@@ -130,13 +130,15 @@ def main():
     env = dict(os.environ, SPORE_LANE=str(lane))
     spore = lambda *x: subprocess.run([os.path.join(ROOT, 'tools', 'spore.sh'), *x], env=env,  # noqa: E731
                                       capture_output=True, text=True)
+    # one run per lane at a time, taken before anything touches the lane or out/dist (lab --repeat
+    # ran two copies on the same free lane: one killed and wiped what the other installed, and both
+    # wanted the same server port; BUG-0211)
+    os.makedirs(os.path.dirname(lane_mod.game_dir(lane)), exist_ok=True)
+    lock = open(os.path.join(os.path.dirname(lane_mod.game_dir(lane)), f'.update_check-lane{lane}.lock'), 'w')
+    fcntl.flock(lock, fcntl.LOCK_EX)
     print(spore('lane', 'create', str(lane)).stdout.strip())
     spore('kill')
     game = lane_mod.game_dir(lane)  # right from a worktree too (BUG-0068)
-    # one run per lane at a time (lab --repeat ran two copies on the same free lane: one wiped the
-    # mod while the other installed it, and both wanted the same server port; BUG-0211)
-    lock = open(os.path.join(game, '.update_check.lock'), 'w')
-    fcntl.flock(lock, fcntl.LOCK_EX)
     bottle = f'SporeLab{lane}'
     b = os.path.join(game, 'SporebinEP1')
     # 1. the game's own files back
