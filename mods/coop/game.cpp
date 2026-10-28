@@ -580,6 +580,8 @@ void destroy_deferred_tick()
     // dropped at once, also while a cinematic of the new world plays, and is no puppet of ours
     for (auto it = g_destroy_later.begin(); it != g_destroy_later.end();)
         if (it->second != world) {
+            H->log(M, SK_INFO, "deferred destroy of %p dropped: another world (avatar %p epoch %u -> %p %u)", it->first,
+                   it->second.av, it->second.epoch, world.av, world.epoch);
             puppet_unregister(it->first);
             it = g_destroy_later.erase(it);
         } else
