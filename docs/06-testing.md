@@ -585,6 +585,9 @@ Learned while writing the tribe game bot (2026-10-23, docs/stability/tribe.md):
   (replies get mixed: a `coop.uistate` answer parsed as `coop.civ`).
 * `update_check.py` restores lane 6 to the original game (no loader); `spore.sh deploy` installs
   the loader again in such a lane.
+* `update_check.py` (BUG-0211) runs `tools/package.sh` itself, installs that pack offline and offers
+  the next version (COOP_VERSION, last part + 1): never a fixed version, it goes stale with the next
+  release. One run per lane at a time (flock `SPORE-lab/.update_check-lane<N>.lock`, port 47999 + lane).
 
 ## 6.15 The `space_empire` fixture (Space features beyond the tutorial)
 
