@@ -108,11 +108,14 @@ def get_drive(con, who, ck):
 
 def to_galaxy(con, who, ck):
     """zoom out with the mouse wheel like a player (the drive allows it) until the galaxy view"""
+    n = 0
     for _ in range(10):
         if fin(con).get('ctx') == '2':
             break
         con.call('wheel 720 540 -5')
+        n += 1
         time.sleep(1.5)
+    print(f'  {who}: zoomed out with {n} x 5 notches')
     ok = wait(lambda: fin(con).get('ctx') == '2', 20)
     ck(ok, f'{who}: zoomed out to the galaxy view')
     time.sleep(3)
@@ -198,12 +201,19 @@ def main():
     ok = wait(lambda: fin(host).get('zone') == '3', 30)
     ck(ok, f'host: at the gate of the galactic core ({fin(host)["line"]})')
     settle(host, 'host')
-    for _ in range(10):
+    # the wheel in at the core like a player. It takes as many notches as the galaxy camera is out:
+    # 10 x 3 landed on the last one in every measured run and missed by one in 3 of 4 runs on main
+    # e5fe623 (the ctx switch came seconds after the check, BUG-0213), so keep wheeling up to 40 x 3
+    t0, n = time.time(), 0
+    for _ in range(40):
         if fin(host).get('ctx') == '1':
             break
         host.call('wheel 720 540 3')
+        n += 1
         time.sleep(1.5)
-    ck(fin(host).get('ctx') == '1', 'host: zoomed into the core\'s system')
+    ok = wait(lambda: fin(host).get('ctx') == '1', 10)
+    print(f'  host: {n} x 3 notches in, ctx={fin(host).get("ctx")} after {time.time() - t0:.0f} s')
+    ck(ok, 'host: zoomed into the core\'s system')
     time.sleep(3)
     settle(host, 'host')
     shot(host, 'finale_core_system.png')
