@@ -1300,3 +1300,18 @@ registry (`mods/coop/fixes.h`, BUG-0116):
   click in each of 4 runs, lab 20261028-053914; on a guest that left 20 s before, every click
   turned the page). The test turns pages until every page was shown, and clicks "More >" again
   when the header did not change.
+
+## creature: the guest walks with W, not with a click (2026-10-28, fix/rel-walk)
+<a id="testing-creature-guest-walk"></a>
+
+* `creature` (coop_two_instances.py --guest-menu) clicked at 300,700 to walk the guest. The guest
+  spawns at the nest of the Scalinus fixture, at a slightly different place each run; from about
+  (-168.8 -468.6 -84.5) that screen point is on the nest's rocks and twigs: the creature turns
+  towards it (its rotation changes) and does not move, a second click neither (2 of 14 runs on
+  lanes 2/3, lab 20261028-064630 #7 and #10; main 20261028-062902 2 of 3, 20261028-055128). From
+  other spawn points the click walked only 1-4 m. W held for 2 s in the same stuck state walked
+  8 m, so the guest's game was fine. The test now holds W for 2 s (5-8 m, lab
+  20261028-065654 6/6); `--no-walk` sends no input and must FAIL ("walked 0.0 m").
+* Clicks on the ground near a creature's nest are a bad walk input in general: the nest is an
+  object, not walkable ground. Prefer W (camera forward, open grass at this fixture) or a point
+  far up the screen.
