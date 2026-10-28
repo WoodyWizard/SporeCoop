@@ -4,16 +4,18 @@ one game, its own bottle; only TCP console port 47810 + ... is used, not the co-
 lab a lane that is neither in the run nor skipped):
 
   1. the lane gets the game's original files back (no SporeCoop)
-  2. SporeCoopSetup.exe /S installs the current build (pack from tools/package.sh)
-  3. a local server answers like the GitHub API: release 0.5.1 (a build of this tree that calls
-     itself 0.5.1, its pack and SHA256SUMS.txt)
-  4. the game finds the update, coop.update apply installs it, after a restart coop 0.5.1 runs
+  2. tools/package.sh stages this tree; SporeCoopSetup.exe /S installs it offline (its own pack,
+     /api: points at a missing page so the setup never fetches the published release)
+  3. a local server answers like the GitHub API: the next version (COOP_VERSION with the last part
+     + 1: a build of this tree that calls itself so, its pack and SHA256SUMS.txt)
+  4. the game finds the update, coop.update apply installs it, after a restart the new coop runs
      and the replaced files (*.sporecoop-old) are gone
   5. SporeCoopSetup.exe /S /uninstall puts the game's own steam_api.dll back
 
   python3 tools/tests/update_check.py [--lane 6]
 """
 import argparse
+import fcntl
 import hashlib
 import http.server
 import json
@@ -30,8 +32,16 @@ sys.path.insert(0, os.path.join(ROOT, 'tools'))
 from sporectl import Console  # noqa: E402
 import lane as lane_mod  # noqa: E402 (game_dir: the lane's game folder from any checkout)
 
-NEW = '0.5.1'
-PORT = 47999
+# BUG-0211: a fixed '0.5.1' was older than the running version since 0.5.2, so the game rightly
+# offered nothing; the release under test is always the next version of this tree
+NEW = ''
+PORT = 47999  # + lane (two lanes' runs at once)
+
+
+def next_version(v):
+    p = v.split('.')
+    p[-1] = str(int(p[-1]) + 1)
+    return '.'.join(p)
 
 
 def run(*a, **kw):
@@ -114,13 +124,19 @@ def main():
         print('RESULT: SKIP (no lane outside this lab run is free: this test wipes the mod from its lane)')
         return 0
     assert a.lane > 1, 'never the real install (lane 1)'
+    global NEW, PORT
     lane, ck = a.lane, Checks()
+    PORT += lane
     env = dict(os.environ, SPORE_LANE=str(lane))
     spore = lambda *x: subprocess.run([os.path.join(ROOT, 'tools', 'spore.sh'), *x], env=env,  # noqa: E731
                                       capture_output=True, text=True)
     print(spore('lane', 'create', str(lane)).stdout.strip())
     spore('kill')
     game = lane_mod.game_dir(lane)  # right from a worktree too (BUG-0068)
+    # one run per lane at a time (lab --repeat ran two copies on the same free lane: one wiped the
+    # mod while the other installed it, and both wanted the same server port; BUG-0211)
+    lock = open(os.path.join(game, '.update_check.lock'), 'w')
+    fcntl.flock(lock, fcntl.LOCK_EX)
     bottle = f'SporeLab{lane}'
     b = os.path.join(game, 'SporebinEP1')
     # 1. the game's own files back
@@ -135,6 +151,10 @@ def main():
     ck(b'sporekit-loader' not in open(os.path.join(b, 'steam_api.dll'), 'rb').read(), 'a clean game (its own steam_api.dll)')
     dist = os.path.join(ROOT, 'out', 'dist')
     ver = run('sed', '-n', 's/^#define COOP_VERSION "\\(.*\\)"/\\1/p', os.path.join(ROOT, 'mods/coop/coop.cpp')).strip()
+    NEW = next_version(ver)
+    # the setup and the pack of this tree (out/dist was whatever tools/package.sh made last, and a
+    # missing pack made the setup download the published release: BUG-0211)
+    run(os.path.join(ROOT, 'tools', 'package.sh'))
     cur_pack = os.path.join(dist, f'SporeCoop-{ver}.pack')
     setup = os.path.join(dist, 'SporeCoopSetup.exe')
     new_pack = build_new(dist)
@@ -144,11 +164,14 @@ def main():
         os.remove(log)
     # 2. the setup installs the current build (offline: its pack)
     wl = lambda p: 'Z:' + p.replace('/', '\\')  # noqa: E731
-    wine(bottle, setup, '/S', f'/dir:{wl(game)}', f'/pack:{wl(cur_pack)}', f'/log:{wl(log)}')
+    ck(os.path.exists(cur_pack), f'the pack under test exists ({os.path.basename(cur_pack)})')
+    wine(bottle, setup, '/S', f'/dir:{wl(game)}', f'/pack:{wl(cur_pack)}', f'/api:http://127.0.0.1:{PORT}/none',
+         f'/log:{wl(log)}')
     print('  setup:', open(log, errors='replace').read().strip() if os.path.exists(log) else '(no log)')
     ck(b'sporekit-loader' in open(os.path.join(b, 'steam_api.dll'), 'rb').read(), 'the setup installed the loader')
     ck(os.path.exists(os.path.join(b, 'steam_api_orig.dll')), 'and kept the game\'s steam_api.dll')
-    ck(open(os.path.join(b, 'mods', 'sporecoop.version')).read().strip() == ver, f'installed version {ver}')
+    vf = os.path.join(b, 'mods', 'sporecoop.version')
+    ck(os.path.exists(vf) and open(vf).read().strip() == ver, f'installed version {ver}')
     # 3. the game asks our "GitHub"
     ini = os.path.join(b, 'mods', 'coop.ini')
     with open(ini, 'a') as f:
