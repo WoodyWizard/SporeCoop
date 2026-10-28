@@ -679,6 +679,10 @@ home that the tutorial points at, or one the ship visited); the nearest NPC empi
   warm reset reloads the fixture too). A run takes ~8-10 minutes.
 * `--alone`: the host presses "Enter now"; the guest is near the core but not at the gate and gets
   Steve's gift by message.
+* The wheel in at the core takes ~30 notches: one zoom-out of 5 notches leaves the system, but the
+  core's system opened after 9 to 11 wheels of 3 notches (measured 2026-10-28, lanes 4-7). A cap of 10
+  failed 3 of 4 runs under load; the test wheels until the system opens (up to 40) and prints the
+  counts (BUG-0213).
 
 ## 6.18 `coop_space_jump.py`: jumps into unvisited systems
 

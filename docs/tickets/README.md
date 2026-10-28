@@ -222,3 +222,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0210](BUG-0210-co-op-window-lists-a-host-with-two-network-addre.md) | open | bug | All | 2026-10-28 |  | Co-op window lists a host with two network addresses twice |
 | [BUG-0211](BUG-0211-update-test-fake-release-0-5-1-is-older-than-the.md) | fixed | test | installer | 2026-10-28 | unreleased | update test: fake release 0.5.1 is older than the running version, the setup installs the published release, parallel copies share lane and port |
 | [BUG-0212](BUG-0212-editor-strays-checks-the-world-during-the-evolut.md) | fixed | test | Creature | 2026-10-28 | unreleased | editor_strays checks the world during the evolution cinematic since BUG-0019 delays the share |
+| [BUG-0213](BUG-0213-space-finale-alone-the-wheel-zoom-in-at-the-gala.md) | fixed | test | Space | 2026-10-28 | unreleased | space_finale_alone: the wheel zoom-in at the galactic core is one wheel short (test timing) |
