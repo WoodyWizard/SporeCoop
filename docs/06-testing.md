@@ -1280,6 +1280,9 @@ registry (`mods/coop/fixes.h`, BUG-0116):
   does not take the mouse (a hold through it swims normally).
 * `ui_status` part 3 (LAN pages): other lanes' hosts answer the discovery as well, each twice on
   the lab PC (wired and Wi-Fi address, BUG-0210), so with six lanes busy the list holds 18 games
-  and the made-up ones are on pages 4-6. The game also drops the first clicks after the guest
-  arrives in the menu. The test turns pages until every page was shown, and clicks "More >" again
+  and the made-up ones are on pages 4-6. Part 3 starts while the guest still loads the host world
+  (part 1's `wait_guest_in` returns before the transfer, the guest already plays a creature), so
+  its leave sends the guest to the main menu, and the game drops the first click there (one lost
+  click in each of 4 runs, lab 20261028-053914; on a guest that left 20 s before, every click
+  turned the page). The test turns pages until every page was shown, and clicks "More >" again
   when the header did not change.
