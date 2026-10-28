@@ -1265,3 +1265,15 @@ registry (`mods/coop/fixes.h`, BUG-0116):
 * `coop_fix_registry.py` (suite `fix_registry`, one game, ~20 s): `coop.fix list` names every
   `COOP_FIX` of the sources, all on; `all off` / `all on` round-trips; the old commands see the
   same bools both ways; an unknown name is refused.
+
+## editor_strays waits for the evolution cinematic (2026-10-28, fix/rel-strays)
+<a id="testing-editor-strays-cinematic"></a>
+
+* After an evolution the host's game plays CRG_SpeciesMigrate for about 10 s. The host sends its
+  world only after it (BUG-0019) and the old puppet's removal waits for it too (BUG-0018, deferred
+  destroy). A check of the world in that time sees the guest in its galaxy menu (`coop.npc herds`:
+  avatar |pos|=0, no herds) and the old puppet still standing (BUG-0212). `coop_editor_strays.py`
+  waits until the host's `for shares` counter went up, no cinematic plays, no deferred destroy is
+  pending and the guest's log has a new `world: loading <planet> from` before it checks.
+* `SPORE_FIX_OFF=core.strays,npc.strays` must FAIL (left-over puppets); lab run
+  20261028-052840-fix-rel-strays did.
