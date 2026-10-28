@@ -155,7 +155,7 @@ add('rejoin_loop', P + 'coop_rejoin_loop.py --rounds 15 --reshare 0:2.5', minute
 add('menu_load', P + 'coop_rejoin_loop.py --rounds 5 --local-load 0:1.5 --cold', minutes=5)
 add('rejoin_race_long', P + 'coop_rejoin_loop.py --rounds 40 --race 1:9', ('nightly',), minutes=8)
 add('rejoin_awful', 'SPORE_NET=awful ' + P + 'coop_rejoin_net.py', ('nightly',), minutes=8)
-add('update', P + 'update_check.py', minutes=6)  # a lane outside the run (SPORE_FREE_LANE), one game
+add('update', P + 'update_check.py', exclusive=True, minutes=6)  # alone: it rebuilds build/ and out/dist (package.sh) that win_unit runs (BUG-0211); a lane outside the run (SPORE_FREE_LANE), one game
 # chaos bot (random real input by both players, network churn); smoke: 2 minutes of tribe
 add('chaos_tribe', P + 'coop_chaos.py --fixture tribe --minutes 2', ('smoke',), minutes=3)
 for st, m in (('creature', 6), ('cell', 6), ('tribe', 8), ('civ', 8), ('space', 6)):

@@ -63,3 +63,4 @@ Players were not affected.
 ## History
 - 2026-10-28: opened.
 - 2026-10-28: fixed on fix/rel-update (test only; the product's update path passes end to end).
+- 2026-10-28: the final full run (out/lab/20261028-070630) failed update and win_unit together: update's package.sh rebuilt build/ while win_unit ran build/SporeCoopSetup.exe on another lane. Both pass alone (update 2/2, win_unit 3/3). `update` is now exclusive (runs alone at the end of a lab run).
