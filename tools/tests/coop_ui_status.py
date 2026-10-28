@@ -29,6 +29,12 @@ def connected(con):
     return 'client id=' in con.call('coop.status')['out'] and ' connected' in con.call('coop.status')['out']
 
 
+def lan_page(st):
+    """(first row number, number of games) from the header "Games on your network: 4-6 of 18" """
+    m = re.search(r'(\d+)-\d+ of (\d+)', (st or {}).get('lan', ''))
+    return (int(m.group(1)), int(m.group(2))) if m else None
+
+
 def wait(pred, timeout):
     t0 = time.time()
     while time.time() - t0 < timeout:
@@ -87,19 +93,32 @@ def main():
     print(' ', guest.call('coop.lanfake 6 120')['out'].strip())
     seen = set()
     st = ui.wait(lambda s: sum(1 for i in range(3) if s.get(f'lan{i}', {}).get('vis')) == 3, 20, 'three LAN rows')
-    for _ in range(6):
-        if not st:
-            break
+    # Other lab lanes' hosts answer too (each twice on a machine with two network addresses), so the
+    # list can hold 18 games and the made-up ones are on pages 4-6. The game drops clicks for a few
+    # seconds after it reaches the menu (the guest just left a world): a click that did not turn the
+    # page is clicked again, and the pages are turned until every game was on screen once.
+    turned = missed = 0
+    while st and turned < 16:
         print('  rows:', [st.get(f'lan{i}', {}).get('text') for i in range(3)], st.get('lan'))
         for i in range(3):
             w = st.get(f'lan{i}', {})
             if w.get('vis'):
                 seen.update(re.findall(r'\bfake(\d)\b', w.get('text', '')))
-        if not st.get('lanmore', {}).get('vis'):
+        page = lan_page(st)
+        if seen >= {str(i) for i in range(1, 7)} or not page or not st.get('lanmore', {}).get('vis'):
             break
-        ui.click('lanmore')
-        time.sleep(1)
-        st = ui.state()
+        if turned >= (page[1] + 2) // 3 + 1:  # every page shown (and one more for a list that changed)
+            break
+        for _ in range(6):
+            ui.click('lanmore')
+            nxt = ui.wait(lambda s: lan_page(s) and lan_page(s)[0] != page[0], 3, 'the next LAN page')
+            if nxt:
+                break
+            missed += 1
+        st = nxt
+        turned += 1
+    if missed:
+        print(f'  {missed} click(s) on "More >" did not turn the page (clicked again)')
     print(f'  fake games listed: {sorted(seen)}; header {st and st.get("lan")!r}')
     ck(seen == {str(i) for i in range(1, 7)}, f'all six made-up games can be listed ({len(seen)} of 6)')
     guest.call('coop.lanfake 0')

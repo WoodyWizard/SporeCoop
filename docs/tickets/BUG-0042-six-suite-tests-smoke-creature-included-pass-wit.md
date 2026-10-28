@@ -88,3 +88,4 @@ CLAUDE.md section 3 ("Check what the other player sees, not our bookkeeping", "A
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #20.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w4-lab (wave 4), test: lab_selftest.py.
+- 2026-10-28: fix/rel-flaky: the cell test's hold towards 1000,760 ran into an obstacle below the fixture's spawn (0.1-0.6 m, 2 of 6 FAIL in lab 20261028-052417); it holds towards 1250,540 now (about 6 m). docs/06-testing.md#testing-cell-move-direction.

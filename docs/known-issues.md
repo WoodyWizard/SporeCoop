@@ -687,3 +687,16 @@ keeps the history).
 **Installer**
 
 None open (BUG-0077, BUG-0080, BUG-0094 and BUG-0139 fixed on fix/w4-installer).
+
+## Co-op window: a host on the network with two addresses is listed twice (2026-10-28, fix/rel-flaky)
+<a id="issue-lan-host-twice"></a>
+
+* What happens: under "Games on your network" a host whose PC has two addresses on the network
+  (cable and Wi-Fi) shows up in two rows, one per address. Both rows join the same game.
+* Reproduce: lab runs with several lanes on the lab PC (wired and Wi-Fi address):
+  out/lab/20261028-043811/ui_status.log lists every other lane's host at 192.168.1.113 and at
+  192.168.1.138.
+* Known: `net::Discovery::on_reply` keeps one entry per address and port; the discovery answer has
+  no host or session id to merge them by.
+* Not checked: two separate PCs.
+* Ticket: BUG-0210.

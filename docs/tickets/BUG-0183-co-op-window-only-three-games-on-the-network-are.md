@@ -50,3 +50,4 @@ fake game must show in a visible row.
 - 2026-10-24: first recorded in docs/known-issues.md.
 - 2026-10-27: ticket backfilled from docs/known-issues.md (every entry carries its ticket id, CLAUDE.md 1).
 - 2026-10-28: fixed on fix/w3-net (wave 3).
+- 2026-10-28: fix/rel-flaky: the test failed when other lanes' hosts filled the list (18 games, fakes on pages 4-6) and the first clicks were dropped; it now turns every page and repeats a click that did not turn the page. Product code unchanged; duplicate rows per host address: BUG-0210.

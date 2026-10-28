@@ -1280,3 +1280,23 @@ registry (`mods/coop/fixes.h`, BUG-0116):
   pending and the guest's log has a new `world: loading <planet> from` before it checks.
 * `SPORE_FIX_OFF=core.strays,npc.strays` must FAIL (left-over puppets); lab run
   20261028-052840-fix-rel-strays did.
+## Two flaky release tests: cell move direction, LAN pages (2026-10-28, fix/rel-flaky)
+<a id="testing-cell-move-direction"></a>
+
+* `cell` (coop_mode.py, cell fixture): the host's cell spawns at (100, 100) with an obstacle below
+  it. Held towards 1000,760 (down-right on a 1440x1080 screen) it was pushed back and moved 0.1-0.6
+  m in 2.5 s (lab 20261028-052417: 2 of 6 FAIL on "moved > 0.3"); towards 1250,540 or 1000,320 it
+  swims about 6 m, towards 440,760 0.4 m. Screen up is +y, right is +x in cell coordinates. Away
+  from the spawn the same hold moves the cell 5-8 m in any direction at ~68 fps. The cell test now
+  holds towards 1250,540.
+* The host of a fixture loaded straight from boot keeps the "galactic adventures" legal splash on
+  screen in the Cell stage (seen for minutes, never on the guest, which joins from the menu); it
+  does not take the mouse (a hold through it swims normally).
+* `ui_status` part 3 (LAN pages): other lanes' hosts answer the discovery as well, each twice on
+  the lab PC (wired and Wi-Fi address, BUG-0210), so with six lanes busy the list holds 18 games
+  and the made-up ones are on pages 4-6. Part 3 starts while the guest still loads the host world
+  (part 1's `wait_guest_in` returns before the transfer, the guest already plays a creature), so
+  its leave sends the guest to the main menu, and the game drops the first click there (one lost
+  click in each of 4 runs, lab 20261028-053914; on a guest that left 20 s before, every click
+  turned the page). The test turns pages until every page was shown, and clicks "More >" again
+  when the header did not change.
