@@ -8,7 +8,7 @@ reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#90
 role: guest
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: fix/w3-space
 commits: eb7541e, 3984987, 4c74ae4
 tests: space_defenders
@@ -96,3 +96,4 @@ This came from an inventory of about 90 game-object pointers the mod keeps acros
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w3-space (eb7541e): guest keeps only real puppets, puppet identity by model key / invincible / no mission; space_defenders FAIL without / PASS with.
 - 2026-10-28: fix/w3-space lab runs on lane 6: 20261028-010933 (14/14: the four new wave 3 Space tests and space_map, space_stale, space_fleet, space_puppet, space_rivalry, space_contracts, space_jump, space_guest_ui, space_allies, space_diplomacy), smoke 20261028-013951 (13/13; `ui` skipped: exclusive, needs a lane 1-5).
+- 2026-10-28: released in 0.7.3.0.

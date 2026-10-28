@@ -8,7 +8,7 @@ reported: 2026-10-25
 source: code review (tools comparison)
 role: both
 versions: all
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: fix/w2-creature
 commits: 8de7ca7
 tests: npc_reuse, unit
@@ -41,3 +41,4 @@ stays in the NPC code; the ids of ships, vehicles and tribe members (BUG-0154) a
 - 2026-10-25: reported (code review (tools comparison)).
 - 2026-10-25: ticket written from the CHANGELOG, commits and reports (backfill).
 - 2026-10-28: fixed on fix/w2-creature (allocator skips ids in use); unit test and npc_reuse part 2.
+- 2026-10-28: released in 0.7.3.0.

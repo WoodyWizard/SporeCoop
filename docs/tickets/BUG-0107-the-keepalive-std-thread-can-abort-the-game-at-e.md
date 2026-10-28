@@ -8,7 +8,7 @@ reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#86
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: fix/w1-core
 commits: 066df15
 tests: tools/tests/coop_exit_thread.py (suite exit_thread)
@@ -90,3 +90,4 @@ A tools/tests check that starts a game with coop.dll, calls `ExitProcess(0)` thr
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #86.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w1-core: keepalive thread through a pointer; abort at exit confirmed by coop_exit_thread.py.
+- 2026-10-28: released in 0.7.3.0.

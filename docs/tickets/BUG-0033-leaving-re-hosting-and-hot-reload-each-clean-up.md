@@ -8,7 +8,7 @@ reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#11
 role: host
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: integrate/pr5-pr6
 commits: a387323
 tests: leave_cleanup, cell_coop
@@ -115,3 +115,4 @@ The test must fail on main and with `coop.fix session_end off`, and pass with th
 - 2026-10-27: fixed on integrate/pr5-pr6 (a387323): `end_session_modules()` in coop.cpp runs every
   stage module's on_session_end and clears the remotes for cb.disconnected, do_leave, on_unload
   and a coop.host / coop.join while a session is open; `coop.sessionfix 0` restores the old lists.
+- 2026-10-28: released in 0.7.3.0.

@@ -8,7 +8,7 @@ reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#8
 role: host
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: fix/w3-net
 commits: aa6d418
 tests: net_tests test_lost_first_packet
@@ -109,3 +109,4 @@ Not run in game over netem (the 1-in-10 failure rate stays computed, not measure
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #8.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w3-net (wave 3).
+- 2026-10-28: released in 0.7.3.0.

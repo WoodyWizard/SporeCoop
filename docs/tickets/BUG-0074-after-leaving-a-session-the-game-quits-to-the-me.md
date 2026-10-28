@@ -8,7 +8,7 @@ reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#52
 role: host
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: fix/w2-world
 commits: df2f0a9, 75b7383
 tests: tools/tests/coop_world_queue.py (suite world_queue)
@@ -82,3 +82,4 @@ The planned test was:
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #52.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w2-world: the session end drops the guest's queued world loads (coop_world_queue).
+- 2026-10-28: released in 0.7.3.0.

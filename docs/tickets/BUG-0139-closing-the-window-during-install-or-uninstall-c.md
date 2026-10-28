@@ -8,7 +8,7 @@ reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#118
 role: 
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: fix/w4-installer
 commits: eaf0a7c, 52be656
 tests: win_unit (tests/win_tests.cpp test_setup_close)
@@ -83,3 +83,4 @@ Runs: FAIL without the fix: `out/w4-fail/win_unit_old.txt` (manual run on lane 4
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #118.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w4-installer (wave 4): no close while a job runs, the process waits for the job; GUI test under Wine.
+- 2026-10-28: released in 0.7.3.0.

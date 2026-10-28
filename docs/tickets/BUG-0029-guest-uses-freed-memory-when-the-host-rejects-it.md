@@ -8,7 +8,7 @@ reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#7
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: fix/w1-core
 commits: a702d15
 tests: tests/net_tests.cpp test_session_end_in_delivery, make test-asan (in make test)
@@ -130,3 +130,4 @@ The planned test was:
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #7.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w1-core: deferred leave during delivery, ASan unit tests in make test.
+- 2026-10-28: released in 0.7.3.0.

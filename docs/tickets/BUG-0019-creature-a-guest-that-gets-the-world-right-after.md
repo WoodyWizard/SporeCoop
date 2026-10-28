@@ -8,7 +8,7 @@ reported: 2026-10-25
 source: test (coop_migration)
 role: guest
 versions: 0.7.2.4
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: fix/w3-creature
 commits: 4096536
 tests: evolve_world, migration
@@ -48,3 +48,4 @@ checked on the guest's game after its load: the avatar's age (+0xB34) and the pr
 - 2026-10-25: reported (test (coop_migration)).
 - 2026-10-25: ticket written from the CHANGELOG, commits and reports (backfill).
 - 2026-10-28: root cause found and fixed on fix/w3-creature (the share waits for the cinematic); test evolve_world (FAIL with sharecine off, PASS with it).
+- 2026-10-28: released in 0.7.3.0.

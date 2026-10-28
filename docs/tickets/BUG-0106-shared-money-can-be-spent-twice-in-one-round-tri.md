@@ -8,7 +8,7 @@ reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#85
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: fix/w2-civ
 commits: caae221, 5fb37c8
 tests: tests/net_tests.cpp test_shared_ledger (make test); tools/tests/coop_civ_shared.py (suite civ_shared)
@@ -98,3 +98,4 @@ On main the test FAILS with -50. With the fix it PASSES with 50, and one of the 
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #85.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w2-civ (floor on the host and in the setters, in-flight changes with sequence numbers; unit and two-game tests FAIL without, PASS with).
+- 2026-10-28: released in 0.7.3.0.

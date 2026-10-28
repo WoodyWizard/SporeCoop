@@ -8,7 +8,7 @@ reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#139
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: fix/w3-cell
 commits: 2bc60b9
 tests: unit (tests/cell_tests.cpp numerics)
@@ -82,3 +82,4 @@ the three was seen in a game (the ticket's own assessment).
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #139.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w3-cell (bug wave 3); unit test with the old and the fixed results.
+- 2026-10-28: released in 0.7.3.0.

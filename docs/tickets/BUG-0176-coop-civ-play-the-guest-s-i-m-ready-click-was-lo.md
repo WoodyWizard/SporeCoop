@@ -8,7 +8,7 @@ reported: 2026-10-23
 source: docs/known-issues.md (ticket backfilled 2026-10-27)
 role: 
 versions: 0.7.2.4 (main) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: fix/w4-tests
 commits: 57d4bc9
 tests: civ_play
@@ -43,3 +43,4 @@ many clicks it took. A lost click in the window's first frames is a UI timing, n
 - 2026-10-23: first recorded in docs/known-issues.md.
 - 2026-10-27: ticket backfilled from docs/known-issues.md (every entry carries its ticket id, CLAUDE.md 1).
 - 2026-10-28: fix/w4-tests: the test clicks again when the vote did not fire and prints the clicks.
+- 2026-10-28: released in 0.7.3.0.

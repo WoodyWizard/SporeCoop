@@ -8,7 +8,7 @@ reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#51
 role: 
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: fix/w4-lab
 commits: 824813c, 6f2d12e, f8b9733, bb7154e
 tests: tools/tests/lab_selftest.py (make test)
@@ -94,3 +94,4 @@ CLAUDE.md section 3 ("A test you never saw fail proves nothing"), section 4 ("`m
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #51.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w4-lab (wave 4), test: lab_selftest.py.
+- 2026-10-28: released in 0.7.3.0.

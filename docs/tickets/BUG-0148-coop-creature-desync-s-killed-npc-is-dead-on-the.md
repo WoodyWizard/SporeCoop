@@ -8,7 +8,7 @@ reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#127
 role: 
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: fix/w4-tests
 commits: 1e2136a
 tests: creature_desync
@@ -79,3 +79,4 @@ The guest's `coop.npc list` keeps printing " DEAD" for the mod flag (other tests
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #127.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fix/w4-tests: the kill check reads the game's death flag of the guest's mirror; seeded FAIL with coop.npc deathfix off, PASS in the lab.
+- 2026-10-28: released in 0.7.3.0.

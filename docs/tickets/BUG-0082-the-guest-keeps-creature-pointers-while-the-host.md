@@ -8,7 +8,7 @@ reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#60
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: fix/w1-creature
 commits: 543edf6, d624824
 tests: host_away_kill
@@ -83,3 +83,4 @@ flip frame; the avatar is a stand-in guest_tick never destroys) and reads `kill_
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #60.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-27: fixed on fix/w1-creature (kill list cleared every frame, `coop.npc killfix`), test host_away_kill FAIL without / PASS with.
+- 2026-10-28: released in 0.7.3.0.

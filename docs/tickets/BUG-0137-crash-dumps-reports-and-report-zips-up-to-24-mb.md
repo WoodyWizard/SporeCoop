@@ -8,7 +8,7 @@ reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#116
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: fix/w3-sys
 commits: 1bebf57
 tests: tools/tests/kit_crash.py prune (suite kit_crash)
@@ -61,3 +61,4 @@ Test: `tools/tests/kit_crash.py --case prune` (12 planted old files of each kind
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #116.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w3-sys (1bebf57); tests named above, lab run out/lab/20261028-011605 (smoke and diag: out/lab/20261028-012842).
+- 2026-10-28: released in 0.7.3.0.

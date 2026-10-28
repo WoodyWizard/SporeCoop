@@ -8,7 +8,7 @@ reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#109
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: fix/w2-world
 commits: 7e2173d
 tests: tools/tests/coop_join_other_world.py (suite join_other_world)
@@ -114,3 +114,4 @@ It fails on main (food and DNA equal the host's, NPC count 0) and with `coop.fix
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #109.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w2-world: a guest in another world of the stage applies nothing of the host's world (coop_join_other_world).
+- 2026-10-28: released in 0.7.3.0.

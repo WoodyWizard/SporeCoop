@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [0.7.3.0] - 2026-10-28
+
+A big bug-fix release. A review of the whole mod and the test lab found about 180 problems; 158 of
+them are fixed here, nearly all with an automated test that fails without its fix: crashes and freezes,
+desyncs between the players in every stage, worlds and saves that could be overwritten or mixed,
+the setup and the in-game update. The network protocol did not change: 0.7.3.0 plays together with
+0.7.x, but both players need 0.7.3.0 for most of the fixes. What is still open is listed in
+[docs/known-issues.md](https://github.com/WoodyWizard/SporeCoop/blob/main/docs/known-issues.md).
+
+**GOG 2016 build (`922af7c7`):** fixes that need new game addresses switch themselves off on it
+(see the README); use the GOG 2024 or Steam build for them (BUG-0108).
+
 ### Fixed
 - **Joining by host name no longer freezes the game while the name is looked up** (BUG-0204): the
   name is resolved in the background and the join goes on when the answer comes; an unknown name

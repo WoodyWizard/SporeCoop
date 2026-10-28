@@ -8,7 +8,7 @@ reported: 2026-10-27
 source: known issue and code review
 role: guest
 versions: observed 0.7.2.4
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: fix/cell-guest-leave
 commits: 2366d74, 53960f5
 tests: cell_coop
@@ -44,3 +44,4 @@ Linux lab run.
 ## History
 - 2026-10-27: recorded from the known issue.
 - 2026-10-27: fixed on fix/cell-guest-leave, not released yet.
+- 2026-10-28: released in 0.7.3.0.

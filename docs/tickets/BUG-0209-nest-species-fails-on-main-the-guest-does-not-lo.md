@@ -8,7 +8,7 @@ reported: 2026-10-28
 source: lab run on lane 6, fix/w4-registry and main 7874654
 role: 
 versions: main 7874654
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: main
 commits:
 tests: tools/tests/coop_nest_species.py (suite nest_species)
@@ -54,3 +54,4 @@ multi3, net_robust, civ_shared: 8/8).
 ## History
 - 2026-10-28: opened.
 - 2026-10-28: fixed on main (orchestrator, after the wave 4 merge).
+- 2026-10-28: released in 0.7.3.0.

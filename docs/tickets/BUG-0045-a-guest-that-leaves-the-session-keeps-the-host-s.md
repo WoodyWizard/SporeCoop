@@ -8,7 +8,7 @@ reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#23
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: integrate/pr5-pr6
 commits: a387323
 tests: leave_cleanup
@@ -80,3 +80,4 @@ Not done yet. Planned test (must FAIL without the fix and PASS with it):
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #23.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: no longer applies on main: fixed by BUG-0033 (a387323, end_session_modules on Leave); test leave_cleanup (fix/w2-space).
+- 2026-10-28: released in 0.7.3.0.

@@ -8,7 +8,7 @@ reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#104
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: fix/w3-creature
 commits: 7f36e32, 9c3aa4b
 tests: npc_rejoin_paused
@@ -74,3 +74,4 @@ menu stays up, then the host closes it. Checked on the guest's game: spawned pro
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #104.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: reproduced and fixed on fix/w3-creature; test npc_rejoin_paused (FAIL with knownfix off, PASS with it).
+- 2026-10-28: released in 0.7.3.0.

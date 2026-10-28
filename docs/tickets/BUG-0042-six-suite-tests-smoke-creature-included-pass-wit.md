@@ -8,7 +8,7 @@ reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#20
 role: 
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: fix/w4-lab
 commits: 824813c, 6f2d12e, f8b9733, bb7154e
 tests: tools/tests/lab_selftest.py (make test)
@@ -90,3 +90,4 @@ CLAUDE.md section 3 ("Check what the other player sees, not our bookkeeping", "A
 - 2026-10-28: fixed on fix/w4-lab (wave 4), test: lab_selftest.py.
 - 2026-10-28: fix/rel-flaky: the cell test's hold towards 1000,760 ran into an obstacle below the fixture's spawn (0.1-0.6 m, 2 of 6 FAIL in lab 20261028-052417); it holds towards 1250,540 now (about 6 m). docs/06-testing.md#testing-cell-move-direction.
 - 2026-10-28: fix/rel-walk: `creature` failed "the guest walked 0.0 m" (main 20261028-062902 2 of 3): the walk click at 300,700 landed on the nest when the guest spawned at about (-168.8 -468.6 -84.5) (creature turned, did not move; W held then walked 8 m, so not a product bug). The test holds W for 2 s now (lab 20261028-065654 6/6, 5-8 m); `--no-walk` FAILs. docs/06-testing.md#testing-creature-guest-walk.
+- 2026-10-28: released in 0.7.3.0.

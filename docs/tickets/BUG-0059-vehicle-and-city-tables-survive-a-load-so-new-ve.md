@@ -8,7 +8,7 @@ reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#37
 role: guest
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: fix/w1-tribe-civ
 commits: ba9dc46
 tests: civ_reload, civ_play, civ_coop
@@ -101,3 +101,4 @@ The guest's tables are cleared by the same `on_world_change` when the guest load
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #37.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-27: fixed on fix/w1-tribe-civ (ba9dc46), test civ_reload (FAIL with --nofix, PASS with the fix).
+- 2026-10-28: released in 0.7.3.0.

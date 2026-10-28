@@ -8,7 +8,7 @@ reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#98
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: fix/w3-creature
 commits: 7f36e32
 tests: world_reload
@@ -83,3 +83,4 @@ creature) is the guest's own creation after each load.
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #98.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w3-creature (world counter instead of the avatar address); test world_reload (FAIL with worldfix off, PASS with it).
+- 2026-10-28: released in 0.7.3.0.

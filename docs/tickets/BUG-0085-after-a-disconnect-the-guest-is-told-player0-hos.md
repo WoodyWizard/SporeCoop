@@ -8,7 +8,7 @@ reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#63
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: fix/w3-net
 commits: aa6d418, 1e905bb, 423392b
 tests: coop_ui_status.py (suite ui_status)
@@ -67,3 +67,4 @@ guest's log after `disconnected:` must have no "(host) is back".
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #63.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w3-net (wave 3).
+- 2026-10-28: released in 0.7.3.0.

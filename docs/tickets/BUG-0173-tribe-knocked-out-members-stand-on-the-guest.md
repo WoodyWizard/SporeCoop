@@ -8,7 +8,7 @@ reported: 2026-10-23
 source: docs/known-issues.md (ticket backfilled 2026-10-27)
 role: guest
 versions: 0.7.2.4 (main) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: fix/w2-civ
 commits: e2a59c3
 tests: tools/tests/coop_tribe_ko.py (suite tribe_ko)
@@ -42,3 +42,4 @@ Not verified: the respawn path (the member did not get up within 60 s in any run
 - 2026-10-23: first recorded in docs/known-issues.md.
 - 2026-10-27: ticket backfilled from docs/known-issues.md (every entry carries its ticket id, CLAUDE.md 1).
 - 2026-10-28: fixed on fix/w2-civ (the guest plays the knock-out; coop_tribe_ko FAIL without, PASS with; respawn not exercised).
+- 2026-10-28: released in 0.7.3.0.

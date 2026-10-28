@@ -8,7 +8,7 @@ reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#44
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: fix/w2-creature
 commits: c068f08
 tests: cinematic_puppet
@@ -87,3 +87,4 @@ new puppet during the cinematic; the old one must have no host NPC id (none is s
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #44.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: confirmed in the game (host NPC id 23 for the old puppet) and fixed on fix/w2-creature; test cinematic_puppet.
+- 2026-10-28: released in 0.7.3.0.

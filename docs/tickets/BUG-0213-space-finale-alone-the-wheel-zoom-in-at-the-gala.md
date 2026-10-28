@@ -8,7 +8,7 @@ reported: 2026-10-28
 source: lab runs 20261028-055128, 20261028-062902 on main e5fe623
 role: host
 versions: 0.7.2.4 (main e5fe623)
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: fix/rel-finale
 commits: 138a9a7
 tests: space_finale_alone, space_finale
@@ -54,3 +54,4 @@ the zoom-out count). The check is the same: the host's own wheel has to open the
 ## History
 - 2026-10-28: opened.
 - 2026-10-28 (fix/rel-finale): cause found (the 10-wheel cap equals the notches the zoom-in needs), test wheels up to 40 times; 4/4 OK in out/lab/20261028-064627-fix-rel-finale.
+- 2026-10-28: released in 0.7.3.0.

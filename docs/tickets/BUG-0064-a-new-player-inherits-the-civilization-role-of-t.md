@@ -8,7 +8,7 @@ reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#42
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: fix/w2-civ
 commits: caae221, 5fb37c8
 tests: tools/tests/coop_civ_shared.py (suite civ_shared)
@@ -84,3 +84,4 @@ It must fail on main.
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #42.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w2-civ (roles erased with their player and session; coop_civ_shared FAIL without, PASS with).
+- 2026-10-28: released in 0.7.3.0.

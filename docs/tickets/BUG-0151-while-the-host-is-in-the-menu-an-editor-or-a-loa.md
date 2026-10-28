@@ -8,7 +8,7 @@ reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#130
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: fix/w3-civ
 commits: 22b7839
 tests: tribe_away, civ_away, dna_away
@@ -107,3 +107,4 @@ creature is still dropped.
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #130.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w3-civ for Tribe, Civ and DNA (22b7839), tests tribe_away, civ_away, dna_away (each FAIL with --nofix, PASS with the fix); the editor/load part and K_GOAL without a host creature moved to BUG-0205.
+- 2026-10-28: released in 0.7.3.0.

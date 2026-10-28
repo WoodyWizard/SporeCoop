@@ -8,7 +8,7 @@ reported: 2026-10-23
 source: docs/known-issues.md (ticket backfilled 2026-10-27)
 role: guest
 versions: 0.7.2.4 (main) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: (earlier) d605e96
 commits: d605e96
 tests: tribe_play, chaos_tribe, tribe_coop
@@ -51,3 +51,4 @@ since (4 tribe_play + 4 chaos_tribe on main, 20261027-183142).
 - 2026-10-23: first recorded in docs/known-issues.md.
 - 2026-10-27: ticket backfilled from docs/known-issues.md (every entry carries its ticket id, CLAUDE.md 1).
 - 2026-10-27: closed on fix/w1-tribe-civ as fixed by the camera guard of d605e96 (checked: guard on, GOG 2024 symbols verified).
+- 2026-10-28: released in 0.7.3.0.

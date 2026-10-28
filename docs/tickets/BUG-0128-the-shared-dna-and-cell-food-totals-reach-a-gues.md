@@ -8,7 +8,7 @@ reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#107
 role: guest
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: fix/w2-cell
 commits: e7ab004, 595e12f, b6039e6, 55b3c2a, b5ebdb2
 tests: tools/tests/coop_cell_sync.py (suite cell_sync), tools/tests/coop_dna_resend.py (suite dna_resend)
@@ -97,3 +97,4 @@ It FAILS on main and PASSES with the fix. The same for DNA in Creature.
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #107.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w2-cell (bug wave 2); test FAIL without the fix, PASS with it.
+- 2026-10-28: released in 0.7.3.0.

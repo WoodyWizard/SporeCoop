@@ -8,7 +8,7 @@ reported: 2026-10-28
 source: split from BUG-0138 (fix/w3-net)
 role: guest
 versions: 0.7.2.4 and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: fix/w4-installer
 commits: cded566
 tests: coop_join_name.py (suite join_name), net_tests test_join_by_name
@@ -60,3 +60,4 @@ Runs: FAIL without the fix: `out/w4-fail/join_name_old.log` (manual run on lane 
 ## History
 - 2026-10-28: opened.
 - 2026-10-28: fixed on fix/w4-installer (wave 4): name lookup on a pinned worker thread, the join goes on in update(); unit and two-game tests.
+- 2026-10-28: released in 0.7.3.0.

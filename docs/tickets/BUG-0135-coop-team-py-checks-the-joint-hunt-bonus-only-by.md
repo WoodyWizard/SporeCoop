@@ -8,7 +8,7 @@ reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#114
 role: 
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: fix/w4-tests
 commits: d0b3f81
 tests: team
@@ -80,3 +80,4 @@ The rescue checks stay as they were (the health check after the lethal hit is th
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #114.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fix/w4-tests: the bonus is measured on the NPC's health on both machines; seeded FAIL with teamplay off, PASS in the lab.
+- 2026-10-28: released in 0.7.3.0.

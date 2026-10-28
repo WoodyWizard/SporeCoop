@@ -8,7 +8,7 @@ reported: 2026-10-24
 source: docs/known-issues.md (ticket backfilled 2026-10-27)
 role: guest
 versions: 0.7.2.4 (main) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: fix/w3-net
 commits: aa6d418, 1e905bb, 423392b
 tests: coop_ui_status.py (suite ui_status)
@@ -51,3 +51,4 @@ fake game must show in a visible row.
 - 2026-10-27: ticket backfilled from docs/known-issues.md (every entry carries its ticket id, CLAUDE.md 1).
 - 2026-10-28: fixed on fix/w3-net (wave 3).
 - 2026-10-28: fix/rel-flaky: the test failed when other lanes' hosts filled the list (18 games, fakes on pages 4-6) and the first clicks were dropped; it now turns every page and repeats a click that did not turn the page. Product code unchanged; duplicate rows per host address: BUG-0210.
+- 2026-10-28: released in 0.7.3.0.

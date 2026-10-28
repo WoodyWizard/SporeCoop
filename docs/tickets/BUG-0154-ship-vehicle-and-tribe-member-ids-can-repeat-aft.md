@@ -8,7 +8,7 @@ reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#133
 role: guest
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: fix/w2-net
 commits: a8341cf, 9afc74d
 tests: tests/net_tests.cpp test_alloc_id
@@ -91,3 +91,4 @@ BUG-0023 in docs/tickets ("NPC net ids can repeat after about 65k allocations in
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #133.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w2-net (wave 2, netcode); tests above FAIL without the fix and PASS with it.
+- 2026-10-28: released in 0.7.3.0.

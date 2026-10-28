@@ -8,7 +8,7 @@ reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#143
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: fix/w3-sys
 commits: 116731e
 tests: make test (tests/text_tests.cpp)
@@ -65,3 +65,4 @@ back as valid UTF-8; names capped).
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #143.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w3-sys (116731e); tests named above, lab run out/lab/20261028-011605 (smoke and diag: out/lab/20261028-012842).
+- 2026-10-28: released in 0.7.3.0.

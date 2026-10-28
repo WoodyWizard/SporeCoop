@@ -8,7 +8,7 @@ reported: 2026-10-23
 source: docs/known-issues.md (ticket backfilled 2026-10-27)
 role: guest
 versions: 0.7.2.4 (main) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: fix/w3-creature
 commits: 9c499bf
 tests: unit (npc_tests: proxy driving)
@@ -56,3 +56,4 @@ driving decision with a host NPC that reports 2 m/s and stands 4 m from where th
 - 2026-10-27: ticket backfilled from docs/known-issues.md (every entry carries its ticket id, CLAUDE.md 1).
 - 2026-10-28: fix/w2-creature: not reproduced; a candidate cause from driver.h written down (see Fix). BUG-0044 (reused objects) ruled out as the cause: it shows another species or a corpse, not an offset.
 - 2026-10-28: fix/w3-creature: the candidate cause fixed in driver.h (stall teleport for NPC proxies, drive_plan.h) with a unit test; not reproduced in the game.
+- 2026-10-28: released in 0.7.3.0.

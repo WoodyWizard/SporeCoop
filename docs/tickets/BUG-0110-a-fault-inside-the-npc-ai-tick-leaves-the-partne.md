@@ -8,7 +8,7 @@ reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#89
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: fix/w2-creature
 commits: c068f08, 949c7f3
 tests: npc_swap, unit (npc_tests: swap ledger)
@@ -103,3 +103,4 @@ between frames.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w2-creature for h_NPCTickAI (per-frame swap guard); test npc_swap. The other detours of the report stay open in their areas.
 - 2026-10-28: fix/w3-creature: the other detours (h_NoAttack, h_SelectUI, h_StageMsg, b_damage) were not covered by the per-frame guard; a swap ledger covers them now. Unit test in make test (npc_tests: the guard off leaves the partner as the value, on puts it back; nested calls); no game test forcing a fault inside those detours.
+- 2026-10-28: released in 0.7.3.0.

@@ -8,7 +8,7 @@ reported: 2026-10-25
 source: code review (playbook comparison)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: fix/w4-tools
 commits: 14463ee
 tests: tools/tests/tools_selftest.py kill (make test)
@@ -45,3 +45,4 @@ an "owner" game on lane 1 without a test argument, a test host and guest.
 - 2026-10-25: reported (code review (playbook comparison)).
 - 2026-10-25: ticket written from the CHANGELOG, commits and reports (backfill).
 - 2026-10-28: fixed on fix/w4-tools (wave 4, tests and tooling).
+- 2026-10-28: released in 0.7.3.0.

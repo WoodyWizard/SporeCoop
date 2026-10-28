@@ -8,7 +8,7 @@ reported: 2026-10-27
 source: docs/known-issues.md (ticket backfilled 2026-10-27)
 role: host
 versions: 0.7.2.4 (main) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: fix/w3-civ
 commits: f0c5f0a
 tests: civ_caption
@@ -45,3 +45,4 @@ without the caption), lane 7.
 - 2026-10-27: first recorded in docs/known-issues.md.
 - 2026-10-27: ticket backfilled from docs/known-issues.md (every entry carries its ticket id, CLAUDE.md 1).
 - 2026-10-28: fixed on fix/w3-civ (f0c5f0a), test civ_caption (FAIL with --nofix, PASS with the fix).
+- 2026-10-28: released in 0.7.3.0.

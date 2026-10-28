@@ -8,7 +8,7 @@ reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#32
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: fix/w1-space
 commits: 8604dd3, 48a56fc
 tests: space_stale (coop_space_stale.py; --without-fix must fail)
@@ -98,3 +98,4 @@ Hard to hit by timing. Make it deterministic with a test command on the guest: `
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #32.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-27: fixed on fix/w1-space (wave 1, Space).
+- 2026-10-28: released in 0.7.3.0.

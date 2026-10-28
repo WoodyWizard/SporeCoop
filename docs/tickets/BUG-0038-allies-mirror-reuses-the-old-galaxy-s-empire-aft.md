@@ -8,7 +8,7 @@ reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#16
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: fix/w2-space
 commits: d0f6003, f581bf2
 tests: space_allies_reload
@@ -97,3 +97,4 @@ This must FAIL on main and with `coop.fix allies_reload off`, and PASS with the 
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w2-space (d0f6003): new cEmpire after a reload (also via ensure_empire); test space_allies_reload FAIL without / PASS with.
 - 2026-10-28: f581bf2: the reset only when the player's cEmpire changed (a save also drops the mirror from the map); space_allies_reload FAIL without / PASS with again.
+- 2026-10-28: released in 0.7.3.0.

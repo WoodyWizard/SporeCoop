@@ -8,7 +8,7 @@ reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#69
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: fix/w1-creature
 commits: d624824, 28cc753
 tests: anim_teardown
@@ -84,3 +84,4 @@ animation calls on a puppet the game no longer lists.
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #69.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-27: fixed on fix/w1-creature (avatar check before the messages, list checks, `coop.framefix`), test anim_teardown FAIL without (15 anims on freed puppets) / PASS with.
+- 2026-10-28: released in 0.7.3.0.

@@ -8,7 +8,7 @@ reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#53
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: fix/w3-civ
 commits: 4c70be2
 tests: make test (validate_tests: gift recipient)
@@ -79,3 +79,4 @@ the game with 3 players (the button only calls the same function).
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #53.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: recipient validation found fixed by BUG-0201; the recipient choice fixed on fix/w3-civ (4c70be2), unit test.
+- 2026-10-28: released in 0.7.3.0.

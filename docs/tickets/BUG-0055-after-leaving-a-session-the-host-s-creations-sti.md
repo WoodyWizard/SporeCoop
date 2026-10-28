@@ -8,7 +8,7 @@ reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#33
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: fix/w2-creature
 commits: 85320fe
 tests: creation_leave
@@ -84,3 +84,4 @@ the bem the guest's resource manager finds for 290229B9 (`coop.creations bem`).
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #33.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w2-creature (world packages dropped at the session end); test creation_leave. The species profile cache is not reset.
+- 2026-10-28: released in 0.7.3.0.

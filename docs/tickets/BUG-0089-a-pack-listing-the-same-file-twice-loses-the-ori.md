@@ -8,7 +8,7 @@ reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#67
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: fix/w2-world
 commits: 6e8e765
 tests: tests/net_tests.cpp test_updater_dup (make test), tools/tests/win_unit.py (apply_pack)
@@ -155,3 +155,4 @@ None known.
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #67.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w2-world: duplicate paths rejected in parse_pack and apply_pack (net_tests, win_unit).
+- 2026-10-28: released in 0.7.3.0.

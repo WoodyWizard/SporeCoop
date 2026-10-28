@@ -8,7 +8,7 @@ reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#113
 role: 
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: fix/w4-tools
 commits: 880c7df (part 2); afdcc31 on main (part 1, fix/w2-civ)
 tests: new_stage_game.py civ --npc-cities 3 (manual, lane 3); coop_civ_city_join / coop_civ_ai_spawn
@@ -77,3 +77,4 @@ CONFIRMED by reading both sides, and a second reviewer verified it. Low severity
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #113.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w4-tools (wave 4, tests and tooling).
+- 2026-10-28: released in 0.7.3.0.

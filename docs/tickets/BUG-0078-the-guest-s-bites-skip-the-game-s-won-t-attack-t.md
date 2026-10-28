@@ -8,7 +8,7 @@ reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#56
 role: guest
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: fix/w3-cell
 commits: 0af9c83, 9413801, 82eeb38
 tests: cell_guest_bite
@@ -79,3 +79,4 @@ the bitten NPC:
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #56.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w3-cell (bug wave 3); test FAIL without the fix, PASS with it.
+- 2026-10-28: released in 0.7.3.0.

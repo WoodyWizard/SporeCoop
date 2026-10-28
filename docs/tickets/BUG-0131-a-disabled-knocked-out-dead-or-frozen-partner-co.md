@@ -8,7 +8,7 @@ reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#110
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: fix/w3-cell
 commits: 8f749d0, 70cca8c, 153ec67
 tests: cell_rescue, space_helper
@@ -99,3 +99,4 @@ Two-player tests (3 players need a second lane, not available to this agent's la
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #110.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w3-cell (bug wave 3); tests FAIL without the fix, PASS with it.
+- 2026-10-28: released in 0.7.3.0.

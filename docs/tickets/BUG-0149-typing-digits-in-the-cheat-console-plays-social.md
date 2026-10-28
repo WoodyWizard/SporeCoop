@@ -8,7 +8,7 @@ reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#128
 role: guest
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: fix/w3-creature, fix/w4-tests
 commits: 4096536, e1eda78
 tests: social_console
@@ -78,3 +78,4 @@ Not covered: other UTFWin text fields than the console.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fix/w3-creature: console window check and the bit-0 change made; the test cannot open the console on the lanes yet, so it stays open.
 - 2026-10-28: fix/w4-tests: the console opens on the lanes once the cheat manager's flag +0x64 is set; the test FAILs with textfix off and PASSes with it; in suite.py.
+- 2026-10-28: released in 0.7.3.0.

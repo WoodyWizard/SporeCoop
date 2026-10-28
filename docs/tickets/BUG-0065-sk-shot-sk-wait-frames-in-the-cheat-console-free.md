@@ -8,7 +8,7 @@ reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#43
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: fix/w1-sporekit
 commits: 5d46dbb, 4de4d0a, 5e4dc7f
 tests: tools/tests/kit_freeze.py (suite kit_freeze)
@@ -79,3 +79,4 @@ Issue #28 (stack dump suspends a thread and then allocates).
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #43.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: verified on today's main (88341cf: same code), fixed on fix/w1-sporekit with switch `kit.fix`; test kit_freeze FAIL with the fix off, PASS twice with it.
+- 2026-10-28: released in 0.7.3.0.

@@ -8,7 +8,7 @@ reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#95
 role: 
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: fix/w4-registry
 commits: 4099ebc, dd3c506, ed70db7
 tests: unit (tests/fixes_tests.cpp), fix_registry; twins via SPORE_FIX_OFF: creature_kills, creature_desync, cell_leave; alt_enter --without-fix
@@ -111,3 +111,4 @@ a `tickets.py check` warning for fixed tickets without a switch (most older tick
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #95.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w4-registry: coop.fix registry over every switch, new switches for BUG-0006/0009/0012/0015/0017, SPORE_FIX_OFF for tests.
+- 2026-10-28: released in 0.7.3.0.

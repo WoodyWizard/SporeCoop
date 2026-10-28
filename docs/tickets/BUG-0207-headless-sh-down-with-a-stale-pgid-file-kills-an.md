@@ -8,7 +8,7 @@ reported: 2026-10-28
 source: wave 4 tools review (fix/w4-tools)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: fix/w4-tools
 commits:
 tests: tools/tests/tools_selftest.py headless (make test)
@@ -42,3 +42,4 @@ FAIL with main's headless.sh (the process is killed), PASS with the fix.
 ## History
 - 2026-10-28: opened.
 - 2026-10-28: fixed on fix/w4-tools (found while checking the dev tools for BUG-0025).
+- 2026-10-28: released in 0.7.3.0.

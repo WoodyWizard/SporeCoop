@@ -8,7 +8,7 @@ reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#45
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: fix/w3-civ
 commits: ba9dc46, 421bfe0
 tests: tribe_epic, tribe_chief_removed
@@ -91,3 +91,4 @@ session goes on), which is right.
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #45.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: re-checked on fix/w3-civ: the chief part was fixed by BUG-0081 (ba9dc46); epic timer and the live epic at the session end fixed (421bfe0), test tribe_epic.
+- 2026-10-28: released in 0.7.3.0.

@@ -8,7 +8,7 @@ reported: 2026-10-27
 source: found by kit_freeze.py hookchurn, fix/w1-sporekit
 role: both
 versions: 0.7.2.4 and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: fix/w3-sys
 commits: 51e8cce
 tests: tools/tests/kit_freeze.py hookrace (suite kit_freeze)
@@ -59,3 +59,4 @@ Test: `tools/tests/kit_freeze.py --case hookrace` (`kit.test.hookchurn 200 3 nog
 ## History
 - 2026-10-27: opened (found by the BUG-0132 test on fix/w1-sporekit).
 - 2026-10-28: fixed on fix/w3-sys (51e8cce); tests named above, lab run out/lab/20261028-011605 (smoke and diag: out/lab/20261028-012842).
+- 2026-10-28: released in 0.7.3.0.

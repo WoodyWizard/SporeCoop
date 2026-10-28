@@ -8,7 +8,7 @@ reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#132
 role: 
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: claude/clever-fermi-h57l81
 commits:
 tests: make test (docs_lint, tickets.py check)
@@ -79,3 +79,4 @@ Fixed 2026-10-27 (claude/clever-fermi-h57l81): the empty `coop.space jumpto` hea
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #132.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-27: fixed on claude/clever-fermi-h57l81 (ticket ids in every entry, merge damage repaired, stale statements marked superseded).
+- 2026-10-28: released in 0.7.3.0.

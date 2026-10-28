@@ -8,7 +8,7 @@ reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#93
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: fix/w2-world
 commits: 6e8e765
 tests: tools/tests/win_unit.py + tests/win_tests.cpp (suite win_unit)
@@ -82,3 +82,4 @@ A host-side test of the updater (like the existing `update_check.py` / net_tests
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #93.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w2-world: own backup suffix, only SporeCoop's backups are deleted (win_unit).
+- 2026-10-28: released in 0.7.3.0.

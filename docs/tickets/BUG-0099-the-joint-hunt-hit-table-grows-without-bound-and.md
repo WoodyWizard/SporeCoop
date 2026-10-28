@@ -8,7 +8,7 @@ reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#77
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: fix/w2-creature
 commits: 8de7ca7
 tests: unit
@@ -72,3 +72,4 @@ creature_kills and team, ran with it).
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #77.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w2-creature (hit table pruned every hit, cleared on world change and session end); unit test.
+- 2026-10-28: released in 0.7.3.0.

@@ -8,7 +8,7 @@ reported: 2026-10-25
 source: code review (tools comparison)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: fix/fakepeer-protocol
 commits: ec57d4b, 5f6f12f, 70fa46d
 tests: fakepeer_check
@@ -36,3 +36,4 @@ that never replies. Its silent-host check must fail if the no-WELCOME error path
 - 2026-10-25: reported (code review (tools comparison)).
 - 2026-10-25: ticket written from the CHANGELOG, commits and reports (backfill).
 - 2026-10-27: fixed on fix/fakepeer-protocol, not released yet.
+- 2026-10-28: released in 0.7.3.0.

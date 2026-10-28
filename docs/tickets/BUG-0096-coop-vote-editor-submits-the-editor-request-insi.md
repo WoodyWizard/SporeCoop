@@ -8,7 +8,7 @@ reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#74
 role: 
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: fix/w4-tests
 commits: 1e2136a
 tests: vote
@@ -64,3 +64,4 @@ out/lab/20261028-025535 (the vote, the host's and the guest's editor through `co
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #74.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fix/w4-tests: coop.vote runs outside the frame; coop_vote.py passes.
+- 2026-10-28: released in 0.7.3.0.

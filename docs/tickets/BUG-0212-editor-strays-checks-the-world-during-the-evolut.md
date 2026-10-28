@@ -8,7 +8,7 @@ reported: 2026-10-28
 source: lab runs 20261028-043811, 20261028-051522
 role: both
 versions: unreleased
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: fix/rel-strays
 commits: 76c47f7
 tests: editor_strays
@@ -55,3 +55,4 @@ the world changed (diagnostics).
 
 ## History
 - 2026-10-28: opened and fixed on fix/rel-strays (test waits for the cinematic and the share; core.strays switch).
+- 2026-10-28: released in 0.7.3.0.

@@ -8,7 +8,7 @@ reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#40
 role: 
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: fix/w4-tools
 commits: 60c9c1e
 tests: tools/tests/tools_selftest.py tickets (make test)
@@ -83,3 +83,4 @@ CLAUDE.md section 1 ("Open security problems: `--private` (out/tickets/)"; "Agen
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #40.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w4-tools (wave 4, tests and tooling).
+- 2026-10-28: released in 0.7.3.0.

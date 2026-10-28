@@ -8,7 +8,7 @@ reported: 2026-10-27
 source: docs/known-issues.md (ticket backfilled 2026-10-27)
 role: guest
 versions: 0.7.2.4 (main) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.0
 branch: fix/w2-civ
 commits: 882e6e2
 tests: tools/tests/coop_civ_ai_spawn.py (suite civ_ai_spawn)
@@ -41,3 +41,4 @@ Not checked: the guest's NPC budgets now differ from the host's (they always did
 - 2026-10-27: first recorded in docs/known-issues.md.
 - 2026-10-27: ticket backfilled from docs/known-issues.md (every entry carries its ticket id, CLAUDE.md 1).
 - 2026-10-28: the guest's own spawns traced to the NPC AI call sites at runtime; fixed on fix/w2-civ (null for those call sites on guests; coop_civ_ai_spawn FAIL without, PASS with).
+- 2026-10-28: released in 0.7.3.0.
