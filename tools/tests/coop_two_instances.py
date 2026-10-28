@@ -7,9 +7,10 @@
 4. move the guest, check both sides see a puppet tracking the remote player
 5. screenshots -> out/shots/two_host.png, two_guest.png
 
-usage: coop_two_instances.py [--no-restart] [--guest-menu]
+usage: coop_two_instances.py [--no-restart] [--guest-menu] [--no-walk]
   --guest-menu  the guest stays in the galaxy menu with an empty profile and must
                 receive + auto-load the host world after joining
+  --no-walk     the guest gets no walk input (seeded failure: the walk check must fail)
 """
 import os
 import subprocess
@@ -117,9 +118,15 @@ def main():
         guest.call('wait.frames 300 60000')
     time.sleep(3)
     watch(lane.HOST, lane.GUEST)  # freezes and dead consoles fail the test (Checks.faults, BUG-0042)
-    # walk the guest somewhere: click on the ground left of the screen
+    # walk the guest: W held for 2 s (about 8 m). A click on the ground left of the screen
+    # (300,700) was used before: from the guest's spawn at about (-168.8 -468.6 -84.5) that point
+    # is on the nest, the creature turns towards it and stays (2 of 14 runs; W from there walks 8 m,
+    # BUG-0042 History). --no-walk sends no input (the check must then fail).
     g0 = avatar_pos(guest)
-    guest.call('click 300 700')
+    if '--no-walk' not in sys.argv:
+        guest.call('key w down')
+        time.sleep(2)
+        guest.call('key w up')
     ok = True
     for _ in range(6):
         time.sleep(1)

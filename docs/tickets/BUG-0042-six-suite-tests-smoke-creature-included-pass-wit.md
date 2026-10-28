@@ -89,3 +89,4 @@ CLAUDE.md section 3 ("Check what the other player sees, not our bookkeeping", "A
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w4-lab (wave 4), test: lab_selftest.py.
 - 2026-10-28: fix/rel-flaky: the cell test's hold towards 1000,760 ran into an obstacle below the fixture's spawn (0.1-0.6 m, 2 of 6 FAIL in lab 20261028-052417); it holds towards 1250,540 now (about 6 m). docs/06-testing.md#testing-cell-move-direction.
+- 2026-10-28: fix/rel-walk: `creature` failed "the guest walked 0.0 m" (main 20261028-062902 2 of 3): the walk click at 300,700 landed on the nest when the guest spawned at about (-168.8 -468.6 -84.5) (creature turned, did not move; W held then walked 8 m, so not a product bug). The test holds W for 2 s now (lab 20261028-065654 6/6, 5-8 m); `--no-walk` FAILs. docs/06-testing.md#testing-creature-guest-walk.
