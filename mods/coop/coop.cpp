@@ -304,6 +304,8 @@ struct Stray {
 };
 std::vector<Stray> g_strays;
 uint32_t g_strays_removed = 0;
+bool g_strays_fix = true; // tests: off = left-over puppets stay (the bug of BUG-0007, coop_editor_strays.py)
+COOP_FIX("core.strays", "BUG-0007", g_strays_fix, "creature: a partner's puppet left over after an editor is removed");
 
 void forget_puppets() // world changed or the local player left it (editor, load)
 {
@@ -324,6 +326,10 @@ void remove_strays(double now)
 {
     if (g_strays.empty() || g_mode != modes::kCreature || !g_local)
         return;
+    if (!g_strays_fix) {
+        g_strays.clear();
+        return;
+    }
     for (auto& s : g_strays) {
         // the same creature (pointer still listed, same herd), the same world, not ours again, not
         // destroyed already (npc.cpp remove_saved_strays meets it too: untuned, in a herd like ours)

@@ -219,3 +219,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0207](BUG-0207-headless-sh-down-with-a-stale-pgid-file-kills-an.md) | fixed | tooling | All | 2026-10-28 | unreleased | headless.sh down with a stale pgid file kills an unrelated process group of the user |
 | [BUG-0208](BUG-0208-dbpf-package-load-a-64-bit-dbbf-index-offset-nea.md) | fixed | crash | All | 2026-10-28 | unreleased | dbpf::Package::load: a 64-bit DBBF index offset near 2^64 wraps the bounds check and reads before the file buffer |
 | [BUG-0209](BUG-0209-nest-species-fails-on-main-the-guest-does-not-lo.md) | fixed | bug | Creature | 2026-10-28 | unreleased | nest_species fails on main: the guest does not load the host's world a second time after coop.share |
+| [BUG-0212](BUG-0212-editor-strays-checks-the-world-during-the-evolut.md) | open | test | Creature | 2026-10-28 |  | editor_strays checks the world during the evolution cinematic since BUG-0019 delays the share |

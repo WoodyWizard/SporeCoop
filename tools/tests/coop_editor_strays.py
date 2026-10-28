@@ -10,12 +10,18 @@ Before the fix two things went wrong when the players came back from the editor:
   surface. An NPC of such a herd searched land around that home and read past the planet's cube
   map (the host's crash). Both are checked here with `coop.npc herds`.
 
+The checks wait until the host's evolution cinematic is over and the guest loaded the world the host
+sends after it (BUG-0019 holds that share, BUG-0018 holds the removal of the old puppet until then):
+checked earlier, the guest is in its galaxy menu and the old puppet still waits (BUG-0212).
+`SPORE_FIX_OFF=core.strays,npc.strays` must FAIL (left-over puppets).
+
   coop_editor_strays.py [--rounds N]
 """
 import re
 import sys
 import time
 
+import lane
 from coop_ui import Ui
 from twoinst import Checks, shot, start
 
@@ -59,6 +65,35 @@ def wait_together(host, guest, t=90):
     return False
 
 
+def host_shares(host):
+    m = re.search(r'for shares (\d+)', host.call('coop.status')['out'])
+    return int(m.group(1)) if m else 0
+
+
+def guest_loads():
+    try:
+        with open(lane.game_log(lane.GUEST), 'rb') as f:
+            return len(re.findall(r'world: loading \S+ from ', f.read().decode('utf-8', 'replace')))
+    except OSError:
+        return 0
+
+
+def wait_settled(host, guest, shares0, loads0, t=180):
+    """After an evolution the host's game plays its cinematic (CRG_SpeciesMigrate): creatures we
+    remove meanwhile go when it is over (BUG-0018), and the host sends its world only then
+    (BUG-0019), the guest loads it. The checks are about the world after all that."""
+    t0 = time.time()
+    while time.time() - t0 < t:
+        hs = host.call('coop.status')['out']
+        if host_shares(host) > shares0 and not re.search(r'cinematic \w+ playing', hs) and \
+                not re.search(r'destroys during cinematics: .*pending=[1-9]', hs) and 'sending world to' not in hs and \
+                guest_loads() > loads0 and 'Creature' in mode(guest) and \
+                'receiving world' not in guest.call('coop.status')['out']:
+            return True
+        time.sleep(2)
+    return False
+
+
 def evolve(host, guest, ck, gu, order):
     m0 = mode(host)
     print(' ', host.call('coop.vote editor')['out'].strip().splitlines()[0])
@@ -92,7 +127,10 @@ def main():
     for i in range(rounds):
         order = 'hg' if i % 2 == 0 else 'gh'
         print(f'  round {i + 1}: evolution, {"host" if order[0] == "h" else "guest"} back first')
+        shares0, loads0 = host_shares(host), guest_loads()
         evolve(host, guest, ck, gu, order)
+        ck(wait_settled(host, guest, shares0, loads0), 'the evolution cinematic is over, the guest loaded the '
+           'host\'s world after it')
         ck(wait_together(host, guest), 'together again, each sees the other')
         time.sleep(5)  # (strays are removed on the first frame back; give the AI time to run too)
         shot(host, f'strays_host_{i + 1}.png')
