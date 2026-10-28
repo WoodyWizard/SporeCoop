@@ -9,7 +9,7 @@ usage: coop_mode.py [--fixture NAME [--planet SLOT/PLANET]] [--keep-guest] [--mo
                  host must already be playing. (Quitting one Wine instance of the bottle kills
                  the others, so the guest is only restarted together with the host.)
   --keep-guest   reuse a running guest
-  --move X,Y     host clicks there to move (default 1000,760)
+  --move X,Y     host clicks there to move (default 1000,760; Cell: 1250,540)
 """
 import argparse
 import os
@@ -73,7 +73,7 @@ def main():
     ap.add_argument('--adventure', action='store_true', help='restart both and start the tutorial adventure on both')
     ap.add_argument('--planet')
     ap.add_argument('--port', type=int, default=lane.PORT)
-    ap.add_argument('--move', default='1000,760')
+    ap.add_argument('--move', default=None)
     a = ap.parse_args()
     if a.fixture and not a.planet:
         a.planet = fixtures.planet_of(a.fixture)
@@ -181,7 +181,10 @@ def main():
         print(f'{name}: {l or "NO PUPPET"}')
         ok &= l is not None
     # host moves; the guest must follow the host's position
-    mx, my = map(int, a.move.split(','))
+    # Cell: the cell fixture's spawn (100, 100) has an obstacle below it: held towards 1000,760 the
+    # cell was pushed back and moved 0.1-0.6 m in 2.5 s (2 of 6 runs under the 0.3 m limit, lab
+    # 20261028-052417); to the right it swims about 6 m (docs/06-testing.md#testing-cell-move-direction)
+    mx, my = map(int, (a.move or ('1250,540' if mode == 'Cell' else '1000,760')).split(','))
     p0 = avatar_pos(host)
     if mode == 'Cell':  # a cell swims while the button is held (a click moves it ~0.1, BUG-0042)
         host.call(f'button {mx} {my} down')
