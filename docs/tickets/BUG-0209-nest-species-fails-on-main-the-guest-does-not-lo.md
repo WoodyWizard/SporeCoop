@@ -10,11 +10,12 @@ role:
 versions: main 7874654
 fixed_in: 0.7.3.0
 branch: main
-commits:
+commits: 1d4cd27
 tests: tools/tests/coop_nest_species.py (suite nest_species)
 signature:
 docs:
 related:
+switch: core.rejoin_name
 ---
 
 ## Report
@@ -55,3 +56,5 @@ multi3, net_robust, civ_shared: 8/8).
 - 2026-10-28: opened.
 - 2026-10-28: fixed on main (orchestrator, after the wave 4 merge).
 - 2026-10-28: released in 0.7.3.0.
+- 2026-10-28: commits: filled in (1d4cd27; ef403ce is the ticket only) (BUG-0215).
+- 2026-10-28: switch: core.rejoin_name (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).

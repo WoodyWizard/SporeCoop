@@ -1343,3 +1343,82 @@ Pitfalls seen:
   `Herd_Update` (BUG-0256), which fails the run.
 * `coop.vote go` while the guest is settled opens its own editor 1-2 frames after the vote's end
   message, so polling `coop.vote` for "own editor due 1" never sees it without `coop.vote hold`.
+## Fix registry rules and the session-end structure (2026-10-28, fix/w5-tools)
+<a id="testing-fix-rules"></a>
+
+BUG-0214 (GitHub #148) completed the registry of BUG-0116 (see
+[the registry](#testing-fix-registry)). The rules every switch follows (mods/coop/fixes.h):
+
+* **One source.** In a coop.dll-only file the bool has `COOP_FIX(...)` on the next line. In a
+  portable file (mods/coop/net/*, updater/*: also built into net_tests, fuzz_decoders, win_tests,
+  release_tsan and the setup, without fixes.cpp) the bool is `FIX_SWITCH(var);` (fix_switch.h) and
+  is registered once in `mods/coop/fix_table.cpp`; the members of `net::Fixes` too.
+* **Names** `<area>.<switch>`, unique, one bool per name and one name per bool (`fix::reg` refuses a
+  second name for a bool). Area: the switch it completes, else the file's area (coop.cpp `core`,
+  world.cpp `world`, net/ `net`, updater/ `update`, cellsync.cpp `pool`, npc.cpp / game.cpp `npc`,
+  squadron.cpp `fleet`, spacecoop.cpp `space`, civ.cpp `civ`, tribe.cpp `tribe`, shared.cpp `res`,
+  creations.cpp `creations`, teamplay.cpp `team`, ...).
+* **One bug per switch**: the off side is the code before that one fix. `tribe.chiefs` now gates
+  only the chief and pincer tables; the epic's end has `tribe.epic_herd`. `upd::g_old_fix` became
+  `update.old_suffix` (BUG-0114) and `update.keep_failed` (BUG-0150), `win_tests --old-suffix` /
+  `--old-keep` show them apart (`--old` sets both).
+* **`COOP_FIX_UNSAFE`**: the off side can corrupt memory or lose data (the crash tickets' switches
+  `fleet.hit`, `space.star`, `core.frame`, `npc.kill`, `civ.boost`, `civ.world`, `tribe.chiefs`,
+  `core.vote_scope`, `core.menu_drop`, `core.update_pin`, `core.keepalive_ptr`, `pool.cellat`, and
+  `update.old_suffix`). `coop.fix all off` skips them ("N fixes off, M unsafe skipped"), `coop.fix
+  all off --unsafe` does not, `coop.fix <name> off` always works; `coop.fix list` marks them.
+* **Unit-test only**: `net.dbbf_bounds` (BUG-0208) and `net.refpack_bound` (BUG-0047) read received
+  data out of bounds when off: no runtime switch, listed in fix_table.cpp's `kUnitOnly[]`.
+  `net_tests --nofix` keeps them on (it runs to the end under ASan); `--old-dbbf` / `--old-refpack`
+  switch one off and `make test-asan` checks that ASan stops them.
+* **Not a lab switch**: setup-only bools (`g_pick_fix`, `g_release_lock_fix`, `g_release_merge_fix`)
+  carry `// not a lab switch: <reason>`.
+* No new per-module aliases: new switches are reached through `coop.fix` and `SPORE_FIX_OFF` only.
+* `SPORE_FIX_OFF` is strict: a name the game does not know fails the test at once (before, the run
+  went on with the fix still on); an unsafe one prints a warning. `coop.fix session_end` answers
+  "unknown fix ... (did you mean session.end)".
+* The scan (`fixes_tests`, make test) reads mods/coop, mods/coop/net and updater (.cpp and .h):
+  every `FIX_SWITCH` and `net::Fixes` member is registered or in `kUnitOnly[]`; a bool `= true`
+  whose line or comment line above names a BUG-NNNN or says `tests:`, `(tests)`, "old behaviour" or
+  "before the fix" (at struct scope: not the BUG-NNNN) is registered or marked; an inline self-test
+  on made-up sources keeps the rules from silently dropping out. `fixes_tests --names` prints the
+  registered names.
+* Tickets name their switches in the front-matter field `switch:` (registry names), checked by
+  `tools/tickets.py check`.
+* Hot reload sets every switch on again (the registry is per image).
+
+**Session-end structure** (`end_session(EndPath, cell)` in coop.cpp, paths Leave, Unload, Restart,
+Disconnect): block 1 the module calls (with `session.end` off only what each path called before
+BUG-0033; Disconnect always calls all), block 2 the remotes (kept only on Restart with the switch
+off), block 3 the core resets, always, each behind its own switch. A new reset of a coop.cpp global
+goes into block 3 (mod state only: it may run inside packet delivery, BUG-0029; idempotent); a
+module's reset into that module's `on_session_end()`.
+
+## make test needs (2026-10-28, fix/w5-tools)
+<a id="testing-make-test-needs"></a>
+
+* No `$USER` / `$HOME` needed any more (containers, `env -i`): lane.py and spore.sh fall back to the
+  password database (BUG-0252).
+* A host compiler with sanitizer runtimes: a probe (`tools/sanitizer_probe.sh`, a stamp per
+  `HOSTCXX` in build/host) builds and runs an ASan/UBSan and a TSan program first and says what is
+  missing (clang: compiler-rt, Ubuntu `libclang-rt-<N>-dev`, or `HOSTCXX=g++`). Where TSan only runs
+  without address randomisation (`vm.mmap_rnd_bits=32` with an older compiler) `release_tsan` runs
+  under `setarch -R`.
+* `SKIP_SANITIZERS=1 make test` skips them on purpose, with a warning at the start and the end;
+  refused when `CI` is set.
+
+## Lab: the free lane and interrupts (2026-10-28, fix/w5-tools)
+<a id="testing-lab-free-lane"></a>
+
+* A suite entry with `uses_free_lane=True` (today `update`) plays on `SPORE_FREE_LANE` and prints
+  `LAB-WATCH lane=<N> since=<time>` once it holds that lane's lock; the lab then also counts crash /
+  hang reports there (newer than `since`) and a game that dies there (BUG-0249). Its result line
+  shows the lane as `lane 1 (+6)`.
+* Lane 1's log folder is also the owner's install: a report whose `run:` line (crash reports
+  since 0.7.3.x: `run: instance <N>, profile set|own, pid <pid>`) says instance 1 without a test
+  profile is the owner's own Spore and does not count; without the line it counts.
+* Ctrl+C or SIGTERM in any phase: the lab kills every test group it started, starts no new test or
+  retry, ends the games of the run's lanes and of the free lane only when no other run holds its
+  lock, and exits non-zero (BUG-0250). SIGHUP is left alone (nohup keeps working).
+* `lab.py kill --lanes 3` is refused as ambiguous: `--lane 3`, `--upto 3` (lanes 2..3) or
+  `--lanes 2,3` (BUG-0253).

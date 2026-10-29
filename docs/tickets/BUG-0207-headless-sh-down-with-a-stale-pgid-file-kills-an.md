@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in: 0.7.3.0
 branch: fix/w4-tools
-commits:
+commits: eeaa558
 tests: tools/tests/tools_selftest.py headless (make test)
 signature:
 docs:
@@ -43,3 +43,4 @@ FAIL with main's headless.sh (the process is killed), PASS with the fix.
 - 2026-10-28: opened.
 - 2026-10-28: fixed on fix/w4-tools (found while checking the dev tools for BUG-0025).
 - 2026-10-28: released in 0.7.3.0.
+- 2026-10-28: commits: filled in (eeaa558) (BUG-0215).

@@ -15,6 +15,7 @@ tests: space_fleet
 signature:
 docs: docs/re/space.md#space-ship-state-chunks
 related: #15
+switch: fleet.chunk
 ---
 
 ## Report
@@ -67,7 +68,7 @@ Suggested in the review:
 - Keep the old behaviour behind `coop.fix fleetchunks off` so the lab can check the test still catches it.
 
 ## Verification
-Done (2026-10-28, lane 6, GOG 2024): `coop_space_fleet.py` (suite `space_fleet`), 20 host NPC ships (2 chunks), the host drops chunk 0 five times. `--without-fix` (`coop.fleet chunkfix 0`) FAILS: the guest's game replaced 17-18 of the host's ships (created 25 -> 43, removed 0 -> 18; runs /tmp/claude-1000/-home-pam3es-Games-Modding-SPORE/13201e2f-19c5-4da6-b393-aae16fe6d338/scratchpad/waves/fix_w2-space/fleet_nofix.log, /tmp/claude-1000/-home-pam3es-Games-Modding-SPORE/13201e2f-19c5-4da6-b393-aae16fe6d338/scratchpad/waves/fix_w2-space/fleet2--without-fix.log). With the fix PASS twice: the same ship objects, created/removed unchanged, partial_cycles=5 (/tmp/claude-1000/-home-pam3es-Games-Modding-SPORE/13201e2f-19c5-4da6-b393-aae16fe6d338/scratchpad/waves/fix_w2-space/fleet2_fix.log and lab run out/lab/20261027-233002 on fix/w2-space (23/23 with smoke)).
+Done (2026-10-28, lane 6, GOG 2024): `coop_space_fleet.py` (suite `space_fleet`), 20 host NPC ships (2 chunks), the host drops chunk 0 five times. `--without-fix` (`coop.fleet chunkfix 0`) FAILS: the guest's game replaced 17-18 of the host's ships (created 25 -> 43, removed 0 -> 18; runs scratch log `fleet_nofix.log` (not kept), scratch log `fleet2--without-fix.log` (not kept)). With the fix PASS twice: the same ship objects, created/removed unchanged, partial_cycles=5 (scratch log `fleet2_fix.log` (not kept) and lab run out/lab/20261027-233002 on fix/w2-space (23/23 with smoke)).
 
 Not done yet. Planned test (must FAIL without the fix and PASS with it):
 
@@ -86,3 +87,5 @@ Not done yet. Planned test (must FAIL without the fix and PASS with it):
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w2-space (c5fe0b8): removal only after a complete cycle, late chunks of older cycles ignored; test space_fleet FAIL without / PASS with.
 - 2026-10-28: released in 0.7.3.0.
+- 2026-10-28: log paths of an agent's scratch folder replaced by the log names (BUG-0215: no paths outside the repository).
+- 2026-10-28: switch: fleet.chunk (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).

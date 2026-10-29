@@ -671,7 +671,7 @@ static void tick_frame(double now)
 // wait, possibly minutes, until the host was back, and guest_tick then destroyed objects the game
 // had freed or reused meanwhile. `coop.npc killfix off` keeps the old behaviour (tests).
 static bool g_kill_clear = true;
-COOP_FIX("npc.kill", "BUG-0082", g_kill_clear, "creature: the guest's kill list is cleared every frame (coop.npc killfix)");
+COOP_FIX_UNSAFE("npc.kill", "BUG-0082", g_kill_clear, "creature: the guest's kill list is cleared every frame (coop.npc killfix)");
 void set_kill_clear(bool on) { g_kill_clear = on; }
 
 void tick(double now)

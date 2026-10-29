@@ -15,6 +15,7 @@ tests: world_reload
 signature:
 docs: docs/re/creature.md#creature-world-epoch
 related: #98
+switch: npc.world
 ---
 
 ## Report
@@ -84,3 +85,4 @@ creature) is the guest's own creation after each load.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w3-creature (world counter instead of the avatar address); test world_reload (FAIL with worldfix off, PASS with it).
 - 2026-10-28: released in 0.7.3.0.
+- 2026-10-28: switch: npc.world (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).

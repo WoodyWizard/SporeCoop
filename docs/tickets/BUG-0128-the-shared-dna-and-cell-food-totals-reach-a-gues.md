@@ -15,6 +15,7 @@ tests: tools/tests/coop_cell_sync.py (suite cell_sync), tools/tests/coop_dna_res
 signature:
 docs: docs/re/cell.md#cell-sync-robustness
 related: #107
+switch: pool.resend
 ---
 
 ## Report
@@ -98,3 +99,4 @@ It FAILS on main and PASSES with the fix. The same for DNA in Creature.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w2-cell (bug wave 2); test FAIL without the fix, PASS with it.
 - 2026-10-28: released in 0.7.3.0.
+- 2026-10-28: switch: pool.resend (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).

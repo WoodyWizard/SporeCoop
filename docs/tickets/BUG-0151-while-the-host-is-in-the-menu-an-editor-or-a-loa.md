@@ -15,6 +15,7 @@ tests: tribe_away, civ_away, dna_away
 signature:
 docs: docs/re/civ.md#civ-wave3
 related: #130
+switch: civ.away, core.away_dna, tribe.away
 ---
 
 ## Report
@@ -103,9 +104,13 @@ creature is still dropped.
 ### Related
 #63 (the "host is back" message after a disconnect), #60 (creature pointers kept while the host is away), #27 (offline changes to shared resources), #21 (votes after the stage is gone).
 
+Run evidence (2026-10-28, BUG-0215, found afterwards in the lab folders and agent logs): FAIL with the fix off: `away_nofix.log`, `civaway_nofix.log`, `dna_nofix.log` (fix/w3-civ, away off), a standalone test run whose log stayed in the agent's scratch folder (not kept in out/lab). PASS: lab run out/lab/20261028-014643 on fix/w3-civ (tribe_away, civ_away, dna_away ok); later full runs on main pass too.
+
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #130.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w3-civ for Tribe, Civ and DNA (22b7839), tests tribe_away, civ_away, dna_away (each FAIL with --nofix, PASS with the fix); the editor/load part and K_GOAL without a host creature moved to BUG-0205.
 - 2026-10-28: released in 0.7.3.0.
+- 2026-10-28: Verification names the FAIL log and the PASS lab run (BUG-0215).
+- 2026-10-28: switch: civ.away, core.away_dna, tribe.away (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).
 - 2026-10-28 (fix/w5-core, GitHub #130 still open): re-checked on b423f56. The menu case (Tribe/Civ play locally, DNA and goal rewards kept) is fixed and released in 0.7.3.0 (tests tribe_away, civ_away, dna_away). What #130 also asked and is not done here: Cell (no host-away state in cellsync) stays open in BUG-0205. Related follow-ups fixed on fix/w5-core: an editor or a load counts as away only in Creature/Tribe/Civ and the away DNA keeps its stage and world (BUG-0233), Tribe/Civ play locally while the guest plays another world (BUG-0231). The known-issues entry, which listed this fixed ticket as open, is removed; the CHANGELOG [Unreleased] corrects the 0.7.3.0 BUG-0205 sentence (Cell still open).

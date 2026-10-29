@@ -15,6 +15,7 @@ tests: unit
 signature:
 docs: 
 related: #77
+switch: team.hunt_hits
 ---
 
 ## Report
@@ -73,3 +74,4 @@ creature_kills and team, ran with it).
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w2-creature (hit table pruned every hit, cleared on world change and session end); unit test.
 - 2026-10-28: released in 0.7.3.0.
+- 2026-10-28: switch: team.hunt_hits (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).

@@ -15,6 +15,7 @@ tests: tools/tests/coop_tribe_ko.py (suite tribe_ko)
 signature:
 docs: docs/re/tribe.md#tribe-knocked-out-members
 related:
+switch: tribe.ko
 ---
 
 ## Report
@@ -43,3 +44,4 @@ Not verified: the respawn path (the member did not get up within 60 s in any run
 - 2026-10-27: ticket backfilled from docs/known-issues.md (every entry carries its ticket id, CLAUDE.md 1).
 - 2026-10-28: fixed on fix/w2-civ (the guest plays the knock-out; coop_tribe_ko FAIL without, PASS with; respawn not exercised).
 - 2026-10-28: released in 0.7.3.0.
+- 2026-10-28: switch: tribe.ko (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).
