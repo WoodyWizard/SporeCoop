@@ -125,6 +125,7 @@ add('evolve_world', P + 'coop_evolve_world.py', minutes=6)  # BUG-0019: the worl
 add('creation_leave', P + 'coop_creation_leave.py', minutes=5)  # BUG-0055: after leaving, the guest's own creation under the host's key is its own again
 add('anim_teardown', P + 'coop_anim_teardown.py', minutes=8)  # BUG-0091: no animation on a puppet freed by a world teardown
 add('join_new_game', P + 'coop_join_new_game.py', minutes=5)  # the host starts a new game (typed planet name) next to an old one: the guest gets the new one
+add('cell_new_game', P + 'coop_cell_new_game.py --diet carn --early --minutes 3', minutes=10)  # two new players (empty profiles), a new Cell game from the stage wizard, the guest joins in the intro: both eat (BUG-0279)
 add('tribe_play', P + 'coop_tribe_play.py', ('smoke',), warm=True, minutes=3, fixture='tribe')
 add('civ_play', P + 'coop_civ_play.py', warm=True, minutes=3, fixture='civ_npc')
 add('civ_reload', P + 'coop_civ_reload.py', warm=True, minutes=5, fixture='civ_npc')  # tables after a load and a leave (BUG-0040, BUG-0059; --nofix fails)

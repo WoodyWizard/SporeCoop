@@ -706,3 +706,49 @@ BUG-0271. GOG 2024, lanes 4 and 5, `tools/tests/coop_cell_evolve_poll.py`.
   and the puppets only while `mode_id()` is still the frame's mode, the stage is not being left
   (BUG-0264) and the adapter still finds them (`local_now()` / `puppet_now()` in coop.cpp).
 * `coop.cellgone` (any thread): pool checks, refusals, and the frame probe's counters.
+
+## New players, diets and the food a guest finds (2026-10-29, fix/w7-eat)
+<a id="cell-new-players-food"></a>
+
+BUG-0279 (Discord: "even at stage 1 only 1 of us could eat"). GOG 2024, lane 9,
+`tools/tests/coop_cell_new_game.py` (both profiles without saves or creations, a new game from the
+stage wizard, the guest joins from its menu).
+
+* ✔ The Cell wizard's diet card picks the premade player cell: herbivore (leaf, left card)
+  `E219E5D2`, carnivore (meat, right card) `252A132F` (`cll` 0x3D97A8E4, group 0x40616200). There is
+  no omnivore card; an omnivore mouth comes only from the cell editor.
+* ✔ A guest without creations of its own plays the host world's cell (`S+0x10` from the save the
+  host shares, `coop.creations`: "mine cell" = the host's key, no swap, no rebuild): host and guest
+  have the same mouth. Its puppet on the host has the same model.
+* ✔ **GetCellModelData 0xE679E0** (same address in both builds) cdecl `u8*(ResourceKey by value)`,
+  only the instance is read: the model data of a cell model from the map at `*(0x16B3C04)+0x70`,
+  built on first use (0xE67940 / 0xE83E30, the 0xE83EC8 fault path of BUG-0004 for an unknown key).
+  `+0x1250` carnivore, `+0x1251` herbivore: CanEat 0xE68470 reads both (`coop.pool diet` prints them
+  for the own cell and the partners').
+* ✔ Runtime, both diets, both players: a herbivore eats plants, a carnivore meat chunks (AvatarEat,
+  +12 / +27 points); a carnivore touching a plant leaves it there with no points; small cells the
+  avatar touches are sometimes swallowed without points (the guest reports them, `eats_sent` >
+  `own_eats`), as in the solo game. With the release 0.7.3.0 the same (lane 9, run below).
+* ✔ Populating ("tiles"): `PopulateTiles` 0xE7D370 (cdecl `(area, tileList*, bool all)`, callers
+  SimUpdate 0xE7F4BA and RebuildLevel 0xE803FE): first every tile in the list that 0xE5F810 finds
+  outside the active set is deleted (its object `+0x300` released, pool DeleteObject), then the
+  active tiles (0xE5FA80(area) fills a stack array of 20-byte entries) that are not in the sorted list
+  are created and populated (`PopulateTile` 0xE7C6C0 -> PopulateMarker per marker of the tile's
+  layer), at most 0x32 per call unless `all`. A tile that leaves the active set and comes back is
+  populated again.
+* ✔ Culling: 0xE5CDE0 (EAX = cell; GOG 2016 0xE5CE00) is true for a gameplay cell (query `G+0x40FC`)
+  whose sphere (`+0x58` * 1.7) is outside the box at 0x16B3C88 (GOG 2024), never for the avatar or
+  the mate `G+0x51D4`. The visibility step 0xE78C00 then destroys only poison (type 5) and part
+  tokens already collected; other cells outside lose their graphics (0xE66010(0)).
+* ✔ Runtime: the area the host's game keeps populated is about one screen around the host's cell,
+  not the 120 m the host sends. A guest holding W away from the host (carnivore, level 2) saw 41-51
+  plants / meat on its screen up to 42 m from the host and **0 from 44 m on** (55, 68, 81, 93, 104,
+  115 m), while the host saw 6-9 all the time. A second run right after the start of a new
+  game (level 1, `--apart 70`): 9-18 up to 13 m, 0 from 23 m to 160 m (the host 2-11). CORRECTION (2026-10-29, fix/w7-eat): docs/known-issues
+  said "more than ~100 m away" (BUG-0174); the empty pool starts at 23-45 m.
+* Fix ideas (not done, BUG-0174): (a) the host populates around each partner too: a second tile
+  list per partner (the list is a sorted vector with an allocator byte at `+0x1018`, layout not
+  traced) passed to PopulateTiles with an area around the puppet, and cells there kept by `+0x354`
+  (0xE7C080) while a partner is near; (b) a guest far from the host spawns its own food (plants and
+  meat only) through PopulateMarker outside the host's area, eaten locally and sent as MSG_CELL_FOOD,
+  removed when the host's area reaches it.
