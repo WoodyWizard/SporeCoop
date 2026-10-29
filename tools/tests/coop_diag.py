@@ -6,7 +6,7 @@
 2. a bug mark: `/bug <text>` typed into the guest's co-op chat writes a MARK line with the text, the
    player and the session time into the log of BOTH games; the guest's chat says "marked for the report"
 3. the logs line up: tools/merge_logs.py over both logs gives one timeline in session-time order, the
-   guest's MARK before the host's copy of it, less than 0.5 s apart
+   guest's MARK and the host's copy of it less than 0.25 s apart
 4. the sync self-check: OK with the guest in this stage on both games (`sync-check: OK`), and a
    difference forced on the guest (`coop.diag sync force shift`: its own creature 100 units off in its
    digest) is reported as a MISMATCH on both games after the 3 s recheck
@@ -126,8 +126,9 @@ def main():
            f'merge_logs gives one timeline of both games in order ({len(rows)} lines)')
         marks = [(float(ln.split()[0]), ln.split()[1]) for ln in rows if 'MARK by' in ln and text in ln]
         print('  merged MARK lines:', marks)
-        ck(len(marks) == 2 and marks[0][1] == 'guest' and marks[1][0] - marks[0][0] < 0.5,
-           'in the merged timeline the guest\'s MARK comes first, the host\'s copy less than 0.5 s later')
+        # the host logs it when it arrives (a frame or two later); the clocks agree to a few ms
+        ck(len(marks) == 2 and {m[1] for m in marks} == {'host', 'guest'} and abs(marks[1][0] - marks[0][0]) < 0.25,
+           'in the merged timeline the MARK of both games is at the same moment (less than 0.25 s apart)')
 
         # 4b. a forced difference is reported as a MISMATCH on both games
         guest.call('coop.diag sync force shift')

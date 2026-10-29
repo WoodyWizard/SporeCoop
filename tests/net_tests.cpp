@@ -2019,6 +2019,20 @@ static void test_diag_conn_stats()
     CHECK(a.stats.rtt_n > 100 && a.stats.rtt_min >= 10 && a.stats.rtt_max <= 30);
     a.stats.take_window();
     CHECK(a.stats.rtt_n == 0);
+    // a bulk transfer outruns the acks (one ack per 200 packets, all received): nothing counts as lost
+    Connection c, d;
+    for (int i = 0; i < 2000; i++) {
+        Writer w;
+        w.u32(i);
+        c.send_unreliable(MSG_PLAYER_STATE, w);
+        if (c.build_packet(now, pkt))
+            d.on_packet(pkt.data(), pkt.size(), now, deliver);
+        if (i % 200 == 199 && d.build_packet(now + 300, pkt))
+            c.on_packet(pkt.data(), pkt.size(), now + 1, deliver);
+        now += 1;
+    }
+    printf("  bulk: sent %u, lost %u\n", c.stats.packets_sent, c.stats.lost);
+    CHECK(c.stats.packets_sent > 1500 && c.stats.lost == 0);
 }
 
 int main(int argc, char** argv)

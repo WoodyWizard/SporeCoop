@@ -33,6 +33,11 @@ crash") and write:
   closed");
 * how often it happens.
 
+**Mark the moment:** when something goes wrong while you play, type `/bug <what you see>` into the
+co-op window's chat (F9), for example `/bug only one of us can eat`. The chat says "marked for the
+report" and the log of **every** player in the session gets that line with your name and the
+moment, so the right minute of a two-hour game is found at once in all the logs.
+
 Screenshots help a lot for "players see different things": one from each player at the same
 moment.
 

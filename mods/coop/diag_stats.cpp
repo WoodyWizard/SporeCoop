@@ -437,7 +437,8 @@ void on_player_join(uint8_t id, const std::string& name)
     g_c.joins++;
     for (auto& p : g_c.peers)
         if (p == name) {
-            g_c.rejoins++;
+            if (g_P.sess && g_P.sess->role() == net::Role::Host)
+                g_c.rejoins++; // a guest of this name was here before (the guest counts its own rejoin)
             return;
         }
     if (g_P.sess && id != g_P.sess->my_id())

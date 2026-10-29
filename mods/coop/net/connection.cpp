@@ -279,7 +279,8 @@ bool Connection::on_packet(const uint8_t* data, size_t n, uint32_t now, const De
         uint16_t diff = (uint16_t)(ack - p.seq);
         if (diff >= 1 && diff <= kAckWindow && ackbits.test(diff - 1u))
             ack_packet(p, now);
-        else if (!p.lost && diff >= kLostAfter && diff < 32768) { // counted once (support statistics)
+        else if (!p.lost && diff >= kLostAfter && diff <= kAckWindow) { // counted once (support statistics);
+            // further back the ack bits say nothing (a bulk transfer outruns them): not counted
             p.lost = true;
             stats.lost++;
         }

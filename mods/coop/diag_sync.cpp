@@ -93,8 +93,8 @@ static void on_clock_answer(const dg::ClockAns& a)
     set_log_clock();
     if (!g_clock_told && g_clock.valid()) {
         g_clock_told = true;
-        SLOG("clock: the session clock of the host: offset %+.3f s, round trip %.1f ms (session time %.3f)",
-             g_clock.offset(), g_clock.rtt() * 1000, now + g_clock.offset());
+        SLOG("clock: the session clock of the host: session time %.3f, round trip %.1f ms (error under %.0f ms)",
+             now + g_clock.offset(), g_clock.rtt() * 1000, g_clock.rtt() * 500 + 1);
     }
 }
 
