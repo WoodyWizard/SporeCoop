@@ -1470,7 +1470,9 @@ wrong. Suite `campaign` (in no other suite): `tools/lab.py run campaign --lanes 
     playerPol, 0, 0, 0, 0)` takes one per call (its capture caption, the city then belongs to a guest,
     owner=1 in `coop.civ`); a captured city may ask "choose the city's specialty" (Economic and
     Military, sometimes Religious too: a modal the campaign answers with the Military button found by
-    caption with uifind inside the dialog's area; the HUD has a "Military" tab label too).
+    caption with uifind inside the dialog's area; the HUD has a "Military" tab label too). A nation
+    can also open its talk screen ("We can see the writing on the wall ...") and wait for the answer
+    "We happily accept your surrender." (found by caption): History does nothing while it is up.
     With all cities taken the goal "Capture All Cities" is checked; History and its check start the
     vote ("Alice wants to edit a design (Civilization)"), then the spaceship editor opens **empty**:
     "done" says "You need at least 3 parts to Save" (three parts dragged slowly from the palette:
