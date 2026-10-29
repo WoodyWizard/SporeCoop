@@ -55,6 +55,24 @@ static bool g_helper_fix = true;   // coop.space helperfix 0: any partner here r
 static bool g_repair_fix = true;   // coop.space repairfix 0: the old head start of up to 0.5 s (tests)
 COOP_FIX("space.helper", "BUG-0131", g_helper_fix, "space: a disabled or frozen partner does not count as a rescuer");
 COOP_FIX("space.repair", "BUG-0147", g_repair_fix, "space: a new disable starts its repair from 0");
+// BUG-0228, BUG-0229: the ship the disabled state was set on, with its object serial and the Space
+// world it lived in (spaceext::world_epoch). The invincible byte is cleared on that ship only, at
+// once in Space or owed until the first Space frame back in the same world (an editor, an
+// adventure, a session end outside Space); a trip to an editor pauses the 20 s, another world
+// (a load, the galaxy menu) ends the state without a death.
+struct DownShip {
+    void* u = nullptr;
+    uint32_t serial = 0, epoch = 0;
+};
+static DownShip g_down_ship;
+static bool g_invincible_owed;
+static bool g_down_clear_fix = true; // off: clear only when in Space at the moment the state ends (0.7.3.0)
+static bool g_down_world_fix = true; // off: the 20 s run on outside Space, the first Space frame decides
+COOP_FIX("space.down_clear", "BUG-0228", g_down_clear_fix,
+         "space: the disabled ship's invincibility is cleared on the first Space frame back when the state ended outside Space");
+COOP_FIX("space.down_world", "BUG-0229", g_down_world_fix,
+         "space: a disabled state pauses in an editor / adventure and ends without a death in another Space world");
+static uint32_t g_down_world_ends, g_down_owed_cleared, g_down_owed_dropped;
 static std::unordered_map<uint8_t, double> g_partner_down; // partner -> until
 static uint32_t g_rescues, g_lost, g_raids_seen, g_raids_told, g_raid_bonus, g_missions_sent, g_tools_got,
     g_terra_sent, g_terra_got, g_gifts_sent, g_gifts_got, g_jumps, g_respawns_forced;
@@ -76,7 +94,7 @@ static bool cinematic_playing()
     void* cm = a_CinematicMgr ? cdecl_call<void*>(a_CinematicMgr) : nullptr;
     return cm && F<uint32_t>(cm, 0x2C) != 0;
 }
-static bool in_space() { return g_ok && game::mode_id() == modes::kSpace; }
+static bool in_space() { return g_ok && !spaceext::away() && game::mode_id() == modes::kSpace; }
 
 static void* my_ufo()
 {
@@ -163,6 +181,21 @@ static void* my_combatant() { void* u = my_ufo(); return u ? (uint8_t*)u + kComb
 
 bool disabled() { return g_down; }
 
+// BUG-0228: the recorded disabled ship is the player's live ship of this Space world
+static bool down_ship_here()
+{
+    void* u = g_down_ship.u;
+    return u && in_space() && u == my_ufo() && g_down_ship.epoch == spaceext::world_epoch() && game::ufo_listed(u) &&
+           game::object_alive(u) && game::object_serial(u) == g_down_ship.serial;
+}
+
+static void note_down_ship(void* u)
+{
+    bool live = u && game::ufo_listed(u) && game::object_alive(u);
+    g_down_ship = {live ? u : nullptr, live ? game::object_serial(u) : 0u, spaceext::world_epoch()};
+    g_invincible_owed = false;
+}
+
 float filter_own_damage(void* ufo, float dmg, int type)
 {
     if (!in_space() || !connected() || ufo != my_ufo() || type == 10)
@@ -182,6 +215,7 @@ float filter_own_damage(void* ufo, float dmg, int type)
     g_down = true;
     g_down_until = now + kDownTime;
     g_last_down = now;
+    note_down_ship(ufo);
     g_repair_t = 0; // invincible from the next frame on (down_tick): this hit still shows
     g_down_fresh = g_repair_fix;
     net::Writer w;
@@ -201,6 +235,8 @@ static void end_down(bool rescued)
     w.u8(rescued ? 2 : 3);
     w.u8(0);
     send(K_DOWN, w);
+    g_invincible_owed = false;
+    g_down_ship = {};
     if (!u)
         return;
     F<uint8_t>(u, kInvincible) = 0;
@@ -224,11 +260,67 @@ static void end_down(bool rescued)
 // BUG-0098: the rescue ends outside Space too (left the stage, a load, the session ended): the
 // singleton's ship pointer may be freed then. Clear the invincible byte only on the live own ship;
 // a new ship starts without it anyway.
+// BUG-0228: and only on the ship the state was set on (same pointer, serial and Space world), at
+// once in Space, else owed until the first Space frame back (down_owed_tick): in an editor or an
+// adventure the ship lives on with the byte at 1.
 static void clear_down_invincible()
 {
-    void* u = my_ufo();
-    if (u && in_space() && game::ufo_listed(u) && game::object_alive(u))
-        F<uint8_t>(u, kInvincible) = 0;
+    if (!g_down_clear_fix) {
+        void* u = my_ufo();
+        if (u && in_space() && game::ufo_listed(u) && game::object_alive(u))
+            F<uint8_t>(u, kInvincible) = 0;
+        return;
+    }
+    if (down_ship_here() && !cinematic_playing()) {
+        F<uint8_t>(g_down_ship.u, kInvincible) = 0;
+        g_invincible_owed = false;
+        g_down_ship = {};
+        return;
+    }
+    g_invincible_owed = g_down_ship.u != nullptr;
+}
+
+// BUG-0228: an owed clear, at the top of the frame (also after the session ended)
+static void down_owed_tick()
+{
+    if (!g_invincible_owed || g_down || !in_space())
+        return;
+    if (g_down_ship.epoch != spaceext::world_epoch() || !game::ufo_listed(g_down_ship.u) ||
+        !game::object_alive(g_down_ship.u) || game::object_serial(g_down_ship.u) != g_down_ship.serial) {
+        g_invincible_owed = false; // another world or the ship is gone: a new ship starts without the byte
+        g_down_ship = {};
+        g_down_owed_dropped++;
+        return;
+    }
+    if (g_down_ship.u != my_ufo() || cinematic_playing())
+        return; // not the player's ship yet / a cinematic may hold the byte: next frame
+    F<uint8_t>(g_down_ship.u, kInvincible) = 0;
+    g_invincible_owed = false;
+    g_down_ship = {};
+    g_down_owed_cleared++;
+    H->log(M, SK_INFO, "space: the disabled state ended outside Space: the ship's invincibility cleared on return");
+}
+
+// BUG-0229: while disabled, every frame (before the early return of tick): another Space world
+// ends the state without a death; outside Space in the same world (an editor, an adventure) the
+// 20 s stand still
+static void down_world_tick(double now)
+{
+    static double last = now;
+    double dt = std::min(0.5, std::max(0.0, now - last));
+    last = now;
+    if (!g_down || !g_down_world_fix)
+        return;
+    if (g_down_ship.epoch != spaceext::world_epoch()) {
+        g_down = false;
+        g_down_world_ends++;
+        H->log(M, SK_INFO, "space: the disabled state ended without a death: another Space world (epoch %u -> %u)",
+               g_down_ship.epoch, spaceext::world_epoch());
+        clear_down_invincible();
+        return;
+    }
+    if (!in_space())
+        g_down_until += dt;
 }
 
 static void down_tick(double now)
@@ -256,8 +348,17 @@ static void down_tick(double now)
     g_repair_t = close_by ? g_repair_t + dt : std::max(0.0, g_repair_t - dt);
     if (g_repair_t >= kRepairHold)
         end_down(true);
-    else if (now > g_down_until)
+    else if (now > g_down_until) {
+        if (g_down_world_fix && g_down_ship.u && !down_ship_here()) {
+            // BUG-0229: not the ship the state was set on (another world, a new ship): no death
+            g_down = false;
+            g_down_world_ends++;
+            H->log(M, SK_INFO, "space: the disabled state ended without a death: not the ship it was set on");
+            clear_down_invincible();
+            return;
+        }
         end_down(false);
+    }
 }
 
 // A destroyed ship waits for the end of its death cinematic (UFO message handler 0xC3B6A0 ->
@@ -988,7 +1089,9 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
 void tick(double now)
 {
     g_main_tid = GetCurrentThreadId();
-    spaceext::tick_all(now); // features check the stage and the session themselves
+    spaceext::tick_all(now); // features check the stage and the session themselves (and the world epoch)
+    down_world_tick(now);    // BUG-0229: first end or pause the disabled state,
+    down_owed_tick();        // BUG-0228: then an owed clear of its invincibility
     if (!in_space() || !connected())
         return;
     if (C.partners)
@@ -1490,11 +1593,23 @@ std::string debug(const std::vector<std::string>& a)
     }
     if (a[0] == "disable" && a.size() > 1) { // tests (BUG-0063): the disabled flag alone, no rescue messages
         g_down = a[1] != "0";
-        if (g_down)
+        if (g_down) {
             g_down_until = H->time_seconds() + kDownTime;
-        else
+            note_down_ship(in_space() ? u : nullptr);
+        } else
             clear_down_invincible();
         return std::string("down=") + (g_down ? "1" : "0");
+    }
+    if (a[0] == "away" && a.size() > 1) { // tests (BUG-0226/0228/0229): act as outside Space, the world stays
+        spaceext::set_away(a[1] != "0");
+        return std::string("away=") + (spaceext::away() ? "1" : "0");
+    }
+    if (a[0] == "downstate") { // tests (BUG-0228/0229)
+        snprintf(b, sizeof b, "down=%d left=%.1f owed=%d epoch=%u ship_epoch=%u world_ends=%u owed_cleared=%u owed_dropped=%u away=%d",
+                 (int)g_down, g_down ? g_down_until - H->time_seconds() : 0.0, (int)g_invincible_owed,
+                 spaceext::world_epoch(), g_down_ship.epoch, g_down_world_ends, g_down_owed_cleared,
+                 g_down_owed_dropped, (int)spaceext::away());
+        return b;
     }
     if (a[0] == "seedfix" && a.size() > 1) { // BUG-0123: 0 = one generation state for all threads (tests)
         g_seed_fix = a[1] != "0";

@@ -139,6 +139,7 @@ add('space_diplomacy', P + 'coop_space_diplomacy.py', minutes=5)  # shared relat
 add('space_diplo_mirror', P + 'coop_space_diplo_mirror.py', warm=True, minutes=3, fixture='space')  # the allies mirror's record is never shared by pol (BUG-0071)
 add('space_trade', P + 'coop_space_trade.py', minutes=4)  # tool gifts and spice sales by real clicks (space_trade.cpp)
 add('space_trade_refund', P + 'coop_space_trade_refund.py', warm=True, minutes=3, fixture='space')  # gifts that come back outside Space are owed, not lost (BUG-0058)
+add('space_down_away', P + 'coop_space_down_away.py', minutes=5, fixture='space')  # a disabled ship and trips out of Space: paused in the same world, no death after a load, no invincibility left (BUG-0229, BUG-0228; SPORE_FIX_OFF=space.down_world / space.down_clear fail)
 # a partner's colonies as an allied empire in the guest's galaxy, its raid fought there, a clean save
 add('space_allies', P + 'coop_space_allies.py', minutes=10)
 add('space_allies_reload', P + 'coop_space_allies_reload.py', minutes=5, fixture='space')  # after a galaxy reload the allies mirror gets a new cEmpire (BUG-0038)

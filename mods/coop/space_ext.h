@@ -64,7 +64,21 @@ bool connected();
 bool is_host();
 uint8_t my_id();
 std::string name_of(uint8_t id);
-bool in_space();          // the Space stage is running
+bool in_space();          // the Space stage is running (false while the `away` test hook is on)
+// tests (BUG-0226, BUG-0228, BUG-0229): `coop.space away 1|0` makes the Space modules act as
+// outside Space while the Space world stays (as an editor or an adventure entered from Space does):
+// in_space() false, no inventory. Cleared at session end and on unload; never saved.
+bool away();
+void set_away(bool on);
+// The Space world in memory (BUG-0228, BUG-0229; a Space-only stand-in for #151's stage epoch).
+// +1 on the first kSpace frame after the Space world was torn down (a frame in any mode other
+// than kSpace, kEdit, kEditor or kScenario: a load, the galaxy menu, another stage) and when, in
+// kSpace, the player's cEmpire changes from one non-null pointer to another. Editors and
+// adventures entered from Space keep it. Two equal values: the same Space world. 0 = Space not
+// seen yet since the mod loaded (a hot reload starts again at 0). Updated in tick_all, before
+// every feature's tick of that frame. Not seen: a reload that shows no non-Space frame and reuses
+// the old cEmpire's address.
+uint32_t world_epoch();
 // the game's saves made while the mod runs (space_allies' save hook counts them; 0 without it)
 void note_save();
 uint32_t saves();
