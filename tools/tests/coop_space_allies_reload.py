@@ -12,8 +12,8 @@ Before the fix the old galaxy's object A went back into the new map.
 
   coop_space_allies_reload.py [--without-fix] [--same-address]
   (--without-fix: `allies reloadfix 0`, so it FAILS; --same-address, BUG-0225: before the first
-   apply after the load `allies samegalaxy` sets the stored player cEmpire to the new one, as an
-   address reuse would; SPORE_FIX_OFF=allies.reload_id then FAILS)"""
+   the load `allies samegalaxy 1` makes the mirror take every new player cEmpire for the old one,
+   as an address reuse would; SPORE_FIX_OFF=allies.reload_id then FAILS)"""
 import re
 import sys
 import time
@@ -72,6 +72,8 @@ def main():
     ck(applied and e0 and e0[0] == "Zed's empire", 'the mirror empire is in the game')
 
     planet = fixtures.planet_of('space')
+    if '--same-address' in sys.argv:  # BUG-0225: the new player cEmpire at the old one's address
+        print(' ', sp(host, 'allies samegalaxy 1'))
     print('  menu:', host.call('coop.menu')['out'].strip())
     ck(wait(lambda: 'GalaxyGameEntry' in host.call('game.mode')['out'], 90), 'the host is in the galaxy menu')
     host.call('wait.frames 240 90000')
@@ -79,8 +81,6 @@ def main():
     ck(wait(lambda: 'Space' in host.call('game.mode')['out'], 180, 2), 'the host is in Space again')
     time.sleep(5)
     print(f'  after the load: {sp(host, "allies nextpol")}')
-    if '--same-address' in sys.argv:  # BUG-0225: the new player cEmpire at the old one's address
-        print(' ', sp(host, 'allies samegalaxy'))
     sp(host, 'allies apply')
     pol2, applied2 = wait(lambda: (lambda m: m if m[1] else None)(mirror(host, 'Zed')), 20) or (None, False)
     e1 = empire(host, pol2) if pol2 else None
@@ -94,6 +94,7 @@ def main():
     ck(q and q != pol2 and e2 and e2[0] == "Zed's empire",
        f'a new empire got id {q}, the mirror keeps {pol2}: {e2}')
 
+    sp(host, 'allies samegalaxy 0')
     sp(host, 'allies drop')
     sp(host, 'allies reloadfix 1')
     ck.faults(host=host, guest=guest)

@@ -783,8 +783,8 @@ int crew_with_me()
 // on the contract's planet (cMission +0x78 id, +0x1E8 target cPlanet, its record +0x13C, docs/re/space.md 6)
 bool armada_ship(void* u)
 {
-    if (g_hide_ships && g_wave_resumed)
-        return false; // tests: the resumed raid's ships never come
+    if (g_hide_ships)
+        return false; // tests: the raid's ships never come (set around a return)
     void* m = F<void*>(u, kMission);
     if (g_wave_fix && g_wave_mission && m != g_wave_mission)
         return false;
@@ -862,7 +862,7 @@ void armada_tick(double t)
                 bool live = F<int>(u, kState) != 2 && F<float>(u, kHp) > 0;
                 auto it = g_seen.find(u);
                 if (it == g_seen.end() && live) { // a new ship of the wave: tougher (once, BUG-0046)
-                    if (g_tough_reuse && g_wave_resumed) // tests: as if an earlier ship at this address was raised
+                    if (g_tough_reuse) // tests (set around a return): as if an earlier ship at this address was raised
                         g_toughened.insert(spacelogic::tough_key((uintptr_t)u, 0, false));
                     uint64_t key = spacelogic::tough_key((uintptr_t)u, game::object_serial(u), g_wave_tough_fix);
                     if (!g_wave_fix || g_toughened.insert(key).second) {
@@ -1097,7 +1097,7 @@ bool init(const SkHost* h, SkMod* m)
     a_Context = S("SporeCoop::Space_GetCurrentContext");
     g_rng.seed((uint32_t)(h->time_seconds() * 1000) ^ 0xC0B0u);
     spacecoop::set_raid_listener([](void* mission, uint32_t place, int state) {
-        if (g_hide_ships && g_wave_resumed)
+        if (g_hide_ships)
             return; // tests: a raid whose ships never came cannot end defended or plundered either
         if (host() && g.state == S_ACTIVE && g.type == T_ARMADA && g_wave_on && !g.targets.empty() &&
             place == (g.targets[0].planet | 0x40000000u) && state != 3 &&

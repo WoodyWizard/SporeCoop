@@ -316,6 +316,7 @@ COOP_FIX("allies.reload", "BUG-0038", g_reload_fix, "space: the allies mirror st
 static bool g_reload_id_fix = true;
 COOP_FIX("allies.reload_id", "BUG-0225", g_reload_id_fix, "space: a galaxy reload is seen by the Space world epoch, not the cEmpire address");
 static uint32_t g_reload_resets;
+static bool g_same_galaxy; // tests (allies samegalaxy 1): the new player cEmpire has the old one's address
 static void reset_empire(Mirror& m)
 {
     // a save also takes the unmirrored cEmpire out of the map (it is put back on the next apply):
@@ -324,7 +325,7 @@ static void reset_empire(Mirror& m)
     void* pe = player_empire();
     if (!g_reload_fix || !m.emp || !pe)
         return;
-    if (pe == m.galaxy && !(g_reload_id_fix && m.epoch && m.epoch != spaceext::world_epoch()))
+    if ((pe == m.galaxy || g_same_galaxy) && !(g_reload_id_fix && m.epoch && m.epoch != spaceext::world_epoch()))
         return;
     m.emp = nullptr;
     m.galaxy = nullptr;
@@ -1206,14 +1207,9 @@ static std::string debug(const std::vector<std::string>& a)
         g_aborted_fix = a[1] != "0";
         return std::string("abortedfix ") + (g_aborted_fix ? "1" : "0") + " aborted=" + std::to_string(g_aborted.size()) + "\n";
     }
-    if (a[0] == "samegalaxy") { // tests (BUG-0225): as if the new galaxy's player cEmpire had the old address
-        int n = 0;
-        for (auto& [k, m] : g_m)
-            if (m.emp) {
-                m.galaxy = player_empire();
-                n++;
-            }
-        return "samegalaxy: " + std::to_string(n) + " mirror(s)\n";
+    if (a[0] == "samegalaxy" && a.size() > 1) { // tests (BUG-0225): as if a new galaxy's player cEmpire had the old address
+        g_same_galaxy = a[1] != "0";
+        return std::string("samegalaxy ") + (g_same_galaxy ? "1" : "0") + "\n";
     }
     if (a[0] == "reloadfix" && a.size() > 1) { // BUG-0038: 0 = reuse the old galaxy's cEmpire after a reload
         g_reload_fix = a[1] != "0";
