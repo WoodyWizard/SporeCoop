@@ -25,6 +25,7 @@
 #include "../updater/pack.h"
 #include "net/connection.h"
 #include "net/dbpf.h"
+#include "net/diagmsg.h"
 #include "net/interp.h"
 #include "net/lobby.h"
 #include "net/protocol.h"
@@ -352,6 +353,43 @@ static void fuzz_protocol(uint64_t seed, int iters)
 // ---------------------------------------------------------------- other portable decoders
 // MSG_LOBBY (lobby.h), MSG_CREATION pieces (validate.h chunk_add), the sender time after a snapshot
 // chunk (interp.h snapshot_time) and the UTF-8 helpers every received name and chat text goes through
+// MSG_DIAG payloads (net/diagmsg.h, support diagnostics): the kind byte is read by the dispatcher
+template <class T> struct NoKind {
+    T x;
+    void write(Writer& w) const
+    {
+        Writer t;
+        x.write(t);
+        w.raw(t.data.data() + 1, t.size() - 1);
+    }
+    bool read(Reader& r) { return x.read(r); }
+};
+
+static void fuzz_diag(uint64_t seed, int iters)
+{
+    printf("MSG_DIAG payloads (%d mutations each)\n", iters);
+    namespace dg = net::diag;
+    Rng R(seed);
+    fuzz_struct<NoKind<dg::Mark>>("diag Mark", R, iters, [](Rng& R) {
+        NoKind<dg::Mark> m; m.x.origin = R.u8(); m.x.t_session = R.u32() / 7.0; m.x.name = R.str(40); m.x.text = R.str(200);
+        return m;
+    });
+    fuzz_struct<NoKind<dg::ClockAns>>("diag ClockAns", R, iters, [](Rng& R) {
+        NoKind<dg::ClockAns> a; a.x.seq = R.u32(); a.x.t_echo = R.u32() / 3.0; a.x.t_session = R.u32() / 5.0; return a;
+    });
+    fuzz_struct<NoKind<dg::ResultMsg>>("diag Result", R, iters, [](Rng& R) {
+        NoKind<dg::ResultMsg> m; m.x.seq = R.u32(); m.x.state = R.u8(); m.x.objects = R.u16(); m.x.text = R.str(400); return m;
+    });
+    fuzz_struct<NoKind<dg::Digest>>("diag Digest", R, iters, [](Rng& R) {
+        NoKind<dg::Digest> d;
+        d.x.seq = R.u32(); d.x.self = R.u8(); d.x.mode = R.u32(); d.x.world = R.u32(); d.x.vote = R.u8(); d.x.vote_editor = R.u32();
+        for (int n = (int)R.below(3), i = 0; i < n; i++) d.x.totals.push_back({R.u8(), (float)R.below(1000)});
+        for (int n = (int)R.below(R.below(4) ? 20 : 400), i = 0; i < n; i++)
+            d.x.entries.push_back({R.u32(), (float)R.below(5000) - 2500, (float)R.below(500), (float)R.below(5000) - 2500});
+        return d;
+    });
+}
+
 static void fuzz_misc(uint64_t seed, int iters)
 {
     printf("lobby table, creation pieces, snapshot time, UTF-8 text\n");
@@ -912,6 +950,7 @@ int main(int argc, char** argv)
             iters = atoi(argv[i + 1]);
     }
     fuzz_protocol(seed, iters);
+    fuzz_diag(seed + 7, iters);
     fuzz_misc(seed + 6, iters);
     fuzz_refpack(seed + 1, iters);
     fuzz_dbpf(seed + 2, iters);

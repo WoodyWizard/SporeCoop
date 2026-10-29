@@ -1709,7 +1709,8 @@ wrong. Suite `campaign` (in no other suite): `tools/lab.py run campaign --lanes 
   the guest. Do not test "guest first".
 * Unit tests: net_tests `test_diag_*` (messages, the clock estimate, the compare and the recheck,
   MSG_DIAG through a host to a new and an older guest, the connection's loss / bytes / round trip
-  statistics incl. a bulk transfer that outruns the ack window: 0 lost), tools_selftest `mergelogs`.
+  statistics incl. a bulk transfer that outruns the ack window: 0 lost), fuzz_decoders `diag *`
+  (mark, clock answer, result, digest), tools_selftest `mergelogs`.
 ## Support logging test (2026-10-29, feat/w7-trace)
 <a id="testing-trace-log"></a>
 
