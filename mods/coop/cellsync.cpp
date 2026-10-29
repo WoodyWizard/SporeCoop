@@ -154,6 +154,10 @@ COOP_FIX("pool.koreset", "BUG-0070", g_fix_koreset, "cell: our knockout ends wit
 COOP_FIX("pool.bodylevel", "BUG-0041", g_fix_bodylevel, "cell: a level-up during the regrowth gives the level's own size");
 COOP_FIX("pool.rescue", "BUG-0131", g_fix_rescue, "cell: a knocked-out partner rescues, revives nobody");
 COOP_FIX("pool.guestbite", "BUG-0078", g_fix_guestbite, "cell: a guest's bite passes the game's ShouldNotAttack gate");
+// wave 5 (review of 0.7.3.0)
+static bool g_fix_ko_grace = true; // BUG-0238: a remote knockout lasts to its own deadline through late refreshes
+COOP_FIX("pool.ko_grace", "BUG-0238", g_fix_ko_grace, "cell: a late knockout refresh does not end it, replay its effect; KO_UP when ours ends on a stage leave");
+static double g_kodrop_until; // tests (`coop.pool kodrop <s>`): MSG_CELL_KO ignored until then
 static uint32_t g_hits_spared;
 bool totals_resend_enabled() { return g_fix_resend; }
 static cell_logic::Rounds g_rounds;
@@ -230,6 +234,8 @@ struct Ko {
     float left = 0, hold = 0;
     double since = 0, fx_at = 0;
     double refreshed = 0; // the last MSG_CELL_KO of its owner (KO_OUT comes every 0.25 s)
+    bool expired = false; // ended here by ko_expire, not by its owner (BUG-0238: no effect replay)
+    uint32_t fx = 0;      // death effects played on its puppet (tests)
 };
 static std::unordered_map<int, Ko> g_ko; // remote player -> knockout state
 
@@ -310,6 +316,8 @@ static void on_ko(int id, uint8_t state, float left, float hold)
     k.left = left;
     k.hold = hold;
     k.refreshed = H->time_seconds();
+    bool expired = k.expired;
+    k.expired = false;
     if (state == prev)
         return;
     k.state = state;
@@ -317,8 +325,12 @@ static void on_ko(int id, uint8_t state, float left, float hold)
     // outside the Cell stage only the state is kept (BUG-0061: the "up again" was dropped there);
     // the puppets of other stages are not cells
     uint8_t* c = in_cell() ? puppet_cell(id) : nullptr;
-    if (state == KO_OUT)
+    if (state == KO_OUT && expired && g_fix_ko_grace && c)
+        F<float>(c, kOpacity) = kKoOpacity; // the same knockout after a gap: no second death effect
+    else if (state == KO_OUT) {
         effect(c, "cell_death_oneshot");
+        k.fx += c != nullptr;
+    }
     else if (state == KO_REVIVED)
         effect(c, "cell_hatch_ice");
     else if (state == KO_RESPAWNED)
@@ -332,10 +344,11 @@ static void on_ko(int id, uint8_t state, float left, float hold)
 static void ko_expire(double now)
 {
     for (auto& [id, k] : g_ko) {
-        if (k.state != KO_OUT || !cell_logic::ko_stale(now, k.refreshed, g_fix_kostale))
+        if (k.state != KO_OUT || !cell_logic::ko_stale(now, k.refreshed, k.left, g_fix_kostale, g_fix_ko_grace))
             continue;
         k.state = KO_UP;
         k.since = now;
+        k.expired = true;
         if (uint8_t* c = in_cell() ? puppet_cell(id) : nullptr)
             F<float>(c, kOpacity) = 1.f;
     }
@@ -1317,6 +1330,10 @@ static void reset_knockout()
 {
     if (!g_fix_koreset)
         return;
+    // BUG-0238: the partners keep our knockout up to its deadline now; tell them it ended (KO_UP is
+    // state 0, which every version handles). On a session end the session is closed: nothing goes out.
+    if (g_downed && g_fix_ko_grace)
+        send_ko(KO_UP, 0, 0);
     if (uint8_t* a = in_cell() ? avatar() : nullptr) {
         if (g_downed || g_invuln_until > 0)
             F<uint8_t>(a, kInvuln) = 0;
@@ -1385,6 +1402,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         return;
     }
     if (type == net::MSG_CELL_KO) {
+        if (g_kodrop_until > 0 && H->time_seconds() < g_kodrop_until)
+            return; // tests: a refresh that comes late (coop.pool kodrop)
         uint8_t id = r.u8(), state = r.u8(), left = r.u8(), hold = r.u8();
         if (!r.ok() || (is_host() && id != from))
             return; // a guest tells only about its own cell
@@ -1525,6 +1544,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
 
 void on_session_end()
 {
+    g_kodrop_until = 0;
     if (g_fix_koreset)
         reset_knockout();
     g_ko.clear();
@@ -2100,6 +2120,11 @@ std::string debug(const std::vector<std::string>& a)
         snprintf(b, sizeof b, "npcflag %s %s=%d hp=%d", a[1].c_str(), a[2].c_str(), v, F<int>(c, kHp));
         return b;
     }
+    if (a.size() >= 2 && a[0] == "kodrop") { // tests: ignore MSG_CELL_KO for <s> seconds (a late refresh, BUG-0238)
+        double s = std::clamp(atof(a[1].c_str()), 0.0, 30.0);
+        g_kodrop_until = s > 0 ? H->time_seconds() + s : 0;
+        return "kodrop " + std::to_string(s).substr(0, 4);
+    }
     if (a.size() >= 2 && a[0] == "invuln") { // tests: the avatar's invulnerability flag +0x111
         F<uint8_t>(av, kInvuln) = (uint8_t)atoi(a[1].c_str());
         return "invuln set";
@@ -2165,8 +2190,8 @@ std::string debug(const std::vector<std::string>& a)
     for (auto& [id, k] : g_ko) {
         uint8_t* pc = puppet_cell(id);
         char kb[96];
-        snprintf(kb, sizeof kb, "ko[%d]=%d left=%.1f hold=%.2f op=%.2f\n", id, k.state, k.left, k.hold,
-                 pc ? F<float>(pc, kOpacity) : -1.f);
+        snprintf(kb, sizeof kb, "ko[%d]=%d left=%.1f hold=%.2f op=%.2f fx=%u\n", id, k.state, k.left, k.hold,
+                 pc ? F<float>(pc, kOpacity) : -1.f, k.fx);
         ko += kb;
     }
     snprintf(b, sizeof b,

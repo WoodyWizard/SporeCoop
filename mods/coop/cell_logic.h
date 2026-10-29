@@ -134,7 +134,21 @@ inline Body regrow(float before, float after, float body, int amount, bool fix)
 // BUG-0061: a remote player's "knocked out" is refreshed every 0.25 s by its owner. Without a
 // refresh for this long it is stale (the player left, its "up again" was lost).
 constexpr double kKoStale = 2.0;
-inline bool ko_stale(double now, double refreshed, bool fix) { return fix && now - refreshed > kKoStale; }
+// BUG-0238: one late refresh (a retransmit under loss, a hitch) ended a running knockout after 2 s:
+// the partner was drawn "up", counted as a helper, and the next refresh replayed the death effect.
+// A knockout cannot outlive its own deadline (`left`, seconds still to run at the last refresh;
+// the owner respawns when it runs out), so it is stale only after that plus a grace, never sooner
+// than kKoStale. `left` is a byte of tenths (at most 25.5 s). grace off: the 2 s of BUG-0061.
+constexpr double kKoGrace = 2.0;
+inline bool ko_stale(double now, double refreshed, double left, bool fix, bool grace = true)
+{
+    if (!fix)
+        return false;
+    if (!grace)
+        return now - refreshed > kKoStale;
+    double l = std::clamp(std::isfinite(left) ? left : 0.0, 0.0, 25.5);
+    return now - refreshed > std::max(kKoStale, l + kKoGrace);
+}
 
 // BUG-0160: a rotation matrix (row-major 3x3, a cell's +0x5C) as a quaternion. A zero or degenerate
 // matrix (a cell whose rotation is not written yet) gave (0, 0, 0.5, 0): the other side's
