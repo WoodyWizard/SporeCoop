@@ -27,6 +27,7 @@
 #include "game.h"
 #include "net/utf8.h"
 #include "space_ext.h"
+#include "space_logic.h"
 #include "sporekit_game.hpp"
 #include "fixes.h"
 
@@ -44,7 +45,7 @@ enum Reason : uint8_t { R_NONE = 0, R_TIMEOUT = 1, R_EXPIRED = 2, R_LEFT = 3, R_
 
 const SkHost* H;
 SkMod* M;
-uintptr_t a_PlayerUFOGet, a_GetAllUFOs, a_StartRaid, a_StarMgr, a_PlayerEmpire, a_AddMoney,
+uintptr_t a_SetState, a_PlayerUFOGet, a_GetAllUFOs, a_StartRaid, a_StarMgr, a_PlayerEmpire, a_AddMoney,
     a_SpaceGame, a_AddItemByKey, a_Context;
 
 template <typename T>
@@ -93,9 +94,22 @@ int g_wave_result;                // the raid's end seen by spacecoop's SetState
 // and the end of either decided it. Now the wave keeps its mission: ships and the end state count
 // only for it, and a return resumes it while it runs. coop.space contracts wavefix 0: the old way.
 void* g_wave_mission;             // the cMission of the wave (pointer, checked in the mission list)
-std::set<void*> g_toughened;      // ships of the wave mission whose HP was raised (once each)
+std::set<uint64_t> g_toughened;   // ships of the wave mission whose HP was raised (once each): spacelogic::tough_key
 bool g_wave_fix = true;
 COOP_FIX("contracts.wave", "BUG-0046", g_wave_fix, "space: an armada wave keeps its own mission");
+// BUG-0227: the resume of BUG-0046 had three gaps. tough: the "raised once" set held pointers, so
+// a new ship at a freed one's address kept its normal HP (now keyed by object serial). resume: a
+// resumed wave kept "its ships appeared" and was won without a fight 30 s later (now it waits for
+// ships again and, when none come, ends its old raid before a new one). away: a raid result while
+// the host was away was dropped (now a loss fails the contract, a win counts).
+bool g_wave_tough_fix = true, g_wave_resume_fix = true, g_wave_away_fix = true;
+COOP_FIX("contracts.wave_tough", "BUG-0227", g_wave_tough_fix, "space: armada ships get their HP raised once per object, not per address");
+COOP_FIX("contracts.wave_resume", "BUG-0227", g_wave_resume_fix, "space: a resumed armada wave waits for its ships again");
+COOP_FIX("contracts.wave_away", "BUG-0227", g_wave_away_fix, "space: an armada raid that ends while the host is away counts");
+bool g_wave_resumed;              // the running wave was resumed (BUG-0227)
+int g_wave_away_result;           // the wave's raid ended while the host was away: 5 or 6 (BUG-0227)
+bool g_tough_reuse, g_hide_ships; // tests: the address-reuse simulation / the resumed raid brings no ships
+uint32_t n_aborted, n_away_results;
 uint32_t n_resumed;               // returns that resumed the running raid
 uint32_t g_stable_place;          // host: the place the crew check saw last, and since when
 double g_stable_since, g_next_wave, g_last_tick, g_last_publish, g_next_offer;
@@ -551,6 +565,8 @@ void finish(bool ok, uint8_t reason)
     g_seen.clear();
     g_wave_mission = nullptr;
     g_toughened.clear();
+    g_wave_resumed = false;
+    g_wave_away_result = 0;
     g_alive.clear();
     ok ? n_done++ : n_failed++;
     g_next_offer = now() + g_period;
@@ -694,6 +710,8 @@ std::string offer(uint8_t type, const std::string& arg)
     g_seen.clear();
     g_wave_mission = nullptr;
     g_toughened.clear();
+    g_wave_resumed = false;
+    g_wave_away_result = 0;
     g_alive.clear();
     g = c;
     g_hold.assign(g.targets.size(), 0);
@@ -765,6 +783,8 @@ int crew_with_me()
 // on the contract's planet (cMission +0x78 id, +0x1E8 target cPlanet, its record +0x13C, docs/re/space.md 6)
 bool armada_ship(void* u)
 {
+    if (g_hide_ships && g_wave_resumed)
+        return false; // tests: the resumed raid's ships never come
     void* m = F<void*>(u, kMission);
     if (g_wave_fix && g_wave_mission && m != g_wave_mission)
         return false;
@@ -807,6 +827,8 @@ bool start_raid(int bombers)
     n_raids++;
     g_wave_mission = nullptr;
     g_toughened.clear();
+    g_wave_resumed = false;
+    g_wave_away_result = 0;
     if (g_wave_fix)
         for (void* m : raids_on_target())
             if (!before.count(m))
@@ -840,7 +862,10 @@ void armada_tick(double t)
                 bool live = F<int>(u, kState) != 2 && F<float>(u, kHp) > 0;
                 auto it = g_seen.find(u);
                 if (it == g_seen.end() && live) { // a new ship of the wave: tougher (once, BUG-0046)
-                    if (!g_wave_fix || g_toughened.insert(u).second) {
+                    if (g_tough_reuse && g_wave_resumed) // tests: as if an earlier ship at this address was raised
+                        g_toughened.insert(spacelogic::tough_key((uintptr_t)u, 0, false));
+                    uint64_t key = spacelogic::tough_key((uintptr_t)u, game::object_serial(u), g_wave_tough_fix);
+                    if (!g_wave_fix || g_toughened.insert(key).second) {
                         F<float>(u, kMaxHp) *= kTough;
                         F<float>(u, kHp) = F<float>(u, kMaxHp);
                     }
@@ -875,6 +900,16 @@ void armada_tick(double t)
             if (!g_wave_ships && t - g_wave_t > 30) {
                 H->log(M, SK_WARN, "contracts: the raid of wave %d brought no ships in 30 s: again", g.wave);
                 g_wave_on = false; // started again below
+                if (g_wave_resume_fix && g_wave_resumed) {
+                    // BUG-0227: end the old raid first (found in the live list this tick), or the
+                    // next ready tick would resume it again, or start a second raid next to it
+                    if (g_wave_mission && raids_on_target().count(g_wave_mission) && a_SetState) {
+                        thiscall<void>(a_SetState, g_wave_mission, 7); // aborted
+                        n_aborted++;
+                    }
+                    g_wave_mission = nullptr;
+                    g_wave_resumed = false;
+                }
             } else if (g_wave_result == 5 || g_wave_result == 6 || (g_wave_ships && alive.empty() && t - g_last_alive > 30)) {
                 // (no end state 30 s after the last ship: taken as won, the ships are gone)
                 bool won = g_wave_result != 6;
@@ -903,6 +938,28 @@ void armada_tick(double t)
         g_stable_place = place;
         g_stable_since = t;
     }
+    // BUG-0227: the wave's raid ended while the host was away
+    if (!g_wave_on && g_wave_away_result) {
+        int r = g_wave_away_result;
+        g_wave_away_result = 0;
+        g_wave_mission = nullptr;
+        auto act = spacelogic::wave_on_return(r, false);
+        H->log(M, SK_INFO, "contracts: wave %d: its raid ended with %d while the host was away", g.wave, r);
+        if (act == spacelogic::WaveReturn::Fail) {
+            finish(false, R_PLUNDERED);
+            return;
+        }
+        if (act == spacelogic::WaveReturn::Won) {
+            if (g.wave >= g.waves) {
+                finish(true, R_NONE);
+                return;
+            }
+            g.wave++;
+            g_next_wave = t + 10;
+            publish();
+            return;
+        }
+    }
     // BUG-0046: back on the planet while the wave's raid still runs: the wave goes on with it
     bool resume = false;
     if (ready && g_wave_fix && g_wave_mission && t - g_stable_since >= 3) {
@@ -919,6 +976,10 @@ void armada_tick(double t)
         g_wave_place = place;
         g_wave_result = 0;
         g_seen.clear();
+        if (g_wave_resume_fix) { // BUG-0227: its ships have to come again
+            g_wave_ships = false;
+            g_wave_resumed = true;
+        }
         changed = true;
     } else if (ready && t - g_stable_since >= 3 && start_raid((int)g.crew.size() + g.wave - 1)) {
         g_wave_on = true;
@@ -1027,6 +1088,7 @@ bool init(const SkHost* h, SkMod* m)
     a_PlayerUFOGet = S("Simulator::cSimulatorPlayerUFO::Get");
     a_GetAllUFOs = S("Simulator::GetAllUFOs");
     a_StartRaid = S("SporeCoop::Space_StartRaid");
+    a_SetState = S("Simulator::cMission::SetState"); // BUG-0227: abort a resumed raid without ships
     a_StarMgr = S("Simulator::cStarManager::Get");
     a_PlayerEmpire = S("Simulator::GetPlayerEmpire");
     a_AddMoney = S("Simulator::cEmpire::AddMoney");
@@ -1039,6 +1101,11 @@ bool init(const SkHost* h, SkMod* m)
             place == (g.targets[0].planet | 0x40000000u) && state != 3 &&
             (!g_wave_fix || !g_wave_mission || mission == g_wave_mission)) // (BUG-0046: only the wave's raid)
             g_wave_result = state;
+        else if (g_wave_away_fix && g_wave_fix && host() && g.state == S_ACTIVE && g.type == T_ARMADA && !g_wave_on &&
+                 g_wave_mission && mission == g_wave_mission && (state == 5 || state == 6)) {
+            g_wave_away_result = state; // BUG-0227: the host is away from the colony
+            n_away_results++;
+        }
     });
     return a_PlayerUFOGet && a_GetAllUFOs && a_StartRaid && a_StarMgr && a_PlayerEmpire &&
            a_AddMoney && a_SpaceGame && a_AddItemByKey && a_Context;
@@ -1095,6 +1162,8 @@ void on_session_end()
     g_seen.clear();
     g_wave_mission = nullptr;
     g_toughened.clear();
+    g_wave_resumed = false;
+    g_wave_away_result = 0;
     g_alive.clear();
     g_next_offer = 0;
 }
@@ -1269,6 +1338,16 @@ std::string debug(const std::vector<std::string>& a)
     if (a[0] == "limit" && a.size() > 1) {
         g_limit_override = atof(a[1].c_str());
         snprintf(b, sizeof b, "time limit of new contracts %.0f s (0 = the default)\n", g_limit_override);
+        return b;
+    }
+    if ((a[0] == "tough_reuse" || a[0] == "hideships") && a.size() > 1) { // tests (BUG-0227)
+        (a[0] == "tough_reuse" ? g_tough_reuse : g_hide_ships) = a[1] != "0";
+        return a[0] + " " + a[1] + "\n";
+    }
+    if (a[0] == "wave") { // tests (BUG-0227): the wave's state
+        snprintf(b, sizeof b, "wave %d/%d on=%d ships=%d resumed=%d away_result=%d mission=%p aborted=%u away_results=%u resumed_n=%u\n",
+                 g.wave, g.waves, (int)g_wave_on, (int)g_wave_ships, (int)g_wave_resumed, g_wave_away_result,
+                 g_wave_mission, n_aborted, n_away_results, n_resumed);
         return b;
     }
     if (a[0] == "wavefix" && a.size() > 1) { // BUG-0046: 0 = a wave is any raid on the planet (tests)

@@ -773,6 +773,8 @@ static void SK_THISCALL h_SetState(void* m, int s)
             w.u32(place);
             w.u8(3);
             send(K_RAID, w);
+        } else if (s == 7) {
+            g_raid_since.erase(m); // aborted (BUG-0227: the armada contract ends a raid that brought no ships)
         } else if (s == 5 || s == 6) {
             g_raid_since.erase(m);
             bool helped = false;
