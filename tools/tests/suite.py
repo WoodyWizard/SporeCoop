@@ -114,6 +114,7 @@ add('dna_away', P + 'coop_dna_away.py', warm=True, minutes=5, fixture='creature'
 add('away_editor', P + 'coop_away_editor.py', warm=True, minutes=6, fixture='creature')  # a guest's goal reward reaching the host in its editor is paid when it is back (BUG-0205; --nofix fails)
 add('tribe_chief_removed', P + 'coop_tribe_chief_removed.py', warm=True, minutes=3, fixture='tribe')  # a chief removed at once (BUG-0081; --nofix fails)
 add('tribe_epic', P + 'coop_tribe_epic.py', warm=True, minutes=4, fixture='tribe')  # epic hitters, herd, save, chiefs after the session (BUG-0146, BUG-0121, BUG-0067; --nofix fails)
+add('tribe_editor_world', P + 'coop_tribe_editor_world.py', warm=True, minutes=5, fixture='tribe')  # an editor visit keeps the co-op epic tracked, out of the share save (BUG-0217; --nofix fails)
 add('tribe_gameover', P + 'coop_tribe_gameover.py', minutes=4)  # a member added during the game-over caption (BUG-0172; --nofix fails)
 add('tribe_ko', P + 'coop_tribe_ko.py', warm=True, minutes=3, fixture='tribe')  # a knocked-out NPC member lies down on the guest (BUG-0173; --nofix fails)
 # two bots play Civilization for 10 minutes through real input (docs/stability/civ.md)

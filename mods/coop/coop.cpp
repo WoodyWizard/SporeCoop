@@ -3419,6 +3419,8 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                            // a request through the vote (the hook), like the game's own editor entry
                            uintptr_t ctor = H->sym("EditorRequest_ctor"), submit = H->sym("Editors::EditorRequest::Submit");
                            void* av = game::avatar();
+                           if (!av && game::mode_id() == modes::kTribe) // tests: a member's species (BUG-0217)
+                               tribe::for_each_owned([](void* c, uint8_t, void* u) { if (!*(void**)u) *(void**)u = c; }, &av);
                            if (!ctor || !submit || !av) {
                                SAY("not possible here");
                                return 1;
