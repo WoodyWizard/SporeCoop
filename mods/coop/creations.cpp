@@ -1219,7 +1219,7 @@ void cycle(Kind k, int dir)
 std::string status()
 {
     std::string s;
-    char b[300];
+    char b[400];
     snprintf(b, sizeof b,
              "creations: in=%u out=%u registered=%u avatar_swaps=%u waits_on_disk=%u unusable=%u world_swaps=%u "
              "species asked=%u got=%u sent=%u missing=%u own_out=%u own_in=%u rx_dropped=%u adopt_skipped=%u%s%s\n",
