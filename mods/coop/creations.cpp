@@ -989,25 +989,23 @@ static bool adopt_after_editor(double now)
     Key a = g_adopt_kind == kCell ? cell_key() : avatar_species_key();
     if (!a.instance)
         return true; // not yet: do not apply the old one meanwhile
-    if (g_pre_editor_fix) {
-        // BUG-0278: only an own creation becomes the own one: the avatar's (the game put the new
-        // creation on it), else the newest one the editor saved (a guest's own editor leaves the
-        // avatar on the world's species). The file lags the editor by seconds: read it again
-        // every 2 s until the 30 s are over.
+    if (g_pre_editor_fix && C.sess->role() == net::Role::Client) {
+        // BUG-0278: a guest takes over only what the editor saved: the newest own creation that was
+        // not in My Creations when the editor opened (a guest's own editor leaves the avatar on the
+        // world's species, and right after the host's evolution editor the avatar still has the
+        // old key). The file lags the editor by seconds: read it again every 2 s for 30 s. The
+        // host keeps the old way (its default is the avatar's key anyway).
         if (now - g_adopt_read < 2.0)
             return false;
         g_adopt_read = now;
         g_opts_read = -100;
         refresh_options(now);
         Key pick;
-        if (own_option(g_adopt_kind, a))
-            pick = a;
-        else
-            for (auto& o : g_opts[g_adopt_kind]) // newest first
-                if (!g_before_editor[g_adopt_kind].count(o.key.instance)) {
-                    pick = o.key;
-                    break;
-                }
+        for (auto& o : g_opts[g_adopt_kind]) // newest first
+            if (!g_before_editor[g_adopt_kind].count(o.key.instance)) {
+                pick = o.key;
+                break;
+            }
         if (!pick.instance) {
             if (now + 2.0 > g_adopt_until) {
                 g_adopt_skipped++;

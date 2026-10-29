@@ -233,11 +233,19 @@ def main():
         if 'Editor' in mode(guest):  # the save dialog after an edit
             guest.call('click %d %d' % SAVE_DIALOG['new'])
         ck(wait(lambda: 'Creature' in mode(guest), 40), 'the guest saves its edit')
-        changed = wait(lambda: (lambda k: k if k and k != before else None)(avatar_key(guest)), 120, 2)
-        seen = wait(lambda: (lambda p: p if changed and p and p not in (k0, k1, before) else None)(
-            puppet_of_guest(host)), 90, 2)
-        print(f'  next editor: guest {before} -> {changed}, host shows {seen}')
-        ck(changed and seen, 'the guest changed its creature and the host shows the new one')
+        shown_before = puppet_of_guest(host)
+
+        def new_body():
+            if 'cine=1' in guest.call('coop.pool')['out']:
+                guest.call('click %d %d' % CAPTION_OK)
+            k = avatar_key(guest)
+            p = puppet_of_guest(host)
+            return (k, p) if k and k != before and p and p not in (k0, k1, shown_before) else None
+        r = wait(new_body, 150, 3)
+        if not r:
+            print('  guest coop.avatar: ' + guest.call('coop.avatar')['out'].replace('\n', ' | ')[:300])
+        print(f'  next editor: guest {before} -> {r and r[0]}, host shows {shown_before} -> {r and r[1]}')
+        ck(r, 'the guest changed its creature and the host shows the new one')
 
     # and back to the world's own (the host's creature) with the co-op window's arrows
     # (`coop.creations prev` is what the arrow runs)
