@@ -82,7 +82,9 @@ CAPTION_OK = (1410, 1048)    # the green check of a caption that waits for the p
 HISTORY_BTN = (1400, 1062)   # the HUD button under the portrait: History (the next stage when it is done)
 HISTORY_OK = (1415, 1055)    # its check: closes History, or starts the next stage
 EDITOR_DONE = (1416, 1062)   # the green "done" of the editors (1440x1080)
-CIV_TALK = ('We happily accept your surrender.',)  # answers to a nation's talk that waits (Civ)
+# answers to a nation's talk that waits (Civ): its surrender after the cities fell; a trade offer
+# (it covers the History button the host clicks next, BUG-0265)
+CIV_TALK = ('We happily accept your surrender.', 'I accept your offer! Start shipments immediately!')
 CAPTAIN_NAME = [(915, 555), (936, 630)]  # "Name Your Captain" (the first Space minutes): dice, check
 EDITOR_DICE = (614, 826)     # the dice of the name panel (a random name), open after a "done" without a name
 EDITOR_PARTS = [(85, 130), (350, 405), (480, 405)]       # spaceship editor palette: a hull, two discs

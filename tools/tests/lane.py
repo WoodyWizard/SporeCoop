@@ -78,8 +78,10 @@ def game_dir(n=None):
 
 
 def game_log(inst):
-    """the SporeKit log of a game instance (instance 1: sporekit.log, else sporekit.<inst>.log)"""
-    return os.path.join(game_dir((inst + 1) // 2), 'SporebinEP1', 'mods', 'logs',
+    """the SporeKit log of a game instance (instance 1: sporekit.log, else sporekit.<inst>.log).
+    Instances 2N-1 and 2N run in lane N, the extra guests 20+N and 30+N too (BUG-0266)."""
+    n = (inst + 1) // 2 if inst <= 20 else inst - 20 if inst <= 30 else inst - 30
+    return os.path.join(game_dir(n), 'SporebinEP1', 'mods', 'logs',
                         'sporekit.log' if inst == 1 else f'sporekit.{inst}.log')
 
 

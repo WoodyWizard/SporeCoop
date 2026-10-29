@@ -74,8 +74,10 @@ def build(tree):
         sys.exit('build failed')
 
 
-def ensure_lanes(n):
-    for lane in range(2, n + 1):
+def ensure_lanes(lanes):
+    for lane in lanes:
+        if lane < 2:
+            continue
         print(spore(ROOT, 1, 'lane', 'create', str(lane), check=True).stdout.strip())
 
 
@@ -84,12 +86,14 @@ def lane_game(lane):
     return main if lane == 1 else os.path.join(os.path.dirname(main), 'SPORE-lab', f'lane{lane}')
 
 
-def save_game_logs(lane, logdir, name):
+def save_game_logs(lane, logdir, name, since=0.0):
     """the games' own logs (SporeKit + mods) next to the test log: the next start overwrites them"""
     logs = os.path.join(lane_game(lane), 'SporebinEP1', 'mods', 'logs')
-    for inst, who in ((2 * lane - 1, 'host'), (2 * lane, 'guest')):
+    # the extra guests of a 4-player test (instances 20+N, 30+N; BUG-0266) when it had them
+    for inst, who in ((2 * lane - 1, 'host'), (2 * lane, 'guest'), (20 + lane, 'extra1'), (30 + lane, 'extra2')):
         src = os.path.join(logs, 'sporekit.log' if inst == 1 else f'sporekit.{inst}.log')
-        if os.path.exists(src):
+        # an extra guest's log only when this test wrote it (2 s: the kernel's coarse file clock)
+        if os.path.exists(src) and (inst <= 2 * lane or os.path.getmtime(src) >= since - 2):
             shutil.copy(src, os.path.join(logdir, f'{name}.{who}.game.log'))
 
 
@@ -236,7 +240,7 @@ def run_one(t, lane, tree, logdir, warm, suffix=''):
                     new_reports.append(p)
             except OSError:
                 pass
-    save_game_logs(lane, logdir, t['name'] + suffix)
+    save_game_logs(lane, logdir, t['name'] + suffix, t0)
     for p in new_reports:  # the next start of the lane may prune them
         try:
             shutil.copy(p, os.path.join(logdir, f'{t["name"]}{suffix}.{os.path.basename(p)}'))
@@ -294,7 +298,7 @@ def cmd_run(a):
     print(f'lab run {run_id}: {len(tests)} tests on {a.lanes} lane(s), tree {tree} [{tree_branch}] ({head})')
     if not a.no_build:
         build(tree)
-    ensure_lanes(max(a.lane_ids))
+    ensure_lanes(a.lane_ids)
     for lane in a.lane_ids:  # a run starts from clean games
         spore(tree, lane, 'kill')
     parallel = sorted([t for t in tests if not t['exclusive']], key=lambda t: -t['minutes'])
