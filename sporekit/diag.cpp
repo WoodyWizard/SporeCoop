@@ -995,6 +995,12 @@ void diag_install()
         CloseHandle(CreateThread(nullptr, 0, so_report_thread, nullptr, 0, nullptr));
     ULONG guarantee = 64 * 1024;
     SetThreadStackGuarantee(&guarantee);
+    // BUG-0246: the guarantee is taken from the main thread's reserve (1 MB in both GOG builds, so
+    // 6 %); logged so a player's log shows it next to a stack overflow, if one is ever reported
+    if (auto* dos = (IMAGE_DOS_HEADER*)GetModuleHandleW(nullptr))
+        if (auto* nt = (IMAGE_NT_HEADERS32*)((uint8_t*)dos + dos->e_lfanew); nt->Signature == IMAGE_NT_SIGNATURE)
+            logf(&g_kit_mod, SK_INFO, "main thread stack: reserve %lu KB, guarantee %lu KB",
+                 (unsigned long)(nt->OptionalHeader.SizeOfStackReserve / 1024), 64ul); // guarantee: the old value now
     diag_prune_logs(); // BUG-0137: piles of earlier versions
 }
 
