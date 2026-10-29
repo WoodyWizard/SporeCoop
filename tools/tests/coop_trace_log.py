@@ -101,7 +101,8 @@ def main():
         ck(partner, f'{name}: a partner line with the puppet shown ({len(partner)})')
         ck(cl and re.search(r'diet=(herb|carn|omni|none) .*screen: plants=\d+', cl[-1]),
            f'{name}: a cell line with the diet and the food on screen: ' + (cl[-1].split('cell: ', 1)[1][:160] if cl else '-'))
-        ck(any('body: puppet of' in l and 'cell model' in l for l in text.splitlines()),
+        full = tail_from(lane.HOST if name == 'host' else lane.GUEST, 0)  # the puppet appears while the guest joins
+        ck(any('body: puppet of' in l and 'cell model' in l for l in full.splitlines()),
            f'{name}: a body line for the partner\'s cell')
     gcl = lines(gl, 'cell')
     ck(gcl and re.search(r'host d=\d+', gcl[-1]), 'guest: its cell line has the distance to the host')
@@ -133,8 +134,12 @@ def main():
     pup = [m for m in pup if m]
     print(f'  guest reports species {gsp.group(1) if gsp else "-"}; host puppet lines: '
           + '; '.join(f'{m.group(1)}: {m.group(2)} (creation {m.group(3)}, reported {m.group(4)})' for m in pup))
-    ck(pup and gsp and pup[-1].group(4) == gsp.group(1),
-       'the host\'s puppet line names the species the guest\'s game reports')
+    rep = [re.search(r'player (\d+) .* reports species \S+ -> ([0-9A-F]{8}); its creation here (\S+), its puppet here (\S+)', l)
+           for l in hfull.splitlines() if 'reports species' in l]
+    rep = [m for m in rep if m]
+    print('  host: ' + '; '.join(m.group(0) for m in rep))
+    ck(rep and gsp and rep[-1].group(2) == gsp.group(1),
+       'the host\'s log names the species the guest\'s game reports')
     ck(pup and pup[-1].group(3) != '-' and pup[-1].group(2) == pup[-1].group(3),
        'the host built the guest\'s puppet from the guest\'s creation')
     ck(re.search(r'player \d+ .*: coop \S+, SporeKit', hfull) and re.search(r'player 0 .*: coop \S+, SporeKit', gfull),

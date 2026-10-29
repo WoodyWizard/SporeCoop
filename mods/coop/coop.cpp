@@ -1531,6 +1531,7 @@ double g_trace_since = 0; // when the mode / world of the last "stage:" line beg
 bool g_trace_dead = false;
 std::string g_trace_body_line;
 std::map<uint8_t, uint8_t> g_trace_rdead; // partner id -> PF_DEAD of its last state seen here
+std::map<uint8_t, uint32_t> g_trace_rspecies; // partner id -> the species its Creature state reported
 
 const char* role_str()
 {
@@ -1592,12 +1593,22 @@ void trace_tick(double now)
         if (it != g_trace_rdead.end() && it->second != d)
             trace::line("ko", "player %u '%s' %s (state of its own game)", id, r.name.c_str(), d ? "dead / knocked out" : "alive again");
         g_trace_rdead[id] = d;
+        // the body a partner's own game reports (Creature): a change after its editor or its own creation
+        const auto& ls = r.buf.latest();
+        if (ls.mode == modes::kCreature && ls.species && g_trace_rspecies[id] != ls.species) {
+            void* pp = puppet_now(r);
+            trace::line("body", "player %u '%s' reports species %s -> %08X; its creation here %s, its puppet here %s", id,
+                        r.name.c_str(), trace::hex(g_trace_rspecies[id]).c_str(), ls.species,
+                        trace::hex(creations::player_key(id, creations::kCreature).instance).c_str(),
+                        pp && g_mode == modes::kCreature ? trace::hex(game::species_instance(pp)).c_str() : "-");
+            g_trace_rspecies[id] = ls.species;
+        }
     }
     bool changed = g_mode != g_trace_mode || g_world != g_trace_world;
     if (changed) {
         trace::line("stage", "%s %s -> %s %s '%s' (%.1f s in the last)", modes::mode_name(g_trace_mode),
                     trace::hex(g_trace_world).c_str(), modes::mode_name(g_mode), trace::hex(g_world).c_str(),
-                    modes::current_world_name().c_str(), now - g_trace_since);
+                    modes::current_world_name().c_str(), g_trace_since > 0 ? now - g_trace_since : 0.0);
         g_trace_mode = g_mode;
         g_trace_world = g_world;
         g_trace_since = now;
