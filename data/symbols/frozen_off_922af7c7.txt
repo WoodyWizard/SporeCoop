@@ -1,0 +1,25 @@
+# What is off on the GOG 2016 build (922af7c7, frozen after 0.7: CLAUDE.md "Builds after 0.7").
+# One line per game symbol the code uses that the GOG 2016 symbol files lack:
+#   <symbol> ; <what is off on GOG 2016> (BUG-NNNN)
+# tools/re_lint.py (make test) fails when a used name is missing there without a line, or a line
+# names something no longer used or no longer missing (BUG-0216). The README links here.
+Simulator::Cell::Bite ; Cell: the guest's bites are checked by the game's own rules (BUG-0078, BUG-0108)
+Simulator::Cell::EatChunkA ; Cell: meat chunks eaten once on both games (BUG-0108)
+Simulator::Cell::EatChunkB ; Cell: meat chunks eaten once on both games (BUG-0108)
+Simulator::Cell::EatFood ; Cell: food eaten once on both games (BUG-0108)
+Simulator::Cell::SoftBodyStep ; Cell: partner cells no longer spin (BUG-0108)
+Simulator::Cell::SpawnLoot ; Cell: the meat of a kill appears once (BUG-0108)
+SporeCoop::AppSystem_NextAdapter ; Alt+Shift+Enter no longer crashes the game (BUG-0012, BUG-0108)
+SporeCoop::AppSystem_ToggleFullscreen ; Alt+Shift+Enter no longer crashes the game (BUG-0012, BUG-0108)
+SporeCoop::CivAI_BF9960_SpawnVehicle_Ret ; Civilization: NPC nations spawn no vehicles on a guest's game (BUG-0188)
+SporeCoop::CivAI_BF9FB0_SpawnVehicle_Ret ; Civilization: NPC nations spawn no vehicles on a guest's game (BUG-0188)
+SporeCoop::CivAI_BFA7A0_SpawnVehicle_Ret ; Civilization: NPC nations spawn no vehicles on a guest's game (BUG-0188)
+SporeCoop::CivAI_BFB160_SpawnVehicle_Ret ; Civilization: NPC nations spawn no vehicles on a guest's game (BUG-0188)
+SporeCoop::CivAI_CityOrders_SpawnVehicle_Ret ; Civilization: NPC nations spawn no vehicles on a guest's game (BUG-0188)
+SporeCoop::CivAI_CityTick_SpawnVehicle_Ret ; Civilization: NPC nations spawn no vehicles on a guest's game (BUG-0188)
+SporeCoop::PosseSimulator_Get ; Creature: the pack (posse) of the partner (BUG-0108)
+SporeCoop::PosseSimulator_GrowMembers ; Creature: the pack grows up with the partner (BUG-0108)
+SporeCoop::cCreatureAnimal_GrowTo ; Creature: the hatchling grows up after a death (BUG-0108)
+SporeCoop::cGameBehaviorManager_Read ; our creatures are kept out of saves (BUG-0020)
+SporeCoop::cPosseSimulator_AddMember ; Creature: pack members of a partner (BUG-0108)
+SporeCoop::cPosseSimulator_Get ; Creature: pack members of a partner (BUG-0108)

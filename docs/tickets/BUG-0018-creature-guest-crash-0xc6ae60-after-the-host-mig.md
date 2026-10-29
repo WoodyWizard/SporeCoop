@@ -15,6 +15,7 @@ tests: migration
 signature: dc04aee5:0xC6AE60 read 0x160 (Herd_NestPosition, null nest of a destroyed creature's herd)
 docs: docs/re/creature.md 16
 related:
+switch: npc.cinedefer
 ---
 
 ## Report
@@ -33,3 +34,4 @@ coop_migration.py FAIL 4/4 without the fix, OK 3/3 with it.
 - 2026-10-25: reported (player report (Discord) + Spore Exception Report (guest, 18:55, 0.7.2.3)).
 - 2026-10-25: fixed on fix/migration-crash, released in 0.7.2.4.
 - 2026-10-25: ticket written from the CHANGELOG, commits and reports (backfill).
+- 2026-10-28: switch: npc.cinedefer (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).

@@ -869,7 +869,7 @@ static float host_health(void* c)
 // mirror removed by guest_state, a load): the call went through a vtable read from freed memory.
 // keep: the chiefs that stay (nullptr: none, the session ends). `coop.tribe fix chiefs 0`: the old check.
 static bool g_fix_chiefs = true;
-COOP_FIX("tribe.chiefs", "BUG-0081", g_fix_chiefs, "tribe: chiefs checked against the player tribe's own list, not freed memory");
+COOP_FIX_UNSAFE("tribe.chiefs", "BUG-0081", g_fix_chiefs, "tribe: chiefs checked against the player tribe's own list, not freed memory");
 static uint32_t g_chief_restores, g_chief_gone, g_chief_bad_calls;
 static void restore_chief_scales(const std::unordered_map<uint8_t, void*>* keep)
 {
@@ -1330,13 +1330,17 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
 
 // BUG-0217: forget the co-op mechanics' pointers of a world that is gone (no game call: the
 // objects are freed). The epic and its herd are no longer ours to destroy or quiet.
+// tribe.chiefs gates only the chief and pincer part; the epic part has its own switch
+// (tribe.epic_herd) and runs whatever tribe.chiefs says (BUG-0214: one bug per switch)
 static void forget_world_tables()
 {
-    g_chief_scale.clear();
-    g_chief.clear();
-    g_chief_saved.clear();
-    g_pincer.clear();
-    g_pincer_told.clear();
+    if (g_fix_chiefs) {
+        g_chief_scale.clear();
+        g_chief.clear();
+        g_chief_saved.clear();
+        g_pincer.clear();
+        g_pincer_told.clear();
+    }
     g_epic = nullptr;
     g_epic_herd = nullptr;
     g_epic_hitters.clear();
@@ -1348,10 +1352,9 @@ static void forget_world_tables()
 // must not inherit them (BUG-0081: a former chief's size was restored through a freed pointer)
 static void clear_coop_tables(bool restore)
 {
-    if (!g_fix_chiefs)
-        return;
     if (restore) {
-        restore_chief_scales(nullptr); // the chiefs are plain members again after the session
+        if (g_fix_chiefs)
+            restore_chief_scales(nullptr); // the chiefs are plain members again after the session
         // the co-op epic ends with the session (BUG-0121: not left in the solo game and its saves)
         if (g_fix_epic_herd && g_epic && game::mode_id() == modes::kTribe && epic_listed())
             game::destroy_creature(g_epic);
@@ -1397,8 +1400,7 @@ void on_session_end()
 void on_world_change()
 {
     g_resets++;
-    if (g_fix_chiefs)
-        forget_world_tables(); // every citizen of the old world is freed: nothing to restore
+    forget_world_tables(); // every citizen of the old world is freed: nothing to restore
     g_split_for.clear();
     g_hm.clear();
     g_hm_by_id.clear();

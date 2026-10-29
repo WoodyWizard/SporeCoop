@@ -15,6 +15,7 @@ tests: npc_rejoin_paused
 signature:
 docs:
 related: #104
+switch: npc.known
 ---
 
 ## Report
@@ -75,3 +76,4 @@ menu stays up, then the host closes it. Checked on the guest's game: spawned pro
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: reproduced and fixed on fix/w3-creature; test npc_rejoin_paused (FAIL with knownfix off, PASS with it).
 - 2026-10-28: released in 0.7.3.0.
+- 2026-10-28: switch: npc.known (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).

@@ -15,6 +15,7 @@ tests: tools/tests/coop_window_layout.py block (suite window_layout)
 signature:
 docs: docs/06-testing.md#testing-sys-w3
 related: #134
+switch: core.status_block
 ---
 
 ## Report
@@ -73,3 +74,4 @@ Test: `tools/tests/coop_window_layout.py` (suite `window_layout`), one game host
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w3-sys (5f0c909); tests named above, lab run out/lab/20261028-011605 (smoke and diag: out/lab/20261028-012842).
 - 2026-10-28: released in 0.7.3.0.
+- 2026-10-28: switch: core.status_block (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).

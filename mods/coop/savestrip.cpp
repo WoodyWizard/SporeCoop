@@ -26,7 +26,7 @@ static double g_last_write;   // when Write ran last
 // 0.5 s pause. `coop.fix savestrip.per_save off`: the 0.5 s rule of 0.7.3.0 (unsafe: a second
 // save soon after can write a game object at a freed puppet's address as null).
 static bool g_per_save_fix = true;
-COOP_FIX("savestrip.per_save", "BUG-0255", g_per_save_fix, "saves: every save builds its own list of our objects (UNSAFE off)");
+COOP_FIX_UNSAFE("savestrip.per_save", "BUG-0255", g_per_save_fix, "saves: every save builds its own list of our objects");
 static uint32_t g_frame, g_save_first_frame, g_save_last_frame, g_max_span;
 static SaveState g_save_state;
 static std::unordered_set<void*> g_ours; // this save's objects of ours (bases and their Cast pointers)

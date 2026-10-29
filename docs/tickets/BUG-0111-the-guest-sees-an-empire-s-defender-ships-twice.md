@@ -15,6 +15,7 @@ tests: space_defenders
 signature:
 docs: docs/re/space.md#space-w3-trips-clicks-defenders
 related: #90
+switch: fleet.type
 ---
 
 ## Report
@@ -75,7 +76,7 @@ Suggested in the review:
   Better still: forget a puppet for good in the first frame it is missing from the UFO list, and check that every frame before any other module uses it.
 
 ## Verification
-Done (2026-10-28, lane 6, GOG 2024): `coop_space_defenders.py` (suite `space_defenders`). Part 1: the guest's game spawns a Defender of its own empire next to it (`coop.fleet spawn 6 own`), the host one too. `--without-fix` FAILS: the guest keeps its Defender, 3 type-6 ships on the guest against 2 on the host (/tmp/claude-1000/-home-pam3es-Games-Modding-SPORE/13201e2f-19c5-4da6-b393-aae16fe6d338/scratchpad/waves/fix_w3-space/defenders_nofix.log); with the fix PASS: removed, 2 and 2 (/tmp/claude-1000/-home-pam3es-Games-Modding-SPORE/13201e2f-19c5-4da6-b393-aae16fe6d338/scratchpad/waves/fix_w3-space/defenders_pass2.log). Part 2 (address reuse cannot be forced): the guest's puppet on the host is made vulnerable as a game Defender is (`coop.fleet impostor 1`). `--without-fix` FAILS: the host keeps driving the same pointer (1CB4F740 -> 1CB4F740, /tmp/claude-1000/-home-pam3es-Games-Modding-SPORE/13201e2f-19c5-4da6-b393-aae16fe6d338/scratchpad/waves/fix_w3-space/defenders_nofix2.log, which also shows part 1 failing: 3 against 2); with the fix a new puppet is spawned and the old ship stays listed. An earlier variant of the impostor that changed the model key to an invalid one cost the guest's mirror of that ship a caught fault in cPlanetGfx_Create+0x8F0 (the known invalid-key fault of docs/re/space.md 10.2), so the test changes the invincible flag instead.
+Done (2026-10-28, lane 6, GOG 2024): `coop_space_defenders.py` (suite `space_defenders`). Part 1: the guest's game spawns a Defender of its own empire next to it (`coop.fleet spawn 6 own`), the host one too. `--without-fix` FAILS: the guest keeps its Defender, 3 type-6 ships on the guest against 2 on the host (scratch log `defenders_nofix.log` (not kept)); with the fix PASS: removed, 2 and 2 (scratch log `defenders_pass2.log` (not kept)). Part 2 (address reuse cannot be forced): the guest's puppet on the host is made vulnerable as a game Defender is (`coop.fleet impostor 1`). `--without-fix` FAILS: the host keeps driving the same pointer (1CB4F740 -> 1CB4F740, scratch log `defenders_nofix2.log` (not kept), which also shows part 1 failing: 3 against 2); with the fix a new puppet is spawned and the old ship stays listed. An earlier variant of the impostor that changed the model key to an invalid one cost the guest's mirror of that ship a caught fault in cPlanetGfx_Create+0x8F0 (the known invalid-key fault of docs/re/space.md 10.2), so the test changes the invincible flag instead.
 
 Planned in the review: Planned test (must FAIL without the fix and PASS with it):
 
@@ -97,3 +98,5 @@ This came from an inventory of about 90 game-object pointers the mod keeps acros
 - 2026-10-28: fixed on fix/w3-space (eb7541e): guest keeps only real puppets, puppet identity by model key / invincible / no mission; space_defenders FAIL without / PASS with.
 - 2026-10-28: fix/w3-space lab runs on lane 6: 20261028-010933 (14/14: the four new wave 3 Space tests and space_map, space_stale, space_fleet, space_puppet, space_rivalry, space_contracts, space_jump, space_guest_ui, space_allies, space_diplomacy), smoke 20261028-013951 (13/13; `ui` skipped: exclusive, needs a lane 1-5).
 - 2026-10-28: released in 0.7.3.0.
+- 2026-10-28: log paths of an agent's scratch folder replaced by the log names (BUG-0215: no paths outside the repository).
+- 2026-10-28: switch: fleet.type (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).

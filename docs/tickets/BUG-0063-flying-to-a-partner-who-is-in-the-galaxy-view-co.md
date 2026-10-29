@@ -15,6 +15,7 @@ tests: space_map_input
 signature:
 docs: docs/re/space.md#space-w3-trips-clicks-defenders
 related: #41
+switch: map.teleport
 ---
 
 ## Report
@@ -69,7 +70,7 @@ Move the galaxy-view teleport into spacecoop, e.g. `spacecoop::teleport_in_galax
 `go_to_partner` then calls it. Keep the old direct call behind `coop.fix mapteleport off`.
 
 ## Verification
-Done (2026-10-28, lane 6, GOG 2024): `coop_space_map_input.py`, both in the galaxy view, the guest's ship between stars. Disabled: `--without-fix` FAILS ("going", the host teleported next to the guest: distance 1.19 -> 0.04, /tmp/claude-1000/-home-pam3es-Games-Modding-SPORE/13201e2f-19c5-4da6-b393-aae16fe6d338/scratchpad/waves/fix_w3-space/map_input_nofix.log); with the fix PASS ("the ship is disabled"). Energy: NOT reproduced: with energy 0 the old direct call cost neither energy nor HP (energy 0 -> 0, hp 1500 -> 1500 in the nofix run), so the energy and damage part of the report did not happen on this path (a short teleport to the star next to the partner); the refund is kept as a guard.
+Done (2026-10-28, lane 6, GOG 2024): `coop_space_map_input.py`, both in the galaxy view, the guest's ship between stars. Disabled: `--without-fix` FAILS ("going", the host teleported next to the guest: distance 1.19 -> 0.04, scratch log `map_input_nofix.log` (not kept)); with the fix PASS ("the ship is disabled"). Energy: NOT reproduced: with energy 0 the old direct call cost neither energy nor HP (energy 0 -> 0, hp 1500 -> 1500 in the nofix run), so the energy and damage part of the report did not happen on this path (a short teleport to the star next to the partner); the refund is kept as a guard.
 
 Planned in the review: Planned test (must FAIL without the fix and PASS with it):
 
@@ -90,3 +91,5 @@ Extend `tools/tests/coop_space_map.py` (or a new `coop_space_map_energy.py`):
 - 2026-10-28: fixed on fix/w3-space (66d7a30): disabled check (FAIL without / PASS with); the energy cost was not reproduced at runtime.
 - 2026-10-28: fix/w3-space lab runs on lane 6: 20261028-010933 (14/14: the four new wave 3 Space tests and space_map, space_stale, space_fleet, space_puppet, space_rivalry, space_contracts, space_jump, space_guest_ui, space_allies, space_diplomacy), smoke 20261028-013951 (13/13; `ui` skipped: exclusive, needs a lane 1-5).
 - 2026-10-28: released in 0.7.3.0.
+- 2026-10-28: log paths of an agent's scratch folder replaced by the log names (BUG-0215: no paths outside the repository).
+- 2026-10-28: switch: map.teleport (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).

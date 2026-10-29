@@ -69,14 +69,14 @@ static void test_ids()
 static void test_hits()
 {
     printf("joint hunt hits\n");
-    for (int legacy = 0; legacy < 2; legacy++) {
+    for (int fix = 0; fix < 2; fix++) {
         teamplay::HitTable t(6.0);
-        t.legacy = legacy;
+        t.fix = fix;
         // 1000 creatures hit once each, one per second: only those of the last 6 s matter
         static char targets[1000];
         for (int i = 0; i < 1000; i++)
             t.hit(&targets[i], 1, i);
-        if (legacy)
+        if (!fix)
             CHECK(t.size() == 1000); // the code before BUG-0099: one entry per creature ever hit
         else
             CHECK(t.size() <= 7);

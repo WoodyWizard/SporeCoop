@@ -15,6 +15,7 @@ tests: space_armada_return
 signature:
 docs: docs/re/space.md#space-w3-trips-clicks-defenders
 related: #24
+switch: contracts.wave
 ---
 
 ## Report
@@ -64,7 +65,7 @@ Suggested in the review:
 - Put the old behaviour behind `coop.fix armada_wave_mission off`.
 
 ## Verification
-Done (2026-10-28, lane 6, GOG 2024): `coop_space_armada_return.py` (suite `space_armada_return`): armada accepted, both land, wave 1 comes, the host takes off to the system view for 6 s and lands again. `--without-fix` FAILS: two active raids on the colony after the return, 30 ships taken for the wave (/tmp/claude-1000/-home-pam3es-Games-Modding-SPORE/13201e2f-19c5-4da6-b393-aae16fe6d338/scratchpad/waves/fix_w3-space/armada_nofix2.log); with the fix PASS: one raid, `resumed=1` (/tmp/claude-1000/-home-pam3es-Games-Modding-SPORE/13201e2f-19c5-4da6-b393-aae16fe6d338/scratchpad/waves/fix_w3-space/armada_pass2.log). The game does keep the first raid active (state 3) while nobody is on the planet (confirms the PLAUSIBLE part of the root cause). Runtime finding: during the wave the mouse wheel did not take the host off the planet (the test uses `coop.space takeoff`). Not run: the old raid ending with 6 while a second runs (no longer possible with the fix: there is no second raid).
+Done (2026-10-28, lane 6, GOG 2024): `coop_space_armada_return.py` (suite `space_armada_return`): armada accepted, both land, wave 1 comes, the host takes off to the system view for 6 s and lands again. `--without-fix` FAILS: two active raids on the colony after the return, 30 ships taken for the wave (scratch log `armada_nofix2.log` (not kept)); with the fix PASS: one raid, `resumed=1` (scratch log `armada_pass2.log` (not kept)). The game does keep the first raid active (state 3) while nobody is on the planet (confirms the PLAUSIBLE part of the root cause). Runtime finding: during the wave the mouse wheel did not take the host off the planet (the test uses `coop.space takeoff`). Not run: the old raid ending with 6 while a second runs (no longer possible with the fix: there is no second raid).
 
 Planned in the review: Planned test (must FAIL without the fix and PASS with it):
 
@@ -87,3 +88,5 @@ This must FAIL on main and with `coop.fix armada_wave_mission off`, and PASS wit
 - 2026-10-28: fixed on fix/w3-space (9f9fd90): the wave keeps and resumes its own raid; space_armada_return FAIL without / PASS with.
 - 2026-10-28: fix/w3-space lab runs on lane 6: 20261028-010933 (14/14: the four new wave 3 Space tests and space_map, space_stale, space_fleet, space_puppet, space_rivalry, space_contracts, space_jump, space_guest_ui, space_allies, space_diplomacy), smoke 20261028-013951 (13/13; `ui` skipped: exclusive, needs a lane 1-5).
 - 2026-10-28: released in 0.7.3.0.
+- 2026-10-28: log paths of an agent's scratch folder replaced by the log names (BUG-0215: no paths outside the repository).
+- 2026-10-28: switch: contracts.wave (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).

@@ -129,7 +129,7 @@ static Win g_menu_btn, g_menu_parent;
 // `coop.corefix menu_drop 0` = the old behaviour (tests).
 bool g_menu_drop_fix = true;
 bool g_recenter_fix = true;
-COOP_FIX("core.menu_drop", "BUG-0163", g_menu_drop_fix, "ui: the galaxy menu's Co-op item pointer goes with the menu");
+COOP_FIX_UNSAFE("core.menu_drop", "BUG-0163", g_menu_drop_fix, "ui: the galaxy menu's Co-op item pointer goes with the menu");
 COOP_FIX("core.window_recenter", "BUG-0113", g_recenter_fix, "ui: the co-op window is placed again after a resolution change");
 
 // The window is centred on the screen it opens on (BUG-0113: it is kept for the whole run, and was

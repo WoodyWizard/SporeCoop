@@ -3,6 +3,7 @@
 #include <cctype>
 #include <cstring>
 
+#include "../mods/coop/fix_switch.h"
 #include "sha256.h"
 
 namespace upd {
@@ -29,7 +30,7 @@ bool allowed_path(const std::string& path)
            path == "Data/SporeCoop.package" || path.rfind("SporebinEP1/mods/", 0) == 0;
 }
 
-bool g_dup_fix = true;
+FIX_SWITCH(g_dup_fix); // update.dup, BUG-0089: a pack with the same path twice is refused
 
 static std::string fold(const std::string& s)
 {
@@ -192,8 +193,9 @@ std::vector<uint8_t> write_pack(const Pack& p)
     return o;
 }
 
-bool g_pick_fix = true;
-bool g_release_lock_fix = true;
+bool g_pick_fix = true;         // not a lab switch: setup only (BUG-0093, net_tests --old)
+bool g_release_lock_fix = true; // not a lab switch: setup only (BUG-0077, release_tsan --old)
+bool g_release_merge_fix = true; // not a lab switch: setup only (BUG-0244, release_tsan --old-merge)
 
 std::string pack_version_of(const std::string& path)
 {

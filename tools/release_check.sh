@@ -21,4 +21,6 @@ if [[ ! -s "$out" ]]; then
     echo "release: CHANGELOG.md has no section \"## [$ver]\" (or it is empty)" >&2
     exit 1
 fi
+# the notes name under "### Fixed" only fixed tickets (BUG-0216)
+python3 "$(dirname "${BASH_SOURCE[0]}")/tickets.py" notes-check "$ver" "$out"
 echo "release $tag: COOP_VERSION matches, notes $(wc -l < "$out") lines in $out"

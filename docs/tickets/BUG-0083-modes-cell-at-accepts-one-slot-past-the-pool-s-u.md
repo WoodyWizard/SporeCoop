@@ -15,6 +15,7 @@ tests: tests/cell_tests.cpp slots() (make test)
 signature:
 docs: docs/re/cell.md#cell-sync-robustness
 related: #61
+switch: pool.cellat
 ---
 
 ## Report
@@ -83,3 +84,4 @@ A unit-level check is enough here. Add a `coop.pool at <index>` debug command th
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w2-cell (bug wave 2); test FAIL without the fix, PASS with it.
 - 2026-10-28: released in 0.7.3.0.
+- 2026-10-28: switch: pool.cellat (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).

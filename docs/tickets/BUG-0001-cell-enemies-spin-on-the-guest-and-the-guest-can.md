@@ -15,6 +15,7 @@ tests: coop_cell_spin
 signature: 
 docs: docs/re/cell.md 10
 related:
+switch: pool.mirror
 ---
 
 ## Report
@@ -33,3 +34,4 @@ coop_cell_spin.py fails on the old code, 3/3 with the fix (facing error 150 deg 
 - 2026-10-24: reported (player report (Reddit, two brothers)).
 - 2026-10-24: fixed on fix/cell-spin, released in 0.7.2.2.
 - 2026-10-25: ticket written from the CHANGELOG, commits and reports (backfill).
+- 2026-10-28: switch: pool.mirror (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).

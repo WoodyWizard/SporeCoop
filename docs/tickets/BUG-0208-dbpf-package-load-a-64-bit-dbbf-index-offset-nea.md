@@ -10,7 +10,7 @@ role: both
 versions: main 7874654 and earlier
 fixed_in: 0.7.3.0
 branch: fix/w4-census
-commits:
+commits: 221bbfe
 tests: net_tests test_dbbf_wrap (make test; `net_tests_asan --nofix` fails with a heap-buffer-overflow), fuzz_decoders (make test; `fuzz_decoders --nofix` fails)
 signature: heap-buffer-overflow / heap-use-after-free read in dbpf::parse_index (le32) from Package::load
 docs: docs/04-netcode.md#netcode-fuzzing
@@ -35,3 +35,4 @@ Unit test `test_dbbf_wrap` (tests/net_tests.cpp, in `make test`): with the fix t
 - 2026-10-28: opened.
 - 2026-10-28 (fix/w4-census): found by the libFuzzer build of fuzz_decoders, fixed with the overflow-free checks, regression test in net_tests and in fuzz_decoders (both FAIL with `--nofix`).
 - 2026-10-28: released in 0.7.3.0.
+- 2026-10-28: commits: filled in (221bbfe) (BUG-0215).

@@ -138,8 +138,8 @@ struct HV {
 // test switches (`coop.civ fix boost|world 0|1`): 0 brings back the code before the fix
 static bool g_fix_boost = true; // BUG-0040: boosts only on listed vehicles, cleared with the session
 static bool g_fix_world = true; // BUG-0059: every pointer table cleared when the world changes
-COOP_FIX("civ.boost", "BUG-0040", g_fix_boost, "civ: boosts only on listed vehicles, cleared with the session");
-COOP_FIX("civ.world", "BUG-0059", g_fix_world, "civ: every pointer table cleared when the world changes");
+COOP_FIX_UNSAFE("civ.boost", "BUG-0040", g_fix_boost, "civ: boosts only on listed vehicles, cleared with the session");
+COOP_FIX_UNSAFE("civ.world", "BUG-0059", g_fix_world, "civ: every pointer table cleared when the world changes");
 static uint32_t g_world_resets;
 static std::unordered_map<void*, HV> g_hv;
 static std::unordered_map<uint16_t, void*> g_hv_by_id;
