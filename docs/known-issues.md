@@ -700,3 +700,11 @@ None open (BUG-0077, BUG-0080, BUG-0094 and BUG-0139 fixed on fix/w4-installer).
   no host or session id to merge them by.
 * Not checked: two separate PCs.
 * Ticket: BUG-0210.
+
+## Space trade: an owed refund can be paid into another game (BUG-0225, open part)
+After a save of any game, a trade refund owed from a gift that came back outside Space is paid
+into whatever Space game is loaded next (`spaceext::saves()` counts every save), and a reloaded
+game whose cEmpire got the old address is taken for the same game. Reproduce: a profile with two
+Space games; the receiver holds a tool gift (`coop.space trade hold 1`), the host saves, loads the
+other game, the receiver declines: the other game's tool gets the charges. Needs the shared
+after-save hook of BUG-0217 (#151) and a game key; the allies part of BUG-0225 is fixed.
