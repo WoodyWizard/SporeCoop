@@ -1426,7 +1426,8 @@ wrong. Suite `campaign` (in no other suite): `tools/lab.py run campaign --lanes 
   host saves. Once per stage a random guest leaves and joins again.
 * **Checks** every 30 s on every machine: dead console, a new crash / report file of the four
   instances (by file time: the name has Wine's local time, which was an hour off), Monitor freezes,
-  `exc` fault count up, the guests' stage (`game.mode`) and `together` on the host, per object kind
+  `exc` fault count up, the guests' stage (`game.mode`) and `together` on the host (not in Space:
+  `together` there means the same star system, and players fly apart on purpose), per object kind
   the 90th percentile position error against the host (twice `coop_sync.LIMITS`, coverage >= 85%,
   `coop_multi.measure`), shared food / money (`coop.res`), the game's objects in Creature and Civ
   (`coop.census`, `campaign_lib.census_problems`: host NPCs within 90 m of the guest's avatar that the

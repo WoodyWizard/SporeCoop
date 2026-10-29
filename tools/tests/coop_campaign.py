@@ -284,7 +284,7 @@ class Campaign:
                 gst = cl.stage_of(g.call('game.mode'))
                 if gst != hst:
                     bad_stage.append(f'{g.name}:{hst}:{gst}')
-                if g.pid not in tog:
+                if g.pid not in tog and hst != 'space':  # in Space players fly to other stars: apart is play
                     apart.append(g.name)
             for k in self.persist['stage'].update(bad_stage):
                 name = k.split(':')[0]
@@ -480,13 +480,15 @@ class Campaign:
             left = any(m in g.call('game.mode') for m in ('GalaxyGameEntry', 'Load')) or \
                 'receiving world' in g.call('coop.status')
             time.sleep(0.5)
-        ok = wait_all(self.host.con, len(self.guests), 200)
-        if ok:  # together, and its game plays the host's stage again
-            hst = cl.stage_of(self.host.call('game.mode'))
-            t2 = time.time()
-            while time.time() - t2 < 60 and cl.stage_of(g.call('game.mode')) != hst:
+        hst = cl.stage_of(self.host.call('game.mode'))
+        ok = False
+        t2 = time.time()
+        while time.time() - t2 < 260 and not ok:  # its game plays the host's stage in the host's world again
+            self.ids()
+            ok = cl.stage_of(g.call('game.mode')) == hst and g.con.call('coop.avatar').get('ok') and \
+                (hst == 'space' or g.pid in self.together())  # (Space: in the session, maybe at another star)
+            if not ok:  # (no Enter for the host's "game saved" box: the mod closes it, BUG-0152)
                 time.sleep(1)
-            ok = cl.stage_of(g.call('game.mode')) == hst and wait_all(self.host.con, len(self.guests), 60)
         self.rejoins += 1
         if not ok:
             self.finding('apart', f'rejoin:{g.name}:{self.stage}', f'{g.name} did not get back into the host\'s world '
