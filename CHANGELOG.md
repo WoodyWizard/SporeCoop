@@ -3,6 +3,9 @@
 ## [Unreleased]
 
 ### Fixed
+- Creature: when the host's game put away NPCs far from the host's creature, a guest standing
+  near them still saw them for 2 s (again with every respawn of a nest member there). The host
+  now removes such an NPC from the guests at once (BUG-0274).
 - Cell: the host's (or a guest's) game could crash while the Cell stage ended and the Creature
   planet loaded, when the co-op status or the player's position was asked for at that moment. The
   mod no longer reads the cells the game has already freed, nor anything else of a stage the game

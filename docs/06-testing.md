@@ -1642,3 +1642,15 @@ wrong. Suite `campaign` (in no other suite): `tools/lab.py run campaign --lanes 
   reached it (`local_refused`, `puppet_refused`, `pool_gone`).
 * Pitfall: two `lab.py run` started in the same second from one worktree get the same run id and
   write into the same `out/lab/<id>/` (logs mixed); start them a few seconds apart.
+
+## Creature: NPCs the host's game pools (2026-10-29, fix/w7-npc)
+<a id="testing-npc-pooled"></a>
+
+* `coop_npc_pooled.py` (suite `npc_pooled`, BUG-0274, ~2 min): creature fixture, the guest stays
+  at the nest, the host walks 300 m away in 20 steps and waits 30 s. Every 0.6 s both censuses:
+  each guest proxy must match a host NPC of the same net id that is in the world (not at the
+  planet's centre); one without in two samples in a row is a ghost. `--without-fix` or
+  `SPORE_FIX_OFF=npc.pooled`: 12-13 ghosts (FAIL); with the fix none. It also prints the matched
+  proxies (median distance to the host's NPC 0.1-0.2 m).
+* The campaign census (`census.py`, `campaign_lib.census_problems`) needed no change: a pooled
+  object of the host has no net id now (`own=local`), and `diff` only pairs ids.

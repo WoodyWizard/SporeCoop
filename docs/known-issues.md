@@ -755,10 +755,28 @@ Lab 20261029-122937 (4 players, three full games, three Cell -> Creature games; 
 
 * A vote ended by its timer although all three guests clicked "I'm ready" (Creature -> Tribe,
   once in three games). Ticket: BUG-0273.
-* A guest keeps a proxy of a host NPC that the host has at the planet's centre (504 m apart,
-  Creature, two of three short games). Ticket: BUG-0274.
+* (fixed on fix/w7-npc) A guest kept a proxy of a host NPC that the host had at the planet's
+  centre (504 m apart): the NPC was back in the game's creature pool. Ticket: BUG-0274. What is
+  left (the host's game keeps NPCs only around the host): see
+  [the entry below](#issue-npcs-only-around-host), BUG-0280.
 * The 3rd and 4th players stay over the sync limits now and then (Cell cells, Creature NPCs);
   the 2nd never did. Ticket: BUG-0275.
 * After the change to Tribe three guests were not in the host's world for 300 s; a rejoin fixed it
   (once). Ticket: BUG-0276.
 * Reproduce: `tools/lab.py run campaign --lane N` (about 85 min) or `campaign_short` (9 min).
+
+## Creature: NPCs live only around the host; a guest far from it sees an empty world (2026-10-29, fix/w7-npc)
+<a id="issue-npcs-only-around-host"></a>
+
+* What happens: the host's game puts every NPC farther than about 150-200 m from the host's own
+  avatar back into its creature pool, also the ones right next to a guest. The guest then sees no
+  NPCs there, and a nest that misses a member spawns it again and the game pools it again 1-3 s
+  later: on the guest a family member appears at the nest and vanishes every 3-6 s (a new net id
+  each time).
+* Reproduce: creature fixture, the guest at the nest, the host 300 m away (`coop_npc_pooled.py`
+  does it; its "matched proxies" stop while the host stands far away).
+* Known: observed on lane 4 (2026-10-29), docs/re/creature.md#creature-npc-pool-cull. The cull
+  distance and the game function were not looked up.
+* Not checked: whether the guests could keep the NPCs of their own area (their game runs them
+  while the host is away) or the host's game can be made to keep creatures around the puppets.
+* Ticket: BUG-0280.
