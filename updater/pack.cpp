@@ -195,6 +195,7 @@ std::vector<uint8_t> write_pack(const Pack& p)
 
 bool g_pick_fix = true;         // not a lab switch: setup only (BUG-0093, net_tests --old)
 bool g_release_lock_fix = true; // not a lab switch: setup only (BUG-0077, release_tsan --old)
+bool g_release_merge_fix = true; // not a lab switch: setup only (BUG-0244, release_tsan --old-merge)
 
 std::string pack_version_of(const std::string& path)
 {

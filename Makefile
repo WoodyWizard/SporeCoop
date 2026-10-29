@@ -144,6 +144,8 @@ test-tsan: sanitizer-probe
 	@mkdir -p $(B)/host
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall -fsanitize=thread -o $(B)/host/release_tsan tests/release_tsan.cpp updater/pack.cpp updater/sha256.cpp
 	TSAN_OPTIONS=halt_on_error=1 $(TSAN_RUN)$(B)/host/release_tsan
+	@! TSAN_OPTIONS=halt_on_error=1 $(TSAN_RUN)$(B)/host/release_tsan --old-merge > $(B)/host/release_tsan_old_merge.txt 2>&1 \
+	  || { cat $(B)/host/release_tsan_old_merge.txt; echo "release_tsan --old-merge must fail (BUG-0244)"; exit 1; }
 
 # Windows-side unit tests (file handling of the updater and of received worlds), run under Wine in
 # a lane's bottle by tools/tests/win_unit.py (lab test win_unit)

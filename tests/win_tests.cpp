@@ -282,6 +282,41 @@ static void test_ini_unicode()
     std::wstring m = g_tmp + L"\\missing.ini"; // a new file gets a non-ASCII value
     CHECK(skini::write_str(m, "coop", "name", name));
     CHECK(skini::read_str(m, "coop", "name", "") == name);
+
+    // BUG-0244: the coop.ini every upgrading player has, written by 0.7.2.x through the profile API in
+    // the ANSI codepage ("J\xF6rg" in cp1252): read as CP_ACP (it is not UTF-8) and converted once
+    UINT acp = GetACP();
+    printf("  ANSI codepage %u\n", acp);
+    if (acp == CP_UTF8) {
+        printf("  NOT RUN: the ANSI codepage is UTF-8 (the ANSI case equals the UTF-8 case)\n");
+        return;
+    }
+    const wchar_t* cands[] = {L"J\u00f6rg", L"\u0412\u0430\u0441\u044f", L"\u03a3\u03bf\u03c6\u03af\u03b1", L"\u592a\u90ce"};
+    std::string ansi;
+    std::wstring wname;
+    for (const wchar_t* c : cands) {
+        BOOL used = FALSE;
+        char buf[64];
+        int n = WideCharToMultiByte(CP_ACP, WC_NO_BEST_FIT_CHARS, c, -1, buf, sizeof buf, nullptr, &used);
+        if (n > 1 && !used) {
+            ansi.assign(buf, n - 1);
+            wname = c;
+            break;
+        }
+    }
+    CHECK(!ansi.empty());
+    if (ansi.empty())
+        return;
+    std::wstring o = g_tmp + L"\\ansi.ini";
+    put(o, "[coop]\r\nname=" + ansi + "\r\nshare_world=1\r\n");
+    char u8[64];
+    int un = WideCharToMultiByte(CP_UTF8, 0, wname.c_str(), -1, u8, sizeof u8, nullptr, nullptr);
+    CHECK(skini::read_str(o, "coop", "name", "") == std::string(u8, un - 1));
+    CHECK(skini::read_int(o, "coop", "share_world", 0) == 1);
+    std::string disk = get(o); // converted once: UTF-16 LE with a BOM (the caches have no reset: read the bytes)
+    std::wstring want = L"name=" + wname;
+    CHECK(disk.size() >= 2 && (unsigned char)disk[0] == 0xFF && (unsigned char)disk[1] == 0xFE &&
+          disk.find(std::string((const char*)want.data(), want.size() * sizeof(wchar_t))) != std::string::npos);
 }
 
 // ---------------- the setup and install.bat ----------------
