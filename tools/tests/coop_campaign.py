@@ -84,12 +84,16 @@ HISTORY_OK = (1415, 1055)    # its check: closes History, or starts the next sta
 EDITOR_DONE = (1416, 1062)   # the green "done" of the editors (1440x1080)
 # answers to a nation's talk that waits (Civ): its surrender after the cities fell; a trade offer
 # (it covers the History button the host clicks next, BUG-0265)
-CIV_TALK = ('We happily accept your surrender.', 'I accept your offer! Start shipments immediately!')
+CIV_TALK = ('We happily accept your surrender.', 'I accept your offer! Start shipments immediately!',
+            'Agreed. Bye for now.')  # the nation's last line after an accepted offer (BUG-0268)
 CAPTAIN_NAME = [(915, 555), (936, 630)]  # "Name Your Captain" (the first Space minutes): dice, check
 EDITOR_DICE = (614, 826)     # the dice of the name panel (a random name), open after a "done" without a name
 EDITOR_PARTS = [(85, 130), (350, 405), (480, 405)]       # spaceship editor palette: a hull, two discs
 EDITOR_PLACES = [(1000, 560), (1000, 470), (1000, 650)]  # onto the stage
 VK_F9 = '0x78'
+# a badge's "Reward" panel (BUG-0268): its green check on the 1440x1080 screen (the panel is centred;
+# from the campaign screenshots of run 20261029-093248)
+REWARD_CHECK = (932, 844)
 ADVANCE_MIN = {'cell': 10, 'creature': 10, 'tribe': 20, 'civ': 20}  # default time of a stage change
 
 
@@ -296,11 +300,11 @@ class Campaign:
                 self.finding('apart', f'{hst}:{k}', f'the host does not see {k} in its world ({hst})',
                              [host, self.byname(k)])
             # sync of every synchronized object kind, guests that are in the host's world only
-            h1 = sample(host.con)
             over, short = [], []
             for g in self.guests:
                 if g not in alive or g.pid not in tog:
                     continue
+                h1 = sample(host.con)  # fresh for each guest (BUG-0269: the fourth one is seconds later)
                 errs, cov, total = measure(host.con, g.con, h1)
                 if total >= 5 and cov < 0.85:
                     short.append(f'{g.name}:coverage')
@@ -381,6 +385,8 @@ class Campaign:
             if b and 600 < b[0] < 1100 and 500 < b[1] < 750:  # the dialog's button, not the HUD's tab label
                 uifind.press(con, 'Military')
                 return 'dialog Military'
+        if self.close_reward(con):
+            return 'reward ok'
         if p is not self.host and hcon.call('coop.vote').get('out', '').startswith('vote active'):
             return self.ready(con, p)
         if 'movie=1' in st:
@@ -398,6 +404,19 @@ class Campaign:
             return None
         self.cap.pop(p.name, None)
         return None
+
+    def close_reward(self, con):
+        """a badge's "Reward" panel (Golden Touch after the money shortcut) waits for its green
+        check and takes the clicks meant for the co-op window (BUG-0268): checked like a player"""
+        r = uifind.shown(con, 'Reward')
+        if not r or not 400 < r[0] < 1000:  # the panel in the middle of the screen, not a HUD label
+            return False
+        x, y = REWARD_CHECK
+        con.call(f'move {x} {y}')
+        time.sleep(0.4)
+        con.call(f'click {x} {y}')
+        time.sleep(1)
+        return True
 
     def editor(self, con, p):
         """leave an editor with "done" like a player. An empty editor (the spaceship editor at the
@@ -956,9 +975,13 @@ class Campaign:
             ui = Ui(g.con, g.name)
             for step in ('near the core', 'the gate'):
                 fz.settle(g.con, g.name, timeout=60)
+                for _ in range(3):  # (several badges can come one after another)
+                    if not self.close_reward(g.con):
+                        break
                 if step == 'the gate':
                     self.take_off(g)
                     fz.to_galaxy(g.con, g.name, ck)
+                self.close_reward(g.con)
                 fz.open_space_page(ui, g.con, ck, g.name)
                 b = fz.fly_button(ui)
                 ck(b is not None, f'{g.name}: "Fly to Alice" on the Space page ({step})')

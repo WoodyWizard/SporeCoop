@@ -728,3 +728,11 @@ after-save hook of BUG-0217 (#151) and a game key; the allies part of BUG-0225 i
 * Next steps: measure the lock bytes per frame after a host bite; making a guest bite take the
   game's own path (DamageCell on the host with the puppet as attacker) is a separate design.
 * Ticket: BUG-0240 (the lock part left open there).
+
+## Space: one caught fault in the game's UI code while a guest loads a shared world (2026-10-29, fix/w6-campaign2)
+
+* What happens: right after the load of a shared Space world (the campaign's jump to the space
+  fixture) a guest caught `0xC0000005 at 0x00000065` from the game's UI code (0x0095904B, near
+  UTFWin::Image / UILayout). The game handled it and played on; seen once in three campaigns.
+* Reproduce: not reproduced. Lab 20261029-093233 campaign#2, out/lane4/campaign/20261029-093248.
+* Ticket: BUG-0270.
