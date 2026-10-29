@@ -351,10 +351,14 @@ void remove_strays(double now)
 }
 
 
+// tests (coop.hoststate mode <hex> <seconds>, BUG-0233): the mode our states report, for a while
+uint32_t g_state_mode_override = 0;
+double g_state_mode_until = 0;
+
 net::PlayerState local_state()
 {
     net::PlayerState st;
-    st.mode = g_mode;
+    st.mode = g_state_mode_override && H->time_seconds() < g_state_mode_until ? g_state_mode_override : g_mode;
     st.world = g_world;
     if (g_adapter && g_local)
         g_adapter->fill(g_local, st);
@@ -1932,6 +1936,7 @@ void end_session_modules(bool cell)
     }
     g_dna_owed = 0;
     g_dna_owed_world = 0;
+    g_state_mode_override = 0; // tests
     if (g_own_editor_end_fix)
         g_own_editor_due = 0; // BUG-0234 (a task already queued reads it first and returns)
     if (g_give_pick_reset_fix)
@@ -3514,6 +3519,17 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         H->hook_create(M, (void*)a, (void*)h_SimMsg, (void**)&o_SimMsg);
     if (uintptr_t a = H->sym("Editors::cEditor::GetBlockingErrors"))
         H->hook_create(M, (void*)a, (void*)h_BlockingErrors, (void**)&o_BlockingErrors);
+    H->command_add(M, "coop.hoststate", "coop.hoststate mode <hex> <seconds> - tests: our player states report this mode",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       if (argc > 3 && !strcmp(argv[1], "mode")) {
+                           g_state_mode_override = (uint32_t)strtoul(argv[2], nullptr, 16);
+                           g_state_mode_until = H->time_seconds() + atof(argv[3]);
+                       }
+                       SAY("state mode override %08X for %.1f s\n", g_state_mode_override,
+                           std::max(0.0, g_state_mode_until - H->time_seconds()));
+                       return 0;
+                   },
+                   nullptr, MT);
     H->command_add(M, "coop.vote", "coop.vote [test|go] - evolution vote (test: a vote without an editor)",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
                        if (argc > 1 && !strcmp(argv[1], "test") && g_sess.role() == net::Role::Host && !g_vote.active) {
