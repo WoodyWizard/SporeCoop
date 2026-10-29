@@ -2,6 +2,7 @@
 """Self-tests of the dev tools (make test): they must never touch the owner's own Spore, profile or
 saves, and keep the knowledge files honest. Every check runs on fakes in a temporary folder:
 
+  docslint  docs_lint flags a known-issues entry without body, heading or ticket id (BUG-0153)
   noenv     spore.sh and lane.py work without $USER / $HOME (BUG-0252)
   kill      spore.sh kill / pids on fake game processes inside a private PID namespace
             (unshare): lane 1 leaves the owner's game alone, a lane leaves other lanes alone,
@@ -357,6 +358,26 @@ def test_relint():
     check(any('Foo::NewThing' in l for l in flagged), 'the override of a new name is flagged')
     check(any(l.startswith('overrides_dc04aee5.sym:') and dup in l for l in flagged),
           f'a second overrides entry of {dup} without a confidence word is flagged')
+    # BUG-0216: a name looked up through a table, only in the GOG 2024 overrides: used, missing on the
+    # frozen build, and it needs its frozen_off line; a plain "free" is no symbol
+    shutil.copy(RELINT, os.path.join(tree, 'tools', 're_lint.py'))
+    shutil.copy(os.path.join(ROOT, 'data', 'symbols', 'overrides_dc04aee5.sym'), ovr)
+    with open(ovr, 'a') as f:
+        f.write('\nSimulator::FooTable=0x00401000 ; verified test entry\nfree=0x00401000 ; verified test entry\n')
+    open(os.path.join(tree, 'mods', 'coop', 'zz_table.cpp'), 'w').write(
+        'static const char* t[] = {"Simulator::FooTable", "free"};\n')
+    r = lint()
+    check(r.returncode == 1 and 'Simulator::FooTable' in r.stdout and 'frozen_off' in r.stdout,
+          'a table-looked-up GOG 2024-only name needs a frozen_off line')
+    check('free (used' not in r.stdout and ' free,' not in r.stdout, 'a literal "free" is not counted as a symbol')
+    fo = os.path.join(tree, 'data', 'symbols', 'frozen_off_922af7c7.txt')
+    with open(fo, 'a') as f:
+        f.write('Simulator::FooTable ; a test feature (BUG-0001)\n')
+    r = lint()
+    check(r.returncode == 0, f'with its line it passes ({r.stdout.strip().splitlines()[-1:]})')
+    os.remove(os.path.join(tree, 'mods', 'coop', 'zz_table.cpp'))
+    r = lint()
+    check(r.returncode == 1 and 'no longer used' in r.stdout, 'a frozen_off line for a name no longer used fails')
 
 
 # ---------------------------------------------------------------- release
@@ -387,6 +408,20 @@ def test_release():
     open(os.path.join(tree, 'mods', 'coop', 'coop.cpp'), 'w').write('#define COOP_VERSION "0.7.4"\n')
     rc, _ = rel('v0.7.4')
     check(rc != 0, 'a version without a CHANGELOG section fails')
+    # BUG-0216: notes-check, on the real tickets
+    notes = os.path.join(tree, 'n.md')
+
+    def nc(body):
+        open(notes, 'w').write('### Fixed\n' + body)
+        return subprocess.run([sys.executable, '-I', TICKETS, 'notes-check', '9.9.9', notes], capture_output=True,
+                              text=True)
+    open_t = next((l.split('|')[1].strip().split(']')[0].lstrip('[') for l in
+                   open(os.path.join(os.path.dirname(TICKETS), '..', 'docs', 'tickets', 'README.md'))
+                   if l.startswith('| [BUG-') and '| open |' in l), None)
+    if open_t:
+        check(nc(f'- **x** fixed ({open_t}).\n').returncode == 1, f'notes-check: an open ticket ({open_t}) under Fixed fails')
+        check(nc(f'- **x** ({open_t}), still open: part 2.\n').returncode == 0, 'notes-check: the same item saying "still open" passes')
+    check(nc('- **x** (BUG-9999).\n').returncode == 1, 'notes-check: an id without a ticket fails')
 
 
 # ---------------------------------------------------------------- crash triage
@@ -458,7 +493,22 @@ def test_noenv():
     check(r.returncode == 0 and '/drive_c/users/' in r.stdout, f'lane.py imports without USER ({r.stderr.strip()[-80:]})')
 
 
-CHECKS = {'noenv': test_noenv, 'kill': test_kill, 'fixture': test_fixture, 'headless': test_headless, 'tickets': test_tickets,
+# ---------------------------------------------------------------- docslint (BUG-0153)
+def test_docslint():
+    print('docslint: known-issues.md entries have a heading, a body and a ticket id')
+    sys.path.insert(0, os.path.join(ROOT, 'tools'))
+    import docs_lint
+    ok = '## A: x\n<a id="issue-a"></a>\n\n* What happens: y. BUG-0001.\n'
+    check(docs_lint.known_issues_problems(ok) == [], 'a complete entry passes')
+    check(any('no body' in p for p in docs_lint.known_issues_problems('## A: x\n## B: y\n* z BUG-0002\n')),
+          'a heading followed by a heading is flagged')
+    check(any('fragment' in p for p in docs_lint.known_issues_problems(ok + '\n of 20-27 m\n\n* body BUG-0003\n')),
+          'a lost heading (a paragraph starting with a fragment) is flagged')
+    check(any('names no ticket' in p for p in docs_lint.known_issues_problems('## A: x\n\n* y\n')),
+          'an entry without BUG-NNNN is flagged')
+
+
+CHECKS = {'noenv': test_noenv, 'docslint': test_docslint, 'kill': test_kill, 'fixture': test_fixture, 'headless': test_headless, 'tickets': test_tickets,
           'tickets_check': test_tickets_check, 'relint': test_relint,
           'release': test_release, 'triage': test_triage}
 

@@ -12,7 +12,14 @@ the setup and the in-game update. The network protocol did not change: 0.7.3.0 p
 [docs/known-issues.md](https://github.com/WoodyWizard/SporeCoop/blob/main/docs/known-issues.md).
 
 **GOG 2016 build (`922af7c7`):** fixes that need new game addresses switch themselves off on it
-(see the README); use the GOG 2024 or Steam build for them (BUG-0108).
+(see the README); use the GOG 2024 or Steam build for them (BUG-0108). Correction (2026-10-28,
+BUG-0216): two fixes of this release are off on GOG 2016 too: NPC nations no longer spawning
+vehicles on a guest's game (BUG-0188) and keeping our creatures out of saves (BUG-0020); the list is
+[data/symbols/frozen_off_922af7c7.txt](data/symbols/frozen_off_922af7c7.txt).
+
+**Behaviour change (added 2026-10-28, BUG-0216):** a Tribe or Civilization host who stays 4 s in an
+editor or on a loading screen now counts as away: guests play on alone ("... is in an editor: you
+play on alone") until the host is back (BUG-0205).
 
 ### Fixed
 - **Joining by host name no longer freezes the game while the name is looked up** (BUG-0204): the
@@ -30,6 +37,8 @@ the setup and the in-game update. The network protocol did not change: 0.7.3.0 p
 - **Creature: a goal card's reward a guest earns while the host is in its editor is no longer
   lost**; it is paid when the host's creature is back. A guest whose host stays in an editor or on a
   loading screen plays on with its own creatures, as when the host is in the main menu (BUG-0205).
+  Correction (2026-10-28, BUG-0216): BUG-0205 is still open: the Creature part is not proven in a
+  game test and the Cell part is not done.
 - **A damaged creations package (My Creations) can no longer crash the game while it is read**:
   a 64-bit index offset could wrap the bounds check (BUG-0208, found by the new decoder fuzzer).
 - **Space: the "Jump to" button of the co-op window jumps to the partner it names** (with 3 or more
@@ -93,8 +102,8 @@ the setup and the in-game update. The network protocol did not change: 0.7.3.0 p
   state** (BUG-0110): the cell stage's player index, a selection flag, a creature's tuning and the
   Civilization capture attribution are put back on the next frame. Unit test in `make test`.
 - **Creature: social ability keys are ignored while the cheat console is open**, and a digit typed
-  in another window no longer plays one when the game comes back to the front (BUG-0149, not yet
-  verified in a game test).
+  in another window no longer plays one when the game comes back to the front (BUG-0149; correction
+  2026-10-28: it has a game test now, `coop_social_console.py`, FAIL without the fix).
 - **Crash reports in hard cases**: a stack overflow now writes a crash report (before, the game
   vanished without one), and a crash in a game that ran out of memory still writes the minidump and
   tells you at the next start where the report is (BUG-0056, BUG-0127). Test: `kit_crash.py`.
@@ -263,7 +272,9 @@ the setup and the in-game update. The network protocol did not change: 0.7.3.0 p
 - **Tribe: a chief that leaves the tribe** no longer gets its size put back through a removed
   citizen (possible crash), chiefs get their normal size back when the session ends, and no member
   is added to a tribe that is out while the game-over caption is up. Tests:
-  `coop_tribe_chief_removed.py`, `coop_tribe_gameover.py`.
+  `coop_tribe_chief_removed.py`, `coop_tribe_gameover.py`. Correction (2026-10-28, BUG-0215): the
+  game-over part is a guard, not a fix: its bug was never reproduced (BUG-0172, its test passes
+  without the guard too).
 - **A host that left right after a guest joined could not leave its stage**: Leave within a few
   seconds of the save for the guest's world kept that save "in progress" for good, and the game's
   exit to the menu (and the load of another host's world) never happened (BUG-0140).

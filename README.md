@@ -126,7 +126,9 @@ frames from the game loop; tested by simulating that case, not yet with the real
 ² 0.7.x is the last version for the GOG 2016 build; from 0.8 only the current GOG build (and Steam,
 which is the same game): update the game through GOG. Since 0.7.2.2 new fixes get game addresses for
 the current build only: on GOG 2016 they switch themselves off (Alt+Shift+Enter, the hatchling growing
-up after a death, the pack, Cell bites, meat and spin); the other fixes work there too.
+up after a death, the pack, Cell bites, meat and spin, NPC nations' vehicles on a guest's game, our
+creatures kept out of saves); the other fixes work there too. The full list, checked by the build:
+[data/symbols/frozen_off_922af7c7.txt](data/symbols/frozen_off_922af7c7.txt).
 
 **Playing together:** GOG 2024 and Steam players can play together (the same game code). A GOG
 2016 player cannot join a GOG 2024 or Steam host (the host turns away another build). Every player

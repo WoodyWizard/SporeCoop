@@ -9,6 +9,7 @@
   tickets.py log BUG-0012                git commits that name the ticket ("BUG-0012" in the message)
   tickets.py index                       rewrite docs/tickets/README.md (the table of all tickets)
   tickets.py release 0.7.3               fixed tickets with fixed_in "unreleased" get that version
+  tickets.py notes-check X.Y.Z notes.md  the release notes name under "### Fixed" only fixed tickets (BUG-0216)
   tickets.py check [--all]               (in make test) fields valid, ids unique, index up to date, and the
                                          evidence of new fixes (BUG-0215); --all: every rule on every
                                          ticket, a report only (exit 0)
@@ -524,6 +525,40 @@ def cmd_check(a):
     return 1 if problems and ctx.scope == 'new' else 0
 
 
+def cmd_notes_check(a):
+    """BUG-0216: the release notes' "### Fixed" part names only fixed tickets (an item may name an open
+    one when it says "still open", or a guard when it says "not reproduced" / "not a fix"); an id
+    with no ticket fails; a fixed ticket of this version that the notes do not name is a note."""
+    text = open(a.notes, encoding='utf-8').read()
+    m = re.search(r'^### Fixed\s*$(.*?)(?=^### |\Z)', text, re.M | re.S)
+    fixed = m.group(1) if m else ''
+    items = re.split(r'^- ', fixed, flags=re.M)
+    tickets = {t.get('id'): t for t in all_tickets()}  # a released security fix may still be private
+    problems, named = [], set()
+    honest = re.compile(r'still open|not reproduced|not a fix', re.I)
+    for item in items:
+        for tid in sorted(set(re.findall(r'BUG-\d{4}', item))):
+            named.add(tid)
+            t = tickets.get(tid)
+            if not t:
+                problems.append(f'{tid}: named under Fixed but there is no ticket docs/tickets/{tid}-*.md')
+            elif t['_private']:
+                print(f'note: {tid} is a private ticket (out/tickets/): released now, publish it (CLAUDE.md 1)')
+            elif t.get('status') != 'fixed' and not honest.search(item):
+                problems.append(f'{tid}: named under Fixed but its ticket is {t.get("status")} '
+                                f'(say "still open" / "not reproduced" in that item, or drop it)')
+    for p in problems:
+        print('notes-check: ' + p)
+    quiet = [tid for tid, t in sorted(tickets.items()) if t.get('fixed_in') == a.version and tid not in named
+             and not t['_private']
+             and t.get('status') == 'fixed' and t.get('kind') in ('crash', 'freeze', 'desync', 'bug')]
+    if quiet:
+        print(f'note: {len(quiet)} fixed ticket(s) of {a.version} not named in the notes (fine when described '
+              f'without an id): {" ".join(quiet[:20])}{" ..." if len(quiet) > 20 else ""}')
+    print(f'notes-check {a.version}: {len(named)} ticket id(s) under Fixed, {len(problems)} problem(s)')
+    return 1 if problems else 0
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sp = ap.add_subparsers(dest='cmd', required=True)
@@ -547,8 +582,11 @@ def main():
     rl.add_argument('version')
     rl.add_argument('--force', action='store_true', help='release although tickets lack commits of this release')
     sp.add_parser('check').add_argument('--all', action='store_true')
+    nc = sp.add_parser('notes-check')
+    nc.add_argument('version')
+    nc.add_argument('notes')
     a = ap.parse_args()
-    r = globals()['cmd_' + a.cmd](a)
+    r = globals()['cmd_' + a.cmd.replace('-', '_')](a)
     sys.exit(r or 0)
 
 
