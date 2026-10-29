@@ -1193,10 +1193,10 @@ std::string trace_line(Kind k)
     Key now = k == kCreature ? avatar_species_key() : k == kCell ? cell_key() : ufo_key();
     auto host = g_applied.find({0, (uint8_t)k});
     char b[320];
-    snprintf(b, sizeof b, "%s: own=%08X '%s' from %s, used here as %08X, the game has %08X%s, host's %08X, %u own creations, swaps=%u",
-             kInfo[k].name, o.key.instance, o.name.c_str(), origin, here.instance, now.instance,
-             here.instance && now.instance && !(here == now) ? " (DIFFERENT)" : "",
-             host != g_applied.end() ? host->second.key.instance : 0u, (unsigned)g_opts[k].size(), g_swaps);
+    snprintf(b, sizeof b, "%s: own=%s '%s' from %s, used here as %s, the game has %s%s, host's %s, %u own creations, swaps=%u",
+             kInfo[k].name, trace::hex(o.key.instance).c_str(), o.name.c_str(), origin, trace::hex(here.instance).c_str(),
+             trace::hex(now.instance).c_str(), here.instance && now.instance && !(here == now) ? " (DIFFERENT)" : "",
+             trace::hex(host != g_applied.end() ? host->second.key.instance : 0u).c_str(), (unsigned)g_opts[k].size(), g_swaps);
     return b;
 }
 

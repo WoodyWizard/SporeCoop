@@ -2383,10 +2383,10 @@ std::string trace_line()
     static uint32_t l_eats, l_food, l_sent, l_in, l_late, l_hits_sent, l_hits_in, l_spared, l_kills_sent, l_kills_in;
     char b[600];
     snprintf(b, sizeof b,
-             "level=%d size=%.2f hp=%d model=%08X diet=%s food=%d plant=%d screen: plants=%d meat=%d creatures=%d "
+             "size=%.2f hp=%d model=%08X diet=%s food=%d plant=%d screen: plants=%d meat=%d creatures=%d "
              "nearest plant=%.0f meat=%.0f pool=%d mirrors=%u downed=%d body=%.2f | since last: ate=%u (+%u pts) "
              "eats_sent=%u eats_in=%u late=%u bites_sent=%u bites_in=%u spared=%u kills_sent=%u kills_in=%u",
-             F<int>(av, kLevel), F<float>(av, kSize), F<int>(av, kHp), k[0],
+             F<float>(av, kSize), F<int>(av, kHp), k[0],
              !md ? "?" : md[0x1250] && md[0x1251] ? "omni" : md[0x1250] ? "carn" : md[0x1251] ? "herb" : "none", s ? F<int32_t>(s, 0x1C) : -1, s ? F<int32_t>(s, 0x20) : -1,
              plants, meat, creatures, near_plant, near_meat, all, (unsigned)g_mirrors.size(), (int)g_downed, g_body,
              g_own_eats - l_eats, g_own_food - l_food, g_eats_sent - l_sent, g_eats_in - l_in, g_eats_late - l_late,
