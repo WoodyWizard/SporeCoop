@@ -43,4 +43,4 @@ creature in an open editor; whether a player can lose its own edits this way.
      or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
 
 ## History
-- 2026-10-29: opened.
+- 2026-10-29: opened (fix/w7-legless, while reproducing BUG-0278).

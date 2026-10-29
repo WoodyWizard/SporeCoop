@@ -1,16 +1,16 @@
 ---
 id: BUG-0278
 title: Creature: a new guest (no own creations) plays the legless creature from the start of the stage and cannot change it
-status: open
+status: fixed
 kind: bug
 stage: creature
 reported: 2026-10-29
 source: Discord report 2026-10-29
 role: guest
-versions: 
-fixed_in:
+versions: 0.7.3.0 (likely), main up to dcff1cf
+fixed_in: unreleased
 branch: fix/w7-legless
-commits:
+commits: 52369bf 7325b15 02bcf2e (tests ac3f711 f126847)
 tests: tools/tests/coop_legless_guest.py (legless_guest, legless_guest_replace, _done, _cancel, _dontsave)
 signature:
 docs: docs/re/creations.md#creations-own-editor-save, docs/06-testing.md#testing-legless-guest, docs/known-issues.md (BUG-0178 item)
@@ -70,8 +70,16 @@ Not changed: the guest's own editor is still the "edit a creation" editor (BUG-0
 oddity of it).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+Lane 8, GOG 2024, `tools/tests/coop_legless_guest.py`:
+* FAIL with `SPORE_FIX_OFF=creations.pre_editor`: out/lab/20261029-154403 (legless_guest: the guest
+  plays the host's pre-editor 290D81CC on both screens, after a rejoin too, the co-op window has no
+  way back; legless_guest_replace: the same with 290D8408). Before the fix (dcff1cf):
+  out/lab/20261029-150227 (new, replace).
+* PASS with the fix: out/lab/20261029-160318 (legless_guest, legless_guest_replace,
+  legless_guest_done: all checks); out/lab/20261029-153321 (new, replace: every check of the fix
+  passed, the next-editor check failed on a test bug fixed in f126847).
+* Exploration runs: out/lab/20261029-143204 (done, legs without the dialog, cancel without Quit).
 
 ## History
 - 2026-10-29: opened.
+- 2026-10-29: fix/w7-legless: reproduced (Save New, Replace), fixed behind creations.pre_editor; BUG-0283 opened for the own editor showing the host's new parts.
