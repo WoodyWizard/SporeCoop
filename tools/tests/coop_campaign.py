@@ -88,7 +88,7 @@ EDITOR_PARTS = [(85, 130), (350, 405), (480, 405)]       # spaceship editor pale
 EDITOR_PLACES = [(1000, 560), (1000, 470), (1000, 650)]  # onto the stage
 VK_F9 = '0x78'
 DIALOG_BUTTONS = ('Religious', 'Military')  # the city specialty dialog after a capture (Civ): press the last
-ADVANCE_MIN = {'cell': 10, 'creature': 10, 'tribe': 30, 'civ': 20}  # default time of a stage change
+ADVANCE_MIN = {'cell': 10, 'creature': 10, 'tribe': 20, 'civ': 20}  # default time of a stage change
 
 
 def drag_slow(con, sx, sy, tx, ty):

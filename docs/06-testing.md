@@ -1462,8 +1462,10 @@ wrong. Suite `campaign` (in no other suite): `tools/lab.py run campaign --lanes 
 * **The later stage ends the players' way** (debug runs on lane 7, 2026-10-29):
   * Tribe: raids by real right-click orders (play_tribe, plan `raid`) with the shortcut members do
     destroy an NPC village (badge cinematic), but new tribes form after each (1 -> 4 other tribes in
-    two minutes); eight minutes were not enough to end the stage, hence `ADVANCE_MIN` tribe 30 and
-    the help of `coop.tribe pincer <victim> <attacker> 60` on the other tribes' members.
+    two minutes); with the help of `coop.tribe pincer <victim> <attacker> 60` on the other tribes'
+    members two villages fell in 30 minutes (run 20261029-011243) and the stage did not end, so the
+    campaign gives it 20 minutes (`ADVANCE_MIN`) and then jumps to the civ_npc fixture (an `info`
+    finding). An automated Tribe end needs a faster conquest or the alliance path (open).
   * Civ: `SpawnNextCity` gave 6 more cities (9 of other nations on civ_npc), `cCity::Capture(city,
     playerPol, 0, 0, 0, 0)` takes one per call (its capture caption, the city then belongs to a guest,
     owner=1 in `coop.civ`); every captured city asks "choose the city's specialty" (Economic /
@@ -1479,6 +1481,6 @@ wrong. Suite `campaign` (in no other suite): `tools/lab.py run campaign --lanes 
     leave the planet to save" and the guests stay in the Civ stage until the host leaves (mission
     control 290,914 and its five answers, then the wheel out, as space_setup.py does).
 * Expected duration of the whole game with the defaults: start ~1 min, 5 stages x 8 min of play,
-  Cell ~1 min and Creature ~3 min changes, Tribe up to 30 min (or the jump, ~1 min), Civ ~8-10 min,
+  Cell ~1 min and Creature ~3 min changes, Tribe 20 min and the jump (~1 min), Civ ~8-10 min,
   the finale ~6 min, follows and rejoins a few minutes: about 2-2.5 h. The lab's timeout for it is 5 h
   (suite field `timeout`).
