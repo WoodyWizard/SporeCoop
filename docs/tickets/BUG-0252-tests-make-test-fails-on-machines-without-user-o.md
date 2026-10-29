@@ -1,19 +1,19 @@
 ---
 id: BUG-0252
 title: Tests: make test fails on machines without $USER or without sanitizer runtimes, with errors that do not say why
-status: open
+status: fixed
 kind: test
 stage: All
 reported: 2026-10-28
 source: GitHub #186 (review of release 0.7.3.0, 5801eea)
 role: all
 versions: 0.7.3.0
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w5-tools
+commits: c06c869
+tests: make test (tools_selftest.py noenv; env -u USER make test)
 signature:
-docs:
+docs: docs/06-testing.md#testing-make-test-needs
 related:
 ---
 
@@ -27,13 +27,14 @@ Release 0.7.3.0 added a lot to `make test`: the lab self-test (BUG-0036 and othe
 - Every unit test now links with sanitizers. With the default `HOSTCXX=clang++` and no compiler-rt runtimes installed, the link fails. With gcc 13, TSan aborts on kernels with `vm.mmap_rnd_bits=32`, the Ubuntu 24.04 defaul
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+Confirmed: lane.py read `os.environ['USER']` at import (lab_selftest imports it through twoinst), spore.sh used $USER / $HOME under `set -u`, and the sanitizer targets failed with the compiler's own link error when its runtimes are missing.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+lane.py `_user()` ($USER, else getpass, else "user"); spore.sh sets USER / HOME from `id -un` / getent when missing (not exported); Makefile target `sanitizer-probe` (tools/sanitizer_probe.sh, a stamp per HOSTCXX) builds and runs an ASan/UBSan and a TSan program before `test`, `test-asan`, `test-tsan` and prints what to install; TSan under `setarch -R` only when the plain run hits "unexpected memory mapping"; `SKIP_SANITIZERS=1` skips them loudly and is refused when CI is set.
 
 ## Verification
-<!-- the test: FAIL without the fix (run dir), PASS with it (runs) -->
+FAIL: `tools_selftest.py noenv` with SELFTEST_SPORE=<b423f56 spore.sh>: `USER: unbound variable` (line 81), `HOME: unbound variable` (env -i, line 23), lane.py KeyError. PASS: noenv 3/3 ok on fix/w5-tools; `env -u USER make test` exit 0 (whole suite); `make sanitizer-probe HOSTCXX=<a wrapper that fails every -fsanitize link>` prints the message and exits 1 before any test; `CI=true SKIP_SANITIZERS=1 make test` stops at once. Not run: a real Ubuntu clang without compiler-rt and the gcc 13 / mmap_rnd_bits=32 TSan case (the setarch path is untested here).
 
 ## History
 - 2026-10-28: opened.
+- 2026-10-28: fixed on fix/w5-tools (c06c869).

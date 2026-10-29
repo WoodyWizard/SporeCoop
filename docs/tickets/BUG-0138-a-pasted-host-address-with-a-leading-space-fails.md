@@ -15,6 +15,7 @@ tests: coop_ui_status.py (suite ui_status), net_tests test_address_parse
 signature:
 docs: docs/06-testing.md#testing-net-w3
 related: #117, BUG-0204
+switch: net.addr_check
 ---
 
 ## Report
@@ -86,3 +87,4 @@ then ` 127.0.0.1:<port>` into the real address field and presses Join.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w3-net (wave 3).
 - 2026-10-28: released in 0.7.3.0.
+- 2026-10-28: switch: net.addr_check (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).

@@ -28,6 +28,8 @@ description: Fix one SporeCoop player bug or crash report on your own branch, wo
 7. Record in the same branch: the ticket (status fixed / not-reproduced / game-bug, fixed_in
    `unreleased`, branch, commits, tests, signature, docs; a History line), `.sym`,
    `docs/re/<area>.md` (unnumbered section + anchor),
+   (a fixed ticket's Verification names the FAIL and PASS lab run ids, or `no-fail-run: <reason>`,
+   and `commits:` lists the fix commits: `tickets.py check` fails otherwise, BUG-0215)
    `docs/06-testing.md`, `docs/known-issues.md`, a CHANGELOG [Unreleased] line. Append one-line
    findings to `out/findings.md` (main checkout) as you go.
 8. Another bug found on the way: `tools/tickets.py new "<title>" --kind ... --stage ...` (open,

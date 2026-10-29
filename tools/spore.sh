@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # SporeCoop helper: install loader, deploy builds, run/kill the game in Bottles, logs.
 set -euo pipefail
+# env -i, containers, cron: no $USER / $HOME (BUG-0252); not exported (Bottles keeps the session's)
+USER="${USER:-$(id -un 2>/dev/null || echo user)}"
+HOME="${HOME:-$(getent passwd "$(id -u)" 2>/dev/null | cut -d: -f6)}"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # test lanes (docs/10-dev-pipeline.md): lane 1 = the real install in the "Games" bottle; lane N>1 =

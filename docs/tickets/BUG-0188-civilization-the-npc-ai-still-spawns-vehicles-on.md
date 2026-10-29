@@ -15,6 +15,7 @@ tests: tools/tests/coop_civ_ai_spawn.py (suite civ_ai_spawn)
 signature:
 docs: docs/re/civ.md#civ-ai-vehicle-spawns; data/symbols/overrides_dc04aee5.sym (SporeCoop::CivAI_*_SpawnVehicle_Ret)
 related:
+switch: civ.aispawn
 ---
 
 ## Report
@@ -42,3 +43,4 @@ Not checked: the guest's NPC budgets now differ from the host's (they always did
 - 2026-10-27: ticket backfilled from docs/known-issues.md (every entry carries its ticket id, CLAUDE.md 1).
 - 2026-10-28: the guest's own spawns traced to the NPC AI call sites at runtime; fixed on fix/w2-civ (null for those call sites on guests; coop_civ_ai_spawn FAIL without, PASS with).
 - 2026-10-28: released in 0.7.3.0.
+- 2026-10-28: switch: civ.aispawn (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).

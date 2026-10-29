@@ -10,11 +10,12 @@ role: guest
 versions: observed 0.7.2.4
 fixed_in: 0.7.3.0
 branch: fix/cell-guest-leave
-commits: 2366d74, 53960f5
+commits: 2366d74, 53960f5, 9d287af
 tests: cell_coop
 signature:
 docs: docs/re/cell.md
 related: BUG-0006
+switch: pool.leave
 ---
 
 ## Report
@@ -41,7 +42,12 @@ The updated `cell_coop` automation checks sampled local pool indices before and 
 that updated automated check has not been run as part of this review. The manual test is not a
 Linux lab run.
 
+Evidence check (2026-10-28, BUG-0215): no FAIL run of the bug was kept and no lab run shows the old behaviour; the fix was checked by hand only. cell_coop passes in later lab runs but does not switch the fix off.
+no-fail-run: manual test only, no run kept
+
 ## History
 - 2026-10-27: recorded from the known issue.
 - 2026-10-27: fixed on fix/cell-guest-leave, not released yet.
 - 2026-10-28: released in 0.7.3.0.
+- 2026-10-28: commits: 9d287af (review follow-up) added (BUG-0215).
+- 2026-10-28: switch: pool.leave (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).

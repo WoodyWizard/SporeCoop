@@ -15,6 +15,7 @@ tests: npc_reuse
 signature:
 docs: docs/re/creature.md#creature-pool-ids
 related: #22
+switch: npc.reuse
 ---
 
 ## Report
@@ -89,3 +90,4 @@ object, its species and death flag in `coop.npc creatures`.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w2-creature (host_tick retires a reused object's id); test npc_reuse FAIL without / PASS with.
 - 2026-10-28: released in 0.7.3.0.
+- 2026-10-28: switch: npc.reuse (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).

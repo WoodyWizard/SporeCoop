@@ -150,6 +150,8 @@ def main():
     for p in (os.path.join(game, 'Data', 'SporeCoop.package'),):
         if os.path.exists(p):
             os.remove(p)
+    # the lab watches this lane from now on (crash / hang reports, dead games: BUG-0249)
+    print(f'LAB-WATCH lane={lane} since={time.time():.3f}', flush=True)
     ck(b'sporekit-loader' not in open(os.path.join(b, 'steam_api.dll'), 'rb').read(), 'a clean game (its own steam_api.dll)')
     dist = os.path.join(ROOT, 'out', 'dist')
     ver = run('sed', '-n', 's/^#define COOP_VERSION "\\(.*\\)"/\\1/p', os.path.join(ROOT, 'mods/coop/coop.cpp')).strip()

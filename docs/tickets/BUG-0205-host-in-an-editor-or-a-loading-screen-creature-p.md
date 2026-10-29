@@ -15,6 +15,7 @@ tests: coop_away_editor.py (suite away_editor; --nofix fails)
 signature:
 docs: docs/06-testing.md#testing-census
 related: BUG-0151, #130
+switch: core.away_editor, core.away_goal
 ---
 
 ## Report
@@ -51,3 +52,4 @@ The creature freeze itself is not checked by the test: after the guest's own edi
 ## History
 - 2026-10-28: opened.
 - 2026-10-28 (fix/w4-census): K_GOAL kept and paid on return (tested, FAIL/PASS), host in an editor or loading counted as away (implemented, effect on creatures not observed: see Verification), Cell left open. A `play_civ.py --seed 9` run with the change (host bot opened the city planner 5 times) was OK.
+- 2026-10-28: switch: core.away_editor, core.away_goal (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).

@@ -15,6 +15,7 @@ tests: space_map_input
 signature:
 docs: docs/re/space.md#space-w3-trips-clicks-defenders
 related: #68
+switch: map.click
 ---
 
 ## Report
@@ -55,7 +56,7 @@ Suggested in the review:
 At the top of the click handling: `if (GetForegroundWindow() != w) { g_lmb = down; return; }`. Also check `WindowFromPoint(screen point)` is the game window (or its child) before `ScreenToClient`. The tests use SporeKit's virtual cursor and the game window is the foreground window there; if a lane runs headless without focus, SporeKit's hook can report the game window as foreground for tests.
 
 ## Verification
-Done (2026-10-28, lane 6): `coop_space_map_input.py`: the physical left button pressed over the guest's tag without a message to the game window (`move`, `key 0x01 down/up`: the button state the old code polled). `--without-fix` FAILS (clicks 0 -> 1, the host flew to the guest, /tmp/claude-1000/-home-pam3es-Games-Modding-SPORE/13201e2f-19c5-4da6-b393-aae16fe6d338/scratchpad/waves/fix_w3-space/map_input_nofix.log); with the fix PASS (clicks 0 -> 0), and the message alone (`coop.space map postclick`) still takes the host there.
+Done (2026-10-28, lane 6): `coop_space_map_input.py`: the physical left button pressed over the guest's tag without a message to the game window (`move`, `key 0x01 down/up`: the button state the old code polled). `--without-fix` FAILS (clicks 0 -> 1, the host flew to the guest, scratch log `map_input_nofix.log` (not kept)); with the fix PASS (clicks 0 -> 0), and the message alone (`coop.space map postclick`) still takes the host there.
 
 Planned in the review: Planned test (must FAIL without the fix and PASS with it):
 
@@ -76,3 +77,5 @@ In `tools/tests/coop_space_map.py`, add a case:
 - 2026-10-28: fixed on fix/w3-space (66d7a30): clicks from the window's messages; space_map_input FAIL without / PASS with.
 - 2026-10-28: fix/w3-space lab runs on lane 6: 20261028-010933 (14/14: the four new wave 3 Space tests and space_map, space_stale, space_fleet, space_puppet, space_rivalry, space_contracts, space_jump, space_guest_ui, space_allies, space_diplomacy), smoke 20261028-013951 (13/13; `ui` skipped: exclusive, needs a lane 1-5).
 - 2026-10-28: released in 0.7.3.0.
+- 2026-10-28: log paths of an agent's scratch folder replaced by the log names (BUG-0215: no paths outside the repository).
+- 2026-10-28: switch: map.click (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).

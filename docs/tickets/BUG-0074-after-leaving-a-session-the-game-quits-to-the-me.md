@@ -15,6 +15,7 @@ tests: tools/tests/coop_world_queue.py (suite world_queue)
 signature:
 docs: 
 related: #52
+switch: world.world_reset
 ---
 
 ## Report
@@ -83,3 +84,4 @@ The planned test was:
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w2-world: the session end drops the guest's queued world loads (coop_world_queue).
 - 2026-10-28: released in 0.7.3.0.
+- 2026-10-28: switch: world.world_reset (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).

@@ -15,6 +15,7 @@ tests: make test (tests/text_tests.cpp)
 signature:
 docs:
 related: #143
+switch: core.text_utf8
 ---
 
 ## Report
@@ -66,3 +67,4 @@ back as valid UTF-8; names capped).
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w3-sys (116731e); tests named above, lab run out/lab/20261028-011605 (smoke and diag: out/lab/20261028-012842).
 - 2026-10-28: released in 0.7.3.0.
+- 2026-10-28: switch: core.text_utf8 (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).
