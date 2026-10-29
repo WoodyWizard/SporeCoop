@@ -13,6 +13,7 @@
 #include <random>
 #include <chrono>
 #include <thread>
+#include <type_traits>
 #include <arpa/inet.h>
 
 #include "net/connection.h"
@@ -969,6 +970,7 @@ static void test_big_reliable()
     printf("reliable message bigger than a packet (BUG-0034)\n");
     for (float loss : {0.f, 0.2f}) {
         Connection a, b;
+        a.peer_split = b.peer_split = true; // both announced CAP_SPLIT (BUG-0219)
         std::mt19937 rng(7);
         std::uniform_real_distribution<float> U(0, 1);
         uint32_t now = 1000;
@@ -1016,6 +1018,283 @@ static void test_big_reliable()
         CHECK(a.pending_reliable() == 0);
         CHECK(pkts < 1000); // 300 frames: about one keepalive / ack each, not 128 empty packets
     }
+}
+
+// ---- wave 5 (each FAILS with its switch off: `net_tests --off <name>`) ----
+
+// what a 0.7.2 receiver makes of a packet: it tests only flag bit 1 and delivers every reliable
+// message as it is, pieces (flag bit 2) included
+struct OldReceiver {
+    std::vector<std::pair<uint8_t, size_t>> got; // type, length of each delivered message
+    int pieces = 0;
+    void on_packet(const std::vector<uint8_t>& pkt)
+    {
+        Reader r(pkt.data(), pkt.size());
+        r.skip(4 + 2 + 4 + 2 + 2 + 16);
+        uint8_t count = r.u8();
+        for (int i = 0; i < count && r.ok(); i++) {
+            uint8_t type = r.u8(), flags = r.u8();
+            uint16_t len = r.u16();
+            if (flags & 1)
+                r.u16();
+            r.skip(len);
+            if (!r.ok())
+                break;
+            if (flags & 2)
+                pieces++;
+            if (flags & 1)
+                got.push_back({type, len});
+        }
+    }
+};
+
+// BUG-0219: 0.7.3.0 split a reliable message above one packet for any peer; a 0.7.2 peer read every
+// piece as a whole message (a long chat line lost, a species table of 42-83 records read as empty)
+static void test_old_peer_split()
+{
+    printf("no split reliable messages to a peer without CAP_SPLIT (BUG-0219)\n");
+    Connection a; // peer_split stays false: the peer announced nothing
+    uint32_t now = 1000;
+    Writer chat, species, small;
+    for (int i = 0; i < 3000; i++)
+        chat.u8('x');
+    species.u16(50);
+    for (int i = 0; i < 50 * 28; i++)
+        species.u8(i % 28 == 12 ? 1 : 0); // relation 1: the bytes 0.7.2 read as the count n = 0
+    small.u32(5);
+    a.send_reliable(MSG_CHAT, chat);
+    a.send_reliable(MSG_SPECIES, species);
+    a.send_reliable(MSG_NOTICE, small);
+    OldReceiver old;
+    std::vector<uint8_t> pkt;
+    for (int step = 0; step < 20; step++) {
+        now += 10;
+        for (int i = 0; i < 128 && a.build_packet(now, pkt); i++)
+            old.on_packet(pkt);
+    }
+    int species_n = 0, chat_n = 0;
+    for (auto& g : old.got) {
+        species_n += g.first == MSG_SPECIES;
+        chat_n += g.first == MSG_CHAT;
+    }
+    printf("  old receiver: %zu messages, %d pieces (chat %d, species %d), too_big_old=%u\n", old.got.size(),
+           old.pieces, chat_n, species_n, a.stats.too_big_old);
+    CHECK(old.pieces == 0);
+    CHECK(chat_n == 0 && species_n == 0); // not sent at all (Session cuts chat lines itself)
+    CHECK(!old.got.empty() && old.got.back().first == MSG_NOTICE);
+    CHECK(a.stats.too_big_old == 2);
+
+    // the receiving side: pieces from a peer that never announced splitting are dropped, not joined
+    Connection s, r; // s splits (peer_split set by mistake), r was told nothing
+    s.peer_split = true;
+    s.send_reliable(MSG_CHAT, chat);
+    s.send_reliable(MSG_NOTICE, small);
+    int whole = 0, notice = 0;
+    for (int step = 0; step < 20; step++) {
+        now += 10;
+        for (int i = 0; i < 128 && s.build_packet(now, pkt); i++)
+            r.on_packet(pkt.data(), pkt.size(), now, [&](uint8_t t, Reader& m) {
+                whole += t == MSG_CHAT;
+                notice += t == MSG_NOTICE && m.left() == 4;
+            });
+        for (int i = 0; i < 128 && r.build_packet(now, pkt); i++)
+            s.on_packet(pkt.data(), pkt.size(), now, [](uint8_t, Reader&) {});
+    }
+    CHECK(whole == 0 && notice == 1 && r.stats.frag_lost == 1);
+}
+
+// BUG-0219 in a session: a guest whose HELLO has no extension (0.7.2) gets long chat lines cut
+// between two characters (from the host and relayed), no species table, and is announced once
+static void test_old_peer_session()
+{
+    printf("a 0.7.2-shaped guest: long chat cut, big messages not sent, one notice (BUG-0219)\n");
+    Session host, oldg, newg;
+    host.build = oldg.build = newg.build = 0x922af7c7;
+    oldg.send_caps = false;
+    std::string err;
+    CHECK(host.host(0, "Host", err));
+    std::string addr = "127.0.0.1:" + std::to_string(host.port());
+    int notices = 0;
+    host.cb.old_peer = [&](uint8_t id, const std::string&) { notices += id == 1; };
+    std::vector<size_t> old_chat, new_chat;
+    bool old_valid = true;
+    int old_species = 0, new_species = 0;
+    oldg.cb.chat = [&](uint8_t id, const std::string& t) {
+        if (id != oldg.my_id()) {
+            old_chat.push_back(t.size());
+            old_valid &= utf8::valid(t);
+        }
+    };
+    newg.cb.chat = [&](uint8_t id, const std::string& t) { if (id != newg.my_id()) new_chat.push_back(t.size()); };
+    oldg.cb.custom = [&](uint8_t t, uint8_t, Reader&) { old_species += t == MSG_SPECIES; };
+    newg.cb.custom = [&](uint8_t t, uint8_t, Reader&) { new_species += t == MSG_SPECIES; };
+    auto run = [&](int ms) {
+        for (int i = 0; i < ms / 5; i++) {
+            host.update();
+            oldg.update();
+            newg.update();
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+    };
+    CHECK(oldg.join(addr, "Old", err));
+    run(300);
+    CHECK(newg.join(addr, "New", err));
+    run(300);
+    CHECK(oldg.connected() && newg.connected());
+    std::string longline;
+    while (longline.size() < 3000)
+        longline += "\xd0\x96"; // Cyrillic, two bytes: an odd cut would land inside a character
+    host.send_chat(longline);
+    Writer sp;
+    sp.u16(50);
+    for (int i = 0; i < 50 * 28; i++)
+        sp.u8(0);
+    host.broadcast_reliable(MSG_SPECIES, sp);
+    newg.send_chat(longline); // relayed by the host
+    run(400);
+    host.send_chat("marker");
+    run(300);
+    printf("  old guest: chats");
+    for (auto n : old_chat)
+        printf(" %zu", n);
+    printf(", species %d; new guest: chats", old_species);
+    for (auto n : new_chat)
+        printf(" %zu", n);
+    printf(", species %d; notices %d\n", new_species, notices);
+    CHECK(old_chat.size() == 3 && old_valid);
+    if (old_chat.size() == 3) {
+        CHECK(old_chat[0] <= Connection::kMaxSingle - 3 && old_chat[0] >= Connection::kMaxSingle - 5);
+        CHECK(old_chat[1] <= Connection::kMaxSingle - 3 && old_chat[1] >= Connection::kMaxSingle - 5);
+        CHECK(old_chat[2] == 6);
+    }
+    CHECK(old_species == 0);
+    CHECK(new_chat.size() == 2 && !new_chat.empty() && new_chat[0] == longline.size());
+    CHECK(new_species == 1);
+    CHECK(notices == 1);
+    CHECK(host.status().find("older peer 1: too_big_old=1") != std::string::npos);
+}
+
+// BUG-0235: the BUG-0209 rule (same name, silent 2 s) dropped a busy player (loading, saving) when
+// another player of the same name joined, and a crash rejoin into a full session was refused
+static void tick(std::vector<Session*> v, int ms)
+{
+    for (int i = 0; i < ms / 5; i++) {
+        for (auto* x : v)
+            if (x->role() != Role::None)
+                x->update();
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+}
+
+static void test_rejoin_token()
+{
+    printf("a rejoin is the same game by its token, not by name and silence (BUG-0235)\n");
+    std::string err;
+    { // a busy player keeps its entry; a different player of the same name is "Bob 2"
+        Session h, b, x;
+        b.rejoin_token = 0x1111;
+        x.rejoin_token = 0x2222;
+        int leaves = 0;
+        h.cb.player_leave = [&](uint8_t, uint8_t) { leaves++; };
+        int hchat = 0;
+        h.cb.chat = [&](uint8_t, const std::string& t) { hchat += t == "back"; };
+        CHECK(h.host(0, "Alice", err));
+        std::string a = "127.0.0.1:" + std::to_string(h.port());
+        CHECK(b.join(a, "Bob", err));
+        tick({&h, &b}, 400);
+        tick({&h}, 2500); // b's game is blocked: no updates, no packets
+        CHECK(x.join(a, "Bob", err));
+        tick({&h, &x}, 400);
+        tick({&h, &b, &x}, 600); // b runs again
+        b.send_chat("back");
+        tick({&h, &b, &x}, 400);
+        printf("  busy: leaves=%d host players=%zu x='%s' b connected=%d chat=%d\n", leaves, h.players().size(),
+               x.name_of(x.my_id()).c_str(), b.connected(), hchat);
+        CHECK(leaves == 0 && h.players().size() == 3);
+        CHECK(x.name_of(x.my_id()) == "Bob 2" && b.name_of(b.my_id()) == "Bob");
+        CHECK(b.connected() && hchat == 1);
+    }
+    { // a crash rejoin into 4/4 with the same token: accepted at once, same name, LEAVE before JOIN
+        Session h, g1, g2, g3, g3b;
+        g1.rejoin_token = 1;
+        g2.rejoin_token = 2;
+        g3.rejoin_token = g3b.rejoin_token = 3;
+        CHECK(h.host(0, "Alice", err));
+        std::string a = "127.0.0.1:" + std::to_string(h.port());
+        CHECK(g1.join(a, "Bob", err));
+        CHECK(g2.join(a, "Dave", err));
+        CHECK(g3.join(a, "Carol", err));
+        tick({&h, &g1, &g2, &g3}, 500);
+        uint8_t old_id = g3.my_id();
+        std::vector<std::string> ev;
+        g1.cb.player_leave = [&](uint8_t id, uint8_t) { ev.push_back("L" + std::to_string(id)); };
+        g1.cb.player_join = [&](const PlayerInfo& p) { ev.push_back("J" + std::to_string(p.id)); };
+        std::vector<uint8_t> self_join;
+        g3b.cb.player_join = [&](const PlayerInfo& p) { if (p.name == "Carol") self_join.push_back(p.id); };
+        std::string why;
+        g3b.cb.disconnected = [&](const std::string& w) { why = w; };
+        tick({&h, &g1, &g2}, 2500); // g3's game died (no BYE)
+        CHECK(g3b.join(a, "Carol", err));
+        tick({&h, &g1, &g2, &g3b}, 600);
+        std::string order;
+        for (auto& e : ev)
+            order += e + " ";
+        printf("  full: rejoin connected=%d why='%s' name='%s' players=%zu g1 events: %s\n", g3b.connected(),
+               why.c_str(), g3b.name_of(g3b.my_id()).c_str(), h.players().size(), order.c_str());
+        CHECK(g3b.connected() && g3b.name_of(g3b.my_id()) == "Carol");
+        CHECK(h.players().size() == 4 && g3b.players().size() == 4);
+        CHECK(self_join.empty()); // its own old entry is not in its roster
+        CHECK(ev.size() == 2 && ev[0] == "L" + std::to_string(old_id) && ev[1][0] == 'J');
+    }
+    { // edge cases: no extension (0.7.2), a live peer with the same token, core.rejoin_name off
+        for (int kind = 0; kind < 3; kind++) {
+            Session h, b, x;
+            b.rejoin_token = x.rejoin_token = 7;
+            if (kind == 0)
+                b.send_caps = x.send_caps = false;
+            if (kind == 2)
+                h.rejoin_by_name = false;
+            CHECK(h.host(0, "Alice", err));
+            std::string a = "127.0.0.1:" + std::to_string(h.port());
+            CHECK(b.join(a, "Bob", err));
+            tick({&h, &b}, 400);
+            if (kind != 1)
+                tick({&h}, 2500); // silent (kind 1: b stays live)
+            CHECK(x.join(a, "Bob", err));
+            tick(kind == 1 ? std::vector<Session*>{&h, &b, &x} : std::vector<Session*>{&h, &x}, 400);
+            printf("  edge %d: x='%s' host players=%zu\n", kind, x.name_of(x.my_id()).c_str(), h.players().size());
+            CHECK(x.name_of(x.my_id()) == "Bob 2" && h.players().size() == 3);
+        }
+    }
+}
+
+// BUG-0236: the co-op window's own hint line, pasted whole, starts with a label
+static void test_address_label()
+{
+    printf("a pasted \"Friends connect to: ...\" line joins its first address (BUG-0236)\n");
+    struct Case {
+        const char* in;
+        uint16_t port;
+    } cases[] = {{"Friends connect to: 192.168.1.5:47810,  10.0.0.2:47810", 47810},
+                 {"\xd0\x94\xd1\x80\xd1\x83\xd0\xb7\xd1\x8c\xd1\x8f \xd0\xbf\xd0\xbe\xd0\xb4\xd0\xba\xd0\xbb\xd1\x8e"
+                  "\xd1\x87\xd0\xb0\xd1\x8e\xd1\x82\xd1\x81\xd1\x8f \xd0\xba: 192.168.1.5:47810,  10.0.0.2:47810",
+                  47810},
+                 {"Bob: Friends connect to: 192.168.1.5:47811", 47811},
+                 {"Friends connect to: 192.168.1.5:47810, ask me: ok", 47810}};
+    for (auto& c : cases) {
+        Endpoint e;
+        std::string err, name;
+        bool ok = Endpoint::parse_numeric(c.in, kDefaultPort, e, err, &name);
+        bool good = ok && e.port == c.port && e.str().rfind("192.168.1.5:", 0) == 0;
+        if (!good)
+            printf("  '%s': ok=%d port=%u name='%s' err='%s'\n", c.in, ok, e.port, name.c_str(), err.c_str());
+        CHECK(good);
+    }
+    // no host:port token: the first word goes to the name lookup as before
+    Endpoint e;
+    std::string err, name;
+    CHECK(!Endpoint::parse_numeric("myhost.lan", kDefaultPort, e, err, &name) && name == "myhost.lan");
+    CHECK(Endpoint::clean("  myhost.lan  ") == "myhost.lan");
 }
 
 // BUG-0109: with 3 players the host relays a leaving guest's last state unreliably, behind the
@@ -1427,9 +1706,31 @@ int main(int argc, char** argv)
 {
     if (argc == 2 && std::string(argv[1]) == "--fakepeer-host")
         return fakepeer_host();
+    // `--off <name>[,<name>]`: one wave 5 switch off (its test must fail), the rest on
+    for (int i = 1; i + 1 < argc; i++)
+        if (std::string(argv[i]) == "--off") {
+            std::string list = argv[i + 1];
+            std::map<std::string, bool*> sw = {{"peer_caps", &g_fix.peer_caps},
+                                               {"rejoin_token", &g_fix.rejoin_token},
+                                               {"addr_label", &g_fix.addr_label}};
+            for (size_t a = 0; a <= list.size();) {
+                size_t b = list.find(',', a);
+                if (b == std::string::npos)
+                    b = list.size();
+                auto it = sw.find(list.substr(a, b - a));
+                if (it == sw.end()) {
+                    fprintf(stderr, "unknown switch '%s'\n", list.substr(a, b - a).c_str());
+                    return 2;
+                }
+                *it->second = false;
+                printf("net fix %s OFF\n", it->first.c_str());
+                a = b + 1;
+            }
+        }
     if (argc == 2 && (std::string(argv[1]) == "--nofix" || std::string(argv[1]) == "--old")) {
-        // the code before the wave 2 fixes (tests must fail)
-        g_fix = Fixes{false, false, false, false, false, false, false, false, false};
+        // the code before the fixes (tests must fail): every bool of Fixes off
+        static_assert(std::is_trivially_copyable_v<Fixes>, "Fixes holds only its bools");
+        memset((void*)&g_fix, 0, sizeof g_fix);
         g_nofix = true;
         upd::g_dup_fix = false;
         upd::g_pick_fix = false;
@@ -1469,6 +1770,10 @@ int main(int argc, char** argv)
     test_dbbf_wrap();
     test_discovery_prune();
     test_address_parse();
+    test_address_label();
+    test_old_peer_split();
+    test_old_peer_session();
+    test_rejoin_token();
     test_join_by_name();
     test_pick_pack();
     printf(g_fail ? "FAILED (%d)\n" : "ALL OK\n", g_fail);

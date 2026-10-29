@@ -148,6 +148,7 @@ static bool g_fix_guestbite = true; // BUG-0078: a guest's bite passes DamageCel
 COOP_FIX("pool.purge", "BUG-0032", g_fix_purge, "cell: mirrors removed only after a complete state round");
 COOP_FIX("pool.hostof", "BUG-0088", g_fix_hostof, "cell: a recreated mirror drops its old local index");
 COOP_FIX("pool.foodseq", "BUG-0051", g_fix_foodseq, "cell: the guest keeps its meals the host has not counted yet");
+COOP_FIX("pool.meals_trim", "BUG-0219", cell_logic::g_meals_trim, "cell: a host without meal acks (0.7.2) does not grow the guest's meal list");
 COOP_FIX("pool.resend", "BUG-0128", g_fix_resend, "cell: food / DNA totals sent again every 2 s and to newcomers");
 COOP_FIX("pool.kostale", "BUG-0061", g_fix_kostale, "cell: a remote knockout ends when its owner leaves or stops refreshing it");
 COOP_FIX("pool.koreset", "BUG-0070", g_fix_koreset, "cell: our knockout ends with the session or the stage");

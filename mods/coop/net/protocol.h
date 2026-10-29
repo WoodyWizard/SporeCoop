@@ -121,12 +121,52 @@ struct Quat {
     float x = 0, y = 0, z = 0, w = 1;
 };
 
+// HELLO / WELCOME extension (BUG-0219, 0.7.4): appended after the 0.7.2 fields, which ignore
+// trailing bytes, so protocol 7 stays: `u32 caps`, then the payload of each set bit in ascending bit
+// order. A peer without the extension (0.7.2.x, 0.7.3.0, fakepeer) reads as caps 0. A new field takes
+// the next free bit and appends its payload after those of the lower bits; never insert a field
+// before the extension. Unknown bits and trailing bytes are ignored.
+enum Caps : uint32_t {
+    CAP_SPLIT = 1, // joins split reliable messages (BUG-0034 receiver); no payload
+    CAP_TOKEN = 2, // HELLO only: u64 rejoin token (BUG-0235); never in WELCOME or anything relayed
+};
+constexpr uint32_t kMyCaps = CAP_SPLIT; // what this build supports (the token bit is per HELLO)
+
 struct Hello {
     uint16_t proto = kProtoVersion;
     uint32_t build = 0; // first 4 bytes of exe sha256
     std::string name;
-    void write(Writer& w) const { w.u16(proto); w.u32(build); w.str8(name); }
-    bool read(Reader& r) { proto = r.u16(); build = r.u32(); name = r.str8(); return r.ok(); }
+    bool ext = true;           // write the extension (false: a 0.7.2-shaped HELLO, tests)
+    uint32_t caps = kMyCaps;   // read: 0 = an older peer
+    bool has_token = false;
+    uint64_t token = 0;
+    void write(Writer& w) const
+    {
+        w.u16(proto); w.u32(build); w.str8(name);
+        if (!ext)
+            return;
+        uint32_t c = (caps & ~(uint32_t)CAP_TOKEN) | (has_token ? CAP_TOKEN : 0);
+        w.u32(c);
+        if (has_token)
+            w.raw(&token, 8);
+    }
+    bool read(Reader& r)
+    {
+        proto = r.u16(); build = r.u32(); name = r.str8();
+        if (!r.ok())
+            return false;
+        caps = 0;
+        has_token = false;
+        token = 0;
+        ext = r.left() >= 4;
+        if (ext)
+            caps = r.u32();
+        if ((caps & CAP_TOKEN) && r.left() >= 8) { // a short payload: no token, not a failed read
+            r.raw(&token, 8);
+            has_token = true;
+        }
+        return true;
+    }
 };
 
 struct PlayerInfo {
@@ -138,12 +178,16 @@ struct Welcome {
     uint8_t your_id = 0;
     uint32_t world = 0;
     std::vector<PlayerInfo> players;
+    bool ext = true;         // write the extension (false: a 0.7.2-shaped WELCOME, tests)
+    uint32_t caps = kMyCaps; // the host's (read: 0 = an older host); no payloads in WELCOME
     void write(Writer& w) const
     {
         w.u8(your_id);
         w.u32(world);
         w.u8((uint8_t)players.size());
         for (auto& p : players) { w.u8(p.id); w.str8(p.name); }
+        if (ext)
+            w.u32(caps & ~(uint32_t)CAP_TOKEN);
     }
     bool read(Reader& r)
     {
@@ -157,7 +201,11 @@ struct Welcome {
             p.name = r.str8();
             players.push_back(p);
         }
-        return r.ok();
+        if (!r.ok())
+            return false;
+        ext = r.left() >= 4;
+        caps = ext ? r.u32() & ~(uint32_t)CAP_TOKEN : 0;
+        return true;
     }
 };
 

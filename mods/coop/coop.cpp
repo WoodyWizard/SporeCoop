@@ -39,6 +39,7 @@
 #include "spacecoop.h"
 #include "squadron.h"
 #include "npc.h"
+#include "rejoin.h"
 #include "savestrip.h"
 #include "cell_logic.h"
 #include "social.h"
@@ -1813,6 +1814,9 @@ COOP_FIX("net.first_ack", "BUG-0030", net::g_fix.first_ack, "net: packet seq sta
 COOP_FIX("net.time_wrap", "BUG-0053", net::g_fix.time_wrap, "net: snapshot order survives the sender's millisecond wrap");
 COOP_FIX("net.lan_prune", "BUG-0039", net::g_fix.lan_prune, "net: the LAN game list forgets silent hosts and has a cap");
 COOP_FIX("net.addr_check", "BUG-0138", net::g_fix.addr_check, "net: host addresses trimmed, the port checked");
+COOP_FIX("net.peer_caps", "BUG-0219", net::g_fix.peer_caps, "net: reliable messages are split only for a peer that joins pieces (HELLO caps)");
+COOP_FIX("net.rejoin_token", "BUG-0235", net::g_fix.rejoin_token, "net: a crash rejoin is recognised by its token, not by name and silence");
+COOP_FIX("net.addr_label", "BUG-0236", net::g_fix.addr_label, "net: a pasted \"Friends connect to: ...\" line joins its first address");
 COOP_FIX("core.text_utf8", "BUG-0164", utf8::g_cut_fix, "net: texts are cut between characters, not bytes");
 COOP_FIX("core.notify_text", "BUG-0129", notify_text::g_fix, "ui: notification lines wrap by characters, the panel kind is not guessed");
 void end_session_modules(bool cell)
@@ -1896,6 +1900,7 @@ void setup_callbacks()
         coop_ui::session_event(true, ""); // BUG-0104: "Connecting to ..." ends here
     };
     g_sess.cb.disconnected = [](const std::string& why) {
+        rejoin::clear(); // the session ended (BUG-0235)
         feed("disconnected: " + why);
         coop_ui::session_event(false, why);
         chat_log("* disconnected: " + why);
@@ -2123,6 +2128,10 @@ void setup_callbacks()
         if (g_sess.role() == net::Role::Client && from == 0)
             world::on_message(type, r, g_sess.name_of(0));
     };
+    g_sess.cb.old_peer = [](uint8_t, const std::string& name) { // BUG-0219: once per player and join
+        // the log line (net: ... older SporeCoop) says what is lost: long chat cut, no species table
+        feed_kind(name + " has an older SporeCoop: update both games to the latest", "info");
+    };
     g_sess.cb.player_leave = [](uint8_t id, uint8_t) {
         if (g_role_fix)
             g_roles.erase(id); // ids are reused: the next newcomer starts with no role (BUG-0064)
@@ -2190,6 +2199,7 @@ bool do_join(const std::string& addr, std::string& err)
 {
     end_open_session();
     reset_lobby();
+    g_sess.rejoin_token = rejoin::token_for_join(H->instance_id()); // BUG-0235
     if (!g_sess.join(addr, g_name, err))
         return false;
     chat_log("* joining " + addr);
@@ -2199,6 +2209,7 @@ bool do_join(const std::string& addr, std::string& err)
 void do_leave()
 {
     g_sess.leave("user");
+    rejoin::clear(); // a clean leave: the next join is a new player (BUG-0235)
     if (g_session_end_fix) {
         end_session_modules(cellsync::voluntary_leave_cleanup_enabled());
     } else { // before BUG-0033 (tests)
@@ -3169,6 +3180,7 @@ void on_unload()
     coop_ui::shutdown();
     lan_scan(false);
     g_sess.leave("mod unload");
+    rejoin::shutdown();
     if (g_session_end_fix) {
         end_session_modules(true);
     } else {

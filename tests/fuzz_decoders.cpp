@@ -11,6 +11,7 @@
 //
 // Deterministic (fixed seeds, about 3 s). `fuzz_decoders --iters N` changes the mutation count per codec,
 // `--seed S` the seed. Built with -DFUZZ_LIBFUZZER -fsanitize=fuzzer it is a libFuzzer target instead.
+#include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -154,7 +155,8 @@ struct CodecStats {
 };
 
 template <class T>
-static void fuzz_struct(const char* name, Rng& R, int iters, const std::function<T(Rng&)>& gen)
+static void fuzz_struct(const char* name, Rng& R, int iters, const std::function<T(Rng&)>& gen,
+                        const std::function<size_t(const T&)>& base_len = nullptr)
 {
     CodecStats st;
     std::vector<std::vector<uint8_t>> corpus;
@@ -175,7 +177,12 @@ static void fuzz_struct(const char* name, Rng& R, int iters, const std::function
             Exact ep(pre);
             Reader rp(ep.data(), ep.n);
             T z;
-            CHECK(!z.read(rp), "%s: prefix %zu/%zu accepted", name, k, b.size());
+            // an appended extension (HELLO / WELCOME caps, BUG-0219): a prefix that still holds the
+            // base fields is an older peer's message and must be read
+            if (base_len && k >= base_len(x))
+                CHECK(z.read(rp), "%s: base prefix %zu/%zu rejected", name, k, b.size());
+            else
+                CHECK(!z.read(rp), "%s: prefix %zu/%zu accepted", name, k, b.size());
             st.prefixes++;
         }
         corpus.push_back(b);
@@ -236,6 +243,39 @@ static NpcState npc_state(Rng& R)
     return s;
 }
 
+// BUG-0219: the HELLO / WELCOME extension, explicit cases (0.7.2 shapes, short token, unknown bits,
+// trailing garbage); Welcome::world stays at the same offset in all of them
+static void hello_welcome_ext()
+{
+    auto rd = [](const std::vector<uint8_t>& b, auto& x) {
+        Reader r(b.data(), b.size());
+        return x.read(r);
+    };
+    Writer base;
+    base.u16(kProtoVersion); base.u32(0x922af7c7); base.str8("Bob");
+    Hello h;
+    CHECK(rd(base.data, h) && h.caps == 0 && !h.has_token && h.name == "Bob", "Hello 0.7.2");
+    Writer t = base;
+    t.u32(CAP_SPLIT | CAP_TOKEN); t.u32(7); // a token cut short
+    CHECK(rd(t.data, h) && h.caps == (CAP_SPLIT | CAP_TOKEN) && !h.has_token, "Hello short token");
+    Writer u = base;
+    uint64_t tok = 0x1122334455667788ull;
+    u.u32(CAP_SPLIT | CAP_TOKEN | 0x80000000u); u.raw(&tok, 8); u.u32(0xDEADBEEF); u.u8(1); // unknown bit, garbage
+    CHECK(rd(u.data, h) && h.has_token && h.token == tok && (h.caps & CAP_SPLIT), "Hello unknown bits");
+    Writer wb;
+    wb.u8(2); wb.u32(0xABCD1234); wb.u8(1); wb.u8(0); wb.str8("Host");
+    Welcome w;
+    CHECK(rd(wb.data, w) && w.caps == 0 && w.world == 0xABCD1234 && w.players.size() == 1, "Welcome 0.7.2");
+    Writer wx = wb;
+    wx.u32(CAP_SPLIT | 0x40u); wx.u8(9); wx.u8(9);
+    CHECK(rd(wx.data, w) && (w.caps & CAP_SPLIT) && w.world == 0xABCD1234 && w.your_id == 2, "Welcome ext");
+    Welcome mine;
+    mine.world = 0xABCD1234;
+    Writer wm;
+    mine.write(wm);
+    CHECK(wm.data.size() >= 5 && memcmp(wm.data.data() + 1, wb.data.data() + 1, 4) == 0, "Welcome::world offset");
+}
+
 static void fuzz_protocol(uint64_t seed, int iters)
 {
     printf("protocol structs (%d mutations each)\n", iters);
@@ -245,13 +285,25 @@ static void fuzz_protocol(uint64_t seed, int iters)
         d.max_players = R.u8(); d.info = R.str(255); return d;
     });
     fuzz_struct<Hello>("Hello", R, iters, [](Rng& R) {
-        Hello h; h.proto = R.u16(); h.build = R.u32(); h.name = R.str(255); return h;
-    });
+        Hello h; h.proto = R.u16(); h.build = R.u32(); h.name = R.str(255);
+        h.ext = R.below(4) != 0; // without: a 0.7.2 HELLO
+        h.caps = R.below(2) ? kMyCaps : R.u32();
+        h.has_token = R.below(2); h.token = ((uint64_t)R.u32() << 32) | R.u32();
+        return h;
+    }, [](const Hello& h) { return (size_t)(2 + 4 + 1 + std::min<size_t>(h.name.size(), 255)); });
     fuzz_struct<Welcome>("Welcome", R, iters, [](Rng& R) {
         Welcome w; w.your_id = R.u8(); w.world = R.u32();
         for (int n = (int)R.below(R.below(8) ? 5 : 256), i = 0; i < n; i++) w.players.push_back({R.u8(), R.str(40)});
+        w.ext = R.below(4) != 0;
+        w.caps = R.below(2) ? kMyCaps : R.u32();
         return w;
+    }, [](const Welcome& w) {
+        size_t n = 1 + 4 + 1;
+        for (size_t i = 0; i < w.players.size() && i < 255; i++)
+            n += 1 + 1 + std::min<size_t>(w.players[i].name.size(), 255);
+        return n;
     });
+    hello_welcome_ext();
     fuzz_struct<Reject>("Reject", R, iters, [](Rng& R) { Reject x; x.reason = R.u8(); x.text = R.str(255); return x; });
     fuzz_struct<PlayerJoin>("PlayerJoin", R, iters, [](Rng& R) { PlayerJoin x; x.p = {R.u8(), R.str(255)}; return x; });
     fuzz_struct<PlayerLeave>("PlayerLeave", R, iters, [](Rng& R) { PlayerLeave x; x.id = R.u8(); x.reason = R.u8(); return x; });
