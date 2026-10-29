@@ -158,6 +158,9 @@ COOP_FIX("pool.guestbite", "BUG-0078", g_fix_guestbite, "cell: a guest's bite pa
 static bool g_fix_ko_grace = true; // BUG-0238: a remote knockout lasts to its own deadline through late refreshes
 COOP_FIX("pool.ko_grace", "BUG-0238", g_fix_ko_grace, "cell: a late knockout refresh does not end it, replay its effect; KO_UP when ours ends on a stage leave");
 static double g_kodrop_until; // tests (`coop.pool kodrop <s>`): MSG_CELL_KO ignored until then
+static bool g_fix_food_ack_away = true; // BUG-0239: the host acknowledges a guest's meal it cannot count
+COOP_FIX("pool.food_ack_away", "BUG-0239", g_fix_food_ack_away, "cell: a guest's meal reaching a host in an editor (no avatar) is acknowledged, not left on the way");
+static bool g_test_away; // tests (`coop.pool away 1|0`, host): the Cell messages are handled as in an editor
 static uint32_t g_hits_spared;
 bool totals_resend_enabled() { return g_fix_resend; }
 static cell_logic::Rounds g_rounds;
@@ -1385,11 +1388,62 @@ void tick(double now)
     symbiosis_tick(now);
 }
 
+// the host's reads of a guest's MSG_CELL_EAT / MSG_CELL_FOOD, shared by the in-Cell handlers and the
+// acknowledgement of a meal that cannot be counted (BUG-0239), so the two cannot drift apart
+struct EatMsg {
+    uint32_t idx = 0;
+    uint8_t kind = ACT_GONE, arg = 0;
+    int food = 0;
+    bool plant = false;
+    bool has_meal = false;
+    uint32_t meal = 0;
+};
+static bool read_eat(net::Reader& r, EatMsg& m)
+{
+    m.idx = r.u32();
+    if (!r.ok())
+        return false;
+    m.kind = r.u8(), m.arg = r.u8();
+    m.food = (int)r.u32();
+    m.plant = r.u8() != 0;
+    if (!r.ok()) // an older guest: the index only
+        m.kind = ACT_GONE, m.arg = 0, m.food = 0, m.plant = false;
+    m.meal = r.u32();
+    m.has_meal = r.ok();
+    return true;
+}
+struct FoodMsg {
+    int amount = 0;
+    bool plant = false, valid = false, has_meal = false;
+    uint32_t meal = 0;
+};
+static FoodMsg read_food(net::Reader& r)
+{
+    FoodMsg m;
+    m.amount = (int)r.u32();
+    m.plant = r.u8() != 0;
+    m.valid = r.ok();
+    m.meal = r.u32();
+    m.has_meal = r.ok();
+    return m;
+}
+
 void on_message(uint8_t type, uint8_t from, net::Reader& r)
 {
     // a knockout state is kept (and relayed) in any stage: an "up again" dropped while we were in an
     // editor or loading left the partner knocked out here (BUG-0061)
-    bool cell = in_cell() && avatar();
+    bool cell = in_cell() && avatar() && !g_test_away;
+    // BUG-0239: a guest's meal that reaches us in an editor (or without an avatar, around a rebuild)
+    // is acknowledged without its points, as a meal eaten first: the guest takes it back at our next
+    // total instead of keeping it "on the way" until a later meal drops it all at once
+    if (!cell && g_fix_food_ack_away && is_host() && (type == net::MSG_CELL_EAT || type == net::MSG_CELL_FOOD)) {
+        EatMsg e;
+        FoodMsg f;
+        bool got = type == net::MSG_CELL_EAT ? read_eat(r, e) && e.has_meal : (f = read_food(r)).has_meal;
+        if (got) // no game call here: outside Cell the pool can be gone, without an avatar AddFoodPoints is unsafe
+            g_food_ack[from] = type == net::MSG_CELL_EAT ? e.meal : f.meal;
+        return;
+    }
     if (!cell && !(type == net::MSG_CELL_KO && g_fix_kostale))
         return;
     if (type == net::MSG_CELL_HIT && is_guest()) {
@@ -1475,17 +1529,15 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
                 skg::cdecl_call<void>(a_Rest, c, res);
         }
     } else if (type == net::MSG_CELL_EAT && is_host()) {
-        uint32_t idx = r.u32();
-        if (!r.ok())
+        EatMsg e;
+        if (!read_eat(r, e))
             return;
-        uint8_t kind = r.u8(), arg = r.u8();
-        int food = (int)r.u32();
-        bool plant = r.u8() != 0;
-        if (!r.ok()) // an older guest: the index only
-            kind = ACT_GONE, arg = 0, food = 0, plant = false;
-        uint32_t meal = r.u32();
-        if (r.ok()) // applied (or refused, eaten first) now: its total goes back with this number
-            g_food_ack[from] = meal;
+        uint32_t idx = e.idx;
+        uint8_t kind = e.kind, arg = e.arg;
+        int food = e.food;
+        bool plant = e.plant;
+        if (e.has_meal) // applied (or refused, eaten first) now: its total goes back with this number
+            g_food_ack[from] = e.meal;
         if (food <= -1000 || food >= 1000)
             food = 0;
         uint8_t* c = modes::cell_at(idx);
@@ -1518,13 +1570,11 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         }
     } else if (type == net::MSG_CELL_FOOD) {
         if (is_host()) { // a guest ate something: add it to the shared progress
-            int amount = (int)r.u32();
-            bool plant = r.u8() != 0;
-            if (r.ok() && amount > -1000 && amount < 1000)
-                o_AddFood(amount, plant);
-            uint32_t meal = r.u32();
-            if (r.ok())
-                g_food_ack[from] = meal;
+            FoodMsg f = read_food(r);
+            if (f.valid && f.amount > -1000 && f.amount < 1000)
+                o_AddFood(f.amount, f.plant);
+            if (f.has_meal)
+                g_food_ack[from] = f.meal;
         } else if (is_guest()) {
             int food = (int)r.u32(), plant = (int)r.u32();
             uint8_t* s = S();
@@ -1545,6 +1595,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
 void on_session_end()
 {
     g_kodrop_until = 0;
+    g_test_away = false;
     if (g_fix_koreset)
         reset_knockout();
     g_ko.clear();
@@ -2119,6 +2170,10 @@ std::string debug(const std::vector<std::string>& a)
         char b[96];
         snprintf(b, sizeof b, "npcflag %s %s=%d hp=%d", a[1].c_str(), a[2].c_str(), v, F<int>(c, kHp));
         return b;
+    }
+    if (a.size() >= 2 && a[0] == "away") { // host, tests: Cell messages handled as in an editor (BUG-0239)
+        g_test_away = a[1] == "1";
+        return g_test_away ? "away 1" : "away 0";
     }
     if (a.size() >= 2 && a[0] == "kodrop") { // tests: ignore MSG_CELL_KO for <s> seconds (a late refresh, BUG-0238)
         double s = std::clamp(atof(a[1].c_str()), 0.0, 30.0);
