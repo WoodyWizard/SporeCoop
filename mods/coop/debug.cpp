@@ -68,6 +68,18 @@ int c_cell(void*, int argc, const char* const* argv, SkOut* out)
     uint8_t* data = *(uint8_t**)(g + 0x1C);
     uint32_t n = *(uint32_t*)(g + 0x1C + 0x10);
     uint32_t av = *(uint32_t*)(g + 0x411C);
+    if (argc >= 2 && !strcmp(argv[1], "pool")) {
+        // the pool header G+0x1C .. +0x18, the avatar index, the rebuild flag G+0x51D8 and the
+        // avatar's +0x111 / +0xFC (tests: what a rebuild keeps, BUG-0221, BUG-0237)
+        const uint32_t* h = (const uint32_t*)(g + 0x1C);
+        uint32_t slot = av & 0xFFFF;
+        uint8_t* a = data && av && cell_logic::slot_in_pool(slot, n, h[6], true) &&
+                             *(uint32_t*)(data + slot * 0x398) == av ? data + slot * 0x398 : nullptr;
+        SAY("pool data=%08X free=%08X gen=%u live=%u high=%u size=%X cap=%u avatar=%08X rebuild=%u "
+            "av_ptr=%p av_invuln=%d av_fc=%08X\n", h[0], h[1], h[2], h[3], h[4], h[5], h[6], av,
+            (unsigned)*(uint8_t*)(g + 0x51D8), (void*)a, a ? *(uint8_t*)(a + 0x111) : -1, a ? *(uint32_t*)(a + 0xFC) : 0);
+        return 0;
+    }
     if (argc < 2 || !strcmp(argv[1], "list")) {
         for (uint32_t i = 1; i < n && i < 4096; i++) { // [1, highWater): BUG-0083, BUG-0093
             uint8_t* c = data + i * 0x398;
@@ -317,7 +329,7 @@ void coop_register_debug_commands2(const SkHost* host, SkMod* self)
                       c_load, nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.menu", "coop.menu - save and leave the stage for the galaxy menu (tests)", c_menu,
                       nullptr, SK_CMD_MAIN_THREAD);
-    host->command_add(self, "coop.cell", "coop.cell list | spawn <slot> [dx dy [scale]] - cell stage experiments", c_cell,
+    host->command_add(self, "coop.cell", "coop.cell list | pool | spawn <slot> [dx dy [scale]] - cell stage experiments", c_cell,
                       nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.save", "save the game (like the pause menu Save)", c_save, nullptr,
                       SK_CMD_MAIN_THREAD);

@@ -282,6 +282,12 @@ def cmd_run(a):
         print(f'lab: {a.lanes} lanes capped to {cap} (GPU load, docs/06-testing.md 6.19; SPORE_MAX_LANES)')
         a.lanes = cap
     a.lane_ids = [n for n in range(1, 11) if n not in skip][:a.lanes]
+    if getattr(a, 'lane', None):  # BUG-0259: an explicit lane list
+        bad = [n for n in a.lane if not 1 <= n <= 10 or n in skip]
+        if bad:
+            sys.exit(f'lab: --lane {bad} is not a lane 1..10 outside --skip')
+        a.lane_ids = sorted(set(a.lane))[:cap]
+        a.lanes = len(a.lane_ids)
     # a lane for tests that take a whole lane of their own outside the run (update_check.py wipes
     # the mod from its lane): neither used by this run nor by other work (--skip); '' = none
     os.environ['SPORE_FREE_LANE'] = str(next((n for n in range(2, 9) if n not in a.lane_ids and n not in skip), ''))
@@ -490,12 +496,17 @@ def cmd_reload(a):
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    # BUG-0259: no prefix matching: `run --lane 2` was taken as `--lanes 2` and ran on lane 1
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter,
+                                 allow_abbrev=False)
     sub = ap.add_subparsers(dest='cmd', required=True)
+    _add = sub.add_parser
+    sub.add_parser = lambda *x, **k: _add(*x, allow_abbrev=False, **k)
     r = sub.add_parser('run')
     r.add_argument('tests', nargs='?', default='smoke', help='smoke | full | nightly | name,name')
     r.add_argument('--lanes', type=int, default=int(os.environ.get('SPORE_LANES', '3')))
     r.add_argument('--skip', default='', help='lanes other work uses, e.g. 3,6: the run takes the next free ones')
+    r.add_argument('--lane', type=int, action='append', help='exactly this lane (repeatable); overrides --lanes')
     r.add_argument('--branch')
     r.add_argument('--cold', action='store_true', help='no warm reuse of running games')
     r.add_argument('--no-build', action='store_true')
