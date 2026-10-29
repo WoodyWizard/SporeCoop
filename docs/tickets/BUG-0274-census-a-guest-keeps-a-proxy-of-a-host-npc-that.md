@@ -63,6 +63,8 @@ that is in the world (the game's own objects of both machines, `coop.census`).
   72 host NPC rows at the planet's centre in 177 samples.
 * PASS with the fix: out/lab/20261029-145028 (`npc_pooled` 2/2, with `npc_reuse` and
   `cinematic_puppet` 2/2 each), direct run on lane 4: 0 ghosts, 0 rows at the centre.
+* Also: smoke out/lab/20261029-145543 (14/14), campaign_short out/lab/20261029-151043 (OK, no
+  census finding; one run only, the bug showed in 2 of 3 before).
 
 ## History
 - 2026-10-29: opened.
