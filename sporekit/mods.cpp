@@ -58,6 +58,7 @@ static bool load_into(SkMod* m, std::string& err)
         hooks_remove_all(m);
         unsubscribe_all(m);
         diag_context_remove(m);
+        diag_headline(m, nullptr);
         commands_remove_all(m);
         ui_winprocs_disable_mod(m);
         FreeLibrary(m->module);
@@ -77,6 +78,7 @@ static void unload_from(SkMod* m)
     int hooks = hooks_remove_all(m);
     unsubscribe_all(m);
     diag_context_remove(m);
+    diag_headline(m, nullptr);
     commands_remove_all(m);
     ui_winprocs_disable_mod(m);
     // a game worker thread may still be inside one of the mod's detours (they are no longer entered:

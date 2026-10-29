@@ -49,7 +49,16 @@ struct ConnStats {
     uint32_t joined = 0;    // reliable messages received in pieces and joined
     uint32_t frag_lost = 0; // received pieces thrown away (a message above kMaxReliable, or a peer that never split)
     uint32_t too_big_old = 0; // reliable messages not sent: above one packet for a peer that cannot join pieces
+    // support diagnostics (diag_stats.cpp): datagram bytes both ways, packets never acknowledged
+    // (lost or their acks lost: still unacknowledged kLostAfter packets later) and the round trip
+    // samples since the last take_window()
+    uint64_t bytes_sent = 0, bytes_recv = 0;
+    uint32_t lost = 0;
+    float rtt_min = 0, rtt_max = 0, rtt_sum = 0;
+    uint32_t rtt_n = 0;
+    void take_window() { rtt_min = rtt_max = rtt_sum = 0; rtt_n = 0; }
 };
+constexpr unsigned kLostAfter = 32;
 // largest reliable message (BUG-0034): bigger ones are split into pieces of one packet each and
 // joined by the receiver; this caps what a receiver collects for one message
 constexpr size_t kMaxReliable = 1u << 20;
@@ -102,6 +111,7 @@ private:
         uint32_t time;
         std::vector<uint16_t> rel_ids;
         bool acked = false;
+        bool lost = false; // counted in stats.lost
     };
 
     void ack_packet(SentPkt& p, uint32_t now);

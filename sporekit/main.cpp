@@ -138,6 +138,9 @@ static int h_diag_report(const char* reason, char* out, int cap)
 }
 static void h_diag_context(SkMod* mod, const char* (*fn)(void*), void* user) { diag_context(mod, fn, user); }
 static const char* h_last_problem() { return diag_last_problem(); }
+static void h_log_session_clock(double off, int on) { log_session_clock(off, on); }
+static void h_diag_headline(SkMod* mod, const char* text) { diag_headline(mod, text); }
+static const char* h_diag_files() { return diag_files_text().c_str(); }
 static const char* h_logs_dir()
 {
     static std::string d = diag_logs_dir();
@@ -175,6 +178,9 @@ SkHost g_host = {
     h_diag_context,
     h_logs_dir,
     h_last_problem,
+    h_log_session_clock,
+    h_diag_headline,
+    h_diag_files,
 };
 
 } // namespace sk

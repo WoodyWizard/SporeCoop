@@ -1,9 +1,12 @@
 #include "core.h"
 
 #include <algorithm>
+#include <atomic>
+#include <climits>
 #include <cstdarg>
 #include <cstdio>
 #include <deque>
+#include <cstring>
 #include <mutex>
 
 namespace sk {
@@ -14,6 +17,98 @@ static std::mutex g_mu;
 static FILE* g_file = nullptr;
 static std::deque<std::string> g_ring;
 static const size_t kRing = 2000;
+
+// The session clock (a co-op session's common time, set by a mod through log_session_clock): every
+// line carries "[s <seconds>]" after the local time, so the logs of the players of one session line
+// up (tools/merge_logs.py). Microseconds to add to now_seconds(); LLONG_MIN = no session clock.
+static std::atomic<long long> g_sclock_us{LLONG_MIN};
+
+void log_session_clock(double offset, int on)
+{
+    g_sclock_us = on ? (long long)(offset * 1e6) : LLONG_MIN;
+}
+
+bool log_session_time(double& t)
+{
+    long long off = g_sclock_us.load();
+    if (off == LLONG_MIN)
+        return false;
+    t = now_seconds() + (double)off / 1e6;
+    return true;
+}
+
+// Paths of the player's computer never go into the log or a report in full (players attach them to
+// public issues): the game folder becomes <game>, the Windows user folder %USERPROFILE%, Wine's home
+// folder of the Linux user <home>. Longest first; compared without case. Set once at log_init.
+static std::vector<std::pair<std::string, std::string>> g_masks;
+
+static void add_mask(std::string path, const char* token)
+{
+    while (!path.empty() && (path.back() == '\\' || path.back() == '/'))
+        path.pop_back();
+    if (path.size() < 4) // "C:" or "Z:\" alone is no private path
+        return;
+    g_masks.push_back({path, token});
+}
+
+static void init_masks()
+{
+    g_masks.clear();
+    std::wstring g = game_dir(); // ...\SporebinEP1: its parent is the game folder
+    size_t k = g.find_last_of(L"\\/");
+    if (k != std::wstring::npos)
+        add_mask(narrow(g.substr(0, k)), "<game>");
+    char b[MAX_PATH * 2];
+    if (GetEnvironmentVariableA("USERPROFILE", b, sizeof b) && b[0])
+        add_mask(b, "%USERPROFILE%");
+    // Wine: \??\Z:\home\<user>
+    if (GetEnvironmentVariableA("WINEHOMEDIR", b, sizeof b) && b[0])
+        add_mask(strncmp(b, "\\??\\", 4) == 0 ? b + 4 : b, "<home>");
+    std::sort(g_masks.begin(), g_masks.end(),
+              [](const auto& a, const auto& c) { return a.first.size() > c.first.size(); });
+}
+
+static bool same_path_char(char a, char c)
+{
+    if (a == '/')
+        a = '\\';
+    if (c == '/')
+        c = '\\';
+    return tolower((unsigned char)a) == tolower((unsigned char)c);
+}
+
+std::string mask_paths(const std::string& s)
+{
+    if (g_masks.empty() || s.size() < 4)
+        return s;
+    std::string out;
+    size_t i = 0;
+    bool changed = false;
+    while (i < s.size()) {
+        bool hit = false;
+        for (auto& [path, token] : g_masks) {
+            if (path.size() > s.size() - i || !same_path_char(s[i], path[0]))
+                continue;
+            size_t j = 1;
+            while (j < path.size() && same_path_char(s[i + j], path[j]))
+                j++;
+            if (j == path.size()) {
+                if (!changed)
+                    out.assign(s, 0, i);
+                out += token;
+                i += j;
+                hit = changed = true;
+                break;
+            }
+        }
+        if (!hit) {
+            if (changed)
+                out += s[i];
+            i++;
+        }
+    }
+    return changed ? out : s;
+}
 
 // The log of the previous run is kept: a player who restarts the game after a crash still has
 // the log of the crash. logs\previous\<name>-<time of its last line>.log, the newest kKeep of
@@ -58,6 +153,7 @@ void log_init(const std::wstring& path)
     ThreadFlag tf(SK_TF_IN_LOG);
     if (g_file)
         fclose(g_file);
+    init_masks();
     keep_previous(path);
     g_file = _wfopen(path.c_str(), L"w");
 }
@@ -76,9 +172,16 @@ void logv(SkMod* mod, int level, const char* fmt, va_list ap)
     static const char* lv[] = {"DBG", "INF", "WRN", "ERR"};
     SYSTEMTIME st;
     GetLocalTime(&st);
+    char sclock[32] = "";
+    double t;
+    if (log_session_time(t))
+        snprintf(sclock, sizeof sclock, "[s %.3f] ", t);
+    // no private path in full (a fault inside the masking re-enters this function: SK_TF_IN_LOG is
+    // not set yet here, the reentry guard above covers only the locked part)
+    std::string m = mask_paths(msg);
     char line[2300];
-    snprintf(line, sizeof line, "%02d:%02d:%02d.%03d [%s] %s: %s", st.wHour, st.wMinute,
-             st.wSecond, st.wMilliseconds, lv[level & 3], mod ? mod->name.c_str() : "?", msg);
+    snprintf(line, sizeof line, "%02d:%02d:%02d.%03d %s[%s] %s: %s", st.wHour, st.wMinute,
+             st.wSecond, st.wMilliseconds, sclock, lv[level & 3], mod ? mod->name.c_str() : "?", m.c_str());
     std::lock_guard<std::mutex> lk(g_mu);
     ThreadFlag tf(SK_TF_IN_LOG);
     if (g_file) {

@@ -74,6 +74,8 @@ enum MsgType : uint8_t {
                           // u8 outcome (6 ally, 5 extinct), f32 dna}, paid once per species and outcome
     MSG_CELL_KO = 44,     // any -> host -> all: u8 player, u8 state (0 up,1 out,2 revived,3 respawned),
                           // u8 tenths of a second left, u8 revive progress 0..255
+    MSG_DIAG = 60,        // support diagnostics (net/diagmsg.h): u8 kind, payload; session clock, bug
+                          // marks, sync self-check. Older SporeCoop ignores it (an unknown type).
 };
 
 // LAN discovery: plain datagrams outside any connection, answered by hosts on their game port

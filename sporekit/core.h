@@ -12,7 +12,7 @@
 
 #include "../sdk/include/sporekit.h"
 
-#define SK_VERSION "0.3.4"
+#define SK_VERSION "0.3.5"
 
 // ---- SkMod (opaque for mods) ----
 struct SkMod {
@@ -33,6 +33,9 @@ void logf(SkMod* mod, int level, const char* fmt, ...);
 void logv(SkMod* mod, int level, const char* fmt, va_list ap);
 std::vector<std::string> log_tail(size_t n);
 extern int g_log_level;
+void log_session_clock(double offset, int on); // "[s <now + offset>]" in every line (on = 0: none)
+bool log_session_time(double& t);               // false: no session clock
+std::string mask_paths(const std::string& s);   // the game folder, user and home folders as tokens
 
 // util
 std::string narrow(const std::wstring& w);
@@ -196,6 +199,10 @@ std::string diag_write_report(const char* reason, EXCEPTION_POINTERS* ep, DWORD 
 std::string diag_logs_dir();
 void diag_context(SkMod* mod, const char* (*fn)(void*), void* user);
 void diag_context_remove(SkMod* mod);
+void diag_headline(SkMod* mod, const char* text); // a block at the top of reports (session summary)
+std::string diag_headline_text();
+// diag_files.cpp: other mods, extra / changed game files and packages (computed once, cached)
+const std::string& diag_files_text();
 void diag_install();          // the crash filter, ExitProcess log
 void diag_after_device();     // GPU and other hooks into the log (once)
 void diag_hang_report(const char* why); // the watchdog: no frames while focused (once per run)
