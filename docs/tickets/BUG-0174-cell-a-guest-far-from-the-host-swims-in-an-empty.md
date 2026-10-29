@@ -31,10 +31,30 @@ Copied from docs/known-issues.md, where the entry stays up to date:
   `partner` distances and the guest's `local_gameplay_cells` vs where its cell is.
 
 ## Root cause
-See the report (observed vs inferred as marked there).
+Observed: Spore's Cell stage is single-player: PopulateTiles (0xE7D370) fills and keeps only the
+tiles around the player's own view (`G+0x4128`) and culls cells outside it (0xE5CDE0 / 0xE78C00,
+docs/re/cell.md#cell-new-players-food). In co-op the host's game is the one world: it spawns and
+simulates the cells, the guests show mirrors of them, and the guest's own population is off (so
+the players do not get different food). Away from the host's view nothing exists at all, on either
+game: on GOG 2024 the guest's screen has no food from 23-45 m from the host (fix/w7-eat, 2026-10-29).
+Player impact: two new players who swim apart get "only one of us can eat" (BUG-0279).
 
 ## Fix
-Not fixed yet.
+Not fixed yet. Plan (owner asked to keep it for a later wave, 2026-10-29):
+1. Preferred: the host populates and keeps tiles around every partner too. Find how PopulateTiles
+   picks its centre and the active tile set (`G+0x4128`, the tile list), call it for each guest's
+   position (or keep a second tile set per partner), stop the cull from removing cells near a
+   partner, and let cellsync's host_tick send each guest the cells of its own area (today: within
+   120 m of the host's avatar). Watch: the pool size cap (pool=~420 cells), the host's frame time,
+   and the bandwidth per guest.
+2. Fallback: a guest far from the host (no host cells around it) lets its own game populate locally
+   (food only, or food and NPCs), marked as local-only; when the host's area overlaps again, the
+   local objects are removed before the mirrors arrive. Simpler, but the two players then see
+   different objects for a while (a desync by design; eating local food must still count into the
+   shared food total).
+Test: `coop_cell_new_game.py --apart 70` (players 70 m apart) must find food within one screen of
+the guest and count the guest's meals on the host; a census/sync check that the two games agree
+where both have objects. Switch: `coop.fix cell.partner_tiles off` (or the fallback's name).
 
 ## Verification
 
@@ -49,3 +69,4 @@ Not fixed yet.
 - 2026-10-29: fix/w7-eat: measured on GOG 2024 (level 2): no food on the guest's screen from 23-45 m
   from the host (not ~100 m); likely what two new players reported (BUG-0279). Measure with
   `coop_cell_new_game.py --apart 70`; PopulateTiles and the cull: docs/re/cell.md#cell-new-players-food.
+- 2026-10-29: root cause and the fix plan written down for a later wave (owner's request).
