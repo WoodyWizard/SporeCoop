@@ -951,6 +951,8 @@ class Campaign:
         ok = fz.wait(lambda: all(fz.fin(p.con).get('entered') == '1' for p in self.P), 120, 3)
         ck(ok, 'every player entered the galactic core: ' + ' | '.join(f'{p.name} {fz.fin(p.con)["line"][:80]}'
                                                                        for p in self.P))
+        if not ok:
+            return
         done = fz.press_through([p.con for p in self.P], lambda: all(
             fz.fin(p.con).get('busy') == '0' and fz.fin(p.con).get('staff') == '1' for p in self.P), 400)
         ck(done, 'every player got the Staff of Life and the cinematic ended')
