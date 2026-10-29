@@ -9,9 +9,9 @@ source: coop_campaign.py debug run 2 (dev/campaign, lane 7)
 role: 
 versions: main 8f1944b
 fixed_in:
-branch:
+branch: fix/w5-snapshot
 commits:
-tests: tools/tests/coop_campaign.py --from creature --to tribe
+tests: tools/tests/coop_campaign.py --from creature --to tribe; tools/tests/coop_tribe_snapshot.py (tribe_snapshot); npc_tests test_world_name
 signature:
 docs:
 related: BUG-0152
@@ -45,7 +45,7 @@ the guests' "I'm ready", "done" in the editor (1416 1062), the check of the capt
 You are about to enter the Tribal stage." (1410 1048); then `coop.avatar` on both.
 
 ## Root cause
-Not analysed (this ticket only reports it). Observed: the place id of a player is
+Analysed on fix/w5-snapshot (docs/re/tribe.md#tribe-snapshot-name): the host's share saves right after the mode turned Tribe still read the planet name (`sharing ... planet Scalinus`), so the rename to `snapshot.spo` comes later, during the Tribe intro, and lasts until the next save. Earlier notes: Observed: the place id of a player is
 `modes::current_world()` = crc32 of `SporeCoop::CurrentGameName` (modes.cpp), and right after the
 game's own stage change that name on the host is `snapshot.spo`, not the planet's file the host
 shares (Scalinus.spo). Inferred: the guests' place never equals the host's, so `together` stays 0
@@ -53,7 +53,7 @@ and no puppets are made, until the host loads its planet again (a jump by `coop.
 together at once in the same run).
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+`modes::current_world_name` keeps the last planet file read while the game says `snapshot.spo` (mods/coop/world_name.h, read once per frame, forgotten when the name is anything else such as "SaveGame"). So the place id, the lobby text, the share's planet and the in-stage world signals of tribe/civ stay the planet. Switch `coop.fix world.snapshot_name`. `coop.avatar` prints `game_name` (the raw name).
 
 ## Verification
 <!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
@@ -63,3 +63,4 @@ together at once in the same run).
 - 2026-10-29: opened by dev/campaign (the campaign's first Creature -> Tribe change with four players).
 - 2026-10-29: reproduced in the whole-game debug run out/lane7/campaign/20261029-011243 (cell fixture, host `world 'snapshot.spo'`, guest `world 'Cadian.spo'`, `together N 0` for all three guests): 2 of 2 campaign runs with four players.
 - 2026-10-29: a save on the host ends it: in that run `coop.save` on the host turned its world name back into `Cadian.spo` and all three guests were `together N 1` at once; a guest's rejoin (the host saves for the share) did the same. So the state lasts until the host's next save.
+- 2026-10-29: fix/w5-snapshot: fix (49de011) and docs (aab7b56); unit test npc_tests test_world_name FAILS with --nofix, passes; the two-game test coop_tribe_snapshot.py is written but NOT run yet (lanes were busy): status stays open until its FAIL (SPORE_FIX_OFF=world.snapshot_name) and PASS runs on lane 3.
