@@ -125,9 +125,36 @@ static void body()
 
 static void ko()
 {
-    CHECK(!ko_stale(10.0, 9.0, true));
-    CHECK(ko_stale(10.0, 7.5, true));
-    CHECK(!ko_stale(100.0, 7.5, false)); // old: never
+    // BUG-0061: a knockout nobody refreshes ends (left 0: the 2 s floor)
+    CHECK(!ko_stale(10.0, 9.0, 0.0, true));
+    CHECK(ko_stale(10.0, 7.5, 0.0, true));
+    CHECK(!ko_stale(100.0, 7.5, 0.0, false)); // kostale off: never
+    // BUG-0238: one late refresh with 7 s still to run does not end it; past its own deadline it does
+    CHECK(!ko_stale(12.5, 10.0, 7.0, true));
+    CHECK(ko_stale(19.5, 10.0, 7.0, true));
+    CHECK(ko_stale(12.5, 10.0, 7.0, true, false)); // grace off: ended after 2 s (the bug)
+    CHECK(ko_stale(40.0, 10.0, 1e9, true));        // a bad `left` is capped (25.5 s)
+    CHECK(ko_stale(12.5, 10.0, std::nan(""), true) && !ko_stale(11.5, 10.0, std::nan(""), true)); // NaN: the 2 s floor
+}
+
+// BUG-0239: the host acknowledged nothing while it was in an editor; now it acknowledges the meal
+// it cannot count (as for a meal eaten first): the guest is back at the host's total at once
+static void meals_away()
+{
+    for (bool fix : {true, false}) {
+        Meals m;
+        int local = 45 + 10;
+        uint32_t dropped = m.sent(10);                         // the host is away: never applied
+        uint32_t ack = fix ? dropped : 0;                      // the host's ack after its return
+        local += m.diff(45, true, ack, 0, local, true);        // its next total, no points from us
+        CHECK(fix ? local == 45 : local == 55);
+        uint32_t next = m.sent(1);                             // a later meal, applied: host 46
+        local += 1;
+        int before = local;
+        local += m.diff(46, true, next, 0, local, true);
+        CHECK(local == 46);
+        CHECK(fix ? before - local == 0 : before - local == 10); // old: the dip of 10 at this meal
+    }
 }
 
 // BUG-0160: a unit quaternion from any matrix, hp 0..255 on the wire, no arrow at a NaN position
@@ -189,6 +216,7 @@ int main(int argc, char** argv)
     meals_old_host();
     body();
     ko();
+    meals_away();
     numerics();
     if (g_fail) {
         printf("cell_tests: %d FAILED\n", g_fail);

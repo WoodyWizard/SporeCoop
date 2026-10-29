@@ -53,6 +53,13 @@
   without a fight, and a raid lost while the host was away fails the contract** (BUG-0227).
 - **Space allies: a galaxy reload is seen even when the new empire object gets the old one's
   address** (BUG-0225, the allies part).
+- **Cell: a knocked-out partner no longer flickers to "up" when one update is late** (BUG-0238):
+  it stays translucent until its own 10 s run out, is not taken for a helper meanwhile, and its
+  death effect does not play twice.
+- **Cell: a guest's meal while the host is in its editor no longer drops the guest's food later**
+  (BUG-0239): the guest is back at the shared total as soon as the host returns.
+- **Cell: a guest's bite no longer hurts cells the host's own bite cannot** (BUG-0240): rocks,
+  plants and meat are spared, as in the game.
 - **Setup: a failed GitHub check can no longer overwrite the release an install just fetched** (the
   window said "GitHub not reachable" and the next Install asked again; BUG-0244).
 - **Crash reports name the game instance and whether a test profile was used** (`run:` line, no

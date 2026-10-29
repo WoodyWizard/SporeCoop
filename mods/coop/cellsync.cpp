@@ -155,6 +155,15 @@ COOP_FIX("pool.koreset", "BUG-0070", g_fix_koreset, "cell: our knockout ends wit
 COOP_FIX("pool.bodylevel", "BUG-0041", g_fix_bodylevel, "cell: a level-up during the regrowth gives the level's own size");
 COOP_FIX("pool.rescue", "BUG-0131", g_fix_rescue, "cell: a knocked-out partner rescues, revives nobody");
 COOP_FIX("pool.guestbite", "BUG-0078", g_fix_guestbite, "cell: a guest's bite passes the game's ShouldNotAttack gate");
+// wave 5 (review of 0.7.3.0)
+static bool g_fix_ko_grace = true; // BUG-0238: a remote knockout lasts to its own deadline through late refreshes
+COOP_FIX("pool.ko_grace", "BUG-0238", g_fix_ko_grace, "cell: a late knockout refresh does not end it, replay its effect; KO_UP when ours ends on a stage leave");
+static double g_kodrop_until; // tests (`coop.pool kodrop <s>`): MSG_CELL_KO ignored until then
+static bool g_fix_food_ack_away = true; // BUG-0239: the host acknowledges a guest's meal it cannot count
+COOP_FIX("pool.food_ack_away", "BUG-0239", g_fix_food_ack_away, "cell: a guest's meal reaching a host in an editor (no avatar) is acknowledged, not left on the way");
+static bool g_fix_guestbite_type = true; // BUG-0240: a guest's bite also needs IsDamageable's cell type and AI type
+COOP_FIX("pool.guestbite_type", "BUG-0240", g_fix_guestbite_type, "cell: a guest's bite spares cells IsDamageable refuses (cell type not 2, AI type 0)");
+static bool g_test_away; // tests (`coop.pool away 1|0`, host): the Cell messages are handled as in an editor
 static uint32_t g_hits_spared;
 bool totals_resend_enabled() { return g_fix_resend; }
 static cell_logic::Rounds g_rounds;
@@ -231,6 +240,8 @@ struct Ko {
     float left = 0, hold = 0;
     double since = 0, fx_at = 0;
     double refreshed = 0; // the last MSG_CELL_KO of its owner (KO_OUT comes every 0.25 s)
+    bool expired = false; // ended here by ko_expire, not by its owner (BUG-0238: no effect replay)
+    uint32_t fx = 0;      // death effects played on its puppet (tests)
 };
 static std::unordered_map<int, Ko> g_ko; // remote player -> knockout state
 
@@ -311,6 +322,8 @@ static void on_ko(int id, uint8_t state, float left, float hold)
     k.left = left;
     k.hold = hold;
     k.refreshed = H->time_seconds();
+    bool expired = k.expired;
+    k.expired = false;
     if (state == prev)
         return;
     k.state = state;
@@ -318,8 +331,12 @@ static void on_ko(int id, uint8_t state, float left, float hold)
     // outside the Cell stage only the state is kept (BUG-0061: the "up again" was dropped there);
     // the puppets of other stages are not cells
     uint8_t* c = in_cell() ? puppet_cell(id) : nullptr;
-    if (state == KO_OUT)
+    if (state == KO_OUT && expired && g_fix_ko_grace && c)
+        F<float>(c, kOpacity) = kKoOpacity; // the same knockout after a gap: no second death effect
+    else if (state == KO_OUT) {
         effect(c, "cell_death_oneshot");
+        k.fx += c != nullptr;
+    }
     else if (state == KO_REVIVED)
         effect(c, "cell_hatch_ice");
     else if (state == KO_RESPAWNED)
@@ -333,10 +350,11 @@ static void on_ko(int id, uint8_t state, float left, float hold)
 static void ko_expire(double now)
 {
     for (auto& [id, k] : g_ko) {
-        if (k.state != KO_OUT || !cell_logic::ko_stale(now, k.refreshed, g_fix_kostale))
+        if (k.state != KO_OUT || !cell_logic::ko_stale(now, k.refreshed, k.left, g_fix_kostale, g_fix_ko_grace))
             continue;
         k.state = KO_UP;
         k.since = now;
+        k.expired = true;
         if (uint8_t* c = in_cell() ? puppet_cell(id) : nullptr)
             F<float>(c, kOpacity) = 1.f;
     }
@@ -413,25 +431,36 @@ static void downed_tick(uint8_t* a, double now, double dt)
         C.notice(C.my_name() + " respawned small" + (partner.empty() ? "" : " next to " + partner));
 }
 
-// ai.type of a cell (docs/re/cell.md 1: the first int of the AI block chosen by difficulty), -1 unknown
-static int ai_type(uint8_t* c)
+// the resource's cell type (+0xB4: 2 solid, 3 plant, 5 poison, ...) and ai.type (docs/re/cell.md 1:
+// the first int of the AI block chosen by difficulty, as IsDamageable 0xE52940 picks it); false when
+// the resource data cannot be read. One reader for kind_of, ai_type and the guest-bite gate.
+static bool res_types(uint8_t* c, int* cell_type, int* ai_type)
 {
-    void* ref = F<void*>(c, kRes);
+    void* ref = c ? F<void*>(c, kRes) : nullptr;
     if (!ref || !a_GetData)
-        return -1;
+        return false;
     void* holder = nullptr;
     uint8_t* res = skg::cdecl_call<uint8_t*>(a_GetData, ref, &holder);
     if (holder)
         --F<int>(holder, 0xC);
     if (!res)
-        return -1;
+        return false;
     int d = S() ? F<int>(S(), 0x7C) : 1;
     uint8_t* ai = res + 0xE0;
     if (d == 0 && F<int>(res, 0x248) != -1)
         ai = res + 0x248;
     else if (d == 2 && F<int>(res, 0x194) != -1)
         ai = res + 0x194;
-    return F<int>(ai, 0);
+    *cell_type = F<int>(res, 0xB4);
+    *ai_type = F<int>(ai, 0);
+    return true;
+}
+
+// ai.type of a cell, -1 unknown
+static int ai_type(uint8_t* c)
+{
+    int ct, ai;
+    return res_types(c, &ct, &ai) ? ai : -1;
 }
 
 // ---------------- guest -> host: what our avatar did to a cell of the host's pool ----------------
@@ -1318,6 +1347,10 @@ static void reset_knockout()
 {
     if (!g_fix_koreset)
         return;
+    // BUG-0238: the partners keep our knockout up to its deadline now; tell them it ended (KO_UP is
+    // state 0, which every version handles). On a session end the session is closed: nothing goes out.
+    if (g_downed && g_fix_ko_grace)
+        send_ko(KO_UP, 0, 0);
     if (uint8_t* a = in_cell() ? avatar() : nullptr) {
         if (g_downed || g_invuln_until > 0)
             F<uint8_t>(a, kInvuln) = 0;
@@ -1369,11 +1402,62 @@ void tick(double now)
     symbiosis_tick(now);
 }
 
+// the host's reads of a guest's MSG_CELL_EAT / MSG_CELL_FOOD, shared by the in-Cell handlers and the
+// acknowledgement of a meal that cannot be counted (BUG-0239), so the two cannot drift apart
+struct EatMsg {
+    uint32_t idx = 0;
+    uint8_t kind = ACT_GONE, arg = 0;
+    int food = 0;
+    bool plant = false;
+    bool has_meal = false;
+    uint32_t meal = 0;
+};
+static bool read_eat(net::Reader& r, EatMsg& m)
+{
+    m.idx = r.u32();
+    if (!r.ok())
+        return false;
+    m.kind = r.u8(), m.arg = r.u8();
+    m.food = (int)r.u32();
+    m.plant = r.u8() != 0;
+    if (!r.ok()) // an older guest: the index only
+        m.kind = ACT_GONE, m.arg = 0, m.food = 0, m.plant = false;
+    m.meal = r.u32();
+    m.has_meal = r.ok();
+    return true;
+}
+struct FoodMsg {
+    int amount = 0;
+    bool plant = false, valid = false, has_meal = false;
+    uint32_t meal = 0;
+};
+static FoodMsg read_food(net::Reader& r)
+{
+    FoodMsg m;
+    m.amount = (int)r.u32();
+    m.plant = r.u8() != 0;
+    m.valid = r.ok();
+    m.meal = r.u32();
+    m.has_meal = r.ok();
+    return m;
+}
+
 void on_message(uint8_t type, uint8_t from, net::Reader& r)
 {
     // a knockout state is kept (and relayed) in any stage: an "up again" dropped while we were in an
     // editor or loading left the partner knocked out here (BUG-0061)
-    bool cell = in_cell() && avatar();
+    bool cell = in_cell() && avatar() && !g_test_away;
+    // BUG-0239: a guest's meal that reaches us in an editor (or without an avatar, around a rebuild)
+    // is acknowledged without its points, as a meal eaten first: the guest takes it back at our next
+    // total instead of keeping it "on the way" until a later meal drops it all at once
+    if (!cell && g_fix_food_ack_away && is_host() && (type == net::MSG_CELL_EAT || type == net::MSG_CELL_FOOD)) {
+        EatMsg e;
+        FoodMsg f;
+        bool got = type == net::MSG_CELL_EAT ? read_eat(r, e) && e.has_meal : (f = read_food(r)).has_meal;
+        if (got) // no game call here: outside Cell the pool can be gone, without an avatar AddFoodPoints is unsafe
+            g_food_ack[from] = type == net::MSG_CELL_EAT ? e.meal : f.meal;
+        return;
+    }
     if (!cell && !(type == net::MSG_CELL_KO && g_fix_kostale))
         return;
     if (type == net::MSG_CELL_HIT && is_guest()) {
@@ -1386,6 +1470,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         return;
     }
     if (type == net::MSG_CELL_KO) {
+        if (g_kodrop_until > 0 && H->time_seconds() < g_kodrop_until)
+            return; // tests: a refresh that comes late (coop.pool kodrop)
         uint8_t id = r.u8(), state = r.u8(), left = r.u8(), hold = r.u8();
         if (!r.ok() || (is_host() && id != from))
             return; // a guest tells only about its own cell
@@ -1417,9 +1503,13 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         // the guest's puppet counts as the player) or the victim has +0x17C / +0x111 set. A mouth's
         // chunk (type 6) is EatChunk's, which asks none of these. Old (`fix guestbite 0`): the
         // arguments swapped, no gate.
+        // BUG-0240: and IsDamageable's resource part (GOG 2024 0xE52940): the cell type is 2 (solid) and
+        // the AI type is not 0 (meat; the victim is never the avatar here). Unreadable data: not spared.
+        int ct = -1, ait = -1;
+        bool not_damageable = g_fix_guestbite_type && res_types(c, &ct, &ait) && (ct != 2 || ait == 0);
         if (g_fix_guestbite && t != 6 &&
             (F<uint8_t>(c, kDead) == 1 || F<int>(c, kHp) == 0 || F<uint8_t>(c, 0x17C) || F<uint8_t>(c, kInvuln) ||
-             (pc && o_NoAttack && h_NoAttack(c, pc)))) {
+             not_damageable || (pc && o_NoAttack && h_NoAttack(c, pc)))) {
             g_hits_spared++;
             return;
         }
@@ -1457,17 +1547,15 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
                 skg::cdecl_call<void>(a_Rest, c, res);
         }
     } else if (type == net::MSG_CELL_EAT && is_host()) {
-        uint32_t idx = r.u32();
-        if (!r.ok())
+        EatMsg e;
+        if (!read_eat(r, e))
             return;
-        uint8_t kind = r.u8(), arg = r.u8();
-        int food = (int)r.u32();
-        bool plant = r.u8() != 0;
-        if (!r.ok()) // an older guest: the index only
-            kind = ACT_GONE, arg = 0, food = 0, plant = false;
-        uint32_t meal = r.u32();
-        if (r.ok()) // applied (or refused, eaten first) now: its total goes back with this number
-            g_food_ack[from] = meal;
+        uint32_t idx = e.idx;
+        uint8_t kind = e.kind, arg = e.arg;
+        int food = e.food;
+        bool plant = e.plant;
+        if (e.has_meal) // applied (or refused, eaten first) now: its total goes back with this number
+            g_food_ack[from] = e.meal;
         if (food <= -1000 || food >= 1000)
             food = 0;
         uint8_t* c = modes::cell_at(idx);
@@ -1500,13 +1588,11 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         }
     } else if (type == net::MSG_CELL_FOOD) {
         if (is_host()) { // a guest ate something: add it to the shared progress
-            int amount = (int)r.u32();
-            bool plant = r.u8() != 0;
-            if (r.ok() && amount > -1000 && amount < 1000)
-                o_AddFood(amount, plant);
-            uint32_t meal = r.u32();
-            if (r.ok())
-                g_food_ack[from] = meal;
+            FoodMsg f = read_food(r);
+            if (f.valid && f.amount > -1000 && f.amount < 1000)
+                o_AddFood(f.amount, f.plant);
+            if (f.has_meal)
+                g_food_ack[from] = f.meal;
         } else if (is_guest()) {
             int food = (int)r.u32(), plant = (int)r.u32();
             uint8_t* s = S();
@@ -1526,6 +1612,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
 
 void on_session_end()
 {
+    g_kodrop_until = 0;
+    g_test_away = false;
     if (g_fix_koreset)
         reset_knockout();
     g_ko.clear();
@@ -1619,22 +1707,9 @@ void draw_overlay()
 // ai.type (first int of the AI block by difficulty)
 static const char* kind_of(uint8_t* c)
 {
-    void* ref = F<void*>(c, kRes);
-    if (!ref || !a_GetData)
+    int type, ai;
+    if (!res_types(c, &type, &ai))
         return "?";
-    void* holder = nullptr;
-    uint8_t* res = skg::cdecl_call<uint8_t*>(a_GetData, ref, &holder);
-    if (holder)
-        --F<int>(holder, 0xC);
-    if (!res)
-        return "?";
-    int type = F<int>(res, 0xB4);
-    int d = S() ? F<int>(S(), 0x7C) : 1;
-    uint8_t* ai = res + 0xE0;
-    if (d == 0 && F<int>(res, 0x248) != -1)
-        ai = res + 0x248;
-    else if (d == 2 && F<int>(res, 0x194) != -1)
-        ai = res + 0x194;
     switch (type) {
     case 1: return "rock";
     case 3: return "plant";
@@ -1642,7 +1717,7 @@ static const char* kind_of(uint8_t* c)
     case 5: return "poison";
     case 6: return "part";
     case 7: return "nanite";
-    case 2: return F<int>(ai, 0) != 0 ? "creature" : "meat";
+    case 2: return ai != 0 ? "creature" : "meat";
     default: return "other";
     }
 }
@@ -1983,8 +2058,12 @@ std::string debug(const std::vector<std::string>& a)
         std::vector<std::pair<float, uint8_t*>> v;
         // "kill <key> hit": DamageCell only (spikes, poison, electric: a lethal hit goes to KillCell)
         uint32_t want = a.size() > 1 && a[1] != "-" ? (uint32_t)strtoul(a[1].c_str() + (a[1][0] == 'c' ? 1 : 0), nullptr, 10) : 0;
+        // "kill <key|-> anyhit [kind]": DamageCell on a cell of any kind (or the nearest of that kind):
+        // the host's own bite there, a MSG_CELL_HIT from a guest (BUG-0240)
+        bool anyhit = a.size() > 2 && a[2] == "anyhit";
+        std::string kind = anyhit && a.size() > 3 ? a[3] : "creature";
         for_each_cell([&](uint8_t* c, uint32_t idx) {
-            if (modes::cell_is_puppet(c) || strcmp(kind_of(c), "creature") != 0)
+            if (modes::cell_is_puppet(c) || c == av || (!(anyhit && want) && kind != kind_of(c)))
                 return;
             auto it = g_host_of.find(idx);
             if (is_guest() && it == g_host_of.end())
@@ -2003,13 +2082,13 @@ std::string debug(const std::vector<std::string>& a)
         float dx = cp.x - ap.x, dy = cp.y - ap.y, l = std::max(0.001f, std::sqrt(dx * dx + dy * dy));
         float dir[3] = {dx / l, dy / l, 0}, at[3] = {cp.x, cp.y, cp.z};
         if (!F<uint8_t>(c, kDead) && !F<uint8_t>(c, kDying)) {
-            if (a_Bite && !(a.size() > 2 && a[2] == "hit")) // the game's bite (event 10): DamageCell, or BreakOrSwallow when lethal
+            if (a_Bite && !(a.size() > 2 && (a[2] == "hit" || anyhit))) // the game's bite (event 10): DamageCell, or BreakOrSwallow when lethal
                 skg::cdecl_call<bool>(a_Bite, avatar_idx(), F<uint32_t>(c, 0), at, dir, 0, 1.f / 30.f);
             else
                 h_DamageCell(c, av, dir, 4, 0, 0.f);
         }
         char b[160];
-        snprintf(b, sizeof b, "bit c%u at %.1f level=%d hp=%d pos=(%.1f %.1f)%s", key, v[0].first, F<int>(c, kLevel), F<int>(c, kHp),
+        snprintf(b, sizeof b, "bit c%u %s at %.1f level=%d hp=%d pos=(%.1f %.1f)%s", key, kind_of(c), v[0].first, F<int>(c, kLevel), F<int>(c, kHp),
                  pos_of(c).x, pos_of(c).y, F<uint8_t>(c, kDead) || F<uint8_t>(c, kDying) ? " dying" : "");
         return b;
     }
@@ -2101,6 +2180,20 @@ std::string debug(const std::vector<std::string>& a)
         snprintf(b, sizeof b, "npcflag %s %s=%d hp=%d", a[1].c_str(), a[2].c_str(), v, F<int>(c, kHp));
         return b;
     }
+    if (a.size() >= 2 && a[0] == "away") { // host, tests: Cell messages handled as in an editor (BUG-0239)
+        g_test_away = a[1] == "1";
+        return g_test_away ? "away 1" : "away 0";
+    }
+    if (a.size() >= 2 && a[0] == "kodrop") { // tests: ignore MSG_CELL_KO for <s> seconds (a late refresh, BUG-0238)
+        double s = std::clamp(atof(a[1].c_str()), 0.0, 30.0);
+        g_kodrop_until = s > 0 ? H->time_seconds() + s : 0;
+        return "kodrop " + std::to_string(s).substr(0, 4);
+    }
+    if (a.size() >= 2 && a[0] == "invulnfor") { // tests: invulnerable for <s> seconds, as after a respawn (BUG-0237)
+        F<uint8_t>(av, kInvuln) = 1;
+        g_invuln_until = H->time_seconds() + std::clamp(atof(a[1].c_str()), 0.0, 120.0);
+        return "invulnerable until " + std::to_string(g_invuln_until);
+    }
     if (a.size() >= 2 && a[0] == "invuln") { // tests: the avatar's invulnerability flag +0x111
         F<uint8_t>(av, kInvuln) = (uint8_t)atoi(a[1].c_str());
         return "invuln set";
@@ -2166,8 +2259,8 @@ std::string debug(const std::vector<std::string>& a)
     for (auto& [id, k] : g_ko) {
         uint8_t* pc = puppet_cell(id);
         char kb[96];
-        snprintf(kb, sizeof kb, "ko[%d]=%d left=%.1f hold=%.2f op=%.2f\n", id, k.state, k.left, k.hold,
-                 pc ? F<float>(pc, kOpacity) : -1.f);
+        snprintf(kb, sizeof kb, "ko[%d]=%d left=%.1f hold=%.2f op=%.2f fx=%u\n", id, k.state, k.left, k.hold,
+                 pc ? F<float>(pc, kOpacity) : -1.f, k.fx);
         ko += kb;
     }
     snprintf(b, sizeof b,
