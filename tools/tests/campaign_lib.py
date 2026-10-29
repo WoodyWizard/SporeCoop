@@ -172,13 +172,14 @@ class Findings:
 REPORT = re.compile(r'^(crash|report|hang)-(\d{8}-\d{6})-i(\d+)\.txt$')
 
 
-def new_reports(names, since, instances):
+def new_reports(files, since, instances):
     """report files (crash-YYYYmmdd-HHMMSS-iN.txt, report-..., hang-...) of the given instances
-    written at or after `since` (a 'YYYYmmdd-HHMMSS' string)"""
+    written at or after `since`. files: [(name, mtime)]. The time in the name is the game's (Wine's)
+    local time, which need not be this machine's: the file time decides (2 s for the coarse clock)."""
     out = []
-    for n in sorted(names):
+    for n, mtime in sorted(files):
         m = REPORT.match(n)
-        if m and int(m.group(3)) in instances and m.group(2) >= since:
+        if m and int(m.group(3)) in instances and mtime >= since - 2:
             out.append(n)
     return out
 

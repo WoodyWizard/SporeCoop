@@ -113,7 +113,7 @@ class Campaign:
         self.stage = a.start
         self.phase = 'start'
         self.events_seen = 0
-        self.since = time.strftime('%Y%m%d-%H%M%S')
+        self.since = time.time()
         self.persist = {k: cl.Persist(2) for k in ('stage', 'apart', 'desync', 'shared', 'census')}
         self.quiet_until = 0.0     # a rejoin or a stage change is going on: no together / sync checks
         self.lock = threading.Lock()
@@ -206,11 +206,13 @@ class Campaign:
             who = [p for p in self.P if p.name == src]
             kind = 'freeze' if 'FROZE' in e else 'info' if 'resumed' in e else 'dead'
             self.finding(kind, e.split(':')[0] + ':' + kind, e, who)
-        try:
-            names = os.listdir(self.log_dir)
-        except OSError:
-            names = []
-        for n in cl.new_reports(names, self.since, {p.inst for p in self.P}):
+        files = []
+        for n in (os.listdir(self.log_dir) if os.path.isdir(self.log_dir) else []):
+            try:
+                files.append((n, os.path.getmtime(os.path.join(self.log_dir, n))))
+            except OSError:
+                pass
+        for n in cl.new_reports(files, self.since, {p.inst for p in self.P}):
             path = os.path.join(self.log_dir, n)
             try:
                 head = open(path, errors='replace').read(1500).splitlines()[:12]
@@ -391,20 +393,35 @@ class Campaign:
         return k
 
     def rejoin(self, g):
-        """a guest leaves and joins again (its game loads the host's world anew)"""
-        self.quiet_until = time.time() + 240
+        """a guest leaves and joins again: it leaves to its menu, loads the host's world anew and is
+        together with the host again (twoinst.warm_reset's wait)"""
+        self.quiet_until = time.time() + 300
         self.note(f'{g.name} leaves and joins again')
         g.call('coop.leave')
+        t0 = time.time()
+        while time.time() - t0 < 15 and g.pid in self.together():
+            time.sleep(0.5)
         time.sleep(self.rng.uniform(2, 8))
         g.call(g.join)
-        t0 = time.time()
+        t1 = time.time()
+        left = False
+        while time.time() - t1 < 40 and not left:  # the world comes: the guest leaves its old copy
+            left = any(m in g.call('game.mode') for m in ('GalaxyGameEntry', 'Load')) or \
+                'receiving world' in g.call('coop.status')
+            time.sleep(0.5)
         ok = wait_all(self.host.con, len(self.guests), 200)
+        if ok:  # together, and its game plays the host's stage again
+            hst = cl.stage_of(self.host.call('game.mode'))
+            t2 = time.time()
+            while time.time() - t2 < 60 and cl.stage_of(g.call('game.mode')) != hst:
+                time.sleep(1)
+            ok = cl.stage_of(g.call('game.mode')) == hst and wait_all(self.host.con, len(self.guests), 60)
         self.rejoins += 1
         if not ok:
             self.finding('apart', f'rejoin:{g.name}:{self.stage}', f'{g.name} did not get back into the host\'s world '
-                         f'after a rejoin within 200 s ({self.stage})', [self.host, g])
+                         f'after a rejoin within 300 s ({self.stage})', [self.host, g])
         else:
-            self.note(f'{g.name} is back after {time.time() - t0:.0f} s')
+            self.note(f'{g.name} is back after {time.time() - t0:.0f} s (left its old world: {left})')
         time.sleep(10)
         self.quiet_until = time.time() + 20
 

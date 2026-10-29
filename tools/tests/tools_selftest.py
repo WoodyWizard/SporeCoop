@@ -564,9 +564,11 @@ def test_campaign():
     check('Bob: kind n out of sync' in md and '* log a' in md and 'shot b' in md and '(+61 s)' in md
           and 'stage creature/play' in md, 'findings.md has the text, the time, the stage and the evidence')
     check(len(jl) == 1 and f.items[0]['repeats'] == 1 and f.summary() == {'desync': 1}, 'one json line, one repeat')
-    names = ['crash-20261029-010000-i13.txt', 'crash-20261028-010000-i13.txt', 'report-20261029-020000-i27.txt',
-             'crash-20261029-030000-i3.txt', 'sporekit.13.log', 'SporeCoop-report-20261029-020000-i27.zip']
-    got = cl.new_reports(names, '20261029-000000', {13, 14, 27, 37})
+    # the name's time is Wine's local time (an hour off here): the file time decides
+    names = [('crash-20261029-010000-i13.txt', 5000), ('crash-20261029-030000-i13.txt', 900),
+             ('report-20261029-020000-i27.txt', 1001), ('crash-20261029-030000-i3.txt', 5000),
+             ('sporekit.13.log', 5000), ('SporeCoop-report-20261029-020000-i27.zip', 5000)]
+    got = cl.new_reports(names, 1000, {13, 14, 27, 37})
     check(got == ['crash-20261029-010000-i13.txt', 'report-20261029-020000-i27.txt'],
           f'new reports: only the instances of the run, only since the start ({got})')
 
