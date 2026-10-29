@@ -726,3 +726,30 @@ GOG 2024 addresses. Callers of `cCity::SpawnVehicle` 0xBDDEF0 (Ghidra `callers`)
   No behaviour changed: every caller (the planet tick, the cheat, civ.cpp's replay) passes (0, 0),
   and the broadcast condition `!instant && !who` is symmetric. The GOG 2024 entry
   (`overrides_dc04aee5.sym`, 0xAE3AB0) names the arguments too. ✔ by reading
+
+## Civ world changes and cinematics (2026-10-28, fix/w5-world)
+<a id="civ-world-epoch-cinematics"></a>
+
+BUG-0223, BUG-0224. GOG 2024, lane 5.
+
+* ✔ One frame with Civ's local entity null (the anchor built from the player civ's first city;
+  forced with `coop.civ nulllocal 1`) made the host forget every table before the fix: all vehicles
+  got new ids (`next_id` 3 -> 5), the guest's game destroyed and rebuilt every vehicle (new object
+  addresses), the guest's own vehicle lost its owner. Now `civ::world_check` decides from
+  `game::stage_epoch(kCiv)`, leaving Civ for a non-editor mode, and the in-stage signals (another
+  player civilization object, another save name); switch `coop.fix civ.world_epoch`.
+  `host_tick` prunes `g_hv` against the game's vehicle list before it reads a vehicle (`pol`, the
+  orphan loop).
+* ✔ `Simulator::cCivExpansion::SpawnNextCity(ex, 0, 0)` on civ_npc founds a city with no cinematic:
+  +0x2C of the cinematic manager stayed 0 for 25 s.
+* ✔ `cCinematicManager::PlayCinematic` GOG 2024 0xAE08B0 (port, overrides_dc04aee5.sym):
+  `call Simulator::cCinematicManager::PlayCinematic thiscall <cm> s:CVG_PRE_NewCityAppears 1 1 0 0 0`
+  plays a camera cinematic that keeps +0x2C set for more than 30 s (Enter does not end it,
+  `SporeCoop::cCinematicManager_EndCinematic` does). Other names that start in Civ (non-zero id):
+  CVG_UnlockUFO, CVG_UnlockAir, CVG_PlayerCityAttacked; CVG-CamRotate returns 0.
+* ✔ `coop.civ capture <city>`: +0x2C is set within 0.3 s after `Capture` returns. BUG-0224: only a
+  capture (`h_Capture`, host, any nation) arms the 8 s close of BUG-0187; the 8 s count from the
+  arm, the arm ends when the cinematic ends, when none came within 3 s, after the close, at a world
+  change or session end. Switch `coop.fix civ.caption_only`. Not measured: the purchase chain
+  (BuyCity, FinishBuyCity, Capture) and whether +0x2C drops between its cinematics; an NPC capture
+  of an NPC city arms too (accepted: its caption would stop everybody the same way).

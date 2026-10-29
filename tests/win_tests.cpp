@@ -339,6 +339,133 @@ static void test_slot_write_fails()
     CHECK(!exists(b + L"\\sporecoop.txt"));
 }
 
+static int count_same_host(const std::wstring& games, const char* host)
+{
+    int n = 0;
+    for (int k = 0; k < 64; k++) {
+        std::string m = get(games + L"\\Game" + std::to_wstring(k) + L"\\sporecoop.txt");
+        if (m.find(std::string("host ") + host + "\n") != std::string::npos)
+            n++;
+    }
+    return n;
+}
+
+// BUG-0254: the old copy of the host's world cannot be replaced (Windows: a file in it is open by
+// another program; slotfs::g_test_fail_replace makes Wine refuse the same way)
+static void test_slot_fallback()
+{
+    printf("world: a slot that cannot be replaced gives way to another slot, tidied later (BUG-0254)\n");
+    std::wstring games = fresh_dir(L"fallback") + L"\\Games";
+    CreateDirectoryW(games.c_str(), nullptr);
+    std::string err, note;
+    auto files = [](const std::vector<slotfs::File>& w) {
+        std::vector<const slotfs::File*> v;
+        for (auto& f : w)
+            v.push_back(&f);
+        return v;
+    };
+    std::wstring a = slotfs::pick(games, L"", "Alice", "Terra", "Terra.spo", true, note);
+    CHECK(wr(a, world("Terra", "A1"), "Alice", "Terra", 1, err));
+    // the guest plays a save of its own (busy, never chosen)
+    std::wstring own = games + L"\\Game5";
+    put(own + L"\\Mine.spo", "the guest's own game");
+    slotfs::g_test_held = lower(a);
+    auto w2 = world("Terra", "A2");
+    std::wstring slot = slotfs::pick(games, lower(own), "Alice", "Terra", "Terra.spo", true, note);
+    CHECK(lower(slot) == lower(a));
+    bool moved = false;
+    err.clear();
+    bool ok = slotfs::write_or_fallback(games, slot, lower(own), files(w2), "Alice", "Terra", "Terra.spo", 2, err, moved);
+    printf("  held slot: %s, moved %d (%s)\n", ok ? "written" : "refused", (int)moved, err.c_str());
+    CHECK(ok && moved);
+    CHECK(lower(slot) != lower(a) && lower(slot) != lower(own));
+    CHECK(get(slot + L"\\Terra.spo") == "A2");
+    CHECK(get(slot + L"\\sporecoop.txt").find("host Alice\n") != std::string::npos);
+    CHECK(get(a + L"\\Terra.spo") == "A1"); // the held copy unchanged
+    CHECK(get(own + L"\\Mine.spo") == "the guest's own game");
+    slotfs::g_test_held.clear();
+    // the hold is released: the next share writes the lowest same-host slot and tidies the extra copy
+    std::wstring s3 = slotfs::pick(games, lower(own), "Alice", "Terra", "Terra.spo", true, note);
+    err.clear();
+    CHECK(slotfs::write_or_fallback(games, s3, lower(own), files(world("Terra", "A3")), "Alice", "Terra", "Terra.spo", 3, err, moved));
+    CHECK(count_same_host(games, "Alice") == 1);
+    CHECK(get(s3 + L"\\Terra.spo") == "A3");
+    CHECK(get(own + L"\\Mine.spo") == "the guest's own game");
+}
+
+static void set_age(const std::wstring& dir, int seconds)
+{
+    HANDLE h = CreateFileW(dir.c_str(), FILE_WRITE_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                           OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+    FILETIME ft;
+    GetSystemTimeAsFileTime(&ft);
+    ULARGE_INTEGER u;
+    u.LowPart = ft.dwLowDateTime;
+    u.HighPart = ft.dwHighDateTime;
+    u.QuadPart -= (ULONGLONG)seconds * 10000000ull;
+    ft.dwLowDateTime = u.LowPart;
+    ft.dwHighDateTime = u.HighPart;
+    if (h != INVALID_HANDLE_VALUE) {
+        SetFileTime(h, &ft, nullptr, nullptr);
+        CloseHandle(h);
+    }
+}
+
+static DWORD WINAPI busy_writer(void* p)
+{
+    auto* games = (std::wstring*)p;
+    std::string e;
+    slotfs::WriteFail why = slotfs::WriteFail::None;
+    std::vector<slotfs::File> w = world("Terra", "B");
+    std::vector<const slotfs::File*> v;
+    for (auto& f : w)
+        v.push_back(&f);
+    bool ok = slotfs::write(*games + L"\\Game1", v, "Bob", "Terra", 2, e, &why);
+    return ok ? 0 : (DWORD)why;
+}
+
+// BUG-0254: folders left in Games-sporecoop-tmp by writes that were interrupted
+static void test_slot_leftovers()
+{
+    printf("world: leftovers of interrupted writes are tidied, an old world is never lost (BUG-0254)\n");
+    std::wstring root = fresh_dir(L"leftover"), games = root + L"\\Games", tmp = games + L"-sporecoop-tmp",
+                 bak = games + L"-sporecoop-backup";
+    CreateDirectoryW(games.c_str(), nullptr);
+    CreateDirectoryW(tmp.c_str(), nullptr);
+    std::string err;
+    put(tmp + L"\\Game3-20260101-101010-123\\stars.db", "old temp");
+    set_age(tmp + L"\\Game3-20260101-101010-123", 3600);
+    Sleep(3000); // (Wine may not keep a creation time set by hand: the age rule is 2 s here)
+    put(tmp + L"\\Game3-20260101-101011-124\\stars.db", "fresh temp");
+    put(tmp + L"\\Game4-old-20260101-101010-125\\Terra.spo", "the only copy of Game4");
+    put(games + L"\\Game6\\Vulcan.spo", "Game6 now");
+    put(tmp + L"\\Game6-old-20260101-101010-126\\Vulcan.spo", "an older Game6");
+    put(tmp + L"\\notes\\x.txt", "not ours");
+    slotfs::g_test_cleanup_age_s = 2;
+    CHECK(wr(games + L"\\Game0", world("Terra", "T"), "Alice", "Terra", 1, err));
+    slotfs::g_test_cleanup_age_s = 600;
+    CHECK(!exists(tmp + L"\\Game3-20260101-101010-123"));    // an old temp copy: deleted
+    CHECK(exists(tmp + L"\\Game3-20260101-101011-124"));     // a fresh one (maybe another write): kept
+    CHECK(get(games + L"\\Game4\\Terra.spo") == "the only copy of Game4"); // back into its slot
+    CHECK(get(games + L"\\Game6\\Vulcan.spo") == "Game6 now");
+    CHECK(get(bak + L"\\Game6-old-20260101-101010-126\\Vulcan.spo") == "an older Game6"); // kept aside
+    CHECK(exists(tmp + L"\\notes\\x.txt"));
+    // another instance holds the write lock: nothing is touched
+    HANDLE mx = CreateMutexW(nullptr, TRUE, L"Local\\SporeCoopSlotWrite");
+    if (slotfs::g_cleanup_fix) {
+        // the mutex is owned by this thread here, so take it from another thread
+        HANDLE th = CreateThread(nullptr, 0, busy_writer, &games, 0, nullptr);
+        WaitForSingleObject(th, 30000);
+        DWORD code = 99;
+        GetExitCodeThread(th, &code);
+        CloseHandle(th);
+        CHECK(code == (DWORD)slotfs::WriteFail::Busy);
+        CHECK(!exists(games + L"\\Game1"));
+    }
+    ReleaseMutex(mx);
+    CloseHandle(mx);
+}
+
 // BUG-0142: a name outside the ANSI codepage survives a write and a read through the profile API;
 // a coop.ini edited by hand in UTF-8 (with or without a BOM) is read as UTF-8
 static void test_ini_unicode()
@@ -755,6 +882,7 @@ int main(int argc, char** argv)
         upd::g_old_suffix_fix = upd::g_keep_failed_fix = false;
         upd::g_dup_fix = false;
         slotfs::g_busy_fix = slotfs::g_match_fix = slotfs::g_write_fix = false;
+        slotfs::g_fallback_fix = slotfs::g_cleanup_fix = false;
         skini::g_unicode_fix = false;
         skini::g_encode_fix = skini::g_lock_fix = false;
         upd::g_path_fix = false;
@@ -773,6 +901,8 @@ int main(int argc, char** argv)
     test_slot_busy();
     test_slot_match();
     test_slot_write_fails();
+    test_slot_fallback();
+    test_slot_leftovers();
     test_ini_unicode();
     test_ini_encoding();
     test_setup_packs();

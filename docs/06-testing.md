@@ -1320,6 +1320,24 @@ registry (`mods/coop/fixes.h`, BUG-0116):
   object, not walkable ground. Prefer W (camera forward, open grass at this fixture) or a point
   far up the screen.
 
+## Wave 5 world tests (2026-10-28, fix/w5-world)
+<a id="testing-w5-world"></a>
+
+* `tribe_editor_world` (BUG-0217): the host opens an editor in Tribe through `coop.vote editor`
+  (works in Tribe now: a member's species) and leaves with the red X (1380, 1062), since Done is
+  blocked for the tribe species. Checks the host's game: no co-op epic after the share save and
+  after the session. `SPORE_FIX_OFF=tribe.editor_world` fails.
+* `civ_null_local` (BUG-0223): `coop.civ nulllocal <frames>` forces Civ's/Tribe's local entity
+  null (the real trigger of the old world change). Checks the guest's vehicle objects and its
+  order on the host. `SPORE_FIX_OFF=civ.world_epoch` fails.
+* `civ_caption` step 0 (BUG-0224): a camera cinematic started with PlayCinematic must still play
+  after 13 s. `SPORE_FIX_OFF=civ.caption_only` fails.
+* `save_hygiene_leave` (BUG-0255): `coop_save_hygiene.py --leave`, the partner leaves before the
+  save. `SPORE_FIX_OFF=savestrip.empty_herds` fails.
+* `win_unit` (BUG-0254): `test_slot_fallback` (`slotfs::g_test_held` makes a slot unmovable under
+  Wine the way an open file does on Windows) and `test_slot_leftovers`; `--old` fails.
+* Pitfall: a warm reuse keeps `coop.fix` switches of the run before (a `--nofix` run directly on a
+  lane, then a warm run: still off). The lab restarts a lane cold after a failure.
 ## Core wave 5: votes, shared money at a join, host away, other worlds (2026-10-28, fix/w5-core)
 <a id="testing-w5-core"></a>
 

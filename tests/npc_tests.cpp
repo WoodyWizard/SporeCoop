@@ -9,6 +9,8 @@
 #include "drive_plan.h"
 #include "hunt_hits.h"
 #include "npc_ids.h"
+#include "savestrip_rule.h"
+#include "stage_epoch.h"
 #include "share_wait.h"
 #include "swap_ledger.h"
 
@@ -190,6 +192,81 @@ static void test_drive()
     CHECK(stuck);
 }
 
+// BUG-0217 / BUG-0223: the stage counters and a module's watch (stage_epoch.h)
+static void test_stage_epoch()
+{
+    using namespace stage_epoch;
+    const uint32_t kLoad = 0x1654C08, kMenu = 0x2CCD1D2;
+    State s;
+    step(s, kMenu);
+    CHECK(get(s, kTribe) == 0);
+    step(s, kLoad);
+    step(s, kTribe);
+    CHECK(get(s, kTribe) == 1);
+    step(s, kTribe);
+    CHECK(get(s, kTribe) == 1);
+    step(s, kEditor); // editor, then Done: the same world
+    step(s, kEdit);
+    step(s, kTribe);
+    CHECK(get(s, kTribe) == 1);
+    step(s, kEditor); // editor, then the menu, then a load: a new world
+    step(s, kMenu);
+    step(s, kLoad);
+    step(s, kTribe);
+    CHECK(get(s, kTribe) == 2);
+    step(s, kCiv); // another stage
+    CHECK(get(s, kCiv) == 1 && get(s, kTribe) == 2);
+    step(s, kScenario); // kScenario keeps only Space
+    step(s, kCiv);
+    CHECK(get(s, kCiv) == 2);
+    step(s, kSpace);
+    step(s, kScenario);
+    step(s, kSpace);
+    CHECK(get(s, kSpace) == 1);
+    step(s, kTribe);
+    CHECK(get(s, kTribe) == 3);
+    CHECK(get(s, kMenu) == 0);
+
+    int a = 0, b = 0;
+    Watch w;
+    CHECK(!changed(w, 5, true, &a, 7)); // the first call records only (hot reload)
+    CHECK(!changed(w, 5, true, &a, 7));
+    CHECK(!changed(w, 5, false, nullptr, 0)); // editor: the in-stage signals wait
+    CHECK(!changed(w, 5, true, &a, 7));
+    CHECK(changed(w, 6, true, &a, 7)); // the stage counter moved
+    CHECK(!changed(w, 6, true, &a, 7));
+    CHECK(changed(w, 6, true, &b, 7)); // another player object in the stage
+    CHECK(!changed(w, 6, true, &b, 7));
+    CHECK(changed(w, 6, true, nullptr, 7)); // the object went away (null included): once
+    CHECK(!changed(w, 6, true, nullptr, 7));
+    CHECK(!changed(w, 6, true, &a, 7)); // back: no recorded object to compare with
+    CHECK(changed(w, 6, true, &a, 9)); // another save name
+    CHECK(!changed(w, 6, true, &a, 0)); // no save name: no signal
+    CHECK(!changed(w, 6, true, &a, 9));
+    Watch w2; // recorded outside the stage: no object yet
+    CHECK(!changed(w2, 1, false, nullptr, 0));
+    CHECK(!changed(w2, 1, true, &a, 3));
+    CHECK(!changed(w2, 1, true, &a, 3));
+}
+
+// BUG-0255: one list of our objects per save; empty herds only when surely empty (savestrip_rule.h)
+static void test_savestrip_rule()
+{
+    using namespace savestrip;
+    int s1, s2;
+    SaveState st;
+    CHECK(new_save(st, &s1, 10));  // the first Write
+    CHECK(!new_save(st, &s1, 10)); // same serializer, same frame: the same save
+    CHECK(new_save(st, &s1, 11));  // the same address one frame later: a new save
+    CHECK(new_save(st, &s2, 11));  // another serializer: a new save
+    CHECK(!new_save(st, &s2, 11));
+    CHECK(strip_empty_herd(true, true, false, false));
+    CHECK(!strip_empty_herd(false, true, false, false)); // member list not readable
+    CHECK(!strip_empty_herd(true, false, false, false)); // has members
+    CHECK(!strip_empty_herd(true, true, true, false));   // a creature points at it
+    CHECK(!strip_empty_herd(true, true, false, true));   // a creature of the save was unreadable
+}
+
 // BUG-0232: the host's wait for the evolution cinematic before a world share. `each` = the fix (one
 // timer per guest, restarted when the guest is marked as needing the world); without it one
 // global timer (npc_tests --nofix: the checks must fail).
@@ -263,6 +340,8 @@ int main(int argc, char** argv)
 {
     g_nofix = argc > 1 && std::string(argv[1]) == "--nofix";
     test_share_wait();
+    test_stage_epoch();
+    test_savestrip_rule();
     test_drive();
     test_ids();
     test_hits();

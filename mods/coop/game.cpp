@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "sporekit_game.hpp"
+#include "stage_epoch.h"
 #include "swap_ledger.h"
 #include "fixes.h"
 
@@ -458,6 +459,10 @@ uint32_t world_epoch()
     }
     return g_epoch_fix ? g_world_epoch : 0;
 }
+
+static stage_epoch::State g_stage_epochs;
+void stage_epoch_tick() { stage_epoch::step(g_stage_epochs, mode_id()); }
+uint32_t stage_epoch(uint32_t stage_mode) { return stage_epoch::get(g_stage_epochs, stage_mode); }
 
 net::Vec3 position(void* c)
 {

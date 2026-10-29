@@ -12,7 +12,12 @@ itself after 8 s (the game's EndCinematic, as Enter does).
    the player civilization on both machines, and a host vehicle drives again (its game position
    changes after a move order).
 
+0. BUG-0224: a cinematic that no capture started (the camera cinematic "CVG_PRE_NewCityAppears",
+   started through the game's PlayCinematic) still plays on the host 12 s later: only a capture's
+   caption is closed. The test then ends it (EndCinematic, as the OK does).
+
 --nofix: `coop.civ fix caption 0` (the old wait for the OK): must FAIL.
+SPORE_FIX_OFF=civ.caption_only: every cinematic is closed after 8 s (0.7.3.0): must FAIL (step 0).
 
   SPORE_LANE=7 python3 tools/tests/coop_civ_caption.py [--nofix]
 """
@@ -39,6 +44,22 @@ def main():
     if a.nofix:
         print(' ', host.call('coop.civ fix caption 0')['out'].strip())
     time.sleep(4)
+    # 0. BUG-0224: another cinematic plays on
+    m = re.search(r'eax=0x([0-9A-Fa-f]+)', host.call('call Simulator::cCinematicManager::Get cdecl')['out'])
+    if ck(m, 'the cinematic manager'):
+        cm = m.group(1)
+        print(' ', host.call(f'call Simulator::cCinematicManager::PlayCinematic thiscall 0x{cm} s:CVG_PRE_NewCityAppears 1 1 0 0 0')['out'].strip())
+        time.sleep(1)
+        p0, out0 = movie(host)
+        print('  ', out0)
+        if ck(p0 == 1, 'a cinematic that no capture started plays on the host'):
+            time.sleep(12)
+            p1, out1 = movie(host)
+            print('  13 s later:', out1)
+            ck(p1 == 1, 'it still plays 13 s later (only a capture\'s caption is closed)')
+        print(' ', host.call(f'call SporeCoop::cCinematicManager_EndCinematic thiscall 0x{cm}')['out'].strip())
+        time.sleep(2)
+        print('  ', movie(host)[1])
     hc, hv = civ(host)
     ppol = next((v['pol'] for v in hc.values() if v['player']), None)
     npc = [k for k, v in hc.items() if not v['player']]

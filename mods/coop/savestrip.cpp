@@ -8,6 +8,7 @@
 
 #include "game.h"
 #include "npc.h"
+#include "savestrip_rule.h"
 #include "sporekit_game.hpp"
 #include "fixes.h"
 
@@ -21,6 +22,13 @@ static std::vector<Filter> g_filters;
 static DWORD g_main_tid;
 static void* g_last_ser;      // the COMSerializer of the save being written
 static double g_last_write;   // when Write ran last
+// BUG-0255: one list per save: a new serializer or a new frame starts it (savestrip_rule.h), not a
+// 0.5 s pause. `coop.fix savestrip.per_save off`: the 0.5 s rule of 0.7.3.0 (unsafe: a second
+// save soon after can write a game object at a freed puppet's address as null).
+static bool g_per_save_fix = true;
+COOP_FIX_UNSAFE("savestrip.per_save", "BUG-0255", g_per_save_fix, "saves: every save builds its own list of our objects");
+static uint32_t g_frame, g_save_first_frame, g_save_last_frame, g_max_span;
+static SaveState g_save_state;
 static std::unordered_set<void*> g_ours; // this save's objects of ours (bases and their Cast pointers)
 static uint32_t g_saves, g_nulled, g_offthread, g_last_count;
 
@@ -49,15 +57,53 @@ static bool own_kind_herd(void* h)
 static bool g_owner_fix = true; // tests: `coop.savestrip owner 0` strips by herd kind alone (the first version)
 COOP_FIX("savestrip.owner", "BUG-0020", g_owner_fix, "saves: only herds made for our objects are stripped, never a pack member");
 static std::unordered_set<void*> g_strip_herds, g_keep_herds;
+// BUG-0255: a herd made for a puppet stayed in the world empty after its partner left (herds are
+// reused per species and never destroyed) and went into every save: the owner rule only stripped
+// herds that still held a creature of ours. Now an own-kind herd with no members is stripped too,
+// when it is surely empty (savestrip_rule.h). `coop.fix savestrip.empty_herds off`: kept (0.7.3.0).
+static bool g_empty_fix = true;
+COOP_FIX("savestrip.empty_herds", "BUG-0255", g_empty_fix, "saves: empty herds made for partners' puppets are kept out of saves too");
+static std::unordered_set<void*> g_herd_seen; // herds some creature of this save points at
+static bool g_unreadable;                     // a creature of this save could not be read
+static uint32_t g_empty_stripped;
+
+static bool herd_members(void* h, bool& empty)
+{
+    if (IsBadReadPtr((uint8_t*)h + 0x40, 8))
+        return false;
+    void** b = *(void***)((uint8_t*)h + 0x40);
+    void** e = *(void***)((uint8_t*)h + 0x44);
+    if (e < b || (b && e > b && IsBadReadPtr(b, (size_t)((uint8_t*)e - (uint8_t*)b))))
+        return false;
+    empty = e == b;
+    return true;
+}
 
 static bool creature_filter(void* o, uint32_t noun)
 {
     if (noun == game::kHerdNoun) {
         if (!own_kind_herd(o))
             return false;
-        return !g_owner_fix || (g_strip_herds.count(o) && !g_keep_herds.count(o));
+        if (!g_owner_fix)
+            return true;
+        if (g_strip_herds.count(o) && !g_keep_herds.count(o))
+            return true;
+        if (!g_empty_fix || g_strip_herds.count(o) || g_keep_herds.count(o))
+            return false;
+        bool empty = false, readable = herd_members(o, empty);
+        if (!strip_empty_herd(readable, empty, g_herd_seen.count(o) != 0, g_unreadable))
+            return false;
+        g_empty_stripped++;
+        return true;
     }
-    if (noun != kCreatureNoun || o == game::avatar() || IsBadReadPtr(o, 0x1680))
+    if (noun != kCreatureNoun)
+        return false;
+    if (IsBadReadPtr(o, 0x1680)) {
+        g_unreadable = true;
+        return false;
+    }
+    g_herd_seen.insert(game::herd_of(o)); // every creature, the avatar and the pack included
+    if (o == game::avatar())
         return false;
     void* h = game::herd_of(o);
     if (!own_kind_herd(h))
@@ -74,6 +120,8 @@ static void rebuild()
     g_ours.clear();
     g_strip_herds.clear();
     g_keep_herds.clear();
+    g_herd_seen.clear();
+    g_unreadable = false;
     // creatures first (they decide their herds), then the herds
     for (int pass = 0; pass < 2; pass++)
         game::for_each_object(
@@ -106,9 +154,19 @@ static bool SK_THISCALL h_Write(void* self, void* stream, void* obj)
         return o_Write(self, stream, obj);
     }
     double now = H->time_seconds();
-    // a new serializer (each save opens its own) or the first reference after a pause: a new save.
-    // The set is made once per save, from the live noun list (never a pointer of an older frame).
-    if (self != g_last_ser || now - g_last_write > 0.5) {
+    // a new serializer (each save opens its own) or a new frame (BUG-0255; before: a 0.5 s pause):
+    // a new save. The set is made once per save, from the live noun list (never a pointer of an
+    // older frame).
+    bool fresh = new_save(g_save_state, self, g_frame);
+    if (!g_per_save_fix)
+        fresh = self != g_last_ser || now - g_last_write > 0.5;
+    if (self != g_last_ser || now - g_last_write > 0.5) { // the measure: frames one save spans
+        g_save_first_frame = g_frame;
+    }
+    g_save_last_frame = g_frame;
+    if (g_save_last_frame - g_save_first_frame > g_max_span)
+        g_max_span = g_save_last_frame - g_save_first_frame;
+    if (fresh) {
         rebuild();
         g_saves++;
         g_last_count = (uint32_t)g_ours.size();
@@ -152,13 +210,19 @@ static int SK_THISCALL h_BhvRead(void* mgr, void* stream)
     return r;
 }
 
-void tick() { g_main_tid = GetCurrentThreadId(); }
+void tick()
+{
+    g_main_tid = GetCurrentThreadId();
+    g_frame++;
+}
 
 std::string status()
 {
-    char b[200];
-    snprintf(b, sizeof b, "savestrip=%d saves=%u last_ours=%u nulled=%u offthread=%u behavior_nulls_dropped=%u\n", (int)g_on,
-             g_saves, g_last_count, g_nulled, g_offthread, g_bhv_nulls);
+    char b[320];
+    snprintf(b, sizeof b,
+             "savestrip=%d saves=%u last_ours=%u nulled=%u offthread=%u behavior_nulls_dropped=%u empty_herds_stripped=%u "
+             "max_save_frames=%u\n",
+             (int)g_on, g_saves, g_last_count, g_nulled, g_offthread, g_bhv_nulls, g_empty_stripped, g_max_span);
     return b;
 }
 

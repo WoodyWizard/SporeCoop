@@ -89,6 +89,7 @@ add('creature_desync', P + 'coop_creature_desync.py', minutes=4)  # editors, a c
 add('editor_strays', P + 'coop_editor_strays.py', minutes=6)  # two evolutions: no puppet left over, herd homes on the surface (crash 0xB88BEA)
 add('creature_e84', P + 'coop_creature_e84.py', minutes=5)  # a save with the partner's puppet, loaded after a restart: no crash on attack (0xD48634), removed
 add('save_hygiene', P + 'coop_save_hygiene.py', minutes=5)  # a save made with the partner's puppet holds no puppet, no herd of ours after a restart (BUG-0020; SPORE_SAVE_FIX=0 fails)
+add('save_hygiene_leave', P + 'coop_save_hygiene.py --leave', minutes=5)  # the partner left before the save: its empty herd is not saved either (BUG-0255; SPORE_FIX_OFF=savestrip.empty_herds fails)
 add('alt_enter', P + 'coop_alt_enter.py', minutes=4)  # Alt+Enter / Alt+Shift+Enter in co-op: no fault at 0x7777BE (device recreation), on the ground
 add('nest_species', P + 'coop_nest_species.py', minutes=4)  # the guest owns another creation under the key of the host's: the host's species at its nests, its table
 add('migration', P + 'coop_migration.py', minutes=5)  # brain upgrade, editors, migration; both claim the new nest: no fault on the guest (0xC6AE60)
@@ -117,6 +118,7 @@ add('join_new_game', P + 'coop_join_new_game.py', minutes=5)  # the host starts 
 add('tribe_play', P + 'coop_tribe_play.py', ('smoke',), warm=True, minutes=3, fixture='tribe')
 add('civ_play', P + 'coop_civ_play.py', warm=True, minutes=3, fixture='civ_npc')
 add('civ_reload', P + 'coop_civ_reload.py', warm=True, minutes=5, fixture='civ_npc')  # tables after a load and a leave (BUG-0040, BUG-0059; --nofix fails)
+add('civ_null_local', P + 'coop_civ_null_local.py', warm=True, minutes=4, fixture='civ')  # a frame without the city anchor keeps vehicles and owners (BUG-0223; --nofix fails)
 add('civ_shared', P + 'coop_civ_shared.py', warm=True, minutes=4, fixture='civ')  # crossing spends, offline money, roles on a rejoin, a spend at a join (BUG-0106, BUG-0049, BUG-0064, BUG-0220; --nofix fails)
 add('civ_city_join', P + 'coop_civ_city_join.py', warm=True, minutes=5, fixture='civ_npc')  # an NPC city founded while the guest joins (BUG-0120; --nofix fails)
 add('civ_ai_spawn', P + 'coop_civ_ai_spawn.py', warm=True, minutes=4, fixture='civ_npc')  # the NPC AI spawns no vehicles on the guest (BUG-0188; --nofix fails)
@@ -130,6 +132,7 @@ add('away_editor', P + 'coop_away_editor.py', warm=True, minutes=6, fixture='cre
 add('away_stages', P + 'coop_away_stages.py', warm=True, minutes=3, fixture='space')  # a host editor counts as away only in Creature/Tribe/Civ, not in Space; the menu still does (BUG-0233; --nofix fails)
 add('tribe_chief_removed', P + 'coop_tribe_chief_removed.py', warm=True, minutes=3, fixture='tribe')  # a chief removed at once (BUG-0081; --nofix fails)
 add('tribe_epic', P + 'coop_tribe_epic.py', warm=True, minutes=4, fixture='tribe')  # epic hitters, herd, save, chiefs after the session (BUG-0146, BUG-0121, BUG-0067; --nofix fails)
+add('tribe_editor_world', P + 'coop_tribe_editor_world.py', warm=True, minutes=5, fixture='tribe')  # an editor visit keeps the co-op epic tracked, out of the share save (BUG-0217; --nofix fails)
 add('tribe_gameover', P + 'coop_tribe_gameover.py', minutes=4)  # a member added during the game-over caption (BUG-0172; --nofix fails)
 add('tribe_ko', P + 'coop_tribe_ko.py', warm=True, minutes=3, fixture='tribe')  # a knocked-out NPC member lies down on the guest (BUG-0173; --nofix fails)
 # two bots play Civilization for 10 minutes through real input (docs/stability/civ.md)

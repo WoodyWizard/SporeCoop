@@ -35,6 +35,13 @@ bool in_creature_stage();
 // Call once per frame at least (coop.cpp on_frame); 0 always with set_world_epoch_fix(false) (tests)
 uint32_t world_epoch();
 void set_world_epoch_fix(bool on);
+// BUG-0217: which world of each stage is open, as counters (stage_epoch.h has the rules: a load,
+// a received world, another stage raise it; an editor visit keeps it). stage_epoch_tick() once per
+// frame at the very top of on_frame, before any message or module tick; stage_epoch(kTribe) etc.
+// read it. stage_epoch(kCreature) counts the same mode routes as world_epoch() without its avatar
+// rule. No fix switch: callers gate their own use (tribe.editor_world, civ.world_epoch).
+void stage_epoch_tick();
+uint32_t stage_epoch(uint32_t stage_mode);
 void* avatar();
 net::Vec3 position(void* c);
 net::Quat orientation(void* c);

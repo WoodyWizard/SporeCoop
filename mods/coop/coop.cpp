@@ -26,6 +26,7 @@
 #include "driver.h"
 #include "game.h"
 #include "modes.h"
+#include "stage_epoch.h"
 #include "mouse.h"
 #include "shared.h"
 #include "sui.h"
@@ -1443,6 +1444,11 @@ void own_editor_tick(double now)
 
 // the local player's entity changed (a load, the editor, the stage left): the puppets and proxies
 // belong to the old world
+static_assert(modes::kTribe == stage_epoch::kTribe && modes::kCiv == stage_epoch::kCiv &&
+                  modes::kEditor == stage_epoch::kEditor && modes::kEdit == stage_epoch::kEdit &&
+                  modes::kSpace == stage_epoch::kSpace && modes::kScenario == stage_epoch::kScenario &&
+                  modes::kCell == stage_epoch::kCell && modes::kCreature == stage_epoch::kCreature,
+              "stage_epoch.h mode ids");
 void avatar_change_check()
 {
     const modes::Adapter* a = modes::for_mode(game::mode_id());
@@ -1452,8 +1458,10 @@ void avatar_change_check()
     if (g_last_avatar) {
         forget_puppets();
         npc::on_world_change();
-        tribe::on_world_change();
-        civ::on_world_change(); // BUG-0059
+        if (!tribe::editor_world_fix()) // BUG-0217: else tribe::world_check() decides
+            tribe::on_world_change();
+        if (!civ::world_epoch_fix()) // BUG-0223: else civ::world_check() decides
+            civ::on_world_change(); // BUG-0059
     }
     g_last_avatar = local;
 }
@@ -1465,6 +1473,10 @@ void on_frame(void*, int, void*)
     diag_tick(now);
     notify::tick(now);
     game::world_epoch(); // BUG-0119: sees every frame outside the creature stage
+    game::stage_epoch_tick(); // BUG-0217: before any message or module tick of this frame
+    modes::test_tick();       // BUG-0223 tests: a forced frame without the local entity
+    tribe::world_check();     // BUG-0217: the Tribe world changed (not an editor visit)
+    civ::world_check();       // BUG-0223: the Civ world changed (not a frame without the city anchor)
     creations::tick(now);
     if (g_frame_fix) // BUG-0091: forget the puppets of a world the game tore down before any message uses them
         avatar_change_check();
@@ -3559,6 +3571,8 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                            // a request through the vote (the hook), like the game's own editor entry
                            uintptr_t ctor = H->sym("EditorRequest_ctor"), submit = H->sym("Editors::EditorRequest::Submit");
                            void* av = game::avatar();
+                           if (!av && game::mode_id() == modes::kTribe) // tests: a member's species (BUG-0217)
+                               tribe::for_each_owned([](void* c, uint8_t, void* u) { if (!*(void**)u) *(void**)u = c; }, &av);
                            if (!ctor || !submit || !av) {
                                SAY("not possible here");
                                return 1;

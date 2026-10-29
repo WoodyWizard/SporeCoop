@@ -33,6 +33,11 @@ void tick(double now);                               // every frame
 void on_message(uint8_t type, uint8_t from, net::Reader& r);
 void on_session_end();
 void on_world_change();
+// BUG-0217: once per frame at the top of on_frame (after game::stage_epoch_tick, before messages):
+// calls on_world_change when the Tribe world changed; with tribe.editor_world off it does nothing
+// and coop.cpp's avatar_change_check keeps the old trigger
+void world_check();
+bool editor_world_fix();
 void before_save(); // host: the co-op epic leaves before the game saves (BUG-0121)
 std::string status();
 std::vector<syncdbg::Entry> sync_entries(); // coop.sync (tests)

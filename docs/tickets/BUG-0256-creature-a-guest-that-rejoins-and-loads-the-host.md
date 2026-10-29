@@ -45,3 +45,4 @@ vde_nofix1_guest.log, vde_nofix2_guest.log (fix/w5-core worktree).
 
 ## History
 - 2026-10-28: opened.
+- 2026-10-29: looked at on fix/w5-world (BUG-0255): not covered. BUG-0255 strips empty herds and rebuilds the object list per save; the fault needs a guest puppet (species 7C329711) in the host's share save, and that save is written by the host, whose game log is not in the run folder, so why the filter missed the puppet is not known (candidates by reading: a puppet in the avatar's herd, the fallback for an unknown creation, which savestrip leaves on purpose; a puppet held by the deferred destroy during the evolution cinematic). Separately the guest side: `remove_saved_strays` destroys the creature while its herd still lists it (Herd_Update reads the freed member, data 0xB34): the stray removal should take it out of its herd first. Next: rerun the rejoin with the host log kept and `coop.savestrip` / `coop.npc herds` printed before the share save.
