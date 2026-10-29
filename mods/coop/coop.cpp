@@ -358,13 +358,40 @@ void remove_strays(double now)
 uint32_t g_state_mode_override = 0;
 double g_state_mode_until = 0;
 
+// BUG-0271: what our last frame found may be gone by now. Console commands and network callbacks
+// also run between frames, even from the game's message pump inside a stage teardown (the host's
+// coop.status / coop.avatar read a freed cell while the game went Cell -> Creature, with the mode
+// already Creature). The local entity counts only while the mode is still the frame's, the stage is
+// not being left and the adapter still finds it; a puppet only while the mode is the frame's and its
+// adapter still sees it alive. Inside on_frame these always agree. `coop.fix core.stale_local off`.
+static bool frame_world_now()
+{
+    return game::mode_id() == g_mode && !game::leaving_stage();
+}
+
+void* local_now()
+{
+    if (!g_adapter || !g_local || !modes::stale_fix)
+        return g_local;
+    return frame_world_now() && g_adapter->local() == g_local ? g_local : nullptr;
+}
+
+void* puppet_now(const Remote& r)
+{
+    if (!r.puppet || !r.puppet_adapter || !modes::stale_fix)
+        return r.puppet;
+    if (!frame_world_now() || (r.puppet_adapter->alive && !r.puppet_adapter->alive(r.puppet)))
+        return nullptr;
+    return r.puppet;
+}
+
 net::PlayerState local_state()
 {
     net::PlayerState st;
     st.mode = g_state_mode_override && H->time_seconds() < g_state_mode_until ? g_state_mode_override : g_mode;
     st.world = g_world;
-    if (g_adapter && g_local)
-        g_adapter->fill(g_local, st);
+    if (void* local = local_now())
+        g_adapter->fill(local, st);
     return st;
 }
 
@@ -1470,6 +1497,7 @@ void avatar_change_check()
 
 void on_frame(void*, int, void*)
 {
+    modes::CellScope cell_scope; // BUG-0271: no game code runs in here, the pool check holds for it
     double now = H->time_seconds();
     g_last_frame = now;
     diag_tick(now);
@@ -1531,6 +1559,7 @@ void on_frame(void*, int, void*)
     g_world = modes::current_place(g_adapter);
     g_local = g_adapter ? g_adapter->local() : nullptr;
     game::leave_probe_tick(g_local); // BUG-0264 tests: an avatar used while the stage is torn down
+    modes::cell_probe_tick();        // BUG-0271: the cell pool freed while the mode reads Cell
     void* av = game::avatar();
     avatar_change_check();
 
@@ -1768,6 +1797,7 @@ std::array<int, 4> g_status_block{}; // the status block's screen rect of the la
 
 void on_overlay(void*, int, void*)
 {
+    modes::CellScope cell_scope; // BUG-0271
     if (!g_overlay)
         return;
     int sw = 0, sh = 0;
@@ -2484,7 +2514,8 @@ int c_status(void*, int, const char* const*, SkOut* out)
         SAY("remote %u '%s' puppet=%p state=%s age=%.2fs pos=(%.1f %.1f %.1f)\n", id, r.name.c_str(),
             r.puppet, have ? "yes" : "no", r.buf.age(now), s.pos.x, s.pos.y, s.pos.z);
         // tests parse the "puppet pos" line as the one right after the "remote" line: keep it there
-        if (r.puppet) {
+        // BUG-0271: a cell puppet of a pool the game freed (the stage is being left) is not read
+        if (puppet_now(r)) {
             net::Vec3 p = modes::entity_pos(r.puppet_adapter, r.puppet);
             float rot_err = -1;
             if (g_mode == modes::kCell) { // facing error in degrees
@@ -2540,7 +2571,7 @@ int c_say(void*, int argc, const char* const* argv, SkOut* out)
 
 int c_avatar(void*, int, const char* const*, SkOut* out)
 {
-    void* av = g_local;
+    void* av = local_now(); // BUG-0271
     if (!av) {
         SAY("nothing controlled (mode 0x%08X %s, adapter %s)", game::mode_id(), modes::mode_name(game::mode_id()),
             g_adapter ? g_adapter->name : "none");
@@ -2550,7 +2581,8 @@ int c_avatar(void*, int, const char* const*, SkOut* out)
     SAY("%s: local=%p place=0x%08X world '%s'\n", g_adapter->name, av, g_world, modes::current_world_name().c_str());
     SAY("species=%p key=0x%08X\npos=(%.2f %.2f %.2f) |r|=%.1f\nrot=(%.3f %.3f %.3f %.3f)\n"
         "vel=(%.2f %.2f %.2f)\nhp=%.1f/%.1f flags=0x%02X",
-        g_adapter->mode == modes::kSpace ? nullptr : game::species_profile(av), st.species, st.pos.x, st.pos.y, st.pos.z,
+        g_adapter->mode == modes::kCreature || g_adapter->mode == modes::kScenario ? game::species_profile(av) : nullptr,
+        st.species, st.pos.x, st.pos.y, st.pos.z,
         std::sqrt(st.pos.x * st.pos.x + st.pos.y * st.pos.y + st.pos.z * st.pos.z), st.rot.x, st.rot.y,
         st.rot.z, st.rot.w, st.vel.x, st.vel.y, st.vel.z, st.health, st.max_health, st.flags);
     if (g_adapter->mode != modes::kSpace && g_adapter->mode != modes::kCell) {
@@ -2998,7 +3030,7 @@ int c_team(void*, int argc, const char* const* argv, SkOut* out)
 {
     if (argc > 1 && !strcmp(argv[1], "point")) { // tests: where the first partner is on the screen
         for (auto& [id, r] : g_remotes)
-            if (r.puppet && !r.echo) {
+            if (puppet_now(r) && !r.echo) {
                 net::Vec3 p = modes::entity_pos(r.puppet_adapter, r.puppet);
                 float w[3] = {p.x, p.y, p.z}, sc[2] = {0, 0};
                 int ok = H->world_to_screen(w, sc);
@@ -3012,32 +3044,32 @@ int c_team(void*, int argc, const char* const* argv, SkOut* out)
         SAY("no partner");
         return 1;
     }
-    if (argc > 1 && !strcmp(argv[1], "die") && g_local && g_mode == modes::kCreature) { // tests: a lethal hit
-        game::apply_damage(g_local, 1e6f, 0, nullptr); // the game's damage path (death, caption, respawn)
+    if (argc > 1 && !strcmp(argv[1], "die") && local_now() && g_mode == modes::kCreature) { // tests: a lethal hit
+        game::apply_damage(local_now(), 1e6f, 0, nullptr); // the game's damage path (death, caption, respawn)
         SAY("lethal hit applied");
         return 0;
     }
-    if (argc > 2 && !strcmp(argv[1], "hit") && g_local && g_mode == modes::kCreature) { // tests: a hit through
-        game::hit(g_local, (float)atof(argv[2]), 0, nullptr); // the damage filter (the pack rescue applies)
-        SAY("hit applied, hp %.1f", game::health(g_local));
+    if (argc > 2 && !strcmp(argv[1], "hit") && local_now() && g_mode == modes::kCreature) { // tests: a hit through
+        game::hit(local_now(), (float)atof(argv[2]), 0, nullptr); // the damage filter (the pack rescue applies)
+        SAY("hit applied, hp %.1f", game::health(local_now()));
         return 0;
     }
-    if (argc > 2 && !strcmp(argv[1], "hp") && g_local && g_mode == modes::kCreature) { // tests
-        game::set_health(g_local, (float)atof(argv[2]));
+    if (argc > 2 && !strcmp(argv[1], "hp") && local_now() && g_mode == modes::kCreature) { // tests
+        game::set_health(local_now(), (float)atof(argv[2]));
         SAY("hp set");
         return 0;
     }
     if (argc > 1 && !strcmp(argv[1], "come")) { // tests: our creature next to the first partner
         for (auto& [id, r] : g_remotes)
-            if (r.puppet && g_local && g_mode == modes::kCreature) {
+            if (puppet_now(r) && local_now() && g_mode == modes::kCreature) {
                 net::Vec3 p = modes::entity_pos(r.puppet_adapter, r.puppet);
-                net::Vec3 me = modes::entity_pos(g_adapter, g_local);
+                net::Vec3 me = modes::entity_pos(g_adapter, local_now());
                 float d = net::dist(p, me);
                 // 3 m from the partner, on our side of it
                 net::Vec3 at = d > 0.1f ? net::Vec3{p.x + (me.x - p.x) * 3.f / d, p.y + (me.y - p.y) * 3.f / d,
                                                     p.z + (me.z - p.z) * 3.f / d}
                                         : p;
-                game::teleport(g_local, at, net::Quat{0, 0, 0, 1});
+                game::teleport(local_now(), at, net::Quat{0, 0, 0, 1});
                 SAY("moved next to %s (%.1f m away before)", r.name.c_str(), d);
                 return 0;
             }
@@ -3091,10 +3123,10 @@ std::string targets(int all)
         out += b;
     };
     for (auto& [id, r] : g_remotes)
-        if (r.puppet && r.puppet_adapter)
-            add("player", id, id, modes::entity_pos(r.puppet_adapter, r.puppet));
-    if (g_local && g_adapter)
-        add("me", g_sess.my_id(), g_sess.my_id(), modes::entity_pos(g_adapter, g_local));
+        if (void* pp = puppet_now(r))
+            add("player", id, id, modes::entity_pos(r.puppet_adapter, pp));
+    if (void* local = local_now())
+        add("me", g_sess.my_id(), g_sess.my_id(), modes::entity_pos(g_adapter, local));
     struct U {
         std::string* out;
         decltype(add)* f;
@@ -3107,8 +3139,8 @@ std::string targets(int all)
         &u);
     if (all) // partners off the screen: where they are projected (bots fly toward them)
         for (auto& [id, r] : g_remotes)
-            if (r.puppet && r.puppet_adapter) {
-                net::Vec3 p = modes::entity_pos(r.puppet_adapter, r.puppet);
+            if (void* pp = puppet_now(r)) {
+                net::Vec3 p = modes::entity_pos(r.puppet_adapter, pp);
                 float w[3] = {p.x, p.y, p.z}, sc[2] = {-1e9f, -1e9f};
                 if (!H->world_to_screen(w, sc) && sc[0] > -1e8f) {
                     snprintf(b, sizeof b, "far player %d %d %d\n", id, (int)std::clamp(sc[0], -1e5f, 1e5f),
@@ -3118,8 +3150,8 @@ std::string targets(int all)
             }
     if (all) { // every synchronized object on screen (game bots aim at NPCs, citizens, ships ...)
         net::Vec3 me{};
-        if (g_local && g_adapter)
-            me = modes::entity_pos(g_adapter, g_local);
+        if (void* local = local_now())
+            me = modes::entity_pos(g_adapter, local);
         struct Seen {
             std::string key;
             float d;
@@ -3549,6 +3581,14 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                        return 0;
                    },
                    nullptr, MT);
+    H->command_add(M, "coop.cellgone", "coop.cellgone - tests (BUG-0271): cell reads refused once the game freed the cell pool",
+                   [](void*, int, const char* const*, SkOut* out) {
+                       const auto& c = modes::cell_gone_stats();
+                       SAY("fix=%d checks=%u outside=%u pool_gone=%u refused=%u windows=%u frames_gone=%u",
+                           (int)modes::stale_fix, c.checks, c.outside, c.pool_gone, c.refused, c.windows, c.frames_gone);
+                       return 0;
+                   },
+                   nullptr, SK_CMD_ANY_THREAD);
     coop_register_debug_commands(H, M);
     teamplay::Ctx tc;
     tc.partners = partners;
@@ -3695,10 +3735,10 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                            v.push_back({"p" + std::to_string(id), st.pos, st.rot});
                        };
                        if (g_sess.connected()) {
-                           player(g_sess.my_id(), g_adapter, g_local);
+                           player(g_sess.my_id(), g_adapter, local_now()); // BUG-0271
                            for (auto& [id, r] : g_remotes)
                                if (!r.echo)
-                                   player(id, r.puppet_adapter, r.puppet);
+                                   player(id, r.puppet_adapter, puppet_now(r));
                        }
                        for (auto* f : {npc::sync_entries, tribe::sync_entries, civ::sync_entries,
                                        squadron::sync_entries, cellsync::sync_entries})

@@ -380,6 +380,107 @@ constexpr uint32_t kCellParticles = 1500;
 bool cell_at_fix = true;
 COOP_FIX_UNSAFE("pool.cellat", "BUG-0083", cell_at_fix, "cell: modes::cell_at refuses the slot past the pool's used range");
 
+// BUG-0271: on the way Cell -> Creature the game frees the cell pool's memory (3.7 MB, its own
+// mapping) while mode_id() still reads Cell, and later points +0x1C at junk (docs/re/cell.md 13).
+// Our console commands and the keepalive's network update also run between frames, from the game's
+// message pump inside that teardown (the host's coop.status read a freed puppet there). So a cell
+// is read only from pool memory that is still mapped: VirtualQuery over the whole block, checked
+// once per frame scope of ours (no game code runs inside it) and on every call outside one. The
+// local cell and the puppets go through the same pool check (cell_usable) before cell_fill reads
+// them; coop.cpp's local_now() / puppet_now() do the same for every mode before a command or a
+// network callback reads the entities our last frame found. `coop.fix core.stale_local off`: the old
+// reads (tests).
+bool stale_fix = true;
+COOP_FIX("core.stale_local", "BUG-0271", stale_fix, "core: no cell, local entity or puppet read between frames once the game freed or changed the stage (Cell -> Creature)");
+static int g_scope_depth;
+static uint8_t* g_scope_data;   // the block found mapped in this scope
+static uint32_t g_scope_bytes;
+static CellGoneStats g_gone;
+static uint8_t* g_gone_logged; // the freed block already logged
+
+void cell_scope(bool enter)
+{
+    if (enter) {
+        if (g_scope_depth++ == 0)
+            g_scope_data = nullptr; // the game ran since the last scope: check again
+    } else if (g_scope_depth > 0) {
+        g_scope_depth--;
+    }
+}
+
+// [p, p + n) is committed, readable memory (one or more regions)
+static bool mapped(const uint8_t* p, size_t n)
+{
+    const uint8_t* end = p + n;
+    while (p < end) {
+        MEMORY_BASIC_INFORMATION mi;
+        if (!VirtualQuery(p, &mi, sizeof mi) || mi.State != MEM_COMMIT || (mi.Protect & (PAGE_NOACCESS | PAGE_GUARD)) ||
+            !(mi.Protect & (PAGE_READONLY | PAGE_READWRITE | PAGE_WRITECOPY | PAGE_EXECUTE_READ |
+                            PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY)))
+            return false;
+        p = (const uint8_t*)mi.BaseAddress + mi.RegionSize;
+    }
+    return true;
+}
+
+// the cell game's pool block is the game's live memory (with the fix off: always yes)
+static bool pool_mapped(uint8_t* data, uint32_t bytes)
+{
+    if (!stale_fix)
+        return true;
+    if (g_scope_depth > 0 && data == g_scope_data && bytes == g_scope_bytes)
+        return true;
+    g_gone.checks++;
+    if (g_scope_depth == 0)
+        g_gone.outside++;
+    bool ok = mapped(data, bytes);
+    if (ok && g_scope_depth > 0) {
+        g_scope_data = data;
+        g_scope_bytes = bytes;
+    }
+    if (!ok) {
+        g_gone.pool_gone++;
+        if (data != g_gone_logged) {
+            g_gone_logged = data;
+            g_host_for_modes->log(g_mod_for_modes, SK_WARN,
+                                  "cell: the pool block %p (%u bytes) is no longer mapped (mode 0x%08X, %s a frame): no cell read from it",
+                                  data, bytes, game::mode_id(), g_scope_depth ? "inside" : "outside");
+        }
+    }
+    return ok;
+}
+
+// once per frame (diagnostic, whatever the switch): in the Cell stage, is the pool block still
+// mapped? Logs when it goes away while the mode still reads Cell and how long that lasts.
+void cell_probe_tick()
+{
+    static bool gone = false;
+    static double gone_at = 0;
+    uint8_t* g = game::mode_id() == kCell ? cell_game() : nullptr;
+    if (!g) {
+        if (gone)
+            g_host_for_modes->log(g_mod_for_modes, SK_INFO, "cell: the mode left Cell %.3f s after the pool block was freed (%u frames)",
+                                  g_host_for_modes->time_seconds() - gone_at, g_gone.frames_gone);
+        gone = false;
+        return;
+    }
+    uint8_t* data = *(uint8_t**)(g + 0x1C);
+    uint32_t cap = *(uint32_t*)(g + 0x1C + 0x18);
+    bool ok = data && mapped(data, (cap && cap <= 4096 ? cap : 4096) * 0x398);
+    if (!ok) {
+        g_gone.frames_gone++;
+        if (!gone) {
+            gone = true;
+            gone_at = g_host_for_modes->time_seconds();
+            g_gone.windows++;
+            g_host_for_modes->log(g_mod_for_modes, SK_WARN, "cell: frame with the pool block %p unmapped while the mode reads Cell",
+                                  data);
+        }
+    } else if (gone) {
+        gone = false; // a new block (the pool was rebuilt)
+    }
+}
+
 uint8_t* cell_at(uint32_t idx)
 {
     uint8_t* g = cell_game();
@@ -388,9 +489,12 @@ uint8_t* cell_at(uint32_t idx)
         return nullptr;
     uint8_t* data = *(uint8_t**)(g + 0x1C);
     uint32_t size = *(uint32_t*)(g + 0x1C + 0x14);
+    uint32_t cap = *(uint32_t*)(g + 0x1C + 0x18);
     // live slots are [0, highWater) inside [0, capacity) (docs/re/cell.md 0, BUG-0083)
     if (!data || size != 0x398 ||
-        !cell_logic::slot_in_pool(slot, *(uint32_t*)(g + 0x1C + 0x10), *(uint32_t*)(g + 0x1C + 0x18), cell_at_fix))
+        !cell_logic::slot_in_pool(slot, *(uint32_t*)(g + 0x1C + 0x10), cap, cell_at_fix))
+        return nullptr;
+    if (!pool_mapped(data, (cap && cap <= 4096 ? cap : 4096) * size))
         return nullptr;
     uint8_t* c = data + (size_t)slot * size;
     return *(uint32_t*)c == idx ? c : nullptr;
@@ -478,9 +582,26 @@ void quat_to_mat(const net::Quat& q, float* m)
     m[6] = 2 * (xz - wy);     m[7] = 2 * (yz + wx);     m[8] = 1 - 2 * (xx + yy);
 }
 
+// BUG-0271: the local cell or a puppet is still a live cell of a mapped pool (the caller may hold it
+// from an earlier frame: g_local, a puppet, read by a command between frames)
+bool cell_usable(void* cp)
+{
+    if (!cp)
+        return false;
+    if (!stale_fix)
+        return true;
+    return cp == cell_local() || cell_at_checked(cp);
+}
+
+const CellGoneStats& cell_gone_stats() { return g_gone; }
+
 static void cell_fill(void* cp, net::PlayerState& st)
 {
     uint8_t* c = (uint8_t*)cp;
+    if (!cell_usable(cp)) { // BUG-0271: nothing is read, the state says "not in the world"
+        g_gone.refused++;
+        return;
+    }
     auto* pos = (float*)(c + 0x4C);
     st.flags |= net::PF_IN_WORLD;
     st.pos = {pos[0], pos[1], pos[2]};
