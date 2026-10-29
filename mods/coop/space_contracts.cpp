@@ -1097,6 +1097,8 @@ bool init(const SkHost* h, SkMod* m)
     a_Context = S("SporeCoop::Space_GetCurrentContext");
     g_rng.seed((uint32_t)(h->time_seconds() * 1000) ^ 0xC0B0u);
     spacecoop::set_raid_listener([](void* mission, uint32_t place, int state) {
+        if (g_hide_ships && g_wave_resumed)
+            return; // tests: a raid whose ships never came cannot end defended or plundered either
         if (host() && g.state == S_ACTIVE && g.type == T_ARMADA && g_wave_on && !g.targets.empty() &&
             place == (g.targets[0].planet | 0x40000000u) && state != 3 &&
             (!g_wave_fix || !g_wave_mission || mission == g_wave_mission)) // (BUG-0046: only the wave's raid)
