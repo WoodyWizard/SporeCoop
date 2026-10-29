@@ -45,6 +45,19 @@ constexpr uint8_t kWorldSpecies = 3, kAskSpecies = 4, kOwnSpecies = 5;
 static bool g_own_species_fix = true; // off: a guest drops the host's own creations (before 0.7.2.4, tests)
 COOP_FIX("creations.own_species", "BUG-0017", g_own_species_fix, "creations: a guest registers the host's own creations of its world (nest species)");
 
+// BUG-0278: a guest's own editor (the vote's, docs/re/creations.md#creations-own-editor-save) saves
+// its creature into My Creations but leaves the avatar on the world's species: the host's creature
+// from before the host's editor (the legless one at the start of the Creature stage). The return
+// from that editor took the avatar's key as the guest's own creature (choices.ini), and "Save New"
+// keeps the edited creation's key, the host's: the host's package answers for it (priority 2000).
+// Either way the guest played the host's legless creature from then on, over every world the host
+// sent, and its next editor started from it again. Now only an own creation is taken over, a key
+// the host's world owns is never the own one (a pinned one is ignored, an own creation under such
+// a key is used under its shared remapped key), and the co-op window offers "the world's own".
+// Off: as 0.7.3.0.
+static bool g_pre_editor_fix = true;
+COOP_FIX("creations.pre_editor", "BUG-0278", g_pre_editor_fix, "creations: a guest's own editor never makes the host's pre-editor creature its own");
+
 static uintptr_t a_GetDb, a_OpNew, a_DbCtor, a_RmPtr, a_SetSpecies, a_GetEmpire, a_CellPreload;
 
 // ---- own creations (My Creations = EditorSaves.package) ----
@@ -244,9 +257,32 @@ static Key avatar_species_key()
     return {k[0], k[1], k[2]};
 }
 
+static bool host_world_key(Kind k, uint32_t inst); // a creation of the host's world (BUG-0278)
+static bool own_option(Kind k, const Key& key)
+{
+    for (auto& o : g_opts[k])
+        if (o.key == key)
+            return true;
+    return false;
+}
+
 Option mine(Kind k)
 {
-    if (g_chosen[k] && k != kUfo) { // the ship is always the own empire's
+    bool guest = C.sess && C.sess->role() == net::Role::Client;
+    // BUG-0278: a choice of a creation of the host's world that is not one of ours (taken over from
+    // an editor by 0.7.3.0) is not a choice; "the world's own" follows the host's creature
+    bool chosen = g_chosen[k];
+    if (g_pre_editor_fix && chosen && guest && k != kUfo && g_choice[k].instance &&
+        host_world_key(k, g_choice[k].instance) && !own_option(k, g_choice[k]))
+        chosen = false;
+    if (g_pre_editor_fix && chosen && guest && k != kUfo && !g_choice[k].instance) {
+        auto h = g_applied.find({0, (uint8_t)k});
+        Key a = h != g_applied.end() && h->second.orig.instance ? h->second.orig
+                : k == kCreature                                ? avatar_species_key()
+                                                                : cell_key();
+        return {a, ""}; // shown as "the world's own"
+    }
+    if (chosen && k != kUfo) { // the ship is always the own empire's
         for (auto& o : g_opts[k])
             if (o.key == g_choice[k])
                 return o;
@@ -264,7 +300,7 @@ Option mine(Kind k)
         return u.instance ? named(u) : Option{};
     }
     // default: a guest plays its newest creation; the host keeps the one of its world
-    if (C.sess && C.sess->role() == net::Role::Client && !g_opts[k].empty())
+    if (guest && !g_opts[k].empty())
         return g_opts[k].front();
     Key a = k == kCreature ? avatar_species_key() : cell_key();
     if (a.instance)
@@ -368,6 +404,18 @@ struct WorldPkg {
     void* db = nullptr;
 };
 static std::map<std::pair<uint8_t, uint32_t>, WorldPkg> g_world_pkgs; // (kind, original instance)
+
+// guest: a key the host's world uses for a creation of the host (registered here above our own My
+// Creations, so the host's creation answers for it)
+static bool host_world_key(Kind k, uint32_t inst)
+{
+    if (g_world_pkgs.count({(uint8_t)k, inst}))
+        return true;
+    auto h = g_applied.find({0, (uint8_t)k});
+    if (h != g_applied.end() && h->second.orig.instance == inst)
+        return true;
+    return k == kCreature && (g_remap.count(inst) || g_species_db.count(inst));
+}
 // BUG-0055: the session end drops them (a guest's own creation of the same key is its own again).
 // `coop.creations worlddrop off` keeps them registered for the rest of the process (tests).
 static bool g_world_drop = true;
@@ -748,7 +796,10 @@ static void share_own(double now)
             continue;
         Bundle b;
         Key hk = host_species(o.key);
-        if (!(hk == o.key)) // a guest that plays the host world's species, a creation of the host: the
+        bool world_own = g_pre_editor_fix && !is_host() && k != kUfo && g_chosen[k] && !g_choice[k].instance;
+        if (world_own) // "the world's own": the host's creature, by its key (BUG-0278)
+            b.key = o.key;
+        else if (!(hk == o.key)) // a guest that plays the host world's species, a creation of the host: the
             b.key = hk;     // host knows it under its own key (our records of that key are another one)
         else if (!make_bundle((Kind)k, o.key, b))
             continue;
@@ -756,7 +807,7 @@ static void share_own(double now)
         // copy of the file has it (read every 10 s). Sent without its records it was a key nobody
         // else knows: the guest's game faulted building the host's new cell from it
         // (CreateCellObject, 0xE83EC8) and showed the old creature until the next bundle.
-        if (b.recs.empty() && in_my_creations(o.key)) {
+        if (!world_own && b.recs.empty() && in_my_creations(o.key)) {
             g_opts_read = -100;
             refresh_options(now);
             b = Bundle{};
@@ -802,6 +853,12 @@ static Key own_key_here(Kind kind)
     auto host = g_applied.find({0, (uint8_t)kind});
     if (me != 0 && host != g_applied.end() && host->second.orig == k)
         k = player_key(me, kind);
+    // BUG-0278: an own creation under a key of the host's world (the own editor's "Save New" keeps
+    // the key of the host's creation it edited): the host's package answers for that key here, ours
+    // is registered under the shared remapped key
+    else if (g_pre_editor_fix && me != 0 && host_world_key(kind, k.instance) && own_option(kind, k))
+        if (Key r = player_key(me, kind); r.instance)
+            k = r;
     return k;
 }
 
@@ -904,14 +961,27 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
 // 2026-10-24 only creatures were taken over, and a guest with other cells in My Creations got its
 // newest older cell back (and a level rebuild) right after its own cell editor.
 static uint32_t g_prev_mode;
-static double g_adopt_until;
+static double g_adopt_until, g_adopt_read;
 static Kind g_adopt_kind;
+static std::set<uint32_t> g_before_editor[kKinds]; // own creations when the editor opened (BUG-0278)
+static unsigned g_adopt_skipped; // tests: returns from an editor that took over nothing of the world's
 static bool adopt_after_editor(double now)
 {
     uint32_t m = game::mode_id();
+    bool editor = m == modes::kEdit || m == modes::kEditor;
+    if (editor && !(g_prev_mode == modes::kEdit || g_prev_mode == modes::kEditor) && g_pre_editor_fix) {
+        g_opts_read = -100; // what was there before: a new creation after it is the editor's
+        refresh_options(now);
+        for (int k = 0; k < kKinds; k++) {
+            g_before_editor[k].clear();
+            for (auto& o : g_opts[k])
+                g_before_editor[k].insert(o.key.instance);
+        }
+    }
     if ((g_prev_mode == modes::kEdit || g_prev_mode == modes::kEditor) && (m == modes::kCreature || m == modes::kCell)) {
         g_adopt_until = now + 30;
         g_adopt_kind = m == modes::kCell ? kCell : kCreature;
+        g_adopt_read = 0;
     }
     g_prev_mode = m;
     if (now > g_adopt_until)
@@ -919,6 +989,40 @@ static bool adopt_after_editor(double now)
     Key a = g_adopt_kind == kCell ? cell_key() : avatar_species_key();
     if (!a.instance)
         return true; // not yet: do not apply the old one meanwhile
+    if (g_pre_editor_fix) {
+        // BUG-0278: only an own creation becomes the own one: the avatar's (the game put the new
+        // creation on it), else the newest one the editor saved (a guest's own editor leaves the
+        // avatar on the world's species). The file lags the editor by seconds: read it again
+        // every 2 s until the 30 s are over.
+        if (now - g_adopt_read < 2.0)
+            return false;
+        g_adopt_read = now;
+        g_opts_read = -100;
+        refresh_options(now);
+        Key pick;
+        if (own_option(g_adopt_kind, a))
+            pick = a;
+        else
+            for (auto& o : g_opts[g_adopt_kind]) // newest first
+                if (!g_before_editor[g_adopt_kind].count(o.key.instance)) {
+                    pick = o.key;
+                    break;
+                }
+        if (!pick.instance) {
+            if (now + 2.0 > g_adopt_until) {
+                g_adopt_skipped++;
+                H->log(M, SK_INFO, "creations: back from the editor, no new own %s (the avatar keeps %08X)",
+                       kInfo[g_adopt_kind].name, a.instance);
+            }
+            return false;
+        }
+        g_adopt_until = 0;
+        if (!(pick == mine(g_adopt_kind).key) || !g_chosen[g_adopt_kind]) {
+            choose(g_adopt_kind, pick);
+            H->log(M, SK_INFO, "creations: back from the editor, own %s %08X", kInfo[g_adopt_kind].name, pick.instance);
+        }
+        return false;
+    }
     g_adopt_until = 0;
     if (!(a == mine(g_adopt_kind).key)) {
         g_opts_read = -100;
@@ -1087,6 +1191,22 @@ void choose(Kind k, const Key& key)
 void cycle(Kind k, int dir)
 {
     auto opts = options(k);
+    // BUG-0278: "the world's own" (the host's creature) is one of the choices: a guest can go back
+    // to it from a creature of its own
+    if (g_pre_editor_fix && C.sess && C.sess->role() == net::Role::Client && k != kUfo && !opts.empty()) {
+        std::vector<Key> ring{Key{}};
+        for (auto& o : opts)
+            ring.push_back(o.key);
+        int i = 0;
+        bool world = g_chosen[k] && !g_choice[k].instance;
+        Key cur = mine(k).key;
+        for (int j = 1; j < (int)ring.size(); j++)
+            if (!world && ring[j] == cur)
+                i = j;
+        i = ((i + dir) % (int)ring.size() + (int)ring.size()) % (int)ring.size();
+        choose(k, ring[i]);
+        return;
+    }
     if (opts.empty())
         return;
     Option cur = mine(k);
@@ -1104,9 +1224,9 @@ std::string status()
     char b[300];
     snprintf(b, sizeof b,
              "creations: in=%u out=%u registered=%u avatar_swaps=%u waits_on_disk=%u unusable=%u world_swaps=%u "
-             "species asked=%u got=%u sent=%u missing=%u own_out=%u own_in=%u rx_dropped=%u%s%s\n",
+             "species asked=%u got=%u sent=%u missing=%u own_out=%u own_in=%u rx_dropped=%u adopt_skipped=%u%s%s\n",
              g_bundles_in, g_bundles_out, g_registered, g_swaps, g_waits_on_disk, g_unusable, g_world_swaps,
-             g_species_asked, g_species_got, g_species_sent, g_species_missing, g_own_out, g_own_in, g_rx_dropped, g_last_error.empty() ? "" : " error=", g_last_error.c_str());
+             g_species_asked, g_species_got, g_species_sent, g_species_missing, g_own_out, g_own_in, g_rx_dropped, g_adopt_skipped, g_last_error.empty() ? "" : " error=", g_last_error.c_str());
     s += b;
     if (uint8_t* g = modes::cell_game(); g && game::mode_id() == modes::kCell) {
         uint8_t* av = modes::cell_at(*(uint32_t*)(g + 0x411C));
