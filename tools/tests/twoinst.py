@@ -304,8 +304,19 @@ def _start(fixture='creature', planet=None, load_args=(), join_in_intro=False, g
     lane.run_host()
     for inst, run in ((lane.GUEST, lane.run_guest), (lane.HOST, lane.run_host))[1 if join_in_intro else 0:]:
         if not wait_up(inst, 90):  # two sandboxes starting together sometimes lose one: start it again
-            run()
-            assert wait_up(inst), f'instance {inst} did not start'
+            # BUG-0267: the lost one may still be starting (a busy machine): a second copy of the
+            # same instance next to it failed to copy coop.dll (err 32) and hung. End the lane's
+            # games first, then start both again.
+            print(f'  (instance {inst} did not answer in 90 s: the lane starts again)', flush=True)
+            sh('kill')
+            time.sleep(2)
+            if not join_in_intro:
+                lane.run_guest()
+                time.sleep(2)
+            lane.run_host()
+            for i in ((lane.HOST,) if join_in_intro else (lane.GUEST, lane.HOST)):
+                assert wait_up(i), f'instance {i} did not start'
+            break
     phases = [('wine up', time.time() - t_start)]
     host, guest = Console(lane.HOST), Console(lane.GUEST)
     if planet:  # GameN/Planet of the fixture, loaded through the mod (works from the galaxy menu)
