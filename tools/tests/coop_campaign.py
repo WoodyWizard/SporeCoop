@@ -52,7 +52,7 @@ mechanic runs for real):
     guests fly there with the real "Fly to Alice" button.
 
   SPORE_LANE=7 python3 tools/tests/coop_campaign.py [--from cell] [--to space] [--minutes 8]
-        [--advance-minutes 20] [--no-finale] [--no-jump] [--seed N] [--players 4]
+        [--advance-minutes M] [--no-finale] [--no-jump] [--seed N] [--players 4]
 Resume a late failure from its stage: --from tribe (the fixture of that stage, campaign_lib.FIXTURE).
 """
 import argparse
@@ -79,6 +79,7 @@ HISTORY_BTN = (1400, 1062)   # the HUD button under the portrait: History (the n
 HISTORY_OK = (1415, 1055)    # its check: closes History, or starts the next stage
 EDITOR_DONE = (1416, 1062)   # the green "done" of the editors (1440x1080)
 VK_F9 = '0x78'
+ADVANCE_MIN = {'cell': 10, 'creature': 10, 'tribe': 30, 'civ': 20}  # default time of a stage change
 
 
 def now():
@@ -552,7 +553,7 @@ class Campaign:
         self.stage, self.phase = stage, 'advance'
         self.note(f'advance {stage} -> {nxt}')
         t0 = time.time()
-        timeout = self.a.advance_minutes * 60
+        timeout = self.advance_minutes(stage) * 60
         kicks = {'cell': self.kick_cell, 'creature': self.kick_creature, 'tribe': self.kick_tribe,
                  'civ': self.kick_civ}[stage]
         state = {'n': 0, 'last': 0.0}
@@ -667,6 +668,11 @@ class Campaign:
             self.finding('vote', f'{self.stage}:timeup', f'a vote ran out of time although '
                          f'{", ".join(sorted({v[1] for v in readies}))} pressed "I\'m ready" ({self.stage})',
                          self.P, [f'`{l.strip()}`' for l in lines if 'evol' in l or 'ready' in l][:10])
+
+    def advance_minutes(self, stage):
+        """--advance-minutes, else per stage: Cell and Creature end in a few minutes, the Tribe stage
+        needs every other tribe conquered (new ones form after each), the Civ stage every city"""
+        return self.a.advance_minutes or ADVANCE_MIN[stage]
 
     def kick_cell(self, state):
         h = self.host
@@ -946,7 +952,8 @@ def main():
     ap.add_argument('--from', dest='start', default='cell', choices=cl.STAGES)
     ap.add_argument('--to', dest='end', default='space', choices=cl.STAGES)
     ap.add_argument('--minutes', type=float, default=8, help='minutes of play per stage')
-    ap.add_argument('--advance-minutes', type=float, default=20, help='time for one stage change on the host')
+    ap.add_argument('--advance-minutes', type=float, default=None,
+                    help='time for one stage change on the host (default per stage: ADVANCE_MIN)')
     ap.add_argument('--players', type=int, default=4, choices=(2, 3, 4))
     ap.add_argument('--noise', type=float, default=0.06, help='chance of a noise action instead of a bot step')
     ap.add_argument('--no-rejoins', dest='rejoins', action='store_false')
@@ -999,7 +1006,7 @@ def main():
                 ok = camp.advance(stage)
                 if not ok and not camp.dead:
                     camp.finding('stuck' if stage in ('cell', 'creature') else 'info', f'advance:{stage}',
-                                 f'the stage change {stage} -> {nxt} did not finish in {a.advance_minutes:.0f} min'
+                                 f'the stage change {stage} -> {nxt} did not finish in {camp.advance_minutes(stage):.0f} min'
                                  + ('' if stage in ('cell', 'creature') else ' (no automated end of this stage yet)'),
                                  camp.P)
                     if a.jump:
