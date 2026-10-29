@@ -288,3 +288,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0276](BUG-0276-tribe-after-a-stage-change-three-guests-were-not.md) | open | bug | tribe | 2026-10-29 |  | tribe: after a stage change three guests were not in the host's world within 300 s (they got there after a rejoin) |
 | [BUG-0277](BUG-0277-campaign-finale-the-host-s-finale-goto-core-stop.md) | open | tooling | space | 2026-10-29 |  | campaign finale: the host's 'finale goto core' stopped near the core while a cinematic ran (zone 2, busy=1) |
 | [BUG-0278](BUG-0278-creature-a-new-guest-no-own-creations-plays-the.md) | open | bug | creature | 2026-10-29 |  | Creature: a new guest (no own creations) plays the legless creature from the start of the stage and cannot change it |
+| [BUG-0279](BUG-0279-cell-only-one-of-two-new-players-can-eat-discord.md) | open | bug | cell | 2026-10-29 |  | Cell: only one of two new players can eat (Discord report) |
