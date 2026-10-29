@@ -190,6 +190,13 @@ anchor so other docs can link to it:
 * Reproduce: `SPORE_LANE=N python3 tools/tests/play_cell.py --minutes 10 --seed 9` and watch
   `partner` distances and the guest's `local_gameplay_cells` vs where its cell is.
 * Ticket: BUG-0174.
+* CORRECTION (2026-10-29, fix/w7-eat): the empty pool starts much nearer: the host's game keeps only
+  about one screen around its own cell populated (PopulateTiles, docs/re/cell.md#cell-new-players-food).
+  A guest swimming away from the host (level 2) saw 41-51 food cells on its screen up to 42 m and none
+  from 44 m on. Most likely what two new players reported on Discord ("even at stage 1 only 1 of us
+  could eat", BUG-0279): the guest, exploring on its own, finds no food at all while the host does.
+  Measure: `SPORE_LANE=N python3 tools/tests/coop_cell_new_game.py --diet carn --minutes 1 --apart 70`
+  (its last check fails while this is open).
 
 ## coop_sync.py: mirrors trail more at low frame rates, the GOG 2024 guest pauses after a load (the test failures were fixed 2026-10-24, fix/gog2024-sync)
 

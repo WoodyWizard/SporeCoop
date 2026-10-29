@@ -14,7 +14,7 @@ commits:
 tests:
 signature:
 docs:
-related:
+related: BUG-0279
 ---
 
 ## Report
@@ -46,3 +46,6 @@ Not fixed yet.
   redesign of the host's pool (PopulateTiles 0xE7D370 and the active tiles follow `G+0x4128`, the
   host's view; the host would have to populate and keep tiles around every partner and send each
   guest its own area), not a bug fix of this wave.
+- 2026-10-29: fix/w7-eat: measured on GOG 2024 (level 2): no food on the guest's screen from ~45 m
+  from the host (not ~100 m); likely what two new players reported (BUG-0279). Measure with
+  `coop_cell_new_game.py --apart 70`; PopulateTiles and the cull: docs/re/cell.md#cell-new-players-food.
