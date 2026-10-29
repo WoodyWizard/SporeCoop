@@ -1468,8 +1468,9 @@ wrong. Suite `campaign` (in no other suite): `tools/lab.py run campaign --lanes 
     finding). An automated Tribe end needs a faster conquest or the alliance path (open).
   * Civ: `SpawnNextCity` gave 6 more cities (9 of other nations on civ_npc), `cCity::Capture(city,
     playerPol, 0, 0, 0, 0)` takes one per call (its capture caption, the city then belongs to a guest,
-    owner=1 in `coop.civ`); every captured city asks "choose the city's specialty" (Economic /
-    Religious / Military, a modal the campaign answers with Military, found by caption with uifind).
+    owner=1 in `coop.civ`); a captured city may ask "choose the city's specialty" (Economic and
+    Military, sometimes Religious too: a modal the campaign answers with the Military button found by
+    caption with uifind inside the dialog's area; the HUD has a "Military" tab label too).
     With all cities taken the goal "Capture All Cities" is checked; History and its check start the
     vote ("Alice wants to edit a design (Civilization)"), then the spaceship editor opens **empty**:
     "done" says "You need at least 3 parts to Save" (three parts dragged slowly from the palette:
@@ -1479,7 +1480,16 @@ wrong. Suite `campaign` (in no other suite): `tools/lab.py run campaign --lanes 
   * Space start: "Name Your Captain" (dice 915,555, check 936,630), then the host is on its home
     planet, where the game does not save: the host's log says "a player is waiting for the world:
     leave the planet to save" and the guests stay in the Civ stage until the host leaves (mission
-    control 290,914 and its five answers, then the wheel out, as space_setup.py does).
+    control 290,914 and its five answers, then the wheel out, as space_setup.py does; only after the
+    captain's name and any caption, else the clicks are lost).
+  * Finale: a host the Space play left on a planet must take off before the wheel takes it to the
+    galaxy view (`coop.space finale` ctx 0 = planet, 1 = solar system, 2 = galaxy).
+* Debug runs (lane 7, main 8f1944b + this branch): 20261029-000344 (Cell -> Creature, 7 min),
+  -001119 (Creature -> Tribe: BUG-0258, then the jump), -002618 (Tribe -> Civ: two villages raided,
+  the jump, Civ play: OK), -004238 (Civ -> Space -> finale: every player entered the core and got the
+  Staff of Life), -011243 (the whole game in 81 min with 2-minute stages: BUG-0258 again, the Tribe
+  jump; no crash, fault, freeze, desync or shared-resource difference in any run). The tool problems
+  those runs showed are fixed on the branch (see its commits).
 * Expected duration of the whole game with the defaults: start ~1 min, 5 stages x 8 min of play,
   Cell ~1 min and Creature ~3 min changes, Tribe 20 min and the jump (~1 min), Civ ~8-10 min,
   the finale ~6 min, follows and rejoins a few minutes: about 2-2.5 h. The lab's timeout for it is 5 h
