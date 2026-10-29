@@ -5,7 +5,7 @@
 //                   sync self-check (host and guests compare the shared world every 30 s)
 //   diag_stats.cpp  FPS and hitches, the game's address space, network quality per peer, session
 //                   settings, the session summary (also at the top of the report text)
-// Cheap and rate limited: about 1 MB per hour of log at the default detail (docs/REPORTING.md#reporting-support).
+// Cheap and rate limited: about 25 KB per hour of log at the default detail (docs/REPORTING.md#reporting-support-log-size).
 #pragma once
 
 #include <cstdint>

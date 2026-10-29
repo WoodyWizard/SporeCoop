@@ -315,10 +315,13 @@ the running one.
 ### Log size
 <a id="reporting-support-log-size"></a>
 
-At the default `log_detail=1` these lines add about LOGSIZE_DIAG to the log per hour of a 2-player
-session (one `perf:` and one `net:` line per peer a minute, a few hitches, the sync-check OKs);
-the whole log with the support trace ([the prefixes above](#reporting-reading-logs)) is
-about LOGSIZE_ALL per hour. The report zip takes 8 MB of each log and stays under 24 MB.
+At the default `log_detail=1` these lines add about 25 KB to the log per hour of a 2-player session
+(one `perf:` and one `net:` line per peer a minute, a few hitches, the sync-check OKs), and the
+session clock about 13 bytes per line (~20 KB per hour). The whole log with the support trace
+([the prefixes above](#reporting-reading-logs)) was 59 KB (host) and 64 KB (guest) for 9.4 minutes
+of Cell bot play (`play_cell`, lab run 20261029-165619): about 0.4 MB per hour, under 1 MB for a
+2-hour game; a 4-player host writes a `net:` line per guest and more trace lines (estimate under
+1 MB per hour). The report zip takes 8 MB of each log and stays under 24 MB.
 
 ### Console
 <a id="reporting-support-console"></a>
