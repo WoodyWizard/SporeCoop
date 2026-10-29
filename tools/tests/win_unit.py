@@ -6,9 +6,10 @@ SporeCoopSetup.exe with a hidden window) and install.bat (BUG-0080: the player's
 the real Win32 file API under Wine in the lane's bottle. No game is started; the tests work in
 %TEMP%\\sporecoop-win-tests of the bottle.
 
-  SPORE_LANE=3 python3 tools/tests/win_unit.py [--old | --old-iniencode | --old-inilock | --old-paths | --old-lock]
+  SPORE_LANE=3 python3 tools/tests/win_unit.py [--old | --old-suffix | --old-keep | --old-iniencode | --old-inilock | --old-paths | --old-lock]
 
 --old switches the fixes off: the run must then FAIL (a test you never saw fail proves nothing).
+--old-suffix / --old-keep switch off only update.old_suffix (BUG-0114) / update.keep_failed (BUG-0150).
 For install.bat, --old runs the install.bat of 7874654 (before BUG-0080, from tools/package.sh).
 """
 import os

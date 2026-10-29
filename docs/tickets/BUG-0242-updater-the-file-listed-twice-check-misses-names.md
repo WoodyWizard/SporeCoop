@@ -14,6 +14,7 @@ commits: 2a6131b, f34f769
 tests: tests/net_tests.cpp test_updater_paths (net_tests --off update_paths fails); tests/win_tests.cpp test_apply_rollback (win_unit --old-paths fails)
 signature:
 docs:
+switch: update.paths
 related:
 ---
 

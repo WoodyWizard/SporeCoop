@@ -15,6 +15,7 @@ tests: unit (tests/space_tests.cpp)
 signature:
 docs: docs/re/space.md#space-w3-trips-clicks-defenders
 related: #115
+switch: allies.aborted
 ---
 
 ## Report
@@ -84,3 +85,4 @@ For the effect: force the next watched raid to reuse the pointer (debug: insert 
 - 2026-10-28: fixed on fix/w3-space (66d7a30): aborted set pruned to watched raids and cleared at the session end; unit test.
 - 2026-10-28: fix/w3-space lab runs on lane 6: 20261028-010933 (14/14: the four new wave 3 Space tests and space_map, space_stale, space_fleet, space_puppet, space_rivalry, space_contracts, space_jump, space_guest_ui, space_allies, space_diplomacy), smoke 20261028-013951 (13/13; `ui` skipped: exclusive, needs a lane 1-5).
 - 2026-10-28: released in 0.7.3.0.
+- 2026-10-28: switch: allies.aborted (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).

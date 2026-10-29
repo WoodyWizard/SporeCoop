@@ -15,6 +15,7 @@ tests: space_fleet
 signature:
 docs: docs/re/space.md#space-ship-state-chunks
 related: #62
+switch: fleet.posse
 ---
 
 ## Report
@@ -78,8 +79,12 @@ Not done yet. Planned test (must FAIL without the fix and PASS with it):
 - docs/re/space.md sections 0, 1 and 2.1.
 - CLAUDE.md section 2 (object lifetime).
 
+Run evidence (2026-10-28, BUG-0215, found afterwards in the lab folders and agent logs): FAIL with the fix off: `fleet2--without-fix.log`, `fleet_nofix.log` (fix/w2-space, keepposse 0), a standalone test run whose log stayed in the agent's scratch folder (not kept in out/lab). PASS: lab run out/lab/20261027-233002 on fix/w2-space (space_fleet ok); later full runs on main pass too.
+
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #62.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w2-space (c5fe0b8): type 3 (posse, per DestroyNPCUFOs) is never removed as a host NPC; test space_fleet FAIL without / PASS with.
 - 2026-10-28: released in 0.7.3.0.
+- 2026-10-28: Verification names the FAIL log and the PASS lab run (BUG-0215).
+- 2026-10-28: switch: fleet.posse (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).

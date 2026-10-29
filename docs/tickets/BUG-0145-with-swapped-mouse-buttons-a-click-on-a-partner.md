@@ -15,6 +15,7 @@ tests: space_map_input
 signature:
 docs: docs/re/space.md#space-w3-trips-clicks-defenders
 related: #124
+switch: map.click
 ---
 
 ## Report
@@ -60,7 +61,7 @@ Suggested in the review:
 Poll `GetSystemMetrics(SM_SWAPBUTTON) ? VK_RBUTTON : VK_LBUTTON`. Better: take the click from the game window's `WM_LBUTTONDOWN` (the window is already subclassed in sporekit/focus.cpp; messages are logical) and expose it to mods as an event. That also fixes #68 (clicks in other windows).
 
 ## Verification
-Done (2026-10-28, lane 6): `coop_space_map_input.py`. A swapped mouse cannot be set in the lane; its two halves are forced: the physical left button alone (a swapped mouse's secondary button, camera drags) must do nothing: `--without-fix` FAILS (the host flew, /tmp/claude-1000/-home-pam3es-Games-Modding-SPORE/13201e2f-19c5-4da6-b393-aae16fe6d338/scratchpad/waves/fix_w3-space/map_input_nofix.log), the fix PASSES; the primary message alone (`coop.space map postclick`, WM_LBUTTONDOWN without the left button state, as the physical right button of a swapped mouse gives) takes the host to the guest with the fix (/tmp/claude-1000/-home-pam3es-Games-Modding-SPORE/13201e2f-19c5-4da6-b393-aae16fe6d338/scratchpad/waves/fix_w3-space/map_input_pass1.log). The menu intro path was not run with a swapped mouse.
+Done (2026-10-28, lane 6): `coop_space_map_input.py`. A swapped mouse cannot be set in the lane; its two halves are forced: the physical left button alone (a swapped mouse's secondary button, camera drags) must do nothing: `--without-fix` FAILS (the host flew, scratch log `map_input_nofix.log` (not kept)), the fix PASSES; the primary message alone (`coop.space map postclick`, WM_LBUTTONDOWN without the left button state, as the physical right button of a swapped mouse gives) takes the host to the guest with the fix (scratch log `map_input_pass1.log` (not kept)). The menu intro path was not run with a swapped mouse.
 
 Planned in the review: Planned test (must FAIL without the fix and PASS with it):
 
@@ -80,3 +81,5 @@ FAILS on main, PASSES with the fix.
 - 2026-10-28: fixed on fix/w3-space (66d7a30): primary click from WM_LBUTTONDOWN; space_map_input FAIL without / PASS with.
 - 2026-10-28: fix/w3-space lab runs on lane 6: 20261028-010933 (14/14: the four new wave 3 Space tests and space_map, space_stale, space_fleet, space_puppet, space_rivalry, space_contracts, space_jump, space_guest_ui, space_allies, space_diplomacy), smoke 20261028-013951 (13/13; `ui` skipped: exclusive, needs a lane 1-5).
 - 2026-10-28: released in 0.7.3.0.
+- 2026-10-28: log paths of an agent's scratch folder replaced by the log names (BUG-0215: no paths outside the repository).
+- 2026-10-28: switch: map.click (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).

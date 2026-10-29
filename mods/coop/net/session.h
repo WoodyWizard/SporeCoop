@@ -58,7 +58,7 @@ public:
     // sends the same token (coop.dll keeps it in a file until a clean leave); the host replaces a
     // silent entry only on an equal token (net::g_fix.rejoin_token), never by the name alone
     uint64_t rejoin_token = 0;
-    bool send_caps = true; // false: HELLO / WELCOME without the extension, like 0.7.2 (tests)
+    bool send_caps = true; // not a lab switch: test seam, false = HELLO / WELCOME without the extension (0.7.2 shape)
     uint32_t world = 0;      // host world id (save hash), sent in WELCOME
     uint32_t timeout_ms = 30000; // the game can block for a long time while saving/loading
     std::string lobby_info;  // host: shown to players looking for games on the network

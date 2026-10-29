@@ -365,3 +365,7 @@ UTFWin::UILayout::Load=0x008121C0 ; verified thiscall bool(UILayout*, const Reso
 UTFWin::UTFWinObject::new_=0x00951230 ; likely cdecl void*(size, align, const char* name, ICoAllocator*) plain ret 0x951284 (BUG-0143)
 wstring_copy=0x00423690 ; verified thiscall(eastl::wstring*, const wchar_t* begin, const wchar_t* end) ret 8: frame [ebp+8]/[ebp+0xC] (BUG-0143)
 App::cCheatManager::func4Ch=0x0067E0A0 ; verified thiscall(this, bool on) ret 4: byte +0x64 = on, the cheat console's enabled flag (default 1 from the constructor 0x67FAE2). func44h 0x67E730 (opening the console, called by AppShortcuts_OnKeyDown on Ctrl+Shift+C) returns at once while it is 0. Set to 1 at 0xDEA3D0 and to 0 at 0xDEB450 (GalaxyGameEntry UI code); 0 on lane games that load their save by command (BUG-0149, 2026-10-28)
+App::cAppSystem::PreInit=0x007E8C40 ; verified thiscall int(cAppSystem*, int, int) ret 8 (first ret 0x7E93C3); SporeKit's lifecycle hook (gamehooks.cpp try_hook), seen running on every start ("App::cAppSystem::PreInit -> ..."); found by re_lint's table rule (BUG-0216, 2026-10-28)
+App::cAppSystem::Init=0x007E6850 ; verified thiscall int(cAppSystem*, int) ret 4 (0x7E7017); SporeKit's lifecycle hook, seen running on every start (BUG-0216)
+App::cSporeApp::Init=0x00F47E90 ; verified thiscall int(cSporeApp*, int) ret 4 (0xF47EB0); SporeKit's lifecycle hook (SK_EV_POST_INIT), seen running on every start (BUG-0216)
+App::cSporeApp::Shutdown=0x00F475A0 ; verified thiscall int(cSporeApp*) plain ret (0xF477C2); SporeKit's lifecycle hook (SK_EV_SHUTDOWN, mods_shutdown) (BUG-0216)

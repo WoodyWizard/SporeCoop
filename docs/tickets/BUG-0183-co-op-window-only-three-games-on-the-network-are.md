@@ -15,6 +15,7 @@ tests: coop_ui_status.py (suite ui_status)
 signature:
 docs: docs/06-testing.md#testing-net-w3
 related: BUG-0039
+switch: core.lan_pages
 ---
 
 ## Report
@@ -52,3 +53,4 @@ fake game must show in a visible row.
 - 2026-10-28: fixed on fix/w3-net (wave 3).
 - 2026-10-28: fix/rel-flaky: the test failed when other lanes' hosts filled the list (18 games, fakes on pages 4-6) and the first clicks were dropped; it now turns every page and repeats a click that did not turn the page. Product code unchanged; duplicate rows per host address: BUG-0210.
 - 2026-10-28: released in 0.7.3.0.
+- 2026-10-28: switch: core.lan_pages (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).

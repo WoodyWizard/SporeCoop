@@ -15,6 +15,7 @@ tests: tests/net_tests.cpp test_lobby_roles (make test)
 signature:
 docs: 
 related: #57
+switch: role.fix
 ---
 
 ## Report
@@ -74,3 +75,4 @@ Planned in the review:
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w2-civ (lobby table sorted by id and read in written order; unit test FAIL without, PASS with).
 - 2026-10-28: released in 0.7.3.0.
+- 2026-10-28: switch: role.fix (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).

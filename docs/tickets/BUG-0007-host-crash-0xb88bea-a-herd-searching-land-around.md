@@ -15,6 +15,7 @@ tests: editor_strays
 signature: dc04aee5:0xB88BEA read past the planet cube map (Planet_NearestCell)
 docs: docs/re/creature.md 10
 related:
+switch: core.strays
 ---
 
 ## Report
@@ -33,3 +34,4 @@ coop_editor_strays.py FAIL before (homes inside the planet, left-over puppets), 
 - 2026-10-25: reported (Spore Exception Report (host, 13:36, 0.7.2.1)).
 - 2026-10-25: fixed on fix/creature-ai-crash, released in 0.7.2.3.
 - 2026-10-25: ticket written from the CHANGELOG, commits and reports (backfill).
+- 2026-10-28: switch: core.strays (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).

@@ -14,6 +14,7 @@ commits: b3bfa90
 tests: tools/tests/kit_crash.py cases thread_worker, thread_exit (--old fails); SporeKit crash.test faultthread
 signature:
 docs: docs/02-modkit.md (kit.fix)
+switch: kit.crashtid
 related:
 ---
 
@@ -33,7 +34,7 @@ Observed on lane 6 with kit.fix crashtid 0: the exception line named the report 
 diag_write_report(_as) take the fault thread (CrashJob::tid, the stack-overflow tid, and g_last_tid stored with the last fault under the same lock, returned by exceptions_last). The exception line keeps its format with that id; a line "report written by thread N" follows when they differ; the exit report's minidump names the fault thread when it still exists. kit.fix crashtid. NOTE for the merge: tools/crash_triage.py REPORT_EXC matches "(thread N)" but not "(thread N, the game's main thread)", which now appears on every main-thread crash: #181 (fix/w5-tools) must land with this.
 
 ## Verification
-kit_crash --case thread_worker,thread_exit on lane 6: PASS (464 = tid=464 both); --old: FAIL both (468 vs 464; 308 main vs 464). A main-thread unhandled crash could not be made from a console command (the game swallows crash.test main).
+Lab PASS: kit_crash in run 20261028-230607 (lane 6). kit_crash --case thread_worker,thread_exit run directly on lane 6: PASS (464 = tid=464 both); --old: FAIL both (468 vs 464; 308 main vs 464). A main-thread unhandled crash could not be made from a console command (the game swallows crash.test main).
 
 ## History
 - 2026-10-28: opened.

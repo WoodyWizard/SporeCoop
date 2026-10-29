@@ -15,6 +15,7 @@ tests: tools/tests/coop_civ_city_join.py (suite civ_city_join)
 signature:
 docs: docs/re/civ.md#civ-city-catch-up
 related: #99
+switch: civ.cities
 ---
 
 ## Report
@@ -93,3 +94,4 @@ It FAILS on main (one city missing) and PASSES with the fix.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w2-civ (the guest catches up with the host's city count; coop_civ_city_join FAIL without, PASS with).
 - 2026-10-28: released in 0.7.3.0.
+- 2026-10-28: switch: civ.cities (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).

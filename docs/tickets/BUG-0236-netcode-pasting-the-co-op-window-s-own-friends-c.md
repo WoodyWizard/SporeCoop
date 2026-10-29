@@ -14,6 +14,7 @@ commits: 57ca92f
 tests: tests/net_tests.cpp test_address_label (net_tests --off addr_label fails); test_address_parse unchanged
 signature:
 docs:
+switch: net.addr_label
 related:
 ---
 

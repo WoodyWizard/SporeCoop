@@ -15,6 +15,7 @@ tests: unit (npc_tests: proxy driving)
 signature:
 docs:
 related:
+switch: npc.stall
 ---
 
 ## Report
@@ -57,3 +58,4 @@ driving decision with a host NPC that reports 2 m/s and stands 4 m from where th
 - 2026-10-28: fix/w2-creature: not reproduced; a candidate cause from driver.h written down (see Fix). BUG-0044 (reused objects) ruled out as the cause: it shows another species or a corpse, not an offset.
 - 2026-10-28: fix/w3-creature: the candidate cause fixed in driver.h (stall teleport for NPC proxies, drive_plan.h) with a unit test; not reproduced in the game.
 - 2026-10-28: released in 0.7.3.0.
+- 2026-10-28: switch: npc.stall (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).

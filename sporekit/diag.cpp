@@ -182,6 +182,11 @@ std::string diag_env()
     s += "SporeKit " SK_VERSION ", game " + std::string(build_name()) + " (exe " + exe_sha256().substr(0, 16) +
          "), frames from " + frame_source() + "\n";
     s += os_text() + "\n";
+    // which game wrote it (BUG-0249: the lab tells a test game on lane 1 from the owner's own Spore);
+    // only a flag for the profile, never its name, no path
+    s += "run: instance " + std::to_string(instance_id()) + ", profile " +
+         (wcsstr(GetCommandLineW(), L"-sporekit-profile:") ? "set" : "own") + ", pid " +
+         std::to_string(GetCurrentProcessId()) + "\n";
     s += memory_text() + "\n";
     s += (g_gpu.empty() ? std::string("GPU: not read yet") : g_gpu) + "\n";
     s += "other hooks: " + foreign_hooks() + "\n";

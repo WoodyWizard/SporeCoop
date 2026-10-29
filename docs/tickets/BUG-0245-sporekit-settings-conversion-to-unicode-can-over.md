@@ -14,6 +14,7 @@ commits: 6fa9165, f34f769, 005f6ba
 tests: tests/win_tests.cpp test_ini_encoding (win_unit --old-iniencode, --old-inilock fail)
 signature:
 docs: docs/02-modkit.md (kit.fix)
+switch: kit.iniencode, kit.inilock
 related:
 ---
 

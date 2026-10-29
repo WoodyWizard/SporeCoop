@@ -31,7 +31,6 @@ std::string status();                // overlay line, "" if nothing
 // the target's object was freed or is another creature now: its hits do not count any more
 void forget_target(void* target);
 void reset(); // a world change or the session end: no target of before is hit again
-void set_legacy_hits(bool on); // tests: the hit table before BUG-0099
 size_t hit_targets();
 bool enabled();
 void set_enabled(bool on);

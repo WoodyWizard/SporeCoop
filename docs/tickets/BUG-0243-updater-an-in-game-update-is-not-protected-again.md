@@ -14,6 +14,7 @@ commits: f34f769
 tests: tests/win_tests.cpp test_update_lock (win_unit --old-lock fails); part (b): written argument below
 signature:
 docs:
+switch: update.lock, kit.exitwait
 related:
 ---
 

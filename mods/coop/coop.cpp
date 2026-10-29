@@ -259,7 +259,7 @@ uint32_t build_id()
 // only touch a creature puppet that is still in the game's object list. `coop.framefix 0` restores
 // the old order and the unchecked calls (tests).
 bool g_frame_fix = true;
-COOP_FIX("core.frame", "BUG-0091", g_frame_fix, "core: animations and despawns only touch a puppet the game still lists (coop.framefix)");
+COOP_FIX_UNSAFE("core.frame", "BUG-0091", g_frame_fix, "core: animations and despawns only touch a puppet the game still lists (coop.framefix)");
 // calls that met a puppet the game no longer lists: dropped (fix on) / made anyway (framefix 0)
 uint32_t g_anims_dropped = 0, g_anims_unlisted = 0, g_despawns_dropped = 0, g_despawns_unlisted = 0;
 bool creature_puppet(const modes::Adapter* a)
@@ -562,7 +562,7 @@ Vote g_vote;
 // dropped, not run later on a freed civilization or in another save). `coop.corefix vote_scope 0`
 // restores the old behaviour (tests).
 bool g_vote_scope_fix = true;
-COOP_FIX("core.vote_scope", "BUG-0043", g_vote_scope_fix, "core: a vote ends with its stage, world and session");
+COOP_FIX_UNSAFE("core.vote_scope", "BUG-0043", g_vote_scope_fix, "core: a vote ends with its stage, world and session");
 unsigned g_vote_actions_run; // tests: action votes whose action ran
 unsigned g_votes_dropped;    // tests: votes ended without running their result
 bool g_vote_bypass = false;
@@ -1137,7 +1137,7 @@ std::atomic<bool> g_keepalive_run{false}, g_keepalive_queued{false};
 // after a join; at process exit nothing is destroyed. `coop.corefix keepalive_ptr 0`: the old
 // global object (tests: coop.exittest then aborts).
 bool g_keepalive_ptr_fix = true;
-COOP_FIX("core.keepalive_ptr", "BUG-0107", g_keepalive_ptr_fix, "core: the keepalive thread cannot abort the game at exit");
+COOP_FIX_UNSAFE("core.keepalive_ptr", "BUG-0107", g_keepalive_ptr_fix, "core: the keepalive thread cannot abort the game at exit");
 std::thread* g_keepalive = nullptr;
 std::thread g_keepalive_old; // the old way, only with the fix off
 
@@ -1806,33 +1806,46 @@ COOP_FIX("session.end", "BUG-0033", g_session_end_fix, "core: every session end 
 COOP_FIX("core.id_reuse", "BUG-0076", g_id_reuse_fix, "core: a joining player does not inherit an old entry of its id");
 COOP_FIX("core.unique_names", "BUG-0141", g_sess.unique_names, "net: players with the same name get unique names");
 COOP_FIX("core.rejoin_name", "BUG-0209", g_sess.rejoin_by_name, "net: a rejoin after a crash replaces the silent entry of its name");
-COOP_FIX("net.big_reliable", "BUG-0034", net::g_fix.big_reliable, "net: reliable messages above one packet are split, not stuck");
-COOP_FIX("net.state_roster", "BUG-0109", net::g_fix.state_roster, "net: a guest ignores the state of a player not in its roster");
-COOP_FIX("net.offset_window", "BUG-0133", net::g_fix.offset_window, "net: the clock offset forgets an old minimum within seconds");
-COOP_FIX("net.sender_time", "BUG-0122", net::g_fix.sender_time, "net: ship / vehicle velocity over the host's time, not arrival");
-COOP_FIX("net.first_ack", "BUG-0030", net::g_fix.first_ack, "net: packet seq starts at 1, an ack 0 acks nothing");
-COOP_FIX("net.time_wrap", "BUG-0053", net::g_fix.time_wrap, "net: snapshot order survives the sender's millisecond wrap");
-COOP_FIX("net.lan_prune", "BUG-0039", net::g_fix.lan_prune, "net: the LAN game list forgets silent hosts and has a cap");
-COOP_FIX("net.addr_check", "BUG-0138", net::g_fix.addr_check, "net: host addresses trimmed, the port checked");
-COOP_FIX("net.peer_caps", "BUG-0219", net::g_fix.peer_caps, "net: reliable messages are split only for a peer that joins pieces (HELLO caps)");
-COOP_FIX("net.rejoin_token", "BUG-0235", net::g_fix.rejoin_token, "net: a crash rejoin is recognised by its token, not by name and silence");
-COOP_FIX("net.addr_label", "BUG-0236", net::g_fix.addr_label, "net: a pasted \"Friends connect to: ...\" line joins its first address");
 COOP_FIX("core.text_utf8", "BUG-0164", utf8::g_cut_fix, "net: texts are cut between characters, not bytes");
 COOP_FIX("core.notify_text", "BUG-0129", notify_text::g_fix, "ui: notification lines wrap by characters, the panel kind is not guessed");
-void end_session_modules(bool cell)
+// The session-end structure (BUG-0214, GitHub #148; docs/06-testing.md#testing-fix-registry):
+//  block 1, the module calls: with session.end on every path calls every module; off, a path calls
+//    only what it called before BUG-0033 (Disconnect always called them all);
+//  block 2, the remotes: despawned and cleared, except on Restart with session.end off (the "new
+//    session inherits the old remotes" part of BUG-0033);
+//  block 3, always: every reset of coop.cpp state, on every path and with every session.end
+//    setting, each gated only by its own switch. It may run inside g_sess.update() (Disconnect,
+//    BUG-0029): mod state only, no game calls, no sends, no waiting; idempotent.
+// A new coop.cpp reset goes into block 3; a module's reset into its own on_session_end().
+enum class EndPath { Leave, Unload, Restart, Disconnect };
+
+void end_session(EndPath path, bool cell)
 {
-    npc::on_session_end();
-    social::on_session_end();
-    tribe::on_session_end();
-    if (cell)
-        cellsync::on_session_end();
-    creations::on_session_end();
-    civ::on_session_end();
-    squadron::on_session_end();
-    spacecoop::on_session_end();
-    for (auto& [id, r] : g_remotes)
-        despawn(r);
-    g_remotes.clear();
+    if (g_session_end_fix || path == EndPath::Disconnect) {
+        npc::on_session_end();
+        social::on_session_end();
+        tribe::on_session_end();
+        if (cell)
+            cellsync::on_session_end();
+        creations::on_session_end();
+        civ::on_session_end();
+        squadron::on_session_end();
+        spacecoop::on_session_end();
+    } else if (path == EndPath::Leave) { // before BUG-0033 (tests)
+        npc::on_session_end();
+        social::on_session_end();
+        if (cell)
+            cellsync::on_session_end();
+        spacecoop::on_session_end();
+    } else if (path == EndPath::Unload) {
+        npc::on_session_end();
+        social::on_session_end();
+    }
+    if (g_session_end_fix || path != EndPath::Restart) {
+        for (auto& [id, r] : g_remotes)
+            despawn(r);
+        g_remotes.clear();
+    }
     if (g_vote_scope_fix)
         drop_vote("the session ended");
     world::reset_shares();
@@ -1906,7 +1919,7 @@ void setup_callbacks()
         chat_log("* disconnected: " + why);
         g_ready.clear();
         g_lobby_rtt.clear();
-        end_session_modules(true);
+        end_session(EndPath::Disconnect, true);
     };
     g_sess.cb.player_join = [](const net::PlayerInfo& p) {
         shared::on_session_change();
@@ -2177,9 +2190,10 @@ void reset_lobby()
 // a host/join while a session is open: Session::host/join close the old one without cleanup
 void end_open_session()
 {
-    if (g_session_end_fix && g_sess.role() != net::Role::None) {
-        g_sess.leave("restart");
-        end_session_modules(true);
+    if (g_sess.role() != net::Role::None) {
+        if (g_session_end_fix) // off: Session::host / join close the old session themselves
+            g_sess.leave("restart");
+        end_session(EndPath::Restart, true);
     }
 }
 
@@ -2210,18 +2224,7 @@ void do_leave()
 {
     g_sess.leave("user");
     rejoin::clear(); // a clean leave: the next join is a new player (BUG-0235)
-    if (g_session_end_fix) {
-        end_session_modules(cellsync::voluntary_leave_cleanup_enabled());
-    } else { // before BUG-0033 (tests)
-        npc::on_session_end();
-        social::on_session_end();
-        if (cellsync::voluntary_leave_cleanup_enabled())
-            cellsync::on_session_end();
-        spacecoop::on_session_end();
-        for (auto& [id, r] : g_remotes)
-            despawn(r);
-        g_remotes.clear();
-    }
+    end_session(EndPath::Leave, cellsync::voluntary_leave_cleanup_enabled());
     reset_lobby();
 }
 
@@ -3181,15 +3184,7 @@ void on_unload()
     lan_scan(false);
     g_sess.leave("mod unload");
     rejoin::shutdown();
-    if (g_session_end_fix) {
-        end_session_modules(true);
-    } else {
-        npc::on_session_end();
-        social::on_session_end();
-        for (auto& [id, r] : g_remotes)
-            despawn(r);
-        g_remotes.clear();
-    }
+    end_session(EndPath::Unload, true);
 }
 
 int c_framefix(void*, int argc, const char* const* argv, SkOut* out)

@@ -1778,8 +1778,21 @@ int main(int argc, char** argv)
         upd::g_dup_fix = false;
         upd::g_path_fix = false;
         upd::g_pick_fix = false;
-        dbpf::g_bounds_fix = false;
+        // BUG-0214 R6: the decoder bounds fixes stay on (their off side is an out-of-bounds read
+        // that aborts the ASan build); --old-dbbf / --old-refpack switch them off one at a time
         printf("netcode fixes OFF\n");
+    }
+    if (argc == 2 && std::string(argv[1]) == "--old-dbbf") { // must die under ASan
+        dbpf::g_bounds_fix = false;
+        test_dbbf_wrap();
+        printf(g_fail ? "FAILED (%d)\n" : "ALL OK\n", g_fail);
+        return g_fail ? 1 : 0;
+    }
+    if (argc == 2 && std::string(argv[1]) == "--old-refpack") { // must die under ASan
+        dbpf::g_refpack_fix = false;
+        test_refpack_short();
+        printf(g_fail ? "FAILED (%d)\n" : "ALL OK\n", g_fail);
+        return g_fail ? 1 : 0;
     }
     test_buffer();
     test_unreliable_chunks();

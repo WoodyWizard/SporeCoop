@@ -15,6 +15,7 @@ tests: net_tests test_discovery_prune; coop_ui_status.py (lanfake)
 signature:
 docs: docs/06-testing.md#testing-net-w3
 related: #17
+switch: net.lan_prune
 ---
 
 ## Report
@@ -78,3 +79,4 @@ Not measured in game (memory and frame time under a flood).
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w3-net (wave 3).
 - 2026-10-28: released in 0.7.3.0.
+- 2026-10-28: switch: net.lan_prune (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).

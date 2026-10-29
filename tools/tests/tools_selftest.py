@@ -2,6 +2,8 @@
 """Self-tests of the dev tools (make test): they must never touch the owner's own Spore, profile or
 saves, and keep the knowledge files honest. Every check runs on fakes in a temporary folder:
 
+  docslint  docs_lint flags a known-issues entry without body, heading or ticket id (BUG-0153)
+  noenv     spore.sh and lane.py work without $USER / $HOME (BUG-0252)
   kill      spore.sh kill / pids on fake game processes inside a private PID namespace
             (unshare): lane 1 leaves the owner's game alone, a lane leaves other lanes alone,
             a half-dead game of the lane is ended (BUG-0025, BUG-0101, BUG-0103)
@@ -12,14 +14,18 @@ saves, and keep the knowledge files honest. Every check runs on fakes in a tempo
   tickets   tickets.py new: ids used on a branch without a worktree are not given out again
             (BUG-0057); a private ticket made in a worktree is seen from the main checkout and
             survives the worktree's removal (BUG-0062)
+  tickets_check  tickets.py check: a new fix names its commits (in history, not all released
+            before), an existing test, FAIL and PASS lab run ids or `no-fail-run:`, no path outside the
+            repository, known `switch:` names; release refuses such tickets (BUG-0215, BUG-0214)
   relint    re_lint.py flags an overrides entry without a confidence word also when a generated
             .sym has the same name (BUG-0086)
-  triage    tools/crash_triage.py reads a report and finds the known ticket (BUG-0158)
+  triage    tools/crash_triage.py reads a report and finds the known ticket (BUG-0158); one signature per
+            place: exit-time, log and short crash files, crash line first (BUG-0247)
   release   tools/release_check.sh: the tag must match COOP_VERSION and the notes are exactly the
             tag's CHANGELOG section (BUG-0097)
 
   tools_selftest.py [check ...]      all checks by default; exit 1 when one fails
-Environment: SELFTEST_SPORE / SELFTEST_TICKETS / SELFTEST_RELINT / SELFTEST_RELEASE run a check
+Environment: SELFTEST_SPORE / SELFTEST_TICKETS / SELFTEST_RELINT / SELFTEST_RELEASE / SELFTEST_TRIAGE run a check
 against another copy of the tool (an old version: the check must FAIL there)."""
 import os
 import shutil
@@ -34,6 +40,7 @@ SPORE = os.environ.get('SELFTEST_SPORE', os.path.join(ROOT, 'tools', 'spore.sh')
 TICKETS = os.environ.get('SELFTEST_TICKETS', os.path.join(ROOT, 'tools', 'tickets.py'))
 RELINT = os.environ.get('SELFTEST_RELINT', os.path.join(ROOT, 'tools', 're_lint.py'))
 RELEASE = os.environ.get('SELFTEST_RELEASE', os.path.join(ROOT, 'tools', 'release_check.sh'))
+TRIAGE = os.environ.get('SELFTEST_TRIAGE', os.path.join(ROOT, 'tools', 'crash_triage.py'))
 HEADLESS = os.environ.get('SELFTEST_HEADLESS', os.path.join(ROOT, 'tools', 'headless.sh'))
 fails = []
 
@@ -230,6 +237,98 @@ def test_tickets():
           f'it survives the worktree\'s removal and its id is not given out again ({os.path.basename(nxt)})')
 
 
+# ---------------------------------------------------------------- tickets check (BUG-0215)
+TICKET = """---
+id: {id}
+title: t
+status: fixed
+kind: bug
+stage: Cell
+reported: 2026-10-28
+source: x
+role: both
+versions: 0.7.3.0
+fixed_in: {fixed_in}
+branch: fix/x
+commits: {commits}
+tests: {tests}
+signature:
+docs:
+related:
+{extra}---
+
+## Verification
+{verif}
+
+## History
+- 2026-10-28: opened.
+"""
+
+
+def test_tickets_check():
+    print('tickets_check: the evidence rules of new fixes (BUG-0215)')
+    repo = os.path.join(TMP, 'repo')
+    for d in ('tools/tests', 'docs/tickets', 'mods/coop'):
+        os.makedirs(os.path.join(repo, d))
+    shutil.copy(TICKETS, os.path.join(repo, 'tools', 'tickets.py'))
+    open(os.path.join(repo, 'tools', 'tests', 'suite.py'), 'w').write("add('cell_x', 'python3 x')\nadd('unit', 'make test')\n")
+    open(os.path.join(repo, 'mods', 'coop', 'a.cpp'), 'w').write('COOP_FIX("pool.purge", "BUG-0001", g, "x");\n')
+    env = dict(os.environ, GIT_AUTHOR_NAME='t', GIT_AUTHOR_EMAIL='t@t', GIT_COMMITTER_NAME='t',
+               GIT_COMMITTER_EMAIL='t@t')
+    g = lambda *a: subprocess.run(['git', '-C', repo, *a], env=env, capture_output=True, text=True, check=True).stdout
+    g('init', '-q', '-b', 'main')
+    g('add', '-A')
+    g('commit', '-qm', 'old fix (BUG-0001)')
+    old = g('rev-parse', '--short', 'HEAD').strip()
+    g('tag', 'v0.7.3.0')
+    open(os.path.join(repo, 'x'), 'w').write('x')
+    g('add', '-A')
+    g('commit', '-qm', 'new fix (BUG-0001)')
+    new = g('rev-parse', '--short', 'HEAD').strip()
+    path = os.path.join(repo, 'docs', 'tickets', 'BUG-0001-t.md')
+    good = dict(id='BUG-0001', fixed_in='unreleased', commits=new, tests='cell_x', extra='',
+                verif='FAIL with the fix off: out/lab/20261028-101010. PASS: 20261028-111111.')
+
+    def check(cwd=repo, **kw):
+        open(os.path.join(cwd, 'docs', 'tickets', 'BUG-0001-t.md'), 'w').write(TICKET.format(**{**good, **kw}))
+        subprocess.run([sys.executable, '-I', os.path.join(cwd, 'tools', 'tickets.py'), 'index'], capture_output=True)
+        r = subprocess.run([sys.executable, '-I', os.path.join(cwd, 'tools', 'tickets.py'), 'check'], cwd=cwd,
+                           capture_output=True, text=True)
+        return r.returncode, r.stdout
+    rc, out = check()
+    globals()['check'](rc == 0, f'a complete new fix passes ({out.strip().splitlines()[-1] if out.strip() else ""})')
+    cases = [
+        (dict(commits=''), 'commits', 'a fixed ticket with empty commits: fails'),
+        (dict(commits='deadbee'), 'does not exist', 'a commit that does not exist: fails'),
+        (dict(commits=old), 'already released', 'commits only in an earlier release: fails (BUG-0167)'),
+        (dict(verif='FAIL and PASS, by hand'), 'run ids', 'a lab test named and no run id: fails'),
+        (dict(verif='it works'), 'no FAIL run', 'no FAIL / PASS in Verification: fails'),
+        (dict(tests='no_such_test'), 'names no lab suite', 'a test name that resolves nowhere: fails'),
+        (dict(verif='/tmp/x/run.log ' + good['verif']), 'outside the repository', 'a path outside the repository: fails'),
+        (dict(extra='switch: session_end\n'), 'unknown coop.fix name', 'an unknown switch: name fails (BUG-0214)'),
+    ]
+    for kw, want, what in cases:
+        rc, out = check(**kw)
+        globals()['check'](rc == 1 and want in out, what)
+    rc, out = check(verif='no-fail-run: docs only')
+    globals()['check'](rc == 0, 'the same with `no-fail-run: docs only` passes')
+    rc, out = check(extra='switch: pool.purge\n')
+    globals()['check'](rc == 0, 'a known switch: name passes')
+    rc, out = check(fixed_in='0.7.2', commits='')
+    globals()['check'](rc == 0, 'an old fix (released up to 0.7.3.0) is not failed retroactively')
+    check(commits=old)
+    rel = subprocess.run([sys.executable, '-I', os.path.join(repo, 'tools', 'tickets.py'), 'release', '0.7.4'],
+                         cwd=repo, capture_output=True, text=True)
+    globals()['check'](rel.returncode == 1 and 'BUG-0001' in rel.stdout and 'unreleased' in open(path).read(),
+                       'release refuses a fixed ticket without a commit of the release (BUG-0167)')
+    g('add', '-A')
+    g('commit', '-qm', 'tickets')
+    shallow = os.path.join(TMP, 'shallow')
+    subprocess.run(['git', 'clone', '-q', '--depth', '1', 'file://' + repo, shallow], capture_output=True, check=True)
+    rc, out = check(cwd=shallow, commits='deadbee')
+    globals()['check'](rc == 0 and 'git checks skipped' in out, 'a shallow clone: the git checks are skipped with a note')
+
+
 # ---------------------------------------------------------------- re_lint
 def test_relint():
     print('relint: confidence of overrides entries that a generated .sym also names')
@@ -259,6 +358,26 @@ def test_relint():
     check(any('Foo::NewThing' in l for l in flagged), 'the override of a new name is flagged')
     check(any(l.startswith('overrides_dc04aee5.sym:') and dup in l for l in flagged),
           f'a second overrides entry of {dup} without a confidence word is flagged')
+    # BUG-0216: a name looked up through a table, only in the GOG 2024 overrides: used, missing on the
+    # frozen build, and it needs its frozen_off line; a plain "free" is no symbol
+    shutil.copy(RELINT, os.path.join(tree, 'tools', 're_lint.py'))
+    shutil.copy(os.path.join(ROOT, 'data', 'symbols', 'overrides_dc04aee5.sym'), ovr)
+    with open(ovr, 'a') as f:
+        f.write('\nSimulator::FooTable=0x00401000 ; verified test entry\nfree=0x00401000 ; verified test entry\n')
+    open(os.path.join(tree, 'mods', 'coop', 'zz_table.cpp'), 'w').write(
+        'static const char* t[] = {"Simulator::FooTable", "free"};\n')
+    r = lint()
+    check(r.returncode == 1 and 'Simulator::FooTable' in r.stdout and 'frozen_off' in r.stdout,
+          'a table-looked-up GOG 2024-only name needs a frozen_off line')
+    check('free (used' not in r.stdout and ' free,' not in r.stdout, 'a literal "free" is not counted as a symbol')
+    fo = os.path.join(tree, 'data', 'symbols', 'frozen_off_922af7c7.txt')
+    with open(fo, 'a') as f:
+        f.write('Simulator::FooTable ; a test feature (BUG-0001)\n')
+    r = lint()
+    check(r.returncode == 0, f'with its line it passes ({r.stdout.strip().splitlines()[-1:]})')
+    os.remove(os.path.join(tree, 'mods', 'coop', 'zz_table.cpp'))
+    r = lint()
+    check(r.returncode == 1 and 'no longer used' in r.stdout, 'a frozen_off line for a name no longer used fails')
 
 
 # ---------------------------------------------------------------- release
@@ -289,12 +408,26 @@ def test_release():
     open(os.path.join(tree, 'mods', 'coop', 'coop.cpp'), 'w').write('#define COOP_VERSION "0.7.4"\n')
     rc, _ = rel('v0.7.4')
     check(rc != 0, 'a version without a CHANGELOG section fails')
+    # BUG-0216: notes-check, on the real tickets
+    notes = os.path.join(tree, 'n.md')
+
+    def nc(body):
+        open(notes, 'w').write('### Fixed\n' + body)
+        return subprocess.run([sys.executable, '-I', TICKETS, 'notes-check', '9.9.9', notes], capture_output=True,
+                              text=True)
+    open_t = next((l.split('|')[1].strip().split(']')[0].lstrip('[') for l in
+                   open(os.path.join(os.path.dirname(TICKETS), '..', 'docs', 'tickets', 'README.md'))
+                   if l.startswith('| [BUG-') and '| open |' in l), None)
+    if open_t:
+        check(nc(f'- **x** fixed ({open_t}).\n').returncode == 1, f'notes-check: an open ticket ({open_t}) under Fixed fails')
+        check(nc(f'- **x** ({open_t}), still open: part 2.\n').returncode == 0, 'notes-check: the same item saying "still open" passes')
+    check(nc('- **x** (BUG-9999).\n').returncode == 1, 'notes-check: an id without a ticket fails')
 
 
 # ---------------------------------------------------------------- crash triage
 def test_triage():
     print('triage: crash_triage.py on a made-up report of a known crash')
-    tool = os.path.join(ROOT, 'tools', 'crash_triage.py')
+    tool = TRIAGE
     if not os.path.exists(tool):
         check(False, 'tools/crash_triage.py exists (CLAUDE.md 5 and the fix-player-report skill name it)')
         return
@@ -313,8 +446,70 @@ def test_triage():
     check('dc04aee5:SporeApp.exe Foo::Bar+0x20' in out, 'the signature names build and place')
     check('BUG-0018' in out, 'the known ticket of 0xC6AE60 is found (BUG-0018)')
 
+    # BUG-0247: one signature per place, whatever thread wrote the report and whatever file it is
+    def sigs(name, text):
+        p = os.path.join(TMP, name)
+        open(p, 'w').write(text)
+        out = subprocess.run([sys.executable, '-I', tool, p], capture_output=True, text=True).stdout
+        return [l for l in out.splitlines() if l.startswith(('signature', 'build'))]
+    env = 'SporeKit 0.7.3.0, game GOG 2024 (exe dc04aee5a3debc3f1ad4c1a937460e99a29b9bd3bc285008be83615dd5e59a37)\n'
+    want = 'signature  dc04aee5:SporeApp.exe Simulator::cNest::Foo+0x20   (0xC0000005 at 0x00C6AE60)'
+    got = sigs('crash-20261028-101010.txt', 'SporeCoop crash (the game ends (ExitProcess 0), seconds after a fault)\n'
+               + env + 'game mode: Creature\n== Exception\n0xC0000005 access violation at 0x00C6AE60 SporeApp.exe '
+               'Simulator::cNest::Foo+0x20 (thread 4242, the game\'s main thread)\n')
+    check(want in got, f'(a) an exit-time report on the main thread: no thread text in the signature ({got[-1:]})')
+    got = sigs('sporekit.log', 'line a\n[ERROR] the game crashed: exception 0xC0000005 at 0x00C6AE60 SporeApp.exe '
+               'Simulator::cNest::Foo+0x20\nsymbols: overrides_dc04aee5.sym\nlast line\n')
+    check([g for g in got if g.startswith('signature')] == [want], f'(b) the crash line in the middle of a log ({got})')
+    got = sigs('crash-20261028-2.txt', 'SporeCoop crash crash-20261028-2 (short: the full report is being written '
+               'over this file)\nSporeKit 0.7.3.0, game GOG 2024\nexception 0xC00000FD stack overflow at 0x00401000 '
+               'SporeApp.exe Foo+0x1 (thread 12)\n')
+    check('signature  dc04aee5:SporeApp.exe Foo+0x1   (0xC00000FD at 0x00401000)' in got,
+          f'(c) a short stack-overflow crash file: the full report\'s signature and exe ({got})')
+    log = ''.join(f'[WARN] exception 0xC0000005 at 0x0040100{i} SporeApp.exe Bar+0x{i} (data 0x0)\n' for i in range(4))
+    got = sigs('sporekit.1.log', 'symbols: overrides_dc04aee5.sym\n' + log + '[ERROR] the game crashed: exception '
+               '0xC0000005 at 0x00C6AE60 SporeApp.exe Simulator::cNest::Foo+0x20\n')
+    check([g for g in got if g.startswith('signature')][:1] == [want],
+          f'(d) four fault-logger lines before the crash line: the crash comes first ({got[1:2]})')
+    got = sigs('crash-20261028-3.txt', 'SporeCoop crash\n' + env + 'run: instance 1, profile own, pid 1234\n'
+               'mods: coop 0.7.3.0\n== Exception\n0xC0000005 access violation at 0x00C6AE60 SporeApp.exe '
+               'Simulator::cNest::Foo+0x20 (thread 7)\n')
+    check(want in got and 'build      GOG 2024 (exe dc04aee5), SporeKit 0.7.3.0, coop 0.7.3.0, mode ?' in got,
+          f'(e) a `run:` Environment line changes nothing ({got})')
 
-CHECKS = {'kill': test_kill, 'fixture': test_fixture, 'headless': test_headless, 'tickets': test_tickets, 'relint': test_relint,
+
+# ---------------------------------------------------------------- noenv (BUG-0252)
+def test_noenv():
+    print('noenv: the tools without $USER / $HOME (containers, env -i, cron)')
+    env = {k: v for k, v in os.environ.items() if k != 'USER'}
+    for what, e in (('without USER', dict(env, SPORE_LANE='10')),
+                    ('with env -i', {'PATH': os.environ.get('PATH', '/usr/bin:/bin'), 'SPORE_LANE': '10'})):
+        r = subprocess.run(['bash', SPORE, 'status'], env=e, capture_output=True, text=True)
+        check(r.returncode == 0 and 'unbound variable' not in r.stderr,
+              f'spore.sh status {what} ({r.returncode}, {r.stderr.strip()[-80:]})')
+    lane_dir = os.path.join(os.path.dirname(SPORE), 'tests')
+    r = subprocess.run([sys.executable, '-I', '-c', f'import sys; sys.path.insert(0, {lane_dir!r}); import lane; '
+                        'print(lane.APPDATA)'], env=dict(env, SPORE_LANE='10'), capture_output=True, text=True)
+    check(r.returncode == 0 and '/drive_c/users/' in r.stdout, f'lane.py imports without USER ({r.stderr.strip()[-80:]})')
+
+
+# ---------------------------------------------------------------- docslint (BUG-0153)
+def test_docslint():
+    print('docslint: known-issues.md entries have a heading, a body and a ticket id')
+    sys.path.insert(0, os.path.join(ROOT, 'tools'))
+    import docs_lint
+    ok = '## A: x\n<a id="issue-a"></a>\n\n* What happens: y. BUG-0001.\n'
+    check(docs_lint.known_issues_problems(ok) == [], 'a complete entry passes')
+    check(any('no body' in p for p in docs_lint.known_issues_problems('## A: x\n## B: y\n* z BUG-0002\n')),
+          'a heading followed by a heading is flagged')
+    check(any('fragment' in p for p in docs_lint.known_issues_problems(ok + '\n of 20-27 m\n\n* body BUG-0003\n')),
+          'a lost heading (a paragraph starting with a fragment) is flagged')
+    check(any('names no ticket' in p for p in docs_lint.known_issues_problems('## A: x\n\n* y\n')),
+          'an entry without BUG-NNNN is flagged')
+
+
+CHECKS = {'noenv': test_noenv, 'docslint': test_docslint, 'kill': test_kill, 'fixture': test_fixture, 'headless': test_headless, 'tickets': test_tickets,
+          'tickets_check': test_tickets_check, 'relint': test_relint,
           'release': test_release, 'triage': test_triage}
 
 if __name__ == '__main__':
