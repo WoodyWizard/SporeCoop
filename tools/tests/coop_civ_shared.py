@@ -10,9 +10,14 @@
    (`coop.res add money 40000` while offline) and joins again (it gets the same id). The host's
    money must not jump by the offline earning, and the host must not keep the old player's role
    for the newcomer (`coop.role` on the host lists it as none, like the guest's own window).
+3. A spend at another player's join (BUG-0220): both totals at 1000, then on the guest
+   `coop.res joinsim add money -500` (what a third player's join runs on a guest, then the spend,
+   in one step). After 3 s the game's money on both machines must be 500 (0.7.3.0: the guest's
+   purchase was undone by the next host total, the host never counted it: both 1000).
 
 --nofix: the code before the fixes (`coop.res fix reset 0`, `coop.res fix floor 0`,
-`coop.role fix 0`): must FAIL.
+`coop.role fix 0`, `coop.fix res.join_keep off`): must FAIL.
+--only-join: step 3 only (with --nofix: only res.join_keep off, the twin run of BUG-0220).
 
   SPORE_LANE=7 python3 tools/tests/coop_civ_shared.py [--nofix]
 """
@@ -61,19 +66,51 @@ def sample_min(host, guest, seconds):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--nofix', action='store_true')
+    ap.add_argument('--only-join', action='store_true')
     a = ap.parse_args()
     host, guest = start('civ')
     ck = Checks()
     for c in (host, guest):
-        for f in ('coop.res fix reset', 'coop.res fix floor', 'coop.role fix'):
-            print(' ', c.call(f'{f} {0 if a.nofix else 1}')['out'].strip())
+        if not a.only_join:
+            for f in ('coop.res fix reset', 'coop.res fix floor', 'coop.role fix'):
+                print(' ', c.call(f'{f} {0 if a.nofix else 1}')['out'].strip())
+        print(' ', c.call(f'coop.fix res.join_keep {"off" if a.nofix else "on"}')['out'].strip())
     time.sleep(2)
+    if not a.only_join:
+        steps_1_2(host, guest, ck)
+    join_spend(host, guest, ck)
+    for c in (host, guest):
+        c.call('coop.fix res.join_keep on')
+    ck.faults(host=host, guest=guest)
+    return ck.result()
+
+
+def join_spend(host, guest, ck):
+    """3. a guest's spend right at another player's join is counted once (BUG-0220)"""
+    h = money(host)
+    ck(h is not None, f'the host has a shared money total ({h})')
+    if h is None:
+        return
+    host.call(f'coop.res add money {1000 - h:.1f}')
+    time.sleep(3)
+    h, g = money(host), money(guest)
+    print(f'  shared money set: host {h} guest {g}', flush=True)
+    ck(g is not None and abs(h - 1000) < 5 and abs(g - 1000) < 5, f'both start from 1000 (host {h}, guest {g})')
+    print(' ', guest.call('coop.res joinsim add money -500')['out'].strip().replace('\n', ' | '))
+    time.sleep(3)
+    h, g = money(host), money(guest)
+    print(f'  after the guest spent 500 at a join: host {h} guest {g}', flush=True)
+    ck(g is not None and abs(g - 500) < 5, f'the guest\'s purchase stays made ({g})')
+    ck(h is not None and abs(h - 500) < 5, f'the host counted the guest\'s spend once ({h})')
+
+
+def steps_1_2(host, guest, ck):
 
     # 1. crossing spends
     h = money(host)
     ck(h is not None, f'the host has a shared money total ({h})')
     if h is None:
-        return ck.result()
+        return
     host.call(f'coop.res add money {150 - h:.1f}')
     time.sleep(2.5)
     h, g = money(host), money(guest)
@@ -115,8 +152,6 @@ def main():
     h, g = money(host), money(guest)
     print(f'  money after the rejoin: host {h} guest {g}', flush=True)
     ck(h is not None and g is not None and abs(h - g) < 5, f'the guest took the host\'s total ({h}, {g})')
-    ck.faults(host=host, guest=guest)
-    return ck.result()
 
 
 if __name__ == '__main__':

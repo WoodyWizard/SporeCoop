@@ -3,6 +3,27 @@
 ## [Unreleased]
 
 ### Fixed
+- **A cancelled evolution vote no longer opens every guest's editor**, and a guest who leaves (or
+  loses the host) right after a vote no longer gets its editor opened offline. The Give recipient
+  you picked is forgotten when that player leaves or the session ends (BUG-0234). Needs the new
+  version on the guest.
+- **Shared money or tribe food a guest spends right when another player joins is no longer given
+  back** (it was spent twice: the purchase was made, the money returned, the host never counted it)
+  (BUG-0220).
+- **After an evolution, every waiting guest gets the world when the cinematic is over (at most
+  120 s)**: with two or three guests the waits added up (120 / 240 / 360 s), and a leftover wait
+  could send the world during the cinematic, so a guest got the hatchling creature again (BUG-0232).
+- **Civilization: a guest who plays another world than the host's no longer gets the host's
+  vehicles and cities applied to its own planet** (its own vehicles were taken over or removed and
+  cities founded), and in Tribe and Civ its own tribe or vehicles play on under its own orders
+  until it plays the host's world (BUG-0231, part). Cities already founded that way stay in the
+  guest's save.
+- **"Host is in an editor / loading: you play on alone" is only shown in Creature, Tribe and Civ**,
+  where the guest really plays on alone; in Cell and Space it is gone. DNA a guest earned while the
+  host was away goes to the pack only when the host plays that stage again, and DNA the host owed
+  is no longer paid into a different world it loads later (BUG-0233). Correction to 0.7.3.0: its
+  BUG-0205 line says a guest plays on with its own creatures while the host edits; that
+  holds for Creature, but Cell is still open (BUG-0205, BUG-0151).
 - **Setup: a failed GitHub check can no longer overwrite the release an install just fetched** (the
   window said "GitHub not reachable" and the next Install asked again; BUG-0244).
 - **Crash reports name the game instance and whether a test profile was used** (`run:` line, no

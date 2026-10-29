@@ -1320,6 +1320,29 @@ registry (`mods/coop/fixes.h`, BUG-0116):
   object, not walkable ground. Prefer W (camera forward, open grass at this fixture) or a point
   far up the screen.
 
+## Core wave 5: votes, shared money at a join, host away, other worlds (2026-10-28, fix/w5-core)
+<a id="testing-w5-core"></a>
+
+New tests and test hooks (each FAILS with its `--nofix`, the fix switched off by `coop.fix`):
+
+| Test | What | Hooks |
+| --- | --- | --- |
+| `coop_vote_drop_editor.py --case 1` (suite `vote_end_editor`) | a passed vote, the guest leaves while its own editor is due: its game stays in Creature (BUG-0234) | `coop.vote hold <s>`: a due own editor waits that long, so the Leave lands first (the editor otherwise opens 1-2 frames after the vote's end) |
+| `coop_vote_drop_editor.py --case 2` (suite `vote_drop_editor`) | a cancelled vote (host to the galaxy menu) opens no guest editor (BUG-0234) | |
+| `coop_civ_shared.py` step 3 (`--only-join` alone) | a guest's spend at another player's join counts once, both machines' game money (BUG-0220) | `coop.res joinsim add <name> <n>`: what a join runs on this machine, then the change, in one step |
+| `coop_away_stages.py` (suite `away_stages`, Space fixture) | a host "editor" gives the Space guest no "you play on alone"; the menu still does (BUG-0233) | `coop.hoststate mode <hex> <s>`: our player states report that mode for a while |
+| `coop_civ_other_world.py` (suite `civ_other_world`) | a guest in its own copy of the Civ planet (Otherworld) gets no host vehicle state applied (BUG-0231) | |
+
+Unit tests: `npc_tests` test_share_wait (BUG-0232, `--nofix` = the global timer), `validate_tests`
+test_dna_route and test_give_pick_leave (BUG-0233, BUG-0234; `validate_tests --nofix`), `net_tests`
+test_shared_join_keep (BUG-0220).
+
+Pitfalls seen:
+* each case of `coop_vote_drop_editor.py` runs on fresh games: a rejoin between the cases loads a
+  host save written while the guest's puppet existed, and the guest then faults every frame in
+  `Herd_Update` (BUG-0256), which fails the run.
+* `coop.vote go` while the guest is settled opens its own editor 1-2 frames after the vote's end
+  message, so polling `coop.vote` for "own editor due 1" never sees it without `coop.vote hold`.
 ## Fix registry rules and the session-end structure (2026-10-28, fix/w5-tools)
 <a id="testing-fix-rules"></a>
 

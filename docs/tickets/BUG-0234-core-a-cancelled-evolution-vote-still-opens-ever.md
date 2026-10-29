@@ -1,20 +1,21 @@
 ---
 id: BUG-0234
 title: Core: a cancelled evolution vote still opens every guest's own editor, and a pending own editor survives the session end
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-10-28
 source: GitHub #168 (review of release 0.7.3.0, 5801eea)
 role: all
 versions: 0.7.3.0
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w5-core
+commits: c4f4981, 9452ccc
+tests: vote_end_editor, vote_drop_editor (coop_vote_drop_editor.py --case 1|2; --nofix fails), tests/validate_tests.cpp test_give_pick_leave
 signature:
-docs:
+docs: docs/06-testing.md#testing-w5-core
 related:
+switch: core.vote_drop_editor, core.own_editor_end, give.pick_reset
 ---
 
 ## Report
@@ -28,13 +29,28 @@ When the host leaves the Creature stage during an evolution vote, the host cance
 Severity LOW-MED: an editor nobody asked for, while the host is in the galaxy menu. The BUG-0043 fix (fix/w1-core, 066df15) left this incomplete, and BUG-0033 (a387323) did not add these st
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+Confirmed on b423f56 by reading and in the game (lane 4, GOG 2024):
+- The host's `drop_vote` resets `g_vote` and then broadcasts the end with `editor = 0`, but the guest's MSG_VOTE handler took the editor id only from "on" messages, so the end of a cancelled vote looked like a passed one and `g_own_editor_due` was set from the old id. Observed: the guest's game went to the editor 2.3 s after "cancelled (the stage was left)".
+- `end_session_modules` did not reset `g_own_editor_due`, and `own_editor_tick` runs without a session: observed, the guest's editor opened 39.5 s after its Leave (when the test hold ended).
+- `g_give_pick` was reset neither when its player left nor at the session end (read only).
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+- Guest MSG_VOTE: the editor id is also taken from the message that ends a vote (`if (on || (ended && has_editor))`); a cancelled vote ends with 0 and opens nothing, `finish_vote` broadcasts before it resets, so a passed vote still ends with its id. `drop_vote` has a comment that its `editor = 0` is on purpose. Switch `coop.fix core.vote_drop_editor`.
+- `end_session_modules` clears `g_own_editor_due` (a task already queued with `run_outside_frame` reads it first and returns; `g_own_editor_queued` is left alone). Switch `core.own_editor_end`.
+- `g_give_pick` is cleared when its player leaves (`net::give_pick_after_leave`) and at the session end. Switch `give.pick_reset`.
+- Test hook `coop.vote hold <s>`: a due own editor waits that long (so a Leave can land before it opens).
+- Mixed versions: an old guest with a new host keeps the bug; a new guest with an old host behaves as before (old hosts never cancel a vote).
 
 ## Verification
-<!-- the test: FAIL without the fix (run dir), PASS with it (runs) -->
+`tools/tests/coop_vote_drop_editor.py` (lane 4, GOG 2024; oracle: the guest's `game.mode`):
+- `--case 1` (a passed vote, the guest leaves while its own editor is due): `--nofix` FAIL (the guest's game in the editor `0x00DBDBA1` after the Leave, log "own editor opened (39.5 s after the vote)"), PASS with the fix (Creature for 55 s).
+- `--case 2` (cancelled vote, the host goes to the galaxy menu): `--nofix` FAIL (guest in the editor 2.3 s after the cancel), PASS with the fix.
+Run logs: out/lab/20261028-235900-w5-core-twins/vde_nofix2.log (both FAIL in one run), vde_fix_c1.log, vde_fix_c2.log; lab runs in the branch report.
+- Give pick: `validate_tests` test_give_pick_leave (fails with `--nofix`). The 3-player game test of the issue was not written (3 games do not fit the memory budget of this wave).
+
+Lab PASS: out/lab/20261028-230144 (vote_end_editor, vote_drop_editor ok, lane 4; also vote_stale, guest_editor ok); smoke out/lab/20261028-232610 all passed at 9202d71 (before the merge of main).
 
 ## History
 - 2026-10-28: opened.
+- 2026-10-28 (fix/w5-core): fixed: the editor id from the end message, the due editor and the Give pick end with the session / their player; coop_vote_drop_editor.py case 1 and 2 FAIL with --nofix, PASS with the fix.
+- 2026-10-29 (fix/w5-core): after the merge of main 8f1944b: lab out/lab/20261028-235045 all passed (vote_end_editor, vote_drop_editor, away_stages, civ_other_world, civ_shared, dna_away, creature, civ_coop, fix_registry, leave_cleanup, unit).
