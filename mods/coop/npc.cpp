@@ -957,6 +957,35 @@ bool damage_filter(void* c, float& damage, int type, void* attacker)
     return true;
 }
 
+std::string trace_line(const net::Vec3& me, float radius)
+{
+    unsigned n_near = 0, total = 0, dead = 0;
+    float nearest = -1;
+    auto count = [&](const net::Vec3& p, bool is_dead) {
+        total++;
+        float d = net::dist(p, me);
+        if (d > radius)
+            return;
+        n_near++;
+        dead += is_dead;
+        if (nearest < 0 || d < nearest)
+            nearest = d;
+    };
+    if (is_host()) {
+        for (auto& [c, hn] : g_host_npcs)
+            if (g_seen_now.count(c)) // alive this frame: its position is readable
+                count(game::position(c), hn.dead);
+    } else {
+        for (auto& [id, px] : g_proxies)
+            if (!px.buf.empty())
+                count(px.buf.latest().pos, px.killed);
+    }
+    char b[160];
+    snprintf(b, sizeof b, "npcs %s: %u within %.0f m (%u dead), nearest %.0f m, %u in all", is_host() ? "simulated" : "mirrored",
+             n_near, radius, dead, nearest, total);
+    return b;
+}
+
 std::string status()
 {
     char b[768];

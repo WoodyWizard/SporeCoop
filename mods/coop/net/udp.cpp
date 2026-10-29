@@ -1,4 +1,5 @@
 #include "udp.h"
+#include "ipmask.h"
 
 #include <cerrno>
 #include <chrono>
@@ -54,6 +55,8 @@ std::string Endpoint::str() const
     snprintf(s, sizeof s, "%u.%u.%u.%u:%u", b[0], b[1], b[2], b[3], port);
     return s;
 }
+
+std::string Endpoint::masked() const { return mask_ip(ip, port); }
 
 bool Endpoint::parse(const std::string& s, uint16_t default_port, Endpoint& out)
 {

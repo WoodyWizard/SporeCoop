@@ -16,6 +16,7 @@
 #include "net/validate.h"
 #include "sporekit_game.hpp"
 #include "fixes.h"
+#include "trace.h"
 
 namespace cellsync {
 
@@ -289,6 +290,7 @@ static void effect(uint8_t* c, const char* name)
     skg::cdecl_call<void*>(a_Effect, c, id);
 }
 
+static uint8_t g_ko_logged;
 static void send_ko(uint8_t state, float left, float hold)
 {
     if (!C.sess || !C.sess->connected())
@@ -302,6 +304,9 @@ static void send_ko(uint8_t state, float left, float hold)
         C.sess->broadcast_reliable(net::MSG_CELL_KO, w);
     else
         C.sess->send_reliable_to(0, net::MSG_CELL_KO, w);
+    if (state != g_ko_logged) // the knockout state is refreshed every second: changes only
+        trace::line("ko", "own cell state %u (0 up, 1 out, 2 revived, 3 respawned) left=%.1f hold=%.2f", state, left, hold);
+    g_ko_logged = state;
     g_ko_sent = H->time_seconds();
 }
 
@@ -328,6 +333,8 @@ static void on_ko(int id, uint8_t state, float left, float hold)
         return;
     k.state = state;
     k.since = k.refreshed;
+    trace::line("ko", "player %d cell state %u -> %u (0 up, 1 out, 2 revived, 3 respawned)%s", id, prev, state,
+                in_cell() && puppet_cell(id) ? "" : " (no puppet here)");
     // outside the Cell stage only the state is kept (BUG-0061: the "up again" was dropped there);
     // the puppets of other stages are not cells
     uint8_t* c = in_cell() ? puppet_cell(id) : nullptr;
@@ -474,8 +481,12 @@ static void send_act(uint32_t hidx, uint8_t kind, uint8_t arg, int food, bool pl
     w.u8(arg);
     w.u32((uint32_t)food);
     w.u8(plant ? 1 : 0);
-    w.u32(g_meals.sent(food)); // the meal number the host echoes in its total (BUG-0051)
+    uint32_t meal = g_meals.sent(food);
+    w.u32(meal); // the meal number the host echoes in its total (BUG-0051)
     C.sess->send_reliable_to(0, net::MSG_CELL_EAT, w);
+    static const char* kinds[] = {"gone", "kill", "break"};
+    trace::ev("eat", kind == ACT_GONE ? "sent gone" : "sent kill", "sent %s c%u food=%d %s meal=%u", kinds[kind % 3], hidx,
+              food, plant ? "plant" : "meat", meal);
 }
 
 static void flush_food()
@@ -486,8 +497,11 @@ static void flush_food()
         net::Writer w;
         w.u32((uint32_t)g_pend_food);
         w.u8(g_pend_plant ? 1 : 0);
-        w.u32(g_meals.sent(g_pend_food));
+        uint32_t meal = g_meals.sent(g_pend_food);
+        w.u32(meal);
         C.sess->send_reliable_to(0, net::MSG_CELL_FOOD, w);
+        trace::ev("eat", "sent food", "sent food +%d %s meal=%u (no host cell with it)", g_pend_food,
+                  g_pend_plant ? "plant" : "meat", meal);
     }
     g_pend_food = 0;
 }
@@ -515,6 +529,7 @@ static void send_hit(uint32_t hidx, int dmg, int type)
     w.u8((uint8_t)type);
     C.sess->send_reliable_to(0, net::MSG_CELL_HIT, w);
     g_hits_sent++;
+    trace::ev("bite", "sent", "sent c%u dmg=%d type=%d", hidx, dmg, type);
 }
 
 static bool SK_CDECL h_DamageCell(uint8_t* victim, uint8_t* attacker, const float* dir, int type, int x, float dt)
@@ -746,6 +761,9 @@ static void SK_CDECL h_AddFood(int amount, bool plant)
     if (!g_food_guard && amount > 0 && in_cell()) { // our own avatar ate (AvatarEat 0xE7D070), not the network
         g_own_eats++;
         g_own_food += amount;
+        uint8_t* s0 = S();
+        trace::ev("eat", "own", "own cell ate +%d %s (total %d)", amount, plant ? "plant" : "meat",
+                  s0 ? F<int32_t>(s0, 0x1C) : -1);
     }
     uint8_t* a = in_cell() ? avatar() : nullptr;
     if (a && a == a0 && g_body < 1.f) {
@@ -1457,6 +1475,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         bool got = type == net::MSG_CELL_EAT ? read_eat(r, e) && e.has_meal : (f = read_food(r)).has_meal;
         if (got) // no game call here: outside Cell the pool can be gone, without an avatar AddFoodPoints is unsafe
             g_food_ack[from] = type == net::MSG_CELL_EAT ? e.meal : f.meal;
+        trace::ev("eat", "refused away", "from %u: meal %u refused (this game is not in the Cell stage / has no cell)",
+                  from, type == net::MSG_CELL_EAT ? e.meal : f.meal);
         return;
     }
     if (!cell && !(type == net::MSG_CELL_KO && g_fix_kostale))
@@ -1494,8 +1514,11 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         int dmg = r.u8(), t = r.u8();
         uint8_t* c = modes::cell_at(idx);
         // a bite lands on an NPC of our pool: never on a player's cell (ours or a puppet)
-        if (!r.ok() || !c || F<uint8_t>(c, kDying) || c == avatar() || modes::cell_is_puppet(c))
+        if (!r.ok() || !c || F<uint8_t>(c, kDying) || c == avatar() || modes::cell_is_puppet(c)) {
+            trace::ev("bite", "refused", "from %u c%u refused: %s", from, idx,
+                      !c ? "no such cell here" : c == avatar() || modes::cell_is_puppet(c) ? "a player's cell" : "dying");
             return;
+        }
         g_hits_in++;
         uint8_t* pc = puppet_cell(from);
         // BUG-0078: judged as DamageCell judges the host's own bite (0xE7A7C0): nothing happens when
@@ -1512,6 +1535,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             (F<uint8_t>(c, kDead) == 1 || F<int>(c, kHp) == 0 || F<uint8_t>(c, 0x17C) || F<uint8_t>(c, kInvuln) ||
              not_damageable || (pc && o_NoAttack && h_NoAttack(c, pc)))) {
             g_hits_spared++;
+            trace::ev("bite", "spared", "from %u c%u (%s) dmg=%d spared by the game's rules (dead/hp0/invulnerable/"
+                      "not damageable/no-attack)", from, idx, kind_of(c), dmg);
             return;
         }
         // the NPC and its kind turn on the guest who bit it, as DamageCell does for the host's bites
@@ -1525,6 +1550,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             g_hits_aggro++;
         }
         int hp = F<int>(c, kHp) - dmg;
+        trace::ev("bite", "applied", "from %u c%u (%s) dmg=%d hp %d -> %d%s", from, idx, kind_of(c), dmg, F<int>(c, kHp),
+                  std::max(hp, 0), hp > 0 ? "" : " killed");
         if (hp > 0) {
             F<int>(c, kHp) = hp;
         } else {
@@ -1563,6 +1590,14 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         if (c && (modes::cell_is_puppet(c) || c == avatar()))
             c = nullptr;
         uint8_t* pc = puppet_cell(from);
+        const char* what = c ? kind_of(c) : "-";
+        if (kind == ACT_GONE)
+            trace::ev("eat", c ? "from applied" : food ? "from late" : "from gone", "from %u gone c%u (%s) food=%d %s meal=%u: %s",
+                      from, idx, what, food, plant ? "plant" : "meat", e.meal,
+                      c ? "applied" : food ? "refused (eaten first / not here): points taken back" : "not here, no points");
+        else
+            trace::ev("eat", "from kill", "from %u kill c%u (%s): %s", from, idx, what,
+                      c && !F<uint8_t>(c, kDying) && !F<uint8_t>(c, kDead) ? "applied" : "refused (gone or dying here)");
         if (kind == ACT_GONE) {
             if (c) {
                 g_eats_in++;
@@ -1592,6 +1627,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             FoodMsg f = read_food(r);
             if (f.valid && f.amount > -1000 && f.amount < 1000)
                 o_AddFood(f.amount, f.plant);
+            trace::ev("eat", "from food", "from %u food +%d %s meal=%u: %s", from, f.amount, f.plant ? "plant" : "meat", f.meal,
+                      f.valid && f.amount > -1000 && f.amount < 1000 ? "applied" : "refused (bad message)");
             if (f.has_meal)
                 g_food_ack[from] = f.meal;
         } else if (is_guest()) {
@@ -1602,6 +1639,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             uint32_t ack = r.u32(); // a host before 0.8 does not send it
             int diff = g_meals.diff(food, r.ok(), ack, g_pend_food, F<int32_t>(s, 0x1C), g_fix_foodseq);
             if (diff != 0) {
+                trace::ev("eat", "total", "host total food=%d (ack meal %u) -> %+d here (pending %d)", food, ack, diff,
+                          g_pend_food);
                 g_food_guard = true;
                 o_AddFood(diff, false); // through the game: level ups happen as usual
                 g_food_guard = false;
@@ -2298,6 +2337,65 @@ std::string debug(const std::vector<std::string>& a)
     snprintf(ob, sizeof ob, "avatar_opacity=%.2f cine=%d parts=%s chasing_me=%d chasing_partner=%d\n",
              F<float>(av, kOpacity), cm && F<uint32_t>(cm, 0x2C) ? 1 : 0, parts.c_str(), chase_me, chase_partner);
     return b + std::string(ob) + ko + status();
+}
+
+// the support trace (trace.h): what the own cell has around it and what it did since the last line.
+// Food = plants and meat (kind_of), "screen" = what world_to_screen puts inside the window.
+uint32_t own_model()
+{
+    uint8_t* av = in_cell() ? avatar() : nullptr;
+    return av ? F<uint32_t>(av, kModelKey) : 0;
+}
+
+std::string trace_line()
+{
+    uint8_t* av = in_cell() ? avatar() : nullptr;
+    if (!av)
+        return "";
+    net::Vec3 me = pos_of(av);
+    int sw = 0, sh = 0;
+    H->screen_size(&sw, &sh);
+    int plants = 0, meat = 0, creatures = 0, all = 0;
+    float near_plant = -1, near_meat = -1;
+    for_each_cell([&](uint8_t* c, uint32_t) {
+        if (modes::cell_is_puppet(c) || F<uint8_t>(c, kDead) || F<uint8_t>(c, kDying))
+            return;
+        all++;
+        const char* k = kind_of(c);
+        bool plant = !strcmp(k, "plant"), m = !strcmp(k, "meat"), cr = !strcmp(k, "creature");
+        if (!plant && !m && !cr)
+            return;
+        net::Vec3 p = pos_of(c);
+        float d = net::dist(p, me);
+        if (plant && (near_plant < 0 || d < near_plant))
+            near_plant = d;
+        if (m && (near_meat < 0 || d < near_meat))
+            near_meat = d;
+        float w[3] = {p.x, p.y, p.z}, sc[2];
+        if (!H->world_to_screen(w, sc) || sc[0] < 0 || sc[1] < 0 || sc[0] >= sw || sc[1] >= sh)
+            return;
+        (plant ? plants : m ? meat : creatures)++;
+    });
+    auto* k = (uint32_t*)(av + kModelKey);
+    uint8_t* md = a_ModelData && k[0] ? skg::cdecl_call<uint8_t*>(a_ModelData, k[0], k[1], k[2]) : nullptr;
+    uint8_t* s = S();
+    // what happened since the last line (counters of status())
+    static uint32_t l_eats, l_food, l_sent, l_in, l_late, l_hits_sent, l_hits_in, l_spared, l_kills_sent, l_kills_in;
+    char b[600];
+    snprintf(b, sizeof b,
+             "size=%.2f hp=%d model=%08X diet=%s food=%d plant=%d screen: plants=%d meat=%d creatures=%d "
+             "nearest plant=%.0f meat=%.0f pool=%d mirrors=%u downed=%d body=%.2f | since last: ate=%u (+%u pts) "
+             "eats_sent=%u eats_in=%u late=%u bites_sent=%u bites_in=%u spared=%u kills_sent=%u kills_in=%u",
+             F<float>(av, kSize), F<int>(av, kHp), k[0],
+             !md ? "?" : md[0x1250] && md[0x1251] ? "omni" : md[0x1250] ? "carn" : md[0x1251] ? "herb" : "none", s ? F<int32_t>(s, 0x1C) : -1, s ? F<int32_t>(s, 0x20) : -1,
+             plants, meat, creatures, near_plant, near_meat, all, (unsigned)g_mirrors.size(), (int)g_downed, g_body,
+             g_own_eats - l_eats, g_own_food - l_food, g_eats_sent - l_sent, g_eats_in - l_in, g_eats_late - l_late,
+             g_hits_sent - l_hits_sent, g_hits_in - l_hits_in, g_hits_spared - l_spared, g_kills_sent - l_kills_sent,
+             g_kills_in - l_kills_in);
+    l_eats = g_own_eats, l_food = g_own_food, l_sent = g_eats_sent, l_in = g_eats_in, l_late = g_eats_late;
+    l_hits_sent = g_hits_sent, l_hits_in = g_hits_in, l_spared = g_hits_spared, l_kills_sent = g_kills_sent;
+    l_kills_in = g_kills_in;
+    return b;
 }
 
 std::string status()

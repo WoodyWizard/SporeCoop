@@ -25,6 +25,7 @@ struct Peer {
     bool accepted = false;
     bool bye = false; // said goodbye: dropped in update()
     uint32_t caps = 0;      // its HELLO / WELCOME caps (BUG-0219); 0 = an older SporeCoop
+    std::string version;    // CAP_VERSION text ("" = unknown: an older SporeCoop)
     bool has_token = false; // host: its HELLO carried a rejoin token (BUG-0235)
     uint64_t token = 0;
     Connection conn;
@@ -47,6 +48,7 @@ public:
     } cb;
 
     uint32_t build = 0;      // exe build id; mismatch = reject
+    std::string version;     // ours for HELLO / WELCOME (CAP_VERSION): "coop X, SporeKit Y, <game build> <exe hash>"
     // BUG-0141: names are unique in a session (the host appends " 2", " 3" to a taken name; the
     // guest takes its name from the roster). Space tables keyed by name mixed up two players with
     // the same (default) name. false = the old behaviour (tests: coop.corefix unique_names 0)
@@ -86,6 +88,12 @@ public:
     uint16_t port() const { return tr_->local_port(); }
     // round trip time to a player in ms (host: any guest, guest: the host), -1 if unknown
     int rtt_of(uint8_t id) const;
+    // the link to a player (host: any guest, guest: the host) for the support trace: no address
+    struct Link {
+        int rtt_ms = -1;
+        uint32_t sent = 0, resends = 0, silent_ms = 0, pending = 0;
+    };
+    bool link_of(uint8_t id, Link& out) const;
     std::string host_address() const; // guest: "ip:port" of the host
     bool resolving() const { return lookup_ != nullptr; } // guest: the host name is being looked up
     struct Lookup; // a name lookup on a worker thread (BUG-0204)

@@ -51,6 +51,7 @@ void* debug_spawn_epic(uint8_t player, float dist, uint32_t archetype, uint32_t 
 void* proxy(uint16_t id);                       // guest: local creature mirroring host NPC #id
 bool damage_filter(void* creature, float& damage, int type, void* attacker);
 std::string status();
+std::string trace_line(const net::Vec3& me, float radius); // support trace: NPCs near `me`
 std::vector<syncdbg::Entry> sync_entries(); // coop.sync (tests)
 std::string list();                                  // debug: mirrored NPCs
 std::string creatures(bool untuned_only, uint32_t species); // debug: creatures (+0xE84 = archetype tuning)

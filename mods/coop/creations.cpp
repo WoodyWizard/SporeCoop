@@ -14,6 +14,7 @@
 #include "net/validate.h"
 #include "sporekit_game.hpp"
 #include "fixes.h"
+#include "trace.h"
 
 namespace creations {
 
@@ -928,8 +929,11 @@ static void apply_own_avatar()
     Key cur = avatar_species_key();
     if (!(cur == k)) {
         void* prof = game::species_by_key({k.instance, k.type, k.group});
-        if (!prof)
+        if (!prof) {
+            trace::ev("body", "own unresolved", "own creature %08X is not resolvable here (yet): the avatar stays %08X",
+                      k.instance, cur.instance);
             return; // not resolvable (yet)
+        }
         int age = *(int*)((uint8_t*)av + 0xB34);
         thiscall<bool>(a_SetSpecies, av, prof, age, true);
         g_swaps++;
@@ -1292,6 +1296,26 @@ std::string debug(const std::vector<std::string>& a)
         return s;
     }
     return status();
+}
+
+// support trace (trace.h): the own creation, where the choice came from, what the game has now
+std::string trace_line(Kind k)
+{
+    bool guest = C.sess && C.sess->role() == net::Role::Client;
+    Option o = mine(k);
+    const char* origin = g_chosen[k] && k != kUfo ? (g_choice[k].instance ? "choices.ini" : "choices.ini: the world's own")
+                         : k == kUfo                ? "own empire"
+                         : guest && !g_opts[k].empty() ? "newest own creation"
+                                                       : "the world's (host's) own";
+    Key here = C.sess && C.sess->connected() ? own_key_here(k) : o.key;
+    Key now = k == kCreature ? avatar_species_key() : k == kCell ? cell_key() : ufo_key();
+    auto host = g_applied.find({0, (uint8_t)k});
+    char b[320];
+    snprintf(b, sizeof b, "%s: own=%s '%s' from %s, used here as %s, the game has %s%s, host's %s, %u own creations, swaps=%u",
+             kInfo[k].name, trace::hex(o.key.instance).c_str(), o.name.c_str(), origin, trace::hex(here.instance).c_str(),
+             trace::hex(now.instance).c_str(), here.instance && now.instance && !(here == now) ? " (DIFFERENT)" : "",
+             trace::hex(host != g_applied.end() ? host->second.key.instance : 0u).c_str(), (unsigned)g_opts[k].size(), g_swaps);
+    return b;
 }
 
 } // namespace creations

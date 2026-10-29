@@ -227,6 +227,7 @@ ascending bit order (BUG-0219).
 | --- | --- | --- | --- |
 | 0 | `CAP_SPLIT` | none | joins split reliable messages (the BUG-0034 receiver) |
 | 1 | `CAP_TOKEN` | `u64` | HELLO only: the rejoin token (BUG-0235); never in WELCOME or anything relayed |
+| 2 | `CAP_VERSION` | HELLO: `str8`; WELCOME: `str8` + `u8 n` + n x (`u8 id`, `str8`) | the versions (`coop X, SporeKit Y, <game build> <exe hash 8>`) of the sender and, in WELCOME, of the players the host knows (0.7.4, feat/w7-trace; see #netcode-versions-masks) |
 
 * A message without the extension reads as caps 0: 0.7.2.x, 0.7.3.0 and fakepeer. A short payload
   means "absent", not a failed read. Unknown bits and trailing bytes are ignored. A new field takes
@@ -252,3 +253,23 @@ ascending bit order (BUG-0219).
   Switches: `coop.fix net.peer_caps`, `net.rejoin_token` (off = the 0.7.3.0 name rule of BUG-0209),
   `core.rejoin_name` (off = never replace), `pool.meals_trim`. `net_tests --off <peer_caps|rejoin_token|addr_label|update_paths>`
   turns one switch off.
+
+## Peer versions and masked addresses in logs (2026-10-29, feat/w7-trace)
+<a id="netcode-versions-masks"></a>
+
+* `CAP_VERSION` (bit 2 of the HELLO / WELCOME caps): `Session::version` goes out in HELLO; the host
+  keeps it per peer (`Peer::version`, `PlayerInfo::version`), sends its own and the known players'
+  in WELCOME and appends the newcomer's to PLAYER_JOIN (`str8` after the 0.7.2 fields: older
+  readers ignore it; an empty or missing one is "unknown (pre-0.7.4)"). A payload that does not
+  read leaves the message readable without versions. Both sides log every partner's versions on a
+  join (`net: player N 'X' joined from ...: coop ...`, `session: ...`), `coop.status` lists them
+  (`version N 'X': ...`), the trace repeats them once a minute; a different SporeCoop or SporeKit
+  version is a warning line, a different SporeCoop version also a notice in the chat. The exe build
+  itself must match already (REJ_BUILD).
+* Addresses: `Endpoint::masked()` / `net::mask_ip` (net/ipmask.h) for every log line, `coop.status`
+  and the chat log that goes into problem reports: loopback as is, LAN / VPN ranges by class
+  (`192.168.x.x:47810`, `10.x.x.x`, `172.N.x.x`, `100.64.x.x (VPN/CGNAT)`), a public address as
+  `public #ABCD` (16 bits of FNV-1a: tells players apart, not where they are). A host name looked
+  up for a join is logged by its length only. The full address stays in the session (and in the
+  co-op window, which the player sees). Tests: `net_tests` `test_peer_versions`, `test_ip_mask`;
+  `fuzz_decoders` PLAYER_JOIN with and without the version.

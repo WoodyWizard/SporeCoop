@@ -76,6 +76,7 @@ void init(const SkHost* host, SkMod* mod, Api api);
 void tick();     // every frame (inside Present): only schedules UI work outside the frame
 void open(bool on);
 bool is_open();
+int input_lock_now(); // the game's input lock count (cGameInputManager +0x110; > 0 = clicks are dropped)
 void shutdown(); // mod unload: hide our windows
 std::string debug_state();
 extern bool g_log_msgs; // debug: log UI messages reaching our handlers

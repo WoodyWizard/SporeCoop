@@ -108,7 +108,7 @@ bool Session::join(const std::string& addr, const std::string& name, std::string
         lookup_ = l;
         lookup_port_ = ep.port;
         lookup_started_ = join_started_;
-        logf(cb, "looking up %s ...", host_name.c_str());
+        logf(cb, "looking up a host name (%u characters) ...", (unsigned)host_name.size());
         return true;
     }
     start_hello(ep, join_started_);
@@ -127,13 +127,14 @@ void Session::start_hello(const Endpoint& ep, uint32_t now)
     h.build = build;
     h.name = my_name_;
     h.ext = send_caps;
+    h.version = version;
     h.has_token = rejoin_token != 0;
     h.token = rejoin_token;
     Writer w;
     h.write(w);
     p->conn.send_reliable(MSG_HELLO, w);
     peers_.push_back(std::move(p));
-    logf(cb, "joining %s ...", ep.str().c_str());
+    logf(cb, "joining %s ...", ep.masked().c_str());
 }
 
 bool Session::poll_lookup(uint32_t now)
@@ -243,10 +244,10 @@ std::vector<PlayerInfo> Session::players() const
 {
     std::vector<PlayerInfo> v;
     if (role_ == Role::Host) {
-        v.push_back({0, my_name_});
+        v.push_back({0, my_name_, version});
         for (auto& p : peers_)
             if (p->accepted)
-                v.push_back({p->id, p->name});
+                v.push_back({p->id, p->name, p->version});
     } else if (role_ == Role::Client) {
         v = roster_;
         bool self = false;
@@ -254,7 +255,7 @@ std::vector<PlayerInfo> Session::players() const
             if (r.id == my_id_)
                 self = true;
         if (!self && welcomed_)
-            v.push_back({my_id_, my_name_});
+            v.push_back({my_id_, my_name_, version});
     }
     return v;
 }
@@ -265,6 +266,20 @@ int Session::rtt_of(uint8_t id) const
         if (p->id == id && (p->accepted || role_ == Role::Client))
             return (int)p->conn.rtt_ms;
     return -1;
+}
+
+bool Session::link_of(uint8_t id, Link& out) const
+{
+    for (auto& p : peers_)
+        if (p->id == id && (p->accepted || role_ == Role::Client)) {
+            out.rtt_ms = (int)p->conn.rtt_ms;
+            out.sent = p->conn.stats.packets_sent;
+            out.resends = p->conn.stats.resends;
+            out.silent_ms = now() - p->conn.last_recv_ms;
+            out.pending = (uint32_t)p->conn.pending_reliable();
+            return true;
+        }
+    return false;
 }
 
 std::string Session::host_address() const
@@ -287,7 +302,7 @@ std::string Session::status() const
     uint32_t now = this->now();
     for (auto& p : peers_) {
         snprintf(b, sizeof b, "  [%u] %-16s %s rtt=%.0fms last=%ums sent=%u recv=%u acked=%u resend=%u pending=%u\n",
-                 p->id, p->name.c_str(), p->conn.remote.str().c_str(), p->conn.rtt_ms,
+                 p->id, p->name.c_str(), p->conn.remote.masked().c_str(), p->conn.rtt_ms,
                  now - p->conn.last_recv_ms, p->conn.stats.packets_sent, p->conn.stats.packets_recv,
                  p->conn.stats.acked, p->conn.stats.resends, (unsigned)p->conn.pending_reliable());
         s += b;
@@ -447,7 +462,7 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
                 Writer w;
                 rej.write(w);
                 p.conn.send_reliable(MSG_REJECT, w);
-                logf(cb, "rejected %s: %s", p.conn.remote.str().c_str(), rej.text.c_str());
+                logf(cb, "rejected %s: %s", p.conn.remote.masked().c_str(), rej.text.c_str());
                 return;
             }
             p.id = alloc_id();
@@ -480,20 +495,23 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
             p.has_token = h.has_token;
             p.token = h.token;
             p.conn.peer_split = (h.caps & CAP_SPLIT) != 0;
+            p.version = h.version;
             Welcome wl;
             wl.your_id = p.id;
             wl.world = world;
             wl.players = players();
             wl.ext = send_caps;
+            wl.host_version = version;
             Writer w;
             wl.write(w);
             p.conn.send_reliable(MSG_WELCOME, w);
             PlayerJoin pj;
-            pj.p = {p.id, p.name};
+            pj.p = {p.id, p.name, p.version};
             Writer wj;
             pj.write(wj);
             broadcast_reliable(MSG_PLAYER_JOIN, wj, p.id);
-            logf(cb, "player %u '%s' joined from %s", p.id, p.name.c_str(), p.conn.remote.str().c_str());
+            logf(cb, "player %u '%s' joined from %s: %s", p.id, p.name.c_str(), p.conn.remote.masked().c_str(),
+                 p.version.empty() ? "version unknown (pre-0.7.4)" : p.version.c_str());
             if (cb.player_join)
                 cb.player_join(pj.p);
             if (!h.caps) {
@@ -572,6 +590,7 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
         p.accepted = true;
         p.caps = wl.caps;
         p.conn.peer_split = (wl.caps & CAP_SPLIT) != 0;
+        p.version = wl.host_version;
         roster_ = wl.players;
         for (auto& pl : roster_) {
             if (pl.id == 0)
@@ -580,6 +599,10 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
                 my_name_ = pl.name; // the host may have made it unique (BUG-0141)
         }
         logf(cb, "joined as player %u (host '%s', %d players)", my_id_, p.name.c_str(), (int)roster_.size());
+        for (auto& pl : roster_)
+            if (pl.id != my_id_)
+                logf(cb, "player %u '%s': %s", pl.id, pl.name.c_str(),
+                     pl.version.empty() ? "version unknown (pre-0.7.4)" : pl.version.c_str());
         if (cb.connected)
             cb.connected();
         for (auto& pl : roster_)
@@ -607,7 +630,8 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
         if (!pj.read(r))
             return;
         roster_.push_back(pj.p);
-        logf(cb, "player %u '%s' joined", pj.p.id, pj.p.name.c_str());
+        logf(cb, "player %u '%s' joined: %s", pj.p.id, pj.p.name.c_str(),
+             pj.p.version.empty() ? "version unknown (pre-0.7.4 or an older host)" : pj.p.version.c_str());
         if (cb.player_join)
             cb.player_join(pj.p);
         break;
@@ -726,7 +750,7 @@ void Session::update()
                 // peer goes (otherwise it swallowed the new HELLO and never timed out)
                 for (size_t k = 0; k < peers_.size(); k++)
                     if (peers_[k].get() == p) {
-                        logf(cb, "a new connection from %s replaces player %u", from.str().c_str(), p->id);
+                        logf(cb, "a new connection from %s replaces player %u", from.masked().c_str(), p->id);
                         drop_peer(k, 0);
                         break;
                     }
