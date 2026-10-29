@@ -12,6 +12,7 @@
 
 #include "game.h"
 #include "shared.h"
+#include "stage_epoch.h"
 #include "modes.h"
 #include "net/ids.h"
 #include "net/interp.h"
@@ -1116,6 +1117,24 @@ static void host_tick(double now)
     // BUG-0031: the vehicles of a player who left go to the owner of the nearest player city (the
     // cities were split anew just now); before, nobody could order them, they took slots of the
     // vehicle cap and the next joiner under the reused id inherited them
+    // BUG-0223: the game's vehicle list first, then the table pruned against it (alive check before
+    // the pol read), then the orphan loop over vehicles that still exist: before, both read the memory
+    // of vehicles that may have been freed since the last tick
+    void* pc = player_civ();
+    uint32_t ppol = pc ? pol_of(pc) : 0;
+    g_host_cities = all_cities();
+    auto vehicles = all_vehicles();
+    std::unordered_set<void*> alive(vehicles.begin(), vehicles.end());
+    for (auto it = g_hv.begin(); it != g_hv.end();) {
+        // a vehicle of another world (or another nation) at an address we knew: assigned anew
+        bool gone = !alive.count(it->first);
+        bool other = !gone && g_fix_world && pol_of(it->first) != it->second.pol;
+        if (gone || other) {
+            g_hv_by_id.erase(it->second.id);
+            it = g_hv.erase(it);
+        } else
+            ++it;
+    }
     if (roster_changed && g_fix_orphans)
         for (auto& [v, hv] : g_hv) {
             if (hv.owner >= 0xFE || std::binary_search(players.begin(), players.end(), hv.owner))
@@ -1127,20 +1146,6 @@ static void host_tick(double now)
             hv.owner = owner;
             g_orphans_given++;
         }
-    void* pc = player_civ();
-    uint32_t ppol = pc ? pol_of(pc) : 0;
-    g_host_cities = all_cities();
-    auto vehicles = all_vehicles();
-    std::unordered_set<void*> alive(vehicles.begin(), vehicles.end());
-    for (auto it = g_hv.begin(); it != g_hv.end();) {
-        // a vehicle of another world (or another nation) at an address we knew: assigned anew
-        bool other = g_fix_world && pol_of(it->first) != it->second.pol;
-        if (!alive.count(it->first) || other) {
-            g_hv_by_id.erase(it->second.id);
-            it = g_hv.erase(it);
-        } else
-            ++it;
-    }
     for (void* v : vehicles) {
         if (g_hv.count(v))
             continue;
@@ -1903,11 +1908,65 @@ void on_world_change()
         return;
     g_world_resets++;
     clear_coop_tables(false); // nothing to restore: the vehicles are gone
-    on_session_end();
+    // BUG-0223: the tables are forgotten here, not through on_session_end (its restoring clear
+    // would write +0x218 into the old world's vehicles if the order ever changed)
+    g_hv.clear();
+    g_hv_by_id.clear();
+    g_gv.clear();
+    g_gv_of.clear();
+    g_city_owner.clear();
+    g_host_cities.clear();
+    g_split_for.clear();
+    g_city_short_since = -1;
     g_rx_cycle = 0xFFFF;
     g_cycle_ids.clear();
     g_cycle_chunks.clear();
     g_exist_frame = ~0ull;
+}
+
+// BUG-0223: which Civ world is open. Before, a single frame without the stage's local entity (an
+// anchor built from the player civ's first city) counted as a world change: the host dropped the
+// vehicle table (every vehicle a new id, rebuilt on the guests), every city's owner (captures and
+// gifts) and the boosts while the world was still there. Now: the stage counter
+// (game::stage_epoch: a load, a received world, another stage), leaving Civ for a mode that is not
+// an editor, and the in-stage signals (another player civilization object, another save name).
+// Limit: a reload of the same save that reuses the player civ's address and never shows a
+// non-stage frame is not seen. `coop.fix civ.world_epoch off`: the old trigger (coop.cpp
+// avatar_change_check, with the editor check above).
+static bool g_fix_world_epoch = true;
+COOP_FIX("civ.world_epoch", "BUG-0223", g_fix_world_epoch, "civ: only a real world change (not a frame without the city anchor) clears the tables");
+static stage_epoch::Watch g_world_watch;
+static bool g_world_left = true;
+static uint32_t g_world_checks_fired;
+
+bool world_epoch_fix() { return g_fix_world_epoch; }
+
+void world_check()
+{
+    if (!g_fix_world_epoch) {
+        g_world_watch = {};
+        g_world_left = true;
+        return;
+    }
+    uint32_t m = game::mode_id();
+    bool in = m == modes::kCiv;
+    bool editor = m == modes::kEdit || m == modes::kEditor;
+    void* pc = in && g_ok && nm() ? player_civ() : nullptr;
+    bool ch = stage_epoch::changed(g_world_watch, game::stage_epoch(modes::kCiv), in, pc, in ? modes::current_world() : 0);
+    bool fire = false;
+    if (!in && !editor) {
+        fire = !g_world_left;
+        g_world_left = true;
+    } else if (in) {
+        fire = ch && !g_world_left;
+        g_world_left = false;
+    }
+    if (fire) {
+        g_world_checks_fired++;
+        if (g_ok)
+            H->log(M, SK_INFO, "civ: the world changed (mode %08X, epoch %u)", m, game::stage_epoch(modes::kCiv));
+        on_world_change();
+    }
 }
 
 void for_each_owned(void (*fn)(void* obj, const net::Vec3& pos, uint8_t owner, bool city, void* user), void* user)
@@ -2106,12 +2165,17 @@ std::string debug(const std::vector<std::string>& a)
         char b[320];
         snprintf(b, sizeof b,
                  "tables: hv=%u boost=%u alarm_at=%u siege=%u joint=%u gifted=%u bfix=%u host_cities=%u city_owner=%u "
-                 "gv=%u world_resets=%u fix_boost=%d fix_world=%d next_id=%u\n",
+                 "gv=%u world_resets=%u fix_boost=%d fix_world=%d next_id=%u world_changes=%u\n",
                  (unsigned)g_hv.size(), (unsigned)g_boost.size(), (unsigned)g_alarm_at.size(), (unsigned)g_siege.size(),
                  (unsigned)g_joint_told.size(), (unsigned)g_city_gifted.size(), (unsigned)g_bfix_seen.size(),
                  (unsigned)g_host_cities.size(), (unsigned)g_city_owner.size(), (unsigned)g_gv.size(), g_world_resets,
-                 (int)g_fix_boost, (int)g_fix_world, (unsigned)g_next_id);
+                 (int)g_fix_boost, (int)g_fix_world, (unsigned)g_next_id, g_world_checks_fired);
         return b;
+    }
+    if (!a.empty() && a[0] == "nulllocal") { // tests (BUG-0223): the stage's local entity is null for N frames
+        int n = a.size() > 1 ? atoi(a[1].c_str()) : 1;
+        modes::test_null_local(n < 1 ? 1 : n > 600 ? 600 : n);
+        return "the local entity is null for " + std::to_string(n < 1 ? 1 : n > 600 ? 600 : n) + " frames\n";
     }
     // tests of the co-op mechanics through the game's own functions (host)
     if (a.size() >= 3 && a[0] == "siege" && is_host()) { // siege <city> <player>: capture damage by that player

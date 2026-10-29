@@ -607,8 +607,22 @@ static bool rts_anchor(net::Vec3& p)
     return false;
 }
 
+// tests (BUG-0223): frames in which Tribe's / Civ's local entity is null, as when the anchor city
+// cannot be read for a moment
+static int g_test_null_frames;
+static bool g_test_null_now;
+void test_null_local(int frames) { g_test_null_frames = frames; }
+void test_tick()
+{
+    g_test_null_now = g_test_null_frames > 0;
+    if (g_test_null_now)
+        g_test_null_frames--;
+}
+
 static void* rts_local()
 {
+    if (g_test_null_now)
+        return nullptr;
     net::Vec3 a;
     return rts_anchor(a) ? &g_local_marker : nullptr;
 }

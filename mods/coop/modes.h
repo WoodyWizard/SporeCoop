@@ -49,6 +49,10 @@ extern void* (*g_species_for_player)(uint8_t player);
 extern bool (*g_model_for_player)(uint8_t player, int kind, uint32_t key[3]);
 const char* mode_name(uint32_t mode);
 uint32_t current_world(); // crc32 of the current save name, 0 if none
+// tests (BUG-0223): Tribe's and Civ's local entity is null for the next `frames` frames
+// (test_tick() once per frame counts them down)
+void test_null_local(int frames);
+void test_tick();
 uint32_t current_place(const Adapter* a); // adapter place() or current_world()
 std::string current_world_name(); // the planet file being played, UTF-8 ("Name.spo"; "SaveGame" in menus)
 

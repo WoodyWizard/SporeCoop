@@ -1369,7 +1369,8 @@ void avatar_change_check()
         npc::on_world_change();
         if (!tribe::editor_world_fix()) // BUG-0217: else tribe::world_check() decides
             tribe::on_world_change();
-        civ::on_world_change(); // BUG-0059
+        if (!civ::world_epoch_fix()) // BUG-0223: else civ::world_check() decides
+            civ::on_world_change(); // BUG-0059
     }
     g_last_avatar = local;
 }
@@ -1382,7 +1383,9 @@ void on_frame(void*, int, void*)
     notify::tick(now);
     game::world_epoch(); // BUG-0119: sees every frame outside the creature stage
     game::stage_epoch_tick(); // BUG-0217: before any message or module tick of this frame
+    modes::test_tick();       // BUG-0223 tests: a forced frame without the local entity
     tribe::world_check();     // BUG-0217: the Tribe world changed (not an editor visit)
+    civ::world_check();       // BUG-0223: the Civ world changed (not a frame without the city anchor)
     creations::tick(now);
     if (g_frame_fix) // BUG-0091: forget the puppets of a world the game tore down before any message uses them
         avatar_change_check();
