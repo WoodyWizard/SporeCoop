@@ -10,11 +10,12 @@ role: all
 versions: 0.7.3.0
 fixed_in: unreleased
 branch: fix/w5-space
-commits: ecbecc3, 5138792, f3e0432
+commits: ecbecc3, 5138792, f3e0432, 344f82f
 tests: space_armada_return (coop_space_armada_return.py, BUG-0227 parts); unit: tests/space_tests.cpp test_wave_return
 signature:
 docs: docs/re/space.md#space-object-serial
 related: BUG-0046, BUG-0218, BUG-0136
+switch: contracts.wave_tough, contracts.wave_resume, contracts.wave_away
 ---
 
 ## Report

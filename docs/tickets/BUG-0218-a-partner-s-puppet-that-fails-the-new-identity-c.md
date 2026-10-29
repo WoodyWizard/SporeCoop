@@ -10,11 +10,12 @@ role: all
 versions: 0.7.3.0
 fixed_in: unreleased
 branch: fix/w5-space
-commits: 730acef
+commits: 730acef, 6dbb476
 tests: space_defenders (coop_space_defenders.py part 2 a, b, c)
 signature:
 docs: docs/re/space.md#space-object-serial
 related: BUG-0111, BUG-0054, BUG-0230
+switch: fleet.puppet_id
 ---
 
 ## Report

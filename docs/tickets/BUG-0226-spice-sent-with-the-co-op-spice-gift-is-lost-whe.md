@@ -10,11 +10,12 @@ role: all
 versions: 0.7.3.0
 fixed_in: unreleased
 branch: fix/w5-space
-commits: 8d9ce51
+commits: 8d9ce51, 6dbb476
 tests: space_gift_refund (coop_space_gift_refund.py)
 signature:
 docs: docs/re/space.md#space-object-serial
 related: BUG-0058, BUG-0225
+switch: space.gift_refund
 ---
 
 ## Report

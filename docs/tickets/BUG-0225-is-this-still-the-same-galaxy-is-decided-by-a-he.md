@@ -10,11 +10,12 @@ role: all
 versions: 0.7.3.0
 fixed_in:
 branch: fix/w5-space
-commits: c5d89f1, f3e0432
+commits: c5d89f1, f3e0432, 344f82f
 tests: space_allies_reload_addr (coop_space_allies_reload.py --same-address)
 signature:
 docs: docs/re/space.md#space-object-serial
 related: BUG-0038, BUG-0058, BUG-0226, BUG-0217
+switch: allies.reload_id
 ---
 
 ## Report

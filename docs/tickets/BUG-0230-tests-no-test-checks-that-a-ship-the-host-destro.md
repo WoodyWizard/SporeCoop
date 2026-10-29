@@ -10,11 +10,12 @@ role: all
 versions: 0.7.3.0
 fixed_in: unreleased
 branch: fix/w5-space
-commits: c5d89f1, 730acef
+commits: c5d89f1, 730acef, 344f82f
 tests: space_fleet (coop_space_fleet.py part 3), space_defenders (part 2 a, b, c)
 signature:
 docs:
 related: BUG-0037, BUG-0111, BUG-0218
+switch: none
 ---
 
 ## Report

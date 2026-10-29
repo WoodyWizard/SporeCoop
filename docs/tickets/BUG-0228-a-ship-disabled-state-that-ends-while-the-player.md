@@ -10,11 +10,12 @@ role: all
 versions: 0.7.3.0
 fixed_in: unreleased
 branch: fix/w5-space
-commits: 7c9ee00
+commits: 7c9ee00, 6dbb476
 tests: space_down_away (coop_space_down_away.py part c)
 signature:
 docs: docs/re/space.md#space-object-serial
 related: BUG-0229, BUG-0098, BUG-0147, BUG-0217
+switch: space.down_clear
 ---
 
 ## Report
