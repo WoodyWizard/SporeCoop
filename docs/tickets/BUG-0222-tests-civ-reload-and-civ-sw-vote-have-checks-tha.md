@@ -41,3 +41,4 @@ Severity: low (tests only). A later regression in these paths would pass the lab
 
 ## History
 - 2026-10-28: opened.
+- 2026-10-28: fix/w5-world did not reach it (budget went to BUG-0217, BUG-0223, BUG-0224, BUG-0255, BUG-0254). Still open: step 0 (the +0x218 boost speed without boost_tick, the GOG 2024 superweapon offsets +0x484 / +0x490), `coop.civ stale_hv`, the boost precondition and speed read in civ_reload, the cooldown and money checks and the host-request case in civ_sw_vote. Usable now: `cCinematicManager::PlayCinematic` is ported to GOG 2024 (BUG-0224); `coop.civ nulllocal` exists (BUG-0223).
