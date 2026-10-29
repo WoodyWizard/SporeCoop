@@ -1913,18 +1913,19 @@ static void test_diag_messages()
     d.vote_editor = 0x1234;
     d.totals = {{dg::kTotalCellFood, 42}};
     d.entries = {{dg::make_key('p', 1), 1, 2, 3}, {dg::make_key('c', 77), 4, 5, 6}};
+    d.out = {2, 3};
     Writer wd;
     d.write(wd);
     Reader rd(wd.data.data(), wd.size());
     dg::Digest d2;
     CHECK(rd.u8() == dg::kDigest && d2.read(rd) && d2.seq == 5 && d2.self == 1 && d2.world == 0xABCD && d2.vote == 1);
-    CHECK(d2.totals.size() == 1 && d2.totals[0].second == 42 && d2.entries.size() == 2 && d2.entries[1].z == 6);
+    CHECK(d2.totals.size() == 1 && d2.totals[0].second == 42 && d2.entries.size() == 2 && d2.entries[1].z == 6 && d2.out.size() == 2 && d2.out[1] == 3);
     CHECK(dg::parse_key("c77") == dg::make_key('c', 77) && dg::parse_key("p") == 0 && dg::parse_key("x1y") == 0);
     CHECK(dg::key_text(dg::make_key('n', 12)) == "n12");
     // a digest that claims more entries than it has
     Writer wb;
     d.write(wb);
-    wb.data.resize(wb.data.size() - 8);
+    wb.data.resize(wb.data.size() - 11);
     Reader rb(wb.data.data(), wb.size());
     rb.u8();
     dg::Digest d3;
@@ -2001,6 +2002,15 @@ static void test_diag_compare()
     g2.entries.pop_back(); // the ghost is gone
     auto lasting = dg::persistent(c.issues, dg::compare(h, g2).issues);
     CHECK(lasting.size() == 3); // missing n4, missing c5, pos n1
+    // a player out of the world on one side (dead, respawning): its creature is not compared
+    dg::Digest h3 = h, g3 = g2;
+    h3.entries.erase(h3.entries.begin()); // the host has no own creature now (dead)...
+    g3.entries.erase(g3.entries.begin()); // ...and the guest no puppet of it
+    g3.entries.erase(g3.entries.begin()); // the guest's own creature is gone too, the host still shows it
+    h3.out = {0};
+    g3.out = {1};
+    for (auto& i : dg::compare(h3, g3).issues)
+        CHECK(i.key.empty() || i.key[0] != 'p');
     // RTS stages: NPCs are not sent per guest
     dg::Limits rts;
     rts.npc_missing = false;

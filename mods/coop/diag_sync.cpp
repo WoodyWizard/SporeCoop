@@ -208,6 +208,8 @@ static dg::Digest build_digest(uint32_t seq)
     int food;
     if (g_P.cell_food && g_P.cell_food(food))
         d.totals.push_back({dg::kTotalCellFood, (float)food});
+    if (g_P.players_out)
+        d.out = g_P.players_out();
     if (g_P.entries)
         for (auto& e : g_P.entries())
             if (uint32_t k = dg::parse_key(e.key))

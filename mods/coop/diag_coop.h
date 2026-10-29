@@ -27,6 +27,9 @@ struct Probe {
     std::function<std::string()> my_name;
     // every synchronized object here: players (p<id>) and the stage's objects (coop.sync)
     std::function<std::vector<syncdbg::Entry>()> entries;
+    // players out of the world as this game knows it (dead, respawning, no recent state, not in a
+    // world): their creatures are not compared
+    std::function<std::vector<uint8_t>()> players_out;
     std::function<uint32_t()> mode;  // game mode id
     std::function<uint32_t()> place; // the place (world) id of the stage, 0 = none
     std::function<bool()> playing;   // the player controls something (an avatar, a tribe, ...)

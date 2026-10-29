@@ -3669,17 +3669,20 @@ void support_init()
     p.feed = feed;
     p.chat_log = chat_log;
     p.my_name = [] { return g_name; };
-    p.entries = [] { // a dead player's creature (death, respawn) is no desync: left out
-        std::vector<syncdbg::Entry> v = sync_all();
-        auto dead = [](uint8_t id) {
-            if (id == g_sess.my_id())
-                return (local_state().flags & net::PF_DEAD) != 0;
-            auto it = g_remotes.find(id);
-            return it != g_remotes.end() && !it->second.buf.empty() && (it->second.buf.latest().flags & net::PF_DEAD);
-        };
-        v.erase(std::remove_if(v.begin(), v.end(),
-                               [&](const syncdbg::Entry& e) { return e.key[0] == 'p' && dead((uint8_t)atoi(e.key.c_str() + 1)); }),
-                v.end());
+    p.entries = sync_all;
+    p.players_out = [] { // dead, respawning or not in a world: hidden on purpose (drive_puppet's rules)
+        std::vector<uint8_t> v;
+        double now = H->time_seconds();
+        net::PlayerState own = local_state();
+        if (!local_now() || (own.flags & net::PF_DEAD) || !(own.flags & net::PF_IN_WORLD))
+            v.push_back(g_sess.my_id());
+        for (auto& [id, r] : g_remotes) {
+            if (r.echo)
+                continue;
+            if (r.buf.empty() || r.buf.age(now) >= 5.0 || (r.buf.latest().flags & net::PF_DEAD) ||
+                !(r.buf.latest().flags & net::PF_IN_WORLD))
+                v.push_back(id);
+        }
         return v;
     };
     p.mode = [] { return g_mode; };

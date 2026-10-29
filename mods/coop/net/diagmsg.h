@@ -144,6 +144,9 @@ struct Digest {
     uint32_t vote_editor = 0;
     std::vector<std::pair<uint8_t, float>> totals;
     std::vector<Entry> entries; // players and objects
+    // players this game knows are out of the world (dead, respawning, no state for 5 s, not in a
+    // world): their creatures are hidden on purpose and not compared
+    std::vector<uint8_t> out;
     void write(Writer& w) const
     {
         w.u8(kDigest);
@@ -164,6 +167,9 @@ struct Digest {
             w.u32(entries[i].key);
             w.f32(entries[i].x); w.f32(entries[i].y); w.f32(entries[i].z);
         }
+        w.u8((uint8_t)std::min<size_t>(out.size(), 255));
+        for (size_t i = 0; i < out.size() && i < 255; i++)
+            w.u8(out[i]);
     }
     bool read(Reader& r)
     {
@@ -188,6 +194,9 @@ struct Digest {
             e.key = r.u32();
             e.x = r.f32(); e.y = r.f32(); e.z = r.f32();
         }
+        out.resize(r.u8());
+        for (auto& id : out)
+            id = r.u8();
         return r.ok() && std::all_of(entries.begin(), entries.end(), [](const Entry& e) {
                    return std::isfinite(e.x) && std::isfinite(e.y) && std::isfinite(e.z);
                });
@@ -258,11 +267,17 @@ inline Compared compare(const Digest& host, const Digest& guest, const Limits& l
                 snprintf(b, sizeof b, "%s: host %.1f, guest %.1f", total_name(id), hv, gv);
                 c.issues.push_back({"total:" + std::to_string(id), "total", total_name(id), std::fabs(hv - gv), b});
             }
+    std::set<uint32_t> skip; // players out of the world on either side
+    for (auto* d : {&host, &guest})
+        for (uint8_t id : d->out)
+            skip.insert(make_key('p', id));
     std::map<uint32_t, const Entry*> h, g;
     for (auto& e : host.entries)
-        h[e.key] = &e;
+        if (!skip.count(e.key))
+            h[e.key] = &e;
     for (auto& e : guest.entries)
-        g[e.key] = &e;
+        if (!skip.count(e.key))
+            g[e.key] = &e;
     const Entry* me = nullptr; // the guest's own creature (its own game)
     if (auto it = g.find(make_key('p', guest.self)); it != g.end())
         me = it->second;
