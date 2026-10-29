@@ -9,6 +9,7 @@
 //  - ExitProcess is logged (a game that closes itself leaves its exit code in the log)
 #include "core.h"
 #include "inifile.h"
+#include "../updater/pending.h"
 
 #include <d3d9.h>
 
@@ -854,8 +855,35 @@ static LPTOP_LEVEL_EXCEPTION_FILTER WINAPI h_SetUEF(LPTOP_LEVEL_EXCEPTION_FILTER
     return prev;
 }
 
+// BUG-0243: an in-game update swaps files under the update lock of the game folder; the game ending
+// between a file's two moves left steam_api.dll missing (the game no longer started) or a mix of
+// versions. The exit waits for the lock (at most 5 s) and releases it at once. A crash does not wait.
+static void wait_for_update()
+{
+    if (!fixed(g_fix_exitwait))
+        return;
+    std::wstring root = mods_dirw();
+    for (int i = 0; i < 2; i++) {
+        size_t k = root.find_last_of(L"\\/");
+        if (k == std::wstring::npos)
+            return;
+        root.resize(k);
+    }
+    wchar_t name[160];
+    if (!sc_lock_name(L"SporeCoopUpdate-", root.c_str(), name, 160))
+        return;
+    HANDLE h = OpenMutexW(SYNCHRONIZE | MUTEX_MODIFY_STATE, FALSE, name);
+    if (!h)
+        return; // no update made the lock in this run
+    DWORD r = WaitForSingleObject(h, 5000);
+    if (r == WAIT_OBJECT_0 || r == WAIT_ABANDONED)
+        ReleaseMutex(h);
+    CloseHandle(h);
+}
+
 static void WINAPI h_ExitProcess(UINT code)
 {
+    wait_for_update();
     logf(&g_kit_mod, code ? SK_WARN : SK_INFO, "the game exits (ExitProcess %u) after %d s, frame %llu", code,
          (int)now_seconds(), (unsigned long long)frame_index());
     exit_report(code, "ExitProcess");
@@ -865,6 +893,7 @@ static void WINAPI h_ExitProcess(UINT code)
 static BOOL WINAPI h_TerminateProcess(HANDLE h, UINT code)
 {
     if (h == GetCurrentProcess() || GetProcessId(h) == GetCurrentProcessId()) {
+        wait_for_update();
         logf(&g_kit_mod, SK_WARN, "the game terminates itself (TerminateProcess %u) after %d s", code,
              (int)now_seconds());
         exit_report(code, "TerminateProcess");

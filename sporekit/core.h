@@ -247,6 +247,9 @@ extern KitFix g_fix_stackov;   // BUG-0056: a stack overflow is reported by a th
 extern KitFix g_fix_crashsafe; // BUG-0127: a failed step of a crash report does not end the game
 extern KitFix g_fix_hookpark;  // BUG-0202: hooks switch a stub, the function's code is written once
 extern KitFix g_fix_iniutf;    // BUG-0142: settings with non-ASCII text are kept in UTF-16
+extern KitFix g_fix_iniencode; // BUG-0245: UTF-16 BE converted, unknown encodings left alone
+extern KitFix g_fix_inilock;   // BUG-0245: a named mutex per settings file; no "????" writes
+extern KitFix g_fix_exitwait;  // BUG-0243: the exit waits for an update's file swaps
 extern KitFix g_fix_crashtid;  // BUG-0248: a crash report names the faulting thread
 extern KitFix g_fix_logprune;  // BUG-0137: old crash reports, dumps, reports and archives are removed
 inline bool fixed(const KitFix& f) { return f.on != 0; }
