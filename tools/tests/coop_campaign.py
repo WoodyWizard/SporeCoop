@@ -37,12 +37,15 @@ mechanic runs for real):
   * Creature end: `AddEvolutionPoints 3000` on the host (brain upgrade 4, the bar full), then the
     History button and its check, the evolution vote, the creature editor, the fire cinematic, its caption.
   * Tribe: `coop.tribe spawn` gives each player's share of the tribe more members (test setup), the
-    raids are real orders (play_tribe); when the stage does not end within --advance-minutes the host
-    loads the `tribe`-> next fixture (a jump, see below).
+    raids are real orders (play_tribe), their fights are helped by `coop.tribe pincer` (the game's
+    damage path); when the stage does not end in time the host jumps to the next fixture (below).
+  * Editors that need a creation (the empty spaceship editor): three parts dragged from the palette,
+    the dice's random name; "Name Your Captain": the dice; the city specialty dialog: Military.
   * Civ: the cities still to come appear at once (cCivExpansion::SpawnNextCity, as new_stage_game.py
     --npc-cities), the other nations' cities are taken with the game's cCity::Capture for the
     player's political id (the capture cinematics play), then History and its check, the vote, the
-    editors; the same jump fallback.
+    spaceship editor; the host then leaves its home planet through the mission control (space_setup.py)
+    so that the game can save its world for the guests.
   * A jump: when a stage change does not finish (no automated end yet, or stuck), the host loads the
     next stage's fixture with `coop.load` in game, the guests follow through the world share (the
     co-op stage switch of coop_stage_switch.py). A stuck change is a finding; a jump is listed in the
@@ -1093,9 +1096,10 @@ def main():
                 nxt = cl.STAGES[cl.STAGES.index(stage) + 1]
                 ok = camp.advance(stage)
                 if not ok and not camp.dead:
-                    camp.finding('stuck' if stage in ('cell', 'creature') else 'info', f'advance:{stage}',
+                    sure = stage != 'tribe'  # the Tribe stage's end by raids is not sure to come in time
+                    camp.finding('stuck' if sure else 'info', f'advance:{stage}',
                                  f'the stage change {stage} -> {nxt} did not finish in {camp.advance_minutes(stage):.0f} min'
-                                 + ('' if stage in ('cell', 'creature') else ' (no automated end of this stage yet)'),
+                                 + ('' if sure else ' (the raids did not conquer every tribe in time)'),
                                  camp.P)
                     if a.jump:
                         ok = camp.jump(nxt)

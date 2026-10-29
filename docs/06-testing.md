@@ -1445,8 +1445,8 @@ wrong. Suite `campaign` (in no other suite): `tools/lab.py run campaign --lanes 
   `cCivExpansion::SpawnNextCity` for the cities still to come and `cCity::Capture` for the player's
   political id; Space the interstellar drive by `coop.space tool add` and `coop.space finale goto
   near|core` for the host's trip to the core. A stage change that does not finish in
-  `--advance-minutes` becomes a finding (`stuck` for Cell and Creature, `info` for Tribe and Civ,
-  which have no automated end yet) and the host **jumps**: it loads the next stage's fixture with
+  `--advance-minutes` (default per stage, `ADVANCE_MIN`) becomes a finding (`stuck`, for the Tribe
+  stage `info`: its end by raids is not sure to come in time) and the host **jumps**: it loads the next stage's fixture with
   `coop.load` in game and the guests follow through the world share (coop_stage_switch.py's path).
 * **The Creature -> Tribe change the players' way** (found while building it, lane 7): with the bar
   full the History button (1400, 1062) shows "Speed Demon" and its check (1415, 1055) starts the
@@ -1458,6 +1458,26 @@ wrong. Suite `campaign` (in no other suite): `tools/lab.py run campaign --lanes 
   caption "With a roof over your head ..." and ~50 s later "A rival tribe of ... has formed" (both
   wait for the check). `coop.status` `movie=1` (in the civ line) is up for any cinematic or caption
   in every stage: the campaign's caption detector.
+* **The later stage ends the players' way** (debug runs on lane 7, 2026-10-29):
+  * Tribe: raids by real right-click orders (play_tribe, plan `raid`) with the shortcut members do
+    destroy an NPC village (badge cinematic), but new tribes form after each (1 -> 4 other tribes in
+    two minutes); eight minutes were not enough to end the stage, hence `ADVANCE_MIN` tribe 30 and
+    the help of `coop.tribe pincer <victim> <attacker> 60` on the other tribes' members.
+  * Civ: `SpawnNextCity` gave 6 more cities (9 of other nations on civ_npc), `cCity::Capture(city,
+    playerPol, 0, 0, 0, 0)` takes one per call (its capture caption, the city then belongs to a guest,
+    owner=1 in `coop.civ`); every captured city asks "choose the city's specialty" (Economic /
+    Religious / Military, a modal the campaign answers with Military, found by caption with uifind).
+    With all cities taken the goal "Capture All Cities" is checked; History and its check start the
+    vote ("Alice wants to edit a design (Civilization)"), then the spaceship editor opens **empty**:
+    "done" says "You need at least 3 parts to Save" (three parts dragged slowly from the palette:
+    (85,130), (350,405), (480,405) onto (1000, 470..650)), then "You must give your creation a name"
+    (the name panel opened by "done": its dice at (614, 826) gives a random name). Civ -> Space took
+    8 min with the 9 captures.
+  * Space start: "Name Your Captain" (dice 915,555, check 936,630), then the host is on its home
+    planet, where the game does not save: the host's log says "a player is waiting for the world:
+    leave the planet to save" and the guests stay in the Civ stage until the host leaves (mission
+    control 290,914 and its five answers, then the wheel out, as space_setup.py does).
 * Expected duration of the whole game with the defaults: start ~1 min, 5 stages x 8 min of play,
-  Cell and Creature changes ~3-5 min each, Tribe and Civ up to 20 min each (or the jump, ~2 min),
-  the finale ~6 min: about 1.5-2.5 h. The lab's timeout for it is 5 h (suite field `timeout`).
+  Cell ~1 min and Creature ~3 min changes, Tribe up to 30 min (or the jump, ~1 min), Civ ~8-10 min,
+  the finale ~6 min, follows and rejoins a few minutes: about 2-2.5 h. The lab's timeout for it is 5 h
+  (suite field `timeout`).
