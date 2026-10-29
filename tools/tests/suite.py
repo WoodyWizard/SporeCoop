@@ -193,7 +193,7 @@ add('multi3', P + 'coop_multi.py --fixture creature --players 3 --minutes 3', ('
 add('npc_multi3', P + 'coop_npc_multi.py --players 3 --seconds 40', ('extended',), minutes=5)
 
 # a whole game of four bot players, Cell to the galactic core (BUG-0152, docs/06-testing.md#testing-campaign):
-# `lab.py run campaign --lane N`. Four games in the lane's bottle (instances 20+N / 30+N), nothing else of
+# `lab.py run campaign --lanes 1 --skip <every other lane>` (one lane; `run` has no --lane, BUG-0259). Four games in the lane's bottle (instances 20+N / 30+N), nothing else of
 # the lab's suites; campaign_short is the first stage change only (a quick check of the tool itself)
 add('campaign', P + 'coop_campaign.py --minutes 8 --advance-minutes 20', ('campaign',), minutes=150,
     timeout=5 * 3600)

@@ -712,6 +712,15 @@ class Campaign:
                     except (OSError, ValueError, KeyError, IndexError, TypeError) as e:
                         self.finding('info', f'tribe:raid:{type(e).__name__}', f'tribe raid bot error: {e!r}')
                         return
+        # the raiders' fights take long: their hits are helped by the game's damage path
+        # (`coop.tribe pincer <victim> <attacker> <dmg>`, citizen TakeDamage), from a player member
+        out = self.host.call('coop.tribe')
+        mine = [int(m.group(1)) for m in re.finditer(r'#(\d+) \S+ owner=[0-3] .*dead=0', out)]
+        others = [int(m.group(1)) for m in re.finditer(r'#(\d+) \S+ owner=254 .*dead=0', out)]
+        if mine and others:
+            for v in others[:6]:
+                self.host.call(f'coop.tribe pincer {v} {mine[0]} 60')
+            self.note(f'shortcut: coop.tribe pincer on {min(6, len(others))} members of other tribes')
         tribes = len(re.findall(r'^tribe \d+ at', self.host.call('coop.tribe'), re.M))
         self.note(f'tribe: {tribes} other tribes left')
         self.history()
@@ -732,8 +741,9 @@ class Campaign:
             self.note(f'shortcut: {n} cities appeared at once (SpawnNextCity)')
             return
         out = h.call('coop.civ')
-        mine = re.search(r'city -?\d+ (\S+) pol=([0-9A-F]+) owner=\S*.*\(player\)', out)
-        others = [(m.group(1), m.group(2)) for m in re.finditer(r'city -?\d+ (\S+) pol=([0-9A-F]+) owner=(?!.*\(player\)).*', out)]
+        # civ.cpp: "city <i> <ptr> pol=<pol> (player) owner=..." for the players' cities
+        mine = re.search(r'city -?\d+ (\S+) pol=([0-9A-F]+) \(player\)', out)
+        others = [(m.group(1), m.group(2)) for m in re.finditer(r'city -?\d+ (\S+) pol=([0-9A-F]+) owner=', out)]
         if not mine:
             self.finding('info', 'civ:noplayer', 'civ: no player city in coop.civ', [], [f'`{out[:300]}`'])
             return

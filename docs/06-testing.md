@@ -1405,7 +1405,8 @@ module's reset into that module's `on_session_end()`.
 
 `tools/tests/coop_campaign.py` (BUG-0152) plays one co-op game with four players from the Cell
 stage to the galactic core, the way ordinary players play it, and writes down everything that goes
-wrong. Suite `campaign` (in no other suite): `tools/lab.py run campaign --lane 7` (the whole game,
+wrong. Suite `campaign` (in no other suite): `tools/lab.py run campaign --lanes 1 --skip 1,2,3,4,5,6,8,9,10`
+(lane 7 only: `run` has no `--lane`, it is read as `--lanes`, BUG-0259) (the whole game,
 ~2.5 h) or `campaign_short` (Cell, the first stage change, Creature: ~25 min).
 
 * **Players**: Alice (host) and Bob are the lane's two games, Carol and Dave are instances 20+N and
