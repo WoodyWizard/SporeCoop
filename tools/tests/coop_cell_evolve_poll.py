@@ -117,7 +117,8 @@ def main():
             print(f'  {name} cell pool: fix={s1.get("fix")} the block went away {d.get("windows")} time(s) while the '
                   f'mode read Cell ({d.get("frames_gone")} frames of ours), checks {d.get("checks")} '
                   f'({d.get("outside")} outside a frame), found gone {d.get("pool_gone")}, reads refused '
-                  f'{d.get("refused")}', flush=True)
+                  f'{d.get("refused")}; between frames the local entity was refused {d.get("local_refused")} and a '
+                  f'puppet {d.get("puppet_refused")} time(s)', flush=True)
     up_h, up_g = alive(lane.HOST), alive(lane.GUEST)
     ck(up_h and up_g, f'both games run on (host {up_h}, guest {up_g})')
     if up_h and up_g:

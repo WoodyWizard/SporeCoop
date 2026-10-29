@@ -369,19 +369,26 @@ static bool frame_world_now()
     return game::mode_id() == g_mode && !game::leaving_stage();
 }
 
+static uint32_t g_local_refused, g_puppet_refused; // coop.cellgone (tests)
+
 void* local_now()
 {
     if (!g_adapter || !g_local || !modes::stale_fix)
         return g_local;
-    return frame_world_now() && g_adapter->local() == g_local ? g_local : nullptr;
+    if (frame_world_now() && g_adapter->local() == g_local)
+        return g_local;
+    g_local_refused++;
+    return nullptr;
 }
 
 void* puppet_now(const Remote& r)
 {
     if (!r.puppet || !r.puppet_adapter || !modes::stale_fix)
         return r.puppet;
-    if (!frame_world_now() || (r.puppet_adapter->alive && !r.puppet_adapter->alive(r.puppet)))
+    if (!frame_world_now() || (r.puppet_adapter->alive && !r.puppet_adapter->alive(r.puppet))) {
+        g_puppet_refused++;
         return nullptr;
+    }
     return r.puppet;
 }
 
@@ -3584,8 +3591,10 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     H->command_add(M, "coop.cellgone", "coop.cellgone - tests (BUG-0271): cell reads refused once the game freed the cell pool",
                    [](void*, int, const char* const*, SkOut* out) {
                        const auto& c = modes::cell_gone_stats();
-                       SAY("fix=%d checks=%u outside=%u pool_gone=%u refused=%u windows=%u frames_gone=%u",
-                           (int)modes::stale_fix, c.checks, c.outside, c.pool_gone, c.refused, c.windows, c.frames_gone);
+                       SAY("fix=%d checks=%u outside=%u pool_gone=%u refused=%u windows=%u frames_gone=%u local_refused=%u "
+                           "puppet_refused=%u",
+                           (int)modes::stale_fix, c.checks, c.outside, c.pool_gone, c.refused, c.windows, c.frames_gone,
+                           g_local_refused, g_puppet_refused);
                        return 0;
                    },
                    nullptr, SK_CMD_ANY_THREAD);
