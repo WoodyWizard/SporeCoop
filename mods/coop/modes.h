@@ -55,6 +55,8 @@ void test_null_local(int frames);
 void test_tick();
 uint32_t current_place(const Adapter* a); // adapter place() or current_world()
 std::string current_world_name(); // the planet file being played, UTF-8 ("Name.spo"; "SaveGame" in menus)
+std::string raw_world_name(); // the game's CurrentGameName as is (may be "snapshot.spo", BUG-0258)
+void world_name_tick(); // once per frame: current_world_name() follows the game (BUG-0258)
 
 // ---- cell stage helpers (pool access, creation with a given model) ----
 uint8_t* cell_game();             // cCellGame*
