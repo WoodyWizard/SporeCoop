@@ -29,6 +29,7 @@ uint32_t Connection::peek_conn(const uint8_t* data, size_t n)
 
 // payload of a reliable message that fits one packet (header + type, flags, len, rel_id)
 static constexpr size_t kRelPiece = kMaxPacket - kHeader - 6;
+static_assert(kRelPiece == Connection::kMaxSingle, "Connection::kMaxSingle is one reliable piece");
 
 void Connection::send_reliable(uint8_t type, const Writer& w)
 {
@@ -38,6 +39,12 @@ void Connection::send_reliable(uint8_t type, const Writer& w)
         // pieces of one packet, flag 2 on all but the last; the receiver joins them in order
         if (w.data.size() > kMaxReliable) {
             stats.too_big++;
+            return;
+        }
+        if (g_fix.peer_caps && !peer_split) {
+            // BUG-0219: an older peer would read each piece as a whole message; queuing it whole
+            // brings back the BUG-0034 stall: not sent (callers cut what can be cut, e.g. chat)
+            stats.too_big_old++;
             return;
         }
         stats.split++;
@@ -70,7 +77,8 @@ void Connection::deliver_reliable(uint8_t type, uint8_t flags, const uint8_t* p,
     if (!frag_on_ || frag_type_ != type) { // the first piece (a different type: the old one was cut)
         frag_.clear();
         frag_on_ = true;
-        frag_drop_ = false;
+        // BUG-0219: a peer that never announced splitting sends no pieces: drop, do not join
+        frag_drop_ = g_fix.peer_caps && !peer_split;
         frag_type_ = type;
     }
     if (!frag_drop_ && frag_.size() + len > kMaxReliable) {

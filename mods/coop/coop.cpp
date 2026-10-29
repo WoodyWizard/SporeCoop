@@ -40,6 +40,7 @@
 #include "spacecoop.h"
 #include "squadron.h"
 #include "npc.h"
+#include "rejoin.h"
 #include "savestrip.h"
 #include "cell_logic.h"
 #include "social.h"
@@ -58,6 +59,8 @@
 #include "sporekit.h"
 #include "sporekit_game.hpp"
 #include "fixes.h"
+#include "share_wait.h"
+#include "dna_route.h"
 
 static const SkHost* H;
 static SkMod* M;
@@ -84,6 +87,7 @@ struct Remote {
     double other_mode_since = -1; // host: since when the guest plays another mode
     bool joined_phase = false; // host: the guest played the host's mode after the last world send
     bool needs_world = false;  // host: joined while the host was not playing; send the world later
+    double cine_wait_since = 0; // host: since when this guest's share waits for a cinematic (BUG-0232)
 };
 
 net::Session g_sess;
@@ -103,6 +107,7 @@ uint32_t g_dna_rx = 0, g_dna_fwd = 0;
 // DNA earned locally: the host's total is authoritative
 extern bool g_host_away;
 extern float g_solo_dna;
+extern uint32_t g_solo_mode, g_mode;
 // BUG-0151: a goal card's reward a guest earns while the host is away is kept like any other DNA
 // (social::goal_dna sent it to a host that drops it); the host keeps a guest's MSG_DNA_ADD that
 // arrives while it has no creature (editor, load) and pays it when it has one again.
@@ -114,6 +119,8 @@ uint32_t g_dna_owed_paid; // tests
 bool on_dna(float delta)
 {
     if (g_away_dna_fix && g_sess.role() == net::Role::Client && g_sess.connected() && delta > 0 && g_host_away) {
+        if (g_solo_dna <= 0)
+            g_solo_mode = g_mode; // the stage it is earned in (BUG-0233)
         g_solo_dna += delta; // nobody to send it to: kept here, given to the pack on the host's return
         return true;
     }
@@ -346,10 +353,14 @@ void remove_strays(double now)
 }
 
 
+// tests (coop.hoststate mode <hex> <seconds>, BUG-0233): the mode our states report, for a while
+uint32_t g_state_mode_override = 0;
+double g_state_mode_until = 0;
+
 net::PlayerState local_state()
 {
     net::PlayerState st;
-    st.mode = g_mode;
+    st.mode = g_state_mode_override && H->time_seconds() < g_state_mode_until ? g_state_mode_override : g_mode;
     st.world = g_world;
     if (g_adapter && g_local)
         g_adapter->fill(g_local, st);
@@ -422,6 +433,23 @@ COOP_FIX("core.host_away_reset", "BUG-0085", g_host_away_fix, "core: the away st
 bool g_away_editor_fix = true;
 COOP_FIX("core.away_editor", "BUG-0205", g_away_editor_fix, "core: the host in an editor or a load for 4 s counts as away");
 extern uint32_t g_own_editor_due;
+// BUG-0233: an editor or a load of the host counts as away only in the stages whose modules play
+// on locally meanwhile (npc in Creature, tribe / civ local_play); in Cell and Space the guest got
+// "you play on alone" / "is back" for every editor visit of the host. The main menu counts in every
+// stage (BUG-0151). Off: every stage (0.7.3.0).
+constexpr uint32_t kAwayStages[] = {modes::kCreature, modes::kTribe, modes::kCiv};
+bool g_away_stages_fix = true;
+COOP_FIX("core.away_stages", "BUG-0233", g_away_stages_fix, "core: a host editor or load counts as away only in Creature, Tribe, Civ");
+// BUG-0233: DNA kept while the host was away stays in its stage and world: a guest's solo DNA goes
+// to the pack only when the host plays that stage again (no "is back" when the host did not come
+// back to the guest's world), the host's owed DNA is paid only into the Creature world it was owed
+// in and dropped when that world or stage is over. Off: sent on any "back", paid into any world.
+bool g_away_dna_stage_fix = true;
+COOP_FIX("core.away_dna_stage", "BUG-0233", g_away_dna_stage_fix, "core: DNA kept while the host was away stays in its stage and world");
+uint32_t g_solo_mode = 0;      // guest: the stage mode g_solo_dna was earned in
+uint32_t g_dna_owed_world = 0; // host: the stage world g_dna_owed was owed in
+uint32_t g_stage_world = 0;    // the world of the last stage this machine played
+uint32_t g_solo_dropped = 0, g_owed_dropped = 0; // tests
 // why the host is not playing our stage: 'm' main menu, 'e' editor, 'l' loading, 0 it is (or unknown)
 char host_out_of_stage()
 {
@@ -435,6 +463,8 @@ char host_out_of_stage()
         return 'm';
     if (!g_away_editor_fix || g_own_editor_due)
         return 0;
+    if (g_away_stages_fix && !dna_route::away_stage(g_mode, kAwayStages, (int)std::size(kAwayStages)))
+        return 0; // BUG-0233
     if (m == modes::kEdit || m == modes::kEditor)
         return 'e';
     return m == modes::kLoad ? 'l' : 0;
@@ -469,9 +499,20 @@ bool host_elsewhere(bool unknown = false)
     return ls.mode == g_mode && !same_place(ls);
 }
 
+// BUG-0231: a guest in another world of the host's Civ or Tribe stage applied the host's vehicle,
+// city and alarm state to its own planet (bound and drove its own vehicles as mirrors, killed the
+// rest, founded cities up to the host's count) and its Tribe/Civ AI and orders stood still
+// (`local_play` followed only the host's main menu / editor). The Civ messages are dropped like the
+// rest of the host's world, and Tribe and Civ play on locally while the guest is elsewhere.
+// Off: as in 0.7.3.0.
+bool g_world_gate_fix = true;
+COOP_FIX("core.world_gate", "BUG-0231", g_world_gate_fix, "core: a guest in another world applies no Civ state and plays its tribe / civ itself");
+
 // a message of the host's world state a guest elsewhere must not apply
 static bool world_state_msg(uint8_t type)
 {
+    if (g_world_gate_fix && (type == net::MSG_CIV_STATE || type == net::MSG_CIV_BUILD || type == net::MSG_CIV_ALARM))
+        return true;
     return type == net::MSG_DNA || type == net::MSG_WORLD_TIME ||
            (type >= net::MSG_CELL_STATE && type <= net::MSG_CELL_FOOD) || type == net::MSG_CELL_KO ||
            type == net::MSG_CELL_BITTEN || type == net::MSG_TRIBE_STATE || type == net::MSG_TRIBE_CMD ||
@@ -480,11 +521,22 @@ static bool world_state_msg(uint8_t type)
 
 void host_away_tick(double now)
 {
-    if (g_dna_owed > 0 && g_sess.role() == net::Role::Host && game::avatar() && stage_mode(g_mode)) {
-        game::dna_add_raw(g_dna_owed);
-        feed("the DNA your partners earned meanwhile: +" + std::to_string((int)g_dna_owed));
-        g_dna_owed = 0;
-        g_dna_owed_paid++;
+    if (stage_mode(g_mode) && g_world)
+        g_stage_world = g_world;
+    if (g_dna_owed > 0 && g_sess.role() == net::Role::Host) {
+        auto o = dna_route::owed(g_away_dna_stage_fix, g_mode, stage_mode(g_mode), game::avatar() != nullptr, g_world,
+                                 g_dna_owed_world, modes::kCreature);
+        if (o == dna_route::Owed::Pay) {
+            game::dna_add_raw(g_dna_owed);
+            feed("the DNA your partners earned meanwhile: +" + std::to_string((int)g_dna_owed));
+            g_dna_owed = 0;
+            g_dna_owed_paid++;
+        } else if (o == dna_route::Owed::Clear) { // BUG-0233: another stage or world
+            LOG("owed DNA %.1f dropped: owed in world %08X, now mode %08X world %08X", g_dna_owed, g_dna_owed_world,
+                g_mode, g_world);
+            g_dna_owed = 0;
+            g_owed_dropped++;
+        }
     }
     if (g_dna_pending >= 0 && g_sess.role() == net::Role::Client && host_here() && game::avatar() && !g_host_away) {
         float d = g_dna_pending - game::dna(); // the host's total, once we play its world
@@ -501,6 +553,7 @@ void host_away_tick(double now)
         g_host_away = false;
         g_host_away_since = -1;
         g_solo_dna = 0;
+        g_solo_mode = 0;
         return;
     }
     // an editor or a load counts after 4 s: a host passing through the loading screen between two
@@ -524,14 +577,30 @@ void host_away_tick(double now)
         feed(host + " (host) " + where + ": you play on alone until " + host + " is back");
         return;
     }
-    if (g_solo_dna > 0 && g_sess.connected()) {
+    auto it = g_remotes.find(0);
+    bool has = it != g_remotes.end() && !it->second.buf.empty();
+    const net::PlayerState* hs = has ? &it->second.buf.latest() : nullptr;
+    auto end = dna_route::solo_end(g_away_dna_stage_fix, host_here(), hs && (hs->flags & net::PF_IN_WORLD),
+                                   hs ? hs->mode : 0, g_solo_mode);
+    if (end != dna_route::SoloEnd::Drop && g_solo_dna > 0 && g_sess.connected()) {
         net::Writer w;
         w.f32(g_solo_dna);
         g_sess.send_reliable_to(0, net::MSG_DNA_ADD, w);
         g_dna_fwd++;
     }
-    feed(host + " (host) is back" + (g_solo_dna >= 1 ? ": your " + std::to_string((int)g_solo_dna) + " DNA go to the pack" : ""));
+    std::string dna = g_solo_dna >= 1 ? ": your " + std::to_string((int)g_solo_dna) + " DNA go to the pack" : "";
+    if (end == dna_route::SoloEnd::SendBack)
+        feed(host + " (host) is back" + dna);
+    else if (end == dna_route::SoloEnd::Send)
+        feed(host + " (host) plays again" + dna);
+    else { // BUG-0233: the host did not come back to this stage (it moved on, or we did)
+        LOG("host away ended without its return (host mode %08X): solo DNA %.1f of mode %08X dropped",
+            hs ? hs->mode : 0, g_solo_dna, g_solo_mode);
+        if (g_solo_dna > 0)
+            g_solo_dropped++;
+    }
     g_solo_dna = 0;
+    g_solo_mode = 0;
 }
 
 // Civilization and Space editors change designs (buildings, vehicles, ships, the anthem), not the
@@ -563,6 +632,15 @@ Vote g_vote;
 // restores the old behaviour (tests).
 bool g_vote_scope_fix = true;
 COOP_FIX_UNSAFE("core.vote_scope", "BUG-0043", g_vote_scope_fix, "core: a vote ends with its stage, world and session");
+// BUG-0234: a guest takes the editor id also from the message that ends a vote: a cancelled vote
+// (drop_vote) ends with 0 and opens no own editor; a passed one (finish_vote) ends with its id.
+// Off: the id only from "on" messages, every ended vote opened the guest's editor (0.7.3.0).
+bool g_vote_drop_editor_fix = true;
+COOP_FIX("core.vote_drop_editor", "BUG-0234", g_vote_drop_editor_fix, "core: a cancelled vote opens no guest editor");
+// BUG-0234: a guest's own editor still due from a vote is forgotten when the session ends (it
+// opened offline after a Leave or a lost host)
+bool g_own_editor_end_fix = true;
+COOP_FIX("core.own_editor_end", "BUG-0234", g_own_editor_end_fix, "core: a guest's pending own editor ends with the session");
 unsigned g_vote_actions_run; // tests: action votes whose action ran
 unsigned g_votes_dropped;    // tests: votes ended without running their result
 bool g_vote_bypass = false;
@@ -932,6 +1010,8 @@ void drop_vote(const char* why)
     void* req = g_vote.request;
     g_vote = Vote{};
     g_vote_action = nullptr;
+    // on purpose with editor = 0 (g_vote was reset): the guests open no own editor for a cancelled
+    // vote (BUG-0234); finish_vote broadcasts with the id. Do not keep the id here.
     broadcast_vote();
     if (g_vote_opened_ui)
         coop_ui::open(false);
@@ -976,6 +1056,11 @@ void vote_tick(double now)
 bool g_share_cine_fix = true;
 COOP_FIX("npc.sharecine", "BUG-0019", g_share_cine_fix, "world: a share waits for the evolution cinematic to end");
 double g_share_cine_since = 0, g_share_due_at = 0;
+// BUG-0232: the cinematic wait counts per guest (Remote::cine_wait_since), restarted whenever the
+// guest is marked as needing the world, and the timers end with the session. Off: one global timer
+// reset only when a world goes out (0.7.3.0).
+bool g_share_cine_each_fix = true;
+COOP_FIX("npc.sharecine_each", "BUG-0232", g_share_cine_each_fix, "world: the wait for the evolution cinematic counts per guest");
 
 void on_mode_change(uint32_t from, uint32_t to)
 {
@@ -998,8 +1083,10 @@ void on_mode_change(uint32_t from, uint32_t to)
     if (!new_stage && !evolved)
         return;
     for (auto& [id, r] : g_remotes)
-        if (!r.echo)
+        if (!r.echo) {
             r.needs_world = true; // sent by follow_phase as soon as the host controls something
+            r.cine_wait_since = 0; // a new wait (BUG-0232)
+        }
     g_share_due_at = H->time_seconds() + (evolved ? 3.0 : 0.0); // BUG-0019: its cinematic starts first
     notice(new_stage            ? g_name + " entered the " + modes::mode_name(to) + " stage: everybody follows"
            : design_stage(to) ? g_name + " changed a design: everybody gets the new designs"
@@ -1019,16 +1106,17 @@ void follow_phase(double now)
         if (r.echo)
             continue;
         if (r.needs_world && g_local) { // joined while the host was in a menu
-            if (g_share_cine_fix && now < g_share_due_at)
-                continue;
-            if (g_share_cine_fix && world::cinematic_playing()) { // BUG-0019
-                if (g_share_cine_since == 0)
-                    g_share_cine_since = now;
-                if (now - g_share_cine_since < 120.0)
+            if (g_share_cine_fix) { // BUG-0019: after the evolution cinematic, at most 120 s
+                double& since = g_share_cine_each_fix ? r.cine_wait_since : g_share_cine_since;
+                bool cine = world::cinematic_playing();
+                bool waited = since != 0 && cine;
+                if (share_wait::hold(since, cine, now, g_share_due_at))
                     continue;
-                LOG("share: a cinematic plays for 120 s, the world is sent anyway");
-            }
-            g_share_cine_since = 0;
+                if (waited)
+                    LOG("share: a cinematic plays for 120 s, the world is sent anyway");
+            } else
+                g_share_cine_since = 0;
+            r.cine_wait_since = 0;
             r.needs_world = false;
             r.world_sent = key;
             r.joined_phase = false;
@@ -1301,6 +1389,7 @@ uint32_t g_own_editor_due = 0;
 double g_own_editor_due_at = 0;
 bool g_own_editor_queued = false;
 unsigned g_own_editor_waits; // tests: frames the own editor waited for the stage to settle
+double g_own_editor_hold_until = 0; // tests (coop.vote hold <s>): the own editor waits until then
 void* g_settle_avatar = nullptr;
 double g_settle_since = 0;
 bool pause_ui_up();
@@ -1320,8 +1409,8 @@ void own_editor_tick(double now)
         g_own_editor_due = 0;
         return;
     }
-    if (!av || !g_local || now - g_settle_since < 15.0 || world::cinematic_playing() || mode_switch_pending() ||
-        world::load_queued()) { // a received world loads first (BUG-0157)
+    if (!av || !g_local || now - g_settle_since < 15.0 || now < g_own_editor_hold_until ||
+        world::cinematic_playing() || mode_switch_pending() || world::load_queued()) { // a received world loads first (BUG-0157)
         g_own_editor_waits++;
         return;
     }
@@ -1819,6 +1908,11 @@ COOP_FIX("core.unique_names", "BUG-0141", g_sess.unique_names, "net: players wit
 COOP_FIX("core.rejoin_name", "BUG-0209", g_sess.rejoin_by_name, "net: a rejoin after a crash replaces the silent entry of its name");
 COOP_FIX("core.text_utf8", "BUG-0164", utf8::g_cut_fix, "net: texts are cut between characters, not bytes");
 COOP_FIX("core.notify_text", "BUG-0129", notify_text::g_fix, "ui: notification lines wrap by characters, the panel kind is not guessed");
+// the Give recipient picked with ">" (civ); BUG-0234: cleared when its player leaves and at the
+// session end (it pointed at whoever got that id next)
+uint8_t g_give_pick = net::kNoGiveTarget;
+bool g_give_pick_reset_fix = true;
+COOP_FIX("give.pick_reset", "BUG-0234", g_give_pick_reset_fix, "civ: the Give pick ends with its player and the session");
 // The session-end structure (BUG-0214, GitHub #148; docs/06-testing.md#testing-fix-registry):
 //  block 1, the module calls: with session.end on every path calls every module; off, a path calls
 //    only what it called before BUG-0033 (Disconnect always called them all);
@@ -1867,8 +1961,19 @@ void end_session(EndPath path, bool cell)
         g_host_away = false;
         g_host_away_since = -1;
         g_solo_dna = 0;
+        g_solo_mode = 0;
     }
     g_dna_owed = 0;
+    g_dna_owed_world = 0;
+    g_state_mode_override = 0; // tests
+    if (g_own_editor_end_fix)
+        g_own_editor_due = 0; // BUG-0234 (a task already queued reads it first and returns)
+    if (g_give_pick_reset_fix)
+        g_give_pick = net::kNoGiveTarget; // BUG-0234: a new session starts with no pick
+    if (g_share_cine_each_fix) { // BUG-0232: no wait of an old session shortens a later one
+        g_share_cine_since = 0;
+        g_share_due_at = 0;
+    }
 }
 
 // BUG-0204: the host name lookup of a join runs on a thread that holds a reference to coop.dll,
@@ -1924,6 +2029,7 @@ void setup_callbacks()
         coop_ui::session_event(true, ""); // BUG-0104: "Connecting to ..." ends here
     };
     g_sess.cb.disconnected = [](const std::string& why) {
+        rejoin::clear(); // the session ended (BUG-0235)
         feed("disconnected: " + why);
         coop_ui::session_event(false, why);
         chat_log("* disconnected: " + why);
@@ -1932,7 +2038,7 @@ void setup_callbacks()
         end_session(EndPath::Disconnect, true);
     };
     g_sess.cb.player_join = [](const net::PlayerInfo& p) {
-        shared::on_session_change();
+        shared::on_player_join(g_sess.role());
         creations::on_player_join(p.id);
         npc::on_player_leave(p.id); // a newcomer under a reused id knows no NPCs yet (BUG-0125)
         g_dna_sent = -1; // resend the DNA total to the newcomer
@@ -1956,6 +2062,7 @@ void setup_callbacks()
             // in menus or loading screens there is no world to send yet (the current save name
             // is a stale snapshot): send it when the host starts playing
             r.needs_world = true;
+            r.cine_wait_since = 0;
             feed(p.name + " waits for your world: load or start a game");
         } else if (g_sess.role() == net::Role::Host && g_share_world && !own_worlds) {
             std::string err;
@@ -1976,7 +2083,10 @@ void setup_callbacks()
             return;
         }
         // (the DNA total also before the host's first state: it is applied once we play its world)
-        if (from == 0 && world_state_msg(type) && host_elsewhere(type == net::MSG_DNA)) {
+        // (the Civ state also before it: one cycle applied in that window bound the guest's own
+        // vehicles for good, BUG-0231; a guest in the host's world gets the next cycle)
+        bool civ_msg = type == net::MSG_CIV_STATE || type == net::MSG_CIV_BUILD || type == net::MSG_CIV_ALARM;
+        if (from == 0 && world_state_msg(type) && host_elsewhere(type == net::MSG_DNA || (g_world_gate_fix && civ_msg))) {
             if (type == net::MSG_DNA) {
                 float total = r.f32();
                 if (r.ok())
@@ -2000,8 +2110,11 @@ void setup_callbacks()
             if (r.ok() && d > 0 && d < 10000 && game::avatar()) {
                 game::dna_add_raw(d);
                 feed(g_sess.name_of(from) + " earned " + std::to_string((int)d) + " DNA");
-            } else if (r.ok() && d > 0 && d < 10000 && g_away_dna_fix && g_dna_owed < 100000)
+            } else if (r.ok() && d > 0 && d < 10000 && g_away_dna_fix && g_dna_owed < 100000) {
+                if (g_dna_owed <= 0)
+                    g_dna_owed_world = g_stage_world; // BUG-0233: paid only into this world
                 g_dna_owed += d; // in an editor or a load: paid when our creature is back
+            }
             return;
         }
         if (type == net::MSG_WORLD_TIME && g_sess.role() == net::Role::Client) {
@@ -2017,10 +2130,11 @@ void setup_callbacks()
             std::string text = r.str8();
             if (!r.ok())
                 return;
-            uint32_t editor = r.left() >= 4 ? r.u32() : 0;
+            bool has_editor = r.left() >= 4;
+            uint32_t editor = has_editor ? r.u32() : 0;
             bool started = on && !g_vote.active, ended = !on && g_vote.active;
-            if (on)
-                g_vote.editor = editor;
+            if (on || (g_vote_drop_editor_fix && ended && has_editor))
+                g_vote.editor = editor; // a cancelled vote ends with 0 (BUG-0234)
             // the evolution starts: everybody evolves its own creature in its own editor (own_editor_tick)
             if (ended && g_vote.editor && g_mode == modes::kCreature && g_local) {
                 g_own_editor_due = g_vote.editor;
@@ -2151,12 +2265,17 @@ void setup_callbacks()
         if (g_sess.role() == net::Role::Client && from == 0)
             world::on_message(type, r, g_sess.name_of(0));
     };
+    g_sess.cb.old_peer = [](uint8_t, const std::string& name) { // BUG-0219: once per player and join
+        // the log line (net: ... older SporeCoop) says what is lost: long chat cut, no species table
+        feed_kind(name + " has an older SporeCoop: update both games to the latest", "info");
+    };
     g_sess.cb.player_leave = [](uint8_t id, uint8_t) {
         if (g_role_fix)
             g_roles.erase(id); // ids are reused: the next newcomer starts with no role (BUG-0064)
         shared::on_player_leave(id);
         creations::on_player_leave(id); // BUG-0076: the next player of this id is not shown as this one
         npc::on_player_leave(id);       // BUG-0125
+        g_give_pick = net::give_pick_after_leave(g_give_pick, id, g_give_pick_reset_fix); // BUG-0234
         auto it = g_remotes.find(id);
         if (it == g_remotes.end())
             return;
@@ -2219,6 +2338,7 @@ bool do_join(const std::string& addr, std::string& err)
 {
     end_open_session();
     reset_lobby();
+    g_sess.rejoin_token = rejoin::token_for_join(H->instance_id()); // BUG-0235
     if (!g_sess.join(addr, g_name, err))
         return false;
     chat_log("* joining " + addr);
@@ -2228,6 +2348,7 @@ bool do_join(const std::string& addr, std::string& err)
 void do_leave()
 {
     g_sess.leave("user");
+    rejoin::clear(); // a clean leave: the next join is a new player (BUG-0235)
     end_session(EndPath::Leave, cellsync::voluntary_leave_cleanup_enabled());
     reset_lobby();
 }
@@ -2265,8 +2386,10 @@ int share_all()
     int n = 0;
     if (!(g_adapter && g_local)) { // not playing: no world yet, send it once the host plays
         for (auto& [id, r] : g_remotes)
-            if (!r.echo)
+            if (!r.echo) {
                 r.needs_world = true;
+                r.cine_wait_since = 0; // BUG-0232
+            }
         feed("the world goes to everyone when you load or start a game");
         return 0;
     }
@@ -2343,6 +2466,8 @@ int c_status(void*, int, const char* const*, SkOut* out)
     SAY("host_away=%d (times %u) solo_dna=%.1f\n", (int)g_host_away, g_host_away_count, g_solo_dna);
     SAY("host elsewhere=%d, its world's messages dropped %u, dna pending %.1f\n", (int)host_elsewhere(), g_place_dropped,
         g_dna_pending); // BUG-0130
+    SAY("away dna: solo_mode=%08X solo_dropped=%u owed_world=%08X owed_dropped=%u\n", g_solo_mode, g_solo_dropped,
+        g_dna_owed_world, g_owed_dropped); // BUG-0233
     SAY("strays: pending=%u removed=%u\n", (unsigned)g_strays.size(), g_strays_removed);
     SAY("labels: menu_up=%d window=%d hidden_frames=%u\n", (int)g_menu_up.load(), (int)coop_ui::is_open(), g_menu_hidden);
     double now = H->time_seconds();
@@ -2458,9 +2583,13 @@ int c_res(void*, int argc, const char* const* argv, SkOut* out)
         SAY("%s", shared::fix(argv[2], argc >= 4 ? atoi(argv[3]) : -1).c_str());
         return 0;
     }
-    if (argc >= 4 && !strcmp(argv[1], "add")) {
+    // joinsim (tests, BUG-0220): what a join of another player runs, then the change, in one step
+    bool joinsim = argc >= 5 && !strcmp(argv[1], "joinsim");
+    if (joinsim)
+        shared::on_player_join(g_sess.role());
+    if ((argc >= 4 && !strcmp(argv[1], "add")) || (joinsim && !strcmp(argv[2], "add"))) {
         std::string err;
-        if (!shared::debug_add(argv[2], atof(argv[3]), err)) {
+        if (!shared::debug_add(argv[2 + joinsim], atof(argv[3 + joinsim]), err)) {
             SAY("%s", err.c_str());
             return 1;
         }
@@ -2916,7 +3045,6 @@ int c_team(void*, int argc, const char* const* argv, SkOut* out)
 // the stage action of the co-op window: give the selected own units to a partner
 // BUG-0075: the player picks the recipient among the other players (the co-op window's ">" next to
 // Give, `coop.give next`); before, it was always the first other player. `coop.give fix 0`: the old one.
-uint8_t g_give_pick = net::kNoGiveTarget;
 bool g_give_pick_fix = true;
 COOP_FIX("give.pick", "BUG-0075", g_give_pick_fix, "civ: the player picks the recipient of Give (coop.give fix)");
 static std::vector<uint8_t> player_ids()
@@ -3187,6 +3315,7 @@ void on_unload()
     coop_ui::shutdown();
     lan_scan(false);
     g_sess.leave("mod unload");
+    rejoin::shutdown();
     end_session(EndPath::Unload, true);
 }
 
@@ -3390,7 +3519,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     H->command_add(M, "coop.overlay", "coop.overlay on|off|self", c_overlay, nullptr, MT);
     H->command_add(M, "coop.social", "coop.social [species | log | act <npc id> [slot] | goto <npc id>] - creature social games", c_social, nullptr, MT);
     H->command_add(M, "coop.npc", "coop.npc [on|off|list|herds|hit <id> <dmg>|hosthit <id> <dmg>|recruit <id>|spawn <hex>|cinedefer on|off] - host-authoritative NPC sync", c_npc, nullptr, MT);
-    H->command_add(M, "coop.res", "coop.res [add <food|money> <n> | fix reset|floor [0|1]] - shared resources", c_res, nullptr, MT);
+    H->command_add(M, "coop.res", "coop.res [[joinsim] add <food|money> <n> | fix reset|floor [0|1]] - shared resources", c_res, nullptr, MT);
     H->command_add(M, "coop.ping", "coop.ping - show everybody the place under your mouse / where you are", c_ping,
                    nullptr, MT);
     H->command_add(M, "coop.share", "coop.share [player id] - (re)send the host world (save) to guests", c_share,
@@ -3412,6 +3541,17 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         H->hook_create(M, (void*)a, (void*)h_SimMsg, (void**)&o_SimMsg);
     if (uintptr_t a = H->sym("Editors::cEditor::GetBlockingErrors"))
         H->hook_create(M, (void*)a, (void*)h_BlockingErrors, (void**)&o_BlockingErrors);
+    H->command_add(M, "coop.hoststate", "coop.hoststate mode <hex> <seconds> - tests: our player states report this mode",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       if (argc > 3 && !strcmp(argv[1], "mode")) {
+                           g_state_mode_override = (uint32_t)strtoul(argv[2], nullptr, 16);
+                           g_state_mode_until = H->time_seconds() + atof(argv[3]);
+                       }
+                       SAY("state mode override %08X for %.1f s\n", g_state_mode_override,
+                           std::max(0.0, g_state_mode_until - H->time_seconds()));
+                       return 0;
+                   },
+                   nullptr, MT);
     H->command_add(M, "coop.vote", "coop.vote [test|go] - evolution vote (test: a vote without an editor)",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
                        if (argc > 1 && !strcmp(argv[1], "test") && g_sess.role() == net::Role::Host && !g_vote.active) {
@@ -3441,6 +3581,8 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                                              [] { LOG("the test vote action ran"); });
                        } else if (argc > 1 && !strcmp(argv[1], "go"))
                            finish_vote("the host started it");
+                       else if (argc > 2 && !strcmp(argv[1], "hold")) // tests (BUG-0234): a due own editor waits
+                           g_own_editor_hold_until = H->time_seconds() + atof(argv[2]);
                        SAY("vote %s: %s (%d s)\nown editor %d, part list waived %u, editor held for a save %u, "
                            "quit held for a save %u, repeated requests dropped %u, own editor due %d (waited %u frames)\n"
                            "actions run %u, votes dropped %u",
@@ -3456,7 +3598,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     trc.sess = &g_sess;
     trc.feed = feed;
     trc.notice = [](const std::string& t) { notice(t, -1); };
-    trc.host_away = [] { return g_host_away; };
+    trc.host_away = [] { return g_host_away || (g_world_gate_fix && host_elsewhere()); }; // BUG-0231
     tribe::init(H, M, std::move(trc));
     notify::init(H, M, [] { return coop_ui::text_font(); });
     creations::Ctx crc;
@@ -3588,7 +3730,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         return start_action_vote(t, d, std::move(a));
     };
     cvc.beacon = add_beacon;
-    cvc.host_away = [] { return g_host_away; };
+    cvc.host_away = [] { return g_host_away || (g_world_gate_fix && host_elsewhere()); }; // BUG-0231
     civ::init(H, M, std::move(cvc));
     census::Ctx csc;
     csc.sess = &g_sess;

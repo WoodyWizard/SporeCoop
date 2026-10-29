@@ -132,7 +132,10 @@ creatures kept out of saves); the other fixes work there too. The full list, che
 
 **Playing together:** GOG 2024 and Steam players can play together (the same game code). A GOG
 2016 player cannot join a GOG 2024 or Steam host (the host turns away another build). Every player
-needs the same SporeCoop protocol: 0.7.0, 0.7.1 and 0.7.2 play together, 0.6.x cannot join 0.7.
+needs the same SporeCoop protocol: every 0.7 version plays with every other, 0.6.x cannot join 0.7.
+With an older 0.7 version (0.7.2.x, 0.7.3.0) on one side, chat lines above about 1160 bytes arrive
+cut and the Creature species table of a planet with 42 or more species does not reach that player;
+the game names that player in a notification. Update everybody to the latest version.
 
 **Not tested yet:** two PCs over the internet with Windows on 0.7 (the network code is the same
 as on Linux, where it was tested), the EA app and disc versions. Which build you have:

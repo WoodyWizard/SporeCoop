@@ -12,6 +12,13 @@
     with SpawnUFO and pol -1: a type 3 with the own empire's political id made that way is freed by
     the game at once (it is not in the real posse).
 
+ 3. BUG-0230: a ship the host destroys goes on the guest, also with 2 chunks per cycle and lost
+    chunks: two of the host's ships (the first and the last listed, one per chunk) are destroyed
+    through the game's death while chunk 0 is lost for 3 s; within 2 s after the drops ended both
+    mirrors are gone from the guest's game and every other mirror kept its object. With chunk 1
+    lost for good a destroyed ship's mirror stays (no complete cycle, no removal: by design) and
+    goes within 2 s once the chunk comes again.
+
   coop_space_fleet.py [--without-fix]   (--without-fix: coop.fleet chunkfix 0 and keepposse 0 on
                                           the guest, the old code, so the test must FAIL)"""
 import re
@@ -85,6 +92,65 @@ def main():
     gs, _ = ships(guest)
     kept = m and [s for s in gs if s[1] == m.group(1) and s[2] == 3]
     ck(kept, f'2 s with the host: the guest\'s escort is still in its game ({kept})')
+
+    # ---- 3. a destroyed ship goes, also with lost chunks (BUG-0230) ----
+    def mirror_map():
+        gs, _ = ships(guest)
+        return {s[0]: s[1] for s in gs if s[0] >= 0}
+
+    def host_ids():
+        hs, _ = ships(host)
+        return [s[0] for s in hs if s[0] >= 0]
+
+    for _ in range(4):  # keep more than 18 after the kills: the cycle stays at 2 chunks
+        host.call('coop.fleet spawn 2')
+    time.sleep(2)
+    ids = host_ids()
+    m0 = mirror_map()
+    ck(len(ids) >= 23, f'the host has enough NPC ships for 2 chunks after 3 kills ({len(ids)})')
+    a, b = ids[0], ids[-1]
+    ck(a in m0 and b in m0, f'the guest mirrors ships #{a} and #{b}')
+    print(' ', host.call('coop.fleet drop 0 30')['out'].strip(), '(chunk 0 lost for 3 s)')
+    t_drop = time.time()
+    for i in (a, b):
+        print(f'  shoot #{i}:', host.call(f'coop.fleet shoot {i} 1000000')['out'].strip())
+    t0 = time.time()
+    while time.time() - t0 < 5 and (a in host_ids() or b in host_ids()):
+        time.sleep(0.2)
+    ck(a not in host_ids() and b not in host_ids(), 'the host no longer lists the two ships')
+    t_gone = time.time()
+    if t_gone - t_drop < 2.5:
+        m1 = mirror_map()
+        print(f'  during the loss: #{a} {"kept" if m1.get(a) == m0.get(a) else "gone"}, '
+              f'#{b} {"kept" if m1.get(b) == m0.get(b) else "gone"}')
+    end = max(t_drop + 3.0, t_gone) + 2.0
+    while time.time() < end and (a in mirror_map() or b in mirror_map()):
+        time.sleep(0.2)
+    m2 = mirror_map()
+    ck(a not in m2 and b not in m2, f'within 2 s after the drops ended both mirrors are gone (#{a}: {a in m2}, #{b}: {b in m2})')
+    still = set(host_ids())
+    replaced = sorted(i for i, p in m0.items() if i in still and i not in (a, b) and m2.get(i) != p)
+    ck(not replaced, f'every other mirror kept its object (replaced: {replaced})')
+    time.sleep(1)
+    ck(len(mirror_map()) == len(host_ids()), f'the guest shows as many mirrors as the host has NPC ships '
+       f'({len(mirror_map())} / {len(host_ids())})')
+    # steady loss: no complete cycle, no removal (squadron has no timeout); then the chunk comes again
+    ids = host_ids()
+    c = ids[-1]
+    print(' ', host.call('coop.fleet drop 1 1000000')['out'].strip(), '(chunk 1 lost)')
+    time.sleep(0.5)
+    print(f'  shoot #{c}:', host.call(f'coop.fleet shoot {c} 1000000')['out'].strip())
+    wait_t = time.time()
+    while time.time() - wait_t < 5 and c in host_ids():
+        time.sleep(0.2)
+    time.sleep(3)
+    ck(c in mirror_map(), f'with chunk 1 lost for good the mirror of #{c} stays (no complete cycle)')
+    print(' ', host.call('coop.fleet drop 1 0')['out'].strip())
+    t0 = time.time()
+    while time.time() - t0 < 2 and c in mirror_map():
+        time.sleep(0.2)
+    ck(c not in mirror_map(), f'the chunk comes again: the mirror of #{c} goes ({time.time() - t0:.1f} s)')
+    host.call('coop.fleet drop 0 0')
 
     guest.call('coop.fleet chunkfix 1')
     guest.call('coop.fleet keepposse 1')

@@ -8,7 +8,68 @@
 
 namespace upd {
 
+FIX_SWITCH(g_path_fix); // update.paths, BUG-0242: one canonical path for the path and duplicate checks
+
+static std::string lower(const std::string& s)
+{
+    std::string o = s;
+    for (auto& c : o)
+        c = c >= 'A' && c <= 'Z' ? (char)(c - 'A' + 'a') : c;
+    return o;
+}
+
+static bool ends_with(const std::string& s, const char* t)
+{
+    size_t k = strlen(t);
+    return s.size() >= k && s.compare(s.size() - k, k, t) == 0;
+}
+
+// a DOS device name ("con", "nul.txt", "com1", ...): opens a device, not a file
+static bool device_name(const std::string& part_lower)
+{
+    std::string b = part_lower.substr(0, part_lower.find('.'));
+    static const char* const dev[] = {"con", "prn", "aux", "nul", "conin$", "conout$"};
+    for (auto* d : dev)
+        if (b == d)
+            return true;
+    if (b.size() == 4 && (b.rfind("com", 0) == 0 || b.rfind("lpt", 0) == 0) && b[3] >= '0' && b[3] <= '9')
+        return true;
+    return false;
+}
+
+static bool allowed_path_old(const std::string& path);
+
+std::string canonical_path(const std::string& path)
+{
+    if (!allowed_path_old(path))
+        return {};
+    std::string l = lower(path);
+    // BUG-0242: Windows strips a trailing dot of a name ("coop.dll." is coop.dll): refused, no real
+    // pack has one. Device names and the updater's own working names are refused too.
+    size_t start = 0;
+    while (start <= l.size()) {
+        size_t end = l.find('/', start);
+        if (end == std::string::npos)
+            end = l.size();
+        std::string part = l.substr(start, end - start);
+        if (part.back() == '.' || device_name(part))
+            return {};
+        start = end + 1;
+    }
+    if (ends_with(l, ".new") || ends_with(l, ".sporecoop-old") || ends_with(l, ".old") ||
+        l.find(".sporecoop-tmp") != std::string::npos || l == "sporebinep1/mods/sporecoop.pending")
+        return {};
+    return l;
+}
+
 bool allowed_path(const std::string& path)
+{
+    if (g_path_fix)
+        return !canonical_path(path).empty();
+    return allowed_path_old(path);
+}
+
+static bool allowed_path_old(const std::string& path)
 {
     if (path.empty() || path.size() > 200 || path.find('\\') != std::string::npos ||
         path.find(':') != std::string::npos || path[0] == '/')
@@ -44,7 +105,9 @@ std::string duplicate_path(const std::vector<PackFile>& files)
 {
     for (size_t i = 0; i < files.size(); i++)
         for (size_t k = 0; k < i; k++)
-            if (fold(files[i].path) == fold(files[k].path))
+            if (g_path_fix ? canonical_path(files[i].path) == canonical_path(files[k].path) &&
+                                 !canonical_path(files[i].path).empty()
+                           : fold(files[i].path) == fold(files[k].path))
                 return files[i].path;
     return {};
 }

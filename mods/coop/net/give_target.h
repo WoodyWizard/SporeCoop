@@ -42,4 +42,11 @@ inline uint8_t give_target_next(std::vector<uint8_t> players, uint8_t me, uint8_
     return cur;
 }
 
+// the pick after player `id` left (BUG-0234): a pick of the leaving player is cleared, so the next
+// player who gets that id is not the recipient. fix false: kept (0.7.3.0)
+inline uint8_t give_pick_after_leave(uint8_t pick, uint8_t id, bool fix = true)
+{
+    return fix && pick == id ? kNoGiveTarget : pick;
+}
+
 } // namespace net

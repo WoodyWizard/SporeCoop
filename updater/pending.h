@@ -28,7 +28,7 @@ static int sc_pending_keep_failed = 1;
 
 /* applies the list in <root>\SporebinEP1\mods\sporecoop.pending; returns how many entries wait
  * for a later start (-1: no list) */
-static int sc_apply_pending(const wchar_t *root, int delete_old)
+static int sc_apply_pending_unlocked(const wchar_t *root, int delete_old)
 {
     wchar_t list[MAX_PATH * 2];
     HANDLE f;
@@ -121,6 +121,113 @@ static int sc_apply_pending(const wchar_t *root, int delete_old)
     HeapFree(GetProcessHeap(), 0, buf);
     HeapFree(GetProcessHeap(), 0, kept);
     return sc_pending_keep_failed ? left : 0;
+}
+
+/* The name of a cross-process lock for a file or folder (BUG-0243, BUG-0245): "Local\<prefix><8 hex
+ * digits>", the same for every form of the same path (8.3 names, drive mappings, case) from coop.dll,
+ * SporeKit, the loader and the setup: the full path, resolved through an open handle when it exists,
+ * without a \\?\ prefix and trailing separators, lowercased, FNV-1a 32 over the UTF-16 units.
+ * Returns 0 on failure. */
+static int sc_lock_name(const wchar_t *prefix, const wchar_t *path, wchar_t *out, int out_len)
+{
+    wchar_t full[MAX_PATH * 2], fin[MAX_PATH * 2];
+    const wchar_t *p = full;
+    DWORD n = GetFullPathNameW(path, MAX_PATH * 2, full, 0), attr;
+    HANDLE h;
+    unsigned int hash = 2166136261u;
+    int len, i, plen = lstrlenW(prefix);
+    static const wchar_t hex[] = L"0123456789abcdef";
+    if (!n || n >= MAX_PATH * 2 || plen + 7 + 8 + 1 > out_len)
+        return 0;
+    attr = GetFileAttributesW(full);
+    if (attr != INVALID_FILE_ATTRIBUTES) {
+        h = CreateFileW(full, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, 0, OPEN_EXISTING,
+                        FILE_FLAG_BACKUP_SEMANTICS, 0);
+        if (h != INVALID_HANDLE_VALUE) {
+            DWORD m = GetFinalPathNameByHandleW(h, fin, MAX_PATH * 2, 0);
+            CloseHandle(h);
+            if (m && m < MAX_PATH * 2)
+                p = fin;
+        }
+    }
+    if (p[0] == L'\\' && p[1] == L'\\' && p[2] == L'?' && p[3] == L'\\') {
+        p += 4;
+        if ((p[0] == L'U' || p[0] == L'u') && (p[1] == L'N' || p[1] == L'n') && (p[2] == L'C' || p[2] == L'c') &&
+            p[3] == L'\\')
+            p += 4;
+    }
+    len = lstrlenW(p);
+    while (len > 0 && (p[len - 1] == L'\\' || p[len - 1] == L'/'))
+        len--;
+    /* lowercase like the file system (kernel32 only: the loader imports nothing else) */
+    if (p >= full && p < full + MAX_PATH * 2) { /* never map a buffer onto itself */
+        lstrcpynW(fin, p, len + 1);
+        p = fin;
+    }
+    len = LCMapStringW(LOCALE_INVARIANT, LCMAP_LOWERCASE, p, len, full, MAX_PATH * 2);
+    if (len <= 0)
+        return 0;
+    for (i = 0; i < len; i++) {
+        hash ^= (unsigned int)(unsigned short)full[i];
+        hash *= 16777619u;
+    }
+    lstrcpyW(out, L"Local\\");
+    lstrcatW(out, prefix);
+    len = lstrlenW(out);
+    for (i = 0; i < 8; i++)
+        out[len + i] = hex[(hash >> (28 - 4 * i)) & 15];
+    out[len + 8] = 0;
+    return 1;
+}
+
+/* The update lock (BUG-0243): a named mutex per game folder (sc_lock_name "SporeCoopUpdate-"). An
+ * update holds it while it swaps files (apply_pack); a start of the loader or of coop.dll on the same
+ * folder (a hot reload, a second instance) then neither applies the pending swaps nor deletes the
+ * backups the running update needs for its rollback, and the game's exit waits for it. 0 = no lock
+ * anywhere (tests: update.lock off, win_tests --old-lock). */
+static int sc_update_lock_fix = 1;
+
+/* try the lock without waiting: 1 = go on (*held: the handle to release, may be 0 when the lock
+ * cannot be made at all), 0 = an update holds it or it cannot be opened (skip this time) */
+static int sc_update_trylock(const wchar_t *root, HANDLE *held)
+{
+    wchar_t name[160];
+    HANDLE h;
+    DWORD r;
+    *held = 0;
+    if (!sc_update_lock_fix || !sc_lock_name(L"SporeCoopUpdate-", root, name, 160))
+        return 1;
+    h = CreateMutexW(NULL, FALSE, name);
+    if (!h)
+        return GetLastError() == ERROR_ACCESS_DENIED ? 0 : 1;
+    r = WaitForSingleObject(h, 0);
+    if (r == WAIT_OBJECT_0 || r == WAIT_ABANDONED) {
+        *held = h;
+        return 1;
+    }
+    CloseHandle(h);
+    return 0;
+}
+
+static void sc_update_unlock(HANDLE h)
+{
+    if (h) {
+        ReleaseMutex(h);
+        CloseHandle(h);
+    }
+}
+
+/* applies the list in <root>\SporebinEP1\mods\sporecoop.pending; returns how many entries wait
+ * for a later start (-1: no list, or an update in this folder is running: the next start) */
+static int sc_apply_pending(const wchar_t *root, int delete_old)
+{
+    HANDLE h;
+    int r;
+    if (!sc_update_trylock(root, &h))
+        return -1;
+    r = sc_apply_pending_unlocked(root, delete_old);
+    sc_update_unlock(h);
+    return r;
 }
 
 #endif

@@ -17,6 +17,10 @@ struct Fixes {
     bool addr_check = true; // BUG-0138: host addresses trimmed, the port checked (1..65535)
     // wave 4
     bool async_resolve = true; // BUG-0204: a host name is looked up on a worker thread, not in the click
+    // wave 5
+    bool peer_caps = true;    // BUG-0219: split / join reliable messages only with a peer that announced it (HELLO caps)
+    bool rejoin_token = true; // BUG-0235: a crash rejoin is the same game by its HELLO token, not by name and silence
+    bool addr_label = true; // BUG-0236: a pasted "Friends connect to: a:p, ..." line joins its first host:port
 };
 inline Fixes g_fix;
 

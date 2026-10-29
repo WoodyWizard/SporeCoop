@@ -20,11 +20,16 @@ COOP_FIX("net.first_ack", "BUG-0030", net::g_fix.first_ack, "net: packet seq sta
 COOP_FIX("net.time_wrap", "BUG-0053", net::g_fix.time_wrap, "net: snapshot order survives the sender's millisecond wrap");
 COOP_FIX("net.lan_prune", "BUG-0039", net::g_fix.lan_prune, "net: the LAN game list forgets silent hosts and has a cap");
 COOP_FIX("net.addr_check", "BUG-0138", net::g_fix.addr_check, "net: host addresses trimmed, the port checked");
+COOP_FIX("net.peer_caps", "BUG-0219", net::g_fix.peer_caps, "net: reliable messages are split only for a peer that joins pieces (HELLO caps)");
+COOP_FIX("net.rejoin_token", "BUG-0235", net::g_fix.rejoin_token, "net: a crash rejoin is recognised by its token, not by name and silence");
+COOP_FIX("net.addr_label", "BUG-0236", net::g_fix.addr_label, "net: a pasted \"Friends connect to: ...\" line joins its first address");
 COOP_FIX("net.async_resolve", "BUG-0204", net::g_fix.async_resolve, "net: a host name is looked up on a worker thread (coop.corefix async_resolve)");
 
 // updater/ (FIX_SWITCH)
 COOP_FIX("update.dup", "BUG-0089", upd::g_dup_fix, "update: a pack that lists a path twice is refused");
 COOP_FIX_UNSAFE("update.old_suffix", "BUG-0114", upd::g_old_suffix_fix, "update: backups are *.sporecoop-old, the cleanup deletes only those (off: every *.old)");
+COOP_FIX_UNSAFE("update.paths", "BUG-0242", upd::g_path_fix, "update: pack paths Windows treats as one file, device and working names are refused");
+COOP_FIX_UNSAFE("update.lock", "BUG-0243", upd::g_lock_fix, "update: file swaps under a lock per game folder; cleanup and pending swaps wait for it");
 COOP_FIX("update.keep_failed", "BUG-0150", upd::g_keep_failed_fix, "update: a deferred file whose swap failed stays on the pending list");
 
 // R6: unit-test only, no runtime switch (the off side reads received data out of bounds). Listed

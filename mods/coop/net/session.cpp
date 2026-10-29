@@ -126,6 +126,9 @@ void Session::start_hello(const Endpoint& ep, uint32_t now)
     Hello h;
     h.build = build;
     h.name = my_name_;
+    h.ext = send_caps;
+    h.has_token = rejoin_token != 0;
+    h.token = rejoin_token;
     Writer w;
     h.write(w);
     p->conn.send_reliable(MSG_HELLO, w);
@@ -289,6 +292,13 @@ std::string Session::status() const
                  p->conn.stats.acked, p->conn.stats.resends, (unsigned)p->conn.pending_reliable());
         s += b;
     }
+    // BUG-0219: a line of its own after the session block, never inside a peer line
+    for (auto& p : peers_)
+        if ((p->accepted || role_ == Role::Client) && !p->conn.peer_split) {
+            snprintf(b, sizeof b, "older peer %u: too_big_old=%u frag_lost=%u\n", p->id,
+                     p->conn.stats.too_big_old, p->conn.stats.frag_lost);
+            s += b;
+        }
     return s;
 }
 
@@ -347,6 +357,23 @@ void Session::send_state(PlayerState st)
             p->conn.send_unreliable(MSG_PLAYER_STATE, w, true);
 }
 
+// BUG-0219: a peer that cannot join pieces gets a chat line that fits one packet (cut between two
+// characters) instead of pieces it would read as broken messages, or nothing
+void Session::send_chat_to(Peer& p, const Chat& c)
+{
+    Writer w;
+    c.write(w);
+    if (w.size() > Connection::kMaxSingle && g_fix.big_reliable && g_fix.peer_caps && !p.conn.peer_split) {
+        Chat cut = c;
+        cut.text.resize(utf8::cut_bytes(c.text, Connection::kMaxSingle - 3)); // u8 id + u16 length
+        Writer wc;
+        cut.write(wc);
+        p.conn.send_reliable(MSG_CHAT, wc);
+        return;
+    }
+    p.conn.send_reliable(MSG_CHAT, w);
+}
+
 void Session::send_chat(const std::string& text)
 {
     if (!connected())
@@ -354,11 +381,9 @@ void Session::send_chat(const std::string& text)
     Chat c;
     c.id = my_id_;
     c.text = text;
-    Writer w;
-    c.write(w);
     for (auto& p : peers_)
         if (p->accepted || role_ == Role::Client)
-            p->conn.send_reliable(MSG_CHAT, w);
+            send_chat_to(*p, c);
     if (cb.chat)
         cb.chat(my_id_, text);
 }
@@ -393,6 +418,21 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
             if (!h.read(r))
                 return;
             Reject rej;
+            // BUG-0235: the same game after a crash (its HELLO carries the token of the old entry,
+            // which has been silent for 2 s) replaces that entry now, before the full check (a crash
+            // rejoin into 4/4 was refused) and before WELCOME (its roster held its own old entry).
+            // A busy player of the same name (loading, saving) keeps its entry: the token differs
+            const bool by_token = unique_names && rejoin_by_name && g_fix.rejoin_token;
+            if (by_token && h.has_token && h.proto == kProtoVersion && !(build && h.build && h.build != build))
+                for (size_t k = 0; k < peers_.size(); k++) {
+                    Peer* o = peers_[k].get();
+                    if (o != &p && o->accepted && !o->bye && o->has_token && o->token == h.token &&
+                        this->now() - o->conn.last_recv_ms > 2000) {
+                        logf(cb, "player %u (%s) rejoins: its old entry is dropped", o->id, o->name.c_str());
+                        drop_peer(k, 0); // PLAYER_LEAVE(old) goes out before PLAYER_JOIN(new)
+                        break;
+                    }
+                }
             if (h.proto != kProtoVersion) {
                 rej.reason = REJ_VERSION;
                 rej.text = "protocol version mismatch";
@@ -416,7 +456,7 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
                 // a player who rejoins after its game died (no BYE) still has its old entry until
                 // that times out: an entry of this name silent for 2 s is that player, it goes now
                 // and the name stays (BUG-0209)
-                if (rejoin_by_name)
+                if (rejoin_by_name && !by_token) // the 0.7.3.0 rule: name and 2 s of silence
                     for (auto& o : peers_)
                         if (o->accepted && o.get() != &p && !o->bye && o->name == p.name &&
                             this->now() - o->conn.last_recv_ms > 2000) {
@@ -436,10 +476,15 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
                     p.name = base + " " + std::to_string(k);
             }
             p.accepted = true;
+            p.caps = h.caps;
+            p.has_token = h.has_token;
+            p.token = h.token;
+            p.conn.peer_split = (h.caps & CAP_SPLIT) != 0;
             Welcome wl;
             wl.your_id = p.id;
             wl.world = world;
             wl.players = players();
+            wl.ext = send_caps;
             Writer w;
             wl.write(w);
             p.conn.send_reliable(MSG_WELCOME, w);
@@ -451,6 +496,11 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
             logf(cb, "player %u '%s' joined from %s", p.id, p.name.c_str(), p.conn.remote.str().c_str());
             if (cb.player_join)
                 cb.player_join(pj.p);
+            if (!h.caps) {
+                logf(cb, "player %u '%s' uses an older SporeCoop (no HELLO caps)", p.id, p.name.c_str());
+                if (cb.old_peer)
+                    cb.old_peer(p.id, p.name);
+            }
             return;
         }
         if (!p.accepted)
@@ -477,9 +527,9 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
             c.id = p.id;
             if (cb.chat)
                 cb.chat(c.id, c.text);
-            Writer w;
-            c.write(w);
-            broadcast_reliable(MSG_CHAT, w, p.id);
+            for (auto& o : peers_)
+                if (o->accepted && o->id != p.id)
+                    send_chat_to(*o, c);
             break;
         }
         case MSG_PING: {
@@ -520,6 +570,8 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
         my_id_ = wl.your_id;
         welcomed_ = true;
         p.accepted = true;
+        p.caps = wl.caps;
+        p.conn.peer_split = (wl.caps & CAP_SPLIT) != 0;
         roster_ = wl.players;
         for (auto& pl : roster_) {
             if (pl.id == 0)
@@ -533,6 +585,11 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
         for (auto& pl : roster_)
             if (pl.id != my_id_ && cb.player_join)
                 cb.player_join(pl);
+        if (!wl.caps) {
+            logf(cb, "the host '%s' uses an older SporeCoop (no WELCOME caps)", p.name.c_str());
+            if (cb.old_peer)
+                cb.old_peer(0, p.name);
+        }
         break;
     }
     case MSG_REJECT: {

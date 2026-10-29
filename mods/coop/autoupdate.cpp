@@ -81,7 +81,15 @@ static void set(State s, const std::string& err = {})
     g_err = err;
 }
 
-static DWORD WINAPI check_thread(void* self)
+// BUG-0241: ExitThread / FreeLibraryAndExitThread do not unwind the C++ stack: a thread function
+// that called end_thread() with its locals in scope leaked them (the whole decoded update pack, several
+// MB, at every Update / Try again). The work runs in a function of its own whose locals are destroyed
+// when it returns; the thread functions hold no objects and only call it and end_thread().
+// Off (coop.fix core.update_unwind off): end_thread() inside the work function, the 0.7.3.0 leak.
+static bool g_unwind_fix = true;
+COOP_FIX("core.update_unwind", "BUG-0241", g_unwind_fix, "update: the threads free the downloaded pack before they end");
+
+static void check_work(bool exit_inside, void* self)
 {
     upd::Release r;
     std::string err;
@@ -97,10 +105,17 @@ static DWORD WINAPI check_thread(void* self)
         if (!g_unloaded)
             H->log(M, SK_INFO, "update check: latest %s, running %s", r.version.c_str(), g_version.c_str());
     }
+    if (exit_inside)
+        end_thread(self); // the 0.7.3.0 leak (r, err never destroyed)
+}
+
+static DWORD WINAPI check_thread(void* self)
+{
+    check_work(!g_unwind_fix, self);
     end_thread(self);
 }
 
-static DWORD WINAPI apply_thread(void* self)
+static void apply_work(bool exit_inside, void* self)
 {
     upd::Release r;
     {
@@ -124,6 +139,13 @@ static DWORD WINAPI apply_thread(void* self)
     if (!g_unloaded)
         H->log(M, ok ? SK_INFO : SK_WARN, "update to %s: %s", r.version.c_str(), ok ? "installed" : err.c_str());
     set(ok ? Ready : Failed, err);
+    if (exit_inside)
+        end_thread(self); // the 0.7.3.0 leak (the pack p never freed)
+}
+
+static DWORD WINAPI apply_thread(void* self)
+{
+    apply_work(!g_unwind_fix, self);
     end_thread(self);
 }
 

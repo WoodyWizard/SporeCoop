@@ -16,6 +16,56 @@
 - Windows: a received world that could not replace its old copy (another program had a file of it
   open) now goes into another save slot instead of being dropped; leftovers of interrupted world
   writes are tidied, an old world moved aside is put back or kept as a backup (BUG-0254).
+- **A cancelled evolution vote no longer opens every guest's editor**, and a guest who leaves (or
+  loses the host) right after a vote no longer gets its editor opened offline. The Give recipient
+  you picked is forgotten when that player leaves or the session ends (BUG-0234). Needs the new
+  version on the guest.
+- **Shared money or tribe food a guest spends right when another player joins is no longer given
+  back** (it was spent twice: the purchase was made, the money returned, the host never counted it)
+  (BUG-0220).
+- **After an evolution, every waiting guest gets the world when the cinematic is over (at most
+  120 s)**: with two or three guests the waits added up (120 / 240 / 360 s), and a leftover wait
+  could send the world during the cinematic, so a guest got the hatchling creature again (BUG-0232).
+- **Civilization: a guest who plays another world than the host's no longer gets the host's
+  vehicles and cities applied to its own planet** (its own vehicles were taken over or removed and
+  cities founded), and in Tribe and Civ its own tribe or vehicles play on under its own orders
+  until it plays the host's world (BUG-0231, part). Cities already founded that way stay in the
+  guest's save.
+- **"Host is in an editor / loading: you play on alone" is only shown in Creature, Tribe and Civ**,
+  where the guest really plays on alone; in Cell and Space it is gone. DNA a guest earned while the
+  host was away goes to the pack only when the host plays that stage again, and DNA the host owed
+  is no longer paid into a different world it loads later (BUG-0233). Correction to 0.7.3.0: its
+  BUG-0205 line says a guest plays on with its own creatures while the host edits; that
+  holds for Creature, but Cell is still open (BUG-0205, BUG-0151).
+- **Mixed versions: an older SporeCoop no longer loses long chat lines or gets an emptied species
+  table** (BUG-0219): players tell each other at the join what they support; a long chat line
+  reaches a 0.7.2.x or 0.7.3.0 player cut, a big species table does not reach them, and a
+  notification names the player with the older version. A guest with a 0.7.2 host no longer keeps
+  every Cell meal in memory.
+- **A player who is loading or saving is no longer dropped when somebody with the same name joins**
+  (BUG-0235): a rejoin after a crash is recognised by a token the game keeps until a clean leave,
+  not by the name; such a rejoin now also works in a full 4-player session.
+- **Pasting the co-op window's whole "Friends connect to: ..." line into Join works** (BUG-0236).
+- **In-game update: a failed attempt no longer keeps the downloaded files in memory** (BUG-0241),
+  a pack with two names for one file is refused (BUG-0242), and a second start of the mod or the
+  game's exit no longer interrupts an update between two file moves (BUG-0243).
+- **Settings: a coop.ini saved as UTF-16 BE is no longer destroyed**, and two games on one folder no
+  longer lose a name written at the same time (BUG-0245).
+- **Crash reports name the thread that crashed** (BUG-0248).
+- **Space: a disabled ship is no longer destroyed when you come back from an editor or an
+  adventure**: the 20 s for a repair stand still while you are out of Space, and a load or the
+  galaxy menu ends the disabled state without a death (BUG-0229). A disabled state that ends while
+  you are out of Space (the session ends) no longer leaves your ship invincible (BUG-0228).
+- **Space: spice of the co-op gift that comes back while you are out of Space is no longer lost**:
+  it goes back into your cargo hold once you are in Space again. A gift received in an editor or an
+  adventure is now sent back like one received in the galaxy menu (BUG-0226).
+- **Space: a partner's ship whose invincibility the game clears stays the partner's ship** instead
+  of turning into an armed NPC ship next to a new one; a ship a game mission takes is held still
+  and removed once the mission lets it go (BUG-0218).
+- **Space armada contracts: a wave resumed after the host's return gets tough ships, is not won
+  without a fight, and a raid lost while the host was away fails the contract** (BUG-0227).
+- **Space allies: a galaxy reload is seen even when the new empire object gets the old one's
+  address** (BUG-0225, the allies part).
 - **Setup: a failed GitHub check can no longer overwrite the release an install just fetched** (the
   window said "GitHub not reachable" and the next Install asked again; BUG-0244).
 - **Crash reports name the game instance and whether a test profile was used** (`run:` line, no
@@ -27,8 +77,11 @@
 A big bug-fix release. A review of the whole mod and the test lab found about 180 problems; 158 of
 them are fixed here, nearly all with an automated test that fails without its fix: crashes and freezes,
 desyncs between the players in every stage, worlds and saves that could be overwritten or mixed,
-the setup and the in-game update. The network protocol did not change: 0.7.3.0 plays together with
-0.7.x, but both players need 0.7.3.0 for most of the fixes. What is still open is listed in
+the setup and the in-game update. 0.7.3.0 plays together with 0.7.x, but both players need 0.7.3.0 for
+most of the fixes. Correction (BUG-0219): one wire feature is new, reliable messages bigger than
+one packet are sent in pieces (BUG-0034), which 0.7.2.x cannot join: with a 0.7.2.x player a chat
+line above about 1160 bytes is lost and a Creature species table of 42 or more species can arrive
+empty. The version after 0.7.3.0 sends such messages only to players who can join them. What is still open is listed in
 [docs/known-issues.md](https://github.com/WoodyWizard/SporeCoop/blob/main/docs/known-issues.md).
 
 **GOG 2016 build (`922af7c7`):** fixes that need new game addresses switch themselves off on it

@@ -146,6 +146,15 @@ uint32_t noun_id(void* obj);                    // ISimulatorSerializable::GetNo
 void* cast(void* obj, uint32_t type);           // Object::Cast (vt 0x0C)
 bool object_position(void* obj, net::Vec3& out); // via cSpatialObject (TYPE 0x1186577), position +4
 bool object_alive(void* obj);                    // cGameData::mbIsDestroyed (+0x21) not set
+// cGameData::mID (+0x24): `++[counter]` in cGameNounManager::CreateInstance (GOG 2024 0xB20BF0,
+// counter 0x167BE28): unique among the objects CreateInstance made in this process. The pointer
+// must be a cGameData base (offset 0) that ufo_listed / object_alive accepted in this frame;
+// 0 = no object. A pointer whose serial equals one recorded earlier is the same object. Not
+// across machines (the counter is per process) and not across a load: the counter's address is
+// in two static descriptor tables (0x131AD5A, 0x131B076, a serializer's field list?), so a load
+// may set it back; callers that keep an identity across frames also compare
+// spaceext::world_epoch() (docs/re/space.md#space-object-serial).
+uint32_t object_serial(void* obj);
 // a cGameDataUFO pointer is still a live UFO noun (the game may have freed it: never read it before)
 bool ufo_listed(void* u);
 // UFO puppets/mirrors found freed by the game (tests: coop.status "freed_by_game")

@@ -73,10 +73,31 @@ static void test_aborted()
     CHECK(aborted.size() == 1 && aborted.count(&a));
 }
 
+// BUG-0227: the armada wave on the host's return
+static void test_wave_return()
+{
+    using spacelogic::WaveReturn;
+    for (bool running : {false, true}) {
+        CHECK(spacelogic::wave_on_return(6, running) == WaveReturn::Fail);
+        CHECK(spacelogic::wave_on_return(5, running) == WaveReturn::Won);
+    }
+    CHECK(spacelogic::wave_on_return(0, true) == WaveReturn::Resume);
+    CHECK(spacelogic::wave_on_return(0, false) == WaveReturn::NewRaid);
+    // the "raised once" key: by serial a new ship at an old address is new; the kinds never match
+    std::set<uint64_t> raised;
+    raised.insert(spacelogic::tough_key(0x1234560, 0, false)); // a pointer key (the reuse simulation)
+    CHECK(raised.insert(spacelogic::tough_key(0x1234560, 77, true)).second);   // by serial: raised
+    CHECK(!raised.insert(spacelogic::tough_key(0x1234560, 77, true)).second);  // the same ship: once
+    CHECK(raised.insert(spacelogic::tough_key(0x1234560, 78, true)).second);   // a new object there
+    CHECK(!raised.insert(spacelogic::tough_key(0x1234560, 99, false)).second); // by pointer: not raised
+    CHECK(spacelogic::tough_key(77, 0, false) != spacelogic::tough_key(0, 77, true));
+}
+
 int main()
 {
     test_jump_target();
     test_aborted();
+    test_wave_return();
     printf(g_fail ? "space_tests: %d FAILED\n" : "space_tests: all passed\n", g_fail);
     return g_fail ? 1 : 0;
 }

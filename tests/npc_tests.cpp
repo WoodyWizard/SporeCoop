@@ -1,6 +1,8 @@
 // Native tests for the NPC id allocator (npc_ids.h, BUG-0023 / BUG-0044) and the joint-hunt hit
 // table (hunt_hits.h, BUG-0099) (make test; built with AddressSanitizer).
 #include <cstdio>
+#include <string>
+#include <vector>
 #include <set>
 #include <unordered_map>
 
@@ -9,6 +11,7 @@
 #include "npc_ids.h"
 #include "savestrip_rule.h"
 #include "stage_epoch.h"
+#include "share_wait.h"
 #include "swap_ledger.h"
 
 static int g_fail = 0;
@@ -264,8 +267,79 @@ static void test_savestrip_rule()
     CHECK(!strip_empty_herd(true, true, false, true));   // a creature of the save was unreadable
 }
 
-int main()
+// BUG-0232: the host's wait for the evolution cinematic before a world share. `each` = the fix (one
+// timer per guest, restarted when the guest is marked as needing the world); without it one
+// global timer (npc_tests --nofix: the checks must fail).
+static bool g_nofix = false;
+struct Waiter {
+    bool needs = false;
+    double since = 0;
+    double sent_at = -1;
+};
+
+// follow_phase's loop over the waiting guests at `now`
+static void share_frame(std::vector<Waiter>& w, double& global, bool cine, double now, double due_at, bool each)
 {
+    for (auto& g : w) {
+        if (!g.needs)
+            continue;
+        double& since = each ? g.since : global;
+        if (share_wait::hold(since, cine, now, due_at))
+            continue;
+        g.since = 0;
+        g.needs = false;
+        g.sent_at = now;
+    }
+}
+
+static void test_share_wait()
+{
+    printf("share wait for the evolution cinematic: per guest (BUG-0232)\n");
+    const bool each = !g_nofix;
+    // three guests wait while a cinematic plays for 400 s: all get the world after 120 s
+    std::vector<Waiter> w(3);
+    double global = 0;
+    for (auto& g : w)
+        g.needs = true;
+    for (double t = 1000; t < 1400; t += 1)
+        share_frame(w, global, true, t, 1003, each);
+    for (auto& g : w)
+        CHECK(g.sent_at >= 1120 && g.sent_at <= 1125); // one global timer: 1123 / 1243 / 1363
+    // a guest waits and leaves; another one waits 200 s later during a cinematic: held 120 s
+    std::vector<Waiter> a(1);
+    global = 0;
+    a[0].needs = true;
+    for (double t = 2000; t < 2050; t += 1)
+        share_frame(a, global, true, t, 0, each);
+    a.clear(); // the guest left (its Remote is erased)
+    std::vector<Waiter> b(1);
+    b[0].needs = true; // a new guest, a new Remote
+    for (double t = 2250; t < 2500; t += 1)
+        share_frame(b, global, true, t, 0, each);
+    CHECK(b[0].sent_at >= 2369); // one global timer: sent at once (2250), during the cinematic
+    // marked again as needing the world (a new evolution): the timer starts from 0
+    Waiter c;
+    c.needs = true;
+    c.since = 3000; // left over from an earlier wait
+    if (each)
+        c.since = 0; // on_mode_change / share_all / a join in a menu reset it with needs_world
+    std::vector<Waiter> cv{c};
+    for (double t = 3200; t < 3400; t += 1)
+        share_frame(cv, global, true, t, 0, each);
+    CHECK(cv[0].sent_at >= 3319);
+    // no cinematic: sent as soon as the 3 s after the editor are over
+    std::vector<Waiter> d(2);
+    for (auto& g : d)
+        g.needs = true;
+    for (double t = 4000; t < 4010; t += 1)
+        share_frame(d, global, false, t, 4003, each);
+    CHECK(d[0].sent_at == 4003 && d[1].sent_at == 4003);
+}
+
+int main(int argc, char** argv)
+{
+    g_nofix = argc > 1 && std::string(argv[1]) == "--nofix";
+    test_share_wait();
     test_stage_epoch();
     test_savestrip_rule();
     test_drive();

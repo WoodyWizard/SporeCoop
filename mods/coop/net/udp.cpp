@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cctype>
 #include <cstring>
+#include <vector>
 
 #ifdef _WIN32
 #include <winsock2.h>
@@ -60,17 +61,51 @@ bool Endpoint::parse(const std::string& s, uint16_t default_port, Endpoint& out)
     return parse(s, default_port, out, err);
 }
 
+// "<non-empty host>:<1 to 5 digits>" (the port's range is checked later)
+static bool host_port(const std::string& t)
+{
+    size_t c = t.rfind(':');
+    if (c == std::string::npos || c == 0 || c + 1 == t.size() || t.size() - c - 1 > 5)
+        return false;
+    for (size_t i = c + 1; i < t.size(); i++)
+        if (!isdigit((unsigned char)t[i]))
+            return false;
+    return true;
+}
+
 std::string Endpoint::clean(const std::string& s)
 {
     // BUG-0138: copied from a chat: spaces, tabs or a newline around it, or the whole "Friends
     // connect to" hint with several addresses: the first address
-    size_t a = 0;
-    while (a < s.size() && isspace((unsigned char)s[a]))
-        a++;
-    size_t b = a;
-    while (b < s.size() && !isspace((unsigned char)s[b]) && s[b] != ',' && s[b] != ';')
-        b++;
-    return s.substr(a, b - a);
+    auto sep = [](char ch) { return isspace((unsigned char)ch) || ch == ',' || ch == ';'; };
+    if (!g_fix.addr_label) { // the 0.7.3.0 rule: the first word
+        size_t a = 0;
+        while (a < s.size() && isspace((unsigned char)s[a]))
+            a++;
+        size_t b = a;
+        while (b < s.size() && !sep(s[b]))
+            b++;
+        return s.substr(a, b - a);
+    }
+    std::vector<std::string> tokens;
+    for (size_t a = 0; a < s.size();) {
+        while (a < s.size() && sep(s[a]))
+            a++;
+        size_t b = a;
+        while (b < s.size() && !sep(s[b]))
+            b++;
+        if (b > a)
+            tokens.push_back(s.substr(a, b - a));
+        a = b;
+    }
+    if (tokens.empty())
+        return std::string();
+    // BUG-0236: the hint line starts with a label ("Friends connect to: a:47810,  b:47810", any
+    // language) or a chat line wraps it ("Bob: ..."): the first token that looks like host:port
+    for (auto& t : tokens)
+        if (host_port(t))
+            return t;
+    return tokens[0];
 }
 
 bool Endpoint::parse(const std::string& in, uint16_t default_port, Endpoint& out, std::string& err)

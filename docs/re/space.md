@@ -1710,3 +1710,45 @@ Runtime findings of the wave 3 Space fixes (lane 6, GOG 2024):
   30 ships counted for the wave. The wave now keeps its mission and resumes it (`contracts raids`,
   `resumed=`). During a wave the mouse wheel at the ship did not take the host off the planet
   (`coop.space takeoff` in the test) (BUG-0046).
+
+## Object serial, the Space world epoch, disabled ships, gifts, puppets, armada returns (2026-10-28, fix/w5-space)
+<a id="space-object-serial"></a>
+
+* ✔ `cGameData::mID` (+0x24) is written in `cGameNounManager::CreateInstance` (GOG 2024 0xB20BF0):
+  `mov eax,[0x167BE28]; inc eax; mov [0x167BE28],eax; mov [esi+0x24],eax` (0xB20C83..0xB20C8E).
+  CreateInstance is the only writer of the counter 0x167BE28 in the code. `game::object_serial(u)`
+  reads +0x24 (only after `ufo_listed` / `object_alive` in the same frame). Seen at runtime: a
+  puppet's serial stays the same over a whole test; the identity tests below rely on it.
+* ? The counter's address is also stored as data in two static tables (0x131AD5A and 0x131B076:
+  `mov [esp+0x18],0x167BE28` next to other function pointers, then `rep movs` into a global): most
+  likely a serializer's field list, so a load may set the counter back and objects read from a save
+  may keep saved ids. Not measured. Until it is, an identity kept across frames also compares the
+  Space world epoch (below); serials are never compared across a load or between machines.
+* ✔ The Space world epoch (`spaceext::world_epoch`, a Space-only stand-in for the stage epoch of
+  BUG-0217 / #151): +1 on the first kSpace frame after a frame in any mode other than kSpace, kEdit,
+  kEditor or kScenario, and when the player's cEmpire changes between two non-null values in
+  kSpace. A load of the same game from the galaxy menu (`coop.menu`, `coop.load`) went 1 -> 2
+  (coop_space_down_away.py part b). Not verified: that the captain outfitter, the ship editor and an
+  adventure from Space show only kEdit / kEditor / kScenario frames (the log line "space: world
+  epoch N (Space entered)" shows a false change).
+* ✔ `coop.space away 1|0` (test hook, cleared at session end): spaceext::in_space() and spacecoop's
+  in_space() / inventory() act as outside Space while the Space world stays; trade's
+  `coop.space trade away` stays its own hook.
+* ✔ Disabled ship (BUG-0228, BUG-0229): the state records the ship (pointer, serial, world epoch).
+  Outside Space in the same world its 20 s stand still (25 s away: 19.0 -> 16.9 s left); another
+  world ends it without a death; its invincible byte is cleared at once in Space, or on the first
+  Space frame back on the same ship (`coop.space downstate`: `owed`, `owed_cleared`).
+* ✔ Spice gift (BUG-0226): K_GIFT has no id and only a failure is answered (K_GIFT_BACK). The
+  sender keeps its unanswered gifts (16 at most, cleared at session end); a K_GIFT_BACK matches
+  the oldest with the same receiver, key and count once. Outside Space it is owed until the first
+  Space frame of the same world (`coop.space gift`). `add_spice` refuses outside Space.
+* ✔ Puppet identity (BUG-0218): our puppet is the object with the serial recorded at its spawn
+  (and the model key). The invincible byte is not part of it any more: when it is found cleared it
+  is set back (`coop.fleet ident`: `flag_restored`). A puppet whose owner mission (+0x800) is set
+  is retired: held still, not sent to the guests, its shots dropped, destroyed through the deferred
+  path once +0x800 is null again, left to the game at session end. Whether the game ever sets
+  +0x800 or clears +0x588 on a Defender with our political id is still not known.
+* ✔ Armada returns (BUG-0227): the "HP raised once" set is keyed by serial; a resumed wave waits for
+  its ships again and, if none come in 30 s, its raid is aborted with `cMission::SetState(7)`
+  (spacecoop's raid hook sends no K_RAID and pays no bonus for 7) before a new one starts; a raid
+  that ended with 5 / 6 while the host was away counts.

@@ -174,7 +174,7 @@ std::string ftrace_set(const std::string& substr);
 
 // exceptions.cpp (more below)
 void exceptions_pump(); // every frame: SK_EV_FAULT for a fault caught in SporeKit / mod code
-bool exceptions_last(EXCEPTION_RECORD* er, CONTEXT* ctx, double* t); // the last fault seen (copies)
+bool exceptions_last(EXCEPTION_RECORD* er, CONTEXT* ctx, double* t, DWORD* tid = nullptr); // the last fault seen (copies)
 bool exceptions_stack_overflow(EXCEPTION_RECORD* er, CONTEXT* ctx, DWORD* tid, double* t); // BUG-0056
 // zip.cpp
 struct ZipEntry {
@@ -191,7 +191,8 @@ const char* diag_last_problem(); // "<what>\n<zip path>" or ""
 const char* build_name();     // "GOG 2024", "Steam (the GOG 2024 code)", ...
 std::string diag_env();       // the environment, several lines
 std::string foreign_hooks();  // overlays / wrappers / ModAPI loaded in the game
-std::string diag_write_report(const char* reason, EXCEPTION_POINTERS* ep); // path of the .txt
+// fault_tid: the thread that faulted (0 = unknown: the current thread, as for hang reports)
+std::string diag_write_report(const char* reason, EXCEPTION_POINTERS* ep, DWORD fault_tid = 0); // path of the .txt
 std::string diag_logs_dir();
 void diag_context(SkMod* mod, const char* (*fn)(void*), void* user);
 void diag_context_remove(SkMod* mod);
@@ -246,6 +247,10 @@ extern KitFix g_fix_stackov;   // BUG-0056: a stack overflow is reported by a th
 extern KitFix g_fix_crashsafe; // BUG-0127: a failed step of a crash report does not end the game
 extern KitFix g_fix_hookpark;  // BUG-0202: hooks switch a stub, the function's code is written once
 extern KitFix g_fix_iniutf;    // BUG-0142: settings with non-ASCII text are kept in UTF-16
+extern KitFix g_fix_iniencode; // BUG-0245: UTF-16 BE converted, unknown encodings left alone
+extern KitFix g_fix_inilock;   // BUG-0245: a named mutex per settings file; no "????" writes
+extern KitFix g_fix_exitwait;  // BUG-0243: the exit waits for an update's file swaps
+extern KitFix g_fix_crashtid;  // BUG-0248: a crash report names the faulting thread
 extern KitFix g_fix_logprune;  // BUG-0137: old crash reports, dumps, reports and archives are removed
 inline bool fixed(const KitFix& f) { return f.on != 0; }
 KitFix* kit_fix_find(const char* name);

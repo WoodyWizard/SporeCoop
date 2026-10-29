@@ -2,6 +2,7 @@
 // with the fix on (must hold) and off (must show the bug), so the test is known to catch it.
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 
 #include "cell_logic.h"
 
@@ -93,6 +94,22 @@ static void meals()
     CHECK(k.unacked.empty());
 }
 
+// BUG-0219: a 0.7.2 host sends its total without the ack field: the guest's list of meals on the
+// way grew by one per meal for the whole session (10,000 meals = 10,000 entries)
+static void meals_old_host()
+{
+    for (bool fix : {true, false}) {
+        Meals m;
+        for (int i = 0; i < 10000; i++) {
+            m.sent(5);
+            m.diff(5 * (i + 1), false, 0, 0, 5 * (i + 1), fix);
+        }
+        printf("  meals with a host without acks (foodseq %s, meals_trim %s): unacked=%zu\n", fix ? "on" : "off",
+               g_meals_trim ? "on" : "off", m.unacked.size());
+        CHECK(m.unacked.empty());
+    }
+}
+
 // BUG-0041: a small cell (0.5 of size 2 -> 1) eats 41 points over a level line; the game resizes
 // it to the new level's size 3 inside AddFoodPoints
 static void body()
@@ -160,12 +177,16 @@ static void spawn_slot()
     CHECK(!parse_cell_slot("99999999999", 5000, &v));
 }
 
-int main()
+int main(int argc, char** argv)
 {
+    for (int i = 1; i < argc; i++)
+        if (!strcmp(argv[i], "--old-trim"))
+            g_meals_trim = false; // the 0.7.3.0 code: meals_old_host must fail
     slots();
     spawn_slot();
     rounds();
     meals();
+    meals_old_host();
     body();
     ko();
     numerics();
