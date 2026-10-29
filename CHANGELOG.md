@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Fixed
+- Tribe: after the host visited an editor, the co-op epic creature was no longer tracked: it went
+  into the shared save and the world of every guest, stayed after the session and a second one
+  came later. An editor visit no longer counts as a new world (BUG-0217).
+- Civilization: a single frame without the player's first city could make the host forget every
+  vehicle and city owner (vehicles rebuilt on the guests, captured cities and bought vehicles given
+  to someone else). Only a real world change does that now (BUG-0223).
+- Civilization: with guests in the session only a capture's caption closes itself after 8 s; other
+  cinematics of the host (city purchases, camera cinematics) play to the end again (BUG-0224).
+- Saves no longer keep the empty herds made for a partner's creature after the partner left, and
+  every save builds its own list of co-op objects to leave out (BUG-0255).
+- Windows: a received world that could not replace its old copy (another program had a file of it
+  open) now goes into another save slot instead of being dropped; leftovers of interrupted world
+  writes are tidied, an old world moved aside is put back or kept as a backup (BUG-0254).
+
 ## [0.7.3.0] - 2026-10-28
 
 A big bug-fix release. A review of the whole mod and the test lab found about 180 problems; 158 of

@@ -691,3 +691,32 @@ New NPC tribes form during play: Cohrach had 2 tribes at the start and 5 (33 cit
 * Diagnostics: `coop.tribe epic herds` (the game's epic herds, ours, enabled, live epics),
   `coop.tribe epic save` (as if the game saved), `coop.tribe scales`, switches
   `coop.tribe fix epic_players|epic_herd|away 0`.
+
+## Which Tribe world is open: the stage counter (2026-10-28, fix/w5-world)
+<a id="tribe-stage-epoch"></a>
+
+BUG-0217. GOG 2024, lane 5.
+
+* ✔ The Tribe stage has no adapter for the editors, so before the fix every editor frame (mode
+  kEditor 0x00DBDBA1) made `avatar_change_check` see "no local entity" and call
+  `tribe::on_world_change`: the tracked co-op epic was forgotten while it stayed alive, and the
+  world share after the editor ("evolved the species") saved it (`coop.tribe epic herds`:
+  `live_epics` 2 after the share save and after the session end, `tracked=00000000`).
+* ✔ `coop.vote editor` in Tribe (a member's species key in the request, CreatureEditorExtraLarge)
+  opens the creature editor within 1 s (mode kEditor). Its Done (1416, 1062) does nothing for the
+  tribe species (a blocking error, ~ the part list bit 5 of docs/re/creations.md 7: not checked);
+  the red X (1380, 1062) leaves without changes. Route seen: kTribe, kEditor, kTribe (no
+  non-stage frame). The host's share save follows; the guest loads it about 10 s later through the
+  galaxy menu (mode 0x02CCD1D2 seen by the guest's world check).
+* ✔ Now (`game::stage_epoch`, mods/coop/stage_epoch.h): one counter per stage, raised when the
+  stage is entered from anything but its editors (kEdit, kEditor; kScenario keeps Space only).
+  `tribe::world_check` (top of on_frame, before messages) forgets the Tribe world when the mode
+  leaves Tribe for a mode that is not an editor, and on the in-stage signals (another player tribe
+  object, another save name). Switch `coop.fix tribe.editor_world`. Limit: a reload of the same
+  save that reuses the player tribe's address and never shows a non-stage frame is not seen.
+* ✔ On a guest `coop.tribe epic herds` lists `live_epics=0` before and after the host's world
+  arrives, the planet's own epic included: the guest's game is no oracle for "the epic came with
+  the save" (the host's game after the share save is).
+* Not measured (issue #151 step 0): the pause-menu Load, the game-over bounce back and Civ to
+  Space routes frame by frame. A route that reloads without any non-stage frame relies on the
+  in-stage signals.

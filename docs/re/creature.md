@@ -403,7 +403,7 @@ the ones I killed since he still sees them alive" (fix/creature-desync, `coop_cr
   `creature_spawn` reuses a herd like ours of the species (`game::own_herd_for`) instead of a new one.
   Not done: our creatures are still written into saves (the save is the game's generic
   `COMSerializer::SaveClassObjects` 0x69FB90 over all objects; no per-object "do not save" flag
-  found), and the empty herds stay (harmless: target 0). Regression: `coop_creature_e84.py`.
+  found), and the empty herds stay (harmless: target 0; ~ superseded (2026-10-28): see [empty puppet herds](#creature-save-strip-empty-herds)). Regression: `coop_creature_e84.py`.
 * ? `+0xB54` of a creature (the handler needs it and its `+0x17C` set).
 * ✗ Real input: in the fixture the host's clicks on the restored creature did not make the avatar
   walk or attack (WASD did move it; key 1 hit nothing at 3-5 m); the test posts the game's attack
@@ -818,3 +818,23 @@ GOG 2024; the 0xB238B0 of section 12 / the 05-re-notes table is the GOG 2016 add
   which. The earlier note "opened once, never again" (creature-world-epoch) fits: that game had
   passed the menu.
 * `coop_social_console.py` sets the flag first (`call App::cCheatManager::func4Ch thiscall <mgr> 1`).
+
+## Empty puppet herds and one list per save (2026-10-28, fix/w5-world)
+<a id="creature-save-strip-empty-herds"></a>
+
+BUG-0255. GOG 2024, lane 5. Adds to [the save filter](#creature-save-strip).
+
+* CORRECTION (2026-10-28, fix/w5-world): section 12's "the empty herds stay (harmless: target 0)"
+  is superseded. After the partner left (`coop.leave`), the herd made for its puppet stayed with
+  `members=0` and went into the save (`coop.npc archless` 1 after the load with
+  `coop.fix savestrip.empty_herds off`). Now an own-kind herd (no archetype, nest or avatar flag)
+  with no members is stripped too, but only when its member list (+0x40 / +0x44) is readable and
+  empty, no creature of the save points at it (`herd_of`, every creature counted, the avatar and
+  the pack included) and every creature of the save was readable. The load after it: no fault
+  (8 s of simulator updates), the avatar there.
+* ✔ `coop.save` in Creature: every Write of a save ran in one frame (`coop.savestrip`
+  `max_save_frames=0`); one `coop.save` counted as two serializers (`saves` +2). So the save filter
+  starts a new list at a new serializer or a new frame (`savestrip_rule.h`), not after a 0.5 s
+  pause; switch `coop.fix savestrip.per_save` (its off side can write a game object at a freed
+  puppet's address as null). Not measured: the share save, quit to the menu, a stage change and a
+  Space planet save.
