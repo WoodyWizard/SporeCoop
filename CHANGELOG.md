@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Fixed
+- **Space: a disabled ship is no longer destroyed when you come back from an editor or an
+  adventure**: the 20 s for a repair stand still while you are out of Space, and a load or the
+  galaxy menu ends the disabled state without a death (BUG-0229). A disabled state that ends while
+  you are out of Space (the session ends) no longer leaves your ship invincible (BUG-0228).
+- **Space: spice of the co-op gift that comes back while you are out of Space is no longer lost**:
+  it goes back into your cargo hold once you are in Space again. A gift received in an editor or an
+  adventure is now sent back like one received in the galaxy menu (BUG-0226).
+- **Space: a partner's ship whose invincibility the game clears stays the partner's ship** instead
+  of turning into an armed NPC ship next to a new one; a ship a game mission takes is held still
+  and removed once the mission lets it go (BUG-0218).
+- **Space armada contracts: a wave resumed after the host's return gets tough ships, is not won
+  without a fight, and a raid lost while the host was away fails the contract** (BUG-0227).
+- **Space allies: a galaxy reload is seen even when the new empire object gets the old one's
+  address** (BUG-0225, the allies part).
+
 ## [0.7.3.0] - 2026-10-28
 
 A big bug-fix release. A review of the whole mod and the test lab found about 180 problems; 158 of

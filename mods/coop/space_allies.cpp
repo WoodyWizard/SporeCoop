@@ -86,6 +86,7 @@ struct Mirror {
     bool applied = false;
     void* emp = nullptr;          // the cEmpire (kept alive by our reference, re-inserted on apply)
     void* galaxy = nullptr;       // the player's cEmpire when emp was made: another one = a reload (BUG-0038)
+    uint32_t epoch = 0;           // spaceext::world_epoch() when emp was made: another one = a reload (BUG-0225)
     uint32_t pol = 0;
     std::map<uint32_t, StarSnap> stars;
     std::map<uint32_t, PlanetSnap> planets;
@@ -309,16 +310,25 @@ static std::string empire_name(const Mirror& m)
 // restores the old reuse (tests).
 static bool g_reload_fix = true;
 COOP_FIX("allies.reload", "BUG-0038", g_reload_fix, "space: the allies mirror starts over with a new cEmpire after a reload");
+// BUG-0225: the player's cEmpire of a reloaded galaxy can have the freed old one's address; the
+// Space world epoch (spaceext::world_epoch: a load or the galaxy menu shows non-Space frames) sees
+// the reload whatever the address. `allies.reload_id` off: the pointer compare alone (0.7.3.0).
+static bool g_reload_id_fix = true;
+COOP_FIX("allies.reload_id", "BUG-0225", g_reload_id_fix, "space: a galaxy reload is seen by the Space world epoch, not the cEmpire address");
 static uint32_t g_reload_resets;
 static void reset_empire(Mirror& m)
 {
     // a save also takes the unmirrored cEmpire out of the map (it is put back on the next apply):
-    // only another player cEmpire means another galaxy; none (the menu) = not known yet
+    // only another player cEmpire (or another Space world) means another galaxy; none (the menu) =
+    // not known yet
     void* pe = player_empire();
-    if (!g_reload_fix || !m.emp || !pe || pe == m.galaxy)
+    if (!g_reload_fix || !m.emp || !pe)
+        return;
+    if (pe == m.galaxy && !(g_reload_id_fix && m.epoch && m.epoch != spaceext::world_epoch()))
         return;
     m.emp = nullptr;
     m.galaxy = nullptr;
+    m.epoch = 0;
     m.pol = 0;
     m.contact_before = 0;
     m.rel_on = spaceext::Relation::Ally;
@@ -347,6 +357,7 @@ static bool ensure_empire(Mirror& m)
         m.emp = e;
         m.pol = pol;
         m.galaxy = player_empire();
+        m.epoch = spaceext::world_epoch();
     } else {
         uint32_t key = m.pol;
         void** slot = thiscall<void**>(a_MapAt, (uint8_t*)sm + 0x150, &key);
@@ -1194,6 +1205,15 @@ static std::string debug(const std::vector<std::string>& a)
     if (a[0] == "abortedfix" && a.size() > 1) { // BUG-0136: 0 = aborted raids stay in the set for good
         g_aborted_fix = a[1] != "0";
         return std::string("abortedfix ") + (g_aborted_fix ? "1" : "0") + " aborted=" + std::to_string(g_aborted.size()) + "\n";
+    }
+    if (a[0] == "samegalaxy") { // tests (BUG-0225): as if the new galaxy's player cEmpire had the old address
+        int n = 0;
+        for (auto& [k, m] : g_m)
+            if (m.emp) {
+                m.galaxy = player_empire();
+                n++;
+            }
+        return "samegalaxy: " + std::to_string(n) + " mirror(s)\n";
     }
     if (a[0] == "reloadfix" && a.size() > 1) { // BUG-0038: 0 = reuse the old galaxy's cEmpire after a reload
         g_reload_fix = a[1] != "0";

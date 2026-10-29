@@ -10,7 +10,10 @@ galaxy may live).
     its one star, and a further empire made in this galaxy (a second mirror) must get its own id.
 Before the fix the old galaxy's object A went back into the new map.
 
-  coop_space_allies_reload.py [--without-fix]   (--without-fix: `allies reloadfix 0`, so it FAILS)"""
+  coop_space_allies_reload.py [--without-fix] [--same-address]
+  (--without-fix: `allies reloadfix 0`, so it FAILS; --same-address, BUG-0225: before the first
+   apply after the load `allies samegalaxy` sets the stored player cEmpire to the new one, as an
+   address reuse would; SPORE_FIX_OFF=allies.reload_id then FAILS)"""
 import re
 import sys
 import time
@@ -76,6 +79,8 @@ def main():
     ck(wait(lambda: 'Space' in host.call('game.mode')['out'], 180, 2), 'the host is in Space again')
     time.sleep(5)
     print(f'  after the load: {sp(host, "allies nextpol")}')
+    if '--same-address' in sys.argv:  # BUG-0225: the new player cEmpire at the old one's address
+        print(' ', sp(host, 'allies samegalaxy'))
     sp(host, 'allies apply')
     pol2, applied2 = wait(lambda: (lambda m: m if m[1] else None)(mirror(host, 'Zed')), 20) or (None, False)
     e1 = empire(host, pol2) if pol2 else None
