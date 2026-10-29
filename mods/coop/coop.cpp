@@ -3429,7 +3429,19 @@ void support_init()
     p.feed = feed;
     p.chat_log = chat_log;
     p.my_name = [] { return g_name; };
-    p.entries = sync_all;
+    p.entries = [] { // a dead player's creature (death, respawn) is no desync: left out
+        std::vector<syncdbg::Entry> v = sync_all();
+        auto dead = [](uint8_t id) {
+            if (id == g_sess.my_id())
+                return (local_state().flags & net::PF_DEAD) != 0;
+            auto it = g_remotes.find(id);
+            return it != g_remotes.end() && !it->second.buf.empty() && (it->second.buf.latest().flags & net::PF_DEAD);
+        };
+        v.erase(std::remove_if(v.begin(), v.end(),
+                               [&](const syncdbg::Entry& e) { return e.key[0] == 'p' && dead((uint8_t)atoi(e.key.c_str() + 1)); }),
+                v.end());
+        return v;
+    };
     p.mode = [] { return g_mode; };
     p.place = [] { return g_world; };
     p.playing = [] { return g_local != nullptr; };

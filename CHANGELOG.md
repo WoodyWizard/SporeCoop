@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Added
+- Problem reports: type `/bug <what you see>` in the co-op chat when something goes wrong; every
+  player's log gets a line with the text and the moment, and the chat says "marked for the report".
+- Problem reports: the games of a session share one clock, so the logs of all players line up
+  (`tools/merge_logs.py` merges them into one timeline). The host and the guests compare the shared
+  world every 30 s and log what differs (`sync-check:`, `[coop] sync_check=0` turns it off). The log
+  also has the frame rate and hitches, the game's free memory, the network quality per player, the
+  saves and world transfers with their times, settings that are not the defaults, and a summary
+  line of each session (also at the top of the report). The report lists other mods, extra
+  `.package` files and game files of an unexpected size. Paths of your PC are masked in logs and
+  reports ([support guide](docs/SUPPORT.md)).
+
 ### Fixed
 - Votes: "I'm ready" in the co-op window did nothing while a caption of the game was on the
   screen (the brain-upgrade captions at the end of the Creature stage): the vote ran out of time.

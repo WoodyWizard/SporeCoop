@@ -252,3 +252,17 @@ ascending bit order (BUG-0219).
   Switches: `coop.fix net.peer_caps`, `net.rejoin_token` (off = the 0.7.3.0 name rule of BUG-0209),
   `core.rejoin_name` (off = never replace), `pool.meals_trim`. `net_tests --off <peer_caps|rejoin_token|addr_label|update_paths>`
   turns one switch off.
+
+## Support diagnostics: MSG_DIAG (2026-10-29, feat/w7-diag)
+<a id="netcode-diag"></a>
+
+* `MSG_DIAG = 60`, `u8 kind` + payload (`net/diagmsg.h`): clock request / answer (guest <-> host,
+  unreliable; the guest keeps the answer with the shortest round trip of the last 12), bug mark
+  (any -> host -> all, reliable, `u8 origin, f64 session time, str8 name, str8 text`; the host sets
+  origin and name), digest request / digest / result of the sync self-check (reliable; a Cell
+  digest is ~6 KB: split for peers with `CAP_SPLIT`). An older SporeCoop drops the unknown type
+  (host: `cb.custom` falls through; guest: `world::on_message` ignores it): no protocol bump.
+* `ConnStats` gained `bytes_sent`, `bytes_recv`, `lost` (a sent packet that an ack 32 to 128
+  packets later does not have; further back the ack bits say nothing, so a bulk transfer that
+  outruns them counts nothing) and the round-trip samples of a window (`rtt_min/max/sum/n`,
+  `take_window()`). `Session::conn_to(id)` gives the connection for the statistics.
