@@ -1627,3 +1627,18 @@ wrong. Suite `campaign` (in no other suite): `tools/lab.py run campaign --lanes 
   still in the game's object list. `SPORE_FIX_OFF=world.leave_avatar` is the twin, but the bug did
   not show with 2 players (BUG-0264: no-fail-run), so both sides pass today.
 * Timing: a share round takes ~15 s (leaving 0.7 s, menu settle 3 s, load, rejoin).
+
+## Cell: the stage ends while the consoles keep asking (2026-10-29, fix/w6-cell)
+<a id="testing-cell-evolve-poll"></a>
+
+* `coop_cell_evolve_poll.py` (suite `cell_evolve_poll`, BUG-0271): the `cell` fixture, four poller
+  threads (own console connections) ask both games `coop.status`, `coop.avatar` and `coop.sync` as
+  fast as they answer (~3 600 calls per game) while the host ends the Cell stage the players' way
+  (food 1000, captions, History, its check) and both get into the Creature stage. Fails when a game
+  faults, dies or freezes. `SPORE_FIX_OFF=core.stale_local` must FAIL (3 of 4 runs did, the host or
+  the guest at modes::cell_fill +0x54 or game::species_profile). About 2 minutes (4 when it fails).
+* The window is the game's own loading step between two frames; the test catches it only because
+  the console commands run from the game's message pump there. `coop.cellgone` shows whether a run
+  reached it (`local_refused`, `puppet_refused`, `pool_gone`).
+* Pitfall: two `lab.py run` started in the same second from one worktree get the same run id and
+  write into the same `out/lab/<id>/` (logs mixed); start them a few seconds apart.

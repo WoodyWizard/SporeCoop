@@ -678,3 +678,31 @@ pointer, +0x111 and +0xFC). Tests: `coop_cell_respawn.py [--swap]`, `coop_cell_e
   after the editor does not happen; `coop.pool invulnfor <s>` (tests) sets the flag and the timer
   as a respawn does. The pool after the editor return starts smaller (live 383 -> 215) and fills
   up again.
+
+## The pool freed between our frames on the way Cell -> Creature (2026-10-29, fix/w6-cell)
+<a id="cell-pool-freed-between-frames"></a>
+
+BUG-0271. GOG 2024, lanes 4 and 5, `tools/tests/coop_cell_evolve_poll.py`.
+
+* ✔ After History's check the game changes the mode to Creature and frees the cell pool (its own
+  3.7 MB mapping, `0x398 * 4096`) inside one step of its loop: when the mod first saw the freed block,
+  `G+0x1C` already read `0x0000BAAD` and `mode_id()` already read Creature. Our frame probe (every
+  frame in Cell, VirtualQuery of the block) never saw a frame in Cell with the block gone (0 windows
+  in 6 two-player runs): the teardown and the planet load run between two of our frames.
+* ✔ In that gap the game's loading code pumps window messages; SporeKit runs queued main-thread
+  console commands from that pump (WM_SK_PUMP), and the keepalive's network update runs outside the
+  frame when frames stop for 0.5 s. Our state of the last frame (g_mode Cell, g_local = the local
+  cell, the partners' puppet cells) is stale there. The crash stacks show it: the game frames above
+  the fault are the creature planet's terrain (`cTerrainMapSet::GetHeight`, `cPlanetModel::ToSurface`).
+  Faults seen with the fix off: modes::cell_fill reading `+0x54` of a freed cell from `coop.status`
+  (a puppet) or `coop.avatar` / `coop.sync` (the local cell), on the host and on the guest (it
+  leaves its Cell stage the same way when it follows), and `game::species_profile` reading
+  `cell+0xB20` from `coop.avatar` (it asked the creature function on a cell).
+* `*cCellGame::_ptr` stays set and the cCellGame object stays readable (as in section 13), so
+  `cell_game() != nullptr` is still no proof of anything.
+* The fix (`core.stale_local`): `modes::cell_at` reads a cell only from a pool block that VirtualQuery
+  still finds committed (cached for our frame scope, where no game code runs; every call outside
+  it); `cell_fill` reads only the live local cell or a live puppet; commands use the local entity
+  and the puppets only while `mode_id()` is still the frame's mode, the stage is not being left
+  (BUG-0264) and the adapter still finds them (`local_now()` / `puppet_now()` in coop.cpp).
+* `coop.cellgone` (any thread): pool checks, refusals, and the frame probe's counters.
