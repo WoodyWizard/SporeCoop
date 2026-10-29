@@ -10,6 +10,8 @@ Every frame the mod detects the game mode (`GetActiveModeID`) and picks an **ada
    **place** match. By default the place is the current save's name (crc32 of the
    `CurrentGameName` string, 0x0167EF40). In space the place is a star or planet; in adventures
    it is the adventure key.
+   After the live Creature -> Tribe change the game's name reads `snapshot.spo` until the next save:
+   the planet read before it stays the place (BUG-0258, docs/re/tribe.md#tribe-snapshot-name).
 
 `PlayerState` (protocol v2) carries `mode` and `world`, so the panel shows who is where:
 `Bob [Space]`, `Bob [Adventure, other world]`.

@@ -1597,3 +1597,22 @@ wrong. Suite `campaign` (in no other suite): `tools/lab.py run campaign --lanes 
   Cell ~1 min and Creature ~3 min changes, Tribe 20 min and the jump (~1 min), Civ ~8-10 min,
   the finale ~6 min, follows and rejoins a few minutes: about 2-2.5 h. The lab's timeout for it is 5 h
   (suite field `timeout`).
+
+## Tribe: the live Creature -> Tribe change with two players (2026-10-29, fix/w5-snapshot)
+<a id="testing-tribe-snapshot"></a>
+
+* `coop_tribe_snapshot.py` (suite `tribe_snapshot`, BUG-0258): the `creature` fixture, the host's
+  evolution bar full (`AddEvolutionPoints 3000`, the only shortcut), then the players' way: History
+  and its check, the guest's real "I'm ready" (F9), "done" in the editors, the captions of the fire
+  cinematic and the Tribe intro. Waits until the guest is together with the host in Tribe (without
+  the fix this already fails when the game's own rename to `snapshot.spo` came after the host's
+  last save, as in lab run 20261029-062544). Then it forces the rename the game does (`mem.write` of
+  "snapshot.spo" into the name's UTF-16 buffer, same length as the fixture's "Scalinus.spo"; the
+  next save sets it back) and checks for 40 s: the same place on both, `together 1 1` all the time,
+  a puppet of the guest on the host, the guest does not hide the host.
+  `SPORE_FIX_OFF=world.snapshot_name` (or `--nofix`) must FAIL. About 8 minutes.
+* Pitfall: the campaign's noise "pause" can leave the host's pause menu open when the stage change
+  starts; the History clicks then do nothing and the advance times out (run 20261029-060328 on
+  lane 3). `--noise 0` avoids it.
+* `coop.avatar` ends with `game_name '<CurrentGameName as is>'`; `world '...'` is the name the mod
+  uses (the planet through `snapshot.spo`).

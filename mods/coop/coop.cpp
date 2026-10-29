@@ -1474,6 +1474,7 @@ void on_frame(void*, int, void*)
     notify::tick(now);
     game::world_epoch(); // BUG-0119: sees every frame outside the creature stage
     game::stage_epoch_tick(); // BUG-0217: before any message or module tick of this frame
+    modes::world_name_tick(); // BUG-0258: the planet stays known through snapshot.spo
     modes::test_tick();       // BUG-0223 tests: a forced frame without the local entity
     tribe::world_check();     // BUG-0217: the Tribe world changed (not an editor visit)
     civ::world_check();       // BUG-0223: the Civ world changed (not a frame without the city anchor)
@@ -2558,6 +2559,7 @@ int c_avatar(void*, int, const char* const*, SkOut* out)
 
     if (g_adapter->mode == modes::kCreature) // age +0xB34 (0 hatchling, 1 adult), the hatchling waiting for its family
         SAY(" age=%d hatchling_waiting=%d", *(int*)((uint8_t*)av + 0xB34), (int)game::hatchling_waiting(av));
+    SAY("\ngame_name '%s'", modes::raw_world_name().c_str()); // BUG-0258: CurrentGameName as is
     return 0;
 }
 

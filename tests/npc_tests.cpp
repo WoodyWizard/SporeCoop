@@ -13,6 +13,7 @@
 #include "stage_epoch.h"
 #include "share_wait.h"
 #include "swap_ledger.h"
+#include "world_name.h"
 
 static int g_fail = 0;
 #define CHECK(c)                                                         \
@@ -336,11 +337,33 @@ static void test_share_wait()
     CHECK(d[0].sent_at == 4003 && d[1].sent_at == 4003);
 }
 
+// BUG-0258: the game's save name reads "snapshot.spo" after the live Creature -> Tribe change; the
+// planet played before it stays the player's world (world_name.h). --nofix: the raw name (fails).
+static void test_world_name()
+{
+    using world_name::effective;
+    bool fix = !g_nofix;
+    world_name::State s;
+    CHECK(effective(s, "SaveGame", fix) == "SaveGame");       // galaxy menu
+    CHECK(effective(s, "snapshot.spo", fix) == "snapshot.spo"); // nothing known: as is
+    CHECK(effective(s, "Scalinus.spo", fix) == "Scalinus.spo"); // the game loaded
+    CHECK(effective(s, "snapshot.spo", fix) == "Scalinus.spo"); // the Tribe intro: still Scalinus
+    CHECK(effective(s, "snapshot.spo", fix) == "Scalinus.spo"); // ... for minutes
+    CHECK(effective(s, "Scalinus.spo", fix) == "Scalinus.spo"); // the next save: the same place
+    CHECK(effective(s, "SaveGame", fix) == "SaveGame");         // back in the menu: forgotten
+    CHECK(effective(s, "snapshot.spo", fix) == "snapshot.spo"); // a new game never inherits it
+    CHECK(effective(s, "Земля.spo", fix) == "Земля.spo");
+    CHECK(effective(s, "Cadian.spo", fix) == "Cadian.spo");     // another planet loaded
+    CHECK(effective(s, "snapshot.spo", fix) == "Cadian.spo");
+    CHECK(!world_name::is_planet("snapshot.spo") && !world_name::is_planet("a\\b.spo") && !world_name::is_planet(".spo"));
+}
+
 int main(int argc, char** argv)
 {
     g_nofix = argc > 1 && std::string(argv[1]) == "--nofix";
     test_share_wait();
     test_stage_epoch();
+    test_world_name();
     test_savestrip_rule();
     test_drive();
     test_ids();

@@ -272,3 +272,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0260](BUG-0260-coop-tribe-act-15-npc-member-on-the-host-faults.md) | open | tooling | Tribe | 2026-10-29 |  | coop.tribe act 15 <npc member> on the host faults in cCreatureCitizen::DoAction (debug command) |
 | [BUG-0261](BUG-0261-phase-the-guest-s-console-stops-answering-after.md) | open | freeze | Tribe | 2026-10-29 |  | phase: the guest's console stops answering after the host pulls it back into Tribe (2 of 7 runs) |
 | [BUG-0262](BUG-0262-space-rivalry-the-guest-s-puppet-is-missing-on-t.md) | open | test | Space | 2026-10-29 |  | space_rivalry: the guest's puppet is missing on the host's home planet (1 of 4 runs) |
+| [BUG-0258](BUG-0258-after-a-live-creature-to-tribe-stage-change-the.md) | fixed | desync | Tribe | 2026-10-29 | unreleased | after a live Creature to Tribe stage change the host plays 'snapshot.spo' and no guest is ever together with it |
+| [BUG-0259](BUG-0259-lab-py-run-lane-2-is-taken-as-lanes-2-and-runs-o.md) | fixed | tooling | all | 2026-10-29 | unreleased | lab.py run --lane 2 is taken as --lanes 2 and runs on lane 1 |
+| [BUG-0260](BUG-0260-coop-tribe-act-15-npc-member-on-the-host-faults.md) | open | tooling | Tribe | 2026-10-29 |  | coop.tribe act 15 <npc member> on the host faults in cCreatureCitizen::DoAction (debug command) |
+| [BUG-0263](BUG-0263-campaign-a-noise-pause-left-open-on-the-host-blo.md) | open | test | Creature | 2026-10-29 |  | campaign: a noise pause left open on the host blocks the stage change (History clicks do nothing) |
