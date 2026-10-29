@@ -140,8 +140,8 @@ def check_round(ck, host, guests, label, report):
     h1 = sample(host)
     worst = {}
     for name, g in guests.items():
-        errs, cov, total = measure(host, g, h1)
-        over = [k for k, v in errs.items() if pct(v, 0.9) > limit(k)]
+        errs, cov, total, _ = measure(host, g)
+        over = [k for k, v in errs.items() if over_limit(v, limit(k))]
         # one moment of one guest: a guest that has just rejoined spawns its NPC proxies within
         # seconds (a churn right before the round), a fight can throw a few NPCs for a moment. A
         # real desync stays: measure again
@@ -153,7 +153,7 @@ def check_round(ck, host, guests, label, report):
             wait_all(host, len(guests), 90)  # a churn just before the round: the guest is still loading
             time.sleep(4)
             h1 = sample(host)
-            errs, cov, total = measure(host, g, h1)
+            errs, cov, total, _ = measure(host, g)
         kinds = {}
         for k in h1:
             kinds[k[0]] = kinds.get(k[0], 0) + 1
@@ -161,11 +161,11 @@ def check_round(ck, host, guests, label, report):
         for kind, v in sorted(errs.items()):
             p90 = pct(v, 0.9)
             line += f', {kind} p90 {p90:.2f} m'
-            worst[(name, kind)] = (p90, limit(kind))
+            worst[(name, kind)] = (p90, limit(kind), over_limit(v, limit(kind)))
         report.append(f'  [{label}] {line}')
         ck(cov >= 0.85, f'[{label}] {name} has the host\'s world ({cov:.0%})')
-    for (name, kind), (p90, lim) in worst.items():
-        ck(p90 <= lim, f'[{label}] {name}: {kind} objects in sync (p90 {p90:.2f} m <= {lim} m)')
+    for (name, kind), (p90, lim, over) in worst.items():
+        ck(not over, f'[{label}] {name}: {kind} objects in sync (p90 {p90:.2f} m, limit {lim} m for 10 % and 2 objects)')
     hr = res(host)
     for name, g in guests.items():
         gr = res(g)
@@ -187,11 +187,36 @@ def seg_dist(p, a, b):
     return sum((q - (x + t * v)) ** 2 for q, x, v in zip(p, a, d)) ** 0.5
 
 
-def measure(host, g, h1):
-    """position errors per kind of one guest against host samples, coverage, objects counted"""
+# the host's path is sampled over this much time before the guest is read: the guest shows NPCs
+# 0.15 s late on purpose (npc.cpp buf.delay) and cells from their last state (0.1 s), and a guest
+# read ~10 ms after the host's sample lay outside that sample's segment (BUG-0275)
+LAG_GAP = 0.25
+
+
+def host_path(host):
+    """two host samples LAG_GAP apart: the start of the host's path the guest is compared with"""
+    h0 = sample(host)
+    time.sleep(LAG_GAP)
+    return h0, sample(host)
+
+
+def over_limit(v, lim):
+    """a kind is out of sync when at least 10 % of its objects, and at least two of them, are
+    farther than the limit. With fewer than 10 objects (2 of 3 checks in the Creature stage) the
+    90th percentile was the largest error: one object off (a proxy pushed by the guest's own
+    avatar, BUG-0281) made the whole kind a desync (BUG-0275)"""
+    n = sum(1 for e in v if e > lim)
+    return n >= max(2, len(v) - int(0.9 * len(v)))
+
+
+def measure(host, g, path=None):
+    """position errors per kind of one guest against the host's path (host_path() before the
+    guest's sample, one more host sample after it), coverage, objects counted.
+    Returns errs {kind: [m]}, coverage, total, worst {kind: (m, key)}"""
+    h0, h1 = path or host_path(host)
     gs = sample(g)
     h2 = sample(host)
-    errs = {}
+    errs, worst = {}, {}
     missing = 0
     me = gs.get(my_key(g, gs))
     total = 0
@@ -206,11 +231,12 @@ def measure(host, g, h1):
         if gp is None:
             missing += 1
             continue
-        hp2 = h2.get(key, hp)
-        e = seg_dist(gp, hp, hp2)
+        e = min(seg_dist(gp, h0.get(key, hp), hp), seg_dist(gp, hp, h2.get(key, hp)))
         errs.setdefault(key[0], []).append(e)
+        if e > worst.get(key[0], (-1, ''))[0]:
+            worst[key[0]] = (e, key)
     cov = 1 - missing / total if total else 1
-    return errs, cov, total
+    return errs, cov, total, worst
 
 
 def main():

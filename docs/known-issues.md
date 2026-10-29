@@ -780,3 +780,22 @@ Lab 20261029-122937 (4 players, three full games, three Cell -> Creature games; 
 * Not checked: whether the guests could keep the NPCs of their own area (their game runs them
   while the host is away) or the host's game can be made to keep creatures around the puppets.
 * Ticket: BUG-0280.
+* (Fixed on fix/w7-sync, BUG-0275: the 3rd and 4th player measured as close to the host as the
+  2nd; the findings were single objects and the check's timing. What remains: one NPC proxy next
+  to the guests' avatars ~4 m off, BUG-0281; cells trail at a low frame rate, BUG-0282.)
+* After the change to Tribe three guests were not in the host's world for 300 s; a rejoin fixed it
+  (once). Ticket: BUG-0276.
+* Reproduce: `tools/lab.py run campaign --lane N` (about 85 min) or `campaign_short` (9 min).
+
+## Creature: an NPC proxy next to a guest's avatar stays ~4 m off (2026-10-29, fix/w7-sync)
+
+* One host NPC standing 3-5 m from the guests' avatars was 3.8-4.3 m from its interpolation target
+  on every guest at once (`coop.npc list` on a guest: `err=4.33`). Likely pushed by the guest's own
+  avatar (inferred). Reproduce: `SPORE_LANE=N python3 tools/tests/coop_sync_multi.py --fixture
+  creature --rounds 45` and `coop.npc list` on a guest. Ticket: BUG-0281.
+
+## Cell: a guest's mirrors trail the host's cells at a low frame rate (2026-10-29, fix/w7-sync)
+
+* At 15 fps (`frame.limit 66`) 283 of 13165 compared cells were 1.2-2.3 m behind the host's (about
+  0.65 s of their way), at 30 fps 2, at 65 fps 1. Reproduce: `FPSLIM=Carol:66 SPORE_LANE=N python3
+  tools/tests/coop_sync_multi.py --fixture cell --rounds 25`. Ticket: BUG-0282.

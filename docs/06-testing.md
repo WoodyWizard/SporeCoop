@@ -1667,3 +1667,24 @@ wrong. Suite `campaign` (in no other suite): `tools/lab.py run campaign --lanes 
   proxies (median distance to the host's NPC 0.1-0.2 m).
 * The campaign census (`census.py`, `campaign_lib.census_problems`) needed no change: a pooled
   object of the host has no net id now (`own=local`), and `diff` only pairs ids.
+## Sync per player with four players (2026-10-29, fix/w7-sync)
+<a id="testing-sync-per-player"></a>
+
+* `SPORE_LANE=N python3 tools/tests/coop_sync_multi.py --fixture cell|creature --rounds 40`
+  (~4 s per check, ~10 min with the start): 4 players, the stage's play bot on every machine, each
+  guest's cells / NPCs against the host's path in a rotating order; per guest the median and
+  largest p90, the checks over the limit and the frame rate. `FPSLIM=Carol:66` forces 15 fps on a
+  guest, `--jsonl` keeps every object's error. A measurement, no pass / fail (BUG-0275).
+* coop_multi.measure compares a guest with the host's path over the 0.25 s before its sample and
+  after it: the guest shows NPCs 0.15 s late on purpose, a host sample taken 10 ms before the
+  guest's counted that lag as a desync. coop_multi.over_limit: out of sync when 10 % of a kind's
+  objects and at least two are beyond the limit; a guest often has fewer than 10 NPCs within 90 m,
+  and p90 of fewer than 10 is the largest error (one object off failed the kind).
+* Measured on lane 6 (65 fps, 4 games): the 3rd and 4th player (instances 20+N / 30+N) are as close
+  to the host as the 2nd (Creature p90 median 0.3-0.7 m, Cell 0.01 m). Cells trail with the frame
+  rate (15 fps: 283 of 13165 cells over 1.2 m, BUG-0282). Extra instances share grid cells with
+  other lanes' games ((instance - 1) mod 24: 36 with 12, 37 with 13, 27 with 3); in lane 6 the
+  shared cell did not lower the frame rate.
+* The campaign prints every guest's p90, object count, worst object and each game's frame rate
+  next to a desync finding (`sync: ...`).
+
