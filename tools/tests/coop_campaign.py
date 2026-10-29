@@ -950,9 +950,15 @@ class Campaign:
         self.note('shortcut: coop.space finale goto near (the host crosses the galaxy)')
         fz.sp(h.con, 'finale goto near')
         fz.wait(lambda: fz.fin(h.con).get('zone') == '2', 30)
-        self.note('shortcut: coop.space finale goto core')
-        fz.sp(h.con, 'finale goto core')
-        fz.wait(lambda: fz.fin(h.con).get('zone') == '3', 30)
+        # BUG-0277: the arrival near the core plays a cinematic (the Grox contact); a `goto core` sent
+        # while it runs leaves the host in zone 2. Let it end first, and try again if needed.
+        for i in range(3):
+            fz.settle(h.con, h.name, timeout=60)
+            self.note('shortcut: coop.space finale goto core' + (f' (again, {i + 1})' if i else ''))
+            fz.sp(h.con, 'finale goto core')
+            if fz.wait(lambda: fz.fin(h.con).get('zone') == '3', 30):
+                break
+            fz.to_galaxy(h.con, h.name, lambda ok, what: None)
         fz.settle(h.con, h.name)
         for _ in range(40):
             if fz.fin(h.con).get('ctx') == '1':
