@@ -18,12 +18,13 @@ saves, and keep the knowledge files honest. Every check runs on fakes in a tempo
             repository, known `switch:` names; release refuses such tickets (BUG-0215, BUG-0214)
   relint    re_lint.py flags an overrides entry without a confidence word also when a generated
             .sym has the same name (BUG-0086)
-  triage    tools/crash_triage.py reads a report and finds the known ticket (BUG-0158)
+  triage    tools/crash_triage.py reads a report and finds the known ticket (BUG-0158); one signature per
+            place: exit-time, log and short crash files, crash line first (BUG-0247)
   release   tools/release_check.sh: the tag must match COOP_VERSION and the notes are exactly the
             tag's CHANGELOG section (BUG-0097)
 
   tools_selftest.py [check ...]      all checks by default; exit 1 when one fails
-Environment: SELFTEST_SPORE / SELFTEST_TICKETS / SELFTEST_RELINT / SELFTEST_RELEASE run a check
+Environment: SELFTEST_SPORE / SELFTEST_TICKETS / SELFTEST_RELINT / SELFTEST_RELEASE / SELFTEST_TRIAGE run a check
 against another copy of the tool (an old version: the check must FAIL there)."""
 import os
 import shutil
@@ -38,6 +39,7 @@ SPORE = os.environ.get('SELFTEST_SPORE', os.path.join(ROOT, 'tools', 'spore.sh')
 TICKETS = os.environ.get('SELFTEST_TICKETS', os.path.join(ROOT, 'tools', 'tickets.py'))
 RELINT = os.environ.get('SELFTEST_RELINT', os.path.join(ROOT, 'tools', 're_lint.py'))
 RELEASE = os.environ.get('SELFTEST_RELEASE', os.path.join(ROOT, 'tools', 'release_check.sh'))
+TRIAGE = os.environ.get('SELFTEST_TRIAGE', os.path.join(ROOT, 'tools', 'crash_triage.py'))
 HEADLESS = os.environ.get('SELFTEST_HEADLESS', os.path.join(ROOT, 'tools', 'headless.sh'))
 fails = []
 
@@ -390,7 +392,7 @@ def test_release():
 # ---------------------------------------------------------------- crash triage
 def test_triage():
     print('triage: crash_triage.py on a made-up report of a known crash')
-    tool = os.path.join(ROOT, 'tools', 'crash_triage.py')
+    tool = TRIAGE
     if not os.path.exists(tool):
         check(False, 'tools/crash_triage.py exists (CLAUDE.md 5 and the fix-player-report skill name it)')
         return
@@ -408,6 +410,37 @@ def test_triage():
     check('GOG 2024' in out and 'coop 0.7.2.3' in out and 'mode Creature' in out, 'build, version and stage read')
     check('dc04aee5:SporeApp.exe Foo::Bar+0x20' in out, 'the signature names build and place')
     check('BUG-0018' in out, 'the known ticket of 0xC6AE60 is found (BUG-0018)')
+
+    # BUG-0247: one signature per place, whatever thread wrote the report and whatever file it is
+    def sigs(name, text):
+        p = os.path.join(TMP, name)
+        open(p, 'w').write(text)
+        out = subprocess.run([sys.executable, '-I', tool, p], capture_output=True, text=True).stdout
+        return [l for l in out.splitlines() if l.startswith(('signature', 'build'))]
+    env = 'SporeKit 0.7.3.0, game GOG 2024 (exe dc04aee5a3debc3f1ad4c1a937460e99a29b9bd3bc285008be83615dd5e59a37)\n'
+    want = 'signature  dc04aee5:SporeApp.exe Simulator::cNest::Foo+0x20   (0xC0000005 at 0x00C6AE60)'
+    got = sigs('crash-20261028-101010.txt', 'SporeCoop crash (the game ends (ExitProcess 0), seconds after a fault)\n'
+               + env + 'game mode: Creature\n== Exception\n0xC0000005 access violation at 0x00C6AE60 SporeApp.exe '
+               'Simulator::cNest::Foo+0x20 (thread 4242, the game\'s main thread)\n')
+    check(want in got, f'(a) an exit-time report on the main thread: no thread text in the signature ({got[-1:]})')
+    got = sigs('sporekit.log', 'line a\n[ERROR] the game crashed: exception 0xC0000005 at 0x00C6AE60 SporeApp.exe '
+               'Simulator::cNest::Foo+0x20\nsymbols: overrides_dc04aee5.sym\nlast line\n')
+    check([g for g in got if g.startswith('signature')] == [want], f'(b) the crash line in the middle of a log ({got})')
+    got = sigs('crash-20261028-2.txt', 'SporeCoop crash crash-20261028-2 (short: the full report is being written '
+               'over this file)\nSporeKit 0.7.3.0, game GOG 2024\nexception 0xC00000FD stack overflow at 0x00401000 '
+               'SporeApp.exe Foo+0x1 (thread 12)\n')
+    check('signature  dc04aee5:SporeApp.exe Foo+0x1   (0xC00000FD at 0x00401000)' in got,
+          f'(c) a short stack-overflow crash file: the full report\'s signature and exe ({got})')
+    log = ''.join(f'[WARN] exception 0xC0000005 at 0x0040100{i} SporeApp.exe Bar+0x{i} (data 0x0)\n' for i in range(4))
+    got = sigs('sporekit.1.log', 'symbols: overrides_dc04aee5.sym\n' + log + '[ERROR] the game crashed: exception '
+               '0xC0000005 at 0x00C6AE60 SporeApp.exe Simulator::cNest::Foo+0x20\n')
+    check([g for g in got if g.startswith('signature')][:1] == [want],
+          f'(d) four fault-logger lines before the crash line: the crash comes first ({got[1:2]})')
+    got = sigs('crash-20261028-3.txt', 'SporeCoop crash\n' + env + 'run: instance 1, profile own, pid 1234\n'
+               'mods: coop 0.7.3.0\n== Exception\n0xC0000005 access violation at 0x00C6AE60 SporeApp.exe '
+               'Simulator::cNest::Foo+0x20 (thread 7)\n')
+    check(want in got and 'build      GOG 2024 (exe dc04aee5), SporeKit 0.7.3.0, coop 0.7.3.0, mode ?' in got,
+          f'(e) a `run:` Environment line changes nothing ({got})')
 
 
 # ---------------------------------------------------------------- noenv (BUG-0252)
