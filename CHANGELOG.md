@@ -3,6 +3,9 @@
 ## [Unreleased]
 
 ### Fixed
+- Tribe: after the Creature stage ended the players' way, the host saw no guest in its Tribe world
+  (no partners, "together" never reached) until its next save. The host now stays in its planet's
+  world through the game's temporary save name (BUG-0258).
 - Tribe: after the host visited an editor, the co-op epic creature was no longer tracked: it went
   into the shared save and the world of every guest, stayed after the session and a second one
   came later. An editor visit no longer counts as a new world (BUG-0217).

@@ -720,3 +720,27 @@ BUG-0217. GOG 2024, lane 5.
 * Not measured (issue #151 step 0): the pause-menu Load, the game-over bounce back and Civ to
   Space routes frame by frame. A route that reloads without any non-stage frame relies on the
   in-stage signals.
+
+## The save name after the live Creature -> Tribe change: snapshot.spo (2026-10-29, fix/w5-snapshot)
+<a id="tribe-snapshot-name"></a>
+
+BUG-0258. GOG 2024.
+
+* ✔ After the game's own Creature -> Tribe change (History, the fire cinematic, the Tribe intro)
+  `CurrentGameName` (string16 0x0167DF60) reads `snapshot.spo`, the game's temporary file, and
+  stays so until the game is saved again (four-player campaign runs 20261029-001119 and
+  20261029-011243 on dev/campaign: 5+ minutes). The next save (pause menu, `coop.save`, the save
+  before a world share) sets it back to the planet's file (`Cadian.spo`).
+* ✔ The host's share saves right after the mode turned Tribe still read the planet's name
+  (`sharing ... planet Scalinus` twice within 6 s of the change): the rename comes later, during
+  the Tribe intro, so those saves do not help.
+* ✔ Effects before the fix: the place id of a player (crc32 of that name, `modes::current_world`)
+  was crc32("snapshot.spo") = 0x6F3BE084 on the host and the planet's on every guest: `together N
+  0`, no puppets, for good. The same name was the lobby text and the in-stage "another save name"
+  signal of `tribe::world_check` (BUG-0217) and `civ::world_check`, so the rename and the next save
+  each looked like a new world.
+* ✔ Now (`mods/coop/world_name.h`): `modes::current_world_name` keeps the last planet file read
+  while the game says `snapshot.spo`; read once per frame (`modes::world_name_tick`, top of
+  on_frame), forgotten when the name is anything else ("SaveGame" in the galaxy menu), so a new
+  game never inherits an old planet. `coop.avatar` prints the game's own name as `game_name`.
+  Switch `coop.fix world.snapshot_name`.

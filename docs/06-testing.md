@@ -1597,3 +1597,16 @@ wrong. Suite `campaign` (in no other suite): `tools/lab.py run campaign --lanes 
   Cell ~1 min and Creature ~3 min changes, Tribe 20 min and the jump (~1 min), Civ ~8-10 min,
   the finale ~6 min, follows and rejoins a few minutes: about 2-2.5 h. The lab's timeout for it is 5 h
   (suite field `timeout`).
+
+## Tribe: the live Creature -> Tribe change with two players (2026-10-29, fix/w5-snapshot)
+<a id="testing-tribe-snapshot"></a>
+
+* `coop_tribe_snapshot.py` (suite `tribe_snapshot`, BUG-0258): the `creature` fixture, the host's
+  evolution bar full (`AddEvolutionPoints 3000`, the only shortcut), then the players' way: History
+  and its check, the guest's real "I'm ready" (F9), "done" in the editors, the captions of the fire
+  cinematic and the Tribe intro. Checks that the host's game name read `snapshot.spo` (the bug's
+  condition; the run fails without it), then the same place on both, `together 1 1`, a puppet of
+  the guest on the host and "Alice appeared in the world" in the guest's log after its load.
+  `SPORE_FIX_OFF=world.snapshot_name` (or `--nofix`) must FAIL. About 10 minutes.
+* `coop.avatar` ends with `game_name '<CurrentGameName as is>'`; `world '...'` is the name the mod
+  uses (the planet through `snapshot.spo`).
