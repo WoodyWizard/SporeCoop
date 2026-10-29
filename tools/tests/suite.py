@@ -66,6 +66,7 @@ add('leave_cleanup', P + 'coop_leave_cleanup.py', minutes=4, fixture='space')  #
 add('space_coop', P + 'coop_space.py', ('smoke',), warm=True, minutes=2, fixture='space')
 add('stage_switch', P + 'coop_stage_switch.py', minutes=13)  # every stage pair that matters, in game
 add('vote', P + 'coop_vote.py', minutes=5)
+add('vote_caption', P + 'coop_vote_caption.py', minutes=4)  # a guest's I'm ready counts while a caption holds the input lock (BUG-0273; SPORE_FIX_OFF=core.ui_locked_clicks fails)
 add('vote_stale', P + 'coop_vote_stale.py', minutes=5)  # a vote ends with its session and its stage (BUG-0043)
 add('vote_end_editor', P + 'coop_vote_drop_editor.py --case 1', minutes=3)  # a guest's own editor due from a vote does not open after a Leave (BUG-0234; --nofix fails)
 add('vote_drop_editor', P + 'coop_vote_drop_editor.py --case 2', minutes=3)  # a cancelled evolution vote opens no guest editor (BUG-0234; --nofix fails)
