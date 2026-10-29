@@ -43,7 +43,7 @@ def wait(fn, t, step=0.5):
 
 
 def main():
-    rounds = int(sys.argv[sys.argv.index('--rounds') + 1]) if '--rounds' in sys.argv else 4
+    rounds = int(sys.argv[sys.argv.index('--rounds') + 1]) if '--rounds' in sys.argv else 6
     host, guest = start('creature')
     ck = Checks()
     ck(twoinst.wait_guest_in(host, guest), 'the guest plays in the host\'s world')

@@ -510,10 +510,14 @@ void leave_probe_tick(void* used)
         return;
     g_leave.frames++;
     void* raw = avatar_raw();
-    if (raw && !(creature_vtables_ok(raw) && creature_listed(raw)))
+    bool raw_ok = raw && creature_vtables_ok(raw) && creature_listed(raw);
+    if (raw && !raw_ok)
         g_leave.raw_gone++;
-    if (used && used == raw && !(creature_vtables_ok(used) && creature_listed(used)))
+    bool used_bad = used && used == raw && !raw_ok;
+    if (used_bad)
         g_leave.used_gone++;
+    H->log(M, used_bad ? SK_WARN : SK_INFO, "game: leaving frame %.3f s after the quit: avatar %p %s, used %p",
+           H->time_seconds() - g_leave_at, raw, !raw ? "none" : raw_ok ? "listed" : "GONE", used);
 }
 
 // BUG-0119: which creature world the game plays, as a counter. The avatar's address is no world
