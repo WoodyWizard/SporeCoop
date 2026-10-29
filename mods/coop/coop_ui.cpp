@@ -11,6 +11,7 @@
 #include "modes.h"
 #include "mouse.h"
 #include "net/fixes.h"
+#include "notify.h"
 #include "net/udp.h"
 #include "notify_text.h"
 #include "space_ext.h"
@@ -321,8 +322,10 @@ void session_event(bool connected, const std::string& why)
 
 static void save_str(const char* section, const char* key, const std::string& v)
 {
-    if (H->config_set_str)
-        H->config_set_str(M, section, key, v.c_str());
+    // BUG-0245: SporeKit refuses a value that is not ASCII when the file could not be made Unicode
+    // (it became "????" before): say so instead of losing the typed text silently at the next start
+    if (H->config_set_str && H->config_set_str(M, section, key, v.c_str()) != 0)
+        notify::show(std::string("could not save the ") + key + ", try again", "danger");
 }
 static std::string load_str(const char* section, const char* key, const char* def)
 {
