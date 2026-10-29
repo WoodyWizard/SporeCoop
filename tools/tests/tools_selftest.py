@@ -21,6 +21,7 @@ saves, and keep the knowledge files honest. Every check runs on fakes in a tempo
             .sym has the same name (BUG-0086)
   triage    tools/crash_triage.py reads a report and finds the known ticket (BUG-0158); one signature per
             place: exit-time, log and short crash files, crash line first (BUG-0247)
+  campaign  the pure logic of the co-op campaign (campaign_lib.py): plan, stages, findings (BUG-0152)
   release   tools/release_check.sh: the tag must match COOP_VERSION and the notes are exactly the
             tag's CHANGELOG section (BUG-0097)
 
@@ -508,9 +509,73 @@ def test_docslint():
           'an entry without BUG-NNNN is flagged')
 
 
+def test_campaign():
+    print('campaign: the pure logic of coop_campaign.py (plan, stages, checks, findings)')
+    sys.path.insert(0, HERE)
+    import campaign_lib as cl
+    import census
+    check(cl.plan('cell', 'space') == [('play', 'cell'), ('advance', 'cell'), ('play', 'creature'),
+                                       ('advance', 'creature'), ('play', 'tribe'), ('advance', 'tribe'),
+                                       ('play', 'civ'), ('advance', 'civ'), ('play', 'space'), ('finale', 'space')],
+          'the whole game: five stages, four stage changes, the finale')
+    check(cl.plan('tribe', 'civ', finale=True) == [('play', 'tribe'), ('advance', 'tribe'), ('play', 'civ')],
+          'a resumed run starts at its stage, no finale before Space')
+    try:
+        cl.plan('civ', 'cell')
+        check(False, 'a plan that goes backwards is refused')
+    except ValueError:
+        check(True, 'a plan that goes backwards is refused')
+    check(cl.stage_of('0x01654C02 Tribe') == 'tribe' and cl.stage_of('0x00DBDBA1 Editor') is None
+          and cl.stage_of('0x02CCD1D2 GalaxyGameEntry') is None and cl.stage_of('') is None,
+          'game.mode: stages by name, editors and menus are no stage')
+    check(cl.faults_of('total faults: 3 (unique 1)') == 3 and cl.faults_of('no answer') is None, 'exc fault count')
+    r = cl.res_of('shared food=12.5 money=-3\nshared money=3000')
+    check(r == {'food': 12.5, 'money': 3000.0}, f'coop.res parsed ({r})')
+    check(cl.res_mismatch({'money': 3000.0, 'food': 10}, {'money': 3040.0, 'food': 11}) == [],
+          'an income tick between two reads is no mismatch')
+    check(cl.res_mismatch({'money': 3000.0}, {'money': 2000.0}) == [('money', 3000.0, 2000.0)]
+          and cl.res_mismatch({'food': 5.0}, {}) == [('food', 5.0, None)], 'a real difference and a missing total')
+    head = 'census v1 role={r} me={m} mode=Creature modeid=01654C01 world=AABBCCDD t=1.0\n'
+    row = 'obj c{i} key=11111111 alive={a} hp=10 ai=1 own={o} owner=0 pos=({x} 0 0)\n'
+    h = census.Census(head.format(r='host', m=0) + row.format(i=1, a=1, o='npc', x=0) + row.format(i=2, a=1, o='npc', x=500)
+                      + row.format(i=3, a=1, o='npc', x=5) + row.format(i=4, a=0, o='npc', x=6) + 'obj c-1 key=00000001 alive=1 hp=1 ai=1 own=avatar owner=0 pos=(0 0 0)\n')
+    g = census.Census(head.format(r='guest', m=1) + row.format(i=1, a=0, o='proxy', x=0) + row.format(i=9, a=1, o='proxy', x=1)
+                      + 'obj c-1 key=00000001 alive=1 hp=1 ai=1 own=avatar owner=1 pos=(2 0 0)\n')
+    pr = cl.census_problems(h, g)
+    check(any(p.startswith('c1: alive=1') for p in pr), f'census: dead on the guest, alive on the host ({pr})')
+    check(any(p.startswith('c3: the host has it') for p in pr) and not any(p.startswith(('c2', 'c4')) for p in pr),
+          'census: a missing NPC near the guest counts, one 500 m away (not streamed) or a corpse does not')
+    check(any(p.startswith('c9: the guest has it') for p in pr), 'census: a proxy the host does not have')
+    other = census.Census(head.replace('AABBCCDD', '11223344').format(r='guest', m=1))
+    check(len(cl.census_problems(h, other)) == 1, 'census: another world is one problem, not a list')
+    ps = cl.Persist(2)
+    check(ps.update(['a', 'b']) == [] and ps.update(['a']) == ['a'] and ps.update(['a']) == []
+          and ps.update(['b']) == [] and ps.update(['b']) == ['b'],
+          'persist: confirmed once on the second check in a row, a gap resets it')
+    folder = os.path.join(TMP, 'run')
+    t = [1000.0]
+    f = cl.Findings(folder, clock=lambda: t[0])
+    t[0] += 61
+    check(f.add('desync', 'x', 'Bob: kind n out of sync', 'creature/play', ['Alice', 'Bob'], ['log a']), 'a new finding')
+    check(not f.add('desync', 'x', 'again', 'creature/play', ['Bob']), 'the same key again only counts')
+    f.attach('desync', 'x', ['shot b'])
+    md = open(os.path.join(folder, 'findings.md')).read()
+    jl = open(os.path.join(folder, 'findings.jsonl')).read().splitlines()
+    check('Bob: kind n out of sync' in md and '* log a' in md and 'shot b' in md and '(+61 s)' in md
+          and 'stage creature/play' in md, 'findings.md has the text, the time, the stage and the evidence')
+    check(len(jl) == 1 and f.items[0]['repeats'] == 1 and f.summary() == {'desync': 1}, 'one json line, one repeat')
+    # the name's time is Wine's local time (an hour off here): the file time decides
+    names = [('crash-20261029-010000-i13.txt', 5000), ('crash-20261029-030000-i13.txt', 900),
+             ('report-20261029-020000-i27.txt', 1001), ('crash-20261029-030000-i3.txt', 5000),
+             ('sporekit.13.log', 5000), ('SporeCoop-report-20261029-020000-i27.zip', 5000)]
+    got = cl.new_reports(names, 1000, {13, 14, 27, 37})
+    check(got == ['crash-20261029-010000-i13.txt', 'report-20261029-020000-i27.txt'],
+          f'new reports: only the instances of the run, only since the start ({got})')
+
+
 CHECKS = {'noenv': test_noenv, 'docslint': test_docslint, 'kill': test_kill, 'fixture': test_fixture, 'headless': test_headless, 'tickets': test_tickets,
           'tickets_check': test_tickets_check, 'relint': test_relint,
-          'release': test_release, 'triage': test_triage}
+          'release': test_release, 'triage': test_triage, 'campaign': test_campaign}
 
 if __name__ == '__main__':
     if sys.argv[1:2] == ['--kill-inside']:

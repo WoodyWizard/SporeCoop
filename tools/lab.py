@@ -208,7 +208,7 @@ def run_one(t, lane, tree, logdir, warm, suffix=''):
     with open(log, 'w') as f:
         f.write(f'# {t["cmd"]}  (lane {lane}, {"warm" if warm else "cold"})\n')
         f.flush()
-        rc = run_cmd(t['cmd'], tree, env, f, TIMEOUT)
+        rc = run_cmd(t['cmd'], tree, env, f, t.get('timeout') or TIMEOUT)
     # a crash after the checks is still a crash (CLAUDE.md 3, BUG-0036): a game that answered at the
     # end must still answer a few seconds later, and no new crash / hang report may appear
     alive0 = lane_alive(lane)

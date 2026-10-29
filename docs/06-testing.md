@@ -1499,3 +1499,101 @@ module's reset into that module's `on_session_end()`.
   lock, and exits non-zero (BUG-0250). SIGHUP is left alone (nohup keeps working).
 * `lab.py kill --lanes 3` is refused as ambiguous: `--lane 3`, `--upto 3` (lanes 2..3) or
   `--lanes 2,3` (BUG-0253).
+
+## The co-op campaign: a whole game of four bot players (2026-10-29, dev/campaign)
+<a id="testing-campaign"></a>
+
+`tools/tests/coop_campaign.py` (BUG-0152) plays one co-op game with four players from the Cell
+stage to the galactic core, the way ordinary players play it, and writes down everything that goes
+wrong. Suite `campaign` (in no other suite): `tools/lab.py run campaign --lanes 1 --skip 1,2,3,4,5,6,8,9,10`
+(lane 7 only: `run` has no `--lane`, it is read as `--lanes`, BUG-0259) (the whole game,
+~2.5 h) or `campaign_short` (Cell, the first stage change, Creature: ~25 min).
+
+* **Players**: Alice (host) and Bob are the lane's two games, Carol and Dave are instances 20+N and
+  30+N in the same bottle (`coop_multi.start_extra`, profiles `mp1` / `mp2`). Four games of one lane,
+  nothing of other lanes.
+* **Phases** (`campaign_lib.plan`): play Cell, advance, play Creature, advance, play Tribe, advance,
+  play Civ, advance, play Space, the finale. `--from <stage>` resumes at a stage from its fixture
+  (`campaign_lib.FIXTURE`: cell, creature, tribe, civ_npc, space), `--to <stage>` stops after one,
+  `--minutes` is the play time per stage, `--advance-minutes` the time a stage change may take on the
+  host, `--no-finale`, `--no-jump`, `--no-rejoins`, `--noise 0.06`, `--seed N` (printed; the game is
+  not deterministic, a seed replays the bots' choices only).
+* **Play**: every player runs the stage's own bot (play_cell / play_creature / play_tribe /
+  play_civ / play_space Player classes, one thread each; the tribe Game steps its four players in
+  turn) wrapped in `Hands`: between bot steps it answers captions (green check after 4-7 s), votes
+  (F9 and a real click on "I'm ready"), editors ("done"), and with `--noise` chance does what players
+  do besides: idles 10-45 s, opens and closes the co-op window, the pause menu (not in Space), the
+  host saves. Once per stage a random guest leaves and joins again.
+* **Checks** every 30 s on every machine: dead console, a new crash / report file of the four
+  instances (by file time: the name has Wine's local time, which was an hour off), Monitor freezes,
+  `exc` fault count up, the guests' stage (`game.mode`) and `together` on the host (not in Space:
+  `together` there means the same star system, and players fly apart on purpose), per object kind
+  the 90th percentile position error against the host (twice `coop_sync.LIMITS`, coverage >= 85%,
+  `coop_multi.measure`), shared food / money (`coop.res`), the game's objects in Creature and Civ
+  (`coop.census`, `campaign_lib.census_problems`: host NPCs within 90 m of the guest's avatar that the
+  guest lacks, proxies the host lacks, alive/dead, owner, > 10 m apart). Stage, together, sync,
+  resources and census count only when seen in two checks in a row (`Persist`): a rejoin or a world
+  load is no desync. During rejoins and stage changes only the health checks run.
+* **Findings**: `out/lane<N>/campaign/<run>/findings.md` and `findings.jsonl`, one per key (repeats are
+  counted), with the time, stage/phase, players and evidence: the last 30 log lines of each game
+  involved and a screenshot of each (`<nn>_<kind>_<player>.log.txt`, `campaign_<nn>_<kind>_<player>.png`).
+  Kinds: dead, crash, freeze, fault, stage, apart, desync, census, shared, stuck, info. Any kind but
+  `info` fails the run; so does a run that did not reach `--to`. `summary.txt` has the timeline.
+* **Shortcuts** (every stage change and co-op mechanic itself runs for real; listed in the
+  docstring and printed in the timeline as `shortcut:`): Cell end `coop.pool food 1000`; Creature end
+  `AddEvolutionPoints 3000` (never call it outside the Creature stage: in the Tribe stage it crashed
+  the game in `AddEvolutionPoints+0x97`); Tribe `coop.tribe spawn` for more raiders; Civ
+  `cCivExpansion::SpawnNextCity` for the cities still to come and `cCity::Capture` for the player's
+  political id; Space the interstellar drive by `coop.space tool add` and `coop.space finale goto
+  near|core` for the host's trip to the core. A stage change that does not finish in
+  `--advance-minutes` (default per stage, `ADVANCE_MIN`) becomes a finding (`stuck`, for the Tribe
+  stage `info`: its end by raids is not sure to come in time) and the host **jumps**: it loads the next stage's fixture with
+  `coop.load` in game and the guests follow through the world share (coop_stage_switch.py's path).
+* **The Creature -> Tribe change the players' way** (found while building it, lane 7): with the bar
+  full the History button (1400, 1062) shows "Speed Demon" and its check (1415, 1055) starts the
+  evolution vote ("Alice wants to evolve (Creature)"); after the vote the host's creature editor
+  opens ("done" 1416, 1062); then the fire cinematic 2677CD86 plays and stops at the caption
+  "Congratulations! You are about to enter the Tribal stage." (check 1410, 1048). The host sends its
+  world to the guests during it ("a cinematic plays for 120 s, the world is sent anyway") and again
+  in the Tribe stage, so each guest loads twice. The tribe intro cinematic 856F3820 ends with the
+  caption "With a roof over your head ..." and ~50 s later "A rival tribe of ... has formed" (both
+  wait for the check). `coop.status` `movie=1` (in the civ line) is up for any cinematic or caption
+  in every stage: the campaign's caption detector.
+* **The later stage ends the players' way** (debug runs on lane 7, 2026-10-29):
+  * Tribe: raids by real right-click orders (play_tribe, plan `raid`) with the shortcut members do
+    destroy an NPC village (badge cinematic), but new tribes form after each (1 -> 4 other tribes in
+    two minutes); with the help of `coop.tribe pincer <victim> <attacker> 60` on the other tribes'
+    members two villages fell in 30 minutes (run 20261029-011243) and the stage did not end, so the
+    campaign gives it 20 minutes (`ADVANCE_MIN`) and then jumps to the civ_npc fixture (an `info`
+    finding). An automated Tribe end needs a faster conquest or the alliance path (open).
+  * Civ: `SpawnNextCity` gave 6 more cities (9 of other nations on civ_npc), `cCity::Capture(city,
+    playerPol, 0, 0, 0, 0)` takes one per call (its capture caption, the city then belongs to a guest,
+    owner=1 in `coop.civ`); a captured city may ask "choose the city's specialty" (Economic and
+    Military, sometimes Religious too: a modal the campaign answers with the Military button found by
+    caption with uifind inside the dialog's area; the HUD has a "Military" tab label too). A nation
+    can also open its talk screen ("We can see the writing on the wall ...") and wait for the answer
+    "We happily accept your surrender." (found by caption): History does nothing while it is up.
+    With all cities taken the goal "Capture All Cities" is checked; History and its check start the
+    vote ("Alice wants to edit a design (Civilization)"), then the spaceship editor opens **empty**:
+    "done" says "You need at least 3 parts to Save" (three parts dragged slowly from the palette:
+    (85,130), (350,405), (480,405) onto (1000, 470..650)), then "You must give your creation a name"
+    (the name panel opened by "done": its dice at (614, 826) gives a random name). Civ -> Space took
+    8 min with the 9 captures.
+  * Space start: "Name Your Captain" (dice 915,555, check 936,630), then the host is on its home
+    planet, where the game does not save: the host's log says "a player is waiting for the world:
+    leave the planet to save" and the guests stay in the Civ stage until the host leaves (mission
+    control 290,914 and its five answers, then the wheel out, as space_setup.py does; only after the
+    captain's name and any caption, else the clicks are lost).
+  * Finale: a host the Space play left on a planet must take off before the wheel takes it to the
+    galaxy view (`coop.space finale` ctx 0 = planet, 1 = solar system, 2 = galaxy).
+* Debug runs (lane 7, main 8f1944b + this branch): 20261029-000344 (Cell -> Creature, 7 min),
+  -001119 (Creature -> Tribe: BUG-0258, then the jump), -002618 (Tribe -> Civ: two villages raided,
+  the jump, Civ play: OK), -004238 (Civ -> Space -> finale: every player entered the core and got the
+  Staff of Life), -011243 (the whole game in 81 min with 2-minute stages: BUG-0258 again, the Tribe
+  jump; no crash, fault, freeze, desync or shared-resource difference in any run), -023333 (Civ ->
+  Space -> finale with the fixes: RESULT OK, 22 min, the surrender talk answered by hand once, now
+  automated). The tool problems those runs showed are fixed on the branch (see its commits).
+* Expected duration of the whole game with the defaults: start ~1 min, 5 stages x 8 min of play,
+  Cell ~1 min and Creature ~3 min changes, Tribe 20 min and the jump (~1 min), Civ ~8-10 min,
+  the finale ~6 min, follows and rejoins a few minutes: about 2-2.5 h. The lab's timeout for it is 5 h
+  (suite field `timeout`).

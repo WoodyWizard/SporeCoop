@@ -728,3 +728,19 @@ after-save hook of BUG-0217 (#151) and a game key; the allies part of BUG-0225 i
 * Next steps: measure the lock bytes per frame after a host bite; making a guest bite take the
   game's own path (DamageCell on the host with the puppet as attacker) is a separate design.
 * Ticket: BUG-0240 (the lock part left open there).
+## Tribe: after the live Creature -> Tribe change no guest is with the host (2026-10-29, dev/campaign)
+<a id="issue-tribe-snapshot-world"></a>
+
+* What happens: four players end the Creature stage the players' way (vote, editors, the fire
+  cinematic); every guest loads the host's world and plays the Tribe stage, but the host shows
+  `together N 0` for each guest and no puppets, and the guests never see "Alice appeared". The host's
+  `coop.avatar` says `world 'snapshot.spo'`, the guests' `world 'Scalinus.spo'`.
+* Reproduce: `SPORE_LANE=7 python3 tools/tests/coop_campaign.py --from creature --to tribe --minutes 3
+  --advance-minutes 10` (finding `stuck`: "... did not get into the host's world in tribe").
+* Known: the place id is the crc32 of the game's current save name (`modes::current_world`); right
+  after the game's own stage change it is `snapshot.spo` on the host. A `coop.load` of the planet
+  makes everyone together again.
+* Workaround: a save on the host (`coop.save`, or a guest's rejoin: the host saves for the share)
+  gives the world its planet name back and everyone is together at once.
+* Not checked: two players (a manual run had the guest together).
+* Ticket: BUG-0258.

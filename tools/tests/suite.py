@@ -3,12 +3,14 @@
   name      result logs: out/lab/<run>/<name>.log
   cmd       command line, run from the repository root with SPORE_LANE set
   suites    smoke (before a merge, ~10 min on 3 lanes), full (every test), nightly (full + long),
-            extended (paths outside the other suites: 3-4 players, hot reload; also nightly)
+            extended (paths outside the other suites: 3-4 players, hot reload; also nightly),
+            campaign (a whole game of four bot players, coop_campaign.py: in no other suite, run it alone)
   warm      may reuse running games of the lane (twoinst.start with SPORE_WARM=1: the fixture is
             loaded into a fresh save slot, the guest rejoins; no restart). Tests that change the
             profile, enter editors or start their own games are cold.
   exclusive needs the machine alone (LAN discovery in the UI test sees other lanes' hosts)
   minutes   rough length, the scheduler starts long tests first
+  timeout   seconds before the lab kills the test (default lab.TIMEOUT, 30 min)
   uses_free_lane  the test plays on SPORE_FREE_LANE (outside the run), takes that lane's lock
             (<lab folder>/.update_check-lane<N>.lock) and prints `LAB-WATCH lane=<N> since=<unix time>`
             once it holds it: the lab watches that lane for crash / hang reports and dead games from
@@ -19,14 +21,17 @@ T = []
 
 
 def add(name, cmd, suites=('full',), warm=False, exclusive=False, minutes=4, fixture=None, reports=False,
-        uses_free_lane=False):
+        uses_free_lane=False, timeout=None):
     """reports=True: the test makes crash / hang reports or faults on purpose and checks them itself;
     for every other test the lab fails it on a new crash-*/report-* file of its lane, a game that
     dies right after it, or a non-zero fault count in its log (tools/lab.py run_one, BUG-0036/0042)"""
-    suites = set(suites) | ({'nightly'} if {'nightly', 'extended'} & set(suites) else {'full', 'nightly'})
+    if 'campaign' in suites:  # hours of play on one lane: only when asked for
+        suites = set(suites)
+    else:
+        suites = set(suites) | ({'nightly'} if {'nightly', 'extended'} & set(suites) else {'full', 'nightly'})
     T.append(dict(name=name, cmd=cmd, suites=suites, warm=warm,
                   exclusive=exclusive, minutes=minutes, fixture=fixture, reports=reports,
-                  uses_free_lane=uses_free_lane))
+                  uses_free_lane=uses_free_lane, timeout=timeout))
 
 
 P = 'python3 tools/tests/'
@@ -203,13 +208,21 @@ add('hotreload', P + 'hotreload_check.py', ('extended',), minutes=3)  # mod.relo
 add('multi3', P + 'coop_multi.py --fixture creature --players 3 --minutes 3', ('extended',), minutes=7)
 add('npc_multi3', P + 'coop_npc_multi.py --players 3 --seconds 40', ('extended',), minutes=5)
 
+# a whole game of four bot players, Cell to the galactic core (BUG-0152, docs/06-testing.md#testing-campaign):
+# `lab.py run campaign --lanes 1 --skip <every other lane>` (one lane; `run` has no --lane, BUG-0259). Four games in the lane's bottle (instances 20+N / 30+N), nothing else of
+# the lab's suites; campaign_short is the first stage change only (a quick check of the tool itself)
+add('campaign', P + 'coop_campaign.py --minutes 8', ('campaign',), minutes=150,
+    timeout=5 * 3600)
+add('campaign_short', P + 'coop_campaign.py --to creature --minutes 3 --advance-minutes 8', ('campaign',),
+    minutes=25, timeout=3600)
+
 
 def select(spec):
-    """suites (smoke / full / nightly / extended) and test names, comma-separated and mixed: 'smoke,vote'"""
+    """suites (smoke / full / nightly / extended / campaign) and test names, comma-separated and mixed: 'smoke,vote'"""
     names = {t['name'] for t in T}
     want = set()
     for w in (x.strip() for x in spec.split(',') if x.strip()):
-        if w in ('smoke', 'full', 'nightly', 'extended'):
+        if w in ('smoke', 'full', 'nightly', 'extended', 'campaign'):
             want |= {t['name'] for t in T if w in t['suites']}
         else:
             assert w in names, f'unknown test: {w} (known: {sorted(names)})'
