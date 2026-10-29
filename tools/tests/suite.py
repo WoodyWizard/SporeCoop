@@ -58,6 +58,8 @@ add('cell_rescue', P + 'coop_cell_rescue.py', warm=True, minutes=3, fixture='cel
 add('cell_ko_gap', P + 'coop_cell_ko_gap.py', warm=True, minutes=3, fixture='cell')  # a knockout lasts through a late refresh (BUG-0238; SPORE_FIX_OFF=pool.ko_grace fails)
 add('cell_food_away', P + 'coop_cell_food_away.py', warm=True, minutes=3, fixture='cell')  # a guest's meal while the host is away is acknowledged (BUG-0239; SPORE_FIX_OFF=pool.food_ack_away fails)
 add('cell_respawn', P + 'coop_cell_respawn.py', warm=True, minutes=3, fixture='cell')  # the game's death and rebuild with the partner knocked out, both play on (BUG-0221)
+add('diag_cell', P + 'coop_diag.py --fixture cell', warm=True, minutes=3, fixture='cell')  # session clock, /bug marks on both games, merge_logs, sync-check OK and a forced mismatch, its cost
+add('diag_creature', P + 'coop_diag.py --fixture creature', warm=True, minutes=3, fixture='creature')  # the same in Creature
 add('cell_respawn_swap', P + 'coop_cell_respawn.py --swap', warm=True, minutes=3, fixture='cell')  # the same with the guest's pool rebuilt (BUG-0221)
 add('cell_editor_invuln', P + 'coop_cell_editor_invuln.py', minutes=5)  # invulnerable into the own cell editor, vulnerable after it (BUG-0237)
 add('cell_spawn_guard', P + 'coop_cell_spawn_guard.py', warm=True, minutes=3, fixture='cell')  # coop.cell spawn with a slot that is not a live cell: "no such cell", no fault (BUG-0093)
