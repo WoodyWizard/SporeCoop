@@ -34,8 +34,8 @@ Reproduce: `coop_vote_drop_editor.py` at commit c4f4981 of fix/w5-core with both
 ## Root cause
 Not analysed. Inferred: the save the host shares holds the guest's puppet (savestrip, BUG-0020,
 missed it; see BUG-0255 for its gaps); the guest's `remove_saved_strays` destroys that creature, and
-its herd still updates a member pointer to it (null +0xB34). Guest logs: scratchpad
-w5/fix_w5-core vde_nofix1_guest.log, vde_nofix2_guest.log.
+its herd still updates a member pointer to it (null +0xB34). Guest logs: out/lab/20261028-235900-w5-core-twins/
+vde_nofix1_guest.log, vde_nofix2_guest.log (fix/w5-core worktree).
 
 ## Fix
 <!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->

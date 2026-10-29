@@ -10,11 +10,12 @@ role: all
 versions: 0.7.3.0
 fixed_in: unreleased
 branch: fix/w5-core
-commits: c4f4981
+commits: c4f4981, 9452ccc
 tests: vote_end_editor, vote_drop_editor (coop_vote_drop_editor.py --case 1|2; --nofix fails), tests/validate_tests.cpp test_give_pick_leave
 signature:
 docs: docs/06-testing.md#testing-w5-core
 related:
+switch: core.vote_drop_editor, core.own_editor_end, give.pick_reset
 ---
 
 ## Report
@@ -44,8 +45,10 @@ Confirmed on b423f56 by reading and in the game (lane 4, GOG 2024):
 `tools/tests/coop_vote_drop_editor.py` (lane 4, GOG 2024; oracle: the guest's `game.mode`):
 - `--case 1` (a passed vote, the guest leaves while its own editor is due): `--nofix` FAIL (the guest's game in the editor `0x00DBDBA1` after the Leave, log "own editor opened (39.5 s after the vote)"), PASS with the fix (Creature for 55 s).
 - `--case 2` (cancelled vote, the host goes to the galaxy menu): `--nofix` FAIL (guest in the editor 2.3 s after the cancel), PASS with the fix.
-Run logs: scratchpad w5/fix_w5-core vde_nofix2.log (both FAIL in one run), vde_fix_c1.log, vde_fix_c2.log; lab runs in the branch report.
+Run logs: out/lab/20261028-235900-w5-core-twins/vde_nofix2.log (both FAIL in one run), vde_fix_c1.log, vde_fix_c2.log; lab runs in the branch report.
 - Give pick: `validate_tests` test_give_pick_leave (fails with `--nofix`). The 3-player game test of the issue was not written (3 games do not fit the memory budget of this wave).
+
+Lab PASS: out/lab/20261028-230144 (vote_end_editor, vote_drop_editor ok, lane 4; also vote_stale, guest_editor ok); smoke out/lab/20261028-232610 all passed at 9202d71 (before the merge of main).
 
 ## History
 - 2026-10-28: opened.

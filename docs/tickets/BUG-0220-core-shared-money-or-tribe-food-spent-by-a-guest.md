@@ -15,6 +15,7 @@ tests: civ_shared (coop_civ_shared.py step 3, --only-join; --nofix fails), net_t
 signature:
 docs: docs/06-testing.md#testing-w5-core
 related:
+switch: res.join_keep
 ---
 
 ## Report
@@ -41,8 +42,10 @@ The editor variant (a guest's `have = false` while its game is in a Civ editor) 
 - The ledger API refactor of the issue (have/synced into the ledger, `pause()`) was not done: no behaviour needs it yet; BUG-0231's shared hold, which would use `pause()`, is still open.
 
 ## Verification
-- `coop_civ_shared.py --only-join` (lane 4, GOG 2024; oracle: the game's money `cCivilization::mWealth` on both machines): `--nofix` FAIL (host 1000, guest 1000 after the guest spent 500), PASS with the fix (host 500, guest 500). Logs: scratchpad w5/fix_w5-core civsh_join--nofix.log, civsh_join.log. The full test (steps 1-3) runs in the lab as `civ_shared`.
+- `coop_civ_shared.py --only-join` (lane 4, GOG 2024; oracle: the game's money `cCivilization::mWealth` on both machines): `--nofix` FAIL (host 1000, guest 1000 after the guest spent 500), PASS with the fix (host 500, guest 500). Logs (standalone runs, lane 4): out/lab/20261028-235900-w5-core-twins/civsh_join--nofix.log, civsh_join.log. The full test (steps 1-3) runs in the lab as `civ_shared`.
 - `net_tests` test_shared_join_keep: the join decision and the fold (fails with `net_tests --nofix`).
+
+Lab PASS: out/lab/20261028-230144 (civ_shared, steps 1-3, ok). FAIL / PASS twins: out/lab/20261028-235900-w5-core-twins/civsh_join--nofix.log (FAIL), civsh_join.log (PASS).
 
 ## History
 - 2026-10-28: opened.

@@ -10,11 +10,12 @@ role: all
 versions: 0.7.3.0
 fixed_in: unreleased
 branch: fix/w5-core
-commits: c4f4981, 9452ccc
+commits: c4f4981, 9452ccc, 0262f78
 tests: away_stages (coop_away_stages.py; --nofix fails), validate_tests test_dna_route (fails with --nofix)
 signature:
 docs: docs/06-testing.md#testing-w5-core
 related:
+switch: core.away_stages, core.away_dna_stage
 ---
 
 ## Report
@@ -38,9 +39,11 @@ Confirmed on b423f56 by reading, and the first part in the game: `host_out_of_st
 - Test hook `coop.hoststate mode <hex> <s>` (our player states report that mode; cleared at the session end).
 
 ## Verification
-- `coop_away_stages.py` (Space fixture, lane 4): the host reports the editor mode for 10 s; `--nofix` FAIL (the guest's toasts: "Alice (host) is in an editor: you play on alone ..."), PASS with the fix (none); control in both runs: the menu mode still gives "left for the main menu: you play on alone". Logs: scratchpad w5/fix_w5-core away_stages--nofix.log, away_stages.log.
+- `coop_away_stages.py` (Space fixture, lane 4): the host reports the editor mode for 10 s; `--nofix` FAIL (the guest's toasts: "Alice (host) is in an editor: you play on alone ..."), PASS with the fix (none); control in both runs: the menu mode still gives "left for the main menu: you play on alone". Logs (standalone runs, lane 4): out/lab/20261028-235900-w5-core-twins/away_stages--nofix.log, away_stages.log.
 - `validate_tests` test_dna_route: away stages, rows 9-11 and 13-15 of the issue's table; 5 checks FAIL with `--nofix`.
 - Not run in the game: the DNA part (the stage change Creature -> Tribe during the host's load, and the host loading another Creature save with DNA owed). The issue's `coop_away_stage_change.py` needs an evolution to Tribe plus a second save on the host and was not written; the decision is the unit-tested function, called from `host_away_tick` and the MSG_DNA_ADD handler. Regression to run: `dna_away` (BUG-0151 menu case, row 9), `away_editor` (BUG-0205 Creature).
+
+Lab PASS: out/lab/20261028-230144 (away_stages, dna_away, away_editor, tribe_away, civ_away ok, lane 4). FAIL twin: out/lab/20261028-235900-w5-core-twins/away_stages--nofix.log.
 
 ## History
 - 2026-10-28: opened.

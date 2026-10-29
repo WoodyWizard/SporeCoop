@@ -15,6 +15,7 @@ tests: npc_tests test_share_wait (make test; fails with npc_tests --nofix)
 signature:
 docs: docs/06-testing.md#testing-w5-core
 related:
+switch: npc.sharecine_each
 ---
 
 ## Report
@@ -39,6 +40,9 @@ Confirmed by reading b423f56 (unchanged since the review): `follow_phase` used o
 ## Verification
 - `npc_tests` test_share_wait (make test): three guests waiting through a 400 s cinematic are all released at 120 s; a guest that waited and left does not shorten a new guest's wait 200 s later; a guest marked again starts from 0; without a cinematic all go out together once the 3 s are over. `npc_tests --nofix` (the global timer): 3 checks FAIL (guests at 1123 / 1243 / 1363 s, the new guest sent at once).
 - No game test: the issue's test needs host + 2 guests on the migration fixture with the caption held for 240 s (3 games, over this wave's memory budget). The game path is the same function with the timer it is given; `evolve_world` (BUG-0019) is the regression test of the wait itself.
+
+PASS: `make test` (npc_tests all passed) on fix/w5-core; FAIL: `npc_tests --nofix` (3 checks).
+no-fail-run: no game run (3 games needed); the unit test runs the same share_wait::hold the game calls, with and without the per-guest timer.
 
 ## History
 - 2026-10-28: opened.
