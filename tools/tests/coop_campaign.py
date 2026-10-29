@@ -655,15 +655,17 @@ class Campaign:
         t0 = time.time()
         ok = False
         good = None
-        left_home = False
+        tries = 0  # Space: attempts to leave the home planet
         svc = [Service(self, p) for p in self.P]
         for s in svc:
             s.start()
         try:
             while time.time() - t0 < 300 and not self.dead:
-                if nxt == 'space' and not left_home and time.time() - t0 > 30 and self.on_home_planet():
-                    left_home = True
-                    self.leave_home()
+                if nxt == 'space' and tries < 3 and time.time() - t0 > 30 * (tries + 1) and self.on_home_planet() \
+                        and not uifind.shown(self.host.con, 'Name Your Captain') \
+                        and 'movie=1' not in self.host.call('coop.status'):
+                    tries += 1
+                    self.leave_home(final=tries == 3)
                 st = {g.name: cl.stage_of(g.call('game.mode')) for g in self.guests}
                 tog = self.together()
                 self.ids()
@@ -713,7 +715,7 @@ class Campaign:
         m = re.search(r'eax=0x([0-9A-Fa-f]+)', self.host.call('call Simulator::GetCurrentContext cdecl'))
         return bool(m) and int(m.group(1), 16) == 0
 
-    def leave_home(self):
+    def leave_home(self, final=True):
         """a new Space stage: the mission control's first talk (space_setup.py's clicks), then zoom out of
         the home planet like a player; the host's world then goes to the guests"""
         self.note('the host leaves its home planet (mission control, zoom out): the guests wait for the world')
@@ -732,8 +734,9 @@ class Campaign:
             if not self.on_home_planet():
                 self.note('the host is in its solar system')
                 return True
-        self.finding('stuck', 'space:home', 'the host could not leave its home planet (the guests wait for the world)',
-                     [self.host])
+        if final:
+            self.finding('stuck', 'space:home', 'the host could not leave its home planet (the guests wait for the '
+                         'world)', [self.host])
         return False
 
     @staticmethod
