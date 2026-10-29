@@ -72,6 +72,9 @@ Cell stage and both enter Creature).
   local entity refused 1-6 times and a puppet 1-2 times per game), 20261029-114946 (3 of 3),
   20261029-114319.
 * campaign_short not rerun on this branch (25 min with 4 games per lane).
+* Smoke (lanes 4, 5): out/lab/20261029-120208, 12 of 14; `team` and `select` failed. Reruns:
+  20261029-121511 team 2 of 2, select 1 of 2; `select` fails the same way with the fix off
+  (20261029-121818, 1 of 3): the known flaky test, BUG-0272. `make test` passes.
 
 ## History
 - 2026-10-29: opened.
