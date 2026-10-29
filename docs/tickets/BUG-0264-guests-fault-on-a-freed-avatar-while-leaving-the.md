@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.3.0
 fixed_in: unreleased
 branch: fix/w6-avatar
-commits: 3f5d29e defb3ec
+commits: 3f5d29e cb4ddd2 af73ab0 defb3ec
 tests: leave_avatar (tools/tests/coop_leave_avatar.py), leave_avatar_cell (tools/tests/coop_leave_avatar.py --cell)
 signature: dc04aee5:coop.dll+0x82858
 docs: docs/re/creature.md#creature-leave-avatar, docs/06-testing.md#testing-leave-avatar
