@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Merge the logs of the players of one co-op session into one timeline (docs/SUPPORT.md).
+"""Merge the logs of the players of one co-op session into one timeline (docs/REPORTING.md#reporting-support).
 
 Every game in a session writes the session time (the host's clock) into its log lines:
 `12:34:56.789 [s 1234.567] [INF] coop: ...`. This tool puts the lines of several logs in the order

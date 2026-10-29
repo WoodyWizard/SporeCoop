@@ -1,4 +1,4 @@
-// Support diagnostics over the network (MSG_DIAG, docs/SUPPORT.md#support-reading): the session
+// Support diagnostics over the network (MSG_DIAG, docs/REPORTING.md#reporting-support-answers): the session
 // clock, bug marks and the sync self-check. Portable (tests/net_tests.cpp).
 //
 // MSG_DIAG payload: u8 kind, then

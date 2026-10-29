@@ -22,7 +22,7 @@ saves, and keep the knowledge files honest. Every check runs on fakes in a tempo
   triage    tools/crash_triage.py reads a report and finds the known ticket (BUG-0158); one signature per
             place: exit-time, log and short crash files, crash line first (BUG-0247)
   mergelogs tools/merge_logs.py orders two players' lines by the session clock, picks the last session,
-            places lines without a clock with --all, and lists the sessions (docs/SUPPORT.md)
+            places lines without a clock with --all, and lists the sessions (docs/REPORTING.md#reporting-support)
   campaign  the pure logic of the co-op campaign (campaign_lib.py): plan, stages, findings (BUG-0152)
   release   tools/release_check.sh: the tag must match COOP_VERSION and the notes are exactly the
             tag's CHANGELOG section (BUG-0097)

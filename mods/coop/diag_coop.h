@@ -1,11 +1,11 @@
-// Support diagnostics of a co-op session (docs/SUPPORT.md): what a player's "Report a problem" zip
+// Support diagnostics of a co-op session (docs/REPORTING.md#reporting-support): what a player's "Report a problem" zip
 // needs to find the cause of a report.
 //   diag_sync.cpp   the session clock ("[s 123.456]" in every log line, tools/merge_logs.py), bug
 //                   marks (/bug <text> in the co-op chat: a MARK line in every player's log) and the
 //                   sync self-check (host and guests compare the shared world every 30 s)
 //   diag_stats.cpp  FPS and hitches, the game's address space, network quality per peer, session
 //                   settings, the session summary (also at the top of the report text)
-// Cheap and rate limited: about 1 MB per hour of log at the default detail (docs/SUPPORT.md).
+// Cheap and rate limited: about 1 MB per hour of log at the default detail (docs/REPORTING.md#reporting-support).
 #pragma once
 
 #include <cstdint>

@@ -3600,7 +3600,7 @@ void init_ui()
     };
     a.vote_active = [] { return g_vote.active; };
     a.say = [](const std::string& t) {
-        if (support::chat_command(t)) // "/bug <text>" (docs/SUPPORT.md)
+        if (support::chat_command(t)) // "/bug <text>" (docs/REPORTING.md#reporting-support)
             return;
         if (g_sess.connected())
             g_sess.send_chat(t);
@@ -3653,7 +3653,7 @@ void on_unload()
     end_session(EndPath::Unload, true);
 }
 
-// ---- support diagnostics (diag_coop.h, docs/SUPPORT.md) ----
+// ---- support diagnostics (diag_coop.h, docs/REPORTING.md#reporting-support) ----
 int g_ini_auto_load = 1, g_ini_share_npcs = 1, g_ini_npc_targets = 1, g_ini_teamplay = 1, g_ini_update = 1, g_ini_sync = 30;
 
 void support_init()
@@ -3743,7 +3743,7 @@ void support_init()
     H->subscribe(M, SK_EV_SHUTDOWN, [](void*, int, void*) { support::on_shutdown(); }, nullptr);
     H->command_add(M, "coop.diag",
                    "coop.diag [status | sync now|on|off|<s>|force shift|drop|ghost|dna|off | summary | mark <text> | "
-                   "detail 0|1|2 | mem] - support diagnostics (docs/SUPPORT.md)",
+                   "detail 0|1|2 | mem] - support diagnostics (docs/REPORTING.md#reporting-support)",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
                        SAY("%s", support::command(std::vector<std::string>(argv + 1, argv + argc)).c_str());
                        return 0;

@@ -1872,7 +1872,7 @@ static void test_pick_pack()
     CHECK(upd::pick_pack({}).empty());
 }
 
-// ---- support diagnostics (net/diagmsg.h, docs/SUPPORT.md) ----
+// ---- support diagnostics (net/diagmsg.h, docs/REPORTING.md#reporting-support) ----
 static void test_diag_messages()
 {
     printf("diag: clock, mark and digest messages round trip; a bad digest is refused\n");

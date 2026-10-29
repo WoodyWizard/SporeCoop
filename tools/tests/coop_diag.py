@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Support diagnostics of a co-op session (docs/SUPPORT.md), on host + guest of one stage:
+"""Support diagnostics of a co-op session (docs/REPORTING.md#reporting-support), on host + guest of one stage:
 
 1. the session clock: both games agree on the session time (the guest's estimate of the host's
    clock is off by less than 50 ms), every log line of the session carries `[s ...]`
@@ -11,7 +11,7 @@
    difference forced on the guest (`coop.diag sync force shift`: its own creature 100 units off in its
    digest) is reported as a MISMATCH on both games after the 3 s recheck
 5. its cost: the check's CPU time on the host (build + compare) and on the guest (build) under 1 ms,
-   the diagnostics' average cost per frame under 0.05 ms (printed for docs/SUPPORT.md)
+   the diagnostics' average cost per frame under 0.05 ms (printed for docs/REPORTING.md#reporting-support)
 6. the environment: `env` lists the extra packages and the game files' size check
 
   coop_diag.py [--fixture cell|creature]

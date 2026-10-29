@@ -1,5 +1,5 @@
 // Support diagnostics: FPS and hitches, the address space, network quality, session settings and
-// the session summary (diag_coop.h, docs/SUPPORT.md#support-reading).
+// the session summary (diag_coop.h, docs/REPORTING.md#reporting-support-answers).
 #include "diag_coop.h"
 
 #include <windows.h>

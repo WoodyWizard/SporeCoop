@@ -230,7 +230,7 @@ For bug reports of players, who send a file, not a debugger session:
 <a id="modkit-support-035"></a>
 
 * **API (since 0.3.5, check `size`):** `log_session_clock(offset, on)`: every log line carries
-  `[s <now + offset>]` after the local time (a co-op session's common clock, docs/SUPPORT.md);
+  `[s <now + offset>]` after the local time (a co-op session's common clock, docs/REPORTING.md#reporting-support);
   `diag_headline(mod, text)`: a block at the top of reports (`== Summary`), copied, removed when the
   mod unloads; `diag_files()`: the game files part of the environment.
 * **Masked paths.** Log lines and report texts have the game folder as `<game>`, `%USERPROFILE%`

@@ -1,5 +1,5 @@
 // Support diagnostics: the session clock, bug marks, the sync self-check (diag_coop.h,
-// docs/SUPPORT.md#support-reading).
+// docs/REPORTING.md#reporting-support-answers).
 #include "diag_coop.h"
 
 #include <windows.h>

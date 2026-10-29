@@ -607,7 +607,7 @@ std::string diag_write_bundle_with(const char* reason, const std::string& existi
         "  report-*.txt      the latest co-op session summary, the game build, Windows / Wine, memory, graphics\n"
         "                    card, other overlays, mods and extra game files, the co-op session, faults,\n"
         "                    loaded modules, the last log lines\n"
-        "  (maintainers: docs/SUPPORT.md says where each answer is; tools/merge_logs.py lines up the logs\n"
+        "  (maintainers: docs/REPORTING.md#reporting-support says where each answer is; tools/merge_logs.py lines up the logs\n"
         "   of all players by their session clock)\n"
         "  logs/             the logs of this run (sporekit.log; sporekit.N.log of other instances)\n"
         "  crashes/          crash reports and minidumps (.dmp: memory of the crashed game, no files of yours)\n"
@@ -1042,7 +1042,7 @@ void diag_after_device()
         return;
     once = true;
     logf(&g_kit_mod, SK_INFO, "%s; other hooks: %s", gpu_text().c_str(), foreign_hooks().c_str());
-    // other mods, extra packages, changed game files (docs/SUPPORT.md#support-environment)
+    // other mods, extra packages, changed game files (docs/REPORTING.md#reporting-support-environment)
     const std::string& f = diag_files_text();
     for (size_t i = 0; i < f.size();) {
         size_t e = f.find('\n', i);

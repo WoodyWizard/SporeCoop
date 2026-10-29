@@ -12,7 +12,7 @@
   saves and world transfers with their times, settings that are not the defaults, and a summary
   line of each session (also at the top of the report). The report lists other mods, extra
   `.package` files and game files of an unexpected size. Paths of your PC are masked in logs and
-  reports ([support guide](docs/SUPPORT.md)).
+  reports ([support guide](docs/REPORTING.md#reporting-support)).
 - Problem reports: the log now says what each player did and what the mod decided: a state line
   every 10 s (stage, world, position, partners and their distance, why a partner is hidden, link
   quality, the food on the screen in Cell, the creature's body and where it came from) and lines

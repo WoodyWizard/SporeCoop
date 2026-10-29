@@ -1,4 +1,4 @@
-// The game files part of the environment for support (docs/SUPPORT.md#support-environment):
+// The game files part of the environment for support (docs/REPORTING.md#reporting-support-environment):
 //  - other SporeKit mods in mods\ (loaded or not) and DLLs next to the exe that the game does not ship
 //    (ModAPI, wrappers); the loaded hooks are in diag.cpp's foreign_hooks()
 //  - .package files in the game's Data folders that the game does not ship (mods, ModAPI packs) and the
