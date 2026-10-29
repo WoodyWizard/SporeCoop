@@ -80,6 +80,8 @@ creature leaving windows, 72 frames, the avatar listed in all of them. The tests
 own object list in the window, so they would catch it where it happens.
 * PASS (fix on): 20261029-090214-fix-w6-avatar (leave_avatar x2, leave_avatar_cell x2): avatar() null
   in every window frame (~237 calls refused per window), no fault.
+* PASS (final code, with the save filter on the raw field): 20261029-092156-fix-w6-avatar
+  (leave_avatar, leave_avatar_cell). Smoke: 20261029-090922-fix-w6-avatar 14/14 (lanes 4, 5).
 
 ## History
 - 2026-10-29: opened.
