@@ -8,6 +8,7 @@
 // trip and could be spent a second time).
 #pragma once
 
+#include <cmath>
 #include <cstdint>
 #include <vector>
 
@@ -37,6 +38,18 @@ struct SharedLedger {
         return s;
     }
 
+    // a local change the guest's tick has not sampled yet (made after its last tick, e.g. in the
+    // frame a host total arrives): reported like any other change (BUG-0220). `synced` is the
+    // game's value after the last write or sample; only valid while the guest has a host total.
+    void fold(double cur, double& synced)
+    {
+        double d = cur - synced;
+        if (std::fabs(d) > 1e-3) {
+            pending += d;
+            synced = cur;
+        }
+    }
+
     // the value to show for a host total. has_ack false: a host that does not echo sequences
     // (older build) - its totals are taken as counting everything sent (the behaviour before).
     double shown(double total, bool has_ack, uint32_t ack)
@@ -61,5 +74,11 @@ inline double shared_add(double cur, double change, bool floor)
     double n = cur + change;
     return floor && n < 0 ? 0 : n;
 }
+
+// a player joined: does this machine forget its sync state (have = false)? The host does, so the
+// newcomer gets every total at once. A guest keeps it (BUG-0220): it was reset for every other
+// player's join, and a spend in the window until the next host total was undone on its screen
+// and never reached the host. (The newcomer itself is reset while it joins: shared::tick.)
+inline bool reset_on_join(bool host, bool keep_fix) { return host || !keep_fix; }
 
 } // namespace net

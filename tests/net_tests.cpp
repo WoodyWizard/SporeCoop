@@ -959,6 +959,37 @@ static void test_shared_ledger()
     CHECK(shared_add(150, -100, kFix) == 50);
 }
 
+// BUG-0220: a guest's spend in the window between another player's join and the next host total
+// was undone on its screen and never reached the host
+static void test_shared_join_keep()
+{
+    printf("shared resources: a guest's spend at another player's join counts once (BUG-0220)\n");
+    const bool kFix = !SPORECOOP_TEST_NOFIX && !g_nofix;
+    CHECK(reset_on_join(true, kFix));                // the host resends its totals to the newcomer
+    CHECK(reset_on_join(false, kFix) == !kFix);      // a guest keeps its state
+    // a guest that shows the host total 1000 (have, synced 1000); a third player joins
+    SharedLedger g;
+    bool have = !reset_on_join(false, kFix);
+    double synced = 1000, game = 1000;
+    game -= 500; // the guest buys for 500 in the window
+    // its tick: samples the change only while it has a host total
+    if (have)
+        g.fold(game, synced);
+    // the host's next total (it counted nothing of ours yet) arrives
+    double shown = g.shown(1000, true, g.next_seq - 1);
+    CHECK(std::fabs(shown - 500) < 1e-9); // before the fix: 1000, the purchase came back
+    CHECK(std::fabs(g.pending + 500) < 1e-9); // reported to the host once
+    // the fold right at the total does not count a sampled change twice
+    SharedLedger h;
+    double s2 = 1000;
+    h.fold(800, s2);  // tick: -200
+    h.fold(800, s2);  // the total in the same frame: nothing new
+    CHECK(std::fabs(h.pending + 200) < 1e-9 && s2 == 800);
+    // a change made after the tick, folded when the total arrives
+    h.fold(750, s2);
+    CHECK(std::fabs(h.pending + 250) < 1e-9);
+}
+
 // ---- wave 2 netcode fixes (each FAILS with `net_tests --nofix`, the code before the fix) ----
 
 // BUG-0034: a reliable message bigger than one packet (a long `coop say`, the species table of a
@@ -1458,6 +1489,7 @@ int main(int argc, char** argv)
     test_discovery();
     test_lobby_roles();
     test_shared_ledger();
+    test_shared_join_keep();
     test_big_reliable();
     test_state_after_leave();
     test_velocity_jitter();

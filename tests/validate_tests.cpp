@@ -9,6 +9,8 @@
 #include "net/buffer.h"
 #include "net/give_target.h"
 #include "net/validate.h"
+#include "dna_route.h"
+#include <string>
 
 using namespace net;
 
@@ -174,8 +176,52 @@ static void test_give_target()
     CHECK(give_target_next({1}, 1, 0) == kNoGiveTarget);
 }
 
-int main()
+// make test runs it with the fixes; `validate_tests --nofix` runs the checks of the wave 5 fixes
+// with their switches off: they must fail
+static bool g_nofix = false;
+
+static void test_give_pick_leave()
 {
+    printf("gift pick after its player left (BUG-0234)\n");
+    const bool fix = !g_nofix;
+    // guest 2 picked guest 1; 1 leaves, a newcomer gets id 1: the gift goes to the first other player
+    uint8_t pick = give_pick_after_leave(1, 1, fix);
+    CHECK(give_target({0, 1, 2}, 2, pick) == 0);
+    CHECK(give_pick_after_leave(3, 1, fix) == 3); // another player left: the pick stays
+}
+
+static void test_dna_route()
+{
+    printf("DNA kept while the host was away stays in its stage and world (BUG-0233)\n");
+    using namespace dna_route;
+    const bool fix = !g_nofix;
+    const uint32_t kCell = 0x1654C00, kCreature = 0x1654C01, kTribe = 0x1654C02, kCiv = 0x1654C04,
+                   kSpace = 0x1654C05, kNoStage = 0; // a menu, an editor or a load
+    const uint32_t stages[] = {kCreature, kTribe, kCiv};
+    // an editor or a load counts as away in Creature, Tribe and Civ only
+    CHECK(away_stage(kCreature, stages, 3) && away_stage(kTribe, stages, 3) && away_stage(kCiv, stages, 3));
+    CHECK(!away_stage(kCell, stages, 3) && !away_stage(kSpace, stages, 3));
+    // solo DNA at the end of the away: the host back in our world (row 9)
+    CHECK(solo_end(fix, true, true, kCreature, kCreature) == SoloEnd::SendBack);
+    // the host loaded another save of the stage, we followed (row 10, BUG-0151)
+    CHECK(solo_end(fix, false, true, kCreature, kCreature) == SoloEnd::Send || !fix);
+    // the host went on to Tribe while we were away in Creature (row 11): dropped, no "is back"
+    CHECK(solo_end(fix, false, true, kTribe, kCreature) == SoloEnd::Drop);
+    CHECK(solo_end(fix, false, false, kCreature, kCreature) == SoloEnd::Drop); // still loading
+    // owed DNA on the host (rows 13-15): world 7 is where it was owed
+    CHECK(owed(fix, kNoStage, false, false, 0, 7, kCreature) == Owed::Keep);       // a menu or an editor: wait
+    CHECK(owed(fix, kCreature, true, true, 7, 7, kCreature) == Owed::Pay);         // back in that world
+    CHECK(owed(fix, kCreature, true, false, 7, 7, kCreature) == Owed::Keep);       // no creature yet
+    CHECK(owed(fix, kCreature, true, true, 9, 7, kCreature) == Owed::Clear);       // another Creature save
+    CHECK(owed(fix, kTribe, true, false, 7, 7, kCreature) == Owed::Clear);         // the next stage
+    CHECK(owed(fix, kSpace, true, true, 7, 7, kCreature) == Owed::Clear);          // a captain is no creature of that world
+}
+
+int main(int argc, char** argv)
+{
+    g_nofix = argc > 1 && std::string(argv[1]) == "--nofix";
+    test_give_pick_leave();
+    test_dna_route();
     test_chunks();
     test_cycle();
     test_space_origin();

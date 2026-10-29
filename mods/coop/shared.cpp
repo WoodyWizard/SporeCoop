@@ -122,6 +122,10 @@ static bool g_reset_fix = true;
 static bool g_floor_fix = true;
 COOP_FIX("res.reset", "BUG-0049", g_reset_fix, "shared: the sync state ends with the session, a guest sends nothing before WELCOME");
 COOP_FIX("res.floor", "BUG-0106", g_floor_fix, "shared: totals never go below 0, a guest keeps its in-flight changes");
+// BUG-0220: a guest keeps its sync state when another player joins and folds an unsampled local
+// change into its report before it takes a host total (a spend at a join came back, spent twice)
+static bool g_join_keep_fix = true;
+COOP_FIX("res.join_keep", "BUG-0220", g_join_keep_fix, "shared: a guest's spend at another player's join is not undone");
 
 // the game's AddMoney clamps to 0..99 999 999; raw writes of a total do the same (BUG-0106)
 static double money_clamp(double v)
@@ -157,6 +161,12 @@ void on_session_change()
 {
     for (auto& r : g_res)
         r.have = false;
+}
+
+void on_player_join(net::Role role)
+{
+    if (net::reset_on_join(role == net::Role::Host, g_join_keep_fix))
+        on_session_change(); // the host: the newcomer gets the totals at once
 }
 
 void on_session_end()
@@ -264,6 +274,8 @@ void on_message(net::Session& s, uint8_t type, uint8_t from, net::Reader& rd)
                 r.have = true;
                 return;
             }
+            if (g_join_keep_fix && r.have)
+                r.led.fold(cur, r.synced); // a change since the last tick is ours, not undone
             // keep changes made since our last report and those the host has not counted yet
             bool has_ack = false;
             uint32_t ack = 0;
