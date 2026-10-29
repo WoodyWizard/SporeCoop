@@ -459,7 +459,7 @@ bool leaving_stage()
 
 const LeaveStats& leave_stats() { return g_leave; }
 
-static void* avatar_raw()
+void* avatar_field()
 {
     if (!g_ready)
         return nullptr;
@@ -515,7 +515,7 @@ void leave_probe_tick(void* used)
         if (now < next)
             return;
         next = now + 1.0;
-        void* raw = avatar_raw();
+        void* raw = avatar_field();
         if (raw && raw != reported && !(creature_vtables_ok(raw) && creature_listed(raw))) {
             reported = raw;
             g_leave.stage_gone++;
@@ -525,7 +525,7 @@ void leave_probe_tick(void* used)
         return;
     }
     g_leave.frames++;
-    void* raw = avatar_raw();
+    void* raw = avatar_field();
     bool raw_ok = raw && creature_vtables_ok(raw) && creature_listed(raw);
     if (raw && !raw_ok)
         g_leave.raw_gone++;

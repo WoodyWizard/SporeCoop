@@ -55,6 +55,9 @@ struct LeaveStats {
     unsigned stage_gone = 0; // an unlisted avatar seen outside the window (1 Hz check)
 };
 void stage_leaving(const char* why);
+// the noun manager's avatar field in the creature stage / adventures, without the BUG-0264 checks:
+// only to compare pointers (the save filter runs during the quit's own save), never to dereference
+void* avatar_field();
 void stage_leave_cancel();
 bool leaving_stage();
 const LeaveStats& leave_stats();
