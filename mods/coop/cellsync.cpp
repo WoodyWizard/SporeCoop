@@ -2188,6 +2188,11 @@ std::string debug(const std::vector<std::string>& a)
         g_kodrop_until = s > 0 ? H->time_seconds() + s : 0;
         return "kodrop " + std::to_string(s).substr(0, 4);
     }
+    if (a.size() >= 2 && a[0] == "invulnfor") { // tests: invulnerable for <s> seconds, as after a respawn (BUG-0237)
+        F<uint8_t>(av, kInvuln) = 1;
+        g_invuln_until = H->time_seconds() + std::clamp(atof(a[1].c_str()), 0.0, 120.0);
+        return "invulnerable until " + std::to_string(g_invuln_until);
+    }
     if (a.size() >= 2 && a[0] == "invuln") { // tests: the avatar's invulnerability flag +0x111
         F<uint8_t>(av, kInvuln) = (uint8_t)atoi(a[1].c_str());
         return "invuln set";

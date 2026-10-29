@@ -648,3 +648,33 @@ for verification and its limits.
   cells, DamageCell checks +0x17C): which byte, set by whom and for how long is not measured. A
   guest's bite applied by the host sets none, so a guest may bite one NPC faster than the host
   (docs/known-issues.md, BUG-0240).
+
+## Rebuilds in a session (2026-10-28, fix/w5-cell)
+<a id="cell-rebuilds-in-session"></a>
+
+Measured on GOG 2024 (lane 2) with `coop.cell pool` (tests: the pool header G+0x1C..+0x18 as
+`data free gen live high size cap`, the avatar index G+0x411C, `rebuild=` G+0x51D8, the avatar's
+pointer, +0x111 and +0xFC). Tests: `coop_cell_respawn.py [--swap]`, `coop_cell_editor_invuln.py`.
+
+* ✔ The game's own death in a session (BUG-0221: the only partner knocked out, then a lethal hit,
+  BUG-0131's rule) rebuilds the pool of the dying player's machine: the avatar gets a new index
+  (host: 7F010000 -> 80C501C2; guest with --swap: 7F010000 -> 80820180), the generation keeps
+  counting (32964 -> 33419, 32897 -> 33261): **generations do not restart**, so an old index never
+  matches a new cell (`cell_at` checks the full index).
+* ✔ The rebuild's own DestroyCell calls are not refused by `h_Destroy`: `puppet_saves=0`, `kept=0`
+  and `coop.pool why` empty after the host's and after the guest's rebuild. The guest recreates
+  every mirror from the next state rounds (created 420 -> 863), every mirror maps to a live host
+  cell afterwards, and each game shows the other player's cell where that player's game has it
+  (0.0 m off). The partner's puppet is recreated once (`puppet_new=1` on both).
+* ✔ The death UI and caption are gone within the 6 s the test waits (`cine=0`, hp > 0, not
+  dying), and the knocked-out partner respawns after its 10 s. No fault in either game.
+* ~ G+0x51D8 was never seen set by a console poll every 50 ms (6 s after the lethal hit): it is set
+  and cleared inside one frame (RequestRespawn during SimUpdate, RebuildLevel in the same
+  CellFrame), so a detector polling it from `tick` would miss it; the avatar index change is the
+  signal to use if one is ever needed. None is needed today.
+* ✔ The own cell editor (guest's mating call, cancel) also rebuilds the pool: the avatar comes back
+  as a new object with a new index (7F010000 -> 808C0126, pointer changed) and **+0x111 clear**,
+  also when it was set (with our timer running) as the editor opened. So BUG-0237's flag left set
+  after the editor does not happen; `coop.pool invulnfor <s>` (tests) sets the flag and the timer
+  as a respawn does. The pool after the editor return starts smaller (live 383 -> 215) and fills
+  up again.

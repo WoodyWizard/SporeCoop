@@ -1319,3 +1319,32 @@ registry (`mods/coop/fixes.h`, BUG-0116):
 * Clicks on the ground near a creature's nest are a bad walk input in general: the nest is an
   object, not walkable ground. Prefer W (camera forward, open grass at this fixture) or a point
   far up the screen.
+
+## Cell wave 5 tests and the puppet move check (2026-10-28, fix/w5-cell)
+<a id="testing-mode-puppet-pos"></a>
+
+* `cell` / `space` (coop_mode.py, BUG-0251): the move check asks the guest's game where the host's
+  cell / UFO is (`puppet pos=` after the host's `remote 0` line of coop.status) and polls up to 8 s
+  after the move: within 1.5 m (Cell) / 8 m (Space) of the host, nearer than to the old place, moved
+  by half the host's move. Seen on lane 2: Cell 0.3 m off after 6.4 m, Space 0.5 m off after 4 m.
+  `--net-pos`: the old check (the network sample); `--hold`: seeded failure through `coop.puppet
+  hold on|off` (the guest's remote puppets are not driven): FAILS with the new check, passes
+  `--net-pos`. Tribe / Civ print a "cursor marker (network)" line: there the puppet is a mod marker
+  at the network sample.
+* `cell_ko_gap` (BUG-0238, ~1.5 min warm): `coop.pool kodrop <s>` on the host holds back the
+  guest's knockout refreshes while its position states flow. The guest must be 30 m away and stay
+  knocked out in its own game (`downed=1`) or the host revives it during the gap and the test
+  proves nothing; the host is held with `coop.pool goto 0 0`. `SPORE_FIX_OFF=pool.ko_grace` FAILS.
+* `cell_food_away` (BUG-0239, ~1 min warm): `coop.pool away 1|0` on the host. `SPORE_FIX_OFF=
+  pool.food_ack_away` FAILS (guest 10 above, then a dip).
+* `cell_guest_bite` (BUG-0078, BUG-0240): also bites a non-solid cell (rock first: a plant is often
+  eaten while the test runs) and meat, each given hp 60, with `coop.pool kill <key|-> anyhit
+  [kind]`. `SPORE_FIX_OFF=pool.guestbite_type` FAILS.
+* `cell_respawn` / `cell_respawn_swap` (BUG-0221, ~1.5 min warm): the game's death in a session and
+  what follows, in both roles; prints `coop.cell pool` before and after
+  (docs/re/cell.md#cell-rebuilds-in-session). A guard: nothing failed when it was written.
+* `cell_editor_invuln` (BUG-0237, ~3 min, cold: `guest_creations=False`): invulnerable into the
+  own cell editor, a host bite hurts 4 s after the return. A guard (passes on 0.7.3.0).
+* `make test`'s net_tests "LAN game list: pruned and capped" (BUG-0039) failed once here while
+  this lane's games ran (`d.stored() == 0` after 6 s): real discovery answers reach the test's
+  socket. It passed on the next run.
