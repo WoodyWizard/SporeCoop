@@ -1319,3 +1319,19 @@ registry (`mods/coop/fixes.h`, BUG-0116):
 * Clicks on the ground near a creature's nest are a bad walk input in general: the nest is an
   object, not walkable ground. Prefer W (camera forward, open grass at this fixture) or a point
   far up the screen.
+
+## Space test hooks of wave 5 (2026-10-28, fix/w5-space)
+<a id="testing-space-away"></a>
+
+* `coop.space away 1|0`: the Space modules act as outside Space (no cargo hold) while the Space
+  world stays, as in an editor or an adventure entered from Space. Cleared at session end; a test
+  that leaves it on breaks the later Space tests of the lane until the session ends. Used by
+  `space_down_away` (BUG-0228/0229) and `space_gift_refund` (BUG-0226). `coop.space trade away`
+  is trade's own older hook.
+* `coop.space downstate` (disabled state, world epoch, owed clear), `coop.space gift` and
+  `gift hold|noroom 0|1` (receiver side), `coop.fleet impostor_id|impostor_mission <p>` and
+  `coop.fleet ident` (BUG-0218), `coop.space contracts tough_reuse|hideships 0|1` and
+  `contracts wave` (BUG-0227), `coop.space allies samegalaxy` (BUG-0225).
+* The owed spice, the owed invincibility clear and the disabled state are memory only: a hot
+  reload of coop.dll drops them.
+* `space_down_away` part (b) loads the fixture again from the galaxy menu (about 40 s).
