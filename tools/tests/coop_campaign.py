@@ -697,7 +697,9 @@ class Campaign:
                      f'world in {nxt} within 300 s (together on the host: {sorted(self.together())})',
                      [self.host] + behind, where)
         # what players do then: leave and join again
-        for g in behind:
+        for g in behind:  # (one rejoin can bring them all: the host saves for its share, BUG-0258)
+            if cl.stage_of(g.call('game.mode')) == nxt and g.pid in self.together():
+                continue
             self.rejoin(g)
         ok = all(cl.stage_of(g.call('game.mode')) == nxt for g in self.guests) and \
             all(g.pid in self.together() for g in self.guests)
