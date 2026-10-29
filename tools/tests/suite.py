@@ -235,3 +235,4 @@ def select(spec):
             assert w in names, f'unknown test: {w} (known: {sorted(names)})'
             want.add(w)
     return [t for t in T if t['name'] in want]
+add('trace_log', P + 'coop_trace_log.py', minutes=6)  # support logging: trace / eat / body lines on both games in Cell and Creature, the same eaten object in both logs, log size per minute

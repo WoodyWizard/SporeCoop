@@ -12,6 +12,7 @@ struct Endpoint {
     bool operator==(const Endpoint& o) const { return ip == o.ip && port == o.port; }
     bool operator!=(const Endpoint& o) const { return !(*this == o); }
     std::string str() const;
+    std::string masked() const; // for logs and reports (net/ipmask.h): never the full public address
     static bool parse(const std::string& s, uint16_t default_port, Endpoint& out);
     // err: why not ("the port must be a number from 1 to 65535", "cannot resolve <host>")
     static bool parse(const std::string& s, uint16_t default_port, Endpoint& out, std::string& err);

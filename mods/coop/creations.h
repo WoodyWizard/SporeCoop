@@ -78,6 +78,8 @@ void choose(Kind k, const Key& key); // {} = keep the world's own
 void cycle(Kind k, int dir);
 
 std::string status();
+// support trace (trace.h): the own creation of the stage, where the choice came from, what the avatar has
+std::string trace_line(Kind k);
 std::string debug(const std::vector<std::string>& args);
 
 } // namespace creations

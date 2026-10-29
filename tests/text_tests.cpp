@@ -8,6 +8,7 @@
 #include "net/buffer.h"
 #include "net/utf8.h"
 #include "notify_text.h"
+#include "trace_rate.h"
 
 static int g_fail;
 #define CHECK(c)                                                  \
@@ -90,6 +91,23 @@ static void test_notify_lines()
     CHECK(utf8::count(all) >= utf8::count(ru));
 }
 
+// the support log's rate limit (trace.h): a burst in full, the rest counted, summed up per window
+static void test_trace_rate()
+{
+    printf("trace rate limit\n");
+    trace::RateLimit r(10.0);
+    int written = 0;
+    for (int i = 0; i < 50; i++)
+        written += r.allow("eat: own", 1.0 + i * 0.1, 5);
+    written += r.allow("eat: sent", 2.0, 5);
+    CHECK(written == 6);
+    CHECK(r.take_summary(5.0).empty()); // the window still runs
+    auto s = r.take_summary(11.5);
+    CHECK(s.size() == 1 && s[0].first == "eat: own" && s[0].second.first == 45 && s[0].second.second == 50);
+    CHECK(r.allow("eat: own", 12.0, 5)); // a new window
+    CHECK(r.take_summary(30.0).empty()); // nothing dropped in it
+}
+
 int main(int argc, char** argv)
 {
     if (argc == 2 && !strcmp(argv[1], "--old")) {
@@ -101,6 +119,7 @@ int main(int argc, char** argv)
     test_names();
     test_width();
     test_notify_lines();
+    test_trace_rate();
     printf(g_fail ? "FAILED (%d)\n" : "ALL OK\n", g_fail);
     return g_fail ? 1 : 0;
 }

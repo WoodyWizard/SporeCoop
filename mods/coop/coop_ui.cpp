@@ -1,4 +1,5 @@
 #include "coop_ui.h"
+#include "trace.h"
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -303,6 +304,7 @@ static Win add_button(std::vector<Win>& page, const char* name, const Rect& r, c
         if (g_log_msgs && m.type != 8 && m.type != 0xC && m.type != 0xD)
             H->log(M, SK_DEBUG, "ui msg %s 0x%X src=%p %08X %08X %08X", name.c_str(), m.type, m.source, m.a, m.b, m.c);
         if (sui::is_click(m)) {
+            trace::line("ui", "click %s", name.c_str());
             g_btn_native[w] = H->time_seconds();
             fn();
             return true;
@@ -326,7 +328,12 @@ static void locked_click_tick(bool clicked)
             g_locked_native++; // the game delivered it after all: no second press
         else if (f != g_btn_fn.end() && D.root && sui::visible(D.root) && sui::visible(w)) {
             g_locked_clicks++;
-            H->log(M, SK_INFO, "ui: a click on the co-op window while the game's input is locked (a caption): pressed");
+            std::string nm;
+            for (auto& [n, win] : g_named)
+                if (win == w)
+                    nm = n;
+            H->log(M, SK_INFO, "ui: a click on the co-op window while the game's input is locked (a caption): pressed %s",
+                   nm.c_str());
             static std::function<void()> s_fn;
             s_fn = f->second;
             H->run_outside_frame([](void*) { if (s_fn) s_fn(); }, nullptr);
@@ -452,7 +459,8 @@ static void do_report()
         return;
     }
     set_status(std::string(T("Report saved: ", "Отчёт сохранён: ")) + p.substr(p.find_last_of("\\/") + 1) +
-                   T(" - attach it to an issue on GitHub", " - приложите его к issue на GitHub"),
+                   T(" - attach it to an issue on GitHub; the other players should send theirs too",
+                     " - приложите его к issue на GitHub; другие игроки пусть пришлют свои"),
                kGreen);
     std::wstring w(p.begin(), p.end()); // the path is ASCII-safe enough for /select; UTF-8 below if not
     int n = MultiByteToWideChar(CP_UTF8, 0, p.c_str(), -1, nullptr, 0);
@@ -944,6 +952,7 @@ void open(bool on)
 }
 
 bool is_open() { return g_want_open; }
+int input_lock_now() { return input_lock(); }
 
 void tick()
 {

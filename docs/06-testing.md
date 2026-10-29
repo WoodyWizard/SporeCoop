@@ -1690,3 +1690,19 @@ wrong. Suite `campaign` (in no other suite): `tools/lab.py run campaign --lanes 
 * The campaign prints every guest's p90, object count, worst object and each game's frame rate
   next to a desync finding (`sync: ...`).
 
+## Support logging test (2026-10-29, feat/w7-trace)
+<a id="testing-trace-log"></a>
+
+* `coop_trace_log.py` (suite `trace_log`, ~6 min, two cold starts): Cell fixture, the guest eats up
+  to three plants / meat of the host's pool with the game's eat handler (`coop.pool eat`), the host
+  one; then the creature fixture. It reads both games' `sporekit.<inst>.log` from the start offsets
+  (lane.game_log) and checks: the same object `c<K>` in the guest's `eat: sent gone` and the host's
+  `eat: from <id> gone ... applied`; periodic `trace:` lines with a partner line `puppet=shown`; a
+  `cell:` line with `diet=` and `screen: plants=`, the guest's with `host d=`; `body: puppet of`
+  lines; in Creature `creature:` and `body: creature: own=` lines on both, the host's puppet line
+  naming the species the guest's own trace reports and built from the guest's creation; the
+  partners' versions; the log growth under 30 KB a minute per game.
+* `coop.log detail 0|1|2` switches the level at runtime, `coop.log trace` writes the trace lines on
+  the next frame (tests).
+* `make test`: `text_tests` checks the rate limit (`trace_rate.h`), `net_tests` the version
+  extension with an old-shape peer (`test_peer_versions`) and the address masks (`test_ip_mask`).

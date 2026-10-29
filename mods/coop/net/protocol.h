@@ -129,8 +129,11 @@ struct Quat {
 enum Caps : uint32_t {
     CAP_SPLIT = 1, // joins split reliable messages (BUG-0034 receiver); no payload
     CAP_TOKEN = 2, // HELLO only: u64 rejoin token (BUG-0235); never in WELCOME or anything relayed
+    // the versions of the game and the mod (support logs, 0.7.4): HELLO: str8 "coop X, SporeKit Y, <build>";
+    // WELCOME: str8 of the host, u8 n, n x (u8 player id, str8 version) of the players the host knows
+    CAP_VERSION = 4,
 };
-constexpr uint32_t kMyCaps = CAP_SPLIT; // what this build supports (the token bit is per HELLO)
+constexpr uint32_t kMyCaps = CAP_SPLIT | CAP_VERSION; // what this build supports (the token bit is per HELLO)
 
 struct Hello {
     uint16_t proto = kProtoVersion;
@@ -140,6 +143,7 @@ struct Hello {
     uint32_t caps = kMyCaps;   // read: 0 = an older peer
     bool has_token = false;
     uint64_t token = 0;
+    std::string version; // CAP_VERSION ("" read: an older peer)
     void write(Writer& w) const
     {
         w.u16(proto); w.u32(build); w.str8(name);
@@ -149,6 +153,8 @@ struct Hello {
         w.u32(c);
         if (has_token)
             w.raw(&token, 8);
+        if (c & CAP_VERSION)
+            w.str8(version);
     }
     bool read(Reader& r)
     {
@@ -165,6 +171,15 @@ struct Hello {
             r.raw(&token, 8);
             has_token = true;
         }
+        version.clear();
+        if ((caps & CAP_VERSION) && r.left() >= 1) {
+            Reader v = r; // a bad payload leaves the HELLO readable
+            std::string s = v.str8();
+            if (v.ok()) {
+                version = s;
+                r = v;
+            }
+        }
         return true;
     }
 };
@@ -172,6 +187,7 @@ struct Hello {
 struct PlayerInfo {
     uint8_t id = 0;
     std::string name;
+    std::string version; // CAP_VERSION text, "" = unknown (an older SporeCoop)
 };
 
 struct Welcome {
@@ -179,15 +195,29 @@ struct Welcome {
     uint32_t world = 0;
     std::vector<PlayerInfo> players;
     bool ext = true;         // write the extension (false: a 0.7.2-shaped WELCOME, tests)
-    uint32_t caps = kMyCaps; // the host's (read: 0 = an older host); no payloads in WELCOME
+    uint32_t caps = kMyCaps; // the host's (read: 0 = an older host)
+    std::string host_version; // CAP_VERSION (read: "" = an older host); the players' in `players`
     void write(Writer& w) const
     {
         w.u8(your_id);
         w.u32(world);
         w.u8((uint8_t)players.size());
         for (auto& p : players) { w.u8(p.id); w.str8(p.name); }
-        if (ext)
-            w.u32(caps & ~(uint32_t)CAP_TOKEN);
+        if (!ext)
+            return;
+        w.u32(caps & ~(uint32_t)CAP_TOKEN);
+        if (caps & CAP_VERSION) {
+            w.str8(host_version);
+            uint8_t n = 0;
+            for (auto& p : players)
+                n += !p.version.empty() && p.id != 0;
+            w.u8(n);
+            for (auto& p : players)
+                if (!p.version.empty() && p.id != 0) {
+                    w.u8(p.id);
+                    w.str8(p.version);
+                }
+        }
     }
     bool read(Reader& r)
     {
@@ -205,6 +235,29 @@ struct Welcome {
             return false;
         ext = r.left() >= 4;
         caps = ext ? r.u32() & ~(uint32_t)CAP_TOKEN : 0;
+        host_version.clear();
+        if ((caps & CAP_VERSION) && r.left() >= 1) {
+            Reader v = r; // a bad payload leaves the WELCOME readable
+            std::string hv = v.str8();
+            int n = v.u8();
+            std::vector<std::pair<uint8_t, std::string>> got;
+            for (int i = 0; i < n && v.ok(); i++) {
+                uint8_t id = v.u8();
+                std::string s = v.str8();
+                got.push_back({id, s});
+            }
+            if (v.ok()) {
+                r = v;
+                host_version = hv;
+                for (auto& p : players) {
+                    if (p.id == 0)
+                        p.version = hv;
+                    for (auto& [id, s] : got)
+                        if (id == p.id && id != 0)
+                            p.version = s;
+                }
+            }
+        }
         return true;
     }
 };
@@ -218,8 +271,24 @@ struct Reject {
 
 struct PlayerJoin {
     PlayerInfo p;
-    void write(Writer& w) const { w.u8(p.id); w.str8(p.name); }
-    bool read(Reader& r) { p.id = r.u8(); p.name = r.str8(); return r.ok(); }
+    // the version (0.7.4) after the 0.7.2 fields: older readers ignore it, "" from an older host
+    void write(Writer& w) const { w.u8(p.id); w.str8(p.name); w.str8(p.version); }
+    bool read(Reader& r)
+    {
+        p.id = r.u8(); p.name = r.str8();
+        if (!r.ok())
+            return false;
+        p.version.clear();
+        if (r.left() >= 1) {
+            Reader v = r;
+            std::string s = v.str8();
+            if (v.ok()) {
+                p.version = s;
+                r = v;
+            }
+        }
+        return true;
+    }
 };
 
 struct PlayerLeave {
