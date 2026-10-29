@@ -700,3 +700,20 @@ None open (BUG-0077, BUG-0080, BUG-0094 and BUG-0139 fixed on fix/w4-installer).
   no host or session id to merge them by.
 * Not checked: two separate PCs.
 * Ticket: BUG-0210.
+
+## Cell: a guest may bite one NPC more often than the host can (2026-10-28, fix/w5-cell)
+<a id="issue-cell-guest-bite-lock"></a>
+
+* What happens: after a bite of the host's own cell the game does not let the same NPC be hurt
+  again for a moment (a lock). A guest's bite is applied by the host as an hp change and sets no
+  lock, so a guest biting fast may take hp more often than the host.
+* Reproduce: not measured. Host `coop.pool kill c<key> hit` twice within 0.5 s, then the guest the
+  same, and compare the hp the host's game lost.
+* Known: Bite sets +0x178 on both cells before DamageCell; DamageCell refuses while the victim's
+  +0x17C or +0x111 is set (docs/re/cell.md#cell-damage-gate). Who sets +0x17C and who clears the
+  locks is open. The cell type and AI type part of the gate is fixed (BUG-0240,
+  docs/re/cell.md#cell-ko-grace).
+* Not checked: whether the guest's own collision code starts bites faster than the host's.
+* Next steps: measure the lock bytes per frame after a host bite; making a guest bite take the
+  game's own path (DamageCell on the host with the puppet as attacker) is a separate design.
+* Ticket: BUG-0240 (the lock part left open there).

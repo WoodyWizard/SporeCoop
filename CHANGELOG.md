@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Fixed
+- **Cell: a knocked-out partner no longer flickers to "up" when one update is late** (BUG-0238):
+  it stays translucent until its own 10 s run out, is not taken for a helper meanwhile, and its
+  death effect does not play twice.
+- **Cell: a guest's meal while the host is in its editor no longer drops the guest's food later**
+  (BUG-0239): the guest is back at the shared total as soon as the host returns.
+- **Cell: a guest's bite no longer hurts cells the host's own bite cannot** (BUG-0240): rocks,
+  plants and meat are spared, as in the game.
+
 ## [0.7.3.0] - 2026-10-28
 
 A big bug-fix release. A review of the whole mod and the test lab found about 180 problems; 158 of

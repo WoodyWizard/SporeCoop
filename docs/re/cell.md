@@ -618,3 +618,33 @@ for verification and its limits.
   guestbite 0|1`; test helper `coop.pool npcflag c<key> spare|invuln 0|1 | hp <n>` (host).
 * Knockout helpers (BUG-0131): `nearest_partner` skips partners whose knockout state is KO_OUT
   (`coop.pool fix rescue 0|1`); `coop.pool selfhit <dmg>` bites our own cell (tests).
+
+## Knockout grace, meals while the host is away, IsDamageable's resource part (2026-10-28, fix/w5-cell)
+<a id="cell-ko-grace"></a>
+
+* ✔ (BUG-0238) A remote knockout (`g_ko`, MSG_CELL_KO every 0.25 s from its owner) is stale only
+  after `max(2 s, left + 2 s)` since its last refresh (`cell_logic::ko_stale`, `left` = the
+  owner's seconds still to run, a byte of tenths, at most 25.5 s). The 2 s of BUG-0061 ended it at
+  one late refresh. A refresh after an expiry (`Ko::expired`) restores the translucency without
+  `cell_death_oneshot`. `reset_knockout` sends KO_UP when it ends a running knockout of ours while
+  the session is open (a stage leave). `coop.pool kodrop <s>` (tests, host) ignores MSG_CELL_KO for
+  s seconds; `ko[N]=` lines of `coop.pool` end with `fx=<death effects played on that puppet>`.
+  Switch `pool.ko_grace`.
+* ✔ (BUG-0239) The host records the meal number of a guest's MSG_CELL_EAT / MSG_CELL_FOOD also
+  outside the Cell stage or without an avatar (no points, no game call): the ack means "counted or
+  never will be", as for a meal eaten first. `read_eat` / `read_food` are the only readers of the two
+  messages. `coop.pool away 1|0` (tests, host) handles the Cell messages as in an editor. Switch
+  `pool.food_ack_away`.
+* ✔ (BUG-0240) IsDamageable, GOG 2024 **0xE52940** (GOG 2016 0xE52950, the address in the table of
+  section 6), disassembled: `push ecx`; GetData(victim+0x108) into a holder; the AI block by the
+  difficulty `*(*(0x16B3C04)+0x5190)+0x7C` (0: +0x248, 2: +0x194, each only when its first int is
+  not -1; else +0xE0); returns true only when `(ai.type != 0 || victim.index == G+0x411C) && hp
+  (+0x244) != 0 && +0x112 != 1 && res+0xB4 == 2`. Seen in the game (lane 2): the host's own bite
+  (DamageCell) on a rock (cell type 1) and on meat (type 2, AI type 0), each given hp 60, takes
+  nothing. Rocks and plants have hp 6 in play, so before the fix a guest could bite them. The
+  host's guest-bite gate now copies this part (`res_types`, fail open when the resource cannot be
+  read). Switch `pool.guestbite_type`; `coop.pool kill <key|-> anyhit [kind]` bites any kind.
+* ? The hurt lock after a host bite (the tests wait 2 s between bites; Bite sets +0x178 on both
+  cells, DamageCell checks +0x17C): which byte, set by whom and for how long is not measured. A
+  guest's bite applied by the host sets none, so a guest may bite one NPC faster than the host
+  (docs/known-issues.md, BUG-0240).
