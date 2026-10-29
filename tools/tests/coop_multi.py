@@ -177,6 +177,16 @@ def limit(kind):
     return LIMITS.get(kind, (3.0, 30))[0] * 2  # chaos keeps everything moving: twice the still limit
 
 
+def seg_dist(p, a, b):
+    """distance of p from the segment a-b: the guest shows the host's object somewhere between the
+    host's two samples around its own (h1 can be seconds old for the last of four guests; the two
+    ends alone counted the object's way in between as a desync, BUG-0269)"""
+    d = [y - x for x, y in zip(a, b)]
+    dd = sum(v * v for v in d)
+    t = 0.0 if dd == 0 else max(0.0, min(1.0, sum((q - x) * v for q, x, v in zip(p, a, d)) / dd))
+    return sum((q - (x + t * v)) ** 2 for q, x, v in zip(p, a, d)) ** 0.5
+
+
 def measure(host, g, h1):
     """position errors per kind of one guest against host samples, coverage, objects counted"""
     gs = sample(g)
@@ -197,7 +207,7 @@ def measure(host, g, h1):
             missing += 1
             continue
         hp2 = h2.get(key, hp)
-        e = min(sum((a - b) ** 2 for a, b in zip(hp, gp)) ** 0.5, sum((a - b) ** 2 for a, b in zip(hp2, gp)) ** 0.5)
+        e = seg_dist(gp, hp, hp2)
         errs.setdefault(key[0], []).append(e)
     cov = 1 - missing / total if total else 1
     return errs, cov, total
