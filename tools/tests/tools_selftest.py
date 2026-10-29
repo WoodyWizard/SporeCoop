@@ -2,6 +2,7 @@
 """Self-tests of the dev tools (make test): they must never touch the owner's own Spore, profile or
 saves, and keep the knowledge files honest. Every check runs on fakes in a temporary folder:
 
+  noenv     spore.sh and lane.py work without $USER / $HOME (BUG-0252)
   kill      spore.sh kill / pids on fake game processes inside a private PID namespace
             (unshare): lane 1 leaves the owner's game alone, a lane leaves other lanes alone,
             a half-dead game of the lane is ended (BUG-0025, BUG-0101, BUG-0103)
@@ -409,7 +410,22 @@ def test_triage():
     check('BUG-0018' in out, 'the known ticket of 0xC6AE60 is found (BUG-0018)')
 
 
-CHECKS = {'kill': test_kill, 'fixture': test_fixture, 'headless': test_headless, 'tickets': test_tickets,
+# ---------------------------------------------------------------- noenv (BUG-0252)
+def test_noenv():
+    print('noenv: the tools without $USER / $HOME (containers, env -i, cron)')
+    env = {k: v for k, v in os.environ.items() if k != 'USER'}
+    for what, e in (('without USER', dict(env, SPORE_LANE='10')),
+                    ('with env -i', {'PATH': os.environ.get('PATH', '/usr/bin:/bin'), 'SPORE_LANE': '10'})):
+        r = subprocess.run(['bash', SPORE, 'status'], env=e, capture_output=True, text=True)
+        check(r.returncode == 0 and 'unbound variable' not in r.stderr,
+              f'spore.sh status {what} ({r.returncode}, {r.stderr.strip()[-80:]})')
+    lane_dir = os.path.join(os.path.dirname(SPORE), 'tests')
+    r = subprocess.run([sys.executable, '-I', '-c', f'import sys; sys.path.insert(0, {lane_dir!r}); import lane; '
+                        'print(lane.APPDATA)'], env=dict(env, SPORE_LANE='10'), capture_output=True, text=True)
+    check(r.returncode == 0 and '/drive_c/users/' in r.stdout, f'lane.py imports without USER ({r.stderr.strip()[-80:]})')
+
+
+CHECKS = {'noenv': test_noenv, 'kill': test_kill, 'fixture': test_fixture, 'headless': test_headless, 'tickets': test_tickets,
           'tickets_check': test_tickets_check, 'relint': test_relint,
           'release': test_release, 'triage': test_triage}
 

@@ -20,7 +20,7 @@ KIT_OBJ := $(patsubst %.cpp,$(B)/obj/%.o,$(KIT_SRC))
 COOP_SRC := $(wildcard mods/coop/*.cpp) $(wildcard mods/coop/net/*.cpp) $(wildcard updater/*.cpp)
 COOP_OBJ := $(patsubst %.cpp,$(B)/obj/%.o,$(COOP_SRC))
 
-.PHONY: test-win test-asan test-tsan all loader sporekit coop res setup clean test
+.PHONY: test-win test-asan test-tsan all loader sporekit coop res setup clean test sanitizer-probe
 all: loader sporekit coop res setup
 
 # game resources (icons, ...) for SporeCoop: Data/SporeCoop.package
@@ -66,37 +66,65 @@ $(B)/SporeCoopSetup.exe: installer/setup.cpp installer/install.cpp installer/ins
 	$(CXX) $(CXXFLAGS) -DSETUP_VERSION='"$(COOP_VERSION)"' -municode -mwindows -static -o $@ $(filter-out %.h,$^) \
 		-lwinhttp -lcomctl32 -lshell32 -lole32 -ladvapi32 -luser32 -lgdi32
 
+# The sanitizer builds need the compiler's runtimes: one probe (a stamp per HOSTCXX) says what is
+# missing before any test runs (BUG-0252). SKIP_SANITIZERS=1: a local machine skips them on purpose,
+# loudly; refused in CI (GitHub sets CI=true).
+SAN_STAMP := $(B)/host/sanitizer-probe.$(subst /,_,$(HOSTCXX)).ok
+ifeq ($(SKIP_SANITIZERS),1)
+ifneq ($(CI),)
+$(error SKIP_SANITIZERS=1 is not allowed in CI: the sanitizer tests must run there)
+endif
+SAN :=
+TSAN_RUN :=
+else
+SAN := -fsanitize=address,undefined
+TSAN_RUN = $(if $(shell grep -s setarch $(SAN_STAMP)),setarch $(shell uname -m) -R )
+endif
+
+sanitizer-probe:
+ifneq ($(SKIP_SANITIZERS),1)
+	@test -f $(SAN_STAMP) || tools/sanitizer_probe.sh "$(HOSTCXX)" $(B)/host $(SAN_STAMP)
+endif
+
 # native Linux unit tests for portable netcode
-test:
+test: sanitizer-probe
 	@mkdir -p $(B)/host
+ifeq ($(SKIP_SANITIZERS),1)
+	@echo "WARNING: SKIP_SANITIZERS=1: the ASan/UBSan/TSan tests are NOT RUN"
+endif
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall -Imods/coop -o $(B)/host/net_tests mods/coop/net/*.cpp updater/pack.cpp updater/sha256.cpp tests/net_tests.cpp
 	$(B)/host/net_tests
 	python3 tools/tests/fakepeer_check.py $(B)/host/net_tests
 	python3 tools/tests/lab_selftest.py
+ifneq ($(SKIP_SANITIZERS),1)
 	$(MAKE) --no-print-directory test-asan
 	$(MAKE) --no-print-directory test-tsan
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall -fsanitize=address,undefined -fno-omit-frame-pointer -Imods/coop -o $(B)/host/fuzz_decoders mods/coop/net/*.cpp updater/pack.cpp updater/sha256.cpp tests/fuzz_decoders.cpp
 	ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 $(B)/host/fuzz_decoders
-	$(HOSTCXX) -std=c++20 -O1 -g -Wall -fsanitize=address,undefined -Imods/coop -o $(B)/host/validate_tests tests/validate_tests.cpp
+endif
+	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/validate_tests tests/validate_tests.cpp
 	$(B)/host/validate_tests
-	$(HOSTCXX) -std=c++20 -O1 -g -Wall -fsanitize=address,undefined -Imods/coop -o $(B)/host/cell_tests tests/cell_tests.cpp
+	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/cell_tests tests/cell_tests.cpp
 	$(B)/host/cell_tests
-	$(HOSTCXX) -std=c++20 -O1 -g -Wall -fsanitize=address,undefined -Imods/coop -o $(B)/host/npc_tests tests/npc_tests.cpp
+	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/npc_tests tests/npc_tests.cpp
 	$(B)/host/npc_tests
-	$(HOSTCXX) -std=c++20 -O1 -g -Wall -fsanitize=address,undefined -Imods/coop -o $(B)/host/space_tests tests/space_tests.cpp
+	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/space_tests tests/space_tests.cpp
 	$(B)/host/space_tests
-	$(HOSTCXX) -std=c++20 -O1 -g -Wall -fsanitize=address,undefined -Imods/coop -o $(B)/host/text_tests tests/text_tests.cpp
+	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/text_tests tests/text_tests.cpp
 	$(B)/host/text_tests
-	$(HOSTCXX) -std=c++20 -O1 -g -Wall -fsanitize=address,undefined -Imods/coop -o $(B)/host/fixes_tests tests/fixes_tests.cpp mods/coop/fixes.cpp
+	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/fixes_tests tests/fixes_tests.cpp mods/coop/fixes.cpp
 	$(B)/host/fixes_tests $(wildcard mods/coop/*.cpp mods/coop/*.h mods/coop/net/*.cpp mods/coop/net/*.h updater/*.cpp updater/*.h)
 	python3 tools/re_lint.py
 	python3 tools/docs_lint.py
 	python3 tools/glyph_lint.py
 	python3 tools/tickets.py check
 	python3 tools/tests/tools_selftest.py
+ifeq ($(SKIP_SANITIZERS),1)
+	@echo "WARNING: SANITIZER TESTS NOT RUN (SKIP_SANITIZERS=1)"
+endif
 
 # the same unit tests under AddressSanitizer: a freed object used later fails here (BUG-0029)
-test-asan:
+test-asan: sanitizer-probe
 	@mkdir -p $(B)/host
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall -fsanitize=address,undefined -fno-omit-frame-pointer -Imods/coop -o $(B)/host/net_tests_asan mods/coop/net/*.cpp updater/pack.cpp updater/sha256.cpp tests/net_tests.cpp
 	ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 $(B)/host/net_tests_asan
@@ -112,10 +140,10 @@ test-asan:
 	@echo "net_tests_asan: --nofix ran to the end, --old-dbbf and --old-refpack died under ASan"
 
 # the setup's shared release state under ThreadSanitizer (BUG-0077; `release_tsan --old` must fail)
-test-tsan:
+test-tsan: sanitizer-probe
 	@mkdir -p $(B)/host
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall -fsanitize=thread -o $(B)/host/release_tsan tests/release_tsan.cpp updater/pack.cpp updater/sha256.cpp
-	TSAN_OPTIONS=halt_on_error=1 $(B)/host/release_tsan
+	TSAN_OPTIONS=halt_on_error=1 $(TSAN_RUN)$(B)/host/release_tsan
 
 # Windows-side unit tests (file handling of the updater and of received worlds), run under Wine in
 # a lane's bottle by tools/tests/win_unit.py (lab test win_unit)
