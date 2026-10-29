@@ -461,12 +461,21 @@ class Campaign:
         elif k == 'pause':
             con.call('key esc')
             time.sleep(self.rng.uniform(2, 6))
-            con.call('key esc')
+            self.close_pause(con)
         elif k == 'save':
             con.call('coop.save')
             time.sleep(2.5)
             con.call('key enter')
         return k
+
+    def close_pause(self, con):
+        """close the pause menu the way a player does (Resume Game); a second Esc could open its
+        Options box instead and leave the game paused (BUG-0263)"""
+        for _ in range(3):
+            if not uifind.shown(con, 'Resume Game'):
+                return
+            uifind.press(con, 'Resume Game')
+            time.sleep(1.0)
 
     def rejoin(self, g):
         """a guest leaves and joins again: it leaves to its menu, loads the host's world anew and is
@@ -614,6 +623,8 @@ class Campaign:
         nxt = cl.STAGES[cl.STAGES.index(stage) + 1]
         self.stage, self.phase = stage, 'advance'
         self.note(f'advance {stage} -> {nxt}')
+        for p in self.P:  # BUG-0263: a pause menu left open by the play phase blocks the stage change
+            self.close_pause(p.con)
         t0 = time.time()
         timeout = self.advance_minutes(stage) * 60
         kicks = {'cell': self.kick_cell, 'creature': self.kick_creature, 'tribe': self.kick_tribe,
