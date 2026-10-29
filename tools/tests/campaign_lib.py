@@ -86,7 +86,10 @@ def census_problems(host, guest, near=90.0, pos_m=10.0):
         for i in sorted(set(h) - set(g)):
             if kind == 'c' and (me is None or math.dist(h[i]['pos'], me) > near):
                 continue  # not streamed to this guest
-            out.append(f'{kind}{i}: the host has it, the guest not ({h[i]["own"]} {h[i]["key"]})')
+            r = h[i]
+            near_txt = f', {math.dist(r["pos"], me):.0f} m from the guest' if me else ''
+            out.append(f'{kind}{i}: the host has it, the guest not ({r["own"]} {r["key"]} alive={r["alive"]} '
+                       f'hp={r["hp"]:g} ai={r["ai"]}{near_txt})')
         for i in sorted(set(g) - set(h)):
             out.append(f'{kind}{i}: the guest has it, the host not ({g[i]["own"]} {g[i]["key"]})')
         for i in sorted(set(h) & set(g)):

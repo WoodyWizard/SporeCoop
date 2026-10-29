@@ -132,14 +132,15 @@ class Campaign:
         with self.lock:
             new = self.F.add(kind, key, text, f'{self.stage}/{self.phase}', [p.name for p in players], ev)
         if not new:
-            return
+            return False
         print(f'  FINDING [{kind}] {text}', flush=True)
         if kind == 'info':
-            return
+            return True
         more = []
         for p in (players or self.P):
             more += self.evidence(p, f'{len(self.F.items):02d}_{kind}')
         self.F.attach(kind, key, more)
+        return True
 
     def evidence(self, p, tag):
         out = []
@@ -305,9 +306,15 @@ class Campaign:
                     if g in alive and g.pid in tog:
                         for pr in cl.census_problems(hc, census.dump(g.con))[:20]:
                             probs.append(f'{g.name}|{pr}')
-                for k in self.persist['census'].update(probs):
+                for k in self.persist['census'].update(p.split(' (')[0] for p in probs):
                     name, pr = k.split('|', 1)
-                    self.finding('census', f'{hst}:{k}', f'{name}: {pr} ({hst})', [host, self.byname(name)])
+                    full = next((x for x in probs if x.startswith(k)), k).split('|', 1)[1]
+                    if self.finding('census', f'{hst}:{k}', f'{name}: {full} ({hst})', [host, self.byname(name)]):
+                        path = os.path.join(self.run_dir, f'{len(self.F.items):02d}_census.txt')
+                        with open(path, 'w') as f:
+                            f.write('# host\n' + host.call('coop.census') + '\n# ' + name + '\n'
+                                    + self.byname(name).call('coop.census') + '\n')
+                        self.F.attach('census', f'{hst}:{k}', [f'both censuses: {os.path.relpath(path, lane.ROOT)}'])
         except (OSError, ValueError) as e:
             self.finding('info', f'check:{e!r}'[:80], f'a check could not read a game: {e!r}')
 
@@ -538,6 +545,7 @@ class Campaign:
         kicks = {'cell': self.kick_cell, 'creature': self.kick_creature, 'tribe': self.kick_tribe,
                  'civ': self.kick_civ}[stage]
         state = {'n': 0, 'last': 0.0}
+        log0 = self.log_size(self.host.inst)
         services = [Service(self, p) for p in self.P]
         for s in services:
             s.start()
@@ -563,10 +571,13 @@ class Campaign:
         took = time.time() - t0
         if cl.stage_of(self.host.call('game.mode')) != nxt:
             self.note(f'the host did not reach {nxt} in {took / 60:.1f} min')
+            self.vote_check(log0, t0)
             return False
         self.note(f'the host plays {nxt} after {took:.0f} s')
         self.stage = nxt
-        return self.follow(nxt, services)
+        ok = self.follow(nxt, services)
+        self.vote_check(log0, t0)
+        return ok
 
     def follow(self, nxt, services=()):
         """every guest follows the host into the stage (the world share) and is in its world"""
@@ -600,6 +611,34 @@ class Campaign:
             self.finding('stuck', f'follow:{nxt}', f'{", ".join(g.name for g in behind)} did not follow the host into '
                          f'{nxt} within 300 s', [self.host] + behind)
         return ok
+
+    @staticmethod
+    def log_size(inst):
+        try:
+            return os.path.getsize(lane.game_log(inst))
+        except OSError:
+            return 0
+
+    def log_since(self, inst, offset):
+        try:
+            with open(lane.game_log(inst), 'rb') as f:
+                f.seek(offset)
+                return [l for l in f.read().decode('utf-8', 'replace').splitlines() if '[DBG]' not in l]
+        except OSError:
+            return []
+
+    def vote_check(self, log0, t0):
+        """a vote of this stage change that ran out of time although the guests pressed I'm ready"""
+        lines = self.log_since(self.host.inst, log0)
+        timeups = [l for l in lines if 'evolution starts (time is up)' in l]
+        readies = [v for v in self.votes if v[0] >= t0]
+        for l in lines:
+            if 'wants to evolve' in l or 'evolution starts' in l:
+                self.note('host log: ' + l.split('coop: ')[-1])
+        if timeups and readies:
+            self.finding('vote', f'{self.stage}:timeup', f'a vote ran out of time although '
+                         f'{", ".join(sorted({v[1] for v in readies}))} pressed "I\'m ready" ({self.stage})',
+                         self.P, [f'`{l.strip()}`' for l in lines if 'evol' in l or 'ready' in l][:10])
 
     def kick_cell(self, state):
         h = self.host
