@@ -18,6 +18,8 @@ Cases (ticket):
   worktree      --branch fix/a never picks the worktree of fix/a-b (BUG-0048)
   game_log      twoinst.Monitor reads the lane's game log from a worktree too (BUG-0068)
   fixture       a fixture that lacks its facts fails Checks.faults() (BUG-0124)
+  kill_args     lab.py kill: --lanes 3 is refused as ambiguous, --lane / --upto / --lanes 2,3, lane 1 only
+                with --include-lane-1, an empty selection exits 1 (BUG-0253)
 """
 import argparse
 import contextlib
@@ -195,6 +197,44 @@ def game_log_case(tree, tmp):
           + (r.stdout.strip().splitlines() or [r.stderr.strip()[-200:]])[-1])
 
 
+def kill_case(tree, tmp):
+    """lab.py kill's lane selection, with the stubbed spore recording its calls (BUG-0253)"""
+    sys.path.insert(0, os.path.join(tree, 'tools'))
+    import lab
+    calls = []
+    lab.spore = lambda root, lane, *a, **k: calls.append(lane) or subprocess.CompletedProcess(a, 0, '', '')
+
+    def kill(*args):
+        calls.clear()
+        old = sys.argv
+        sys.argv = ['lab.py', 'kill', *args]
+        out = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
+                rc = lab.main()
+        except SystemExit as e:
+            rc = e.code
+        finally:
+            sys.argv = old
+        return rc, list(calls), out.getvalue()
+    rc, c, out = kill('--lanes', '3')
+    check(rc == 2 and c == [] and 'ambiguous' in out, f'kill --lanes 3: refused as ambiguous, no kill ({rc}, {c})')
+    rc, c, _ = kill('--lane', '3')
+    check(rc == 0 and c == [3], f'kill --lane 3: lane 3 ({c})')
+    rc, c, _ = kill('--upto', '3')
+    check(rc == 0 and c == [2, 3], f'kill --upto 3: lanes 2, 3 ({c})')
+    rc, c, _ = kill('--upto', '3', '--include-lane-1')
+    check(rc == 0 and c == [1, 2, 3], f'kill --upto 3 --include-lane-1: lanes 1..3 ({c})')
+    rc, c, out = kill('--lanes', '2,3')
+    check(rc == 0 and c == [2, 3] and 'lanes 2, 3' in out, f'kill --lanes 2,3: lanes 2, 3, printed ({c})')
+    rc, c, out = kill('--lanes', '1,')
+    check(rc == 1 and c == [] and 'lane 1 left out' in out, f'kill --lanes 1,: nothing, exit 1 with the reason ({rc}, {c})')
+    rc, c, _ = kill()
+    check(rc == 0 and c == list(range(2, 11)), f'kill: lanes 2..10 ({c})')
+    rc, c, _ = kill('--lane', '11')
+    check(rc not in (0, None) and c == [], f'kill --lane 11: refused ({rc}, {c})')
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--tree', default=os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -205,6 +245,7 @@ def main():
         lab_cases(tree, tmp)
         worktree_case(tree, tmp)
         game_log_case(tree, tmp)
+        kill_case(tree, tmp)
     print('RESULT:', 'OK' if not FAILS else f'FAIL ({len(FAILS)})')
     return 0 if not FAILS else 1
 

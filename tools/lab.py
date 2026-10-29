@@ -7,7 +7,9 @@
   lab.py run tribe_play,select         chosen tests (names: tools/tests/suite.py)
   lab.py reload --lane 2               build, deploy and hot-reload coop.dll in the lane's running games
   lab.py run tribe_play --repeat 6 --retry 0   hunt a flaky bug: 6 runs, no retries
-  lab.py kill [--lanes 2,3] [--include-lane-1]  stop the games of lanes 2..10 (lane 1: test games only)
+  lab.py kill [--lane N ... | --upto N | --lanes 2,3] [--include-lane-1]
+                                       stop the games of lanes 2..10, of lane N, of lanes 2..N or of a list
+                                       (lane 1: only with --include-lane-1, its test games only)
 
 A lane runs one test at a time. Warm tests reuse the lane's running games (SPORE_WARM=1,
 twoinst.start: ~10 s instead of ~40 s); after a failure the lane restarts cold. A test that dies
@@ -395,7 +397,9 @@ def main():
     rl = sub.add_parser('reload')
     rl.add_argument('--lane', type=int, action='append', help='lane(s) to reload (default 1)')
     k = sub.add_parser('kill', help='end the games of lanes 2..10 (lane 1: --include-lane-1, test games only)')
-    k.add_argument('--lanes', default='', help='lanes to clean, e.g. 2,3 (default: 2..10)')
+    k.add_argument('--lanes', default='', help='a list of lanes, e.g. 2,3 (one lane: 3, with the comma)')
+    k.add_argument('--lane', type=int, action='append', help='one lane (repeatable)')
+    k.add_argument('--upto', type=int, help='lanes 2..N')
     k.add_argument('--include-lane-1', action='store_true',
                    help='also lane 1 (the real install): its test games only, never the owner\'s own Spore')
     a = ap.parse_args()
@@ -405,11 +409,48 @@ def main():
         ensure_lanes(a.n)
     if a.cmd == 'reload':
         cmd_reload(a)
-    if a.cmd == 'kill':  # BUG-0103: lane 1 is the owner's install, only on request
-        lanes = [int(x) for x in a.lanes.split(',') if x.strip()] or list(range(2, 11))
-        lanes = [n for n in lanes if n != 1] + ([1] if a.include_lane_1 else [])
-        for lane in lanes:  # a lane that does not exist has no processes: nothing happens
-            spore(ROOT, lane, 'kill')
+    if a.cmd == 'kill':
+        return cmd_kill(a)
+    return 0
+
+
+def kill_lanes(a):
+    """the lanes `lab.py kill` ends, or (None, message, exit code). BUG-0103: lane 1 (the owner's
+    install) only on request. BUG-0253: `--lanes N` meant lanes 1..N up to 0.7.2 and lane N in
+    0.7.3.0; a bare number is refused instead of guessed (parallel runs use other lanes)."""
+    v = a.lanes.strip()
+    if v and ',' not in v:
+        return None, (f'lab kill: "--lanes {v}" is ambiguous (0.7.2: lanes 1..{v}; 0.7.3.0: lane {v}). Use '
+                      f'--lane {v} for one lane, --upto {v} for lanes 2..{v}, or --lanes 2,{v} for a list.'), 2
+    try:
+        lanes = [int(x) for x in v.split(',') if x.strip()] if v else []
+    except ValueError:
+        return None, f'lab kill: --lanes {v}: lane numbers separated by commas', 2
+    lanes += a.lane or []
+    if a.upto is not None:
+        lanes += list(range(2, a.upto + 1)) + ([1] if a.include_lane_1 else [])
+    if not (v or a.lane or a.upto is not None):
+        lanes = list(range(2, 11)) + ([1] if a.include_lane_1 else [])
+    bad = [n for n in lanes if not 1 <= n <= 10]
+    if bad:
+        return None, f'lab kill: lane {bad[0]} is not one of 1..10', 2
+    asked1 = 1 in lanes
+    lanes = sorted(set(n for n in lanes if n != 1 or a.include_lane_1))
+    note = 'lane 1 left out: --include-lane-1 to end its test games' if asked1 and not a.include_lane_1 else ''
+    if not lanes:
+        return None, (note + '; ' if note else '') + 'lab kill: no lane selected', 1
+    return lanes, note, 0
+
+
+def cmd_kill(a):
+    lanes, msg, rc = kill_lanes(a)
+    if msg:
+        print(msg)
+    if lanes is None:
+        return rc
+    print('lab kill: lanes ' + ', '.join(map(str, lanes)))
+    for lane in lanes:  # a lane that does not exist has no processes: nothing happens
+        spore(ROOT, lane, 'kill')
     return 0
 
 
