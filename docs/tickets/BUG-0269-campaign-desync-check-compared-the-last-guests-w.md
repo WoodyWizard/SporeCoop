@@ -1,34 +1,35 @@
 ---
 id: BUG-0269
 title: campaign: desync check compared the last guests with a host sample seconds old (false n / c desyncs of Carol and Dave)
-status: open
+status: fixed
 kind: tooling
 stage: 
 reported: 2026-10-29
 source: lab 20261029-093233 campaign
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w6-campaign2
+commits: f617994
+tests: campaign
 signature:
 docs:
 related:
 ---
 
 ## Report
-<!-- what the player (or the test) saw, in our words; no player names, no paths from their PC -->
+Lab 20261029-093233 campaign runs (see the title and the fix commit).
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+The bot did not handle these (see the title).
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+See the commit message.
+switch: none (test tooling)
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+no-fail-run: test tool change; desync findings of the 3rd and 4th player remain in lab 20261029-122937 (followed in BUG-0275).
 
 ## History
 - 2026-10-29: opened.
+- 2026-10-29: fixed on fix/w6-campaign2, merged into main.
