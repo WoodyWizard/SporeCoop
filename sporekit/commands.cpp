@@ -166,6 +166,29 @@ static int c_mem_read(void*, int argc, const char* const* argv, SkOut* o)
     return 0;
 }
 
+// committed private memory of the process, walked with VirtualQuery (read-only, any thread). Under
+// Wine the `env` line reports the working set, which moves by tens of MB on its own (BUG-0241 test)
+static int c_mem_commit(void*, int, const char* const*, SkOut* o)
+{
+    MEMORY_BASIC_INFORMATION mbi;
+    uintptr_t a = 0;
+    uint64_t priv = 0, all = 0;
+    while (VirtualQuery((void*)a, &mbi, sizeof mbi) == sizeof mbi) {
+        if (mbi.State == MEM_COMMIT) {
+            all += mbi.RegionSize;
+            if (mbi.Type == MEM_PRIVATE)
+                priv += mbi.RegionSize;
+        }
+        uintptr_t next = (uintptr_t)mbi.BaseAddress + mbi.RegionSize;
+        if (next <= a)
+            break;
+        a = next;
+    }
+    outf(o, "commit_private_kb=%llu commit_kb=%llu\n", (unsigned long long)(priv / 1024),
+         (unsigned long long)(all / 1024));
+    return 0;
+}
+
 static int c_mem_write(void*, int argc, const char* const* argv, SkOut* o)
 {
     NEED(3, "mem.write <addr> <hexbytes>");
@@ -713,6 +736,7 @@ void register_builtin_commands()
     command_add(k, "mem.read", "mem.read <addr> [len]", c_mem_read, nullptr, A);
     command_add(k, "mem.write", "mem.write <addr> <hex>", c_mem_write, nullptr, M);
     command_add(k, "mem.ptr", "mem.ptr <addr> [off...] - follow pointers", c_mem_ptr, nullptr, A);
+    command_add(k, "mem.commit", "committed private memory of the game (VirtualQuery walk)", c_mem_commit, nullptr, A);
     command_add(k, "call", "call <addr> <conv> [args] - call game function", c_call, nullptr, M);
     command_add(k, "cheat", "cheat <text> - run a Spore cheat", c_cheat, nullptr, M);
     command_add(k, "shot", "shot [linux path] - PNG screenshot", c_shot, nullptr, W);
