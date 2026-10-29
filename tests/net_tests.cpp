@@ -6,6 +6,7 @@
 #include <fstream>
 #include <iterator>
 #include <map>
+#include <set>
 #include "net/dbpf.h"
 #include <cmath>
 #include <cstring>
@@ -17,6 +18,7 @@
 #include <arpa/inet.h>
 
 #include "net/connection.h"
+#include "net/diagmsg.h"
 #include "net/discovery.h"
 #include "net/fixes.h"
 #include "net/ids.h"
@@ -1870,6 +1872,272 @@ static void test_pick_pack()
     CHECK(upd::pick_pack({}).empty());
 }
 
+// ---- support diagnostics (net/diagmsg.h, docs/REPORTING.md#reporting-support) ----
+static void test_diag_messages()
+{
+    printf("diag: clock, mark and digest messages round trip; a bad digest is refused\n");
+    namespace dg = net::diag;
+    Writer w;
+    dg::ClockReq q{7, 123.25};
+    q.write(w);
+    Reader r(w.data.data(), w.size());
+    CHECK(r.u8() == dg::kClockReq);
+    dg::ClockReq q2;
+    CHECK(q2.read(r) && q2.seq == 7 && q2.t_local == 123.25);
+    Writer wa;
+    dg::ClockAns a{7, 123.25, 4567.5};
+    a.write(wa);
+    Reader ra(wa.data.data(), wa.size());
+    dg::ClockAns a2;
+    CHECK(ra.u8() == dg::kClockAns && a2.read(ra) && a2.t_echo == 123.25 && a2.t_session == 4567.5);
+    // a mark: the text is cut at 200 bytes between two characters
+    dg::Mark m;
+    m.origin = 2;
+    m.t_session = 99.125;
+    m.name = "Bob";
+    while (m.text.size() < 400)
+        m.text += "\xd0\x96";
+    Writer wm;
+    m.write(wm);
+    Reader rm(wm.data.data(), wm.size());
+    dg::Mark m2;
+    CHECK(rm.u8() == dg::kMark && m2.read(rm) && m2.origin == 2 && m2.t_session == 99.125 && m2.name == "Bob");
+    CHECK(m2.text.size() <= dg::kMarkTextMax && m2.text.size() >= dg::kMarkTextMax - 1 && utf8::valid(m2.text));
+    // a digest
+    dg::Digest d;
+    d.seq = 5;
+    d.self = 1;
+    d.mode = 0x1654C00;
+    d.world = 0xABCD;
+    d.vote = 1;
+    d.vote_editor = 0x1234;
+    d.totals = {{dg::kTotalCellFood, 42}};
+    d.entries = {{dg::make_key('p', 1), 1, 2, 3}, {dg::make_key('c', 77), 4, 5, 6}};
+    d.out = {2, 3};
+    Writer wd;
+    d.write(wd);
+    Reader rd(wd.data.data(), wd.size());
+    dg::Digest d2;
+    CHECK(rd.u8() == dg::kDigest && d2.read(rd) && d2.seq == 5 && d2.self == 1 && d2.world == 0xABCD && d2.vote == 1);
+    CHECK(d2.totals.size() == 1 && d2.totals[0].second == 42 && d2.entries.size() == 2 && d2.entries[1].z == 6 && d2.out.size() == 2 && d2.out[1] == 3);
+    CHECK(dg::parse_key("c77") == dg::make_key('c', 77) && dg::parse_key("p") == 0 && dg::parse_key("x1y") == 0);
+    CHECK(dg::key_text(dg::make_key('n', 12)) == "n12");
+    // a digest that claims more entries than it has
+    Writer wb;
+    d.write(wb);
+    wb.data.resize(wb.data.size() - 11);
+    Reader rb(wb.data.data(), wb.size());
+    rb.u8();
+    dg::Digest d3;
+    CHECK(!d3.read(rb));
+}
+
+static void test_diag_clock()
+{
+    printf("diag: the session clock takes the sample with the shortest round trip\n");
+    namespace dg = net::diag;
+    dg::ClockSync c;
+    CHECK(!c.valid());
+    // the host's session clock is local + 1000; one way delays differ per sample
+    double true_off = 1000;
+    struct S {
+        double up, down;
+    } s[] = {{0.050, 0.010}, {0.004, 0.004}, {0.030, 0.090}, {0.002, 0.003}, {0.200, 0.010}};
+    double t = 10;
+    for (auto& x : s) {
+        double host = t + x.up + true_off;
+        c.add(t, t + x.up + x.down, host);
+        t += 1;
+    }
+    CHECK(c.valid() && c.samples() == 5);
+    CHECK(std::fabs(c.offset() - true_off) < 0.001); // the 5 ms sample: error <= 0.5 ms
+    CHECK(std::fabs(c.rtt() - 0.005) < 1e-9);
+    c.add(20, 19, 5); // an answer before the request: refused
+    c.add(20, 30, 5); // 10 s round trip: stale
+    CHECK(c.samples() == 5);
+    for (int i = 0; i < 20; i++)
+        c.add(100 + i, 100.5 + i, 100.25 + i + 7);
+    CHECK(c.samples() == dg::ClockSync::kKeep && std::fabs(c.offset() - 7) < 1e-9); // old samples aged out
+}
+
+static void test_diag_compare()
+{
+    printf("diag: the sync-check compares stage, players, totals and objects; lasting differences only\n");
+    namespace dg = net::diag;
+    dg::Digest h, g;
+    h.mode = g.mode = 0x1654C01;
+    h.world = g.world = 0x42;
+    h.self = 0;
+    g.self = 1;
+    h.totals = {{dg::kTotalDna, 100}};
+    g.totals = {{dg::kTotalDna, 100.2f}};
+    h.entries = {{dg::make_key('p', 0), 0, 0, 0}, {dg::make_key('p', 1), 50, 0, 0}, {dg::make_key('n', 1), 10, 0, 0},
+                 {dg::make_key('n', 2), 500, 0, 0}, {dg::make_key('c', 3), 1, 1, 1}};
+    g.entries = {{dg::make_key('p', 0), 2, 0, 0}, {dg::make_key('p', 1), 51, 0, 0}, {dg::make_key('n', 1), 11, 0, 0},
+                 {dg::make_key('c', 3), 1, 1, 2}};
+    dg::Compared c = dg::compare(h, g);
+    // n2 is 450 m from the guest: never sent to it, not missing
+    CHECK(!c.other_place && c.issues.empty() && c.objects == 4);
+    // differences
+    g.entries.push_back({dg::make_key('n', 9), 0, 0, 0});  // a ghost on the guest
+    h.entries.push_back({dg::make_key('n', 4), 60, 0, 0}); // near the guest, missing there
+    h.entries.push_back({dg::make_key('c', 5), 0, 0, 0});  // a cell the guest lacks
+    g.entries[2].x = 40;                                   // n1 30 m off
+    g.totals[0].second = 80;
+    g.vote = 1;
+    c = dg::compare(h, g);
+    std::set<std::string> ids;
+    for (auto& i : c.issues)
+        ids.insert(i.id);
+    CHECK(ids.count("extra:n9") && ids.count("missing:n4") && ids.count("missing:c5") && ids.count("pos:n1"));
+    CHECK(ids.count("total:1") && ids.count("vote") && !ids.count("missing:n2") && ids.size() == 6);
+    std::string t = dg::describe(c.issues);
+    printf("  %s\n", t.c_str());
+    CHECK(t.find("n: 1 missing on the guest (n4)") != std::string::npos && t.find("n: 1 apart (n1 30.0)") != std::string::npos);
+    CHECK(t.find("dna: host 100.0, guest 80.0") != std::string::npos);
+    // a recheck: only what is still there counts
+    dg::Digest g2 = g;
+    g2.totals[0].second = 100;
+    g2.vote = 0;
+    g2.entries.pop_back(); // the ghost is gone
+    auto lasting = dg::persistent(c.issues, dg::compare(h, g2).issues);
+    CHECK(lasting.size() == 3); // missing n4, missing c5, pos n1
+    // a player out of the world on one side (dead, respawning): its creature is not compared
+    dg::Digest h3 = h, g3 = g2;
+    h3.entries.erase(h3.entries.begin()); // the host has no own creature now (dead)...
+    g3.entries.erase(g3.entries.begin()); // ...and the guest no puppet of it
+    g3.entries.erase(g3.entries.begin()); // the guest's own creature is gone too, the host still shows it
+    h3.out = {0};
+    g3.out = {1};
+    for (auto& i : dg::compare(h3, g3).issues)
+        CHECK(i.key.empty() || i.key[0] != 'p');
+    // RTS stages: NPCs are not sent per guest
+    dg::Limits rts;
+    rts.npc_missing = false;
+    for (auto& i : dg::compare(h, g2, rts).issues)
+        CHECK(i.id != "missing:n4");
+    // another stage: nothing compared
+    g2.mode = 0x1654C00;
+    c = dg::compare(h, g2);
+    CHECK(c.other_place && c.issues.size() == 1 && c.objects == 0);
+}
+
+// MSG_DIAG between new and old games: an older SporeCoop gets an unknown message type (its handler
+// ignores it) and the session goes on; a mark of a guest is relayed by the host to the other guest
+static void test_diag_session()
+{
+    printf("diag: MSG_DIAG relayed by the host, ignored by an older guest\n");
+    namespace dg = net::diag;
+    Session host, oldg, newg;
+    host.build = oldg.build = newg.build = 0x922af7c7;
+    oldg.send_caps = false;
+    std::string err;
+    CHECK(host.host(0, "Host", err));
+    std::string addr = "127.0.0.1:" + std::to_string(host.port());
+    int host_marks = 0, new_marks = 0, old_unknown = 0, old_chats = 0;
+    // the host relays a mark like coop.cpp does (support::on_message)
+    host.cb.custom = [&](uint8_t type, uint8_t from, Reader& r) {
+        if (type != MSG_DIAG || r.u8() != dg::kMark)
+            return;
+        dg::Mark m;
+        if (!m.read(r))
+            return;
+        host_marks++;
+        m.origin = from;
+        Writer w;
+        m.write(w);
+        host.broadcast_reliable(MSG_DIAG, w, from);
+    };
+    newg.cb.custom = [&](uint8_t type, uint8_t from, Reader& r) {
+        dg::Mark m;
+        if (type == MSG_DIAG && from == 0 && r.u8() == dg::kMark && m.read(r) && m.text == "only one can eat")
+            new_marks++;
+    };
+    // an older SporeCoop: every type it does not know falls through (world::on_message ignores it)
+    oldg.cb.custom = [&](uint8_t type, uint8_t, Reader&) { old_unknown += type == MSG_DIAG; };
+    oldg.cb.chat = [&](uint8_t, const std::string& t) { old_chats += t == "still here"; };
+    auto run = [&](int ms) {
+        for (int i = 0; i < ms / 5; i++) {
+            host.update();
+            oldg.update();
+            newg.update();
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+    };
+    CHECK(oldg.join(addr, "Old", err));
+    run(300);
+    CHECK(newg.join(addr, "New", err));
+    run(300);
+    CHECK(oldg.connected() && newg.connected());
+    // a guest's mark reaches the other guest through the host; one of the host reaches both
+    dg::Mark m;
+    m.name = "Old";
+    m.text = "only one can eat";
+    Writer w;
+    m.write(w);
+    oldg.send_reliable_to(0, MSG_DIAG, w); // a guest's mark: the host relays it to the other guest
+    run(300);
+    CHECK(host_marks == 1 && new_marks == 1);
+    Writer wh;
+    m.write(wh);
+    host.broadcast_reliable(MSG_DIAG, wh);
+    Writer wq;
+    dg::ClockReq{1, 2.0}.write(wq);
+    host.send_unreliable_to(oldg.my_id(), MSG_DIAG, wq);
+    run(300);
+    CHECK(old_unknown >= 1 && new_marks == 2);
+    host.send_chat("still here"); // the old guest's session goes on
+    run(300);
+    CHECK(old_chats == 1 && oldg.connected() && newg.connected());
+}
+
+// the support statistics of a connection: bytes both ways, round trip samples, lost packets
+static void test_diag_conn_stats()
+{
+    printf("diag: connection statistics (bytes, round trips, lost packets)\n");
+    Connection a, b;
+    std::vector<uint8_t> pkt;
+    uint32_t now = 1000;
+    auto deliver = [](uint8_t, Reader&) {};
+    int dropped = 0;
+    for (int i = 0; i < 200; i++) {
+        Writer w;
+        w.u32(i);
+        a.send_unreliable(MSG_PLAYER_STATE, w);
+        if (a.build_packet(now, pkt)) {
+            if (i % 10 == 3) // 10 % of a's packets are lost on the way
+                dropped++;
+            else
+                b.on_packet(pkt.data(), pkt.size(), now + 5, deliver);
+        }
+        if (b.build_packet(now + 5, pkt))
+            a.on_packet(pkt.data(), pkt.size(), now + 10, deliver);
+        now += 20;
+    }
+    printf("  sent %u bytes %llu, b got %llu, lost %u (dropped %d), rtt n=%u min %.0f max %.0f\n", a.stats.packets_sent,
+           (unsigned long long)a.stats.bytes_sent, (unsigned long long)b.stats.bytes_recv, a.stats.lost, dropped,
+           a.stats.rtt_n, a.stats.rtt_min, a.stats.rtt_max);
+    CHECK(a.stats.bytes_sent > 200 * 30 && b.stats.bytes_recv < a.stats.bytes_sent && b.stats.bytes_recv > 0);
+    CHECK(a.stats.lost + 4 >= (uint32_t)dropped && a.stats.lost <= (uint32_t)dropped); // the last kLostAfter packets are still open
+    CHECK(a.stats.rtt_n > 100 && a.stats.rtt_min >= 10 && a.stats.rtt_max <= 30);
+    a.stats.take_window();
+    CHECK(a.stats.rtt_n == 0);
+    // a bulk transfer outruns the acks (one ack per 200 packets, all received): nothing counts as lost
+    Connection c, d;
+    for (int i = 0; i < 2000; i++) {
+        Writer w;
+        w.u32(i);
+        c.send_unreliable(MSG_PLAYER_STATE, w);
+        if (c.build_packet(now, pkt))
+            d.on_packet(pkt.data(), pkt.size(), now, deliver);
+        if (i % 200 == 199 && d.build_packet(now + 300, pkt))
+            c.on_packet(pkt.data(), pkt.size(), now + 1, deliver);
+        now += 1;
+    }
+    printf("  bulk: sent %u, lost %u\n", c.stats.packets_sent, c.stats.lost);
+    CHECK(c.stats.packets_sent > 1500 && c.stats.lost == 0);
+}
+
 int main(int argc, char** argv)
 {
     if (argc == 2 && std::string(argv[1]) == "--fakepeer-host")
@@ -1963,6 +2231,11 @@ int main(int argc, char** argv)
     test_ip_mask();
     test_join_by_name();
     test_pick_pack();
+    test_diag_messages();
+    test_diag_clock();
+    test_diag_compare();
+    test_diag_session();
+    test_diag_conn_stats();
     printf(g_fail ? "FAILED (%d)\n" : "ALL OK\n", g_fail);
     return g_fail ? 1 : 0;
 }

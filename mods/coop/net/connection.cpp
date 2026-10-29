@@ -195,6 +195,7 @@ bool Connection::build_packet(uint32_t now, std::vector<uint8_t>& out)
     sent_.push_back(std::move(sp));
     while (sent_.size() > 1024)
         sent_.pop_front();
+    stats.bytes_sent += w.data.size();
     out = std::move(w.data);
     last_send_ms_ = now;
     ack_pending_ = false;
@@ -210,6 +211,12 @@ void Connection::ack_packet(SentPkt& p, uint32_t now)
     stats.acked++;
     float sample = (float)(now - p.time);
     rtt_ms = rtt_ms * 0.9f + sample * 0.1f;
+    if (!stats.rtt_n || sample < stats.rtt_min)
+        stats.rtt_min = sample;
+    if (sample > stats.rtt_max)
+        stats.rtt_max = sample;
+    stats.rtt_sum += sample;
+    stats.rtt_n++;
     for (uint16_t id : p.rel_ids) {
         auto it = std::find_if(rel_out_.begin(), rel_out_.end(),
                                [id](const OutMsg& m) { return m.rel_id == id; });
@@ -240,6 +247,7 @@ bool Connection::on_packet(const uint8_t* data, size_t n, uint32_t now, const De
         return false;
 
     stats.packets_recv++;
+    stats.bytes_recv += n;
     last_recv_ms = now;
     ack_pending_ = true;
 
@@ -271,6 +279,11 @@ bool Connection::on_packet(const uint8_t* data, size_t n, uint32_t now, const De
         uint16_t diff = (uint16_t)(ack - p.seq);
         if (diff >= 1 && diff <= kAckWindow && ackbits.test(diff - 1u))
             ack_packet(p, now);
+        else if (!p.lost && diff >= kLostAfter && diff <= kAckWindow) { // counted once (support statistics);
+            // further back the ack bits say nothing (a bulk transfer outruns them): not counted
+            p.lost = true;
+            stats.lost++;
+        }
     }
 
     for (int i = 0; i < count; i++) {

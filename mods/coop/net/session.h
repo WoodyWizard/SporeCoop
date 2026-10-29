@@ -78,6 +78,9 @@ public:
     void send_event(uint8_t type, const Writer& w);
     size_t pending_to(uint8_t id) const;
     bool send_unreliable_to(uint8_t id, uint8_t type, const Writer& w);
+    // the connection to a player (host: a guest, guest: the host, id 0) for the support statistics
+    // (diag_stats.cpp), nullptr when there is none; valid until the next update()
+    Connection* conn_to(uint8_t id);
 
     Role role() const { return role_; }
     uint8_t my_id() const { return my_id_; }

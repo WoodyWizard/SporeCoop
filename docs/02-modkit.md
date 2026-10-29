@@ -225,3 +225,19 @@ For bug reports of players, who send a file, not a debugger session:
   takes it over: the game's code is written once per process. The first hook of a target is still
   a plain write (at boot, before the game's threads call it). `kit.fix hookpark 0` = MinHook's
   create / remove each time.
+
+## Support diagnostics in SporeKit 0.3.5 (2026-10-29, feat/w7-diag)
+<a id="modkit-support-035"></a>
+
+* **API (since 0.3.5, check `size`):** `log_session_clock(offset, on)`: every log line carries
+  `[s <now + offset>]` after the local time (a co-op session's common clock, docs/REPORTING.md#reporting-support);
+  `diag_headline(mod, text)`: a block at the top of reports (`== Summary`), copied, removed when the
+  mod unloads; `diag_files()`: the game files part of the environment.
+* **Masked paths.** Log lines and report texts have the game folder as `<game>`, `%USERPROFILE%`
+  and Wine's `<home>` instead of the player's paths (`mask_paths`, log.cpp: case-insensitive, `/`
+  and `\` alike, set once at `log_init`).
+* **Game files** (`diag_files.cpp`, computed once, logged as `files:` after the GPU line, in the
+  report and in `env`): other DLLs in `mods\`, DLLs next to the exe that the game does not ship,
+  a ModAPI folder, extra `.package` files in `Data\`, `DataEP1\` and the player's
+  `AppData\Roaming\Spore` (name, size, date; at most 12 per list) and the sizes of the GOG 2024
+  build's 12 base packages and exe.

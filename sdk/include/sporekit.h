@@ -157,6 +157,17 @@ typedef struct SkHost {
     /* the previous run's problem: "<what>\n<path of its SporeCoop-report .zip>" ("crashed", "stopped
      * responding", ...), "" when it ended well. Told once: the mark is removed at this boot. */
     const char* (*last_problem)(void);
+
+    /* ---- since 0.3.5 (check size) ---- */
+    /* the session clock of every log line (a co-op session's common time): on != 0: each line
+     * carries "[s <time_seconds() + offset>]" after the local time; on == 0: no session clock */
+    void (*log_session_clock)(double offset, int on);
+    /* a text block put at the top of reports, right after their title (a session summary); NULL or
+     * "" removes it. Copied. Removed automatically when the mod unloads. */
+    void (*diag_headline)(SkMod* mod, const char* text);
+    /* the game files part of the environment: other mods, extra .package files in the game's Data
+     * folders and the player's, known files whose size is not the build's (several lines) */
+    const char* (*diag_files)(void);
 } SkHost;
 
 typedef struct SkModInfo {

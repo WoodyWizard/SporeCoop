@@ -21,6 +21,8 @@ saves, and keep the knowledge files honest. Every check runs on fakes in a tempo
             .sym has the same name (BUG-0086)
   triage    tools/crash_triage.py reads a report and finds the known ticket (BUG-0158); one signature per
             place: exit-time, log and short crash files, crash line first (BUG-0247)
+  mergelogs tools/merge_logs.py orders two players' lines by the session clock, picks the last session,
+            places lines without a clock with --all, and lists the sessions (docs/REPORTING.md#reporting-support)
   campaign  the pure logic of the co-op campaign (campaign_lib.py): plan, stages, findings (BUG-0152)
   release   tools/release_check.sh: the tag must match COOP_VERSION and the notes are exactly the
             tag's CHANGELOG section (BUG-0097)
@@ -573,9 +575,54 @@ def test_campaign():
           f'new reports: only the instances of the run, only since the start ({got})')
 
 
+def test_mergelogs():
+    print('mergelogs: two logs merged by the session clock')
+    sys.path.insert(0, os.path.join(ROOT, 'tools'))
+    import io
+    import contextlib
+    import merge_logs
+    host = ('10:00:00.000 [INF] coop: before any session\n'
+            '10:00:01.000 [s 0.000] [INF] coop: clock: session clock started\n'
+            '10:00:11.000 [s 10.000] [INF] coop: sync-check: OK with player 1\n'
+            '10:00:20.500 [s 19.500] [WRN] coop: MARK by \'Bob\' (player 1) at s 19.400: only one eats\n'
+            '10:00:30.000 [s 29.000] [INF] coop: host line\n')
+    # the guest's wall clock is 2 h 3 s off; the session clock lines it up
+    guest = ('12:00:05.000 [INF] coop: joining\n'
+             '12:00:06.000 [s 9.000] [INF] coop: clock: the session clock of the host\n'
+             '12:00:07.000 [INF] coop: a line before the clock was set again\n'
+             '12:00:16.400 [s 19.400] [WRN] coop: MARK by \'Bob\' (player 1) at s 19.400: only one eats\n'
+             '12:00:20.000 [s 23.000] [INF] coop: guest line\n')
+    hp, gp = os.path.join(TMP, 'h.log'), os.path.join(TMP, 'g.log')
+    open(hp, 'w').write(host)
+    open(gp, 'w').write(guest)
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        rc = merge_logs.main(['Alice=' + hp, 'Bob=' + gp])
+    lines = [ln for ln in out.getvalue().splitlines() if not ln.startswith('#')]
+    times = [float(ln.split()[0].rstrip('~')) for ln in lines]
+    check(rc == 0 and times == sorted(times) and len(lines) == 7, f'lines in session-time order ({len(lines)} lines)')
+    order = [ln.split()[1] for ln in lines]
+    check(order == ['Alice', 'Bob', 'Alice', 'Bob', 'Alice', 'Bob', 'Alice'], f'host and guest interleaved ({order})')
+    check(not any('before any session' in ln or 'before the clock' in ln for ln in lines), 'lines without a clock left out')
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        merge_logs.main(['--all', 'Bob=' + gp])
+    est = [ln for ln in out.getvalue().splitlines() if 'before the clock' in ln]
+    check(est and est[0].split()[0].endswith('~') and abs(float(est[0].split()[0].rstrip('~')) - 10.0) < 0.01,
+          f'--all places a line without a clock by its neighbours ({est})')
+    two = host + '11:00:00.000 [s 0.000] [INF] coop: clock: session clock started\n11:00:05.000 [s 5.000] [INF] coop: second\n'
+    open(hp, 'w').write(two)
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        merge_logs.main([hp])
+    body = [ln for ln in out.getvalue().splitlines() if not ln.startswith('#')]
+    check(len(body) == 2 and 'second' in body[-1] and out.getvalue().count('# h.log: session') == 2,
+          'a log with two sessions: the last one by default, both listed')
+
+
 CHECKS = {'noenv': test_noenv, 'docslint': test_docslint, 'kill': test_kill, 'fixture': test_fixture, 'headless': test_headless, 'tickets': test_tickets,
           'tickets_check': test_tickets_check, 'relint': test_relint,
-          'release': test_release, 'triage': test_triage, 'campaign': test_campaign}
+          'release': test_release, 'triage': test_triage, 'campaign': test_campaign, 'mergelogs': test_mergelogs}
 
 if __name__ == '__main__':
     if sys.argv[1:2] == ['--kill-inside']:

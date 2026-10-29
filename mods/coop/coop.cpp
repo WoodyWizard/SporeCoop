@@ -61,6 +61,7 @@
 #include "fixes.h"
 #include "share_wait.h"
 #include "dna_route.h"
+#include "diag_coop.h"
 #include "trace.h"
 
 static const SkHost* H;
@@ -391,6 +392,31 @@ void* puppet_now(const Remote& r)
         return nullptr;
     }
     return r.puppet;
+}
+
+// every synchronized object here (coop.sync, the support sync-check): the players (p<id>: our own
+// creature, the partners' puppets) and the stage modules' objects
+std::vector<syncdbg::Entry> sync_all()
+{
+    std::vector<syncdbg::Entry> v;
+    auto player = [&](uint8_t id, const modes::Adapter* a, void* e) {
+        if (!a || !e)
+            return;
+        net::PlayerState st;
+        a->fill(e, st);
+        v.push_back({"p" + std::to_string(id), st.pos, st.rot});
+    };
+    if (g_sess.connected()) {
+        player(g_sess.my_id(), g_adapter, local_now()); // BUG-0271
+        for (auto& [id, r] : g_remotes)
+            if (!r.echo)
+                player(id, r.puppet_adapter, puppet_now(r));
+    }
+    for (auto* f : {npc::sync_entries, tribe::sync_entries, civ::sync_entries, squadron::sync_entries,
+                    cellsync::sync_entries})
+        for (auto& e : f())
+            v.push_back(e);
+    return v;
 }
 
 net::PlayerState local_state()
@@ -1421,6 +1447,7 @@ static const char* diag_context_fn(void*) { return g_diag_buf[g_diag_cur.load()]
 // the report is, a mod bug is behind it
 static void on_fault(void*, int, void* arg)
 {
+    support::on_fault();
     H->log(M, SK_WARN, "a fault in the mod's code was caught: %s", arg ? (const char*)arg : "?");
     if (g_fault_told)
         return;
@@ -1712,6 +1739,7 @@ void on_frame(void*, int, void*)
     modes::CellScope cell_scope; // BUG-0271: no game code runs in here, the pool check holds for it
     double now = H->time_seconds();
     g_last_frame = now;
+    support::tick(now); // first: its frame timing (FPS, hitches) and the session clock
     diag_tick(now);
     notify::tick(now);
     game::world_epoch(); // BUG-0119: sees every frame outside the creature stage
@@ -2175,6 +2203,8 @@ enum class EndPath { Leave, Unload, Restart, Disconnect };
 
 void end_session(EndPath path, bool cell)
 {
+    support::on_session_end(path == EndPath::Leave ? "left" : path == EndPath::Unload ? "mod unload"
+                            : path == EndPath::Restart ? "a new session" : "disconnected");
     if (g_session_end_fix || path == EndPath::Disconnect) {
         npc::on_session_end();
         social::on_session_end();
@@ -2278,10 +2308,13 @@ void setup_callbacks()
                      std::string(H->exe_sha256()).substr(0, 8);
     g_sess.cb.log = [](const std::string& s) { LOG("net: %s", s.c_str()); };
     g_sess.cb.connected = [] {
+        support::on_session_start();
+        support::on_connected();
         feed("connected to host");
         coop_ui::session_event(true, ""); // BUG-0104: "Connecting to ..." ends here
     };
     g_sess.cb.disconnected = [](const std::string& why) {
+        support::on_disconnected(why);
         rejoin::clear(); // the session ended (BUG-0235)
         feed("disconnected: " + why);
         coop_ui::session_event(false, why);
@@ -2291,6 +2324,7 @@ void setup_callbacks()
         end_session(EndPath::Disconnect, true);
     };
     g_sess.cb.player_join = [](const net::PlayerInfo& p) {
+        support::on_player_join(p);
         shared::on_player_join(g_sess.role());
         creations::on_player_join(p.id);
         npc::on_player_leave(p.id); // a newcomer under a reused id knows no NPCs yet (BUG-0125)
@@ -2342,6 +2376,10 @@ void setup_callbacks()
         }
     };
     g_sess.cb.custom = [](uint8_t type, uint8_t from, net::Reader& r) {
+        if (type == net::MSG_DIAG) { // support diagnostics: clock, marks, sync-check (diag_coop.h)
+            support::on_message(from, r);
+            return;
+        }
         if (type == net::MSG_ANIM) {
             net::AnimEvent ev;
             if (ev.read(r))
@@ -2546,6 +2584,7 @@ void setup_callbacks()
     g_sess.cb.player_leave = [](uint8_t id, uint8_t reason) {
         trace::line("session", "player %u '%s' left: %s", id, g_remotes.count(id) ? g_remotes[id].name.c_str() : "?",
                     reason == 1 ? "timed out (no packets)" : "left or replaced by its rejoin");
+        support::on_player_leave(id, reason); // its link statistics (diag_stats.cpp)
         if (g_role_fix)
             g_roles.erase(id); // ids are reused: the next newcomer starts with no role (BUG-0064)
         shared::on_player_leave(id);
@@ -2604,6 +2643,7 @@ bool do_host(uint16_t port, std::string& err)
     reset_lobby();
     if (!g_sess.host(port, g_name, err))
         return false;
+    support::on_session_start();
     feed("hosting on port " + std::to_string(g_sess.port()));
     chat_log("* hosting on UDP port " + std::to_string(g_sess.port()));
     g_lobby_dirty = true;
@@ -2806,6 +2846,10 @@ int c_say(void*, int argc, const char* const* argv, SkOut* out)
     for (int i = 1; i < argc; i++) {
         if (i > 1) t += ' ';
         t += argv[i];
+    }
+    if (support::chat_command(t)) { // "/bug <text>": a mark in every player's log, not a chat line
+        SAY("marked for the report");
+        return 0;
     }
     if (!g_sess.connected()) {
         SAY("not connected");
@@ -3556,6 +3600,8 @@ void init_ui()
     };
     a.vote_active = [] { return g_vote.active; };
     a.say = [](const std::string& t) {
+        if (support::chat_command(t)) // "/bug <text>" (docs/REPORTING.md#reporting-support)
+            return;
         if (g_sess.connected())
             g_sess.send_chat(t);
     };
@@ -3593,6 +3639,7 @@ int c_uistate(void*, int argc, const char* const* argv, SkOut* out)
 
 void on_unload()
 {
+    support::on_unload();
     gamefixes::shutdown();
     mouse::shutdown(); // its message hook lives in this DLL
     keepalive_stop();
@@ -3604,6 +3651,114 @@ void on_unload()
     g_sess.leave("mod unload");
     rejoin::shutdown();
     end_session(EndPath::Unload, true);
+}
+
+// ---- support diagnostics (diag_coop.h, docs/REPORTING.md#reporting-support) ----
+int g_ini_auto_load = 1, g_ini_share_npcs = 1, g_ini_npc_targets = 1, g_ini_teamplay = 1, g_ini_update = 1, g_ini_sync = 30;
+
+void support_init()
+{
+    g_ini_auto_load = H->config_int(M, "coop", "auto_load_world", 1);
+    g_ini_share_npcs = H->config_int(M, "coop", "share_npcs", 1);
+    g_ini_npc_targets = H->config_int(M, "coop", "npcs_target_partners", 1);
+    g_ini_teamplay = H->config_int(M, "coop", "teamplay", 1);
+    g_ini_update = H->config_int(M, "update", "check", 1);
+    g_ini_sync = H->config_int(M, "coop", "sync_check", 30);
+    support::Probe p;
+    p.sess = &g_sess;
+    p.feed = feed;
+    p.chat_log = chat_log;
+    p.my_name = [] { return g_name; };
+    p.entries = sync_all;
+    p.players_out = [] { // dead, respawning or not in a world: hidden on purpose (drive_puppet's rules)
+        std::vector<uint8_t> v;
+        double now = H->time_seconds();
+        net::PlayerState own = local_state();
+        if (!local_now() || (own.flags & net::PF_DEAD) || !(own.flags & net::PF_IN_WORLD))
+            v.push_back(g_sess.my_id());
+        for (auto& [id, r] : g_remotes) {
+            if (r.echo)
+                continue;
+            if (r.buf.empty() || r.buf.age(now) >= 5.0 || (r.buf.latest().flags & net::PF_DEAD) ||
+                !(r.buf.latest().flags & net::PF_IN_WORLD))
+                v.push_back(id);
+        }
+        return v;
+    };
+    p.mode = [] { return g_mode; };
+    p.place = [] { return g_world; };
+    p.playing = [] { return g_local != nullptr; };
+    p.dna = [](float& v) {
+        if (!game::avatar() || g_mode != modes::kCreature)
+            return false;
+        v = game::dna();
+        return true;
+    };
+    p.cell_food = [](int& v) { return g_mode == modes::kCell && cellsync::food_total(v); };
+    p.vote = [](uint32_t& editor) {
+        editor = g_vote.editor;
+        return g_vote.active;
+    };
+    p.activity = [] {
+        std::string a = modes::mode_name(g_mode);
+        uint32_t got, total;
+        if (world::progress(got, total))
+            a += ", receiving a world " + std::to_string(got >> 10) + "/" + std::to_string(total >> 10) + " KB";
+        if (world::save_busy())
+            a += ", saving";
+        if (world::load_queued() || g_mode == modes::kLoad)
+            a += ", loading";
+        if (g_mode == modes::kEditor || g_mode == modes::kEdit)
+            a += ", editor";
+        if (g_vote.active)
+            a += ", vote";
+        if (world::cinematic_playing())
+            a += ", cinematic";
+        if (!g_local)
+            a += ", nothing controlled";
+        return a;
+    };
+    p.settings = [] { // what differs from the defaults (coop.ini, and what the window / console changed)
+        std::string s;
+        auto add = [&](const char* k, int v) { s += (s.empty() ? "" : " ") + std::string(k) + "=" + std::to_string(v); };
+        if (!g_share_world)
+            add("share_world", 0);
+        if (!g_save_on_share)
+            add("save_before_share", 0);
+        if (g_ini_auto_load != 1)
+            add("auto_load_world", g_ini_auto_load);
+        if (g_ini_share_npcs != 1)
+            add("share_npcs", g_ini_share_npcs);
+        if (g_ini_npc_targets != 1)
+            add("npcs_target_partners", g_ini_npc_targets);
+        if (g_ini_teamplay != 1)
+            add("teamplay", g_ini_teamplay);
+        if (g_ini_update != 1)
+            add("update.check", g_ini_update);
+        if (g_ini_sync != 30)
+            add("sync_check", g_ini_sync);
+        return s;
+    };
+    support::init(H, M, p);
+    H->subscribe(M, SK_EV_SHUTDOWN, [](void*, int, void*) { support::on_shutdown(); }, nullptr);
+    H->command_add(M, "coop.diag",
+                   "coop.diag [status | sync now|on|off|<s>|force shift|drop|ghost|dna|off | summary | mark <text> | "
+                   "detail 0|1|2 | mem] - support diagnostics (docs/REPORTING.md#reporting-support)",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       SAY("%s", support::command(std::vector<std::string>(argv + 1, argv + argc)).c_str());
+                       return 0;
+                   },
+                   nullptr, SK_CMD_MAIN_THREAD);
+    H->command_add(M, "coop.bug", "coop.bug <text> - mark a problem in every player's log (like /bug in the co-op chat)",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       std::string t;
+                       for (int i = 1; i < argc; i++)
+                           t += (i > 1 ? " " : "") + std::string(argv[i]);
+                       support::mark(t);
+                       SAY("marked for the report");
+                       return 0;
+                   },
+                   nullptr, SK_CMD_MAIN_THREAD);
 }
 
 int c_framefix(void*, int argc, const char* const* argv, SkOut* out)
@@ -3749,6 +3904,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     sc.blocked = [] { return g_menu_up.load() || coop_ui::is_open() || g_text_up.load(); };
     social::init(H, M, sc);
     game::set_damage_filter(npc::damage_filter);
+    support_init();
     setup_callbacks();
     H->subscribe(M, SK_EV_FRAME, on_frame, nullptr);
     if (host_has_diag() && H->diag_context) {
@@ -3988,24 +4144,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                    nullptr, MT);
     H->command_add(M, "coop.sync", "coop.sync - pose of every synchronized object (key x y z qx qy qz qw), tests",
                    [](void*, int, const char* const*, SkOut* out) {
-                       std::vector<syncdbg::Entry> v;
-                       auto player = [&](uint8_t id, const modes::Adapter* a, void* e) {
-                           if (!a || !e)
-                               return;
-                           net::PlayerState st;
-                           a->fill(e, st);
-                           v.push_back({"p" + std::to_string(id), st.pos, st.rot});
-                       };
-                       if (g_sess.connected()) {
-                           player(g_sess.my_id(), g_adapter, local_now()); // BUG-0271
-                           for (auto& [id, r] : g_remotes)
-                               if (!r.echo)
-                                   player(id, r.puppet_adapter, puppet_now(r));
-                       }
-                       for (auto* f : {npc::sync_entries, tribe::sync_entries, civ::sync_entries,
-                                       squadron::sync_entries, cellsync::sync_entries})
-                           for (auto& e : f())
-                               v.push_back(e);
+                       std::vector<syncdbg::Entry> v = sync_all();
                        for (auto& e : v) // one line per call: the console buffer of a call is 8 KB
                            SAY("%s", syncdbg::format({e}).c_str());
                        return 0;

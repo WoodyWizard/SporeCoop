@@ -273,3 +273,17 @@ ascending bit order (BUG-0219).
   up for a join is logged by its length only. The full address stays in the session (and in the
   co-op window, which the player sees). Tests: `net_tests` `test_peer_versions`, `test_ip_mask`;
   `fuzz_decoders` PLAYER_JOIN with and without the version.
+
+## Support diagnostics: MSG_DIAG (2026-10-29, feat/w7-diag)
+<a id="netcode-diag"></a>
+
+* `MSG_DIAG = 60`, `u8 kind` + payload (`net/diagmsg.h`): clock request / answer (guest <-> host,
+  unreliable; the guest keeps the answer with the shortest round trip of the last 12), bug mark
+  (any -> host -> all, reliable, `u8 origin, f64 session time, str8 name, str8 text`; the host sets
+  origin and name), digest request / digest / result of the sync self-check (reliable; a Cell
+  digest is ~6 KB: split for peers with `CAP_SPLIT`). An older SporeCoop drops the unknown type
+  (host: `cb.custom` falls through; guest: `world::on_message` ignores it): no protocol bump.
+* `ConnStats` gained `bytes_sent`, `bytes_recv`, `lost` (a sent packet that an ack 32 to 128
+  packets later does not have; further back the ack bits say nothing, so a bulk transfer that
+  outruns them counts nothing) and the round-trip samples of a window (`rtt_min/max/sum/n`,
+  `take_window()`). `Session::conn_to(id)` gives the connection for the statistics.

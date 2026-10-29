@@ -699,9 +699,9 @@ void register_builtin_commands()
     command_add(k, "help", "list commands [filter]", c_help, nullptr, A);
     command_add(k, "ping", "liveness check (any thread)", c_ping, nullptr, A);
     command_add(k, "info", "versions, exe hash, frame, mode, mods", c_info, nullptr, M);
-    command_add(k, "env", "the environment: game build, Windows / Wine, memory, GPU, other hooks, mods",
+    command_add(k, "env", "the environment: game build, Windows / Wine, memory, GPU, other hooks, mods, extra game files",
                 [](void*, int, const char* const*, SkOut* out) {
-                    outf(out, "%s", diag_env().c_str());
+                    outf(out, "%s%s", diag_env().c_str(), mask_paths(diag_files_text()).c_str());
                     return 0;
                 },
                 nullptr, M);

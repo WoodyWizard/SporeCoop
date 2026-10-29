@@ -2445,6 +2445,15 @@ std::vector<syncdbg::Entry> sync_entries()
     return v;
 }
 
+bool food_total(int& food)
+{
+    uint8_t* s = in_cell() ? S() : nullptr;
+    if (!s)
+        return false;
+    food = F<int32_t>(s, 0x1C);
+    return true;
+}
+
 void join_partner()
 {
     uint8_t* a = in_cell() ? avatar() : nullptr;

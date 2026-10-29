@@ -35,6 +35,7 @@ struct Out {
     size_t fi = 0, off = 0;
     bool header_sent = false;
     bool done = false;
+    uint64_t t0 = GetTickCount64(); // support log: how long the transfer took
 };
 
 struct In {
@@ -42,6 +43,7 @@ struct In {
     net::WorldOffer offer;
     std::map<uint16_t, File> files;
     uint32_t received = 0;
+    uint64_t t0 = GetTickCount64(); // support log: the offer arrived (In{} is made at each offer)
 };
 
 // A received world comes from another player's machine: only plain relative names inside the
@@ -926,6 +928,9 @@ void tick(net::Session& s)
         if (p.latest && g_box_seen_at < g_saved_at)
             H->log(M, SK_INFO, "world: no saved box %llu ms after the save: sharing anyway",
                    (unsigned long long)(now - g_saved_at));
+        else if (p.latest && g_saved_at) // support log: the save's length (its box came up)
+            H->log(M, SK_INFO, "world: the save for player %u was written in %llu ms (try %d)", p.peer,
+                   (unsigned long long)(g_box_seen_at - g_saved_at), p.saves + 1);
         std::string err;
         if (!share_now(p.peer, err) && g_planet_missing && ++p.saves < 3) {
             // the save did not write the played planet's file (yet): save again rather than send
@@ -970,7 +975,12 @@ void tick(net::Session& s)
                 w.u32(o.world_id);
                 s.send_reliable_to(o.peer, net::MSG_WORLD_DONE, w);
                 o.done = true;
-                H->log(M, SK_INFO, "world: transfer to %u queued completely", o.peer);
+                uint64_t ms = GetTickCount64() - o.t0;
+                size_t bytes = 0;
+                for (auto& f : o.files)
+                    bytes += f.data.size();
+                H->log(M, SK_INFO, "world: transfer to %u queued completely (%u KB in %.1f s, %.0f KB/s, rtt %d ms)", o.peer,
+                       (unsigned)(bytes >> 10), ms / 1000.0, ms ? (bytes / 1024.0) / (ms / 1000.0) : 0.0, s.rtt_of(o.peer));
                 break;
             }
             File& f = o.files[o.fi];
@@ -1171,7 +1181,9 @@ static void finish(const std::string& host_name)
         return;
     }
     std::string slot_name = narrow(slot.substr(slot.find_last_of(L'\\') + 1));
-    H->log(M, SK_INFO, "world: received %u bytes into %s", g_in.received, narrow(slot).c_str());
+    uint64_t in_ms = GetTickCount64() - g_in.t0;
+    H->log(M, SK_INFO, "world: received %u bytes into %s in %.1f s (%.0f KB/s)", g_in.received, narrow(slot).c_str(),
+           in_ms / 1000.0, in_ms ? (g_in.received / 1024.0) / (in_ms / 1000.0) : 0.0);
     std::string err;
     if (planet == "snapshot.spo") // the game's temporary file of an unsaved game: loading it crashes
         planet.clear();

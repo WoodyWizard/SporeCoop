@@ -1690,6 +1690,27 @@ wrong. Suite `campaign` (in no other suite): `tools/lab.py run campaign --lanes 
 * The campaign prints every guest's p90, object count, worst object and each game's frame rate
   next to a desync finding (`sync: ...`).
 
+
+## Support diagnostics test (2026-10-29, feat/w7-diag)
+<a id="testing-support-diag"></a>
+
+* `coop_diag.py --fixture cell|creature` (suites `diag_cell`, `diag_creature`, warm, ~1 min each):
+  the guest's session clock agrees with the host's (best of 5 reads, under 50 ms beyond the time
+  between the two console reads; measured 0.2-12 ms), `coop.say /bug <text>` gives "marked for the
+  report" and a `MARK by 'Bob'` line in both games' logs, `tools/merge_logs.py` over the logs of
+  the test gives one timeline in order with both MARK lines less than 0.25 s apart, `coop.diag sync
+  now` gives `sync-check: OK` in the stage on both games, `coop.diag sync force shift` on the guest
+  a `sync-check: MISMATCH ... p1 100.0` on both after the 3 s recheck, the check under 1 ms on each
+  game and the diagnostics under 0.05 ms per frame on average (printed as `COST` lines), `env` lists
+  the game files. The test reads only the part of each log written after its start (warm runs keep
+  the logs of earlier tests).
+* The MARK lines of host and guest are not in a fixed order: the guest's clock is the host's within
+  a few ms (half the best round trip; frames quantize it), the host logs the mark one frame after
+  the guest. Do not test "guest first".
+* Unit tests: net_tests `test_diag_*` (messages, the clock estimate, the compare and the recheck,
+  MSG_DIAG through a host to a new and an older guest, the connection's loss / bytes / round trip
+  statistics incl. a bulk transfer that outruns the ack window: 0 lost), fuzz_decoders `diag *`
+  (mark, clock answer, result, digest), tools_selftest `mergelogs`.
 ## Creature: a new guest in its own editor of the first Creature vote (2026-10-29, fix/w7-legless)
 <a id="testing-legless-guest"></a>
 

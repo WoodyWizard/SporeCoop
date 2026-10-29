@@ -359,6 +359,14 @@ size_t Session::pending_to(uint8_t id) const
     return 0;
 }
 
+Connection* Session::conn_to(uint8_t id)
+{
+    for (auto& p : peers_)
+        if (p->id == id && (p->accepted || role_ == Role::Client))
+            return &p->conn;
+    return nullptr;
+}
+
 void Session::send_state(PlayerState st)
 {
     if (!connected())

@@ -219,6 +219,27 @@ void diag_context(SkMod* mod, const char* (*fn)(void*), void* user)
 
 void diag_context_remove(SkMod* mod) { diag_context(mod, nullptr, nullptr); }
 
+// a block at the top of reports (a mod's session summary), per mod
+static std::vector<std::pair<SkMod*, std::string>> g_headlines; // under g_ctx_mu
+
+void diag_headline(SkMod* mod, const char* text)
+{
+    std::lock_guard<std::mutex> lk(g_ctx_mu);
+    for (auto it = g_headlines.begin(); it != g_headlines.end();)
+        it = it->first == mod ? g_headlines.erase(it) : std::next(it);
+    if (text && *text)
+        g_headlines.push_back({mod, text});
+}
+
+std::string diag_headline_text()
+{
+    std::lock_guard<std::mutex> lk(g_ctx_mu);
+    std::string s;
+    for (auto& [m, t] : g_headlines)
+        s += t + (t.empty() || t.back() == '\n' ? "" : "\n");
+    return s;
+}
+
 // ---------------- reports ----------------
 static std::string where(uintptr_t a)
 {
@@ -353,7 +374,9 @@ static std::string diag_write_report_as(const std::string& base, const char* rea
     s += "SporeCoop " + kind + " " + stamp() + (reason && *reason ? std::string(" (") + reason + ")" : "") + "\n";
     s += "Please attach this file (and the .dmp next to it, if there is one) to an issue:\n";
     s += "https://github.com/WoodyWizard/SporeCoop/issues\n\n";
-    s += "== Environment\n" + diag_env() + "\n";
+    if (std::string h = diag_headline_text(); !h.empty())
+        s += "== Summary\n" + h + "\n";
+    s += "== Environment\n" + diag_env() + diag_files_text() + "\n";
     if (ep && ep->ExceptionRecord && ep->ContextRecord) {
         EXCEPTION_RECORD* er = ep->ExceptionRecord;
         CONTEXT* c = ep->ContextRecord;
@@ -418,7 +441,7 @@ static std::string diag_write_report_as(const std::string& base, const char* rea
     s += "\n== The last log lines\n";
     for (auto& l : log_tail(300))
         s += l + "\n";
-    write_text(txt, s);
+    write_text(txt, mask_paths(s)); // no private path in full (the module list, a mod's state)
     if (ep && dump) {
         // the fault's thread when it still exists (the exit report runs on the exiting thread)
         DWORD dt = GetCurrentThreadId();
@@ -581,8 +604,11 @@ std::string diag_write_bundle_with(const char* reason, const std::string& existi
         "Please attach this .zip to an issue: https://github.com/WoodyWizard/SporeCoop/issues\n"
         "and say what you did when the problem happened.\n\n"
         "Inside:\n"
-        "  report-*.txt      the game build, Windows / Wine, memory, graphics card, other overlays and mods,\n"
-        "                    the co-op session, faults, loaded modules, the last log lines\n"
+        "  report-*.txt      the latest co-op session summary, the game build, Windows / Wine, memory, graphics\n"
+        "                    card, other overlays, mods and extra game files, the co-op session, faults,\n"
+        "                    loaded modules, the last log lines\n"
+        "  (maintainers: docs/REPORTING.md#reporting-support says where each answer is; tools/merge_logs.py lines up the logs\n"
+        "   of all players by their session clock)\n"
         "  logs/             the logs of this run (sporekit.log; sporekit.N.log of other instances)\n"
         "  crashes/          crash reports and minidumps (.dmp: memory of the crashed game, no files of yours)\n"
         "  reports/          earlier reports (hangs, problems)\n"
@@ -1016,6 +1042,15 @@ void diag_after_device()
         return;
     once = true;
     logf(&g_kit_mod, SK_INFO, "%s; other hooks: %s", gpu_text().c_str(), foreign_hooks().c_str());
+    // other mods, extra packages, changed game files (docs/REPORTING.md#reporting-support-environment)
+    const std::string& f = diag_files_text();
+    for (size_t i = 0; i < f.size();) {
+        size_t e = f.find('\n', i);
+        logf(&g_kit_mod, SK_INFO, "files: %s", f.substr(i, e == std::string::npos ? std::string::npos : e - i).c_str());
+        if (e == std::string::npos)
+            break;
+        i = e + 1;
+    }
 }
 
 } // namespace sk

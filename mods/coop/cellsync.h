@@ -48,4 +48,6 @@ std::string trace_line(); // support trace (trace.h): the own cell, food around 
 std::vector<syncdbg::Entry> sync_entries(); // coop.sync (tests)
 std::string debug(const std::vector<std::string>& args);
 
+bool food_total(int& food); // the own game's food total S+0x1C (support sync-check); false outside Cell
+
 } // namespace cellsync
