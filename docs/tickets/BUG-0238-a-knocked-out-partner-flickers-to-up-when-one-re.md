@@ -10,8 +10,9 @@ role: all
 versions: 0.7.3.0
 fixed_in: unreleased
 branch: fix/w5-cell
-commits: 8d2c882
+commits: 8d2c882, 666f692
 tests: cell_ko_gap, cell_tests (make test)
+switch: pool.ko_grace
 signature:
 docs: docs/re/cell.md#cell-ko-grace
 related: #172, BUG-0061, BUG-0131
@@ -37,6 +38,7 @@ Observed (lane 2, `coop_cell_ko_gap.py` with `SPORE_FIX_OFF=pool.ko_grace`): wit
 * Unit: `tests/cell_tests.cpp` `ko()` (2.5 s gap with 7 s left: not stale; past the deadline: stale; grace off: stale after 2 s).
 * Two-game `tools/tests/coop_cell_ko_gap.py` (suite `cell_ko_gap`), lane 2 GOG 2024: FAIL with `SPORE_FIX_OFF=pool.ko_grace` (7 of 29 samples opaque, fx 1 -> 2, host `downed=1`); PASS with the fix (twice, plus lab).
 * The KO_UP of `reset_knockout` (step 3) has no in-game test: it needs a guest leaving the Cell stage while knocked out (a save load) and cannot fail on 0.7.3.0.
+* Lab: FAIL out/lab/20261028-235046 (`SPORE_FIX_OFF=pool.ko_grace`); PASS out/lab/20261028-231910 and out/lab/20261028-235414.
 
 ## History
 - 2026-10-28: opened.

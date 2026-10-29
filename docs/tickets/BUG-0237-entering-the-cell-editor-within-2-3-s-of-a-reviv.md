@@ -30,6 +30,8 @@ None needed (step 2 of the issue was conditional). Added the test-only command `
 
 ## Verification
 `tools/tests/coop_cell_editor_invuln.py` (suite `cell_editor_invuln`): PASS on lane 2 (main code). No FAIL run exists: it is the regression guard the issue asked for.
+* Lab: PASS out/lab/20261028-231910 (cell_editor_invuln).
+* no-fail-run: the problem does not occur (the avatar is recreated by the editor's rebuild).
 
 ## History
 - 2026-10-28: opened.

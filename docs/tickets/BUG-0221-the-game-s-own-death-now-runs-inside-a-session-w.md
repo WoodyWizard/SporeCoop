@@ -30,6 +30,8 @@ No product change (step 2 of the issue was conditional on step 1 finding a probl
 
 ## Verification
 `tools/tests/coop_cell_respawn.py` (suite `cell_respawn`) and `--swap` (suite `cell_respawn_swap`): PASS on lane 2 (host's pool rebuilt; guest's pool rebuilt). It has no FAIL run: nothing was broken, so this is a guard, not a fix test. Not checked: the death count S+0x70 and cCellUI+0x936 directly (the caption check `cine=0` covers the UI the player sees), 3 players, a lossy link.
+* Lab: PASS out/lab/20261028-235414 (cell_respawn, cell_respawn_swap). Run 20261028-231910 failed cell_respawn on a test bug (a mirror of a host cell in slot 0, which `coop.cell list` does not print); the test now asks `coop.pool cell` for those.
+* no-fail-run: a guard for behaviour that was found correct, nothing to fail.
 
 ## History
 - 2026-10-28: opened.

@@ -10,8 +10,9 @@ role: all
 versions: 0.7.3.0
 fixed_in: unreleased
 branch: fix/w5-cell
-commits: b8bc761
+commits: 8d2c882, b8bc761, 666f692
 tests: cell_food_away, cell_tests (make test)
+switch: pool.food_ack_away
 signature:
 docs: docs/re/cell.md#cell-ko-grace
 related: #173, BUG-0051, BUG-0128, BUG-0153
@@ -34,6 +35,7 @@ The host reads a guest's MSG_CELL_EAT / MSG_CELL_FOOD before the `!cell` return 
 * Unit: `tests/cell_tests.cpp` `meals_away()` (an acknowledged dropped meal: the guest is at the host total at once; without the ack, the dip of 10 at the next meal).
 * Two-game `tools/tests/coop_cell_food_away.py` (suite `cell_food_away`), lane 2: FAIL with `SPORE_FIX_OFF=pool.food_ack_away` (host 0 / guest 10 after the return, then a dip 10 -> 1); PASS twice with the fix.
 * Not run: the real editor route (round 2 of the issue's test plan); the hook takes the same `!cell` branch the editor does.
+* Lab: FAIL out/lab/20261028-235143 (`SPORE_FIX_OFF=pool.food_ack_away`); PASS out/lab/20261028-231910 and out/lab/20261028-235414.
 
 ## History
 - 2026-10-28: opened.

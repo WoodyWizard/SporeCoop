@@ -10,8 +10,9 @@ role: all
 versions: 0.7.3.0
 fixed_in: unreleased
 branch: fix/w5-cell
-commits: 71eb1c7
+commits: 71eb1c7, 666f692
 tests: cell_guest_bite
+switch: pool.guestbite_type
 signature:
 docs: docs/re/cell.md#cell-damage-gate, docs/re/cell.md#cell-ko-grace, docs/known-issues.md
 related: #174, BUG-0078
@@ -34,6 +35,7 @@ Not changed: the hurt lock. A host bite is followed by a lock the guest's bite d
 
 ## Verification
 Two-game `tools/tests/coop_cell_guest_bite.py` (suite `cell_guest_bite`), lane 2: FAIL with `SPORE_FIX_OFF=pool.guestbite_type` (rock 60 -> 54, meat 60 -> 54); PASS twice with the fix, the plain creature control still loses hp.
+* Lab: FAIL out/lab/20261028-235236 (`SPORE_FIX_OFF=pool.guestbite_type`: rock 60 -> 57, meat 60 -> 54); PASS out/lab/20261028-231910 and out/lab/20261028-235414.
 
 ## History
 - 2026-10-28: opened.

@@ -10,7 +10,7 @@ role: all
 versions: 0.7.3.0
 fixed_in: unreleased
 branch: fix/w5-cell
-commits: 1bd70d6, b57410f
+commits: 1bd70d6, b57410f, eefc923
 tests: cell, space (coop_mode.py)
 signature:
 docs: docs/06-testing.md#testing-mode-puppet-pos
@@ -31,6 +31,7 @@ Cell and Space: `puppet_pos()` reads the `puppet pos=` line right after the host
 
 ## Verification
 Lane 2: `--fixture cell`: PASS (puppet 0.31 m off after a 6.4 m move); `--fixture cell --hold`: FAIL (puppet 12.8-13.5 m off, moved 0.0 m); `--fixture cell --hold --net-pos`: PASS (the old check misses it). `--fixture space`: PASS (0.50 m off after 4.0 m); `--fixture space --hold`: FAIL (17.5 m off). Tribe / Civ not run (their check is unchanged apart from the printed label).
+* Lab: PASS `cell` and `space` in out/lab/20261028-231910 and out/lab/20261028-235414. The seeded FAIL (`--hold`) has no suite entry; it was run directly on lane 2 as above.
 
 ## History
 - 2026-10-28: opened.
