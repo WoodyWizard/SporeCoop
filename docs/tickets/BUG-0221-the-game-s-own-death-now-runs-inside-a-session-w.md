@@ -10,7 +10,7 @@ role: all
 versions: 0.7.3.0
 fixed_in: unreleased
 branch: fix/w5-cell
-commits: see History
+commits: b57410f
 tests: cell_respawn, cell_respawn_swap
 signature:
 docs: docs/re/cell.md#cell-rebuilds-in-session

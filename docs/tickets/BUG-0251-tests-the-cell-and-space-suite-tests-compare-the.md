@@ -10,7 +10,7 @@ role: all
 versions: 0.7.3.0
 fixed_in: unreleased
 branch: fix/w5-cell
-commits: 1bd70d6
+commits: 1bd70d6, b57410f
 tests: cell, space (coop_mode.py)
 signature:
 docs: docs/06-testing.md#testing-mode-puppet-pos
