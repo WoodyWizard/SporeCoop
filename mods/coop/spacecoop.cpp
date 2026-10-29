@@ -630,6 +630,8 @@ static void add_money(int n)
 
 static void* inventory()
 {
+    if (spaceext::away()) // tests: as in the galaxy menu (no cargo hold)
+        return nullptr;
     void* sg = a_SpaceGame ? *(void**)a_SpaceGame : nullptr;
     return sg ? F<void*>(sg, 0x40) : nullptr;
 }
@@ -900,8 +902,39 @@ static int find_spice(void* inv, Key& key, int& count)
     return -1;
 }
 
+// BUG-0226: spice of a co-op gift that comes back while we are not in Space waits here (memory
+// only, never saved) and is put back on the first Space frame of the same Space world. Another
+// world (a load, the galaxy menu) drops it: the loaded game may still have it (BUG-0225 is the
+// finer "same game file, saved since" rule, not done yet).
+struct GiftOut {
+    uint8_t to;
+    Key key;
+    int n;
+    uint32_t epoch;
+};
+static std::vector<GiftOut> g_gifts_out; // sent, no answer yet (the receiver answers only a failure)
+struct GiftOwed {
+    Key key;
+    int n;
+    uint32_t epoch;
+};
+static std::vector<GiftOwed> g_gifts_owed;
+static bool g_gift_refund_fix = true; // off: K_GIFT_BACK adds at once or drops; add_spice in any stage (0.7.3.0)
+COOP_FIX("space.gift_refund", "BUG-0226", g_gift_refund_fix,
+         "space: spice of a gift that comes back outside Space is put back once back in Space");
+static bool g_gift_hold, g_gift_noroom; // tests: the receiver keeps gifts unanswered / has no room
+struct GiftHeld {
+    uint8_t origin;
+    Key key;
+    int n;
+};
+static std::vector<GiftHeld> g_gifts_held;
+static uint32_t g_gift_back_paid, g_gift_back_owed, g_gift_back_dropped, g_gift_back_stray;
+
 static bool add_spice(const Key& key, int n)
 {
+    if (g_gift_refund_fix && !in_space())
+        return false; // outside Space cSimulatorSpaceGame +0x40 may be stale, not only null
     void* inv = inventory();
     void* tr = a_Trading ? cdecl_call<void*>(a_Trading) : nullptr;
     if (!inv || !tr || !a_CreateTrading || n <= 0)
@@ -959,12 +992,19 @@ int give_spice(int n)
     w.u32((uint32_t)n);
     send(K_GIFT, w);
     g_gifts_sent++;
+    if (g_gift_refund_fix) {
+        g_gifts_out.push_back({to, k, n, spaceext::world_epoch()});
+        if (g_gifts_out.size() > 16)
+            g_gifts_out.erase(g_gifts_out.begin());
+    }
     if (C.notice)
         C.notice(std::to_string(n) + " spice sent to " + name(to));
     return n;
 }
 
 // ---------------- messages ----------------
+static void on_gift(uint8_t kind, uint8_t origin, const Key& k, int n);
+
 void on_message(uint8_t type, uint8_t from, net::Reader& r)
 {
     if (type != net::MSG_SPACE || !g_ok)
@@ -1061,7 +1101,49 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         int n = (int)r.u32();
         if (!r.ok() || to != C.sess->my_id())
             break;
-        if (add_spice(k, n)) {
+        on_gift(kind, origin, k, n);
+        break;
+    }
+    default:
+        spaceext::dispatch(kind, origin, r); // the features of space_ext.h
+        break;
+    }
+}
+
+// a gift (K_GIFT) or a gift that came back (K_GIFT_BACK) for us
+static void on_gift(uint8_t kind, uint8_t origin, const Key& k, int n)
+{
+    if (g_gift_refund_fix && (n < 1 || n > 999))
+        return;
+    if (kind == K_GIFT && g_gift_hold) { // tests: the answer is still on its way
+        g_gifts_held.push_back({origin, k, n});
+        return;
+    }
+    if (kind == K_GIFT_BACK && g_gift_refund_fix) {
+        auto it = std::find_if(g_gifts_out.begin(), g_gifts_out.end(), [&](const GiftOut& g) {
+            return g.to == origin && g.n == n && !memcmp(g.key.v, k.v, sizeof k.v);
+        });
+        if (it == g_gifts_out.end()) {
+            g_gift_back_stray++; // a duplicate or a stray answer: nothing was taken for it
+            return;
+        }
+        GiftOut g = *it;
+        g_gifts_out.erase(it); // before anything is paid: once
+        if (!add_spice(k, n)) {
+            g_gifts_owed.push_back({k, n, g.epoch});
+            g_gift_back_owed++;
+            if (C.notice)
+                C.notice(name(origin) + " had no room: " + std::to_string(n) +
+                         " spice comes back to your cargo hold in Space");
+            return;
+        }
+        g_gift_back_paid++;
+        if (C.notice)
+            C.notice(name(origin) + " had no room: " + std::to_string(n) + " spice came back");
+        return;
+    }
+    {
+        if (!(kind == K_GIFT && g_gift_noroom) && add_spice(k, n)) {
             if (kind == K_GIFT)
                 g_gifts_got++;
             if (C.notice)
@@ -1077,11 +1159,31 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             if (C.notice)
                 C.notice("no free cargo slot for " + name(origin) + "'s spice");
         }
-        break;
     }
-    default:
-        spaceext::dispatch(kind, origin, r); // the features of space_ext.h
-        break;
+}
+
+// BUG-0226: owed spice, back in Space (also after the session ended)
+static void gift_owed_tick()
+{
+    if (g_gifts_owed.empty() || !in_space() || !inventory())
+        return;
+    auto owed = std::move(g_gifts_owed);
+    g_gifts_owed.clear();
+    for (auto& o : owed) {
+        if (o.epoch != spaceext::world_epoch()) {
+            g_gift_back_dropped++;
+            H->log(M, SK_INFO, "space: %d spice owed from another Space world dropped", o.n);
+            continue;
+        }
+        if (add_spice(o.key, o.n)) {
+            g_gift_back_paid++;
+            if (C.notice)
+                C.notice(std::to_string(o.n) + " spice came back to your cargo hold");
+        } else {
+            g_gift_back_dropped++;
+            if (C.notice)
+                C.notice(std::to_string(o.n) + " spice came back: no room, lost");
+        }
     }
 }
 
@@ -1092,6 +1194,7 @@ void tick(double now)
     spaceext::tick_all(now); // features check the stage and the session themselves (and the world epoch)
     down_world_tick(now);    // BUG-0229: first end or pause the disabled state,
     down_owed_tick();        // BUG-0228: then an owed clear of its invincibility
+    gift_owed_tick();        // BUG-0226
     if (!in_space() || !connected())
         return;
     if (C.partners)
@@ -1144,6 +1247,9 @@ void on_session_end()
     g_last_star.clear();
     g_raid_since.clear();
     g_terra_planet = 0;
+    g_gifts_out.clear(); // unanswered gifts most likely arrived (only a failure is answered); g_gifts_owed stays
+    g_gifts_held.clear();
+    g_gift_hold = g_gift_noroom = false;
     spaceext::session_end_all();
 }
 
@@ -1603,6 +1709,25 @@ std::string debug(const std::vector<std::string>& a)
     if (a[0] == "away" && a.size() > 1) { // tests (BUG-0226/0228/0229): act as outside Space, the world stays
         spaceext::set_away(a[1] != "0");
         return std::string("away=") + (spaceext::away() ? "1" : "0");
+    }
+    if (a[0] == "gift" && a.size() > 2 && (a[1] == "hold" || a[1] == "noroom")) { // tests (BUG-0226), receiver side
+        bool on = a[2] != "0";
+        (a[1] == "hold" ? g_gift_hold : g_gift_noroom) = on;
+        if (a[1] == "hold" && !on) {
+            auto held = std::move(g_gifts_held);
+            g_gifts_held.clear();
+            for (auto& h : held)
+                on_gift(K_GIFT, h.origin, h.key, h.n);
+        }
+        snprintf(b, sizeof b, "gift hold=%d noroom=%d held=%u", (int)g_gift_hold, (int)g_gift_noroom,
+                 (unsigned)g_gifts_held.size());
+        return b;
+    }
+    if (a[0] == "gift") {
+        snprintf(b, sizeof b, "gifts out=%u owed=%u back_paid=%u back_owed=%u back_dropped=%u stray=%u held=%u",
+                 (unsigned)g_gifts_out.size(), (unsigned)g_gifts_owed.size(), g_gift_back_paid, g_gift_back_owed,
+                 g_gift_back_dropped, g_gift_back_stray, (unsigned)g_gifts_held.size());
+        return b;
     }
     if (a[0] == "downstate") { // tests (BUG-0228/0229)
         snprintf(b, sizeof b, "down=%d left=%.1f owed=%d epoch=%u ship_epoch=%u world_ends=%u owed_cleared=%u owed_dropped=%u away=%d",
