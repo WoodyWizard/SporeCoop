@@ -60,4 +60,5 @@ together at once in the same run).
      or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
 
 ## History
+- 2026-10-29: reproduced in the whole-game debug run out/lane7/campaign/20261029-011243 (cell fixture, host `world 'snapshot.spo'`, guest `world 'Cadian.spo'`, `together N 0` for all three guests): 2 of 2 campaign runs with four players.
 - 2026-10-29: opened by dev/campaign (the campaign's first Creature -> Tribe change with four players).
