@@ -749,21 +749,14 @@ after-save hook of BUG-0217 (#151) and a game key; the allies part of BUG-0225 i
 * Next steps: wait until the partner is on the screen (or turn the camera) before clicking.
 * Ticket: BUG-0272.
 
-## Four-player campaign: open findings of the final run (2026-10-29, main)
+## Four-player campaign: findings of the final run (2026-10-29, main)
 
-Lab 20261029-122937 (4 players, three full games, three Cell -> Creature games; no crash, no fault):
-
-* A guest keeps a proxy of a host NPC that the host has at the planet's centre (504 m apart,
-  Creature, two of three short games). Ticket: BUG-0274.
-* A vote ended by its timer although all three guests clicked "I'm ready" (Creature -> Tribe,
-  once in three games). Ticket: BUG-0273.
-* (fixed on fix/w7-npc) A guest kept a proxy of a host NPC that the host had at the planet's
-  centre (504 m apart): the NPC was back in the game's creature pool. Ticket: BUG-0274. What is
-  left (the host's game keeps NPCs only around the host): see
-  [the entry below](#issue-npcs-only-around-host), BUG-0280.
-* The 3rd and 4th players stay over the sync limits now and then (Cell cells, Creature NPCs);
-  the 2nd never did. Ticket: BUG-0275.
-* Reproduce: `tools/lab.py run campaign --lane N` (about 85 min) or `campaign_short` (9 min).
+Lab 20261029-122937 (4 players, three full games, three Cell -> Creature games; no crash, no fault).
+All fixed in wave 7: the lost "I'm ready" clicks under a caption (BUG-0273), the proxy of a pooled
+host NPC (BUG-0274; what is left: [the entry below](#issue-npcs-only-around-host), BUG-0280), the
+3rd and 4th players' false desyncs (BUG-0275, the check; BUG-0281 and BUG-0282 are what the
+per-player measurement found), the stale world share right after a stage change (BUG-0276).
+Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `campaign_short` (9 min).
 
 ## Creature: NPCs live only around the host; a guest far from it sees an empty world (2026-10-29, fix/w7-npc)
 <a id="issue-npcs-only-around-host"></a>
@@ -780,12 +773,6 @@ Lab 20261029-122937 (4 players, three full games, three Cell -> Creature games; 
 * Not checked: whether the guests could keep the NPCs of their own area (their game runs them
   while the host is away) or the host's game can be made to keep creatures around the puppets.
 * Ticket: BUG-0280.
-* (Fixed on fix/w7-sync, BUG-0275: the 3rd and 4th player measured as close to the host as the
-  2nd; the findings were single objects and the check's timing. What remains: one NPC proxy next
-  to the guests' avatars ~4 m off, BUG-0281; cells trail at a low frame rate, BUG-0282.)
-* After the change to Tribe three guests were not in the host's world for 300 s; a rejoin fixed it
-  (once). Ticket: BUG-0276.
-* Reproduce: `tools/lab.py run campaign --lane N` (about 85 min) or `campaign_short` (9 min).
 
 ## Creature: an NPC proxy next to a guest's avatar stays ~4 m off (2026-10-29, fix/w7-sync)
 
