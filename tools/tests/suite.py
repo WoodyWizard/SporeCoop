@@ -74,6 +74,7 @@ add('creature_desync', P + 'coop_creature_desync.py', minutes=4)  # editors, a c
 add('editor_strays', P + 'coop_editor_strays.py', minutes=6)  # two evolutions: no puppet left over, herd homes on the surface (crash 0xB88BEA)
 add('creature_e84', P + 'coop_creature_e84.py', minutes=5)  # a save with the partner's puppet, loaded after a restart: no crash on attack (0xD48634), removed
 add('save_hygiene', P + 'coop_save_hygiene.py', minutes=5)  # a save made with the partner's puppet holds no puppet, no herd of ours after a restart (BUG-0020; SPORE_SAVE_FIX=0 fails)
+add('save_hygiene_leave', P + 'coop_save_hygiene.py --leave', minutes=5)  # the partner left before the save: its empty herd is not saved either (BUG-0255; SPORE_FIX_OFF=savestrip.empty_herds fails)
 add('alt_enter', P + 'coop_alt_enter.py', minutes=4)  # Alt+Enter / Alt+Shift+Enter in co-op: no fault at 0x7777BE (device recreation), on the ground
 add('nest_species', P + 'coop_nest_species.py', minutes=4)  # the guest owns another creation under the key of the host's: the host's species at its nests, its table
 add('migration', P + 'coop_migration.py', minutes=5)  # brain upgrade, editors, migration; both claim the new nest: no fault on the guest (0xC6AE60)

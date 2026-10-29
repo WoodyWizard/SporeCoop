@@ -7,6 +7,7 @@
 #include "drive_plan.h"
 #include "hunt_hits.h"
 #include "npc_ids.h"
+#include "savestrip_rule.h"
 #include "stage_epoch.h"
 #include "swap_ledger.h"
 
@@ -245,9 +246,28 @@ static void test_stage_epoch()
     CHECK(!changed(w2, 1, true, &a, 3));
 }
 
+// BUG-0255: one list of our objects per save; empty herds only when surely empty (savestrip_rule.h)
+static void test_savestrip_rule()
+{
+    using namespace savestrip;
+    int s1, s2;
+    SaveState st;
+    CHECK(new_save(st, &s1, 10));  // the first Write
+    CHECK(!new_save(st, &s1, 10)); // same serializer, same frame: the same save
+    CHECK(new_save(st, &s1, 11));  // the same address one frame later: a new save
+    CHECK(new_save(st, &s2, 11));  // another serializer: a new save
+    CHECK(!new_save(st, &s2, 11));
+    CHECK(strip_empty_herd(true, true, false, false));
+    CHECK(!strip_empty_herd(false, true, false, false)); // member list not readable
+    CHECK(!strip_empty_herd(true, false, false, false)); // has members
+    CHECK(!strip_empty_herd(true, true, true, false));   // a creature points at it
+    CHECK(!strip_empty_herd(true, true, false, true));   // a creature of the save was unreadable
+}
+
 int main()
 {
     test_stage_epoch();
+    test_savestrip_rule();
     test_drive();
     test_ids();
     test_hits();
