@@ -23,3 +23,4 @@ SporeCoop::cCreatureAnimal_GrowTo ; Creature: the hatchling grows up after a dea
 SporeCoop::cGameBehaviorManager_Read ; our creatures are kept out of saves (BUG-0020)
 SporeCoop::cPosseSimulator_AddMember ; Creature: pack members of a partner (BUG-0108)
 SporeCoop::cPosseSimulator_Get ; Creature: pack members of a partner (BUG-0108)
+SporeCoop::Herd_NestPosition ; support log: no nest distance in the creature trace line (BUG-0279)
