@@ -395,3 +395,45 @@ What an editor leaves behind, seen with two games (`tools/tests/coop_editor_desy
   cCinematicManager +0x2C), at most 90 s after the vote. An editor opened by `coop.vote editor` while
   the host's stage-intro caption ("It is the beginning of a new day...") waited for its check stayed
   black after cancel too.
+
+## The guest's own editor saves, the avatar keeps the world's species (2026-10-29, fix/w7-legless)
+<a id="creations-own-editor-save"></a>
+
+Seen on lane 8 (GOG 2024, `tools/tests/coop_legless_guest.py`, a fresh guest profile without
+creations, the first creature editor after the Cell stage). BUG-0278.
+
+* ✔ The own editor the vote opens (`open_own_editor`: an `EditorRequest` with the editor id and the
+  avatar's species key only, none of the native evolution data of section 7) is the "edit a
+  creation" editor, not the evolution one: it has a red cross (the host's first creature editor has
+  only the check), "done" after an edit asks "Save 'X' as a new creation or replace 'X' before
+  exiting?" (Don't Save / Cancel / Replace / Save New, at 510/612/830/926, 604 in a 1440x1080
+  window), and the red cross after an edit asks "Exiting will cause your changes to be lost" (Cancel /
+  Quit at 944, 604). "done" without a change leaves at once (GetFinishState 3).
+* ✔ Whatever it saves goes into the guest's My Creations, but **the avatar keeps the species it had**
+  (the world's: the host's legless pre-editor creature); the game does not put the saved creation on
+  the avatar as the evolution editor does.
+* ~ Key of the saved creation: "Save New" kept the key of the creation it edited, the host's
+  (290D780E in My Creations of the guest, the host's pre-editor creature was 290D780E); "Replace"
+  made a new one (290D79C9 for the host's 290D79C6). One run each. The next own editor's "Save New"
+  gave 290D7813 (the host's evolved creature was 290D7812). ? how the game picks the instance.
+* ✔ On a guest a key of the host's world answers with the host's package (priority 2000 above My
+  Creations at 1000): an own creation under such a key is the host's creature in the guest's game.
+* Before the fix (0.7.3.0): the return from the editor took the avatar's key as the own creature
+  (`adopt_after_editor`, choices.ini) when it was not the newest own one: after Replace the host's
+  legless key 290D79C6 was pinned ("back from the editor, own creature 290D79C6"); after Save New the
+  newest own creation was that very key. From then on `apply_own_avatar` put the legless creature on
+  every avatar the host's worlds brought (also after a rejoin and a restart: choices.ini), the host
+  showed the guest with its own old creature, and the co-op window's arrows offered only the guest's
+  My Creations (no way back to the world's species). The guest's own screen and the host's both
+  showed the legless creature after Replace; after Save New only the guest's own screen did (the host
+  got the guest's records under a remapped key).
+* The fix (`creations.pre_editor`): a guest takes over after an editor only the newest own creation
+  that was not in My Creations when the editor opened (read again every 2 s for 30 s; the host keeps
+  the old way: right after its evolution editor its avatar still had the pre-editor key, which is
+  one of its own creations, and a first version of the fix pinned it); a pinned key of the host's world that is not ours is
+  ignored; an own creation under a host key is used under its remapped key (`player_key`, the same
+  records the host shows); the co-op window's arrows include "the world's own" (the host's current
+  creature, sent by key).
+* ? Cancel run (one of one): while the guest's own editor was open the creature it showed got the
+  host's new legs and the DNA dropped by their price (115 -> 65) without any input of the guest, so
+  the red cross asked to confirm (BUG-0283).
