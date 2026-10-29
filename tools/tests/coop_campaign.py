@@ -82,6 +82,7 @@ CAPTION_OK = (1410, 1048)    # the green check of a caption that waits for the p
 HISTORY_BTN = (1400, 1062)   # the HUD button under the portrait: History (the next stage when it is done)
 HISTORY_OK = (1415, 1055)    # its check: closes History, or starts the next stage
 EDITOR_DONE = (1416, 1062)   # the green "done" of the editors (1440x1080)
+CIV_TALK = ('We happily accept your surrender.',)  # answers to a nation's talk that waits (Civ)
 CAPTAIN_NAME = [(915, 555), (936, 630)]  # "Name Your Captain" (the first Space minutes): dice, check
 EDITOR_DICE = (614, 826)     # the dice of the name panel (a random name), open after a "done" without a name
 EDITOR_PARTS = [(85, 130), (350, 405), (480, 405)]       # spaceship editor palette: a hull, two discs
@@ -370,6 +371,10 @@ class Campaign:
             return 'captain named'
         if 'Civ' in mode:
             # a captured city asks for its specialty (Economic / Religious / Military) and waits
+            for answer in CIV_TALK:  # a nation's talk (its surrender after the cities fell) waits for an answer
+                if uifind.shown(con, answer):
+                    uifind.press(con, answer)
+                    return 'talk answered'
             b = uifind.shown(con, 'Military')
             if b and 600 < b[0] < 1100 and 500 < b[1] < 750:  # the dialog's button, not the HUD's tab label
                 uifind.press(con, 'Military')
