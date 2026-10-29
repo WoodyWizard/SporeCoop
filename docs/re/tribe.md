@@ -752,3 +752,23 @@ BUG-0258. GOG 2024.
   on_frame), forgotten when the name is anything else ("SaveGame" in the galaxy menu), so a new
   game never inherits an old planet. `coop.avatar` prints the game's own name as `game_name`.
   Switch `coop.fix world.snapshot_name`.
+
+## A share save right after the change to Tribe is not written (2026-10-29, fix/w7-vote)
+<a id="tribe-share-save-dropped"></a>
+
+* ~ (logs, lab 20261029-122937 campaign#2, four players, BUG-0276): the host entered Tribe at
+  13:50:18.861, the shares for the three guests were queued again (the save before the change was
+  of Creature: "the game went from Creature to Tribe during the save ... saving again") and one of
+  them posted its save at 18.929, 68 ms into the stage. The game never wrote it: no "save: objects
+  kept out" line, no "game saved" box, and 10 s later "no saved box ... sharing anyway" sent the
+  slot's files of the Creature save of 13:50:17. All three guests loaded it and played Creature in
+  the host's planet (`game.mode` 0x01654C01) while the host played Tribe, for 300 s, until a rejoin
+  (which saved in a settled Tribe and worked).
+* In the other games of the same lab the second save came 2 s after the change (the new shares
+  had merged with the older save first and were moved by its "saving again" delay) and was
+  written ~1.8 s later. Inferred: a save posted in the first frames of the new stage is dropped by
+  the game. Not reproduced on purpose (a timing race of the four-player change).
+* Fix (world.cpp, switch `world.share_settle`): a share save waits until the stage has been
+  playable for 2 s; a share whose save showed no box is sent only when a file of the slot was
+  written after the save was posted, else it saves again (at most three times). `coop.status`
+  prints "share saves held while the stage settled N, shares saved again (nothing written) N".

@@ -8,6 +8,7 @@
 #include <windows.h>
 
 #include <cstdio>
+#include <algorithm>
 #include <deque>
 #include <map>
 
@@ -315,6 +316,33 @@ static const char* (*g_save_blocker)();
 static unsigned g_saves_posted; // tests: every save_game that posted the game's save
 void set_save_blocker(const char* (*probe)()) { g_save_blocker = probe; }
 
+static FILETIME g_saved_ft; // when the last save was posted (system time, as file times)
+static unsigned g_stale_saves; // tests: shares whose save wrote nothing: saved again (BUG-0276)
+static unsigned g_settle_waits; // tests: share saves held while the stage settled (BUG-0276)
+static constexpr double kShareSettle = 2.0;
+
+// the newest write time of a file in the slot folder (and one level below)
+static uint64_t newest_write(const std::wstring& dir, int depth = 0)
+{
+    uint64_t best = 0;
+    WIN32_FIND_DATAW fd;
+    HANDLE h = FindFirstFileW((dir + L"\\*").c_str(), &fd);
+    if (h == INVALID_HANDLE_VALUE)
+        return 0;
+    do {
+        if (!wcscmp(fd.cFileName, L".") || !wcscmp(fd.cFileName, L".."))
+            continue;
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+            if (depth < 1)
+                best = std::max(best, newest_write(dir + L"\\" + fd.cFileName, depth + 1));
+        } else {
+            best = std::max(best, ((uint64_t)fd.ftLastWriteTime.dwHighDateTime << 32) | fd.ftLastWriteTime.dwLowDateTime);
+        }
+    } while (FindNextFileW(h, &fd));
+    FindClose(h);
+    return best;
+}
+
 bool save_game(std::string& err)
 {
     using namespace skg;
@@ -348,6 +376,7 @@ bool save_game(std::string& err)
     // Present) deadlocked DXVK threads.
     vcall<void>(mm, 0x18 / 4, 0x1CD20F0u, (void*)nullptr, (void*)nullptr, 0);
     g_saves_posted++;
+    GetSystemTimeAsFileTime(&g_saved_ft);
     g_saved_at = GetTickCount64();
     g_box_seen_at = 0;
     g_box_watch_until = g_saved_at + 30000;
@@ -412,6 +441,14 @@ COOP_FIX("core.share_reset", "BUG-0140", g_share_reset_fix, "world: the session 
 COOP_FIX("world.world_reset", "BUG-0074", g_world_reset_fix, "world: the session end drops the guest's queued world loads");
 COOP_FIX("world.share_drop_peer", "BUG-0166", g_drop_peer_fix, "world: shares for a player who left are dropped");
 COOP_FIX("world.share_one_save", "BUG-0112", g_one_save_fix, "world: one save for every share that waits at the same time");
+// BUG-0276: the host's share save posted 70 ms after the game entered the Tribe stage was never
+// written (no "game saved" box, no file); after 10 s the share went out anyway with the slot's
+// previous files, a Creature save, and every guest loaded Creature while the host played Tribe.
+// A share save now waits until the stage has been playable for kShareSettle, and a share without
+// its box is sent only when a file of the slot was written after the save was posted (else: save
+// again, up to three times). Off: the old timing (0.7.3.0).
+bool g_share_settle_fix = true;
+COOP_FIX("world.share_settle", "BUG-0276", g_share_settle_fix, "world: a share save waits for a settled stage and is not sent stale");
 COOP_FIX("world.load_in_editor", "BUG-0157", g_editor_load_fix, "world: a queued load never starts inside an editor");
 COOP_FIX("world.busy_slot", "BUG-0035", slotfs::g_busy_fix, "world: a received world never moves or overwrites the slot being played");
 COOP_FIX("world.slot_match", "BUG-0087", slotfs::g_match_fix, "world: a received world goes only into its own host's co-op slot");
@@ -825,8 +862,13 @@ void tick(net::Session& s)
         if (p.need_save) {
             // a stage that just began (loading screen, setup) is saved once the player controls
             // something, like a share at join (coop.cpp player_join)
+            double ts = H->time_seconds();
             if (now >= p.next_try && g_playing && !g_playing()) {
                 p.next_try = now + 1000;
+            } else if (now >= p.next_try && g_share_settle_fix && in_stage(game::mode_id()) &&
+                       (!g_playable_since || ts - g_playable_since < kShareSettle)) {
+                p.next_try = now + 250; // BUG-0276: the stage just began, the game drops a save now
+                g_settle_waits++;
             } else if (now >= p.next_try) {
                 std::string why;
                 if (save_game(why)) {
@@ -860,6 +902,26 @@ void tick(net::Session& s)
             p.latest = 0;
             i++;
             continue;
+        }
+        if (p.latest && g_box_seen_at < g_saved_at && g_share_settle_fix && p.saves < 3) {
+            // BUG-0276: no box: was anything written at all? A save the game dropped leaves the
+            // slot's older files, possibly of another stage
+            std::string planet;
+            bool missing = false;
+            std::wstring slot = current_slot(planet, missing);
+            uint64_t posted = ((uint64_t)g_saved_ft.dwHighDateTime << 32) | g_saved_ft.dwLowDateTime;
+            uint64_t wrote = slot.empty() ? 0 : newest_write(slot);
+            if (wrote && posted && wrote + 20000000ull < posted) { // 2 s of slack for coarse file times
+                H->log(M, SK_WARN, "world: no saved box and no file written %llu ms after the save for player %u: saving again (try %d)",
+                       (unsigned long long)(now - g_saved_at), p.peer, p.saves + 2);
+                g_stale_saves++;
+                p.saves++;
+                p.need_save = true;
+                p.next_try = now + 1000;
+                p.latest = 0;
+                i++;
+                continue;
+            }
         }
         if (p.latest && g_box_seen_at < g_saved_at)
             H->log(M, SK_INFO, "world: no saved box %llu ms after the save: sharing anyway",
@@ -1208,6 +1270,9 @@ std::string status()
     snprintf(b, sizeof b, "world saves posted %u, for shares %u, shares dropped %u, loads dropped %u, loads held %u%s%s\n",
              g_saves_posted, g_share_saves, g_shares_dropped, g_loads_dropped, g_loads_held,
              g_via_menu.on ? ", load queued" : "", g_deferred.on ? ", load after the editor" : "");
+    s += b;
+    snprintf(b, sizeof b, "share saves held while the stage settled %u, shares saved again (nothing written) %u\n",
+             g_settle_waits, g_stale_saves); // tests (BUG-0276)
     s += b;
     if (g_in.active) {
         snprintf(b, sizeof b, "receiving world: %u/%u bytes\n", g_in.received, g_in.offer.total_size);

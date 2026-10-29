@@ -865,3 +865,24 @@ BUG-0264. GOG 2024, lanes 4 and 5.
   filter runs inside the quit's own save, when avatar() is already null).
 * Diagnostic: once a second in a stage the mod checks that the avatar is still listed; a miss logs
   "game: the avatar ... is no longer in the game's object list" (`stage_gone` in `coop.leaving`).
+
+## The game's input lock drops clicks on the co-op window (2026-10-29, fix/w7-vote)
+<a id="creature-input-lock-clicks"></a>
+
+* ✔ `Simulator::cGameInputManager::Get` (GOG 2024 0xB3D350, `mov eax,[0x167EAD0]; ret`) +0x110 is
+  the input lock: the cinematic start (0xADFEC1) increments it, EndCinematic (0xADFF87) decrements
+  it. While it is above 0 the game drops every click on the UI, our co-op window included (the
+  window is a child of the main window, always in front, and still gets nothing). A caption's own
+  OK button still works. Measured in coop_vote_caption.py: CRG_ClaimNest started by hand on the
+  guest, `input_lock=1` in `coop.uistate`; real clicks on "I'm ready" did not reach the button's
+  handler (lab 20261029-142824).
+* In the four-player campaign the Creature -> Tribe vote started while the guests still had the
+  brain-upgrade captions of AddEvolutionPoints up: their clicks were dropped and the vote ran out
+  of time (BUG-0273). The first vote of the game (Cell -> Creature) came after the captions and
+  ended in 2 s.
+* The mod now takes a click from the window's messages (mouse.h, WM_LBUTTONDOWN) while the lock
+  is held and presses the visible co-op window button under it after 0.5 s, unless the game
+  delivered the click itself meanwhile (`locked_native` in `coop.uistate` counts those; it stayed
+  0). Switch `core.ui_locked_clicks`.
+* CRG_ClaimNest started with PlayCinematic does not end with Enter on the guest; EndCinematic
+  (`call SporeCoop::cCinematicManager_EndCinematic thiscall <mgr>`) ends it and frees the lock.

@@ -266,6 +266,29 @@ static Win add_label(std::vector<Win>& page, const Rect& r, const std::string& t
     return w;
 }
 
+// BUG-0273: while a cinematic or a caption plays, the game holds its input lock
+// (cGameInputManager +0x110 above 0) and drops every click on the UI, also on our window: a
+// guest's "I'm ready" during the brain-upgrade captions of a vote did nothing, the vote ran out of
+// time. The click is taken from the window's messages instead (mouse.h) and given to the button
+// under it, unless the game delivered it itself within kLockedClickWait. Off: the clicks are
+// dropped while the lock is held (0.7.3.0).
+bool g_locked_clicks_fix = true;
+COOP_FIX("core.ui_locked_clicks", "BUG-0273", g_locked_clicks_fix, "ui: co-op window buttons take clicks while a caption holds the game's input lock");
+static std::map<Win, std::function<void()>> g_btn_fn; // every button of the window and its action
+static std::map<Win, double> g_btn_native;            // when the game last delivered a click to it
+static Win g_locked_btn;                              // a click under the lock waits for the game
+static double g_locked_at;
+static unsigned g_locked_clicks, g_locked_native;     // tests: clicks given / the game delivered itself
+constexpr double kLockedClickWait = 0.5;
+
+static int input_lock()
+{
+    uintptr_t get = H ? H->sym("Simulator::cGameInputManager::Get") : 0;
+    using Get_t = uint8_t*(__cdecl*)();
+    uint8_t* im = get ? ((Get_t)get)() : nullptr;
+    return im && !IsBadReadPtr(im + 0x110, 4) ? *(int*)(im + 0x110) : 0;
+}
+
 static Win add_button(std::vector<Win>& page, const char* name, const Rect& r, const std::string& t,
                       std::function<void()> fn)
 {
@@ -276,16 +299,54 @@ static Win add_button(std::vector<Win>& page, const char* name, const Rect& r, c
     page.push_back(w);
     g_named[name] = w;
     g_cache[w] = Cache{t, 0, 1};
-    sui::add_handler(w, [fn, name = std::string(name)](Win, const sui::Msg& m) {
+    sui::add_handler(w, [fn, w, name = std::string(name)](Win, const sui::Msg& m) {
         if (g_log_msgs && m.type != 8 && m.type != 0xC && m.type != 0xD)
             H->log(M, SK_DEBUG, "ui msg %s 0x%X src=%p %08X %08X %08X", name.c_str(), m.type, m.source, m.a, m.b, m.c);
         if (sui::is_click(m)) {
+            g_btn_native[w] = H->time_seconds();
             fn();
             return true;
         }
         return false;
     });
+    g_btn_fn[w] = fn;
     return w;
+}
+
+// a click under the game's input lock on one of our visible buttons (BUG-0273); main thread
+static void locked_click_tick(bool clicked)
+{
+    double now = H->time_seconds();
+    if (g_locked_btn && now - g_locked_at >= kLockedClickWait) {
+        Win w = g_locked_btn;
+        g_locked_btn = nullptr;
+        auto f = g_btn_fn.find(w);
+        auto n = g_btn_native.find(w);
+        if (n != g_btn_native.end() && n->second >= g_locked_at - 0.05)
+            g_locked_native++; // the game delivered it after all: no second press
+        else if (f != g_btn_fn.end() && D.root && sui::visible(D.root) && sui::visible(w)) {
+            g_locked_clicks++;
+            H->log(M, SK_INFO, "ui: a click on the co-op window while the game's input is locked (a caption): pressed");
+            static std::function<void()> s_fn;
+            s_fn = f->second;
+            H->run_outside_frame([](void*) { if (s_fn) s_fn(); }, nullptr);
+        }
+    }
+    if (!clicked || !g_locked_clicks_fix || !mouse::g_fix || !g_want_open || !D.root || !sui::visible(D.root) ||
+        g_locked_btn || input_lock() <= 0)
+        return;
+    int cx = 0, cy = 0;
+    mouse::last_click(cx, cy);
+    for (auto& [w, fn] : g_btn_fn) {
+        if (!sui::visible(w))
+            continue;
+        Rect r = sui::screen_rect(w);
+        if (cx >= r.x1 && cx < r.x2 && cy >= r.y1 && cy < r.y2) {
+            g_locked_btn = w;
+            g_locked_at = now;
+            return;
+        }
+    }
 }
 
 static Win add_edit(std::vector<Win>& page, const char* name, const Rect& r, const std::string& t, int max_len)
@@ -428,6 +489,9 @@ static void build_dialog()
     }
     D = Dialog{};
     g_named.clear();
+    g_btn_fn.clear();
+    g_btn_native.clear();
+    g_locked_btn = nullptr;
     D.root = root;
     D.layer = sui::parent(root);
     sui::add_ref(root); // ours: the window survives mode changes that clear the layer
@@ -906,6 +970,7 @@ void tick()
     uint32_t nclicks = mouse::clicks();
     bool lb = mouse::g_fix ? nclicks != g_lb_seen : (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
     g_lb_seen = nclicks;
+    locked_click_tick(mouse::g_fix && lb);
     if (mouse::g_fix)
         g_lb_down = false;
     // menu_intro_playing() (mode-checked) before any call on the item
@@ -969,7 +1034,9 @@ std::string debug_state()
 {
     std::string s = "open=" + std::to_string(g_want_open) + " page=" +
                     (A.role() ? (g_space_page ? "space" : "lobby") : "connect") +
-                    " menu_button=" + (g_menu_btn ? "yes" : "no") + " in_menu=" + (in_menu() ? "1" : "0") + "\n";
+                    " menu_button=" + (g_menu_btn ? "yes" : "no") + " in_menu=" + (in_menu() ? "1" : "0") +
+                    " input_lock=" + std::to_string(input_lock()) + " locked_clicks=" + std::to_string(g_locked_clicks) +
+                    " locked_native=" + std::to_string(g_locked_native) + "\n";
     char b[256];
     int sw = 0, sh = 0;
     H->screen_size(&sw, &sh);
