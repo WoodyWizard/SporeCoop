@@ -116,7 +116,9 @@ def main():
     def mirrors_ok():
         live = set(int(x, 16) for x in re.findall(r'idx=([0-9A-F]{8})', host.call('coop.cell list')['out']))
         mm = [int(h) for h in re.findall(r'^map (\d+) ', guest.call('coop.pool mirrormap')['out'], re.MULTILINE)]
-        dead = [h for h in mm if h not in live]
+        # `coop.cell list` starts at slot 1; a cell in slot 0 (the avatar's before the rebuild) is
+        # asked by its key (modes::cell_at, the generation checked)
+        dead = [h for h in mm if h not in live and 'no such cell' in host.call(f'coop.pool cell c{h}')['out']]
         return (len(mm), dead)
     res = wait(lambda: (lambda r: r if r[0] > 5 and not r[1] else None)(mirrors_ok()), 15)
     n, dead = res or mirrors_ok()
