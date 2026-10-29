@@ -704,3 +704,18 @@ None open (BUG-0077, BUG-0080, BUG-0094 and BUG-0139 fixed on fix/w4-installer).
   no host or session id to merge them by.
 * Not checked: two separate PCs.
 * Ticket: BUG-0210.
+
+## Tribe: after the live Creature -> Tribe change no guest is with the host (2026-10-29, dev/campaign)
+<a id="issue-tribe-snapshot-world"></a>
+
+* What happens: four players end the Creature stage the players' way (vote, editors, the fire
+  cinematic); every guest loads the host's world and plays the Tribe stage, but the host shows
+  `together N 0` for each guest and no puppets, and the guests never see "Alice appeared". The host's
+  `coop.avatar` says `world 'snapshot.spo'`, the guests' `world 'Scalinus.spo'`.
+* Reproduce: `SPORE_LANE=7 python3 tools/tests/coop_campaign.py --from creature --to tribe --minutes 3
+  --advance-minutes 10` (finding `stuck`: "... did not get into the host's world in tribe").
+* Known: the place id is the crc32 of the game's current save name (`modes::current_world`); right
+  after the game's own stage change it is `snapshot.spo` on the host. A `coop.load` of the planet
+  makes everyone together again.
+* Not checked: two players (a manual run had the guest together), whether a save on the host ends it.
+* Ticket: BUG-0258.
