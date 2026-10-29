@@ -543,6 +543,7 @@ static void* SK_THISCALL h_SpawnVehicle(void* city, int purpose, int loco, uint3
     return o_SpawnVehicle(city, purpose, loco, k0, k1, k2, space);
 }
 
+static void caption_arm(); // BUG-0224 (below)
 using Capture_t = int(SK_THISCALL*)(void*, uint32_t, int, int, int, int);
 static Capture_t o_Capture;
 static int SK_THISCALL h_Capture(void* city, uint32_t pol, int type, int a3, int a4, int a5)
@@ -551,6 +552,7 @@ static int SK_THISCALL h_Capture(void* city, uint32_t pol, int type, int a3, int
         return 0; // captures happen on the host and come back with the snapshot
     int r = o_Capture(city, pol, type, a3, a4, a5);
     if (is_host() && game::mode_id() == modes::kCiv) {
+        caption_arm(); // every capture the host's game runs may show a caption that waits for OK
         void* pc = player_civ();
         if (pc && pol == pol_of(pc) && !g_city_owner.count(city)) {
             // the city goes to the player whose vehicle is closest (who took it)
@@ -1070,13 +1072,46 @@ static bool g_fix_caption = true;
 COOP_FIX("civ.caption", "BUG-0187", g_fix_caption, "civ: the host's capture caption closes itself when guests wait");
 static double g_caption_wait = 8.0, g_movie_since;
 static uint32_t g_captions_closed;
+// BUG-0224: only a cinematic that a capture started is ended. Before, every cinematic of the host
+// in Civ (a city purchase, the camera when a city appears, superweapons) was cut after 8 s. A
+// capture (h_Capture, host, any nation) arms; the 8 s count from the arm time while a cinematic
+// plays (a purchase chain may never drop +0x2C between its cinematic and the caption). Disarmed
+// when the cinematic ends after it was seen, when no cinematic came within kArmWindow, after an
+// end, and at a session end or world change. Accepted: a capture during another long cinematic
+// ends that one (the caption is queued behind it and everybody waits anyway).
+// `coop.fix civ.caption_only off`: every cinematic is ended after 8 s (0.7.3.0).
+static bool g_fix_caption_only = true;
+COOP_FIX("civ.caption_only", "BUG-0224", g_fix_caption_only, "civ: only a capture's caption is closed after 8 s, other cinematics play on");
+constexpr double kArmWindow = 3.0;
+static double g_caption_armed;  // time of the last capture, 0 = not armed
+static bool g_armed_seen;       // a cinematic played since the arm
+static uint32_t g_caption_arms; // tests
+static void caption_arm()
+{
+    g_caption_armed = H->time_seconds();
+    g_armed_seen = false;
+    g_caption_arms++;
+}
+static void caption_disarm()
+{
+    g_caption_armed = 0;
+    g_armed_seen = false;
+}
 static void movie_tick()
 {
     bool on = movie_playing();
     double now = H->time_seconds();
-    if (on && g_movie && g_fix_caption && g_movie_since > 0 && now - g_movie_since > g_caption_wait &&
+    if (g_caption_armed > 0) {
+        if (on)
+            g_armed_seen = true;
+        else if (g_armed_seen || now - g_caption_armed > kArmWindow)
+            caption_disarm(); // the caption ended, or the capture showed none
+    }
+    double since = g_fix_caption_only ? (g_caption_armed > 0 && g_movie_since > 0 ? g_caption_armed : -1) : g_movie_since;
+    if (on && g_movie && g_fix_caption && since > 0 && now - since > g_caption_wait &&
         C.sess->players().size() >= 2) {
         g_movie_since = -1; // once per cinematic
+        caption_disarm();
         H->run_outside_frame(
             [](void*) {
                 uintptr_t end = H->sym("SporeCoop::cCinematicManager_EndCinematic");
@@ -1096,7 +1131,7 @@ static void movie_tick()
     g_movie_since = on ? now : 0;
     if (on && C.notice)
         C.notice(C.sess->name_of(C.sess->my_id()) + " watches a cinematic: the world waits for the OK" +
-                 (g_fix_caption && C.sess->players().size() >= 2 ? " (or " + std::to_string((int)g_caption_wait) + " s)" : ""));
+                 (g_fix_caption && (!g_fix_caption_only || g_caption_armed > 0) && C.sess->players().size() >= 2 ? " (or " + std::to_string((int)g_caption_wait) + " s)" : ""));
 }
 
 static void host_tick(double now)
@@ -1882,6 +1917,7 @@ static void clear_coop_tables(bool restore_speed)
 
 void on_session_end()
 {
+    caption_disarm(); // BUG-0224
     if (g_fix_boost)
         clear_coop_tables(true);
     g_hv.clear();
@@ -1907,6 +1943,7 @@ void on_world_change()
     if (m == modes::kEdit || m == modes::kEditor)
         return;
     g_world_resets++;
+    caption_disarm();
     clear_coop_tables(false); // nothing to restore: the vehicles are gone
     // BUG-0223: the tables are forgotten here, not through on_session_end (its restoring clear
     // would write +0x218 into the old world's vehicles if the order ever changed)
@@ -2215,8 +2252,8 @@ std::string debug(const std::vector<std::string>& a)
     }
     if (!a.empty() && a[0] == "movie") { // the host's cinematic / caption (BUG-0187)
         char b[96];
-        snprintf(b, sizeof b, "movie playing=%d closed=%u fix=%d wait=%.0f", (int)movie_playing(), g_captions_closed,
-                 (int)g_fix_caption, g_caption_wait);
+        snprintf(b, sizeof b, "movie playing=%d closed=%u fix=%d wait=%.0f armed=%d arms=%u", (int)movie_playing(), g_captions_closed,
+                 (int)g_fix_caption, g_caption_wait, (int)(g_caption_armed > 0), g_caption_arms);
         return b;
     }
     if (!a.empty() && a[0] == "sw") { // the superweapon votes (host, BUG-0117)
