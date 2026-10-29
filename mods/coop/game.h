@@ -52,6 +52,7 @@ struct LeaveStats {
     unsigned used_gone = 0;  // frames where the mod used such an avatar (the crash)
     unsigned refused = 0;    // avatar() calls answered with null while leaving
     unsigned bad_vtable = 0; // avatars refused for vtables outside the game
+    unsigned stage_gone = 0; // an unlisted avatar seen outside the window (1 Hz check)
 };
 void stage_leaving(const char* why);
 void stage_leave_cancel();

@@ -506,8 +506,24 @@ void* avatar()
 void leave_probe_tick(void* used)
 {
     bool leaving = leaving_stage();
-    if (!leaving)
+    if (!leaving) {
+        // outside the window, once a second: an avatar the game no longer lists while the stage
+        // runs (not seen in the lab; evidence for the next campaign, logged once per avatar)
+        static double next = 0;
+        static void* reported = nullptr;
+        double now = H->time_seconds();
+        if (now < next)
+            return;
+        next = now + 1.0;
+        void* raw = avatar_raw();
+        if (raw && raw != reported && !(creature_vtables_ok(raw) && creature_listed(raw))) {
+            reported = raw;
+            g_leave.stage_gone++;
+            H->log(M, SK_WARN, "game: the avatar %p is no longer in the game's object list (mode 0x%08X, not leaving)",
+                   raw, mode_id());
+        }
         return;
+    }
     g_leave.frames++;
     void* raw = avatar_raw();
     bool raw_ok = raw && creature_vtables_ok(raw) && creature_listed(raw);

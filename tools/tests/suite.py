@@ -116,6 +116,7 @@ add('cinematic_puppet', P + 'coop_cinematic_puppet.py', minutes=3)  # BUG-0066: 
 add('npc_swap', P + 'coop_npc_swap.py', minutes=3)  # BUG-0110: an NPC tick that does not return leaves no puppet as the game's avatar
 add('world_reload', P + 'coop_world_reload.py', minutes=6)  # BUG-0119: after a reload the guest plays its own creature again although the avatar's address came back (--without-fix fails)
 add('leave_avatar', P + 'coop_leave_avatar.py', minutes=7)  # BUG-0264: a guest leaving the Creature stage for a shared world never uses the avatar the game tears down (SPORE_FIX_OFF=world.leave_avatar fails)
+add('leave_avatar_cell', P + 'coop_leave_avatar.py --cell --rounds 3', minutes=8)  # BUG-0264: the campaign's way: Cell -> Creature, the host's first editor, the shares after it
 add('npc_rejoin_paused', P + 'coop_npc_rejoin_paused.py', minutes=4)  # BUG-0125: a guest that rejoins while the host is paused gets the NPCs around it (--without-fix fails)
 add('evolve_world', P + 'coop_evolve_world.py', minutes=6)  # BUG-0019: the world after an evolution that starts a migration waits for its cinematic: the guest grows up and migrates (--without-fix fails)
 add('creation_leave', P + 'coop_creation_leave.py', minutes=5)  # BUG-0055: after leaving, the guest's own creation under the host's key is its own again
