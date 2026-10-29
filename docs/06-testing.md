@@ -1616,3 +1616,14 @@ wrong. Suite `campaign` (in no other suite): `tools/lab.py run campaign --lanes 
   lane 3). `--noise 0` avoids it.
 * `coop.avatar` ends with `game_name '<CurrentGameName as is>'`; `world '...'` is the name the mod
   uses (the planet through `snapshot.spo`).
+
+## Creature: leaving the stage for a shared world (2026-10-29, fix/w6-avatar)
+<a id="testing-leave-avatar"></a>
+
+* `coop_leave_avatar.py [--rounds N] [--cell]` (suite: `leave_avatar`, `leave_avatar_cell`): the host
+  saves and shares N times while the guest plays; `--cell` starts from the Cell fixture, finishes the
+  Cell stage, the host's first creature editor and the share after it (the campaign's way). Checks
+  on the guest's game per frame of the leaving window (`coop.leaving`): the entity the mod used was
+  still in the game's object list. `SPORE_FIX_OFF=world.leave_avatar` is the twin, but the bug did
+  not show with 2 players (BUG-0264: no-fail-run), so both sides pass today.
+* Timing: a share round takes ~15 s (leaving 0.7 s, menu settle 3 s, load, rejoin).
