@@ -15,6 +15,7 @@ tests: tests/net_tests.cpp test_updater_dup (make test), tools/tests/win_unit.py
 signature:
 docs: 
 related: #67
+switch: update.dup
 ---
 
 ## Report
@@ -156,3 +157,4 @@ None known.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w2-world: duplicate paths rejected in parse_pack and apply_pack (net_tests, win_unit).
 - 2026-10-28: released in 0.7.3.0.
+- 2026-10-28: switch: update.dup (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).

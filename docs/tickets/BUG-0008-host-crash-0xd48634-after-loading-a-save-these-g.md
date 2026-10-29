@@ -15,6 +15,7 @@ tests: creature_e84
 signature: dc04aee5:0xD48634 read 0x32C (CreatureStageEventHandler, null +0xE84)
 docs: docs/re/creature.md 12
 related:
+switch: npc.strays
 ---
 
 ## Report
@@ -33,3 +34,4 @@ coop_creature_e84.py FAIL 3/3 before (crash at 0xD48634), 4/4 after. The cause a
 - 2026-10-25: reported (Spore Exception Reports (host, 14:12 / 14:14 / 14:21, 0.7.2.1) + screenshots).
 - 2026-10-25: fixed on fix/creature-e84, released in 0.7.2.3.
 - 2026-10-25: ticket written from the CHANGELOG, commits and reports (backfill).
+- 2026-10-28: switch: npc.strays (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).

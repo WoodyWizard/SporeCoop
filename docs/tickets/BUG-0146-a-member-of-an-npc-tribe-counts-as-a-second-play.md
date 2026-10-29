@@ -15,6 +15,7 @@ tests: tribe_epic
 signature:
 docs: docs/re/tribe.md#tribe-epic-lifetime
 related: #125
+switch: tribe.epic_players
 ---
 
 ## Report
@@ -65,8 +66,12 @@ set (tests).
 ### Related
 #45 (epic creature state survives a leave or a load). Not a duplicate.
 
+Run evidence (2026-10-28, BUG-0215, found afterwards in the lab folders and agent logs): FAIL with the fix off: `epic_nofix2.log` (fix/w3-civ, epic_players off: food 15 -> 95), a standalone test run whose log stayed in the agent's scratch folder (not kept in out/lab). PASS: lab run out/lab/20261028-014643 on fix/w3-civ (tribe_epic ok); later full runs on main pass too.
+
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #125.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w3-civ (421bfe0), test tribe_epic (FAIL with --nofix, PASS with the fix).
 - 2026-10-28: released in 0.7.3.0.
+- 2026-10-28: Verification names the FAIL log and the PASS lab run (BUG-0215).
+- 2026-10-28: switch: tribe.epic_players (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).

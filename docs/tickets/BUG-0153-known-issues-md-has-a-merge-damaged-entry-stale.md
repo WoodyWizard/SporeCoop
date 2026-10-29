@@ -10,8 +10,8 @@ role:
 versions: 0.7.2.4 (main 563f72d) and earlier
 fixed_in: 0.7.3.0
 branch: claude/clever-fermi-h57l81
-commits:
-tests: make test (docs_lint, tickets.py check)
+commits: 940fc74, 7cbae8e
+tests: make test (docs_lint, tools_selftest.py docslint)
 signature:
 docs: docs/known-issues.md
 related: #132
@@ -75,8 +75,11 @@ Fixed 2026-10-27 (claude/clever-fermi-h57l81): the empty `coop.space jumpto` hea
 ### Related
 #47 (another doc that drifted from the code).
 
+Checked again 2026-10-28 (fix/w5-tools): the entries were repaired in 940fc74 (commits: was empty). Added the lint the issue asked for: docs_lint flags a known-issues entry with no body, a paragraph starting with a fragment and an entry without BUG-NNNN. FAIL: on 563f72d's known-issues.md it reports the empty jumpto entry (line 266), the lost heading " of 20-27 m" (line 281) and 38 entries without a ticket id. PASS: 0 problems on today's file; tools_selftest docslint 4/4. One more stale line corrected (g_host_away is reset since BUG-0085).
+
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #132.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-27: fixed on claude/clever-fermi-h57l81 (ticket ids in every entry, merge damage repaired, stale statements marked superseded).
 - 2026-10-28: released in 0.7.3.0.
+- 2026-10-28: docs_lint rules for known-issues.md added, commits filled in (fix/w5-tools, 7cbae8e).

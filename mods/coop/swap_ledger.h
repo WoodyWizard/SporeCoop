@@ -22,7 +22,7 @@ struct Entry {
 template <size_t N> struct Ledger {
     Entry e[N];
     size_t n = 0;
-    bool guard = true;  // tests: off = leftovers stay (the code before the fix)
+    bool guard = true;  // tests: off = leftovers stay; not a lab switch: game.cpp copies npc.swapguard into it
     bool fault = false; // tests: the next close is skipped, as after an unwind
     unsigned restored = 0;
     const char* last = nullptr;

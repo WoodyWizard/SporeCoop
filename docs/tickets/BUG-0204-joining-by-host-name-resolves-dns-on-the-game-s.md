@@ -15,6 +15,7 @@ tests: coop_join_name.py (suite join_name), net_tests test_join_by_name
 signature:
 docs: docs/06-testing.md#testing-installer-w4
 related: BUG-0138
+switch: net.async_resolve
 ---
 
 ## Report
@@ -61,3 +62,4 @@ Runs: FAIL without the fix: `out/w4-fail/join_name_old.log` (manual run on lane 
 - 2026-10-28: opened.
 - 2026-10-28: fixed on fix/w4-installer (wave 4): name lookup on a pinned worker thread, the join goes on in update(); unit and two-game tests.
 - 2026-10-28: released in 0.7.3.0.
+- 2026-10-28: switch: net.async_resolve (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).

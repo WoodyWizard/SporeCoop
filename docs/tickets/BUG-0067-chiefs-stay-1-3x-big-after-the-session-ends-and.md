@@ -87,8 +87,11 @@ session goes on), which is right.
 - The chief scale restore uses `object_alive` only (separate issue).
 - Saves holding our objects: BUG-0020.
 
+Run evidence (2026-10-28, BUG-0215, found afterwards in the lab folders and agent logs): FAIL with the fix off: `epic_nofix.log`, `epic_nofix2.log` (fix/w3-civ, chiefs off: max ratio 1.30), a standalone test run whose log stayed in the agent's scratch folder (not kept in out/lab). PASS: lab run out/lab/20261028-014643 on fix/w3-civ (tribe_epic ok); later full runs on main pass too.
+
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #45.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: re-checked on fix/w3-civ: the chief part was fixed by BUG-0081 (ba9dc46); epic timer and the live epic at the session end fixed (421bfe0), test tribe_epic.
 - 2026-10-28: released in 0.7.3.0.
+- 2026-10-28: Verification names the FAIL log and the PASS lab run (BUG-0215).

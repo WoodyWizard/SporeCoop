@@ -58,7 +58,7 @@ bool parse_release(const std::string& json, Release& out);
 // first name in the listing (tests).
 std::string pack_version_of(const std::string& name);
 std::string pick_pack(const std::vector<std::string>& names);
-extern bool g_pick_fix;
+extern bool g_pick_fix; // not a lab switch: setup only
 
 // BUG-0077: the newest release as the setup's check thread found it, read by the window and the
 // install job. Every access copies under one lock; g_release_lock_fix false = the old unlocked
@@ -69,7 +69,10 @@ struct ReleaseInfo {
     bool done = false; // the check has finished (ok or not)
     std::string err;
 };
-extern bool g_release_lock_fix;
+extern bool g_release_lock_fix; // not a lab switch: setup only
+// BUG-0244: the check thread's result never replaces a good release the install job stored meanwhile
+// (one lock for the compare and the store); false = the old get-then-set under two locks
+extern bool g_release_merge_fix; // not a lab switch: setup only (setup /oldmerge, release_tsan --old-merge)
 class ReleaseBox {
 public:
     ReleaseInfo get() const
@@ -87,6 +90,36 @@ public:
         }
         std::lock_guard<std::mutex> l(mu_);
         info_ = i;
+    }
+    // store i unless the box holds an ok release and i is not ok; returns whether it stored
+    // tests (release_tsan): runs where another writer can come in (between the old code's get and
+    // set; before the fixed code takes its lock)
+    static inline void (*test_between)(ReleaseBox&) = nullptr;
+    bool merge(const ReleaseInfo& i)
+    {
+        if (!g_release_merge_fix) { // the old get-then-set: another writer can come in between
+            bool was_ok = get().ok;
+            if (test_between)
+                test_between(*this);
+            if (!was_ok || i.ok) {
+                set(i);
+                return true;
+            }
+            return false;
+        }
+        if (test_between)
+            test_between(*this);
+        if (!g_release_lock_fix) {
+            if (info_.ok && !i.ok)
+                return false;
+            info_ = i;
+            return true;
+        }
+        std::lock_guard<std::mutex> l(mu_);
+        if (info_.ok && !i.ok)
+            return false;
+        info_ = i;
+        return true;
     }
 
 private:

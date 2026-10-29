@@ -5,12 +5,14 @@
 
 #include <algorithm>
 
+#include "../mods/coop/fix_switch.h"
 #include "pending.h"
 #include "sha256.h"
 
 namespace upd {
 
-bool g_old_fix = true;
+FIX_SWITCH(g_old_suffix_fix); // update.old_suffix, BUG-0114: our own .sporecoop-old suffix, only ours cleaned
+FIX_SWITCH(g_keep_failed_fix); // update.keep_failed, BUG-0150: a failed pending swap keeps its files
 int g_swap_delay_ms = 0;
 
 std::wstring widen(const std::string& s)
@@ -247,7 +249,7 @@ bool apply_pack(const std::wstring& root, const Pack& p, std::string& err, int* 
             continue;
         s.fresh = s.target + L".new";
         // our own suffix (BUG-0114): "<file>.old" may be the player's own backup
-        s.old = s.target + (g_old_fix ? SC_OLD_SUFFIX : L".old");
+        s.old = s.target + (g_old_suffix_fix ? SC_OLD_SUFFIX : L".old");
         make_dirs(s.target);
         if (!write_all(s.fresh, f.data)) {
             err = why("cannot write", s.fresh);
@@ -317,7 +319,7 @@ rollback:
 
 void apply_pending(const std::wstring& root)
 {
-    sc_pending_keep_failed = g_old_fix ? 1 : 0; // tests: the same switch as the backups
+    sc_pending_keep_failed = g_keep_failed_fix ? 1 : 0;
     sc_apply_pending(root.c_str(), 0); // the replaced files: cleanup_old
 }
 
@@ -361,7 +363,7 @@ void cleanup_old(const std::wstring& root)
             std::wstring n = fd.cFileName, p = d + L"\\" + n;
             size_t k = wcslen(SC_OLD_SUFFIX);
             bool ours = n.size() > k && _wcsicmp(n.c_str() + n.size() - k, SC_OLD_SUFFIX) == 0;
-            if (!g_old_fix) // the old behaviour: every *.old
+            if (!g_old_suffix_fix) // the old behaviour: every *.old
                 ours = n.size() > 4 && _wcsicmp(n.c_str() + n.size() - 4, L".old") == 0;
             else if (!ours)
                 ours = own_legacy_backup(dir, n, _wcsicmp(n.c_str(), L"steam_api.dll.old") == 0 && is_loader(p));

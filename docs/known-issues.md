@@ -26,6 +26,10 @@ anchor so other docs can link to it:
   open: `g_host_away` is not reset on any path. The vote (BUG-0043)
   and the world share queue (BUG-0140) are reset by the same cleanup since fix/w1-core; the
   `shared` resources (BUG-0049) and `g_roles` (BUG-0064) since fix/w2-civ.
+* CORRECTION (2026-10-28, fix/w5-tools): `g_host_away` is reset at every session end since
+  BUG-0085 (0.7.3.0). Since BUG-0214 the core resets run on every path also with `coop.sessionfix
+  0` (`end_session` in coop.cpp, docs/06-testing.md#testing-fix-rules): only the module calls of
+  before BUG-0033 depend on that switch.
 
 ## Creature: a guest that gets the world right after the host's editor stays a hatchling
 

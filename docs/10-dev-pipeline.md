@@ -189,7 +189,9 @@ proves nothing", oracles on the other machine, crash triage by signature (CLAUDE
   in a test's launch sandbox). On lanes 2..10 it ends every game of the lane and whatever runs in
   the lane's bottle, never another lane's (a half-dead game is matched by a live thread's command
   line). `spore.sh pids [inst]` lists what it would end (BUG-0025, BUG-0101, BUG-0103).
-* `lab.py kill` cleans lanes 2..10; lane 1 only with `--include-lane-1` (test games only).
+* `lab.py kill` cleans lanes 2..10; `--lane N` one lane, `--upto N` lanes 2..N, `--lanes 2,3` a list (a
+  bare `--lanes 3` is refused as ambiguous, BUG-0253); lane 1 only with `--include-lane-1` (test games
+  only). It prints the lanes it ends and exits 1 when none is left.
 * `spore.sh fixture restore|slot` refuses the player's own profile `-` (only `save` reads from it)
   and a missing fixture before it deletes anything (BUG-0102).
 * A test profile redirects Documents ("My Spore Creations") as well as AppData (BUG-0156):

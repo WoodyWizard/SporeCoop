@@ -1,14 +1,14 @@
 ---
 id: BUG-0167
 title: Guest: fault in the tribe setup with a null simulator object (seen once)
-status: fixed
+status: not-reproduced
 kind: crash
 stage: Tribe
 reported: 2026-10-23
 source: docs/known-issues.md (ticket backfilled 2026-10-27)
 role: guest
 versions: 0.7.2.4 (main) and earlier
-fixed_in: 0.7.3.0
+fixed_in:
 branch: (earlier) d605e96
 commits: d605e96
 tests: tribe_play, chaos_tribe, tribe_coop
@@ -52,3 +52,4 @@ since (4 tribe_play + 4 chaos_tribe on main, 20261027-183142).
 - 2026-10-27: ticket backfilled from docs/known-issues.md (every entry carries its ticket id, CLAUDE.md 1).
 - 2026-10-27: closed on fix/w1-tribe-civ as fixed by the camera guard of d605e96 (checked: guard on, GOG 2024 symbols verified).
 - 2026-10-28: released in 0.7.3.0.
+- 2026-10-28: status fixed -> not-reproduced: its only commit d605e96 shipped in v0.6.0; nothing was changed in 0.7.3.0, the ticket was closed because the guard was never seen failing again. fixed_in cleared (BUG-0215).

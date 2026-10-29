@@ -15,6 +15,7 @@ tests: tribe_gameover
 signature:
 docs: docs/re/tribe.md#tribe-lifetime
 related:
+switch: tribe.gameover
 ---
 
 ## Report
@@ -63,3 +64,4 @@ So the test is a regression test for the scenario, not a proof that the guard fi
 - 2026-10-23: first recorded in docs/known-issues.md.
 - 2026-10-27: ticket backfilled from docs/known-issues.md (every entry carries its ticket id, CLAUDE.md 1).
 - 2026-10-27: not reproduced on GOG 2024 (4 tries with the old code); guard and test added on fix/w1-tribe-civ (ba9dc46).
+- 2026-10-28: switch: tribe.gameover (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).

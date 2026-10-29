@@ -15,6 +15,7 @@ tests: host_away_kill
 signature:
 docs: docs/re/creature.md#creature-kill-list
 related: #60
+switch: npc.kill
 ---
 
 ## Report
@@ -84,3 +85,4 @@ flip frame; the avatar is a stand-in guest_tick never destroys) and reads `kill_
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-27: fixed on fix/w1-creature (kill list cleared every frame, `coop.npc killfix`), test host_away_kill FAIL without / PASS with.
 - 2026-10-28: released in 0.7.3.0.
+- 2026-10-28: switch: npc.kill (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).

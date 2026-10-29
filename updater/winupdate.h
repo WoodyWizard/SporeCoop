@@ -40,8 +40,10 @@ void cleanup_old(const std::wstring& game_root);
 // a "<file>.old" a SporeCoop version before 0.8 left (dir_rel e.g. L"\\SporebinEP1\\mods");
 // steam_api.dll.old only when it is the old loader (loader_old)
 bool own_legacy_backup(const std::wstring& dir_rel, const std::wstring& name, bool loader_old);
-extern bool g_old_fix;
-extern int g_swap_delay_ms; // tests (BUG-0139): apply_pack waits this long between a file's two moves // tests: false = the old behaviour (every *.old deleted, pending list dropped)
+// tests (BUG-0214 split of the old g_old_fix): false = the old behaviour
+extern bool g_old_suffix_fix;  // update.old_suffix, BUG-0114: backups as *.sporecoop-old, the cleanup deletes only ours
+extern bool g_keep_failed_fix; // update.keep_failed, BUG-0150: a failed pending swap keeps its list
+extern int g_swap_delay_ms; // tests (BUG-0139): apply_pack waits this long between a file's two moves
 
 // the version installed in a game folder (SporebinEP1/mods/sporecoop.version), "" if none
 std::string installed_version(const std::wstring& game_root);

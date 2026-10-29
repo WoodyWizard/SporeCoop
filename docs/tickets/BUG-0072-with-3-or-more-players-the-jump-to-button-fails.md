@@ -15,6 +15,7 @@ tests: space_map_input, unit (tests/space_tests.cpp)
 signature:
 docs: docs/re/space.md#space-w3-trips-clicks-defenders
 related: #50
+switch: space.jump
 ---
 
 ## Report
@@ -70,7 +71,7 @@ Suggested in the review:
 - Or better, let the button pass the partner id that `can_jump` showed (the UI keeps it).
 
 ## Verification
-Done (2026-10-28, lane 6). 3 players need a second lane (not this agent's), so the pick is a unit test: tests/space_tests.cpp `test_jump_target` (make test) checks the 3-player case (button and jump both pick partner 2; the old pick gives partner 0, in my own system). The notice: `coop_space_map_input.py`, the host jumps with `coop.space jump` (any partner). `--without-fix` FAILS: "jumped to Alice's star system" (the host's own name, /tmp/claude-1000/-home-pam3es-Games-Modding-SPORE/13201e2f-19c5-4da6-b393-aae16fe6d338/scratchpad/waves/fix_w3-space/map_input_nofix.log); with the fix PASS: "jumped to Bob's star system" (/tmp/claude-1000/-home-pam3es-Games-Modding-SPORE/13201e2f-19c5-4da6-b393-aae16fe6d338/scratchpad/waves/fix_w3-space/map_input_pass1.log). Not run: a real 3-instance click on the co-op window's button.
+Done (2026-10-28, lane 6). 3 players need a second lane (not this agent's), so the pick is a unit test: tests/space_tests.cpp `test_jump_target` (make test) checks the 3-player case (button and jump both pick partner 2; the old pick gives partner 0, in my own system). The notice: `coop_space_map_input.py`, the host jumps with `coop.space jump` (any partner). `--without-fix` FAILS: "jumped to Alice's star system" (the host's own name, scratch log `map_input_nofix.log` (not kept)); with the fix PASS: "jumped to Bob's star system" (scratch log `map_input_pass1.log` (not kept)). Not run: a real 3-instance click on the co-op window's button.
 
 Planned in the review: Planned test (must FAIL without the fix and PASS with it):
 
@@ -91,3 +92,5 @@ Planned in the review: Planned test (must FAIL without the fix and PASS with it)
 - 2026-10-28: fixed on fix/w3-space (66d7a30): shared target pick, notice names the target; unit test + space_map_input FAIL without / PASS with.
 - 2026-10-28: fix/w3-space lab runs on lane 6: 20261028-010933 (14/14: the four new wave 3 Space tests and space_map, space_stale, space_fleet, space_puppet, space_rivalry, space_contracts, space_jump, space_guest_ui, space_allies, space_diplomacy), smoke 20261028-013951 (13/13; `ui` skipped: exclusive, needs a lane 1-5).
 - 2026-10-28: released in 0.7.3.0.
+- 2026-10-28: log paths of an agent's scratch folder replaced by the log names (BUG-0215: no paths outside the repository).
+- 2026-10-28: switch: space.jump (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).

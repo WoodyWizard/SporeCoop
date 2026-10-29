@@ -15,6 +15,7 @@ tests: make test (validate_tests: gift recipient)
 signature:
 docs: 
 related: #53
+switch: give.pick
 ---
 
 ## Report
@@ -80,3 +81,4 @@ the game with 3 players (the button only calls the same function).
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: recipient validation found fixed by BUG-0201; the recipient choice fixed on fix/w3-civ (4c70be2), unit test.
 - 2026-10-28: released in 0.7.3.0.
+- 2026-10-28: switch: give.pick (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).

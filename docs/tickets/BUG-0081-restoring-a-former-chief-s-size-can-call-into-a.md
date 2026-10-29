@@ -15,6 +15,7 @@ tests: tribe_chief_removed, tribe_play, tribe_coop
 signature:
 docs: docs/re/tribe.md#tribe-lifetime
 related: #59
+switch: tribe.chiefs
 ---
 
 ## Report
@@ -92,3 +93,4 @@ was, and it must keep its own size in the game (spatial GetScale).
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-27: fixed on fix/w1-tribe-civ (ba9dc46), test tribe_chief_removed (FAIL with --nofix, PASS with the fix).
 - 2026-10-28: released in 0.7.3.0.
+- 2026-10-28: switch: tribe.chiefs (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).

@@ -15,6 +15,7 @@ tests: cell_leave
 signature: coop.dll modes::cell_at <- cellsync::destroy_local <- on_session_end
 docs: docs/re/cell.md 13
 related:
+switch: pool.forget
 ---
 
 ## Report
@@ -33,3 +34,4 @@ coop_cell_leave.py FAIL on 0.7.2.2 (same signature), OK 3x after.
 - 2026-10-25: reported (Spore Exception Report (guest, 14:13, 0.7.2.1)).
 - 2026-10-25: fixed on fix/crash-reports-0725, released in 0.7.2.3.
 - 2026-10-25: ticket written from the CHANGELOG, commits and reports (backfill).
+- 2026-10-28: switch: pool.forget (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).

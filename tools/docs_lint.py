@@ -64,8 +64,47 @@ def anchors_of(path, cache={}):
     return cache[path]
 
 
+def known_issues_problems(text, rel='docs/known-issues.md'):
+    """BUG-0153: the union merge damaged known-issues.md once (a heading with no body, a body whose
+    heading was lost). Every entry has a heading, a body and its ticket id."""
+    out, in_code = [], False
+    lines = text.splitlines()
+    heads = []
+    for n, line in enumerate(lines, 1):
+        if line.startswith('```'):
+            in_code = not in_code
+        if not in_code and line.startswith('## '):
+            heads.append(n)
+    for i, n in enumerate(heads):
+        end = heads[i + 1] - 1 if i + 1 < len(heads) else len(lines)
+        body = [l for l in lines[n:end] if l.strip() and not l.startswith('<a id=')]
+        title = lines[n - 1]
+        if '<Stage>' in title:  # the template
+            continue
+        if not body:
+            out.append(f'{rel}:{n}: entry "{title[3:60]}" has no body (a heading followed by a heading)')
+            continue
+        first = body[0].lstrip()
+        if re.match(r'^[a-z]', first) and not first.startswith(('http', 'coop', 'tools/', 'mods/')):
+            out.append(f'{rel}:{n}: entry "{title[3:60]}" starts with a fragment ("{first[:30]}"): a lost line?')
+        if not re.search(r'BUG-\d{4}', '\n'.join(body)):
+            out.append(f'{rel}:{n}: entry "{title[3:60]}" names no ticket (BUG-NNNN; tools/tickets.py new)')
+    # a body whose heading was lost (" of 20-27 m"): a paragraph that starts with a lowercase fragment
+    in_code = False
+    for n, line in enumerate(lines, 1):
+        if line.startswith('```'):
+            in_code = not in_code
+        if not in_code and n > 1 and not lines[n - 2].strip() and re.match(r'^\s*[a-z]', line) \
+                and not re.match(r'^\s*(https?:|`)', line):
+            out.append(f'{rel}:{n}: a paragraph starts with a fragment ("{line.strip()[:30]}"): a lost heading?')
+    return out
+
+
 def main():
     problems = []
+    ki = os.path.join(ROOT, 'docs', 'known-issues.md')
+    if os.path.exists(ki):
+        problems += known_issues_problems(open(ki, encoding='utf-8').read())
     files = tracked()
     for rel in files:
         path = os.path.join(ROOT, rel)
