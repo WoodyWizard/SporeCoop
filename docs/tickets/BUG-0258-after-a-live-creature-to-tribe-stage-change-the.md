@@ -62,3 +62,4 @@ together at once in the same run).
 ## History
 - 2026-10-29: opened by dev/campaign (the campaign's first Creature -> Tribe change with four players).
 - 2026-10-29: reproduced in the whole-game debug run out/lane7/campaign/20261029-011243 (cell fixture, host `world 'snapshot.spo'`, guest `world 'Cadian.spo'`, `together N 0` for all three guests): 2 of 2 campaign runs with four players.
+- 2026-10-29: a save on the host ends it: in that run `coop.save` on the host turned its world name back into `Cadian.spo` and all three guests were `together N 1` at once; a guest's rejoin (the host saves for the share) did the same. So the state lasts until the host's next save.

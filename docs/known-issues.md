@@ -717,5 +717,7 @@ None open (BUG-0077, BUG-0080, BUG-0094 and BUG-0139 fixed on fix/w4-installer).
 * Known: the place id is the crc32 of the game's current save name (`modes::current_world`); right
   after the game's own stage change it is `snapshot.spo` on the host. A `coop.load` of the planet
   makes everyone together again.
-* Not checked: two players (a manual run had the guest together), whether a save on the host ends it.
+* Workaround: a save on the host (`coop.save`, or a guest's rejoin: the host saves for the share)
+  gives the world its planet name back and everyone is together at once.
+* Not checked: two players (a manual run had the guest together).
 * Ticket: BUG-0258.
