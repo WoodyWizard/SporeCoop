@@ -46,7 +46,8 @@ Observed, the likely cause: **a guest more than ~45 m from the host finds no foo
 host's game populates and keeps only the tiles around its own cell (PopulateTiles, about one screen
 at level 2) and the guest spawns none of its own (BUG-0174, whose "~100 m" was too optimistic):
 holding W away from the host the guest saw 41-51 food cells on its screen up to 42 m and 0 from 44 m
-on (55 ... 115 m), the host 6-9 all the time. Two new players who swim off on their own get exactly
+on (55 ... 115 m), the host 6-9 all the time; in a second run right after the start of a new game
+none from 23 m to 160 m. Two new players who swim off on their own get exactly
 "only one of us could eat": the host eats, the guest finds an empty pool. Inferred: not proven to be
 what the players hit.
 
@@ -65,8 +66,10 @@ None yet. The fix of the likely cause belongs to BUG-0174 (the host populates ar
 or a far guest spawns its own food: ideas in docs/re/cell.md#cell-new-players-food).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+Not fixed, left open. The new test `cell_new_game` (both new players eat) PASSES: lab run
+20261029-150407 (lane 9). The far guest's empty pool (BUG-0174) FAILS as expected with
+`coop_cell_new_game.py --diet carn --minutes 1 --probe 0 --apart 70 --seed 5` (manual run, lane 9,
+2026-10-29: 0 food on the guest's screen at every sample from 23 m to 160 m).
 
 ## History
 - 2026-10-29: opened.

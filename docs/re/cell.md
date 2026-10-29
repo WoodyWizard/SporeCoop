@@ -743,8 +743,9 @@ stage wizard, the guest joins from its menu).
 * ✔ Runtime: the area the host's game keeps populated is about one screen around the host's cell,
   not the 120 m the host sends. A guest holding W away from the host (carnivore, level 2) saw 41-51
   plants / meat on its screen up to 42 m from the host and **0 from 44 m on** (55, 68, 81, 93, 104,
-  115 m), while the host saw 6-9 all the time. CORRECTION (2026-10-29, fix/w7-eat): docs/known-issues
-  said "more than ~100 m away" (BUG-0174); the empty pool starts at ~45 m at level 2.
+  115 m), while the host saw 6-9 all the time. A second run right after the start of a new
+  game (level 1, `--apart 70`): 9-18 up to 13 m, 0 from 23 m to 160 m (the host 2-11). CORRECTION (2026-10-29, fix/w7-eat): docs/known-issues
+  said "more than ~100 m away" (BUG-0174); the empty pool starts at 23-45 m.
 * Fix ideas (not done, BUG-0174): (a) the host populates around each partner too: a second tile
   list per partner (the list is a sorted vector with an allocator byte at `+0x1018`, layout not
   traced) passed to PopulateTiles with an area around the puppet, and cells there kept by `+0x354`

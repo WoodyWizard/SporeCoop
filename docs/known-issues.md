@@ -193,7 +193,7 @@ anchor so other docs can link to it:
 * CORRECTION (2026-10-29, fix/w7-eat): the empty pool starts much nearer: the host's game keeps only
   about one screen around its own cell populated (PopulateTiles, docs/re/cell.md#cell-new-players-food).
   A guest swimming away from the host (level 2) saw 41-51 food cells on its screen up to 42 m and none
-  from 44 m on. Most likely what two new players reported on Discord ("even at stage 1 only 1 of us
+  from 44 m on; right after a new game's start none from 23 m on. Most likely what two new players reported on Discord ("even at stage 1 only 1 of us
   could eat", BUG-0279): the guest, exploring on its own, finds no food at all while the host does.
   Measure: `SPORE_LANE=N python3 tools/tests/coop_cell_new_game.py --diet carn --minutes 1 --apart 70`
   (its last check fails while this is open).
