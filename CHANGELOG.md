@@ -39,6 +39,20 @@
 - **Settings: a coop.ini saved as UTF-16 BE is no longer destroyed**, and two games on one folder no
   longer lose a name written at the same time (BUG-0245).
 - **Crash reports name the thread that crashed** (BUG-0248).
+- **Space: a disabled ship is no longer destroyed when you come back from an editor or an
+  adventure**: the 20 s for a repair stand still while you are out of Space, and a load or the
+  galaxy menu ends the disabled state without a death (BUG-0229). A disabled state that ends while
+  you are out of Space (the session ends) no longer leaves your ship invincible (BUG-0228).
+- **Space: spice of the co-op gift that comes back while you are out of Space is no longer lost**:
+  it goes back into your cargo hold once you are in Space again. A gift received in an editor or an
+  adventure is now sent back like one received in the galaxy menu (BUG-0226).
+- **Space: a partner's ship whose invincibility the game clears stays the partner's ship** instead
+  of turning into an armed NPC ship next to a new one; a ship a game mission takes is held still
+  and removed once the mission lets it go (BUG-0218).
+- **Space armada contracts: a wave resumed after the host's return gets tough ships, is not won
+  without a fight, and a raid lost while the host was away fails the contract** (BUG-0227).
+- **Space allies: a galaxy reload is seen even when the new empire object gets the old one's
+  address** (BUG-0225, the allies part).
 - **Setup: a failed GitHub check can no longer overwrite the release an install just fetched** (the
   window said "GitHub not reachable" and the next Install asked again; BUG-0244).
 - **Crash reports name the game instance and whether a test profile was used** (`run:` line, no

@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstring>
 #include <unordered_map>
+#include <unordered_set>
 
 #include "cell_logic.h"
 #include "game.h"
@@ -154,7 +155,27 @@ static void space_fill(void* u, net::PlayerState& st)
 
 bool ufo_ident_fix = true;
 COOP_FIX("fleet.type", "BUG-0111", ufo_ident_fix, "space: only our own puppets count as puppets, not any UfoType 6 ship (coop.fleet typefix)");
-static std::unordered_map<void*, skg::ResourceKey> g_ufo_ident; // our puppets: the model key they got
+// our puppets: the model key they got and (BUG-0218) their object serial (cGameData mID)
+struct UfoIdent {
+    skg::ResourceKey key;
+    uint32_t serial;
+};
+static std::unordered_map<void*, UfoIdent> g_ufo_ident;
+// BUG-0218: the identity is the object serial, not the flags. Our puppet whose invincible byte the
+// game cleared gets it back; our puppet that a game mission took (owner mission +0x800) is retired
+// (held still, never sent or fired, destroyed once the mission lets go). Off: the 0.7.3.0 check
+// (flags in the identity, such a ship forgotten and left in the game as an armed NPC).
+bool puppet_id_fix = true;
+COOP_FIX("fleet.puppet_id", "BUG-0218", puppet_id_fix,
+         "space: a puppet is ours by its object serial; a cleared flag is restored, a mission's ship retired");
+struct Retired {
+    void* u;
+    uint32_t serial;
+};
+static std::vector<Retired> g_retired;
+static std::unordered_set<void*> g_fake_mission; // tests (coop.fleet impostor_mission): as if +0x800 were set
+uint32_t g_puppet_flag_restored, g_puppet_retired, g_retired_destroyed, g_retired_gone, g_retired_left;
+static void* owner_mission(void* u) { return g_fake_mission.count(u) ? u : skg::field<void*>(u, 0x800); }
 
 static void* space_spawn(const net::PlayerState& s, void* local)
 {
@@ -175,7 +196,7 @@ static void* space_spawn(const net::PlayerState& s, void* local)
     if (!u)
         return nullptr;
     skg::field<uint8_t>(u, kUfoCombat + 0x80) = 1; // mbInvincible
-    g_ufo_ident[u] = skg::field<skg::ResourceKey>(u, 0x780); // mDesiredModelKey (BUG-0111)
+    g_ufo_ident[u] = {skg::field<skg::ResourceKey>(u, 0x780), game::object_serial(u)}; // mDesiredModelKey (BUG-0111), mID (BUG-0218)
     skg::Vector3 p{s.pos.x, s.pos.y, s.pos.z};
     skg::Quaternion q{s.rot.x, s.rot.y, s.rot.z, s.rot.w};
     skg::vcall<void>((uint8_t*)u + kUfoLoco, 0x44 / 4, &p, &q); // Teleport
@@ -230,18 +251,110 @@ bool space_puppet_ok(void* u)
     if (it == g_ufo_ident.end())
         return false;
     const skg::ResourceKey& k = skg::field<skg::ResourceKey>(u, 0x780);
-    return !memcmp(&k, &it->second, sizeof k) && skg::field<uint8_t>(u, kUfoCombat + 0x80) == 1 &&
+    if (puppet_id_fix) // BUG-0218: the same object (serial), not taken by a game mission
+        return game::object_serial(u) == it->second.serial && !memcmp(&k, &it->second.key, sizeof k) &&
+               !owner_mission(u);
+    return !memcmp(&k, &it->second.key, sizeof k) && skg::field<uint8_t>(u, kUfoCombat + 0x80) == 1 &&
            !skg::field<void*>(u, 0x800);
 }
 
 static bool space_alive(void* u)
 {
-    if (space_puppet_ok(u))
+    if (space_puppet_ok(u)) {
+        if (puppet_id_fix && ufo_ident_fix && skg::field<uint8_t>(u, kUfoCombat + 0x80) != 1) {
+            // our own puppet lost its invincibility (the game? only the test command is known to do
+            // it): give it back, count it, log the first one
+            skg::field<uint8_t>(u, kUfoCombat + 0x80) = 1;
+            if (!g_puppet_flag_restored++)
+                g_host_for_modes->log(g_mod_for_modes, SK_WARN, "space: a puppet's invincible byte was cleared: restored (mode %08X)",
+                       game::mode_id());
+        }
         return true;
-    if (ufo_ident_fix && g_ufo_ident.erase(u))
-        game::puppet_unregister(u); // (the address may be a game ship now: forgotten, never destroyed)
+    }
+    auto it = ufo_ident_fix ? g_ufo_ident.find(u) : g_ufo_ident.end();
+    if (it != g_ufo_ident.end()) {
+        uint32_t serial = it->second.serial;
+        g_ufo_ident.erase(it);
+        if (puppet_id_fix && game::ufo_listed(u) && game::object_alive(u) && game::object_serial(u) == serial &&
+            owner_mission(u)) {
+            // our ship, held by a game mission: never freed while the mission points to it; retired
+            g_retired.push_back({u, serial});
+            g_puppet_retired++;
+            g_host_for_modes->log(g_mod_for_modes, SK_INFO, "space: a game mission took a puppet: retired until the mission lets go");
+        }
+        game::puppet_unregister(u); // (a different serial: another object at the address, forgotten, never destroyed)
+    }
     game::g_ufos_freed++;
     return false;
+}
+
+bool space_retired(void* u)
+{
+    for (auto& r : g_retired)
+        if (r.u == u)
+            return true;
+    return false;
+}
+
+void space_retired_tick()
+{
+    for (size_t i = 0; i < g_retired.size();) {
+        void* u = g_retired[i].u;
+        if (!game::ufo_listed(u) || !game::object_alive(u) || game::object_serial(u) != g_retired[i].serial) {
+            g_retired_gone++; // the game freed it (another object may be at the address now)
+            g_fake_mission.erase(u);
+            g_retired.erase(g_retired.begin() + i);
+            continue;
+        }
+        if (!owner_mission(u)) { // the mission let go: ours to destroy (the deferred path)
+            g_retired_destroyed++;
+            g_retired.erase(g_retired.begin() + i);
+            game::destroy_creature(u);
+            continue;
+        }
+        // held still where it is (its own controller would fly it)
+        skg::Vector3 p = skg::field<skg::Vector3>(u, kUfoLoco + 0x04);
+        skg::field<skg::Vector3>(u, 0x718) = p;
+        skg::field<skg::Vector3>(u, 0x724) = {0, 0, 0};
+        skg::field<skg::Vector3>(u, kUfoLoco + 0x1C8) = {0, 0, 0};
+        skg::field<skg::Vector3>(u, 0x750) = p;
+        i++;
+    }
+}
+
+void space_retired_clear(const char* why)
+{
+    if (!g_retired.empty()) {
+        g_retired_left += (uint32_t)g_retired.size();
+        if (g_host_for_modes)
+            g_host_for_modes->log(g_mod_for_modes, SK_WARN, "space: %u retired puppet(s) still held by a mission at %s: left to the game",
+                   (unsigned)g_retired.size(), why);
+    }
+    g_retired.clear();
+    g_fake_mission.clear();
+}
+
+std::string space_ident_test(void* u, const std::string& what, bool on)
+{
+    auto it = g_ufo_ident.find(u);
+    if (what == "impostor_id") { // another object at the address: the recorded serial no longer matches
+        if (it == g_ufo_ident.end())
+            return "not a puppet";
+        it->second.serial ^= 0x80000000u;
+        return "puppet serial changed";
+    }
+    if (what == "impostor_mission") { // a game mission holds the ship (+0x800 seen as set), or lets go
+        if (on)
+            g_fake_mission.insert(u);
+        else
+            g_fake_mission.erase(u);
+        return on ? "mission set" : "mission cleared";
+    }
+    char b[160];
+    snprintf(b, sizeof b, "flag_restored=%u retired=%u (now %u) retired_destroyed=%u retired_gone=%u retired_left=%u",
+             g_puppet_flag_restored, g_puppet_retired, (unsigned)g_retired.size(), g_retired_destroyed, g_retired_gone,
+             g_retired_left);
+    return b;
 }
 
 static float space_tag(void*) { return 4.f; }

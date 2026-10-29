@@ -62,6 +62,15 @@ bool cell_is_puppet(void* cell);  // a remote player's cell
 // game Defender at a reused address became the partner's ship. coop.fleet typefix 0: the old check
 extern bool ufo_ident_fix;
 bool space_puppet_ok(void* u); // listed, alive and still our puppet
+// BUG-0218: the identity is the object serial; our puppet taken by a game mission (owner mission
+// +0x800) is retired: held still, not sent to the guests, its shots dropped, destroyed (deferred)
+// once the mission lets go, left to the game at session end (a log line). fleet.puppet_id
+extern bool puppet_id_fix;
+bool space_retired(void* u);
+void space_retired_tick();              // every frame (squadron::tick)
+void space_retired_clear(const char* why); // session end, unload
+// tests: impostor_id (the recorded serial changes), impostor_mission on|off, else the counters
+std::string space_ident_test(void* u, const std::string& what, bool on);
 void cell_forget();               // the Cell stage was left: forget the puppets' pool indices
 uint32_t cell_create(const net::Vec3& pos, void* res_ref, int level, const uint32_t key[3], const net::Quat* rot);
 void cell_destroy(uint32_t idx);

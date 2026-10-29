@@ -6,6 +6,7 @@
 #include "coop_ui.h"
 #include "game.h"
 #include "modes.h"
+#include "sporekit_game.hpp"
 
 namespace spaceext {
 
@@ -33,7 +34,36 @@ bool connected() { return C && C->sess && C->sess->connected(); }
 bool is_host() { return connected() && C->sess->role() == net::Role::Host; }
 uint8_t my_id() { return C && C->sess ? C->sess->my_id() : 0; }
 std::string name_of(uint8_t id) { return C && C->sess ? C->sess->name_of(id) : "?"; }
-bool in_space() { return game::mode_id() == modes::kSpace; }
+static bool g_away;
+bool away() { return g_away; }
+void set_away(bool on) { g_away = on; }
+bool in_space() { return !g_away && game::mode_id() == modes::kSpace; }
+
+static uint32_t g_epoch;
+static bool g_space_open; // the Space world is alive (kSpace, or an editor / adventure entered from it)
+static void* g_epoch_emp;
+static uintptr_t a_GetPlayerEmpire;
+uint32_t world_epoch() { return g_epoch; }
+static void epoch_tick()
+{
+    uint32_t m = game::mode_id();
+    if (m == modes::kSpace) {
+        void* e = a_GetPlayerEmpire ? skg::cdecl_call<void*>(a_GetPlayerEmpire) : nullptr;
+        bool emp_changed = e && g_epoch_emp && e != g_epoch_emp;
+        if (!g_space_open || emp_changed) {
+            g_epoch++;
+            if (H)
+                H->log(M, SK_INFO, "space: world epoch %u (%s)", g_epoch,
+                       emp_changed ? "the player's empire changed" : "Space entered");
+        }
+        g_space_open = true;
+        if (e)
+            g_epoch_emp = e;
+    } else if (!(g_space_open && (m == modes::kEdit || m == modes::kEditor || m == modes::kScenario))) {
+        g_space_open = false;
+        g_epoch_emp = nullptr;
+    }
+}
 bool russian() { return coop_ui::russian(); }
 static uint32_t g_saves;
 static std::vector<void (*)()> g_save_fns;
@@ -90,6 +120,7 @@ void init_all(const SkHost* h, SkMod* m, const spacecoop::Ctx* c)
     H = h;
     M = m;
     C = c;
+    a_GetPlayerEmpire = h->sym("Simulator::GetPlayerEmpire");
     auto& v = all();
     g_on.assign(v.size(), false);
     for (size_t i = 0; i < v.size(); i++) {
@@ -100,6 +131,7 @@ void init_all(const SkHost* h, SkMod* m, const spacecoop::Ctx* c)
 
 void tick_all(double now)
 {
+    epoch_tick();
     auto& v = all();
     for (size_t i = 0; i < v.size() && i < g_on.size(); i++)
         if (g_on[i] && v[i].tick)
@@ -120,6 +152,7 @@ bool dispatch(uint8_t kind, uint8_t origin, net::Reader& r)
 
 void session_end_all()
 {
+    g_away = false;
     auto& v = all();
     for (size_t i = 0; i < v.size() && i < g_on.size(); i++)
         if (g_on[i] && v[i].on_session_end)

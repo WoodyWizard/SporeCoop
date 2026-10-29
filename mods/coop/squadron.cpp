@@ -168,7 +168,8 @@ static int SK_THISCALL h_FireTool(void* mgr, void* tool, void* owner, const floa
     // the partners' ships here are Defender UFOs: their AI shot at every hostile ship in range on
     // its own (pirates near the guest's puppet died on the host while the guest did not fire);
     // only the partner's real shots count (MSG_UFO_HIT)
-    if (owner && in_space() && C.puppet_owner && C.puppet_owner((uint8_t*)owner - kLoco) >= 0) {
+    if (owner && in_space() &&
+        ((C.puppet_owner && C.puppet_owner((uint8_t*)owner - kLoco) >= 0) || modes::space_retired((uint8_t*)owner - kLoco))) {
         g_puppet_shots++;
         return 0;
     }
@@ -205,7 +206,8 @@ static void host_tick(double now)
     void* me = player_ufo();
     std::vector<void*> ships;
     for (void* u : all_ufos())
-        if (u != me && F<int>(u, kType) != 0 && (!C.puppet_owner || C.puppet_owner(u) < 0))
+        if (u != me && F<int>(u, kType) != 0 && (!C.puppet_owner || C.puppet_owner(u) < 0) &&
+            !modes::space_retired(u)) // BUG-0218: a retired puppet is not one of our NPC ships
             ships.push_back(u);
     std::unordered_set<void*> alive(ships.begin(), ships.end());
     for (auto it = g_hid.begin(); it != g_hid.end();) {
@@ -407,6 +409,8 @@ static void guest_state(net::Reader& r)
         // was kept, and the guest saw each defender twice). coop.fleet typefix 0: the old check
         if (modes::ufo_ident_fix ? (C.puppet_owner && C.puppet_owner(u) >= 0) : F<int>(u, kType) == 6)
             continue;
+        if (modes::space_retired(u)) // BUG-0218: a game mission holds it, never freed here
+            continue;
         if (g_keep_posse && F<int>(u, kType) == 3) {
             // type 3 is the posse (DestroyNPCUFOs keeps exactly type 3 when keepPosse is set): our
             // own escort, whatever empire its ships came from, not one of the host's NPCs
@@ -463,6 +467,7 @@ static void guest_tick(double now)
 
 void tick(double now)
 {
+    modes::space_retired_tick(); // BUG-0218 (reads the UFO list only, before it touches a ship)
     if (!in_space() || !C.sess || !C.sess->connected() || !player_ufo())
         return;
     if (is_host())
@@ -527,6 +532,7 @@ void on_session_end()
     g_hid_rev.clear();
     g_hold_mirror = 0xFFFF;
     g_stale_puppet = nullptr;
+    modes::space_retired_clear("session end");
     g_cycle_ids.clear();
     g_rx_any = false;
     g_rx_mask = 0;
@@ -630,6 +636,19 @@ std::string debug(const std::vector<std::string>& a)
         g_drop_left = atoi(a[2].c_str());
         return "dropping";
     }
+    if (a.size() >= 2 && (a[0] == "impostor_id" || a[0] == "impostor_mission")) { // tests (BUG-0218)
+        void* pup = C.puppet_of ? C.puppet_of((uint8_t)atoi(a[1].c_str())) : nullptr;
+        if (a[0] == "impostor_mission" && a.size() >= 4) // impostor_mission <p> 0 <ptr>: a retired ship lets go
+            pup = (void*)(uintptr_t)strtoull(a[3].c_str(), nullptr, 16);
+        if (!pup)
+            return "no puppet";
+        std::string r = modes::space_ident_test(pup, a[0], a.size() < 3 || a[2] != "0");
+        char b[64];
+        snprintf(b, sizeof b, " (%p)", pup);
+        return r + b;
+    }
+    if (a.size() >= 1 && a[0] == "ident") // tests (BUG-0218): the identity counters
+        return modes::space_ident_test(nullptr, "", false);
     if (a.size() >= 2 && (a[0] == "puppet" || a[0] == "impostor")) { // tests (BUG-0111): player <p>'s puppet;
         // impostor: make it vulnerable, as a game Defender made at the freed puppet's address is (another
         // model key would do too, but an invalid one costs every mirror of the ship a caught fault)
