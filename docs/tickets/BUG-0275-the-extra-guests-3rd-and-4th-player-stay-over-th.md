@@ -10,7 +10,7 @@ role:
 versions: 0.7.3.0
 fixed_in: unreleased
 branch: fix/w7-sync
-commits:
+commits: 2777adb
 tests: campaign, multi4, coop_sync_multi
 signature:
 docs:

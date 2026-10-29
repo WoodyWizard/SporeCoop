@@ -392,11 +392,10 @@ class Campaign:
                 return 'dialog Military'
         if self.close_reward(con):
             return 'reward ok'
-        if p is not self.host and hcon.call('coop.vote').get('out', '').startswith('vote active'):
-            return self.ready(con, p)
         if 'movie=1' in st:
             # a player reads the caption first; a cinematic without a button ends by itself (the
-            # click lands on the HUD corner then): one OK after 6 s of it, then every 10 s
+            # click lands on the HUD corner then): one OK after 6 s of it, then every 10 s. The
+            # caption comes before the vote (BUG-0273: it covers the co-op window's buttons)
             t = time.time()
             since, last = self.cap.get(p.name, (t, 0.0))
             self.cap[p.name] = (since, last)
@@ -406,8 +405,10 @@ class Campaign:
                 time.sleep(0.4)
                 con.call(f'click {CAPTION_OK[0]} {CAPTION_OK[1]}')
                 return 'caption ok'
-            return None
-        self.cap.pop(p.name, None)
+        else:
+            self.cap.pop(p.name, None)
+        if p is not self.host and hcon.call('coop.vote').get('out', '').startswith('vote active'):
+            return self.ready(con, p)
         return None
 
     def close_reward(self, con):
@@ -448,6 +449,14 @@ class Campaign:
     def vote_open(self):
         return self.host.call('coop.vote').startswith('vote active')
 
+    @staticmethod
+    def is_ready(st):
+        """this player is ready in the vote: its button offers "Not ready", or its own row (the
+        one marked "- you") says ready (coop_ui.cpp)"""
+        if st.get('ready', {}).get('text', '') in ('Not ready', 'Не готов'):
+            return True
+        return any(r and ('- you' in r[0] or '- вы' in r[0]) and r[-1] in ('ready', 'готов') for r in st.get('rows', []))
+
     def ready(self, con, p):
         """F9 when the window is closed, then "I'm ready" (a real click on the widget)"""
         ui = Ui(con, p.name)
@@ -457,6 +466,14 @@ class Campaign:
             time.sleep(0.3)
             con.call(f'key {VK_F9} up')
             st = ui.wait(lambda s: s.get('open') == '1', 6, 'the co-op window')
+        if st and self.is_ready(st):
+            # "I'm ready" toggles: a second click takes the ready back (BUG-0273). Close the
+            # window again and wait for the vote like a player
+            if st.get('open') == '1':
+                con.call(f'key {VK_F9} down')
+                time.sleep(0.3)
+                con.call(f'key {VK_F9} up')
+            return 'already ready'
         if st and st.get('ready', {}).get('vis'):
             ui.click('ready')
             with self.lock:
