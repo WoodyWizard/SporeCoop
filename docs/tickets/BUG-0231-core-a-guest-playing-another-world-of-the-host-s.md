@@ -10,7 +10,7 @@ role: all
 versions: 0.7.3.0
 fixed_in:
 branch: fix/w5-core
-commits: c4f4981 (part)
+commits: c4f4981, 9202d71 (part)
 tests: civ_other_world (coop_civ_other_world.py; --nofix fails)
 signature:
 docs: docs/06-testing.md#testing-w5-core
@@ -36,11 +36,12 @@ Checked on b423f56: `world_state_msg` (coop.cpp) did not list MSG_CIV_STATE / MS
 Part done on fix/w5-core (switch `coop.fix core.world_gate`, off = 0.7.3.0):
 - the three Civ messages are in the gate (dropped while `host_elsewhere()`, as the Creature, Cell and Tribe state since BUG-0130);
 - `trc.host_away` and `cvc.host_away` are `g_host_away || host_elsewhere()`, so Tribe and Civ play on with their own AI and orders while the guest plays another world (the BUG-0151 local play).
-Not done (left open, it is the redesign of the issue): the shared predicate `host_world()` with `Welcome::world`, the `host_absent_for()` function, DNA row 2 (a guest's DNA earned in its own world stays there: a visible behaviour change that needs a release note), the shared-resource hold (`res.elsewhere`, needs the ledger `pause()` of BUG-0220's design), the `city_catch_up` second guard (civ.cpp internals, fix/w5-world's area) and the share retry after a failed `world::tick` share (`core.share_retry`). Before the host's first state a joining guest still counts as "not elsewhere" for the Civ messages (`host_elsewhere(false)`), one round trip.
+Not done (left open, it is the redesign of the issue): the shared predicate `host_world()` with `Welcome::world`, the `host_absent_for()` function, DNA row 2 (a guest's DNA earned in its own world stays there: a visible behaviour change that needs a release note), the shared-resource hold (`res.elsewhere`, needs the ledger `pause()` of BUG-0220's design), the `city_catch_up` second guard (civ.cpp internals, fix/w5-world's area) and the share retry after a failed `world::tick` share (`core.share_retry`). The Civ messages are also dropped before the host's first state while gated (`host_elsewhere(true)`): in the lab one cycle applied in that window bound the guest's vehicle for good (run 20261028-230144); a guest in the host's world gets the next cycle.
 
 ## Verification
-`coop_civ_other_world.py` (lane 4, GOG 2024): the guest leaves, loads its own copy of the Civ planet (Otherworld), joins with autoload 0 and stays 40 s. `--nofix` FAIL (1 of its 1 vehicles bound as a mirror of a host vehicle), PASS with the fix (0 bound, still alive, still in Otherworld, `elsewhere=1`). Logs: scratchpad w5/fix_w5-core civ_other_world--nofix.log, civ_other_world.log. Weak points: the fixture planet has one vehicle, and the mirror binding is read from the census `own` column (the mod's table that drives the game's vehicle), not from the vehicle's motion; the Tribe local play while elsewhere has no game test.
+`coop_civ_other_world.py` (lane 4, GOG 2024): the guest leaves, loads its own copy of the Civ planet (Otherworld), joins with autoload 0 and stays 40 s. `--nofix` FAIL (1 of its 1 vehicles bound as a mirror of a host vehicle), PASS with the fix (0 bound, still alive, still in Otherworld, `elsewhere=1`). Logs: scratchpad w5/fix_w5-core civ_other_world--nofix.log, civ_other_world.log. The lab then failed it with the first version of the fix (20261028-230144: the state of the round trip before the host's first PlayerState was applied); with the second commit PASS 3/3 (lab 20261028-231857) and `--nofix` still FAIL (civ_other_world--nofix2.log). Weak points: the fixture planet has one vehicle, and the mirror binding is read from the census `own` column (the mod's table that drives the game's vehicle), not from the vehicle's motion; the Tribe local play while elsewhere has no game test.
 
 ## History
 - 2026-10-28: opened.
 - 2026-10-28 (fix/w5-core): part fixed: Civ messages gated for a guest in another world, Tribe/Civ local play there (core.world_gate); civ_other_world FAIL with --nofix, PASS with the fix. Left open: host_world()/Welcome::world, DNA row 2, shared hold, share retry, city_catch_up guard (see Fix).
+- 2026-10-28 (fix/w5-core): the Civ gate also covers the round trip before the host's first state (lab FAIL 20261028-230144, then PASS 3/3 20261028-231857).
