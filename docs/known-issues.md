@@ -736,3 +736,15 @@ after-save hook of BUG-0217 (#151) and a game key; the allies part of BUG-0225 i
   UTFWin::Image / UILayout). The game handled it and played on; seen once in three campaigns.
 * Reproduce: not reproduced. Lab 20261029-093233 campaign#2, out/lane4/campaign/20261029-093248.
 * Ticket: BUG-0270.
+
+## Tests: the smoke test `select` sometimes finds the partner off the screen (2026-10-29, fix/w6-cell)
+<a id="issue-select-partner-off-screen"></a>
+
+* What happens: `coop_select.py` fails with "the partner is on the screen (point 0 X Y)": the
+  partner projects outside the 1440x1080 window (x 1859, 2395, 4078, -151).
+* Reproduce: `tools/lab.py run select --lane 4 --repeat 3`, about 1 in 3 (lab 20261029-121511,
+  20261029-121818, also with `SPORE_FIX_OFF=core.stale_local`).
+* Known: older than BUG-0271's change (lab history 20261027-230552, 20261028-011940).
+* Not checked: where the partner stands relative to the camera at that moment.
+* Next steps: wait until the partner is on the screen (or turn the camera) before clicking.
+* Ticket: BUG-0272.

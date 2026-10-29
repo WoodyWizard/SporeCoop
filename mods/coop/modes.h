@@ -63,6 +63,25 @@ uint8_t* cell_game();             // cCellGame*
 uint8_t* cell_at(uint32_t idx);   // live cell for a pool index, else nullptr
 extern bool cell_at_fix;           // coop.pool fix cellat 0: the old bound (slot == highWater passed, BUG-0083)
 bool cell_is_puppet(void* cell);  // a remote player's cell
+// BUG-0271 (core.stale_local): no cell is read from a pool block the game already freed
+extern bool stale_fix;
+bool cell_usable(void* cell);     // the local cell or a puppet, still live in a mapped pool
+// our frame scope (on_frame, on_overlay): no game code runs inside, so the pool check is cached
+void cell_scope(bool enter);
+struct CellScope {
+    CellScope() { cell_scope(true); }
+    ~CellScope() { cell_scope(false); }
+};
+struct CellGoneStats {
+    uint32_t checks = 0;    // pool block checks made
+    uint32_t outside = 0;   // of them outside a frame scope (commands, the keepalive)
+    uint32_t pool_gone = 0; // the block was no longer mapped
+    uint32_t refused = 0;   // cell_fill refused a cell
+    uint32_t windows = 0;   // frame probe: times the block went away while the mode read Cell
+    uint32_t frames_gone = 0; // frames of ours in Cell with the block unmapped
+};
+void cell_probe_tick(); // once per frame: the diagnostic above (whatever the switch)
+const CellGoneStats& cell_gone_stats();
 // BUG-0111: a Space puppet is ours only while the UFO at its address still has what space_spawn gave
 // it (model key, invincible, no owner mission); any listed Defender (UfoType 6) passed before, so a
 // game Defender at a reused address became the partner's ship. coop.fleet typefix 0: the old check
