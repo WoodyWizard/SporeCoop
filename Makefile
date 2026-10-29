@@ -34,7 +34,7 @@ loader: $(B)/steam_api.dll
 sporekit: $(B)/sporekit.dll
 coop: $(B)/coop.dll
 
-$(B)/steam_api.dll: loader/loader.c loader/steam_api.def
+$(B)/steam_api.dll: loader/loader.c loader/steam_api.def updater/pending.h
 	@mkdir -p $(B)
 	$(CC) $(CFLAGS) -shared -o $@ loader/loader.c loader/steam_api.def -Wl,--kill-at
 

@@ -31,6 +31,11 @@ struct Pack {
 // The only places an update may write to (a pack comes from the internet): the loader, SporeKit,
 // the mods folder and the resource package. No "..", no absolute paths, no drive letters.
 bool allowed_path(const std::string& path);
+// BUG-0242: the name Windows uses for `path`, lowercased, or "" when it is not a plain file name we
+// write (a trailing dot, a DOS device name, a name of the updater's own working files). allowed_path
+// and duplicate_path both use it, so they never disagree. g_path_fix false = 0.7.3.0 (case only).
+std::string canonical_path(const std::string& path);
+extern bool g_path_fix;
 
 // a path listed twice (compared without case, as Windows does): "" if none (BUG-0089: a second
 // entry for a file deleted the first entry's backup of the original, and the rollback lost it)

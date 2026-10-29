@@ -39,6 +39,7 @@
 #include "spacecoop.h"
 #include "squadron.h"
 #include "npc.h"
+#include "rejoin.h"
 #include "savestrip.h"
 #include "cell_logic.h"
 #include "social.h"
@@ -2016,6 +2017,7 @@ void setup_callbacks()
         coop_ui::session_event(true, ""); // BUG-0104: "Connecting to ..." ends here
     };
     g_sess.cb.disconnected = [](const std::string& why) {
+        rejoin::clear(); // the session ended (BUG-0235)
         feed("disconnected: " + why);
         coop_ui::session_event(false, why);
         chat_log("* disconnected: " + why);
@@ -2251,6 +2253,10 @@ void setup_callbacks()
         if (g_sess.role() == net::Role::Client && from == 0)
             world::on_message(type, r, g_sess.name_of(0));
     };
+    g_sess.cb.old_peer = [](uint8_t, const std::string& name) { // BUG-0219: once per player and join
+        // the log line (net: ... older SporeCoop) says what is lost: long chat cut, no species table
+        feed_kind(name + " has an older SporeCoop: update both games to the latest", "info");
+    };
     g_sess.cb.player_leave = [](uint8_t id, uint8_t) {
         if (g_role_fix)
             g_roles.erase(id); // ids are reused: the next newcomer starts with no role (BUG-0064)
@@ -2320,6 +2326,7 @@ bool do_join(const std::string& addr, std::string& err)
 {
     end_open_session();
     reset_lobby();
+    g_sess.rejoin_token = rejoin::token_for_join(H->instance_id()); // BUG-0235
     if (!g_sess.join(addr, g_name, err))
         return false;
     chat_log("* joining " + addr);
@@ -2329,6 +2336,7 @@ bool do_join(const std::string& addr, std::string& err)
 void do_leave()
 {
     g_sess.leave("user");
+    rejoin::clear(); // a clean leave: the next join is a new player (BUG-0235)
     end_session(EndPath::Leave, cellsync::voluntary_leave_cleanup_enabled());
     reset_lobby();
 }
@@ -3295,6 +3303,7 @@ void on_unload()
     coop_ui::shutdown();
     lan_scan(false);
     g_sess.leave("mod unload");
+    rejoin::shutdown();
     end_session(EndPath::Unload, true);
 }
 

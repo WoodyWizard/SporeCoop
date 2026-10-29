@@ -47,7 +47,8 @@ struct ConnStats {
     uint32_t split = 0;     // reliable messages sent in pieces (bigger than one packet)
     uint32_t too_big = 0;   // reliable messages refused: above kMaxReliable
     uint32_t joined = 0;    // reliable messages received in pieces and joined
-    uint32_t frag_lost = 0; // received pieces thrown away (a message above kMaxReliable)
+    uint32_t frag_lost = 0; // received pieces thrown away (a message above kMaxReliable, or a peer that never split)
+    uint32_t too_big_old = 0; // reliable messages not sent: above one packet for a peer that cannot join pieces
 };
 // largest reliable message (BUG-0034): bigger ones are split into pieces of one packet each and
 // joined by the receiver; this caps what a receiver collects for one message
@@ -66,6 +67,13 @@ public:
     uint32_t last_recv_ms = 0;
     uint32_t created_ms = 0;
     ConnStats stats;
+    // BUG-0219: the peer joins split reliable messages (its HELLO / WELCOME caps bit CAP_SPLIT). A
+    // 0.7.2 peer read every piece as a whole message (long chat lost, the species table emptied).
+    // false (the safe side) until the handshake says otherwise
+    bool peer_split = false;
+    // the largest reliable message that goes in one packet (no split needed)
+    // (kMaxPacket 1200 - the 31-byte header - type, flags, len, rel_id; checked in connection.cpp)
+    static constexpr size_t kMaxSingle = 1200 - 31 - 6;
 
     void send_reliable(uint8_t type, const Writer& w);
     // first: ahead of what is queued (the player state must not wait behind a big snapshot)

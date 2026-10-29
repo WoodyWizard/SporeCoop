@@ -85,6 +85,11 @@ struct Rounds {
 // The host echoes the last meal number it applied (MSG_CELL_FOOD ack); the guest sets its total to
 // host total + what is still on the way, instead of the host total alone (which took a fresh meal
 // away again until the next total, a level down and up when the meal crossed a level line).
+// BUG-0219: a host that sends no ack (0.7.2) never acknowledges a meal: the list is cleared instead
+// of growing by one entry per meal for the whole session (also on the off side of pool.foodseq).
+// false = the 0.7.3.0 code (coop.fix pool.meals_trim off, cell_tests --old-trim)
+inline bool g_meals_trim = true;
+
 struct Meals {
     uint32_t seq = 0;
     std::deque<std::pair<uint32_t, int>> unacked; // meal number, points
@@ -99,8 +104,11 @@ struct Meals {
     // the change the guest applies to its own total for a host total (has_ack: a host that sends it)
     int diff(int host_total, bool has_ack, uint32_t ack, int pending, int local_total, bool fix)
     {
-        if (!fix || !has_ack)
+        if (!fix || !has_ack) {
+            if (g_meals_trim)
+                unacked.clear();
             return host_total - local_total;
+        }
         while (!unacked.empty() && (int32_t)(ack - unacked.front().first) >= 0)
             unacked.pop_front();
         int on_way = pending;

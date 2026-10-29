@@ -14,6 +14,34 @@ namespace upd {
 FIX_SWITCH(g_old_suffix_fix); // update.old_suffix, BUG-0114: our own .sporecoop-old suffix, only ours cleaned
 FIX_SWITCH(g_keep_failed_fix); // update.keep_failed, BUG-0150: a failed pending swap keeps its files
 int g_swap_delay_ms = 0;
+std::string g_swap_delay_file; // not a lab switch: test hook (BUG-0243)
+int g_fail_swap_at = 0;         // not a lab switch: test hook (BUG-0242)
+FIX_SWITCH(g_lock_fix); // update.lock, BUG-0243: the update lock of a game folder
+
+// BUG-0243: the update lock of a game folder, made so that a game run by the player and a setup run
+// as administrator can open each other's (a NULL DACL); waits at most wait_ms. nullptr: not taken
+// (another update holds it that long) or it cannot be made: the update goes on without it.
+static HANDLE take_update_lock(const std::wstring& root, DWORD wait_ms)
+{
+    sc_update_lock_fix = g_lock_fix ? 1 : 0;
+    wchar_t name[160];
+    if (!g_lock_fix || !sc_lock_name(L"SporeCoopUpdate-", root.c_str(), name, 160))
+        return nullptr;
+    SECURITY_DESCRIPTOR sd;
+    SECURITY_ATTRIBUTES sa{sizeof sa, &sd, FALSE};
+    bool sd_ok = InitializeSecurityDescriptor(&sd, SECURITY_DESCRIPTOR_REVISION) &&
+                 SetSecurityDescriptorDacl(&sd, TRUE, nullptr, FALSE);
+    HANDLE h = CreateMutexW(sd_ok ? &sa : nullptr, FALSE, name);
+    if (!h)
+        h = OpenMutexW(SYNCHRONIZE | MUTEX_MODIFY_STATE, FALSE, name);
+    if (!h)
+        return nullptr;
+    DWORD r = WaitForSingleObject(h, wait_ms);
+    if (r == WAIT_OBJECT_0 || r == WAIT_ABANDONED)
+        return h;
+    CloseHandle(h);
+    return nullptr;
+}
 
 std::wstring widen(const std::string& s)
 {
@@ -259,8 +287,15 @@ bool apply_pack(const std::wstring& root, const Pack& p, std::string& err, int* 
         }
         steps.push_back(s);
     }
-    // 2. swap them in: the current file becomes *.old (a loaded DLL can be renamed, not overwritten)
+    // 2. swap them in: the current file becomes *.old (a loaded DLL can be renamed, not overwritten).
+    // Under the update lock (BUG-0243): only file operations until it is released
+    HANDLE lock = take_update_lock(root, 10000);
+    int swap_no = 0;
     for (auto& s : steps) {
+        if (g_fail_swap_at > 0 && ++swap_no == g_fail_swap_at) { // test hook: fails like "cannot replace"
+            err = why("cannot replace", s.target);
+            goto rollback;
+        }
         if (s.had) {
             DeleteFileW(s.old.c_str());
             if (!MoveFileExW(s.target.c_str(), s.old.c_str(), MOVEFILE_REPLACE_EXISTING)) {
@@ -273,8 +308,8 @@ bool apply_pack(const std::wstring& root, const Pack& p, std::string& err, int* 
                 goto rollback;
             }
             s.moved_old = true;
-            if (g_swap_delay_ms > 0) // tests (BUG-0139): the target is gone until the next move
-                Sleep((DWORD)g_swap_delay_ms);
+            if (g_swap_delay_ms > 0 && (g_swap_delay_file.empty() || g_swap_delay_file == s.rel))
+                Sleep((DWORD)g_swap_delay_ms); // tests (BUG-0139): the target is gone until the next move
         }
         if (!MoveFileExW(s.fresh.c_str(), s.target.c_str(), MOVEFILE_REPLACE_EXISTING)) {
             err = why("cannot install", s.target);
@@ -299,6 +334,7 @@ bool apply_pack(const std::wstring& root, const Pack& p, std::string& err, int* 
             goto rollback;
         }
     }
+    sc_update_unlock(lock);
     if (pending) {
         *pending = 0;
         for (auto& s : steps)
@@ -314,12 +350,14 @@ rollback:
         DeleteFileW(s.fresh.c_str());
         s.deferred = false;
     }
+    sc_update_unlock(lock);
     return false;
 }
 
 void apply_pending(const std::wstring& root)
 {
     sc_pending_keep_failed = g_keep_failed_fix ? 1 : 0;
+    sc_update_lock_fix = g_lock_fix ? 1 : 0;
     sc_apply_pending(root.c_str(), 0); // the replaced files: cleanup_old
 }
 
@@ -348,7 +386,21 @@ bool own_legacy_backup(const std::wstring& dir_rel, const std::wstring& name, bo
     return false;
 }
 
+static void cleanup_old_unlocked(const std::wstring& root);
+
 void cleanup_old(const std::wstring& root)
+{
+    // BUG-0243: an update running in this folder (an old image's thread after a hot reload, another
+    // instance) still needs its backups for a rollback: they go at the next start
+    sc_update_lock_fix = g_lock_fix ? 1 : 0;
+    HANDLE h;
+    if (!sc_update_trylock(root.c_str(), &h))
+        return;
+    cleanup_old_unlocked(root);
+    sc_update_unlock(h);
+}
+
+static void cleanup_old_unlocked(const std::wstring& root)
 {
     for (const wchar_t* dir : {L"\\SporebinEP1", L"\\SporebinEP1\\mods", L"\\SporebinEP1\\mods\\sporekit\\symbols",
                                L"\\Data"}) {

@@ -6,7 +6,7 @@ SporeCoopSetup.exe with a hidden window) and install.bat (BUG-0080: the player's
 the real Win32 file API under Wine in the lane's bottle. No game is started; the tests work in
 %TEMP%\\sporecoop-win-tests of the bottle.
 
-  SPORE_LANE=3 python3 tools/tests/win_unit.py [--old | --old-suffix | --old-keep]
+  SPORE_LANE=3 python3 tools/tests/win_unit.py [--old | --old-suffix | --old-keep | --old-iniencode | --old-inilock | --old-paths | --old-lock]
 
 --old switches the fixes off: the run must then FAIL (a test you never saw fail proves nothing).
 --old-suffix / --old-keep switch off only update.old_suffix (BUG-0114) / update.keep_failed (BUG-0150).
@@ -56,7 +56,7 @@ def main():
     subprocess.run(['make', '-C', ROOT, '--no-print-directory', 'test-win'], check=True, stdout=subprocess.DEVNULL)
     exe = os.path.join(ROOT, 'build', 'win_tests.exe')
     out = os.path.join(lane.out_dir('win_unit'), 'win_tests.txt')
-    args = [a for a in sys.argv[1:] if a in ('--old', '--old-suffix', '--old-keep')]
+    args = [a for a in sys.argv[1:] if a == '--old' or a.startswith('--old-')]  # --old-<switch>: one fix off
     bat, excl = stage_bat('--old' in args)
     args += ['--bat', win(bat), '--exclude', win(excl)]
     w = 'Z:' + exe.replace('/', '\\')

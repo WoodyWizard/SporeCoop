@@ -12,6 +12,7 @@
 #include "../installer/install.h"
 #include "../mods/coop/slotfs.h"
 #include "../sporekit/inifile.h"
+#include "../updater/pending.h"
 #include "../updater/winupdate.h"
 
 static int g_fail;
@@ -130,6 +131,85 @@ static void test_apply_pack()
     CHECK(get(g + L"\\SporebinEP1\\mods\\coop.dll") == "N1");
     CHECK(get(g + L"\\SporebinEP1\\mods\\coop.dll.old") == "player's backup");
     CHECK(get(g + L"\\SporebinEP1\\mods\\coop.dll.sporecoop-old") == "ORIGINAL");
+}
+
+// BUG-0242: "coop.dll" and "coop.dll." are one file on Windows: the second entry moved the first
+// entry's new file to its own backup and the rollback ended with the original gone
+static void test_apply_rollback()
+{
+    printf("updater: a rollback with two names of one file, and the rollback itself (BUG-0242)\n");
+    std::wstring g = fresh_dir(L"rollback");
+    put(g + L"\\SporebinEP1\\steam_api.dll", "the game's steam api");
+    put(g + L"\\SporebinEP1\\mods\\coop.dll", "ORIGINAL");
+    put(g + L"\\SporebinEP1\\sporekit.dll", "KIT");
+    upd::Pack p;
+    p.version = "9";
+    p.files.push_back({"SporebinEP1/mods/coop.dll", 0, {'N', '1'}});
+    p.files.push_back({"SporebinEP1/mods/coop.dll.", 0, {'N', '2'}});
+    p.files.push_back({"SporebinEP1/sporekit.dll", 0, {'N', '3'}});
+    std::string err;
+    upd::g_fail_swap_at = 3;
+    bool ok = upd::apply_pack(g, p, err);
+    std::string after = get(g + L"\\SporebinEP1\\mods\\coop.dll");
+    printf("  two names: apply=%d (%s), coop.dll='%s'\n", ok, err.c_str(), after.c_str());
+    CHECK(!ok && after == "ORIGINAL");
+    // the hook itself: no duplicates, the second swap fails, every original is back
+    put(g + L"\\SporebinEP1\\mods\\coop.dll", "ORIGINAL");
+    p.files.erase(p.files.begin() + 1);
+    upd::g_fail_swap_at = 2;
+    ok = upd::apply_pack(g, p, err);
+    upd::g_fail_swap_at = 0;
+    CHECK(!ok && get(g + L"\\SporebinEP1\\mods\\coop.dll") == "ORIGINAL" &&
+          get(g + L"\\SporebinEP1\\sporekit.dll") == "KIT");
+}
+
+// BUG-0243: a new start of coop.dll (hot reload, a second instance) ran cleanup_old while an update
+// in the same folder was swapping files: the backups its rollback needed were gone
+struct ApplyJob {
+    std::wstring g;
+    upd::Pack p;
+    bool ok = true;
+    std::string err;
+};
+static DWORD WINAPI apply_job(void* a)
+{
+    auto* j = (ApplyJob*)a;
+    j->ok = upd::apply_pack(j->g, j->p, j->err);
+    return 0;
+}
+
+static void test_update_lock()
+{
+    printf("updater: no cleanup_old under a running update (BUG-0243)\n");
+    std::wstring g = fresh_dir(L"lock");
+    put(g + L"\\SporebinEP1\\steam_api.dll", "the game's steam api");
+    put(g + L"\\SporebinEP1\\mods\\sporecoop.version", "V1");
+    put(g + L"\\SporebinEP1\\mods\\sporekit\\symbols\\x.sym", "SYM1");
+    put(g + L"\\Data\\SporeCoop.package", "PKG1");
+    ApplyJob j;
+    j.g = g;
+    j.p.version = "9";
+    j.p.files.push_back({"SporebinEP1/mods/sporecoop.version", 0, {'V', '2'}});
+    j.p.files.push_back({"SporebinEP1/mods/sporekit/symbols/x.sym", 0, {'S', '2'}});
+    j.p.files.push_back({"Data/SporeCoop.package", 0, {'P', '2'}});
+    upd::g_swap_delay_ms = 1500;
+    upd::g_swap_delay_file = "SporebinEP1/mods/sporecoop.version";
+    upd::g_fail_swap_at = 3; // the third swap fails: the rollback needs the first file's backup
+    HANDLE t = CreateThread(nullptr, 0, apply_job, &j, 0, nullptr);
+    Sleep(800);
+    upd::cleanup_old(g); // the new image's start
+    WaitForSingleObject(t, 20000);
+    CloseHandle(t);
+    upd::g_swap_delay_ms = 0;
+    upd::g_swap_delay_file.clear();
+    upd::g_fail_swap_at = 0;
+    std::string v = get(g + L"\\SporebinEP1\\mods\\sporecoop.version");
+    printf("  apply=%d (%s), sporecoop.version='%s' x.sym='%s'\n", j.ok, j.err.c_str(), v.c_str(),
+           get(g + L"\\SporebinEP1\\mods\\sporekit\\symbols\\x.sym").c_str());
+    CHECK(!j.ok && v == "V1" && get(g + L"\\SporebinEP1\\mods\\sporekit\\symbols\\x.sym") == "SYM1");
+    // the next start (no update running) removes the backups as before
+    upd::cleanup_old(g);
+    CHECK(!exists(g + L"\\SporebinEP1\\mods\\sporecoop.version.sporecoop-old"));
 }
 
 // BUG-0150: a deferred file whose swap fails at the next start stays listed and is applied later
@@ -317,6 +397,94 @@ static void test_ini_unicode()
     std::wstring want = L"name=" + wname;
     CHECK(disk.size() >= 2 && (unsigned char)disk[0] == 0xFF && (unsigned char)disk[1] == 0xFE &&
           disk.find(std::string((const char*)want.data(), want.size() * sizeof(wchar_t))) != std::string::npos);
+}
+
+// BUG-0245: a UTF-16 BE file was decoded as the ANSI codepage and saved over the original; a UTF-16
+// file without a BOM was converted on a guess; a second instance holding the temp name (or the lock)
+// made a non-ASCII write land as "????"
+static std::string utf16(const std::wstring& w, bool be)
+{
+    std::string o;
+    for (wchar_t c : w) {
+        unsigned char hi = (unsigned char)(c >> 8), lo = (unsigned char)c;
+        o += (char)(be ? hi : lo);
+        o += (char)(be ? lo : hi);
+    }
+    return o;
+}
+
+struct HoldLock {
+    const wchar_t* name;
+    HANDLE taken;
+};
+static DWORD WINAPI hold_lock(void* a)
+{
+    auto* h = (HoldLock*)a;
+    HANDLE m = CreateMutexW(nullptr, TRUE, h->name);
+    SetEvent(h->taken);
+    Sleep(1000);
+    ReleaseMutex(m);
+    CloseHandle(m);
+    return 0;
+}
+
+static void test_ini_encoding()
+{
+    const char* vasya = "\xD0\x92\xD0\xB0\xD1\x81\xD1\x8F"; // "Вася"
+    const std::wstring text = L"[coop]\r\nname=\x0412\x0430\x0441\x044F\r\nshare_world=1\r\n";
+    // 1. UTF-16 BE with a BOM: converted losslessly
+    std::wstring be = g_tmp + L"\\be.ini";
+    put(be, "\xFE\xFF" + utf16(text, true));
+    std::string got = skini::read_str(be, "coop", "name", "");
+    printf("  UTF-16 BE: name='%s' share_world=%d first bytes %02X %02X\n", got.c_str(),
+           skini::read_int(be, "coop", "share_world", 0), (unsigned char)get(be)[0], (unsigned char)get(be)[1]);
+    CHECK(got == vasya);
+    CHECK(skini::read_int(be, "coop", "share_world", 0) == 1);
+    CHECK(get(be).rfind("\xFF\xFE", 0) == 0);
+    // 2. UTF-16 LE without a BOM: left as it is, a non-ASCII write refused
+    std::wstring nb = g_tmp + L"\\nobom.ini";
+    std::string raw = utf16(L"[coop]\r\nname=Player\r\n", false);
+    put(nb, raw);
+    skini::read_str(nb, "coop", "name", "");
+    bool w = skini::write_str(nb, "coop", "name", vasya);
+    printf("  UTF-16 without BOM: write=%d unchanged=%d\n", w, get(nb) == raw);
+    CHECK(!w && get(nb) == raw);
+    // 3. another instance holds the temp name: never "????", the next write after it stores the name
+    std::wstring a = g_tmp + L"\\held.ini";
+    put(a, "[coop]\r\nname=Player\r\n");
+    HANDLE t = CreateFileW((a + L".sporecoop-tmp").c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, 0, nullptr);
+    bool w1 = skini::write_str(a, "coop", "name", vasya);
+    std::string held = skini::read_str(a, "coop", "name", "");
+    CloseHandle(t);
+    DeleteFileW((a + L".sporecoop-tmp").c_str());
+    bool w2 = skini::write_str(a, "coop", "name", vasya);
+    std::string after = skini::read_str(a, "coop", "name", "");
+    printf("  temp held: write=%d name='%s'; released: write=%d name='%s'\n", w1, held.c_str(), w2, after.c_str());
+    CHECK(held.find('?') == std::string::npos && !w1);
+    CHECK(w2 && after == vasya);
+    // 4. another instance holds the file's lock for 1 s: the write is refused, nothing is lost
+    std::wstring b = g_tmp + L"\\locked.ini";
+    put(b, "[coop]\r\nname=Player\r\n");
+    wchar_t name[128];
+    CHECK(sc_lock_name(L"SporeKitIni-", b.c_str(), name, 128));
+    // held by another thread (a mutex is re-entrant for its owner thread)
+    HoldLock hold{name, CreateEventW(nullptr, TRUE, FALSE, nullptr)};
+    HANDLE ht = CreateThread(nullptr, 0, hold_lock, &hold, 0, nullptr);
+    WaitForSingleObject(hold.taken, 5000);
+    bool w3 = skini::write_str(b, "coop", "name", vasya);
+    std::string lk = skini::read_str(b, "coop", "name", "");
+    WaitForSingleObject(ht, 5000);
+    CloseHandle(ht);
+    CloseHandle(hold.taken);
+    printf("  lock held: write=%d name='%s'\n", w3, lk.c_str());
+    if (skini::g_lock_fix)
+        CHECK(!w3 && lk == "Player");
+    // the same lock name for another spelling of the path
+    wchar_t name2[128];
+    std::wstring upper = b;
+    for (auto& c : upper)
+        c = (wchar_t)towupper(c);
+    CHECK(sc_lock_name(L"SporeKitIni-", upper.c_str(), name2, 128) && !wcscmp(name, name2));
 }
 
 // ---------------- the setup and install.bat ----------------
@@ -569,6 +737,14 @@ int main(int argc, char** argv)
             upd::g_old_suffix_fix = false;
         else if (!strcmp(argv[i], "--old-keep")) // BUG-0150 alone (update.keep_failed)
             upd::g_keep_failed_fix = false;
+        else if (!strcmp(argv[i], "--old-iniencode")) // only this switch off (BUG-0245)
+            skini::g_encode_fix = false;
+        else if (!strcmp(argv[i], "--old-inilock"))
+            skini::g_lock_fix = false;
+        else if (!strcmp(argv[i], "--old-paths")) // BUG-0242
+            upd::g_path_fix = false;
+        else if (!strcmp(argv[i], "--old-lock")) // BUG-0243
+            upd::g_lock_fix = false;
         else if (!strcmp(argv[i], "--bat") && i + 1 < argc)
             g_bat = upd::widen(argv[++i]);
         else if (!strcmp(argv[i], "--exclude") && i + 1 < argc)
@@ -580,6 +756,9 @@ int main(int argc, char** argv)
         upd::g_dup_fix = false;
         slotfs::g_busy_fix = slotfs::g_match_fix = slotfs::g_write_fix = false;
         skini::g_unicode_fix = false;
+        skini::g_encode_fix = skini::g_lock_fix = false;
+        upd::g_path_fix = false;
+        upd::g_lock_fix = false;
     }
     wchar_t t[MAX_PATH];
     GetTempPathW(MAX_PATH, t);
@@ -588,11 +767,14 @@ int main(int argc, char** argv)
     CreateDirectoryW(g_tmp.c_str(), nullptr);
     test_cleanup_old();
     test_apply_pack();
+    test_apply_rollback();
+    test_update_lock();
     test_pending();
     test_slot_busy();
     test_slot_match();
     test_slot_write_fails();
     test_ini_unicode();
+    test_ini_encoding();
     test_setup_packs();
     test_setup_close();
     test_install_bat();

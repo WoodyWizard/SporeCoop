@@ -15,10 +15,16 @@ KitFix g_fix_stackov{"stackov", "a stack overflow is reported from a thread wait
 KitFix g_fix_crashsafe{"crashsafe", "each step of a crash / hang report catches its own failure, the mark first (BUG-0127)", 1};
 KitFix g_fix_hookpark{"hookpark", "a hooked function's code is written once: hooks are made / removed by switching a stub (BUG-0202)", 1};
 KitFix g_fix_iniutf{"iniutf", "mods\\*.ini with text that is not ASCII are kept in UTF-16 (BUG-0142)", 1};
+KitFix g_fix_iniencode{"iniencode", "a UTF-16 BE settings file is converted losslessly, one with NUL bytes is left alone (BUG-0245)", 1};
+KitFix g_fix_inilock{"inilock", "a named mutex per settings file around conversion and writes; no \"????\" writes (BUG-0245)", 1};
+KitFix g_fix_exitwait{"exitwait", "the game's exit waits (5 s at most) for an update that swaps files (BUG-0243)", 1};
+KitFix g_fix_crashtid{"crashtid", "a crash report names the thread that crashed, not the one writing the report (BUG-0248)", 1};
 KitFix g_fix_logprune{"logprune", "only the newest crash reports, dumps, reports and archives stay in mods\\logs (BUG-0137)", 1};
 
 std::vector<KitFix*> kit_fixes() { return {&g_fix_stackdump, &g_fix_cheatwait, &g_fix_reentry, &g_fix_hookkeep,
-                                       &g_fix_stackov,   &g_fix_crashsafe, &g_fix_logprune, &g_fix_iniutf, &g_fix_hookpark}; }
+                                       &g_fix_stackov,   &g_fix_crashsafe, &g_fix_logprune, &g_fix_iniutf, &g_fix_hookpark,
+                                       &g_fix_crashtid, &g_fix_iniencode, &g_fix_inilock,
+                                       &g_fix_exitwait}; }
 
 KitFix* kit_fix_find(const char* name)
 {

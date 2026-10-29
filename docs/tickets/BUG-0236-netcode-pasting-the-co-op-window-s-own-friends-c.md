@@ -1,19 +1,20 @@
 ---
 id: BUG-0236
 title: Netcode: pasting the co-op window's own "Friends connect to: ..." line into the Join field fails with "cannot resolve Friends"
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-10-28
 source: GitHub #170 (review of release 0.7.3.0, 5801eea)
 role: all
 versions: 0.7.3.0
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w5-net
+commits: 57ca92f
+tests: tests/net_tests.cpp test_address_label (net_tests --off addr_label fails); test_address_parse unchanged
 signature:
 docs:
+switch: net.addr_label
 related:
 ---
 
@@ -28,13 +29,14 @@ BUG-0138 (commit aa6d418, release 0.7.3.0) added `Endpoint::clean` so that a hos
 - `parse_numeric` runs `clean()
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+Observed in the unit test: Endpoint::clean took the first word, "Friends" of the hint line "Friends connect to: a:47810,  b:47810", which then went to the name lookup ("cannot resolve Friends").
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+`Endpoint::clean` splits at whitespace, ',' and ';' and returns the first token of the form `<host>:<1-5 digits>`, else the first token as before (so "192.168.1.5:", ":47810", "...:abc" keep their port errors). Switch `coop.fix net.addr_label off` (also inside `net.addr_check`).
 
 ## Verification
-<!-- the test: FAIL without the fix (run dir), PASS with it (runs) -->
+`net_tests`: PASS (English and Russian hint lines, a chat prefix, text after the address, "myhost.lan" still a name). `net_tests --off addr_label`: FAIL (4 cases).
 
 ## History
 - 2026-10-28: opened.
+- 2026-10-28: fixed on fix/w5-net (wave 5).
