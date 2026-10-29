@@ -72,7 +72,7 @@ import census
 import fixtures
 import lane
 import uifind
-from coop_multi import join_cmd, limit, measure, sample, start_extra, wait_all
+from coop_multi import fps, join_cmd, limit, measure, over_limit, start_extra, wait_all
 from coop_ui import Ui
 from sporectl import Console
 from twoinst import Monitor, shot, start
@@ -300,19 +300,24 @@ class Campaign:
                 self.finding('apart', f'{hst}:{k}', f'the host does not see {k} in its world ({hst})',
                              [host, self.byname(k)])
             # sync of every synchronized object kind, guests that are in the host's world only
-            over, short = [], []
+            over, short, nums = [], [], []
             for g in self.guests:
                 if g not in alive or g.pid not in tog:
                     continue
-                h1 = sample(host.con)  # fresh for each guest (BUG-0269: the fourth one is seconds later)
-                errs, cov, total = measure(host.con, g.con, h1)
+                # the host's path right before each guest (BUG-0269), its last 0.25 s: the guest
+                # shows the host's objects that late on purpose (BUG-0275)
+                errs, cov, total, worst = measure(host.con, g.con)
                 if total >= 5 and cov < 0.85:
                     short.append(f'{g.name}:coverage')
                 for kind, v in errs.items():
                     v = sorted(v)
                     p90 = v[min(len(v) - 1, int(0.9 * len(v)))]
-                    if p90 > limit(kind):
+                    nums.append(f'{g.name}:{kind} p90 {p90:.1f} of {len(v)}, worst {worst[kind][1]} {worst[kind][0]:.1f}')
+                    if over_limit(v, limit(kind)):
                         over.append(f'{g.name}:{kind}:{p90:.1f}')
+            if over:  # every guest's numbers next to a desync: one guest only, or everybody (BUG-0275)
+                self.note('sync: ' + '; '.join(nums) + ' | fps ' + ', '.join(
+                    f'{p.name} {fps(p.con)}' for p in self.P if p in alive))
             keys = [k.rsplit(':', 1)[0] if k.count(':') == 2 else k for k in over] + short
             for k in self.persist['desync'].update(keys):
                 name = k.split(':')[0]
