@@ -287,6 +287,7 @@ void despawn(Remote& r)
 uint32_t g_mode = 0, g_world = 0;
 bool g_save_on_share = true; // host saves before sending the world, so guests get the current state
 const modes::Adapter* g_adapter = nullptr;
+bool g_puppet_hold = false; // tests (coop.puppet hold): remote puppets are not driven (BUG-0251), never saved
 void* g_local = nullptr; // entity the local player controls (adapter specific)
 
 // Creature puppets the game did not destroy when we forgot them: the creature stage world stays
@@ -391,7 +392,8 @@ void drive_puppet(Remote& r, double now)
         r.drv = drive::State{};
         feed(r.name + " appeared in the world");
     }
-    g_adapter->drive(r.puppet, s, r.drv, now);
+    if (!g_puppet_hold)
+        g_adapter->drive(r.puppet, s, r.drv, now);
 }
 
 bool stage_mode(uint32_t m)
@@ -1817,6 +1819,7 @@ COOP_FIX("core.text_utf8", "BUG-0164", utf8::g_cut_fix, "net: texts are cut betw
 COOP_FIX("core.notify_text", "BUG-0129", notify_text::g_fix, "ui: notification lines wrap by characters, the panel kind is not guessed");
 void end_session_modules(bool cell)
 {
+    g_puppet_hold = false;
     npc::on_session_end();
     social::on_session_end();
     tribe::on_session_end();
@@ -3336,6 +3339,14 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     H->command_add(M, "coop.leave", "leave the session", c_leave, nullptr, MT);
     H->command_add(M, "coop.framefix", "coop.framefix [0|1] - forget a torn-down world's puppets before the frame's messages (tests: 0 = the old order, BUG-0091)",
                    c_framefix, nullptr, MT);
+    H->command_add(M, "coop.puppet", "coop.puppet hold on|off - tests: the remote players' puppets are not moved (a seeded failure for coop_mode.py, BUG-0251)",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       if (argc > 2 && !strcmp(argv[1], "hold"))
+                           g_puppet_hold = !strcmp(argv[2], "on") || !strcmp(argv[2], "1");
+                       SAY("puppet hold %s\n", g_puppet_hold ? "on" : "off");
+                       return 0;
+                   },
+                   nullptr, MT);
     H->command_add(M, "coop.sessionfix", "coop.sessionfix [0|1] - one cleanup for every session end (tests: 0 = the old per-path lists, BUG-0033)",
                    c_sessionfix, nullptr, MT);
     H->command_add(M, "coop.lanfake", "coop.lanfake <n> [seconds] - n made-up games on the network answer (192.0.2.x, tests, BUG-0183)",
