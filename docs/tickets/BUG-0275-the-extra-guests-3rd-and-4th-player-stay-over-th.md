@@ -65,7 +65,9 @@ switch: none (test tooling)
 ## Verification
 no-fail-run: test tooling; the old rule did not fail on a per-player difference, it failed at random
 on single objects. Before / after on the same measurements (checks over the limit, Bob / Carol /
-Dave): creature 1: 2 / 3 / 1 -> 0 / 1 / 0; creature 2: 1 / 0 / 0 -> 0 / 0 / 0; cell: 0 -> 0.
+Dave): creature 1: 2 / 3 / 1 -> 0 / 1 / 0; creature 2: 1 / 0 / 0 -> 0 / 0 / 0; cell: 0 -> 0. With the new check: coop_sync_multi creature 30 checks
+per guest 0 / 0 / 0 over (p90 median 0.63 / 0.56 / 0.51 m, 57-59 fps); lab 20261029-151605
+campaign_short lane 6 OK, 0 findings; smoke 20261029-152549 lanes 6+7 13/14 OK (ui skipped).
 ## History
 - 2026-10-29: opened.
 - 2026-10-29: measured per player, test tooling fixed on fix/w7-sync; BUG-0281, BUG-0282 opened.
