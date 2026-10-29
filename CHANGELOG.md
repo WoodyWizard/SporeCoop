@@ -40,6 +40,11 @@
 - Tests: the four-player sync check no longer calls a whole kind of objects out of sync for one
   object off among a few, and allows for the guest's designed 0.15 s lag; measured per player, the
   3rd and 4th player were as close to the host as the 2nd (BUG-0275).
+- Creature: a new guest (no creations of its own) that saved an edit in its own editor at the start
+  of the Creature stage could be stuck with the host's legless creature from the Cell stage, on its
+  own screen (and after "Replace" on the host's too), after every rejoin and restart. Only a
+  creature the guest really made becomes its own now, and the co-op window's arrows can go back to
+  the world's own creature (BUG-0278).
 - Cell: the host's (or a guest's) game could crash while the Cell stage ended and the Creature
   planet loaded, when the co-op status or the player's position was asked for at that moment. The
   mod no longer reads the cells the game has already freed, nor anything else of a stage the game

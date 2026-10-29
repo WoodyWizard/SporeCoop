@@ -1711,6 +1711,24 @@ wrong. Suite `campaign` (in no other suite): `tools/lab.py run campaign --lanes 
   MSG_DIAG through a host to a new and an older guest, the connection's loss / bytes / round trip
   statistics incl. a bulk transfer that outruns the ack window: 0 lost), fuzz_decoders `diag *`
   (mark, clock answer, result, digest), tools_selftest `mergelogs`.
+## Creature: a new guest in its own editor of the first Creature vote (2026-10-29, fix/w7-legless)
+<a id="testing-legless-guest"></a>
+
+* `coop_legless_guest.py --guest done|cancel|new|replace|dontsave` (suites `legless_guest` = new,
+  `legless_guest_replace`, `_done`, `_cancel`, `_dontsave`, BUG-0278): the `cell` fixture with a guest
+  profile without creations; the host ends the Cell stage the players' way, the guest clicks "I'm
+  ready", the host adds legs; the guest does one thing in its own editor (legs + the save dialog's
+  button, or done, or cancel + Quit). Checks the guest's avatar species (`coop.avatar`) and the
+  species the host's game shows for it (`coop.status` remote 1), after the editors, after a rejoin,
+  after the next own editor (`coop.vote editor`, a part, done, Save New) and after "the world's own"
+  in the co-op window's list (`coop.creations prev creature`, what the arrow runs). About 9 minutes.
+  `SPORE_FIX_OFF=creations.pre_editor` must FAIL on `new` and `replace`.
+* Pitfalls: the guest's own editor is the "edit a creation" editor: done after an edit and the red
+  cross after an edit open dialogs (coordinates in the test, docs/re/creations.md#creations-own-editor-save);
+  a click under a dialog does nothing. A guest may play the host's creation under the host's key
+  (290D...) or a remapped one (7D... from `coop.creations` "host species X = Y here"): compare with
+  both. Right after an editor the avatar hatches again and `coop.avatar` has no key for a while (up
+  to a minute).
 ## Support logging test (2026-10-29, feat/w7-trace)
 <a id="testing-trace-log"></a>
 

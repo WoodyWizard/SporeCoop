@@ -239,9 +239,13 @@ anchor so other docs can link to it:
   for the vote.
 * A guest without own creations gets its own editor on the host's creature as it was before the
   host's editor (the legless one at the start of the Creature stage). If it saves an edit, that
-  edited pre-legs creature becomes its own (kept in `choices.ini`) while the host plays the legged
-  one: by design (everybody evolves its own creature), but it may look like "the host's creature did
-  not change". Cancel keeps the world's species.
+  edited creature becomes its own while the host plays the legged one: by design (everybody evolves
+  its own creature). Done without a change, cancel and Don't Save keep the world's species (the
+  host's evolved one after the reload). Fixed (BUG-0278): the guest no longer ends up with the
+  host's legless creature itself (0.7.3.0 pinned it in `choices.ini` after Replace, and Save New kept
+  the host's key), and the co-op window's arrows lead back to "the world's own". Still open: that
+  editor is the "edit a creation" one (save dialogs, a red cross), not the evolution editor the host
+  gets, and it can show the host's new parts while it is open (BUG-0283).
 * The guest's mating-call button needs a collected part (`S+0x69`): whether a guest touching a host's
   part token (a mirror) sets it was not checked; the test sets it by console.
 * The report's Creature case ("3 rejoins did not fix it") did not reproduce as such on lane 5 with
