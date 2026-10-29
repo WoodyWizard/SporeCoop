@@ -2053,7 +2053,10 @@ void setup_callbacks()
             return;
         }
         // (the DNA total also before the host's first state: it is applied once we play its world)
-        if (from == 0 && world_state_msg(type) && host_elsewhere(type == net::MSG_DNA)) {
+        // (the Civ state also before it: one cycle applied in that window bound the guest's own
+        // vehicles for good, BUG-0231; a guest in the host's world gets the next cycle)
+        bool civ_msg = type == net::MSG_CIV_STATE || type == net::MSG_CIV_BUILD || type == net::MSG_CIV_ALARM;
+        if (from == 0 && world_state_msg(type) && host_elsewhere(type == net::MSG_DNA || (g_world_gate_fix && civ_msg))) {
             if (type == net::MSG_DNA) {
                 float total = r.f32();
                 if (r.ok())
