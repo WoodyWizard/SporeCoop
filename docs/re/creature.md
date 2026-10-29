@@ -886,3 +886,23 @@ BUG-0264. GOG 2024, lanes 4 and 5.
   0). Switch `core.ui_locked_clicks`.
 * CRG_ClaimNest started with PlayCinematic does not end with Enter on the guest; EndCinematic
   (`call SporeCoop::cCinematicManager_EndCinematic thiscall <mgr>`) ends it and frees the lock.
+## NPCs far from the host's avatar go back to the pool (2026-10-29, fix/w7-npc)
+<a id="creature-npc-pool-cull"></a>
+
+* ✔ The creature stage keeps NPCs only around the player's own avatar. Walking the host 300 m
+  away from the nest (`coop.npc gopos` in 20 steps, lane 4) turned every NPC farther than about
+  150-200 m into a pool object: still in the noun list and `object_alive`, species key and health
+  kept, herd (+0x1674) 00000000, position (0 0 0), no more cCreatureAnimal::Update calls
+  (`coop.npc creatures`). The partners' puppets next to them do not keep them. The cull distance
+  was not measured exactly.
+* ✔ A nest that misses a member spawns it again near the nest (the same pooled object comes back,
+  `Create` with reuse, docs/re/creature.md#creature-pool-ids) and, with the avatar still far, the
+  game pools it again 1-3 s later: a cycle of 3-6 s for as long as the avatar stays away.
+* ✔ Walking back, the pooled family member returned as the same object with its herd and nest set
+  again (flags 0x10) at the nest.
+* ✔ For the NPC sync (BUG-0274): a host NPC that did not update in a frame is now checked at once:
+  not in the noun list (freed) or listed without a herd or at (0 0 0) (pooled) -> despawned on the
+  guests now, not after the 2 s grace. Before, the census caught such an object as
+  `own=npc pos=(0.0 0.0 0.0)` with the guest's proxy still on the surface ("504 m apart"; 2 s per
+  cull, every few seconds with the nest cycle, so two campaign checks 30 s apart could see it).
+* Consequence (BUG-0280, open): a guest far from the host has no NPCs around it.

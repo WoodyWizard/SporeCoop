@@ -249,6 +249,45 @@ static void retire(uint16_t id, void* c)
     teamplay::forget_target(c);
 }
 
+// host: tracked NPCs that did not update this frame and are no creature in the world any more: freed
+// (not in the noun list) or back in the creature pool (still listed, no herd, at (0 0 0)). Their ids
+// go now. Fields are read only of objects still in the noun list (a freed one may be any memory).
+static bool g_pool_fix = true;
+COOP_FIX("npc.pooled", "BUG-0274", g_pool_fix, "creature: an NPC the game puts back into its pool is despawned at once");
+static uint32_t g_pooled_retired = 0;
+static void retire_pooled()
+{
+    struct Acc {
+        std::unordered_set<void*> unseen, listed;
+    } a;
+    for (auto& [c, hn] : g_host_npcs)
+        if (!g_seen_now.count(c))
+            a.unseen.insert(c);
+    if (a.unseen.empty())
+        return;
+    game::for_each_object(
+        [](void* o, uint32_t noun, void* u) {
+            auto* a = (Acc*)u;
+            if (noun == 0x18EB45Eu && a->unseen.count(o) && game::object_alive(o))
+                a->listed.insert(o);
+            return true;
+        },
+        &a);
+    for (void* c : a.unseen) {
+        bool gone = !a.listed.count(c);
+        if (!gone) {
+            net::Vec3 p = game::position(c);
+            gone = !game::herd_of(c) || (p.x == 0.f && p.y == 0.f && p.z == 0.f);
+        }
+        if (!gone)
+            continue;
+        auto it = g_host_npcs.find(c);
+        retire(it->second.id, c);
+        g_host_npcs.erase(it);
+        g_pooled_retired++;
+    }
+}
+
 static void host_tick(double now, const std::vector<void*>& creatures)
 {
     void* av = game::avatar();
@@ -298,6 +337,13 @@ static void host_tick(double now, const std::vector<void*>& creatures)
         }
         g_seen_now.insert(c);
     }
+    // creatures the game took out of the world (BUG-0274): the creature stage keeps NPCs only around
+    // the host's avatar; one farther away goes back to the creature pool (herd cleared, position
+    // (0 0 0), no more updates) and the nest spawns it again when it misses a member. It used to keep
+    // its id for the 2 s below, so a guest near it kept the proxy where it stood (504 m from the
+    // host's object at the planet's centre in the census) and got it again with the next respawn.
+    if (g_pool_fix && g_seen_now.size() < g_host_npcs.size())
+        retire_pooled();
     // forget creatures that stopped updating (destroyed / unloaded)
     for (auto it = g_host_npcs.begin(); it != g_host_npcs.end();) {
         if (now - it->second.last_seen > 2.0) {
@@ -913,7 +959,7 @@ bool damage_filter(void* c, float& damage, int type, void* attacker)
 
 std::string status()
 {
-    char b[512];
+    char b[768];
     if (is_host()) {
         size_t known = 0;
         for (auto& [g, ks] : g_known)
@@ -922,10 +968,10 @@ std::string status()
         for (auto& [c, pup] : g_ai_target)
             on_partner += g_seen_now.count(c) != 0;
         snprintf(b, sizeof b, "npc(host): tracked=%u alive=%u mirrored=%u hits_applied=%u guest_kills=%u strays_removed=%u "
-                 "hatch_helped=%u partner_targets=%d on_partner=%u partner_picks=%u ai_swaps=%u swaps_restored=%u ledger_restored=%u reused=%u hunt_targets=%u\n",
+                 "hatch_helped=%u partner_targets=%d on_partner=%u partner_picks=%u ai_swaps=%u swaps_restored=%u ledger_restored=%u reused=%u hunt_targets=%u pooled=%u\n",
                  (unsigned)g_host_npcs.size(), (unsigned)g_seen_now.size(), (unsigned)known, g_hits_applied,
                  g_kills_credited, g_strays_removed, g_hatch_helped, (int)g_partner_targets, (unsigned)on_partner,
-                 g_ai_partner_picks, game::ai_swaps(), game::swaps_restored(), game::swap_ledger_restored(), g_reused, (unsigned)teamplay::hit_targets());
+                 g_ai_partner_picks, game::ai_swaps(), game::swaps_restored(), game::swap_ledger_restored(), g_reused, (unsigned)teamplay::hit_targets(), g_pooled_retired);
     } else {
         unsigned spawned = 0;
         for (auto& [id, px] : g_proxies)
