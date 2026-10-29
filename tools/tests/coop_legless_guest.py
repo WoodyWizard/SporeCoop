@@ -220,6 +220,7 @@ def main():
     # the guest can change its creature: its next own editor opens on the creature it plays
     # (evolution editor through the game's own entry, which the mod turns into a vote)
     before = avatar_key(guest)
+    shown_before = puppet_of_guest(host)  # the body the host shows for it before that editor
     guest.call('coop.vote editor')
     opened = wait(lambda: 'Editor' in mode(guest), 60)
     ck(opened, "the guest's next own editor opens")
@@ -233,7 +234,6 @@ def main():
         if 'Editor' in mode(guest):  # the save dialog after an edit
             guest.call('click %d %d' % SAVE_DIALOG['new'])
         ck(wait(lambda: 'Creature' in mode(guest), 40), 'the guest saves its edit')
-        shown_before = puppet_of_guest(host)
 
         def new_body():
             if 'cine=1' in guest.call('coop.pool')['out']:
