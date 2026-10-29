@@ -7,6 +7,7 @@
 #include "drive_plan.h"
 #include "hunt_hits.h"
 #include "npc_ids.h"
+#include "stage_epoch.h"
 #include "swap_ledger.h"
 
 static int g_fail = 0;
@@ -187,8 +188,66 @@ static void test_drive()
     CHECK(stuck);
 }
 
+// BUG-0217 / BUG-0223: the stage counters and a module's watch (stage_epoch.h)
+static void test_stage_epoch()
+{
+    using namespace stage_epoch;
+    const uint32_t kLoad = 0x1654C08, kMenu = 0x2CCD1D2;
+    State s;
+    step(s, kMenu);
+    CHECK(get(s, kTribe) == 0);
+    step(s, kLoad);
+    step(s, kTribe);
+    CHECK(get(s, kTribe) == 1);
+    step(s, kTribe);
+    CHECK(get(s, kTribe) == 1);
+    step(s, kEditor); // editor, then Done: the same world
+    step(s, kEdit);
+    step(s, kTribe);
+    CHECK(get(s, kTribe) == 1);
+    step(s, kEditor); // editor, then the menu, then a load: a new world
+    step(s, kMenu);
+    step(s, kLoad);
+    step(s, kTribe);
+    CHECK(get(s, kTribe) == 2);
+    step(s, kCiv); // another stage
+    CHECK(get(s, kCiv) == 1 && get(s, kTribe) == 2);
+    step(s, kScenario); // kScenario keeps only Space
+    step(s, kCiv);
+    CHECK(get(s, kCiv) == 2);
+    step(s, kSpace);
+    step(s, kScenario);
+    step(s, kSpace);
+    CHECK(get(s, kSpace) == 1);
+    step(s, kTribe);
+    CHECK(get(s, kTribe) == 3);
+    CHECK(get(s, kMenu) == 0);
+
+    int a = 0, b = 0;
+    Watch w;
+    CHECK(!changed(w, 5, true, &a, 7)); // the first call records only (hot reload)
+    CHECK(!changed(w, 5, true, &a, 7));
+    CHECK(!changed(w, 5, false, nullptr, 0)); // editor: the in-stage signals wait
+    CHECK(!changed(w, 5, true, &a, 7));
+    CHECK(changed(w, 6, true, &a, 7)); // the stage counter moved
+    CHECK(!changed(w, 6, true, &a, 7));
+    CHECK(changed(w, 6, true, &b, 7)); // another player object in the stage
+    CHECK(!changed(w, 6, true, &b, 7));
+    CHECK(changed(w, 6, true, nullptr, 7)); // the object went away (null included): once
+    CHECK(!changed(w, 6, true, nullptr, 7));
+    CHECK(!changed(w, 6, true, &a, 7)); // back: no recorded object to compare with
+    CHECK(changed(w, 6, true, &a, 9)); // another save name
+    CHECK(!changed(w, 6, true, &a, 0)); // no save name: no signal
+    CHECK(!changed(w, 6, true, &a, 9));
+    Watch w2; // recorded outside the stage: no object yet
+    CHECK(!changed(w2, 1, false, nullptr, 0));
+    CHECK(!changed(w2, 1, true, &a, 3));
+    CHECK(!changed(w2, 1, true, &a, 3));
+}
+
 int main()
 {
+    test_stage_epoch();
     test_drive();
     test_ids();
     test_hits();

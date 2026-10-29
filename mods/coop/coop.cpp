@@ -26,6 +26,7 @@
 #include "driver.h"
 #include "game.h"
 #include "modes.h"
+#include "stage_epoch.h"
 #include "mouse.h"
 #include "shared.h"
 #include "sui.h"
@@ -1352,6 +1353,11 @@ void own_editor_tick(double now)
 
 // the local player's entity changed (a load, the editor, the stage left): the puppets and proxies
 // belong to the old world
+static_assert(modes::kTribe == stage_epoch::kTribe && modes::kCiv == stage_epoch::kCiv &&
+                  modes::kEditor == stage_epoch::kEditor && modes::kEdit == stage_epoch::kEdit &&
+                  modes::kSpace == stage_epoch::kSpace && modes::kScenario == stage_epoch::kScenario &&
+                  modes::kCell == stage_epoch::kCell && modes::kCreature == stage_epoch::kCreature,
+              "stage_epoch.h mode ids");
 void avatar_change_check()
 {
     const modes::Adapter* a = modes::for_mode(game::mode_id());
@@ -1361,7 +1367,8 @@ void avatar_change_check()
     if (g_last_avatar) {
         forget_puppets();
         npc::on_world_change();
-        tribe::on_world_change();
+        if (!tribe::editor_world_fix()) // BUG-0217: else tribe::world_check() decides
+            tribe::on_world_change();
         civ::on_world_change(); // BUG-0059
     }
     g_last_avatar = local;
@@ -1374,6 +1381,8 @@ void on_frame(void*, int, void*)
     diag_tick(now);
     notify::tick(now);
     game::world_epoch(); // BUG-0119: sees every frame outside the creature stage
+    game::stage_epoch_tick(); // BUG-0217: before any message or module tick of this frame
+    tribe::world_check();     // BUG-0217: the Tribe world changed (not an editor visit)
     creations::tick(now);
     if (g_frame_fix) // BUG-0091: forget the puppets of a world the game tore down before any message uses them
         avatar_change_check();

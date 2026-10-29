@@ -12,6 +12,7 @@
 #include "modes.h"
 #include "npc.h"
 #include "space_ext.h"
+#include "stage_epoch.h"
 #include "net/ids.h"
 #include "net/interp.h"
 #include "net/validate.h"
@@ -1327,30 +1328,36 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         host_command(from, r);
 }
 
+// BUG-0217: forget the co-op mechanics' pointers of a world that is gone (no game call: the
+// objects are freed). The epic and its herd are no longer ours to destroy or quiet.
+static void forget_world_tables()
+{
+    g_chief_scale.clear();
+    g_chief.clear();
+    g_chief_saved.clear();
+    g_pincer.clear();
+    g_pincer_told.clear();
+    g_epic = nullptr;
+    g_epic_herd = nullptr;
+    g_epic_hitters.clear();
+    if (g_fix_epic_herd)
+        g_epic_next = 0; // BUG-0067: the first epic of the next session comes after 8 minutes again
+}
+
 // the co-op mechanics' tables of game pointers (chiefs, pincer, epic): a new session or world
 // must not inherit them (BUG-0081: a former chief's size was restored through a freed pointer)
 static void clear_coop_tables(bool restore)
 {
     if (!g_fix_chiefs)
         return;
-    if (restore)
+    if (restore) {
         restore_chief_scales(nullptr); // the chiefs are plain members again after the session
-    g_chief_scale.clear();
-    g_chief.clear();
-    g_chief_saved.clear();
-    g_pincer.clear();
-    g_pincer_told.clear();
-    // the co-op epic ends with the session (BUG-0121: not left in the solo game and its saves);
-    // after a world change (restore false) the old world's objects are gone: only forgotten
-    if (restore && g_fix_epic_herd && g_epic && game::mode_id() == modes::kTribe && epic_listed())
-        game::destroy_creature(g_epic);
-    g_epic = nullptr;
-    if (restore)
+        // the co-op epic ends with the session (BUG-0121: not left in the solo game and its saves)
+        if (g_fix_epic_herd && g_epic && game::mode_id() == modes::kTribe && epic_listed())
+            game::destroy_creature(g_epic);
         epic_herd_release();
-    g_epic_herd = nullptr;
-    g_epic_hitters.clear();
-    if (g_fix_epic_herd)
-        g_epic_next = 0; // BUG-0067: the first epic of the next session comes after 8 minutes again
+    }
+    forget_world_tables();
 }
 
 // BUG-0121: the host saves (pause menu, quit, the world sent to a joining guest): a live co-op epic
@@ -1384,11 +1391,64 @@ void on_session_end()
     g_player_members_seen = 0;
 }
 
+// a world of the Tribe stage is gone (a load, a received world, the stage left, the game-over
+// bounce back): every pointer of it is forgotten, with no game call (BUG-0217: no longer through
+// on_session_end, whose restoring clear would touch the old world if the order ever changed)
 void on_world_change()
 {
     g_resets++;
-    clear_coop_tables(false); // every citizen of the old world is freed: nothing to restore
-    on_session_end();
+    if (g_fix_chiefs)
+        forget_world_tables(); // every citizen of the old world is freed: nothing to restore
+    g_split_for.clear();
+    g_hm.clear();
+    g_hm_by_id.clear();
+    g_gm.clear();
+    g_gid_of.clear();
+    g_player_members_seen = 0;
+}
+
+// BUG-0217: which Tribe world is open. Before, any frame without the stage's local entity (every
+// editor: no adapter) counted as a world change, so an editor visit dropped the live co-op epic
+// untracked into the share save that follows. Now: the stage counter (game::stage_epoch: a load,
+// a received world, another stage), leaving Tribe for a mode that is not an editor, and the
+// in-stage signals (another player tribe object, another save name). Limit: a reload of the same
+// save that reuses the player tribe's address and never shows a non-stage frame is not seen.
+// `coop.fix tribe.editor_world off`: the old trigger (coop.cpp avatar_change_check).
+static bool g_fix_editor_world = true;
+COOP_FIX("tribe.editor_world", "BUG-0217", g_fix_editor_world, "tribe: an editor visit keeps the world (the co-op epic stays tracked)");
+static stage_epoch::Watch g_world_watch;
+static bool g_world_left = true; // the Tribe world is not open (forgotten when it was left)
+static uint32_t g_world_checks_fired;
+
+bool editor_world_fix() { return g_fix_editor_world; }
+
+void world_check()
+{
+    if (!g_fix_editor_world) {
+        g_world_watch = {};
+        g_world_left = true;
+        return;
+    }
+    uint32_t m = game::mode_id();
+    bool in = m == modes::kTribe;
+    bool editor = m == modes::kEdit || m == modes::kEditor;
+    void* pt = in && g_ok ? player_tribe() : nullptr;
+    bool ch = stage_epoch::changed(g_world_watch, game::stage_epoch(modes::kTribe), in, pt,
+                                   in ? modes::current_world() : 0);
+    bool fire = false;
+    if (!in && !editor) { // the Tribe world is gone (menu, load, another stage)
+        fire = !g_world_left;
+        g_world_left = true;
+    } else if (in) {
+        fire = ch && !g_world_left; // a new world while one was open (in-stage signals)
+        g_world_left = false;
+    }
+    if (fire) {
+        g_world_checks_fired++;
+        if (g_ok)
+            H->log(M, SK_INFO, "tribe: the world changed (mode %08X, epoch %u)", m, game::stage_epoch(modes::kTribe));
+        on_world_change();
+    }
 }
 
 bool center(net::Vec3& pos)
@@ -1569,9 +1629,9 @@ std::string debug(const std::vector<std::string>& a)
                 return true;
             },
             &n);
-        char b[128];
-        snprintf(b, sizeof b, "epic herds=%d quiet_ours=%d enabled=%d live_epics=%d tracked=%p", n.herds, n.ours,
-                 n.enabled, n.epics, g_epic);
+        char b[192];
+        snprintf(b, sizeof b, "epic herds=%d quiet_ours=%d enabled=%d live_epics=%d tracked=%p resets=%u world_changes=%u epoch=%u",
+                 n.herds, n.ours, n.enabled, n.epics, g_epic, g_resets, g_world_checks_fired, game::stage_epoch(modes::kTribe));
         return b;
     }
     if (a.size() >= 2 && a[0] == "epic" && a[1] == "quiet") { // RE: quiet every epic herd of ours now
