@@ -416,6 +416,8 @@ COOP_FIX("world.load_in_editor", "BUG-0157", g_editor_load_fix, "world: a queued
 COOP_FIX("world.busy_slot", "BUG-0035", slotfs::g_busy_fix, "world: a received world never moves or overwrites the slot being played");
 COOP_FIX("world.slot_match", "BUG-0087", slotfs::g_match_fix, "world: a received world goes only into its own host's co-op slot");
 COOP_FIX("world.write_check", "BUG-0105", slotfs::g_write_fix, "world: a world whose files could not be written is not loaded");
+COOP_FIX("world.slot_fallback", "BUG-0254", slotfs::g_fallback_fix, "world: a slot that cannot be replaced (a file in use) gives way to another slot");
+COOP_FIX("world.tmp_cleanup", "BUG-0254", slotfs::g_cleanup_fix, "world: leftovers of interrupted world writes are tidied (under a mutex)");
 static unsigned g_share_saves;         // saves posted for shares (tests)
 static unsigned g_shares_dropped;      // shares dropped because their player left (tests)
 static unsigned g_loads_dropped;       // guest: queued loads dropped at a session end (tests)
@@ -1090,7 +1092,14 @@ static void finish(const std::string& host_name)
     for (auto& [i, f] : g_in.files)
         files.push_back(&f);
     std::string werr;
-    if (!slotfs::write(slot, files, host_name, g_in.offer.planet, crc, werr)) {
+    bool moved = false;
+    bool wrote = slotfs::write_or_fallback(games_dir(), slot, current_db_dir(), files, host_name, g_in.offer.planet,
+                                           planet, crc, werr, moved);
+    if (moved) {
+        H->log(M, SK_WARN, "world: the old copy was in use: the world went into %s", narrow(slot).c_str());
+        g_feed("the old copy of " + host_name + "'s world was in use: the world went into another save slot");
+    }
+    if (!wrote) {
         // not marked, not loaded: a half-written world hung or faulted in LoadGame
         H->log(M, SK_WARN, "world: could not write the world into %s: %s", narrow(slot).c_str(), werr.c_str());
         g_feed("could not save the world of " + host_name + ": " + werr);
