@@ -68,6 +68,7 @@ import campaign_lib as cl
 import census
 import fixtures
 import lane
+import uifind
 from coop_multi import join_cmd, limit, measure, sample, start_extra, wait_all
 from coop_ui import Ui
 from sporectl import Console
@@ -78,8 +79,27 @@ CAPTION_OK = (1410, 1048)    # the green check of a caption that waits for the p
 HISTORY_BTN = (1400, 1062)   # the HUD button under the portrait: History (the next stage when it is done)
 HISTORY_OK = (1415, 1055)    # its check: closes History, or starts the next stage
 EDITOR_DONE = (1416, 1062)   # the green "done" of the editors (1440x1080)
+CAPTAIN_NAME = [(915, 555), (936, 630)]  # "Name Your Captain" (the first Space minutes): dice, check
+EDITOR_DICE = (614, 826)     # the dice of the name panel (a random name), open after a "done" without a name
+EDITOR_PARTS = [(85, 130), (350, 405), (480, 405)]       # spaceship editor palette: a hull, two discs
+EDITOR_PLACES = [(1000, 560), (1000, 470), (1000, 650)]  # onto the stage
 VK_F9 = '0x78'
+DIALOG_BUTTONS = ('Religious', 'Military')  # the city specialty dialog after a capture (Civ): press the last
 ADVANCE_MIN = {'cell': 10, 'creature': 10, 'tribe': 30, 'civ': 20}  # default time of a stage change
+
+
+def drag_slow(con, sx, sy, tx, ty):
+    """hold the button and move in steps: a plain `drag` is too fast for the editors"""
+    con.call(f'move {sx} {sy}')
+    time.sleep(0.3)
+    con.call(f'button {sx} {sy} down')
+    time.sleep(0.3)
+    for i in range(1, 11):
+        con.call(f'move {sx + (tx - sx) * i // 10} {sy + (ty - sy) * i // 10}')
+        time.sleep(0.08)
+    time.sleep(0.3)
+    con.call(f'button {tx} {ty} up')
+    time.sleep(1)
 
 
 def now():
@@ -127,6 +147,7 @@ class Campaign:
         self.log_dir = os.path.dirname(lane.game_log(self.host.inst))
         self.shots = 0
         self.cap = {}  # player -> (caption seen since, last OK)
+        self.edits = {}  # player -> "done" clicks in the current editor
 
     # ---------------- findings and evidence ----------------
     def finding(self, kind, key, text, players=(), evidence=()):
@@ -336,11 +357,20 @@ class Campaign:
         st = con.call('coop.status').get('out', '')
         mode = con.call('game.mode').get('out', '')
         if 'Editor' in mode:
-            time.sleep(self.rng.uniform(3, 8))  # a look at the creation
-            con.call(f'move {EDITOR_DONE[0]} {EDITOR_DONE[1]}')
-            time.sleep(0.4)
-            con.call(f'click {EDITOR_DONE[0]} {EDITOR_DONE[1]}')
-            return 'editor done'
+            return self.editor(con, p)
+        self.edits.pop(p.name, None)
+        if 'Space' in mode and uifind.shown(con, 'Name Your Captain'):
+            for x, y in CAPTAIN_NAME:  # the dice (a random name), then its check
+                con.call(f'move {x} {y}')
+                time.sleep(0.4)
+                con.call(f'click {x} {y}')
+                time.sleep(1)
+            return 'captain named'
+        if 'Civ' in mode:
+            # a captured city asks for its specialty (Economic / Religious / Military) and waits
+            if all(uifind.shown(con, cap) for cap in DIALOG_BUTTONS):
+                uifind.press(con, DIALOG_BUTTONS[-1])
+                return f'dialog {DIALOG_BUTTONS[-1]}'
         if p is not self.host and hcon.call('coop.vote').get('out', '').startswith('vote active'):
             return self.ready(con, p)
         if 'movie=1' in st:
@@ -358,6 +388,28 @@ class Campaign:
             return None
         self.cap.pop(p.name, None)
         return None
+
+    def editor(self, con, p):
+        """leave an editor with "done" like a player. An empty editor (the spaceship editor at the
+        end of the Civ stage: "You need at least 3 parts to Save") gets three parts dragged from the
+        palette; a creation without a name ("You must give your creation a name") gets the dice's
+        random name (the name panel opens with the first "done")"""
+        n = self.edits.get(p.name, 0)
+        self.edits[p.name] = n + 1
+        time.sleep(self.rng.uniform(3, 6))  # a look at the creation
+        if n == 2:
+            for (sx, sy), (tx, ty) in zip(EDITOR_PARTS, EDITOR_PLACES):
+                drag_slow(con, sx, sy, tx, ty)
+            self.note(f'{p.name}: three parts dragged into an empty editor')
+        if n >= 3:
+            con.call(f'move {EDITOR_DICE[0]} {EDITOR_DICE[1]}')
+            time.sleep(0.4)
+            con.call(f'click {EDITOR_DICE[0]} {EDITOR_DICE[1]}')
+            time.sleep(1)
+        con.call(f'move {EDITOR_DONE[0]} {EDITOR_DONE[1]}')
+        time.sleep(0.4)
+        con.call(f'click {EDITOR_DONE[0]} {EDITOR_DONE[1]}')
+        return 'editor done'
 
     def vote_open(self):
         return self.host.call('coop.vote').startswith('vote active')
@@ -598,11 +650,15 @@ class Campaign:
         t0 = time.time()
         ok = False
         good = None
+        left_home = False
         svc = [Service(self, p) for p in self.P]
         for s in svc:
             s.start()
         try:
             while time.time() - t0 < 300 and not self.dead:
+                if nxt == 'space' and not left_home and time.time() - t0 > 30 and self.on_home_planet():
+                    left_home = True
+                    self.leave_home()
                 st = {g.name: cl.stage_of(g.call('game.mode')) for g in self.guests}
                 tog = self.together()
                 self.ids()
@@ -627,6 +683,9 @@ class Campaign:
             self.note(f'all guests play {nxt} together with the host after {time.time() - t0:.0f} s')
             return True
         behind = [g for g in self.guests if cl.stage_of(g.call('game.mode')) != nxt or g.pid not in self.together()]
+        if not behind:  # they got there just after the time
+            self.note(f'all guests play {nxt} together with the host after {time.time() - t0:.0f} s (late)')
+            return True
         where = [f'{p.name}: `{" | ".join(l.strip() for l in p.call("coop.avatar").splitlines()[:1])}` '
                  f'mode `{p.call("game.mode").strip()}`' for p in [self.host] + behind]
         self.finding('stuck', f'follow:{nxt}', f'{", ".join(g.name for g in behind)} did not get into the host\'s '
@@ -640,6 +699,35 @@ class Campaign:
         self.note(f'after a rejoin of {", ".join(g.name for g in behind)}: '
                   + ('together with the host' if ok else 'still apart'))
         return ok
+
+    def on_home_planet(self):
+        """the host's ship is on a planet (Simulator::GetCurrentContext 0): the Space stage saves only
+        in a solar system or the galaxy, so the guests wait for the world until the host leaves"""
+        m = re.search(r'eax=0x([0-9A-Fa-f]+)', self.host.call('call Simulator::GetCurrentContext cdecl'))
+        return bool(m) and int(m.group(1), 16) == 0
+
+    def leave_home(self):
+        """a new Space stage: the mission control's first talk (space_setup.py's clicks), then zoom out of
+        the home planet like a player; the host's world then goes to the guests"""
+        self.note('the host leaves its home planet (mission control, zoom out): the guests wait for the world')
+        h = self.host
+        h.call('click 290 914')
+        h.call('wait.frames 100 60000')
+        for y in (755, 755, 723, 723, 723):  # "been there, done that", "ready", "what's next", "I accept", "bye"
+            h.call(f'click 720 {y}')
+            h.call('wait.frames 150 60000')
+        for _ in range(4):
+            for _ in range(4):
+                h.call('wheel 720 540 -25')
+                h.call('wait.frames 150 60000')
+            h.call('wait.frames 300 60000')
+            h.call(f'click {CAPTION_OK[0]} {CAPTION_OK[1]}')  # the badge
+            if not self.on_home_planet():
+                self.note('the host is in its solar system')
+                return True
+        self.finding('stuck', 'space:home', 'the host could not leave its home planet (the guests wait for the world)',
+                     [self.host])
+        return False
 
     @staticmethod
     def log_size(inst):
