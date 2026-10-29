@@ -87,7 +87,6 @@ EDITOR_DICE = (614, 826)     # the dice of the name panel (a random name), open 
 EDITOR_PARTS = [(85, 130), (350, 405), (480, 405)]       # spaceship editor palette: a hull, two discs
 EDITOR_PLACES = [(1000, 560), (1000, 470), (1000, 650)]  # onto the stage
 VK_F9 = '0x78'
-DIALOG_BUTTONS = ('Religious', 'Military')  # the city specialty dialog after a capture (Civ): press the last
 ADVANCE_MIN = {'cell': 10, 'creature': 10, 'tribe': 20, 'civ': 20}  # default time of a stage change
 
 
@@ -371,9 +370,10 @@ class Campaign:
             return 'captain named'
         if 'Civ' in mode:
             # a captured city asks for its specialty (Economic / Religious / Military) and waits
-            if all(uifind.shown(con, cap) for cap in DIALOG_BUTTONS):
-                uifind.press(con, DIALOG_BUTTONS[-1])
-                return f'dialog {DIALOG_BUTTONS[-1]}'
+            b = uifind.shown(con, 'Military')
+            if b and 600 < b[0] < 1100 and 500 < b[1] < 750:  # the dialog's button, not the HUD's tab label
+                uifind.press(con, 'Military')
+                return 'dialog Military'
         if p is not self.host and hcon.call('coop.vote').get('out', '').startswith('vote active'):
             return self.ready(con, p)
         if 'movie=1' in st:
