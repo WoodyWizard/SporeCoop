@@ -86,6 +86,8 @@ def census_problems(host, guest, near=90.0, pos_m=10.0):
         for i in sorted(set(h) - set(g)):
             if kind == 'c' and (me is None or math.dist(h[i]['pos'], me) > near):
                 continue  # not streamed to this guest
+            if kind == 'c' and not h[i]['alive']:
+                continue  # a corpse (60 s on the host): a guest that joined after the kill never had it
             r = h[i]
             near_txt = f', {math.dist(r["pos"], me):.0f} m from the guest' if me else ''
             out.append(f'{kind}{i}: the host has it, the guest not ({r["own"]} {r["key"]} alive={r["alive"]} '

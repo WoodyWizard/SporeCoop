@@ -538,13 +538,13 @@ def test_campaign():
     head = 'census v1 role={r} me={m} mode=Creature modeid=01654C01 world=AABBCCDD t=1.0\n'
     row = 'obj c{i} key=11111111 alive={a} hp=10 ai=1 own={o} owner=0 pos=({x} 0 0)\n'
     h = census.Census(head.format(r='host', m=0) + row.format(i=1, a=1, o='npc', x=0) + row.format(i=2, a=1, o='npc', x=500)
-                      + row.format(i=3, a=1, o='npc', x=5) + 'obj c-1 key=00000001 alive=1 hp=1 ai=1 own=avatar owner=0 pos=(0 0 0)\n')
+                      + row.format(i=3, a=1, o='npc', x=5) + row.format(i=4, a=0, o='npc', x=6) + 'obj c-1 key=00000001 alive=1 hp=1 ai=1 own=avatar owner=0 pos=(0 0 0)\n')
     g = census.Census(head.format(r='guest', m=1) + row.format(i=1, a=0, o='proxy', x=0) + row.format(i=9, a=1, o='proxy', x=1)
                       + 'obj c-1 key=00000001 alive=1 hp=1 ai=1 own=avatar owner=1 pos=(2 0 0)\n')
     pr = cl.census_problems(h, g)
     check(any(p.startswith('c1: alive=1') for p in pr), f'census: dead on the guest, alive on the host ({pr})')
-    check(any(p.startswith('c3: the host has it') for p in pr) and not any(p.startswith('c2') for p in pr),
-          'census: a missing NPC near the guest counts, one 500 m away (not streamed) does not')
+    check(any(p.startswith('c3: the host has it') for p in pr) and not any(p.startswith(('c2', 'c4')) for p in pr),
+          'census: a missing NPC near the guest counts, one 500 m away (not streamed) or a corpse does not')
     check(any(p.startswith('c9: the guest has it') for p in pr), 'census: a proxy the host does not have')
     other = census.Census(head.replace('AABBCCDD', '11223344').format(r='guest', m=1))
     check(len(cl.census_problems(h, other)) == 1, 'census: another world is one problem, not a list')

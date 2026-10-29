@@ -125,6 +125,7 @@ class Campaign:
         self.votes = []
         self.log_dir = os.path.dirname(lane.game_log(self.host.inst))
         self.shots = 0
+        self.cap = {}  # player -> (caption seen since, last OK)
 
     # ---------------- findings and evidence ----------------
     def finding(self, kind, key, text, players=(), evidence=()):
@@ -341,13 +342,20 @@ class Campaign:
             return 'editor done'
         if p is not self.host and hcon.call('coop.vote').get('out', '').startswith('vote active'):
             return self.ready(con, p)
-        if re.search(r'movie=1', st):
-            time.sleep(self.rng.uniform(4, 7))  # an OK too early crashed the UI once (coop_space_finale.settle)
-            if 'movie=1' in con.call('coop.status').get('out', ''):
+        if 'movie=1' in st:
+            # a player reads the caption first; a cinematic without a button ends by itself (the
+            # click lands on the HUD corner then): one OK after 6 s of it, then every 10 s
+            t = time.time()
+            since, last = self.cap.get(p.name, (t, 0.0))
+            self.cap[p.name] = (since, last)
+            if t - since >= 6 and t - last >= 10:
+                self.cap[p.name] = (since, t)
                 con.call(f'move {CAPTION_OK[0]} {CAPTION_OK[1]}')
                 time.sleep(0.4)
                 con.call(f'click {CAPTION_OK[0]} {CAPTION_OK[1]}')
                 return 'caption ok'
+            return None
+        self.cap.pop(p.name, None)
         return None
 
     def vote_open(self):
@@ -490,6 +498,9 @@ class Campaign:
             import play_tribe
             # each player's share of the tribe: 3 more members per player (play_tribe's setup) so
             # that raids and gathering go on at once
+            t0 = time.time()
+            while time.time() - t0 < 90 and '(player)' not in self.host.call('coop.tribe'):
+                time.sleep(2)  # the player tribe exists once the intro is over
             print('  tribe setup:', self.host.call(f'coop.tribe spawn {3 * len(self.P)}'), flush=True)
             time.sleep(8)
             g = play_tribe.Game(Console(self.host.inst, timeout=30), Console(self.guests[0].inst, timeout=30),
@@ -575,9 +586,9 @@ class Campaign:
             return False
         self.note(f'the host plays {nxt} after {took:.0f} s')
         self.stage = nxt
-        ok = self.follow(nxt, services)
+        self.follow(nxt, services)  # a guest left behind is a finding; the game goes on in the stage
         self.vote_check(log0, t0)
-        return ok
+        return True
 
     def follow(self, nxt, services=()):
         """every guest follows the host into the stage (the world share) and is in its world"""
@@ -585,6 +596,7 @@ class Campaign:
         self.quiet_until = time.time() + 600
         t0 = time.time()
         ok = False
+        good = None
         svc = [Service(self, p) for p in self.P]
         for s in svc:
             s.start()
@@ -594,8 +606,14 @@ class Campaign:
                 tog = self.together()
                 self.ids()
                 if all(v == nxt for v in st.values()) and all(g.pid in tog for g in self.guests):
-                    ok = True
-                    break
+                    # together for 20 s: right after a stage change the guests can still be in their
+                    # old copy (the host's world arrives a few seconds later and they reload)
+                    good = good or time.time()
+                    if time.time() - good >= 20:
+                        ok = True
+                        break
+                else:
+                    good = None
                 time.sleep(4)
                 self.health()
         finally:
@@ -606,10 +624,20 @@ class Campaign:
         self.quiet_until = time.time() + 10
         if ok:
             self.note(f'all guests play {nxt} together with the host after {time.time() - t0:.0f} s')
-        else:
-            behind = [g for g in self.guests if cl.stage_of(g.call('game.mode')) != nxt or g.pid not in self.together()]
-            self.finding('stuck', f'follow:{nxt}', f'{", ".join(g.name for g in behind)} did not follow the host into '
-                         f'{nxt} within 300 s', [self.host] + behind)
+            return True
+        behind = [g for g in self.guests if cl.stage_of(g.call('game.mode')) != nxt or g.pid not in self.together()]
+        where = [f'{p.name}: `{" | ".join(l.strip() for l in p.call("coop.avatar").splitlines()[:1])}` '
+                 f'mode `{p.call("game.mode").strip()}`' for p in [self.host] + behind]
+        self.finding('stuck', f'follow:{nxt}', f'{", ".join(g.name for g in behind)} did not get into the host\'s '
+                     f'world in {nxt} within 300 s (together on the host: {sorted(self.together())})',
+                     [self.host] + behind, where)
+        # what players do then: leave and join again
+        for g in behind:
+            self.rejoin(g)
+        ok = all(cl.stage_of(g.call('game.mode')) == nxt for g in self.guests) and \
+            all(g.pid in self.together() for g in self.guests)
+        self.note(f'after a rejoin of {", ".join(g.name for g in behind)}: '
+                  + ('together with the host' if ok else 'still apart'))
         return ok
 
     @staticmethod
@@ -734,14 +762,19 @@ class Campaign:
         lane.sh('fixture', 'slot', fx, lane.HOST_PROFILE, str(slot))
         self.host.call(f'coop.load Game{slot} {planet}')
         t0 = time.time()
+        left = False
         while time.time() - t0 < 180:
-            if cl.stage_of(self.host.call('game.mode')) == nxt and self.host.con.call('coop.avatar').get('ok'):
+            st = cl.stage_of(self.host.call('game.mode'))
+            left |= st != nxt  # the host leaves the stage it plays first (the same stage: a reload)
+            if left and st == nxt and self.host.con.call('coop.avatar').get('ok'):
                 break
-            time.sleep(1)
+            time.sleep(0.5)
         else:
             self.finding('stuck', f'jump:{nxt}', f'the host did not load the {fx} fixture within 180 s', [self.host])
             return False
-        return self.follow(nxt)
+        time.sleep(5)  # the host saves and sends its world to the guests now
+        self.follow(nxt)
+        return True
 
     # ---------------- the end of the game ----------------
     def finale(self):
