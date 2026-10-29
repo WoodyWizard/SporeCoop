@@ -168,11 +168,11 @@ static void net_second(double now, bool minute)
         double avg = s.rtt_n ? s.rtt_sum / s.rtt_n : c->rtt_ms;
         if (g_detail >= 1)
             SLOG("net: player %u '%s' rtt %.0f/%.0f/%.0f ms (min/avg/max), loss %.1f%% (%u of %u packets), resends %u, "
-                 "backlog %u (max %u), in %llu KB out %llu KB, direct UDP",
+                 "backlog %u (max %u), in %llu KB out %llu KB, direct UDP to %s",
                  p.id, p.name.c_str(), s.rtt_n ? s.rtt_min : c->rtt_ms, avg, s.rtt_n ? s.rtt_max : c->rtt_ms, loss, lost, sent,
                  s.resends - n.last.resends, (unsigned)c->pending_reliable(), n.backlog_max,
                  (unsigned long long)((s.bytes_recv - n.last.bytes_recv) >> 10),
-                 (unsigned long long)((s.bytes_sent - n.last.bytes_sent) >> 10));
+                 (unsigned long long)((s.bytes_sent - n.last.bytes_sent) >> 10), c->remote.masked().c_str());
         n.usual_rtt = avg;
         n.backlog_max = 0;
         s.take_window();
@@ -372,7 +372,6 @@ void init(const SkHost* host, SkMod* mod, const Probe& probe)
     g_H = host;
     g_M = mod;
     g_P = probe;
-    g_detail = std::max(0, std::min(2, g_H->config_int(g_M, "coop", "log_detail", 1)));
     sync_set_interval(std::max(0, g_H->config_int(g_M, "coop", "sync_check", 30)));
     // the summary of the last session of an earlier run stays at the top of reports until a new one
     std::string f = summary_file();
@@ -423,26 +422,39 @@ void on_session_start()
     settings_check(g_session_t0, true);
 }
 
+static std::vector<std::string> g_peer_names; // the names in g_c.peers (a name seen again: a rejoin)
+
+static std::string peer_text(const net::PlayerInfo& p)
+{
+    return p.name + " (" + (p.version.empty() ? std::string("version unknown: before 0.7.4") : p.version) + ")";
+}
+
 void on_connected()
 {
     g_c.peers.clear();
+    g_peer_names.clear();
     if (g_P.sess)
         for (auto& p : g_P.sess->players())
-            if (p.id != g_P.sess->my_id())
-                g_c.peers.push_back(p.name);
+            if (p.id != g_P.sess->my_id()) {
+                g_c.peers.push_back(peer_text(p));
+                g_peer_names.push_back(p.name);
+            }
 }
 
-void on_player_join(uint8_t id, const std::string& name)
+void on_player_join(const net::PlayerInfo& pi)
 {
+    const std::string& name = pi.name;
     g_c.joins++;
-    for (auto& p : g_c.peers)
+    for (auto& p : g_peer_names)
         if (p == name) {
             if (g_P.sess && g_P.sess->role() == net::Role::Host)
                 g_c.rejoins++; // a guest of this name was here before (the guest counts its own rejoin)
             return;
         }
-    if (g_P.sess && id != g_P.sess->my_id())
-        g_c.peers.push_back(name);
+    if (g_P.sess && pi.id != g_P.sess->my_id()) {
+        g_c.peers.push_back(peer_text(pi));
+        g_peer_names.push_back(name);
+    }
 }
 
 void on_player_leave(uint8_t id, uint8_t reason)

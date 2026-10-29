@@ -13,6 +13,18 @@
   line of each session (also at the top of the report). The report lists other mods, extra
   `.package` files and game files of an unexpected size. Paths of your PC are masked in logs and
   reports ([support guide](docs/SUPPORT.md)).
+- Problem reports: the log now says what each player did and what the mod decided: a state line
+  every 10 s (stage, world, position, partners and their distance, why a partner is hidden, link
+  quality, the food on the screen in Cell, the creature's body and where it came from) and lines
+  for eating, bites, bodies, votes, clicks in the co-op window, knockouts, stage changes, joins and
+  leaves, about 0.5 MB an hour. `[coop] log_detail=0|1|2` in coop.ini (`coop.log detail N` in the
+  console) sets how much. "Report a problem" reminds that the other players should send theirs too.
+- Every game logs the SporeCoop, SporeKit and game versions of the other players when they join
+  (and warns when they differ); `coop.status` lists them. Older versions show as unknown.
+
+### Changed
+- Logs and problem reports no longer contain other players' internet addresses: a public address
+  is shown as a short tag ("public #3F2A"), a home network one by its class ("192.168.x.x").
 
 ### Fixed
 - Votes: "I'm ready" in the co-op window did nothing while a caption of the game was on the

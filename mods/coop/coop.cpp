@@ -62,6 +62,7 @@
 #include "share_wait.h"
 #include "dna_route.h"
 #include "diag_coop.h"
+#include "trace.h"
 
 static const SkHost* H;
 static SkMod* M;
@@ -463,6 +464,15 @@ void drive_puppet(Remote& r, double now)
         r.puppet_world = g_world;
         r.drv = drive::State{};
         feed(r.name + " appeared in the world");
+        if (g_mode == modes::kCreature) // which body the partner got here and why (support trace)
+            trace::line("body", "puppet of %u '%s': species %08X here; its creation here %s, its own game reports %08X%s",
+                        r.id, r.name.c_str(), game::species_instance(r.puppet),
+                        trace::hex(creations::player_key(r.id, creations::kCreature).instance).c_str(), s.species,
+                        creations::player_key(r.id, creations::kCreature).instance ? "" : " (none received: built from our species)");
+        else if (g_mode == modes::kCell)
+            trace::line("body", "puppet of %u '%s': cell model %08X here; its creation here %s", r.id, r.name.c_str(),
+                        *(uint32_t*)((uint8_t*)r.puppet + 0xFC),
+                        trace::hex(creations::player_key(r.id, creations::kCell).instance).c_str());
     }
     if (!g_puppet_hold)
         g_adapter->drive(r.puppet, s, r.drv, now);
@@ -724,6 +734,7 @@ bool start_action_vote(const std::string& text, const std::string& done, std::fu
     g_vote = Vote{true, nullptr, H->time_seconds(), text, 60, 0u, game::mode_id(), modes::current_world()};
     g_vote_action = std::move(action);
     g_vote_done = done;
+    trace::line("vote", "start (action) '%s' players=%d", text.c_str(), (int)g_sess.players().size());
     for (auto& p : g_sess.players())
         g_ready[p.id] = p.id == 0;
     g_lobby_dirty = true;
@@ -742,6 +753,8 @@ void start_vote(void* req, const std::string& text)
         skg::vcall<int>(req, 1); // AddRef: kept until the vote ends
     g_vote = Vote{true, req, H->time_seconds(), text, 60, req ? skg::field<uint32_t>(req, 0xC) : 0u,
                   game::mode_id(), modes::current_world()};
+    trace::line("vote", "start '%s' editor=%s %s players=%d", text.c_str(), trace::hex(g_vote.editor).c_str(),
+                modes::mode_name(g_vote.mode), (int)g_sess.players().size());
     for (auto& p : g_sess.players())
         g_ready[p.id] = p.id == 0;
     g_lobby_dirty = true;
@@ -1034,6 +1047,15 @@ void finish_vote(const char* why)
         return;
     void* req = g_vote.request;
     g_vote.active = false;
+    {
+        int ready = 0, n = 0;
+        for (auto& p : g_sess.players()) {
+            n++;
+            ready += g_ready.count(p.id) && g_ready[p.id];
+        }
+        trace::line("vote", "end: %s, ready %d/%d after %.1f s, editor=%s", why, ready, n, H->time_seconds() - g_vote.t0,
+                    trace::hex(g_vote.editor).c_str());
+    }
     broadcast_vote();
     if (g_vote_opened_ui)
         coop_ui::open(false);
@@ -1529,6 +1551,189 @@ void avatar_change_check()
     g_last_avatar = local;
 }
 
+// ---- support trace (trace.h, docs/REPORTING.md#reporting-reading-logs) ----
+double g_trace_at = -100, g_trace_body_at = -100, g_trace_stage_at = -100, g_trace_ver_at = -100;
+uint32_t g_trace_mode = 0, g_trace_world = 0, g_trace_own_body = 0;
+double g_trace_since = 0; // when the mode / world of the last "stage:" line began
+bool g_trace_dead = false;
+std::string g_trace_body_line;
+std::map<uint8_t, uint8_t> g_trace_rdead; // partner id -> PF_DEAD of its last state seen here
+std::map<uint8_t, uint32_t> g_trace_rspecies; // partner id -> the species its Creature state reported
+
+const char* role_str()
+{
+    return g_sess.role() == net::Role::Host ? "host" : g_sess.role() == net::Role::Client ? (g_sess.connected() ? "guest" : "joining")
+                                                                                          : "offline";
+}
+
+// why a partner's puppet is shown or not (the same tests as drive_puppet)
+const char* puppet_why(const Remote& r, double now)
+{
+    if (r.buf.empty())
+        return "hidden: no state received";
+    const auto& s = r.buf.latest();
+    if (!g_adapter || !g_local)
+        return "hidden: no own avatar here";
+    if (!(s.flags & net::PF_IN_WORLD))
+        return "hidden: partner not in a world";
+    if (s.flags & net::PF_DEAD)
+        return "hidden: partner dead";
+    if (r.buf.age(now) >= 5.0)
+        return "hidden: state older than 5 s";
+    if (s.mode != g_mode)
+        return "hidden: partner in another mode";
+    if (s.world != g_world || !g_world)
+        return "hidden: partner in another world";
+    return r.puppet ? "shown" : "hidden: not spawned (yet)";
+}
+
+// the first line of a module's status()
+std::string first_line(const std::string& s) { return s.substr(0, s.find('\n')); }
+
+void trace_tick(double now)
+{
+    if (!trace::on())
+        return;
+    trace::tick(now);
+    net::PlayerState st = local_state();
+    bool have = g_local && local_now();
+    // own avatar: death and its body (Creature: species; Cell: the cell model)
+    bool dead = have && (st.flags & net::PF_DEAD);
+    if (have && dead != g_trace_dead)
+        trace::line("ko", "own avatar %s (hp %.0f/%.0f, %s)", dead ? "dead / knocked out" : "alive again", st.health,
+                    st.max_health, modes::mode_name(g_mode));
+    g_trace_dead = dead;
+    uint32_t body = !have ? 0 : g_mode == modes::kCreature ? st.species : g_mode == modes::kCell ? cellsync::own_model() : 0;
+    if (body && body != g_trace_own_body && g_sess.connected()) {
+        trace::line("body", "own avatar %s %s -> %08X: %s", g_mode == modes::kCreature ? "species" : "cell model",
+                    trace::hex(g_trace_own_body).c_str(), body,
+                    creations::trace_line(g_mode == modes::kCreature ? creations::kCreature : creations::kCell).c_str());
+        g_trace_body_at = now;
+    }
+    if (body)
+        g_trace_own_body = body;
+    for (auto& [id, r] : g_remotes) {
+        if (r.echo || r.buf.empty())
+            continue;
+        uint8_t d = r.buf.latest().flags & net::PF_DEAD;
+        auto it = g_trace_rdead.find(id);
+        if (it != g_trace_rdead.end() && it->second != d)
+            trace::line("ko", "player %u '%s' %s (state of its own game)", id, r.name.c_str(), d ? "dead / knocked out" : "alive again");
+        g_trace_rdead[id] = d;
+        // the body a partner's own game reports (Creature): a change after its editor or its own creation
+        const auto& ls = r.buf.latest();
+        if (ls.mode == modes::kCreature && ls.species && g_trace_rspecies[id] != ls.species) {
+            void* pp = puppet_now(r);
+            trace::line("body", "player %u '%s' reports species %s -> %08X; its creation here %s, its puppet here %s", id,
+                        r.name.c_str(), trace::hex(g_trace_rspecies[id]).c_str(), ls.species,
+                        trace::hex(creations::player_key(id, creations::kCreature).instance).c_str(),
+                        pp && g_mode == modes::kCreature ? trace::hex(game::species_instance(pp)).c_str() : "-");
+            g_trace_rspecies[id] = ls.species;
+        }
+    }
+    bool changed = g_mode != g_trace_mode || g_world != g_trace_world;
+    if (changed) {
+        trace::line("stage", "%s %s -> %s %s '%s' (%.1f s in the last)", modes::mode_name(g_trace_mode),
+                    trace::hex(g_trace_world).c_str(), modes::mode_name(g_mode), trace::hex(g_world).c_str(),
+                    modes::current_world_name().c_str(), g_trace_since > 0 ? now - g_trace_since : 0.0);
+        g_trace_mode = g_mode;
+        g_trace_world = g_world;
+        g_trace_since = now;
+        g_trace_body_at = g_trace_stage_at = -100; // the stage lines with the next trace
+    }
+    if (!g_sess.connected() || (!changed && now - g_trace_at < 10.0))
+        return;
+    g_trace_at = now;
+    char b[700];
+    std::string res = shared::brief();
+    snprintf(b, sizeof b,
+             "%s id=%u players=%d %s world=%s '%s' avatar=%s pos=(%.1f %.1f %.1f) hp=%.0f/%.0f species=%s flags=0x%X "
+             "dna=%.0f%s%s host_away=%d vote=%s input_lock=%d editor_pending=%s",
+             role_str(), g_sess.my_id(), (int)g_sess.players().size(), modes::mode_name(g_mode), trace::hex(g_world).c_str(),
+             modes::current_world_name().c_str(), have ? "yes" : "no", st.pos.x, st.pos.y, st.pos.z, st.health,
+             st.max_health, g_mode == modes::kCell ? "-" : trace::hex(st.species).c_str(), (unsigned)st.flags,
+             game::avatar() ? game::dna() : -1.f, res.empty() ? "" : " ", res.c_str(), (int)g_host_away,
+             g_vote.active ? "on" : "off", coop_ui::input_lock_now(), trace::hex(g_own_editor_due).c_str());
+    trace::line("trace", "%s%s%s", b, now - g_trace_ver_at > 60.0 ? " version=" : "",
+                now - g_trace_ver_at > 60.0 ? g_sess.version.c_str() : "");
+    float host_d = -1;
+    for (auto& [id, r] : g_remotes) {
+        if (r.echo)
+            continue;
+        net::Session::Link lk;
+        bool link = g_sess.link_of(id, lk);
+        int rtt = link ? lk.rtt_ms : g_lobby_rtt.count(id) ? g_lobby_rtt[id] : -1;
+        if (r.buf.empty()) {
+            trace::line("trace", "  partner %u '%s': no state yet, rtt=%d", id, r.name.c_str(), rtt);
+            continue;
+        }
+        const auto& s = r.buf.latest();
+        float d = net::dist(s.pos, st.pos);
+        bool here = same_place(s);
+        if (id == 0 && here)
+            host_d = d;
+        snprintf(b, sizeof b,
+                 "  partner %u '%s' %s world=%s d=%s same_place=%d puppet=%s hp=%.0f/%.0f species=%s flags=0x%X "
+                 "state_age=%.1f s rtt=%d ms",
+                 id, r.name.c_str(), modes::mode_name(s.mode), trace::hex(s.world).c_str(),
+                 here ? std::to_string((int)d).c_str() : "-", (int)here, puppet_why(r, now), s.health, s.max_health,
+                 s.mode == modes::kCell ? "-" : trace::hex(s.species).c_str(), (unsigned)s.flags, r.buf.age(now), rtt);
+        std::string l = b;
+        if (now - g_trace_ver_at > 60.0) // the versions once a minute (they do not change in a session)
+            for (auto& pl : g_sess.players())
+                if (pl.id == id)
+                    l += " version=" + (pl.version.empty() ? std::string("unknown (pre-0.7.4)") : pl.version);
+        if (link) {
+            snprintf(b, sizeof b, " resends=%u/%u silent=%u ms pending=%u", lk.resends, lk.sent, lk.silent_ms, lk.pending);
+            l += b;
+        }
+        trace::line("trace", "%s", l.c_str());
+    }
+    if (now - g_trace_ver_at > 60.0)
+        g_trace_ver_at = now;
+    if (!have)
+        return;
+    if (g_mode == modes::kCell) {
+        std::string c = cellsync::trace_line();
+        if (g_sess.role() == net::Role::Client) {
+            // the host's game populates only about one screen around its own cell (BUG-0174)
+            snprintf(b, sizeof b, " | host d=%s%s", host_d < 0 ? "-" : std::to_string((int)host_d).c_str(),
+                     host_d < 0 ? " (not here)" : host_d > 40 ? " (outside the host's populated area: little or no food)" : "");
+            c += b;
+        }
+        trace::line("cell", "%s", c.c_str());
+    } else if (g_mode == modes::kCreature) {
+        std::string c = npc::trace_line(st.pos, 60.f);
+        net::Vec3 nest;
+        if (game::nest_position(g_local, nest)) {
+            snprintf(b, sizeof b, ", nest d=%.0f m", net::dist(nest, st.pos));
+            c += b;
+        } else
+            c += ", no nest";
+        trace::line("creature", "%s", c.c_str());
+    }
+    bool body_stage = g_mode == modes::kCreature || g_mode == modes::kCell;
+    if (body_stage) {
+        std::string bl = creations::trace_line(g_mode == modes::kCreature ? creations::kCreature : creations::kCell);
+        if (bl != g_trace_body_line || now - g_trace_body_at > 60.0) {
+            trace::line("body", "%s", bl.c_str());
+            g_trace_body_line = bl;
+            g_trace_body_at = now;
+        }
+    }
+    if (now - g_trace_stage_at > 30.0) {
+        g_trace_stage_at = now;
+        if (g_mode == modes::kTribe)
+            trace::line("tribe", "%s", first_line(tribe::status()).c_str());
+        else if (g_mode == modes::kCiv)
+            trace::line("civ", "%s", first_line(civ::status()).c_str());
+        else if (g_mode == modes::kSpace) {
+            trace::line("space", "%s", first_line(squadron::status()).c_str());
+            trace::line("space", "%s", first_line(spacecoop::status()).c_str());
+        }
+    }
+}
+
 void on_frame(void*, int, void*)
 {
     modes::CellScope cell_scope; // BUG-0271: no game code runs in here, the pool check holds for it
@@ -1649,6 +1854,7 @@ void on_frame(void*, int, void*)
         }
         drive_puppet(r, now);
     }
+    trace_tick(now);
 }
 
 // Arial 18 bold, approx.: letter cells, not bytes (BUG-0159: a Cyrillic name was centred as twice
@@ -2097,6 +2303,9 @@ void setup_callbacks()
 {
     net::g_spawn_thread = spawn_pinned;
     g_sess.build = build_id();
+    // the versions every peer logs on a join (CAP_VERSION): mod, SporeKit, game build and exe hash
+    g_sess.version = std::string("coop " COOP_VERSION ", SporeKit ") + H->kit_version() + ", " + H->build_name() + " " +
+                     std::string(H->exe_sha256()).substr(0, 8);
     g_sess.cb.log = [](const std::string& s) { LOG("net: %s", s.c_str()); };
     g_sess.cb.connected = [] {
         support::on_session_start();
@@ -2115,7 +2324,7 @@ void setup_callbacks()
         end_session(EndPath::Disconnect, true);
     };
     g_sess.cb.player_join = [](const net::PlayerInfo& p) {
-        support::on_player_join(p.id, p.name);
+        support::on_player_join(p);
         shared::on_player_join(g_sess.role());
         creations::on_player_join(p.id);
         npc::on_player_leave(p.id); // a newcomer under a reused id knows no NPCs yet (BUG-0125)
@@ -2131,6 +2340,19 @@ void setup_callbacks()
         auto& r = g_remotes[p.id];
         r.id = p.id;
         r.name = p.name;
+        trace::line("session", "player %u '%s' joined (we are %s, %s, world %s): %s", p.id, p.name.c_str(), role_str(),
+                    modes::mode_name(g_mode), trace::hex(g_world).c_str(),
+                    p.version.empty() ? "version unknown (pre-0.7.4)" : p.version.c_str());
+        if (!p.version.empty() && p.version != g_sess.version) {
+            // the same exe build is checked by the protocol; another mod or SporeKit version is allowed
+            // but behaves differently: a support report needs to see it at once
+            H->log(M, SK_WARN, "versions differ: player %u '%s' runs %s, this game %s", p.id, p.name.c_str(),
+                   p.version.c_str(), g_sess.version.c_str());
+            if (p.version.substr(0, p.version.find(',')) != g_sess.version.substr(0, g_sess.version.find(',')))
+                feed_kind(p.name + " has another SporeCoop version (" +
+                              (p.version.rfind("coop ", 0) == 0 ? p.version.substr(5, p.version.find(',') - 5) : p.version) +
+                              "): update both games to the same one", "info");
+        }
         feed_kind(p.name + " joined the pack", "join"); // a name like "Lost" is not danger (BUG-0129)
         chat_log("* " + p.name + " joined");
         g_lobby_dirty = true;
@@ -2181,8 +2403,10 @@ void setup_callbacks()
             float total = r.f32();
             if (r.ok() && game::avatar() && !g_host_away) {
                 float d = total - game::dna();
-                if (d != 0)
+                if (d != 0) {
+                    trace::ev("dna", "total", "host total %.0f -> %+.0f here", total, d);
                     game::dna_add_raw(d); // through the game so the UI/progress updates
+                }
                 g_dna_rx++;
             }
             return;
@@ -2193,6 +2417,7 @@ void setup_callbacks()
                 game::dna_add_raw(d);
                 feed(g_sess.name_of(from) + " earned " + std::to_string((int)d) + " DNA");
             } else if (r.ok() && d > 0 && d < 10000 && g_away_dna_fix && g_dna_owed < 100000) {
+                trace::line("dna", "from %u +%.0f kept as owed (no own creature now)", from, d);
                 if (g_dna_owed <= 0)
                     g_dna_owed_world = g_stage_world; // BUG-0233: paid only into this world
                 g_dna_owed += d; // in an editor or a load: paid when our creature is back
@@ -2225,6 +2450,10 @@ void setup_callbacks()
             g_vote.active = on;
             g_vote.left = left;
             g_vote.text = text;
+            if (started || ended)
+                trace::line("vote", "%s by the host: '%s' editor=%s%s", started ? "started" : "ended", text.c_str(),
+                            trace::hex(editor).c_str(),
+                            ended && g_own_editor_due ? ": the own editor opens when the stage has settled" : "");
             if (started) {
                 g_ready[g_sess.my_id()] = false;
                 g_vote_opened_ui = !coop_ui::is_open();
@@ -2261,6 +2490,7 @@ void setup_callbacks()
             if (r.ok()) {
                 g_ready[from] = on != 0;
                 g_lobby_dirty = true;
+                trace::line("vote", "player %u ready=%d received (vote %s)", from, (int)on, g_vote.active ? "on" : "off");
             }
             return;
         }
@@ -2352,7 +2582,9 @@ void setup_callbacks()
         feed_kind(name + " has an older SporeCoop: update both games to the latest", "info");
     };
     g_sess.cb.player_leave = [](uint8_t id, uint8_t reason) {
-        support::on_player_leave(id, reason);
+        trace::line("session", "player %u '%s' left: %s", id, g_remotes.count(id) ? g_remotes[id].name.c_str() : "?",
+                    reason == 1 ? "timed out (no packets)" : "left or replaced by its rejoin");
+        support::on_player_leave(id, reason); // its link statistics (diag_stats.cpp)
         if (g_role_fix)
             g_roles.erase(id); // ids are reused: the next newcomer starts with no role (BUG-0064)
         shared::on_player_leave(id);
@@ -2425,7 +2657,12 @@ bool do_join(const std::string& addr, std::string& err)
     g_sess.rejoin_token = rejoin::token_for_join(H->instance_id()); // BUG-0235
     if (!g_sess.join(addr, g_name, err))
         return false;
-    chat_log("* joining " + addr);
+    { // the chat log goes into problem reports: no public address there
+        net::Endpoint ep;
+        std::string e, name;
+        bool numeric = net::Endpoint::parse_numeric(addr, net::kDefaultPort, ep, e, &name);
+        chat_log("* joining " + (numeric ? ep.masked() : std::string("a host name")));
+    }
     return true;
 }
 
@@ -2456,6 +2693,7 @@ void set_role(uint8_t role)
 
 void set_ready(bool on)
 {
+    trace::line("vote", "own ready=%d set (vote %s)", (int)on, g_vote.active ? "on" : "off");
     g_ready[g_sess.my_id()] = on;
     if (g_sess.role() == net::Role::Client) {
         net::Writer w;
@@ -2529,6 +2767,8 @@ int c_leave(void*, int, const char* const*, SkOut* out)
 int c_status(void*, int, const char* const*, SkOut* out)
 {
     SAY("%s%s", g_sess.status().c_str(), world::status().c_str());
+    for (auto& pl : g_sess.players()) // CAP_VERSION: each player's mod, SporeKit and game build
+        SAY("version %u '%s': %s\n", pl.id, pl.name.c_str(), pl.version.empty() ? "unknown (pre-0.7.4)" : pl.version.c_str());
     SAY("remote animations: received %u, played %u\n", g_anims_rx, g_anims_played);
     SAY("%s", npc::status().c_str());
     SAY("%s", social::status().c_str());
@@ -3602,6 +3842,8 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         g_name = "Player";
     g_share_world = H->config_int(M, "coop", "share_world", 1) != 0;
     g_save_on_share = H->config_int(M, "coop", "save_before_share", 1) != 0;
+    trace::init(H, M);
+    trace::g_detail = std::max(0, std::min(2, H->config_int(M, "coop", "log_detail", 1)));
     world::init(H, M, feed);
     world::set_playing_probe([] { return g_local != nullptr; });
     world::set_save_blocker(save_blocker);
@@ -3720,6 +3962,17 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                    },
                    nullptr, MT);
     H->command_add(M, "coop.status", "session, players and puppets", c_status, nullptr, MT);
+    H->command_add(M, "coop.log", "coop.log detail [0|1|2] - support logging: 0 = the old lines only, 1 = state trace + events "
+                   "(default), 2 = verbose; coop.log trace - write the trace lines now",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       if (argc >= 3 && !strcmp(argv[1], "detail"))
+                           trace::g_detail = std::max(0, std::min(2, atoi(argv[2])));
+                       else if (argc >= 2 && !strcmp(argv[1], "trace"))
+                           g_trace_at = g_trace_body_at = g_trace_stage_at = -100; // the next frame writes them
+                       SAY("log_detail=%d\n", trace::g_detail);
+                       return 0;
+                   },
+                   nullptr, MT);
     H->command_add(M, "coop.name", "coop.name <nick>", c_name, nullptr, MT);
     H->command_add(M, "coop.say", "coop.say <text> - chat", c_say, nullptr, MT);
     H->command_add(M, "coop.avatar", "print local avatar state (planet stages: ground = terrain radius under it, above = height over it)", c_avatar, nullptr, MT);

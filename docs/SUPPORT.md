@@ -143,7 +143,7 @@ numbers are Wine's view of the 32-bit space.
 ## Network
 <a id="support-net"></a>
 
-    net: player 1 'Bob' rtt 12/15/40 ms (min/avg/max), loss 0.0% (0 of 1200 packets), resends 3, backlog 0 (max 12), in 45 KB out 230 KB, direct UDP
+    net: player 1 'Bob' rtt 12/15/40 ms (min/avg/max), loss 0.0% (0 of 1200 packets), resends 3, backlog 0 (max 12), in 45 KB out 230 KB, direct UDP to 192.168.x.x:47810
     net: spike with player 1 'Bob': rtt 450 ms (usual 30), loss 12.0% of 300 packets in 5 s, backlog 40
     net: player 1 left: timed out (nothing heard for the timeout) (rtt 80 ms, last heard 3000 ms before the last check, worst loss 2.0%/min)
     net: the session with the host ended: host closed the session (rtt ..., last heard ..., worst loss ...)
@@ -153,8 +153,9 @@ Once a minute per peer (the host: each guest; a guest: the host): round trips of
 outruns the 128-packet ack window counts nothing), resent reliable messages, the reliable backlog
 now and its largest of the minute, bytes in and out. At once: a spike (the round trip over twice
 the last minute's average and over 100 ms, or over 10 % loss in 5 s; one line per peer and 30 s),
-and every disconnect with its reason. SporeCoop has no relay: the path is always direct UDP (a
-VPN looks direct too).
+and every disconnect with its reason. SporeCoop has no relay: the path is always direct UDP; the
+address is masked like every address in the logs (`net/ipmask.h`: loopback as it is, LAN / VPN
+classes such as `192.168.x.x` or `100.64.x.x (VPN/CGNAT)`, a public address as `public #3F2A`).
 
 ## Saves, world shares and loads
 <a id="support-saves"></a>
@@ -200,7 +201,7 @@ wrappers, ModAPI DLLs loaded in the game) is on the GPU line and in `== Environm
 
 When a session ends (leave, disconnect, a new session, the game closing):
 
-    summary: session as host, 83 min (left): stages Cell > Creature > Tribe; players Bob, Carol; faults 0, rejoins 1, marks 2; sync-check 160 ok, 3 differed, 1 mismatch; max rtt 140 ms, max loss 2.1%; min fps 18; lowest free address space 820 MB (largest block 210 MB); diagnostics 0.0040 ms/frame (max 0.26 ms)
+    summary: session as host, 83 min (left): stages Cell > Creature > Tribe; players Bob (coop 0.7.4, SporeKit 0.3.5, GOG 2024 dc04aee5), Carol (...); faults 0, rejoins 1, marks 2; sync-check 160 ok, 3 differed, 1 mismatch; max rtt 140 ms, max loss 2.1%; min fps 18; lowest free address space 820 MB (largest block 210 MB); diagnostics 0.0040 ms/frame (max 0.26 ms)
 
 The latest summary is also at the top of every report (`== Summary`, kept in
 `mods\logs\coop-last-session.txt` between runs: a report made after a restart still has it). A run

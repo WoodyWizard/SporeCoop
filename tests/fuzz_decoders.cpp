@@ -305,7 +305,11 @@ static void fuzz_protocol(uint64_t seed, int iters)
     });
     hello_welcome_ext();
     fuzz_struct<Reject>("Reject", R, iters, [](Rng& R) { Reject x; x.reason = R.u8(); x.text = R.str(255); return x; });
-    fuzz_struct<PlayerJoin>("PlayerJoin", R, iters, [](Rng& R) { PlayerJoin x; x.p = {R.u8(), R.str(255)}; return x; });
+    // the version (CAP_VERSION, 0.7.4) is appended: a prefix with id and name is a 0.7.3 PLAYER_JOIN
+    fuzz_struct<PlayerJoin>(
+        "PlayerJoin", R, iters,
+        [](Rng& R) { PlayerJoin x; x.p = {R.u8(), R.str(255), R.below(2) ? R.str(60) : std::string()}; return x; },
+        [](const PlayerJoin& x) { return (size_t)2 + x.p.name.size(); });
     fuzz_struct<PlayerLeave>("PlayerLeave", R, iters, [](Rng& R) { PlayerLeave x; x.id = R.u8(); x.reason = R.u8(); return x; });
     fuzz_struct<PlayerState>("PlayerState", R, iters, [](Rng& R) {
         PlayerState s; s.id = R.u8(); s.time_ms = R.u32(); s.pos = v3(R); s.rot = q4(R); s.vel = v3(R);

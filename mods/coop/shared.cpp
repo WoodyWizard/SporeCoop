@@ -319,6 +319,20 @@ void on_message(net::Session& s, uint8_t type, uint8_t from, net::Reader& rd)
     }
 }
 
+std::string brief()
+{
+    std::string out;
+    char b[64];
+    for (auto& r : g_res) {
+        double v;
+        if (r.mode != g_mode || !r.get(v))
+            continue;
+        snprintf(b, sizeof b, "%s%s=%.0f%s", out.empty() ? "" : " ", r.name, v, r.have ? "" : "(unsynced)");
+        out += b;
+    }
+    return out;
+}
+
 std::string status()
 {
     std::string out;

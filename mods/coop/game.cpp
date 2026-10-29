@@ -852,6 +852,19 @@ void herd_home(void* h, const net::Vec3& pos)
 
 void* herd_of(void* c) { return field<void*>(c, kHerdOff); }
 
+bool nest_position(void* c, net::Vec3& out)
+{
+    static uintptr_t get = H->sym("SporeCoop::Herd_NestPosition");
+    void* herd = c ? herd_of(c) : nullptr;
+    if (!get || !herd || !herd_nest(herd)) // (no null check of the herd inside, BUG-0018)
+        return false;
+    const float* p = thiscall<const float*>(get, herd);
+    if (!p)
+        return false;
+    out = {p[0], p[1], p[2]};
+    return true;
+}
+
 uint32_t political_id(void* c) { return vcall<uint32_t>(c, 0x4C / 4); } // cGameData::GetPoliticalID
 
 float dna()

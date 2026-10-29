@@ -16,6 +16,7 @@
 #include "net/session.h"
 #include "sporekit.h"
 #include "syncdbg.h"
+#include "trace.h"
 
 namespace support {
 
@@ -50,7 +51,7 @@ void mark(const std::string& text); // a bug mark in every player's log
 
 void on_session_start();                    // host() / join() succeeded
 void on_connected();                        // guest: welcomed by the host
-void on_player_join(uint8_t id, const std::string& name);
+void on_player_join(const net::PlayerInfo& p); // with its versions (CAP_VERSION, trace.h)
 void on_player_leave(uint8_t id, uint8_t reason);
 void on_disconnected(const std::string& why); // guest: lost / rejected / host left
 void on_session_end(const char* why);       // the session ended (any path)
@@ -61,7 +62,7 @@ void on_shutdown();                         // the game ends
 std::string command(const std::vector<std::string>& args);
 
 // ---- shared between diag_sync.cpp and diag_stats.cpp ----
-extern int g_detail;       // [coop] log_detail: 0 = only the old lines and marks, 1 = default, 2 = verbose
+using trace::g_detail;     // [coop] log_detail (trace.h): 0 = the old lines and marks only, 1 = default, 2 = verbose
 extern const SkHost* g_H;
 extern SkMod* g_M;
 extern Probe g_P;

@@ -18,7 +18,6 @@ namespace support {
 
 namespace dg = net::diag;
 
-int g_detail = 1;
 const SkHost* g_H;
 SkMod* g_M;
 Probe g_P;

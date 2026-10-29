@@ -26,6 +26,7 @@
 #include "net/lobby.h"
 #include "net/shared_ledger.h"
 #include "net/session.h"
+#include "net/ipmask.h"
 
 using namespace net;
 
@@ -1261,6 +1262,98 @@ static void tick(std::vector<Session*> v, int ms)
     }
 }
 
+// CAP_VERSION (0.7.4): every peer learns the mod / SporeKit / game versions of the others; an
+// older peer (no extension) reads as "" and still joins; the old message shapes still read
+static void test_peer_versions()
+{
+    printf("peer versions in HELLO / WELCOME / PLAYER_JOIN, an old-shape peer reads as unknown\n");
+    // message level: a 0.7.3-shaped HELLO (caps without CAP_VERSION) and PLAYER_JOIN (id + name)
+    {
+        Hello h;
+        h.caps = CAP_SPLIT;
+        h.version = "coop 9.9";
+        Writer w;
+        h.write(w);
+        Reader r(w.data.data(), w.size());
+        Hello g;
+        CHECK(g.read(r) && g.version.empty() && g.caps == CAP_SPLIT);
+        Hello h2;
+        h2.has_token = true;
+        h2.token = 77;
+        h2.version = "coop 1.2.3, SporeKit 0.3.4, GOG 2024 dc04aee5";
+        Writer w2;
+        h2.write(w2);
+        Reader r2(w2.data.data(), w2.size());
+        Hello g2;
+        CHECK(g2.read(r2) && g2.token == 77 && g2.version == h2.version);
+        Writer wj;
+        wj.u8(3);
+        wj.str8("Old");
+        Reader rj(wj.data.data(), wj.size());
+        PlayerJoin pj;
+        CHECK(pj.read(rj) && pj.p.id == 3 && pj.p.name == "Old" && pj.p.version.empty());
+        Welcome wl;
+        wl.your_id = 2;
+        wl.players = {{0, "H", "vh"}, {1, "A", "va"}, {2, "B", ""}};
+        wl.host_version = "vh";
+        Writer ww;
+        wl.write(ww);
+        Reader rw(ww.data.data(), ww.size());
+        Welcome got;
+        CHECK(got.read(rw) && got.host_version == "vh" && got.players.size() == 3 && got.players[0].version == "vh" &&
+              got.players[1].version == "va" && got.players[2].version.empty());
+    }
+    Session host, oldg, newg;
+    host.build = oldg.build = newg.build = 0x922af7c7;
+    host.version = "coop H";
+    oldg.version = "coop O";
+    newg.version = "coop N";
+    oldg.send_caps = false;
+    std::string err;
+    CHECK(host.host(0, "Host", err));
+    std::string addr = "127.0.0.1:" + std::to_string(host.port());
+    auto run = [&](int ms) {
+        for (int i = 0; i < ms / 5; i++) {
+            host.update();
+            oldg.update();
+            newg.update();
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+    };
+    CHECK(oldg.join(addr, "Old", err));
+    run(300);
+    CHECK(newg.join(addr, "New", err));
+    run(300);
+    CHECK(oldg.connected() && newg.connected());
+    auto ver = [](const Session& s, uint8_t id) {
+        for (auto& p : s.players())
+            if (p.id == id)
+                return p.version;
+        return std::string("?");
+    };
+    printf("  host sees old='%s' new='%s'; new sees host='%s' old='%s'; old sees host='%s'\n", ver(host, 1).c_str(),
+           ver(host, 2).c_str(), ver(newg, 0).c_str(), ver(newg, 1).c_str(), ver(oldg, 0).c_str());
+    CHECK(ver(host, 1).empty() && ver(host, 2) == "coop N");
+    CHECK(ver(newg, 0) == "coop H" && ver(newg, 1).empty() && ver(newg, 2) == "coop N");
+    CHECK(ver(oldg, 0) == "coop H"); // an old guest ignores the trailing bytes (here: reads them, it is this build)
+    host.leave();
+    oldg.leave();
+    newg.leave();
+}
+
+// logs and reports never carry a full public address (net/ipmask.h)
+static void test_ip_mask()
+{
+    printf("addresses in logs: loopback / LAN class kept, public hashed\n");
+    auto ip = [](const char* s) { return (uint32_t)inet_addr(s); };
+    CHECK(mask_ip(ip("127.0.0.1"), 47810) == "127.0.0.1:47810");
+    CHECK(mask_ip(ip("192.168.1.20"), 47810) == "192.168.x.x:47810");
+    CHECK(mask_ip(ip("10.1.2.3"), 0) == "10.x.x.x");
+    std::string pub = mask_ip(ip("93.184.216.34"), 47810);
+    CHECK(pub.rfind("public #", 0) == 0 && pub.find("93") == std::string::npos);
+    CHECK(mask_ip(ip("93.184.216.34"), 1) != mask_ip(ip("93.184.216.35"), 1));
+}
+
 static void test_rejoin_token()
 {
     printf("a rejoin is the same game by its token, not by name and silence (BUG-0235)\n");
@@ -2124,6 +2217,8 @@ int main(int argc, char** argv)
     test_old_peer_split();
     test_old_peer_session();
     test_rejoin_token();
+    test_peer_versions();
+    test_ip_mask();
     test_join_by_name();
     test_pick_pack();
     test_diag_messages();
