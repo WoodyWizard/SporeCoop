@@ -209,6 +209,14 @@ For bug reports of players, who send a file, not a debugger session:
   codepage; a temp file and a rename). ASCII-only files stay as they are (tools edit them with sed;
   `tools/spore.sh` edits only sporekit.ini). Report archives convert UTF-16 settings to UTF-8.
   `kit.fix iniutf 0`.
+  Since BUG-0245: a UTF-16 BE file is converted losslessly, a file with NUL bytes (UTF-16 without
+  a BOM) is left as it is, a named mutex per file (`SporeKitIni-<hash>`, 500 ms) guards the
+  conversion and every write against a second instance, and a non-ASCII value is not written when
+  the file could not be made Unicode (`kit.fix iniencode 0`, `kit.fix inilock 0`).
+* **Crash reports name the faulting thread (BUG-0248).** The exception line of a report written by
+  the report thread or at exit names the thread that faulted (`kit.fix crashtid 0` = the writer).
+* **The exit waits for an in-game update's file swaps (BUG-0243).** ExitProcess and a
+  self-TerminateProcess wait up to 5 s for the update lock of the game folder (`kit.fix exitwait 0`).
 * **Parked hooks (BUG-0202).** MinHook writes a 5-byte jmp over the target without stopping other
   threads (its freeze deadlocked under Wine): a thread in the first bytes continued inside the jmp.
   Every hook now jumps to a SporeKit stub `jmp [cur]`; making (after the first time), enabling,

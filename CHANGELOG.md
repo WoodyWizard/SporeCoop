@@ -2,13 +2,33 @@
 
 ## [Unreleased]
 
+### Fixed
+- **Mixed versions: an older SporeCoop no longer loses long chat lines or gets an emptied species
+  table** (BUG-0219): players tell each other at the join what they support; a long chat line
+  reaches a 0.7.2.x or 0.7.3.0 player cut, a big species table does not reach them, and a
+  notification names the player with the older version. A guest with a 0.7.2 host no longer keeps
+  every Cell meal in memory.
+- **A player who is loading or saving is no longer dropped when somebody with the same name joins**
+  (BUG-0235): a rejoin after a crash is recognised by a token the game keeps until a clean leave,
+  not by the name; such a rejoin now also works in a full 4-player session.
+- **Pasting the co-op window's whole "Friends connect to: ..." line into Join works** (BUG-0236).
+- **In-game update: a failed attempt no longer keeps the downloaded files in memory** (BUG-0241),
+  a pack with two names for one file is refused (BUG-0242), and a second start of the mod or the
+  game's exit no longer interrupts an update between two file moves (BUG-0243).
+- **Settings: a coop.ini saved as UTF-16 BE is no longer destroyed**, and two games on one folder no
+  longer lose a name written at the same time (BUG-0245).
+- **Crash reports name the thread that crashed** (BUG-0248).
+
 ## [0.7.3.0] - 2026-10-28
 
 A big bug-fix release. A review of the whole mod and the test lab found about 180 problems; 158 of
 them are fixed here, nearly all with an automated test that fails without its fix: crashes and freezes,
 desyncs between the players in every stage, worlds and saves that could be overwritten or mixed,
-the setup and the in-game update. The network protocol did not change: 0.7.3.0 plays together with
-0.7.x, but both players need 0.7.3.0 for most of the fixes. What is still open is listed in
+the setup and the in-game update. 0.7.3.0 plays together with 0.7.x, but both players need 0.7.3.0 for
+most of the fixes. Correction (BUG-0219): one wire feature is new, reliable messages bigger than
+one packet are sent in pieces (BUG-0034), which 0.7.2.x cannot join: with a 0.7.2.x player a chat
+line above about 1160 bytes is lost and a Creature species table of 42 or more species can arrive
+empty. The version after 0.7.3.0 sends such messages only to players who can join them. What is still open is listed in
 [docs/known-issues.md](https://github.com/WoodyWizard/SporeCoop/blob/main/docs/known-issues.md).
 
 **GOG 2016 build (`922af7c7`):** fixes that need new game addresses switch themselves off on it

@@ -1319,3 +1319,20 @@ registry (`mods/coop/fixes.h`, BUG-0116):
 * Clicks on the ground near a creature's nest are a bad walk input in general: the nest is an
   object, not walkable ground. Prefer W (camera forward, open grass at this fixture) or a point
   far up the screen.
+
+## Update leak and the updater's twin flags (2026-10-28, fix/w5-net)
+<a id="testing-update-leak"></a>
+
+* `tools/tests/coop_update_leak.py` (suite `update_leak`, one game, ~40 s, not exclusive: nothing is
+  installed): a local server (port 47970 + lane) offers 99.0.0 whose pack calls itself the running
+  version and holds one 20 MB file; 5 x `coop.update apply` stop at "the release pack is not
+  newer". The SporeKit command `mem.commit` (VirtualQuery walk, any thread) gives the committed
+  private memory; the `env` line under Wine is the working set and moves by tens of MB by itself.
+  Seen: with the fix 231 -> 211 MB, with `SPORE_FIX_OFF=core.update_unwind` 233 -> 326 MB.
+* `win_unit.py` passes `--old-<switch>` through to win_tests.exe, each turning one fix off while the
+  others stay on: `--old-paths` (BUG-0242), `--old-lock` (BUG-0243), `--old-iniencode`,
+  `--old-inilock` (BUG-0245). `--old` still turns everything off.
+* `kit_crash.py` cases `thread_worker` and `thread_exit` (BUG-0248) compare the report's exception
+  line with the fault logger's own `tid=`. `crash.test main` cannot make a main-thread crash report:
+  the game's own handler swallows a fault in a console command on the main thread (no report, the
+  game goes on); `crash.test faultthread` makes a repaired fault on a worker thread instead.

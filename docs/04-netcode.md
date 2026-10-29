@@ -214,3 +214,41 @@ Found on the way: `Reader::raw(nullptr, 0)` (an empty payload read into an empty
 passed nullptr to memcpy (undefined behaviour, harmless on the compilers we use): it skips the copy
 now. A RefPack stream that lacks only its final bare stop code (0xFC) is accepted, because the
 decoder stops at the declared size; that is intended (the data is complete).
+
+## HELLO / WELCOME caps and the rejoin token (2026-10-28, fix/w5-net)
+<a id="netcode-hello-caps"></a>
+
+Protocol 7 stays. HELLO (`proto u16, build u32, name str8`) and WELCOME (`your_id u8, world u32,
+players`) get an extension appended after their 0.7.2 fields, which every older reader ignores
+(their `read()` never checked for trailing bytes): `u32 caps`, then the payload of each set bit in
+ascending bit order (BUG-0219).
+
+| bit | name | payload | meaning |
+| --- | --- | --- | --- |
+| 0 | `CAP_SPLIT` | none | joins split reliable messages (the BUG-0034 receiver) |
+| 1 | `CAP_TOKEN` | `u64` | HELLO only: the rejoin token (BUG-0235); never in WELCOME or anything relayed |
+
+* A message without the extension reads as caps 0: 0.7.2.x, 0.7.3.0 and fakepeer. A short payload
+  means "absent", not a failed read. Unknown bits and trailing bytes are ignored. A new field takes
+  the next bit and appends its payload after those of the lower bits; never insert a field before
+  the extension. `tests/fuzz_decoders.cpp` checks both shapes (`hello_welcome_ext`, and a prefix
+  that still holds the base fields must be read).
+* `Connection::peer_split` (false until the handshake) comes from the guest's HELLO on the host and
+  from WELCOME on the guest. A reliable message above one packet (`Connection::kMaxSingle` = 1163
+  bytes of payload) goes out in pieces only to such a peer; to an older one it is not sent and
+  counted (`too_big_old`, a line `older peer N: too_big_old=.. frag_lost=..` after the session
+  block of `coop.status`); pieces from a peer that never announced splitting are dropped
+  (`frag_lost`). Chat lines to an older peer are cut between characters to `kMaxSingle - 3` bytes,
+  per peer (the host's relay too). One notice names an older player at each join.
+* What a mixed session loses (0.7.2.x / 0.7.3.0 with a newer version): chat lines above about 1160
+  bytes arrive cut, a Creature species table of 42 or more records does not reach the older player.
+  0.7.3.0 is "older" here too (it has no caps), although it could join pieces.
+* Rejoin token: `mods/coop/rejoin.cpp`, `<AppData>\SporeCoop\rejoin-<instance>-<slot>.txt` in the
+  profile's AppData (lanes: in the lane's bottle), the first slot the game can open exclusively, kept
+  open for the process. A join sends the token in the file (a crash left it) or writes a fresh one;
+  a clean leave, the session end and the unload empty it. The host's HELLO handler drops an accepted
+  entry with the same token that has been silent for 2 s before the full check and before WELCOME
+  (PLAYER_LEAVE(old) goes out before PLAYER_JOIN(new)). Without a token nobody is replaced.
+  Switches: `coop.fix net.peer_caps`, `net.rejoin_token` (off = the 0.7.3.0 name rule of BUG-0209),
+  `core.rejoin_name` (off = never replace), `pool.meals_trim`. `net_tests --off <peer_caps|rejoin_token|addr_label|update_paths>`
+  turns one switch off.
