@@ -69,8 +69,11 @@ already existed); the files it writes later (creation cards, screenshots) go to 
 - #80 (spore.sh fixture restore with profile "-" deletes the player's own saves)
 - #81 (more places that can kill the owner's own Spore on lane 1)
 
+Run evidence (2026-10-28, BUG-0215, found afterwards in the lab folders and agent logs): FAIL with the fix off: `docs_old.log` (fix/w4-tools, --old), a standalone test run whose log stayed in the agent's scratch folder (not kept in out/lab). PASS: lab run out/lab/20261028-031641 on fix/w4-tools (kit_docs ok); later full runs on main pass too.
+
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #135.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w4-tools (wave 4, tests and tooling).
 - 2026-10-28: released in 0.7.3.0.
+- 2026-10-28: Verification names the FAIL log and the PASS lab run (BUG-0215).

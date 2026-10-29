@@ -15,6 +15,7 @@ tests: social_console
 signature:
 docs: docs/re/creature.md#creature-cheat-console-flag, docs/06-testing.md#testing-w4-tests
 related: #128
+switch: social.text
 ---
 
 ## Report
@@ -73,9 +74,13 @@ injected Ctrl+Shift+C (control 0x014A4606 in the UI tree) and closes it with Esc
 - PASS: out/lab/20261028-030521 (0 -> 0 while open, 0 -> 1 after it was closed).
 Not covered: other UTFWin text fields than the console.
 
+Run evidence (2026-10-28, BUG-0215, found afterwards in the lab folders and agent logs): FAIL with the fix off: `console_nofix.log` (fix/w4-tests, textfix off), a standalone test run whose log stayed in the agent's scratch folder (not kept in out/lab). PASS: lab run out/lab/20261028-030521 on fix/w4-tests (social_console ok); later full runs on main pass too.
+
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #128.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fix/w3-creature: console window check and the bit-0 change made; the test cannot open the console on the lanes yet, so it stays open.
 - 2026-10-28: fix/w4-tests: the console opens on the lanes once the cheat manager's flag +0x64 is set; the test FAILs with textfix off and PASSes with it; in suite.py.
 - 2026-10-28: released in 0.7.3.0.
+- 2026-10-28: Verification names the FAIL log and the PASS lab run (BUG-0215).
+- 2026-10-28: switch: social.text (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).

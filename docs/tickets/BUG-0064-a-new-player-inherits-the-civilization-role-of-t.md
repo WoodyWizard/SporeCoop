@@ -15,6 +15,7 @@ tests: tools/tests/coop_civ_shared.py (suite civ_shared)
 signature:
 docs: 
 related: #42
+switch: role.fix
 ---
 
 ## Report
@@ -85,3 +86,4 @@ It must fail on main.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w2-civ (roles erased with their player and session; coop_civ_shared FAIL without, PASS with).
 - 2026-10-28: released in 0.7.3.0.
+- 2026-10-28: switch: role.fix (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).

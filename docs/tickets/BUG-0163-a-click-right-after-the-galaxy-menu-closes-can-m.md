@@ -15,6 +15,7 @@ tests: tools/tests/coop_ui_menu_leave.py (suite ui_menu_leave)
 signature:
 docs:
 related: #142
+switch: core.menu_drop
 ---
 
 ## Report
@@ -81,8 +82,12 @@ The last check fails on main (it stays "yes" up to 1 s) and passes with the fix.
 ### Related
 #68 (galaxy map name tags react to clicks in other windows), docs/08-ui.md.
 
+Run evidence (2026-10-28, BUG-0215, found afterwards in the lab folders and agent logs): FAIL with the fix off: `menu_nofix2.log` (fix/w1-core, menu_drop 0; the first run `menu_nofix.log` did not reproduce), a standalone test run whose log stayed in the agent's scratch folder (not kept in out/lab). PASS: lab run out/lab/20261027-192300-fix-w1-core on fix/w1-core (ui_menu_leave ok); later full runs on main pass too.
+
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #142.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w1-core: menu item pointer dropped with the menu (coop_ui_menu_leave.py).
 - 2026-10-28: released in 0.7.3.0.
+- 2026-10-28: Verification names the FAIL log and the PASS lab run (BUG-0215).
+- 2026-10-28: switch: core.menu_drop (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).

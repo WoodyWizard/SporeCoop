@@ -12,6 +12,9 @@ saves, and keep the knowledge files honest. Every check runs on fakes in a tempo
   tickets   tickets.py new: ids used on a branch without a worktree are not given out again
             (BUG-0057); a private ticket made in a worktree is seen from the main checkout and
             survives the worktree's removal (BUG-0062)
+  tickets_check  tickets.py check: a new fix names its commits (in history, not all released
+            before), an existing test, FAIL and PASS lab run ids or `no-fail-run:`, no path outside the
+            repository, known `switch:` names; release refuses such tickets (BUG-0215, BUG-0214)
   relint    re_lint.py flags an overrides entry without a confidence word also when a generated
             .sym has the same name (BUG-0086)
   triage    tools/crash_triage.py reads a report and finds the known ticket (BUG-0158)
@@ -230,6 +233,98 @@ def test_tickets():
           f'it survives the worktree\'s removal and its id is not given out again ({os.path.basename(nxt)})')
 
 
+# ---------------------------------------------------------------- tickets check (BUG-0215)
+TICKET = """---
+id: {id}
+title: t
+status: fixed
+kind: bug
+stage: Cell
+reported: 2026-10-28
+source: x
+role: both
+versions: 0.7.3.0
+fixed_in: {fixed_in}
+branch: fix/x
+commits: {commits}
+tests: {tests}
+signature:
+docs:
+related:
+{extra}---
+
+## Verification
+{verif}
+
+## History
+- 2026-10-28: opened.
+"""
+
+
+def test_tickets_check():
+    print('tickets_check: the evidence rules of new fixes (BUG-0215)')
+    repo = os.path.join(TMP, 'repo')
+    for d in ('tools/tests', 'docs/tickets', 'mods/coop'):
+        os.makedirs(os.path.join(repo, d))
+    shutil.copy(TICKETS, os.path.join(repo, 'tools', 'tickets.py'))
+    open(os.path.join(repo, 'tools', 'tests', 'suite.py'), 'w').write("add('cell_x', 'python3 x')\nadd('unit', 'make test')\n")
+    open(os.path.join(repo, 'mods', 'coop', 'a.cpp'), 'w').write('COOP_FIX("pool.purge", "BUG-0001", g, "x");\n')
+    env = dict(os.environ, GIT_AUTHOR_NAME='t', GIT_AUTHOR_EMAIL='t@t', GIT_COMMITTER_NAME='t',
+               GIT_COMMITTER_EMAIL='t@t')
+    g = lambda *a: subprocess.run(['git', '-C', repo, *a], env=env, capture_output=True, text=True, check=True).stdout
+    g('init', '-q', '-b', 'main')
+    g('add', '-A')
+    g('commit', '-qm', 'old fix (BUG-0001)')
+    old = g('rev-parse', '--short', 'HEAD').strip()
+    g('tag', 'v0.7.3.0')
+    open(os.path.join(repo, 'x'), 'w').write('x')
+    g('add', '-A')
+    g('commit', '-qm', 'new fix (BUG-0001)')
+    new = g('rev-parse', '--short', 'HEAD').strip()
+    path = os.path.join(repo, 'docs', 'tickets', 'BUG-0001-t.md')
+    good = dict(id='BUG-0001', fixed_in='unreleased', commits=new, tests='cell_x', extra='',
+                verif='FAIL with the fix off: out/lab/20261028-101010. PASS: 20261028-111111.')
+
+    def check(cwd=repo, **kw):
+        open(os.path.join(cwd, 'docs', 'tickets', 'BUG-0001-t.md'), 'w').write(TICKET.format(**{**good, **kw}))
+        subprocess.run([sys.executable, '-I', os.path.join(cwd, 'tools', 'tickets.py'), 'index'], capture_output=True)
+        r = subprocess.run([sys.executable, '-I', os.path.join(cwd, 'tools', 'tickets.py'), 'check'], cwd=cwd,
+                           capture_output=True, text=True)
+        return r.returncode, r.stdout
+    rc, out = check()
+    globals()['check'](rc == 0, f'a complete new fix passes ({out.strip().splitlines()[-1] if out.strip() else ""})')
+    cases = [
+        (dict(commits=''), 'commits', 'a fixed ticket with empty commits: fails'),
+        (dict(commits='deadbee'), 'does not exist', 'a commit that does not exist: fails'),
+        (dict(commits=old), 'already released', 'commits only in an earlier release: fails (BUG-0167)'),
+        (dict(verif='FAIL and PASS, by hand'), 'run ids', 'a lab test named and no run id: fails'),
+        (dict(verif='it works'), 'no FAIL run', 'no FAIL / PASS in Verification: fails'),
+        (dict(tests='no_such_test'), 'names no lab suite', 'a test name that resolves nowhere: fails'),
+        (dict(verif='/tmp/x/run.log ' + good['verif']), 'outside the repository', 'a path outside the repository: fails'),
+        (dict(extra='switch: session_end\n'), 'unknown coop.fix name', 'an unknown switch: name fails (BUG-0214)'),
+    ]
+    for kw, want, what in cases:
+        rc, out = check(**kw)
+        globals()['check'](rc == 1 and want in out, what)
+    rc, out = check(verif='no-fail-run: docs only')
+    globals()['check'](rc == 0, 'the same with `no-fail-run: docs only` passes')
+    rc, out = check(extra='switch: pool.purge\n')
+    globals()['check'](rc == 0, 'a known switch: name passes')
+    rc, out = check(fixed_in='0.7.2', commits='')
+    globals()['check'](rc == 0, 'an old fix (released up to 0.7.3.0) is not failed retroactively')
+    check(commits=old)
+    rel = subprocess.run([sys.executable, '-I', os.path.join(repo, 'tools', 'tickets.py'), 'release', '0.7.4'],
+                         cwd=repo, capture_output=True, text=True)
+    globals()['check'](rel.returncode == 1 and 'BUG-0001' in rel.stdout and 'unreleased' in open(path).read(),
+                       'release refuses a fixed ticket without a commit of the release (BUG-0167)')
+    g('add', '-A')
+    g('commit', '-qm', 'tickets')
+    shallow = os.path.join(TMP, 'shallow')
+    subprocess.run(['git', 'clone', '-q', '--depth', '1', 'file://' + repo, shallow], capture_output=True, check=True)
+    rc, out = check(cwd=shallow, commits='deadbee')
+    globals()['check'](rc == 0 and 'git checks skipped' in out, 'a shallow clone: the git checks are skipped with a note')
+
+
 # ---------------------------------------------------------------- re_lint
 def test_relint():
     print('relint: confidence of overrides entries that a generated .sym also names')
@@ -314,7 +409,8 @@ def test_triage():
     check('BUG-0018' in out, 'the known ticket of 0xC6AE60 is found (BUG-0018)')
 
 
-CHECKS = {'kill': test_kill, 'fixture': test_fixture, 'headless': test_headless, 'tickets': test_tickets, 'relint': test_relint,
+CHECKS = {'kill': test_kill, 'fixture': test_fixture, 'headless': test_headless, 'tickets': test_tickets,
+          'tickets_check': test_tickets_check, 'relint': test_relint,
           'release': test_release, 'triage': test_triage}
 
 if __name__ == '__main__':

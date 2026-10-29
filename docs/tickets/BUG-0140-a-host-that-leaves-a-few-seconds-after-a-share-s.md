@@ -15,6 +15,7 @@ tests: tools/tests/coop_leave_during_share.py (suite leave_during_share)
 signature:
 docs:
 related: #119
+switch: core.share_reset
 ---
 
 ## Report
@@ -88,8 +89,12 @@ It fails on main (the mode stays in the stage, the quits-delayed counter grows) 
 ### Related
 #11 (leaving, re-hosting and hot reload clean up different subsets of the state). This issue is one concrete, severe consequence of that gap, with its own trigger. #52 (stale world load after leaving). docs/re/creature.md 9 (why `h_SimMsg` re-posts the quit).
 
+Run evidence (2026-10-28, BUG-0215, found afterwards in the lab folders and agent logs): FAIL with the fix off: `share_nofix.log` (fix/w1-core, share_reset 0), a standalone test run whose log stayed in the agent's scratch folder (not kept in out/lab). PASS: lab run out/lab/20261027-192300-fix-w1-core on fix/w1-core (leave_during_share ok); later full runs on main pass too.
+
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #119.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w1-core: shares dropped at every session end (coop_leave_during_share.py).
 - 2026-10-28: released in 0.7.3.0.
+- 2026-10-28: Verification names the FAIL log and the PASS lab run (BUG-0215).
+- 2026-10-28: switch: core.share_reset (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).

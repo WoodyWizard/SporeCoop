@@ -15,6 +15,7 @@ tests: evolve_world, migration
 signature: 
 docs: docs/known-issues.md, docs/re/creature.md#creature-world-epoch
 related:
+switch: npc.sharecine
 ---
 
 ## Report
@@ -49,3 +50,4 @@ checked on the guest's game after its load: the avatar's age (+0xB34) and the pr
 - 2026-10-25: ticket written from the CHANGELOG, commits and reports (backfill).
 - 2026-10-28: root cause found and fixed on fix/w3-creature (the share waits for the cinematic); test evolve_world (FAIL with sharecine off, PASS with it).
 - 2026-10-28: released in 0.7.3.0.
+- 2026-10-28: switch: npc.sharecine (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).

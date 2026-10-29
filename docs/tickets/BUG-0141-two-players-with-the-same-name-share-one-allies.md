@@ -15,6 +15,7 @@ tests: unit (net_tests test_unique_names)
 signature:
 docs: 
 related: #120
+switch: core.unique_names
 ---
 
 ## Report
@@ -81,3 +82,4 @@ Both must FAIL on main and PASS with the fix.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w2-space (de700db): unique names at HELLO; unit test FAIL without (3 problems) / PASS with.
 - 2026-10-28: released in 0.7.3.0.
+- 2026-10-28: switch: core.unique_names (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).

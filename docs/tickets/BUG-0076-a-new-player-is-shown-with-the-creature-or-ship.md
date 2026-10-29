@@ -15,6 +15,7 @@ tests: tools/tests/coop_creations_rejoin.py (suite creations_rejoin)
 signature:
 docs: docs/04-netcode.md#netcode-w2, docs/06-testing.md#testing-net-w2
 related: #54
+switch: core.creations_leave, core.id_reuse
 ---
 
 ## Report
@@ -91,8 +92,12 @@ It must fail on main.
 - Umbrella #11.
 - `tools/tests/coop_creations.py`.
 
+Run evidence (2026-10-28, BUG-0215, found afterwards in the lab folders and agent logs): FAIL with the fix off: `rejoin_nofix2.log` to `rejoin_nofix5.log` (fix/w2-net), a standalone test run whose log stayed in the agent's scratch folder (not kept in out/lab). PASS: lab run out/lab/20261027-232903 on fix/w2-net (creations_rejoin ok); later full runs on main pass too.
+
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #54.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w2-net (wave 2, netcode); tests above FAIL without the fix and PASS with it.
 - 2026-10-28: released in 0.7.3.0.
+- 2026-10-28: Verification names the FAIL log and the PASS lab run (BUG-0215).
+- 2026-10-28: switch: core.creations_leave, core.id_reuse (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).

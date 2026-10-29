@@ -15,6 +15,7 @@ tests: space_trade_refund
 signature:
 docs: docs/re/space.md#space-ship-state-chunks
 related: #36
+switch: trade.refund
 ---
 
 ## Report
@@ -66,7 +67,7 @@ Suggested in the review:
 - Keep the old behaviour behind `coop.fix trade_refund_later off`.
 
 ## Verification
-Done (2026-10-28, lane 6): `coop_space_trade_refund.py` (suite `space_trade_refund`). The guest holds its answer (`trade hold 1`), the host gives 5 bomb charges, acts as outside Space (`trade away 1`: the feature sees no inventory, as in the galaxy menu), the guest leaves, the host comes back (`away 0`). `--without-fix` FAILS (7 charges, refunds=1 lost; /tmp/claude-1000/-home-pam3es-Games-Modding-SPORE/13201e2f-19c5-4da6-b393-aae16fe6d338/scratchpad/waves/fix_w2-space/refund--without-fix3213.log), with the fix PASS twice (12 charges, owed_paid=1, once). The outside-Space state is forced by the switch (a real editor entry in that window cannot be timed); the null inventory it simulates was checked in the real galaxy menu.
+Done (2026-10-28, lane 6): `coop_space_trade_refund.py` (suite `space_trade_refund`). The guest holds its answer (`trade hold 1`), the host gives 5 bomb charges, acts as outside Space (`trade away 1`: the feature sees no inventory, as in the galaxy menu), the guest leaves, the host comes back (`away 0`). `--without-fix` FAILS (7 charges, refunds=1 lost; scratch log `refund--without-fix3213.log` (not kept)), with the fix PASS twice (12 charges, owed_paid=1, once). The outside-Space state is forced by the switch (a real editor entry in that window cannot be timed); the null inventory it simulates was checked in the real galaxy menu.
 
 Not done yet. Planned test (must FAIL without the fix and PASS with it):
 
@@ -82,8 +83,13 @@ This must FAIL on main and with `coop.fix trade_refund_later off`, and PASS with
 - docs/known-issues.md "Space trade: open ends" (a gift on its way when the own session ends comes back and can duplicate; this issue is the opposite case, where it never comes back).
 - docs/re/space.md 14.1, 14.3.
 
+Run evidence (2026-10-28, BUG-0215, found afterwards in the lab folders and agent logs): FAIL with the fix off: `refund--without-fix3213.log` (fix/w2-space), a standalone test run whose log stayed in the agent's scratch folder (not kept in out/lab). PASS: lab run out/lab/20261027-233002 on fix/w2-space (space_trade_refund ok); later full runs on main pass too.
+
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #36.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w2-space (fd814d3): owed refunds paid back in Space; test space_trade_refund FAIL without / PASS with.
 - 2026-10-28: released in 0.7.3.0.
+- 2026-10-28: log paths of an agent's scratch folder replaced by the log names (BUG-0215: no paths outside the repository).
+- 2026-10-28: Verification names the FAIL log and the PASS lab run (BUG-0215).
+- 2026-10-28: switch: trade.refund (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).

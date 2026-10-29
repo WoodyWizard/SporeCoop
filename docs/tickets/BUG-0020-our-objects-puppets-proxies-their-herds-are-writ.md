@@ -15,6 +15,7 @@ tests: save_hygiene (creature_e84 makes its save with coop.savestrip 0)
 signature: (fix side effect seen and handled) dc04aee5:0xB0EC8C read 0 (cGameBehaviorManager update, a null entry)
 docs: docs/re/creature.md#creature-save-strip, docs/known-issues.md
 related:
+switch: savestrip.on, savestrip.owner
 ---
 
 ## Report
@@ -68,3 +69,4 @@ its game: creatures without tuning, herds without an archetype, faults.
   behavior manager's list after a load; test FAIL without the fix, PASS with it.
 - 2026-10-28 (merge of wave 3, main): the first version stripped every creature of a herd without an archetype. `creature_desync` recruits a console-spawned NPC into the host's pack; it was stripped, the pack kept a null member and the loaded game faulted thousands of times (lab 20261028-021701, 20261028-023605: 0/2). Now only puppets and proxies (never pack members) are stripped, and their herd only when every creature in it is stripped (`coop.savestrip owner 0` restores the first version). creature_desync, save_hygiene, creature_e84, creature: OK (lab 20261028-024059).
 - 2026-10-28: released in 0.7.3.0.
+- 2026-10-28: switch: savestrip.on, savestrip.owner (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).

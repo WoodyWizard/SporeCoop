@@ -15,6 +15,7 @@ tests: anim_teardown
 signature:
 docs: docs/re/creature.md#creature-kill-list
 related: #69
+switch: core.frame
 ---
 
 ## Report
@@ -85,3 +86,4 @@ animation calls on a puppet the game no longer lists.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-27: fixed on fix/w1-creature (avatar check before the messages, list checks, `coop.framefix`), test anim_teardown FAIL without (15 anims on freed puppets) / PASS with.
 - 2026-10-28: released in 0.7.3.0.
+- 2026-10-28: switch: core.frame (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).

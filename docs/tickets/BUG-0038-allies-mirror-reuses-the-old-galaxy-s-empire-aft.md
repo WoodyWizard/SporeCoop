@@ -15,6 +15,7 @@ tests: space_allies_reload
 signature:
 docs: docs/re/space.md#space-ship-state-chunks
 related: #16
+switch: allies.reload
 ---
 
 ## Report
@@ -72,7 +73,7 @@ m.emp = nullptr; m.pol = 0; m.contact_before = 0; m.rel_on = spaceext::Relation:
 Then `ensure_empire` creates a new empire with `NextPoliticalID` of the new galaxy. Also, in the `g_end_pending` path, run `end_all` before a new session's first apply. Keep the old behaviour behind `coop.fix allies_reload off`.
 
 ## Verification
-Done (2026-10-28, lane 6): `coop_space_allies_reload.py` (suite `space_allies_reload`). The host has a mirror (`allies fake`), goes to the galaxy menu, loads the fixture, the mirror is applied again. `--without-fix` FAILS: the empire map holds the old galaxy's object at the old id 800021CD (/tmp/claude-1000/-home-pam3es-Games-Modding-SPORE/13201e2f-19c5-4da6-b393-aae16fe6d338/scratchpad/waves/fix_w2-space/reload--without-fix29322.log). With the fix PASS twice: a new cEmpire (other pointer) at a new id 800021D0 with its one star, and a second empire gets its own id. The collision with a real NPC empire was not produced: after the menu the counter `cStarManager +0x1D4` was not below the mirror's id (the save on the way to the menu stores it).
+Done (2026-10-28, lane 6): `coop_space_allies_reload.py` (suite `space_allies_reload`). The host has a mirror (`allies fake`), goes to the galaxy menu, loads the fixture, the mirror is applied again. `--without-fix` FAILS: the empire map holds the old galaxy's object at the old id 800021CD (scratch log `reload--without-fix29322.log` (not kept)). With the fix PASS twice: a new cEmpire (other pointer) at a new id 800021D0 with its one star, and a second empire gets its own id. The collision with a real NPC empire was not produced: after the menu the counter `cStarManager +0x1D4` was not below the mirror's id (the save on the way to the menu stores it).
 
 Not done yet. Planned test (must FAIL without the fix and PASS with it):
 
@@ -98,3 +99,5 @@ This must FAIL on main and with `coop.fix allies_reload off`, and PASS with the 
 - 2026-10-28: fixed on fix/w2-space (d0f6003): new cEmpire after a reload (also via ensure_empire); test space_allies_reload FAIL without / PASS with.
 - 2026-10-28: f581bf2: the reset only when the player's cEmpire changed (a save also drops the mirror from the map); space_allies_reload FAIL without / PASS with again.
 - 2026-10-28: released in 0.7.3.0.
+- 2026-10-28: log paths of an agent's scratch folder replaced by the log names (BUG-0215: no paths outside the repository).
+- 2026-10-28: switch: allies.reload (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).

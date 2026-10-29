@@ -177,7 +177,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0164](BUG-0164-a-long-name-from-the-cheat-console-is-cut-inside.md) | fixed | bug | All | 2026-10-27 | 0.7.3.0 | a long name from the cheat console is cut inside a character, and a log line with a non-ASCII path is truncated |
 | [BUG-0165](BUG-0165-install-check-line-readme-latest-version-and-sta.md) | fixed | bug | All | 2026-10-27 | 0.7.3.0 | INSTALL check line, README latest version and stability-report lane count are out of date |
 | [BUG-0166](BUG-0166-a-world-share-for-a-guest-who-already-left-stays.md) | fixed | bug | All | 2026-10-27 | 0.7.3.0 | a world share for a guest who already left stays queued, so the host saves for nobody and its editors wait up to 15 s |
-| [BUG-0167](BUG-0167-guest-fault-in-the-tribe-setup-with-a-null-simul.md) | fixed | crash | Tribe | 2026-10-23 | 0.7.3.0 | Guest: fault in the tribe setup with a null simulator object (seen once) |
+| [BUG-0167](BUG-0167-guest-fault-in-the-tribe-setup-with-a-null-simul.md) | not-reproduced | crash | Tribe | 2026-10-23 |  | Guest: fault in the tribe setup with a null simulator object (seen once) |
 | [BUG-0168](BUG-0168-creature-npc-aggression-towards-a-partner-is-unt.md) | open | test | Creature | 2026-10-25 |  | Creature: NPC aggression towards a partner is untested end to end |
 | [BUG-0169](BUG-0169-creature-one-npc-4-m-off-on-every-guest-for-30-s.md) | fixed | desync | Creature | 2026-10-23 | 0.7.3.0 | Creature: one NPC 4 m off on every guest for 30+ s (seen once) |
 | [BUG-0170](BUG-0170-creature-chaos-a-guest-crashed-with-a-corrupted.md) | not-reproduced | crash | Creature | 2026-10-23 |  | Creature chaos: a guest crashed with a corrupted heap (seen once) |
