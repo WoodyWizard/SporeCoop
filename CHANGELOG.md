@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Fixed
+- **Setup: a failed GitHub check can no longer overwrite the release an install just fetched** (the
+  window said "GitHub not reachable" and the next Install asked again; BUG-0244).
+- **Crash reports name the game instance and whether a test profile was used** (`run:` line, no
+  names or paths), so the test lab no longer counts a crash of your own game against a test
+  (BUG-0249).
+
 ## [0.7.3.0] - 2026-10-28
 
 A big bug-fix release. A review of the whole mod and the test lab found about 180 problems; 158 of
