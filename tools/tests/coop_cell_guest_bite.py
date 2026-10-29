@@ -15,6 +15,13 @@ On one NPC creature (the one nearest the guest):
 The NPC's hp is read in the host's game (`coop.pool cell`).
 
 SPORE_CELL_FIX=0 switches the fix off on the host (`coop.pool fix guestbite 0`): the run that must FAIL.
+
+BUG-0240: DamageCell's IsDamageable (0xE52940) also wants the resource's cell type 2 (solid) and an
+AI type other than 0 (meat). On a non-solid cell (a plant, given hp to lose) and on meat when one
+is there (`coop.pool kill <key> anyhit`, DamageCell on a cell of any kind):
+  5. the host's own bite takes nothing (the game's rule);
+  6. the guest's bite takes nothing in the host's game.
+SPORE_FIX_OFF=pool.guestbite_type must FAIL at 6.
 """
 import os
 import re
@@ -92,6 +99,41 @@ def main():
         # 4. back to normal
         guest_bite('again', True)
         print('  host: ' + ' '.join(re.findall(r'hits_(?:in|aggro|spared)=\d+', host.call('coop.pool')['out'])))
+
+        # 5, 6 (BUG-0240): cells IsDamageable refuses
+        def other_kind(kind):
+            r = host.call(f'coop.pool kill - anyhit {kind}')['out']  # also the host's first bite on it
+            m = re.match(r'bit (c\d+) ', r)
+            print(f'  {kind}: host {r}')
+            if not m:
+                return False
+            k = m.group(1)
+            others.append(k)
+            print('  ' + host.call(f'coop.pool npcflag {k} hp 60')['out'])
+            time.sleep(2.0)
+            h0 = hp(host, k)
+            r = host.call(f'coop.pool kill {k} anyhit')['out']
+            time.sleep(0.5)
+            h1 = hp(host, k)
+            print(f'  {kind}: host {r}; host hp {h0} -> {h1}')
+            ck(h0 is not None and h1 is not None and h1 >= h0, f'{kind}: the host\'s own bite took nothing ({h0} -> {h1})')
+            r = 'gone'
+            for _ in range(3):
+                r = guest.call(f'coop.pool kill {k} anyhit')['out']
+                if r.startswith('bit '):
+                    break
+                guest.call(f'coop.pool swimto {k}')  # not mirrored yet: closer to it
+                time.sleep(2.0)
+            time.sleep(1.5)
+            h2 = hp(host, k)
+            print(f'  {kind}: guest {r}; host hp {h1} -> {h2}')
+            ck(r.startswith('bit '), f'{kind}: the guest bit its mirror ({r})')
+            ck(h1 is not None and h2 is not None and h2 >= h1, f'{kind}: the guest\'s bite took nothing ({h1} -> {h2})')
+            return True
+        others = []
+        # cell type not 2: a rock or the like first (a plant may be eaten while the test runs)
+        ck(any(other_kind(k) for k in ('rock', 'poison', 'bubble', 'nanite', 'plant')), 'a non-solid cell in the pool')
+        other_kind('meat')  # AI type 0, when the pool has meat
     finally:
         if key:
             host.call(f'coop.pool npcflag {key} spare 0')

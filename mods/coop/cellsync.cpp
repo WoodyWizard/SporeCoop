@@ -160,6 +160,8 @@ COOP_FIX("pool.ko_grace", "BUG-0238", g_fix_ko_grace, "cell: a late knockout ref
 static double g_kodrop_until; // tests (`coop.pool kodrop <s>`): MSG_CELL_KO ignored until then
 static bool g_fix_food_ack_away = true; // BUG-0239: the host acknowledges a guest's meal it cannot count
 COOP_FIX("pool.food_ack_away", "BUG-0239", g_fix_food_ack_away, "cell: a guest's meal reaching a host in an editor (no avatar) is acknowledged, not left on the way");
+static bool g_fix_guestbite_type = true; // BUG-0240: a guest's bite also needs IsDamageable's cell type and AI type
+COOP_FIX("pool.guestbite_type", "BUG-0240", g_fix_guestbite_type, "cell: a guest's bite spares cells IsDamageable refuses (cell type not 2, AI type 0)");
 static bool g_test_away; // tests (`coop.pool away 1|0`, host): the Cell messages are handled as in an editor
 static uint32_t g_hits_spared;
 bool totals_resend_enabled() { return g_fix_resend; }
@@ -428,25 +430,36 @@ static void downed_tick(uint8_t* a, double now, double dt)
         C.notice(C.my_name() + " respawned small" + (partner.empty() ? "" : " next to " + partner));
 }
 
-// ai.type of a cell (docs/re/cell.md 1: the first int of the AI block chosen by difficulty), -1 unknown
-static int ai_type(uint8_t* c)
+// the resource's cell type (+0xB4: 2 solid, 3 plant, 5 poison, ...) and ai.type (docs/re/cell.md 1:
+// the first int of the AI block chosen by difficulty, as IsDamageable 0xE52940 picks it); false when
+// the resource data cannot be read. One reader for kind_of, ai_type and the guest-bite gate.
+static bool res_types(uint8_t* c, int* cell_type, int* ai_type)
 {
-    void* ref = F<void*>(c, kRes);
+    void* ref = c ? F<void*>(c, kRes) : nullptr;
     if (!ref || !a_GetData)
-        return -1;
+        return false;
     void* holder = nullptr;
     uint8_t* res = skg::cdecl_call<uint8_t*>(a_GetData, ref, &holder);
     if (holder)
         --F<int>(holder, 0xC);
     if (!res)
-        return -1;
+        return false;
     int d = S() ? F<int>(S(), 0x7C) : 1;
     uint8_t* ai = res + 0xE0;
     if (d == 0 && F<int>(res, 0x248) != -1)
         ai = res + 0x248;
     else if (d == 2 && F<int>(res, 0x194) != -1)
         ai = res + 0x194;
-    return F<int>(ai, 0);
+    *cell_type = F<int>(res, 0xB4);
+    *ai_type = F<int>(ai, 0);
+    return true;
+}
+
+// ai.type of a cell, -1 unknown
+static int ai_type(uint8_t* c)
+{
+    int ct, ai;
+    return res_types(c, &ct, &ai) ? ai : -1;
 }
 
 // ---------------- guest -> host: what our avatar did to a cell of the host's pool ----------------
@@ -1489,9 +1502,13 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         // the guest's puppet counts as the player) or the victim has +0x17C / +0x111 set. A mouth's
         // chunk (type 6) is EatChunk's, which asks none of these. Old (`fix guestbite 0`): the
         // arguments swapped, no gate.
+        // BUG-0240: and IsDamageable's resource part (GOG 2024 0xE52940): the cell type is 2 (solid) and
+        // the AI type is not 0 (meat; the victim is never the avatar here). Unreadable data: not spared.
+        int ct = -1, ait = -1;
+        bool not_damageable = g_fix_guestbite_type && res_types(c, &ct, &ait) && (ct != 2 || ait == 0);
         if (g_fix_guestbite && t != 6 &&
             (F<uint8_t>(c, kDead) == 1 || F<int>(c, kHp) == 0 || F<uint8_t>(c, 0x17C) || F<uint8_t>(c, kInvuln) ||
-             (pc && o_NoAttack && h_NoAttack(c, pc)))) {
+             not_damageable || (pc && o_NoAttack && h_NoAttack(c, pc)))) {
             g_hits_spared++;
             return;
         }
@@ -1689,22 +1706,9 @@ void draw_overlay()
 // ai.type (first int of the AI block by difficulty)
 static const char* kind_of(uint8_t* c)
 {
-    void* ref = F<void*>(c, kRes);
-    if (!ref || !a_GetData)
+    int type, ai;
+    if (!res_types(c, &type, &ai))
         return "?";
-    void* holder = nullptr;
-    uint8_t* res = skg::cdecl_call<uint8_t*>(a_GetData, ref, &holder);
-    if (holder)
-        --F<int>(holder, 0xC);
-    if (!res)
-        return "?";
-    int type = F<int>(res, 0xB4);
-    int d = S() ? F<int>(S(), 0x7C) : 1;
-    uint8_t* ai = res + 0xE0;
-    if (d == 0 && F<int>(res, 0x248) != -1)
-        ai = res + 0x248;
-    else if (d == 2 && F<int>(res, 0x194) != -1)
-        ai = res + 0x194;
     switch (type) {
     case 1: return "rock";
     case 3: return "plant";
@@ -1712,7 +1716,7 @@ static const char* kind_of(uint8_t* c)
     case 5: return "poison";
     case 6: return "part";
     case 7: return "nanite";
-    case 2: return F<int>(ai, 0) != 0 ? "creature" : "meat";
+    case 2: return ai != 0 ? "creature" : "meat";
     default: return "other";
     }
 }
@@ -2053,8 +2057,12 @@ std::string debug(const std::vector<std::string>& a)
         std::vector<std::pair<float, uint8_t*>> v;
         // "kill <key> hit": DamageCell only (spikes, poison, electric: a lethal hit goes to KillCell)
         uint32_t want = a.size() > 1 && a[1] != "-" ? (uint32_t)strtoul(a[1].c_str() + (a[1][0] == 'c' ? 1 : 0), nullptr, 10) : 0;
+        // "kill <key|-> anyhit [kind]": DamageCell on a cell of any kind (or the nearest of that kind):
+        // the host's own bite there, a MSG_CELL_HIT from a guest (BUG-0240)
+        bool anyhit = a.size() > 2 && a[2] == "anyhit";
+        std::string kind = anyhit && a.size() > 3 ? a[3] : "creature";
         for_each_cell([&](uint8_t* c, uint32_t idx) {
-            if (modes::cell_is_puppet(c) || strcmp(kind_of(c), "creature") != 0)
+            if (modes::cell_is_puppet(c) || c == av || (!(anyhit && want) && kind != kind_of(c)))
                 return;
             auto it = g_host_of.find(idx);
             if (is_guest() && it == g_host_of.end())
@@ -2073,13 +2081,13 @@ std::string debug(const std::vector<std::string>& a)
         float dx = cp.x - ap.x, dy = cp.y - ap.y, l = std::max(0.001f, std::sqrt(dx * dx + dy * dy));
         float dir[3] = {dx / l, dy / l, 0}, at[3] = {cp.x, cp.y, cp.z};
         if (!F<uint8_t>(c, kDead) && !F<uint8_t>(c, kDying)) {
-            if (a_Bite && !(a.size() > 2 && a[2] == "hit")) // the game's bite (event 10): DamageCell, or BreakOrSwallow when lethal
+            if (a_Bite && !(a.size() > 2 && (a[2] == "hit" || anyhit))) // the game's bite (event 10): DamageCell, or BreakOrSwallow when lethal
                 skg::cdecl_call<bool>(a_Bite, avatar_idx(), F<uint32_t>(c, 0), at, dir, 0, 1.f / 30.f);
             else
                 h_DamageCell(c, av, dir, 4, 0, 0.f);
         }
         char b[160];
-        snprintf(b, sizeof b, "bit c%u at %.1f level=%d hp=%d pos=(%.1f %.1f)%s", key, v[0].first, F<int>(c, kLevel), F<int>(c, kHp),
+        snprintf(b, sizeof b, "bit c%u %s at %.1f level=%d hp=%d pos=(%.1f %.1f)%s", key, kind_of(c), v[0].first, F<int>(c, kLevel), F<int>(c, kHp),
                  pos_of(c).x, pos_of(c).y, F<uint8_t>(c, kDead) || F<uint8_t>(c, kDying) ? " dying" : "");
         return b;
     }
