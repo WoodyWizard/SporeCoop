@@ -3,6 +3,13 @@
 ## [Unreleased]
 
 ### Fixed
+- Votes: "I'm ready" in the co-op window did nothing while a caption of the game was on the
+  screen (the brain-upgrade captions at the end of the Creature stage): the vote ran out of time.
+  The window's buttons now work during captions and cinematics (BUG-0273).
+- Stage changes: after the change to Tribe the guests could load a Creature save of the host and
+  stay in Creature until they rejoined. The host's save for them now waits until the new stage has
+  settled, and a save the game did not write is made again instead of sending older files
+  (BUG-0276).
 - Cell: the host's (or a guest's) game could crash while the Cell stage ended and the Creature
   planet loaded, when the co-op status or the player's position was asked for at that moment. The
   mod no longer reads the cells the game has already freed, nor anything else of a stage the game

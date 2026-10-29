@@ -753,12 +753,8 @@ after-save hook of BUG-0217 (#151) and a game key; the allies part of BUG-0225 i
 
 Lab 20261029-122937 (4 players, three full games, three Cell -> Creature games; no crash, no fault):
 
-* A vote ended by its timer although all three guests clicked "I'm ready" (Creature -> Tribe,
-  once in three games). Ticket: BUG-0273.
 * A guest keeps a proxy of a host NPC that the host has at the planet's centre (504 m apart,
   Creature, two of three short games). Ticket: BUG-0274.
 * The 3rd and 4th players stay over the sync limits now and then (Cell cells, Creature NPCs);
   the 2nd never did. Ticket: BUG-0275.
-* After the change to Tribe three guests were not in the host's world for 300 s; a rejoin fixed it
-  (once). Ticket: BUG-0276.
 * Reproduce: `tools/lab.py run campaign --lane N` (about 85 min) or `campaign_short` (9 min).

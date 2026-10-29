@@ -1642,3 +1642,17 @@ wrong. Suite `campaign` (in no other suite): `tools/lab.py run campaign --lanes 
   reached it (`local_refused`, `puppet_refused`, `pool_gone`).
 * Pitfall: two `lab.py run` started in the same second from one worktree get the same run id and
   write into the same `out/lab/<id>/` (logs mixed); start them a few seconds apart.
+
+## Votes during a caption: coop_vote_caption.py (2026-10-29, fix/w7-vote)
+<a id="testing-vote-caption"></a>
+
+* `tools/lab.py run vote_caption --lane N` (2 players, cold, ~70 s after both games are up): the
+  guest plays CRG_ClaimNest (PlayCinematic by hand, the caption holds the input lock: the test
+  checks `input_lock` > 0 in `coop.uistate`), the host starts `coop.vote test` twice in a row and
+  the guest really clicks "I'm ready": each vote must end "everybody is ready", not by its timer.
+  Then EndCinematic frees the lock (Enter does not end a hand-started CRG_ClaimNest) and a third
+  vote checks the ordinary path; `locked_native` must stay 0 (no click pressed twice).
+* `SPORE_FIX_OFF=core.ui_locked_clicks` fails the first two votes (BUG-0273, lab
+  20261029-143459).
+* The campaign bot answers a vote before captions (coop_campaign.py `service`): with a caption up
+  its clicks hit the input lock; it also toggles the button on every pass (`set_ready(!ready)`).
