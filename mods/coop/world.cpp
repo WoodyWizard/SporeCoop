@@ -626,6 +626,7 @@ static bool post_quit_to_menu(std::string& err)
     // MessagePost (4 arguments, as save_game): handled in the game's own message processing,
     // outside our frame hook
     skg::vcall<void>(mm, 0x18 / 4, 0x4715068u, (void*)nullptr, (void*)nullptr, 0);
+    game::stage_leaving("quit to the galaxy menu posted"); // BUG-0264
     return true;
 }
 
@@ -709,6 +710,7 @@ static void via_menu_tick()
     }
     if (now - g_via_menu.since > 60.0) {
         g_via_menu = ViaMenu{};
+        game::stage_leave_cancel(); // BUG-0264: the stage stays, its avatar too
         H->log(M, SK_WARN, "world: the game did not go to the galaxy menu, load cancelled");
         g_feed("the world could not be loaded: the game did not go to the galaxy menu");
     }
