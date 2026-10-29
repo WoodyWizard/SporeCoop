@@ -15,6 +15,7 @@ tests: tools/tests/win_unit.py + tests/win_tests.cpp (suite win_unit)
 signature:
 docs: 
 related: #129
+switch: update.keep_failed
 ---
 
 ## Report
@@ -82,3 +83,4 @@ Host-side or lane test of the updater:
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w2-world: entries whose swap failed stay in sporecoop.pending (win_unit).
 - 2026-10-28: released in 0.7.3.0.
+- 2026-10-28: switch: update.keep_failed (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).

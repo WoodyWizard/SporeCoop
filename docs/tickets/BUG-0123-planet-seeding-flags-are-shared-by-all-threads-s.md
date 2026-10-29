@@ -15,6 +15,7 @@ tests: space_seed_thread
 signature:
 docs: docs/re/space.md#space-w3-trips-clicks-defenders
 related: #102
+switch: space.seed
 ---
 
 ## Report
@@ -61,7 +62,7 @@ Suggested in the review:
 - Log a warning (once) when one of the hooks runs on a thread other than the main thread, so the docs can record whether it happens.
 
 ## Verification
-Done (2026-10-28, lane 6, GOG 2024): `coop_space_seed_thread.py` (suite `space_seed_thread`): another thread holds the name counter while the guest jumps into two stars nobody generated, the host follows, the PlanetIDs of both games are compared. `--without-fix` FAILS: 6 and 5 planets of 00460024, 1 and 4 of 0046002F (/tmp/claude-1000/-home-pam3es-Games-Modding-SPORE/13201e2f-19c5-4da6-b393-aae16fe6d338/scratchpad/waves/fix_w3-space/seed_nofix.log); with the fix PASS: 6 and 6, 1 and 1, the same ids (/tmp/claude-1000/-home-pam3es-Games-Modding-SPORE/13201e2f-19c5-4da6-b393-aae16fe6d338/scratchpad/waves/fix_w3-space/seed_pass1.log). Whether the game itself ever calls GenerateRandomName or RequirePlanetsForStar off the main thread is still not known: no off-main warning was logged in these runs; the warning stays to find out.
+Done (2026-10-28, lane 6, GOG 2024): `coop_space_seed_thread.py` (suite `space_seed_thread`): another thread holds the name counter while the guest jumps into two stars nobody generated, the host follows, the PlanetIDs of both games are compared. `--without-fix` FAILS: 6 and 5 planets of 00460024, 1 and 4 of 0046002F (scratch log `seed_nofix.log` (not kept)); with the fix PASS: 6 and 6, 1 and 1, the same ids (scratch log `seed_pass1.log` (not kept)). Whether the game itself ever calls GenerateRandomName or RequirePlanetsForStar off the main thread is still not known: no off-main warning was logged in these runs; the warning stays to find out.
 
 Planned in the review: Planned test (must FAIL without the fix and PASS with it):
 
@@ -76,3 +77,5 @@ The known issue in docs/known-issues.md ("an unvisited star's planets can still 
 - 2026-10-28: fixed on fix/w3-space (66d7a30): thread-local seeding state; space_seed_thread FAIL without / PASS with (forced second thread).
 - 2026-10-28: fix/w3-space lab runs on lane 6: 20261028-010933 (14/14: the four new wave 3 Space tests and space_map, space_stale, space_fleet, space_puppet, space_rivalry, space_contracts, space_jump, space_guest_ui, space_allies, space_diplomacy), smoke 20261028-013951 (13/13; `ui` skipped: exclusive, needs a lane 1-5).
 - 2026-10-28: released in 0.7.3.0.
+- 2026-10-28: log paths of an agent's scratch folder replaced by the log names (BUG-0215: no paths outside the repository).
+- 2026-10-28: switch: space.seed (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).

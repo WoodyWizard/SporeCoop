@@ -249,8 +249,7 @@ DWORD WINAPI check_thread(void*)
     ri.done = true;
     if (ri.ok)
         ri.err.clear();
-    if (!g_rel.get().ok || ri.ok) // an install job may have fetched it already
-        g_rel.set(ri);
+    g_rel.merge(ri); // an install job may have fetched it already (one lock: BUG-0244)
     PostMessageW(g_wnd, WM_INFO, 0, 0);
     return 0;
 }
@@ -455,6 +454,8 @@ void parse_args()
             g_opt.inst.downgrade = true;
         else if (s == L"/oldfix") // tests: the behaviour before BUG-0094 and BUG-0139
             inst::g_fix = false;
+        else if (s == L"/oldmerge") // tests: the check thread's get-then-set before BUG-0244
+            upd::g_release_merge_fix = false;
         else if (!val(L"/pack:").empty())
             g_opt.inst.pack = val(L"/pack:");
         else if (!val(L"/api:").empty())

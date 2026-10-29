@@ -15,6 +15,7 @@ tests: space_diplo_mirror
 signature:
 docs: docs/re/space.md#space-ship-state-chunks
 related: #49
+switch: diplomacy.mirror
 ---
 
 ## Report
@@ -67,7 +68,7 @@ Suggested in the review:
 - Keep the old behaviour behind `coop.fix diplo_skip_mirrors off`.
 
 ## Verification
-Done (2026-10-28, lane 6): `coop_space_diplo_mirror.py` (suite `space_diplo_mirror`). The guest gets an empire of its own galaxy it never met (`allies fake` + `allies detach`), the host takes ids up to it (`allies nextpol bump`) and makes an allies mirror with the same id, the guest asks for the host's table. `--without-fix` FAILS: the guest's record of that empire becomes flags 34 (allied, contacted; "host table: 1 empires, 1 fixed"; /tmp/claude-1000/-home-pam3es-Games-Modding-SPORE/13201e2f-19c5-4da6-b393-aae16fe6d338/scratchpad/waves/fix_w2-space/diplo--without-fix15117.log). With the fix PASS twice: flags 0, the host sends 0 empires.
+Done (2026-10-28, lane 6): `coop_space_diplo_mirror.py` (suite `space_diplo_mirror`). The guest gets an empire of its own galaxy it never met (`allies fake` + `allies detach`), the host takes ids up to it (`allies nextpol bump`) and makes an allies mirror with the same id, the guest asks for the host's table. `--without-fix` FAILS: the guest's record of that empire becomes flags 34 (allied, contacted; "host table: 1 empires, 1 fixed"; scratch log `diplo--without-fix15117.log` (not kept)). With the fix PASS twice: flags 0, the host sends 0 empires.
 
 Not done yet. Planned test (must FAIL without the fix and PASS with it):
 
@@ -84,8 +85,13 @@ This must FAIL on main and with `coop.fix diplo_skip_mirrors off`, and PASS with
 - docs/re/space.md 12 (diplomacy), 15.1 and 15.3 (mirror empire, contact flags).
 - Same id-reuse family: the allies reload issue (old mirror empire reused at an old pol).
 
+Run evidence (2026-10-28, BUG-0215, found afterwards in the lab folders and agent logs): FAIL with the fix off: `diplo--without-fix15117.log` (fix/w2-space, 0 -> 34 contacts), a standalone test run whose log stayed in the agent's scratch folder (not kept in out/lab). PASS: lab run out/lab/20261027-233002 on fix/w2-space (space_diplo_mirror ok); later full runs on main pass too.
+
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #49.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w2-space (778e3e8): mirror pols are never shared or applied onto; test space_diplo_mirror FAIL without / PASS with.
 - 2026-10-28: released in 0.7.3.0.
+- 2026-10-28: log paths of an agent's scratch folder replaced by the log names (BUG-0215: no paths outside the repository).
+- 2026-10-28: Verification names the FAIL log and the PASS lab run (BUG-0215).
+- 2026-10-28: switch: diplomacy.mirror (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).

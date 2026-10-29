@@ -15,6 +15,7 @@ tests: cinematic_puppet
 signature:
 docs: docs/re/creature.md#creature-pool-ids
 related: #44
+switch: npc.deferpuppet
 ---
 
 ## Report
@@ -88,3 +89,4 @@ new puppet during the cinematic; the old one must have no host NPC id (none is s
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: confirmed in the game (host NPC id 23 for the old puppet) and fixed on fix/w2-creature; test cinematic_puppet.
 - 2026-10-28: released in 0.7.3.0.
+- 2026-10-28: switch: npc.deferpuppet (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).

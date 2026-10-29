@@ -15,6 +15,7 @@ tests: tools/tests/win_unit.py + tests/win_tests.cpp (suite win_unit)
 signature:
 docs: docs/03-gameplay.md
 related: #84
+switch: world.write_check
 ---
 
 ## Report
@@ -86,3 +87,4 @@ A test for `coop_*` on two instances, with a switch `coop.fix world_write_check 
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w2-world: received files written to a temporary folder, checked, swapped in whole; a failed write is not loaded (win_unit).
 - 2026-10-28: released in 0.7.3.0.
+- 2026-10-28: switch: world.write_check (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).

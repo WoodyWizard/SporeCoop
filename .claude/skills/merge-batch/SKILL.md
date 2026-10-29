@@ -19,6 +19,8 @@ description: Orchestrator - merge a batch of parallel SporeCoop branches (one pe
 5. After each merge: `tools/tickets.py index` (the union merge keeps both table rows), `make -j8`,
    `make test` (unit tests, re_lint, docs_lint, tickets check). The branch's ticket says fixed
    with its commits and tests; add the merge commit to it.
+   A fixed ticket's Verification names the FAIL and PASS lab run ids (or `no-fail-run: <reason>`)
+   and `commits:` lists the fix commits: `tickets.py check` fails otherwise (BUG-0215).
 6. After the batch: `tools/lab.py run smoke,<the batch's new tests> --lanes 6`; a single failure
    under load: run that test alone 2-3 times before calling it a regression. Fold the
    `out/findings.md` lines into the docs.

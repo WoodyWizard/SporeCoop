@@ -15,6 +15,7 @@ tests: space_stale (coop_space_stale.py; --without-fix must fail)
 signature:
 docs: docs/re/space.md#space-stale-lookups, docs/06-testing.md#testing-space-stale
 related: #32
+switch: fleet.hit
 ---
 
 ## Report
@@ -99,3 +100,4 @@ Hard to hit by timing. Make it deterministic with a test command on the guest: `
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-27: fixed on fix/w1-space (wave 1, Space).
 - 2026-10-28: released in 0.7.3.0.
+- 2026-10-28: switch: fleet.hit (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).

@@ -17,8 +17,23 @@ HOST = 2 * LANE - 1   # SporeKit instance numbers: console port 47800 + N - 1
 GUEST = 2 * LANE
 PORT = 47810 + HOST - 1  # the host's co-op port
 BOTTLE = 'Games' if LANE == 1 else f'SporeLab{LANE}'
+
+
+def _user():
+    """$USER, else the password database's name (the name Wine falls back to for drive_c/users), else
+    'user' (a container uid without a passwd entry: imports keep working, a game test fails visibly at
+    its fixture step). BUG-0252: make test ran without $USER into a KeyError."""
+    if os.environ.get('USER'):
+        return os.environ['USER']
+    try:
+        import getpass
+        return getpass.getuser()
+    except (KeyError, OSError, ImportError):
+        return 'user'
+
+
 APPDATA = os.path.expanduser(f'~/.var/app/com.usebottles.bottles/data/bottles/bottles/{BOTTLE}/drive_c/users/'
-                             + os.environ['USER'] + '/AppData/Roaming')
+                             + _user() + '/AppData/Roaming')
 HOST_PROFILE = 'test'
 GUEST_PROFILE = 'inst2' if LANE == 1 else f'inst{GUEST}'
 HOST_DIR = os.path.join(APPDATA, 'SporeKit-' + HOST_PROFILE, 'Spore')

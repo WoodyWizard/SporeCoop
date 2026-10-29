@@ -15,6 +15,7 @@ tests: npc_swap, unit (npc_tests: swap ledger)
 signature:
 docs: docs/re/creature.md#creature-pool-ids
 related: #89
+switch: npc.swapguard
 ---
 
 ## Report
@@ -104,3 +105,4 @@ between frames.
 - 2026-10-28: fixed on fix/w2-creature for h_NPCTickAI (per-frame swap guard); test npc_swap. The other detours of the report stay open in their areas.
 - 2026-10-28: fix/w3-creature: the other detours (h_NoAttack, h_SelectUI, h_StageMsg, b_damage) were not covered by the per-frame guard; a swap ledger covers them now. Unit test in make test (npc_tests: the guard off leaves the partner as the value, on puts it back; nested calls); no game test forcing a fault inside those detours.
 - 2026-10-28: released in 0.7.3.0.
+- 2026-10-28: switch: npc.swapguard (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).

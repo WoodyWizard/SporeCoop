@@ -15,6 +15,7 @@ tests: coop_ui_status.py (suite ui_status)
 signature:
 docs: docs/06-testing.md#testing-net-w3
 related: #63
+switch: core.host_away_reset
 ---
 
 ## Report
@@ -68,3 +69,4 @@ guest's log after `disconnected:` must have no "(host) is back".
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w3-net (wave 3).
 - 2026-10-28: released in 0.7.3.0.
+- 2026-10-28: switch: core.host_away_reset (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).

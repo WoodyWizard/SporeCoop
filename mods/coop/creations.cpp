@@ -371,6 +371,7 @@ static std::map<std::pair<uint8_t, uint32_t>, WorldPkg> g_world_pkgs; // (kind, 
 // BUG-0055: the session end drops them (a guest's own creation of the same key is its own again).
 // `coop.creations worlddrop off` keeps them registered for the rest of the process (tests).
 static bool g_world_drop = true;
+COOP_FIX("creations.world_drop", "BUG-0055", g_world_drop, "creations: the host's world creations are dropped at the session end (coop.creations worlddrop)");
 static unsigned g_world_dropped;
 
 static void* package_for(std::wstring path, const std::vector<dbpf::Record>& recs, int priority)

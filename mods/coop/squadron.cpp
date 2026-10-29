@@ -101,6 +101,7 @@ COOP_FIX("fleet.chunk", "BUG-0037", g_chunk_fix, "space: the mirror removal pass
 // BUG-0084: the guest's own escort (posse, type 3 ships) is not the host's to simulate.
 // `coop.fleet keepposse 0` restores the old loop that destroyed it (tests).
 static bool g_keep_posse = true;
+COOP_FIX("fleet.posse", "BUG-0084", g_keep_posse, "space: the guest's own escort is not destroyed as a host mirror (coop.fleet keepposse)");
 static uint32_t g_stale_chunks, g_partial_cycles, g_posse_kept;
 static bool g_applying;
 static uint32_t g_created, g_removed, g_hits_sent, g_damage_in, g_local_removed, g_mirror_hits;
@@ -273,7 +274,7 @@ static bool live(void* u)
 // messages run before squadron::tick drops the freed pointers) passed a freed object, which the
 // game reads and AddRefs (AddHostileUnit). `coop.fleet hitfix 0` restores the old unchecked path.
 static bool g_hit_fix = true;
-COOP_FIX("fleet.hit", "BUG-0054", g_hit_fix, "space: a hit message never passes a freed ship to TakeDamage");
+COOP_FIX_UNSAFE("fleet.hit", "BUG-0054", g_hit_fix, "space: a hit message never passes a freed ship to TakeDamage");
 static uint16_t g_hold_mirror = 0xFFFF; // tests (coop.fleet freemirror): this freed mirror stays listed
 static void* g_stale_puppet;            // tests (coop.fleet freepuppet): the next MSG_UFO_HIT's attacker
 static uint32_t g_att_dropped, g_att_freed;
