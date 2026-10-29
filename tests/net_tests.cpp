@@ -1652,7 +1652,9 @@ static void test_discovery_prune()
     printf("LAN game list: pruned and capped (BUG-0039)\n");
     Discovery d;
     CHECK(d.start());
-    d.targets = {0x0100007F};
+    // no query targets: a real game of a lab lane on this machine would answer a loopback query
+    // and stay in the list past the prune (seen in make test while lanes were running)
+    d.targets = {};
     // what update() does with each answer datagram (64 per frame at most)
     uint32_t now = 100000;
     for (int i = 0; i < 500; i++) {
