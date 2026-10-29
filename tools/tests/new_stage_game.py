@@ -36,6 +36,9 @@ STEPS = {
     "cell": [(900, 537), NEXT, NEXT, (1090, 608)],  # diet card, difficulty, planet name
 }
 
+# the two diet cards of the Cell wizard (GOG 2024, 1440x1080): wiz_cell_start.png of `--shots`
+CELL_DIET = {"herb": (900, 537), "carn": (995, 537)}  # leaf, meat
+
 
 SLOT_WINDOW = "0x02E5A4A8"  # the hotspot over a planet slot ring in the galaxy menu
 
@@ -118,6 +121,8 @@ def main():
     ap.add_argument("--npc-cities", type=int, default=0,
                     help="civ: let N cities of other nations appear right away (the game waits for spice and money)")
     ap.add_argument("--shots", action="store_true", help="screenshot every wizard step to out/shots")
+    ap.add_argument("--diet", help="cell: the diet card, herb | carn | X,Y (default: the wizard's first card)")
+    ap.add_argument("--no-settle", action="store_true", help="return as soon as the stage mode is up (its intro still runs)")
     ap.add_argument("--name", help="type this planet name (any letters, e.g. Cyrillic) instead of the game's")
     a = ap.parse_args()
     for _ in range(120):  # the game is up (its console answers)
@@ -154,7 +159,13 @@ def main():
     x, y = STAGE_ICON[a.stage]
     c.cmd(f"click {x} {y}")
     c.cmd("wait.frames 150 60000")
-    steps = STEPS[a.stage]
+    if a.shots:  # the first wizard page (the diet cards of the cell wizard)
+        subprocess.run([sys.executable, os.path.join(os.path.dirname(__file__), "..", "sporectl.py"), "-i", str(a.i),
+                        "shot", os.path.join(lane.out_dir("shots"), f"wiz_{a.stage}_start.png"), "--scale", "0.4"],
+                       stdout=subprocess.DEVNULL)
+    steps = list(STEPS[a.stage])
+    if a.stage == "cell" and a.diet:
+        steps[0] = CELL_DIET[a.diet] if a.diet in CELL_DIET else tuple(map(int, a.diet.split(",")))
     for n, (x, y) in enumerate(steps):
         if a.name and n == len(steps) - 1:  # the last step names the planet: type over the game's name
             c.cmd(f"move {PLANET_NAME[0]} {PLANET_NAME[1]}")
@@ -179,6 +190,8 @@ def main():
         mode = c.cmd("game.mode")
         if MODE[a.stage].lower() in mode.lower():
             print("in", mode.strip())
+            if a.no_settle:
+                return 0
             c.cmd("wait.frames 600 120000")
             if a.stage == "civ" and a.npc_cities:
                 return npc_cities(c, a.npc_cities)

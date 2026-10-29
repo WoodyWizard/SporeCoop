@@ -25,7 +25,7 @@ static Ctx C;
 static bool g_ok;
 static uintptr_t a_Wipe, a_Cine, a_Pair, a_GetData, a_DamageCell, a_KillCell, a_Break, a_Destroy, a_AddFood, a_Populate, a_Rollover, a_GetDamage,
     a_RefCreate, a_Serializer, a_S, a_Fnv, a_Effect, a_TargetParams, a_IsPrey, a_IsThreat, a_ScaleDiff, a_NoAttack, a_Alert, a_React, a_Rest,
-    a_Soft, a_ChunkA, a_ChunkB, a_Bite, a_SpawnLoot, a_EatFood;
+    a_Soft, a_ChunkA, a_ChunkB, a_Bite, a_SpawnLoot, a_EatFood, a_ModelData;
 
 // ---- cCellObjectData fields (docs/re/cell.md) ----
 constexpr uintptr_t kTarget = 0x08, kFlags = 0x48, kCounter = 0x4A, kPos = 0x4C, kSize = 0x58, kRot = 0x5C,
@@ -991,6 +991,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     a_GetDamage = H->sym("Simulator::Cell::GetDamageAmount");
     a_TargetParams = H->sym("Simulator::Cell::GetTargetSearchParams");
     a_IsPrey = H->sym("Simulator::Cell::IsPrey");
+    a_ModelData = H->sym("Simulator::Cell::GetCellModelData");
     a_IsThreat = H->sym("Simulator::Cell::IsThreat");
     a_ScaleDiff = H->sym("Simulator::Cell::GetScaleDifference");
     a_NoAttack = H->sym("Simulator::Cell::ShouldNotAttack");
@@ -1962,6 +1963,24 @@ std::string debug(const std::vector<std::string>& a)
                  F<float>(c, kSize), F<uint32_t>(c, 0x248), F<int>(c, 0x250), F<int>(c, kHp), F<int>(c, kLevel),
                  F<uint8_t>(c, kAiLock), F<uint8_t>(c, kKeepAlive));
         return b;
+    }
+    if (!a.empty() && a[0] == "diet") { // what each cell's mouth eats (the model data CanEat 0xE68470 reads)
+        std::string out;
+        auto line = [&](const char* who, uint8_t* c) {
+            char b[160];
+            auto* k = (uint32_t*)(c + kModelKey);
+            uint8_t* md = a_ModelData && k[0] ? skg::cdecl_call<uint8_t*>(a_ModelData, k[0], k[1], k[2]) : nullptr;
+            snprintf(b, sizeof b, "diet %s model=%08X carnivore=%d herbivore=%d\n", who, k[0], md ? md[0x1250] : -1,
+                     md ? md[0x1251] : -1);
+            out += b;
+        };
+        if (uint8_t* av = avatar())
+            line("me", av);
+        for_each_cell([&](uint8_t* c, uint32_t) {
+            if (modes::cell_is_puppet(c))
+                line("partner", c);
+        });
+        return out.empty() ? std::string("diet: no avatar\n") : out;
     }
     if (!a.empty() && a[0] == "see")
         return see(a.size() > 1 ? atoi(a[1].c_str()) : 60);
