@@ -794,6 +794,48 @@ static void test_updater_dup()
     CHECK(upd::parse_pack(upd::write_pack(dup), q, err) && q.files.size() == 2);
 }
 
+// BUG-0242: names Windows treats as one file ("coop.dll" and "coop.dll.") passed the duplicate
+// check; device names and the updater's own working names were allowed as pack paths
+static void test_updater_paths()
+{
+    printf("updater: paths that are the same file on Windows, device and working names (BUG-0242)\n");
+    upd::Pack p, q;
+    std::string err;
+    p.version = "9";
+    p.files.push_back({"SporebinEP1/mods/coop.dll", 0, {'A'}});
+    p.files.push_back({"SporebinEP1/mods/coop.dll.", 0, {'B'}});
+    p.files.push_back({"SporebinEP1/mods/sporekit/symbols/x.sym", 0, {'C'}});
+    p.files.push_back({"SporebinEP1/mods/sporekit./symbols/x.sym", 0, {'D'}});
+    bool parsed = upd::parse_pack(upd::write_pack(p), q, err);
+    printf("  trailing-dot pack: parse_pack=%d (%s)\n", parsed, err.c_str());
+    CHECK(!parsed);
+    for (const char* bad : {"SporebinEP1/mods/coop.dll.", "SporebinEP1/mods/sporekit./symbols/x.sym",
+                            "SporebinEP1/mods/nul", "SporebinEP1/mods/con.dll", "SporebinEP1/mods/COM1.ini",
+                            "SporebinEP1/mods/coop.dll.new", "SporebinEP1/mods/coop.dll.sporecoop-old",
+                            "SporebinEP1/mods/coop.dll.old", "SporebinEP1/mods/coop.ini.sporecoop-tmp",
+                            "SporebinEP1/mods/sporecoop.pending"}) {
+        bool a = upd::allowed_path(bad);
+        if (a)
+            printf("  allowed: %s\n", bad);
+        CHECK(!a);
+    }
+    // every path of the real release packs (tools/mkpack.py) still passes
+    std::vector<std::string> real = {"SporebinEP1/steam_api.dll", "SporebinEP1/sporekit.dll", "SporebinEP1/mods/coop.dll",
+                                     "Data/SporeCoop.package", "SporebinEP1/mods/sporecoop.version",
+                                     "SporebinEP1/mods/sporekit.ini", "SporebinEP1/mods/coop.ini"};
+    for (const char* sym : {"gog2016_922af7c7.sym", "march2017_dc04aee5.sym", "overrides_922af7c7.sym",
+                            "overrides_dc04aee5.sym"})
+        real.push_back(std::string("SporebinEP1/mods/sporekit/symbols/") + sym);
+    upd::Pack rp;
+    rp.version = "9";
+    for (auto& r : real) {
+        CHECK(upd::allowed_path(r));
+        rp.files.push_back({r, 0, {'x'}});
+    }
+    CHECK(upd::parse_pack(upd::write_pack(rp), q, err) && q.files.size() == real.size());
+    CHECK(upd::canonical_path("SporebinEP1/mods/COOP.dll") == "sporebinep1/mods/coop.dll");
+}
+
 static void test_updater()
 {
     printf("updater: packs, paths, versions, release answer\n");
@@ -1712,7 +1754,8 @@ int main(int argc, char** argv)
             std::string list = argv[i + 1];
             std::map<std::string, bool*> sw = {{"peer_caps", &g_fix.peer_caps},
                                                {"rejoin_token", &g_fix.rejoin_token},
-                                               {"addr_label", &g_fix.addr_label}};
+                                               {"addr_label", &g_fix.addr_label},
+                                               {"update_paths", &upd::g_path_fix}};
             for (size_t a = 0; a <= list.size();) {
                 size_t b = list.find(',', a);
                 if (b == std::string::npos)
@@ -1733,6 +1776,7 @@ int main(int argc, char** argv)
         memset((void*)&g_fix, 0, sizeof g_fix);
         g_nofix = true;
         upd::g_dup_fix = false;
+        upd::g_path_fix = false;
         upd::g_pick_fix = false;
         dbpf::g_bounds_fix = false;
         printf("netcode fixes OFF\n");
@@ -1745,6 +1789,7 @@ int main(int argc, char** argv)
     test_refpack_untrusted();
     test_updater();
     test_updater_dup();
+    test_updater_paths();
     test_reliability();
     test_ackbits();
     test_bulk();
