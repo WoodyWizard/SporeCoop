@@ -901,10 +901,8 @@ class Campaign:
                     self.note('finale ok: ' + msg)
                 return cond
         ck = Ck()
-        for p in self.P:
+        for p in self.P:  # (the drive came with the Space play phase)
             fz.settle(p.con, p.name, timeout=60)
-            if fz.fin(p.con).get('ctx') not in ('2',):
-                fz.get_drive(p.con, p.name, ck)
         fz.to_galaxy(h.con, h.name, ck)
         self.note('shortcut: coop.space finale goto near (the host crosses the galaxy)')
         fz.sp(h.con, 'finale goto near')
