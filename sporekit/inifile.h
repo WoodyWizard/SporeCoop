@@ -12,6 +12,14 @@
 namespace skini {
 
 extern bool g_unicode_fix; // false: the old behaviour (kit.fix iniutf 0, win_tests --old)
+// BUG-0245: UTF-16 BE is converted losslessly, a file with NUL bytes (UTF-16 without a BOM, or not an
+// ini file) is left as it is; false = only FF FE counts as Unicode (kit.fix iniencode 0)
+extern bool g_encode_fix;
+// BUG-0245: a named mutex per settings file around the conversion and the writes (two instances on
+// one folder), and a non-ASCII value is not written when the file could not be made Unicode (it
+// became "????"); false = no mutex, written anyway (kit.fix inilock 0)
+extern bool g_lock_fix;
+extern void (*g_log)(const std::string&); // problems worth one log line (set by SporeKit; may be null)
 
 // rewrites `file` as UTF-16LE with a BOM when it is not already; `force`: also when it is ASCII
 // only (or missing: then an empty Unicode file is made). true when the file is Unicode afterwards.

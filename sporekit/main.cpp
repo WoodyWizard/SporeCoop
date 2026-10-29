@@ -21,9 +21,18 @@ int ini_int(const std::wstring& file, const char* section, const char* key, int 
     return skini::read_int(file, section, key, def);
 }
 
-std::string ini_str(const std::wstring& file, const char* section, const char* key, const char* def)
+// the kit.fix switches of skini (inifile.cpp is also built into win_tests without SporeKit)
+static void ini_fixes()
 {
     skini::g_unicode_fix = fixed(g_fix_iniutf);
+    skini::g_encode_fix = fixed(g_fix_iniencode);
+    skini::g_lock_fix = fixed(g_fix_inilock);
+    skini::g_log = [](const std::string& s) { SKLOG(SK_WARN, "%s", s.c_str()); };
+}
+
+std::string ini_str(const std::wstring& file, const char* section, const char* key, const char* def)
+{
+    ini_fixes();
     return skini::read_str(file, section, key, def);
 }
 
@@ -98,7 +107,7 @@ static void h_config_str(SkMod* m, const char* s, const char* k, const char* d, 
 }
 static int h_config_set_str(SkMod* m, const char* s, const char* k, const char* v)
 {
-    skini::g_unicode_fix = fixed(g_fix_iniutf);
+    ini_fixes();
     return skini::write_str(mod_ini(m), s, k, v) ? 0 : 1;
 }
 static void h_run_outside_frame(SkTaskFn fn, void* u)
