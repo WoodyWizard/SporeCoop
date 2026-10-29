@@ -1,17 +1,17 @@
 ---
 id: BUG-0259
 title: lab.py run --lane 2 is taken as --lanes 2 and runs on lane 1
-status: open
+status: fixed
 kind: tooling
 stage: all
 reported: 2026-10-29
 source: fix/w5-cell, 2026-10-28
 role: 
 versions: 
-fixed_in:
-branch:
+fixed_in: unreleased
+branch: main
 commits:
-tests:
+tests: hotreload
 signature:
 docs:
 related:
@@ -25,13 +25,15 @@ Reproduce: `python3 tools/lab.py run unit --lane 2` and read the lane column of 
 Suggested fix: `allow_abbrev=False` on lab.py's parsers, and a real `run --lane N` if that is the intended interface.
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+argparse matches unique prefixes of long options by default (`allow_abbrev=True`), and `run` had only `--lanes`.
 
 ## Fix
+`allow_abbrev=False` on the parser and every subparser of lab.py, and a real `run --lane N` (repeatable; refused for a lane outside 1..10 or in --skip). The wave 5 coordinator's wrong note was corrected to the agents still running.
 <!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
+no-fail-run: argparse behaviour, shown by the report's runs 20261028-235046, -235143, -235236 (lane 1). After the fix: `lab.py run x --lan 2` exits 2 (unrecognized arguments); `lab.py run hotreload --lane 3` ran on lane 3 (out/lab/20261029-003406, OK).
+ach with its lab run id (out/lab/YYYYMMDD-HHMMSS);
      or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
 
 ## History
