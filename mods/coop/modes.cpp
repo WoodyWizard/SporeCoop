@@ -876,7 +876,24 @@ std::string current_world_name()
     return world_name::effective(g_world_name, raw, g_snapshot_name_fix);
 }
 
-void world_name_tick() { (void)current_world_name(); }
+// once per frame: the memory follows the game; every change of the game's own name is logged
+// (BUG-0258: when "snapshot.spo" comes and goes)
+void world_name_tick()
+{
+    static std::string seen;
+    std::string raw = raw_world_name();
+    std::string eff;
+    {
+        std::lock_guard<std::mutex> lk(g_world_name_mx);
+        eff = world_name::effective(g_world_name, raw, g_snapshot_name_fix);
+    }
+    if (raw != seen) {
+        if (g_host_for_modes && g_mod_for_modes)
+            g_host_for_modes->log(g_mod_for_modes, SK_INFO, "world: the game's save name is now '%s' (mode %08X; the place uses '%s')",
+                                  raw.c_str(), game::mode_id(), eff.c_str());
+        seen = raw;
+    }
+}
 
 uint32_t current_place(const Adapter* a)
 {

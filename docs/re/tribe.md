@@ -731,9 +731,17 @@ BUG-0258. GOG 2024.
   stays so until the game is saved again (four-player campaign runs 20261029-001119 and
   20261029-011243 on dev/campaign: 5+ minutes). The next save (pause menu, `coop.save`, the save
   before a world share) sets it back to the planet's file (`Cadian.spo`).
-* ✔ The host's share saves right after the mode turned Tribe still read the planet's name
-  (`sharing ... planet Scalinus` twice within 6 s of the change): the rename comes later, during
-  the Tribe intro, so those saves do not help.
+* ✔ When: 5 to 10 s after the mode turned Tribe (log line `world: the game's save name is now
+  'snapshot.spo'`, lane 3: +4.9 s in a two-player run, +8.7 s in a four-player run), after the
+  host's first share save. Whether a later save of the host follows decides the bug: in the
+  four-player campaign run 20261029-061803 (lane 3, fix off) the "next phase"
+  save came 10 s after the rename and set the name back (no bug); in the two-player lab run
+  20261029-062544 the "next phase" save was posted 0.2 s after the rename, wrote nothing (no "save:
+  objects kept out" line, the saved box 188 ms after it was the old one) and the name stayed
+  `snapshot.spo` for 5 minutes: the bug. The ticket's four-player runs had both saves before the
+  rename.
+* ✔ The rename also made `tribe::world_check` report "the world changed" (its in-stage save-name
+  signal) on the host 5 s into the stage.
 * ✔ Effects before the fix: the place id of a player (crc32 of that name, `modes::current_world`)
   was crc32("snapshot.spo") = 0x6F3BE084 on the host and the planet's on every guest: `together N
   0`, no puppets, for good. The same name was the lobby text and the in-stage "another save name"

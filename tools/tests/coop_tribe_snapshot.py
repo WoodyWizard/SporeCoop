@@ -7,13 +7,14 @@ real "I'm ready", "done" in the editors, the captions of the fire cinematic. The
 Tribe stage and sends its world; the guest loads it.
 
 After the game's own stage change the game's save name (CurrentGameName) reads "snapshot.spo"
-until the next save. The place id of a player was the crc32 of that name, so the host was in
-"snapshot.spo", the guest (who loaded the planet's file) in "<planet>.spo": `together 1 0`, no
-puppets, for good. Checked: the host's game name was "snapshot.spo" at some time after the change
-(else the run proves nothing and fails), and then, within 120 s of the guest's load:
-  * the host's place equals the guest's, `together 1 1`;
-  * the host has a puppet of the guest (`remote 1 ... puppet=<not null>`), the guest's log says
-    "Alice appeared in the world" after its load.
+about 9 s into the Tribe stage, until the next save. The place id of a player was the crc32 of that
+name: when no save of the host followed the rename (four-player campaign runs), the host was in
+"snapshot.spo" and every guest in "<planet>.spo" for good. Whether a share save comes after the
+rename depends on timing (a two-player run and a four-player run on lane 3 had one), so the test
+forces the rename the game does, once the guest is together with the host in Tribe: the same
+UTF-16 text written into the name's buffer (same length as the fixture's "Scalinus.spo"). Then, for
+40 s: the host's place is the guest's, `together 1 1` all the time, a puppet of the guest on the
+host, the guest does not hide the host.
 
   SPORE_LANE=3 python3 tools/tests/coop_tribe_snapshot.py [--nofix]
   (--nofix: `coop.fix world.snapshot_name off` on both games: must FAIL)
@@ -127,47 +128,55 @@ def main():
         time.sleep(2)
     if not ck(tribe_at, f'the host entered the Tribe stage ({time.time() - t0:.0f} s)'):
         return ck.result()
-    # the Tribe intro: both play on, answer captions; the guest loads the host's world
-    together_since = None
-    g_log0 = None
+    # the Tribe intro: both play on, answer captions; the guest loads the host's world and is together
+    # with the host (the share saves after the change set the game's name back when the game had
+    # renamed it already)
     t1 = time.time()
-    last_print = 0
-    while time.time() - t1 < 360:
+    good = None
+    while time.time() - t1 < 300:
         for p in players:
             p.service(host)
-        hp, hw, hg = avatar(host)
-        gp, gw, gg = avatar(guest)
-        snapshot_seen |= hg == 'snapshot.spo'
-        st = out(host, 'coop.status')
-        tog = re.search(r'^together 1 1$', st, re.M) is not None
-        g_tribe = 'Tribe' in out(guest, 'game.mode') and gp is not None
-        if time.time() - last_print > 15:
-            last_print = time.time()
-            print(f'   +{time.time() - t1:4.0f}s host place {hp} {hw!r} (game {hg!r}); guest place {gp} {gw!r}; '
-                  f'together={int(tog)}', flush=True)
-        if g_tribe and g_log0 is None:
-            g_log0 = time.time()
-        # done when the host's name was snapshot.spo and the guest played Tribe for 120 s (or together)
-        if snapshot_seen and g_log0 and (tog and together_since and time.time() - together_since > 20):
+        snapshot_seen |= avatar(host)[2] == 'snapshot.spo'
+        tog = re.search(r'^together 1 1$', out(host, 'coop.status'), re.M) is not None
+        good = (good or time.time()) if tog and 'movie=1' not in out(host, 'coop.status') else None
+        if good and time.time() - good > 20:
             break
-        if snapshot_seen and g_log0 and time.time() - g_log0 > 120:
-            break
-        together_since = (together_since or time.time()) if tog else None
         time.sleep(3)
     hp, hw, hg = avatar(host)
     gp, gw, gg = avatar(guest)
-    print(f'   host: place {hp} world {hw!r} game name {hg!r}; guest: place {gp} world {gw!r} game name {gg!r}')
-    ck(snapshot_seen, 'the host\'s game name read "snapshot.spo" after the stage change (the condition of BUG-0258)')
-    ck(g_log0, 'the guest plays the Tribe stage in the host\'s world')
+    print(f'   host: place {hp} world {hw!r} game name {hg!r}; guest: place {gp} world {gw!r}; '
+          f'the game\'s own snapshot.spo seen: {snapshot_seen}', flush=True)
+    if not ck(good, 'the guest plays the Tribe stage together with the host'):
+        return ck.result()
+    # The game renames its save "snapshot.spo" about 9 s into the Tribe stage (lane 3, 2026-10-29); a
+    # share save after that sets the planet name back, so whether the bug shows depends on the order
+    # of the host's saves. Forced here: the name the game itself writes, in place (the same length as
+    # the planet's name: the string's end pointer stays right). The next save sets it back.
+    name = 'snapshot.spo'
+    if hg != name:
+        if len(hg or '') != len(name):
+            ck(False, f'the planet name {hg!r} has the length of {name!r} (the forced rename needs it)')
+            return ck.result()
+        m = re.findall(r'-> 0x([0-9A-F]{8})', out(host, 'mem.ptr SporeCoop::CurrentGameName 0'))
+        print('  ', out(host, f'mem.write 0x{m[0]} {name.encode("utf-16-le").hex()}').strip(), flush=True)
+    ck(avatar(host)[2] == name, 'the host\'s game name reads "snapshot.spo" (as after the game\'s own rename)')
+    apart = 0
+    t2 = time.time()
+    while time.time() - t2 < 40:
+        st = out(host, 'coop.status')
+        apart += re.search(r'^together 1 1$', st, re.M) is None
+        time.sleep(4)
+    hp, hw, hg = avatar(host)
+    gp, gw, gg = avatar(guest)
+    print(f'   host: place {hp} world {hw!r} game name {hg!r}; guest: place {gp} world {gw!r}', flush=True)
     ck(hp and hp == gp, f'the host\'s place is the guest\'s ({hp} / {gp})')
+    ck(apart == 0, f'the host stayed together with the guest for 40 s ({apart} checks apart)')
     st = out(host, 'coop.status')
-    ck(re.search(r'^together 1 1$', st, re.M), 'the host is together with the guest')
     pup = re.search(r"^remote 1 '[^']*' puppet=([0-9A-Fa-f]+)", st, re.M)
     ck(pup and int(pup.group(1), 16) != 0, f'the host has a puppet of the guest ({pup.group(1) if pup else None})')
-    glog = out(guest, 'log 400')
-    tail = glog[glog.rfind('world: loading '):] if 'world: loading ' in glog else ''
-    ck('Alice appeared in the world' in tail or 'host appeared in the world' in tail.lower(),
-       'the guest sees the host appear after its load')
+    glog = out(guest, 'log 60')
+    ck('hidden' not in glog or 'appeared' in glog.split('hidden')[-1],
+       'the guest still sees the host (no "hidden" without "appeared" after it)')
     shot(host, 'tribe_snapshot_host.png')
     ck.faults(host=host, guest=guest)
     return ck.result()

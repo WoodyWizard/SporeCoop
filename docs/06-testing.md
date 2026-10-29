@@ -1604,9 +1604,15 @@ wrong. Suite `campaign` (in no other suite): `tools/lab.py run campaign --lanes 
 * `coop_tribe_snapshot.py` (suite `tribe_snapshot`, BUG-0258): the `creature` fixture, the host's
   evolution bar full (`AddEvolutionPoints 3000`, the only shortcut), then the players' way: History
   and its check, the guest's real "I'm ready" (F9), "done" in the editors, the captions of the fire
-  cinematic and the Tribe intro. Checks that the host's game name read `snapshot.spo` (the bug's
-  condition; the run fails without it), then the same place on both, `together 1 1`, a puppet of
-  the guest on the host and "Alice appeared in the world" in the guest's log after its load.
-  `SPORE_FIX_OFF=world.snapshot_name` (or `--nofix`) must FAIL. About 10 minutes.
+  cinematic and the Tribe intro. Waits until the guest is together with the host in Tribe (without
+  the fix this already fails when the game's own rename to `snapshot.spo` came after the host's
+  last save, as in lab run 20261029-062544). Then it forces the rename the game does (`mem.write` of
+  "snapshot.spo" into the name's UTF-16 buffer, same length as the fixture's "Scalinus.spo"; the
+  next save sets it back) and checks for 40 s: the same place on both, `together 1 1` all the time,
+  a puppet of the guest on the host, the guest does not hide the host.
+  `SPORE_FIX_OFF=world.snapshot_name` (or `--nofix`) must FAIL. About 8 minutes.
+* Pitfall: the campaign's noise "pause" can leave the host's pause menu open when the stage change
+  starts; the History clicks then do nothing and the advance times out (run 20261029-060328 on
+  lane 3). `--noise 0` avoids it.
 * `coop.avatar` ends with `game_name '<CurrentGameName as is>'`; `world '...'` is the name the mod
   uses (the planet through `snapshot.spo`).

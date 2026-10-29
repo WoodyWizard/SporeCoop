@@ -270,3 +270,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0258](BUG-0258-after-a-live-creature-to-tribe-stage-change-the.md) | open | desync | Tribe | 2026-10-29 |  | after a live Creature to Tribe stage change the host plays 'snapshot.spo' and no guest is ever together with it |
 | [BUG-0259](BUG-0259-lab-py-run-lane-2-is-taken-as-lanes-2-and-runs-o.md) | fixed | tooling | all | 2026-10-29 | unreleased | lab.py run --lane 2 is taken as --lanes 2 and runs on lane 1 |
 | [BUG-0260](BUG-0260-coop-tribe-act-15-npc-member-on-the-host-faults.md) | open | tooling | Tribe | 2026-10-29 |  | coop.tribe act 15 <npc member> on the host faults in cCreatureCitizen::DoAction (debug command) |
+| [BUG-0263](BUG-0263-campaign-a-noise-pause-left-open-on-the-host-blo.md) | open | test | Creature | 2026-10-29 |  | campaign: a noise pause left open on the host blocks the stage change (History clicks do nothing) |
