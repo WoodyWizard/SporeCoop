@@ -101,11 +101,11 @@ static void test_cleanup_old()
     CHECK(exists(g + L"\\Data\\keep.old"));
     CHECK(exists(g + L"\\SporebinEP1\\mods\\othermod.ini.old"));
     CHECK(exists(g + L"\\SporebinEP1\\steam_api.dll.old"));
-    CHECK(!exists(g + L"\\SporebinEP1\\sporekit.dll.sporecoop-old") || !upd::g_old_fix);
-    CHECK(!exists(g + L"\\SporebinEP1\\mods\\coop.dll.sporecoop-old") || !upd::g_old_fix);
+    CHECK(!exists(g + L"\\SporebinEP1\\sporekit.dll.sporecoop-old") || !upd::g_old_suffix_fix);
+    CHECK(!exists(g + L"\\SporebinEP1\\mods\\coop.dll.sporecoop-old") || !upd::g_old_suffix_fix);
     CHECK(!exists(g + L"\\SporebinEP1\\mods\\coop.dll.old"));
     CHECK(!exists(g + L"\\SporebinEP1\\mods\\sporekit\\symbols\\gog2024_dc04aee5.sym.old"));
-    CHECK(!exists(g + L"\\Data\\SporeCoop.package.sporecoop-old") || !upd::g_old_fix);
+    CHECK(!exists(g + L"\\Data\\SporeCoop.package.sporecoop-old") || !upd::g_old_suffix_fix);
 }
 
 // BUG-0089 (in apply_pack too) and the backup name: a pack replaces a file, the backup is ours
@@ -530,6 +530,10 @@ int main(int argc, char** argv)
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--old"))
             g_old = true;
+        else if (!strcmp(argv[i], "--old-suffix")) // BUG-0114 alone (update.old_suffix)
+            upd::g_old_suffix_fix = false;
+        else if (!strcmp(argv[i], "--old-keep")) // BUG-0150 alone (update.keep_failed)
+            upd::g_keep_failed_fix = false;
         else if (!strcmp(argv[i], "--bat") && i + 1 < argc)
             g_bat = upd::widen(argv[++i]);
         else if (!strcmp(argv[i], "--exclude") && i + 1 < argc)
@@ -537,7 +541,7 @@ int main(int argc, char** argv)
     }
     if (g_old) {
         inst::g_fix = false;
-        upd::g_old_fix = false;
+        upd::g_old_suffix_fix = upd::g_keep_failed_fix = false;
         upd::g_dup_fix = false;
         slotfs::g_busy_fix = slotfs::g_match_fix = slotfs::g_write_fix = false;
         skini::g_unicode_fix = false;

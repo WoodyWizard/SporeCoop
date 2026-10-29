@@ -1,5 +1,6 @@
-// Test switches of the netcode fixes (`coop.netfix <name> 0|1`): 0 brings back the code before the
-// fix, so a test can show that it still catches the bug. All on in normal play.
+// Test switches of the netcode fixes (`coop.fix net.<name> on|off`): off brings back the code before
+// the fix, so a test can show that it still catches the bug. All on in normal play. Every member is a
+// portable fix switch (BUG-0214 R1): registered in mods/coop/fix_table.cpp, never with COOP_FIX here.
 #pragma once
 
 namespace net {

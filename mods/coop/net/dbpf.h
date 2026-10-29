@@ -28,6 +28,8 @@ struct Record {
 
 // BUG-0208: Package::load checks offset and size without an overflow (false: the old sum, tests)
 extern bool g_bounds_fix;
+// BUG-0047: a 4-byte RefPack size needs 6 header bytes (false: the old 5-byte check, net_tests --old-refpack)
+extern bool g_refpack_fix;
 
 class Package {
 public:

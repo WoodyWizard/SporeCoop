@@ -88,7 +88,7 @@ test:
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall -fsanitize=address,undefined -Imods/coop -o $(B)/host/text_tests tests/text_tests.cpp
 	$(B)/host/text_tests
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall -fsanitize=address,undefined -Imods/coop -o $(B)/host/fixes_tests tests/fixes_tests.cpp mods/coop/fixes.cpp
-	$(B)/host/fixes_tests $(wildcard mods/coop/*.cpp mods/coop/*.h mods/coop/net/*.h)
+	$(B)/host/fixes_tests $(wildcard mods/coop/*.cpp mods/coop/*.h mods/coop/net/*.cpp mods/coop/net/*.h updater/*.cpp updater/*.h)
 	python3 tools/re_lint.py
 	python3 tools/docs_lint.py
 	python3 tools/glyph_lint.py
@@ -100,6 +100,16 @@ test-asan:
 	@mkdir -p $(B)/host
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall -fsanitize=address,undefined -fno-omit-frame-pointer -Imods/coop -o $(B)/host/net_tests_asan mods/coop/net/*.cpp updater/pack.cpp updater/sha256.cpp tests/net_tests.cpp
 	ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 $(B)/host/net_tests_asan
+	@# --nofix: every fix test runs to the end and fails (BUG-0214: it used to abort at test_dbbf_wrap)
+	@ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 $(B)/host/net_tests_asan --nofix > $(B)/host/net_tests_nofix.txt 2>&1; \
+	  rc=$$?; tail -n 1 $(B)/host/net_tests_nofix.txt | grep -q '^FAILED (' && [ $$rc = 1 ] \
+	  || { tail -n 20 $(B)/host/net_tests_nofix.txt; echo "net_tests_asan --nofix: expected FAILs to the end (exit $$rc)"; exit 1; }
+	@# the decoder bounds fixes' off side reads out of bounds: ASan must stop it (BUG-0208, BUG-0047)
+	@! ASAN_OPTIONS=detect_leaks=0 $(B)/host/net_tests_asan --old-dbbf > $(B)/host/net_tests_old_dbbf.txt 2>&1 \
+	  && grep -q 'AddressSanitizer' $(B)/host/net_tests_old_dbbf.txt || { echo "net_tests_asan --old-dbbf: ASan did not report"; exit 1; }
+	@! ASAN_OPTIONS=detect_leaks=0 $(B)/host/net_tests_asan --old-refpack > $(B)/host/net_tests_old_refpack.txt 2>&1 \
+	  && grep -q 'AddressSanitizer' $(B)/host/net_tests_old_refpack.txt || { echo "net_tests_asan --old-refpack: ASan did not report"; exit 1; }
+	@echo "net_tests_asan: --nofix ran to the end, --old-dbbf and --old-refpack died under ASan"
 
 # the setup's shared release state under ThreadSanitizer (BUG-0077; `release_tsan --old` must fail)
 test-tsan:

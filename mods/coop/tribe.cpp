@@ -868,7 +868,7 @@ static float host_health(void* c)
 // mirror removed by guest_state, a load): the call went through a vtable read from freed memory.
 // keep: the chiefs that stay (nullptr: none, the session ends). `coop.tribe fix chiefs 0`: the old check.
 static bool g_fix_chiefs = true;
-COOP_FIX("tribe.chiefs", "BUG-0081", g_fix_chiefs, "tribe: chiefs checked against the player tribe's own list, not freed memory");
+COOP_FIX_UNSAFE("tribe.chiefs", "BUG-0081", g_fix_chiefs, "tribe: chiefs checked against the player tribe's own list, not freed memory");
 static uint32_t g_chief_restores, g_chief_gone, g_chief_bad_calls;
 static void restore_chief_scales(const std::unordered_map<uint8_t, void*>* keep)
 {
@@ -1328,18 +1328,20 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
 }
 
 // the co-op mechanics' tables of game pointers (chiefs, pincer, epic): a new session or world
-// must not inherit them (BUG-0081: a former chief's size was restored through a freed pointer)
+// must not inherit them (BUG-0081: a former chief's size was restored through a freed pointer).
+// tribe.chiefs gates only the chief and pincer part; the epic part has its own switch
+// (tribe.epic_herd) and runs whatever tribe.chiefs says (BUG-0214: one bug per switch)
 static void clear_coop_tables(bool restore)
 {
-    if (!g_fix_chiefs)
-        return;
-    if (restore)
-        restore_chief_scales(nullptr); // the chiefs are plain members again after the session
-    g_chief_scale.clear();
-    g_chief.clear();
-    g_chief_saved.clear();
-    g_pincer.clear();
-    g_pincer_told.clear();
+    if (g_fix_chiefs) {
+        if (restore)
+            restore_chief_scales(nullptr); // the chiefs are plain members again after the session
+        g_chief_scale.clear();
+        g_chief.clear();
+        g_chief_saved.clear();
+        g_pincer.clear();
+        g_pincer_told.clear();
+    }
     // the co-op epic ends with the session (BUG-0121: not left in the solo game and its saves);
     // after a world change (restore false) the old world's objects are gone: only forgotten
     if (restore && g_fix_epic_herd && g_epic && game::mode_id() == modes::kTribe && epic_listed())

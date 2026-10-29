@@ -237,12 +237,26 @@ def warm_reset(host, guest, fixture, planet):
 def start(*a, **kw):
     """_start(), then SPORE_FIX_OFF=<name>[,<name>...] switches those fixes off on both games
     (`coop.fix <name> off`, BUG-0116): any test can run once without a fix to show that it still
-    catches the bug. Fixes that act while the guest joins are on until then."""
+    catches the bug. Fixes that act while the guest joins are on until then.
+    Strict (BUG-0214 R8): a name the game does not know fails the test at once, so a twin run
+    cannot pass silently with the fix still on; an unsafe switch only gets a warning line."""
     host, guest = _start(*a, **kw)
-    for name in filter(None, os.environ.get('SPORE_FIX_OFF', '').split(',')):
+    for name in filter(None, (n.strip() for n in os.environ.get('SPORE_FIX_OFF', '').split(','))):
         for con in (host, guest):
-            print('  SPORE_FIX_OFF: ' + con.call(f'coop.fix {name.strip()} off')['out'].strip(), flush=True)
+            out = con.call(f'coop.fix {name} off')['out'].strip()
+            print('  SPORE_FIX_OFF: ' + out, flush=True)
+            if not fix_off_ok(name, out):
+                print(f'RESULT: FAIL (SPORE_FIX_OFF: unknown fix {name}: {out.splitlines()[0] if out else "no answer"})',
+                      flush=True)
+                raise SystemExit(1)
+            if ' unsafe ' in out.splitlines()[0]:
+                print(f'  SPORE_FIX_OFF: warning: {name} is unsafe (its off side can corrupt memory or data)', flush=True)
     return host, guest
+
+
+def fix_off_ok(name, answer):
+    """the coop.fix answer to `<name> off` says that switch is off now"""
+    return answer.startswith(f'{name} off ')
 
 
 def _start(fixture='creature', planet=None, load_args=(), join_in_intro=False, guest_creations=True):

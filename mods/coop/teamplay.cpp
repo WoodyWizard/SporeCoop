@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <map>
 
+#include "fixes.h"
 #include "game.h"
 #include "hunt_hits.h"
 #include "net/interp.h"
@@ -18,6 +19,7 @@ static double g_last_rescue = -1000, g_last_regen = 0;
 static uint32_t g_joint_hits = 0, g_rescues = 0;
 
 static HitTable g_hits(kHuntWindow); // target -> recent hits by players (BUG-0099)
+COOP_FIX("team.hunt_hits", "BUG-0099", g_hits.fix, "creature: the joint-hunt hit table forgets old hits of every target");
 
 void init(const SkHost* host, SkMod* mod, Ctx ctx)
 {
@@ -31,17 +33,16 @@ bool enabled() { return g_on; }
 
 void forget_target(void* target)
 {
-    if (!g_hits.legacy)
+    if (g_hits.fix)
         g_hits.forget(target);
 }
 
 void reset()
 {
-    if (!g_hits.legacy)
+    if (g_hits.fix)
         g_hits.clear();
 }
 
-void set_legacy_hits(bool on) { g_hits.legacy = on; }
 size_t hit_targets() { return g_hits.size(); }
 void set_enabled(bool on) { g_on = on; }
 

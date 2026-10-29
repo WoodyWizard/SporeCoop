@@ -263,7 +263,7 @@ uint8_t* cell_game()
 constexpr uint32_t kCellParticles = 1500;
 
 bool cell_at_fix = true;
-COOP_FIX("pool.cellat", "BUG-0083", cell_at_fix, "cell: modes::cell_at refuses the slot past the pool's used range");
+COOP_FIX_UNSAFE("pool.cellat", "BUG-0083", cell_at_fix, "cell: modes::cell_at refuses the slot past the pool's used range");
 
 uint8_t* cell_at(uint32_t idx)
 {

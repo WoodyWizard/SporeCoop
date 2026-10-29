@@ -58,7 +58,7 @@ bool parse_release(const std::string& json, Release& out);
 // first name in the listing (tests).
 std::string pack_version_of(const std::string& name);
 std::string pick_pack(const std::vector<std::string>& names);
-extern bool g_pick_fix;
+extern bool g_pick_fix; // not a lab switch: setup only
 
 // BUG-0077: the newest release as the setup's check thread found it, read by the window and the
 // install job. Every access copies under one lock; g_release_lock_fix false = the old unlocked
@@ -69,7 +69,7 @@ struct ReleaseInfo {
     bool done = false; // the check has finished (ok or not)
     std::string err;
 };
-extern bool g_release_lock_fix;
+extern bool g_release_lock_fix; // not a lab switch: setup only
 class ReleaseBox {
 public:
     ReleaseInfo get() const

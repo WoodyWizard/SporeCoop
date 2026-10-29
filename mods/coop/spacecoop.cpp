@@ -384,7 +384,7 @@ std::string teleport_in_galaxy(uint32_t star)
 // BUG-0092: the index is checked against the sector's end (+4) before the array is read; an id from
 // the network may name an index past it (`coop.space starfix 0`: the old read, for the tests).
 static bool g_star_fix = true;
-COOP_FIX("space.star", "BUG-0092", g_star_fix, "space: a star id's index is checked against its table");
+COOP_FIX_UNSAFE("space.star", "BUG-0092", g_star_fix, "space: a star id's index is checked against its table");
 static uint32_t g_star_oob; // lookups whose index was past the sector's end (read or refused)
 static uint32_t g_star_oob_read; // ... and read anyway (the old path)
 void* star_record(uint32_t id)

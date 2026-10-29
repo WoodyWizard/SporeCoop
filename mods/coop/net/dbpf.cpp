@@ -2,9 +2,13 @@
 
 #include <cstring>
 
+#include "../fix_switch.h"
+
 namespace dbpf {
 
-bool g_bounds_fix = true;
+// unit-test only switches (BUG-0214 R6: the off side reads out of bounds; net_tests --old-dbbf / --old-refpack)
+FIX_SWITCH(g_bounds_fix);  // net.dbbf_bounds, BUG-0208
+FIX_SWITCH(g_refpack_fix); // net.refpack_bound, BUG-0047
 
 static uint32_t le32(const uint8_t* p) { return p[0] | p[1] << 8 | p[2] << 16 | (uint32_t)p[3] << 24; }
 static uint32_t be32(const uint8_t* p) { return (uint32_t)p[0] << 24 | p[1] << 16 | p[2] << 8 | p[3]; }
@@ -116,7 +120,7 @@ bool refpack_decode(const uint8_t* src, size_t n, std::vector<uint8_t>& out)
     size_t o = 2;
     uint32_t size;
     if (src[0] & 0x80) {
-        if (n < 6) // BUG-0047: the 4-byte size needs 6 header bytes (be32 read one byte past a 5-byte record)
+        if (n < 6 && g_refpack_fix) // BUG-0047: the 4-byte size needs 6 header bytes (be32 read one byte past a 5-byte record)
             return false;
         size = be32(src + 2);
         o = 6;
