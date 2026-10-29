@@ -50,3 +50,4 @@ Lab PASS: out/lab/20261028-230144 (civ_shared, steps 1-3, ok). FAIL / PASS twins
 ## History
 - 2026-10-28: opened.
 - 2026-10-28 (fix/w5-core): fixed: a guest keeps its sync state on another player's join and folds an unsampled change before a host total (res.join_keep); coop_civ_shared.py step 3 FAIL with --nofix, PASS with the fix.
+- 2026-10-29 (fix/w5-core): after the merge of main 8f1944b: lab out/lab/20261028-235045 all passed (vote_end_editor, vote_drop_editor, away_stages, civ_other_world, civ_shared, dna_away, creature, civ_coop, fix_registry, leave_cleanup, unit).

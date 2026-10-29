@@ -53,3 +53,4 @@ Lab PASS: out/lab/20261028-230144 (vote_end_editor, vote_drop_editor ok, lane 4;
 ## History
 - 2026-10-28: opened.
 - 2026-10-28 (fix/w5-core): fixed: the editor id from the end message, the due editor and the Give pick end with the session / their player; coop_vote_drop_editor.py case 1 and 2 FAIL with --nofix, PASS with the fix.
+- 2026-10-29 (fix/w5-core): after the merge of main 8f1944b: lab out/lab/20261028-235045 all passed (vote_end_editor, vote_drop_editor, away_stages, civ_other_world, civ_shared, dna_away, creature, civ_coop, fix_registry, leave_cleanup, unit).

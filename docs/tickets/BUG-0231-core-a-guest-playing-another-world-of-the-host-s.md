@@ -48,3 +48,4 @@ FAIL twin: out/lab/20261028-235900-w5-core-twins/civ_other_world--nofix.log and 
 - 2026-10-28: opened.
 - 2026-10-28 (fix/w5-core): part fixed: Civ messages gated for a guest in another world, Tribe/Civ local play there (core.world_gate); civ_other_world FAIL with --nofix, PASS with the fix. Left open: host_world()/Welcome::world, DNA row 2, shared hold, share retry, city_catch_up guard (see Fix).
 - 2026-10-28 (fix/w5-core): the Civ gate also covers the round trip before the host's first state (lab FAIL 20261028-230144, then PASS 3/3 20261028-231857).
+- 2026-10-29 (fix/w5-core): after the merge of main 8f1944b: lab out/lab/20261028-235045 all passed (vote_end_editor, vote_drop_editor, away_stages, civ_other_world, civ_shared, dna_away, creature, civ_coop, fix_registry, leave_cleanup, unit).
