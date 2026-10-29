@@ -908,6 +908,7 @@ class Campaign:
         ck = Ck()
         for p in self.P:  # (the drive came with the Space play phase)
             fz.settle(p.con, p.name, timeout=60)
+        self.take_off(h)  # the Space play may have left the host on a planet
         fz.to_galaxy(h.con, h.name, ck)
         self.note('shortcut: coop.space finale goto near (the host crosses the galaxy)')
         fz.sp(h.con, 'finale goto near')
@@ -938,6 +939,7 @@ class Campaign:
             for step in ('near the core', 'the gate'):
                 fz.settle(g.con, g.name, timeout=60)
                 if step == 'the gate':
+                    self.take_off(g)
                     fz.to_galaxy(g.con, g.name, ck)
                 fz.open_space_page(ui, g.con, ck, g.name)
                 b = fz.fly_button(ui)
@@ -953,6 +955,19 @@ class Campaign:
             fz.fin(p.con).get('busy') == '0' and fz.fin(p.con).get('staff') == '1' for p in self.P), 400)
         ck(done, 'every player got the Staff of Life and the cinematic ended')
         self.quiet_until = time.time() + 20
+
+
+    def take_off(self, p):
+        """off a planet like a player: the wheel out until the ship is in the solar system (finale ctx 0 =
+        on a planet; play_space.take_off does the same)"""
+        import coop_space_finale as fz
+        for _ in range(10):
+            if fz.fin(p.con).get('ctx') != '0':
+                return True
+            fz.settle(p.con, p.name, timeout=30)
+            p.call('wheel 720 540 -5')
+            time.sleep(1.5)
+        return fz.fin(p.con).get('ctx') != '0'
 
 
 class Service(threading.Thread):
