@@ -1490,8 +1490,9 @@ wrong. Suite `campaign` (in no other suite): `tools/lab.py run campaign --lanes 
   -001119 (Creature -> Tribe: BUG-0258, then the jump), -002618 (Tribe -> Civ: two villages raided,
   the jump, Civ play: OK), -004238 (Civ -> Space -> finale: every player entered the core and got the
   Staff of Life), -011243 (the whole game in 81 min with 2-minute stages: BUG-0258 again, the Tribe
-  jump; no crash, fault, freeze, desync or shared-resource difference in any run). The tool problems
-  those runs showed are fixed on the branch (see its commits).
+  jump; no crash, fault, freeze, desync or shared-resource difference in any run), -023333 (Civ ->
+  Space -> finale with the fixes: RESULT OK, 22 min, the surrender talk answered by hand once, now
+  automated). The tool problems those runs showed are fixed on the branch (see its commits).
 * Expected duration of the whole game with the defaults: start ~1 min, 5 stages x 8 min of play,
   Cell ~1 min and Creature ~3 min changes, Tribe 20 min and the jump (~1 min), Civ ~8-10 min,
   the finale ~6 min, follows and rejoins a few minutes: about 2-2.5 h. The lab's timeout for it is 5 h
