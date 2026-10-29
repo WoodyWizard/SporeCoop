@@ -705,7 +705,7 @@ void register_builtin_commands()
                     return 0;
                 },
                 nullptr, M);
-    command_add(k, "crash.test", "crash.test [thread|main|stackoverflow|oom] - make the game crash (tests of the crash report)",
+    command_add(k, "crash.test", "crash.test [thread|main|stackoverflow|oom|faultthread] - make the game crash (tests of the crash report; faultthread: a repaired fault on a worker thread, no crash)",
                 [](void*, int argc, const char* const* argv, SkOut* out) {
                     outf(out, "crashing");
                     diag_crash_test(argc > 1 ? argv[1] : "thread");

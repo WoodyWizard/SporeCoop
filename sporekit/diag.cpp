@@ -326,14 +326,19 @@ static std::string report_base(bool crash)
 }
 
 static std::string diag_write_report_as(const std::string& base, const char* reason, EXCEPTION_POINTERS* ep,
-                                        bool dump = true);
+                                        bool dump = true, DWORD fault_tid = 0);
 
-std::string diag_write_report(const char* reason, EXCEPTION_POINTERS* ep)
+std::string diag_write_report(const char* reason, EXCEPTION_POINTERS* ep, DWORD fault_tid)
 {
-    return diag_write_report_as(report_base(ep != nullptr), reason, ep);
+    return diag_write_report_as(report_base(ep != nullptr), reason, ep, true, fault_tid);
 }
 
-static std::string diag_write_report_as(const std::string& base, const char* reason, EXCEPTION_POINTERS* ep, bool dump)
+// BUG-0248: the report is written by a thread of its own (or the exiting thread): the exception line
+// names the thread that faulted. 0 / kit.fix crashtid 0: the current thread, as before
+static DWORD fault_thread(DWORD fault_tid) { return fault_tid && fixed(g_fix_crashtid) ? fault_tid : GetCurrentThreadId(); }
+
+static std::string diag_write_report_as(const std::string& base, const char* reason, EXCEPTION_POINTERS* ep, bool dump,
+                                        DWORD fault_tid)
 {
     std::string kind = ep ? "crash" : "report";
     CreateDirectoryW(logs_dir().c_str(), nullptr);
@@ -348,10 +353,15 @@ static std::string diag_write_report_as(const std::string& base, const char* rea
         CONTEXT* c = ep->ContextRecord;
         char b[512];
         s += "== Exception\n";
+        DWORD ft = fault_thread(fault_tid);
         snprintf(b, sizeof b, "0x%08lX %s at 0x%08X %s (thread %lu%s)\n", er->ExceptionCode,
-                 code_name(er->ExceptionCode), (unsigned)c->Eip, where(c->Eip).c_str(), GetCurrentThreadId(),
-                 GetCurrentThreadId() == main_thread_id() ? ", the game's main thread" : "");
+                 code_name(er->ExceptionCode), (unsigned)c->Eip, where(c->Eip).c_str(), ft,
+                 ft == main_thread_id() ? ", the game's main thread" : "");
         s += b;
+        if (ft != GetCurrentThreadId()) {
+            snprintf(b, sizeof b, "report written by thread %lu\n", GetCurrentThreadId());
+            s += b;
+        }
         if (er->ExceptionCode == EXCEPTION_ACCESS_VIOLATION && er->NumberParameters >= 2) {
             snprintf(b, sizeof b, "%s of address 0x%08X\n",
                      er->ExceptionInformation[0] == 0 ? "read" : er->ExceptionInformation[0] == 1 ? "write" : "execute",
@@ -403,8 +413,16 @@ static std::string diag_write_report_as(const std::string& base, const char* rea
     for (auto& l : log_tail(300))
         s += l + "\n";
     write_text(txt, s);
-    if (ep && dump)
-        write_minidump(logs_dir() + L"\\" + widen(base) + L".dmp", ep, GetCurrentThreadId());
+    if (ep && dump) {
+        // the fault's thread when it still exists (the exit report runs on the exiting thread)
+        DWORD dt = GetCurrentThreadId();
+        if (fault_tid && fixed(g_fix_crashtid))
+            if (HANDLE th = OpenThread(THREAD_QUERY_LIMITED_INFORMATION, FALSE, fault_tid)) {
+                CloseHandle(th);
+                dt = fault_tid;
+            }
+        write_minidump(logs_dir() + L"\\" + widen(base) + L".dmp", ep, dt);
+    }
     return narrow(txt);
 }
 
@@ -674,7 +692,8 @@ static void exit_report(UINT code, const char* how)
     EXCEPTION_RECORD er;
     CONTEXT ctx;
     double t = -1;
-    bool fault = exceptions_last(&er, &ctx, &t) && now_seconds() - t < kFaultExitSec;
+    DWORD ftid = 0;
+    bool fault = exceptions_last(&er, &ctx, &t, &ftid) && now_seconds() - t < kFaultExitSec;
     if (!fault && !code)
         return;
     g_crashed++;
@@ -684,7 +703,7 @@ static void exit_report(UINT code, const char* how)
     EXCEPTION_POINTERS ep{&er, &ctx};
     const char* what = fault ? "closed right after an error" : "closed with an error code";
     std::string p;
-    if (!report_step("the report", [&] { p = diag_write_report(why, fault ? &ep : nullptr); }))
+    if (!report_step("the report", [&] { p = diag_write_report(why, fault ? &ep : nullptr, ftid); }))
         return;
     report_step("the mark", [&] { mark_problem(p, what); });
     report_step("the archive", [&] { mark_problem(bundle_for_problem(why, p), what); });
@@ -705,7 +724,7 @@ struct CrashJob {
 static DWORD WINAPI crash_report_thread_old(void* p)
 {
     auto* j = (CrashJob*)p;
-    std::string path = diag_write_report_as(j->base, "unhandled exception", j->ep, false);
+    std::string path = diag_write_report_as(j->base, "unhandled exception", j->ep, false, j->tid);
     logf(&g_kit_mod, SK_ERROR, "crash report: %s", path.c_str());
     std::string zip = bundle_for_problem("the game crashed", path); // one file to send
     mark_problem(zip, "crashed");
@@ -728,7 +747,7 @@ static DWORD WINAPI crash_report_thread(void* p)
         return crash_report_thread_old(p);
     auto* j = (CrashJob*)p;
     std::string path = narrow(logs_dir() + L"\\" + widen(j->base) + L".txt"); // the short report
-    report_step("the crash report", [&] { path = diag_write_report_as(j->base, "unhandled exception", j->ep, false); });
+    report_step("the crash report", [&] { path = diag_write_report_as(j->base, "unhandled exception", j->ep, false, j->tid); });
     report_step("the mark", [&] { mark_problem(path, "crashed"); });
     report_step("the log line", [&] { logf(&g_kit_mod, SK_ERROR, "crash report: %s", path.c_str()); });
     std::string zip;
@@ -875,6 +894,15 @@ static DWORD WINAPI crash_thread(void*)
     return 0;
 }
 
+// a fault on a new thread that a test handler repairs (the thread goes on): the last fault of the
+// fault logger comes from a worker thread; an exit within 15 s reports it (BUG-0248)
+static DWORD WINAPI repaired_fault_thread(void*)
+{
+    volatile uint8_t* page = (volatile uint8_t*)test_fault_page();
+    page[0] = 1;
+    return 0;
+}
+
 // a recursion without end with 4 KB of locals per call: a stack overflow (BUG-0056)
 static volatile int g_recurse_stop; // never set: the compiler must not see an endless recursion
 static int __attribute__((noinline)) recurse_forever(int depth)
@@ -900,6 +928,13 @@ void diag_crash_test(const char* where_)
     }
     if (where_ && !strcmp(where_, "oom"))
         g_test_oom = 1;
+    if (where_ && !strcmp(where_, "faultthread")) { // no crash: a repaired fault on a worker thread
+        if (HANDLE t = CreateThread(nullptr, 0, repaired_fault_thread, nullptr, 0, nullptr)) {
+            WaitForSingleObject(t, 5000);
+            CloseHandle(t);
+        }
+        return;
+    }
     if (where_ && !strcmp(where_, "main")) {
         volatile int* p = nullptr;
         *p = 1;

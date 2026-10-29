@@ -10,6 +10,13 @@
                  mods\\logs; `report test`: only the newest 5 / 5 / 5 / 3 stay, the file named in
                  last-problem.txt stays
 
+  thread_worker  BUG-0248: `crash.test thread`: the report's exception line names the thread that
+                 crashed (the tid= of the same fault in "Faults caught before"), not the thread that
+                 writes the report
+  thread_exit    BUG-0248: a repaired fault on a worker thread (`crash.test faultthread`), then
+                 `coop.exittest` (ExitProcess on the main thread): the exit report names the worker
+                 thread, without the main-thread marker (it named the exiting main thread)
+
   --old      switch each case's fix off first (`kit.fix <name> 0`): every case must FAIL then
   --case a,b only these cases
 
@@ -28,7 +35,8 @@ from sporectl import Console  # noqa: E402 (twoinst puts tools/ on the path)
 
 GAME = lane.game_dir()
 LOGDIR = os.path.join(GAME, 'SporebinEP1', 'mods', 'logs')
-FIX = {'stackoverflow': 'stackov', 'oom': 'crashsafe', 'prune': 'logprune'}
+FIX = {'stackoverflow': 'stackov', 'oom': 'crashsafe', 'prune': 'logprune', 'thread_worker': 'crashtid',
+       'thread_exit': 'crashtid'}
 CASES = list(FIX)
 
 
@@ -86,6 +94,42 @@ def case_stackoverflow(ck):
     log = open(logname(), errors='replace').read() if os.path.exists(logname()) else ''
     ck('0xC00000FD' in log or 'stack overflow' in log, 'the log has the stack overflow line')
     return False
+
+
+def crash_thread(ck, how, main):
+    before = files('crash-*.txt')
+    for line in how:
+        call(line, 10)
+    gone = game_gone(40)
+    time.sleep(3)
+    new = sorted(files('crash-*.txt') - before)
+    print(f'  game gone: {gone}, new crash reports: {[os.path.basename(p) for p in new]}')
+    ck(new, f'{how[-1]} writes a crash report')
+    if not new:
+        return
+    t = open(new[-1], errors='replace').read()
+    m = re.search(r'^(0x[0-9A-F]{8}) .*? at (0x[0-9A-F]{8}) .*\(thread (\d+)(, the game\'s main thread)?\)$', t, re.M)
+    ck(m, 'the report has an exception line')
+    if not m:
+        return
+    code, eip, tid, suffix = m.group(1), m.group(2), m.group(3), m.group(4)
+    print('  exception line:', m.group(0))
+    # the fault logger's own record of the same fault (code and eip) in "Faults caught before"
+    faults = t[t.find('== Faults caught before'):]
+    rec = re.search(rf'^\s*{code} x\d+ at {eip} .*?tid=(\d+)', faults, re.M | re.I)
+    print('  fault record:', rec.group(0).strip() if rec else None)
+    ck(rec, 'the fault logger recorded the same fault')
+    if rec:
+        ck(rec.group(1) == tid, f'the exception line names the crashed thread ({tid} vs tid={rec.group(1)})')
+    ck(bool(suffix) == main, 'the main-thread marker is ' + ('there' if main else 'absent'))
+
+
+def case_thread_worker(ck):
+    crash_thread(ck, ['crash.test thread'], False)
+
+
+def case_thread_exit(ck):
+    crash_thread(ck, ['crash.test faultthread', 'coop.exittest'], False)
 
 
 def case_oom(ck):

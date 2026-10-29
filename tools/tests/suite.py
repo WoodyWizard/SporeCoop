@@ -86,7 +86,7 @@ add('creature_respawn', P + 'coop_creature_respawn.py', minutes=5)  # both playe
 add('diag', P + 'diag_check.py --crash', minutes=5, reports=True)  # kept logs, environment, version in the menu, report button, hang / crash reports
 add('kit_freeze', P + 'kit_freeze.py', minutes=4, reports=True)  # stack / hangdump under a held heap, cheat-console waits, faults inside the log / fault logger, hook churn, hooks made while threads run the function (BUG-0050/0065/0115/0132/0202; --old: every case fails)
 add('kit_docs', P + 'kit_profile_docs.py', minutes=2)  # a test profile's My Spore Creations is in the profile, the bottle's own Documents unchanged (BUG-0156; --old fails)
-add('kit_crash', P + 'kit_crash.py', minutes=4, reports=True)  # crash reports for a stack overflow and a failed archive (out of memory); old reports pruned (BUG-0056/0127/0137; --old: every case fails)
+add('kit_crash', P + 'kit_crash.py', minutes=7, reports=True)  # crash reports for a stack overflow and a failed archive (out of memory); old reports pruned; the exception line names the crashed thread (BUG-0056/0127/0137/0248; --old: every case fails)
 # frames from the game loop when Present is lost (issue #4, the Steam overlay on Windows)
 add('frames_loop', P + 'coop_frames_loop.py', ('smoke',), warm=True, minutes=2, fixture='creature')
 add('exit_menu', P + 'coop_exit_menu.py', minutes=3)  # a guest exits to the main menu and comes back

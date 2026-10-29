@@ -43,13 +43,17 @@ static std::mutex g_mu;
 // caught the exception and closed the game, so the unhandled-exception filter never ran)
 static EXCEPTION_RECORD g_last_er;
 static CONTEXT g_last_ctx;
+static DWORD g_last_tid; // the thread of g_last_er (BUG-0248), written under g_mu with it
 static std::atomic<double> g_last_t{-1};
 
-bool exceptions_last(EXCEPTION_RECORD* er, CONTEXT* ctx, double* t)
+bool exceptions_last(EXCEPTION_RECORD* er, CONTEXT* ctx, double* t, DWORD* tid)
 {
     DWORD so_tid;
-    if (exceptions_stack_overflow(er, ctx, &so_tid, t) && *t >= g_last_t.load())
+    if (exceptions_stack_overflow(er, ctx, &so_tid, t) && *t >= g_last_t.load()) {
+        if (tid)
+            *tid = so_tid;
         return true; // a stack overflow is never in g_last_* (BUG-0056)
+    }
     if (g_last_t.load() < 0)
         return false;
     std::lock_guard<std::mutex> lk(g_mu);
@@ -57,6 +61,8 @@ bool exceptions_last(EXCEPTION_RECORD* er, CONTEXT* ctx, double* t)
     *er = g_last_er;
     *ctx = g_last_ctx;
     *t = g_last_t.load();
+    if (tid)
+        *tid = g_last_tid;
     return true;
 }
 // a fault inside SporeKit or a mod (a DLL under mods\): told to the mods at the next frame
@@ -159,6 +165,7 @@ static LONG CALLBACK veh(EXCEPTION_POINTERS* ep)
         std::lock_guard<std::mutex> lk(g_mu);
         g_last_er = *ep->ExceptionRecord;
         g_last_ctx = *c;
+        g_last_tid = r.tid;
         g_last_t = now_seconds();
         for (auto& x : g_recs)
             if (x.code == code && x.eip == eip) {
