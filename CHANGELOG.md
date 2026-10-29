@@ -3,6 +3,9 @@
 ## [Unreleased]
 
 ### Fixed
+- Creature: a guest's game could fault a second after it started to leave the stage for a world
+  the host shared (all three guests of a 4-player game, right after the host's creature editor).
+  The mod no longer touches the player's creature while the game tears the stage down (BUG-0264).
 - Tribe: after the Creature stage ended the players' way, the host saw no guest in its Tribe world
   (no partners, "together" never reached) until its next save. The host now stays in its planet's
   world through the game's temporary save name (BUG-0258).

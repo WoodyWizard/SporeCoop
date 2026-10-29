@@ -36,6 +36,7 @@ int c_menu(void*, int, const char* const*, SkOut* out)
         return 1;
     }
     skg::vcall<void>(mm, 0x18 / 4, 0x4715068u, (void*)nullptr, (void*)nullptr, 0); // MessagePost
+    game::stage_leaving("coop.menu"); // BUG-0264
     SAY("leaving to the galaxy menu (mode 0x%08X)", game::mode_id());
     return 0;
 }

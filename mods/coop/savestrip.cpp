@@ -103,7 +103,7 @@ static bool creature_filter(void* o, uint32_t noun)
         return false;
     }
     g_herd_seen.insert(game::herd_of(o)); // every creature, the avatar and the pack included
-    if (o == game::avatar())
+    if (o == game::avatar_field()) // (avatar() is null during the quit message's save, BUG-0264)
         return false;
     void* h = game::herd_of(o);
     if (!own_kind_herd(h))

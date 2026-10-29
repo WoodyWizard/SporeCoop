@@ -43,6 +43,25 @@ void set_world_epoch_fix(bool on);
 void stage_epoch_tick();
 uint32_t stage_epoch(uint32_t stage_mode);
 void* avatar();
+// BUG-0264: the stage is being left for the galaxy menu (the quit message 0x4715068 posted or
+// handled): avatar() returns null until the mode changes (30 s at most). world.leave_avatar.
+struct LeaveStats {
+    unsigned windows = 0;    // stages left
+    unsigned frames = 0;     // frames seen while leaving
+    unsigned raw_gone = 0;   // frames where the avatar field held an object the game no longer lists
+    unsigned used_gone = 0;  // frames where the mod used such an avatar (the crash)
+    unsigned refused = 0;    // avatar() calls answered with null while leaving
+    unsigned bad_vtable = 0; // avatars refused for vtables outside the game
+    unsigned stage_gone = 0; // an unlisted avatar seen outside the window (1 Hz check)
+};
+void stage_leaving(const char* why);
+// the noun manager's avatar field in the creature stage / adventures, without the BUG-0264 checks:
+// only to compare pointers (the save filter runs during the quit's own save), never to dereference
+void* avatar_field();
+void stage_leave_cancel();
+bool leaving_stage();
+const LeaveStats& leave_stats();
+void leave_probe_tick(void* used);
 net::Vec3 position(void* c);
 net::Quat orientation(void* c);
 net::Vec3 velocity(void* c);

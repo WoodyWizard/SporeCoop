@@ -838,3 +838,30 @@ BUG-0255. GOG 2024, lane 5. Adds to [the save filter](#creature-save-strip).
   pause; switch `coop.fix savestrip.per_save` (its off side can write a game object at a freed
   puppet's address as null). Not measured: the share save, quit to the menu, a stage change and a
   Space planet save.
+
+## Leaving the stage for the galaxy menu: the avatar in the window (2026-10-29, fix/w6-avatar)
+<a id="creature-leave-avatar"></a>
+
+BUG-0264. GOG 2024, lanes 4 and 5.
+
+* ✔ The quit message 0x4715068 (docs/re/space.md 8.2) on a guest in the Creature stage, measured
+  per frame (`coop.leaving`, log lines "game: leaving frame ..."): mode_id() reads Creature for
+  0.63-0.71 s after the quit is posted; our frame hook runs 3 times in that window (right after the
+  post, then twice ~10 ms apart after the game's save that blocks ~0.65 s), then the mode changes.
+  In 30+ windows (2 players, also right after the Cell -> Creature change and the host's first
+  editor) the avatar stayed in the noun manager's object list with the game's vtables in every one
+  of those frames.
+* ✔ The campaign's guests (4 players, 20261029-070811 campaign#2) faulted 1.06 s after the post,
+  later than any window measured here: Bob in `game::max_health` (combatant vtable at avatar+0x5A8
+  read 0x01), Carol and Dave in a call into the heap with the same return addresses on the stack
+  (coop+0x8285B after the vcall in max_health, coop+0x88D33 in creature_fill): all three the same
+  path, a freed avatar still in the noun manager's field while the mode read Creature.
+* ? Why the campaign's window was longer and its avatar freed in it: not reproduced (4 games per
+  lane under the load of other lanes; more frames inside the teardown are the guess).
+* The fix (`world.leave_avatar`): `game::avatar()` is null from the quit (posted by the mod, or
+  handled by `Simulator_HandleMessage` for any source) until the mode changes (30 s at most, cleared
+  when a via-menu load is cancelled), and never returns an avatar whose object or combatant vtable
+  is outside the exe. `game::avatar_field()` is the raw field for pointer comparisons (the save
+  filter runs inside the quit's own save, when avatar() is already null).
+* Diagnostic: once a second in a stage the mod checks that the avatar is still listed; a miss logs
+  "game: the avatar ... is no longer in the game's object list" (`stage_gone` in `coop.leaving`).

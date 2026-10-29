@@ -930,6 +930,8 @@ int SK_THISCALL h_SimMsg(void* self, uint32_t id, void* data)
             return 1;
         }
     }
+    if (id == 0x4715068u) // BUG-0264: the game leaves the stage now (any source of the quit)
+        game::stage_leaving("quit message handled");
     return o_SimMsg(self, id, data);
 }
 
@@ -1528,6 +1530,7 @@ void on_frame(void*, int, void*)
     g_adapter = modes::for_mode(g_mode);
     g_world = modes::current_place(g_adapter);
     g_local = g_adapter ? g_adapter->local() : nullptr;
+    game::leave_probe_tick(g_local); // BUG-0264 tests: an avatar used while the stage is torn down
     void* av = game::avatar();
     avatar_change_check();
 
@@ -3536,6 +3539,15 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     H->command_add(M, "coop.ping", "coop.ping - show everybody the place under your mouse / where you are", c_ping,
                    nullptr, MT);
     H->command_add(M, "coop.share", "coop.share [player id] - (re)send the host world (save) to guests", c_share,
+                   nullptr, MT);
+    H->command_add(M, "coop.leaving", "coop.leaving - tests (BUG-0264): the avatar while the game leaves a stage for the galaxy menu",
+                   [](void*, int, const char* const*, SkOut* out) {
+                       const auto& l = game::leave_stats();
+                       SAY("leaving=%d windows=%u frames=%u raw_gone=%u used_gone=%u refused=%u bad_vtable=%u stage_gone=%u",
+                           (int)game::leaving_stage(), l.windows, l.frames, l.raw_gone, l.used_gone, l.refused, l.bad_vtable,
+                           l.stage_gone);
+                       return 0;
+                   },
                    nullptr, MT);
     coop_register_debug_commands(H, M);
     teamplay::Ctx tc;

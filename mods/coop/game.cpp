@@ -414,6 +414,68 @@ uint32_t mode_id()
 
 bool in_creature_stage() { return mode_id() == 0x1654C01; }
 
+// BUG-0264: the game leaves a stage for the galaxy menu (the quit message 0x4715068: a received
+// world, coop.load, coop.menu) and tears the stage down while mode_id() still reads that stage: the
+// noun manager's avatar field kept the freed avatar for about a second and every guest of a
+// 4-player campaign faulted in max_health (its vtable read 0x01) from creature_fill. From the moment
+// the quit is posted or handled until the mode changes (30 s at most) there is no avatar, and an
+// avatar whose vtables are no longer the game's is never handed out. `coop.fix world.leave_avatar
+// off`: the avatar field as it is (tests).
+static bool g_leave_fix = true;
+COOP_FIX("world.leave_avatar", "BUG-0264", g_leave_fix, "creature: no avatar while the game leaves the stage for the galaxy menu (it is freed before the mode changes)");
+constexpr double kLeaveMax = 30.0;
+static uint32_t g_leave_mode = 0; // the stage being left, 0 = none
+static double g_leave_at = 0;
+static LeaveStats g_leave;
+
+void stage_leaving(const char* why)
+{
+    uint32_t m = g_ready ? mode_id() : 0;
+    if (!m)
+        return;
+    if (g_leave_mode != m) {
+        g_leave.windows++;
+        H->log(M, SK_INFO, "game: leaving the stage 0x%08X (%s): no avatar until the mode changes", m, why);
+    }
+    g_leave_mode = m;
+    g_leave_at = H->time_seconds();
+}
+
+void stage_leave_cancel()
+{
+    g_leave_mode = 0;
+}
+
+bool leaving_stage()
+{
+    if (!g_leave_mode)
+        return false;
+    if (mode_id() != g_leave_mode || H->time_seconds() - g_leave_at > kLeaveMax) {
+        g_leave_mode = 0;
+        return false;
+    }
+    return true;
+}
+
+const LeaveStats& leave_stats() { return g_leave; }
+
+void* avatar_field()
+{
+    if (!g_ready)
+        return nullptr;
+    uint32_t m = mode_id();
+    if (m != 0x1654C01 && m != 0x1654C10) // creature stage, adventures (the captain)
+        return nullptr;
+    void* nm = cdecl_call<void*>(a_NounGet);
+    return nm ? field<void*>(nm, kNounAvatarOff) : nullptr;
+}
+
+// a creature whose object and combatant vtables are still the game's (a freed one read 0x01)
+static bool creature_vtables_ok(void* c)
+{
+    return c && in_exe(*(void**)c) && in_exe(*(void**)((uint8_t*)c + kCombatOff));
+}
+
 void* avatar()
 {
     if (!g_ready)
@@ -421,12 +483,57 @@ void* avatar()
     uint32_t m = mode_id();
     if (m != 0x1654C01 && m != 0x1654C10) // creature stage, adventures (the captain)
         return nullptr;
+    if (g_leave_fix && leaving_stage()) {
+        g_leave.refused++;
+        return nullptr;
+    }
     if (g_swap_real) // inside an NPC's AI tick that sees a puppet as the player
         return g_swap_real;
     void* nm = cdecl_call<void*>(a_NounGet);
     if (!nm)
         return nullptr;
-    return field<void*>(nm, kNounAvatarOff);
+    void* av = field<void*>(nm, kNounAvatarOff);
+    if (g_leave_fix && av && !creature_vtables_ok(av)) {
+        g_leave.bad_vtable++;
+        return nullptr;
+    }
+    return av;
+}
+
+// once per frame (coop.cpp on_frame, after g_local is set): while the stage is being left, is the
+// avatar still the game's? `used` = what the mod took as the local entity this frame. A frame where
+// the game's own object list no longer has the avatar the mod uses is the bug (tests).
+void leave_probe_tick(void* used)
+{
+    bool leaving = leaving_stage();
+    if (!leaving) {
+        // outside the window, once a second: an avatar the game no longer lists while the stage
+        // runs (not seen in the lab; evidence for the next campaign, logged once per avatar)
+        static double next = 0;
+        static void* reported = nullptr;
+        double now = H->time_seconds();
+        if (now < next)
+            return;
+        next = now + 1.0;
+        void* raw = avatar_field();
+        if (raw && raw != reported && !(creature_vtables_ok(raw) && creature_listed(raw))) {
+            reported = raw;
+            g_leave.stage_gone++;
+            H->log(M, SK_WARN, "game: the avatar %p is no longer in the game's object list (mode 0x%08X, not leaving)",
+                   raw, mode_id());
+        }
+        return;
+    }
+    g_leave.frames++;
+    void* raw = avatar_field();
+    bool raw_ok = raw && creature_vtables_ok(raw) && creature_listed(raw);
+    if (raw && !raw_ok)
+        g_leave.raw_gone++;
+    bool used_bad = used && used == raw && !raw_ok;
+    if (used_bad)
+        g_leave.used_gone++;
+    H->log(M, used_bad ? SK_WARN : SK_INFO, "game: leaving frame %.3f s after the quit: avatar %p %s, used %p",
+           H->time_seconds() - g_leave_at, raw, !raw ? "none" : raw_ok ? "listed" : "GONE", used);
 }
 
 // BUG-0119: which creature world the game plays, as a counter. The avatar's address is no world
