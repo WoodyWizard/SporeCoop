@@ -1799,6 +1799,7 @@ switch off (`SPORE_FIX_OFF=<switch>` or the test's own flag) and PASSES with it:
 | --- | --- | --- |
 | `coop_share_retry.py` (suite `share_retry`, Creature) | the guest joins from its own copy of the planet (Otherworld); the host's share of that join fails once after the save; within 120 s the guest plays the host's world | `SPORE_FIX_OFF=core.share_retry` (the guest stays in Otherworld) |
 | `coop_civ_other_world.py` step 4 (suite `civ_other_world`) | the guest's own Civ world has 777 more money than the host's (`coop.res add money 777` offline); for 40 s in the session its game's money never becomes the host's total and the host's does not move by it | `SPORE_FIX_OFF=res.elsewhere` |
+| `coop_tribe_other_world.py` (suite `tribe_other_world`, Tribe) | the guest in its own copy of the Tribe planet (Otherworld) orders one of its own members to walk 20-80 m (`coop.tribe walk`): it moves more than 8 m in the guest's game | `--nofix` (`coop.fix core.world_gate off`: AI skipped, orders sent to the host) |
 | `coop_join_other_world.py` step 5 (suite `join_other_world`) | `coop.dna add 20` on the guest in Otherworld: its game's DNA rises by 20, the host's does not; after `coop.share` it plays the host's world with the host's total | `SPORE_FIX_OFF=core.world_dna` |
 
 Hooks: `coop.worldfix failnext` (host): the next `share_now` fails once with an error that is not
