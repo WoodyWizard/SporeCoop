@@ -27,6 +27,10 @@
   is shown as a short tag ("public #3F2A"), a home network one by its class ("192.168.x.x").
 
 ### Fixed
+- Wine: the game could crash right after leaving a session, while the co-op window looked up the
+  PC's network addresses (the "Friends connect to" line); Wine's network code returned garbage when
+  two games of one Wine prefix asked at the same moment. The lookup now runs in the background,
+  rarely, one game at a time, and a fault in it no longer ends the game (BUG-0286).
 - Votes: "I'm ready" in the co-op window did nothing while a caption of the game was on the
   screen (the brain-upgrade captions at the end of the Creature stage): the vote ran out of time.
   The window's buttons now work during captions and cinematics (BUG-0273).

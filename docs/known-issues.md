@@ -797,3 +797,12 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * At 15 fps (`frame.limit 66`) 283 of 13165 compared cells were 1.2-2.3 m behind the host's (about
   0.65 s of their way), at 30 fps 2, at 65 fps 1. Reproduce: `FPSLIM=Carol:66 SPORE_LANE=N python3
   tools/tests/coop_sync_multi.py --fixture cell --rounds 25`. Ticket: BUG-0282.
+
+## Wine: other programs of the same prefix can still collide with the address lookup (2026-10-29, fix/w8-adapters)
+<a id="issue-wine-nsi-other-callers"></a>
+
+* SporeCoop's lookups take turns per Wine prefix (BUG-0286), but Wine's own code inside the game
+  (ws2_32 `gethostbyname` of the own host name, winhttp proxy detection) and an older SporeCoop in
+  the same prefix still use the same device without that turn. Seen only with several games in one
+  bottle (lab). Reproduce the collision: two games of a lane, `coop.fix core.adapters off` on both,
+  `coop.adapters stress 300` on both at once. Ticket: BUG-0286.

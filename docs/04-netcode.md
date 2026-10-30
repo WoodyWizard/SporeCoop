@@ -287,3 +287,34 @@ ascending bit order (BUG-0219).
   packets later does not have; further back the ack bits say nothing, so a bulk transfer that
   outruns them counts nothing) and the round-trip samples of a window (`rtt_min/max/sum/n`,
   `take_window()`). `Session::conn_to(id)` gives the connection for the statistics.
+
+## Local addresses and Wine's nsi (2026-10-29, fix/w8-adapters)
+<a id="netcode-wine-nsi"></a>
+
+What the co-op window's "Friends connect to" line and the LAN scan's subnet broadcast targets need
+is the PC's IPv4 addresses with their prefix lengths: `GetAdaptersAddresses(AF_INET)`
+(`mods/coop/adapters.cpp`, BUG-0286).
+
+* ✔ Wine 10.0 (Bottles, lab lanes): two games of **one Wine prefix** that call
+  `GetAdaptersAddresses` at the same moment crash. `coop.adapters stress 300` on both games of a
+  lane at once (old synchronous path) crashed one within seconds (lab run 20261029-193811: heap
+  fault in ntdll on the main thread); a worker lookup 4 ms after start-up, when host and guest
+  started together, faulted in ucrtbase memcpy in 3 of 3 cold starts of the creature fixture.
+* ✔ Mechanism (Wine 10.0 source, `dlls/nsi/nsi.c` `NsiEnumerateObjectsAllParametersEx`): after
+  the `IOCTL_NSIPROXY_WINE_ENUMERATE_ALL` call it takes `params->count = *(DWORD *)out` and
+  copies `count * size` bytes for each table without checking it against the count it asked for.
+  When the reply's count is garbage (observed: 0xC8F00180 bytes for one table), memcpy runs off the
+  malloc'd `out` buffer: a fault on the first read when ucrt copies backwards (destination above
+  the source, the player crash: nothing written), or a heap overwrite first when it copies forwards
+  (the later heap faults). Why the reply is garbage when two processes ask together is not known
+  (? the shared nsiproxy.sys in the prefix's winedevice.exe).
+* ✔ Negative: two threads of **one** game looking up together (GetAdaptersAddresses AF_INET and
+  AF_UNSPEC, GetAdaptersInfo, gethostbyname of the own host name), 1500 times: no fault. 1000
+  serial lookups in one game while sessions open and close: no fault.
+* The mod's rule: never on the main thread, never at start, at most every 5 min when the window or
+  the LAN scan asks, one lookup at a time per prefix (named mutex `Local\SporeCoop.nsi`: Wine's
+  named objects are per wineserver), the `ERROR_BUFFER_OVERFLOW` retry, and a fault guard (a
+  vectored handler sends the faulting worker to a landing function that releases the mutex and
+  ends the thread; the list keeps its last value and no lookup runs again in that game). Other
+  callers in the prefix are not covered: Wine's own ws2_32 (`gethostbyname` of the own host name,
+  `SIO_ROUTING_INTERFACE_QUERY`), winhttp's proxy detection, an older SporeCoop.

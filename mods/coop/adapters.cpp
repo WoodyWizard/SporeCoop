@@ -104,7 +104,7 @@ static std::vector<Addr> old_lookup()
 
 // One lookup at a time per Wine prefix: two games of one bottle enumerating at the same moment get
 // garbage from the shared \\.\Nsi device (Wine 10.0: a game crashed within seconds when two games
-// looked up in a loop, docs/re/net.md#net-wine-nsi-race). Named objects are per wineserver, so this mutex is shared by
+// looked up in a loop, docs/04-netcode.md#netcode-wine-nsi). Named objects are per wineserver, so this mutex is shared by
 // every SporeCoop game of the prefix. Held by the worker only.
 static HANDLE g_nsi_mutex;
 static std::atomic<bool> g_holding{false};
