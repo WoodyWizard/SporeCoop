@@ -51,6 +51,13 @@ int c_deadmodal(void*, int, const char* const*, SkOut* out)
     return 0;
 }
 
+// tests (BUG-0310): the next citizen the stage change sends walking is a cleaned-up one
+int c_leavewalk(void*, int, const char* const*, SkOut* out)
+{
+    SAY("%s", gamefixes::arm_leave_walk().c_str());
+    return 0;
+}
+
 int c_load(void*, int argc, const char* const* argv, SkOut* out)
 {
     if (argc < 3) {
@@ -344,6 +351,8 @@ void coop_register_debug_commands2(const SkHost* host, SkMod* self)
                       nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.deadmodal", "tests (BUG-0270): the window manager's modal window becomes a destroyed object",
                       c_deadmodal, nullptr, SK_CMD_MAIN_THREAD);
+    host->command_add(self, "coop.leavewalk", "tests (BUG-0310): the next citizen walked off-stage is a cleaned-up one",
+                      c_leavewalk, nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.save", "save the game (like the pause menu Save)", c_save, nullptr,
                       SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.dna", "coop.dna [add|local <n>] - shared DNA debug", c_dna, nullptr, SK_CMD_MAIN_THREAD);

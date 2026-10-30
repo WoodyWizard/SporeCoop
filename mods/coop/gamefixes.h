@@ -12,5 +12,7 @@ void shutdown(); // puts the original bytes back (hot reload)
 std::string status();
 // tests (BUG-0270): the window manager `wm` gets a destroyed object as its modal window
 std::string fake_dead_modal(void* wm);
+// tests (BUG-0310): the next citizen checked outside the Tribe mode gets +0xB54 = 0 (a cleaned-up one)
+std::string arm_leave_walk();
 
 } // namespace gamefixes

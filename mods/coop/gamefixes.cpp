@@ -220,6 +220,76 @@ std::string fake_dead_modal(void* wm)
     return "the modal window is now a destroyed object\n";
 }
 
+// BUG-0285 / BUG-0310: Citizen_OffStageCheck (0xACA2A0, thiscall(mgr, object), ret 4) sends a
+// citizen (noun 0x18EB4B7) on a new idle walk (0xD57680 -> 0xC27B00 -> DoAction -> WalkTo) when the
+// game mode is no longer Tribe. In the frame the Tribe stage is left for the galaxy menu it was run
+// for a citizen the stage had already cleaned up (CreatureBase_Cleanup 0xC1CA40 sets +0xB54 to 0),
+// and WalkTo's CreatureBase_SetMoveScale (0xC0DB10) read +0x3C of that null pointer: a first-chance
+// fault the game's own handler caught. That handler unwound past the rest of the mode change, and
+// the next load from the menu crashed or never finished (BUG-0284: the player reset; BUG-0310: the
+// space graphics init in cPlanet::GetRingEffect / cSpaceGfx_EnableHeatEffects). A cleaned-up citizen
+// has nowhere to walk: the guard skips the check for it. docs/re/tribe.md#tribe-leave-walk-fault.
+using OffStageFn = void(__thiscall*)(void*, void*);
+using IdleWalkFn = void(__cdecl*)(void*);
+static OffStageFn g_offstage_orig;
+static IdleWalkFn g_idle_walk; // 0xD57680, what the check calls for a citizen with nowhere to go
+static bool g_leave_walk_fix = true;
+COOP_FIX("tribe.leave_walk", "BUG-0285 BUG-0310", g_leave_walk_fix,
+         "gamefixes: a citizen already cleaned up while the Tribe stage is left is not sent on a new walk (fault in SetMoveScale)");
+constexpr uint32_t kCitizenNoun = 0x18EB4B7;
+constexpr uint32_t kTribeMode = 0x1654C02;
+static std::atomic<unsigned> g_offstage_calls{0}, g_offstage_citizens{0}, g_leave_walk_skipped{0};
+static std::atomic<bool> g_leave_walk_test{false}; // tests: the next citizen out of Tribe is made a cleaned-up one
+static unsigned g_leave_walk_test_done;
+
+static uint32_t mode_now()
+{
+    static uintptr_t get = H->sym("Simulator_GetCurrentGameMode");
+    return get ? skg::cdecl_call<uint32_t>(get) : 0;
+}
+
+static void __fastcall offstage_guard(void* mgr, void*, void* obj)
+{
+    g_offstage_calls++;
+    uint8_t* c = (uint8_t*)obj;
+    if (!c || skg::vcall<uint32_t>(c, 0x20 / 4) != kCitizenNoun || mode_now() == kTribeMode) {
+        g_offstage_orig(mgr, obj);
+        return;
+    }
+    g_offstage_citizens++;
+    void* saved = nullptr;
+    bool test = g_leave_walk_test.exchange(false);
+    if (test) { // the stand-in for the campaign's cleaned-up citizen: +0xB54 as the cleanup leaves it
+        saved = *(void**)(c + 0xB54);
+        *(void**)(c + 0xB54) = nullptr;
+        g_leave_walk_test_done++;
+        H->log(M, SK_WARN, "game fixes: tests: citizen %p made a cleaned-up one (+0xB54 %p -> 0) as the Tribe stage is left", c, saved);
+    }
+    if (*(void**)(c + 0xB54)) {
+        g_offstage_orig(mgr, obj);
+        return;
+    }
+    if (g_leave_walk_fix) {
+        if (++g_leave_walk_skipped <= 8)
+            H->log(M, SK_WARN, "game fixes: citizen %p was cleaned up (+0xB54 0) but the stage change sent it walking: skipped (mode %08X)",
+                   c, mode_now());
+    } else if (test && g_idle_walk) {
+        g_idle_walk(c); // the old code's path for this citizen (the check's own end: no place in range)
+    } else {
+        g_offstage_orig(mgr, obj);
+    }
+    if (test)
+        *(void**)(c + 0xB54) = saved;
+}
+
+std::string arm_leave_walk()
+{
+    if (!g_offstage_orig || !g_idle_walk)
+        return "no citizen off-stage guard\n";
+    g_leave_walk_test = true;
+    return "armed: the next citizen checked outside the Tribe mode becomes a cleaned-up one\n";
+}
+
 static bool patch_slot(uintptr_t* slot, uintptr_t value)
 {
     DWORD old;
@@ -263,6 +333,12 @@ void init(const SkHost* host, SkMod* mod)
     uintptr_t uh = H->sym("UTFWin::cWindowManager::UpdateHover");
     bool hover = uh && g_code_hi && H->hook_create(M, (void*)uh, (void*)&hover_guard, (void**)&g_hover_orig) == 0;
     H->log(M, SK_INFO, "game fixes: dead modal window guard %s", hover ? "on" : "off");
+    uintptr_t os = H->sym("SporeCoop::Citizen_OffStageCheck");
+    g_idle_walk = (IdleWalkFn)H->sym("SporeCoop::Citizen_IdleWalk");
+    bool walk = os && g_idle_walk && H->hook_create(M, (void*)os, (void*)&offstage_guard, (void**)&g_offstage_orig) == 0;
+    if (!walk)
+        g_offstage_orig = nullptr;
+    H->log(M, SK_INFO, "game fixes: cleaned-up citizen walk guard %s", walk ? "on" : "off");
 }
 
 void shutdown()
@@ -278,7 +354,9 @@ std::string status()
            ", tribe camera skipped " + std::to_string(g_cam_skipped.load()) + ", respawn caption without a planet " +
            std::to_string(g_planet_clear_skipped.load()) + ", Alt+Shift+Enter turned into Alt+Enter " +
            std::to_string(g_adapter_keys.load()) + ", dead modal windows dropped " + std::to_string(g_dead_modal.load()) +
-           "\n";
+           ", off-stage checks " + std::to_string(g_offstage_calls.load()) + " (citizens out of Tribe " +
+           std::to_string(g_offstage_citizens.load()) + "), cleaned-up citizen walks skipped " +
+           std::to_string(g_leave_walk_skipped.load()) + ", test citizens " + std::to_string(g_leave_walk_test_done) + "\n";
 }
 
 } // namespace gamefixes

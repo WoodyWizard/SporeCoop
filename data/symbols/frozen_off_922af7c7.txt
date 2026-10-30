@@ -33,3 +33,5 @@ Simulator::Cell::WorldScaleStep ; Cell: the host populates only around itself, a
 UTFWin::cWindowManager::UpdateHover ; game fixes: no guard against a destroyed modal window in the window manager (BUG-0270)
 SporeCoop::Herd_Update ; creature: null herd members are not taken out before the herd update (BUG-0256)
 SporeCoop::Relevance_Update ; creature: the host keeps its world alive only around its own camera (BUG-0280)
+SporeCoop::Citizen_OffStageCheck ; Tribe: no guard for a cleaned-up citizen sent walking while the stage is left (BUG-0310)
+SporeCoop::Citizen_IdleWalk ; Tribe: no guard for a cleaned-up citizen sent walking while the stage is left (BUG-0310)
