@@ -1599,6 +1599,7 @@ std::string debug(const std::vector<std::string>& a)
         void* pt = game::mode_id() == modes::kTribe ? player_tribe() : nullptr;
         int n = 0, big = 0;
         float mx = 0;
+        std::string list;
         for (void* c : pt ? members(pt) : std::vector<void*>{}) {
             float own = vcall<float>(c, 0x80 / 4, 0); // GetDesiredScale(int)
             if (own <= 0.01f || own > 10.f)
@@ -1607,10 +1608,13 @@ std::string debug(const std::vector<std::string>& a)
             n++;
             big += r > 1.15f;
             mx = std::max(mx, r);
+            char e[48];
+            snprintf(e, sizeof e, " %u:%.2f/%.2f", (unsigned)member_id(c), game::scale(c), own);
+            list += e; // id:scale in the game/own size (tests, BUG-0152)
         }
         char b[96];
         snprintf(b, sizeof b, "scales members=%d big=%d max_ratio=%.2f", n, big, mx);
-        return b;
+        return b + list;
     }
     if (a.size() >= 2 && a[0] == "epic" && a[1] == "herds") { // the game's epic herds and epic creatures (BUG-0121)
         struct Cnt {

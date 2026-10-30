@@ -20,6 +20,7 @@ Tests that use it are cold (the extra games share the lane's bottle: quitting on
 ends the others; Party.start begins with a clean lane through twoinst.start).
 """
 import math
+import os
 import re
 import subprocess
 import time
@@ -37,8 +38,10 @@ NEAR = {'cell': 3.0, 'creature': 3.0, 'tribe': 3.0, 'civ': 6.0, 'space': 12.0}
 
 
 class Player:
-    def __init__(self, name, con, inst, join=None):
+    def __init__(self, name, con, inst, join=None, netname=None):
         self.name, self.con, self.inst, self.join = name, con, inst, join
+        # the name in the session (the host may append " 2" to a taken name, BUG-0141); None: unknown yet
+        self.netname = name if netname == '' else netname
         self.pid = 0 if join is None else None
 
     def call(self, line):
@@ -67,18 +70,25 @@ class Party:
         return [self.host] + self.guests
 
     @classmethod
-    def start(cls, fixture, players=3, join_together=True, timeout=240):
+    def start(cls, fixture, players=3, join_together=True, timeout=240, join_names=None):
         """host + first guest (twoinst.start, cold), then players-2 extra guests that join at the same
-        moment (the world goes to two guests at once, #91) or one after the other"""
+        moment (the world goes to two guests at once, #91) or one after the other. join_names: the
+        name an extra guest joins with ({'Carol': 'Bob'}: two players named Bob, BUG-0141); its
+        session name is then the host's choice (Player.netname, set by ids())"""
         assert 3 <= players <= 4
         h, g = start(fixture)
         lane_state(**{**lane_state(), 'build': ''})  # the extras share the bottle: no warm reuse of these games
-        host = Player('Alice', h, lane.HOST)
-        guests = [Player('Bob', g, lane.GUEST, lane.JOIN)]
+        host = Player('Alice', h, lane.HOST, netname='')
+        guests = [Player('Bob', g, lane.GUEST, lane.JOIN, '')]
         extra = start_extra(players - 2)
         for name, (con, inst) in extra.items():
-            guests.append(Player(name, con, inst, join_cmd(name)))
+            jn = (join_names or {}).get(name, name)
+            guests.append(Player(name, con, inst, join_cmd(jn), None if jn != name else ''))
         p = cls(host, guests, fixture)
+        # SPORE_FIX_OFF reaches the extra guests too (twoinst.start switched the host and Bob)
+        for name in filter(None, (n.strip() for n in os.environ.get('SPORE_FIX_OFF', '').split(','))):
+            for gp in guests[1:]:
+                print(f'  SPORE_FIX_OFF ({gp.name}): ' + gp.call(f'coop.fix {name} off').strip().splitlines()[0], flush=True)
         for gp in guests[1:]:
             gp.call(gp.join)
             if not join_together:
@@ -88,9 +98,21 @@ class Party:
 
     # ---------------- who is where ----------------
     def ids(self):
-        got = {m.group(2): int(m.group(1)) for m in re.finditer(r'^\s*\[(\d+)\] (\S+)', self.host.call('coop.status'), re.M)}
+        """{session name: id} from the host's roster; each guest's pid (by its session name, or for a
+        guest that joined under another's name, the id the guest's own game reports)"""
+        got = {m.group(2): int(m.group(1)) for m in re.finditer(r'^\s*\[(\d+)\] (.{1,16})', self.host.call('coop.status'), re.M)}
+        got = {n.strip(): i for n, i in got.items()}
         for gp in self.guests:
-            gp.pid = got.get(gp.name, gp.pid)
+            if gp.netname is None or gp.netname not in got:
+                m = re.search(r'\bid=(\d+)', gp.call('coop.status'))
+                if m:
+                    gp.pid = int(m.group(1))
+                    gp.netname = next((n for n, i in got.items() if i == gp.pid), gp.netname)
+                continue
+            gp.pid = got.get(gp.netname, gp.pid)
+        for gp in self.guests:  # tests address the players by their own names too
+            if gp.pid is not None:
+                got.setdefault(gp.name, gp.pid)
         return got
 
     def together(self):

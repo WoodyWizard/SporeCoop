@@ -234,7 +234,9 @@ for st, n, extra in (('cell', 3, ''), ('creature', 4, ''), ('tribe', 4, ''), ('c
         ('multi', 'extended'), minutes=3)
 
 # the gameplay paths between guests per stage (BUG-0152): each a few minutes on party.py
-for name, cmd in (('party_cell_ko', 'coop_party_cell.py'),):
+for name, cmd in (('party_cell_ko', 'coop_party_cell.py'), ('party_creature_npc', 'coop_party_creature.py'),
+                  ('party_tribe_split', 'coop_party_tribe.py'), ('party_civ_own', 'coop_party_civ.py'),
+                  ('party_space_names', 'coop_party_space.py')):
     add(name, P + cmd, ('multi', 'extended'), minutes=4)
 
 # a whole game of four bot players, Cell to the galactic core (BUG-0152, docs/06-testing.md#testing-campaign):
