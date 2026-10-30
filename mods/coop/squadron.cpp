@@ -1,6 +1,8 @@
 #include "squadron.h"
 
 #include <algorithm>
+#include <array>
+#include <cstring>
 #include <cmath>
 #include <cstdio>
 #include <unordered_map>
@@ -309,6 +311,32 @@ static void* hit_puppet(uint8_t from)
     return hit_attacker(p);
 }
 
+// BUG-0323: the model of a live ship this game made for the empire `pol` (the same type first)
+static bool local_model(uint32_t pol, int type, uint32_t* key)
+{
+    void* best = nullptr;
+    for (void* u : all_ufos()) {
+        if (u == player_ufo() || g_mirror_of.count(u) || F<uint32_t>(u, kPol) != pol)
+            continue;
+        const uint32_t* k = &F<uint32_t>(u, kModel);
+        if (!(k[0] | k[1] | k[2]) || !creations::key_known({k[0], k[1], k[2]}))
+            continue;
+        if (!best || F<int>(u, kType) == type)
+            best = u;
+    }
+    static std::unordered_map<uint32_t, std::array<uint32_t, 3>> seen; // pol -> a model it had here
+    if (!best) {
+        auto it = seen.find(pol); // the local ships are removed once the host's are mirrored
+        if (it == seen.end() || !creations::key_known({it->second[0], it->second[1], it->second[2]}))
+            return false;
+        memcpy(key, it->second.data(), 12);
+        return true;
+    }
+    memcpy(key, &F<uint32_t>(best, kModel), 12);
+    memcpy(seen[pol].data(), key, 12);
+    return true;
+}
+
 static void destroy_mirror(void* u, bool explode)
 {
     if (!live(u))
@@ -382,14 +410,22 @@ static void guest_state(net::Reader& r)
             // without a model, and the game faulted at 0xE98DD0 (null model in the ship gfx's
             // SetVisible) when the mirror came up. Such a mirror takes the game's default model.
             // `coop.fix fleet.model_check off`: the old spawn with any key.
+            // (SpawnUFO with no key faulted the same way: the default model was missing too.) The
+            // model of a ship of the same empire that this game made itself is taken instead; with
+            // none the mirror waits (no ship rather than a broken one).
             bool known = !(key[0] | key[1] | key[2]) || creations::key_known({key[0], key[1], key[2]});
             if (!known) {
                 g_unknown_models++;
+                bool sub = false;
+                if (g_model_fix)
+                    sub = local_model(pol, type, key);
                 if (g_unknown_logged.insert(key[0]).second)
-                    H->log(M, SK_INFO, "space: host ship model %08X/%08X/%08X is not in this game%s", key[0], key[1],
-                           key[2], g_model_fix ? ": the mirror takes the default model" : "");
+                    H->log(M, SK_INFO, "space: host ship model %08X is not in this game%s", key[0],
+                           !g_model_fix ? "" : sub ? ": the mirror takes a local ship's model" : ": no mirror yet");
+                if (g_model_fix && !sub)
+                    continue;
             }
-            void* u = skg::cdecl_call<void*>(a_SpawnUFO, type, &pol, known || !g_model_fix ? (void*)key : nullptr);
+            void* u = skg::cdecl_call<void*>(a_SpawnUFO, type, &pol, (void*)key);
             if (!u)
                 continue;
             m.u = u;
