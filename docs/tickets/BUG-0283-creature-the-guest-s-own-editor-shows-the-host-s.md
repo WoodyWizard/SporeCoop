@@ -11,7 +11,7 @@ versions: main after 0.7.3.0 (fix/w7-finale dcff1cf)
 fixed_in:
 branch:
 commits:
-tests:
+tests: tools/tests/coop_guest_editor_hold.py (suite guest_editor_hold, extended)
 signature:
 docs: docs/re/creations.md#creations-own-editor-save
 related: BUG-0278
@@ -33,7 +33,14 @@ questions: whether the shared DNA total (BUG-0128) or the host's world package s
 creature in an open editor; whether a player can lose its own edits this way.
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+Not found. 2026-10-30 (fix/w9-creature, lane 9, 0.7.3.1 code): not reproduced in 3 runs of
+`coop_guest_editor_hold.py` (the report's flow from the Cell stage): the red cross 3 s after the
+guest's editor came up (out/lab/20261030-004649), and the editor left alone 5 s
+(20261030-004334) and 40 s (20261030-005344) after the host's new creation and world reached the
+guest: the editor kept the legless creature and 115 DNA, one click left it. In the report the first
+click on the red cross did nothing; whatever kept the editor open may be what let the host's body
+in. A first guess (the host's creation bundles registered while the editor is open) was tried as a
+fix and dropped: the test passed without it too.
 
 ## Fix
 <!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
@@ -44,3 +51,4 @@ creature in an open editor; whether a player can lose its own edits this way.
 
 ## History
 - 2026-10-29: opened (fix/w7-legless, while reproducing BUG-0278).
+- 2026-10-30: not reproduced on fix/w9-creature (3 runs, coop_guest_editor_hold.py, suite extended).

@@ -13,7 +13,12 @@ changes to be lost" instead of leaving. Checked on the guest's game (its mode): 
 cross leaves the editor (an editor without changes leaves at once, docs/re/creations.md
 #creations-own-editor-save).
 
-  coop_guest_editor_hold.py   (SPORE_FIX_OFF=creations.editor_hold must FAIL)"""
+Not reproduced on lane 9 (2026-10-30, 0.7.3.1 code): the red cross 3 s after the editor came up
+(20261030-004649), and the editor left alone 5 s (20261030-004334) and 40 s (20261030-005344) after
+the host's new body arrived: the editor kept the legless creature and 115 DNA, one click left it.
+Kept as the report's scenario (suite extended); it has no fix to switch off.
+
+  coop_guest_editor_hold.py"""
 import time
 
 import lane

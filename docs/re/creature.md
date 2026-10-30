@@ -951,3 +951,32 @@ BUG-0280. GOG 2024, disassembly plus runtime on lane 9. Explains [the pool cull]
   host's brain level for every herd (a rival with another brain level needs the herds of its own
   range near it), and the sphere of a player is its avatar's position (not its camera).
 * `coop.views` (host): the partners' centres, the game's own sphere, how many passes took partners.
+
+## A null herd member after a rejoin: the stray waiting for its destroy (2026-10-30, fix/w9-creature)
+<a id="creature-herd-null-member"></a>
+
+BUG-0256. GOG 2024, lane 9, `coop_rejoin_saved_puppet.py`. Adds to [the save filter](#creature-save-strip-empty-herds).
+
+* ✔ The fault 0x00C0B8D2 is `SporeCoop::Creature_IsAdult` 0xC0B8D0 (`[ecx+0xB34] == 1`, no null
+  check) called from `Herd_Update`+0x61 (0xC6D9C1) with a **null member** of the herd's list
+  (+0x40 / +0x44). The crash reporter's label "cCreatureAnimal::Update+0xAA2" was the nearest
+  older symbol. Destroying a creature (DestroyInstance -> 0xC083D0) takes it out of its herd's list
+  (0xACC940 erases it), so a null there does not come from a destroy in this world: it was loaded.
+* ✔ The chain (host log of the run): the guest leaves during the vote while the host is in its
+  evolution editor; the host's puppet of it is forgotten, not destroyed (the world stays through
+  the editor, coop.cpp `forget_puppets`); back from the editor the host removes it as a left-over
+  puppet ("a puppet left over from before") while the evolution cinematic plays, so the destroy is
+  **deferred** (`game::destroy_creature`); the guest joins again, its new puppet goes into the
+  **same herd** (herds are reused per species), and the share save is written in that window. The
+  save filter stripped the new puppet (a null reference in the herd's list) but kept the herd for
+  the left-over creature (no longer a puppet, not ours by the owner rule): the guest loaded a herd
+  with a null member and faulted every frame (1229 faults in 20 s, fix off).
+* Fix 1 (`savestrip.pending`): a creature waiting for its deferred destroy counts as ours in the
+  save filter (stripped with its herd when nothing else of the game is in it). With it alone the
+  guest's herds had no null member (`coop.npc herdnulls` removed=0, lane 9).
+* Fix 2 (`npc.herd_nulls`): a hook on `Herd_Update` takes null members out of the list before the
+  update (moving the others down changes no reference count). It covers saves already written by
+  older versions and any other way a null gets there; the log line "herd ... null member(s) taken
+  out" names the herd (archetype 0, no nest: one of ours in the runs).
+* Not checked: whether other lists of the game hold a stripped creature as a null (the behavior
+  manager's has its own cleanup, savestrip `h_BhvRead`).

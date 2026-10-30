@@ -1807,8 +1807,9 @@ wrong. Suite `campaign` (in no other suite): `tools/lab.py run campaign --lanes 
   play. Fix off: the guest removes the saved creature of its species twice and faults every frame
   at 0x00C0B8D2 (1229 faults in one run). `coop.npc herdnulls`: how many null members the
   Herd_Update hook took out.
-* `coop_guest_editor_hold.py` (suite `guest_editor_hold`, cell fixture, ~9 min cold, BUG-0283): the
-  first Creature vote from the Cell stage as in `coop_legless_guest.py`; the guest leaves its own
-  editor alone until the host's new creation and world have reached it (its game log), then one
-  click on the red cross must leave the editor. `coop.creations` prints `editor_hold: held= total=
-  used=`.
+* `coop_guest_editor_hold.py` (suite `guest_editor_hold`, extended, cell fixture, ~4 min cold,
+  BUG-0283): the first Creature vote from the Cell stage as in `coop_legless_guest.py`; the guest
+  leaves its own editor alone for 40 s after the host's new creation reached it (its game log),
+  then one click on the red cross must leave the editor. Not reproduced in 3 runs on lane 9 (the
+  click 3 s after the editor came up, 5 s and 40 s after the host's body): the editor kept the
+  legless creature with 115 DNA and left on one click every time.

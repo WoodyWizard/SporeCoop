@@ -9,9 +9,6 @@
   seconds. The host now keeps the world alive around every player (BUG-0280).
 - Creature: a guest that rejoined and loaded the host's world could fault every frame in the herd
   update (a herd of the save with an empty member slot); such slots are dropped now (BUG-0256).
-- Creature: the guest's own editor no longer changes while it is open when the host's new body
-  arrives (the host's new parts appeared, the DNA dropped, and the red cross asked to confirm); the
-  host's creations that arrive meanwhile are used when the editor closes (BUG-0283).
 
 ## [0.7.3.1] - 2026-10-29
 
