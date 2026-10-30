@@ -14,7 +14,7 @@ every guest at once in the 4-player measurement, coop_sync_multi.py --fixture tr
    at each end (`coop.npc dash`, test command), for 40 s.
 3. Every ~0.5 s the guest's game positions of those animals is compared with the host's path over the
    0.25 s before the guest's sample and the host's sample after it (coop_multi.measure, as the
-   campaign does). PASS: at most 20 % of the samples farther than 1.5 m (fix off: 40-45 %).
+   campaign does). PASS: 90 % of the samples within 1.2 m (fix off: p90 1.5-2.8 m, on: 0.7-0.95 m).
 
 Switch: SPORE_FIX_OFF=npc.trail (the driving before the fix) must FAIL.
 
@@ -27,14 +27,14 @@ import time
 import coop_multi as cm
 from twoinst import Checks, start
 
-LIMIT = 1.5     # m
+LIMIT = 1.5     # m (printed: samples farther than this)
+P90 = 1.2       # m: the 90th percentile of the errors (fix off: 1.5-2.8 m, on: 0.7-0.95 m)
 FRAME_MS = int(os.environ.get('DASH_FRAME_MS', '66'))
 SPEED = float(os.environ.get('DASH_SPEED', '6.5'))
 LEN, WIDTH = float(os.environ.get('DASH_LEN', '12')), float(os.environ.get('DASH_WIDTH', '2'))
 OFF = float(os.environ.get('DASH_OFF', '1.2'))  # m: the second animal runs this far beside the first
 # the small herd animal of the fixture's planet (the one 4 m off in the 4-player probes, BUG-0305)
 SPECIES = os.environ.get('DASH_SPECIES', '06808ACA')
-SHARE = 0.2     # of the samples (fix off: 40-45 %, on: 1-10 %)
 
 
 def host_animals(con):
@@ -94,8 +94,9 @@ def main():
         far = sum(1 for e in errs if e > LIMIT)
         print(f'  errors: median {s[len(s) // 2]:.2f} m, p90 {s[int(0.9 * len(s))]:.2f} m, max {s[-1]:.2f} m, '
               f'{far} of {len(errs)} over {LIMIT} m', flush=True)
-        ck(far <= SHARE * len(errs), f'the guest shows the dashing animal where the host has it '
-           f'({far} of {len(errs)} samples over {LIMIT} m, at most {SHARE:.0%})')
+        p90 = s[int(0.9 * len(s))]
+        ck(p90 <= P90, f'the guest shows the running animals where the host has them '
+           f'(90 % of {len(errs)} samples within {p90:.2f} m, limit {P90} m)')
     return ck.result()
 
 
