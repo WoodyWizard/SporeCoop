@@ -1086,3 +1086,13 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   guest had jumped to; also with main 4dbacc5 (lab 20261030-151438). Lane 9 is clean with the same
   code. Reproduce: `tools/lab.py run space_jump --lanes 1 --skip 1,2,3,4,5,6,7,9,10`.
 * Ticket: BUG-0323.
+
+## Civilization: a guest's gift or command is refused now and then in play_civ (2026-10-30, fix/w14-tribe-civ)
+<a id="issue-civ-rejected-commands"></a>
+
+* What happens: `play_civ.py` seeds 11 and 5: 1-2 guest commands rejected by the host per 10 min, once
+  a gift of one vehicle that did not reach the host.
+* Reproduce: `SPORE_LANE=N python3 tools/tests/play_civ.py --minutes 10 --seed 11` (2 of 3 runs).
+* Known: the host logs each rejection with its kind since fix/w14-tribe-civ.
+* Not checked: which command kinds, and whether the vehicle changed owner or died first.
+* Ticket: BUG-0325
