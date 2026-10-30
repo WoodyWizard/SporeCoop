@@ -145,3 +145,53 @@ currently working**:
   by key has not been found yet: the menu goes through `kMsgSetGameModeByName` 0xE11333, and the
   adventure resource is read by `cScenarioResource::Read` 0xF2FC40 via the resource manager.
 * Shared NPCs outside the Creature stage: cells, citizens and ships are simulated separately on each machine.
+
+## The host's world: one rule for every module (2026-10-30, fix/w9-core)
+<a id="modes-host-world"></a>
+
+A guest can play another world of the host's stage while connected: (a) it joins from inside a
+game of its own, (b) it loads one of its own saves, (c) the host loads another save of the same
+stage, (d) a share failed or the guest has `auto_load_world=0`. Before 0.7.4 each module decided
+this differently (BUG-0130, BUG-0231 / GitHub #165). Now there is one rule, `mods/coop/host_world.h`
+(pure, unit tested in `tests/validate_tests.cpp` test_host_world), and every module asks it through
+three functions in coop.cpp:
+
+* `host_world_now()`: `NotGated` (not a connected guest; Space, adventures, menus, editors, loads;
+  the host's state in another mode: follow_phase pulls the guest), `Same` (the host's latest state,
+  or before the first one the world the host named in WELCOME, is this machine's world, not 0),
+  `Other` (anything else in Cell, Creature, Tribe or Civ, including "no state and no WELCOME world"
+  from an older host, and this machine's world 0). Recomputed on every call, never cached.
+  `core.same_place off` makes it `NotGated` everywhere.
+* `guest_elsewhere()`: `host_world_now() == Other`.
+* `host_absent_for(Absent::Npc | Tribe | Civ)`: the host does not drive this module's shared
+  objects on this guest now (away in the menu, an editor or a load: `g_host_away`; or elsewhere):
+  the guest plays them itself. The npc part keeps BUG-0130's switch, Tribe and Civ use
+  `core.world_gate`. A later "host away" change edits only the away part inside it.
+
+`Welcome::world` (protocol unchanged, the field existed and was never set): the host fills it every
+frame with its save CRC in a gated stage (`host_world::welcome_world`), the guest keeps it
+(`Session::welcome_world()`, reset by `leave()`). A guest joining in the host's world is `Same` from
+WELCOME on, so it no longer drops the host's Civ state, Cell knockouts or a build event in the round
+trip before the host's first state.
+
+What each module does while `Other`:
+
+| Module | While elsewhere | Switch |
+| --- | --- | --- |
+| message gate (`gate_drops`) | drops DNA total (kept as `g_dna_pending`), time of day, Cell, Tribe, Civ state / build / alarm, species, social | `core.world_gate` (off: 0.7.3.0's predicate, no Civ messages) |
+| npc, tribe, civ | `local_play()`: the guest's own AI and orders | `core.same_place` (npc), `core.world_gate` |
+| civ `city_catch_up` | founds nothing (second guard: `local_play()`) | (behind the gate) |
+| DNA (`dna_route.h` row 2) | a gain is applied in the guest's own world, nothing is sent; the host's total replaces it once the guest plays the host's world | `core.world_dna` |
+| shared money / food | held (`SharedLedger::pause`): no sampling, no sending, host totals ignored; pending and in-flight changes are kept and go out after the first host total back in the host's world | `res.elsewhere` |
+| Space | never gated here: squadron `with_host` and spacecoop `my_place` decide per star system | |
+
+The host side: a share that fails after the save (`world::tick`, "cannot share the world") calls
+`world::set_share_failed`; coop.cpp clears the guest's `world_sent` (and sets `needs_world` for a
+share of its join) and follow_phase sends it again 30 s later, at most 3 times per phase and guest,
+then the host is told to use `coop.share` (`core.share_retry`). The tag is the guest's
+`join_serial`, so a newcomer that got the id of a guest who left is not retried for it. "Planet
+file missing" is not retried (world.cpp saved 3 times already).
+
+Limits: two different planets saved under the same name count as one world (a protocol change would
+fix it). Rivals mode (docs/11-rivals.md 11.8, "Perspective" and "Per-player progress") builds on
+this rule: it answers "whose world is this machine in", the modules decide what to share.
