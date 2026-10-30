@@ -333,3 +333,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0321](BUG-0321-tribe-npc-dash-fails-2-of-3-runs-on-main-p90-1-5.md) | open | test | Tribe | 2026-10-30 |  | tribe_npc_dash fails 2 of 3 runs on main (p90 1.5-2.2 m over the 1.2 m limit) |
 | [BUG-0322](BUG-0322-tests-tribe-npc-dash-fails-about-half-of-the-run.md) | open | test | Tribe | 2026-10-30 |  | tests: tribe_npc_dash fails about half of the runs on a loaded machine (p90 1.3-2.0 m, limit 1.2 m) |
 | [BUG-0323](BUG-0323-space-a-guest-faults-at-0xe98dd0-effect-object-n.md) | open | crash | Space | 2026-10-30 |  | Space: a guest faults at 0xE98DD0 (effect object null) when the host's ship appears in an NPC system, lane 8 only |
+| [BUG-0326](BUG-0326-tests-sync-lowfps-fails-civ-vehicles-90-facing-w.md) | open | desync | Civ | 2026-10-30 |  | tests: sync_lowfps fails 'civ/vehicles: 90% facing within 20 deg' on main d003127 (lane 4, 2 of 2) |
