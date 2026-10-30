@@ -12,6 +12,55 @@
 
 namespace dna_route {
 
+// The decision table (GitHub #165 owns rows 1-9 and 12, #167 rows 10, 11, 13-15). A switch that
+// is off makes its input false. "elsewhere" is host_world.h's Other (coop.cpp guest_elsewhere()).
+
+// rows 1-5: a guest's own gain (on_dna, d > 0)
+enum class Gain {
+    Local,   // 1: not a connected guest: the game applies it
+    Own,     // 2: the guest plays another world (core.world_dna): applied here, nothing sent; the
+             //    host's total replaces it once the guest plays the host's world (row 6)
+    Solo,    // 3: the host is away (core.away_dna): applied here, kept as solo DNA (row 9)
+    Forward, // 4-5: a goal card's reward (K_GOAL) or MSG_DNA_ADD, not applied here
+};
+
+inline Gain guest_gain(bool connected_guest, bool positive, bool elsewhere, bool away)
+{
+    if (!connected_guest || !positive)
+        return Gain::Local;
+    if (elsewhere)
+        return Gain::Own;
+    if (away)
+        return Gain::Solo;
+    return Gain::Forward;
+}
+
+// rows 6-8: the guest gets the host's total (MSG_DNA)
+enum class Total {
+    Pending, // 6: elsewhere: kept as g_dna_pending, applied once the guest plays the host's world
+    Drop,    // 7: the host away or no avatar: dropped (the host resends it every 2 s, BUG-0128)
+    Apply,   // 8: the difference is applied through the game
+};
+
+inline Total host_total(bool elsewhere, bool away, bool avatar)
+{
+    if (elsewhere)
+        return Total::Pending;
+    if (away || !avatar)
+        return Total::Drop;
+    return Total::Apply;
+}
+
+// row 12 (13: #167 owes it, tagged with the world): the host gets a guest's MSG_DNA_ADD
+enum class Add { Pay, Owe, Drop };
+
+inline Add host_add(bool avatar, bool owe_fix)
+{
+    if (avatar)
+        return Add::Pay;
+    return owe_fix ? Add::Owe : Add::Drop;
+}
+
 // the guest's "host away" ended: what happens to its solo DNA
 enum class SoloEnd {
     SendBack, // the host is back in the guest's world: sent to the pack, "is back" notice

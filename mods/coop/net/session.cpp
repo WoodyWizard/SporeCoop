@@ -94,6 +94,7 @@ bool Session::join(const std::string& addr, const std::string& name, std::string
     role_ = Role::Client;
     my_name_ = name;
     welcomed_ = false;
+    welcome_world_ = 0;
     join_started_ = now();
     if (!host_name.empty()) {
         auto l = std::make_shared<Lookup>();
@@ -195,6 +196,7 @@ void Session::leave(const char* why)
     tr_->close();
     role_ = Role::None;
     welcomed_ = false;
+    welcome_world_ = 0;
     logf(cb, "session closed (%s)", why);
 }
 
@@ -594,6 +596,7 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
         if (!wl.read(r))
             return;
         my_id_ = wl.your_id;
+        welcome_world_ = wl.world; // BUG-0231: the host's world before its first state
         welcomed_ = true;
         p.accepted = true;
         p.caps = wl.caps;

@@ -13,7 +13,11 @@ namespace world {
 
 void init(const SkHost* host, SkMod* mod, std::function<void(const std::string&)> feed);
 // host: queue the current save folder for a guest (optionally save the game first)
-bool share_with(uint8_t peer, std::string& err, bool save_first = false);
+// tag: given back to the share-failed callback (coop.cpp: the guest's join serial, BUG-0231)
+bool share_with(uint8_t peer, std::string& err, bool save_first = false, uint32_t tag = 0);
+// host: a queued share failed for good ("cannot share the world"); planet_missing: the played
+// planet had no file after 3 saves. Called from tick(); not for shares dropped with their player
+void set_share_failed(void (*f)(uint8_t peer, uint32_t tag, bool planet_missing));
 bool share_now(uint8_t peer, std::string& err);
 // the game's own save (pause menu "Save"); also works on planets in space
 bool save_game(std::string& err);

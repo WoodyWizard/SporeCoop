@@ -1577,6 +1577,10 @@ static void city_catch_up(size_t host_total)
 {
     if (!g_fix_cities)
         return;
+    // BUG-0231: a second guard behind the message gate: a guest that plays its own world (another
+    // world of the host's stage) or plays on while the host is away founds nothing for the host
+    if (local_play())
+        return;
     double now = H->time_seconds();
     if (all_cities().size() >= host_total) {
         g_city_short_since = -1;

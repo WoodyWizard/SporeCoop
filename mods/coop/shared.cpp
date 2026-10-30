@@ -126,6 +126,13 @@ COOP_FIX("res.floor", "BUG-0106", g_floor_fix, "shared: totals never go below 0,
 // change into its report before it takes a host total (a spend at a join came back, spent twice)
 static bool g_join_keep_fix = true;
 COOP_FIX("res.join_keep", "BUG-0220", g_join_keep_fix, "shared: a guest's spend at another player's join is not undone");
+// BUG-0231: a guest that plays another world of the host's stage took the host's money / food
+// total into its own world (and sent its own world's changes to the host). Held while elsewhere
+// (SharedLedger::pause: the sync state waits, nothing is lost). Off: totals applied while elsewhere.
+static bool g_elsewhere_fix = true;
+COOP_FIX("res.elsewhere", "BUG-0231", g_elsewhere_fix, "shared: a guest in another world keeps its own money and food");
+static bool g_hold;          // the last tick: the guest is elsewhere and the totals are held
+static uint32_t g_held_totals; // tests: host totals ignored while held
 
 // the game's AddMoney clamps to 0..99 999 999; raw writes of a total do the same (BUG-0106)
 static double money_clamp(double v)
@@ -187,9 +194,10 @@ void on_player_leave(uint8_t id)
         r.acked.erase(id); // the id is given to the next newcomer, whose sequence starts at 1
 }
 
-void tick(net::Session& s, uint32_t mode, double now)
+void tick(net::Session& s, uint32_t mode, double now, bool elsewhere)
 {
     g_mode = mode;
+    g_hold = g_elsewhere_fix && elsewhere && s.role() == net::Role::Client;
     if (s.role() == net::Role::None) {
         on_session_end(); // nothing changed offline is ever reported to a host (BUG-0049)
         return;
@@ -207,6 +215,11 @@ void tick(net::Session& s, uint32_t mode, double now)
         }
         if (r.mode != mode || !r.get(v)) {
             r.have = false;
+            continue;
+        }
+        if (g_hold) { // BUG-0231: another world: its value is not the pack's; the ledger waits
+            r.have = false;
+            r.led.pause();
             continue;
         }
         if (s.role() == net::Role::Host) {
@@ -268,6 +281,10 @@ void on_message(net::Session& s, uint8_t type, uint8_t from, net::Reader& rd)
         if (!r.get(cur))
             return;
         if (type == net::MSG_RES && s.role() == net::Role::Client) {
+            if (!r.led.take_total(g_hold)) {
+                g_held_totals++;
+                return; // BUG-0231: the guest plays another world
+            }
             if (!g_floor_fix) { // before BUG-0106: only the unsent change is kept
                 r.set(v + r.led.pending);
                 r.synced = v + r.led.pending;
@@ -346,8 +363,8 @@ std::string status()
         double fl = 0;
         for (auto& e : r.led.in_flight)
             fl += e.v;
-        snprintf(b, sizeof b, "shared %s=%.1f synced=%d pending=%.1f in_flight=%.1f from_guests=+%.0f/%.0f\n", r.name, v,
-                 r.have, r.led.pending, fl, r.gained, r.spent);
+        snprintf(b, sizeof b, "shared %s=%.1f synced=%d pending=%.1f in_flight=%.1f from_guests=+%.0f/%.0f held=%d/%u\n",
+                 r.name, v, r.have, r.led.pending, fl, r.gained, r.spent, (int)r.led.held, g_held_totals);
         out += b;
     }
     return out.empty() ? "no shared resources in this mode\n" : out;
