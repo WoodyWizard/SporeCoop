@@ -1788,3 +1788,27 @@ wrong. Suite `campaign` (in no other suite): `tools/lab.py run campaign --lanes 
 * Pitfall: two games of one bottle that call `GetAdaptersAddresses` together crash Wine 10.0
   (docs/04-netcode.md#netcode-wine-nsi). A test helper that looks up addresses must not run in
   every game of a lane at the same moment.
+
+## Creature wave 9: far guests, rejoin herds, the guest's open editor (2026-10-30, fix/w9-creature)
+<a id="testing-w9-creature"></a>
+
+* `coop_npc_far.py` (suite `npc_far`, ~2.3 min cold, BUG-0280): the guest stays at the nest, the
+  host is teleported 450 m away in 20 steps (`coop.npc gopos`), 8 s for the relevance pass, then
+  40 s of censuses of both games: the guest's proxies within 120 m of its avatar (at least 85 % of
+  the count before), the host's NPCs there, new net ids near the guest. Without the fix (lane 9):
+  20 -> 8 or 12 NPCs left; with it 20 -> 20. `coop.views` (host) prints the partners' centres and
+  the game's own sphere: in the headless lanes the host's camera does not follow a `gopos` all the
+  way (its sphere stayed ~370 m behind an avatar sent 600 m away), so how many NPCs the fix-off run
+  loses depends on where the camera stopped; the nest flicker of BUG-0274 (new ids every 3-6 s)
+  was not seen in these runs (0 new ids either way).
+* `coop_rejoin_saved_puppet.py` (suite `rejoin_saved_puppet`, ~2.5 min cold, BUG-0256): a passed
+  vote, the guest leaves with its editor due (`core.own_editor_end off`: the editor opens offline,
+  as on 0.7.3.0), the host leaves its editor, the guest joins again and loads the share; 20 s of
+  play. Fix off: the guest removes the saved creature of its species twice and faults every frame
+  at 0x00C0B8D2 (1229 faults in one run). `coop.npc herdnulls`: how many null members the
+  Herd_Update hook took out.
+* `coop_guest_editor_hold.py` (suite `guest_editor_hold`, cell fixture, ~9 min cold, BUG-0283): the
+  first Creature vote from the Cell stage as in `coop_legless_guest.py`; the guest leaves its own
+  editor alone until the host's new creation and world have reached it (its game log), then one
+  click on the red cross must leave the editor. `coop.creations` prints `editor_hold: held= total=
+  used=`.
