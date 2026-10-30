@@ -301,4 +301,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0289](BUG-0289-cell-a-guest-s-cells-out-of-sync-by-2-2-limit-1.md) | fixed | test | Cell | 2026-10-29 | unreleased | cell: a guest's cells out of sync by 2.2 (limit 1.2) in the 4-player campaign |
 | [BUG-0290](BUG-0290-tests-the-campaign-bot-answers-the-same-civ-talk.md) | fixed | test | Civ | 2026-10-29 | unreleased | tests: the campaign bot answers the same Civ talk dialog for 20 min and civ -> space times out |
 | [BUG-0291](BUG-0291-tribe-animals-far-from-the-player-tribe-are-miss.md) | fixed | desync | Tribe | 2026-10-30 | unreleased | tribe: animals far from the player tribe are missing on guests (NPCs are sent only within 250 m of the tribe) |
-| [BUG-0292](BUG-0292-cell-a-guest-s-own-cell-position-became-nan-then.md) | open | crash | Cell | 2026-10-30 |  | Cell: a guest's own cell position became NaN, then its game crashed in PopulateTile+0x8A |
+| [BUG-0292](BUG-0292-cell-a-guest-s-own-cell-position-became-nan-then.md) | fixed | crash | Cell | 2026-10-30 | unreleased | Cell: a guest's own cell position became NaN, then its game crashed in PopulateTile+0x8A |

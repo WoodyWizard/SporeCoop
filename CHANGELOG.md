@@ -7,6 +7,8 @@
   the area around its own cell alive. Now it populates and keeps the area around every player, and
   each player gets the cells around itself, so two players exploring apart can both eat (BUG-0174,
   BUG-0279).
+- Cell: a cell whose position is invalid is no longer sent to or shown by the other players (a
+  guard after one crash seen in testing, BUG-0292).
 ### Changed
 - A guest that plays another world of the host's stage (joined from its own game, loaded one of its
   own saves, or kept its world with `auto_load_world=0`) now plays that world on its own: **DNA it

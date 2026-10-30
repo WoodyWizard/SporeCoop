@@ -871,6 +871,9 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Known: a NaN view point gives PopulateTiles a garbage tile range (inferred to be the consequence,
   not the cause). The host had no fault.
 * Not checked: where the NaN comes from; whether main has it.
+* Guarded (2026-10-30, fix/w9-cell-food, `pool.finite_state`): non-finite cell poses are not sent or
+  mirrored and non-finite positions are no view centres; not reproduced since (15 runs). If a log
+  shows "our own cell's position is not finite" or "pose that is not finite", reopen with it.
 * Ticket: BUG-0292.
 ## Tribe: guests miss host objects while the host's tribe is knocked out (2026-10-30, fix/w9-tribe)
 <a id="issue-tribe-coverage-before-bounce"></a>
