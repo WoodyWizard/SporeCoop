@@ -265,6 +265,8 @@ add('cell_stale', P + 'coop_cell_stale.py', minutes=2)  # a group member drops a
 add('cell_nan_all', P + 'coop_cell_nan.py --all', minutes=3)  # the own cell NaN in every field: healed once, not NaN again (BUG-0307; SPORE_FIX_OFF=cell.nan_heal_all fails)
 add('cell_lowfps', P + 'coop_cell_lowfps.py', minutes=5)  # a guest at 15 fps shows the host's moving cells where they are, not ~2 m behind (BUG-0282 guard: not reproduced on 5d7f20e)
 add('cell_nan_drain', P + 'coop_cell_nan.py --all --drain 180', minutes=7)  # the own cell NaN in every field, level-ups, 3 min of play: the guest keeps its address space (BUG-0307)
+add('cell_jumps', P + 'coop_cell_jumps.py', minutes=5)  # a guest's cell jumps 150-250 m 40 times: no pile of background cells, it mirrors the host again (BUG-0314; SPORE_FIX_OFF=cell.bg_cull fails)
+add('cell_jumps_host', P + 'coop_cell_jumps.py --who host', minutes=5)  # the same on the host (BUG-0314)
 add('cell_churn', P + 'coop_cell_churn.py', minutes=4)  # the guest's mirrors removed and re-created 40 times: its free address space stays (BUG-0307)
 
 # a whole game of four bot players, Cell to the galactic core (BUG-0152, docs/06-testing.md#testing-campaign):

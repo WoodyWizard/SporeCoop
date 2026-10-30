@@ -1010,3 +1010,32 @@ BUG-0307 (follow-up of BUG-0299, #cell-broadphase-cap end).
   does not use address space (lab 20261030-121142); neither do 15 s of a NaN own cell.
 * ? The first NaN's source: not caught yet. The probes (cellsync.cpp own_probe) name the step where
   it appears.
+
+## Background cells left behind by jumps, and what did not reproduce (2026-10-30, fix/w13-cell)
+<a id="cell-bg-leftovers"></a>
+
+* ✔ **Background cells are not freed when the camera moves away.** The decoration of the background
+  tiles (cells with query `+0x35C` = `G+0x4100`, levels above the player's, 6 and 7 at level 4) stays
+  in the pool after the own cell has jumped far: 40 jumps of 150-250 m (`coop.pool tp`, 3 s apart)
+  left 1099 of them on a guest and 1075 on the host (37 / 35 before, 807 / 781 over 150 m from the own
+  cell; out/hunt of fix/w13-cell, lanes 2 and 3). Both roles, at 3 fps and at 65 fps, so a game
+  behaviour that our jumps expose: the game frees them only on a level change
+  (RemoveCellsOfOldScale). The foreground cull (0xE5F8C0, per foreground cell in UpdateCells) never
+  sees them. On a guest the pool then reaches the mirror cap (1500 live cells, BUG-0295) and no
+  mirror is created any more: the guest has 0 of the host's cells (BUG-0314, the coverage 1% of
+  BUG-0307's campaign run, whose NaN heals made the own cell jump 100-200 m at a time).
+* ✔ `cell.bg_cull` (cellsync.cpp `bg_cull`): every 2 s, outside a level change, background cells
+  (not `+0x354` keep-alive) farther than 150 m from the own cell are destroyed with DestroyCell (as
+  RemoveCellsOfOldScale destroys cells outside the view), at most 300 a pass. `coop.pool census`
+  lists every used pool slot by kind (foreground, background with distance and levels, mirrors,
+  puppets, strays, culled).
+* ✔ Negative (BUG-0307's address space drain): 3 minutes of a NaN own cell (every field, the heal off,
+  level-ups, swimming) kept the guest at 3632 MB free (lab 20261030-133256); 4 players with Carol at
+  3 fps jumping 80 times (28 538 mirrors created) kept 3613-3620 MB. The drain is neither the NaN
+  state nor the jumps nor the mirror churn. Still unknown.
+* ✔ Negative (BUG-0282): on 5d7f20e the low-frame-rate trail did not come back: 2 players, guest at
+  15 fps, 30 checks, 0 of 16 616 cells over 1.2 m (worst 0.08 m, lab 20261030-133013); 4 players
+  (Carol 15 fps, Dave 30 fps) after the food went to 200: p90 median 0.05 / 0.04 m, largest 0.39 /
+  0.45 m, 0 checks over the limit.
+* ✔ The own_probe lines (BUG-0307) never fired in these runs (4 players, level-ups, 3 fps, jumps):
+  the natural first NaN was not caught.
