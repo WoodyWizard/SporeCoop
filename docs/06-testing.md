@@ -1756,8 +1756,9 @@ wrong. Suite `campaign` (in no other suite): `tools/lab.py run campaign --lanes 
   no crash report, the guest's frames go on, `faults=1`, `main_thread_lookups=0`, its address list
   kept. `SPORE_FIX_OFF=core.adapters` FAILS in the stress part (a natural crash, not the injected
   one). The fix-off run takes ~7 min (the crashed game's report times out).
-* `coop.adapters` prints the counters (lookups, failed, faults, main-thread lookups, mutex
-  timeouts, the age of the list) and the addresses with their broadcast addresses.
+* `coop.adapters` prints the counters (wine, socket lookups, lookups, failed, faults, main-thread
+  lookups, mutex timeouts / waits, the age of the list) and the addresses with their broadcast
+  addresses.
 * Pitfall: two games of one bottle that call `GetAdaptersAddresses` together crash Wine 10.0
   (docs/04-netcode.md#netcode-wine-nsi). A test helper that looks up addresses must not run in
   every game of a lane at the same moment.

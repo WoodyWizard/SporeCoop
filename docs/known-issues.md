@@ -801,8 +801,8 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 ## Wine: other programs of the same prefix can still collide with the address lookup (2026-10-29, fix/w8-adapters)
 <a id="issue-wine-nsi-other-callers"></a>
 
-* SporeCoop's lookups take turns per Wine prefix (BUG-0286), but Wine's own code inside the game
+* SporeCoop no longer calls iphlpapi under Wine (BUG-0286), but Wine's own code inside the game
   (ws2_32 `gethostbyname` of the own host name, winhttp proxy detection) and an older SporeCoop in
-  the same prefix still use the same device without that turn. Seen only with several games in one
+  the same prefix still use Wine's nsi device. Seen only with several games in one
   bottle (lab). Reproduce the collision: two games of a lane, `coop.fix core.adapters off` on both,
   `coop.adapters stress 300` on both at once. Ticket: BUG-0286.

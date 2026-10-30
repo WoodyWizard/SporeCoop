@@ -311,10 +311,20 @@ is the PC's IPv4 addresses with their prefix lengths: `GetAdaptersAddresses(AF_I
 * ✔ Negative: two threads of **one** game looking up together (GetAdaptersAddresses AF_INET and
   AF_UNSPEC, GetAdaptersInfo, gethostbyname of the own host name), 1500 times: no fault. 1000
   serial lookups in one game while sessions open and close: no fault.
-* The mod's rule: never on the main thread, never at start, at most every 5 min when the window or
-  the LAN scan asks, one lookup at a time per prefix (named mutex `Local\SporeCoop.nsi`: Wine's
-  named objects are per wineserver), the `ERROR_BUFFER_OVERFLOW` retry, and a fault guard (a
-  vectored handler sends the faulting worker to a landing function that releases the mutex and
-  ends the thread; the list keeps its last value and no lookup runs again in that game). Other
-  callers in the prefix are not covered: Wine's own ws2_32 (`gethostbyname` of the own host name,
-  `SIO_ROUTING_INTERFACE_QUERY`), winhttp's proxy detection, an older SporeCoop.
+* ✔ A per-prefix named mutex (`Local\SporeCoop.nsi`) around each lookup was **not enough**: with
+  the two games taking turns, `coop_adapters.py` still lost a game twice in a row (lab runs
+  20261029-194630: a fault in d3d9.dll on a render thread, no report; 20261029-195441: a silent
+  exit), so the garbage reply is not only about two requests at the same instant. Not analysed
+  further.
+* The mod's rule (`mods/coop/adapters.cpp`): never on the main thread, never at start, at most
+  every 5 min when the window or the LAN scan asks. **Under Wine** (ntdll exports
+  `wine_get_version`) it never calls iphlpapi: the address a UDP socket connected to 8.8.8.8 /
+  192.168.255.254 / 10.255.255.254 would send from (`connect` on UDP sends nothing) plus
+  `getaddrinfo(gethostname())` (Wine 10.0 resolves that on the Unix side; only `gethostbyname` of
+  the own name goes through `GetAdaptersInfo`). No prefix length there: a private address gets a
+  /24 subnet broadcast. On Windows `GetAdaptersAddresses` with the `ERROR_BUFFER_OVERFLOW` retry,
+  under the mutex. Both run under a fault guard (a vectored handler sends the faulting worker to
+  a landing function that releases the mutex and ends the thread; the list keeps its last value
+  and no lookup runs again in that game). Other nsi users in the game are not covered: Wine's
+  own ws2_32 (`gethostbyname` of the own host name, `SIO_ROUTING_INTERFACE_QUERY`), winhttp's
+  proxy detection.

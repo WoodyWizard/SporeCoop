@@ -23,8 +23,8 @@ static SkMod* M;
 
 // BUG-0286: Wine 10.0's GetAdaptersAddresses faulted in nsi.dll (memcpy with a garbage count from
 // the \\.\Nsi reply) on the main thread, inside the co-op window's refresh: the game crashed.
-// On: the lookup runs on a worker thread, rarely (kMaxAgeMs), with the ERROR_BUFFER_OVERFLOW retry
-// and a fault guard. Off: the old synchronous lookup every 10 s on the caller's thread.
+// On: the lookup runs on a worker thread, rarely (kMaxAgeMs), from sockets under Wine, else with the
+// ERROR_BUFFER_OVERFLOW retry; a fault guard. Off: the old synchronous lookup every 10 s on the caller's thread.
 bool g_fix = true;
 COOP_FIX("core.adapters", "BUG-0286", g_fix, "core: local addresses are looked up on a guarded worker thread, rarely, never on the main thread");
 
@@ -102,10 +102,9 @@ static std::vector<Addr> old_lookup()
     return g_old_cache;
 }
 
-// One lookup at a time per Wine prefix: two games of one bottle enumerating at the same moment get
-// garbage from the shared \\.\Nsi device (Wine 10.0: a game crashed within seconds when two games
-// looked up in a loop, docs/04-netcode.md#netcode-wine-nsi). Named objects are per wineserver, so this mutex is shared by
-// every SporeCoop game of the prefix. Held by the worker only.
+// One GetAdaptersAddresses at a time across the SporeCoop games of a machine / Wine prefix (named
+// objects are per session / wineserver). Under Wine it was not enough (docs/04-netcode.md#netcode-wine-nsi):
+// there the socket lookup below runs instead. Held by the worker only.
 static HANDLE g_nsi_mutex;
 static std::atomic<bool> g_holding{false};
 static std::atomic<uint32_t> g_mutex_timeouts{0}, g_mutex_waits{0};

@@ -6,9 +6,9 @@ enumerate at the same moment get garbage from the shared Nsi device (Wine 10.0).
 
 Two games of the lane (one bottle):
 1. both look up their addresses 300 times at the same moment, three rounds
-   (`coop.adapters stress 300`): with the fix the lookups of the two games take turns (a named
-   mutex per prefix) on worker threads; without it they run on the main threads together and a
-   game crashes within seconds.
+   (`coop.adapters stress 300`): with the fix the lookups run on worker threads and, under Wine,
+   from sockets (no iphlpapi); without it GetAdaptersAddresses runs on both main threads together
+   and a game crashes within seconds.
 2. the crash path: the guest leaves (Leave), the next lookup faults the way Wine's nsi did
    (`coop.adapters fault`: a read of 0xD54CF6CC through ucrt's memcpy) and the co-op window opens
    on its connect page (its refresh asks for the addresses). The guest's game keeps running (frames
