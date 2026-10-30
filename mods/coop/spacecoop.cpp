@@ -665,6 +665,7 @@ struct GenState {
     uint32_t rng;
     bool generating;
     int in_names;
+    int in_profile; // BUG-0185: inside cStarRecord_GetSpeciesProfile (a species load draws too)
     uint32_t draws, hash, other; // BUG-0185 diagnosis: private draws, their results, global draws
     uint32_t trace[48][2];       // the first private draws: caller, result
 };
@@ -677,11 +678,21 @@ static DWORD g_main_tid;                     // set by tick (the main thread)
 static uint32_t g_gen_off_main, g_names_off_main; // hooks seen on other threads (logged once)
 static GenState& gen() { return g_seed_fix ? t_gen : g_gen_shared; }
 
-// every draw of the generating thread while it generates, except the names'
+// BUG-0185: RequirePlanetsForStar calls cStarRecord_GetSpeciesProfile before the generation. When
+// the star's species profile is not cached yet (star +0x80), the species manager loads it and
+// draws from the global generator (0x4D4B30, once or twice: RandomInt(1)); with those draws on the
+// private generator the planets depended on whether the profile was loaded before (the galaxy view,
+// an empire's colour, a contact load it): 6 or 10 planets of 0046101B. The profile's draws stay on
+// the global generator now, like the names'. `coop.fix space.seed_profile off`: the old way.
+static bool g_seed_profile_fix = true;
+COOP_FIX("space.seed_profile", "BUG-0185", g_seed_profile_fix,
+         "space: a species profile load inside the planet generation does not draw from the seeded generator");
+
+// every draw of the generating thread while it generates, except the names' (and the profile's)
 static bool generator_draw(void* rng)
 {
     GenState& g = gen();
-    return g.generating && !g.in_names && rng == (void*)a_Rng &&
+    return g.generating && !g.in_names && !(g.in_profile && g_seed_profile_fix) && rng == (void*)a_Rng &&
            (g_seed_fix || GetCurrentThreadId() == g_gen_thread_shared);
 }
 
@@ -740,6 +751,17 @@ static void* SK_THISCALL h_RandomName(void* names, void* out, uint32_t kind)
     names_enter();
     void* r = o_RandomName(names, out, kind);
     names_leave();
+    return r;
+}
+
+using SpeciesProfile_t = void*(SK_THISCALL*)(void*);
+static SpeciesProfile_t o_SpeciesProfile;
+static void* SK_THISCALL h_SpeciesProfile(void* star)
+{
+    GenState& g = gen();
+    g.in_profile++;
+    void* r = o_SpeciesProfile(star);
+    g.in_profile--;
     return r;
 }
 
@@ -1398,6 +1420,8 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
         H->hook_create(M, (void*)rf, (void*)h_RandomFloat, (void**)&o_RandomFloat) == 0 &&
         H->hook_create(M, (void*)rn, (void*)h_RandomName, (void**)&o_RandomName) == 0)
         H->hook_create(M, (void*)rp, (void*)h_RequirePlanets, (void**)&o_RequirePlanets);
+    if (uintptr_t prof = S("cStarRecord_GetSpeciesProfile"))
+        H->hook_create(M, (void*)prof, (void*)h_SpeciesProfile, (void**)&o_SpeciesProfile);
     if (a_TerraA && a_TerraW && a_TerraT) {
         H->hook_create(M, (void*)a_TerraA, (void*)h_TerraA, (void**)&o_Terra[0]);
         H->hook_create(M, (void*)a_TerraW, (void*)h_TerraW, (void**)&o_Terra[1]);
