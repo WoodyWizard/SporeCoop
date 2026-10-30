@@ -11,7 +11,10 @@ and the next full snapshot killed them again: vehicles appeared and died on the 
    guest, each refused one counted apart; with the fix the AI's calls get null back).
 3. For 60 s the guest's game vehicle list is sampled every 0.3 s: every vehicle in it must be a
    mirror of a host vehicle (a net id from the host, `veh #0` = a vehicle of the guest's own),
-   and the game's vehicles of the guest that the host does not know (`removed=`) must not grow.
+   and the game's vehicles of the guest that the host does not know (`removed_local=`) must not grow.
+   (`removed=` also counts mirrors of host vehicles that died or went away meanwhile: a host vehicle
+   that vanished made the test fail once, lab 20261030-163302-fix-w14-tribe-civ, "removed 24 -> 25"
+   with the host's vehicles 7 -> 6; that is not the guest's own AI, BUG-0327.)
 
 --nofix: `coop.civ fix aispawn 0` (the code before): must FAIL.
 
@@ -43,7 +46,7 @@ def main():
     for c in (host, guest):
         print(' ', c.call(f'coop.civ fix aispawn {0 if a.nofix else 1}')['out'].strip())
     time.sleep(3)
-    removed0 = guest_stat(guest, 'removed')
+    removed0 = guest_stat(guest, 'removed_local')
     m = re.search(r'eax=(0x[0-9A-Fa-f]+)', host.call('call Simulator::cCivExpansion::Get cdecl')['out'])
     ck(m and int(m.group(1), 16), 'the host has a city manager')
     if not (m and int(m.group(1), 16)):
@@ -58,7 +61,7 @@ def main():
             seen.append(v)
         host.call('key enter')  # a caption that waits for OK
         time.sleep(0.3)
-    removed = guest_stat(guest, 'removed')
+    removed = guest_stat(guest, 'removed_local')
     sp = guest.call('coop.civ spawns')['out']
     print(' ', sp.strip().replace('\n', ' | '), flush=True)
     made = sum(int(n) for n in re.findall(r'^spawn from \S+ x(\d+)', sp, re.M))

@@ -214,6 +214,7 @@ static void SK_THISCALL h_KeepGround(void* v)
     }
     o_KeepGround(v);
 }
+static uint32_t g_removed_local; // the guest's own vehicles removed (civ_ai_spawn: not the host's departed ones)
 static uint32_t g_created, g_removed, g_cmds_sent, g_builds_in, g_captures_in, g_orders_dropped, g_growth_blocked, g_nodes_in;
 
 static uint8_t owner_of_vehicle(void* v)
@@ -1894,6 +1895,7 @@ static void guest_state(net::Reader& r)
         if (!g_gv_of.count(lv)) {
             kill_local(lv);
             g_removed++;
+            g_removed_local++; // tests: a vehicle of this game's own, not a mirror the host no longer has
         }
 }
 
@@ -2167,10 +2169,10 @@ std::string status()
         snprintf(b, sizeof b,
                  "civ(guest): mirrors=%u created=%u removed=%u cities=%u cmds_sent=%u builds_in=%u captures_in=%u "
                  "orders_dropped=%u growth_blocked=%u nodes_in=%u cities_in=%u cities_blocked=%u unselected=%u movie=%d "
-                 "buildings_fixed=+%u/-%u ruins_in=%u ruins_differ=%u incomplete=%u income_blocked=%u cities_caught_up=%u ai_spawns_blocked=%u away_orders=%u local=%d founds_outside=%u mirror_place_skipped=%u\n",
+                 "buildings_fixed=+%u/-%u ruins_in=%u ruins_differ=%u incomplete=%u income_blocked=%u cities_caught_up=%u ai_spawns_blocked=%u away_orders=%u local=%d founds_outside=%u mirror_place_skipped=%u removed_local=%u\n",
                  (unsigned)g_gv.size(), g_created, g_removed, (unsigned)g_host_cities.size(), g_cmds_sent, g_builds_in,
                  g_captures_in, g_orders_dropped, g_growth_blocked, g_nodes_in, g_cities_in, g_cities_blocked, g_unselected, (int)movie_playing(), g_bfix_added,
-                 g_bfix_removed, g_ruins_in, g_ruins_differ, g_incomplete, g_income_blocked, g_cities_caught_up, g_ai_spawns_blocked, g_away_orders, (int)local_play(), g_founds_outside, g_mirror_place_skipped);
+                 g_bfix_removed, g_ruins_in, g_ruins_differ, g_incomplete, g_income_blocked, g_cities_caught_up, g_ai_spawns_blocked, g_away_orders, (int)local_play(), g_founds_outside, g_mirror_place_skipped, g_removed_local);
     return b;
 }
 

@@ -2248,3 +2248,13 @@ answered right after; a 1 s poller beside a standalone run saw no gap. Same sign
 * `coop_space_finale_wait.py` (suite `space_finale_wait`, ~4 min): the host waits at the core, the
   guest only flies to the gate, the host enters first; its `entries_with` must count it as together.
   `SPORE_FIX_OFF=space.finale_waited` fails (BUG-0320).
+## sync_lowfps: vehicles drive round their city (2026-10-30, fix/w15-civ)
+<a id="testing-sync-lowfps-round"></a>
+
+* `coop_sync.py --fps N civ` gives the vehicles a new order every sample; since BUG-0326 it is a drive
+  round the city (35 deg further on a 45 m circle), not away / back: a reversal every sample flipped
+  the host's vehicle 180 deg inside the 0.15 s window and the facing check cannot tell the direction
+  of such a turn (p90 38-87 deg with one vehicle and 16 samples). `SYNC_VERBOSE=1` prints each
+  vehicle sample's facing error and the host's turn over the window.
+* `coop_civ_ai_spawn.py` checks `removed_local=` (the guest's own vehicles it killed), not
+  `removed=` (also the mirrors of host vehicles that went away meanwhile, BUG-0327).
