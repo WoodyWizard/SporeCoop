@@ -20,6 +20,7 @@ struct State {
     bool nudged = false;
     uint32_t nudges = 0, nudges_kept = 0, teleports = 0, stalls = 0, trails = 0;
     float last_err = 0, last_speed = 0;
+    double hold_until = 0; // BUG-0305: after a trail teleport the nudge puts it on the path every frame
 };
 
 inline float speed(const net::Vec3& v) { return std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z); }
@@ -62,7 +63,7 @@ inline void step(void* p, const net::Vec3& pos_in, const net::Quat& rot, const n
             ds.last_target = tgt;
         }
         if (nudge && err > 0.5f) {
-            const float k = 0.15f;
+            const float k = now < ds.hold_until ? 1.f : 0.15f;
             ds.nudged_to = {cur.x + (pos.x - cur.x) * k, cur.y + (pos.y - cur.y) * k, cur.z + (pos.z - cur.z) * k};
             game::set_position(p, ds.nudged_to);
             ds.nudged = true;
@@ -80,6 +81,8 @@ inline void step(void* p, const net::Vec3& pos_in, const net::Quat& rot, const n
         ds.teleports++;
         ds.stalls += pl.stall;
         ds.trails += pl.trail;
+        if (pl.trail)
+            ds.hold_until = now + kTrailQuiet;
     }
 }
 
