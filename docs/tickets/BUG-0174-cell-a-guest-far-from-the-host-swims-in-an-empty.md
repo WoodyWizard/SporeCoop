@@ -1,19 +1,19 @@
 ---
 id: BUG-0174
 title: Cell: a guest far from the host swims in an empty pool
-status: open
+status: fixed
 kind: bug
 stage: Cell
 reported: 2026-10-23
 source: docs/known-issues.md (ticket backfilled 2026-10-27)
 role: guest
 versions: 0.7.2.4 (main) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w9-cell-food
+commits: f9f1861, 5e77f1b, 1b61757, 8b1a7b5, 1511d0b, ebf5ee2, a41caec, 12366b7, 6b23ebd
+tests: cell_far_guest
 signature:
-docs:
+docs: docs/re/cell.md#cell-partner-tiles, docs/known-issues.md, docs/06-testing.md
 related: BUG-0279
 ---
 
@@ -40,7 +40,17 @@ game: on GOG 2024 the guest's screen has no food from 23-45 m from the host (fix
 Player impact: two new players who swim apart get "only one of us can eat" (BUG-0279).
 
 ## Fix
-Not fixed yet. Plan (owner asked to keep it for a later wave, 2026-10-29):
+Done (fix/w9-cell-food, the preferred plan 1, switch `coop.fix cell.partner_tiles`): on the host,
+cellsync.cpp hooks PopulateTiles 0xE7D370, PopulateTile 0xE7C6C0 and IsTileActive 0xE5F810. After the
+game's own pass, one more PopulateTiles call per partner with a tile list of ours and the view boxes
+(0x16B3C88) moved onto the partner's cell (no background tiles); a tile two lists share is populated
+once; a gameplay tile or cell inside any player's box is kept; our lists' deletes are our own code
+(the game's erase is bound to the host's list, which crashed the first run), with a guard for the
+tile pool's 512 slots. The players' positions are the host's "view centres" (`view_centres.h`, at most
+8, reusable by other stages and by Rivals in 0.8). Each guest gets the cells within 120 m of its own
+cell (before: of the host's). Details: docs/re/cell.md#cell-partner-tiles.
+
+Original plan (owner asked to keep it for a later wave, 2026-10-29):
 1. Preferred: the host populates and keeps tiles around every partner too. Find how PopulateTiles
    picks its centre and the active tile set (`G+0x4128`, the tile list), call it for each guest's
    position (or keep a second tile set per partner), stop the cull from removing cells near a
@@ -57,6 +67,14 @@ the guest and count the guest's meals on the host; a census/sync check that the 
 where both have objects. Switch: `coop.fix cell.partner_tiles off` (or the fallback's name).
 
 ## Verification
+Test `cell_far_guest` (`coop_cell_new_game.py --diet carn --minutes 0 --probe 0 --apart 70 --far-probe 4`:
+a new game from the wizard, the guest holds W away from the host for 70 s, then eats food of its diet
+where it is):
+* FAIL with `SPORE_FIX_OFF=cell.partner_tiles`: lab 20261030-004115 (lane 2): 0 food on the guest's
+  screen at every sample from 39 m to 150 m, 0/4 eaten.
+* PASS: lab 20261030-003727 (lane 2): 15-28 food cells on the guest's screen up to 141 m, at 151 m
+  12/12 of its food are cells of the host's world, 4/4 eaten by its own game and applied on the host,
+  no faults; tile pool 71/512. Second PASS: lab 20261030-004501 (lane 2).
 
 ## History
 - 2026-10-23: first recorded in docs/known-issues.md.
@@ -70,3 +88,6 @@ where both have objects. Switch: `coop.fix cell.partner_tiles off` (or the fallb
   from the host (not ~100 m); likely what two new players reported (BUG-0279). Measure with
   `coop_cell_new_game.py --apart 70`; PopulateTiles and the cull: docs/re/cell.md#cell-new-players-food.
 - 2026-10-29: root cause and the fix plan written down for a later wave (owner's request).
+- 2026-10-30: fix/w9-cell-food: fixed (host populates around every partner, `cell.partner_tiles`); two
+  crashes on the way recorded in docs/re/cell.md#cell-partner-tiles (the erase bound to the host's
+  list, the full tile pool).

@@ -1,17 +1,17 @@
 ---
 id: BUG-0279
 title: Cell: only one of two new players can eat (Discord report)
-status: open
+status: fixed
 kind: bug
 stage: cell
 reported: 2026-10-29
 source: Discord report 2026-10-29
 role: 
 versions: 
-fixed_in:
-branch: fix/w7-eat
-commits:
-tests: coop_cell_new_game
+fixed_in: unreleased
+branch: fix/w9-cell-food
+commits: f9f1861, 5e77f1b, 1b61757, 8b1a7b5, 1511d0b, ebf5ee2, a41caec, 12366b7, 6b23ebd
+tests: cell_new_game, cell_far_guest
 signature:
 docs: docs/re/cell.md#cell-new-players-food, docs/known-issues.md (BUG-0174 correction)
 related: BUG-0278, BUG-0174
@@ -62,10 +62,17 @@ and who could not eat, plants or meat (and herbivore or carnivore), whether the 
 was far from the other, and the "Report a problem" zip from the co-op window (both players).
 
 ## Fix
-None yet. The fix of the likely cause belongs to BUG-0174 (the host populates around each partner,
+Fixed with BUG-0174 (fix/w9-cell-food, `coop.fix cell.partner_tiles`): the host populates and keeps
+the area around every player, so a guest exploring on its own finds food and eats it. Inferred to be
+what the players hit (the report has no roles, version or distances; nothing else was found that
+stops one player from eating). Earlier: The fix of the likely cause belongs to BUG-0174 (the host populates around each partner,
 or a far guest spawns its own food: ideas in docs/re/cell.md#cell-new-players-food).
 
 ## Verification
+The likely cause: lab 20261030-004115 FAILS (`SPORE_FIX_OFF=cell.partner_tiles`: the far guest finds
+no food, eats 0/4) and 20261030-003727 PASSES (the far guest eats 4/4, the host applies the meals),
+and 20261030-004501 PASSES too, all `cell_far_guest` on lane 2. What differs from BUG-0174: nothing seen; the near case (both eat)
+was never broken. Earlier:
 Not fixed, left open. The new test `cell_new_game` (both new players eat) PASSES: lab run
 20261029-150407 (lane 9). The far guest's empty pool (BUG-0174) FAILS as expected with
 `coop_cell_new_game.py --diet carn --minutes 1 --probe 0 --apart 70 --seed 5` (manual run, lane 9,
@@ -76,3 +83,4 @@ Not fixed, left open. The new test `cell_new_game` (both new players eat) PASSES
 - 2026-10-29: fix/w7-eat: not reproduced with new profiles, a new game from the wizard, both diets,
   an early join, on this branch and on v0.7.3.0; the far guest's empty pool (BUG-0174) measured at
   ~45 m. Left open until the players answer.
+- 2026-10-30: fix/w9-cell-food: closed with BUG-0174 (the far guest's empty pool, the likely cause).

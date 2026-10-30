@@ -184,7 +184,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0171](BUG-0171-tribe-the-host-froze-once-while-the-epic-creatur.md) | not-reproduced | freeze | Tribe | 2026-10-22 |  | Tribe: the host froze once while the epic creature was being killed |
 | [BUG-0172](BUG-0172-tribe-host-fault-and-freeze-when-a-member-is-add.md) | not-reproduced | crash | Tribe | 2026-10-23 |  | Tribe: host fault and freeze when a member is added during the game-over caption |
 | [BUG-0173](BUG-0173-tribe-knocked-out-members-stand-on-the-guest.md) | fixed | desync | Tribe | 2026-10-23 | 0.7.3.0 | Tribe: knocked-out members stand on the guest |
-| [BUG-0174](BUG-0174-cell-a-guest-far-from-the-host-swims-in-an-empty.md) | open | bug | Cell | 2026-10-23 |  | Cell: a guest far from the host swims in an empty pool |
+| [BUG-0174](BUG-0174-cell-a-guest-far-from-the-host-swims-in-an-empty.md) | fixed | bug | Cell | 2026-10-23 | unreleased | Cell: a guest far from the host swims in an empty pool |
 | [BUG-0175](BUG-0175-coop-sync-py-mirrors-trail-more-at-low-frame-rat.md) | open | bug | All | 2026-10-24 |  | coop_sync.py: mirrors trail more at low frame rates, the GOG 2024 guest pauses after a load (the test failures were fixed 2026-10-24, fix/gog2024-sync) |
 | [BUG-0176](BUG-0176-coop-civ-play-the-guest-s-i-m-ready-click-was-lo.md) | fixed | test | Civ | 2026-10-23 | 0.7.3.0 | coop_civ_play: the guest's "I'm ready" click was lost twice |
 | [BUG-0177](BUG-0177-creature-the-mating-call-did-not-lead-to-the-edi.md) | open | test | Creature | 2026-10-24 |  | Creature: the mating call did not lead to the editor in the bot |
@@ -288,7 +288,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0276](BUG-0276-tribe-after-a-stage-change-three-guests-were-not.md) | fixed | bug | tribe | 2026-10-29 | 0.7.3.1 | tribe: after a stage change three guests were not in the host's world within 300 s (they got there after a rejoin) |
 | [BUG-0277](BUG-0277-campaign-finale-the-host-s-finale-goto-core-stop.md) | open | tooling | space | 2026-10-29 |  | campaign finale: the host's 'finale goto core' stopped near the core while a cinematic ran (zone 2, busy=1) |
 | [BUG-0278](BUG-0278-creature-a-new-guest-no-own-creations-plays-the.md) | fixed | bug | creature | 2026-10-29 | 0.7.3.1 | Creature: a new guest (no own creations) plays the legless creature from the start of the stage and cannot change it |
-| [BUG-0279](BUG-0279-cell-only-one-of-two-new-players-can-eat-discord.md) | open | bug | cell | 2026-10-29 |  | Cell: only one of two new players can eat (Discord report) |
+| [BUG-0279](BUG-0279-cell-only-one-of-two-new-players-can-eat-discord.md) | fixed | bug | cell | 2026-10-29 | unreleased | Cell: only one of two new players can eat (Discord report) |
 | [BUG-0280](BUG-0280-creature-the-host-s-game-keeps-npcs-only-around.md) | open | desync | creature | 2026-10-29 |  | Creature: the host's game keeps NPCs only around the host's avatar; a guest far from it sees nest members appear and vanish every few seconds |
 | [BUG-0281](BUG-0281-creature-an-npc-proxy-right-next-to-a-guest-s-av.md) | open | desync | creature | 2026-10-29 |  | creature: an NPC proxy right next to a guest's avatar stays ~4 m from where the host has it |
 | [BUG-0282](BUG-0282-cell-at-a-low-frame-rate-a-guest-s-mirrors-trail.md) | open | desync | cell | 2026-10-29 |  | cell: at a low frame rate a guest's mirrors trail the host's moving cells by ~0.65 s (2 m at 3 m/s, 15 fps) |
@@ -298,5 +298,5 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0286](BUG-0286-crash-in-wine-s-nsi-dll-getadaptersaddresses-on.md) | fixed | crash | Space/Any | 2026-10-29 | 0.7.3.1 | Crash in Wine's nsi.dll (GetAdaptersAddresses) on the main thread after a guest leaves in Space |
 | [BUG-0287](BUG-0287-space-after-the-host-left-its-home-planet-three.md) | fixed | bug | space | 2026-10-29 | 0.7.3.1 | space: after the host left its home planet, three guests loaded its world and their ships went down to the planet while the host stayed in the solar system |
 | [BUG-0288](BUG-0288-tribe-two-guests-see-too-few-of-the-host-s-objec.md) | open | bug | Tribe | 2026-10-29 |  | tribe: two guests see too few of the host's objects (coverage desync) in the 4-player campaign |
-| [BUG-0289](BUG-0289-cell-a-guest-s-cells-out-of-sync-by-2-2-limit-1.md) | open | bug | Cell | 2026-10-29 |  | cell: a guest's cells out of sync by 2.2 (limit 1.2) in the 4-player campaign |
+| [BUG-0289](BUG-0289-cell-a-guest-s-cells-out-of-sync-by-2-2-limit-1.md) | fixed | test | Cell | 2026-10-29 | unreleased | cell: a guest's cells out of sync by 2.2 (limit 1.2) in the 4-player campaign |
 | [BUG-0290](BUG-0290-tests-the-campaign-bot-answers-the-same-civ-talk.md) | open | test | Civ | 2026-10-29 |  | tests: the campaign bot answers the same Civ talk dialog for 20 min and civ -> space times out |
