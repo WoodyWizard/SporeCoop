@@ -1867,3 +1867,46 @@ Runtime findings of the wave 3 Space fixes (lane 6, GOG 2024):
   on a change of `GetCurrentContext` read in the same frame as the save.
 * Test knob: `coop.worldfix retry <ms>` (the retry of a share save the game refused; 0 = every
   frame) makes the lab's one-frame race certain (`coop_space_share_takeoff.py`).
+
+## The species profile inside the planet generation, the wheel's landing conditions (2026-10-30, fix/w13-space)
+<a id="space-seed-profile"></a>
+
+* ✔ **What still made the planets differ (BUG-0185, runtime lanes 8 + 9, GOG 2024):**
+  `RequirePlanetsForStar` (0xBB4C90) calls `cStarRecord_GetSpeciesProfile` (0xBBA670) right before
+  `GeneratePlanetsForStar`. The profile is cached at star +0x80 (valid while its +0x504 equals the
+  species key at star +0x74); a first load goes through `cSpeciesManager::GetSpeciesProfile`
+  0x4DF5C0 and draws RandomInt from the **global** generator in 0x4D4B30 (return addresses 0x4D4E2F
+  and 0x4D4F34, results 0). Inside the hook of section 7.3 those draws went to the private, star-seeded
+  generator and shifted every later draw. Whether a game had loaded the profile before depended on
+  what it did earlier (the galaxy view, an empire's colour `UpdateAndGetColor`, GetEmpireForStar,
+  cEmpire::GetSpeciesProfile all call it). Seen with the same seed D34F3953 for 0046101B: one profile
+  draw -> 6 planets (170 seeded draws, hash EC90DBC9), two -> 10 planets (629 draws, hash
+  5499C009), the profile already cached (no draw) -> 8 planets (321 draws, hash 5FA0B667). 3 of 6
+  `coop_space_jump.py` runs on lanes 8/9 ended DIFFERENT (lab 20261030-135159).
+* ✔ Not the cause (logged in the same runs): the star's empire object (made in every run, also
+  the 10-planet ones), tech level +0x4C, flags +0x5C (0x1004), the "pending tech level" list
+  cStarManager +0xDC, the template argument (always null from TravelToStar's 0xBB5920, return
+  address 0xBB596B), another thread.
+* **Fix:** `spacecoop.cpp` hooks `cStarRecord_GetSpeciesProfile`; draws inside it stay on the global
+  generator (like the names'). With it every game makes the "cached" layout: 8 planets of 0046101B.
+  `coop.fix space.seed_profile off` restores the old routing. Each seeded generation logs one line
+  (`space: planets of star ... generated (seeded <seed>): <n> (... draws=<n> hash=<h> ...)`): two
+  games' logs with the same seed and a different hash generated differently; SK_DEBUG adds every
+  record (kind +0x28, flags +0x2C, scores +0xB0/+0xB4, tech +0x194) and the first 48 seeded draws
+  with their return addresses. `coop.space profile <StarID>` loads one star's profile (tests).
+* ✔ **The wheel's landing (system update 0x1009C90, GOG 2024, Ghidra + runtime, BUG-0182):** each
+  frame, unless the game time is paused (cGameTimeManager +0x48 bit 0) or cSimulatorSpaceGame +0x50
+  has bit 2 or 4, and no cSpaceGfx +0x8C job is busy: with the space camera (IGameModeManager vt 0x50
+  -> vt 0x38 -> vt 0xC(0x303154CC)) zoomed in (+0xD5 set) to its minimum (`SporeCoop::SpaceCam_MinZoom`,
+  5.0) and `SporeCoop::Space_ZoomLandReady` 0x10422F0 true (ship +0x74C at destination +
+  `cSimulatorPlayerUFO_CanLandOnActivePlanet` 0xC383D0: not a gas giant, HP +0x540 > 0 (or an own
+  colony), no comm screen, time running, space UI window 0x755F180 hidden) it lands (0xFDF5A0).
+  Otherwise, at a planet: the hint 0x9A16D07E for a gas giant, the event 0x9D507CCB when HP <= 0.
+  The zoom-out to the galaxy is the other branch (+0xD5 set, zoom at the maximum 0x1016F10(1)).
+* ✔ A landing pauses the game time and sets cSimulatorSpaceGame +0x50 bit 2 for about a second
+  while the planet loads (`coop.space landcheck`: `paused 1 sg50 2`), then context 0.
+* ~ The 50-80 s delay of known-issues BUG-0182 (lane 10, 2026-10-23) was not seen again: 3 direct
+  runs on lane 9 and 2 lab runs on lane 8 of `coop_space_land_early.py` landed 7-16 s after
+  `start('space')` returned (the camera's zoom animation takes ~4-7 s of wheel turns). The old
+  runs (lane 10, code of 2026-10-23, the intro of section 7.9 already ruled out) were not kept; what
+  changed since is not known. If it comes back, `landcheck` shows which condition holds it.

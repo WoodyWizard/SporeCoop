@@ -26,6 +26,10 @@
   its world and makes a lost one again, with a log line saying what happened (BUG-0300, diagnostics).
 - Tests: a test reusing running games no longer inherits fixes switched off by the previous test
   (BUG-0312); `coop_legless_guest.py --guest cancel` clicks the red cross as it says (BUG-0317).
+- Space: a star nobody had visited could still get different planets in the two games (for
+  example 6 and 10), so a partner's planet did not exist on the other side. The game loads the star's
+  species on the way and that load drew from the same random numbers as the planets; it no longer
+  does (BUG-0185). Test: `coop_space_seed_profile.py`.
 - Tribe (and Creature): an animal running in a herd, for example one fleeing a hunt, no longer lags
   a few metres behind on the other players' screens: a copy pushed off its path by the animal beside
   it is now put back on it after half a second (BUG-0305).

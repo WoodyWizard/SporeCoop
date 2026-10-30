@@ -270,3 +270,44 @@ offered in the lobby once its step is done.
   together (not chosen for now: every player wins alone)?
 * What a player who is far behind for several stages gets besides the draft (none planned).
 * Rivals in Adventures (Galactic Adventures): not planned.
+
+## Guest colonies that survive a rejoin (2026-10-30, fix/w13-space)
+<a id="rivals-guest-colonies"></a>
+
+Design note for BUG-0195 (left open in the 0.7.3.2 patch). Today every player flies in a copy of
+the host's save: a colony the guest founds exists only in the guest's running game and is gone when
+it rejoins (it loads the host's world again). The host shows it meanwhile as a city of the mirror
+empire "<guest>'s empire" (`space_allies.cpp`, docs/re/space.md 15), which is undone before every
+save, so the host's save never holds it either.
+
+Why it was not fixed in the patch (not a contained change):
+
+* The obvious fix, "the host founds the guest's colony in its own world at record level" (the
+  `coop.space empire colony` path: star claim, `cPlanetRecord_SetTechLevel(rec, 5)`,
+  `FillPlanetDataForTechLevel`, `cEmpire_AddPlanet`), collides with the allies mirror: the mirror
+  claims the same star for the mirror empire and writes the old fields down, the save hook restores
+  them before every save, so an adoption made after the mirror is undone by the next save, and one
+  made before it makes the star "owned" (no mirror, but then the colony is the host's, not the
+  guest's: in rivals mode it would be wrong).
+* The planet record must exist on the host: a star the host never visited has no records until
+  `RequirePlanetsForStar`, and its planets can differ (BUG-0185).
+* The guest's colony state (cities, stored spice) lives only in the guest's game; the host would
+  make a fresh colony with one city and no spice.
+
+What Rivals 0.8 needs (fits the Ownership row of 11.8):
+
+1. The host keeps **a colony list per player** (player identity as for the owed refunds of
+   BUG-0225: world epoch + save key), filled from the rosters (`space_map.h` `own_colony`), saved
+   next to the world (a side file, never inside the game's save), restored on load.
+2. On a guest's join, the host sends the list; the guest applies each colony as its **own**
+   record-level colony in its copy (its player empire, after `RequirePlanetsForStar` with the host's
+   planet records, BUG-0185's sure fix) before its roster is first sent.
+3. The host keeps showing them as that player's mirror empire (allied, or at war in rivals mode),
+   so the save hook stays the only place that strips them from the host's save.
+4. Spice and cities: the guest's roster already carries cities and the spice key per colony; the
+   apply sets them (`set_spice` of `coop.space empire colony`).
+5. Conflicts: a planet the host (or another player) colonised in the meantime stays with whoever
+   has it in the host's world; the guest's entry is dropped with a message.
+
+Test: `coop_space_map.py` already founds a guest colony and checks that it is gone after the rejoin
+(the line to turn around).

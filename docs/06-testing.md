@@ -2170,3 +2170,21 @@ answered right after; a 1 s poller beside a standalone run saw no gap. Same sign
   dialog's Cancel (the key `cancel` was in its dialog table); screenshots of those runs show the
   guest's own legs and DNA spend, not the host's.
 * The guest's proxies have `+0xB67` = 0: a guest's camera far from them does not pool them (lane 4).
+## Space: planet seeding and the first landing (2026-10-30, fix/w13-space)
+<a id="testing-space-seed-profile"></a>
+
+* `coop_space_seed_profile.py` (suite `space_seed_profile`, ~2 min after a cold start): the host
+  loads the species profile of an unvisited NPC star (`coop.space profile <StarID>`, 0046101B in the
+  `space` fixture), the guest does not; both jump there and must have the same planets.
+  `--without-fix` (`coop.fix space.seed_profile off`) fails: 8 and 6 planets (BUG-0185).
+* `coop_space_jump.py` prints "same" / "DIFFERENT planets" without failing; the game logs carry one
+  `space: planets of star <id> generated (seeded <seed>): <n> (... hash=<h> ...)` line per
+  generation: compare the hash of the same star in the host's and the guest's log.
+* `coop_space_land_early.py` (suite `space_land_early`, ~1.5 min): both players land on the home
+  planet with click + wheel right after `start('space')`, must be on it within 40 s; prints
+  `coop.space landcheck` every second (the game's landing conditions, docs/re/space.md#space-seed-profile).
+  A landing shows `paused 1 sg50 2` for about a second: a bot that clicks the planet again then
+  waits up to 25 s for the ship to arrive, which looked like a landing delay (BUG-0182).
+* A new test file is only known to the lab of its own tree: run `python3 tools/lab.py` of the
+  worktree (`../SporeCoop-wt/<branch>/tools/lab.py run <test> --branch <branch>`), the main
+  checkout's lab.py reads main's suite.py ("unknown test").

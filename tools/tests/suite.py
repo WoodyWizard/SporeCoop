@@ -191,6 +191,8 @@ add('space_stale', P + 'coop_space_stale.py', warm=True, minutes=5, fixture='spa
 add('space_fleet', P + 'coop_space_fleet.py', warm=True, minutes=4, fixture='space')  # a lost ship-state chunk changes no mirror, the guest keeps its posse, a destroyed ship goes with 2 chunks and lost chunks (BUG-0037, BUG-0084, BUG-0230)
 add('space_map_input', P + 'coop_space_map_input.py', minutes=7, fixture='space')  # x87 stack after contacts, jump notice, galaxy teleport guards, tag clicks from the window (BUG-0126, BUG-0072, BUG-0063, BUG-0090, BUG-0145; --without-fix fails)
 add('space_seed_thread', P + 'coop_space_seed_thread.py', warm=True, minutes=5, fixture='space')  # another thread does not switch the planet seeding off (BUG-0123; --without-fix fails)
+add('space_seed_profile', P + 'coop_space_seed_profile.py', minutes=4, fixture='space')  # an unvisited NPC star's planets do not depend on its species profile being loaded (BUG-0185; --without-fix fails)
+add('space_land_early', P + 'coop_space_land_early.py', minutes=3, fixture='space')  # the wheel lands on the home planet right after a load (BUG-0182)
 add('space_defenders', P + 'coop_space_defenders.py', warm=True, minutes=3, fixture='space')  # the game's Defenders are not partner puppets (BUG-0111; --without-fix fails)
 add('space_armada_return', P + 'coop_space_armada_return.py', minutes=8, fixture='space')  # an armada wave resumes its raid after the host's return (BUG-0046; --without-fix fails); a resumed wave's ships are tough, a raid without ships is not a won wave (BUG-0227; SPORE_FIX_OFF=contracts.wave_resume fails)
 add('space_contracts', P + 'coop_space_contracts.py', minutes=9)  # co-op contracts: armada, survey, timeout (F9 Space page clicks)

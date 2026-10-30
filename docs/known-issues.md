@@ -311,6 +311,11 @@ anchor so other docs can link to it:
   (a ship's height is its zoom, docs/re/space.md 7.10). That made the rescue fail on GOG 2024 (the
   3D distance never got under 60 m): fixed, the repair measures along the ground now, and the bot
   zooms to the partner's height. The landing delay itself is still not understood.
+* 2026-10-30 (fix/w13-space): not reproduced. `coop_space_land_early.py` (both players click the
+  home planet and zoom in right after `start('space')`, the game's own landing conditions printed by
+  `coop.space landcheck`) landed 7-16 s after the load in 3 direct runs on lane 9 and 2 lab runs on
+  lane 8 (GOG 2024). The conditions are in docs/re/space.md#space-seed-profile. A landing itself
+  shows `paused 1` for about a second (the planet loads).
 * Ticket: BUG-0182.
 
 ## Galaxy menu: a host that stopped answering right after "Co-op" during the intro (once)
@@ -342,6 +347,10 @@ anchor so other docs can link to it:
   before the generation, or the empire's state read by 0xC309F0). `coop_space_jump.py` prints "same" or
   "DIFFERENT planets" without failing. A sure fix: the host sends the planet records of a newly
   generated star (or the guest asks for them before entering).
+* 2026-10-30 (fix/w13-space): FIXED. The draw that differed: a first load of the star's species
+  profile inside RequirePlanetsForStar drew on the seeded generator (docs/re/space.md#space-seed-profile).
+  Test `coop_space_seed_profile.py`. Left open: `GenerateRandomName` draws stay on the global
+  generator, so planet names may still differ (not compared).
 * Ticket: BUG-0185.
 
 ## Civilization: single vehicle sync outliers of 20-27 m
@@ -1059,3 +1068,21 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   or "... has no species" and makes such a proxy again (`npc.proxy_listed`).
 * Next steps: when the line shows in a campaign, follow what freed or emptied that creature.
 * Ticket: BUG-0300.
+## Space finale: the host's "entered with the partner" counter after a wait (2026-10-30, fix/w13-space)
+<a id="issue-finale-entries-with"></a>
+
+* `coop_space_finale.py` failed once (lab 20261030-142729, lane 9): both entered the core
+  together, but the host's `entries_with` stayed 0 because it entered before the guest's "reached"
+  message came (the wait flag is cleared when everybody is at the gate). Players see nothing wrong;
+  the test's check reads the counter. Reproduce: run `space_finale` a few times.
+* Ticket: BUG-0320.
+
+## Space: a guest fault at 0xE98DD0 when the host's ship appears, lane 8 only (2026-10-30, fix/w13-space)
+<a id="issue-space-e98dd0-lane8"></a>
+
+* Since ~15:00 on 2026-10-30 every `space_jump` / `space_seed_profile` run on lane 8 had a caught
+  guest fault `0xC0000005 at 0x00E98DD0` (labelled cPlanetGfx_Create+0x8F0; a null from a virtual
+  getter in 0xE98D90, gfx/effects code) ~1.4 s after the host's ship appeared in the NPC system the
+  guest had jumped to; also with main 4dbacc5 (lab 20261030-151438). Lane 9 is clean with the same
+  code. Reproduce: `tools/lab.py run space_jump --lanes 1 --skip 1,2,3,4,5,6,7,9,10`.
+* Ticket: BUG-0323.
