@@ -752,3 +752,34 @@ stage wizard, the guest joins from its menu).
   (0xE7C080) while a partner is near; (b) a guest far from the host spawns its own food (plants and
   meat only) through PopulateMarker outside the host's area, eaten locally and sent as MSG_CELL_FOOD,
   removed when the host's area reaches it.
+
+## The guest's own pool while the host is away (2026-10-30, fix/w9-cell-away)
+<a id="cell-host-away"></a>
+
+BUG-0205 / BUG-0151 (GitHub #130). GOG 2024, lane 3, `tools/tests/coop_cell_away.py [--editor]`.
+
+* ✔ With the host in the main menu (no state rounds, no totals) the guest's pool stood still: 0 of 14
+  creatures around the guest moved more than 1 m in 6 s (`pool.away` off). The mirrors are held at
+  the host's last pose by `guest_tick` (the extrapolation is capped at 0.5 s), `h_Populate` and
+  `h_SpawnLoot` are off on a guest and `h_Pair` skips every pair without the guest's own cell.
+* ~ Between two frames the AI lock +0x16C read 0 on the mirrors too (`coop.pool npcs`, a console
+  read): the mod writes it every frame (`guest_tick`, `guest_state`), something in the game's step
+  seems to clear it again. The mirrors do not move all the same (the pose is written every frame).
+  Not analysed further; the test checks the movement, not the byte.
+* ✔ Clearing +0x16C and +0x354 (keep-alive) of the former mirrors and forgetting them as mirrors is
+  enough for the guest's game to run them: 11 of 12 creatures moved within 6 s. 570 cells were
+  released (the whole mirrored pool, not only the ones on the screen). `h_Populate` was not called
+  in the ~10 s the host was away (`solo_spawns=0`): the tiles around the guest were already populated.
+* ✔ The return: the host's first complete state round after its reload purges every cell the guest
+  had as a stray (the purge spares the puppets and the mate) and recreates the mirrors: 315 mirrors,
+  each a live host cell, no own creature left within 30 s. No fault on either side.
+* ✔ The guest's food while the host was away (`coop.pool food 10`, the hooked AddFoodPoints): kept
+  on the guest and sent as one numbered meal just before the first state round is applied; the
+  host's total grew 0 -> 10 and the guest's stayed 10. Sent while the host is in the menu, the same
+  meal was acknowledged without its points (BUG-0239) and the guest's total fell back to 0.
+* ✔ The cell editor through the mate: the Cell stage is left ~10 s after the cell touches its mate
+  (9.86 s and 10.02 s, `coop_cell_editor_timed.py`; the mating cinematic). The host's editor
+  therefore counts as away (4 s) only well after the stage was left.
+* ~ The game's death count S+0x70 stayed 0 after a death through KillCell / PlayerDeath (the
+  `selfhit` death of `coop_cell_respawn.py`, both machines); the table above names only
+  BreakOrSwallow 0xE7AEE0 as its writer. Consistent, not checked with a break death.

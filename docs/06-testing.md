@@ -1860,3 +1860,26 @@ answered right after; a 1 s poller beside a standalone run saw no gap. Same sign
   answers (a line "busy, not a crash"); the frame check still reports a freeze.
   `SPORE_MONITOR_STRICT=1` gives the old verdict. Keep `wait.frames` counts small in tests that
   run a Monitor, or wait with `time.sleep` + `frame`.
+## Cell: the host away, a timed editor after a knockout (2026-10-30, fix/w9-cell-away)
+<a id="testing-cell-away"></a>
+
+* `coop_cell_away.py` (suite `cell_away`, ~1.5 min, cell fixture): the host goes to the main menu
+  (`coop.menu`), the guest's creatures must swim by their own AI (positions of `coop.pool npcs 80`
+  6 s apart, at least 2 moved > 1 m), the guest eats 10 points (`coop.pool food 10`), the host
+  reloads its save (`coop.load`); then every creature around the guest is a mirror of a live host
+  cell again and both food totals are the host's old total + 10. `--editor` (suite
+  `cell_away_editor`): the host opens its own cell editor instead (mating call, `coop.pool mate tp`)
+  and cancels. `SPORE_FIX_OFF=pool.away` FAILS both.
+* `coop.pool mate tp` (tests) puts the own cell onto its mate: a click-swim to a mate off the screen
+  (host side, coordinates below the window) did not reach it. The editor opens ~10 s later.
+* `coop_cell_editor_timed.py [--revive]` (suites `cell_editor_timed`, `cell_editor_timed_revive`,
+  ~1.5 min each): a real respawn (25 m from the host) or revive (next to it), the cell onto its mate
+  the moment the knockout ends, then the editor: prints when the stage was left (always ~10 s, after
+  the 2-3 s invulnerability), checks +0x111 clear and a host bite after the return (BUG-0237 guard).
+* `coop_cell_respawn.py` also checks the knocked-out partner's death count S+0x70 (`coop.pool
+  deaths`), BUG-0221.
+* Pitfall: the AI lock byte +0x16C is not a usable oracle of "frozen" (it reads 0 on mirrors between
+  frames); check positions over time.
+* Pitfall (2026-10-30): `coop_cell.py` (and others) read the first `food=` of `coop.pool`. A new line
+  in that output must not repeat a key of the status line before it (`cell_away:` first had
+  `food=0/0` there and cell_coop failed with "guest has the same total (0)"); new lines go last.
