@@ -3,8 +3,9 @@
 
 The first Creature vote from the Cell stage, as in coop_legless_guest.py --guest cancel: the host
 adds legs in its editor and leaves it; the vote opened the guest's own editor on the host's legless
-pre-editor creature; 3 s after its interface is up the guest clicks the red cross once (before the
-host's new body reaches it).
+pre-editor creature; the guest leaves it alone for 40 s after the host's new body reached it (the
+report's first click did nothing and the editor stayed open that long), then clicks the red cross
+once.
 
 Seen on 0.7.3.0 (lab run 20261029-143204, lane 8): the guest's editor showed the host's new legs and
 its DNA dropped by their price while it was open, and the red cross asked "Exiting will cause your
@@ -71,12 +72,17 @@ def main():
     ck(wait(lambda: editor_ui(guest), 40), "the guest's own editor shows its interface")
     time.sleep(3)
     shot(guest, 'editor_hold_open.png')
-    early = not guest_log_has('creations: player 0 creature =', pos)
-    print(f"  the red cross {'before' if early else 'after'} the host's new body reached the guest", flush=True)
-    guest.call('click %d %d' % CANCEL)  # as coop_legless_guest.py --guest cancel: 3 s after the editor is up
-    left = wait(lambda: 'Creature' in mode(guest) or 'LoadGame' in mode(guest), 40)
+    # the report's editor stayed open (its first click on the red cross did nothing) for about 40 s
+    # while the host's new body, its world and the shared DNA arrived: the guest leaves it alone
+    got = wait(lambda: guest_log_has('creations: player 0 creature =', pos), 90)
+    ck(got, "the host's new body reached the guest while its editor is open")
+    for k in range(4):
+        time.sleep(10)
+        shot(guest, f'editor_hold_{k}.png')
+    guest.call('click %d %d' % CANCEL)
+    left = wait(lambda: 'Creature' in mode(guest) or 'LoadGame' in mode(guest), 20)
     got = guest_log_has('creations: player 0 creature =', pos)
-    print(f"  guest mode 40 s after one click on the red cross: {mode(guest).strip()}; host's body arrived: {got}",
+    print(f"  guest mode 20 s after one click on the red cross: {mode(guest).strip()}; host's body arrived: {got}",
           flush=True)
     print('  guest ' + guest.call('coop.creations')['out'].strip().splitlines()[1], flush=True)
     if not left:
