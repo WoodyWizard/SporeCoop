@@ -3436,8 +3436,11 @@ std::string debug(const std::vector<std::string>& a)
                 return;
             members++;
             char k[16];
-            snprintf(k, sizeof k, "%X", ai_type(c));
+            int at = ai_type(c);
+            snprintf(k, sizeof k, "%X", at);
             types[k]++;
+            if (at <= 0) // no AI (decoration clusters): never runs the behaviours
+                return;
             F<float>(c, 0x224) = F<float>(c, 0x228) = F<float>(c, 0x21C) = 0.f; // free to chase at its next pick
             F<float>(c, 0x238) = 0.f;
             if (!done.insert(li).second)
@@ -3601,8 +3604,11 @@ std::string trace_line()
 
 std::string status()
 {
-    char d[256];
-    snprintf(d, sizeof d, "cell_contacts: creature_pairs=%u bite_events=%u nonfinite_skipped=%u nonfinite_dropped=%u stale_targets=%u own_nf=%u shared_parts=%u\n", g_creature_pairs, g_bite_events, g_nonfinite_sent_skipped, g_nonfinite_dropped, g_stale_targets, g_own_nf_events, g_shared_parts);
+    MEMORYSTATUSEX vm{};
+    vm.dwLength = sizeof vm;
+    GlobalMemoryStatusEx(&vm);
+    char d[320];
+    snprintf(d, sizeof d, "cell_contacts: creature_pairs=%u bite_events=%u nonfinite_skipped=%u nonfinite_dropped=%u stale_targets=%u own_nf=%u shared_parts=%u vm_free_mb=%llu created=%u destroyed=%u\n", g_creature_pairs, g_bite_events, g_nonfinite_sent_skipped, g_nonfinite_dropped, g_stale_targets, g_own_nf_events, g_shared_parts, vm.ullAvailVirtual >> 20, g_created, g_destroyed);
     char b[1100];
     uint8_t* s = S();
     int food = s ? F<int32_t>(s, 0x1C) : -1;

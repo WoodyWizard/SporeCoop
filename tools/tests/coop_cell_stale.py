@@ -13,7 +13,7 @@ follower faults at every frame.
 with another generation) and rest for 60 s, so the leaders never drop it themselves.
 
 1. The host has group leaders to break (the host's world at the cell fixture has groups).
-2. Within 10 s the host logs no new caught fault (`exc`), and its game still draws.
+2. (after level-ups until AI packs exist) Within 10 s the host logs no new caught fault (`exc`), and its game still draws.
 SPORE_FIX_OFF=cell.pick_guard must FAIL (faults at 0x00E52949, one per frame).
 
   SPORE_LANE=2 python3 tools/tests/coop_cell_stale.py
@@ -38,10 +38,16 @@ def main():
     ck = Checks()
     host, guest = start('cell')
     time.sleep(5)
-    f0, fr0 = faults(host), frame(host)
-    out = host.call('coop.pool staletarget 16')['out'].strip()
-    print('  host:', out, flush=True)
-    m = re.search(r'(\d+) leaders', out)
+    out, t0 = '', time.time()
+    while True:  # packs of AI cells (level 1 has only clusters without AI): level up until some appear
+        out = host.call('coop.pool staletarget 16')['out'].strip()
+        print('  host:', out, flush=True)
+        m = re.search(r'(\d+) leaders', out)
+        if (m and int(m.group(1)) > 0) or time.time() - t0 > 90:
+            break
+        host.call('coop.pool food 150')
+        time.sleep(8)
+    f0, fr0 = faults(host), frame(host)  # from here: the faults of the stale copies only
     ck(m and int(m.group(1)) > 0, f'1. the host has group leaders to break ({out})')
     time.sleep(10)
     f1, fr1 = faults(host), frame(host)

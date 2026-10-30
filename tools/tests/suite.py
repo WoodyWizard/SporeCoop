@@ -261,6 +261,7 @@ for name, cmd in (('party_cell_ko', 'coop_party_cell.py'), ('party_creature_npc'
 add('cell_4p', P + 'coop_cell_4p.py', ('multi', 'extended'), minutes=6)
 add('cell_nan', P + 'coop_cell_nan.py', minutes=3)  # a guest's own cell NaN is put back, no tiles from NaN boxes, a level-up after it (BUG-0299; SPORE_FIX_OFF=cell.nan_guard fails)
 add('cell_stale', P + 'coop_cell_stale.py', minutes=2)  # a group member drops a dead chase target copied from its leader: no fault per frame on the host (BUG-0306; SPORE_FIX_OFF=cell.pick_guard fails)
+add('cell_churn', P + 'coop_cell_churn.py', minutes=4)  # the guest's mirrors removed and re-created 40 times: its free address space stays (BUG-0307)
 
 # a whole game of four bot players, Cell to the galactic core (BUG-0152, docs/06-testing.md#testing-campaign):
 # `lab.py run campaign --lanes 1 --skip <every other lane>` (one lane; `run` has no --lane, BUG-0259). Four games in the lane's bottle (instances 20+N / 30+N), nothing else of
