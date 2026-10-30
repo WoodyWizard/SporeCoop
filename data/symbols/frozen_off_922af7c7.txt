@@ -29,3 +29,4 @@ Simulator::Cell::PopulateTiles ; Cell: the host populates only around itself, a 
 Simulator::Cell::PopulateTile ; Cell: the host populates only around itself, a far guest finds no food (BUG-0174)
 Simulator::Cell::IsTileActive ; Cell: the host populates only around itself, a far guest finds no food (BUG-0174)
 Simulator::Cell::ViewBoxes ; Cell: the host populates only around itself, a far guest finds no food (BUG-0174)
+Simulator::Cell::WorldScaleStep ; Cell: the host populates only around itself, a far guest finds no food (BUG-0174)

@@ -1051,6 +1051,32 @@ static void tiles_drain(int, PartnerTiles& pt)
         tiles_delete(pt.list, [](const int32_t*) { return false; });
 }
 
+// The world scale step 0xE73E50 (cdecl void(float dt), early in SimUpdate): while the scale G+0x514C
+// moves towards G+0x5150 (a level change, over several frames) it rescales the world through
+// 0xE6DB70, which empties the host's tile list and fills it again from EVERY tile object of the pool,
+// one per key. Our tiles then sat in both lists (both freed them: faults at CreateObject+0x37 after
+// `coop.pool food 1000`, lab 20261030-004900) or replaced the host's own tile of the same key (that
+// one leaked). So our tiles go back to the pool before such a step, and no partner pass runs until
+// the scale settles (h_PopTiles).
+using WorldScale_t = void(SK_CDECL*)(float);
+static WorldScale_t o_WorldScale;
+static uintptr_t a_WorldScale;
+static bool scale_moving()
+{
+    uint8_t* g = G();
+    return g && F<float>(g, 0x514C) != F<float>(g, 0x5150);
+}
+static void SK_CDECL h_WorldScale(float dt)
+{
+    if (!g_ptiles.empty() && in_cell() && scale_moving())
+        for (auto& [id, pt] : g_ptiles)
+            if (pt.list && pt.list->begin != pt.list->end) {
+                g_tiles_flush++;
+                tiles_delete(pt.list, [](const int32_t*) { return false; });
+            }
+    o_WorldScale(dt);
+}
+
 static void partner_tiles_reset(bool drain)
 {
     for (auto& [id, pt] : g_ptiles) {
@@ -1196,7 +1222,8 @@ static void SK_CDECL h_PopTiles(int level, TileList* list, int all)
     g_pass_list = list;
     o_PopTiles(level, list, all);
     tiles_check("the host's pass", level);
-    if (!all) { // a rebuild (all) populates the host's view in one go; the partners follow next frame
+    if (!all && !scale_moving()) { // a rebuild (all) populates the host's view in one go, a moving
+                                   // world scale refills the host's list from every tile: the partners follow
         for (size_t k = 1; k < g_views.size(); k++) {
             auto& pt = g_ptiles[g_views.list()[k].id];
             pt.seen = now;
@@ -1417,6 +1444,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     a_PopTile = H->sym("Simulator::Cell::PopulateTile");
     a_TileActive = H->sym("Simulator::Cell::IsTileActive");
     a_ViewBoxes = H->sym("Simulator::Cell::ViewBoxes");
+    a_WorldScale = H->sym("Simulator::Cell::WorldScaleStep");
     g_ok = a_DamageCell && a_KillCell && a_Break && a_Destroy && a_AddFood && a_Populate && a_RefCreate &&
            a_Serializer && a_S;
     if (!g_ok) {
@@ -1429,7 +1457,8 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     H->hook_create(M, (void*)a_Destroy, (void*)h_Destroy, (void**)&o_Destroy);
     H->hook_create(M, (void*)a_AddFood, (void*)h_AddFood, (void**)&o_AddFood);
     H->hook_create(M, (void*)a_Populate, (void*)h_Populate, (void**)&o_Populate);
-    if (a_PopTiles && a_PopTile && a_TileActive && a_ViewBoxes) { // GOG 2024 only (BUG-0174)
+    if (a_PopTiles && a_PopTile && a_TileActive && a_ViewBoxes && a_WorldScale) { // GOG 2024 only (BUG-0174)
+        H->hook_create(M, (void*)a_WorldScale, (void*)h_WorldScale, (void**)&o_WorldScale);
         H->hook_create(M, (void*)a_PopTiles, (void*)h_PopTiles, (void**)&o_PopTiles);
         H->hook_create(M, (void*)a_PopTile, (void*)h_PopTile, (void**)&o_PopTile);
         H->hook_create(M, (void*)a_TileActive, (void*)h_TileActive, (void**)&o_TileActive);
