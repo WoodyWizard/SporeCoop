@@ -108,6 +108,7 @@ COOP_FIX("fleet.posse", "BUG-0084", g_keep_posse, "space: the guest's own escort
 static bool g_model_fix = true;
 COOP_FIX("fleet.model_check", "BUG-0323", g_model_fix, "space: a host ship whose model the guest lacks is mirrored with the default model");
 static uint32_t g_unknown_models;
+static bool g_fake_model; // tests: the host sends made-up model instances
 static std::unordered_set<uint32_t> g_unknown_logged;
 static uint32_t g_stale_chunks, g_partial_cycles, g_posse_kept;
 static bool g_applying;
@@ -249,7 +250,9 @@ static void host_tick(double now)
             w.u16(g_hid[u]);
             w.u8((uint8_t)F<int>(u, kType));
             w.u32(F<uint32_t>(u, kPol));
-            w.u32(key[0]); w.u32(key[1]); w.u32(key[2]);
+            // tests (BUG-0323): `coop.fleet fakemodel 1` sends a model instance the guest has not got,
+            // as a host whose Sporepedia cache holds other creations does
+            w.u32(g_fake_model ? key[0] ^ 0x5A5A5A5Au : key[0]); w.u32(key[1]); w.u32(key[2]);
             w.f32(p.x); w.f32(p.y); w.f32(p.z);
             w.f32(q[0]); w.f32(q[1]); w.f32(q[2]); w.f32(q[3]);
             w.f32(F<float>(u, kHp));
@@ -676,6 +679,10 @@ std::string debug(const std::vector<std::string>& a)
         h_TakeDamage((uint8_t*)pup + kCombat, a.size() > 3 ? (float)atof(a[3].c_str()) : 5.f,
                      F<uint32_t>(it->second, kPol), 0, dir, (uint8_t*)it->second + kCombat);
         return "hit sent";
+    }
+    if (a.size() >= 2 && a[0] == "fakemodel") { // tests (BUG-0323): 1 = send made-up model instances
+        g_fake_model = a[1] != "0";
+        return std::string("fakemodel ") + (g_fake_model ? "1" : "0");
     }
     if (a.size() >= 2 && a[0] == "chunkfix") { // BUG-0037: 0 = the removal pass on the last chunk (tests)
         g_chunk_fix = a[1] != "0";
