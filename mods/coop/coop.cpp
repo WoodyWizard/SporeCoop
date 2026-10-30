@@ -65,6 +65,7 @@
 #include "host_world.h"
 #include "diag_coop.h"
 #include "trace.h"
+#include "view_centres.h"
 
 static const SkHost* H;
 static SkMod* M;
@@ -437,6 +438,11 @@ void drive_puppet(Remote& r, double now)
     // dead players are hidden until they respawn
     bool visible = g_adapter && g_local && (s.flags & net::PF_IN_WORLD) && !(s.flags & net::PF_DEAD) &&
                    r.buf.age(now) < 5.0 && (r.echo || same_place(s));
+    // BUG-0280: the host keeps its world simulated around every partner it shows in its own place
+    if (visible && g_sess.role() == net::Role::Host)
+        views::note(r.id, s.pos, g_mode, now);
+    else
+        views::forget(r.id);
     if (r.puppet && !visible) // why a partner disappears (docs/stability/cell.md)
         LOG("%s hidden: flags=0x%X age=%.1f same_place=%d", r.name.c_str(), (unsigned)s.flags, r.buf.age(now),
             (int)same_place(s));
@@ -2332,6 +2338,7 @@ void end_session(EndPath path, bool cell)
         for (auto& [id, r] : g_remotes)
             despawn(r);
         g_remotes.clear();
+        views::clear();
     }
     if (g_vote_scope_fix)
         drop_vote("the session ended");
@@ -2699,6 +2706,7 @@ void setup_callbacks()
         shared::on_player_leave(id);
         creations::on_player_leave(id); // BUG-0076: the next player of this id is not shown as this one
         npc::on_player_leave(id);       // BUG-0125
+        views::forget(id);              // BUG-0280
         g_give_pick = net::give_pick_after_leave(g_give_pick, id, g_give_pick_reset_fix); // BUG-0234
         auto it = g_remotes.find(id);
         if (it == g_remotes.end())
@@ -3083,6 +3091,19 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
 {
     if (argc > 1 && !strcmp(argv[1], "list")) {
         SAY("%s%s", npc::status().c_str(), npc::list().c_str());
+        return 0;
+    }
+    if (argc > 1 && !strcmp(argv[1], "marker")) { // tests (BUG-0280): pin the Tribe / Civ pointer (x y z | off)
+        bool pin = argc > 4;
+        net::Vec3 p{};
+        if (pin)
+            p = {(float)atof(argv[2]), (float)atof(argv[3]), (float)atof(argv[4])};
+        modes::test_pin_marker(pin, p);
+        SAY("pointer %s (%.1f %.1f %.1f)", pin ? "pinned" : "follows the mouse", p.x, p.y, p.z);
+        return 0;
+    }
+    if (argc > 1 && !strcmp(argv[1], "herdnulls")) { // tests (BUG-0256)
+        SAY("%s", game::herd_nulls_status().c_str());
         return 0;
     }
     if (argc > 1 && !strcmp(argv[1], "herds")) {
@@ -4005,6 +4026,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     ctx.stage_center = [](net::Vec3& p) { return tribe::center(p); };
     npc::init(H, M, ctx);
     savestrip::init(H, M); // BUG-0020: our objects never go into a save
+    views::init(H, M);     // BUG-0280: the world lives around every player
     npc::set_enabled(H->config_int(M, "coop", "share_npcs", 1) != 0);
     npc::set_partner_targets(H->config_int(M, "coop", "npcs_target_partners", 1) != 0);
     social::Ctx sc;

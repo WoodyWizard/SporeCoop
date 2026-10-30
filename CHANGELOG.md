@@ -45,6 +45,16 @@
 - Cell: `coop_cell_editor_timed.py` enters the own cell editor right after a real respawn or revive
   (BUG-0237: the stage is left ~10 s after touching the mate, the invulnerability is over by then,
   not reproduced); `coop_cell_respawn.py` also checks the death count (BUG-0221, not reproduced).
+### Fixed
+- Creature: a guest far from the host no longer loses the animals around it. The host's game kept
+  its world alive only around its own camera: farther than about 150 m it put the animals back
+  into its pool, also next to a guest, and nest members there appeared and vanished every few
+  seconds. The host now keeps the world alive around every player (BUG-0280).
+- Tribe: the animals where a guest looks, far from the host's village, now live on the host's game
+  and reach the guest (the host kept and sent them only around its own village) (BUG-0280,
+  BUG-0291).
+- Creature: a guest that rejoined and loaded the host's world could fault every frame in the herd
+  update (a herd of the save with an empty member slot); such slots are dropped now (BUG-0256).
 
 ## [0.7.3.1] - 2026-10-29
 

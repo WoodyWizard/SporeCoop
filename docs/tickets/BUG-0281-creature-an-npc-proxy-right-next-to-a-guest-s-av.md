@@ -31,7 +31,16 @@ bots, `coop.npc list` on a guest: lines with `err=` above 2 m while the host's N
 <!-- what the player (or the test) saw, in our words; no player names, no paths from their PC -->
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+Not found; not reproduced (2026-10-30, fix/w9-creature, lane 9):
+* 2 players, the guest's avatar teleported 0.3 / 1.5 / 3 m beside three host NPCs that stood still
+  (`coop.npc gopos`), 6 s each, `coop.npc list` and both censuses every 0.5 s: the proxy stayed
+  0.1-0.6 m from its target and from the host's NPC; the guest's avatar did not push it 4 m. One NPC
+  that walked off meanwhile trailed 3.5-4.2 m for about 2 s (host and guest apart by the same, a
+  moving NPC) and caught up.
+* 4 players, play_creature bots (`coop_sync_multi.py --fixture creature --rounds 45`): no standing
+  NPC 4 m off on every guest at once was singled out; the worst NPC errors of rounds 21-32 were
+  2-19 m on 1-3 guests (n22, n25, n33, n35, n36, moving NPCs of a fight near the players; p90
+  median 0.64-1.11 m per guest). The jsonl has no speed, so "standing" could not be checked there.
 
 ## Fix
 <!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
@@ -42,3 +51,4 @@ bots, `coop.npc list` on a guest: lines with `err=` above 2 m while the host's N
 
 ## History
 - 2026-10-29: opened.
+- 2026-10-30: not reproduced on fix/w9-creature (2-player probe beside standing NPCs, one 4-player measurement).

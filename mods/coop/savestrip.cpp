@@ -57,6 +57,8 @@ static bool own_kind_herd(void* h)
 static bool g_owner_fix = true; // tests: `coop.savestrip owner 0` strips by herd kind alone (the first version)
 COOP_FIX("savestrip.owner", "BUG-0020", g_owner_fix, "saves: only herds made for our objects are stripped, never a pack member");
 static std::unordered_set<void*> g_strip_herds, g_keep_herds;
+static bool g_pending_fix = true;
+COOP_FIX("savestrip.pending", "BUG-0256", g_pending_fix, "saves: creatures waiting for a deferred destroy are kept out of saves like puppets");
 // BUG-0255: a herd made for a puppet stayed in the world empty after its partner left (herds are
 // reused per species and never destroyed) and went into every save: the owner rule only stripped
 // herds that still held a creature of ours. Now an own-kind herd with no members is stripped too,
@@ -110,7 +112,12 @@ static bool creature_filter(void* o, uint32_t noun)
         return false;
     if (!g_owner_fix)
         return true;
-    bool ours = !game::pack_member(o) && (game::is_puppet(o) || npc::is_proxy(o));
+    // BUG-0256: a creature waiting for its deferred destroy (a stray removed during the evolution
+    // cinematic) is ours too: herds are reused per species, and the herd it shared with the
+    // partner's new puppet was kept for it with a null where the puppet was stripped; the guest that
+    // loaded that save faulted every frame in Herd_Update
+    bool ours = !game::pack_member(o) &&
+                (game::is_puppet(o) || npc::is_proxy(o) || (g_pending_fix && game::destroy_pending(o)));
     (ours ? g_strip_herds : g_keep_herds).insert(h);
     return ours;
 }

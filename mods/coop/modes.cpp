@@ -810,6 +810,13 @@ struct Marker {
     net::Vec3 pos;
 };
 static Marker g_local_marker;
+static bool g_marker_pinned; // tests (coop.marker): the pointer stays where the test put it
+void test_pin_marker(bool pin, const net::Vec3& p)
+{
+    g_marker_pinned = pin;
+    if (pin)
+        g_local_marker.pos = p;
+}
 
 static void* noun_manager()
 {
@@ -904,7 +911,7 @@ static void rts_fill(void* m, net::PlayerState& st)
 {
     Marker* mk = (Marker*)m;
     net::Vec3 p;
-    if (mk == &g_local_marker && mouse_on_planet(p))
+    if (mk == &g_local_marker && !g_marker_pinned && mouse_on_planet(p))
         mk->pos = p;
     st.flags |= net::PF_IN_WORLD;
     st.pos = mk->pos;

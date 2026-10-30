@@ -245,7 +245,8 @@ anchor so other docs can link to it:
   host's legless creature itself (0.7.3.0 pinned it in `choices.ini` after Replace, and Save New kept
   the host's key), and the co-op window's arrows lead back to "the world's own". Still open: that
   editor is the "edit a creation" one (save dialogs, a red cross), not the evolution editor the host
-  gets, and it can show the host's new parts while it is open (BUG-0283).
+  gets, and it can show the host's new parts while it is open (BUG-0283; seen once, not reproduced
+  in 3 runs of `coop_guest_editor_hold.py` on 2026-10-30).
 * The guest's mating-call button needs a collected part (`S+0x69`): whether a guest touching a host's
   part token (a mirror) sets it was not checked; the test sets it by console.
 * The report's Creature case ("3 rejoins did not fix it") did not reproduce as such on lane 5 with
@@ -665,7 +666,7 @@ keeps the history).
 
 * BUG-0119 (#98, bug): after a load the guest may keep the host's species, or get SetSpecies on a world still loading (avatar pointer used as world identity)
 * BUG-0125 (#104, bug): a guest that rejoins while the host is paused sees no animals near it.
-* BUG-0256 (crash, caught): a guest that rejoins and loads a host save written while its puppet existed faults every frame in Herd_Update (cCreatureAnimal::Update+0xAA2) after the stray removal.
+* BUG-0256 (crash, caught): a guest that rejoins and loads a host save written while its puppet existed faults every frame in Herd_Update (cCreatureAnimal::Update+0xAA2) after the stray removal. Fixed on fix/w9-creature (savestrip.pending, npc.herd_nulls).
 
 **Tribe**
 
@@ -787,6 +788,11 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Not checked: whether the guests could keep the NPCs of their own area (their game runs them
   while the host is away) or the host's game can be made to keep creatures around the puppets.
 * Ticket: BUG-0280.
+* Fixed (2026-10-30, fix/w9-creature, `npc.view_centres`): the cull is the game's relevance pass
+  around the local camera (docs/re/creature.md#creature-view-centres); the host now adds a sphere
+  per partner, in Creature and (npc.view_centres_tribe) Tribe; in Tribe the host also sends a guest
+  the animals around its pointer (BUG-0291, npc.rts_views). Still open: the herds' brain range
+  filter uses the host's brain level (matters for Rivals); Civ is not covered.
 
 ## Creature: an NPC proxy next to a guest's avatar stays ~4 m off (2026-10-29, fix/w7-sync)
 
@@ -794,6 +800,9 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   on every guest at once (`coop.npc list` on a guest: `err=4.33`). Likely pushed by the guest's own
   avatar (inferred). Reproduce: `SPORE_LANE=N python3 tools/tests/coop_sync_multi.py --fixture
   creature --rounds 45` and `coop.npc list` on a guest. Ticket: BUG-0281.
+* Not reproduced (2026-10-30, fix/w9-creature): with 2 players a guest's avatar 0.3-3 m beside
+  a standing host NPC did not push its proxy (0.1-0.6 m off); a 4-player measurement showed large
+  errors only for moving NPCs in a fight (2-19 m on 1-3 guests).
 
 ## Cell: a guest's mirrors trail the host's cells at a low frame rate (2026-10-29, fix/w7-sync)
 
