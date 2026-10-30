@@ -1135,7 +1135,22 @@ static void SK_CDECL h_PopTiles(int level, TileList* list, int all)
     if (!ours) {
         if (!g_ptiles.empty() || g_union)
             partner_tiles_reset(in_cell() && list == host_tiles()); // not hosting a Cell session any more: the lists are the old pool's
+        bool own = list && list == host_tiles() && in_cell();
+        if (own)
+            tiles_check("the frame between (no partner tiles)", level);
         o_PopTiles(level, list, all);
+        if (own) {
+            tiles_check("the own pass (no partner tiles)", level);
+            static double last_log;
+            double now = H->time_seconds();
+            if (now - last_log > 10.0) {
+                last_log = now;
+                uint8_t* tp = G() + 0x38;
+                trace::line("tiles", "pool %u/%u, own list %d, level %d (no partner tiles here); cell pool %u/%u",
+                            F<uint32_t>(tp, 0xC), F<uint32_t>(tp, 0x18), (int)((list->end - list->begin) / 2), level,
+                            F<uint32_t>(G(), 0x1C + 0xC), F<uint32_t>(G(), 0x1C + 0x18));
+            }
+        }
         return;
     }
     // A level change rescales the world (0xE6DB70, called by 0xE73E50 early in SimUpdate): it empties
@@ -1259,9 +1274,10 @@ static void SK_CDECL h_PopTiles(int level, TileList* list, int all)
         for (auto& [id, pt] : g_ptiles)
             if (pt.list)
                 ours += (size_t)((pt.list->end - pt.list->begin) / 2);
-        trace::line("tiles", "pool %u/%u, host list %d, partner lists %u (%u tiles), level %d, flushes %u, full %u",
+        trace::line("tiles", "pool %u/%u, host list %d, partner lists %u (%u tiles), level %d, flushes %u, full %u; cell pool %u/%u",
                     F<uint32_t>(tp, 0xC), F<uint32_t>(tp, 0x18), (int)((list->end - list->begin) / 2),
-                    (unsigned)g_ptiles.size(), (unsigned)ours, level, g_tiles_flush, g_tiles_full);
+                    (unsigned)g_ptiles.size(), (unsigned)ours, level, g_tiles_flush, g_tiles_full,
+                    F<uint32_t>(G(), 0x1C + 0xC), F<uint32_t>(G(), 0x1C + 0x18));
     }
     // a partner that left (or has no cell here any more): the game deletes its tiles
     for (auto it = g_ptiles.begin(); it != g_ptiles.end();) {
