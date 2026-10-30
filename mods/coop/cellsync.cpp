@@ -916,13 +916,13 @@ static bool pose_finite(const net::Vec3& p, float vx, float vy, float size)
 // more than ~2048 live cells overruns it (fault at 0xBBB07B, the stack and heap corrupted, crashes
 // later in DestroyCell and on worker threads; docs/re/cell.md#cell-broadphase-cap). With 3-4 players
 // the host's partner passes and each guest's 120 m state let the pools grow past 2300 cells. Now:
-// a partner's tile is populated only while the host holds fewer than kPopCap cells (the others wait,
+// a partner's tile is populated only while the host holds fewer than kPopCap (1250) cells (the others wait,
 // `g_starved`, and are populated when room comes back), each guest gets at most its kSendCap
 // nearest cells, and a guest creates no new mirror at kMirrorCap live cells.
 // Old (`coop.fix cell.budget off`): no bound.
 static bool g_fix_budget = true;
-COOP_FIX("cell.budget", "BUG-0295", g_fix_budget, "cell: the host populates partner tiles only below 1400 cells, a guest gets its 900 nearest cells and mirrors at most 1500 (the game's broadphase holds ~2048)");
-constexpr uint32_t kPopCap = 1400, kSendCap = 900, kMirrorCap = 1500;
+COOP_FIX("cell.budget", "BUG-0295", g_fix_budget, "cell: the host populates partner tiles only below 1250 cells, a guest gets its 900 nearest cells and mirrors at most 1500 (the game's broadphase holds ~2048)");
+constexpr uint32_t kPopCap = 1250, kSendCap = 900, kMirrorCap = 1500;
 static int g_tile_level = -1; // the level base of the last PopulateTiles call (tests)
 static uint32_t g_tiles_starved, g_tiles_fed, g_send_capped, g_mirror_capped, g_cells_peak;
 static std::unordered_set<uint32_t> g_starved; // tile objects of ours not populated for the budget

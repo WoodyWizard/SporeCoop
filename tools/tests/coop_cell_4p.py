@@ -30,7 +30,7 @@ from coop_multi import measure
 from party import Party
 from twoinst import Checks
 
-CAP = 1700  # the budget keeps the host under 1400 + one tile; the game's broadphase overflows at ~2048
+CAP = 1700  # the budget keeps the host under 1250 + one tile; the game's broadphase overflows at ~2048
 
 
 def pool(p):
@@ -71,7 +71,14 @@ def phase(ck, p, label, seconds):
     for name, pk in peaks.items():
         ck(0 < pk < CAP, f'[{label}] {name}: the game\'s cell pool stays under {CAP} (peak {pk})')
     for g in p.guests:
-        _, cov, total, _ = measure(p.host.con, g.con)
+        # measured up to 3 times 2 s apart, as the campaign does (a tile populated on the host right
+        # then reaches the guest with the next state rounds)
+        for _ in range(3):
+            _, cov, total, _ = measure(p.host.con, g.con)
+            if total < 5 or cov >= 0.85:
+                break
+            print(f'  [{label}] {g.name}: coverage {cov:.0%} of {total}, measured again in 2 s', flush=True)
+            time.sleep(2)
         ck(total < 5 or cov >= 0.85, f'[{label}] {g.name} has the host\'s cells around it (coverage {cov:.0%} of {total})')
         n, food = on_screen(g)  # (food itself is rare on some screens at level 4: not asserted)
         ck(n > 0, f'[{label}] {g.name} sees cells of the host\'s world on its screen ({n}, food {food})')

@@ -894,8 +894,8 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 ## Cell, 4 players at high levels: the partners' areas are thinner than the host's (2026-10-30, fix/w10-cell-4p)
 <a id="issue-cell-4p-budget"></a>
 
-* What happens: with four players apart at level 4 the host already holds ~1400 cells, so the
-  cell budget (BUG-0295: partner tiles populated only below 1400 host cells, the game's collision
+* What happens: with four players apart at level 4 the host already holds 1000-1400 cells, so the
+  cell budget (BUG-0295: partner tiles populated only below 1250 host cells, the game's collision
   step holds ~2048) leaves part of the partners' new tiles empty until cells die or the host's
   area shrinks; the host's own area is never limited. Seen in `cell_4p` (lab 20261030-052856):
   542 tile populations postponed, 99 done later; the far guests still had 185-322 host cells within

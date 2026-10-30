@@ -903,11 +903,11 @@ lanes 2 / 3 with four players (`tools/tests/coop_cell_4p.py`, suite `cell_4p`).
   to 2200 cells; with the partners 200 m apart (BUG-0174's partner passes, one screen of tiles each)
   it grew past 4000; and a guest got every host cell within 120 m of itself (up to 3140 mirrors).
 * The bound (`coop.fix cell.budget`, cellsync.cpp): (1) a partner's tile is populated only while the
-  host has fewer than 1400 live cells (`G+0x1C+0xC`); the others are kept as empty tiles ("starved")
+  host has fewer than 1250 live cells (first 1400: host peak 1714 in lab 20261030-053258, lowered for the margin) (`G+0x1C+0xC`); the others are kept as empty tiles ("starved")
   and populated, 4 per frame, when the pool has room; the partner passes take turns being first;
   a starved tile does not count as "populated elsewhere" for the other lists; (2) each guest gets
   at most its 900 nearest cells (nth_element by distance to its centre); (3) a guest creates no new
-  mirror at 1500 live cells. Measured with it (lab 20261030-052856): host peak 1557, guests 1282 to
+  mirror at 1500 live cells. Measured with the 1400 cap (lab 20261030-052856): host peak 1557, guests 1282 to
   1394, no fault, the far guests had 185-322 host cells within 60 m. The host's own pass is never
   limited (vanilla), so the host's own area keeps all its food; with four players at level 4 the
   partners' areas are thinner than the host's (starved tiles waited, 542 starvations, 99 fed later).
