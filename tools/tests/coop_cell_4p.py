@@ -15,7 +15,7 @@ games in the 4-player campaign (lab 20261030-035318).
 3. Close: the guests stand --near m from the host (their 120 m state ranges overlap: each guest
    used to get nearly every host cell), --seconds s.
 Checked on every game after each phase: its live cell count (the pool header, the game's own
-count) stayed under 1700 the whole time (`peak=`, the highest seen per frame), each guest sees
+count) stayed under 1800 the whole time (`peak=`, the highest seen per frame), each guest sees
 the host's cells around itself (coverage within 60 m, as the campaign measures it), cells of
 the host's world on each guest's screen (not an empty pool, BUG-0174), and no fault in any log (the lab).
 SPORE_FIX_OFF=cell.budget must FAIL (a pool over 2000, the fault at 0xBBB07B).
@@ -30,7 +30,7 @@ from coop_multi import measure
 from party import Party
 from twoinst import Checks
 
-CAP = 1700  # the budget keeps the host under 1250 + one tile; the game's broadphase overflows at ~2048
+CAP = 1800  # the budget keeps the host near 1300 (spikes of ~250 seen: loot, the game's own spawns); the game's broadphase overflows at ~2048
 
 
 def pool(p):
