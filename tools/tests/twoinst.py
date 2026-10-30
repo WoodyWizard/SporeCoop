@@ -48,6 +48,21 @@ def wait_guest_in(host, guest, timeout=240, close=lambda h: h.call('key enter'))
     return False
 
 
+def host_up(host, tries=3):
+    """BUG-0302: `coop host` on the host; a host that failed (its UDP port taken: the lab's fixed
+    ports lie inside Linux's ephemeral range 32768-60999) is said and tried again, instead of a guest
+    whose join times out and a test that fails 4 minutes later on something else"""
+    out = ''
+    for i in range(tries):
+        r = host.call(lane.HOST_CMD)
+        out = (r.get('out') or '').strip()
+        if 'hosting on' in out or 'host failed' not in out:
+            return True
+        print(f'  (the host did not host, try {i + 1}: {out.splitlines()[0][:160]})', flush=True)
+        time.sleep(3)
+    return False
+
+
 def shot(con, name):
     path = os.path.join(lane.out_dir('shots'), name)
     if con.call('shot ' + path)['ok']:
@@ -364,7 +379,7 @@ def _start(fixture='creature', planet=None, load_args=(), join_in_intro=False, g
     else:
         subprocess.run([sys.executable, os.path.join(HERE, 'load_game.py'), '-i', str(lane.HOST), *load_args],
                        capture_output=True, text=True, timeout=600)
-    host.call(lane.HOST_CMD)
+    host_up(host)
     if join_in_intro:
         lane.run_guest()
         if not wait_up(lane.GUEST, 90):
@@ -388,7 +403,9 @@ def _start(fixture='creature', planet=None, load_args=(), join_in_intro=False, g
     guest.call(lane.JOIN)
     # the host saves before sharing and the game shows a modal "game saved" box (frames stop):
     # close it whenever it is up, until the guest is in the world
-    wait_guest_in(host, guest)
+    if not wait_guest_in(host, guest):
+        print('  (the guest is not in the host\'s world after 240 s: '
+              + guest.call('coop.status')['out'].strip().splitlines()[0][:160] + ')', flush=True)
     phases.append(('guest in game', time.time() - t_start))
     time.sleep(4)
     print(f'  (both games ready in {time.time() - t_start:.0f} s: '
