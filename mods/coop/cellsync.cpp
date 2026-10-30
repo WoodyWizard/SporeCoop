@@ -897,7 +897,7 @@ static TileList* g_pass_list;   // the list of the pass PopulateTiles is running
 static int g_pass = -1;         // -1 none, 0 the host's pass, k > 0 the pass of centre k
 static bool g_union;            // h_TileActive: also true inside another centre's box
 static std::unordered_set<uint32_t> g_shadow_tiles; // tile objects not populated (another list has the tile)
-static uint32_t g_tiles_flush, g_tiles_full, g_tiles_partner, g_tiles_shared, g_tiles_bg, g_tile_passes, g_tiles_kept, g_tile_resets, g_tiles_drained;
+static uint32_t g_tiles_unshared, g_tiles_flush, g_tiles_full, g_tiles_partner, g_tiles_shared, g_tiles_bg, g_tile_passes, g_tiles_kept, g_tile_resets, g_tiles_drained;
 
 using PopTiles_t = void(SK_CDECL*)(int, TileList*, int);
 static PopTiles_t o_PopTiles;
@@ -985,6 +985,7 @@ static bool SK_CDECL h_TileActive(const int32_t* t)
 // its erase is inlined with the host's list end (`cCellGame+0x412C`), so a tile it deleted from our
 // list shortened the HOST's list and read past ours (crash at PopulateTiles+0xC3, lab
 // 20261030-001703, BUG-0174).
+static std::vector<uint32_t> g_freed_dbg;
 template <typename Keep>
 static void tiles_delete(TileList* l, Keep keep)
 {
@@ -1019,6 +1020,8 @@ static void tiles_delete(TileList* l, Keep keep)
             F<uint32_t>(pool, 4) = idx & 0xFFFF;
             g_shadow_tiles.erase(idx);
             g_tiles_drained++;
+            if (g_freed_dbg.size() < 6)
+                g_freed_dbg.push_back(idx);
         }
     }
     l->end = out;
@@ -1072,8 +1075,12 @@ static void tiles_check(const char* step, int level)
     if (!g || !h || g_tile_checks_bad > 20)
         return;
     size_t n = (size_t)((h->end - h->begin) / 2), dead = 0;
+    uint32_t first_dead = 0, first_key = 0;
     for (int32_t* e = h->begin; e < h->end; e += 2)
-        dead += !tile_alive((uint32_t)e[1]);
+        if (!tile_alive((uint32_t)e[1]) && !dead++) {
+            first_dead = (uint32_t)e[1];
+            first_key = (uint32_t)e[0];
+        }
     for (auto& [id, pt] : g_ptiles)
         if (pt.list) {
             n += (size_t)((pt.list->end - pt.list->begin) / 2);
@@ -1083,8 +1090,15 @@ static void tiles_check(const char* step, int level)
     uint32_t live = F<uint32_t>(g, 0x38 + 0xC);
     if (n != live || dead) {
         g_tile_checks_bad++;
-        H->log(M, SK_WARN, "coop: tiles: check after %s (level %d): pool live %u, list entries %u, dead entries %u", step, level,
-               live, (unsigned)n, (unsigned)dead);
+        std::string fr;
+        for (uint32_t i : g_freed_dbg)
+            fr += " " + std::to_string(i & 0xFFFF) + "/" + std::to_string(i >> 16);
+        H->log(M, SK_WARN, "coop: tiles: check after %s (level %d): pool live %u, list entries %u, dead entries %u (host: first dead %u/%u key %08X); we freed%s",
+               step, level, live, (unsigned)n, (unsigned)dead, first_dead & 0xFFFF, first_dead >> 16, first_key, fr.c_str());
+        if (n && h->begin < h->end)
+            H->log(M, SK_WARN, "coop: tiles: host list first entries %08X:%u/%u %08X:%u/%u", (uint32_t)h->begin[0],
+                   (uint32_t)h->begin[1] & 0xFFFF, (uint32_t)h->begin[1] >> 16, h->end - h->begin > 2 ? (uint32_t)h->begin[2] : 0,
+                   h->end - h->begin > 2 ? (uint32_t)h->begin[3] & 0xFFFF : 0, h->end - h->begin > 2 ? (uint32_t)h->begin[3] >> 16 : 0);
     }
 }
 
@@ -1097,6 +1111,28 @@ static void SK_CDECL h_PopTiles(int level, TileList* list, int all)
             partner_tiles_reset(in_cell() && list == host_tiles()); // not hosting a Cell session any more: the lists are the old pool's
         o_PopTiles(level, list, all);
         return;
+    }
+    // A level change rescales the world (0xE6DB70, called by 0xE73E50 early in SimUpdate): it empties
+    // the host's list and fills it again from EVERY tile object of the pool, ours included. Both
+    // lists then held our tiles and both freed them (a double free: faults at CreateObject+0x37 after
+    // `coop.pool food 1000`, lab 20261030-004900). Our tiles leave the host's list again here.
+    if (!g_ptiles.empty()) {
+        std::unordered_set<uint32_t> mine;
+        for (auto& [id, pt] : g_ptiles)
+            if (pt.list)
+                for (int32_t* e = pt.list->begin; e < pt.list->end; e += 2)
+                    mine.insert((uint32_t)e[1]);
+        int32_t* out = list->begin;
+        for (int32_t* e = list->begin; e < list->end; e += 2) {
+            if (mine.count((uint32_t)e[1])) {
+                g_tiles_unshared++;
+                continue;
+            }
+            out[0] = e[0];
+            out[1] = e[1];
+            out += 2;
+        }
+        list->end = out;
     }
     tiles_check("the frame between", level);
     // a rebuild cleared the tile pool (RebuildLevel 0xE80010): our lists point at freed tiles
@@ -1155,6 +1191,7 @@ static void SK_CDECL h_PopTiles(int level, TileList* list, int all)
             tiles_delete(pt.list, [](const int32_t* t) { return h_TileActive(t); });
     }
     tiles_check("our deletes", level);
+    g_freed_dbg.clear();
     g_pass = 0;
     g_pass_list = list;
     o_PopTiles(level, list, all);
@@ -2814,9 +2851,9 @@ std::string status()
         if (pt.list)
             pcount += (size_t)((pt.list->end - pt.list->begin) / 2);
     snprintf(t, sizeof t,
-             "cell_tiles: fix=%d centres=%u partner_lists=%u partner_tiles=%u populated=%u shared=%u bg_skipped=%u passes=%u kept=%u resets=%u drained=%u pool_full=%u flushes=%u tile_pool=%u/%u\n",
+             "cell_tiles: fix=%d centres=%u partner_lists=%u partner_tiles=%u populated=%u shared=%u bg_skipped=%u passes=%u kept=%u resets=%u drained=%u pool_full=%u flushes=%u unshared=%u tile_pool=%u/%u\n",
              (int)g_fix_partner_tiles, (unsigned)g_views.size(), (unsigned)g_ptiles.size(), (unsigned)pcount, g_tiles_partner,
-             g_tiles_shared, g_tiles_bg, g_tile_passes, g_tiles_kept, g_tile_resets, g_tiles_drained, g_tiles_full, g_tiles_flush,
+             g_tiles_shared, g_tiles_bg, g_tile_passes, g_tiles_kept, g_tile_resets, g_tiles_drained, g_tiles_full, g_tiles_flush, g_tiles_unshared,
              G() ? F<uint32_t>(G(), 0x38 + 0xC) : 0, G() ? F<uint32_t>(G(), 0x38 + 0x18) : 0);
     return b + std::string(d) + t;
 }
