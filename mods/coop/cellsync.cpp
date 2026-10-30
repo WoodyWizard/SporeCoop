@@ -1354,7 +1354,7 @@ struct SendCell {
     uint8_t* c;
     uint32_t idx;
 };
-static void send_state(int to, const std::vector<SendCell>& cells);
+static void send_state(int dest, const std::vector<SendCell>& cells);
 
 static void host_tick(double now)
 {
@@ -1424,7 +1424,7 @@ static void host_tick(double now)
     }
 }
 
-static void send_state(int to, const std::vector<SendCell>& cells)
+static void send_state(int dest, const std::vector<SendCell>& cells)
 {
     size_t per = 14, chunks = std::max<size_t>(1, (cells.size() + per - 1) / per);
     for (size_t k = 0; k < chunks; k++) {
@@ -1454,7 +1454,7 @@ static void send_state(int to, const std::vector<SendCell>& cells)
             w.u8(cell_logic::hp_byte(F<int>(c, kHp))); // a negative hp is 0, not 255 (BUG-0160)
             w.u8((uint8_t)((F<uint8_t>(c, kDying) ? 1 : 0) | (F<uint8_t>(c, kDead) ? 2 : 0)));
         }
-        C.sess->send_unreliable_to(to, net::MSG_CELL_STATE, w);
+        C.sess->send_unreliable_to(dest, net::MSG_CELL_STATE, w);
     }
 }
 
