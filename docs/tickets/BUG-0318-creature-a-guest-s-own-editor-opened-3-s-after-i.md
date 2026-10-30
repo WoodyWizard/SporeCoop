@@ -62,8 +62,9 @@ later; the editor must draw (screenshot not black) and one red-cross click must 
 * PASS: out/lab/20261030-161801 (2 runs: "the editor waits until the avatar's new body is built",
   opened 45-47 s later, brightness 88, left with one click).
 `--no-swap` (suite editor_after_load, the world's own creature, no swap after the load):
-* FAIL with the switch off: out/lab/20261030-170223. PASS: out/lab/20261030-170230 (with
-  editor_after_swap again).
+* FAIL with the switch off: out/lab/20261030-170223. PASS: out/lab/20261030-170230, 20261030-170657 (with
+  editor_after_swap again); legless_guest_cancel OK in 20261030-170648 (it failed on the first version of
+  the fix, 20261030-162204: no swap after its load).
 
 ## History
 - 2026-10-30: opened.
