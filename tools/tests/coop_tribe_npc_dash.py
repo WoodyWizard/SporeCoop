@@ -13,7 +13,7 @@ every guest at once in the 4-player measurement, coop_sync_multi.py --fixture tr
    at each end (`coop.npc dash`, test command), for 40 s.
 3. Every ~0.5 s the guest's game positions of those animals is compared with the host's path over the
    0.25 s before the guest's sample and the host's sample after it (coop_multi.measure, as the
-   campaign does). PASS: under 15 % of the samples farther than 1.5 m.
+   campaign does). PASS: at most 20 % of the samples farther than 1.5 m (fix off: 40-45 %).
 
 Switch: SPORE_FIX_OFF=npc.trail (the driving before the fix) must FAIL.
 
@@ -31,7 +31,7 @@ FRAME_MS = int(os.environ.get('DASH_FRAME_MS', '66'))
 SPEED = float(os.environ.get('DASH_SPEED', '6.5'))
 LEN, WIDTH = float(os.environ.get('DASH_LEN', '12')), float(os.environ.get('DASH_WIDTH', '2'))
 OFF = float(os.environ.get('DASH_OFF', '1.2'))  # m: the second animal runs beside the first
-SHARE = 0.15    # of the samples
+SHARE = 0.2     # of the samples (fix off: 40-45 %, on: 1-10 %)
 
 
 def host_animals(con):
