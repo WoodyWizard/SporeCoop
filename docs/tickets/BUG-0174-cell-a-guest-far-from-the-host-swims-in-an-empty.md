@@ -77,7 +77,8 @@ where it is), lane 2, final code (6fe1871):
   applied on the host, no faults; tile pool 60-71/512. (Earlier builds: 20261030-003727, -004501.)
 * Related tests on lane 2: cell_coop, cell_meat, cell_sync OK (20261030-004900), cell_evolve_poll
   (`coop.pool food 1000`: the level-change rescale) and cell_leave OK (20261030-012925),
-  cell_new_game OK twice (20261030-013749) plus the final batch below; one cell_new_game run
+  cell_new_game OK twice (20261030-013749); final build: cell_new_game, cell_evolve_poll, cell_coop,
+  cell_meat OK (20261030-020044). One cell_new_game run
   (20261030-012925) had a guest NaN position and crash, BUG-0292 (not reproduced since).
 ## History
 - 2026-10-23: first recorded in docs/known-issues.md.
