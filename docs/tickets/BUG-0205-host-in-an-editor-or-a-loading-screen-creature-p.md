@@ -74,7 +74,10 @@ Cell (fix/w9-cell-away), `coop_cell_away.py`, lane 3, GOG 2024:
   out/lab/20261030-001911-fix-w9-cell-away: 0 of 14 creatures moved, host food 0 -> 0, guest 10 -> 0);
   PASS with the fix (out/lab/20261030-002054-fix-w9-cell-away: 11 of 12 moved, 570 cells released;
   back: 315 mirrors, all live host cells, no own cell left; host food 0 -> 10, guest 10).
-- Host in its own cell editor (suite `cell_away_editor`): see the History line below for the runs.
+- Host in its own cell editor (suite `cell_away_editor`: mating call, `coop.pool mate tp`, `coop.vote
+  go`, the guest stays in its pool): FAIL with `SPORE_FIX_OFF=pool.away` (out/lab/20261030-003513-fix-w9-cell-away:
+  the guest never counts the host away, 0 creatures moved, 10 points lost); PASS with the fix
+  (out/lab/20261030-003818-fix-w9-cell-away: 7 of 7 moved, host food 0 -> 10, guest 10).
 - Not checked: a host load of another save in Cell (the guest's kept food then waits for a host
   that comes back to this world), 3 players, a lossy link. The Creature freeze of the first part is
   still not observed in a game (see above).
