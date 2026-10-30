@@ -1158,6 +1158,17 @@ static void SK_CDECL h_PopTiles(int level, TileList* list, int all)
     }
     g_pass = -1;
     g_pass_list = nullptr;
+    static double last_log;
+    if (now - last_log > 10.0) { // the support log: how full the tile pool is with the partners' areas
+        last_log = now;
+        size_t ours = 0;
+        for (auto& [id, pt] : g_ptiles)
+            if (pt.list)
+                ours += (size_t)((pt.list->end - pt.list->begin) / 2);
+        trace::line("tiles", "pool %u/%u, host list %d, partner lists %u (%u tiles), level %d, flushes %u, full %u",
+                    F<uint32_t>(tp, 0xC), F<uint32_t>(tp, 0x18), (int)((list->end - list->begin) / 2),
+                    (unsigned)g_ptiles.size(), (unsigned)ours, level, g_tiles_flush, g_tiles_full);
+    }
     // a partner that left (or has no cell here any more): the game deletes its tiles
     for (auto it = g_ptiles.begin(); it != g_ptiles.end();) {
         if (!g_views.find(it->first) && now - it->second.seen > 2.0) {
