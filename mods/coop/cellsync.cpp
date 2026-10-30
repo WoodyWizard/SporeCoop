@@ -1062,6 +1062,32 @@ static void partner_tiles_reset(bool drain)
     g_union = false;
 }
 
+// debug: every tile object is in exactly one list (the host's or one of ours); log the first step
+// where the pool's live count and the lists disagree
+static uint32_t g_tile_checks_bad;
+static void tiles_check(const char* step, int level)
+{
+    uint8_t* g = G();
+    TileList* h = host_tiles();
+    if (!g || !h || g_tile_checks_bad > 20)
+        return;
+    size_t n = (size_t)((h->end - h->begin) / 2), dead = 0;
+    for (int32_t* e = h->begin; e < h->end; e += 2)
+        dead += !tile_alive((uint32_t)e[1]);
+    for (auto& [id, pt] : g_ptiles)
+        if (pt.list) {
+            n += (size_t)((pt.list->end - pt.list->begin) / 2);
+            for (int32_t* e = pt.list->begin; e < pt.list->end; e += 2)
+                dead += !tile_alive((uint32_t)e[1]);
+        }
+    uint32_t live = F<uint32_t>(g, 0x38 + 0xC);
+    if (n != live || dead) {
+        g_tile_checks_bad++;
+        H->log(M, SK_WARN, "coop: tiles: check after %s (level %d): pool live %u, list entries %u, dead entries %u", step, level,
+               live, (unsigned)n, (unsigned)dead);
+    }
+}
+
 static void SK_CDECL h_PopTiles(int level, TileList* list, int all)
 {
     float* vb = view_boxes();
@@ -1072,6 +1098,7 @@ static void SK_CDECL h_PopTiles(int level, TileList* list, int all)
         o_PopTiles(level, list, all);
         return;
     }
+    tiles_check("the frame between", level);
     // a rebuild cleared the tile pool (RebuildLevel 0xE80010): our lists point at freed tiles
     for (auto& [id, pt] : g_ptiles)
         if (pt.list && pt.list->begin != pt.list->end && !tile_alive((uint32_t)pt.list->begin[1])) {
@@ -1127,9 +1154,11 @@ static void SK_CDECL h_PopTiles(int level, TileList* list, int all)
         } else
             tiles_delete(pt.list, [](const int32_t* t) { return h_TileActive(t); });
     }
+    tiles_check("our deletes", level);
     g_pass = 0;
     g_pass_list = list;
     o_PopTiles(level, list, all);
+    tiles_check("the host's pass", level);
     if (!all) { // a rebuild (all) populates the host's view in one go; the partners follow next frame
         for (size_t k = 1; k < g_views.size(); k++) {
             auto& pt = g_ptiles[g_views.list()[k].id];
@@ -1153,6 +1182,7 @@ static void SK_CDECL h_PopTiles(int level, TileList* list, int all)
             g_pass_list = pt.list;
             o_PopTiles(level, pt.list, 0);
             g_tile_passes++;
+            tiles_check("a partner's pass", level);
         }
         memcpy(vb, host_box.data(), sizeof(float) * 12);
     }
