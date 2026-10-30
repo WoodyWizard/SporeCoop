@@ -9,6 +9,8 @@
   it holds under 1250 cells, each player gets at most its 900 nearest cells, and the self-check no
   longer reports the cells around other players as missing (BUG-0295, BUG-0296, BUG-0297,
   BUG-0298). Test: `coop_cell_4p.py`.
+- Cell: a player whose own cell ends up at an invalid position is put back where it was, and its
+  game no longer fills the world from that position (a crash at the next level-up, BUG-0299).
 - Cell: a player far from the host found no food and no other cells: the host's game kept only
   the area around its own cell alive. Now it populates and keeps the area around every player, and
   each player gets the cells around itself, so two players exploring apart can both eat (BUG-0174,

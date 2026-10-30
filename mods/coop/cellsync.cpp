@@ -934,7 +934,7 @@ COOP_FIX("cell.budget", "BUG-0295", g_fix_budget, "cell: the host populates part
 constexpr uint32_t kPopCap = 1250, kPopCapScreen = 1500, kSendCap = 900, kMirrorCap = 1500;
 static int g_tile_level = -1; // the level base of the last PopulateTiles call (tests)
 static uint32_t g_tiles_core, g_tiles_starved, g_tiles_fed, g_send_capped, g_mirror_capped, g_cells_peak;
-static std::unordered_set<uint32_t> g_starved; // tile objects of ours not populated for the budget
+static std::unordered_map<uint32_t, uint8_t> g_starved; // tile objects of ours not populated for the budget -> the partner (0xFF: unknown)
 static uint32_t cells_live() { return G() ? F<uint32_t>(G(), 0x1C + 0xC) : 0; }
 static bool over_budget() { return g_fix_budget && cells_live() >= kPopCap; }
 static uintptr_t a_PopTiles, a_PopTile, a_TileActive, a_ViewBoxes;
@@ -1073,7 +1073,7 @@ static void SK_CDECL h_PopTile(uint32_t* t, int all)
         if (g_pass > 0 && starve_tile(t)) { // BUG-0295: populated later, when the pool has room
             g_tiles_starved++;
             g_shadow_tiles.insert(t[0]);
-            g_starved.insert(t[0]);
+            g_starved[t[0]] = (uint8_t)g_views.list()[(size_t)g_pass].player;
             return;
         }
         if (g_pass > 0)
@@ -1134,7 +1134,7 @@ static void hand_over(int32_t key, TileList* from)
             if (e[0] == key && g_shadow_tiles.count((uint32_t)e[1]) && tile_alive((uint32_t)e[1])) {
                 uint32_t* t = (uint32_t*)(data + (size_t)((uint32_t)e[1] & 0xFFFF) * size);
                 if (l != host_tiles() && over_budget()) { // BUG-0295: a partner's area waits for room
-                    g_starved.insert((uint32_t)e[1]);
+                    g_starved.emplace((uint32_t)e[1], (uint8_t)0xFF);
                     return true;
                 }
                 g_shadow_tiles.erase((uint32_t)e[1]);
@@ -1314,15 +1314,34 @@ static void feed_starved()
     uint8_t* data = F<uint8_t*>(g, 0x38);
     uint32_t size = F<uint32_t>(g, 0x38 + 0x14);
     int n = 0;
+    float* vb = view_boxes();
     for (auto it = g_starved.begin(); it != g_starved.end() && n < 4;) {
-        uint32_t idx = *it;
+        uint32_t idx = it->first;
         if (!tile_alive(idx) || !g_shadow_tiles.count(idx)) {
             it = g_starved.erase(it);
             continue;
         }
-        if (over_budget())
+        uint32_t live = cells_live();
+        if (live >= kPopCapScreen)
             break;
         uint32_t* t = (uint32_t*)(data + (size_t)(idx & 0xFFFF) * size);
+        if (live >= kPopCap) { // between the caps: only a tile on its partner's screen (as starve_tile)
+            bool core = false;
+            for (size_t k = 1; vb && k < g_views.size() && k < g_view_boxes.size(); k++)
+                if (g_views.list()[k].player == it->second) {
+                    float save[12];
+                    memcpy(save, vb, sizeof save);
+                    memcpy(vb, g_view_boxes[k].data(), sizeof save);
+                    core = partner_core(t);
+                    memcpy(vb, save, sizeof save);
+                    break;
+                }
+            if (!core) {
+                ++it;
+                continue;
+            }
+            g_tiles_core++;
+        }
         // another list populated the same tile meanwhile: ours stays a plain shadow
         bool other = tile_elsewhere(cell_logic::tile_key((int32_t)t[1], (int32_t)t[2], (int32_t)t[3], (int32_t)t[4]), nullptr);
         it = g_starved.erase(it);

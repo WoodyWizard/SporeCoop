@@ -2022,3 +2022,7 @@ answered right after; a 1 s poller beside a standalone run saw no gap. Same sign
 * Food (plant / meat) on a guest's screen is not asserted: at level 4 a screen with 300+ host cells
   often had none (also without the budget). Use `cell_far_guest` (two players) for food far away.
 * The sync-check and `coop_multi.measure` count host cells within 60 m of the guest only (BUG-0298).
+* `coop_cell_nan.py` (suite `cell_nan`, 2 players, ~1 min): the guest's own cell NaN
+  (`coop.pool nanself`), back at a finite position within 3 s, then `coop.pool food 1000` on the
+  host (level-ups). BUG-0299; `SPORE_FIX_OFF=cell.nan_guard` FAILS (lab 20261030-055502: the
+  position stays NaN, the guest hangs after the level-ups).

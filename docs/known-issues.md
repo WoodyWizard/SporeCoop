@@ -908,3 +908,18 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Not checked: Rivals (0.8) with every player far away at level 5.
 * Next steps: per-centre shares before Rivals (docs/11-rivals.md).
 * Ticket: BUG-0295
+
+## Cell: a guest's own cell becomes NaN without a NaN mirror (2026-10-30, fix/w10-cell-4p)
+<a id="issue-cell-own-nan"></a>
+
+* What happens: once in a 4-player campaign_short (lab 20261030-053709, guest Bob, level 4, 900
+  mirrors, none of them NaN) the guest's own cell position became NaN. Before BUG-0299's guard its
+  game then faulted in PopulateTiles and crashed at the next level-up; with the guard the cell is
+  put back at its last finite position.
+* Reproduce: not reproduced on purpose; `coop.pool nanself` (tests) makes the state
+  (`coop_cell_nan.py`).
+* Known: docs/re/cell.md#cell-broadphase-cap (end). BUG-0292's guard (no NaN mirror) did not catch it.
+* Not checked: the soft-body step with hundreds of overlapping mirrors (the guest's steering of
+  mirror particles, cellsync guest_tick) as the source.
+* Next steps: log the own cell's particles and the nearest mirrors on the first NaN frame.
+* Ticket: BUG-0299

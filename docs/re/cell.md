@@ -904,7 +904,10 @@ lanes 2 / 3 with four players (`tools/tests/coop_cell_4p.py`, suite `cell_4p`).
   it grew past 4000; and a guest got every host cell within 120 m of itself (up to 3140 mirrors).
 * The bound (`coop.fix cell.budget`, cellsync.cpp): (1) a partner's tile is populated only while the
   host has fewer than 1250 live cells (first 1400: host peak 1714 in lab 20261030-053258, lowered for the margin) (`G+0x1C+0xC`); the others are kept as empty tiles ("starved")
-  and populated, 4 per frame, when the pool has room; the partner passes take turns being first;
+  and populated, 4 per frame, when the pool has room; a tile on the partner's own screen waits
+  only above 1500 (`partner_core`: IsTileActive reads the gameplay range as the visible box
+  doubled, so asked with the partner's visible box halved it answers for the screen itself; without
+  it a far guest's screen stayed empty, lab 20261030-054633); the partner passes take turns being first;
   a starved tile does not count as "populated elsewhere" for the other lists; (2) each guest gets
   at most its 900 nearest cells (nth_element by distance to its centre); (3) a guest creates no new
   mirror at 1500 live cells. Measured with the 1400 cap (lab 20261030-052856): host peak 1557, guests 1282 to
@@ -918,3 +921,16 @@ lanes 2 / 3 with four players (`tools/tests/coop_cell_4p.py`, suite `cell_4p`).
 * The sync-check (`net/diagmsg.h` compare) and the campaign's coverage (`coop_multi.measure`) now
   count only host cells within 60 m of the guest (BUG-0298): each guest is sent the cells around
   itself, not the ones around the other players (it reported "1033 missing on the guest").
+* ✔ With the final caps (1250, screen 1500, send 900, mirrors 1500), `cell_4p` x2 (lab
+  20261030-055041): host peak 1625-1626, guests 1135-1339, every guest saw host cells on its
+  screen far apart and together, no fault.
+* ✔ BUG-0299 (a guest's own cell NaN with no NaN mirror, 4-player campaign_short, lab
+  20261030-053709 i14): the order seen was the own position NaN, then a fault in CreateObject+0x56
+  under PopulateTiles+0x1EF (garbage tiles from NaN view boxes: the pool's live count grew by one
+  per frame while the list held 12), then 90 s later the level-up's RemoveCellsOfOldScale crashed in
+  PopulateTile+0x8A. `coop.pool nanself` (tests) makes the same state: without the guard the
+  guest's game hung after the level-ups (hang report, lab 20261030-055502). The guard
+  (`coop.fix cell.nan_guard`): no PopulateTiles / PopulateTile while the own view boxes are not
+  finite, and the own cell is written back to its last finite position (`+0x4C`, `+0x84`, the
+  soft-body particles `G+0x4108` on a ring of 0.4 x size around it, at rest). ? Where the NaN came
+  from is still not known (the guest held 900 mirrors, none NaN).
