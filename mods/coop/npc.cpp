@@ -77,6 +77,14 @@ COOP_FIX("npc.stall", "BUG-0169", g_stall_fix, "creature: a proxy 2.5 m off for 
 // the path on a guest and cannot run faster than the animal: one trailed 2-4 m behind the host's on
 // every guest at once. A proxy more than 1.5 m off for 0.5 s without closing in is put in place.
 // `coop.fix npc.trail off`: the driving before (0.7.3.x).
+// BUG-0281: in the Creature stage a proxy given a MoveTo again and again (the host's NPC runs on) hardly
+// walked (own speed 0-3 m/s while the NPC ran at 4) and our pulls towards the path were undone by its
+// locomotion (5-10 % kept): running NPCs were 3-6 m off on a 15 fps guest. While the host's NPC moves
+// its proxy is now placed on the interpolated host path every frame with the host's velocity (the
+// game animates from it); standing, the driving (walk, nudge, stuck/stall/trail) works as before.
+// `coop.fix npc.kinematic off`: always the driving.
+static bool g_kinematic_fix = true;
+COOP_FIX("npc.kinematic", "BUG-0281", g_kinematic_fix, "creature: the proxy of a running NPC follows the host's path exactly");
 static bool g_trail_fix = true;
 COOP_FIX("npc.trail", "BUG-0305", g_trail_fix, "creature, tribe: a proxy 1.5 m off its path for 0.5 s is put in place");
 // 0.7.2.x fixes kept for the tests (off: the code before them)
@@ -102,6 +110,12 @@ struct Proxy {
     bool killed = false;
     int fail = 0; // 1 species, 2 herd, 3 create
     bool nospecies_said = false; // BUG-0300 diagnostics: logged once
+    bool kinematic = false;      // BUG-0281: placed on the host's path this frame
+    double manual_until = 0;     // tests (BUG-0281): `coop.npc pwalk` drives it, the sync does not
+    int manual_mode = 0;         // bits: 1 MoveTo again every 0.1 s, 2 set_position to itself, 4 set_orientation
+    net::Vec3 manual_to{};
+    float manual_speed = 0;
+    double manual_last = 0;
     double last_rx = 0; // local time of its last spawn / state from the host
     net::SnapshotBuffer buf;
     drive::State drv;
@@ -387,6 +401,24 @@ static void dash_tick(double now)
         game::set_position(c, w);
         *(net::Vec3*)((uint8_t*)c + game::kVelOff) = v;
     }
+}
+// tests (BUG-0281): the guest's proxy #id walks to p at speed with the game's locomotion for secs (no sync)
+std::string debug_pwalk(uint16_t id, const net::Vec3& p, float speed, float secs, int mode)
+{
+    auto it = g_proxies.find(id);
+    if (it == g_proxies.end() || !it->second.c)
+        return "no such spawned proxy";
+    it->second.manual_until = H->time_seconds() + secs;
+    it->second.manual_mode = mode;
+    it->second.manual_to = p;
+    it->second.manual_speed = speed;
+    game::set_speed(it->second.c, speed);
+    game::move_to(it->second.c, p, 0.3f);
+    net::Vec3 c = game::position(it->second.c);
+    char b[160];
+    snprintf(b, sizeof b, "proxy %u at (%.1f %.1f %.1f) walks to (%.1f %.1f %.1f) at %.1f m/s for %.0f s", id, c.x, c.y, c.z,
+             p.x, p.y, p.z, speed, secs);
+    return b;
 }
 std::string debug_dash(uint16_t id, float len, float speed, float secs, float width, uint16_t mate, float off)
 {
@@ -744,6 +776,33 @@ static void guest_tick(double now)
             game::puppet_register(px.c); // no local AI
             g_proxy_of[px.c] = id;
             game::teleport(px.c, s.pos, s.rot);
+        }
+        if (now < px.manual_until) {
+            if (px.c && (px.manual_mode & 1) && now - px.manual_last > 0.1) {
+                game::set_speed(px.c, px.manual_speed);
+                game::move_to(px.c, px.manual_to, 0.3f);
+                px.manual_last = now;
+            }
+            if (px.c && (px.manual_mode & 2))
+                game::set_position(px.c, game::position(px.c));
+            if (px.c && (px.manual_mode & 4))
+                game::set_orientation(px.c, game::orientation(px.c));
+            continue;
+        }
+        if (!px.killed && g_kinematic_fix && game::in_creature_stage() && drive::speed(s.vel) > 0.3f &&
+            net::dist(game::position(px.c), s.pos) < 8.f) {
+            // BUG-0281: a running NPC's proxy follows the host's path itself (see g_kinematic_fix)
+            if (!px.kinematic)
+                game::stop(px.c);
+            px.kinematic = true;
+            game::teleport(px.c, s.pos, s.rot);
+            *(net::Vec3*)((uint8_t*)px.c + game::kVelOff) = s.vel;
+            px.drv.last_step = now;
+            continue;
+        }
+        if (px.kinematic) { // it stands again: the driving takes over from here
+            px.kinematic = false;
+            *(net::Vec3*)((uint8_t*)px.c + game::kVelOff) = {0, 0, 0};
         }
         if (!px.killed)
             drive::step(px.c, s.pos, s.rot, s.vel, px.drv, now, 0, true, 8.f, g_stall_fix, g_trail_fix);

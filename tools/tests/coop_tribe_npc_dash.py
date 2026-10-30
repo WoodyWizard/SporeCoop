@@ -21,9 +21,10 @@ Switch: SPORE_FIX_OFF=npc.trail (the driving before the fix) must FAIL.
 Creature (BUG-0281, `creature_npc_dash`): DASH_FIXTURE=creature runs the same on the creature
 fixture with the nest species next to the start (065CBE70, the NPC 3-5 m from the guests' avatars
 in the 4-player report) at 4 m/s (their running speed); the guest's avatar stands 1.5 m beside the
-end of the path, so the proxies run up to it and stand next to it at every turn. A measurement,
-not in a suite: it fails with and without npc.trail (p90 6.2 m off, 3.1-3.4 m on, lane 5,
-2026-10-30; these proxies hardly walk by themselves, BUG-0281 stays open).
+end of the path, so the proxies run up to it and stand next to it at every turn (suite
+`creature_npc_dash`). Before `npc.kinematic` these proxies hardly walked (a MoveTo again every 0.1 s
+restarts the walk, our pulls were undone by the locomotion): p90 3.3-3.5 m with npc.trail, 6.2 m
+without; with it 0.6-0.9 m (SPORE_FIX_OFF=npc.kinematic must FAIL).
 
   SPORE_LANE=5 python3 tools/tests/coop_tribe_npc_dash.py
   SPORE_LANE=5 DASH_FIXTURE=creature python3 tools/tests/coop_tribe_npc_dash.py
@@ -66,6 +67,8 @@ def main():
     host, guest = start(FIXTURE)
     ck = Checks()
     print('  guest:', guest.call(f'frame.limit {FRAME_MS}')['out'].strip(), flush=True)
+    for c in filter(None, os.environ.get('DASH_GUEST_CMDS', '').split(';')):  # tests: e.g. coop.npc walklead 1
+        print('  guest:', guest.call(c.strip())['out'].strip(), flush=True)
     time.sleep(5)
     hs, gs = host_animals(host), guest_proxies(guest)
     both = sorted(i for i in hs if i in gs)

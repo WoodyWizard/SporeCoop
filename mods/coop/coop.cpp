@@ -992,9 +992,12 @@ void hold_submit(void* req)
 
 // the held request goes to the game once the save is written (at most 15 s later), outside the
 // frame: editors create D3D resources
+unsigned g_submits_after_swap; // tests (BUG-0318): editor requests that waited for the avatar's new body
 void submit_tick(double now)
 {
     if (!g_submit_later || (share_save_due() && now - g_submit_held_at < 15.0))
+        return;
+    if (creations::avatar_swap_settling(now) && now - g_submit_held_at < 90.0)
         return;
     void* req = g_submit_later;
     g_submit_later = nullptr;
@@ -1086,6 +1089,12 @@ bool SK_CDECL h_Submit(void* req)
         }
         notice(g_name + (design_stage(mode) ? " edits a design" : " evolves its own creature"), -1);
         set_ready(true);
+    }
+    if (!g_vote_bypass && req && creations::avatar_swap_settling(H->time_seconds())) {
+        hold_submit(req); // BUG-0318: after the new body is built (submit_tick)
+        LOG("the editor waits until the avatar's new body is built");
+        g_submits_after_swap++;
+        return false;
     }
     if (!g_vote_bypass && req && g_sess.role() == net::Role::Host && share_save_due()) {
         hold_submit(req); // the game's own request (alone in the session): after the save
@@ -1601,6 +1610,7 @@ void own_editor_tick(double now)
         return;
     }
     if (!av || !g_local || now - g_settle_since < 15.0 || now < g_own_editor_hold_until ||
+        creations::avatar_swap_settling(now) || // BUG-0318
         world::cinematic_playing() || mode_switch_pending() || world::load_queued()) { // a received world loads first (BUG-0157)
         g_own_editor_waits++;
         return;
@@ -3127,6 +3137,11 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
         SAY("%s", npc::debug_dash((uint16_t)atoi(argv[2]), (float)atof(argv[3]), (float)atof(argv[4]), (float)atof(argv[5]),
                                   argc > 6 ? (float)atof(argv[6]) : 0.f, argc > 7 ? (uint16_t)atoi(argv[7]) : 0,
                                   argc > 8 ? (float)atof(argv[8]) : 0.f).c_str());
+        return 0;
+    }
+    if (argc > 7 && !strcmp(argv[1], "pwalk")) { // guest (tests, BUG-0281): pwalk <id> x y z <m/s> <s> [mode bits]
+        SAY("%s", npc::debug_pwalk((uint16_t)atoi(argv[2]), {(float)atof(argv[3]), (float)atof(argv[4]), (float)atof(argv[5])},
+                                   (float)atof(argv[6]), (float)atof(argv[7]), argc > 8 ? atoi(argv[8]) : 0).c_str());
         return 0;
     }
     if (argc > 1 && !strcmp(argv[1], "herds")) {
