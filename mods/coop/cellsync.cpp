@@ -826,7 +826,7 @@ static const char* kind_of(uint8_t* c);
 // soft-body step and after our guest tick; the first probe that sees a non-finite field logs the
 // field mask, the probe and the last probe that saw it finite, with what was near.
 enum : unsigned { NF_POS = 1, NF_PREV = 2, NF_VEL = 4, NF_ACC = 8, NF_ROT = 16, NF_SHAPE = 32, NF_SIZE = 64,
-                  NF_PPOS = 128, NF_PVEL = 256, NF_PGOAL = 512 };
+                  NF_PPOS = 128, NF_PVEL = 256, NF_PGOAL = 512, NF_MASS = 1024 };
 static bool fin(const float* v, int n)
 {
     for (int i = 0; i < n; i++)
@@ -846,6 +846,7 @@ static unsigned cell_nonfinite(uint8_t* c)
     m |= fin((float*)(c + 0x5C), 9) ? 0 : NF_ROT;
     m |= fin((float*)(c + 0x24), 9) ? 0 : NF_SHAPE;
     m |= fin((float*)(c + 0x58), 1) && fin((float*)(c + 0xB4), 1) ? 0 : NF_SIZE;
+    m |= fin((float*)(c + 0xB8), 2) ? 0 : NF_MASS; // mass, inverse mass
     int n = F<int>(c, 0x250);
     uint8_t* parts = G() ? F<uint8_t*>(G(), 0x4108) : nullptr;
     if (F<uint32_t>(c, 0x248) && parts && n > 1 && n <= 64)
@@ -2206,7 +2207,7 @@ static bool g_own_good_set;
 // any non-finite field (not only the position) starts the heal.
 static bool g_fix_nan_heal_all = true;
 COOP_FIX("cell.nan_heal_all", "BUG-0307", g_fix_nan_heal_all, "cell: the own cell's heal also repairs its matrices, size, velocity and the particles' rest shape, and starts on any non-finite field");
-static float g_own_good_size = 0.5f, g_own_good_tsize = 0.5f;
+static float g_own_good_size = 0.5f, g_own_good_tsize = 0.5f, g_own_good_mass = 1.f, g_own_good_imass = 1.f;
 static void heal_own(uint8_t* a, const net::Vec3& me, bool bad)
 {
     unsigned mask = g_fix_nan_heal_all ? cell_nonfinite(a) : 0;
@@ -2215,6 +2216,8 @@ static void heal_own(uint8_t* a, const net::Vec3& me, bool bad)
         g_own_good_set = true;
         g_own_good_size = F<float>(a, kSize);
         g_own_good_tsize = F<float>(a, kTargetSize);
+        g_own_good_mass = F<float>(a, 0xB8);
+        g_own_good_imass = F<float>(a, 0xBC);
         return;
     }
     if (!g_fix_nan_guard || !g_own_good_set)
@@ -2224,6 +2227,10 @@ static void heal_own(uint8_t* a, const net::Vec3& me, bool bad)
         if (mask & NF_SIZE) {
             F<float>(a, kSize) = g_own_good_size;
             F<float>(a, kTargetSize) = g_own_good_tsize;
+        }
+        if (mask & NF_MASS) {
+            F<float>(a, 0xB8) = g_own_good_mass;
+            F<float>(a, 0xBC) = g_own_good_imass;
         }
         if (mask & NF_ROT) {
             static const float id[9] = {1, 0, 0, 0, 1, 0, 0, 0, 1};
