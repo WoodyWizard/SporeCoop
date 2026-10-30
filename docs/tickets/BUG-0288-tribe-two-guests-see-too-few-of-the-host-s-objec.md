@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.3.0 (main 3780da0)
 fixed_in: unreleased
 branch: fix/w9-tribe
-commits: 399bd97 2bc6ef1
+commits: 399bd97 2bc6ef1 0e9b31d
 tests: coop_tribe_bounce_mirrors.py (suite tribe_bounce_mirrors)
 signature: sync-check "t: N missing on the guest" after the host's game-over bounce back; tribe lifetime spawns_blocked grows on the guest
 docs: docs/re/tribe.md#tribe-bounce-mirrors, docs/06-testing.md#testing-tribe-w9, docs/known-issues.md#issue-tribe-coverage-before-bounce
