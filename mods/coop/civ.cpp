@@ -153,6 +153,12 @@ static bool g_extrap_fix = true;
 COOP_FIX("civ.extrap", "BUG-0186", g_extrap_fix,
          "civ: a mirrored vehicle is moved on at most 0.15 s past its last state (a host hitch no longer throws it ahead)");
 constexpr double kVehAhead = 0.15;
+// BUG-0186 (a): a mirror the guest's game moved more than kPushSnap in one frame goes straight back
+static bool g_push_snap_fix = true;
+COOP_FIX("civ.push_snap", "BUG-0186", g_push_snap_fix,
+         "civ: a mirror the guest's own game threw away goes straight back to its place, not by gliding");
+constexpr float kPushSnap = 2.f;
+static uint32_t g_push_snaps;
 static uint32_t g_mirror_orders_cleared;
 static bool g_vel_cap_fix = true;
 COOP_FIX("civ.vel_cap", "BUG-0186", g_vel_cap_fix,
@@ -1846,7 +1852,17 @@ static void guest_tick(double now)
         }
         g.err = d;
         net::Vec3 p = want;
-        if (d < 30.f && d > 0.01f) { // glide out small corrections
+        // BUG-0186: the guest's game itself threw the mirror away from where guest_tick put it one frame
+        // before (13 m once, at the same spice node in every seed 9 / 11 run): put it back at once,
+        // gliding back made it 4-15 m off for several frames
+        bool pushed_away = g_push_snap_fix && g.has_put && g.pushed > kPushSnap;
+        if (pushed_away) {
+            g_push_snaps++;
+            if (g_push_snaps <= 20)
+                H->log(M, SK_INFO, "civ: mirror #%u was pushed %.1f m by this game (owner %d, nodes_in %u): put back",
+                       (unsigned)id, g.pushed, (int)g.owner, g_nodes_in);
+        }
+        if (!pushed_away && d < 30.f && d > 0.01f) { // glide out small corrections
             float k = 0.5f;
             p = {cur.x + (want.x - cur.x) * k, cur.y + (want.y - cur.y) * k, cur.z + (want.z - cur.z) * k};
         }
@@ -2087,10 +2103,10 @@ std::string status()
         snprintf(b, sizeof b,
                  "civ(guest): mirrors=%u created=%u removed=%u cities=%u cmds_sent=%u builds_in=%u captures_in=%u "
                  "orders_dropped=%u growth_blocked=%u nodes_in=%u cities_in=%u cities_blocked=%u unselected=%u movie=%d "
-                 "buildings_fixed=+%u/-%u ruins_in=%u ruins_differ=%u incomplete=%u income_blocked=%u cities_caught_up=%u ai_spawns_blocked=%u away_orders=%u local=%d founds_outside=%u mirror_orders_cleared=%u\n",
+                 "buildings_fixed=+%u/-%u ruins_in=%u ruins_differ=%u incomplete=%u income_blocked=%u cities_caught_up=%u ai_spawns_blocked=%u away_orders=%u local=%d founds_outside=%u mirror_orders_cleared=%u push_snaps=%u\n",
                  (unsigned)g_gv.size(), g_created, g_removed, (unsigned)g_host_cities.size(), g_cmds_sent, g_builds_in,
                  g_captures_in, g_orders_dropped, g_growth_blocked, g_nodes_in, g_cities_in, g_cities_blocked, g_unselected, (int)movie_playing(), g_bfix_added,
-                 g_bfix_removed, g_ruins_in, g_ruins_differ, g_incomplete, g_income_blocked, g_cities_caught_up, g_ai_spawns_blocked, g_away_orders, (int)local_play(), g_founds_outside, g_mirror_orders_cleared);
+                 g_bfix_removed, g_ruins_in, g_ruins_differ, g_incomplete, g_income_blocked, g_cities_caught_up, g_ai_spawns_blocked, g_away_orders, (int)local_play(), g_founds_outside, g_mirror_orders_cleared, g_push_snaps);
     return b;
 }
 
