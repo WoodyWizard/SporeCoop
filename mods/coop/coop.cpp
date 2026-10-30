@@ -205,6 +205,16 @@ std::vector<LocalAddr> local_addresses() { return adapters::list(); }
 
 void lan_scan(bool on)
 {
+    // BUG-0286: the addresses come from a background lookup: new ones join a running scan
+    static uint32_t gen;
+    if (on && g_disc_on && adapters::generation() != gen) {
+        gen = adapters::generation();
+        g_disc.targets = {0xFFFFFFFFu, 0x0100007Fu};
+        for (auto& a : local_addresses())
+            if (a.broadcast != 0xFFFFFFFFu)
+                g_disc.targets.push_back(a.broadcast);
+        return;
+    }
     if (on == g_disc_on)
         return;
     g_disc_on = on;
@@ -216,6 +226,7 @@ void lan_scan(bool on)
     for (auto& a : local_addresses())
         if (a.broadcast != 0xFFFFFFFFu)
             g_disc.targets.push_back(a.broadcast);
+    gen = adapters::generation();
     g_disc.start();
 }
 

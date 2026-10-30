@@ -40,7 +40,8 @@ static std::atomic<bool> g_stale{false};     // the next list() starts a lookup 
 static std::atomic<bool> g_inject{false};    // tests: the next lookup faults like Wine's nsi did
 static std::atomic<bool> g_unloaded{false};
 static std::atomic<int> g_threads{0};
-static std::atomic<int> g_stress{0};         // lookups the worker still has to run (coop.adapters stress)
+static std::atomic<int> g_stress{0};
+static std::atomic<uint32_t> g_gen{0};       // finished good lookups (lan_scan rebuilds its targets)         // lookups the worker still has to run (coop.adapters stress)
 static std::atomic<uint32_t> g_lookups{0}, g_failed{0}, g_faults{0}, g_main_lookups{0};
 static char g_fault_text[200];
 
@@ -101,9 +102,40 @@ static std::vector<Addr> old_lookup()
     return g_old_cache;
 }
 
+// One lookup at a time per Wine prefix: two games of one bottle enumerating at the same moment get
+// garbage from the shared \\.\Nsi device (Wine 10.0: a game crashed within seconds when two games
+// looked up in a loop, docs/re/net.md#net-wine-nsi-race). Named objects are per wineserver, so this mutex is shared by
+// every SporeCoop game of the prefix. Held by the worker only.
+static HANDLE g_nsi_mutex;
+static std::atomic<bool> g_holding{false};
+static std::atomic<uint32_t> g_mutex_timeouts{0};
+
+static bool nsi_lock()
+{
+    if (!g_nsi_mutex)
+        g_nsi_mutex = CreateMutexW(nullptr, FALSE, L"Local\\SporeCoop.nsi");
+    if (!g_nsi_mutex)
+        return true; // no mutex: look up anyway (the guard still holds)
+    DWORD w = WaitForSingleObject(g_nsi_mutex, 15000);
+    if (w != WAIT_OBJECT_0 && w != WAIT_ABANDONED) {
+        g_mutex_timeouts++;
+        return false;
+    }
+    g_holding = true;
+    return true;
+}
+
+static void nsi_unlock()
+{
+    if (g_holding.exchange(false))
+        ReleaseMutex(g_nsi_mutex);
+}
+
 // one guarded lookup on the worker: the documented retry while the buffer is too small
 static DWORD lookup(std::vector<Addr>& out)
 {
+    if (!nsi_lock())
+        return ERROR_TIMEOUT;
     maybe_inject();
     ULONG len = 16384;
     std::vector<uint8_t> buf;
@@ -113,6 +145,7 @@ static DWORD lookup(std::vector<Addr>& out)
         len = (ULONG)buf.size();
         r = GetAdaptersAddresses(AF_INET, kFlags, nullptr, (IP_ADAPTER_ADDRESSES*)buf.data(), &len);
     }
+    nsi_unlock();
     if (r == NO_ERROR)
         parse((const IP_ADAPTER_ADDRESSES*)buf.data(), out);
     return r;
@@ -147,6 +180,7 @@ static EXCEPTION_RECORD g_er;
 {
     asm volatile("movl %0, %%fs:0" : : "r"(g_seh_top) : "memory"); // drop the abandoned SEH frames
     g_in_call = false;
+    nsi_unlock(); // (this thread owns it)
     g_broken = true;
     g_faults++;
     g_stress = 0;
@@ -202,6 +236,7 @@ static DWORD WINAPI worker(void*)
         } else {
             std::lock_guard<std::mutex> l(g_mu);
             g_list = std::move(v);
+            g_gen++;
         }
         {
             std::lock_guard<std::mutex> l(g_mu);
@@ -238,10 +273,10 @@ static bool start_worker()
 void init(const SkHost* host, SkMod* mod)
 {
     H = host;
-    M = mod;
-    if (g_fix)
-        start_worker();
+    M = mod; // no lookup at start: every game of a lab bottle would enumerate at the same moment
 }
+
+uint32_t generation() { return g_fix ? g_gen.load() : 0; }
 
 std::vector<Addr> list()
 {
@@ -292,9 +327,9 @@ int command(int argc, const char* const* argv, SkOut* out)
         v = g_fix ? g_list : g_old_cache;
     }
     SAY("adapters: fix %s lookups=%u failed=%u faults=%u main_thread_lookups=%u running=%d broken=%d stress_left=%d "
-        "age=%ld ms%s%s\n",
+        "mutex_timeouts=%u age=%ld ms%s%s\n",
         g_fix ? "on" : "off", (unsigned)g_lookups, (unsigned)g_failed, (unsigned)g_faults, (unsigned)g_main_lookups,
-        (int)g_running, (int)g_broken, (int)g_stress, at ? (long)(GetTickCount() - at) : -1L,
+        (int)g_running, (int)g_broken, (int)g_stress, (unsigned)g_mutex_timeouts, at ? (long)(GetTickCount() - at) : -1L,
         g_faults ? " last_fault=" : "", g_faults ? g_fault_text : "");
     for (auto& x : v) {
         const uint8_t* b = (const uint8_t*)&x.broadcast;
