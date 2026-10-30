@@ -41,3 +41,8 @@ Not reproduced on purpose yet.
 
 ## History
 - 2026-10-30: opened.
+- 2026-10-30 (fix/w13-cell): not reproduced. The stack words are a scan: 0x7946DE is the return
+  address after `call 0x11E077E` (a memset-like call: size, 0, pointer) in the function at ~0x7946B0,
+  0x4234E8 the return after `call 0x41CB30`; neither calls through a pointer, so they are stale
+  frames, not the caller of address 0. In the lab history 5683 "test window placed in the grid" lines
+  are followed by no fault except this one. Nothing more to go on without a dump.

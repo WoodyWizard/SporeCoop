@@ -11,10 +11,10 @@ versions: 0.7.3.1
 fixed_in:
 branch: fix/w12-cell-fault
 commits:
-tests: cell_nan_all, cell_churn, campaign, cell_4p
+tests: cell_nan_all, cell_churn, campaign, cell_4p, cell_nan_drain, cell_jumps
 signature:
 docs: docs/known-issues.md#issue-cell-own-nan
-related: BUG-0299, BUG-0292, BUG-0306
+related: BUG-0299, BUG-0292, BUG-0306, BUG-0314
 ---
 
 ## Report
@@ -68,3 +68,11 @@ the 1-3 of the original run).
 
 ## History
 - 2026-10-30: opened.
+- 2026-10-30 (fix/w13-cell): the coverage loss explained: the NaN heals made the own cell jump
+  100-200 m, every jump left the background decoration cells of the place in the pool, and the pool
+  reached the guest's mirror cap (1500): no mirror was created any more. Reproduced with jumps alone
+  and fixed as BUG-0314 (`cell.bg_cull`). Still open: the first NaN (no own_probe line in 4-player
+  runs with level-ups, a guest at 3 fps and 80 jumps, nor in coop_sync_multi at 15 / 30 fps) and the
+  address space drain. Negative: 3 minutes of a NaN own cell with the heal off, level-ups and
+  swimming kept 3632 MB free (lab 20261030-133256, cell_nan_drain); 4 players with Carol jumping at
+  3 fps (28 538 mirrors created) kept 3613-3620 MB. docs/re/cell.md#cell-bg-leftovers.

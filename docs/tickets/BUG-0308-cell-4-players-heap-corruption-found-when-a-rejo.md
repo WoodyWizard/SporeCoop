@@ -42,3 +42,12 @@ Not reproduced on purpose yet.
 
 ## History
 - 2026-10-30: opened.
+- 2026-10-30 (fix/w13-cell): not reproduced. Observed in the log: the guest had left the session
+  (12:40:46, its 900 mirrors destroyed), rejoined 5 s later in Cell and had 900 mirrors again within
+  0.1 s; 3 s later the world arrived and the stage was left; the free failed 0.83 s after the quit, in
+  the third leaving frame. Inferred candidate not checked: our guest state handler (`guest_state`)
+  still creates and writes mirrors in the leaving frames (it checks the Cell mode, not
+  `game::leaving_stage()`); rejoin loops do the same without faults, so it is not shown to matter.
+  BUG-0314 (background cells piling up to the pool's 1500 cap) is another way a guest's pool grows
+  toward the broadphase limit of BUG-0295; whether it played a part here is not known (the guest's
+  pool held 904 cells before the leave).

@@ -3,6 +3,9 @@
 ## [Unreleased]
 
 ### Fixed
+- Cell: a player whose cell was moved far again and again (for example put back after an invalid
+  position) no longer fills its game with leftover background cells; a guest then stopped seeing
+  the host's cells at all. Background cells far from the player are now removed (BUG-0314).
 - Tribe (and Creature): an animal running in a herd, for example one fleeing a hunt, no longer lags
   a few metres behind on the other players' screens: a copy pushed off its path by the animal beside
   it is now put back on it after half a second (BUG-0305).
