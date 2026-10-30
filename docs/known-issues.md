@@ -841,3 +841,14 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   the same prefix still use Wine's nsi device. Seen only with several games in one
   bottle (lab). Reproduce the collision: two games of a lane, `coop.fix core.adapters off` on both,
   `coop.adapters stress 300` on both at once. Ticket: BUG-0286.
+
+## Cell: a guest's cell position became NaN, then a crash in PopulateTile (2026-10-30, fix/w9-cell-food)
+<a id="issue-cell-guest-nan-populate"></a>
+
+* What happens: once in four `cell_new_game` runs the guest's own cell position became NaN after a
+  handled fault at PopulateTile+0x8A (0xE7C74A); its game crashed there at the next level change.
+* Reproduce: `tools/lab.py run cell_new_game --lane N` (seen in lab 20261030-012925 only).
+* Known: a NaN view point gives PopulateTiles a garbage tile range (inferred to be the consequence,
+  not the cause). The host had no fault.
+* Not checked: where the NaN comes from; whether main has it.
+* Ticket: BUG-0292.
