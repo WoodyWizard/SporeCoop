@@ -10,7 +10,7 @@ role: guest
 versions: 
 fixed_in: unreleased
 branch: fix/w9-creature
-commits:
+commits: f7eb82e 8c950ac 5cf09ff
 tests: tools/tests/coop_tribe_far.py (suite tribe_far)
 signature: tribe: no animals on a guest that looks farther than 250 m from the player tribe
 docs: docs/re/creature.md#creature-view-centres-tribe, docs/06-testing.md#testing-w9-creature

@@ -10,7 +10,7 @@ role:
 versions: 0.7.3.0
 fixed_in: unreleased
 branch: fix/w9-creature
-commits: f430ef5 bbdeb14 83e9c20 e4f980c
+commits: f7eb82e 8c950ac b6a3830 355bca5 20f36a8 4b555a7 e4f980c 83e9c20 bbdeb14 f430ef5
 tests: tools/tests/coop_npc_far.py (suite npc_far), tools/tests/coop_tribe_far.py (suite tribe_far)
 signature: creature NPCs pooled outside the host camera sphere (Relevance_Update 0xACE4E0)
 docs: docs/re/creature.md#creature-view-centres, docs/re/creature.md#creature-view-centres-tribe, docs/06-testing.md#testing-w9-creature
