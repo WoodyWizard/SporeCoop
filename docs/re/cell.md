@@ -800,6 +800,17 @@ BUG-0174 / BUG-0279 (a guest far from the host swam in an empty pool). GOG 2024,
   tile of ours goes back to the pool before the host's own pass (`coop.pool food 1000` faulted there
   without it, lab 20261030-004900 cell_evolve_poll). RebuildLevel clears the pool `G+0x38` at
   0xE7FFFF and calls PopulateTiles(all 1) at 0xE803FE.
+* ✔ **Third trap, the world scale step** `WorldScaleStep` 0xE73E50 (cdecl `void(float dt)`, first in
+  SimUpdate): while the scale `G+0x514C` moves towards `G+0x5150` (a level change takes several frames)
+  it calls 0xE6DB70 (EAX = `0x16B3C0C+0x48`, a float ratio on the stack: rescales the cells, the camera
+  and the boxes), which **empties the host's tile list and fills it again from every tile object of
+  the pool**, one entry per key (the last object of a key wins). With our tiles in the pool the host's
+  list then held them too (both lists freed them: the double free behind the faults at
+  CreateObject+0x37, seen with a consistency check: right after our deletes the host list had exactly
+  our 15 freed tiles, lab runs of 2026-10-30 on lane 2), or one of ours replaced the host's own tile
+  of a shared key (that one leaked). The only deleter of tile objects is PopulateTiles' loop (every
+  other `cObjectPool_::DeleteObject` call is on other pools). Fix: `h_WorldScale` gives all our tiles
+  back to the pool before a moving-scale step, and no partner pass runs while the scale moves.
 * The fix (`coop.fix cell.partner_tiles`, cellsync.cpp `h_PopTiles`): on the host, after the game's
   own pass, one more PopulateTiles call per partner with a list of our own and the 12 view-box floats
   moved by (partner cell - host box centre), restored right after. `h_PopTile` populates a tile that
