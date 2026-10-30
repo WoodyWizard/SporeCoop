@@ -140,26 +140,11 @@ static bool g_fix_boost = true; // BUG-0040: boosts only on listed vehicles, cle
 static bool g_fix_world = true; // BUG-0059: every pointer table cleared when the world changes
 COOP_FIX_UNSAFE("civ.boost", "BUG-0040", g_fix_boost, "civ: boosts only on listed vehicles, cleared with the session");
 COOP_FIX_UNSAFE("civ.world", "BUG-0059", g_fix_world, "civ: every pointer table cleared when the world changes");
-// BUG-0186: a mirror of another player's or nation's vehicle kept an order of the guest's own game
-// (order 8 seen: given before it was bound as a mirror, or pushed by a vehicle behaviour without
-// SetOrder), and the guest's game moved it 13 m away from where guest_tick put it. Such orders are
-// cleared (cVehicle::ClearOrders) every frame they show up. Optional symbol (GOG 2024 only).
-static bool g_mirror_orders_fix = true;
-COOP_FIX("civ.mirror_orders", "BUG-0186", g_mirror_orders_fix,
-         "civ: a guest clears the orders its own game gives a mirror of another player's or nation's vehicle");
-static uintptr_t a_ClearOrders;
 // BUG-0186 (b): the guest moves a mirror at most 0.15 s ahead of its last state (was 0.4 s)
 static bool g_extrap_fix = true;
 COOP_FIX("civ.extrap", "BUG-0186", g_extrap_fix,
          "civ: a mirrored vehicle is moved on at most 0.15 s past its last state (a host hitch no longer throws it ahead)");
 constexpr double kVehAhead = 0.15;
-// BUG-0186 (a): a mirror the guest's game moved more than kPushSnap in one frame goes straight back
-static bool g_push_snap_fix = true;
-COOP_FIX("civ.push_snap", "BUG-0186", g_push_snap_fix,
-         "civ: a mirror the guest's own game threw away goes straight back to its place, not by gliding");
-constexpr float kPushSnap = 2.f;
-static uint32_t g_push_snaps;
-static uint32_t g_mirror_orders_cleared;
 static bool g_vel_cap_fix = true;
 COOP_FIX("civ.vel_cap", "BUG-0186", g_vel_cap_fix,
          "civ: a vehicle step faster than twice its top speed is taken as a jump, not a speed to extrapolate");
@@ -200,6 +185,7 @@ struct GV {
 };
 static std::unordered_map<uint16_t, GV> g_gv;
 static std::unordered_map<void*, uint16_t> g_gv_of;
+
 static std::unordered_set<uint16_t> g_cycle_ids;
 static std::unordered_set<uint8_t> g_cycle_chunks; // chunks of the current cycle received
 static uint32_t g_incomplete;                      // cycles whose cleanup was skipped (a chunk missing)
@@ -207,6 +193,27 @@ static uint32_t g_last_chunks, g_max_chunk;        // host: chunks per cycle, la
 static size_t g_chunk_budget = net::kMaxPacket - 48; // host: bytes per chunk (coop.civ chunk <bytes>, tests)
 static uint16_t g_rx_cycle = 0xFFFF;
 static bool g_applying; // executing a host message: the hooks let the game act
+
+// BUG-0186: Vehicle_KeepOnValidGround (0xCA7430, thiscall(v), from the vehicle's movement updates)
+// checks the planet cell under a vehicle against its locomotion (land / sea / air flags) and, when the
+// cell is not valid, puts it on the nearest valid spot (SetPosition). The host's NPC vehicle stood
+// on a spice node the guest's planet flags as invalid ground: the guest's game threw the mirror 13 m
+// away every frame and guest_tick put it back (13-15 m off in every play_civ seed 9 / 11 run).
+// A mirror stands where the host's vehicle stands: the check is skipped for mirrors on a guest.
+using KeepGround_t = void(SK_THISCALL*)(void*);
+static KeepGround_t o_KeepGround;
+static bool g_mirror_place_fix = true;
+COOP_FIX("civ.mirror_place", "BUG-0186", g_mirror_place_fix,
+         "civ: a guest's game does not move a mirrored vehicle off ground it finds invalid (the host's vehicle stands there)");
+static uint32_t g_mirror_place_skipped;
+static void SK_THISCALL h_KeepGround(void* v)
+{
+    if (g_mirror_place_fix && !g_applying && is_guest() && game::mode_id() == modes::kCiv && g_gv_of.count(v)) {
+        g_mirror_place_skipped++;
+        return;
+    }
+    o_KeepGround(v);
+}
 static uint32_t g_created, g_removed, g_cmds_sent, g_builds_in, g_captures_in, g_orders_dropped, g_growth_blocked, g_nodes_in;
 
 static uint8_t owner_of_vehicle(void* v)
@@ -929,7 +936,6 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
         {&a_GrowthRetBudget, "SporeCoop::CivGrowth_Budget_Ret"},
         {&a_GrowthRetNew, "SporeCoop::CivGrowth_New_Ret"},
     };
-    a_ClearOrders = H->sym("Simulator::cVehicle::ClearOrders"); // optional (BUG-0186)
     g_ok = true;
     for (auto& s : syms)
         if (!(*s.a = H->sym(s.n))) {
@@ -939,6 +945,8 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     if (!g_ok)
         return false;
     H->hook_create(M, (void*)a_BTTick, (void*)h_BT, (void**)&o_BT);
+    if (uintptr_t kg = H->sym("SporeCoop::Vehicle_KeepOnValidGround")) // optional (BUG-0186, GOG 2024)
+        H->hook_create(M, (void*)kg, (void*)h_KeepGround, (void**)&o_KeepGround);
     H->hook_create(M, (void*)a_SetSelected, (void*)h_SetSelected, (void**)&o_SetSelected);
     H->hook_create(M, (void*)a_SetOrder, (void*)h_SetOrder, (void**)&o_SetOrder);
     H->hook_create(M, (void*)a_SetMoveOrder, (void*)h_SetMoveOrder, (void**)&o_SetMoveOrder);
@@ -1065,6 +1073,67 @@ static std::vector<std::pair<net::Vec3, uint32_t>> spice_nodes()
     return r;
 }
 
+
+// BUG-0186 probe (coop.civ pushprobe, tests): who moves a mirror on the guest. The vehicles' spatial
+// vtable slots SetPosition (0x38) and Teleport (0x44) are pointed here; a call on a mirror that moves
+// it more than 2 m, from the game (not guest_tick), is logged with its return address.
+using SpSetPos_t = void(__thiscall*)(void*, const float*);
+using SpTeleport_t = void(__thiscall*)(void*, const float*, const float*);
+static SpSetPos_t g_probe_setpos;
+static SpTeleport_t g_probe_tp;
+static uintptr_t* g_probe_vt;
+static unsigned g_probe_hits;
+static void probe_note(void* sp, const float* p, const char* what, void* ret)
+{
+    if (g_applying || !p || g_probe_hits >= 40)
+        return;
+    void* v = (uint8_t*)sp - kVSpatial;
+    auto it = g_gv_of.find(v);
+    if (it == g_gv_of.end())
+        return;
+    net::Vec3 cur = veh_pos(v), to{p[0], p[1], p[2]};
+    if (net::dist(cur, to) < 2.f)
+        return;
+    g_probe_hits++;
+    H->log(M, SK_WARN, "civ: probe: %s of mirror #%u by %p: (%.1f %.1f %.1f) -> (%.1f %.1f %.1f)", what,
+           (unsigned)it->second, ret, cur.x, cur.y, cur.z, to.x, to.y, to.z);
+}
+static void __fastcall probe_setpos(void* sp, void*, const float* p)
+{
+    probe_note(sp, p, "SetPosition", __builtin_return_address(0));
+    g_probe_setpos(sp, p);
+}
+static void __fastcall probe_tp(void* sp, void*, const float* p, const float* q)
+{
+    probe_note(sp, p, "Teleport", __builtin_return_address(0));
+    g_probe_tp(sp, p, q);
+}
+static std::string push_probe()
+{
+    if (g_probe_vt)
+        return "probe on";
+    void* v = nullptr;
+    for (auto& [id, g] : g_gv)
+        if (g.v && game::object_alive(g.v)) {
+            v = g.v;
+            break;
+        }
+    if (!v)
+        return "no mirror";
+    uintptr_t* vt = *(uintptr_t**)((uint8_t*)v + kVSpatial);
+    DWORD old;
+    if (!VirtualProtect(vt + 0x38 / 4, 0x10, PAGE_READWRITE, &old))
+        return "no access";
+    g_probe_setpos = (SpSetPos_t)vt[0x38 / 4];
+    g_probe_tp = (SpTeleport_t)vt[0x44 / 4];
+    vt[0x38 / 4] = (uintptr_t)&probe_setpos;
+    vt[0x44 / 4] = (uintptr_t)&probe_tp;
+    VirtualProtect(vt + 0x38 / 4, 0x10, old, &old);
+    g_probe_vt = vt;
+    char b[96];
+    snprintf(b, sizeof b, "probe on vtable %p", (void*)vt);
+    return b;
+}
 static void boost_tick(double now);
 // a vehicle given away (or taken by a capture) stays selected on the giver's screen and its orders
 // went to the game directly on the host: only the owner keeps a vehicle selected
@@ -1833,13 +1902,6 @@ static void guest_tick(double now)
             g.has_put = false;
             continue;
         }
-        if (g_mirror_orders_fix && a_ClearOrders && g.owner != C.sess->my_id() &&
-            F<uint8_t*>(g.v, kVOrders) != F<uint8_t*>(g.v, kVOrders + 4)) {
-            g_applying = true;
-            thiscall<void>(a_ClearOrders, g.v);
-            g_applying = false;
-            g_mirror_orders_cleared++;
-        }
         net::Vec3 cur = veh_pos(g.v);
         net::Vec3 want = g.est.at(now); // moved on with the estimated velocity (no lag behind the host)
         float d = net::dist(cur, want);
@@ -1852,17 +1914,7 @@ static void guest_tick(double now)
         }
         g.err = d;
         net::Vec3 p = want;
-        // BUG-0186: the guest's game itself threw the mirror away from where guest_tick put it one frame
-        // before (13 m once, at the same spice node in every seed 9 / 11 run): put it back at once,
-        // gliding back made it 4-15 m off for several frames
-        bool pushed_away = g_push_snap_fix && g.has_put && g.pushed > kPushSnap;
-        if (pushed_away) {
-            g_push_snaps++;
-            if (g_push_snaps <= 20)
-                H->log(M, SK_INFO, "civ: mirror #%u was pushed %.1f m by this game (owner %d, nodes_in %u): put back",
-                       (unsigned)id, g.pushed, (int)g.owner, g_nodes_in);
-        }
-        if (!pushed_away && d < 30.f && d > 0.01f) { // glide out small corrections
+        if (d < 30.f && d > 0.01f) { // glide out small corrections
             float k = 0.5f;
             p = {cur.x + (want.x - cur.x) * k, cur.y + (want.y - cur.y) * k, cur.z + (want.z - cur.z) * k};
         }
@@ -2103,10 +2155,10 @@ std::string status()
         snprintf(b, sizeof b,
                  "civ(guest): mirrors=%u created=%u removed=%u cities=%u cmds_sent=%u builds_in=%u captures_in=%u "
                  "orders_dropped=%u growth_blocked=%u nodes_in=%u cities_in=%u cities_blocked=%u unselected=%u movie=%d "
-                 "buildings_fixed=+%u/-%u ruins_in=%u ruins_differ=%u incomplete=%u income_blocked=%u cities_caught_up=%u ai_spawns_blocked=%u away_orders=%u local=%d founds_outside=%u mirror_orders_cleared=%u push_snaps=%u\n",
+                 "buildings_fixed=+%u/-%u ruins_in=%u ruins_differ=%u incomplete=%u income_blocked=%u cities_caught_up=%u ai_spawns_blocked=%u away_orders=%u local=%d founds_outside=%u mirror_place_skipped=%u\n",
                  (unsigned)g_gv.size(), g_created, g_removed, (unsigned)g_host_cities.size(), g_cmds_sent, g_builds_in,
                  g_captures_in, g_orders_dropped, g_growth_blocked, g_nodes_in, g_cities_in, g_cities_blocked, g_unselected, (int)movie_playing(), g_bfix_added,
-                 g_bfix_removed, g_ruins_in, g_ruins_differ, g_incomplete, g_income_blocked, g_cities_caught_up, g_ai_spawns_blocked, g_away_orders, (int)local_play(), g_founds_outside, g_mirror_orders_cleared, g_push_snaps);
+                 g_bfix_removed, g_ruins_in, g_ruins_differ, g_incomplete, g_income_blocked, g_cities_caught_up, g_ai_spawns_blocked, g_away_orders, (int)local_play(), g_founds_outside, g_mirror_place_skipped);
     return b;
 }
 
@@ -2370,28 +2422,8 @@ std::string debug(const std::vector<std::string>& a)
         thiscall<int>(a_SetSelected, (uint8_t*)v + kVSpatial, atoi(a[2].c_str()));
         return "selected=" + std::to_string(F<uint8_t>(v, kVSelected));
     }
-    if (a.size() >= 3 && a[0] == "localorder" && is_guest()) {
-        // localorder <id> <type> [node|x y z]: the guest's own game gives the mirror <id> an order, as
-        // its civ AI or a vehicle behaviour does (the SetOrder hook is bypassed; tests, BUG-0186)
-        auto it = g_gv.find((uint16_t)atoi(a[1].c_str()));
-        if (it == g_gv.end() || !it->second.v || !game::object_alive(it->second.v))
-            return "no such mirror";
-        void* v = it->second.v;
-        int type = atoi(a[2].c_str());
-        if (type == 6 && a.size() >= 6) {
-            o_SetMoveOrder(v, (float)atof(a[3].c_str()), (float)atof(a[4].c_str()), (float)atof(a[5].c_str()), 1);
-            return "move order given here";
-        }
-        void* node = game::find_object(kNodeNoun, veh_pos(v), 2000.f);
-        if (!node)
-            return "no spice node";
-        o_SetOrder(v, node, type, 1);
-        net::Vec3 np;
-        game::object_position(node, np);
-        char b[160];
-        snprintf(b, sizeof b, "order %d given here, target node at (%.1f %.1f %.1f)", type, np.x, np.y, np.z);
-        return b;
-    }
+    if (!a.empty() && a[0] == "pushprobe" && is_guest()) // tests (BUG-0186): who moves a mirror
+        return push_probe();
     if (a.size() >= 5 && a[0] == "move") { // move <id> <x> <y> <z>
         void* v = local_vehicle((uint16_t)atoi(a[1].c_str()));
         if (!v)

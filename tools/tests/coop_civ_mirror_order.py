@@ -35,6 +35,7 @@ def main():
         for c in (host, guest):
             print(' ', c.call('coop.fix civ.mirror_orders off')['out'].strip(), flush=True)
     time.sleep(5)
+    print('  guest:', guest.call('coop.civ pushprobe')['out'].strip(), flush=True)  # logs who moves a mirror
     _, hv = civ_state(host)[:2]
     _, gv = civ_state(guest)[:2]
     npc = sorted(i for i, v in gv.items() if v['owner'] == 254 and i in hv)
@@ -49,6 +50,7 @@ def main():
     ck(all('given here' in o for o in out), 'the guest\'s own game gave both mirrors an order')
     time.sleep(1)
     held, worst, n = {i: 0 for i in picked}, {i: 0.0 for i in picked}, 0
+    worst_line = {}
     t0 = time.time()
     while time.time() - t0 < 20:
         _, hv = civ_state(host)[:2]
@@ -56,9 +58,16 @@ def main():
         for i in picked:
             if i in hv and i in gv:
                 held[i] += gv[i]['order'] >= 0
-                worst[i] = max(worst[i], math.dist(hv[i]['pos'], gv[i]['pos']))
+                d = math.dist(hv[i]['pos'], gv[i]['pos'])
+                if d > worst[i]:
+                    worst[i] = d
+                    worst_line[i] = [ln.strip() for c in (host, guest) for ln in c.call('coop.civ')['out'].splitlines()
+                                     if ln.strip().startswith(f'veh #{i} ')]
         n += 1
         time.sleep(0.5)
+    for i, lines in worst_line.items():
+        for ln in lines:
+            print(f'    worst #{i}: {ln[:330]}', flush=True)
     st = civ_state(guest)[2]
     print(f'  {n} samples: orders held by the guest\'s game {held}, largest distance to the host {worst}', flush=True)
     print('  guest:', st[st.find('mirror_orders'):], flush=True)
