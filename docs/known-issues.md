@@ -721,6 +721,7 @@ Fixed (unreleased): owed trade and spice refunds go by the Space world and its s
 (docs/re/space.md#space-owed-refund-identity). Left: a save that fails to write is still taken as
 saved (the game's SaveGame reports nothing), and the owed queue is memory only (a hot reload or a
 game restart drops it).
+* Ticket: BUG-0225.
 ## Cell: a guest may bite one NPC more often than the host can (2026-10-28, fix/w5-cell)
 <a id="issue-cell-guest-bite-lock"></a>
 

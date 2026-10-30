@@ -1805,7 +1805,7 @@ wrong. Suite `campaign` (in no other suite): `tools/lab.py run campaign --lanes 
 * `coop_dead_modal.py` (suite `dead_modal`, warm, ~1 min; BUG-0270): `coop.deadmodal` on the guest
   puts a destroyed object (vtable slots 0x65) as the window manager's modal window, then `move`
   sends mouse messages. `SPORE_FIX_OFF=game.dead_modal` FAILS with the game's fault at 0x65; with
-  the guard `coop.status` shows "dead modal windows dropped 1" and `exc` stays 0. The state is
+  the guard the "dead modal windows dropped" count of `coop.status` rises by one and `exc` stays 0. The state is
   simulated: the game's own way to leave a destroyed modal window is not known.
 * `coop_space_rivalry.py` (BUG-0262): lands whoever is still in the system twice (two
   `land_retry` rounds), then waits until both ships are on the home planet and the host's game has

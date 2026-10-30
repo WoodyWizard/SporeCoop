@@ -11,9 +11,15 @@ mouse over the game window. The game's own exception counter (`exc`) must stay a
 must keep handling the UI (a click on the co-op window still works afterwards).
 
   coop_dead_modal.py   (SPORE_FIX_OFF=game.dead_modal: the fault at 0x65 comes back, it FAILS)"""
+import re
 import time
 
 from twoinst import Checks, start
+
+
+def dropped(con):
+    m = re.search(r'dead modal windows dropped (\d+)', con.call('coop.status')['out'])
+    return int(m.group(1)) if m else -1
 
 
 def main():
@@ -22,6 +28,7 @@ def main():
     time.sleep(3)
     e0 = guest.call('exc')['out'].splitlines()[0]
     print('  guest before:', e0)
+    d0 = dropped(guest)  # warm runs: the counter keeps counting
     out = guest.call('coop.deadmodal')['out'].strip()
     print('  deadmodal:', out)
     ck('destroyed object' in out, f'the window manager holds a destroyed modal window ({out})')
@@ -29,9 +36,8 @@ def main():
         guest.call(f'move {300 + 40 * i} {300 + 25 * i}')
         time.sleep(0.3)
     guest.call('wait.frames 30 10000')
-    st = [ln for ln in guest.call('coop.status')['out'].splitlines() if 'dead modal' in ln]
-    print('  guest:', st[0].strip()[-60:] if st else '?')
-    ck(st and 'dead modal windows dropped 1' in st[0], 'the guard dropped the destroyed modal window once')
+    d1 = dropped(guest)
+    ck(d0 >= 0 and d1 == d0 + 1, f'the guard dropped the destroyed modal window once ({d0} -> {d1})')
     ck('total faults: 0' in guest.call('exc')['out'], 'no fault in the game\'s UI code')
     ck.faults(host=host, guest=guest)
     return ck.result()
