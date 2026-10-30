@@ -29,7 +29,13 @@ def main():
         get_drive(c, who, ck)
     to_galaxy(host, 'host', ck)
     print('  host:', sp(host, 'finale goto core enter'))
-    ok = wait(lambda: fin(host).get('waiting') == '1', 90, 2)
+    wait(lambda: fin(host).get('ctx') == '1' and fin(host).get('zone') == '3', 60, 2)
+    settle(host, 'host')
+    for _ in range(5):  # what the zoom-in at the core's centre does (through the wait)
+        print('  host:', sp(host, 'finale enter'))
+        if wait(lambda: fin(host).get('waiting') == '1', 10, 1):
+            break
+    ok = fin(host).get('waiting') == '1'
     print('  host:', fin(host)['line'])
     ck(ok and fin(host).get('entered') == '0', 'host: at the core, waiting for the guest')
     if not ok:
