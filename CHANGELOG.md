@@ -13,6 +13,12 @@
   fault could leave the next load from the menu unfinished (BUG-0310, BUG-0285).
 - Civilization: a vehicle the host's game moves in one step (not by driving) no longer flies past
   its place on the other players' screens for a moment (BUG-0186).
+- Cell: a player leaving the Cell stage to load the host's world (after joining or rejoining) no
+  longer has the mod create or move cells while the game is tearing the stage down (a guard after one
+  crash seen in testing, BUG-0308).
+- Cell: a player whose cell was moved far again and again (for example put back after an invalid
+  position) no longer fills its game with leftover background cells; a guest then stopped seeing
+  the host's cells at all. Background cells far from the player are now removed (BUG-0314).
 - Tribe (and Creature): an animal running in a herd, for example one fleeing a hunt, no longer lags
   a few metres behind on the other players' screens: a copy pushed off its path by the animal beside
   it is now put back on it after half a second (BUG-0305).

@@ -20,6 +20,11 @@ the host's cells around itself (coverage within 60 m, as the campaign measures i
 the host's world on each guest's screen (not an empty pool, BUG-0174), and no fault in any log (the lab).
 SPORE_FIX_OFF=cell.budget must FAIL (a pool over 2000, the fault at 0xBBB07B).
 
+--jumps S (BUG-0307 hunt): before the phases, Carol runs at --jump-ms per frame and jumps to a new
+place 150-250 m from the host every 3 s for S s (the guest's reported centre jumped like this while
+its own cell was NaN in lab 20261030-104149); her free address space is sampled and printed, and
+4. it must not fall by more than 300 MB.
+
   SPORE_LANE=2 python3 tools/tests/coop_cell_4p.py [--food 300] [--far 200] [--near 50] [--seconds 60]
 """
 import argparse
@@ -84,12 +89,38 @@ def phase(ck, p, label, seconds):
         ck(n > 0, f'[{label}] {g.name} sees cells of the host\'s world on its screen ({n}, food {food})')
 
 
+def jump(ck, p, a):
+    import math
+    import random
+    c = p.byname('Carol')
+    print('  Carol: frame.limit', c.call(f'frame.limit {a.jump_ms}').strip()[:60], flush=True)
+    rng, vm, t0, k = random.Random(5), [], time.time(), 0
+    while time.time() - t0 < a.jumps:
+        ang, r = rng.uniform(0, 2 * math.pi), rng.uniform(150, 250)
+        c.call(f'coop.pool tp {r * math.cos(ang):.0f} {r * math.sin(ang):.0f} 0')
+        time.sleep(3)
+        k += 1
+        if k % 5 == 0:
+            out = pool(c)
+            vm.append(num(out, 'vm_free_mb'))
+            print(f'  [jumps] {time.time() - t0:3.0f}s: Carol free {vm[-1]} MB, mirrors {num(out, "mirrors")}, '
+                  f'own_nf {num(out, "own_nf")}, created {num(out, "created")}', flush=True)
+            print('  [jumps]', c.call('coop.pool census').strip(), flush=True)
+    c.call('frame.limit auto')
+    time.sleep(10)
+    print('  [jumps] after:', c.call('coop.pool census').strip(), flush=True)
+    ok = [v for v in vm if v is not None]
+    ck(len(ok) >= 2 and ok[0] - min(ok) <= 300, f'4. Carol keeps her free address space while jumping ({ok[:1]} -> {min(ok) if ok else "?"} MB)')
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--food', type=int, default=300)
     ap.add_argument('--far', type=float, default=200)
     ap.add_argument('--near', type=float, default=50)
     ap.add_argument('--seconds', type=float, default=60)
+    ap.add_argument('--jumps', type=float, default=0)
+    ap.add_argument('--jump-ms', type=int, default=300)
     a = ap.parse_args()
     ck = Checks()
     p = Party.start('cell', 4)
@@ -102,6 +133,8 @@ def main():
             print('  host:', p.host.call(f'coop.pool food {a.food}').strip()[:120], flush=True)
             time.sleep(8)  # the level change takes a few frames (the world scale moves)
         report(p.host, 'level')
+        if a.jumps:
+            jump(ck, p, a)
         for g, (dx, dy) in zip(p.guests, ((a.far, 0), (0, a.far), (a.far, a.far))):
             print(f'  {g.name}:', g.call(f'coop.pool tp {dx} {dy} 0').strip()[:100], flush=True)
         phase(ck, p, 'apart', a.seconds)

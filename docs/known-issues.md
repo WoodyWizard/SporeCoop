@@ -824,6 +824,9 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * 2026-10-30 (fix/w9-cell-food): the 4-player campaign's "Bob:c:2.2" (BUG-0289) was not this: Bob's
   pause menu was open (no simulation, mirrors moved only by the 3 m jumps). The campaign check now
   skips a paused guest.
+* 2026-10-30 (fix/w13-cell): not reproduced on 5d7f20e (2 players at 15 fps: 0 of 16 616 cells over
+  1.2 m; 4 players at 15 / 30 fps after level-ups: p90 <= 0.05 m). BUG-0282 is not-reproduced, guard
+  test `cell_lowfps`.
 
 ## Tribe: a handled game fault in a citizen's walk while the stage is left (2026-10-29, 4-player campaign)
 <a id="issue-tribe-leave-hears-fault"></a>
@@ -982,6 +985,9 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   NaN matrices / rest offsets that made the position NaN again (docs/re/cell.md#cell-nan-fields).
 * Still open: what makes the first NaN (the own_probe log lines name the step) and what drains the
   address space (not the mirror churn, not the NaN state: cell_churn and cell_nan_all measured 0 MB).
+* 2026-10-30 (fix/w13-cell): the coverage loss was the jumps of the NaN heals leaving background
+  cells behind until the guest's pool hit its mirror cap (BUG-0314, fixed by `cell.bg_cull`). The
+  first NaN and the address space drain are still not reproduced (docs/re/cell.md#cell-bg-leftovers).
 * Ticket: BUG-0307
 
 ## Cell, 4 players: two one-off faults of the 4th player (2026-10-30, fix/w12-cell-fault)
@@ -1028,3 +1034,6 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Known: vehicle positions of the same run were in sync (p90 0.64 m).
 * Not checked: the guest's city catch-up timing, whether it was in the city planner then.
 * Ticket: BUG-0319
+* 2026-10-30 (fix/w13-cell): BUG-0308 got a guard (`cell.leave_guard`: none of our cell work runs on
+  the pool while the stage is being left); the crash itself is still not reproduced. BUG-0309: the
+  stack words are stale frames, nothing to go on (docs/re/cell.md#cell-leave-guard).

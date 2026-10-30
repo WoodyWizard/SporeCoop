@@ -1,7 +1,7 @@
 ---
 id: BUG-0282
 title: cell: at a low frame rate a guest's mirrors trail the host's moving cells by ~0.65 s (2 m at 3 m/s, 15 fps)
-status: open
+status: not-reproduced
 kind: desync
 stage: cell
 reported: 2026-10-29
@@ -9,9 +9,9 @@ source: fix/w7-sync BUG-0275 measurement
 role: 
 versions: 
 fixed_in:
-branch:
+branch: fix/w13-cell
 commits:
-tests:
+tests: cell_lowfps
 signature:
 docs:
 related:
@@ -38,14 +38,20 @@ Reproduce: the measurement script of BUG-0275 (see its Verification) with FPSLIM
 <!-- what the player (or the test) saw, in our words; no player names, no paths from their PC -->
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+Not reproduced on main 5d7f20e (2026-10-30, fix/w13-cell). Measured with the steering unchanged:
+2 players, guest at 15 fps (`frame.limit 66`), both with play_cell bots, 30 checks: 0 of 16 616
+compared cells over 1.2 m, worst 0.08 m (lab 20261030-133013, lane 2); 4 players (Carol 15 fps, Dave
+30 fps) after `coop.pool food 200`, 30 checks each: p90 median 0.05 / 0.04 m, largest 0.39 / 0.45 m,
+0 checks over the limit (coop_sync_multi, lane 3). What changed since the 2026-10-29 measurement is
+not known (inferred candidates: the BUG-0295 budget, fewer rigid mirrors).
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+None. A follow step (rigid mirrors more than 0.2 m off moved towards their place each frame) was
+written and reverted: with no failing run it could not be shown to matter. Guard test
+`coop_cell_lowfps.py` (suite cell_lowfps).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+no-fail-run: not reproducible on 5d7f20e (lab 20261030-133013 cell_lowfps passed with the old steering).
 
 ## History
 - 2026-10-29: opened.
@@ -55,3 +61,4 @@ Reproduce: the measurement script of BUG-0275 (see its Verification) with FPSLIM
   for both: write the mirror's position along the host's extrapolated path every frame when it is
   off by more than ~0.5 m (through the particles for a soft body), instead of relying on the game's
   integration at the guest's frame rate; it needs the 15 fps measurement of BUG-0275 to confirm.
+- 2026-10-30 (fix/w13-cell): not reproduced at 15 fps with 2 and 4 players; guard test cell_lowfps.

@@ -9,11 +9,11 @@ source: lab 20261030-104149 campaign_short#3
 role: guest
 versions: 0.7.3.1
 fixed_in:
-branch:
-commits:
-tests: campaign_short
+branch: fix/w13-cell
+commits: 4ae7640
+tests: campaign_short, cell_rejoin_leave
 signature:
-docs:
+docs: docs/re/cell.md#cell-leave-guard
 related: BUG-0295, BUG-0271, BUG-0028
 ---
 
@@ -35,10 +35,34 @@ or a freed mirror written later. First time in the lab history (no other log has
 `cObjectPool::_dtor`).
 
 ## Fix
-Not fixed.
+Guard, not a proven fix (status stays open, as BUG-0292's guard): `coop.fix cell.leave_guard`
+(modes.cpp `cell_leaving()`): while `game::leaving_stage()` (quit posted for a world load or the menu,
+until the mode changes) the guest's state handler applies no MSG_CELL_STATE (no CreateCellObject, no
+field writes, no DestroyCell), `tick()` runs no guest / host / symbiosis tick and no background cull,
+and h_SimUpdate writes no puppet poses. Static evidence: cellsync's `in_cell()` and `avatar()` read
+the mode and the pool directly and stayed true through the leaving frames, unlike `game::avatar`
+(BUG-0264); docs/re/cell.md#cell-leave-guard. `coop.pool` prints `leave_writes=` / `leave_dropped=`.
 
 ## Verification
-Not reproduced on purpose yet.
+The heap corruption itself was not reproduced. `coop_rejoin_loop.py --fixture cell --rounds 12 --gap
+0.3:1.5 --cell-leave` (suite cell_rejoin_leave): the guest leaves and rejoins inside Cell, the host's
+world arrives and the guest leaves the stage to load it, 12 times.
+* FAIL `SPORE_FIX_OFF=cell.leave_guard`: out/lab/20261030-143913 (lane 2): 1185 cell states / ticks
+  of ours ran on the guest's pool while it was being left (the window exists and is hit every round);
+  no fault in 12 rounds.
+* PASS: out/lab/20261030-143918 (lane 3): 0 ran, 932 skipped, no fault.
+* no-fail-run (for the crash): the corruption did not happen in 12 + 12 rounds with the old code;
+  what corrupted the heap in lab 20261030-104149 is not shown.
 
 ## History
 - 2026-10-30: opened.
+- 2026-10-30 (fix/w13-cell): not reproduced. Observed in the log: the guest had left the session
+  (12:40:46, its 900 mirrors destroyed), rejoined 5 s later in Cell and had 900 mirrors again within
+  0.1 s; 3 s later the world arrived and the stage was left; the free failed 0.83 s after the quit, in
+  the third leaving frame. Inferred candidate not checked: our guest state handler (`guest_state`)
+  still creates and writes mirrors in the leaving frames (it checks the Cell mode, not
+  `game::leaving_stage()`); rejoin loops do the same without faults, so it is not shown to matter.
+  BUG-0314 (background cells piling up to the pool's 1500 cap) is another way a guest's pool grows
+  toward the broadphase limit of BUG-0295; whether it played a part here is not known (the guest's
+  pool held 904 cells before the leave).
+- 2026-10-30 (fix/w13-cell): guard `cell.leave_guard` added (window confirmed: 1185 applied states / ticks in 12 rejoins without it); the crash not reproduced, stays open.

@@ -2135,3 +2135,21 @@ answered right after; a 1 s poller beside a standalone run saw no gap. Same sign
   `CreatureBase_SetMoveScale+0x13` under DoAction+0x496 and the host stops drawing (FROZE) in the load.
 * `coop.status` "off-stage checks N (citizens while the stage is left M), cleaned-up citizen walks
   skipped K, test citizens T".
+## Cell: jumps, background leftovers and low frame rates (2026-10-30, fix/w13-cell)
+<a id="testing-cell-jumps"></a>
+
+* `coop_cell_jumps.py [--who guest|host]` (suites cell_jumps, cell_jumps_host, ~5 min): the food goes
+  to 300, the player jumps 40 times 150-250 m, then `coop.pool census` must show at most 600
+  background cells (BUG-0314; `SPORE_FIX_OFF=cell.bg_cull` fails with ~1100).
+* `coop_cell_4p.py --jumps S [--jump-ms 300]`: the BUG-0307 hunt with four players (Carol jumps at
+  ~3 fps and her free address space and pool census are printed every 15 s).
+* `coop_cell_nan.py --all --drain S` (suite cell_nan_drain): after the NaN and the level-ups the
+  guest plays S s more, its free address space must not drop more than 150 MB (a guard; the drain of
+  BUG-0307 did not reproduce this way).
+* `coop_cell_lowfps.py` (suite cell_lowfps): a guest at 15 fps compares the host's moving cells
+  (BUG-0282 guard; it passed on main without a fix). `coop_sync_multi.py --food N` levels the cell
+  fixture up first.
+* `coop.pool census`: every used slot of the cell pool by kind (a growing `background=` is BUG-0314).
+* `coop_rejoin_loop.py --fixture cell --cell-leave` (suite cell_rejoin_leave, ~3 min): 12 rejoins inside
+  Cell, each followed by the host's world and the stage leave; `leave_writes=` of the guest's
+  `coop.pool` must stay 0 (BUG-0308 guard; `SPORE_FIX_OFF=cell.leave_guard` gives ~1000).

@@ -38,3 +38,7 @@ None needed (step 2 of the issue was conditional). Added the test-only command `
 - 2026-10-28: opened.
 - 2026-10-28: fix/w5-cell: the avatar comes back from the cell editor recreated with +0x111 clear; closed as not reproduced, guard test cell_editor_invuln.
 - 2026-10-30 (fix/w9-cell-away, GitHub #171 re-check): timed test with a real respawn and a real revive (`coop_cell_editor_timed.py [--revive]`): the cell put onto its mate the moment the knockout ended; the Cell stage was left 9.86 s (respawn) and 10.02 s (revive) later (the mating cinematic), +0x111 already cleared by our timer before (av_invuln=0 on the last read in Cell), and the avatar came back recreated (new index and pointer) with +0x111 = 0; a host bite then took 6 -> 5 hp. The 2-3 s window cannot be reached through the mate. Still not reproduced.
+- 2026-10-30 (fix/w13-cell, re-check): cell_editor_timed and cell_editor_timed_revive PASS on lane 3 (out/lab/20261030-133815):
+  the stage was left 10.51 s (respawn) and 10.41 s (revive) after the knockout ended, outside the
+  3 s / 2 s window again; a host bite took 6 -> 5 hp after the editor. The mating cinematic is the
+  only way into the cell editor, so the window stays unreachable. Still not reproduced.
