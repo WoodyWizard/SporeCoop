@@ -1,4 +1,5 @@
 #include "npc.h"
+#include "view_centres.h"
 #include "modes.h"
 #include "tribe.h"
 #include "teamplay.h"
@@ -38,6 +39,13 @@ static constexpr float kRtsRelevance = 250.f; // tribe stage: m around the playe
 // NPC creatures are shared in the creature stage and, around the player tribe, in the tribe stage
 static bool npc_stage() { return game::in_creature_stage() || game::mode_id() == 0x1654C02; }
 static bool rts_stage() { return game::mode_id() == 0x1654C02; }
+// BUG-0291: in the Tribe stage the host sent a guest only the animals within kRtsRelevance of the
+// player tribe; a guest looking farther away saw none there (its own are removed by the update
+// filter). Now also those within kRelevance of the guest's view centre (its pointer,
+// view_centres.h); the game keeps them alive there (npc.view_centres_tribe).
+// `coop.fix npc.rts_views off`: around the tribe only (0.7.3.x).
+static bool g_rts_views_fix = true;
+COOP_FIX("npc.rts_views", "BUG-0291", g_rts_views_fix, "tribe: the host sends a guest the animals around the guest's own view too");
 
 // ------------------------------------------------------------------ host side
 struct HostNpc {
@@ -367,9 +375,12 @@ static void host_tick(double now, const std::vector<void*>& creatures)
             known.clear();
             continue;
         }
+        net::Vec3 view;
+        bool has_view = false;
         if (rts) {
             gp = center;
             relevance = kRtsRelevance;
+            has_view = g_rts_views_fix && views::of(p.id, game::mode_id(), now, view);
         } else if (!C.player_pos(p.id, gp)) {
             for (uint16_t id : known)
                 send_despawn(p.id, id);
@@ -379,13 +390,15 @@ static void host_tick(double now, const std::vector<void*>& creatures)
         std::vector<net::NpcState> batch;
         for (void* c : g_seen_now) {
             uint16_t id = g_host_npcs[c].id;
-            float d = net::dist(game::position(c), gp);
+            net::Vec3 cp = game::position(c);
+            float d = net::dist(cp, gp);
+            float dv = has_view ? net::dist(cp, view) : 1e9f;
             bool k = known.count(id) != 0;
-            if (!k && d < relevance) {
+            if (!k && (d < relevance || dv < kRelevance)) {
                 send_spawn(p.id, id, c);
                 known.insert(id);
                 k = true;
-            } else if (k && d > relevance + kHysteresis) {
+            } else if (k && d > relevance + kHysteresis && dv > kRelevance + kHysteresis) {
                 send_despawn(p.id, id);
                 known.erase(id);
                 k = false;

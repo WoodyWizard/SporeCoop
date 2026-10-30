@@ -27,6 +27,15 @@ void note(uint8_t id, const net::Vec3& pos, uint32_t mode, double now) { g_centr
 void forget(uint8_t id) { g_centres.erase(id); }
 void clear() { g_centres.clear(); }
 
+bool of(uint8_t id, uint32_t mode, double now, net::Vec3& out, double max_age)
+{
+    auto it = g_centres.find(id);
+    if (it == g_centres.end() || it->second.mode != mode || now - it->second.at > max_age || now < it->second.at)
+        return false;
+    out = it->second.pos;
+    return true;
+}
+
 size_t partners(uint32_t mode, double now, Centre* out, size_t max, double max_age)
 {
     size_t n = 0;

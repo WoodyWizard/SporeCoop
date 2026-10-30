@@ -39,6 +39,8 @@ void clear(); // the session ended
 // the partners' centres seen in `mode` within the last `max_age` seconds; returns how many were
 // written to `out` (at most `max`)
 size_t partners(uint32_t mode, double now, Centre* out, size_t max, double max_age = 3.0);
+// the view centre of player `id` seen in `mode` within the last `max_age` seconds
+bool of(uint8_t id, uint32_t mode, double now, net::Vec3& out, double max_age = 3.0);
 bool keep_alive_on(); // switch npc.view_centres
 std::string status(); // coop.views
 
