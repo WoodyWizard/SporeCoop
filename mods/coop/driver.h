@@ -66,7 +66,7 @@ inline void step(void* p, const net::Vec3& pos_in, const net::Quat& rot, const n
             ds.last_target = tgt;
         }
         if (nudge && err > 0.5f) {
-            const float k = now < ds.hold_until ? 1.f : pull_k(0.15f, dt); // BUG-0175: per second
+            const float k = now < ds.hold_until || hold_on_path(trail, sp, err) ? 1.f : pull_k(0.15f, dt); // BUG-0175: per second
             ds.nudged_to = {cur.x + (pos.x - cur.x) * k, cur.y + (pos.y - cur.y) * k, cur.z + (pos.z - cur.z) * k};
             game::set_position(p, ds.nudged_to);
             ds.nudged = true;
