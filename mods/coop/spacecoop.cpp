@@ -768,6 +768,12 @@ static void SK_THISCALL h_RequirePlanets(void* sm, void* star, void* p3)
     if (a_SmGetEmpire && pol0 != 0xFFFFFFFFu)
         emp0 = thiscall<void*>(a_SmGetEmpire, sm, pol0);
     int home0 = emp0 ? (int)(F<uint32_t>(emp0, 0xB0) == F<uint32_t>(star, 0x70)) : -1;
+    // the second argument goes to GeneratePlanetsForStar as a planet template (a forced kind for
+    // one planet of the star's tech level: +0 kind, +4 tech level mask, +8 flags); the caller
+    uint32_t tpl[3] = {0, 0, 0};
+    if (p3 && !IsBadReadPtr(p3, 12))
+        memcpy(tpl, p3, 12);
+    void* caller = __builtin_return_address(0);
     g.draws = g.hash = g.other = 0;
     g.generating = true;
     o_RequirePlanets(sm, star, p3);
@@ -775,9 +781,10 @@ static void SK_THISCALL h_RequirePlanets(void* sm, void* star, void* p3)
     g_planets_seeded++;
     H->log(M, SK_INFO,
            "space: planets of star %08X generated (seeded %08X): %d (tech %u->%u flags %08X->%08X pending=%d "
-           "empire=%08X %s home=%d draws=%u hash=%08X other=%u)",
+           "empire=%08X %s home=%d draws=%u hash=%08X other=%u template=%p [%08X %08X %08X] from=%p)",
            F<uint32_t>(star, 0x70), seed, (int)F<uint8_t>(star, 0xAC), tech0, F<uint32_t>(star, 0x4C), flags0,
-           F<uint32_t>(star, 0x5C), (int)pending, pol0, emp0 ? "made" : "not made", home0, g.draws, g.hash, g.other);
+           F<uint32_t>(star, 0x5C), (int)pending, pol0, emp0 ? "made" : "not made", home0, g.draws, g.hash, g.other,
+           p3, tpl[0], tpl[1], tpl[2], caller);
 }
 
 // tests (BUG-0123): another thread "inside GenerateRandomName" for `ms` (the hook's bookkeeping,
