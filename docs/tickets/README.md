@@ -196,7 +196,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0183](BUG-0183-co-op-window-only-three-games-on-the-network-are.md) | fixed | bug | Menu | 2026-10-24 | 0.7.3.0 | Co-op window: only three games on the network are listed |
 | [BUG-0184](BUG-0184-galaxy-menu-a-host-that-stopped-answering-right.md) | not-reproduced | freeze | Menu | 2026-10-24 |  | Galaxy menu: a host that stopped answering right after "Co-op" during the intro (once) |
 | [BUG-0185](BUG-0185-space-an-unvisited-star-s-planets-can-still-diff.md) | fixed | desync | Space | 2026-10-23 | unreleased | Space: an unvisited star's planets can still differ between the two games |
-| [BUG-0186](BUG-0186-civilization-single-vehicle-sync-outliers-of-20.md) | open | desync | Civ | 2026-10-27 |  | Civilization: single vehicle sync outliers of 20-27 m |
+| [BUG-0186](BUG-0186-civilization-single-vehicle-sync-outliers-of-20.md) | fixed | desync | Civ | 2026-10-27 | unreleased | Civilization: single vehicle sync outliers of 20-27 m |
 | [BUG-0187](BUG-0187-civilization-the-host-s-capture-caption-stops-ev.md) | fixed | bug | Civ | 2026-10-27 | 0.7.3.0 | Civilization: the host's capture caption stops everybody's game |
 | [BUG-0188](BUG-0188-civilization-the-npc-ai-still-spawns-vehicles-on.md) | fixed | desync | Civ | 2026-10-27 | 0.7.3.0 | Civilization: the NPC AI still spawns vehicles on guests |
 | [BUG-0189](BUG-0189-civilization-no-building-placement-through-the-c.md) | open | test | Civ | 2026-10-27 |  | Civilization: no building placement through the city planner in tests |
@@ -330,7 +330,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0318](BUG-0318-creature-a-guest-s-own-editor-opened-3-s-after-i.md) | open | bug | Creature | 2026-10-30 |  | Creature: a guest's own editor opened 3 s after it loaded the host's world stays black and never closes |
 | [BUG-0319](BUG-0319-civ-an-npc-city-founded-late-in-a-play-civ-sessi.md) | open | desync | Civ | 2026-10-30 |  | Civ: an NPC city founded late in a play_civ session (and its two vehicles) is missing on the guest for 40-60 s |
 | [BUG-0320](BUG-0320-space-finale-the-host-s-entries-with-stays-0-whe.md) | open | bug | Space | 2026-10-30 |  | Space finale: the host's entries_with stays 0 when it enters the core before the guest (test flake) |
-| [BUG-0321](BUG-0321-tribe-npc-dash-fails-2-of-3-runs-on-main-p90-1-5.md) | open | test | Tribe | 2026-10-30 |  | tribe_npc_dash fails 2 of 3 runs on main (p90 1.5-2.2 m over the 1.2 m limit) |
+| [BUG-0321](BUG-0321-tribe-npc-dash-fails-2-of-3-runs-on-main-p90-1-5.md) | fixed | test | Tribe | 2026-10-30 | unreleased | tribe_npc_dash fails 2 of 3 runs on main (p90 1.5-2.2 m over the 1.2 m limit) |
 | [BUG-0322](BUG-0322-tests-tribe-npc-dash-fails-about-half-of-the-run.md) | duplicate | test | Tribe | 2026-10-30 |  | tests: tribe_npc_dash fails about half of the runs on a loaded machine (p90 1.3-2.0 m, limit 1.2 m) |
 | [BUG-0323](BUG-0323-space-a-guest-faults-at-0xe98dd0-effect-object-n.md) | open | crash | Space | 2026-10-30 |  | Space: a guest faults at 0xE98DD0 (effect object null) when the host's ship appears in an NPC system, lane 8 only |
 | [BUG-0324](BUG-0324-play-civ-the-end-audit-finds-a-ruin-and-a-buildi.md) | open | desync | Civ | 2026-10-30 |  | play_civ: the end audit finds a ruin (and a building) on the guest that the host no longer has |

@@ -40,3 +40,4 @@ came while the guest was in the city planner (the bots open it).
 
 ## History
 - 2026-10-30: opened.
+- 2026-10-30 (fix/w14-tribe-civ): not reproduced in 5 more `play_civ.py --minutes 10` runs on lane 7 (seeds 9, 11, then 9, 11, 5 with the branch): every founding of the host reached the guest and was founded there ("here founded" in the guest's log, the new line), `founds_outside=0` (no founding message arrived while the guest was outside the Civ mode), `cities_caught_up=0`. In the run of the report `cities_in=6` and `cities_caught_up=4`: all six messages were applied, yet the count stayed short 4 times, so the guest's replayed SpawnNextCity did not give a city (inferred: no free site or its materialisation never came) and each catch-up waited 6 + 15 s. Added diagnostics (4f73f10): the guest logs every replayed founding with its result and the city count, and counts foundings received outside the Civ mode. Status kept open until a sighting with these lines.
