@@ -180,7 +180,7 @@ void init(const SkHost* host, SkMod* mod, std::function<void(const std::string&)
     M = mod;
     g_feed = std::move(feed);
     H->command_add(M, "coop.worldfix",
-                   "coop.worldfix [<name> 0|1 | queue <id>...] - world sharing fix switches (tests: 0 = the old behaviour); "
+                   "coop.worldfix [<name> 0|1 | queue <id>... | failnext] - world sharing fix switches (tests: 0 = the old behaviour); "
                    "queue: shares for these players in one frame, each with a save",
                    c_worldfix, nullptr, SK_CMD_MAIN_THREAD);
 }
@@ -405,17 +405,26 @@ struct PendingShare {
     bool told = false;
     uint32_t mode = 0; // the game mode the save was made in
     int saves = 0;     // saves made for this share (the planet's file did not appear: save again)
+    uint32_t tag = 0;  // the caller's tag, given back on a failure (coop.cpp: the guest's join serial)
 };
+// BUG-0231: the final failure of a queued share ("cannot share the world"), for the caller's retry
+static void (*g_share_failed)(uint8_t peer, uint32_t tag, bool planet_missing);
+void set_share_failed(void (*f)(uint8_t peer, uint32_t tag, bool planet_missing)) { g_share_failed = f; }
+static bool g_fail_next; // tests (coop.worldfix failnext): the next share_now fails once, not as planet-missing
 static std::vector<PendingShare> g_pending;
 extern bool g_share_reset_fix;
 
-bool share_with(uint8_t peer, std::string& err, bool save_first)
+bool share_with(uint8_t peer, std::string& err, bool save_first, uint32_t tag)
 {
     if (save_first) {
         for (auto& p : g_pending)
-            if (p.peer == peer && p.need_save)
+            if (p.peer == peer && p.need_save) {
+                p.tag = tag; // the newest caller's share
                 return true; // already waiting for a save
-        g_pending.push_back({peer, 0, true});
+            }
+        PendingShare ps{peer, 0, true};
+        ps.tag = tag;
+        g_pending.push_back(ps);
         return true;
     }
     if (share_now(peer, err))
@@ -425,7 +434,7 @@ bool share_with(uint8_t peer, std::string& err, bool save_first)
     // a new game that was never saved (coop.share, save_before_share=0): save it first; sending
     // the slot without its file sent an older planet of the host
     err.clear();
-    return share_with(peer, err, true);
+    return share_with(peer, err, true, tag);
 }
 
 bool save_busy()
@@ -526,6 +535,12 @@ bool share_now(uint8_t peer, std::string& err)
 {
     std::string cur_planet;
     std::wstring slot = current_slot(cur_planet, g_planet_missing);
+    if (g_fail_next) { // tests: a failure other than "planet file missing" (BUG-0231)
+        g_fail_next = false;
+        g_planet_missing = false;
+        err = "test failure (coop.worldfix failnext)";
+        return false;
+    }
     if (g_planet_missing) {
         err = "your game (" + cur_planet.substr(0, cur_planet.size() - 4) + ") is not saved yet: save it (pause menu)";
         return false;
@@ -990,7 +1005,12 @@ void tick(net::Session& s)
         }
         if (!err.empty())
             g_feed("cannot share the world: " + err);
+        uint8_t fpeer = p.peer;
+        uint32_t ftag = p.tag;
+        bool failed = !err.empty(), missing = g_planet_missing;
         g_pending.erase(g_pending.begin() + i); // p is invalid from here
+        if (failed && g_share_failed)
+            g_share_failed(fpeer, ftag, missing); // BUG-0231: coop.cpp retries
     }
     for (auto& o : g_out) {
         if (o.done)
@@ -1092,6 +1112,23 @@ static std::wstring current_db_dir(bool lower)
             ch = towlower(ch);
     return w;
 }
+
+std::string current_game_key()
+{
+    std::string planet = modes::current_world_name();
+    if (!is_planet_file(planet))
+        return "";
+    std::wstring db = current_db_dir(true);
+    if (db.empty())
+        return "";
+    std::wstring f = widen(planet);
+    for (auto& ch : f)
+        ch = towlower(ch);
+    return narrow(db + L"\\" + f);
+}
+
+static void (*g_slot_replaced)(const std::string&);
+void set_slot_replaced_hook(void (*fn)(const std::string& dir)) { g_slot_replaced = fn; }
 
 // Which slot a received world goes into and how it is written: slotfs.cpp (never the slot being
 // played, BUG-0035; a co-op slot only for the same host world, BUG-0087; all files written or none,
@@ -1237,6 +1274,14 @@ static void finish(const std::string& host_name)
         g_feed("could not save the world of " + host_name + ": " + werr);
         g_in = In{};
         return;
+    }
+    if (g_slot_replaced) { // BUG-0225: refunds owed to the game that was in this slot are void
+        std::wstring low = slot;
+        while (!low.empty() && low.back() == L'\\')
+            low.pop_back();
+        for (auto& ch : low)
+            ch = towlower(ch == L'/' ? L'\\' : ch);
+        g_slot_replaced(narrow(low));
     }
     std::string slot_name = narrow(slot.substr(slot.find_last_of(L'\\') + 1));
     uint64_t in_ms = GetTickCount64() - g_in.t0;
@@ -1389,6 +1434,11 @@ static int c_worldfix(void*, int argc, const char* const* argv, SkOut* out)
             share_with((uint8_t)atoi(argv[i]), err, true);
         }
         H->out_printf(out, "queued %d share(s)\n", argc - 2);
+        return 0;
+    }
+    if (argc > 1 && !strcmp(argv[1], "failnext")) { // tests (BUG-0231): the next share_now fails once
+        g_fail_next = true;
+        H->out_printf(out, "the next share fails once\n");
         return 0;
     }
     if (argc > 2 && !strcmp(argv[1], "autoload")) { // tests: auto_load_world of coop.ini

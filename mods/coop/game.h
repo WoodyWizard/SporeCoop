@@ -223,5 +223,6 @@ const std::vector<void*>& puppets(); // puppets and NPC proxies (creatures), UFO
 bool creature_listed(void* c);
 // diagnostics (coop.npc herds): every herd, and the creatures of herds without a nest
 std::string herds_dump();
+std::string herd_nulls_status(); // BUG-0256: null herd members taken out before Herd_Update
 
 } // namespace game

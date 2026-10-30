@@ -79,6 +79,18 @@ class Monitor(threading.Thread):
             return False
         return bool(tail) and ('world: loading ' in tail[-1] or 'loading the world of' in tail[-1])
 
+    def answers_again(self, secs):
+        """seconds until a fresh console connection answers `frame`, None when it does not"""
+        t0 = time.time()
+        while time.time() - t0 < secs:
+            try:
+                if Console(self.inst, timeout=5).call('frame').get('ok'):
+                    return time.time() - t0
+            except (OSError, ValueError):
+                pass
+            time.sleep(0.5)
+        return None
+
     def __init__(self, inst, name):
         super().__init__(daemon=True)
         self.inst, self.name, self.stop = inst, name, False
@@ -90,9 +102,25 @@ class Monitor(threading.Thread):
         while not self.stop:
             try:
                 m = re.search(r'frame=(\d+)', con.call('frame').get('out', ''))
-            except (OSError, ValueError):
-                if not self.stop:
-                    Monitor.events.append(f'{self.name}: the console stopped answering (crash?)')
+            except (OSError, ValueError) as e:
+                if self.stop:
+                    return
+                # BUG-0261: SporeKit's console serves every client on one thread and runs the waiting
+                # commands (wait.frames, shot: SK_CMD_NOT_ON_MAIN) right there, so the test's own
+                # `wait.frames 300 60000` held this `frame` for 10+ s on a busy lane (the game drew
+                # on). A console that answers a fresh connection again is no crash; the frame check
+                # below still catches a freeze. SPORE_MONITOR_STRICT=1: the old verdict (tests).
+                t0 = time.time()
+                back = self.answers_again(30)
+                if back is not None and not os.environ.get('SPORE_MONITOR_STRICT'):
+                    print(f'  ({self.name}: the console did not answer for 10 s ({e!r}) and answered a new '
+                          f'connection {back:.1f} s later: busy, not a crash)', flush=True)
+                    con = Console(self.inst, timeout=10)
+                    continue
+                Monitor.events.append(f'{self.name}: the console stopped answering (crash?) [{e!r}, '
+                                      f'loading={self.loading()}, '
+                                      + (f'answered again after {back:.1f} s' if back is not None else
+                                         f'no answer for {time.time() - t0:.0f} s more') + ']')
                 return
             f = int(m.group(1)) if m else -1
             now = time.time()

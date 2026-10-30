@@ -13,7 +13,11 @@ namespace world {
 
 void init(const SkHost* host, SkMod* mod, std::function<void(const std::string&)> feed);
 // host: queue the current save folder for a guest (optionally save the game first)
-bool share_with(uint8_t peer, std::string& err, bool save_first = false);
+// tag: given back to the share-failed callback (coop.cpp: the guest's join serial, BUG-0231)
+bool share_with(uint8_t peer, std::string& err, bool save_first = false, uint32_t tag = 0);
+// host: a queued share failed for good ("cannot share the world"); planet_missing: the played
+// planet had no file after 3 saves. Called from tick(); not for shares dropped with their player
+void set_share_failed(void (*f)(uint8_t peer, uint32_t tag, bool planet_missing));
 bool share_now(uint8_t peer, std::string& err);
 // the game's own save (pause menu "Save"); also works on planets in space
 bool save_game(std::string& err);
@@ -62,5 +66,14 @@ bool menu_intro_playing();
 // a cinematic or a caption of the game plays (cCinematicManager +0x2C): the HUD is hidden, an editor
 // opened meanwhile came up without its interface (coop.cpp own editor)
 bool cinematic_playing();
+
+// BUG-0225 (#159): the save file of the game being played, "<slot dir>\<planet>.spo" in lower case
+// (UTF-8): the planet file alone is not unique (co-op worlds alternate between two slots of the same
+// planet, BUG-0035, and the guest's own copy can be beside them). "" = unknown (a menu: "SaveGame",
+// snapshot.spo, no save database). Not for every frame (it asks the resource database).
+std::string current_game_key();
+// BUG-0225: called after a received world was written into a slot (lower-case dir, UTF-8, no
+// trailing '\'): the game that was in that slot no longer exists as it was
+void set_slot_replaced_hook(void (*fn)(const std::string& dir));
 
 } // namespace world

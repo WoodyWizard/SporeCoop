@@ -4,9 +4,11 @@
 #include <map>
 
 #include "coop_ui.h"
+#include "fixes.h"
 #include "game.h"
 #include "modes.h"
 #include "sporekit_game.hpp"
+#include "world.h"
 
 namespace spaceext {
 
@@ -44,24 +46,47 @@ static bool g_space_open; // the Space world is alive (kSpace, or an editor / ad
 static void* g_epoch_emp;
 static uintptr_t a_GetPlayerEmpire;
 uint32_t world_epoch() { return g_epoch; }
+static uint32_t g_epoch_file; // crc of the planet file seen in this Space world (0: none yet)
+static bool g_file_fix = true; // BUG-0225: off = the epoch ignores the save file (0.7.3.1)
+COOP_FIX("space.world_file", "BUG-0225", g_file_fix,
+         "space: another save file in the Space stage is another Space world (not only another cEmpire)");
+// the planet file being played, as a crc; 0 for the menu name, snapshot.spo or nothing
+static uint32_t planet_file_crc()
+{
+    std::string n = modes::current_world_name();
+    if (n.size() <= 4 || n.compare(n.size() - 4, 4, ".spo") != 0 || n == "snapshot.spo")
+        return 0;
+    return modes::current_world();
+}
 static void epoch_tick()
 {
     uint32_t m = game::mode_id();
     if (m == modes::kSpace) {
         void* e = a_GetPlayerEmpire ? skg::cdecl_call<void*>(a_GetPlayerEmpire) : nullptr;
         bool emp_changed = e && g_epoch_emp && e != g_epoch_emp;
-        if (!g_space_open || emp_changed) {
+        // BUG-0225: the save file is the galaxy's identity too: a load of another game that shows no
+        // other mode to a frame and gives the new cEmpire the old address is still a new world
+        uint32_t f = g_file_fix ? planet_file_crc() : 0;
+        bool file_changed = f && g_epoch_file && f != g_epoch_file;
+        if (!g_space_open || emp_changed || file_changed) {
             g_epoch++;
             if (H)
                 H->log(M, SK_INFO, "space: world epoch %u (%s)", g_epoch,
-                       emp_changed ? "the player's empire changed" : "Space entered");
+                       file_changed  ? "the save file changed"
+                       : emp_changed ? "the player's empire changed"
+                                     : "Space entered");
         }
+        if (!g_space_open || file_changed)
+            g_epoch_file = 0;
         g_space_open = true;
         if (e)
             g_epoch_emp = e;
+        if (f)
+            g_epoch_file = f;
     } else if (!(g_space_open && (m == modes::kEdit || m == modes::kEditor || m == modes::kScenario))) {
         g_space_open = false;
         g_epoch_emp = nullptr;
+        g_epoch_file = 0;
     }
 }
 bool russian() { return coop_ui::russian(); }
@@ -79,6 +104,52 @@ void note_save()
         fn();
 }
 uint32_t saves() { return g_saves; }
+
+// BUG-0225 (#159): owed refunds go by the Space world and its save file, not by the player's cEmpire
+// address and a save counter of every stage. Off: the 0.7.3.0 rule (trade) and the 0.7.3.1 one (spice
+// gifts: the same Space world only).
+static bool g_owed_id_fix = true;
+COOP_FIX("space.owed_id", "BUG-0225", g_owed_id_fix,
+         "space: an owed refund is paid only into the game it was taken from (same world, or its file saved after)");
+static spacelogic::WorldLedger g_ledger;
+static uint32_t g_saves_noted;
+static std::string g_key;
+static uint32_t g_key_epoch;
+bool owed_id() { return g_owed_id_fix; }
+std::string game_key()
+{
+    if (g_key.empty() || g_key_epoch != g_epoch) {
+        g_key = world::current_game_key();
+        g_key_epoch = g_epoch;
+    }
+    return g_key;
+}
+spacelogic::WorldTag world_tag() { return g_ledger.tag(g_space_open ? g_epoch : 0, g_space_open ? game_key() : ""); }
+spacelogic::OwedAction owed_action(const spacelogic::WorldTag& t)
+{
+    return spacelogic::owed_action(g_ledger, t, g_space_open ? g_epoch : 0, g_space_open ? game_key() : "");
+}
+void note_saved()
+{
+    if (!g_space_open) // a save of another stage's game, or between a load and its first Space frame
+        return;
+    std::string k = world::current_game_key(); // fresh: the save may have named the game just now
+    if (!k.empty())
+        g_key = k, g_key_epoch = g_epoch;
+    g_ledger.note_save(g_epoch, k);
+    if (!k.empty())
+        g_saves_noted++;
+    if (H)
+        H->log(M, SK_INFO, "space: saved world %u (%s)", g_epoch, k.empty() ? "unknown game" : k.c_str());
+}
+static void on_slot_replaced(const std::string& dir)
+{
+    g_ledger.note_replaced(dir);
+    if (dir == spacelogic::game_dir(g_key)) // never the slot being played (BUG-0035); just in case
+        g_key.clear();
+    if (H)
+        H->log(M, SK_INFO, "space: slot %s replaced by a received world", dir.c_str());
+}
 
 static bool g_rivals;
 static std::map<uint16_t, Relation> g_rel; // (low id << 8 | high id) -> relation
@@ -121,6 +192,7 @@ void init_all(const SkHost* h, SkMod* m, const spacecoop::Ctx* c)
     M = m;
     C = c;
     a_GetPlayerEmpire = h->sym("Simulator::GetPlayerEmpire");
+    world::set_slot_replaced_hook(on_slot_replaced);
     auto& v = all();
     g_on.assign(v.size(), false);
     for (size_t i = 0; i < v.size(); i++) {
@@ -201,6 +273,12 @@ bool debug(const std::vector<std::string>& args, std::string& out)
         return false;
     if (args[0] == "features") {
         out = status_all();
+        return true;
+    }
+    if (args[0] == "world") { // BUG-0225: the Space world and its save file (tests)
+        char b[96];
+        snprintf(b, sizeof b, "world=%u open=%d saves_noted=%u game=", g_epoch, (int)g_space_open, g_saves_noted);
+        out = b + (g_space_open ? game_key() : std::string()) + "\n";
         return true;
     }
     if (args[0] == "rows") { // tests: what the Space page shows (n: text | button)

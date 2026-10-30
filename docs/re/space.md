@@ -1796,3 +1796,40 @@ Runtime findings of the wave 3 Space fixes (lane 6, GOG 2024):
   reproduced (2 games with the fix off saved 1.8 s in).
 * The share's settle clock now restarts at a Space context change too
   ([tribe.md](tribe.md#tribe-share-settle-reset), `world.share_settle_reset`).
+
+## Owed refunds by game identity, the save hook, a destroyed modal window (2026-10-30, fix/w9-space)
+<a id="space-owed-refund-identity"></a>
+
+* ✔ The galaxy's identity for owed refunds (BUG-0225, GitHub #159) is the Space world in memory
+  (`spaceext::world_epoch()`) plus the game's save file, `<slot dir>\<planet>.spo` in lower case
+  (`world::current_game_key()`: the save database location of resource DB 0x4729A47 and
+  CurrentGameName). Seen at runtime: `c:\users\<user>\appdata\roaming\sporekit-test\spore\games\game0\madas.spo`;
+  a copy of the slot as Game7 gives another key with the same planet name. The planet name alone
+  is not unique (co-op worlds alternate between two slots of one planet, BUG-0035).
+* ✔ The world epoch also rises when, in kSpace, the planet file changes (crc of CurrentGameName,
+  "SaveGame" and snapshot.spo ignored; `coop.fix space.world_file`), so a load of another game that
+  shows no other mode to a frame and reuses the old cEmpire's address is still seen.
+* ✔ `cGamePersistenceManager::SaveGame` (GOG 2024 0xB29000, thiscall(name, bool) ret 8) writes the
+  save synchronously (`<name>.tmp`, then its own commit 0x6891E0, the save messages 0x1A0219E before
+  and after) and returns nothing: success is not reported. The mod counts a save of the Space world
+  after the call returned with a non-empty name; a write error is not seen (? no case known).
+* ✔ The galaxy-menu quit (message 0x4715068, `coop.menu`) saves the game first: after a gift, a
+  trip to the menu and a load of the same game, its file already lacks the gift. A reload that
+  still has the items needs a game file not saved since (a crash, another slot's copy, a received
+  world).
+* ✔ Rule (space_logic.h `owed_action`, unit tested): the same world in memory: pay; the slot got a
+  received world since: drop; another game now (or unknown): keep owed (32 at most), paid when
+  that game is loaded again; the same file again: pay if that world was saved after the take,
+  else drop. Trade gifts and sales (space_trade.cpp) and spice gifts (spacecoop.cpp) use it with
+  `coop.fix space.owed_id`; off = the 0.7.3.0 trade rule (cEmpire pointer and a save counter of
+  every stage) and the 0.7.3.1 spice rule (the same world only).
+* ✔ The window manager's modal window (BUG-0270): `cWindowManager` +0x82C is the modal window,
+  +0x830 its handler, +0x81C the list of modal windows under it (PushModal 0x95AE80 vt 0x74,
+  PopModal 0x959410 vt 0x78, GetModal 0x957E80 vt 0x84). `UpdateHover` 0x958FB0 (mouse messages
+  6..9 through ProcessMessage 0x9596E0 and Update 0x95A9E0) calls the modal window's vt 0xC4 and
+  vt 0xF8 without checks. A guest had a destroyed window there (vtable 0x13EB92C, the refcounted
+  base its destructor 0x410D00 leaves; slot 0xF8 lies past that table's end and reads 0x65) and
+  faulted at 0x65 from 0x959049. Which window and why the game destroyed it without PopModal is
+  open (?): the guest had been taken from Space to the galaxy menu by the mod and loaded the world
+  from there. gamefixes.cpp drops such a window (both slots must lead into executable code) before
+  UpdateHover (`coop.fix game.dead_modal`).

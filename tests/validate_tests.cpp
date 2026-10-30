@@ -10,6 +10,8 @@
 #include "net/give_target.h"
 #include "net/validate.h"
 #include "dna_route.h"
+#include "host_world.h"
+#include "net/shared_ledger.h"
 #include <string>
 
 using namespace net;
@@ -217,11 +219,63 @@ static void test_dna_route()
     CHECK(owed(fix, kSpace, true, true, 7, 7, kCreature) == Owed::Clear);          // a captain is no creature of that world
 }
 
+// BUG-0231 (GitHub #165): "is the host's world the one I play", the DNA rows it owns, the shared hold
+static void test_host_world()
+{
+    printf("host_world: classify, DNA rows 1-8 and 12, the shared hold (BUG-0231)\n");
+    using host_world::HostWorld;
+    using host_world::classify;
+    const uint32_t cr = host_world::kCreature, civ = host_world::kCiv, space = 0x1654C05, adv = 0x1654C10;
+    // not a connected guest, Space, adventures, menus: never gated
+    CHECK(classify(false, cr, 7, true, cr, 8, 0) == HostWorld::NotGated);
+    CHECK(classify(true, space, 7, true, space, 8, 0) == HostWorld::NotGated);
+    CHECK(classify(true, adv, 7, false, 0, 0, 0) == HostWorld::NotGated);
+    CHECK(classify(true, 0x2CCD1D2, 7, true, cr, 7, 0) == HostWorld::NotGated);
+    // the host in another stage: follow_phase pulls the guest along
+    CHECK(classify(true, cr, 7, true, civ, 7, 7) == HostWorld::NotGated);
+    // same stage: the state decides
+    CHECK(classify(true, civ, 7, true, civ, 7, 0) == HostWorld::Same);
+    CHECK(classify(true, civ, 7, true, civ, 8, 7) == HostWorld::Other); // the state wins over WELCOME
+    // no state yet: WELCOME's world, 0 (older host) counts as Other
+    CHECK(classify(true, cr, 7, false, 0, 0, 7) == HostWorld::Same);
+    CHECK(classify(true, cr, 7, false, 0, 0, 0) == HostWorld::Other);
+    CHECK(classify(true, cr, 7, false, 0, 0, 9) == HostWorld::Other);
+    // this machine's world unknown: Other, never Same
+    CHECK(classify(true, cr, 0, true, cr, 0, 0) == HostWorld::Other);
+    CHECK(classify(true, cr, 0, false, 0, 0, 0) == HostWorld::Other);
+    // the host names its world in WELCOME only in a gated stage
+    CHECK(host_world::welcome_world(cr, 7) == 7 && host_world::welcome_world(space, 7) == 0);
+
+    using namespace dna_route;
+    CHECK(guest_gain(false, true, true, true) == Gain::Local);  // 1
+    CHECK(guest_gain(true, false, true, true) == Gain::Local);  // 1 (a loss)
+    CHECK(guest_gain(true, true, true, true) == Gain::Own);     // 2: before the away row
+    CHECK(guest_gain(true, true, false, true) == Gain::Solo);   // 3
+    CHECK(guest_gain(true, true, false, false) == Gain::Forward); // 4-5
+    CHECK(host_total(true, false, true) == Total::Pending);     // 6
+    CHECK(host_total(false, true, true) == Total::Drop);        // 7
+    CHECK(host_total(false, false, false) == Total::Drop);      // 7
+    CHECK(host_total(false, false, true) == Total::Apply);      // 8
+    CHECK(host_add(true, true) == Add::Pay && host_add(false, true) == Add::Owe && host_add(false, false) == Add::Drop); // 12
+
+    // the shared hold: pending and in-flight changes survive it, totals are ignored while held
+    SharedLedger g;
+    g.pending = -300; // a spend in the shared world, just before the guest loaded its own save
+    uint32_t seq = g.send();
+    g.pending = -20;  // another one, not sent yet
+    g.pause();
+    CHECK(g.held && !g.take_total(true) && g.held); // still elsewhere: the host's total is ignored
+    CHECK(g.take_total(false) && !g.held);          // back: the first total ends the hold
+    double shown = g.shown(1000, true, seq - 1);    // the host has not counted the -300 yet
+    CHECK(std::fabs(shown - 680) < 1e-9 && std::fabs(g.pending + 20) < 1e-9 && g.in_flight.size() == 1);
+}
+
 int main(int argc, char** argv)
 {
     g_nofix = argc > 1 && std::string(argv[1]) == "--nofix";
     test_give_pick_leave();
     test_dna_route();
+    test_host_world();
     test_chunks();
     test_cycle();
     test_space_origin();

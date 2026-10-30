@@ -753,3 +753,33 @@ BUG-0223, BUG-0224. GOG 2024, lane 5.
   change or session end. Switch `coop.fix civ.caption_only`. Not measured: the purchase chain
   (BuyCity, FinishBuyCity, Capture) and whether +0x2C drops between its cinematics; an NPC capture
   of an NPC city arms too (accepted: its caption would stop everybody the same way).
+## Superweapon fields and the boost speed on GOG 2024 (2026-10-30, fix/w9-tests)
+<a id="civ-superweapon-2024"></a>
+
+Measured for BUG-0222 (the civ_reload / civ_sw_vote tests read these now):
+* ✔ `cCivilization::FireSuperweapon` GOG 2024 0xBF8BB0 (thiscall civ, int type, const Vector3* target,
+  ret 8): CanUse 0xBF8B40 → the own city that can launch nearest to `target` (equal to the zero vector
+  0x168C514 = the first one) → launch `city 0xBE5D30(type, target)` → unless the free cheat byte
+  0x168BD6C is set: `mWealth (+0x98) -= cost(type)` (0xBF6DF0), +0x4CC = 1 for types 2/5/8. It reads
+  `target` without a null check: a null target crashes when the weapon is usable (the game's own
+  callers always pass one; `coop.civ super <type> [x y z]` passes the zero vector or a place now).
+* ✔ CanUse 0xBF8B40 (thiscall civ, type, ret 4): free cheat → 1; types 2/5/8 only while +0x4CC is 0;
+  `unlocked[type]` at civ +0x484 (bool[12]); affordable 0xBF7870 (`cost <= mWealth +0x98`); no
+  cooldown 0xBF18D0. Runtime: on the `civ` fixture `unlocked[]` is all 0, money 3000; after
+  `mem.write` of `unlocked[3]` / `[9]` / `[1]` and 20000 money the game fired them (money -2000 /
+  -2000 / -16000). A fired type is not usable again within the test's minutes (cooldown): the same
+  type twice in one test fires once.
+* ✔ Costs 0xBF6DF0: types 0, 6, 11 = 4000; 1, 4, 7 = 16000; 2, 5, 8 = 12000 x 1 while fewer than two
+  cities of the planet are not this civ's, else 12000 x (the type number, as decompiled: ~ not checked
+  at runtime); every other type (3, 9, 10) = 2000.
+* ✔ Fired at the zero vector, type 4 crashed the game in `cPlanetModel::GetNearestCity+0x1B7`
+  (0xB897A7, read of 0x8F04CAB0, lab 20261030-001517; via launch 0xBE5D30 → 0xBDC2F0). Types 1, 3
+  and 9 at the zero vector worked. Tests use 1, 3, 9 only.
+* ✔ The alarm boost writes the vehicle's speed +0x218 (x1.5). The game does NOT bring it back by
+  itself: with `coop.fix civ.boost off` the boosted vehicles kept 1.5x for 30 s after `coop.leave`
+  (lab 20261030-002050); with the fix the session end restores them within 2 s. So the speed is a
+  FAIL criterion of BUG-0040, read with `mem.read <vehicle+0x218> 4` (`coop.civ boosts` lists the
+  boosted vehicles and their own speed).
+* ✔ The order list element (v+0xB68) holds the order's place at +4: `coop.civ` prints it as
+  `opos=(x y z)`. A guest's move order that the host executed shows the guest's target there
+  (BUG-0059 with `civ.world off`: lab 20261030-001854).

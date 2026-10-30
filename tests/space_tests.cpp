@@ -93,11 +93,93 @@ static void test_wave_return()
     CHECK(spacelogic::tough_key(77, 0, false) != spacelogic::tough_key(0, 77, true));
 }
 
+// BUG-0225 (#159): where an owed refund is paid (the whole owed_action table)
+static void test_owed_action()
+{
+    printf("owed action\n");
+    using spacelogic::OwedAction;
+    using spacelogic::WorldLedger;
+    const std::string A = "c:\\games\\game0\\madas.spo", A2 = "c:\\games\\game1\\madas.spo",
+                      B = "c:\\games\\game2\\other.spo";
+    {   // the same world in memory: paid, saved or not, whatever game key now
+        WorldLedger l;
+        auto t = l.tag(5, A);
+        CHECK(spacelogic::owed_action(l, t, 5, A) == OwedAction::Pay);
+        CHECK(spacelogic::owed_action(l, t, 5, "") == OwedAction::Pay);
+    }
+    {   // the same file loaded again, not saved since the take: the reloaded game still has it
+        WorldLedger l;
+        auto t = l.tag(5, A);
+        CHECK(spacelogic::owed_action(l, t, 6, A) == OwedAction::Drop);
+        // a save made BEFORE the take does not count
+        WorldLedger l2;
+        l2.note_save(5, A);
+        auto t2 = l2.tag(5, A);
+        CHECK(spacelogic::owed_action(l2, t2, 6, A) == OwedAction::Drop);
+    }
+    {   // saved after the take (that world), then loaded again: the file lacks it
+        WorldLedger l;
+        auto t = l.tag(5, A);
+        l.note_save(5, A);
+        CHECK(spacelogic::owed_action(l, t, 6, A) == OwedAction::Pay);
+        // a save of a reload of that file (epoch 6, which still had the items) does not count
+        WorldLedger l2;
+        auto t2 = l2.tag(5, A);
+        l2.note_save(6, A);
+        CHECK(spacelogic::owed_action(l2, t2, 7, A) == OwedAction::Drop);
+        // a save of another game does not count (the 0.7.3.0 save counter did)
+        WorldLedger l3;
+        auto t3 = l3.tag(5, A);
+        l3.note_save(6, B);
+        CHECK(spacelogic::owed_action(l3, t3, 7, A) == OwedAction::Drop);
+    }
+    {   // a failed save marks nothing: the caller does not call note_save; unknown keys are ignored
+        WorldLedger l;
+        auto t = l.tag(5, A);
+        l.note_save(5, "");
+        l.note_save(0, A);
+        CHECK(spacelogic::owed_action(l, t, 6, A) == OwedAction::Drop);
+    }
+    {   // another game now: kept (also when that game was saved), paid later in its own game
+        WorldLedger l;
+        auto t = l.tag(5, A);
+        l.note_save(5, A);
+        CHECK(spacelogic::owed_action(l, t, 6, B) == OwedAction::Keep);
+        CHECK(spacelogic::owed_action(l, t, 6, A2) == OwedAction::Keep); // same planet, other slot
+        CHECK(spacelogic::owed_action(l, t, 6, "") == OwedAction::Keep); // unknown now
+        CHECK(spacelogic::owed_action(l, t, 7, A) == OwedAction::Pay);
+    }
+    {   // the tag's game is unknown: dropped once the world changed
+        WorldLedger l;
+        auto t = l.tag(5, "");
+        CHECK(spacelogic::owed_action(l, t, 5, A) == OwedAction::Pay);
+        CHECK(spacelogic::owed_action(l, t, 6, A) == OwedAction::Drop);
+        CHECK(spacelogic::owed_action(l, t, 6, "") == OwedAction::Drop);
+    }
+    {   // a received world replaced the slot: dropped, even when saved after the take
+        WorldLedger l;
+        auto t = l.tag(5, A);
+        l.note_save(5, A);
+        l.note_replaced(spacelogic::game_dir(A));
+        CHECK(spacelogic::owed_action(l, t, 6, A) == OwedAction::Drop);
+        CHECK(spacelogic::owed_action(l, t, 6, B) == OwedAction::Drop);
+        // a replacement BEFORE the take, or of another slot, does not count
+        WorldLedger l2;
+        l2.note_replaced(spacelogic::game_dir(A));
+        auto t2 = l2.tag(5, A);
+        l2.note_replaced(spacelogic::game_dir(B));
+        l2.note_save(5, A);
+        CHECK(spacelogic::owed_action(l2, t2, 6, A) == OwedAction::Pay);
+    }
+    CHECK(spacelogic::game_dir("c:\\x\\y.spo") == "c:\\x" && spacelogic::game_dir("y.spo").empty());
+}
+
 int main()
 {
     test_jump_target();
     test_aborted();
     test_wave_return();
+    test_owed_action();
     printf(g_fail ? "space_tests: %d FAILED\n" : "space_tests: all passed\n", g_fail);
     return g_fail ? 1 : 0;
 }

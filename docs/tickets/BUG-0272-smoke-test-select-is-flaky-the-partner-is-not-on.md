@@ -1,17 +1,17 @@
 ---
 id: BUG-0272
 title: Smoke test select is flaky: the partner is not on the screen (coop.team point 0)
-status: open
+status: fixed
 kind: test
 stage: creature
 reported: 2026-10-29
 source: lab 20261029-120208 smoke
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w9-tests
+commits: 2db65c9
+tests: select
 signature:
 docs: docs/known-issues.md#issue-select-partner-off-screen
 related:
@@ -29,14 +29,14 @@ Inferred: the partner has not walked into the camera's view yet when the test as
 spawn place), a test timing problem rather than a game bug; not analysed.
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+Inferred, not observed: right after a (warm) start the partner can stand outside the camera's view; the test read `coop.team point` once and failed. In 11 runs on fix/w9-tests the partner was always on the screen at the first read (projected x 523-880), so the off-screen case was not seen again.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+Test only (tools/tests/coop_select.py `wait_on_screen`): up to 8 s for the partner to come into view (with a 160 px margin at the top for the clicks above the root point), then `coop.team come` (our creature 3 m from the partner, the camera follows) and 6 s again, up to 3 times.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+FAIL before: lab 20261029-120208, 20261029-121511, 20261029-121818 (about 1 in 3). PASS: lab 20261030-004240 (5 of 5, lane 7) and 20261030-004746 (6 of 6, lane 6). Not verified: the `coop.team come` fallback never ran in these 11 runs.
 
 ## History
 - 2026-10-29: opened.
+- 2026-10-30: fix/w9-tests: the test waits for the partner on the screen and walks up to it; 11 of 11 passed. Fixed (the fallback is unproven).

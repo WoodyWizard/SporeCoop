@@ -62,8 +62,10 @@
 #include "fixes.h"
 #include "share_wait.h"
 #include "dna_route.h"
+#include "host_world.h"
 #include "diag_coop.h"
 #include "trace.h"
+#include "view_centres.h"
 
 static const SkHost* H;
 static SkMod* M;
@@ -91,6 +93,13 @@ struct Remote {
     bool joined_phase = false; // host: the guest played the host's mode after the last world send
     bool needs_world = false;  // host: joined while the host was not playing; send the world later
     double cine_wait_since = 0; // host: since when this guest's share waits for a cinematic (BUG-0232)
+    // host, BUG-0231 (core.share_retry): a failed share is retried; dropped with the entry at the
+    // session end (g_remotes.clear())
+    uint32_t join_serial = 0; // this guest's join (the share's tag: an id reused by a newcomer is not it)
+    bool share_at_join = false; // the last share was the join's (a retry waits for needs_world)
+    int share_tries = 0;        // retries in this phase (share_try_key)
+    uint64_t share_try_key = 0;
+    double retry_at = 0;        // no share for this guest before
 };
 
 net::Session g_sess;
@@ -119,9 +128,22 @@ bool g_away_dna_fix = true;
 COOP_FIX("core.away_dna", "BUG-0151", g_away_dna_fix, "core: DNA a guest earns while the host is away is kept");
 float g_dna_owed = 0;     // host: guests' DNA that arrived without an avatar
 uint32_t g_dna_owed_paid; // tests
+// BUG-0231 (GitHub #165, dna_route.h row 2): DNA a guest earns while it plays another world of
+// the host's stage stays in that world (0.7.3.0 sent it to the host's world). Off: forwarded.
+bool g_world_dna_fix = true;
+COOP_FIX("core.world_dna", "BUG-0231", g_world_dna_fix, "core: DNA a guest earns in its own world stays in that world");
+uint32_t g_dna_own = 0; // tests: gains kept in the guest's own world (row 2)
+bool guest_elsewhere();
 bool on_dna(float delta)
 {
-    if (g_away_dna_fix && g_sess.role() == net::Role::Client && g_sess.connected() && delta > 0 && g_host_away) {
+    bool guest = g_sess.role() == net::Role::Client && g_sess.connected();
+    auto g = dna_route::guest_gain(guest, delta > 0, g_world_dna_fix && guest_elsewhere(), g_away_dna_fix && g_host_away);
+    if (g == dna_route::Gain::Own) {
+        g_dna_own++;
+        trace::ev("dna", "own", "+%.0f kept in this world (the host plays another one)", delta);
+        return true;
+    }
+    if (g == dna_route::Gain::Solo) {
         if (g_solo_dna <= 0)
             g_solo_mode = g_mode; // the stage it is earned in (BUG-0233)
         g_solo_dna += delta; // nobody to send it to: kept here, given to the pack on the host's return
@@ -129,18 +151,17 @@ bool on_dna(float delta)
     }
     if (social::goal_dna(delta))
         return false; // a goal card's reward: the host pays it into the shared pool once
-    if (g_sess.role() == net::Role::Client && g_sess.connected() && delta > 0 && g_host_away) {
-        g_solo_dna += delta; // nobody to send it to: kept here, given to the pack on the host's return
+    if (g == dna_route::Gain::Local)
+        return true;
+    if (g_host_away) { // core.away_dna off: the old order (a goal card's reward went to the host)
+        g_solo_dna += delta;
         return true;
     }
-    if (g_sess.role() == net::Role::Client && g_sess.connected() && delta > 0) {
-        net::Writer w;
-        w.f32(delta);
-        g_sess.send_reliable_to(0, net::MSG_DNA_ADD, w);
-        g_dna_fwd++;
-        return false; // applied when the host's total comes back
-    }
-    return true;
+    net::Writer w;
+    w.f32(delta);
+    g_sess.send_reliable_to(0, net::MSG_DNA_ADD, w);
+    g_dna_fwd++;
+    return false; // applied when the host's total comes back
 }
 bool g_tag_self = false; // debug: draw a tag over our own avatar to check the projection
 float g_dbg_sc[3];
@@ -417,6 +438,11 @@ void drive_puppet(Remote& r, double now)
     // dead players are hidden until they respawn
     bool visible = g_adapter && g_local && (s.flags & net::PF_IN_WORLD) && !(s.flags & net::PF_DEAD) &&
                    r.buf.age(now) < 5.0 && (r.echo || same_place(s));
+    // BUG-0280: the host keeps its world simulated around every partner it shows in its own place
+    if (visible && g_sess.role() == net::Role::Host)
+        views::note(r.id, s.pos, g_mode, now);
+    else
+        views::forget(r.id);
     if (r.puppet && !visible) // why a partner disappears (docs/stability/cell.md)
         LOG("%s hidden: flags=0x%X age=%.1f same_place=%d", r.name.c_str(), (unsigned)s.flags, r.buf.age(now),
             (int)same_place(s));
@@ -486,7 +512,8 @@ extern uint32_t g_own_editor_due;
 // on locally meanwhile (npc in Creature, tribe / civ local_play); in Cell and Space the guest got
 // "you play on alone" / "is back" for every editor visit of the host. The main menu counts in every
 // stage (BUG-0151). Off: every stage (0.7.3.0).
-constexpr uint32_t kAwayStages[] = {modes::kCreature, modes::kTribe, modes::kCiv};
+// BUG-0205: Cell too since cellsync plays the guest's own pool while the host is away (pool.away).
+constexpr uint32_t kAwayStages[] = {modes::kCreature, modes::kTribe, modes::kCiv, modes::kCell};
 bool g_away_stages_fix = true;
 COOP_FIX("core.away_stages", "BUG-0233", g_away_stages_fix, "core: a host editor or load counts as away only in Creature, Tribe, Civ");
 // BUG-0233: DNA kept while the host was away stays in its stage and world: a guest's solo DNA goes
@@ -514,6 +541,8 @@ char host_out_of_stage()
         return 0;
     if (g_away_stages_fix && !dna_route::away_stage(g_mode, kAwayStages, (int)std::size(kAwayStages)))
         return 0; // BUG-0233
+    if (g_mode == modes::kCell && !cellsync::away_enabled())
+        return 0; // BUG-0205 off: as in 0.7.3.1
     if (m == modes::kEdit || m == modes::kEditor)
         return 'e';
     return m == modes::kLoad ? 'l' : 0;
@@ -536,7 +565,9 @@ bool g_place_fix = true;
 COOP_FIX("core.same_place", "BUG-0130", g_place_fix, "core: nothing of the host's world is applied to a guest in another world");
 uint32_t g_place_dropped = 0;
 float g_dna_pending = -1; // the host's DNA total that arrived while we were elsewhere
-// unknown: what to say before the host's first state arrived (just joined)
+// unknown: what to say before the host's first state arrived (just joined).
+// The 0.7.3.0 predicate: kept for the off side of core.world_gate (the gate) only; every module
+// asks host_world_now() / guest_elsewhere() / host_absent_for() below.
 bool host_elsewhere(bool unknown = false)
 {
     if (!g_place_fix || g_sess.role() != net::Role::Client || !stage_mode(g_mode))
@@ -552,12 +583,51 @@ bool host_elsewhere(bool unknown = false)
 // city and alarm state to its own planet (bound and drove its own vehicles as mirrors, killed the
 // rest, founded cities up to the host's count) and its Tribe/Civ AI and orders stood still
 // (`local_play` followed only the host's main menu / editor). The Civ messages are dropped like the
-// rest of the host's world, and Tribe and Civ play on locally while the guest is elsewhere.
-// Off: as in 0.7.3.0.
+// rest of the host's world, every gated message asks guest_elsewhere(), and Tribe and Civ play on
+// locally while the guest is elsewhere. Off: as in 0.7.3.0.
 bool g_world_gate_fix = true;
 COOP_FIX("core.world_gate", "BUG-0231", g_world_gate_fix, "core: a guest in another world applies no Civ state and plays its tribe / civ itself");
 
-// a message of the host's world state a guest elsewhere must not apply
+// "Is the host's world the one I play?" (BUG-0231, GitHub #165; host_world.h has the rule and its
+// semantics). Recomputed on every call from this machine's g_mode / g_world, the host's latest
+// PlayerState and, before the first one, the world the host named in WELCOME. Messages are handled
+// inside g_sess.update(), before g_mode / g_world are refreshed: they see the previous frame's
+// values (the first frame after a load still has kLoad, so NotGated). core.same_place off: NotGated.
+static_assert(host_world::kCell == modes::kCell && host_world::kCreature == modes::kCreature &&
+                  host_world::kTribe == modes::kTribe && host_world::kCiv == modes::kCiv,
+              "host_world.h mode ids");
+host_world::HostWorld host_world_now()
+{
+    if (!g_place_fix)
+        return host_world::HostWorld::NotGated;
+    bool guest = g_sess.role() == net::Role::Client && g_sess.connected();
+    auto it = g_remotes.find(0);
+    bool has = it != g_remotes.end() && !it->second.buf.empty();
+    const net::PlayerState* ls = has ? &it->second.buf.latest() : nullptr;
+    return host_world::classify(guest, g_mode, g_world, has, ls ? ls->mode : 0, ls ? ls->world : 0,
+                                g_sess.welcome_world());
+}
+
+// this guest plays another world of the host's stage (or cannot tell yet): nothing of the host's
+// world is applied here, nothing of this world goes to the host
+bool guest_elsewhere() { return host_world_now() == host_world::HostWorld::Other; }
+
+// the module asking host_absent_for (npc runs in Creature and Tribe)
+enum class Absent { Npc, Tribe, Civ };
+
+// true when the host does not drive this module's shared objects on this guest now: the guest
+// plays them itself (its own AI and orders). The away part (main menu, editor, load: BUG-0151,
+// BUG-0233) is g_host_away; the elsewhere part is switched per module: npc by core.same_place
+// (BUG-0130, as before), Tribe and Civ by core.world_gate.
+bool host_absent_for(Absent who)
+{
+    bool away = g_host_away;
+    bool elsewhere = guest_elsewhere() && (who == Absent::Npc ? g_place_fix : g_world_gate_fix);
+    return away || elsewhere;
+}
+
+// a message of the host's world state a guest elsewhere must not apply (MSG_RES is held inside
+// shared.cpp instead: res.elsewhere)
 static bool world_state_msg(uint8_t type)
 {
     if (g_world_gate_fix && (type == net::MSG_CIV_STATE || type == net::MSG_CIV_BUILD || type == net::MSG_CIV_ALARM))
@@ -566,6 +636,15 @@ static bool world_state_msg(uint8_t type)
            (type >= net::MSG_CELL_STATE && type <= net::MSG_CELL_FOOD) || type == net::MSG_CELL_KO ||
            type == net::MSG_CELL_BITTEN || type == net::MSG_TRIBE_STATE || type == net::MSG_TRIBE_CMD ||
            type == net::MSG_SPECIES || type == net::MSG_SOCIAL;
+}
+
+// the gate: does this machine drop the host's message? (0.7.3.0 with core.world_gate off: the old
+// predicate, "unknown" counted only for the DNA total)
+static bool gate_drops(uint8_t type)
+{
+    if (!world_state_msg(type))
+        return false;
+    return g_world_gate_fix ? guest_elsewhere() : host_elsewhere(type == net::MSG_DNA);
 }
 
 void host_away_tick(double now)
@@ -1157,6 +1236,46 @@ void on_mode_change(uint32_t from, uint32_t to)
            -1);
 }
 
+// BUG-0231: a share that failed in world::tick ("cannot share the world: ...", after the save) was
+// never retried in that phase: follow_phase / player_join had already set world_sent, so a guest
+// in another world of the host's stage stayed there for good. Retried at most 3 times per phase
+// and guest, 30 s apart; then the host is told to use coop.share. A "planet file missing" failure
+// is not retried (world.cpp already saved 3 times). Off: as in 0.7.3.0.
+bool g_share_retry_fix = true;
+COOP_FIX("core.share_retry", "BUG-0231", g_share_retry_fix, "core: a failed world share is retried (3 times, 30 s apart)");
+uint32_t g_join_serial = 0;   // host: counts joins (Remote::join_serial)
+uint32_t g_share_retries = 0; // tests
+constexpr int kShareRetries = 3;
+constexpr double kShareRetryGap = 30.0;
+
+void share_failed(uint8_t peer, uint32_t tag, bool planet_missing)
+{
+    if (!g_share_retry_fix || planet_missing || !tag || g_sess.role() != net::Role::Host)
+        return;
+    auto it = g_remotes.find(peer);
+    if (it == g_remotes.end() || it->second.join_serial != tag)
+        return; // the player left, or its id belongs to a newcomer by now (BUG-0166)
+    Remote& r = it->second;
+    uint64_t key = ((uint64_t)g_mode << 32) | modes::current_world();
+    if (r.share_try_key != key) {
+        r.share_try_key = key;
+        r.share_tries = 0;
+    }
+    if (r.share_tries >= kShareRetries) {
+        feed("cannot share the world with " + r.name + ": use coop.share");
+        return;
+    }
+    r.share_tries++;
+    g_share_retries++;
+    r.retry_at = H->time_seconds() + kShareRetryGap;
+    r.world_sent = 0; // follow_phase sends it again
+    if (r.share_at_join) {
+        r.needs_world = true;
+        r.cine_wait_since = 0; // a new wait (BUG-0232)
+    }
+    LOG("share for %s failed: retry %d of %d in %.0f s", r.name.c_str(), r.share_tries, kShareRetries, kShareRetryGap);
+}
+
 // The host decides when a phase ends: when the host plays a stage and a guest stays in another
 // stage (or its editor) for a few seconds, the host world is sent again and the guest loads it.
 void follow_phase(double now)
@@ -1168,6 +1287,8 @@ void follow_phase(double now)
     for (auto& [id, r] : g_remotes) {
         if (r.echo)
             continue;
+        if (r.retry_at && now < r.retry_at)
+            continue; // BUG-0231: a failed share is retried 30 s later
         if (r.needs_world && g_local) { // joined while the host was in a menu
             if (g_share_cine_fix) { // BUG-0019: after the evolution cinematic, at most 120 s
                 double& since = g_share_cine_each_fix ? r.cine_wait_since : g_share_cine_since;
@@ -1183,11 +1304,14 @@ void follow_phase(double now)
             r.needs_world = false;
             r.world_sent = key;
             r.joined_phase = false;
+            r.share_at_join = true; // (a retry of it waits for needs_world again)
             std::string err;
-            if (world::share_with(id, err, g_save_on_share))
+            if (world::share_with(id, err, g_save_on_share, r.join_serial))
                 feed("sending the world to " + r.name);
-            else
+            else {
                 feed("cannot share the world: " + err);
+                share_failed(id, r.join_serial, false);
+            }
             continue;
         }
         if (r.buf.empty())
@@ -1220,11 +1344,14 @@ void follow_phase(double now)
             continue;
         r.world_sent = key;
         r.joined_phase = false;
+        r.share_at_join = false;
         std::string err;
-        if (world::share_with(id, err, g_save_on_share))
+        if (world::share_with(id, err, g_save_on_share, r.join_serial))
             feed((left_to_menu || other_world ? "back to the world: sending it to " : "next phase: sending the world to ") + r.name);
-        else
+        else {
             feed("cannot share the world: " + err);
+            share_failed(id, r.join_serial, false);
+        }
     }
 }
 
@@ -1728,6 +1855,11 @@ void on_frame(void*, int, void*)
     creations::tick(now);
     if (g_frame_fix) // BUG-0091: forget the puppets of a world the game tore down before any message uses them
         avatar_change_check();
+    // BUG-0231: the world a joining guest hears in WELCOME (before the host's first state); the
+    // values of the last frame, as every message of this update sees them. Not switched: 0.7.3.0
+    // guests never read it
+    if (g_sess.role() == net::Role::Host)
+        g_sess.world = host_world::welcome_world(g_mode, g_world);
     g_sess.update();
     lobby_tick(now);
     vote_tick(now);
@@ -1742,7 +1874,7 @@ void on_frame(void*, int, void*)
     savestrip::tick();
     npc::tick(now);
     social::tick(now);
-    shared::tick(g_sess, game::mode_id(), now);
+    shared::tick(g_sess, game::mode_id(), now, guest_elsewhere()); // BUG-0231: held while elsewhere
     if (g_sess.role() == net::Role::Host && game::avatar()) {
         float total = game::dna();
         // also every 2 s: a guest drops it while it has no avatar (loading, editor), BUG-0128
@@ -2206,6 +2338,7 @@ void end_session(EndPath path, bool cell)
         for (auto& [id, r] : g_remotes)
             despawn(r);
         g_remotes.clear();
+        views::clear();
     }
     if (g_vote_scope_fix)
         drop_vote("the session ended");
@@ -2317,6 +2450,10 @@ void setup_callbacks()
         auto& r = g_remotes[p.id];
         r.id = p.id;
         r.name = p.name;
+        r.join_serial = ++g_join_serial; // BUG-0231: the tag of this guest's shares
+        r.share_tries = 0;
+        r.share_try_key = 0;
+        r.retry_at = 0;
         trace::line("session", "player %u '%s' joined (we are %s, %s, world %s): %s", p.id, p.name.c_str(), role_str(),
                     modes::mode_name(g_mode), trace::hex(g_world).c_str(),
                     p.version.empty() ? "version unknown (pre-0.7.4)" : p.version.c_str());
@@ -2346,9 +2483,11 @@ void setup_callbacks()
             bool save = g_save_on_share && g_adapter; // only while playing, not from menus
             r.world_sent = ((uint64_t)g_mode << 32) | modes::current_world();
             r.joined_phase = false;
-            if (!world::share_with(p.id, err, save))
+            r.share_at_join = true;
+            if (!world::share_with(p.id, err, save, r.join_serial)) {
                 feed("cannot share the world: " + err);
-            else
+                share_failed(p.id, r.join_serial, false);
+            } else
                 feed("sending the world to " + p.name);
         }
     };
@@ -2363,11 +2502,10 @@ void setup_callbacks()
                 on_remote_anim(ev);
             return;
         }
-        // (the DNA total also before the host's first state: it is applied once we play its world)
-        // (the Civ state also before it: one cycle applied in that window bound the guest's own
-        // vehicles for good, BUG-0231; a guest in the host's world gets the next cycle)
-        bool civ_msg = type == net::MSG_CIV_STATE || type == net::MSG_CIV_BUILD || type == net::MSG_CIV_ALARM;
-        if (from == 0 && world_state_msg(type) && host_elsewhere(type == net::MSG_DNA || (g_world_gate_fix && civ_msg))) {
+        // (also before the host's first state when the host named no world in WELCOME: one Civ
+        // cycle applied in that window bound the guest's own vehicles for good, BUG-0231; with
+        // Welcome::world a guest in the host's world is Same from WELCOME on and loses nothing)
+        if (from == 0 && gate_drops(type)) {
             if (type == net::MSG_DNA) {
                 float total = r.f32();
                 if (r.ok())
@@ -2377,8 +2515,8 @@ void setup_callbacks()
             return;
         }
         if (type == net::MSG_DNA && g_sess.role() == net::Role::Client) {
-            float total = r.f32();
-            if (r.ok() && game::avatar() && !g_host_away) {
+            float total = r.f32(); // (row 6, elsewhere, is the gate above: kept as g_dna_pending)
+            if (r.ok() && dna_route::host_total(false, g_host_away, game::avatar() != nullptr) == dna_route::Total::Apply) {
                 float d = total - game::dna();
                 if (d != 0) {
                     trace::ev("dna", "total", "host total %.0f -> %+.0f here", total, d);
@@ -2390,10 +2528,11 @@ void setup_callbacks()
         }
         if (type == net::MSG_DNA_ADD && g_sess.role() == net::Role::Host) {
             float d = r.f32();
-            if (r.ok() && d > 0 && d < 10000 && game::avatar()) {
+            auto add = dna_route::host_add(game::avatar() != nullptr, g_away_dna_fix);
+            if (r.ok() && d > 0 && d < 10000 && add == dna_route::Add::Pay) {
                 game::dna_add_raw(d);
                 feed(g_sess.name_of(from) + " earned " + std::to_string((int)d) + " DNA");
-            } else if (r.ok() && d > 0 && d < 10000 && g_away_dna_fix && g_dna_owed < 100000) {
+            } else if (r.ok() && d > 0 && d < 10000 && add == dna_route::Add::Owe && g_dna_owed < 100000) {
                 trace::line("dna", "from %u +%.0f kept as owed (no own creature now)", from, d);
                 if (g_dna_owed <= 0)
                     g_dna_owed_world = g_stage_world; // BUG-0233: paid only into this world
@@ -2567,6 +2706,7 @@ void setup_callbacks()
         shared::on_player_leave(id);
         creations::on_player_leave(id); // BUG-0076: the next player of this id is not shown as this one
         npc::on_player_leave(id);       // BUG-0125
+        views::forget(id);              // BUG-0280
         g_give_pick = net::give_pick_after_leave(g_give_pick, id, g_give_pick_reset_fix); // BUG-0234
         auto it = g_remotes.find(id);
         if (it == g_remotes.end())
@@ -2765,8 +2905,9 @@ int c_status(void*, int, const char* const*, SkOut* out)
     void* av = g_local;
     SAY("mode=0x%08X local=%p overlay-self=(%.1f %.1f ok=%.0f)\n", game::mode_id(), av, g_dbg_sc[0], g_dbg_sc[1], g_dbg_sc[2]);
     SAY("host_away=%d (times %u) solo_dna=%.1f\n", (int)g_host_away, g_host_away_count, g_solo_dna);
-    SAY("host elsewhere=%d, its world's messages dropped %u, dna pending %.1f\n", (int)host_elsewhere(), g_place_dropped,
-        g_dna_pending); // BUG-0130
+    SAY("host elsewhere=%d, its world's messages dropped %u, dna pending %.1f, own-world dna gains %u, welcome world %08X, share retries %u\n",
+        (int)(g_world_gate_fix ? guest_elsewhere() : host_elsewhere()), g_place_dropped, g_dna_pending, g_dna_own,
+        g_sess.welcome_world(), g_share_retries); // BUG-0130, BUG-0231
     SAY("away dna: solo_mode=%08X solo_dropped=%u owed_world=%08X owed_dropped=%u\n", g_solo_mode, g_solo_dropped,
         g_dna_owed_world, g_owed_dropped); // BUG-0233
     SAY("strays: pending=%u removed=%u\n", (unsigned)g_strays.size(), g_strays_removed);
@@ -2950,6 +3091,19 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
 {
     if (argc > 1 && !strcmp(argv[1], "list")) {
         SAY("%s%s", npc::status().c_str(), npc::list().c_str());
+        return 0;
+    }
+    if (argc > 1 && !strcmp(argv[1], "marker")) { // tests (BUG-0280): pin the Tribe / Civ pointer (x y z | off)
+        bool pin = argc > 4;
+        net::Vec3 p{};
+        if (pin)
+            p = {(float)atof(argv[2]), (float)atof(argv[3]), (float)atof(argv[4])};
+        modes::test_pin_marker(pin, p);
+        SAY("pointer %s (%.1f %.1f %.1f)", pin ? "pinned" : "follows the mouse", p.x, p.y, p.z);
+        return 0;
+    }
+    if (argc > 1 && !strcmp(argv[1], "herdnulls")) { // tests (BUG-0256)
+        SAY("%s", game::herd_nulls_status().c_str());
         return 0;
     }
     if (argc > 1 && !strcmp(argv[1], "herds")) {
@@ -3830,6 +3984,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     world::set_playing_probe([] { return g_local != nullptr; });
     world::set_place_probe([] { return g_world; });
     world::set_save_blocker(save_blocker);
+    world::set_share_failed(share_failed); // BUG-0231
     // species of the host's own creations: sent ahead of its world (creations.h)
     world::set_share_hook([](uint8_t peer, const std::vector<const std::vector<uint8_t>*>& files) {
         creations::world_species_out(peer, files);
@@ -3861,7 +4016,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     ctx.feed = feed;
     // its own NPCs stay while it plays another world (BUG-0130), also until the host's first state
     // says where the host is (a join from inside a game of its own)
-    ctx.host_away = [] { return g_host_away || host_elsewhere(true); };
+    ctx.host_away = [] { return host_absent_for(Absent::Npc); }; // BUG-0130, BUG-0231
     ctx.in_place = [](uint8_t id) {
         if (!g_place_fix)
             return true;
@@ -3871,6 +4026,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     ctx.stage_center = [](net::Vec3& p) { return tribe::center(p); };
     npc::init(H, M, ctx);
     savestrip::init(H, M); // BUG-0020: our objects never go into a save
+    views::init(H, M);     // BUG-0280: the world lives around every player
     npc::set_enabled(H->config_int(M, "coop", "share_npcs", 1) != 0);
     npc::set_partner_targets(H->config_int(M, "coop", "npcs_target_partners", 1) != 0);
     social::Ctx sc;
@@ -4061,7 +4217,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     trc.sess = &g_sess;
     trc.feed = feed;
     trc.notice = [](const std::string& t) { notice(t, -1); };
-    trc.host_away = [] { return g_host_away || (g_world_gate_fix && host_elsewhere()); }; // BUG-0231
+    trc.host_away = [] { return host_absent_for(Absent::Tribe); }; // BUG-0151, BUG-0231
     tribe::init(H, M, std::move(trc));
     notify::init(H, M, [] { return coop_ui::text_font(); });
     creations::Ctx crc;
@@ -4160,6 +4316,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                 v.push_back({id, r.name, r.puppet});
         return v;
     };
+    cc.host_away = [] { return g_host_away; }; // BUG-0205
     cellsync::init(H, M, std::move(cc));
     H->command_add(M, "coop.pool", "coop.pool [bite | food <n> | hp <n> | hurt <player> <dmg>] - cell co-op",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
@@ -4176,7 +4333,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         return start_action_vote(t, d, std::move(a));
     };
     cvc.beacon = add_beacon;
-    cvc.host_away = [] { return g_host_away || (g_world_gate_fix && host_elsewhere()); }; // BUG-0231
+    cvc.host_away = [] { return host_absent_for(Absent::Civ); }; // BUG-0151, BUG-0231
     civ::init(H, M, std::move(cvc));
     census::Ctx csc;
     csc.sess = &g_sess;

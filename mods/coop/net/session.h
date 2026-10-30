@@ -61,7 +61,11 @@ public:
     // silent entry only on an equal token (net::g_fix.rejoin_token), never by the name alone
     uint64_t rejoin_token = 0;
     bool send_caps = true; // not a lab switch: test seam, false = HELLO / WELCOME without the extension (0.7.2 shape)
-    uint32_t world = 0;      // host world id (save hash), sent in WELCOME
+    // host: its world id (save CRC in Cell / Creature / Tribe / Civ, else 0), sent in WELCOME; coop.cpp
+    // sets it every frame (host_world.h). Guest: welcome_world() is what the host sent (0 = unknown
+    // or an older host), until leave(). The field stays where it is in Welcome (BUG-0231)
+    uint32_t world = 0;
+    uint32_t welcome_world() const { return welcome_world_; }
     uint32_t timeout_ms = 30000; // the game can block for a long time while saving/loading
     std::string lobby_info;  // host: shown to players looking for games on the network
 
@@ -130,6 +134,7 @@ private:
     std::string my_name_;
     uint8_t my_id_ = 0;
     bool welcomed_ = false;
+    uint32_t welcome_world_ = 0; // guest: Welcome::world of the host
     uint32_t join_started_ = 0;
     std::vector<std::unique_ptr<Peer>> peers_;
     std::vector<PlayerInfo> roster_; // client: known players (incl. host)

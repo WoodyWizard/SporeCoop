@@ -53,6 +53,9 @@ uint32_t current_world(); // crc32 of the current save name, 0 if none
 // (test_tick() once per frame counts them down)
 void test_null_local(int frames);
 void test_tick();
+// tests (BUG-0280): the local Tribe / Civ pointer stays at `p` (as if the mouse pointed there);
+// pin=false: the mouse again
+void test_pin_marker(bool pin, const net::Vec3& p);
 uint32_t current_place(const Adapter* a); // adapter place() or current_world()
 std::string current_world_name(); // the planet file being played, UTF-8 ("Name.spo"; "SaveGame" in menus)
 std::string raw_world_name(); // the game's CurrentGameName as is (may be "snapshot.spo", BUG-0258)

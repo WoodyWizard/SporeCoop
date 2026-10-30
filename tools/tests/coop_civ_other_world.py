@@ -14,7 +14,12 @@ cycle, and founded cities up to the host's count.
   3. on the guest's game (coop.census): none of its vehicles becomes a mirror of a host vehicle,
      none of the vehicles alive before the join dies, and it is still in Otherworld
 
+  4. BUG-0231 (res.elsewhere): before the join the guest's own world gets 777 more money than the
+     host's (coop.res add money 777, offline): while it plays that world in the session, its game's
+     money never becomes the host's total (0.7.3.0 overwrote it), and the host's does not move by it
+
   coop_civ_other_world.py [--nofix]   (coop.fix core.world_gate off: must FAIL)
+  SPORE_FIX_OFF=res.elsewhere coop_civ_other_world.py   (the host's money total applied: must FAIL)
 """
 import glob
 import os
@@ -31,6 +36,11 @@ from twoinst import Checks, start
 def world_of(con):
     m = re.search(r"world '([^']*)'", con.call('coop.avatar')['out'])
     return m.group(1) if m else None
+
+
+def money(con):
+    m = re.search(r'shared money=(-?[\d.]+)', con.call('coop.res')['out'])
+    return float(m.group(1)) if m else None
 
 
 def main():
@@ -64,14 +74,21 @@ def main():
     print(f'  guest alone: {n0} vehicles alive, census complete={c0.complete}')
     ck(n0 > 0, 'the guest\'s own planet has vehicles')
 
+    print(' ', guest.call('coop.res add money 777')['out'].strip())
+    time.sleep(1)
+    gm0, hm0 = money(guest), money(host)
+    print(f'  money: guest own world {gm0}, host {hm0}')
+
     print(' ', guest.call(lane.JOIN)['out'].strip())
     mirrors_max, alive_min = 0, n0
+    pairs = []  # (guest money, host money) per second
     t0 = time.time()
     while time.time() - t0 < 40:
         c = dump(guest)
         vs = [r for r in c.rows if r['kind'] == 'v']
         mirrors_max = max(mirrors_max, len([r for r in vs if r['own'] == 'mirror']))
         alive_min = min(alive_min, len([r for r in vs if r['alive']]))
+        pairs.append((money(guest), money(host)))
         time.sleep(1)
     st = guest.call('coop.status')['out']
     print(f'  during 40 s in the session: guest vehicles bound as mirrors (max) {mirrors_max}, alive (min) {alive_min} of {n0}')
@@ -80,6 +97,13 @@ def main():
     ck(mirrors_max == 0, f'none of the guest\'s own vehicles is driven as a host vehicle ({mirrors_max})')
     ck(alive_min >= n0, f'none of the guest\'s own vehicles died ({alive_min} of {n0} alive)')
     ck(world_of(guest) == 'Otherworld.spo', f'the guest is still in its own world ({world_of(guest)})')
+    pairs = [(g, h) for g, h in pairs if g is not None and h is not None]
+    gap = min((abs(g - h) for g, h in pairs), default=None)
+    drift = max((abs(h - hm0) for g, h in pairs), default=None) if hm0 is not None else None
+    print(f'  money during the 40 s: {len(pairs)} samples, closest guest/host {gap}, host drift {drift}; last {pairs[-1:]}')
+    # (a Civ planet's money moves with its own income: the 777 apart is what must stay)
+    ck(gap is not None and gap > 500, f"the guest's own world keeps its own money, never the host's total (closest {gap})")
+    ck(drift is not None and drift < 500, f"the host's money is not changed by the guest's world (drift {drift})")
 
     for con in (host, guest):
         con.call('coop.fix core.world_gate on')

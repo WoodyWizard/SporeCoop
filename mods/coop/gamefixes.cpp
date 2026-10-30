@@ -8,11 +8,13 @@
 #include <string>
 
 #include "fixes.h"
+#include "sporekit_game.hpp"
 
 namespace gamefixes {
 
 static const SkHost* H;
 static SkMod* M;
+using skg::readable;
 
 // The texture job of a terrain sphere (docs/re/space.md 8.3): a one-shot render layer that the
 // sphere queues in the render manager to draw its planet textures face by face (pass +0x10 0..3,
@@ -143,6 +145,81 @@ static void __fastcall next_adapter_guard(void* app, void*)
     g_toggle_fullscreen(app);
 }
 
+// BUG-0270: the window manager's modal window (cWindowManager +0x82C, the window PushModal (WM vt
+// 0x74) set; +0x830 its handler; +0x81C the list of modal windows under it) can point to a window
+// the game already destroyed. Then the first mouse message (cWindowManager::Update -> ProcessMessage
+// -> UpdateHover 0x958FB0) calls through the dead object's vtable: a guest loading a shared Space
+// world after a forced leave to the galaxy menu faulted at 0x65 (eax 0x65: the destroyed object's
+// vtable is the refcounted base 0x13EB92C, whose slot 0xF8 is past its end) and the rest of that
+// frame's UI messages were lost. Before each UpdateHover the guard checks that the modal window's
+// vtable slots 0xC4 and 0xF8 (the two UpdateHover calls) lead into executable code; when not, the
+// modal window is dropped (as PopModal of the last one does, without calling its dead handler).
+using HoverFn = void*(__thiscall*)(void*, void*, int);
+static HoverFn g_hover_orig;
+static std::atomic<unsigned> g_dead_modal{0};
+static bool g_dead_modal_fix = true;
+COOP_FIX("game.dead_modal", "BUG-0270", g_dead_modal_fix,
+         "gamefixes: a destroyed modal window left in the window manager is dropped before a mouse message uses it");
+static uintptr_t g_code_lo, g_code_hi; // the game's image (no VirtualQuery for its addresses)
+static uintptr_t g_test_vt[0x100 / 4]; // tests: a vtable as the destroyed object's (slots past the code)
+static uintptr_t g_test_obj[4];
+
+// code of the game or of a DLL (a window class of another mod): executable committed memory
+static bool executable(uintptr_t a)
+{
+    if (a >= g_code_lo && a < g_code_hi)
+        return true;
+    MEMORY_BASIC_INFORMATION mbi;
+    if (a < 0x10000 || !VirtualQuery((const void*)a, &mbi, sizeof mbi) || mbi.State != MEM_COMMIT)
+        return false;
+    return (mbi.Protect & (PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY)) != 0;
+}
+
+static bool modal_alive(const void* w)
+{
+    if (!readable(w, 4))
+        return false;
+    uintptr_t vt = *(const uintptr_t*)w;
+    if (!readable((const void*)vt, 0xFC))
+        return false;
+    return executable(((const uintptr_t*)vt)[0xC4 / 4]) && executable(((const uintptr_t*)vt)[0xF8 / 4]);
+}
+
+static void* __fastcall hover_guard(void* wm, void*, void* out, int flag)
+{
+    uint8_t* m = (uint8_t*)wm;
+    void* modal = m ? *(void**)(m + 0x82C) : nullptr;
+    if (g_dead_modal_fix && modal && !modal_alive(modal)) {
+        uintptr_t* list = (uintptr_t*)(m + 0x81C);
+        bool more = *list != (uintptr_t)list; // other modal windows under it (left in the list)
+        *(void**)(m + 0x82C) = nullptr;
+        *(void**)(m + 0x830) = nullptr;
+        unsigned n = ++g_dead_modal;
+        if (n <= 8)
+            H->log(M, SK_WARN, "game fixes: the window manager's modal window %p was destroyed (vtable %08X)%s: dropped it",
+                   modal, readable(modal, 4) ? (unsigned)*(uintptr_t*)modal : 0u, more ? ", more modal windows listed" : "");
+    }
+    return g_hover_orig(wm, out, flag);
+}
+
+// tests (BUG-0270): make the window manager's modal window a destroyed object, as the guest had it
+std::string fake_dead_modal(void* wm)
+{
+    uint8_t* m = (uint8_t*)wm;
+    if (!m || !g_hover_orig)
+        return "no window manager or no guard\n";
+    if (*(void**)(m + 0x82C))
+        return "a modal window is open: not replaced\n";
+    if (*(uintptr_t*)(m + 0x81C) != (uintptr_t)(m + 0x81C))
+        return "modal windows listed: not replaced\n";
+    for (auto& v : g_test_vt)
+        v = 0x65; // what the destroyed object's slots held (UTF-16 text past the end of its vtable)
+    g_test_obj[0] = (uintptr_t)g_test_vt;
+    *(void**)(m + 0x82C) = g_test_obj;
+    *(void**)(m + 0x830) = nullptr;
+    return "the modal window is now a destroyed object\n";
+}
+
 static bool patch_slot(uintptr_t* slot, uintptr_t value)
 {
     DWORD old;
@@ -177,6 +254,15 @@ void init(const SkHost* host, SkMod* mod)
     g_toggle_fullscreen = (AppFlagFn)tf;
     bool keys = na && tf && H->hook_create(M, (void*)na, (void*)&next_adapter_guard, (void**)&g_next_adapter_orig) == 0;
     H->log(M, SK_INFO, "game fixes: Alt+Shift+Enter guard %s", keys ? "on" : "off");
+    if (HMODULE exe = GetModuleHandleW(nullptr)) {
+        auto* dos = (IMAGE_DOS_HEADER*)exe;
+        auto* nt = (IMAGE_NT_HEADERS*)((uint8_t*)exe + dos->e_lfanew);
+        g_code_lo = (uintptr_t)exe;
+        g_code_hi = g_code_lo + nt->OptionalHeader.SizeOfImage;
+    }
+    uintptr_t uh = H->sym("UTFWin::cWindowManager::UpdateHover");
+    bool hover = uh && g_code_hi && H->hook_create(M, (void*)uh, (void*)&hover_guard, (void**)&g_hover_orig) == 0;
+    H->log(M, SK_INFO, "game fixes: dead modal window guard %s", hover ? "on" : "off");
 }
 
 void shutdown()
@@ -191,7 +277,8 @@ std::string status()
            std::to_string(g_skipped.load()) + (g_last.empty() ? "" : " (last: " + g_last + ")") +
            ", tribe camera skipped " + std::to_string(g_cam_skipped.load()) + ", respawn caption without a planet " +
            std::to_string(g_planet_clear_skipped.load()) + ", Alt+Shift+Enter turned into Alt+Enter " +
-           std::to_string(g_adapter_keys.load()) + "\n";
+           std::to_string(g_adapter_keys.load()) + ", dead modal windows dropped " + std::to_string(g_dead_modal.load()) +
+           "\n";
 }
 
 } // namespace gamefixes

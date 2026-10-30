@@ -29,6 +29,22 @@ struct SharedLedger {
         pending = 0;
     }
 
+    // BUG-0231 (res.elsewhere): the guest plays another world of the host's stage. Its game's value
+    // there is that world's, not the pack's: nothing is sampled, sent or taken while held, and the
+    // pending and in-flight changes are KEPT (a spend made in the shared world just before the
+    // guest loaded its own save reaches the host once it is back; reset() would lose it). The
+    // first host total after the hold ends it (take_total), then the pending change goes out once.
+    bool held = false;
+    void pause() { held = true; }
+    // a host total arrives; hold: the guest is still elsewhere. false = ignore the total
+    bool take_total(bool hold)
+    {
+        if (hold)
+            return false;
+        held = false;
+        return true;
+    }
+
     // the pending change goes out now: its sequence number for the message
     uint32_t send()
     {

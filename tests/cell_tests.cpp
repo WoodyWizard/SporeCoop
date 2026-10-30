@@ -217,19 +217,22 @@ static void partner_tiles()
     CHECK(!tile_list_has(l, l + 8, tile_key(0, 1, 0, 2)));
     CHECK(!tile_list_has(l, l, l[0]));
     CHECK(!tile_list_has(nullptr, nullptr, 0));
-    view::Centres c;
-    CHECK(c.add(2, 100, 0, 0));
-    c.set_host(0, 0, 0);
-    CHECK(c.size() == 2 && c.list()[0].id == 0 && c.list()[1].id == 2);
-    c.set_host(1, 1, 0);
-    CHECK(c.size() == 2 && c.list()[0].x == 1);
-    CHECK(c.add(2, 50, 0, 0) && c.size() == 2 && c.find(2)->x == 50);
+    views::Set c;
+    CHECK(c.add(2, {100, 0, 0}));
+    c.set_host({0, 0, 0});
+    CHECK(c.size() == 2 && c.list()[0].player == 0 && c.list()[1].player == 2);
+    c.set_host({1, 1, 0});
+    CHECK(c.size() == 2 && c.list()[0].pos.x == 1);
+    CHECK(c.add(2, {50, 0, 0}) && c.size() == 2 && c.find(2)->pos.x == 50);
     CHECK(c.near_any(45, 0, 6) && !c.near_any(25, 0, 6));
+    float nan = std::nanf("");
+    CHECK(!c.add(3, {nan, 0, 0}) && !c.find(3)); // BUG-0292: a NaN partner is no centre
+    CHECK(!c.add(3, {1e9f, 0, 0}));
     for (int i = 3; i < 20; i++)
-        c.add(i, (float)i, 0, 0);
-    CHECK(c.size() == view::kMaxCentres); // bounded
-    view::Box b{-20, -15, 20, 15};
-    view::Box m = b.centred(100, 50);
+        c.add((uint8_t)i, {(float)i, 0, 0});
+    CHECK(c.size() == views::kMaxCentres); // bounded
+    views::Box b{-20, -15, 20, 15};
+    views::Box m = b.centred(100, 50);
     CHECK(m.x0 == 80 && m.x1 == 120 && m.y0 == 35 && m.y1 == 65);
 }
 

@@ -30,3 +30,6 @@ Simulator::Cell::PopulateTile ; Cell: the host populates only around itself, a f
 Simulator::Cell::IsTileActive ; Cell: the host populates only around itself, a far guest finds no food (BUG-0174)
 Simulator::Cell::ViewBoxes ; Cell: the host populates only around itself, a far guest finds no food (BUG-0174)
 Simulator::Cell::WorldScaleStep ; Cell: the host populates only around itself, a far guest finds no food (BUG-0174)
+UTFWin::cWindowManager::UpdateHover ; game fixes: no guard against a destroyed modal window in the window manager (BUG-0270)
+SporeCoop::Herd_Update ; creature: null herd members are not taken out before the herd update (BUG-0256)
+SporeCoop::Relevance_Update ; creature: the host keeps its world alive only around its own camera (BUG-0280)

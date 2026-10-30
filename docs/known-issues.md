@@ -248,7 +248,8 @@ anchor so other docs can link to it:
   host's legless creature itself (0.7.3.0 pinned it in `choices.ini` after Replace, and Save New kept
   the host's key), and the co-op window's arrows lead back to "the world's own". Still open: that
   editor is the "edit a creation" one (save dialogs, a red cross), not the evolution editor the host
-  gets, and it can show the host's new parts while it is open (BUG-0283).
+  gets, and it can show the host's new parts while it is open (BUG-0283; seen once, not reproduced
+  in 3 runs of `coop_guest_editor_hold.py` on 2026-10-30).
 * The guest's mating-call button needs a collected part (`S+0x69`): whether a guest touching a host's
   part token (a mirror) sets it was not checked; the test sets it by console.
 * The report's Creature case ("3 rejoins did not fix it") did not reproduce as such on lane 5 with
@@ -657,8 +658,8 @@ keeps the history).
 * BUG-0202 (crash): making a hook while another thread runs the first bytes of the hooked function can crash that thread (hot reload re-hooks RandomInt).
 * BUG-0138 (#117, bug): a pasted host address with a leading space fails as "cannot resolve", and a wrong port is silently accepted.
 * BUG-0144 (#123, bug): the netcode message table lists PING/PONG, a mod version and fields the protocol does not send.
-* BUG-0205 (bug): host in an editor or a loading screen: Cell mirrors freeze (cellsync has no host-away state, also not for the main menu). The goal reward part is fixed and the Creature side counts an editor or a load as away since fix/w4-census (not proven in game, see the ticket).
 * BUG-0152 (#131, test): most 3-4 player gameplay paths have no test, and coop_multi runs in no lab suite.
+* BUG-0205 (bug): host in an editor or a loading screen: Cell mirrors freeze (cellsync has no host-away state, also not for the main menu). The goal reward part is fixed and the Creature side counts an editor or a load as away since fix/w4-census (not proven in game, see the ticket).
 * BUG-0153 (#132, bug): known-issues.md has a merge-damaged entry, stale "fixed" and outdated entries, and no ticket ids.
 * BUG-0162 (#141, test): hot reload and every 3-4 player test are outside the lab suites, so they never run.
 * BUG-0156 (#135, test): test profiles redirect only AppData, so tests on lane 1 can write into the owner's own Documents (My Spore Creations)
@@ -669,7 +670,7 @@ keeps the history).
 
 * BUG-0119 (#98, bug): after a load the guest may keep the host's species, or get SetSpecies on a world still loading (avatar pointer used as world identity)
 * BUG-0125 (#104, bug): a guest that rejoins while the host is paused sees no animals near it.
-* BUG-0256 (crash, caught): a guest that rejoins and loads a host save written while its puppet existed faults every frame in Herd_Update (cCreatureAnimal::Update+0xAA2) after the stray removal.
+* BUG-0256 (crash, caught): a guest that rejoins and loads a host save written while its puppet existed faults every frame in Herd_Update (cCreatureAnimal::Update+0xAA2) after the stray removal. Fixed on fix/w9-creature (savestrip.pending, npc.herd_nulls).
 
 **Tribe**
 
@@ -719,13 +720,12 @@ None open (BUG-0077, BUG-0080, BUG-0094 and BUG-0139 fixed on fix/w4-installer).
 * Not checked: two separate PCs.
 * Ticket: BUG-0210.
 
-## Space trade: an owed refund can be paid into another game (BUG-0225, open part)
-After a save of any game, a trade refund owed from a gift that came back outside Space is paid
-into whatever Space game is loaded next (`spaceext::saves()` counts every save), and a reloaded
-game whose cEmpire got the old address is taken for the same game. Reproduce: a profile with two
-Space games; the receiver holds a tool gift (`coop.space trade hold 1`), the host saves, loads the
-other game, the receiver declines: the other game's tool gets the charges. Needs the shared
-after-save hook of BUG-0217 (#151) and a game key; the allies part of BUG-0225 is fixed.
+## Space trade: an owed refund can be paid into another game (BUG-0225, fixed on fix/w9-space)
+Fixed (unreleased): owed trade and spice refunds go by the Space world and its save file
+(docs/re/space.md#space-owed-refund-identity). Left: a save that fails to write is still taken as
+saved (the game's SaveGame reports nothing), and the owed queue is memory only (a hot reload or a
+game restart drops it).
+* Ticket: BUG-0225.
 ## Cell: a guest may bite one NPC more often than the host can (2026-10-28, fix/w5-cell)
 <a id="issue-cell-guest-bite-lock"></a>
 
@@ -749,6 +749,11 @@ after-save hook of BUG-0217 (#151) and a game key; the allies part of BUG-0225 i
   fixture) a guest caught `0xC0000005 at 0x00000065` from the game's UI code (0x0095904B, near
   UTFWin::Image / UILayout). The game handled it and played on; seen once in three campaigns.
 * Reproduce: not reproduced. Lab 20261029-093233 campaign#2, out/lane4/campaign/20261029-093248.
+* Contained (2026-10-30, fix/w9-space): the window manager's modal window was a destroyed object;
+  a guard now drops such a window before a mouse message uses it (`game.dead_modal`,
+  docs/re/space.md#space-owed-refund-identity). Still open: which game window it was and why the
+  game destroyed it without PopModal (the guard logs "the window manager's modal window ... was
+  destroyed" when it happens again).
 * Ticket: BUG-0270.
 
 ## Tests: the smoke test `select` sometimes finds the partner off the screen (2026-10-29, fix/w6-cell)
@@ -787,6 +792,11 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Not checked: whether the guests could keep the NPCs of their own area (their game runs them
   while the host is away) or the host's game can be made to keep creatures around the puppets.
 * Ticket: BUG-0280.
+* Fixed (2026-10-30, fix/w9-creature, `npc.view_centres`): the cull is the game's relevance pass
+  around the local camera (docs/re/creature.md#creature-view-centres); the host now adds a sphere
+  per partner, in Creature and (npc.view_centres_tribe) Tribe; in Tribe the host also sends a guest
+  the animals around its pointer (BUG-0291, npc.rts_views). Still open: the herds' brain range
+  filter uses the host's brain level (matters for Rivals); Civ is not covered.
 
 ## Creature: an NPC proxy next to a guest's avatar stays ~4 m off (2026-10-29, fix/w7-sync)
 
@@ -794,6 +804,9 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   on every guest at once (`coop.npc list` on a guest: `err=4.33`). Likely pushed by the guest's own
   avatar (inferred). Reproduce: `SPORE_LANE=N python3 tools/tests/coop_sync_multi.py --fixture
   creature --rounds 45` and `coop.npc list` on a guest. Ticket: BUG-0281.
+* Not reproduced (2026-10-30, fix/w9-creature): with 2 players a guest's avatar 0.3-3 m beside
+  a standing host NPC did not push its proxy (0.1-0.6 m off); a 4-player measurement showed large
+  errors only for moving NPCs in a fight (2-19 m on 1-3 guests).
 
 ## Cell: a guest's mirrors trail the host's cells at a low frame rate (2026-10-29, fix/w7-sync)
 
@@ -817,6 +830,13 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Not checked: which object is null; whether a mod object is involved; what else of the menu
   reset (0xB32C30) is skipped besides the player record.
 * Next steps: probe 0xC0DB10 during `coop_tribe_*` leaves to the menu with 4 players.
+* Update (2026-10-30, fix/w9-tribe): the null object is the citizen's own `+0xB54`, released by its
+  cleanup 0xC1CA40; the game updates it once more through a handler that runs only when the mode is
+  no longer Tribe (0xD673B0 -> 0xACA2A0 -> 0xD57680 -> WalkTo -> 0xC0DB10). No coop.dll frame in the
+  chain; members spawned by `coop.tribe spawn` have +0xB54 and 4 leaves with 28 of them caught no
+  fault (lane 8). The co-op epic destroyed by the quit's save is an animal (another branch).
+  docs/re/tribe.md#tribe-leave-walk-fault. Still not reproduced; no fix. Its consequence is
+  contained by BUG-0284 (world.menu_player).
 * Ticket: BUG-0285
 ## Space: guests' ships go down to the home planet after the first world share (2026-10-29, fix/w8-stuck)
 <a id="issue-space-share-first-frame"></a>
@@ -852,3 +872,18 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   not the cause). The host had no fault.
 * Not checked: where the NaN comes from; whether main has it.
 * Ticket: BUG-0292.
+## Tribe: guests miss host objects while the host's tribe is knocked out (2026-10-30, fix/w9-tribe)
+<a id="issue-tribe-coverage-before-bounce"></a>
+
+* What happens: in the 4-player campaign (lab 20261029-203821 campaign#2) two guests had less than
+  85 % of the host's objects at two checks (21:07:27 and 21:07:57 lab clock), while the host's
+  player tribe was being knocked out (members 13 -> 5, then the game-over caption's cinematic).
+* Reproduce: not reproduced apart from the part after the bounce back (BUG-0288, fixed).
+* Known: the guests' mirror counts followed the host's member counts in the 30 s trace lines; the
+  coverage check counts the host's members (t) and the host's animals within 90 m of the guest's
+  pointer (n). Which kind was missing is not logged. Candidates: a new member of the host (born or
+  saved) refused by the guest's BUG-0172 guard while every mirror was dead (fixed by
+  `tribe.mirror_out`), or animals near a guest's pointer far from the village (BUG-0291).
+* Next steps: the campaign's coverage finding now names the missing keys per kind; read them in the
+  next 4-player campaign.
+* Ticket: BUG-0288 (fixed part), BUG-0291

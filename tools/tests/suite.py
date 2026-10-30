@@ -4,6 +4,7 @@
   cmd       command line, run from the repository root with SPORE_LANE set
   suites    smoke (before a merge, ~10 min on 3 lanes), full (every test), nightly (full + long),
             extended (paths outside the other suites: 3-4 players, hot reload; also nightly),
+            multi (3-4 players per stage in minutes, coop_party.py; also extended / nightly),
             campaign (a whole game of four bot players, coop_campaign.py: in no other suite, run it alone)
   warm      may reuse running games of the lane (twoinst.start with SPORE_WARM=1: the fixture is
             loaded into a fresh save slot, the guest rejoins; no restart). Tests that change the
@@ -57,10 +58,14 @@ add('cell_guest_bite', P + 'coop_cell_guest_bite.py', warm=True, minutes=4, fixt
 add('cell_rescue', P + 'coop_cell_rescue.py', warm=True, minutes=3, fixture='cell')  # a knocked-out partner rescues nobody (BUG-0131; SPORE_CELL_FIX=0 fails)
 add('cell_ko_gap', P + 'coop_cell_ko_gap.py', warm=True, minutes=3, fixture='cell')  # a knockout lasts through a late refresh (BUG-0238; SPORE_FIX_OFF=pool.ko_grace fails)
 add('cell_food_away', P + 'coop_cell_food_away.py', warm=True, minutes=3, fixture='cell')  # a guest's meal while the host is away is acknowledged (BUG-0239; SPORE_FIX_OFF=pool.food_ack_away fails)
+add('cell_away', P + 'coop_cell_away.py', warm=True, minutes=5, fixture='cell')  # the guest plays its own pool while the host is in the menu, the host's again after (BUG-0205; SPORE_FIX_OFF=pool.away fails)
+add('cell_away_editor', P + 'coop_cell_away.py --editor', minutes=5)  # the same while the host is in its own cell editor (BUG-0205; SPORE_FIX_OFF=pool.away fails)
 add('cell_respawn', P + 'coop_cell_respawn.py', warm=True, minutes=3, fixture='cell')  # the game's death and rebuild with the partner knocked out, both play on (BUG-0221)
 add('diag_cell', P + 'coop_diag.py --fixture cell', warm=True, minutes=3, fixture='cell')  # session clock, /bug marks on both games, merge_logs, sync-check OK and a forced mismatch, its cost
 add('diag_creature', P + 'coop_diag.py --fixture creature', warm=True, minutes=3, fixture='creature')  # the same in Creature
 add('cell_respawn_swap', P + 'coop_cell_respawn.py --swap', warm=True, minutes=3, fixture='cell')  # the same with the guest's pool rebuilt (BUG-0221)
+add('cell_editor_timed', P + 'coop_cell_editor_timed.py', minutes=5)  # the own cell editor entered within the 3 s after a real respawn, vulnerable after it (BUG-0237)
+add('cell_editor_timed_revive', P + 'coop_cell_editor_timed.py --revive', minutes=5)  # the same within the 2 s after a revive (BUG-0237)
 add('cell_editor_invuln', P + 'coop_cell_editor_invuln.py', minutes=5)  # invulnerable into the own cell editor, vulnerable after it (BUG-0237)
 add('cell_spawn_guard', P + 'coop_cell_spawn_guard.py', warm=True, minutes=3, fixture='cell')  # coop.cell spawn with a slot that is not a live cell: "no such cell", no fault (BUG-0093)
 add('dna_resend', P + 'coop_dna_resend.py', warm=True, minutes=3, fixture='creature')  # the DNA total reaches a guest that missed it (BUG-0128)
@@ -73,8 +78,10 @@ add('vote_stale', P + 'coop_vote_stale.py', minutes=5)  # a vote ends with its s
 add('vote_end_editor', P + 'coop_vote_drop_editor.py --case 1', minutes=3)  # a guest's own editor due from a vote does not open after a Leave (BUG-0234; --nofix fails)
 add('vote_drop_editor', P + 'coop_vote_drop_editor.py --case 2', minutes=3)  # a cancelled evolution vote opens no guest editor (BUG-0234; --nofix fails)
 add('world_queue', P + 'coop_world_queue.py', minutes=6)  # one save for shares waiting at once, shares of gone players dropped, no load inside an editor, no host world after Leave (BUG-0112/0166/0157/0074; --without all fails)
-add('join_other_world', P + 'coop_join_other_world.py', minutes=5)  # a guest in another world of the stage gets no DNA / NPC removal from the host (BUG-0130; --without-fix fails)
-add('civ_other_world', P + 'coop_civ_other_world.py', minutes=5)  # a guest in another Civ world gets no host vehicle / city state applied (BUG-0231; --nofix fails)
+add('join_other_world', P + 'coop_join_other_world.py', minutes=5)  # a guest in another world of the stage gets no DNA / NPC removal from the host (BUG-0130, BUG-0231 DNA row 2; --without-fix and SPORE_FIX_OFF=core.world_dna fail)
+add('civ_other_world', P + 'coop_civ_other_world.py', minutes=5)  # a guest in another Civ world gets no host vehicle / city state / money total applied (BUG-0231; --nofix and SPORE_FIX_OFF=res.elsewhere fail)
+add('tribe_other_world', P + 'coop_tribe_other_world.py', minutes=5)  # a guest in another Tribe world walks its own members (BUG-0231; --nofix fails)
+add('share_retry', P + 'coop_share_retry.py', minutes=5)  # a world share that failed after the save is retried (BUG-0231; SPORE_FIX_OFF=core.share_retry fails)
 add('leave_during_share', P + 'coop_leave_during_share.py', minutes=4)  # Leave right after a share save: the host can still leave the stage (BUG-0140)
 add('exit_thread', P + 'coop_exit_thread.py', minutes=2, reports=True)  # ExitProcess without Shutdown: no abort from the keepalive std::thread (BUG-0107)
 add('adapters', P + 'coop_adapters.py', minutes=5, reports=True)  # BUG-0286: two games of one bottle look up their local addresses (GetAdaptersAddresses, crashed in Wine's nsi.dll) 900 times at the same moment, then the guest leaves and a lookup faults: both games keep running (SPORE_FIX_OFF=core.adapters fails)
@@ -118,11 +125,15 @@ add('host_away_kill', P + 'coop_host_away_kill.py', minutes=4)  # BUG-0082: the 
 add('npc_reuse', P + 'coop_npc_reuse.py', minutes=3)  # BUG-0044 / BUG-0023: a reused NPC object gets a new id (the guest's mirror is alive), ids never repeat
 add('cinematic_puppet', P + 'coop_cinematic_puppet.py', minutes=3)  # BUG-0066: a puppet removed during a cinematic stays a puppet (no host NPC id)
 add('npc_pooled', P + 'coop_npc_pooled.py', minutes=3)  # BUG-0274: no guest proxy of an NPC the host's game put back into its pool
+add('npc_far', P + 'coop_npc_far.py', minutes=4)  # BUG-0280: a guest 300 m from the host keeps the NPCs around it, no nest member flickers (SPORE_FIX_OFF=npc.view_centres fails)
+add('rejoin_saved_puppet', P + 'coop_rejoin_saved_puppet.py', minutes=6)  # BUG-0256: a guest that rejoins after a passed vote and loads the host's world does not fault in Herd_Update (SPORE_FIX_OFF=npc.herd_nulls fails)
+add('tribe_far', P + 'coop_tribe_far.py', minutes=4, fixture='tribe')  # BUG-0280 (Tribe): the host's game keeps herds with animals where a guest points 300-450 m from the host (SPORE_FIX_OFF=npc.view_centres_tribe fails; SPORE_FIX_OFF=npc.rts_views fails its BUG-0291 check)
 add('npc_swap', P + 'coop_npc_swap.py', minutes=3)  # BUG-0110: an NPC tick that does not return leaves no puppet as the game's avatar
 add('world_reload', P + 'coop_world_reload.py', minutes=6)  # BUG-0119: after a reload the guest plays its own creature again although the avatar's address came back (--without-fix fails)
 add('leave_avatar', P + 'coop_leave_avatar.py', minutes=7)  # BUG-0264: a guest leaving the Creature stage for a shared world never uses the avatar the game tears down (SPORE_FIX_OFF=world.leave_avatar fails)
 add('leave_avatar_cell', P + 'coop_leave_avatar.py --cell --rounds 3', minutes=8)  # BUG-0264: the campaign's way: Cell -> Creature, the host's first editor, the shares after it
 add('cell_evolve_poll', P + 'coop_cell_evolve_poll.py', minutes=6, fixture='cell')  # BUG-0271: the host ends the Cell stage while the consoles keep asking (coop.status / avatar / sync): no cell read from the freed pool (SPORE_FIX_OFF=core.stale_local fails)
+add('guest_editor_hold', P + 'coop_guest_editor_hold.py', suites=('extended',), minutes=9, fixture='cell')  # BUG-0283 (not reproduced in 3 runs): the host's new body reaches a guest while its own editor is open; one red cross click must leave the unchanged editor
 add('legless_guest', P + 'coop_legless_guest.py --guest new', minutes=10, fixture='cell')  # BUG-0278: a new guest (no own creations) adds legs in the own editor of the first Creature vote and picks Save New: it plays that creature on both screens (not the host's legless pre-editor one under the same key), after a rejoin too, changes it in its next editor and goes back to the world's own (SPORE_FIX_OFF=creations.pre_editor fails)
 add('legless_guest_replace', P + 'coop_legless_guest.py --guest replace', ('extended',), minutes=10, fixture='cell')  # BUG-0278: the same with Replace: the return from the editor no longer pins the host's legless creature (SPORE_FIX_OFF=creations.pre_editor fails)
 add('legless_guest_done', P + 'coop_legless_guest.py --guest done', ('extended',), minutes=10, fixture='cell')  # BUG-0278: the same guest clicks done without a change: it plays the host's evolved species
@@ -157,6 +168,8 @@ add('tribe_editor_world', P + 'coop_tribe_editor_world.py', warm=True, minutes=5
 add('tribe_snapshot', P + 'coop_tribe_snapshot.py', minutes=12)  # after the live Creature -> Tribe change the host's place is its planet, not snapshot.spo: the guest is together with it (BUG-0258; --nofix fails)
 add('tribe_gameover', P + 'coop_tribe_gameover.py', minutes=4)  # a member added during the game-over caption (BUG-0172; --nofix fails)
 add('tribe_ko', P + 'coop_tribe_ko.py', warm=True, minutes=3, fixture='tribe')  # a knocked-out NPC member lies down on the guest (BUG-0173; --nofix fails)
+add('tribe_bounce_mirrors', P + 'coop_tribe_bounce_mirrors.py', warm=True, minutes=4, fixture='tribe')  # the guests mirror the host's tribe after its game over and bounce back (BUG-0288; --nofix fails)
+add('tribe_act', P + 'coop_tribe_act.py', warm=True, minutes=4, fixture='tribe')  # the coop.tribe act test command does not fault the host (BUG-0260; --nofix fails)
 # two bots play Civilization for 10 minutes through real input (docs/stability/civ.md)
 add('play_civ', P + 'play_civ.py --minutes 10', ('nightly',), minutes=13, fixture='civ_npc')
 add('space_play', P + 'coop_space_play.py', ('smoke',), minutes=6)
@@ -186,6 +199,9 @@ add('space_gift_refund', P + 'coop_space_gift_refund.py', warm=True, minutes=3, 
 add('space_allies', P + 'coop_space_allies.py', minutes=10)
 add('space_allies_reload', P + 'coop_space_allies_reload.py', minutes=5, fixture='space')  # after a galaxy reload the allies mirror gets a new cEmpire (BUG-0038)
 add('space_allies_reload_addr', P + 'coop_space_allies_reload.py --same-address', minutes=5, fixture='space')  # the same, with the new player cEmpire at the old address: the Space world epoch sees the reload (BUG-0225; SPORE_FIX_OFF=allies.reload_id fails)
+add('space_trade_reload', P + 'coop_space_trade_reload.py', minutes=6, fixture='space')  # a trade refund that comes back while another game is loaded waits for its own game (BUG-0225; SPORE_FIX_OFF=space.owed_id fails)
+add('space_trade_reload_same', P + 'coop_space_trade_reload.py --same-game', minutes=5, fixture='space')  # the same game loaded again (saved by the quit after the gift): paid once (BUG-0225, BUG-0058)
+add('dead_modal', P + 'coop_dead_modal.py', warm=True, minutes=3, fixture='space')  # a destroyed modal window in the window manager does not fault the next mouse message (BUG-0270; SPORE_FIX_OFF=game.dead_modal fails)
 add('space_finale', P + 'coop_space_finale.py', minutes=12)  # the galaxy core together (space_finale.cpp): wait, joint entry, Staff of Life, rejoin
 add('space_finale_alone', P + 'coop_space_finale.py --alone', minutes=10)  # "Enter now" alone: the partner gets Steve's gift by message
 # joins and rejoins over a bad network (goodbye lost every second round), the setup + in-game update
@@ -222,8 +238,22 @@ add('chaos_tribe_awful', 'SPORE_NET=awful ' + P + 'coop_chaos.py --fixture tribe
 # paths outside the lab's other suites (BUG-0152, BUG-0162): `lab.py run extended`. Three players in
 # one lane (the extra guest is instance 20+N in the lane's bottle, coop_multi.extra_instances)
 add('hotreload', P + 'hotreload_check.py', ('extended',), minutes=3)  # mod.reload coop twice, joins again
-add('multi3', P + 'coop_multi.py --fixture creature --players 3 --minutes 3', ('extended',), minutes=7)
+add('multi3', P + 'coop_multi.py --fixture creature --players 3 --minutes 3', ('extended', 'multi'), minutes=7)
 add('npc_multi3', P + 'coop_npc_multi.py --players 3 --seconds 40', ('extended',), minutes=5)
+
+# 3-4 players per stage in minutes (BUG-0152, tools/tests/party.py, docs/06-testing.md#testing-party): joins of two
+# guests at once, each guest's game shows the others, shared totals, a vote with N, a leave and rejoin of the
+# last guest, the host in the menu with several guests. `lab.py run multi`; also nightly
+for st, n, extra in (('cell', 3, ''), ('creature', 4, ''), ('tribe', 4, ''), ('civ', 3, ''), ('space', 4, ''),
+                     ('creature', 3, ' --one-by-one --skip away')):
+    add(f'party_{st}{n}' + ('_seq' if extra else ''), P + f'coop_party.py --fixture {st} --players {n}{extra}',
+        ('multi', 'extended'), minutes=3)
+
+# the gameplay paths between guests per stage (BUG-0152): each a few minutes on party.py
+for name, cmd in (('party_cell_ko', 'coop_party_cell.py'), ('party_creature_npc', 'coop_party_creature.py'),
+                  ('party_tribe_split', 'coop_party_tribe.py'), ('party_civ_own', 'coop_party_civ.py'),
+                  ('party_space_names', 'coop_party_space.py'), ('party_civ_trade', 'coop_party_civ_trade.py')):
+    add(name, P + cmd, ('multi', 'extended'), minutes=4)
 
 # a whole game of four bot players, Cell to the galactic core (BUG-0152, docs/06-testing.md#testing-campaign):
 # `lab.py run campaign --lanes 1 --skip <every other lane>` (one lane; `run` has no --lane, BUG-0259). Four games in the lane's bottle (instances 20+N / 30+N), nothing else of
@@ -242,11 +272,11 @@ add('campaign_space', P + 'coop_campaign.py --from civ --to space --minutes 2 --
 
 
 def select(spec):
-    """suites (smoke / full / nightly / extended / campaign) and test names, comma-separated and mixed: 'smoke,vote'"""
+    """suites (smoke / full / nightly / extended / multi / campaign) and test names, comma-separated and mixed: 'smoke,vote'"""
     names = {t['name'] for t in T}
     want = set()
     for w in (x.strip() for x in spec.split(',') if x.strip()):
-        if w in ('smoke', 'full', 'nightly', 'extended', 'campaign'):
+        if w in ('smoke', 'full', 'nightly', 'extended', 'campaign', 'multi'):
             want |= {t['name'] for t in T if w in t['suites']}
         else:
             assert w in names, f'unknown test: {w} (known: {sorted(names)})'

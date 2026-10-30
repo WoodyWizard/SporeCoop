@@ -169,6 +169,22 @@ static bool g_fix_guestbite_type = true; // BUG-0240: a guest's bite also needs 
 COOP_FIX("pool.guestbite_type", "BUG-0240", g_fix_guestbite_type, "cell: a guest's bite spares cells IsDamageable refuses (cell type not 2, AI type 0)");
 static bool g_test_away; // tests (`coop.pool away 1|0`, host): the Cell messages are handled as in an editor
 static uint32_t g_hits_spared;
+// BUG-0205 / BUG-0151 (GitHub #130): while the host is away (main menu, an editor or a load, the
+// state coop.cpp calls "host away") its pool is not simulated and no state comes. The guest was told
+// "you play on alone", but its mirrors stood AI-locked, it spawned nothing (h_Populate) and the food
+// it ate went to a host that dropped it. Now the guest plays its own pool meanwhile: the mirrors
+// become cells of its own game (AI lock and keep-alive cleared, no longer mirrors), its game spawns,
+// drops loot and runs every collision pair, and what it eats is kept. When the host is back, the
+// first state round of the host's pool purges the guest's own cells as strays (as at a join) and
+// mirrors the host's again; the kept food goes to the host as meals (BUG-0051 numbering).
+// Off: the frozen pool of 0.7.3.1 (and a host editor or load does not count as away in Cell).
+static bool g_fix_away = true;
+COOP_FIX("pool.away", "BUG-0205", g_fix_away, "cell: a guest plays its own pool while the host is away and takes the host's pool again when it is back");
+static bool g_solo;        // guest: playing its own pool now (the host away)
+static int g_solo_food[2]; // guest: meat / plant points eaten meanwhile (the guest's game has them)
+static bool g_solo_owed;   // the host is back: g_solo_food goes out before its first state or total is applied
+static uint32_t g_solo_times, g_solo_released, g_solo_spawns, g_solo_sent, g_solo_dropped;
+bool away_enabled() { return g_fix_away; }
 bool totals_resend_enabled() { return g_fix_resend; }
 static cell_logic::Rounds g_rounds;
 static cell_logic::Meals g_meals;              // guest: meals sent, not yet in a host total
@@ -784,6 +800,10 @@ static void SK_CDECL h_AddFood(int amount, bool plant)
         g_body = b.factor;
         g_body_size = b.target;
     }
+    if (g_solo && is_guest() && !g_food_guard && amount != 0 && in_cell()) {
+        g_solo_food[plant ? 1 : 0] += amount; // BUG-0205: kept until the host is back
+        return;
+    }
     if (is_guest() && !g_food_guard && amount != 0 && in_cell()) {
         // AvatarEat runs before the food is removed (EatFood 0xE7DF40: OnEat, then DestroyCell):
         // h_Destroy takes it with the eaten cell, the tick sends what is left
@@ -823,7 +843,7 @@ static void SK_CDECL h_Pair(uint8_t* a, uint8_t* b, float dt)
         g_pairs_skipped++;
         return;
     }
-    if (is_guest() && in_cell()) {
+    if (is_guest() && in_cell() && !g_solo) { // BUG-0205: our own pool while the host is away: every pair
         uint8_t* av = avatar();
         if (a != av && b != av) {
             g_pairs_skipped++;
@@ -859,8 +879,11 @@ static Populate_t o_Populate;
 static int SK_CDECL h_Populate(float prob, int layer, int level, void* query, void* bbox, void* marker, int x)
 {
     // guests do not spawn their own creatures/food on the gameplay layer: the host's are mirrored
-    if (is_guest() && in_cell() && query == fg_query())
-        return 0;
+    if (is_guest() && in_cell() && query == fg_query()) {
+        if (!g_solo)
+            return 0;
+        g_solo_spawns++; // BUG-0205: the host is away, our game fills its own pool
+    }
     return o_Populate(prob, layer, level, query, bbox, marker, x);
 }
 
@@ -871,10 +894,23 @@ static int SK_CDECL h_Populate(float prob, int layer, int level, void* query, vo
 // than one screen from the host swam in an empty pool. Now the host runs one more PopulateTiles pass
 // per partner, with its own tile list and the view boxes moved onto the partner's cell; a tile two
 // players share is populated once (h_PopTile), and a tile / cell inside any player's box is kept
-// (h_TileActive). The players are the host's view centres (view_centres.h), at most kMaxCentres.
+// (h_TileActive). The players are the host's view centres (view_centres.h: the partners noted by coop.cpp,
+// the same registry as BUG-0280's Creature / Tribe hook), at most views::kMaxCentres.
 // Old (`coop.fix cell.partner_tiles off`): only the host's own view.
 static bool g_fix_partner_tiles = true;
 COOP_FIX("cell.partner_tiles", "BUG-0174", g_fix_partner_tiles, "cell: the host populates and keeps the tiles around every partner, and sends each guest the cells around it");
+// BUG-0292: a cell whose pose is not finite (NaN, inf) is neither sent nor mirrored: a NaN mirror on
+// a guest pushed its own cell to NaN through the soft-body contact, its camera and view boxes went
+// NaN and PopulateTiles filled its stack with garbage tiles (fault, then a crash, at PopulateTile+0x8A).
+// Old (`coop.fix pool.finite_state off`): sent and mirrored as they come.
+static bool g_fix_finite = true;
+COOP_FIX("pool.finite_state", "BUG-0292", g_fix_finite, "cell: a cell with a NaN / infinite pose is neither sent by the host nor mirrored by a guest");
+static uint32_t g_nonfinite_sent_skipped, g_nonfinite_dropped;
+static bool pose_finite(const net::Vec3& p, float vx, float vy, float size)
+{
+    return views::finite_pos(p) && std::isfinite(vx) && std::isfinite(vy) && std::isfinite(size) && std::fabs(vx) < 1e6f &&
+           std::fabs(vy) < 1e6f;
+}
 static uintptr_t a_PopTiles, a_PopTile, a_TileActive, a_ViewBoxes;
 constexpr size_t kTileCap = 2048; // entries of our own lists' fixed buffers (the active set is < 512 tiles)
 struct TileList {             // the game's fixed_vector layout (PopulateTiles reads +0..+8, +0x10, +0x1018)
@@ -891,7 +927,7 @@ struct PartnerTiles {
     double seen = 0;
 };
 static std::unordered_map<int, PartnerTiles> g_ptiles; // partner id -> its tile list
-static view::Centres g_views;                          // host: itself + every partner (this frame)
+static views::Set g_views;                          // host: itself + every partner (this frame)
 static std::vector<std::array<float, 12>> g_view_boxes; // the view boxes of each centre (host first)
 static TileList* g_pass_list;   // the list of the pass PopulateTiles is running for us (null: none)
 static int g_pass = -1;         // -1 none, 0 the host's pass, k > 0 the pass of centre k
@@ -1189,20 +1225,21 @@ static void SK_CDECL h_PopTiles(int level, TileList* list, int all)
     double now = H->time_seconds();
     std::array<float, 12> host_box;
     memcpy(host_box.data(), vb, sizeof(float) * 12);
-    view::Box hb{host_box[0], host_box[1], host_box[3], host_box[4]};
+    views::Box hb{host_box[0], host_box[1], host_box[3], host_box[4]};
     g_views.clear();
-    g_views.set_host(hb.cx(), hb.cy(), 0);
-    for (auto& p : C.puppets()) {
-        uint8_t* c = (uint8_t*)p.cell;
-        if (!c || p.id <= 0)
-            continue;
-        net::Vec3 at = pos_of(c);
-        if (std::isfinite(at.x) && std::isfinite(at.y) && std::fabs(at.x) < 1e6f && std::fabs(at.y) < 1e6f)
-            g_views.add(p.id, at.x, at.y, 0);
+    // the partners' centres: the one registry (views::note, coop.cpp: every partner shown in our
+    // place), the same the Creature and Tribe stages use (BUG-0280); a host view that is not finite
+    // gets no partner pass at all (BUG-0292)
+    if (views::finite_pos({hb.cx(), hb.cy(), 0.f})) {
+        g_views.set_host({hb.cx(), hb.cy(), 0.f});
+        views::Centre pc[views::kMaxCentres];
+        size_t n = views::partners(modes::kCell, now, pc, views::kMaxCentres - 1);
+        for (size_t i = 0; i < n; i++)
+            g_views.add(pc[i].player, {pc[i].pos.x, pc[i].pos.y, 0.f});
     }
     g_view_boxes.clear();
     for (auto& v : g_views.list()) {
-        float dx = v.x - hb.cx(), dy = v.y - hb.cy();
+        float dx = v.pos.x - hb.cx(), dy = v.pos.y - hb.cy();
         std::array<float, 12> b = host_box;
         for (int i : {0, 3})
             b[i] += dx;
@@ -1240,7 +1277,7 @@ static void SK_CDECL h_PopTiles(int level, TileList* list, int all)
     if (!all && !scale_moving()) { // a rebuild (all) populates the host's view in one go, a moving
                                    // world scale refills the host's list from every tile: the partners follow
         for (size_t k = 1; k < g_views.size(); k++) {
-            auto& pt = g_ptiles[g_views.list()[k].id];
+            auto& pt = g_ptiles[g_views.list()[k].player];
             pt.seen = now;
             if (!pt.list) {
                 pt.buf = new int32_t[kTileCap * 2];
@@ -1281,7 +1318,7 @@ static void SK_CDECL h_PopTiles(int level, TileList* list, int all)
     }
     // a partner that left (or has no cell here any more): the game deletes its tiles
     for (auto it = g_ptiles.begin(); it != g_ptiles.end();) {
-        if (!g_views.find(it->first) && now - it->second.seen > 2.0) {
+        if (!g_views.find((uint8_t)it->first) && now - it->second.seen > 2.0) {
             tiles_drain(level, it->second);
             tiles_free(it->second);
             it = g_ptiles.erase(it);
@@ -1290,7 +1327,7 @@ static void SK_CDECL h_PopTiles(int level, TileList* list, int all)
     }
 }
 
-const view::Centres& view_centres() { return g_views; }
+const views::Set& view_centres() { return g_views; }
 
 // ShouldNotAttack 0xE57480 (cdecl bool(attacker, victim)): the prey / threat tests of the NPC AI
 // (IsPrey 0xE68910, IsThreat 0xE68870) and DamageCell ask it. Its "wontAttackPlayer(WhenSmall)"
@@ -1329,7 +1366,7 @@ static void SK_CDECL h_SpawnLoot(void* res, void* key, void* query, void* pos, f
                                  uint32_t* out, int* nout)
 {
     bool fg = in_cell() && query && query == fg_query();
-    if (fg && is_guest()) {
+    if (fg && is_guest() && !g_solo) { // BUG-0205: our own pool while the host is away drops its own loot
         // The gameplay cells of the pool are the host's (no PopulateMarker here either): loot the guest's
         // game drops (a mirror broken or killed by the game here, DestroyCell(idx, 1)) would exist only on
         // this machine and be purged as stray at the next state. The host drops its own, mirrored here.
@@ -1551,6 +1588,11 @@ static void host_tick(double now)
         if (modes::cell_is_puppet(c) || !F<void*>(c, kRes))
             return;
         net::Vec3 p = pos_of(c);
+        if (g_fix_finite && !pose_finite(p, F<float>(c, kVel), F<float>(c, kVel + 4), F<float>(c, kSize))) {
+            if (!g_nonfinite_sent_skipped++)
+                H->log(M, SK_WARN, "coop: cell: host cell %08X has a pose that is not finite: not sent (BUG-0292)", idx);
+            return;
+        }
         if (per_guest ? !g_views.near_any(p.x, p.y, 120.f) && net::dist(p, me) > 120.f : net::dist(p, me) > 120.f)
             return;
         all.push_back({c, idx});
@@ -1559,13 +1601,13 @@ static void host_tick(double now)
     for (auto& pl : C.sess->players()) {
         if (pl.id == 0)
             continue;
-        const view::Centre* vc = per_guest ? g_views.find(pl.id) : nullptr;
+        const views::Centre* vc = per_guest ? g_views.find((uint8_t)pl.id) : nullptr;
         std::vector<E> mine;
         const std::vector<E>* list = &all;
         if (vc) {
             for (auto& e : all) {
                 net::Vec3 p = pos_of(e.c);
-                if (std::hypot(p.x - vc->x, p.y - vc->y) <= 120.f)
+                if (std::hypot(p.x - vc->pos.x, p.y - vc->pos.y) <= 120.f)
                     mine.push_back(e);
             }
             list = &mine;
@@ -1652,6 +1694,12 @@ static void guest_state(net::Reader& r)
         uint8_t flags = r.u8();
         if (!r.ok())
             return;
+        if (g_fix_finite && (!pose_finite(p, v.x, v.y, size) || !std::isfinite(q.x) || !std::isfinite(q.y) ||
+                             !std::isfinite(q.z) || !std::isfinite(q.w))) {
+            if (!g_nonfinite_dropped++)
+                H->log(M, SK_WARN, "coop: cell: host cell %08X arrived with a pose that is not finite: not mirrored (BUG-0292)", hidx);
+            continue; // not in this round: its mirror goes with the round's purge
+        }
         g_cycle_seen.insert(hidx);
         auto& m = g_mirrors[hidx];
         m.pos = p; m.vel = v; m.rot = q; m.size = size; m.hp = hp; m.seen = now;
@@ -1720,6 +1768,20 @@ static void guest_state(net::Reader& r)
 static void guest_tick(double now)
 {
     flush_food();
+    // BUG-0292 diagnostics: the moment our own cell's position stops being finite, and what was near
+    static bool own_bad;
+    if (uint8_t* a = avatar()) {
+        net::Vec3 me = pos_of(a);
+        bool bad = !views::finite_pos(me);
+        if (bad && !own_bad) {
+            size_t odd = 0;
+            for (auto& [hidx, m] : g_mirrors)
+                odd += !pose_finite(m.pos, m.vel.x, m.vel.y, m.size);
+            H->log(M, SK_WARN, "coop: cell: our own cell's position is not finite (BUG-0292): %u mirrors, %u of them with a pose that is not finite, %u dropped so far",
+                   (unsigned)g_mirrors.size(), (unsigned)odd, g_nonfinite_dropped);
+        }
+        own_bad = bad;
+    }
     for (auto& [hidx, m] : g_mirrors) {
         uint8_t* c = m.local ? modes::cell_at(m.local) : nullptr;
         if (!c)
@@ -1870,6 +1932,82 @@ void on_player_leave(int id)
     g_puppet_seen.erase(id);
 }
 
+// BUG-0205: the guest's own pool while the host is away (see g_fix_away)
+static void solo_reset()
+{
+    if (g_solo_food[0] || g_solo_food[1]) {
+        g_solo_dropped++;
+        trace::ev("eat", "solo dropped", "food kept while the host was away dropped (meat %d plant %d): the stage or "
+                  "the session ended first", g_solo_food[0], g_solo_food[1]);
+    }
+    g_solo = g_solo_owed = false;
+    g_solo_food[0] = g_solo_food[1] = 0;
+}
+
+static void solo_start()
+{
+    // the host's pool is not simulated now: its mirrors become cells of our game, with their AI.
+    // Dying and dead ones keep the locks of their death.
+    for (auto& [h, m] : g_mirrors) {
+        uint8_t* c = m.local ? modes::cell_at(m.local) : nullptr;
+        if (!c || F<uint8_t>(c, kDying) || F<uint8_t>(c, kDead))
+            continue;
+        F<uint8_t>(c, kAiLock) = 0;
+        F<uint8_t>(c, kKeepAlive) = 0; // the tile streaming owns them again
+        g_solo_released++;
+    }
+    g_mirrors.clear();
+    g_host_of.clear();
+    g_touched.clear();
+    g_cycle_seen.clear();
+    g_rounds.reset();
+    if (g_pend_food) { // not sent yet: kept with the rest
+        g_solo_food[g_pend_plant ? 1 : 0] += g_pend_food;
+        g_pend_food = 0;
+    }
+    g_solo = true;
+    g_solo_owed = false;
+    g_solo_times++;
+    trace::line("cell", "host away: the guest plays its own pool (%u cells released)", g_solo_released);
+}
+
+// the host is back and its pool runs again (its first state or total arrived): what we ate meanwhile
+// goes to it as meals; the totals it sends back count them (BUG-0051)
+static void solo_send()
+{
+    g_solo_owed = false;
+    for (int k = 0; k < 2; k++)
+        while (g_solo_food[k] > 0) {
+            int n = std::min(g_solo_food[k], 999); // the host refuses one meal of 1000 or more
+            g_solo_food[k] -= n;
+            net::Writer w;
+            w.u32((uint32_t)n);
+            w.u8((uint8_t)k);
+            w.u32(g_meals.sent(n));
+            C.sess->send_reliable_to(0, net::MSG_CELL_FOOD, w);
+            g_solo_sent += n;
+            trace::ev("eat", "solo sent", "host back: food +%d %s eaten while it was away sent", n, k ? "plant" : "meat");
+        }
+    g_solo_food[0] = g_solo_food[1] = 0;
+}
+
+static void solo_tick()
+{
+    bool want = g_fix_away && is_guest() && in_cell() && C.host_away && C.host_away();
+    if (want == g_solo)
+        return;
+    if (want) {
+        solo_start();
+        return;
+    }
+    if (is_guest() && in_cell()) { // the host is back: its pool replaces ours at its first state
+        g_solo = false;
+        g_solo_owed = g_solo_food[0] || g_solo_food[1];
+        trace::line("cell", "host back: the host's pool replaces the guest's at its first state");
+    } else
+        solo_reset();
+}
+
 void tick(double now)
 {
     static bool was_in_cell;
@@ -1882,12 +2020,15 @@ void tick(double now)
         g_loot_recent.clear();
         modes::cell_forget(); // the partners' puppets were in the same pool
     }
+    if (!cell && (g_solo || g_solo_owed))
+        solo_reset(); // BUG-0205: the stage was left
     was_in_cell = cell;
+    solo_tick();
     if (!in_cell() || !C.sess || !C.sess->connected() || !avatar())
         return;
     if (is_host())
         host_tick(now);
-    else if (is_guest())
+    else if (is_guest() && !g_solo)
         guest_tick(now);
     symbiosis_tick(now);
 }
@@ -1978,6 +2119,10 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
     }
     if (!cell)
         return;
+    if (g_solo && is_guest() && (type == net::MSG_CELL_STATE || type == net::MSG_CELL_FOOD))
+        return; // BUG-0205: our own pool until the host's away state ends (a state of the host's pool comes then)
+    if (g_solo_owed && is_guest() && (type == net::MSG_CELL_STATE || type == net::MSG_CELL_FOOD))
+        solo_send(); // before the host's first total is applied: it then counts them as on the way (no dip)
     if (type == net::MSG_CELL_STATE && is_guest()) {
         guest_state(r);
     } else if (type == net::MSG_CELL_HIT && is_host()) {
@@ -2143,6 +2288,21 @@ void on_session_end()
     forget_mirrors();
     g_food_sent = g_plant_sent = -1;
     g_pend_food = 0;
+    solo_reset();
+}
+
+// BUG-0205: the guest's own pool while the host is away (`coop.pool`, a line of its own, no key the lines
+// above have: tests read the first `food=`)
+static std::string away_status()
+{
+    if (!C.sess || C.sess->role() != net::Role::Client)
+        return "";
+    char e[200];
+    snprintf(e, sizeof e, "cell_away: solo=%d send_due=%d solo_times=%u released=%u solo_spawns=%u kept_meat=%d kept_plant=%d "
+             "kept_sent=%u kept_lost=%u\n",
+             (int)g_solo, (int)g_solo_owed, g_solo_times, g_solo_released, g_solo_spawns, g_solo_food[0], g_solo_food[1],
+             g_solo_sent, g_solo_dropped);
+    return e;
 }
 
 // ---- overlay: knockout countdown, revive progress, arrows to knocked out partners ----
@@ -2445,6 +2605,28 @@ std::string debug(const std::vector<std::string>& a)
         }
         return o.empty() ? "none" : o;
     }
+    if (!a.empty() && a[0] == "deaths") { // tests (BUG-0221): the game's death count S+0x70 (docs/re/cell.md)
+        uint8_t* s0 = S();
+        return "deaths=" + std::to_string(s0 ? F<int32_t>(s0, 0x70) : -1);
+    }
+    if (!a.empty() && a[0] == "npcs") { // tests (BUG-0205): the creatures within <r> m: local index, mirror, AI lock, pos
+        uint8_t* av = avatar();
+        if (!av)
+            return "no cell";
+        float r = a.size() > 1 ? (float)atof(a[1].c_str()) : 80.f;
+        net::Vec3 me = pos_of(av);
+        std::string out;
+        for_each_cell([&](uint8_t* c, uint32_t idx) {
+            if (c == av || modes::cell_is_puppet(c) || F<uint8_t>(c, kDead) || F<uint8_t>(c, kDying) ||
+                strcmp(kind_of(c), "creature") || net::dist(pos_of(c), me) > r)
+                return;
+            char b[128];
+            snprintf(b, sizeof b, "npc %08X mirror=%d ailock=%d pos=(%.2f %.2f)\n", idx, g_host_of.count(idx) ? 1 : 0,
+                     F<uint8_t>(c, kAiLock), pos_of(c).x, pos_of(c).y);
+            out += b;
+        });
+        return out.empty() ? "no npcs\n" : out;
+    }
     if (!a.empty() && a[0] == "mirrors") { // live local pool indices, for checking cleanup after leave
         std::vector<uint32_t> indices;
         for (auto& [host, mirror] : g_mirrors)
@@ -2672,6 +2854,8 @@ std::string debug(const std::vector<std::string>& a)
         if (s && a.size() >= 2 && a[1] == "button")
             F<uint8_t>(s, 0x69) = 1; // as if a part had been collected (0xE5D7B0 sets it)
         uint8_t* m = modes::cell_at(mate_idx());
+        if (m && a.size() >= 2 && a[1] == "tp") // tests (BUG-0237): our cell right onto the mate (it touches it)
+            stop_at(av, pos_of(m));
         float sc[2] = {-1, -1};
         if (m) {
             net::Vec3 p = pos_of(m);
@@ -2740,9 +2924,14 @@ std::string debug(const std::vector<std::string>& a)
         F<uint8_t>(av, 0x04) = 0;
         return "swimming";
     }
-    if (a.size() >= 3 && a[0] == "tp") { // move our cell to <dx dy> from the nearest partner
+    if (a.size() >= 3 && a[0] == "tp") { // move our cell to <dx dy> from the nearest partner [or player <id>]
         net::Vec3 at;
-        if (nearest_partner(1e9f, &at).empty())
+        if (a.size() >= 4) { // tests with 3-4 players (BUG-0152): next to that player's cell as we draw it
+            uint8_t* pc = puppet_cell(atoi(a[3].c_str()));
+            if (!pc)
+                return "no such player";
+            at = pos_of(pc);
+        } else if (nearest_partner(1e9f, &at).empty())
             return "no partner";
         stop_at(av, {at.x + (float)atof(a[1].c_str()), at.y + (float)atof(a[2].c_str()), 0.f});
         return "moved";
@@ -2807,7 +2996,7 @@ std::string debug(const std::vector<std::string>& a)
     char ob[160];
     snprintf(ob, sizeof ob, "avatar_opacity=%.2f cine=%d parts=%s chasing_me=%d chasing_partner=%d\n",
              F<float>(av, kOpacity), cm && F<uint32_t>(cm, 0x2C) ? 1 : 0, parts.c_str(), chase_me, chase_partner);
-    return b + std::string(ob) + ko + status();
+    return b + std::string(ob) + ko + status() + away_status(); // the away line last: tests read the first food=
 }
 
 // the support trace (trace.h): what the own cell has around it and what it did since the last line.
@@ -2871,8 +3060,8 @@ std::string trace_line()
 
 std::string status()
 {
-    char d[96];
-    snprintf(d, sizeof d, "cell_contacts: creature_pairs=%u bite_events=%u\n", g_creature_pairs, g_bite_events);
+    char d[192];
+    snprintf(d, sizeof d, "cell_contacts: creature_pairs=%u bite_events=%u nonfinite_skipped=%u nonfinite_dropped=%u\n", g_creature_pairs, g_bite_events, g_nonfinite_sent_skipped, g_nonfinite_dropped);
     char b[1100];
     uint8_t* s = S();
     int food = s ? F<int32_t>(s, 0x1C) : -1;

@@ -156,6 +156,7 @@ class Campaign:
         self.log_dir = os.path.dirname(lane.game_log(self.host.inst))
         self.shots = 0
         self.cap = {}  # player -> (caption seen since, last OK)
+        self.talks = {}  # player -> answers to a Civ talk that is still up (BUG-0290)
         self.edits = {}  # player -> "done" clicks in the current editor
 
     # ---------------- findings and evidence ----------------
@@ -312,9 +313,13 @@ class Campaign:
                     continue
                 # the host's path right before each guest (BUG-0269), its last 0.25 s: the guest
                 # shows the host's objects that late on purpose (BUG-0275)
-                errs, cov, total, worst = measure(host.con, g.con)
+                missed = {}
+                errs, cov, total, worst = measure(host.con, g.con, missed=missed)
                 if total >= 5 and cov < 0.85:
                     short.append(f'{g.name}:coverage')
+                    # which kind and which keys (BUG-0288: the finding did not say)
+                    nums.append(f'{g.name}: coverage {cov:.0%} of {total}, missing '
+                                + ', '.join(f'{k}:{len(v)} {" ".join(sorted(v)[:6])}' for k, v in sorted(missed.items())))
                 for kind, v in errs.items():
                     v = sorted(v)
                     p90 = v[min(len(v) - 1, int(0.9 * len(v)))]
@@ -323,7 +328,7 @@ class Campaign:
                         over.append(f'{g.name}:{kind}:{p90:.1f}')
             if paused:
                 self.note('sync: not compared (pause menu open): ' + ', '.join(paused))
-            if over:  # every guest's numbers next to a desync: one guest only, or everybody (BUG-0275)
+            if over or short:  # every guest's numbers next to a desync: one guest only, or everybody (BUG-0275)
                 self.note('sync: ' + '; '.join(nums) + ' | fps ' + ', '.join(
                     f'{p.name} {fps(p.con)}' for p in self.P if p in alive))
             keys = [k.rsplit(':', 1)[0] if k.count(':') == 2 else k for k in over] + short
@@ -389,15 +394,32 @@ class Campaign:
                 time.sleep(1)
             return 'captain named'
         if 'Civ' in mode:
-            # a captured city asks for its specialty (Economic / Religious / Military) and waits
-            for answer in CIV_TALK:  # a nation's talk (its surrender after the cities fell) waits for an answer
-                if uifind.shown(con, answer):
-                    uifind.press(con, answer)
-                    return 'talk answered'
+            # a captured city asks for its specialty (Economic / Religious / Military) and waits. It
+            # comes first: the specialty box opens on top of a nation's talk and takes its clicks (the
+            # talk's answer stays "shown" under it: answered every 12 s for 20 min, BUG-0290)
             b = uifind.shown(con, 'Military')
             if b and 600 < b[0] < 1100 and 500 < b[1] < 750:  # the dialog's button, not the HUD's tab label
                 uifind.press(con, 'Military')
+                self.talks.pop(p.name, None)
                 return 'dialog Military'
+            for answer in CIV_TALK:  # a nation's talk (its surrender after the cities fell) waits for an answer
+                if uifind.shown(con, answer):
+                    # the same talk still up after 3 answers: something else takes the clicks (a
+                    # guest's talk under the "galactic adventures" panel, BUG-0290): Esc, as a player
+                    n = self.talks.get(p.name, 0) + 1
+                    self.talks[p.name] = n
+                    if n > 3 and n % 2 == 0:
+                        con.call('key esc')
+                        time.sleep(1)
+                        if not uifind.shown(con, answer):
+                            self.talks.pop(p.name, None)
+                            return 'talk closed with Esc'
+                        self.close_pause(con)  # (Esc opened the pause menu instead)
+                        return 'talk stuck: Esc did not close it'
+                    if uifind.press(con, answer):
+                        self.talks.pop(p.name, None)
+                    return 'talk answered'
+            self.talks.pop(p.name, None)
         if self.close_reward(con):
             return 'reward ok'
         if 'movie=1' in st:

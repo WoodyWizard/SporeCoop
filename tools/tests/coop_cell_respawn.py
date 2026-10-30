@@ -86,6 +86,7 @@ def main():
     ck(wait(lambda: (num(pool(guest), 'mirrors') or 0) > 5, 30), 'the guest mirrors the host pool')
     ck(wait(lambda: puppet_pos(host, 1) and puppet_pos(guest, 0), 20), 'both show the other player')
     record('before', host, guest)
+    deaths0 = {n: num(c.call('coop.pool deaths')['out'], 'deaths') for n, c in ((an, a), (bn, b))}
     # 1. A knocked out, then B's lethal bite
     r = a.call('coop.pool selfhit 250')['out']
     print(f'  {an}: {r}')
@@ -111,6 +112,11 @@ def main():
     ck(up, f'the {an}\'s knockout ends (it respawns)')
     time.sleep(3.0)
     record('after', host, guest)
+    # the game's death count S+0x70 (BUG-0221, the issue's "death count"): the knockout is no death
+    deaths1 = {n: num(c.call('coop.pool deaths')['out'], 'deaths') for n, c in ((an, a), (bn, b))}
+    print(f'  death count S+0x70 before {deaths0}, after {deaths1}')
+    ck(deaths0[an] is not None and deaths1[an] == deaths0[an],
+       f'the {an}\'s knockout and respawn is no death in its game ({deaths0[an]} -> {deaths1[an]})')
 
     # 3. the pool and the players in both games
     def mirrors_ok():

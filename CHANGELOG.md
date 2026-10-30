@@ -7,6 +7,74 @@
   the area around its own cell alive. Now it populates and keeps the area around every player, and
   each player gets the cells around itself, so two players exploring apart can both eat (BUG-0174,
   BUG-0279).
+### Changed
+- A guest that plays another world of the host's stage (joined from its own game, loaded one of its
+  own saves, or kept its world with `auto_load_world=0`) now plays that world on its own: **DNA it
+  earns there stays in that world and its save** and no longer goes to the host's world; when it
+  then loads the host's world, its DNA becomes the host's total (the DNA earned meanwhile does not
+  join the pack). Its money and tribe food stay its own there too, and a spend made in the shared
+  world just before it left still counts once. Cities founded in such a world by 0.7.3.0 stay in
+  the guest's save (BUG-0231).
+
+### Fixed
+- All modules now use one rule for "is the host's world the one I play", and the host names its
+  world when a player joins, so a guest joining in the host's Civ world no longer misses the first
+  vehicle and city state (BUG-0231).
+- A world share that failed after the host's save ("cannot share the world: ...") is retried up to
+  3 times, 30 s apart; a guest in another world no longer stays there for the whole stage
+  (BUG-0231).
+### Fixed
+- Space: a trade or spice gift that comes back after a galaxy reload is paid only into the game it
+  was taken from: kept for that game while another one is loaded, paid when the same game was saved
+  since, dropped when the reloaded game still has it or its save slot was replaced by a received
+  world (BUG-0225, GitHub #159).
+- A rare fault in the game's UI right after a guest loaded a shared world (a destroyed modal window
+  left in the window manager) is caught before the next mouse message (BUG-0270).
+- Tests: `space_rivalry` waits until both ships are on the home planet before its checks (BUG-0262).
+### Fixed
+- Tribe: after the host's tribe was wiped out and the host bounced back in time, the other players
+  no longer lose the host's whole tribe for the rest of the session (BUG-0288).
+
+### Testing
+- The test monitor no longer reports a crash when a game's console is only busy with another
+  command of the test (BUG-0261); `coop.tribe act` refuses hut and tool actions on a tribe member,
+  which made the host's game fault (BUG-0260); the campaign's coverage finding names the missing
+  objects per kind.
+### Fixed
+- Cell: while the host is in the main menu, an editor or a loading screen, a guest now plays on in
+  its own tide pool (the creatures swim, eat and are eaten, new ones appear) instead of a frozen
+  one, and the food it eats meanwhile goes to the shared progress when the host is back; then the
+  host's pool takes over again (BUG-0205, BUG-0151). Test: `coop_cell_away.py`.
+
+### Tests
+- Cell: `coop_cell_editor_timed.py` enters the own cell editor right after a real respawn or revive
+  (BUG-0237: the stage is left ~10 s after touching the mate, the invulnerability is over by then,
+  not reproduced); `coop_cell_respawn.py` also checks the death count (BUG-0221, not reproduced).
+### Fixed
+- Creature: a guest far from the host no longer loses the animals around it. The host's game kept
+  its world alive only around its own camera: farther than about 150 m it put the animals back
+  into its pool, also next to a guest, and nest members there appeared and vanished every few
+  seconds. The host now keeps the world alive around every player (BUG-0280).
+- Tribe: the animals where a guest looks, far from the host's village, now live on the host's game
+  and reach the guest (the host kept and sent them only around its own village) (BUG-0280,
+  BUG-0291).
+- Creature: a guest that rejoined and loaded the host's world could fault every frame in the herd
+  update (a herd of the save with an empty member slot); such slots are dropped now (BUG-0256).
+### Tests
+- Three and four players per stage in minutes: `tools/tests/party.py` (the helper for every test with
+  more than two players) and `coop_party.py` in the new `multi` suite: two guests joining at once,
+  each guest's game showing the others, shared totals, a vote with four, a leave and rejoin of the
+  last guest, the host in the menu with several guests, a player joining during a vote; and one
+  test per stage for the gameplay between guests: knockouts and revives (Cell), a joint hunt, one
+  NPC impressed by two guests and noticing two partners (Creature), the tribe split and chiefs with
+  four (Tribe), ownership, gifts, trade, roles and two superweapon requests (Civ), two players with
+  the same name, gifts, a spice sale, a contract crew without the host, allies mirrors, rivals and
+  rescue between guests (Space), leaves during another guest's transfer (BUG-0152).
+- civ_reload and civ_sw_vote assert the game's own state (the boost speed, the order a vehicle took,
+  the money a superweapon cost) and fail with their fixes switched off (BUG-0222).
+- The campaign bot answers a captured city's specialty box before a nation's talk under it, and
+  closes a talk that does not take its answer (BUG-0290); `select` waits for the partner to be on
+  the screen (BUG-0272).
 
 ## [0.7.3.1] - 2026-10-29
 

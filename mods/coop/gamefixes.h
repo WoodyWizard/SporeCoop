@@ -10,5 +10,7 @@ namespace gamefixes {
 void init(const SkHost* host, SkMod* mod);
 void shutdown(); // puts the original bytes back (hot reload)
 std::string status();
+// tests (BUG-0270): the window manager `wm` gets a destroyed object as its modal window
+std::string fake_dead_modal(void* wm);
 
 } // namespace gamefixes
