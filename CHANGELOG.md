@@ -27,6 +27,9 @@
   is shown as a short tag ("public #3F2A"), a home network one by its class ("192.168.x.x").
 
 ### Fixed
+- A load from the galaxy menu (a stage jump, a received world) could crash the game in
+  `cStarRecord::GetPlanetRecord` when the stage was left with a game fault that kept the old
+  world's player empire in the menu: the mod now clears it first (BUG-0284).
 - Votes: "I'm ready" in the co-op window did nothing while a caption of the game was on the
   screen (the brain-upgrade captions at the end of the Creature stage): the vote ran out of time.
   The window's buttons now work during captions and cinematics (BUG-0273).

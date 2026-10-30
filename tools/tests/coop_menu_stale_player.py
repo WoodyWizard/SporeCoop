@@ -115,7 +115,10 @@ def main():
         else:
             continue
         break
-    ck.faults(host=host, guest=guest)
+    try:
+        ck.faults(host=host, guest=guest)
+    except OSError as e:  # a game that crashed does not answer its console
+        ck(False, f'both games answer after the loads ({e})')
     return ck.result()
 
 
