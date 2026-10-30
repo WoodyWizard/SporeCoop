@@ -46,6 +46,26 @@ def bots(fixture, insts, stop):
             b = play_cell.Player(name, Console(inst, timeout=30), pid, 1 if pid == 0 else 0, random.Random(7 + pid))
             threading.Thread(target=run, daemon=True, args=(
                 lambda b=b: (b.step(time.time(), play_cell.pool(b.c)), time.sleep(0.25)),)).start()
+    elif fixture == 'tribe':
+        # as coop_campaign.py's Tribe play: 3 more members per player, play_tribe's Game steps every
+        # player in turn in one thread (it is not thread-safe)
+        import play_tribe
+        cons = {name: Console(inst, timeout=30) for name, (inst, _) in insts.items()}
+        host = cons['Alice']
+        print('  tribe setup:', host.call(f'coop.tribe spawn {3 * len(insts)}').get('out', '').strip(), flush=True)
+        time.sleep(8)
+        g = play_tribe.Game(host, cons['Bob'], 7, 1.0)
+        for name, (inst, pid) in insts.items():
+            if pid >= 2:
+                g.p.append(play_tribe.Player(name, cons[name], pid, random.Random(7 + pid), g.log, g.w, g.h))
+        for pl, name in zip(g.p, insts):
+            pl.name = name
+            pl.calibrate()
+
+        def steps():
+            for pl in g.p:
+                g.step(pl)
+        threading.Thread(target=run, args=(steps,), daemon=True).start()
     else:
         import play_creature
         world = play_creature.World(lane.HOST)
@@ -58,7 +78,7 @@ def bots(fixture, insts, stop):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--fixture', default='creature', choices=('cell', 'creature'))
+    ap.add_argument('--fixture', default='creature', choices=('cell', 'creature', 'tribe'))
     ap.add_argument('--rounds', type=int, default=40)
     ap.add_argument('--jsonl', default=None)
     a = ap.parse_args()
