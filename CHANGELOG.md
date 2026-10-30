@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Tests
+- Three and four players per stage in minutes: `tools/tests/party.py` (the helper for every test with
+  more than two players) and `coop_party.py` in the new `multi` suite: two guests joining at once,
+  each guest's game showing the others, shared totals, a vote with four, a leave and rejoin of the
+  last guest, the host in the menu with several guests (BUG-0152, partly).
+- civ_reload and civ_sw_vote assert the game's own state (the boost speed, the order a vehicle took,
+  the money a superweapon cost) and fail with their fixes switched off (BUG-0222).
+- The campaign bot answers a captured city's specialty box before a nation's talk under it, and
+  closes a talk that does not take its answer (BUG-0290); `select` waits for the partner to be on
+  the screen (BUG-0272).
+
 ## [0.7.3.1] - 2026-10-29
 
 ### Added

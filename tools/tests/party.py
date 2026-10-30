@@ -110,12 +110,15 @@ class Party:
         return hst is not None and self.stage(gp) == hst and gp.ok('coop.avatar') and \
             (hst == 'space' or gp.pid in self.together())
 
-    def wait_in(self, gp, timeout=240):
-        """no Enter for the host's "game saved" box: the mod closes it (a press could hide a stuck
-        box, BUG-0152)"""
+    def wait_in(self, gp, timeout=240, stable=1):
+        """in the host's world on `stable` checks in a row (1 s apart) with no world being received.
+        No Enter for the host's "game saved" box: the mod closes it (a press could hide a stuck box,
+        BUG-0152)"""
         t0 = time.time()
+        n = 0
         while time.time() - t0 < timeout:
-            if self.is_in(gp):
+            n = n + 1 if self.is_in(gp) and 'receiving world' not in gp.call('coop.status') else 0
+            if n >= stable:
                 return True
             time.sleep(1)
         return False
@@ -191,8 +194,20 @@ class Party:
         return gp.pid not in self.together()
 
     def join(self, gp, timeout=260):
+        """join (again). A guest that left keeps its copy of the world (avatar, stage) until the
+        host's world has arrived and loads: the host counts it as together for a moment before that.
+        So: wait until its game leaves the old copy (the galaxy menu or a load; 90 s at most: a
+        guest whose world needs no load stays), then until it is in the host's world for 4 s in a row
+        with nothing being received"""
         gp.call(gp.join)
-        return self.wait_in(gp, timeout)
+        hst = self.stage(self.host)
+        t0 = time.time()
+        left = False
+        while time.time() - t0 < 90 and not left:
+            left = self.stage(gp) != hst
+            time.sleep(0.5)
+        self.log.append(f'{gp.name} left its old copy: {left} ({time.time() - t0:.0f} s)')
+        return self.wait_in(gp, timeout, stable=4)
 
     def open_window(self, p):
         ui = Ui(p.con, p.name)

@@ -231,7 +231,7 @@ add('npc_multi3', P + 'coop_npc_multi.py --players 3 --seconds 40', ('extended',
 for st, n, extra in (('cell', 3, ''), ('creature', 4, ''), ('tribe', 4, ''), ('civ', 3, ''), ('space', 4, ''),
                      ('creature', 3, ' --one-by-one --skip away')):
     add(f'party_{st}{n}' + ('_seq' if extra else ''), P + f'coop_party.py --fixture {st} --players {n}{extra}',
-        ('multi', 'extended'), minutes=8)
+        ('multi', 'extended'), minutes=3)
 
 # a whole game of four bot players, Cell to the galactic core (BUG-0152, docs/06-testing.md#testing-campaign):
 # `lab.py run campaign --lanes 1 --skip <every other lane>` (one lane; `run` has no --lane, BUG-0259). Four games in the lane's bottle (instances 20+N / 30+N), nothing else of

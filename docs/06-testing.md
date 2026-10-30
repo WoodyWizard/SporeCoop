@@ -1814,8 +1814,27 @@ wrong. Suite `campaign` (in no other suite): `tools/lab.py run campaign --lanes 
   the last guest leaves: it passes once), rejoin of the last guest, the host in the menu and back.
   Suite `multi` (`tools/lab.py run multi --lane N`, also `extended` / `nightly`): `party_cell3`,
   `party_creature4`, `party_tribe4`, `party_civ3`, `party_space4`, `party_creature3_seq` and
-  `multi3` (coop_multi chaos). About 5-8 min each.
+  `multi3` (coop_multi chaos, ~4 min). About 2-2.5 min each (lab 20261030-003549: 6 tests in 6.4 min on
+  two lanes).
 * Not covered yet (BUG-0152 stays open for them): the per-stage gameplay between guests listed in
   the ticket (KO / revive between two guests, two guests impressing one NPC, tribe re-split, civ
   ownership with 4, space rescue / gifts between guests, same names). New tests for them start from
   `Party` and add their stage's own check of the other guest's game.
+## civ_reload and civ_sw_vote read the game (2026-10-30, fix/w9-tests)
+<a id="testing-civ-checks"></a>
+
+* `coop_civ_sw_vote.py` (BUG-0117, BUG-0222, ~1 min): makes the weapons usable without the free
+  cheat (`mem.write` of `unlocked[type]` at player civ +0x484, the civ from `coop.civ sw`; shared
+  money 20000 by `coop.res add money`) and asserts the game's money (+0x98) on the host and on the
+  guest: the vote fired the cheap type of its own request (2000), not the dear type 1 of the later
+  one (16000). Cases `--case guest|host|both`. `SPORE_FIX_OFF=civ.sw_vote` FAILS (guest case: 16000
+  spent; host case: 0, type 1 is then on cooldown). Pitfall: a fired type stays unusable for minutes,
+  so each case uses its own cheap type; never fire type 4 at the zero vector (crashed the game,
+  docs/re/civ.md#civ-superweapon-2024).
+* `coop_civ_reload.py` (BUG-0040, BUG-0059, BUG-0222, ~1.5 min): the alarm boost as a precondition
+  (the boosted vehicles' +0x218 at 1.5x), the speed back to the vehicle's own 2 s after `coop.leave`
+  (`SPORE_FIX_OFF=civ.boost` FAILS: the game keeps 1.5x for 30 s and more), and a forced stale
+  vehicle entry (`coop.civ stale_hv <id> 1`, host only, Civ only): the guest's order must not reach
+  that NPC vehicle in the host's game (`opos` of `coop.civ`; `SPORE_FIX_OFF=civ.world` FAILS).
+* Pitfall: two `lab.py run` started in the same second on different lanes got the same run folder
+  (out/lab/20261030-001854 holds both logs, the summary of one). Start them a few seconds apart.

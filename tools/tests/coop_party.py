@@ -90,7 +90,7 @@ def main():
                 time.sleep(3)
             t1 = time.time()
             ok = p.join(last)
-            print(f'  {last.name} back after {time.time() - t1:.0f} s: {ok}', flush=True)
+            print(f'  {last.name} back after {time.time() - t1:.0f} s: {ok} ({p.log[-1] if p.log else ""})', flush=True)
             ck(ok, f'[rejoin] {last.name} plays the host\'s world again')
             time.sleep(5)
             p.check_together(ck, 'rejoin')
