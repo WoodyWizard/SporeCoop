@@ -59,6 +59,7 @@ its editor, the guest joins again and plays 20 s in the shared world; no fault o
   `SPORE_FIX_OFF=npc.herd_nulls`: 1229 faults), out/lab/20261030-005130
   (`SPORE_FIX_OFF=npc.herd_nulls,savestrip.pending`: 1285 faults).
 * PASS with both: out/lab/20261030-003904 (2/2; herd_nulls only, it took 1 null out).
+* PASS on the final code (both fixes): out/lab/20261030-011525 (no null member reached the guest).
 * PASS with savestrip.pending alone (`SPORE_FIX_OFF=npc.herd_nulls`): out/lab/20261030-004853 (no
   null member, no fault).
 

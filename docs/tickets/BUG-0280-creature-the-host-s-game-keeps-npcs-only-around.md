@@ -55,7 +55,7 @@ list is meant for Rivals (docs/11-rivals.md 11.3.2) and the Cell tiles (BUG-0174
 * FAIL without the fix (`SPORE_FIX_OFF=npc.view_centres`, lane 9): out/lab/20261030-002600 (the
   guest kept 8 of its 20 NPCs; host NPCs near the guest 8). Earlier runs with a looser check
   (20261030-001557, 001845) lost 8 of 20 too and passed it: the check was tightened to 85 %.
-* PASS with the fix: out/lab/20261030-002333, out/lab/20261030-002821 (20 of 20 in every sample).
+* PASS with the fix: out/lab/20261030-002333, out/lab/20261030-002821, out/lab/20261030-011525 (20 of 20 in every sample).
 * Not seen in these runs: the nest flicker (new ids every 3-6 s), with or without the fix.
 
 ## History
