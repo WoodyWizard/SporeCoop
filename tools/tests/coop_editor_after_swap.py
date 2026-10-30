@@ -12,7 +12,12 @@ being built stayed black for good and could not be left (seen at 2-17 fps in leg
 4. Checked on the guest's game: the editor opens within 120 s, draws (the screen is not black) and
    one click on the red cross brings the guest back to the Creature stage.
 
-  coop_editor_after_swap.py   (SPORE_FIX_OFF=creations.editor_after_swap must FAIL)"""
+--no-swap: the guest plays the world's own creature (no swap after the load: only the new avatar of
+the loaded world, lab 20261030-162204 showed the same black editor 1.7 s after such a load).
+
+  coop_editor_after_swap.py [--no-swap]   (SPORE_FIX_OFF=creations.editor_after_swap must FAIL)"""
+import re
+import sys
 import time
 
 import lane
@@ -31,6 +36,13 @@ def brightness(con, name):
 def main():
     host, guest = start('creature')
     ck = Checks()
+    if '--no-swap' in sys.argv:  # the world's own creature: nothing to swap after the load
+        for _ in range(4):
+            guest.call('coop.creations prev creature')
+            if re.search(r"mine creature: [0-9A-F]{8} ''", guest.call('coop.creations')['out']):
+                break
+        time.sleep(8)
+        print('  guest plays the world\'s own:', re.search(r'key=\S+', guest.call('coop.avatar')['out']).group(0), flush=True)
     print('  guest:', guest.call('frame.limit 150')['out'].strip(), flush=True)
     guest.call('coop.leave')
     time.sleep(3)

@@ -902,13 +902,20 @@ static void apply_own_cell()
 // `coop.fix creations.editor_after_swap off`: no wait (0.7.3.1).
 static bool g_editor_after_swap_fix = true;
 COOP_FIX("creations.editor_after_swap", "BUG-0318", g_editor_after_swap_fix, "creations: an editor waits until the avatar's new body is built");
+// The same holds for a new avatar (a world just loaded, a rejoin without a swap: lab 20261030-162204,
+// the editor 1.7 s after the load stayed black): its body is built over the first frames as well.
 static double g_swap_at = -100;
 static uint64_t g_swap_frame = 0;
+static double g_new_avatar_at = -100;
+static uint64_t g_new_avatar_frame = 0;
 bool avatar_swap_settling(double now)
 {
-    if (!g_editor_after_swap_fix || g_swap_at < 0)
+    if (!g_editor_after_swap_fix)
         return false;
-    return now - g_swap_at < 5.0 || H->frame_index() - g_swap_frame < 300;
+    uint64_t f = H->frame_index();
+    bool swap = g_swap_at >= 0 && (now - g_swap_at < 5.0 || f - g_swap_frame < 300);
+    bool fresh = g_new_avatar_at >= 0 && (now - g_new_avatar_at < 5.0 || f - g_new_avatar_frame < 300);
+    return swap || fresh;
 }
 
 static void apply_own_avatar()
@@ -937,6 +944,8 @@ static void apply_own_avatar()
         g_seen_avatar = av;
         g_seen_epoch = epoch;
         g_seen_since = now;
+        g_new_avatar_at = now; // BUG-0318: a new avatar's body is still being built
+        g_new_avatar_frame = H->frame_index();
     }
     if (now - g_seen_since < 3.0)
         return;
