@@ -2960,6 +2960,10 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
         SAY("%s%s", npc::status().c_str(), npc::list().c_str());
         return 0;
     }
+    if (argc > 1 && !strcmp(argv[1], "herdnulls")) { // tests (BUG-0256)
+        SAY("%s", game::herd_nulls_status().c_str());
+        return 0;
+    }
     if (argc > 1 && !strcmp(argv[1], "herds")) {
         SAY("%s", game::herds_dump().c_str());
         return 0;

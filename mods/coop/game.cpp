@@ -32,6 +32,56 @@ static void SK_CDECL h_AddEvo(float delta)
     o_AddEvo(delta);
 }
 
+// ---- herds with a null member (BUG-0256) ----
+// SporeCoop::Herd_Update (0xC6D960, thiscall(herd, int dt) ret 4, every frame for an enabled herd)
+// reads every member of its list (+0x40 .. +0x44) without a null check (Creature_IsAdult 0xC0B8D0
+// reads +0xB34 first). A herd loaded with a null in that list (a member the save wrote as a null
+// reference) faulted at 0x00C0B8D2 every frame on a guest that rejoined and loaded the host's world.
+// The hook takes nulls out of the list before the update (the list holds counted references; a null
+// has none, so moving the others down changes no count).
+typedef void(SK_THISCALL* HerdUpdate_t)(void*, int);
+static HerdUpdate_t o_HerdUpdate;
+static bool g_herd_nulls_fix = true;
+COOP_FIX("npc.herd_nulls", "BUG-0256", g_herd_nulls_fix, "creature: a herd loaded with a null member does not fault every frame");
+static uint32_t g_herd_nulls_removed, g_herd_nulls_herds;
+static void* g_herd_nulls_last;
+
+static void SK_THISCALL h_HerdUpdate(void* herd, int dt)
+{
+    if (g_herd_nulls_fix && herd && !IsBadReadPtr((uint8_t*)herd + 0x40, 8)) {
+        void**& b = *(void***)((uint8_t*)herd + 0x40);
+        void**& e = *(void***)((uint8_t*)herd + 0x44);
+        if (b && e > b && !IsBadReadPtr(b, (size_t)((uint8_t*)e - (uint8_t*)b))) {
+            void** w = b;
+            for (void** r = b; r != e; ++r)
+                if (*r)
+                    *w++ = *r;
+            if (w != e) {
+                uint32_t n = (uint32_t)(e - w);
+                for (void** r = w; r != e; ++r)
+                    *r = nullptr;
+                e = w;
+                g_herd_nulls_removed += n;
+                if (herd != g_herd_nulls_last) {
+                    g_herd_nulls_herds++;
+                    g_herd_nulls_last = herd;
+                    H->log(M, SK_INFO, "herd %p (archetype %08X, nest %p): %u null member(s) taken out of its list "
+                           "(a loaded save held them)", herd, *(uint32_t*)((uint8_t*)herd + 0x88), herd_nest(herd), n);
+                }
+            }
+        }
+    }
+    o_HerdUpdate(herd, dt);
+}
+
+std::string herd_nulls_status()
+{
+    char b[120];
+    snprintf(b, sizeof b, "herd nulls: fix=%d hooked=%d removed=%u herds=%u", (int)g_herd_nulls_fix,
+             (int)(o_HerdUpdate != nullptr), g_herd_nulls_removed, g_herd_nulls_herds);
+    return b;
+}
+
 static std::vector<void*> g_puppets;
 static std::vector<void*> g_our_herds; // made by create_herd (puppets, proxies); diagnostics only
 
@@ -388,6 +438,8 @@ bool init(const SkHost* host, SkMod* mod)
         H->hook_create(M, (void*)a, (void*)h_TakeDamage, (void**)&o_TakeDamage);
     if (uintptr_t a = H->sym("Simulator::cCreatureGameData::AddEvolutionPoints"))
         H->hook_create(M, (void*)a, (void*)h_AddEvo, (void**)&o_AddEvo);
+    if (uintptr_t a = H->sym("SporeCoop::Herd_Update"))
+        H->hook_create(M, (void*)a, (void*)h_HerdUpdate, (void**)&o_HerdUpdate);
     a_CinematicGet = H->sym("Simulator::cCinematicManager::Get");
     a_SpeciesMgrGet = H->sym("Editors::cSpeciesManager::Get");
     a_GetSpecies = H->sym("Editors::cSpeciesManager::GetSpeciesProfile");

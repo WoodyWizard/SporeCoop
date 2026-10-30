@@ -1,8 +1,10 @@
 #include "view_centres.h"
 
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <map>
+#include <windows.h>
 
 #include "fixes.h"
 #include "game.h"
@@ -59,9 +61,16 @@ static double g_last_extra_at;
 using RelevanceFn = void*(SK_THISCALL*)(void* mgr, uint32_t a, uint32_t dt_ms);
 static RelevanceFn o_Relevance;
 
+static Sphere g_game_last; // the game's own first sphere at the last pass (diagnostics)
+
 static void* SK_THISCALL h_Relevance(void* mgr, uint32_t a, uint32_t dt_ms)
 {
     g_passes++;
+    if (mgr && !IsBadReadPtr((uint8_t*)mgr + 0x20, 8)) {
+        Sphere* b0 = *(Sphere**)((uint8_t*)mgr + 0x20);
+        if (b0 && b0 != *(Sphere**)((uint8_t*)mgr + 0x24) && !IsBadReadPtr(b0, sizeof(Sphere)))
+            g_game_last = *b0;
+    }
     if (!g_keep || g_centres.empty() || !mgr || !game::in_creature_stage())
         return o_Relevance(mgr, a, dt_ms);
     Sphere** v = (Sphere**)((uint8_t*)mgr + 0x20);
@@ -102,6 +111,10 @@ std::string status()
              (int)g_keep, (int)(o_Relevance != nullptr), (unsigned)g_centres.size(), g_passes, g_passes_extra,
              g_extra_max, g_game_spheres_max, g_last_extra_at > 0 ? now - g_last_extra_at : -1.0);
     std::string s = b;
+    snprintf(b, sizeof b, "\n  game sphere (%.1f %.1f %.1f) enter %.0f m leave %.0f m", g_game_last.x, g_game_last.y,
+             g_game_last.z, g_game_last.enter_sq > 0 ? sqrtf(g_game_last.enter_sq) : 0.f,
+             g_game_last.leave_sq > 0 ? sqrtf(g_game_last.leave_sq) : 0.f);
+    s += b;
     for (auto& [id, c] : g_centres) {
         snprintf(b, sizeof b, "\n  player %u mode %08X pos (%.1f %.1f %.1f) age %.1f s", id, c.mode, c.pos.x, c.pos.y,
                  c.pos.z, now - c.at);

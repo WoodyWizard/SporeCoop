@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A guest far from the host keeps the NPCs around it (BUG-0280).
+"""A guest far from the host (450 m) keeps the NPCs around it (BUG-0280).
 
 The game simulates its world only around its own camera (SporeCoop::Relevance_Update: herds and
 spawn points within 100 m are enabled, creatures farther than 250 m go back to the pool). Without
@@ -7,11 +7,11 @@ the fix the host's game pooled every NPC around a guest that stood 300 m from th
 had none left, and the nest spawned a missing member that was pooled again 1-3 s later: on the
 guest a family member appeared and vanished every 3-6 s, each time with a new net id.
 
-The guest stays where both start (at the nest), the host walks 300 m away and waits 40 s. Checked
+The guest stays where both start (at the nest), the host walks 450 m away and waits 40 s. Checked
 on the guest's game (its census: proxies are creatures in its world) and on the host's (NPCs in its
 world, not at the planet's centre, near the guest's puppet):
-  * the guest still has NPCs within 120 m of its avatar (at least half the count it had before,
-    at least 2), in most samples of the hold;
+  * the guest still has the NPCs within 120 m of its avatar (at least 85 % of the count it had
+    before, at least 2), in most samples of the hold (without the fix: 12 of 20 left, lane 9);
   * few new NPC ids appear around the guest during the hold (no spawn-and-pool cycle);
   * the host's game has NPCs in its world near the guest.
 
@@ -38,7 +38,7 @@ def main():
     hc = census.dump(host)
     av = next(r for r in hc.rows if r['own'] == 'avatar')
     a = list(av['pos'])
-    b = away(a, 300)
+    b = away(a, 450)
     guest.call('coop.npc gopos %.1f %.1f %.1f' % tuple(on_sphere(a, a, 0)))
     time.sleep(8)
 
@@ -84,9 +84,9 @@ def main():
     new_ids = len(seen - (first or set()))
     print(f'  new NPC ids near the guest during the hold: {new_ids}', flush=True)
     print('  host ' + host.call('coop.views')['out'].strip().replace('\n', '\n  '), flush=True)
-    need = max(2, n0 // 2)
+    need = max(2, math.ceil(0.85 * n0))  # without the fix the host's game pooled 8 of 20 (lane 9)
     good = sum(1 for n in counts if n >= need)
-    ck(math.dist(hp, a) > 250, 'the host stands far from the guest')
+    ck(math.dist(hp, a) > 350, 'the host stands far from the guest')
     ck(samples >= 20, f'censuses of both games compared ({samples})')
     ck(n0 >= 2, f'the guest had NPCs around it before ({n0})')
     ck(good >= 0.8 * max(1, samples), f'the guest keeps NPCs around it ({good}/{samples} samples with >= {need})')
