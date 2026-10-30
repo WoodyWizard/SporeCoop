@@ -796,6 +796,9 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   on every guest at once (`coop.npc list` on a guest: `err=4.33`). Likely pushed by the guest's own
   avatar (inferred). Reproduce: `SPORE_LANE=N python3 tools/tests/coop_sync_multi.py --fixture
   creature --rounds 45` and `coop.npc list` on a guest. Ticket: BUG-0281.
+* Not reproduced (2026-10-30, fix/w9-creature): with 2 players a guest's avatar 0.3-3 m beside
+  a standing host NPC did not push its proxy (0.1-0.6 m off); a 4-player measurement showed large
+  errors only for moving NPCs in a fight (2-19 m on 1-3 guests).
 
 ## Cell: a guest's mirrors trail the host's cells at a low frame rate (2026-10-29, fix/w7-sync)
 
