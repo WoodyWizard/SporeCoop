@@ -821,14 +821,20 @@ BUG-0174 / BUG-0279 (a guest far from the host swam in an empty pool). GOG 2024,
   without a cell for 2 s: our code deletes all its tiles and frees the list. Our lists are forgotten (not drained) when
   the tile pool was cleared or the stage is left. Each guest gets the cells within 120 m of its own
   cell (before: within 120 m of the host's).
-* **The host's view centres** (`mods/coop/view_centres.h`, `cellsync::view_centres()`): the host
-  first, then every partner, at most `view::kMaxCentres` (8), rebuilt every SimUpdate. The cost is
-  one PopulateTiles call per partner (at most 0x32 new tiles each), IsTileActive up to once per centre
-  for tiles and cells the own box refuses, and the pool holds the cells of up to N screens.
-* Rivals (docs/11-rivals.md, 0.8): every player plays on its own, far from the host. The same piece
-  serves it: the host's world keeps one populated area per view centre, every guest gets the state
-  of its own area, and a stage that needs it (Creature: the NPC pool cull BUG-0280, Tribe, Civ) keeps
-  a `view::Centres` of its own and asks `near_any` / `nearest` instead of "near the host's avatar".
+* **The host's view centres**: ONE module for every stage, `mods/coop/view_centres.{h,cpp}`
+  (namespace `views`, merged 2026-10-30 with fix/w9-creature's BUG-0280 registry,
+  docs/re/creature.md#creature-view-centres). coop.cpp notes each partner it shows in its own place
+  (`views::note`, any stage; a position that is not finite is no centre, BUG-0292); the Creature and
+  Tribe relevance hook reads them (`npc.view_centres`, `npc.view_centres_tribe`), the Cell stage reads
+  the same ones (`views::partners(kCell)`) into a `views::Set` (the host's view first, then every
+  partner, at most `views::kMaxCentres` = 8; `near_any` / `nearest`), rebuilt every SimUpdate and
+  readable as `cellsync::view_centres()`. The cost in Cell is one PopulateTiles call per partner (at
+  most 0x32 new tiles each), IsTileActive up to once per centre for tiles and cells the own box
+  refuses, and the pool holds the cells of up to N screens.
+* Rivals (docs/11-rivals.md, 0.8): every player plays on its own, far from the host. The same module
+  serves it: the registry already holds every partner in every stage; each stage turns it into its
+  own keep-alive (Cell: tile passes + per-guest state; Creature / Tribe: relevance spheres) and asks
+  `views::Set::near_any` / `nearest` instead of "near the host's avatar".
   Not done for Cell: a per-centre level (a Rivals player far ahead of the host would need its own
   tile level; the level here is the shared food progress).
 * Not verified: the pool's capacity with four players far apart (the cell pool holds 4096 slots in
