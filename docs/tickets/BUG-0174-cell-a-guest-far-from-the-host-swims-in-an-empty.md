@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.2.4 (main) and earlier
 fixed_in: unreleased
 branch: fix/w9-cell-food
-commits: f9f1861, 5e77f1b, 1b61757, 8b1a7b5, 1511d0b, ebf5ee2, a41caec, 12366b7, 6b23ebd
+commits: f9f1861, 5e77f1b, 1b61757, 8b1a7b5, 1511d0b, ebf5ee2, a41caec, 12366b7, 7f76bd5, ac4a302, ab5f584, 3914f6d, 924507c, dc71981, 4241133, 6f9d26d, 6b23ebd
 tests: cell_far_guest
 signature:
 docs: docs/re/cell.md#cell-partner-tiles, docs/known-issues.md, docs/06-testing.md
@@ -69,13 +69,16 @@ where both have objects. Switch: `coop.fix cell.partner_tiles off` (or the fallb
 ## Verification
 Test `cell_far_guest` (`coop_cell_new_game.py --diet carn --minutes 0 --probe 0 --apart 70 --far-probe 4`:
 a new game from the wizard, the guest holds W away from the host for 70 s, then eats food of its diet
-where it is):
-* FAIL with `SPORE_FIX_OFF=cell.partner_tiles`: lab 20261030-004115 (lane 2): 0 food on the guest's
-  screen at every sample from 39 m to 150 m, 0/4 eaten.
-* PASS: lab 20261030-003727 (lane 2): 15-28 food cells on the guest's screen up to 141 m, at 151 m
-  12/12 of its food are cells of the host's world, 4/4 eaten by its own game and applied on the host,
-  no faults; tile pool 71/512. Second PASS: lab 20261030-004501 (lane 2).
-
+where it is), lane 2, final code (6fe1871):
+* FAIL with `SPORE_FIX_OFF=cell.partner_tiles`: lab 20261030-015715: 0 food on the guest's screen at
+  every sample past 50 m (to 172 m), 0/4 eaten. (Also lab 20261030-004115 on an earlier build.)
+* PASS twice: lab 20261030-015012 (`--repeat 2`): 15-28 food cells on the guest's screen at every
+  sample, at 131-151 m 12/12 of its food are cells of the host's world, 4/4 eaten by its own game and
+  applied on the host, no faults; tile pool 60-71/512. (Earlier builds: 20261030-003727, -004501.)
+* Related tests on lane 2: cell_coop, cell_meat, cell_sync OK (20261030-004900), cell_evolve_poll
+  (`coop.pool food 1000`: the level-change rescale) and cell_leave OK (20261030-012925),
+  cell_new_game OK twice (20261030-013749) plus the final batch below; one cell_new_game run
+  (20261030-012925) had a guest NaN position and crash, BUG-0292 (not reproduced since).
 ## History
 - 2026-10-23: first recorded in docs/known-issues.md.
 - 2026-10-27: ticket backfilled from docs/known-issues.md (every entry carries its ticket id, CLAUDE.md 1).
@@ -90,4 +93,4 @@ where it is):
 - 2026-10-29: root cause and the fix plan written down for a later wave (owner's request).
 - 2026-10-30: fix/w9-cell-food: fixed (host populates around every partner, `cell.partner_tiles`); two
   crashes on the way recorded in docs/re/cell.md#cell-partner-tiles (the erase bound to the host's
-  list, the full tile pool).
+  list, the full tile pool, the world scale step refilling the host's list from every tile).

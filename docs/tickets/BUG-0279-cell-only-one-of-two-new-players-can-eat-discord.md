@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in: unreleased
 branch: fix/w9-cell-food
-commits: f9f1861, 5e77f1b, 1b61757, 8b1a7b5, 1511d0b, ebf5ee2, a41caec, 12366b7, 6b23ebd
+commits: f9f1861, 5e77f1b, 1b61757, 8b1a7b5, 1511d0b, ebf5ee2, a41caec, 12366b7, 7f76bd5, ac4a302, ab5f584, 3914f6d, 924507c, dc71981, 4241133, 6f9d26d, 6b23ebd
 tests: cell_new_game, cell_far_guest
 signature:
 docs: docs/re/cell.md#cell-new-players-food, docs/known-issues.md (BUG-0174 correction)
@@ -69,9 +69,9 @@ stops one player from eating). Earlier: The fix of the likely cause belongs to B
 or a far guest spawns its own food: ideas in docs/re/cell.md#cell-new-players-food).
 
 ## Verification
-The likely cause: lab 20261030-004115 FAILS (`SPORE_FIX_OFF=cell.partner_tiles`: the far guest finds
-no food, eats 0/4) and 20261030-003727 PASSES (the far guest eats 4/4, the host applies the meals),
-and 20261030-004501 PASSES too, all `cell_far_guest` on lane 2. What differs from BUG-0174: nothing seen; the near case (both eat)
+The likely cause: lab 20261030-015715 FAILS (`SPORE_FIX_OFF=cell.partner_tiles`: the far guest finds
+no food, eats 0/4) and 20261030-015012 PASSES twice (the far guest eats 4/4, the host applies the meals), all
+`cell_far_guest` on lane 2. What differs from BUG-0174: nothing seen; the near case (both eat)
 was never broken. Earlier:
 Not fixed, left open. The new test `cell_new_game` (both new players eat) PASSES: lab run
 20261029-150407 (lane 9). The far guest's empty pool (BUG-0174) FAILS as expected with
