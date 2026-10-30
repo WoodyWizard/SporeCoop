@@ -1589,6 +1589,11 @@ static void* local_city_near(const net::Vec3& p)
 // the host does not have is removed (a mismatch must be seen on two passes in a row: an incremental
 // MSG_CIV_BUILD may be on its way)
 static std::unordered_map<void*, int> g_bfix_seen;
+// BUG-0324: the host's game rebuilt a building the siege had ruined (a siege that ended without a
+// capture); the guest kept the ruin for good: reconcile_buildings only made ruins, never undid one.
+static bool g_ruin_repair_fix = true;
+COOP_FIX("civ.ruin_repair", "BUG-0324", g_ruin_repair_fix,
+         "civ: a guest replaces a ruin the host has whole again with the host's building");
 static uint32_t g_bfix_added, g_bfix_removed, g_ruins_differ, g_ruins_in;
 static void reconcile_buildings(void* city, size_t n,
                                 const std::function<void(size_t, uint32_t&, net::Vec3&, bool&)>& host_b)
@@ -1608,6 +1613,10 @@ static void reconcile_buildings(void* city, size_t n,
             net::Vec3 lp;
             if (used[k] || game::noun_id(local[k]) != noun || !game::object_position(local[k], lp) ||
                 net::dist(lp, p) > 4.f)
+                continue;
+            // BUG-0324: a ruin here that the host has whole again (rebuilt after the siege): not this
+            // building, so it goes as an extra and the host's comes back as a missing one
+            if (g_ruin_repair_fix && !ruin && F<int>(local[k], kBuildingState) == 2 && type_for_noun(noun))
                 continue;
             used[k] = found = true;
             if (ruin && F<int>(local[k], kBuildingState) != 2)
@@ -2508,6 +2517,25 @@ std::string debug(const std::vector<std::string>& a)
             out += line;
         }
         return out;
+    }
+    if (a.size() >= 2 && a[0] == "ruinlocal" && is_guest()) {
+        // ruinlocal <host city index>: this game alone ruins one building of that city (tests, BUG-0324)
+        int ci = atoi(a[1].c_str());
+        void* city = ci >= 0 && ci < (int)g_host_cities.size() ? g_host_cities[ci] : nullptr;
+        if (!city)
+            return "no such city";
+        static const float zero[3] = {0, 0, 0};
+        for (void* bl : vec_of((uint8_t*)city + kCityBuildings))
+            if (type_for_noun(game::noun_id(bl)) && F<int>(bl, kBuildingState) != 2) {
+                g_applying = true;
+                thiscall<int>(a_CombatantDamage, (uint8_t*)bl + 0x120, F<float>(bl, kBuildingState + 4) + 1.f, 0xFFFFFFFFu,
+                              0, (const float*)zero, (void*)nullptr);
+                g_applying = false;
+                char b[96];
+                snprintf(b, sizeof b, "building %p ruined here: state %d", bl, F<int>(bl, kBuildingState));
+                return b;
+            }
+        return "no building to ruin";
     }
     if (a.size() >= 2 && a[0] == "buildings") { // buildings <host city index>: object, noun, state, hp, position
         int ci = atoi(a[1].c_str());
