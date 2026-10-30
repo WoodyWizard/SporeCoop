@@ -25,3 +25,7 @@ SporeCoop::cPosseSimulator_AddMember ; Creature: pack members of a partner (BUG-
 SporeCoop::cPosseSimulator_Get ; Creature: pack members of a partner (BUG-0108)
 SporeCoop::Herd_NestPosition ; support log: no nest distance in the creature trace line (BUG-0279)
 SporeCoop::SpacePlayerData_Reset ; world: no clearing of a stale player empire before a load from the galaxy menu (BUG-0284)
+Simulator::Cell::PopulateTiles ; Cell: the host populates only around itself, a far guest finds no food (BUG-0174)
+Simulator::Cell::PopulateTile ; Cell: the host populates only around itself, a far guest finds no food (BUG-0174)
+Simulator::Cell::IsTileActive ; Cell: the host populates only around itself, a far guest finds no food (BUG-0174)
+Simulator::Cell::ViewBoxes ; Cell: the host populates only around itself, a far guest finds no food (BUG-0174)
