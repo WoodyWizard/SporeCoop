@@ -1,16 +1,16 @@
 ---
 id: BUG-0284
 title: Loading another save from the galaxy menu after a stage left with a fault: crash in cStarRecord::GetPlanetRecord
-status: open
+status: fixed
 kind: crash
 stage: Tribe/Civ
 reported: 2026-10-29
 source: lab campaign 20261029-174717 (4 players, lane 7)
 role: host
 versions: 0.7.3.0 (main b5ef74d)
-fixed_in:
+fixed_in: unreleased
 branch: fix/w8-planet
-commits:
+commits: 48324e9 302a898
 tests: coop_menu_stale_player.py (suite menu_stale_player)
 signature: 0xC0000005 at 0x00BBABE2 Simulator::cStarRecord::GetPlanetRecord+0x12 read of 0 (eax=ecx=0) < cStarManager::GetPlanetRecord+0x3B < cEmpire_RequireHomePlanet+0x65 < GetPlayerHomePlanetRecord+0x15 < 0xBB4E8A (stars.db write 0xBB4D40, labelled RequirePlanetsForStar+0x1FA), mode GalaxyGameEntry
 docs: docs/re/space.md#space-menu-player-reset, docs/06-testing.md#testing-menu-stale-player, docs/known-issues.md#issue-tribe-leave-hears-fault
@@ -58,8 +58,16 @@ missing there, so the fix is off (data/symbols/frozen_off_922af7c7.txt).
 The fault itself (BUG-0285) stays open.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+`coop_menu_stale_player.py` (suite `menu_stale_player`): the tribe fixture, 3 rounds of
+tribe -> civ_npc -> tribe loads from the galaxy menu with the menu's player reset patched out
+(the stand-in for the game fault, which cannot be made on purpose).
+* FAIL without the fix (`SPORE_FIX_OFF=world.menu_player`, lane 5): lab run
+  20261029-191412-fix-w8-planet: the host crashed in round 1 at 0x00BBABE2
+  `cStarRecord::GetPlanetRecord+0x12`, the campaign's address, registers and stack.
+* PASS with the fix: lab run 20261029-191921-fix-w8-planet (2 runs, lanes 6 and 8): 6 loads each,
+  "stale menu player cleared" 6 of 6, no fault on either game.
+Not verified: the original trigger (the game fault BUG-0285) was not reproduced; that it skipped the
+player reset is inferred from the one campaign crash.
 
 ## History
 - 2026-10-29: opened; root cause, fix and test on fix/w8-planet.
