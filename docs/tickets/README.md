@@ -302,3 +302,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0290](BUG-0290-tests-the-campaign-bot-answers-the-same-civ-talk.md) | fixed | test | Civ | 2026-10-29 | unreleased | tests: the campaign bot answers the same Civ talk dialog for 20 min and civ -> space times out |
 | [BUG-0291](BUG-0291-tribe-animals-far-from-the-player-tribe-are-miss.md) | fixed | desync | Tribe | 2026-10-30 | unreleased | tribe: animals far from the player tribe are missing on guests (NPCs are sent only within 250 m of the tribe) |
 | [BUG-0292](BUG-0292-cell-a-guest-s-own-cell-position-became-nan-then.md) | fixed | crash | Cell | 2026-10-30 | unreleased | Cell: a guest's own cell position became NaN, then its game crashed in PopulateTile+0x8A |
+| [BUG-0293](BUG-0293-cell-new-game-a-player-s-meat-probe-finds-too-li.md) | open | test | Cell | 2026-10-30 |  | cell_new_game: a player's meat probe finds too little meat on its screen now and then (with and without partner tiles) |

@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.2.4 (main) and earlier
 fixed_in: unreleased
 branch: fix/w9-cell-food
-commits: f9f1861, 5e77f1b, 1b61757, 8b1a7b5, 1511d0b, ebf5ee2, a41caec, 12366b7, 7f76bd5, ac4a302, ab5f584, 3914f6d, 924507c, dc71981, 4241133, 6f9d26d, 6b23ebd
+commits: f9f1861, 5e77f1b, 1b61757, 8b1a7b5, 1511d0b, ebf5ee2, a41caec, 12366b7, 7f76bd5, ac4a302, ab5f584, 3914f6d, 924507c, dc71981, 4241133, 6f9d26d, 6b23ebd, de617d3, c4b73fd, 1b46016, 21dad8b
 tests: cell_far_guest
 signature:
 docs: docs/re/cell.md#cell-partner-tiles, docs/known-issues.md, docs/06-testing.md
@@ -80,6 +80,14 @@ where it is), lane 2, final code (6fe1871):
   cell_new_game OK twice (20261030-013749); final build: cell_new_game, cell_evolve_poll, cell_coop,
   cell_meat OK (20261030-020044). One cell_new_game run
   (20261030-012925) had a guest NaN position and crash, BUG-0292 (not reproduced since).
+After the merge with main (de617d3: one view centres module with BUG-0280's `views`, the partners
+from its registry; 1b46016: shared tiles hand over after a level change), lane 2:
+* lab 20261030-021422: cell_far_guest, cell_sync, cell_evolve_poll, cell_coop, cell_meat, cell_leave,
+  npc_far, tribe_far all OK (8/8).
+* lab 20261030-023719 (`--repeat 3`): cell_far_guest 3/3 OK, cell_evolve_poll 3/3 OK, cell_new_game
+  1/3 (the guest's meat probe 2/6 and 0/6; the same probe failed with the fix off too, lab
+  20261030-030946 #3: BUG-0293). No fault in any run.
+
 ## History
 - 2026-10-23: first recorded in docs/known-issues.md.
 - 2026-10-27: ticket backfilled from docs/known-issues.md (every entry carries its ticket id, CLAUDE.md 1).
