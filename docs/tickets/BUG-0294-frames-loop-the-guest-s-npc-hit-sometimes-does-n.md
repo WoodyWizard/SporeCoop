@@ -8,7 +8,7 @@ reported: 2026-10-30
 source: lab 20261030-033555
 role: test
 versions: 
-fixed_in:
+fixed_in: unreleased
 branch: main
 commits: 75a05bf
 tests: frames_loop
