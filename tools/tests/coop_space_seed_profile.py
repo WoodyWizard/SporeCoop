@@ -11,7 +11,8 @@ there and the host follows. Both games must have the same planets (the PlanetIDs
 
   SPORE_LANE=9 python3 tools/tests/coop_space_seed_profile.py [--without-fix]
 
---without-fix: `coop.fix space.seed_profile off` on both games: the planets differ (FAIL).
+--without-fix (or SPORE_FIX_OFF=space.seed_profile): `coop.fix space.seed_profile off` on both
+games: the planets differ (FAIL).
 """
 import re
 import sys
@@ -34,8 +35,9 @@ def main():
     host, guest = start('space')
     ck = Checks()
     time.sleep(3)
-    for con in (host, guest):
-        print(' ', con.call(f'coop.fix space.seed_profile {"off" if without else "on"}')['out'].strip())
+    if without:  # (SPORE_FIX_OFF=space.seed_profile does the same through twoinst.start)
+        for con in (host, guest):
+            print(' ', con.call('coop.fix space.seed_profile off')['out'].strip())
     stars = [s for s in fresh_npc(host) if s in fresh_npc(guest)]
     print('  fresh NPC stars:', [f'{s:08X}' for s in stars])
     if not ck(len(stars) >= 1, 'an NPC star near home whose planets nobody generated'):
