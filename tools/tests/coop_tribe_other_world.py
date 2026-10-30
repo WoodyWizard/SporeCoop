@@ -9,8 +9,8 @@ empty table, so its own tribe stood still.
   1. the usual Tribe session, then the guest leaves and plays a world of its own: a copy of the
      fixture planet under another name (Otherworld), coop.worldfix autoload 0
   2. the guest joins the host and stays in Otherworld (coop.status: elsewhere=1)
-  3. the guest selects one of its own members and orders it to walk 20-80 m (coop.tribe walk: the
-     game's WalkSelectedTo, as a right-click): the member's position in the guest's game moves
+  3. the guest selects one of its own members and orders it to walk 20-80 m (coop.tribe select_own / walk:
+     the game's WalkSelectedTo, as a right-click): the member's position in the guest's game moves
      by more than 8 m
 
   coop_tribe_other_world.py [--nofix]   (coop.fix core.world_gate off: must FAIL)
@@ -23,13 +23,30 @@ import sys
 import time
 
 import lane
-from coop_tribe import dist, members
+from coop_tribe import dist
 from twoinst import Checks, start
 
 
 def world_of(con):
     m = re.search(r"world '([^']*)'", con.call('coop.avatar')['out'])
     return m.group(1) if m else None
+
+
+def tribes(con):
+    """[(is_player, [(x, y, z), ...])] in the game's order (ids are 0 in a world of the guest's own)"""
+    out = []
+    for line in con.call('coop.tribe')['out'].splitlines():
+        if re.match(r'tribe \d+', line):
+            out.append(('(player)' in line, []))
+            continue
+        m = re.match(r'\s+#\d+ \S+ owner=-?\d+ age=\d+ sel=\d+ hp=[\d.]+ pos=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\)', line)
+        if m and out:
+            out[-1][1].append(tuple(float(m.group(i)) for i in (1, 2, 3)))
+    return out
+
+
+def own(con):
+    return next((ms for pl, ms in tribes(con) if pl), [])
 
 
 def main():
@@ -68,25 +85,24 @@ def main():
         time.sleep(1)
     ck('elsewhere=1' in st, 'the guest knows the host plays another world')
     time.sleep(4)
-    gm = members(guest)
-    mine = [i for i, v in gm.items() if v[3] == 'player']
+    mine = own(guest)
     if not ck(mine, f'the guest has members of its own tribe ({len(mine)})'):
         return ck.result()
-    me = mine[0]
-    p0 = gm[me][2]
-    cands = sorted((dist(p0, v[2]), v[2]) for i, v in gm.items() if v[3] != 'player')
+    p0 = mine[0]
+    others = [p for pl, ms in tribes(guest) if not pl for p in ms]
+    cands = sorted((dist(p0, p), p) for p in others)
     tgt = next((p for d, p in cands if 20 < d < 80), cands[0][1] if cands else None)
     if not ck(tgt is not None, 'a target to walk to'):
         return ck.result()
-    for i, v in gm.items():
-        if v[1]:
-            guest.call(f'coop.tribe select {i} 0')
-    print(' ', guest.call(f'coop.tribe select {me} 1')['out'].strip())
+    for i in range(len(mine)):
+        guest.call(f'coop.tribe select_own {i} 0')
+    print(' ', guest.call('coop.tribe select_own 0 1')['out'].strip())
     print(' ', guest.call('coop.tribe walk %.1f %.1f %.1f' % tgt)['out'].strip(), f'({dist(p0, tgt):.0f} m)')
     time.sleep(10)
-    p1 = members(guest).get(me, (0, 0, p0))[2]
+    now = own(guest)
+    p1 = now[0] if now else p0
     moved = dist(p0, p1)
-    print(f'  member #{me} moved {moved:.1f} m in the guest\'s own world')
+    print(f'  own member 0 moved {moved:.1f} m in the guest\'s own world')
     ck(moved > 8, f'the guest\'s own member walks while it plays its own world ({moved:.1f} m)')
     ck(world_of(guest) == 'Otherworld.spo', f'the guest is still in its own world ({world_of(guest)})')
 

@@ -1677,6 +1677,16 @@ std::string debug(const std::vector<std::string>& a)
         vcall<int>((uint8_t*)c + 0xC0, 0x54 / 4, atoi(a[2].c_str()));
         return std::string("selected=") + std::to_string(F<uint8_t>(c, kSelectedOff));
     }
+    if (a.size() >= 3 && a[0] == "select_own") { // select_own <n> <0|1>: the player tribe's n-th member (tests:
+        // a guest in a world of its own has no shared ids, BUG-0231)
+        void* pt = player_tribe();
+        auto ms = pt ? members(pt) : std::vector<void*>{};
+        size_t n = (size_t)atoi(a[1].c_str());
+        if (n >= ms.size())
+            return "no such member";
+        vcall<int>((uint8_t*)ms[n] + 0xC0, 0x54 / 4, atoi(a[2].c_str()));
+        return std::string("selected=") + std::to_string(F<uint8_t>(ms[n], kSelectedOff));
+    }
     if (a.size() >= 4 && a[0] == "walk") { // walk <x> <y> <z> : the selected members walk there
         float p[3] = {(float)atof(a[1].c_str()), (float)atof(a[2].c_str()), (float)atof(a[3].c_str())};
         thiscall<int>(a_WalkSelected, (void*)nullptr, (const float*)p);
@@ -1752,7 +1762,7 @@ std::string debug(const std::vector<std::string>& a)
             out += q.v[i].second;
         return out + std::to_string(q.v.size()) + " objects";
     }
-    return "usage: coop.tribe select <id> <0|1> | walk <x> <y> <z> | act <action> <target id> | objs <noun hex>";
+    return "usage: coop.tribe select <id> <0|1> | select_own <n> <0|1> | walk <x> <y> <z> | act <action> <target id> | objs <noun hex>";
 }
 
 // the citizen's current behaviour-tree node (ai = c+0xB4C, node id at ai+0x1D8; docs/re/tribe.md B)
