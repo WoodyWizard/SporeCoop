@@ -204,6 +204,7 @@ add('space_trade_reload_same', P + 'coop_space_trade_reload.py --same-game', min
 add('dead_modal', P + 'coop_dead_modal.py', warm=True, minutes=3, fixture='space')  # a destroyed modal window in the window manager does not fault the next mouse message (BUG-0270; SPORE_FIX_OFF=game.dead_modal fails)
 add('space_finale', P + 'coop_space_finale.py', minutes=12)  # the galaxy core together (space_finale.cpp): wait, joint entry, Staff of Life, rejoin
 add('space_finale_alone', P + 'coop_space_finale.py --alone', minutes=10)  # "Enter now" alone: the partner gets Steve's gift by message
+add('space_captain', P + 'coop_space_captain.py', minutes=4, reports=True)  # BUG-0303: a captain screen left open (rank badge) blocks the finale's wheel zoom-out; the tool closes it (OLD_FINALE_TOOL=1 fails); BUG-0304: the game's own fault when it opens
 # joins and rejoins over a bad network (goodbye lost every second round), the setup + in-game update
 add('rejoin_mobile', 'SPORE_NET=mobile ' + P + 'coop_rejoin_net.py', minutes=5)
 # many rejoins / world loads in a row, fault log checked after each (docs/re/space.md 8.3): a world sent

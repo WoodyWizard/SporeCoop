@@ -49,6 +49,26 @@ def png_size(path):
     return struct.unpack('>II', head[16:24])
 
 
+def captain_open(con):
+    """the captain screen (opened by the rank badge over the ship's picture) is up: its "Equipment"
+    panel is shown. It is not a caption (finale busy=0) and the game ignores the mouse wheel while it
+    is up, so a zoom-out to the galaxy view never happens (BUG-0303)"""
+    import uifind
+    return uifind.shown(con, 'Equipment') is not None
+
+
+def close_captain(con, tries=3):
+    """close the captain screen like a player: its OK button (Esc opens the pause menu over it)"""
+    import uifind
+    for _ in range(tries):
+        if not captain_open(con):
+            return True
+        p = uifind.shown(con, 'OK')
+        con.call(f'click {p[0]} {p[1]}' if p else 'click 1224 856')
+        time.sleep(1.5)
+    return not captain_open(con)
+
+
 class Stop(Exception):
     pass
 
@@ -132,7 +152,9 @@ class Player(threading.Thread):
                 players.setdefault(int(f[2]), (int(f[3]), int(f[4])))
             elif f and f[0] == 'obj' and len(f) == 5:
                 x, y = int(f[3]), int(f[4])
-                if 40 < x < self.W - 40 and 60 < y < self.H - 180:  # not under the HUD
+                # not under the HUD; the rank badge over the ship's picture (bottom right, up to
+                # H - 205) opens the captain screen, which blocks the wheel (BUG-0303)
+                if 40 < x < self.W - 40 and 60 < y < self.H - 180 and not (x > self.W - 120 and y > self.H - 225):
                     objs.append((f[1], float(f[2]), x, y))
         return me, players, objs
 
@@ -226,6 +248,11 @@ class Player(threading.Thread):
             self.sleep(self.rng.uniform(1.0, 2.5))
             self.act('key enter')
             self.count('captions_ok')
+            return True
+        # the captain screen (a click on the rank badge): OK closes it, Esc does not (BUG-0303)
+        if captain_open(self.c):
+            close_captain(self.c)
+            self.count('captain_closed')
             return True
         # the pause menu (an Esc too many) or the co-op window left open: close them
         for cap in ('Resume Game',):

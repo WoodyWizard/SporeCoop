@@ -107,11 +107,17 @@ def get_drive(con, who, ck):
 
 
 def to_galaxy(con, who, ck):
-    """zoom out with the mouse wheel like a player (the drive allows it) until the galaxy view"""
+    """zoom out with the mouse wheel like a player (the drive allows it) until the galaxy view.
+    A captain screen left open (a bot's click on the rank badge) takes no wheel: close it first
+    (BUG-0303; OLD_FINALE_TOOL=1 skips that, to see the old tool fail)"""
+    import play_space
     n = 0
     for _ in range(10):
         if fin(con).get('ctx') == '2':
             break
+        if os.environ.get('OLD_FINALE_TOOL') != '1' and play_space.captain_open(con):
+            print(f'  {who}: the captain screen is open: OK closes it')
+            play_space.close_captain(con)
         con.call('wheel 720 540 -5')
         n += 1
         time.sleep(1.5)
