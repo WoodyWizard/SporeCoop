@@ -38,7 +38,7 @@ def host_animals(con):
     """the host's living NPCs: id -> pos"""
     out = {}
     for m in re.finditer(r'^\s*#(\d+) \S+ species=\S+ hp=([\d.]+) dist=\S+ pos=\((\S+) (\S+) (\S+)\)', con.call('coop.npc list')['out'], re.M):
-        if float(m.group(2)) > 0:
+        if 0 < float(m.group(2)) < 500:  # not the epic (it attacks the tribe, its own AI fights the path)
             out[int(m.group(1))] = tuple(map(float, m.group(3, 4, 5)))
     return out
 
@@ -64,6 +64,7 @@ def main():
     print('  host:', host.call(f'coop.npc dash {nid} {LEN} {SPEED} 45 {WIDTH} {mate} {OFF}')['out'].strip(), flush=True)
     time.sleep(2)
     errs = []
+    per = {k: 0 for k in keys}
     t_end = time.time() + 40
     while time.time() < t_end:
         h0, h1 = cm.host_path(host)
@@ -75,6 +76,7 @@ def main():
             e = min(cm.seg_dist(gsm[key], h0.get(key, h1[key]), h1[key]),
                     cm.seg_dist(gsm[key], h1[key], h2.get(key, h1[key])))
             errs.append(e)
+            per[key] += 1
             if os.environ.get('DASH_VERBOSE'):
                 gl = [l.strip() for l in guest.call('coop.npc list')['out'].splitlines() if re.match(rf'\s*#{nid}\s', l)]
                 print(f'    {e:.2f} m', re.sub(r' (puppet|ptr|herd|body|species|hp|dist)=\S+', '', gl[0])[:220] if gl else '-', flush=True)
@@ -83,7 +85,7 @@ def main():
         line = [l.strip() for l in guest.call('coop.npc list')['out'].splitlines() if re.match(rf'\s*#{i}\s', l)]
         print(f'  guest proxy #{i}:', line[0][:300] if line else '-', flush=True)
     guest.call('frame.limit auto')
-    ck(len(errs) >= 30, f'{len(errs)} samples of animals {keys} on both machines')
+    ck(len(keys) == 2 and min(per.values()) >= 30, f'samples of both animals on both machines ({per})')
     if errs:
         s = sorted(errs)
         far = sum(1 for e in errs if e > LIMIT)
