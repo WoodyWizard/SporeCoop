@@ -1788,3 +1788,34 @@ wrong. Suite `campaign` (in no other suite): `tools/lab.py run campaign --lanes 
 * Pitfall: two games of one bottle that call `GetAdaptersAddresses` together crash Wine 10.0
   (docs/04-netcode.md#netcode-wine-nsi). A test helper that looks up addresses must not run in
   every game of a lane at the same moment.
+## Three and four players per stage: party.py, coop_party.py (2026-10-30, fix/w9-tests)
+<a id="testing-party"></a>
+
+* `tools/tests/party.py` (BUG-0152, GitHub #131) is the helper for every test with more than two
+  players, and the base of the 0.8 Rivals tests (docs/11-rivals.md). `Party.start(fixture, players=3|4)`
+  starts lane N's host (Alice) and guest (Bob) with `twoinst.start`, then one or two extra guests in
+  the same bottle (Carol = instance 20+N, Dave = 30+N, empty profiles `mp1` / `mp2`,
+  `coop_multi.start_extra`) that join at the same moment (`join_together=False`: one after the
+  other). Each machine is a `Player` (`name`, `con`, `inst`, `pid`, `join`).
+* Checks of every machine's own game: `check_together` (each guest plays the host's stage with an
+  avatar and the host counts it as together; Space: in the session), `check_partners` (each guest's
+  game shows every other player, guests too, near where that player's own game has it:
+  `partner_view(viewer, subject)` compares the viewer's `coop.sync` key `p<id>` with the subject's
+  own avatar; limits per stage in `party.NEAR`), `check_res` (shared food / money), `faults`.
+* Actions: `leave`, `join` (waits until it is back in the host's world; never presses Enter on the
+  host's "game saved" box: the mod closes it, a press could hide a stuck box), `vote_ready` (a
+  real click on "I'm ready" in the player's co-op window), `vote_line` (the vote line of that
+  machine's window, "... - ready k/N - s"), `host_away` (`coop.menu`, until every guest shows
+  `host_away=1`), `host_back` (the host loads the lane's slot again), `stop` (ends the lane's
+  games: the extras share the bottle, so these tests are cold and mark the lane state not reusable).
+* `coop_party.py --fixture <stage> --players 3|4 [--one-by-one] [--skip vote,rejoin,away]`: join
+  (two guests at once), see (every guest sees every other player, shared totals), vote (`coop.vote
+  action`; all guests but the last ready: every window shows the same ready k/N, the vote waits;
+  the last guest leaves: it passes once), rejoin of the last guest, the host in the menu and back.
+  Suite `multi` (`tools/lab.py run multi --lane N`, also `extended` / `nightly`): `party_cell3`,
+  `party_creature4`, `party_tribe4`, `party_civ3`, `party_space4`, `party_creature3_seq` and
+  `multi3` (coop_multi chaos). About 5-8 min each.
+* Not covered yet (BUG-0152 stays open for them): the per-stage gameplay between guests listed in
+  the ticket (KO / revive between two guests, two guests impressing one NPC, tribe re-split, civ
+  ownership with 4, space rescue / gifts between guests, same names). New tests for them start from
+  `Party` and add their stage's own check of the other guest's game.

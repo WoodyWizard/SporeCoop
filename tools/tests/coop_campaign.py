@@ -156,6 +156,7 @@ class Campaign:
         self.log_dir = os.path.dirname(lane.game_log(self.host.inst))
         self.shots = 0
         self.cap = {}  # player -> (caption seen since, last OK)
+        self.talks = {}  # player -> answers to a Civ talk that is still up (BUG-0290)
         self.edits = {}  # player -> "done" clicks in the current editor
 
     # ---------------- findings and evidence ----------------
@@ -381,15 +382,32 @@ class Campaign:
                 time.sleep(1)
             return 'captain named'
         if 'Civ' in mode:
-            # a captured city asks for its specialty (Economic / Religious / Military) and waits
-            for answer in CIV_TALK:  # a nation's talk (its surrender after the cities fell) waits for an answer
-                if uifind.shown(con, answer):
-                    uifind.press(con, answer)
-                    return 'talk answered'
+            # a captured city asks for its specialty (Economic / Religious / Military) and waits. It
+            # comes first: the specialty box opens on top of a nation's talk and takes its clicks (the
+            # talk's answer stays "shown" under it: answered every 12 s for 20 min, BUG-0290)
             b = uifind.shown(con, 'Military')
             if b and 600 < b[0] < 1100 and 500 < b[1] < 750:  # the dialog's button, not the HUD's tab label
                 uifind.press(con, 'Military')
+                self.talks.pop(p.name, None)
                 return 'dialog Military'
+            for answer in CIV_TALK:  # a nation's talk (its surrender after the cities fell) waits for an answer
+                if uifind.shown(con, answer):
+                    # the same talk still up after 3 answers: something else takes the clicks (a
+                    # guest's talk under the "galactic adventures" panel, BUG-0290): Esc, as a player
+                    n = self.talks.get(p.name, 0) + 1
+                    self.talks[p.name] = n
+                    if n > 3 and n % 2 == 0:
+                        con.call('key esc')
+                        time.sleep(1)
+                        if not uifind.shown(con, answer):
+                            self.talks.pop(p.name, None)
+                            return 'talk closed with Esc'
+                        self.close_pause(con)  # (Esc opened the pause menu instead)
+                        return 'talk stuck: Esc did not close it'
+                    if uifind.press(con, answer):
+                        self.talks.pop(p.name, None)
+                    return 'talk answered'
+            self.talks.pop(p.name, None)
         if self.close_reward(con):
             return 'reward ok'
         if 'movie=1' in st:

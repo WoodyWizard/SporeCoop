@@ -2,9 +2,10 @@
 """Civilization: a second superweapon request during a running vote (BUG-0117), checked in the game.
 
 The weapons are made usable the game's way (no free cheat): `unlocked[type]` of the player civ
-(+0x484, bool[12], GOG 2024 CanUse 0xBF8B40) is written for types 3 and 1, and the shared money is
-raised to 20000. Type 3 costs 2000, type 1 costs 16000 (GOG 2024 0xBF6DF0), so the money the game
-takes in FireSuperweapon (mWealth +0x98 -= cost, 0xBF8BB0) tells which weapon the game fired.
+(+0x484, bool[12], GOG 2024 CanUse 0xBF8B40) is written for the two types of a case, and the shared
+money is raised to 20000. Types 3 and 9 cost 2000, type 1 costs 16000 (GOG 2024 0xBF6DF0), so
+the money the game takes in FireSuperweapon (mWealth +0x98 -= cost, 0xBF8BB0) tells which weapon the
+game fired. Each case asks for its own cheap type (guest 3, host 9; a fired type is on cooldown), then type 1.
 
 Case guest (the BUG-0117 path, host_superweapon_request):
 1. The guest asks for type 3 (`coop.civ super 3`: the game's FireSuperweapon, hooked on the guest:
@@ -14,8 +15,8 @@ Case guest (the BUG-0117 path, host_superweapon_request):
 4. The game's money on the host (+0x98) went down by about 2000 (type 3), not 16000 (type 1), and
    the guest's own game shows the same money (the shared total); the guest was told its second
    request was not taken.
-Case host (the host's own request, h_FireSW): the host asks for type 3, then for type 1 during the
-vote; the guest clicks nothing, the host passes the vote: again 2000, not 16000.
+Case host (the host's own request, h_FireSW): the host asks for type 9, then for type 1 during the
+vote, the host passes the vote: again 2000, not 16000.
 
 Before the fix the second request overwrote the statics the vote read: type 1 fired under the
 first vote (16000 taken). Spice income during the few seconds is small (tolerance 600).
@@ -31,7 +32,12 @@ import time
 
 from twoinst import Checks, start
 
-COST = {3: 2000.0, 1: 16000.0}
+# (cheap, dear) per case: each case its own cheap type (a fired weapon's cooldown blocks it for minutes).
+# The dear one fires only without the fix (then the later case finds it on cooldown: spent 0, also a
+# FAIL). Not type 4: fired at the zero vector it crashed the game in cPlanetModel::GetNearestCity+0x1B7
+# (0xB897A7, lab 20261030-001517; the game's own UI always passes a place)
+PAIR = {'guest': (3, 1), 'host': (9, 1)}
+COST = {3: 2000.0, 9: 2000.0, 1: 16000.0}
 TOL = 600.0
 
 
@@ -88,30 +94,32 @@ def settle(host, guest, before, secs=8):
 
 def run_case(ck, host, guest, case):
     asker = guest if case == 'guest' else host
+    cheap, dear = PAIR[case]
     tag = f'[{case}]'
-    print(f'  {tag} unlocked on the host:', unlock(host, (3, 1)))
+    print(f'  {tag} unlocked on the host:', unlock(host, (cheap, dear)))
     h0, g0 = set_money(host, guest, 20000.0)
     print(f'  {tag} money host {h0} guest {g0}')
     ck(h0 is not None and h0 >= 19000 and g0 is not None and abs(g0 - h0) < 50,
        f'{tag} both games show 20000 before the request (host {h0}, guest {g0})')
-    print(f'  {tag} first request:', asker.call('coop.civ super 3')['out'].strip())
+    print(f'  {tag} first request:', asker.call(f'coop.civ super {cheap}')['out'].strip())
     time.sleep(2)
     v = host.call('coop.vote')['out']
     print(f'  {tag} host vote:', v.splitlines()[0] if v else v)
     ck('wants to fire a superweapon' in v and 'active' in v, f'{tag} the request opened a vote')
-    print(f'  {tag} second request:', asker.call('coop.civ super 1')['out'].strip())
+    print(f'  {tag} second request:', asker.call(f'coop.civ super {dear}')['out'].strip())
     time.sleep(2)
     s, out = sw(host)
     print(f'  {tag} host:', out)
     if case == 'guest':
-        ck(s.get('last_request') == 1, f'{tag} the host got the second request')
+        ck(s.get('last_request') == dear, f'{tag} the host got the second request')
     ck(abs(money(host) - h0) < TOL, f'{tag} nothing fired before the vote passed')
     host.call('coop.vote go')
     h1, g1 = settle(host, guest, h0)
     print(f'  {tag} after the vote: host {h0} -> {h1}, guest {g0} -> {g1}')
     spent = h0 - (h1 or h0)
-    ck(COST[3] - TOL <= spent < COST[1] - TOL,
-       f'{tag} the game fired the vote\'s weapon: type 3 (2000), not the later request\'s type 1 (16000): spent {spent:.0f}')
+    ck(COST[cheap] - TOL <= spent < COST[dear] - TOL,
+       f'{tag} the game fired the vote\'s weapon: type {cheap} (2000), not the later request\'s type {dear} (16000): '
+       f'spent {spent:.0f}')
     ck(g1 is not None and h1 is not None and abs(g1 - h1) < 50,
        f'{tag} the guest\'s game shows the same money ({g1} vs {h1})')
     if case == 'guest':

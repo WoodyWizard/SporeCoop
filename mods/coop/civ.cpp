@@ -2109,10 +2109,14 @@ std::string list()
         uint8_t* ob = F<uint8_t*>(v, kVOrders);
         uint8_t* oe = F<uint8_t*>(v, kVOrders + 4);
         int otype = ob && oe > ob ? *(int*)(ob + 0x10) : -1;
+        // the order's own place (element +4, Vector3; BUG-0222: tests check whose order the game took)
+        float ox = otype >= 0 ? *(float*)(ob + 4) : 0, oy = otype >= 0 ? *(float*)(ob + 8) : 0,
+              oz = otype >= 0 ? *(float*)(ob + 12) : 0;
         snprintf(b, sizeof b,
-                 "  veh #%u %p pol=%08X owner=%d purpose=%d loco=%d sel=%u hp=%.0f pos=(%.1f %.1f %.1f) order=%d\n", id, v,
-                 pol_of(v), o == 0xFF ? -1 : (int)o, F<int>(v, kVPurpose), F<int>(v, kVLoco), F<uint8_t>(v, kVSelected),
-                 F<float>(v, kVHp), p.x, p.y, p.z, otype);
+                 "  veh #%u %p pol=%08X owner=%d purpose=%d loco=%d sel=%u hp=%.0f pos=(%.1f %.1f %.1f) order=%d "
+                 "opos=(%.1f %.1f %.1f)\n",
+                 id, v, pol_of(v), o == 0xFF ? -1 : (int)o, F<int>(v, kVPurpose), F<int>(v, kVLoco),
+                 F<uint8_t>(v, kVSelected), F<float>(v, kVHp), p.x, p.y, p.z, otype, ox, oy, oz);
         out += b;
         auto gi = id && !(C.sess && C.sess->role() == net::Role::Host) ? g_gv.find(id) : g_gv.end();
         if (gi != g_gv.end()) { // BUG-0186: the guest's view of the mirror (on the same line)
