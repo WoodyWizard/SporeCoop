@@ -9,23 +9,12 @@
   BUG-0279).
 - Cell: a cell whose position is invalid is no longer sent to or shown by the other players (a
   guard after one crash seen in testing, BUG-0292).
-### Changed
-- A guest that plays another world of the host's stage (joined from its own game, loaded one of its
-  own saves, or kept its world with `auto_load_world=0`) now plays that world on its own: **DNA it
-  earns there stays in that world and its save** and no longer goes to the host's world; when it
-  then loads the host's world, its DNA becomes the host's total (the DNA earned meanwhile does not
-  join the pack). Its money and tribe food stay its own there too, and a spend made in the shared
-  world just before it left still counts once. Cities founded in such a world by 0.7.3.0 stay in
-  the guest's save (BUG-0231).
-
-### Fixed
 - All modules now use one rule for "is the host's world the one I play", and the host names its
   world when a player joins, so a guest joining in the host's Civ world no longer misses the first
   vehicle and city state (BUG-0231).
 - A world share that failed after the host's save ("cannot share the world: ...") is retried up to
   3 times, 30 s apart; a guest in another world no longer stays there for the whole stage
   (BUG-0231).
-### Fixed
 - Space: a trade or spice gift that comes back after a galaxy reload is paid only into the game it
   was taken from: kept for that game while another one is loaded, paid when the same game was saved
   since, dropped when the reloaded game still has it or its save slot was replaced by a received
@@ -33,26 +22,12 @@
 - A rare fault in the game's UI right after a guest loaded a shared world (a destroyed modal window
   left in the window manager) is caught before the next mouse message (BUG-0270).
 - Tests: `space_rivalry` waits until both ships are on the home planet before its checks (BUG-0262).
-### Fixed
 - Tribe: after the host's tribe was wiped out and the host bounced back in time, the other players
   no longer lose the host's whole tribe for the rest of the session (BUG-0288).
-
-### Testing
-- The test monitor no longer reports a crash when a game's console is only busy with another
-  command of the test (BUG-0261); `coop.tribe act` refuses hut and tool actions on a tribe member,
-  which made the host's game fault (BUG-0260); the campaign's coverage finding names the missing
-  objects per kind.
-### Fixed
 - Cell: while the host is in the main menu, an editor or a loading screen, a guest now plays on in
   its own tide pool (the creatures swim, eat and are eaten, new ones appear) instead of a frozen
   one, and the food it eats meanwhile goes to the shared progress when the host is back; then the
   host's pool takes over again (BUG-0205, BUG-0151). Test: `coop_cell_away.py`.
-
-### Tests
-- Cell: `coop_cell_editor_timed.py` enters the own cell editor right after a real respawn or revive
-  (BUG-0237: the stage is left ~10 s after touching the mate, the invulnerability is over by then,
-  not reproduced); `coop_cell_respawn.py` also checks the death count (BUG-0221, not reproduced).
-### Fixed
 - Creature: a guest far from the host no longer loses the animals around it. The host's game kept
   its world alive only around its own camera: farther than about 150 m it put the animals back
   into its pool, also next to a guest, and nest members there appeared and vanished every few
@@ -62,7 +37,24 @@
   BUG-0291).
 - Creature: a guest that rejoined and loaded the host's world could fault every frame in the herd
   update (a herd of the save with an empty member slot); such slots are dropped now (BUG-0256).
+
+### Changed
+- A guest that plays another world of the host's stage (joined from its own game, loaded one of its
+  own saves, or kept its world with `auto_load_world=0`) now plays that world on its own: **DNA it
+  earns there stays in that world and its save** and no longer goes to the host's world; when it
+  then loads the host's world, its DNA becomes the host's total (the DNA earned meanwhile does not
+  join the pack). Its money and tribe food stay its own there too, and a spend made in the shared
+  world just before it left still counts once. Cities founded in such a world by 0.7.3.0 stay in
+  the guest's save (BUG-0231).
+
 ### Tests
+- The test monitor no longer reports a crash when a game's console is only busy with another
+  command of the test (BUG-0261); `coop.tribe act` refuses hut and tool actions on a tribe member,
+  which made the host's game fault (BUG-0260); the campaign's coverage finding names the missing
+  objects per kind.
+- Cell: `coop_cell_editor_timed.py` enters the own cell editor right after a real respawn or revive
+  (BUG-0237: the stage is left ~10 s after touching the mate, the invulnerability is over by then,
+  not reproduced); `coop_cell_respawn.py` also checks the death count (BUG-0221, not reproduced).
 - Three and four players per stage in minutes: `tools/tests/party.py` (the helper for every test with
   more than two players) and `coop_party.py` in the new `multi` suite: two guests joining at once,
   each guest's game showing the others, shared totals, a vote with four, a leave and rejoin of the
