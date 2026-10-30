@@ -71,7 +71,7 @@ screen).
   mirrors walk and the 0.15 s lag window of coop_sync hides a one-frame difference; the paused
   window where mirrors only get the nudge is a black screen on the guest. `coop_sync.py --fps 15
   civ tribe` (suite sync_lowfps) passed with the fix off (20261030-133141, 20261030-133514,
-  20261030-134029) and with it on (20261030-133830, and the regression run of the branch), once failed with it
+  20261030-134029) and with it on (20261030-133830, 20261030-134756 with the final code), once failed with it
   on with the civ glide change (20261030-133658: vehicles p90 3.05 m against 3.0, one vehicle):
   that change was taken out.
 
