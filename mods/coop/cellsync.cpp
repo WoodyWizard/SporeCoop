@@ -7,6 +7,8 @@
 #include <cstdio>
 #include <cstring>
 #include <deque>
+#include <map>
+#include <string>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -818,6 +820,134 @@ static void SK_CDECL h_AddFood(int amount, bool plant)
 // swallows mirror, the host's cell bumps into a mirror) are the host's business: it simulates them
 // and the result arrives with the next state. Run here they made the guest report "eaten" to the
 // host for cells nobody on the guest had touched, and the host destroyed them (docs/stability/cell.md).
+static const char* kind_of(uint8_t* c);
+// BUG-0307 diagnostics: where in the frame our own cell's state first stops being finite. The probes
+// run at the start of the cell step (WorldScaleStep), around the own cell's collision pairs, after its
+// soft-body step and after our guest tick; the first probe that sees a non-finite field logs the
+// field mask, the probe and the last probe that saw it finite, with what was near.
+enum : unsigned { NF_POS = 1, NF_PREV = 2, NF_VEL = 4, NF_ACC = 8, NF_ROT = 16, NF_SHAPE = 32, NF_SIZE = 64,
+                  NF_PPOS = 128, NF_PVEL = 256, NF_PGOAL = 512 };
+static bool fin(const float* v, int n)
+{
+    for (int i = 0; i < n; i++)
+        if (!std::isfinite(v[i]))
+            return false;
+    return true;
+}
+static unsigned cell_nonfinite(uint8_t* c)
+{
+    unsigned m = 0;
+    if (!c)
+        return 0;
+    m |= fin((float*)(c + 0x4C), 3) ? 0 : NF_POS;
+    m |= fin((float*)(c + 0x84), 3) ? 0 : NF_PREV;
+    m |= fin((float*)(c + 0x90), 3) ? 0 : NF_VEL;
+    m |= fin((float*)(c + 0x1C4), 3) ? 0 : NF_ACC;
+    m |= fin((float*)(c + 0x5C), 9) ? 0 : NF_ROT;
+    m |= fin((float*)(c + 0x24), 9) ? 0 : NF_SHAPE;
+    m |= fin((float*)(c + 0x58), 1) && fin((float*)(c + 0xB4), 1) ? 0 : NF_SIZE;
+    int n = F<int>(c, 0x250);
+    uint8_t* parts = G() ? F<uint8_t*>(G(), 0x4108) : nullptr;
+    if (F<uint32_t>(c, 0x248) && parts && n > 1 && n <= 64)
+        for (int i = 0; i < n; i++) {
+            uint32_t k = F<uint32_t>(c, 0x254 + 4 * i);
+            if (k >= 1500)
+                continue;
+            m |= fin((float*)(parts + 4 + 12 * (size_t)k), 3) ? 0 : NF_PPOS;
+            m |= fin((float*)(parts + 0x4654 + 12 * (size_t)k), 3) ? 0 : NF_PVEL;
+            m |= fin((float*)(parts + 0x11944 + 12 * (size_t)k), 3) ? 0 : NF_PGOAL;
+        }
+    return m;
+}
+static const char* g_own_ok_at = "-";
+static unsigned g_own_nf;          // the mask at the last probe
+static uint32_t g_own_nf_events;   // finite -> not finite transitions seen
+static uint32_t g_shared_parts;    // own particle indices also held by another cell (last scan)
+static double g_shared_scan_at;
+static float g_last_dt;
+static void own_probe(const char* where, uint8_t* other = nullptr)
+{
+    uint8_t* av = in_cell() ? avatar() : nullptr;
+    if (!av)
+        return;
+    unsigned m = cell_nonfinite(av);
+    if (!m) {
+        g_own_nf = 0;
+        g_own_ok_at = where;
+        return;
+    }
+    if (g_own_nf) {
+        g_own_nf = m;
+        return;
+    }
+    g_own_nf = m;
+    if (++g_own_nf_events > 20)
+        return;
+    // what was near: cells within 3 sizes, non-finite cells there, own particles shared with others
+    auto* p = (float*)(av + 0x84); // the previous position (the current one may be NaN)
+    float size = F<float>(av, kSize), r = std::isfinite(size) ? std::max(3.f * size, 2.f) : 2.f;
+    int near_n = 0, near_bad = 0, zero_size = 0, shared = 0;
+    std::unordered_set<uint32_t> own;
+    int n = F<int>(av, 0x250);
+    if (F<uint32_t>(av, 0x248) && n > 1 && n <= 64)
+        for (int i = 0; i < n; i++)
+            own.insert(F<uint32_t>(av, 0x254 + 4 * i));
+    for_each_cell([&](uint8_t* c, uint32_t) {
+        auto* q = (float*)(c + 0x4C);
+        int cn = F<int>(c, 0x250);
+        if (!own.empty() && F<uint32_t>(c, 0x248) && cn > 1 && cn <= 64)
+            for (int i = 0; i < cn; i++)
+                shared += own.count(F<uint32_t>(c, 0x254 + 4 * i)) ? 1 : 0;
+        if (!std::isfinite(q[0]) || !std::isfinite(q[1])) {
+            near_bad++;
+            return;
+        }
+        if (fin(p, 2) && std::hypot(q[0] - p[0], q[1] - p[1]) < r) {
+            near_n++;
+            zero_size += F<float>(c, kSize) <= 1e-4f;
+        }
+    });
+    char ob[160] = "";
+    if (other)
+        snprintf(ob, sizeof ob, " other=c%u %s pos=(%.2f %.2f) size=%.3f nf=0x%X dist=%.4f", F<uint32_t>(other, 0), kind_of(other),
+                 F<float>(other, 0x4C), F<float>(other, 0x50), F<float>(other, kSize), cell_nonfinite(other),
+                 std::hypot(F<float>(other, 0x4C) - p[0], F<float>(other, 0x50) - p[1]));
+    H->log(M, SK_WARN,
+           "coop: cell: own cell not finite (BUG-0307) at %s, finite at %s: mask=0x%X prev=(%.2f %.2f) size=%.3f dt=%.4f "
+           "particles=%d near=%d (size 0: %d) non-finite cells=%d shared particles=%d mirrors=%u%s",
+           where, g_own_ok_at, m, p[0], p[1], size, g_last_dt, n, near_n, zero_size, near_bad, shared,
+           (unsigned)g_mirrors.size(), ob);
+}
+// own particle indices that another live cell holds too (once a second on the guest; logged when > 0)
+static void shared_parts_scan(double now)
+{
+    if (now - g_shared_scan_at < 1.0)
+        return;
+    g_shared_scan_at = now;
+    uint8_t* av = avatar();
+    int n = av ? F<int>(av, 0x250) : 0;
+    if (!av || !F<uint32_t>(av, 0x248) || n < 2 || n > 64)
+        return;
+    std::unordered_set<uint32_t> own;
+    for (int i = 0; i < n; i++)
+        own.insert(F<uint32_t>(av, 0x254 + 4 * i));
+    uint32_t shared = 0, holder = 0;
+    for_each_cell([&](uint8_t* c, uint32_t idx) {
+        int cn = F<int>(c, 0x250);
+        if (!F<uint32_t>(c, 0x248) || cn < 2 || cn > 64)
+            return;
+        for (int i = 0; i < cn; i++)
+            if (own.count(F<uint32_t>(c, 0x254 + 4 * i))) {
+                shared++;
+                holder = idx;
+            }
+    });
+    if (shared && !g_shared_parts)
+        H->log(M, SK_WARN, "coop: cell: %u of our own %d soft-body particles are held by another cell too (c%u) (BUG-0307)", shared, n,
+               holder);
+    g_shared_parts = shared;
+}
+
 using Pair_t = void(SK_CDECL*)(uint8_t*, uint8_t*, float);
 static Pair_t o_Pair;
 static uint32_t g_pairs_skipped;
@@ -858,7 +988,13 @@ static void SK_CDECL h_Pair(uint8_t* a, uint8_t* b, float dt)
                     it = now - it->second > 1.0 ? g_touched.erase(it) : std::next(it);
         }
     }
+    uint8_t* av = avatar();
+    bool mine = av && (a == av || b == av);
+    if (mine)
+        own_probe("before a collision", a == av ? b : a);
     o_Pair(a, b, dt);
+    if (mine)
+        own_probe("collision", a == av ? b : a);
 }
 
 // A level change removes every cell of the old scale (RemoveCellsOfOldScale 0xE7CD10). On the
@@ -1256,6 +1392,8 @@ static bool scale_moving()
 }
 static void SK_CDECL h_WorldScale(float dt)
 {
+    g_last_dt = dt;
+    own_probe("step start");
     if (!g_ptiles.empty() && in_cell() && scale_moving())
         for (auto& [id, pt] : g_ptiles)
             if (pt.list && pt.list->begin != pt.list->end) {
@@ -1661,7 +1799,12 @@ using Soft_t = void(SK_CDECL*)(uint8_t*, void*, float);
 static Soft_t o_Soft;
 static void SK_CDECL h_Soft(uint8_t* c, void* res, float dt)
 {
+    bool own = c && c == avatar();
+    if (own)
+        own_probe("before the soft body");
     o_Soft(c, res, dt);
+    if (own)
+        own_probe("soft body");
     if (!c || !g_mirror_fixes || !is_guest() || !in_cell() || g_mirrors.empty())
         return;
     auto hit = g_host_of.find(F<uint32_t>(c, 0));
@@ -1805,6 +1948,7 @@ static void send_state(int dest, const std::vector<SendCell>& cells);
 static void heal_own(uint8_t* a, const net::Vec3& me, bool bad);
 static void host_tick(double now)
 {
+    own_probe("host tick");
     if (uint8_t* a = avatar()) // BUG-0299 on the host too
         heal_own(a, pos_of(a), !views::finite_pos(pos_of(a)));
     uint8_t* s = S();
@@ -2096,6 +2240,8 @@ static void heal_own(uint8_t* a, const net::Vec3& me, bool bad)
 static void guest_tick(double now)
 {
     flush_food();
+    own_probe("guest tick");
+    shared_parts_scan(now);
     // BUG-0292 diagnostics: the moment our own cell's position stops being finite, and what was near
     static bool own_bad;
     if (uint8_t* a = avatar()) {
@@ -2139,6 +2285,7 @@ static void guest_tick(double now)
         F<uint16_t>(c, kFlags) |= 2;
         F<uint8_t>(c, kAiLock) = 1;
     }
+    own_probe("mirror moves");
 }
 
 // ---------------- both ----------------
@@ -3273,6 +3420,7 @@ std::string debug(const std::vector<std::string>& a)
         uint32_t ghigh = F<uint32_t>(g, 0xA8 + 0x10), gsize = F<uint32_t>(g, 0xA8 + 0x14);
         int max = a.size() >= 2 ? atoi(a[1].c_str()) : 8, leaders = 0, members = 0;
         std::unordered_set<uint32_t> done;
+        std::map<std::string, int> types; // the members' ai.type (behaviour 0x1006 runs the chase step 0xE79C30)
         if (!gdata || !gsize || gsize > 0x1000)
             return "no group pool\n";
         for_each_cell([&](uint8_t* c, uint32_t idx) {
@@ -3287,6 +3435,11 @@ std::string debug(const std::vector<std::string>& a)
             if (!lc || li == idx)
                 return;
             members++;
+            char k[16];
+            snprintf(k, sizeof k, "%X", ai_type(c));
+            types[k]++;
+            F<float>(c, 0x224) = F<float>(c, 0x228) = F<float>(c, 0x21C) = 0.f; // free to chase at its next pick
+            F<float>(c, 0x238) = 0.f;
             if (!done.insert(li).second)
                 return;
             F<uint32_t>(lc, kChase) = idx ^ 0x10000; // this member's slot with another generation: a dead cell
@@ -3296,10 +3449,13 @@ std::string debug(const std::vector<std::string>& a)
             F<float>(lc, 0x228) = 0.f;
             leaders++;
         });
-        char b[128];
-        snprintf(b, sizeof b, "staletarget: %d leaders chase a dead cell (%d group members seen), stale_targets=%u\n", leaders,
+        std::string ts;
+        for (auto& [t, n] : types)
+            ts += " " + t + ":" + std::to_string(n);
+        char b[160];
+        snprintf(b, sizeof b, "staletarget: %d leaders chase a dead cell (%d group members seen), stale_targets=%u, member ai types", leaders,
                  members, g_stale_targets);
-        return b;
+        return b + ts + "\n";
     }
     if (!a.empty() && a[0] == "nanself") { // tests (BUG-0299): our own cell and its particles NaN, as seen in a 4-player run
         uint8_t* av = avatar();
@@ -3446,7 +3602,7 @@ std::string trace_line()
 std::string status()
 {
     char d[256];
-    snprintf(d, sizeof d, "cell_contacts: creature_pairs=%u bite_events=%u nonfinite_skipped=%u nonfinite_dropped=%u stale_targets=%u\n", g_creature_pairs, g_bite_events, g_nonfinite_sent_skipped, g_nonfinite_dropped, g_stale_targets);
+    snprintf(d, sizeof d, "cell_contacts: creature_pairs=%u bite_events=%u nonfinite_skipped=%u nonfinite_dropped=%u stale_targets=%u own_nf=%u shared_parts=%u\n", g_creature_pairs, g_bite_events, g_nonfinite_sent_skipped, g_nonfinite_dropped, g_stale_targets, g_own_nf_events, g_shared_parts);
     char b[1100];
     uint8_t* s = S();
     int food = s ? F<int32_t>(s, 0x1C) : -1;
