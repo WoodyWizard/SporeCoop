@@ -68,12 +68,14 @@ def main():
     ck(finite(p1) and finite(p0) and math.dist(p0, p1) < 30, f'1. ... where it was ({p0} -> {p1})')
     ck((num(guest, 'mirrors') or 0) >= 10, f'1. the guest still mirrors the host\'s cells ({num(guest, "mirrors")})')
     if a.all:
-        bad = 0
+        bad, vm0 = 0, num(guest, 'vm_free_mb')
         for _ in range(15):
             time.sleep(1)
             bad += not finite(pos(guest))
         nf = (num(guest, 'own_nf') or 0) - nf0
-        print(f'  guest: own_nf +{nf}, non-finite samples {bad} of 15, nan_heals={num(guest, "nan_heals")}', flush=True)
+        vm1 = num(guest, 'vm_free_mb')
+        print(f'  guest: own_nf +{nf}, non-finite samples {bad} of 15, nan_heals={num(guest, "nan_heals")}, '
+              f'free address space {vm0} -> {vm1} MB', flush=True)
         ck(nf <= 1 and bad == 0, f'3. the own cell does not go NaN again (episodes {nf}, non-finite samples {bad} of 15)')
     print('  host:', host.call('coop.pool food 1000')['out'].strip()[:80], flush=True)
     time.sleep(15)
