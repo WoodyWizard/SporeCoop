@@ -951,4 +951,8 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   `SPORE_FIX_OFF=npc.rts_views,npc.view_centres_tribe` (2.2 % vs 2.6 % of animals over 1.5 m). The
   same pattern as BUG-0281 in the Creature stage.
 * Not checked: the proxy's own error (`coop.npc list` err=) and the host animal's speed at that moment.
+* FIXED (2026-10-30, fix/w12-tribe-npc): the proxies of a running herd push each other off the path
+  on a guest and never run faster than the animal, so one trailed 2-4 m on every guest
+  (docs/re/tribe.md#tribe-animal-proxy-trail). A proxy 1.5 m off for 0.5 s is put on its path and
+  held there for 1 s (`npc.trail`). Test: `tribe_npc_dash`.
 * Ticket: BUG-0305.

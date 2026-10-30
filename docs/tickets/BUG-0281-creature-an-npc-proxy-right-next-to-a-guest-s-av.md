@@ -14,7 +14,7 @@ commits:
 tests:
 signature:
 docs:
-related:
+related: BUG-0305, BUG-0169
 ---
 
 ## Report
@@ -42,6 +42,14 @@ Not found; not reproduced (2026-10-30, fix/w9-creature, lane 9):
   2-19 m on 1-3 guests (n22, n25, n33, n35, n36, moving NPCs of a fight near the players; p90
   median 0.64-1.11 m per guest). The jsonl has no speed, so "standing" could not be checked there.
 
+Possibly the same mechanism as BUG-0305 (2026-10-30, fix/w12-tribe-npc; inferred, not reproduced
+in the Creature stage): there, a proxy pushed off its path by the proxy beside it stayed 2-4 m from
+its target on every guest while the animal ran (the proxy cannot run faster than the animal). The
+`npc.trail` fix of BUG-0305 is in the same driving (npc.cpp, drive::step) and also acts in the
+Creature stage: a proxy 1.5 m off for 0.5 s is put on its target and held 1 s. A proxy next to a
+standing host NPC 4 m off (this report) should now be put in place within 0.5 s (before: the stuck
+rule after 1.5 s, the stall rule after 3 s); not checked in the game.
+
 ## Fix
 <!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
 
@@ -53,3 +61,4 @@ Not found; not reproduced (2026-10-30, fix/w9-creature, lane 9):
 - 2026-10-29: opened.
 - 2026-10-30: not reproduced on fix/w9-creature (2-player probe beside standing NPCs, one 4-player measurement).
 - 2026-10-30: fix/w11-finale: the same pattern in the Tribe stage with 4 players (one animal ~4 m off on every guest at once): BUG-0305.
+- 2026-10-30: BUG-0305 (Tribe) found proxies of a running herd pushed off their path; its `npc.trail` fix also acts here; not reproduced in Creature, stays open (fix/w12-tribe-npc).

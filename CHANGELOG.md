@@ -3,6 +3,9 @@
 ## [Unreleased]
 
 ### Fixed
+- Tribe (and Creature): an animal running in a herd, for example one fleeing a hunt, no longer lags
+  a few metres behind on the other players' screens: a copy pushed off its path by the animal beside
+  it is now put back on it after half a second (BUG-0305).
 - Space: players joining while the host is on a planet no longer end up on that planet when the
   host leaves it (their ships went back down a few seconds after loading the host's world while the
   host stayed in the solar system): the world is now saved 2 s after the host is in the system, also

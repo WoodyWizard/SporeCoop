@@ -841,3 +841,36 @@ BUG-0285 (static reading of GOG 2024 `dc04aee5`, objdump; not reproduced):
 * The co-op epic destroyed by the quit's save (`before_save`, "the epic creature went away" 0.04 s
   after the quit) is an animal (noun 0x18EB45E): 0xACA2A0 takes another branch for it.
 * ? Which citizen was cleaned up yet still updated, and why only once in ~100 leaves.
+
+## Animal proxies trail a running herd on every guest (2026-10-30, fix/w12-tribe-npc)
+<a id="tribe-animal-proxy-trail"></a>
+
+How the guests' copies of the host's animals lagged 2-4 m in a hunt (BUG-0305). Measured with
+`coop_sync_multi.py --fixture tribe` (4 players, play_tribe bots) and its `coop.npc list` probe of
+every machine for each animal over 1.5 m off (`out/w12/probe*.jsonl` of the branch, not in git).
+
+* ✔ The host's game updates every tracked animal every frame in Tribe (`coop.npc list` on the host:
+  `upd=64/64`, the frames of the last 64 in which the creature ran its update). Not an update
+  throttle.
+* ✔ Every animal over 1.5 m off was running or had just stopped: host `velfr` (frames of the last 64
+  with the game's velocity over 0.3 m/s) 16-64, `moved64` 4-8 m; often a wounded one (hp 12.5-20 of
+  40-50) in short dashes, often a herd mate 0.3-3 m beside it (species 06808ACA, 0680AA69, 065CBCB4).
+* ✔ The guest's proxy was 2-4 m from its own interpolation target (`err=`) while it walked at
+  exactly the animal's speed (`own=` = the sample's `spd=` 5.5 / 6.5 / 7.5 m/s): the game's
+  locomotion does not run a creature faster than its top speed, so `drive::step`'s catch-up speed
+  never came, and a proxy thrown off once stayed behind for the whole run, the same way on every
+  guest. After the animal stopped it caught up in 0.5-1.5 s (walking, or the stuck teleport).
+* ✔ The host's herd mates stood 0.3-2 m apart while their proxies stood 0.7-3.4 m apart on the
+  guests (probe2 r37 n81 / n82): on a guest the proxies push each other apart, the host's animals
+  overlap. Which game code separates puppets (collision or the locomotion's avoidance): ? not
+  looked up.
+* ✔ Reproduced on two games (`coop.npc dash`, test command): two 06808ACA animals forced 1.2 m apart
+  on a 12 m zigzag at 6.5 m/s, guest at 15 fps: p90 1.5-2.8 m off; one animal alone (or the two
+  5-10 m apart) followed within p90 0.5-0.9 m. A 16DE4FEA pair 1.2 m apart overlapped so much that
+  the guest flung the proxies apart at 12 m/s after every teleport (no game keeps a herd that close).
+* ✔ The guests got 4-10 states per animal per second (`rx=`, sender seconds) at 10-30 fps guests;
+  ages up to 1 s were seen on loaded lanes. Not the cause here: with 10 states/s the offsets stayed.
+* Fix `npc.trail` (drive_plan.h, driver.h): a proxy more than 1.5 m off for 0.5 s without getting
+  0.3 m closer is teleported onto its target and held there for 1 s (the per-frame nudge goes from
+  15 % to all of the way), then 1 s before the next such teleport. The teleport alone was not
+  enough: the proxy beside it pushed it off again at once.

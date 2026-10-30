@@ -2054,3 +2054,25 @@ answered right after; a 1 s poller beside a standalone run saw no gap. Same sign
   host takes off, the share save goes out with the retry every frame (`coop.worldfix retry 0`); the
   guest's own place after the load must be the host's solar system. FAIL with
   SPORE_FIX_OFF=world.share_settle_context (the guest's ship lands on the planet 2.5 s after the load).
+
+## Animals that run side by side: tribe_npc_dash (2026-10-30, fix/w12-tribe-npc)
+<a id="testing-tribe-npc-dash"></a>
+
+* `coop_tribe_npc_dash.py` (`tribe_npc_dash`, ~2 min, tribe fixture, BUG-0305): the host makes two
+  animals of the small herd species 06808ACA run 1.2 m apart along a 12 m zigzag at 6.5 m/s
+  (`coop.npc dash <id> <m> <m/s> <s> [zigzag m] [mate id] [m beside]`, a test command that writes
+  their position and velocity after the game's update), the guest at 15 fps (`frame.limit 66`);
+  the guest's positions against the host's path (coop_multi.measure) must have p90 <= 1.2 m.
+  Fix on: p90 0.7-1.1 m; `SPORE_FIX_OFF=npc.trail`: 1.5-2.8 m. The margin is small (one fix-off
+  run had 1.47 m): a pass of a twin run is a reason to run it again, not proof.
+* Do not force bigger species that close: a 16DE4FEA pair 1.2 m apart overlaps and the guest flings
+  the proxies apart at 12 m/s (both sides fail). The species and the spacing are env knobs
+  (`DASH_SPECIES`, `DASH_OFF`, `DASH_SPEED`, `DASH_FRAME_MS`, `DASH_VERBOSE=1` prints the proxy line).
+* `coop.npc list` shows on the host `spd= vel= upd=N/64 velfr=N/64 moved64=` (updates, moving frames
+  and metres moved over the last 64 frames) and on a guest `at= rx=N/s spd= vel= own= tp= stall= trail=`
+  (states per sender second, the sample's velocity, the proxy's own speed and teleports). It used to
+  be cut at 8 KB (SporeKit's out_printf buffer): a guest's list of 40 proxies lost its tail.
+* `coop_sync_multi.py` prints `coop.npc list` of an NPC more than 1.5 m off on every machine, 5 times
+  0.3 s apart (also into the jsonl as `probe`), and applies SPORE_FIX_OFF to Carol and Dave too.
+* Two `lab.py run` started within the same second share one out/lab folder (and one log): start a
+  twin run a few seconds after the other.
