@@ -40,7 +40,8 @@ def main():
     print('  fresh NPC stars:', [f'{s:08X}' for s in stars])
     if not ck(len(stars) >= 1, 'an NPC star near home whose planets nobody generated'):
         return ck.result()
-    star = stars[0]
+    # 0046101B (an empire's home star, 6 or 10 planets) shows it; a star with one planet may not
+    star = 0x0046101B if 0x0046101B in stars else stars[0]
     print('  host:', sp(host, 'profile', f'{star:08X}'))  # only the host's game has it loaded
     ck(jump(guest, 'guest', star), f'the guest jumped to {star:08X}')
     ck(jump(host, 'host', star), 'the host followed')
