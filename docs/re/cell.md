@@ -912,7 +912,7 @@ lanes 2 / 3 with four players (`tools/tests/coop_cell_4p.py`, suite `cell_4p`).
   at most its 900 nearest cells (nth_element by distance to its centre); (3) a guest creates no new
   mirror at 1500 live cells. Measured with the 1400 cap (lab 20261030-052856): host peak 1557, guests 1282 to
   1394, no fault, the far guests had 185-322 host cells within 60 m. The host's own pass is never
-  limited (vanilla), so the host's own area keeps all its food; with four players at level 4 the
+  limited (vanilla; ~ superseded 2026-10-30, see the host tiles below), so the host's own area keeps all its food; with four players at level 4 the
   partners' areas are thinner than the host's (starved tiles waited, 542 starvations, 99 fed later).
 * ✔ `coop.pool` prints `cell_tiles: ... budget= starved=<count>/<now> fed= send_capped= mirror_capped=
   cells=<live> peak=<highest seen> level=<tile level base>` on both roles.
@@ -927,6 +927,11 @@ lanes 2 / 3 with four players (`tools/tests/coop_cell_4p.py`, suite `cell_4p`).
   (screen tiles between the caps: without it a far guest's screen stayed empty, lab
   20261030-060124). Even so the host's count jumps by ~250 now and then with no partner tile
   (loot, the game's own spawns; not traced): the caps keep ~450 below the broadphase's limit.
+* ✔ While partners play, the host's own gameplay tiles follow the same rule (its screen up to 1300,
+  the ring of its doubled box only below 1100): at level 4 the host's own box alone held ~1000
+  cells, so with partner-only rules a far guest's screen got nothing (cell_4p, lab
+  20261030-064009). The background layer (layer 1) and a host without partners are never limited.
+  With it: cell_4p 3/3, host peaks 1386-1430, guests <= 1500 (lab 20261030-065411).
 * With caps 1250 / 1500 `cell_4p` x2 (lab 20261030-055041): host peak 1625-1626, guests
   1135-1339, no fault; the final caps 1100 / 1300: see BUG-0295's Verification.
 * ✔ BUG-0299 (a guest's own cell NaN with no NaN mirror, 4-player campaign_short, lab

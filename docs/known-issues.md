@@ -897,7 +897,9 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * What happens: with four players apart at level 4 the host already holds 1000-1400 cells, so the
   cell budget (BUG-0295: partner tiles populated only below 1100 host cells, its screen below 1300, the game's collision
   step holds ~2048) leaves part of the partners' new tiles empty until cells die or the host's
-  area shrinks; the host's own area is never limited. Seen in `cell_4p` (lab 20261030-052856):
+  area shrinks. Since bea15ec every player's screen (the host's too) is filled first, up to 1300
+  cells, and the rings around the screens only below 1100: food appears at the edge of a screen a few
+  frames late when the host's pool is busy. Seen in `cell_4p` (lab 20261030-052856):
   542 tile populations postponed, 99 done later; the far guests still had 185-322 host cells within
   60 m, but food on a screen was sometimes 0.
 * Reproduce: `SPORE_LANE=2 python3 tools/tests/coop_cell_4p.py`, read `starved=` and `fed=` in the
