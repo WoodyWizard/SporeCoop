@@ -1022,6 +1022,44 @@ static bool SK_CDECL h_TileActive(const int32_t* t)
 // list shortened the HOST's list and read past ours (crash at PopulateTiles+0xC3, lab
 // 20261030-001703, BUG-0174).
 static std::vector<uint32_t> g_freed_dbg;
+// A tile of ours that goes while another list holds the same key unpopulated (a shadow: its cells
+// were ours): that tile is populated now, or the area lost its food. Seen after a level change: our
+// tiles went back to the pool and the host's shadowed tiles around its own cell stayed empty
+// (RemoveCellsOfOldScale skips shadows; cell_new_game: the host found no meat on its screen, lab
+// 20261030-022912).
+static uint32_t g_tiles_handed;
+static void hand_over(int32_t key, TileList* from)
+{
+    uint8_t* g = G();
+    if (!g || g_shadow_tiles.empty())
+        return;
+    uint8_t* data = F<uint8_t*>(g, 0x38);
+    uint32_t size = F<uint32_t>(g, 0x38 + 0x14);
+    auto try_list = [&](TileList* l) {
+        if (!l || l == from)
+            return false;
+        for (int32_t* e = l->begin; e < l->end; e += 2)
+            if (e[0] == key && g_shadow_tiles.count((uint32_t)e[1]) && tile_alive((uint32_t)e[1])) {
+                uint32_t* t = (uint32_t*)(data + (size_t)((uint32_t)e[1] & 0xFFFF) * size);
+                g_shadow_tiles.erase((uint32_t)e[1]);
+                if (t[1] == 0) { // gameplay layer only (a partner's background was never ours)
+                    int pass = g_pass;
+                    g_pass = -1;
+                    o_PopTile(t, 0);
+                    g_pass = pass;
+                    g_tiles_handed++;
+                }
+                return true;
+            }
+        return false;
+    };
+    if (try_list(host_tiles()))
+        return;
+    for (auto& [id, pt] : g_ptiles)
+        if (try_list(pt.list))
+            return;
+}
+
 template <typename Keep>
 static void tiles_delete(TileList* l, Keep keep)
 {
@@ -1050,6 +1088,7 @@ static void tiles_delete(TileList* l, Keep keep)
                     skg::thiscall<void>((uintptr_t)(*(void***)o)[1], o);
                 }
             }
+            bool was_shadow = g_shadow_tiles.count(idx) != 0;
             // cObjectPool_::DeleteObject 0xB72370: the slot goes to the head of the free list
             F<uint32_t>(t, 0) = F<uint32_t>(pool, 4);
             F<uint32_t>(pool, 0xC)--;
@@ -1058,6 +1097,8 @@ static void tiles_delete(TileList* l, Keep keep)
             g_tiles_drained++;
             if (g_freed_dbg.size() < 6)
                 g_freed_dbg.push_back(idx);
+            if (!was_shadow)
+                hand_over(e[0], l);
         }
     }
     l->end = out;
@@ -3085,9 +3126,9 @@ std::string status()
         if (pt.list)
             pcount += (size_t)((pt.list->end - pt.list->begin) / 2);
     snprintf(t, sizeof t,
-             "cell_tiles: fix=%d centres=%u partner_lists=%u partner_tiles=%u populated=%u shared=%u bg_skipped=%u passes=%u kept=%u resets=%u drained=%u pool_full=%u flushes=%u unshared=%u tile_pool=%u/%u\n",
+             "cell_tiles: fix=%d centres=%u partner_lists=%u partner_tiles=%u populated=%u shared=%u bg_skipped=%u passes=%u kept=%u resets=%u drained=%u pool_full=%u flushes=%u unshared=%u handed=%u tile_pool=%u/%u\n",
              (int)g_fix_partner_tiles, (unsigned)g_views.size(), (unsigned)g_ptiles.size(), (unsigned)pcount, g_tiles_partner,
-             g_tiles_shared, g_tiles_bg, g_tile_passes, g_tiles_kept, g_tile_resets, g_tiles_drained, g_tiles_full, g_tiles_flush, g_tiles_unshared,
+             g_tiles_shared, g_tiles_bg, g_tile_passes, g_tiles_kept, g_tile_resets, g_tiles_drained, g_tiles_full, g_tiles_flush, g_tiles_unshared, g_tiles_handed,
              G() ? F<uint32_t>(G(), 0x38 + 0xC) : 0, G() ? F<uint32_t>(G(), 0x38 + 0x18) : 0);
     return b + std::string(d) + t;
 }
