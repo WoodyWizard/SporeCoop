@@ -7,6 +7,8 @@
 //    health regenerates while a partner is close
 #pragma once
 
+#include "view_centres.h"
+
 #include "syncdbg.h"
 
 #include <cstdint>
@@ -43,6 +45,7 @@ void on_player_leave(int id); // a remote player left: its knockout and food boo
 void draw_overlay();
 void join_partner(); // our cell next to the nearest partner (after a level rebuild) // knockout countdown / revive progress / off-screen arrows (SK_EV_OVERLAY)
 std::string status();
+const view::Centres& view_centres(); // host: itself + every partner in the Cell stage (BUG-0174)
 uint32_t own_model(); // the own cell's model instance (0: none)
 std::string trace_line(); // support trace (trace.h): the own cell, food around it, what it did since the last line
 std::vector<syncdbg::Entry> sync_entries(); // coop.sync (tests)

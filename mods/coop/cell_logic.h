@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <bitset>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <deque>
 #include <utility>
@@ -219,6 +220,34 @@ inline bool edge_point(float cx, float cy, float dx, float dy, float mx, float m
         y = std::clamp(y, 0.f, 2 * cy);
     }
     return true;
+}
+
+// BUG-0174: the key PopulateTiles (0xE7D370) sorts its tile lists by: the layer, the level and the
+// tile coordinates as bytes, compared as a signed int (docs/re/cell.md#cell-partner-tiles).
+inline int32_t tile_key(int32_t layer, int32_t level, int32_t x, int32_t y)
+{
+    return (int32_t)(((uint32_t)layer << 24) | (((uint32_t)level & 0xFF) << 16) | (((uint32_t)x & 0xFF) << 8) |
+                     ((uint32_t)y & 0xFF));
+}
+
+// BUG-0174: is `key` in a game tile list (a sorted vector of {key, tile object index} pairs between
+// begin and end)? The host's list and the partners' lists must not populate the same tile twice.
+inline bool tile_list_has(const int32_t* begin, const int32_t* end, int32_t key)
+{
+    if (!begin || !end || end <= begin || ((end - begin) & 1))
+        return false;
+    std::ptrdiff_t lo = 0, hi = (end - begin) / 2;
+    while (lo < hi) {
+        std::ptrdiff_t mid = (lo + hi) / 2;
+        int32_t k = begin[mid * 2];
+        if (k == key)
+            return true;
+        if (k < key)
+            lo = mid + 1;
+        else
+            hi = mid;
+    }
+    return false;
 }
 
 } // namespace cell_logic

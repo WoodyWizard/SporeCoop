@@ -1,6 +1,7 @@
 #include "cellsync.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -9,6 +10,7 @@
 #include <unordered_set>
 
 #include "cell_logic.h"
+#include "view_centres.h"
 #include "game.h"
 #include "modes.h"
 #include "net/interp.h"
@@ -861,6 +863,247 @@ static int SK_CDECL h_Populate(float prob, int layer, int level, void* query, vo
     return o_Populate(prob, layer, level, query, bbox, marker, x);
 }
 
+// ---- BUG-0174: the host keeps the world populated around every player, not only around itself ----
+// Spore populates and keeps only the tiles around the local view (PopulateTiles 0xE7D370 with the
+// list cCellGame+0x4128 and the view boxes 0x16B3C88, docs/re/cell.md#cell-partner-tiles). In co-op
+// the host's game is the one world and a guest's own population is off (h_Populate), so a guest more
+// than one screen from the host swam in an empty pool. Now the host runs one more PopulateTiles pass
+// per partner, with its own tile list and the view boxes moved onto the partner's cell; a tile two
+// players share is populated once (h_PopTile), and a tile / cell inside any player's box is kept
+// (h_TileActive). The players are the host's view centres (view_centres.h), at most kMaxCentres.
+// Old (`coop.fix cell.partner_tiles off`): only the host's own view.
+static bool g_fix_partner_tiles = true;
+COOP_FIX("cell.partner_tiles", "BUG-0174", g_fix_partner_tiles, "cell: the host populates and keeps the tiles around every partner, and sends each guest the cells around it");
+static uintptr_t a_PopTiles, a_PopTile, a_TileActive, a_ViewBoxes;
+constexpr size_t kTileCap = 2048; // entries of our own lists' fixed buffers (the active set is < 512 tiles)
+struct TileList {             // the game's fixed_vector layout (PopulateTiles reads +0..+8, +0x10, +0x1018)
+    int32_t* begin;
+    int32_t* end;
+    int32_t* cap;
+    uint32_t pad;
+    int32_t* fixed;
+    uint8_t rest[0x1020 - 0x14];
+};
+struct PartnerTiles {
+    TileList* list = nullptr;
+    int32_t* buf = nullptr;
+    double seen = 0;
+};
+static std::unordered_map<int, PartnerTiles> g_ptiles; // partner id -> its tile list
+static view::Centres g_views;                          // host: itself + every partner (this frame)
+static std::vector<std::array<float, 12>> g_view_boxes; // the view boxes of each centre (host first)
+static TileList* g_pass_list;   // the list of the pass PopulateTiles is running for us (null: none)
+static int g_pass = -1;         // -1 none, 0 the host's pass, k > 0 the pass of centre k
+static bool g_union;            // h_TileActive: also true inside another centre's box
+static std::unordered_set<uint32_t> g_shadow_tiles; // tile objects not populated (another list has the tile)
+static uint32_t g_tiles_partner, g_tiles_shared, g_tiles_bg, g_tile_passes, g_tiles_kept, g_tile_resets, g_tiles_drained;
+
+using PopTiles_t = void(SK_CDECL*)(int, TileList*, int);
+static PopTiles_t o_PopTiles;
+using PopTile_t = void(SK_CDECL*)(uint32_t*, int);
+static PopTile_t o_PopTile;
+using TileActive_t = bool(SK_CDECL*)(const int32_t*);
+static TileActive_t o_TileActive;
+
+static float* view_boxes() { return a_ViewBoxes ? (float*)a_ViewBoxes : nullptr; }
+
+// a tile object index of the pool cCellGame+0x38 is still alive (pool layout: docs/re/cell.md 0)
+static bool tile_alive(uint32_t idx)
+{
+    uint8_t* g = G();
+    if (!g)
+        return false;
+    uint8_t* data = F<uint8_t*>(g, 0x38);
+    uint32_t used = F<uint32_t>(g, 0x38 + 0x10), size = F<uint32_t>(g, 0x38 + 0x14), slot = idx & 0xFFFF;
+    if (!data || !size || size > 0x1000 || slot >= used)
+        return false;
+    return F<uint32_t>(data + (size_t)slot * size, 0) == idx;
+}
+
+static TileList* host_tiles() { return G() ? (TileList*)(G() + 0x4128) : nullptr; }
+
+// every list but `except` that holds the tile already
+static bool tile_elsewhere(int32_t key, TileList* except)
+{
+    TileList* h = host_tiles();
+    if (h && h != except && cell_logic::tile_list_has(h->begin, h->end, key))
+        return true;
+    for (auto& [id, pt] : g_ptiles)
+        if (pt.list && pt.list != except && cell_logic::tile_list_has(pt.list->begin, pt.list->end, key))
+            return true;
+    return false;
+}
+
+static void SK_CDECL h_PopTile(uint32_t* t, int all)
+{
+    if (t && g_pass >= 0) {
+        if (g_pass > 0 && t[1] != 0) { // the host does not need a partner's background
+            g_tiles_bg++;
+            g_shadow_tiles.insert(t[0]);
+            return;
+        }
+        if (tile_elsewhere(cell_logic::tile_key((int32_t)t[1], (int32_t)t[2], (int32_t)t[3], (int32_t)t[4]), g_pass_list)) {
+            g_tiles_shared++; // its cells are there already: populating it again doubled the food
+            g_shadow_tiles.insert(t[0]);
+            return;
+        }
+        if (g_pass > 0)
+            g_tiles_partner++;
+    } else if (t && !g_shadow_tiles.empty() && g_shadow_tiles.count(t[0]))
+        return; // RemoveCellsOfOldScale repopulates every tile object: not the shared ones twice
+    o_PopTile(t, all);
+}
+
+static bool SK_CDECL h_TileActive(const int32_t* t)
+{
+    bool r = o_TileActive(t);
+    float* vb = view_boxes();
+    if (r || !g_union || !t || t[0] != 0 || !vb || g_view_boxes.size() < 2)
+        return r;
+    float save[12];
+    memcpy(save, vb, sizeof save);
+    for (auto& b : g_view_boxes) {
+        if (!memcmp(b.data(), save, sizeof save))
+            continue; // the box it was just asked with
+        memcpy(vb, b.data(), sizeof save);
+        if ((r = o_TileActive(t)))
+            break;
+    }
+    memcpy(vb, save, sizeof save);
+    if (r)
+        g_tiles_kept++;
+    return r;
+}
+
+// our list forgets its entries without deleting them (the pool they were in is gone)
+static void tiles_forget(PartnerTiles& pt)
+{
+    if (pt.list) {
+        pt.list->begin = pt.list->end = pt.list->fixed = pt.buf;
+        pt.list->cap = pt.buf + kTileCap * 2;
+    }
+}
+
+static void tiles_free(PartnerTiles& pt)
+{
+    delete pt.list; // a buffer the game grew it into (more than kTileCap tiles) is left to the game's heap
+    delete[] pt.buf;
+    pt.list = nullptr;
+    pt.buf = nullptr;
+}
+
+// the game deletes the list's tiles itself: a pass with empty boxes, nothing active, nothing created
+static void tiles_drain(int level, PartnerTiles& pt)
+{
+    float* vb = view_boxes();
+    if (!pt.list || !vb || pt.list->begin == pt.list->end)
+        return;
+    float save[12];
+    memcpy(save, vb, sizeof save);
+    memset(vb, 0, sizeof save);
+    bool u = g_union;
+    g_union = false;
+    g_tiles_drained += (uint32_t)((pt.list->end - pt.list->begin) / 2);
+    o_PopTiles(level, pt.list, 0);
+    g_union = u;
+    memcpy(vb, save, sizeof save);
+}
+
+static void partner_tiles_reset(bool drain)
+{
+    for (auto& [id, pt] : g_ptiles) {
+        if (drain && in_cell())
+            tiles_drain(0, pt);
+        tiles_free(pt);
+    }
+    g_ptiles.clear();
+    g_shadow_tiles.clear();
+    g_views.clear();
+    g_view_boxes.clear();
+    g_union = false;
+}
+
+static void SK_CDECL h_PopTiles(int level, TileList* list, int all)
+{
+    float* vb = view_boxes();
+    bool ours = g_fix_partner_tiles && vb && list && list == host_tiles() && is_host() && in_cell() && C.puppets;
+    if (!ours) {
+        if (!g_ptiles.empty() || g_union)
+            partner_tiles_reset(in_cell() && list == host_tiles()); // not hosting a Cell session any more: the lists are the old pool's
+        o_PopTiles(level, list, all);
+        return;
+    }
+    // a rebuild cleared the tile pool (RebuildLevel 0xE80010): our lists point at freed tiles
+    for (auto& [id, pt] : g_ptiles)
+        if (pt.list && pt.list->begin != pt.list->end && !tile_alive((uint32_t)pt.list->begin[1])) {
+            tiles_forget(pt);
+            g_tile_resets++;
+        }
+    if (g_shadow_tiles.size() > 4096)
+        for (auto it = g_shadow_tiles.begin(); it != g_shadow_tiles.end();)
+            it = tile_alive(*it) ? std::next(it) : g_shadow_tiles.erase(it);
+    // the view centres: the host's view box, then every partner's cell
+    double now = H->time_seconds();
+    std::array<float, 12> host_box;
+    memcpy(host_box.data(), vb, sizeof(float) * 12);
+    view::Box hb{host_box[0], host_box[1], host_box[3], host_box[4]};
+    g_views.clear();
+    g_views.set_host(hb.cx(), hb.cy(), 0);
+    for (auto& p : C.puppets()) {
+        uint8_t* c = (uint8_t*)p.cell;
+        if (!c || p.id <= 0)
+            continue;
+        net::Vec3 at = pos_of(c);
+        if (std::isfinite(at.x) && std::isfinite(at.y) && std::fabs(at.x) < 1e6f && std::fabs(at.y) < 1e6f)
+            g_views.add(p.id, at.x, at.y, 0);
+    }
+    g_view_boxes.clear();
+    for (auto& v : g_views.list()) {
+        float dx = v.x - hb.cx(), dy = v.y - hb.cy();
+        std::array<float, 12> b = host_box;
+        for (int i : {0, 3, 6, 9})
+            b[i] += dx;
+        for (int i : {1, 4, 7, 10})
+            b[i] += dy;
+        g_view_boxes.push_back(b);
+    }
+    g_union = g_view_boxes.size() > 1;
+    g_pass = 0;
+    g_pass_list = list;
+    o_PopTiles(level, list, all);
+    if (!all) { // a rebuild (all) populates the host's view in one go; the partners follow next frame
+        for (size_t k = 1; k < g_views.size(); k++) {
+            auto& pt = g_ptiles[g_views.list()[k].id];
+            pt.seen = now;
+            if (!pt.list) {
+                pt.buf = new int32_t[kTileCap * 2];
+                pt.list = new TileList();
+                memset(pt.list, 0, sizeof(TileList));
+                tiles_forget(pt);
+            }
+            memcpy(vb, g_view_boxes[k].data(), sizeof(float) * 12);
+            g_pass = (int)k;
+            g_pass_list = pt.list;
+            o_PopTiles(level, pt.list, 0);
+            g_tile_passes++;
+        }
+        memcpy(vb, host_box.data(), sizeof(float) * 12);
+    }
+    g_pass = -1;
+    g_pass_list = nullptr;
+    // a partner that left (or has no cell here any more): the game deletes its tiles
+    for (auto it = g_ptiles.begin(); it != g_ptiles.end();) {
+        if (!g_views.find(it->first) && now - it->second.seen > 2.0) {
+            tiles_drain(level, it->second);
+            tiles_free(it->second);
+            it = g_ptiles.erase(it);
+        } else
+            ++it;
+    }
+}
+
+const view::Centres& view_centres() { return g_views; }
+
 // ShouldNotAttack 0xE57480 (cdecl bool(attacker, victim)): the prey / threat tests of the NPC AI
 // (IsPrey 0xE68910, IsThreat 0xE68870) and DamageCell ask it. Its "wontAttackPlayer(WhenSmall)"
 // flags of a species (resource +0x300/+0x301) apply only when the victim is the avatar
@@ -1025,6 +1268,10 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     a_RefCreate = H->sym("Simulator::Cell::cCellDataReference_::Create");
     a_Serializer = H->sym("Simulator::Cell::cCellSerializer::_ptr");
     a_S = H->sym("Simulator::Cell::cCellSerializableData::_ptr");
+    a_PopTiles = H->sym("Simulator::Cell::PopulateTiles");
+    a_PopTile = H->sym("Simulator::Cell::PopulateTile");
+    a_TileActive = H->sym("Simulator::Cell::IsTileActive");
+    a_ViewBoxes = H->sym("Simulator::Cell::ViewBoxes");
     g_ok = a_DamageCell && a_KillCell && a_Break && a_Destroy && a_AddFood && a_Populate && a_RefCreate &&
            a_Serializer && a_S;
     if (!g_ok) {
@@ -1037,6 +1284,12 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     H->hook_create(M, (void*)a_Destroy, (void*)h_Destroy, (void**)&o_Destroy);
     H->hook_create(M, (void*)a_AddFood, (void*)h_AddFood, (void**)&o_AddFood);
     H->hook_create(M, (void*)a_Populate, (void*)h_Populate, (void**)&o_Populate);
+    if (a_PopTiles && a_PopTile && a_TileActive && a_ViewBoxes) { // GOG 2024 only (BUG-0174)
+        H->hook_create(M, (void*)a_PopTiles, (void*)h_PopTiles, (void**)&o_PopTiles);
+        H->hook_create(M, (void*)a_PopTile, (void*)h_PopTile, (void**)&o_PopTile);
+        H->hook_create(M, (void*)a_TileActive, (void*)h_TileActive, (void**)&o_TileActive);
+    } else
+        a_ViewBoxes = 0;
     if (a_Pair)
         H->hook_create(M, (void*)a_Pair, (void*)h_Pair, (void**)&o_Pair);
     if (a_Wipe)
@@ -1057,6 +1310,12 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
 }
 
 // ---------------- host ----------------
+struct SendCell {
+    uint8_t* c;
+    uint32_t idx;
+};
+static void send_state(int to, const std::vector<SendCell>& cells);
+
 static void host_tick(double now)
 {
     uint8_t* s = S();
@@ -1093,17 +1352,40 @@ static void host_tick(double now)
     if (!av)
         return;
     net::Vec3 me = pos_of(av);
-    struct E {
-        uint8_t* c;
-        uint32_t idx;
-    };
-    std::vector<E> cells;
+    using E = SendCell;
+    // BUG-0174: each guest gets the cells within 120 m of its own cell (the host populates around it
+    // too, h_PopTiles); a guest without a centre yet, or `fix cell.partner_tiles off`: around the host.
+    std::vector<E> all;
+    bool per_guest = g_fix_partner_tiles && g_views.size() > 1;
     for_each_cell([&](uint8_t* c, uint32_t idx) {
-        if (modes::cell_is_puppet(c) || !F<void*>(c, kRes) || net::dist(pos_of(c), me) > 120.f)
+        if (modes::cell_is_puppet(c) || !F<void*>(c, kRes))
             return;
-        cells.push_back({c, idx});
+        net::Vec3 p = pos_of(c);
+        if (per_guest ? !g_views.near_any(p.x, p.y, 120.f) && net::dist(p, me) > 120.f : net::dist(p, me) > 120.f)
+            return;
+        all.push_back({c, idx});
     });
     g_cycle++;
+    for (auto& pl : C.sess->players()) {
+        if (pl.id == 0)
+            continue;
+        const view::Centre* vc = per_guest ? g_views.find(pl.id) : nullptr;
+        std::vector<E> mine;
+        const std::vector<E>* list = &all;
+        if (vc) {
+            for (auto& e : all) {
+                net::Vec3 p = pos_of(e.c);
+                if (std::hypot(p.x - vc->x, p.y - vc->y) <= 120.f)
+                    mine.push_back(e);
+            }
+            list = &mine;
+        }
+        send_state(pl.id, *list);
+    }
+}
+
+static void send_state(int to, const std::vector<SendCell>& cells)
+{
     size_t per = 14, chunks = std::max<size_t>(1, (cells.size() + per - 1) / per);
     for (size_t k = 0; k < chunks; k++) {
         net::Writer w;
@@ -1132,9 +1414,7 @@ static void host_tick(double now)
             w.u8(cell_logic::hp_byte(F<int>(c, kHp))); // a negative hp is 0, not 255 (BUG-0160)
             w.u8((uint8_t)((F<uint8_t>(c, kDying) ? 1 : 0) | (F<uint8_t>(c, kDead) ? 2 : 0)));
         }
-        for (auto& pl : C.sess->players())
-            if (pl.id != 0)
-                C.sess->send_unreliable_to(pl.id, net::MSG_CELL_STATE, w);
+        C.sess->send_unreliable_to(to, net::MSG_CELL_STATE, w);
     }
 }
 
@@ -1408,6 +1688,7 @@ void tick(double now)
         if (was_in_cell)
             reset_knockout(); // no avatar any more: only our state is reset
         forget_mirrors();
+        partner_tiles_reset(false); // the tile pool went with the stage
         g_loot_recent.clear();
         modes::cell_forget(); // the partners' puppets were in the same pool
     }
@@ -2419,7 +2700,16 @@ std::string status()
                  g_revives, g_respawns, g_pairs_skipped, g_hurt_local, g_hurt_fwd, g_bitten_sent, g_soft_moves, g_soft_turns, g_chunks_sent, g_chunks_taken, g_breaks_sent, g_wipes, g_kept, g_puppet_saves, g_puppet_new,
                  g_npc_deaths, g_loot_calls, g_loot_cells, g_mirror_kills, g_kills_sent, g_death_replays, g_loot_skipped,
                  (unsigned)g_host_of.size(), g_late_chunks, g_rounds_partial, (unsigned)g_meals.unacked.size());
-    return b + std::string(d);
+    char t[256];
+    size_t pcount = 0;
+    for (auto& [id, pt] : g_ptiles)
+        if (pt.list)
+            pcount += (size_t)((pt.list->end - pt.list->begin) / 2);
+    snprintf(t, sizeof t,
+             "cell_tiles: fix=%d centres=%u partner_lists=%u partner_tiles=%u populated=%u shared=%u bg_skipped=%u passes=%u kept=%u resets=%u drained=%u\n",
+             (int)g_fix_partner_tiles, (unsigned)g_views.size(), (unsigned)g_ptiles.size(), (unsigned)pcount, g_tiles_partner,
+             g_tiles_shared, g_tiles_bg, g_tile_passes, g_tiles_kept, g_tile_resets, g_tiles_drained);
+    return b + std::string(d) + t;
 }
 
 std::vector<syncdbg::Entry> sync_entries()

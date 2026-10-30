@@ -13,7 +13,8 @@ at the screen, go for food) and the test asserts the game's own state on both ma
 * the cells a player ate are gone on the other machine too (`eats_in` on the host).
 
   SPORE_LANE=N python3 tools/tests/coop_cell_new_game.py [--diet herb|carn] [--early] [--minutes 3]
-      [--probe 6] [--apart 70]
+      [--probe 6] [--apart 70 [--far-probe 4]]
+  BUG-0174 (cell_far_guest): --apart 70 --far-probe 4; SPORE_FIX_OFF=cell.partner_tiles must FAIL
 """
 import argparse
 import os
@@ -22,7 +23,7 @@ import subprocess
 import sys
 import time
 
-from twoinst import Checks, HERE, Monitor, shot, wait_guest_in, wait_up, watch  # (sets the path)
+from twoinst import Checks, HERE, Monitor, fix_off_ok, shot, wait_guest_in, wait_up, watch  # (sets the path)
 import lane  # noqa: E402
 from lane import sh  # noqa: E402
 from sporectl import Console  # noqa: E402
@@ -74,10 +75,12 @@ def food_on_screen(con):
     return sum(1 for l in out.splitlines() if l.startswith('see ') and l.split()[2] in ('plant', 'meat'))
 
 
-def apart(ck, host, guest, seconds):
+def apart(ck, host, guest, seconds, far_probe, kind):
     """BUG-0174 / BUG-0279: the guest swims straight away from the host (W held) and looks at its
-    screen: is there food where it is? The host's game populates and keeps only the tiles around
-    its own cell, the guest spawns none of its own."""
+    screen: is there food where it is? Before the fix the host's game populated and kept only the
+    tiles around its own cell and the guest spawns none of its own. Then (far_probe) the guest, far
+    from the host, swims into food of its diet: its game eats it, the host counts the meal, the cell
+    is gone on both; every food cell on the far guest's screen is a cell of the host's world too."""
     far = []
     guest.call('key 0x57 down')
     t0 = time.time()
@@ -92,7 +95,24 @@ def apart(ck, host, guest, seconds):
             time.sleep(4)
     finally:
         guest.call('key 0x57 up')
+    tiles = [l for l in host.call('coop.pool')['out'].splitlines() if l.startswith('cell_tiles')]
+    print('  host ' + (tiles[0] if tiles else 'cell_tiles: (none)'), flush=True)
     ck(far and min(far) > 0, f'the guest finds food more than 50 m from the host (food on screen there: {far})')
+    if not far_probe:
+        return
+    d = pool(guest)['partner_dist'] or 0
+    seen = [l.split() for l in guest.call('coop.pool see 200')['out'].splitlines() if l.startswith('see ')]
+    food = [f[1] for f in seen if f[2] in ('plant', 'meat')]
+    there = sum(1 for k in food[:12] if alive(host, k))
+    print(f'  far ({d:.0f} m): {len(food)} food cells on the guest\'s screen, of the first {min(12, len(food))} '
+          f'{there} are cells of the host\'s world', flush=True)
+    ck(d > 50 and food and there >= min(12, len(food)) * 0.8,
+       f'the far guest\'s food is the host\'s ({there}/{min(12, len(food))} at {d:.0f} m)')
+    h0 = pool(host)['eats_in'] or 0
+    got = probe('guest(far)', guest, host, kind, far_probe)
+    h1 = pool(host)['eats_in'] or 0
+    ck(got >= (far_probe + 1) // 2 and h1 > h0,
+       f'the far guest eats ({got}/{far_probe} by its own game, the host applied {h1 - h0} of its meals)')
 
 
 def main():
@@ -104,6 +124,8 @@ def main():
     ap.add_argument('--apart', type=float, default=0, help='then the guest swims away from the host for N s '
                     '(BUG-0174: fails while the host populates only around itself)')
     ap.add_argument('--probe', type=int, default=6, help='swims to food of the diet per player before playing')
+    ap.add_argument('--far-probe', type=int, default=0, help='after --apart: the far guest swims to food of its '
+                    'diet N times (BUG-0174: it must eat there and the host must count it)')
     a = ap.parse_args()
     seed = a.seed if a.seed is not None else random.randrange(1 << 30)
     print(f'  new cell game, diet {a.diet}, early join {a.early}, {a.minutes} min, seed {seed}', flush=True)
@@ -146,6 +168,14 @@ def main():
         shot(guest, 'cell_new_game_guest.png')
         return ck.result()
     time.sleep(4)
+    # SPORE_FIX_OFF=<name>[,...] (the lab's twin runs, BUG-0116): those fixes off on both games
+    for name in filter(None, (n.strip() for n in os.environ.get('SPORE_FIX_OFF', '').split(','))):
+        for con in (host, guest):
+            out = con.call(f'coop.fix {name} off')['out'].strip()
+            print('  SPORE_FIX_OFF: ' + out, flush=True)
+            if not fix_off_ok(name, out):
+                print(f'RESULT: FAIL (SPORE_FIX_OFF: unknown fix {name})', flush=True)
+                return 1
     for name, con in (('host', host), ('guest', guest)):
         print(f'  {name} creations:', ' | '.join(con.call('coop.creations')['out'].strip().splitlines()[:8]), flush=True)
         print(f'  {name} diet:', con.call('coop.pool diet')['out'].strip(), flush=True)
@@ -210,7 +240,7 @@ def main():
         hs, gs = pool(host), pool(guest)
     ck(hs['food'] == gs['food'], f'the same food bar on both ({hs["food"]} / {gs["food"]})')
     if a.apart:
-        apart(ck, host, guest, a.apart)
+        apart(ck, host, guest, a.apart, a.far_probe, kind)
     ck.faults(host=host, guest=guest)
     return ck.result()
 

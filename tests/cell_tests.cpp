@@ -5,6 +5,7 @@
 #include <cstring>
 
 #include "cell_logic.h"
+#include "view_centres.h"
 
 using namespace cell_logic;
 
@@ -204,6 +205,34 @@ static void spawn_slot()
     CHECK(!parse_cell_slot("99999999999", 5000, &v));
 }
 
+// BUG-0174: the tile keys of PopulateTiles' sorted lists and the host's view centres
+static void partner_tiles()
+{
+    CHECK(tile_key(0, 2, 3, 4) == 0x00020304);
+    CHECK(tile_key(1, 0, -1, -2) == 0x0100FFFE);
+    CHECK(tile_key(0, 1, -1, 0) < tile_key(0, 2, 0, 0)); // sorted by level before the coordinates
+    int32_t l[] = {tile_key(0, 1, 0, 0), 7, tile_key(0, 1, 0, 1), 9, tile_key(0, 1, 5, -3), 11, tile_key(1, 1, 0, 0), 13};
+    for (int i = 0; i < 4; i++)
+        CHECK(tile_list_has(l, l + 8, l[i * 2]));
+    CHECK(!tile_list_has(l, l + 8, tile_key(0, 1, 0, 2)));
+    CHECK(!tile_list_has(l, l, l[0]));
+    CHECK(!tile_list_has(nullptr, nullptr, 0));
+    view::Centres c;
+    CHECK(c.add(2, 100, 0, 0));
+    c.set_host(0, 0, 0);
+    CHECK(c.size() == 2 && c.list()[0].id == 0 && c.list()[1].id == 2);
+    c.set_host(1, 1, 0);
+    CHECK(c.size() == 2 && c.list()[0].x == 1);
+    CHECK(c.add(2, 50, 0, 0) && c.size() == 2 && c.find(2)->x == 50);
+    CHECK(c.near_any(45, 0, 6) && !c.near_any(25, 0, 6));
+    for (int i = 3; i < 20; i++)
+        c.add(i, (float)i, 0, 0);
+    CHECK(c.size() == view::kMaxCentres); // bounded
+    view::Box b{-20, -15, 20, 15};
+    view::Box m = b.centred(100, 50);
+    CHECK(m.x0 == 80 && m.x1 == 120 && m.y0 == 35 && m.y1 == 65);
+}
+
 int main(int argc, char** argv)
 {
     for (int i = 1; i < argc; i++)
@@ -218,6 +247,7 @@ int main(int argc, char** argv)
     ko();
     meals_away();
     numerics();
+    partner_tiles();
     if (g_fail) {
         printf("cell_tests: %d FAILED\n", g_fail);
         return 1;
