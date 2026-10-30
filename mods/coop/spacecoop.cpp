@@ -1782,6 +1782,18 @@ std::string debug(const std::vector<std::string>& a)
                 out += e.key + " ";
         return out.empty() ? "none" : out;
     }
+    if (a[0] == "profile" && a.size() > 1) { // tests (BUG-0185): load and cache a star's species profile now
+        static uintptr_t prof = H->sym("cStarRecord_GetSpeciesProfile");
+        void* sm = a_StarMgr ? cdecl_call<void*>(a_StarMgr) : nullptr;
+        void* star = sm && a_GetStarRecord ? thiscall<void*>(a_GetStarRecord, sm, (uint32_t)strtoul(a[1].c_str(), nullptr, 16))
+                                           : nullptr;
+        if (!star || !prof)
+            return "no such star";
+        void* before = F<void*>(star, 0x80);
+        void* r = thiscall<void*>(prof, star);
+        snprintf(b, sizeof b, "profile of %08X: %p (cached before: %p)", F<uint32_t>(star, 0x70), r, before);
+        return b;
+    }
     if (a[0] == "landcheck") { // BUG-0182: the conditions of the wheel's landing (system update 0x1009C90)
         static uintptr_t can_land = H->sym("SporeCoop::cSimulatorPlayerUFO_CanLandOnActivePlanet"),
                          ready = H->sym("SporeCoop::Space_ZoomLandReady"),
