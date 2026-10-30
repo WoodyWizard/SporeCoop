@@ -16,5 +16,6 @@ std::string fake_dead_modal(void* wm);
 std::string arm_leave_walk();
 // tests (BUG-0310): once armed, puts `citizen` through the guard in the first frame Tribe is left
 bool leave_walk_tick(void* citizen);
+bool leave_walk_armed(); // the stand-in is armed (the frame loop asks before walking the members)
 
 } // namespace gamefixes

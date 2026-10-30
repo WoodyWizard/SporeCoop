@@ -290,6 +290,8 @@ static void __fastcall offstage_guard(void* mgr, void*, void* obj)
 // through the guard as the game would have: +0xB54 cleared, then the guard (fix on: skipped) or the
 // old code's walk (fix off: WalkTo faults in SetMoveScale, caught by the game's handler as in the
 // campaign). Returns whether it fired.
+bool leave_walk_armed() { return g_leave_walk_test; }
+
 bool leave_walk_tick(void* citizen)
 {
     if (!g_leave_walk_test || !citizen || !g_offstage_orig || !game::leaving_stage() || game::mode_id() != kTribeMode)
