@@ -14,8 +14,8 @@ and the food it ate went to a host that dropped it.
    host cell again (the guest's own cells are gone) and there are more than 5 mirrors, and the host's
    game food total S+0x1C grew by the 10 points, the guest's the same.
 
---editor: the host is in its own cell editor instead (its mating call and the mate, real clicks,
-coop_editor_desync.py's way; cancel after the checks). It counts as away after 4 s (in Cell since
+--editor: the host is in its own cell editor instead (its mating call by a real click, then onto the
+mate with `coop.pool mate tp`; cancel after the checks). It counts as away after 4 s (in Cell since
 BUG-0205; BUG-0233 had left Cell out because nothing played on there).
 
 SPORE_FIX_OFF=pool.away must FAIL (the frozen pool of 0.7.3.1: no creature moves, the 10 points are lost).
@@ -27,7 +27,7 @@ import sys
 import time
 
 from twoinst import Checks, lane_state, start
-from coop_editor_desync import CANCEL, mating_call, mode
+from coop_editor_desync import CANCEL, HEART, mode
 
 
 def num(out, key):
@@ -80,7 +80,17 @@ def main():
 
     # 1. the host leaves for the main menu (or opens its own cell editor)
     if editor:
-        _, reached = mating_call(host, 'host', lambda: 'Editor' in mode(host))
+        # the mating call (real click), then onto the mate (`coop.pool mate tp`: a click-swim to a mate
+        # off the screen did not reach it); the mating cinematic takes ~10 s before the editor
+        for _ in range(3):
+            host.call('coop.pool mate button')
+            time.sleep(1)
+            host.call('click %d %d' % HEART)
+            time.sleep(3)
+            if 'alive=1' in host.call('coop.pool mate')['out']:
+                break
+        print('  host mate: ' + host.call('coop.pool mate tp')['out'].strip())
+        reached = wait(lambda: 'Editor' in mode(host), 40, 0.5)
         if not ck(reached, f'the host\'s own cell editor opens ({mode(host).strip()})'):
             return ck.result()
     else:

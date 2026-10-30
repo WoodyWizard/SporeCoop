@@ -13,8 +13,9 @@ takes the real way and the real timing the issue (#171) describes:
 3. Cancel. Back in the pool: the avatar's +0x111 (`coop.cell pool` av_invuln) is 0 within 4 s, and
    a host bite (`coop.pool hurt 1 1`) lowers the guest's hp in the guest's game.
 
-The test is valid only when the editor opened while the invulnerability timer still ran (the stage
-left less than 2 s / 3 s after the end of the knockout); otherwise it says SKIP with the time.
+Measured (2026-10-30, lane 3): the Cell stage is left ~10 s after the cell touches its mate (the
+mating cinematic), so the 2 s / 3 s window of the issue is over before the editor opens, whatever
+the player does; the test prints that time and stays as a guard of the editor return.
 
   SPORE_LANE=3 python3 tools/tests/coop_cell_editor_timed.py [--revive]
 """
@@ -106,9 +107,9 @@ def main():
     print(f'  host bite: guest hp {h0} -> {h1}')
     ck(h0 is not None and h1 is not None and h1 < h0, f'a host bite hurts the guest after its editor ({h0} -> {h1})')
     ck.faults(host=host, guest=guest)
-    if not in_window and ck.ok:
-        print(f'RESULT: SKIP (the editor opened {left:.2f} s after the knockout, after the {window} s window)')
-        return 0
+    if not in_window:  # lane 3, 2026-10-30: always ~10 s (the mating cinematic): the issue's window cannot be hit
+        print(f'  note: the Cell stage was left {left:.2f} s after the knockout, after the {window} s window: the timer '
+              f'had cleared +0x111 already; the checks above still guard the editor return')
     return ck.result()
 
 
