@@ -284,7 +284,10 @@ def start(*a, **kw):
     Strict (BUG-0214 R8): a name the game does not know fails the test at once, so a twin run
     cannot pass silently with the fix still on; an unsafe switch only gets a warning line."""
     host, guest = _start(*a, **kw)
-    for name in filter(None, (n.strip() for n in os.environ.get('SPORE_FIX_OFF', '').split(','))):
+    names = [n for n in (n.strip() for n in os.environ.get('SPORE_FIX_OFF', '').split(',')) if n]
+    if names:  # BUG-0312: these games keep the switches off; the next warm test must not reuse them
+        lane_state(**{**lane_state(), 'fix_off': ','.join(names)})
+    for name in names:
         for con in (host, guest):
             out = con.call(f'coop.fix {name} off')['out'].strip()
             print('  SPORE_FIX_OFF: ' + out, flush=True)
@@ -316,6 +319,7 @@ def _start(fixture='creature', planet=None, load_args=(), join_in_intro=False, g
     # coop_stage_switch.py, but go through the galaxy menu and take longer)
     if os.environ.get('SPORE_WARM') == '1' and planet and not join_in_intro and st.get('build') == build_id() \
             and st.get('fixture') == fixture and st.get('guest_creations', True) == guest_creations \
+            and not st.get('fix_off') \
             and alive(lane.HOST) and alive(lane.GUEST):
         host, guest = Console(lane.HOST), Console(lane.GUEST)
         try:

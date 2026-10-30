@@ -1007,3 +1007,44 @@ BUG-0280 (Tribe), BUG-0291. GOG 2024, lane 9, `coop_tribe_far.py`. Extends [the 
 * `coop.npc archless all` (any stage): every herd with its enabled flag, members, members in the
   world and members within 100 m of the home.
 * Rivals: the same two pieces (spheres and the send set) are what a rival's area needs in Tribe.
+
+## Proxies at low frame rates, missing proxies, the host's NPCs after it left (2026-10-30, fix/w13-creature)
+<a id="creature-proxy-guest-side"></a>
+
+BUG-0281, BUG-0300, BUG-0180. GOG 2024, lanes 4 and 5. Extends [the relevance pass](#creature-view-centres).
+
+* ✔ A guest's NPC proxies are never sent to the pool by the guest's own relevance pass: the pass
+  pools only creatures with `+0x135` and `+0xB67` set (0xACE7E4 / 0xACE7F0 in Relevance_Update);
+  every proxy read `+0xB67` = 0 (21 of 21, `mem.read`, lane 4), every host NPC 1. With the guest's
+  camera 305 m from its proxies for 45 s none was pooled and the census matched the host's.
+  (Not the cause of BUG-0300.)
+* ✔ The pool call itself: creature vt 0xC8, `thiscall(c, 1)` (`push 1` at 0xACE88C, ecx = the
+  creature).
+* ✔ Creature-stage proxies of the nest species 065CBE70 hardly walk by themselves: `own=` (their
+  game speed) stayed 0 for most samples and reached 1-3.3 m/s at best while the host's NPC ran at
+  4 m/s (`coop.npc list`); the per-frame nudge (driver.h, 15 % of the way, about half of the nudges
+  undone by the next frame: `nudge=kept/all`) and the `npc.trail` teleports move them. Two NPCs
+  running side by side at 4 m/s (`DASH_FIXTURE=creature coop_tribe_npc_dash.py`, guest at 15 fps):
+  p90 6.2 m off the host's path with `npc.trail` off, 3.1-3.4 m with it (Tribe: 0.7-0.95 m). A
+  nudge scaled by the frame time (the same pull per second at 15 as at 60 fps) was tried and gave
+  3.4 m: not the cause, dropped. Not found why these proxies do not run at the host's speed.
+* ✔ A proxy beside a standing host NPC is not pushed off by the guest's own avatar: guest avatar
+  0.5 / 1.0 / 1.5 / 2.5 m beside three standing NPCs, 6 s each, guest at 15 fps: errors 0.0-0.5 m
+  (only NPCs that walked off meanwhile showed 1-2.5 m for a moment).
+* ✔ The host leaving to its main menu: its world change despawns every NPC at the guests a few
+  seconds before the guest learns `host_away` (so the proxies are gone when the guest's own game
+  takes over); the nests then bring their members back one at a time (0 own NPCs within 70 m for
+  25 s, `coop_away_refill.py`). Fix `npc.away_locals` (BUG-0180):
+  the guest keeps the last non-empty set of proxies it showed (species, place, orientation, only
+  those in a nest herd of its game; every 0.5 s) and, when the host is away (within 15 s of that
+  set), creates a creature of the game for each with `cCreatureAnimal::Create` in the nest herd of
+  that species, as the nest does: 20 made, 11 of 11 within 70 m at once.
+* ~ BUG-0300 (one proxy missing on a guest for 30 s and more, 4-player campaign): the guest's trace
+  counted 20 proxies with states while its census listed 19 creatures as proxies, so the proxy was
+  in its list but its object was no creature of the world (not listed, destroyed, or without a
+  species); not a range edge (three members of the same herd 77-84 m away were there; the host sends
+  within 110 m). Not reproduced in 4 rejoins with 2 players. Diagnostics `npc.proxy_listed`: the
+  guest checks every second (Creature stage) that each proxy's object is a creature of the noun list (logs
+  "is no creature of this world any more" and makes it again) and logs a proxy without a species.
+* ✔ BUG-0118 re-read on the lane 4 exe (2026-10-30): CreatureSelectionUI 0xB6C9C3..0xB6CA11 reads
+  `(+0xE84)->+0x32C` only with `+0xB58` mask 0x2 clear and mask 0x1 set; the guard (mask 0x1) covers it.

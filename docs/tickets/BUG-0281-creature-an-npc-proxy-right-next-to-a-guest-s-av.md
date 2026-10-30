@@ -9,12 +9,12 @@ source: fix/w7-sync BUG-0275 measurement
 role: 
 versions: 
 fixed_in:
-branch:
+branch: fix/w13-creature
 commits:
 tests:
 signature:
 docs:
-related: BUG-0305, BUG-0169
+related: BUG-0305, BUG-0169, BUG-0312
 ---
 
 ## Report
@@ -50,15 +50,29 @@ Creature stage: a proxy 1.5 m off for 0.5 s is put on its target and held 1 s. A
 standing host NPC 4 m off (this report) should now be put in place within 0.5 s (before: the stuck
 rule after 1.5 s, the stall rule after 3 s); not checked in the game.
 
+Checked in the Creature stage on fix/w13-creature (lane 5, 2026-10-30, docs/re/creature.md#creature-proxy-guest-side):
+* Standing: the guest's avatar 0.5 / 1.0 / 1.5 / 2.5 m beside three standing host NPCs, 6 s each,
+  the guest at 15 fps (`frame.limit 66`, as a loaded 4-player guest): proxy errors 0.0-0.5 m. The
+  standing case of the report did not show (also not with the guest's avatar pushing).
+* Running: two nest NPCs (065CBE70) run side by side on the host (`coop.npc dash`, 4 m/s, 12 m
+  zigzag), the guest at 15 fps 1.5 m beside the path's end (`DASH_FIXTURE=creature
+  coop_tribe_npc_dash.py`): p90 6.2 m off the host's path with `npc.trail` off, 3.1-3.4 m with it
+  (3 runs); Tribe 0.7-0.95 m. `npc.trail` (BUG-0305) helps in Creature but does not remove the lag.
+  These proxies hardly walk by themselves (`own=` 0 for most samples, 1-3.3 m/s at best while the
+  NPC runs at 4 m/s); a nudge scaled by the frame time (the same pull per second at 15 fps as at 60)
+  was tried and gave 3.4 m: dropped (commit 3a62e2b reverts 05269fb).
+* Not found: why Creature proxies of that species do not run at the host's speed.
+
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+None. `npc.trail` (BUG-0305) is in and halves the running case in Creature.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+Measurement, not a pass/fail pair: `SPORE_LANE=5 DASH_FIXTURE=creature python3
+tools/tests/coop_tribe_npc_dash.py` (fails with and without `npc.trail`; not in a suite).
 
 ## History
 - 2026-10-29: opened.
 - 2026-10-30: not reproduced on fix/w9-creature (2-player probe beside standing NPCs, one 4-player measurement).
 - 2026-10-30: fix/w11-finale: the same pattern in the Tribe stage with 4 players (one animal ~4 m off on every guest at once): BUG-0305.
 - 2026-10-30: BUG-0305 (Tribe) found proxies of a running herd pushed off their path; its `npc.trail` fix also acts here; not reproduced in Creature, stays open (fix/w12-tribe-npc).
+- 2026-10-30: fix/w13-creature: Creature check of npc.trail: standing case not reproduced; running NPCs p90 6.2 m -> 3.1-3.4 m with npc.trail at 15 fps; stays open.
