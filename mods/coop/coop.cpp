@@ -4089,6 +4089,9 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                        g_lan_fake_until = net::now_ms() + (uint32_t)(argc > 2 ? atoi(argv[2]) : 60) * 1000u;
                        SAY("fake games %d, listed %zu, kept %zu\n", g_lan_fake_n, g_disc.games(net::now_ms()).size(),
                            g_disc.stored());
+                       for (auto& g : g_disc.games(net::now_ms())) // the rows (BUG-0210 test)
+                           SAY("  game %s %s id=%08X%s\n", g.info.name.c_str(), g.host.str().c_str(), g.info.host_id,
+                               g.info.has_id ? "" : " (none)");
                        return 0;
                    },
                    nullptr, MT);
