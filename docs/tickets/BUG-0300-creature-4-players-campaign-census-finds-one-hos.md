@@ -10,7 +10,7 @@ role: guest
 versions: fix/w10-cell-4p a964c90
 fixed_in:
 branch: fix/w13-creature
-commits: 2d444ef
+commits: 2d444ef, 65cf54c
 tests:
 signature:
 docs: docs/re/creature.md#creature-proxy-guest-side
