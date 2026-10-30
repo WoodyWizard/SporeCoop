@@ -1910,3 +1910,29 @@ Runtime findings of the wave 3 Space fixes (lane 6, GOG 2024):
   `start('space')` returned (the camera's zoom animation takes ~4-7 s of wheel turns). The old
   runs (lane 10, code of 2026-10-23, the intro of section 7.9 already ruled out) were not kept; what
   changed since is not known. If it comes back, `landcheck` shows which condition holds it.
+
+## Host NPC ship models the guest lacks (2026-10-30, fix/w14-space)
+<a id="space-mirror-model"></a>
+
+* ✔ **The fault 0x00E98DD0 (BUG-0323, runtime lanes 8 + 9, GOG 2024).** The label
+  "cPlanetGfx_Create+0x8F0" is only the nearest symbol: the code is 0xE98D90 (thiscall(gfx, bool
+  visible), `ret 4`), the ship gfx's SetVisible. It calls the gfx's vt+0x2C (its model), writes
+  `[model+4]` bit 0 without a null check, tells the model world (vt+0xC4) and, when shown, starts the
+  engine sound of the owner (gfx +0xC, cast with vt+0xB8(0xB033B403) to the UFO; +0x714 the UFO
+  kind). A ship whose model resource does not exist has a null model there.
+* ✔ **How a guest gets such a ship:** the host sends every NPC ship with its model key
+  (cGameDataUFO +0x780, `squadron.cpp`), the guest spawns its mirror with `SpawnUFO(type, &pol, key)`.
+  An NPC empire's ships are creations of the host's Sporepedia cache `Pollination.package`
+  (per profile). On lane 8 the host profile's Pollination.package (grown by earlier tests, among
+  them a Civilization -> Space campaign) held creations the guest's did not: the guest logged the
+  key as unknown 24 ms before the fault. Swapping only that file between the lane 8 and lane 9 host
+  profiles moved the fault with it (bisection of the profile, labs 20261030-1536..1629).
+  `SpawnUFO` with a null key faulted the same way (its default model was missing too).
+* **Fix:** before spawning a mirror the guest checks the key with the resource manager
+  (`creations::key_known`, RM FindRecord vt+0x30); an unknown key is replaced with the model of a
+  live ship of the same empire that this game made itself (remembered per political id, since the
+  local ships are removed once the host's are mirrored), else the mirror is not made. Switch
+  `coop.fix fleet.model_check`; `coop.fleet list` prints `unknown_models=` (spawn attempts with
+  an unknown key); `coop.fleet fakemodel 1` (host, tests) sends made-up model instances.
+* Not done: sending the creation itself to the guest (creations.cpp does that for the players' own
+  ships, not for NPC empires' ones).

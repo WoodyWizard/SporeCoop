@@ -1,6 +1,8 @@
 #include "squadron.h"
 
 #include <algorithm>
+#include <array>
+#include <cstring>
 #include <cmath>
 #include <cstdio>
 #include <unordered_map>
@@ -16,6 +18,7 @@
 #include "spacecoop.h"
 #include "sporekit_game.hpp"
 #include "fixes.h"
+#include "creations.h"
 
 using skg::thiscall;
 using skg::vcall;
@@ -102,6 +105,11 @@ COOP_FIX("fleet.chunk", "BUG-0037", g_chunk_fix, "space: the mirror removal pass
 // `coop.fleet keepposse 0` restores the old loop that destroyed it (tests).
 static bool g_keep_posse = true;
 COOP_FIX("fleet.posse", "BUG-0084", g_keep_posse, "space: the guest's own escort is not destroyed as a host mirror (coop.fleet keepposse)");
+static bool g_model_fix = true;
+COOP_FIX("fleet.model_check", "BUG-0323", g_model_fix, "space: a host ship whose model the guest lacks is mirrored with the default model");
+static uint32_t g_unknown_models;
+static bool g_fake_model; // tests: the host sends made-up model instances
+static std::unordered_set<uint32_t> g_unknown_logged;
 static uint32_t g_stale_chunks, g_partial_cycles, g_posse_kept;
 static bool g_applying;
 static uint32_t g_created, g_removed, g_hits_sent, g_damage_in, g_local_removed, g_mirror_hits;
@@ -242,7 +250,9 @@ static void host_tick(double now)
             w.u16(g_hid[u]);
             w.u8((uint8_t)F<int>(u, kType));
             w.u32(F<uint32_t>(u, kPol));
-            w.u32(key[0]); w.u32(key[1]); w.u32(key[2]);
+            // tests (BUG-0323): `coop.fleet fakemodel 1` sends a model instance the guest has not got,
+            // as a host whose Sporepedia cache holds other creations does
+            w.u32(g_fake_model ? key[0] ^ 0x5A5A5A5Au : key[0]); w.u32(key[1]); w.u32(key[2]);
             w.f32(p.x); w.f32(p.y); w.f32(p.z);
             w.f32(q[0]); w.f32(q[1]); w.f32(q[2]); w.f32(q[3]);
             w.f32(F<float>(u, kHp));
@@ -302,6 +312,32 @@ static void* hit_puppet(uint8_t from)
     if (p && g_hit_fix && live(p) && !modes::space_puppet_ok(p)) // only the mod's player puppets (BUG-0111)
         p = nullptr, g_att_dropped++;
     return hit_attacker(p);
+}
+
+// BUG-0323: the model of a live ship this game made for the empire `pol` (the same type first)
+static bool local_model(uint32_t pol, int type, uint32_t* key)
+{
+    void* best = nullptr;
+    for (void* u : all_ufos()) {
+        if (u == player_ufo() || g_mirror_of.count(u) || F<uint32_t>(u, kPol) != pol)
+            continue;
+        const uint32_t* k = &F<uint32_t>(u, kModel);
+        if (!(k[0] | k[1] | k[2]) || !creations::key_known({k[0], k[1], k[2]}))
+            continue;
+        if (!best || F<int>(u, kType) == type)
+            best = u;
+    }
+    static std::unordered_map<uint32_t, std::array<uint32_t, 3>> seen; // pol -> a model it had here
+    if (!best) {
+        auto it = seen.find(pol); // the local ships are removed once the host's are mirrored
+        if (it == seen.end() || !creations::key_known({it->second[0], it->second[1], it->second[2]}))
+            return false;
+        memcpy(key, it->second.data(), 12);
+        return true;
+    }
+    memcpy(key, &F<uint32_t>(best, kModel), 12);
+    memcpy(seen[pol].data(), key, 12);
+    return true;
 }
 
 static void destroy_mirror(void* u, bool explode)
@@ -371,6 +407,27 @@ static void guest_state(net::Reader& r)
             m.u = nullptr;
         }
         if (!m.u) {
+            // BUG-0323: the host's NPC ships carry its model keys (cGameDataUFO +0x780). An NPC
+            // empire's ships are creations of the host's Sporepedia cache (Pollination.package),
+            // which differs between profiles: a key the guest's game does not have gave a ship
+            // without a model, and the game faulted at 0xE98DD0 (null model in the ship gfx's
+            // SetVisible) when the mirror came up. Such a mirror takes the game's default model.
+            // `coop.fix fleet.model_check off`: the old spawn with any key.
+            // (SpawnUFO with no key faulted the same way: the default model was missing too.) The
+            // model of a ship of the same empire that this game made itself is taken instead; with
+            // none the mirror waits (no ship rather than a broken one).
+            bool known = !(key[0] | key[1] | key[2]) || creations::key_known({key[0], key[1], key[2]});
+            if (!known) {
+                g_unknown_models++;
+                bool sub = false;
+                if (g_model_fix)
+                    sub = local_model(pol, type, key);
+                if (g_unknown_logged.insert(key[0]).second)
+                    H->log(M, SK_INFO, "space: host ship model %08X is not in this game%s", key[0],
+                           !g_model_fix ? "" : sub ? ": the mirror takes a local ship's model" : ": no mirror yet");
+                if (g_model_fix && !sub)
+                    continue;
+            }
             void* u = skg::cdecl_call<void*>(a_SpawnUFO, type, &pol, (void*)key);
             if (!u)
                 continue;
@@ -553,10 +610,10 @@ std::string status()
         snprintf(b, sizeof b,
                  "space(guest): mirrors=%u created=%u removed=%u local_removed=%u hits_sent=%u damage_in=%u "
                  "freed_by_game=%u puppet_shots_blocked=%u mirror_hits=%u att_dropped=%u att_freed=%u stale_chunks=%u "
-                 "partial_cycles=%u posse_kept=%u\n",
+                 "partial_cycles=%u posse_kept=%u unknown_models=%u\n",
                  (unsigned)g_mirrors.size(), g_created, g_removed, g_local_removed, g_hits_sent, g_damage_in,
                  game::g_ufos_freed, g_puppet_shots, g_mirror_hits, g_att_dropped, g_att_freed, g_stale_chunks,
-                 g_partial_cycles, g_posse_kept);
+                 g_partial_cycles, g_posse_kept, g_unknown_models);
     return b;
 }
 
@@ -622,6 +679,10 @@ std::string debug(const std::vector<std::string>& a)
         h_TakeDamage((uint8_t*)pup + kCombat, a.size() > 3 ? (float)atof(a[3].c_str()) : 5.f,
                      F<uint32_t>(it->second, kPol), 0, dir, (uint8_t*)it->second + kCombat);
         return "hit sent";
+    }
+    if (a.size() >= 2 && a[0] == "fakemodel") { // tests (BUG-0323): 1 = send made-up model instances
+        g_fake_model = a[1] != "0";
+        return std::string("fakemodel ") + (g_fake_model ? "1" : "0");
     }
     if (a.size() >= 2 && a[0] == "chunkfix") { // BUG-0037: 0 = the removal pass on the last chunk (tests)
         g_chunk_fix = a[1] != "0";

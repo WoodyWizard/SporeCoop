@@ -199,6 +199,7 @@ add('space_seed_thread', P + 'coop_space_seed_thread.py', warm=True, minutes=5, 
 add('space_seed_profile', P + 'coop_space_seed_profile.py', minutes=4, fixture='space')  # an unvisited NPC star's planets do not depend on its species profile being loaded (BUG-0185; --without-fix fails)
 add('space_land_early', P + 'coop_space_land_early.py', minutes=3, fixture='space')  # the wheel lands on the home planet right after a load (BUG-0182)
 add('space_defenders', P + 'coop_space_defenders.py', warm=True, minutes=3, fixture='space')  # the game's Defenders are not partner puppets (BUG-0111; --without-fix fails)
+add('space_mirror_model', P + 'coop_space_mirror_model.py', warm=True, minutes=3, fixture='space')  # a host ship whose model the guest lacks does not fault the guest (BUG-0323; --without-fix fails)
 add('space_armada_return', P + 'coop_space_armada_return.py', minutes=8, fixture='space')  # an armada wave resumes its raid after the host's return (BUG-0046; --without-fix fails); a resumed wave's ships are tough, a raid without ships is not a won wave (BUG-0227; SPORE_FIX_OFF=contracts.wave_resume fails)
 add('space_contracts', P + 'coop_space_contracts.py', minutes=9)  # co-op contracts: armada, survey, timeout (F9 Space page clicks)
 add('space_rivalry', P + 'coop_space_rivalry.py', minutes=8)  # rivals mode: own budgets, war and peace by real clicks, PvP
@@ -216,6 +217,7 @@ add('space_trade_reload', P + 'coop_space_trade_reload.py', minutes=6, fixture='
 add('space_trade_reload_same', P + 'coop_space_trade_reload.py --same-game', minutes=5, fixture='space')  # the same game loaded again (saved by the quit after the gift): paid once (BUG-0225, BUG-0058)
 add('dead_modal', P + 'coop_dead_modal.py', warm=True, minutes=3, fixture='space')  # a destroyed modal window in the window manager does not fault the next mouse message (BUG-0270; SPORE_FIX_OFF=game.dead_modal fails)
 add('space_finale', P + 'coop_space_finale.py', minutes=12)  # the galaxy core together (space_finale.cpp): wait, joint entry, Staff of Life, rejoin
+add('space_finale_wait', P + 'coop_space_finale_wait.py', minutes=6)  # the host that waited at the core counts its entry as together when it enters first (BUG-0320; --without-fix fails)
 add('space_finale_alone', P + 'coop_space_finale.py --alone', minutes=10)  # "Enter now" alone: the partner gets Steve's gift by message
 add('space_captain', P + 'coop_space_captain.py', minutes=4, reports=True)  # BUG-0303: a captain screen left open (rank badge) blocks the finale's wheel zoom-out; the tool closes it (OLD_FINALE_TOOL=1 fails); BUG-0304: the game's own fault when it opens
 # joins and rejoins over a bad network (goodbye lost every second round), the setup + in-game update
