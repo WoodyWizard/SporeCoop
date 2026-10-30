@@ -752,3 +752,61 @@ stage wizard, the guest joins from its menu).
   (0xE7C080) while a partner is near; (b) a guest far from the host spawns its own food (plants and
   meat only) through PopulateMarker outside the host's area, eaten locally and sent as MSG_CELL_FOOD,
   removed when the host's area reaches it.
+
+## Populating around every player: tile lists, view boxes, the host's view centres (2026-10-30, fix/w9-cell-food)
+<a id="cell-partner-tiles"></a>
+
+BUG-0174 / BUG-0279 (a guest far from the host swam in an empty pool). GOG 2024, Ghidra
+(`out/ghidra-2024`), names in `overrides_dc04aee5.sym`.
+
+* ✔ **View boxes** `Simulator::Cell::ViewBoxes` 0x16B3C88, 12 floats, written at the start of every
+  SimUpdate by 0xE507F0 from the camera point: `[0..5]` the visible box (x +-10, y +-7.5 around the
+  camera, z 0), `[6..11]` the background box (the same times `1 + globals+0x68 / 15`). Fixed size in
+  cell coordinates at every level (the world scale is `G+0x514C`). Readers: the visibility cull
+  0xE5CDE0, RemoveCellsOfOldScale, the populate range 0xE5F610 (layer 0: the visible box doubled
+  around its centre, so +-20 x +-15; layer 1: the background box), spawn helpers 0xE4xxxx.
+* ✔ **Tile lists**: PopulateTiles 0xE7D370 cdecl `(int levelBase, TileList*, bool all)`. A TileList is
+  an eastl fixed_vector of `{int key, u32 tileIdx}` sorted by key: `+0 begin, +4 end, +8 capacity,
+  +0x10 the fixed buffer` (a growth allocates with GeneralAllocator and frees the old buffer only when
+  it is not the fixed one), `+0x1018` a byte passed to lower_bound 0xB41FA0. The host's list is
+  `cCellGame+0x4128`; a list of our own (same layout, our buffer as the fixed one) works with the
+  same function. Key = `layer<<24 | level<<16 | x<<8 | y` (bytes, compared signed;
+  `cell_logic::tile_key`).
+* ✔ Tile objects live in the pool `cCellGame+0x38`: `{+0 own index, +4 layer, +8 level, +0xC x,
+  +0x10 y, +0x14 flag, +0x300 a released object}`. RebuildLevel (0xE7FD00) clears that pool
+  (`cObjectPool_::Clear`: highWater 0) and empties the host's list; a list of ours then holds dead
+  indices (check: `pool slot < highWater` and the object's first dword == the index).
+* ✔ **IsTileActive** 0xE5F810 cdecl `bool(const int* {layer, level, x, y})`: the level within
+  `[table(level of the food progress), +5]` and (x, y) in the range of the current view boxes.
+  Callers: the delete loop of PopulateTiles and the cell cull **0xE5F8C0** (called by the cell update
+  0xE7C080): a gameplay cell with level != -1 whose `+0x36C` parent is gone is destroyed when the tile
+  under it is not active, unless `+0x354`. So "the active area" for cells is the tile range of the view
+  box, read again for every cell every frame.
+* ✔ **PopulateTile** 0xE7C6C0 cdecl `void(tile*, bool all)`: PopulateMarker for every marker of the
+  tile's layer. Also called by RemoveCellsOfOldScale 0xE7CD10, which after a level change destroys
+  every cell outside the visible box and then repopulates EVERY tile object of the pool (also the
+  ones in our lists).
+* The fix (`coop.fix cell.partner_tiles`, cellsync.cpp `h_PopTiles`): on the host, after the game's
+  own pass, one more PopulateTiles call per partner with a list of our own and the 12 view-box floats
+  moved by (partner cell - host box centre), restored right after. `h_PopTile` populates a tile that
+  another list (the host's or another partner's) already holds only once (and remembers the skipped
+  tile objects, so RemoveCellsOfOldScale does not populate them either) and skips a partner's
+  background tiles; `h_TileActive` answers true for a gameplay tile inside ANY player's box, so the
+  host's tiles and cells near a partner stay and a partner's tiles near the host stay. A partner
+  without a cell for 2 s: its list is drained (a PopulateTiles call with all boxes 0: nothing active,
+  nothing created, the game deletes its tiles) and freed. Our lists are forgotten (not drained) when
+  the tile pool was cleared or the stage is left. Each guest gets the cells within 120 m of its own
+  cell (before: within 120 m of the host's).
+* **The host's view centres** (`mods/coop/view_centres.h`, `cellsync::view_centres()`): the host
+  first, then every partner, at most `view::kMaxCentres` (8), rebuilt every SimUpdate. The cost is
+  one PopulateTiles call per partner (at most 0x32 new tiles each), IsTileActive up to once per centre
+  for tiles and cells the own box refuses, and the pool holds the cells of up to N screens.
+* Rivals (docs/11-rivals.md, 0.8): every player plays on its own, far from the host. The same piece
+  serves it: the host's world keeps one populated area per view centre, every guest gets the state
+  of its own area, and a stage that needs it (Creature: the NPC pool cull BUG-0280, Tribe, Civ) keeps
+  a `view::Centres` of its own and asks `near_any` / `nearest` instead of "near the host's avatar".
+  Not done for Cell: a per-centre level (a Rivals player far ahead of the host would need its own
+  tile level; the level here is the shared food progress).
+* Not verified: the pool's capacity with four players far apart (the cell pool holds 4096 slots in
+  for_each_cell's bound; seen sizes up to ~650 with 4 players together); a host level-up wipes and
+  repopulates the cells around partners too (vanilla behaviour for anything outside the view).

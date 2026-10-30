@@ -49,3 +49,9 @@ Reproduce: the measurement script of BUG-0275 (see its Verification) with FPSLIM
 
 ## History
 - 2026-10-29: opened.
+- 2026-10-30: fix/w9-cell-food: not fixed (not part of the partner-tiles change). Related finding
+  (BUG-0289): the same steering (`v = host vel + (want - cur) * 2`, a jump only beyond 3 m) gives a
+  0-3 m sawtooth when the guest's game runs no simulation at all (pause menu open). A fix idea
+  for both: write the mirror's position along the host's extrapolated path every frame when it is
+  off by more than ~0.5 m (through the particles for a soft body), instead of relying on the game's
+  integration at the guest's frame rate; it needs the 15 fps measurement of BUG-0275 to confirm.
