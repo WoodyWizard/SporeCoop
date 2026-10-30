@@ -805,3 +805,28 @@ BUG-0186 (single vehicle sync outliers of 10-27 m in `play_civ.py --seed 9`):
 * Fix `civ.vel_cap`: the guest gives each vehicle's estimate a top speed of 2 x its own speed
   (+0x218) + 10; a step faster than that is taken as a jump (no speed, like the 200-unit jump).
   `coop.civ` on the guest shows `vel=` (the estimate's speed), `top=` (+0x218) and `jumps=`.
+
+## The guest's game throws a mirror off "invalid" ground (2026-10-30, fix/w14-tribe-civ)
+<a id="civ-mirror-valid-ground"></a>
+
+BUG-0186, the 13-17 m outliers of `play_civ.py` seeds 9 and 11 (always NPC vehicle #2 of nation
+000021CB at its spice node near (-336, 132, 354) of civ_npc):
+* ✔ (runtime probe `coop.civ pushprobe`, lane 7) every frame the guest's game called the mirror's
+  spatial SetPosition (vt 0x38) from 0x00CA75B8 and moved it 13 m to (-345.8, 133.5, 344.0); then
+  guest_tick's Teleport put it back. The caller is **Vehicle_KeepOnValidGround 0xCA7430**
+  thiscall(v): 0xC9EA70(locomotion +0xB1C, pos) tests the planet cell flags under the vehicle
+  (land: none of 0x98000000; sea: none of 0x58000000; air: bit 29 clear); when invalid it searches
+  nearby spots (cCommunityLayout, radius 128) and sets the vehicle on the first valid one.
+  Callers: vehicle updates 0xCA8360, 0xCA84D0 (x2), 0xCA8CB0, 0xCADA20 (spatial-side thunk).
+* ✔ The host's game keeps its own vehicle on that spot (claiming the node); the guest's planet finds
+  it invalid for a land vehicle. ? why the cell flags differ (the node's claim / derrick, or the
+  host vehicle reached it while the ground was valid).
+* ~ superseded (2026-10-30): the guess of fix/w13-tribe-civ (docs/re/civ.md#civ-vehicle-jump-velocity)
+  that the guest's game pushed the mirror because of an order of its own: CORRECTION (2026-10-30,
+  fix/w14-tribe-civ): the mirror had no order (`order=-1`) while it was thrown off; clearing its
+  orders every frame (tried) changed nothing: `coop_civ_mirror_order` with the clearing: 12.9-13.6 m.
+* Fix `civ.mirror_place`: the check is skipped for mirrors on a guest in Civ (the host's vehicle is
+  where it is). Test `coop_civ_mirror_place.py`: off 17.3 m, on 0.8-1.2 m.
+* Also `civ.extrap` (VelocityEstimate::max_ahead 0.15 s for vehicles, was 0.4): a fast air vehicle
+  (25 u/s) whose host hitched was put up to 10 m past the host's (unit test test_velocity_hitch:
+  10.0 -> 3.8 units; a 150 ms late packet costs 0.8 units either way).
