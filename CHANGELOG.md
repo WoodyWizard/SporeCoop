@@ -3,6 +3,9 @@
 ## [Unreleased]
 
 ### Fixed
+- Cell: a player leaving the Cell stage to load the host's world (after joining or rejoining) no
+  longer has the mod create or move cells while the game is tearing the stage down (a guard after one
+  crash seen in testing, BUG-0308).
 - Cell: a player whose cell was moved far again and again (for example put back after an invalid
   position) no longer fills its game with leftover background cells; a guest then stopped seeing
   the host's cells at all. Background cells far from the player are now removed (BUG-0314).

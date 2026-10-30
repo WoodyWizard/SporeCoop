@@ -2118,3 +2118,6 @@ answered right after; a 1 s poller beside a standalone run saw no gap. Same sign
   (BUG-0282 guard; it passed on main without a fix). `coop_sync_multi.py --food N` levels the cell
   fixture up first.
 * `coop.pool census`: every used slot of the cell pool by kind (a growing `background=` is BUG-0314).
+* `coop_rejoin_loop.py --fixture cell --cell-leave` (suite cell_rejoin_leave, ~3 min): 12 rejoins inside
+  Cell, each followed by the host's world and the stage leave; `leave_writes=` of the guest's
+  `coop.pool` must stay 0 (BUG-0308 guard; `SPORE_FIX_OFF=cell.leave_guard` gives ~1000).

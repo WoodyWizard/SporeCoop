@@ -986,3 +986,6 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * A guest 6 s into Cell jumped to address 0 in UI code right after its test window was moved and its
   main thread stopped, lab 20261030-104149 campaign#1. Ticket: BUG-0309.
 * Both seen once, on an overloaded machine. Reproduce: not yet.
+* 2026-10-30 (fix/w13-cell): BUG-0308 got a guard (`cell.leave_guard`: none of our cell work runs on
+  the pool while the stage is being left); the crash itself is still not reproduced. BUG-0309: the
+  stack words are stale frames, nothing to go on (docs/re/cell.md#cell-leave-guard).
