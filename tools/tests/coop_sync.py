@@ -15,9 +15,9 @@ and facing error (deg), and the 90% without the window ("raw", the old measure, 
 usage: coop_sync.py [--fps N] [stage ...]   (default: cell creature tribe civ space)
 
 --fps N: the guest runs at ~N frames a second (frame.limit 1000/N), a weak PC or four games on
-one PC (BUG-0175: the mirrors' pull towards the host's pose was per frame, so at 15 fps a civ
-vehicle trailed ~4 m and a mirror that cannot walk 4x as far as at 60 fps;
-SPORE_FIX_OFF=drive.nudge_dt fails `--fps 15 civ`).
+one PC (BUG-0175: drive::step's pull towards the host's pose was per frame, so a mirror that
+cannot walk trailed 4x as far at 15 fps as at 60; the fix's FAIL/PASS is npc_tests: in game, with
+the game time running, the 0.15 s lag window hides the difference, see the ticket).
 """
 import math
 import re

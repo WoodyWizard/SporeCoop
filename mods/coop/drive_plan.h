@@ -9,8 +9,8 @@ namespace drive {
 
 // BUG-0175: a per-frame pull of a mirror towards where it should be ("move k of the way") made the
 // error a function of the frame rate: a target moving at v leaves a mirror that cannot move by
-// itself (no game time after a load, a vehicle stopped every frame) (1 - k) / k * v * frame_time
-// behind, 4x as far at 15 fps as at 60. With the fix the pull is k60 per 1/60 s, so a frame of dt
+// itself (the GOG 2024 guest's paused game time after a load, an NPC proxy held by others)
+// (1 - k) / k * v * frame_time behind, 4x as far at 15 fps as at 60. With the fix the pull is k60 per 1/60 s, so a frame of dt
 // pulls 1 - (1 - k60)^(dt * 60): the same pull per second at every frame rate, and at 60 fps the
 // old one. Off (`coop.fix drive.nudge_dt off`): k60 every frame.
 inline bool g_nudge_dt_fix = true;

@@ -382,8 +382,8 @@ static void test_world_name()
     CHECK(!world_name::is_planet("snapshot.spo") && !world_name::is_planet("a\\b.spo") && !world_name::is_planet(".spo"));
 }
 
-// BUG-0175: a mirror that cannot move by itself (the 2024 guest's paused game time after a load, a
-// civ vehicle stopped every frame) follows only by the per-frame pull: how far behind a target
+// BUG-0175: a mirror that cannot move by itself (the 2024 guest's paused game time after a load)
+// follows only by drive::step's per-frame pull: how far behind a target
 // moving at v it settles at a frame rate. Returns the error after 10 s.
 static float pulled_lag(float k60, float v, double fps, bool fix)
 {
@@ -402,12 +402,11 @@ static void test_pull_per_second()
     const bool fix = !g_nofix;
     // a citizen walking at 5.5 m/s (drive::step's nudge, 15 % at 60 fps)
     float c60 = pulled_lag(0.15f, 5.5f, 60, fix), c15 = pulled_lag(0.15f, 5.5f, 15, fix);
-    // a vehicle at 30 m/s (civ guest_tick's glide, 50 % at 60 fps)
-    float v60 = pulled_lag(0.5f, 30.f, 60, fix), v15 = pulled_lag(0.5f, 30.f, 15, fix);
-    printf("  citizen: %.2f m at 60 fps, %.2f m at 15 fps; vehicle: %.2f / %.2f m\n", c60, c15, v60, v15);
+    float c30 = pulled_lag(0.15f, 5.5f, 30, fix);
+    printf("  citizen: %.2f m at 60 fps, %.2f m at 30 fps, %.2f m at 15 fps\n", c60, c30, c15);
     CHECK(std::fabs(c60 - 0.52f) < 0.05f); // 60 fps: the pull of before the fix
     CHECK(c15 <= c60 * 1.05f);             // a lower frame rate trails no further
-    CHECK(v15 <= v60 * 1.05f);
+    CHECK(c30 <= c60 * 1.05f);
     // the pull stays a pull: never past the target, and a long hitch is not a full teleport
     CHECK(drive::pull_k(0.15f, 1.0 / 60) > 0.149f && drive::pull_k(0.15f, 1.0 / 60) < 0.151f);
     CHECK(drive::pull_k(0.15f, 5.0) < 0.7f);
