@@ -12,7 +12,12 @@ that window, its facing with the host's turn over it. A desync (wrong pose, a st
 object) is far from that whole path. Prints per kind: count, median / 90% / max position error (m)
 and facing error (deg), and the 90% without the window ("raw", the old measure, lag included).
 
-usage: coop_sync.py [stage ...]   (default: cell creature tribe civ space)
+usage: coop_sync.py [--fps N] [stage ...]   (default: cell creature tribe civ space)
+
+--fps N: the guest runs at ~N frames a second (frame.limit 1000/N), a weak PC or four games on
+one PC (BUG-0175: the mirrors' pull towards the host's pose was per frame, so at 15 fps a civ
+vehicle trailed ~4 m and a mirror that cannot walk 4x as far as at 60 fps;
+SPORE_FIX_OFF=drive.nudge_dt fails `--fps 15 civ`).
 """
 import math
 import re
@@ -135,6 +140,8 @@ def stir(stage, host, guest, i):
 def measure(stage):
     fx, planet = FIXTURES[stage]
     host, guest = start(fx, planet)
+    if FPS:
+        print('  guest:', guest.call(f'frame.limit {round(1000 / FPS)}')['out'].strip(), flush=True)
     w = wait_running(host, guest)
     print(f'  (game time running {w:.1f} s after the start)' if w is not None
           else '  (a game stayed paused: measuring anyway)', flush=True)
@@ -172,8 +179,16 @@ def measure(stage):
     return pos, rot, raw_pos, raw_rot, keys, host, guest
 
 
+FPS = 0
+
+
 def main():
-    stages = sys.argv[1:] or ['cell', 'creature', 'tribe', 'civ', 'space']
+    global FPS
+    args = sys.argv[1:]
+    if args[:1] == ['--fps']:
+        FPS = float(args[1])
+        args = args[2:]
+    stages = args or ['cell', 'creature', 'tribe', 'civ', 'space']
     ck = Checks()
     for st in stages:
         print(f'== {st}', flush=True)
@@ -188,6 +203,8 @@ def main():
                   f' | raw p90 {pct(raw_pos[kind], .9):.2f} m {pct(raw_rot[kind], .9):.1f} deg', flush=True)
             ck(pct(p, .9) <= lp, f'{st}/{KINDS.get(kind, kind)}: 90% within {lp} m')
             ck(pct(r, .9) <= lr, f'{st}/{KINDS.get(kind, kind)}: 90% facing within {lr} deg')
+        if FPS:
+            guest.call('frame.limit auto')
         ck.faults(host=host, guest=guest)
     return ck.result()
 

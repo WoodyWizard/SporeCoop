@@ -2,7 +2,25 @@
 // tests/npc_tests.cpp). Portable: no game calls.
 #pragma once
 
+#include <algorithm>
+#include <cmath>
+
 namespace drive {
+
+// BUG-0175: a per-frame pull of a mirror towards where it should be ("move k of the way") made the
+// error a function of the frame rate: a target moving at v leaves a mirror that cannot move by
+// itself (no game time after a load, a vehicle stopped every frame) (1 - k) / k * v * frame_time
+// behind, 4x as far at 15 fps as at 60. With the fix the pull is k60 per 1/60 s, so a frame of dt
+// pulls 1 - (1 - k60)^(dt * 60): the same pull per second at every frame rate, and at 60 fps the
+// old one. Off (`coop.fix drive.nudge_dt off`): k60 every frame.
+inline bool g_nudge_dt_fix = true;
+inline float pull_k(float k60, double dt, bool fix = g_nudge_dt_fix)
+{
+    if (!fix || !(dt > 0))
+        return k60;
+    double n = std::min(dt, 0.1) * 60.0; // a hitch (a load, a dialog) counts as 0.1 s
+    return (float)(1.0 - std::pow(1.0 - (double)k60, n));
+}
 
 struct Track {
     double stuck_since = 0; // the remote stands still and the puppet is more than 1 m off

@@ -1800,6 +1800,11 @@ static void guest_tick(double now)
             g.has_put = false;
         return; // the last states would stop every order for 3 s (StopMovement below)
     }
+    // BUG-0175: the glide below pulls per second, not per frame (drive::pull_k)
+    static double last_tick;
+    const double dt = last_tick > 0 && now > last_tick ? now - last_tick : 1.0 / 60;
+    last_tick = now;
+    const float glide = drive::pull_k(0.5f, dt);
     for (auto& [id, g] : g_gv) {
         if (!g.v || !game::object_alive(g.v) || now - g.seen > 3.0) {
             g.has_put = false;
@@ -1818,7 +1823,7 @@ static void guest_tick(double now)
         g.err = d;
         net::Vec3 p = want;
         if (d < 30.f && d > 0.01f) { // glide out small corrections
-            float k = 0.5f;
+            float k = glide;
             p = {cur.x + (want.x - cur.x) * k, cur.y + (want.y - cur.y) * k, cur.z + (want.z - cur.z) * k};
         }
         void* sp = (uint8_t*)g.v + kVSpatial;
