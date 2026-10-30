@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Fixed
+- Cell: a player far from the host found no food and no other cells: the host's game kept only
+  the area around its own cell alive. Now it populates and keeps the area around every player, and
+  each player gets the cells around itself, so two players exploring apart can both eat (BUG-0174,
+  BUG-0279).
+
 ## [0.7.3.1] - 2026-10-29
 
 ### Added

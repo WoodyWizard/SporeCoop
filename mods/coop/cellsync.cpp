@@ -956,6 +956,10 @@ static void SK_CDECL h_PopTile(uint32_t* t, int all)
 
 static bool SK_CDECL h_TileActive(const int32_t* t)
 {
+    // inside a partner pass the only caller is PopulateTiles' delete loop, whose erase would shorten
+    // the host's list (tiles_delete did this list's deletes already): it deletes nothing of ours
+    if (g_pass > 0)
+        return true;
     bool r = o_TileActive(t);
     float* vb = view_boxes();
     if (r || !g_union || !t || t[0] != 0 || !vb || g_view_boxes.size() < 2)
@@ -975,6 +979,50 @@ static bool SK_CDECL h_TileActive(const int32_t* t)
     return r;
 }
 
+// Delete the tiles of one of our lists that `keep` refuses, as PopulateTiles' own delete loop does
+// (the tile's +0x300 object released, the pool G+0x38 slot freed). Never through the game's loop:
+// its erase is inlined with the host's list end (`cCellGame+0x412C`), so a tile it deleted from our
+// list shortened the HOST's list and read past ours (crash at PopulateTiles+0xC3, lab
+// 20261030-001703, BUG-0174).
+template <typename Keep>
+static void tiles_delete(TileList* l, Keep keep)
+{
+    uint8_t* g = G();
+    if (!l || !g)
+        return;
+    uint8_t* pool = g + 0x38;
+    uint8_t* data = F<uint8_t*>(pool, 0);
+    uint32_t size = F<uint32_t>(pool, 0x14);
+    int32_t* out = l->begin;
+    for (int32_t* e = l->begin; e < l->end; e += 2) {
+        uint32_t idx = (uint32_t)e[1];
+        uint8_t* t = tile_alive(idx) ? data + (size_t)(idx & 0xFFFF) * size : nullptr;
+        if (t && (F<int32_t>(t, 8) == -1 || keep((const int32_t*)(t + 4)))) {
+            out[0] = e[0];
+            out[1] = e[1];
+            out += 2;
+            continue;
+        }
+        if (t) {
+            if (void* o = F<void*>(t, 0x300)) {
+                void** vt = *(void***)o;
+                skg::thiscall<void>((uintptr_t)vt[3], o, 1);
+                if ((o = F<void*>(t, 0x300))) {
+                    F<void*>(t, 0x300) = nullptr;
+                    skg::thiscall<void>((uintptr_t)(*(void***)o)[1], o);
+                }
+            }
+            // cObjectPool_::DeleteObject 0xB72370: the slot goes to the head of the free list
+            F<uint32_t>(t, 0) = F<uint32_t>(pool, 4);
+            F<uint32_t>(pool, 0xC)--;
+            F<uint32_t>(pool, 4) = idx & 0xFFFF;
+            g_shadow_tiles.erase(idx);
+            g_tiles_drained++;
+        }
+    }
+    l->end = out;
+}
+
 // our list forgets its entries without deleting them (the pool they were in is gone)
 static void tiles_forget(PartnerTiles& pt)
 {
@@ -992,21 +1040,11 @@ static void tiles_free(PartnerTiles& pt)
     pt.buf = nullptr;
 }
 
-// the game deletes the list's tiles itself: a pass with empty boxes, nothing active, nothing created
-static void tiles_drain(int level, PartnerTiles& pt)
+// every tile of the list goes (the partner left)
+static void tiles_drain(int, PartnerTiles& pt)
 {
-    float* vb = view_boxes();
-    if (!pt.list || !vb || pt.list->begin == pt.list->end)
-        return;
-    float save[12];
-    memcpy(save, vb, sizeof save);
-    memset(vb, 0, sizeof save);
-    bool u = g_union;
-    g_union = false;
-    g_tiles_drained += (uint32_t)((pt.list->end - pt.list->begin) / 2);
-    o_PopTiles(level, pt.list, 0);
-    g_union = u;
-    memcpy(vb, save, sizeof save);
+    if (pt.list)
+        tiles_delete(pt.list, [](const int32_t*) { return false; });
 }
 
 static void partner_tiles_reset(bool drain)
@@ -1082,6 +1120,8 @@ static void SK_CDECL h_PopTiles(int level, TileList* list, int all)
                 tiles_forget(pt);
             }
             memcpy(vb, g_view_boxes[k].data(), sizeof(float) * 12);
+            // our deletes first (h_TileActive: any player's box), so the game's loop deletes none
+            tiles_delete(pt.list, [](const int32_t* t) { return h_TileActive(t); });
             g_pass = (int)k;
             g_pass_list = pt.list;
             o_PopTiles(level, pt.list, 0);

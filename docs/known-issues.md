@@ -197,6 +197,9 @@ anchor so other docs can link to it:
   could eat", BUG-0279): the guest, exploring on its own, finds no food at all while the host does.
   Measure: `SPORE_LANE=N python3 tools/tests/coop_cell_new_game.py --diet carn --minutes 1 --apart 70`
   (its last check fails while this is open).
+* FIXED (2026-10-30, fix/w9-cell-food, unreleased): the host populates and keeps the tiles around
+  every partner (`coop.fix cell.partner_tiles`, docs/re/cell.md#cell-partner-tiles); test
+  `cell_far_guest`. Left: a host level-up wipes and repopulates the areas around partners too.
 
 ## coop_sync.py: mirrors trail more at low frame rates, the GOG 2024 guest pauses after a load (the test failures were fixed 2026-10-24, fix/gog2024-sync)
 
@@ -797,6 +800,9 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * At 15 fps (`frame.limit 66`) 283 of 13165 compared cells were 1.2-2.3 m behind the host's (about
   0.65 s of their way), at 30 fps 2, at 65 fps 1. Reproduce: `FPSLIM=Carol:66 SPORE_LANE=N python3
   tools/tests/coop_sync_multi.py --fixture cell --rounds 25`. Ticket: BUG-0282.
+* 2026-10-30 (fix/w9-cell-food): the 4-player campaign's "Bob:c:2.2" (BUG-0289) was not this: Bob's
+  pause menu was open (no simulation, mirrors moved only by the 3 m jumps). The campaign check now
+  skips a paused guest.
 
 ## Tribe: a handled game fault in a citizen's walk while the stage is left (2026-10-29, 4-player campaign)
 <a id="issue-tribe-leave-hears-fault"></a>
