@@ -1745,3 +1745,17 @@ wrong. Suite `campaign` (in no other suite): `tools/lab.py run campaign --lanes 
   the next frame (tests).
 * `make test`: `text_tests` checks the rate limit (`trace_rate.h`), `net_tests` the version
   extension with an old-shape peer (`test_peer_versions`) and the address masks (`test_ip_mask`).
+
+## A load from the galaxy menu with the old world's player left there (2026-10-29, fix/w8-planet)
+<a id="testing-menu-stale-player"></a>
+
+* `SPORE_LANE=N python3 tools/tests/coop_menu_stale_player.py [--nofix] [--rounds 3]` (suite
+  `menu_stale_player`, ~10 min): the host plays the tribe fixture and jumps to civ_npc and back to
+  tribe (fresh slots 10/11) `--rounds` times, each time with the galaxy menu's player reset patched
+  out (`mem.write` of 5 NOPs at 0xB32CF0, GOG 2024 bytes checked first, put back once the menu is
+  up), the stand-in for the game fault that skipped it in the campaign (BUG-0284, BUG-0285).
+  Checks: the host reaches each stage with an avatar, the guest follows, no fault or crash, and
+  `coop.status` "stale menu player cleared N". `--nofix` (or `SPORE_FIX_OFF=world.menu_player`):
+  the host crashes in the first load at 0x00BBABE2 `cStarRecord::GetPlanetRecord+0x12`.
+* Pitfall: `mem.ptr <addr> <off>` prints only the first hop here; read SpacePlayerData with
+  `mem.read` ([0x16DDA8C] then +0x18 / +0x1C).

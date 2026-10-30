@@ -136,6 +136,7 @@ add('cell_new_game', P + 'coop_cell_new_game.py --diet carn --early --minutes 3'
 add('tribe_play', P + 'coop_tribe_play.py', ('smoke',), warm=True, minutes=3, fixture='tribe')
 add('civ_play', P + 'coop_civ_play.py', warm=True, minutes=3, fixture='civ_npc')
 add('civ_reload', P + 'coop_civ_reload.py', warm=True, minutes=5, fixture='civ_npc')  # tables after a load and a leave (BUG-0040, BUG-0059; --nofix fails)
+add('menu_stale_player', P + 'coop_menu_stale_player.py', minutes=12, fixture='tribe')  # a load from the galaxy menu with the old world's player empire left there (BUG-0284; --nofix fails)
 add('civ_null_local', P + 'coop_civ_null_local.py', warm=True, minutes=4, fixture='civ')  # a frame without the city anchor keeps vehicles and owners (BUG-0223; --nofix fails)
 add('civ_shared', P + 'coop_civ_shared.py', warm=True, minutes=4, fixture='civ')  # crossing spends, offline money, roles on a rejoin, a spend at a join (BUG-0106, BUG-0049, BUG-0064, BUG-0220; --nofix fails)
 add('civ_city_join', P + 'coop_civ_city_join.py', warm=True, minutes=5, fixture='civ_npc')  # an NPC city founded while the guest joins (BUG-0120; --nofix fails)

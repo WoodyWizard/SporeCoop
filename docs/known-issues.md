@@ -797,3 +797,18 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * At 15 fps (`frame.limit 66`) 283 of 13165 compared cells were 1.2-2.3 m behind the host's (about
   0.65 s of their way), at 30 fps 2, at 65 fps 1. Reproduce: `FPSLIM=Carol:66 SPORE_LANE=N python3
   tools/tests/coop_sync_multi.py --fixture cell --rounds 25`. Ticket: BUG-0282.
+
+## Tribe: a handled game fault in a citizen's walk while the stage is left (2026-10-29, 4-player campaign)
+<a id="issue-tribe-leave-hears-fault"></a>
+
+* What happens: in the frame the host's Tribe stage is left for the galaxy menu, the game faults in
+  `CreatureHearsTarget+0x463` (0x00C0DB23, read of +0x3C of null) under
+  `cCreatureCitizen::DoAction > cCreatureBase::WalkTo`, and its own handler goes on. The handler
+  unwinds past the menu's player reset; the next load from the menu crashed until BUG-0284.
+* Reproduce: not reproduced; seen once (lab campaign 20261029-174717, lane 7, 4 players, after 30
+  min of tribe with raids and an epic creature).
+* Known: docs/re/space.md#space-menu-player-reset (what the unwind skips).
+* Not checked: which object is null; whether a mod object is involved; what else of the menu
+  reset (0xB32C30) is skipped besides the player record.
+* Next steps: probe 0xC0DB10 during `coop_tribe_*` leaves to the menu with 4 players.
+* Ticket: BUG-0285

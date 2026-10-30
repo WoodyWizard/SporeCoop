@@ -1752,3 +1752,35 @@ Runtime findings of the wave 3 Space fixes (lane 6, GOG 2024):
   its ships again and, if none come in 30 s, its raid is aborted with `cMission::SetState(7)`
   (spacecoop's raid hook sends no K_RAID and pays no bonus for 7) before a new one starts; a raid
   that ended with 5 / 6 while the host was away counts.
+
+## The galaxy-menu reset and the player record (2026-10-29, fix/w8-planet)
+<a id="space-menu-player-reset"></a>
+
+* ✔ `0xB32C30` (GOG 2024) is the simulator's reset when the galaxy menu comes up: it resets many
+  managers, then calls `SpacePlayerData_Reset` 0x01022350 (at 0xB32CF0), SetCurrentContext(-1),
+  SetActiveStarAndPlanet(0, 0), and only then `cStarManager::ReadStarsFromSaveDB` (at 0xB32D3F).
+  At runtime (probe, lane 5) the menu's ReadStarsFromSaveDB is called from 0xB32D44.
+* ✔ `SpacePlayerData_Reset` 0x01022350 (same bytes and address in GOG 2016): cdecl void(), plain
+  `ret`: clears bytes 0x16DDA88/89, +0x04 planet, +0x08 star, releases the cached `cEmpire*` +0x1C,
+  empties +0x20 colonies, +0x18 player empire id = -1, +0x0C. Callers 0xB32CF0, 0xB32E90,
+  0xB33554, 0x102244C. ✔ In the galaxy menu the player empire id is -1 and +0x1C is 0 (sampled
+  every 0.5 s, lane 5); the load sets them again (0x10220E0 writes +0x18).
+* ✔ `ReadStarsFromSaveDB` 0xBB8C90 calls `0xBB61C0` (at 0xBB95D5), which tops up a star list from
+  the global RNG (tuning 0x156C518 / 0x156C508) and, when it added something and star manager
+  +0x64 is 0, writes the stars back: `0xBB4D40` = **cStarManager write of stars.db** (5 KB frame,
+  `stars.db.tmp` via SaveDb_OpenTmp; also called by SaveGame 0xB29543 and 0xBB5931, tail 0xBB6874
+  after setting +0x64). The symbolizer labels it `RequirePlanetsForStar+0xB0` (the GOG 2024
+  RequirePlanetsForStar ends at 0xBB4D39). At its end (0xBB4E85) it calls
+  `GetPlayerHomePlanetRecord` 0x1021220 -> `cEmpire::RequireHomePlanet` 0xC31890 ->
+  `cStarManager::GetPlanetRecord(empire +0xB4)` -> `cStarRecord::GetPlanetRecord`.
+* ✔ A planet id is `planet index << 24 | star index`; `cStarManager::GetPlanetRecord` 0xBA6F10
+  indexes the star table +0xC8 (pages of 0x1000) with no bounds or "has planets" check;
+  `cStarRecord::GetPlanetRecord` 0xBBABD0 reloads the records (0xBBA7B0, only up to the count
+  +0xAC) and reads `records[i]` with no check: a star without planets (count 0, +0x84 null) is a
+  null read at 0xBBABE2. That is BUG-0284's crash: the empire of the old world (home 0x00C9C01E in
+  the tribe fixture) met the stars of the civ_npc slot, whose star 0xC9C01E has count 0.
+* ~ A handled game fault while a stage is left (BUG-0285: CreatureHearsTarget in a citizen's
+  WalkTo, in the frame the mode changed) unwound past the player reset: the menu kept the old
+  empire. Inferred from the one campaign crash (the only logged leave with a fault before the
+  load, of ~100); the effect is reproduced by patching out the call at 0xB32CF0
+  (`coop_menu_stale_player.py`), identical crash and stack.
