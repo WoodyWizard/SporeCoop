@@ -254,6 +254,9 @@ for name, cmd in (('party_cell_ko', 'coop_party_cell.py'), ('party_creature_npc'
                   ('party_tribe_split', 'coop_party_tribe.py'), ('party_civ_own', 'coop_party_civ.py'),
                   ('party_space_names', 'coop_party_space.py'), ('party_civ_trade', 'coop_party_civ_trade.py')):
     add(name, P + cmd, ('multi', 'extended'), minutes=4)
+# BUG-0295 / BUG-0298: four players in Cell far apart and close together: every game's cell pool stays under what
+# the game's broadphase holds, each guest has the host's cells around it; SPORE_FIX_OFF=cell.budget fails
+add('cell_4p', P + 'coop_cell_4p.py', ('multi', 'extended'), minutes=6)
 
 # a whole game of four bot players, Cell to the galactic core (BUG-0152, docs/06-testing.md#testing-campaign):
 # `lab.py run campaign --lanes 1 --skip <every other lane>` (one lane; `run` has no --lane, BUG-0259). Four games in the lane's bottle (instances 20+N / 30+N), nothing else of

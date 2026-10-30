@@ -911,6 +911,23 @@ static bool pose_finite(const net::Vec3& p, float vx, float vy, float size)
     return views::finite_pos(p) && std::isfinite(vx) && std::isfinite(vy) && std::isfinite(size) && std::fabs(vx) < 1e6f &&
            std::fabs(vy) < 1e6f;
 }
+// BUG-0295: the game's cell broadphase (the sweep-and-prune step 0xBBB450 / merge 0xBBAF10, called
+// from SimUpdate) merges the endpoints in a stack buffer of 4096 entries (2 per cell): a game with
+// more than ~2048 live cells overruns it (fault at 0xBBB07B, the stack and heap corrupted, crashes
+// later in DestroyCell and on worker threads; docs/re/cell.md#cell-broadphase-cap). With 3-4 players
+// the host's partner passes and each guest's 120 m state let the pools grow past 2300 cells. Now:
+// a partner's tile is populated only while the host holds fewer than kPopCap cells (the others wait,
+// `g_starved`, and are populated when room comes back), each guest gets at most its kSendCap
+// nearest cells, and a guest creates no new mirror at kMirrorCap live cells.
+// Old (`coop.fix cell.budget off`): no bound.
+static bool g_fix_budget = true;
+COOP_FIX("cell.budget", "BUG-0295", g_fix_budget, "cell: the host populates partner tiles only below 1400 cells, a guest gets its 900 nearest cells and mirrors at most 1500 (the game's broadphase holds ~2048)");
+constexpr uint32_t kPopCap = 1400, kSendCap = 900, kMirrorCap = 1500;
+static int g_tile_level = -1; // the level base of the last PopulateTiles call (tests)
+static uint32_t g_tiles_starved, g_tiles_fed, g_send_capped, g_mirror_capped, g_cells_peak;
+static std::unordered_set<uint32_t> g_starved; // tile objects of ours not populated for the budget
+static uint32_t cells_live() { return G() ? F<uint32_t>(G(), 0x1C + 0xC) : 0; }
+static bool over_budget() { return g_fix_budget && cells_live() >= kPopCap; }
 static uintptr_t a_PopTiles, a_PopTile, a_TileActive, a_ViewBoxes;
 constexpr size_t kTileCap = 2048; // entries of our own lists' fixed buffers (the active set is < 512 tiles)
 struct TileList {             // the game's fixed_vector layout (PopulateTiles reads +0..+8, +0x10, +0x1018)
@@ -960,13 +977,23 @@ static bool tile_alive(uint32_t idx)
 static TileList* host_tiles() { return G() ? (TileList*)(G() + 0x4128) : nullptr; }
 
 // every list but `except` that holds the tile already
+// (a tile of ours left empty for the cell budget, BUG-0295, does not count: it has no cells)
 static bool tile_elsewhere(int32_t key, TileList* except)
 {
-    TileList* h = host_tiles();
-    if (h && h != except && cell_logic::tile_list_has(h->begin, h->end, key))
+    auto has = [&](TileList* l) {
+        if (!l || l == except || !cell_logic::tile_list_has(l->begin, l->end, key))
+            return false;
+        if (g_starved.empty())
+            return true;
+        for (int32_t* e = l->begin; e < l->end; e += 2)
+            if (e[0] == key && !g_starved.count((uint32_t)e[1]))
+                return true;
+        return false;
+    };
+    if (has(host_tiles()))
         return true;
     for (auto& [id, pt] : g_ptiles)
-        if (pt.list && pt.list != except && cell_logic::tile_list_has(pt.list->begin, pt.list->end, key))
+        if (has(pt.list))
             return true;
     return false;
 }
@@ -982,6 +1009,12 @@ static void SK_CDECL h_PopTile(uint32_t* t, int all)
         if (tile_elsewhere(cell_logic::tile_key((int32_t)t[1], (int32_t)t[2], (int32_t)t[3], (int32_t)t[4]), g_pass_list)) {
             g_tiles_shared++; // its cells are there already: populating it again doubled the food
             g_shadow_tiles.insert(t[0]);
+            return;
+        }
+        if (g_pass > 0 && over_budget()) { // BUG-0295: populated later, when the pool has room
+            g_tiles_starved++;
+            g_shadow_tiles.insert(t[0]);
+            g_starved.insert(t[0]);
             return;
         }
         if (g_pass > 0)
@@ -1041,7 +1074,12 @@ static void hand_over(int32_t key, TileList* from)
         for (int32_t* e = l->begin; e < l->end; e += 2)
             if (e[0] == key && g_shadow_tiles.count((uint32_t)e[1]) && tile_alive((uint32_t)e[1])) {
                 uint32_t* t = (uint32_t*)(data + (size_t)((uint32_t)e[1] & 0xFFFF) * size);
+                if (l != host_tiles() && over_budget()) { // BUG-0295: a partner's area waits for room
+                    g_starved.insert((uint32_t)e[1]);
+                    return true;
+                }
                 g_shadow_tiles.erase((uint32_t)e[1]);
+                g_starved.erase((uint32_t)e[1]);
                 if (t[1] == 0) { // gameplay layer only (a partner's background was never ours)
                     int pass = g_pass;
                     g_pass = -1;
@@ -1094,6 +1132,7 @@ static void tiles_delete(TileList* l, Keep keep)
             F<uint32_t>(pool, 0xC)--;
             F<uint32_t>(pool, 4) = idx & 0xFFFF;
             g_shadow_tiles.erase(idx);
+            g_starved.erase(idx);
             g_tiles_drained++;
             if (g_freed_dbg.size() < 6)
                 g_freed_dbg.push_back(idx);
@@ -1163,6 +1202,7 @@ static void partner_tiles_reset(bool drain)
     }
     g_ptiles.clear();
     g_shadow_tiles.clear();
+    g_starved.clear();
     g_views.clear();
     g_view_boxes.clear();
     g_union = false;
@@ -1205,6 +1245,39 @@ static void tiles_check(const char* step, int level)
     }
 }
 
+// BUG-0295: tiles of ours left empty for the cell budget are populated, a few per frame, once the
+// host's pool has room again (still alive: the generation of the index matches)
+static void feed_starved()
+{
+    uint8_t* g = G();
+    if (!g || g_starved.empty())
+        return;
+    uint8_t* data = F<uint8_t*>(g, 0x38);
+    uint32_t size = F<uint32_t>(g, 0x38 + 0x14);
+    int n = 0;
+    for (auto it = g_starved.begin(); it != g_starved.end() && n < 4;) {
+        uint32_t idx = *it;
+        if (!tile_alive(idx) || !g_shadow_tiles.count(idx)) {
+            it = g_starved.erase(it);
+            continue;
+        }
+        if (over_budget())
+            break;
+        uint32_t* t = (uint32_t*)(data + (size_t)(idx & 0xFFFF) * size);
+        // another list populated the same tile meanwhile: ours stays a plain shadow
+        bool other = tile_elsewhere(cell_logic::tile_key((int32_t)t[1], (int32_t)t[2], (int32_t)t[3], (int32_t)t[4]), nullptr);
+        it = g_starved.erase(it);
+        if (other)
+            continue;
+        g_shadow_tiles.erase(idx);
+        if (t[1] == 0) {
+            o_PopTile(t, 0);
+            g_tiles_fed++;
+            n++;
+        }
+    }
+}
+
 static void SK_CDECL h_PopTiles(int level, TileList* list, int all)
 {
     float* vb = view_boxes();
@@ -1213,6 +1286,8 @@ static void SK_CDECL h_PopTiles(int level, TileList* list, int all)
         if (!g_ptiles.empty() || g_union)
             partner_tiles_reset(in_cell() && list == host_tiles()); // not hosting a Cell session any more: the lists are the old pool's
         bool own = list && list == host_tiles() && in_cell();
+        if (own)
+            g_tile_level = level;
         if (own)
             tiles_check("the frame between (no partner tiles)", level);
         o_PopTiles(level, list, all);
@@ -1298,6 +1373,7 @@ static void SK_CDECL h_PopTiles(int level, TileList* list, int all)
     // returns 0 and the tile overwrites slot 0: faults at CreateObject+0x37 after `coop.pool food
     // 1000`, lab 20261030-004900). The partners' passes populate their areas again afterwards.
     static int last_level = INT_MIN;
+    g_tile_level = level;
     uint8_t* tp = G() + 0x38;
     bool room = F<uint32_t>(tp, 0x18) >= F<uint32_t>(tp, 0xC) + 4 * 0x40;
     bool all_go = all || level != last_level || !room;
@@ -1317,7 +1393,13 @@ static void SK_CDECL h_PopTiles(int level, TileList* list, int all)
     tiles_check("the host's pass", level);
     if (!all && !scale_moving()) { // a rebuild (all) populates the host's view in one go, a moving
                                    // world scale refills the host's list from every tile: the partners follow
-        for (size_t k = 1; k < g_views.size(); k++) {
+        // BUG-0295: the partners take turns being first, so the one that comes first does not take
+        // all the room under the cell budget every frame
+        static size_t turn;
+        size_t np = g_views.size() - 1;
+        turn++;
+        for (size_t j = 0; j < np; j++) {
+            size_t k = 1 + (turn + j) % np;
             auto& pt = g_ptiles[g_views.list()[k].player];
             pt.seen = now;
             if (!pt.list) {
@@ -1342,9 +1424,11 @@ static void SK_CDECL h_PopTiles(int level, TileList* list, int all)
             tiles_check("a partner's pass", level);
         }
         memcpy(vb, host_box.data(), sizeof(float) * 12);
+        feed_starved();
     }
     g_pass = -1;
     g_pass_list = nullptr;
+    g_cells_peak = std::max(g_cells_peak, cells_live());
     static double last_log;
     if (now - last_log > 10.0) { // the support log: how full the tile pool is with the partners' areas
         last_log = now;
@@ -1653,6 +1737,25 @@ static void host_tick(double now)
             }
             list = &mine;
         }
+        // BUG-0295: at most kSendCap cells per guest, the nearest to it (its pool and the game's
+        // broadphase behind it hold ~2048 cells; 4 players together had ~2300 within 120 m)
+        if (g_fix_budget && list->size() > kSendCap) {
+            float cx = vc ? vc->pos.x : me.x, cy = vc ? vc->pos.y : me.y;
+            std::vector<std::pair<float, size_t>> d;
+            d.reserve(list->size());
+            for (size_t i = 0; i < list->size(); i++) {
+                net::Vec3 p = pos_of((*list)[i].c);
+                d.push_back({(p.x - cx) * (p.x - cx) + (p.y - cy) * (p.y - cy), i});
+            }
+            std::nth_element(d.begin(), d.begin() + kSendCap, d.end());
+            std::vector<E> closest;
+            closest.reserve(kSendCap);
+            for (size_t i = 0; i < kSendCap; i++)
+                closest.push_back((*list)[d[i].second]);
+            g_send_capped++;
+            send_state(pl.id, closest);
+            continue;
+        }
         send_state(pl.id, *list);
     }
 }
@@ -1745,6 +1848,10 @@ static void guest_state(net::Reader& r)
         auto& m = g_mirrors[hidx];
         m.pos = p; m.vel = v; m.rot = q; m.size = size; m.hp = hp; m.seen = now;
         uint8_t* c = m.local ? modes::cell_at(m.local) : nullptr;
+        if (!c && g_fix_budget && cells_live() >= kMirrorCap) {
+            g_mirror_capped++; // BUG-0295: the pool is full enough (an older host sends more)
+            continue;
+        }
         if (!c) { // dead ones too: the host shows a creature it killed until it is gone
             uint32_t idx = modes::cell_create(p, ref_for(inst), level, key, &q);
             c = modes::cell_at(idx);
@@ -1772,6 +1879,7 @@ static void guest_state(net::Reader& r)
             }
         }
     }
+    g_cells_peak = std::max(g_cells_peak, cells_live());
     if (chunk + 1 < chunks)
         return;
     // The host no longer has these: remove the mirrors. Only after a round of which every chunk
@@ -3120,16 +3228,17 @@ std::string status()
                  g_revives, g_respawns, g_pairs_skipped, g_hurt_local, g_hurt_fwd, g_bitten_sent, g_soft_moves, g_soft_turns, g_chunks_sent, g_chunks_taken, g_breaks_sent, g_wipes, g_kept, g_puppet_saves, g_puppet_new,
                  g_npc_deaths, g_loot_calls, g_loot_cells, g_mirror_kills, g_kills_sent, g_death_replays, g_loot_skipped,
                  (unsigned)g_host_of.size(), g_late_chunks, g_rounds_partial, (unsigned)g_meals.unacked.size());
-    char t[512];
+    char t[640];
     size_t pcount = 0;
     for (auto& [id, pt] : g_ptiles)
         if (pt.list)
             pcount += (size_t)((pt.list->end - pt.list->begin) / 2);
     snprintf(t, sizeof t,
-             "cell_tiles: fix=%d centres=%u partner_lists=%u partner_tiles=%u populated=%u shared=%u bg_skipped=%u passes=%u kept=%u resets=%u drained=%u pool_full=%u flushes=%u unshared=%u handed=%u tile_pool=%u/%u\n",
+             "cell_tiles: fix=%d centres=%u partner_lists=%u partner_tiles=%u populated=%u shared=%u bg_skipped=%u passes=%u kept=%u resets=%u drained=%u pool_full=%u flushes=%u unshared=%u handed=%u tile_pool=%u/%u budget=%d starved=%u/%u fed=%u send_capped=%u mirror_capped=%u cells=%u peak=%u level=%d\n",
              (int)g_fix_partner_tiles, (unsigned)g_views.size(), (unsigned)g_ptiles.size(), (unsigned)pcount, g_tiles_partner,
              g_tiles_shared, g_tiles_bg, g_tile_passes, g_tiles_kept, g_tile_resets, g_tiles_drained, g_tiles_full, g_tiles_flush, g_tiles_unshared, g_tiles_handed,
-             G() ? F<uint32_t>(G(), 0x38 + 0xC) : 0, G() ? F<uint32_t>(G(), 0x38 + 0x18) : 0);
+             G() ? F<uint32_t>(G(), 0x38 + 0xC) : 0, G() ? F<uint32_t>(G(), 0x38 + 0x18) : 0, (int)g_fix_budget, g_tiles_starved,
+             (unsigned)g_starved.size(), g_tiles_fed, g_send_capped, g_mirror_capped, cells_live(), g_cells_peak, g_tile_level);
     return b + std::string(d) + t;
 }
 

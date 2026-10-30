@@ -227,6 +227,10 @@ def measure(host, g, path=None, missed=None):
         # the host streams NPCs within 110 m of each guest (npc.cpp kRelevance): only those count
         if key.startswith('n') and me and sum((a - b) ** 2 for a, b in zip(hp, me)) ** 0.5 > 90:
             continue
+        # cells: each guest gets the ones around its own cell (BUG-0174, the nearest 900: BUG-0295), not
+        # the ones around the other players (BUG-0298); the same 60 m as the sync-check (diagmsg.h)
+        if key.startswith('c') and me and sum((a - b) ** 2 for a, b in zip(hp, me)) ** 0.5 > 60:
+            continue
         total += 1
         gp = gs.get(key)
         if gp is None:

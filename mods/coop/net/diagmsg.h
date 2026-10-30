@@ -210,6 +210,10 @@ struct Limits {
     float total = 0.5f;   // dna / food: whole points
     float npc_near = 90;  // a host NPC this close to the guest must be on the guest (relevance 110 m)
     bool npc_missing = true; // false: RTS stages (NPCs are sent around the tribe, not the guest)
+    // a host cell this close to the guest must be on the guest: the host sends each guest the cells
+    // around its own cell (BUG-0174), at most the nearest 900 (BUG-0295), not the ones around the
+    // other players (BUG-0298)
+    float cell_near = 60;
     float pos(char kind) const
     {
         switch (kind) {
@@ -287,6 +291,8 @@ inline Compared compare(const Digest& host, const Digest& guest, const Limits& l
         if (it == g.end()) {
             if (kind == 'n' && (!lim.npc_missing || !me || dist(*he, *me) > lim.npc_near))
                 continue; // out of the guest's range: never sent to it
+            if (kind == 'c' && me && dist(*he, *me) > lim.cell_near)
+                continue; // around another player: not sent to this guest (BUG-0298)
             c.issues.push_back({"missing:" + key_text(k), "missing", key_text(k), 0, ""});
             continue;
         }

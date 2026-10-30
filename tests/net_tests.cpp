@@ -1982,6 +1982,7 @@ static void test_diag_compare()
     g.entries.push_back({dg::make_key('n', 9), 0, 0, 0});  // a ghost on the guest
     h.entries.push_back({dg::make_key('n', 4), 60, 0, 0}); // near the guest, missing there
     h.entries.push_back({dg::make_key('c', 5), 0, 0, 0});  // a cell the guest lacks
+    h.entries.push_back({dg::make_key('c', 6), 300, 0, 0}); // around another player, 250 m away (BUG-0298)
     g.entries[2].x = 40;                                   // n1 30 m off
     g.totals[0].second = 80;
     g.vote = 1;
