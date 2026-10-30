@@ -792,3 +792,52 @@ BUG-0258. GOG 2024.
   without its box is stale also when no file of the slot is newer than the newest one before the
   save was posted (`g_saved_base`). Log: "world: saving for the share of player N (Tribe, X s in
   this place)".
+
+## The game-over bounce back and the guests' mirrors (2026-10-30, fix/w9-tribe)
+<a id="tribe-bounce-mirrors"></a>
+
+* ✔ (lab, lane 8) When the host's player tribe is knocked out, the game-over caption ("Alas! Your
+  population has fallen below the minimum ...") comes on the HOST only, its input lock
+  (cGameInputManager +0x110) is 1 then (once 0 when read). The guest's game shows no caption and its
+  lock stays 0, although every mirror of its player tribe played its death (tribe.ko).
+* ✔ The host's OK (bounce back) reloads the save: the host goes Tribe -> Loading -> Tribe (mode
+  0x01654C08, same world), its members get new ids (t14.. in the fixture, t20.. in the campaign).
+  The guests stay in Tribe and get the new ids in the next snapshot; the old ids are removed at the
+  end of the cycle.
+* ✔ Before the fix the guest's BUG-0172 guard (`player_tribe_out`: no member with health = out)
+  refused every new mirror: first because every local mirror was dead, then because the tribe was
+  empty after the dead ones were removed. `spawns_blocked` grew every snapshot (1950 in 2 min), the
+  guest's game had 0 members in its player tribe for good (campaign 20261029-203821 campaign#2:
+  "t: 16 missing on the guest" on all three guests after the host's bounce back at 22:08:05).
+* Fix (`tribe.mirror_out`, BUG-0288): on a guest the guard holds only while its own game has the
+  input lock up (a caption or a cinematic). The host keeps the guard as it was.
+* Not explained: the campaign's first coverage finding (21:07:57, Bob and Carol) came 8 s BEFORE the
+  host's bounce back, while its tribe was being knocked out (members 13 -> 5, the caption's
+  cinematic); the logs do not say which kind was missing. coop_campaign.py now names the missing
+  keys per kind. See also BUG-0291 (animals far from the tribe).
+
+## A citizen's walk after its cleanup in the frame Tribe is left (2026-10-30, fix/w9-tribe)
+<a id="tribe-leave-walk-fault"></a>
+
+BUG-0285 (static reading of GOG 2024 `dc04aee5`, objdump; not reproduced):
+* ✔ The fault 0xC0DB23 is in **0xC0DB10** (labelled CreatureHearsTarget+0x463 by the nearest
+  symbol): `thiscall(cCreatureBase*)`, plain `ret`, reads `this+0xB54` (+0x3C) and `this+0xB20`
+  (+0x554..+0x55C) without a null check, sets the spatial's move scale. Called from WalkTo
+  (0xC1CEEB) and four more places (0xC09CEE, 0xC0ABD9, 0xC0E78D, 0xD410F8).
+* ✔ `+0xB54` is set to 0 only by **0xC1CA40** (a cCreatureBase cleanup: releases +0xB54 through
+  0xA051B0, then +0x5A8, +0x2C; reached from the citizen's override at 0xC27DE7 and four jmp thunks)
+  and by the constructor (0xC1FB33). A citizen with +0xB54 = 0 has been cleaned up.
+* ✔ The chain of the fault: 0xD673B0 (per citizen: 0xC1B030, then if `(this+0xC0)->vt58()` and
+  0xC0EFC0(this) is set, a manager from 0xB3D580 runs **0xACA2A0** on it) -> 0xACA2A0 checks the
+  object's noun (vt+0x20): for 0x18EB4B7 (the citizen noun, see above) it goes on only when the game mode is NOT Tribe (0x1654C02), looks for
+  a point in range, else calls **0xD57680**(citizen) -> 0xC0D500, a timer on +0xB4C, then
+  0xC27B00(citizen, 0xA68F70(3)+1, ~ a random 1..3) (sets +0x102C, then vt+0xAC(1)) -> DoAction -> WalkTo -> 0xC0DB10.
+  So the branch only runs in the frame the mode is already the galaxy menu: the stage's teardown
+  updates a citizen it had cleaned up. No frame of coop.dll is in the chain.
+* ✔ (lab, lane 8, 4 leaves) Members made by `coop.tribe spawn 25` (SpawnMember / CreateCitizen +
+  AddMember, 28 members) all have +0xB54 set, and leaving Tribe for the galaxy menu with them
+  (`coop.load` of another slot) caught no fault: the mod's spawned members are not shown to be the
+  cleaned-up citizen.
+* The co-op epic destroyed by the quit's save (`before_save`, "the epic creature went away" 0.04 s
+  after the quit) is an animal (noun 0x18EB45E): 0xACA2A0 takes another branch for it.
+* ? Which citizen was cleaned up yet still updated, and why only once in ~100 leaves.

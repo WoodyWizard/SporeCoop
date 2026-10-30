@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include "coop_ui.h"
 #include "driver.h"
 #include "game.h"
 #include "modes.h"
@@ -592,10 +593,30 @@ static void host_command(uint8_t from, net::Reader& r)
 static bool g_fix_gameover = true;
 COOP_FIX("tribe.gameover", "BUG-0172", g_fix_gameover, "tribe: no member is added during the game-over caption");
 static uint32_t g_spawns_blocked;
+// BUG-0288: a guest's player tribe holds mirrors only. When every mirror had played its death (the
+// host's tribe knocked out) the guard above refused every new mirror for good, also after the host
+// bounced back and the dead mirrors were removed (an empty tribe has no member with health): the
+// guests missed the host's whole new tribe (4-player campaign, "t: 16 missing on the guest"). The
+// game-over caption comes on the host only (the guest's game shows none, its input lock stays 0):
+// on a guest the guard holds only while its own game has a caption or cinematic up (the input lock).
+// `coop.fix tribe.mirror_out off`: the guard as before.
+static bool g_fix_mirror_out = true;
+COOP_FIX("tribe.mirror_out", "BUG-0288", g_fix_mirror_out,
+         "tribe: a guest mirrors the host's members after a game over (its own tribe is not out)");
+static uint32_t g_mirror_out_passed;
 static bool player_tribe_out(void* t)
 {
     if (!g_fix_gameover || !t || t != player_tribe())
         return false;
+    if (g_fix_mirror_out && is_guest() && coop_ui::input_lock_now() <= 0) {
+        bool none = true;
+        for (void* c : members(t))
+            if (game::health(c) > 0)
+                none = false;
+        if (none)
+            g_mirror_out_passed++;
+        return false;
+    }
     for (void* c : members(t))
         if (game::health(c) > 0)
             return false;
@@ -1510,14 +1531,18 @@ std::string status()
         scales += sb;
     }
     snprintf(b, sizeof b,
-             "tribe lifetime: chief_restores=%u chief_gone=%u chief_bad_calls=%u spawns_blocked=%u fix_chiefs=%d "
+             "tribe lifetime: chief_restores=%u chief_gone=%u chief_bad_calls=%u spawns_blocked=%u mirror_out_passed=%u fix_chiefs=%d "
              "fix_gameover=%d knocked_out=%u ko_replaced=%u epic_herd_reused=%u epic_saved_out=%u chief_scale=%s\n",
-             g_chief_restores, g_chief_gone, g_chief_bad_calls, g_spawns_blocked, (int)g_fix_chiefs, (int)g_fix_gameover,
+             g_chief_restores, g_chief_gone, g_chief_bad_calls, g_spawns_blocked, g_mirror_out_passed, (int)g_fix_chiefs, (int)g_fix_gameover,
              g_ko_shown, g_ko_replaced, g_epic_herd_reused, g_epic_saved_out, scales.c_str());
     return out + b;
 }
 
 // ---- debug (tests): orders through the same hooked functions the UI uses ----
+static bool g_fix_act_check = true;
+COOP_FIX("tribe.act_check", "BUG-0260", g_fix_act_check, "tribe: coop.tribe act refuses a tool / hut action on a member (tests)");
+static bool act_needs_object(int action) { return action == 3 || action == 12 || action == 15 || action == 24; }
+
 static void* local_of(uint16_t id)
 {
     if (C.sess && C.sess->role() == net::Role::Host) {
@@ -1694,6 +1719,12 @@ std::string debug(const std::vector<std::string>& a)
     }
     if (a.size() >= 3 && (a[0] == "act" || a[0] == "act_npc")) { // act <action> <member id | npc id>
         void* t = a[0] == "act" ? local_of((uint16_t)atoi(a[2].c_str())) : npc::proxy((uint16_t)atoi(a[2].c_str()));
+        int action = atoi(a[1].c_str());
+        // BUG-0260: the object actions (3 GrabTool, 12 Party, 15 RaidHuts, 24 Repair) take a tool or a
+        // hut; with a citizen as the target DoAction read a field of the citizen as a tool's and
+        // faulted (DoAction+0x78C, data 0x39C). The game's UI never pairs them (docs/re/tribe.md 2).
+        if (g_fix_act_check && a[0] == "act" && t && act_needs_object(action))
+            return "action " + std::to_string(action) + " needs a tool or a hut, not a member (attack a member: 7)";
         std::vector<void*> sel;
         for (auto& [id, g] : g_gm)
             if (g.c && F<uint8_t>(g.c, kSelectedOff))
@@ -1702,7 +1733,7 @@ std::string debug(const std::vector<std::string>& a)
             if (F<uint8_t>(c, kSelectedOff))
                 sel.push_back((uint8_t*)c + 0xC0);
         void* vec[3] = {sel.data(), sel.data() + sel.size(), sel.data() + sel.size()};
-        int r = thiscall<int>(a_DoActionForObjects, (void*)nullptr, (void*)vec, atoi(a[1].c_str()), t, (void*)nullptr);
+        int r = thiscall<int>(a_DoActionForObjects, (void*)nullptr, (void*)vec, action, t, (void*)nullptr);
         return "action ordered (" + std::to_string(sel.size()) + " selected, ret " + std::to_string(r) + ")";
     }
     if (a.size() >= 2 && a[0] == "spawn" && is_host()) { // spawn <n>: test setup, n more adults in the player tribe

@@ -1833,3 +1833,30 @@ answered right after; a 1 s poller beside a standalone run saw no gap. Same sign
 * `coop_space_rivalry.py` (BUG-0262): lands whoever is still in the system twice (two
   `land_retry` rounds), then waits until both ships are on the home planet and the host's game has
   the guest's puppet before the PvP checks; the failure message names both places.
+## Tribe wave 9: bounce back, `coop.tribe act`, coverage detail (2026-10-30, fix/w9-tribe)
+<a id="testing-tribe-w9"></a>
+
+* `coop_tribe_bounce_mirrors.py` (suite `tribe_bounce_mirrors`, ~1.5 min warm, ~2.5 min cold,
+  BUG-0288): knocks the host's player tribe out (`coop.tribe pincer <member> <enemy> 300`), waits up
+  to 40 s for the game-over caption (`coop.ui find "Alas"`: on a cold lane it took longer than the
+  15 s of coop_tribe_gameover.py once, and without the caption the test proves nothing: it is a
+  check now), presses OK on the host, then compares the player tribe sizes of both games and the t
+  keys of `coop.sync`. `SPORE_FIX_OFF=tribe.mirror_out` must FAIL.
+* The guest's `tribe lifetime` line has `mirror_out_passed` (snapshots in which the guest spawned a
+  mirror into a player tribe without health, the BUG-0288 case) next to `spawns_blocked`.
+* `coop.uistate` prints `input_lock=N` (the game's input lock, > 0 under a caption or cinematic).
+* `coop.tribe act <action> <member id>` refuses the object actions 3 (GrabTool), 12 (Party), 15
+  (RaidHuts) and 24 (Repair) on a member: they take a tool or a hut and faulted the host (BUG-0260).
+  Attack a member with 7, an animal with `act_npc 10`. `coop_tribe_act.py` (suite `tribe_act`).
+* The campaign's coverage finding (coop_campaign.py) writes a `sync:` note with the coverage and the
+  missing keys per kind of every short guest (`coop_multi.measure(..., missed={})`).
+* **SporeKit's console serves all clients on one thread** (sporekit/console.cpp, select loop) and
+  runs `SK_CMD_ANY_THREAD` commands right there, the waiting ones too (`wait.frames`, `shot`:
+  `SK_CMD_NOT_ON_MAIN`). While one connection waits in `wait.frames 300 60000`, every other
+  connection's command waits behind it: coop_phase.py's `wait.frames 300` on the guest held the
+  Monitor's `frame` for more than its 10 s timeout on a busy lane (3 of 6 runs on lane 8; the guest
+  drew on, no hitch in its log), the old Monitor called that "the console stopped answering
+  (crash?)" (BUG-0261). The Monitor now asks a fresh connection for up to 30 s and goes on when it
+  answers (a line "busy, not a crash"); the frame check still reports a freeze.
+  `SPORE_MONITOR_STRICT=1` gives the old verdict. Keep `wait.frames` counts small in tests that
+  run a Monitor, or wait with `time.sleep` + `frame`.

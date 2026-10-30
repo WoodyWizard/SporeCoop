@@ -26,6 +26,15 @@
 - A rare fault in the game's UI right after a guest loaded a shared world (a destroyed modal window
   left in the window manager) is caught before the next mouse message (BUG-0270).
 - Tests: `space_rivalry` waits until both ships are on the home planet before its checks (BUG-0262).
+### Fixed
+- Tribe: after the host's tribe was wiped out and the host bounced back in time, the other players
+  no longer lose the host's whole tribe for the rest of the session (BUG-0288).
+
+### Testing
+- The test monitor no longer reports a crash when a game's console is only busy with another
+  command of the test (BUG-0261); `coop.tribe act` refuses hut and tool actions on a tribe member,
+  which made the host's game fault (BUG-0260); the campaign's coverage finding names the missing
+  objects per kind.
 
 ## [0.7.3.1] - 2026-10-29
 
