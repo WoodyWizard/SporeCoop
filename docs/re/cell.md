@@ -903,9 +903,9 @@ lanes 2 / 3 with four players (`tools/tests/coop_cell_4p.py`, suite `cell_4p`).
   to 2200 cells; with the partners 200 m apart (BUG-0174's partner passes, one screen of tiles each)
   it grew past 4000; and a guest got every host cell within 120 m of itself (up to 3140 mirrors).
 * The bound (`coop.fix cell.budget`, cellsync.cpp): (1) a partner's tile is populated only while the
-  host has fewer than 1250 live cells (first 1400: host peak 1714 in lab 20261030-053258, lowered for the margin) (`G+0x1C+0xC`); the others are kept as empty tiles ("starved")
+  host has fewer than 1100 live cells (kPopCap; first 1400: host peak 1714, lab 20261030-053258; then 1250: peaks 1759-1776, lab 20261030-063326) (`G+0x1C+0xC`); the others are kept as empty tiles ("starved")
   and populated, 4 per frame, when the pool has room; a tile on the partner's own screen waits
-  only above 1500 (`partner_core`: IsTileActive reads the gameplay range as the visible box
+  only above 1300 (kPopCapScreen; `partner_core`: IsTileActive reads the gameplay range as the visible box
   doubled, so asked with the partner's visible box halved it answers for the screen itself; without
   it a far guest's screen stayed empty, lab 20261030-054633); the partner passes take turns being first;
   a starved tile does not count as "populated elsewhere" for the other lists; (2) each guest gets
@@ -921,9 +921,14 @@ lanes 2 / 3 with four players (`tools/tests/coop_cell_4p.py`, suite `cell_4p`).
 * The sync-check (`net/diagmsg.h` compare) and the campaign's coverage (`coop_multi.measure`) now
   count only host cells within 60 m of the guest (BUG-0298): each guest is sent the cells around
   itself, not the ones around the other players (it reported "1033 missing on the guest").
-* ✔ With the final caps (1250, screen 1500, send 900, mirrors 1500), `cell_4p` x2 (lab
-  20261030-055041): host peak 1625-1626, guests 1135-1339, every guest saw host cells on its
-  screen far apart and together, no fault.
+* ✔ The live count lags: a populated tile's cells reach `G+0x1C+0xC` over the next frames, so many
+  tiles in one frame overshot the caps; from kPopCap - 250 at most 2 partner tiles (passes and
+  feeding together) per frame. A starved tile remembers its partner and is fed by the same rule
+  (screen tiles between the caps: without it a far guest's screen stayed empty, lab
+  20261030-060124). Even so the host's count jumps by ~250 now and then with no partner tile
+  (loot, the game's own spawns; not traced): the caps keep ~450 below the broadphase's limit.
+* With caps 1250 / 1500 `cell_4p` x2 (lab 20261030-055041): host peak 1625-1626, guests
+  1135-1339, no fault; the final caps 1100 / 1300: see BUG-0295's Verification.
 * ✔ BUG-0299 (a guest's own cell NaN with no NaN mirror, 4-player campaign_short, lab
   20261030-053709 i14): the order seen was the own position NaN, then a fault in CreateObject+0x56
   under PopulateTiles+0x1EF (garbage tiles from NaN view boxes: the pool's live count grew by one

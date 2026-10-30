@@ -2016,7 +2016,7 @@ answered right after; a 1 s poller beside a standalone run saw no gap. Same sign
   levels within ~8 s), the three guests 200 m apart from the host and from each other (`coop.pool tp`),
   60 s, then 50 m around the host, 60 s; the guests swim a little (`coop.pool goto`). Checked on every
   game: the cell pool's highest live count (`peak=` in `coop.pool`, the game's pool header) under
-  1700, each guest's coverage of the host cells within 60 m, cells of the host's world on each
+  1800 (the broadphase overflows at ~2048), each guest's coverage of the host cells within 60 m, cells of the host's world on each
   guest's screen; the lab fails it on any fault. BUG-0295 / BUG-0298, docs/re/cell.md#cell-broadphase-cap.
 * `SPORE_FIX_OFF=cell.budget` FAILS (lab 20261030-052851: host 4096 cells, 8203 faults at 0xBBB07B).
 * Food (plant / meat) on a guest's screen is not asserted: at level 4 a screen with 300+ host cells
