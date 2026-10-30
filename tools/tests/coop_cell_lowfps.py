@@ -12,7 +12,9 @@ moves a cell less per second at a long frame, so the mirror settled behind.
    the host's path around the guest's sample (coop_multi.measure).
 Checked: the guest ran at a low frame rate (median fps < 25), enough cells were compared, and at
 most 0.5 % of them are more than 1.2 m off (BUG-0275's limit of the measurement).
-SPORE_FIX_OFF=cell.mirror_follow must FAIL.
+A guard, not a fix test: on main 5d7f20e (2026-10-30) the trail did not come back (2 players at
+15 fps: 0 of 16 616 cells over 1.2 m, worst 0.08 m; 4 players at 15 / 30 fps after level-ups:
+p90 <= 0.05 m), so BUG-0282 is not-reproduced and there is no fix to switch off.
 
   SPORE_LANE=2 python3 tools/tests/coop_cell_lowfps.py [--rounds 30] [--frame-ms 66]
 """
