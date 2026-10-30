@@ -1464,8 +1464,11 @@ static void host_command(uint8_t from, net::Reader& r)
 {
     uint8_t kind = r.u8();
     auto reject = [&] {
-        if (from != C.sess->my_id())
+        if (from != C.sess->my_id()) {
             g_cmds_rejected++;
+            if (g_cmds_rejected <= 20) // BUG-0325 diagnostics: which command, from whom
+                H->log(M, SK_INFO, "civ: rejected command kind %u from player %u", (unsigned)kind, (unsigned)from);
+        }
     };
     auto own_vehicle = [&](uint16_t id) -> void* {
         auto it = g_hv_by_id.find(id);
