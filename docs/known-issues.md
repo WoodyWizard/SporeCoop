@@ -998,3 +998,13 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   message came (the wait flag is cleared when everybody is at the gate). Players see nothing wrong;
   the test's check reads the counter. Reproduce: run `space_finale` a few times.
 * Ticket: BUG-0320.
+
+## Space: a guest fault at 0xE98DD0 when the host's ship appears, lane 8 only (2026-10-30, fix/w13-space)
+<a id="issue-space-e98dd0-lane8"></a>
+
+* Since ~15:00 on 2026-10-30 every `space_jump` / `space_seed_profile` run on lane 8 had a caught
+  guest fault `0xC0000005 at 0x00E98DD0` (labelled cPlanetGfx_Create+0x8F0; a null from a virtual
+  getter in 0xE98D90, gfx/effects code) ~1.4 s after the host's ship appeared in the NPC system the
+  guest had jumped to; also with main 4dbacc5 (lab 20261030-151438). Lane 9 is clean with the same
+  code. Reproduce: `tools/lab.py run space_jump --lanes 1 --skip 1,2,3,4,5,6,7,9,10`.
+* Ticket: BUG-0323.
