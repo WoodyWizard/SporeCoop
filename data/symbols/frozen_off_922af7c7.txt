@@ -24,3 +24,4 @@ SporeCoop::cGameBehaviorManager_Read ; our creatures are kept out of saves (BUG-
 SporeCoop::cPosseSimulator_AddMember ; Creature: pack members of a partner (BUG-0108)
 SporeCoop::cPosseSimulator_Get ; Creature: pack members of a partner (BUG-0108)
 SporeCoop::Herd_NestPosition ; support log: no nest distance in the creature trace line (BUG-0279)
+SporeCoop::SpacePlayerData_Reset ; world: no clearing of a stale player empire before a load from the galaxy menu (BUG-0284)

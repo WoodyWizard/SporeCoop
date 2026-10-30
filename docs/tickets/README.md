@@ -293,3 +293,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0281](BUG-0281-creature-an-npc-proxy-right-next-to-a-guest-s-av.md) | open | desync | creature | 2026-10-29 |  | creature: an NPC proxy right next to a guest's avatar stays ~4 m from where the host has it |
 | [BUG-0282](BUG-0282-cell-at-a-low-frame-rate-a-guest-s-mirrors-trail.md) | open | desync | cell | 2026-10-29 |  | cell: at a low frame rate a guest's mirrors trail the host's moving cells by ~0.65 s (2 m at 3 m/s, 15 fps) |
 | [BUG-0283](BUG-0283-creature-the-guest-s-own-editor-shows-the-host-s.md) | open | bug | creature | 2026-10-29 |  | Creature: the guest's own editor shows the host's new parts while it is open (DNA drops, cancel asks to confirm) |
+| [BUG-0284](BUG-0284-loading-another-save-from-the-galaxy-menu-after.md) | open | crash | Tribe/Civ | 2026-10-29 |  | Loading another save from the galaxy menu after a stage left with a fault: crash in cStarRecord::GetPlanetRecord |

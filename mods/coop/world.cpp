@@ -458,6 +458,17 @@ COOP_FIX("world.write_check", "BUG-0105", slotfs::g_write_fix, "world: a world w
 COOP_FIX("world.slot_fallback", "BUG-0254", slotfs::g_fallback_fix, "world: a slot that cannot be replaced (a file in use) gives way to another slot");
 COOP_FIX("world.tmp_cleanup", "BUG-0254", slotfs::g_cleanup_fix, "world: leftovers of interrupted world writes are tidied (under a mutex)");
 static unsigned g_share_saves;         // saves posted for shares (tests)
+// BUG-0284: the game's own reset for the galaxy menu (0xB32C30) clears the player's record
+// (SpacePlayerData: empire id, cached cEmpire*, colonies) before it reads the slot's stars. A game
+// fault while the stage was left (a tribe citizen's WalkTo, handled by the game's own exception
+// handler) cut that reset short, so the menu still held the old world's empire; our load then read
+// the stars of another slot, the star manager wrote stars.db back and asked for the player's home
+// planet: the old planet id indexed a star of the new galaxy without planets (null read in
+// cStarRecord::GetPlanetRecord). A load from the menu first clears a player record left there.
+// Off: the old behaviour (0.7.3.0).
+static bool g_menu_player_fix = true;
+COOP_FIX("world.menu_player", "BUG-0284", g_menu_player_fix, "world: a load from the galaxy menu clears the old world's player empire a broken stage exit left behind");
+static unsigned g_menu_player_cleared; // tests
 static unsigned g_shares_dropped;      // shares dropped because their player left (tests)
 static unsigned g_loads_dropped;       // guest: queued loads dropped at a session end (tests)
 static unsigned g_loads_held;          // guest: queued loads moved behind an editor (tests)
@@ -1120,6 +1131,17 @@ static bool load_now(const std::wstring& slot, const std::string& planet_file, s
         err = "Open failed";
         return false;
     }
+    // BUG-0284: in the galaxy menu the player's record is empty (the game's menu reset clears it);
+    // one left over from the old world must not meet the new slot's stars
+    if (g_menu_player_fix && game::mode_id() == modes::kMenu) {
+        uintptr_t empid = H->sym("Simulator::GetPlayerEmpireID"), reset = H->sym("SporeCoop::SpacePlayerData_Reset");
+        uint32_t id = empid ? skg::cdecl_call<uint32_t>(empid) : 0xFFFFFFFFu;
+        if (id != 0xFFFFFFFFu && reset) {
+            H->log(M, SK_WARN, "world: the galaxy menu still holds the old world's player empire %08X: cleared it", id);
+            skg::cdecl_call<void>(reset);
+            g_menu_player_cleared++;
+        }
+    }
     // the star manager keeps the stars of the previously selected slot: reload them
     uintptr_t starget = H->sym("Simulator::cStarManager::Get"), readstars = H->sym("Simulator::cStarManager::ReadStarsFromSaveDB");
     if (starget && readstars)
@@ -1285,6 +1307,8 @@ std::string status()
     s += b;
     snprintf(b, sizeof b, "share saves held while the stage settled %u, shares saved again (nothing written) %u\n",
              g_settle_waits, g_stale_saves); // tests (BUG-0276)
+    s += b;
+    snprintf(b, sizeof b, "stale menu player cleared %u\n", g_menu_player_cleared); // tests (BUG-0284)
     s += b;
     if (g_in.active) {
         snprintf(b, sizeof b, "receiving world: %u/%u bytes\n", g_in.received, g_in.offer.total_size);
