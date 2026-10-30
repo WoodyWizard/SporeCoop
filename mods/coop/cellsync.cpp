@@ -2535,6 +2535,7 @@ static bool g_fix_bg_cull = true;
 COOP_FIX("cell.bg_cull", "BUG-0314", g_fix_bg_cull, "cell: background decoration cells left far behind (over 150 m from the own cell) are removed, so jumps do not fill the pool");
 constexpr float kBgFar = 150.f;
 static uint32_t g_bg_culled;
+static uint32_t g_leave_writes, g_leave_dropped; // BUG-0308: our pool work while the stage was left (off) / skipped (on)
 static double g_bg_cull_at;
 static void bg_cull(double now)
 {
@@ -2586,6 +2587,11 @@ void tick(double now)
     if (!cell && (g_solo || g_solo_owed))
         solo_reset(); // BUG-0205: the stage was left
     was_in_cell = cell;
+    if (cell && avatar() && game::leaving_stage()) { // BUG-0308: no pool writes while the stage is torn down
+        if (modes::cell_leaving())
+            return;
+        g_leave_writes++;
+    }
     solo_tick();
     if (!in_cell() || !C.sess || !C.sess->connected() || !avatar())
         return;
@@ -2642,6 +2648,13 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
     // a knockout state is kept (and relayed) in any stage: an "up again" dropped while we were in an
     // editor or loading left the partner knocked out here (BUG-0061)
     bool cell = in_cell() && avatar() && !g_test_away;
+    if (cell && game::leaving_stage()) { // BUG-0308: the stage is being torn down
+        if (modes::cell_leaving()) {
+            g_leave_dropped++;
+            cell = false;
+        } else if (type == net::MSG_CELL_STATE)
+            g_leave_writes++;
+    }
     // BUG-0239: a guest's meal that reaches us in an editor (or without an avatar, around a rebuild)
     // is acknowledged without its points, as a meal eaten first: the guest takes it back at our next
     // total instead of keeping it "on the way" until a later meal drops it all at once
@@ -3251,8 +3264,8 @@ std::string debug(const std::vector<std::string>& a)
                          stray_keep, stray_dying, keep, dying, dead);
         for (auto& [lv, k] : stray_levels)
             n += snprintf(b + n, sizeof b - std::min<size_t>(n, sizeof b), "%d:%u ", lv, k);
-        n += snprintf(b + n, sizeof b - std::min<size_t>(n, sizeof b), " background=%u (over 150 m %u, keepalive %u, mirrors %u) bg_culled=%u bg_levels=",
-                      bg, bg_far, bg_keep, bg_host, g_bg_culled);
+        n += snprintf(b + n, sizeof b - std::min<size_t>(n, sizeof b), " background=%u (over 150 m %u, keepalive %u, mirrors %u) bg_culled=%u leave_writes=%u leave_dropped=%u bg_levels=",
+                      bg, bg_far, bg_keep, bg_host, g_bg_culled, g_leave_writes, g_leave_dropped);
         for (auto& [lv, k] : bg_levels)
             n += snprintf(b + n, sizeof b - std::min<size_t>(n, sizeof b), "%d:%u ", lv, k);
         n = std::min<int>(n, (int)sizeof b - 1);
@@ -3780,7 +3793,7 @@ std::string status()
     vm.dwLength = sizeof vm;
     GlobalMemoryStatusEx(&vm);
     char d[320];
-    snprintf(d, sizeof d, "cell_contacts: creature_pairs=%u bite_events=%u nonfinite_skipped=%u nonfinite_dropped=%u stale_targets=%u own_nf=%u shared_parts=%u vm_free_mb=%llu created=%u destroyed=%u\n", g_creature_pairs, g_bite_events, g_nonfinite_sent_skipped, g_nonfinite_dropped, g_stale_targets, g_own_nf_events, g_shared_parts, vm.ullAvailVirtual >> 20, g_created, g_destroyed);
+    snprintf(d, sizeof d, "cell_contacts: creature_pairs=%u bite_events=%u nonfinite_skipped=%u nonfinite_dropped=%u stale_targets=%u own_nf=%u shared_parts=%u vm_free_mb=%llu created=%u destroyed=%u leave_writes=%u leave_dropped=%u\n", g_creature_pairs, g_bite_events, g_nonfinite_sent_skipped, g_nonfinite_dropped, g_stale_targets, g_own_nf_events, g_shared_parts, vm.ullAvailVirtual >> 20, g_created, g_destroyed, g_leave_writes, g_leave_dropped);
     char b[1100];
     uint8_t* s = S();
     int food = s ? F<int32_t>(s, 0x1C) : -1;

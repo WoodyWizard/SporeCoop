@@ -1039,3 +1039,20 @@ BUG-0307 (follow-up of BUG-0299, #cell-broadphase-cap end).
   0.45 m, 0 checks over the limit.
 * ✔ The own_probe lines (BUG-0307) never fired in these runs (4 players, level-ups, 3 fps, jumps):
   the natural first NaN was not caught.
+
+## Our pool work while the Cell stage is torn down (2026-10-30, fix/w13-cell)
+<a id="cell-leave-guard"></a>
+
+* ✔ Static: between the posted quit (world.cpp `load_slot`: "quit to the galaxy menu posted",
+  `game::stage_leaving`) and the mode change (~0.8 s, three frames in lab 20261030-104149
+  campaign_short#3) `game::mode_id()` still reads Cell and the cell game is still there, so
+  cellsync's `in_cell()` is true. Its `avatar()` reads the pool directly (not `game::avatar`, which is
+  null while leaving, BUG-0264), so `tick()` kept running `guest_tick` / `host_tick` / `bg_cull` /
+  `symbiosis_tick`, `on_message` kept applying MSG_CELL_STATE (`guest_state`: CreateCellObject for
+  new mirrors, field writes, DestroyCell for dropped ones), and modes.cpp `h_SimUpdate` kept writing
+  the puppets' poses, all on the pool the game frees in SimUpdate (the BUG-0308 fault was in
+  `cObjectPool::_dtor` under SimUpdate+0x6ED). A rejoin in Cell is exactly this case: the guest
+  creates ~900 mirrors at the join and the host's world arrives ~3 s later.
+* `cell.leave_guard` (modes.cpp `cell_leaving()`): none of that runs while `game::leaving_stage()`.
+  `coop.pool` prints `leave_writes=` (states / ticks applied while leaving, the off side) and
+  `leave_dropped=` (skipped). Whether this work corrupted the heap is not shown.

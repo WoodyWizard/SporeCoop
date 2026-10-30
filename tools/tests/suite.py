@@ -267,6 +267,7 @@ add('cell_lowfps', P + 'coop_cell_lowfps.py', minutes=5)  # a guest at 15 fps sh
 add('cell_nan_drain', P + 'coop_cell_nan.py --all --drain 180', minutes=7)  # the own cell NaN in every field, level-ups, 3 min of play: the guest keeps its address space (BUG-0307)
 add('cell_jumps', P + 'coop_cell_jumps.py', minutes=5)  # a guest's cell jumps 150-250 m 40 times: no pile of background cells, it mirrors the host again (BUG-0314; SPORE_FIX_OFF=cell.bg_cull fails)
 add('cell_jumps_host', P + 'coop_cell_jumps.py --who host', minutes=5)  # the same on the host (BUG-0314)
+add('cell_rejoin_leave', P + 'coop_rejoin_loop.py --fixture cell --rounds 12 --gap 0.3:1.5 --cell-leave', minutes=12)  # a guest rejoins in Cell, the host's world arrives and the stage is left: none of our cell work runs on the pool being torn down (BUG-0308 guard; SPORE_FIX_OFF=cell.leave_guard fails)
 add('cell_churn', P + 'coop_cell_churn.py', minutes=4)  # the guest's mirrors removed and re-created 40 times: its free address space stays (BUG-0307)
 
 # a whole game of four bot players, Cell to the galactic core (BUG-0152, docs/06-testing.md#testing-campaign):
