@@ -845,6 +845,11 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   fault (lane 8). The co-op epic destroyed by the quit's save is an animal (another branch).
   docs/re/tribe.md#tribe-leave-walk-fault. Still not reproduced; no fix. Its consequence is
   contained by BUG-0284 (world.menu_player).
+* Update (2026-10-30, fix/w13-tribe-civ): seen a second time (BUG-0310, campaign#3 of lab
+  20261030-104149): the next load from the menu then faulted in the space graphics and never ended.
+  Guarded since (`tribe.leave_walk`: a cleaned-up citizen is not checked for a new walk); the
+  stand-in test `tribe_leave_walk` reproduces fault and freeze with the guard off. Which citizen the
+  game cleaned up before its action ended is still not known (docs/re/tribe.md#tribe-offstage-action).
 * Ticket: BUG-0285
 ## Space: guests' ships go down to the home planet after the first world share (2026-10-29, fix/w8-stuck)
 <a id="issue-space-share-first-frame"></a>
@@ -1000,3 +1005,26 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Not known: what holds the pause (planet still loading?). Players see a black screen, no mirror
   error.
 * Ticket: BUG-0313.
+## Civilization: the campaign's end of Civ never comes after the last city changed hands by a talk (2026-10-30, fix/w13-tribe-civ)
+<a id="issue-civ-end-after-talk"></a>
+
+* What happens: campaign_space#1 (lab 20261030-104149): every city of the planet was the players'
+  (`owned_cities=10` of 10 on the host), the last one without a capture (a nation's talk was answered,
+  another closed with Esc), and the game's end of Civ (spaceship editor vote) did not come in 14 min.
+* Reproduce: not reproduced; `coop_campaign.py --from civ --to space` (1 of 3 runs that day).
+* Known: the shortcut's "Capture of 0 city (0 of other nations listed)" is right (nothing left to
+  capture), it is not blind to other nations. In passing runs the last city was a capture and the
+  vote came 8 s after its cinematic.
+* Not checked: whether the game ends Civ only through a capture, or the Esc closed its prompt.
+* Next steps: log `coop.ui` dialogs on every player when all cities are owned and no end comes.
+* Ticket: BUG-0311
+
+## Civilization: an NPC city founded late in a session is missing on the guest for up to a minute (2026-10-30, fix/w13-tribe-civ)
+<a id="issue-civ-late-npc-city"></a>
+
+* What happens: in the last minute of a `play_civ.py --seed 9` session the guest lacked one new NPC
+  city and two vehicles for 40-60 s (every audit); it caught up afterwards (`cities_caught_up=4`).
+* Reproduce: `SPORE_LANE=N python3 tools/tests/play_civ.py --minutes 10 --seed 9` (1 of 3 runs).
+* Known: vehicle positions of the same run were in sync (p90 0.64 m).
+* Not checked: the guest's city catch-up timing, whether it was in the city planner then.
+* Ticket: BUG-0319

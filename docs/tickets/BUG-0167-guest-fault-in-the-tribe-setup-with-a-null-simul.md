@@ -53,3 +53,4 @@ since (4 tribe_play + 4 chaos_tribe on main, 20261027-183142).
 - 2026-10-27: closed on fix/w1-tribe-civ as fixed by the camera guard of d605e96 (checked: guard on, GOG 2024 symbols verified).
 - 2026-10-28: released in 0.7.3.0.
 - 2026-10-28: status fixed -> not-reproduced: its only commit d605e96 shipped in v0.6.0; nothing was changed in 0.7.3.0, the ticket was closed because the guard was never seen failing again. fixed_in cleared (BUG-0215).
+- 2026-10-30 (fix/w13-tribe-civ): still not reproduced. All lab game logs of the main checkout (out/lab, 2026-10-22..30) searched for tribe-stage faults: none at this ticket's address in any tribe test; the only Tribe faults in campaigns are BUG-0285 / BUG-0310 (0xC0DB23, fixed by tribe.leave_walk). On this branch tribe_coop, tribe_play, tribe_far, chaos_tribe, menu_stale_player, campaign_tribe, tribe_leave_walk (3x) passed on lane 6 without a fault, freeze or crash (lab runs 20261030-141833, 20261030-140307). Status kept.

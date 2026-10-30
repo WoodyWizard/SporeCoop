@@ -2120,3 +2120,18 @@ answered right after; a 1 s poller beside a standalone run saw no gap. Same sign
   BUG-0175's fix on and off: with the game time running mirrors walk and the 0.15 s lag window
   hides a one-frame lag; the fix's FAIL/PASS is `npc_tests` (`--nofix`).
 
+## A cleaned-up citizen walked as Tribe is left: tribe_leave_walk (2026-10-30, fix/w13-tribe-civ)
+<a id="testing-tribe-leave-walk"></a>
+
+* `SPORE_LANE=N python3 tools/tests/coop_tribe_leave_walk.py [--nofix] [--rounds 2] [--play 90]`
+  (suite `tribe_leave_walk`, ~7 min cold): the host plays the tribe fixture with the play_tribe
+  bots for `--play` s, arms `coop.leavewalk` and loads the civ_npc fixture through the galaxy menu
+  (the campaign's jump), then the tribe fixture again. The stand-in: in the first frame the Tribe
+  stage is left (quit posted) one player member gets +0xB54 = 0 (what CreatureBase_Cleanup leaves)
+  and goes through the guard, as the campaign's citizen did (the game's own path needs a citizen in
+  one action as the mode changes, which 90 s of play never gave: docs/re/tribe.md#tribe-offstage-action).
+  Checks: the stand-in fired, the host reaches Civ / Tribe with an avatar, the guest follows, no
+  fault. `--nofix` (or `SPORE_FIX_OFF=tribe.leave_walk`): the campaign's fault 0xC0DB23
+  `CreatureBase_SetMoveScale+0x13` under DoAction+0x496 and the host stops drawing (FROZE) in the load.
+* `coop.status` "off-stage checks N (citizens while the stage is left M), cleaned-up citizen walks
+  skipped K, test citizens T".

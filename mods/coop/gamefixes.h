@@ -12,5 +12,10 @@ void shutdown(); // puts the original bytes back (hot reload)
 std::string status();
 // tests (BUG-0270): the window manager `wm` gets a destroyed object as its modal window
 std::string fake_dead_modal(void* wm);
+// tests (BUG-0310): the next citizen checked outside the Tribe mode gets +0xB54 = 0 (a cleaned-up one)
+std::string arm_leave_walk();
+// tests (BUG-0310): once armed, puts `citizen` through the guard in the first frame Tribe is left
+bool leave_walk_tick(void* citizen);
+bool leave_walk_armed(); // the stand-in is armed (the frame loop asks before walking the members)
 
 } // namespace gamefixes

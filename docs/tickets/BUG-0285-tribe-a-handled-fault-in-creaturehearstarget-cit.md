@@ -1,20 +1,20 @@
 ---
 id: BUG-0285
 title: Tribe: a handled fault in CreatureHearsTarget (citizen WalkTo) while the stage is left for the galaxy menu
-status: not-reproduced
+status: fixed
 kind: crash
 stage: Tribe
 reported: 2026-10-29
 source: lab campaign 20261029-174717 (4 players, lane 7)
 role: host
 versions: 0.7.3.0 (main b5ef74d)
-fixed_in:
-branch: fix/w9-tribe
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w9-tribe, fix/w13-tribe-civ
+commits: 22cbf89 d1cdf2e eb1bebf 4c6c6e1
+tests: tribe_leave_walk (coop_tribe_leave_walk.py)
 signature: 0xC0000005 at 0x00C0DB23 SporeCoop::CreatureHearsTarget+0x463 data 0x3C (handled, first chance)
 docs: docs/re/tribe.md#tribe-leave-walk-fault, docs/known-issues.md#issue-tribe-leave-hears-fault
-related: BUG-0284
+related: BUG-0284, BUG-0310
 ---
 
 ## Report
@@ -51,13 +51,34 @@ whether a mod object (a puppet, a pack member, the epic) is the target is not kn
   mode-change frame); a mod object is not shown to be involved. Not proven.
 
 ## Fix
-None. The consequence (the next load from the menu crashed) is contained by BUG-0284
-(`world.menu_player`, 0.7.3.1).
+`tribe.leave_walk` (mods/coop/gamefixes.cpp, fix/w13-tribe-civ): Citizen_OffStageCheck
+(0xACA2A0) is hooked; for a citizen whose +0xB54 is 0 (cleaned up by CreatureBase_Cleanup) it is
+skipped, so no new walk starts and SetMoveScale never reads the null pointer. In the Tribe mode the
+check does nothing for a citizen anyway. Counters and a warning line ("was cleaned up (+0xB54 0) but
+is checked for a new walk: skipped") in `coop.status` / the log. `coop.fix tribe.leave_walk off` =
+the old behaviour. GOG 2016 (frozen): the symbols are missing, the guard is off
+(frozen_off_922af7c7.txt). Test stand-in `coop.leavewalk` (debug.cpp, gamefixes.cpp
+leave_walk_tick).
+The consequence (the next load) was also contained by BUG-0284 (world.menu_player) for the player reset; BUG-0310 showed another consequence (a hanging load).
 
 ## Verification
-no-fail-run: not reproducible (4 leaves Tribe -> galaxy menu with 28 members on lane 8, scratch
-probe, no fault; once in ~100 leaves in the labs); analysis only, no code change.
+`coop_tribe_leave_walk.py` (suite `tribe_leave_walk`): the tribe fixture, 90 s of play_tribe
+bots, then the campaign's jump to civ_npc through the galaxy menu; in the first frame Tribe is left
+the stand-in clears one player member's +0xB54 and puts it through the check (the game's own
+trigger, a citizen in action 0x5218BB3 as the mode changes, did not come in 90 s of play:
+docs/re/tribe.md#tribe-offstage-action).
+* FAIL with the fix off (`SPORE_FIX_OFF=tribe.leave_walk`, lane 6): lab run
+  20261030-135912-fix-w13-tribe-civ: the campaign's fault `0xC0000005 at 0x00C0DB23
+  CreatureBase_SetMoveScale+0x13 data 0x3C` with the same chain (DoAction+0x496 < 0xD576F1
+  Citizen_IdleWalk), then the host stopped drawing in the load (FROZE), the civ_npc fixture never
+  came: the campaign's outcome.
+* PASS with the fix: lab runs 20261030-140307-fix-w13-tribe-civ (2 runs, lane 6) and 20261030-145455-fix-w13-tribe-civ (final code): 4 leaves of Tribe
+  with the stand-in, "cleaned-up citizen walks skipped" 2 per run, no fault, every load reached
+  Civ / Tribe and the guest followed.
+Not verified: which citizen the game cleaned up while its action still ran, and why only in the
+30-min 4-player campaigns (2 of ~100 leaves); the stand-in makes that state, it does not find it.
 
 ## History
 - 2026-10-29: opened (fix/w8-planet, found while fixing BUG-0284).
 - 2026-10-30: fix/w9-tribe: the fault's function and caller chain read (game code only), not reproduced; not-reproduced.
+- 2026-10-30: seen again (BUG-0310); fixed on fix/w13-tribe-civ by the guard tribe.leave_walk (stand-in test FAIL 20261030-135912, PASS 20261030-140307 2x); not-reproduced -> fixed.

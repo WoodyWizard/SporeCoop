@@ -9,12 +9,12 @@ source: docs/known-issues.md (ticket backfilled 2026-10-27)
 role: guest
 versions: 0.7.2.4 (main) and earlier
 fixed_in:
-branch:
-commits:
-tests:
+branch: fix/w13-tribe-civ
+commits: eb1bebf
+tests: net_tests (test_velocity_jump_cap), play_civ
 signature:
-docs:
-related: BUG-0122, BUG-0188
+docs: docs/re/civ.md#civ-vehicle-jump-velocity
+related: BUG-0122, BUG-0188, BUG-0206
 ---
 
 ## Report
@@ -32,9 +32,17 @@ Copied from docs/known-issues.md, where the entry stays up to date:
 See the report (observed vs inferred as marked there).
 
 ## Fix
-Not fixed yet.
+Partly (fix/w13-tribe-civ, eb1bebf): `civ.vel_cap` (civ.cpp guest_state + net/interp.h
+VelocityEstimate::max_speed): a step of a mirrored vehicle faster than 2 x its own top speed
+(+0x218) + 10 u/s is taken as a jump, so it is not extrapolated (one cause, see the 2026-10-30
+history line). `coop.fix civ.vel_cap off` = the old estimate. `coop.civ` on the guest now also
+prints `vel=` `top=` `jumps=` per mirror. Other causes seen in the same test stay open (below).
 
 ## Verification
+Unit: tests/net_tests.cpp test_velocity_jump_cap: a standing vehicle put 20 units further in one
+snapshot overshoots by 15.6 units without the cap (FAIL side) and 0.0 with it (PASS side).
+no-fail-run: in game the outliers are single samples of a 10 min bot session that do not come
+at the same moment twice; the lab cannot show one cause FAIL and PASS on purpose.
 
 ## History
 - 2026-10-27: first recorded in docs/known-issues.md.
@@ -43,3 +51,4 @@ Not fixed yet.
 - 2026-10-28 (fix/w2-civ, after merging main with the BUG-0122 fix and the BUG-0188 fix): `play_civ.py --seed 9` again: n=2642, p90 0.15 m (was 0.34), max 17.4 m. The max is NOT jitter: vehicle v2 showed the same ~17 m offset at the same place in both runs (host (-334, 125, 359), guest (-347, 123, 347); the run before: host (-333, 123, 360), guest (-346, 122, 348)), two samples each, so the vehicle stood still with a constant offset. v8 had 11-12 m the same way. Not the same cause as BUG-0122. Next step: watch v2 in that run (`coop.civ` on both at 00:08 of the seed 9 session: purpose, order, a harbour or a city it stands in; the host position may be one the guest's game moves the vehicle out of, e.g. a building footprint). Logs: out/lab/w2civ-manual/play_civ.log, play_civ2.log (fix/w2-civ worktree).
 - 2026-10-28 (fix/w3-civ): `play_civ.py --seed 9` on lane 7 again (with the wave 3 Civ fixes), and `play_civ.py` now prints the outlier vehicle's `coop.civ` line on both machines: n=1800, p90 0.19 m, max 14.8 m, again `v2` at the same place (host (-335, 129, 356), guest (-346, 129, 346)). v2 is an **NPC vehicle** (owner 254, pol 000021CB, purpose 0, order 8 on both). In the `coop.civ` dump taken right after the samples (a second or two later) the guest's mirror was 1.9 m from the host's (host (-335.1, 128.5, 356.5), guest (-336.4, 128.4, 355.2)): the offset is transient and converges, but it happens at the same place and time in every seed 9 run. Inferred, not proven: for a moment the guest's `guest_tick` does not pull the mirror (no state for that vehicle for more than 3 s, e.g. a chunk without it, or the vehicle just bound as a local one within the 25 m bind radius). Next step: log `now - g.seen` and the chunk of v2 on the guest at that time (00:08 of the session). Log: scratchpad of fix/w3-civ, play_civ9b.log (the run also showed 4 "vehicle owner 0 on the host, 1 on the guest" problems after gifts, see the log).
 - 2026-10-28 (fix/w4-census): `play_civ.py --minutes 10 --seed 9` on lane 7 (main 7874654 + this branch): n=2509, median 0.00 m, p90 0.25 m, max 9.35 m, no outlier over 10 m (the v2 event of the earlier runs did not come: the bots' actions differ from run to run, 248 actions this time). New diagnostics for the next sighting: `coop.civ` on the guest now ends every mirrored vehicle's line with `age=` (s since its last state), `err=` (distance from where it should be), `pushed=` / `pushed5s=` (how far the game moved it away from where guest_tick put it one frame before, now and the largest in the last 5 s), and play_civ prints that line for every outlier; `coop.census` + `tools/tests/census.py diff` compare all vehicles by net id. pushed > 1 m on a standing vehicle would prove the inferred cause (the guest's game pushes the mirror out of something only it has there, e.g. a building); age > 3 s would prove the other one (no state). Left open: needs one sighting with these fields. Log: scratchpad fix_w4-census/play_civ9.log.
+- 2026-10-30 (fix/w13-tribe-civ): `play_civ.py --minutes 10 --seed 9` on lane 7, before the cap: n=2352, p90 1.23 m, max 16.2 m: v7 and v10 (player vehicles) 16 m off at the same moment with `age=0.0`/`0.2`, `pushed` 0.0/0.3 and `err=27.0` on both: the target guest_tick wanted was 11+ m from the host's vehicle with a fresh state, so it came from the velocity estimate (observed); a step the host's game made by putting the vehicles somewhere (the bots had just given a defend order) became a speed (inferred). Fixed by civ.vel_cap (eb1bebf). With the cap (2 runs): run 1 n=2613, p90 0.49 m, max 14.6 m with two other causes, both `jumps=0`: v3 (NPC, owner 254) `pushed5s=13.1` and the guest's mirror had an order of its own (`order=8`, opos 0): the guest's game moved it (observed, why not known); v14 (NPC air, loco=1) `age=0.4` `err=19.6` `vel=25.2` `top=25.0`: a late state of a fast vehicle extrapolated while the host's vehicle turned (inferred). Logs: out/w13/play_civ9_a.log, play_civ9_fix1.log, play_civ9_fix2.log of the branch worktree (not in git). Stays open.
