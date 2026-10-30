@@ -654,7 +654,7 @@ using RequirePlanets_t = void(SK_THISCALL*)(void*, void*, void*);
 static RandomInt_t o_RandomInt;
 static RandomFloat_t o_RandomFloat;
 static RequirePlanets_t o_RequirePlanets;
-static uintptr_t a_Rng;
+static uintptr_t a_Rng, a_SmGetEmpire;
 static uint32_t g_planets_seeded;
 
 // BUG-0123: the generation state is per thread. It was process-wide: a GenerateRandomName or a
@@ -761,6 +761,13 @@ static void SK_THISCALL h_RequirePlanets(void* sm, void* star, void* p3)
         for (void** q = b; q && q < e && !pending; q++)
             pending = *q == star;
     }
+    // the star's empire object: GeneratePlanetsForStar reads it for an empire star (tech level 5):
+    // "is this its home star", "is it the player's empire"; the game creates empires lazily
+    void* emp0 = nullptr;
+    uint32_t pol0 = F<uint32_t>(star, 0x54);
+    if (a_SmGetEmpire && pol0 != 0xFFFFFFFFu)
+        emp0 = thiscall<void*>(a_SmGetEmpire, sm, pol0);
+    int home0 = emp0 ? (int)(F<uint32_t>(emp0, 0xB0) == F<uint32_t>(star, 0x70)) : -1;
     g.draws = g.hash = g.other = 0;
     g.generating = true;
     o_RequirePlanets(sm, star, p3);
@@ -768,9 +775,9 @@ static void SK_THISCALL h_RequirePlanets(void* sm, void* star, void* p3)
     g_planets_seeded++;
     H->log(M, SK_INFO,
            "space: planets of star %08X generated (seeded %08X): %d (tech %u->%u flags %08X->%08X pending=%d "
-           "draws=%u hash=%08X other=%u)",
+           "empire=%08X %s home=%d draws=%u hash=%08X other=%u)",
            F<uint32_t>(star, 0x70), seed, (int)F<uint8_t>(star, 0xAC), tech0, F<uint32_t>(star, 0x4C), flags0,
-           F<uint32_t>(star, 0x5C), (int)pending, g.draws, g.hash, g.other);
+           F<uint32_t>(star, 0x5C), (int)pending, pol0, emp0 ? "made" : "not made", home0, g.draws, g.hash, g.other);
 }
 
 // tests (BUG-0123): another thread "inside GenerateRandomName" for `ms` (the hook's bookkeeping,
@@ -1350,6 +1357,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     if (uintptr_t ge = S("SporeCoop::cAppModeSpace_OnGalaxyEntered"))
         H->hook_create(M, (void*)ge, (void*)h_GalaxyEntered, (void**)&o_GalaxyEntered);
     a_Rng = S("Math::RandomNumberGenerator::global_ptr");
+    a_SmGetEmpire = S("Sim_StarManager_GetEmpire");
     uintptr_t ri = S("Math::RandomNumberGenerator::RandomInt"), rf = S("Math::RandomNumberGenerator::RandomFloat"),
               rp = S("Simulator::cStarManager::RequirePlanetsForStar"),
               rn = S("Simulator::cSpaceNames::GenerateRandomName");
@@ -1716,6 +1724,25 @@ std::string debug(const std::vector<std::string>& a)
             if (e.key.size() == 9 && (e.key[0] == 'P' || e.key[0] == 'C'))
                 out += e.key + " ";
         return out.empty() ? "none" : out;
+    }
+    if (a[0] == "landcheck") { // BUG-0182: the conditions of the wheel's landing (system update 0x1009C90)
+        static uintptr_t can_land = H->sym("SporeCoop::cSimulatorPlayerUFO_CanLandOnActivePlanet"),
+                         ready = H->sym("SporeCoop::Space_ZoomLandReady"),
+                         comm_get = H->sym("Simulator::cCommManager::Get"),
+                         comm_active = H->sym("Simulator::cCommManager::IsCommScreenActive"),
+                         time_get = H->sym("Simulator::cGameTimeManager::Get");
+        if (!u)
+            return "no ship";
+        void* p = a_ActivePlanet ? cdecl_call<void*>(a_ActivePlanet) : nullptr;
+        void* tm = time_get ? cdecl_call<void*>(time_get) : nullptr;
+        void* cm = comm_get ? cdecl_call<void*>(comm_get) : nullptr;
+        snprintf(b, sizeof b,
+                 "ctx %d planet %p arrived %d hp %.1f can_land %d ready %d comm %d paused %d cinematic %d",
+                 a_Context ? cdecl_call<int>(a_Context) : -9, p, (int)F<uint8_t>(u, 0x74C), F<float>(u, kHp),
+                 can_land ? (int)thiscall<bool>(can_land, u) : -1, ready ? (int)cdecl_call<bool>(ready) : -1,
+                 cm && comm_active ? (int)thiscall<bool>(comm_active, cm) : -1, tm ? (int)(F<uint8_t>(tm, 0x48) & 1) : -1,
+                 (int)cinematic_playing());
+        return b;
     }
     if (a[0] == "land") { // tests: land on the active planet (the landing of Respawn)
         uintptr_t f = H->sym("SporeCoop::cAppModeSpace_LandOnActivePlanet");
