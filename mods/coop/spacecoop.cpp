@@ -666,6 +666,7 @@ struct GenState {
     bool generating;
     int in_names;
     uint32_t draws, hash, other; // BUG-0185 diagnosis: private draws, their results, global draws
+    uint32_t trace[48][2];       // the first private draws: caller, result
 };
 static thread_local GenState t_gen;
 static GenState g_gen_shared; // the old state (seedfix 0)
@@ -684,12 +685,16 @@ static bool generator_draw(void* rng)
            (g_seed_fix || GetCurrentThreadId() == g_gen_thread_shared);
 }
 
-static void note_draw(bool mine, uint32_t v)
+static void note_draw(bool mine, uint32_t v, void* from)
 {
     GenState& g = gen();
     if (!g.generating)
         return;
     if (mine) {
+        if (g.draws < 48) {
+            g.trace[g.draws][0] = (uint32_t)(uintptr_t)from;
+            g.trace[g.draws][1] = v;
+        }
         g.draws++;
         g.hash = (g.hash ^ v) * 0x01000193u;
     } else {
@@ -701,7 +706,7 @@ static uint32_t SK_THISCALL h_RandomInt(void* rng, uint32_t n)
 {
     bool mine = generator_draw(rng);
     uint32_t v = o_RandomInt(mine ? &gen().rng : rng, n);
-    note_draw(mine, v);
+    note_draw(mine, v, __builtin_return_address(0));
     return v;
 }
 
@@ -711,7 +716,7 @@ static float SK_THISCALL h_RandomFloat(void* rng)
     float f = o_RandomFloat(mine ? &gen().rng : rng);
     uint32_t v;
     memcpy(&v, &f, 4);
-    note_draw(mine, v);
+    note_draw(mine, v, __builtin_return_address(0));
     return f;
 }
 
@@ -785,6 +790,27 @@ static void SK_THISCALL h_RequirePlanets(void* sm, void* star, void* p3)
            F<uint32_t>(star, 0x70), seed, (int)F<uint8_t>(star, 0xAC), tech0, F<uint32_t>(star, 0x4C), flags0,
            F<uint32_t>(star, 0x5C), (int)pending, pol0, emp0 ? "made" : "not made", home0, g.draws, g.hash, g.other,
            p3, tpl[0], tpl[1], tpl[2], caller);
+    // each planet record: kind +0x28, flags +0x2C, the terrain scores +0xB0/+0xB4, tech +0x194
+    std::string recs;
+    void** rb = F<void**>(star, 0x84);
+    void** re = F<void**>(star, 0x88);
+    for (void** q = rb; q && q < re && q - rb < 16; q++) {
+        void* r = *q;
+        if (!r || IsBadReadPtr(r, 0x198))
+            continue;
+        char one[96];
+        snprintf(one, sizeof one, " %08X:k%d f%X %.3f/%.3f t%d", F<uint32_t>(r, 0x184), F<int>(r, 0x28), F<uint32_t>(r, 0x2C),
+                 F<float>(r, 0xB0), F<float>(r, 0xB4), F<int>(r, 0x194));
+        recs += one;
+    }
+    H->log(M, SK_INFO, "space: planets of star %08X:%s", F<uint32_t>(star, 0x70), recs.c_str());
+    std::string tr;
+    for (uint32_t i = 0; i < g.draws && i < 48; i++) {
+        char one[32];
+        snprintf(one, sizeof one, " %X:%X", g.trace[i][0], g.trace[i][1]);
+        tr += one;
+    }
+    H->log(M, SK_INFO, "space: draws of star %08X:%s", F<uint32_t>(star, 0x70), tr.c_str());
 }
 
 // tests (BUG-0123): another thread "inside GenerateRandomName" for `ms` (the hook's bookkeeping,
