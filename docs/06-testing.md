@@ -2232,3 +2232,13 @@ answered right after; a 1 s poller beside a standalone run saw no gap. Same sign
   wants a working editor checks the picture (`coop_legless_guest.editor_shown`).
 * Pitfall: `cd X && (cmd) & cmd2` backgrounds the `cd` too; cmd2 then runs in the old directory (a
   lab run of the main checkout instead of the worktree, 2026-10-30).
+## sync_lowfps: vehicles drive round their city (2026-10-30, fix/w15-civ)
+<a id="testing-sync-lowfps-round"></a>
+
+* `coop_sync.py --fps N civ` gives the vehicles a new order every sample; since BUG-0326 it is a drive
+  round the city (35 deg further on a 45 m circle), not away / back: a reversal every sample flipped
+  the host's vehicle 180 deg inside the 0.15 s window and the facing check cannot tell the direction
+  of such a turn (p90 38-87 deg with one vehicle and 16 samples). `SYNC_VERBOSE=1` prints each
+  vehicle sample's facing error and the host's turn over the window.
+* `coop_civ_ai_spawn.py` checks `removed_local=` (the guest's own vehicles it killed), not
+  `removed=` (also the mirrors of host vehicles that went away meanwhile, BUG-0327).
