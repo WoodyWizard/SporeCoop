@@ -70,6 +70,19 @@ def editor_ui(con):
     return tree.count('Window') > 15
 
 
+def editor_shown(con, name='legless_editor_probe.png'):
+    """the editor's windows exist AND it draws (BUG-0318: at 2-7 fps an editor kept a black screen for
+    many seconds after its windows existed; clicks then were lost and the test called it stuck)"""
+    if not editor_ui(con):
+        return False
+    try:
+        from PIL import Image, ImageStat
+        img = Image.open(shot(con, name)).convert('L')
+        return ImageStat.Stat(img).mean[0] > 25
+    except (OSError, ImportError):
+        return True
+
+
 def add_legs(con):
     """drag the first leg of the palette onto the creature (the editor mirrors it)"""
     con.call('move 275 300')
@@ -152,7 +165,7 @@ def main():
     own = wait(lambda: 'Editor' in mode(guest), 120)
     ck(own, "the guest's own editor opens after the vote")
     if own:
-        ui = wait(lambda: editor_ui(guest), 40)
+        ui = wait(lambda: editor_shown(guest), 120, 2)
         ck(ui, "the guest's own editor shows its interface")
         time.sleep(3)
         shot(guest, f'legless_guest_editor_{how}.png')
@@ -230,7 +243,7 @@ def main():
     opened = wait(lambda: 'Editor' in mode(guest), 60)
     ck(opened, "the guest's next own editor opens")
     if opened:
-        wait(lambda: editor_ui(guest), 40)
+        ck(wait(lambda: editor_shown(guest), 120, 2), "the guest's next own editor draws (BUG-0318)")
         time.sleep(3)
         add_part(guest)
         shot(guest, f'legless_guest_next_editor_{how}.png')
