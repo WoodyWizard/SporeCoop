@@ -249,6 +249,8 @@ static bool key_exists(const Key& k)
     return rm && vcall<void*>(rm, 0x30 / 4, (const uint32_t*)key, real, (void*)nullptr) != nullptr;
 }
 
+bool key_known(const Key& k) { return key_exists(k); }
+
 static Key avatar_species_key()
 {
     void* av = game::mode_id() == modes::kCreature ? game::avatar() : nullptr;

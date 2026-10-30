@@ -16,6 +16,7 @@
 #include "spacecoop.h"
 #include "sporekit_game.hpp"
 #include "fixes.h"
+#include "creations.h"
 
 using skg::thiscall;
 using skg::vcall;
@@ -102,6 +103,10 @@ COOP_FIX("fleet.chunk", "BUG-0037", g_chunk_fix, "space: the mirror removal pass
 // `coop.fleet keepposse 0` restores the old loop that destroyed it (tests).
 static bool g_keep_posse = true;
 COOP_FIX("fleet.posse", "BUG-0084", g_keep_posse, "space: the guest's own escort is not destroyed as a host mirror (coop.fleet keepposse)");
+static bool g_model_fix = true;
+COOP_FIX("fleet.model_check", "BUG-0323", g_model_fix, "space: a host ship whose model the guest lacks is mirrored with the default model");
+static uint32_t g_unknown_models;
+static std::unordered_set<uint32_t> g_unknown_logged;
 static uint32_t g_stale_chunks, g_partial_cycles, g_posse_kept;
 static bool g_applying;
 static uint32_t g_created, g_removed, g_hits_sent, g_damage_in, g_local_removed, g_mirror_hits;
@@ -371,7 +376,20 @@ static void guest_state(net::Reader& r)
             m.u = nullptr;
         }
         if (!m.u) {
-            void* u = skg::cdecl_call<void*>(a_SpawnUFO, type, &pol, (void*)key);
+            // BUG-0323: the host's NPC ships carry its model keys (cGameDataUFO +0x780). An NPC
+            // empire's ships are creations of the host's Sporepedia cache (Pollination.package),
+            // which differs between profiles: a key the guest's game does not have gave a ship
+            // without a model, and the game faulted at 0xE98DD0 (null model in the ship gfx's
+            // SetVisible) when the mirror came up. Such a mirror takes the game's default model.
+            // `coop.fix fleet.model_check off`: the old spawn with any key.
+            bool known = !(key[0] | key[1] | key[2]) || creations::key_known({key[0], key[1], key[2]});
+            if (!known) {
+                g_unknown_models++;
+                if (g_unknown_logged.insert(key[0]).second)
+                    H->log(M, SK_INFO, "space: host ship model %08X/%08X/%08X is not in this game%s", key[0], key[1],
+                           key[2], g_model_fix ? ": the mirror takes the default model" : "");
+            }
+            void* u = skg::cdecl_call<void*>(a_SpawnUFO, type, &pol, known || !g_model_fix ? (void*)key : nullptr);
             if (!u)
                 continue;
             m.u = u;
@@ -553,10 +571,10 @@ std::string status()
         snprintf(b, sizeof b,
                  "space(guest): mirrors=%u created=%u removed=%u local_removed=%u hits_sent=%u damage_in=%u "
                  "freed_by_game=%u puppet_shots_blocked=%u mirror_hits=%u att_dropped=%u att_freed=%u stale_chunks=%u "
-                 "partial_cycles=%u posse_kept=%u\n",
+                 "partial_cycles=%u posse_kept=%u unknown_models=%u\n",
                  (unsigned)g_mirrors.size(), g_created, g_removed, g_local_removed, g_hits_sent, g_damage_in,
                  game::g_ufos_freed, g_puppet_shots, g_mirror_hits, g_att_dropped, g_att_freed, g_stale_chunks,
-                 g_partial_cycles, g_posse_kept);
+                 g_partial_cycles, g_posse_kept, g_unknown_models);
     return b;
 }
 
