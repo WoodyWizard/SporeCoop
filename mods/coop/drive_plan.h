@@ -9,6 +9,9 @@ struct Track {
     double far_since = 0;   // BUG-0169: the puppet is more than kFar off and gets no closer
     float far_best = 0;
     double far_quiet_until = 0; // after such a teleport: not again for a while (a spot it cannot stand on)
+    double trail_since = 0;     // BUG-0305: the puppet is more than kTrail off and gets no closer
+    float trail_best = 0;
+    double trail_quiet_until = 0;
 };
 
 struct Plan {
@@ -16,18 +19,36 @@ struct Plan {
     bool walk = false;  // walk with the game's locomotion
     bool stuck = false; // teleport: the remote stands still, the puppet could not reach it
     bool stall = false; // teleport: far off for seconds whatever the remote's speed (BUG-0169)
+    bool trail = false; // teleport: trailing more than kTrail for half a second (BUG-0305)
 };
 
 constexpr float kFar = 2.5f;     // m
 constexpr double kFarHold = 3.0; // s without getting 0.5 m closer
 constexpr double kFarQuiet = 10.0;
+// BUG-0305: an NPC proxy pushed off its path by the proxies next to it (a herd that flees together
+// in a Tribe hunt) walks at most at the animal's own speed: it trailed 2-4 m for the whole dash
+constexpr float kTrail = 1.5f;     // m
+constexpr double kTrailHold = 0.5; // s without getting kTrailGain closer
+constexpr float kTrailGain = 0.3f; // m
+constexpr double kTrailQuiet = 1.0;
 
 // err: puppet to target (m), sp: the remote's speed (m/s), snap: teleport distance.
 // stall_fix off: the code before BUG-0169 (a remote that reports a speed, e.g. an NPC pushing
 // against a rock, keeps the puppet walking to a spot it cannot reach, for as long as it pushes)
-inline Plan plan(Track& t, float err, float sp, double now, float snap, bool stall_fix = true)
+inline Plan plan(Track& t, float err, float sp, double now, float snap, bool stall_fix = true, bool trail_fix = false)
 {
     Plan p;
+    // trail: checked first, independent of the stall rule below
+    if (!trail_fix || err > snap || err <= kTrail || now < t.trail_quiet_until)
+        t.trail_since = 0;
+    else if (t.trail_since == 0 || err < t.trail_best - kTrailGain) {
+        t.trail_since = now;
+        t.trail_best = err;
+    } else if (now - t.trail_since > kTrailHold) {
+        p.trail = true;
+        t.trail_since = 0;
+        t.trail_quiet_until = now + kTrailQuiet;
+    }
     if (err > snap)
         p.snap = true;
     else if (sp > 0.3f || err > 0.8f)

@@ -3092,7 +3092,16 @@ int c_share(void*, int argc, const char* const* argv, SkOut* out)
 int c_npc(void*, int argc, const char* const* argv, SkOut* out)
 {
     if (argc > 1 && !strcmp(argv[1], "list")) {
-        SAY("%s%s", npc::status().c_str(), npc::list().c_str());
+        SAY("%s", npc::status().c_str());
+        // out_printf keeps 8 KB per call: a guest's list with 40 proxies is longer (BUG-0305)
+        std::string l = npc::list();
+        for (size_t at = 0; at < l.size();) {
+            size_t end = at + 6000 < l.size() ? l.rfind('\n', at + 6000) : l.size() - 1;
+            if (end == std::string::npos || end < at)
+                end = std::min(l.size(), at + 6000) - 1;
+            SAY("%s", l.substr(at, end + 1 - at).c_str());
+            at = end + 1;
+        }
         return 0;
     }
     if (argc > 1 && !strcmp(argv[1], "marker")) { // tests (BUG-0280): pin the Tribe / Civ pointer (x y z | off)
@@ -3106,6 +3115,12 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
     }
     if (argc > 1 && !strcmp(argv[1], "herdnulls")) { // tests (BUG-0256)
         SAY("%s", game::herd_nulls_status().c_str());
+        return 0;
+    }
+    if (argc > 5 && !strcmp(argv[1], "dash")) { // host (tests, BUG-0305): dash <id> <m> <m/s> <s> [w] [mate id] [m beside]
+        SAY("%s", npc::debug_dash((uint16_t)atoi(argv[2]), (float)atof(argv[3]), (float)atof(argv[4]), (float)atof(argv[5]),
+                                  argc > 6 ? (float)atof(argv[6]) : 0.f, argc > 7 ? (uint16_t)atoi(argv[7]) : 0,
+                                  argc > 8 ? (float)atof(argv[8]) : 0.f).c_str());
         return 0;
     }
     if (argc > 1 && !strcmp(argv[1], "herds")) {

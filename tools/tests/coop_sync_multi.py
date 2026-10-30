@@ -31,6 +31,28 @@ def fps(con):
     return float(m.group(1)) if m else 0.0
 
 
+PROBE = 1.5  # m: an NPC this far off on a guest: `coop.npc list` of it on every machine (BUG-0305)
+
+
+def probe_npc(host, guests, key, times=5, gap=0.3):
+    """the line of NPC `key` (n<id>) in `coop.npc list` of the host and of every guest, `times` times
+    `gap` s apart: the host's speed, each proxy's err / target / own speed / teleports (BUG-0305)"""
+    pat = re.compile(rf'^\s*#{key[1:]}\s.*$', re.M)
+    lines = []
+    for k in range(times):
+        for n, con in [('Alice', host), *guests.items()]:
+            m = pat.search(con.call('coop.npc list')['out'])
+            sm = cm.sample(con)
+            near = ''
+            if key in sm:  # what stands next to it on this machine: tribe members, other animals
+                me = sm[key]
+                d = sorted((sum((a - b) ** 2 for a, b in zip(me, v)) ** 0.5, o) for o, v in sm.items() if o != key)
+                near = ' near ' + ' '.join(f'{o}:{x:.1f}' for x, o in d[:4] if x < 6)
+            lines.append(f't{k} {n}: ' + (m.group(0).strip() if m else '-') + near)
+        time.sleep(gap)
+    return lines
+
+
 def bots(fixture, insts, stop):
     """the stage's play bot on every machine, each in a thread with its own console"""
     def run(fn):
@@ -112,10 +134,16 @@ def main():
                     s['p90'].append(cm.pct(v, 0.9))
                     s['over'] += cm.over_limit(v, cm.limit(kind))
                     s['fps'].append(f)
+                probe = None
+                w = worst.get('n')
+                if w and w[0] > PROBE:
+                    probe = probe_npc(host, guests, w[1])
+                    for line in probe:
+                        print(f'  r{r} {name} {w[1]} {w[0]:.2f} m |', line, flush=True)
                 if out:
                     out.write(json.dumps({'r': r, 'g': name, 'fps': f, 'cov': cov, 'total': total,
                                           'e': {k: [round(x, 3) for x in v] for k, v in errs.items()},
-                                          'worst': worst}) + '\n')
+                                          'worst': worst, 'probe': probe}) + '\n')
                     out.flush()
     finally:
         stop.append(1)

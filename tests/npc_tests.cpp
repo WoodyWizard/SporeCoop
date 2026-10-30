@@ -191,6 +191,30 @@ static void test_drive()
     for (int f = 0; f < 60 && !stuck; f++)
         stuck = drive::plan(s, 2.f, 0.f, 1 + f / 30.0, 8.f, true).stuck;
     CHECK(stuck);
+    // BUG-0305: a proxy pushed 3 m off the path of a running animal by the proxy beside it (runs at
+    // the animal's speed, never closes in): put in place after 0.5 s with the fix, never without
+    auto trailing = [](bool fix) {
+        drive::Track t;
+        int tps = 0;
+        float err = 3.f;
+        for (int f = 0; f < 3 * 30; f++) {
+            drive::Plan p = drive::plan(t, err, 6.5f, 1 + f / 30.0, 8.f, true, fix);
+            if (p.snap || p.stuck || p.stall || p.trail) {
+                tps++;
+                err = 3.f; // pushed off again at once
+            }
+        }
+        return tps;
+    };
+    CHECK(trailing(false) == 0);
+    int tr = trailing(true);
+    CHECK(tr >= 2 && tr <= 3); // 0.5 s, then 1 s quiet each time
+    // a proxy that closes in is left walking
+    drive::Track u;
+    int closing = 0;
+    for (int f = 0; f < 60; f++)
+        closing += drive::plan(u, 3.f - f * 0.05f, 6.5f, 1 + f / 30.0, 8.f, true, true).trail;
+    CHECK(closing == 0);
 }
 
 // BUG-0217 / BUG-0223: the stage counters and a module's watch (stage_epoch.h)

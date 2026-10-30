@@ -146,6 +146,15 @@ public:
         return snaps_.empty() ? 1e9 : local_now - (snaps_.back().t + offset_);
     }
 
+    // diagnostics: snapshots of the last `span` seconds of sender time before the newest one
+    int received_in(double span) const
+    {
+        int n = 0;
+        for (auto it = snaps_.rbegin(); it != snaps_.rend() && snaps_.back().t - it->t < span; ++it)
+            n++;
+        return n;
+    }
+
     // Interpolated state at (now - delay) in sender time.
     bool sample(double local_now, PlayerState& out) const
     {

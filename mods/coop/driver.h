@@ -18,7 +18,7 @@ struct State {
     // diagnostics (coop.status): did the last frame's nudge stay where we put it?
     net::Vec3 nudged_to;
     bool nudged = false;
-    uint32_t nudges = 0, nudges_kept = 0, teleports = 0, stalls = 0;
+    uint32_t nudges = 0, nudges_kept = 0, teleports = 0, stalls = 0, trails = 0;
     float last_err = 0, last_speed = 0;
 };
 
@@ -31,8 +31,10 @@ inline float speed(const net::Vec3& v) { return std::sqrt(v.x * v.x + v.y * v.y 
 // snap: teleport when the puppet is this far from where it should be
 // stall: also teleport when it stays more than 2.5 m off for 3 s whatever the remote's speed (NPC
 // proxies, BUG-0169: an NPC of the host pushing against a rock reports a speed while it stands)
+// trail: also teleport when it stays more than 1.5 m off for 0.5 s (NPC proxies, BUG-0305: proxies of
+// a herd that flees together push each other off the path and cannot run faster than the animal)
 inline void step(void* p, const net::Vec3& pos_in, const net::Quat& rot, const net::Vec3& vel, State& ds, double now,
-                 double age = 0, bool nudge = false, float snap = 8.f, bool stall = false)
+                 double age = 0, bool nudge = false, float snap = 8.f, bool stall = false, bool trail = false)
 {
     float a = (float)std::min(std::max(age, 0.0), 0.5);
     net::Vec3 pos{pos_in.x + vel.x * a, pos_in.y + vel.y * a, pos_in.z + vel.z * a};
@@ -44,7 +46,7 @@ inline void step(void* p, const net::Vec3& pos_in, const net::Quat& rot, const n
     float sp = speed(vel);
     ds.last_err = err;
     ds.last_speed = speed(game::velocity(p));
-    Plan pl = plan(ds.track, err, sp, now, snap, stall);
+    Plan pl = plan(ds.track, err, sp, now, snap, stall, trail);
     if (pl.snap) {
         game::teleport(p, pos, rot);
         ds.teleports++;
@@ -73,10 +75,11 @@ inline void step(void* p, const net::Vec3& pos_in, const net::Quat& rot, const n
     }
     // the remote stands still but the puppet could not reach it (rocks, other creatures), or it
     // stays far off and gets no closer (stall)
-    if (pl.stuck || pl.stall) {
+    if (pl.stuck || pl.stall || pl.trail) {
         game::teleport(p, pos, rot);
         ds.teleports++;
         ds.stalls += pl.stall;
+        ds.trails += pl.trail;
     }
 }
 

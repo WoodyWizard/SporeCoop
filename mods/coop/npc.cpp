@@ -53,6 +53,10 @@ struct HostNpc {
     double last_seen;
     uint32_t species = 0; // what the object was when it got the id (BUG-0044)
     bool dead = false;
+    uint64_t seen_bits = 0; // diagnostics: bit i = updated by the game i frames ago (coop.npc list)
+    uint64_t vel_bits = 0;  // diagnostics: bit i = the game's velocity over 0.3 m/s i frames ago
+    net::Vec3 pos_hist[64] = {}; // diagnostics: the position of the last 64 frames (ring)
+    uint8_t hist_at = 0;
 };
 static std::unordered_map<void*, HostNpc> g_host_npcs;  // creature -> id
 static std::unordered_map<uint16_t, void*> g_host_by_id;
@@ -69,6 +73,12 @@ static bool g_stall_fix = true;
 COOP_FIX("npc.reuse", "BUG-0044", g_reuse_fix, "creature: a reused creature object gets a new NPC id");
 COOP_FIX("npc.id", "BUG-0023", g_id_fix, "creature: NPC ids never wrap over ids in use");
 COOP_FIX("npc.stall", "BUG-0169", g_stall_fix, "creature: a proxy 2.5 m off for 3 s is put in place");
+// BUG-0305: proxies of animals that run side by side (a herd fleeing a Tribe hunt) push each other off
+// the path on a guest and cannot run faster than the animal: one trailed 2-4 m behind the host's on
+// every guest at once. A proxy more than 1.5 m off for 0.5 s without closing in is put in place.
+// `coop.fix npc.trail off`: the driving before (0.7.3.x).
+static bool g_trail_fix = true;
+COOP_FIX("npc.trail", "BUG-0305", g_trail_fix, "creature, tribe: a proxy 1.5 m off its path for 0.5 s is put in place");
 // 0.7.2.x fixes kept for the tests (off: the code before them)
 static bool g_stale_fix = true, g_world_despawn_fix = true, g_death_fix = true;
 COOP_FIX("npc.stale_proxy", "BUG-0009", g_stale_fix, "creature: a guest drops a proxy the host stopped sending states for");
@@ -296,6 +306,96 @@ static void retire_pooled()
     }
 }
 
+// tests (BUG-0305): `coop.npc dash <id> <m> <m/s> <s> [w]` runs host NPC #id back and forth along
+// a zigzag on the ground (4 legs over <m>, <w> m to either side, at <m/s>, 0.6 s standing at each
+// end) for <s> seconds, like a wounded animal of a Tribe hunt. Position and velocity are written
+// after the game's update of the frame.
+struct Dash {
+    uint16_t id = 0;
+    net::Vec3 a, dir, side;
+    float len = 0, speed = 0, width = 0;
+    double t0 = 0, until = 0;
+    uint16_t mate = 0; // a second NPC on the same path, `off` m to the side (a herd that flees together)
+    float off = 0;
+};
+static Dash g_dash;
+static net::Vec3 dash_point(int k) // corner k (0..4) of the zigzag
+{
+    float fw = g_dash.len * k / 4.f, sw = (k == 0 || k == 4) ? 0.f : (k & 1 ? g_dash.width : -g_dash.width);
+    return {g_dash.a.x + g_dash.dir.x * fw + g_dash.side.x * sw, g_dash.a.y + g_dash.dir.y * fw + g_dash.side.y * sw,
+            g_dash.a.z + g_dash.dir.z * fw + g_dash.side.z * sw};
+}
+static void dash_tick(double now)
+{
+    if (!g_dash.id || now > g_dash.until) {
+        g_dash.id = 0;
+        return;
+    }
+    float leg[4], total = 0;
+    for (int k = 0; k < 4; k++)
+        total += leg[k] = net::dist(dash_point(k), dash_point(k + 1));
+    double run = total / g_dash.speed, cycle = 2 * (run + 0.6);
+    double t = std::fmod(now - g_dash.t0, cycle);
+    float d; // metres along the path from corner 0
+    bool moving = true;
+    if (t < run)
+        d = (float)(t * g_dash.speed);
+    else if (t < run + 0.6) {
+        d = total;
+        moving = false;
+    } else if (t < 2 * run + 0.6)
+        d = total - (float)((t - run - 0.6) * g_dash.speed);
+    else {
+        d = 0;
+        moving = false;
+    }
+    bool back = t >= run + 0.6;
+    int k = 0;
+    while (k < 3 && d > leg[k]) {
+        d -= leg[k];
+        k++;
+    }
+    net::Vec3 p0 = dash_point(k), p1 = dash_point(k + 1);
+    float f = leg[k] > 0 ? std::min(d / leg[k], 1.f) : 0.f;
+    net::Vec3 q{p0.x + (p1.x - p0.x) * f, p0.y + (p1.y - p0.y) * f, p0.z + (p1.z - p0.z) * f};
+    net::Vec3 v{};
+    if (moving && leg[k] > 0) {
+        float sc = g_dash.speed / leg[k] * (back ? -1.f : 1.f);
+        v = {(p1.x - p0.x) * sc, (p1.y - p0.y) * sc, (p1.z - p0.z) * sc};
+    }
+    for (int m = 0; m < 2; m++) {
+        auto it = g_host_by_id.find(m ? g_dash.mate : g_dash.id);
+        if ((m && !g_dash.mate) || it == g_host_by_id.end() || !g_seen_now.count(it->second))
+            continue;
+        void* c = it->second;
+        float o = m ? g_dash.off : 0.f;
+        net::Vec3 w{q.x + g_dash.side.x * o, q.y + g_dash.side.y * o, q.z + g_dash.side.z * o};
+        float r = std::sqrt(w.x * w.x + w.y * w.y + w.z * w.z), gr = game::ground_radius(w);
+        if (r > 1 && gr > 1)
+            w = {w.x / r * gr, w.y / r * gr, w.z / r * gr};
+        game::set_position(c, w);
+        *(net::Vec3*)((uint8_t*)c + game::kVelOff) = v;
+    }
+}
+std::string debug_dash(uint16_t id, float len, float speed, float secs, float width, uint16_t mate, float off)
+{
+    void* c = host_npc(id);
+    if (!is_host() || !c || len <= 0 || speed <= 0)
+        return "no such host npc";
+    net::Vec3 p = game::position(c);
+    float r = std::sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
+    net::Vec3 up = r > 1 ? net::Vec3{p.x / r, p.y / r, p.z / r} : net::Vec3{0, 0, 1};
+    net::Vec3 a = std::fabs(up.x) < 0.9f ? net::Vec3{0, -up.z, up.y} : net::Vec3{-up.z, 0, up.x};
+    float al = std::sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
+    a = {a.x / al, a.y / al, a.z / al};
+    net::Vec3 b{up.y * a.z - up.z * a.y, up.z * a.x - up.x * a.z, up.x * a.y - up.y * a.x}; // up x a
+    g_dash = {id, p, a, b, len, speed, width, H->time_seconds(), H->time_seconds() + secs, host_npc(mate) ? mate : (uint16_t)0, off};
+    char t[192];
+    snprintf(t, sizeof t, "npc %u dashes %.1f m (zigzag %.1f m) at %.1f m/s for %.0f s from (%.1f %.1f %.1f), mate %u %.1f m beside", id,
+             len, width, speed, secs, p.x, p.y, p.z, g_dash.mate, off);
+    return t;
+}
+
 static void host_tick(double now, const std::vector<void*>& creatures)
 {
     void* av = game::avatar();
@@ -317,6 +417,8 @@ static void host_tick(double now, const std::vector<void*>& creatures)
         g_frozen_since = 0;
     }
     g_seen_now.clear();
+    for (auto& [c, hn] : g_host_npcs)
+        hn.seen_bits <<= 1;
     for (void* c : creatures) {
         if (c == av || game::is_puppet(c) || game::is_destroyed(c))
             continue;
@@ -343,6 +445,13 @@ static void host_tick(double now, const std::vector<void*>& creatures)
             it->second.last_seen = now;
             it->second.dead = dead;
         }
+        {
+            HostNpc& hn = g_host_npcs[c];
+            hn.seen_bits |= 1;
+            hn.vel_bits = (hn.vel_bits << 1) | (drive::speed(game::velocity(c)) > 0.3f ? 1u : 0u);
+            hn.hist_at = (uint8_t)((hn.hist_at + 1) & 63);
+            hn.pos_hist[hn.hist_at] = game::position(c);
+        }
         g_seen_now.insert(c);
     }
     // creatures the game took out of the world (BUG-0274): the creature stage keeps NPCs only around
@@ -352,6 +461,7 @@ static void host_tick(double now, const std::vector<void*>& creatures)
     // host's object at the planet's centre in the census) and got it again with the next respawn.
     if (g_pool_fix && g_seen_now.size() < g_host_npcs.size())
         retire_pooled();
+    dash_tick(now);
     // forget creatures that stopped updating (destroyed / unloaded)
     for (auto it = g_host_npcs.begin(); it != g_host_npcs.end();) {
         if (now - it->second.last_seen > 2.0) {
@@ -579,7 +689,7 @@ static void guest_tick(double now)
             game::teleport(px.c, s.pos, s.rot);
         }
         if (!px.killed)
-            drive::step(px.c, s.pos, s.rot, s.vel, px.drv, now, 0, true, 8.f, g_stall_fix);
+            drive::step(px.c, s.pos, s.rot, s.vel, px.drv, now, 0, true, 8.f, g_stall_fix, g_trail_fix);
         else { // a corpse lies where the host has it: the guest's dead proxy shot off into the sky
                // (~2.5 km/s away from the planet; driven, it stayed ~80 m up: play_tribe.py)
             *(net::Vec3*)((uint8_t*)px.c + game::kVelOff) = {0, 0, 0};
@@ -1053,7 +1163,7 @@ static uint32_t body_print(void* c)
 std::string list()
 {
     std::string out;
-    char b[200];
+    char b[640];
     void* av = game::avatar();
     net::Vec3 ap = av ? game::position(av) : net::Vec3{};
     if (is_host()) {
@@ -1066,10 +1176,12 @@ std::string list()
             }
             net::Vec3 p = game::position(c);
             // " DEAD" right after dist: tests match "dist=N( DEAD)?"
-            snprintf(b, sizeof b, "  #%u %p species=%08X hp=%.2f dist=%.1f%s pos=(%.1f %.1f %.1f)%s%s body=%08X\n", hn.id,
+            snprintf(b, sizeof b, "  #%u %p species=%08X hp=%.2f dist=%.1f%s pos=(%.1f %.1f %.1f) spd=%.1f vel=(%.1f %.1f %.1f) upd=%d/64 velfr=%d/64 moved64=%.1f%s%s body=%08X\n", hn.id,
                      c, game::species_key(c).instance, game::health(c), net::dist(p, ap), game::is_dead(c) ? " DEAD" : "",
-                     p.x, p.y, p.z, game::pack_member(c) ? " pack" : "", g_ai_target.count(c) ? " on_partner" : "",
-                     body_print(c));
+                     p.x, p.y, p.z, drive::speed(game::velocity(c)), game::velocity(c).x, game::velocity(c).y, game::velocity(c).z,
+                     __builtin_popcountll(hn.seen_bits), __builtin_popcountll(hn.vel_bits),
+                     net::dist(hn.pos_hist[hn.hist_at], hn.pos_hist[(hn.hist_at + 1) & 63]), game::pack_member(c) ? " pack" : "",
+                     g_ai_target.count(c) ? " on_partner" : "", body_print(c));
             out += b;
         }
     } else {
@@ -1083,10 +1195,14 @@ std::string list()
             net::PlayerState st;
             bool have = px.buf.sample(now, st);
             float err = px.c && have ? net::dist(game::position(px.c), st.pos) : -1.f;
-            snprintf(b, sizeof b, "  #%u species=%08X %s hp=%.2f dist=%.1f err=%.2f age=%.2f%s want=(%.1f %.1f %.1f) puppet=%d ptr=%p herd=%p body=%08X\n",
+            net::Vec3 at = px.c ? game::position(px.c) : net::Vec3{};
+            snprintf(b, sizeof b, "  #%u species=%08X %s hp=%.2f dist=%.1f err=%.2f age=%.2f%s want=(%.1f %.1f %.1f) at=(%.1f %.1f %.1f) "
+                     "rx=%d/s spd=%.1f vel=(%.1f %.1f %.1f) own=%.1f tp=%u stall=%u trail=%u nudge=%u/%u puppet=%d ptr=%p herd=%p body=%08X\n",
                      id, px.key.instance, px.c ? "spawned" : "pending", px.c ? game::health(px.c) : 0.f,
-                     px.c ? net::dist(game::position(px.c), ap) : -1.f, err, px.buf.age(now),
-                     px.killed ? " DEAD" : "", st.pos.x, st.pos.y, st.pos.z, px.c ? (int)game::is_puppet(px.c) : -1, px.c, px.c ? game::herd_of(px.c) : nullptr, body_print(px.c));
+                     px.c ? net::dist(at, ap) : -1.f, err, px.buf.age(now),
+                     px.killed ? " DEAD" : "", st.pos.x, st.pos.y, st.pos.z, at.x, at.y, at.z, px.buf.received_in(1.0), drive::speed(st.vel), st.vel.x, st.vel.y, st.vel.z,
+                     px.c ? drive::speed(game::velocity(px.c)) : 0.f, px.drv.teleports, px.drv.stalls, px.drv.trails, px.drv.nudges_kept,
+                     px.drv.nudges, px.c ? (int)game::is_puppet(px.c) : -1, px.c, px.c ? game::herd_of(px.c) : nullptr, body_print(px.c));
             out += b;
         }
     }
