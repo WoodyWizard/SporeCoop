@@ -237,6 +237,10 @@ struct VelocityEstimate {
     // 0 = only the 200-unit jump. `capped` counts the steps taken as a jump this way.
     float max_speed = 0;
     unsigned capped = 0;
+    // BUG-0186: how far ahead of its last snapshot at() moves the object (s). A gap in the states is
+    // mostly a hitch of the sender, whose objects stand still meanwhile: a fast Civ air vehicle (25 u/s)
+    // was put 10 m past where the host had it 0.4 s after its last state. 0.4 = the old limit.
+    double max_ahead = 0.4;
     bool too_fast(const Vec3& v)
     {
         if (max_speed <= 0 || v.x * v.x + v.y * v.y + v.z * v.z <= max_speed * max_speed)
@@ -282,7 +286,7 @@ struct VelocityEstimate {
     // latency: the one-way delay before the snapshot arrived
     Vec3 at(double now, double latency = 0.03) const
     {
-        float a = (float)std::min(std::max(now - t + latency, 0.0), 0.4);
+        float a = (float)std::min(std::max(now - t + latency, 0.0), max_ahead);
         return {pos.x + vel.x * a, pos.y + vel.y * a, pos.z + vel.z * a};
     }
 };

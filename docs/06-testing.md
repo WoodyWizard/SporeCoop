@@ -2188,3 +2188,28 @@ answered right after; a 1 s poller beside a standalone run saw no gap. Same sign
 * A new test file is only known to the lab of its own tree: run `python3 tools/lab.py` of the
   worktree (`../SporeCoop-wt/<branch>/tools/lab.py run <test> --branch <branch>`), the main
   checkout's lab.py reads main's suite.py ("unknown test").
+## A mirrored vehicle thrown off its place by the guest's game: civ_mirror_place (2026-10-30, fix/w14-tribe-civ)
+<a id="testing-civ-mirror-place"></a>
+
+* `SPORE_LANE=N python3 tools/tests/coop_civ_mirror_place.py [--nofix] [--seconds 40]` (suite
+  `civ_mirror_place`, ~2 min, civ_npc): no command; the fixture's NPC vehicle #2 claims the spice
+  node near (-336, 132, 354) by itself. Every 0.5 s every mirrored NPC vehicle's position on the
+  guest's game is compared with the host's. PASS: all within 4 m and the vehicle at the node seen.
+  `--nofix` (`coop.fix civ.mirror_place off`): about 13 m (BUG-0186).
+* `coop.civ pushprobe` (guest, tests): points the vehicles' spatial SetPosition / Teleport slots at a
+  logger: every move of a mirror over 2 m by the game is logged with its return address.
+* `coop.civ` on the guest: `mirror_place_skipped=N`, `founds_outside=N` (city foundings received
+  outside the Civ mode, BUG-0319); per mirror `vel= top= jumps=`.
+## tribe_npc_dash under load, civ_ruin_repair (2026-10-30, fix/w14-tribe-civ)
+<a id="testing-dash-fresh-states"></a>
+
+* `coop_tribe_npc_dash.py` (BUG-0321): the p90 is taken over the samples whose proxy state was fresh
+  on the guest (`coop.npc list`: `age=` at most 0.25 s and `rx=` at least 7 states a second); the
+  p90 of all samples and the median frame rates of both games are printed. With fewer than 40
+  fresh samples the run prints `RESULT: SKIP` (inconclusive: the machine was too loaded to measure
+  the driving). On a lane with the rest of the machine busy the fix-on p90 spread 0.33-1.33 m over
+  30 runs (limit 1.2 m); the failing samples had states 0.3-0.5 s old or 4-6 a second.
+* `coop_civ_ruin_repair.py [--nofix]` (suite `civ_ruin_repair`, ~2 min, civ_npc): the guest's game
+  alone ruins one building of an NPC city (`coop.civ ruinlocal <city>`, tests); within 10 s the
+  guest must have the host's ruins and buildings again. `--nofix` (`coop.fix civ.ruin_repair off`):
+  the ruin stays (BUG-0324).
