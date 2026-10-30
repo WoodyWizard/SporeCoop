@@ -118,6 +118,7 @@ add('host_away_kill', P + 'coop_host_away_kill.py', minutes=4)  # BUG-0082: the 
 add('npc_reuse', P + 'coop_npc_reuse.py', minutes=3)  # BUG-0044 / BUG-0023: a reused NPC object gets a new id (the guest's mirror is alive), ids never repeat
 add('cinematic_puppet', P + 'coop_cinematic_puppet.py', minutes=3)  # BUG-0066: a puppet removed during a cinematic stays a puppet (no host NPC id)
 add('npc_pooled', P + 'coop_npc_pooled.py', minutes=3)  # BUG-0274: no guest proxy of an NPC the host's game put back into its pool
+add('npc_far', P + 'coop_npc_far.py', minutes=4)  # BUG-0280: a guest 300 m from the host keeps the NPCs around it, no nest member flickers (SPORE_FIX_OFF=npc.view_centres fails)
 add('npc_swap', P + 'coop_npc_swap.py', minutes=3)  # BUG-0110: an NPC tick that does not return leaves no puppet as the game's avatar
 add('world_reload', P + 'coop_world_reload.py', minutes=6)  # BUG-0119: after a reload the guest plays its own creature again although the avatar's address came back (--without-fix fails)
 add('leave_avatar', P + 'coop_leave_avatar.py', minutes=7)  # BUG-0264: a guest leaving the Creature stage for a shared world never uses the avatar the game tears down (SPORE_FIX_OFF=world.leave_avatar fails)
