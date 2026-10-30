@@ -1039,11 +1039,17 @@ static bool partner_core(const uint32_t* t)
 }
 // a partner's tile waits: above kPopCap cells unless it is on the partner's screen, above
 // kPopCapScreen always (the partner's own screen keeps food while the host's pool is busy)
+// The cells of a populated tile show up in the pool's live count only over the next frames, so
+// several tiles in one frame overshot the caps (host peaks 1714-1722 with 1250 / 1500, labs
+// 20261030-053258, -062717): from kPopCap - 250 on, at most 2 partner tiles per frame.
+static int g_frame_tiles;
 static bool starve_tile(const uint32_t* t)
 {
     if (!g_fix_budget)
         return false;
     uint32_t live = cells_live();
+    if (live >= kPopCap - 250 && g_frame_tiles >= 2)
+        return true;
     if (live < kPopCap)
         return false;
     if (live < kPopCapScreen && partner_core(t)) {
@@ -1076,8 +1082,10 @@ static void SK_CDECL h_PopTile(uint32_t* t, int all)
             g_starved[t[0]] = (uint8_t)g_views.list()[(size_t)g_pass].player;
             return;
         }
-        if (g_pass > 0)
+        if (g_pass > 0) {
             g_tiles_partner++;
+            g_frame_tiles++;
+        }
     } else if (t && !g_shadow_tiles.empty() && g_shadow_tiles.count(t[0]))
         return; // RemoveCellsOfOldScale repopulates every tile object: not the shared ones twice
     o_PopTile(t, all);
@@ -1322,7 +1330,7 @@ static void feed_starved()
             continue;
         }
         uint32_t live = cells_live();
-        if (live >= kPopCapScreen)
+        if (live >= kPopCapScreen || (live >= kPopCap - 250 && g_frame_tiles >= 2))
             break;
         uint32_t* t = (uint32_t*)(data + (size_t)(idx & 0xFFFF) * size);
         if (live >= kPopCap) { // between the caps: only a tile on its partner's screen (as starve_tile)
@@ -1351,6 +1359,7 @@ static void feed_starved()
         if (t[1] == 0) {
             o_PopTile(t, 0);
             g_tiles_fed++;
+            g_frame_tiles++;
             n++;
         }
     }
@@ -1471,6 +1480,7 @@ static void SK_CDECL h_PopTiles(int level, TileList* list, int all)
     g_freed_dbg.clear();
     g_pass = 0;
     g_pass_list = list;
+    g_frame_tiles = 0;
     o_PopTiles(level, list, all);
     tiles_check("the host's pass", level);
     if (!all && !scale_moving()) { // a rebuild (all) populates the host's view in one go, a moving
