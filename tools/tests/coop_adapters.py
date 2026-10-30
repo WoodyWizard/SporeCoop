@@ -30,7 +30,10 @@ def crashes():
 
 
 def frame(c):
-    m = re.search(r'frame=(\d+)', c.call('frame').get('out', '') or '')
+    try:
+        m = re.search(r'frame=(\d+)', c.call('frame').get('out', '') or '')
+    except OSError:  # the console is gone (the game crashed)
+        return None
     return int(m.group(1)) if m else None
 
 
@@ -76,9 +79,11 @@ def main():
         except Exception as e:  # noqa: BLE001  the game may be gone before it answers
             print('  (no answer)', type(e).__name__)
         time.sleep(6)
-    up = alive(lane.HOST)
-    ck(up, 'the game survives a fault inside the address lookup (no crash)')
     new = sorted(crashes() - before)
+    if new:  # the crash handler keeps the console up for a while: let it finish
+        time.sleep(10)
+    up = alive(lane.HOST) and not new
+    ck(up, 'the game survives a fault inside the address lookup (no crash)')
     ck(not new, f'no crash report ({[os.path.basename(p) for p in new]})')
     if up:
         f0 = frame(c)
