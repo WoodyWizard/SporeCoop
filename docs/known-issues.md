@@ -248,16 +248,16 @@ anchor so other docs can link to it:
   host's legless creature itself (0.7.3.0 pinned it in `choices.ini` after Replace, and Save New kept
   the host's key), and the co-op window's arrows lead back to "the world's own". Still open: that
   editor is the "edit a creation" one (save dialogs, a red cross), not the evolution editor the host
-  gets, and it can show the host's new parts while it is open (BUG-0283; seen once, not reproduced
-  in 3 runs of `coop_guest_editor_hold.py` on 2026-10-30).
+  gets. (BUG-0283, "it shows the host's new parts while it is open", was the test's own edit: its
+  `--guest cancel` added legs and pressed the save dialog's Cancel, BUG-0317.)
 * The guest's mating-call button needs a collected part (`S+0x69`): whether a guest touching a host's
-  part token (a mirror) sets it was not checked; the test sets it by console.
+  part token (a mirror) sets it was not checked; the test sets it by console (BUG-0316).
 * The report's Creature case ("3 rejoins did not fix it") did not reproduce as such on lane 5 with
   0.7.2.1: the guest saw the host's legged creature after the editor, also after a rejoin. Fixed
   causes that can show a stale creature: a creation sent without its records (the guest then shows
   its own body for the host), a rejoin applying the same version again (writing its package failed,
   nothing was applied).
-* Ticket: BUG-0178.
+* Ticket: BUG-0178 (closed 2026-10-30: the vote for the switch is BUG-0315, the part token check BUG-0316).
 
 ## Creature (guest): the social game is simplified
 
@@ -277,6 +277,10 @@ anchor so other docs can link to it:
   time (`local_alive` 0-1 after 30 s in `coop_exit_menu.py`). Making the mirrors local NPCs
   instead failed (a mirror with AI leaves its herd and is destroyed, docs/re/creature.md 8.3).
 * Ticket: BUG-0180.
+* Fixed (2026-10-30, fix/w13-creature, `npc.away_locals`): the guest replaces the host's NPCs it
+  showed last (in nest herds of its game) by creatures of its own game at the same places in the
+  same nest herds (docs/re/creature.md#creature-proxy-guest-side). `coop_away_refill.py`: 0 own NPCs
+  near the guest for 25 s without the fix, 11 of 11 at once with it.
 
 ## Space: no test save after the tutorial missions
 
@@ -807,6 +811,11 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Not reproduced (2026-10-30, fix/w9-creature): with 2 players a guest's avatar 0.3-3 m beside
   a standing host NPC did not push its proxy (0.1-0.6 m off); a 4-player measurement showed large
   errors only for moving NPCs in a fight (2-19 m on 1-3 guests).
+* Checked again (2026-10-30, fix/w13-creature, lane 5, docs/re/creature.md#creature-proxy-guest-side):
+  standing NPCs next to a 15 fps guest's avatar stayed within 0.5 m; two NPCs running side by side
+  at 4 m/s were p90 6.2 m off on a 15 fps guest without `npc.trail` and 3.1-3.4 m with it (Tribe
+  0.7-0.95 m): Creature proxies of that species hardly walk by themselves. Measure:
+  `SPORE_LANE=N DASH_FIXTURE=creature python3 tools/tests/coop_tribe_npc_dash.py`.
 
 ## Cell: a guest's mirrors trail the host's cells at a low frame rate (2026-10-29, fix/w7-sync)
 
@@ -980,3 +989,17 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * A guest 6 s into Cell jumped to address 0 in UI code right after its test window was moved and its
   main thread stopped, lab 20261030-104149 campaign#1. Ticket: BUG-0309.
 * Both seen once, on an overloaded machine. Reproduce: not yet.
+
+## Creature, 4 players: a guest misses one of the host's NPCs although it has the rest of its herd (2026-10-30, fix/w13-creature)
+<a id="issue-proxy-not-in-world"></a>
+
+* What happens: campaign_short (lab 20261030-060122 on fix/w10-cell-4p): for 30 s and more a guest
+  lacked one NPC 90 m from it (census and sync-check), while three members of the same herd 77-84 m
+  away were there. The guest's proxy list had it (states arriving), its world had no creature for it.
+* Reproduce: not reproduced (2-player rejoins, guest camera far from its proxies); seen once in 4-player
+  `campaign_short`.
+* Known: not a range edge; the guest's relevance pass never pools proxies (`+0xB67` = 0); since
+  fix/w13-creature the guest logs "the proxy's creature ... is no creature of this world any more"
+  or "... has no species" and makes such a proxy again (`npc.proxy_listed`).
+* Next steps: when the line shows in a campaign, follow what freed or emptied that creature.
+* Ticket: BUG-0300.

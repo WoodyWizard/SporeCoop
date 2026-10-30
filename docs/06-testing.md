@@ -2102,3 +2102,21 @@ answered right after; a 1 s poller beside a standalone run saw no gap. Same sign
 * `coop.pool` (cell_contacts line, both roles): `own_nf=` (finite -> non-finite transitions of the
   own cell seen by the probes), `shared_parts=` (own particle indices another cell holds),
   `vm_free_mb=`, `created=` / `destroyed=` (mirrors), `stale_targets=` (BUG-0306).
+
+## Creature: the host away, running proxies, fix switches and warm games (2026-10-30, fix/w13-creature)
+<a id="testing-w13-creature"></a>
+
+* `coop_away_refill.py` (suite `away_refill`, ~2 min, cold): the host leaves through its pause menu;
+  the guest's own NPCs (census `local`, AI on) within 70 m 10 s later must be at least 60 % of the
+  host's it showed there (BUG-0180; `SPORE_FIX_OFF=npc.away_locals` fails with 0).
+* `DASH_FIXTURE=creature coop_tribe_npc_dash.py`: the Tribe dash test on the creature fixture (nest
+  species 065CBE70, 4 m/s, guest at 15 fps 1.5 m beside the path's end; `DASH_GUEST=0` without
+  the guest there). A measurement for BUG-0281: it fails with and without `npc.trail` (not in a suite).
+* Pitfall (BUG-0312): `coop.fix` switches live in the game process. Until 2026-10-30 a warm test
+  reused games a `SPORE_FIX_OFF` run had left with the fix off and silently ran without it; now
+  `twoinst` marks the lane (`fix_off` in lane_state.json) and the next test starts cold. A test that
+  switches a fix off by its own command (`--without-fix`) still leaves it off for a warm successor.
+* Pitfall (BUG-0317): `coop_legless_guest.py --guest cancel` used to add legs and press the save
+  dialog's Cancel (the key `cancel` was in its dialog table); screenshots of those runs show the
+  guest's own legs and DNA spend, not the host's.
+* The guest's proxies have `+0xB67` = 0: a guest's camera far from them does not pool them (lane 4).

@@ -87,3 +87,4 @@ No new test: there is no failing case to reproduce.
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #97.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-27: checked on fix/w1-creature: 0x2 is the early-out, 0x1 the gate; the guard is right. Docs and `.sym` corrected; closed as not-reproduced.
+- 2026-10-30: fix/w13-creature: settled again statically on the GOG 2024 exe (objdump 0xB6C9C3..0xB6CA11: `test al,2; jne skip; test al,1; je skip` before `call 0xC0C300` / `[eax+0x32C]`), and the guard in coop.cpp `h_SelectUI` still hides mask 0x1 when +0xE84 is null. No contradiction left; stays not-reproduced (docs/re/creature.md#creature-proxy-guest-side).
