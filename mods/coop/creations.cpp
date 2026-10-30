@@ -216,6 +216,7 @@ static void refresh_options(double now)
 }
 
 static bool is_host() { return C.sess && C.sess->role() == net::Role::Host && C.sess->connected(); }
+static void release_held(); // BUG-0283
 
 static uint8_t* cell_S()
 {
@@ -1039,6 +1040,7 @@ void tick(double now)
 {
     if (!C.sess || !C.sess->connected())
         return;
+    release_held(); // BUG-0283
     if (adopt_after_editor(now))
         return;
     if (now - g_last_check > 2.0) {
@@ -1046,6 +1048,63 @@ void tick(double now)
         share_own(now);
     }
     apply_own_avatar();
+}
+
+// BUG-0283: a guest's own editor (the vote's, docs/re/creations.md#creations-own-editor-save)
+// edits the creature the guest plays. A creation of the host that arrived while it was open (the
+// host's new body after its evolution editor, its species packages) was registered and its species
+// profile made at once: the guest's open editor then showed the host's new parts, its DNA dropped
+// by their price without any input, and the red cross asked "Exiting will cause your changes to be
+// lost". A guest now keeps what arrives while it is in an editor and uses it when the editor is
+// closed (the world itself already waits for that: "the world of X is loaded when you leave the
+// editor"). `coop.fix creations.editor_hold off`: used at once (0.7.3.x).
+static bool g_editor_hold_fix = true;
+COOP_FIX("creations.editor_hold", "BUG-0283", g_editor_hold_fix, "creations: a guest's open editor is not changed by the host's new creations");
+struct Held {
+    uint8_t owner, kind;
+    uint32_t id;
+    std::vector<uint8_t> data;
+};
+static std::vector<Held> g_held;
+static uint32_t g_held_total, g_held_used;
+static void use_bundle(uint8_t owner, uint8_t kind, uint32_t id, std::vector<uint8_t>& data);
+
+static bool in_editor_now()
+{
+    uint32_t m = game::mode_id();
+    return m == modes::kEditor || m == modes::kEdit;
+}
+
+static bool hold_for_editor(uint8_t owner, uint8_t kind, uint32_t id, std::vector<uint8_t>& data)
+{
+    if (!g_editor_hold_fix || is_host() || !in_editor_now())
+        return false;
+    for (auto& h : g_held) // a newer version of the same creation replaces the held one
+        if (h.owner == owner && h.kind == kind) {
+            h.id = id;
+            h.data = std::move(data);
+            return true;
+        }
+    g_held.push_back({owner, kind, id, std::move(data)});
+    g_held_total++;
+    H->log(M, SK_INFO, "creations: player %u kind %u (id %08X) arrived while the editor is open: used when it closes",
+           owner, kind, id);
+    return true;
+}
+
+static void release_held()
+{
+    if (g_held.empty() || in_editor_now())
+        return;
+    auto held = std::move(g_held);
+    g_held.clear();
+    if (!C.sess || !C.sess->connected())
+        return; // the session ended meanwhile: nothing of it is used
+    for (auto& h : held) {
+        use_bundle(h.owner, h.kind, h.id, h.data);
+        g_held_used++;
+    }
+    H->log(M, SK_INFO, "creations: the editor closed: %u creation(s) that arrived meanwhile used", (unsigned)held.size());
 }
 
 void on_message(uint8_t type, uint8_t from, net::Reader& r)
@@ -1081,6 +1140,13 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         return;
     std::vector<uint8_t> data = std::move(rx.data);
     g_rx.erase({owner, kind});
+    if (hold_for_editor(owner, kind, id, data))
+        return;
+    use_bundle(owner, kind, id, data);
+}
+
+static void use_bundle(uint8_t owner, uint8_t kind, uint32_t id, std::vector<uint8_t>& data)
+{
     if (kind == kWorldSpecies) {
         apply_species(data);
         return;
@@ -1130,6 +1196,7 @@ void on_player_leave(uint8_t id)
 
 void on_session_end()
 {
+    g_held.clear(); // BUG-0283: what waited for the editor belonged to that session
     // the host's creations registered under their original keys (priority 2000, above the guest's
     // own My Creations): after the session a guest's own creation of the same id (ids are per
     // profile and sequential) resolved to the host's records in its own games (BUG-0055). They go;
@@ -1229,6 +1296,9 @@ std::string status()
              "species asked=%u got=%u sent=%u missing=%u own_out=%u own_in=%u rx_dropped=%u adopt_skipped=%u%s%s\n",
              g_bundles_in, g_bundles_out, g_registered, g_swaps, g_waits_on_disk, g_unusable, g_world_swaps,
              g_species_asked, g_species_got, g_species_sent, g_species_missing, g_own_out, g_own_in, g_rx_dropped, g_adopt_skipped, g_last_error.empty() ? "" : " error=", g_last_error.c_str());
+    s += b;
+    snprintf(b, sizeof b, "  editor_hold: fix=%d held=%u total=%u used=%u\n", (int)g_editor_hold_fix,
+             (unsigned)g_held.size(), g_held_total, g_held_used);
     s += b;
     if (uint8_t* g = modes::cell_game(); g && game::mode_id() == modes::kCell) {
         uint8_t* av = modes::cell_at(*(uint32_t*)(g + 0x411C));
