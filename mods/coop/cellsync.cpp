@@ -896,7 +896,7 @@ static TileList* g_pass_list;   // the list of the pass PopulateTiles is running
 static int g_pass = -1;         // -1 none, 0 the host's pass, k > 0 the pass of centre k
 static bool g_union;            // h_TileActive: also true inside another centre's box
 static std::unordered_set<uint32_t> g_shadow_tiles; // tile objects not populated (another list has the tile)
-static uint32_t g_tiles_partner, g_tiles_shared, g_tiles_bg, g_tile_passes, g_tiles_kept, g_tile_resets, g_tiles_drained;
+static uint32_t g_tiles_full, g_tiles_partner, g_tiles_shared, g_tiles_bg, g_tile_passes, g_tiles_kept, g_tile_resets, g_tiles_drained;
 
 using PopTiles_t = void(SK_CDECL*)(int, TileList*, int);
 static PopTiles_t o_PopTiles;
@@ -1099,13 +1099,20 @@ static void SK_CDECL h_PopTiles(int level, TileList* list, int all)
     for (auto& v : g_views.list()) {
         float dx = v.x - hb.cx(), dy = v.y - hb.cy();
         std::array<float, 12> b = host_box;
-        for (int i : {0, 3, 6, 9})
+        for (int i : {0, 3})
             b[i] += dx;
-        for (int i : {1, 4, 7, 10})
+        for (int i : {1, 4})
             b[i] += dy;
+        if (!g_view_boxes.empty()) // a partner's background box is empty: no layer 1 tiles for it
+            for (int i = 6; i < 12; i++)
+                b[i] = 0;
         g_view_boxes.push_back(b);
     }
     g_union = g_view_boxes.size() > 1;
+    // our deletes first (h_TileActive: any player's box), before the host's pass: after a level
+    // change the old level's tiles of every list give their pool slots back before new ones are made
+    for (auto& [id, pt] : g_ptiles)
+        tiles_delete(pt.list, [](const int32_t* t) { return h_TileActive(t); });
     g_pass = 0;
     g_pass_list = list;
     o_PopTiles(level, list, all);
@@ -1119,9 +1126,16 @@ static void SK_CDECL h_PopTiles(int level, TileList* list, int all)
                 memset(pt.list, 0, sizeof(TileList));
                 tiles_forget(pt);
             }
+            // the tile pool (cCellGame+0x38) has a fixed capacity and CreateObject returns 0 when it
+            // is full: PopulateTiles then used slot 0 of another tile (a double free later, the free
+            // list broken: 4060 faults at CreateObject+0x37, lab 20261030-002902). One call creates
+            // at most 0x33 tiles: a partner pass runs only with room for that and the host's next.
+            uint8_t* tp = G() + 0x38;
+            if (F<uint32_t>(tp, 0x18) < F<uint32_t>(tp, 0xC) + 2 * 0x40) {
+                g_tiles_full++;
+                continue;
+            }
             memcpy(vb, g_view_boxes[k].data(), sizeof(float) * 12);
-            // our deletes first (h_TileActive: any player's box), so the game's loop deletes none
-            tiles_delete(pt.list, [](const int32_t* t) { return h_TileActive(t); });
             g_pass = (int)k;
             g_pass_list = pt.list;
             o_PopTiles(level, pt.list, 0);
@@ -2740,15 +2754,16 @@ std::string status()
                  g_revives, g_respawns, g_pairs_skipped, g_hurt_local, g_hurt_fwd, g_bitten_sent, g_soft_moves, g_soft_turns, g_chunks_sent, g_chunks_taken, g_breaks_sent, g_wipes, g_kept, g_puppet_saves, g_puppet_new,
                  g_npc_deaths, g_loot_calls, g_loot_cells, g_mirror_kills, g_kills_sent, g_death_replays, g_loot_skipped,
                  (unsigned)g_host_of.size(), g_late_chunks, g_rounds_partial, (unsigned)g_meals.unacked.size());
-    char t[256];
+    char t[512];
     size_t pcount = 0;
     for (auto& [id, pt] : g_ptiles)
         if (pt.list)
             pcount += (size_t)((pt.list->end - pt.list->begin) / 2);
     snprintf(t, sizeof t,
-             "cell_tiles: fix=%d centres=%u partner_lists=%u partner_tiles=%u populated=%u shared=%u bg_skipped=%u passes=%u kept=%u resets=%u drained=%u\n",
+             "cell_tiles: fix=%d centres=%u partner_lists=%u partner_tiles=%u populated=%u shared=%u bg_skipped=%u passes=%u kept=%u resets=%u drained=%u pool_full=%u tile_pool=%u/%u\n",
              (int)g_fix_partner_tiles, (unsigned)g_views.size(), (unsigned)g_ptiles.size(), (unsigned)pcount, g_tiles_partner,
-             g_tiles_shared, g_tiles_bg, g_tile_passes, g_tiles_kept, g_tile_resets, g_tiles_drained);
+             g_tiles_shared, g_tiles_bg, g_tile_passes, g_tiles_kept, g_tile_resets, g_tiles_drained, g_tiles_full,
+             G() ? F<uint32_t>(G(), 0x38 + 0xC) : 0, G() ? F<uint32_t>(G(), 0x38 + 0x18) : 0);
     return b + std::string(d) + t;
 }
 
