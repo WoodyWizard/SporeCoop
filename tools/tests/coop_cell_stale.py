@@ -9,11 +9,12 @@ not checked it yet hands the follower a dead index, the chase step gets NULL for
 swallows the fault and aborts the frame, so the leader never runs its check again and the
 follower faults at every frame.
 
-`coop.pool staletarget` (host) makes every group leader chase a dead cell (its own member's slot
-with another generation) and rest for 60 s, so the leaders never drop it themselves.
+`coop.pool staletarget 40` (host): the fixture's groups are clusters without AI, whose leader never
+runs the behaviours (as a leader that skips its check); up to 40 AI cells join such a group and the
+leader is given a dead chase target (its own slot with another generation).
 
-1. The host has group leaders to break (the host's world at the cell fixture has groups).
-2. (after level-ups until AI packs exist) Within 10 s the host logs no new caught fault (`exc`), and its game still draws.
+1. AI cells follow such a leader.
+2. Within 10 s the host logs no new caught fault (`exc`), and its game still draws.
 SPORE_FIX_OFF=cell.pick_guard must FAIL (faults at 0x00E52949, one per frame).
 
   SPORE_LANE=2 python3 tools/tests/coop_cell_stale.py
@@ -39,16 +40,15 @@ def main():
     host, guest = start('cell')
     time.sleep(5)
     out, t0 = '', time.time()
-    while True:  # packs of AI cells (level 1 has only clusters without AI): level up until some appear
-        out = host.call('coop.pool staletarget 16')['out'].strip()
+    while True:  # AI cells near the host (a fresh pool may have few): wait for some
+        out = host.call('coop.pool staletarget 40')['out'].strip()
         print('  host:', out, flush=True)
-        m = re.search(r'(\d+) leaders', out)
-        if (m and int(m.group(1)) > 0) or time.time() - t0 > 90:
+        m = re.search(r'(\d+) followers', out)
+        if (m and int(m.group(1)) > 0) or time.time() - t0 > 60:
             break
-        host.call('coop.pool food 150')
-        time.sleep(8)
+        time.sleep(5)
     f0, fr0 = faults(host), frame(host)  # from here: the faults of the stale copies only
-    ck(m and int(m.group(1)) > 0, f'1. the host has group leaders to break ({out})')
+    ck(m and int(m.group(1)) > 0, f'1. AI cells follow a leader holding a dead target ({out})')
     time.sleep(10)
     f1, fr1 = faults(host), frame(host)
     stale = re.search(r'stale_targets=(\d+)', host.call('coop.pool')['out'])

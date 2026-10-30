@@ -3412,52 +3412,57 @@ std::string debug(const std::vector<std::string>& a)
         stop_at(av, {at.x + (float)atof(a[1].c_str()), at.y + (float)atof(a[2].c_str()), 0.f});
         return "moved";
     }
-    if (!a.empty() && a[0] == "staletarget") { // tests (BUG-0306): group leaders chase a dead cell and rest, so they never drop it
+    if (!a.empty() && a[0] == "staletarget") { // tests (BUG-0306): AI cells follow a group leader that holds a dead chase target
+        // The fixture's groups (+0x38C, pool G+0xA8, leader at group+8) are clusters without AI: their
+        // leader never runs the behaviours, so it never drops a target (a leader that skips its check,
+        // as in the lab run). <n> AI cells join such a group; at their next pick (PickTargets 0xE70CF0)
+        // they copy the leader's dead chase target.
         uint8_t* g = G();
         if (!g)
             return "no cell game\n";
-        uint8_t* gdata = F<uint8_t*>(g, 0xA8); // the group pool (PickTargets: +0x38C of a cell, leader at +8)
+        uint8_t* gdata = F<uint8_t*>(g, 0xA8);
         uint32_t ghigh = F<uint32_t>(g, 0xA8 + 0x10), gsize = F<uint32_t>(g, 0xA8 + 0x14);
-        int max = a.size() >= 2 ? atoi(a[1].c_str()) : 8, leaders = 0, members = 0;
-        std::unordered_set<uint32_t> done;
-        std::map<std::string, int> types; // the members' ai.type (behaviour 0x1006 runs the chase step 0xE79C30)
+        int max = a.size() >= 2 ? atoi(a[1].c_str()) : 8, followers = 0;
         if (!gdata || !gsize || gsize > 0x1000)
             return "no group pool\n";
+        uint32_t gi = 0;
+        uint8_t* lc = nullptr;
         for_each_cell([&](uint8_t* c, uint32_t idx) {
-            uint32_t gi = F<uint32_t>(c, 0x38C), gs = gi & 0xFFFF;
-            if (!gi || gs > ghigh || leaders >= max || modes::cell_is_puppet(c))
+            uint32_t g1 = F<uint32_t>(c, 0x38C), gs = g1 & 0xFFFF;
+            if (lc || !g1 || gs > ghigh || modes::cell_is_puppet(c))
                 return;
             uint8_t* grp = gdata + (size_t)gs * gsize;
-            if (F<uint32_t>(grp, 0) != gi)
-                return;
             uint32_t li = F<uint32_t>(grp, 8);
-            uint8_t* lc = modes::cell_at(li);
-            if (!lc || li == idx)
-                return;
-            members++;
-            char k[16];
+            uint8_t* l = F<uint32_t>(grp, 0) == g1 ? modes::cell_at(li) : nullptr;
+            if (l && li != idx && ai_type(l) <= 0) {
+                gi = g1;
+                lc = l;
+            }
+        });
+        if (!lc)
+            return "staletarget: 0 followers (no group with a leader without AI)\n";
+        uint32_t dead = F<uint32_t>(lc, 0) ^ 0x10000; // the leader's slot with another generation: a dead cell
+        F<uint32_t>(lc, kChase) = dead;
+        F<float>(lc, 0x230) = 60.f; // chase timer
+        std::map<std::string, int> types;
+        for_each_cell([&](uint8_t* c, uint32_t) {
             int at = ai_type(c);
-            snprintf(k, sizeof k, "%X", at);
-            types[k]++;
-            if (at <= 0) // no AI (decoration clusters): never runs the behaviours
+            if (followers >= max || at <= 0 || c == lc || modes::cell_is_puppet(c) || F<uint8_t>(c, kDead) || F<uint8_t>(c, kDying))
                 return;
+            F<uint32_t>(c, 0x38C) = gi;
             F<float>(c, 0x224) = F<float>(c, 0x228) = F<float>(c, 0x21C) = 0.f; // free to chase at its next pick
             F<float>(c, 0x238) = 0.f;
-            if (!done.insert(li).second)
-                return;
-            F<uint32_t>(lc, kChase) = idx ^ 0x10000; // this member's slot with another generation: a dead cell
-            F<float>(lc, 0x230) = 60.f;              // chase timer
-            F<float>(lc, 0x224) = 60.f;              // rest: the leader skips its own check 0xE70E30
-            F<float>(lc, 0x21C) = 0.f;
-            F<float>(lc, 0x228) = 0.f;
-            leaders++;
+            char k[16];
+            snprintf(k, sizeof k, "%X", at);
+            types[k]++;
+            followers++;
         });
         std::string ts;
         for (auto& [t, n] : types)
             ts += " " + t + ":" + std::to_string(n);
         char b[160];
-        snprintf(b, sizeof b, "staletarget: %d leaders chase a dead cell (%d group members seen), stale_targets=%u, member ai types", leaders,
-                 members, g_stale_targets);
+        snprintf(b, sizeof b, "staletarget: %d followers of leader c%u chasing dead c%u, stale_targets=%u, follower ai types", followers,
+                 F<uint32_t>(lc, 0), dead, g_stale_targets);
         return b + ts + "\n";
     }
     if (!a.empty() && a[0] == "nanself") { // tests (BUG-0299): our own cell and its particles NaN, as seen in a 4-player run
