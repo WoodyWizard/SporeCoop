@@ -14,14 +14,20 @@ and the food it ate went to a host that dropped it.
    host cell again (the guest's own cells are gone) and there are more than 5 mirrors, and the host's
    game food total S+0x1C grew by the 10 points, the guest's the same.
 
+--editor: the host is in its own cell editor instead (its mating call and the mate, real clicks,
+coop_editor_desync.py's way; cancel after the checks). It counts as away after 4 s (in Cell since
+BUG-0205; BUG-0233 had left Cell out because nothing played on there).
+
 SPORE_FIX_OFF=pool.away must FAIL (the frozen pool of 0.7.3.1: no creature moves, the 10 points are lost).
 
-  SPORE_LANE=3 python3 tools/tests/coop_cell_away.py
+  SPORE_LANE=3 python3 tools/tests/coop_cell_away.py [--editor]
 """
 import re
+import sys
 import time
 
 from twoinst import Checks, lane_state, start
+from coop_editor_desync import CANCEL, mating_call, mode
 
 
 def num(out, key):
@@ -63,7 +69,8 @@ def away_line(con):
 
 
 def main():
-    host, guest = start('cell')
+    editor = '--editor' in sys.argv
+    host, guest = start('cell', guest_creations=False) if editor else start('cell')
     ck = Checks()
     ck(wait(lambda: (num(guest.call('coop.pool')['out'], 'mirrors') or 0) > 5, 30), 'the guest mirrors the host pool')
     ck(wait(lambda: food(host) is not None and food(host) == food(guest), 10), 'the same food total')
@@ -71,8 +78,13 @@ def main():
     before = npcs(guest)
     print(f'  food host {h0} guest {g0}; guest creatures {len(before)}, mirrors {sum(v[0] for v in before.values())}')
 
-    # 1. the host leaves for the main menu
-    print(' ', host.call('coop.menu')['out'].strip())
+    # 1. the host leaves for the main menu (or opens its own cell editor)
+    if editor:
+        _, reached = mating_call(host, 'host', lambda: 'Editor' in mode(host))
+        if not ck(reached, f'the host\'s own cell editor opens ({mode(host).strip()})'):
+            return ck.result()
+    else:
+        print(' ', host.call('coop.menu')['out'].strip())
     away = wait(lambda: 'host_away=1' in guest.call('coop.status')['out'], 90, 1)
     ck(away, 'the guest knows the host is away')
     time.sleep(3)
@@ -97,11 +109,14 @@ def main():
     ck(g1 == g0 + 10, f'the guest\'s game counts its meal while the host is away ({g0} -> {g1})')
 
     # 4. the host is back
-    lst = lane_state()
-    slot, name = lst.get('planet', 'Game0/Cadian').split('/')
-    if lst.get('slot', 9) != 9:
-        slot = f'Game{lst["slot"]}'
-    print(' ', host.call(f'coop.load {slot} {name}')['out'].strip())
+    if editor:
+        host.call('click %d %d' % CANCEL)
+    else:
+        lst = lane_state()
+        slot, name = lst.get('planet', 'Game0/Cadian').split('/')
+        if lst.get('slot', 9) != 9:
+            slot = f'Game{lst["slot"]}'
+        print(' ', host.call(f'coop.load {slot} {name}')['out'].strip())
     back = wait(lambda: 'host_away=0' in guest.call('coop.status')['out'] and
                 'not in the cell stage' not in host.call('coop.pool')['out'], 150, 2)
     ck(back, 'the host is back in its pool')
