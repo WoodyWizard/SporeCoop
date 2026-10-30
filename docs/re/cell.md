@@ -944,3 +944,69 @@ lanes 2 / 3 with four players (`tools/tests/coop_cell_4p.py`, suite `cell_4p`).
   finite, and the own cell is written back to its last finite position (`+0x4C`, `+0x84`, the
   soft-body particles `G+0x4108` on a ring of 0.4 x size around it, at rest). ? Where the NaN came
   from is still not known (the guest held 900 mirrors, none NaN).
+
+## A group member copies a dead chase target from its leader (2026-10-30, fix/w12-cell-fault)
+<a id="cell-pick-stale"></a>
+
+BUG-0306. GOG 2024, Ghidra (REA), lab 20261030-104149 campaign#2 (host, 4 players, level 4).
+
+* ✔ The fault `0xC0000005 at 0x00E52949` (data 0x108, ESI=0), which the crash tools name
+  `App::cCellModeStrategy::OnMouseMove+0x1939` and whose chain they name `RestAfterBite+0x479 <
+  DestroyCell+... < PopulateTile+0x25A` (nearest-symbol names, all wrong), is **IsDamageable
+  0xE52940 + 9** (`mov ecx,[esi+0x108]`, ESI = the cell asked about). The real chain from the
+  stack words: `SimUpdate 0xE7F3A0 -> 0xE7E7A0 -> UpdateCells 0xE7C8C0 (ret 0xE7C91A / 0xE7CA4C) ->
+  AI dispatcher 0xE7A190 (ret 0xE7A394) -> behaviour 0x1006 0xE7A0A0 (ret 0xE7A0CA) -> chase step
+  0xE79C30 (ret 0xE79F1E) -> 0xE57CE0 (ret 0xE57D09) -> IsDamageable`. 0xE719F8 in the list is a
+  stale word (the AoE 0xE71980 run earlier by 0xE76A80). The stack held `0xE57CE0(cell
+  0x1C80C870, NULL)`.
+* ✔ **0xE57CE0** cdecl `bool(cell* a, cell* b)`, plain ret: `GetScaleDifferenceWithPlayer 0xE57340(a)
+  != 1 && a+0xFC != 0 && IsDamageable(ESI = b)`; b is not checked for NULL.
+* ✔ **Chase step 0xE79C30** cdecl `void(cell*, resData*, float dt)`: (G+0x51DC and the avatar alive:
+  swim away from the avatar); `+0x224 > 0` rest: count down; `+0x228 > 0`: count down, `+0x178 = 1`;
+  `+0x21C > 0` flee `+0x220`; `+0x230 > 0` chase: `b = GetIfNotDeleted(+0x22C)` (0xB722E0 on G+0x1C,
+  thiscall ret 4: NULL for 0, a slot above the high-water mark or another generation) -> 0xE57CE0(cell,
+  b) -> steering 0xE6F800 (raw Get 0xB72320 of +0x22C, no check); at the end of the chase
+  `+0x224 = res+0x88`; else idle (+0x220 = +0x22C = 0, wander 0xE6FF60). All float tests are COMISS
+  (NaN takes the "<= 0" branch), the same as in 0xE70E30.
+* ✔ **Behaviour 0x1006 0xE7A0A0** = target timers 0xE70E30(cell, res, dt) then 0xE79C30(cell, res,
+  dt); E79C30 has no other caller. 0xE70E30 returns at once when `+0x224 > 0` or `+0x228 > 0`, clears a
+  dead flee target (`+0x21C > 0`, a live one returns), clears a dead chase target (`+0x230 > 0`), and
+  only **then** counts `+0x238` down and calls PickTargets (`+0x238 = 0.25`).
+* ✔ **PickTargets 0xE70CF0** (same address in both builds): a cell whose group (`+0x38C`, pool
+  **G+0xA8**, `GetIfNotDeleted` on it) has a leader (`group+8`) other than itself that is alive copies
+  the leader's `+0x21C, +0x220, +0x230, +0x22C, +0x208` **without checking them** and returns 0. So a
+  leader still holding a dead target (its target died after its last check: it comes later in the
+  pool, or it rests / is dead and skips the behaviours) hands it to the follower, and 0xE79C30 passes
+  NULL to 0xE57CE0 in the same call. A vanilla bug (a crash on Windows), made likely by many deaths
+  per second (four players eating, tiles going inactive) and low frame rates.
+* ✔ Why it repeats at every frame: Wine swallows the access violation and the game's frame is
+  aborted, the rest of UpdateCells included. The leader (later in the pool) never runs its check, the
+  follower's 0xE70E30 clears the copy, sets `+0x238 = 0`, calls PickTargets at once, copies the dead
+  target again and faults again: 8616 faults in 5 min at the host's frame rate, every cell after
+  the follower frozen on the host, until the stage was left.
+* Fix (`coop.fix cell.pick_guard`, cellsync.cpp h_PickTargets, both roles, puppets left alone):
+  after PickTargets a flee / chase target that is not a live cell is dropped with its timer, as
+  0xE70E30 would do one frame later. `coop.pool` prints `stale_targets=` (cell_contacts line);
+  `coop.pool staletarget [n]` (tests, host) makes n group leaders chase a dead cell and rest 60 s.
+  Test `coop_cell_stale.py` (suite `cell_stale`).
+* ? Not measured: how often the vanilla game reaches the copy with a dead target; which leader
+  held the dead target in the lab run (the follower's index is 0x1C80C870's first dword, not logged).
+
+## The own cell's NaN repeats: fields the heal must repair (2026-10-30, fix/w12-cell-fault)
+<a id="cell-nan-fields"></a>
+
+BUG-0307 (follow-up of BUG-0299, #cell-broadphase-cap end).
+
+* ✔ (lab 20261030-121742 / -122306) A soft-body cell's position comes back from its particles and
+  the shape matching at every cell step: with the rotation (+0x5C), the shape matrix (+0x24), the
+  size (+0x58 / +0xB4), the mass (+0xB8, inverse +0xBC) or a particle's rest offset
+  (`parts + 0x11944 + 12*k`, 1500 particle slots, k from +0x254) NaN, a position written back finite
+  is NaN again after the next step. Repairing position, particles' positions and velocities alone
+  (BUG-0299) does not hold.
+* ✔ Identity matrices, the last finite size and mass and rest offsets on the particles' ring are
+  accepted by the game: the cell swims on and the next fit rebuilds the shape (cell_nan_all,
+  lab 20261030-121908).
+* ✔ Negative: re-creating 900 mirrors 40 times (28 049 CreateCellObject + DestroyCell on the guest)
+  does not use address space (lab 20261030-121142); neither do 15 s of a NaN own cell.
+* ? The first NaN's source: not caught yet. The probes (cellsync.cpp own_probe) name the step where
+  it appears.
