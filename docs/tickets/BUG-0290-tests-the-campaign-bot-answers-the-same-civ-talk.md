@@ -1,17 +1,17 @@
 ---
 id: BUG-0290
 title: tests: the campaign bot answers the same Civ talk dialog for 20 min and civ -> space times out
-status: open
+status: fixed
 kind: test
 stage: Civ
 reported: 2026-10-29
 source: final campaign lab 20261029-203821 campaign_space#1 lane 7
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w9-tests
+commits: 2db65c9
+tests: campaign, campaign_space
 signature:
 docs:
 related:
@@ -21,14 +21,14 @@ related:
 Lab 20261029-203821 campaign_space#1 (lane 7, run out/lane7/campaign/20261029-215906): in civ/advance the bot logged "Alice: talk answered" / "Carol: talk answered" every 12 s for 20 min, the host never reached Space and the test jumped with the fixture. A dialog the CIV_TALK list in tools/tests/coop_campaign.py does not close (see BUG-0265 for the earlier case). A test problem, not a mod bug as far as seen.
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+Observed in the screenshots of out/lane7/campaign/20261029-215906: on the host a captured city's specialty box (Economic / Military) was open ON TOP of the Blue Nation's surrender talk. `service()` looked for the talk's answer first; that answer stays "shown" (coop.ui find) under the box, so the bot clicked it every 12 s and the box took the clicks; the Military answer of the box was never reached. On the guests the talk's answer area was covered by the "galactic adventures" panel (clicks lost there too).
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+Test tool only (coop_campaign.py `service`): the specialty box is answered first; a talk whose answer is still up after 3 presses gets Esc (every second try; a pause menu that Esc opened is closed with Resume Game). Logged as "talk closed with Esc" / "talk stuck: Esc did not close it".
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+FAIL: lab 20261029-203821 campaign_space#1 (20 min of "talk answered"). PASS: see History (campaign_space on fix/w9-tests). The order of the two dialogs is a race of the shortcut captures, not reproducible on demand.
 
 ## History
 - 2026-10-29: opened.
+- 2026-10-30: fix/w9-tests: the specialty box first, Esc for a talk that does not close.

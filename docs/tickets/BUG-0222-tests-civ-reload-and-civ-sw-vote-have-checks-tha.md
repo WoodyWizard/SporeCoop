@@ -10,7 +10,7 @@ role: all
 versions: 0.7.3.0
 fixed_in: unreleased
 branch: fix/w9-tests
-commits:
+commits: ff34761 2db65c9 da65c35
 tests: civ_reload, civ_sw_vote
 signature:
 docs: docs/re/civ.md#civ-superweapon-2024, docs/06-testing.md#testing-civ-checks

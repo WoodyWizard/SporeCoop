@@ -9,11 +9,11 @@ source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#131
 role: 
 versions: 0.7.2.4 (main 563f72d) and earlier
 fixed_in:
-branch: fix/w4-tests
+branch: fix/w4-tests, dev/campaign, fix/w9-tests
 commits:
-tests:
+tests: multi3, npc_multi3, campaign, party_cell3, party_creature4, party_tribe4, party_civ3, party_space4, party_creature3_seq
 signature:
-docs:
+docs: docs/06-testing.md#testing-party
 related: #131
 ---
 
@@ -92,3 +92,4 @@ This issue is about tests: done when the suite above exists and its tests fail o
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fix/w4-tests: partly done: coop_multi (3 players, creature, 3 min) and coop_npc_multi (3 players) run in the lab now (suite extended, in nightly; out/lab/20261028-030927 passed), a third player runs in the test's own lane (instances 20+N). Left: one focused 3-player test per feature that asserts the game state on the other guest's machine (the paths of #91 BUG-0112, #96 BUG-0117, #110 and #120), 4 players, and the Enter press in coop_multi.wait_all that can hide a stuck save box. Stays open.
 - 2026-10-29: dev/campaign: `coop_campaign.py` (suite `campaign`, docs/06-testing.md#testing-campaign) plays a whole game with four players (lane N's two games plus instances 20+N / 30+N), every stage change through the vote, the editors and the world share to three guests at once, 4-player play per stage with the stage bots, rejoins, and checks every 30 s on every machine (stage, together, sync per kind, shared resources, census, faults, freezes, crash reports). It found BUG-0258 (after the live Creature -> Tribe change no guest is with the host). Its rejoins no longer press Enter on the host's save box. Still open here: focused 3-player tests that assert the game state on the other guest's machine per feature.
+- 2026-10-30: fix/w9-tests: `tools/tests/party.py` (Party: host + 1-3 guests in one lane, checks of each machine's own game: together, every guest sees every other player where it is, shared totals; join / leave / rejoin, a real "I'm ready" click, host away / back) and `coop_party.py` per stage in the new `multi` suite (also extended / nightly): two guests join at once, guest-to-guest views, a vote with 3-4 players (every window shows the same ready k/N, a leaver not ready lets it pass once), a rejoin of the 3rd / 4th player, the host in the menu with several guests. Lab 20261030-003549: 6 of 6 in 6.4 min on two lanes (2 min each). Negative: party_creature4 still passes with `SPORE_FIX_OFF=world.share_one_save` (lab 20261030-004236): it does not cover BUG-0112's one-save path (world_queue does). Still open: the per-stage gameplay between guests (KO / revive between guests, two guests and one NPC, tribe re-split and chiefs, civ ownership and superweapon requests from two guests, space rescue / gifts / rivals between guests, same names, a leave during another guest's transfer).
