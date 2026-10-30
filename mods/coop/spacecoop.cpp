@@ -1736,12 +1736,30 @@ std::string debug(const std::vector<std::string>& a)
         void* p = a_ActivePlanet ? cdecl_call<void*>(a_ActivePlanet) : nullptr;
         void* tm = time_get ? cdecl_call<void*>(time_get) : nullptr;
         void* cm = comm_get ? cdecl_call<void*>(comm_get) : nullptr;
+        static uintptr_t gmm_get = H->sym("App::IGameModeManager::Get"),
+                         sg_get = H->sym("Simulator::cSimulatorSpaceGame::Get"),
+                         gfx_get = H->sym("Simulator::cSpaceGfx::Get"), min_zoom = H->sym("SporeCoop::SpaceCam_MinZoom");
+        // the system update's own gates: cSimulatorSpaceGame +0x50 (bits 2, 4 stop it), a cSpaceGfx +0x8C
+        // job still running (it returns early), the space camera's zoom-in flag +0xD5 and its zoom
+        void* sg = sg_get ? cdecl_call<void*>(sg_get) : nullptr;
+        void* gfx = gfx_get ? cdecl_call<void*>(gfx_get) : nullptr;
+        void* job = gfx ? F<void*>(gfx, 0x8C) : nullptr;
+        int busy = job ? (int)vcall<bool>(job, 0x10 / 4) : -1;
+        void* cam = nullptr;
+        if (void* gmm = gmm_get ? cdecl_call<void*>(gmm_get) : nullptr)
+            if (void* m = vcall<void*>(gmm, 0x50 / 4))
+                if (void* v = vcall<void*>(m, 0x38 / 4))
+                    cam = vcall<void*>(v, 0xC / 4, 0x303154CCu);
+        char extra[160];
+        snprintf(extra, sizeof extra, " sg50 %X gfxjob %d cam %d/%d zoom %.1f min %.1f", sg ? F<uint32_t>(sg, 0x50) : 0u, busy,
+                 cam ? (int)F<uint8_t>(cam, 0xD5) : -1, cam ? (int)F<uint8_t>(cam, 0xD6) : -1,
+                 cam ? vcall<float>(cam, 0x5C / 4) : -1.f, min_zoom ? *(float*)min_zoom : -1.f);
         snprintf(b, sizeof b,
-                 "ctx %d planet %p arrived %d hp %.1f can_land %d ready %d comm %d paused %d cinematic %d",
+                 "ctx %d planet %p arrived %d hp %.1f can_land %d ready %d comm %d paused %d cinematic %d%s",
                  a_Context ? cdecl_call<int>(a_Context) : -9, p, (int)F<uint8_t>(u, 0x74C), F<float>(u, kHp),
                  can_land ? (int)thiscall<bool>(can_land, u) : -1, ready ? (int)cdecl_call<bool>(ready) : -1,
                  cm && comm_active ? (int)thiscall<bool>(comm_active, cm) : -1, tm ? (int)(F<uint8_t>(tm, 0x48) & 1) : -1,
-                 (int)cinematic_playing());
+                 (int)cinematic_playing(), extra);
         return b;
     }
     if (a[0] == "land") { // tests: land on the active planet (the landing of Respawn)
