@@ -143,10 +143,23 @@ def main():
     total = money(host)
     ck(total and money(guest) == total, f'shared money before: host {money(host)} guest {money(guest)}')
     # both on the home planet (fights happen on planets: the weapons are for the planet view)
-    for p in (ph, pg):
-        if p.ctx() == 'system':
-            p.land_retry(home)
-    ck(ph.place()[0] == pg.place()[0] and ph.ctx() == 'planet', f'both on the home planet ({sp(guest, "dist")})')
+    # BUG-0262: one player's landing can take longer than one land_retry right after the load (1 of 4
+    # runs: the check ran with one ship still in the system and the host had no puppet of the guest):
+    # land whoever is still in the system again, then wait until both are there and the host's game
+    # shows the guest's puppet
+    def together():
+        return ph.place()[0] == pg.place()[0] and ph.ctx() == 'planet' and pg.ctx() == 'planet'
+    for rnd in range(2):
+        for p in (ph, pg):
+            if p.ctx() == 'system':
+                p.land_retry(home)
+        if wait(together, 30, 1):
+            break
+        print(f'  not together yet (round {rnd + 1}): host {ph.place()} {ph.ctx()} / guest {pg.place()} {pg.ctx()}')
+    ck(together(), f'both on the home planet ({sp(guest, "dist")}; host {ph.place()} {ph.ctx()}, '
+       f'guest {pg.place()} {pg.ctx()})')
+    ck(wait(lambda: 'puppet 1 ' in sp(host, 'rivalry pol'), 30),
+       f'the host\'s game has the guest\'s puppet here ({sp(host, "rivalry pol")})')
     # the host needs some money to split
     if total < 10000:
         host.call('coop.res add money 20000')
@@ -191,6 +204,7 @@ def main():
     close_page(ug, guest)
     time.sleep(1)
     pol = sp(host, 'rivalry pol')
+    ck('puppet 1 ' in pol, f'the host still has the guest\'s puppet ({pol})')
     ck('puppet 1 FFFFFFFF' in pol, f'the guest\'s puppet on the host belongs to no empire ({pol})')
     print('  guest pol:', sp(guest, 'rivalry pol'))
 

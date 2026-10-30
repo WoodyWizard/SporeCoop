@@ -6,6 +6,7 @@
 
 #include "cell_logic.h"
 #include "game.h"
+#include "gamefixes.h"
 #include "modes.h"
 #include "world.h"
 #include "sporekit.h"
@@ -38,6 +39,15 @@ int c_menu(void*, int, const char* const*, SkOut* out)
     skg::vcall<void>(mm, 0x18 / 4, 0x4715068u, (void*)nullptr, (void*)nullptr, 0); // MessagePost
     game::stage_leaving("coop.menu"); // BUG-0264
     SAY("leaving to the galaxy menu (mode 0x%08X)", game::mode_id());
+    return 0;
+}
+
+// tests (BUG-0270): the window manager's modal window becomes a destroyed object
+int c_deadmodal(void*, int, const char* const*, SkOut* out)
+{
+    uintptr_t get = H->sym("UTFWin::IWindowManager::Get");
+    void* wm = get ? skg::cdecl_call<void*>(get) : nullptr;
+    SAY("%s", gamefixes::fake_dead_modal(wm).c_str());
     return 0;
 }
 
@@ -332,6 +342,8 @@ void coop_register_debug_commands2(const SkHost* host, SkMod* self)
                       nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.cell", "coop.cell list | pool | spawn <slot> [dx dy [scale]] - cell stage experiments", c_cell,
                       nullptr, SK_CMD_MAIN_THREAD);
+    host->command_add(self, "coop.deadmodal", "tests (BUG-0270): the window manager's modal window becomes a destroyed object",
+                      c_deadmodal, nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.save", "save the game (like the pause menu Save)", c_save, nullptr,
                       SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.dna", "coop.dna [add|local <n>] - shared DNA debug", c_dna, nullptr, SK_CMD_MAIN_THREAD);

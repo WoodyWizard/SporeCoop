@@ -185,8 +185,9 @@ add('space_gift_refund', P + 'coop_space_gift_refund.py', warm=True, minutes=3, 
 add('space_allies', P + 'coop_space_allies.py', minutes=10)
 add('space_allies_reload', P + 'coop_space_allies_reload.py', minutes=5, fixture='space')  # after a galaxy reload the allies mirror gets a new cEmpire (BUG-0038)
 add('space_allies_reload_addr', P + 'coop_space_allies_reload.py --same-address', minutes=5, fixture='space')  # the same, with the new player cEmpire at the old address: the Space world epoch sees the reload (BUG-0225; SPORE_FIX_OFF=allies.reload_id fails)
-add('space_trade_reload', P + 'coop_space_trade_reload.py', minutes=5, fixture='space')  # a trade refund after a galaxy reload of a game saved before the gift is not paid (doubled) (BUG-0225; SPORE_FIX_OFF=space.owed_id fails)
-add('space_trade_reload_saved', P + 'coop_space_trade_reload.py --saved', minutes=5, fixture='space')  # the same with a save after the gift: paid once (BUG-0225, BUG-0058)
+add('space_trade_reload', P + 'coop_space_trade_reload.py', minutes=6, fixture='space')  # a trade refund that comes back while another game is loaded waits for its own game (BUG-0225; SPORE_FIX_OFF=space.owed_id fails)
+add('space_trade_reload_same', P + 'coop_space_trade_reload.py --same-game', minutes=5, fixture='space')  # the same game loaded again (saved by the quit after the gift): paid once (BUG-0225, BUG-0058)
+add('dead_modal', P + 'coop_dead_modal.py', warm=True, minutes=3, fixture='space')  # a destroyed modal window in the window manager does not fault the next mouse message (BUG-0270; SPORE_FIX_OFF=game.dead_modal fails)
 add('space_finale', P + 'coop_space_finale.py', minutes=12)  # the galaxy core together (space_finale.cpp): wait, joint entry, Staff of Life, rejoin
 add('space_finale_alone', P + 'coop_space_finale.py --alone', minutes=10)  # "Enter now" alone: the partner gets Steve's gift by message
 # joins and rejoins over a bad network (goodbye lost every second round), the setup + in-game update

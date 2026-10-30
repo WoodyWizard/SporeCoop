@@ -3,24 +3,30 @@
 the game it was taken from, and only when that game's file lacks it.
 
 The host has an Antimatter Bomb with 12 charges and gives 5 to the guest, which does not answer
-(`trade hold 1`: the answer is still on its way). The host then goes to the galaxy menu and loads
-the same game again; the guest leaves, so the 5 charges come back to the host in the reloaded game.
+(`trade hold 1`: the answer is still on its way). The host leaves for the galaxy menu (the game's
+quit saves the game: its file now has 7) and loads a game; then the guest leaves, so the 5 charges
+come back to the host while another Space world is in memory.
 
-  default round: the host saved BEFORE the gift (the file has 12). The reloaded game has 12 again:
-                 the refund must be dropped, the bomb keeps 12. 0.7.3.0 paid it at once into the
-                 reloaded game (17 charges: doubled).
-  --saved:       the host saved AFTER the gift (the file has 7). The reloaded game has 7: the refund
-                 must be paid once (12). Both versions pass (regression of BUG-0058's rule).
+  default round: the host loads ANOTHER game (game B: a copy of the fixture's slot made at the start,
+                 without the bomb). The refund must be kept owed, not paid into game B (no bomb
+                 there). Back in game A (loaded again: 7 charges) it is paid once: 12.
+                 0.7.3.0 paid it into game B (a new bomb with 5 charges there) and game A kept 7:
+                 a transfer between games.
+  --same-game:   the host loads game A again (its file was saved after the gift: 7). The refund is
+                 paid once: 12. Both versions pass (BUG-0058's rule, regression).
 
 The checks read the game's own tool ammo (cSpaceToolData) on the host.
 
-  coop_space_trade_reload.py [--saved]   (SPORE_FIX_OFF=space.owed_id: the 0.7.3.0 rule, the
-                                          default round FAILS)"""
+  coop_space_trade_reload.py [--same-game]   (SPORE_FIX_OFF=space.owed_id: the 0.7.3.0 rule, the
+                                              default round FAILS)"""
+import os
 import re
+import shutil
 import sys
 import time
 
 import fixtures
+import lane
 from twoinst import Checks, start
 
 BOMB = '144DF50A'  # Antimatter Bomb
@@ -45,60 +51,67 @@ def wait(pred, timeout=20, step=0.5):
     return pred()
 
 
-def noted(host):
-    m = re.search(r'saves_noted=(\d+)', sp(host, 'world'))
-    return int(m.group(1)) if m else -1
-
-
-def save(host, ck, what):
-    n0 = noted(host)
-    print(f'  save ({what}):', host.call('coop.save')['out'].strip())
-    time.sleep(4)
-    for _ in range(3):  # the "game saved" box stops the host's frames
-        host.call('key enter')
-        time.sleep(1)
-    ck(wait(lambda: noted(host) > n0, 20), f'the host saved this Space world ({what}): {sp(host, "world")}')
+def load(host, ck, slot, planet, what):
+    print('  menu:', host.call('coop.menu')['out'].strip())
+    ck(wait(lambda: 'GalaxyGameEntry' in host.call('game.mode')['out'], 90, 1), f'the host is in the galaxy menu ({what})')
+    host.call('wait.frames 240 90000')
+    print('  load:', host.call(f'coop.load {slot} {planet}')['out'].strip())
+    ck(wait(lambda: 'Space' in host.call('game.mode')['out'], 180, 2), f'the host is in Space: {what}')
+    time.sleep(6)
+    print('  world:', sp(host, 'world'))
 
 
 def main():
-    saved_after = '--saved' in sys.argv
+    same = '--same-game' in sys.argv
+    planet = fixtures.planet_of('space')  # Game0/Madas
+    slot_a, name = planet.split('/')
+    games = os.path.join(lane.HOST_DIR, 'Games')
+    made = []
+    try:
+        return run(same, slot_a, name, games, made)
+    finally:
+        for d in made:
+            shutil.rmtree(d, ignore_errors=True)
+
+
+def run(same, slot_a, name, games, made):
     host, guest = start('space')
     ck = Checks()
     time.sleep(5)
+    slot_b = None
+    if not same:  # game B: a copy of the fixture's slot as loaded (no bomb), never the slot being played
+        slot_b = next(f'Game{n}' for n in range(7, 30) if not os.path.exists(os.path.join(games, f'Game{n}')))
+        shutil.copytree(os.path.join(games, slot_a), os.path.join(games, slot_b))
+        made.append(os.path.join(games, slot_b))
+        print(f'  game B: {slot_b}/{name} (a copy of {slot_a})')
     print('  host bomb:', sp(host, 'tool add', '0x' + BOMB), '|', sp(host, 'trade ammo', BOMB, 12))
     ck(ammo(host) == 12, f'the host has 12 Antimatter Bomb charges ({ammo(host)})')
-    if not saved_after:
-        save(host, ck, 'before the gift: the file has 12')
     print(' ', sp(guest, 'trade hold 1'))
     print('  give:', sp(host, 'trade give', BOMB, 5))
     ck(wait(lambda: ammo(host) == 7, 5), f'the 5 charges left the host\'s hold: 7 ({ammo(host)})')
     ck('pending=1' in sp(host, 'trade'), 'the gift is on its way (no answer yet)')
-    if saved_after:
-        save(host, ck, 'after the gift: the file has 7')
 
-    planet = fixtures.planet_of('space')
-    print('  menu:', host.call('coop.menu')['out'].strip())
-    ck(wait(lambda: 'GalaxyGameEntry' in host.call('game.mode')['out'], 90, 1), 'the host is in the galaxy menu')
-    host.call('wait.frames 240 90000')
-    print('  load:', host.call(f'coop.load {" ".join(planet.split("/"))}')['out'].strip())
-    ck(wait(lambda: 'Space' in host.call('game.mode')['out'], 180, 2), 'the host is in Space again')
-    time.sleep(5)
-    want_loaded = 7 if saved_after else 12
-    a = wait(lambda: ammo(host) is not None and ammo(host), 20)
-    ck(ammo(host) == want_loaded, f'the reloaded game has the file\'s {want_loaded} charges ({ammo(host)})')
+    if same:
+        load(host, ck, slot_a, name, 'game A again')
+        ck(ammo(host) == 7, f'game A was saved by the quit after the gift: 7 ({ammo(host)})')
+    else:
+        load(host, ck, slot_b, name, 'game B')
+        ck(ammo(host) is None, f'game B has no bomb ({ammo(host)})')
     ck('pending=1' in sp(host, 'trade'), f'the gift is still on its way ({sp(host, "trade")})')
 
     print('  guest leaves:', guest.call('coop.leave')['out'].strip())
     ck(wait(lambda: 'pending=0' in sp(host, 'trade'), 30), 'the host saw the partner leave with the gift open')
-    time.sleep(4)
-    st = sp(host, 'trade')
-    print('  host trade:', st)
-    if saved_after:
-        ck(wait(lambda: ammo(host) == 12, 10), f'saved after the gift: the 5 came back once: 12 ({ammo(host)})')
+    time.sleep(5)
+    print('  host trade:', sp(host, 'trade'))
+    if same:
+        ck(wait(lambda: ammo(host) == 12, 10), f'the 5 came back once into game A: 12 ({ammo(host)})')
     else:
-        ck(ammo(host) == 12, f'saved before the gift: the reloaded game still has them, nothing paid: 12 ({ammo(host)})')
+        ck(ammo(host) is None, f'nothing was paid into game B: no bomb there ({ammo(host)})')
+        load(host, ck, slot_a, name, 'game A again')
+        ck(wait(lambda: ammo(host) == 12, 15), f'back in game A the 5 came back: 12 ({ammo(host)})')
     time.sleep(3)
-    ck(ammo(host) == 12, f'and it stays 12 ({ammo(host)})')
+    ck(ammo(host) == 12, f'and only once: 12 ({ammo(host)})')
+    print('  host trade:', sp(host, 'trade'))
 
     sp(guest, 'trade hold 0')
     ck.faults(host=host, guest=guest)
