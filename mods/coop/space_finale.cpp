@@ -23,6 +23,7 @@
 #include <string>
 #include <vector>
 
+#include "fixes.h"
 #include "game.h"
 #include "modes.h"
 #include "space_ext.h"
@@ -80,6 +81,13 @@ static bool g_waiting, g_alone, g_go, g_reward_pending;
 static std::string g_reward_from;
 static uint32_t g_reward_fails;
 static uint32_t g_waits, g_entries, g_entries_with, g_rewards, g_reward_skipped, g_flights, g_blocked;
+// BUG-0320: the wait at the gate ended because every partner arrived. The tick clears g_waiting at
+// that moment, so an entry before the partner's K_REACHED came in was counted as alone.
+// `coop.fix space.finale_waited off`: the old count.
+static bool g_waited_all;
+static bool g_waited_fix = true;
+COOP_FIX("space.finale_waited", "BUG-0320", g_waited_fix,
+         "space finale: an entry after waiting for everybody counts as together");
 
 // a flight to a partner at the core: galaxy view first (the core is not a solar system), then the
 // free instant galaxy travel of the `space -flyto` cheat, then into the system if the partner is there
@@ -298,8 +306,8 @@ static void __cdecl h_Enter()
         }
     }
     g_go = false;
-    bool with = g_waiting || !g_reached_by.empty();
-    g_waiting = false;
+    bool with = g_waiting || (g_waited_all && g_waited_fix) || !g_reached_by.empty();
+    g_waiting = g_waited_all = false;
     o_Enter();
     if (!before && has_flag(kFlagEnteredCore)) {
         g_entries++;
@@ -610,9 +618,10 @@ static void tick(double now)
     if (g_waiting) {
         void* core = core_record();
         if (!core || active_star_record() != core || g_flags & F_ENTERED) {
-            g_waiting = false;
+            g_waiting = g_waited_all = false;
         } else if ((g_alone || missing().empty()) && !busy()) {
             g_enter_at = now; // everybody is here (or "Enter now"): open it
+            g_waited_all = !g_alone;
             g_waiting = false;
         }
     }
@@ -641,7 +650,7 @@ static void session_end()
 {
     g_peer.clear();
     g_reached_by.clear();
-    g_waiting = g_alone = g_go = false;
+    g_waiting = g_alone = g_go = g_waited_all = false;
     g_enter_at = 0;
     g_reward_next = 0;
     g_reward_fails = 0;

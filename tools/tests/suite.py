@@ -211,6 +211,7 @@ add('space_trade_reload', P + 'coop_space_trade_reload.py', minutes=6, fixture='
 add('space_trade_reload_same', P + 'coop_space_trade_reload.py --same-game', minutes=5, fixture='space')  # the same game loaded again (saved by the quit after the gift): paid once (BUG-0225, BUG-0058)
 add('dead_modal', P + 'coop_dead_modal.py', warm=True, minutes=3, fixture='space')  # a destroyed modal window in the window manager does not fault the next mouse message (BUG-0270; SPORE_FIX_OFF=game.dead_modal fails)
 add('space_finale', P + 'coop_space_finale.py', minutes=12)  # the galaxy core together (space_finale.cpp): wait, joint entry, Staff of Life, rejoin
+add('space_finale_wait', P + 'coop_space_finale_wait.py', minutes=6)  # the host that waited at the core counts its entry as together when it enters first (BUG-0320; --without-fix fails)
 add('space_finale_alone', P + 'coop_space_finale.py --alone', minutes=10)  # "Enter now" alone: the partner gets Steve's gift by message
 add('space_captain', P + 'coop_space_captain.py', minutes=4, reports=True)  # BUG-0303: a captain screen left open (rank badge) blocks the finale's wheel zoom-out; the tool closes it (OLD_FINALE_TOOL=1 fails); BUG-0304: the game's own fault when it opens
 # joins and rejoins over a bad network (goodbye lost every second round), the setup + in-game update
