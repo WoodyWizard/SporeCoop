@@ -786,6 +786,17 @@ BUG-0174 / BUG-0279 (a guest far from the host swam in an empty pool). GOG 2024,
   tile's layer. Also called by RemoveCellsOfOldScale 0xE7CD10, which after a level change destroys
   every cell outside the visible box and then repopulates EVERY tile object of the pool (also the
   ones in our lists).
+* ✔ **Two traps** (both crashed the first runs of the fix, lab 20261030-001703 / -002902): (1) the
+  delete loop of PopulateTiles erases with an inlined loop bound to `cCellGame+0x412C` (the host
+  list's end), not to the list it was given: deleting from any other list shortens the host's list and
+  runs past ours (fault at PopulateTiles+0xC3). Our lists' deletes are done by our own code
+  (`tiles_delete`: release `+0x300`, `cObjectPool_::DeleteObject` 0xB72370 by hand) and the game's
+  loop is told every tile of ours is active. (2) The tile pool `G+0x38` has a fixed capacity (512 seen
+  at level 1; `+0x18`); `cObjectPool_::CreateObject` 0xB72270 returns 0 when it is full and
+  PopulateTiles then fills slot 0 of a live tile (a double free later, the free list broken, faults at
+  CreateObject+0x37). A partner pass runs only with room for 2 x 0x40 tiles and creates no
+  background (layer 1) tiles (its background box is all 0); seen: 71 of 512 with two players 150 m
+  apart.
 * The fix (`coop.fix cell.partner_tiles`, cellsync.cpp `h_PopTiles`): on the host, after the game's
   own pass, one more PopulateTiles call per partner with a list of our own and the 12 view-box floats
   moved by (partner cell - host box centre), restored right after. `h_PopTile` populates a tile that
@@ -793,8 +804,7 @@ BUG-0174 / BUG-0279 (a guest far from the host swam in an empty pool). GOG 2024,
   tile objects, so RemoveCellsOfOldScale does not populate them either) and skips a partner's
   background tiles; `h_TileActive` answers true for a gameplay tile inside ANY player's box, so the
   host's tiles and cells near a partner stay and a partner's tiles near the host stay. A partner
-  without a cell for 2 s: its list is drained (a PopulateTiles call with all boxes 0: nothing active,
-  nothing created, the game deletes its tiles) and freed. Our lists are forgotten (not drained) when
+  without a cell for 2 s: our code deletes all its tiles and frees the list. Our lists are forgotten (not drained) when
   the tile pool was cleared or the stage is left. Each guest gets the cells within 120 m of its own
   cell (before: within 120 m of the host's).
 * **The host's view centres** (`mods/coop/view_centres.h`, `cellsync::view_centres()`): the host
