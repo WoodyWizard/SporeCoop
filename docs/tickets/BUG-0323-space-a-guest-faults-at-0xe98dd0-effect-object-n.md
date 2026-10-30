@@ -66,3 +66,4 @@ model instances and spawns a pirate and an escort; the guest's game must not fau
 ## History
 - 2026-10-30: opened.
 - 2026-10-30 (fix/w14-space): root cause found (host NPC ship model missing on the guest; lane 8's host Pollination.package as trigger), fixed behind fleet.model_check.
+- 2026-10-30: Space regression on lanes 8/9 with the fix, lab 20261030-170211: 15/15 (space_jump on lane 8 with the faulting host profile included).

@@ -52,3 +52,4 @@ first; its `entries_with` must be 1.
 ## History
 - 2026-10-30: opened.
 - 2026-10-30 (fix/w14-space): fixed behind space.finale_waited; FAIL 20261030-165154, PASS 20261030-164615 + 20261030-165209.
+- 2026-10-30: Space regression on lanes 8/9 with the fix, lab 20261030-170211: 15/15 (space_jump on lane 8 with the faulting host profile included).
