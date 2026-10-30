@@ -228,6 +228,11 @@ def main():
         for n, me, other in (('host', host, guest), ('guest', guest, host)):
             probe(n + '(other diet)', me, other, 'meat' if kind == 'plant' else 'plant', 2)
 
+    if a.minutes <= 0:  # --apart alone (cell_far_guest): no play phase, so no level-up caption locks the
+        if a.apart:     # guest's input on its way (a run of 2026-10-30 stood 2 min in one)
+            apart(ck, host, guest, a.apart, a.far_probe, kind)
+        ck.faults(host=host, guest=guest)
+        return ck.result()
     ck((hs['own_points'] or 0) > hp0, f'the host ate by itself ({hs["own_eats"]} items, {hs["own_points"]} points)')
     ck((gs['own_points'] or 0) > gp0, f'the guest ate by itself ({gs["own_eats"]} items, {gs["own_points"]} points)')
     ck((gs['eats_sent'] or 0) > 0 and (hs['eats_in'] or 0) > 0,
