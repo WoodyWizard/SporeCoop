@@ -1992,6 +1992,14 @@ static void test_diag_compare()
         ids.insert(i.id);
     CHECK(ids.count("extra:n9") && ids.count("missing:n4") && ids.count("missing:c5") && ids.count("pos:n1"));
     CHECK(ids.count("total:1") && ids.count("vote") && !ids.count("missing:n2") && ids.size() == 6);
+    {   // a guest is sent only its nearest lim.cell_sent cells (BUG-0295): the others are not missing
+        dg::Limits few;
+        few.cell_sent = 0;
+        bool c5 = false;
+        for (auto& i : dg::compare(h, g, few).issues)
+            c5 |= i.id == "missing:c5";
+        CHECK(!c5);
+    }
     std::string t = dg::describe(c.issues);
     printf("  %s\n", t.c_str());
     CHECK(t.find("n: 1 missing on the guest (n4)") != std::string::npos && t.find("n: 1 apart (n1 30.0)") != std::string::npos);

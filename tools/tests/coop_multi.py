@@ -221,7 +221,14 @@ def measure(host, g, path=None, missed=None):
     missing = 0
     me = gs.get(my_key(g, gs))
     total = 0
+    # the host sends a guest at most its nearest 900 cells (cellsync kSendCap, BUG-0295)
+    far = set()
+    if me:
+        cells = sorted((sum((a - b) ** 2 for a, b in zip(hp, me)), key) for key, hp in h1.items() if key.startswith('c'))
+        far = {key for _, key in cells[900:]}
     for key, hp in h1.items():
+        if key in far:
+            continue
         if key.startswith('p'):
             continue
         # the host streams NPCs within 110 m of each guest (npc.cpp kRelevance): only those count

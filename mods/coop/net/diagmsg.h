@@ -214,6 +214,7 @@ struct Limits {
     // around its own cell (BUG-0174), at most the nearest 900 (BUG-0295), not the ones around the
     // other players (BUG-0298)
     float cell_near = 60;
+    std::size_t cell_sent = 900; // the host sends a guest at most its nearest 900 cells (BUG-0295)
     float pos(char kind) const
     {
         switch (kind) {
@@ -285,14 +286,27 @@ inline Compared compare(const Digest& host, const Digest& guest, const Limits& l
     const Entry* me = nullptr; // the guest's own creature (its own game)
     if (auto it = g.find(make_key('p', guest.self)); it != g.end())
         me = it->second;
+    // the host cells a guest is sent at most: the nearest lim.cell_sent to it (BUG-0295)
+    std::set<uint32_t> far_cells;
+    if (me) {
+        std::vector<std::pair<float, uint32_t>> cd;
+        for (auto& [k, he] : h)
+            if (key_kind(k) == 'c')
+                cd.push_back({dist(*he, *me), k});
+        if (cd.size() > lim.cell_sent) {
+            std::nth_element(cd.begin(), cd.begin() + lim.cell_sent, cd.end());
+            for (std::size_t i = lim.cell_sent; i < cd.size(); i++)
+                far_cells.insert(cd[i].second);
+        }
+    }
     for (auto& [k, he] : h) {
         auto it = g.find(k);
         char kind = key_kind(k);
         if (it == g.end()) {
             if (kind == 'n' && (!lim.npc_missing || !me || dist(*he, *me) > lim.npc_near))
                 continue; // out of the guest's range: never sent to it
-            if (kind == 'c' && me && dist(*he, *me) > lim.cell_near)
-                continue; // around another player: not sent to this guest (BUG-0298)
+            if (kind == 'c' && me && (dist(*he, *me) > lim.cell_near || far_cells.count(k)))
+                continue; // around another player or past the nearest 900: not sent to this guest (BUG-0298)
             c.issues.push_back({"missing:" + key_text(k), "missing", key_text(k), 0, ""});
             continue;
         }

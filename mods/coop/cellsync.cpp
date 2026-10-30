@@ -906,6 +906,14 @@ COOP_FIX("cell.partner_tiles", "BUG-0174", g_fix_partner_tiles, "cell: the host 
 static bool g_fix_finite = true;
 COOP_FIX("pool.finite_state", "BUG-0292", g_fix_finite, "cell: a cell with a NaN / infinite pose is neither sent by the host nor mirrored by a guest");
 static uint32_t g_nonfinite_sent_skipped, g_nonfinite_dropped;
+// BUG-0299: a guest's own cell still went NaN with no NaN mirror (4 players, lab 20261030-053709): its
+// view boxes followed, PopulateTiles filled the tile pool with garbage (a fault) and the next level-up
+// crashed in PopulateTile+0x8A. Now no PopulateTiles / PopulateTile runs while the own view boxes are
+// not finite, and the own cell is put back at its last finite position (soft-body particles around
+// it, at rest). Old (`coop.fix cell.nan_guard off`): as before.
+static bool g_fix_nan_guard = true;
+COOP_FIX("cell.nan_guard", "BUG-0299", g_fix_nan_guard, "cell: no tile populating while the own view is NaN, and the own cell goes back to its last finite position");
+static uint32_t g_nan_pop_skips, g_nan_heals;
 static bool pose_finite(const net::Vec3& p, float vx, float vy, float size)
 {
     return views::finite_pos(p) && std::isfinite(vx) && std::isfinite(vy) && std::isfinite(size) && std::fabs(vx) < 1e6f &&
@@ -961,6 +969,17 @@ using TileActive_t = bool(SK_CDECL*)(const int32_t*);
 static TileActive_t o_TileActive;
 
 static float* view_boxes() { return a_ViewBoxes ? (float*)a_ViewBoxes : nullptr; }
+// BUG-0299: the own view boxes hold garbage (the own cell went NaN)
+static bool view_bad()
+{
+    float* vb = view_boxes();
+    if (!g_fix_nan_guard || !vb)
+        return false;
+    for (int i = 0; i < 12; i++)
+        if (!std::isfinite(vb[i]) || std::fabs(vb[i]) > 1e7f)
+            return true;
+    return false;
+}
 
 // a tile object index of the pool cCellGame+0x38 is still alive (pool layout: docs/re/cell.md 0)
 static bool tile_alive(uint32_t idx)
@@ -1036,6 +1055,10 @@ static bool starve_tile(const uint32_t* t)
 
 static void SK_CDECL h_PopTile(uint32_t* t, int all)
 {
+    if (view_bad()) {
+        g_nan_pop_skips++;
+        return;
+    }
     if (t && g_pass >= 0) {
         if (g_pass > 0 && t[1] != 0) { // the host does not need a partner's background
             g_tiles_bg++;
@@ -1316,6 +1339,10 @@ static void feed_starved()
 
 static void SK_CDECL h_PopTiles(int level, TileList* list, int all)
 {
+    if (view_bad()) { // BUG-0299: the active set from NaN boxes is garbage
+        g_nan_pop_skips++;
+        return;
+    }
     float* vb = view_boxes();
     bool ours = g_fix_partner_tiles && vb && list && list == host_tiles() && is_host() && in_cell() && C.puppets;
     if (!ours) {
@@ -1704,8 +1731,11 @@ struct SendCell {
 };
 static void send_state(int dest, const std::vector<SendCell>& cells);
 
+static void heal_own(uint8_t* a, const net::Vec3& me, bool bad);
 static void host_tick(double now)
 {
+    if (uint8_t* a = avatar()) // BUG-0299 on the host too
+        heal_own(a, pos_of(a), !views::finite_pos(pos_of(a)));
     uint8_t* s = S();
     if (s && now - g_last_food > 0.5) {
         g_last_food = now;
@@ -1950,6 +1980,48 @@ static void guest_state(net::Reader& r)
     }
 }
 
+// BUG-0299: our own cell back at its last finite position, its soft-body particles on a small ring
+// around it and at rest (their old positions are NaN too)
+static net::Vec3 g_own_good;
+static bool g_own_good_set;
+static void heal_own(uint8_t* a, const net::Vec3& me, bool bad)
+{
+    if (!bad) {
+        g_own_good = me;
+        g_own_good_set = true;
+        return;
+    }
+    if (!g_fix_nan_guard || !g_own_good_set)
+        return;
+    const net::Vec3 p = g_own_good;
+    float r = std::isfinite(F<float>(a, kSize)) ? std::clamp(F<float>(a, kSize) * 0.4f, 0.05f, 5.f) : 0.3f;
+    int n = F<int>(a, 0x250);
+    uint8_t* parts = G() ? F<uint8_t*>(G(), 0x4108) : nullptr;
+    if (F<uint32_t>(a, 0x248) && parts && n > 1 && n <= 64)
+        for (int i = 0; i < n; i++) {
+            uint32_t k = F<uint32_t>(a, 0x254 + 4 * i);
+            if (k >= 1500)
+                continue;
+            auto* q = (float*)(parts + 4 + 12 * (size_t)k);
+            auto* v = (float*)(parts + 0x4654 + 12 * (size_t)k);
+            float ang = 6.2831853f * (float)i / (float)n;
+            q[0] = p.x + r * std::cos(ang);
+            q[1] = p.y + r * std::sin(ang);
+            q[2] = p.z;
+            v[0] = v[1] = v[2] = 0;
+        }
+    auto* pos = (float*)(a + 0x4C);
+    auto* prev = (float*)(a + 0x84);
+    pos[0] = prev[0] = p.x;
+    pos[1] = prev[1] = p.y;
+    pos[2] = prev[2] = p.z;
+    F<uint16_t>(a, 0x48) |= 4;
+    F<uint16_t>(a, 0x4A)++;
+    stop_at(a, p);
+    if (!g_nan_heals++)
+        H->log(M, SK_WARN, "coop: cell: our own cell went back to its last finite position (%.1f %.1f) (BUG-0299)", p.x, p.y);
+}
+
 static void guest_tick(double now)
 {
     flush_food();
@@ -1966,6 +2038,7 @@ static void guest_tick(double now)
                    (unsigned)g_mirrors.size(), (unsigned)odd, g_nonfinite_dropped);
         }
         own_bad = bad;
+        heal_own(a, me, bad);
     }
     for (auto& [hidx, m] : g_mirrors) {
         uint8_t* c = m.local ? modes::cell_at(m.local) : nullptr;
@@ -3121,6 +3194,26 @@ std::string debug(const std::vector<std::string>& a)
         stop_at(av, {at.x + (float)atof(a[1].c_str()), at.y + (float)atof(a[2].c_str()), 0.f});
         return "moved";
     }
+    if (!a.empty() && a[0] == "nanself") { // tests (BUG-0299): our own cell and its particles NaN, as seen in a 4-player run
+        uint8_t* av = avatar();
+        if (!av)
+            return "no avatar\n";
+        float nan = std::nanf("");
+        int n = F<int>(av, 0x250);
+        uint8_t* parts = G() ? F<uint8_t*>(G(), 0x4108) : nullptr;
+        if (F<uint32_t>(av, 0x248) && parts && n > 1 && n <= 64)
+            for (int i = 0; i < n; i++) {
+                uint32_t k = F<uint32_t>(av, 0x254 + 4 * i);
+                if (k < 1500)
+                    for (int j = 0; j < 3; j++)
+                        ((float*)(parts + 4 + 12 * (size_t)k))[j] = nan;
+            }
+        for (int j = 0; j < 2; j++) {
+            ((float*)(av + 0x4C))[j] = nan;
+            ((float*)(av + 0x84))[j] = nan;
+        }
+        return "own cell NaN\n";
+    }
     if (a.size() >= 2 && a[0] == "selfhit") { // tests: our own cell takes a bite of <dmg> (a lethal one: KillCell)
         hurt_avatar(atoi(a[1].c_str()), 4);
         uint8_t* c = avatar();
@@ -3270,11 +3363,11 @@ std::string status()
         if (pt.list)
             pcount += (size_t)((pt.list->end - pt.list->begin) / 2);
     snprintf(t, sizeof t,
-             "cell_tiles: fix=%d centres=%u partner_lists=%u partner_tiles=%u populated=%u shared=%u bg_skipped=%u passes=%u kept=%u resets=%u drained=%u pool_full=%u flushes=%u unshared=%u handed=%u tile_pool=%u/%u budget=%d starved=%u/%u fed=%u screen=%u send_capped=%u mirror_capped=%u cells=%u peak=%u level=%d\n",
+             "cell_tiles: fix=%d centres=%u partner_lists=%u partner_tiles=%u populated=%u shared=%u bg_skipped=%u passes=%u kept=%u resets=%u drained=%u pool_full=%u flushes=%u unshared=%u handed=%u tile_pool=%u/%u budget=%d starved=%u/%u fed=%u screen=%u send_capped=%u mirror_capped=%u cells=%u peak=%u level=%d nan_pop_skips=%u nan_heals=%u\n",
              (int)g_fix_partner_tiles, (unsigned)g_views.size(), (unsigned)g_ptiles.size(), (unsigned)pcount, g_tiles_partner,
              g_tiles_shared, g_tiles_bg, g_tile_passes, g_tiles_kept, g_tile_resets, g_tiles_drained, g_tiles_full, g_tiles_flush, g_tiles_unshared, g_tiles_handed,
              G() ? F<uint32_t>(G(), 0x38 + 0xC) : 0, G() ? F<uint32_t>(G(), 0x38 + 0x18) : 0, (int)g_fix_budget, g_tiles_starved,
-             (unsigned)g_starved.size(), g_tiles_fed, g_tiles_core, g_send_capped, g_mirror_capped, cells_live(), g_cells_peak, g_tile_level);
+             (unsigned)g_starved.size(), g_tiles_fed, g_tiles_core, g_send_capped, g_mirror_capped, cells_live(), g_cells_peak, g_tile_level, g_nan_pop_skips, g_nan_heals);
     return b + std::string(d) + t;
 }
 
