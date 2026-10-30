@@ -837,6 +837,11 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   fault (lane 8). The co-op epic destroyed by the quit's save is an animal (another branch).
   docs/re/tribe.md#tribe-leave-walk-fault. Still not reproduced; no fix. Its consequence is
   contained by BUG-0284 (world.menu_player).
+* Update (2026-10-30, fix/w13-tribe-civ): seen a second time (BUG-0310, campaign#3 of lab
+  20261030-104149): the next load from the menu then faulted in the space graphics and never ended.
+  Guarded since (`tribe.leave_walk`: a cleaned-up citizen is not checked for a new walk); the
+  stand-in test `tribe_leave_walk` reproduces fault and freeze with the guard off. Which citizen the
+  game cleaned up before its action ended is still not known (docs/re/tribe.md#tribe-offstage-action).
 * Ticket: BUG-0285
 ## Space: guests' ships go down to the home planet after the first world share (2026-10-29, fix/w8-stuck)
 <a id="issue-space-share-first-frame"></a>

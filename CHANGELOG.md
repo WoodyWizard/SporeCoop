@@ -3,6 +3,11 @@
 ## [Unreleased]
 
 ### Fixed
+- Tribe: leaving the Tribe stage (for example for the galaxy menu before loading another save) no
+  longer faults when the game sends a tribe member it has already cleaned up on one more walk; that
+  fault could leave the next load from the menu unfinished (BUG-0310, BUG-0285).
+- Civilization: a vehicle the host's game moves in one step (not by driving) no longer flies past
+  its place on the other players' screens for a moment (BUG-0186).
 - Tribe (and Creature): an animal running in a herd, for example one fleeing a hunt, no longer lags
   a few metres behind on the other players' screens: a copy pushed off its path by the animal beside
   it is now put back on it after half a second (BUG-0305).

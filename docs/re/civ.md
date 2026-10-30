@@ -783,3 +783,25 @@ Measured for BUG-0222 (the civ_reload / civ_sw_vote tests read these now):
 * ✔ The order list element (v+0xB68) holds the order's place at +4: `coop.civ` prints it as
   `opos=(x y z)`. A guest's move order that the host executed shows the guest's target there
   (BUG-0059 with `civ.world off`: lab 20261030-001854).
+
+## A vehicle the host's game puts somewhere: the guest's velocity estimate (2026-10-30, fix/w13-tribe-civ)
+<a id="civ-vehicle-jump-velocity"></a>
+
+BUG-0186 (single vehicle sync outliers of 10-27 m in `play_civ.py --seed 9`):
+* ✔ (lane 7, `play_civ.py --minutes 10 --seed 9`, out/w13/play_civ9_a.log of the branch, not in
+  git) two of the player's vehicles were 16 m off at the same moment, and the guest's `coop.civ`
+  line showed `age=0.0` / `0.2` (fresh states), `pushed` 0.0 / 0.3 (the guest's game did not move
+  them) and `err=27.0` for both: the mirror stood 27 m from the target guest_tick wanted while it was
+  only 16 m from the host's vehicle. The target itself was 11+ m from the host's vehicle with a
+  fresh state, so it came from the velocity estimate (`VelocityEstimate::at`, up to 0.4 s of
+  extrapolation), not from a missing or old state, nor from a push.
+* Inferred: one step of the host's vehicle between two snapshots that the host's game made by
+  putting it somewhere (a step the vehicle cannot drive: tens of m in 0.1 s) became a speed of
+  100+ u/s, and the mirror was put up to 0.4 s of that speed past the vehicle. The earlier
+  hypotheses (an old state, a push out of a building on the guest) are ruled out for this sighting.
+  Which game action puts a vehicle (the `defend` order of the bots came right before) is not known.
+* ✔ unit (tests/net_tests.cpp, test_velocity_jump_cap): a standing vehicle put 20 units further in
+  one snapshot: 15.6 units of overshoot without a cap, 0.0 with it.
+* Fix `civ.vel_cap`: the guest gives each vehicle's estimate a top speed of 2 x its own speed
+  (+0x218) + 10; a step faster than that is taken as a jump (no speed, like the 200-unit jump).
+  `coop.civ` on the guest shows `vel=` (the estimate's speed), `top=` (+0x218) and `jumps=`.
