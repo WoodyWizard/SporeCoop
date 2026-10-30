@@ -8,8 +8,9 @@ every guest at once in the 4-player measurement, coop_sync_multi.py --fixture tr
 
 1. Two games on the tribe fixture; the guest runs at ~15 fps (frame.limit 66, the frame rate of a
    loaded guest of a 4-player session on one PC: the largest offsets came at 9-20 fps).
-2. The host picks two animals the guest has as proxies and makes them run side by side (their
-   bodies touching, a herd fleeing together) back and forth along a 12 m zigzag at 6.5 m/s, 0.6 s standing
+2. The host picks two animals of the planet's small herd species (06808ACA, the one 4 m off in
+   the 4-player probes) that the guest has as proxies and makes them run side by side (1.2 m
+   apart, a herd fleeing together) back and forth along a 12 m zigzag at 6.5 m/s, 0.6 s standing
    at each end (`coop.npc dash`, test command), for 40 s.
 3. Every ~0.5 s the guest's game positions of those animals is compared with the host's path over the
    0.25 s before the guest's sample and the host's sample after it (coop_multi.measure, as the
@@ -30,16 +31,18 @@ LIMIT = 1.5     # m
 FRAME_MS = int(os.environ.get('DASH_FRAME_MS', '66'))
 SPEED = float(os.environ.get('DASH_SPEED', '6.5'))
 LEN, WIDTH = float(os.environ.get('DASH_LEN', '12')), float(os.environ.get('DASH_WIDTH', '2'))
-OFF = float(os.environ.get('DASH_OFF', '0'))  # m: the second animal runs beside the first (0: touching)
+OFF = float(os.environ.get('DASH_OFF', '1.2'))  # m: the second animal runs this far beside the first
+# the small herd animal of the fixture's planet (the one 4 m off in the 4-player probes, BUG-0305)
+SPECIES = os.environ.get('DASH_SPECIES', '06808ACA')
 SHARE = 0.2     # of the samples (fix off: 40-45 %, on: 1-10 %)
 
 
 def host_animals(con):
     """the host's living NPCs: id -> pos"""
     out = {}
-    for m in re.finditer(r'^\s*#(\d+) \S+ species=\S+ hp=([\d.]+) dist=\S+ pos=\((\S+) (\S+) (\S+)\)', con.call('coop.npc list')['out'], re.M):
-        if 0 < float(m.group(2)) < 500:  # not the epic (it attacks the tribe, its own AI fights the path)
-            out[int(m.group(1))] = tuple(map(float, m.group(3, 4, 5)))
+    for m in re.finditer(r'^\s*#(\d+) \S+ species=(\S+) hp=([\d.]+) dist=\S+ pos=\((\S+) (\S+) (\S+)\)', con.call('coop.npc list')['out'], re.M):
+        if m.group(2) == SPECIES and float(m.group(3)) > 0:
+            out[int(m.group(1))] = tuple(map(float, m.group(4, 5, 6)))
     return out
 
 
@@ -59,7 +62,7 @@ def main():
         return ck.result()
     # the animal nearest to the guest's own view: any one the guest has; the first
     nid = both[0]
-    mate = both[1] if len(both) > 1 and OFF >= 0 else 0
+    mate = both[1] if len(both) > 1 else 0
     keys = [f'n{nid}'] + ([f'n{mate}'] if mate else [])
     print('  host:', host.call(f'coop.npc dash {nid} {LEN} {SPEED} 45 {WIDTH} {mate} {OFF}')['out'].strip(), flush=True)
     time.sleep(2)
