@@ -12,8 +12,10 @@ every machine's game. Minutes per stage, not the campaign's hours (tools/tests/p
             ready" in their co-op window: every machine's window shows the same "ready k/N" and the
             vote waits. The last guest leaves: the vote passes (everybody present is ready), it ran
             once on the host.
-4. rejoin   the last guest joins again: it plays the host's world, sees the others where they are,
-            the others see it.
+4. rejoin   the last guest joins again while another vote runs (the guest before it not ready yet):
+            it plays the host's world, sees the others where they are, the others see it; every
+            window, the newcomer's too, shows the same ready count; the vote passes once when the
+            newcomer and the other guest are ready.
 5. away     the host goes to the main menu (`coop.menu`): every guest knows (host_away=1) and stays
             in its stage; the host loads its world again: every guest is back with it, sees the
             others, the shared resources match.
@@ -32,6 +34,15 @@ from twoinst import Checks
 def actions_run(p):
     m = re.search(r'actions run (\d+)', p.host.call('coop.vote'))
     return int(m.group(1)) if m else -1
+
+
+def wait_until(cond, secs):
+    t0 = time.time()
+    while time.time() - t0 < secs:
+        if cond():
+            return True
+        time.sleep(0.5)
+    return False
 
 
 def ready_counts(p):
@@ -88,10 +99,33 @@ def main():
             if 'vote' in skip:
                 ck(p.leave(last), f'[rejoin] {last.name} leaves')
                 time.sleep(3)
+            # a vote runs while the last guest joins again. The guest before it stays not ready (else
+            # everybody present would be ready and the vote would pass before the join)
+            during = 'vote' not in skip
+            if during:
+                n1 = actions_run(p)
+                print('  host:', p.host.call('coop.vote action').splitlines()[0], flush=True)
+                time.sleep(2)
+                for gp in p.guests[:-2]:
+                    p.vote_ready(gp)
             t1 = time.time()
             ok = p.join(last)
             print(f'  {last.name} back after {time.time() - t1:.0f} s: {ok} ({p.log[-1] if p.log else ""})', flush=True)
             ck(ok, f'[rejoin] {last.name} plays the host\'s world again')
+            if during:
+                want = f'{len(p.guests) - 1}/{len(p.all)}'
+                rc = ready_counts(p)
+                print(f'  [join in a vote] ready as each window shows it: {rc} (want {want})', flush=True)
+                ck(p.host.call('coop.vote').startswith('vote active') and actions_run(p) == n1,
+                   f'[join in a vote] the vote waits for {last.name}, who joined during it')
+                ck(all(v == want for v in rc.values()), f'[join in a vote] every window, {last.name}\'s too, shows ready {want}: {rc}')
+                ck(p.vote_ready(last), f'[join in a vote] {last.name} clicks "I\'m ready"')
+                time.sleep(1.5)
+                ck(p.host.call('coop.vote').startswith('vote active'), '[join in a vote] the vote still waits for the one not ready')
+                ck(p.vote_ready(p.guests[-2]), f'[join in a vote] {p.guests[-2].name} clicks "I\'m ready"')
+                ck(wait_until(lambda: not p.host.call('coop.vote').startswith('vote active'), 8),
+                   '[join in a vote] the vote passes')
+                ck(actions_run(p) == n1 + 1, f'[join in a vote] it ran once ({n1} -> {actions_run(p)})')
             time.sleep(5)
             p.check_together(ck, 'rejoin')
             p.check_partners(ck, 'rejoin')

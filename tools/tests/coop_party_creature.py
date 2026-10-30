@@ -11,16 +11,22 @@ Alice hosts, Bob, Carol and Dave are guests (tools/tests/party.py).
 2. Two guests impress one NPC: Bob and Carol play the same social ability at the same NPC in the
    same second (`coop.social act`): the host impresses it once (impressed +1, the other game
    refused), the species table is the same on every machine.
-3. A leave during another guest's transfer: Dave leaves and joins again; while his game receives
+3. An NPC between two partners: Bob and Carol stand next to the same host NPC far from the host:
+   its behaviour tree gets the "noticed" stimulus from their puppets, only from present players'
+   puppets (BUG-0016; SPORE_FIX_OFF=npc.partners must FAIL).
+4. A leave during another guest's transfer: Dave leaves and joins again; while his game receives
    the host's world, Carol leaves. Dave still gets into the host's world, and Carol joins again
    and gets in too.
+5. A leave during another guest's creation transfer: Bob (own creations) leaves and joins again,
+   Carol leaves the moment he is back in the roster and joins again: the host's, Carol's and Dave's
+   games show Bob's own creature.
 
   SPORE_LANE=6 python3 tools/tests/coop_party_creature.py
 """
 import re
 import time
 
-from coop_creature_kills import family, game_dead, killed, npcs, proxies
+from coop_creature_kills import family, game_dead, killed, npcs, proxies, stimuli
 from party import Party
 from twoinst import Checks
 
@@ -121,6 +127,38 @@ def impress(ck, p, fam, skip):
     ck(False, '[impress] no NPC was impressed by the two guests (4 tried)')
 
 
+def noticed(ck, p, fam, skip):
+    """an NPC between two partner puppets: Bob and Carol stand next to the same host NPC far from the
+    host; the NPC's behaviour tree gets the "noticed" stimulus (0x4000000) from their puppets (the
+    host's NPC AI treats a partner like the player, BUG-0016), only from live puppets of present
+    players. SPORE_FIX_OFF=npc.partners must FAIL here."""
+    bob, carol = p.guests[0], p.guests[1]
+    st = p.host.call('coop.status')
+    pups = {int(m.group(1)): int(m.group(2), 16) for m in re.finditer(r"^remote (\d+) '[^']*' puppet=(?:0x)?([0-9A-Fa-f]+)", st, re.M)}
+    mine = {pups.get(bob.pid), pups.get(carol.pid)} - {None, 0}
+    h = npcs(p.host.con)
+    seen_by = set(proxies(bob.con)) & set(proxies(carol.con))
+    far = sorted((n[3], i) for i, n in h.items() if i in seen_by and not n[4] and n[1] != fam and n[3] > 45 and i != skip)
+    ck(far and len(mine) == 2, f'[notice] an NPC far from the host ({len(far)}) and both guests\' puppets on the host ({pups})')
+    if not far or len(mine) < 2:
+        return
+    fid = far[0][1]
+    ptr = h[fid][0]
+    for g in (bob, carol):
+        g.call(f'coop.social goto {fid}')
+    senders, t0 = {}, time.time()
+    while time.time() - t0 < 10:
+        for lo, hi, snd in stimuli(p.host.con, ptr):
+            if lo & 0x4000000:
+                senders[snd] = senders.get(snd, 0) + 1
+        time.sleep(0.25)
+    print(f'  [notice] #{fid}: noticed from {{{", ".join(f"{k:08X}: {v}" for k, v in senders.items())}}} '
+          f'(puppets {[f"{x:08X}" for x in mine]})', flush=True)
+    ck(any(s in mine for s in senders), f'[notice] host NPC #{fid} noticed a partner puppet standing next to it')
+    stale = [f'{s:08X}' for s in senders if s not in mine and s not in pups.values() and s != 0]
+    ck(not stale, f'[notice] it noticed nothing but present players\' puppets ({stale})')
+
+
 def leave_during_transfer(ck, p):
     carol, dave = p.guests[1], p.guests[2]
     ck(p.leave(dave), '[transfer] Dave leaves')
@@ -138,6 +176,38 @@ def leave_during_transfer(ck, p):
     p.check_partners(ck, 'transfer')
 
 
+def applied(con, pid):
+    """the creature key this game shows for player pid (creations: 'player <id> creature: <key>')"""
+    m = re.search(rf'^\s*player {pid} creature: ([0-9A-F]{{8}})', con.call('coop.creations')['out'], re.M)
+    return m.group(1) if m else None
+
+
+def leave_during_creation(ck, p):
+    """Bob (own creations) leaves and joins again: his creature goes to every machine. Carol leaves
+    the moment Bob is back in the roster (his creation bundle on the way to her) and joins again:
+    her game, Dave's and the host's show Bob's own creature"""
+    bob, carol, dave = p.guests
+    key0 = applied(p.host.con, bob.pid)
+    print(f'  [creation] Bob\'s creature on the host: {key0}', flush=True)
+    ck(key0, '[creation] the host shows Bob\'s own creature')
+    ck(p.leave(bob), '[creation] Bob leaves')
+    time.sleep(2)
+    bob.call(bob.join)
+    wait(lambda: bob.netname in p.ids(), 30, 0.25)
+    carol.call('coop.leave')
+    print(f'  [creation] Carol left as Bob came back ({p.host.call("coop.creations").splitlines()[0][:100]})', flush=True)
+    ck(p.wait_in(bob, 240, stable=4), '[creation] Bob is back in the host\'s world')
+    ck(p.join(carol), '[creation] Carol joins again')
+    p.ids()
+    time.sleep(4)
+    for x in p.all:
+        if x is bob:
+            continue
+        k = wait(lambda: applied(x.con, bob.pid), 20)
+        ck(k == key0, f'[creation] {x.name}\'s game shows Bob\'s own creature ({k}, want {key0})')
+    p.check_partners(ck, 'creation')
+
+
 def main():
     ck = Checks()
     p = Party.start('creature', 4)
@@ -151,7 +221,9 @@ def main():
         time.sleep(3)
         nid = hunt(ck, p, fam)
         impress(ck, p, fam, nid)
+        noticed(ck, p, fam, nid)
         leave_during_transfer(ck, p)
+        leave_during_creation(ck, p)
         p.faults(ck)
         return ck.result()
     finally:

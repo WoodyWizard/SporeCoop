@@ -1816,10 +1816,50 @@ wrong. Suite `campaign` (in no other suite): `tools/lab.py run campaign --lanes 
   `party_creature4`, `party_tribe4`, `party_civ3`, `party_space4`, `party_creature3_seq` and
   `multi3` (coop_multi chaos, ~4 min). About 2-2.5 min each (lab 20261030-003549: 6 tests in 6.4 min on
   two lanes).
-* Not covered yet (BUG-0152 stays open for them): the per-stage gameplay between guests listed in
-  the ticket (KO / revive between two guests, two guests impressing one NPC, tribe re-split, civ
-  ownership with 4, space rescue / gifts between guests, same names). New tests for them start from
-  `Party` and add their stage's own check of the other guest's game.
+* The gameplay between guests, one test per stage in the `multi` suite (BUG-0152), each 1-2 min:
+  * `party_cell_ko` (`coop_party_cell.py`, 3 players): a guest's knockout drawn translucent by the
+    host and the other guest, a revive by the other guest (`coop.pool tp <dx> <dy> <id>` puts a cell
+    next to a given player), two guests knocked out side by side revive nobody (#110).
+    `SPORE_FIX_OFF=pool.rescue` FAILS (lab 20261030-010849; PASS 20261030-010719).
+  * `party_creature_npc` (`coop_party_creature.py`, 4 players): two guests' hits kill one NPC
+    (one kill on every table, the NPC dead in every guest's game), two guests impress one NPC in
+    the same second (impressed once, the other refused), an NPC next to two partners gets the
+    "noticed" stimulus from their puppets only (behaviour tree, `stimuli` of coop_creature_kills),
+    a guest leaves while another one receives the world, and while a guest's own creation travels
+    to the others. `SPORE_FIX_OFF=npc.play_death` FAILS (20261030-011708; PASS 20261030-010920,
+    20261030-012915).
+  * `party_tribe_split` (`coop_party_tribe.py`, 4 players): the split of the player tribe and the
+    chiefs the same on every machine, a gift from guest to guest that the new owner can select, a
+    new split when the fourth player leaves and comes back. No fix switch of these paths exists, so
+    no FAIL run.
+  * `party_civ_own` (`coop_party_civ.py`, 4 players, `civ`): the shared capital, a purchase per
+    guest with the same owners everywhere, a vehicle gift from guest to guest that the new owner
+    drives, superweapon requests from two guests in one vote (#96, the game's money), a leaver's
+    vehicle. `SPORE_FIX_OFF=civ.sw_vote,civ.orphans` FAILS (20261030-011312; PASS 20261030-011125).
+  * `party_civ_trade` (`coop_party_civ_trade.py`, 3 players, `civ_npc`): the host's civ captures
+    two NPC cities (three cities, one per player, no shared capital, the same owners everywhere),
+    Bob Military and Carol Economic on every machine, one trade payout of three pairs (+100, the
+    Economic governor doubles hers), a leaver's city and role.
+  * `party_space_names` (`coop_party_space.py`, 3 players, two of them join as "Bob", #120):
+    unique names, a tool gift from guest to guest, a contract crew without the host (a 1-star
+    survey the two guests fly; the reward once on every machine), allies mirrors of two partners
+    (each guest colonizes a star; every other galaxy shows "<name>'s empire"), war and peace between
+    two guests in rivals mode with the host neutral, two disabled guests and the host's lethal hit
+    (#110). `SPORE_FIX_OFF=core.unique_names,space.helper` FAILS (20261030-011923; PASS
+    20261030-011655).
+  * The finale with several partners is in the campaign (4 players, every player enters the core:
+    lab 20261029-203821 campaign#1).
+  * `coop_party.py` (party_<stage><n>): a vote with 3-4 players, a leaver not ready lets it pass,
+    a player joining during a vote (the window of the newcomer shows it, it waits for its ready).
+* `Party.start(..., join_names={'Carol': 'Bob'})` joins an extra guest under another name;
+  `Player.netname` is its name in the session, found by `ids()`. `SPORE_FIX_OFF` reaches the extra
+  guests too (twoinst.start switches the host and Bob only).
+* Pitfall: `Player.call` returns the text; the raw console is `Player.con`.
+* Pitfall: a tribe member's size is no test criterion: GetDesiredScale (citizen vt 0x80) of the same
+  member differs between the machines and from moment to moment (chief / own ratios 1.05-1.56 on
+  one machine, only the fixture's grown chief stayed at 1.3; lab 20261030-012230, 20261030-012238).
+  `coop.tribe scales` lists `id:scale/own` per member.
+
 ## civ_reload and civ_sw_vote read the game (2026-10-30, fix/w9-tests)
 <a id="testing-civ-checks"></a>
 
