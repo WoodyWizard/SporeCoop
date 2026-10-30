@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Changed
+- A guest that plays another world of the host's stage (joined from its own game, loaded one of its
+  own saves, or kept its world with `auto_load_world=0`) now plays that world on its own: **DNA it
+  earns there stays in that world and its save** and no longer goes to the host's world; when it
+  then loads the host's world, its DNA becomes the host's total (the DNA earned meanwhile does not
+  join the pack). Its money and tribe food stay its own there too, and a spend made in the shared
+  world just before it left still counts once. Cities founded in such a world by 0.7.3.0 stay in
+  the guest's save (BUG-0231).
+
+### Fixed
+- All modules now use one rule for "is the host's world the one I play", and the host names its
+  world when a player joins, so a guest joining in the host's Civ world no longer misses the first
+  vehicle and city state (BUG-0231).
+- A world share that failed after the host's save ("cannot share the world: ...") is retried up to
+  3 times, 30 s apart; a guest in another world no longer stays there for the whole stage
+  (BUG-0231).
+
 ## [0.7.3.1] - 2026-10-29
 
 ### Added

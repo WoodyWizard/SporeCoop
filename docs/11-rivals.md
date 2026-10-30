@@ -206,8 +206,8 @@ The Space stage has no end (the finale is the galaxy core, 11.7).
 |---|---|---|
 | Stage table | the mode per stage (11.2), sent on join, saved with the world | the lobby (08-ui), the vote (9.3) |
 | Ownership | which NPC faction (herd, tribe, nation, empire) belongs to which player, kept by the host, saved with the world, restored on load | tribe.cpp / civ.cpp ownership of members, cities and vehicles |
-| Perspective | every game shows **its own** player's faction as "the player" (the avatar's nest, the player tribe, the player nation, the player empire), the others as factions of the world | Creature avatar of the player's own creature (creations.cpp), separate saves in Space |
-| Per-player progress | DNA, food, money per player (today shared: `shared.cpp`) | shared.cpp |
+| Perspective | every game shows **its own** player's faction as "the player" (the avatar's nest, the player tribe, the player nation, the player empire), the others as factions of the world | Creature avatar of the player's own creature (creations.cpp), separate saves in Space, "whose world is this machine in": `host_world.h` / `host_absent_for()` ([07-modes](07-modes.md#modes-host-world)) |
+| Per-player progress | DNA, food, money per player (today shared: `shared.cpp`) | shared.cpp, the DNA decision table `dna_route.h`, the ledger hold `SharedLedger::pause()` ([07-modes](07-modes.md#modes-host-world)) |
 | Player relations | neutral / allied / war, proposals, warnings, all stages | the rivals storage of `space_ext.h` (`rivals()`, `relation()`) |
 | NPC relations and influence | one NPC relation table per player on the host, written into each game; influence | the Creature species table sync (social.cpp, docs/re/creature.md 8.1), space_diplomacy.cpp |
 | PvP | hits between players at war applied by the host (members, creatures, vehicles) or the victim (ships), home protection | the Space PvP hit relay (docs/re/space.md 11.2), the damage filters |

@@ -1788,3 +1788,22 @@ wrong. Suite `campaign` (in no other suite): `tools/lab.py run campaign --lanes 
 * Pitfall: two games of one bottle that call `GetAdaptersAddresses` together crash Wine 10.0
   (docs/04-netcode.md#netcode-wine-nsi). A test helper that looks up addresses must not run in
   every game of a lane at the same moment.
+
+## Core wave 9: the host's world rule, DNA and money of a guest elsewhere, the share retry (2026-10-30, fix/w9-core)
+<a id="testing-w9-core"></a>
+
+BUG-0231 (GitHub #165), design in [07-modes](07-modes.md#modes-host-world). Each test FAILS with its
+switch off (`SPORE_FIX_OFF=<switch>` or the test's own flag) and PASSES with it:
+
+| Test | What | FAIL with |
+| --- | --- | --- |
+| `coop_share_retry.py` (suite `share_retry`, Creature) | the guest joins from its own copy of the planet (Otherworld); the host's share of that join fails once after the save; within 120 s the guest plays the host's world | `SPORE_FIX_OFF=core.share_retry` (the guest stays in Otherworld) |
+| `coop_civ_other_world.py` step 4 (suite `civ_other_world`) | the guest's own Civ world has 777 more money than the host's (`coop.res add money 777` offline); for 40 s in the session its game's money never becomes the host's total and the host's does not move by it | `SPORE_FIX_OFF=res.elsewhere` |
+| `coop_join_other_world.py` step 5 (suite `join_other_world`) | `coop.dna add 20` on the guest in Otherworld: its game's DNA rises by 20, the host's does not; after `coop.share` it plays the host's world with the host's total | `SPORE_FIX_OFF=core.world_dna` |
+
+Hooks: `coop.worldfix failnext` (host): the next `share_now` fails once with an error that is not
+"planet file missing". `coop.status` prints "host elsewhere=0|1, ..., own-world dna gains N, welcome
+world XXXXXXXX, share retries N"; `coop.res` prints `held=0|1/N` (the hold, host totals ignored).
+Unit: `validate_tests` test_host_world (the classifier, DNA rows 1-8 and 12, the ledger hold).
+Pitfall: Civ money moves with the planet's own income during the 40 s: the money check compares
+guest and host per sample (they stay ~777 apart), not a fixed value.
