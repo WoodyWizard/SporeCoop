@@ -10,7 +10,7 @@ role: both
 versions: main 5ae9744 and earlier
 fixed_in: unreleased
 branch: fix/w4-census, fix/w9-cell-away
-commits: 5780f32, cc0e7bd
+commits: 5780f32, cc0e7bd, a5911a7
 tests: coop_away_editor.py (suite away_editor; --nofix fails), coop_cell_away.py (suites cell_away, cell_away_editor; SPORE_FIX_OFF=pool.away fails)
 signature:
 docs: docs/06-testing.md#testing-census, docs/re/cell.md#cell-host-away, docs/06-testing.md#testing-cell-away
@@ -78,6 +78,13 @@ Cell (fix/w9-cell-away), `coop_cell_away.py`, lane 3, GOG 2024:
   go`, the guest stays in its pool): FAIL with `SPORE_FIX_OFF=pool.away` (out/lab/20261030-003513-fix-w9-cell-away:
   the guest never counts the host away, 0 creatures moved, 10 points lost); PASS with the fix
   (out/lab/20261030-003818-fix-w9-cell-away: 7 of 7 moved, host food 0 -> 10, guest 10).
+- Final code (a5911a7: the kept food also goes out before the host's first total, so the guest's
+  total does not dip; checked by the test): PASS out/lab/20261030-005950-fix-w9-cell-away (cell_away,
+  cell_away_editor; the guest's total never below 10 on the way back), with cell, cell_coop,
+  cell_meat, cell_food_away. Earlier PASS of the area: out/lab/20261030-004000-fix-w9-cell-away
+  (cell_sync, cell_evolve_poll, cell_leave, creations_cell, cell_rescue, cell_ko_gap,
+  cell_editor_invuln, away_stages; cell_coop / cell_meat failed there on the first version of the
+  `cell_away:` line, fixed in a5911a7).
 - Not checked: a host load of another save in Cell (the guest's kept food then waits for a host
   that comes back to this world), 3 players, a lossy link. The Creature freeze of the first part is
   still not observed in a game (see above).
