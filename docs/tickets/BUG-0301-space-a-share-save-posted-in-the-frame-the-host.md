@@ -49,6 +49,8 @@ why the game does that is not known).
   (lane 4): host place 80460035, guest place 40460035.
 - PASS: lab 20261030-100310 space_share_takeoff #1 (lane 4) and #2 (lane 7): saves 2.1 s / 2.0 s into
   the system, the guest in the host's system.
+- Related: lab 20261030-100500 campaign_space #1 (lane 4) and #2 (lane 7) PASS (4 bots, Civ -> Space;
+  the Space share saves 2.2 s / 2.0 s into the solar system).
 
 ## History
 - 2026-10-30: opened (fix/w11-space-join) from lab 20261030-075052 campaign_space#3; reproduced with
