@@ -10,7 +10,7 @@ role:
 versions: 0.7.2.4 (main 563f72d) and earlier
 fixed_in: unreleased
 branch: fix/w4-tests, dev/campaign, fix/w9-tests
-commits: 2db65c9 da65c35 4994b7a ab94194 96d1a2f COMMITX
+commits: 2db65c9 da65c35 4994b7a ab94194 96d1a2f 081b936
 tests: multi3, npc_multi3, campaign, party_cell3, party_creature4, party_tribe4, party_civ3, party_space4, party_creature3_seq, party_cell_ko, party_creature_npc, party_tribe_split, party_civ_own, party_civ_trade, party_space_names
 signature:
 docs: docs/06-testing.md#testing-party
