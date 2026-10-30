@@ -2200,7 +2200,8 @@ answered right after; a 1 s poller beside a standalone run saw no gap. Same sign
   itself, 4 = set_orientation every frame.
 * `editor_after_swap` (suite, ~2 min): guest at 6.7 fps (`frame.limit 150`), rejoin, editor 3 s later;
   the editor must draw (a screenshot's mean brightness over 25, PIL) and one red cross must leave it.
-  `SPORE_FIX_OFF=creations.editor_after_swap` fails (BUG-0318). With the fix the editor opens ~45 s
+  `SPORE_FIX_OFF=creations.editor_after_swap` fails (BUG-0318); `editor_after_load` (`--no-swap`) the
+  same without an avatar swap. With the fix the editor opens ~45 s
   after the request at 6.7 fps.
 * `coop.ui tree` counts the editor's windows even while it draws nothing (BUG-0318): a test that
   wants a working editor checks the picture (`coop_legless_guest.editor_shown`).

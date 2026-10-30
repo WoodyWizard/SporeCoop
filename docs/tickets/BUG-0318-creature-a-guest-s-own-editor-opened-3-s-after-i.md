@@ -10,7 +10,7 @@ role: guest
 versions: 
 fixed_in: unreleased
 branch: fix/w14-creature
-commits: 74e58b2
+commits: 74e58b2, 103a369
 tests: tools/tests/coop_editor_after_swap.py (suite editor_after_swap)
 signature:
 docs: docs/re/creations.md#creations-editor-after-swap
@@ -40,12 +40,16 @@ Observed (lane 4, 2026-10-30, guest at 6.7 fps with `frame.limit 150`):
 * Not without the swap: no rejoin at 6.7 fps (the editor drew), the swap done at normal fps 8 s
   before slowing down (drew), the rejoin at 6.7 fps but the editor entered at normal fps (drew), the
   request 60 s after the swap at 6.7 fps (drew). At 15 fps 3 s after the swap: drew.
-* Inferred: the editor takes the avatar's creature while its new body (SetSpecies) is still being
-  built over the next frames; at 60 fps that is done long before anyone clicks.
+* The same without a swap: the guest playing the world's own creature, rejoin, editor 1.2-1.7 s
+  after the load (lab 20261030-162204 legless_guest_cancel at 23 fps; 20261030-170223 at 6.7 fps).
+* Inferred: the editor takes the avatar's creature while its body (a new avatar of a loaded world,
+  or SetSpecies) is still being built over the next frames; at 60 fps that is done long before
+  anyone clicks.
 
 ## Fix
 `creations.editor_after_swap`: editor requests (the game's own entry through `h_Submit`, the vote's own
-editor in `own_editor_tick`) wait until the last avatar swap is 5 s **and** 300 frames old; the
+editor in `own_editor_tick`) wait until the last avatar swap and the current avatar (a new one after
+every load) are 5 s **and** 300 frames old; the
 held request goes out from `submit_tick` (at most 90 s). The player is told "your editor opens in a
 moment". At 60 fps the wait is 5 s after a swap; at 6.7 fps about 45 s.
 `coop.fix creations.editor_after_swap off`: no wait (0.7.3.1).
@@ -57,6 +61,9 @@ later; the editor must draw (screenshot not black) and one red-cross click must 
   60 s, the red cross did nothing).
 * PASS: out/lab/20261030-161801 (2 runs: "the editor waits until the avatar's new body is built",
   opened 45-47 s later, brightness 88, left with one click).
+`--no-swap` (suite editor_after_load, the world's own creature, no swap after the load):
+* FAIL with the switch off: out/lab/20261030-170223. PASS: out/lab/20261030-170230 (with
+  editor_after_swap again).
 
 ## History
 - 2026-10-30: opened.

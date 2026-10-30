@@ -451,8 +451,10 @@ BUG-0318. GOG 2024, lane 4, guest at 6.7 fps (`frame.limit 150`).
   after the swap it drew.
 * ~ Inferred: the new body of SetSpecies is built over the following frames and an editor that takes
   the avatar's creature before that never finishes its setup.
-* Fix `creations.editor_after_swap`: editor requests wait until the last swap is 5 s and 300 frames
-  old (`creations::avatar_swap_settling`; coop.cpp `h_Submit` holds the request, `submit_tick`
+* ✔ The same right after a load without a swap (the new avatar of the loaded world), 1.2-1.7 s
+  after the load.
+* Fix `creations.editor_after_swap`: editor requests wait until the last swap and the current avatar
+  are 5 s and 300 frames old (`creations::avatar_swap_settling`; coop.cpp `h_Submit` holds the request, `submit_tick`
   sends it, `own_editor_tick` waits too).
 * CORRECTION (2026-10-30, fix/w13-creature, recorded on fix/w14-creature): the "? Cancel run" bullet
   of [the own editor save section](#creations-own-editor-save) (the host's legs and a DNA drop in a
