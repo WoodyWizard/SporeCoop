@@ -2102,3 +2102,21 @@ answered right after; a 1 s poller beside a standalone run saw no gap. Same sign
 * `coop.pool` (cell_contacts line, both roles): `own_nf=` (finite -> non-finite transitions of the
   own cell seen by the probes), `shared_parts=` (own particle indices another cell holds),
   `vm_free_mb=`, `created=` / `destroyed=` (mirrors), `stale_targets=` (BUG-0306).
+
+## LAN list of a host with two addresses, the 15 fps sync run (2026-10-30, fix/w13-net)
+<a id="testing-lan-dedup"></a>
+
+* `coop_lan_dedup.py` (suite `lan_dedup`, ~1.2 min warm, creature fixture): the guest leaves,
+  opens the co-op window and reads its LAN rows for 12 s (`coop.lanfake 0` prints them with the
+  game id); the lane's own host must be one row. It needs a machine with two addresses on one
+  network (the lab PC: wired 192.168.1.113 and Wi-Fi .138), else it passes with a note.
+  `SPORE_FIX_OFF=net.lan_dedup` fails (20261030-134353: two rows, one per address). BUG-0210.
+<a id="testing-sync-lowfps"></a>
+
+* `coop_sync.py --fps N` (suite `sync_lowfps` = `--fps 15 civ tribe`, ~3 min): the guest runs at
+  ~N fps (`frame.limit`); in Civ the vehicles are sent on every round (moving all the time). At
+  15 fps the windowed errors stay inside the limits (vehicles p90 1.6-3.1 m against 3.0 m: one
+  vehicle, 16 samples, the noisiest kind; citizens 0.8 m, animals 0.7 m). It does not separate
+  BUG-0175's fix on and off: with the game time running mirrors walk and the 0.15 s lag window
+  hides a one-frame lag; the fix's FAIL/PASS is `npc_tests` (`--nofix`).
+

@@ -3,6 +3,11 @@
 ## [Unreleased]
 
 ### Fixed
+- Co-op window: a host whose PC is on the network twice (cable and Wi-Fi) is listed once, not
+  once per address (both hosts need this version; BUG-0210).
+- Creature and Tribe: a partner's creature, an animal or a citizen that cannot keep up by walking
+  no longer falls further behind on a player whose game runs at a low frame rate (the pull towards
+  the host's position was per frame, now per second; BUG-0175).
 - Tribe (and Creature): an animal running in a herd, for example one fleeing a hunt, no longer lags
   a few metres behind on the other players' screens: a copy pushed off its path by the animal beside
   it is now put back on it after half a second (BUG-0305).

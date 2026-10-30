@@ -224,6 +224,9 @@ anchor so other docs can link to it:
 * Not fixed: drive.h's nudge is per frame, so a mirror that cannot walk trails more at low frame
   rates; the 2024 guest's paused seconds after a load are not explained (planet still loading?).
 * Ticket: BUG-0175.
+* 2026-10-30 (fix/w13-net): drive::step's nudge is per second now (`coop.fix drive.nudge_dt`), the
+  civ vehicle glide stays per frame (no measurable difference in the lab); the GOG 2024 guest's
+  paused seconds after a load are BUG-0313 (below).
 
 ## Creature: the mating call did not lead to the editor in the bot
 
@@ -719,6 +722,8 @@ None open (BUG-0077, BUG-0080, BUG-0094 and BUG-0139 fixed on fix/w4-installer).
   no host or session id to merge them by.
 * Not checked: two separate PCs.
 * Ticket: BUG-0210.
+* 2026-10-30 (fix/w13-net): fixed (switch `coop.fix net.lan_dedup`): the LAN answer carries a game
+  id, one row per id; a host of 0.7.3.1 or older (no id) is still listed once per address.
 
 ## Space trade: an owed refund can be paid into another game (BUG-0225, fixed on fix/w9-space)
 Fixed (unreleased): owed trade and spice refunds go by the Space world and its save file
@@ -980,3 +985,15 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * A guest 6 s into Cell jumped to address 0 in UI code right after its test window was moved and its
   main thread stopped, lab 20261030-104149 campaign#1. Ticket: BUG-0309.
 * Both seen once, on an overloaded machine. Reproduce: not yet.
+
+## GOG 2024 guest: the game time stays paused for seconds after its world load (2026-10-30, fix/w13-net)
+<a id="issue-2024-load-pause"></a>
+
+* What happens: after its world load in the Tribe stage the GOG 2024 guest keeps its game time
+  paused (cGameTimeManager +0x48 = 3, black screen, ~23 fps) for ~7 s, up to ~20 s on a loaded lab
+  PC (20261030-133141); the GOG 2016 guest runs at once. Mirrors do not walk meanwhile.
+* Reproduce: `SPORE_LANE=10 python3 tools/tests/coop_sync.py tribe` prints "game time running N s
+  after the start".
+* Not known: what holds the pause (planet still loading?). Players see a black screen, no mirror
+  error.
+* Ticket: BUG-0313.
