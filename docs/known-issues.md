@@ -985,3 +985,27 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * A guest 6 s into Cell jumped to address 0 in UI code right after its test window was moved and its
   main thread stopped, lab 20261030-104149 campaign#1. Ticket: BUG-0309.
 * Both seen once, on an overloaded machine. Reproduce: not yet.
+
+## Civilization: the campaign's end of Civ never comes after the last city changed hands by a talk (2026-10-30, fix/w13-tribe-civ)
+<a id="issue-civ-end-after-talk"></a>
+
+* What happens: campaign_space#1 (lab 20261030-104149): every city of the planet was the players'
+  (`owned_cities=10` of 10 on the host), the last one without a capture (a nation's talk was answered,
+  another closed with Esc), and the game's end of Civ (spaceship editor vote) did not come in 14 min.
+* Reproduce: not reproduced; `coop_campaign.py --from civ --to space` (1 of 3 runs that day).
+* Known: the shortcut's "Capture of 0 city (0 of other nations listed)" is right (nothing left to
+  capture), it is not blind to other nations. In passing runs the last city was a capture and the
+  vote came 8 s after its cinematic.
+* Not checked: whether the game ends Civ only through a capture, or the Esc closed its prompt.
+* Next steps: log `coop.ui` dialogs on every player when all cities are owned and no end comes.
+* Ticket: BUG-0311
+
+## Civilization: an NPC city founded late in a session is missing on the guest for up to a minute (2026-10-30, fix/w13-tribe-civ)
+<a id="issue-civ-late-npc-city"></a>
+
+* What happens: in the last minute of a `play_civ.py --seed 9` session the guest lacked one new NPC
+  city and two vehicles for 40-60 s (every audit); it caught up afterwards (`cities_caught_up=4`).
+* Reproduce: `SPORE_LANE=N python3 tools/tests/play_civ.py --minutes 10 --seed 9` (1 of 3 runs).
+* Known: vehicle positions of the same run were in sync (p90 0.64 m).
+* Not checked: the guest's city catch-up timing, whether it was in the city planner then.
+* Ticket: BUG-0319
