@@ -52,3 +52,4 @@ Not found; not reproduced (2026-10-30, fix/w9-creature, lane 9):
 ## History
 - 2026-10-29: opened.
 - 2026-10-30: not reproduced on fix/w9-creature (2-player probe beside standing NPCs, one 4-player measurement).
+- 2026-10-30: fix/w11-finale: the same pattern in the Tribe stage with 4 players (one animal ~4 m off on every guest at once): BUG-0305.

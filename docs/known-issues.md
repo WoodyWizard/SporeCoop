@@ -938,3 +938,17 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   A campaign [fault] finding with this address is this, not a coop bug.
 * Not checked: a save with a Galactic Adventures captain, the GOG 2016 build.
 * Ticket: BUG-0304 (game-bug).
+
+## Tribe, 4 players: one animal stands ~4 m off on every guest at once (2026-10-30, fix/w11-finale)
+<a id="issue-tribe-npc-4m"></a>
+
+* What happens: the campaign's sync check finds one host animal 3.4-4.4 m off on all three guests at
+  once for a minute or more; with few animals near the guests two such objects make a [desync]
+  finding (lab 20261030-075052 campaign#3, n212).
+* Reproduce: `SPORE_LANE=N python3 tools/tests/coop_sync_multi.py --fixture tribe --rounds 30 --jsonl x.jsonl`
+  (an animal off by 4-5 m on two guests in the same round, about once in 30 rounds).
+* Known: not caused by the view centres merged on 2026-10-30: the same rate with
+  `SPORE_FIX_OFF=npc.rts_views,npc.view_centres_tribe` (2.2 % vs 2.6 % of animals over 1.5 m). The
+  same pattern as BUG-0281 in the Creature stage.
+* Not checked: the proxy's own error (`coop.npc list` err=) and the host animal's speed at that moment.
+* Ticket: BUG-0305.
