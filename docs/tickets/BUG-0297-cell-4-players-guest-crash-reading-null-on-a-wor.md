@@ -1,34 +1,38 @@
 ---
 id: BUG-0297
 title: Cell, 4 players: guest crash reading null on a worker thread (dc04aee5:SporeApp.exe+0x6479B7)
-status: open
+status: fixed
 kind: crash
 stage: Cell
 reported: 2026-10-30
 source: lab 20261030-035318 campaign#3 i27
 role: 
 versions: main 1d51511
-fixed_in:
-branch:
-commits:
-tests:
-signature:
-docs:
-related:
+fixed_in: unreleased
+branch: fix/w10-cell-4p
+commits: 08428c0, 3a3292b, 1ebfd3e, 6a731e6, bea15ec
+tests: cell_4p, campaign_short
+signature: dc04aee5:SporeApp.exe+0x6479B7
+docs: docs/re/cell.md#cell-broadphase-cap
+related: BUG-0295
 ---
 
 ## Report
-<!-- what the player (or the test) saw, in our words; no player names, no paths from their PC -->
+lab 20261030-035318 campaign#3, instance 27 (guest Carol): AV reading null at 0x00A479B7 on a worker thread (stack 0xA4F70E, 0xA49554, 0xA61735, 0xA5BE71).
+
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+Inferred: a consequence of BUG-0295. The same game faulted at 0x00BBB07B (the broadphase's stack buffer overrun, stack and heap corrupted) at 04:57:45, the crash came 7 s later at 04:57:52. Not seen without the overrun.
+
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+The overrun no longer happens (BUG-0295, `coop.fix cell.budget`). No separate change.
+
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+no-fail-run: a consequence of BUG-0295's overrun, not reproducible on its own; the BUG-0295 FAIL run (lab 20261030-052851) faulted at 0xBBB07B the same way. PASS: no crash or fault in cell_4p (lab 20261030-065411) and campaign_short (lab 20261030-070059).
+
 
 ## History
 - 2026-10-30: opened.
+- 2026-10-30: fix/w10-cell-4p: a consequence of BUG-0295 (same game, after the 0xBBB07B fault); fixed with it.
