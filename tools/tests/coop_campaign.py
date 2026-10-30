@@ -306,16 +306,20 @@ class Campaign:
                     continue
                 # the host's path right before each guest (BUG-0269), its last 0.25 s: the guest
                 # shows the host's objects that late on purpose (BUG-0275)
-                errs, cov, total, worst = measure(host.con, g.con)
+                missed = {}
+                errs, cov, total, worst = measure(host.con, g.con, missed=missed)
                 if total >= 5 and cov < 0.85:
                     short.append(f'{g.name}:coverage')
+                    # which kind and which keys (BUG-0288: the finding did not say)
+                    nums.append(f'{g.name}: coverage {cov:.0%} of {total}, missing '
+                                + ', '.join(f'{k}:{len(v)} {" ".join(sorted(v)[:6])}' for k, v in sorted(missed.items())))
                 for kind, v in errs.items():
                     v = sorted(v)
                     p90 = v[min(len(v) - 1, int(0.9 * len(v)))]
                     nums.append(f'{g.name}:{kind} p90 {p90:.1f} of {len(v)}, worst {worst[kind][1]} {worst[kind][0]:.1f}')
                     if over_limit(v, limit(kind)):
                         over.append(f'{g.name}:{kind}:{p90:.1f}')
-            if over:  # every guest's numbers next to a desync: one guest only, or everybody (BUG-0275)
+            if over or short:  # every guest's numbers next to a desync: one guest only, or everybody (BUG-0275)
                 self.note('sync: ' + '; '.join(nums) + ' | fps ' + ', '.join(
                     f'{p.name} {fps(p.con)}' for p in self.P if p in alive))
             keys = [k.rsplit(':', 1)[0] if k.count(':') == 2 else k for k in over] + short

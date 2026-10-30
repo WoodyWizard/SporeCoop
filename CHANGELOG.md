@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+- Tribe: after the host's tribe was wiped out and the host bounced back in time, the other players
+  no longer lose the host's whole tribe for the rest of the session (BUG-0288).
+
 ## [0.7.3.1] - 2026-10-29
 
 ### Added

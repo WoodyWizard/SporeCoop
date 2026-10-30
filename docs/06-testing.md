@@ -1788,3 +1788,23 @@ wrong. Suite `campaign` (in no other suite): `tools/lab.py run campaign --lanes 
 * Pitfall: two games of one bottle that call `GetAdaptersAddresses` together crash Wine 10.0
   (docs/04-netcode.md#netcode-wine-nsi). A test helper that looks up addresses must not run in
   every game of a lane at the same moment.
+
+## Tribe wave 9: bounce back, `coop.tribe act`, coverage detail (2026-10-30, fix/w9-tribe)
+<a id="testing-tribe-w9"></a>
+
+* `coop_tribe_bounce_mirrors.py` (suite `tribe_bounce_mirrors`, ~1.5 min warm, ~2.5 min cold,
+  BUG-0288): knocks the host's player tribe out (`coop.tribe pincer <member> <enemy> 300`), waits up
+  to 40 s for the game-over caption (`coop.ui find "Alas"`: on a cold lane it took longer than the
+  15 s of coop_tribe_gameover.py once, and without the caption the test proves nothing: it is a
+  check now), presses OK on the host, then compares the player tribe sizes of both games and the t
+  keys of `coop.sync`. `SPORE_FIX_OFF=tribe.mirror_out` must FAIL.
+* The guest's `tribe lifetime` line has `mirror_out_passed` (snapshots in which the guest spawned a
+  mirror into a player tribe without health, the BUG-0288 case) next to `spawns_blocked`.
+* `coop.uistate` prints `input_lock=N` (the game's input lock, > 0 under a caption or cinematic).
+* `coop.tribe act <action> <member id>` refuses the object actions 3 (GrabTool), 12 (Party), 15
+  (RaidHuts) and 24 (Repair) on a member: they take a tool or a hut and faulted the host (BUG-0260).
+  Attack a member with 7, an animal with `act_npc 10`. `coop_tribe_act.py` (suite `tribe_act`).
+* The campaign's coverage finding (coop_campaign.py) writes a `sync:` note with the coverage and the
+  missing keys per kind of every short guest (`coop_multi.measure(..., missed={})`).
+* twoinst.Monitor: when the console stops answering, the event now says the exception, whether the
+  game was loading and whether a fresh connection answered again within 20 s (BUG-0261).

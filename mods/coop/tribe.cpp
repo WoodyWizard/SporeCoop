@@ -1539,6 +1539,10 @@ std::string status()
 }
 
 // ---- debug (tests): orders through the same hooked functions the UI uses ----
+static bool g_fix_act_check = true;
+COOP_FIX("tribe.act_check", "BUG-0260", g_fix_act_check, "tribe: coop.tribe act refuses a tool / hut action on a member (tests)");
+static bool act_needs_object(int action) { return action == 3 || action == 12 || action == 15 || action == 24; }
+
 static void* local_of(uint16_t id)
 {
     if (C.sess && C.sess->role() == net::Role::Host) {
@@ -1705,6 +1709,12 @@ std::string debug(const std::vector<std::string>& a)
     }
     if (a.size() >= 3 && (a[0] == "act" || a[0] == "act_npc")) { // act <action> <member id | npc id>
         void* t = a[0] == "act" ? local_of((uint16_t)atoi(a[2].c_str())) : npc::proxy((uint16_t)atoi(a[2].c_str()));
+        int action = atoi(a[1].c_str());
+        // BUG-0260: the object actions (3 GrabTool, 12 Party, 15 RaidHuts, 24 Repair) take a tool or a
+        // hut; with a citizen as the target DoAction read a field of the citizen as a tool's and
+        // faulted (DoAction+0x78C, data 0x39C). The game's UI never pairs them (docs/re/tribe.md 2).
+        if (g_fix_act_check && a[0] == "act" && t && act_needs_object(action))
+            return "action " + std::to_string(action) + " needs a tool or a hut, not a member (attack a member: 7)";
         std::vector<void*> sel;
         for (auto& [id, g] : g_gm)
             if (g.c && F<uint8_t>(g.c, kSelectedOff))
@@ -1713,7 +1723,7 @@ std::string debug(const std::vector<std::string>& a)
             if (F<uint8_t>(c, kSelectedOff))
                 sel.push_back((uint8_t*)c + 0xC0);
         void* vec[3] = {sel.data(), sel.data() + sel.size(), sel.data() + sel.size()};
-        int r = thiscall<int>(a_DoActionForObjects, (void*)nullptr, (void*)vec, atoi(a[1].c_str()), t, (void*)nullptr);
+        int r = thiscall<int>(a_DoActionForObjects, (void*)nullptr, (void*)vec, action, t, (void*)nullptr);
         return "action ordered (" + std::to_string(sel.size()) + " selected, ret " + std::to_string(r) + ")";
     }
     if (a.size() >= 2 && a[0] == "spawn" && is_host()) { // spawn <n>: test setup, n more adults in the player tribe

@@ -79,6 +79,18 @@ class Monitor(threading.Thread):
             return False
         return bool(tail) and ('world: loading ' in tail[-1] or 'loading the world of' in tail[-1])
 
+    def answers_again(self, secs):
+        """seconds until a fresh console connection answers `frame`, None when it does not"""
+        t0 = time.time()
+        while time.time() - t0 < secs:
+            try:
+                if Console(self.inst, timeout=5).call('frame').get('ok'):
+                    return time.time() - t0
+            except (OSError, ValueError):
+                pass
+            time.sleep(0.5)
+        return None
+
     def __init__(self, inst, name):
         super().__init__(daemon=True)
         self.inst, self.name, self.stop = inst, name, False
@@ -90,9 +102,14 @@ class Monitor(threading.Thread):
         while not self.stop:
             try:
                 m = re.search(r'frame=(\d+)', con.call('frame').get('out', ''))
-            except (OSError, ValueError):
+            except (OSError, ValueError) as e:
                 if not self.stop:
-                    Monitor.events.append(f'{self.name}: the console stopped answering (crash?)')
+                    t0 = time.time()
+                    back = self.answers_again(20)
+                    Monitor.events.append(f'{self.name}: the console stopped answering (crash?) [{e!r}, '
+                                          f'loading={self.loading()}, '
+                                          + (f'answered again after {back:.1f} s' if back is not None else
+                                             f'no answer for {time.time() - t0:.0f} s more') + ']')
                 return
             f = int(m.group(1)) if m else -1
             now = time.time()

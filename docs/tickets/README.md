@@ -300,3 +300,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0288](BUG-0288-tribe-two-guests-see-too-few-of-the-host-s-objec.md) | open | bug | Tribe | 2026-10-29 |  | tribe: two guests see too few of the host's objects (coverage desync) in the 4-player campaign |
 | [BUG-0289](BUG-0289-cell-a-guest-s-cells-out-of-sync-by-2-2-limit-1.md) | open | bug | Cell | 2026-10-29 |  | cell: a guest's cells out of sync by 2.2 (limit 1.2) in the 4-player campaign |
 | [BUG-0290](BUG-0290-tests-the-campaign-bot-answers-the-same-civ-talk.md) | open | test | Civ | 2026-10-29 |  | tests: the campaign bot answers the same Civ talk dialog for 20 min and civ -> space times out |
+| [BUG-0291](BUG-0291-tribe-animals-far-from-the-player-tribe-are-miss.md) | open | desync | Tribe | 2026-10-30 |  | tribe: animals far from the player tribe are missing on guests (NPCs are sent only within 250 m of the tribe) |

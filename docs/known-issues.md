@@ -811,6 +811,13 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Not checked: which object is null; whether a mod object is involved; what else of the menu
   reset (0xB32C30) is skipped besides the player record.
 * Next steps: probe 0xC0DB10 during `coop_tribe_*` leaves to the menu with 4 players.
+* Update (2026-10-30, fix/w9-tribe): the null object is the citizen's own `+0xB54`, released by its
+  cleanup 0xC1CA40; the game updates it once more through a handler that runs only when the mode is
+  no longer Tribe (0xD673B0 -> 0xACA2A0 -> 0xD57680 -> WalkTo -> 0xC0DB10). No coop.dll frame in the
+  chain; members spawned by `coop.tribe spawn` have +0xB54 and 4 leaves with 28 of them caught no
+  fault (lane 8). The co-op epic destroyed by the quit's save is an animal (another branch).
+  docs/re/tribe.md#tribe-leave-walk-fault. Still not reproduced; no fix. Its consequence is
+  contained by BUG-0284 (world.menu_player).
 * Ticket: BUG-0285
 ## Space: guests' ships go down to the home planet after the first world share (2026-10-29, fix/w8-stuck)
 <a id="issue-space-share-first-frame"></a>
@@ -835,3 +842,19 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   the same prefix still use Wine's nsi device. Seen only with several games in one
   bottle (lab). Reproduce the collision: two games of a lane, `coop.fix core.adapters off` on both,
   `coop.adapters stress 300` on both at once. Ticket: BUG-0286.
+
+## Tribe: guests miss host objects while the host's tribe is knocked out (2026-10-30, fix/w9-tribe)
+<a id="issue-tribe-coverage-before-bounce"></a>
+
+* What happens: in the 4-player campaign (lab 20261029-203821 campaign#2) two guests had less than
+  85 % of the host's objects at two checks (21:07:27 and 21:07:57 lab clock), while the host's
+  player tribe was being knocked out (members 13 -> 5, then the game-over caption's cinematic).
+* Reproduce: not reproduced apart from the part after the bounce back (BUG-0288, fixed).
+* Known: the guests' mirror counts followed the host's member counts in the 30 s trace lines; the
+  coverage check counts the host's members (t) and the host's animals within 90 m of the guest's
+  pointer (n). Which kind was missing is not logged. Candidates: a new member of the host (born or
+  saved) refused by the guest's BUG-0172 guard while every mirror was dead (fixed by
+  `tribe.mirror_out`), or animals near a guest's pointer far from the village (BUG-0291).
+* Next steps: the campaign's coverage finding now names the missing keys per kind; read them in the
+  next 4-player campaign.
+* Ticket: BUG-0288 (fixed part), BUG-0291

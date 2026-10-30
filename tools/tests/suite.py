@@ -157,6 +157,7 @@ add('tribe_snapshot', P + 'coop_tribe_snapshot.py', minutes=12)  # after the liv
 add('tribe_gameover', P + 'coop_tribe_gameover.py', minutes=4)  # a member added during the game-over caption (BUG-0172; --nofix fails)
 add('tribe_ko', P + 'coop_tribe_ko.py', warm=True, minutes=3, fixture='tribe')  # a knocked-out NPC member lies down on the guest (BUG-0173; --nofix fails)
 add('tribe_bounce_mirrors', P + 'coop_tribe_bounce_mirrors.py', warm=True, minutes=4, fixture='tribe')  # the guests mirror the host's tribe after its game over and bounce back (BUG-0288; --nofix fails)
+add('tribe_act', P + 'coop_tribe_act.py', warm=True, minutes=3, fixture='tribe')  # the coop.tribe act test command does not fault the host (BUG-0260; --nofix fails)
 # two bots play Civilization for 10 minutes through real input (docs/stability/civ.md)
 add('play_civ', P + 'play_civ.py --minutes 10', ('nightly',), minutes=13, fixture='civ_npc')
 add('space_play', P + 'coop_space_play.py', ('smoke',), minutes=6)

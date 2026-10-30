@@ -209,10 +209,11 @@ def over_limit(v, lim):
     return n >= max(2, len(v) - int(0.9 * len(v)))
 
 
-def measure(host, g, path=None):
+def measure(host, g, path=None, missed=None):
     """position errors per kind of one guest against the host's path (host_path() before the
     guest's sample, one more host sample after it), coverage, objects counted.
-    Returns errs {kind: [m]}, coverage, total, worst {kind: (m, key)}"""
+    Returns errs {kind: [m]}, coverage, total, worst {kind: (m, key)}; `missed` (a dict) gets the
+    host's keys the guest lacks per kind (which kind a coverage desync is: BUG-0288)"""
     h0, h1 = path or host_path(host)
     gs = sample(g)
     h2 = sample(host)
@@ -230,6 +231,8 @@ def measure(host, g, path=None):
         gp = gs.get(key)
         if gp is None:
             missing += 1
+            if missed is not None:
+                missed.setdefault(key[0], []).append(key)
             continue
         e = min(seg_dist(gp, h0.get(key, hp), hp), seg_dist(gp, hp, h2.get(key, hp)))
         errs.setdefault(key[0], []).append(e)
