@@ -39,7 +39,9 @@ STAGE_BTN = (1396, 1063)  # the cell HUD button under the portrait: History, the
 HISTORY_OK = (1415, 1055)
 CAPTION_OK = (1410, 1048)
 # the editor's exit dialog after an edit ("Save 'X' as a new creation or replace 'X' before exiting?")
-SAVE_DIALOG = {'dontsave': (510, 604), 'cancel': (612, 604), 'replace': (830, 604), 'new': (926, 604)}
+# the save dialog's buttons (its "Cancel" at 612 604 is not used: until 2026-10-30 the key 'cancel' here
+# made `--guest cancel` add legs and press that Cancel instead of the red cross, BUG-0283)
+SAVE_DIALOG = {'dontsave': (510, 604), 'replace': (830, 604), 'new': (926, 604)}
 QUIT = (944, 604)  # "Exiting will cause your changes to be lost": Quit
 OWN = ('new', 'replace')  # the guest keeps a creature it designed
 
@@ -162,10 +164,13 @@ def main():
             guest.call('click %d %d' % SAVE_DIALOG[how])
         elif how == 'cancel':
             guest.call('click %d %d' % CANCEL)
-            time.sleep(3)
-            if 'Editor' in mode(guest):  # "your changes will be lost" (seen: the editor showed changes)
+            # the editor takes ~4 s to close (lab 20261030-141448: the mode read Editor 3 s after the
+            # click, its window already gone, no dialog): wait before calling it a dialog
+            asked = not wait(lambda: 'Editor' not in mode(guest), 12)
+            if asked:  # "your changes will be lost": the editor would show changes nobody made (BUG-0283)
                 shot(guest, 'legless_guest_cancel_dialog.png')
                 guest.call('click %d %d' % QUIT)
+            ck(not asked, 'one click on the red cross leaves the unchanged editor (BUG-0283)')
         else:
             guest.call('click %d %d' % DONE)
         left = wait(lambda: 'Creature' in mode(guest), 30)
