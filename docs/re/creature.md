@@ -1048,3 +1048,20 @@ BUG-0281, BUG-0300, BUG-0180. GOG 2024, lanes 4 and 5. Extends [the relevance pa
   "is no creature of this world any more" and makes it again) and logs a proxy without a species.
 * ✔ BUG-0118 re-read on the lane 4 exe (2026-10-30): CreatureSelectionUI 0xB6C9C3..0xB6CA11 reads
   `(+0xE84)->+0x32C` only with `+0xB58` mask 0x2 clear and mask 0x1 set; the guard (mask 0x1) covers it.
+
+## Proxies of running NPCs: why they did not walk (2026-10-30, fix/w14-creature)
+<a id="creature-kinematic-proxies"></a>
+
+BUG-0281. GOG 2024, lane 5. Corrects [the proxy section](#creature-proxy-guest-side) ("not found why").
+
+* ✔ A guest proxy's locomotion works: one `cLocomotiveObject::MoveTo` (creature spatial vt 0xE0)
+  12 m ahead made the 065CBE70 proxy run at 4 m/s at once (`coop.npc pwalk`, test command).
+* ✔ The same MoveTo given again every 0.1 s (drive::step while the target moves on) **restarts the
+  walk**: the proxy stood, stepped back and crept at 1-2 m/s. Writing its position to itself or its
+  orientation every frame did not slow it.
+* ✔ While it walks, `set_position` (vt 0x38) towards the path is undone by the locomotion (14-76 of
+  519-624 nudges kept); `teleport` (vt 0x44) puts it exactly there.
+* ✔ Fix `npc.kinematic` (Creature only): while the host's NPC moves the proxy is teleported onto the
+  interpolated host position every frame and gets the host's velocity (`+0xC0 + 0x1C8`); stills of
+  the guest show running poses. p90 off the host's path at 15 fps 0.31-0.34 m (before 1.84 m with
+  BUG-0175, 3.3-3.5 m without). Standing NPCs keep the driving.

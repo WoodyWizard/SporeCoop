@@ -833,6 +833,9 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   at 4 m/s were p90 6.2 m off on a 15 fps guest without `npc.trail` and 3.1-3.4 m with it (Tribe
   0.7-0.95 m): Creature proxies of that species hardly walk by themselves. Measure:
   `SPORE_LANE=N DASH_FIXTURE=creature python3 tools/tests/coop_tribe_npc_dash.py`.
+* Fixed (2026-10-30, fix/w14-creature, `npc.kinematic`): the proxies of running NPCs did not walk (a
+  walk order every 0.1 s restarts the walk); they now follow the host's path (p90 0.3 m at 15 fps,
+  docs/re/creature.md#creature-kinematic-proxies). Standing NPCs 4 m off were never reproduced.
 
 ## Cell: a guest's mirrors trail the host's cells at a low frame rate (2026-10-29, fix/w7-sync)
 

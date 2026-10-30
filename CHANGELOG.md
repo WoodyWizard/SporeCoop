@@ -3,6 +3,11 @@
 ## [Unreleased]
 
 ### Fixed
+- Creature: animals running on the host are no longer shown metres behind on the other players'
+  screens (their copies hardly walked: each new walk order restarted the walk); a running animal's
+  copy now follows the host's path exactly (BUG-0281).
+- Creature: an editor opened right after a rejoin on a slow PC no longer stays black for good: it
+  opens once the player's creature is built (BUG-0318).
 - Co-op window: a host whose PC is on the network twice (cable and Wi-Fi) is listed once, not
   once per address (both hosts need this version; BUG-0210).
 - Creature and Tribe: a partner's creature, an animal or a citizen that cannot keep up by walking

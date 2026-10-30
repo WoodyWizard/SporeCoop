@@ -1007,7 +1007,7 @@ void submit_tick(double now)
         return;
     }
     if (now - g_submit_held_at > 0.05)
-        LOG("the save is written: the editor opens (%.1f s later)", now - g_submit_held_at);
+        LOG("the editor opens (held %.1f s: a world save or the avatar's new body)", now - g_submit_held_at);
     g_submit_queued = true; // no save from here until the game has the request (save_blocker)
     H->run_outside_frame(
         [](void* r) {
@@ -1093,6 +1093,7 @@ bool SK_CDECL h_Submit(void* req)
     if (!g_vote_bypass && req && creations::avatar_swap_settling(H->time_seconds())) {
         hold_submit(req); // BUG-0318: after the new body is built (submit_tick)
         LOG("the editor waits until the avatar's new body is built");
+        feed("your editor opens in a moment (your creature is still being built)");
         g_submits_after_swap++;
         return false;
     }

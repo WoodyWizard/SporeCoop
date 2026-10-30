@@ -47,3 +47,4 @@ campaign census finding of this kind comes with the log line that names what hap
 ## History
 - 2026-10-30: opened.
 - 2026-10-30: fix/w13-creature: analysed (not a range edge; a proxy in the list without a creature in the world), not reproduced; diagnostics + guard npc.proxy_listed; stays open.
+- 2026-10-30: fix/w14-creature: guard kept; no "no creature of this world" / "has no species" line in any lab game log of fix/w13-creature and fix/w14-creature (about 40 Creature runs, lanes 4-5); stays open.
