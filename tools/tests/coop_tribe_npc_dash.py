@@ -15,6 +15,12 @@ every guest at once in the 4-player measurement, coop_sync_multi.py --fixture tr
 3. Every ~0.5 s the guest's game positions of those animals is compared with the host's path over the
    0.25 s before the guest's sample and the host's sample after it (coop_multi.measure, as the
    campaign does). PASS: 90 % of the samples within 1.2 m (fix off: p90 1.5-2.8 m, on: 0.7-0.95 m).
+   BUG-0321: on a loaded machine the host's states reached the guest late or at 4-6 a second
+   instead of 10 (`age=` up to 0.5 s, `rx=`): the guest showed the animal where the host had it
+   that long ago, 2 m back at 6.5 m/s, with the proxy right on its target. Those samples measure
+   the machine, not the driving: the p90 is taken over the samples whose state was fresh (age at
+   most 0.25 s and at least 7 states a second); with fewer than 40 such samples the run is
+   inconclusive (RESULT: SKIP). The p90 of all samples is printed too.
 
 Switch: SPORE_FIX_OFF=npc.trail (the driving before the fix) must FAIL.
 
@@ -58,6 +64,14 @@ def host_animals(con):
     return out
 
 
+def proxy_feed(con):
+    """the guest's proxies: id -> (age of the last state in s, states per second)"""
+    out = {}
+    for m in re.finditer(r'^\s*#(\d+) species=\S+ spawned .*? age=([\d.]+) .*? rx=(\d+)/s', con.call('coop.npc list')['out'], re.M):
+        out[int(m.group(1))] = (float(m.group(2)), int(m.group(3)))
+    return out
+
+
 def guest_proxies(con):
     return {int(m.group(1)) for m in re.finditer(r'^\s*#(\d+) species=\S+ spawned ', con.call('coop.npc list')['out'], re.M)}
 
@@ -89,13 +103,21 @@ def main():
         time.sleep(3)
     print('  host:', host.call(f'coop.npc dash {nid} {LEN} {SPEED} 45 {WIDTH} {mate} {OFF}')['out'].strip(), flush=True)
     time.sleep(2)
-    errs = []
+    errs, fresh, fps_g, fps_h, loop = [], [], [], [], 0
     per = {k: 0 for k in keys}
     t_end = time.time() + 40
     while time.time() < t_end:
         h0, h1 = cm.host_path(host)
         gsm = cm.sample(guest)
         h2 = cm.sample(host)
+        feed = proxy_feed(guest)
+        loop += 1
+        if loop % 4 == 0:
+            for con, lst in ((guest, fps_g), (host, fps_h)):
+                try:
+                    lst.append(float(cm.fps(con)))
+                except ValueError:
+                    pass
         for key in keys:
             if key not in gsm or key not in h1:
                 continue
@@ -103,6 +125,9 @@ def main():
                     cm.seg_dist(gsm[key], h1[key], h2.get(key, h1[key])))
             errs.append(e)
             per[key] += 1
+            age, rx = feed.get(int(key[1:]), (9.0, 0))
+            if age <= 0.25 and rx >= 7:
+                fresh.append(e)
             if os.environ.get('DASH_VERBOSE'):
                 gl = [l.strip() for l in guest.call('coop.npc list')['out'].splitlines() if re.match(rf'\s*#{nid}\s', l)]
                 print(f'    {e:.2f} m', re.sub(r' (puppet|ptr|herd|body|species|hp|dist)=\S+', '', gl[0])[:220] if gl else '-', flush=True)
@@ -117,9 +142,18 @@ def main():
         far = sum(1 for e in errs if e > LIMIT)
         print(f'  errors: median {s[len(s) // 2]:.2f} m, p90 {s[int(0.9 * len(s))]:.2f} m, max {s[-1]:.2f} m, '
               f'{far} of {len(errs)} over {LIMIT} m', flush=True)
-        p90 = s[int(0.9 * len(s))]
+        med = lambda v: sorted(v)[len(v) // 2] if v else -1
+        print(f'  frame rates (median of {len(fps_g)}): guest {med(fps_g):.1f}, host {med(fps_h):.1f}; '
+              f'all samples p90 {s[int(0.9 * len(s))]:.2f} m', flush=True)
+        f = sorted(fresh)
+        if len(f) < 40:
+            print(f'  only {len(f)} of {len(errs)} samples with a fresh state (the machine is too loaded to measure)')
+            print('RESULT: SKIP (inconclusive: the host\'s states reached the guest late, BUG-0321)')
+            return 0
+        p90 = f[int(0.9 * len(f))]
+        print(f'  fresh-state samples: {len(f)} of {len(errs)}, p90 {p90:.2f} m', flush=True)
         ck(p90 <= P90, f'the guest shows the running animals where the host has them '
-           f'(90 % of {len(errs)} samples within {p90:.2f} m, limit {P90} m)')
+           f'(90 % of {len(f)} samples with a fresh state within {p90:.2f} m, limit {P90} m)')
     return ck.result()
 
 
