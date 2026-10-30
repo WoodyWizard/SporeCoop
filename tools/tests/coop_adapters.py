@@ -9,7 +9,7 @@ One game of the lane:
 2. the crash path: a session ends (Leave), the next lookup faults the way Wine's nsi did
    (`coop.adapters fault`: a read of 0xD54CF6CC through ucrt's memcpy) and the co-op window opens
    on its connect page (its refresh asks for the addresses). The game must keep running (frames go
-   on, the console answers, no crash report) and the window must keep its address hint.
+   on, the console answers, no crash report) and the address list keeps its last value.
 
   SPORE_LANE=3 python3 tools/tests/coop_adapters.py [--without-fix]
   (--without-fix or SPORE_FIX_OFF=core.adapters: the old synchronous lookup on the main thread,
