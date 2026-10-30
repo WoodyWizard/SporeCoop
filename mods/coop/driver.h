@@ -21,6 +21,7 @@ struct State {
     uint32_t nudges = 0, nudges_kept = 0, teleports = 0, stalls = 0, trails = 0;
     float last_err = 0, last_speed = 0;
     double hold_until = 0; // BUG-0305: after a trail teleport the nudge puts it on the path every frame
+    double last_step = 0;  // BUG-0281: the time of the previous step (the nudge per second)
 };
 
 inline float speed(const net::Vec3& v) { return std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z); }
@@ -34,9 +35,13 @@ inline float speed(const net::Vec3& v) { return std::sqrt(v.x * v.x + v.y * v.y 
 // proxies, BUG-0169: an NPC of the host pushing against a rock reports a speed while it stands)
 // trail: also teleport when it stays more than 1.5 m off for 0.5 s (NPC proxies, BUG-0305: proxies of
 // a herd that flees together push each other off the path and cannot run faster than the animal)
+// nudge_dt: the nudge pulls as far per second at any frame rate (NPC proxies, BUG-0281)
 inline void step(void* p, const net::Vec3& pos_in, const net::Quat& rot, const net::Vec3& vel, State& ds, double now,
-                 double age = 0, bool nudge = false, float snap = 8.f, bool stall = false, bool trail = false)
+                 double age = 0, bool nudge = false, float snap = 8.f, bool stall = false, bool trail = false,
+                 bool nudge_dt = false)
 {
+    double dt = ds.last_step > 0 ? now - ds.last_step : 0.0;
+    ds.last_step = now;
     float a = (float)std::min(std::max(age, 0.0), 0.5);
     net::Vec3 pos{pos_in.x + vel.x * a, pos_in.y + vel.y * a, pos_in.z + vel.z * a};
     net::Vec3 cur = game::position(p);
@@ -63,7 +68,7 @@ inline void step(void* p, const net::Vec3& pos_in, const net::Quat& rot, const n
             ds.last_target = tgt;
         }
         if (nudge && err > 0.5f) {
-            const float k = now < ds.hold_until ? 1.f : 0.15f;
+            const float k = now < ds.hold_until ? 1.f : nudge_gain(dt > 0 ? dt : 1.0 / 60, nudge_dt);
             ds.nudged_to = {cur.x + (pos.x - cur.x) * k, cur.y + (pos.y - cur.y) * k, cur.z + (pos.z - cur.z) * k};
             game::set_position(p, ds.nudged_to);
             ds.nudged = true;
