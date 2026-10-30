@@ -4,6 +4,7 @@
   cmd       command line, run from the repository root with SPORE_LANE set
   suites    smoke (before a merge, ~10 min on 3 lanes), full (every test), nightly (full + long),
             extended (paths outside the other suites: 3-4 players, hot reload; also nightly),
+            multi (3-4 players per stage in minutes, coop_party.py; also extended / nightly),
             campaign (a whole game of four bot players, coop_campaign.py: in no other suite, run it alone)
   warm      may reuse running games of the lane (twoinst.start with SPORE_WARM=1: the fixture is
             loaded into a fresh save slot, the guest rejoins; no restart). Tests that change the
@@ -236,8 +237,22 @@ add('chaos_tribe_awful', 'SPORE_NET=awful ' + P + 'coop_chaos.py --fixture tribe
 # paths outside the lab's other suites (BUG-0152, BUG-0162): `lab.py run extended`. Three players in
 # one lane (the extra guest is instance 20+N in the lane's bottle, coop_multi.extra_instances)
 add('hotreload', P + 'hotreload_check.py', ('extended',), minutes=3)  # mod.reload coop twice, joins again
-add('multi3', P + 'coop_multi.py --fixture creature --players 3 --minutes 3', ('extended',), minutes=7)
+add('multi3', P + 'coop_multi.py --fixture creature --players 3 --minutes 3', ('extended', 'multi'), minutes=7)
 add('npc_multi3', P + 'coop_npc_multi.py --players 3 --seconds 40', ('extended',), minutes=5)
+
+# 3-4 players per stage in minutes (BUG-0152, tools/tests/party.py, docs/06-testing.md#testing-party): joins of two
+# guests at once, each guest's game shows the others, shared totals, a vote with N, a leave and rejoin of the
+# last guest, the host in the menu with several guests. `lab.py run multi`; also nightly
+for st, n, extra in (('cell', 3, ''), ('creature', 4, ''), ('tribe', 4, ''), ('civ', 3, ''), ('space', 4, ''),
+                     ('creature', 3, ' --one-by-one --skip away')):
+    add(f'party_{st}{n}' + ('_seq' if extra else ''), P + f'coop_party.py --fixture {st} --players {n}{extra}',
+        ('multi', 'extended'), minutes=3)
+
+# the gameplay paths between guests per stage (BUG-0152): each a few minutes on party.py
+for name, cmd in (('party_cell_ko', 'coop_party_cell.py'), ('party_creature_npc', 'coop_party_creature.py'),
+                  ('party_tribe_split', 'coop_party_tribe.py'), ('party_civ_own', 'coop_party_civ.py'),
+                  ('party_space_names', 'coop_party_space.py'), ('party_civ_trade', 'coop_party_civ_trade.py')):
+    add(name, P + cmd, ('multi', 'extended'), minutes=4)
 
 # a whole game of four bot players, Cell to the galactic core (BUG-0152, docs/06-testing.md#testing-campaign):
 # `lab.py run campaign --lanes 1 --skip <every other lane>` (one lane; `run` has no --lane, BUG-0259). Four games in the lane's bottle (instances 20+N / 30+N), nothing else of
@@ -256,11 +271,11 @@ add('campaign_space', P + 'coop_campaign.py --from civ --to space --minutes 2 --
 
 
 def select(spec):
-    """suites (smoke / full / nightly / extended / campaign) and test names, comma-separated and mixed: 'smoke,vote'"""
+    """suites (smoke / full / nightly / extended / multi / campaign) and test names, comma-separated and mixed: 'smoke,vote'"""
     names = {t['name'] for t in T}
     want = set()
     for w in (x.strip() for x in spec.split(',') if x.strip()):
-        if w in ('smoke', 'full', 'nightly', 'extended', 'campaign'):
+        if w in ('smoke', 'full', 'nightly', 'extended', 'campaign', 'multi'):
             want |= {t['name'] for t in T if w in t['suites']}
         else:
             assert w in names, f'unknown test: {w} (known: {sorted(names)})'

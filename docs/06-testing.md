@@ -1914,3 +1914,94 @@ answered right after; a 1 s poller beside a standalone run saw no gap. Same sign
   the guest's proxies of them). `SPORE_FIX_OFF=npc.view_centres_tribe` fails both checks,
   `SPORE_FIX_OFF=npc.rts_views` only the BUG-0291 one. `coop.census` lists no creatures in Tribe
   (Creature and Civ only), so the test reads `coop.npc list`.
+## Three and four players per stage: party.py, coop_party.py (2026-10-30, fix/w9-tests)
+<a id="testing-party"></a>
+
+* `tools/tests/party.py` (BUG-0152, GitHub #131) is the helper for every test with more than two
+  players, and the base of the 0.8 Rivals tests (docs/11-rivals.md). `Party.start(fixture, players=3|4)`
+  starts lane N's host (Alice) and guest (Bob) with `twoinst.start`, then one or two extra guests in
+  the same bottle (Carol = instance 20+N, Dave = 30+N, empty profiles `mp1` / `mp2`,
+  `coop_multi.start_extra`) that join at the same moment (`join_together=False`: one after the
+  other). Each machine is a `Player` (`name`, `con`, `inst`, `pid`, `join`).
+* Checks of every machine's own game: `check_together` (each guest plays the host's stage with an
+  avatar and the host counts it as together; Space: in the session), `check_partners` (each guest's
+  game shows every other player, guests too, near where that player's own game has it:
+  `partner_view(viewer, subject)` compares the viewer's `coop.sync` key `p<id>` with the subject's
+  own avatar; limits per stage in `party.NEAR`), `check_res` (shared food / money), `faults`.
+* Actions: `leave`, `join` (waits until it is back in the host's world; never presses Enter on the
+  host's "game saved" box: the mod closes it, a press could hide a stuck box), `vote_ready` (a
+  real click on "I'm ready" in the player's co-op window), `vote_line` (the vote line of that
+  machine's window, "... - ready k/N - s"), `host_away` (`coop.menu`, until every guest shows
+  `host_away=1`), `host_back` (the host loads the lane's slot again), `stop` (ends the lane's
+  games: the extras share the bottle, so these tests are cold and mark the lane state not reusable).
+* `coop_party.py --fixture <stage> --players 3|4 [--one-by-one] [--skip vote,rejoin,away]`: join
+  (two guests at once), see (every guest sees every other player, shared totals), vote (`coop.vote
+  action`; all guests but the last ready: every window shows the same ready k/N, the vote waits;
+  the last guest leaves: it passes once), rejoin of the last guest, the host in the menu and back.
+  Suite `multi` (`tools/lab.py run multi --lane N`, also `extended` / `nightly`): `party_cell3`,
+  `party_creature4`, `party_tribe4`, `party_civ3`, `party_space4`, `party_creature3_seq` and
+  `multi3` (coop_multi chaos, ~4 min). About 2-2.5 min each (lab 20261030-003549: 6 tests in 6.4 min on
+  two lanes).
+* The gameplay between guests, one test per stage in the `multi` suite (BUG-0152), each 1-2 min:
+  * `party_cell_ko` (`coop_party_cell.py`, 3 players): a guest's knockout drawn translucent by the
+    host and the other guest, a revive by the other guest (`coop.pool tp <dx> <dy> <id>` puts a cell
+    next to a given player), two guests knocked out side by side revive nobody (#110).
+    `SPORE_FIX_OFF=pool.rescue` FAILS (lab 20261030-010849; PASS 20261030-010719).
+  * `party_creature_npc` (`coop_party_creature.py`, 4 players): two guests' hits kill one NPC
+    (one kill on every table, the NPC dead in every guest's game), two guests impress one NPC in
+    the same second (impressed once, the other refused), an NPC next to two partners gets the
+    "noticed" stimulus from their puppets only (behaviour tree, `stimuli` of coop_creature_kills),
+    a guest leaves while another one receives the world, and while a guest's own creation travels
+    to the others. `SPORE_FIX_OFF=npc.play_death` FAILS (20261030-011708), `npc.partners` too
+    (20261030-014139; PASS 20261030-010920,
+    20261030-012915).
+  * `party_tribe_split` (`coop_party_tribe.py`, 4 players): the split of the player tribe and the
+    chiefs the same on every machine, a gift from guest to guest that the new owner can select, a
+    new split when the fourth player leaves and comes back. No fix switch of these paths exists, so
+    no FAIL run.
+  * `party_civ_own` (`coop_party_civ.py`, 4 players, `civ`): the shared capital, a purchase per
+    guest with the same owners everywhere, a vehicle gift from guest to guest that the new owner
+    drives, superweapon requests from two guests in one vote (#96, the game's money), a leaver's
+    vehicle. `SPORE_FIX_OFF=civ.sw_vote,civ.orphans` FAILS (20261030-011312; PASS 20261030-011125).
+  * `party_civ_trade` (`coop_party_civ_trade.py`, 3 players, `civ_npc`): the host's civ captures
+    two NPC cities (three cities, one per player, no shared capital, the same owners everywhere),
+    Bob Military and Carol Economic on every machine, one trade payout of three pairs (+100, the
+    Economic governor doubles hers), a leaver's city and role.
+  * `party_space_names` (`coop_party_space.py`, 3 players, two of them join as "Bob", #120):
+    unique names, a tool gift from guest to guest, a contract crew without the host (a 1-star
+    survey the two guests fly; the reward once on every machine), allies mirrors of two partners
+    (each guest colonizes a star; every other galaxy shows "<name>'s empire"), war and peace between
+    two guests in rivals mode with the host neutral, two disabled guests and the host's lethal hit
+    (#110). `SPORE_FIX_OFF=core.unique_names,space.helper` FAILS (20261030-011923; PASS
+    20261030-011655).
+  * The finale with several partners is in the campaign (4 players, every player enters the core:
+    lab 20261029-203821 campaign#1).
+  * `coop_party.py` (party_<stage><n>): a vote with 3-4 players, a leaver not ready lets it pass,
+    a player joining during a vote (the window of the newcomer shows it, it waits for its ready).
+* `Party.start(..., join_names={'Carol': 'Bob'})` joins an extra guest under another name;
+  `Player.netname` is its name in the session, found by `ids()`. `SPORE_FIX_OFF` reaches the extra
+  guests too (twoinst.start switches the host and Bob only).
+* Pitfall: `Player.call` returns the text; the raw console is `Player.con`.
+* Pitfall: a tribe member's size is no test criterion: GetDesiredScale (citizen vt 0x80) of the same
+  member differs between the machines and from moment to moment (chief / own ratios 1.05-1.56 on
+  one machine, only the fixture's grown chief stayed at 1.3; lab 20261030-012230, 20261030-012238).
+  `coop.tribe scales` lists `id:scale/own` per member.
+
+## civ_reload and civ_sw_vote read the game (2026-10-30, fix/w9-tests)
+<a id="testing-civ-checks"></a>
+
+* `coop_civ_sw_vote.py` (BUG-0117, BUG-0222, ~1 min): makes the weapons usable without the free
+  cheat (`mem.write` of `unlocked[type]` at player civ +0x484, the civ from `coop.civ sw`; shared
+  money 20000 by `coop.res add money`) and asserts the game's money (+0x98) on the host and on the
+  guest: the vote fired the cheap type of its own request (2000), not the dear type 1 of the later
+  one (16000). Cases `--case guest|host|both`. `SPORE_FIX_OFF=civ.sw_vote` FAILS (guest case: 16000
+  spent; host case: 0, type 1 is then on cooldown). Pitfall: a fired type stays unusable for minutes,
+  so each case uses its own cheap type; never fire type 4 at the zero vector (crashed the game,
+  docs/re/civ.md#civ-superweapon-2024).
+* `coop_civ_reload.py` (BUG-0040, BUG-0059, BUG-0222, ~1.5 min): the alarm boost as a precondition
+  (the boosted vehicles' +0x218 at 1.5x), the speed back to the vehicle's own 2 s after `coop.leave`
+  (`SPORE_FIX_OFF=civ.boost` FAILS: the game keeps 1.5x for 30 s and more), and a forced stale
+  vehicle entry (`coop.civ stale_hv <id> 1`, host only, Civ only): the guest's order must not reach
+  that NPC vehicle in the host's game (`opos` of `coop.civ`; `SPORE_FIX_OFF=civ.world` FAILS).
+* Pitfall: two `lab.py run` started in the same second on different lanes got the same run folder
+  (out/lab/20261030-001854 holds both logs, the summary of one). Start them a few seconds apart.
