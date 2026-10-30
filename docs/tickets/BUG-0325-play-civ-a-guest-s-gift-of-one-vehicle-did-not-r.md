@@ -41,3 +41,4 @@ died on the host between the guest's selection and the gift, or a command raced 
 
 ## History
 - 2026-10-30: opened.
+- 2026-10-30 (fix/w14-tribe-civ): again in seed 5 (2 rejected guest commands; "1 own vehicles selected but no give button (My role: none - pick one)"). The host now logs every rejected command with its kind ("civ: rejected command kind K from player P"). Open.

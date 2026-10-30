@@ -3,6 +3,11 @@
 ## [Unreleased]
 
 ### Fixed
+- Civilization: a vehicle of another nation standing on a spice node no longer flickers 13 m away
+  on the other players' screens (their game moved it off ground it found invalid), and a fast
+  vehicle is no longer thrown ahead of its place when the host stutters (BUG-0186).
+- Civilization: a building the host's game rebuilt after a siege no longer stays a ruin for the
+  other players (BUG-0324).
 - Co-op window: a host whose PC is on the network twice (cable and Wi-Fi) is listed once, not
   once per address (both hosts need this version; BUG-0210).
 - Creature and Tribe: a partner's creature, an animal or a citizen that cannot keep up by walking

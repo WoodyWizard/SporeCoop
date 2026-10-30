@@ -1,20 +1,21 @@
 ---
 id: BUG-0324
 title: play_civ: the end audit finds a ruin (and a building) on the guest that the host no longer has
-status: open
+status: fixed
 kind: desync
 stage: Civ
 reported: 2026-10-30
 source: play_civ.py --seed 11 / --seed 9, fix/w13-tribe-civ and fix/w14-tribe-civ
 role: guest
 versions: main 4dbacc5
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w14-tribe-civ
+commits: 9689722
+tests: civ_ruin_repair (coop_civ_ruin_repair.py)
 signature:
-docs:
+docs: docs/06-testing.md#testing-dash-fresh-states
 related:
+switch: civ.ruin_repair
 ---
 
 ## Report
@@ -28,16 +29,25 @@ During the session the audits count such differences (`ruins_differ`, `buildings
 failing; the guest's `buildings_fixed=+N/-M` shows the reconciliation correcting buildings.
 
 ## Root cause
-Not analysed. Candidates (inferred): a capture removes the ruins on the host (docs/re/civ.md 9.4)
-and the guest's reconciliation of that city comes a few seconds later (the end audit has no
-second look, unlike owners since BUG-0206); or a real desync of ruins after a capture.
+Observed (code): `reconcile_buildings` (civ.cpp, the guest's per-city reconciliation with the
+host's building list) only turned a building into a ruin when the host's was one; a guest building
+that was a ruin while the host's was whole stayed matched and was never undone.
+Inferred (not seen directly): after a siege that ended without a capture the host's game rebuilt
+a ruined building (city 1 of seed 9 had capture max 19, not taken); the guest's own game did not.
+Observed in play_civ: 3 of 6 end audits on lane 7 had such a city.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+`civ.ruin_repair` (9689722): a ruin on the guest whose host building is whole does not match it; it
+goes as an extra (DestroyBuilding) and the host's comes back as a missing one (build_in_city), the
+reconciliation's existing paths (`buildings_fixed=+N/-N`).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+`coop_civ_ruin_repair.py` (the guest's game alone ruins one building of an NPC city,
+`coop.civ ruinlocal`): FAIL with `SPORE_FIX_OFF=civ.ruin_repair`: lab run
+20261030-162619-fix-w14-tribe-civ (the ruin stayed 20 s); PASS: lab run
+20261030-162734-fix-w14-tribe-civ (2 runs, the guest matched the host within 2 s, buildings_fixed +1/-1).
+Not verified: the host's rebuilding after a siege itself (the stand-in makes the guest's state).
 
 ## History
 - 2026-10-30: opened.
+- 2026-10-30 (fix/w14-tribe-civ): fixed (civ.ruin_repair), stand-in test FAIL 20261030-162619, PASS 20261030-162734.
