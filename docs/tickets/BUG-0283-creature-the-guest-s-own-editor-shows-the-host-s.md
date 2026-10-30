@@ -1,7 +1,7 @@
 ---
 id: BUG-0283
 title: Creature: the guest's own editor shows the host's new parts while it is open (DNA drops, cancel asks to confirm)
-status: open
+status: not-reproduced
 kind: bug
 stage: creature
 reported: 2026-10-29
@@ -9,12 +9,12 @@ source: fix/w7-legless test run 20261029-143204
 role: guest
 versions: main after 0.7.3.0 (fix/w7-finale dcff1cf)
 fixed_in:
-branch:
-commits:
+branch: fix/w13-creature
+commits: 3922e14
 tests: tools/tests/coop_guest_editor_hold.py (suite guest_editor_hold, extended)
 signature:
 docs: docs/re/creations.md#creations-own-editor-save
-related: BUG-0278
+related: BUG-0278, BUG-0317, BUG-0318
 ---
 
 ## Report
@@ -33,22 +33,27 @@ questions: whether the shared DNA total (BUG-0128) or the host's world package s
 creature in an open editor; whether a player can lose its own edits this way.
 
 ## Root cause
-Not found. 2026-10-30 (fix/w9-creature, lane 9, 0.7.3.1 code): not reproduced in 3 runs of
-`coop_guest_editor_hold.py` (the report's flow from the Cell stage): the red cross 3 s after the
-guest's editor came up (out/lab/20261030-004649), and the editor left alone 5 s
-(20261030-004334) and 40 s (20261030-005344) after the host's new creation and world reached the
-guest: the editor kept the legless creature and 115 DNA, one click left it. In the report the first
-click on the red cross did nothing; whatever kept the editor open may be what let the host's body
-in. A first guess (the host's creation bundles registered while the editor is open) was tried as a
-fix and dropped: the test passed without it too.
+Not a bug of the mod or the game: the report came from the test's own input. In
+`coop_legless_guest.py` (since its first version, ac3f711) the dialog table `SAVE_DIALOG` had a key
+`cancel` (the save dialog's Cancel button), so `--guest cancel` took the `how in SAVE_DIALOG` branch:
+it **added legs on the guest** (`add_legs(guest)`), clicked done and then the save dialog's Cancel;
+the red-cross branch (`elif how == 'cancel'`) never ran. The legs and the 115 -> 65 DNA in the
+report's screenshots were the guest's own edit, the editor stayed open because the dialog's Cancel
+keeps it open, and the second click (the test's fallback: red cross, Quit) asked "your changes will
+be lost" because there were changes. Seen again on lane 4 (2026-10-30, the old test): the same
+screenshots, the legs on the guest's own creature right after `add_legs(guest)`.
+With the test fixed (BUG-0317) the red cross leaves the unchanged editor without a dialog (lab
+20261030-141448: the editor closed 4 s after the click; the check then looked after 3 s and called
+it a dialog, now it waits 12 s; with that, out/lab/20261030-142629 passes the check). 5 runs of `coop_guest_editor_hold.py` (3 on fix/w9-creature, 1
+here) never showed a change either.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+None needed in the mod. The test: BUG-0317.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+no-fail-run: not a bug (the test's own edit, see Root cause).
 
 ## History
 - 2026-10-29: opened (fix/w7-legless, while reproducing BUG-0278).
 - 2026-10-30: not reproduced on fix/w9-creature (3 runs, coop_guest_editor_hold.py, suite extended).
+- 2026-10-30: fix/w13-creature: explained: the test pressed add_legs + the dialog Cancel for --guest cancel (BUG-0317); not-reproduced.

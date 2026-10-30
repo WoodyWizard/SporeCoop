@@ -13,6 +13,23 @@
   fault could leave the next load from the menu unfinished (BUG-0310, BUG-0285).
 - Civilization: a vehicle the host's game moves in one step (not by driving) no longer flies past
   its place on the other players' screens for a moment (BUG-0186).
+- Cell: a player leaving the Cell stage to load the host's world (after joining or rejoining) no
+  longer has the mod create or move cells while the game is tearing the stage down (a guard after one
+  crash seen in testing, BUG-0308).
+- Cell: a player whose cell was moved far again and again (for example put back after an invalid
+  position) no longer fills its game with leftover background cells; a guest then stopped seeing
+  the host's cells at all. Background cells far from the player are now removed (BUG-0314).
+- Creature: when the host leaves to the main menu, the other players keep the animals they saw
+  around them (their own game runs them now); before, their planet stood empty and the nests
+  brought their members back one at a time (BUG-0180).
+- Creature: a player's game checks every second that the copies of the host's animals are still in
+  its world and makes a lost one again, with a log line saying what happened (BUG-0300, diagnostics).
+- Tests: a test reusing running games no longer inherits fixes switched off by the previous test
+  (BUG-0312); `coop_legless_guest.py --guest cancel` clicks the red cross as it says (BUG-0317).
+- Space: a star nobody had visited could still get different planets in the two games (for
+  example 6 and 10), so a partner's planet did not exist on the other side. The game loads the star's
+  species on the way and that load drew from the same random numbers as the planets; it no longer
+  does (BUG-0185). Test: `coop_space_seed_profile.py`.
 - Tribe (and Creature): an animal running in a herd, for example one fleeing a hunt, no longer lags
   a few metres behind on the other players' screens: a copy pushed off its path by the animal beside
   it is now put back on it after half a second (BUG-0305).

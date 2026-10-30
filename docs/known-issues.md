@@ -251,16 +251,16 @@ anchor so other docs can link to it:
   host's legless creature itself (0.7.3.0 pinned it in `choices.ini` after Replace, and Save New kept
   the host's key), and the co-op window's arrows lead back to "the world's own". Still open: that
   editor is the "edit a creation" one (save dialogs, a red cross), not the evolution editor the host
-  gets, and it can show the host's new parts while it is open (BUG-0283; seen once, not reproduced
-  in 3 runs of `coop_guest_editor_hold.py` on 2026-10-30).
+  gets. (BUG-0283, "it shows the host's new parts while it is open", was the test's own edit: its
+  `--guest cancel` added legs and pressed the save dialog's Cancel, BUG-0317.)
 * The guest's mating-call button needs a collected part (`S+0x69`): whether a guest touching a host's
-  part token (a mirror) sets it was not checked; the test sets it by console.
+  part token (a mirror) sets it was not checked; the test sets it by console (BUG-0316).
 * The report's Creature case ("3 rejoins did not fix it") did not reproduce as such on lane 5 with
   0.7.2.1: the guest saw the host's legged creature after the editor, also after a rejoin. Fixed
   causes that can show a stale creature: a creation sent without its records (the guest then shows
   its own body for the host), a rejoin applying the same version again (writing its package failed,
   nothing was applied).
-* Ticket: BUG-0178.
+* Ticket: BUG-0178 (closed 2026-10-30: the vote for the switch is BUG-0315, the part token check BUG-0316).
 
 ## Creature (guest): the social game is simplified
 
@@ -280,6 +280,10 @@ anchor so other docs can link to it:
   time (`local_alive` 0-1 after 30 s in `coop_exit_menu.py`). Making the mirrors local NPCs
   instead failed (a mirror with AI leaves its herd and is destroyed, docs/re/creature.md 8.3).
 * Ticket: BUG-0180.
+* Fixed (2026-10-30, fix/w13-creature, `npc.away_locals`): the guest replaces the host's NPCs it
+  showed last (in nest herds of its game) by creatures of its own game at the same places in the
+  same nest herds (docs/re/creature.md#creature-proxy-guest-side). `coop_away_refill.py`: 0 own NPCs
+  near the guest for 25 s without the fix, 11 of 11 at once with it.
 
 ## Space: no test save after the tutorial missions
 
@@ -307,6 +311,11 @@ anchor so other docs can link to it:
   (a ship's height is its zoom, docs/re/space.md 7.10). That made the rescue fail on GOG 2024 (the
   3D distance never got under 60 m): fixed, the repair measures along the ground now, and the bot
   zooms to the partner's height. The landing delay itself is still not understood.
+* 2026-10-30 (fix/w13-space): not reproduced. `coop_space_land_early.py` (both players click the
+  home planet and zoom in right after `start('space')`, the game's own landing conditions printed by
+  `coop.space landcheck`) landed 7-16 s after the load in 3 direct runs on lane 9 and 2 lab runs on
+  lane 8 (GOG 2024). The conditions are in docs/re/space.md#space-seed-profile. A landing itself
+  shows `paused 1` for about a second (the planet loads).
 * Ticket: BUG-0182.
 
 ## Galaxy menu: a host that stopped answering right after "Co-op" during the intro (once)
@@ -338,6 +347,10 @@ anchor so other docs can link to it:
   before the generation, or the empire's state read by 0xC309F0). `coop_space_jump.py` prints "same" or
   "DIFFERENT planets" without failing. A sure fix: the host sends the planet records of a newly
   generated star (or the guest asks for them before entering).
+* 2026-10-30 (fix/w13-space): FIXED. The draw that differed: a first load of the star's species
+  profile inside RequirePlanetsForStar drew on the seeded generator (docs/re/space.md#space-seed-profile).
+  Test `coop_space_seed_profile.py`. Left open: `GenerateRandomName` draws stay on the global
+  generator, so planet names may still differ (not compared).
 * Ticket: BUG-0185.
 
 ## Civilization: single vehicle sync outliers of 20-27 m
@@ -815,6 +828,11 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Not reproduced (2026-10-30, fix/w9-creature): with 2 players a guest's avatar 0.3-3 m beside
   a standing host NPC did not push its proxy (0.1-0.6 m off); a 4-player measurement showed large
   errors only for moving NPCs in a fight (2-19 m on 1-3 guests).
+* Checked again (2026-10-30, fix/w13-creature, lane 5, docs/re/creature.md#creature-proxy-guest-side):
+  standing NPCs next to a 15 fps guest's avatar stayed within 0.5 m; two NPCs running side by side
+  at 4 m/s were p90 6.2 m off on a 15 fps guest without `npc.trail` and 3.1-3.4 m with it (Tribe
+  0.7-0.95 m): Creature proxies of that species hardly walk by themselves. Measure:
+  `SPORE_LANE=N DASH_FIXTURE=creature python3 tools/tests/coop_tribe_npc_dash.py`.
 
 ## Cell: a guest's mirrors trail the host's cells at a low frame rate (2026-10-29, fix/w7-sync)
 
@@ -824,6 +842,9 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * 2026-10-30 (fix/w9-cell-food): the 4-player campaign's "Bob:c:2.2" (BUG-0289) was not this: Bob's
   pause menu was open (no simulation, mirrors moved only by the 3 m jumps). The campaign check now
   skips a paused guest.
+* 2026-10-30 (fix/w13-cell): not reproduced on 5d7f20e (2 players at 15 fps: 0 of 16 616 cells over
+  1.2 m; 4 players at 15 / 30 fps after level-ups: p90 <= 0.05 m). BUG-0282 is not-reproduced, guard
+  test `cell_lowfps`.
 
 ## Tribe: a handled game fault in a citizen's walk while the stage is left (2026-10-29, 4-player campaign)
 <a id="issue-tribe-leave-hears-fault"></a>
@@ -982,6 +1003,9 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   NaN matrices / rest offsets that made the position NaN again (docs/re/cell.md#cell-nan-fields).
 * Still open: what makes the first NaN (the own_probe log lines name the step) and what drains the
   address space (not the mirror churn, not the NaN state: cell_churn and cell_nan_all measured 0 MB).
+* 2026-10-30 (fix/w13-cell): the coverage loss was the jumps of the NaN heals leaving background
+  cells behind until the guest's pool hit its mirror cap (BUG-0314, fixed by `cell.bg_cull`). The
+  first NaN and the address space drain are still not reproduced (docs/re/cell.md#cell-bg-leftovers).
 * Ticket: BUG-0307
 
 ## Cell, 4 players: two one-off faults of the 4th player (2026-10-30, fix/w12-cell-fault)
@@ -1028,3 +1052,37 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Known: vehicle positions of the same run were in sync (p90 0.64 m).
 * Not checked: the guest's city catch-up timing, whether it was in the city planner then.
 * Ticket: BUG-0319
+* 2026-10-30 (fix/w13-cell): BUG-0308 got a guard (`cell.leave_guard`: none of our cell work runs on
+  the pool while the stage is being left); the crash itself is still not reproduced. BUG-0309: the
+  stack words are stale frames, nothing to go on (docs/re/cell.md#cell-leave-guard).
+## Creature, 4 players: a guest misses one of the host's NPCs although it has the rest of its herd (2026-10-30, fix/w13-creature)
+<a id="issue-proxy-not-in-world"></a>
+
+* What happens: campaign_short (lab 20261030-060122 on fix/w10-cell-4p): for 30 s and more a guest
+  lacked one NPC 90 m from it (census and sync-check), while three members of the same herd 77-84 m
+  away were there. The guest's proxy list had it (states arriving), its world had no creature for it.
+* Reproduce: not reproduced (2-player rejoins, guest camera far from its proxies); seen once in 4-player
+  `campaign_short`.
+* Known: not a range edge; the guest's relevance pass never pools proxies (`+0xB67` = 0); since
+  fix/w13-creature the guest logs "the proxy's creature ... is no creature of this world any more"
+  or "... has no species" and makes such a proxy again (`npc.proxy_listed`).
+* Next steps: when the line shows in a campaign, follow what freed or emptied that creature.
+* Ticket: BUG-0300.
+## Space finale: the host's "entered with the partner" counter after a wait (2026-10-30, fix/w13-space)
+<a id="issue-finale-entries-with"></a>
+
+* `coop_space_finale.py` failed once (lab 20261030-142729, lane 9): both entered the core
+  together, but the host's `entries_with` stayed 0 because it entered before the guest's "reached"
+  message came (the wait flag is cleared when everybody is at the gate). Players see nothing wrong;
+  the test's check reads the counter. Reproduce: run `space_finale` a few times.
+* Ticket: BUG-0320.
+
+## Space: a guest fault at 0xE98DD0 when the host's ship appears, lane 8 only (2026-10-30, fix/w13-space)
+<a id="issue-space-e98dd0-lane8"></a>
+
+* Since ~15:00 on 2026-10-30 every `space_jump` / `space_seed_profile` run on lane 8 had a caught
+  guest fault `0xC0000005 at 0x00E98DD0` (labelled cPlanetGfx_Create+0x8F0; a null from a virtual
+  getter in 0xE98D90, gfx/effects code) ~1.4 s after the host's ship appeared in the NPC system the
+  guest had jumped to; also with main 4dbacc5 (lab 20261030-151438). Lane 9 is clean with the same
+  code. Reproduce: `tools/lab.py run space_jump --lanes 1 --skip 1,2,3,4,5,6,7,9,10`.
+* Ticket: BUG-0323.

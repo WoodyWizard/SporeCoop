@@ -38,3 +38,5 @@ No product change (step 2 of the issue was conditional on step 1 finding a probl
 - 2026-10-28: opened.
 - 2026-10-28: fix/w5-cell: measured (both roles), no problem; guard tests cell_respawn / cell_respawn_swap and `coop.cell pool` added.
 - 2026-10-30 (fix/w9-cell-away, GitHub #155 re-check): cell_respawn and cell_respawn_swap PASS again on lane 3 (out/lab/20261030-002235-fix-w9-cell-away) with a new check: the game's death count S+0x70 (`coop.pool deaths`) of the knocked-out partner does not change. Measured: S+0x70 stayed 0 on both machines also for the player whose game ran its death (the selfhit death goes through KillCell / PlayerDeath; only BreakOrSwallow 0xE7AEE0 counts deaths, docs/re/cell.md). Still not reproduced, no product change.
+- 2026-10-30 (fix/w13-cell, re-check): cell_respawn and cell_respawn_swap PASS on lane 3 (out/lab/20261030-133815,
+  main 5d7f20e code). Still not reproduced, no product change.

@@ -102,6 +102,9 @@ std::string space_ident_test(void* u, const std::string& what, bool on);
 void cell_forget();               // the Cell stage was left: forget the puppets' pool indices
 uint32_t cell_create(const net::Vec3& pos, void* res_ref, int level, const uint32_t key[3], const net::Quat* rot);
 void cell_destroy(uint32_t idx);
+// BUG-0308: the Cell stage is being left (quit posted for a world load or the menu) and coop.fix
+// cell.leave_guard is on: no mirror creation and no pool write of ours until the mode changes
+bool cell_leaving();
 // move a cell exactly (soft-body cells take their position from their particles, docs/re/cell.md §6)
 void cell_move(uint8_t* c, const net::Vec3& p, bool still = false);
 void mat_to_quat(const float* m, net::Quat& q);

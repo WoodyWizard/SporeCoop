@@ -9,6 +9,7 @@ A measurement tool, no pass / fail of its own.
 
   SPORE_LANE=6 python3 tools/tests/coop_sync_multi.py --fixture creature --rounds 45
   FPSLIM=Carol:66,Dave:33   force a frame time (ms) on some guests (frame.limit): 15 / 30 fps
+  --food N                  cell: the host's food progress set to N first (level-ups)
   --jsonl out.jsonl         every object's error, key and offset, one line per guest check
 """
 import argparse
@@ -103,6 +104,7 @@ def main():
     ap.add_argument('--fixture', default='creature', choices=('cell', 'creature', 'tribe'))
     ap.add_argument('--rounds', type=int, default=40)
     ap.add_argument('--jsonl', default=None)
+    ap.add_argument('--food', type=int, default=0, help='cell: the host\'s food progress first (level-ups, BUG-0307 hunt)')
     a = ap.parse_args()
     host, guest = start(a.fixture, planet_of(a.fixture))
     extra = cm.start_extra(2)
@@ -117,6 +119,8 @@ def main():
     for kv in filter(None, os.environ.get('FPSLIM', '').split(',')):
         n, ms = kv.split(':')
         print(f'  {n}: frame.limit {ms}:', guests[n].call(f'frame.limit {ms}')['out'].strip(), flush=True)
+    if a.food and a.fixture == 'cell':
+        print('  host: food', host.call(f'coop.pool food {a.food}')['out'].strip()[:100], flush=True)
     stop = []
     insts = {'Alice': (lane.HOST, 0), 'Bob': (lane.GUEST, 1),
              **{n: (inst, k + 2) for k, (n, (_, inst)) in enumerate(extra.items())}}

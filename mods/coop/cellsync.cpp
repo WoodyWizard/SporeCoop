@@ -2524,6 +2524,54 @@ static void solo_tick()
         solo_reset();
 }
 
+// BUG-0314: the game populates the background decoration (query G+0x4100) of the tiles around the
+// camera and frees those cells only on a level change (RemoveCellsOfOldScale). A cell that jumps far
+// again and again (BUG-0307's NaN heals, 100-200 m each) left them behind at every place: 1099
+// background cells after 40 jumps, both roles; a guest's pool reached its mirror cap (1500 live
+// cells, BUG-0295) and it created no mirror any more (coverage 1% in lab 20261030-104149). With
+// cell.bg_cull background cells farther than kBgFar from our own cell are destroyed (the game's own
+// DestroyCell, as RemoveCellsOfOldScale does for cells outside the view), every 2 s, at most 300 a pass.
+static bool g_fix_bg_cull = true;
+COOP_FIX("cell.bg_cull", "BUG-0314", g_fix_bg_cull, "cell: background decoration cells left far behind (over 150 m from the own cell) are removed, so jumps do not fill the pool");
+constexpr float kBgFar = 150.f;
+static uint32_t g_bg_culled;
+static uint32_t g_leave_writes, g_leave_dropped; // BUG-0308: our pool work while the stage was left (off) / skipped (on)
+static double g_bg_cull_at;
+static void bg_cull(double now)
+{
+    if (!g_fix_bg_cull || now - g_bg_cull_at < 2.0 || scale_moving())
+        return;
+    g_bg_cull_at = now;
+    uint8_t* g = G();
+    uint8_t* av = avatar();
+    if (!g || !av)
+        return;
+    net::Vec3 me = pos_of(av);
+    if (!views::finite_pos(me))
+        return;
+    uint8_t* data = F<uint8_t*>(g, 0x1C);
+    uint32_t used = F<uint32_t>(g, 0x1C + 0x10), size = F<uint32_t>(g, 0x1C + 0x14);
+    void* bq = F<void*>(g, 0x4100);
+    if (!data || size != 0x398 || !bq)
+        return;
+    std::vector<uint32_t> gone;
+    for (uint32_t slot = 0; slot < used && slot < 4096 && gone.size() < 300; slot++) {
+        uint8_t* c = data + (size_t)slot * size;
+        uint32_t idx = F<uint32_t>(c, 0);
+        if ((idx & 0xFFFF) != slot || F<void*>(c, kQuery) != bq || F<uint8_t>(c, kKeepAlive))
+            continue;
+        net::Vec3 q = pos_of(c);
+        if (views::finite_pos(q) && std::hypot(q.x - me.x, q.y - me.y) > kBgFar)
+            gone.push_back(idx);
+    }
+    for (uint32_t idx : gone)
+        destroy_local(idx);
+    if (!gone.empty() && (g_bg_culled == 0 || (g_bg_culled + gone.size()) / 1000 != g_bg_culled / 1000))
+        trace::ev("cell", "bg cull", "%u background cells over %.0f m from our cell removed (%u in all, BUG-0314)",
+                  (unsigned)gone.size(), kBgFar, g_bg_culled + (unsigned)gone.size());
+    g_bg_culled += (uint32_t)gone.size();
+}
+
 void tick(double now)
 {
     static bool was_in_cell;
@@ -2539,9 +2587,15 @@ void tick(double now)
     if (!cell && (g_solo || g_solo_owed))
         solo_reset(); // BUG-0205: the stage was left
     was_in_cell = cell;
+    if (cell && avatar() && game::leaving_stage()) { // BUG-0308: no pool writes while the stage is torn down
+        if (modes::cell_leaving())
+            return;
+        g_leave_writes++;
+    }
     solo_tick();
     if (!in_cell() || !C.sess || !C.sess->connected() || !avatar())
         return;
+    bg_cull(now);
     if (is_host())
         host_tick(now);
     else if (is_guest() && !g_solo)
@@ -2594,6 +2648,13 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
     // a knockout state is kept (and relayed) in any stage: an "up again" dropped while we were in an
     // editor or loading left the partner knocked out here (BUG-0061)
     bool cell = in_cell() && avatar() && !g_test_away;
+    if (cell && game::leaving_stage()) { // BUG-0308: the stage is being torn down
+        if (modes::cell_leaving()) {
+            g_leave_dropped++;
+            cell = false;
+        } else if (type == net::MSG_CELL_STATE)
+            g_leave_writes++;
+    }
     // BUG-0239: a guest's meal that reaches us in an editor (or without an avatar, around a rebuild)
     // is acknowledged without its points, as a meal eaten first: the guest takes it back at our next
     // total instead of keeping it "on the way" until a later meal drops it all at once
@@ -3143,6 +3204,73 @@ std::string debug(const std::vector<std::string>& a)
         });
         return out.empty() ? "no npcs\n" : out;
     }
+    if (!a.empty() && a[0] == "census") { // tests (BUG-0307 hunt): every used slot of the cell pool by kind
+        uint8_t* g = G();
+        if (!g)
+            return "no cell game\n";
+        uint8_t* data = F<uint8_t*>(g, 0x1C);
+        uint32_t used = F<uint32_t>(g, 0x1C + 0x10), size = F<uint32_t>(g, 0x1C + 0x14);
+        if (!data || size != 0x398)
+            return "no pool\n";
+        void* fq = fg_query();
+        uint32_t av = avatar_idx(), live = 0, fg = 0, other_q = 0, mirrors = 0, puppets = 0, strays = 0, keep = 0,
+                 dying = 0, dead = 0, stray_keep = 0, stray_dying = 0, own = 0;
+        std::map<int, uint32_t> stray_levels, bg_levels;
+        uint32_t bg = 0, bg_far = 0, bg_keep = 0, bg_host = 0;
+        uint8_t* avc = avatar();
+        net::Vec3 me = avc ? pos_of(avc) : net::Vec3{};
+        for (uint32_t slot = 0; slot < used && slot < 4096; slot++) {
+            uint8_t* c = data + (size_t)slot * size;
+            uint32_t idx = F<uint32_t>(c, 0);
+            if ((idx & 0xFFFF) != slot)
+                continue;
+            live++;
+            if (idx == av) {
+                own++;
+                continue;
+            }
+            if (F<void*>(c, kQuery) != fq) {
+                other_q++;
+                bool is_bg = F<void*>(c, kQuery) == F<void*>(g, 0x4100);
+                bg += is_bg;
+                if (is_bg) {
+                    bg_levels[F<int>(c, kLevel)]++;
+                    net::Vec3 q = pos_of(c);
+                    float d = std::hypot(q.x - me.x, q.y - me.y);
+                    bg_far += d > 150.f;
+                    bg_keep += F<uint8_t>(c, kKeepAlive) != 0;
+                    bg_host += g_host_of.count(idx) ? 1 : 0;
+                }
+                continue;
+            }
+            fg++;
+            bool k = F<uint8_t>(c, kKeepAlive), dy = F<uint8_t>(c, kDying), de = F<uint8_t>(c, kDead);
+            keep += k; dying += dy; dead += de;
+            if (g_host_of.count(idx))
+                mirrors++;
+            else if (modes::cell_is_puppet(c))
+                puppets++;
+            else {
+                strays++;
+                stray_keep += k;
+                stray_dying += dy || de;
+                stray_levels[F<int>(c, kLevel)]++;
+            }
+        }
+        char b[900];
+        int n = snprintf(b, sizeof b, "census: header=%u used=%u live=%u own=%u fg=%u other_query=%u mirrors=%u (map %u) puppets=%u "
+                         "strays=%u (keepalive %u, dying/dead %u) keepalive=%u dying=%u dead=%u stray_levels=",
+                         cells_live(), used, live, own, fg, other_q, mirrors, (unsigned)g_mirrors.size(), puppets, strays,
+                         stray_keep, stray_dying, keep, dying, dead);
+        for (auto& [lv, k] : stray_levels)
+            n += snprintf(b + n, sizeof b - std::min<size_t>(n, sizeof b), "%d:%u ", lv, k);
+        n += snprintf(b + n, sizeof b - std::min<size_t>(n, sizeof b), " background=%u (over 150 m %u, keepalive %u, mirrors %u) bg_culled=%u leave_writes=%u leave_dropped=%u bg_levels=",
+                      bg, bg_far, bg_keep, bg_host, g_bg_culled, g_leave_writes, g_leave_dropped);
+        for (auto& [lv, k] : bg_levels)
+            n += snprintf(b + n, sizeof b - std::min<size_t>(n, sizeof b), "%d:%u ", lv, k);
+        n = std::min<int>(n, (int)sizeof b - 1);
+        return std::string(b) + "\n";
+    }
     if (!a.empty() && a[0] == "mirrors") { // live local pool indices, for checking cleanup after leave
         std::vector<uint32_t> indices;
         for (auto& [host, mirror] : g_mirrors)
@@ -3665,7 +3793,7 @@ std::string status()
     vm.dwLength = sizeof vm;
     GlobalMemoryStatusEx(&vm);
     char d[320];
-    snprintf(d, sizeof d, "cell_contacts: creature_pairs=%u bite_events=%u nonfinite_skipped=%u nonfinite_dropped=%u stale_targets=%u own_nf=%u shared_parts=%u vm_free_mb=%llu created=%u destroyed=%u\n", g_creature_pairs, g_bite_events, g_nonfinite_sent_skipped, g_nonfinite_dropped, g_stale_targets, g_own_nf_events, g_shared_parts, vm.ullAvailVirtual >> 20, g_created, g_destroyed);
+    snprintf(d, sizeof d, "cell_contacts: creature_pairs=%u bite_events=%u nonfinite_skipped=%u nonfinite_dropped=%u stale_targets=%u own_nf=%u shared_parts=%u vm_free_mb=%llu created=%u destroyed=%u leave_writes=%u leave_dropped=%u\n", g_creature_pairs, g_bite_events, g_nonfinite_sent_skipped, g_nonfinite_dropped, g_stale_targets, g_own_nf_events, g_shared_parts, vm.ullAvailVirtual >> 20, g_created, g_destroyed, g_leave_writes, g_leave_dropped);
     char b[1100];
     uint8_t* s = S();
     int food = s ? F<int32_t>(s, 0x1C) : -1;

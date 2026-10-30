@@ -20,6 +20,10 @@ matrices and the particles' rest offsets NaN, as left by the first heal in lab 2
 (`own_nf=` of `coop.pool`: finite -> not finite transitions, at most 1) and stays finite.
 SPORE_FIX_OFF=cell.nan_heal_all must FAIL check 3.
 
+--all --drain S (BUG-0307, suite cell_nan_drain): after the level-ups the guest plays on for S s; its
+free address space (`vm_free_mb=`) is sampled every 15 s. 4. It loses at most 150 MB (lab 20261030-104149:
+3502 -> 1427 MB in 6 minutes while the own cell stayed NaN).
+
   SPORE_LANE=2 python3 tools/tests/coop_cell_nan.py
 """
 import argparse
@@ -51,6 +55,7 @@ def num(con, key):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--all', action='store_true')
+    ap.add_argument('--drain', type=float, default=0)
     a = ap.parse_args()
     ck = Checks()
     host, guest = start('cell')
@@ -82,6 +87,19 @@ def main():
     p2 = pos(guest)
     ck(guest.call('coop.pool').get('ok') is not False and finite(p2), f'2. after the level-ups the guest answers at a finite position ({p2})')
     ck((num(guest, 'mirrors') or 0) >= 10, f'2. the guest mirrors the host\'s cells ({num(guest, "mirrors")})')
+    if a.drain:
+        vm, t0, k = [num(guest, 'vm_free_mb')], time.time(), 0
+        while time.time() - t0 < a.drain:
+            k += 1
+            guest.call(f'coop.pool goto {(-1) ** k * 15} {(-1) ** (k // 2) * 10}')  # swim: new tiles, new mirrors
+            time.sleep(15)
+            vm.append(num(guest, 'vm_free_mb'))
+            fr = re.search(r'fps=([\d.]+)', guest.call('frame').get('out', ''))
+            print(f'  {time.time() - t0:3.0f}s: guest free address space {vm[-1]} MB, pos {pos(guest)}, '
+                  f'fps {fr.group(1) if fr else "?"}, own_nf={num(guest, "own_nf")} mirrors={num(guest, "mirrors")}', flush=True)
+        ok = [v for v in vm if v is not None]
+        ck(len(ok) >= 2 and ok[0] - min(ok) <= 150, f'4. the guest keeps its free address space ({ok[0] if ok else "?"} -> '
+           f'{min(ok) if ok else "?"} MB lowest over {a.drain:.0f} s)')
     return ck.result()
 
 

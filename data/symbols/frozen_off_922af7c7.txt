@@ -36,3 +36,6 @@ SporeCoop::Relevance_Update ; creature: the host keeps its world alive only arou
 SporeCoop::Citizen_OffStageCheck ; Tribe: no guard for a cleaned-up citizen sent walking while the stage is left (BUG-0310)
 SporeCoop::Citizen_IdleWalk ; Tribe: no guard for a cleaned-up citizen sent walking while the stage is left (BUG-0310)
 Simulator::cVehicle::ClearOrders ; Civilization: a guest does not clear its own game's orders on mirrored vehicles (BUG-0186)
+SporeCoop::cSimulatorPlayerUFO_CanLandOnActivePlanet ; space tests: coop.space landcheck prints -1 for it (BUG-0182)
+SporeCoop::Space_ZoomLandReady ; space tests: coop.space landcheck prints -1 for it (BUG-0182)
+SporeCoop::SpaceCam_MinZoom ; space tests: coop.space landcheck prints -1 for the minimum zoom (BUG-0182)

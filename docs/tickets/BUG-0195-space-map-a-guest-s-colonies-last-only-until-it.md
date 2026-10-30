@@ -13,7 +13,7 @@ branch:
 commits:
 tests:
 signature:
-docs:
+docs: docs/11-rivals.md#rivals-guest-colonies
 related:
 ---
 
@@ -47,3 +47,4 @@ Not fixed yet.
 ## History
 - 2026-10-27: first recorded in docs/known-issues.md.
 - 2026-10-27: ticket backfilled from docs/known-issues.md (every entry carries its ticket id, CLAUDE.md 1).
+- 2026-10-30 (fix/w13-space): left open, not a contained change for the 0.7.3.2 patch: adopting the guest's colony in the host's world collides with the allies mirror (undone before every save), needs the planet records (BUG-0185) and loses the colony's state. Design for Rivals 0.8 written: docs/11-rivals.md#rivals-guest-colonies.

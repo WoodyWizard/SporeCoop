@@ -2146,3 +2146,56 @@ answered right after; a 1 s poller beside a standalone run saw no gap. Same sign
   guest's vehicle and the host's. `--nofix` (`coop.fix civ.mirror_orders off`) must FAIL (BUG-0186).
 * `coop.civ` on the guest: `mirror_orders_cleared=N`, `founds_outside=N` (city foundings received
   outside the Civ mode, BUG-0319); per mirror `vel= top= jumps=`.
+## Cell: jumps, background leftovers and low frame rates (2026-10-30, fix/w13-cell)
+<a id="testing-cell-jumps"></a>
+
+* `coop_cell_jumps.py [--who guest|host]` (suites cell_jumps, cell_jumps_host, ~5 min): the food goes
+  to 300, the player jumps 40 times 150-250 m, then `coop.pool census` must show at most 600
+  background cells (BUG-0314; `SPORE_FIX_OFF=cell.bg_cull` fails with ~1100).
+* `coop_cell_4p.py --jumps S [--jump-ms 300]`: the BUG-0307 hunt with four players (Carol jumps at
+  ~3 fps and her free address space and pool census are printed every 15 s).
+* `coop_cell_nan.py --all --drain S` (suite cell_nan_drain): after the NaN and the level-ups the
+  guest plays S s more, its free address space must not drop more than 150 MB (a guard; the drain of
+  BUG-0307 did not reproduce this way).
+* `coop_cell_lowfps.py` (suite cell_lowfps): a guest at 15 fps compares the host's moving cells
+  (BUG-0282 guard; it passed on main without a fix). `coop_sync_multi.py --food N` levels the cell
+  fixture up first.
+* `coop.pool census`: every used slot of the cell pool by kind (a growing `background=` is BUG-0314).
+* `coop_rejoin_loop.py --fixture cell --cell-leave` (suite cell_rejoin_leave, ~3 min): 12 rejoins inside
+  Cell, each followed by the host's world and the stage leave; `leave_writes=` of the guest's
+  `coop.pool` must stay 0 (BUG-0308 guard; `SPORE_FIX_OFF=cell.leave_guard` gives ~1000).
+## Creature: the host away, running proxies, fix switches and warm games (2026-10-30, fix/w13-creature)
+<a id="testing-w13-creature"></a>
+
+* `coop_away_refill.py` (suite `away_refill`, ~2 min, cold): the host leaves through its pause menu;
+  the guest's own NPCs (census `local`, AI on) within 70 m 10 s later must be at least 60 % of the
+  host's it showed there (BUG-0180; `SPORE_FIX_OFF=npc.away_locals` fails with 0).
+* `DASH_FIXTURE=creature coop_tribe_npc_dash.py`: the Tribe dash test on the creature fixture (nest
+  species 065CBE70, 4 m/s, guest at 15 fps 1.5 m beside the path's end; `DASH_GUEST=0` without
+  the guest there). A measurement for BUG-0281: it fails with and without `npc.trail` (not in a suite).
+* Pitfall (BUG-0312): `coop.fix` switches live in the game process. Until 2026-10-30 a warm test
+  reused games a `SPORE_FIX_OFF` run had left with the fix off and silently ran without it; now
+  `twoinst` marks the lane (`fix_off` in lane_state.json) and the next test starts cold. A test that
+  switches a fix off by its own command (`--without-fix`) still leaves it off for a warm successor.
+* Pitfall (BUG-0317): `coop_legless_guest.py --guest cancel` used to add legs and press the save
+  dialog's Cancel (the key `cancel` was in its dialog table); screenshots of those runs show the
+  guest's own legs and DNA spend, not the host's.
+* The guest's proxies have `+0xB67` = 0: a guest's camera far from them does not pool them (lane 4).
+## Space: planet seeding and the first landing (2026-10-30, fix/w13-space)
+<a id="testing-space-seed-profile"></a>
+
+* `coop_space_seed_profile.py` (suite `space_seed_profile`, ~2 min after a cold start): the host
+  loads the species profile of an unvisited NPC star (`coop.space profile <StarID>`, 0046101B in the
+  `space` fixture), the guest does not; both jump there and must have the same planets.
+  `--without-fix` (`coop.fix space.seed_profile off`) fails: 8 and 6 planets (BUG-0185).
+* `coop_space_jump.py` prints "same" / "DIFFERENT planets" without failing; the game logs carry one
+  `space: planets of star <id> generated (seeded <seed>): <n> (... hash=<h> ...)` line per
+  generation: compare the hash of the same star in the host's and the guest's log.
+* `coop_space_land_early.py` (suite `space_land_early`, ~1.5 min): both players land on the home
+  planet with click + wheel right after `start('space')`, must be on it within 40 s; prints
+  `coop.space landcheck` every second (the game's landing conditions, docs/re/space.md#space-seed-profile).
+  A landing shows `paused 1 sg50 2` for about a second: a bot that clicks the planet again then
+  waits up to 25 s for the ship to arrive, which looked like a landing delay (BUG-0182).
+* A new test file is only known to the lab of its own tree: run `python3 tools/lab.py` of the
+  worktree (`../SporeCoop-wt/<branch>/tools/lab.py run <test> --branch <branch>`), the main
+  checkout's lab.py reads main's suite.py ("unknown test").

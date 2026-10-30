@@ -654,7 +654,7 @@ using RequirePlanets_t = void(SK_THISCALL*)(void*, void*, void*);
 static RandomInt_t o_RandomInt;
 static RandomFloat_t o_RandomFloat;
 static RequirePlanets_t o_RequirePlanets;
-static uintptr_t a_Rng;
+static uintptr_t a_Rng, a_SmGetEmpire;
 static uint32_t g_planets_seeded;
 
 // BUG-0123: the generation state is per thread. It was process-wide: a GenerateRandomName or a
@@ -665,6 +665,9 @@ struct GenState {
     uint32_t rng;
     bool generating;
     int in_names;
+    int in_profile; // BUG-0185: inside cStarRecord_GetSpeciesProfile (a species load draws too)
+    uint32_t draws, hash, other; // BUG-0185 diagnosis: private draws, their results, global draws
+    uint32_t trace[48][2];       // the first private draws: caller, result
 };
 static thread_local GenState t_gen;
 static GenState g_gen_shared; // the old state (seedfix 0)
@@ -675,22 +678,57 @@ static DWORD g_main_tid;                     // set by tick (the main thread)
 static uint32_t g_gen_off_main, g_names_off_main; // hooks seen on other threads (logged once)
 static GenState& gen() { return g_seed_fix ? t_gen : g_gen_shared; }
 
-// every draw of the generating thread while it generates, except the names'
+// BUG-0185: RequirePlanetsForStar calls cStarRecord_GetSpeciesProfile before the generation. When
+// the star's species profile is not cached yet (star +0x80), the species manager loads it and
+// draws from the global generator (0x4D4B30, once or twice: RandomInt(1)); with those draws on the
+// private generator the planets depended on whether the profile was loaded before (the galaxy view,
+// an empire's colour, a contact load it): 6 or 10 planets of 0046101B. The profile's draws stay on
+// the global generator now, like the names'. `coop.fix space.seed_profile off`: the old way.
+static bool g_seed_profile_fix = true;
+COOP_FIX("space.seed_profile", "BUG-0185", g_seed_profile_fix,
+         "space: a species profile load inside the planet generation does not draw from the seeded generator");
+
+// every draw of the generating thread while it generates, except the names' (and the profile's)
 static bool generator_draw(void* rng)
 {
     GenState& g = gen();
-    return g.generating && !g.in_names && rng == (void*)a_Rng &&
+    return g.generating && !g.in_names && !(g.in_profile && g_seed_profile_fix) && rng == (void*)a_Rng &&
            (g_seed_fix || GetCurrentThreadId() == g_gen_thread_shared);
+}
+
+static void note_draw(bool mine, uint32_t v, void* from)
+{
+    GenState& g = gen();
+    if (!g.generating)
+        return;
+    if (mine) {
+        if (g.draws < 48) {
+            g.trace[g.draws][0] = (uint32_t)(uintptr_t)from;
+            g.trace[g.draws][1] = v;
+        }
+        g.draws++;
+        g.hash = (g.hash ^ v) * 0x01000193u;
+    } else {
+        g.other++;
+    }
 }
 
 static uint32_t SK_THISCALL h_RandomInt(void* rng, uint32_t n)
 {
-    return o_RandomInt(generator_draw(rng) ? &gen().rng : rng, n);
+    bool mine = generator_draw(rng);
+    uint32_t v = o_RandomInt(mine ? &gen().rng : rng, n);
+    note_draw(mine, v, __builtin_return_address(0));
+    return v;
 }
 
 static float SK_THISCALL h_RandomFloat(void* rng)
 {
-    return o_RandomFloat(generator_draw(rng) ? &gen().rng : rng);
+    bool mine = generator_draw(rng);
+    float f = o_RandomFloat(mine ? &gen().rng : rng);
+    uint32_t v;
+    memcpy(&v, &f, 4);
+    note_draw(mine, v, __builtin_return_address(0));
+    return f;
 }
 
 static void off_main(uint32_t& n, const char* what)
@@ -716,6 +754,17 @@ static void* SK_THISCALL h_RandomName(void* names, void* out, uint32_t kind)
     return r;
 }
 
+using SpeciesProfile_t = void*(SK_THISCALL*)(void*);
+static SpeciesProfile_t o_SpeciesProfile;
+static void* SK_THISCALL h_SpeciesProfile(void* star)
+{
+    GenState& g = gen();
+    g.in_profile++;
+    void* r = o_SpeciesProfile(star);
+    g.in_profile--;
+    return r;
+}
+
 static void SK_THISCALL h_RequirePlanets(void* sm, void* star, void* p3)
 {
     off_main(g_gen_off_main, "RequirePlanetsForStar");
@@ -729,12 +778,61 @@ static void SK_THISCALL h_RequirePlanets(void* sm, void* star, void* p3)
     memcpy(&z, (uint8_t*)star + 0x44, 4);
     g.rng = (F<uint32_t>(star, 0x70) * 0x9E3779B1u ^ x ^ (z << 16 | z >> 16)) | 1u;
     g_gen_thread_shared = GetCurrentThreadId();
+    // BUG-0185: what the generation reads besides the draws (tech level +0x4C, flags +0x5C, the
+    // star waiting in cStarManager +0xDC for its tech level), so two games' logs can be compared
+    uint32_t seed = g.rng, tech0 = F<uint32_t>(star, 0x4C), flags0 = F<uint32_t>(star, 0x5C);
+    bool pending = false;
+    if (sm && !IsBadReadPtr((uint8_t*)sm + 0xDC, 8)) {
+        void** b = F<void**>(sm, 0xDC);
+        void** e = F<void**>(sm, 0xE0);
+        for (void** q = b; q && q < e && !pending; q++)
+            pending = *q == star;
+    }
+    // the star's empire object: GeneratePlanetsForStar reads it for an empire star (tech level 5):
+    // "is this its home star", "is it the player's empire"; the game creates empires lazily
+    void* emp0 = nullptr;
+    uint32_t pol0 = F<uint32_t>(star, 0x54);
+    if (a_SmGetEmpire && pol0 != 0xFFFFFFFFu)
+        emp0 = thiscall<void*>(a_SmGetEmpire, sm, pol0);
+    int home0 = emp0 ? (int)(F<uint32_t>(emp0, 0xB0) == F<uint32_t>(star, 0x70)) : -1;
+    // the second argument goes to GeneratePlanetsForStar as a planet template (a forced kind for
+    // one planet of the star's tech level: +0 kind, +4 tech level mask, +8 flags); the caller
+    uint32_t tpl[3] = {0, 0, 0};
+    if (p3 && !IsBadReadPtr(p3, 12))
+        memcpy(tpl, p3, 12);
+    void* caller = __builtin_return_address(0);
+    g.draws = g.hash = g.other = 0;
     g.generating = true;
     o_RequirePlanets(sm, star, p3);
     g.generating = false;
     g_planets_seeded++;
-    H->log(M, SK_DEBUG, "space: planets of star %08X generated (seeded): %d", F<uint32_t>(star, 0x70),
-           (int)F<uint8_t>(star, 0xAC));
+    H->log(M, SK_INFO,
+           "space: planets of star %08X generated (seeded %08X): %d (tech %u->%u flags %08X->%08X pending=%d "
+           "empire=%08X %s home=%d draws=%u hash=%08X other=%u template=%p [%08X %08X %08X] from=%p)",
+           F<uint32_t>(star, 0x70), seed, (int)F<uint8_t>(star, 0xAC), tech0, F<uint32_t>(star, 0x4C), flags0,
+           F<uint32_t>(star, 0x5C), (int)pending, pol0, emp0 ? "made" : "not made", home0, g.draws, g.hash, g.other,
+           p3, tpl[0], tpl[1], tpl[2], caller);
+    // each planet record: kind +0x28, flags +0x2C, the terrain scores +0xB0/+0xB4, tech +0x194
+    std::string recs;
+    void** rb = F<void**>(star, 0x84);
+    void** re = F<void**>(star, 0x88);
+    for (void** q = rb; q && q < re && q - rb < 16; q++) {
+        void* r = *q;
+        if (!r || IsBadReadPtr(r, 0x198))
+            continue;
+        char one[96];
+        snprintf(one, sizeof one, " %08X:k%d f%X %.3f/%.3f t%d", F<uint32_t>(r, 0x184), F<int>(r, 0x28), F<uint32_t>(r, 0x2C),
+                 F<float>(r, 0xB0), F<float>(r, 0xB4), F<int>(r, 0x194));
+        recs += one;
+    }
+    H->log(M, SK_DEBUG, "space: planets of star %08X:%s", F<uint32_t>(star, 0x70), recs.c_str());
+    std::string tr;
+    for (uint32_t i = 0; i < g.draws && i < 48; i++) {
+        char one[32];
+        snprintf(one, sizeof one, " %X:%X", g.trace[i][0], g.trace[i][1]);
+        tr += one;
+    }
+    H->log(M, SK_DEBUG, "space: draws of star %08X:%s", F<uint32_t>(star, 0x70), tr.c_str());
 }
 
 // tests (BUG-0123): another thread "inside GenerateRandomName" for `ms` (the hook's bookkeeping,
@@ -1314,6 +1412,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     if (uintptr_t ge = S("SporeCoop::cAppModeSpace_OnGalaxyEntered"))
         H->hook_create(M, (void*)ge, (void*)h_GalaxyEntered, (void**)&o_GalaxyEntered);
     a_Rng = S("Math::RandomNumberGenerator::global_ptr");
+    a_SmGetEmpire = S("Sim_StarManager_GetEmpire");
     uintptr_t ri = S("Math::RandomNumberGenerator::RandomInt"), rf = S("Math::RandomNumberGenerator::RandomFloat"),
               rp = S("Simulator::cStarManager::RequirePlanetsForStar"),
               rn = S("Simulator::cSpaceNames::GenerateRandomName");
@@ -1321,6 +1420,8 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
         H->hook_create(M, (void*)rf, (void*)h_RandomFloat, (void**)&o_RandomFloat) == 0 &&
         H->hook_create(M, (void*)rn, (void*)h_RandomName, (void**)&o_RandomName) == 0)
         H->hook_create(M, (void*)rp, (void*)h_RequirePlanets, (void**)&o_RequirePlanets);
+    if (uintptr_t prof = S("cStarRecord_GetSpeciesProfile"))
+        H->hook_create(M, (void*)prof, (void*)h_SpeciesProfile, (void**)&o_SpeciesProfile);
     if (a_TerraA && a_TerraW && a_TerraT) {
         H->hook_create(M, (void*)a_TerraA, (void*)h_TerraA, (void**)&o_Terra[0]);
         H->hook_create(M, (void*)a_TerraW, (void*)h_TerraW, (void**)&o_Terra[1]);
@@ -1680,6 +1781,55 @@ std::string debug(const std::vector<std::string>& a)
             if (e.key.size() == 9 && (e.key[0] == 'P' || e.key[0] == 'C'))
                 out += e.key + " ";
         return out.empty() ? "none" : out;
+    }
+    if (a[0] == "profile" && a.size() > 1) { // tests (BUG-0185): load and cache a star's species profile now
+        static uintptr_t prof = H->sym("cStarRecord_GetSpeciesProfile");
+        void* sm = a_StarMgr ? cdecl_call<void*>(a_StarMgr) : nullptr;
+        void* star = sm && a_GetStarRecord ? thiscall<void*>(a_GetStarRecord, sm, (uint32_t)strtoul(a[1].c_str(), nullptr, 16))
+                                           : nullptr;
+        if (!star || !prof)
+            return "no such star";
+        void* before = F<void*>(star, 0x80);
+        void* r = thiscall<void*>(prof, star);
+        snprintf(b, sizeof b, "profile of %08X: %p (cached before: %p)", F<uint32_t>(star, 0x70), r, before);
+        return b;
+    }
+    if (a[0] == "landcheck") { // BUG-0182: the conditions of the wheel's landing (system update 0x1009C90)
+        static uintptr_t can_land = H->sym("SporeCoop::cSimulatorPlayerUFO_CanLandOnActivePlanet"),
+                         ready = H->sym("SporeCoop::Space_ZoomLandReady"),
+                         comm_get = H->sym("Simulator::cCommManager::Get"),
+                         comm_active = H->sym("Simulator::cCommManager::IsCommScreenActive"),
+                         time_get = H->sym("Simulator::cGameTimeManager::Get");
+        if (!u)
+            return "no ship";
+        void* p = a_ActivePlanet ? cdecl_call<void*>(a_ActivePlanet) : nullptr;
+        void* tm = time_get ? cdecl_call<void*>(time_get) : nullptr;
+        void* cm = comm_get ? cdecl_call<void*>(comm_get) : nullptr;
+        static uintptr_t gmm_get = H->sym("App::IGameModeManager::Get"),
+                         sg_get = H->sym("Simulator::cSimulatorSpaceGame::Get"),
+                         gfx_get = H->sym("Simulator::cSpaceGfx::Get"), min_zoom = H->sym("SporeCoop::SpaceCam_MinZoom");
+        // the system update's own gates: cSimulatorSpaceGame +0x50 (bits 2, 4 stop it), a cSpaceGfx +0x8C
+        // job still running (it returns early), the space camera's zoom-in flag +0xD5 and its zoom
+        void* sg = sg_get ? cdecl_call<void*>(sg_get) : nullptr;
+        void* gfx = gfx_get ? cdecl_call<void*>(gfx_get) : nullptr;
+        void* job = gfx ? F<void*>(gfx, 0x8C) : nullptr;
+        int busy = job ? (int)vcall<bool>(job, 0x10 / 4) : -1;
+        void* cam = nullptr;
+        if (void* gmm = gmm_get ? cdecl_call<void*>(gmm_get) : nullptr)
+            if (void* m = vcall<void*>(gmm, 0x50 / 4))
+                if (void* v = vcall<void*>(m, 0x38 / 4))
+                    cam = vcall<void*>(v, 0xC / 4, 0x303154CCu);
+        char extra[160];
+        snprintf(extra, sizeof extra, " sg50 %X gfxjob %d cam %d/%d zoom %.1f min %.1f", sg ? F<uint32_t>(sg, 0x50) : 0u, busy,
+                 cam ? (int)F<uint8_t>(cam, 0xD5) : -1, cam ? (int)F<uint8_t>(cam, 0xD6) : -1,
+                 cam ? vcall<float>(cam, 0x5C / 4) : -1.f, min_zoom ? *(float*)min_zoom : -1.f);
+        snprintf(b, sizeof b,
+                 "ctx %d planet %p arrived %d hp %.1f can_land %d ready %d comm %d paused %d cinematic %d%s",
+                 a_Context ? cdecl_call<int>(a_Context) : -9, p, (int)F<uint8_t>(u, 0x74C), F<float>(u, kHp),
+                 can_land ? (int)thiscall<bool>(can_land, u) : -1, ready ? (int)cdecl_call<bool>(ready) : -1,
+                 cm && comm_active ? (int)thiscall<bool>(comm_active, cm) : -1, tm ? (int)(F<uint8_t>(tm, 0x48) & 1) : -1,
+                 (int)cinematic_playing(), extra);
+        return b;
     }
     if (a[0] == "land") { // tests: land on the active planet (the landing of Respawn)
         uintptr_t f = H->sym("SporeCoop::cAppModeSpace_LandOnActivePlanet");

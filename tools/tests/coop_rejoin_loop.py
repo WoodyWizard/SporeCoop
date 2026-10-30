@@ -143,6 +143,9 @@ def main():
                          'the world (coop.load) that long after the menu came up (with --clicks: after it opened a '
                          'planet view by clicking a slot ring), while the menu still draws planet textures')
     ap.add_argument('--cold', action='store_true', help='with --local-load: fresh games for every round')
+    ap.add_argument('--cell-leave', action='store_true',
+                    help='Cell (BUG-0308): the guest\'s mod must not have applied cell states or ticks to its pool while '
+                         'the stage was being left for the reload (`leave_writes=` of coop.pool stays 0)')
     a = ap.parse_args()
     rng = random.Random(a.seed)
     host, guest = start(a.fixture)
@@ -253,6 +256,13 @@ def main():
     if times:
         print(f'  rejoin times: min {min(times):.1f} max {max(times):.1f} s over {len(times)} rounds', flush=True)
     print(f'  first fault in round {first_fault}' if first_fault else '  no fault in any round', flush=True)
+    if a.cell_leave and alive(lane.GUEST):
+        out = guest.call('coop.pool')['out']
+        w = re.search(r'leave_writes=(\d+) leave_dropped=(\d+)', out)
+        lw, ld = (int(w.group(1)), int(w.group(2))) if w else (-1, -1)
+        print(f'  guest: pool work while leaving the stage: {lw} applied, {ld} skipped', flush=True)
+        ck(lw == 0, f'BUG-0308: no cell state or tick of ours ran on the guest\'s pool while it left the stage '
+           f'for the reloads ({lw} ran, {ld} skipped)')
     if alive(lane.HOST) and alive(lane.GUEST):
         ck.faults(host=host, guest=guest)
     else:

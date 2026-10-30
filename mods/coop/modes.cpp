@@ -546,9 +546,24 @@ typedef void(__cdecl* SimUpdate_t)(float);
 static SimUpdate_t o_SimUpdate;
 static uint8_t* cell_at_checked(void* cp);
 
+// BUG-0308: a rejoined guest found a corrupt heap when the Cell pool was freed for the world reload
+// (lab 20261030-104149 campaign_short#3). Between the posted quit and the mode change (~0.8 s) the
+// game tears the stage down while mode_id() still reads Cell, and our code went on writing the pool:
+// the guest's state handler created and moved mirrors, the guest / host ticks and the puppet poses
+// wrote cells. With cell.leave_guard none of that runs while game::leaving_stage() (not shown to be
+// the corruption: a guard, like BUG-0292's).
+static bool g_fix_leave_guard = true;
+COOP_FIX("cell.leave_guard", "BUG-0308", g_fix_leave_guard, "cell: no mirror creation and no pool write of ours while the stage is being left (quit posted for a world load or the menu)");
+bool cell_leaving()
+{
+    return g_fix_leave_guard && game::leaving_stage();
+}
+
 static void __cdecl h_SimUpdate(float dt)
 {
     o_SimUpdate(dt);
+    if (cell_leaving())
+        return;
     for (auto it = g_cell_pose.begin(); it != g_cell_pose.end();) {
         uint8_t* c = cell_at_checked(it->first);
         if (!c) {
