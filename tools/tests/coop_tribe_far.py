@@ -23,11 +23,12 @@ import math
 import re
 import time
 
-import census
 from twoinst import Checks, start
 
 HERD = re.compile(r'herd (\S+) arch=([0-9A-F]{8}) .*? en=(\d) members=(\d+) in_world=(\d+) '
-                  r'home=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\)')
+                  r'near_home=(\d+) home=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\)')
+HOST_NPC = re.compile(r'#(\d+) \S+ species=\S+ hp=\S+ dist=\S+(?: DEAD)? pos=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\)')
+GUEST_PX = re.compile(r'#(\d+) species=\S+ spawned .*?want=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\)')
 SPHERE = re.compile(r'game sphere \(([-\d.]+) ([-\d.]+) ([-\d.]+)\) enter (\d+) m leave (\d+) m')
 
 
@@ -35,7 +36,8 @@ def herds(host):
     out = []
     for m in HERD.finditer(host.call('coop.npc archless all')['out']):
         out.append(dict(ptr=m.group(1), arch=m.group(2), en=int(m.group(3)), members=int(m.group(4)),
-                        in_world=int(m.group(5)), home=tuple(float(m.group(i)) for i in (6, 7, 8))))
+                        in_world=int(m.group(5)), near_home=int(m.group(6)),
+                        home=tuple(float(m.group(i)) for i in (7, 8, 9))))
     return out
 
 
@@ -74,14 +76,16 @@ def main():
     while time.time() - t0 < 40:
         near = [h for h in herds(host) if math.dist(h['home'], pt) < 100 and h['arch'] != '00000000']
         en = sum(h['en'] for h in near)
-        alive = sum(h['in_world'] for h in near)
+        alive = sum(h['near_home'] for h in near)  # members within 100 m of their home, in the world
         samples += 1
         seen.append((en, alive))
         good += en >= 1 and alive >= 2
-        # BUG-0291: the host's NPCs within 100 m of the guest's point and the guest's proxies of them
-        hc, gc = census.dump(host), census.dump(guest)
-        hn = {i for i, r in hc.by_id('c', ('npc',)).items() if math.dist(r['pos'], pt) < 100}
-        gn = {i for i, r in gc.by_id('c', ('proxy',)).items() if math.dist(r['pos'], pt) < 120}
+        # BUG-0291: the host's NPCs within 100 m of the guest's point (coop.npc list: the NPCs the host's
+        # game updates, with their positions) and the guest's proxies of them (spawned, its game's objects)
+        hn = {int(m.group(1)) for m in HOST_NPC.finditer(host.call('coop.npc list')['out'])
+              if math.dist(tuple(float(m.group(i)) for i in (2, 3, 4)), pt) < 100}
+        gn = {int(m.group(1)) for m in GUEST_PX.finditer(guest.call('coop.npc list')['out'])
+              if math.dist(tuple(float(m.group(i)) for i in (2, 3, 4)), pt) < 120}
         sent_seen.append((len(hn), len(hn & gn)))
         sent += len(hn) >= 2 and len(hn & gn) >= 0.8 * len(hn)
         time.sleep(1.5)
