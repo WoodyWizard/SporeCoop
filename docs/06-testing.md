@@ -1806,5 +1806,13 @@ wrong. Suite `campaign` (in no other suite): `tools/lab.py run campaign --lanes 
   Attack a member with 7, an animal with `act_npc 10`. `coop_tribe_act.py` (suite `tribe_act`).
 * The campaign's coverage finding (coop_campaign.py) writes a `sync:` note with the coverage and the
   missing keys per kind of every short guest (`coop_multi.measure(..., missed={})`).
-* twoinst.Monitor: when the console stops answering, the event now says the exception, whether the
-  game was loading and whether a fresh connection answered again within 20 s (BUG-0261).
+* **SporeKit's console serves all clients on one thread** (sporekit/console.cpp, select loop) and
+  runs `SK_CMD_ANY_THREAD` commands right there, the waiting ones too (`wait.frames`, `shot`:
+  `SK_CMD_NOT_ON_MAIN`). While one connection waits in `wait.frames 300 60000`, every other
+  connection's command waits behind it: coop_phase.py's `wait.frames 300` on the guest held the
+  Monitor's `frame` for more than its 10 s timeout on a busy lane (3 of 6 runs on lane 8; the guest
+  drew on, no hitch in its log), the old Monitor called that "the console stopped answering
+  (crash?)" (BUG-0261). The Monitor now asks a fresh connection for up to 30 s and goes on when it
+  answers (a line "busy, not a crash"); the frame check still reports a freeze.
+  `SPORE_MONITOR_STRICT=1` gives the old verdict. Keep `wait.frames` counts small in tests that
+  run a Monitor, or wait with `time.sleep` + `frame`.
