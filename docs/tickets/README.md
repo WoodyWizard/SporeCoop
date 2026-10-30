@@ -336,3 +336,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0324](BUG-0324-play-civ-the-end-audit-finds-a-ruin-and-a-buildi.md) | fixed | desync | Civ | 2026-10-30 | unreleased | play_civ: the end audit finds a ruin (and a building) on the guest that the host no longer has |
 | [BUG-0325](BUG-0325-play-civ-a-guest-s-gift-of-one-vehicle-did-not-r.md) | open | desync | Civ | 2026-10-30 |  | play_civ: a guest's gift of one vehicle did not reach the host, and one guest command was rejected (seed 11) |
 | [BUG-0326](BUG-0326-tests-sync-lowfps-fails-civ-vehicles-90-facing-w.md) | open | desync | Civ | 2026-10-30 |  | tests: sync_lowfps fails 'civ/vehicles: 90% facing within 20 deg' on main d003127 (lane 4, 2 of 2) |
+| [BUG-0327](BUG-0327-civ-ai-spawn-removed-24-25-when-a-host-vehicle-w.md) | open | test | Civ | 2026-10-30 |  | civ_ai_spawn: 'removed 24 -> 25' when a host vehicle went away during the test (test race) |
