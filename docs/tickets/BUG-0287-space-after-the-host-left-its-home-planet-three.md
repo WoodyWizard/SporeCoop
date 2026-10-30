@@ -55,3 +55,4 @@ player N (Space, X s in this place)".
 ## History
 - 2026-10-29: opened (fix/w8-stuck) from the logs of lab 20261029-174717; fixed by BUG-0276's second switch, root cause inferred, no FAIL run.
 - 2026-10-29: released in 0.7.3.1.
+- 2026-10-30: seen again (lab 20261030-075052 campaign_space#3): the save in the frame of the takeoff, the place one frame old; fixed as BUG-0301 (world.share_settle_context).

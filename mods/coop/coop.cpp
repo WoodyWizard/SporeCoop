@@ -2851,6 +2851,8 @@ int c_host(void*, int argc, const char* const* argv, SkOut* out)
     std::string err;
     if (!do_host(port, err)) {
         SAY("host failed: %s", err.c_str());
+        // BUG-0302: in the game log too (a lab start whose host never hosted left no trace there)
+        H->log(M, SK_WARN, "net: host failed on UDP port %u: %s", port, err.c_str());
         return 1;
     }
     SAY("hosting on UDP %u as '%s'", g_sess.port(), g_name.c_str());

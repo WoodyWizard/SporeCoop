@@ -1852,3 +1852,18 @@ Runtime findings of the wave 3 Space fixes (lane 6, GOG 2024):
 * Test bots: play_space.Player.targets skips points under the badge, `play_space.captain_open` /
   `close_captain` detect and close the screen, `coop_space_finale.to_galaxy` closes it before the
   wheel (BUG-0303). Test: `space_captain`.
+## A share save in the frame the ship leaves a planet (2026-10-30, fix/w11-space-join)
+<a id="space-share-save-stale-place"></a>
+
+* ✔ (lab 20261030-100130, BUG-0301) A Space save made in the frame the ship leaves a planet
+  (`takeoff`, as a zoom out does) loads on that planet: the guest that loaded it was in the solar
+  system for 2.5 s, then its ship was on the planet (Space 80xxxxxx -> 40xxxxxx), nobody steering.
+  Saves made 2 s into the system load in the system. Why the game goes back down is not known (?).
+  This confirms the inference of [the section above](#space-share-save-at-context-change).
+* ✔ The mod's place (`coop.cpp g_world`, `modes::current_place`, `SpacePlayerData +0x10`) is
+  updated after `world::tick` in the frame, so in that frame it is one frame old while
+  `Simulator::GetCurrentContext` already says "solar system": the settle clock of BUG-0287 did not
+  restart, the save went out "80 s in this place". `world.share_settle_context` restarts the clock
+  on a change of `GetCurrentContext` read in the same frame as the save.
+* Test knob: `coop.worldfix retry <ms>` (the retry of a share save the game refused; 0 = every
+  frame) makes the lab's one-frame race certain (`coop_space_share_takeoff.py`).

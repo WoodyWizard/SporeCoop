@@ -2040,3 +2040,17 @@ answered right after; a 1 s poller beside a standalone run saw no gap. Same sign
   `reports=True` and accepts only that one. `OLD_FINALE_TOOL=1` keeps the old `to_galaxy` (fails).
 * `coop_sync_multi.py --fixture tribe`: four players in the tribe fixture with play_tribe bots (the
   campaign's setup: `coop.tribe spawn 3 x players`, one thread steps every player).
+## The start checks that the host hosts (2026-10-30, fix/w11-space-join)
+<a id="testing-host-start-check"></a>
+
+* `twoinst.start` checks the answer of `coop host` (`host_up`): a "host failed: ..." is printed and
+  tried again (3 times, 3 s apart), and a guest that is not in the host's world after 240 s is
+  printed with its `coop.status` line. Before (BUG-0302, lab 20261030-074023 space_coop) a host that
+  never hosted left no line in any log, the guest's join timed out after 10 s and the test failed
+  4 minutes later on something else ("the host has an NPC ship []"). The game log now has
+  "net: host failed on UDP port N: <error>" too. The lab's co-op ports (47810-47828) lie inside
+  Linux's ephemeral range (32768-60999): any UDP socket of the machine can hold one for a moment.
+* `space_share_takeoff` (BUG-0301, ~1.5 min): the guest rejoins while the host is on a planet, the
+  host takes off, the share save goes out with the retry every frame (`coop.worldfix retry 0`); the
+  guest's own place after the load must be the host's solar system. FAIL with
+  SPORE_FIX_OFF=world.share_settle_context (the guest's ship lands on the planet 2.5 s after the load).

@@ -3,6 +3,11 @@
 ## [Unreleased]
 
 ### Fixed
+- Space: players joining while the host is on a planet no longer end up on that planet when the
+  host leaves it (their ships went back down a few seconds after loading the host's world while the
+  host stayed in the solar system): the world is now saved 2 s after the host is in the system, also
+  when the save would have gone out in the very frame the ship left the planet (BUG-0301, BUG-0287).
+- Tests: a host that fails to start hosting is logged and retried at the start of a test (BUG-0302).
 - Cell with three or four players: the games no longer fault and crash when the players spread
   out (the game's own collision step holds about 2000 cells; the host kept the area around every
   player alive and the pools grew past it). The host now fills the other players' areas only while

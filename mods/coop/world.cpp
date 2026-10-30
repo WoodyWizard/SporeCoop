@@ -172,6 +172,9 @@ static std::wstring newest_slot()
     return best;
 }
 
+// tests (BUG-0301): the retry of a share save the game refused (on a planet), ms; 0 = every frame,
+// so the save lands in the first frame the game allows it (the race of the lab, made certain)
+static unsigned g_share_retry_ms = 2000;
 static int c_worldfix(void*, int argc, const char* const* argv, SkOut* out);
 
 void init(const SkHost* host, SkMod* mod, std::function<void(const std::string&)> feed)
@@ -180,7 +183,7 @@ void init(const SkHost* host, SkMod* mod, std::function<void(const std::string&)
     M = mod;
     g_feed = std::move(feed);
     H->command_add(M, "coop.worldfix",
-                   "coop.worldfix [<name> 0|1 | queue <id>... | failnext] - world sharing fix switches (tests: 0 = the old behaviour); "
+                   "coop.worldfix [<name> 0|1 | queue <id>... | failnext | retry <ms>] - world sharing fix switches (tests: 0 = the old behaviour); "
                    "queue: shares for these players in one frame, each with a save",
                    c_worldfix, nullptr, SK_CMD_MAIN_THREAD);
 }
@@ -478,6 +481,14 @@ COOP_FIX("world.share_settle", "BUG-0276", g_share_settle_fix, "world: a share s
 // one before the save was posted (the 2 s slack let the previous save's files pass).
 bool g_settle_reset_fix = true;
 COOP_FIX("world.share_settle_reset", "BUG-0276", g_settle_reset_fix, "world: a share save waits 2 s after every stage or place change; files older than the save are stale");
+// BUG-0301: the place above is coop.cpp's g_world, updated after world::tick in the frame: in the
+// frame the host's ship left its home planet the game's context (Simulator::GetCurrentContext, read
+// by save_game) already said "solar system" while the place still said "planet, settled for 80 s",
+// and the share save went out in that frame (the guests' ships went down to the planet, BUG-0287
+// again). With this switch the Space context, read in the same frame as the save, restarts the
+// settle clock too.
+bool g_settle_ctx_fix = true;
+COOP_FIX("world.share_settle_context", "BUG-0301", g_settle_ctx_fix, "world: a Space share save also waits 2 s after the game's own context change (planet / solar system / galaxy) of the same frame");
 COOP_FIX("world.load_in_editor", "BUG-0157", g_editor_load_fix, "world: a queued load never starts inside an editor");
 COOP_FIX("world.busy_slot", "BUG-0035", slotfs::g_busy_fix, "world: a received world never moves or overwrites the slot being played");
 COOP_FIX("world.slot_match", "BUG-0087", slotfs::g_match_fix, "world: a received world goes only into its own host's co-op slot");
@@ -626,6 +637,7 @@ static double g_stage_since;    // when the current stage mode began (0: not in 
 static double g_playable_since; // when the local player got something to control in it (0: not yet)
 static double g_share_settled_since; // ... and since the last mode or place change (BUG-0276, shares)
 static uint32_t g_settle_mode, g_settle_place;
+static int g_settle_ctx = -1; // Simulator::GetCurrentContext in Space (BUG-0301), -1 elsewhere
 static uint32_t (*g_place)();
 static uint32_t g_stage_mode;
 static bool (*g_playing)();
@@ -734,12 +746,18 @@ static void via_menu_tick()
     else if (!g_playable_since)
         g_playable_since = now;
     uint32_t place = g_place ? g_place() : 0;
+    int ctx = -1;
+    if (g_settle_ctx_fix && mode == modes::kSpace) {
+        uintptr_t get = H->sym("Simulator::GetCurrentContext");
+        ctx = get ? skg::cdecl_call<int>(get) : -1;
+    }
     if (!g_playable_since)
         g_share_settled_since = 0;
-    else if (!g_share_settled_since || mode != g_settle_mode || place != g_settle_place)
+    else if (!g_share_settled_since || mode != g_settle_mode || place != g_settle_place || ctx != g_settle_ctx)
         g_share_settled_since = now;
     g_settle_mode = mode;
     g_settle_place = place;
+    g_settle_ctx = ctx;
     if (!g_via_menu.on)
         return;
     // other modes (an adventure, an editor, before the first menu): load from there as before, but
@@ -938,7 +956,7 @@ void tick(net::Session& s)
                     p.latest = now + 10000;
                     p.mode = game::mode_id();
                 } else {
-                    p.next_try = now + 2000;
+                    p.next_try = now + g_share_retry_ms;
                     if (!p.told)
                         g_feed("a player is waiting for the world: " + why);
                     p.told = true;
@@ -1439,6 +1457,11 @@ static int c_worldfix(void*, int argc, const char* const* argv, SkOut* out)
     if (argc > 1 && !strcmp(argv[1], "failnext")) { // tests (BUG-0231): the next share_now fails once
         g_fail_next = true;
         H->out_printf(out, "the next share fails once\n");
+        return 0;
+    }
+    if (argc > 2 && !strcmp(argv[1], "retry")) { // tests (BUG-0301): retry of a refused share save, ms
+        g_share_retry_ms = (unsigned)atoi(argv[2]);
+        H->out_printf(out, "share save retry %u ms\n", g_share_retry_ms);
         return 0;
     }
     if (argc > 2 && !strcmp(argv[1], "autoload")) { // tests: auto_load_world of coop.ini
