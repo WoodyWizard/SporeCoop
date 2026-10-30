@@ -1781,6 +1781,18 @@ void on_session_end()
     solo_reset();
 }
 
+// BUG-0205: the guest's own pool while the host is away (`coop.pool`, a line of its own)
+static std::string away_status()
+{
+    if (!C.sess || C.sess->role() != net::Role::Client)
+        return "";
+    char e[200];
+    snprintf(e, sizeof e, "cell_away: solo=%d owed=%d times=%u released=%u spawns=%u food=%d/%d sent=%u dropped=%u\n",
+             (int)g_solo, (int)g_solo_owed, g_solo_times, g_solo_released, g_solo_spawns, g_solo_food[0], g_solo_food[1],
+             g_solo_sent, g_solo_dropped);
+    return e;
+}
+
 // ---- overlay: knockout countdown, revive progress, arrows to knocked out partners ----
 static std::string bar(float f)
 {
@@ -2467,7 +2479,7 @@ std::string debug(const std::vector<std::string>& a)
     char ob[160];
     snprintf(ob, sizeof ob, "avatar_opacity=%.2f cine=%d parts=%s chasing_me=%d chasing_partner=%d\n",
              F<float>(av, kOpacity), cm && F<uint32_t>(cm, 0x2C) ? 1 : 0, parts.c_str(), chase_me, chase_partner);
-    return b + std::string(ob) + ko + status();
+    return b + std::string(ob) + ko + away_status() + status();
 }
 
 // the support trace (trace.h): what the own cell has around it and what it did since the last line.
@@ -2550,15 +2562,7 @@ std::string status()
                  g_revives, g_respawns, g_pairs_skipped, g_hurt_local, g_hurt_fwd, g_bitten_sent, g_soft_moves, g_soft_turns, g_chunks_sent, g_chunks_taken, g_breaks_sent, g_wipes, g_kept, g_puppet_saves, g_puppet_new,
                  g_npc_deaths, g_loot_calls, g_loot_cells, g_mirror_kills, g_kills_sent, g_death_replays, g_loot_skipped,
                  (unsigned)g_host_of.size(), g_late_chunks, g_rounds_partial, (unsigned)g_meals.unacked.size());
-    std::string away;
-    if (C.sess && C.sess->role() == net::Role::Client) { // BUG-0205 (a line of its own: the lines above are parsed)
-        char e[200];
-        snprintf(e, sizeof e, "cell_away: solo=%d owed=%d times=%u released=%u spawns=%u food=%d/%d sent=%u dropped=%u\n",
-                 (int)g_solo, (int)g_solo_owed, g_solo_times, g_solo_released, g_solo_spawns, g_solo_food[0],
-                 g_solo_food[1], g_solo_sent, g_solo_dropped);
-        away = e;
-    }
-    return b + std::string(d) + away;
+    return b + std::string(d);
 }
 
 std::vector<syncdbg::Entry> sync_entries()
