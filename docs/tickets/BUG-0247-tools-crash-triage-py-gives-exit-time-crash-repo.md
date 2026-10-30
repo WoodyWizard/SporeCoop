@@ -8,7 +8,7 @@ reported: 2026-10-28
 source: GitHub #181 (review of release 0.7.3.0, 5801eea)
 role: all
 versions: 0.7.3.0
-fixed_in: unreleased
+fixed_in: 0.7.3.1
 branch: fix/w5-tools
 commits: 19084de
 tests: make test (tools_selftest.py triage)
@@ -40,3 +40,4 @@ tools_selftest.py triage cases (a) to (e), exact line match. FAIL: with SELFTEST
 ## History
 - 2026-10-28: opened.
 - 2026-10-28: fixed on fix/w5-tools (19084de).
+- 2026-10-29: released in 0.7.3.1.

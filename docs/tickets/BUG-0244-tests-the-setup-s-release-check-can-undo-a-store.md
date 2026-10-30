@@ -8,7 +8,7 @@ reported: 2026-10-28
 source: GitHub #178 (review of release 0.7.3.0, 5801eea)
 role: all
 versions: 0.7.3.0
-fixed_in: unreleased
+fixed_in: 0.7.3.1
 branch: fix/w5-tools
 commits: fd8c716
 tests: make test (release_tsan, make test-tsan), win_unit (tests/win_tests.cpp test_ini_unicode)
@@ -39,3 +39,4 @@ FAIL: `release_tsan --old-merge` prints "merge: FAILED" and exits 1 (the install
 ## History
 - 2026-10-28: opened.
 - 2026-10-28: fixed on fix/w5-tools (fd8c716).
+- 2026-10-29: released in 0.7.3.1.

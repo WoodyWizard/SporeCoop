@@ -8,7 +8,7 @@ reported: 2026-10-29
 source: coop_campaign.py debug run 2 (dev/campaign, lane 7)
 role: 
 versions: main 8f1944b
-fixed_in: unreleased
+fixed_in: 0.7.3.1
 branch: fix/w5-snapshot
 commits: 49de011 937a429
 tests: tools/tests/coop_campaign.py --from creature --to tribe; tools/tests/coop_tribe_snapshot.py (tribe_snapshot); npc_tests test_world_name
@@ -75,3 +75,4 @@ Two-game test `coop_tribe_snapshot.py` (suite `tribe_snapshot`), lane 3, branch 
 - 2026-10-29: a save on the host ends it: in that run `coop.save` on the host turned its world name back into `Cadian.spo` and all three guests were `together N 1` at once; a guest's rejoin (the host saves for the share) did the same. So the state lasts until the host's next save.
 - 2026-10-29: fix/w5-snapshot: fix (49de011) and docs (aab7b56); unit test npc_tests test_world_name FAILS with --nofix, passes; the two-game test coop_tribe_snapshot.py is written but NOT run yet (lanes were busy): status stays open until its FAIL (SPORE_FIX_OFF=world.snapshot_name) and PASS runs on lane 3.
 - 2026-10-29: fixed on fix/w5-snapshot (49de011, 937a429): FAIL run 20261029-062544, PASS run 20261029-063347 (2x), lane 3. Two players reproduce it too (the rename after the host's last real save).
+- 2026-10-29: released in 0.7.3.1.

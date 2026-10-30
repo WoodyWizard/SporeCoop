@@ -8,7 +8,7 @@ reported: 2026-10-29
 source: lab 20261029-070811 campaign
 role: guest
 versions: 0.7.3.0
-fixed_in: unreleased
+fixed_in: 0.7.3.1
 branch: fix/w6-avatar
 commits: 3f5d29e cb4ddd2 af73ab0 defb3ec
 tests: leave_avatar (tools/tests/coop_leave_avatar.py), leave_avatar_cell (tools/tests/coop_leave_avatar.py --cell)
@@ -87,3 +87,4 @@ own object list in the window, so they would catch it where it happens.
 - 2026-10-29: opened.
 - 2026-10-29: fixed on fix/w6-avatar (3f5d29e, defb3ec): no avatar while the stage is left; test
   leave_avatar / leave_avatar_cell, no-fail-run (not reproduced with 2 players).
+- 2026-10-29: released in 0.7.3.1.

@@ -8,7 +8,7 @@ reported: 2026-10-28
 source: GitHub #172 (review of release 0.7.3.0, 5801eea)
 role: all
 versions: 0.7.3.0
-fixed_in: unreleased
+fixed_in: 0.7.3.1
 branch: fix/w5-cell
 commits: 8d2c882, 666f692
 tests: cell_ko_gap, cell_tests (make test)
@@ -43,3 +43,4 @@ Observed (lane 2, `coop_cell_ko_gap.py` with `SPORE_FIX_OFF=pool.ko_grace`): wit
 ## History
 - 2026-10-28: opened.
 - 2026-10-28: fixed on fix/w5-cell (8d2c882): deadline-based expiry, no effect replay, KO_UP on a stage leave; test cell_ko_gap FAIL without / PASS with.
+- 2026-10-29: released in 0.7.3.1.

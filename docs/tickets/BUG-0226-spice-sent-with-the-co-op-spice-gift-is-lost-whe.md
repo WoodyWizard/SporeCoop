@@ -8,7 +8,7 @@ reported: 2026-10-28
 source: GitHub #160 (review of release 0.7.3.0, 5801eea)
 role: all
 versions: 0.7.3.0
-fixed_in: unreleased
+fixed_in: 0.7.3.1
 branch: fix/w5-space
 commits: 8d9ce51, 6dbb476
 tests: space_gift_refund (coop_space_gift_refund.py)
@@ -35,3 +35,4 @@ PASS out/lab/20261028-224835 (20 -> 15 -> 20, still 20 10 s later); FAIL with `S
 ## History
 - 2026-10-28: opened.
 - 2026-10-28: fixed on fix/w5-space (8d9ce51): owed until back in Space; test space_gift_refund.
+- 2026-10-29: released in 0.7.3.1.

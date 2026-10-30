@@ -8,7 +8,7 @@ reported: 2026-10-28
 source: GitHub #176 (review of release 0.7.3.0, 5801eea)
 role: all
 versions: 0.7.3.0
-fixed_in: unreleased
+fixed_in: 0.7.3.1
 branch: fix/w5-net
 commits: 2a6131b, f34f769
 tests: tests/net_tests.cpp test_updater_paths (net_tests --off update_paths fails); tests/win_tests.cpp test_apply_rollback (win_unit --old-paths fails)
@@ -39,3 +39,4 @@ net_tests PASS; --off update_paths FAIL (the 4-entry pack parsed, 10 bad names a
 ## History
 - 2026-10-28: opened.
 - 2026-10-28: fixed on fix/w5-net (wave 5).
+- 2026-10-29: released in 0.7.3.1.

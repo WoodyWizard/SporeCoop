@@ -8,7 +8,7 @@ reported: 2026-10-28
 source: GitHub #150 (review of release 0.7.3.0, 5801eea)
 role: all
 versions: 0.7.3.0
-fixed_in: unreleased
+fixed_in: 0.7.3.1
 branch: fix/w5-tools
 commits: 7cbae8e
 tests: make test (re_lint.py, tools_selftest.py relint, release)
@@ -43,3 +43,4 @@ FAIL: SELFTEST_RELINT=<b423f56 re_lint.py>: the table name and the stale frozen_
 ## History
 - 2026-10-28: opened.
 - 2026-10-28: fixed on fix/w5-tools (7cbae8e). Left: the GitHub release text of v0.7.3.0 (owner, by hand).
+- 2026-10-29: released in 0.7.3.1.

@@ -8,7 +8,7 @@ reported: 2026-10-28
 source: GitHub #161 (review of release 0.7.3.0, 5801eea)
 role: all
 versions: 0.7.3.0
-fixed_in: unreleased
+fixed_in: 0.7.3.1
 branch: fix/w5-space
 commits: ecbecc3, 5138792, f3e0432, 344f82f
 tests: space_armada_return (coop_space_armada_return.py, BUG-0227 parts); unit: tests/space_tests.cpp test_wave_return
@@ -35,3 +35,4 @@ PASS out/lab/20261028-230613 and 20261028-231750 (resumed ships 500 / 100 like w
 ## History
 - 2026-10-28: opened.
 - 2026-10-28: fixed on fix/w5-space: serial key, resumed waves wait for ships, away results count; test space_armada_return extended.
+- 2026-10-29: released in 0.7.3.1.

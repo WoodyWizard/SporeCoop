@@ -8,7 +8,7 @@ reported: 2026-10-28
 source: GitHub #166 (review of release 0.7.3.0, 5801eea)
 role: all
 versions: 0.7.3.0
-fixed_in: unreleased
+fixed_in: 0.7.3.1
 branch: fix/w5-core
 commits: c4f4981
 tests: npc_tests test_share_wait (make test; fails with npc_tests --nofix)
@@ -47,3 +47,4 @@ no-fail-run: no game run (3 games needed); the unit test runs the same share_wai
 ## History
 - 2026-10-28: opened.
 - 2026-10-28 (fix/w5-core): fixed: per-guest cinematic wait (share_wait.h, npc.sharecine_each), timers reset at the session end; unit test FAIL with --nofix, PASS with the fix; no 3-game test.
+- 2026-10-29: released in 0.7.3.1.

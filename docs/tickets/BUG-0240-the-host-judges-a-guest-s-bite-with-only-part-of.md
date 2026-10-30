@@ -8,7 +8,7 @@ reported: 2026-10-28
 source: GitHub #174 (review of release 0.7.3.0, 5801eea)
 role: all
 versions: 0.7.3.0
-fixed_in: unreleased
+fixed_in: 0.7.3.1
 branch: fix/w5-cell
 commits: 71eb1c7, 666f692
 tests: cell_guest_bite
@@ -40,3 +40,4 @@ Two-game `tools/tests/coop_cell_guest_bite.py` (suite `cell_guest_bite`), lane 2
 ## History
 - 2026-10-28: opened.
 - 2026-10-28: fixed on fix/w5-cell (71eb1c7): IsDamageable's cell type / AI type copied into the guest-bite gate; lock rate left open (known issue).
+- 2026-10-29: released in 0.7.3.1.

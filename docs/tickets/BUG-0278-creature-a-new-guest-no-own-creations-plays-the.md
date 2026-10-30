@@ -8,7 +8,7 @@ reported: 2026-10-29
 source: Discord report 2026-10-29
 role: guest
 versions: 0.7.3.0 (likely), main up to dcff1cf
-fixed_in: unreleased
+fixed_in: 0.7.3.1
 branch: fix/w7-legless
 commits: 52369bf 7325b15 02bcf2e (tests ac3f711 f126847)
 tests: tools/tests/coop_legless_guest.py (legless_guest, legless_guest_replace, _done, _cancel, _dontsave)
@@ -83,3 +83,4 @@ Lane 8, GOG 2024, `tools/tests/coop_legless_guest.py`:
 ## History
 - 2026-10-29: opened.
 - 2026-10-29: fix/w7-legless: reproduced (Save New, Replace), fixed behind creations.pre_editor; BUG-0283 opened for the own editor showing the host's new parts.
+- 2026-10-29: released in 0.7.3.1.

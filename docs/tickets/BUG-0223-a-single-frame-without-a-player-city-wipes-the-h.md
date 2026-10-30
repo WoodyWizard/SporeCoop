@@ -8,7 +8,7 @@ reported: 2026-10-28
 source: GitHub #157 (review of release 0.7.3.0, 5801eea)
 role: all
 versions: 0.7.3.0
-fixed_in: unreleased
+fixed_in: 0.7.3.1
 branch: fix/w5-world
 commits: e68f6b8 976af47
 tests: civ_null_local (tools/tests/coop_civ_null_local.py), npc_tests test_stage_epoch
@@ -46,3 +46,4 @@ Observed with a forced trigger (`coop.civ nulllocal 1`, lane 5): one frame witho
 ## History
 - 2026-10-28: opened.
 - 2026-10-28: fixed on fix/w5-world (e68f6b8); test civ_null_local: FAIL 20261029-003144 with civ.world_epoch off, PASS 20261028-232442, 20261028-235458, 20261029-003648
+- 2026-10-29: released in 0.7.3.1.

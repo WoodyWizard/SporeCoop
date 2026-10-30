@@ -8,7 +8,7 @@ reported: 2026-10-28
 source: GitHub #182 (review of release 0.7.3.0, 5801eea)
 role: all
 versions: 0.7.3.0
-fixed_in: unreleased
+fixed_in: 0.7.3.1
 branch: fix/w5-net
 commits: b3bfa90
 tests: tools/tests/kit_crash.py cases thread_worker, thread_exit (--old fails); SporeKit crash.test faultthread
@@ -39,3 +39,4 @@ Lab PASS: kit_crash in run 20261028-230607 (lane 6). kit_crash --case thread_wor
 ## History
 - 2026-10-28: opened.
 - 2026-10-28: fixed on fix/w5-net (wave 5).
+- 2026-10-29: released in 0.7.3.1.

@@ -8,7 +8,7 @@ reported: 2026-10-28
 source: GitHub #179 (review of release 0.7.3.0, 5801eea)
 role: all
 versions: 0.7.3.0
-fixed_in: unreleased
+fixed_in: 0.7.3.1
 branch: fix/w5-net
 commits: 6fa9165, f34f769, 005f6ba
 tests: tests/win_tests.cpp test_ini_encoding (win_unit --old-iniencode, --old-inilock fail)
@@ -39,3 +39,4 @@ win_unit lane 6 PASS out/lab/20261028-230252 (BE read as "Вася", share_world
 ## History
 - 2026-10-28: opened.
 - 2026-10-28: fixed on fix/w5-net (wave 5).
+- 2026-10-29: released in 0.7.3.1.

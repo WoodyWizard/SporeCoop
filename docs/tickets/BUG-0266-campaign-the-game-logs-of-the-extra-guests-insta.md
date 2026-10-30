@@ -8,7 +8,7 @@ reported: 2026-10-29
 source: lab 20261029-070811 campaign
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.3.1
 branch: fix/w6-campaign
 commits: 9f875d3
 tests: campaign
@@ -38,3 +38,4 @@ no-fail-run: test tool change; checked by hand: lane.game_log(24) -> lane4/.../s
 ## History
 - 2026-10-29: opened.
 - 2026-10-29: fixed on fix/w6-campaign.
+- 2026-10-29: released in 0.7.3.1.

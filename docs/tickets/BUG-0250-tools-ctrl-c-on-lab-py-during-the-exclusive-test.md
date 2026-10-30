@@ -8,7 +8,7 @@ reported: 2026-10-28
 source: GitHub #184 (review of release 0.7.3.0, 5801eea)
 role: all
 versions: 0.7.3.0
-fixed_in: unreleased
+fixed_in: 0.7.3.1
 branch: fix/w5-tools
 commits: e647496
 tests: make test (lab_selftest.py interrupt_exclusive, interrupt_sigterm, free_lane_locked, interrupt_retry, nohup)
@@ -39,3 +39,4 @@ lab_selftest.py, the lab in a child process interrupted after 8 s. FAIL against 
 ## History
 - 2026-10-28: opened.
 - 2026-10-28: fixed on fix/w5-tools (e647496).
+- 2026-10-29: released in 0.7.3.1.

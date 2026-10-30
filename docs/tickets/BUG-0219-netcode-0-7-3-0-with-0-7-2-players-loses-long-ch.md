@@ -8,7 +8,7 @@ reported: 2026-10-28
 source: GitHub #153 (review of release 0.7.3.0, 5801eea)
 role: all
 versions: 0.7.3.0
-fixed_in: unreleased
+fixed_in: 0.7.3.1
 branch: fix/w5-net
 commits: 57ca92f, 91f39b1
 tests: tests/net_tests.cpp test_old_peer_split, test_old_peer_session (net_tests --off peer_caps fails); tests/cell_tests.cpp meals_old_host (--old-trim fails); tests/fuzz_decoders.cpp hello_welcome_ext
@@ -44,3 +44,4 @@ HELLO and WELCOME carry `u32 caps` after the 0.7.2 fields (readers of 0.7.2 igno
 ## History
 - 2026-10-28: opened.
 - 2026-10-28: fixed on fix/w5-net (wave 5).
+- 2026-10-29: released in 0.7.3.1.

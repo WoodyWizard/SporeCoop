@@ -8,7 +8,7 @@ reported: 2026-10-28
 source: GitHub #167 (review of release 0.7.3.0, 5801eea)
 role: all
 versions: 0.7.3.0
-fixed_in: unreleased
+fixed_in: 0.7.3.1
 branch: fix/w5-core
 commits: c4f4981, 9452ccc, 0262f78
 tests: away_stages (coop_away_stages.py; --nofix fails), validate_tests test_dna_route (fails with --nofix)
@@ -49,3 +49,4 @@ Lab PASS: out/lab/20261028-230144 (away_stages, dna_away, away_editor, tribe_awa
 - 2026-10-28: opened.
 - 2026-10-28 (fix/w5-core): fixed: editor/load away only in Creature/Tribe/Civ (core.away_stages, game test FAIL/PASS), solo and owed DNA keep their stage and world (core.away_dna_stage, unit tests only).
 - 2026-10-29 (fix/w5-core): after the merge of main 8f1944b: lab out/lab/20261028-235045 all passed (vote_end_editor, vote_drop_editor, away_stages, civ_other_world, civ_shared, dna_away, creature, civ_coop, fix_registry, leave_cleanup, unit).
+- 2026-10-29: released in 0.7.3.1.

@@ -8,7 +8,7 @@ reported: 2026-10-28
 source: GitHub #158 (review of release 0.7.3.0, 5801eea)
 role: all
 versions: 0.7.3.0
-fixed_in: unreleased
+fixed_in: 0.7.3.1
 branch: fix/w5-world
 commits: ad7d76d 976af47
 tests: civ_caption (tools/tests/coop_civ_caption.py, new step 0)
@@ -44,3 +44,4 @@ Observed (lane 5): `movie_tick` ended any cinematic of the host after 8 s with 2
 ## History
 - 2026-10-28: opened.
 - 2026-10-28: fixed on fix/w5-world (ad7d76d); test civ_caption: FAIL 20261029-003144 with civ.caption_only off, PASS 20261028-232442, 20261028-235458, 20261029-003648
+- 2026-10-29: released in 0.7.3.1.

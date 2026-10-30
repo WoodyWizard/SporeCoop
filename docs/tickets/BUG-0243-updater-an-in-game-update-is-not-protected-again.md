@@ -8,7 +8,7 @@ reported: 2026-10-28
 source: GitHub #177 (review of release 0.7.3.0, 5801eea)
 role: all
 versions: 0.7.3.0
-fixed_in: unreleased
+fixed_in: 0.7.3.1
 branch: fix/w5-net
 commits: f34f769
 tests: tests/win_tests.cpp test_update_lock (win_unit --old-lock fails); part (b): written argument below
@@ -38,3 +38,4 @@ win_unit lane 6 PASS out/lab/20261028-230252; `win_unit.py --old-lock` FAIL (spo
 ## History
 - 2026-10-28: opened.
 - 2026-10-28: fixed on fix/w5-net (wave 5).
+- 2026-10-29: released in 0.7.3.1.

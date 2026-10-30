@@ -8,7 +8,7 @@ reported: 2026-10-28
 source: GitHub #187 (review of release 0.7.3.0, 5801eea)
 role: all
 versions: 0.7.3.0
-fixed_in: unreleased
+fixed_in: 0.7.3.1
 branch: fix/w5-tools
 commits: f180926
 tests: make test (lab_selftest.py kill_args)
@@ -43,3 +43,4 @@ Unit test in make test: `lab_selftest.py` case kill_args. FAIL: the same self-te
 ## History
 - 2026-10-28: opened.
 - 2026-10-28: fixed on fix/w5-tools (f180926): kill_args FAIL on b423f56's lab, PASS with the fix.
+- 2026-10-29: released in 0.7.3.1.

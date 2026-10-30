@@ -8,7 +8,7 @@ reported: 2026-10-29
 source: lab campaign 20261029-174717 (4 players, lane 7)
 role: host
 versions: 0.7.3.0 (main b5ef74d)
-fixed_in: unreleased
+fixed_in: 0.7.3.1
 branch: fix/w8-planet
 commits: 48324e9 302a898
 tests: coop_menu_stale_player.py (suite menu_stale_player)
@@ -71,3 +71,4 @@ player reset is inferred from the one campaign crash.
 
 ## History
 - 2026-10-29: opened; root cause, fix and test on fix/w8-planet.
+- 2026-10-29: released in 0.7.3.1.

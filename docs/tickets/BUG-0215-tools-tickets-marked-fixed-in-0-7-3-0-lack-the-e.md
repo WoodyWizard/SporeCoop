@@ -8,7 +8,7 @@ reported: 2026-10-28
 source: GitHub #149 (review of release 0.7.3.0, 5801eea)
 role: all
 versions: 0.7.3.0
-fixed_in: unreleased
+fixed_in: 0.7.3.1
 branch: fix/w5-tools
 commits: 964b098
 tests: make test (tools_selftest.py tickets_check; tickets.py check)
@@ -46,3 +46,4 @@ tools_selftest.py tickets_check, 13 cases on a temporary repository. FAIL: with 
 ## History
 - 2026-10-28: opened.
 - 2026-10-28: fixed on fix/w5-tools (964b098). Left: BUG-0149's test oracle (item 6 of #149).
+- 2026-10-29: released in 0.7.3.1.

@@ -8,7 +8,7 @@ reported: 2026-10-28
 source: GitHub #189 (review of release 0.7.3.0, 5801eea)
 role: all
 versions: 0.7.3.0
-fixed_in: unreleased
+fixed_in: 0.7.3.1
 branch: fix/w5-world
 commits: 1337ccf 976af47
 tests: save_hygiene_leave (tools/tests/coop_save_hygiene.py --leave), npc_tests test_savestrip_rule
@@ -42,3 +42,4 @@ Observed (lane 5): after the partner left, the herd made for its puppet stayed w
 ## History
 - 2026-10-28: opened.
 - 2026-10-28: fixed on fix/w5-world (1337ccf); test save_hygiene_leave: FAIL 20261029-003144 with savestrip.empty_herds off, PASS 20261028-232442, 20261028-235458, 20261029-003648
+- 2026-10-29: released in 0.7.3.1.

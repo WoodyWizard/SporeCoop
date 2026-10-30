@@ -8,7 +8,7 @@ reported: 2026-10-28
 source: GitHub #185 (review of release 0.7.3.0, 5801eea)
 role: all
 versions: 0.7.3.0
-fixed_in: unreleased
+fixed_in: 0.7.3.1
 branch: fix/w5-cell
 commits: 1bd70d6, b57410f, eefc923
 tests: cell, space (coop_mode.py)
@@ -36,3 +36,4 @@ Lane 2: `--fixture cell`: PASS (puppet 0.31 m off after a 6.4 m move); `--fixtur
 ## History
 - 2026-10-28: opened.
 - 2026-10-28: fixed on fix/w5-cell (1bd70d6): Cell and Space ask the guest's game; seeded failure shown for both.
+- 2026-10-29: released in 0.7.3.1.

@@ -8,7 +8,7 @@ reported: 2026-10-28
 source: GitHub #188 (review of release 0.7.3.0, 5801eea)
 role: all
 versions: 0.7.3.0
-fixed_in: unreleased
+fixed_in: 0.7.3.1
 branch: fix/w5-world
 commits: 8228f24 976af47
 tests: win_unit (tests/win_tests.cpp test_slot_fallback, test_slot_leftovers)
@@ -39,3 +39,4 @@ By reading (Windows only; Wine renames folders with open files): `slotfs::write`
 ## History
 - 2026-10-28: opened.
 - 2026-10-28: fixed on fix/w5-world (8228f24); win_unit: FAIL with --old (direct run), PASS 20261028-232442, 20261028-235458, 20261029-003648
+- 2026-10-29: released in 0.7.3.1.

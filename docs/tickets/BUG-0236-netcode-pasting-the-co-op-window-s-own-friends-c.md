@@ -8,7 +8,7 @@ reported: 2026-10-28
 source: GitHub #170 (review of release 0.7.3.0, 5801eea)
 role: all
 versions: 0.7.3.0
-fixed_in: unreleased
+fixed_in: 0.7.3.1
 branch: fix/w5-net
 commits: 57ca92f
 tests: tests/net_tests.cpp test_address_label (net_tests --off addr_label fails); test_address_parse unchanged
@@ -40,3 +40,4 @@ Observed in the unit test: Endpoint::clean took the first word, "Friends" of the
 ## History
 - 2026-10-28: opened.
 - 2026-10-28: fixed on fix/w5-net (wave 5).
+- 2026-10-29: released in 0.7.3.1.

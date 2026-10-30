@@ -8,7 +8,7 @@ reported: 2026-10-28
 source: GitHub #183 (review of release 0.7.3.0, 5801eea)
 role: all
 versions: 0.7.3.0
-fixed_in: unreleased
+fixed_in: 0.7.3.1
 branch: fix/w5-tools
 commits: e647496
 tests: make test (lab_selftest.py free_lane_*, owner_crash_lane1, test_crash_lane1)
@@ -42,3 +42,4 @@ lab_selftest.py (make test). FAIL against b423f56's lab (--tree): free_lane_cras
 ## History
 - 2026-10-28: opened.
 - 2026-10-28: fixed on fix/w5-tools (e647496); the new run: line in sporekit/diag.cpp needs a game restart (no hot reload of sporekit.dll).
+- 2026-10-29: released in 0.7.3.1.

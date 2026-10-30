@@ -8,7 +8,7 @@ reported: 2026-10-29
 source: fix/w5-snapshot, lane 3 campaign run 20261029-060328
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.3.1
 branch: main
 commits: 31e3043
 tests: campaign
@@ -37,3 +37,4 @@ no-fail-run: test tool change; the failing run is out/lane3/campaign/20261029-06
 
 ## History
 - 2026-10-29: opened.
+- 2026-10-29: released in 0.7.3.1.

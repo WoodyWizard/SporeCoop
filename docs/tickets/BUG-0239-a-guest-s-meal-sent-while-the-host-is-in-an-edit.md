@@ -8,7 +8,7 @@ reported: 2026-10-28
 source: GitHub #173 (review of release 0.7.3.0, 5801eea)
 role: all
 versions: 0.7.3.0
-fixed_in: unreleased
+fixed_in: 0.7.3.1
 branch: fix/w5-cell
 commits: 8d2c882, b8bc761, 666f692
 tests: cell_food_away, cell_tests (make test)
@@ -40,3 +40,4 @@ The host reads a guest's MSG_CELL_EAT / MSG_CELL_FOOD before the `!cell` return 
 ## History
 - 2026-10-28: opened.
 - 2026-10-28: fixed on fix/w5-cell (b8bc761): the host acknowledges a meal it cannot count; test cell_food_away FAIL without / PASS with.
+- 2026-10-29: released in 0.7.3.1.

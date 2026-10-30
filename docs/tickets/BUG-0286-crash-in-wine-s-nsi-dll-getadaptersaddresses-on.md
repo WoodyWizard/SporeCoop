@@ -8,7 +8,7 @@ reported: 2026-10-29
 source: lab
 role: guest
 versions: 0.7.3
-fixed_in: unreleased
+fixed_in: 0.7.3.1
 branch: fix/w8-adapters
 commits: 042a194 6a6bb7d 499c8d2 (tests 56f498a 3b53d69, docs 0d70eaf 4736828)
 tests: tools/tests/coop_adapters.py (suite adapters)
@@ -77,3 +77,4 @@ co-op window opens):
 ## History
 - 2026-10-29: opened.
 - 2026-10-29: fix/w8-adapters: reproduced with two games of one bottle, fixed behind core.adapters.
+- 2026-10-29: released in 0.7.3.1.

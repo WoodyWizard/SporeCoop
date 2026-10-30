@@ -8,7 +8,7 @@ reported: 2026-10-28
 source: GitHub #148 (review of release 0.7.3.0, 5801eea)
 role: all
 versions: 0.7.3.0
-fixed_in: unreleased
+fixed_in: 0.7.3.1
 branch: fix/w5-tools
 commits: 8124796, 964b098
 tests: make test (fixes_tests, test-asan), fix_registry, leave_cleanup, vote_stale, tribe_chief_removed, win_unit
@@ -48,3 +48,4 @@ Not run: vote_stale with session.end off on b423f56 (expected FAIL by reading: t
 ## History
 - 2026-10-28: opened.
 - 2026-10-28: fixed on fix/w5-tools (8124796 registry, 964b098 switch: fields). Other wave-5 branches that add a reset to the session end: put a coop.cpp reset into block 3 of end_session (after the `g_vote_scope_fix` line), and a switch in a portable file into fix_table.cpp.
+- 2026-10-29: released in 0.7.3.1.

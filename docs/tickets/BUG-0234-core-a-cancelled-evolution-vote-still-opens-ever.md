@@ -8,7 +8,7 @@ reported: 2026-10-28
 source: GitHub #168 (review of release 0.7.3.0, 5801eea)
 role: all
 versions: 0.7.3.0
-fixed_in: unreleased
+fixed_in: 0.7.3.1
 branch: fix/w5-core
 commits: c4f4981, 9452ccc
 tests: vote_end_editor, vote_drop_editor (coop_vote_drop_editor.py --case 1|2; --nofix fails), tests/validate_tests.cpp test_give_pick_leave
@@ -54,3 +54,4 @@ Lab PASS: out/lab/20261028-230144 (vote_end_editor, vote_drop_editor ok, lane 4;
 - 2026-10-28: opened.
 - 2026-10-28 (fix/w5-core): fixed: the editor id from the end message, the due editor and the Give pick end with the session / their player; coop_vote_drop_editor.py case 1 and 2 FAIL with --nofix, PASS with the fix.
 - 2026-10-29 (fix/w5-core): after the merge of main 8f1944b: lab out/lab/20261028-235045 all passed (vote_end_editor, vote_drop_editor, away_stages, civ_other_world, civ_shared, dna_away, creature, civ_coop, fix_registry, leave_cleanup, unit).
+- 2026-10-29: released in 0.7.3.1.

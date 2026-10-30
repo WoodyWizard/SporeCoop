@@ -8,7 +8,7 @@ reported: 2026-10-29
 source: lab 20261029-122937 campaign
 role: 
 versions: 0.7.3.0
-fixed_in: unreleased
+fixed_in: 0.7.3.1
 branch: fix/w7-vote
 commits: 2525267
 tests: vote_caption
@@ -52,3 +52,4 @@ frame) after 0.5 s, unless the game delivered the click itself meanwhile (counte
 ## History
 - 2026-10-29: opened.
 - 2026-10-29: fixed on fix/w7-vote (input lock drops the clicks; the mod presses the button).
+- 2026-10-29: released in 0.7.3.1.

@@ -8,7 +8,7 @@ reported: 2026-10-29
 source: lab 20261029-122937 campaign
 role: 
 versions: 0.7.3.0
-fixed_in: unreleased
+fixed_in: 0.7.3.1
 branch: fix/w7-npc
 commits: 5449631
 tests: tools/tests/coop_npc_pooled.py (suite npc_pooled)
@@ -69,3 +69,4 @@ that is in the world (the game's own objects of both machines, `coop.census`).
 ## History
 - 2026-10-29: opened.
 - 2026-10-29: fixed on fix/w7-npc (cause: the NPC was back in the game's creature pool; BUG-0280 opened for the culling itself).
+- 2026-10-29: released in 0.7.3.1.

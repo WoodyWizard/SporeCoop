@@ -8,7 +8,7 @@ reported: 2026-10-28
 source: GitHub #152 (review of release 0.7.3.0, 5801eea)
 role: all
 versions: 0.7.3.0
-fixed_in: unreleased
+fixed_in: 0.7.3.1
 branch: fix/w5-space
 commits: 730acef, 6dbb476
 tests: space_defenders (coop_space_defenders.py part 2 a, b, c)
@@ -35,3 +35,4 @@ PASS out/lab/20261028-224835 ((a) same pointer, invincible 1, no extra mirror; (
 ## History
 - 2026-10-28: opened.
 - 2026-10-28: fixed on fix/w5-space (730acef): identity by object serial, retire for missions; defenders test reworked.
+- 2026-10-29: released in 0.7.3.1.

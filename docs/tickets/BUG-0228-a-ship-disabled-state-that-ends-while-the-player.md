@@ -8,7 +8,7 @@ reported: 2026-10-28
 source: GitHub #162 (review of release 0.7.3.0, 5801eea)
 role: all
 versions: 0.7.3.0
-fixed_in: unreleased
+fixed_in: 0.7.3.1
 branch: fix/w5-space
 commits: 7c9ee00, 6dbb476
 tests: space_down_away (coop_space_down_away.py part c)
@@ -35,3 +35,4 @@ coop_space_down_away.py part (c): PASS out/lab/20261028-224335 (and the later PA
 ## History
 - 2026-10-28: opened.
 - 2026-10-28: fixed on fix/w5-space (7c9ee00): the clear waits for the first Space frame on the same ship; test space_down_away.
+- 2026-10-29: released in 0.7.3.1.

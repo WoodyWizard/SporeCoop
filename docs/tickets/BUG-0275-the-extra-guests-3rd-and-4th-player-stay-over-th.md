@@ -8,7 +8,7 @@ reported: 2026-10-29
 source: lab 20261029-122937 campaign
 role: 
 versions: 0.7.3.0
-fixed_in: unreleased
+fixed_in: 0.7.3.1
 branch: fix/w7-sync
 commits: 2777adb
 tests: campaign, multi4, coop_sync_multi
@@ -71,3 +71,4 @@ campaign_short lane 6 OK, 0 findings; smoke 20261029-152549 lanes 6+7 13/14 OK (
 ## History
 - 2026-10-29: opened.
 - 2026-10-29: measured per player, test tooling fixed on fix/w7-sync; BUG-0281, BUG-0282 opened.
+- 2026-10-29: released in 0.7.3.1.

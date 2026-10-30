@@ -8,7 +8,7 @@ reported: 2026-10-29
 source: fix/w5-cell, 2026-10-28
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.3.1
 branch: main
 commits: 11b61eb
 tests: hotreload
@@ -38,3 +38,4 @@ ach with its lab run id (out/lab/YYYYMMDD-HHMMSS);
 
 ## History
 - 2026-10-29: opened.
+- 2026-10-29: released in 0.7.3.1.

@@ -8,7 +8,7 @@ reported: 2026-10-29
 source: lab 20261029-093233 campaign
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.3.1
 branch: fix/w6-campaign2
 commits: f617994
 tests: campaign
@@ -33,3 +33,4 @@ no-fail-run: test tool change; failing run lab 20261029-093233 campaign#2; in la
 ## History
 - 2026-10-29: opened.
 - 2026-10-29: fixed on fix/w6-campaign2, merged into main.
+- 2026-10-29: released in 0.7.3.1.

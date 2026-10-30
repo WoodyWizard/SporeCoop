@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.7.3.1] - 2026-10-29
+
 ### Added
 - Problem reports: type `/bug <what you see>` in the co-op chat when something goes wrong; every
   player's log gets a line with the text and the moment, and the chat says "marked for the report".
@@ -90,7 +92,7 @@
 - **Civilization: a guest who plays another world than the host's no longer gets the host's
   vehicles and cities applied to its own planet** (its own vehicles were taken over or removed and
   cities founded), and in Tribe and Civ its own tribe or vehicles play on under its own orders
-  until it plays the host's world (BUG-0231, part). Cities already founded that way stay in the
+  until it plays the host's world (BUG-0231, partly: the shared resources and DNA of such a guest are still open). Cities already founded that way stay in the
   guest's save.
 - **"Host is in an editor / loading: you play on alone" is only shown in Creature, Tribe and Civ**,
   where the guest really plays on alone; in Cell and Space it is gone. DNA a guest earned while the
@@ -126,7 +128,7 @@
 - **Space armada contracts: a wave resumed after the host's return gets tough ships, is not won
   without a fight, and a raid lost while the host was away fails the contract** (BUG-0227).
 - **Space allies: a galaxy reload is seen even when the new empire object gets the old one's
-  address** (BUG-0225, the allies part).
+  address** (BUG-0225, the allies part; refunds after a galaxy reload are still open).
 - **Cell: a knocked-out partner no longer flickers to "up" when one update is late** (BUG-0238):
   it stays translucent until its own 10 s run out, is not taken for a helper meanwhile, and its
   death effect does not play twice.

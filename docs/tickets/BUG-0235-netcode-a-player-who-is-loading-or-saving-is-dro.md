@@ -8,7 +8,7 @@ reported: 2026-10-28
 source: GitHub #169 (review of release 0.7.3.0, 5801eea)
 role: all
 versions: 0.7.3.0
-fixed_in: unreleased
+fixed_in: 0.7.3.1
 branch: fix/w5-net
 commits: 57ca92f
 tests: tests/net_tests.cpp test_rejoin_token (net_tests --off rejoin_token fails); lab nest_species, rejoin_loop, multi3 (regression)
@@ -45,3 +45,4 @@ A rejoin token: `mods/coop/rejoin.cpp` keeps a random u64 in `<AppData>\SporeCoo
 ## History
 - 2026-10-28: opened.
 - 2026-10-28: fixed on fix/w5-net (wave 5).
+- 2026-10-29: released in 0.7.3.1.

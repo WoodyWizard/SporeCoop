@@ -8,7 +8,7 @@ reported: 2026-10-28
 source: GitHub #175 (review of release 0.7.3.0, 5801eea)
 role: all
 versions: 0.7.3.0
-fixed_in: unreleased
+fixed_in: 0.7.3.1
 branch: fix/w5-net
 commits: d127b18
 tests: tools/tests/coop_update_leak.py (suite update_leak); SporeKit command mem.commit
@@ -40,3 +40,4 @@ update_leak on lane 6: PASS out/lab/20261028-224927 (committed private memory 23
 ## History
 - 2026-10-28: opened.
 - 2026-10-28: fixed on fix/w5-net (wave 5).
+- 2026-10-29: released in 0.7.3.1.

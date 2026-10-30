@@ -8,7 +8,7 @@ reported: 2026-10-28
 source: GitHub #164 (review of release 0.7.3.0, 5801eea)
 role: all
 versions: 0.7.3.0
-fixed_in: unreleased
+fixed_in: 0.7.3.1
 branch: fix/w5-space
 commits: c5d89f1, 730acef, 344f82f
 tests: space_fleet (coop_space_fleet.py part 3), space_defenders (part 2 a, b, c)
@@ -35,3 +35,4 @@ PASS out/lab/20261028-225821 (space_fleet, space_defenders). FAIL with the mutat
 ## History
 - 2026-10-28: opened.
 - 2026-10-28: fixed on fix/w5-space: fleet test part 3 (seen failing with the removal mutation), defenders test reworked with BUG-0218.
+- 2026-10-29: released in 0.7.3.1.

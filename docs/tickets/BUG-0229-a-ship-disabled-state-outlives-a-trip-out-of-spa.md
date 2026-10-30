@@ -8,7 +8,7 @@ reported: 2026-10-28
 source: GitHub #163 (review of release 0.7.3.0, 5801eea)
 role: all
 versions: 0.7.3.0
-fixed_in: unreleased
+fixed_in: 0.7.3.1
 branch: fix/w5-space
 commits: 7c9ee00, 6dbb476
 tests: space_down_away (coop_space_down_away.py parts a, b)
@@ -35,3 +35,4 @@ PASS out/lab/20261028-224335 ((a) 19.0 -> 16.9 s left after 25 s away; (b) epoch
 ## History
 - 2026-10-28: opened.
 - 2026-10-28: fixed on fix/w5-space (7c9ee00): paused in the same world, ended without a death in another; test space_down_away.
+- 2026-10-29: released in 0.7.3.1.

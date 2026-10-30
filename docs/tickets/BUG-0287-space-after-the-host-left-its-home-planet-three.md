@@ -8,7 +8,7 @@ reported: 2026-10-29
 source: lab 20261029-174717 campaign#2 (lane 4)
 role: 
 versions: main b5ef74d
-fixed_in: unreleased
+fixed_in: 0.7.3.1
 branch: fix/w8-stuck
 commits: 1e5edc8
 tests: campaign_space (coop_campaign.py --from civ --to space)
@@ -54,3 +54,4 @@ player N (Space, X s in this place)".
 
 ## History
 - 2026-10-29: opened (fix/w8-stuck) from the logs of lab 20261029-174717; fixed by BUG-0276's second switch, root cause inferred, no FAIL run.
+- 2026-10-29: released in 0.7.3.1.
