@@ -2277,8 +2277,20 @@ static void heal_own(uint8_t* a, const net::Vec3& me, bool bad)
                p.x, p.y, mask);
 }
 
+// BUG-0282: a rigid mirror was steered by its velocity only (`v = host vel + (want - cur) * 2`, a jump
+// beyond 3 m). The game's cell physics moves a cell less per second at a long frame, so at 15 fps the
+// guest showed the host's moving cells ~2 m (0.65 s) behind their way. With cell.mirror_follow a
+// mirror more than 0.2 m off is also moved towards its place each frame, by a share that depends on
+// the frame time (time constant 0.08 s): at 65 fps it stays within 0.2 m and nothing changes.
+static bool g_fix_mirror_follow = true;
+COOP_FIX("cell.mirror_follow", "BUG-0282", g_fix_mirror_follow, "cell: a guest's rigid mirror more than 0.2 m off its host place is moved towards it each frame (not only steered), so it does not trail at a low frame rate");
+static uint32_t g_follow_moves;
+static double g_guest_tick_at;
 static void guest_tick(double now)
 {
+    double frame_dt = g_guest_tick_at > 0 ? std::clamp(now - g_guest_tick_at, 0.0, 0.25) : 0.0;
+    g_guest_tick_at = now;
+    float follow = g_fix_mirror_follow ? (float)(1.0 - std::exp(-frame_dt / 0.08)) : 0.f;
     flush_food();
     own_probe("guest tick");
     shared_parts_scan(now);
@@ -2315,8 +2327,14 @@ static void guest_tick(double now)
             acc[0] = acc[1] = acc[2] = 0;
             g_soft_moves++;
         } else {
-            if (net::dist(cur, want) > 3.f)
+            float off = net::dist(cur, want);
+            if (off > 3.f)
                 set_pos(c, want);
+            else if (follow > 0.f && off > 0.2f) {
+                cur = {cur.x + (want.x - cur.x) * follow, cur.y + (want.y - cur.y) * follow, cur.z + (want.z - cur.z) * follow};
+                set_pos(c, cur);
+                g_follow_moves++;
+            }
             auto* v = (float*)(c + kVel);
             v[0] = m.vel.x + (want.x - cur.x) * 2.f;
             v[1] = m.vel.y + (want.y - cur.y) * 2.f;
@@ -3678,11 +3696,11 @@ std::string status()
                  "cell(guest): food=%d mirrors=%u created=%u destroyed=%u purged=%u hits_sent=%u eats_sent=%u "
                  "revives=%u respawns=%u pairs_skipped=%u hurt_local=%u hurt_fwd=%u bitten_sent=%u soft_moves=%u soft_turns=%u chunks_sent=%u chunks_taken=%u breaks_sent=%u wipes=%u kept=%u puppet_saves=%u puppet_new=%u "
                  "npc_deaths=%u loot_calls=%u loot_cells=%u mirror_kills=%u kills_sent=%u death_replays=%u loot_skipped=%u "
-                 "host_of=%u late_chunks=%u rounds_partial=%u meals_unacked=%u\n",
+                 "host_of=%u late_chunks=%u rounds_partial=%u meals_unacked=%u follow_moves=%u\n",
                  food, (unsigned)g_mirrors.size(), g_created, g_destroyed, g_purged, g_hits_sent, g_eats_sent,
                  g_revives, g_respawns, g_pairs_skipped, g_hurt_local, g_hurt_fwd, g_bitten_sent, g_soft_moves, g_soft_turns, g_chunks_sent, g_chunks_taken, g_breaks_sent, g_wipes, g_kept, g_puppet_saves, g_puppet_new,
                  g_npc_deaths, g_loot_calls, g_loot_cells, g_mirror_kills, g_kills_sent, g_death_replays, g_loot_skipped,
-                 (unsigned)g_host_of.size(), g_late_chunks, g_rounds_partial, (unsigned)g_meals.unacked.size());
+                 (unsigned)g_host_of.size(), g_late_chunks, g_rounds_partial, (unsigned)g_meals.unacked.size(), g_follow_moves);
     char t[640];
     size_t pcount = 0;
     for (auto& [id, pt] : g_ptiles)
