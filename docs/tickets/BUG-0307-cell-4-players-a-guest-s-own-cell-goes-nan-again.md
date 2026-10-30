@@ -61,8 +61,10 @@ the cells near, non-finite cells and shared particle indices; `coop.pool` prints
 The repetition: FAIL `SPORE_FIX_OFF=cell.nan_heal_all` cell_nan_all, lab 20261030-121742 and
 20261030-122306 (position NaN in 8-9 of 15 samples, after the level-ups too). PASS cell_nan_all, lab
 20261030-121908 (one heal, 0 of 15 non-finite; cell and cell_nan of the same run passed, no heal in
-the plain cell test). The natural first NaN was not reproduced: campaign_short x2 + cell_4p x2 (lab
-20261030-120947) and the runs after it had no own_probe line.
+the plain cell test). The natural first NaN was not reproduced: no own_probe line in campaign_short x2 + cell_4p x2 (lab
+20261030-120947, c2fcc91), cell_4p + campaign_short (20261030-122501, 918f075), campaign_short x2
+(20261030-123430, 918f075, lanes 4/7 while lanes 2/3 ran campaign_short + campaign; fps 35-54, not
+the 1-3 of the original run).
 
 ## History
 - 2026-10-30: opened.
