@@ -20,7 +20,7 @@ related: BUG-0305
 ## Report
 `tribe_npc_dash` (coop_tribe_npc_dash.py, BUG-0305's test, merged with fix/w12-tribe-npc) on
 lane 6, GOG 2024:
-* main 5d7f20e (temporary worktree tmp/w13-main-ref): lab 20261030-144611-tmp-w13-main-ref, 1 of 3
+* main 5d7f20e (temporary worktree tmp/w13-main-ref): lab 20261030-144611-tmp-w13-main-ref (its folder went with the temporary worktree), 1 of 3
   passed; FAIL "90 % of 106 samples within 1.95 m" and "... 114 samples within 1.51 m" (limit 1.2 m).
 * fix/w13-tribe-civ: lab 20261030-141833 (1 FAIL, 1.81 m) and 20261030-144027 (3 FAIL: 2.21, 1.92,
   1.46 m), while lanes 6 and 7 both ran tests.
