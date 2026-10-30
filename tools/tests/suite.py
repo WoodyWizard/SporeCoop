@@ -229,6 +229,13 @@ add('campaign', P + 'coop_campaign.py --minutes 8', ('campaign',), minutes=150,
     timeout=5 * 3600)
 add('campaign_short', P + 'coop_campaign.py --to creature --minutes 3 --advance-minutes 8', ('campaign',),
     minutes=25, timeout=3600)
+# BUG-0276: the guests get the host's world after a live stage change with four players (the share
+# save posted in the first frames of Tribe / of the solar system); a stuck finding is the bug.
+# A timing race: FAIL with SPORE_FIX_OFF=world.share_settle_reset in about 1 of 3 games (--repeat)
+add('campaign_tribe', P + 'coop_campaign.py --from creature --to tribe --minutes 2 --no-finale', ('campaign',),
+    minutes=30, timeout=3600)
+add('campaign_space', P + 'coop_campaign.py --from civ --to space --minutes 2 --no-finale', ('campaign',),
+    minutes=35, timeout=3600)
 
 
 def select(spec):
