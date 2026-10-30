@@ -7,8 +7,8 @@ creature on its screen was a mirror the mod keeps AI-locked (cell +0x16C), its g
 and the food it ate went to a host that dropped it.
 
 1. The host leaves for the main menu (`coop.menu`); the guest counts it as away (host_away=1).
-2. In the guest's game the creatures around it swim by their own AI: AI lock (+0x16C) clear and at
-   least two of them moved more than 1 m within 6 s (`coop.pool npcs`, the game's own cell data).
+2. In the guest's game the creatures around it swim by their own AI: at least two of them moved
+   more than 1 m within 6 s (`coop.pool npcs`, the positions in the guest's own pool).
 3. The guest eats 10 points through the game's hooked AddFoodPoints (`coop.pool food 10`).
 4. The host loads its world again: within 30 s every creature around the guest is a mirror of a live
    host cell again (the guest's own cells are gone) and there are more than 5 mirrors, and the host's
@@ -85,7 +85,9 @@ def main():
     locked = [k for k in n2 if n2[k][1]]
     print(f'  away: creatures {len(n1)} -> {len(n2)}, in both {len(both)}, moved >1 m {len(moved)}, '
           f'AI-locked {len(locked)}; {away_line(guest)}')
-    ck(len(n2) > 0 and not locked, f'no creature around the guest is AI-locked while the host is away ({len(locked)} of {len(n2)})')
+    # +0x16C is printed, not checked: between two frames it read 0 on the mirrors too (lane 3, pool.away
+    # off), the mod sets it again every frame (guest_tick); the movement is what the player sees
+    ck(len(n2) > 0, f'creatures around the guest while the host is away ({len(n2)})')
     ck(len(moved) >= 2, f'the guest\'s creatures swim by their own AI ({len(moved)} moved more than 1 m in 6 s)')
     # 3. the guest eats
     print(' ', guest.call('coop.pool food 10')['out'].strip())

@@ -2081,6 +2081,10 @@ std::string debug(const std::vector<std::string>& a)
         }
         return o.empty() ? "none" : o;
     }
+    if (!a.empty() && a[0] == "deaths") { // tests (BUG-0221): the game's death count S+0x70 (docs/re/cell.md)
+        uint8_t* s0 = S();
+        return "deaths=" + std::to_string(s0 ? F<int32_t>(s0, 0x70) : -1);
+    }
     if (!a.empty() && a[0] == "npcs") { // tests (BUG-0205): the creatures within <r> m: local index, mirror, AI lock, pos
         uint8_t* av = avatar();
         if (!av)
@@ -2326,6 +2330,8 @@ std::string debug(const std::vector<std::string>& a)
         if (s && a.size() >= 2 && a[1] == "button")
             F<uint8_t>(s, 0x69) = 1; // as if a part had been collected (0xE5D7B0 sets it)
         uint8_t* m = modes::cell_at(mate_idx());
+        if (m && a.size() >= 2 && a[1] == "tp") // tests (BUG-0237): our cell right onto the mate (it touches it)
+            stop_at(av, pos_of(m));
         float sc[2] = {-1, -1};
         if (m) {
             net::Vec3 p = pos_of(m);

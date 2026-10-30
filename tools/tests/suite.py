@@ -62,6 +62,8 @@ add('cell_respawn', P + 'coop_cell_respawn.py', warm=True, minutes=3, fixture='c
 add('diag_cell', P + 'coop_diag.py --fixture cell', warm=True, minutes=3, fixture='cell')  # session clock, /bug marks on both games, merge_logs, sync-check OK and a forced mismatch, its cost
 add('diag_creature', P + 'coop_diag.py --fixture creature', warm=True, minutes=3, fixture='creature')  # the same in Creature
 add('cell_respawn_swap', P + 'coop_cell_respawn.py --swap', warm=True, minutes=3, fixture='cell')  # the same with the guest's pool rebuilt (BUG-0221)
+add('cell_editor_timed', P + 'coop_cell_editor_timed.py', minutes=5)  # the own cell editor entered within the 3 s after a real respawn, vulnerable after it (BUG-0237)
+add('cell_editor_timed_revive', P + 'coop_cell_editor_timed.py --revive', minutes=5)  # the same within the 2 s after a revive (BUG-0237)
 add('cell_editor_invuln', P + 'coop_cell_editor_invuln.py', minutes=5)  # invulnerable into the own cell editor, vulnerable after it (BUG-0237)
 add('cell_spawn_guard', P + 'coop_cell_spawn_guard.py', warm=True, minutes=3, fixture='cell')  # coop.cell spawn with a slot that is not a live cell: "no such cell", no fault (BUG-0093)
 add('dna_resend', P + 'coop_dna_resend.py', warm=True, minutes=3, fixture='creature')  # the DNA total reaches a guest that missed it (BUG-0128)
