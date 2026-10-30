@@ -699,7 +699,7 @@ static void guest_tick(double now)
             g_stale_dropped++;
         }
     }
-    if (now - g_listed_at >= 1.0) {
+    if (now - g_listed_at >= 1.0 && game::in_creature_stage()) { // (Creature only: the case seen; Tribe untouched)
         g_listed_at = now;
         check_listed();
     }

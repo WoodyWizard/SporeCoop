@@ -1044,7 +1044,7 @@ BUG-0281, BUG-0300, BUG-0180. GOG 2024, lanes 4 and 5. Extends [the relevance pa
   in its list but its object was no creature of the world (not listed, destroyed, or without a
   species); not a range edge (three members of the same herd 77-84 m away were there; the host sends
   within 110 m). Not reproduced in 4 rejoins with 2 players. Diagnostics `npc.proxy_listed`: the
-  guest checks every second that each proxy's object is a creature of the noun list (logs
+  guest checks every second (Creature stage) that each proxy's object is a creature of the noun list (logs
   "is no creature of this world any more" and makes it again) and logs a proxy without a species.
 * ✔ BUG-0118 re-read on the lane 4 exe (2026-10-30): CreatureSelectionUI 0xB6C9C3..0xB6CA11 reads
   `(+0xE84)->+0x32C` only with `+0xB58` mask 0x2 clear and mask 0x1 set; the guard (mask 0x1) covers it.

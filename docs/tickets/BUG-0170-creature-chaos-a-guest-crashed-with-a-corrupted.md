@@ -53,3 +53,4 @@ Next step when it shows again: replay seed 1035603402 with 4 players on two free
 - 2026-10-23: first recorded in docs/known-issues.md.
 - 2026-10-27: ticket backfilled from docs/known-issues.md (every entry carries its ticket id, CLAUDE.md 1).
 - 2026-10-27: not reproduced on fix/w1-creature (2 creature chaos runs, 0 faults); two freed-pointer candidates fixed (BUG-0082, BUG-0091).
+- 2026-10-30: fix/w13-creature: chaos_creature_long (6 min, 2 players) OK in out/lab/20261030-141545 (fix/w13-creature, lane 5, GOG 2024), 0 faults on both games. The 4-player replay (seed 1035603402) was not run (lanes 4 and 5 were busy with this batch's tests). Not reproduced; stays.

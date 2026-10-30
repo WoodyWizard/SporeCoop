@@ -33,3 +33,4 @@ Ask the player for sporekit.log device Reset lines, a screenshot, whether a relo
 - 2026-10-25: reported (player report (Discord)).
 - 2026-10-25: not reproduced, see Root cause.
 - 2026-10-25: ticket written from the CHANGELOG, commits and reports (backfill).
+- 2026-10-30: fix/w13-creature: alt_enter OK in out/lab/20261030-141545 (fix/w13-creature, lane 5, GOG 2024) (Wine/DXVK, on the ground after the toggles). Not reproduced; still needs the player's log / a Windows AMD machine.
