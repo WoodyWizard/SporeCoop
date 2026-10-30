@@ -6,8 +6,6 @@
 #include <set>
 #include <unordered_map>
 
-#include <cmath>
-
 #include "drive_plan.h"
 #include "hunt_hits.h"
 #include "npc_ids.h"
@@ -217,17 +215,6 @@ static void test_drive()
     for (int f = 0; f < 60; f++)
         closing += drive::plan(u, 3.f - f * 0.05f, 6.5f, 1 + f / 30.0, 8.f, true, true).trail;
     CHECK(closing == 0);
-    // BUG-0281: the nudge pulls as far per second at 15 fps as at 60 fps (scaled); per frame before
-    auto left_after_1s = [](int fps, bool scaled) {
-        float rest = 1.f;
-        for (int f = 0; f < fps; f++)
-            rest *= 1.f - drive::nudge_gain(1.0 / fps, scaled);
-        return rest;
-    };
-    CHECK(std::fabs(drive::nudge_gain(1.0 / 60, true) - 0.15f) < 1e-4f);
-    CHECK(std::fabs(left_after_1s(15, true) - left_after_1s(60, true)) < 1e-3f);
-    CHECK(left_after_1s(15, false) > 20 * left_after_1s(60, false)); // the old pull is 4x weaker at 15 fps
-    CHECK(drive::nudge_gain(5.0, true) < 1.f && drive::nudge_gain(0.0, true) == 0.f);
 }
 
 // BUG-0217 / BUG-0223: the stage counters and a module's watch (stage_epoch.h)

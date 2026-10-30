@@ -79,11 +79,6 @@ COOP_FIX("npc.stall", "BUG-0169", g_stall_fix, "creature: a proxy 2.5 m off for 
 // `coop.fix npc.trail off`: the driving before (0.7.3.x).
 static bool g_trail_fix = true;
 COOP_FIX("npc.trail", "BUG-0305", g_trail_fix, "creature, tribe: a proxy 1.5 m off its path for 0.5 s is put in place");
-// BUG-0281: the nudge towards the host's position was 15 % per frame: at the 15 fps of a loaded guest a
-// running NPC's proxy (which hardly walks by itself in the Creature stage) trailed 2-6 m. Now the same
-// pull per second at any frame rate (drive_plan.h nudge_gain). `coop.fix npc.nudge_dt off`: per frame.
-static bool g_nudge_dt_fix = true;
-COOP_FIX("npc.nudge_dt", "BUG-0281", g_nudge_dt_fix, "creature, tribe: a proxy is pulled to its target as fast at any frame rate");
 // 0.7.2.x fixes kept for the tests (off: the code before them)
 static bool g_stale_fix = true, g_world_despawn_fix = true, g_death_fix = true;
 COOP_FIX("npc.stale_proxy", "BUG-0009", g_stale_fix, "creature: a guest drops a proxy the host stopped sending states for");
@@ -751,8 +746,7 @@ static void guest_tick(double now)
             game::teleport(px.c, s.pos, s.rot);
         }
         if (!px.killed)
-            drive::step(px.c, s.pos, s.rot, s.vel, px.drv, now, 0, true, 8.f, g_stall_fix, g_trail_fix,
-                        g_nudge_dt_fix);
+            drive::step(px.c, s.pos, s.rot, s.vel, px.drv, now, 0, true, 8.f, g_stall_fix, g_trail_fix);
         else { // a corpse lies where the host has it: the guest's dead proxy shot off into the sky
                // (~2.5 km/s away from the planet; driven, it stayed ~80 m up: play_tribe.py)
             *(net::Vec3*)((uint8_t*)px.c + game::kVelOff) = {0, 0, 0};

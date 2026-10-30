@@ -21,9 +21,9 @@ Switch: SPORE_FIX_OFF=npc.trail (the driving before the fix) must FAIL.
 Creature (BUG-0281, `creature_npc_dash`): DASH_FIXTURE=creature runs the same on the creature
 fixture with the nest species next to the start (065CBE70, the NPC 3-5 m from the guests' avatars
 in the 4-player report) at 4 m/s (their running speed); the guest's avatar stands 1.5 m beside the
-end of the path, so the proxies run up to it and stand next to it at every turn. These proxies
-hardly walk by themselves (own speed 0 most of the time): the nudge moves them, and at 15 fps its
-15 % per frame left them 2-6 m behind (SPORE_FIX_OFF=npc.nudge_dt must FAIL).
+end of the path, so the proxies run up to it and stand next to it at every turn. A measurement,
+not in a suite: it fails with and without npc.trail (p90 6.2 m off, 3.1-3.4 m on, lane 5,
+2026-10-30; these proxies hardly walk by themselves, BUG-0281 stays open).
 
   SPORE_LANE=5 python3 tools/tests/coop_tribe_npc_dash.py
   SPORE_LANE=5 DASH_FIXTURE=creature python3 tools/tests/coop_tribe_npc_dash.py
