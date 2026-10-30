@@ -2213,3 +2213,22 @@ answered right after; a 1 s poller beside a standalone run saw no gap. Same sign
   alone ruins one building of an NPC city (`coop.civ ruinlocal <city>`, tests); within 10 s the
   guest must have the host's ruins and buildings again. `--nofix` (`coop.fix civ.ruin_repair off`):
   the ruin stays (BUG-0324).
+
+## Creature proxies and editors at low frame rates (2026-10-30, fix/w14-creature)
+<a id="testing-w14-creature"></a>
+
+* `creature_npc_dash` (suite): `DASH_FIXTURE=creature coop_tribe_npc_dash.py`, 4 m/s, guest at 15 fps;
+  `SPORE_FIX_OFF=npc.kinematic` fails (BUG-0281). `DASH_GUEST_CMDS="cmd;cmd"` runs console commands
+  on the guest before the dash (experiments).
+* `coop.npc pwalk <id> x y z <m/s> <s> [mode]` (guest): walks one proxy with the game's locomotion
+  for <s> seconds without the sync; mode bits 1 = MoveTo again every 0.1 s, 2 = set_position to
+  itself, 4 = set_orientation every frame.
+* `editor_after_swap` (suite, ~2 min): guest at 6.7 fps (`frame.limit 150`), rejoin, editor 3 s later;
+  the editor must draw (a screenshot's mean brightness over 25, PIL) and one red cross must leave it.
+  `SPORE_FIX_OFF=creations.editor_after_swap` fails (BUG-0318); `editor_after_load` (`--no-swap`) the
+  same without an avatar swap. With the fix the editor opens ~45 s
+  after the request at 6.7 fps.
+* `coop.ui tree` counts the editor's windows even while it draws nothing (BUG-0318): a test that
+  wants a working editor checks the picture (`coop_legless_guest.editor_shown`).
+* Pitfall: `cd X && (cmd) & cmd2` backgrounds the `cd` too; cmd2 then runs in the old directory (a
+  lab run of the main checkout instead of the worktree, 2026-10-30).

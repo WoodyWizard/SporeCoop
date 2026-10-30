@@ -56,6 +56,7 @@ void* player_species(uint8_t player);
 // not build these NPCs at all (an ally in the host's pack was invisible, player report 2026-10-25).
 void want_species(const Key& k); // guest: this NPC species is unknown here
 bool species_pending(const Key& k); // guest: asked, no answer yet
+bool avatar_swap_settling(double now); // BUG-0318: the own avatar got a new body moments ago (editors wait)
 
 // Species of the host's world that are the host's own creations (its My Creations). Creation ids
 // are per profile and sequential, so a guest often owns another creation under the same key, and its

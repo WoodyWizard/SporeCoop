@@ -895,6 +895,29 @@ static void apply_own_cell()
     H->log(M, SK_INFO, "creations: own cell is now %08X (level rebuilt)", k.instance);
 }
 
+// BUG-0318: an editor that opens while the avatar's new body (SetSpecies) is still being built stayed
+// black for good and could not be left (guest at 6.7 fps, request 0.3 s after "own avatar is now":
+// 2 of 2; 60 s later: fine; at 60 fps the build takes a few frames). Editor requests wait until the
+// last swap is 5 s and 300 frames old (coop.cpp h_Submit, submit_tick, own_editor_tick).
+// `coop.fix creations.editor_after_swap off`: no wait (0.7.3.1).
+static bool g_editor_after_swap_fix = true;
+COOP_FIX("creations.editor_after_swap", "BUG-0318", g_editor_after_swap_fix, "creations: an editor waits until the avatar's new body is built");
+// The same holds for a new avatar (a world just loaded, a rejoin without a swap: lab 20261030-162204,
+// the editor 1.7 s after the load stayed black): its body is built over the first frames as well.
+static double g_swap_at = -100;
+static uint64_t g_swap_frame = 0;
+static double g_new_avatar_at = -100;
+static uint64_t g_new_avatar_frame = 0;
+bool avatar_swap_settling(double now)
+{
+    if (!g_editor_after_swap_fix)
+        return false;
+    uint64_t f = H->frame_index();
+    bool swap = g_swap_at >= 0 && (now - g_swap_at < 5.0 || f - g_swap_frame < 300);
+    bool fresh = g_new_avatar_at >= 0 && (now - g_new_avatar_at < 5.0 || f - g_new_avatar_frame < 300);
+    return swap || fresh;
+}
+
 static void apply_own_avatar()
 {
     if (game::mode_id() == modes::kCell && C.sess && C.sess->connected()) {
@@ -921,6 +944,8 @@ static void apply_own_avatar()
         g_seen_avatar = av;
         g_seen_epoch = epoch;
         g_seen_since = now;
+        g_new_avatar_at = now; // BUG-0318: a new avatar's body is still being built
+        g_new_avatar_frame = H->frame_index();
     }
     if (now - g_seen_since < 3.0)
         return;
@@ -936,6 +961,8 @@ static void apply_own_avatar()
         }
         int age = *(int*)((uint8_t*)av + 0xB34);
         thiscall<bool>(a_SetSpecies, av, prof, age, true);
+        g_swap_at = now;
+        g_swap_frame = H->frame_index();
         g_swaps++;
         H->log(M, SK_INFO, "creations: own avatar is now %08X", k.instance);
     }

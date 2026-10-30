@@ -1,19 +1,19 @@
 ---
 id: BUG-0281
 title: creature: an NPC proxy right next to a guest's avatar stays ~4 m from where the host has it
-status: open
+status: fixed
 kind: desync
 stage: creature
 reported: 2026-10-29
 source: fix/w7-sync BUG-0275 measurement
 role: 
 versions: 
-fixed_in:
-branch: fix/w13-creature
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w14-creature
+commits: aaa98ac
+tests: creature_npc_dash (coop_tribe_npc_dash.py with DASH_FIXTURE=creature)
 signature:
-docs:
+docs: docs/re/creature.md#creature-kinematic-proxies
 related: BUG-0305, BUG-0169, BUG-0312
 ---
 
@@ -61,14 +61,41 @@ Checked in the Creature stage on fix/w13-creature (lane 5, 2026-10-30, docs/re/c
   These proxies hardly walk by themselves (`own=` 0 for most samples, 1-3.3 m/s at best while the
   NPC runs at 4 m/s); a nudge scaled by the frame time (the same pull per second at 15 fps as at 60)
   was tried and gave 3.4 m: dropped (commit 3a62e2b reverts 05269fb).
-* Not found: why Creature proxies of that species do not run at the host's speed.
+* ~ superseded (2026-10-30, fix/w14-creature): "not found why". CORRECTION (2026-10-30,
+  fix/w14-creature): found, see below.
+
+Found on fix/w14-creature (lane 5, 2026-10-30, `coop.npc pwalk <id> x y z <m/s> <s> [mode]`, a test
+command that walks one guest proxy with the game's locomotion and keeps the sync off it):
+* One `MoveTo` 12 m ahead: the 065CBE70 proxy ran at its 4 m/s at once (others 2.5-4 m/s): the
+  locomotion of a proxy works.
+* The same with the `MoveTo` given again every 0.1 s (what drive::step does while the target moves
+  on): the proxy stood (speed 0), went back, crept at 1-2 m/s. Each new MoveTo restarts the walk.
+* Writing the position to itself or the orientation every frame did not slow it.
+* While walking, our pulls towards the path (set_position) were undone by the locomotion: `nudge=`
+  kept 14-76 of 519-624.
+* Giving the walk again less often (only when the target moved 1.5 m or after 0.5 s) or 2-4 s
+  ahead did not help: p90 3.3-3.9 m (the zigzag turns every 3 m).
+So the Creature proxy of a running NPC moved mostly by our teleports (npc.trail) and pulls, and
+trailed. (Tribe passes because its animals are driven the same way but its test path fits their
+locomotion; not looked into.)
 
 ## Fix
-None. `npc.trail` (BUG-0305) is in and halves the running case in Creature.
+`npc.kinematic` (npc.cpp, Creature stage only): while the host's NPC moves (its speed > 0.3 m/s) and
+the proxy is within 8 m of the sampled host position, the proxy is teleported onto the interpolated
+host position with the host's orientation every frame and gets the host's velocity (the game
+animates the run from it: stills show running poses). When the NPC stands the old driving (walk,
+nudge, stuck/stall/trail) takes over; the velocity is zeroed once. `coop.fix npc.kinematic off`: the
+driving always (0.7.3.1). `set_position` instead of the teleport left p90 1.5-2.0 m (the proxies
+pushed each other); the teleport puts it exactly there.
 
 ## Verification
-Measurement, not a pass/fail pair: `SPORE_LANE=5 DASH_FIXTURE=creature python3
-tools/tests/coop_tribe_npc_dash.py` (fails with and without `npc.trail`; not in a suite).
+`DASH_FIXTURE=creature coop_tribe_npc_dash.py` (suite creature_npc_dash): two nest NPCs run side by
+side at 4 m/s, the guest at 15 fps beside the path's end; 90 % of the guest's samples within 1.2 m
+of the host's path.
+* FAIL with `SPORE_FIX_OFF=npc.kinematic`: out/lab/20261030-161510 (p90 1.84 m on main d003127 with
+  BUG-0175's per-second nudge; 3.3-3.5 m before it).
+* PASS: out/lab/20261030-161659 (2 runs: p90 0.34 and 0.31 m, median 0.05 m).
+Standing NPCs (the report's case) were not reproduced (see above); the standing driving is unchanged.
 
 ## History
 - 2026-10-29: opened.
@@ -76,3 +103,4 @@ tools/tests/coop_tribe_npc_dash.py` (fails with and without `npc.trail`; not in 
 - 2026-10-30: fix/w11-finale: the same pattern in the Tribe stage with 4 players (one animal ~4 m off on every guest at once): BUG-0305.
 - 2026-10-30: BUG-0305 (Tribe) found proxies of a running herd pushed off their path; its `npc.trail` fix also acts here; not reproduced in Creature, stays open (fix/w12-tribe-npc).
 - 2026-10-30: fix/w13-creature: Creature check of npc.trail: standing case not reproduced; running NPCs p90 6.2 m -> 3.1-3.4 m with npc.trail at 15 fps; stays open.
+- 2026-10-30: fix/w14-creature: cause found (a MoveTo again every 0.1 s restarts the walk; pulls undone by the locomotion); fixed by npc.kinematic.

@@ -437,3 +437,26 @@ creations, the first creature editor after the Cell stage). BUG-0278.
 * ? Cancel run (one of one): while the guest's own editor was open the creature it showed got the
   host's new legs and the DNA dropped by their price (115 -> 65) without any input of the guest, so
   the red cross asked to confirm (BUG-0283).
+
+## An editor during the avatar's body swap stays black (2026-10-30, fix/w14-creature)
+<a id="creations-editor-after-swap"></a>
+
+BUG-0318. GOG 2024, lane 4, guest at 6.7 fps (`frame.limit 150`).
+
+* ✔ An editor request (`Editors::EditorRequest::Submit`) 0.3 s after `cCreatureAnimal::SetSpecies`
+  on the avatar (creations.cpp `apply_own_avatar`, after a rejoin): the editor's windows exist (as
+  many as in a working editor) but nothing is drawn, for minutes and also after the frame rate goes
+  back up; the red cross, Quit and Esc do nothing. 60 s after the swap, or the swap done at normal
+  frame rate first, or the editor entered at normal frame rate: the editor draws. At 15 fps 3 s
+  after the swap it drew.
+* ~ Inferred: the new body of SetSpecies is built over the following frames and an editor that takes
+  the avatar's creature before that never finishes its setup.
+* ✔ The same right after a load without a swap (the new avatar of the loaded world), 1.2-1.7 s
+  after the load.
+* Fix `creations.editor_after_swap`: editor requests wait until the last swap and the current avatar
+  are 5 s and 300 frames old (`creations::avatar_swap_settling`; coop.cpp `h_Submit` holds the request, `submit_tick`
+  sends it, `own_editor_tick` waits too).
+* CORRECTION (2026-10-30, fix/w13-creature, recorded on fix/w14-creature): the "? Cancel run" bullet
+  of [the own editor save section](#creations-own-editor-save) (the host's legs and a DNA drop in a
+  guest's open editor, BUG-0283) was the test's own edit: `coop_legless_guest.py --guest cancel`
+  added legs and pressed the save dialog's Cancel (BUG-0317).
