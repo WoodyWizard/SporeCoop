@@ -825,14 +825,14 @@ static void SK_THISCALL h_RequirePlanets(void* sm, void* star, void* p3)
                  F<float>(r, 0xB0), F<float>(r, 0xB4), F<int>(r, 0x194));
         recs += one;
     }
-    H->log(M, SK_INFO, "space: planets of star %08X:%s", F<uint32_t>(star, 0x70), recs.c_str());
+    H->log(M, SK_DEBUG, "space: planets of star %08X:%s", F<uint32_t>(star, 0x70), recs.c_str());
     std::string tr;
     for (uint32_t i = 0; i < g.draws && i < 48; i++) {
         char one[32];
         snprintf(one, sizeof one, " %X:%X", g.trace[i][0], g.trace[i][1]);
         tr += one;
     }
-    H->log(M, SK_INFO, "space: draws of star %08X:%s", F<uint32_t>(star, 0x70), tr.c_str());
+    H->log(M, SK_DEBUG, "space: draws of star %08X:%s", F<uint32_t>(star, 0x70), tr.c_str());
 }
 
 // tests (BUG-0123): another thread "inside GenerateRandomName" for `ms` (the hook's bookkeeping,

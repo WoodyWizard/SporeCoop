@@ -33,3 +33,6 @@ Simulator::Cell::WorldScaleStep ; Cell: the host populates only around itself, a
 UTFWin::cWindowManager::UpdateHover ; game fixes: no guard against a destroyed modal window in the window manager (BUG-0270)
 SporeCoop::Herd_Update ; creature: null herd members are not taken out before the herd update (BUG-0256)
 SporeCoop::Relevance_Update ; creature: the host keeps its world alive only around its own camera (BUG-0280)
+SporeCoop::cSimulatorPlayerUFO_CanLandOnActivePlanet ; space tests: coop.space landcheck prints -1 for it (BUG-0182)
+SporeCoop::Space_ZoomLandReady ; space tests: coop.space landcheck prints -1 for it (BUG-0182)
+SporeCoop::SpaceCam_MinZoom ; space tests: coop.space landcheck prints -1 for the minimum zoom (BUG-0182)

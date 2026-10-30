@@ -304,6 +304,11 @@ anchor so other docs can link to it:
   (a ship's height is its zoom, docs/re/space.md 7.10). That made the rescue fail on GOG 2024 (the
   3D distance never got under 60 m): fixed, the repair measures along the ground now, and the bot
   zooms to the partner's height. The landing delay itself is still not understood.
+* 2026-10-30 (fix/w13-space): not reproduced. `coop_space_land_early.py` (both players click the
+  home planet and zoom in right after `start('space')`, the game's own landing conditions printed by
+  `coop.space landcheck`) landed 7-16 s after the load in 3 direct runs on lane 9 and 2 lab runs on
+  lane 8 (GOG 2024). The conditions are in docs/re/space.md#space-seed-profile. A landing itself
+  shows `paused 1` for about a second (the planet loads).
 * Ticket: BUG-0182.
 
 ## Galaxy menu: a host that stopped answering right after "Co-op" during the intro (once)
@@ -332,6 +337,10 @@ anchor so other docs can link to it:
   before the generation, or the empire's state read by 0xC309F0). `coop_space_jump.py` prints "same" or
   "DIFFERENT planets" without failing. A sure fix: the host sends the planet records of a newly
   generated star (or the guest asks for them before entering).
+* 2026-10-30 (fix/w13-space): FIXED. The draw that differed: a first load of the star's species
+  profile inside RequirePlanetsForStar drew on the seeded generator (docs/re/space.md#space-seed-profile).
+  Test `coop_space_seed_profile.py`. Left open: `GenerateRandomName` draws stay on the global
+  generator, so planet names may still differ (not compared).
 * Ticket: BUG-0185.
 
 ## Civilization: single vehicle sync outliers of 20-27 m
