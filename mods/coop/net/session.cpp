@@ -44,6 +44,7 @@ bool Session::host(uint16_t port, const std::string& name, std::string& err)
     my_id_ = 0;
     my_name_ = name;
     welcomed_ = true;
+    lan_id_ = new_conn_id(now(), tr_->local_port() ^ 0x4C414E00u); // BUG-0210: new per hosted game
     logf(cb, "hosting on UDP port %u", tr_->local_port());
     return true;
 }
@@ -743,6 +744,8 @@ void Session::update()
             rep.players = (uint8_t)players().size();
             rep.max_players = kMaxPlayers;
             rep.info = lobby_info;
+            rep.has_id = g_fix.lan_dedup;
+            rep.host_id = lan_id_;
             Writer w;
             rep.write(w);
             tr_->send_to(from, w.data.data(), w.size());

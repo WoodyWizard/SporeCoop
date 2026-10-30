@@ -70,14 +70,21 @@ void Discovery::on_reply(const Endpoint& from, const DiscoverReply& rep, uint32_
 {
     Endpoint host{from.ip, rep.port};
     bool found = false;
+    uint32_t lo = ip4(127, 0, 0, 1);
     for (auto& g : games_) {
         // the same host can answer on loopback and on its LAN address: keep one
-        uint32_t lo = ip4(127, 0, 0, 1);
         bool same = g.host == host || (g.info.port == rep.port && g.info.name == rep.name &&
                                        (g.host.ip == lo || host.ip == lo));
-        if (same) {
-            if (g.host.ip == ip4(127, 0, 0, 1))
+        // BUG-0210: ... and on each of its LAN addresses (cable and Wi-Fi): its game id tells
+        bool same_id = g_fix.lan_dedup && rep.has_id && g.info.has_id && g.info.host_id == rep.host_id &&
+                       g.info.port == rep.port;
+        if (same || same_id) {
+            if (g.host.ip == lo && host.ip != lo)
                 g.host = host; // prefer an address friends can use too
+            else if (!(g.host == host) && same_id && now - g.addr_seen_ms >= kSwitchMs)
+                g.host = host; // the shown address went quiet (its adapter is down): use one that answers
+            if (g.host == host)
+                g.addr_seen_ms = now;
             g.info = rep;
             g.seen_ms = now;
             found = true;
@@ -92,10 +99,10 @@ void Discovery::on_reply(const Endpoint& from, const DiscoverReply& rep, uint32_
         });
         if (now - old->seen_ms < 2000)
             return; // every entry answered recently: keep them
-        *old = {host, rep, now};
+        *old = {host, rep, now, now};
         return;
     }
-    games_.push_back({host, rep, now});
+    games_.push_back({host, rep, now, now});
 }
 
 std::vector<Discovery::Game> Discovery::games(uint32_t now) const

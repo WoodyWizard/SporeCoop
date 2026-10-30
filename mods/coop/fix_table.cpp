@@ -23,6 +23,7 @@ COOP_FIX("net.addr_check", "BUG-0138", net::g_fix.addr_check, "net: host address
 COOP_FIX("net.peer_caps", "BUG-0219", net::g_fix.peer_caps, "net: reliable messages are split only for a peer that joins pieces (HELLO caps)");
 COOP_FIX("net.rejoin_token", "BUG-0235", net::g_fix.rejoin_token, "net: a crash rejoin is recognised by its token, not by name and silence");
 COOP_FIX("net.addr_label", "BUG-0236", net::g_fix.addr_label, "net: a pasted \"Friends connect to: ...\" line joins its first address");
+COOP_FIX("net.lan_dedup", "BUG-0210", net::g_fix.lan_dedup, "net: a host answering on two addresses is one LAN game");
 COOP_FIX("net.async_resolve", "BUG-0204", net::g_fix.async_resolve, "net: a host name is looked up on a worker thread (coop.corefix async_resolve)");
 
 // updater/ (FIX_SWITCH)

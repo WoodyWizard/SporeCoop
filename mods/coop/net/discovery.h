@@ -17,6 +17,7 @@ public:
         Endpoint host;
         DiscoverReply info;
         uint32_t seen_ms = 0;
+        uint32_t addr_seen_ms = 0; // BUG-0210: the last answer from `host` itself (not another address)
     };
     // where queries go (network byte order IPs): 255.255.255.255 and 127.0.0.1 by default
     std::vector<uint32_t> targets;
@@ -32,6 +33,7 @@ public:
     size_t stored() const { return games_.size(); } // entries kept, shown or not (tests)
 
     static constexpr uint32_t kShowMs = 5000; // a host that has not answered for this long is gone
+    static constexpr uint32_t kSwitchMs = 3000; // BUG-0210: show another address of the game after this
     static constexpr size_t kMaxGames = 32;   // BUG-0039: fake answers cannot grow the list for ever
 
 private:

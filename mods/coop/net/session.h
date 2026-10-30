@@ -132,6 +132,7 @@ private:
     UdpTransport udp_;
     Transport* tr_ = &udp_;
     std::string my_name_;
+    uint32_t lan_id_ = 0; // BUG-0210: DiscoverReply::host_id of the game hosted now
     uint8_t my_id_ = 0;
     bool welcomed_ = false;
     uint32_t welcome_world_ = 0; // guest: Welcome::world of the host

@@ -89,14 +89,22 @@ struct DiscoverReply {
     std::string name; // host player
     uint8_t players = 0, max_players = 0;
     std::string info; // stage and world, e.g. "Creature - Scalinus"
+    // BUG-0210: an appended id of the hosted game (random per host start), so the answers of one
+    // host from its two addresses (cable and Wi-Fi) are one game. Older readers ignore the bytes
+    // (read() does not ask for the end); an older host sends none (has_id false).
+    bool has_id = false;
+    uint32_t host_id = 0;
     void write(Writer& w) const
     {
         w.u32(kDiscoverReply); w.u16(proto); w.u16(port); w.str8(name); w.u8(players); w.u8(max_players); w.str8(info);
+        if (has_id) w.u32(host_id);
     }
     bool read(Reader& r)
     {
         if (r.u32() != kDiscoverReply) return false;
         proto = r.u16(); port = r.u16(); name = r.str8(); players = r.u8(); max_players = r.u8(); info = r.str8();
+        has_id = r.ok() && r.left() >= 4;
+        host_id = has_id ? r.u32() : 0;
         return r.ok();
     }
 };

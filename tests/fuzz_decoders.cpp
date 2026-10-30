@@ -283,7 +283,10 @@ static void fuzz_protocol(uint64_t seed, int iters)
     Rng R(seed);
     fuzz_struct<DiscoverReply>("DiscoverReply", R, iters, [](Rng& R) {
         DiscoverReply d; d.proto = R.u16(); d.port = R.u16(); d.name = R.str(255); d.players = R.u8();
-        d.max_players = R.u8(); d.info = R.str(255); return d;
+        d.max_players = R.u8(); d.info = R.str(255);
+        d.has_id = R.below(2); d.host_id = d.has_id ? R.u32() : 0; return d; // BUG-0210 appended id
+    }, [](const DiscoverReply& d) {
+        return (size_t)(4 + 2 + 2 + 1 + std::min<size_t>(d.name.size(), 255) + 2 + 1 + std::min<size_t>(d.info.size(), 255));
     });
     fuzz_struct<Hello>("Hello", R, iters, [](Rng& R) {
         Hello h; h.proto = R.u16(); h.build = R.u32(); h.name = R.str(255);

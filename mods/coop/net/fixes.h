@@ -21,6 +21,8 @@ struct Fixes {
     bool peer_caps = true;    // BUG-0219: split / join reliable messages only with a peer that announced it (HELLO caps)
     bool rejoin_token = true; // BUG-0235: a crash rejoin is the same game by its HELLO token, not by name and silence
     bool addr_label = true; // BUG-0236: a pasted "Friends connect to: a:p, ..." line joins its first host:port
+    // wave 13
+    bool lan_dedup = true; // BUG-0210: a host answering on two addresses is one LAN game (DiscoverReply id)
 };
 inline Fixes g_fix;
 

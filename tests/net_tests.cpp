@@ -1767,6 +1767,76 @@ static void test_discovery_prune()
     CHECK(d.games(now + 6000).empty());
 }
 
+// BUG-0210: a host on the network twice (cable and Wi-Fi) answers a broadcast query from both
+// addresses: one game in the list, not two; two hosts that look alike stay two
+static void test_discovery_dedup()
+{
+    printf("LAN game list: one host with two addresses is one game (BUG-0210)\n");
+    Discovery d;
+    CHECK(d.start());
+    d.targets = {};
+    auto rep = [](uint32_t id, bool has_id = true) {
+        DiscoverReply r;
+        r.port = kDefaultPort;
+        r.name = "Alice";
+        r.players = 2;
+        r.max_players = 4;
+        r.info = "Space - Madas";
+        r.has_id = has_id;
+        r.host_id = id;
+        return r;
+    };
+    // what goes over the wire: the id survives a write and a read
+    {
+        Writer w;
+        rep(0xA11CE).write(w);
+        Reader r(w.data.data(), w.size());
+        DiscoverReply x;
+        CHECK(x.read(r) && x.has_id && x.host_id == 0xA11CE && r.left() == 0);
+        Writer w0; // an older host's answer (no id)
+        DiscoverReply o = rep(0, false);
+        o.write(w0);
+        Reader r0(w0.data.data(), w0.size());
+        CHECK(x.read(r0) && !x.has_id && x.name == "Alice");
+    }
+    const Endpoint wired{0x7101A8C0, 0}, wifi{0x8A01A8C0, 0}; // 192.168.1.113 / .138
+    uint32_t now = 50000;
+    for (int i = 0; i < 6; i++) { // a few query rounds, both addresses answer each
+        d.on_reply(wired, rep(0xA11CE), now + i * 1500);
+        d.on_reply(wifi, rep(0xA11CE), now + i * 1500 + 1);
+    }
+    now += 6 * 1500;
+    auto g = d.games(now);
+    printf("  one host, two addresses: listed %zu\n", g.size());
+    CHECK(g.size() == 1);
+    CHECK(!g.empty() && g[0].host.ip == wired.ip && g[0].host.port == kDefaultPort); // stays on the first
+    // the wired cable is pulled: after a few seconds the entry shows the address that answers
+    for (int i = 0; i < 4; i++)
+        d.on_reply(wifi, rep(0xA11CE), now + i * 1500);
+    now += 4 * 1500;
+    g = d.games(now);
+    CHECK(g.size() == 1 && g[0].host.ip == wifi.ip);
+    // another host of the same name, port and stage (another game id): its own row
+    d.on_reply(Endpoint{0x0A01A8C0, 0}, rep(0xB0B), now);
+    CHECK(d.games(now).size() == 2);
+    // older hosts (no id) on two addresses: as before, two rows (nothing tells them apart)
+    Discovery o;
+    CHECK(o.start());
+    o.targets = {};
+    o.on_reply(wired, rep(0, false), now);
+    o.on_reply(wifi, rep(0, false), now);
+    CHECK(o.games(now).size() == 2);
+    // the loopback rule stays: loopback then LAN of one host is one row with the LAN address
+    Discovery l;
+    CHECK(l.start());
+    l.targets = {};
+    l.on_reply(Endpoint{0x0100007F, 0}, rep(7), now);
+    l.on_reply(wired, rep(7), now);
+    l.on_reply(wifi, rep(7), now);
+    g = l.games(now);
+    CHECK(g.size() == 1 && g[0].host.ip == wired.ip);
+}
+
 // BUG-0138: a pasted address with spaces around it, the whole hint line, a wrong port
 static void test_address_parse()
 {
@@ -2158,6 +2228,7 @@ int main(int argc, char** argv)
             std::map<std::string, bool*> sw = {{"peer_caps", &g_fix.peer_caps},
                                                {"rejoin_token", &g_fix.rejoin_token},
                                                {"addr_label", &g_fix.addr_label},
+                                               {"lan_dedup", &g_fix.lan_dedup},
                                                {"update_paths", &upd::g_path_fix}};
             for (size_t a = 0; a <= list.size();) {
                 size_t b = list.find(',', a);
@@ -2231,6 +2302,7 @@ int main(int argc, char** argv)
     test_refpack_short();
     test_dbbf_wrap();
     test_discovery_prune();
+    test_discovery_dedup();
     test_address_parse();
     test_address_label();
     test_old_peer_split();
