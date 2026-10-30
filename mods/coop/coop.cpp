@@ -1916,6 +1916,11 @@ void on_frame(void*, int, void*)
     follow_phase(now);
     host_away_tick(now);
     tribe::tick(now);
+    bool walk_done = false;
+    tribe::for_each_owned([](void* c, uint8_t, void* done) { // BUG-0310 tests (coop.leavewalk)
+        if (!*(bool*)done)
+            *(bool*)done = gamefixes::leave_walk_tick(c);
+    }, &walk_done);
     cellsync::tick(now);
     civ::tick(now);
     squadron::tick(now);

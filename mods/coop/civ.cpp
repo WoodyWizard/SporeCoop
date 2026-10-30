@@ -140,6 +140,9 @@ static bool g_fix_boost = true; // BUG-0040: boosts only on listed vehicles, cle
 static bool g_fix_world = true; // BUG-0059: every pointer table cleared when the world changes
 COOP_FIX_UNSAFE("civ.boost", "BUG-0040", g_fix_boost, "civ: boosts only on listed vehicles, cleared with the session");
 COOP_FIX_UNSAFE("civ.world", "BUG-0059", g_fix_world, "civ: every pointer table cleared when the world changes");
+static bool g_vel_cap_fix = true;
+COOP_FIX("civ.vel_cap", "BUG-0186", g_vel_cap_fix,
+         "civ: a vehicle step faster than twice its top speed is taken as a jump, not a speed to extrapolate");
 static uint32_t g_world_resets;
 static std::unordered_map<void*, HV> g_hv;
 static std::unordered_map<uint16_t, void*> g_hv_by_id;
@@ -1719,6 +1722,9 @@ static void guest_state(net::Reader& r)
         void* v = g.v;
         g.owner = m.owner; g.pol = m.pol; g.purpose = m.purpose; g.loco = m.loco;
         g.pos = m.pos; g.rot = m.rot; g.hp = m.hp; g.seen = now;
+        // BUG-0186: a step faster than twice the vehicle's own top speed is a jump of the host's game
+        bool alive_v = v && game::object_alive(v) && !F<uint8_t>(v, kVDead);
+        g.est.max_speed = g_vel_cap_fix && alive_v ? 2.f * F<float>(v, 0x218) + 10.f : 0.f;
         g.est.update(m.pos, now, sent);
         if (v && (!game::object_alive(v) || F<uint8_t>(v, kVDead))) {
             g_gv_of.erase(v);
@@ -2125,8 +2131,10 @@ std::string list()
         auto gi = id && !(C.sess && C.sess->role() == net::Role::Host) ? g_gv.find(id) : g_gv.end();
         if (gi != g_gv.end()) { // BUG-0186: the guest's view of the mirror (on the same line)
             out.pop_back();
-            snprintf(b, sizeof b, " age=%.1f err=%.1f pushed=%.1f pushed5s=%.1f\n", H->time_seconds() - gi->second.seen,
-                     gi->second.err, gi->second.pushed, gi->second.pushed_max);
+            const net::Vec3& ev = gi->second.est.vel;
+            snprintf(b, sizeof b, " age=%.1f err=%.1f pushed=%.1f pushed5s=%.1f vel=%.1f top=%.1f jumps=%u\n",
+                     H->time_seconds() - gi->second.seen, gi->second.err, gi->second.pushed, gi->second.pushed_max,
+                     std::sqrt(ev.x * ev.x + ev.y * ev.y + ev.z * ev.z), F<float>(v, 0x218), gi->second.est.capped);
             out += b;
         }
     }

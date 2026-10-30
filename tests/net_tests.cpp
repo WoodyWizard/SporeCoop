@@ -1552,6 +1552,38 @@ static void test_velocity_jitter()
     CHECK(bunch < 5.0);
 }
 
+// BUG-0186: a Civ vehicle standing still that the sender's game moves 20 units at once (one step):
+// without a cap the step became a 120 u/s speed and the mirror was put up to ~30 units past it
+static double jump_overshoot(float max_speed)
+{
+    VelocityEstimate e;
+    e.max_speed = max_speed;
+    double worst = 0;
+    for (int k = 0; k < 30; k++) {
+        double sent = k * 0.1, recv = 1000 + sent + 0.03;
+        float x = k >= 10 ? 20.f : 0.f; // put 20 units further between snapshots 9 and 10, then still
+        e.update({x, 0, 0}, recv, 5000 + sent);
+        for (double t = recv; t < recv + 0.1; t += 1 / 60.0)
+            worst = std::max(worst, (double)std::fabs(e.at(t).x - x));
+    }
+    return worst;
+}
+
+static void test_velocity_jump_cap()
+{
+    printf("vehicle velocity after a jump of the sender's game (BUG-0186)\n");
+    double old = jump_overshoot(0), capped = jump_overshoot(2 * 8.f + 10.f);
+    printf("  max overshoot: %.1f units without a cap, %.1f with it\n", old, capped);
+    CHECK(old > 10.0);  // the bug: the step became a speed
+    CHECK(capped < 1.0);
+    // a vehicle at its top speed is not capped
+    VelocityEstimate e;
+    e.max_speed = 2 * 8.f + 10.f;
+    for (int k = 0; k < 20; k++)
+        e.update({8.f * k * 0.1f, 0, 0}, 1000 + k * 0.1 + 0.03, 5000 + k * 0.1);
+    CHECK(e.capped == 0 && std::fabs(e.vel.x - 8.f) < 0.5f);
+}
+
 // BUG-0133: after the one-way latency rose by 300 ms the buffer rendered past its newest snapshot
 // (puppets and NPCs in 20 Hz steps) for about 50 s
 static void test_interp_latency_rise()
@@ -2224,6 +2256,7 @@ int main(int argc, char** argv)
     test_big_reliable();
     test_state_after_leave();
     test_velocity_jitter();
+    test_velocity_jump_cap();
     test_interp_latency_rise();
     test_alloc_id();
     test_lost_first_packet();

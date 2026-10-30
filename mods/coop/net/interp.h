@@ -232,6 +232,18 @@ struct VelocityEstimate {
     double t = 0;          // local time of the last snapshot (its arrival, or its sender time mapped)
     double sender = -1;    // sender time of the last snapshot, -1 = none
     ClockOffset clock;
+    // BUG-0186: > 0: a step between two snapshots faster than this (u/s) is a jump, not a speed (the
+    // sender's game put the object somewhere; a Civ vehicle 16 m off for 0.4 s after one such step).
+    // 0 = only the 200-unit jump. `capped` counts the steps taken as a jump this way.
+    float max_speed = 0;
+    unsigned capped = 0;
+    bool too_fast(const Vec3& v)
+    {
+        if (max_speed <= 0 || v.x * v.x + v.y * v.y + v.z * v.z <= max_speed * max_speed)
+            return false;
+        capped++;
+        return true;
+    }
     void update(const Vec3& p, double now, double sender_s = -1)
     {
         if (sender_s >= 0 && g_fix.sender_time) {
@@ -244,7 +256,7 @@ struct VelocityEstimate {
                     vel = {};
                 } else if (dts > 0.02 && dts < 1.0) {
                     Vec3 v{(p.x - pos.x) / (float)dts, (p.y - pos.y) / (float)dts, (p.z - pos.z) / (float)dts};
-                    bool jump = dist(p, pos) > 200.f;
+                    bool jump = dist(p, pos) > 200.f || too_fast(v);
                     vel = jump ? Vec3{} : Vec3{vel.x + (v.x - vel.x) * 0.6f, vel.y + (v.y - vel.y) * 0.6f, vel.z + (v.z - vel.z) * 0.6f};
                 } else if (dts >= 1.0)
                     vel = {};
@@ -260,7 +272,7 @@ struct VelocityEstimate {
         double dt = now - t;
         if (t > 0 && dt > 0.02 && dt < 1.0) {
             Vec3 v{(p.x - pos.x) / (float)dt, (p.y - pos.y) / (float)dt, (p.z - pos.z) / (float)dt};
-            bool jump = dist(p, pos) > 200.f;
+            bool jump = dist(p, pos) > 200.f || too_fast(v);
             vel = jump ? Vec3{} : Vec3{vel.x + (v.x - vel.x) * 0.6f, vel.y + (v.y - vel.y) * 0.6f, vel.z + (v.z - vel.z) * 0.6f};
         } else if (dt >= 1.0)
             vel = {};

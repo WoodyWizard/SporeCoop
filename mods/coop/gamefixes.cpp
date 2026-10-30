@@ -243,12 +243,6 @@ static std::atomic<unsigned> g_offstage_calls{0}, g_offstage_citizens{0}, g_leav
 static std::atomic<bool> g_leave_walk_test{false}; // tests: the next citizen checked while Tribe is left is made a cleaned-up one
 static unsigned g_leave_walk_test_done;
 
-static uint32_t mode_now()
-{
-    static uintptr_t get = H->sym("Simulator_GetCurrentGameMode");
-    return get ? skg::cdecl_call<uint32_t>(get) : 0;
-}
-
 static void __fastcall offstage_guard(void* mgr, void*, void* obj)
 {
     g_offstage_calls++;
@@ -257,7 +251,7 @@ static void __fastcall offstage_guard(void* mgr, void*, void* obj)
         g_offstage_orig(mgr, obj);
         return;
     }
-    uint32_t mode = mode_now();
+    uint32_t mode = game::mode_id();
     bool leaving = mode != kTribeMode || game::leaving_stage();
     if (leaving) {
         unsigned n = ++g_offstage_citizens;
@@ -288,6 +282,20 @@ static void __fastcall offstage_guard(void* mgr, void*, void* obj)
     }
     if (test)
         *(void**)(c + 0xB54) = saved;
+}
+
+// tests: the game's own path to the fault is a citizen in a certain action as the mode changes (a
+// long session); none came in the lab's leaves (docs/re/tribe.md#tribe-offstage-action). So in the
+// first frame the Tribe stage is being left (quit posted) the armed stand-in puts one player member
+// through the guard as the game would have: +0xB54 cleared, then the guard (fix on: skipped) or the
+// old code's walk (fix off: WalkTo faults in SetMoveScale, caught by the game's handler as in the
+// campaign). Returns whether it fired.
+bool leave_walk_tick(void* citizen)
+{
+    if (!g_leave_walk_test || !citizen || !g_offstage_orig || !game::leaving_stage() || game::mode_id() != kTribeMode)
+        return false;
+    offstage_guard(nullptr, nullptr, citizen); // mgr is only read by the original, not on these paths
+    return true;
 }
 
 std::string arm_leave_walk()

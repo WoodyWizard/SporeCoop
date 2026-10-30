@@ -874,3 +874,26 @@ every machine for each animal over 1.5 m off (`out/w12/probe*.jsonl` of the bran
   0.3 m closer is teleported onto its target and held there for 1 s (the per-frame nudge goes from
   15 % to all of the way), then 1 s before the next such teleport. The teleport alone was not
   enough: the proxy beside it pushed it off again at once.
+
+## The citizen action whose exit sends a citizen walking off-stage (2026-10-30, fix/w13-tribe-civ)
+<a id="tribe-offstage-action"></a>
+
+BUG-0310 (the second sighting of BUG-0285's fault, lab 20261030-104149 campaign#3, the same
+stack: Citizen_OffStageCheck+0x18A < Citizen_IdleWalk < 0xC27B00 < DoAction+0x496 < WalkTo <
+CreatureBase_SetMoveScale+0x13). GOG 2024, static reading plus a probe of the guard's counters:
+* ✔ 0xD673B0 has no direct caller: it is the 4th word of a descriptor in .data at 0x1583F40
+  `{0x5218BB3, 0xD69540, 0xD69740, 0xD673B0}`: a citizen action (id 0x5218BB3) with its start
+  (0xD69540, resets a 0x38-byte state), its tick (0xD69740, also calls Citizen_OffStageCheck at
+  0xD69BB7) and its end (0xD673B0). The id is also used at 0xC2462D, 0xCCA672, 0xD9ADEA, 0xDA81D8,
+  0xDA9C0C (? which action: not named yet).
+* ✔ Citizen_OffStageCheck (0xACA2A0) has 14 callers (citizen actions, 0xC4CE00 ... 0x1032BD0);
+  its citizen branch returns at once in the Tribe mode, so it only acts in the frame(s) after the
+  mode changed (or in another mode).
+* ✔ (lane 6, `coop_tribe_leave_walk.py`) 90 s of play_tribe bots made 11 calls, every one of them
+  in the Tribe mode; two leaves of Tribe for the galaxy menu right after the play made none for a
+  citizen outside the Tribe mode: the campaign's path needs a citizen in that action at the moment
+  the mode changes, which the lab's short sessions do not give.
+* Guard `tribe.leave_walk` (gamefixes.cpp): Citizen_OffStageCheck is skipped for a citizen whose
+  +0xB54 is 0 (cleaned up by CreatureBase_Cleanup): there is nothing to walk, and in the Tribe mode
+  the check does nothing for a citizen anyway. Its counters are in `coop.status` ("off-stage
+  checks N (citizens while the stage is left M), cleaned-up citizen walks skipped K").
