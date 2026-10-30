@@ -1536,6 +1536,8 @@ wrong. Suite `campaign` (in no other suite): `tools/lab.py run campaign --lanes 
   guest lacks, proxies the host lacks, alive/dead, owner, > 10 m apart). Stage, together, sync,
   resources and census count only when seen in two checks in a row (`Persist`): a rejoin or a world
   load is no desync. During rejoins and stage changes only the health checks run.
+  A guest whose pause menu is open ("Resume Game" shown) is not compared for sync: its game runs no
+  simulation and its cell mirrors move only by the 3 m jumps (BUG-0289, 2026-10-30).
 * **Findings**: `out/lane<N>/campaign/<run>/findings.md` and `findings.jsonl`, one per key (repeats are
   counted), with the time, stage/phase, players and evidence: the last 30 log lines of each game
   involved and a screenshot of each (`<nn>_<kind>_<player>.log.txt`, `campaign_<nn>_<kind>_<player>.png`).
