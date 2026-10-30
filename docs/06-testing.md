@@ -1808,3 +1808,7 @@ world XXXXXXXX, share retries N"; `coop.res` prints `held=0|1/N` (the hold, host
 Unit: `validate_tests` test_host_world (the classifier, DNA rows 1-8 and 12, the ledger hold).
 Pitfall: Civ money moves with the planet's own income during the 40 s: the money check compares
 guest and host per sample (they stay ~777 apart), not a fixed value.
+Pitfall: with the machine loaded (load average ~25, several lanes) the two-game Monitor reported
+"guest: the console stopped answering (crash?)" at the end of civ_other_world / tribe_other_world
+(4 of 7 lab runs) while every check passed, no crash report was written and the guest's console
+answered right after; a 1 s poller beside a standalone run saw no gap. Same signature as BUG-0261.
