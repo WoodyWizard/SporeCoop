@@ -14,8 +14,15 @@ known; this test makes it (`coop.pool nanself`: the own cell and its soft-body p
    games answer, the guest's position stays finite; the lab fails the test on any fault or crash.
 SPORE_FIX_OFF=cell.nan_guard must FAIL (the position stays NaN, faults in PopulateTiles).
 
+--all (BUG-0307, suite cell_nan_all): `coop.pool nanself all` also makes the rotation and shape
+matrices and the particles' rest offsets NaN, as left by the first heal in lab 20261030-104149
+(26 NaN episodes in 6 minutes). 3. Over the next 15 s the own cell does not go NaN again
+(`own_nf=` of `coop.pool`: finite -> not finite transitions, at most 1) and stays finite.
+SPORE_FIX_OFF=cell.nan_heal_all must FAIL check 3.
+
   SPORE_LANE=2 python3 tools/tests/coop_cell_nan.py
 """
+import argparse
 import math
 import re
 import time
@@ -42,6 +49,9 @@ def num(con, key):
 
 
 def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--all', action='store_true')
+    a = ap.parse_args()
     ck = Checks()
     host, guest = start('cell')
     t0 = time.time()
@@ -49,13 +59,22 @@ def main():
         time.sleep(1)
     p0 = pos(guest)
     ck(finite(p0) and (num(guest, 'mirrors') or 0) >= 10, f'the guest plays with the host\'s cells ({p0}, mirrors {num(guest, "mirrors")})')
-    print('  guest:', guest.call('coop.pool nanself')['out'].strip(), flush=True)
+    nf0 = num(guest, 'own_nf') or 0
+    print('  guest:', guest.call('coop.pool nanself' + (' all' if a.all else ''))['out'].strip(), flush=True)
     time.sleep(3)
     p1 = pos(guest)
     print(f'  guest after 3 s: pos {p1}, nan_heals={num(guest, "nan_heals")} nan_pop_skips={num(guest, "nan_pop_skips")}', flush=True)
     ck(finite(p1), f'1. the guest\'s own cell is at a finite position again ({p1})')
     ck(finite(p1) and finite(p0) and math.dist(p0, p1) < 30, f'1. ... where it was ({p0} -> {p1})')
     ck((num(guest, 'mirrors') or 0) >= 10, f'1. the guest still mirrors the host\'s cells ({num(guest, "mirrors")})')
+    if a.all:
+        bad = 0
+        for _ in range(15):
+            time.sleep(1)
+            bad += not finite(pos(guest))
+        nf = (num(guest, 'own_nf') or 0) - nf0
+        print(f'  guest: own_nf +{nf}, non-finite samples {bad} of 15, nan_heals={num(guest, "nan_heals")}', flush=True)
+        ck(nf <= 1 and bad == 0, f'3. the own cell does not go NaN again (episodes {nf}, non-finite samples {bad} of 15)')
     print('  host:', host.call('coop.pool food 1000')['out'].strip()[:80], flush=True)
     time.sleep(15)
     p2 = pos(guest)

@@ -2199,16 +2199,42 @@ static void guest_state(net::Reader& r)
 // around it and at rest (their old positions are NaN too)
 static net::Vec3 g_own_good;
 static bool g_own_good_set;
+// BUG-0307: the heal of BUG-0299 fixed the position and the particles' positions and velocities only.
+// A NaN left in the rotation / shape matrices, the size or the particles' goal offsets (the rest shape
+// of the shape matching) made the next soft-body step NaN again: the own cell went NaN 26 times in
+// 6 minutes in lab 20261030-104149. With cell.nan_heal_all every non-finite field is repaired, and
+// any non-finite field (not only the position) starts the heal.
+static bool g_fix_nan_heal_all = true;
+COOP_FIX("cell.nan_heal_all", "BUG-0307", g_fix_nan_heal_all, "cell: the own cell's heal also repairs its matrices, size, velocity and the particles' rest shape, and starts on any non-finite field");
+static float g_own_good_size = 0.5f, g_own_good_tsize = 0.5f;
 static void heal_own(uint8_t* a, const net::Vec3& me, bool bad)
 {
-    if (!bad) {
+    unsigned mask = g_fix_nan_heal_all ? cell_nonfinite(a) : 0;
+    if (!bad && !mask) {
         g_own_good = me;
         g_own_good_set = true;
+        g_own_good_size = F<float>(a, kSize);
+        g_own_good_tsize = F<float>(a, kTargetSize);
         return;
     }
     if (!g_fix_nan_guard || !g_own_good_set)
         return;
-    const net::Vec3 p = g_own_good;
+    const net::Vec3 p = g_fix_nan_heal_all && !bad ? me : g_own_good;
+    if (g_fix_nan_heal_all) {
+        if (mask & NF_SIZE) {
+            F<float>(a, kSize) = g_own_good_size;
+            F<float>(a, kTargetSize) = g_own_good_tsize;
+        }
+        if (mask & NF_ROT) {
+            static const float id[9] = {1, 0, 0, 0, 1, 0, 0, 0, 1};
+            memcpy(a + kRot, id, sizeof id);
+            F<uint16_t>(a, 0x48) |= 2;
+        }
+        if (mask & NF_SHAPE) {
+            static const float id[9] = {1, 0, 0, 0, 1, 0, 0, 0, 1};
+            memcpy(a + 0x24, id, sizeof id);
+        }
+    }
     float r = std::isfinite(F<float>(a, kSize)) ? std::clamp(F<float>(a, kSize) * 0.4f, 0.05f, 5.f) : 0.3f;
     int n = F<int>(a, 0x250);
     uint8_t* parts = G() ? F<uint8_t*>(G(), 0x4108) : nullptr;
@@ -2224,6 +2250,12 @@ static void heal_own(uint8_t* a, const net::Vec3& me, bool bad)
             q[1] = p.y + r * std::sin(ang);
             q[2] = p.z;
             v[0] = v[1] = v[2] = 0;
+            auto* goal = (float*)(parts + 0x11944 + 12 * (size_t)k); // the rest offset of the shape matching
+            if (g_fix_nan_heal_all && !fin(goal, 3)) {
+                goal[0] = r * std::cos(ang);
+                goal[1] = r * std::sin(ang);
+                goal[2] = 0;
+            }
         }
     auto* pos = (float*)(a + 0x4C);
     auto* prev = (float*)(a + 0x84);
@@ -2233,8 +2265,9 @@ static void heal_own(uint8_t* a, const net::Vec3& me, bool bad)
     F<uint16_t>(a, 0x48) |= 4;
     F<uint16_t>(a, 0x4A)++;
     stop_at(a, p);
-    if (!g_nan_heals++)
-        H->log(M, SK_WARN, "coop: cell: our own cell went back to its last finite position (%.1f %.1f) (BUG-0299)", p.x, p.y);
+    if (!g_nan_heals++ || (mask && g_nan_heals <= 20))
+        H->log(M, SK_WARN, "coop: cell: our own cell went back to its last finite position (%.1f %.1f), non-finite fields 0x%X (BUG-0299, BUG-0307)",
+               p.x, p.y, mask);
 }
 
 static void guest_tick(double now)
@@ -3482,6 +3515,18 @@ std::string debug(const std::vector<std::string>& a)
         for (int j = 0; j < 2; j++) {
             ((float*)(av + 0x4C))[j] = nan;
             ((float*)(av + 0x84))[j] = nan;
+        }
+        if (a.size() >= 2 && a[1] == "all") { // BUG-0307: also the fields the first heal left alone
+            for (int j = 0; j < 9; j++)
+                ((float*)(av + kRot))[j] = ((float*)(av + 0x24))[j] = nan;
+            if (F<uint32_t>(av, 0x248) && parts && n > 1 && n <= 64)
+                for (int i = 0; i < n; i++) {
+                    uint32_t k = F<uint32_t>(av, 0x254 + 4 * i);
+                    if (k < 1500)
+                        for (int j = 0; j < 3; j++)
+                            ((float*)(parts + 0x11944 + 12 * (size_t)k))[j] = nan;
+                }
+            return "own cell NaN (all fields)\n";
         }
         return "own cell NaN\n";
     }
