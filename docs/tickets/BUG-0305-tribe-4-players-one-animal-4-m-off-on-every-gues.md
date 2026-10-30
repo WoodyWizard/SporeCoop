@@ -78,6 +78,8 @@ One fix-off run passed narrowly (out/lab/20261030-114958, p90 1.47 m against the
 4 players, real hunts (coop_sync_multi --fixture tribe --rounds 40, lanes 5 / 6 at the same time,
 68 fps): animals over 1.5 m 2 of 1335 (0.1 %) with the fix, 11 of 1144 (1.0 %) without; none over
 3 m in either (the machine was less loaded than in the probes, 9-55 fps, where 2-6 m were seen).
+Other tests with the fix: out/lab/20261030-120130 (lanes 5+6) tribe_coop, tribe_far, chaos_tribe, tribe_play,
+npc_far, creature, creature_kills, creature_death, npc_pooled, tribe_npc_dash: 10/10 OK.
 
 ## History
 - 2026-10-30: opened; A/B with the view-centre switches: no regression, open (fix/w11-finale).
