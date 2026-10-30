@@ -42,7 +42,7 @@ static std::atomic<bool> g_unloaded{false};
 static std::atomic<int> g_threads{0};
 static std::atomic<int> g_stress{0};
 static std::atomic<uint32_t> g_gen{0};       // finished good lookups (lan_scan rebuilds its targets)         // lookups the worker still has to run (coop.adapters stress)
-static std::atomic<uint32_t> g_lookups{0}, g_failed{0}, g_faults{0}, g_main_lookups{0};
+static std::atomic<uint32_t> g_lookups{0}, g_failed{0}, g_faults{0}, g_main_lookups{0}, g_socket_lookups{0};
 static char g_fault_text[200];
 
 // the old path's own cache (fix off): exactly the code before the fix
@@ -108,15 +108,22 @@ static std::vector<Addr> old_lookup()
 // every SporeCoop game of the prefix. Held by the worker only.
 static HANDLE g_nsi_mutex;
 static std::atomic<bool> g_holding{false};
-static std::atomic<uint32_t> g_mutex_timeouts{0};
+static std::atomic<uint32_t> g_mutex_timeouts{0}, g_mutex_waits{0};
+static bool g_mutex_shared; // another game of the prefix had it already
 
 static bool nsi_lock()
 {
-    if (!g_nsi_mutex)
+    if (!g_nsi_mutex) {
         g_nsi_mutex = CreateMutexW(nullptr, FALSE, L"Local\\SporeCoop.nsi");
+        g_mutex_shared = g_nsi_mutex && GetLastError() == ERROR_ALREADY_EXISTS;
+    }
     if (!g_nsi_mutex)
         return true; // no mutex: look up anyway (the guard still holds)
-    DWORD w = WaitForSingleObject(g_nsi_mutex, 15000);
+    DWORD w = WaitForSingleObject(g_nsi_mutex, 0);
+    if (w == WAIT_TIMEOUT) {
+        g_mutex_waits++; // another game is looking up
+        w = WaitForSingleObject(g_nsi_mutex, 15000);
+    }
     if (w != WAIT_OBJECT_0 && w != WAIT_ABANDONED) {
         g_mutex_timeouts++;
         return false;
@@ -131,9 +138,73 @@ static void nsi_unlock()
         ReleaseMutex(g_nsi_mutex);
 }
 
+// Under Wine the addresses come from sockets, never from iphlpapi (its nsi device is the fault):
+// the address a UDP socket connected to a public address would send from (connect sends nothing)
+// and the host name's IPv4 addresses. No prefix length there: a private address gets a /24 subnet
+// broadcast (255.255.255.255 is sent to anyway).
+static bool under_wine()
+{
+    static int w = -1;
+    if (w < 0) {
+        HMODULE nt = GetModuleHandleW(L"ntdll.dll");
+        w = nt && GetProcAddress(nt, "wine_get_version") ? 1 : 0;
+    }
+    return w == 1;
+}
+
+static void add_ip(std::vector<Addr>& out, uint32_t ip)
+{
+    const uint8_t* b = (const uint8_t*)&ip;
+    if (!ip || b[0] == 127 || (b[0] == 169 && b[1] == 254) || b[0] >= 224)
+        return;
+    for (auto& a : out)
+        if (inet_addr(a.ip.c_str()) == ip)
+            return;
+    bool priv = b[0] == 10 || (b[0] == 172 && (b[1] & 0xF0) == 16) || (b[0] == 192 && b[1] == 168);
+    uint32_t mask = priv ? htonl(0xFFFFFF00u) : 0xFFFFFFFFu;
+    char s[32];
+    snprintf(s, sizeof s, "%u.%u.%u.%u", b[0], b[1], b[2], b[3]);
+    out.push_back({s, priv ? (ip & mask) | ~mask : 0xFFFFFFFFu});
+}
+
+static DWORD socket_lookup(std::vector<Addr>& out)
+{
+    static const char* const kTargets[] = {"8.8.8.8", "192.168.255.254", "10.255.255.254"};
+    for (const char* t : kTargets) {
+        SOCKET s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        if (s == INVALID_SOCKET)
+            break;
+        sockaddr_in to{};
+        to.sin_family = AF_INET;
+        to.sin_port = htons(9);
+        to.sin_addr.s_addr = inet_addr(t);
+        sockaddr_in me{};
+        int len = sizeof me;
+        if (connect(s, (sockaddr*)&to, sizeof to) == 0 && getsockname(s, (sockaddr*)&me, &len) == 0)
+            add_ip(out, me.sin_addr.s_addr);
+        closesocket(s);
+    }
+    char hn[256] = "";
+    addrinfo hints{}, *res = nullptr;
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_DGRAM;
+    if (gethostname(hn, sizeof hn) == 0 && getaddrinfo(hn, nullptr, &hints, &res) == 0) {
+        for (auto* r = res; r; r = r->ai_next)
+            if (r->ai_family == AF_INET)
+                add_ip(out, ((sockaddr_in*)r->ai_addr)->sin_addr.s_addr);
+        freeaddrinfo(res);
+    }
+    return NO_ERROR;
+}
+
 // one guarded lookup on the worker: the documented retry while the buffer is too small
 static DWORD lookup(std::vector<Addr>& out)
 {
+    if (under_wine()) {
+        maybe_inject();
+        g_socket_lookups++;
+        return socket_lookup(out);
+    }
     if (!nsi_lock())
         return ERROR_TIMEOUT;
     maybe_inject();
@@ -326,10 +397,10 @@ int command(int argc, const char* const* argv, SkOut* out)
         at = g_at;
         v = g_fix ? g_list : g_old_cache;
     }
-    SAY("adapters: fix %s lookups=%u failed=%u faults=%u main_thread_lookups=%u running=%d broken=%d stress_left=%d "
-        "mutex_timeouts=%u age=%ld ms%s%s\n",
-        g_fix ? "on" : "off", (unsigned)g_lookups, (unsigned)g_failed, (unsigned)g_faults, (unsigned)g_main_lookups,
-        (int)g_running, (int)g_broken, (int)g_stress, (unsigned)g_mutex_timeouts, at ? (long)(GetTickCount() - at) : -1L,
+    SAY("adapters: fix %s wine=%d socket_lookups=%u lookups=%u failed=%u faults=%u main_thread_lookups=%u running=%d broken=%d stress_left=%d "
+        "mutex_timeouts=%u mutex_waits=%u mutex_shared=%d age=%ld ms%s%s\n",
+        g_fix ? "on" : "off", (int)under_wine(), (unsigned)g_socket_lookups, (unsigned)g_lookups, (unsigned)g_failed, (unsigned)g_faults, (unsigned)g_main_lookups,
+        (int)g_running, (int)g_broken, (int)g_stress, (unsigned)g_mutex_timeouts, (unsigned)g_mutex_waits, (int)g_mutex_shared, at ? (long)(GetTickCount() - at) : -1L,
         g_faults ? " last_fault=" : "", g_faults ? g_fault_text : "");
     for (auto& x : v) {
         const uint8_t* b = (const uint8_t*)&x.broadcast;
