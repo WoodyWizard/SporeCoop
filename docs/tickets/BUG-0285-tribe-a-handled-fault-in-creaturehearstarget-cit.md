@@ -10,7 +10,7 @@ role: host
 versions: 0.7.3.0 (main b5ef74d)
 fixed_in: unreleased
 branch: fix/w9-tribe, fix/w13-tribe-civ
-commits: 22cbf89 d1cdf2e eb1bebf
+commits: 22cbf89 d1cdf2e eb1bebf 4c6c6e1
 tests: tribe_leave_walk (coop_tribe_leave_walk.py)
 signature: 0xC0000005 at 0x00C0DB23 SporeCoop::CreatureHearsTarget+0x463 data 0x3C (handled, first chance)
 docs: docs/re/tribe.md#tribe-leave-walk-fault, docs/known-issues.md#issue-tribe-leave-hears-fault
@@ -72,7 +72,7 @@ docs/re/tribe.md#tribe-offstage-action).
   CreatureBase_SetMoveScale+0x13 data 0x3C` with the same chain (DoAction+0x496 < 0xD576F1
   Citizen_IdleWalk), then the host stopped drawing in the load (FROZE), the civ_npc fixture never
   came: the campaign's outcome.
-* PASS with the fix: lab run 20261030-140307-fix-w13-tribe-civ (2 runs, lane 6): 4 leaves of Tribe
+* PASS with the fix: lab runs 20261030-140307-fix-w13-tribe-civ (2 runs, lane 6) and 20261030-145455-fix-w13-tribe-civ (final code): 4 leaves of Tribe
   with the stand-in, "cleaned-up citizen walks skipped" 2 per run, no fault, every load reached
   Civ / Tribe and the guest followed.
 Not verified: which citizen the game cleaned up while its action still ran, and why only in the
