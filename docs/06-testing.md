@@ -2026,3 +2026,17 @@ answered right after; a 1 s poller beside a standalone run saw no gap. Same sign
   (`coop.pool nanself`), back at a finite position within 3 s, then `coop.pool food 1000` on the
   host (level-ups). BUG-0299; `SPORE_FIX_OFF=cell.nan_guard` FAILS (lab 20261030-055502: the
   position stays NaN, the guest hangs after the level-ups).
+
+## The captain screen blocks the wheel (space_captain, 2026-10-30, fix/w11-finale)
+<a id="testing-captain-screen"></a>
+
+* The rank badge over the ship's picture (1390 890) opens the captain screen; while it is up the
+  wheel does nothing and `coop.space finale` still says busy=0. Esc does not close it (it opens the
+  pause menu over it): click its OK (`play_space.close_captain`). Detect it with
+  `play_space.captain_open` (`coop.ui find Equipment` shown).
+* Bots must not click objects projected under the badge (play_space.Player.targets skips
+  x > W-120, y > H-225). The 4-player campaign lost the finale to it (BUG-0303).
+* Each opening logs the game's own caught fault at 0x5971D4 (BUG-0304): `space_captain` is
+  `reports=True` and accepts only that one. `OLD_FINALE_TOOL=1` keeps the old `to_galaxy` (fails).
+* `coop_sync_multi.py --fixture tribe`: four players in the tribe fixture with play_tribe bots (the
+  campaign's setup: `coop.tribe spawn 3 x players`, one thread steps every player).

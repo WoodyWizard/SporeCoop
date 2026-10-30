@@ -77,6 +77,11 @@
 - The campaign bot answers a captured city's specialty box before a nation's talk under it, and
   closes a talk that does not take its answer (BUG-0290); `select` waits for the partner to be on
   the screen (BUG-0272).
+- The Space play bot no longer clicks under the rank badge (it opened the captain screen, which
+  takes no mouse wheel), and the galactic core finale closes a captain screen before zooming out:
+  a guest of the 4-player campaign stayed next to the core (BUG-0303, test `space_captain`). The
+  captain screen's caught fault at 0x5971D4 is the game's own, also without the mod (BUG-0304).
+  `coop_sync_multi.py --fixture tribe` measures the Tribe stage with four players.
 
 ## [0.7.3.1] - 2026-10-29
 

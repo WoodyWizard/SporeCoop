@@ -1833,3 +1833,22 @@ Runtime findings of the wave 3 Space fixes (lane 6, GOG 2024):
   open (?): the guest had been taken from Space to the galaxy menu by the mod and loaded the world
   from there. gamefixes.cpp drops such a window (both slots must lead into executable code) before
   UpdateHover (`coop.fix game.dead_modal`).
+
+## The captain screen and its game fault (2026-10-30, fix/w11-finale)
+<a id="space-captain-screen-fault"></a>
+
+* ✔ The rank badge over the ship's picture (bottom right, about 1390 890 at 1440x1080) opens the
+  captain screen (panels "Equipment" and "Crew", buttons "Enter Outfitter" and "OK"). In the lab's
+  Space saves its left panel is pink with the missing string `*UNKNOWN<ep1_captain_primary_title>*`.
+* ✔ While it is up the game ignores the mouse wheel: no zoom-out to the galaxy view (10 x 5 notches,
+  context stays 1). It is not a caption (`coop.space finale` busy=0). Esc does not close it (Esc
+  opens the pause menu over it); its OK button does. `coop.ui find Equipment` shows it (the "Enter
+  Outfitter" window has a hidden parent and does not count as shown). The co-op window's "Fly to"
+  still works under it (BUG-0303's guest jumped with it open).
+* ✔ Each opening logs one caught fault `0xC0000005 at 0x005971D4` (named LockPart+0x3C4 by the
+  symboliser; really the out-of-line block of the cCollectableItems method 0x5970D0, called with a
+  null `this` from the captain screen's update 0xF179E0), also with coop unloaded: the game's own,
+  handled (BUG-0304, `SporeCoop::CollectableItems_5970D0` in overrides_dc04aee5.sym).
+* Test bots: play_space.Player.targets skips points under the badge, `play_space.captain_open` /
+  `close_captain` detect and close the screen, `coop_space_finale.to_galaxy` closes it before the
+  wheel (BUG-0303). Test: `space_captain`.

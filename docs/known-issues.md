@@ -925,3 +925,16 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   mirror particles, cellsync guest_tick) as the source.
 * Next steps: log the own cell's particles and the nearest mirrors on the first NaN frame.
 * Ticket: BUG-0299
+
+## Space: opening the captain screen logs a caught fault in the game (2026-10-30, fix/w11-finale)
+<a id="issue-captain-screen-fault"></a>
+
+* What happens: every opening of the captain screen (the rank badge over the ship's picture) logs
+  `0xC0000005 at 0x005971D4` (named Simulator::cCollectableItems::LockPart+0x3C4). The game handles
+  it and plays on; the screen's left panel shows a missing string.
+* Reproduce: `tools/lab.py run space_captain`, or click the badge (1390 890) in any lab Space save;
+  also with `mod.unload coop`.
+* Known: the game's own null object in the captain screen's update (docs/re/space.md#space-captain-screen-fault).
+  A campaign [fault] finding with this address is this, not a coop bug.
+* Not checked: a save with a Galactic Adventures captain, the GOG 2016 build.
+* Ticket: BUG-0304 (game-bug).
