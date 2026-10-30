@@ -300,9 +300,15 @@ class Campaign:
                 self.finding('apart', f'{hst}:{k}', f'the host does not see {k} in its world ({hst})',
                              [host, self.byname(k)])
             # sync of every synchronized object kind, guests that are in the host's world only
-            over, short, nums = [], [], []
+            over, short, nums, paused = [], [], [], []
             for g in self.guests:
                 if g not in alive or g.pid not in tog:
+                    continue
+                # a guest in its pause menu runs no simulation: its cell mirrors move only by the
+                # 3 m jumps of cellsync's guest_tick, a 0-3 m sawtooth that read as a desync of
+                # p90 2.2 (BUG-0289, a noise pause whose Resume click was lost under an input lock)
+                if uifind.shown(g.con, 'Resume Game'):
+                    paused.append(g.name)
                     continue
                 # the host's path right before each guest (BUG-0269), its last 0.25 s: the guest
                 # shows the host's objects that late on purpose (BUG-0275)
@@ -315,6 +321,8 @@ class Campaign:
                     nums.append(f'{g.name}:{kind} p90 {p90:.1f} of {len(v)}, worst {worst[kind][1]} {worst[kind][0]:.1f}')
                     if over_limit(v, limit(kind)):
                         over.append(f'{g.name}:{kind}:{p90:.1f}')
+            if paused:
+                self.note('sync: not compared (pause menu open): ' + ', '.join(paused))
             if over:  # every guest's numbers next to a desync: one guest only, or everybody (BUG-0275)
                 self.note('sync: ' + '; '.join(nums) + ' | fps ' + ', '.join(
                     f'{p.name} {fps(p.con)}' for p in self.P if p in alive))
