@@ -1826,7 +1826,8 @@ wrong. Suite `campaign` (in no other suite): `tools/lab.py run campaign --lanes 
     the same second (impressed once, the other refused), an NPC next to two partners gets the
     "noticed" stimulus from their puppets only (behaviour tree, `stimuli` of coop_creature_kills),
     a guest leaves while another one receives the world, and while a guest's own creation travels
-    to the others. `SPORE_FIX_OFF=npc.play_death` FAILS (20261030-011708; PASS 20261030-010920,
+    to the others. `SPORE_FIX_OFF=npc.play_death` FAILS (20261030-011708), `npc.partners` too
+    (20261030-014139; PASS 20261030-010920,
     20261030-012915).
   * `party_tribe_split` (`coop_party_tribe.py`, 4 players): the split of the player tribe and the
     chiefs the same on every machine, a gift from guest to guest that the new owner can select, a
