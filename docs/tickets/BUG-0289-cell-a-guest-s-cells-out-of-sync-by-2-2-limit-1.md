@@ -10,7 +10,7 @@ role: guest
 versions: 
 fixed_in: unreleased
 branch: fix/w9-cell-food
-commits: e07d9e4, 6b23ebd
+commits: e07d9e4, 6b23ebd, 1983bea
 tests: campaign
 signature:
 docs: docs/06-testing.md, docs/known-issues.md
