@@ -26,7 +26,12 @@ runs `SK_CMD_ANY_THREAD` commands inline, the waiting ones too (`wait.frames`, `
 calls `wait.frames 300 60000` on the guest after the join; meanwhile twoinst.Monitor's `frame` on its
 own connection waits behind it, past its 10 s socket timeout, and the Monitor reported a crash. The
 game drew on (no hitch over 0.3 s in its log), a new connection answered 0.3-15 s later. Not a freeze
-of the game: a test-harness artefact. With the Monitor's diagnostics: 3 of 6 runs (lab
+of the game: a test-harness artefact. Same verdict from fix/w9-core (lane 4, machine load ~25):
+4 of 7 runs of civ_other_world / tribe_other_world / share_retry (out/lab/20261030-002615,
+-002941, runs around 20261030-0036..0110) had "the console stopped answering" with every check
+passed, no crash report and the console answering right after; a 1 s poller beside a standalone run
+saw no gap. Under load the 10 s socket timeout of the watcher is reached by a console that is slow
+or busy with another client's waiting command, not by a dead game. With the Monitor's diagnostics: 3 of 6 runs (lab
 20261030-003237: "TimeoutError, loading=False, answered again after 2.3-9.5 s").
 
 ## Fix
