@@ -319,6 +319,8 @@ static unsigned g_saves_posted; // tests: every save_game that posted the game's
 void set_save_blocker(const char* (*probe)()) { g_save_blocker = probe; }
 
 static FILETIME g_saved_ft; // when the last save was posted (system time, as file times)
+extern bool g_settle_reset_fix;
+static uint64_t g_saved_base; // the slot's newest file write when the last save was posted (BUG-0276)
 static unsigned g_stale_saves; // tests: shares whose save wrote nothing: saved again (BUG-0276)
 static unsigned g_settle_waits; // tests: share saves held while the stage settled (BUG-0276)
 static constexpr double kShareSettle = 2.0;
@@ -379,6 +381,13 @@ bool save_game(std::string& err)
     vcall<void>(mm, 0x18 / 4, 0x1CD20F0u, (void*)nullptr, (void*)nullptr, 0);
     g_saves_posted++;
     GetSystemTimeAsFileTime(&g_saved_ft);
+    g_saved_base = 0;
+    if (g_settle_reset_fix) {
+        std::string planet;
+        bool missing = false;
+        std::wstring slot = current_slot(planet, missing);
+        g_saved_base = slot.empty() ? 0 : newest_write(slot);
+    }
     g_saved_at = GetTickCount64();
     g_box_seen_at = 0;
     g_box_watch_until = g_saved_at + 30000;
@@ -451,6 +460,15 @@ COOP_FIX("world.share_one_save", "BUG-0112", g_one_save_fix, "world: one save fo
 // again, up to three times). Off: the old timing (0.7.3.0).
 bool g_share_settle_fix = true;
 COOP_FIX("world.share_settle", "BUG-0276", g_share_settle_fix, "world: a share save waits for a settled stage and is not sent stale");
+// BUG-0276 (reopened, wave 8): the settle clock above was the "playable since" of the via-menu load,
+// which a stage change with an avatar in both stages (Creature -> Tribe) or a Space context change
+// (home planet -> solar system) never restarted: the share saves still went out 9-75 ms into the
+// new stage / place (Tribe: dropped, the Creature files sent; Space: every guest loaded a ship that
+// went down to the planet). With this switch the share's clock restarts at every mode or place
+// change, and a share without its box is stale unless a file of the slot is newer than the newest
+// one before the save was posted (the 2 s slack let the previous save's files pass).
+bool g_settle_reset_fix = true;
+COOP_FIX("world.share_settle_reset", "BUG-0276", g_settle_reset_fix, "world: a share save waits 2 s after every stage or place change; files older than the save are stale");
 COOP_FIX("world.load_in_editor", "BUG-0157", g_editor_load_fix, "world: a queued load never starts inside an editor");
 COOP_FIX("world.busy_slot", "BUG-0035", slotfs::g_busy_fix, "world: a received world never moves or overwrites the slot being played");
 COOP_FIX("world.slot_match", "BUG-0087", slotfs::g_match_fix, "world: a received world goes only into its own host's co-op slot");
@@ -580,6 +598,9 @@ static const double kMenuSettle = 3.0, kStageSettle = 3.0;
 static double g_menu_since; // when the galaxy menu came up (0: not in it, or a load started from it)
 static double g_stage_since;    // when the current stage mode began (0: not in a stage)
 static double g_playable_since; // when the local player got something to control in it (0: not yet)
+static double g_share_settled_since; // ... and since the last mode or place change (BUG-0276, shares)
+static uint32_t g_settle_mode, g_settle_place;
+static uint32_t (*g_place)();
 static uint32_t g_stage_mode;
 static bool (*g_playing)();
 static bool load_now(const std::wstring& slot, const std::string& planet_file, std::string& err);
@@ -686,6 +707,13 @@ static void via_menu_tick()
         g_playable_since = 0;
     else if (!g_playable_since)
         g_playable_since = now;
+    uint32_t place = g_place ? g_place() : 0;
+    if (!g_playable_since)
+        g_share_settled_since = 0;
+    else if (!g_share_settled_since || mode != g_settle_mode || place != g_settle_place)
+        g_share_settled_since = now;
+    g_settle_mode = mode;
+    g_settle_place = place;
     if (!g_via_menu.on)
         return;
     // other modes (an adventure, an editor, before the first menu): load from there as before, but
@@ -865,16 +893,20 @@ void tick(net::Session& s)
             // a stage that just began (loading screen, setup) is saved once the player controls
             // something, like a share at join (coop.cpp player_join)
             double ts = H->time_seconds();
+            double since = g_settle_reset_fix ? g_share_settled_since : g_playable_since;
             if (now >= p.next_try && g_playing && !g_playing()) {
                 p.next_try = now + 1000;
             } else if (now >= p.next_try && g_share_settle_fix && in_stage(game::mode_id()) &&
-                       (!g_playable_since || ts - g_playable_since < kShareSettle)) {
+                       (!since || ts - since < kShareSettle)) {
                 p.next_try = now + 250; // BUG-0276: the stage just began, the game drops a save now
                 g_settle_waits++;
             } else if (now >= p.next_try) {
                 std::string why;
                 if (save_game(why)) {
                     g_share_saves++;
+                    // support log (BUG-0276): how long the stage / place had been settled
+                    H->log(M, SK_INFO, "world: saving for the share of player %u (%s, %.1f s in this place)", p.peer,
+                           modes::mode_name(game::mode_id()), g_share_settled_since ? ts - g_share_settled_since : -1.0);
                     p.need_save = false;
                     p.at = now + 2500;
                     p.latest = now + 10000;
@@ -913,7 +945,10 @@ void tick(net::Session& s)
             std::wstring slot = current_slot(planet, missing);
             uint64_t posted = ((uint64_t)g_saved_ft.dwHighDateTime << 32) | g_saved_ft.dwLowDateTime;
             uint64_t wrote = slot.empty() ? 0 : newest_write(slot);
-            if (wrote && posted && wrote + 20000000ull < posted) { // 2 s of slack for coarse file times
+            bool stale = wrote && posted && wrote + 20000000ull < posted; // 2 s of slack for coarse file times
+            if (g_settle_reset_fix && wrote && g_saved_base && wrote <= g_saved_base)
+                stale = true; // nothing newer than before the save (the slack let those files pass)
+            if (stale) {
                 H->log(M, SK_WARN, "world: no saved box and no file written %llu ms after the save for player %u: saving again (try %d)",
                        (unsigned long long)(now - g_saved_at), p.peer, p.saves + 2);
                 g_stale_saves++;
@@ -1055,6 +1090,7 @@ static std::wstring current_db_dir(bool lower)
 // the way the galaxy menu's Play button does (see docs/05-re-notes.md).
 void set_auto_load(bool on) { g_auto_load = on; }
 void set_playing_probe(bool (*probe)()) { g_playing = probe; }
+void set_place_probe(uint32_t (*probe)()) { g_place = probe; }
 
 static bool in_stage(uint32_t m)
 {

@@ -1,6 +1,7 @@
 // World sharing between host and guests (save folder transfer).
 #pragma once
 
+#include <cstdint>
 #include <functional>
 #include <string>
 #include <vector>
@@ -46,6 +47,8 @@ void set_auto_load(bool on);
 // true while the local player controls something in a stage (coop.cpp): a load waits until the
 // stage has been playable for a few seconds before it leaves it
 void set_playing_probe(bool (*probe)());
+// where the local player is (the adapter's place, coop.cpp): a share save waits 2 s after a change
+void set_place_probe(uint32_t (*probe)());
 // share_host: a received world of that host (dropped when the session ends, BUG-0074); "" for the
 // player's own load (coop.load)
 bool load_slot(const std::wstring& slot, const std::string& planet_file, std::string& err,
