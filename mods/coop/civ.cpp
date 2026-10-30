@@ -140,6 +140,20 @@ static bool g_fix_boost = true; // BUG-0040: boosts only on listed vehicles, cle
 static bool g_fix_world = true; // BUG-0059: every pointer table cleared when the world changes
 COOP_FIX_UNSAFE("civ.boost", "BUG-0040", g_fix_boost, "civ: boosts only on listed vehicles, cleared with the session");
 COOP_FIX_UNSAFE("civ.world", "BUG-0059", g_fix_world, "civ: every pointer table cleared when the world changes");
+// BUG-0186: a mirror of another player's or nation's vehicle kept an order of the guest's own game
+// (order 8 seen: given before it was bound as a mirror, or pushed by a vehicle behaviour without
+// SetOrder), and the guest's game moved it 13 m away from where guest_tick put it. Such orders are
+// cleared (cVehicle::ClearOrders) every frame they show up. Optional symbol (GOG 2024 only).
+static bool g_mirror_orders_fix = true;
+COOP_FIX("civ.mirror_orders", "BUG-0186", g_mirror_orders_fix,
+         "civ: a guest clears the orders its own game gives a mirror of another player's or nation's vehicle");
+static uintptr_t a_ClearOrders;
+// BUG-0186 (b): the guest moves a mirror at most 0.15 s ahead of its last state (was 0.4 s)
+static bool g_extrap_fix = true;
+COOP_FIX("civ.extrap", "BUG-0186", g_extrap_fix,
+         "civ: a mirrored vehicle is moved on at most 0.15 s past its last state (a host hitch no longer throws it ahead)");
+constexpr double kVehAhead = 0.15;
+static uint32_t g_mirror_orders_cleared;
 static bool g_vel_cap_fix = true;
 COOP_FIX("civ.vel_cap", "BUG-0186", g_vel_cap_fix,
          "civ: a vehicle step faster than twice its top speed is taken as a jump, not a speed to extrapolate");
@@ -909,6 +923,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
         {&a_GrowthRetBudget, "SporeCoop::CivGrowth_Budget_Ret"},
         {&a_GrowthRetNew, "SporeCoop::CivGrowth_New_Ret"},
     };
+    a_ClearOrders = H->sym("Simulator::cVehicle::ClearOrders"); // optional (BUG-0186)
     g_ok = true;
     for (auto& s : syms)
         if (!(*s.a = H->sym(s.n))) {
@@ -1725,6 +1740,7 @@ static void guest_state(net::Reader& r)
         // BUG-0186: a step faster than twice the vehicle's own top speed is a jump of the host's game
         bool alive_v = v && game::object_alive(v) && !F<uint8_t>(v, kVDead);
         g.est.max_speed = g_vel_cap_fix && alive_v ? 2.f * F<float>(v, 0x218) + 10.f : 0.f;
+        g.est.max_ahead = g_extrap_fix ? kVehAhead : 0.4;
         g.est.update(m.pos, now, sent);
         if (v && (!game::object_alive(v) || F<uint8_t>(v, kVDead))) {
             g_gv_of.erase(v);
@@ -1811,6 +1827,13 @@ static void guest_tick(double now)
             g.has_put = false;
             continue;
         }
+        if (g_mirror_orders_fix && a_ClearOrders && g.owner != C.sess->my_id() &&
+            F<uint8_t*>(g.v, kVOrders) != F<uint8_t*>(g.v, kVOrders + 4)) {
+            g_applying = true;
+            thiscall<void>(a_ClearOrders, g.v);
+            g_applying = false;
+            g_mirror_orders_cleared++;
+        }
         net::Vec3 cur = veh_pos(g.v);
         net::Vec3 want = g.est.at(now); // moved on with the estimated velocity (no lag behind the host)
         float d = net::dist(cur, want);
@@ -1846,9 +1869,11 @@ static void guest_build(net::Reader& r)
     if (r.ok() && ci == kNextCitySite && noun == 0) { // the host's planet grew a new city: the same site here
         if (void* ex = skg::cdecl_call<void*>(a_ExpansionGet)) {
             g_applying = true;
-            o_SpawnNextCity(ex, 0, nullptr);
+            bool ok = o_SpawnNextCity(ex, 0, nullptr);
             g_applying = false;
             g_cities_in++;
+            H->log(M, SK_INFO, "civ: the host founded a city: here %s (cities now %u)", ok ? "founded" : "NOT founded",
+                   (unsigned)all_cities().size());
             g_last_city_spawn = H->time_seconds();
         }
         return;
@@ -1890,10 +1915,22 @@ void tick(double now)
         guest_tick(now);
 }
 
+static uint32_t g_founds_outside; // BUG-0319 diagnostics: city foundings received outside the Civ mode
 void on_message(uint8_t type, uint8_t from, net::Reader& r)
 {
-    if (!active())
+    if (!active()) {
+        if (type == net::MSG_CIV_BUILD && g_ok && is_guest()) {
+            net::Reader peek = r;
+            uint8_t ci = peek.u8();
+            uint32_t noun = peek.u32();
+            if (peek.ok() && ci == kNextCitySite && noun == 0) {
+                g_founds_outside++;
+                H->log(M, SK_INFO, "civ: the host founded a city while this game is outside the Civ mode (mode %08X)",
+                       game::mode_id());
+            }
+        }
         return;
+    }
     prune_gone();
     if (type == net::MSG_CIV_STATE && is_guest())
         guest_state(r);
@@ -2050,10 +2087,10 @@ std::string status()
         snprintf(b, sizeof b,
                  "civ(guest): mirrors=%u created=%u removed=%u cities=%u cmds_sent=%u builds_in=%u captures_in=%u "
                  "orders_dropped=%u growth_blocked=%u nodes_in=%u cities_in=%u cities_blocked=%u unselected=%u movie=%d "
-                 "buildings_fixed=+%u/-%u ruins_in=%u ruins_differ=%u incomplete=%u income_blocked=%u cities_caught_up=%u ai_spawns_blocked=%u away_orders=%u local=%d\n",
+                 "buildings_fixed=+%u/-%u ruins_in=%u ruins_differ=%u incomplete=%u income_blocked=%u cities_caught_up=%u ai_spawns_blocked=%u away_orders=%u local=%d founds_outside=%u mirror_orders_cleared=%u\n",
                  (unsigned)g_gv.size(), g_created, g_removed, (unsigned)g_host_cities.size(), g_cmds_sent, g_builds_in,
                  g_captures_in, g_orders_dropped, g_growth_blocked, g_nodes_in, g_cities_in, g_cities_blocked, g_unselected, (int)movie_playing(), g_bfix_added,
-                 g_bfix_removed, g_ruins_in, g_ruins_differ, g_incomplete, g_income_blocked, g_cities_caught_up, g_ai_spawns_blocked, g_away_orders, (int)local_play());
+                 g_bfix_removed, g_ruins_in, g_ruins_differ, g_incomplete, g_income_blocked, g_cities_caught_up, g_ai_spawns_blocked, g_away_orders, (int)local_play(), g_founds_outside, g_mirror_orders_cleared);
     return b;
 }
 
@@ -2316,6 +2353,28 @@ std::string debug(const std::vector<std::string>& a)
             return "no such vehicle";
         thiscall<int>(a_SetSelected, (uint8_t*)v + kVSpatial, atoi(a[2].c_str()));
         return "selected=" + std::to_string(F<uint8_t>(v, kVSelected));
+    }
+    if (a.size() >= 3 && a[0] == "localorder" && is_guest()) {
+        // localorder <id> <type> [node|x y z]: the guest's own game gives the mirror <id> an order, as
+        // its civ AI or a vehicle behaviour does (the SetOrder hook is bypassed; tests, BUG-0186)
+        auto it = g_gv.find((uint16_t)atoi(a[1].c_str()));
+        if (it == g_gv.end() || !it->second.v || !game::object_alive(it->second.v))
+            return "no such mirror";
+        void* v = it->second.v;
+        int type = atoi(a[2].c_str());
+        if (type == 6 && a.size() >= 6) {
+            o_SetMoveOrder(v, (float)atof(a[3].c_str()), (float)atof(a[4].c_str()), (float)atof(a[5].c_str()), 1);
+            return "move order given here";
+        }
+        void* node = game::find_object(kNodeNoun, veh_pos(v), 2000.f);
+        if (!node)
+            return "no spice node";
+        o_SetOrder(v, node, type, 1);
+        net::Vec3 np;
+        game::object_position(node, np);
+        char b[160];
+        snprintf(b, sizeof b, "order %d given here, target node at (%.1f %.1f %.1f)", type, np.x, np.y, np.z);
+        return b;
     }
     if (a.size() >= 5 && a[0] == "move") { // move <id> <x> <y> <z>
         void* v = local_vehicle((uint16_t)atoi(a[1].c_str()));

@@ -1584,6 +1584,43 @@ static void test_velocity_jump_cap()
     CHECK(e.capped == 0 && std::fabs(e.vel.x - 8.f) < 0.5f);
 }
 
+// BUG-0186 (b): a fast vehicle (25 u/s) whose sender hitches for 0.5 s (no frames: the vehicle stands
+// still on the host meanwhile), then goes on; and the same vehicle with one packet 150 ms late
+static double hitch_error(double ahead, bool hitch)
+{
+    const float S = 25.f;
+    VelocityEstimate e;
+    e.max_ahead = ahead;
+    double worst = 0, sent = 0, x = 0;
+    for (int k = 0; k < 40; k++) {
+        double gap = hitch && k == 20 ? 0.5 : 0.1; // the sender's time between snapshots
+        double move_dt = hitch && k == 20 ? 0.1 : gap;  // in a hitch the vehicle moved one frame's worth
+        sent += gap;
+        x += S * move_dt;
+        double recv = 1000 + sent + 0.03 + (!hitch && k == 20 ? 0.15 : 0);
+        e.update({(float)x, 0, 0}, recv, 5000 + sent);
+        double next_recv = 1000 + sent + 0.03 + (hitch && k == 19 ? 0.5 : 0.1);
+        for (double t = recv; t < next_recv && k >= 5; t += 1 / 60.0) {
+            // the truth at local time t: standing during the hitch, else moving on
+            double truth = x + (hitch && k == 19 ? 0 : S * std::max(0.0, t - recv));
+            worst = std::max(worst, std::fabs((double)e.at(t).x - truth));
+        }
+    }
+    return worst;
+}
+
+static void test_velocity_hitch()
+{
+    printf("vehicle position after a hitch of the sender (BUG-0186)\n");
+    double old_h = hitch_error(0.4, true), new_h = hitch_error(0.15, true);
+    double old_l = hitch_error(0.4, false), new_l = hitch_error(0.15, false);
+    printf("  sender hitch 0.5 s: max error %.1f units with 0.4 s ahead, %.1f with 0.15 s; one packet 150 ms late: %.1f / %.1f\n",
+           old_h, new_h, old_l, new_l);
+    CHECK(old_h > 8.0);  // the bug: thrown 10 units past the standing vehicle
+    CHECK(new_h < 5.0);
+    CHECK(new_l < 3.0);  // a late packet costs little
+}
+
 // BUG-0133: after the one-way latency rose by 300 ms the buffer rendered past its newest snapshot
 // (puppets and NPCs in 20 Hz steps) for about 50 s
 static void test_interp_latency_rise()
@@ -2328,6 +2365,7 @@ int main(int argc, char** argv)
     test_state_after_leave();
     test_velocity_jitter();
     test_velocity_jump_cap();
+    test_velocity_hitch();
     test_interp_latency_rise();
     test_alloc_id();
     test_lost_first_packet();
