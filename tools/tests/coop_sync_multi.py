@@ -111,6 +111,9 @@ def main():
         time.sleep(1)
     print('  together:', cm.wait_all(host, 3), cm.together(host), flush=True)
     guests = {'Bob': guest, **{n: c for n, (c, _) in extra.items()}}
+    for name in filter(None, (n.strip() for n in os.environ.get('SPORE_FIX_OFF', '').split(','))):
+        for n, (c, _) in extra.items():  # twoinst.start switched it off on the host and Bob
+            print(f'  {n}: SPORE_FIX_OFF:', c.call(f'coop.fix {name} off')['out'].strip(), flush=True)
     for kv in filter(None, os.environ.get('FPSLIM', '').split(',')):
         n, ms = kv.split(':')
         print(f'  {n}: frame.limit {ms}:', guests[n].call(f'frame.limit {ms}')['out'].strip(), flush=True)
