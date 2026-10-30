@@ -49,17 +49,6 @@ constexpr float kTrail = 1.5f;     // m
 constexpr double kTrailHold = 0.5; // s without getting kTrailGain closer
 constexpr float kTrailGain = 0.3f; // m
 constexpr double kTrailQuiet = 1.0;
-// BUG-0321: below kTrail the proxy of a running animal still trailed 1.0-2.1 m at times (pushed by
-// its mate, walking to catch up at 10-19 m/s); tribe_npc_dash's p90 limit 1.2 m failed now and then.
-// While the animal runs and the proxy is more than kTrailNear off, the nudge puts it on its path
-// every frame (as in the hold after a trail teleport). Off (`coop.fix npc.trail_near off`): only
-// the hold after a teleport.
-constexpr float kTrailNear = 1.0f;
-inline bool g_trail_near_fix = true;
-inline bool hold_on_path(bool trail, float remote_speed, float err, bool fix = g_trail_near_fix)
-{
-    return fix && trail && remote_speed > 0.3f && err > kTrailNear;
-}
 
 // err: puppet to target (m), sp: the remote's speed (m/s), snap: teleport distance.
 // stall_fix off: the code before BUG-0169 (a remote that reports a speed, e.g. an NPC pushing

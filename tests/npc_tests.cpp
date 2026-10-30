@@ -215,13 +215,6 @@ static void test_drive()
     for (int f = 0; f < 60; f++)
         closing += drive::plan(u, 3.f - f * 0.05f, 6.5f, 1 + f / 30.0, 8.f, true, true).trail;
     CHECK(closing == 0);
-    // BUG-0321: a running animal's proxy 1.0-1.5 m off is held on its path (not below 1 m, not
-    // while the animal stands, not with the switch off or for a creature without the trail rule)
-    CHECK(drive::hold_on_path(true, 6.5f, 1.3f, true));
-    CHECK(!drive::hold_on_path(true, 6.5f, 1.3f, false));
-    CHECK(!drive::hold_on_path(true, 6.5f, 0.8f, true));
-    CHECK(!drive::hold_on_path(true, 0.f, 1.3f, true));
-    CHECK(!drive::hold_on_path(false, 6.5f, 1.3f, true));
 }
 
 // BUG-0217 / BUG-0223: the stage counters and a module's watch (stage_epoch.h)

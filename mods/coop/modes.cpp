@@ -157,7 +157,6 @@ static void space_fill(void* u, net::PlayerState& st)
 
 bool ufo_ident_fix = true;
 COOP_FIX("drive.nudge_dt", "BUG-0175", drive::g_nudge_dt_fix, "creature, tribe: a mirror's pull to its place is per second, not per frame (low frame rates trailed more)");
-COOP_FIX("npc.trail_near", "BUG-0321", drive::g_trail_near_fix, "creature, tribe: the proxy of a running animal more than 1 m off its path is put on it every frame");
 COOP_FIX("fleet.type", "BUG-0111", ufo_ident_fix, "space: only our own puppets count as puppets, not any UfoType 6 ship (coop.fleet typefix)");
 // our puppets: the model key they got and (BUG-0218) their object serial (cGameData mID)
 struct UfoIdent {
