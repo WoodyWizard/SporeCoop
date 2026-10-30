@@ -75,12 +75,15 @@ def main():
             host.call(f'coop.tribe pincer {i} {enemy[0]} 300')
         time.sleep(1)
     ck(own and not [i for i, hp in own.items() if hp > 0], 'every member of the player tribe is out')
-    time.sleep(15)  # the caption comes some seconds later
-    alas = 'no window' not in host.call('coop.ui find "Alas"')['out']
+    t2, alas = time.time(), False
+    while time.time() - t2 < 40 and not alas:  # the caption comes some seconds later
+        time.sleep(3)
+        alas = 'no window' not in host.call('coop.ui find "Alas"')['out']
     galas = 'no window' not in guest.call('coop.ui find "Alas"')['out']
     print(f'  caption: host {alas} (lock {lock(host)}), guest {galas} (lock {lock(guest)}), guest player '
           f'tribe {player_tribe_size(guest)} members')
     twoinst.shot(guest, 'tribe_bounce_mirrors_guest_caption.png')
+    ck(alas, 'the game-over caption is up on the host')
     host.call('key enter')  # OK: bounce back in time
     ck(frames_go_on(host, 15), 'the host bounces back and keeps drawing')
     t1, hs, gs, miss, n = time.time(), -1, -1, [], 0
