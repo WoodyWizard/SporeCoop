@@ -32,7 +32,9 @@ None needed (step 2 of the issue was conditional). Added the test-only command `
 `tools/tests/coop_cell_editor_invuln.py` (suite `cell_editor_invuln`): PASS on lane 2 (main code). No FAIL run exists: it is the regression guard the issue asked for.
 * Lab: PASS out/lab/20261028-231910 (cell_editor_invuln).
 * no-fail-run: the problem does not occur (the avatar is recreated by the editor's rebuild).
+* Timed re-check 2026-10-30 (fix/w9-cell-away, lane 3): `coop_cell_editor_timed.py` (suites cell_editor_timed, cell_editor_timed_revive), out/lab/20261030-002235-fix-w9-cell-away: the stage is left ~10 s after the mate is touched (9.86 s respawn, 10.02 s revive), so the 3 s / 2 s timer has always run out first; the flag is clear after the editor and a bite hurts. Both runs ended as SKIP under the first version of the test (the window not reached); the test now passes as a guard and prints the time.
 
 ## History
 - 2026-10-28: opened.
 - 2026-10-28: fix/w5-cell: the avatar comes back from the cell editor recreated with +0x111 clear; closed as not reproduced, guard test cell_editor_invuln.
+- 2026-10-30 (fix/w9-cell-away, GitHub #171 re-check): timed test with a real respawn and a real revive (`coop_cell_editor_timed.py [--revive]`): the cell put onto its mate the moment the knockout ended; the Cell stage was left 9.86 s (respawn) and 10.02 s (revive) later (the mating cinematic), +0x111 already cleared by our timer before (av_invuln=0 on the last read in Cell), and the avatar came back recreated (new index and pointer) with +0x111 = 0; a host bite then took 6 -> 5 hp. The 2-3 s window cannot be reached through the mate. Still not reproduced.

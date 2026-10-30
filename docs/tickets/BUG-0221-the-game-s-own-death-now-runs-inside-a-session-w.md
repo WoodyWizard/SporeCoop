@@ -32,7 +32,9 @@ No product change (step 2 of the issue was conditional on step 1 finding a probl
 `tools/tests/coop_cell_respawn.py` (suite `cell_respawn`) and `--swap` (suite `cell_respawn_swap`): PASS on lane 2 (host's pool rebuilt; guest's pool rebuilt). It has no FAIL run: nothing was broken, so this is a guard, not a fix test. Not checked: the death count S+0x70 and cCellUI+0x936 directly (the caption check `cine=0` covers the UI the player sees), 3 players, a lossy link.
 * Lab: PASS out/lab/20261028-235414 (cell_respawn, cell_respawn_swap). Run 20261028-231910 failed cell_respawn on a test bug (a mirror of a host cell in slot 0, which `coop.cell list` does not print); the test now asks `coop.pool cell` for those.
 * no-fail-run: a guard for behaviour that was found correct, nothing to fail.
+* Re-run 2026-10-30 (fix/w9-cell-away, lane 3): PASS out/lab/20261030-002235-fix-w9-cell-away (cell_respawn, cell_respawn_swap), with the death count S+0x70 check.
 
 ## History
 - 2026-10-28: opened.
 - 2026-10-28: fix/w5-cell: measured (both roles), no problem; guard tests cell_respawn / cell_respawn_swap and `coop.cell pool` added.
+- 2026-10-30 (fix/w9-cell-away, GitHub #155 re-check): cell_respawn and cell_respawn_swap PASS again on lane 3 (out/lab/20261030-002235-fix-w9-cell-away) with a new check: the game's death count S+0x70 (`coop.pool deaths`) of the knocked-out partner does not change. Measured: S+0x70 stayed 0 on both machines also for the player whose game ran its death (the selfhit death goes through KillCell / PlayerDeath; only BreakOrSwallow 0xE7AEE0 counts deaths, docs/re/cell.md). Still not reproduced, no product change.

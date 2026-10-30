@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Fixed
+- Cell: while the host is in the main menu, an editor or a loading screen, a guest now plays on in
+  its own tide pool (the creatures swim, eat and are eaten, new ones appear) instead of a frozen
+  one, and the food it eats meanwhile goes to the shared progress when the host is back; then the
+  host's pool takes over again (BUG-0205, BUG-0151). Test: `coop_cell_away.py`.
+
+### Tests
+- Cell: `coop_cell_editor_timed.py` enters the own cell editor right after a real respawn or revive
+  (BUG-0237: the stage is left ~10 s after touching the mate, the invulnerability is over by then,
+  not reproduced); `coop_cell_respawn.py` also checks the death count (BUG-0221, not reproduced).
+
 ## [0.7.3.1] - 2026-10-29
 
 ### Added

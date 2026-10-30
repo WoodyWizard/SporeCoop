@@ -15,7 +15,8 @@ and the food it ate went to a host that dropped it.
    game food total S+0x1C grew by the 10 points, the guest's the same.
 
 --editor: the host is in its own cell editor instead (its mating call by a real click, then onto the
-mate with `coop.pool mate tp`; cancel after the checks). It counts as away after 4 s (in Cell since
+mate with `coop.pool mate tp`; its editor request waits for the vote: `coop.vote go`; the guest
+stays in its pool; cancel after the checks). It counts as away after 4 s (in Cell since
 BUG-0205; BUG-0233 had left Cell out because nothing played on there).
 
 SPORE_FIX_OFF=pool.away must FAIL (the frozen pool of 0.7.3.1: no creature moves, the 10 points are lost).
@@ -90,7 +91,8 @@ def main():
             if 'alive=1' in host.call('coop.pool mate')['out']:
                 break
         print('  host mate: ' + host.call('coop.pool mate tp')['out'].strip())
-        reached = wait(lambda: 'Editor' in mode(host), 40, 0.5)
+        # the host's editor request waits for the evolution vote (every player ready or 60 s): "Start now"
+        reached = wait(lambda: 'Editor' in mode(host) or (host.call('coop.vote go') and False), 60, 2)
         if not ck(reached, f'the host\'s own cell editor opens ({mode(host).strip()})'):
             return ck.result()
     else:
