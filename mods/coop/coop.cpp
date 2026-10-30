@@ -2960,6 +2960,15 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
         SAY("%s%s", npc::status().c_str(), npc::list().c_str());
         return 0;
     }
+    if (argc > 1 && !strcmp(argv[1], "marker")) { // tests (BUG-0280): pin the Tribe / Civ pointer (x y z | off)
+        bool pin = argc > 4;
+        net::Vec3 p{};
+        if (pin)
+            p = {(float)atof(argv[2]), (float)atof(argv[3]), (float)atof(argv[4])};
+        modes::test_pin_marker(pin, p);
+        SAY("pointer %s (%.1f %.1f %.1f)", pin ? "pinned" : "follows the mouse", p.x, p.y, p.z);
+        return 0;
+    }
     if (argc > 1 && !strcmp(argv[1], "herdnulls")) { // tests (BUG-0256)
         SAY("%s", game::herd_nulls_status().c_str());
         return 0;

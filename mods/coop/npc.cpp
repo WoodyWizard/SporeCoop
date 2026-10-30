@@ -1149,10 +1149,23 @@ std::string herds(bool all)
                 auto* home = (float*)((uint8_t*)o + 0x34);
                 void* sp = game::herd_species(o);
                 uint32_t inst = sp && !IsBadReadPtr(sp, 0x10) ? *(uint32_t*)((uint8_t*)sp + 0xC) : 0;
-                char b[200];
-                snprintf(b, sizeof b, "  herd %p arch=%08X species=%p/%08X nest=%p dist=%.0f\n", o,
+                // enabled (+0x218), members (+0x40 / +0x44) and how many of them stand in the world
+                // (not in the creature pool at the planet's centre): BUG-0280 tests in Tribe
+                int members = 0, in_world = 0;
+                void** m0 = *(void***)((uint8_t*)o + 0x40);
+                void** m1 = *(void***)((uint8_t*)o + 0x44);
+                if (m0 && m1 > m0 && m1 - m0 < 64 && !IsBadReadPtr(m0, (size_t)((uint8_t*)m1 - (uint8_t*)m0)))
+                    for (void** m = m0; m != m1; ++m) {
+                        members++;
+                        if (*m && game::object_alive(*m) && net::dist(game::position(*m), net::Vec3{}) > 50.f)
+                            in_world++;
+                    }
+                char b[260];
+                snprintf(b, sizeof b, "  herd %p arch=%08X species=%p/%08X nest=%p dist=%.0f en=%d members=%d in_world=%d "
+                         "home=(%.1f %.1f %.1f)\n", o,
                          *(uint32_t*)((uint8_t*)o + 0x88), sp, inst, game::herd_nest(o),
-                         net::dist(net::Vec3{home[0], home[1], home[2]}, a->at));
+                         net::dist(net::Vec3{home[0], home[1], home[2]}, a->at), (int)*(uint8_t*)((uint8_t*)o + 0x218),
+                         members, in_world, home[0], home[1], home[2]);
                 a->out += b;
                 return true;
             }

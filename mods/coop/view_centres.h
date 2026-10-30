@@ -9,8 +9,8 @@
 // sphere per partner, 2-4 players).
 //
 // The registry is stage-neutral: coop.cpp notes a partner's position whenever its puppet is shown
-// in the host's place (any stage), the stage code asks for the centres of its mode. The Creature
-// stage hook lives in view_centres.cpp; the Cell stage builds the same idea for its tiles. For the
+// in the host's place (any stage; in Tribe the partner's pointer), the stage code asks for the
+// centres of its mode. The hook of the Creature and Tribe stages lives in view_centres.cpp; the Cell stage builds the same idea for its tiles. For the
 // 0.8 Rivals mode (docs/11-rivals.md) every player plays its own nest far from the others: the
 // same list is what keeps their areas alive on the host.
 #pragma once

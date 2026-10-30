@@ -120,6 +120,7 @@ add('cinematic_puppet', P + 'coop_cinematic_puppet.py', minutes=3)  # BUG-0066: 
 add('npc_pooled', P + 'coop_npc_pooled.py', minutes=3)  # BUG-0274: no guest proxy of an NPC the host's game put back into its pool
 add('npc_far', P + 'coop_npc_far.py', minutes=4)  # BUG-0280: a guest 300 m from the host keeps the NPCs around it, no nest member flickers (SPORE_FIX_OFF=npc.view_centres fails)
 add('rejoin_saved_puppet', P + 'coop_rejoin_saved_puppet.py', minutes=6)  # BUG-0256: a guest that rejoins after a passed vote and loads the host's world does not fault in Herd_Update (SPORE_FIX_OFF=npc.herd_nulls fails)
+add('tribe_far', P + 'coop_tribe_far.py', minutes=4, fixture='tribe')  # BUG-0280 (Tribe): the host's game keeps herds with animals where a guest points 300-450 m from the host (SPORE_FIX_OFF=npc.view_centres_tribe fails)
 add('npc_swap', P + 'coop_npc_swap.py', minutes=3)  # BUG-0110: an NPC tick that does not return leaves no puppet as the game's avatar
 add('world_reload', P + 'coop_world_reload.py', minutes=6)  # BUG-0119: after a reload the guest plays its own creature again although the avatar's address came back (--without-fix fails)
 add('leave_avatar', P + 'coop_leave_avatar.py', minutes=7)  # BUG-0264: a guest leaving the Creature stage for a shared world never uses the avatar the game tears down (SPORE_FIX_OFF=world.leave_avatar fails)

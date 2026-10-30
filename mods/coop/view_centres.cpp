@@ -58,6 +58,15 @@ static Sphere g_buf[kMaxSpheres];
 static uint32_t g_passes, g_passes_extra, g_extra_max, g_game_spheres_max;
 static double g_last_extra_at;
 
+// The pass runs in the Creature stage (0x1654C01) and the Tribe stage (0x1654C02, Relevance_Tick
+// after 0xACE420 / 0xAD11E0). A partner's centre there is what coop.cpp notes for it: in Creature
+// its avatar's position, in Tribe its pointer (modes.cpp rts_fill: the point of the planet under its
+// mouse, which lies in its view; it stays where it was while the mouse is off the planet).
+// `npc.view_centres_tribe off`: Creature only (the first version of this fix).
+static bool g_tribe = true;
+COOP_FIX("npc.view_centres_tribe", "BUG-0280", g_tribe, "tribe: the host keeps animals and herds alive around every partner's view too");
+static bool stage_on(uint32_t mode) { return mode == 0x1654C01u || (g_tribe && mode == 0x1654C02u); }
+
 using RelevanceFn = void*(SK_THISCALL*)(void* mgr, uint32_t a, uint32_t dt_ms);
 static RelevanceFn o_Relevance;
 
@@ -71,7 +80,7 @@ static void* SK_THISCALL h_Relevance(void* mgr, uint32_t a, uint32_t dt_ms)
         if (b0 && b0 != *(Sphere**)((uint8_t*)mgr + 0x24) && !IsBadReadPtr(b0, sizeof(Sphere)))
             g_game_last = *b0;
     }
-    if (!g_keep || g_centres.empty() || !mgr || !game::in_creature_stage())
+    if (!g_keep || g_centres.empty() || !mgr || !stage_on(game::mode_id()))
         return o_Relevance(mgr, a, dt_ms);
     Sphere** v = (Sphere**)((uint8_t*)mgr + 0x20);
     Sphere *b = v[0], *e = v[1], *cap = v[2];
