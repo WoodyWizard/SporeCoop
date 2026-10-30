@@ -322,3 +322,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0310](BUG-0310-campaign-jump-to-the-civ-npc-fixture-after-tribe.md) | fixed | bug | Tribe/Civ | 2026-10-30 | unreleased | Campaign jump to the civ_npc fixture after tribe: faults while leaving tribe and in cSpaceGfx init, the host never finishes loading |
 | [BUG-0311](BUG-0311-campaign-space-every-city-captured-10-of-10-but.md) | open | test | Civ | 2026-10-30 |  | campaign_space: every city captured (10 of 10) but the end of Civ (spaceship editor vote) never came |
 | [BUG-0319](BUG-0319-civ-an-npc-city-founded-late-in-a-play-civ-sessi.md) | open | desync | Civ | 2026-10-30 |  | Civ: an NPC city founded late in a play_civ session (and its two vehicles) is missing on the guest for 40-60 s |
+| [BUG-0321](BUG-0321-tribe-npc-dash-fails-2-of-3-runs-on-main-p90-1-5.md) | open | test | Tribe | 2026-10-30 |  | tribe_npc_dash fails 2 of 3 runs on main (p90 1.5-2.2 m over the 1.2 m limit) |
