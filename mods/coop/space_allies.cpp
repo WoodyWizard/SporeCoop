@@ -644,6 +644,10 @@ static void SK_THISCALL h_Save(void* mgr, const char16_t* name, int flag)
     g_saves++;
     spaceext::note_save();
     o_Save(mgr, name, flag);
+    // BUG-0225: the game wrote the file synchronously (<name>.tmp, then its own rename; the function
+    // returns nothing, docs/re/space.md#space-owed-refund-identity). An empty name writes nothing.
+    if (name && *name)
+        spaceext::note_saved();
 }
 
 // NPC empires grow (colonise more stars) on their own: not the mirror (it would leave stars behind)

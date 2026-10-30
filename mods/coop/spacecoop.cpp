@@ -913,12 +913,14 @@ struct GiftOut {
     Key key;
     int n;
     uint32_t epoch;
+    spacelogic::WorldTag tag; // BUG-0225: the Space world and save file it was taken from
 };
 static std::vector<GiftOut> g_gifts_out; // sent, no answer yet (the receiver answers only a failure)
 struct GiftOwed {
     Key key;
     int n;
     uint32_t epoch;
+    spacelogic::WorldTag tag;
 };
 static std::vector<GiftOwed> g_gifts_owed;
 static bool g_gift_refund_fix = true; // off: K_GIFT_BACK adds at once or drops; add_spice in any stage (0.7.3.0)
@@ -995,7 +997,7 @@ int give_spice(int n)
     send(K_GIFT, w);
     g_gifts_sent++;
     if (g_gift_refund_fix) {
-        g_gifts_out.push_back({to, k, n, spaceext::world_epoch()});
+        g_gifts_out.push_back({to, k, n, spaceext::world_epoch(), spaceext::world_tag()});
         if (g_gifts_out.size() > 16)
             g_gifts_out.erase(g_gifts_out.begin());
     }
@@ -1131,8 +1133,10 @@ static void on_gift(uint8_t kind, uint8_t origin, const Key& k, int n)
         }
         GiftOut g = *it;
         g_gifts_out.erase(it); // before anything is paid: once
-        if (!add_spice(k, n)) {
-            g_gifts_owed.push_back({k, n, g.epoch});
+        // BUG-0225: another Space world in memory now (a load came between): gift_owed_tick decides
+        bool other_world = spaceext::owed_id() && g.epoch != spaceext::world_epoch();
+        if (other_world || !add_spice(k, n)) {
+            g_gifts_owed.push_back({k, n, g.epoch, g.tag});
             g_gift_back_owed++;
             if (C.notice)
                 C.notice(name(origin) + " had no room: " + std::to_string(n) +
@@ -1172,7 +1176,19 @@ static void gift_owed_tick()
     auto owed = std::move(g_gifts_owed);
     g_gifts_owed.clear();
     for (auto& o : owed) {
-        if (o.epoch != spaceext::world_epoch()) {
+        if (spaceext::owed_id()) { // BUG-0225: the same world, or its file saved after the gift
+            auto a = spaceext::owed_action(o.tag);
+            if (a == spacelogic::OwedAction::Keep) {
+                g_gifts_owed.push_back(o); // another game: paid when that one is loaded again
+                continue;
+            }
+            if (a == spacelogic::OwedAction::Drop) {
+                g_gift_back_dropped++;
+                H->log(M, SK_INFO, "space: %d spice owed from world %u (%s) dropped", o.n, o.tag.epoch,
+                       o.tag.game.c_str());
+                continue;
+            }
+        } else if (o.epoch != spaceext::world_epoch()) {
             g_gift_back_dropped++;
             H->log(M, SK_INFO, "space: %d spice owed from another Space world dropped", o.n);
             continue;
@@ -1186,6 +1202,10 @@ static void gift_owed_tick()
             if (C.notice)
                 C.notice(std::to_string(o.n) + " spice came back: no room, lost");
         }
+    }
+    while (g_gifts_owed.size() > spacelogic::kOwedKeepMax) {
+        g_gift_back_dropped++;
+        g_gifts_owed.erase(g_gifts_owed.begin());
     }
 }
 
