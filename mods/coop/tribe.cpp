@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include "coop_ui.h"
 #include "driver.h"
 #include "game.h"
 #include "modes.h"
@@ -592,10 +593,30 @@ static void host_command(uint8_t from, net::Reader& r)
 static bool g_fix_gameover = true;
 COOP_FIX("tribe.gameover", "BUG-0172", g_fix_gameover, "tribe: no member is added during the game-over caption");
 static uint32_t g_spawns_blocked;
+// BUG-0288: a guest's player tribe holds mirrors only. When every mirror had played its death (the
+// host's tribe knocked out) the guard above refused every new mirror for good, also after the host
+// bounced back and the dead mirrors were removed (an empty tribe has no member with health): the
+// guests missed the host's whole new tribe (4-player campaign, "t: 16 missing on the guest"). The
+// game-over caption comes on the host only (the guest's game shows none, its input lock stays 0):
+// on a guest the guard holds only while its own game has a caption or cinematic up (the input lock).
+// `coop.fix tribe.mirror_out off`: the guard as before.
+static bool g_fix_mirror_out = true;
+COOP_FIX("tribe.mirror_out", "BUG-0288", g_fix_mirror_out,
+         "tribe: a guest mirrors the host's members after a game over (its own tribe is not out)");
+static uint32_t g_mirror_out_passed;
 static bool player_tribe_out(void* t)
 {
     if (!g_fix_gameover || !t || t != player_tribe())
         return false;
+    if (g_fix_mirror_out && is_guest() && coop_ui::input_lock_now() <= 0) {
+        bool none = true;
+        for (void* c : members(t))
+            if (game::health(c) > 0)
+                none = false;
+        if (none)
+            g_mirror_out_passed++;
+        return false;
+    }
     for (void* c : members(t))
         if (game::health(c) > 0)
             return false;
@@ -1510,9 +1531,9 @@ std::string status()
         scales += sb;
     }
     snprintf(b, sizeof b,
-             "tribe lifetime: chief_restores=%u chief_gone=%u chief_bad_calls=%u spawns_blocked=%u fix_chiefs=%d "
+             "tribe lifetime: chief_restores=%u chief_gone=%u chief_bad_calls=%u spawns_blocked=%u mirror_out_passed=%u fix_chiefs=%d "
              "fix_gameover=%d knocked_out=%u ko_replaced=%u epic_herd_reused=%u epic_saved_out=%u chief_scale=%s\n",
-             g_chief_restores, g_chief_gone, g_chief_bad_calls, g_spawns_blocked, (int)g_fix_chiefs, (int)g_fix_gameover,
+             g_chief_restores, g_chief_gone, g_chief_bad_calls, g_spawns_blocked, g_mirror_out_passed, (int)g_fix_chiefs, (int)g_fix_gameover,
              g_ko_shown, g_ko_replaced, g_epic_herd_reused, g_epic_saved_out, scales.c_str());
     return out + b;
 }
