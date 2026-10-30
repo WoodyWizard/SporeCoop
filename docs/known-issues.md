@@ -989,3 +989,12 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * A guest 6 s into Cell jumped to address 0 in UI code right after its test window was moved and its
   main thread stopped, lab 20261030-104149 campaign#1. Ticket: BUG-0309.
 * Both seen once, on an overloaded machine. Reproduce: not yet.
+
+## Space finale: the host's "entered with the partner" counter after a wait (2026-10-30, fix/w13-space)
+<a id="issue-finale-entries-with"></a>
+
+* `coop_space_finale.py` failed once (lab 20261030-142729, lane 9): both entered the core
+  together, but the host's `entries_with` stayed 0 because it entered before the guest's "reached"
+  message came (the wait flag is cleared when everybody is at the gate). Players see nothing wrong;
+  the test's check reads the counter. Reproduce: run `space_finale` a few times.
+* Ticket: BUG-0320.
