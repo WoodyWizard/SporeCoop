@@ -2007,3 +2007,18 @@ answered right after; a 1 s poller beside a standalone run saw no gap. Same sign
   that NPC vehicle in the host's game (`opos` of `coop.civ`; `SPORE_FIX_OFF=civ.world` FAILS).
 * Pitfall: two `lab.py run` started in the same second on different lanes got the same run folder
   (out/lab/20261030-001854 holds both logs, the summary of one). Start them a few seconds apart.
+
+## Cell with four players: cell_4p (2026-10-30, fix/w10-cell-4p)
+<a id="testing-cell-4p"></a>
+
+* `tools/tests/coop_cell_4p.py` (suite entry `cell_4p`, suites multi / extended, ~6 min, cold:
+  party.py with four games in one lane): `coop.pool food 300` on the host (level 4 of the tile
+  levels within ~8 s), the three guests 200 m apart from the host and from each other (`coop.pool tp`),
+  60 s, then 50 m around the host, 60 s; the guests swim a little (`coop.pool goto`). Checked on every
+  game: the cell pool's highest live count (`peak=` in `coop.pool`, the game's pool header) under
+  1700, each guest's coverage of the host cells within 60 m, cells of the host's world on each
+  guest's screen; the lab fails it on any fault. BUG-0295 / BUG-0298, docs/re/cell.md#cell-broadphase-cap.
+* `SPORE_FIX_OFF=cell.budget` FAILS (lab 20261030-052851: host 4096 cells, 8203 faults at 0xBBB07B).
+* Food (plant / meat) on a guest's screen is not asserted: at level 4 a screen with 300+ host cells
+  often had none (also without the budget). Use `cell_far_guest` (two players) for food far away.
+* The sync-check and `coop_multi.measure` count host cells within 60 m of the guest only (BUG-0298).

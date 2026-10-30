@@ -3,6 +3,12 @@
 ## [Unreleased]
 
 ### Fixed
+- Cell with three or four players: the games no longer fault and crash when the players spread
+  out (the game's own collision step holds about 2000 cells; the host kept the area around every
+  player alive and the pools grew past it). The host now fills the other players' areas only while
+  it holds under 1400 cells, each player gets at most its 900 nearest cells, and the self-check no
+  longer reports the cells around other players as missing (BUG-0295, BUG-0296, BUG-0297,
+  BUG-0298). Test: `coop_cell_4p.py`.
 - Cell: a player far from the host found no food and no other cells: the host's game kept only
   the area around its own cell alive. Now it populates and keeps the area around every player, and
   each player gets the cells around itself, so two players exploring apart can both eat (BUG-0174,

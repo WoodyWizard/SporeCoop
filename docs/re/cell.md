@@ -875,3 +875,46 @@ BUG-0205 / BUG-0151 (GitHub #130). GOG 2024, lane 3, `tools/tests/coop_cell_away
 * ~ The game's death count S+0x70 stayed 0 after a death through KillCell / PlayerDeath (the
   `selfhit` death of `coop_cell_respawn.py`, both machines); the table above names only
   BreakOrSwallow 0xE7AEE0 as its writer. Consistent, not checked with a break death.
+## The cell broadphase holds ~2048 cells (2026-10-30, fix/w10-cell-4p)
+<a id="cell-broadphase-cap"></a>
+
+BUG-0295 / BUG-0296 / BUG-0297 / BUG-0298. GOG 2024, Ghidra (`tools/ghidra/q.sh --build 2024`) and
+lanes 2 / 3 with four players (`tools/tests/coop_cell_4p.py`, suite `cell_4p`).
+
+* ✔ `Simulator::Cell::SimUpdate+0x131` (0xE7F4D1) calls 0xBBBF60, a thunk to **SweepPrune::UpdatePairs
+  0xBBB450** (cdecl, one argument): for each of two axes it merges the new endpoints into the sorted
+  endpoint array (**SweepPrune::MergeAxis 0xBBAF10**), then sweeps axis 0 with an active list of 1024
+  ints on its stack and writes the overlapping pairs. An endpoint is 8 bytes `{short type (0 min),
+  short object id, float value}`; object records are 16 bytes at `sap+0x14` (+8 / +0xC: its endpoint
+  index per axis, a short).
+* ✔ MergeAxis keeps the displaced endpoints in a **stack buffer of 0x8000 bytes = 4096 endpoints =
+  2048 objects**, with no bound check. A game holding more cells overruns it: the saved arguments
+  are overwritten and the loop faults at **0x00BBB07B** (MergeAxis+0x16B, `add esi,[ebx+0x14]` with a
+  garbage EBX; EAX, the merge index, read 0x1021..0x1084 in the four logs), which the crash tools
+  symbolise as `Simulator::cStarRecord::GetPlanetRecord+0x4AB`. SporeKit catches it, the frame goes
+  on with a corrupted stack and heap: seen right after it on the same games, a crash in DestroyCell
+  of a mirror (0xA81FE6, cCellGFX, BUG-0296), a null read on a worker thread (0xA479B7, BUG-0297),
+  faults at small addresses (0x9BB) and games that stop answering (lab 20261030-035318 campaign#2
+  and #3: every game faulted at 0xBBB07B within 2 s at level 4, with 1950-2450 live cells).
+* ✔ The cell pool's capacity (4096 slots, `G+0x1C+0x18`) is not the limit: the broadphase is.
+  Measured with the budget off (lab 20261030-052851, four players, food progress at level 4): the
+  host's pool reached 4096 (full) and 8203 faults, the guests 3140 / 2211 / 2334.
+* ✔ Where the cells came from: at level 4 the host alone with three partners next to it held ~1400
+  to 2200 cells; with the partners 200 m apart (BUG-0174's partner passes, one screen of tiles each)
+  it grew past 4000; and a guest got every host cell within 120 m of itself (up to 3140 mirrors).
+* The bound (`coop.fix cell.budget`, cellsync.cpp): (1) a partner's tile is populated only while the
+  host has fewer than 1400 live cells (`G+0x1C+0xC`); the others are kept as empty tiles ("starved")
+  and populated, 4 per frame, when the pool has room; the partner passes take turns being first;
+  a starved tile does not count as "populated elsewhere" for the other lists; (2) each guest gets
+  at most its 900 nearest cells (nth_element by distance to its centre); (3) a guest creates no new
+  mirror at 1500 live cells. Measured with it (lab 20261030-052856): host peak 1557, guests 1282 to
+  1394, no fault, the far guests had 185-322 host cells within 60 m. The host's own pass is never
+  limited (vanilla), so the host's own area keeps all its food; with four players at level 4 the
+  partners' areas are thinner than the host's (starved tiles waited, 542 starvations, 99 fed later).
+* ✔ `coop.pool` prints `cell_tiles: ... budget= starved=<count>/<now> fed= send_capped= mirror_capped=
+  cells=<live> peak=<highest seen> level=<tile level base>` on both roles.
+* ? Not measured: whether the active list of 1024 (UpdatePairs) can overflow with fewer cells (it
+  holds the cells overlapping one x position; would need ~1000 cells in one column).
+* The sync-check (`net/diagmsg.h` compare) and the campaign's coverage (`coop_multi.measure`) now
+  count only host cells within 60 m of the guest (BUG-0298): each guest is sent the cells around
+  itself, not the ones around the other players (it reported "1033 missing on the guest").
