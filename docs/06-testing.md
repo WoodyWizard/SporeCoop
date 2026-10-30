@@ -2066,3 +2066,18 @@ answered right after; a 1 s poller beside a standalone run saw no gap. Same sign
 * A campaign's "N new caught fault(s)" counts every fault at one address; the game log shows only
   the first one (sporekit/exceptions.cpp keeps one record per address). Thousands per check at one
   address mean a fault at every frame (Wine aborts the frame each time), not many different bugs.
+
+## Cell: the own cell's NaN fields and the mirror churn (2026-10-30, fix/w12-cell-fault)
+<a id="testing-cell-nan-all"></a>
+
+* `coop_cell_nan.py --all` (suite `cell_nan_all`, ~1.5 min): `coop.pool nanself all` (guest) makes
+  the own cell's position, matrices and the particles' rest offsets NaN; the own cell must be
+  finite at 15 samples over 15 s with at most one NaN episode (`own_nf=` of `coop.pool`), and it
+  prints the free address space. `SPORE_FIX_OFF=cell.nan_heal_all` fails (BUG-0307).
+* `coop_cell_churn.py` (suite `cell_churn`, ~3 min): the guest removes all its mirror cells 40 times
+  (`coop.pool zap 5000`), the host's states create them again; the free address space
+  (`vm_free_mb=` of `coop.pool`, GlobalMemoryStatusEx) must stay within 150 MB. A measurement more
+  than a regression test (it passed on the first try: the churn does not leak).
+* `coop.pool` (cell_contacts line, both roles): `own_nf=` (finite -> non-finite transitions of the
+  own cell seen by the probes), `shared_parts=` (own particle indices another cell holds),
+  `vm_free_mb=`, `created=` / `destroyed=` (mirrors), `stale_targets=` (BUG-0306).

@@ -1,16 +1,16 @@
 ---
 id: BUG-0306
 title: Cell, 4 players: the host faults every frame in IsDamageable (null chase target copied from a group leader by PickTargets)
-status: open
+status: fixed
 kind: crash
 stage: Cell
 reported: 2026-10-30
 source: lab 20261030-104149 campaign#2
 role: host
 versions: 0.7.3.1
-fixed_in:
+fixed_in: unreleased
 branch: fix/w12-cell-fault
-commits:
+commits: aa2d02e, 111ca3e
 tests: cell_stale, campaign
 signature: dc04aee5:0x00E52949 (IsDamageable+0x9; named App::cCellModeStrategy::OnMouseMove+0x1939 by the crash tools)
 docs: docs/re/cell.md#cell-pick-stale
@@ -49,11 +49,16 @@ can only add deaths (cells of tiles going inactive).
 puppets left alone): after the game's PickTargets a flee / chase target that is no live cell is
 dropped with its timer (what 0xE70E30 does one frame later). `coop.pool` counts `stale_targets=`;
 `coop.pool staletarget [n]` (tests, host) makes group leaders chase a dead cell and rest 60 s.
-Not verified in the game yet (static analysis only).
 
 ## Verification
-To run: `cell_stale` with `SPORE_FIX_OFF=cell.pick_guard` (expected FAIL: faults at 0x00E52949, one
-per frame) and without it (expected PASS). Then the 4-player `cell_4p` and `campaign` on the branch.
+FAIL: `SPORE_FIX_OFF=cell.pick_guard` cell_stale, lab 20261030-121635 (lane 2): 11 AI cells (ai type
+0x1006) follow a cluster leader holding a dead chase target; host faults 1 -> 648 in 10 s at
+IsDamageable 0x00E52949, the same signature as the campaign. PASS: cell_stale lab 20261030-121739
+(lane 2): 10 followers, faults 0 -> 0, `stale_targets=323` (the guard dropped the copies).
+Regression: lab 20261030-120947 (cell_4p x2, campaign_short x2, lanes 4/7, c2fcc91) passed 4/4.
+Note: the first version of the test (leaders of the fixture's groups) passed with the fix off
+(lab 20261030-120640, 20261030-120917): every group member at the cell fixture has ai type 0 (no
+behaviours), so nobody copied anything; the test now makes AI cells join such a group.
 
 ## History
 - 2026-10-30: opened.

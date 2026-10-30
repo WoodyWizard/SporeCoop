@@ -961,8 +961,10 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   900 / 300 / 40, fps 26 -> 1-3, free address space 3502 -> 1427 MB. See
   #issue-cell-own-nan for the NaN itself.
 * Reproduce: not on purpose; a 4-player `campaign` (Cell, level 4) on a loaded machine showed it.
-* Next steps: log the own cell's particles and nearest mirrors on the first NaN frame; measure
-  which allocation grows during the mirror churn.
+  The repetition is reproduced and fixed (`cell.nan_heal_all`, cell_nan_all): the old heal left
+  NaN matrices / rest offsets that made the position NaN again (docs/re/cell.md#cell-nan-fields).
+* Still open: what makes the first NaN (the own_probe log lines name the step) and what drains the
+  address space (not the mirror churn, not the NaN state: cell_churn and cell_nan_all measured 0 MB).
 * Ticket: BUG-0307
 
 ## Cell, 4 players: two one-off faults of the 4th player (2026-10-30, fix/w12-cell-fault)

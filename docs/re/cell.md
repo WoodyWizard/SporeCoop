@@ -991,3 +991,22 @@ BUG-0306. GOG 2024, Ghidra (REA), lab 20261030-104149 campaign#2 (host, 4 player
   Test `coop_cell_stale.py` (suite `cell_stale`).
 * ? Not measured: how often the vanilla game reaches the copy with a dead target; which leader
   held the dead target in the lab run (the follower's index is 0x1C80C870's first dword, not logged).
+
+## The own cell's NaN repeats: fields the heal must repair (2026-10-30, fix/w12-cell-fault)
+<a id="cell-nan-fields"></a>
+
+BUG-0307 (follow-up of BUG-0299, #cell-broadphase-cap end).
+
+* ✔ (lab 20261030-121742 / -122306) A soft-body cell's position comes back from its particles and
+  the shape matching at every cell step: with the rotation (+0x5C), the shape matrix (+0x24), the
+  size (+0x58 / +0xB4), the mass (+0xB8, inverse +0xBC) or a particle's rest offset
+  (`parts + 0x11944 + 12*k`, 1500 particle slots, k from +0x254) NaN, a position written back finite
+  is NaN again after the next step. Repairing position, particles' positions and velocities alone
+  (BUG-0299) does not hold.
+* ✔ Identity matrices, the last finite size and mass and rest offsets on the particles' ring are
+  accepted by the game: the cell swims on and the next fit rebuilds the shape (cell_nan_all,
+  lab 20261030-121908).
+* ✔ Negative: re-creating 900 mirrors 40 times (28 049 CreateCellObject + DestroyCell on the guest)
+  does not use address space (lab 20261030-121142); neither do 15 s of a NaN own cell.
+* ? The first NaN's source: not caught yet. The probes (cellsync.cpp own_probe) name the step where
+  it appears.
