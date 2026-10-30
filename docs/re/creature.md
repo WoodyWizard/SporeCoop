@@ -906,3 +906,48 @@ BUG-0264. GOG 2024, lanes 4 and 5.
   `own=npc pos=(0.0 0.0 0.0)` with the guest's proxy still on the surface ("504 m apart"; 2 s per
   cull, every few seconds with the nest cycle, so two campaign checks 30 s apart could see it).
 * Consequence (BUG-0280, open): a guest far from the host has no NPCs around it.
+
+## The relevance pass and the view centres of all players (2026-10-30, fix/w9-creature)
+<a id="creature-view-centres"></a>
+
+BUG-0280. GOG 2024, disassembly plus runtime on lane 9. Explains [the pool cull](#creature-npc-pool-cull).
+
+* ✔ `SporeCoop::Relevance_Tick` 0xAD2300 (thiscall(mgr, mode, int, dt_ms) ret 0xC, every frame,
+  only caller 0xAD2520 from vtable 0x145A188) pushes **one** sphere `{centre, enter^2, leave^2}`
+  (5 floats, 0x14 bytes) onto the vector `mgr+0x20` (begin) / `+0x24` (end) / `+0x28` (capacity),
+  runs the mode's pass and erases the whole vector again. The centre is
+  `cViewer_GetView(&out, 0, 0, 0)` of the game mode's viewer (IGameModeManager vt 0x50 -> vt 0x1C):
+  the local camera, not the avatar. Radii from 0x1565D5C / 0x1565D60 (100 / 250 in the exe's
+  data); **at runtime the leave radius was 150 m** (`coop.views`: "enter 100 m leave 150 m"), so a
+  tuning value overrides the static one.
+* ✔ `SporeCoop::Relevance_Update` 0xACE4E0 (thiscall(mgr, int, dt_ms) ret 8) is the pass of the
+  Creature stage (mode 0x1654C01) and of the Tribe stage (0x1654C02, after 0xACE420 / 0xAD11E0);
+  other modes run 0xACF400. It returns at once until 5 s (0x1565CE0) have added up. Then: spawn
+  points (noun 0x36BE27E) inside an enter radius spawn their herd; **creatures** of the pool list
+  (+0x135 set, +0xB67 set, not the player's tribe) outside the leave radius of every sphere
+  (`Relevance_OutsideAll` 0xAC8CC0) get vt 0xC8(1): back to the pool (herd 0, position (0 0 0),
+  BUG-0274); herds inside an enter radius (`Relevance_InsideEnter` 0xAC8D30) are enabled (at most 10
+  per pass, 0x1565D04), herds outside every leave radius disabled; a herd whose brain range
+  [+0x120, +0x124] does not hold the player's brain level (0x169E370) is disabled in the Creature
+  stage whatever its distance.
+* ✔ Not every creature goes: with the camera ~200-250 m from the guest, 8 of the 20 NPCs within
+  120 m of the guest were pooled and 12 stayed (lane 9, fix off); the +0xB67 flag decides, not
+  checked which creatures have it.
+* ~ In the headless test games the host's camera does not follow `coop.npc gopos` all the way: the
+  host's sphere stayed ~370 m behind an avatar teleported 600 m away and did not move for 40 s. A
+  test that needs the camera far away has to check the sphere (`coop.views` prints it).
+* The fix (`npc.view_centres`, `mods/coop/view_centres.cpp`): the host keeps a list of **the view
+  centres of all players** (coop.cpp notes a partner's position whenever its puppet is shown in the
+  host's place, any stage; dropped after 3 s, at a leave and at the session end). A hook on
+  Relevance_Update lends the vector a buffer of ours for that one call: the game's spheres first,
+  then one per partner with the radii of the game's first sphere; the game's pointers come back
+  right after the call (the game's allocator never sees our buffer). Bounded cost: one sphere per
+  partner (1-3), the game's own radii and its 10-herds-per-pass limit. Only in the Creature stage
+  for now (`game::in_creature_stage()` in the hook); the Tribe stage runs the same pass and would
+  take the same list (not tested).
+* Rivals (docs/11-rivals.md 11.3.2): every player plays its own nest, possibly far from the host.
+  The host simulates all of them; this list is what keeps each rival's nest, family, spawns and
+  wild herds alive around it. Two things stay to do there: the brain-range filter above uses the
+  host's brain level for every herd (a rival with another brain level needs the herds of its own
+  range near it), and the sphere of a player is its avatar's position (not its camera).
+* `coop.views` (host): the partners' centres, the game's own sphere, how many passes took partners.
