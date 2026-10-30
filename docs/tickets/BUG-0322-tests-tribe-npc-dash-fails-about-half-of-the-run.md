@@ -1,7 +1,7 @@
 ---
 id: BUG-0322
 title: tests: tribe_npc_dash fails about half of the runs on a loaded machine (p90 1.3-2.0 m, limit 1.2 m)
-status: open
+status: duplicate
 kind: test
 stage: Tribe
 reported: 2026-10-30
@@ -14,7 +14,7 @@ commits:
 tests: tribe_npc_dash
 signature:
 docs:
-related: BUG-0305
+related: BUG-0305, BUG-0321
 ---
 
 ## Report
@@ -39,3 +39,4 @@ a look.
 
 ## History
 - 2026-10-30: opened.
+- 2026-10-30 (fix/w14-tribe-civ): duplicate of BUG-0321 (the same test and symptom); the analysis and the change are there.
