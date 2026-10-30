@@ -233,6 +233,10 @@ for st, n, extra in (('cell', 3, ''), ('creature', 4, ''), ('tribe', 4, ''), ('c
     add(f'party_{st}{n}' + ('_seq' if extra else ''), P + f'coop_party.py --fixture {st} --players {n}{extra}',
         ('multi', 'extended'), minutes=3)
 
+# the gameplay paths between guests per stage (BUG-0152): each a few minutes on party.py
+for name, cmd in (('party_cell_ko', 'coop_party_cell.py'),):
+    add(name, P + cmd, ('multi', 'extended'), minutes=4)
+
 # a whole game of four bot players, Cell to the galactic core (BUG-0152, docs/06-testing.md#testing-campaign):
 # `lab.py run campaign --lanes 1 --skip <every other lane>` (one lane; `run` has no --lane, BUG-0259). Four games in the lane's bottle (instances 20+N / 30+N), nothing else of
 # the lab's suites; campaign_short is the first stage change only (a quick check of the tool itself)

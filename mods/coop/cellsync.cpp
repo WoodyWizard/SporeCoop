@@ -2269,9 +2269,14 @@ std::string debug(const std::vector<std::string>& a)
         F<uint8_t>(av, 0x04) = 0;
         return "swimming";
     }
-    if (a.size() >= 3 && a[0] == "tp") { // move our cell to <dx dy> from the nearest partner
+    if (a.size() >= 3 && a[0] == "tp") { // move our cell to <dx dy> from the nearest partner [or player <id>]
         net::Vec3 at;
-        if (nearest_partner(1e9f, &at).empty())
+        if (a.size() >= 4) { // tests with 3-4 players (BUG-0152): next to that player's cell as we draw it
+            uint8_t* pc = puppet_cell(atoi(a[3].c_str()));
+            if (!pc)
+                return "no such player";
+            at = pos_of(pc);
+        } else if (nearest_partner(1e9f, &at).empty())
             return "no partner";
         stop_at(av, {at.x + (float)atof(a[1].c_str()), at.y + (float)atof(a[2].c_str()), 0.f});
         return "moved";
