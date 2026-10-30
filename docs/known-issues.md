@@ -952,3 +952,25 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   same pattern as BUG-0281 in the Creature stage.
 * Not checked: the proxy's own error (`coop.npc list` err=) and the host animal's speed at that moment.
 * Ticket: BUG-0305.
+
+## Cell, 4 players: a guest's own cell goes NaN again and again, then its game slows down and drains memory (2026-10-30, fix/w12-cell-fault)
+<a id="issue-cell-nan-repeat"></a>
+
+* What happens: lab 20261030-104149 campaign#2, guest Carol (3rd player, 900 mirrors, far from the
+  host): the own cell NaN 26 times in 6 minutes despite BUG-0299's heal, the mirror count swings
+  900 / 300 / 40, fps 26 -> 1-3, free address space 3502 -> 1427 MB. See
+  #issue-cell-own-nan for the NaN itself.
+* Reproduce: not on purpose; a 4-player `campaign` (Cell, level 4) on a loaded machine showed it.
+* Next steps: log the own cell's particles and nearest mirrors on the first NaN frame; measure
+  which allocation grows during the mirror churn.
+* Ticket: BUG-0307
+
+## Cell, 4 players: two one-off faults of the 4th player (2026-10-30, fix/w12-cell-fault)
+<a id="issue-cell-4th-player-faults"></a>
+
+* A rejoined guest leaving Cell for the host's world found a corrupt heap when the cell pool was
+  freed (`GeneralAllocator_FreeInternal` under `cObjectPool::_dtor` < SimUpdate+0x6ED), lab
+  20261030-104149 campaign_short#3. Ticket: BUG-0308.
+* A guest 6 s into Cell jumped to address 0 in UI code right after its test window was moved and its
+  main thread stopped, lab 20261030-104149 campaign#1. Ticket: BUG-0309.
+* Both seen once, on an overloaded machine. Reproduce: not yet.

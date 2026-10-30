@@ -1573,6 +1573,40 @@ static bool SK_CDECL h_NoAttack(uint8_t* a, uint8_t* b)
     return r;
 }
 
+// BUG-0306: PickTargets 0xE70CF0 (cdecl bool(cell*, resData*), docs/re/cell.md#cell-pick-stale) runs
+// after the behaviour's liveness check 0xE70E30. A cell in a group (+0x38C) copies its leader's
+// flee / chase target and timers without checking them; when the leader's chase target died
+// and the leader has not run its own check yet (it comes later in the pool, or it skips the
+// behaviours), 0xE79C30 passes the dead target to 0xE57CE0 as NULL and IsDamageable reads
+// [0+0x108]. Wine swallows the fault and aborts the frame, so the leader never runs again and
+// the follower faults every frame (8616 times in lab 20261030-104149). Drop a dead copied target
+// here, as 0xE70E30 does on the next frame.
+using PickTargets_t = bool(SK_CDECL*)(uint8_t*, void*);
+static PickTargets_t o_PickTargets;
+static uintptr_t a_PickTargets;
+static uint32_t g_stale_targets;
+static bool g_fix_pick_guard = true;
+COOP_FIX("cell.pick_guard", "BUG-0306", g_fix_pick_guard, "cell: a group member drops a dead flee / chase target copied from its leader");
+static bool SK_CDECL h_PickTargets(uint8_t* c, void* res)
+{
+    bool r = o_PickTargets(c, res);
+    if (!g_fix_pick_guard || !c || !G() || modes::cell_is_puppet(c)) // a puppet keeps its -1 (modes.cpp)
+        return r;
+    uint32_t& chase = F<uint32_t>(c, kChase);
+    if (chase && !modes::cell_at(chase)) {
+        chase = 0;
+        F<float>(c, 0x230) = 0.f; // chase timer
+        g_stale_targets++;
+    }
+    uint32_t& flee = F<uint32_t>(c, kFlee);
+    if (flee && !modes::cell_at(flee)) {
+        flee = 0;
+        F<float>(c, 0x21C) = 0.f; // flee timer
+        g_stale_targets++;
+    }
+    return r;
+}
+
 // SpawnLoot 0xE771D0: the cells a death leaves behind (meat chunks, part tokens) come from here
 // (KillCell, a break 0xE7ADD0, DestroyCell(idx, 1)). Counted per machine: loot_calls / loot_cells.
 using SpawnLoot_t = void(SK_CDECL*)(void*, void*, void*, void*, float, int, void*, float, uint32_t*, int*);
@@ -1720,6 +1754,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     a_TileActive = H->sym("Simulator::Cell::IsTileActive");
     a_ViewBoxes = H->sym("Simulator::Cell::ViewBoxes");
     a_WorldScale = H->sym("Simulator::Cell::WorldScaleStep");
+    a_PickTargets = H->sym("Simulator::Cell::PickTargets");
     g_ok = a_DamageCell && a_KillCell && a_Break && a_Destroy && a_AddFood && a_Populate && a_RefCreate &&
            a_Serializer && a_S;
     if (!g_ok) {
@@ -1751,6 +1786,8 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
         H->hook_create(M, (void*)a_Soft, (void*)h_Soft, (void**)&o_Soft);
     if (a_Bite)
         H->hook_create(M, (void*)a_Bite, (void*)h_Bite, (void**)&o_Bite);
+    if (a_PickTargets) // BUG-0306
+        H->hook_create(M, (void*)a_PickTargets, (void*)h_PickTargets, (void**)&o_PickTargets);
     if (a_ChunkA && a_ChunkB) {
         H->hook_create(M, (void*)a_ChunkA, (void*)h_ChunkA, (void**)&o_ChunkA);
         H->hook_create(M, (void*)a_ChunkB, (void*)h_ChunkB, (void**)&o_ChunkB);
@@ -3228,6 +3265,42 @@ std::string debug(const std::vector<std::string>& a)
         stop_at(av, {at.x + (float)atof(a[1].c_str()), at.y + (float)atof(a[2].c_str()), 0.f});
         return "moved";
     }
+    if (!a.empty() && a[0] == "staletarget") { // tests (BUG-0306): group leaders chase a dead cell and rest, so they never drop it
+        uint8_t* g = G();
+        if (!g)
+            return "no cell game\n";
+        uint8_t* gdata = F<uint8_t*>(g, 0xA8); // the group pool (PickTargets: +0x38C of a cell, leader at +8)
+        uint32_t ghigh = F<uint32_t>(g, 0xA8 + 0x10), gsize = F<uint32_t>(g, 0xA8 + 0x14);
+        int max = a.size() >= 2 ? atoi(a[1].c_str()) : 8, leaders = 0, members = 0;
+        std::unordered_set<uint32_t> done;
+        if (!gdata || !gsize || gsize > 0x1000)
+            return "no group pool\n";
+        for_each_cell([&](uint8_t* c, uint32_t idx) {
+            uint32_t gi = F<uint32_t>(c, 0x38C), gs = gi & 0xFFFF;
+            if (!gi || gs > ghigh || leaders >= max || modes::cell_is_puppet(c))
+                return;
+            uint8_t* grp = gdata + (size_t)gs * gsize;
+            if (F<uint32_t>(grp, 0) != gi)
+                return;
+            uint32_t li = F<uint32_t>(grp, 8);
+            uint8_t* lc = modes::cell_at(li);
+            if (!lc || li == idx)
+                return;
+            members++;
+            if (!done.insert(li).second)
+                return;
+            F<uint32_t>(lc, kChase) = idx ^ 0x10000; // this member's slot with another generation: a dead cell
+            F<float>(lc, 0x230) = 60.f;              // chase timer
+            F<float>(lc, 0x224) = 60.f;              // rest: the leader skips its own check 0xE70E30
+            F<float>(lc, 0x21C) = 0.f;
+            F<float>(lc, 0x228) = 0.f;
+            leaders++;
+        });
+        char b[128];
+        snprintf(b, sizeof b, "staletarget: %d leaders chase a dead cell (%d group members seen), stale_targets=%u\n", leaders,
+                 members, g_stale_targets);
+        return b;
+    }
     if (!a.empty() && a[0] == "nanself") { // tests (BUG-0299): our own cell and its particles NaN, as seen in a 4-player run
         uint8_t* av = avatar();
         if (!av)
@@ -3372,8 +3445,8 @@ std::string trace_line()
 
 std::string status()
 {
-    char d[192];
-    snprintf(d, sizeof d, "cell_contacts: creature_pairs=%u bite_events=%u nonfinite_skipped=%u nonfinite_dropped=%u\n", g_creature_pairs, g_bite_events, g_nonfinite_sent_skipped, g_nonfinite_dropped);
+    char d[256];
+    snprintf(d, sizeof d, "cell_contacts: creature_pairs=%u bite_events=%u nonfinite_skipped=%u nonfinite_dropped=%u stale_targets=%u\n", g_creature_pairs, g_bite_events, g_nonfinite_sent_skipped, g_nonfinite_dropped, g_stale_targets);
     char b[1100];
     uint8_t* s = S();
     int food = s ? F<int32_t>(s, 0x1C) : -1;

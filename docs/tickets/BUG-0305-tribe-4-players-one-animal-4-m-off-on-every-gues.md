@@ -54,3 +54,4 @@ BUG-0281's reproduction; a per-object speed in measure()'s jsonl.
 
 ## History
 - 2026-10-30: opened; A/B with the view-centre switches: no regression, open (fix/w11-finale).
+- 2026-10-30: fix/w12-cell-fault: lab 20261030-104149 campaign#3 (main 813f8cd, overloaded machine, host fps 17-27): kind t (tribe members) 4.1-4.8 m off on all three guests at every check from 11:07 for 7 minutes (n stayed under 2 m mostly); recorded in BUG-0310's report.

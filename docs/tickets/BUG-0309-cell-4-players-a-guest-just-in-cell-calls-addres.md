@@ -1,0 +1,43 @@
+---
+id: BUG-0309
+title: Cell, 4 players: a guest just in Cell calls address 0 from UI code right after its test window is placed, then its main thread stops (no log, no frames)
+status: open
+kind: freeze
+stage: Cell
+reported: 2026-10-30
+source: lab 20261030-104149 campaign#1
+role: guest
+versions: 0.7.3.1
+fixed_in:
+branch:
+commits:
+tests: campaign
+signature:
+docs:
+related: 
+---
+
+## Report
+Lab 20261030-104149 campaign#1 (main 813f8cd, lane 2), guest Dave (instance 32, the 4th player): 6 s
+after loading into Cell with 205 mirrors, 0.16 s after `sporekit: test window placed in the grid
+(10080,0)`, `0xC0000005 at 0x00000000 (data 0)` with eax=ebx=0, stack words `007946DE 004234E8 ...`
+named `App::Property::SetValueKey+0x5A8 < Math::MultiplyVectorScalar+0x194 < ? <
+UTFWin::Window::func19+0x25D4`. Nothing more in its game log for 4.5 minutes (no 10 s trace, no
+watchdog line) until the test closed the session; the campaign saw "FROZE (no frame for 10 s)".
+
+## Root cause
+Not known. Observed: a jump or return to address 0 on the main thread during UI / window work
+right after the window was moved; the main thread made no progress after it. Inferred: a null
+callback, or a `ret` to a zeroed stack slot; the stack words are a scan, not a chain. Whether the
+test harness's window move (`test window placed in the grid`) matters is not checked: no other
+log of the lab history has a fault within 3 lines after that line. Load: the machine was
+overloaded (host fps 17-21).
+
+## Fix
+Not fixed.
+
+## Verification
+Not reproduced on purpose yet.
+
+## History
+- 2026-10-30: opened.

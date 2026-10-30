@@ -2054,3 +2054,15 @@ answered right after; a 1 s poller beside a standalone run saw no gap. Same sign
   host takes off, the share save goes out with the retry every frame (`coop.worldfix retry 0`); the
   guest's own place after the load must be the host's solar system. FAIL with
   SPORE_FIX_OFF=world.share_settle_context (the guest's ship lands on the planet 2.5 s after the load).
+
+## Cell: a group member's dead chase target, cell_stale (2026-10-30, fix/w12-cell-fault)
+<a id="testing-cell-stale"></a>
+
+* `coop_cell_stale.py` (suite `cell_stale`, 2 players, ~2 min): `coop.pool staletarget 16` (host)
+  makes up to 16 group leaders chase a dead cell and rest 60 s; within 10 s the host must log no new
+  caught fault (`exc`) and keep drawing. `SPORE_FIX_OFF=cell.pick_guard` must FAIL with faults at
+  0x00E52949 (IsDamageable, one per frame; BUG-0306). It needs groups in the host's pool at the
+  cell fixture: the first check fails when none is found (then the fixture has no packs).
+* A campaign's "N new caught fault(s)" counts every fault at one address; the game log shows only
+  the first one (sporekit/exceptions.cpp keeps one record per address). Thousands per check at one
+  address mean a fault at every frame (Wine aborts the frame each time), not many different bugs.
