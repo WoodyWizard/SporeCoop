@@ -27,8 +27,9 @@ Observed in the screenshots of out/lane7/campaign/20261029-215906: on the host a
 Test tool only (coop_campaign.py `service`): the specialty box is answered first; a talk whose answer is still up after 3 presses gets Esc (every second try; a pause menu that Esc opened is closed with Resume Game). Logged as "talk closed with Esc" / "talk stuck: Esc did not close it".
 
 ## Verification
-FAIL: lab 20261029-203821 campaign_space#1 (20 min of "talk answered"). PASS: see History (campaign_space on fix/w9-tests). The order of the two dialogs is a race of the shortcut captures, not reproducible on demand.
+FAIL: lab 20261029-203821 campaign_space#1 (20 min of "talk answered"). PASS: lab 20261030-004738 campaign_space (lane 7): Civ -> Space in 358 s, the specialty box answered 5 times ("dialog Military"), the talk once, no finding. The order of the two dialogs is a race of the shortcut captures, not reproducible on demand.
 
 ## History
 - 2026-10-29: opened.
 - 2026-10-30: fix/w9-tests: the specialty box first, Esc for a talk that does not close.
+- 2026-10-30: fix/w9-tests: campaign_space passed (lab 20261030-004738).
