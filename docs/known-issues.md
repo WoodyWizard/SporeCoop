@@ -827,3 +827,11 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Next steps: if it is seen again with the fix in, the "saving for the share" line of the host's log
   says how long the host had been in the system.
 * Ticket: BUG-0287.
+## Wine: other programs of the same prefix can still collide with the address lookup (2026-10-29, fix/w8-adapters)
+<a id="issue-wine-nsi-other-callers"></a>
+
+* SporeCoop no longer calls iphlpapi under Wine (BUG-0286), but Wine's own code inside the game
+  (ws2_32 `gethostbyname` of the own host name, winhttp proxy detection) and an older SporeCoop in
+  the same prefix still use Wine's nsi device. Seen only with several games in one
+  bottle (lab). Reproduce the collision: two games of a lane, `coop.fix core.adapters off` on both,
+  `coop.adapters stress 300` on both at once. Ticket: BUG-0286.

@@ -1772,3 +1772,19 @@ wrong. Suite `campaign` (in no other suite): `tools/lab.py run campaign --lanes 
   read the finding.
 * The host's log says when each share save was posted: "world: saving for the share of player N
   (<stage>, X s in this place)"; below 2 s means the settle clock did not hold.
+## Address lookup test (2026-10-29, fix/w8-adapters)
+<a id="testing-adapters"></a>
+
+* `coop_adapters.py` (suite `adapters`, ~2 min with the fix, `reports=True`): two games of one lane
+  run `coop.adapters stress 300` at the same moment, three rounds, then the guest leaves, arms
+  `coop.adapters fault` (the next lookup reads 0xD54CF6CC through ucrt's memcpy, like Wine's nsi
+  did) and opens the co-op window, whose refresh asks for the addresses. Checks: both games alive,
+  no crash report, the guest's frames go on, `faults=1`, `main_thread_lookups=0`, its address list
+  kept. `SPORE_FIX_OFF=core.adapters` FAILS in the stress part (a natural crash, not the injected
+  one). The fix-off run takes ~7 min (the crashed game's report times out).
+* `coop.adapters` prints the counters (wine, socket lookups, lookups, failed, faults, main-thread
+  lookups, mutex timeouts / waits, the age of the list) and the addresses with their broadcast
+  addresses.
+* Pitfall: two games of one bottle that call `GetAdaptersAddresses` together crash Wine 10.0
+  (docs/04-netcode.md#netcode-wine-nsi). A test helper that looks up addresses must not run in
+  every game of a lane at the same moment.

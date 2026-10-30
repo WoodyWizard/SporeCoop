@@ -77,6 +77,7 @@ add('join_other_world', P + 'coop_join_other_world.py', minutes=5)  # a guest in
 add('civ_other_world', P + 'coop_civ_other_world.py', minutes=5)  # a guest in another Civ world gets no host vehicle / city state applied (BUG-0231; --nofix fails)
 add('leave_during_share', P + 'coop_leave_during_share.py', minutes=4)  # Leave right after a share save: the host can still leave the stage (BUG-0140)
 add('exit_thread', P + 'coop_exit_thread.py', minutes=2, reports=True)  # ExitProcess without Shutdown: no abort from the keepalive std::thread (BUG-0107)
+add('adapters', P + 'coop_adapters.py', minutes=5, reports=True)  # BUG-0286: two games of one bottle look up their local addresses (GetAdaptersAddresses, crashed in Wine's nsi.dll) 900 times at the same moment, then the guest leaves and a lookup faults: both games keep running (SPORE_FIX_OFF=core.adapters fails)
 add('fix_registry', P + 'coop_fix_registry.py', minutes=2)  # coop.fix lists every fix switch, all off / on round-trips, the old commands share the bools (BUG-0116)
 add('ui_status', P + 'coop_ui_status.py', minutes=7)  # the co-op window: port check, a pasted address, the status after the join and the session end, LAN pages, no "host is back" after a disconnect (BUG-0138, BUG-0104, BUG-0183, BUG-0085; --without-fix fails)
 add('join_name', P + 'coop_join_name.py', warm=True, minutes=4)  # join by host name with a slow name server: the frames go on, the guest gets in (BUG-0204; --without-fix fails)

@@ -22,6 +22,7 @@
 #include <map>
 #include <string>
 
+#include "adapters.h"
 #include "coop_ui.h"
 #include "driver.h"
 #include "game.h"
@@ -198,47 +199,22 @@ void notice(const std::string& text, int from = -1)
         g_sess.send_reliable_to(0, net::MSG_NOTICE, w);
 }
 
-struct LocalAddr {
-    std::string ip;
-    uint32_t broadcast; // network byte order
-};
-std::vector<LocalAddr> local_addresses()
-{
-    static std::vector<LocalAddr> cache;
-    static DWORD at = 0;
-    if (!cache.empty() && GetTickCount() - at < 10000)
-        return cache;
-    at = GetTickCount();
-    cache.clear();
-    ULONG len = 16384;
-    std::vector<uint8_t> buf(len);
-    auto* aa = (IP_ADAPTER_ADDRESSES*)buf.data();
-    if (GetAdaptersAddresses(AF_INET, GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER,
-                             nullptr, aa, &len) != NO_ERROR)
-        return cache;
-    for (auto* a = aa; a; a = a->Next) {
-        if (a->OperStatus != IfOperStatusUp || a->IfType == IF_TYPE_SOFTWARE_LOOPBACK)
-            continue;
-        for (auto* u = a->FirstUnicastAddress; u; u = u->Next) {
-            auto* sin = (sockaddr_in*)u->Address.lpSockaddr;
-            if (!sin || sin->sin_family != AF_INET)
-                continue;
-            uint32_t ip = sin->sin_addr.s_addr;
-            const uint8_t* b = (const uint8_t*)&ip;
-            if (b[0] == 127 || (b[0] == 169 && b[1] == 254))
-                continue;
-            int plen = u->OnLinkPrefixLength;
-            uint32_t mask = plen <= 0 ? 0 : htonl(plen >= 32 ? 0xFFFFFFFFu : ~(0xFFFFFFFFu >> plen));
-            char s[32];
-            snprintf(s, sizeof s, "%u.%u.%u.%u", b[0], b[1], b[2], b[3]);
-            cache.push_back({s, (ip & mask) | ~mask});
-        }
-    }
-    return cache;
-}
+// BUG-0286: the lookup lives in adapters.cpp (off the main thread with the fix core.adapters)
+using LocalAddr = adapters::Addr;
+std::vector<LocalAddr> local_addresses() { return adapters::list(); }
 
 void lan_scan(bool on)
 {
+    // BUG-0286: the addresses come from a background lookup: new ones join a running scan
+    static uint32_t gen;
+    if (on && g_disc_on && adapters::generation() != gen) {
+        gen = adapters::generation();
+        g_disc.targets = {0xFFFFFFFFu, 0x0100007Fu};
+        for (auto& a : local_addresses())
+            if (a.broadcast != 0xFFFFFFFFu)
+                g_disc.targets.push_back(a.broadcast);
+        return;
+    }
     if (on == g_disc_on)
         return;
     g_disc_on = on;
@@ -250,6 +226,7 @@ void lan_scan(bool on)
     for (auto& a : local_addresses())
         if (a.broadcast != 0xFFFFFFFFu)
             g_disc.targets.push_back(a.broadcast);
+    gen = adapters::generation();
     g_disc.start();
 }
 
@@ -3643,6 +3620,8 @@ void on_unload()
     gamefixes::shutdown();
     mouse::shutdown(); // its message hook lives in this DLL
     keepalive_stop();
+    if (int n = adapters::shutdown())
+        LOG("%d address lookup thread(s) still running: the old image stays loaded until they end", n);
     if (int n = autoupdate::shutdown()) // their image stays mapped until they end (BUG-0060)
         LOG("%d update thread(s) still running: the old image stays loaded until they end", n);
     notify::shutdown();
@@ -4293,6 +4272,10 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     H->command_add(M, "coop.team", "coop.team [on|off] - co-op mechanics (joint hunt, rescue, pack regen)", c_team,
                    nullptr, MT);
     init_ui();
+    adapters::init(H, M);
+    H->command_add(M, "coop.adapters", "coop.adapters [stress N|fault] - local address lookup (BUG-0286)",
+                   [](void*, int argc, const char* const* argv, SkOut* out) { return adapters::command(argc, argv, out); },
+                   nullptr, SK_CMD_OUTSIDE_FRAME);
     H->command_add(M, "coop.uistate", "coop.uistate [0|1] - co-op window state (open/close it)", c_uistate, nullptr,
                    SK_CMD_OUTSIDE_FRAME);
     H->cheat_register("coop", "coop.",
