@@ -1808,3 +1808,6 @@ wrong. Suite `campaign` (in no other suite): `tools/lab.py run campaign --lanes 
   deaths`), BUG-0221.
 * Pitfall: the AI lock byte +0x16C is not a usable oracle of "frozen" (it reads 0 on mirrors between
   frames); check positions over time.
+* Pitfall (2026-10-30): `coop_cell.py` (and others) read the first `food=` of `coop.pool`. A new line
+  in that output must not repeat a key of the status line before it (`cell_away:` first had
+  `food=0/0` there and cell_coop failed with "guest has the same total (0)"); new lines go last.

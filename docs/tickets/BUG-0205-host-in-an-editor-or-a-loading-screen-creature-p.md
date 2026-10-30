@@ -61,7 +61,7 @@ Cell (fix/w9-cell-away, GitHub #130):
   host as numbered meals (MSG_CELL_FOOD, at most 999 each), so the host's totals count them
   (BUG-0051). Leaving the stage or the session drops the kept food (logged, `dropped=`). `coop.cpp`:
   Cell is in `kAwayStages` (a host editor or load for 4 s is away), only with `pool.away` on.
-  `coop.pool` prints `cell_away: solo= owed= times= released= spawns= food= sent= dropped=`, and
+  `coop.pool` prints `cell_away: solo= send_due= solo_times= released= solo_spawns= kept_meat= kept_plant= kept_sent= kept_lost=` (last, after the status line), and
   `coop.pool npcs [r]` the creatures around the own cell (tests).
 
 ## Verification

@@ -769,7 +769,7 @@ BUG-0205 / BUG-0151 (GitHub #130). GOG 2024, lane 3, `tools/tests/coop_cell_away
 * ✔ Clearing +0x16C and +0x354 (keep-alive) of the former mirrors and forgetting them as mirrors is
   enough for the guest's game to run them: 11 of 12 creatures moved within 6 s. 570 cells were
   released (the whole mirrored pool, not only the ones on the screen). `h_Populate` was not called
-  in the ~10 s the host was away (`spawns=0`): the tiles around the guest were already populated.
+  in the ~10 s the host was away (`solo_spawns=0`): the tiles around the guest were already populated.
 * ✔ The return: the host's first complete state round after its reload purges every cell the guest
   had as a stray (the purge spares the puppets and the mate) and recreates the mirrors: 315 mirrors,
   each a live host cell, no own creature left within 30 s. No fault on either side.

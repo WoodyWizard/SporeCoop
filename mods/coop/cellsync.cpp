@@ -179,7 +179,7 @@ static bool g_fix_away = true;
 COOP_FIX("pool.away", "BUG-0205", g_fix_away, "cell: a guest plays its own pool while the host is away and takes the host's pool again when it is back");
 static bool g_solo;        // guest: playing its own pool now (the host away)
 static int g_solo_food[2]; // guest: meat / plant points eaten meanwhile (the guest's game has them)
-static bool g_solo_owed;   // the host is back: g_solo_food goes out before its first state round is applied
+static bool g_solo_owed;   // the host is back: g_solo_food goes out before its first state or total is applied
 static uint32_t g_solo_times, g_solo_released, g_solo_spawns, g_solo_sent, g_solo_dropped;
 bool away_enabled() { return g_fix_away; }
 bool totals_resend_enabled() { return g_fix_resend; }
@@ -1462,7 +1462,7 @@ static void solo_start()
     trace::line("cell", "host away: the guest plays its own pool (%u cells released)", g_solo_released);
 }
 
-// the host is back and its pool runs again (its first state round arrived): what we ate meanwhile
+// the host is back and its pool runs again (its first state or total arrived): what we ate meanwhile
 // goes to it as meals; the totals it sends back count them (BUG-0051)
 static void solo_send()
 {
@@ -1611,9 +1611,9 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         return;
     if (g_solo && is_guest() && (type == net::MSG_CELL_STATE || type == net::MSG_CELL_FOOD))
         return; // BUG-0205: our own pool until the host's away state ends (a state of the host's pool comes then)
+    if (g_solo_owed && is_guest() && (type == net::MSG_CELL_STATE || type == net::MSG_CELL_FOOD))
+        solo_send(); // before the host's first total is applied: it then counts them as on the way (no dip)
     if (type == net::MSG_CELL_STATE && is_guest()) {
-        if (g_solo_owed)
-            solo_send();
         guest_state(r);
     } else if (type == net::MSG_CELL_HIT && is_host()) {
         uint32_t idx = r.u32();
@@ -1781,13 +1781,15 @@ void on_session_end()
     solo_reset();
 }
 
-// BUG-0205: the guest's own pool while the host is away (`coop.pool`, a line of its own)
+// BUG-0205: the guest's own pool while the host is away (`coop.pool`, a line of its own, no key the lines
+// above have: tests read the first `food=`)
 static std::string away_status()
 {
     if (!C.sess || C.sess->role() != net::Role::Client)
         return "";
     char e[200];
-    snprintf(e, sizeof e, "cell_away: solo=%d owed=%d times=%u released=%u spawns=%u food=%d/%d sent=%u dropped=%u\n",
+    snprintf(e, sizeof e, "cell_away: solo=%d send_due=%d solo_times=%u released=%u solo_spawns=%u kept_meat=%d kept_plant=%d "
+             "kept_sent=%u kept_lost=%u\n",
              (int)g_solo, (int)g_solo_owed, g_solo_times, g_solo_released, g_solo_spawns, g_solo_food[0], g_solo_food[1],
              g_solo_sent, g_solo_dropped);
     return e;
@@ -2479,7 +2481,7 @@ std::string debug(const std::vector<std::string>& a)
     char ob[160];
     snprintf(ob, sizeof ob, "avatar_opacity=%.2f cine=%d parts=%s chasing_me=%d chasing_partner=%d\n",
              F<float>(av, kOpacity), cm && F<uint32_t>(cm, 0x2C) ? 1 : 0, parts.c_str(), chase_me, chase_partner);
-    return b + std::string(ob) + ko + away_status() + status();
+    return b + std::string(ob) + ko + status() + away_status(); // the away line last: tests read the first food=
 }
 
 // the support trace (trace.h): what the own cell has around it and what it did since the last line.

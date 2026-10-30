@@ -12,7 +12,8 @@ and the food it ate went to a host that dropped it.
 3. The guest eats 10 points through the game's hooked AddFoodPoints (`coop.pool food 10`).
 4. The host loads its world again: within 30 s every creature around the guest is a mirror of a live
    host cell again (the guest's own cells are gone) and there are more than 5 mirrors, and the host's
-   game food total S+0x1C grew by the 10 points, the guest's the same.
+   game food total S+0x1C grew by the 10 points, the guest's the same, and the guest's total never
+   fell below its own on the way (read every 0.2-0.5 s).
 
 --editor: the host is in its own cell editor instead (its mating call by a real click, then onto the
 mate with `coop.pool mate tp`; its editor request waits for the vote: `coop.vote go`; the guest
@@ -129,11 +130,19 @@ def main():
         if lst.get('slot', 9) != 9:
             slot = f'Game{lst["slot"]}'
         print(' ', host.call(f'coop.load {slot} {name}')['out'].strip())
-    back = wait(lambda: 'host_away=0' in guest.call('coop.status')['out'] and
-                'not in the cell stage' not in host.call('coop.pool')['out'], 150, 2)
+    lows = []  # the guest's total while the host comes back: no dip below its own (BUG-0239's dip)
+
+    def sample():
+        f = food(guest)
+        if f is not None:
+            lows.append(f)
+        return f
+    back = wait(lambda: sample() is not None and 'host_away=0' in guest.call('coop.status')['out'] and
+                'not in the cell stage' not in host.call('coop.pool')['out'], 150, 0.5)
     ck(back, 'the host is back in its pool')
 
     def host_pool_again():
+        sample()
         mm = [int(h) for h in re.findall(r'^map (\d+) ', guest.call('coop.pool mirrormap')['out'], re.MULTILINE)]
         live = set(int(x, 16) for x in re.findall(r'idx=([0-9A-F]{8})', host.call('coop.cell list')['out']))
         dead = [h for h in mm if h not in live and 'no such cell' in host.call(f'coop.pool cell c{h}')['out']]
@@ -143,10 +152,13 @@ def main():
     n, dead, own = res or host_pool_again()
     print(f'  back: guest mirrors {n}, not live on the host {len(dead)}, own creatures left {len(own)}; {away_line(guest)}')
     ck(res is not None, f'the guest shows the host\'s pool again ({n} mirrors, {len(dead)} dead, {len(own)} own creatures)')
-    ok = wait(lambda: food(host) == h0 + 10 and food(guest) == food(host), 15)
+    ok = wait(lambda: food(host) == h0 + 10 and sample() == food(host), 15, 0.2)
     h2, g2 = food(host), food(guest)
     print(f'  food host {h0} -> {h2}, guest {g1} -> {g2}')
     ck(ok, f'the 10 points eaten while the host was away are in the host\'s total, the guest the same ({h0} -> {h2}, guest {g2})')
+    low = min(lows) if lows else None
+    print(f'  guest total while the host came back: low {low} ({len(lows)} reads)')
+    ck(low is not None and low >= g1, f'the guest\'s total did not dip while the host came back (low {low}, its own {g1})')
     time.sleep(5)
     ck.faults(host=host, guest=guest)
     return ck.result()
