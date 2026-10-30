@@ -8,6 +8,7 @@
 #include <string>
 
 #include "fixes.h"
+#include "game.h"
 #include "sporekit_game.hpp"
 
 namespace gamefixes {
@@ -239,7 +240,7 @@ COOP_FIX("tribe.leave_walk", "BUG-0285 BUG-0310", g_leave_walk_fix,
 constexpr uint32_t kCitizenNoun = 0x18EB4B7;
 constexpr uint32_t kTribeMode = 0x1654C02;
 static std::atomic<unsigned> g_offstage_calls{0}, g_offstage_citizens{0}, g_leave_walk_skipped{0};
-static std::atomic<bool> g_leave_walk_test{false}; // tests: the next citizen out of Tribe is made a cleaned-up one
+static std::atomic<bool> g_leave_walk_test{false}; // tests: the next citizen checked while Tribe is left is made a cleaned-up one
 static unsigned g_leave_walk_test_done;
 
 static uint32_t mode_now()
@@ -252,13 +253,20 @@ static void __fastcall offstage_guard(void* mgr, void*, void* obj)
 {
     g_offstage_calls++;
     uint8_t* c = (uint8_t*)obj;
-    if (!c || skg::vcall<uint32_t>(c, 0x20 / 4) != kCitizenNoun || mode_now() == kTribeMode) {
+    if (!c || skg::vcall<uint32_t>(c, 0x20 / 4) != kCitizenNoun) {
         g_offstage_orig(mgr, obj);
         return;
     }
-    g_offstage_citizens++;
+    uint32_t mode = mode_now();
+    bool leaving = mode != kTribeMode || game::leaving_stage();
+    if (leaving) {
+        unsigned n = ++g_offstage_citizens;
+        if (n <= 8)
+            H->log(M, SK_INFO, "game fixes: citizen %p checked off-stage while the stage is left (mode %08X, +0xB54 %p)", c,
+                   mode, *(void**)(c + 0xB54));
+    }
     void* saved = nullptr;
-    bool test = g_leave_walk_test.exchange(false);
+    bool test = leaving && g_leave_walk_test.exchange(false);
     if (test) { // the stand-in for the campaign's cleaned-up citizen: +0xB54 as the cleanup leaves it
         saved = *(void**)(c + 0xB54);
         *(void**)(c + 0xB54) = nullptr;
@@ -269,10 +277,10 @@ static void __fastcall offstage_guard(void* mgr, void*, void* obj)
         g_offstage_orig(mgr, obj);
         return;
     }
-    if (g_leave_walk_fix) {
+    if (g_leave_walk_fix) { // (in the Tribe mode the check does nothing for a citizen: skipping it is the same)
         if (++g_leave_walk_skipped <= 8)
-            H->log(M, SK_WARN, "game fixes: citizen %p was cleaned up (+0xB54 0) but the stage change sent it walking: skipped (mode %08X)",
-                   c, mode_now());
+            H->log(M, SK_WARN, "game fixes: citizen %p was cleaned up (+0xB54 0) but is checked for a new walk: skipped (mode %08X)",
+                   c, mode);
     } else if (test && g_idle_walk) {
         g_idle_walk(c); // the old code's path for this citizen (the check's own end: no place in range)
     } else {
@@ -287,7 +295,7 @@ std::string arm_leave_walk()
     if (!g_offstage_orig || !g_idle_walk)
         return "no citizen off-stage guard\n";
     g_leave_walk_test = true;
-    return "armed: the next citizen checked outside the Tribe mode becomes a cleaned-up one\n";
+    return "armed: the next citizen checked while the Tribe stage is left becomes a cleaned-up one\n";
 }
 
 static bool patch_slot(uintptr_t* slot, uintptr_t value)
@@ -354,7 +362,7 @@ std::string status()
            ", tribe camera skipped " + std::to_string(g_cam_skipped.load()) + ", respawn caption without a planet " +
            std::to_string(g_planet_clear_skipped.load()) + ", Alt+Shift+Enter turned into Alt+Enter " +
            std::to_string(g_adapter_keys.load()) + ", dead modal windows dropped " + std::to_string(g_dead_modal.load()) +
-           ", off-stage checks " + std::to_string(g_offstage_calls.load()) + " (citizens out of Tribe " +
+           ", off-stage checks " + std::to_string(g_offstage_calls.load()) + " (citizens while the stage is left " +
            std::to_string(g_offstage_citizens.load()) + "), cleaned-up citizen walks skipped " +
            std::to_string(g_leave_walk_skipped.load()) + ", test citizens " + std::to_string(g_leave_walk_test_done) + "\n";
 }

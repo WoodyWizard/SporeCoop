@@ -43,6 +43,22 @@ def gf(con, key):
     return int(m.group(1)) if m else -1
 
 
+def play(host, guest, seconds, seed):
+    """the play_tribe bots (real clicks) for a while: citizens that gather and carry food are the
+    ones the game's food behaviour hands to Citizen_OffStageCheck when the stage ends"""
+    if seconds <= 0:
+        return
+    import play_tribe
+    g = play_tribe.Game(host, guest, seed, 1.0)
+    for p in g.p:
+        p.calibrate()
+    t0, n = time.time(), 0
+    while time.time() - t0 < seconds and not Monitor.events:
+        g.step(g.p[n % 2])
+        n += 1
+    print(f'   played {time.time() - t0:.0f} s, {n} actions', flush=True)
+
+
 def jump(host, guest, fx, stage, slot, arm):
     """the host loads fixture fx from a fresh slot (through the galaxy menu); True when the host plays
     `stage` with an avatar and the guest followed"""
@@ -72,22 +88,25 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--nofix', action='store_true')
     ap.add_argument('--rounds', type=int, default=2)
+    ap.add_argument('--play', type=float, default=90, help='seconds of play_tribe bots before each leave of Tribe')
     a = ap.parse_args()
     host, guest = start('tribe')
     ck = Checks()
-    if 'no citizen off-stage guard' in host.call('coop.leavewalk')['out']:
+    if 'off-stage checks' not in host.call('coop.status')['out']:
         print('RESULT: SKIP (no citizen off-stage guard on this build)')
         return 0
-    host.call('coop.fix tribe.leave_walk on')  # the probe above armed it: harmless, re-armed per round
     if a.nofix:  # (SPORE_FIX_OFF=tribe.leave_walk does the same through start())
         print(' ', host.call('coop.fix tribe.leave_walk off')['out'].strip())
-    time.sleep(3)
+    print('  setup:', host.call('coop.tribe spawn 3')['out'].strip(), flush=True)
+    time.sleep(10)
     n = 0
     for r in range(a.rounds):
         for fx, stage in (('civ_npc', 'Civ'), ('tribe', 'Tribe')):
             arm = stage == 'Civ'  # only a leave of the Tribe stage
             before = gf(host, 'test citizens')
             print(f'  round {r + 1}: -> {fx}', flush=True)
+            if arm:
+                play(host, guest, a.play, 1000 + r)
             ok = jump(host, guest, fx, stage, 10 + n % 2, arm)
             n += 1
             try:
