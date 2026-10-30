@@ -34,6 +34,11 @@
   stay in Creature until they rejoined. The host's save for them now waits until the new stage has
   settled, and a save the game did not write is made again instead of sending older files
   (BUG-0276).
+- Stage changes: the fix above did not hold when the host's creature stayed under its control
+  through the change to Tribe (the usual case with four players), and in Space the host's first save
+  for the guests came right as it left its home planet; the guests then stayed in Creature, or their
+  ships went back down to the home planet. The host's save for them now waits until it has been 2 s
+  in the new stage or place, and older files are no longer sent as the new save (BUG-0276, BUG-0287).
 - Creature: when the host's game put away NPCs far from the host's creature, a guest standing
   near them still saw them for 2 s (again with every respawn of a nest member there). The host
   now removes such an NPC from the guests at once (BUG-0274).

@@ -1745,3 +1745,17 @@ wrong. Suite `campaign` (in no other suite): `tools/lab.py run campaign --lanes 
   the next frame (tests).
 * `make test`: `text_tests` checks the rate limit (`trace_rate.h`), `net_tests` the version
   extension with an old-shape peer (`test_peer_versions`) and the address masks (`test_ip_mask`).
+
+## The live stage change with four players: campaign_tribe, campaign_space (2026-10-29, fix/w8-stuck)
+<a id="testing-campaign-stage-change"></a>
+
+* `tools/lab.py run campaign_tribe --lane N` (`coop_campaign.py --from creature --to tribe --minutes
+  2 --no-finale`, 8-15 min) and `campaign_space` (`--from civ --to space`, 13-27 min): one stage
+  change of the campaign with four players, in the `campaign` suite only. The bug they catch
+  (BUG-0276, BUG-0287: the share save posted in the first frames of the new stage or place) is a
+  race: with `SPORE_FIX_OFF=world.share_settle_reset` campaign_tribe got stuck in 1 of 2 games
+  (lab 20261029-192222); use `--repeat`. A stuck finding of `tribe/follow` or `space/follow` is the
+  bug; other findings (a desync, a Civ -> Space change that runs out of time) fail the run too, so
+  read the finding.
+* The host's log says when each share save was posted: "world: saving for the share of player N
+  (<stage>, X s in this place)"; below 2 s means the settle clock did not hold.
