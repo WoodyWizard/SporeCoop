@@ -1075,6 +1075,7 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   together, but the host's `entries_with` stayed 0 because it entered before the guest's "reached"
   message came (the wait flag is cleared when everybody is at the gate). Players see nothing wrong;
   the test's check reads the counter. Reproduce: run `space_finale` a few times.
+* 2026-10-30 (fix/w14-space): FIXED (space.finale_waited), test `coop_space_finale_wait.py`.
 * Ticket: BUG-0320.
 
 ## Space: a guest fault at 0xE98DD0 when the host's ship appears, lane 8 only (2026-10-30, fix/w13-space)
@@ -1085,4 +1086,6 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   getter in 0xE98D90, gfx/effects code) ~1.4 s after the host's ship appeared in the NPC system the
   guest had jumped to; also with main 4dbacc5 (lab 20261030-151438). Lane 9 is clean with the same
   code. Reproduce: `tools/lab.py run space_jump --lanes 1 --skip 1,2,3,4,5,6,7,9,10`.
+* 2026-10-30 (fix/w14-space): FIXED. A host NPC ship model (from the host's Pollination.package)
+  the guest's game lacked: docs/re/space.md#space-mirror-model. Test `coop_space_mirror_model.py`.
 * Ticket: BUG-0323.

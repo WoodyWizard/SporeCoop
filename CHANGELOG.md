@@ -3,6 +3,11 @@
 ## [Unreleased]
 
 ### Fixed
+- Space: a guest's game no longer faults when the host's NPC ships use a ship model the guest does
+  not have (the empires' ships come from each player's own Sporepedia cache); the guest shows such
+  a ship with a model of that empire it has, or not at all (BUG-0323).
+- Space finale: a host who waited at the galactic core and went in first is counted as entering
+  together (a counter the tests read; players saw nothing wrong, BUG-0320).
 - Co-op window: a host whose PC is on the network twice (cable and Wi-Fi) is listed once, not
   once per address (both hosts need this version; BUG-0210).
 - Creature and Tribe: a partner's creature, an animal or a citizen that cannot keep up by walking

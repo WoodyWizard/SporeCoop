@@ -2188,3 +2188,19 @@ answered right after; a 1 s poller beside a standalone run saw no gap. Same sign
 * A new test file is only known to the lab of its own tree: run `python3 tools/lab.py` of the
   worktree (`../SporeCoop-wt/<branch>/tools/lab.py run <test> --branch <branch>`), the main
   checkout's lab.py reads main's suite.py ("unknown test").
+
+## Space: mirror models and the finale wait (2026-10-30, fix/w14-space)
+<a id="testing-space-mirror-model"></a>
+
+* `coop_space_mirror_model.py` (suite `space_mirror_model`, ~1 min warm): the host sends made-up
+  model instances (`coop.fleet fakemodel 1`) and spawns NPC ships; the guest's game must not fault.
+  `SPORE_FIX_OFF=fleet.model_check` fails with the fault 0x00E98DD0 (BUG-0323).
+* A lane's profiles carry state between tests: the Sporepedia cache `Pollination.package` (not part
+  of a fixture) grows with every game that meets NPC empires; host and guest profiles of a lane then
+  differ in NPC ship models. To find which profile file triggers a lane-only failure, swap the
+  profile (`drive_c/users/<user>/AppData/Roaming/SporeKit-<profile>`) with another lane's and bisect
+  its persistent files (the fixtures restore only `Games/`). Lane 8's host profile from before the
+  fix is kept at `<bottles>/SporeLab8/test-bak-bug0323`.
+* `coop_space_finale_wait.py` (suite `space_finale_wait`, ~4 min): the host waits at the core, the
+  guest only flies to the gate, the host enters first; its `entries_with` must count it as together.
+  `SPORE_FIX_OFF=space.finale_waited` fails (BUG-0320).
