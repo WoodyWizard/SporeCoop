@@ -811,6 +811,11 @@ BUG-0174 / BUG-0279 (a guest far from the host swam in an empty pool). GOG 2024,
   of a shared key (that one leaked). The only deleter of tile objects is PopulateTiles' loop (every
   other `cObjectPool_::DeleteObject` call is on other pools). Fix: `h_WorldScale` gives all our tiles
   back to the pool before a moving-scale step, and no partner pass runs while the scale moves.
+* ✔ **Shared tiles hand over**: a tile two lists hold is populated once; the other one is a
+  "shadow" (no cells of its own; RemoveCellsOfOldScale skips it too). When the populated one is ours
+  and goes (a level change flushes all our tiles), the shadow is populated right then (`hand_over`):
+  without it the host's own area stayed empty after a level-up (`cell_new_game`, the host found no
+  meat on its screen, lab 20261030-022912).
 * The fix (`coop.fix cell.partner_tiles`, cellsync.cpp `h_PopTiles`): on the host, after the game's
   own pass, one more PopulateTiles call per partner with a list of our own and the 12 view-box floats
   moved by (partner cell - host box centre), restored right after. `h_PopTile` populates a tile that
