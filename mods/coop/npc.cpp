@@ -389,7 +389,10 @@ std::string debug_dash(uint16_t id, float len, float speed, float secs, float wi
     float al = std::sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
     a = {a.x / al, a.y / al, a.z / al};
     net::Vec3 b{up.y * a.z - up.z * a.y, up.z * a.x - up.x * a.z, up.x * a.y - up.y * a.x}; // up x a
-    g_dash = {id, p, a, b, len, speed, width, H->time_seconds(), H->time_seconds() + secs, host_npc(mate) ? mate : (uint16_t)0, off};
+    void* mc = host_npc(mate);
+    if (mc && off <= 0) // touching: the two bodies side by side, as the game keeps a herd apart
+        off = game::bounding_radius(c) + game::bounding_radius(mc);
+    g_dash = {id, p, a, b, len, speed, width, H->time_seconds(), H->time_seconds() + secs, mc ? mate : (uint16_t)0, off};
     char t[192];
     snprintf(t, sizeof t, "npc %u dashes %.1f m (zigzag %.1f m) at %.1f m/s for %.0f s from (%.1f %.1f %.1f), mate %u %.1f m beside", id,
              len, width, speed, secs, p.x, p.y, p.z, g_dash.mate, off);
