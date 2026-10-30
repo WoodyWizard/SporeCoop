@@ -33,7 +33,7 @@ def main():
         print('  host:', host.call(f'coop.fleet spawn {args}')['out'].strip())
         time.sleep(4)
     time.sleep(6)
-    st = guest.call('coop.fleet')['out']
+    st = guest.call('coop.fleet list')['out']
     m = re.search(r'unknown_models=(\d+)', st)
     print('  guest:', (m.group(0) if m else st.strip()[:200]))
     ck(m and int(m.group(1)) > 0, 'the guest got host ships with models it does not have')
