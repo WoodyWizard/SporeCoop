@@ -794,9 +794,12 @@ BUG-0174 / BUG-0279 (a guest far from the host swam in an empty pool). GOG 2024,
   loop is told every tile of ours is active. (2) The tile pool `G+0x38` has a fixed capacity (512 seen
   at level 1; `+0x18`); `cObjectPool_::CreateObject` 0xB72270 returns 0 when it is full and
   PopulateTiles then fills slot 0 of a live tile (a double free later, the free list broken, faults at
-  CreateObject+0x37). A partner pass runs only with room for 2 x 0x40 tiles and creates no
+  CreateObject+0x37). A partner pass runs only with room for 4 x 0x40 tiles and creates no
   background (layer 1) tiles (its background box is all 0); seen: 71 of 512 with two players 150 m
-  apart.
+  apart. On a level change (the level base argument differs), a rebuild (`all`) or a short pool every
+  tile of ours goes back to the pool before the host's own pass (`coop.pool food 1000` faulted there
+  without it, lab 20261030-004900 cell_evolve_poll). RebuildLevel clears the pool `G+0x38` at
+  0xE7FFFF and calls PopulateTiles(all 1) at 0xE803FE.
 * The fix (`coop.fix cell.partner_tiles`, cellsync.cpp `h_PopTiles`): on the host, after the game's
   own pass, one more PopulateTiles call per partner with a list of our own and the 12 view-box floats
   moved by (partner cell - host box centre), restored right after. `h_PopTile` populates a tile that
