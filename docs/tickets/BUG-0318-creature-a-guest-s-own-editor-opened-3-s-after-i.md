@@ -24,7 +24,8 @@ after the guest's rejoin (Creature -> galaxy menu -> load -> Creature at 15:17:4
 -> Editor") and stayed in mode Editor for the rest of the test (5 min): the screen black (no editor
 UI, screenshot legless_guest_next_editor_cancel.png), "nothing controlled", 13-17 fps, hitches of
 200-360 ms. The test's checks "the guest saves its edit" and those after it fail.
-Reproduce: `tools/lab.py run legless_guest_cancel --lane N` (both runs on 2026-10-30 showed it).
+Reproduce: `tools/lab.py run legless_guest_cancel --lane N`: 2 of 3 runs on 2026-10-30 (lane 4; the third,
+out/lab/20261030-142629, opened and saved the next editor normally).
 Not known: whether it needs the rejoin right before (a world loaded 3 s earlier) or also happens in
 `--guest new`; whether a player can leave such an editor (Esc, the red cross) at all.
 

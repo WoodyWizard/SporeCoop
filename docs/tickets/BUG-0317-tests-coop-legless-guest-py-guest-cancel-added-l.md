@@ -32,7 +32,8 @@ checks that one click leaves the unchanged editor (waiting up to 12 s: the edito
 ## Verification
 no-fail-run: a test's own input. Lab 20261030-141448 ran the red cross for the first time
 (its check, still at 3 s, failed on the closing editor; the guest log shows Editor -> Creature 4 s
-after the click without a dialog). The test still fails later for BUG-0318.
+after the click without a dialog). With the 12 s wait: PASS, out/lab/20261030-142629 ("one click on
+the red cross leaves the unchanged editor"). It can still fail later for BUG-0318.
 
 ## History
 - 2026-10-30: opened.

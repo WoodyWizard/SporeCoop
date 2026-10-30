@@ -44,7 +44,7 @@ be lost" because there were changes. Seen again on lane 4 (2026-10-30, the old t
 screenshots, the legs on the guest's own creature right after `add_legs(guest)`.
 With the test fixed (BUG-0317) the red cross leaves the unchanged editor without a dialog (lab
 20261030-141448: the editor closed 4 s after the click; the check then looked after 3 s and called
-it a dialog, now it waits 12 s). 5 runs of `coop_guest_editor_hold.py` (3 on fix/w9-creature, 1
+it a dialog, now it waits 12 s; with that, out/lab/20261030-142629 passes the check). 5 runs of `coop_guest_editor_hold.py` (3 on fix/w9-creature, 1
 here) never showed a change either.
 
 ## Fix
