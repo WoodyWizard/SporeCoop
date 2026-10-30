@@ -63,7 +63,8 @@ guest jumps there, the host follows; both games' loaded PlanetIDs must be equal.
 * FAIL without the fix (lane 9, `SPORE_FIX_OFF=space.seed_profile`): lab run 20261030-142550
   (8 and 6 planets); direct run on lane 9 with `--without-fix`: 8 and 6.
 * PASS with the fix: direct run lane 9 (8 and 8, both logs hash 5FA0B667); lab run
-  20261030-142409 (fix on: the test switched it back on, 8 and 8); regression run see History.
+  20261030-142409 (fix on: the test switched it back on, 8 and 8); lab run 20261030-142729 (lane 9,
+  8 and 8, in the Space regression run).
 
 ## History
 - 2026-10-23: first recorded in docs/known-issues.md.
@@ -71,3 +72,4 @@ guest jumps there, the host follows; both games' loaded PlanetIDs must be equal.
 - 2026-10-28: fix/w2-space: still open. Not reached in wave 2 (budget spent on the 7 other Space tickets). What is left: find the draw that still differs (or the sure fix from the report: the host sends the planet records of a newly generated star, a protocol feature). No new runtime data.
 - 2026-10-28: fix/w3-space: still open. BUG-0123 (fixed there) is one cause that makes exactly this difference: with another thread inside GenerateRandomName during the generation the guest made 5 planets where the host made 6 and 4 where it made 1 (coop_space_seed_thread.py --without-fix); with the per-thread state both rounds matched. Whether the game itself ever names things off the main thread is not known yet: the mod now logs once (`space: GenerateRandomName runs on thread N, not on the main thread`). Not reached: the sure fix (the host sends a new star's planet records).
 - 2026-10-30 (fix/w13-space): root cause found with logs of the seeded generation (species profile load draws), fixed behind space.seed_profile; FAIL 20261030-142550, PASS 20261030-142409 + direct runs.
+- 2026-10-30: Space regression on lanes 8/9, lab 20261030-142729: 12/13 (space_seed_profile, space_coop, space_play, space_page, space_share_takeoff, space_captain, space_puppet, space_rivalry, campaign_space, space_jump, space_seed_thread, space_land_early ok; space_finale failed on a counter race unrelated to this change, BUG-0320).

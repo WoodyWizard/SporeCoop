@@ -52,7 +52,7 @@ None needed now. `coop.space landcheck` and `coop_space_land_early.py` stay to c
 `tools/tests/coop_space_land_early.py` (suite `space_land_early`): both players click the home
 planet and zoom in at once after the load; must be on it within 40 s. 3 direct runs on lane 9
 (landed at 10-16 s; scratch logs not kept) and lab run 20261030-141123 (lane 8, 2 runs: host 15/14 s,
-guest 13/13 s); regression run see History. no-fail-run: not reproduced, no fix to switch off.
+guest 13/13 s) and lab run 20261030-142729 (lane 9). no-fail-run: not reproduced, no fix to switch off.
 
 ## History
 - 2026-10-27: first recorded in docs/known-issues.md.
