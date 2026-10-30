@@ -6,8 +6,8 @@ proxy walks with the game's locomotion, which never runs faster than the animal'
 the lag at the start of a dash stayed as an offset along the path for the whole dash (2-4 m on
 every guest at once in the 4-player measurement, coop_sync_multi.py --fixture tribe).
 
-1. Two games on the tribe fixture; the guest runs at ~30 fps (frame.limit 33, the frame rate of a
-   guest of a 4-player session on one PC).
+1. Two games on the tribe fixture; the guest runs at ~15 fps (frame.limit 66, the frame rate of a
+   loaded guest of a 4-player session on one PC: the largest offsets came at 9-20 fps).
 2. The host picks two animals the guest has as proxies and makes them run side by side (1.2 m
    apart, a herd fleeing together) back and forth along a 12 m zigzag at 6.5 m/s, 0.6 s standing
    at each end (`coop.npc dash`, test command), for 40 s.
@@ -27,7 +27,7 @@ import coop_multi as cm
 from twoinst import Checks, start
 
 LIMIT = 1.5     # m
-FRAME_MS = int(os.environ.get('DASH_FRAME_MS', '33'))
+FRAME_MS = int(os.environ.get('DASH_FRAME_MS', '66'))
 SPEED = float(os.environ.get('DASH_SPEED', '6.5'))
 LEN, WIDTH = float(os.environ.get('DASH_LEN', '12')), float(os.environ.get('DASH_WIDTH', '2'))
 OFF = float(os.environ.get('DASH_OFF', '1.2'))  # m: the second animal runs beside the first
