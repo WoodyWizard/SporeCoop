@@ -148,8 +148,8 @@ def measure(stage):
     time.sleep(5)
     pos, rot, raw_pos, raw_rot, keys = {}, {}, {}, {}, {}
     for i in range(16):
-        if i % 4 == 0:
-            stir(stage, host, guest, i // 4)
+        if i % 4 == 0 or (FPS and stage == 'civ'):  # --fps: the vehicles drive all the time (BUG-0175)
+            stir(stage, host, guest, i if FPS and stage == 'civ' else i // 4)
         h0 = sample(host)
         time.sleep(LAG_WINDOW - 0.03)  # a console call takes ~0.03 s: h0 is ~LAG_WINDOW older than g
         h1, g, h2 = sample(host), sample(guest), sample(host)
