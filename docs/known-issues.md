@@ -322,6 +322,9 @@ anchor so other docs can link to it:
 * 2026-10-28 (fix/w1-core, lane 2): 3 of 3 more runs passed with the click during the intro: not
   reproduced.
 * Ticket: BUG-0184.
+* 2026-10-30 (fix/w13-net, lane 10): 3 of 3 passed, but the intro was not playing at the click in
+  any of them (path not exercised). Candidate (not verified): the posted Escape reaching the menu
+  outside the intro, see the ticket.
 
 ## Space: an unvisited star's planets can still differ between the two games
 

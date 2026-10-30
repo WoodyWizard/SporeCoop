@@ -45,7 +45,22 @@ click on "Co-op" during the menu intro ("menu intro playing: True", "the co-op w
 Together with the 11 of 12 from 2026-10-24 that is 14 of 15. Without a log of the failed run the
 cause is unknown; the known-issues entry stays with what to keep if it comes back.
 
+2026-10-30, fix/w13-net, lane 10 (GOG 2024): `coop_ui.py` 3 runs by hand (`SPORE_LANE=10`; the lab
+runs the `ui` suite entry only on lanes 1-5, it is exclusive): 3 of 3 passed, but in all three
+"menu intro playing: False" at the host's click, so the click-during-intro path (the Escape the mod
+posts) was not exercised: not reproduced, and not tested either on this lane. Code reading
+(inferred, not verified): the mod checks `menu_intro_playing()` when it sees the button and posts
+WM_KEYDOWN/UP Escape; the game handles them a frame or more later. If the intro has not taken the
+key yet (the click came in the first frames of GGE_Intro, which is when coop_ui.py clicks: right
+after `coop.status` first shows the intro) or has just ended, Escape reaches the galaxy menu's own
+key handler (0xDEA5B0, docs/re/space.md 7.9) instead of the skip. What the menu does with an
+Escape outside the intro (a quit prompt? nothing?) is not recorded; a modal prompt would stop the
+frames and explain a console that times out. Next step when a lane 1-5 is free: post Escape
+(`key 27`) in the galaxy menu with no intro playing and at the intro's first frame, and see
+whether the console keeps answering.
+
 ## History
 - 2026-10-24: first recorded in docs/known-issues.md.
 - 2026-10-27: ticket backfilled from docs/known-issues.md (every entry carries its ticket id, CLAUDE.md 1).
 - 2026-10-28: not reproduced on fix/w1-core (coop_ui.py 3 of 3 with the click during the intro).
+- 2026-10-30: fix/w13-net: 3 of 3 passed on lane 10, intro not playing at the click (path not exercised); a candidate written down (Escape outside the intro), not verified. Status kept.
