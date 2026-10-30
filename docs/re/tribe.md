@@ -772,3 +772,23 @@ BUG-0258. GOG 2024.
   playable for 2 s; a share whose save showed no box is sent only when a file of the slot was
   written after the save was posted, else it saves again (at most three times). `coop.status`
   prints "share saves held while the stage settled N, shares saved again (nothing written) N".
+
+## The share's settle clock did not restart at Creature -> Tribe (2026-10-29, fix/w8-stuck)
+<a id="tribe-share-settle-reset"></a>
+
+* CORRECTION (2026-10-29, fix/w8-stuck): the fix of [the dropped share save](#tribe-share-save-dropped)
+  (`world.share_settle`) did not hold: lab 20261029-174717 campaign#1 (lane 2, main b5ef74d) had the
+  same stuck finding. ✔ (logs) Its clock was `g_playable_since` of the via-menu load (world.cpp),
+  reset only when the local player had nothing to control. The host's creature is the Tribe
+  adapter's avatar from the first Tribe frame on (`avatar=yes` in the trace line of the change), so
+  the clock still held the Creature value and the share saved at once: posted 19:08:38.767, 75 ms
+  into Tribe (38.692); no box, "sharing anyway" after 10 s sent the slot's Creature files (written
+  ~38.0, inside the stale check's 2 s slack); the guests played Creature in the host's planet.
+* ✔ Reproduced with the new switch off: lab 20261029-192222 campaign_tribe#1 (lane 7), save
+  posted 0.2 s into Tribe, no box, "sharing anyway", stuck finding. The other three games of the
+  lab had their save 1.8-2 s after the change (the race of the older share's "saving again").
+* Fix (`world.share_settle_reset`, BUG-0276): the share's clock (`g_share_settled_since`) restarts at
+  every mode change and every place change (`world::set_place_probe`, the adapter's place); a save
+  without its box is stale also when no file of the slot is newer than the newest one before the
+  save was posted (`g_saved_base`). Log: "world: saving for the share of player N (Tribe, X s in
+  this place)".

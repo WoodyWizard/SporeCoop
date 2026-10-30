@@ -3849,6 +3849,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     trace::g_detail = std::max(0, std::min(2, H->config_int(M, "coop", "log_detail", 1)));
     world::init(H, M, feed);
     world::set_playing_probe([] { return g_local != nullptr; });
+    world::set_place_probe([] { return g_world; });
     world::set_save_blocker(save_blocker);
     // species of the host's own creations: sent ahead of its world (creations.h)
     world::set_share_hook([](uint8_t peer, const std::vector<const std::vector<uint8_t>*>& files) {

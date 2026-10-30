@@ -812,3 +812,18 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   reset (0xB32C30) is skipped besides the player record.
 * Next steps: probe 0xC0DB10 during `coop_tribe_*` leaves to the menu with 4 players.
 * Ticket: BUG-0285
+## Space: guests' ships go down to the home planet after the first world share (2026-10-29, fix/w8-stuck)
+<a id="issue-space-share-first-frame"></a>
+
+* What happens: after Civ -> Space with four players the host leaves its home planet; the guests
+  load its world into the solar system and 2 s later their ships are on the home planet, apart from
+  the host, until they rejoin (lab 20261029-174717 campaign#2).
+* Reproduce: `tools/lab.py run campaign_space --lane N --repeat 2` with
+  `SPORE_FIX_OFF=world.share_settle_reset`; not reproduced so far (the save must land in the first
+  frames of the solar system).
+* Known: the save was posted 9 ms after the host reached the system
+  ([space.md](re/space.md#space-share-save-at-context-change)); the share save now waits 2 s after
+  every place change (`world.share_settle_reset`). Inferred, not proven, that this was the cause.
+* Next steps: if it is seen again with the fix in, the "saving for the share" line of the host's log
+  says how long the host had been in the system.
+* Ticket: BUG-0287.

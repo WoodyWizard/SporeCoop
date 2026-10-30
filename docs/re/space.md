@@ -1784,3 +1784,15 @@ Runtime findings of the wave 3 Space fixes (lane 6, GOG 2024):
   empire. Inferred from the one campaign crash (the only logged leave with a fault before the
   load, of ~100); the effect is reproduced by patching out the call at 0xB32CF0
   (`coop_menu_stale_player.py`), identical crash and stack.
+## A share save in the first frame of the solar system (2026-10-29, fix/w8-stuck)
+<a id="space-share-save-at-context-change"></a>
+
+* ~ (logs, lab 20261029-174717 campaign#2, BUG-0287): the host's shares waited on the home planet
+  ("leave the planet to save") and posted the save 9 ms after the place changed to the solar system
+  (`SpacePlayerData +0x10` context 0 -> 1). The guests loaded it into the solar system and 2.2-2.4 s
+  later their ships were on the home planet (place 0x40...), nobody steering; the host stayed in the
+  system. Saves made 1.7 s or minutes into the system loaded in the system and stayed there.
+  Inferred: a save of the first frame after leaving a planet still holds the way down; not
+  reproduced (2 games with the fix off saved 1.8 s in).
+* The share's settle clock now restarts at a Space context change too
+  ([tribe.md](tribe.md#tribe-share-settle-reset), `world.share_settle_reset`).
