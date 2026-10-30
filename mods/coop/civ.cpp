@@ -2257,14 +2257,42 @@ std::string debug(const std::vector<std::string>& a)
         return b;
     }
     if (!a.empty() && a[0] == "sw") { // the superweapon votes (host, BUG-0117)
-        char b[128];
-        snprintf(b, sizeof b, "sw last_request=%d fired=%d refused=%u fix=%d orphans_given=%u", g_sw_last_req, g_sw_fired,
-                 g_sw_refused, (int)g_fix_sw_vote, g_orphans_given);
+        // civ= the player civ (tests read the game's own fields: +0x98 money, +0x484 unlocked[12], BUG-0222)
+        char b[192];
+        snprintf(b, sizeof b, "sw last_request=%d fired=%d refused=%u fix=%d orphans_given=%u civ=%p", g_sw_last_req,
+                 g_sw_fired, g_sw_refused, (int)g_fix_sw_vote, g_orphans_given, g_ok && game::mode_id() == modes::kCiv && nm() ? player_civ() : nullptr);
         return b;
     }
-    if (a.size() >= 2 && a[0] == "super") { // super <type>: fire a superweapon (through the vote)
+    if (a.size() >= 2 && a[0] == "super") { // super <type> [x y z]: fire a superweapon (through the vote)
+        // BUG-0222: always a target, as the game's own callers pass one: FireSuperweapon reads it without
+        // a null check (GOG 2024 0xBF8BB0: compares it with the zero vector 0x168C514 = untargeted)
         void* pc = player_civ();
-        return pc ? std::string("fired -> ") + (h_FireSW(pc, atoi(a[1].c_str()), nullptr) ? "1" : "0") : "no civ";
+        float t[3] = {0, 0, 0};
+        if (a.size() >= 5)
+            for (int i = 0; i < 3; i++)
+                t[i] = (float)atof(a[2 + i].c_str());
+        return pc ? std::string("fired -> ") + (h_FireSW(pc, atoi(a[1].c_str()), t) ? "1" : "0") : "no civ";
+    }
+    if (!a.empty() && a[0] == "boosts") { // the boosted vehicles (tests read the game's +0x218 speed, BUG-0222)
+        std::string out;
+        char b[96];
+        double now = H->time_seconds();
+        for (auto& [v, bo] : g_boost) {
+            snprintf(b, sizeof b, "boost %p orig=%.3f left=%.1f\n", v, bo.orig, bo.until - now);
+            out += b;
+        }
+        return out.empty() ? "no boosts\n" : out;
+    }
+    if (a.size() >= 3 && a[0] == "stale_hv" && is_host() && game::mode_id() == modes::kCiv) {
+        // stale_hv <vehicle id> <owner> (tests, BUG-0222 / BUG-0059): the table entry of that vehicle as if
+        // its address had held a player's vehicle of the old world: a player owner and another nation's pol
+        auto it = g_hv_by_id.find((uint16_t)atoi(a[1].c_str()));
+        if (it == g_hv_by_id.end() || !g_hv.count(it->second))
+            return "no such vehicle";
+        HV& h = g_hv[it->second];
+        h.owner = (uint8_t)atoi(a[2].c_str());
+        h.pol ^= 0x5A5A5A5Au;
+        return "stale entry: owner=" + std::to_string(h.owner);
     }
     if (a.size() >= 3 && a[0] == "select") {
         void* v = local_vehicle((uint16_t)atoi(a[1].c_str()));
