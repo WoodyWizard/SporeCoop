@@ -1076,7 +1076,12 @@ static void SK_CDECL h_PopTile(uint32_t* t, int all)
             g_shadow_tiles.insert(t[0]);
             return;
         }
-        if (g_pass > 0 && starve_tile(t)) { // BUG-0295: populated later, when the pool has room
+        // BUG-0295: populated later, when the pool has room. The host's own gameplay tiles too while
+        // partners play (its screen like theirs, the ring around it only below kPopCap): at level 4 the
+        // host's own doubled box alone held ~1000 cells and the partners' screens got nothing
+        // (cell_4p, lab 20261030-064009)
+        bool budgeted = g_pass > 0 || (g_pass == 0 && t[1] == 0 && g_views.size() > 1);
+        if (budgeted && (size_t)g_pass < g_views.size() && starve_tile(t)) {
             g_tiles_starved++;
             g_shadow_tiles.insert(t[0]);
             g_starved[t[0]] = (uint8_t)g_views.list()[(size_t)g_pass].player;
@@ -1335,7 +1340,7 @@ static void feed_starved()
         uint32_t* t = (uint32_t*)(data + (size_t)(idx & 0xFFFF) * size);
         if (live >= kPopCap) { // between the caps: only a tile on its partner's screen (as starve_tile)
             bool core = false;
-            for (size_t k = 1; vb && k < g_views.size() && k < g_view_boxes.size(); k++)
+            for (size_t k = 0; vb && k < g_views.size() && k < g_view_boxes.size(); k++)
                 if (g_views.list()[k].player == it->second) {
                     float save[12];
                     memcpy(save, vb, sizeof save);
