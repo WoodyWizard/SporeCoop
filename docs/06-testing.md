@@ -2135,3 +2135,14 @@ answered right after; a 1 s poller beside a standalone run saw no gap. Same sign
   `CreatureBase_SetMoveScale+0x13` under DoAction+0x496 and the host stops drawing (FROZE) in the load.
 * `coop.status` "off-stage checks N (citizens while the stage is left M), cleaned-up citizen walks
   skipped K, test citizens T".
+## An order of the guest's own game on a mirrored vehicle: civ_mirror_order (2026-10-30, fix/w14-tribe-civ)
+<a id="testing-civ-mirror-order"></a>
+
+* `SPORE_LANE=N python3 tools/tests/coop_civ_mirror_order.py [--nofix]` (suite `civ_mirror_order`,
+  ~3 min, civ_npc): the guest's own game gives two mirrors of NPC vehicles an order (`coop.civ
+  localorder <id> 8` claims the nearest spice node, `... 6 x y z` a move; the SetOrder hook is
+  bypassed, as for an order given before the binding or by a vehicle behaviour). For 20 s: the
+  guest's order list of them (`order=` of the guest's `coop.civ`) and the distance between the
+  guest's vehicle and the host's. `--nofix` (`coop.fix civ.mirror_orders off`) must FAIL (BUG-0186).
+* `coop.civ` on the guest: `mirror_orders_cleared=N`, `founds_outside=N` (city foundings received
+  outside the Civ mode, BUG-0319); per mirror `vel= top= jumps=`.
