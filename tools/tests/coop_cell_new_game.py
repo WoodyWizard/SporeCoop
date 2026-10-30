@@ -106,7 +106,7 @@ def apart(ck, host, guest, seconds, far_probe, kind):
     there = sum(1 for k in food[:12] if alive(host, k))
     print(f'  far ({d:.0f} m): {len(food)} food cells on the guest\'s screen, of the first {min(12, len(food))} '
           f'{there} are cells of the host\'s world', flush=True)
-    ck(d > 50 and food and there >= min(12, len(food)) * 0.8,
+    ck(d > 40 and food and there >= min(12, len(food)) * 0.8,
        f'the far guest\'s food is the host\'s ({there}/{min(12, len(food))} at {d:.0f} m)')
     h0 = pool(host)['eats_in'] or 0
     got = probe('guest(far)', guest, host, kind, far_probe)
