@@ -980,3 +980,30 @@ BUG-0256. GOG 2024, lane 9, `coop_rejoin_saved_puppet.py`. Adds to [the save fil
   out" names the herd (archetype 0, no nest: one of ours in the runs).
 * Not checked: whether other lists of the game hold a stripped creature as a null (the behavior
   manager's has its own cleanup, savestrip `h_BhvRead`).
+
+## The view centres in the Tribe stage (2026-10-30, fix/w9-creature)
+<a id="creature-view-centres-tribe"></a>
+
+BUG-0280 (Tribe), BUG-0291. GOG 2024, lane 9, `coop_tribe_far.py`. Extends [the view centres](#creature-view-centres).
+
+* ✔ The Tribe stage (0x1654C02) runs the same `Relevance_Update` pass. With the hook gated to
+  Creature and Tribe (`npc.view_centres_tribe`), a guest's view centre 332 m from the host's camera
+  kept 3 herds of the game enabled with 18 animals near their homes for 40 s; without it the host's
+  game had none there (see the ticket for the runs).
+* ✔ A Tribe partner's view centre is its **pointer** (modes.cpp `rts_fill`: the point of the planet
+  under its mouse, cast from its own camera; it stays where it was while the mouse is off the
+  planet). The mod has no other Tribe position of a guest (no chief, no camera target is sent); the
+  pointer lies on the guest's screen, so it is inside its view. Tests pin it with
+  `coop.npc marker x y z` (`coop.npc marker off` lets the mouse drive it again).
+* ✔ Radii: the exe image has enter 100 (0x1565D5C = 42C80000) and leave 250 (0x1565D60 = 437A0000),
+  but in a running game 0x1565D60 reads 43160000 = **150 m** (`mem.read 0x1565D5C 8` on lane 9,
+  Creature and Tribe): something writes it at startup (a tuning value, not looked up). In Tribe the
+  first sphere of the vector had enter 75 m / leave 112 m (and the vector held 2 spheres at times):
+  the Tribe path pushes a sphere of its own before Relevance_Tick's (not looked up).
+* ✔ BUG-0291 (npc.cpp, `npc.rts_views`): the host sent a Tribe guest only the NPCs within 250 m
+  (`kRtsRelevance`) of the player tribe. Now also those within 110 m (`kRelevance`, as in Creature)
+  of that guest's own view centre (`views::of`), with the same 20 m hysteresis. The guest's update
+  filter still removes its own animals everywhere: what it shows far away is what the host sends.
+* `coop.npc archless all` (any stage): every herd with its enabled flag, members, members in the
+  world and members within 100 m of the home.
+* Rivals: the same two pieces (spheres and the send set) are what a rival's area needs in Tribe.

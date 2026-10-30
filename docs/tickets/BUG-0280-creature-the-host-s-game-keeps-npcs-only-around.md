@@ -11,9 +11,9 @@ versions: 0.7.3.0
 fixed_in: unreleased
 branch: fix/w9-creature
 commits: f430ef5 bbdeb14 83e9c20 e4f980c
-tests: tools/tests/coop_npc_far.py (suite npc_far)
+tests: tools/tests/coop_npc_far.py (suite npc_far), tools/tests/coop_tribe_far.py (suite tribe_far)
 signature: creature NPCs pooled outside the host camera sphere (Relevance_Update 0xACE4E0)
-docs: docs/re/creature.md#creature-view-centres, docs/06-testing.md#testing-w9-creature
+docs: docs/re/creature.md#creature-view-centres, docs/re/creature.md#creature-view-centres-tribe, docs/06-testing.md#testing-w9-creature
 related: BUG-0274
 ---
 
@@ -46,7 +46,7 @@ The host keeps a list of the view centres of all players (`mods/coop/view_centre
 position whenever its puppet is shown in the host's place, any stage) and a hook on
 Relevance_Update adds one sphere per partner (the game's radii) to the game's list for that call
 (a buffer of ours lent to the vector, the game's pointers restored right after). Creature stage
-only for now. Bounded cost: one sphere per partner, the game's 10-herds-per-pass limit. The same
+and (2026-10-30, `npc.view_centres_tribe`) Tribe, where a partner's centre is its pointer. Bounded cost: one sphere per partner, the game's 10-herds-per-pass limit. The same
 list is meant for Rivals (docs/11-rivals.md 11.3.2) and the Cell tiles (BUG-0174). Switch
 `coop.fix npc.view_centres off`; `coop.views` prints the centres and the game's own sphere.
 
@@ -56,8 +56,13 @@ list is meant for Rivals (docs/11-rivals.md 11.3.2) and the Cell tiles (BUG-0174
   guest kept 8 of its 20 NPCs; host NPCs near the guest 8). Earlier runs with a looser check
   (20261030-001557, 001845) lost 8 of 20 too and passed it: the check was tightened to 85 %.
 * PASS with the fix: out/lab/20261030-002333, out/lab/20261030-002821, out/lab/20261030-011525 (20 of 20 in every sample).
+Tribe (`coop_tribe_far.py`, the guest's pointer 332 m from the host's camera at a herd of the game):
+* FAIL without it (`SPORE_FIX_OFF=npc.view_centres_tribe`): out/lab/20261030-013630 (no herd enabled,
+  no animal near the guest's point).
+* PASS: out/lab/20261030-013436, out/lab/20261030-014003 (3 herds enabled, 18 animals there).
 * Not seen in these runs: the nest flicker (new ids every 3-6 s), with or without the fix.
 
 ## History
 - 2026-10-29: opened.
 - 2026-10-30: fixed on fix/w9-creature (npc.view_centres), the cull found (Relevance_Update).
+- 2026-10-30: extended to the Tribe stage (npc.view_centres_tribe).

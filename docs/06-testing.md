@@ -1813,3 +1813,10 @@ wrong. Suite `campaign` (in no other suite): `tools/lab.py run campaign --lanes 
   then one click on the red cross must leave the editor. Not reproduced in 3 runs on lane 9 (the
   click 3 s after the editor came up, 5 s and 40 s after the host's body): the editor kept the
   legless creature with 115 DNA and left on one click every time.
+* `coop_tribe_far.py` (suite `tribe_far`, tribe fixture, ~2 min cold, BUG-0280 Tribe and BUG-0291):
+  the guest's pointer is pinned (`coop.npc marker x y z`) at the home of a herd of the game 300-450 m
+  from the host's camera sphere; 40 s of `coop.npc archless all` (herds within 100 m enabled, members
+  near their homes) and `coop.npc list` on both games (the host's NPCs within 100 m of the point and
+  the guest's proxies of them). `SPORE_FIX_OFF=npc.view_centres_tribe` fails both checks,
+  `SPORE_FIX_OFF=npc.rts_views` only the BUG-0291 one. `coop.census` lists no creatures in Tribe
+  (Creature and Civ only), so the test reads `coop.npc list`.

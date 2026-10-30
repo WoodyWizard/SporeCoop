@@ -787,8 +787,9 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Ticket: BUG-0280.
 * Fixed (2026-10-30, fix/w9-creature, `npc.view_centres`): the cull is the game's relevance pass
   around the local camera (docs/re/creature.md#creature-view-centres); the host now adds a sphere
-  per partner. Still open: the Tribe stage runs the same pass and is not covered; the herds' brain
-  range filter uses the host's brain level (matters for Rivals).
+  per partner, in Creature and (npc.view_centres_tribe) Tribe; in Tribe the host also sends a guest
+  the animals around its pointer (BUG-0291, npc.rts_views). Still open: the herds' brain range
+  filter uses the host's brain level (matters for Rivals); Civ is not covered.
 
 ## Creature: an NPC proxy next to a guest's avatar stays ~4 m off (2026-10-29, fix/w7-sync)
 
