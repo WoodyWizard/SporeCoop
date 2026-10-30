@@ -665,6 +665,7 @@ struct GenState {
     uint32_t rng;
     bool generating;
     int in_names;
+    uint32_t draws, hash, other; // BUG-0185 diagnosis: private draws, their results, global draws
 };
 static thread_local GenState t_gen;
 static GenState g_gen_shared; // the old state (seedfix 0)
@@ -683,14 +684,35 @@ static bool generator_draw(void* rng)
            (g_seed_fix || GetCurrentThreadId() == g_gen_thread_shared);
 }
 
+static void note_draw(bool mine, uint32_t v)
+{
+    GenState& g = gen();
+    if (!g.generating)
+        return;
+    if (mine) {
+        g.draws++;
+        g.hash = (g.hash ^ v) * 0x01000193u;
+    } else {
+        g.other++;
+    }
+}
+
 static uint32_t SK_THISCALL h_RandomInt(void* rng, uint32_t n)
 {
-    return o_RandomInt(generator_draw(rng) ? &gen().rng : rng, n);
+    bool mine = generator_draw(rng);
+    uint32_t v = o_RandomInt(mine ? &gen().rng : rng, n);
+    note_draw(mine, v);
+    return v;
 }
 
 static float SK_THISCALL h_RandomFloat(void* rng)
 {
-    return o_RandomFloat(generator_draw(rng) ? &gen().rng : rng);
+    bool mine = generator_draw(rng);
+    float f = o_RandomFloat(mine ? &gen().rng : rng);
+    uint32_t v;
+    memcpy(&v, &f, 4);
+    note_draw(mine, v);
+    return f;
 }
 
 static void off_main(uint32_t& n, const char* what)
@@ -729,12 +751,26 @@ static void SK_THISCALL h_RequirePlanets(void* sm, void* star, void* p3)
     memcpy(&z, (uint8_t*)star + 0x44, 4);
     g.rng = (F<uint32_t>(star, 0x70) * 0x9E3779B1u ^ x ^ (z << 16 | z >> 16)) | 1u;
     g_gen_thread_shared = GetCurrentThreadId();
+    // BUG-0185: what the generation reads besides the draws (tech level +0x4C, flags +0x5C, the
+    // star waiting in cStarManager +0xDC for its tech level), so two games' logs can be compared
+    uint32_t seed = g.rng, tech0 = F<uint32_t>(star, 0x4C), flags0 = F<uint32_t>(star, 0x5C);
+    bool pending = false;
+    if (sm && !IsBadReadPtr((uint8_t*)sm + 0xDC, 8)) {
+        void** b = F<void**>(sm, 0xDC);
+        void** e = F<void**>(sm, 0xE0);
+        for (void** q = b; q && q < e && !pending; q++)
+            pending = *q == star;
+    }
+    g.draws = g.hash = g.other = 0;
     g.generating = true;
     o_RequirePlanets(sm, star, p3);
     g.generating = false;
     g_planets_seeded++;
-    H->log(M, SK_DEBUG, "space: planets of star %08X generated (seeded): %d", F<uint32_t>(star, 0x70),
-           (int)F<uint8_t>(star, 0xAC));
+    H->log(M, SK_INFO,
+           "space: planets of star %08X generated (seeded %08X): %d (tech %u->%u flags %08X->%08X pending=%d "
+           "draws=%u hash=%08X other=%u)",
+           F<uint32_t>(star, 0x70), seed, (int)F<uint8_t>(star, 0xAC), tech0, F<uint32_t>(star, 0x4C), flags0,
+           F<uint32_t>(star, 0x5C), (int)pending, g.draws, g.hash, g.other);
 }
 
 // tests (BUG-0123): another thread "inside GenerateRandomName" for `ms` (the hook's bookkeeping,
