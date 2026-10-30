@@ -1113,6 +1113,23 @@ static std::wstring current_db_dir(bool lower)
     return w;
 }
 
+std::string current_game_key()
+{
+    std::string planet = modes::current_world_name();
+    if (!is_planet_file(planet))
+        return "";
+    std::wstring db = current_db_dir(true);
+    if (db.empty())
+        return "";
+    std::wstring f = widen(planet);
+    for (auto& ch : f)
+        ch = towlower(ch);
+    return narrow(db + L"\\" + f);
+}
+
+static void (*g_slot_replaced)(const std::string&);
+void set_slot_replaced_hook(void (*fn)(const std::string& dir)) { g_slot_replaced = fn; }
+
 // Which slot a received world goes into and how it is written: slotfs.cpp (never the slot being
 // played, BUG-0035; a co-op slot only for the same host world, BUG-0087; all files written or none,
 // BUG-0105).
@@ -1257,6 +1274,14 @@ static void finish(const std::string& host_name)
         g_feed("could not save the world of " + host_name + ": " + werr);
         g_in = In{};
         return;
+    }
+    if (g_slot_replaced) { // BUG-0225: refunds owed to the game that was in this slot are void
+        std::wstring low = slot;
+        while (!low.empty() && low.back() == L'\\')
+            low.pop_back();
+        for (auto& ch : low)
+            ch = towlower(ch == L'/' ? L'\\' : ch);
+        g_slot_replaced(narrow(low));
     }
     std::string slot_name = narrow(slot.substr(slot.find_last_of(L'\\') + 1));
     uint64_t in_ms = GetTickCount64() - g_in.t0;

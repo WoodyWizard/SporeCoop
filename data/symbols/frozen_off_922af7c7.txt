@@ -25,3 +25,4 @@ SporeCoop::cPosseSimulator_AddMember ; Creature: pack members of a partner (BUG-
 SporeCoop::cPosseSimulator_Get ; Creature: pack members of a partner (BUG-0108)
 SporeCoop::Herd_NestPosition ; support log: no nest distance in the creature trace line (BUG-0279)
 SporeCoop::SpacePlayerData_Reset ; world: no clearing of a stale player empire before a load from the galaxy menu (BUG-0284)
+UTFWin::cWindowManager::UpdateHover ; game fixes: no guard against a destroyed modal window in the window manager (BUG-0270)

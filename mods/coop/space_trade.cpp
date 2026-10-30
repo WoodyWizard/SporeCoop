@@ -100,6 +100,7 @@ struct Out {               // something of ours on its way to a partner
     bool cancel_sent = false;
     void* emp = nullptr;   // BUG-0058: the player's cEmpire it was taken from (a load makes a new one)
     uint32_t saves = 0;    // spaceext::saves() when it was taken
+    spacelogic::WorldTag tag; // BUG-0225: the Space world and save file it was taken from
 };
 // BUG-0058: what comes back while we are not in Space (an editor, the menu, a load) waits here and
 // is paid once we are back in Space. Before, the refund ran at once (outside Space: "no room, lost",
@@ -116,6 +117,10 @@ COOP_FIX("trade.refund", "BUG-0058", g_refund_fix, "space: gifts that come back 
 static bool g_away;        // tests: the feature acts as outside Space (no inventory), BUG-0058
 static bool g_hold;        // tests: do not answer gifts (the answer is still on its way)
 static uint32_t g_owed_paid, g_owed_dropped;
+static uint32_t g_owed_kept;        // BUG-0225: owed items kept for another game (as last decided)
+static uint32_t g_owed_seen_epoch;  // the world the kept items were last decided in
+static double g_owed_seen_t;        // and when (decided again every 2 s or on a new world / item)
+static bool g_owed_new;
 struct Offer {             // rivals: a partner's offer to us
     uint32_t id;
     uint8_t from;
@@ -569,6 +574,7 @@ static std::string give_tool(const Key& key, int n, uint8_t to)
     Out o{new_id(), K_TOOL, to, key, n, 0, 0, nm, H->time_seconds()};
     o.emp = empire();
     o.saves = spaceext::saves();
+    o.tag = spaceext::world_tag();
     g_out.push_back(o);
     net::Writer w;
     w.u8(to);
@@ -599,6 +605,7 @@ static std::string sell(int n_max = kSaleStep)
           H->time_seconds()};
     o.emp = empire();
     o.saves = spaceext::saves();
+    o.tag = spaceext::world_tag();
     g_out.push_back(o);
     if (!rivals)
         note_demand(d.col.planet, n, o.t);
@@ -621,14 +628,27 @@ static std::string sell(int n_max = kSaleStep)
 
 static bool here() { return !g_away && spaceext::in_space() && inventory() && empire(); }
 
+static void pay_now(const Out& o, int n, const std::string& why);
 static void refund(const Out& o, int n, const std::string& why)
 {
     if (n <= 0)
         return;
     if (g_refund_fix && !here()) { // not in Space now: owed until we are back
         g_owed.push_back({o, n, why});
+        g_owed_new = true;
         return;
     }
+    // BUG-0225: in Space, but maybe another Space world than the one it was taken from (a load came
+    // between): pay_owed decides with the world tag
+    if (g_refund_fix && spaceext::owed_id() && o.tag.epoch != spaceext::world_epoch()) {
+        g_owed.push_back({o, n, why});
+        g_owed_new = true;
+        return;
+    }
+    pay_now(o, n, why);
+}
+static void pay_now(const Out& o, int n, const std::string& why)
+{
     bool ok = o.kind == K_TOOL ? [&] { bool is_new; return add_charges(o.key, n, is_new) > 0; }() : add_spice(o.key, n);
     g_refunds++;
     spaceext::notice(std::to_string(n) + " x " + o.name + spaceext::tr(" came back", " вернулось") +
@@ -697,15 +717,46 @@ static void pay_owed()
 {
     if (g_owed.empty() || !here())
         return;
+    if (spaceext::owed_id()) { // BUG-0225: kept items wait for their game; decide again only when needed
+        double now = H->time_seconds();
+        if (!g_owed_new && g_owed_seen_epoch == spaceext::world_epoch() && now - g_owed_seen_t < 2.0)
+            return;
+        g_owed_new = false;
+        g_owed_seen_epoch = spaceext::world_epoch();
+        g_owed_seen_t = now;
+        g_owed_kept = 0;
+    }
     auto owed = std::move(g_owed);
     g_owed.clear();
     void* emp = empire();
     for (auto& w : owed) {
+        if (spaceext::owed_id()) { // BUG-0225: by the world and its save file
+            switch (spaceext::owed_action(w.o.tag)) {
+            case spacelogic::OwedAction::Pay:
+                g_owed_paid++;
+                pay_now(w.o, w.n, w.why);
+                break;
+            case spacelogic::OwedAction::Drop:
+                g_owed_dropped++;
+                H->log(M, SK_INFO, "trade: %d x %s owed from world %u (%s) dropped: that game still has it or is gone",
+                       w.n, w.o.name.c_str(), w.o.tag.epoch, w.o.tag.game.c_str());
+                break;
+            case spacelogic::OwedAction::Keep:
+                g_owed_kept++;
+                g_owed.push_back(std::move(w)); // another game: paid when that one is loaded again
+                break;
+            }
+            continue;
+        }
         if (w.o.emp == emp || spaceext::saves() != w.o.saves) {
             g_owed_paid++;
             refund(w.o, w.n, w.why);
         } else
             g_owed_dropped++;
+    }
+    while (g_owed.size() > spacelogic::kOwedKeepMax) {
+        g_owed_dropped++;
+        g_owed.erase(g_owed.begin());
     }
 }
 
@@ -1033,10 +1084,10 @@ static std::string status()
     snprintf(b, sizeof b,
              "trade: gifts_sent=%u gifts_got=%u charges_sent=%u charges_got=%u charges_back=%u sales=%u sold=%u "
              "bought=%u earned=%lld paid=%lld offers_sent=%u offers_got=%u refunds=%u pending=%u offers=%u owed=%u "
-             "owed_paid=%u owed_dropped=%u\n",
+             "owed_paid=%u owed_dropped=%u owed_kept=%u world=%u\n",
              g_gifts_sent, g_gifts_got, g_charges_sent, g_charges_got, g_charges_back, g_sales, g_sold, g_bought,
              (long long)g_earned, (long long)g_paid, g_offers_sent, g_offers_got, g_refunds, (unsigned)g_out.size(),
-             (unsigned)g_offers.size(), (unsigned)g_owed.size(), g_owed_paid, g_owed_dropped);
+             (unsigned)g_offers.size(), (unsigned)g_owed.size(), g_owed_paid, g_owed_dropped, g_owed_kept, spaceext::world_epoch());
     return b;
 }
 

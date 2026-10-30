@@ -716,13 +716,12 @@ None open (BUG-0077, BUG-0080, BUG-0094 and BUG-0139 fixed on fix/w4-installer).
 * Not checked: two separate PCs.
 * Ticket: BUG-0210.
 
-## Space trade: an owed refund can be paid into another game (BUG-0225, open part)
-After a save of any game, a trade refund owed from a gift that came back outside Space is paid
-into whatever Space game is loaded next (`spaceext::saves()` counts every save), and a reloaded
-game whose cEmpire got the old address is taken for the same game. Reproduce: a profile with two
-Space games; the receiver holds a tool gift (`coop.space trade hold 1`), the host saves, loads the
-other game, the receiver declines: the other game's tool gets the charges. Needs the shared
-after-save hook of BUG-0217 (#151) and a game key; the allies part of BUG-0225 is fixed.
+## Space trade: an owed refund can be paid into another game (BUG-0225, fixed on fix/w9-space)
+Fixed (unreleased): owed trade and spice refunds go by the Space world and its save file
+(docs/re/space.md#space-owed-refund-identity). Left: a save that fails to write is still taken as
+saved (the game's SaveGame reports nothing), and the owed queue is memory only (a hot reload or a
+game restart drops it).
+* Ticket: BUG-0225.
 ## Cell: a guest may bite one NPC more often than the host can (2026-10-28, fix/w5-cell)
 <a id="issue-cell-guest-bite-lock"></a>
 
@@ -746,6 +745,11 @@ after-save hook of BUG-0217 (#151) and a game key; the allies part of BUG-0225 i
   fixture) a guest caught `0xC0000005 at 0x00000065` from the game's UI code (0x0095904B, near
   UTFWin::Image / UILayout). The game handled it and played on; seen once in three campaigns.
 * Reproduce: not reproduced. Lab 20261029-093233 campaign#2, out/lane4/campaign/20261029-093248.
+* Contained (2026-10-30, fix/w9-space): the window manager's modal window was a destroyed object;
+  a guard now drops such a window before a mouse message uses it (`game.dead_modal`,
+  docs/re/space.md#space-owed-refund-identity). Still open: which game window it was and why the
+  game destroyed it without PopModal (the guard logs "the window manager's modal window ... was
+  destroyed" when it happens again).
 * Ticket: BUG-0270.
 
 ## Tests: the smoke test `select` sometimes finds the partner off the screen (2026-10-29, fix/w6-cell)

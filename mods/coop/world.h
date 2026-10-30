@@ -67,4 +67,13 @@ bool menu_intro_playing();
 // opened meanwhile came up without its interface (coop.cpp own editor)
 bool cinematic_playing();
 
+// BUG-0225 (#159): the save file of the game being played, "<slot dir>\<planet>.spo" in lower case
+// (UTF-8): the planet file alone is not unique (co-op worlds alternate between two slots of the same
+// planet, BUG-0035, and the guest's own copy can be beside them). "" = unknown (a menu: "SaveGame",
+// snapshot.spo, no save database). Not for every frame (it asks the resource database).
+std::string current_game_key();
+// BUG-0225: called after a received world was written into a slot (lower-case dir, UTF-8, no
+// trailing '\'): the game that was in that slot no longer exists as it was
+void set_slot_replaced_hook(void (*fn)(const std::string& dir));
+
 } // namespace world

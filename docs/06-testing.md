@@ -1812,3 +1812,24 @@ Pitfall: with the machine loaded (load average ~25, several lanes) the two-game 
 "guest: the console stopped answering (crash?)" at the end of civ_other_world / tribe_other_world
 (4 of 7 lab runs) while every check passed, no crash report was written and the guest's console
 answered right after; a 1 s poller beside a standalone run saw no gap. Same signature as BUG-0261.
+## Space world identity, dead modal window, rivals landing (2026-10-30, fix/w9-space)
+<a id="testing-space-world-identity"></a>
+
+* `coop_space_trade_reload.py` (suite `space_trade_reload`, cold, ~1.5 min; BUG-0225): the host
+  gives 5 bomb charges to a guest on `trade hold 1`, leaves for the menu (the quit saves), loads
+  game B (a copy of the fixture slot as `Game7`+, made by the test after the start and removed at
+  the end), the guest leaves: nothing may be paid into game B; back in game A the 5 come back
+  once (12). `SPORE_FIX_OFF=space.owed_id` FAILS (game B gets a bomb with 5, game A keeps 7).
+  `--same-game` (suite `space_trade_reload_same`): game A loaded again, paid once (both versions).
+* `coop.space world`: the Space world epoch, `open`, the number of saves of the Space world the
+  ledger noted and the game key (`<slot dir>\<planet>.spo`).
+* Pitfall: `coop.menu` is the game's quit and SAVES first; a "reload of a game that still has the
+  items" cannot be made with it (only the unit test `tests/space_tests.cpp` covers that row).
+* `coop_dead_modal.py` (suite `dead_modal`, warm, ~1 min; BUG-0270): `coop.deadmodal` on the guest
+  puts a destroyed object (vtable slots 0x65) as the window manager's modal window, then `move`
+  sends mouse messages. `SPORE_FIX_OFF=game.dead_modal` FAILS with the game's fault at 0x65; with
+  the guard the "dead modal windows dropped" count of `coop.status` rises by one and `exc` stays 0. The state is
+  simulated: the game's own way to leave a destroyed modal window is not known.
+* `coop_space_rivalry.py` (BUG-0262): lands whoever is still in the system twice (two
+  `land_retry` rounds), then waits until both ships are on the home planet and the host's game has
+  the guest's puppet before the PvP checks; the failure message names both places.

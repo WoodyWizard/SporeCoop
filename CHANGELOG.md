@@ -18,6 +18,14 @@
 - A world share that failed after the host's save ("cannot share the world: ...") is retried up to
   3 times, 30 s apart; a guest in another world no longer stays there for the whole stage
   (BUG-0231).
+### Fixed
+- Space: a trade or spice gift that comes back after a galaxy reload is paid only into the game it
+  was taken from: kept for that game while another one is loaded, paid when the same game was saved
+  since, dropped when the reloaded game still has it or its save slot was replaced by a received
+  world (BUG-0225, GitHub #159).
+- A rare fault in the game's UI right after a guest loaded a shared world (a destroyed modal window
+  left in the window manager) is caught before the next mouse message (BUG-0270).
+- Tests: `space_rivalry` waits until both ships are on the home planet before its checks (BUG-0262).
 
 ## [0.7.3.1] - 2026-10-29
 
