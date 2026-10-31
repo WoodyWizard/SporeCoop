@@ -3,6 +3,13 @@
 ## [Unreleased]
 
 ### Fixed
+- Cell: after the host's world is loaded again (an evolution, "Send my world"), a guest's cell no
+  longer starts alone up to 130 m from the host: it joins the host as after the first load
+  (BUG-0352).
+- Cell: a guest that bites a creature of the host now sees its health ring, as the host does
+  (BUG-0350).
+- Cell: the log names the food, the DNA spent and the editor's DNA budget at every cell editor and
+  stage entry, to explain reports of unexpected DNA (BUG-0351).
 - Tribe: at the arrival and after a rejoin, a player's chief that stands in another one is moved to
   its own spot round the village; two chiefs that end up in each other later are moved apart
   (BUG-0340).

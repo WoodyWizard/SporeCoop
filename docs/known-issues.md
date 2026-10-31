@@ -1188,14 +1188,16 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Known: `creations.cpp apply_own_cell` skips a key equal to `g_cell_set`, cleared only at the
   session end (code). Observed in two sessions of the 2026-10-31 reports.
 * Next steps: re-apply after every load once the Cell game has settled (BUG-0342).
-* Ticket: BUG-0349 (also BUG-0352: such a load leaves the guest at the pool's start, far from the host).
+* Ticket: BUG-0349 (BUG-0352, the guest left at the pool's start after such a load, is fixed).
 
-## Cell: a guest's bites show no health ring of the host's creature (2026-10-31, player report)
+## Cell: no hurt or eating animations across machines (2026-10-31, player report)
 <a id="issue-cell-guest-bite-ring"></a>
 
-* What happens: the guest's weapon bite on a host creature is sent to the host and skips the game's
-  DamageCell, which draws the health ring and the hurt animation; the host's puppet of a guest
-  shows no eating.
-* Reproduce: guest with a weapon cell bites a creature next to the host (coop_cell_spin.py setup).
-* Known: code reading of the DamageCell hook in cellsync.cpp; not checked in a game.
-* Ticket: BUG-0350. Related open question "a bunch of DNA" after a cell editor: BUG-0351.
+* What happens: a guest's bite on a host creature shows the health ring since BUG-0350, but not the
+  creature's hurt animation (the host plays it); the host's picture of a guest (its puppet) shows no
+  eating or biting.
+* Reproduce: guest with a weapon cell bites a creature next to the host (coop_cell_bite_ring.py setup).
+* Known: docs/re/cell.md#cell-guest-bite-ring (the hurt animation's event 2 runs the after-hurt
+  reaction, not wanted on a passive mirror; puppets get no animation from the mod).
+* Ticket: BUG-0350 (the ring fixed, the animations open). Open question "a bunch of DNA" after a
+  cell editor: BUG-0351 (the log now has the numbers).
