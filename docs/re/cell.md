@@ -1225,3 +1225,26 @@ BUG-0338. GOG 2024, Ghidra and `tools/tests/coop_cell_particles.py` (suite `cell
   all such cells), and a free of 1499 or of anything outside the pool does nothing. `coop.pool sap`
   prints `particles=` (the game's count), `peak=`, `spare=`, `bad_frees=`; `coop.pool particles <n>`
   (tests) fills the pool to n used with real allocations.
+
+## The "ghost" after the own cell's rebuild: our avatar taken for the partner's puppet (2026-10-31, fix/w25-reports)
+<a id="cell-ghost-puppet-address"></a>
+
+BUG-0342. GOG 2024, lanes 5/6, `tools/tests/coop_cell_own_load.py` (34 + 18 runs) with
+`coop.pool collide` / `sapme` / `own_pairs`.
+
+* ✔ Not the cause (the failing runs had the same as the good ones): the cell model data (16 parts,
+  radius 1.259), the broadphase (object, endpoints, bounds, pair list 60-120 of 4096), scale +0x58,
+  matrix +0x5C, flags +0x48, the level. The broadphase held 1-3 pairs of our cell with the plants it
+  touched, both cells live in the pool (GetIfNotDeleted) and Collisions' sphere test (0xE6D790:
+  model data centre +0x1238 and radius +0x1244 times +0x58, turned by +0x5C when +0x48 bit 2) passed,
+  yet HandleCollisionPair (hook h_Pair) saw no pair of our cell (`own_pairs` stayed 0; good runs: 15-70
+  per plant).
+* ✔ The cause: h_Pair drops every pair with a partner's puppet (`modes::cell_is_puppet`), and that
+  asked only a map keyed by the cell's address. RebuildLevel 0xE7FD00 frees every cell and makes the
+  avatar first, often at the address the puppet had; the puppet is then made again at another
+  address, and the old entry is never looked at again (the remote's alive check asks for its new
+  puppet). With the old check: `puppet=1` for our own cell in both ghost runs of 12 (lab of the
+  branch); a game whose avatar is "a puppet" does not eat, bite or get hit until the next rebuild.
+* Fix `cell.puppet_index` (modes.cpp): a puppet is the cell at the address AND its pool index
+  (index + generation, `cell_at`); entries whose index no longer leads to their address are dropped
+  when a puppet is made. With it: see BUG-0342's Verification.

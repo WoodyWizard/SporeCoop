@@ -1181,17 +1181,6 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Known: docs/re/creature.md#creature-npc-at-centre; the host logs such NPCs now.
 * Ticket: BUG-0339.
 
-## Cell: a guest's own cell applied at the world load is a ghost (2026-10-31, player report)
-<a id="issue-cell-own-cell-ghost"></a>
-
-* What happens: after the own cell's level rebuild the guest's game does not eat what the cell swims
-  into (players: no eat, bite or hit for minutes).
-* Reproduce: `coop_cell_own_load.py` (guest choices.ini cell BAF1AD40). After a reload: 2 of 2 lab
-  runs without `cell.own_rebuild` (fixed on fix/w22-reports: the rebuild waits 5 s). After the
-  first load (the join): 2 of 4 runs even with the fix: open.
-* Known: CORRECTION: not "every rebuild at a load" (a rebuild right after the guest's editor was fine,
-  second batch); lead not checked: the host's mirrors already in the pool at the rebuild.
-* Ticket: BUG-0342
 ## Cell: the view is off centre after a co-op small respawn (2026-10-31, player report)
 <a id="issue-cell-respawn-camera"></a>
 
