@@ -11,6 +11,9 @@ nothing is unpacked or run). For each fault it prints:
   signature  <exe hash 8>:<where>, where = SporeApp.exe Name+off | module+off (instance tags such as
              coop.i7.1.dll are folded to coop.dll, so reports of every instance match)
   chain      the first frames in SporeApp.exe / coop.dll / sporekit.dll
+  address    the fault's address in the exe's own numbering (preferred base 0x400000): Windows loads
+             SporeApp.exe relocated (0x410000, Steam seen at 0x810000), tickets name the rebased address
+             (BUG-0346); the base comes from the log's `base=` line or the report's module list
   known      tickets.py find on the signature, the address and the symbol: earlier tickets
   action     "seen: BUG-NNNN (status, fixed in X)" or "new: tools/tickets.py new ..."
   coop.dll   the llvm-symbolizer line for a coop.dll offset (only right for the build of that version)
@@ -90,6 +93,30 @@ def build_of(text):
     return dict(kit='?', build='unknown', exe='????????')
 
 
+EXE_BASE = re.compile(r'SporeApp\.exe sha256=\S+ base=0x([0-9A-Fa-f]{8})|'
+                      r'^\s+([0-9A-F]{8})\s+[0-9A-F]+\s+\S.*\\SporeApp\.exe\s*$', re.M)
+PREFERRED_BASE = 0x400000
+
+
+def exe_base(text):
+    """where SporeApp.exe was loaded (None when the text does not say): the log's `exe ... base=` line or
+    the report's module list"""
+    m = EXE_BASE.search(text)
+    return int(m.group(1) or m.group(2), 16) if m else None
+
+
+def rebased(eip, where, base):
+    """the fault address in the exe's preferred numbering (0x400000), as tickets and .sym files name it
+    (BUG-0346), or None when the fault is not in SporeApp.exe"""
+    m = re.match(r'SporeApp\.exe\+(0x[0-9A-Fa-f]+)$', where)
+    if m:
+        return PREFERRED_BASE + int(m.group(1), 16)
+    in_exe = where.startswith('SporeApp.exe') or ('.dll' not in where and '::' in where)  # log lines omit the module
+    if in_exe and base is not None:
+        return int(eip, 16) - base + PREFERRED_BASE
+    return None
+
+
 def faults(text):
     """[(code, eip, where)]: the report's exception first, then the log's `the game crashed:` lines,
     then the other fault lines in file order (BUG-0247: the crash is never cut off by fl[:3])"""
@@ -125,12 +152,18 @@ def triage(name, text):
         print('signature  none (no exception in this file)')
         return
     chain = [fold(m.group(2)) for m in FRAME.finditer(text)][:6]
+    base = exe_base(text)
     for code, eip, where in fl[:3]:
         sig = f'{b["exe"]}:{where}'
         print(f'signature  {sig}   ({code} at {eip})')
         if chain:
             print('chain      ' + ' <- '.join(chain))
         terms = [where, eip.lower(), '0x' + eip[2:].upper().lstrip('0')]
+        va = rebased(eip, where, base)
+        if va is not None and va != int(eip, 16):
+            print(f'address    0x{va:X} (the exe loaded at 0x{base:08X}, numbered from 0x{PREFERRED_BASE:X} here)'
+                  if base is not None else f'address    0x{va:X} (numbered from 0x{PREFERRED_BASE:X})')
+            terms.append(f'0x{va:X}')
         sym = re.match(r'SporeApp\.exe (\S+?)\+', where)
         if sym:
             terms.append(sym.group(1))

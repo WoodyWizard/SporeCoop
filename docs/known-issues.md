@@ -1175,3 +1175,50 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   the host and respawned at the nest); not reproduced by the pool call or a pinned NPC.
 * Known: docs/re/creature.md#creature-npc-at-centre; the host logs such NPCs now.
 * Ticket: BUG-0339.
+
+## Creature: a Steam guest crashes loading the host's Creature world (2026-10-31, player report)
+<a id="issue-steam-guest-bake-crash"></a>
+
+* What happens: the guest (Steam build, Windows) crashes at 0x441F3B (`3010a413:SporeApp.exe+0x41F3B`,
+  read of 0) 0.3 s into every load of the host's Creature world: a creature model bake whose
+  property list is null; first from the save reader (a creature in the host's save), then from
+  coop's puppet build of the host's chosen own creature.
+* Reproduce: not yet; plan in BUG-0341 (a lane without `bp1content/BoosterPack_01.package`, or a
+  host playing an own creature from choices.ini, BUG-0344).
+* Known: chain and both candidate causes in the ticket; SporeKit's relocation handling is fine.
+* Ticket: BUG-0341
+
+## Cell: a guest's own cell applied at the world load is a ghost (2026-10-31, player report)
+<a id="issue-cell-own-cell-ghost"></a>
+
+* What happens: when `apply_own_cell` rebuilds the level on the first Cell frames of a load, the
+  guest's cell cannot eat, bite or be hit for minutes (both players saw it); after the game's own
+  rebuild (the cell editor) it works.
+* Reproduce: a guest with an own cell (choices.ini or newest own creation) joins a host in Cell.
+* Known: observed correlation in the guest's log (3 loads); the cause (timing or the missing
+  unlocked-parts refresh 0xE4FBA0) is inferred.
+* Ticket: BUG-0342
+
+## Cell: the view is off centre after a co-op small respawn (2026-10-31, player report)
+<a id="issue-cell-respawn-camera"></a>
+
+* What happens: after a knockout and "respawned small next to <partner>" the host's view stayed off
+  the cell.
+* Reproduce: not tried; knock the host out with a partner, wait for the 10 s respawn.
+* Ticket: BUG-0343
+
+## Creature: the host's avatar becomes an old own creature from choices.ini (2026-10-31, player report)
+<a id="issue-host-old-own-creature"></a>
+
+* What happens: on Cell -> Creature the host's avatar is swapped (SetSpecies) from the species it
+  just made to an own creature chosen in an earlier session; after the creature editor the edit is
+  not taken over ("my species are still unevolved").
+* Reproduce: a host with a creature choice in its choices.ini evolves Cell -> Creature with a guest.
+* Ticket: BUG-0344
+
+## All: the watchdog dumps stacks while the game is minimized (2026-10-31, player report)
+<a id="issue-watchdog-minimized"></a>
+
+* What happens: `WATCHDOG (no frames ...)` with a stack dump each time a player's game is minimized
+  (main thread in Canvas::Tick's minimized sleep); harmless, noisy in reports.
+* Ticket: BUG-0347
