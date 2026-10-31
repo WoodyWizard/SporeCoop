@@ -254,6 +254,12 @@ class Player(threading.Thread):
             close_captain(self.c)
             self.count('captain_closed')
             return True
+        # a window that pauses the game without a caption (My Collections, the Sporepedia): Esc
+        # closes it; the wheel and Enter do nothing there (BUG-0336)
+        import coop_space_finale
+        if coop_space_finale.close_stray(self.c, self.name):
+            self.count('windows_closed')
+            return True
         # the pause menu (an Esc too many) or the co-op window left open: close them
         for cap in ('Resume Game',):
             b = self.ui_button(cap)

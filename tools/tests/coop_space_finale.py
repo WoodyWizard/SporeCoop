@@ -70,6 +70,37 @@ def wait(pred, timeout, step=1.0):
     return None
 
 
+def stray_window(con):
+    """the game time is paused (finale busy=1) without a caption or a cinematic: a window a bot's
+    click opened, such as My Collections / Mission Log (the 4th small HUD button bottom left) or the
+    Sporepedia. It takes no mouse wheel and no Enter (BUG-0336). OLD_FINALE_TOOL=1: not looked for"""
+    if os.environ.get('OLD_FINALE_TOOL') == '1':
+        return False
+    f = fin(con)
+    if f.get('busy') != '1' or f.get('cin', '0').strip('0'):
+        return False
+    hp = sp(con, 'hp')
+    return 'cine=0' in hp and 'movie=0' in hp and 'state=2' not in hp
+
+
+def close_stray(con, who):
+    """Esc closes such a window like a player; an Esc that opened the pause menu instead is undone
+    with Resume Game"""
+    import uifind
+    if not stray_window(con):
+        return False
+    print(f'  {who}: a window pauses the game (no caption): Esc closes it', flush=True)
+    if uifind.shown(con, 'Resume Game'):
+        uifind.press(con, 'Resume Game')
+    else:
+        con.call('key esc')
+    time.sleep(2)
+    if uifind.shown(con, 'Resume Game'):
+        uifind.press(con, 'Resume Game')
+        time.sleep(1)
+    return True
+
+
 def settle(con, who, secs=4, timeout=120):
     """press OK on every caption (tutorial texts, badges) until nothing plays for `secs`. A caption
     is confirmed only after it has been up for 6 s: an Enter while a caption is still coming up
@@ -83,7 +114,9 @@ def settle(con, who, secs=4, timeout=120):
         if f.get('busy') == '1':
             quiet = 0.0
             since = since or time.time()
-            if time.time() - since >= 6:
+            if time.time() - since >= 6 and close_stray(con, who):  # (BUG-0336)
+                since = None
+            elif time.time() - since >= 6:
                 presses += 1
                 # some captions only take the green check button (bottom right)
                 con.call('key enter' if presses % 2 else 'click 1410 1048')
@@ -118,6 +151,7 @@ def to_galaxy(con, who, ck):
         if os.environ.get('OLD_FINALE_TOOL') != '1' and play_space.captain_open(con):
             print(f'  {who}: the captain screen is open: OK closes it')
             play_space.close_captain(con)
+        close_stray(con, who)  # My Collections, Sporepedia (BUG-0336)
         con.call('wheel 720 540 -5')
         n += 1
         time.sleep(1.5)
