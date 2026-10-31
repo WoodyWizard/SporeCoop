@@ -1135,12 +1135,15 @@ campaign#1 (guest Bob) and `tools/tests/coop_cell_pause.py` (suite `cell_pause`)
   right after it the first warning of BUG-0337's diagnostics: 198 objects left open, 194 of them
   with his avatar's object id; 30 s later 782 (endpoints 2597 for 904 live objects); then on the
   way to Creature `GeneralAllocator_FreeInternal+0x13D` freeing the event pool `G+0x54` in the
-  Cell teardown 0xE7F9B0 (return 0xE7FAF0; the crash tools say SimUpdate+0x750). Inferred (not seen
-  directly): the heap damage is the pending overflow's.
+  Cell teardown 0xE7F9B0 (return 0xE7FAF0; the crash tools say SimUpdate+0x750).
+* ✔ Reproduced (lane 8, `cell.sap_pending` off): pending 17424 while paused, Resume, then the guest
+  leaves Cell for the galaxy menu (`coop.menu`): 88 faults, first `GeneralAllocator_FreeInternal+0x64`
+  freeing pool `G+0x8C` (return 0xE7FA8D, BUG-0308's exact signature), then 0x00DDA358 (data 0x18) as
+  in both campaign reports. The heap blocks after the pending arrays are what the teardown frees.
 * The guard `cell.sap_pending` (modes.cpp `cell_sap_room()`, used by `cell_create` (mirrors) and
   `cell_spawn` (puppets)): no cell of ours while `s+0x2C + 2 + 512 > 2 x s+4`; the mirror is made
   by a later state once the simulation runs again. `coop.pool sap` prints `held=` (creations held).
   The game itself creates cells only inside SimUpdate, before the sweep of the same frame.
-* ? BUG-0308 (a rejoined guest, the same kind of heap fault freeing pool `G+0x8C`, return 0xE7FA8D):
-  same mechanism possible (900 mirrors created by the join while the game was not simulating);
-  not shown.
+* ~ BUG-0308 (a rejoined guest, the same fault freeing pool `G+0x8C`, return 0xE7FA8D): the same
+  signature is what the pending overflow gives; whether that guest's game was not simulating while
+  it made mirrors (the join, a pause) is not shown.

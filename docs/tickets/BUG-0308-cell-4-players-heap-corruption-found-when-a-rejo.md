@@ -14,7 +14,7 @@ commits: 4ae7640
 tests: campaign_short, cell_rejoin_leave
 signature:
 docs: docs/re/cell.md#cell-leave-guard
-related: BUG-0295, BUG-0271, BUG-0028
+related: BUG-0295, BUG-0271, BUG-0028, BUG-0348
 ---
 
 ## Report
@@ -66,3 +66,4 @@ world arrives and the guest leaves the stage to load it, 12 times.
   toward the broadphase limit of BUG-0295; whether it played a part here is not known (the guest's
   pool held 904 cells before the leave).
 - 2026-10-30 (fix/w13-cell): guard `cell.leave_guard` added (window confirmed: 1185 applied states / ticks in 12 rejoins without it); the crash not reproduced, stays open.
+- 2026-10-31 (fix/w22-cell): BUG-0348 reproduces this exact signature (FreeInternal+0x64 freeing pool G+0x8C, return 0xE7FA8D, then 0x00DDA358) by overflowing the cell broadphase's pending arrays (a guest that creates mirrors while its game does not simulate), guarded by `cell.sap_pending`; whether this report's guest was in that state is not shown, so it stays open.
