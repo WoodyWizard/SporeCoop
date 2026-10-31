@@ -2314,3 +2314,17 @@ answered right after; a 1 s poller beside a standalone run saw no gap. Same sign
   --from space --to space --minutes 1 --players 4 --no-rejoins --finale-from-galaxy` (~10 min;
   `--finale-from-galaxy` puts every guest into the galaxy view first; `CAMPAIGN_FINALE_OLD=1`
   runs the old steps and fails with the [stuck] findings of the report).
+
+## Space bots: windows that pause the game without a caption (2026-10-31, fix/w19-space)
+<a id="testing-space-stray-window"></a>
+
+* The small HUD buttons at the bottom left (1440x1080 window): (24, 1054) the pause menu, (84, 1054)
+  the Sporepedia, (114, 1054) My Collections / Mission Log. The last two pause the game time
+  (finale `busy=1`, `coop.space hp` cine=0 movie=0), take no mouse wheel and no Enter; Esc closes
+  them. `uifind` does not report My Collections as shown (its visibility flags stay 0 while it is
+  up): look at the paused game time instead.
+* The finale tools and the Space play bot close such a window (`coop_space_finale.close_stray`);
+  `OLD_FINALE_TOOL=1` turns that off. Test `coop_space_stray_window.py` (suite
+  `space_stray_window`, ~2 min): the host opens each window with a real click, then must reach the
+  galaxy view with the game running (BUG-0336). Without the close the host never leaves its system,
+  which stalled a whole 4-player campaign finale for 25 minutes (20261031-024151).
