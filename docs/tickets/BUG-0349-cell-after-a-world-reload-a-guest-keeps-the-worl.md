@@ -1,20 +1,21 @@
 ---
 id: BUG-0349
 title: Cell: after a world reload a guest keeps the world's cell while the host shows the guest's own cell (the own cell is applied once per session)
-status: open
+status: fixed
 kind: desync
 stage: Cell
 reported: 2026-10-31
 source: player reports 2026-10-31 (second batch: 11 zips, host and guest)
 role: guest
 versions: 0.7.3.1
-fixed_in:
-branch:
+fixed_in: unreleased
+branch: fix/w22-reports
 commits:
-tests:
+tests: cell_own_load (tools/tests/coop_cell_own_load.py)
 signature:
 docs: docs/re/creations.md (4.2 Cell stage), docs/re/cell.md#cell-rebuilds-in-session
 related: BUG-0342, BUG-0345, BUG-0352
+switch: creations.cell_reapply
 ---
 
 ## Report
@@ -45,10 +46,9 @@ Inferred: the same happens for every world reload of a guest with a chosen own c
 manual share, rejoin without a session end).
 
 ## Fix
-Not done. Proposal (`coop.fix creations.cell_reapply`): forget `g_cell_set` when the world changes
-(`game::world_epoch()` or a new avatar index, as `apply_own_avatar` does for creatures), so the own
-cell is applied again after every load; together with BUG-0342 (a rebuild at the load can leave a
-ghost) the re-apply must wait until the loaded Cell game has settled.
+`creations.cell_reapply` (on; off = 0.7.3.1): `apply_own_cell` forgets the applied key (and a rebuild
+it waited for) when `game::stage_epoch(Cell)` changes (a load of a Cell world), so the own cell is
+applied again after every load.
 
 ## Verification
 Test to write (lanes 5/6): the guest has an own cell chosen (premade BAF1AD40, coop_creations_cell.py
@@ -58,3 +58,4 @@ puppet. Must FAIL on main (the guest keeps the world's key).
 
 ## History
 - 2026-10-31: opened from the second batch of the 2026-10-31 report zips (host mark, guest log).
+- 2026-10-31: fixed on fix/w22-reports (creations.cell_reapply).

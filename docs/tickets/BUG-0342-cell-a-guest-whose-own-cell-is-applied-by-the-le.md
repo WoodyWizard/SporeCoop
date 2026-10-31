@@ -1,7 +1,7 @@
 ---
 id: BUG-0342
 title: Cell: a guest whose own cell is applied by the level rebuild at the world load is a ghost (cannot eat, bite or be hit)
-status: open
+status: not-reproduced
 kind: bug
 stage: Cell
 reported: 2026-10-31
@@ -51,12 +51,22 @@ its interaction (collision/abilities): the editor's own path refreshes the unloc
 `apply_own_cell` does only `S+0x10` + PreloadModel + the flag. Not checked which of the two
 (timing or the missing part refresh) is the cause.
 
+CORRECTION (2026-10-31, fix/w22-reports, from fix/w22-reports2 out/w22-evidence.md): "ghost iff the own
+cell is rebuilt at the load" is wrong: a rebuild at 19:15:59 (host clock, right after the guest's own
+editor) was not a ghost (the guest ate and bit within seconds). Lead from that batch, not verified:
+in the three ghost rebuilds the host's mirrors already filled the pool in the same frame
+(pool=408/231/313); in the good one the pool was empty.
+
+Not reproduced (2026-10-31, GOG lanes 5/6, Wine): `coop_cell_own_load.py`, the guest's choices.ini
+names premade cell BAF1AD40, the cell is applied by the rebuild at the load with mirrors present:
+the guest's game ate plants (AvatarEat, points 0 -> 36, the cells gone on both) and its bite reached
+the host (out/w22/own_load_fail2.txt). A 5 s delay of the rebuild was tried as a fix and dropped
+(no failing test, and by the lead it would rebuild with even more mirrors).
+
 ## Fix
-Not done yet. Candidates, behind `coop.fix cell.own_rebuild` (off = today):
-* apply the own cell only after the Cell game has run some frames (as `apply_own_avatar` waits
-  3 s for creatures), and/or
-* do what the editor's exit handler does before the rebuild (the unlocked parts refresh
-  0xE4FBA0), then RebuildLevel.
+Not done (not reproduced). Next: a player run with `sk`-level logs at the rebuild (mirrors alive, the
+avatar's +0x16C / collision flags after it), or a test that forces RebuildLevel while the pool holds
+the host's full state round (a 4-player pool, Windows timing).
 
 ## Verification
 Test to write (lanes 5/6 after the go-ahead): `coop_cell_own_load.py`: the guest has an own cell
@@ -67,3 +77,4 @@ an NPC bite lowers its hp, and the host's puppet of it collides. Must FAIL on ma
 
 ## History
 - 2026-10-31: opened from the host's and guest's report zips (marks, cell trace lines).
+- 2026-10-31: CORRECTION recorded; not reproduced on lanes 5/6 (coop_cell_own_load.py passes on main); the reload part is BUG-0349.

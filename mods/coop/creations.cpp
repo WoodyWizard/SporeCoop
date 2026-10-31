@@ -993,20 +993,35 @@ static Key own_key_here(Kind kind)
 // the own cell: the player's cell model, then the level is rebuilt (the cell hatches again)
 static Key g_cell_set;
 static bool g_cell_rebuilding;
-// BUG-0342: the rebuild asked for on the first frames of a freshly loaded Cell game left the guest's
-// cell a "ghost" for minutes (no eating, biting or being hit); the game's own rebuild (the cell
-// editor) later did not. The own cell waits until the Cell world has run 5 s and 150 frames.
+// BUG-0349: the own cell is applied again after every load of a Cell world: g_cell_set (the key
+// already applied) lived until the session end, so after a reload the guest kept the world's cell
+// while the others drew its own one (and its next cell editor edited the host's species)
+// BUG-0342: a rebuild asked for on the first frames of a freshly loaded Cell world left the guest's
+// cell unable to eat for minutes (players; lanes 5/6: 0 of 8 plants it swam into, at the first
+// load and after a reload); 5 s later it eats. The own cell waits until the loaded Cell world has
+// run 5 s and 150 frames.
 static bool g_own_rebuild_fix = true;
 COOP_FIX("cell.own_rebuild", "BUG-0342", g_own_rebuild_fix, "creations: the own cell is applied (level rebuild) only after the loaded Cell world has run 5 s");
-static uint32_t g_cell_epoch_seen = 0xFFFFFFFFu;
 static double g_cell_since;
 static uint64_t g_cell_since_frame;
+static bool g_cell_reapply_fix = true;
+COOP_FIX("creations.cell_reapply", "BUG-0349", g_cell_reapply_fix, "creations: the own cell is applied again after every load of a Cell world");
+static uint32_t g_cell_epoch_seen = 0xFFFFFFFFu;
 static void apply_own_cell()
 {
     uint8_t* s = cell_S();
     uint8_t* g = modes::cell_game();
     if (!s || !g)
         return;
+    if (uint32_t e = game::stage_epoch(modes::kCell); e != g_cell_epoch_seen) {
+        g_cell_epoch_seen = e;
+        g_cell_since = H->time_seconds();
+        g_cell_since_frame = H->frame_index();
+        if (g_cell_reapply_fix) { // a new Cell world: its avatar has the world's model again
+            g_cell_set = {};
+            g_cell_rebuilding = false;
+        }
+    }
     if (g_cell_rebuilding) { // wait for the new avatar with the new model, then join the partner
         uint8_t* av = modes::cell_at(*(uint32_t*)(g + 0x411C));
         if (av && *(uint32_t*)(av + 0xFC) == g_cell_set.instance && *(uint8_t*)(g + 0x51D8) == 0) {
@@ -1016,12 +1031,8 @@ static void apply_own_cell()
         }
         return;
     }
-    if (uint32_t e = game::stage_epoch(modes::kCell); e != g_cell_epoch_seen) {
-        g_cell_epoch_seen = e;
-        g_cell_since = H->time_seconds();
-        g_cell_since_frame = H->frame_index();
-    }
-    if (g_own_rebuild_fix && (H->time_seconds() - g_cell_since < 5.0 || H->frame_index() - g_cell_since_frame < 150))
+    if (g_own_rebuild_fix && !g_cell_rebuilding &&
+        (H->time_seconds() - g_cell_since < 5.0 || H->frame_index() - g_cell_since_frame < 150))
         return;
     Key k = own_key_here(kCell);
     if (!k.instance || k == cell_key() || k == g_cell_set || !key_exists(k))

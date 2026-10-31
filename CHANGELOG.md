@@ -3,6 +3,13 @@
 ## [Unreleased]
 
 ### Fixed
+- Creature: a guest whose game lacks the "Creepy & Cute" parts pack (sold apart on Steam) no longer
+  crashes loading the host's world when the host's creature has one of its parts: the guest is told
+  which creature needs the pack, and a player's creature with such parts is shown as another one
+  (BUG-0341).
+- Creature / Cell: the host keeps its world's species; an own creature or cell chosen in an earlier
+  session (another world) no longer replaces the species the host just evolved (BUG-0344).
+- Cell: after a reload of the world a guest plays its own cell again, as the others see it (BUG-0349).
 - Tools: `crash_triage.py` finds the known ticket of a crash in a relocated `SporeApp.exe` (Windows,
   Steam) by its address numbered from 0x400000 (BUG-0346).
 - Tribe: at the arrival and after a rejoin, a player's chief that stands in another one is moved to

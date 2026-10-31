@@ -1,20 +1,21 @@
 ---
 id: BUG-0341
 title: Creature: a Steam guest crashes at 0x441F3B (model bake, null property list) every time it loads the host's Creature world
-status: open
+status: fixed
 kind: crash
 stage: Creature
 reported: 2026-10-31
 source: player reports 2026-10-31 (guest zip, Steam build, 3 crashes)
 role: guest
 versions: 0.7.3.1
-fixed_in:
-branch:
+fixed_in: unreleased
+branch: fix/w22-reports
 commits:
-tests:
+tests: guest_missing_pack (tools/tests/coop_guest_missing_pack.py)
 signature: 3010a413:SporeApp.exe+0x41F3B read 0x00000000 (dc04aee5 0x441F3B, FUN_00441910+0x62B, model bake: this+0xC property list null)
-docs:
+docs: docs/re/creations.md#creations-content-packs
 related: BUG-0344, BUG-0200, BUG-0027
+switch: creations.missing_parts
 ---
 
 ## Report
@@ -58,7 +59,16 @@ Observed (crash reports, minidumps, Ghidra on dc04aee5; absolute addresses of th
   names of the report are misleading (nearest preceding symbol: "GetAnimationID+0x127D" is
   FUN_004d4f70, "cCreatureAnimal_GrowTo+0xF89" is FUN_00c05ea0), see BUG-0346.
 
-Inferred (not verified), most likely first:
+Reproduced (2026-10-31, lanes 5/6, `coop_guest_missing_pack.py`): cause 1 below. A guest whose game
+lacks `bp1content/BoosterPack_01.package` faults at exactly 0x441F3B (data 0) 0.5 s into the load of a
+host world whose creature has ONE Creepy & Cute part (the fixture's Tiger Horse with one part swapped
+for 0x17A60A7F); under Wine the fault is caught and the load hangs (Windows: the crash). The host and a
+guest with the pack: no fault. Cause 2 alone (a host playing its choices.ini creature, all parts
+present) did not crash a guest (lane 5, by hand). The second batch of zips (fix/w22-reports2,
+out/w22-evidence.md) shows all 6 guest crashes while the host played its choices.ini creature: BUG-0344
+is what put the old creature (most likely the one with the C&C part) into the shared save.
+
+Inferred before the repro (kept for the record), most likely first:
 1. The guest's game lacks content a part of that creature needs. Steam sells "Creepy & Cute" as
    its own DLC (GOG ships it, `bp1content/BoosterPack_01.package`); a rigblock whose prop file is
    not there leaves the bake without its property list. SporeKit's file check does not look at
@@ -70,24 +80,30 @@ Inferred (not verified), most likely first:
    A key that resolves to a partial record set would fit a model without its properties.
 
 ## Fix
-Not done yet (needs lab runs). Plan:
-* Reproduce on GOG lanes 5/6: (a) guest lane without `bp1content/BoosterPack_01.package` (moved
-  aside in the lane copy only), host creature with a Creepy & Cute part, host enters Creature,
-  guest loads; (b) both lanes complete, host with an own creature from choices.ini (BUG-0344).
-  The one that crashes at 0x441F3B names the cause; (a) also without co-op (solo load of the save)
-  tells a game limit from a mod bug.
-* If (a): SporeKit reports the content packs (bp1content, EP1) in the log and the report; the
-  handshake carries them; a guest missing a pack the host has gets a clear message at the join, and
-  a creation with a part that is not in this game's resources is never baked here (check the
-  rigblocks, docs/re/creations.md section 7, before `species_by_key` / SetSpecies; fall back to
-  the local species like a creation without records). The world's own species cannot be swapped
-  (rewriting the save lost herds, BUG-0200), so a missing pack must stop the join, not crash.
-* If (b): fix BUG-0344 (the host keeps the world's species), and make the shared world never name
-  a My Creations creature the guest cannot resolve.
+`creations.missing_parts` (on by default; `coop.fix creations.missing_parts off` = 0.7.3.1):
+* `mods/coop/content_packs.h`: the 119 part ids only Creepy & Cute has (from the GOG 2024 files'
+  index). `creations::model_parts` reads the part ids of a creature model (bem), see
+  docs/re/creations.md#creations-content-packs; `have_creepy_cute()` asks the resource manager for
+  the first part once (logged: `content: Creepy & Cute parts pack present / NOT present`).
+* On a game without the pack: a player's creature with such a part is not registered (its puppet
+  falls back as for an unknown creation, the player is told); the host's own creation of its world
+  with such a part is not registered and the world is not loaded: "cannot load <host>'s world:
+  their creature '<name>' uses parts of the Creepy & Cute parts pack, which this game does not have.
+  Install that pack, or the host replaces those parts" (`world.cpp`). An NPC species of the host's
+  world with such parts is not registered either.
+* Together with BUG-0344 (the host no longer brings an old choices.ini creature into its world) a
+  world whose creatures have no C&C parts loads normally.
+Not covered: parts of other packs (none known), a creature with a C&C part that reaches the save
+without being one of the host's own creations (a Sporepedia download: the guest's game gets its
+records from the host only on demand, after the load).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+* FAIL (fix off, `SPORE_FIX_OFF=creations.missing_parts`, Carol switched off too): out/w22/missing_pack_fail1.txt
+  of the worktree (direct run, lanes 5+6): Carol faults at 0x441F3B and stays in LoadGame. The same
+  without any fix code: out/w22/missing_pack_1.txt.
+* PASS: out/w22/missing_pack_pass1.txt: Carol is told, stays in the galaxy menu, 0 faults; Bob (with the
+  pack) plays. Lab runs: see History.
 
 ## History
 - 2026-10-31: opened from the guest's report zip (three crash reports with minidumps and logs) and the host's zip (logs of the same session).
+- 2026-10-31: reproduced on GOG lanes 5/6 (missing pack -> 0x441F3B); fixed on fix/w22-reports (creations.missing_parts).

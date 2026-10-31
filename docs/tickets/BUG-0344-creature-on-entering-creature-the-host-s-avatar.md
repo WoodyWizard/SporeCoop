@@ -1,20 +1,21 @@
 ---
 id: BUG-0344
 title: Creature: on entering Creature the host's avatar becomes an old own creature from choices.ini, and its species looks unevolved after the editor
-status: open
+status: fixed
 kind: bug
 stage: Creature
 reported: 2026-10-31
 source: player report 2026-10-31 (host mark)
 role: host
 versions: 0.7.3.1
-fixed_in:
-branch:
+fixed_in: unreleased
+branch: fix/w22-reports
 commits:
-tests:
+tests: host_old_choice (tools/tests/coop_host_old_choice.py)
 signature:
 docs: docs/re/creations.md
 related: BUG-0341, BUG-0278, BUG-0345
+switch: creations.host_world_species
 ---
 
 ## Report
@@ -41,15 +42,20 @@ should not replace a species the host has just made in this world. "Still unevol
 seeing the old creature (its avatar or the puppet the guest is shown) instead of the new species.
 
 ## Fix
-Not done. Proposal (`coop.fix creations.host_world_species`): on the host a choices.ini creature
-choice is used only in the world (save) it was chosen in, and an evolution (Cell -> Creature, an
-editor) always makes the new species the host's own; the guest's own creations stay as they are
-(BUG-0345 for the design question).
+`creations.host_world_species` (on; off = 0.7.3.1): on the host a creature or cell choice holds only
+in the stage world it was made in (`game::stage_epoch` of Creature / Cell at `choose`); a choice from
+choices.ini of an earlier session, or one made before the stage changed (Cell -> Creature), is
+ignored: the host plays its world's species. Back from an editor the host's choice is dropped, so the
+editor's result (the avatar's species) is its own. A choice made now, in this world, still swaps.
 
 ## Verification
-Test to write: the host has an own creature chosen (choices.ini of the test profile), plays
-Cell -> Creature (fixture cell world, `coop_campaign.py --from cell --to creature`); then the
-host's avatar species is the species the stage editor made (game state), on both machines.
+`tools/tests/coop_host_old_choice.py` (suite `host_old_choice`), host choices.ini preset to Tiger
+Horse (twoinst.PRESET_CHOICES):
+* FAIL with `SPORE_FIX_OFF=creations.host_world_species`: out/w22/old_choice_fail2.txt (host avatar
+  290229B9, the guest draws the host as 7CF18B79).
+* PASS: out/w22/old_choice_pass2.txt (both 065CBE70; the in-world choice still swaps).
+Lab runs: see History. Not tested: the editor return (adopt) part.
 
 ## History
 - 2026-10-31: opened from the host's report zip (mark, creations and trace lines).
+- 2026-10-31: fixed on fix/w22-reports (creations.host_world_species); the second batch (fix/w22-reports2 evidence) adds: every load re-swapped the host.
