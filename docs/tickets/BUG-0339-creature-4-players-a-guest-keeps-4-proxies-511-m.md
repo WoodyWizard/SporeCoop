@@ -61,3 +61,4 @@ no-fail-run: not reproduced (see Root cause); diagnostics only.
 ## History
 - 2026-10-31: opened.
 - 2026-10-31: fix/w21-creature: analysed (host NPCs at the planet's centre still updated, a guest keeping their proxies on the surface), not reproduced; diagnostics in; stays open.
+- 2026-10-31: fix/w21-creature: the new diagnostic fired in 3 of 3 creature_npc_dash runs (out/lab/20261031-105509 #1/#2, 20261031-105513): "npc 3 (species 06805133) is updated at the planet's centre: herd 00000000, 505 m from where it was a frame before, dead=1". So the game keeps updating a pooled **corpse** at (0 0 0) and the host keeps it as an NPC: the lead for a reproduction (the campaign's four were alive=1, not checked whether the same path). Next: a test that kills an NPC, waits for its pool and compares both censuses; then the host-side fix (an NPC updated at the centre is not mirrored).
