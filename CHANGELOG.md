@@ -3,6 +3,9 @@
 ## [Unreleased]
 
 ### Fixed
+- Cell: a player who stays in the pause menu while the other players play no longer corrupts the
+  game's memory (a broken collision state, then a crash or freeze when Cell ends; seen on the way
+  to Creature with four players) (BUG-0348).
 - Tribe: at the arrival and after a rejoin, a player's chief that stands in another one is moved to
   its own spot round the village; two chiefs that end up in each other later are moved apart
   (BUG-0340).

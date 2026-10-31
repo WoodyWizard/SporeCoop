@@ -2022,6 +2022,12 @@ answered right after; a 1 s poller beside a standalone run saw no gap. Same sign
 * Food (plant / meat) on a guest's screen is not asserted: at level 4 a screen with 300+ host cells
   often had none (also without the budget). Use `cell_far_guest` (two players) for food far away.
 * The sync-check and `coop_multi.measure` count host cells within 60 m of the guest only (BUG-0298).
+* `coop_cell_pause.py` (suite `cell_pause`, 2 players, ~2 min): food 300, the guest opens its pause
+  menu (Esc, "Resume Game" shown), 12 x `coop.pool zap 5000` 2.5 s apart while paused, Resume, then
+  `coop.leave`. Checked: the broadphase's pending count (`coop.pool sap` pending=, the game's header)
+  <= 8192 while paused; after Resume pending 0, no object left open, no duplicate entries; mirrors
+  back; the guest's game answers after leaving Cell; no fault. BUG-0348,
+  docs/re/cell.md#cell-sap-pending. `SPORE_FIX_OFF=cell.sap_pending` FAILS (pending ~20000).
 * `coop_cell_sap.py` (suite `cell_sap`, multi / extended, ~2 min, four players): food 300 on the
   host (~1300 cells), the guests 200 m away, then `coop.pool column 1100` (1100 host cells on one
   40 m line next to the host's cell): the game's broadphase sweep holds them all open at once.

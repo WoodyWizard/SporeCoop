@@ -15,8 +15,8 @@ Creature, then froze.
    the game's own header) must stay within its arrays (8192 entries).
 3. Resume: the broadphase's order is intact (no object left open at the end of the game's sweep
    order, `open_at_end=0`), the guest mirrors the host's cells again.
-4. The guest leaves the session (its game leaves the Cell stage: the Cell pools are freed): its game
-   still answers, and no game faulted (the lab checks the logs and crash reports too).
+4. The guest leaves the session and then the Cell stage for the galaxy menu (`coop.menu`: the game
+   frees the Cell pools and the broadphase, 0xE7F9B0): its game still answers, and no game faulted (the lab checks the logs and crash reports too).
 SPORE_FIX_OFF=cell.sap_pending must FAIL (pending grows past 20000 entries, objects left open).
 
   SPORE_LANE=8 python3 tools/tests/coop_cell_pause.py [--rounds 12]
@@ -84,14 +84,25 @@ def main():
     m = num(guest, 'mirrors') or 0
     ck(m > 100, f'3. the guest mirrors the host\'s cells again ({m})')
     print('  guest:', guest.call('coop.leave')['out'].strip()[:100], flush=True)
-    time.sleep(12)
+    time.sleep(3)
+    # out of the Cell stage (the galaxy menu): the game frees the Cell pools and the broadphase
+    # (0xE7F9B0), where the campaign's guest found the corrupted heap
+    print('  guest:', (guest.call('coop.menu').get('out') or '').strip()[:100], flush=True)
+    t0 = time.time()
+    while time.time() - t0 < 40:
+        time.sleep(2)
+        try:
+            if 'Cell' not in (guest.call('game.mode').get('out') or ''):
+                break
+        except (OSError, ValueError):
+            break
     try:
         mode = (guest.call('game.mode').get('out') or '').strip()
     except (OSError, ValueError) as e:  # a frozen or dead game
         mode = ''
         print(f'  guest console: {e!r}', flush=True)
     print('  guest after leaving:', mode[:100], flush=True)
-    ck(bool(mode), '4. the guest\'s game answers after leaving the Cell stage')
+    ck(bool(mode) and 'Cell' not in mode, f'4. the guest\'s game answers after leaving the Cell stage ({mode[:40]})')
     for name, con in (('host', host), ('guest', guest)):
         n = faults(con)
         ck(n == 0, f'4. {name}: no caught fault ({n})')

@@ -1156,6 +1156,8 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   the object record; stale indices would leave entries behind; the pending sort never says equal).
 * Next steps: read the logged report the next time a campaign hits it.
 * Ticket: BUG-0337 (follow-up)
+* CORRECTION (2026-10-31, fix/w22-cell): explained and fixed by BUG-0348: a guest in its pause menu
+  kept creating mirrors, the broadphase's pending arrays overflowed (docs/re/cell.md#cell-sap-pending).
 
 ## Cell: a guest faults at 0x00E4E384 next to a pack of 1100 host cells (2026-10-31, fix/w20-cell)
 <a id="issue-cell-advect-fault"></a>
