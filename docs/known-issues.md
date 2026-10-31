@@ -1102,3 +1102,22 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Known: the host logs each rejection with its kind since fix/w14-tribe-civ.
 * Not checked: which command kinds, and whether the vehicle changed owner or died first.
 * Ticket: BUG-0325
+
+## Tribe: a rejoined guest lacked 6 of the host's NPCs (2026-10-30, fix/w16-tribe)
+<a id="issue-tribe-rejoin-npcs"></a>
+
+* What happens: after a guest's rejoin in Tribe (final lab 20261030-175722 campaign_tribe#1) it had
+  75 % of the host's nearby objects, 6 NPCs missing, for the last ~50 s of the play.
+* Reproduce: not reproduced (3 replays of seed 612535391, `coop_tribe_rejoin_npcs.py`).
+* Known: suspected window while the guest loads the host's world (docs/tickets BUG-0328).
+* Ticket: BUG-0328
+
+## Tribe: in a long campaign every guest shows tribe members 4-6 m off (2026-10-30, fix/w16-tribe)
+<a id="issue-tribe-members-offset"></a>
+
+* What happens: campaign#3 of labs 20261030-104149 and 20261030-175722: kind t p90 3.9-5.9 m on all
+  guests at every check of tribe/play (members varying), sometimes an animal too.
+* Reproduce: not reproduced with the tribe fixture (2 and 4 players, `coop.tribe spawn 12`) or the
+  campaign_tribe replay; only in the full campaign's own evolved world.
+* Known: the guests agree with each other; the campaign now prints the worst member's lines.
+* Ticket: BUG-0329
