@@ -12,7 +12,8 @@ lab 20261031-124047-fix-w22-cell; 0x00E4E384 on a guest).
 2. --rounds times the guest's mirrors are removed (`coop.pool zap 5000`) and the host's next state
    makes them again: every mirror near the camera asks for particles from the full pool, every
    removal frees what it got.
-3. Checked on the guest: no caught fault, the pool's count (the game's header) never below 0 or
+3. Checked on the guest (the game's own state): no cell holds -1 among its particles, the pool's
+   free-list head stays inside the pool, no caught fault, the pool's count (the game's header) never below 0 or
    over 1500, its own cell stays where it was (no jump), the mirrors come back.
 SPORE_FIX_OFF=cell.particles must FAIL.
 
@@ -58,21 +59,25 @@ def main():
     time.sleep(10)
     print('  guest:', out(guest, 'coop.pool particles 1499').strip(), flush=True)
     p0 = own_pos(guest)
-    counts, jumps = [], []
+    counts, jumps, minus1, head_bad = [], [], [], []
     for i in range(a.rounds):
         guest.call('coop.pool zap 5000')
         time.sleep(2.5)
         s = out(guest, 'coop.pool sap')
         counts.append(num(s, 'particles'))
+        minus1.append(num(s, 'minus1_cells') or 0)
+        head_bad.append(num(s, 'free_head_bad') or 0)
         p = own_pos(guest)
         if p and p0:
             jumps.append(math.dist(p, p0))
         print(f'  round {i + 1}: particles={num(s, "particles")} spare={num(s, "spare")} bad_frees={num(s, "bad_frees")} '
-              f'mirrors={num(out(guest, "coop.pool"), "mirrors")} own cell {jumps[-1] if jumps else "?"} m from the start',
+              f'minus1_cells={minus1[-1]} free_head_bad={head_bad[-1]} mirrors={num(out(guest, "coop.pool"), "mirrors")} own cell {jumps[-1] if jumps else "?"} m from the start',
               flush=True)
     ok = [c for c in counts if c is not None]
     ck(len(ok) == len(counts) and min(ok) >= 0 and max(ok) <= 1500,
        f'3. the particle pool\'s count stays in 0..1500 ({min(ok) if ok else "?"}..{max(ok) if ok else "?"})')
+    ck(max(minus1) == 0, f'3. no cell holds the pool\'s -1 among its particles (most: {max(minus1)} cells)')
+    ck(max(head_bad) == 0, f'3. the pool\'s free list stays inside the pool (bad in {sum(head_bad)} of {len(head_bad)} rounds)')
     ck(bool(jumps) and max(jumps) < 30, f'3. the guest\'s own cell stays where it was (at most {max(jumps) if jumps else "?":.1f} m away)')
     m = num(out(guest, 'coop.pool'), 'mirrors') or 0
     ck(m > 100, f'3. the guest mirrors the host\'s cells ({m})')

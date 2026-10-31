@@ -1820,6 +1820,33 @@ static int particles_used()
     uint8_t* parts = G() ? F<uint8_t*>(G(), 0x4108) : nullptr;
     return parts ? F<int>(parts, 0x1BD54) : -1;
 }
+// the game's own particle state: cells whose list holds -1 among real particles, and whether the
+// free-list head points into the pool (it must while some slot below the high water is free)
+static void particle_state(int* minus1_cells, int* head_bad)
+{
+    *minus1_cells = 0;
+    *head_bad = 0;
+    uint8_t* g = G();
+    uint8_t* parts = g ? F<uint8_t*>(g, 0x4108) : nullptr;
+    uint8_t* data = g ? F<uint8_t*>(g, 0x1C) : nullptr;
+    if (!parts || !data)
+        return;
+    int used = F<int>(parts, 0x1BD54), high = F<int>(parts, 0x1BD58), head = F<int>(parts, 0x1BD5C);
+    *head_bad = used < high && (head < 0 || head >= kParticles);
+    uint32_t n = F<uint32_t>(g, 0x1C + 0x10);
+    for (uint32_t slot = 0; slot < n && slot < 4096; slot++) {
+        uint8_t* c = data + (size_t)slot * 0x398;
+        if ((F<uint32_t>(c, 0) & 0xFFFF) != slot || !F<uint32_t>(c, 0x248))
+            continue;
+        int k = F<int>(c, 0x250);
+        if (k > 1 && k <= 64)
+            for (int i = 0; i < k; i++)
+                if (F<int>(c, 0x254 + 4 * i) < 0) {
+                    (*minus1_cells)++;
+                    break;
+                }
+    }
+}
 static int SK_CDECL h_PartAlloc(uint8_t* parts, const float* pos, const float* vel, float w, int cell)
 {
     int used = parts ? F<int>(parts, 0x1BD54) : 0;
@@ -3334,11 +3361,13 @@ static std::string sap_report()
             snprintf(sample, sizeof sample, " first=c%u pos=(%.1f %.1f) size=%.3f min=%.2f max=%.2f", idx, pos_of(c).x,
                      pos_of(c).y, r, mi < n ? F<float>(ep, 8 * mi + 4) : 0.f, ma < n ? F<float>(ep, 8 * ma + 4) : 0.f);
     }
+    int m1 = 0, hb = 0;
+    particle_state(&m1, &hb);
     char b[900];
     snprintf(b, sizeof b,
-             "sap: particles=%d peak=%u spare=%u bad_frees=%u endpoints=%d objects_cap=%d pending=%d held=%u removed=%d nan=%d unsorted=%d peak_open=%d open_at_end=%d "
+             "sap: particles=%d peak=%u spare=%u bad_frees=%u minus1_cells=%d free_head_bad=%d endpoints=%d objects_cap=%d pending=%d held=%u removed=%d nan=%d unsorted=%d peak_open=%d open_at_end=%d "
              "max_first=%d live_objects=%d dup_min=%d lone_min=%d lone_max=%d sweeps=%u over_1024=%u sweep_peak=%u sweep_left=%u fix=%d | open: mirror=%d other=%d bg=%d puppet=%d avatar=%d no_cell=%d inverted=%d size=%.3f..%.3f%s",
-             particles_used(), g_particles_peak, g_part_spare, g_part_bad_frees, n, cap, pend, modes::cell_sap_held(), removed, nan_v, unsorted, peak, (int)active.size(), max_first, live_objs, dup_min, lone_min, lone_max, g_sap_sweeps, g_sap_over, g_sap_peak, g_sap_left,
+             particles_used(), g_particles_peak, g_part_spare, g_part_bad_frees, m1, hb, n, cap, pend, modes::cell_sap_held(), removed, nan_v, unsorted, peak, (int)active.size(), max_first, live_objs, dup_min, lone_min, lone_max, g_sap_sweeps, g_sap_over, g_sap_peak, g_sap_left,
              (int)g_fix_sap_sweep, k_mirror, k_other, k_bg, k_puppet,
              k_avatar, k_none, inverted, rmin, rmax, sample);
     return b;
