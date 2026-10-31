@@ -12,6 +12,11 @@ creations-guest.package become the profiles' EditorSaves.package on every cold s
 FIXTURES = {
     'creature': dict(planet='Game0/Scalinus', stage='Creature',
                      facts=[('the avatar plays', 'coop.avatar', r'Creature')]),
+    # BUG-0329: the Creature stage of a full campaign's own world (Cadian, its nest on a slope; lab
+    # 20261030-210914 campaign#3, lane 7 host profile Game0): the village of its Tribe stage sits 5 m
+    # lower on the host that made it than in the save the guests load
+    'creature_cadian': dict(planet='Game0/Cadian', stage='Creature',
+                            facts=[('the avatar plays', 'coop.avatar', r'Creature')]),
     'cell': dict(planet='Game0/Cadian', stage='Cell',
                  facts=[('cells in the pool', 'coop.pool', r'local_gameplay_cells=[1-9]')]),
     'tribe': dict(planet='Game0/Zorispe', stage='Tribe',

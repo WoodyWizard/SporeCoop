@@ -335,6 +335,11 @@ class Campaign:
                                 ln = [x.strip() for x in con.call(cmd).splitlines()
                                       if re.match(rf'\s*#{key[1:]}\b', x)]
                                 nums.append(f'{g.name} {key} on {who}: {ln[0][:260] if ln else "-"}')
+                                # BUG-0329: each game's ground under the host's position of it
+                                m = re.search(r'pos=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\)', ln[0]) if ln and who == 'host' else None
+                                if m:
+                                    for w2, c2 in (('host', host), (g.name, g)):
+                                        nums.append(f'{g.name} {key} ground on {w2}: ' + c2.call('coop.ground ' + ' '.join(m.groups())).strip())
             if paused:
                 self.note('sync: not compared (pause menu open): ' + ', '.join(paused))
             if over or short:  # every guest's numbers next to a desync: one guest only, or everybody (BUG-0275)

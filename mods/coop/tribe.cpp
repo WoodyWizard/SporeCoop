@@ -176,6 +176,7 @@ static uint32_t g_local_orders;
 static uint32_t g_gifts;
 
 // ---------------- guest ----------------
+static float g_test_lift = 0.f; // tests (BUG-0329): `coop.tribe lift <m>` on a guest
 struct GMember {
     void* c = nullptr;
     uint8_t tribe = 0, owner = 0xFE, age = 1;
@@ -700,6 +701,13 @@ static void guest_state(net::Reader& r)
         void* c = g.c;
         g.tribe = m.tribe; g.owner = m.owner; g.age = m.age;
         g.pos = m.pos; g.vel = m.vel; g.rot = m.rot; g.hp = m.hp; g.seen = now;
+        if (g_test_lift != 0.f) { // tests (BUG-0329): the host's member as if its ground were higher
+            float r = std::sqrt(g.pos.x * g.pos.x + g.pos.y * g.pos.y + g.pos.z * g.pos.z);
+            if (r > 1.f) {
+                float k = (r + g_test_lift) / r;
+                g.pos = {g.pos.x * k, g.pos.y * k, g.pos.z * k};
+            }
+        }
         if (c && !game::object_alive(c)) {
             g_gid_of.erase(c);
             g.c = c = nullptr;
@@ -784,7 +792,7 @@ static void guest_tick(double now)
                 game::play_death(g.c);
                 g_ko_shown++;
             }
-            drive::step(g.c, g.pos, g.rot, g.vel, g.ds, now, now - g.seen, true);
+            drive::step(g.c, g.pos, g.rot, g.vel, g.ds, now, now - g.seen, true, 8.f, false, false, true);
             continue;
         }
         if (g_fix_ko && game::is_dead(g.c)) { // back on its feet on the host
@@ -794,7 +802,7 @@ static void guest_tick(double now)
             g_ko_replaced++;
             continue;
         }
-        drive::step(g.c, g.pos, g.rot, g.vel, g.ds, now, now - g.seen, true);
+        drive::step(g.c, g.pos, g.rot, g.vel, g.ds, now, now - g.seen, true, 8.f, false, false, true);
         float hp = game::health(g.c);
         if (std::fabs(hp - g.hp) > 0.01f && g.hp > 0)
             game::set_health(g.c, g.hp);
@@ -1739,6 +1747,10 @@ std::string debug(const std::vector<std::string>& a)
         void* vec[3] = {sel.data(), sel.data() + sel.size(), sel.data() + sel.size()};
         int r = thiscall<int>(a_DoActionForObjects, (void*)nullptr, (void*)vec, action, t, (void*)nullptr);
         return "action ordered (" + std::to_string(sel.size()) + " selected, ret " + std::to_string(r) + ")";
+    }
+    if (a.size() >= 2 && a[0] == "lift" && is_guest()) { // lift <m>: tests (BUG-0329), the host's members m higher
+        g_test_lift = (float)atof(a[1].c_str());
+        return "members of the host taken " + a[1] + " m further from the planet's centre";
     }
     if (a.size() >= 2 && a[0] == "spawn" && is_host()) { // spawn <n>: test setup, n more adults in the player tribe
         void* pt = player_tribe();

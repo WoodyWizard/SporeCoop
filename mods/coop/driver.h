@@ -36,11 +36,14 @@ inline float speed(const net::Vec3& v) { return std::sqrt(v.x * v.x + v.y * v.y 
 // trail: also teleport when it stays more than 1.5 m off for 0.5 s (NPC proxies, BUG-0305: proxies of
 // a herd that flees together push each other off the path and cannot run faster than the animal)
 inline void step(void* p, const net::Vec3& pos_in, const net::Quat& rot, const net::Vec3& vel, State& ds, double now,
-                 double age = 0, bool nudge = false, float snap = 8.f, bool stall = false, bool trail = false)
+                 double age = 0, bool nudge = false, float snap = 8.f, bool stall = false, bool trail = false,
+                 bool own_height = false)
 {
     float a = (float)std::min(std::max(age, 0.0), 0.5);
     net::Vec3 pos{pos_in.x + vel.x * a, pos_in.y + vel.y * a, pos_in.z + vel.z * a};
     net::Vec3 cur = game::position(p);
+    if (own_height) // BUG-0329: the guest's own ground height, not the host's
+        pos = at_own_height(pos, cur);
     const double dt = ds.last_step > 0 && now > ds.last_step ? now - ds.last_step : 1.0 / 60;
     ds.last_step = now;
     if (ds.nudged && net::dist(cur, ds.nudged_to) < 0.5f)

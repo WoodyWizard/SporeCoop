@@ -217,6 +217,22 @@ static void test_drive()
     CHECK(closing == 0);
 }
 
+// BUG-0329: a mirror whose own ground is 5 m higher than the host's is driven at its own height
+static void test_own_height()
+{
+    printf("mirror target at its own ground height (BUG-0329)\n");
+    struct V { float x, y, z; };
+    V host{0, -511.f, 0}, cur{3.f, -516.f, 0};
+    V t = drive::at_own_height(host, cur, true);
+    float rt = std::sqrt(t.x * t.x + t.y * t.y + t.z * t.z), rc = std::sqrt(cur.x * cur.x + cur.y * cur.y + cur.z * cur.z);
+    CHECK(std::fabs(rt - rc) < 0.01f);           // the mirror's own distance from the centre
+    CHECK(std::fabs(t.x) < 0.01f && t.y < 0);    // the host's direction
+    V same = drive::at_own_height(host, cur, false);
+    CHECK(same.y == host.y);                      // off: the host's absolute position
+    V far{0, -540.f, 0};                          // more than 10 m apart (a flight, a jump): unchanged
+    CHECK(drive::at_own_height(far, cur, true).y == far.y);
+}
+
 // BUG-0217 / BUG-0223: the stage counters and a module's watch (stage_epoch.h)
 static void test_stage_epoch()
 {
@@ -418,6 +434,7 @@ int main(int argc, char** argv)
     g_nofix = argc > 1 && std::string(argv[1]) == "--nofix";
     test_share_wait();
     test_stage_epoch();
+    test_own_height();
     test_world_name();
     test_savestrip_rule();
     test_drive();
