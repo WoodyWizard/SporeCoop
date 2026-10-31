@@ -5,6 +5,9 @@
 ### Fixed
 - Creature: a player who leaves and joins again (or loads) within a minute of being saved by the
   pack is saved again in the new session; the rescue cooldown no longer carries over (BUG-0330).
+- Tribe: where the village ground is higher or lower for the other players than for the host, the
+  tribe members and animals no longer walk in place or jump around on their screens: they stand on
+  their own ground where the host's stand (BUG-0329).
 - Civilization: a vehicle of another nation standing on a spice node no longer flickers 13 m away
   on the other players' screens (their game moved it off ground it found invalid), and a fast
   vehicle is no longer thrown ahead of its place when the host stutters (BUG-0186).

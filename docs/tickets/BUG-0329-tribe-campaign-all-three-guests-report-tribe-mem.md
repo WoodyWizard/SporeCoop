@@ -1,20 +1,21 @@
 ---
 id: BUG-0329
 title: Tribe campaign: all three guests report tribe members 4.0-4.8 off at the same sample (18:21:43)
-status: open
+status: fixed
 kind: desync
 stage: Tribe
 reported: 2026-10-30
 source: lab 20261030-175722 campaign#3 (lane 7)
 role: guest
 versions: main de87f05
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w16-tribe, fix/w17-tribe
+commits: cd4030a 2d79697
+tests: tribe_own_height (coop_tribe_own_height.py), npc_tests (test_own_height)
 signature:
-docs:
-related: BUG-0305, BUG-0310
+docs: docs/re/tribe.md#tribe-ground-height, docs/06-testing.md#testing-tribe-own-height
+related: BUG-0305, BUG-0310, BUG-0332
+switch: drive.own_height
 ---
 
 ## Report
@@ -27,32 +28,37 @@ the desync findings at 18:21:43. The campaign of 10:41 (lab 20261030-104149 camp
 report) showed the same: kind t 4.1-4.8 m on all three guests at every check from 11:07.
 
 ## Root cause
-Not found. What the evidence says:
-* Not one sample or a host jump: 13 checks over 6.5 minutes, many members, two campaigns.
-* The guests agree with each other (the same 4.0-4.8 m at the same check), so the difference is
-  between the host's members and what every guest makes of the same states (inferred).
-* The host's state and its sync sample read the same `game::position` (tribe.cpp host_tick,
-  sync_entries); the guests drive members with drive::step (snap 8 m, no stall / trail rule).
-* Not reproduced (fix/w16-tribe, lane 7): the tribe fixture with 2 players and `coop.tribe spawn 12`
-  (7 min of play_tribe bots): t p90 0.35-1.0 m; 4 players (`coop_sync_multi.py --fixture tribe
-  --spawn 12 --rounds 45`, the campaign's setup): t p90 median 0.65-0.69 m, largest 1.48 m on all
-  guests; the campaign_tribe replay (seed 612535391): t p90 0.7 m. The difference to campaign#3 is its
-  world (the tribe evolved from that campaign's own creature after Cell and Creature).
-* The only t offsets over 2.5 m seen: a knocked-out member (hp 0, dead=1) lying 2.7-3.3 m from the
-  host's on a guest (its death animation moved it, speed 28-30), a smaller separate effect.
-The [info] "tribe -> civ did not finish in 20 min (the raids did not conquer every tribe)" of the same
-run: the test's own limit (coop_campaign.py reports a Tribe end that does not come as info on
-purpose; kick_tribe only knocks members out with `coop.tribe pincer`, a tribe is conquered when the
-raids destroy its hut, and one tribe stayed for 20 min). Not a co-op bug as far as seen.
+Observed (the probe lines of lab 20261030-210914, campaign#3 lane 7 and campaign#1 lane 2):
+* Every offset is radial: the host's member at 509.3-511.0 m from the planet's centre, the guest's
+  mirror at 514.6-516.1 m in campaign#3 (radial 4.87-5.31 m, sideways 0.02-0.74 m); in campaign#1 the
+  other way (host 516.3, guest 511.4) and the same for animals near the village (host 505.9, guest
+  502.0: Dave's n 3.7-4.3). So each game's ground under the village differs in height by ~5 m: the
+  guests load the host's save of the Tribe stage, the host made the village live (BUG-0332).
+* The guest's mirror was driven at the host's absolute position, 5 m under (or over) its own ground:
+  it never arrived (`speed=5.5` on the guest while `host_speed=0.0`: walking in place), and NPC
+  proxies were teleported again and again (`tp=14-33 trail=8-18`).
+* All guests agree with each other because they all loaded the same save.
 
 ## Fix
-Not fixed. Diagnostics (fix/w16-tribe, 94b168a): when a kind is out of sync the campaign's note now
-holds the worst object's `coop.tribe` / `coop.npc list` line on the host and on that guest (the
-guest's line has how its mirror is driven); `coop_sync_multi.py --spawn N` and its member probe.
+* `drive.own_height` (cd4030a, drive_plan.h at_own_height, driver.h): in Tribe the target of a
+  member's mirror and of an NPC proxy keeps the host's direction from the planet's centre but takes
+  the mirror's own distance from it when the two differ by less than 10 m: it stands on its own
+  ground where the host's stands. `coop.fix drive.own_height off` = the old driving. Test stand-in
+  `coop.tribe lift <m>` (guest).
+* The campaign's sync check (2d79697): a t / n kind over the limit whose worst object is in place
+  sideways and at the same height over each game's own ground is noted as "ground height differs"
+  (BUG-0332), not a desync; the probe lines print each game's ground (`coop.ground`).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+`coop_tribe_own_height.py` (the guest's copy of the host's members 5 m higher: `coop.tribe lift 5`):
+* FAIL with `SPORE_FIX_OFF=drive.own_height`: lab run 20261030-232117-fix-w17-tribe: 37 of 56 samples
+  of members standing on the host had the guest's mirror moving; 12-14 teleports per member in 20 s.
+* PASS: lab run 20261030-232236-fix-w17-tribe (2 runs): 1 of 55 and 0 of 52 moving, 0 teleports.
+* Unit: npc_tests test_own_height.
+Not verified: the full campaign with the fix (the terrain difference was not made outside it: a
+live Creature -> Tribe on the creature_cadian fixture put the village on flat ground, 503.68 m on
+both machines).
 
 ## History
 - 2026-10-30: opened.
+- 2026-10-30 (fix/w17-tribe): root cause from the probe lines (a ground height difference, BUG-0332); mirrors driven at their own height (drive.own_height); the campaign classifies the ground difference.

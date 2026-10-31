@@ -58,6 +58,21 @@ int c_leavewalk(void*, int, const char* const*, SkOut* out)
     return 0;
 }
 
+// tests (BUG-0329): coop.ground <x> <y> <z> - the terrain radius in that direction (GetHeightAt) and
+// the point's own radius: how high a position is over this game's ground
+int c_ground(void*, int argc, const char* const* argv, SkOut* out)
+{
+    if (argc < 4) {
+        SAY("usage: coop.ground <x> <y> <z>");
+        return 1;
+    }
+    net::Vec3 p{(float)atof(argv[1]), (float)atof(argv[2]), (float)atof(argv[3])};
+    float g = game::ground_radius(p);
+    float r = std::sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
+    SAY("ground %.2f point %.2f above %.2f", g, r, r - g);
+    return 0;
+}
+
 int c_load(void*, int argc, const char* const* argv, SkOut* out)
 {
     if (argc < 3) {
@@ -345,6 +360,8 @@ void coop_register_debug_commands2(const SkHost* host, SkMod* self)
                       nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.load", "coop.load <GameN> <Planet> - load a local save (also from the menu)",
                       c_load, nullptr, SK_CMD_MAIN_THREAD);
+    host->command_add(self, "coop.ground", "coop.ground <x> <y> <z> - terrain radius under a point (tests, BUG-0329)", c_ground,
+                      nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.menu", "coop.menu - save and leave the stage for the galaxy menu (tests)", c_menu,
                       nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.cell", "coop.cell list | pool | spawn <slot> [dx dy [scale]] - cell stage experiments", c_cell,

@@ -1132,3 +1132,11 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   regen check" with N > 5.
 * Known: not the debug hit, not npc.kinematic, not the editor wait (BUG-0330 analysis).
 * Ticket: BUG-0333.
+## Tribe: the village ground is up to 5 m higher or lower on the guests (2026-10-30, fix/w17-tribe)
+<a id="issue-tribe-village-ground"></a>
+
+* What happens: after the host's live Creature -> Tribe the guests (who load its save) have the ground
+  around the village up to 5 m higher or lower; members and animals stand on each game's ground
+  (drive.own_height, BUG-0329), so they look right, but the ground itself differs.
+* Reproduce: the full campaign (cell -> tribe); not on flat ground (creature_cadian fixture).
+* Ticket: BUG-0332

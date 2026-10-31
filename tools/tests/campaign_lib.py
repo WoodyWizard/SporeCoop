@@ -21,6 +21,10 @@ import time
 STAGES = ['cell', 'creature', 'tribe', 'civ', 'space']
 # the fixture each stage starts from when a run is resumed there (tools/tests/fixtures.py)
 FIXTURE = {'cell': 'cell', 'creature': 'creature', 'tribe': 'tribe', 'civ': 'civ_npc', 'space': 'space'}
+# CAMPAIGN_FIXTURE_<stage>=<fixture>: start a stage from another save (BUG-0329: creature_cadian)
+import os as _os
+for _st in list(FIXTURE):
+    FIXTURE[_st] = _os.environ.get(f'CAMPAIGN_FIXTURE_{_st}', FIXTURE[_st])
 # game.mode names (`0x01654C01 Creature`) of the stages
 MODE = {'Cell': 'cell', 'Creature': 'creature', 'Tribe': 'tribe', 'Civ': 'civ', 'Space': 'space'}
 

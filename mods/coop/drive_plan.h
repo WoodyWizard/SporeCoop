@@ -22,6 +22,26 @@ inline float pull_k(float k60, double dt, bool fix = g_nudge_dt_fix)
     return (float)(1.0 - std::pow(1.0 - (double)k60, n));
 }
 
+// BUG-0329: the ground of a host and of a guest can differ in height in places (a Tribe village 5 m
+// higher or lower on the guests, which load the host's save, than on the host that made it live).
+// A mirror on the ground was driven at the host's absolute height: 5 m under or over its own ground
+// it never reached its target, walked in place (5.5 m/s while the host's member stood) and was
+// teleported again and again. With `own_height` the target keeps its direction from the planet's
+// centre but takes the mirror's own distance from it, when the two differ by less than kOwnHeightMax.
+inline bool g_own_height_fix = true;
+constexpr float kOwnHeightMax = 10.f;
+template <class V> inline V at_own_height(const V& target, const V& cur, bool fix = g_own_height_fix)
+{
+    float rt = std::sqrt(target.x * target.x + target.y * target.y + target.z * target.z);
+    float rc = std::sqrt(cur.x * cur.x + cur.y * cur.y + cur.z * cur.z);
+    if (!fix || rt < 1.f || rc < 1.f || std::fabs(rt - rc) > kOwnHeightMax)
+        return target;
+    float k = rc / rt;
+    V out = target;
+    out.x *= k; out.y *= k; out.z *= k;
+    return out;
+}
+
 struct Track {
     double stuck_since = 0; // the remote stands still and the puppet is more than 1 m off
     double far_since = 0;   // BUG-0169: the puppet is more than kFar off and gets no closer

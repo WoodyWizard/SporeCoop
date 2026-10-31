@@ -805,7 +805,7 @@ static void guest_tick(double now)
             *(net::Vec3*)((uint8_t*)px.c + game::kVelOff) = {0, 0, 0};
         }
         if (!px.killed)
-            drive::step(px.c, s.pos, s.rot, s.vel, px.drv, now, 0, true, 8.f, g_stall_fix, g_trail_fix);
+            drive::step(px.c, s.pos, s.rot, s.vel, px.drv, now, 0, true, 8.f, g_stall_fix, g_trail_fix, rts_stage()); // own height in Tribe (BUG-0329)
         else { // a corpse lies where the host has it: the guest's dead proxy shot off into the sky
                // (~2.5 km/s away from the planet; driven, it stayed ~80 m up: play_tribe.py)
             *(net::Vec3*)((uint8_t*)px.c + game::kVelOff) = {0, 0, 0};

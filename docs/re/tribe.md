@@ -897,3 +897,18 @@ CreatureBase_SetMoveScale+0x13). GOG 2024, static reading plus a probe of the gu
   +0xB54 is 0 (cleaned up by CreatureBase_Cleanup): there is nothing to walk, and in the Tribe mode
   the check does nothing for a citizen anyway. Its counters are in `coop.status` ("off-stage
   checks N (citizens while the stage is left M), cleaned-up citizen walks skipped K").
+
+## The ground under a village differs between the host and the guests (2026-10-30, fix/w17-tribe)
+<a id="tribe-ground-height"></a>
+
+BUG-0329 / BUG-0332, from the campaign's probe lines (lab 20261030-210914):
+* ✔ A tribe member's position on the host and its mirror's on every guest differed only along the
+  planet's radius (4.9-5.3 m; sideways under 0.8 m); animals near the village the same (3.9-4.3 m).
+  The sign differs between campaigns. All guests agree (they load the same save).
+* ✔ A mirror driven to the host's absolute position under its own ground walks in place (5.5 m/s on
+  the guest while the host's member stands) and NPC proxies are teleported again and again.
+* ✔ `Simulator::cPlanetModel::GetHeightAt` (`coop.ground x y z`) gives each game's ground radius in a
+  direction; a live Creature -> Tribe on flat ground (creature_cadian fixture) gave 503.68 m on both.
+* ? Which game code places the village ground, and why a live Tribe and a loaded one differ.
+* drive.own_height: in Tribe a mirror's target takes the mirror's own distance from the centre
+  (when within 10 m of the host's).
