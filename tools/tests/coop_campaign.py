@@ -61,6 +61,7 @@ Resume a late failure from its stage: --from tribe (the fixture of that stage, c
 import argparse
 import os
 import random
+import math
 import re
 import shutil
 import sys
@@ -73,6 +74,7 @@ import fixtures
 import lane
 import uifind
 from coop_multi import fps, join_cmd, limit, measure, over_limit, start_extra, wait_all
+import coop_multi as cm
 from coop_ui import Ui
 from sporectl import Console
 from twoinst import Monitor, shot, start
@@ -301,7 +303,7 @@ class Campaign:
                 self.finding('apart', f'{hst}:{k}', f'the host does not see {k} in its world ({hst})',
                              [host, self.byname(k)])
             # sync of every synchronized object kind, guests that are in the host's world only
-            over, short, nums, paused = [], [], [], []
+            over, short, nums, paused, terrain = [], [], [], [], []
             for g in self.guests:
                 if g not in alive or g.pid not in tog:
                     continue
@@ -324,7 +326,10 @@ class Campaign:
                     v = sorted(v)
                     p90 = v[min(len(v) - 1, int(0.9 * len(v)))]
                     nums.append(f'{g.name}:{kind} p90 {p90:.1f} of {len(v)}, worst {worst[kind][1]} {worst[kind][0]:.1f}')
-                    if over_limit(v, limit(kind)):
+                    if over_limit(v, limit(kind)) and hst == 'tribe' and kind in ('t', 'n') and \
+                            self.terrain_only(host, g, worst[kind][1], limit(kind), nums):
+                        terrain.append(f'{g.name}:{kind}')
+                    elif over_limit(v, limit(kind)):
                         over.append(f'{g.name}:{kind}:{p90:.1f}')
                         # BUG-0329: the worst object's own line on the host and on this guest (the
                         # guest's line has how its mirror is driven: err, target, own speed, teleports)
@@ -342,6 +347,9 @@ class Campaign:
                                         nums.append(f'{g.name} {key} ground on {w2}: ' + c2.call('coop.ground ' + ' '.join(m.groups())).strip())
             if paused:
                 self.note('sync: not compared (pause menu open): ' + ', '.join(paused))
+            if terrain:  # BUG-0329: the same place on each game's own ground, the grounds differ in height
+                self.note('sync: ground height differs (objects in place on their own ground): ' + ', '.join(terrain)
+                          + ' | ' + '; '.join(n for n in nums if 'ground' in n or ' on ' in n))
             if over or short:  # every guest's numbers next to a desync: one guest only, or everybody (BUG-0275)
                 self.note('sync: ' + '; '.join(nums) + ' | fps ' + ', '.join(
                     f'{p.name} {fps(p.con)}' for p in self.P if p in alive))
@@ -367,7 +375,9 @@ class Campaign:
                 hc = census.dump(host.con)
                 probs = []
                 for g in self.guests:
-                    if g in alive and g.pid in tog:
+                    # a guest in its pause menu runs no simulation: a city the host founded meanwhile
+                    # (and its vehicles) appears there when it resumes (BUG-0331, as BUG-0289 for sync)
+                    if g in alive and g.pid in tog and g.name not in paused:
                         for pr in cl.census_problems(hc, census.dump(g.con))[:20]:
                             probs.append(f'{g.name}|{pr}')
                 for k in self.persist['census'].update(p.split(' (')[0] for p in probs):
@@ -381,6 +391,34 @@ class Campaign:
                         self.F.attach('census', f'{hst}:{k}', [f'both censuses: {os.path.relpath(path, lane.ROOT)}'])
         except (OSError, ValueError) as e:
             self.finding('info', f'check:{e!r}'[:80], f'a check could not read a game: {e!r}')
+
+    def terrain_only(self, host, g, key, lim, nums):
+        """BUG-0329: the object `key` stands at the same place on the host's and on the guest's own
+        ground, only the two grounds differ in height (a Tribe village 5 m higher or lower on the
+        guests): its sideways distance is within `lim` and its height over each game's own ground is
+        the same within 1 m, while its distance from the planet's centre differs. Not a desync of
+        the object (the player sees it standing where the host's stands)."""
+        try:
+            hp = cm.sample(host.con).get(key)
+            gp = cm.sample(g.con).get(key)
+            if not hp or not gp:
+                return False
+            def above(con, p):
+                m = re.search(r'above (-?[\d.]+)', con.call('coop.ground %.2f %.2f %.2f' % tuple(p)))
+                return float(m.group(1)) if m else None
+            ah, ag = above(host, hp), above(g, gp)
+            if ah is None or ag is None:
+                return False
+            rh, rg = math.dist(hp, (0, 0, 0)), math.dist(gp, (0, 0, 0))
+            u = [x / rh for x in hp]
+            d = [b - a for a, b in zip(hp, gp)]
+            radial = sum(a * b for a, b in zip(u, d))
+            side = math.sqrt(max(0.0, sum(x * x for x in d) - radial * radial))
+            nums.append(f'{g.name} {key}: sideways {side:.1f} m, centre distance host {rh:.1f} guest {rg:.1f}, '
+                        f'over its own ground host {ah:.1f} guest {ag:.1f}')
+            return side <= lim and abs(ah - ag) <= 1.0 and abs(rh - rg) > 1.5
+        except (OSError, ValueError, ZeroDivisionError):
+            return False
 
     def byname(self, name):
         return next(p for p in self.P if p.name == name)
