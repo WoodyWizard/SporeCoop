@@ -38,7 +38,10 @@ def main():
     hc, gc = re.search(r'chiefs=(.*)', hl), re.search(r'chiefs=(.*)', gl)
     print('  chiefs host:', hc and hc.group(1), '| guest:', gc and gc.group(1))
     ck(hc and hc.group(1).count('#') >= 2, 'every player has a chief')
-    ck(hc and gc and set(hc.group(1).split()) == set(gc.group(1).split()), 'the same chiefs on both machines')
+    # (compare the chief tokens only: spread= / placed= after them are per machine, BUG-0340)
+    def chief_set(m):
+        return set(re.findall(r'\d+:#\d+', m.group(1))) if m else None
+    ck(hc and gc and chief_set(hc) == chief_set(gc), 'the same chiefs on both machines')
     # pincer: the host's member hits, then the guest's member hits the same enemy tribe
     if enemy and host_m and guest_m:
         v = enemy[0]
