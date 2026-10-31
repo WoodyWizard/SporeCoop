@@ -2299,3 +2299,18 @@ answered right after; a 1 s poller beside a standalone run saw no gap. Same sign
   (`CAMPAIGN_FIXTURE_creature=creature_cadian coop_campaign.py --from creature --to tribe`).
 * The campaign's sync check notes "ground height differs" instead of a desync when the worst t / n
   object is in place sideways and at the same height over each game's own ground (BUG-0332).
+
+## Campaign finale: guests that start in the galaxy view (2026-10-31, fix/w18-space)
+<a id="testing-campaign-finale-galaxy"></a>
+
+* "Fly to Alice" from the galaxy view goes straight to the core's gate; when everybody else already
+  waits there, the core opens at once and that guest is inside the core cinematic a few seconds
+  later. The campaign's finale bot assumed every guest starts in a solar system (first "Fly to
+  Alice" next to the core, zoom out, second "Fly to Alice" to the gate) and got stuck on the second
+  step for the last guest (campaign 20261031-000341, Dave). It now reads `coop.space finale` before
+  each step: in the core (or at the gate) it stops, in the galaxy view it does only the gate step
+  (BUG-0335).
+* Replay of the finale alone with 4 players: `SPORE_LANE=8 python3 tools/tests/coop_campaign.py
+  --from space --to space --minutes 1 --players 4 --no-rejoins --finale-from-galaxy` (~10 min;
+  `--finale-from-galaxy` puts every guest into the galaxy view first; `CAMPAIGN_FINALE_OLD=1`
+  runs the old steps and fails with the [stuck] findings of the report).
