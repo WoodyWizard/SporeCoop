@@ -48,7 +48,7 @@ def own_pos(p):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--food', type=int, default=300)
-    ap.add_argument('--cells', type=int, default=1100)
+    ap.add_argument('--cells', type=int, default=1100)  # at least; all the host's cells but 40
     ap.add_argument('--seconds', type=float, default=40)
     ap.add_argument('--far', type=float, default=200)
     a = ap.parse_args()
@@ -75,7 +75,9 @@ def main():
         for g, (dx, dy) in zip(p.guests, ((a.far, 0), (0, a.far), (a.far, a.far))):
             print(f'  {g.name}:', g.call(f'coop.pool tp {dx} {dy} 0').strip()[:100], flush=True)
         time.sleep(8)
-        print('  host:', h.call(f'coop.pool column {a.cells}').strip(), flush=True)
+        # all the host's cells but 40 (at least --cells): over 1024 must stand in the column at once
+        n = max(a.cells, (num(h.call('coop.pool'), 'cells') or 0) - 40)
+        print('  host:', h.call(f'coop.pool column {n}').strip(), flush=True)
         print('  host:', h.call('coop.pool sap').strip()[:400], flush=True)
         exc0 = h.call('exc')
         print('  host exc before:', exc0.strip().splitlines()[0] if exc0.strip() else '-', flush=True)
@@ -98,8 +100,11 @@ def main():
             k += 1
         print(f'  host cell moved (m per 5 s): {[round(m, 1) for m in moved]}', flush=True)
         # (the first seconds after the column the crowd of cells pushes itself apart around the host's cell)
+        # the crowd pushes the host's cell about: it swims in most intervals, and never jumps (a
+        # centre from a broken soft body jumped thousands of metres, BUG-0338)
         ok = sum(1 for m in moved if m > 3)
-        ck(len(moved) >= 4 and ok >= len(moved) - 2, f'3. the host\'s cell swims after the column ({[round(m, 1) for m in moved]})')
+        ck(len(moved) >= 4 and ok * 2 >= len(moved) and max(moved) < 60,
+           f'3. the host\'s cell swims after the column, no jump ({[round(m, 1) for m in moved]})')
         sap = h.call('coop.pool sap')
         print('  host:', sap.strip()[:500], flush=True)
         fix_on = num(sap, 'fix') == 1
@@ -114,9 +119,9 @@ def main():
         ck(sum(1 for x in hitches if x > 400) <= 1, f'3. the host\'s frames keep coming (hitches over 400 ms: {sum(1 for x in hitches if x > 400)})')
         for g in p.guests:  # what the other players see: the host's cell swimming on their screens
             v = seen[g.name]
-            ok = sum(1 for m in v if m > 3)
+            ok = sum(1 for m in v if m > 3)  # (as the host's own, a jump on the host is a jump here)
             print(f'  {g.name} sees the host\'s cell move (m per 5 s): {[round(m, 1) for m in v]}', flush=True)
-            ck(len(v) >= 4 and ok >= len(v) - 2, f'3. {g.name} sees the host\'s cell swim ({[round(m, 1) for m in v]})')
+            ck(len(v) >= 4 and ok * 2 >= len(v) and max(v) < 60, f'3. {g.name} sees the host\'s cell swim ({[round(m, 1) for m in v]})')
         p.faults(ck)
         return ck.result()
     finally:

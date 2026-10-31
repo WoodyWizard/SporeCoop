@@ -1797,57 +1797,50 @@ static void SK_CDECL h_SpawnLoot(void* res, void* key, void* query, void* pos, f
 // particle cloud is turned about its centre onto the host's facing right after the fit, and the
 // host's matrix is written: what is drawn and what bites or is bitten here faces as on the host.
 // ---- soft-body particles (BUG-0338, docs/re/cell.md#cell-particle-pool) ----
-// CreateSoftBody 0xE6D8F0 gives a cell one particle per node of the soft-body quadtree
-// (0x16AE800) at depth "tier" (size 0.3 / 1 / 2: 4 / 16 / 64 particles) from a pool of 1500
-// (G+0x4108, ParticleAlloc 0xE4DBA0). A full pool returns -1 and the cell keeps the -1 in its list;
-// the next free (0xE4EC10) of that -1 writes before the pool's block (the heap header) and puts -1
-// on the free list: later allocations read garbage and fault every frame (0xE4DBD9), the heap is
-// damaged. The fix: a cell whose particles do not fit gets the game's own "no particles" form (as
-// a cell under size 0.3: one entry -1, n = 1, which nothing frees).
-// Old (`coop.fix cell.particles off`): the game's partial lists.
+// The cells' soft-body particles come from one pool of 1500 (G+0x4108, ParticleAlloc 0xE4DBA0).
+// A full pool returns -1 and the game keeps it in the cell's list (CreateSoftBody 0xE6D8F0, the
+// re-tier 0xE51A20 when a cell grows or shrinks; the re-tier even frees the -1 of a cell without
+// particles). The game then reads and writes particle -1, 8 bytes before the pool's block (its heap
+// header; a cell's centre from it jumped thousands of metres), and ParticleFree 0xE4EC10 (no bound
+// check) puts -1 on the free list: the next allocations read garbage and fault every frame at
+// 0xE4DBD9, and the count fell below what is used (-25 seen). The fix: the pool never gets full;
+// past 1498 particles an allocation gets the spare slot 1499 (never handed out by the game then),
+// set to the asking cell's position, and freeing it, or anything outside the pool, does nothing.
+// Old (`coop.fix cell.particles off`): the game's -1.
 static bool g_fix_particles = true;
-COOP_FIX_UNSAFE("cell.particles", "BUG-0338", g_fix_particles, "cell: a cell whose soft-body particles do not fit in the game's pool of 1500 gets none (the game kept -1 entries, whose free damaged the heap and the free list)");
-static uintptr_t a_SoftCreate, a_SoftTree;
-static void(SK_CDECL* o_SoftCreate)(uint32_t, int);
-static uint32_t g_soft_held, g_particles_peak;
-static int soft_nodes(const uint8_t* node, int depth, int tier)
-{
-    if (!node)
-        return 0;
-    if (depth == tier)
-        return 1;
-    int n = 0;
-    for (int k = 1; k <= 4; k++)
-        n += soft_nodes(((const uint8_t* const*)node)[k], depth + 1, tier);
-    return n;
-}
+COOP_FIX_UNSAFE("cell.particles", "BUG-0338", g_fix_particles, "cell: past 1498 soft-body particles an allocation gets a spare slot instead of the game's -1 (used before the pool's block, it broke the heap and the free list)");
+constexpr int kParticles = 1500, kSpare = kParticles - 1;
+static uintptr_t a_PartAlloc, a_PartFree;
+static int(SK_CDECL* o_PartAlloc)(uint8_t*, const float*, const float*, float, int);
+static void(SK_CDECL* o_PartFree)(uint8_t*, int);
+static uint32_t g_part_spare, g_part_bad_frees, g_particles_peak;
 static int particles_used()
 {
     uint8_t* parts = G() ? F<uint8_t*>(G(), 0x4108) : nullptr;
     return parts ? F<int>(parts, 0x1BD54) : -1;
 }
-static void SK_CDECL h_SoftCreate(uint32_t idx, int arg)
+static int SK_CDECL h_PartAlloc(uint8_t* parts, const float* pos, const float* vel, float w, int cell)
 {
-    uint8_t* c = g_fix_particles && a_SoftTree ? modes::cell_at(idx) : nullptr;
-    int used = particles_used();
-    if (!c || used < 0)
-        return o_SoftCreate(idx, arg);
-    float size = F<float>(c, kSize);
-    int tier = size >= 2.f ? 3 : size >= 1.f ? 2 : size >= 0.3f ? 1 : 0;
-    int need = tier ? soft_nodes((const uint8_t*)a_SoftTree, 0, tier) : 0;
-    if (need == 0 || used + need < 1500) {
-        o_SoftCreate(idx, arg);
-    } else {
-        // the game's own form for a small cell: size under 0.3 for the call only
-        F<float>(c, kSize) = 0.1f;
-        o_SoftCreate(idx, arg);
-        F<float>(c, kSize) = size;
-        if (!g_soft_held++)
-            H->log(M, SK_WARN, "cell: the soft-body particle pool is full (%d of 1500, %d more asked): a cell without particles (BUG-0338)", used, need);
+    int used = parts ? F<int>(parts, 0x1BD54) : 0;
+    if (used > (int)g_particles_peak)
+        g_particles_peak = (uint32_t)used;
+    if (!g_fix_particles || !parts || used + 1 < kSpare)
+        return o_PartAlloc(parts, pos, vel, w, cell);
+    for (int j = 0; j < 3; j++) { // the spare stands where the asking cell is, at rest
+        ((float*)(parts + 4 + 12 * kSpare))[j] = pos ? pos[j] : 0.f;
+        ((float*)(parts + 0x4654 + 12 * kSpare))[j] = vel ? vel[j] : 0.f;
     }
-    int now = particles_used();
-    if (now > (int)g_particles_peak)
-        g_particles_peak = (uint32_t)now;
+    if (!g_part_spare++)
+        H->log(M, SK_WARN, "cell: the soft-body particle pool is full (%d of %d): the spare slot instead of -1 (BUG-0338)", used, kParticles);
+    return kSpare;
+}
+static void SK_CDECL h_PartFree(uint8_t* parts, int i)
+{
+    if (g_fix_particles && (i < 0 || i >= kSpare)) {
+        g_part_bad_frees++;
+        return;
+    }
+    o_PartFree(parts, i);
 }
 
 using Soft_t = void(SK_CDECL*)(uint8_t*, void*, float);
@@ -2053,10 +2046,12 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
         H->hook_create(M, (void*)a_Bite, (void*)h_Bite, (void**)&o_Bite);
     if (a_PickTargets) // BUG-0306
         H->hook_create(M, (void*)a_PickTargets, (void*)h_PickTargets, (void**)&o_PickTargets);
-    a_SoftCreate = H->sym("Simulator::Cell::CreateSoftBody");
-    a_SoftTree = H->sym("Simulator::Cell::SoftBodyTree");
-    if (a_SoftCreate && a_SoftTree) // GOG 2024 only (BUG-0338)
-        H->hook_create(M, (void*)a_SoftCreate, (void*)h_SoftCreate, (void**)&o_SoftCreate);
+    a_PartAlloc = H->sym("Simulator::Cell::ParticleAlloc");
+    a_PartFree = H->sym("Simulator::Cell::ParticleFree");
+    if (a_PartAlloc && a_PartFree) { // GOG 2024 only (BUG-0338)
+        H->hook_create(M, (void*)a_PartAlloc, (void*)h_PartAlloc, (void**)&o_PartAlloc);
+        H->hook_create(M, (void*)a_PartFree, (void*)h_PartFree, (void**)&o_PartFree);
+    }
     a_UpdatePairs = H->sym("SweepPrune::UpdatePairs");
     a_MergeAxis = H->sym("SweepPrune::MergeAxis");
     a_Overlap = H->sym("SweepPrune::OverlapOther");
@@ -3340,9 +3335,9 @@ static std::string sap_report()
     }
     char b[900];
     snprintf(b, sizeof b,
-             "sap: particles=%d peak=%u soft_held=%u endpoints=%d objects_cap=%d pending=%d held=%u removed=%d nan=%d unsorted=%d peak_open=%d open_at_end=%d "
+             "sap: particles=%d peak=%u spare=%u bad_frees=%u endpoints=%d objects_cap=%d pending=%d held=%u removed=%d nan=%d unsorted=%d peak_open=%d open_at_end=%d "
              "max_first=%d live_objects=%d dup_min=%d lone_min=%d lone_max=%d sweeps=%u over_1024=%u sweep_peak=%u sweep_left=%u fix=%d | open: mirror=%d other=%d bg=%d puppet=%d avatar=%d no_cell=%d inverted=%d size=%.3f..%.3f%s",
-             particles_used(), g_particles_peak, g_soft_held, n, cap, pend, modes::cell_sap_held(), removed, nan_v, unsorted, peak, (int)active.size(), max_first, live_objs, dup_min, lone_min, lone_max, g_sap_sweeps, g_sap_over, g_sap_peak, g_sap_left,
+             particles_used(), g_particles_peak, g_part_spare, g_part_bad_frees, n, cap, pend, modes::cell_sap_held(), removed, nan_v, unsorted, peak, (int)active.size(), max_first, live_objs, dup_min, lone_min, lone_max, g_sap_sweeps, g_sap_over, g_sap_peak, g_sap_left,
              (int)g_fix_sap_sweep, k_mirror, k_other, k_bg, k_puppet,
              k_avatar, k_none, inverted, rmin, rmax, sample);
     return b;
