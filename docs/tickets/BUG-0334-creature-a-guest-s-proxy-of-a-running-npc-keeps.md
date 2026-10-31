@@ -39,7 +39,8 @@ version.
 `coop_npc_run_hp.py` (suite npc_run_hp): a host NPC dashes (40 m legs, 4 m/s); hit while it runs, then
 killed while it runs; the guest's game must show the health within 3 s and the death within 3 s.
 * FAIL with `SPORE_FIX_OFF=npc.kinematic_sync`: out/lab/20261031-020145 (6.0 / host 4.0; no death).
-* PASS: see History (npc_run_hp x3, team x12 cold and warm).
+* PASS: out/lab/20261031-020245 (npc_run_hp 3/3); team 12/12: out/lab/20261031-020249 (6 cold, lane 5)
+  and out/lab/20261031-020425 (1 cold + 5 warm, lane 4).
 
 ## History
 - 2026-10-31: opened.
