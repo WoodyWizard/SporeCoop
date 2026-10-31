@@ -376,7 +376,7 @@ class Campaign:
                 probs = []
                 for g in self.guests:
                     # a guest in its pause menu runs no simulation: a city the host founded meanwhile
-                    # (and its vehicles) appears there when it resumes (BUG-0331, as BUG-0289 for sync)
+                    # (and its vehicles) appears there when it resumes (BUG-0335, as BUG-0289 for sync)
                     if g in alive and g.pid in tog and g.name not in paused:
                         for pr in cl.census_problems(hc, census.dump(g.con))[:20]:
                             probs.append(f'{g.name}|{pr}')
@@ -1081,6 +1081,10 @@ class Campaign:
                 break
         f = fz.fin(h.con)
         ck(f.get('waiting') == '1' or f.get('entered') == '1', f'the host waits at the core ({f["line"]})')
+        if getattr(self.a, 'finale_from_galaxy', False):  # tests (BUG-0335): the guests wait in the galaxy view
+            for g in self.guests:
+                self.take_off(g)
+                fz.to_galaxy(g.con, g.name, lambda ok, what: None)
         for g in self.guests:  # each guest flies to Alice twice: next to the core, then to the gate
             ui = Ui(g.con, g.name)
             for step in ('near the core', 'the gate'):
@@ -1088,6 +1092,17 @@ class Campaign:
                 for _ in range(3):  # (several badges can come one after another)
                     if not self.close_reward(g.con):
                         break
+                # BUG-0335: "Fly to Alice" from the galaxy view goes straight to the gate, and with
+                # everybody else waiting there the core opens at once: a guest that played on in the
+                # galaxy view (Dave in campaign 20261031-000341) was inside the core cinematic when the
+                # bot tried its second step (zoom out, "Fly to Alice" again) and got stuck there.
+                f = fz.fin(g.con) if not os.environ.get('CAMPAIGN_FINALE_OLD') else {}  # (old steps: tests)
+                if f.get('entered') == '1' or (step == 'the gate' and f.get('zone') == '3'):
+                    self.note(f'{g.name}: already at the gate / in the core ({step} skipped)')
+                    break
+                if step == 'near the core' and f.get('ctx') == '2':
+                    self.note(f'{g.name}: in the galaxy view: "Fly to Alice" goes to the gate')
+                    step = 'the gate'
                 if step == 'the gate':
                     self.take_off(g)
                     fz.to_galaxy(g.con, g.name, ck)
@@ -1099,6 +1114,8 @@ class Campaign:
                     ui.click(b)
                 g.call(f'key {VK_F9}')
                 time.sleep(8)
+                if step == 'the gate' and not os.environ.get('CAMPAIGN_FINALE_OLD'):
+                    break
         ok = fz.wait(lambda: all(fz.fin(p.con).get('entered') == '1' for p in self.P), 120, 3)
         ck(ok, 'every player entered the galactic core: ' + ' | '.join(f'{p.name} {fz.fin(p.con)["line"][:80]}'
                                                                        for p in self.P))
@@ -1222,6 +1239,8 @@ def main():
     ap.add_argument('--noise', type=float, default=0.06, help='chance of a noise action instead of a bot step')
     ap.add_argument('--no-rejoins', dest='rejoins', action='store_false')
     ap.add_argument('--no-finale', dest='finale', action='store_false')
+    ap.add_argument('--finale-from-galaxy', action='store_true',
+                    help='tests (BUG-0335): the guests go to the galaxy view before their finale steps')
     ap.add_argument('--no-jump', dest='jump', action='store_false', help='stop at a stage change that does not finish')
     ap.add_argument('--seed', type=int, default=None)
     a = ap.parse_args()
