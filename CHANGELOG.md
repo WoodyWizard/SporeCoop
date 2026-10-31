@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### Fixed
+- Cell: a crowd of hundreds of cells next to a player no longer makes that game fault every frame or
+  throw a cell thousands of metres away (the game's pool of cell particles ran full) (BUG-0338).
 - Cell: a player who stays in the pause menu while the other players play no longer corrupts the
   game's memory (a broken collision state, then a crash or freeze when Cell ends; seen on the way
   to Creature with four players) (BUG-0348).

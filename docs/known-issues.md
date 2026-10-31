@@ -1168,6 +1168,8 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Known: BUG-0338 (stack arrays of the advect grid, not analysed). Also on the host (0x00E4DBD9, 1332
   faults, lab 20261031-124047-fix-w22-cell): `cell_sap` fails now and then because of it.
 * Ticket: BUG-0338
+* CORRECTION (2026-10-31, fix/w23-cell): fixed (BUG-0338, `cell.particles`): the soft-body particle
+  pool of 1500 got full; docs/re/cell.md#cell-particle-pool.
 
 ## Creature, 4 players: proxies 511 m from host NPCs at the planet's centre (2026-10-31, fix/w21-creature)
 <a id="issue-npc-at-centre"></a>

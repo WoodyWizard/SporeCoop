@@ -2022,6 +2022,13 @@ answered right after; a 1 s poller beside a standalone run saw no gap. Same sign
 * Food (plant / meat) on a guest's screen is not asserted: at level 4 a screen with 300+ host cells
   often had none (also without the budget). Use `cell_far_guest` (two players) for food far away.
 * The sync-check and `coop_multi.measure` count host cells within 60 m of the guest only (BUG-0298).
+* `coop_cell_particles.py` (suite `cell_particles`, 2 players, ~2 min): food 300, the guest's
+  soft-body particle pool filled to 1499 (`coop.pool particles 1499`), 10 x `coop.pool zap 5000`.
+  Checked: the pool's count in 0..1500, the guest's own cell within 30 m of where it was, mirrors
+  back, no fault. BUG-0338, docs/re/cell.md#cell-particle-pool. `SPORE_FIX_OFF=cell.particles`
+  FAILS (faults at 0x00E4E384, the own cell 8385 m away).
+* cell_sap (2026-10-31, fix/w23-cell): the column takes all the host's cells but 40 (at least 1100)
+  and the swim check asks for most intervals and no jump over 60 m; its BUG-0338 faults are fixed.
 * `coop_cell_pause.py` (suite `cell_pause`, 2 players, ~2 min): food 300, the guest opens its pause
   menu (Esc, "Resume Game" shown), 12 x `coop.pool zap 5000` 2.5 s apart while paused, Resume, then
   `coop.leave`. Checked: the broadphase's pending count (`coop.pool sap` pending=, the game's header)
