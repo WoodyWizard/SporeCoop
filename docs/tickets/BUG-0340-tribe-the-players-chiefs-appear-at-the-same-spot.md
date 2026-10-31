@@ -53,6 +53,9 @@ Campaign `--from creature --to tribe --players 4 --minutes 2`:
 * with the fix: seed 778, lane 8: two chiefs placed, "apart" on all four machines (PASS of the check);
   seed 777, lane 9: two chiefs placed (host log), yet 8 s later players 1-2 4.5-5.2 m apart (bodies
   5.1-5.6 m) again: the game's idle behaviour brought them back. Not a reliable PASS.
+* after a Tribe rejoin with the fix: "apart" on all four machines in both runs (Bob seed 777, Carol
+  seed 778); without it (seed 777): Dave's rejoin left 0-3 5.1-5.5 m (bodies 5.9-6.1 m).
+  Campaign RESULT: seed 778 OK, seed 777 FAIL (the arrival check only).
 Scenario test `coop_tribe_chiefs_apart.py`: passes with and without the switches (the game parts
 stacked chiefs itself).
 
