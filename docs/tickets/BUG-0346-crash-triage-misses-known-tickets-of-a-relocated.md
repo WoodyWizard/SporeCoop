@@ -1,18 +1,18 @@
 ---
 id: BUG-0346
 title: crash_triage misses known tickets of a relocated exe (Windows base 0x410000+, Steam 0x810000) and names unknown functions by the nearest symbol
-status: open
+status: fixed
 kind: tooling
 stage: All
 reported: 2026-10-31
 source: triage of the 2026-10-31 player reports
 role: 
 versions: all
-fixed_in:
+fixed_in: unreleased
 branch: fix/w22-reports
-commits:
-tests: tools_selftest triage (f)
-signature:
+commits: 7ce1249
+tests: tools_selftest
+signature: tooling (no game fault)
 docs:
 related: BUG-0158, BUG-0247, BUG-0008, BUG-0012
 ---

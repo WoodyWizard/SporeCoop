@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### Fixed
+- Tools: `crash_triage.py` finds the known ticket of a crash in a relocated `SporeApp.exe` (Windows,
+  Steam) by its address numbered from 0x400000 (BUG-0346).
 - Tribe: at the arrival and after a rejoin, a player's chief that stands in another one is moved to
   its own spot round the village; two chiefs that end up in each other later are moved apart
   (BUG-0340).
