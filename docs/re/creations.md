@@ -485,3 +485,14 @@ BUG-0318. GOG 2024, lane 4, guest at 6.7 fps (`frame.limit 150`).
 * The world shared by the host does not hold creation records: the guest's game builds the host's
   creatures from what co-op registers (`world_*`, `own_species_*`, `species_*` packages), so checking
   the bundles before the world covers the world's creatures.
+
+## The own cell's rebuild right after a Cell load (2026-10-31, fix/w22-reports)
+<a id="creations-own-cell-rebuild-timing"></a>
+
+* ✔ runtime (lanes 5/6, `coop_cell_own_load.py`): RebuildLevel asked for (`G+0x51D8 = 1`) by
+  `apply_own_cell` on the first frames after a reload of the host's Cell world leaves the guest's new
+  avatar unable to eat plants it swims into (AvatarEat never runs: 0 of 3 in 2 of 2 runs); the same
+  rebuild 5 s / 150 frames later: 3 of 3 (BUG-0342, `cell.own_rebuild`).
+* ~ After the first load of a join the delay is not enough: 2 of 4 runs did not eat. Unknown why.
+* ✔ `g_cell_set` must be forgotten when `game::stage_epoch(Cell)` changes, or a reload keeps the
+  world's cell (BUG-0349, `creations.cell_reapply`).
