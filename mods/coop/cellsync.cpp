@@ -2849,6 +2849,33 @@ static void bg_cull(double now)
 }
 
 static bool g_dna_note_due;
+// the bounding sphere Collisions 0xE7F260 tests before HandleCollisionPair (0xE6D790): the model
+// data's centre and radius (GetCellModelData +0x1238 / +0x1244) times the scale +0x58, turned by
+// +0x5C when +0x48 bit 2 is set; a cell without a model: +0x4C and +0x58
+static float cell_sphere(uint8_t* c, float* ctr)
+{
+    float sc = F<float>(c, 0x58);
+    auto* k = (uint32_t*)(c + kModelKey);
+    if (!k[0]) {
+        ctr[0] = F<float>(c, 0x4C), ctr[1] = F<float>(c, 0x50), ctr[2] = F<float>(c, 0x54);
+        return sc;
+    }
+    uint8_t* md = a_ModelData ? skg::cdecl_call<uint8_t*>(a_ModelData, k[0], k[1], k[2]) : nullptr;
+    if (!md)
+        return -1.f;
+    float v[3] = {F<float>(md, 0x1238), F<float>(md, 0x123C), F<float>(md, 0x1240)};
+    if (F<uint8_t>(c, 0x48) & 2) {
+        float* m = (float*)(c + 0x5C);
+        float x = v[0], y = v[1], z = v[2];
+        v[0] = m[3] * y + m[6] * z + x * m[0];
+        v[1] = m[1] * x + m[4] * y + m[7] * z;
+        v[2] = m[2] * x + m[5] * y + m[8] * z;
+    }
+    for (int i = 0; i < 3; i++)
+        ctr[i] = F<float>(c, 0x4C + 4 * i) + v[i] * sc;
+    return F<float>(md, 0x1244) * sc;
+}
+
 void tick(double now)
 {
     static bool was_in_cell;
@@ -4052,6 +4079,60 @@ std::string debug(const std::vector<std::string>& a)
         char b[96];
         snprintf(b, sizeof b, "particles: %d made, %d of %d used\n", made, particles_used(), kParticles);
         return b;
+    }
+    if (!a.empty() && a[0] == "collide") { // tests (BUG-0342): Collisions 0xE7F260's tests for our cell's pairs
+        uint8_t* av = avatar();
+        uint8_t* g = G();
+        uint8_t* sap = g ? F<uint8_t*>(g, 0x4104) : nullptr;
+        if (!av || !sap)
+            return "collide: no avatar / sap\n";
+        // the bounding sphere 0xE6D790 builds for the narrow test
+        auto sphere = [&](uint8_t* c, float* ctr) -> float {
+            float sc = F<float>(c, 0x58);
+            auto* k = (uint32_t*)(c + kModelKey);
+            if (!k[0]) {
+                ctr[0] = F<float>(c, 0x4C), ctr[1] = F<float>(c, 0x50), ctr[2] = F<float>(c, 0x54);
+                return sc;
+            }
+            uint8_t* md = a_ModelData ? skg::cdecl_call<uint8_t*>(a_ModelData, k[0], k[1], k[2]) : nullptr;
+            if (!md)
+                return -1.f;
+            float v[3] = {F<float>(md, 0x1238), F<float>(md, 0x123C), F<float>(md, 0x1240)};
+            if (F<uint8_t>(c, 0x48) & 2) {
+                float* m = (float*)(c + 0x5C);
+                float x = v[0], y = v[1], z = v[2];
+                v[0] = m[3] * y + m[6] * z + x * m[0];
+                v[1] = m[1] * x + m[4] * y + m[7] * z;
+                v[2] = m[2] * x + m[5] * y + m[8] * z;
+            }
+            for (int i = 0; i < 3; i++)
+                ctr[i] = F<float>(c, 0x4C + 4 * i) + v[i] * sc;
+            return F<float>(md, 0x1244) * sc;
+        };
+        uint32_t me = F<uint32_t>(av, 0);
+        int np = F<int>(sap, 8);
+        int* pairs = F<int*>(sap, 0xC);
+        std::string out;
+        char b[300];
+        int n = 0;
+        for (int i = 0; pairs && i < np && i < 8192; i++) {
+            uint32_t x = (uint32_t)pairs[2 * i], y = (uint32_t)pairs[2 * i + 1];
+            if (x != me && y != me)
+                continue;
+            uint32_t other = x == me ? y : x;
+            uint8_t* ca = modes::cell_at(me);
+            uint8_t* cb = modes::cell_at(other);
+            float pa[3] = {}, pb[3] = {};
+            float ra = ca ? sphere(ca, pa) : -1.f, rb = cb ? sphere(cb, pb) : -1.f;
+            float d2 = (pa[0] - pb[0]) * (pa[0] - pb[0]) + (pa[1] - pb[1]) * (pa[1] - pb[1]) + (pa[2] - pb[2]) * (pa[2] - pb[2]);
+            snprintf(b, sizeof b, "pair me=%08X(%s puppet=%d) other=%08X(%s %s) ra=%.3f rb=%.3f d=%.3f narrow=%d me_obj=%p av=%p\n", me,
+                     ca ? "found" : "GONE", ca ? (int)modes::cell_is_puppet(ca) : -1, other, cb ? "found" : "GONE", cb ? kind_of(cb) : "-", ra, rb, std::sqrt(d2),
+                     ca && cb && d2 < (ra + rb) * (ra + rb), (void*)ca, (void*)av);
+            out += b;
+            n++;
+        }
+        snprintf(b, sizeof b, "collide: %d pairs with our cell %08X of %d, own_pairs=%u\n", n, me, np, g_own_pairs);
+        return out + b;
     }
     if (!a.empty() && a[0] == "sapme") { // tests (BUG-0342): our own cell's broadphase object [or c<key>'s]
         uint8_t* av = avatar();
