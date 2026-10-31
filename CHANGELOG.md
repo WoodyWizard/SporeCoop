@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### Fixed
+- Creature: an animal hit or killed while it runs now shows its health and its death on the other
+  players' screens at once (BUG-0334).
 - Creature: a player who leaves and joins again (or loads) within a minute of being saved by the
   pack is saved again in the new session; the rescue cooldown no longer carries over (BUG-0330).
 - Tribe: where the village ground is higher or lower for the other players than for the host, the

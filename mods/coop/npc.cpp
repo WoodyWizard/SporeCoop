@@ -84,6 +84,8 @@ COOP_FIX("npc.stall", "BUG-0169", g_stall_fix, "creature: a proxy 2.5 m off for 
 // game animates from it); standing, the driving (walk, nudge, stuck/stall/trail) works as before.
 // `coop.fix npc.kinematic off`: always the driving.
 static bool g_kinematic_fix = true;
+static bool g_kinematic_sync_fix = true;
+COOP_FIX("npc.kinematic_sync", "BUG-0334", g_kinematic_sync_fix, "creature: a running NPC's proxy gets its health, death and impressed flag too");
 COOP_FIX("npc.kinematic", "BUG-0281", g_kinematic_fix, "creature: the proxy of a running NPC follows the host's path exactly");
 static bool g_trail_fix = true;
 COOP_FIX("npc.trail", "BUG-0305", g_trail_fix, "creature, tribe: a proxy 1.5 m off its path for 0.5 s is put in place");
@@ -789,6 +791,7 @@ static void guest_tick(double now)
                 game::set_orientation(px.c, game::orientation(px.c));
             continue;
         }
+        bool placed = false;
         if (!px.killed && g_kinematic_fix && game::in_creature_stage() && drive::speed(s.vel) > 0.3f &&
             net::dist(game::position(px.c), s.pos) < 8.f) {
             // BUG-0281: a running NPC's proxy follows the host's path itself (see g_kinematic_fix)
@@ -798,13 +801,21 @@ static void guest_tick(double now)
             game::teleport(px.c, s.pos, s.rot);
             *(net::Vec3*)((uint8_t*)px.c + game::kVelOff) = s.vel;
             px.drv.last_step = now;
-            continue;
+            placed = true;
+            // BUG-0334: health, death and the impressed flag below are synced for a running NPC too
+            // (0.7.3.2's first npc.kinematic went on to the next proxy here: a fleeing NPC kept its
+            // old health on the guest and did not die there until it stopped).
+            // `coop.fix npc.kinematic_sync off`: that first version.
+            if (!g_kinematic_sync_fix)
+                continue;
         }
-        if (px.kinematic) { // it stands again: the driving takes over from here
+        if (!placed && px.kinematic) { // it stands again: the driving takes over from here
             px.kinematic = false;
             *(net::Vec3*)((uint8_t*)px.c + game::kVelOff) = {0, 0, 0};
         }
-        if (!px.killed)
+        if (placed) {
+            // placed on the host's path this frame: no driving
+        } else if (!px.killed)
             drive::step(px.c, s.pos, s.rot, s.vel, px.drv, now, 0, true, 8.f, g_stall_fix, g_trail_fix, rts_stage()); // own height in Tribe (BUG-0329)
         else { // a corpse lies where the host has it: the guest's dead proxy shot off into the sky
                // (~2.5 km/s away from the planet; driven, it stayed ~80 m up: play_tribe.py)
