@@ -10,8 +10,14 @@ The host's My Creations: the fixture with 'Tiger Horse' (290229B9) changed to us
 
   SPORE_LANE=5 SPORE_LANE_B=6 python3 tools/tests/coop_guest_missing_pack.py
 
-Without the fix (SPORE_FIX_OFF=creations.missing_parts) Carol faults at 0x441F3B in the load and
-stays in it (Wine; Windows crashes): the run that must FAIL."""
+Since the owner's choice (fix/w24-parts) Carol's game shows the creature's pack parts as similar base
+game parts (content_packs.h kCreepyCuteSubstitutes) and plays the world: checked with the game's view
+of the model (`coop.creations parts`: no pack part left, the species profile built) on Carol and the
+original part on Bob.
+
+Runs that must FAIL: SPORE_FIX_OFF=creations.part_substitute (the refusal of BUG-0341: Carol is told
+and stays in the galaxy menu); SPORE_FIX_OFF=creations.missing_parts,creations.part_substitute (0.7.3.1:
+Carol faults at 0x441F3B in the load and stays in it under Wine; Windows crashes)."""
 import os
 import re
 import shutil
@@ -91,34 +97,42 @@ def main():
             print('  carol:', carol.call(f'coop.fix {name.strip()} off')['out'].strip().splitlines()[0])
         carol.call(join_cmd('Carol'))
         t0 = time.time()
-        crashed, told = False, False
-        while time.time() - t0 < 100:
+        crashed, playing, mode = False, False, ''
+        while time.time() - t0 < 150:
             f1 = twoinst.host_frame(host)
             time.sleep(1)
             if twoinst.host_frame(host) == f1:
                 host.call('key enter')  # the "game saved" box of the share
             try:
-                cs = carol.call('coop.creations')['out']
+                mode = carol.call('game.mode')['out'].strip()
+                av = carol.call('coop.avatar')
             except (OSError, ValueError):
                 crashed = True
                 break
-            m = re.search(r'world_missing=(\d+)', cs)
-            if m and int(m.group(1)) > 0 and time.time() - t0 > 45:
-                told = True
+            if 'Creature' in mode and av.get('ok') and 'key=0x' in av.get('out', '') and time.time() - t0 > 20:
+                playing = True
                 break
-        out, mode = '', ''
+        time.sleep(8)  # the host's puppet is built on Carol's game (its species: the host's creature)
+        out, cparts, bparts = '', '', bob.call(f'coop.creations parts {TIGER:08X}')['out'].strip()
         try:
             out = carol.call('exc')['out']
             mode = carol.call('game.mode')['out'].strip()
+            cparts = carol.call(f'coop.creations parts {TIGER:08X}')['out'].strip()
             print('  carol:', carol.call('coop.creations')['out'].splitlines()[0][-90:])
         except (OSError, ValueError):
             crashed = True
         print('  carol faults:', (out.strip().splitlines() or ['-'])[0][:160], '| mode', mode[:40])
+        print('  carol:', cparts, '| bob:', bparts)
         ck(not crashed, 'the guest without the pack did not crash')
         ck('0x00441F3B' not in out, 'no fault in the model bake (0x441F3B) on the guest without the pack')
-        ck(told, "the guest without the pack knows the host's creature needs the pack (world_missing)")
-        ck('Loading' not in mode and 'total faults: 0' in out,
-           f'the guest without the pack is not stuck in a load and has no fault ({mode[:30]})')
+        ck(playing, f"the guest without the pack plays the host's Creature world ({mode[:30]})")
+        # the game's view: the model the guest's game reads for the host's creature has no pack part
+        # left (shown with base parts) and its species profile is built
+        ck(re.search(r'\bcc=0\b', cparts) and re.search(r'\bspecies=1\b', cparts) and not re.search(r'\bn=0\b', cparts),
+           f"the guest's game builds the host's creature with base parts only ({cparts})")
+        ck(re.search(r'\bcc=1\b', bparts) and re.search(r'\bspecies=1\b', bparts),
+           f"Bob (with the pack) keeps the original Creepy & Cute part ({bparts})")
+        ck('total faults: 0' in out and 'Loading' not in mode, f'the guest without the pack has no fault ({mode[:30]})')
     finally:
         subprocess.run([lane.SPORE, 'kill'], env=dict(os.environ, SPORE_LANE=str(b)), capture_output=True)
         time.sleep(2)
