@@ -63,6 +63,16 @@ def eat_plants(guest, host, want=3, timeout=90):
         ok = p1 > p0 and not alive(guest, key) and not alive(host, key)
         eaten += ok
         log.append(f'{key}: points {p0}->{p1} {"eaten" if ok else "not eaten"}')
+        if not ok and tried == 1:  # what the guest's game has for its cell and the plant (BUG-0342)
+            me = [l for l in guest.call('coop.pool prey 40')['out'].splitlines() if l.startswith('player ')]
+            print('    diag:', ' | '.join(me)[:300], flush=True)
+            print('    diag:', guest.call(f'coop.pool cell {key}')['out'].strip()[:300], flush=True)
+            print('    diag:', guest.call('coop.pool diet')['out'].strip().replace('\n', ' | ')[:300], flush=True)
+            print('    diag:', guest.call('coop.pool sapme')['out'].strip()[:600], flush=True)
+            print('    diag plant:', guest.call(f'coop.pool sapme {key}')['out'].strip()[:600], flush=True)
+            print('    diag sap:', guest.call('coop.pool sap')['out'].strip()[:700], flush=True)
+            print('    diag: own_pairs', field(guest.call('coop.pool')['out'], r'own_pairs=(\d+)'), 'then',
+                  (guest.call('wait.frames 30 5000'), field(guest.call('coop.pool')['out'], r'own_pairs=(\d+)'))[1], flush=True)
     print(f'  plants: {eaten}/{tried} eaten: ' + '; '.join(log), flush=True)
     return eaten, tried
 
@@ -84,6 +94,7 @@ def main():
     # BAF1AD40 eats plants (meat stays where it is: runs of 2026-10-31)
     # BUG-0342, still open: after the FIRST load the own cell did not eat in 2 of 4 lab runs with
     # cell.own_rebuild on (20261031-130510, -130756), 2 of 2 ate (-130258, -130455): reported, not checked
+    print('  sapme:', guest.call('coop.pool sapme')['out'].strip()[:400])
     eaten, tried = eat_plants(guest, host)
     print(f"  (open, BUG-0342) after the first load the guest's own game ate {eaten} of {tried} plants")
     # a bite through the game's Bite on the nearest host NPC: the host's game takes its hp
