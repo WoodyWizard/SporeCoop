@@ -6,7 +6,9 @@ avatar bites). On the guest a bite on a mirror of a host creature goes to the ho
 and skipped DamageCell, so the guest never saw the hp of what it bit (player report 2026-10-31,
 "the guest doesn't see enemies' HP").
 
-The ring is the game's own state: an entry for that cell in the cell UI's rollover pool
+Each bite waits until the creature is drawn on the guest's screen (its GFX built, +0x248): the game
+shows no ring on a cell it does not draw (ShowHealthRollover returns without GFX), with or without the
+fix. The ring is the game's own state: an entry for that cell in the cell UI's rollover pool
 (`ring=` of `coop.pool kill` / `coop.pool cell`: its timer, -1 = none; docs/re/cell.md#cell-guest-bite-ring).
 
 1. Control, the host's game: the host's own bite (the game's DamageCell) gives the creature a ring
@@ -55,9 +57,18 @@ def main():
 
     # 2. the guest's bites
     for i, how in enumerate(('hit', 'hit', '')):
-        host.call(f'coop.pool swimto {key} tp')
-        guest.call(f'coop.pool swimto {key} tp')
-        time.sleep(2.5)  # the hurt lock (+0x17C) of the last bite is over
+        # the game shows a ring only on a cell it draws (ShowHealthRollover needs its GFX, +0x248):
+        # the creature must be on the guest's screen with its body built
+        drawn = None
+        for _ in range(6):
+            host.call(f'coop.pool swimto {key} tp')
+            guest.call(f'coop.pool swimto {key} tp')
+            time.sleep(2.5)  # also: the hurt lock (+0x17C) of the last bite is over
+            st = guest.call(f'coop.pool cell {key}')['out']
+            if num(st, 'gfx', int):
+                drawn = st
+                break
+        ck(drawn is not None, f'bite {i + 1}: the creature has its body (GFX) in the guest\'s game ({st.strip()})')
         h0 = num(host.call(f'coop.pool cell {key}')['out'], 'hp', int)
         r = guest.call(f'coop.pool kill {key} {how}'.strip())['out']
         time.sleep(0.1)
@@ -65,6 +76,8 @@ def main():
         time.sleep(1.5)
         h1 = num(host.call(f'coop.pool cell {key}')['out'], 'hp', int)
         ring, ring2 = num(r, 'ring'), num(later, 'ring')
+        print('    guest cell: ' + later.strip())
+        print('    guest me: ' + ' '.join(l for l in guest.call('coop.pool')['out'].splitlines() if l.startswith('avatar ')))
         label = how or "the game's Bite"
         print(f'  guest bite {i + 1} ({label}): {r.strip()} | 0.1 s later ring={ring2} | host hp {h0} -> {h1}')
         ck(ring is not None and ring >= 0, f'bite {i + 1}: the creature shows its health ring in the guest\'s game (ring={ring})')

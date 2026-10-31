@@ -1112,3 +1112,49 @@ report) and `tools/tests/coop_cell_sap.py` (suite `cell_sap`). Answers the "? No
   Inferred, not seen: the endpoint arrays were corrupted earlier (entries of a removed object left
   behind by a RemoveObject with stale indices, or a broken order); not reproduced. The warning
   above records it the next time.
+
+## A guest's bite and the health ring; the editor's DNA budget; joining after a load (2026-10-31, fix/w22-reports2)
+<a id="cell-guest-bite-ring"></a>
+
+* ✔ (Ghidra GOG 2024, DamageCell 0xE7A7C0) the health ring a bite shows is `ShowHealthRollover`
+  0xE62340 (cdecl `void(cell*, int hpBefore)`, plain ret), called by DamageCell before the hp change
+  when the avatar is the victim or the attacker (or the attacker's +0x110). It returns at once without
+  GFX (+0x248 = 0) and otherwise calls 0xE62200(cell index, hp/6): an entry of the cell UI's
+  rollover pool `*cCellUI::_ptr (0x016B3C0C) + 0x9C` (cObjectPool, docs §0): `+4` the cell's pool
+  index (an existing entry for that cell is reused), `+8/+0x14/+0x1C` hp/6, `+0x24` a timer set to
+  0.5 (runtime: 0.42-0.50 0.1 s later), `+0x28` 0.25, `+0x30` a flag. The same ring is made by
+  EatChunkA/B (0xE7DD90 / 0xE7DBD0) and 0xE62500, 0xE71520.
+* ✔ After the hp change DamageCell plays the victim's hurt animation through
+  `Simulator::Cell::PlayAnimation` 0xE6D200 (`(cell*, 0, anim, cell+0x1B0)`: anim 0xE type 1, 0xF
+  type 3, 0x11 type 5, else 0x10; it writes the animation to +0x1B0 and its length to +0x1B8) and
+  schedules event 2 (0xE51EC0) with that length, whose end runs the after-hurt reaction; with a
+  zero length it calls 0xE7A770 at once.
+* ✔ (runtime, lab 20261031-125228..130728, BUG-0350) on a guest the bite on a mirror never ran the
+  original (the host applies it), so no ring: `ring=-1` in the guest's game while the host's own bite
+  on the same creature showed `ring=0.50` in the host's game. The fix `cell.bite_ring` calls
+  ShowHealthRollover itself under DamageCell's conditions (damage > 0, GFX, hp > 0, not dead or
+  dying, +0x17C and +0x111 clear, ShouldNotAttack false): ring 0.50 on each of 3 bites. The hurt
+  animation is not played on the mirror: its event 2 would run the after-hurt AI reaction on a
+  passive mirror (not tried).
+* ✔ A host creature that flees after a bite often has **no GFX on the guest** (`gfx=0 particles=0`,
+  same pool index) for seconds right after the guest was teleported next to it (tests'
+  `coop.pool swimto <key> tp`): it is not drawn there yet, and the game would show no ring either.
+  With the fix off the same. `coop.pool cell <key>` now prints `ring=`, `anim=` (+0x1B0), `idx=` and
+  `onscreen=`; `coop.pool kill` prints `ring=`, `rings=` and `skip=` (why the last guest bite showed
+  none). The `onscreen=` test (world_to_screen) said 0 for cells 3-5 m from the guest's cell on the
+  headless lanes now and then: not a reliable "drawn" test, GFX is.
+<a id="cell-editor-dna"></a>
+* ✔ (Ghidra) the cell editor's DNA budget: the request 0xE59800 computes
+  `DNAForFood(S+0x1C) - S+0x2C` and sends it with message 0x90A03FDF after
+  `Editors::EditorRequest::Submit`. `DNAForFood` 0xE51410 is fastcall (ECX = food), interpolated in
+  the level table 0x01483B54 (7 ints: level, food threshold, DNA, ...): 0 -> 0, 50 -> 5, 100 -> 10,
+  150 -> 13, ... 350 -> 25, 400 -> 28, 450 -> 31, 500 -> 34; food 1000 uses the entry 0x01483DA0.
+  `S+0x2C` is the DNA spent so far. The mod writes neither. Since BUG-0351 the log has
+  `cell: DNA at the editor request: food= plant= spent= dna_for_food= budget=` (each request, also
+  after the vote) and `cell: DNA on entering Cell: ...` (a load, an editor's return).
+<a id="cell-join-after-load"></a>
+* ✔ (player logs 2026-10-31, BUG-0352) a loaded Cell world starts the player's cell at the pool's
+  start, also on a guest; only an own-cell rebuild moved a guest to the host (`join_partner`). The
+  fix `cell.join_after_load`: every new avatar index of a guest (a load, an editor, a rebuild) goes
+  2.5 m next to the host once the host's state is here (2 s to 30 s after the avatar appeared, not
+  while knocked out), when it is 15 m or more away; log `cell: our new cell joined the host`.

@@ -564,6 +564,15 @@ static void send_hit(uint32_t hidx, int dmg, int type)
 static bool g_bite_ring_fix = true;
 COOP_FIX("cell.bite_ring", "BUG-0350", g_bite_ring_fix, "cell: a guest's bite on a host creature shows its health ring");
 static uint32_t g_bite_rings; // tests
+// tests: whether a cell is inside the window (world_to_screen)
+static int on_screen_dbg(uint8_t* c)
+{
+    int sw = 0, sh = 0;
+    H->screen_size(&sw, &sh);
+    float w[3] = {F<float>(c, kPos), F<float>(c, kPos + 4), F<float>(c, kPos + 8)}, sc[2];
+    return H->world_to_screen(w, sc) && sc[0] >= 0 && sc[1] >= 0 && sc[0] < sw && sc[1] < sh;
+}
+
 // tests: the game's health ring of cell <idx>: the timer of its entry in the cell UI's rollover pool
 // (*cCellUI::_ptr + 0x9C, entries: +4 the cell's pool index, +0x24 a timer the game sets to 0.5),
 // -1 when the cell has none (docs/re/cell.md#cell-guest-bite-ring)
@@ -585,12 +594,15 @@ static float rollover_of(uint32_t idx)
     return -1.f;
 }
 
+static const char* g_bite_ring_skip = "-"; // tests: why the last guest bite showed no ring
 static void bite_ring(uint8_t* victim, uint8_t* attacker, int dmg)
 {
-    if (!g_bite_ring_fix || !a_Rollover || dmg <= 0 || !F<uint32_t>(victim, 0x248) || F<int>(victim, kHp) <= 0 ||
-        F<uint8_t>(victim, kDead) || F<uint8_t>(victim, kDying) || F<uint8_t>(victim, 0x17C) || F<uint8_t>(victim, kInvuln))
-        return;
-    if (o_NoAttack_ptr() && o_NoAttack_ptr()(victim, attacker))
+    const char* why = !g_bite_ring_fix ? "off" : !a_Rollover ? "nosym" : dmg <= 0 ? "dmg" : !F<uint32_t>(victim, 0x248) ? "gfx"
+                      : F<int>(victim, kHp) <= 0 ? "hp" : F<uint8_t>(victim, kDead) || F<uint8_t>(victim, kDying) ? "dead"
+                      : F<uint8_t>(victim, 0x17C) ? "lock" : F<uint8_t>(victim, kInvuln) ? "invuln"
+                      : o_NoAttack_ptr() && o_NoAttack_ptr()(victim, attacker) ? "spared" : nullptr;
+    g_bite_ring_skip = why ? why : "-";
+    if (why)
         return;
     skg::cdecl_call<void>(a_Rollover, victim, F<int>(victim, kHp));
     g_bite_rings++;
@@ -3580,9 +3592,9 @@ std::string debug(const std::vector<std::string>& a)
         char b[256];
         auto* v = (float*)(c + kVel);
         snprintf(b, sizeof b, "cell %s %s pos=(%.2f %.2f) vel=(%.2f %.2f) size=%.2f gfx=%u particles=%d hp=%d level=%d "
-                 "ailock=%d keepalive=%d ring=%.2f anim=%X\n", a[1].c_str(), kind_of(c), pos_of(c).x, pos_of(c).y, v[0], v[1],
+                 "ailock=%d keepalive=%d ring=%.2f anim=%X idx=%08X onscreen=%d\n", a[1].c_str(), kind_of(c), pos_of(c).x, pos_of(c).y, v[0], v[1],
                  F<float>(c, kSize), F<uint32_t>(c, 0x248), F<int>(c, 0x250), F<int>(c, kHp), F<int>(c, kLevel),
-                 F<uint8_t>(c, kAiLock), F<uint8_t>(c, kKeepAlive), rollover_of(F<uint32_t>(c, 0)), F<uint32_t>(c, 0x1B0));
+                 F<uint8_t>(c, kAiLock), F<uint8_t>(c, kKeepAlive), rollover_of(F<uint32_t>(c, 0)), F<uint32_t>(c, 0x1B0), F<uint32_t>(c, 0), on_screen_dbg(c));
         return b;
     }
     if (!a.empty() && a[0] == "diet") { // what each cell's mouth eats (the model data CanEat 0xE68470 reads)
@@ -3727,9 +3739,10 @@ std::string debug(const std::vector<std::string>& a)
             else
                 h_DamageCell(c, av, dir, 4, 0, 0.f);
         }
-        char b[200];
-        snprintf(b, sizeof b, "bit c%u %s at %.1f level=%d hp=%d pos=(%.1f %.1f) ring=%.2f rings=%u%s", key, kind_of(c), v[0].first, F<int>(c, kLevel), F<int>(c, kHp),
-                 pos_of(c).x, pos_of(c).y, rollover_of(F<uint32_t>(c, 0)), g_bite_rings, F<uint8_t>(c, kDead) || F<uint8_t>(c, kDying) ? " dying" : "");
+        char b[240];
+        snprintf(b, sizeof b, "bit c%u %s at %.1f level=%d hp=%d pos=(%.1f %.1f) ring=%.2f rings=%u skip=%s lock=%d invuln=%d noattack=%d%s", key, kind_of(c), v[0].first, F<int>(c, kLevel), F<int>(c, kHp),
+                 pos_of(c).x, pos_of(c).y, rollover_of(F<uint32_t>(c, 0)), g_bite_rings, g_bite_ring_skip, F<uint8_t>(c, 0x17C), F<uint8_t>(c, kInvuln),
+                 o_NoAttack_ptr() ? (int)o_NoAttack_ptr()(c, av) : -1, F<uint8_t>(c, kDead) || F<uint8_t>(c, kDying) ? " dying" : "");
         return b;
     }
     if (!a.empty() && a[0] == "realbite") { // realbite [max distance | c<key>]: our cell bites the nearest
