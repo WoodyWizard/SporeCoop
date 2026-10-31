@@ -2336,3 +2336,12 @@ answered right after; a 1 s poller beside a standalone run saw no gap. Same sign
   `space_stray_window`, ~2 min): the host opens each window with a real click, then must reach the
   galaxy view with the game running (BUG-0336). Without the close the host never leaves its system,
   which stalled a whole 4-player campaign finale for 25 minutes (20261031-024151).
+## Tribe chiefs apart (2026-10-31, fix/w21-tribe)
+<a id="testing-tribe-chiefs-apart"></a>
+
+* `coop_tribe_chiefs_apart.py [--nofix]` (suite `tribe_chiefs_apart`, ~1 min): `coop.tribe stack` (host,
+  tests) puts every chief onto the host's; 6 s later no two chiefs within 1.5 m on each machine, then
+  each player walks its own chief 8 m (select + walk) and it must move 3 m on both machines. A
+  scenario test for BUG-0340: it also passes with `tribe.spread_chiefs` off, the game's own
+  avoidance parts two stacked chiefs within 1-2 s.
+* `coop.tribe` member lines end with `radius=` (the spatial's bounding radius).
