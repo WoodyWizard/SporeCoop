@@ -18,7 +18,7 @@ Alice hosts, Bob, Carol and Dave are guests (tools/tests/party.py).
 3. For --seconds s, checked on the host: the game's own simulation goes on (the host's cell swims
    to a point and gets there, all but the first two times), its frames come (no hitch over 400 ms in the perf lines), the sweep
    did hold over 1024 open objects (`coop.pool sap` sweep_peak, so the case was reached), and each
-   guest still sees the host's cells move (its mirrors of the host's cells follow the host).
+   guest's game shows the host's cell swimming (its puppet of the host moves as much).
 4. No caught fault in any game (the lab checks the logs too).
 SPORE_FIX_OFF=cell.sap_sweep must FAIL (faults at small addresses on the host, its cell stops).
 
@@ -28,6 +28,9 @@ import argparse
 import re
 import time
 
+import math
+
+from coop_multi import sample
 from party import Party
 from twoinst import Checks
 
@@ -77,15 +80,21 @@ def main():
         exc0 = h.call('exc')
         print('  host exc before:', exc0.strip().splitlines()[0] if exc0.strip() else '-', flush=True)
         # 3. the host's simulation goes on: its own cell swims to a point 12 m away and gets there
-        moved = []
+        moved, seen = [], {g.name: [] for g in p.guests}
+
+        def views():  # where each guest's game shows the host's cell (its puppet, coop.sync key p0)
+            return {g.name: sample(g.con).get('p0') for g in p.guests}
         t0, k = time.time(), 0
         while time.time() - t0 < a.seconds:
-            start = own_pos(h)
+            start, vstart = own_pos(h), views()
             h.call(f'coop.pool goto {(-1) ** k * 12} 0')
             time.sleep(5)
-            end = own_pos(h)
+            end, vend = own_pos(h), views()
             if start and end:
                 moved.append(abs(end[0] - start[0]))
+            for g in p.guests:
+                if vstart[g.name] and vend[g.name]:
+                    seen[g.name].append(math.dist(vstart[g.name], vend[g.name]))
             k += 1
         print(f'  host cell moved (m per 5 s): {[round(m, 1) for m in moved]}', flush=True)
         # (the first seconds after the column the crowd of cells pushes itself apart around the host's cell)
@@ -103,10 +112,11 @@ def main():
         hitches = [int(x) for x in re.findall(r'hitch (\d+) ms', tail)]
         print(f'  host hitches since the column: {hitches[:12]}', flush=True)
         ck(sum(1 for x in hitches if x > 400) <= 1, f'3. the host\'s frames keep coming (hitches over 400 ms: {sum(1 for x in hitches if x > 400)})')
-        for g in p.guests:  # what the guests see: the host's cells keep coming
-            out = g.call('coop.pool')
-            print(f'  {g.name}: mirrors {num(out, "mirrors")}', flush=True)
-            ck((num(out, 'mirrors') or 0) > 50, f'3. {g.name} still mirrors the host\'s cells ({num(out, "mirrors")})')
+        for g in p.guests:  # what the other players see: the host's cell swimming on their screens
+            v = seen[g.name]
+            ok = sum(1 for m in v if m > 3)
+            print(f'  {g.name} sees the host\'s cell move (m per 5 s): {[round(m, 1) for m in v]}', flush=True)
+            ck(len(v) >= 4 and ok >= len(v) - 2, f'3. {g.name} sees the host\'s cell swim ({[round(m, 1) for m in v]})')
         p.faults(ck)
         return ck.result()
     finally:

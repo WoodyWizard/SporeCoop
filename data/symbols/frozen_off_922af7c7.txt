@@ -39,3 +39,6 @@ SporeCoop::Vehicle_KeepOnValidGround ; Civilization: a guest's game may move a m
 SporeCoop::cSimulatorPlayerUFO_CanLandOnActivePlanet ; space tests: coop.space landcheck prints -1 for it (BUG-0182)
 SporeCoop::Space_ZoomLandReady ; space tests: coop.space landcheck prints -1 for it (BUG-0182)
 SporeCoop::SpaceCam_MinZoom ; space tests: coop.space landcheck prints -1 for the minimum zoom (BUG-0182)
+SweepPrune::UpdatePairs ; Cell: the game's own broadphase sweep (int[1024] open list on the stack) stays (BUG-0337)
+SweepPrune::MergeAxis ; Cell: the game's own broadphase sweep stays (BUG-0337)
+SweepPrune::OverlapOther ; Cell: the game's own broadphase sweep stays (BUG-0337)

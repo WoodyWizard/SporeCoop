@@ -3,6 +3,9 @@
 ## [Unreleased]
 
 ### Fixed
+- Cell: a game with more than 1024 cells in one column of the cell physics (seen on a guest of a
+  four-player game, 0.7.3.1) no longer faults every frame with a half-second hitch each, a stopped
+  simulation and a frozen game after the stage change (BUG-0337).
 - Creature: an animal hit or killed while it runs now shows its health and its death on the other
   players' screens at once (BUG-0334).
 - Creature: a player who leaves and joins again (or loads) within a minute of being saved by the

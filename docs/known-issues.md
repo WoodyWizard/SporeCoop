@@ -1140,3 +1140,28 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   (drive.own_height, BUG-0329), so they look right, but the ground itself differs.
 * Reproduce: the full campaign (cell -> tribe); not on flat ground (creature_cadian fixture).
 * Ticket: BUG-0332
+
+## Cell: a guest's cell broadphase left ~1024 objects open (2026-10-31, fix/w20-cell)
+<a id="issue-cell-sap-broken-order"></a>
+
+* What happens: in lab 20261031-054758 campaign#1 a 4-player guest (927 cells, 900 mirrors) ended
+  every broadphase sweep with ~1024 objects still open (EDX at its faults 0x3F9-0x407): more than
+  its live cells, so the endpoint arrays held entries of removed objects or a broken order. That
+  overran the game's open list (BUG-0337, fixed by `cell.sap_sweep`: no fault any more). The broken
+  order itself may still give extra collision pairs.
+* Reproduce: not reproduced (three replays of that Cell stage, seed 755764009, lanes 5 / 6: 0 left
+  open, 0 duplicate entries). `coop.pool sap` shows the state; with the fix the game logs "N
+  broadphase objects left open by the sweep (BUG-0337): sap: ..." when it happens.
+* Known: docs/re/cell.md#cell-sap-active-list (RemoveObject marks entries by the indices stored in
+  the object record; stale indices would leave entries behind; the pending sort never says equal).
+* Next steps: read the logged report the next time a campaign hits it.
+* Ticket: BUG-0337 (follow-up)
+
+## Cell: a guest faults at 0x00E4E384 next to a pack of 1100 host cells (2026-10-31, fix/w20-cell)
+<a id="issue-cell-advect-fault"></a>
+
+* What happens: 161 faults at 0x00E4E384 (advect grid query, a garbage output pointer) on a guest
+  mirroring 1100 host cells packed on one 40 m line; once in two runs.
+* Reproduce: `coop_cell_sap.py` with the guests left next to the host (lab 20261031-075645-fix-w20-cell #1).
+* Known: BUG-0338 (stack arrays of the advect grid, not analysed).
+* Ticket: BUG-0338
