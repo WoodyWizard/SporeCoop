@@ -326,6 +326,15 @@ class Campaign:
                     nums.append(f'{g.name}:{kind} p90 {p90:.1f} of {len(v)}, worst {worst[kind][1]} {worst[kind][0]:.1f}')
                     if over_limit(v, limit(kind)):
                         over.append(f'{g.name}:{kind}:{p90:.1f}')
+                        # BUG-0329: the worst object's own line on the host and on this guest (the
+                        # guest's line has how its mirror is driven: err, target, own speed, teleports)
+                        key = worst[kind][1]
+                        cmd = {'t': 'coop.tribe', 'n': 'coop.npc list'}.get(kind)
+                        if cmd and key[1:].isdigit():
+                            for who, con in (('host', host), (g.name, g)):
+                                ln = [x.strip() for x in con.call(cmd).splitlines()
+                                      if re.match(rf'\s*#{key[1:]}\b', x)]
+                                nums.append(f'{g.name} {key} on {who}: {ln[0][:260] if ln else "-"}')
             if paused:
                 self.note('sync: not compared (pause menu open): ' + ', '.join(paused))
             if over or short:  # every guest's numbers next to a desync: one guest only, or everybody (BUG-0275)

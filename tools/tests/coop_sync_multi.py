@@ -104,6 +104,7 @@ def main():
     ap.add_argument('--fixture', default='creature', choices=('cell', 'creature', 'tribe'))
     ap.add_argument('--rounds', type=int, default=40)
     ap.add_argument('--jsonl', default=None)
+    ap.add_argument('--spawn', type=int, default=0, help='tribe: coop.tribe spawn N on the host first (the campaign\'s setup, BUG-0329)')
     ap.add_argument('--food', type=int, default=0, help='cell: the host\'s food progress first (level-ups, BUG-0307 hunt)')
     a = ap.parse_args()
     host, guest = start(a.fixture, planet_of(a.fixture))
@@ -124,6 +125,8 @@ def main():
     stop = []
     insts = {'Alice': (lane.HOST, 0), 'Bob': (lane.GUEST, 1),
              **{n: (inst, k + 2) for k, (n, (_, inst)) in enumerate(extra.items())}}
+    if a.spawn:
+        print('  host:', host.call(f'coop.tribe spawn {a.spawn}')['out'].strip(), flush=True)
     time.sleep(20)
     bots(a.fixture, insts, stop)
     out = open(a.jsonl, 'w') if a.jsonl else None
@@ -147,6 +150,12 @@ def main():
                     probe = probe_npc(host, guests, w[1])
                     for line in probe:
                         print(f'  r{r} {name} {w[1]} {w[0]:.2f} m |', line, flush=True)
+                w = worst.get('t')
+                if w and w[0] > 2.5:  # BUG-0329: a tribe member off on a guest: its coop.tribe line everywhere
+                    k = w[1][1:]
+                    for who, con in [('host', host)] + list(guests.items()):
+                        ln = [x.strip() for x in con.call('coop.tribe')['out'].splitlines() if re.match(rf'\s*#{k}\b', x)]
+                        print(f'  r{r} {name} {w[1]} {w[0]:.2f} m | {who}: {ln[0][:300] if ln else "-"}', flush=True)
                 if out:
                     out.write(json.dumps({'r': r, 'g': name, 'fps': f, 'cov': cov, 'total': total,
                                           'e': {k: [round(x, 3) for x in v] for k, v in errs.items()},
