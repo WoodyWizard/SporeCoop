@@ -392,6 +392,36 @@ class Campaign:
         except (OSError, ValueError) as e:
             self.finding('info', f'check:{e!r}'[:80], f'a check could not read a game: {e!r}')
 
+    def chiefs_overlap(self, p):
+        """BUG-0340: pairs of players' chiefs whose bodies overlap on this player's own game
+        (distance under the sum of their bounding radii)"""
+        out = p.call('coop.tribe')
+        m = re.search(r'chiefs=([^\n]*)', out)
+        ids = dict((int(a), int(b)) for a, b in re.findall(r'(\d+):#(\d+)', m.group(1))) if m else {}
+        mem = {int(x.group(1)): (tuple(map(float, x.group(2, 3, 4))), float(x.group(5)))
+               for x in re.finditer(r'#(\d+) \S+ owner=-?\d+ .*?pos=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\).*?radius=([\d.]+)', out)}
+        ch = {o: mem[i] for o, i in ids.items() if i in mem}
+        ks = sorted(ch)
+        return [f'{a}-{b} {math.dist(ch[a][0], ch[b][0]):.1f} m (bodies {ch[a][1] + ch[b][1]:.1f} m)'
+                for i, a in enumerate(ks) for b in ks[i + 1:] if math.dist(ch[a][0], ch[b][0]) < ch[a][1] + ch[b][1]]
+
+    def chiefs_check(self, when):
+        """BUG-0340: right after the players arrive in Tribe (or a rejoin) no two players' chiefs stand
+        in each other on any machine (checked twice 8 s apart: the game's own avoidance gets a chance)"""
+        try:
+            first = {p.name: self.chiefs_overlap(p) for p in self.P}
+            time.sleep(8)
+            still = {p.name: [x for x in self.chiefs_overlap(p) if x.split()[0] in [y.split()[0] for y in first[p.name]]]
+                     for p in self.P}
+        except (OSError, ValueError) as e:
+            self.finding('info', f'chiefs:{e!r}'[:60], f'chiefs check could not read a game: {e!r}')
+            return
+        self.note(f'chiefs after the {when}: ' + '; '.join(f'{n}: {v or "apart"}' for n, v in still.items()))
+        bad = {n: v for n, v in still.items() if v}
+        if bad:
+            self.finding('stack', f'tribe:chiefs:{when}', f'players\' chiefs stand in each other after the {when} '
+                         f'(8 s later still): ' + '; '.join(f'{n}: {v}' for n, v in bad.items()), self.P)
+
     def terrain_only(self, host, g, key, lim, nums):
         """BUG-0329: the object `key` stands at the same place on the host's and on the guest's own
         ground, only the two grounds differ in height (a Tribe village 5 m higher or lower on the
@@ -634,6 +664,9 @@ class Campaign:
                          f'after a rejoin within 300 s ({self.stage})', [self.host, g])
         else:
             self.note(f'{g.name} is back after {time.time() - t0:.0f} s (left its old world: {left})')
+            if self.stage == 'tribe':
+                time.sleep(4)
+                self.chiefs_check(f'rejoin of {g.name}')
         time.sleep(10)
         self.quiet_until = time.time() + 20
 
@@ -829,6 +862,8 @@ class Campaign:
         self.quiet_until = time.time() + 10
         if ok:
             self.note(f'all guests play {nxt} together with the host after {time.time() - t0:.0f} s')
+            if nxt == 'tribe':
+                self.chiefs_check('arrival')
             return True
         behind = [g for g in self.guests if cl.stage_of(g.call('game.mode')) != nxt or g.pid not in self.together()]
         if not behind:  # they got there just after the time

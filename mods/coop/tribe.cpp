@@ -404,6 +404,19 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
 }
 
 // ---------------- host: snapshots + orders ----------------
+// BUG-0340 (second part, the owner's request): at a player's arrival in Tribe and after a rejoin each
+// player's chief gets its own spot: a chief closer to another than the sum of their sizes + 1 m goes to
+// its ring spot round the village. Only then (not on later chief changes: no jump in a fight).
+// `coop.fix tribe.place_chiefs off`: chiefs stay where the game put them.
+static bool g_place_fix = true;
+COOP_FIX("tribe.place_chiefs", "BUG-0340", g_place_fix, "tribe: at arrival and after a rejoin every player's chief too close to another gets its own spot round the village");
+static double g_place_due = 0, g_place_until = 0;
+static uint32_t g_placed;
+static void arrival_place_due(double now)
+{
+    g_place_due = now + 3.0;   // the split and the chiefs settle first
+    g_place_until = now + 20.0; // a player still loading: its members come with the next snapshots
+}
 static void host_tick(double now)
 {
     if (now - g_last_send < 0.12)
@@ -416,6 +429,7 @@ static void host_tick(double now)
         players.push_back(p.id);
     std::sort(players.begin(), players.end());
     if (players != g_split_for && pt) {
+        arrival_place_due(now); // BUG-0340: a player arrived or rejoined
         // the players changed: split the player tribe again, in member order
         g_split_for = players;
         g_player_members_seen = 0;
@@ -1290,7 +1304,7 @@ void note_animal_hit(void* animal, void* attacker_creature)
 // `coop.fix tribe.spread_chiefs off`: chiefs stay where they are.
 static bool g_spread_fix = true;
 COOP_FIX("tribe.spread_chiefs", "BUG-0340", g_spread_fix, "tribe: two players' chiefs standing in each other are parted onto a ring round the village");
-constexpr float kChiefApart = 1.5f, kChiefRing = 9.f;
+constexpr float kChiefApart = 1.5f, kChiefRing = 12.f;
 static std::map<std::pair<uint8_t, uint8_t>, double> g_stack_since;
 static uint32_t g_spread_moves;
 
@@ -1344,11 +1358,47 @@ static void spread_chiefs(double now)
         }
 }
 
+static void place_chiefs(double now)
+{
+    void* pt = player_tribe();
+    if (!g_place_fix || !pt || g_place_due == 0 || now < g_place_due)
+        return;
+    if (now > g_place_until) {
+        g_place_due = 0;
+        return;
+    }
+    g_place_due = now + 2.0; // looked at again every 2 s inside the window (a guest's members come late)
+    net::Vec3 centre = tribe_pos(pt);
+    std::vector<std::pair<uint8_t, void*>> ch(g_chief.begin(), g_chief.end());
+    std::sort(ch.begin(), ch.end());
+    for (size_t j = 1; j < ch.size(); j++) {
+        void* b = ch[j].second;
+        if (!game::object_alive(b))
+            continue;
+        bool close = false;
+        for (size_t i = 0; i < ch.size() && !close; i++) {
+            void* a = ch[i].second;
+            if (i == j || !game::object_alive(a))
+                continue;
+            close = net::dist(game::position(a), game::position(b)) <
+                    game::bounding_radius(a) + game::bounding_radius(b) + 1.f;
+        }
+        if (!close)
+            continue;
+        net::Vec3 spot = ring_spot(centre, ch[j].first);
+        game::teleport(b, spot, game::orientation(b));
+        g_placed++;
+        H->log(M, SK_INFO, "tribe: %s's chief stood next to another one at the arrival: put on its own spot round the village",
+               C.sess->name_of(ch[j].first).c_str());
+    }
+}
+
 static void coop_tick(double now)
 {
     chiefs_tick();
     if (is_host()) {
         spread_chiefs(now);
+        place_chiefs(now);
         duet_tick(now);
         epic_tick(now);
     }
@@ -1591,9 +1641,9 @@ std::string status()
         chiefs += " " + std::to_string(o) + ":#" + std::to_string(member_id(c));
     snprintf(b, sizeof b,
              "tribe co-op: pincer=%u aura=%u chief_rescues=%u duet=%u heals=%u epics=%u epic_kills=%u epic=%p "
-             "chiefs=%s spread=%u\n",
+             "chiefs=%s spread=%u placed=%u\n",
              g_pincer_hits, g_aura_hits, g_chief_rescues, g_duet_ticks, g_heals, g_epics, g_epic_kills, g_epic,
-             chiefs.c_str(), g_spread_moves);
+             chiefs.c_str(), g_spread_moves, g_placed);
     out += b;
     // the chiefs' size in the game (spatial GetScale / their own scale) and the lifetime checks
     std::string scales;

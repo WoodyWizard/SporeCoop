@@ -27,7 +27,7 @@ from twoinst import Checks, start
 def chiefs(con):
     """owner -> (member id, position) on this game"""
     out = con.call('coop.tribe')['out']
-    m = re.search(r'chiefs=([^\n]*?)(?: spread=\d+)?\n', out)
+    m = re.search(r'chiefs=([^\n]*?)(?: spread=\d+.*)?\n', out)
     ids = dict((int(a), int(b)) for a, b in re.findall(r'(\d+):#(\d+)', m.group(1))) if m else {}
     pos = {int(x.group(1)): tuple(map(float, x.group(2, 3, 4)))
            for x in re.finditer(r'#(\d+) \S+ owner=-?\d+ .*?pos=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\)', out)}
