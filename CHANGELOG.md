@@ -3,6 +3,9 @@
 ## [Unreleased]
 
 ### Fixed
+- Cell: a guest playing its own cell is no longer a "ghost" after joining or a reload (it swam
+  through everything and could not eat, bite or be hit): the mod took the rebuilt cell for the
+  partner's old puppet (BUG-0342).
 - Creature: a player whose game does not have the Creepy & Cute parts pack can now join a host whose
   creatures use its parts: on that player's screen those parts are shown as similar parts of the base
   game (eye for eye, mouth for mouth, the nearest abilities), with a notice; nothing of the pack is

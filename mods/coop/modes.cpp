@@ -653,7 +653,20 @@ static skg::ResourceKey* __cdecl h_GetModelKey(skg::ResourceKey* ret, void* res)
     return o_GetModelKey(ret, res);
 }
 
-bool cell_is_puppet(void* c) { return g_cell_ids.count(c) != 0; }
+// BUG-0342: a puppet is the cell at its address AND its pool index. Our own cell's level rebuild
+// (RebuildLevel 0xE7FD00, the own cell applied at a load) frees every cell and makes the avatar
+// first, often at the address the partner's puppet had: by the address alone the new avatar was
+// "a puppet", so h_Pair dropped every collision pair of it (no eating, biting or being hit for
+// minutes: the players' "ghost"). `coop.fix cell.puppet_index off`: the address only (0.7.3.1).
+static bool g_fix_puppet_index = true;
+COOP_FIX("cell.puppet_index", "BUG-0342", g_fix_puppet_index, "cell: a puppet is recognised by its address and its pool index (a new avatar at an old puppet's address was taken for the puppet: the ghost)");
+bool cell_is_puppet(void* c)
+{
+    auto it = g_cell_ids.find(c);
+    if (it == g_cell_ids.end())
+        return false;
+    return !g_fix_puppet_index || cell_at(it->second) == (uint8_t*)c;
+}
 
 // The Cell stage was left (an editor, the Creature stage, a load): the pool the puppets lived in is
 // rebuilt or gone. Stale entries could match a new cell at the same address and index in the next
@@ -771,6 +784,9 @@ static void* cell_spawn(const net::PlayerState& s, void* local)
     uint8_t* c = cell_at(idx);
     if (!c)
         return nullptr;
+    if (g_fix_puppet_index) // BUG-0342: entries of puppets that are gone (a level rebuild freed them)
+        for (auto it = g_cell_ids.begin(); it != g_cell_ids.end();)
+            it = cell_at(it->second) == (uint8_t*)it->first ? std::next(it) : g_cell_ids.erase(it);
     g_cell_ids[c] = idx;
     *(bool*)(c + 0x111) = true; // invulnerable: nobody eats a friend
     *(uint8_t*)(c + 0x354) = 1; // we own the lifetime: not removed outside the local active area

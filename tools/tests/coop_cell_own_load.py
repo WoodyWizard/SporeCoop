@@ -15,6 +15,8 @@ guest's game plays its own cell again (its avatar's model), the host draws the s
 the guest still eats.
 
 SPORE_FIX_OFF=creations.cell_reapply: the guest keeps the world's cell after the reload (must FAIL).
+SPORE_FIX_OFF=cell.puppet_index: the rebuilt avatar can sit at the old puppet's address and is taken
+for the puppet: its collision pairs are dropped (fails in about a third of the runs: the address).
 SPORE_FIX_OFF=cell.own_rebuild: the rebuild comes on the first frames of the reload and the guest's
 game does not eat what it swims into (must FAIL at "after the reload ... still eats"; the switch goes
 off after the first load, so only the reload checks the old timing)."""
@@ -52,17 +54,24 @@ def eat_plants(guest, host, want=3, timeout=90):
         done.add(key)
         tried += 1
         p0 = pool(guest)['own_points'] or 0
+        op0 = int(field(guest.call('coop.pool')['out'], r'own_pairs=(\d+)') or 0)
         guest.call(f'coop.pool swimto {key} tp')
-        for _ in range(12):
+        col = ''
+        for i in range(12):
             time.sleep(0.25)
             guest.call(f'coop.pool swimto {key}')
+            if i == 2:
+                col = guest.call('coop.pool collide')['out'].strip()
             if not alive(guest, key):
                 break
+        op1 = int(field(guest.call('coop.pool')['out'], r'own_pairs=(\d+)') or 0)
         time.sleep(1.5)
         p1 = pool(guest)['own_points'] or 0
         ok = p1 > p0 and not alive(guest, key) and not alive(host, key)
         eaten += ok
-        log.append(f'{key}: points {p0}->{p1} {"eaten" if ok else "not eaten"}')
+        log.append(f'{key}: points {p0}->{p1} {"eaten" if ok else "not eaten"} own_pairs +{op1 - op0}')
+        if not ok or tried == 1:
+            print('    collide:', col.replace('\n', ' | ')[:900], flush=True)
         if not ok and tried == 1:  # what the guest's game has for its cell and the plant (BUG-0342)
             me = [l for l in guest.call('coop.pool prey 40')['out'].splitlines() if l.startswith('player ')]
             print('    diag:', ' | '.join(me)[:300], flush=True)
@@ -92,11 +101,9 @@ def main():
        'the guest plays its own cell after the load')
     time.sleep(8)
     # BAF1AD40 eats plants (meat stays where it is: runs of 2026-10-31)
-    # BUG-0342, still open: after the FIRST load the own cell did not eat in 2 of 4 lab runs with
-    # cell.own_rebuild on (20261031-130510, -130756), 2 of 2 ate (-130258, -130455): reported, not checked
-    print('  sapme:', guest.call('coop.pool sapme')['out'].strip()[:400])
+    # BUG-0342: after the first load the own cell did not eat in 12 of 34 runs before cell.puppet_index
     eaten, tried = eat_plants(guest, host)
-    print(f"  (open, BUG-0342) after the first load the guest's own game ate {eaten} of {tried} plants")
+    ck(tried >= 2 and eaten >= 2, f"after the first load the guest's own game eats plants it swims into ({eaten} of {tried})")
     # a bite through the game's Bite on the nearest host NPC: the host's game takes its hp
     out = guest.call('coop.pool realbite 40')['out'].strip()
     print('  realbite:', out[:160])
