@@ -31,7 +31,7 @@ static Ctx C;
 static bool g_ok;
 static uintptr_t a_Wipe, a_Cine, a_Pair, a_GetData, a_DamageCell, a_KillCell, a_Break, a_Destroy, a_AddFood, a_Populate, a_Rollover, a_GetDamage,
     a_RefCreate, a_Serializer, a_S, a_Fnv, a_Effect, a_TargetParams, a_IsPrey, a_IsThreat, a_ScaleDiff, a_NoAttack, a_Alert, a_React, a_Rest,
-    a_Soft, a_ChunkA, a_ChunkB, a_Bite, a_SpawnLoot, a_EatFood, a_ModelData;
+    a_Soft, a_ChunkA, a_ChunkB, a_Bite, a_SpawnLoot, a_EatFood, a_ModelData, a_CellUI, a_DnaFor;
 
 // ---- cCellObjectData fields (docs/re/cell.md) ----
 constexpr uintptr_t kTarget = 0x08, kFlags = 0x48, kCounter = 0x4A, kPos = 0x4C, kSize = 0x58, kRot = 0x5C,
@@ -537,6 +537,8 @@ static uint32_t mirror_key(uint8_t* c)
 }
 
 // ---------------- hooks ----------------
+using NoAttack_t = bool(SK_CDECL*)(uint8_t*, uint8_t*);
+static NoAttack_t& o_NoAttack_ptr();
 using DamageCell_t = bool(SK_CDECL*)(uint8_t*, uint8_t*, const float*, int, int, float);
 static DamageCell_t o_DamageCell;
 static void hurt_avatar(int dmg, int type);
@@ -551,6 +553,47 @@ static void send_hit(uint32_t hidx, int dmg, int type)
     C.sess->send_reliable_to(0, net::MSG_CELL_HIT, w);
     g_hits_sent++;
     trace::ev("bite", "sent", "sent c%u dmg=%d type=%d", hidx, dmg, type);
+}
+
+// BUG-0350: the guest's bite on a mirror skips the game's DamageCell (the host applies it), and with
+// it the health ring DamageCell shows when the avatar bites (ShowHealthRollover 0xE62340, before the
+// hp change, docs/re/cell.md#cell-guest-bite-ring): the guest never saw the hp of what it bit. The
+// ring is shown here under DamageCell's own conditions (damage > 0, the victim damageable and not
+// spared); the hp change and the hurt reaction stay the host's (they come with the state).
+// `coop.fix cell.bite_ring off`: no ring (0.7.3.1).
+static bool g_bite_ring_fix = true;
+COOP_FIX("cell.bite_ring", "BUG-0350", g_bite_ring_fix, "cell: a guest's bite on a host creature shows its health ring");
+static uint32_t g_bite_rings; // tests
+// tests: the game's health ring of cell <idx>: the timer of its entry in the cell UI's rollover pool
+// (*cCellUI::_ptr + 0x9C, entries: +4 the cell's pool index, +0x24 a timer the game sets to 0.5),
+// -1 when the cell has none (docs/re/cell.md#cell-guest-bite-ring)
+static float rollover_of(uint32_t idx)
+{
+    uint8_t* ui = a_CellUI ? *(uint8_t**)a_CellUI : nullptr;
+    if (!ui || !idx)
+        return -1.f;
+    uint8_t* pool = ui + 0x9C;
+    uint8_t* data = F<uint8_t*>(pool, 0);
+    uint32_t high = F<uint32_t>(pool, 0x10), size = F<uint32_t>(pool, 0x14);
+    if (!data || size < 0x28 || high > 4096)
+        return -1.f;
+    for (uint32_t i = 0; i < high; i++) {
+        uint8_t* e = data + (size_t)i * size;
+        if ((F<uint32_t>(e, 0) & 0xFFFF) == i && F<uint32_t>(e, 4) == idx)
+            return F<float>(e, 0x24);
+    }
+    return -1.f;
+}
+
+static void bite_ring(uint8_t* victim, uint8_t* attacker, int dmg)
+{
+    if (!g_bite_ring_fix || !a_Rollover || dmg <= 0 || !F<uint32_t>(victim, 0x248) || F<int>(victim, kHp) <= 0 ||
+        F<uint8_t>(victim, kDead) || F<uint8_t>(victim, kDying) || F<uint8_t>(victim, 0x17C) || F<uint8_t>(victim, kInvuln))
+        return;
+    if (o_NoAttack_ptr() && o_NoAttack_ptr()(victim, attacker))
+        return;
+    skg::cdecl_call<void>(a_Rollover, victim, F<int>(victim, kHp));
+    g_bite_rings++;
 }
 
 static bool SK_CDECL h_DamageCell(uint8_t* victim, uint8_t* attacker, const float* dir, int type, int x, float dt)
@@ -570,8 +613,11 @@ static bool SK_CDECL h_DamageCell(uint8_t* victim, uint8_t* attacker, const floa
     if (is_guest() && victim) {
         auto it = g_host_of.find(F<uint32_t>(victim, 0));
         if (it != g_host_of.end()) { // a mirror: the host applies the bite
-            if (attacker == avatar())
-                send_hit(it->second, a_GetDamage ? skg::cdecl_call<int>(a_GetDamage, attacker, victim) : 1, type);
+            if (attacker == avatar()) {
+                int dmg = a_GetDamage ? skg::cdecl_call<int>(a_GetDamage, attacker, victim) : 1;
+                send_hit(it->second, dmg, type);
+                bite_ring(victim, attacker, dmg);
+            }
             return false;
         }
         if (victim == avatar() && attacker && g_host_of.count(F<uint32_t>(attacker, 0)))
@@ -1695,8 +1741,8 @@ const views::Set& view_centres() { return g_views; }
 // flags of a species (resource +0x300/+0x301) apply only when the victim is the avatar
 // (G+0x411C). A partner's cell is a player too: for it the game answers as for the avatar, so an
 // NPC that spares the host spares the guest as well (and the other way round).
-using NoAttack_t = bool(SK_CDECL*)(uint8_t*, uint8_t*);
 static NoAttack_t o_NoAttack;
+static NoAttack_t& o_NoAttack_ptr() { return o_NoAttack; }
 static bool SK_CDECL h_NoAttack(uint8_t* a, uint8_t* b)
 {
     uint8_t* g = G();
@@ -1941,6 +1987,8 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     a_AddFood = H->sym("Simulator::Cell::AddFoodPoints");
     a_Populate = H->sym("Simulator::Cell::PopulateMarker");
     a_Rollover = H->sym("Simulator::Cell::ShowHealthRollover");
+    a_CellUI = H->sym("Simulator::Cell::cCellUI::_ptr"); // tests only (rollover_of)
+    a_DnaFor = H->sym("Simulator::Cell::DNAForFood"); // BUG-0351 diagnostics (dna_note)
     a_GetDamage = H->sym("Simulator::Cell::GetDamageAmount");
     a_TargetParams = H->sym("Simulator::Cell::GetTargetSearchParams");
     a_IsPrey = H->sym("Simulator::Cell::IsPrey");
@@ -2349,8 +2397,46 @@ static void heal_own(uint8_t* a, const net::Vec3& me, bool bad)
                p.x, p.y, mask);
 }
 
+// BUG-0352: after a world load the guest's cell starts at the pool's start, and only an own-cell
+// rebuild (creations.cpp apply_own_cell -> join_partner) moved it to the host: a load without one
+// (every load after the first of a session, BUG-0349) left it up to 130 m away, outside the host's
+// tiles. Every new own avatar (a load, an editor, a rebuild) now goes next to the host once the host's
+// cell is known here (its state says the same place), at most 30 s after the avatar appeared.
+// `coop.fix cell.join_after_load off`: only after an own-cell rebuild (0.7.3.1).
+static bool g_join_load_fix = true;
+COOP_FIX("cell.join_after_load", "BUG-0352", g_join_load_fix, "cell: a guest goes next to the host after every Cell load");
+static uint32_t g_join_avatar;    // the avatar index this was decided for
+static double g_join_since = -1;  // when that avatar appeared
+static uint32_t g_joins_load;     // tests: guest moved next to the host after a new avatar
+static void join_after_load(double now)
+{
+    uint32_t idx = avatar_idx();
+    if (idx != g_join_avatar) {
+        g_join_avatar = idx;
+        g_join_since = now;
+    }
+    if (!g_join_load_fix || g_join_since < 0 || now - g_join_since < 2.0)
+        return;
+    if (now - g_join_since > 30.0) {
+        g_join_since = -1; // the host never showed up here: leave it
+        return;
+    }
+    uint8_t* a = avatar();
+    net::Vec3 at;
+    float d = -1;
+    if (!a || F<uint8_t>(a, kDying) || g_downed || nearest_partner(1e9f, &at, &d).empty())
+        return; // the host's state is not here yet
+    g_join_since = -1;
+    if (d < 15.f)
+        return;
+    stop_at(a, {at.x + 2.5f, at.y + 1.f, 0.f});
+    g_joins_load++;
+    H->log(M, SK_INFO, "coop: cell: our new cell joined the host (%.0f m away after the load)", d);
+}
+
 static void guest_tick(double now)
 {
+    join_after_load(now);
     flush_food();
     own_probe("guest tick");
     shared_parts_scan(now);
@@ -2644,6 +2730,7 @@ static void bg_cull(double now)
     g_bg_culled += (uint32_t)gone.size();
 }
 
+static bool g_dna_note_due;
 void tick(double now)
 {
     static bool was_in_cell;
@@ -2658,6 +2745,12 @@ void tick(double now)
     }
     if (!cell && (g_solo || g_solo_owed))
         solo_reset(); // BUG-0205: the stage was left
+    if (cell && !was_in_cell && C.sess && C.sess->connected())
+        g_dna_note_due = true; // BUG-0351: once the Cell game has its data (a load, an editor's return)
+    if (cell && g_dna_note_due && S() && avatar()) {
+        g_dna_note_due = false;
+        dna_note("on entering Cell");
+    }
     was_in_cell = cell;
     if (cell && avatar() && game::leaving_stage()) { // BUG-0308: no pool writes while the stage is torn down
         if (modes::cell_leaving())
@@ -3487,9 +3580,9 @@ std::string debug(const std::vector<std::string>& a)
         char b[256];
         auto* v = (float*)(c + kVel);
         snprintf(b, sizeof b, "cell %s %s pos=(%.2f %.2f) vel=(%.2f %.2f) size=%.2f gfx=%u particles=%d hp=%d level=%d "
-                 "ailock=%d keepalive=%d\n", a[1].c_str(), kind_of(c), pos_of(c).x, pos_of(c).y, v[0], v[1],
+                 "ailock=%d keepalive=%d ring=%.2f anim=%X\n", a[1].c_str(), kind_of(c), pos_of(c).x, pos_of(c).y, v[0], v[1],
                  F<float>(c, kSize), F<uint32_t>(c, 0x248), F<int>(c, 0x250), F<int>(c, kHp), F<int>(c, kLevel),
-                 F<uint8_t>(c, kAiLock), F<uint8_t>(c, kKeepAlive));
+                 F<uint8_t>(c, kAiLock), F<uint8_t>(c, kKeepAlive), rollover_of(F<uint32_t>(c, 0)), F<uint32_t>(c, 0x1B0));
         return b;
     }
     if (!a.empty() && a[0] == "diet") { // what each cell's mouth eats (the model data CanEat 0xE68470 reads)
@@ -3634,9 +3727,9 @@ std::string debug(const std::vector<std::string>& a)
             else
                 h_DamageCell(c, av, dir, 4, 0, 0.f);
         }
-        char b[160];
-        snprintf(b, sizeof b, "bit c%u %s at %.1f level=%d hp=%d pos=(%.1f %.1f)%s", key, kind_of(c), v[0].first, F<int>(c, kLevel), F<int>(c, kHp),
-                 pos_of(c).x, pos_of(c).y, F<uint8_t>(c, kDead) || F<uint8_t>(c, kDying) ? " dying" : "");
+        char b[200];
+        snprintf(b, sizeof b, "bit c%u %s at %.1f level=%d hp=%d pos=(%.1f %.1f) ring=%.2f rings=%u%s", key, kind_of(c), v[0].first, F<int>(c, kLevel), F<int>(c, kHp),
+                 pos_of(c).x, pos_of(c).y, rollover_of(F<uint32_t>(c, 0)), g_bite_rings, F<uint8_t>(c, kDead) || F<uint8_t>(c, kDying) ? " dying" : "");
         return b;
     }
     if (!a.empty() && a[0] == "realbite") { // realbite [max distance | c<key>]: our cell bites the nearest
@@ -4031,7 +4124,9 @@ std::string status()
              g_tiles_shared, g_tiles_bg, g_tile_passes, g_tiles_kept, g_tile_resets, g_tiles_drained, g_tiles_full, g_tiles_flush, g_tiles_unshared, g_tiles_handed,
              G() ? F<uint32_t>(G(), 0x38 + 0xC) : 0, G() ? F<uint32_t>(G(), 0x38 + 0x18) : 0, (int)g_fix_budget, g_tiles_starved,
              (unsigned)g_starved.size(), g_tiles_fed, g_tiles_core, g_send_capped, g_mirror_capped, cells_live(), g_cells_peak, g_tile_level, g_nan_pop_skips, g_nan_heals);
-    return b + std::string(d) + t;
+    char j[96];
+    snprintf(j, sizeof j, "cell_guest_fx: joins_after_load=%u bite_rings=%u\n", g_joins_load, g_bite_rings); // BUG-0352, BUG-0350
+    return b + std::string(d) + t + j;
 }
 
 std::vector<syncdbg::Entry> sync_entries()
@@ -4064,6 +4159,20 @@ bool food_total(int& food)
         return false;
     food = F<int32_t>(s, 0x1C);
     return true;
+}
+
+// BUG-0351 diagnostics: what the cell editor's DNA budget is made of. The game's request (0xE59800)
+// passes DNAForFood(S+0x1C) - S+0x2C (spent) to the editor (docs/re/cell.md#cell-editor-dna).
+void dna_note(const char* when)
+{
+    uint8_t* s = S();
+    if (!s)
+        return;
+    int food = F<int32_t>(s, 0x1C), spent = F<int32_t>(s, 0x2C);
+    using DnaFor_t = int(__fastcall*)(int);
+    int dna = a_DnaFor && food >= 0 && food <= 1000 ? ((DnaFor_t)a_DnaFor)(food) : -1;
+    H->log(M, SK_INFO, "coop: cell: DNA %s: food=%d plant=%d spent=%d dna_for_food=%d budget=%d", when, food,
+           F<int32_t>(s, 0x20), spent, dna, dna >= 0 ? dna - spent : -1);
 }
 
 void join_partner()

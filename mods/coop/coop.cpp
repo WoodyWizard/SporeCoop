@@ -1080,6 +1080,8 @@ bool SK_CDECL h_Submit(void* req)
         g_submits_repeated++;
         return false;
     }
+    if (req && mode == modes::kCell && g_sess.connected())
+        cellsync::dna_note(g_vote_bypass ? "at the editor request (after the vote)" : "at the editor request");
     if (!g_vote_bypass && req && stage_mode(mode) && g_sess.connected() && g_sess.players().size() > 1) {
         if (g_sess.role() == net::Role::Host) {
             if (!g_vote.active)
