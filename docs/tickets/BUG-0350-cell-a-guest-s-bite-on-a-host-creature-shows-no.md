@@ -60,6 +60,8 @@ host's game).
 Found on the way: right after a teleport to a fleeing creature its mirror often has no GFX on the
 guest (not drawn there yet), so the game shows no ring (with or without the fix); the test waits for
 the GFX.
+Related tests PASS on lane 3: out/lab/20261031-132041 (cell_editor_invuln, cell_guest_bite, cell_rescue,
+cell_respawn_swap, creations_cell, cell); `make test` PASS.
 
 ## History
 - 2026-10-31: opened from the second batch of the 2026-10-31 report zips (host mark, code reading).

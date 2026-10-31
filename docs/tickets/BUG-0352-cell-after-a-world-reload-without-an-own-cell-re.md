@@ -47,6 +47,8 @@ game; the first version of the fix did that and failed its test.
   20 s after the load in both games), also 20261031-131104 (first test version).
 * PASS: out/lab/20261031-131706 (2 runs: the guest 2.6 m from the host 4.9 / 5.3 s after the load,
   both games). The first fix version (join during the hatch) FAILED: 20261031-131228.
+Related tests PASS on lane 3: out/lab/20261031-132041 (cell_editor_invuln, cell_guest_bite, cell_rescue,
+cell_respawn_swap, creations_cell, cell); `make test` PASS.
 
 ## History
 - 2026-10-31: opened from the guest's log of the second batch of the 2026-10-31 report zips.
