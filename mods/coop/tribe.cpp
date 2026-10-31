@@ -404,6 +404,21 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
 }
 
 // ---------------- host: snapshots + orders ----------------
+// BUG-0340 (second part, the owner's request): at a player's arrival in Tribe and after a rejoin each
+// player's chief gets its own spot: a chief closer to another than the sum of their sizes + 1 m goes to
+// its ring spot round the village. Only then (not on later chief changes: no jump in a fight).
+// `coop.fix tribe.place_chiefs off`: chiefs stay where the game put them.
+static bool g_place_fix = true;
+COOP_FIX("tribe.place_chiefs", "BUG-0340", g_place_fix, "tribe: at arrival and after a rejoin every player's chief too close to another gets its own spot round the village");
+static double g_place_due = 0, g_place_until = 0;
+static uint32_t g_placed;
+static std::unordered_set<void*> g_placed_now; // chiefs placed in this arrival's window
+static void arrival_place_due(double now)
+{
+    g_placed_now.clear();
+    g_place_due = now + 3.0;   // the split and the chiefs settle first
+    g_place_until = now + 60.0; // a player still loading: the guests' games come in later
+}
 static void host_tick(double now)
 {
     if (now - g_last_send < 0.12)
@@ -416,6 +431,7 @@ static void host_tick(double now)
         players.push_back(p.id);
     std::sort(players.begin(), players.end());
     if (players != g_split_for && pt) {
+        arrival_place_due(now); // BUG-0340: a player arrived or rejoined
         // the players changed: split the player tribe again, in member order
         g_split_for = players;
         g_player_members_seen = 0;
@@ -1280,10 +1296,124 @@ void note_animal_hit(void* animal, void* attacker_creature)
     }
 }
 
+
+// BUG-0340: every player's chief (the player's character in Tribe) could stand on another's: the
+// members the game spawns for a tribe (its hut, the co-op split of new members, a rejoin) appear at
+// one spot, and two chiefs standing in each other blocked each other. On the host, two chiefs that
+// both stand still less than kChiefApart apart for a second are parted: the later owner's chief goes
+// to its own spot on a ring round the village (kChiefRing m from the tribe's centre, a quarter turn
+// per owner, on this game's ground). The guests follow through the snapshots.
+// `coop.fix tribe.spread_chiefs off`: chiefs stay where they are.
+static bool g_spread_fix = true;
+COOP_FIX("tribe.spread_chiefs", "BUG-0340", g_spread_fix, "tribe: two players' chiefs standing in each other are parted onto a ring round the village");
+constexpr float kChiefApart = 1.5f, kChiefRing = 12.f;
+static std::map<std::pair<uint8_t, uint8_t>, double> g_stack_since;
+static uint32_t g_spread_moves;
+
+static net::Vec3 ring_spot(const net::Vec3& centre, uint8_t owner)
+{
+    float r = std::sqrt(centre.x * centre.x + centre.y * centre.y + centre.z * centre.z);
+    if (r < 1.f)
+        return centre;
+    net::Vec3 up{centre.x / r, centre.y / r, centre.z / r};
+    net::Vec3 a = std::fabs(up.y) < 0.9f ? net::Vec3{0, 1, 0} : net::Vec3{1, 0, 0};
+    net::Vec3 e1{up.y * a.z - up.z * a.y, up.z * a.x - up.x * a.z, up.x * a.y - up.y * a.x};
+    float l = std::sqrt(e1.x * e1.x + e1.y * e1.y + e1.z * e1.z);
+    e1 = {e1.x / l, e1.y / l, e1.z / l};
+    net::Vec3 e2{up.y * e1.z - up.z * e1.y, up.z * e1.x - up.x * e1.z, up.x * e1.y - up.y * e1.x};
+    float t = 6.2831853f * (float)(owner % 8) / 4.f + (owner >= 4 ? 0.785f : 0.f);
+    float cs = std::cos(t) * kChiefRing, sn = std::sin(t) * kChiefRing;
+    net::Vec3 p{centre.x + e1.x * cs + e2.x * sn, centre.y + e1.y * cs + e2.y * sn, centre.z + e1.z * cs + e2.z * sn};
+    float g = game::ground_radius(p), pr = std::sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
+    if (g > 1.f && pr > 1.f)
+        p = {p.x * g / pr, p.y * g / pr, p.z * g / pr};
+    return p;
+}
+
+// a chief put on its spot also gets a walk order there (the game's own order, as a player's walk on
+// the host): a member only put there walked back to where it stood before (seen: 9 m in 6 s)
+static void put_chief(void* c, const net::Vec3& spot)
+{
+    game::teleport(c, spot, game::orientation(c));
+    void* rec = thiscall<void*>(a_DoAction, c, 4, (void*)nullptr, (void*)nullptr);
+    float p[3] = {spot.x, spot.y, spot.z};
+    if (rec)
+        thiscall<void>(a_SetValueVector3, (uint8_t*)rec + 0x39, (const float*)p);
+}
+
+static void spread_chiefs(double now)
+{
+    void* pt = player_tribe();
+    if (!g_spread_fix || !pt)
+        return;
+    net::Vec3 centre = tribe_pos(pt);
+    std::vector<std::pair<uint8_t, void*>> ch(g_chief.begin(), g_chief.end());
+    std::sort(ch.begin(), ch.end());
+    for (size_t i = 0; i < ch.size(); i++)
+        for (size_t j = i + 1; j < ch.size(); j++) {
+            auto key = std::make_pair(ch[i].first, ch[j].first);
+            void *a = ch[i].second, *b = ch[j].second;
+            bool stacked = game::object_alive(a) && game::object_alive(b) &&
+                           net::dist(game::position(a), game::position(b)) < kChiefApart &&
+                           drive::speed(game::velocity(a)) < 0.3f && drive::speed(game::velocity(b)) < 0.3f;
+            if (!stacked) {
+                g_stack_since.erase(key);
+                continue;
+            }
+            auto it = g_stack_since.emplace(key, now).first;
+            if (now - it->second < 1.0)
+                continue;
+            put_chief(b, ring_spot(centre, ch[j].first));
+            g_spread_moves++;
+            g_stack_since.erase(key);
+            H->log(M, SK_INFO, "tribe: %s's chief stood in %s's: put on its own spot round the village",
+                   C.sess->name_of(ch[j].first).c_str(), C.sess->name_of(ch[i].first).c_str());
+        }
+}
+
+static void place_chiefs(double now)
+{
+    void* pt = player_tribe();
+    if (!g_place_fix || !pt || g_place_due == 0 || now < g_place_due)
+        return;
+    if (now > g_place_until) {
+        g_place_due = 0;
+        return;
+    }
+    g_place_due = now + 2.0; // looked at again every 2 s inside the window (a guest's members come late)
+    net::Vec3 centre = tribe_pos(pt);
+    std::vector<std::pair<uint8_t, void*>> ch(g_chief.begin(), g_chief.end());
+    std::sort(ch.begin(), ch.end());
+    for (size_t j = 1; j < ch.size(); j++) {
+        void* b = ch[j].second;
+        if (!game::object_alive(b))
+            continue;
+        bool close = false;
+        for (size_t i = 0; i < ch.size() && !close; i++) {
+            void* a = ch[i].second;
+            if (i == j || !game::object_alive(a))
+                continue;
+            close = net::dist(game::position(a), game::position(b)) <
+                    game::bounding_radius(a) + game::bounding_radius(b) + 1.f;
+        }
+        if (!close)
+            continue;
+        if (g_placed_now.count(b))
+            continue; // once per arrival
+        g_placed_now.insert(b);
+        put_chief(b, ring_spot(centre, ch[j].first));
+        g_placed++;
+        H->log(M, SK_INFO, "tribe: %s's chief stood next to another one at the arrival: put on its own spot round the village",
+               C.sess->name_of(ch[j].first).c_str());
+    }
+}
+
 static void coop_tick(double now)
 {
     chiefs_tick();
     if (is_host()) {
+        spread_chiefs(now);
+        place_chiefs(now);
         duet_tick(now);
         epic_tick(now);
     }
@@ -1526,9 +1656,9 @@ std::string status()
         chiefs += " " + std::to_string(o) + ":#" + std::to_string(member_id(c));
     snprintf(b, sizeof b,
              "tribe co-op: pincer=%u aura=%u chief_rescues=%u duet=%u heals=%u epics=%u epic_kills=%u epic=%p "
-             "chiefs=%s\n",
+             "chiefs=%s spread=%u placed=%u\n",
              g_pincer_hits, g_aura_hits, g_chief_rescues, g_duet_ticks, g_heals, g_epics, g_epic_kills, g_epic,
-             chiefs.c_str());
+             chiefs.c_str(), g_spread_moves, g_placed);
     out += b;
     // the chiefs' size in the game (spatial GetScale / their own scale) and the lifetime checks
     std::string scales;
@@ -1748,6 +1878,19 @@ std::string debug(const std::vector<std::string>& a)
         int r = thiscall<int>(a_DoActionForObjects, (void*)nullptr, (void*)vec, action, t, (void*)nullptr);
         return "action ordered (" + std::to_string(sel.size()) + " selected, ret " + std::to_string(r) + ")";
     }
+    if (!a.empty() && a[0] == "stack" && is_host()) { // tests (BUG-0340): every chief onto the first one
+        if (g_chief.empty())
+            return "no chiefs";
+        auto first = *std::min_element(g_chief.begin(), g_chief.end());
+        net::Vec3 at = game::position(first.second);
+        int n = 0;
+        for (auto& [o, c] : g_chief)
+            if (c != first.second) {
+                game::teleport(c, at, game::orientation(c));
+                n++;
+            }
+        return "stacked " + std::to_string(n) + " chiefs on the chief of player " + std::to_string(first.first);
+    }
     if (a.size() >= 2 && a[0] == "lift" && is_guest()) { // lift <m>: tests (BUG-0329), the host's members m higher
         g_test_lift = (float)atof(a[1].c_str());
         return "members of the host taken " + a[1] + " m further from the planet's centre";
@@ -1852,10 +1995,10 @@ std::string list()
                 }
             }
             snprintf(b, sizeof b,
-                     "  #%u %p owner=%d age=%u sel=%u hp=%.1f pos=(%.1f %.1f %.1f) speed=%.1f host_speed=%.1f dead=%d bt=%08X\n",
+                     "  #%u %p owner=%d age=%u sel=%u hp=%.1f pos=(%.1f %.1f %.1f) speed=%.1f host_speed=%.1f dead=%d bt=%08X radius=%.2f\n",
                      id, c, ow == 0xFF ? -1 : (int)ow, F<uint8_t>(c, kAgeOff), F<uint8_t>(c, kSelectedOff),
                      game::health(c), cp.x, cp.y, cp.z, drive::speed(v), drive::speed(sv), (int)game::is_dead(c),
-                     bt_node(c));
+                     bt_node(c), game::bounding_radius(c));
             out += b;
             if (ds) { // guests: how the mirror is driven (drive::step)
                 snprintf(b, sizeof b, "     drive err=%.2f nudges=%u kept=%u teleports=%u\n", ds->last_err, ds->nudges,
