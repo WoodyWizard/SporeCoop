@@ -912,3 +912,19 @@ BUG-0329 / BUG-0332, from the campaign's probe lines (lab 20261030-210914):
 * ? Which game code places the village ground, and why a live Tribe and a loaded one differ.
 * drive.own_height: in Tribe a mirror's target takes the mirror's own distance from the centre
   (when within 10 m of the host's).
+
+## Where the players' chiefs stand at the arrival (2026-10-31, fix/w21-tribe)
+<a id="tribe-chiefs-arrival"></a>
+
+BUG-0340 (players' chiefs on the same spot), measured with `coop.tribe` (member lines end with
+`radius=`, the spatial's bounding radius vt 0x70) on every machine:
+* ✔ 2 players: fixture chiefs 26 m apart; live Creature -> Tribe 3.9 / 4.6 m apart (radii 2-3.9 m).
+* ✔ 4 players, live Creature -> Tribe (campaign, lane 9): the chiefs of players 1 and 2 2.0 m apart
+  (sum of the bounding radii 5.0-5.5 m) on all four machines, standing still, for 6+ s; 50 s later
+  still 4.5 m (under 5.0). The others 6-20 m apart.
+* ✔ Two chiefs put onto one spot on purpose are parted by the game's own avoidance within 1-2 s (to
+  1.8-5 m), so the reported overlap is the arrival's placement, not a lock of the game.
+* tribe.place_chiefs: at the arrival and after a rejoin (the host's split of the player tribe, then
+  every 2 s for 20 s), a chief closer than the sum of the radii + 1 m to another chief goes to its
+  ring spot: 12 m from the tribe's centre, a quarter turn per player, on the game's ground.
+  tribe.spread_chiefs: later, two chiefs standing in each other (< 1.5 m, 1 s) are parted the same way.

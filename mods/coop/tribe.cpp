@@ -412,10 +412,12 @@ static bool g_place_fix = true;
 COOP_FIX("tribe.place_chiefs", "BUG-0340", g_place_fix, "tribe: at arrival and after a rejoin every player's chief too close to another gets its own spot round the village");
 static double g_place_due = 0, g_place_until = 0;
 static uint32_t g_placed;
+static std::unordered_set<void*> g_placed_now; // chiefs placed in this arrival's window
 static void arrival_place_due(double now)
 {
+    g_placed_now.clear();
     g_place_due = now + 3.0;   // the split and the chiefs settle first
-    g_place_until = now + 20.0; // a player still loading: its members come with the next snapshots
+    g_place_until = now + 60.0; // a player still loading: the guests' games come in later
 }
 static void host_tick(double now)
 {
@@ -1328,6 +1330,17 @@ static net::Vec3 ring_spot(const net::Vec3& centre, uint8_t owner)
     return p;
 }
 
+// a chief put on its spot also gets a walk order there (the game's own order, as a player's walk on
+// the host): a member only put there walked back to where it stood before (seen: 9 m in 6 s)
+static void put_chief(void* c, const net::Vec3& spot)
+{
+    game::teleport(c, spot, game::orientation(c));
+    void* rec = thiscall<void*>(a_DoAction, c, 4, (void*)nullptr, (void*)nullptr);
+    float p[3] = {spot.x, spot.y, spot.z};
+    if (rec)
+        thiscall<void>(a_SetValueVector3, (uint8_t*)rec + 0x39, (const float*)p);
+}
+
 static void spread_chiefs(double now)
 {
     void* pt = player_tribe();
@@ -1350,7 +1363,7 @@ static void spread_chiefs(double now)
             auto it = g_stack_since.emplace(key, now).first;
             if (now - it->second < 1.0)
                 continue;
-            game::teleport(b, ring_spot(centre, ch[j].first), game::orientation(b));
+            put_chief(b, ring_spot(centre, ch[j].first));
             g_spread_moves++;
             g_stack_since.erase(key);
             H->log(M, SK_INFO, "tribe: %s's chief stood in %s's: put on its own spot round the village",
@@ -1385,8 +1398,10 @@ static void place_chiefs(double now)
         }
         if (!close)
             continue;
-        net::Vec3 spot = ring_spot(centre, ch[j].first);
-        game::teleport(b, spot, game::orientation(b));
+        if (g_placed_now.count(b))
+            continue; // once per arrival
+        g_placed_now.insert(b);
+        put_chief(b, ring_spot(centre, ch[j].first));
         g_placed++;
         H->log(M, SK_INFO, "tribe: %s's chief stood next to another one at the arrival: put on its own spot round the village",
                C.sess->name_of(ch[j].first).c_str());
