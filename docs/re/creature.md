@@ -1065,3 +1065,14 @@ BUG-0281. GOG 2024, lane 5. Corrects [the proxy section](#creature-proxy-guest-s
   interpolated host position every frame and gets the host's velocity (`+0xC0 + 0x1C8`); stills of
   the guest show running poses. p90 off the host's path at 15 fps 0.31-0.34 m (before 1.84 m with
   BUG-0175, 3.3-3.5 m without). Standing NPCs keep the driving.
+
+## The pack's rescue cooldown across sessions (2026-10-30, fix/w17-creature)
+<a id="creature-rescue-reset"></a>
+
+BUG-0330. Mod logic, not game RE.
+
+* ✔ The rescue cooldown (`teamplay::g_last_rescue`, 60 s) lived in the guest's process across a leave
+  and join: the next session had no rescue for up to a minute (every warm `team` run, 4 of 4).
+  `team.rescue_reset`: `teamplay::reset()` (session end, world change) makes the rescue ready.
+* ✔ `coop.npc hit <id> <dmg>` on a guest (TakeDamage on the proxy with the guest's avatar as the
+  attacker, no push) does not move the guest's avatar (proxies 14-37 m away, lane 4).

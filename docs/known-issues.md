@@ -1121,3 +1121,14 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   campaign_tribe replay; only in the full campaign's own evolved world.
 * Known: the guests agree with each other; the campaign now prints the worst member's lines.
 * Ticket: BUG-0329
+
+## Creature: a guest's avatar ~14 m from where it joined (2026-10-30, fix/w17-creature)
+<a id="issue-guest-avatar-drift"></a>
+
+* What happens: in 2 of ~60 `team` runs the guest's avatar stood ~14 m from where it joined, both
+  times at the same spot (-159 -471 -86 on the creature fixture), a few seconds after its own
+  creature was put on it.
+* Reproduce: `tools/lab.py run team --repeat 10` (cold); the log line "players N m apart before the
+  regen check" with N > 5.
+* Known: not the debug hit, not npc.kinematic, not the editor wait (BUG-0330 analysis).
+* Ticket: BUG-0333.
