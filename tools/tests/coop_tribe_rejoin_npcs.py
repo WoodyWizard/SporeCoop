@@ -12,7 +12,9 @@ it never sent them again: coverage 75%, 6 NPCs missing for the rest of the play.
 3. For 20 s, 25 s after it is back: the guest's game has the host's NPCs (coverage, the game's
    objects of both machines through `coop.sync`).
 PASS: coverage at least 85 % in every sample after the rejoin (the campaign's limit) and no NPC
-missing in the last one. --nofix (`coop.fix npc.rts_inworld off` on the host): must FAIL.
+missing in the last one. A regression scenario: the campaign's loss was not reproduced by it (it passed
+with and without the candidate fix npc.rts_inworld, which was then left out); --nofix is kept
+for that switch if it comes back.
 
   SPORE_LANE=6 python3 tools/tests/coop_tribe_rejoin_npcs.py [--nofix] [--rounds 2]
 """
@@ -44,7 +46,7 @@ def main():
     a = ap.parse_args()
     host, guest = start('tribe')
     ck = Checks()
-    if a.nofix:
+    if a.nofix:  # (no switch of this name now: coop.fix answers "unknown fix")
         print(' ', host.call('coop.fix npc.rts_inworld off')['out'].strip(), flush=True)
     time.sleep(10)
     cov, total, miss = coverage(host, guest)
