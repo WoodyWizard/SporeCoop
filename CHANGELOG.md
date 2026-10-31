@@ -3,6 +3,10 @@
 ## [Unreleased]
 
 ### Fixed
+- Creature: a player whose game does not have the Creepy & Cute parts pack can now join a host whose
+  creatures use its parts: on that player's screen those parts are shown as similar parts of the base
+  game (eye for eye, mouth for mouth, the nearest abilities), with a notice; nothing of the pack is
+  shared (BUG-0354, BUG-0341).
 - Cell: a crowd of hundreds of cells next to a player no longer makes that game fault every frame or
   throw a cell thousands of metres away (the game's pool of cell particles ran full) (BUG-0338).
 - Cell: a player who stays in the pause menu while the other players play no longer corrupts the

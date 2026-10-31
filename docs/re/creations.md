@@ -485,6 +485,8 @@ BUG-0318. GOG 2024, lane 4, guest at 6.7 fps (`frame.limit 150`).
 * The world shared by the host does not hold creation records: the guest's game builds the host's
   creatures from what co-op registers (`world_*`, `own_species_*`, `species_*` packages), so checking
   the bundles before the world covers the world's creatures.
+* ~ superseded in part (2026-10-31): a creature with pack parts is no longer refused but shown with
+  base parts, see #creations-part-substitutes (the refusal stays for a part without a substitute).
 
 ## The own cell's rebuild right after a Cell load (2026-10-31, fix/w22-reports)
 <a id="creations-own-cell-rebuild-timing"></a>
