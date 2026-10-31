@@ -692,12 +692,40 @@ static void ensure_model_hook()
     }
 }
 
+// BUG-0348: the cell broadphase (cCellGame+0x4104, docs/re/cell.md#cell-sap-pending) queues every
+// new cell's endpoints in its pending arrays (AddObject 0xBBB290, no bound check; 2 x capacity
+// entries each) and empties them only in its sweep, inside SimUpdate. A game that does not run
+// SimUpdate (the pause menu) while we create cells (a guest's mirrors churning) wrote past the
+// arrays: heap corruption (found when the Cell pools are freed) and a broken endpoint order (the
+// ~1024 objects left open of BUG-0337). We create no cell while the pending entries are near full.
+// Old (`coop.fix cell.sap_pending off`): no bound.
+static bool g_fix_sap_pending = true;
+COOP_FIX_UNSAFE("cell.sap_pending", "BUG-0348", g_fix_sap_pending, "cell: no cell of ours is created while the broadphase's pending list (emptied only by the running simulation) is near full (it overflowed into the heap while a guest sat in the pause menu)");
+static uint32_t g_sap_held;
+
+uint32_t cell_sap_held() { return g_sap_held; }
+
+bool cell_sap_room()
+{
+    uint8_t* g = cell_game();
+    uint8_t* sap = g ? *(uint8_t**)(g + 0x4104) : nullptr;
+    if (!g_fix_sap_pending || !sap)
+        return true;
+    int cap = *(int*)(sap + 4), pend = *(int*)(sap + 0x2C);
+    // 2 x cap entries per axis; each new cell takes 2; keep room for the game's own (a level change
+    // or loot made by one frame of the game before its sweep)
+    if (cap > 0 && pend + 2 + 512 <= 2 * cap)
+        return true;
+    g_sap_held++;
+    return false;
+}
+
 uint32_t cell_create(const net::Vec3& pos, void* res_ref, int level, const uint32_t key[3], const net::Quat* rot)
 {
     ensure_model_hook();
     uint8_t* g = cell_game();
     uintptr_t create = S("Simulator::Cell::CreateCellObject");
-    if (!g || !res_ref || !create)
+    if (!g || !res_ref || !create || !cell_sap_room())
         return 0;
     skg::Vector3 p{pos.x, pos.y, pos.z};
     skg::Quaternion q{0, 0, 0, 1};
@@ -718,7 +746,7 @@ static void* cell_spawn(const net::PlayerState& s, void* local)
     uint8_t* g = cell_game();
     uint8_t* me = (uint8_t*)local;
     uintptr_t create = S("Simulator::Cell::CreateCellObject");
-    if (!g || !me || !create)
+    if (!g || !me || !create || !cell_sap_room())
         return nullptr;
     skg::Vector3 p{s.pos.x, s.pos.y, s.pos.z};
     void* query = *(void**)(g + 0x40FC);
