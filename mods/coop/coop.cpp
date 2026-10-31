@@ -3140,6 +3140,10 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
                                   argc > 8 ? (float)atof(argv[8]) : 0.f).c_str());
         return 0;
     }
+    if (argc > 2 && !strcmp(argv[1], "pool")) { // host (tests, BUG-0339): pool <id>
+        SAY("%s", npc::debug_pool((uint16_t)atoi(argv[2])).c_str());
+        return 0;
+    }
     if (argc > 7 && !strcmp(argv[1], "pwalk")) { // guest (tests, BUG-0281): pwalk <id> x y z <m/s> <s> [mode bits]
         SAY("%s", npc::debug_pwalk((uint16_t)atoi(argv[2]), {(float)atof(argv[3]), (float)atof(argv[4]), (float)atof(argv[5])},
                                    (float)atof(argv[6]), (float)atof(argv[7]), argc > 8 ? atoi(argv[8]) : 0).c_str());

@@ -1088,3 +1088,16 @@ BUG-0334. Corrects [the kinematic proxies](#creature-kinematic-proxies).
   hit kept its old health on the guest (`team`: 4.2 / host 1.95, smoke 20261030-235253 and
   20261030-231732 #2); in `npc_run_hp` (a dashing NPC hit, then killed): health 6.0 / host 4.0 and no
   death on the guest within 3 s with `npc.kinematic_sync` off. Fixed: only the driving is skipped.
+
+## NPCs updated at the planet's centre (2026-10-31, fix/w21-creature)
+<a id="creature-npc-at-centre"></a>
+
+BUG-0339. Extends [the pool cull](#creature-npc-pool-cull).
+
+* ✔ The game's pool call on a host NPC (creature vt 0xC8, `thiscall(c, 1)`, test command `coop.npc
+  pool <id>`) moves it to (0 0 0) with herd 0, and it is no longer updated. The host retires it
+  (BUG-0274) and the guest drops its proxy within 1 s (lane 5).
+* ~ In a 4-player campaign (lab 20261031-083425 campaign#2) four host NPCs of one herd sat at (0 0 0)
+  in every census for 30 s and more and were still updated (the sync-check lists only NPCs updated in
+  that frame). The cause was not found. A guest kept their proxies on the surface 511 m away.
+  The host now logs "is updated at the planet's centre" for such an NPC.

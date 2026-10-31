@@ -57,6 +57,7 @@ struct HostNpc {
     uint64_t vel_bits = 0;  // diagnostics: bit i = the game's velocity over 0.3 m/s i frames ago
     net::Vec3 pos_hist[64] = {}; // diagnostics: the position of the last 64 frames (ring)
     uint8_t hist_at = 0;
+    bool centre_said = false; // BUG-0339 diagnostics: logged once per stay at the planet's centre
 };
 static std::unordered_map<void*, HostNpc> g_host_npcs;  // creature -> id
 static std::unordered_map<uint16_t, void*> g_host_by_id;
@@ -404,6 +405,20 @@ static void dash_tick(double now)
         *(net::Vec3*)((uint8_t*)c + game::kVelOff) = v;
     }
 }
+// tests (BUG-0339): host NPC #id goes back to the game's creature pool, as the relevance pass does it
+// (creature vt 0xC8, thiscall(c, 1): push 1 at 0xACE88C in Relevance_Update)
+std::string debug_pool(uint16_t id)
+{
+    auto it = g_host_by_id.find(id);
+    if (!is_host() || it == g_host_by_id.end() || !g_seen_now.count(it->second))
+        return "no such host npc";
+    void* c = it->second;
+    skg::vcall<void>(c, 0xC8 / 4, 1);
+    net::Vec3 p = game::position(c);
+    char b[120];
+    snprintf(b, sizeof b, "npc %u pooled: now at (%.1f %.1f %.1f) herd %p", id, p.x, p.y, p.z, game::herd_of(c));
+    return b;
+}
 // tests (BUG-0281): the guest's proxy #id walks to p at speed with the game's locomotion for secs (no sync)
 std::string debug_pwalk(uint16_t id, const net::Vec3& p, float speed, float secs, int mode)
 {
@@ -499,6 +514,18 @@ static void host_tick(double now, const std::vector<void*>& creatures)
             hn.pos_hist[hn.hist_at] = game::position(c);
         }
         g_seen_now.insert(c);
+        {   // BUG-0339 diagnostics: an NPC the game still updates at the planet's centre (pool place)
+            HostNpc& hn = g_host_npcs[c];
+            net::Vec3 p = hn.pos_hist[hn.hist_at];
+            bool centre = p.x * p.x + p.y * p.y + p.z * p.z < 2500.f;
+            if (centre && !hn.centre_said) {
+                net::Vec3 q = hn.pos_hist[(hn.hist_at + 63) & 63];
+                H->log(M, SK_WARN, "npc %u (species %08X) is updated at the planet's centre: herd %p, %.0f m from where it "
+                       "was a frame before, dead=%d", hn.id, hn.species, game::herd_of(c), net::dist(p, q), (int)hn.dead);
+                hn.centre_said = true;
+            } else if (!centre)
+                hn.centre_said = false;
+        }
     }
     // creatures the game took out of the world (BUG-0274): the creature stage keeps NPCs only around
     // the host's avatar; one farther away goes back to the creature pool (herd cleared, position

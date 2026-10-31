@@ -1165,3 +1165,13 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Reproduce: `coop_cell_sap.py` with the guests left next to the host (lab 20261031-075645-fix-w20-cell #1).
 * Known: BUG-0338 (stack arrays of the advect grid, not analysed).
 * Ticket: BUG-0338
+
+## Creature, 4 players: proxies 511 m from host NPCs at the planet's centre (2026-10-31, fix/w21-creature)
+<a id="issue-npc-at-centre"></a>
+
+* What happens: four host NPCs of one herd at (0 0 0) still updated by the host's game; one guest
+  kept their proxies on the surface (census "511 m apart") and missed two other NPCs 81-88 m away.
+* Reproduce: seen once (lab 20261031-083425 campaign#2, after that guest rejoined, died 170 m from
+  the host and respawned at the nest); not reproduced by the pool call or a pinned NPC.
+* Known: docs/re/creature.md#creature-npc-at-centre; the host logs such NPCs now.
+* Ticket: BUG-0339.

@@ -70,6 +70,7 @@ bool debug_attack_msg(uint16_t id);                  // tests: the game's attack
 bool debug_hit(uint16_t id, float damage);           // guest: avatar hits proxy `id`
 bool debug_hurt(uint8_t player, uint16_t id, float damage); // host: NPC `id` hits player's puppet
 void* host_npc(uint16_t id);     // host: NPC #id if it is alive this frame
+std::string debug_pool(uint16_t id); // host (tests, BUG-0339): NPC #id to the game's creature pool
 std::string debug_pwalk(uint16_t id, const net::Vec3& p, float speed, float secs, int mode = 0); // guest (tests, BUG-0281)
 std::string debug_dash(uint16_t id, float len, float speed, float secs, float width, uint16_t mate = 0, float off = 0); // host (tests, BUG-0305): NPC #id dashes back and forth
 int host_id(void* creature);     // host: net id of an NPC, -1
