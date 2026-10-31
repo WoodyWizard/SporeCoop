@@ -1121,3 +1121,12 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   campaign_tribe replay; only in the full campaign's own evolved world.
 * Known: the guests agree with each other; the campaign now prints the worst member's lines.
 * Ticket: BUG-0329
+
+## Tribe: the village ground is up to 5 m higher or lower on the guests (2026-10-30, fix/w17-tribe)
+<a id="issue-tribe-village-ground"></a>
+
+* What happens: after the host's live Creature -> Tribe the guests (who load its save) have the ground
+  around the village up to 5 m higher or lower; members and animals stand on each game's ground
+  (drive.own_height, BUG-0329), so they look right, but the ground itself differs.
+* Reproduce: the full campaign (cell -> tribe); not on flat ground (creature_cadian fixture).
+* Ticket: BUG-0332

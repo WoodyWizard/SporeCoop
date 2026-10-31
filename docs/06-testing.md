@@ -2270,3 +2270,20 @@ answered right after; a 1 s poller beside a standalone run saw no gap. Same sign
   driven), for BUG-0329.
 * `coop_sync_multi.py --fixture tribe --spawn N`: the campaign's member setup first; a tribe member
   over 2.5 m off on a guest is printed with its `coop.tribe` line on every machine.
+## Ground height, a paused guest's city, creature_cadian (2026-10-30, fix/w17-tribe)
+<a id="testing-tribe-own-height"></a>
+
+* `coop_tribe_own_height.py [--nofix] [--lift 5]` (suite `tribe_own_height`, ~2 min): `coop.tribe lift 5`
+  on the guest takes the host's members 5 m higher in its copy of the snapshots (as a guest's ground
+  5 m off the host's, BUG-0329); members standing on the host must stand on the guest (own speed
+  under 1 m/s in 90 % of the samples) and not be teleported again and again. `--nofix`
+  (`coop.fix drive.own_height off`): 37 of 56 moving, 12-14 teleports each.
+* `coop.ground x y z` (any machine): the game's ground radius in that direction, the point's radius
+  and its height over the ground.
+* `coop_civ_pause_city.py` (suite `civ_pause_city`, ~1 min): a city founded while the guest's pause
+  menu is open appears there after Resume (BUG-0331); the campaign's census skips paused guests.
+* Fixture `creature_cadian`: a full campaign's own Creature world (Cadian); `CAMPAIGN_FIXTURE_<stage>=<fixture>`
+  starts a campaign stage from another fixture
+  (`CAMPAIGN_FIXTURE_creature=creature_cadian coop_campaign.py --from creature --to tribe`).
+* The campaign's sync check notes "ground height differs" instead of a desync when the worst t / n
+  object is in place sideways and at the same height over each game's own ground (BUG-0332).
