@@ -334,6 +334,95 @@ static unsigned missing_parts(const std::vector<dbpf::Record>& recs)
     return n;
 }
 
+// BUG-0341, the owner's choice: on a game without the pack each pack part of a creature is shown as a
+// similar base game part (content_packs.h kCreepyCuteSubstitutes: the same kind, the nearest ability
+// levels), rewritten in this game's copy of the creature's model records before they are registered;
+// nothing of the pack is sent. A part with no substitute (or whose substitute this game lacks) keeps
+// the refusal above. Old (`coop.fix creations.part_substitute off`): the refusal for every pack part.
+static bool g_subst_fix = true;
+COOP_FIX("creations.part_substitute", "BUG-0341", g_subst_fix, "creations: on a game without Creepy & Cute a creature's pack parts are shown as similar base game parts instead of the creature being refused");
+static unsigned g_parts_substituted;
+static bool g_subst_told;
+
+static uint32_t substitute_of(uint32_t id)
+{
+    auto it = std::lower_bound(std::begin(kCreepyCuteSubstitutes), std::end(kCreepyCuteSubstitutes), id,
+                               [](const PartSubstitute& s, uint32_t v) { return s.pack < v; });
+    return it != std::end(kCreepyCuteSubstitutes) && it->pack == id ? it->base : 0;
+}
+
+// the encoded bytes of an id in a model: 0xFE is written FE 00
+static void encode_id(uint32_t id, std::vector<uint8_t>& out)
+{
+    for (int k = 0; k < 4; k++) {
+        uint8_t b = (uint8_t)(id >> (8 * k));
+        out.push_back(b);
+        if (b == 0xFE)
+            out.push_back(0);
+    }
+}
+
+// rewrites the pack parts of the creature's model records (bem) to their substitutes in place;
+// returns how many were rewritten
+static unsigned substitute_parts(std::vector<dbpf::Record>& recs)
+{
+    if (!g_parts_fix || !g_subst_fix || have_creepy_cute())
+        return 0;
+    unsigned n = 0;
+    for (auto& r : recs) {
+        if (r.key.type != kBem)
+            continue;
+        auto& m = r.data;
+        for (size_t i = 0; i + 7 <= m.size(); i++) {
+            if (m[i] != 0x60 || m[i + 1] != 0x62 || m[i + 2] != 0x40)
+                continue;
+            uint8_t id[4];
+            int got = 0;
+            size_t j = i + 3;
+            bool ok = true;
+            while (got < 4 && j < m.size()) { // as model_parts
+                if (m[j] == 0xFE) {
+                    if (j + 1 >= m.size() || m[j + 1] != 0) {
+                        ok = false;
+                        break;
+                    }
+                    id[got++] = 0xFE;
+                    j += 2;
+                } else
+                    id[got++] = m[j++];
+            }
+            if (!ok || got != 4)
+                continue;
+            uint32_t v = id[0] | id[1] << 8 | id[2] << 16 | (uint32_t)id[3] << 24;
+            uint32_t sub = is_cc_part(v) ? substitute_of(v) : 0;
+            if (!sub || !key_exists({sub, kPartProp, kPartGroup}))
+                continue;
+            std::vector<uint8_t> enc;
+            encode_id(sub, enc);
+            if (enc.size() != j - (i + 3)) // not the same length: left as it is (refused below)
+                continue;
+            std::copy(enc.begin(), enc.end(), m.begin() + (long)(i + 3));
+            n++;
+            i = j - 1;
+        }
+    }
+    g_parts_substituted += n;
+    return n;
+}
+
+// a log line and, once per session, a notice for the player
+static void told_substituted(unsigned n, const std::string& whose)
+{
+    if (!n)
+        return;
+    H->log(M, SK_INFO, "creations: %s: %u Creepy & Cute part(s) shown as similar base game parts (this game does "
+           "not have that pack, BUG-0341)", whose.c_str(), n);
+    if (!g_subst_told && C.feed) {
+        g_subst_told = true;
+        C.feed("Some Creepy & Cute parts are shown as similar base game parts (this game does not have that pack)");
+    }
+}
+
 std::string world_missing_parts()
 {
     if (!g_parts_fix || g_world_missing.empty())
@@ -572,6 +661,8 @@ static void apply(uint8_t owner, Kind k, uint32_t id, const std::vector<uint8_t>
     void* old = ap.db;
     void* db = nullptr;
     bool unusable = false;
+    if (k == kCreature)
+        told_substituted(substitute_parts(b.recs), "player " + std::to_string(owner) + "'s creature '" + name + "'");
     unsigned miss = k == kCreature ? missing_parts(b.recs) : 0;
     if (miss) { // BUG-0341: its puppet falls back as for an unknown creation
         use = {};
@@ -711,6 +802,7 @@ static void apply_species(const std::vector<uint8_t>& data)
     Bundle b;
     if (!unpack(data, b) || b.recs.empty() || !find_paths() || g_species_db.count(b.key.instance))
         return;
+    told_substituted(substitute_parts(b.recs), "species " + trace::hex(b.key.instance) + " of the host's world");
     if (unsigned miss = missing_parts(b.recs)) { // BUG-0341: an NPC species this game cannot build
         g_parts_refused++;
         H->log(M, SK_WARN, "creations: species %08X of the host's world has %u Creepy & Cute part(s) this game does "
@@ -807,6 +899,7 @@ static void apply_own_species(const std::vector<uint8_t>& data)
     Bundle b;
     if (!unpack(data, b) || b.recs.empty() || !is_crt(b.key) || !find_paths())
         return;
+    told_substituted(substitute_parts(b.recs), "the host's own creation " + trace::hex(b.key.instance));
     if (unsigned miss = missing_parts(b.recs)) { // BUG-0341: not registered, the world is not loaded
         std::string name, author;
         for (auto& r : b.recs)
@@ -1462,6 +1555,27 @@ std::string debug(const std::vector<std::string>& a)
         g_world_drop = a[1] != "off";
         return std::string("the host's world creations are dropped at the session end: ") + (g_world_drop ? "on" : "off") +
                " (dropped " + std::to_string(g_world_dropped) + ", registered " + std::to_string(g_world_pkgs.size()) + ")";
+    }
+    if (a.size() >= 2 && a[0] == "parts") { // parts <hex crt instance>: the parts of the model the game reads for that key (tests, BUG-0341)
+        Key k{(uint32_t)strtoul(a[1].c_str(), nullptr, 16), kInfo[kCreature].type, kInfo[kCreature].group};
+        std::vector<dbpf::Record> recs;
+        if (!records_from_game(k, recs))
+            return "parts " + hex(k.instance) + " none\n";
+        unsigned n = 0, cc = 0, unknown = 0;
+        for (auto& r : recs)
+            if (r.key.type == kBem)
+                for (uint32_t id : model_parts(r.data)) {
+                    n++;
+                    cc += is_cc_part(id);
+                    unknown += is_cc_part(id) && !key_exists({id, kPartProp, kPartGroup});
+                }
+        // the game's own species profile (it builds the model): only when it can (a pack part it does
+        // not have faults in the bake, 0x441F3B)
+        int species = unknown ? -1 : game::species_by_key({k.instance, k.type, k.group}) != nullptr;
+        char b[200];
+        snprintf(b, sizeof b, "parts %s n=%u cc=%u unknown=%u species=%d have_pack=%d substituted=%u refused=%u\n", hex(k.instance).c_str(),
+                 n, cc, unknown, species, (int)have_creepy_cute(), g_parts_substituted, g_parts_refused);
+        return b;
     }
     if (a.size() >= 2 && a[0] == "bem") { // bem <hex crt instance>: the body the game finds for that key (tests)
         Key k{(uint32_t)strtoul(a[1].c_str(), nullptr, 16), kInfo[kCreature].type, kInfo[kCreature].group};

@@ -485,6 +485,8 @@ BUG-0318. GOG 2024, lane 4, guest at 6.7 fps (`frame.limit 150`).
 * The world shared by the host does not hold creation records: the guest's game builds the host's
   creatures from what co-op registers (`world_*`, `own_species_*`, `species_*` packages), so checking
   the bundles before the world covers the world's creatures.
+* ~ superseded in part (2026-10-31): a creature with pack parts is no longer refused but shown with
+  base parts, see #creations-part-substitutes (the refusal stays for a part without a substitute).
 
 ## The own cell's rebuild right after a Cell load (2026-10-31, fix/w22-reports)
 <a id="creations-own-cell-rebuild-timing"></a>
@@ -496,3 +498,41 @@ BUG-0318. GOG 2024, lane 4, guest at 6.7 fps (`frame.limit 150`).
 * ~ After the first load of a join the delay is not enough: 2 of 4 runs did not eat. Unknown why.
 * ✔ `g_cell_set` must be forgotten when `game::stage_epoch(Cell)` changes, or a reload keeps the
   world's cell (BUG-0349, `creations.cell_reapply`).
+
+## Pack parts shown as base parts on a game without the pack (2026-10-31, fix/w24-parts)
+<a id="creations-part-substitutes"></a>
+
+BUG-0354 (the owner's choice for BUG-0341: substitute instead of refusing). Files read with
+`tools/part_substitutes.py` (the game install, read only); runtime on GOG lanes 8 / 9
+(`coop_guest_missing_pack.py`).
+
+* ✔ A part prop (type 0x00B1B104, group 0x40626000) is a property list (big endian count; each:
+  id u32, type u16, flags u16; keys 16 bytes little endian instance/type/group + pad; arrays: count u32,
+  item size u32). Ids that mark a part's role are a family `0xB00F0FXX` (one per role):
+  **0x0FE9 eye**, **0x0FEC mouth**, **0x0FE2 grasper / arm**, **0x0FEF foot**, 0x0FDF bone / leg,
+  0x0FE5 ear, 0x0FF4 horn, 0x0FF7 mace, 0x0FF2 spike; details have none (names checked against the
+  en-us locale of the base parts, e.g. 0x0FE9: Grumpeye, Optic Orb; 0x0FEC: Whalephant, Leeyotch).
+  The ability levels are int properties `0x??C3E5XX` (1..5; e.g. a mouth's diet is one of them:
+  0xB1C3E5B5 with the herbivore mouths, 0xB1C3E5B6 with the carnivore ones); 0x02166464 is the cost
+  (10 / 25 / 75 / 150 / 250), 0x3C652302 / 0x51FA9DFA / 0x03A289AC small editor ranks. The part's name
+  is a text property 0x8F6FC401 (table 0x325440A2 in Data/Locale/en-us/Text.package for the base
+  parts; the pack's table 0xB90C8C60 is not in that package).
+* ✔ The pack's 119 parts: 12 eyes, 12 mouths, 12 graspers, 12 feet, 71 details. The table
+  `kCreepyCuteSubstitutes` (content_packs.h) gives each a base part of `Spore_Graphics` / `PatchData`
+  (not a cell part) with the same role set, the nearest abilities (each level apart 1, a missing or
+  extra ability 3), the same ranks and cost, and the most properties in common; its id has as many
+  0xFE bytes (a model writes 0xFE as `FE 00`, so the substitute fits in place).
+* The guest rewrites the ids in its copy of the creature's model records (`substitute_parts`, before
+  the records are registered: a player's creature, a species of the host's world, the host's own
+  creation of its world); nothing of the pack is sent and no save file is touched. A part without a
+  substitute, or whose substitute this game lacks (`key_exists`), keeps BUG-0341's refusal.
+* ✔ Runtime (lanes 8 / 9): Carol without the pack loads the host's Creature world whose creature
+  (Tiger Horse with the pack part 0x17A60A7F, substituted by 0x0330D834) she plays with: the model her
+  game reads has 33 parts, none of the pack, the species profile is built, 0 faults; Bob with the pack
+  reads the original part (`coop.creations parts 290229B9`). Log: `creations: player 0's creature
+  'Tiger Horse': 1 Creepy & Cute part(s) shown as similar base game parts`, and once per session the
+  notice "Some Creepy & Cute parts are shown as similar base game parts".
+* Gameplay: the guest's own avatar has its own parts (unchanged); the host's creatures and NPC species
+  are run by the host (its abilities count), the guest only shows them, so a substitute changes their
+  look on that guest, not what they do. ? Not checked: an animation that only the pack part has (the
+  base part's own is played on that guest).

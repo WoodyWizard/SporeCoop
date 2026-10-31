@@ -14,7 +14,7 @@ commits: 2a4420a
 tests: guest_missing_pack (tools/tests/coop_guest_missing_pack.py)
 signature: 3010a413:SporeApp.exe+0x41F3B read 0x00000000 (dc04aee5 0x441F3B, FUN_00441910+0x62B, model bake: this+0xC property list null)
 docs: docs/re/creations.md#creations-content-packs
-related: BUG-0344, BUG-0200, BUG-0027
+related: BUG-0344, BUG-0200, BUG-0027, BUG-0354
 switch: creations.missing_parts
 ---
 
@@ -109,3 +109,4 @@ records from the host only on demand, after the load).
 ## History
 - 2026-10-31: opened from the guest's report zip (three crash reports with minidumps and logs) and the host's zip (logs of the same session).
 - 2026-10-31: reproduced on GOG lanes 5/6 (missing pack -> 0x441F3B); fixed on fix/w22-reports (creations.missing_parts).
+- 2026-10-31 (fix/w24-parts): the owner chose substitution over refusal: BUG-0354 shows the pack's parts as similar base parts on a game without it (`creations.part_substitute`); the refusal stays as the fallback for a part without a substitute.

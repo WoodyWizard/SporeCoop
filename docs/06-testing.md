@@ -2379,3 +2379,18 @@ answered right after; a 1 s poller beside a standalone run saw no gap. Same sign
   is the control. A creature that fled has no GFX on the guest for a while after the guest was
   teleported to it: the test waits until `gfx=` is set (the game shows no ring without it). The
   `onscreen=` field (world_to_screen) is not reliable on the headless lanes.
+
+## A guest without the Creepy & Cute pack (guest_missing_pack, 2026-10-31, fix/w24-parts)
+<a id="testing-missing-pack"></a>
+
+* `coop_guest_missing_pack.py` (suite `guest_missing_pack`, `uses_free_lane`: Carol runs on the lab's
+  free lane with `bp1content/BoosterPack_01.package` of that lane moved aside and put back at the end).
+  The host plays Tiger Horse with the pack part 0x17A60A7F. Checked: Carol (no pack) plays the host's
+  Creature world, the model her game reads has no pack part and its species profile is built
+  (`coop.creations parts 290229B9`: cc=0 species=1), Bob (with the pack) reads the original part
+  (cc=1), no fault, no 0x441F3B. BUG-0354, docs/re/creations.md#creations-part-substitutes.
+* The lab's free lane is the first of 2..8 outside the run's lanes and `--skip`: to keep a test on
+  lanes 8 / 9 use `--lane 9 --skip 2,3,4,5,6,7`.
+* FAIL: `SPORE_FIX_OFF=creations.part_substitute` (BUG-0341's refusal: Carol stays in the galaxy menu);
+  with `creations.missing_parts` off too: 0.7.3.1 (0x441F3B, the load hangs).
+
