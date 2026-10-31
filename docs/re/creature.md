@@ -1076,3 +1076,15 @@ BUG-0330. Mod logic, not game RE.
   `team.rescue_reset`: `teamplay::reset()` (session end, world change) makes the rescue ready.
 * ✔ `coop.npc hit <id> <dmg>` on a guest (TakeDamage on the proxy with the guest's avatar as the
   attacker, no push) does not move the guest's avatar (proxies 14-37 m away, lane 4).
+
+## Running proxies and the NPC's state (2026-10-31, fix/w18-creature)
+<a id="creature-kinematic-sync"></a>
+
+BUG-0334. Corrects [the kinematic proxies](#creature-kinematic-proxies).
+
+* CORRECTION (2026-10-31, fix/w18-creature): the first `npc.kinematic` (BUG-0281) placed a running
+  NPC's proxy and went on to the next proxy, so the code after the driving (health, the death replay,
+  the impressed flag) did not run while the host's NPC moved. Observed: a fleeing NPC after a joint
+  hit kept its old health on the guest (`team`: 4.2 / host 1.95, smoke 20261030-235253 and
+  20261030-231732 #2); in `npc_run_hp` (a dashing NPC hit, then killed): health 6.0 / host 4.0 and no
+  death on the guest within 3 s with `npc.kinematic_sync` off. Fixed: only the driving is skipped.
