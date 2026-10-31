@@ -59,6 +59,7 @@ def main():
         print('RESULT: SKIP (no second lane free for the guest without the pack)')
         return 0
     b = lane_b()
+    os.environ['SPORE_LANE_B'] = str(b)  # coop_multi.start_extra starts Carol on lane B
     assert b > 1 and b != lane.LANE, 'Carol needs a lane of her own (never lane 1: its pack is the real install)'
     pk = pack_path(b)
     off = pk + '.bug0341-off'

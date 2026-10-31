@@ -10,7 +10,7 @@ role: host
 versions: 0.7.3.1
 fixed_in: unreleased
 branch: fix/w22-reports
-commits:
+commits: 2a4420a
 tests: host_old_choice (tools/tests/coop_host_old_choice.py)
 signature:
 docs: docs/re/creations.md
@@ -54,7 +54,7 @@ Horse (twoinst.PRESET_CHOICES):
 * FAIL with `SPORE_FIX_OFF=creations.host_world_species`: out/w22/old_choice_fail2.txt (host avatar
   290229B9, the guest draws the host as 7CF18B79).
 * PASS: out/w22/old_choice_pass2.txt (both 065CBE70; the in-world choice still swaps).
-Lab runs: see History. Not tested: the editor return (adopt) part.
+Lab: FAIL 20261031-125112 (fix off), PASS 20261031-125210. Not tested: the editor return (adopt) part.
 
 ## History
 - 2026-10-31: opened from the host's report zip (mark, creations and trace lines).

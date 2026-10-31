@@ -1176,18 +1176,6 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Known: docs/re/creature.md#creature-npc-at-centre; the host logs such NPCs now.
 * Ticket: BUG-0339.
 
-## Creature: a Steam guest crashes loading the host's Creature world (2026-10-31, player report)
-<a id="issue-steam-guest-bake-crash"></a>
-
-* What happens: the guest (Steam build, Windows) crashes at 0x441F3B (`3010a413:SporeApp.exe+0x41F3B`,
-  read of 0) 0.3 s into every load of the host's Creature world: a creature model bake whose
-  property list is null; first from the save reader (a creature in the host's save), then from
-  coop's puppet build of the host's chosen own creature.
-* Reproduce: not yet; plan in BUG-0341 (a lane without `bp1content/BoosterPack_01.package`, or a
-  host playing an own creature from choices.ini, BUG-0344).
-* Known: chain and both candidate causes in the ticket; SporeKit's relocation handling is fine.
-* Ticket: BUG-0341
-
 ## Cell: a guest's own cell applied at the world load is a ghost (2026-10-31, player report)
 <a id="issue-cell-own-cell-ghost"></a>
 
@@ -1207,35 +1195,19 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Reproduce: not tried; knock the host out with a partner, wait for the 10 s respawn.
 * Ticket: BUG-0343
 
-## Creature: the host's avatar becomes an old own creature from choices.ini (2026-10-31, player report)
-<a id="issue-host-old-own-creature"></a>
-
-* What happens: on Cell -> Creature the host's avatar is swapped (SetSpecies) from the species it
-  just made to an own creature chosen in an earlier session; after the creature editor the edit is
-  not taken over ("my species are still unevolved").
-* Reproduce: a host with a creature choice in its choices.ini evolves Cell -> Creature with a guest.
-* Ticket: BUG-0344
-
 ## All: the watchdog dumps stacks while the game is minimized (2026-10-31, player report)
 <a id="issue-watchdog-minimized"></a>
 
 * What happens: `WATCHDOG (no frames ...)` with a stack dump each time a player's game is minimized
   (main thread in Canvas::Tick's minimized sleep); harmless, noisy in reports.
 * Ticket: BUG-0347
-## Cell: after a world reload a guest plays the world's cell, the host shows the guest's own (2026-10-31, player reports)
-<a id="issue-cell-own-cell-once"></a>
+## Cell: after a world reload a guest starts at the pool's start, far from the host (2026-10-31, player reports)
+<a id="issue-cell-reload-own-cell"></a>
 
-* What happens: a guest with an own cell (choices.ini or its newest creation) gets it applied only at
-  the first world load of a session; after the next load (the host's evolution, a manual share) its
-  game keeps the world's cell while the host draws the guest's own one. The guest's next own editor
-  then edits the host's species.
-* Reproduce: guest with an own cell, host loads a Cell world, then shares it again; guest log
-  `own avatar cell model <own> -> <world's> ... (DIFFERENT)` without `level rebuilt`.
-* Known: `creations.cpp apply_own_cell` skips a key equal to `g_cell_set`, cleared only at the
-  session end (code). Observed in two sessions of the 2026-10-31 reports.
-* Next steps: re-apply after every load once the Cell game has settled (BUG-0342).
-* Ticket: BUG-0349 (also BUG-0352: such a load leaves the guest at the pool's start, far from the host).
-
+* What happens: after a reload of the host's Cell world the guest starts at the pool's start, far
+  from the host. The part where the guest kept the world's cell (BUG-0349) is fixed on
+  fix/w22-reports (`creations.cell_reapply`).
+* Ticket: BUG-0352
 ## Cell: a guest's bites show no health ring of the host's creature (2026-10-31, player report)
 <a id="issue-cell-guest-bite-ring"></a>
 

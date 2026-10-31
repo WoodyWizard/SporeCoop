@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.3.1
 fixed_in: unreleased
 branch: fix/w22-reports
-commits:
+commits: c8f91ff
 tests: cell_own_load (tools/tests/coop_cell_own_load.py)
 signature:
 docs: docs/re/creations.md (4.2 Cell stage), docs/re/cell.md#cell-rebuilds-in-session
@@ -51,10 +51,10 @@ it waited for) when `game::stage_epoch(Cell)` changes (a load of a Cell world), 
 applied again after every load.
 
 ## Verification
-Test to write (lanes 5/6): the guest has an own cell chosen (premade BAF1AD40, coop_creations_cell.py
-style), the host loads a Cell world, then shares it again (or evolves); after the second load the
-guest's game model (`S+0x10`, the avatar's +0xFC) equals the key the host draws for the guest's
-puppet. Must FAIL on main (the guest keeps the world's key).
+`tools/tests/coop_cell_own_load.py` (suite `cell_own_load`), reload phase:
+* FAIL with `SPORE_FIX_OFF=creations.cell_reapply`: lab 20261031-130510 (after the reload the guest
+  plays 4DA56CA5, the world's cell, the host draws BAF1AD40).
+* PASS: lab 20261031-130258 and 20261031-130756 (BAF1AD40 on both).
 
 ## History
 - 2026-10-31: opened from the second batch of the 2026-10-31 report zips (host mark, guest log).

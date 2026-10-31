@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.3.1
 fixed_in: unreleased
 branch: fix/w22-reports
-commits:
+commits: 2a4420a
 tests: guest_missing_pack (tools/tests/coop_guest_missing_pack.py)
 signature: 3010a413:SporeApp.exe+0x41F3B read 0x00000000 (dc04aee5 0x441F3B, FUN_00441910+0x62B, model bake: this+0xC property list null)
 docs: docs/re/creations.md#creations-content-packs
@@ -102,7 +102,9 @@ records from the host only on demand, after the load).
   of the worktree (direct run, lanes 5+6): Carol faults at 0x441F3B and stays in LoadGame. The same
   without any fix code: out/w22/missing_pack_1.txt.
 * PASS: out/w22/missing_pack_pass1.txt: Carol is told, stays in the galaxy menu, 0 faults; Bob (with the
-  pack) plays. Lab runs: see History.
+  pack) plays.
+* Lab (Carol on lane 6 via SPORE_FREE_LANE): FAIL 20261031-131550 (fix off: fault 0x441F3B, stuck in
+  LoadGame), PASS 20261031-131835 (told, galaxy menu, 0 faults).
 
 ## History
 - 2026-10-31: opened from the guest's report zip (three crash reports with minidumps and logs) and the host's zip (logs of the same session).

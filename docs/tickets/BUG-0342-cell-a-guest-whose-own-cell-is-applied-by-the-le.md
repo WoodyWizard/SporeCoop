@@ -1,7 +1,7 @@
 ---
 id: BUG-0342
 title: Cell: a guest whose own cell is applied by the level rebuild at the world load is a ghost (cannot eat, bite or be hit)
-status: not-reproduced
+status: open
 kind: bug
 stage: Cell
 reported: 2026-10-31
@@ -9,11 +9,12 @@ source: player reports 2026-10-31 (host and guest marks)
 role: guest
 versions: 0.7.3.1
 fixed_in:
-branch:
-commits:
-tests:
+branch: fix/w22-reports
+commits: 2a4420a c8f91ff
+tests: cell_own_load (tools/tests/coop_cell_own_load.py)
 signature:
 docs: docs/re/creations.md (4.2 Cell stage), docs/re/cell.md#cell-rebuilds-in-session
+switch: cell.own_rebuild
 related: BUG-0345, BUG-0341
 ---
 
@@ -57,24 +58,30 @@ editor) was not a ghost (the guest ate and bit within seconds). Lead from that b
 in the three ghost rebuilds the host's mirrors already filled the pool in the same frame
 (pool=408/231/313); in the good one the pool was empty.
 
-Not reproduced (2026-10-31, GOG lanes 5/6, Wine): `coop_cell_own_load.py`, the guest's choices.ini
-names premade cell BAF1AD40, the cell is applied by the rebuild at the load with mirrors present:
-the guest's game ate plants (AvatarEat, points 0 -> 36, the cells gone on both) and its bite reached
-the host (out/w22/own_load_fail2.txt). A 5 s delay of the rebuild was tried as a fix and dropped
-(no failing test, and by the lead it would rebuild with even more mirrors).
+Reproduced in part (2026-10-31, GOG lanes 5/6, Wine, `coop_cell_own_load.py`: the guest's choices.ini
+names premade cell BAF1AD40; "eats" = the guest swims into 3 different plants and its own game runs
+AvatarEat, the plant gone on both machines):
+* after a RELOAD of the world (the own cell re-applied, BUG-0349) with the rebuild on the first Cell
+  frames: 0 of 3 plants eaten in 2 of 2 runs (lab 20261031-130455, 20261031-130741); with the rebuild
+  5 s later (`cell.own_rebuild`): 3 of 3 in 2 of 2 (20261031-130258, 20261031-130756). Observed.
+* after the FIRST load (the join): 0 of 3 in 2 runs and 3 of 3 in 2 runs, with the delay on as well
+  (switching it off happens only after the join, so the first load always ran with it): not fixed,
+  cause open. The lead of the second batch (mirrors already in the pool at the rebuild) is not
+  checked; the join adds the first state rounds of the host's pool at the same time.
+* Earlier runs where the eat probe found no food or retried the same plant were inconclusive (the
+  probe now takes a new plant each time).
 
 ## Fix
-Not done (not reproduced). Next: a player run with `sk`-level logs at the rebuild (mirrors alive, the
-avatar's +0x16C / collision flags after it), or a test that forces RebuildLevel while the pool holds
-the host's full state round (a 4-player pool, Windows timing).
+Partly: `cell.own_rebuild` (on; off = 0.7.3.1): `apply_own_cell` waits until the loaded Cell world
+has run 5 s and 150 frames before it asks for the rebuild. Fixes the reload case (above). The first
+load (join) can still leave the cell unable to eat: open.
 
 ## Verification
-Test to write (lanes 5/6 after the go-ahead): `coop_cell_own_load.py`: the guest has an own cell
-chosen (premade BAF1AD40 as in coop_creations_cell.py, written to the test profile's choices
-before the join), the host loads a Cell world, the guest gets it; then, on the guest, the game's
-own state: it eats a plant put next to it (food rises in the game's progress, not our counter),
-an NPC bite lowers its hp, and the host's puppet of it collides. Must FAIL on main.
+Reload part: FAIL with `SPORE_FIX_OFF=cell.own_rebuild` lab 20261031-130455 and 20261031-130741
+("after the reload the guest's game still eats plants (0 of 3)"); PASS lab 20261031-130258 and
+20261031-130756 (that check 3 of 3). First load: reported by the test, not checked (open).
 
 ## History
 - 2026-10-31: opened from the host's and guest's report zips (marks, cell trace lines).
 - 2026-10-31: CORRECTION recorded; not reproduced on lanes 5/6 (coop_cell_own_load.py passes on main); the reload part is BUG-0349.
+- 2026-10-31: reload case reproduced and fixed (cell.own_rebuild); first-load case reproduced in 2 of 4 runs, still open.
