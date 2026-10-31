@@ -28,6 +28,16 @@ def hp(con):
     return (float(m.group(1)), float(m.group(2))) if m else (None, None)
 
 
+def pos(con):
+    m = re.search(r'pos=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\)', con.call('coop.avatar')['out'])
+    return tuple(map(float, m.groups())) if m else None
+
+
+def players_apart(host, guest):
+    a, b = pos(host), pos(guest)
+    return round(sum((x - y) ** 2 for x, y in zip(a, b)) ** 0.5, 1) if a and b else None
+
+
 def npc_hp(con, nid):
     """host: the game's health of NPC nid"""
     m = re.search(r'#%s \S+ species=\S+ hp=([\d.]+)' % nid, con.call('coop.npc list')['out'])
@@ -71,11 +81,13 @@ def main():
     if '--seed-nobonus' in sys.argv:
         print('  seed:', host.call('coop.team off')['out'].strip())
     j0, _ = team(host)
+    print(f'  players {players_apart(host, guest)} m apart before the hunt (guest at {pos(guest)})', flush=True)
     h0 = npc_hp(host, nid)
     d = round(max(1.0, min(h0 * 0.3, 40.0)), 2) if h0 else 1.0  # two hits leave it alive
     guest.call(f'coop.npc hit {nid} {d}')
     time.sleep(1.0)
     h1 = npc_hp(host, nid)
+    print(f'  after the guest\'s hit: guest at {pos(guest)}, host at {pos(host)}', flush=True)
     host.call(f'coop.npc hosthit {nid} {d}')
     time.sleep(1.0)
     h2 = npc_hp(host, nid)
@@ -100,6 +112,21 @@ def main():
         host.call('coop.team on')
 
     # pack regeneration while the partner is close (an NPC hit would throw the guest away: set hp)
+    print(f'  players {players_apart(host, guest)} m apart before the regen check (guest at {pos(guest)}, '
+          f'host at {pos(host)}, npc {nid}: {[l.strip()[:120] for l in host.call("coop.npc list")["out"].splitlines() if l.strip().startswith("#" + str(nid) + " ")]})', flush=True)
+    # BUG-0330: the guest's avatar was found ~14 m from the host here in 2 of ~40 runs (the regen then
+    # rightly did nothing: "Alice near"); the check is about the regen, so the guest stands next to
+    # the host first and the guest's own status must say "close (regen)"
+    hpos = pos(host)
+    if hpos:
+        guest.call('coop.npc gopos %.2f %.2f %.2f' % (hpos[0] + 1.5, hpos[1], hpos[2]))
+    close = False
+    for _ in range(10):
+        time.sleep(0.5)
+        close = 'close (regen)' in guest.call('coop.team')['out']
+        if close:
+            break
+    ck(close, f'the guest stands next to the host for the regen check ({players_apart(host, guest)} m)')
     hr0, mx0 = hp(guest)
     guest.call(f'coop.team hp {(mx0 or 10) * 0.6:.1f}')
     time.sleep(0.5)
