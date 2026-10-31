@@ -46,6 +46,8 @@ static bool rts_stage() { return game::mode_id() == 0x1654C02; }
 // `coop.fix npc.rts_views off`: around the tribe only (0.7.3.x).
 static bool g_rts_views_fix = true;
 COOP_FIX("npc.rts_views", "BUG-0291", g_rts_views_fix, "tribe: the host sends a guest the animals around the guest's own view too");
+static bool g_rts_inworld_fix = true;
+COOP_FIX("npc.rts_inworld", "BUG-0328", g_rts_inworld_fix, "tribe: a guest out of the world (loading after a rejoin) forgets its known NPCs, they are sent again");
 
 // ------------------------------------------------------------------ host side
 struct HostNpc {
@@ -531,6 +533,16 @@ static void host_tick(double now, const std::vector<void*>& creatures)
         }
         net::Vec3 view;
         bool has_view = false;
+        net::Vec3 seen_at;
+        if (rts && g_rts_inworld_fix && !C.player_pos(p.id, seen_at)) {
+            // BUG-0328: a guest not in the world (loading the host's world after a rejoin: its last
+            // state still says this place) loses its proxies with the load; forget what it knew so
+            // they are sent again when it is back (the Creature path does this through player_pos)
+            for (uint16_t id : known)
+                send_despawn(p.id, id);
+            known.clear();
+            continue;
+        }
         if (rts) {
             gp = center;
             relevance = kRtsRelevance;
