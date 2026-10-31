@@ -86,8 +86,9 @@ Reload part: FAIL with `SPORE_FIX_OFF=cell.own_rebuild` lab 20261031-130455 and 
 - 2026-10-31: CORRECTION recorded; not reproduced on lanes 5/6 (coop_cell_own_load.py passes on main); the reload part is BUG-0349.
 - 2026-10-31: reload case reproduced and fixed (cell.own_rebuild); first-load case reproduced in 2 of 4 runs, still open.
 - 2026-10-31 (fix/w23-reports): first-load case measured, cause still open. `coop_cell_own_load.py`
-  with diagnostics, lanes 5/6, 24 runs: the guest did not eat after the first load in 11 of 24
-  (lane 6 more often: 3 of 3 in one batch), after the reload never (with cell.own_rebuild). In the
+  with diagnostics, lanes 5/6, 34 runs: the guest did not eat after the first load in 12 of 34
+  (0 of 3 plants; batches of 3 per lane from 0/3 to 3/3), after the reload in 1 of 34 (with
+  cell.own_rebuild on: the reload fix is not complete either). In the
   failing runs, NOT the cause (observed): the cell model data (16 parts, radius 1.259 like the good
   runs), the broadphase (no pending, nothing removed or unsorted, pairs 60-120 of 4096, the avatar's
   object id 0 with its own four endpoints and bounds around its position, the plant's bounds inside
