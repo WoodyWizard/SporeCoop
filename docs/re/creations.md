@@ -460,3 +460,39 @@ BUG-0318. GOG 2024, lane 4, guest at 6.7 fps (`frame.limit 150`).
   of [the own editor save section](#creations-own-editor-save) (the host's legs and a DNA drop in a
   guest's open editor, BUG-0283) was the test's own edit: `coop_legless_guest.py --guest cancel`
   added legs and pressed the save dialog's Cancel (BUG-0317).
+
+## Content packs: Creepy & Cute parts and the part ids in a creature model (2026-10-31, fix/w22-reports)
+<a id="creations-content-packs"></a>
+
+* ✔ Creepy & Cute (GOG: `bp1content/BoosterPack_01.package`, Steam: a DLC of its own) holds 119
+  creature parts (rigblock props, type 0x00B1B104, group 0x40626000) that no package of `Data\` or
+  `DataEP1\` has. List: `mods/coop/content_packs.h` (from the game files' index). It holds no premade
+  creatures.
+* ✔ A creature model (`.bem`, type 0x1A99B06B, group 0x40626200 in My Creations) names each part as
+  its group 0x40626000 (bytes `00 60 62 40`) followed by the instance. Byte runs are packed: `FE n`
+  = the byte before, n more times; a 0xFE byte is written `FE 00` (Tiger Horse's part 0x4BF3FE6A is
+  stored `6A FE 00 F3 4B`). `creations::model_parts` reads them (ids with a run inside are skipped).
+  ~ Not every id after the group is a part prop: Kirgle (fixture) names 0x05D58995, which no game
+  package holds, and builds fine: only ids of the pack list count.
+* ✔ runtime (GOG lanes 5/6, `coop_guest_missing_pack.py`): a game without the pack loading a world
+  whose creature has one C&C part faults at **0x441F3B** (FUN_00441910+0x62B, the model bake reads a
+  null property list `this+0xC`, BUG-0341), 0.5 s into the load, from the save reader. Under Wine the
+  fault is caught and the load hangs; on Windows the game crashes. The same creature on a game with
+  the pack: no fault. A creature from My Creations chosen by the host (choices.ini) alone does not
+  crash a guest that has all its parts.
+* The guest decides with one key: `have_creepy_cute()` = the resource manager finds the first part of
+  the list (logged once: `creations: content: Creepy & Cute parts pack present / NOT present`).
+* The world shared by the host does not hold creation records: the guest's game builds the host's
+  creatures from what co-op registers (`world_*`, `own_species_*`, `species_*` packages), so checking
+  the bundles before the world covers the world's creatures.
+
+## The own cell's rebuild right after a Cell load (2026-10-31, fix/w22-reports)
+<a id="creations-own-cell-rebuild-timing"></a>
+
+* ✔ runtime (lanes 5/6, `coop_cell_own_load.py`): RebuildLevel asked for (`G+0x51D8 = 1`) by
+  `apply_own_cell` on the first frames after a reload of the host's Cell world leaves the guest's new
+  avatar unable to eat plants it swims into (AvatarEat never runs: 0 of 3 in 2 of 2 runs); the same
+  rebuild 5 s / 150 frames later: 3 of 3 (BUG-0342, `cell.own_rebuild`).
+* ~ After the first load of a join the delay is not enough: 2 of 4 runs did not eat. Unknown why.
+* ✔ `g_cell_set` must be forgotten when `game::stage_epoch(Cell)` changes, or a reload keeps the
+  world's cell (BUG-0349, `creations.cell_reapply`).

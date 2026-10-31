@@ -35,3 +35,4 @@ coop_alt_enter.py FAIL with the hook off (fault at 0x7777BE), OK 2/2.
 - 2026-10-25: fixed on fix/alt-enter, released in 0.7.2.4.
 - 2026-10-25: ticket written from the CHANGELOG, commits and reports (backfill).
 - 2026-10-28: switch: game.adapter_key (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).
+- 2026-10-31: seen again in a player zip (crash of 2026-10-25, the player had 0.7.2.3, Windows, exe relocated): already fixed in 0.7.2.4, nothing to do (BUG-0346 made the triage find it).

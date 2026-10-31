@@ -479,6 +479,19 @@ def test_triage():
                'Simulator::cNest::Foo+0x20 (thread 7)\n')
     check(want in got and 'build      GOG 2024 (exe dc04aee5), SporeKit 0.7.3.0, coop 0.7.3.0, mode ?' in got,
           f'(e) a `run:` Environment line changes nothing ({got})')
+    # BUG-0346: Windows loads the exe relocated; tickets name the address numbered from 0x400000
+    for name, text in (('crash-20261031-1.txt', 'SporeCoop crash\n' + env + 'mods: coop 0.7.3.1\n== Exception\n'
+                        '0xC0000005 access violation at 0x00FCAE60 SporeApp.exe Simulator::cNest::Foo+0x20 (thread 7)\n'
+                        '== Modules\n  00760000  190E000 <game>\\SporebinEP1\\SporeApp.exe\n'),
+                       ('sporekit.2.log', 'exe <game>\\SporebinEP1\\SporeApp.exe sha256=dc04aee5 base=0x00760000 '
+                        '(preferred 0x00400000)\nsymbols: overrides_dc04aee5.sym\n[ERROR] the game crashed: exception '
+                        '0xC0000005 at 0x00FCAE60 SporeApp.exe+0x86AE60\n')):
+        p = os.path.join(TMP, name)
+        open(p, 'w').write(text)
+        out = subprocess.run([sys.executable, '-I', tool, p], capture_output=True, text=True).stdout
+        check('address    0xC6AE60' in out and 'BUG-0018' in out,
+              f'(f) {name}: a relocated exe (base 0x760000) is rebased to 0xC6AE60 and finds BUG-0018 '
+              f'({[l for l in out.splitlines() if l.startswith(("address", "known"))]})')
 
 
 # ---------------------------------------------------------------- noenv (BUG-0252)

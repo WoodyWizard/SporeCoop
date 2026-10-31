@@ -72,6 +72,13 @@ void world_species_out(uint8_t peer, const std::vector<const std::vector<uint8_t
 Key local_species(const Key& k); // guest: the host's key of a species -> the key its NPCs use here
 Key host_species(const Key& k);  // guest: ours -> the host's
 
+// BUG-0341: creatures with parts of the "Creepy & Cute" pack on a game without it (the game faulted
+// at 0x441F3B building them): not built here; the host's world is not loaded while one of its own
+// creations needs such parts (the names, "" = none)
+bool have_creepy_cute();
+std::string world_missing_parts();
+std::vector<uint32_t> model_parts(const std::vector<uint8_t>& bem); // part ids a creature model names
+
 // My Creations of this kind, newest first
 std::vector<Option> options(Kind k);
 Option mine(Kind k);

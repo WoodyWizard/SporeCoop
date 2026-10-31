@@ -14,6 +14,7 @@
 #include "net/validate.h"
 #include "sporekit_game.hpp"
 #include "fixes.h"
+#include "content_packs.h"
 #include "trace.h"
 
 namespace creations {
@@ -68,6 +69,17 @@ static dbpf::Package g_es;  // My Creations, read every few seconds
 static bool g_es_ok;
 static double g_opts_read = -100;
 static Key g_choice[kKinds];  // explicit choice ({} = default)
+// BUG-0344: on the host a creature or cell choice holds only in the stage world it was made in (a
+// choice from choices.ini of another world swapped the host's just evolved species for an old
+// creature, and the shared save then named it: BUG-0341), and an editor's result is the host's own
+static bool g_host_world_fix = true;
+COOP_FIX("creations.host_world_species", "BUG-0344", g_host_world_fix, "creations: the host plays its world's species unless it chose another creation in this stage world; an editor's result is its own");
+constexpr uint32_t kNoEpoch = 0xFFFFFFFFu;
+static uint32_t g_choice_epoch[kKinds] = {kNoEpoch, kNoEpoch, kNoEpoch}; // stage world of the choice (host)
+static uint32_t choice_epoch_now(int k)
+{
+    return game::stage_epoch(k == 1 ? modes::kCell : modes::kCreature);
+}
 static bool g_chosen[kKinds]; // the player chose (even "none")
 
 // ---- bundles: a creation with its records ----
@@ -251,6 +263,87 @@ static bool key_exists(const Key& k)
 
 bool key_known(const Key& k) { return key_exists(k); }
 
+// ---- BUG-0341: creatures with parts of a pack this game does not have ----
+// A Steam player without the "Creepy & Cute" parts pack crashed at 0x441F3B (a model bake with a
+// null property list) on every load of a host world whose creature had one of its parts, and on the
+// host's puppet built from it. Such a creation is not registered here (its puppet falls back as for
+// an unknown creation), and a world that needs one is not loaded (world.cpp asks
+// world_missing_parts): the player gets a message instead of a crash.
+static bool g_parts_fix = true;
+COOP_FIX("creations.missing_parts", "BUG-0341", g_parts_fix, "creations: a creature with Creepy & Cute parts is not built on a game without that pack, and a world that needs one is not loaded (0x441F3B)");
+constexpr uint32_t kPartProp = 0x00B1B104, kPartGroup = 0x40626000;
+static int g_have_cc = -1; // this game has the Creepy & Cute parts (-1: not asked yet)
+static unsigned g_parts_refused;
+static std::map<uint32_t, std::string> g_world_missing; // the host's world creatures this game cannot build
+
+bool have_creepy_cute()
+{
+    if (g_have_cc < 0 && a_RmPtr && *(void**)a_RmPtr) {
+        g_have_cc = key_exists({kCreepyCuteParts[0], kPartProp, kPartGroup}) ? 1 : 0;
+        H->log(M, SK_INFO, "creations: content: Creepy & Cute parts pack %s", g_have_cc ? "present" : "NOT present");
+    }
+    return g_have_cc != 0;
+}
+
+// the part ids a creature model (bem record) names: a part key is written as its group 0x40626000
+// (bytes 60 62 40 after a 00) and the instance right after it. The model packs byte runs as 0xFE n
+// (the byte before, n more times) and writes a 0xFE byte as 0xFE 0x00; an id with a run in it is
+// skipped (docs/re/creations.md#creations-content-packs)
+std::vector<uint32_t> model_parts(const std::vector<uint8_t>& m)
+{
+    std::vector<uint32_t> out;
+    for (size_t i = 0; i + 7 <= m.size(); i++) {
+        if (m[i] != 0x60 || m[i + 1] != 0x62 || m[i + 2] != 0x40)
+            continue;
+        uint8_t id[4];
+        int n = 0;
+        size_t j = i + 3;
+        bool ok = true;
+        while (n < 4 && j < m.size()) {
+            if (m[j] == 0xFE) {
+                if (j + 1 >= m.size() || m[j + 1] != 0) {
+                    ok = false;
+                    break;
+                }
+                id[n++] = 0xFE;
+                j += 2;
+            } else
+                id[n++] = m[j++];
+        }
+        if (ok && n == 4)
+            out.push_back(id[0] | id[1] << 8 | id[2] << 16 | (uint32_t)id[3] << 24);
+    }
+    return out;
+}
+
+static bool is_cc_part(uint32_t id)
+{
+    return std::binary_search(std::begin(kCreepyCuteParts), std::end(kCreepyCuteParts), id);
+}
+
+// how many parts of the creation this game cannot build (0 with the fix off or the pack present)
+static unsigned missing_parts(const std::vector<dbpf::Record>& recs)
+{
+    if (!g_parts_fix || have_creepy_cute())
+        return 0;
+    unsigned n = 0;
+    for (auto& r : recs)
+        if (r.key.type == kBem)
+            for (uint32_t id : model_parts(r.data))
+                n += is_cc_part(id);
+    return n;
+}
+
+std::string world_missing_parts()
+{
+    if (!g_parts_fix || g_world_missing.empty())
+        return {};
+    std::string s;
+    for (auto& [k, name] : g_world_missing)
+        s += (s.empty() ? "'" : ", '") + name + "'";
+    return s;
+}
+
 static Key avatar_species_key()
 {
     void* av = game::mode_id() == modes::kCreature ? game::avatar() : nullptr;
@@ -275,6 +368,8 @@ Option mine(Kind k)
     // BUG-0278: a choice of a creation of the host's world that is not one of ours (taken over from
     // an editor by 0.7.3.0) is not a choice; "the world's own" follows the host's creature
     bool chosen = g_chosen[k];
+    if (g_host_world_fix && chosen && !guest && k != kUfo && g_choice[k].instance && g_choice_epoch[k] != choice_epoch_now(k))
+        chosen = false; // BUG-0344: a choice of another world (or before this stage): the world's own
     if (g_pre_editor_fix && chosen && guest && k != kUfo && g_choice[k].instance &&
         host_world_key(k, g_choice[k].instance) && !own_option(k, g_choice[k]))
         chosen = false;
@@ -477,7 +572,18 @@ static void apply(uint8_t owner, Kind k, uint32_t id, const std::vector<uint8_t>
     void* old = ap.db;
     void* db = nullptr;
     bool unusable = false;
-    if (!b.recs.empty() && find_paths()) {
+    unsigned miss = k == kCreature ? missing_parts(b.recs) : 0;
+    if (miss) { // BUG-0341: its puppet falls back as for an unknown creation
+        use = {};
+        unusable = true;
+        g_unusable++;
+        g_parts_refused++;
+        H->log(M, SK_WARN, "creations: player %u's creature '%s' has %u Creepy & Cute part(s) this game does not have: "
+               "not built here (BUG-0341)", owner, name.c_str(), miss);
+        if (C.feed)
+            C.feed((C.name_of ? C.name_of(owner) : "a player") + "'s creature uses Creepy & Cute parts this game does "
+                   "not have: shown as another creature here");
+    } else if (!b.recs.empty() && find_paths()) {
         // the same id everywhere: owner + content hash (a new version after an editor = a new key)
         uint8_t seed[5] = {owner, (uint8_t)id, (uint8_t)(id >> 8), (uint8_t)(id >> 16), (uint8_t)(id >> 24)};
         uint32_t inst = 0x7C000000u | (fnv(seed, 5) & 0x00FFFFFFu);
@@ -605,6 +711,12 @@ static void apply_species(const std::vector<uint8_t>& data)
     Bundle b;
     if (!unpack(data, b) || b.recs.empty() || !find_paths() || g_species_db.count(b.key.instance))
         return;
+    if (unsigned miss = missing_parts(b.recs)) { // BUG-0341: an NPC species this game cannot build
+        g_parts_refused++;
+        H->log(M, SK_WARN, "creations: species %08X of the host's world has %u Creepy & Cute part(s) this game does "
+               "not have: not registered (BUG-0341)", b.key.instance, miss);
+        return;
+    }
     std::wstring path = g_dir + L"\\species_" + std::to_wstring(b.key.instance) + L".package";
     void* db = package_for(path, b.recs, kPrioWorld);
     if (!db) {
@@ -695,6 +807,19 @@ static void apply_own_species(const std::vector<uint8_t>& data)
     Bundle b;
     if (!unpack(data, b) || b.recs.empty() || !is_crt(b.key) || !find_paths())
         return;
+    if (unsigned miss = missing_parts(b.recs)) { // BUG-0341: not registered, the world is not loaded
+        std::string name, author;
+        for (auto& r : b.recs)
+            if (r.key.type == kMeta)
+                dbpf::metadata_names(r.data, author, name);
+        g_world_missing[b.key.instance] = name.empty() ? trace::hex(b.key.instance) : name;
+        g_parts_refused++;
+        H->log(M, SK_WARN, "creations: the host's own creation %08X '%s' of its world has %u Creepy & Cute part(s) this "
+               "game does not have: not registered, the world cannot be loaded here (BUG-0341)", b.key.instance,
+               name.c_str(), miss);
+        return;
+    }
+    g_world_missing.erase(b.key.instance);
     uint32_t h = 0x811C9DC5;
     for (auto& r : b.recs) // the creation itself (not the host's creaturedata cache)
         if (r.key.instance == b.key.instance && r.key.type != kCreatureData)
@@ -868,12 +993,35 @@ static Key own_key_here(Kind kind)
 // the own cell: the player's cell model, then the level is rebuilt (the cell hatches again)
 static Key g_cell_set;
 static bool g_cell_rebuilding;
+// BUG-0349: the own cell is applied again after every load of a Cell world: g_cell_set (the key
+// already applied) lived until the session end, so after a reload the guest kept the world's cell
+// while the others drew its own one (and its next cell editor edited the host's species)
+// BUG-0342: a rebuild asked for on the first frames of a freshly loaded Cell world left the guest's
+// cell unable to eat for minutes (players; lanes 5/6: 0 of 8 plants it swam into, at the first
+// load and after a reload); 5 s later it eats. The own cell waits until the loaded Cell world has
+// run 5 s and 150 frames.
+static bool g_own_rebuild_fix = true;
+COOP_FIX("cell.own_rebuild", "BUG-0342", g_own_rebuild_fix, "creations: the own cell is applied (level rebuild) only after the loaded Cell world has run 5 s");
+static double g_cell_since;
+static uint64_t g_cell_since_frame;
+static bool g_cell_reapply_fix = true;
+COOP_FIX("creations.cell_reapply", "BUG-0349", g_cell_reapply_fix, "creations: the own cell is applied again after every load of a Cell world");
+static uint32_t g_cell_epoch_seen = 0xFFFFFFFFu;
 static void apply_own_cell()
 {
     uint8_t* s = cell_S();
     uint8_t* g = modes::cell_game();
     if (!s || !g)
         return;
+    if (uint32_t e = game::stage_epoch(modes::kCell); e != g_cell_epoch_seen) {
+        g_cell_epoch_seen = e;
+        g_cell_since = H->time_seconds();
+        g_cell_since_frame = H->frame_index();
+        if (g_cell_reapply_fix) { // a new Cell world: its avatar has the world's model again
+            g_cell_set = {};
+            g_cell_rebuilding = false;
+        }
+    }
     if (g_cell_rebuilding) { // wait for the new avatar with the new model, then join the partner
         uint8_t* av = modes::cell_at(*(uint32_t*)(g + 0x411C));
         if (av && *(uint32_t*)(av + 0xFC) == g_cell_set.instance && *(uint8_t*)(g + 0x51D8) == 0) {
@@ -883,6 +1031,9 @@ static void apply_own_cell()
         }
         return;
     }
+    if (g_own_rebuild_fix && !g_cell_rebuilding &&
+        (H->time_seconds() - g_cell_since < 5.0 || H->frame_index() - g_cell_since_frame < 150))
+        return;
     Key k = own_key_here(kCell);
     if (!k.instance || k == cell_key() || k == g_cell_set || !key_exists(k))
         return;
@@ -1055,6 +1206,10 @@ static bool adopt_after_editor(double now)
         return false;
     }
     g_adopt_until = 0;
+    if (g_host_world_fix && is_host()) { // BUG-0344: the editor's result (the avatar's species) is the own one
+        g_choice_epoch[g_adopt_kind] = kNoEpoch;
+        return false;
+    }
     if (!(a == mine(g_adopt_kind).key)) {
         g_opts_read = -100;
         refresh_options(now);
@@ -1173,6 +1328,7 @@ void on_session_end()
         g_world_pkgs.clear();
     }
     g_asked.clear(); // (registered species packages stay: the same world may come back)
+    g_world_missing.clear();
     g_own_sent.clear();
     g_remap.clear(); // (their packages stay registered: the same world may come back)
     g_unmap.clear();
@@ -1209,6 +1365,7 @@ void choose(Kind k, const Key& key)
 {
     g_chosen[k] = true;
     g_choice[k] = key;
+    g_choice_epoch[k] = choice_epoch_now(k);
     if (find_paths()) {
         std::wstring v = key.instance ? std::wstring(L"0x") + std::to_wstring(0) : L"0";
         wchar_t hx[16];
@@ -1255,9 +1412,9 @@ std::string status()
     char b[400];
     snprintf(b, sizeof b,
              "creations: in=%u out=%u registered=%u avatar_swaps=%u waits_on_disk=%u unusable=%u world_swaps=%u "
-             "species asked=%u got=%u sent=%u missing=%u own_out=%u own_in=%u rx_dropped=%u adopt_skipped=%u%s%s\n",
+             "species asked=%u got=%u sent=%u missing=%u own_out=%u own_in=%u rx_dropped=%u adopt_skipped=%u parts_refused=%u world_missing=%u cc=%d%s%s\n",
              g_bundles_in, g_bundles_out, g_registered, g_swaps, g_waits_on_disk, g_unusable, g_world_swaps,
-             g_species_asked, g_species_got, g_species_sent, g_species_missing, g_own_out, g_own_in, g_rx_dropped, g_adopt_skipped, g_last_error.empty() ? "" : " error=", g_last_error.c_str());
+             g_species_asked, g_species_got, g_species_sent, g_species_missing, g_own_out, g_own_in, g_rx_dropped, g_adopt_skipped, g_parts_refused, (unsigned)g_world_missing.size(), g_have_cc, g_last_error.empty() ? "" : " error=", g_last_error.c_str());
     s += b;
     if (uint8_t* g = modes::cell_game(); g && game::mode_id() == modes::kCell) {
         uint8_t* av = modes::cell_at(*(uint32_t*)(g + 0x411C));

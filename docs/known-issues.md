@@ -1178,3 +1178,45 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   the host and respawned at the nest); not reproduced by the pool call or a pinned NPC.
 * Known: docs/re/creature.md#creature-npc-at-centre; the host logs such NPCs now.
 * Ticket: BUG-0339.
+
+## Cell: a guest's own cell applied at the world load is a ghost (2026-10-31, player report)
+<a id="issue-cell-own-cell-ghost"></a>
+
+* What happens: after the own cell's level rebuild the guest's game does not eat what the cell swims
+  into (players: no eat, bite or hit for minutes).
+* Reproduce: `coop_cell_own_load.py` (guest choices.ini cell BAF1AD40). After a reload: 2 of 2 lab
+  runs without `cell.own_rebuild` (fixed on fix/w22-reports: the rebuild waits 5 s). After the
+  first load (the join): 2 of 4 runs even with the fix: open.
+* Known: CORRECTION: not "every rebuild at a load" (a rebuild right after the guest's editor was fine,
+  second batch); lead not checked: the host's mirrors already in the pool at the rebuild.
+* Ticket: BUG-0342
+## Cell: the view is off centre after a co-op small respawn (2026-10-31, player report)
+<a id="issue-cell-respawn-camera"></a>
+
+* What happens: after a knockout and "respawned small next to <partner>" the host's view stayed off
+  the cell.
+* Reproduce: not tried; knock the host out with a partner, wait for the 10 s respawn.
+* Ticket: BUG-0343
+
+## All: the watchdog dumps stacks while the game is minimized (2026-10-31, player report)
+<a id="issue-watchdog-minimized"></a>
+
+* What happens: `WATCHDOG (no frames ...)` with a stack dump each time a player's game is minimized
+  (main thread in Canvas::Tick's minimized sleep); harmless, noisy in reports.
+* Ticket: BUG-0347
+## Cell: after a world reload a guest starts at the pool's start, far from the host (2026-10-31, player reports)
+<a id="issue-cell-reload-own-cell"></a>
+
+* What happens: after a reload of the host's Cell world the guest starts at the pool's start, far
+  from the host. The part where the guest kept the world's cell (BUG-0349) is fixed on
+  fix/w22-reports (`creations.cell_reapply`).
+* Ticket: BUG-0352
+## Cell: a guest's bites show no health ring of the host's creature (2026-10-31, player report)
+<a id="issue-cell-guest-bite-ring"></a>
+
+* What happens: the guest's weapon bite on a host creature is sent to the host and skips the game's
+  DamageCell, which draws the health ring and the hurt animation; the host's puppet of a guest
+  shows no eating.
+* Reproduce: guest with a weapon cell bites a creature next to the host (coop_cell_spin.py setup).
+* Known: code reading of the DamageCell hook in cellsync.cpp; not checked in a game.
+* Ticket: BUG-0350. Related open question "a bunch of DNA" after a cell editor: BUG-0351.
