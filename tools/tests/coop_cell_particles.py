@@ -10,8 +10,8 @@ lab 20261031-124047-fix-w22-cell; 0x00E4E384 on a guest).
 1. Two players in Cell, food 300 on the host. The guest's pool is filled to 1499 used particles
    (`coop.pool particles 1499`, real allocations by the game's own ParticleAlloc).
 2. --rounds times the guest's mirrors are removed (`coop.pool zap 5000`) and the host's next state
-   makes them again: every mirror near the camera asks for particles from the full pool, every
-   removal frees what it got.
+   makes them again; the pool is filled to 1499 again right after each removal, so every new mirror
+   near the camera asks for particles from a full pool, every removal frees what it got.
 3. Checked on the guest (the game's own state): no cell holds -1 among its particles, the pool's
    free-list head stays inside the pool, no caught fault, the pool's count (the game's header) never below 0 or
    over 1500, its own cell stays where it was (no jump), the mirrors come back.
@@ -62,6 +62,7 @@ def main():
     counts, jumps, minus1, head_bad = [], [], [], []
     for i in range(a.rounds):
         guest.call('coop.pool zap 5000')
+        guest.call('coop.pool particles 1499')  # the removals gave particles back: full again for the new mirrors
         time.sleep(2.5)
         s = out(guest, 'coop.pool sap')
         counts.append(num(s, 'particles'))
