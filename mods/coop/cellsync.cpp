@@ -3833,7 +3833,8 @@ std::string debug(const std::vector<std::string>& a)
         for_each_cell([&](uint8_t* c, uint32_t) {
             if (moved >= want || modes::cell_is_puppet(c) || F<uint8_t>(c, kDead) || F<uint8_t>(c, kDying))
                 return;
-            set_pos(c, {me.x + 30.f, me.y - 200.f + 0.4f * (float)moved, me.z});
+            // 40 m tall, 8 m to our right: inside our active area (cells taken out of it are culled)
+            set_pos(c, {me.x + 8.f, me.y - 20.f + 40.f * (float)moved / (float)std::max(want, 1), me.z});
             moved++;
         });
         char b[96];
