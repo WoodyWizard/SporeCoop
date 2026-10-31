@@ -2258,3 +2258,15 @@ answered right after; a 1 s poller beside a standalone run saw no gap. Same sign
   vehicle sample's facing error and the host's turn over the window.
 * `coop_civ_ai_spawn.py` checks `removed_local=` (the guest's own vehicles it killed), not
   `removed=` (also the mirrors of host vehicles that went away meanwhile, BUG-0327).
+## Tribe rejoin coverage and the campaign's member probe (2026-10-30, fix/w16-tribe)
+<a id="testing-tribe-rejoin-npcs"></a>
+
+* `coop_tribe_rejoin_npcs.py [--rounds 2]` (suite `tribe_rejoin_npcs`, ~3 min): the guest leaves and
+  joins again twice in Tribe (loads the host's world), then must have the host's NPCs near it
+  (coop_multi coverage at least 85 %, none missing in the last sample). A scenario test for
+  BUG-0328, which it did not reproduce.
+* The campaign's sync note, when a kind is out of sync, now holds the worst object's line on the host
+  and on that guest (`coop.tribe` for t, `coop.npc list` for n; the guest's has how its mirror is
+  driven), for BUG-0329.
+* `coop_sync_multi.py --fixture tribe --spawn N`: the campaign's member setup first; a tribe member
+  over 2.5 m off on a guest is printed with its `coop.tribe` line on every machine.

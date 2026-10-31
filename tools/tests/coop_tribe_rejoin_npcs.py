@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Tribe: a guest that leaves and joins again gets all the host's NPCs again (BUG-0328).
 
-The campaign's guest Dave left and joined again in Tribe; for the 4 s it still played its old copy
-of the world the host counted it as present, sent it the NPCs around it and noted them as known;
-then the host's world arrived, the guest loaded it and lost those proxies. In Tribe the host never
-checked that the guest was in the world (no avatar: the shared tribe centre is its position), so
-it never sent them again: coverage 75%, 6 NPCs missing for the rest of the play.
+The campaign's guest Dave left and joined again in Tribe and then lacked 6 host NPCs (coverage 75%)
+for the last ~50 s of the play. Suspected (not shown): the host counted it present for the 4 s it
+still played its old copy and while it loaded (its last state still said "this place"; in Tribe
+the host does not check that a guest is in the world), so NPCs it noted as known then were never
+sent again.
 
 1. Two games on the tribe fixture; the guest's coverage of the host's NPCs near it (coop_multi).
 2. The guest leaves (`coop.leave`), joins again, loads the host's world and plays Tribe again.
