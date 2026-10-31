@@ -25,6 +25,7 @@ def main():
     host, guest = start('space')
     ck = Checks()
     time.sleep(3)
+    fz.get_drive(host, 'host', ck)  # (the fixture's ship has no interstellar drive: no galaxy view)
     fz.settle(host, 'host', timeout=60)
     for name, x, y in BUTTONS:
         host.call(f'click {x} {y}')
