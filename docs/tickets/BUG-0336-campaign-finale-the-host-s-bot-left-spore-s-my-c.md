@@ -1,20 +1,20 @@
 ---
 id: BUG-0336
 title: Campaign finale: the host's bot left Spore's My Collections / Mission Log window open; it pauses the game and takes no wheel, the whole finale stalls
-status: open
+status: fixed
 kind: bug
 stage: Space
 reported: 2026-10-31
 source: lab 20261031-024148 campaign#1 (lane 2), run dir out/lane2/campaign/20261031-024151
 role: host
 versions: main 8874eb1
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w19-space
+commits: 1b4e719, 71a5ebb
+tests: space_stray_window
 signature:
-docs:
-related:
+docs: docs/06-testing.md#testing-space-stray-window
+related: BUG-0303, BUG-0335
 ---
 
 ## Report
@@ -47,8 +47,19 @@ and `play_space` captions (the Space play bot). `OLD_FINALE_TOOL=1` turns it off
 tools already had for BUG-0303). No mod change.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+Test `tools/tests/coop_space_stray_window.py` (suite `space_stray_window`): the host opens My
+Collections, then the Sporepedia with real clicks on the HUD buttons; each time the finale tools
+must bring it to the galaxy view with the game time running (the game's context and pause flag).
+
+* FAIL without the close (`OLD_FINALE_TOOL=1`): lab 20261031-050021 (lane 8): both windows left
+  the host at ctx=1 busy=1, the state of the campaign's host.
+* PASS: labs 20261031-045500 (lane 9) and 20261031-050839 (lane 8): "a window pauses the game (no
+  caption): Esc closes it", galaxy view, busy=0.
+* Campaign replay, 4 players, `coop_campaign.py --from space --to space --minutes 3 --players 4
+  --no-rejoins` (lane 9, run dir out/lane9/campaign/20261031-050854 in the worktree): RESULT OK,
+  every player entered the core and got the Staff of Life. The Space play bots closed such a
+  window three times in its 3 minutes (Alice, Bob, Carol): the bots open them often.
 
 ## History
 - 2026-10-31: opened.
+- 2026-10-31 (fix/w19-space): test tools close windows that pause the game without a caption; FAIL 20261031-050021, PASS 20261031-045500 + 20261031-050839, campaign replay OK, Space regression 20261031-051044 7/7 (lane 8).
