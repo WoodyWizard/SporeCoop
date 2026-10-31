@@ -1856,6 +1856,73 @@ static void SK_CDECL h_Soft(uint8_t* c, void* res, float dt)
     g_soft_turns++;
 }
 
+// ---- the cell broadphase's sweep (BUG-0337, docs/re/cell.md#cell-sap-active-list) ----
+// SweepPrune::UpdatePairs 0xBBB450 sweeps axis 0 with the open objects in an int[1024] on its
+// stack and no bound check: the 1025th open object overwrites its return address (and the next
+// ones the caller's frame, SimUpdate's), so `ret` jumps to a cell's broadphase id (0x196, 0x4D6...)
+// every frame. The fix runs the same sweep with an open list on the heap: the same merges (the
+// game's MergeAxis), the same pair test (the game's), the same pairs in the same order.
+// Old (`coop.fix cell.sap_sweep off`): the game's UpdatePairs.
+static bool g_fix_sap_sweep = true;
+COOP_FIX_UNSAFE("cell.sap_sweep", "BUG-0337", g_fix_sap_sweep, "cell: the broadphase sweep keeps its open objects on the heap, not in the game's int[1024] on the stack (over 1024 open objects overwrote UpdatePairs' return address)");
+static uintptr_t a_UpdatePairs, a_MergeAxis, a_Overlap;
+static void(__cdecl* o_UpdatePairs)(uint8_t*);
+static uint32_t g_sap_over, g_sap_peak, g_sap_sweeps, g_sap_left;
+static std::string sap_report(); // sweeps with over 1024 open objects, the most open at once, sweeps of ours
+static void __cdecl h_UpdatePairs(uint8_t* s)
+{
+    if (!g_fix_sap_sweep || !s || !a_MergeAxis || !a_Overlap)
+        return o_UpdatePairs(s);
+    int n = 0;
+    for (int axis = 0; axis < 2; axis++)
+        n = skg::cdecl_call<int>(a_MergeAxis, s, F<void*>(s, 0x24 + 4 * axis), F<int>(s, 0x20), F<void*>(s, 0x30 + 4 * axis),
+                                 F<int>(s, 0x2C), axis);
+    F<int>(s, 0x20) = n;
+    F<int>(s, 0x2C) = 0;
+    F<int>(s, 8) = 0;
+    g_sap_sweeps++;
+    static std::vector<int> open; // reused: no allocation per frame
+    open.clear();
+    uint32_t peak = 0;
+    uint8_t* ep = F<uint8_t*>(s, 0x24);
+    uint8_t* objs = F<uint8_t*>(s, 0x14);
+    for (int i = 0; i < n; i++) {
+        int id = F<int16_t>(ep, 8 * i + 2);
+        uint8_t* o = objs + 16 * id;
+        if (F<int16_t>(ep, 8 * i) == 0) {
+            for (int other : open) {
+                uint8_t* p = objs + 16 * other;
+                if (skg::cdecl_call<uint8_t>(a_Overlap, s, 0, o, p) && F<int>(s, 8) != F<int>(s, 0)) {
+                    int a = F<int>(o, 0), b = F<int>(p, 0);
+                    int* pair = (int*)(F<uint8_t*>(s, 0xC) + 8 * (size_t)F<int>(s, 8));
+                    pair[0] = std::min(a, b);
+                    pair[1] = std::max(a, b);
+                    F<int>(s, 8)++;
+                }
+            }
+            open.push_back(id);
+            peak = std::max(peak, (uint32_t)open.size());
+        } else {
+            auto it = std::find(open.begin(), open.end(), id);
+            if (it != open.end()) {
+                *it = open.back();
+                open.pop_back();
+            }
+        }
+    }
+    g_sap_peak = std::max(g_sap_peak, peak);
+    g_sap_left = std::max(g_sap_left, (uint32_t)open.size());
+    if (peak > 1024 && !g_sap_over++) // the first one per session (the count is in `coop.pool sap`)
+        H->log(M, SK_WARN, "cell: the broadphase sweep held %u open objects (the game's list holds 1024, BUG-0337)", peak);
+    // objects still open after the sweep have their max endpoint before their min: a broken order
+    static double s_told;
+    if (open.size() > 64 && H->time_seconds() - s_told > 30) {
+        s_told = H->time_seconds();
+        H->log(M, SK_WARN, "cell: %u broadphase objects left open by the sweep (BUG-0337): %s", (unsigned)open.size(),
+               sap_report().c_str());
+    }
+}
+
 bool init(const SkHost* host, SkMod* mod, Ctx ctx)
 {
     H = host;
@@ -1932,6 +1999,11 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
         H->hook_create(M, (void*)a_Bite, (void*)h_Bite, (void**)&o_Bite);
     if (a_PickTargets) // BUG-0306
         H->hook_create(M, (void*)a_PickTargets, (void*)h_PickTargets, (void**)&o_PickTargets);
+    a_UpdatePairs = H->sym("SweepPrune::UpdatePairs");
+    a_MergeAxis = H->sym("SweepPrune::MergeAxis");
+    a_Overlap = H->sym("SweepPrune::OverlapOther");
+    if (a_UpdatePairs && a_MergeAxis && a_Overlap) // GOG 2024 only (BUG-0337)
+        H->hook_create(M, (void*)a_UpdatePairs, (void*)h_UpdatePairs, (void**)&o_UpdatePairs);
     if (a_ChunkA && a_ChunkB) {
         H->hook_create(M, (void*)a_ChunkA, (void*)h_ChunkA, (void**)&o_ChunkA);
         H->hook_create(M, (void*)a_ChunkB, (void*)h_ChunkB, (void**)&o_ChunkB);
@@ -3098,6 +3170,126 @@ static std::string prey_report(float r, bool rows)
     return out;
 }
 
+// The cell broadphase (SweepPrune, G+0x4104, docs/re/cell.md#cell-sap-active-list): replays the
+// axis-0 sweep of SweepPrune::UpdatePairs over the sorted endpoints and reports the most objects
+// open at once (the game's stack list holds 1024) and the objects still open at the end (a max
+// endpoint before its min), with what those cells are.
+static std::string sap_report()
+{
+    uint8_t* g = G();
+    uint8_t* sap = g ? F<uint8_t*>(g, 0x4104) : nullptr;
+    if (!sap)
+        return "sap: none";
+    int cap = F<int>(sap, 4), n = F<int>(sap, 0x20), pend = F<int>(sap, 0x2C);
+    auto* ep = F<uint8_t*>(sap, 0x24);
+    uint8_t* objs = F<uint8_t*>(sap, 0x14);
+    if (!ep || !objs || n < 0 || n > 2 * cap || cap <= 0 || cap > 0x8000)
+        return "sap: bad header";
+    std::vector<int> active;
+    std::vector<uint8_t> open(cap, 0);
+    // entries per id: an object has one min and one max per axis; more min entries with one id
+    // are endpoints left behind (a RemoveObject that marked other entries)
+    std::vector<uint16_t> mins(cap, 0), maxs(cap, 0);
+    for (int i = 0; i < n; i++) {
+        int16_t type = F<int16_t>(ep, 8 * i), id = F<int16_t>(ep, 8 * i + 2);
+        if (id >= 0 && id < cap && type != -2)
+            (type == 0 ? mins : maxs)[id]++;
+    }
+    int dup_min = 0, lone_min = 0, lone_max = 0;
+    for (int i = 0; i < cap; i++) {
+        dup_min += mins[i] > 1;
+        lone_min += mins[i] > maxs[i];
+        lone_max += maxs[i] > mins[i];
+    }
+    int live_objs = F<int>(sap, 0x10);
+    int peak = 0, nan_v = 0, removed = 0, unsorted = 0, max_first = 0;
+    float prev = -INFINITY;
+    for (int i = 0; i < n; i++) {
+        int16_t type = F<int16_t>(ep, 8 * i), id = F<int16_t>(ep, 8 * i + 2);
+        float v = F<float>(ep, 8 * i + 4);
+        if (type == -2) {
+            removed++;
+            continue;
+        }
+        if (v != v)
+            nan_v++;
+        else {
+            if (v < prev)
+                unsorted++;
+            prev = v;
+        }
+        if (id < 0 || id >= cap)
+            continue;
+        if (type == 0) {
+            active.push_back(id);
+            open[id]++;
+            peak = std::max(peak, (int)active.size());
+        } else {
+            auto it = std::find(active.begin(), active.end(), (int)id);
+            if (it == active.end())
+                max_first++;
+            else {
+                *it = active.back();
+                active.pop_back();
+                open[id]--;
+            }
+        }
+    }
+    // what the objects left open are: cell +0x364 holds the cell's broadphase object
+    std::unordered_set<uint32_t> mirror_local;
+    for (auto& [h, m] : g_mirrors)
+        mirror_local.insert(m.local);
+    int k_mirror = 0, k_puppet = 0, k_avatar = 0, k_bg = 0, k_other = 0, k_none = 0, inverted = 0;
+    float rmin = INFINITY, rmax = -INFINITY;
+    std::unordered_map<int, uint8_t*> by_obj;
+    uint8_t* data = F<uint8_t*>(g, 0x1C);
+    uint32_t used = F<uint32_t>(g, 0x1C + 0x10), size = F<uint32_t>(g, 0x1C + 0x14);
+    if (data && size == 0x398)
+        for (uint32_t slot = 0; slot < used && slot < 4096; slot++) {
+            uint8_t* c = data + (size_t)slot * size;
+            if ((F<uint32_t>(c, 0) & 0xFFFF) == slot && F<int>(c, 0x364) >= 0 && F<int>(c, 0x364) < cap)
+                by_obj[F<int>(c, 0x364)] = c;
+        }
+    char sample[200] = "";
+    for (int id : active) {
+        auto it = by_obj.find(id);
+        uint8_t* c = it == by_obj.end() ? nullptr : it->second;
+        if (!c) {
+            k_none++;
+            continue;
+        }
+        // its endpoint values (object record: +8 min index per axis, +0xC max index per axis)
+        uint8_t* o = objs + 16 * (size_t)id;
+        int mi = F<int16_t>(o, 8) & 0x7FFF, ma = F<int16_t>(o, 0xC) & 0x7FFF;
+        if (mi < n && ma < n && F<float>(ep, 8 * mi + 4) > F<float>(ep, 8 * ma + 4))
+            inverted++;
+        float r = F<float>(c, kSize);
+        rmin = std::min(rmin, r), rmax = std::max(rmax, r);
+        uint32_t idx = F<uint32_t>(c, 0);
+        if (idx == avatar_idx())
+            k_avatar++;
+        else if (modes::cell_is_puppet(c))
+            k_puppet++;
+        else if (mirror_local.count(idx))
+            k_mirror++;
+        else if (F<void*>(c, kQuery) != fg_query())
+            k_bg++;
+        else
+            k_other++;
+        if (!sample[0])
+            snprintf(sample, sizeof sample, " first=c%u pos=(%.1f %.1f) size=%.3f min=%.2f max=%.2f", idx, pos_of(c).x,
+                     pos_of(c).y, r, mi < n ? F<float>(ep, 8 * mi + 4) : 0.f, ma < n ? F<float>(ep, 8 * ma + 4) : 0.f);
+    }
+    char b[900];
+    snprintf(b, sizeof b,
+             "sap: endpoints=%d objects_cap=%d pending=%d removed=%d nan=%d unsorted=%d peak_open=%d open_at_end=%d "
+             "max_first=%d live_objects=%d dup_min=%d lone_min=%d lone_max=%d sweeps=%u over_1024=%u sweep_peak=%u sweep_left=%u fix=%d | open: mirror=%d other=%d bg=%d puppet=%d avatar=%d no_cell=%d inverted=%d size=%.3f..%.3f%s",
+             n, cap, pend, removed, nan_v, unsorted, peak, (int)active.size(), max_first, live_objs, dup_min, lone_min, lone_max, g_sap_sweeps, g_sap_over, g_sap_peak, g_sap_left,
+             (int)g_fix_sap_sweep, k_mirror, k_other, k_bg, k_puppet,
+             k_avatar, k_none, inverted, rmin, rmax, sample);
+    return b;
+}
+
 std::string debug(const std::vector<std::string>& a)
 {
     if (!a.empty() && a[0] == "fix") { // any stage (resend also covers the DNA total) // fix [<name>|all 0|1]: the wave 2 fixes, off = the old behaviour
@@ -3632,6 +3824,23 @@ std::string debug(const std::vector<std::string>& a)
         snprintf(b, sizeof b, "staletarget: %d followers of leader c%u chasing dead c%u, stale_targets=%u, follower ai types", followers,
                  F<uint32_t>(lc, 0), dead, g_stale_targets);
         return b + ts + "\n";
+    }
+    if (!a.empty() && a[0] == "sap") // the cell broadphase's axis-0 sweep, as UpdatePairs would run it (BUG-0337)
+        return sap_report() + "\n";
+    if (a.size() >= 2 && a[0] == "column") { // tests (BUG-0337): <n> of our cells on one vertical line next to us (all open at once in the sweep)
+        net::Vec3 me = pos_of(av);
+        int want = atoi(a[1].c_str()), moved = 0;
+        for_each_cell([&](uint8_t* c, uint32_t) {
+            if (moved >= want || modes::cell_is_puppet(c) || F<uint8_t>(c, kDead) || F<uint8_t>(c, kDying))
+                return;
+            // 40 m tall, 8 m to our right: inside our active area (cells taken out of it are culled)
+            set_pos(c, {me.x + 8.f, me.y - 20.f + 40.f * (float)moved / (float)std::max(want, 1), me.z});
+            moved++;
+        });
+        char b[96];
+        snprintf(b, sizeof b, "column: %d cells moved\n", moved);
+        H->log(M, SK_INFO, "cell: %s", b);
+        return b;
     }
     if (!a.empty() && a[0] == "nanself") { // tests (BUG-0299): our own cell and its particles NaN, as seen in a 4-player run
         uint8_t* av = avatar();

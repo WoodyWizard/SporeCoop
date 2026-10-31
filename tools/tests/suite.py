@@ -287,6 +287,7 @@ add('cell_jumps', P + 'coop_cell_jumps.py', minutes=5)  # a guest's cell jumps 1
 add('cell_jumps_host', P + 'coop_cell_jumps.py --who host', minutes=5)  # the same on the host (BUG-0314)
 add('cell_rejoin_leave', P + 'coop_rejoin_loop.py --fixture cell --rounds 12 --gap 0.3:1.5 --cell-leave', minutes=12)  # a guest rejoins in Cell, the host's world arrives and the stage is left: none of our cell work runs on the pool being torn down (BUG-0308 guard; SPORE_FIX_OFF=cell.leave_guard fails)
 add('cell_churn', P + 'coop_cell_churn.py', minutes=4)  # the guest's mirrors removed and re-created 40 times: its free address space stays (BUG-0307)
+add('cell_sap', P + 'coop_cell_sap.py', ('multi', 'extended'), minutes=6)  # four players, over 1024 host cells in one column: the broadphase sweep holds them, no fault per frame (BUG-0337; SPORE_FIX_OFF=cell.sap_sweep fails)
 
 # a whole game of four bot players, Cell to the galactic core (BUG-0152, docs/06-testing.md#testing-campaign):
 # `lab.py run campaign --lanes 1 --skip <every other lane>` (one lane; `run` has no --lane, BUG-0259). Four games in the lane's bottle (instances 20+N / 30+N), nothing else of
