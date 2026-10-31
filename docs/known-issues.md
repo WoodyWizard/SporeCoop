@@ -1175,3 +1175,27 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   the host and respawned at the nest); not reproduced by the pool call or a pinned NPC.
 * Known: docs/re/creature.md#creature-npc-at-centre; the host logs such NPCs now.
 * Ticket: BUG-0339.
+
+## Cell: after a world reload a guest plays the world's cell, the host shows the guest's own (2026-10-31, player reports)
+<a id="issue-cell-own-cell-once"></a>
+
+* What happens: a guest with an own cell (choices.ini or its newest creation) gets it applied only at
+  the first world load of a session; after the next load (the host's evolution, a manual share) its
+  game keeps the world's cell while the host draws the guest's own one. The guest's next own editor
+  then edits the host's species.
+* Reproduce: guest with an own cell, host loads a Cell world, then shares it again; guest log
+  `own avatar cell model <own> -> <world's> ... (DIFFERENT)` without `level rebuilt`.
+* Known: `creations.cpp apply_own_cell` skips a key equal to `g_cell_set`, cleared only at the
+  session end (code). Observed in two sessions of the 2026-10-31 reports.
+* Next steps: re-apply after every load once the Cell game has settled (BUG-0342).
+* Ticket: BUG-0349 (also BUG-0352: such a load leaves the guest at the pool's start, far from the host).
+
+## Cell: a guest's bites show no health ring of the host's creature (2026-10-31, player report)
+<a id="issue-cell-guest-bite-ring"></a>
+
+* What happens: the guest's weapon bite on a host creature is sent to the host and skips the game's
+  DamageCell, which draws the health ring and the hurt animation; the host's puppet of a guest
+  shows no eating.
+* Reproduce: guest with a weapon cell bites a creature next to the host (coop_cell_spin.py setup).
+* Known: code reading of the DamageCell hook in cellsync.cpp; not checked in a game.
+* Ticket: BUG-0350. Related open question "a bunch of DNA" after a cell editor: BUG-0351.
