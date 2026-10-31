@@ -918,6 +918,9 @@ lanes 2 / 3 with four players (`tools/tests/coop_cell_4p.py`, suite `cell_4p`).
   cells=<live> peak=<highest seen> level=<tile level base>` on both roles.
 * ? Not measured: whether the active list of 1024 (UpdatePairs) can overflow with fewer cells (it
   holds the cells overlapping one x position; would need ~1000 cells in one column).
+  ~ superseded (2026-10-31): see #cell-sap-active-list. CORRECTION (2026-10-31, fix/w20-cell): it
+  overflows (1100 cells in one column, and a guest with ~1024 objects left open in the campaign):
+  the return address is overwritten, BUG-0337.
 * The sync-check (`net/diagmsg.h` compare) and the campaign's coverage (`coop_multi.measure`) now
   count only host cells within 60 m of the guest (BUG-0298): each guest is sent the cells around
   itself, not the ones around the other players (it reported "1033 missing on the guest").
@@ -1056,3 +1059,56 @@ BUG-0307 (follow-up of BUG-0299, #cell-broadphase-cap end).
 * `cell.leave_guard` (modes.cpp `cell_leaving()`): none of that runs while `game::leaving_stage()`.
   `coop.pool` prints `leave_writes=` (states / ticks applied while leaving, the off side) and
   `leave_dropped=` (skipped). Whether this work corrupted the heap is not shown.
+
+## The broadphase sweep's open list holds 1024 objects (2026-10-31, fix/w20-cell)
+<a id="cell-sap-active-list"></a>
+
+BUG-0337. GOG 2024, Ghidra (`tools/ghidra/q.sh --build 2024`), lab 20261031-054758 campaign#1 (the
+report) and `tools/tests/coop_cell_sap.py` (suite `cell_sap`). Answers the "? Not measured" of
+#cell-broadphase-cap: yes, it overflows, and then every frame faults.
+
+* ✔ The cell broadphase is the sweep-and-prune at `cCellGame+0x4104` (SAP, built by 0xBBB570:
+  s+0 pair capacity, +4 object capacity (4096), +8 pair count, +0xC pairs, +0x10 live objects,
+  +0x14 object records (16 bytes), +0x18 high water, +0x1C free list head, +0x20 endpoint count,
+  +0x24 / +0x28 sorted endpoints per axis, +0x2C pending count, +0x30 / +0x34 pending endpoints
+  per axis, each 2 x capacity x 8 bytes). Object record: +0 the pair key, +4 a group (same nonzero:
+  never a pair; -1 after RemoveObject), +8 / +0xA min endpoint index per axis, +0xC / +0xE max
+  (short, bit 15: still in the pending array). Endpoint `{short type (0 min, 1 max, -2 removed),
+  short object, float value}`.
+* ✔ A cell's object id is cell `+0x364` (-1: none). CreateCellObject (0xE74FF6) adds it through
+  0xBBBF40 -> AddObject 0xBBB290 (pending entries, merged at the next sweep); DestroyCell (0xE78116)
+  and the world rebuild 0xE7FD00 remove it through 0xBBBF50 -> RemoveObject 0xBBB380 (its four
+  entries marked -2, the record to the free list; the cell's `+0x364` is not reset). Every frame
+  0xE6DAE0 (and the world scale step 0xE6DB70) moves its bounds, `pos +- r` with r = model radius
+  (model data +0x1244) x cell `+0x58` (0xE6D790), through 0xBBC460 -> UpdateObject 0xBBBFD0, which
+  moves each endpoint by insertion with strict `<` (0xBBB770 / 0xBBB880 / 0xBBB990 / 0xBBBA70). The
+  pending sort's comparator 0xBBAE50 never answers "equal" (equal values: either order).
+* ✔ `SweepPrune::UpdatePairs` 0xBBB450 (SimUpdate+0x131, every frame): MergeAxis for both axes,
+  then the sweep along x keeps the objects whose min it has passed and whose max it has not in
+  **an int[1024] at esp+0x1C of a 0x100C-byte frame, no bound check**. open[1024] is the return
+  address, open[1025] the argument, then SimUpdate's frame. With more than 1024 objects open at
+  once `ret` jumps to an object id: faults at 0x196, 0x4D6, 0x144, ... with **esp=0012D394**,
+  edi=01639470, ebx=034CF4E8, ebp=034CF480 on the main thread (the crash tools name the stale
+  return addresses above it "UIMissionCardPanel_HandleMessage+0x775 < cCellModeStrategy::OnExit+0xC4C",
+  really FUN_00e18aa0 0xE18AD5 and SimUpdate's caller 0xE8084C). EDX at the fault is the open
+  count at the end of the sweep. The game catches it; the rest of SimUpdate is skipped every frame
+  (the own cell stops, 500-750 ms per fault on Wine, lab: 2642 faults in 40 s), the stack above is
+  overwritten.
+* ✔ Reproduced: `coop.pool column 1100` on a host with ~1300 cells (food 300) puts 1100 cells on one
+  40 m line: `coop.fix cell.sap_sweep off` -> the same fault signature at once (esp=0012D394, small
+  EIPs, edi=01639470), the host's cell stops, a guest lost its mirrors (lab 20261031-075501).
+* The fix `cell.sap_sweep` (cellsync.cpp `h_UpdatePairs`, hook on 0xBBB450): the same two
+  MergeAxis calls, the same sweep with the open list in a heap vector, the same pair test (the
+  game's `SweepPrune::OverlapOther` 0xBBB110) and the same pairs in the same order. `coop.pool sap`
+  replays the sweep (peak_open, open_at_end, max-before-min, duplicate / lone min entries, which
+  cells are left open) and prints our counters (`sweeps`, `over_1024`, `sweep_peak`,
+  `sweep_left`); more than 64 objects left open at the end of a sweep logs that report (30 s apart).
+* ? Why the campaign's guest (Carol, 927 cells, 900 mirrors) had over 1024 open objects: EDX at its
+  faults was 0x3F9-0x407, i.e. ~1024 objects **still open at the end of the sweep** (a max endpoint
+  before its min, or min entries left behind), more than its live cells. In a healthy game none is
+  left (three replays of the campaign's Cell stage with `coop.pool sap` every 10 s on lanes 5 / 6:
+  peak 13-43 open, 0 left, 0 duplicate or lone entries). The same frame (esp=0012D394, EDX
+  0x614 / 0x7F0 with 2000-2450 cells) is in lab 20261030-035318 after BUG-0295's MergeAxis overrun.
+  Inferred, not seen: the endpoint arrays were corrupted earlier (entries of a removed object left
+  behind by a RemoveObject with stale indices, or a broken order); not reproduced. The warning
+  above records it the next time.

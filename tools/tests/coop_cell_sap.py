@@ -11,7 +11,7 @@ campaign#1, Carol: 4314 faults, a desync, then a frozen game after the stage cha
 Alice hosts, Bob, Carol and Dave are guests (tools/tests/party.py).
 1. The food progress goes up (`coop.pool food <n>` on the host) to a level with more cells: the
    host holds over --cells live cells.
-2. The host puts --cells of its cells on one vertical line next to its own cell (`coop.pool column
+2. The guests go --far m away (their own areas); the host puts --cells of its cells on one vertical line next to its own cell (`coop.pool column
    <n>`): their x ranges all overlap, so the sweep holds all of them open at once (what a player
    sees as a crowd of cells in one place; the broken order the campaign hit leaves them open the
    same way).
@@ -47,6 +47,7 @@ def main():
     ap.add_argument('--food', type=int, default=300)
     ap.add_argument('--cells', type=int, default=1100)
     ap.add_argument('--seconds', type=float, default=40)
+    ap.add_argument('--far', type=float, default=200)
     a = ap.parse_args()
     ck = Checks()
     p = Party.start('cell', 4)
@@ -66,6 +67,11 @@ def main():
             if cells >= a.cells + 30:
                 break
         ck(cells >= a.cells + 30, f'1. the host holds over {a.cells} cells ({cells})')
+        # the guests play 200 m away (their own areas, BUG-0174): the column stays out of their
+        # mirrors (a guest mirroring such a pack faulted elsewhere once, BUG-0338)
+        for g, (dx, dy) in zip(p.guests, ((a.far, 0), (0, a.far), (a.far, a.far))):
+            print(f'  {g.name}:', g.call(f'coop.pool tp {dx} {dy} 0').strip()[:100], flush=True)
+        time.sleep(8)
         print('  host:', h.call(f'coop.pool column {a.cells}').strip(), flush=True)
         print('  host:', h.call('coop.pool sap').strip()[:400], flush=True)
         exc0 = h.call('exc')
