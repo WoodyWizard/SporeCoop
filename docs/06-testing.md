@@ -2022,6 +2022,12 @@ answered right after; a 1 s poller beside a standalone run saw no gap. Same sign
 * Food (plant / meat) on a guest's screen is not asserted: at level 4 a screen with 300+ host cells
   often had none (also without the budget). Use `cell_far_guest` (two players) for food far away.
 * The sync-check and `coop_multi.measure` count host cells within 60 m of the guest only (BUG-0298).
+* `coop_cell_pause.py` (suite `cell_pause`, 2 players, ~2 min): food 300, the guest opens its pause
+  menu (Esc, "Resume Game" shown), 12 x `coop.pool zap 5000` 2.5 s apart while paused, Resume, then
+  `coop.leave`. Checked: the broadphase's pending count (`coop.pool sap` pending=, the game's header)
+  <= 8192 while paused; after Resume pending 0, no object left open, no duplicate entries; mirrors
+  back; the guest's game answers after leaving Cell; no fault. BUG-0348,
+  docs/re/cell.md#cell-sap-pending. `SPORE_FIX_OFF=cell.sap_pending` FAILS (pending ~20000).
 * `coop_cell_sap.py` (suite `cell_sap`, multi / extended, ~2 min, four players): food 300 on the
   host (~1300 cells), the guests 200 m away, then `coop.pool column 1100` (1100 host cells on one
   40 m line next to the host's cell): the game's broadphase sweep holds them all open at once.
@@ -2030,6 +2036,9 @@ answered right after; a 1 s poller beside a standalone run saw no gap. Same sign
   (its puppet `p0` in `coop.sync`), no fault.
   BUG-0337, docs/re/cell.md#cell-sap-active-list. `SPORE_FIX_OFF=cell.sap_sweep` FAILS (the host
   faults every frame at small addresses with esp=0012D394, its cell stops).
+  Flaky (2026-10-31, fix/w22-cell): the pack sometimes reaches only ~1012 open objects (the cells
+  spread before the next sweep) and sometimes trips BUG-0338's advect-grid fault on the host
+  (lab 20261031-124047-fix-w22-cell, 20261031-124835-fix-w22-cell #1).
 * `coop_cell_nan.py` (suite `cell_nan`, 2 players, ~1 min): the guest's own cell NaN
   (`coop.pool nanself`), back at a finite position within 3 s, then `coop.pool food 1000` on the
   host (level-ups). BUG-0299; `SPORE_FIX_OFF=cell.nan_guard` FAILS (lab 20261030-055502: the

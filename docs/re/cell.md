@@ -1112,3 +1112,38 @@ report) and `tools/tests/coop_cell_sap.py` (suite `cell_sap`). Answers the "? No
   Inferred, not seen: the endpoint arrays were corrupted earlier (entries of a removed object left
   behind by a RemoveObject with stale indices, or a broken order); not reproduced. The warning
   above records it the next time.
+
+## The broadphase's pending list overflows while the simulation is paused (2026-10-31, fix/w22-cell)
+<a id="cell-sap-pending"></a>
+
+BUG-0348 (and the cause of BUG-0337's objects left open). GOG 2024; lab 20261031-120025
+campaign#1 (guest Bob) and `tools/tests/coop_cell_pause.py` (suite `cell_pause`).
+
+* ✔ AddObject 0xBBB290 (through 0xBBBF40, from CreateCellObject) appends the new object's two
+  endpoints per axis at `s+0x30[axis] + 8 * s+0x2C` and adds 2 to `s+0x2C`, **no bound check**; the
+  pending arrays hold 2 x capacity = 8192 entries (64 KB, allocated by 0xBBB570 right after the
+  sorted array of the same axis). Only UpdatePairs (the sweep, inside SimUpdate) merges and resets
+  them. RemoveObject marks pending entries -2 but `s+0x2C` does not shrink, so every create counts.
+* ✔ In the pause menu SimUpdate does not run, but a guest keeps applying the host's states: mirrors
+  dropped and created again (or new ones as the host moves). Measured on lane 8 (`coop.pool zap 5000`
+  every 2.5 s while paused): pending 1774, 3532, ... **20376** after 12 rounds, 2.5 x the arrays,
+  i.e. ~97 KB written past pending[0] (over the next blocks: the axis-1 sorted endpoints and
+  whatever the heap put after pending[1]). After Resume the sweep left 477 objects open (entries
+  with stale or foreign ids, a broken order: BUG-0337's "~1024 left open").
+* ✔ The campaign case: Bob's position did not change from 13:07:36 to 13:08:36 (game clock) while
+  his mirrors went 354 -> 502 -> 1 -> 95 -> 248 -> 330 (a pause menu whose Resume was lost, BUG-0289);
+  right after it the first warning of BUG-0337's diagnostics: 198 objects left open, 194 of them
+  with his avatar's object id; 30 s later 782 (endpoints 2597 for 904 live objects); then on the
+  way to Creature `GeneralAllocator_FreeInternal+0x13D` freeing the event pool `G+0x54` in the
+  Cell teardown 0xE7F9B0 (return 0xE7FAF0; the crash tools say SimUpdate+0x750).
+* ✔ Reproduced (lane 8, `cell.sap_pending` off): pending 17424 while paused, Resume, then the guest
+  leaves Cell for the galaxy menu (`coop.menu`): 88 faults, first `GeneralAllocator_FreeInternal+0x64`
+  freeing pool `G+0x8C` (return 0xE7FA8D, BUG-0308's exact signature), then 0x00DDA358 (data 0x18) as
+  in both campaign reports. The heap blocks after the pending arrays are what the teardown frees.
+* The guard `cell.sap_pending` (modes.cpp `cell_sap_room()`, used by `cell_create` (mirrors) and
+  `cell_spawn` (puppets)): no cell of ours while `s+0x2C + 2 + 512 > 2 x s+4`; the mirror is made
+  by a later state once the simulation runs again. `coop.pool sap` prints `held=` (creations held).
+  The game itself creates cells only inside SimUpdate, before the sweep of the same frame.
+* ~ BUG-0308 (a rejoined guest, the same fault freeing pool `G+0x8C`, return 0xE7FA8D): the same
+  signature is what the pending overflow gives; whether that guest's game was not simulating while
+  it made mirrors (the join, a pause) is not shown.

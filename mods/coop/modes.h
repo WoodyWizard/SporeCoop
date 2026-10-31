@@ -64,6 +64,10 @@ void world_name_tick(); // once per frame: current_world_name() follows the game
 // ---- cell stage helpers (pool access, creation with a given model) ----
 uint8_t* cell_game();             // cCellGame*
 uint8_t* cell_at(uint32_t idx);   // live cell for a pool index, else nullptr
+// BUG-0348: false while the cell broadphase's pending list is near full (a cell made now would
+// overflow it); counts the refusals (cell_sap_held)
+bool cell_sap_room();
+uint32_t cell_sap_held();
 extern bool cell_at_fix;           // coop.pool fix cellat 0: the old bound (slot == highWater passed, BUG-0083)
 bool cell_is_puppet(void* cell);  // a remote player's cell
 // BUG-0271 (core.stale_local): no cell is read from a pool block the game already freed

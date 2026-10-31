@@ -43,3 +43,4 @@ overrun of one of these stack arrays when many cells stand in one grid square.
 
 ## History
 - 2026-10-31: opened.
+- 2026-10-31 (fix/w22-cell): seen on the HOST too in cell_sap (lab 20261031-124047-fix-w22-cell, lane 9): 1332 faults at 0x00E4DBD9 (FUN_00e4dba0+0x39, the same advect grid code, data 0x4AF5FEB4), calls 00E5CC88 00E5CCDF 00E6D9D0 00E78CEA 00E7C91A 00E7F502 (SimUpdate+0x162 -> PopulateTile -> DestroyCell path), after `coop.pool column 1100`. The artificial pack of 1100 cells trips it; cell_sap is flaky until this is fixed. Not related to the broadphase fixes (BUG-0337 / BUG-0348).
