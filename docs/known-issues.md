@@ -1165,7 +1165,8 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * What happens: 161 faults at 0x00E4E384 (advect grid query, a garbage output pointer) on a guest
   mirroring 1100 host cells packed on one 40 m line; once in two runs.
 * Reproduce: `coop_cell_sap.py` with the guests left next to the host (lab 20261031-075645-fix-w20-cell #1).
-* Known: BUG-0338 (stack arrays of the advect grid, not analysed).
+* Known: BUG-0338 (stack arrays of the advect grid, not analysed). Also on the host (0x00E4DBD9, 1332
+  faults, lab 20261031-124047-fix-w22-cell): `cell_sap` fails now and then because of it.
 * Ticket: BUG-0338
 
 ## Creature, 4 players: proxies 511 m from host NPCs at the planet's centre (2026-10-31, fix/w21-creature)

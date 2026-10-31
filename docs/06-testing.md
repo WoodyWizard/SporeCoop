@@ -2036,6 +2036,9 @@ answered right after; a 1 s poller beside a standalone run saw no gap. Same sign
   (its puppet `p0` in `coop.sync`), no fault.
   BUG-0337, docs/re/cell.md#cell-sap-active-list. `SPORE_FIX_OFF=cell.sap_sweep` FAILS (the host
   faults every frame at small addresses with esp=0012D394, its cell stops).
+  Flaky (2026-10-31, fix/w22-cell): the pack sometimes reaches only ~1012 open objects (the cells
+  spread before the next sweep) and sometimes trips BUG-0338's advect-grid fault on the host
+  (lab 20261031-124047-fix-w22-cell, 20261031-124835-fix-w22-cell #1).
 * `coop_cell_nan.py` (suite `cell_nan`, 2 players, ~1 min): the guest's own cell NaN
   (`coop.pool nanself`), back at a finite position within 3 s, then `coop.pool food 1000` on the
   host (level-ups). BUG-0299; `SPORE_FIX_OFF=cell.nan_guard` FAILS (lab 20261030-055502: the
