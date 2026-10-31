@@ -290,6 +290,7 @@ add('cell_rejoin_leave', P + 'coop_rejoin_loop.py --fixture cell --rounds 12 --g
 add('cell_churn', P + 'coop_cell_churn.py', minutes=4)  # the guest's mirrors removed and re-created 40 times: its free address space stays (BUG-0307)
 add('cell_sap', P + 'coop_cell_sap.py', ('multi', 'extended'), minutes=6)  # four players, over 1024 host cells in one column: the broadphase sweep holds them, no fault per frame (BUG-0337; SPORE_FIX_OFF=cell.sap_sweep fails)
 add('cell_pause', P + 'coop_cell_pause.py', minutes=4)  # a guest in its pause menu while its mirrors churn: the cell broadphase's pending list stays in bounds, its order intact, leaving Cell does not fault (BUG-0348; SPORE_FIX_OFF=cell.sap_pending fails)
+add('cell_particles', P + 'coop_cell_particles.py', minutes=3)  # a full soft-body particle pool on a guest while its mirrors churn: no fault, the pool's count sane, its cell in place (BUG-0338; SPORE_FIX_OFF=cell.particles fails)
 
 # a whole game of four bot players, Cell to the galactic core (BUG-0152, docs/06-testing.md#testing-campaign):
 # `lab.py run campaign --lanes 1 --skip <every other lane>` (one lane; `run` has no --lane, BUG-0259). Four games in the lane's bottle (instances 20+N / 30+N), nothing else of

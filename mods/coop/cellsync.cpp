@@ -1804,11 +1804,12 @@ static void SK_CDECL h_SpawnLoot(void* res, void* key, void* query, void* pos, f
 // header; a cell's centre from it jumped thousands of metres), and ParticleFree 0xE4EC10 (no bound
 // check) puts -1 on the free list: the next allocations read garbage and fault every frame at
 // 0xE4DBD9, and the count fell below what is used (-25 seen). The fix: the pool never gets full;
-// past 1498 particles an allocation gets the spare slot 1499 (never handed out by the game then),
+// a full pool's allocation gets the spare slot 1499 (the game never hands it out),
 // set to the asking cell's position, and freeing it, or anything outside the pool, does nothing.
+// The game itself never hands out slot 1499 (it refuses at 1499 used, its last slot is 1498).
 // Old (`coop.fix cell.particles off`): the game's -1.
 static bool g_fix_particles = true;
-COOP_FIX_UNSAFE("cell.particles", "BUG-0338", g_fix_particles, "cell: past 1498 soft-body particles an allocation gets a spare slot instead of the game's -1 (used before the pool's block, it broke the heap and the free list)");
+COOP_FIX_UNSAFE("cell.particles", "BUG-0338", g_fix_particles, "cell: a full soft-body particle pool (1500) gives a spare slot instead of the game's -1 (used before the pool's block, it broke the heap and the free list)");
 constexpr int kParticles = 1500, kSpare = kParticles - 1;
 static uintptr_t a_PartAlloc, a_PartFree;
 static int(SK_CDECL* o_PartAlloc)(uint8_t*, const float*, const float*, float, int);
@@ -1824,7 +1825,7 @@ static int SK_CDECL h_PartAlloc(uint8_t* parts, const float* pos, const float* v
     int used = parts ? F<int>(parts, 0x1BD54) : 0;
     if (used > (int)g_particles_peak)
         g_particles_peak = (uint32_t)used;
-    if (!g_fix_particles || !parts || used + 1 < kSpare)
+    if (!g_fix_particles || !parts || used + 1 < kParticles)
         return o_PartAlloc(parts, pos, vel, w, cell);
     for (int j = 0; j < 3; j++) { // the spare stands where the asking cell is, at rest
         ((float*)(parts + 4 + 12 * kSpare))[j] = pos ? pos[j] : 0.f;
@@ -3877,6 +3878,20 @@ std::string debug(const std::vector<std::string>& a)
         snprintf(b, sizeof b, "staletarget: %d followers of leader c%u chasing dead c%u, stale_targets=%u, follower ai types", followers,
                  F<uint32_t>(lc, 0), dead, g_stale_targets);
         return b + ts + "\n";
+    }
+    if (a.size() >= 2 && a[0] == "particles") { // tests (BUG-0338): fill the soft-body particle pool up to <n> used (owner: our cell)
+        uint8_t* parts = G() ? F<uint8_t*>(G(), 0x4108) : nullptr;
+        int want = std::min(atoi(a[1].c_str()), kParticles - 1), made = 0;
+        net::Vec3 me = pos_of(av);
+        float p[3] = {me.x, me.y, me.z}, v[3] = {0, 0, 0};
+        while (parts && o_PartAlloc && F<int>(parts, 0x1BD54) < want && made < kParticles) {
+            if (o_PartAlloc(parts, p, v, 1.f, (int)avatar_idx()) < 0)
+                break;
+            made++;
+        }
+        char b[96];
+        snprintf(b, sizeof b, "particles: %d made, %d of %d used\n", made, particles_used(), kParticles);
+        return b;
     }
     if (!a.empty() && a[0] == "sap") // the cell broadphase's axis-0 sweep, as UpdatePairs would run it (BUG-0337)
         return sap_report() + "\n";
