@@ -1,4 +1,5 @@
 #include "cellsync.h"
+#include "coop_ui.h"
 
 #include <algorithm>
 #include <array>
@@ -2418,7 +2419,10 @@ static void heal_own(uint8_t* a, const net::Vec3& me, bool bad)
 static bool g_join_load_fix = true;
 COOP_FIX("cell.join_after_load", "BUG-0352", g_join_load_fix, "cell: a guest goes next to the host after every Cell load");
 static uint32_t g_join_avatar;    // the avatar index this was decided for
-static double g_join_since = -1;  // when that avatar appeared
+static double g_join_since = -1;  // when that avatar appeared (-1: decided)
+static double g_join_check = -1;  // when to check that the move held
+static net::Vec3 g_join_to;       // where it was put
+static int g_join_tries;
 static uint32_t g_joins_load;     // tests: guest moved next to the host after a new avatar
 static void join_after_load(double now)
 {
@@ -2426,24 +2430,38 @@ static void join_after_load(double now)
     if (idx != g_join_avatar) {
         g_join_avatar = idx;
         g_join_since = now;
+        g_join_check = -1;
+        g_join_tries = 0;
     }
-    if (!g_join_load_fix || g_join_since < 0 || now - g_join_since < 2.0)
+    uint8_t* a = avatar();
+    if (!g_join_load_fix || !a)
+        return;
+    if (g_join_check >= 0 && now >= g_join_check) { // the game's hatch can put the cell back at the start
+        g_join_check = -1;
+        if (net::dist(pos_of(a), g_join_to) > 15.f && g_join_tries < 3)
+            g_join_since = now - 2.0; // again
+    }
+    if (g_join_since < 0 || now - g_join_since < 2.0)
         return;
     if (now - g_join_since > 30.0) {
         g_join_since = -1; // the host never showed up here: leave it
         return;
     }
-    uint8_t* a = avatar();
     net::Vec3 at;
     float d = -1;
-    if (!a || F<uint8_t>(a, kDying) || g_downed || nearest_partner(1e9f, &at, &d).empty())
-        return; // the host's state is not here yet
+    // not during the hatch (the game's input lock after a load or a rebuild), not knocked out, and
+    // only once the host's state is here
+    if (F<uint8_t>(a, kDying) || g_downed || coop_ui::input_lock_now() > 0 || nearest_partner(1e9f, &at, &d).empty())
+        return;
     g_join_since = -1;
     if (d < 15.f)
         return;
-    stop_at(a, {at.x + 2.5f, at.y + 1.f, 0.f});
+    g_join_to = {at.x + 2.5f, at.y + 1.f, 0.f};
+    stop_at(a, g_join_to);
+    g_join_tries++;
+    g_join_check = now + 3.0;
     g_joins_load++;
-    H->log(M, SK_INFO, "coop: cell: our new cell joined the host (%.0f m away after the load)", d);
+    H->log(M, SK_INFO, "cell: our new cell joined the host (%.0f m away after the load, try %d)", d, g_join_tries);
 }
 
 static void guest_tick(double now)
@@ -4184,7 +4202,7 @@ void dna_note(const char* when)
     int food = F<int32_t>(s, 0x1C), spent = F<int32_t>(s, 0x2C);
     using DnaFor_t = int(__fastcall*)(int);
     int dna = a_DnaFor && food >= 0 && food <= 1000 ? ((DnaFor_t)a_DnaFor)(food) : -1;
-    H->log(M, SK_INFO, "coop: cell: DNA %s: food=%d plant=%d spent=%d dna_for_food=%d budget=%d", when, food,
+    H->log(M, SK_INFO, "cell: DNA %s: food=%d plant=%d spent=%d dna_for_food=%d budget=%d", when, food,
            F<int32_t>(s, 0x20), spent, dna, dna >= 0 ? dna - spent : -1);
 }
 

@@ -53,9 +53,14 @@ def main():
     host, guest = start('cell')
     ck = Checks()
     ck(wait(lambda: puppet_pos(host, 1) and puppet_pos(guest, 0), 30), 'both show the other player')
-    print('  host:', host.call('coop.pool tp 80 0')['out'].strip())
-    time.sleep(2.0)
-    d0 = dist(own_pos(host), own_pos(guest))
+    time.sleep(8.0)  # the guest's own join after its first load of this test is over
+    d0 = None
+    for _ in range(3):
+        print('  host:', host.call('coop.pool tp 80 0')['out'].strip())
+        time.sleep(3.0)
+        d0 = dist(own_pos(host), own_pos(guest))
+        if d0 and d0 > 50:
+            break
     print(f'  before the reload: host {own_pos(host)}, guest {own_pos(guest)}, {d0} m apart')
     ck(d0 is not None and d0 > 50, f'the host is far from the guest before the reload ({d0} m)')
 
