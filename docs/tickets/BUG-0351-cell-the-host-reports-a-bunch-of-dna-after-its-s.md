@@ -42,7 +42,9 @@ Diagnostics only (fix/w22-reports2, no behaviour change): `cellsync::dna_note` l
 `cell: DNA <when>: food= plant= spent= dna_for_food= budget=` at each cell editor request (h_Submit,
 also after the vote) and on entering Cell (a load, an editor's return). `dna_for_food` is the game's
 `DNAForFood` 0xE51410 (fastcall, ECX = food), `budget` = dna_for_food - spent, what the editor gets.
-The next report with such a mark shows the numbers. Status stays open until then.
+The next report with such a mark shows the numbers. Seen in lab 20261031-132041 (both lines, also at the
+request of the cell_editor_invuln editor); the fixture plays at food 0, so DNAForFood was only seen
+returning 0 (the call works, no fault). Status stays open until then.
 
 ## Verification
 <!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
