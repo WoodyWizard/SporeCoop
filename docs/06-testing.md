@@ -2270,3 +2270,15 @@ answered right after; a 1 s poller beside a standalone run saw no gap. Same sign
   driven), for BUG-0329.
 * `coop_sync_multi.py --fixture tribe --spawn N`: the campaign's member setup first; a tribe member
   over 2.5 m off on a guest is printed with its `coop.tribe` line on every machine.
+
+## The team test in warm runs (2026-10-30, fix/w17-creature)
+<a id="testing-team-warm"></a>
+
+* `team` reuses games (warm). Until BUG-0330 every warm run failed the rescue (the previous run's 60 s
+  rescue cooldown was still running in the guest's game). Fixed in the mod (`team.rescue_reset`).
+* The regen check puts the guest 1.5 m from the host first and waits for "close (regen)" in the
+  guest's `coop.team`: the guest was found ~14 m away in 2 of ~60 runs (BUG-0333, open). The test
+  prints both positions before the hunt, after the guest's hit and before the regen check.
+* Pitfall: a background `lab.py` that you think you killed keeps its lane: check with
+  `pgrep -x python3` and `/proc/PID/cmdline` before starting another run on that lane (two runs on one
+  lane gave "TimeoutError" and "instance stopped answering" on 2026-10-30).

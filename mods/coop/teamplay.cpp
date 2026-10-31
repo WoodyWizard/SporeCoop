@@ -37,10 +37,18 @@ void forget_target(void* target)
         g_hits.forget(target);
 }
 
+// BUG-0330: the rescue cooldown (kRescueCooldown) outlived the session and the world: a player that
+// left and joined again (or loaded another world) within a minute of a rescue had none in the new
+// session (the warm `team` runs failed "rescue counted (1 -> 1)", the guest died of the lethal hit).
+// `coop.fix team.rescue_reset off`: the cooldown runs on (0.7.3.x).
+static bool g_rescue_reset = true;
+COOP_FIX("team.rescue_reset", "BUG-0330", g_rescue_reset, "creature: a new session or world starts with the pack's rescue ready");
 void reset()
 {
     if (g_hits.fix)
         g_hits.clear();
+    if (g_rescue_reset)
+        g_last_rescue = -1000;
 }
 
 size_t hit_targets() { return g_hits.size(); }
