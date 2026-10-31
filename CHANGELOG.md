@@ -3,8 +3,9 @@
 ## [Unreleased]
 
 ### Fixed
-- Tribe: two players' chiefs that end up standing in each other are moved apart, each to its own
-  spot round the village (BUG-0340).
+- Tribe: at the arrival and after a rejoin, a player's chief that stands in another one is moved to
+  its own spot round the village; two chiefs that end up in each other later are moved apart
+  (BUG-0340).
 - Cell: a game with more than 1024 cells in one column of the cell physics (seen on a guest of a
   four-player game, 0.7.3.1) no longer faults every frame with a half-second hitch each, a stopped
   simulation and a frozen game after the stage change (BUG-0337).

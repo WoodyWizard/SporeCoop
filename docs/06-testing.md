@@ -2345,3 +2345,6 @@ answered right after; a 1 s poller beside a standalone run saw no gap. Same sign
   scenario test for BUG-0340: it also passes with `tribe.spread_chiefs` off, the game's own
   avoidance parts two stacked chiefs within 1-2 s.
 * `coop.tribe` member lines end with `radius=` (the spatial's bounding radius).
+* (BUG-0340) The campaign checks the players' chiefs after the Tribe arrival and after a Tribe rejoin:
+  on every machine no two chiefs closer than the sum of their bounding radii, twice 8 s apart
+  (finding `stack`). With 4 players and both switches off it fails at the arrival (seed 777).
