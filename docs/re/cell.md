@@ -1147,3 +1147,36 @@ campaign#1 (guest Bob) and `tools/tests/coop_cell_pause.py` (suite `cell_pause`)
 * ~ BUG-0308 (a rejoined guest, the same fault freeing pool `G+0x8C`, return 0xE7FA8D): the same
   signature is what the pending overflow gives; whether that guest's game was not simulating while
   it made mirrors (the join, a pause) is not shown.
+
+## The soft-body particle pool holds 1500 (2026-10-31, fix/w23-cell)
+<a id="cell-particle-pool"></a>
+
+BUG-0338. GOG 2024, Ghidra and `tools/tests/coop_cell_particles.py` (suite `cell_particles`).
+
+* ✔ Particle pool `cCellGame+0x4108` (the `parts` the mod already uses: positions +4 + 12i,
+  velocities +0x4654 + 12i, goal offsets +0x11944 + 12i): owner +0x18E74[i], next +0x1A5E4[i], count
+  +0x1BD54, high water +0x1BD58, free-list head +0x1BD5C; **1500 slots** (0x5DC).
+  Simulator::Cell::ParticleAlloc 0xE4DBA0 returns -1 when 1499 are used (so it never hands out slot
+  1499); Simulator::Cell::ParticleFree 0xE4EC10 has no bound check.
+* ✔ A cell's soft body (cell +0x248 object, +0x24C tier, +0x250 count, +0x254 indices):
+  CreateSoftBody 0xE6D8F0 picks the tier from size +0x58 (>=0.3: 1, >=1: 2, >=2: 3) and takes one
+  particle per node of the quadtree 0x16AE800 at that depth (4 / 16 / 64); tier 0, another query or
+  model type 0 / 5 is the "no particles" form (+0x250 = 1, +0x254 = -1). The re-tier 0xE51A20
+  (from 0xE5A1A0, when a cell grows or shrinks) frees the old particles and takes the new tier's.
+  FreeSoftBody 0xE66010 (DestroyCell) frees every entry when +0x250 > 1.
+* ✔ A full pool's -1 is kept in the list. The game then reads and writes particle -1 (8 bytes
+  before the block: the heap header; a cell's centre computed from it jumped 4000-8400 m) and frees
+  it, which makes -1 the free-list head; the next allocation reads `next[-1]` (another array's
+  last value) as the head and the one after faults: **0x00E4DBD9** (ParticleAlloc+0x39, the host in
+  cell_sap, 1332 faults) and **0x00E4E384** (the advect query 0xE4E320, the guest in cell_sap and in
+  coop_cell_particles with the fix off: 360 faults, own cell 8385 m away). The re-tier from a cell
+  without particles frees its -1 too (the count went to -25 once).
+* How full the pool gets: ordinary 2-player play at level 4 (food 300) peaked at 391 on the host;
+  `coop.pool column 1100` (1100 cells next to the host's cell, cell_sap) filled it (1480-1499 right
+  after). Inferred: real play needs some hundreds of cells crowded near the camera to reach it, not
+  seen outside these tests.
+* The fix `cell.particles` (cellsync.cpp, hooks on ParticleAlloc / ParticleFree): an allocation the
+  game would refuse gets the spare slot 1499 (set to the asking cell's position, at rest; shared by
+  all such cells), and a free of 1499 or of anything outside the pool does nothing. `coop.pool sap`
+  prints `particles=` (the game's count), `peak=`, `spare=`, `bad_frees=`; `coop.pool particles <n>`
+  (tests) fills the pool to n used with real allocations.
