@@ -220,6 +220,9 @@ def restore_creations(guest=True):
             shutil.copy(src, os.path.join(d, 'EditorSaves.package'))
 
 
+# {'host'|'guest': {'creature'|'cell': '<hex instance>'}}: choices.ini written for a cold start, as
+# if the player chose them in an earlier session (tests of BUG-0342 / BUG-0344)
+PRESET_CHOICES = {}
 FIXTURE_BAD = []  # what the loaded fixture lacks (start()): Checks.faults() fails the test on it (BUG-0124)
 
 
@@ -319,7 +322,7 @@ def _start(fixture='creature', planet=None, load_args=(), join_in_intro=False, g
     # coop_stage_switch.py, but go through the galaxy menu and take longer)
     if os.environ.get('SPORE_WARM') == '1' and planet and not join_in_intro and st.get('build') == build_id() \
             and st.get('fixture') == fixture and st.get('guest_creations', True) == guest_creations \
-            and not st.get('fix_off') \
+            and not st.get('fix_off') and not PRESET_CHOICES \
             and alive(lane.HOST) and alive(lane.GUEST):
         host, guest = Console(lane.HOST), Console(lane.GUEST)
         try:
@@ -342,6 +345,11 @@ def _start(fixture='creature', planet=None, load_args=(), join_in_intro=False, g
     subprocess.run(['rm', '-rf', lane.GUEST_DIR + '/Games', lane.GUEST_DIR + '/Games-sporecoop-backup'])
     for d in (lane.HOST_DIR, lane.GUEST_DIR):  # own-creation choices: back to the defaults
         subprocess.run(['rm', '-f', d + '/SporeCoop/choices.ini'])
+    for who, lines in PRESET_CHOICES.items():  # a test's choices from an earlier session (BUG-0342/0344)
+        d = os.path.join(lane.HOST_DIR if who == 'host' else lane.GUEST_DIR, 'SporeCoop')
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, 'choices.ini'), 'w', newline='\r\n') as f:
+            f.write('[creations]\n' + ''.join(f'{k}={v}\n' for k, v in lines.items()))
     t_start = time.time()
     # join_in_intro: the guest starts once the host is in its world, so that its menu intro comes
     # after the host is ready (the guest joins at the start of it)

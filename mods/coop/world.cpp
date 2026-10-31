@@ -18,6 +18,7 @@
 #include "slotfs.h"
 #include "sui.h"
 #include "fixes.h"
+#include "creations.h"
 
 namespace world {
 
@@ -1315,6 +1316,16 @@ static void finish(const std::string& host_name)
     H->log(M, SK_INFO, "world: the host plays %s: loading %s", g_in.offer.planet.c_str(),
            planet.empty() ? "nothing" : planet.c_str());
     g_in = In{};
+    // BUG-0341: a creature of the host's world has parts this game does not have (the Creepy & Cute
+    // pack): loading the world faulted at 0x441F3B in the game's model bake. Not loaded; the player
+    // is told why
+    if (std::string need = creations::world_missing_parts(); !need.empty() && !planet.empty()) {
+        H->log(M, SK_WARN, "world: not loading %s: the host's creature(s) %s use Creepy & Cute parts this game does "
+               "not have (BUG-0341)", planet.c_str(), need.c_str());
+        g_feed("cannot load " + host_name + "'s world: their creature " + need + " uses parts of the Creepy & Cute "
+               "parts pack, which this game does not have. Install that pack, or the host replaces those parts");
+        return;
+    }
     // a player in its own editor (everybody evolves its own creature) loads it when it is back:
     // loading a world under an open editor crashed the game
     uint32_t mode = game::mode_id();
