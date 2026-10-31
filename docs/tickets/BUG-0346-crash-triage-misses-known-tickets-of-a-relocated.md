@@ -11,7 +11,7 @@ versions: all
 fixed_in: unreleased
 branch: fix/w22-reports
 commits: 7ce1249
-tests: tools_selftest
+tests: tools/tests/tools_selftest.py triage (make test)
 signature: tooling (no game fault)
 docs:
 related: BUG-0158, BUG-0247, BUG-0008, BUG-0012
