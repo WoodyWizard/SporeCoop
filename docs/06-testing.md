@@ -2357,3 +2357,18 @@ answered right after; a 1 s poller beside a standalone run saw no gap. Same sign
 * (BUG-0340) The campaign checks the players' chiefs after the Tribe arrival and after a Tribe rejoin:
   on every machine no two chiefs closer than the sum of their bounding radii, twice 8 s apart
   (finding `stack`). With 4 players and both switches off it fails at the arrival (seed 777).
+
+## Cell: guest after a reload, a guest's bite ring (2026-10-31, fix/w22-reports2)
+<a id="testing-cell-reload-ring"></a>
+
+* `coop_cell_reload_join.py` (suite `cell_reload_join`, cell fixture, ~1.5 min warm, BUG-0352): the
+  host moves 80 m away (`coop.pool tp 80 0`), saves, `coop.share`; the guest's cell must be within
+  15 m of the host in both games 20 s after the load. Wait ~8 s after the start first: the guest's own
+  join after the fixture load moves it next to the host (it is a new avatar too). A loaded Cell
+  world keeps the cell at the start while the game's input lock (the hatch) is on: a move made then is
+  undone (seen: the join fired 2 s after the load and the cell was back at (100 100)).
+* `coop_cell_bite_ring.py` (suite `cell_bite_ring`, ~1 min, BUG-0350): the ring is read from the
+  game's cell UI rollover pool (`ring=` in `coop.pool kill` / `coop.pool cell`), the host's own bite
+  is the control. A creature that fled has no GFX on the guest for a while after the guest was
+  teleported to it: the test waits until `gfx=` is set (the game shows no ring without it). The
+  `onscreen=` field (world_to_screen) is not reliable on the headless lanes.

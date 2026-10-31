@@ -1,19 +1,19 @@
 ---
 id: BUG-0350
 title: Cell: a guest's bite on a host creature shows no health ring or hurt reaction on the guest, and the host sees no eating on the guest's cell
-status: open
+status: fixed
 kind: bug
 stage: Cell
 reported: 2026-10-31
 source: player reports 2026-10-31 (second batch: 11 zips, host and guest)
 role: guest
 versions: 0.7.3.1
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w22-reports2
+commits: 6f18d53, 8e58c97
+tests: tools/tests/coop_cell_bite_ring.py (suite cell_bite_ring)
 signature:
-docs: docs/re/cell.md (3, 10), docs/re/cell.md#cell-damage-gate
+docs: docs/re/cell.md#cell-guest-bite-ring, docs/06-testing.md#testing-cell-reload-ring
 related: BUG-0078, BUG-0240, BUG-0001
 ---
 
@@ -40,16 +40,29 @@ The mark came 30 s after a reload in which the guest was 125-133 m from the host
 screen (BUG-0352), so the player described earlier minutes.
 
 ## Fix
-Not done. Candidates: (a) on the guest, after `send_hit`, show the ring the game would show
-(call the health-ring function 0xE62350 for the mirror, RE needed for its arguments) and the hurt
-animation, without the hp change; (b) send the eat / bite events of a player's cell with the state
-and play the game's eat animation on the puppet. Cosmetic, but players read it as "the guest is
-broken".
+`cell.bite_ring` (cellsync.cpp `bite_ring`, guest): after sending the hit, the guest calls the game's
+ShowHealthRollover (0xE62340) on the mirror itself, under DamageCell's own conditions (damage > 0,
+GFX, hp > 0, not dead or dying, +0x17C and +0x111 clear, ShouldNotAttack false). The hp change and
+the creature's reaction stay the host's. `coop.fix cell.bite_ring off`: no ring (0.7.3.1).
+Not done: (a) the hurt animation on the mirror: DamageCell plays it and schedules event 2, whose end
+runs the after-hurt AI reaction, not wanted on a passive mirror; (b) eat / bite animations of a
+partner's puppet on the other machine: needs the cell eat animation ids and a message per meal (RE
+and protocol work, not cheap). Both stay open here as a smaller follow-up.
 
 ## Verification
-Test to write: guest bites a host creature (BAF1AD40 cell with a weapon, coop_cell_spin.py style);
-on the guest the mirror's health ring is shown (the field the ring sets, RE needed) within 0.5 s.
-Must FAIL on main.
+`coop_cell_bite_ring.py` (cell fixture, lane 3). The ring is the game's state: the cell UI's
+rollover pool entry of that cell (`ring=`); the host's own bite is the control (ring 0.50 in the
+host's game).
+* FAIL with `SPORE_FIX_OFF=cell.bite_ring`: out/lab/20261031-130728 (ring=-1 on all 3 guest bites
+  while the host took the hp), also 20261031-125228 and 20261031-130423.
+* PASS: out/lab/20261031-130836 (2 runs, ring 0.50 on each of 3 bites, 0.4-0.5 0.1 s later), also
+  20261031-130238.
+Found on the way: right after a teleport to a fleeing creature its mirror often has no GFX on the
+guest (not drawn there yet), so the game shows no ring (with or without the fix); the test waits for
+the GFX.
+Related tests PASS on lane 3: out/lab/20261031-132041 (cell_editor_invuln, cell_guest_bite, cell_rescue,
+cell_respawn_swap, creations_cell, cell); `make test` PASS.
 
 ## History
 - 2026-10-31: opened from the second batch of the 2026-10-31 report zips (host mark, code reading).
+- 2026-10-31: the ring fixed on fix/w22-reports2 (cell.bite_ring); hurt and eat animations not done.

@@ -42,3 +42,4 @@ SporeCoop::SpaceCam_MinZoom ; space tests: coop.space landcheck prints -1 for th
 SweepPrune::UpdatePairs ; Cell: the game's own broadphase sweep (int[1024] open list on the stack) stays (BUG-0337)
 SweepPrune::MergeAxis ; Cell: the game's own broadphase sweep stays (BUG-0337)
 SweepPrune::OverlapOther ; Cell: the game's own broadphase sweep stays (BUG-0337)
+Simulator::Cell::DNAForFood ; Cell: the editor's DNA budget in the log (BUG-0351)

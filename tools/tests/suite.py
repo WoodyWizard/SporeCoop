@@ -60,6 +60,8 @@ add('cell_ko_gap', P + 'coop_cell_ko_gap.py', warm=True, minutes=3, fixture='cel
 add('cell_food_away', P + 'coop_cell_food_away.py', warm=True, minutes=3, fixture='cell')  # a guest's meal while the host is away is acknowledged (BUG-0239; SPORE_FIX_OFF=pool.food_ack_away fails)
 add('cell_away', P + 'coop_cell_away.py', warm=True, minutes=5, fixture='cell')  # the guest plays its own pool while the host is in the menu, the host's again after (BUG-0205; SPORE_FIX_OFF=pool.away fails)
 add('cell_away_editor', P + 'coop_cell_away.py --editor', minutes=5)  # the same while the host is in its own cell editor (BUG-0205; SPORE_FIX_OFF=pool.away fails)
+add('cell_reload_join', P + 'coop_cell_reload_join.py', warm=True, minutes=4, fixture='cell')  # after a world reload the guest's cell is next to the host (BUG-0352; SPORE_FIX_OFF=cell.join_after_load fails)
+add('cell_bite_ring', P + 'coop_cell_bite_ring.py', warm=True, minutes=3, fixture='cell')  # a guest's bite shows the host creature's health ring in the guest's game (BUG-0350; SPORE_FIX_OFF=cell.bite_ring fails)
 add('cell_respawn', P + 'coop_cell_respawn.py', warm=True, minutes=3, fixture='cell')  # the game's death and rebuild with the partner knocked out, both play on (BUG-0221)
 add('diag_cell', P + 'coop_diag.py --fixture cell', warm=True, minutes=3, fixture='cell')  # session clock, /bug marks on both games, merge_logs, sync-check OK and a forced mismatch, its cost
 add('diag_creature', P + 'coop_diag.py --fixture creature', warm=True, minutes=3, fixture='creature')  # the same in Creature

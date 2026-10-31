@@ -45,6 +45,7 @@ bool totals_resend_enabled();
 bool away_enabled(); // BUG-0205 switch (pool.away): a host editor or load counts as away in Cell too // BUG-0128 switch (coop.pool fix resend): DNA total resent every 2 s too
 void on_player_leave(int id); // a remote player left: its knockout and food bookkeeping go
 void draw_overlay();
+void dna_note(const char* when); // BUG-0351: food, spent DNA and the editor budget in the log
 void join_partner(); // our cell next to the nearest partner (after a level rebuild) // knockout countdown / revive progress / off-screen arrows (SK_EV_OVERLAY)
 std::string status();
 const views::Set& view_centres(); // host: itself + every partner in the Cell stage (BUG-0174)
