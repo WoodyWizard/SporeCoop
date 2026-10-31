@@ -85,3 +85,18 @@ Reload part: FAIL with `SPORE_FIX_OFF=cell.own_rebuild` lab 20261031-130455 and 
 - 2026-10-31: opened from the host's and guest's report zips (marks, cell trace lines).
 - 2026-10-31: CORRECTION recorded; not reproduced on lanes 5/6 (coop_cell_own_load.py passes on main); the reload part is BUG-0349.
 - 2026-10-31: reload case reproduced and fixed (cell.own_rebuild); first-load case reproduced in 2 of 4 runs, still open.
+- 2026-10-31 (fix/w23-reports): first-load case measured, cause still open. `coop_cell_own_load.py`
+  with diagnostics, lanes 5/6, 34 runs: the guest did not eat after the first load in 12 of 34
+  (0 of 3 plants; batches of 3 per lane from 0/3 to 3/3), after the reload in 1 of 34 (with
+  cell.own_rebuild on: the reload fix is not complete either). In the
+  failing runs, NOT the cause (observed): the cell model data (16 parts, radius 1.259 like the good
+  runs), the broadphase (no pending, nothing removed or unsorted, pairs 60-120 of 4096, the avatar's
+  object id 0 with its own four endpoints and bounds around its position, the plant's bounds inside
+  the avatar's on both axes), the avatar's scale (+0x58 0.55) and rotation matrix (+0x5C, finite),
+  flags +0x48 = 6 as in good runs, the level (-1 / plants 0, scale_diff 2 like the partner).
+  Seen: `coop.pool` own_pairs (HandleCollisionPair calls with our cell, hook h_Pair) stayed 0 for 30
+  frames while the plant overlapped; not checked whether own_pairs is non-zero in good runs, so it
+  does not yet tell the broadphase pair from the narrow test in Collisions 0xE7F260 (GetIfNotDeleted
+  of both, then the bounding spheres from 0xE6D790). The mirrors-in-pool lead (pool 340-700 at the
+  rebuild in good and bad runs alike) does not separate the cases. Tools for the next step:
+  `coop.pool sapme [c<key>]`, `own_pairs=` in `coop.pool`, `pairs=` / `pairs_full=` in `coop.pool sap`.

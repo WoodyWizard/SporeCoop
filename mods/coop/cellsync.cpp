@@ -1015,6 +1015,7 @@ static const char* kind_of(uint8_t* c);
 // what our cell does to creatures (tests: how often a player gets to bite): collision pairs of our
 // cell with a creature, interaction events of kind 10 our cell started (Bite 0xE7B0A0)
 static uint32_t g_creature_pairs, g_bite_events;
+static uint32_t g_own_pairs; // tests (BUG-0342): collision pairs of our own cell with any cell
 using Bite_t = bool(SK_CDECL*)(uint32_t, uint32_t, void*, void*, int, float);
 static Bite_t o_Bite;
 static bool SK_CDECL h_Bite(uint32_t att, uint32_t vic, void* p, void* d, int x, float dt)
@@ -1050,6 +1051,8 @@ static void SK_CDECL h_Pair(uint8_t* a, uint8_t* b, float dt)
     }
     uint8_t* av = avatar();
     bool mine = av && (a == av || b == av);
+    if (mine)
+        g_own_pairs++;
     if (mine)
         own_probe("before a collision", a == av ? b : a);
     o_Pair(a, b, dt);
@@ -2002,6 +2005,7 @@ COOP_FIX_UNSAFE("cell.sap_sweep", "BUG-0337", g_fix_sap_sweep, "cell: the broadp
 static uintptr_t a_UpdatePairs, a_MergeAxis, a_Overlap;
 static void(__cdecl* o_UpdatePairs)(uint8_t*);
 static uint32_t g_sap_over, g_sap_peak, g_sap_sweeps, g_sap_left;
+static uint32_t g_sap_pairs, g_sap_pair_cap, g_sap_pairs_full; // tests (BUG-0342): pairs of the last sweep, the pair list size, sweeps that filled it
 static std::string sap_report(); // sweeps with over 1024 open objects, the most open at once, sweeps of ours
 static void __cdecl h_UpdatePairs(uint8_t* s)
 {
@@ -2044,6 +2048,9 @@ static void __cdecl h_UpdatePairs(uint8_t* s)
             }
         }
     }
+    g_sap_pairs = (uint32_t)F<int>(s, 8);
+    g_sap_pair_cap = (uint32_t)F<int>(s, 0);
+    g_sap_pairs_full += g_sap_pairs >= g_sap_pair_cap;
     g_sap_peak = std::max(g_sap_peak, peak);
     g_sap_left = std::max(g_sap_left, (uint32_t)open.size());
     if (peak > 1024 && !g_sap_over++) // the first one per session (the count is in `coop.pool sap`)
@@ -3489,9 +3496,9 @@ static std::string sap_report()
     char b[900];
     snprintf(b, sizeof b,
              "sap: particles=%d peak=%u spare=%u bad_frees=%u minus1_cells=%d free_head_bad=%d endpoints=%d objects_cap=%d pending=%d held=%u removed=%d nan=%d unsorted=%d peak_open=%d open_at_end=%d "
-             "max_first=%d live_objects=%d dup_min=%d lone_min=%d lone_max=%d sweeps=%u over_1024=%u sweep_peak=%u sweep_left=%u fix=%d | open: mirror=%d other=%d bg=%d puppet=%d avatar=%d no_cell=%d inverted=%d size=%.3f..%.3f%s",
+             "max_first=%d live_objects=%d dup_min=%d lone_min=%d lone_max=%d sweeps=%u over_1024=%u sweep_peak=%u sweep_left=%u pairs=%u/%u pairs_full=%u fix=%d | open: mirror=%d other=%d bg=%d puppet=%d avatar=%d no_cell=%d inverted=%d size=%.3f..%.3f%s",
              particles_used(), g_particles_peak, g_part_spare, g_part_bad_frees, m1, hb, n, cap, pend, modes::cell_sap_held(), removed, nan_v, unsorted, peak, (int)active.size(), max_first, live_objs, dup_min, lone_min, lone_max, g_sap_sweeps, g_sap_over, g_sap_peak, g_sap_left,
-             (int)g_fix_sap_sweep, k_mirror, k_other, k_bg, k_puppet,
+             g_sap_pairs, g_sap_pair_cap, g_sap_pairs_full, (int)g_fix_sap_sweep, k_mirror, k_other, k_bg, k_puppet,
              k_avatar, k_none, inverted, rmin, rmax, sample);
     return b;
 }
@@ -4046,6 +4053,52 @@ std::string debug(const std::vector<std::string>& a)
         snprintf(b, sizeof b, "particles: %d made, %d of %d used\n", made, particles_used(), kParticles);
         return b;
     }
+    if (!a.empty() && a[0] == "sapme") { // tests (BUG-0342): our own cell's broadphase object [or c<key>'s]
+        uint8_t* av = avatar();
+        if (a.size() > 1) {
+            uint32_t key = (uint32_t)strtoul(a[1].c_str() + (a[1][0] == 'c' ? 1 : 0), nullptr, 10);
+            auto it = g_mirrors.find(key);
+            av = is_guest() ? (it != g_mirrors.end() && it->second.local ? modes::cell_at(it->second.local) : nullptr)
+                            : modes::cell_at(key);
+        }
+        uint8_t* g = G();
+        uint8_t* sap = g ? F<uint8_t*>(g, 0x4104) : nullptr;
+        if (!av || !sap)
+            return "sapme: no avatar / sap";
+        int id = F<int>(av, 0x364), cap = F<int>(sap, 4);
+        char b[400];
+        if (id < 0 || id >= cap)
+            return "sapme: avatar " + std::to_string(F<uint32_t>(av, 0)) + " sap id " + std::to_string(id);
+        uint8_t* o = F<uint8_t*>(sap, 0x14) + 16 * id;
+        uint16_t e[4] = {F<uint16_t>(o, 8), F<uint16_t>(o, 10), F<uint16_t>(o, 12), F<uint16_t>(o, 14)};
+        auto val = [&](int axis, uint16_t ei) -> float {
+            uint8_t* ep = F<uint8_t*>(sap, (ei & 0x8000 ? 0x30 : 0x24) + 4 * axis);
+            return F<float>(ep, 8 * (ei & 0x7FFF) + 4);
+        };
+        auto* k = (uint32_t*)(av + kModelKey);
+        uint8_t* md = a_ModelData && k[0] ? skg::cdecl_call<uint8_t*>(a_ModelData, k[0], k[1], k[2]) : nullptr;
+        int np = F<int>(sap, 8), mine = 0;
+        int* pairs = F<int*>(sap, 0xC);
+        for (int i = 0; pairs && i < np && i < cap; i++)
+            mine += pairs[2 * i] == F<int>(o, 0) || pairs[2 * i + 1] == F<int>(o, 0);
+        auto who = [&](int axis, uint16_t ei) -> int {
+            uint8_t* ep = F<uint8_t*>(sap, (ei & 0x8000 ? 0x30 : 0x24) + 4 * axis);
+            return F<int16_t>(ep, 8 * (ei & 0x7FFF) + 2);
+        };
+        snprintf(b, sizeof b, "sapme: avatar %u idx=%08X sapid=%d obj=(%08X %08X) e=%04X/%04X %04X/%04X x=%.2f..%.2f y=%.2f..%.2f "
+                 "owners=%d/%d/%d/%d pos=(%.2f %.2f) size=%.2f grp=%08X live=%d pairs_with_me=%d/%d md_parts=%d md_radius=%.3f md_centre=(%.2f %.2f) model=%08X",
+                 F<uint32_t>(av, 0), F<uint32_t>(av, 0), id, F<uint32_t>(o, 0), F<uint32_t>(o, 4), e[0], e[1], e[2], e[3],
+                 val(0, e[0]), val(0, e[2]), val(1, e[1]), val(1, e[3]), who(0, e[0]), who(0, e[2]), who(1, e[1]), who(1, e[3]),
+                 pos_of(av).x, pos_of(av).y, F<float>(av, kSize), F<uint32_t>(av, 0x1B0), F<int>(sap, 0x10), mine, np, md ? F<int>(md, 0) : -1, md ? F<float>(md, 0x1244) : -1.f, md ? F<float>(md, 0x1238) : 0.f,
+                 md ? F<float>(md, 0x123C) : 0.f, k[0]);
+        std::string out = b;
+        float* m = (float*)(av + 0x5C);
+        char c2[300];
+        snprintf(c2, sizeof c2, " flags48=%04X scale58=%.3f m=(%.2f %.2f %.2f / %.2f %.2f %.2f / %.2f %.2f %.2f) p4c=(%.2f %.2f %.2f)",
+                 F<uint16_t>(av, 0x48), F<float>(av, 0x58), m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8],
+                 F<float>(av, 0x4C), F<float>(av, 0x50), F<float>(av, 0x54));
+        return out + c2;
+    }
     if (!a.empty() && a[0] == "sap") // the cell broadphase's axis-0 sweep, as UpdatePairs would run it (BUG-0337)
         return sap_report() + "\n";
     if (a.size() >= 2 && a[0] == "column") { // tests (BUG-0337): <n> of our cells on one vertical line next to us (all open at once in the sweep)
@@ -4142,9 +4195,9 @@ std::string debug(const std::vector<std::string>& a)
     }
     snprintf(b, sizeof b,
              "avatar hp=%d invuln=%d own_eats=%u own_points=%u bites_taken=%u damage_taken=%u pos=(%.1f %.1f) size=%.2f target=%.2f body=%.2f downed=%d partner_dist=%.1f "
-             "revive_dist=%.1f local_gameplay_cells=%d\n",
+             "revive_dist=%.1f local_gameplay_cells=%d own_pairs=%u\n",
              F<int>(av, kHp), F<uint8_t>(av, kInvuln), g_own_eats, g_own_food, g_bites_taken, g_damage_taken, pos_of(av).x, pos_of(av).y, F<float>(av, kSize), F<float>(av, kTargetSize), g_body,
-             g_downed ? 1 : 0, pd, revive_dist(av), local);
+             g_downed ? 1 : 0, pd, revive_dist(av), local, g_own_pairs);
     // cine=1: a caption waits for the player's OK (cinematic manager +0x2C, docs/re/space.md 7.2);
     // parts: the unlocked part flags S+0x34 (13 bytes)
     void* cm = a_Cine ? skg::cdecl_call<void*>(a_Cine) : nullptr;
