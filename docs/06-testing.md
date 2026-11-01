@@ -2735,6 +2735,10 @@ Before a tag `vX.Y.Z` (CLAUDE.md 4):
   rejoins; the guest's log must show the host's notice and the host's trace `share_wait=planet`
   within 25 s; after the takeoff the guest loads the host's system. `SPORE_FIX_OFF=
   world.share_wait_notice` fails.
+* coop_campaign.py's Civ shortcut founds the remaining cities with `SpawnNextCity(ex, 0, 0)` now (the
+  game's own call, broadcast to the guests); `(ex, 1, 0)` was not broadcast and left every guest to
+  the catch-up (campaign_space: Civ v missing in 45 of 45 runs). Lab 20261101-110949: no Civ
+  MISMATCH, no monitor violation; the run stays red on Space `p apart` (BUG-0378).
 * `diag.rejoin_grace` (BUG-0380): the host's sync-check dropped no entry of a player who left, so
   a guest that left and joined again (civ_city_join) was checked on its old schedule, 6 s after
   its world load; now a returning player is first checked 10 s after the join, like a newcomer.

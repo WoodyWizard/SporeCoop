@@ -69,9 +69,16 @@ Three separate things behind the three symptoms:
   (2 runs, all 3 cities and vehicles in 7 s, no city twice).
 * civ_cursor: FAIL with `SPORE_FIX_OFF=diag.rts_cursor` lab 20261101-094724 (MISMATCH p0 74.9);
   PASS lab 20261101-094852 (2 runs, no mismatch, resting pointer 0.0 m apart).
+* civ_city_join (rejoin grace): FAIL with `SPORE_FIX_OFF=diag.rejoin_grace` lab 20261101-104227
+  (gate: MISMATCH v: 1 missing, the test itself OK); before the switch existed the same in lab
+  20261101-100204; PASS lab 20261101-103417 (3 runs, gates on).
+* campaign_space (gates and monitor on): lab 20261101-105523 (city burst, the old instant=1
+  shortcut): Civ 1 MISMATCH (v19, a city on its way) instead of 6-8 per guest, no monitor
+  violation; lab 20261101-110949 (shortcut now (ex, 0, 0), broadcast): no Civ MISMATCH, no monitor
+  violation (totals, stage_apart); still red on Space `p apart` (p0 14.7 / 24.3, BUG-0378's area).
 * Monitor: gates_selftest.py "a growing treasury sampled between two host lines" fails on the old
   monitor, passes now; "a treasury 10000 apart" stays a violation.
 
 ## History
 - 2026-11-01: opened.
-- 2026-11-01 (fix/w31-civ-gate): three causes found and fixed (above).
+- 2026-11-01 (fix/w31-civ-gate): three causes found and fixed (above); the campaign's Civ shortcut founds with (ex, 0, 0) now (broadcast, as the game's tick).
