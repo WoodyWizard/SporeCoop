@@ -1328,3 +1328,12 @@ BUG-0355. GOG 2024, Ghidra and `tools/tests/coop_cell_spare.py` (suite `cell_spa
   one failure on a guest's view). ~ Inferred: some game code divides by or walks the count (the
   NaN cell); the 62-73 m first intervals are the column pushing itself apart (up to 46 m with the
   guard off too), not this.
+
+## A negative "spent DNA" after the cell editor (2026-11-01, fix/w30-progress)
+<a id="cell-editor-negative-spent"></a>
+
+* ✔ (player logs 0.7.3.3, BUG-0351) `S+0x2C` (DNA spent) can be negative after the game's cell editor:
+  the host's first editor (budget 20, the starting carnivore cell E3B1B67B) came back with spent=-40
+  (budget 60 on the next request), then -19 and -20. The mod writes neither field
+  (#cell-editor-dna). ~ Inferred: the editor charges the difference of the cells' worth, so removing the
+  starting cell's parts pays DNA back (vanilla sell-back; not checked in a solo game).

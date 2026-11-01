@@ -536,3 +536,71 @@ BUG-0354 (the owner's choice for BUG-0341: substitute instead of refusing). File
   are run by the host (its abilities count), the guest only shows them, so a substitute changes their
   look on that guest, not what they do. ? Not checked: an animation that only the pack part has (the
   base part's own is played on that guest).
+
+## The guest's own editor and the parts the species has collected (2026-11-01, fix/w30-progress)
+<a id="creations-own-editor-items"></a>
+
+BUG-0368. GOG 2024, Ghidra and lane 10 (`tools/tests/coop_guest_editor_locks.py`).
+
+* ✔ (Ghidra) The creature stage's own evolution request is built in the creature game's message
+  handler 0xD42E50 (message 0x4471C60, only with `this+0xDA` set): `new EditorRequest`, `+0xC`
+  0x465C50BA, `+0x10..+0x18` the avatar's species (0xC0BD60), `+0x90 = 0x64AA168` (the tag the
+  return message 0x30C11C7 carries back at its +0xC: then 0x572620 applies the evolution), **`+0x94` =
+  `cPlayer+0x10E8`** set with the intrusive pointer assignment 0xB5FAB0
+  (`SporeCoop::IntrusivePtr_Assign`), flags +0x34/+0x36/+0x37/+0x38/+0x39/+0x3B = 0 and +0x3C/+0x3D = 1,
+  `+0x70` a vector of the four dwords `cPlayer+0x10FC..+0x1108`; after Submit it posts 0x5D02A72 and
+  sets byte 0x1686AF0. `cPlayer` = `cGameNounManager +0x74` (0xF67D40).
+* ✔ `cPlayer+0x10E8` is the species' collected creature parts, a `Simulator::cCollectableItems`
+  (UnlockPart 0x596DA0 / LockPart 0x596E10 work on it). `IsUnlocked` 0x595110 (fastcall, ECX = items,
+  8-byte key on the stack, ret 8): the item's state (hash map +0x4D04) bit 0; an unlockable item
+  (hash map +0x1490: buckets +0x1490, count +0x1494, node: key +0/+4, next +0x28) without a state is
+  locked; anything else answers `this+0xC`.
+* ✔ (Ghidra) The palette asks 0x5C6820(item, items) "available" = `items == null` or
+  `IsUnlocked(item+0xC, item+0x14)` (0x5C6720 the opposite, "locked"); `cEditor::OnEnter` takes the
+  items from its request (`cEditor+0x1CC`) +0x94. **A request without +0x94 offers every part.**
+* ✔ runtime: the editor game mode is in the mode manager's list (`IGameModeManager::Get()` +0x14 ..
+  +0x18, entries of 0x18 bytes `{mode, id, name string}`) under id 0xDBDBA1 (0x57F3E0 registers it);
+  its vtable 0x13F5800 (+0x18 OnEnter). `IGameModeManager` vt 0x50 is not the active mode (another
+  object on every call).
+* ✔ runtime (lane 10, creature fixture): the guest's own editor (`open_own_editor`) had `+0x94 = 0`:
+  0 of the 312 unlockable parts locked, every part in the palette (the player report). With the
+  fix (`creations.own_editor_items`: the request gets the guest's `cPlayer+0x10E8`, Creature only)
+  258 of 312 are locked, the palette shows the locked silhouettes, "done" without an edit still
+  leaves at once. The guest plays the host's world, so these are the pack's collected parts (the
+  host's save).
+* Not done: the other native fields (+0x90 evolution tag, +0x70, the flags): +0x90 would make the
+  guest's editor apply an evolution to the world's species. The test command `coop.vote editor` on
+  the host builds a bare request too (its palette is unlocked in tests; the real host's editor is the
+  game's own).
+* Updates section 7's "Not done" line: +0x94 is now filled for the own editor (Creature).
+
+## Content packs: Creepy & Cute paints (2026-11-01, fix/w30-progress)
+<a id="creations-paint-substitutes"></a>
+
+BUG-0369. GOG 2024 game files and lane 10 (`tools/tests/coop_guest_pack_paints.py`).
+
+* ✔ A creature model (bem) names its three paint layers (base, coat, detail) by **skin effect ids**:
+  three dwords at byte 26 of the (unpacked) model header, right before the three layer seeds (1234
+  each) and the colours (`EditorModel::Save` 0x4AF780 writes `model+0x8C..+0x94` effects, `+0x98..`
+  seeds, `+0xA4..` colours into the resource's +0x18 block). In the fixtures the ids are written byte
+  by byte (no 0xFE run in the header).
+* ✔ A paint prop (type 0x00B1B104, group 0x406A0200; name 0x00B2CCCA) lists its layers' effects in
+  0xB0E066A7 (an array of three keys, 0 for a layer it does not paint) and default colours in
+  0xB0E066A8. The base game's effect sources are type 0x497767B9, group 0xEA5118B1
+  (Spore_Graphics.package; some, e.g. 0x103691CE, elsewhere).
+* ✔ Creepy & Cute holds 48 paint props (themes, base, coat, detail) whose 36 effects are compiled
+  into the pack's own effect directories (type 0xEA5118B0, groups 0x40604300..02): no base package
+  has them.
+* ✔ runtime (lane 10, both games without the pack, the host's Tiger Horse with the pack's "BP1
+  Dottie" base and coat): the guest showed the host's creature **black** (the layers it cannot find are
+  not painted). The player's "different colour".
+* Fix `creations.paint_substitute` (creations.cpp `substitute_paints`, on a game without the pack
+  only, where the part substitutes run): each pack effect in this game's copy of a creature's model
+  is rewritten in place to the base game effect of the same layer whose paint has the nearest
+  default colour of that layer (content_packs.h `kCreepyCutePaintSubstitutes`, 36 entries from
+  `tools/paint_substitutes.py`; the same number of 0xFE bytes, so it fits). The model's own colours
+  stay: the creature keeps the host's colours on a base game pattern. `coop.creations paints <key>`
+  prints the three effects of the model the game reads and how many are the pack's.
+* ? Not reproduced: "cubes". The black creature above is the only effect seen of a missing paint; the
+  pack parts are substituted since BUG-0354 (10 on the player's guest, logged). Not checked: a pack
+  part whose substitute has another parent block (eye children map to children of other eyes).
