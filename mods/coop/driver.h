@@ -111,14 +111,16 @@ inline void step(void* p, const net::Vec3& pos_in, const net::Quat& rot, const n
 // ds.kinematic: walked last frame (false: a new walk, the first goal at once). The caller ends a walk with
 // a MoveTo to the stop point (not StopMovement). variant (tests): 1 place only, no walk goal (the velocity
 // written instead); 2 the walk goal, but a teleport with the mark; 3 no teleport when the place was lost. own_height: on the guest's own ground
-// (BUG-0329, Tribe).
+// (BUG-0329, Tribe). walk_speed: the speed the game walks it at, when slower than the remote's (the placing still
+// follows the remote's speed).
 constexpr float kWalkAhead = 12.f, kWalkTurnDot = 0.995f, kWalkCatchUp = 3.f;
 constexpr double kWalkMinGap = 0.3, kWalkMaxGap = 1.5;
 constexpr float kWalkLostErr = 0.75f;   // m
+constexpr float kWalkSnap = 2.5f;       // m: farther off it is teleported onto the path (the remote itself jumped)
 constexpr double kWalkLostAfter = 0.15; // s
 
 inline void walk_place(void* c, const net::Vec3& pos_in, const net::Vec3& vel, const net::Quat& rot, State& ds, double now,
-                       int variant = 0, bool own_height = false)
+                       int variant = 0, bool own_height = false, float walk_speed = -1.f)
 {
     net::Vec3 pos = own_height ? at_own_height(pos_in, game::position(c)) : pos_in; // BUG-0329
     float sp = speed(vel);
@@ -129,7 +131,7 @@ inline void walk_place(void* c, const net::Vec3& pos_in, const net::Vec3& vel, c
         ds.stuck_since = 0;
     }
     if (variant != 1 && sp > 0.01f) {
-        game::set_speed(c, sp);
+        game::set_speed(c, walk_speed > 0 ? std::min(walk_speed, sp) : sp);
         net::Vec3 hd{vel.x / sp, vel.y / sp, vel.z / sp};
         float dot = hd.x * ds.goal_dir.x + hd.y * ds.goal_dir.y + hd.z * ds.goal_dir.z;
         if (!was || (now - ds.last_cmd > kWalkMinGap && dot < kWalkTurnDot) || now - ds.last_cmd > kWalkMaxGap) {
@@ -163,6 +165,15 @@ inline void walk_place(void* c, const net::Vec3& pos_in, const net::Vec3& vel, c
     else if (err < 0.2f)
         ds.held = false;
     ds.place_lost += ds.held;
+    if (err > kWalkSnap) { // the remote jumped (the host put its NPC elsewhere: 4.8 m in one state, creature_npc_dash's
+                           // mate at the dash's start): closed at 3 m/s it stayed 2-7 m off for 2 s
+        game::teleport(c, pos, rot);
+        ds.teleports++;
+        ds.placed_to = pos;
+        ds.last_step = now;
+        ds.track = Track{};
+        return;
+    }
     double dt = was && now > ds.last_step ? std::min(now - ds.last_step, 0.1) : 1.0 / 60;
     float max_step = (sp + kWalkCatchUp) * (float)dt;
     net::Vec3 to = pos;

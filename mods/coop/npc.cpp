@@ -1017,6 +1017,7 @@ static void guest_tick(double now)
         // BUG-0361: the last 0.1 s of a walk is interpolated towards a state that stands (velocity 0): a
         // walked proxy goes on with the speed of its path to the stop point instead of standing there
         net::Vec3 vel = s.vel;
+        float walk_speed = -1.f;
         {
             double pdt = now - px.prev_tgt_t;
             if (pdt > 0 && pdt < 0.25) {
@@ -1039,10 +1040,8 @@ static void guest_tick(double now)
                 // the game walks the proxy at the path's speed, or its walk between two placings runs ahead
                 // (Tribe: 0.6-1.4x the path in 77 % of the 0.1 s windows where the path was slower than the speed)
                 float ps = std::max(px.path_sp * 1.1f, 0.5f);
-                if (walking && ps < px.walk_sp) {
-                    float k = ps / px.walk_sp;
-                    vel = {vel.x * k, vel.y * k, vel.z * k};
-                }
+                if (walking && ps < px.walk_sp)
+                    walk_speed = ps; // (only the walk: scaling the placing too made it trail at every start, creature_npc_dash)
             }
             px.prev_tgt = s.pos;
             px.prev_tgt_t = now;
@@ -1053,7 +1052,7 @@ static void guest_tick(double now)
             if (walking) { // BUG-0361: the game walks it, placed on the path
                 if (!px.kinematic)
                     px.drv.kinematic = false; // a new walk: its first goal at once
-                drive::walk_place(px.c, s.pos, vel, s.rot, px.drv, now, g_walk_variant, rts);
+                drive::walk_place(px.c, s.pos, vel, s.rot, px.drv, now, g_walk_variant, rts, walk_speed);
                 walked = true;
             } else {
                 if (!px.kinematic)
