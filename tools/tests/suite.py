@@ -41,7 +41,12 @@ def allow(gate, ticket, reason, stage=None, kind=None, who=None, match=None):
 
 
 # allowed in every test (each a known bug with its ticket; empty when every gate holds everywhere)
-ALLOW_ALL = []
+ALLOW_ALL = [
+    allow('monitor', 'BUG-0399', 'the guest shows a few host animals under its ground for 20-30 s after joining Tribe',
+          kind='proxies', match=r'under the ground \(Tribe\)'),
+    allow('monitor', 'BUG-0400', "the guest's own creature stands under the terrain after its own species replaced the "
+          "host's", kind='ground', who='guest', match=r'its own creature [\d.]+ m under the ground \(Creature\)'),
+]
 
 
 def add(name, cmd, suites=('full',), warm=False, exclusive=False, minutes=4, fixture=None, reports=False,
@@ -237,6 +242,7 @@ add('tribe_walk_fps30', P + 'coop_tribe_walk.py --fps 30', minutes=5, fixture='t
 add('tribe_walk_player', 'SPORE_NET=player ' + P + 'coop_tribe_walk.py --fps 30', minutes=5, fixture='tribe')  # tribe_walk at 30 fps over the player network (BUG-0394)
 add('npc_run_hp', P + 'coop_npc_run_hp.py', warm=True, minutes=3, fixture='creature')  # BUG-0334: a running NPC's health and death reach the guest (SPORE_FIX_OFF=npc.kinematic_sync fails)
 add('creature_partner_hp', P + 'coop_creature_partner_hp.py', warm=True, minutes=3, fixture='creature')  # BUG-0373: each game shows the partner's real health and max health on its creature (SPORE_FIX_OFF=creature.partner_hp fails)
+add('monitor_plant', P + 'coop_monitor_plant.py', minutes=5, fixture='creature', gates={'off': ('monitor', 'sync-check')})  # the invariant monitor catches one planted problem per rule over the mod's monitor fields (drawn, puppet_hp, posse_damage, unlocks, proxies; ground: puppet_under with SPORE_FIX_OFF=creature.puppet_ground; docs/06-testing.md#testing-monitor-fields); fails on a build without the fields
 add('creature_party', P + 'coop_creature_party.py', warm=True, minutes=3, fixture='creature')  # BUG-0374: the host's pack does not fight the guest after the guest's hit on it (SPORE_FIX_OFF=npc.party_peace fails)
 add('nest_eggs', P + 'coop_nest_eggs.py', warm=True, minutes=3, fixture='creature')  # BUG-0384: the host's eggs at a nest of another species are on the guest at the same places, on the ground; an egg eaten on one game is eaten on the other (SPORE_FIX_OFF=nest.eggs fails)
 add('creature_brain_hp', P + 'coop_creature_brain_hp.py', minutes=4, fixture='creature')  # BUG-0375: a guest playing its own creature gets the brain level's health (SPORE_FIX_OFF=creature.own_brain_hp fails)

@@ -175,6 +175,7 @@ def monitor_cases(tmp):
     tl.add(monitor.parse_line('host', partner(99) + ' drawn=(1 2 3)'))
     check(monitor.HOOKS[0](monitor.DEFAULTS).available(tl), 'monitor: the drawn hook is available once a line has drawn=')
     check(all(monitor.NEEDS.get(c.name) for c in monitor.HOOKS), 'monitor: every hook says what mod output it needs')
+    field_cases(tmp)
     # the live thread over growing logs, no console
     paths = {w: os.path.join(tmp, f'live.{w}.log') for w in ('host', 'guest')}
     for p in paths.values():
@@ -193,6 +194,71 @@ def monitor_cases(tmp):
     v = w.stop()
     check(any(x.startswith('MONITOR-VIOLATION puppet guest:') for x in lines_out) and len(v) == len(lines_out),
           f'monitor: the live thread prints a violation once ({lines_out[:2]})')
+
+
+def aligned_pair(n=8, host_own='', guest_own='', host_sees='', guest_sees='', **kw):
+    """clean_pair with the trace lines on the session clock's 10 s marks (the monitor fields' timing) and
+    the given monitor fields at the end of the lines (a callable: k -> the fields of the k-th line)"""
+    f = lambda x, k: x(k) if callable(x) else x  # noqa: E731
+    h, g = [], []
+    for k in range(n):
+        t = 10.0 * k + 0.01
+        link = (5 * k, 1000 * (k + 1), 0, 0)
+        h += [own(t, **kw.get('h', {})) + f(host_own, k), partner(t, link=link, **kw.get('hs', {})) + f(host_sees, k)]
+        g += [own(t + 0.02, role='guest', pid=1, **kw.get('g', {})) + f(guest_own, k),
+              partner(t + 0.02, pid=0, name='Alice', link=link) + f(guest_sees, k)]
+    return h, g
+
+
+def field_cases(tmp):
+    """the invariants over the mod's monitor fields (monitor.FIELDS): quiet on a clean pair, caught on a
+    planted problem"""
+    # own pos=(1.0 2.0 3.0) on both machines' own lines
+    got = scenario(tmp, 'f_clean', *aligned_pair(
+        host_own=' agl=0.02 parts=40:0000ABCD', guest_own=' agl=-0.03 parts=40:0000ABCD proxy_under=0 proxy_stuck=0',
+        host_sees=' drawn=(1.5 2.0 3.0) drawn_v=0.0 agl=0.00 puppet_hp=10/10',
+        guest_sees=' drawn=(1.0 2.5 3.0) drawn_v=0.0 agl=-0.04 puppet_hp=10/10'))
+    check(not got, f'monitor fields: a clean pair has no violation ({got})')
+    got = scenario(tmp, 'f_drawn', *aligned_pair(host_sees=' drawn=(9.0 2.0 3.0) drawn_v=0.0'))
+    check(got == {'drawn'}, f'monitor: drawn: the host draws the guest 8 m off its own position ({got})')
+    got = scenario(tmp, 'f_drawn_fast', *aligned_pair(host_sees=' drawn=(9.0 2.0 3.0) drawn_v=30.0'))
+    check(not got, f'monitor: drawn: 8 m behind a partner running 30 m/s is the lag ({got})')
+    got = scenario(tmp, 'f_drawn_space', *aligned_pair(host_sees=' drawn=(9.0 2.0 3.0) drawn_v=0.0',
+                                                       h=dict(stage='Space'), g=dict(stage='Space')))
+    check(not got, f'monitor: drawn: 8 m in Space is within its limit ({got})')
+    got = scenario(tmp, 'f_under', *aligned_pair(host_sees=' drawn=(1.0 2.0 3.0) drawn_v=0.0 agl=-0.90'))
+    check(got == {'ground'}, f'monitor: ground: the guest\'s puppet 0.9 m under the host\'s ground ({got})')
+    got = scenario(tmp, 'f_under_own', *aligned_pair(guest_own=' agl=-1.20'))
+    check(got == {'ground'}, f'monitor: ground: the guest\'s own creature under the ground ({got})')
+    got = scenario(tmp, 'f_over', *aligned_pair(guest_own=' agl=0.01', host_sees=' agl=4.50'))
+    check(got == {'ground'}, f'monitor: ground: the puppet 4.5 m up while its player walks on the ground ({got})')
+    got = scenario(tmp, 'f_over_rock', *aligned_pair(guest_own=' agl=6.00', host_sees=' agl=6.10'))
+    check(not got, f'monitor: ground: puppet and player both on a rock 6 m over the terrain ({got})')
+    got = scenario(tmp, 'f_tribe_hi', *aligned_pair(host_own=' agl=0.00 agl_hi=7.00', h=dict(stage='Tribe'),
+                                                    g=dict(stage='Tribe')))
+    check(got == {'ground'}, f'monitor: ground: a tribe member 7 m over the ground ({got})')
+    got = scenario(tmp, 'f_php', *aligned_pair(host_sees=' puppet_hp=10/10', g=dict(hp=4), hs=dict(hp=4)))
+    check(got == {'puppet_hp'}, f'monitor: puppet_hp: the guest at 4/10, its creature on the host full ({got})')
+    h, g = aligned_pair()
+    h.append("12:00:00.000 [s 33.0] [INF] coop: damage: 1 hit by pack owner=npc posse=1 amount=2.5 forwarded")
+    g.append("12:00:00.000 [s 33.1] [INF] coop: damage: 1 hit by proxy owner=npc posse=? amount=2.5 from the host")
+    got = scenario(tmp, 'f_posse', h, g)
+    check(got == {'posse_damage'}, f'monitor: posse_damage: the host\'s pack hit the guest ({got})')
+    h, g = aligned_pair()
+    h.append("12:00:00.000 [s 33.0] [INF] coop: damage: 1 hit by pack owner=npc posse=1 amount=0.0 dropped (npc.party_peace)")
+    h.append("12:00:00.000 [s 34.0] [INF] coop: damage: 0 hit by npc owner=npc posse=0 amount=3.0")
+    got = scenario(tmp, 'f_posse_ok', h, g)
+    check(not got, f'monitor: posse_damage: a dropped party hit and an NPC\'s hit are no violation ({got})')
+    got = scenario(tmp, 'f_parts', *aligned_pair(n=14, host_own=lambda k: f' parts={40 if k < 3 else 42}:0000ABCD',
+                                                 guest_own=' parts=40:0000ABCD'))
+    check(got == {'unlocks'}, f'monitor: unlocks: the host unlocked 2 parts, the guest still at 40 a minute later ({got})')
+    got = scenario(tmp, 'f_parts_ok', *aligned_pair(n=14, host_own=lambda k: f' parts={40 if k < 3 else 42}:0000ABCD',
+                                                    guest_own=lambda k: f' parts={40 if k < 5 else 42}:0000ABCD'))
+    check(not got, f'monitor: unlocks: the guest gets the host\'s new parts within a minute ({got})')
+    got = scenario(tmp, 'f_proxy', *aligned_pair(guest_own=lambda k: f' proxy_under={1 if k > 3 else 0} proxy_stuck=0'))
+    check(got == {'proxies'}, f'monitor: proxies: a proxy under the ground on 4 lines ({got})')
+    got = scenario(tmp, 'f_proxy_once', *aligned_pair(guest_own=lambda k: f' proxy_under=0 proxy_stuck={1 if k == 3 else 0}'))
+    check(not got, f'monitor: proxies: one line with a stuck proxy is no violation ({got})')
 
 
 def netem_cases():

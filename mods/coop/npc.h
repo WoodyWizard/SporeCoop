@@ -52,6 +52,12 @@ void* proxy(uint16_t id);                       // guest: local creature mirrori
 bool damage_filter(void* creature, float& damage, int type, void* attacker);
 std::string status();
 std::string trace_line(const net::Vec3& me, float radius); // support trace: NPCs near `me`
+// the invariant monitor (docs/06-testing.md#testing-monitor), guest: the proxies as drawn, sampled at the
+// start of the mod's frame (4 times a second); fields " proxy_under=<n> proxy_stuck=<n>" for the own
+// trace line: proxies under this game's ground for 1 s / over 3 m off the host's NPC for 2 s since the
+// last line ("" on the host and outside Creature / Tribe)
+void monitor_tick(double now);
+std::string monitor_fields();
 std::vector<syncdbg::Entry> sync_entries(); // coop.sync (tests)
 std::string list();                                  // debug: mirrored NPCs
 std::string creatures(bool untuned_only, uint32_t species); // debug: creatures (+0xE84 = archetype tuning)

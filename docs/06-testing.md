@@ -2652,7 +2652,8 @@ chaos_creature_long. Every other test: none.
 
 Hooks (inactive until the mod writes their field; `monitor.NEEDS` has the exact text). New fields
 go at the END of a trace line (after `pending=` / `editor_pending=`) so today's parsers keep
-working:
+working. Update 2026-11-01 (feat/w32-monitor-diag): the mod writes all of them now and the rules are
+active, see [testing-monitor-fields](#testing-monitor-fields); the list below is the original plan:
 
 * drawn (audit M1/M2): partner line `drawn=(x y z)`, the puppet's position read back from the game
   object (not the interpolation target); compared with the partner's own `pos=` at the same session
@@ -3027,3 +3028,73 @@ can eat a plant in the 2 s of the shared food check, which now allows the host's
   missed in one run; citizens' p90 1.9 m in the other).
 * Log gates on lane 7 with diag.rts_cursor (BUG-0380) in: chaos_tribe 2/2, tribe_coop 2/2, tribe_play 2/2,
   play_tribe 2/2 without any sync-check MISMATCH (out/lab/20261101-115510).
+## The monitor's fields from the mod: drawn, ground, puppet health, posse hits, unlocks, proxies (2026-11-01, feat/w32-monitor-diag)
+<a id="testing-monitor-fields"></a>
+
+The hooks of [testing-monitor](#testing-monitor) are active: the mod writes their fields and
+`monitor.py` checks them in every test and campaign (`monitor.FIELDS` has the exact output, player
+logs carry them too: [REPORTING.md#reporting-monitor-fields](REPORTING.md#reporting-monitor-fields)).
+
+* **Timing**: the `trace:` lines are written at the session clock's 10 s marks (`[s 20.0xx]` on every
+  machine, within the clock's error; local 10 s without a session clock; a stage change still writes
+  at once). So a partner line of one machine and the partner's own line of the same mark describe the
+  same moment (measured 2-40 ms apart), which the drawn / ground / puppet_hp rules need.
+* **Read at the start of the frame**: on a frame that writes the trace, `monitor_frame_start`
+  (coop.cpp, right after the stale-world check, before any message, module tick or puppet driving)
+  reads each partner's puppet through its adapter (`fill`: Creature `game::position`, health, max
+  health; Cell / Space the object's own fields; Tribe / Civ the pointer marker). That is what the
+  game drew last (the BUG-0360 measuring pitfall: after the driving it is our own target).
+
+| rule | field (end of the line) | violation |
+|---|---|---|
+| drawn | partner `drawn=(x y z) drawn_v=<m/s>` | the drawn position over `DRAWN_BASE[stage]` (Cell / Creature / Tribe 3 m, Civ 6 m, Space 12 m) + `drawn_v` x (0.3 s + rtt + the two lines' time apart) from the partner's own `pos=` of the same mark, on 2 lines in a row; Tribe / Civ only while the pointer rests (`drawn_v` <= 0.5: a moving pointer's copy trails, tests pin it in jumps) |
+| ground | own / partner `agl=<m>`, Tribe `agl=<lowest> agl_hi=<highest>` of the player's members | under -0.5 m on 2 lines in a row (own avatar, puppet, members); a Creature puppet over 3 m while its player's own line says under 1 m (that covers jumps, rocks, water: the player's own height explains the puppet's); Tribe members over 3 m. Not the own creature over 3 m (`GetHeightAt` is the terrain only: 1-16 m on a rock) |
+| puppet_hp | partner `puppet_hp=<hp>/<max>` (read from the puppet creature) | differs from its player's own `hp=` of the same mark (max by 0.5, hp by 1 or 10 %) on 2 lines in a row |
+| posse_damage | `damage: <victim> hit by <kind> owner=... posse=<0|1|?> amount=<hp> [how]` (npc.cpp, where a hit on a player is applied, forwarded or dropped) | `posse=1` with an amount over 0, at once |
+| unlocks | own `parts=<count>:<hash>` (Creature) | a guest's count under the host's on its lines 70 s and 60 s before (same world), on 2 lines in a row |
+| proxies | guest own `proxy_under=<n> proxy_stuck=<n>` (Creature / Tribe, proxies under the ground for 1 s / over 3 m off the host's NPC for 2 s since the last line; `npc: proxy <id> ...` names the first) | over 0 on 2 lines in a row |
+
+Calibration (lane 6, `out/lab/20261101-120947-feat-w32-monitor-diag` smoke + puppet_walk and
+`20261101-123454` tribe_coop / chaos_tribe; per field over every trace line with the field):
+* drawn: Creature 40 lines, 0.30 m median, p90 0.84 m, max 1.28 m (at most 0.43 of the limit, walking
+  in puppet_walk 0.68 m); Space 18 lines, p90 1.21 m, max 12.8 m at speed (0.22 of its limit); Cell 14,
+  max 0.42 m; Civ 6, 0 m; Tribe 70, 0 m at rest, up to 65 m while chaos_tribe's pinned pointers jump
+  (hence: at rest only).
+* agl: Creature puppets -0.05 to 0.42 m (the kSink placing: -0.05), own creatures 0.00 to 0.48 m except
+  one guest at -0.94 m after its species swap (BUG-0400); Tribe members -0.01 to 0.00 m (host and guest).
+* puppet_hp: 40 lines, equal to the player's own hp and max hp every time.
+* parts: 54:C81D84FB on host and guest (the fixture's collected parts, 312 unlockable).
+* proxies: stuck 0; under 1-4 proxies on the guest's first two Tribe lines after joining (BUG-0399).
+* damage: a forwarded NPC hit (`posse=0`) and the guest's `from the host` line (`posse=?`).
+* Both new findings (BUG-0399, BUG-0400) are allowed in `suite.ALLOW_ALL` with their tickets.
+
+Planted problems (each rule must fire; `monitor_plant`, tools/tests/coop_monitor_plant.py, full suite,
+lab gates `monitor` and `sync-check` off for it: it judges the violations itself): `coop.parts unlock 3`
+on the host only (unlocks), `coop.hp packhit 1 0.5` with `npc.party_peace` off (posse_damage; with it on
+the dropped hit is no violation), `creature.partner_hp` off on the host while the guest's hp is held at half (puppet_hp),
+`coop.puppet hold on` on the guest while the host walks away (drawn), `coop.npc pwalk` of one proxy on the
+guest (proxies). ground: `SPORE_FIX_OFF=creature.puppet_ground lab.py run puppet_under` (the guest's states
+1 m under the host's ground while it walks; in monitor_plant a standing puppet was put back on the ground
+by the game and the driving: `coop.track lift -0.9` / `-3` never showed under). Offline: gates_selftest.py `field_cases` (each rule caught on planted lines, quiet on
+the lag of a fast partner, Space's limit, a rock, a dropped party hit, a guest that gets the new parts in
+time, one stuck line).
+
+New test helpers: `coop.parts [unlock <n>]` (the field's count and hash; unlock n locked parts in this
+game only, `cCollectableItems::UnlockPart`, docs/re/creations.md#creations-unlock-part), `coop.hp packhit
+<player> <hp>` (host: the first pack member hits that player's puppet through the damage filter).
+Pitfall: `tools/tests/monitor.py replay` over whole lane logs mixes sessions (the session clock starts
+at 0 at every join): cut them where `[s ...]` goes back.
+
+Evidence (lane 6): the rules failing on planted problems: `monitor_plant` PASS in
+`out/lab/20261101-131215-feat-w32-monitor-diag` (drawn 15.7 m, puppet_hp 16/16 vs 8/16, proxies, unlocks
+54 vs 57, posse_damage 0.5 hp forwarded; with the fix on the dropped pack hit is no violation); ground:
+`SPORE_FIX_OFF=creature.puppet_ground` puppet_under `20261101-125249` (`partner 1's puppet 1.00 m under
+the ground on 2 lines`); posse_damage in its own bug test: `SPORE_FIX_OFF=npc.party_peace` creature_party
+`20261101-131058` (8 violations). `SPORE_FIX_OFF=creature.partner_hp` creature_partner_hp
+(`20261101-130959`) fails on its own checks, not on the monitor: its hit lasts 3 s, the rule needs two
+10 s marks. The clean run `20261101-131215` (smoke + puppet_walk + monitor_plant on lane 6): no monitor
+violation in any passing test; creature failed on BUG-0390, puppet_walk on BUG-0394 (walk gait 0 %),
+ui skipped (exclusive). Second calibration (that run): drawn Creature 69 lines p50 0.32 m (planted
+lines aside under 1.3 m), Space 82 lines max 4.1 m (0.11 of the limit), Cell max 0.36 m, Civ 0 m, Tribe at
+rest 0 m except one line right after a join (151 m: the pointer copy of an older state, one line);
+agl Creature puppets -0.20 to 0.64 m, own -0.43 to 1.04 m; Tribe members -0.01 to 0.00 m.

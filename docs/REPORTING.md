@@ -63,7 +63,7 @@ so a 2 h game fits the 24 MB zip many times.
 
 | prefix | when | what it answers |
 |---|---|---|
-| `trace:` | every 10 s while connected, and at once after a stage or world change | role and id, players, mode, world id and planet file, own position, hp, species, flags, DNA and the shared food / money of this game, host away, vote, the game's input lock, a pending own editor; then one `partner <id>` line each: its mode and world, distance, `same_place`, `puppet=shown` or `hidden: <why>`, its hp and species, the age of its last state, rtt, resends / packets, silence, pending reliable messages; once a minute the versions |
+| `trace:` | every 10 s while connected (at the session clock's 10 s marks), and at once after a stage or world change | role and id, players, mode, world id and planet file, own position, hp, species, flags, DNA and the shared food / money of this game, host away, vote, the game's input lock, a pending own editor; then one `partner <id>` line each: its mode and world, distance, `same_place`, `puppet=shown` or `hidden: <why>`, its hp and species, the age of its last state, rtt, resends / packets, silence, pending reliable messages; once a minute the versions; at the end the [monitor fields](#reporting-monitor-fields) (`drawn=`, `agl=`, `puppet_hp=`, `parts=`, `proxy_under=`) |
 | `cell:` | with each trace in Cell | the own cell's level, size, hp, model and **diet** (`herb`, `carn`, `omni`), the food totals, the plants / meat / creatures **on the screen** and the nearest plant / meat, the pool size, mirrors (guest), knocked out, and what it did since the last line (ate, points, eats sent / applied / refused, bites); the guest's line ends with `host d=` and "outside the host's populated area" beyond 40 m (BUG-0174) |
 | `creature:` | with each trace in Creature | NPCs simulated (host) or mirrored (guest) within 60 m, the nearest, and the nest distance |
 | `tribe:` `civ:` `space:` | every 30 s in those stages | the first line of the stage module's counters |
@@ -340,3 +340,32 @@ of Cell bot play (`play_cell`, lab run 20261029-165619): about 0.4 MB per hour, 
 `coop.diag` shows the clock, the sync-check counters and costs, FPS, memory, the network per peer
 and the settings; `coop.diag summary | mem | detail 0|1|2 | mark <text> | sync ...`; `coop.bug
 <text>`; `env` (SporeKit) also lists the game files.
+
+### The monitor fields: what each player saw (2026-11-01, feat/w32-monitor-diag)
+<a id="reporting-monitor-fields"></a>
+
+The `trace:` lines end with a few fields the lab's invariant monitor checks while a test plays
+([06-testing.md#testing-monitor](06-testing.md#testing-monitor)); players' reports carry them too,
+and `tools/tests/monitor.py replay <the players' logs>` runs the same checks over a report. The trace
+lines are now written at the session clock's 10 s marks (`[s 20.0]`, `[s 30.0]`, ...): every player's
+lines of one moment sit next to each other in `tools/merge_logs.py`.
+
+| field | line | what it says |
+|---|---|---|
+| `drawn=(x y z) drawn_v=<m/s>` | partner | where this game drew the partner's creature / cell / ship (Tribe / Civ: its pointer), read back from the game before the mod moved it this frame, and the partner's speed as seen here. Compare with the partner's own `pos=` of the same `[s ...]` moment: a puppet far from it is "I see my partner somewhere else" |
+| `agl=<m>` | own, partner | Creature: height of the creature over this game's terrain (negative: under the ground; 1-16 m on a rock: the terrain query knows no rocks). Tribe: `agl=<lowest> agl_hi=<highest>` of the player's tribe members as drawn here |
+| `puppet_hp=<hp>/<max>` | partner | Creature: the health the partner's creature has in this game (its health bar), next to `hp=` (what the partner's game reported) |
+| `parts=<count>:<hash>` | own | Creature: the creature parts unlocked in this game (the editor's palette); equal counts and hashes on every player = the same parts |
+| `proxy_under=<n> proxy_stuck=<n>` | own (guest) | Creature / Tribe: the host's animals shown here that were under the ground for 1 s / over 3 m off the host's animal for 2 s since the last line |
+
+Hits on players are logged where they are applied, forwarded or dropped (five per kind and 10 s,
+then summed up; a hit by the player's own party always):
+
+    damage: 1 hit by pack owner=npc posse=1 amount=2.5 forwarded
+
+`<victim>` is the hit player's id; kind `none` (no attacker), `avatar`, `player` (a partner, `owner=`
+its id or `host`), `proxy` (on a guest: the host's animal), `pack` / `family` (the host's own party),
+`npc`; `posse=1` the hit player's own party (`?`: not known on this machine); `forwarded` (the host
+sends a hit on the guest's creature to that guest), `dropped (npc.party_peace)`, `from the host` (the
+guest applies the host's forwarded hit). "My own pack attacks my friend" (BUG-0374) shows as a
+`posse=1` line with an amount over 0.

@@ -103,6 +103,11 @@ struct Remote {
     int share_tries = 0;        // retries in this phase (share_try_key)
     uint64_t share_try_key = 0;
     double retry_at = 0;        // no share for this guest before
+    // the invariant monitor (docs/06-testing.md#testing-monitor): the puppet read back from the game at
+    // the start of the mod's frame (before any driving: where the game drew it) on a frame that writes
+    // the trace lines; drawn_at = that frame's time, -1: not read
+    net::PlayerState drawn_st;
+    double drawn_at = -1;
 };
 
 net::Session g_sess;
@@ -1960,6 +1965,165 @@ const char* puppet_why(const Remote& r, double now)
     return r.puppet ? "shown" : "hidden: not spawned (yet)";
 }
 
+// ---- the invariant monitor's fields (docs/06-testing.md#testing-monitor) ----
+// The trace lines are written at the session clock's 10 s marks (every machine of a session in the same
+// frame, within the clock's error of a few ms), so the lab compares a partner's puppet with that partner's
+// own trace line of the same moment. Without a session clock: every 10 s of the local clock as before.
+double g_trace_slot = -1e9, g_trace_slot_now = -1e9;
+bool g_trace_due = false;
+
+// the start of the mod's frame (after the stale-world check, before any message, module or puppet
+// driving): is a trace due this frame, and if so each partner's puppet as the game drew it
+void monitor_frame_start(double now)
+{
+    bool ok = false;
+    double st = support::session_time(&ok);
+    g_trace_slot_now = ok ? std::floor(st / 10.0) : -1e9;
+    g_trace_due = g_trace_at < -50 || (ok ? g_trace_slot_now != g_trace_slot : now - g_trace_at >= 10.0);
+    if (!g_trace_due || !trace::on() || !g_sess.connected())
+        return;
+    for (auto& [id, r] : g_remotes) {
+        r.drawn_at = -1;
+        void* p = r.echo ? nullptr : puppet_now(r);
+        if (!p || (creature_puppet(r.puppet_adapter) && !game::creature_listed(p)))
+            continue;
+        r.drawn_st = net::PlayerState{};
+        r.puppet_adapter->fill(p, r.drawn_st);
+        r.drawn_at = now;
+    }
+}
+
+// height over this game's terrain (cPlanetModel::GetHeightAt); false without a planet
+static bool agl_of(const net::Vec3& p, float& h)
+{
+    float g = game::ground_radius(p);
+    if (g <= 0)
+        return false;
+    h = drive::speed(p) - g;
+    return std::isfinite(h);
+}
+
+// Tribe: the lowest and highest of the player tribe's members of `owner` as this game draws them
+// (host: its own members; guest: the mirrors, drawn before this frame's driving)
+static bool tribe_agl(uint8_t owner, float& lo, float& hi)
+{
+    struct Acc {
+        uint8_t owner;
+        float lo = 1e9f, hi = -1e9f;
+        int n = 0;
+    } a{owner};
+    tribe::for_each_tracked(
+        [](const tribe::TrackMember& m, void* u) {
+            auto* a = (Acc*)u;
+            float h;
+            if (m.owner != a->owner || !agl_of(m.drawn ? *m.drawn : game::position(m.c), h))
+                return;
+            a->lo = std::min(a->lo, h);
+            a->hi = std::max(a->hi, h);
+            a->n++;
+        },
+        &a);
+    lo = a.lo;
+    hi = a.hi;
+    return a.n > 0;
+}
+
+// " agl=<m>" (Creature: the creature; Tribe: " agl=<lowest> agl_hi=<highest>" of the player's members)
+static std::string agl_field(uint8_t owner, void* creature, const net::Vec3* at)
+{
+    char b[64];
+    float lo, hi;
+    if (g_mode == modes::kCreature && creature && at && agl_of(*at, lo)) {
+        snprintf(b, sizeof b, " agl=%.2f", lo);
+        return b;
+    }
+    if (g_mode == modes::kTribe && tribe_agl(owner, lo, hi)) {
+        snprintf(b, sizeof b, " agl=%.2f agl_hi=%.2f", lo, hi);
+        return b;
+    }
+    return "";
+}
+
+// BUG-0368 class: the unlocked creature parts of the cPlayer's collected parts (cCollectableItems,
+// docs/re/creations.md#creations-own-editor-items): over the unlockable items (the map at +0x1490),
+// the number unlocked and an order-free hash of their keys. `locked` gets the keys still locked.
+static bool parts_census(int& unlocked, uint32_t& hash, int& unlockable, std::vector<std::pair<uint32_t, uint32_t>>* locked = nullptr)
+{
+    unlocked = unlockable = 0;
+    hash = 0;
+    void* items = collected_parts();
+    uintptr_t is_unlocked = H->sym("Simulator::cCollectableItems::IsUnlocked");
+    if (!items || !is_unlocked || !skg::readable((char*)items + 0x1490, 8))
+        return false;
+    void** b = skg::field<void**>(items, 0x1490);
+    uint32_t n = skg::field<uint32_t>(items, 0x1494);
+    for (uint32_t i = 0; b && n < 100000 && i < n && skg::readable(b + i, 4); i++)
+        for (uint32_t* nd = (uint32_t*)b[i]; nd && unlockable < 100000; nd = (uint32_t*)nd[10]) {
+            if (!skg::readable(nd, 0x2C))
+                break;
+            unlockable++;
+            if (skg::thiscall<bool>(is_unlocked, items, nd[0], nd[1])) {
+                unlocked++;
+                uint32_t h = (nd[0] ^ (nd[1] * 0x9E3779B1u)) * 0x85EBCA6Bu;
+                hash += h ^ (h >> 13);
+            } else if (locked)
+                locked->push_back({nd[0], nd[1]});
+        }
+    return true;
+}
+
+// the partner's speed as this game sees it: its reported speed, or (the RTS pointer reports none) the
+// way its interpolated position went in the last 0.5 s
+static float seen_speed(const Remote& r, double now)
+{
+    net::PlayerState a, b;
+    if (!r.buf.sample(now, a) || !r.buf.sample(now - 0.5, b))
+        return 0;
+    float v = a.mode == b.mode && a.world == b.world ? net::dist(a.pos, b.pos) / 0.5f : 0.f;
+    return std::max(v, drive::speed(a.vel));
+}
+
+// the monitor's fields at the end of the own trace line
+static std::string monitor_own_fields(bool have)
+{
+    std::string out;
+    if (!have)
+        return out;
+    net::Vec3 p = g_local && g_mode == modes::kCreature ? game::position(g_local) : net::Vec3{};
+    out += agl_field(g_sess.my_id(), g_mode == modes::kCreature ? g_local : nullptr, &p);
+    if (g_mode == modes::kCreature) {
+        int n, all;
+        uint32_t h;
+        if (parts_census(n, h, all)) {
+            char b[48];
+            snprintf(b, sizeof b, " parts=%d:%08X", n, h);
+            out += b;
+        }
+    }
+    out += npc::monitor_fields();
+    return out;
+}
+
+// the monitor's fields at the end of a partner's trace line
+static std::string monitor_partner_fields(uint8_t id, const Remote& r, double now)
+{
+    std::string out;
+    char b[160];
+    bool drawn = r.drawn_at == now && strcmp(puppet_why(r, now), "shown") == 0;
+    if (drawn) {
+        const net::Vec3& d = r.drawn_st.pos;
+        snprintf(b, sizeof b, " drawn=(%.1f %.1f %.1f) drawn_v=%.1f", d.x, d.y, d.z, seen_speed(r, now));
+        out += b;
+    }
+    bool creature = drawn && creature_puppet(r.puppet_adapter) && g_mode == modes::kCreature;
+    out += agl_field(id, creature ? r.puppet : nullptr, creature ? &r.drawn_st.pos : nullptr);
+    if (creature && r.drawn_st.max_health > 0) { // read from the puppet (BUG-0373: the partner's health)
+        snprintf(b, sizeof b, " puppet_hp=%.0f/%.0f", r.drawn_st.health, r.drawn_st.max_health);
+        out += b;
+    }
+    return out;
+}
+
 // the first line of a module's status()
 std::string first_line(const std::string& s) { return s.substr(0, s.find('\n')); }
 
@@ -2014,9 +2178,11 @@ void trace_tick(double now)
         g_trace_since = now;
         g_trace_body_at = g_trace_stage_at = -100; // the stage lines with the next trace
     }
-    if (!g_sess.connected() || (!changed && now - g_trace_at < 10.0))
+    if (!g_sess.connected() || (!changed && !g_trace_due))
         return;
     g_trace_at = now;
+    if (g_trace_due)
+        g_trace_slot = g_trace_slot_now;
     char b[700];
     std::string res = shared::brief();
     snprintf(b, sizeof b,
@@ -2029,6 +2195,7 @@ void trace_tick(double now)
              g_vote.active ? "on" : "off", coop_ui::input_lock_now(), trace::hex(g_own_editor_due).c_str());
     if (const char* why = share_wait_reason()) // BUG-0382 (new fields go at the end: monitor.py)
         snprintf(b + strlen(b), sizeof b - strlen(b), " share_wait=%s", why);
+    snprintf(b + strlen(b), sizeof b - strlen(b), "%s", monitor_own_fields(have).c_str()); // (before version=)
     trace::line("trace", "%s%s%s", b, now - g_trace_ver_at > 60.0 ? " version=" : "",
                 now - g_trace_ver_at > 60.0 ? g_sess.version.c_str() : "");
     float host_d = -1;
@@ -2062,6 +2229,7 @@ void trace_tick(double now)
             snprintf(b, sizeof b, " resends=%u/%u silent=%u ms pending=%u", lk.resends, lk.sent, lk.silent_ms, lk.pending);
             l += b;
         }
+        l += monitor_partner_fields(id, r, now);
         trace::line("trace", "%s", l.c_str());
     }
     if (now - g_trace_ver_at > 60.0)
@@ -2131,6 +2299,8 @@ void on_frame(void*, int, void*)
     creations::tick(now);
     if (g_frame_fix) // BUG-0091: forget the puppets of a world the game tore down before any message uses them
         avatar_change_check();
+    monitor_frame_start(now); // the puppets as drawn, before any driving (docs/06-testing.md#testing-monitor)
+    npc::monitor_tick(now);   // the proxies as drawn
     // BUG-0231: the world a joining guest hears in WELCOME (before the host's first state); the
     // values of the last frame, as every message of this update sees them. Not switched: 0.7.3.0
     // guests never read it
@@ -4611,6 +4781,28 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                        SAY("editor %08X key %08X request %p items %p collected %p unlockable %d locked %d (own editor items set %u)\n",
                            skg::field<uint32_t>(req, 0xC), skg::field<uint32_t>(req, 0x10), req, items, mine, unlockable,
                            locked, g_own_editor_items_set);
+                       return 0;
+                   },
+                   nullptr, MT);
+    H->command_add(M, "coop.parts", "coop.parts [unlock <n>] - the collected creature parts as the trace's parts= field counts them; "
+                   "unlock <n>: unlock n locked ones in this game only (tests: a player's unlock the other games miss)",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       std::vector<std::pair<uint32_t, uint32_t>> locked;
+                       int n = 0, all = 0, done = 0;
+                       uint32_t h = 0;
+                       if (!parts_census(n, h, all, &locked)) {
+                           SAY("no collected parts (no cPlayer)\n");
+                           return 1;
+                       }
+                       if (argc > 2 && !strcmp(argv[1], "unlock")) {
+                           // cCollectableItems::UnlockPart(key, cost 0), as when the player finds the part
+                           uintptr_t unlock = H->sym("Simulator::cCollectableItems::UnlockPart");
+                           void* items = collected_parts();
+                           for (int i = 0; unlock && items && i < atoi(argv[2]) && i < (int)locked.size(); i++)
+                               done += skg::thiscall<bool>(unlock, items, locked[i].first, locked[i].second, 0) ? 1 : 0;
+                           parts_census(n, h, all);
+                       }
+                       SAY("parts=%d:%08X unlockable=%d unlocked_now=%d\n", n, h, all, done);
                        return 0;
                    },
                    nullptr, MT);
