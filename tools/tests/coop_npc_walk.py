@@ -34,6 +34,9 @@ animation's walk gait, on the screen or not).
   1 -> 0 while the host's NPC moves) more than N times more often than the host's own moving NPCs
   (BUG-0366's downhill falls, for proxies)
   NPC_WALK_GUEST_CMDS="cmd;cmd": console commands on the guest first (e.g. frame.limit 66)
+  The walkers are NPCs outside the host avatar's pack and family (BUG-0417: the flee phase's hit by the host's
+  avatar on its own family made the family fight the host back, the monitor's posse_damage). NPC_WALK_PARTY=1:
+  the family / pack first (the test before the fix; the monitor gate must fail when one was hit).
   (SPORE_FIX_OFF=npc.walk must FAIL)"""
 import argparse
 import json
@@ -97,6 +100,11 @@ def host_npcs(con):
         if float(m.group(2)) > 0:
             out[int(m.group(1))] = (tuple(map(float, m.group(3, 4, 5))), float(m.group(6)))
     return out
+
+
+def host_party(con):
+    """ids of the host avatar's pack and family (`coop.npc list` tags them, BUG-0390)"""
+    return {int(m.group(1)) for m in re.finditer(r'^\s*#(\d+) .*? (?:pack|family)\b', con.call('coop.npc list')['out'], re.M)}
 
 
 def proxies(con):
@@ -248,12 +256,21 @@ def analyse(rows, W, H, phases):
 
 def walk_phase(host, guest, rng, secs, watch, log, near=30):
     """the host's game walks up to 4 NPCs the guest mirrors around the guest's avatar"""
-    hs, gs = host_npcs(host), proxies(guest)
+    hs, gs, party = host_npcs(host), proxies(guest), host_party(host)
     g = avatar_pos(guest)
     both = sorted((math.dist(gs[i][0], g), i) for i in hs if i in gs and g and math.dist(gs[i][0], g) < (120 if FIXTURE == 'tribe' else near))
+    # BUG-0417: the flee phase's hit (`coop.npc hosthit`: TakeDamage with the host's avatar as the attacker) on a
+    # member of the avatar's own family or pack is the player attacking its own party, which the phase does not
+    # mean to test; the family fought the host back and the monitor (posse_damage) failed the test. The walkers
+    # are NPCs outside both (as the creature test's hit, BUG-0390). NPC_WALK_PARTY=1: the family / pack first.
+    if os.environ.get('NPC_WALK_PARTY') == '1':
+        both.sort(key=lambda x: (x[1] not in party, x[0]))
+    else:
+        both = [x for x in both if x[1] not in party]
     ids = [i for _, i in both[:4]]
     home = {i: hs[i][0] for i in ids}  # Tribe: they walk around where they were (far from the tribe)
-    log.append(f'walkers {ids} (of {len(hs)} host NPCs, {len(gs)} proxies)')
+    log.append(f'walkers {ids} (of {len(hs)} host NPCs, {len(gs)} proxies; host pack / family {sorted(party)}, '
+               f'walkers in it: {sorted(set(ids) & party)})')
     if not ids:
         return ids
     watch.nid = ids[0]
