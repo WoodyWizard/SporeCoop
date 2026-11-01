@@ -319,6 +319,11 @@ restarted around it. Screenshots and other files from a Bottles game cannot be w
     `move` (a plain `drag` is too fast for the editors), then the species name field asks for a name
     on the first save (`click 720 1055`, `click 720 810`, `text <name>`), done (1416, 1058), cancel
     (1383, 1062).
+  * After the host's editor the guest reloads the host's world (~4-10 s after it got the host's new
+    cell) and its cell may hatch (`coop.uistate input_lock=1`, `coop.pool cine=1`, 5-10 s): the heart
+    takes no click then and `coop.pool mate` stays `mate=00000000`. Part 4 waits for that reload and
+    for the HUD before each press, and calls again when the mate is gone (BUG-0411; `--old-wait`, the
+    old 5 s pause, fails about every second run).
   * End of the Cell stage: `coop.pool food 1000`, the cinematic (~20 s) ends with the caption
     "Congratulations! You're on the path to sentience!" (check 1410, 1048); the button under the
     portrait (1396, 1063, 'History' before) opens the evolution history, its check (1415, 1055) starts
