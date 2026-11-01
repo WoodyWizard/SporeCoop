@@ -11,7 +11,7 @@ host watches the guest).
 
 Checks per direction, over the time in which the walker's latest state says it moves:
 * no jump: no frame step of the drawn puppet longer than TP_FACTOR x the walker's top speed x the
-  frame time (and at least TP_MIN m);
+  frame time or the frame before's (a hitch is made up in the next frame; and at least TP_MIN m);
 * no steps: in 0.1 s windows the drawn puppet moves at 0.6-1.4x the speed of the walker's path (the
   interpolated target) in at least MATCHED_MIN of them and stands (< 0.3x) in at most STAND_MAX (the old driving: 18-23 % standing,
   57-63 % matched: the "updates about every half second, not steadily");
@@ -189,8 +189,12 @@ def analyse(obs_rows, walker_rows, label):
     pup = [r for r in obs_rows if r['who'] != 255]
     frames, moving, anim_ok, walk_anim, gait, tps, steps, dts = 0, 0, 0, 0, 0, [], [], []
     anims_moving = {}
+    prev_dt = 0
     for a, b in zip(pup, pup[1:]):
         dt = b['t'] - a['t']
+        # BUG-0365: what a frame draws was placed in the frame before; after a hitch (a 100-250 ms frame on
+        # a loaded machine) the next short frame shows the way made up (0.77 m in 16 ms after 108 ms)
+        allow_dt, prev_dt = max(dt, prev_dt), dt
         if dt <= 0 or dt > 0.25:
             continue
         dts.append(dt)
@@ -199,7 +203,7 @@ def analyse(obs_rows, walker_rows, label):
         frames += 1
         step = math.dist(a['d'], b['d'])
         steps.append(step / dt)
-        if step > max(TP_MIN, TP_FACTOR * top * dt):
+        if step > max(TP_MIN, TP_FACTOR * top * allow_dt):
             tps.append((round(b['t'], 2), round(step, 2), round(dt * 1000)))
         if step >= 0.2 * b['rv'] * dt:
             moving += 1
