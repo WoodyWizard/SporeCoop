@@ -306,6 +306,26 @@ static std::string place_text(uint32_t mode, uint32_t world)
     return b;
 }
 
+// BUG-0381: under a MISMATCH, what this game knows of the NPCs / citizens named in it (at most 3)
+static void describe_keys(const std::string& text)
+{
+    if (!g_P.describe)
+        return;
+    int n = 0;
+    for (size_t i = 0; i + 1 < text.size() && n < 3; i++) {
+        char k = text[i];
+        if ((k != 'n' && k != 't') || (i && text[i - 1] != '(' && text[i - 1] != ' ') || !isdigit((unsigned char)text[i + 1]))
+            continue;
+        size_t j = i + 1;
+        while (j < text.size() && isdigit((unsigned char)text[j]))
+            j++;
+        std::string key = text.substr(i, j - i), d = g_P.describe(key);
+        SLOG("sync-check:   %s here: %s", key.c_str(), d.empty() ? "not listed" : d.c_str());
+        n++;
+        i = j;
+    }
+}
+
 static std::string name_of(uint8_t id) { return g_P.sess ? g_P.sess->name_of(id) : "?"; }
 
 static void send_result(uint8_t to, uint32_t seq, uint8_t state, int objects, const std::string& text)
@@ -401,6 +421,7 @@ static void on_digest(uint8_t from, const dg::Digest& gd, size_t bytes)
         g.last_mismatch = ids;
         g.last_mismatch_at = now;
         g.repeats = 0;
+        describe_keys(text);
     }
     send_result(from, gd.seq, dg::kResMismatch, c.objects, text);
 }
@@ -427,6 +448,7 @@ static void on_result(const dg::ResultMsg& m)
     case dg::kResMismatch:
         g_c.sync_mismatch++;
         SWARN("sync-check: MISMATCH with the host (%s, %u objects compared): %s", where.c_str(), m.objects, m.text.c_str());
+        describe_keys(m.text);
         break;
     default:
         if (g_detail >= 2)
