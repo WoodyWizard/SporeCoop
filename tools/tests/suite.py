@@ -191,6 +191,7 @@ add('npc_run_hp', P + 'coop_npc_run_hp.py', warm=True, minutes=3, fixture='creat
 add('away_refill', P + 'coop_away_refill.py', minutes=3)  # BUG-0180: the host leaves to the main menu: the guest's game has its own NPCs where the host's were at once (SPORE_FIX_OFF=npc.away_locals fails)
 add('editor_after_swap', P + 'coop_editor_after_swap.py', minutes=5)  # BUG-0318: a 6.7 fps guest's editor right after a rejoin draws and can be left (SPORE_FIX_OFF=creations.editor_after_swap fails)
 add('editor_after_load', P + 'coop_editor_after_swap.py --no-swap', minutes=5)  # BUG-0318: the same without an avatar swap (only the loaded world's new avatar)
+add('ability_bar', P + 'coop_ability_bar.py', minutes=5)  # a guest's ability bar holds its own creature's abilities after the swap, keys do not fault (BUG-0358; SPORE_FIX_OFF=creations.ability_bar fails)
 # two bots play Civilization for 10 minutes through real input (docs/stability/civ.md)
 add('play_civ', P + 'play_civ.py --minutes 10', ('nightly',), minutes=13, fixture='civ_npc')
 add('space_play', P + 'coop_space_play.py', ('smoke',), minutes=6)

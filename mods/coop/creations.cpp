@@ -1217,6 +1217,111 @@ static void apply_own_avatar()
     g_swapped_key = k;
 }
 
+// ---- BUG-0358: the ability bar after the own creature swap ----
+// The creature HUD's ability bar (SporeCoop::AbilityBar_ptr, 5 rows x 5 slots of {ability index,
+// flag}) is filled by the game (SporeCoop::AbilityBar_Rebuild) when the stage's HUD starts, from the
+// avatar it has then: the loaded world's species. SetSpecies gives the avatar our own creature and
+// its abilities but leaves the bar as it was. A slot whose index is past the new ability count made
+// the game's slot lookup (SporeCoop::AbilityBar_Ability) read past the species' ability array, and
+// every key press of the creature stage (CreatureMode OnKeyDown -> AbilityBar_FindByKey) faulted on
+// that garbage at 0xD4A397 (lab 20261031-185843 campaign#2: 203 caught faults on one guest; the
+// world's species had more abilities than the guest's own creature). With the fix the bar is built
+// again whenever the avatar's abilities change under the same avatar (our swap), and whenever a
+// slot points past the avatar's abilities. `coop.fix creations.ability_bar off`: the old behaviour.
+static uintptr_t a_BarPtr, a_BarRebuild;
+static bool g_bar_fix = true;
+COOP_FIX("creations.ability_bar", "BUG-0358", g_bar_fix, "creations: the creature ability bar is built again after the own creature swap (no slot past the avatar's abilities)");
+static void* g_bar_avatar;
+static uint32_t g_bar_sig;
+static bool g_bar_queued;
+static unsigned g_bar_rebuilds;
+
+struct BarState {
+    int abilities = -1; // the avatar's ability count (vt 0xB0)
+    int used = 0;       // slots with an ability index
+    int stale = 0;      // slots whose index is not one of the avatar's abilities
+    int max_index = -1;
+};
+
+static uint8_t* bar_table()
+{
+    if (!a_BarPtr || game::mode_id() != modes::kCreature)
+        return nullptr;
+    uint8_t* bar = *(uint8_t**)a_BarPtr;
+    if (!bar || !skg::readable(bar, 0xD8))
+        return nullptr;
+    int rows = *(int*)(bar + 0xC8), cols = *(int*)(bar + 0xCC);
+    return rows > 0 && rows <= 5 && cols > 0 && cols <= 5 ? bar : nullptr;
+}
+
+static BarState bar_state(void* av)
+{
+    BarState st;
+    uint8_t* bar = bar_table();
+    if (!bar || !av)
+        return st;
+    st.abilities = vcall<int>(av, 0xB0 / 4);
+    int rows = *(int*)(bar + 0xC8), cols = *(int*)(bar + 0xCC);
+    for (int r = 0; r < rows; r++)
+        for (int c = 0; c < cols; c++) {
+            int idx = *(int*)(bar + r * 0x28 + c * 8);
+            if (idx == -1)
+                continue;
+            st.used++;
+            st.max_index = std::max(st.max_index, idx);
+            if (idx < 0 || idx >= st.abilities)
+                st.stale++;
+        }
+    return st;
+}
+
+// the avatar's abilities: their count and objects (vt 0xB0 count, vt 0xB4 GetAbility(i))
+static uint32_t ability_sig(void* av)
+{
+    int n = vcall<int>(av, 0xB0 / 4);
+    uint32_t h = 2166136261u ^ (uint32_t)n;
+    for (int i = 0; i < n && i < 64; i++)
+        h = (h ^ (uint32_t)(uintptr_t)vcall<void*>(av, 0xB4 / 4, i)) * 16777619u;
+    return h;
+}
+
+static void bar_rebuild_task(void*)
+{
+    g_bar_queued = false;
+    void* av = game::avatar();
+    if (!a_BarRebuild || !av || !bar_table())
+        return;
+    cdecl_call<void>(a_BarRebuild);
+    g_bar_rebuilds++;
+    BarState st = bar_state(av);
+    H->log(M, SK_INFO, "creations: ability bar built again for the avatar's %d abilities (%d slots, %d past them)",
+           st.abilities, st.used, st.stale);
+}
+
+static void bar_tick()
+{
+    if (!g_bar_fix || g_bar_queued || !a_BarRebuild)
+        return;
+    void* av = game::avatar();
+    if (!av || !bar_table())
+        return;
+    uint32_t sig = ability_sig(av);
+    bool rebuild = false;
+    if (av != g_bar_avatar) { // a new avatar: the game builds its bar itself
+        g_bar_avatar = av;
+        g_bar_sig = sig;
+    } else if (sig != g_bar_sig) { // the same avatar with other abilities (SetSpecies)
+        g_bar_sig = sig;
+        rebuild = true;
+    }
+    if (!rebuild && bar_state(av).stale > 0)
+        rebuild = true;
+    if (rebuild) {
+        g_bar_queued = true;
+        H->run_outside_frame(bar_rebuild_task, nullptr);
+    }
+}
+
 // ---- api ----
 bool init(const SkHost* host, SkMod* mod, Ctx ctx)
 {
@@ -1230,6 +1335,8 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     a_SetSpecies = H->sym("Simulator::cCreatureAnimal::SetSpecies");
     a_GetEmpire = H->sym("Simulator::GetPlayerEmpire");
     a_CellPreload = H->sym("Simulator::Cell::PreloadModel");
+    a_BarPtr = H->sym("SporeCoop::AbilityBar_ptr");
+    a_BarRebuild = H->sym("SporeCoop::AbilityBar_Rebuild");
     return a_GetDb && a_OpNew && a_DbCtor && a_RmPtr;
 }
 
@@ -1323,6 +1430,7 @@ void tick(double now)
         share_own(now);
     }
     apply_own_avatar();
+    bar_tick(); // BUG-0358
 }
 
 void on_message(uint8_t type, uint8_t from, net::Reader& r)
@@ -1587,6 +1695,26 @@ std::string debug(const std::vector<std::string>& a)
             if (r.key.type == kBem)
                 h = fnv(r.data.data(), r.data.size());
         return "bem " + hex(k.instance) + " " + hex(h) + "\n";
+    }
+    if (a.size() >= 2 && a[0] == "bar" && a[1] == "rebuild") { // tests: the game builds the bar for the avatar it has now
+        if (!g_bar_queued) {
+            g_bar_queued = true;
+            H->run_outside_frame(bar_rebuild_task, nullptr);
+        }
+        return "the ability bar is built again on the next frame\n";
+    }
+    if (!a.empty() && a[0] == "bar") { // the creature ability bar against the avatar's abilities (tests, BUG-0358)
+        BarState st = bar_state(game::avatar());
+        char b[200];
+        snprintf(b, sizeof b, "bar abilities=%d used=%d stale=%d max_index=%d rebuilds=%u fix=%d slots=", st.abilities, st.used,
+                 st.stale, st.max_index, g_bar_rebuilds, (int)g_bar_fix);
+        std::string out = b;
+        if (uint8_t* bar = bar_table(); bar && game::avatar())
+            for (int r = 0; r < *(int*)(bar + 0xC8); r++)
+                for (int c = 0; c < *(int*)(bar + 0xCC); c++)
+                    if (int idx = *(int*)(bar + r * 0x28 + c * 8); idx != -1)
+                        out += std::to_string(r) + "." + std::to_string(c) + ":" + std::to_string(idx) + ",";
+        return out + "\n";
     }
     if (!a.empty() && a[0] == "list") {
         std::string s;
