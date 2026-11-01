@@ -63,6 +63,7 @@
 #include "fixes.h"
 #include "share_wait.h"
 #include "dna_route.h"
+#include "dna_ledger.h"
 #include "host_world.h"
 #include "diag_coop.h"
 #include "trace.h"
@@ -134,6 +135,41 @@ uint32_t g_dna_owed_paid; // tests
 bool g_world_dna_fix = true;
 COOP_FIX("core.world_dna", "BUG-0231", g_world_dna_fix, "core: DNA a guest earns in its own world stays in that world");
 uint32_t g_dna_own = 0; // tests: gains kept in the guest's own world (row 2)
+void feed_kind(const std::string& s, const char* kind);
+// the DNA cause ledger and its notices (dna_ledger.h; player request 2026-11-01, BUG-0351)
+static std::vector<dna_ledger::Part> g_dna_out; // host: the causes since the last total sent
+static dna_ledger::Notices g_dna_notices;
+static uint32_t g_dna_noticed;
+static void dna_note(const dna_ledger::Part& p, uint8_t me)
+{
+    if (dna_ledger::worth_a_notice(p, me))
+        g_dna_notices.add(p.cause, p.player, p.amount, H->time_seconds());
+}
+// host: a gain applied here now (before the game adds it)
+static void dna_host_gain(const dna_ledger::Part& p, float before)
+{
+    LOG("dna: %.0f -> %.0f cause=%s", before, before + p.amount, dna_ledger::causes_text({p}).c_str());
+    if (!g_sess.connected())
+        return;
+    bool merged = false;
+    for (auto& o : g_dna_out)
+        if (o.cause == p.cause && o.player == p.player) {
+            o.amount += p.amount;
+            merged = true;
+        }
+    if (!merged && g_dna_out.size() < 16)
+        g_dna_out.push_back(p);
+    dna_note(p, 0);
+}
+static void dna_notices_tick(double now)
+{
+    for (auto& p : g_dna_notices.due(now)) {
+        bool mine = g_sess.connected() && p.player == g_sess.my_id();
+        feed_kind(dna_ledger::notice_text(p, g_sess.name_of(p.player), mine), "good");
+        g_dna_noticed++;
+    }
+}
+
 bool guest_elsewhere();
 bool on_dna(float delta)
 {
@@ -152,8 +188,11 @@ bool on_dna(float delta)
     }
     if (social::goal_dna(delta))
         return false; // a goal card's reward: the host pays it into the shared pool once
-    if (g == dna_route::Gain::Local)
+    if (g == dna_route::Gain::Local) {
+        if (g_sess.role() == net::Role::Host && delta != 0 && g_mode == modes::kCreature)
+            dna_host_gain(dna_ledger::g_credit.gain(delta, H->time_seconds()), game::dna());
         return true;
+    }
     if (g_host_away) { // core.away_dna off: the old order (a goal card's reward went to the host)
         g_solo_dna += delta;
         return true;
@@ -777,6 +816,7 @@ void host_away_tick(double now)
         auto o = dna_route::owed(g_away_dna_stage_fix, g_mode, stage_mode(g_mode), game::avatar() != nullptr, g_world,
                                  g_dna_owed_world, modes::kCreature);
         if (o == dna_route::Owed::Pay) {
+            dna_host_gain({dna_ledger::Cause::Owed, 0, g_dna_owed}, game::dna());
             game::dna_add_raw(g_dna_owed);
             feed("the DNA your partners earned meanwhile: +" + std::to_string((int)g_dna_owed));
             g_dna_owed = 0;
@@ -2045,6 +2085,14 @@ void on_frame(void*, int, void*)
             g_dna_at = now;
             net::Writer w;
             w.f32(total);
+            // (optional tail, older guests read the total only) why it changed since the last one
+            w.u8((uint8_t)g_dna_out.size());
+            for (auto& c : g_dna_out) {
+                w.u8((uint8_t)c.cause);
+                w.u8(c.player);
+                w.f32(c.amount);
+            }
+            g_dna_out.clear();
             for (auto& p : g_sess.players())
                 if (p.id != 0)
                     g_sess.send_reliable_to(p.id, net::MSG_DNA, w);
@@ -2077,6 +2125,7 @@ void on_frame(void*, int, void*)
     remove_strays(now);
     follow_phase(now);
     host_away_tick(now);
+    dna_notices_tick(now);
     tribe::tick(now);
     bool walk_done = !gamefixes::leave_walk_armed();
     if (!walk_done)
@@ -2524,6 +2573,8 @@ void end_session(EndPath path, bool cell)
     }
     g_dna_owed = 0;
     g_dna_owed_world = 0;
+    g_dna_out.clear();
+    g_dna_notices.clear();
     g_state_mode_override = 0; // tests
     if (g_own_editor_end_fix)
         g_own_editor_due = 0; // BUG-0234 (a task already queued reads it first and returns)
@@ -2685,11 +2736,23 @@ void setup_callbacks()
         }
         if (type == net::MSG_DNA && g_sess.role() == net::Role::Client) {
             float total = r.f32(); // (row 6, elsewhere, is the gate above: kept as g_dna_pending)
+            std::vector<dna_ledger::Part> parts; // the host's causes (an older host sends none)
+            if (r.ok() && r.left() >= 1) {
+                unsigned n = r.u8();
+                for (unsigned i = 0; i < n && r.left() >= 6; i++) {
+                    uint8_t c = r.u8(), pl = r.u8();
+                    float a = r.f32();
+                    if (c >= 1 && c <= 4 && std::isfinite(a) && std::fabs(a) < 100000)
+                        parts.push_back({(dna_ledger::Cause)c, pl, a});
+                }
+            }
             if (r.ok() && dna_route::host_total(false, g_host_away, game::avatar() != nullptr) == dna_route::Total::Apply) {
-                float d = total - game::dna();
+                float before = game::dna(), d = total - before;
                 if (d != 0) {
-                    trace::ev("dna", "total", "host total %.0f -> %+.0f here", total, d);
+                    LOG("dna: %.0f -> %.0f cause=%s", before, total, dna_ledger::causes_text(parts).c_str());
                     game::dna_add_raw(d); // through the game so the UI/progress updates
+                    for (auto& p : parts)
+                        dna_note(p, g_sess.my_id());
                 }
                 g_dna_rx++;
             }
@@ -2699,6 +2762,7 @@ void setup_callbacks()
             float d = r.f32();
             auto add = dna_route::host_add(game::avatar() != nullptr, g_away_dna_fix);
             if (r.ok() && d > 0 && d < 10000 && add == dna_route::Add::Pay) {
+                dna_host_gain({dna_ledger::Cause::Earned, from, d}, game::dna());
                 game::dna_add_raw(d);
                 feed(g_sess.name_of(from) + " earned " + std::to_string((int)d) + " DNA");
             } else if (r.ok() && d > 0 && d < 10000 && add == dna_route::Add::Owe && g_dna_owed < 100000) {
@@ -3063,6 +3127,7 @@ int c_status(void*, int, const char* const*, SkOut* out)
     SAY("%s", tribe::status().c_str());
     SAY("%s", cellsync::status().c_str());
     SAY("%s", notify::status().c_str());
+    SAY("dna notices: shown=%u gathering=%u\n", g_dna_noticed, (unsigned)g_dna_notices.open());
     SAY("status block (%d %d %d %d)\n", g_status_block[0], g_status_block[1], g_status_block[2], g_status_block[3]);
     SAY("%s", creations::status().c_str());
     SAY("%s", civ::status().c_str());
@@ -4553,6 +4618,10 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     cc.sess = &g_sess;
     cc.partners = partners;
     cc.notice = [](const std::string& t) { notice(t, -1); };
+    cc.food_cause = [](int from, int before, int amount) { // Cell (dna_ledger.h)
+        LOG("dna: food %d -> %d cause=meal:%d%+d", before, before + amount, from, amount);
+        dna_note({dna_ledger::Cause::Meal, (uint8_t)from, (float)amount}, g_sess.connected() ? g_sess.my_id() : 0);
+    };
     cc.my_name = [] { return g_name; };
     cc.puppet_owner = [](void* cell) -> int {
         for (auto& [id, r] : g_remotes)

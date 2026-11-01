@@ -23,6 +23,7 @@
 #include "world.h"
 #include "sporekit_game.hpp"
 #include "fixes.h"
+#include "dna_ledger.h"
 
 namespace npc {
 
@@ -1240,6 +1241,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         if (av && !game::is_dead(npc) && game::health(npc) > 0 && game::health(npc) <= dmg) {
             attacker = av;
             g_kills_credited++;
+            dna_ledger::g_credit.kill(from, H->time_seconds()); // the DNA it pays is that guest's hunt
         }
         game::apply_damage(npc, dmg, q.type, attacker);
         g_hits_applied++;

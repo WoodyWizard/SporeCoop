@@ -3310,8 +3310,13 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
     } else if (type == net::MSG_CELL_FOOD) {
         if (is_host()) { // a guest ate something: add it to the shared progress
             FoodMsg f = read_food(r);
-            if (f.valid && f.amount > -1000 && f.amount < 1000)
+            if (f.valid && f.amount > -1000 && f.amount < 1000) {
+                uint8_t* s0 = S();
+                int before = s0 ? F<int32_t>(s0, 0x1C) : 0;
                 o_AddFood(f.amount, f.plant);
+                if (C.food_cause && s0 && f.amount != 0)
+                    C.food_cause(from, before, f.amount);
+            }
             trace::ev("eat", "from food", "from %u food +%d %s meal=%u: %s", from, f.amount, f.plant ? "plant" : "meat", f.meal,
                       f.valid && f.amount > -1000 && f.amount < 1000 ? "applied" : "refused (bad message)");
             if (f.has_meal)
@@ -3326,9 +3331,12 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             if (diff != 0) {
                 trace::ev("eat", "total", "host total food=%d (ack meal %u) -> %+d here (pending %d)", food, ack, diff,
                           g_pend_food);
+                int before = F<int32_t>(s, 0x1C);
                 g_food_guard = true;
                 o_AddFood(diff, false); // through the game: level ups happen as usual
                 g_food_guard = false;
+                if (C.food_cause)
+                    C.food_cause(0xFF, before, diff);
             }
             F<int32_t>(s, 0x20) = plant;
         }

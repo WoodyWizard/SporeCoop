@@ -10,6 +10,7 @@
 #include "net/give_target.h"
 #include "net/validate.h"
 #include "dna_route.h"
+#include "dna_ledger.h"
 #include "host_world.h"
 #include "net/shared_ledger.h"
 #include <string>
@@ -192,6 +193,48 @@ static void test_give_pick_leave()
     CHECK(give_pick_after_leave(3, 1, fix) == 3); // another player left: the pick stays
 }
 
+static void test_dna_ledger()
+{
+    printf("shared DNA tells where it came from (dna_ledger.h, the player request of 2026-11-01)\n");
+    using namespace dna_ledger;
+    // a guest's credited kill: the game's gains within kCreditSec are that guest's hunt
+    Credit c;
+    CHECK(c.gain(5, 10.0).cause == Cause::Host && c.gain(5, 10.0).player == 0);
+    c.kill(2, 10.0);
+    CHECK(c.gain(7, 10.1).cause == Cause::Hunt && c.gain(7, 10.1).player == 2);
+    CHECK(c.gain(7, 10.0 + kCreditSec + 0.1).cause == Cause::Host);
+    // the ledger text
+    CHECK(causes_text({}) == "unknown");
+    CHECK(causes_text({{Cause::Hunt, 1, 12}, {Cause::Host, 0, 5}}) == "hunt:1+12,host:0+5");
+    // who sees a notice: the host only a guest's hunt; a guest every partner's gain and its own kill
+    CHECK(worth_a_notice({Cause::Hunt, 1, 12}, 0) && !worth_a_notice({Cause::Host, 0, 12}, 0));
+    CHECK(!worth_a_notice({Cause::Earned, 1, 12}, 0));
+    CHECK(worth_a_notice({Cause::Host, 0, 12}, 1) && worth_a_notice({Cause::Hunt, 1, 12}, 1));
+    CHECK(worth_a_notice({Cause::Earned, 2, 3}, 1) && !worth_a_notice({Cause::Earned, 1, 3}, 1));
+    CHECK(!worth_a_notice({Cause::Host, 0, 0.4f}, 1) && !worth_a_notice({Cause::Host, 0, -10}, 1));
+    // gathered: three kills of the pack in a row are one notice, then not again for kGap
+    Notices n;
+    n.add(Cause::Host, 0, 5, 1.0);
+    n.add(Cause::Host, 0, 7, 1.5);
+    n.add(Cause::Hunt, 2, 4, 1.6);
+    CHECK(n.due(2.0).empty()); // still gathering
+    auto d = n.due(2.6);
+    CHECK(d.size() == 1 && d[0].cause == Cause::Host && d[0].amount == 12);
+    n.add(Cause::Host, 0, 3, 3.0);
+    CHECK(n.due(5.0).empty()); // the hunt is due, the gap is not over
+    d = n.due(2.7 + kGap);
+    CHECK(d.size() == 2);
+    CHECK(notice_text({Cause::Hunt, 2, 12}, "Bob", false) == "+12 DNA from Bob's hunt");
+    CHECK(notice_text({Cause::Hunt, 1, 9}, "Bob", true).rfind("+9 DNA from your hunt", 0) == 0);
+    // Cell: a partner's meals, gathered longer
+    CHECK(notice_text({Cause::Meal, kPartners, 20}, "", false) == "+20 food (DNA) from your partners' meals");
+    CHECK(worth_a_notice({Cause::Meal, 1, 8}, 0) && worth_a_notice({Cause::Meal, kPartners, 8}, 1));
+    Notices m;
+    m.add(Cause::Meal, 1, 4, 0.0);
+    m.add(Cause::Meal, 1, 4, 5.0);
+    CHECK(m.due(10.0).empty() && m.due(kGatherMeals).size() == 1);
+}
+
 static void test_dna_route()
 {
     printf("DNA kept while the host was away stays in its stage and world (BUG-0233)\n");
@@ -275,6 +318,7 @@ int main(int argc, char** argv)
     g_nofix = argc > 1 && std::string(argv[1]) == "--nofix";
     test_give_pick_leave();
     test_dna_route();
+    test_dna_ledger();
     test_host_world();
     test_chunks();
     test_cycle();
