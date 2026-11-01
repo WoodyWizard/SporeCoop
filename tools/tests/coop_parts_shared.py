@@ -98,7 +98,10 @@ def main():
     ok, ph, pg, dt = wait_same(host, guest)
     print(f'  after {dt:.0f} s: host {ph}, guest {pg} | host sync: {sync_line(host)}', flush=True)
     ck(ok and ph[0] >= g2[0], f"the host's game has the parts the guest found (host {ph[0]}:{ph[1]}, guest {pg[0]}:{pg[1]})")
-    union = max(ph[0], pg[0])
+    # the party's parts: the host's after its find plus the guest's find (a random locked part: the same
+    # part as the host's is a 1 in ~250 chance)
+    union = h1[0] + (g2[0] - g_before[0])
+    print(f'  the party has {union} parts', flush=True)
 
     # 3. the guest's own editor offers the party's parts, and locks the rest (BUG-0368)
     gu = Ui(guest, 'guest')
