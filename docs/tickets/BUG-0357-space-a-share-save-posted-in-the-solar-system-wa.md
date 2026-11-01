@@ -64,6 +64,9 @@ out with that save, 0.7.3.1). Test knob `coop.worldfix landsave <ms>|-1`.
 - PASS: lab 20261031-205039 space_share_landing #1 (lane 9) and #2 (lane 10): "the save for player 1 was
   written on a planet ... saving again off the planet", the second save after the takeoff, guest
   faults 0, guest in the host's system 80460035.
+- Related: lab 20261031-205237 space_share_takeoff + space_share_landing (lane 9) PASS; lab
+  20261031-205302 (lane 10) and 20261031-205600 (lane 9) campaign_space PASS (4 bots, Civ -> Space);
+  make test passes.
 
 ## History
 - 2026-10-31: opened (fix/w27-space-fault) from lab 20261031-185843 campaign_space#3; reproduced with
