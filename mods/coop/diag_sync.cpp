@@ -12,6 +12,7 @@
 #include <map>
 
 #include "modes.h"
+#include "fixes.h"
 #include "net/diagmsg.h"
 
 namespace support {
@@ -181,6 +182,9 @@ struct GuestCheck {
     uint32_t ok_told_place = 0; // the stage of the last OK line written
 };
 static std::map<uint8_t, GuestCheck> g_guests; // host
+static bool g_rejoin_grace_fix = true;
+COOP_FIX("diag.rejoin_grace", "BUG-0380", g_rejoin_grace_fix,
+         "sync-check: a player who leaves and joins again is first checked 10 s after the join, like a newcomer");
 static uint32_t g_guest_told_place;            // guest: the stage of the last OK line written
 static uint32_t g_seq;
 
@@ -385,6 +389,16 @@ void sync_tick(double now)
             g_guests.clear();
         return;
     }
+    // BUG-0380: a player who left kept its entry, so the same id joining again was checked on the old
+    // schedule (6 s after its world load in civ_city_join: the catch-up's city was still on its way)
+    // instead of 10 s after the join like a newcomer. Off: the entry stays (0.7.3.3).
+    if (g_rejoin_grace_fix)
+        for (auto it = g_guests.begin(); it != g_guests.end();) {
+            bool here = false;
+            for (auto& p : g_P.sess->players())
+                here = here || p.id == it->first;
+            it = here ? std::next(it) : g_guests.erase(it);
+        }
     // one guest per frame at most: the cost of a check is spread over frames
     for (auto& p : g_P.sess->players()) {
         if (p.id == 0)
