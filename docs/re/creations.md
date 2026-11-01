@@ -618,3 +618,19 @@ BUG-0369. GOG 2024 game files and lane 10 (`tools/tests/coop_guest_pack_paints.p
   pass (npc.strays) within a second; the players' NPC (BUG-0370) stayed, so its herd was not one.
 * Since creations.old_species the host keeps the records of the last 24 player creatures applied and
   answers a guest's `kAskSpecies` from them (`old_sent=` in `coop.creations`).
+
+## Collected parts: UnlockPart, LockPart, a count for the trace (2026-11-01, feat/w32-monitor-diag)
+<a id="creations-unlock-part"></a>
+
+GOG 2024, objdump of `SporeApp.exe` (dc04aee5) and lane 6.
+* ✔ `cCollectableItems::UnlockPart` 0x596DA0: thiscall(items, key_lo, key_hi, int cost) ret 0xC. False
+  when `IsUnlocked` 0x595110 says so already; a cost != 0 is taken from `this+0x6D70` (false when that
+  goes negative); then the state map entry (`+0x4D00`, find-or-insert 0x595EB0) gets bits 0-1 set and
+  the key is added to the set at `+0x6D80` (0x594B10); returns true.
+* ✔ `LockPart` 0x596E10: thiscall(items, key_lo, key_hi) ret 8: the same entry's bits 0-1 cleared, the
+  key added to the set at `+0x6D80` (0x5945B0); returns true.
+* The trace's `parts=<count>:<hash>` (own line, Creature) counts the unlockable items (the map at
+  `+0x1490`) that `IsUnlocked` answers true for, with an order-free hash of their keys
+  ([06-testing.md#testing-monitor](../06-testing.md#testing-monitor)). Lane 6, creature fixture: 54
+  of 312 on host and guest (the same hash). `coop.parts unlock <n>` unlocks n locked ones with cost 0
+  in that game only (the plant of the monitor's `unlocks` rule).

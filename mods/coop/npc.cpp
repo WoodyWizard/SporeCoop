@@ -1845,7 +1845,7 @@ void monitor_tick(double now)
         auto& a = g_audit[id];
         a.seen = now;
         net::PlayerState s;
-        if (!px.c || px.killed || now < px.manual_until || game::is_destroyed(px.c) || !game::object_alive(px.c) ||
+        if (!px.c || px.killed || game::is_destroyed(px.c) || !game::object_alive(px.c) ||
             game::destroy_pending(px.c) || game::is_dead(px.c) || !px.buf.sample(now, s) || (s.flags & net::NF_DEAD)) {
             a.under_since = a.off_since = -1;
             continue;

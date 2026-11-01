@@ -41,12 +41,12 @@ before; the fields are described in FIELDS and docs/06-testing.md#testing-monito
                 (lowest; `agl_hi=` the highest): under -0.5 m on 2 lines in a row; a Creature puppet over
                 3 m while its player's own creature is on its ground (own agl under 1 m: not jumping,
                 on a rock, swimming), Tribe members over 3 m, each on 2 lines in a row
-  puppet_hp     the puppet's own health (partner line `puppet_hp=`) equals its player's own hp / max hp
-                while that is steady for 12 s, on 2 lines in a row
+  puppet_hp     the puppet's own health (partner line `puppet_hp=`) equals its player's own hp / max hp on
+                its line of the same moment (within 1 hp or 10 %), on 2 lines in a row
   posse_damage  `damage: <victim> hit by <kind> ... posse=1 amount=<hp>` with hp > 0: the hit player's own
                 party (pack, family) hurt it (BUG-0374 class), at once
-  unlocks       a guest's `parts=<count>` in Creature under the count the host had from 90 s to 60 s
-                before, in the same world, on 2 lines in a row (BUG-0368 class)
+  unlocks       a guest's `parts=<count>` in Creature under the count the host had on its lines 70 s and
+                60 s before, in the same world, on 2 lines in a row (BUG-0368 class)
   proxies       a guest's NPC proxies (own line `proxy_under=` / `proxy_stuck=`: under the ground for
                 1 s, over 3 m off the host's NPC for 2 s) on 2 lines in a row
 
@@ -87,7 +87,7 @@ DEFAULTS = dict(together_s=20.0, apart_s=90.0, link_ratio=0.5, link_min_sent=50,
                 link_lines=3, tot_abs=1.0, tot_rel=0.02, tot_n=3, tot_span=20.0, tot_dt=6.0, hp_n=2, hp_abs=1.0,
                 pool_frac=0.9, census_growth=3.0, census_extra=200, period=5.0, census_period=30.0,
                 drawn_dt=1.0, drawn_lag=0.3, drawn_n=2, agl_under=-0.5, agl_over=3.0, agl_ground=1.0, agl_n=2,
-                php_n=2, unlock_s=60.0, unlock_span=30.0, unlock_n=2, proxy_n=2)
+                php_n=2, unlock_s=60.0, unlock_span=10.0, unlock_n=2, proxy_n=2)
 OBJECT_LIMITS = {'c': 4000, 'v': 800}
 # the drawn invariant's distance per stage (m) before the speed slack (calibration: docs/06-testing.md#testing-monitor)
 DRAWN_BASE = {'Cell': 3.0, 'Creature': 3.0, 'Tribe': 3.0, 'Civilization': 6.0, 'Space': 12.0}
@@ -565,11 +565,9 @@ class PuppetHp(Hook):
             def bad(p):
                 if 'puppet_hp' not in p or not p['same'] or p['flags'] & PF_DEAD:
                     return False
+                # the same moment (the 10 s marks): the puppet's health is ~0.15 s behind, no steady window needed
                 subj, o = self.same_moment(tl, p)
-                if not o or not playing(o) or o['maxhp'] <= 0:
-                    return False
-                around = own_window(tl, subj, p['t'], 12.0)
-                if len(around) < 2 or len({(x['hp'], x['maxhp']) for x in around}) != 1:
+                if not o or not playing(o) or o['maxhp'] <= 0 or abs(o['t'] - p['t']) > 0.5:
                     return False
                 hp, mx = p['puppet_hp']
                 p['_php'] = (subj, o)
@@ -606,11 +604,12 @@ class Unlocks(Hook):
             def bad(g):
                 if 'parts' not in g or g['stage'] != 'Creature' or not playing(g) or g['t'] is None:
                     return False
-                t1 = g['t'] - c['unlock_s']
-                hs = own_window(tl, host, t1 - c['unlock_span'] / 2, c['unlock_span'] / 2)
+                # the host's lines from unlock_s + unlock_span to unlock_s before (2 lines at the 10 s marks)
+                t1 = g['t'] - c['unlock_s'] - c['unlock_span'] / 2
+                hs = own_window(tl, host, t1, c['unlock_span'] / 2 + 5)
                 hs = [h for h in hs if 'parts' in h and h['stage'] == 'Creature' and h['world'] == g['world']]
-                if len(hs) < 2 or hs[0]['t'] > t1 - c['unlock_span'] + 12 or hs[-1]['t'] < t1 - 12:
-                    return False  # the host's count all through the half minute before (no gap, same world)
+                if len(hs) < 2:
+                    return False
                 need = min(h['parts'][0] for h in hs)
                 g['_need'] = need
                 return g['parts'][0] < need

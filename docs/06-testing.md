@@ -2619,7 +2619,8 @@ chaos_creature_long. Every other test: none.
 
 Hooks (inactive until the mod writes their field; `monitor.NEEDS` has the exact text). New fields
 go at the END of a trace line (after `pending=` / `editor_pending=`) so today's parsers keep
-working:
+working. Update 2026-11-01 (feat/w32-monitor-diag): the mod writes all of them now and the rules are
+active, see [testing-monitor-fields](#testing-monitor-fields); the list below is the original plan:
 
 * drawn (audit M1/M2): partner line `drawn=(x y z)`, the puppet's position read back from the game
   object (not the interpolation target); compared with the partner's own `pos=` at the same session
