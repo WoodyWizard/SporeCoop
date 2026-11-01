@@ -544,11 +544,14 @@ class Game:
             hs, gs = tribe_state(self.host), tribe_state(self.guest)
             if roster(hs) != roster(gs):
                 self.roster_mismatch.append(f'host {roster(hs)} guest {roster(gs)}')
+        # the chiefs (`<owner>:#<member>`), not the line's own counters after them (spread= / placed=: what this
+        # machine's tribe.place_chiefs did, BUG-0340; only the host places)
+        chiefs = lambda m: {t for t in m.group(1).split() if '=' not in t}  # noqa: E731
         hc, gc = re.search(r'chiefs=(.*)', status(self.host)), re.search(r'chiefs=(.*)', status(self.guest))
-        if hc and gc and set(hc.group(1).split()) != set(gc.group(1).split()):
+        if hc and gc and chiefs(hc) != chiefs(gc):
             time.sleep(1.5)
             hc, gc = re.search(r'chiefs=(.*)', status(self.host)), re.search(r'chiefs=(.*)', status(self.guest))
-            if hc and gc and set(hc.group(1).split()) != set(gc.group(1).split()):
+            if hc and gc and chiefs(hc) != chiefs(gc):
                 self.roster_mismatch.append(f'chiefs host {hc.group(1)} guest {gc.group(1)}')
         for name, s, me in (('host', hs, 0), ('guest', gs, 1)):
             bad = [i for i, v in s.items() if v['sel'] and v['tribe'] == 'p' and v['owner'] != me]

@@ -57,6 +57,8 @@ PARTNER = re.compile(r"trace:\s+partner (\d+) '(.*?)' (.+?) world=([0-9A-F]+) d=
                      r"rtt=(-?\d+) ms(.*)$")
 LINK = re.compile(r'resends=(\d+)/(\d+) silent=(\d+) ms pending=(\d+)')
 POOL = re.compile(r'cell pool (\d+)/(\d+)')
+SHARE = re.compile(r'world: (sharing) .* with player (\d+)$|world: (?:transfer) to (\d+) queued completely|'
+                   r'session: player (\d+) \'.*\' (left)')
 KV = re.compile(r'(\w+)=(-?[\d.]+)(\(unsynced\))?')
 STAGES = ('Cell', 'Creature', 'Tribe', 'Civilization', 'Space')
 PF_IN_WORLD, PF_DEAD = 1, 16
@@ -118,6 +120,10 @@ def parse_line(who, line):
                         maxhp=num(p.group(9)), flags=int(p.group(11), 16), age=float(p.group(12)),
                         rtt=int(p.group(13)), rest=p.group(14),
                         link=tuple(int(lk.group(i)) for i in range(1, 5)) if lk else None)
+    m = SHARE.search(line)  # a world transfer to a partner (its reliable chunks fill the link, see Link)
+    if m:
+        return dict(kind='share', who=who, t=t, pid=int(m.group(2) or m.group(3) or m.group(4)),
+                    what='start' if m.group(1) == 'sharing' else 'end')
     if 'coop: damage: ' in line:  # a hook's own log line (NEEDS['posse_damage'])
         return dict(kind='hookline', who=who, t=t, rest=line)
     m = POOL.search(line)
@@ -135,6 +141,7 @@ class Timeline:
         self.own_t = collections.defaultdict(list)     # who -> their session times (sorted, -inf: none)
         self.partner = collections.defaultdict(list)   # (viewer, pid) -> [partner records]
         self.ids = {}                                  # who -> session id (0 = host)
+        self.shares = collections.defaultdict(list)    # (who, pid) -> [[start, end or None]] world transfers
         self.records = []
 
     def add(self, r):
@@ -148,6 +155,17 @@ class Timeline:
             self.ids[r['who']] = r['id']
         elif r['kind'] == 'partner':
             self.partner[(r['who'], r['pid'])].append(r)
+        elif r['kind'] == 'share' and r['t'] is not None:
+            lst = self.shares[(r['who'], r['pid'])]
+            if r['what'] == 'start':
+                lst.append([r['t'], None])
+            elif lst and lst[-1][1] is None:
+                lst[-1][1] = r['t']
+
+    def sharing(self, who, pid, t, after=15.0):
+        """`who` sends its world to partner pid at session time t (or did within `after` s)"""
+        return t is not None and any(a <= t <= (b if b is not None else float('inf')) + after
+                                     for a, b in self.shares.get((who, pid), ()))
 
     def who_of(self, pid):
         return next((w for w, i in self.ids.items() if i == pid), None)
@@ -261,6 +279,11 @@ class Link(Invariant):
             bad, prev = [], None
             for p in lst:
                 if p['link'] is None:
+                    continue
+                if tl.sharing(viewer, pid, p['t']):
+                    # a world transfer: its chunks fill the reliable window (pending 600) and a loading
+                    # guest acks late (50-90 % resends on loopback, rejoin_race_long 20261101-134020)
+                    bad, prev = [], None
                     continue
                 why = None
                 rs, sent, _, pend = p['link']

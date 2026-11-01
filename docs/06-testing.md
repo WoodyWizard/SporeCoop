@@ -3009,3 +3009,50 @@ can eat a plant in the 2 s of the shared food check, which now allows the host's
 * Pitfalls: four lanes at once pushed the 30 fps games to 21-26 fps and one test killed the other's games
   when a second `lab.py run` took a lane still in use (start a run only after the last one on its lanes
   ended); the known caught startup fault at 0x11ECE4F on both games fails a run by the fault gate.
+
+## Session paths under players' conditions (2026-11-01, feat/w33-tests-session)
+<a id="testing-session-paths"></a>
+
+Tests of whole session paths (stage changes, rejoins, joins at a busy moment, votes, mixed versions) with
+the network and frame rate of real players; every check reads the other machine's game:
+
+* `coop_latency_step.py` (suite `latency_step_ingame`, ~5 min, cold, `SPORE_NET="delay=30,jitter=5"`): one
+  player walks 55 s by real input (coop_puppet_walk.walk) while the guest's proxy changes its one-way delay
+  30 -> 300 ms at 12 s and back to 30 ms at 34 s (`netem.proxy().p['delay']` is read per packet, so a test
+  can step it at any moment); both directions. Per 1 s of the observer's coop.track: BAD when the drawn
+  puppet moves in steps (< 60 % of its >= 4-frame windows at 0.6-1.4x the path's speed, or > 20 %
+  standing) or jumps (puppet_walk's rule), GOOD when smooth. The longest stretch of BAD seconds with no
+  GOOD one between must be <= 5 s. `SPORE_FIX_OFF=net.offset_window` (BUG-0133) fails.
+* `coop_transition_net.py` (suite `transition_net`, ~20 min, `SPORE_NET=player SPORE_FPS=guest:30`): Cell ->
+  Creature -> Tribe through coop_campaign.Campaign.advance (the host's History button, the guest's real
+  "I'm ready", editors left with "done"), two players. After each change: the guest plays the new stage in
+  the host's world, after 30 s draws the host where it is (3 reads), and neither log has a `sync-check:
+  MISMATCH` line in the 60 s after. `TRANSITION_PLANT=mismatch` (`coop.diag sync force shift` on the guest
+  in the last watch, no LAB-MARK) fails.
+* `coop_party_rejoin_net.py` (suite `party_rejoin_net`, ~10 min, `SPORE_NET=players`, 4 players): rounds
+  `one` (the last guest rejoins), `swap` (Bob, who plays his own creature, and the last guest leave; the
+  last joins first and takes Bob's id), `lost` (a goodbye lost by a 1 s proxy outage), `both` (the extra
+  guests leave and join at the same moment). After each: together, each guest draws every other player
+  where it is, and every machine draws every other player as the species that player plays (the census
+  key of the puppet nearest to where the viewer shows it against the subject's own avatar key).
+  `SPORE_FIX_OFF=core.id_reuse` (BUG-0076) fails.
+* `coop_join_during.py --case combat|editor` (suites `join_during_combat`, `join_during_host_editor`, ~4-5
+  min): the guest leaves after the start and joins 4 s into the host's fight with an NPC (real bites), or
+  while the host is in its editor (`coop.vote editor` alone; "done" 25 s after the join). Then every second
+  on the guest: the host drawn within 4 m as the species it plays, campaign_lib.census_problems empty (NPCs
+  near the guest, alive / dead, 10 m), the fought NPC there with the host's dead flag and health within 25 %;
+  3 such reads in a row, the first within 10 s of the guest being in the world (editor: of the host's
+  return). Combat: the host's kill is dead in the guest's game within 10 s.
+* `coop_vote_net_4p.py` (suite `vote_net_4p`, ~10 min, `SPORE_NET=players`, 4 players): the evolution vote
+  (three real ready clicks; it must end "everybody is ready" and every game opens an editor), an action
+  vote while Dave stays in his editor (the windows show 3/4, the vote waits; Dave leaves from his editor:
+  it passes within 10 s, once), Dave's return (together, drawn where and as what he is), a vote of all four.
+* `coop_mixed_version.py --old guest|host [--fixture tribe]` (suites `mixed_version_guest`,
+  `mixed_version_host`, `mixed_version_tribe`, exclusive: they use the neighbour lane as SPORE_LANE_B): the
+  previous release (`--old-tag v0.7.3.3`, `git archive` built once into out/old/<tag>, its DLLs and symbol
+  files copied into lane B) and this build in one session of three. Checks: every game logs every other
+  player's version, Carol is in the host's world, all three draw each other where they are before and after
+  two of them walk, the shared DNA total (with this build's cause tail) reaches the old game, nest eggs
+  (MSG_NEST) are sent while the old game stands at a nest, Tribe chunks with the time trailer, no caught
+  fault, no crash report. Both lanes get this build's files again at the end. `--old-tag v0.7.2.4` fails
+  (no version lines before 0.7.3.x).
