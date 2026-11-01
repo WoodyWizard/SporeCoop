@@ -9,6 +9,7 @@
 - Creature: the other player's creature and the host's animals no longer stand still and then jump
   ahead when they move without walking themselves (carried by an animation): they move along with
   them (BUG-0394).
+
 ### Added
 - Creature and Cell: DNA (and the cell's food) that a partner or the pack earned now says where it came
   from in a short notice: "+9 DNA from Bob's hunt", "+7 DNA shared by Alice's pack", "+10 food (DNA)
