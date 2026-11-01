@@ -1275,3 +1275,21 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Reproduce: `tools/lab.py run creature_npc_dash --repeat 3 --retry 0`.
 * Not checked: whether main fails as often on an idle machine; the cause.
 * Ticket: BUG-0363
+
+## Creature: eggs at other species' nests differ between host and guest (2026-11-01, fix/w30-npc-walk)
+<a id="issue-nest-eggs"></a>
+
+* What happens: the nest food objects (noun 0x2C9CC91, most likely the eggs) are each game's own; their
+  numbers differed at 3 of 3 nests (14/13, 6/9, 12/8); at one nest 4 of them were 3-4 m over the ground on
+  both games. A player saw eggs "desynced and flying mid air".
+* Reproduce: `SPORE_LANE=N python3 tools/tests/coop_nest_objects.py` (lists both games' objects per nest).
+* Not checked: that these objects are the eggs; why some float.
+* Ticket: BUG-0384
+
+## Creature: corpses reported out of sync (not reproduced) (2026-11-01, fix/w30-npc-walk)
+<a id="issue-corpses"></a>
+
+* What happens (player report): bodies of killed NPCs in other places or states on the two machines.
+* Reproduce: not reproduced; `coop_npc_corpse.py [--by guest]` compares the bodies (0.00 m apart in 6 kills).
+* Not checked: a corpse eaten on one machine, NPCs killed by NPCs, low frame rates.
+* Ticket: BUG-0383
