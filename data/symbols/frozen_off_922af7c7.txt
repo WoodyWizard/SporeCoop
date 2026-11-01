@@ -47,3 +47,5 @@ Simulator::Cell::ParticleFree ; Cell: no guard for a full soft-body particle poo
 Simulator::Cell::ParticleAlloc ; Cell: no guard for a full soft-body particle pool (BUG-0338)
 Simulator::Cell::ActiveBox ; Cell: the active area's size in the coop.pool parts diagnostic (BUG-0355)
 Simulator::Cell::CreateSoftBody ; Cell: no guard for a full cell graphics pool (BUG-0355)
+SporeCoop::AbilityBar_ptr ; Creature: the ability bar is not built again after the own creature swap (BUG-0358)
+SporeCoop::AbilityBar_Rebuild ; Creature: the ability bar is not built again after the own creature swap (BUG-0358)
