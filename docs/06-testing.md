@@ -2521,6 +2521,10 @@ answered right after; a 1 s poller beside a standalone run saw no gap. Same sign
   prints `NOT MEASURED` and skips the window and stop-and-go checks for that view (calm runs: 0-2.2 %,
   also the failing runs of the 0.7.3.3 driving: 0.1-1.6 %). Under 40 frames at 1-5 m/s (a few walks at
   30 fps) the stop-and-go check is skipped the same way (the 0.7.3.3 driving's failing runs: 98-1116).
+  Steps within 0.2 s after a jump of the target itself (faster than 1.5x the top speed: over a mobile
+  network a late or lost state corrects the extrapolated path by 0.3-0.8 m in a frame) are left out
+  too: the driving smooths such a jump on purpose, and the "step against the target's step" check
+  flagged that smoothing (10 % in a passing run; the 0.7.3.3 driving's runs still fail with it).
 * Pitfalls: the lab's games ran at ~70 fps (14-15 ms frames), not 30; the minimap's camera jumps give
   100-230 ms frames, and the next frame draws the way made up (allow the frame before's time); a click
   on the ground near a tree or a member gives no walk (the test logs `nothing`).

@@ -91,7 +91,7 @@ def analyse(rows, owner, top, label):
         if r['who'] == owner and r['id']:
             by.setdefault(r['id'], []).append(r)
     frames, tps, steps, near, near_gait, win, errs, dts, drive_tp = 0, [], [], 0, 0, [], [], [], 0
-    slow, slow_still, slow_surge, slow_uneven, hitches, skipped = 0, 0, 0, 0, 0, 0
+    slow, slow_still, slow_surge, slow_uneven, hitches, skipped, target_jumps = 0, 0, 0, 0, 0, 0, 0
     walked = set()
     all_frames = 0
     for mid, rs in by.items():
@@ -101,10 +101,16 @@ def analyse(rows, owner, top, label):
         # frames after a hitch of the game (a frame over 0.1 s: a loaded machine, a camera jump) show the
         # way made up and are no measure of the driving: steps and windows within HITCH_QUIET s after one
         # are left out of the stop-and-go and window checks (counted and printed)
+        # Likewise after a jump of the target itself (faster than 1.5x the top speed: a late or lost state
+        # over a bad network corrected the extrapolated path): the driving smooths it out over the next
+        # frames on purpose
         calm, last_hitch = [], -1e9
         for k in range(len(rs)):
-            if k and rs[k]['t'] - rs[k - 1]['t'] > 0.1:
-                last_hitch = rs[k]['t']
+            if k:
+                fdt = rs[k]['t'] - rs[k - 1]['t']
+                if fdt > 0.1 or (fdt > 0 and math.dist(rs[k - 1]['tgt'], rs[k]['tgt']) / fdt > 1.5 * top):
+                    last_hitch = rs[k]['t']
+                    target_jumps += fdt <= 0.1
             calm.append(rs[k]['t'] - last_hitch > HITCH_QUIET)
         for k, (a, b) in enumerate(zip(rs, rs[1:])):
             dt = b['t'] - a['t']
@@ -155,7 +161,7 @@ def analyse(rows, owner, top, label):
                 win.append(math.dist(rs[i]['d'], rs[j]['d']) / dt / sp)
             i = j
     return {
-        'label': label, 'members': len(by), 'hitches': hitches, 'skipped': skipped,
+        'label': label, 'members': len(by), 'hitches': hitches, 'skipped': skipped, 'target_jumps': target_jumps,
         'loaded': hitches / all_frames if all_frames else 0, 'walked': sorted(walked), 'frames': frames,
         'fps': 1 / (sum(dts) / len(dts) / max(1, len(by))) if dts else 0, 'teleports': tps,
         'speed_p50': pct(steps, 0.5), 'speed_p99': pct(steps, 0.99), 'speed_max': max(steps) if steps else 0,
@@ -171,8 +177,8 @@ def analyse(rows, owner, top, label):
 
 def report(r, ck, mirrors=True):
     print(f'  {r["label"]}: {r["members"]} members, {len(r["walked"])} walked {r["walked"]}, {r["frames"]} frames '
-          f'while they walk; frames over 0.1 s: {r["hitches"]} ({r["skipped"]} walking frames within {HITCH_QUIET} s '
-          f'after one left out of the step checks)', flush=True)
+          f'while they walk; frames over 0.1 s: {r["hitches"]}, target jumps (network corrections): {r["target_jumps"]} '
+          f'({r["skipped"]} walking frames within {HITCH_QUIET} s after one left out of the step checks)', flush=True)
     print(f'    drawn speed p50 {r["speed_p50"]:.2f} p99 {r["speed_p99"]:.2f} max {r["speed_max"]:.1f} m/s; '
           f'off the target p50 {r["err_p50"]:.2f} p90 {r["err_p90"]:.2f} max {r["err_max"]:.2f} m; '
           f'driver teleports {r["drive_tp"]}', flush=True)
