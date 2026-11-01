@@ -2488,3 +2488,22 @@ answered right after; a 1 s poller beside a standalone run saw no gap. Same sign
   the fixture is 4.75 m/s; WASD turns (W+D) curve at top speed, where a puppet that only walks falls
   behind; screenshots of the puppet are hard to judge (Kooks of the same colour around, and
   `coop.targets all` gives the tag point).
+
+## Creature health between players: coop.hp, partner_hp, party, brain_hp (2026-11-01, fix/w30-creature-hp)
+<a id="testing-creature-hp"></a>
+
+* `coop.hp` (main thread): `own: hp=<health>/<GetMaxHitPoints> level=<brain level> species=
+  player_species= same|other base_game=<the game's BaseMaxHitPoints without the fix>`, then
+  `puppet <id>: hp=<game health>/<game max> reported=<state>`: what each game shows, not mod counters.
+  `coop.hp pack` lists the host's pack members with `from_partner=` (AI stimuli naming a partner's
+  puppet), `coop.hp attack <player>` sends the host avatar's attack message on a puppet.
+* `creature_partner_hp` (~45 s cold, warm-capable): `coop.team hit` is a real TakeDamage on the own
+  avatar; the pack regen (2 %/s of max next to the partner) moves health between the two reads, the
+  test allows 8 % of max.
+* `creature_party` (~45 s warm): `coop.npc recruit` + `gonpc 3` + the guest's `gopos` puts all three
+  together; the recruit walks to the host on its own only sometimes. While a brain-upgrade cinematic
+  plays (`coop.status`: `cinematic F6A4B1E1 playing`) hits on the host's NPCs land with no health
+  change: close the captions (Enter on both) first.
+* `creature_brain_hp` (~65 s, cold): 250 DNA on the host (`AddEvolutionPoints f:250`) gives level 1 on
+  both games through the DNA sync; Enter closes CRG_BrainUpgrade1 on each. The guest plays its own
+  creature in the fixture (creations-guest: Kirgle, species health 6).

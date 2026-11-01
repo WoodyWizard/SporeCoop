@@ -1,34 +1,46 @@
 ---
 id: BUG-0375
 title: Creature: a guest playing its own creature never gets the brain level's health (max HP stays at level 0)
-status: open
+status: fixed
 kind: bug
 stage: Creature
 reported: 2026-11-01
 source: player reports 2026-11-01 (host marks 13:39:07, 13:48:17)
 role: guest
 versions: 0.7.3.3
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w30-creature-hp
+commits: d62e750
+tests: tools/tests/coop_creature_brain_hp.py (suite creature_brain_hp)
 signature:
-docs:
-related:
+docs: docs/re/creature.md#creature-max-hit-points
+related: BUG-0373, BUG-0345
 ---
 
 ## Report
-<!-- what the player (or the test) saw, in our words; no player names, no paths from their PC -->
+Host marks (0.7.3.3, Creature): "after growing brain more my friend didnt got extra HP i have 29 he has
+only 14", 9 minutes later "another growth and my friend still has only 14 hp but i have 44".
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+Observed (logs, Ghidra, lane 9). The guest's own game really had 14/14 at every brain level (its
+`trace:` lines), the host 10, 15, 19, 29, 44. Max hit points (creature vt 0x7C, 0xC04170) add the
+brain level's health (10 15 25 40 ... by level) only to creatures of the world's player species
+(cSpeciesManager +0xA4); the guest plays its own creation, which is another species in its own game
+(the world's player species stays the host's), so it got level 0's 10 + its species health 4.
+The brain level itself was the same on both machines (shared DNA, CRG_BrainUpgrade on both).
+What the host showed for the guest: its puppet was pinned to the puppet's own full health
+(BUG-0373), also level 0's.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+`creature.own_brain_hp` (creature_hp.cpp, hook of 0xC04170): the own avatar (`+0xB58 & 0x200`) of a
+species other than the player species gets `CreatureLevelHealth(level)` + species health, the player
+species' rule. The host shows it through BUG-0373's fix. Off: level 0's health (0.7.3.3).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+`coop_creature_brain_hp.py`: the guest plays its own creature (checked: another species than the
+world's), the host gains 250 DNA, both games reach brain level 1 (captions closed with Enter); the
+guest's own max health rises by the host's step (16 -> 21, host 10 -> 15) and each game shows the
+other's new max on its puppet.
 
 ## History
 - 2026-11-01: opened.
