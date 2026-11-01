@@ -83,7 +83,8 @@ campaign_short 3/3 with the fix, lab 20261031-181517 (lanes 5, 6, 8; the guards 
 there); with the fix off 2/2 OK too, lab 20261031-174551 (not reached either: the campaign hits it
 in about 1 of 5 runs, so it is no FAIL test).
 Cell regression 8/8, lab 20261031-182516 (cell_coop, cell_particles, cell_sap, cell_spare,
-cell_leave, cell_evolve_poll, cell_nan, cell_churn); `make test` OK.
+cell_leave, cell_evolve_poll, cell_nan, cell_churn); smoke 14/14, lab 20261031-183030 (lanes 5, 6, 8);
+`make test` OK.
 Not verified: the 3 fps itself (not reproduced in 2 players, see Root cause).
 
 ## History
