@@ -391,3 +391,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0380](BUG-0380-civ-vehicles-missing-on-guests-and-money-totals.md) | open | bug | Civ | 2026-11-01 |  | civ: vehicles missing on guests and money totals differ in campaigns (sync-check v missing, p apart, totals) |
 | [BUG-0381](BUG-0381-tribe-partner-members-apart-and-citizens-missing.md) | open | bug | Tribe | 2026-11-01 |  | tribe: partner / members apart and citizens missing on guests (sync-check p apart, t missing, n apart) |
 | [BUG-0382](BUG-0382-campaign-a-guest-still-in-civ-90-s-after-the-hos.md) | open | bug | Civ | 2026-11-01 |  | campaign: a guest still in Civ 90 s after the host entered Space (monitor stage_apart) |
+| [BUG-0395](BUG-0395-tests-cell-coop-shared-food-progress-on-the-host.md) | open | test | Cell | 2026-11-01 |  | tests: cell_coop 'shared food progress on the host' fails when the host's own cell eats a plant in the 2 s window |

@@ -12,7 +12,7 @@ def pool(con):
     out = con.call('coop.pool')['out']  # avatar line + the cell(...) status line only
     d = {}
     for k in ('hp', 'local_gameplay_cells', 'food', 'mirrors', 'hits_in', 'hits_sent', 'revives', 'respawns',
-              'purged', 'downed'):
+              'purged', 'downed', 'own_points'):
         m = re.search(k + r'=(-?\d+)', out)
         d[k] = int(m.group(1)) if m else None
     for k in ('size', 'target', 'body', 'partner_dist', 'revive_dist'):
@@ -76,7 +76,14 @@ def main():
     time.sleep(2)
     h3, _ = pool(host)
     g3, _ = pool(guest)
-    ck(h3['food'] == f0 + 20, f'shared food progress on the host ({f0} -> {h3["food"]})')
+    # the host's own cell may eat a plant that floats into it meanwhile (BUG-0395: +12 in 1 of 130 runs)
+    own = (h3['own_points'] or 0) - (h2['own_points'] or 0)
+    ck(h3['food'] == f0 + 20 + own, f'shared food progress on the host ({f0} -> {h3["food"]}, the host ate +{own} itself)')
+    for _ in range(6):  # the host sends its total every 0.5 s: a meal of its own may be on the way
+        if g3['food'] == h3['food']:
+            break
+        time.sleep(0.5)
+        g3, _ = pool(guest)
     ck(g3['food'] == h3['food'], f'guest has the same total ({g3["food"]})')
 
     # knockout far from the partner: nobody saves it at once
