@@ -3038,7 +3038,10 @@ the network and frame rate of real players; every check reads the other machine'
   "I'm ready", editors left with "done"), two players. After each change: the guest plays the new stage in
   the host's world, after 30 s draws the host where it is (3 reads), and neither log has a `sync-check:
   MISMATCH` line in the 60 s after. `TRANSITION_PLANT=mismatch` (`coop.diag sync force shift` on the guest
-  in the last watch, no LAB-MARK) fails.
+  in the last watch, no LAB-MARK) fails (lab 20261101-152859). It found two open bugs on main, allowed by
+  name until their fixes merge: Tribe `t missing` 58 s after the arrival in both runs (BUG-0381, NPC tribes the
+  host forms; `--allow "t missing=BUG-0381"` and a suite allow), and Creature `n missing` under the
+  brain-upgrade caption of the AddEvolutionPoints shortcut in one of two runs (BUG-0413, a suite allow).
 * `coop_party_rejoin_net.py` (suite `party_rejoin_net`, ~10 min, `SPORE_NET=players`, 4 players): rounds
   `one` (the last guest rejoins), `swap` (Bob, who plays his own creature, and the last guest leave; the
   last joins first and takes Bob's id), `lost` (a goodbye lost by a 1 s proxy outage), `both` (the extra
@@ -3048,7 +3051,10 @@ the network and frame rate of real players; every check reads the other machine'
   instance key: Kirgle is 290225CD in Bob's game, 7C329711 in the others', 7CF261BB after a rejoin), so a player
   who plays its own creation must be drawn as the viewer's import of it (`coop.creations`: `player <id>
   creature: <key> '<name>'` with the subject's `mine creature` name and the census key of the drawn puppet), a
-  player of the world's species as that key.
+  player of the world's species as that key. BUG-0076's switches (`core.id_reuse`, `core.creations_leave`,
+  both) did not fail it: the newcomer with Bob's old id was drawn as its own species (labs 20261101-144314 /
+  144852 / 152157); `PARTY_PLANT=lift` (Carol's game draws its partners 5 m up after the swap, `coop.track
+  lift 5`) fails it (lab 20261101-153001).
 * `coop_join_during.py --case combat|editor` (suites `join_during_combat`, `join_during_host_editor`, ~4-5
   min): the guest leaves after the start and joins 4 s into the host's fight with an NPC (real bites), or
   while the host is in its editor (`coop.vote editor` alone; "done" 25 s after the join). A guest that joins
@@ -3057,13 +3063,18 @@ the network and frame rate of real players; every check reads the other machine'
   within 4 m as the species it plays, campaign_lib.census_problems empty (NPCs near the guest, alive / dead,
   10 m), the fought NPC there with the host's dead flag and health within 25 %; 3 such reads in a row, the
   first within 10 s. Combat: the host's kill is dead in the guest's game within 10 s
-  (`SPORE_FIX_OFF=npc.play_death` fails: alive=1). Editor: while the host edits, the joined guest's own
-  creatures move in its game (census dumps 8 s apart; `SPORE_FIX_OFF=core.away_editor` fails: the guest has
-  no creatures at all, 0 of 0).
+  (`SPORE_FIX_OFF=npc.play_death` fails: alive=1, lab 20261101-145305). Each read also wants exactly one player
+  creature on the guest (no stray puppet after the host's editor; `core.strays` off did not leave one).
+  Editor: while the host edits, the joined guest's own creatures should move in its game (census dumps 8 s
+  apart): they do not exist at all (`0 of 0`, with every fix on too): BUG-0412, allowed by name
+  (`--allow-empty BUG-0412`, printed). `JOIN_PLANT=leave` (the guest drops out right after the join) fails
+  it; `JOIN_PLANT=lift` did not (a standing host's puppet stays on the ground).
 * `coop_vote_net_4p.py` (suite `vote_net_4p`, ~10 min, `SPORE_NET=players`, 4 players): the evolution vote
   (three real ready clicks; it must end "everybody is ready" and every game opens an editor), an action
   vote while Dave stays in his editor (the windows show 3/4, the vote waits; Dave leaves from his editor:
   it passes within 10 s, once), Dave's return (together, drawn where and as what he is), a vote of all four.
+  `VOTE_PLANT=noready` (Dave's last ready not clicked) fails (lab 20261101-153741); `world.share_drop_peer`
+  off did not (lab 20261101-152552).
 * `coop_mixed_version.py --old guest|host [--fixture tribe]` (suites `mixed_version_guest`,
   `mixed_version_host`, `mixed_version_tribe`, exclusive: they use the neighbour lane as SPORE_LANE_B): the
   previous release (`--old-tag v0.7.3.3`, `git archive` built once into out/old/<tag>, its DLLs and symbol
