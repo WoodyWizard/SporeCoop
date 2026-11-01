@@ -63,7 +63,7 @@ so a 2 h game fits the 24 MB zip many times.
 
 | prefix | when | what it answers |
 |---|---|---|
-| `trace:` | every 10 s while connected (at the session clock's 10 s marks), and at once after a stage or world change | role and id, players, mode, world id and planet file, own position, hp, species, flags, DNA and the shared food / money of this game, host away, vote, the game's input lock, a pending own editor; then one `partner <id>` line each: its mode and world, distance, `same_place`, `puppet=shown` or `hidden: <why>`, its hp and species, the age of its last state, rtt, resends / packets, silence, pending reliable messages; once a minute the versions; at the end the [monitor fields](#reporting-monitor-fields) (`drawn=`, `agl=`, `puppet_hp=`, `parts=`, `proxy_under=`) |
+| `trace:` | every 10 s while connected (at the session clock's 10 s marks), and at once after a stage or world change | role and id, players, mode, world id and planet file, own position, hp, species, flags, DNA and the shared food / money of this game, host away, vote, the game's input lock, a pending own editor; then one `partner <id>` line each: its mode and world, distance, `same_place`, `puppet=shown` or `hidden: <why>`, its hp and species, the age of its last state, rtt, resends / packets, silence, pending reliable messages; once a minute the versions; at the end the [monitor fields](#reporting-monitor-fields) (`drawn=`, `agl=`, `puppet_hp=`, `parts=`, `proxy_under=`, `ptr_still=`) |
 | `cell:` | with each trace in Cell | the own cell's level, size, hp, model and **diet** (`herb`, `carn`, `omni`), the food totals, the plants / meat / creatures **on the screen** and the nearest plant / meat, the pool size, mirrors (guest), knocked out, and what it did since the last line (ate, points, eats sent / applied / refused, bites); the guest's line ends with `host d=` and "outside the host's populated area" beyond 40 m (BUG-0174) |
 | `creature:` | with each trace in Creature | NPCs simulated (host) or mirrored (guest) within 60 m, the nearest, and the nest distance |
 | `tribe:` `civ:` `space:` | every 30 s in those stages | the first line of the stage module's counters |
@@ -357,6 +357,7 @@ lines of one moment sit next to each other in `tools/merge_logs.py`.
 | `puppet_hp=<hp>/<max>` | partner | Creature: the health the partner's creature has in this game (its health bar), next to `hp=` (what the partner's game reported) |
 | `parts=<count>:<hash>` | own | Creature: the creature parts unlocked in this game (the editor's palette); equal counts and hashes on every player = the same parts |
 | `proxy_under=<n> proxy_stuck=<n>` | own (guest) | Creature / Tribe: the host's animals shown here that were under the ground for 1 s / over 3 m off the host's animal for 2 s since the last line |
+| `ptr_still=<s>` | own | Tribe / Civ: how long this player's pointer (the planet point under the mouse) has stood still. A partner's copy of a pointer that moved under a second ago trails it (BUG-0416): judge `drawn=` against `pos=` only when this is over 1 s |
 
 Hits on players are logged where they are applied, forwarded or dropped (five per kind and 10 s,
 then summed up; a hit by the player's own party always):
