@@ -21,7 +21,9 @@ Checks after every round, on every machine's game (not the mod's counters):
 Afterwards no machine has a caught fault.
 
   SPORE_LANE=9 SPORE_NET=players python3 tools/tests/coop_party_rejoin_net.py --players 4
-  SPORE_FIX_OFF=core.id_reuse fails (round 2: the newcomer is drawn as Bob's creature)
+  BUG-0076's switches (core.id_reuse, core.creations_leave, both) did not fail it (labs 20261101-144314,
+  20261101-144852, 20261101-152157: the newcomer was drawn as its own species with Bob's id); the planted
+  PARTY_PLANT=lift (Carol's game draws its partners 5 m up after round 2, `coop.track lift 5`) fails it
 """
 import argparse
 import math
@@ -154,6 +156,9 @@ def main():
                     gp.call(gp.join)
                 ok = all(p.wait_in(gp, 260, stable=4) for gp in extra)
                 ck(ok, f'[both] {", ".join(g.name for g in extra)} left and joined at the same moment')
+            if os.environ.get('PARTY_PLANT') == 'lift' and rnd == 'swap':
+                # a planted problem: Carol's game draws every partner 5 m above where it is (`coop.track lift`)
+                print('  PLANTED: Carol: ' + p.byname('Carol').call('coop.track lift 5').strip()[:100], flush=True)
             print(f'  round {rnd}: {time.time() - t1:.0f} s', flush=True)
             checks(p, ck, rnd)
         for name, px in netem.proxies().items():
