@@ -13,8 +13,10 @@ Checks per direction over the fight (FIGHT_S s):
   game's speed, sprints included) x the frame time (or the frame before's): at most 1 per minute;
 * teleports of the driver (`coop.track` tp column, the mod putting the puppet in place): at most 1 per
   minute;
-* error: the drawn puppet against the fighter's own path in its game, after the constant delay that
-  fits best (0-0.8 s: the interpolation and network delay, not an error): p95 <= ERR_P95 m.
+* error: the drawn puppet against the fighter's own position in its game at the same moment (both tracks
+  start together), over the frames in which the fighter moves faster than 1 m/s: p95 <= ERR_P95 m;
+* delay: the constant delay (0-0.8 s) that fits the drawn path best over those frames: <= LAG_MAX s (a fight
+  the other player sees half a second late: the bite lands before the creature arrives).
 
   coop_puppet_fight.py [--dir host|guest|both] [--seed N] [--secs S]
   (SPORE_FIX_OFF=creature.puppet_path,creature.puppet_walk fails)"""
@@ -32,6 +34,7 @@ from twoinst import Checks, shot, start
 
 TP_FACTOR, TP_MIN = 3.0, 0.75
 ERR_P95 = 2.5
+LAG_MAX = 0.3  # s: the delay that fits the drawn path best (fix on 0.06-0.14 s; puppet_path + puppet_walk off 0.50-0.54 s)
 PER_MIN = 1.0
 ABILITY_KEYS = [0x31, 0x32, 0x33, 0x34, 0x35, 0x30]  # 1-5, 0
 
@@ -83,7 +86,7 @@ def fight(con, rng, secs, log):
             continue
         tg = npc_targets(con)
         r = rng.random()
-        if tg and r < 0.55:
+        if tg and r < 0.45:
             dist, nid, x, y = tg[0] if rng.random() < 0.7 else rng.choice(tg)
             if stance(con) != 1:
                 combat_stance(con)
@@ -96,7 +99,7 @@ def fight(con, rng, secs, log):
                 con.call(f'key 0x{k:02X} up')
                 time.sleep(rng.uniform(0.5, 1.2))
             log.append(f'{nid} {dist:.0f}m keys {"".join(chr(k) for k in keys)}')
-        elif r < 0.8:
+        elif r < 0.9:
             keys = rng.choice([['W'], ['W', 'A'], ['W', 'D'], ['A'], ['D'], ['S']])
             hold = rng.uniform(0.5, 1.8)
             for k in keys:
@@ -156,20 +159,27 @@ def analyse(obs_rows, fighter_rows, label):
             jumps.append((round(b['t'], 2), round(step, 2), round(dt * 1000)))
     span = (pup[-1]['t'] - pup[0]['t']) if len(pup) > 1 else 0.0
     tps = (pup[-1]['tp'] - pup[0]['tp']) if pup else 0
-    # the delay that fits best, then the error at it
+    # the delay that fits best (over the frames in which the fighter moves faster than 1 m/s: standing frames fit
+    # any delay), then the error at it and at no delay
+    def own_speed(t):
+        lo = [r for r in own if t - 0.15 <= r['t'] <= t + 0.15]
+        return max((r['gv'] for r in lo), default=0.0)
+    mov = [r for r in pup[::2] if own and r['t'] - 0.8 >= own[0]['t'] and own_speed(r['t']) > 1.0] if own else []
     best = None
-    if own and pup:
-        for k in range(0, 41):
-            lag = 0.02 * k
-            errs = [math.dist(r['d'], interp(own, r['t'] - lag)) for r in pup[::3] if r['t'] - lag >= own[0]['t']]
-            med = pct(errs, 0.5)
-            if errs and (best is None or med < best[1]):
-                best = (lag, med)
+    for k in range(0, 41):
+        lag = 0.02 * k
+        errs = [math.dist(r['d'], interp(own, r['t'] - lag)) for r in mov]
+        med = pct(errs, 0.5)
+        if errs and (best is None or med < best[1] - 1e-6):
+            best = (lag, med)
     lag = best[0] if best else 0.0
     errs = [math.dist(r['d'], interp(own, r['t'] - lag)) for r in pup if own and r['t'] - lag >= own[0]['t']]
+    errs0 = [math.dist(r['d'], interp(own, r['t'])) for r in pup if own and r['t'] >= own[0]['t']]
+    errs_mov0 = [math.dist(r['d'], interp(own, r['t'])) for r in mov]
     moving = sum(1 for r in own if r['gv'] > 0.5) / len(own) if own else 0
     return {'label': label, 'samples': len(pup), 'span': span, 'top': top, 'jumps': jumps, 'tps': tps,
             'lag': lag, 'err_p50': pct(errs, 0.5), 'err_p95': pct(errs, 0.95), 'err_max': max(errs) if errs else 0,
+            'now_p95': pct(errs0, 0.95), 'mov_now_p95': pct(errs_mov0, 0.95), 'mov_n': len(mov),
             'fps': 1 / (sum(dts) / len(dts)) if dts else 0, 'moving': moving,
             'own_speed_p50': pct([r['gv'] for r in own if r['gv'] > 0.3], 0.5)}
 
@@ -219,22 +229,25 @@ def direction(fighter, observer, fname, oname, rng, secs, ck):
     allowed = math.ceil(PER_MIN * mins)
     print(f'  {r["label"]}: {r["samples"]} puppet samples over {r["span"]:.0f} s at {r["fps"]:.0f} fps; the fighter\'s top '
           f'speed {r["top"]:.1f} m/s (median while moving {r["own_speed_p50"]:.1f}, moving {r["moving"]:.0%} of its frames)', flush=True)
-    print(f'    drawn vs the fighter\'s own path after {r["lag"]:.2f} s: p50 {r["err_p50"]:.2f} p95 {r["err_p95"]:.2f} max '
-          f'{r["err_max"]:.2f} m; driver teleports {r["tps"]}; jumps {len(r["jumps"])} {r["jumps"][:10]}', flush=True)
+    print(f'    drawn vs the fighter\'s own path: at the same moment p95 {r["now_p95"]:.2f} m (while it moves: '
+          f'{r["mov_now_p95"]:.2f} m, {r["mov_n"]} samples); after the best delay {r["lag"]:.2f} s: p50 {r["err_p50"]:.2f} p95 '
+          f'{r["err_p95"]:.2f} max {r["err_max"]:.2f} m; driver teleports {r["tps"]}; jumps {len(r["jumps"])} {r["jumps"][:10]}', flush=True)
     ck(r['samples'] > 300 and r['moving'] > 0.25, f'{r["label"]}: it fought and moved ({r["samples"]} samples, moving '
        f'{r["moving"]:.0%} of its own frames)')
     ck(len(r['jumps']) <= allowed, f'{r["label"]}: drawn jumps within the bound ({len(r["jumps"])} <= {allowed})')
     ck(r['tps'] <= allowed, f'{r["label"]}: the puppet is put in place (teleported) at most {PER_MIN:g} per minute '
        f'({r["tps"]} <= {allowed})')
-    ck(r['err_p95'] <= ERR_P95, f'{r["label"]}: drawn where the fighter is (p95 {r["err_p95"]:.2f} m <= {ERR_P95} m '
-       f'after {r["lag"]:.2f} s)')
+    ck(r['mov_n'] >= 50 and r['mov_now_p95'] <= ERR_P95,
+       f'{r["label"]}: drawn where the fighter is at the same moment while it moves (p95 {r["mov_now_p95"]:.2f} m <= '
+       f'{ERR_P95} m over {r["mov_n"]} samples)')
+    ck(r['lag'] <= LAG_MAX, f'{r["label"]}: the drawn creature trails the fighter by at most {LAG_MAX} s ({r["lag"]:.2f} s)')
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--dir', default='both', choices=('host', 'guest', 'both'), help='who fights')
     ap.add_argument('--seed', type=int, default=None)
-    ap.add_argument('--secs', type=float, default=40)
+    ap.add_argument('--secs', type=float, default=50)
     a = ap.parse_args()
     seed = a.seed if a.seed is not None else random.randrange(1 << 30)
     print(f'  seed {seed}', flush=True)
