@@ -23,13 +23,16 @@ host's game plays (a caption, a brain upgrade, the evolution's cinematic).
 --part gate (suite busy_gate), the other actions at the same gate:
 6. action_cinematic / action_paused: an action vote's result (`coop.vote action`) waits for the host's
    cinematic / pause and runs after it.
-7. share_cinematic / share_paused: a share due as after an evolution (`coop.share due`) does not reach the
-   guest while the host's cinematic plays / its game time stands, and reaches it after (the guest loads).
+7. share_cinematic: a share due as after an evolution (`coop.share due`) does not reach the guest while the
+   host's cinematic plays and reaches it after (the guest loads; BUG-0019's wait, now through the gate).
+   share_paused: the same share during the host's pause goes out at once (the game sets the pause flag
+   itself at a stage start, after an editor and under captions: a share held for it came 120 s late,
+   guest_editor_hold in lab 20261101-172428; a save during a pause is the game's own way to save).
 
 SPORE_FIX_OFF=core.editor_cinematic: cases 1, 2, 4 fail (the host's editor opens during the cinematic and
 stays without its buttons; the cinematic is then ended by hand so that the games are usable again).
 SPORE_FIX_OFF=core.own_editor_busy: case 5 fails. SPORE_FIX_OFF=core.vote_action_busy: case 6 fails.
-SPORE_FIX_OFF=world.share_busy: share_paused fails (share_cinematic is BUG-0019's, npc.sharecine).
+share_cinematic fails with SPORE_FIX_OFF=npc.sharecine (BUG-0019's switch).
 
   coop_vote_cinematic.py [--part vote|gate|all]
 """
@@ -322,6 +325,13 @@ def share_case(host, guest, ck, cm_h, name, paused):
         if not pause_host_ui(host, ck, name):
             unpause(host)
             return
+        print('  ' + host.call('coop.share due')['out'].strip(), flush=True)
+        got = within(lambda: guest_loading(guest), 30)
+        print(f'  {name}: the share reached the guest during the host\'s pause={got} (busy={busy(host)})', flush=True)
+        ck(got, f'{name}: a share is not held by a pause (the guest loads while the host\'s game time stands)')
+        unpause(host)
+        ck(settled(host, guest, timeout=150), f'{name}: the guest is back in the host\'s world')
+        return
     else:
         play(host, cm_h)
         time.sleep(0.5)

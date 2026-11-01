@@ -29,9 +29,12 @@ enum : unsigned {
 // an editor opening (the host's after a vote, a guest's own): loading and the editor itself are the
 // callers' own checks (they drop or re-decide then)
 constexpr unsigned kEditorGate = kCinematic | kInputLock | kPaused;
-// a world share after a mode change (BUG-0019: the cinematic; the save itself checks editors and
-// loads, coop.cpp save_blocker)
-constexpr unsigned kShareGate = kCinematic | kInputLock | kPaused;
+// a world share after a mode change: the cinematic only (BUG-0019; the save itself checks editors and
+// loads, coop.cpp save_blocker). Not a pause: the game sets the pause flag itself at the start of the
+// Creature stage, after an editor and under its captions (no window of the player's), and a share that
+// waited for it reached the guests up to 120 s late (guest_editor_hold, lab 20261101-172428); a save
+// during a pause is the game's own way to save.
+constexpr unsigned kShareGate = kCinematic;
 // the result of an action vote (a superweapon ...)
 constexpr unsigned kActionGate = kCinematic | kInputLock | kPaused | kEditor | kLoading;
 // the game's simulation stands: a state compared now is stale (the sync check, the census)
@@ -54,23 +57,34 @@ inline std::string names(unsigned b)
     return s.empty() ? "-" : s;
 }
 
-// One wait at a gate. `b` = the game's busy bits masked with the action's gate. Returns true while
-// the action must wait this frame. `since` (0 = not waiting) starts at the first busy frame; the
-// reasons in `endless` (a player's pause: the player comes back) never run out, the others do after
-// `limit` seconds of waiting; then *expired is set and the action goes on (its own fallback).
-inline bool hold(double& since, unsigned b, double now, double limit, unsigned endless = 0, bool* expired = nullptr)
+// One wait at a gate (per action). `since`: the first busy frame; `other_since`: the first frame busy
+// for a reason outside `long_bits` (0 = none now).
+struct Wait {
+    double since = 0;
+    double other_since = 0;
+};
+
+// `b` = the game's busy bits masked with the action's gate. Returns true while the action must wait
+// this frame. Busy only for reasons in `long_bits` (a pause: the player comes back), it waits up to
+// `long_limit` seconds; busy for any other reason (a cinematic, also under a pause: a caption), up to
+// `limit` seconds of that reason. Then *expired is set and the action goes on (its own fallback).
+inline bool hold(Wait& w, unsigned b, double now, double limit, unsigned long_bits = 0, double long_limit = 300.0,
+                 bool* expired = nullptr)
 {
     if (expired)
         *expired = false;
     if (!b) {
-        since = 0;
+        w = Wait{};
         return false;
     }
-    if (b & endless)
-        return true; // (the limit counts only the time busy for other reasons)
-    if (since == 0)
-        since = now;
-    if (now - since < limit)
+    if (w.since == 0)
+        w.since = now;
+    bool other = b & ~long_bits;
+    if (!other)
+        w.other_since = 0;
+    else if (w.other_since == 0)
+        w.other_since = now;
+    if (other ? now - w.other_since < limit : now - w.since < long_limit)
         return true;
     if (expired)
         *expired = true;

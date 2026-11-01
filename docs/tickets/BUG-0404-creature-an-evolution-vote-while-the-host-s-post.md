@@ -15,7 +15,7 @@ tests: vote_during_cinematic, busy_gate (tools/tests/coop_vote_cinematic.py); np
 signature:
 docs: docs/re/creature.md#creature-busy-states, docs/06-testing.md#testing-busy-gate, docs/known-issues.md#issue-vote-during-evolution-cinematic
 related: BUG-0371, BUG-0273, BUG-0019, BUG-0331, BUG-0336, BUG-0319
-switch: core.editor_cinematic, core.own_editor_busy, core.vote_action_busy, world.share_busy
+switch: core.editor_cinematic, core.own_editor_busy, core.vote_action_busy
 ---
 
 ## Report
@@ -53,16 +53,20 @@ use the same cinematic manager state, docs/re/cell.md); not reproduced with a vo
 
 ## Fix
 One busy gate (mods/coop/busy.h, `game_busy()` in coop.cpp: a cinematic, the input lock, the game time
-paused, an editor, a load; `busy:` in `coop.status`, `busy=` in the trace line):
+paused, an editor, a load; `busy:` in `coop.status`, `busy=` in the trace line). Each action waits for its
+own mask (busy.h); a pause alone at most 300 s, a cinematic (also under a pause: a caption) 60 s:
 * `core.editor_cinematic`: the host's held editor (a vote's) waits at the gate and for 3 s after an editor
-  (the fade-in starts then); a pause as long as it lasts, a cinematic at most 60 s, then the cinematic is
-  ended natively right before the editor opens.
+  (the fade-in starts then); after the 60 s of a cinematic it is ended natively right before the editor
+  opens.
 * `core.own_editor_busy`: the guest's own editor after a vote waits through a pause (the 90 s limit counts
   only unpaused time) instead of being dropped.
-* `core.vote_action_busy`: an action vote's result (the superweapon) waits at the gate (a pause as long as it
-  lasts, the rest 60 s); dropped when the stage was left or the session ended.
-* `world.share_busy`: the world share after a mode change waits for a pause and the input lock too, not only
-  a cinematic (BUG-0019's 120 s limit).
+* `core.vote_action_busy`: an action vote's result (the superweapon) waits at the gate; dropped when the
+  stage was left or the session ended.
+* The world share after a mode change reads the gate's cinematic mask (busy.h kShareGate: BUG-0019's wait
+  and switch `npc.sharecine`, unchanged). Not a pause, on purpose: the game sets the pause flag itself at the
+  Creature stage start, after an editor and under captions; a share that also waited for it (a switch
+  `world.share_busy` on the way, removed) came 120 s late and guest_editor_hold failed (lab
+  20261101-172428: the host's new body reached the guest after its editor had closed).
 * Test tools: the campaign's sync and census checks skip a guest whose game stands by `busy:` (paused,
   editor, loading), not only by the "Resume Game" button (`OLD_PAUSE_CHECK=1`: the old check).
 * Test hook: `coop.share due` (a share due as after an evolution).
@@ -78,8 +82,8 @@ the guest's load).
   input lock 1, "done" does nothing).
 * FAIL with `SPORE_FIX_OFF=core.editor_cinematic,core.own_editor_busy`: lab 20261101-164848
   (host_cinematic, evolution_cinematic, host_paused, guest_paused).
-* FAIL with `SPORE_FIX_OFF=core.vote_action_busy,world.share_busy`: lab 20261101-165714 (action_cinematic,
-  action_paused, share_paused).
+* FAIL with `SPORE_FIX_OFF=core.vote_action_busy,world.share_busy` (the share's pause wait, removed since):
+  lab 20261101-165714 (action_cinematic, action_paused; share_paused was the removed switch's case).
 * PASS: lab 20261101-161924 (3/3, cases 1-3), 20261101-164247 (all five cases), 20261101-164000 (busy_gate),
   PASS3_PLACEHOLDER
 * `make test`: npc_tests test_busy_gate (the gate's waits and limits).

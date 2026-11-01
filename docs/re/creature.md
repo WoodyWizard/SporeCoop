@@ -1466,6 +1466,12 @@ BUG-0404. GOG 2024, lane 5, `tools/tests/coop_vote_cinematic.py`.
   (`busy=paused` in the guest's trace from the first Creature frame, gone ~10 s later; lab
   20261101-170147, run 2). An Esc in that window did not open the pause menu (the flag went to 0): tests wait
   for `busy: -` before they pause a game by hand.
+* ✔ The game sets the pause flag itself, with no window of the player's: on the host at the start of the
+  Creature stage after the Cell stage's editor (~18 s, `busy=paused`, input lock 0), after the first Creature
+  editor (~12 s), and together with a caption cinematic (`cinematic,input_lock,paused` for minutes while the
+  caption waits for OK); lab 20261101-172428 (guest_editor_hold), host trace. So a wait for "paused" also
+  waits for these: the world share does not (busy.h kShareGate), editors and action votes do (a pause alone
+  at most 300 s, a cinematic under it 60 s).
 * ~ The co-op window opened by a vote does not stop the game time (the held editor opened right after the
   vote with the window just closed; inferred from the passing runs, the flag was not read with the window up).
 

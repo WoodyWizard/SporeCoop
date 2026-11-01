@@ -3207,7 +3207,7 @@ counters. Every one has a `_player` twin (`SPORE_FPS=guest:30 SPORE_NET=player`)
   starts each gated action while the host's (or the guest's) game is busy and checks the game state on the
   machine that was busy: the vote's editor (the game's mode, `cinematic`, `input_lock` in the editor, a real
   click on "done"), the guest's own editor after a vote, an action vote's result, a share due as after an
-  evolution (the guest's mode leaves Creature / "receiving world").
+  evolution (the guest's mode leaves Creature / "receiving world"; held for a cinematic, not for a pause).
 * Busy by hand: a cinematic with `PlayCinematic ... s:CRG_Fade_From_Black_Egg` (~7 s, ends by itself); the
   game time paused with a real click on the Sporepedia's HUD button (84 1054) or Esc (the pause menu);
   `coop.status` prints `busy: <reasons>` (`-` when free).

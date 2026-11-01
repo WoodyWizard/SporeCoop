@@ -444,32 +444,37 @@ static void test_busy_gate()
     CHECK((busy::kStillGate & busy::kPaused) && !(busy::kStillGate & busy::kCinematic));
     CHECK((busy::kShareGate & busy::kPaused) && (busy::kShareGate & busy::kCinematic));
     // a cinematic of 7 s: held 7 s, then free, not expired
-    double since = 0;
+    busy::Wait w;
     bool exp = true;
     int held = 0;
     for (double t = 100; t < 120; t += 1)
-        held += busy::hold(since, t < 107 ? busy::kCinematic : 0u, t, 60.0, busy::kPaused, &exp);
-    CHECK(held == 7 && !exp && since == 0);
+        held += busy::hold(w, t < 107 ? busy::kCinematic : 0u, t, 60.0, busy::kPaused, 300.0, &exp);
+    CHECK(held == 7 && !exp && w.since == 0);
     // a cinematic that never ends: held 60 s, then expired (the action's own fallback)
-    since = 0;
-    held = 0;
+    w = {};
     double went = 0;
-    for (double t = 100; t < 200 && !went; t += 1) {
-        if (busy::hold(since, busy::kCinematic, t, 60.0, busy::kPaused, &exp))
-            held++;
-        else
+    for (double t = 100; t < 200 && !went; t += 1)
+        if (!busy::hold(w, busy::kCinematic, t, 60.0, busy::kPaused, 300.0, &exp))
             went = t;
-    }
     CHECK(went == 160 && exp);
-    // a pause of 300 s never runs out; the cinematic after it gets its full 60 s
-    since = 0;
+    // a pause alone waits 300 s; a cinematic that starts after 100 s of pause still gets its full 60 s
+    w = {};
     held = 0;
-    for (double t = 0; t < 300; t += 1)
-        held += busy::hold(since, busy::kPaused, t, 60.0, busy::kPaused, &exp);
-    CHECK(held == 300 && since == 0);
-    CHECK(busy::hold(since, busy::kCinematic, 300, 60.0, busy::kPaused, &exp) && since == 300);
-    CHECK(busy::hold(since, busy::kCinematic, 359, 60.0, busy::kPaused, &exp));
-    CHECK(!busy::hold(since, busy::kCinematic, 360, 60.0, busy::kPaused, &exp) && exp);
+    for (double t = 1; t < 100; t += 1)
+        held += busy::hold(w, busy::kPaused, t, 60.0, busy::kPaused, 300.0, &exp);
+    CHECK(held == 99 && w.since == 1 && w.other_since == 0);
+    CHECK(busy::hold(w, busy::kCinematic | busy::kPaused, 100, 60.0, busy::kPaused, 300.0, &exp) && w.other_since == 100);
+    CHECK(busy::hold(w, busy::kCinematic | busy::kPaused, 159, 60.0, busy::kPaused, 300.0, &exp));
+    CHECK(!busy::hold(w, busy::kCinematic | busy::kPaused, 160, 60.0, busy::kPaused, 300.0, &exp) && exp);
+    // a pause that never ends: 300 s, then expired
+    w = {};
+    went = 0;
+    for (double t = 1000; t < 1400 && !went; t += 1)
+        if (!busy::hold(w, busy::kPaused, t, 60.0, busy::kPaused, 300.0, &exp))
+            went = t;
+    CHECK(went == 1300 && exp);
+    // the share gate is BUG-0019's cinematic only (a pause of the game's own held shares 120 s)
+    CHECK(busy::kShareGate == busy::kCinematic);
 }
 
 int main(int argc, char** argv)

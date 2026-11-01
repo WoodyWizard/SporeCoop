@@ -1229,7 +1229,7 @@ bool g_editor_cine_fix = true;
 COOP_FIX("core.editor_cinematic", "BUG-0404", g_editor_cine_fix, "core: a vote's editor waits at the busy gate (cinematic, input lock, pause)");
 constexpr double kEditorCineWait = 60.0;
 double g_editor_left_at = -100;  // the game came back from an editor into a stage
-double g_submit_cine_since = 0;  // the held request waits for a cinematic since then (0: not)
+busy::Wait g_submit_wait;        // the held request's wait at the busy gate
 bool g_submit_busy_told = false; // the held request's wait was logged
 bool g_submit_end_cine = false;  // the outside-frame submit ends the cinematic first
 unsigned g_submits_after_cine;   // tests: editor requests that waited for a cinematic
@@ -1242,7 +1242,7 @@ void hold_submit(void* req)
         skg::vcall<int>(g_submit_later, 2); // a newer request replaces it
     g_submit_later = req;
     g_submit_held_at = H->time_seconds();
-    g_submit_cine_since = 0;
+    g_submit_wait = {};
     g_submit_busy_told = false;
     if (share_save_due()) {
         g_submits_held++;
@@ -1264,8 +1264,8 @@ void submit_tick(double now)
         unsigned b = game_busy() & busy::kEditorGate;
         bool expired = false;
         bool settling = now - g_editor_left_at < 3.0; // (the evolution's cinematic is about to start)
-        bool was = g_submit_cine_since != 0 || g_submit_busy_told;
-        if (busy::hold(g_submit_cine_since, b, now, kEditorCineWait, busy::kPaused, &expired) || settling) {
+        bool was = g_submit_busy_told;
+        if (busy::hold(g_submit_wait, b, now, kEditorCineWait, busy::kPaused, 300.0, &expired) || settling) {
             if (!was) {
                 g_submits_after_cine++;
                 LOG("the editor waits: the game is busy (%s)", busy::names(b).c_str());
@@ -1281,7 +1281,7 @@ void submit_tick(double now)
     }
     void* req = g_submit_later;
     g_submit_later = nullptr;
-    g_submit_cine_since = 0;
+    g_submit_wait = {};
     g_submit_busy_told = false;
     if (!stage_mode(game::mode_id()) || mode_switch_pending()) { // the host left the stage meanwhile
         LOG("the held editor request is dropped: the game left the stage");
@@ -1402,7 +1402,7 @@ bool SK_CDECL h_Submit(void* req)
 bool g_vote_action_busy_fix = true;
 COOP_FIX("core.vote_action_busy", "BUG-0404", g_vote_action_busy_fix, "core: an action vote's result waits at the busy gate");
 std::function<void()> g_vote_action_due;
-double g_vote_action_since = 0;
+busy::Wait g_vote_action_wait;
 bool g_vote_action_told = false;
 uint32_t g_vote_action_mode = 0;
 unsigned g_vote_actions_waited; // tests
@@ -1418,7 +1418,7 @@ void vote_action_tick(double now)
         return;
     }
     unsigned b = all & busy::kActionGate;
-    if (busy::hold(g_vote_action_since, b, now, 60.0, busy::kPaused)) {
+    if (busy::hold(g_vote_action_wait, b, now, 60.0, busy::kPaused)) {
         if (!g_vote_action_told) {
             g_vote_action_told = true;
             g_vote_actions_waited++;
@@ -1429,7 +1429,7 @@ void vote_action_tick(double now)
     static std::function<void()> run;
     run = std::move(g_vote_action_due);
     g_vote_action_due = nullptr;
-    g_vote_action_since = 0;
+    g_vote_action_wait = {};
     g_vote_action_told = false;
     H->run_outside_frame([](void*) { g_vote_actions_run++; if (run) run(); }, nullptr);
 }
@@ -1461,7 +1461,7 @@ void finish_vote(const char* why)
         if (g_vote_action_busy_fix) { // BUG-0404: vote_action_tick runs it at the busy gate
             g_vote_action_due = std::move(run);
             run = nullptr;
-            g_vote_action_since = 0;
+            g_vote_action_wait = {};
             g_vote_action_told = false;
             g_vote_action_mode = game::mode_id();
             vote_action_tick(H->time_seconds());
@@ -1633,12 +1633,6 @@ static bool g_share_wait_fix = true;
 COOP_FIX("world.share_wait_notice", "BUG-0382", g_share_wait_fix,
          "world: everybody is told that the host's world goes out when its ship leaves the planet; the trace says why a share waits");
 static double g_share_cine_held_at = -1e9; // host: a share was held for a cinematic (follow_phase)
-// BUG-0404 (the busy gate): a share after an evolution waited for a cinematic only (BUG-0019); a
-// pause (the pause menu, the Sporepedia, My Collections: the game time stands) or the input lock did
-// not hold it. It now waits at busy::kShareGate, at most the same 120 s. Off: cinematics only.
-static bool g_share_busy_fix = true;
-COOP_FIX("world.share_busy", "BUG-0404", g_share_busy_fix, "world: a share after a mode change waits at the busy gate (pause, input lock)");
-static bool g_share_busy_paused = false; // the last held share waited for a pause (trace share_wait=paused)
 static bool g_planet_wait_told;
 // host: why a share waits now ("planet", "cinematic"), nullptr when none does
 static const char* share_wait_reason()
@@ -1647,9 +1641,7 @@ static const char* share_wait_reason()
         return nullptr;
     if (world::share_waits_for_planet())
         return "planet";
-    if (H->time_seconds() - g_share_cine_held_at >= 2.0)
-        return nullptr;
-    return g_share_busy_paused ? "paused" : "cinematic"; // (BUG-0404: the busy gate)
+    return H->time_seconds() - g_share_cine_held_at < 2.0 ? "cinematic" : nullptr;
 }
 static void share_wait_tick()
 {
@@ -1677,15 +1669,13 @@ void follow_phase(double now)
         if (r.needs_world && g_local) { // joined while the host was in a menu
             if (g_share_cine_fix) { // BUG-0019: after the evolution cinematic, at most 120 s
                 double& since = g_share_cine_each_fix ? r.cine_wait_since : g_share_cine_since;
-                // BUG-0404: at the busy gate (a pause or the input lock too), not only a cinematic
-                unsigned gate = g_share_busy_fix ? game_busy() & busy::kShareGate : 0u;
-                bool cine = world::cinematic_playing() || gate;
+                // the busy gate's share mask (busy.h kShareGate: the cinematic, not a pause, BUG-0404)
+                unsigned gate = game_busy() & busy::kShareGate;
+                bool cine = gate != 0;
                 bool waited = since != 0 && cine;
                 if (share_wait::hold(since, cine, now, g_share_due_at)) {
-                    if (cine) {
+                    if (cine)
                         g_share_cine_held_at = now; // BUG-0382: trace share_wait=cinematic
-                        g_share_busy_paused = gate & busy::kPaused;
-                    }
                     continue;
                 }
                 if (waited)
@@ -1971,6 +1961,7 @@ std::string make_report(const char* reason)
 // played for 15 s and no cinematic or caption is up, at most 90 s.
 uint32_t g_own_editor_due = 0;
 double g_own_editor_due_at = 0;
+double g_own_editor_due_first = 0; // (BUG-0404: the 90 s may be pushed by pauses, not past 300 s)
 bool g_own_editor_queued = false;
 unsigned g_own_editor_waits; // tests: frames the own editor waited for the stage to settle
 double g_own_editor_hold_until = 0; // tests (coop.vote hold <s>): the own editor waits until then
@@ -2001,8 +1992,9 @@ void own_editor_tick(double now)
         return;
     unsigned b = g_own_editor_busy_fix ? game_busy() & busy::kEditorGate : 0u;
     if ((b & busy::kPaused) && dt > 0 && dt < 5.0)
-        g_own_editor_due_at += dt; // a pause does not count against the 90 s
-    if (now - g_own_editor_due_at > 90.0 || (g_mode != modes::kCreature && stage_mode(g_mode))) {
+        g_own_editor_due_at += dt; // a pause does not count against the 90 s (all in all 300 s)
+    if (now - g_own_editor_due_at > 90.0 || now - g_own_editor_due_first > 300.0 ||
+        (g_mode != modes::kCreature && stage_mode(g_mode))) {
         LOG("own editor not opened: the stage did not settle (or was left)");
         feed("evolution: your editor did not open; evolve at your nest later");
         g_own_editor_due = 0;
@@ -3169,7 +3161,7 @@ void setup_callbacks()
             // the evolution starts: everybody evolves its own creature in its own editor (own_editor_tick)
             if (ended && g_vote.editor && g_mode == modes::kCreature && g_local) {
                 g_own_editor_due = g_vote.editor;
-                g_own_editor_due_at = H->time_seconds();
+                g_own_editor_due_at = g_own_editor_due_first = H->time_seconds();
             }
             g_vote.active = on;
             g_vote.left = left;
