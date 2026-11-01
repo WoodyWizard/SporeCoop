@@ -42,6 +42,7 @@
 #include "squadron.h"
 #include "npc.h"
 #include "creature_hp.h"
+#include "nest.h"
 #include "rejoin.h"
 #include "savestrip.h"
 #include "cell_logic.h"
@@ -818,7 +819,7 @@ static bool world_state_msg(uint8_t type)
     return type == net::MSG_DNA || type == net::MSG_WORLD_TIME ||
            (type >= net::MSG_CELL_STATE && type <= net::MSG_CELL_FOOD) || type == net::MSG_CELL_KO ||
            type == net::MSG_CELL_BITTEN || type == net::MSG_TRIBE_STATE || type == net::MSG_TRIBE_CMD ||
-           type == net::MSG_SPECIES || type == net::MSG_SOCIAL;
+           type == net::MSG_SPECIES || type == net::MSG_SOCIAL || type == net::MSG_NEST;
 }
 
 // the gate: does this machine drop the host's message? (0.7.3.0 with core.world_gate off: the old
@@ -1904,6 +1905,7 @@ void avatar_change_check()
     if (g_last_avatar) {
         forget_puppets();
         npc::on_world_change();
+        nest::on_world_change();
         if (!tribe::editor_world_fix()) // BUG-0217: else tribe::world_check() decides
             tribe::on_world_change();
         if (!civ::world_epoch_fix()) // BUG-0223: else civ::world_check() decides
@@ -2137,6 +2139,7 @@ void on_frame(void*, int, void*)
         world::guest_tick(); // a received world waiting for the player to leave its editor
     savestrip::tick();
     npc::tick(now);
+    nest::tick(now); // BUG-0384
     social::tick(now);
     shared::tick(g_sess, game::mode_id(), now, guest_elsewhere()); // BUG-0231: held while elsewhere
     if (g_sess.role() == net::Role::Host && game::avatar()) {
@@ -2597,6 +2600,7 @@ void end_session(EndPath path, bool cell)
                             : path == EndPath::Restart ? "a new session" : "disconnected");
     if (g_session_end_fix || path == EndPath::Disconnect) {
         npc::on_session_end();
+        nest::on_session_end(); // BUG-0384: our egg mirrors
         social::on_session_end();
         tribe::on_session_end();
         if (cell)
@@ -2607,12 +2611,14 @@ void end_session(EndPath path, bool cell)
         spacecoop::on_session_end();
     } else if (path == EndPath::Leave) { // before BUG-0033 (tests)
         npc::on_session_end();
+        nest::on_session_end(); // BUG-0384: our egg mirrors
         social::on_session_end();
         if (cell)
             cellsync::on_session_end();
         spacecoop::on_session_end();
     } else if (path == EndPath::Unload) {
         npc::on_session_end();
+        nest::on_session_end(); // BUG-0384: our egg mirrors
         social::on_session_end();
     }
     if (g_session_end_fix || path != EndPath::Restart) {
@@ -2984,6 +2990,9 @@ void setup_callbacks()
             return;
         case net::MSG_SPECIES: case net::MSG_SOCIAL:
             social::on_message(type, from, r);
+            return;
+        case net::MSG_NEST: // BUG-0384
+            nest::on_message(type, from, r);
             return;
         }
         if (g_sess.role() == net::Role::Client && from == 0)
@@ -4378,6 +4387,14 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         };
         hc.is_host = [] { return g_sess.role() == net::Role::Host; };
         creature_hp::init(H, M, hc);
+    }
+    { // BUG-0384: eggs at the nests
+        nest::Ctx nc;
+        nc.sess = &g_sess;
+        nc.player_pos = ctx.player_pos;
+        nc.in_place = ctx.in_place;
+        nc.host_away = ctx.host_away;
+        nest::init(H, M, nc);
     }
     savestrip::init(H, M); // BUG-0020: our objects never go into a save
     views::init(H, M);     // BUG-0280: the world lives around every player

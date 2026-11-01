@@ -56,3 +56,5 @@ SporeCoop::cSpeciesManager_PlayerSpecies ; Creature: an own creature of another 
 SporeCoop::IntrusivePtr_Assign ; BUG-0368: on GOG 2016 a guest's own creature editor still offers every part (no collected parts in its request)
 Simulator::cCollectableItems::IsUnlocked ; BUG-0368: coop.editor (tests) counts no locked parts on GOG 2016
 SporeCoop::UFOController_Update ; BUG-0378: the hook that leaves pinned Space puppets / mirrors where the mod put them is off (the offset pin of modes::space_pin still applies)
+SporeCoop::cEgg_SetState ; BUG-0384: on GOG 2016 the host's nest eggs are not shown on guests (no egg mirrors, no eating them)
+SporeCoop::cEgg_SnapToGround ; BUG-0384: on GOG 2016 the host's nest eggs are not shown on guests
