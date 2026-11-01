@@ -76,28 +76,46 @@ std::wstring parent(std::wstring p)
 
 std::vector<uint8_t> read_file(const std::wstring& path);
 
-// Steam's game folders of Spore: <library>\steamapps\common\Spore for every library in
-// libraryfolders.vdf (BUG-0391: the game is often not in Steam's own folder)
-std::vector<std::wstring> steam_spore_dirs()
+// Steam's library folders: Steam's own folder (registry, else the default one) and every library in
+// its libraryfolders.vdf (BUG-0391: the game is often not in Steam's own folder)
+std::vector<std::wstring> steam_libraries()
 {
     std::vector<std::wstring> steam = {reg_str(HKEY_CURRENT_USER, L"Software\\Valve\\Steam", L"SteamPath"),
-                                       reg_str(HKEY_LOCAL_MACHINE, L"Software\\Valve\\Steam", L"InstallPath")};
+                                       reg_str(HKEY_LOCAL_MACHINE, L"Software\\Valve\\Steam", L"InstallPath"),
+                                       L"C:\\Program Files (x86)\\Steam"};
     std::vector<std::wstring> libs;
-    for (auto s : steam) {
-        if (s.empty())
-            continue;
-        for (auto& ch : s)
+    auto add_lib = [&](std::wstring l) {
+        for (auto& ch : l)
             if (ch == L'/')
                 ch = L'\\';
-        s = trim_slash(s);
-        libs.push_back(s);
-        std::vector<uint8_t> vdf = read_file(s + L"\\steamapps\\libraryfolders.vdf");
+        l = trim_slash(l);
+        for (auto& x : libs)
+            if (!_wcsicmp(x.c_str(), l.c_str()))
+                return;
+        libs.push_back(l);
+    };
+    for (auto& s : steam) {
+        if (s.empty())
+            continue;
+        add_lib(s);
+        std::vector<uint8_t> vdf = read_file(trim_slash(s) + L"\\steamapps\\libraryfolders.vdf");
         for (auto& l : inst::steam_libraries(std::string(vdf.begin(), vdf.end())))
-            libs.push_back(trim_slash(l));
+            add_lib(l);
     }
+    return libs;
+}
+std::vector<std::wstring> g_libs; // steam_libraries() at the start
+
+// Steam's game folders: Galactic Adventures (app 24720, "Spore 24720") first, then base Spore
+std::vector<std::wstring> steam_spore_dirs()
+{
     std::vector<std::wstring> out;
-    for (auto& l : libs)
+    for (auto& l : g_libs) {
+        if (inst::g_ga_dir_fix)
+            for (auto& g : inst::ga_folders(l))
+                out.push_back(g);
         out.push_back(l + L"\\steamapps\\common\\Spore");
+    }
     return out;
 }
 
@@ -125,7 +143,7 @@ std::wstring find_game()
     if (inst::g_ga_fix)
         for (auto& d : c)
             d = inst::game_root_of(d);
-    return inst::pick_game(c);
+    return inst::resolve_root(inst::pick_game(c), g_libs); // base Spore found: its GA folder (Steam)
 }
 
 std::vector<uint8_t> read_file(const std::wstring& path)
@@ -227,11 +245,12 @@ std::wstring dir_text()
 
 // the game folder the setup works on: the typed folder, or its parent when that is SporeBin or
 // SporebinEP1 (BUG-0391)
-std::wstring chosen_root() { return inst::game_root_of(dir_text()); }
+std::wstring chosen_root(std::string* note = nullptr) { return inst::resolve_root(dir_text(), g_libs, note); }
 
 void refresh()
 {
-    std::wstring root = chosen_root();
+    std::string note; // BUG-0391: "Galactic Adventures is installed in ...\Spore 24720: using that folder."
+    std::wstring root = chosen_root(&note);
     std::wstring game;
     if (!is_game(root))
         game = upd::widen("Game: " + inst::folder_problem(root));
@@ -248,6 +267,8 @@ void refresh()
         game = L"Game: Spore Galactic Adventures, the GOG 2024 build under Steam's DRM (should work)";
     else
         game = L"Game: Spore Galactic Adventures, a build SporeCoop has not been tested with yet";
+    if (!note.empty())
+        game = upd::widen(note) + L"\n" + game;
     SetWindowTextW(g_game, game.c_str());
     std::string v = is_game(root) ? upd::installed_version(root) : "";
     SetWindowTextW(g_inst, upd::widen("Installed: " + (v.empty() ? std::string("not installed") : "SporeCoop " + v)).c_str());
@@ -375,15 +396,16 @@ LRESULT CALLBACK wndproc(HWND w, UINT m, WPARAM wp, LPARAM lp)
         g_dir = add(L"EDIT", upd::widen(upd::narrow(find_game())).c_str(), ES_AUTOHSCROLL, 20, 98, 420, 24, ID_DIR);
         add(L"BUTTON", L"Browse...", BS_PUSHBUTTON, 448, 97, 92, 26, ID_BROWSE);
         // two lines each: "Galactic Adventures is not installed: ..." (BUG-0391), a GitHub error (BUG-0392)
-        g_game = add(L"STATIC", L"", 0, 20, 134, 520, 34);
-        g_inst = add(L"STATIC", L"", 0, 20, 170, 520, 18);
-        g_latest = add(L"STATIC", L"", 0, 20, 192, 520, 34);
-        g_install = add(L"BUTTON", L"Install", BS_DEFPUSHBUTTON, 20, 236, 170, 32, ID_INSTALL);
-        g_remove = add(L"BUTTON", L"Uninstall", BS_PUSHBUTTON, 200, 236, 120, 32, ID_REMOVE);
-        g_close = add(L"BUTTON", L"Close", BS_PUSHBUTTON, 440, 236, 100, 32, ID_CLOSE);
-        g_status = add(L"STATIC", L"", 0, 20, 280, 520, 52);
+        // the folder note + the build: three lines (the Steam GA folder, BUG-0391)
+        g_game = add(L"STATIC", L"", 0, 20, 134, 520, 50);
+        g_inst = add(L"STATIC", L"", 0, 20, 186, 520, 18);
+        g_latest = add(L"STATIC", L"", 0, 20, 208, 520, 34);
+        g_install = add(L"BUTTON", L"Install", BS_DEFPUSHBUTTON, 20, 252, 170, 32, ID_INSTALL);
+        g_remove = add(L"BUTTON", L"Uninstall", BS_PUSHBUTTON, 200, 252, 120, 32, ID_REMOVE);
+        g_close = add(L"BUTTON", L"Close", BS_PUSHBUTTON, 440, 252, 100, 32, ID_CLOSE);
+        g_status = add(L"STATIC", L"", 0, 20, 296, 520, 52);
         add(L"STATIC", L"github.com/WoodyWizard/SporeCoop  -  every player needs the same SporeCoop version", 0, 20,
-            340, 520, 18);
+            356, 520, 18);
         refresh();
         CloseHandle(CreateThread(nullptr, 0, check_thread, nullptr, 0, nullptr));
         return 0;
@@ -503,6 +525,8 @@ void parse_args()
             inst::g_fix = false;
         else if (s == L"/oldga") // tests: the folder handling before BUG-0391
             inst::g_ga_fix = false;
+        else if (s == L"/oldgadir") // tests: before the Steam GA folder "Spore 24720" (BUG-0391)
+            inst::g_ga_dir_fix = false;
         else if (s == L"/oldweb") // tests: the API only, before BUG-0392
             upd::g_web_fallback_fix = false;
         else if (s == L"/oldmerge") // tests: the check thread's get-then-set before BUG-0244
@@ -522,6 +546,7 @@ void parse_args()
 int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, LPWSTR, int show)
 {
     parse_args();
+    g_libs = steam_libraries();
     g_opt.inst.pack_dir = self_dir();
     wchar_t delay[16] = {};
     if (GetEnvironmentVariableW(L"SPORECOOP_SETUP_TEST_DELAY", delay, 16)) { // tests (BUG-0139)
@@ -530,8 +555,11 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, LPWSTR, int show)
     }
     if (g_opt.silent) {
         std::wstring root = g_opt.dir.empty() ? find_game() : g_opt.dir;
+        std::string note;
         if (inst::g_ga_fix)
-            root = inst::game_root_of(root); // /dir: of SporeBin or SporebinEP1 (BUG-0391)
+            root = inst::resolve_root(root, g_libs, &note); // /dir: of SporeBin, SporebinEP1, Steam's base Spore (BUG-0391)
+        if (!note.empty())
+            log(note);
         std::string msg;
         bool ok = g_opt.uninstall ? inst::do_uninstall(root, msg)
                                   : inst::do_install(root, g_opt.inst, g_rel, msg) == inst::Result::Ok;
@@ -549,7 +577,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, LPWSTR, int show)
     wc.hIcon = LoadIconW(inst, MAKEINTRESOURCEW(1));
     wc.lpszClassName = L"SporeCoopSetup";
     RegisterClassW(&wc);
-    RECT r{0, 0, 560, 370};
+    RECT r{0, 0, 560, 386};
     AdjustWindowRect(&r, WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, FALSE);
     HWND w = CreateWindowW(L"SporeCoopSetup", L"SporeCoop Setup", WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
                            CW_USEDEFAULT, CW_USEDEFAULT, r.right - r.left, r.bottom - r.top, nullptr, nullptr, inst, nullptr);

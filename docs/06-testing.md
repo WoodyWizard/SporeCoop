@@ -2811,3 +2811,15 @@ Before a tag `vX.Y.Z` (CLAUDE.md 4):
   allows speed x (0.2 s + the guest's round trip [+ half the owner's]), capped at 1 s / 300 m.
 * `s missing` / `p0 missing, p<guest> extra` (the gate report's 12 + 4 Space results) were in world 0 in every recorded host log but two (`s1` missing in space_mirror_model, made on purpose: a host ship whose model the guest lacks gets no mirror, BUG-0323) (the galaxy view,
   where no puppet is shown and no ship mirrored): `sync.no_place` compares no players or ships there.
+* CORRECTION (2026-11-01, fix/w31-installer): the first BUG-0391 fix took a Steam `common\Spore`
+  without `SporebinEP1` for "Galactic Adventures is not installed". On Steam GA is its own app
+  (24720) in its own folder `steamapps\common\spore 24720` (appmanifest_24720.acf "installdir";
+  seen on this machine's Steam, `SporebinEP1\SporeApp.exe` 25 066 744 bytes), base Spore (17390) in
+  `common\Spore` never has `SporebinEP1`. More win_unit tests: `test_steam_ga_folder`
+  (`inst::resolve_root`: sibling `Spore 24720` / the appmanifest's installdir / another library),
+  `test_setup_steam_ga` (the real setup's window and `/S` with `/dir:<lib>\steamapps\common\Spore\SporeBin`
+  install into `spore 24720`), `test_real_steam` (read only: `win_unit.py` passes
+  `--steam Z:\home\...\.local\share\Steam` when that Steam exists; Bottles' Wine sees it under Z:).
+  Switch `inst::g_ga_dir_fix` (setup `/oldgadir`, `win_tests --old-gadir`, lab
+  `SPORE_WIN_UNIT_ARGS=--old-gadir`). The setup built from c891445 (`--setup build/main-setup/...`)
+  fails `test_setup_steam_ga` with "Galactic Adventures is not installed".
