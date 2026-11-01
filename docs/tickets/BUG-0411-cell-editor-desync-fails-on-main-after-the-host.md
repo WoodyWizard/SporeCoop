@@ -10,7 +10,7 @@ role: guest
 versions: unreleased
 fixed_in: unreleased
 branch: fix/w34-cell-mate
-commits:
+commits: f798e20 3d3c42d
 tests: editor_desync (tools/tests/coop_editor_desync.py, part 4)
 signature:
 docs: docs/re/cell.md#cell-mate-button
@@ -58,8 +58,13 @@ press was lost) the test calls again, as a player would (at most 6 presses). The
 test's own `--old-wait` (the old waits). No mod change, so no coop.fix switch.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+FAIL (the old waits, same as `--old-wait`; lane 6): main 1c186c2, lab 20261101-153116 (#1 FAIL,
+`mate=00000000`; #2, #3 passed); the last passing commit 861a539, lab 20261101-155217 (copied as
+`out/lab/20261101-155217-at-861a539`: #2, #3 FAIL, #1, #4 passed); earlier 20261101-142144,
+20261101-150148, 20261101-151114 (fix/w33-unlocks' out/lab).
+PASS (the new waits, lane 6): lab 20261101-160955 (3 of 3; every run had the hatch after the
+reload, `input_lock=1`, and the first press after it brought the mate).
 
 ## History
 - 2026-11-01: opened.
+- 2026-11-01: fix/w34-cell-mate: a race in the test, not a regression (the last passing commit fails the same way); fixed in the test (unreleased).
