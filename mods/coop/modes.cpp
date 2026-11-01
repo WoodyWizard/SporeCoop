@@ -65,32 +65,48 @@ static void* creature_spawn(const net::PlayerState& s, void* av)
     return p;
 }
 
-// BUG-0360: the partner's creature was driven like an NPC proxy before BUG-0281: a MoveTo again every
-// 0.1 s while the partner walks on (which restarts the game's walk: the puppet stood or crept) and a
-// pull towards the path (undone by its locomotion), so it fell behind and the 4 m snap teleported it
-// about every half second ("the partner teleports, sometimes it walks"). While the partner moves its
-// puppet is now placed on the interpolated path every frame with the partner's velocity (the game
-// animates its walk from it), like npc.kinematic; standing, the driving works as before.
-// `coop.fix creature.puppet_kinematic off`: always the driving (0.7.3.2).
-static bool g_puppet_kinematic_fix = true;
-COOP_FIX("creature.puppet_kinematic", "BUG-0360", g_puppet_kinematic_fix, "creature: the partner's walking creature follows its path every frame instead of teleporting every half second");
+// BUG-0360: while the partner walked, its puppet was given a MoveTo again every 0.1 s (which restarts the
+// game's walk: the puppet stood or crept, 18-23 % of 0.1 s windows) and pulled towards the path with
+// SetPosition, so it moved in steps, trailed 1.5-3.5 m and the 4 m snap teleported it ("the partner
+// teleports, sometimes it walks"). Now, while the partner moves:
+// * the game walks the puppet: the partner's speed (SetDesiredSpeed) and a MoveTo 12 m ahead on its
+//   path, given again only when that direction turns (or every 1.5 s): its walk gait and walk
+//   animation run as on the partner's screen;
+// * SetPosition (vt 0x38: the model and Anim::AnimatedCreature's position) puts it on the
+//   interpolated path every frame. Not teleport (vt 0x44): it sets +0xB5D, which restarts the
+//   animation's gait (no walk gait at all when teleported every frame, as npc.kinematic does).
+// Standing, the driving (drive::step) works as before.
+// `coop.fix creature.puppet_walk off`: the driving only (0.7.3.2).
+static bool g_puppet_walk_fix = true;
+COOP_FIX("creature.puppet_walk", "BUG-0360", g_puppet_walk_fix, "creature: the walking partner's creature walks on its path instead of moving in steps and teleporting");
+constexpr float kGoalAhead = 12.f;      // m: the MoveTo point ahead on the partner's path
+constexpr float kGoalTurnDot = 0.995f;  // a new MoveTo when its direction turns more than ~6 degrees,
+constexpr double kGoalMinGap = 0.3;     // not more often than this (s: given every 0.1 s it restarts the walk)
+constexpr double kGoalMaxGap = 1.5;     // and at least this often (s)
 
 static void creature_drive(void* p, const net::PlayerState& s, drive::State& ds, double now)
 {
-    bool placed = g_puppet_kinematic_fix && game::in_creature_stage() && drive::speed(s.vel) > 0.3f &&
-                  net::dist(game::position(p), s.pos) < 8.f;
-    if (placed) {
-        if (!ds.kinematic)
-            game::stop(p); // its last MoveTo of the driving
+    float sp = drive::speed(s.vel);
+    bool walk = g_puppet_walk_fix && game::in_creature_stage() && sp > 0.3f && net::dist(game::position(p), s.pos) < 8.f;
+    if (walk) {
+        bool was = ds.kinematic;
         ds.kinematic = true;
-        game::teleport(p, s.pos, s.rot);
-        *(net::Vec3*)((uint8_t*)p + game::kVelOff) = s.vel;
+        game::set_speed(p, sp);
+        net::Vec3 hd{s.vel.x / sp, s.vel.y / sp, s.vel.z / sp};
+        float dot = hd.x * ds.goal_dir.x + hd.y * ds.goal_dir.y + hd.z * ds.goal_dir.z;
+        if (!was || (now - ds.last_cmd > kGoalMinGap && dot < kGoalTurnDot) || now - ds.last_cmd > kGoalMaxGap) {
+            game::move_to(p, {s.pos.x + hd.x * kGoalAhead, s.pos.y + hd.y * kGoalAhead, s.pos.z + hd.z * kGoalAhead}, 0.3f);
+            ds.goal_dir = hd;
+            ds.last_cmd = now;
+            ds.goals++;
+        }
+        game::set_position(p, s.pos);
         ds.last_step = now;
         ds.track = drive::Track{};
     } else {
-        if (ds.kinematic) { // it stands again: the driving takes over from here
+        if (ds.kinematic) { // it stands again: no walk to the goal ahead, the driving takes over
             ds.kinematic = false;
-            *(net::Vec3*)((uint8_t*)p + game::kVelOff) = {0, 0, 0};
+            game::stop(p);
         }
         // a partner's creature: lunges and charges move it faster than a puppet can walk, and attack
         // animations undo the nudges (~10-20 % of them in fights): it trailed by 5-8 m after a fight

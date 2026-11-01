@@ -441,6 +441,8 @@ struct TrackSample {
     net::Vec3 p, d, tgt;
     float gv, rv; // the game's speed of the creature, the remote's reported speed
     uint32_t anim;
+    int16_t gait = -1, gait2 = -1; // the animation's gait state (game::gait_state)
+    int8_t moving = -1, speed_state = -1;
 };
 static std::deque<TrackSample> g_track;
 static bool g_track_on = false;
@@ -456,6 +458,13 @@ static void track_one(uint8_t who, void* c, const net::PlayerState* s, uint16_t 
     x.p = game::position(c);
     x.d = x.p;
     game::drawn_state(c, &x.d, &x.anim);
+    int g = -1, g2 = -1, mv = -1, ss = -1;
+    if (game::gait_state(c, &g, &g2, &mv, &ss)) {
+        x.gait = (int16_t)g;
+        x.gait2 = (int16_t)g2;
+        x.moving = (int8_t)mv;
+        x.speed_state = (int8_t)ss;
+    }
     x.gv = drive::speed(game::velocity(c));
     if (s) {
         x.tgt = s->pos;
@@ -492,12 +501,13 @@ int c_track(void*, int argc, const char* const* argv, SkOut* out)
     } else if (!strcmp(a, "stop"))
         g_track_on = false;
     else if (!strcmp(a, "dump")) {
-        // dump [from] [n]: t who flags tp px py pz dx dy dz tx ty tz gv rv anim
+        // dump [from] [n]: t who flags tp px py pz dx dy dz tx ty tz gv rv anim gait gait2 moving speed_state
         size_t from = argc > 2 ? (size_t)atol(argv[2]) : 0, n = argc > 3 ? (size_t)atol(argv[3]) : 2000;
         for (size_t i = from; i < g_track.size() && i < from + n; i++) {
             const auto& x = g_track[i];
-            SAY("%.4f %u %u %u %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.2f %.2f %08X\n", x.t, x.who, x.flags,
-                x.tp, x.p.x, x.p.y, x.p.z, x.d.x, x.d.y, x.d.z, x.tgt.x, x.tgt.y, x.tgt.z, x.gv, x.rv, x.anim);
+            SAY("%.4f %u %u %u %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.2f %.2f %08X %d %d %d %d\n", x.t, x.who,
+                x.flags, x.tp, x.p.x, x.p.y, x.p.z, x.d.x, x.d.y, x.d.z, x.tgt.x, x.tgt.y, x.tgt.z, x.gv, x.rv, x.anim,
+                x.gait, x.gait2, x.moving, x.speed_state);
         }
         return 0;
     }
@@ -3032,8 +3042,8 @@ int c_status(void*, int, const char* const*, SkOut* out)
                 : g_mode == modes::kCell   ? *(uint32_t*)((uint8_t*)r.puppet + 0xFC) // cell model
                                            : 0u);
             if (g_mode == modes::kCreature)
-                SAY("   drive err=%.2f speed=%.2f nudges=%u kept=%u teleports=%u\n", r.drv.last_err,
-                    r.drv.last_speed, r.drv.nudges, r.drv.nudges_kept, r.drv.teleports);
+                SAY("   drive err=%.2f speed=%.2f nudges=%u kept=%u teleports=%u walk_goals=%u\n", r.drv.last_err,
+                    r.drv.last_speed, r.drv.nudges, r.drv.nudges_kept, r.drv.teleports, r.drv.goals);
         }
         // tests: both players are in the same world and place right now
         SAY("together %u %d\n", id, !r.buf.empty() && r.buf.age(now) < 3.0 && same_place(r.buf.latest()) ? 1 : 0);

@@ -99,6 +99,10 @@ void set_scale(void* c, float s);
 // model is drawn (+0x04) and the id of its current animation (vt 0x58 GetCurrentAnimation, 0 when
 // none). False when the creature has none.
 bool drawn_state(void* c, net::Vec3* drawn, uint32_t* anim);
+// BUG-0360: the walk state the creature's idle animation is chosen by (0xC0C790): the animation's
+// gait state (AnimatedCreature +0x17C -> +0x15B8, two ints: 0 = no gait), the creature's +0x137 and
+// its speed state +0xF98. False when it has no animation.
+bool gait_state(void* c, int* gait, int* gait2, int* moving, int* speed_state);
 
 // Animation events: called for every PlayAnimation/PlayAnimationTo on any creature.
 using AnimListener = void (*)(void* creature, uint32_t anim_id, int block, bool disable_blend, bool to_target);

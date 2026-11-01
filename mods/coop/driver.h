@@ -18,11 +18,12 @@ struct State {
     // diagnostics (coop.status): did the last frame's nudge stay where we put it?
     net::Vec3 nudged_to;
     bool nudged = false;
-    uint32_t nudges = 0, nudges_kept = 0, teleports = 0, stalls = 0, trails = 0;
+    uint32_t nudges = 0, nudges_kept = 0, teleports = 0, stalls = 0, trails = 0, goals = 0;
     float last_err = 0, last_speed = 0;
     double hold_until = 0; // BUG-0305: after a trail teleport the nudge puts it on the path every frame
     double last_step = 0;  // BUG-0175: the time of the previous step (the nudge per second, not per frame)
-    bool kinematic = false; // BUG-0360: a partner's puppet placed on its path this frame (modes.cpp)
+    bool kinematic = false; // BUG-0360: a walking partner's puppet, walked and placed on its path (modes.cpp)
+    net::Vec3 goal_dir;     // BUG-0360: the direction of the walk goal given to it
 };
 
 inline float speed(const net::Vec3& v) { return std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z); }

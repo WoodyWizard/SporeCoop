@@ -643,6 +643,23 @@ net::Vec3 velocity(void* c)
 
 float health(void* c) { return field<float>(c, kHpOff); }
 
+bool gait_state(void* c, int* gait, int* gait2, int* moving, int* speed_state)
+{
+    if (!c || !skg::readable(c, 0xF9C))
+        return false;
+    uint8_t* ac = field<uint8_t*>(c, 0xB54);
+    if (!ac || !skg::readable(ac, 0x188))
+        return false;
+    uint8_t* cid = field<uint8_t*>(ac, 0x17C);
+    if (!cid || !skg::readable(cid + 0x15B8, 8))
+        return false;
+    *gait = field<int>(cid, 0x15B8);
+    *gait2 = field<int>(cid, 0x15BC);
+    *moving = field<uint8_t>(c, 0x137);
+    *speed_state = field<int>(c, 0xF98);
+    return true;
+}
+
 bool drawn_state(void* c, net::Vec3* drawn, uint32_t* anim)
 {
     if (!c || !skg::readable((uint8_t*)c + 0xB54, 4))
