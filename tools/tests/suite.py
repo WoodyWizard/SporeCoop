@@ -229,6 +229,7 @@ add('puppet_under', 'PUPPET_WALK_CMDS="coop.track lift -1" ' + P + 'coop_puppet_
 add('puppet_walk_fps30', 'SPORE_FPS=30 ' + P + 'coop_puppet_walk.py', minutes=5, fixture='creature')  # puppet_walk with both games at 30 fps (BUG-0394)
 add('puppet_walk_player', 'SPORE_FPS=30 SPORE_NET=player ' + P + 'coop_puppet_walk.py', minutes=5, fixture='creature')  # puppet_walk at 30 fps over the player network (BUG-0394)
 add('puppet_walk_novel', 'SPORE_FPS=30 PUPPET_WALK_CMDS="coop.track novel 1" ' + P + 'coop_puppet_walk.py', minutes=5, fixture='creature')  # BUG-0394: each game takes the partner's states without their speed (a move carried by an animation reports none): the puppet still walks with it (SPORE_FIX_OFF=creature.puppet_path fails)
+add('npc_walk_novel', 'SPORE_FPS=30 NPC_WALK_GUEST_CMDS="coop.npctrack novel 1" ' + P + 'coop_npc_walk.py', minutes=5, fixture='creature')  # BUG-0394: the guest takes the host's NPC states without their speed (moves carried by an animation report none): the proxies still walk (SPORE_FIX_OFF=npc.path fails)
 add('npc_walk_fps30', 'SPORE_FPS=30 ' + P + 'coop_npc_walk.py', minutes=5, fixture='creature')  # npc_walk with both games at 30 fps (BUG-0394)
 add('npc_walk_player', 'SPORE_FPS=30 SPORE_NET=player ' + P + 'coop_npc_walk.py', minutes=5, fixture='creature')  # npc_walk at 30 fps over the player network (BUG-0394)
 add('tribe_walk_fps30', 'SPORE_FPS=30 ' + P + 'coop_tribe_walk.py', minutes=5, fixture='tribe')  # tribe_walk with both games at 30 fps (BUG-0394)

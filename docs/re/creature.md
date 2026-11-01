@@ -1352,3 +1352,33 @@ Observed on lane 6 (GOG 2024, creature fixture Scalinus, BUG-0377):
   f32 only. Every machine logs `dna: <a> -> <b> cause=<cause>:<player><+amount>[,...]` (`unknown`: an
   editor's spending, a catch-up, an older host); Cell: `dna: food <a> -> <b> cause=meal:<player>+N`
   (255 on a guest: the host's total, some partner's meal). mods/coop/dna_ledger.h.
+
+## Walks at 30 fps: one shared walk driver, moves without a speed (2026-11-01, fix/w30-npc-walk)
+<a id="creature-walk-30fps"></a>
+
+BUG-0394 / BUG-0387. GOG 2024, lanes 2-5, `SPORE_FPS=30`, `SPORE_NET=player`.
+
+* ✔ One implementation: `drive::walk_place` / `walk_end` (driver.h) drive the partner's puppet
+  (creature.puppet_walk), the Tribe mirrors (tribe.mirror_walk) and the NPC proxies (npc.walk,
+  npc.walk_tribe). `WalkPlace` options: goal_ahead, turn_dot, min_gap, max_gap, catch_up, own_height,
+  speed_after_goal and max_dt (Tribe), ground (on_own_ground), walk_speed, snap and keep_lost (NPC
+  proxies), variant (tests). `drive::path_update` / `path_velocity` track the remote's interpolated path
+  per frame for every user.
+* ✔ A partner can move without a speed of its own: its creature carried by an animation (B4212A07 after a
+  click on its screen: 3-4.6 m/s for a second with the game's velocity 0 and speed state 0). Its states
+  then say "standing"; the puppet stood (drive::step) while its path went on, fell 2.9 m behind and was put
+  in place (18 % standing windows in that run). `creature.puppet_path`: the puppet walks with
+  `path_velocity` (the path smoothed over 0.2 s from 0.5 m/s, before that this frame's path from 0.8 m/s,
+  never a path jump over 15 m/s) when the state reports no speed. Test lever `coop.track novel 1` (all
+  partner states without their speed): off 39-63 % standing and 4-9 jumps per direction, on 0-1 %.
+* ✔ Right after a join a guest loads for seconds (18 fps on average, single frames of 5.4-5.6 s) and its
+  game did not update the partner's puppet for 7 s: it moved only where it was placed (game speed 0,
+  walk gait 0, idle animation) even on the screen. Later it walks normally. Tests now wait until both
+  games run steadily (`settle`), as a player would only judge after the load.
+* ~ At 21-29 fps (a loaded machine) a 0.1 s window holds 1-3 frames: the drawn puppet's speed over it
+  swung 0.3-2x the path's with the frame times (the game moves a creature by its own frame time) while its
+  drawn error stayed 0.01-0.6 m; over 4 frames 89-98 % matched. Not a step a player sees (inferred); the
+  walk tests' windows span at least 4 frames.
+* ~ The walker of puppet_walk sometimes did not walk: its clicks on the partner's tag (to walk back when
+  12 m away) did nothing after a first walk ended 15-25 m apart; the test now puts the walker next to the
+  observer before its walk (`coop.npc gopos`).

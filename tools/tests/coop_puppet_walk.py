@@ -97,8 +97,16 @@ def back_to_partner(con, W, H):
     for _ in range(5):
         xy = partner_screen(con)
         if xy and 40 < xy[0] < W - 40 and 90 < xy[1] < H - 170:
+            d0 = partner_dist(con)
             con.call(f'click {xy[0]} {min(H - 180, xy[1] + 60)}')
             time.sleep(2.0)
+            d1 = partner_dist(con)
+            if d0 is not None and d1 is not None and d1 > d0 - 2:
+                # BUG-0394: the click did not bring it closer (seen 7 times in a row at 14 m): it walks there
+                # with W (the partner is in front of the camera now)
+                con.call('key 0x57 down')
+                time.sleep(2.0)
+                con.call('key 0x57 up')
             return True
         con.call(f'drag {W // 2} {H // 2} {W // 2 + 380} {H // 2} right')
         time.sleep(0.4)

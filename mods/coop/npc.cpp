@@ -110,6 +110,13 @@ COOP_FIX("npc.walk", "BUG-0361", g_walk_fix, "creature: a walking or running NPC
 // speed in only 77 %, with 0.8-2.3 m jumps (coop_npc_walk.py, TRACK_FIXTURE=tribe). They are walked and
 // placed as in the Creature stage now, at the guest's own ground height (BUG-0329).
 // `coop.fix npc.walk_tribe off`: the driving (0.7.3.3).
+// BUG-0394: an NPC of the host can move without reporting a speed (carried by an animation, a hit): its proxy
+// was driven as standing. `coop.fix npc.path`: off, the proxy walks only with a reported speed.
+static bool g_path_fix = true;
+COOP_FIX("npc.path", "BUG-0394", g_path_fix, "creature, tribe: an NPC's proxy also walks where the NPC moves without a speed (moves carried by an animation)");
+// tests (BUG-0394): `coop.npctrack novel 1`: the host's NPC states without their speed (as a move carried by an
+// animation reports none)
+static bool g_npc_novel = false;
 static bool g_walk_tribe_fix = true;
 COOP_FIX("npc.walk_tribe", "BUG-0361", g_walk_tribe_fix, "tribe: a walking or running animal's proxy walks on its path instead of moving in steps");
 // tests (coop.npctrack variant, drive::walk_place): 0 the fix; 1 place only (no walk goal); 2 walk goal +
@@ -560,9 +567,9 @@ static void ntrack_push(uint16_t id, void* c, uint8_t how, uint8_t flags, uint16
 }
 
 static void ntrack_row(uint16_t id, const Proxy& px, const net::PlayerState& s, const net::Vec3& drawn, uint8_t how,
-                       double now)
+                       double now, float rv)
 {
-    ntrack_push(id, px.c, how, s.flags, (uint16_t)px.drv.teleports, drawn, s.pos, drive::speed(s.vel), now);
+    ntrack_push(id, px.c, how, s.flags, (uint16_t)px.drv.teleports, drawn, s.pos, rv, now);
 }
 
 static int c_npctrack(void*, int argc, const char* const* argv, SkOut* out)
@@ -615,6 +622,11 @@ static int c_npctrack(void*, int argc, const char* const* argv, SkOut* out)
                 return true;
             },
             &u);
+        return 0;
+    } else if (!strcmp(a, "novel")) {
+        if (argc > 2)
+            g_npc_novel = atoi(argv[2]) != 0;
+        H->out_printf(out, "npc novel %d\n", (int)g_npc_novel);
         return 0;
     } else if (!strcmp(a, "variant") && argc > 2) { // tests (BUG-0361): how npc.walk moves a proxy
         g_walk_variant = atoi(argv[2]);
@@ -959,6 +971,9 @@ static void guest_tick(double now)
         net::PlayerState s;
         if (!px.buf.sample(now, s))
             continue;
+        const float rv_rep = drive::speed(s.vel); // (coop.npctrack: the speed the host reported)
+        if (g_npc_novel)
+            s.vel = {0, 0, 0};
         // the guest's own game destroyed the proxy (its tribe killed it, a cleanup): forget the
         // object at once (it is freed later; it was driven every frame after that) and make a new
         // one unless the host says the NPC is dead. NPCs vanished from guests this way in a 4-player
@@ -1028,6 +1043,10 @@ static void guest_tick(double now)
                     float k = px.walk_sp > 0.3f && ps > px.walk_sp ? px.walk_sp / ps : 1.f;
                     vel = {pt.v.x * k, pt.v.y * k, pt.v.z * k};
                 }
+            } else if (walking && g_path_fix && drive::speed(vel) <= 0.3f) {
+                // BUG-0394: a host NPC that moves without a speed of its own (2.2 m/s at speed 0): driven as
+                // standing, its pulls were undone by its locomotion, it fell 2.7 m behind and was teleported
+                vel = drive::path_velocity(px.drv);
             } else if (drive::speed(vel) > 0.3f) {
                 px.walk_sp = drive::speed(vel);
                 // a host NPC that reports its speed but moves slower (pushed by its herd, against a rock, turning):
@@ -1066,7 +1085,7 @@ static void guest_tick(double now)
             // old health on the guest and did not die there until it stopped).
             // `coop.fix npc.kinematic_sync off`: that first version.
             if (!g_kinematic_sync_fix) {
-                ntrack_row(id, px, s, drawn, walked ? 3 : 1, now);
+                ntrack_row(id, px, s, drawn, walked ? 3 : 1, now, rv_rep);
                 continue;
             }
         }
@@ -1103,7 +1122,7 @@ static void guest_tick(double now)
             game::set_health(px.c, s.health);
         if (!px.killed) // the host's NPC was impressed (by anybody): the proxy shows it too
             game::set_impressed(px.c, (s.flags & net::NF_IMPRESSED) != 0);
-        ntrack_row(id, px, s, drawn, px.killed ? 2 : walked ? 3 : placed ? 1 : 0, now);
+        ntrack_row(id, px, s, drawn, px.killed ? 2 : walked ? 3 : placed ? 1 : 0, now, rv_rep);
     }
 }
 

@@ -2979,3 +2979,19 @@ cell_coop pitfalls found on the way (fix/w31-cell-gate): the `revives=` / `respa
 their values at its start (BUG-0396: every warm `--repeat` run failed before); the host's idle cell
 can eat a plant in the 2 s of the shared food check, which now allows the host's own `own_points`
 (BUG-0395, 1 in 130 runs).
+
+## Walk tests at 30 fps and over the player network (2026-11-01, fix/w30-npc-walk)
+<a id="testing-walk-30fps"></a>
+
+* Suites `puppet_walk_fps30`, `puppet_walk_player`, `npc_walk_fps30`, `npc_walk_player`, `tribe_walk_fps30`,
+  `tribe_walk_player` (`SPORE_FPS=30`, `_player` also `SPORE_NET=player`; cold) and `puppet_walk_novel`
+  (`coop.track novel 1` on both games: the partner's states without their speed;
+  `SPORE_FIX_OFF=creature.puppet_path` fails).
+* The walk tests' speed windows span at least 4 frames (`WIN_FRAMES`; at 60 fps still 0.1 s); puppet_walk's
+  "walked", window and on-screen counts scale with the observer's frame rate (200 / 50 / 150 at 60 fps).
+* puppet_walk and npc_walk wait (`settle`) until both games ran three 1 s windows of at least 20 frames
+  (up to 40 s) before they measure; puppet_walk puts the walker next to the observer before each walk.
+* puppet_walk / npc_walk write their per-frame rows to `out/lane<N>/track/*_<time>.json` (one file per run).
+* Pitfalls: four lanes at once pushed the 30 fps games to 21-26 fps and one test killed the other's games
+  when a second `lab.py run` took a lane still in use (start a run only after the last one on its lanes
+  ended); the known caught startup fault at 0x11ECE4F on both games fails a run by the fault gate.
