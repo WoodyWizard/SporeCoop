@@ -137,6 +137,10 @@ struct WalkPlace {
     // BUG-0366: the target onto this game's ground (on_own_ground). The Creature puppet puts its target
     // there before it chooses walk or stand (creature_drive), so it leaves this off
     bool ground = false;
+    // the longest frame the catch-up step is scaled by (s). BUG-0365: a guest at 3-4 fps (226-336 ms
+    // frames, lab load 31 on 12 cores) closed 1.2 m per frame of a 2-3 m step of its member, fell 8 m
+    // behind and was teleported; the Creature puppet keeps 0.1
+    double max_dt = 0.1;
 };
 
 inline void walk_place(void* p, const net::Vec3& pos_in, const net::Quat& rot, const net::Vec3& vel, State& ds, double now,
@@ -164,7 +168,7 @@ inline void walk_place(void* p, const net::Vec3& pos_in, const net::Quat& rot, c
         game::set_speed(p, sp);
     net::Vec3 cur = game::position(p);
     float err = net::dist(cur, pos);
-    double dt = was && now > ds.last_step ? std::min(now - ds.last_step, 0.1) : 1.0 / 60;
+    double dt = was && now > ds.last_step ? std::min(now - ds.last_step, o.max_dt) : 1.0 / 60;
     float max_step = (sp + o.catch_up) * (float)dt;
     net::Vec3 to = pos;
     if (err > max_step) {

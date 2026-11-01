@@ -393,3 +393,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0381](BUG-0381-tribe-partner-members-apart-and-citizens-missing.md) | open | bug | Tribe | 2026-11-01 |  | tribe: partner / members apart and citizens missing on guests (sync-check p apart, t missing, n apart) |
 | [BUG-0382](BUG-0382-campaign-a-guest-still-in-civ-90-s-after-the-hos.md) | open | bug | Civ | 2026-11-01 |  | campaign: a guest still in Civ 90 s after the host entered Space (monitor stage_apart) |
 | [BUG-0386](BUG-0386-tribe-a-guest-s-walking-mirror-held-back-by-its.md) | open | desync | Tribe | 2026-11-01 |  | Tribe: a guest's walking mirror held back by its own game (an obstacle?) falls 3.6 m behind and lurches 1 m per frame to catch up |
+| [BUG-0390](BUG-0390-tests-the-creature-test-s-guest-hit-lands-on-the.md) | open | test | Creature | 2026-11-01 |  | Tests: the creature test's guest hit lands on the host's family (hp 10 NPC), which npc.party_peace drops: hits applied 0 -> 0 |

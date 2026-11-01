@@ -1331,3 +1331,11 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Next steps: send the airborne state and put the puppet into the game's fall (or play the jump)
   on the observer; check with a creature that can jump.
 * Ticket: BUG-0376
+
+## Tests: the creature test's hit lands on the host's family and is dropped (2026-11-01, fix/w30-tribe-walk)
+<a id="issue-creature-test-party-hit"></a>
+
+* What happens: coop_two_instances.py (suite `creature`) sometimes hits an NPC of the host's family; since
+  BUG-0374 the host drops a partner's hit on it, and the check `hits applied 0 -> 1` fails (2 of 4 runs).
+* Reproduce: `tools/lab.py run creature --repeat 4 --retry 0`; a failing run prints `host hp 10.0 -> 10.0`.
+* Ticket: BUG-0390

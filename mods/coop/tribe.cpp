@@ -883,6 +883,7 @@ static void mirror_drive(GMember& g, double now)
         drive::WalkPlace o;
         o.own_height = true;
         o.speed_after_goal = true;
+        o.max_dt = 0.4; // a slow guest keeps up with its members (driver.h)
         drive::walk_place(g.c, g.aim, rot, vel, g.ds, now, o);
         g_mirror_walks++;
         return;

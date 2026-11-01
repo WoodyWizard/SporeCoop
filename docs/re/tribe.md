@@ -996,4 +996,10 @@ method as [the Creature puppets](creature.md#creature-puppet-walk).
 * ✔ The placing of a frame is drawn in the next one: after a hitch of the game (100-230 ms frames, a
   few per test while the camera jumps by the minimap) the next short frame shows the way made up
   (1.1-1.3 m in 13-14 ms). Not a teleport; a frame-step test has to allow the frame before's time.
+* ✔ (after the merge with main) A guest at 3-4 fps (226-336 ms frames, lab load 31 on 12 cores) closed
+  only 1.2 m per frame of its member's 2-3 m (the catch-up scaled by at most 0.1 s), fell 8 m behind and
+  drive::step teleported it 8.1 m: the mirrors scale the catch-up by up to 0.4 s (`WalkPlace::max_dt`).
+* ~ `WalkPlace::ground` (BUG-0366's on_own_ground) is not on for the mirrors: they keep their own height
+  (`own_height`, BUG-0329); the `hd` column of coop.track showed them 0.00 m over the ground while they
+  walk (fixture village, flat).
 * ~ Members of NPC tribes (owner 0xFE) are mirrors too and get the same driving; not measured.
