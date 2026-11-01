@@ -3,6 +3,12 @@
 ## [Unreleased]
 
 ### Fixed
+- Cell: a knocked-out cell no longer eats the food that floats into it, so it no longer comes back
+  from its respawn bigger than "small again" and the shared food no longer grows while it is out
+  (BUG-0364).
+- Support: the sync self-check no longer reports a Cell food total that reached a guest a moment
+  late, nor the cells at the edge of the 900 a guest is sent in a crowded pool; tests that remove a
+  guest's cells on purpose mark it for the lab (BUG-0379).
 - Creature: each player now sees the partner's real health on the partner's creature (it always
   looked full, hits on the partner did not show) and its real max health (BUG-0373).
 - Creature: the host's pack and family no longer attack and kill a partner (a partner's hit on a
