@@ -10,8 +10,8 @@ role: guest
 versions: 0.7.3.3+ (feat/w33-tests-creature de258df)
 fixed_in: unreleased
 branch: fix/w34-ability-pop
-commits:
-tests: tools/tests/coop_puppet_fight.py (suite puppet_fight_player)
+commits: f8f41de 1e5bc71
+tests: tools/tests/coop_puppet_fight.py (suites puppet_fight, puppet_fight_player)
 signature:
 docs: docs/re/creature.md#creature-out-of-view-ground
 related: BUG-0360, BUG-0394, BUG-0434, BUG-0435
@@ -52,7 +52,15 @@ health to its maximum (`coop.team hp 1000` gave it 1000 of 10, which the invaria
 failed every run on since the monitor was merged).
 
 ## Verification
-<!-- filled below -->
+* FAIL (the old judging, which counted steps out of view): lab 20261101-142305 (host watches guest: 3 jumps) and
+  20261101-151044 (guest watches host: 2 jumps), feat/w33-tests-creature. Their saved per-frame rows re-judged by
+  the new rule (coop_puppet_fight.analyse with the screen size): 0 jumps on screen; 3 steps out of view and 2 low
+  first frames back in view (BUG-0434). The camera experiment on the mound (lane 4, 70 s): 72 steps by the old
+  rule, 0 by the new one (61 out of view, 11 first frames back in view).
+* PASS: puppet_fight_player 3 of 3, lab 20261101-170200 (lane 4).
+* The test still fails on real steps: `SPORE_FIX_OFF=creature.puppet_path,creature.puppet_walk`, lab
+  20261101-171131: 2 drawn jumps on screen, 2 teleports, delay 0.52-0.54 s.
+* Before the health change every run failed on the monitor's puppet_hp gate (lab 20261101-160710, 2 of 2).
 
 ## History
 - 2026-11-01: opened.
