@@ -2466,22 +2466,24 @@ answered right after; a 1 s poller beside a standalone run saw no gap. Same sign
 
 * `coop.track start|stop|count|dump [from] [n]` (main thread, BUG-0360): every frame in the
   Creature stage, one row for the own avatar (who 255) and one per partner puppet: time, state
-  flags, the driver's teleports, the game position, where the model is drawn (AnimatedCreature
-  +0x04), the interpolated target, the game's speed of the creature, the partner's reported speed,
-  the current main animation id, the animation's walk gait state, +0x137 and the speed state
-  +0xF98 (docs/re/creature.md#creature-puppet-walk). A ring of 30 000 rows (~4 min at 60 fps per
-  puppet); `dump` in pages of 1500 rows.
+  flags, the driver's teleports, the game position after the mod's driving, the position the game
+  drew (the puppet's position before this frame's driving: the mod's frame runs at Present, after
+  the drawing), the interpolated target, the game's speed of the creature, the partner's reported
+  speed, the main animation id, the animation's walk gait state, +0x137, the speed state +0xF98, and
+  whether / where it is on the screen (docs/re/creature.md#creature-puppet-walk). A ring of 30 000
+  rows; `dump` in pages of 1500.
+* Measure the drawn position, not the one after the mod's write: this branch's first numbers read
+  after the write and showed SetPosition "exactly on the path" while the drawn puppet trailed 2 m.
 * `coop_puppet_walk.py` (suite `puppet_walk`, ~1.6 min cold): one player walks ~25 s by WASD holds
-  and clicks on the ground (seeded: `--seed N` repeats the same walk), the other's track is read
+  and clicks on the ground, turning back when more than 12 m from the other (seeded: `--seed N`
+  repeats the walk), the other's camera keeps it on the screen (right-drags), the track is read
   back (saved to `out/lane<N>/track/*.json`), both directions. Checks: no frame step beyond 3x the
   walker's top speed (min 0.75 m), in 0.1 s windows at most 5 % standing (< 0.3x the walker's
-  speed) and at least 85 % at 0.6-1.4x, the walk gait on in at least 80 % of the moving frames.
-  `PUPPET_WALK_CMDS="cmd;cmd"` runs console commands on both games first (experiments).
-  `SPORE_FIX_OFF=creature.puppet_walk` fails (12-62 % standing windows, 1-3 jumps of 2.5-3.5 m,
-  gait 0-95 %); with the fix 0 % standing, 100 % matched, gait 100 %, path error 0.00 m.
-* Pitfalls: the main animation id is no walk measure for puppets (a puppet can keep
-  idle_walk_lookat_loop standing); the walker's own top speed in the fixture is 4.75 m/s; a
-  creature in WASD walk turns (W+D) curves at top speed, which is where a puppet that only walks
-  falls behind.
-* Screenshots of the puppet are hard to judge (tags and creatures of the same species around);
-  `coop.targets all` gives the partner's tag point, not its feet.
+  speed) and at least 85 % at 0.6-1.4x, the walk gait on in at least 80 % of the moving frames on
+  the observer's screen (at least 150 of them). `PUPPET_WALK_CMDS="cmd;cmd"` runs console commands
+  on both games first. `SPORE_FIX_OFF=creature.puppet_walk` fails.
+* Pitfalls: a creature behind the observer's camera is animated rarely (its gait value says
+  nothing there); the main animation id is no walk measure for puppets; the walker's top speed in
+  the fixture is 4.75 m/s; WASD turns (W+D) curve at top speed, where a puppet that only walks falls
+  behind; screenshots of the puppet are hard to judge (Kooks of the same colour around, and
+  `coop.targets all` gives the tag point).

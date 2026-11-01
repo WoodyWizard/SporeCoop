@@ -12,12 +12,14 @@ host watches the guest).
 Checks per direction, over the time in which the walker's latest state says it moves:
 * no jump: no frame step of the drawn puppet longer than TP_FACTOR x the walker's top speed x the
   frame time (and at least TP_MIN m);
-* no steps: in 0.1 s windows the puppet moves at 0.6-1.4x the walker's speed in at least
-  MATCHED_MIN of them and stands (< 0.3x) in at most STAND_MAX (the old driving: 18-23 % standing,
+* no steps: in 0.1 s windows the drawn puppet moves at 0.6-1.4x the speed of the walker's path (the
+  interpolated target) in at least MATCHED_MIN of them and stands (< 0.3x) in at most STAND_MAX (the old driving: 18-23 % standing,
   57-63 % matched: the "updates about every half second, not steadily");
 * it walks: the animation's walk gait (Anim::AnimatedCreature +0x17C -> +0x15B8, what the game's
   idle chooser 0xC0C790 reads; > 0 on a walking avatar in 94-97 % of its moving frames) is on in at
-  least GAIT_MIN of the frames.
+  least GAIT_MIN of the frames in which the puppet is on the observer's screen (the walker stays
+  within TETHER m, the observer's camera follows it: a creature behind the camera is animated rarely).
+The drawn position is the puppet's position before the mod's frame (the mod runs at Present).
 
   coop_puppet_walk.py [--dir host|guest|both] [--seed N] [--secs S]
   PUPPET_WALK_CMDS="cmd;cmd": console commands on both games before the walks (experiments)
@@ -176,7 +178,9 @@ def analyse(obs_rows, walker_rows, label):
             if r['vis'] and 0 < r['sx'] < 1440 and 0 < r['sy'] < 1080:
                 near += 1
                 near_gait += r['gait'] > 0
-    # 0.1 s windows while the walker walks (> 1 m/s): the puppet's drawn speed / the walker's speed
+    # 0.1 s windows while the walker's path moves (> 1 m/s): the drawn puppet's speed / the path's speed
+    # (the path: the interpolated target; the reported speed is no measure, an avatar turning on the
+    # spot reports one)
     win, i = [], 0
     while i < len(pup):
         j = i
@@ -184,9 +188,10 @@ def analyse(obs_rows, walker_rows, label):
             j += 1
         if j >= len(pup):
             break
-        rv = sum(r['rv'] for r in pup[i:j + 1]) / (j - i + 1)
-        if rv > 1.0 and pup[j]['t'] - pup[i]['t'] < 0.3:
-            win.append(math.dist(pup[i]['d'], pup[j]['d']) / (pup[j]['t'] - pup[i]['t']) / rv)
+        dt = pup[j]['t'] - pup[i]['t']
+        path = math.dist(pup[i]['tgt'], pup[j]['tgt']) / dt
+        if path > 1.0 and dt < 0.3 and (pup[j]['flags'] & 1):
+            win.append(math.dist(pup[i]['d'], pup[j]['d']) / dt / path)
         i = j
     own_anims = {}
     own_moving = [r for r in own if r['gv'] > 0.5]
@@ -260,7 +265,7 @@ def direction(walker, observer, wname, oname, rng, secs, ck):
           f'moved in {r["moving"]:.0%} of the frames; game speed > 0.5 in {r["anim"]:.0%}; '
           f'off the target p50 {r["err_p50"]:.2f} p90 {r["err_p90"]:.2f} max {r["err_max"]:.2f} m; '
           f'driver teleports {r["drive_tp"]}', flush=True)
-    print(f'    0.1 s windows while it walks: {r["win"]}, the puppet stands (< 0.3 of the walker\'s speed) in '
+    print(f'    0.1 s windows while it walks: {r["win"]}, the puppet stands (< 0.3 of its path\'s speed) in '
           f'{r["stand"]:.0%}, moves at 0.6-1.4x its speed in {r["matched"]:.0%}', flush=True)
     print(f'    jumps (t, m, frame ms): {len(r["teleports"])} {r["teleports"][:12]}', flush=True)
     print(f'    walk gait (animation gait state > 0) in {r["gait"]:.0%} of the frames, in {r["near_gait"]:.0%} of the '

@@ -1250,9 +1250,9 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   path every frame; a creature teleported every frame has no walk gait (measured on the partner's
   puppet: gait state 0 in 97-100 % of its moving frames), so it slides.
 * Reproduce: `creature_npc_dash` with `coop.track` extended to proxies (not done).
-* Known: teleport (vt 0x44) sets +0xB5D and restarts the gait; SetPosition (vt 0x38) does not
-  (docs/re/creature.md#creature-puppet-walk).
-* Next steps: the `creature.puppet_walk` technique (MoveTo ahead + speed, SetPosition every frame).
+* Known: teleport (vt 0x44) sets +0xB5D and restarts the gait; `game::place` (teleport, then
+  +0xB5D = 0) keeps it (docs/re/creature.md#creature-puppet-walk).
+* Next steps: the `creature.puppet_walk` technique (MoveTo ahead + speed, `game::place` every frame).
 * Ticket: BUG-0361
 
 ## Lab: two runs started in the same second share one run directory (2026-11-01, fix/w29-puppet-move)

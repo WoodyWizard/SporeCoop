@@ -30,9 +30,9 @@ How to check: extend `coop.track` (coop.cpp) to NPC proxies (or sample one with 
 
 ## Root cause
 Teleport (0xC0C040) sets creature +0xB5D = 1, which restarts the animation's gait (verified for the
-partner's puppet). SetPosition (0xC0DEA0) does not. The fix used for the partner's puppet
-(`creature.puppet_walk`: the game walks it with a MoveTo ahead and the speed, SetPosition puts it on
-the path every frame) would likely work for proxies too.
+partner's puppet); clearing it right after the teleport (`game::place`) keeps the gait. The fix used
+for the partner's puppet (`creature.puppet_walk`: the game walks it with a MoveTo ahead and the
+speed, `game::place` puts it on the path every frame) would likely work for proxies too.
 
 ## Fix
 Not fixed (found on fix/w29-puppet-move, outside its task).
