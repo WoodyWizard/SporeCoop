@@ -1,7 +1,7 @@
 ---
 id: BUG-0387
 title: tests: puppet_walk fails when the observer runs below ~40 fps (0.6-1.4x in 76-82 % of the windows)
-status: open
+status: duplicate
 kind: test
 stage: Creature
 reported: 2026-11-01
@@ -14,7 +14,7 @@ commits:
 tests: puppet_walk
 signature:
 docs:
-related: BUG-0360, BUG-0363
+related: BUG-0394, BUG-0360, BUG-0363
 ---
 
 ## Report
@@ -36,4 +36,5 @@ None.
 no-fail-run: not fixed.
 
 ## History
+- 2026-11-01: duplicate of BUG-0394 (the same failures; causes and fixes there).
 - 2026-11-01: opened.
