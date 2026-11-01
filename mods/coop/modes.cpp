@@ -316,7 +316,7 @@ static void* space_spawn(const net::PlayerState& s, void* local)
 // off its orbit point in the core, BUG-0378).
 bool puppet_pin_fix = true;
 COOP_FIX("space.puppet_pin", "BUG-0378", puppet_pin_fix,
-         "space: a partner's ship is pinned minus its own controller offset, with its zoom altitude: drawn where it is (core: 20-30 m too high)");
+         "space: a partner's ship stays where the mod puts it (its controller update skipped, pinned minus its offset): drawn where it is (core: 20-30 m off)");
 // the ships pinned since the last Present (squadron's controller hook leaves them where we put them)
 static std::unordered_set<void*> g_pinned;
 void space_pin_frame() { g_pinned.clear(); }

@@ -104,7 +104,7 @@ static bool g_rx_done;        // the removal pass of g_rx_cycle ran
 // (modes::space_pin: its own offset taken out, its zoom altitude set); off: the host position itself
 static bool g_mirror_pin_fix = true;
 COOP_FIX("fleet.mirror_pin", "BUG-0190", g_mirror_pin_fix,
-         "space: a host ship's mirror is pinned minus its own controller offset, with its zoom altitude (drawn where the ship is)");
+         "space: a host ship's mirror stays where the mod puts it (its controller update skipped, pinned minus its offset)");
 static bool g_chunk_fix = true;
 COOP_FIX("fleet.chunk", "BUG-0037", g_chunk_fix, "space: the mirror removal pass runs only on a complete cycle of ship chunks");
 // BUG-0084: the guest's own escort (posse, type 3 ships) is not the host's to simulate.
