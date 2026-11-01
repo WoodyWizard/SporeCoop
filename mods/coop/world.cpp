@@ -748,6 +748,13 @@ bool cinematic_playing()
     return cm && *(uint32_t*)(cm + kCineState);
 }
 
+bool time_paused()
+{
+    static uintptr_t get = H->sym("Simulator::cGameTimeManager::Get");
+    uint8_t* tm = get ? skg::cdecl_call<uint8_t*>(get) : nullptr;
+    return tm && (tm[0x48] & 1);
+}
+
 bool end_cinematic(const char* where)
 {
     uintptr_t end = H->sym("SporeCoop::cCinematicManager_EndCinematic");

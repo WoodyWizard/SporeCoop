@@ -12,6 +12,7 @@
 #include "savestrip_rule.h"
 #include "stage_epoch.h"
 #include "share_wait.h"
+#include "busy.h"
 #include "swap_ledger.h"
 #include "world_name.h"
 
@@ -429,10 +430,53 @@ static void test_pull_per_second()
     CHECK(drive::pull_k(0.15f, 0.0) == 0.15f);
 }
 
+// BUG-0404: the busy gate (busy.h) - the reasons, their names and the wait of one action
+static void test_busy_gate()
+{
+    printf("busy gate: reasons, names, waits (BUG-0404)\n");
+    CHECK(busy::bits(false, 0, false, false, false) == 0);
+    CHECK(busy::bits(true, 1, false, false, false) == (busy::kCinematic | busy::kInputLock));
+    CHECK(busy::bits(false, 0, true, true, true) == (busy::kPaused | busy::kEditor | busy::kLoading));
+    CHECK(busy::names(0) == "-");
+    CHECK(busy::names(busy::kCinematic | busy::kPaused) == "cinematic,paused");
+    // the gates: an editor waits for a cinematic and a pause; the still gate (census) for a pause, not a cinematic
+    CHECK((busy::kEditorGate & busy::kCinematic) && (busy::kEditorGate & busy::kPaused));
+    CHECK((busy::kStillGate & busy::kPaused) && !(busy::kStillGate & busy::kCinematic));
+    CHECK((busy::kShareGate & busy::kPaused) && (busy::kShareGate & busy::kCinematic));
+    // a cinematic of 7 s: held 7 s, then free, not expired
+    double since = 0;
+    bool exp = true;
+    int held = 0;
+    for (double t = 100; t < 120; t += 1)
+        held += busy::hold(since, t < 107 ? busy::kCinematic : 0u, t, 60.0, busy::kPaused, &exp);
+    CHECK(held == 7 && !exp && since == 0);
+    // a cinematic that never ends: held 60 s, then expired (the action's own fallback)
+    since = 0;
+    held = 0;
+    double went = 0;
+    for (double t = 100; t < 200 && !went; t += 1) {
+        if (busy::hold(since, busy::kCinematic, t, 60.0, busy::kPaused, &exp))
+            held++;
+        else
+            went = t;
+    }
+    CHECK(went == 160 && exp);
+    // a pause of 300 s never runs out; the cinematic after it gets its full 60 s
+    since = 0;
+    held = 0;
+    for (double t = 0; t < 300; t += 1)
+        held += busy::hold(since, busy::kPaused, t, 60.0, busy::kPaused, &exp);
+    CHECK(held == 300 && since == 0);
+    CHECK(busy::hold(since, busy::kCinematic, 300, 60.0, busy::kPaused, &exp) && since == 300);
+    CHECK(busy::hold(since, busy::kCinematic, 359, 60.0, busy::kPaused, &exp));
+    CHECK(!busy::hold(since, busy::kCinematic, 360, 60.0, busy::kPaused, &exp) && exp);
+}
+
 int main(int argc, char** argv)
 {
     g_nofix = argc > 1 && std::string(argv[1]) == "--nofix";
     test_share_wait();
+    test_busy_gate();
     test_stage_epoch();
     test_own_height();
     test_world_name();

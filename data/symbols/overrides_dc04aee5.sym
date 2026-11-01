@@ -352,7 +352,7 @@ Simulator::cCreatureGameData::AddEvolutionPoints=0x00D2E8A0 ; verified cdecl voi
 Simulator::cCreatureGameData::GetEvolutionPoints=0x00D2E350 ; verified cdecl float() plain ret: fld [0x169E398]; ret (BUG-0143)
 Simulator::cGameNounManager::GetData=0x00B212D0 ; likely thiscall(cGameNounManager*, 5 dwords) ret 0x14: mov esi,ecx (BUG-0143)
 Simulator::cGamePersistenceManager::Get=0x00B3D440 ; verified cdecl() plain ret: mov eax,[0x167EAF4] (BUG-0143)
-Simulator::cGameTimeManager::Get=0x00B3D480 ; verified cdecl() plain ret: mov eax,[0x167EB04] (BUG-0143)
+Simulator::cGameTimeManager::Get=0x00B3D480 ; verified cdecl() plain ret: mov eax,[0x167EB04] (BUG-0143); +0x48 bit 0 = the game time stands (Creature, lane 5, 2026-11-01: pause menu 0x03, Sporepedia 0x01, My Collections 0x03, 0 again after Esc; mods/coop/busy.h kPaused, BUG-0404)
 Simulator::cSimulatorPlayerUFO::Get=0x00FFBD00 ; verified cdecl() plain ret: mov eax,[0x16DBA14] (BUG-0143)
 Simulator::cSpaceTrading::Get=0x00B3D4D0 ; verified cdecl() plain ret: mov eax,[0x167EB20] (BUG-0143)
 Simulator::cStarManager::Get=0x00B3D3A0 ; verified cdecl() plain ret: mov eax,[0x167EAE4] (BUG-0143)

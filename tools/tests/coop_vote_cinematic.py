@@ -16,9 +16,24 @@ host's game plays (a caption, a brain upgrade, the evolution's cinematic).
 3. the guest's own cinematic: the cinematic plays on the guest when the vote ends; the guest's own editor
    opens after it, with its buttons (own_editor_tick already waits; no switch).
 
-SPORE_FIX_OFF=core.editor_cinematic: the host's editor opens during the cinematic and stays without its
-buttons (the test fails; the cinematic is then ended by hand so that the games are usable again).
+4. host_paused: the host's game time stands (the Sporepedia, a real click on its HUD button) when the
+   vote ends: the host's editor does not open while it is up, and opens after Esc, with its buttons.
+5. guest_paused: the guest's pause menu is open when its own editor after the vote is due (the host ends
+   the vote with `coop.vote go`): it waits for the pause and opens after Resume (it was dropped before).
+--part gate (suite busy_gate), the other actions at the same gate:
+6. action_cinematic / action_paused: an action vote's result (`coop.vote action`) waits for the host's
+   cinematic / pause and runs after it.
+7. share_cinematic / share_paused: a share due as after an evolution (`coop.share due`) does not reach the
+   guest while the host's cinematic plays / its game time stands, and reaches it after (the guest loads).
+
+SPORE_FIX_OFF=core.editor_cinematic: cases 1, 2, 4 fail (the host's editor opens during the cinematic and
+stays without its buttons; the cinematic is then ended by hand so that the games are usable again).
+SPORE_FIX_OFF=core.own_editor_busy: case 5 fails. SPORE_FIX_OFF=core.vote_action_busy: case 6 fails.
+SPORE_FIX_OFF=world.share_busy: share_paused fails (share_cinematic is BUG-0019's, npc.sharecine).
+
+  coop_vote_cinematic.py [--part vote|gate|all]
 """
+import argparse
 import re
 import time
 
@@ -146,7 +161,177 @@ def wait_quiet(host, guest, secs=40):
         time.sleep(1)
 
 
+SPOREPEDIA = (84, 1054)  # the 3rd small HUD button at the bottom left (1440x1080): pauses the game time
+
+
+def busy(con):
+    m = re.search(r'^busy: (\S+)', con.call('coop.status')['out'], re.M)
+    return m.group(1) if m else '?'
+
+
+def pause_host_ui(con, ck, name):
+    """the Sporepedia by a real click (the game time stands: busy=paused); True when it is up"""
+    for _ in range(3):
+        con.call('click %d %d' % SPOREPEDIA)
+        time.sleep(2)
+        if 'paused' in busy(con):
+            return True
+    ck(False, f'{name}: the Sporepedia pauses the game (busy={busy(con)})')
+    return False
+
+
+def unpause(con):
+    for _ in range(3):
+        if 'paused' not in busy(con):
+            return True
+        con.call('key esc')
+        time.sleep(2)
+    return 'paused' not in busy(con)
+
+
+def stays(cond, secs):
+    """cond() holds for secs seconds (polled); returns the seconds it held"""
+    t0 = time.time()
+    while time.time() - t0 < secs:
+        if not cond():
+            return time.time() - t0
+        time.sleep(0.5)
+    return secs
+
+
+def within(cond, secs):
+    t0 = time.time()
+    while time.time() - t0 < secs:
+        if cond():
+            return True
+        time.sleep(0.5)
+    return False
+
+
+def host_paused(host, guest, gu, ck, m0):
+    name = 'host_paused'
+    if not vote_and_ready(host, gu):
+        ck(False, f'{name}: the guest sees the vote and its ready button')
+        return True
+    if not pause_host_ui(host, ck, name):
+        unpause(host)
+        host.call('coop.vote go')
+        return True
+    gu.click('ready')
+    ended, _ = ended_during(host, host)
+    ck(ended, f'{name}: the guest\'s ready ends the vote while the host\'s Sporepedia is up')
+    held = stays(lambda: 'Creature' in mode(host), 10)
+    print(f'  {name}: host stayed in the stage {held:.0f} s of 10 while paused (busy={busy(host)})', flush=True)
+    shot(host, f'vote_cinematic_{name}_paused')
+    ck(held >= 10, f'{name}: the host\'s editor does not open under the Sporepedia ({mode(host)})')
+    unpause(host)
+    entered, cin, lk = editor_state(host, 'host', 30)
+    print(f'  {name}: after Esc: host in its editor={entered}, cinematic={cin}, input lock={lk}', flush=True)
+    ck(entered and lk == 0, f'{name}: the host\'s editor opens after the pause')
+    back = leave_editor(host, m0) if 'Editor' in mode(host) else False
+    ck(back, f'{name}: "done" takes the host back to the stage ({mode(host)})')
+    g_in, _, _ = editor_state(guest, 'guest', 30)
+    if g_in:
+        ck(leave_editor(guest, m0), f'{name}: the guest\'s editor opened and "done" took it back')
+    if 'Editor' in mode(host):  # (the bug's state: an editor under the Sporepedia)
+        unpause(host)
+        leave_editor(host, m0)
+    return mode(host) == m0
+
+
+def guest_paused(host, guest, gu, ck, m0):
+    name = 'guest_paused'
+    if not vote_and_ready(host, gu):
+        ck(False, f'{name}: the guest sees the vote and its ready button')
+        return True
+    guest.call('key esc')  # the guest's pause menu
+    time.sleep(2)
+    ck('paused' in busy(guest), f'{name}: the guest\'s pause menu stops its game time (busy={busy(guest)})')
+    host.call('coop.vote go')  # the host starts it: the guest's own editor is due now
+    h_in, _, _ = editor_state(host, 'host', 30)
+    held = stays(lambda: 'Creature' in mode(guest), 20)
+    print(f'  {name}: guest stayed in the stage {held:.0f} s of 20 while paused; '
+          f'{guest.call("coop.vote")["out"].splitlines()[1]}', flush=True)
+    ck(held >= 20, f'{name}: the guest\'s editor does not open under its pause menu ({mode(guest)})')
+    if h_in:
+        leave_editor(host, m0)
+    unpause(guest)
+    entered, cin, lk = editor_state(guest, 'guest', 60)
+    print(f'  {name}: after Resume: guest in its editor={entered}, cinematic={cin}, input lock={lk}', flush=True)
+    shot(guest, f'vote_cinematic_{name}_editor')
+    ck(entered and lk == 0, f'{name}: the guest\'s own editor opens after the pause (it was dropped before)')
+    if entered:
+        ck(leave_editor(guest, m0), f'{name}: "done" takes the guest back ({mode(guest)})')
+    return mode(host) == m0
+
+
+def actions_run(con):
+    m = re.search(r'actions run (\d+)', con.call('coop.vote')['out'])
+    return int(m.group(1)) if m else -1
+
+
+def action_case(host, gu, ck, cm_h, name, paused):
+    n0 = actions_run(host)
+    print('  ' + host.call('coop.vote action')['out'].strip().splitlines()[0], flush=True)
+    if gu.wait(lambda s: s['ready']['vis'], 15, 'ready button') is None:
+        ck(False, f'{name}: the guest sees the vote and its ready button')
+        return
+    if paused:
+        if not pause_host_ui(host, ck, name):
+            unpause(host)
+            host.call('coop.vote go')
+            return
+    else:
+        play(host, cm_h)
+        time.sleep(0.5)
+    gu.click('ready')
+    ended, _ = ended_during(host, host)
+    ck(ended, f'{name}: the guest\'s ready ends the action vote')
+    if paused:
+        held = stays(lambda: actions_run(host) == n0, 8)
+        ck(held >= 8, f'{name}: the action does not run while the host\'s game time stands (busy={busy(host)})')
+        unpause(host)
+    else:
+        held = stays(lambda: actions_run(host) == n0 and cinematic(host), 20)
+        ck(not cinematic(host) or actions_run(host) == n0,
+           f'{name}: the action does not run while the host\'s cinematic plays')
+        if cinematic(host):
+            end_cinematic(host, cm_h)
+    ran = within(lambda: actions_run(host) == n0 + 1, 15)
+    print(f'  {name}: actions run {n0} -> {actions_run(host)} (held {held:.0f} s)', flush=True)
+    ck(ran, f'{name}: the action runs once the host\'s game goes on')
+
+
+def guest_loading(guest):
+    return 'Creature' not in mode(guest) or 'receiving world' in guest.call('coop.status')['out']
+
+
+def share_case(host, guest, ck, cm_h, name, paused):
+    if paused:
+        if not pause_host_ui(host, ck, name):
+            unpause(host)
+            return
+    else:
+        play(host, cm_h)
+        time.sleep(0.5)
+        ck(cinematic(host) == FADE_ID, f'{name}: the host plays the cinematic')
+    print('  ' + host.call('coop.share due')['out'].strip(), flush=True)
+    secs = 10 if paused else 5
+    held = stays(lambda: not guest_loading(guest) and (paused or cinematic(host)), secs)
+    still = 'paused' in busy(host) if paused else bool(cinematic(host))
+    print(f'  {name}: the guest did not load for {held:.0f} s while the host was busy (still busy={still})', flush=True)
+    ck(held >= secs or not still, f'{name}: no share reaches the guest while the host is busy ({mode(guest)})')
+    if paused:
+        unpause(host)
+    got = within(lambda: guest_loading(guest), 40)
+    ck(got, f'{name}: the share reaches the guest after the host\'s game goes on (the guest loads)')
+    ck(settled(host, guest, timeout=150), f'{name}: the guest is back in the host\'s world')
+
+
 def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--part', default='vote', choices=('vote', 'gate', 'all'))
+    a = ap.parse_args()
     host, guest = start('creature')
     ck = Checks()
     gu = Ui(guest, 'guest')
@@ -155,6 +340,16 @@ def main():
     cm_h = eax(host, 'Simulator::cCinematicManager::Get cdecl')
     cm_g = eax(guest, 'Simulator::cCinematicManager::Get cdecl')
     ck(cm_h and cm_g, 'both games have their cinematic manager')
+    if a.part in ('gate', 'all'):
+        for nm, pz in (('action_cinematic', False), ('action_paused', True)):
+            action_case(host, gu, ck, cm_h, nm, pz)
+            wait_quiet(host, guest)
+        for nm, pz in (('share_cinematic', False), ('share_paused', True)):
+            share_case(host, guest, ck, cm_h, nm, pz)
+            wait_quiet(host, guest)
+        if a.part == 'gate':
+            ck.faults(host=host, guest=guest)
+            return ck.result()
 
     # 1. by hand: the cinematic starts on the host while the vote is open
     ok = host_case(host, guest, gu, ck, cm_h, 'host_cinematic', True, m0)
@@ -201,6 +396,16 @@ def main():
             ck(entered and leave_editor(guest, m0), f'guest_cinematic: "done" takes the guest back ({mode(guest)})')
         else:
             ck(False, 'guest_cinematic: the guest sees the vote and its ready button')
+    # 4. the host's game time stands (the Sporepedia) when the vote ends
+    if ok:
+        wait_quiet(host, guest)
+        settled(host, guest)
+        ok = host_paused(host, guest, gu, ck, m0)
+    # 5. the guest's pause menu when its own editor is due
+    if ok:
+        wait_quiet(host, guest)
+        settled(host, guest)
+        ok = guest_paused(host, guest, gu, ck, m0)
     ck.faults(host=host, guest=guest)
     return ck.result()
 
