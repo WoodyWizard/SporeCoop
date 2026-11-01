@@ -52,7 +52,7 @@ the host's own avatar.
 FAIL: npc_far before the change, lab 20261101-092616 (lane 6, gate sync-check: 3 MISMATCH lines, `p0 10.7`).
 PASS: npc_far + npc_pooled, lab 20261101-094034 (lane 6: the walk 5.8 m or more over the water, the
 guest draws the host 0.3 m from where it is, no MISMATCH in the four game logs); again in the
-regression run of the branch.
+regression run of the branch, lab 20261101-100420.
 
 ## History
 - 2026-11-01: opened.
