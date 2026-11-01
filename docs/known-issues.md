@@ -1382,3 +1382,11 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   0.94 m under the terrain (own trace line `agl=-0.94`) in one warm creature test on lane 6.
 * Reproduce: not reliably; the lab's ground rule reports it (allowed in the lab).
 * Ticket: BUG-0400
+
+## Creature: the host's part unlocks never reach the guests (2026-11-01, feat/w32-monitor-diag)
+<a id="issue-creature-unlocks-sync"></a>
+
+* What happens: parts the host unlocks during a session stay locked in the guests' games (their own
+  editor offers the collected parts of the save they loaded).
+* Reproduce: `coop.parts unlock 3` on the host, `coop.parts` on both (monitor_plant does it).
+* Ticket: BUG-0401
