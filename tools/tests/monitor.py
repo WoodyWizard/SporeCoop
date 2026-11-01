@@ -28,6 +28,7 @@ a moment between two reads is no violation):
                 census of each game (coop.census, every 30 s, live only) stays under the limits of
                 OBJECT_LIMITS and does not grow past 3x its first count + 200
   stage_apart   a guest whose own stage / world differs from the host's for 90 s while both play a stage
+                (not while the host's line says its world share waits: share_wait=planet / cinematic)
 
 Hooks for invariants that need new mod diagnostics (inactive until the mod writes the field; the
 exact output each needs is in NEEDS and docs/06-testing.md#testing-monitor): drawn, ground,
@@ -157,6 +158,14 @@ class Timeline:
         if not ts or t is None:
             return []
         return self.own[who][bisect.bisect_left(ts, t - dt):bisect.bisect_right(ts, t + dt)]
+
+    def around(self, who, t):
+        """the own records of `who` right before and right after session time t (BUG-0380)"""
+        ts = self.own_t.get(who)
+        if not ts or t is None:
+            return []
+        i = bisect.bisect_left(ts, t)
+        return [self.own[who][j] for j in (i - 1, i) if 0 <= j < len(ts) and ts[j] != float('-inf')]
 
     def own_at(self, who, t, dt):
         """the own record of `who` closest to session time t (within dt), None"""
@@ -296,8 +305,11 @@ class Totals(Invariant):
                     run = []
                     continue
                 # a total that changes (income, a meal) may have moved between the two machines' lines: the
-                # guest's value must lie outside everything the host had in that window
-                hs = [x for x in own_window(tl, host, g['t'], self.c['tot_dt']) if playing(x)]
+                # guest's value must lie outside everything the host had in that window. BUG-0380: the window
+                # always holds the host's lines right before and right after the guest's (trace lines come
+                # every 10 s, so +-6 s often held one host line: a Civ treasury growing by ~400 per 10 s was
+                # "apart" at every guest line between two host lines, campaign_space 42 violations)
+                hs = [x for x in own_window(tl, host, g['t'], self.c['tot_dt']) + tl.around(host, g['t']) if playing(x)]
                 diffs = []
                 for k, v in g['res'].items():
                     hv = [x['res'][k] for x in hs if k in x['res']]
@@ -380,8 +392,11 @@ class StageApart(Invariant):
             for g in lst:
                 h = tl.own_at(host, g['t'], 12) if g['t'] is not None else None
                 # Space: every star system is its own world, players fly apart on purpose
+                # BUG-0382: the host's share that waits for a reason of the game (`share_wait=planet`: the
+                # Space stage saves only off a planet; `cinematic`: BUG-0019) is a declared wait, not "apart"
                 apart = h and playing(g) and playing(h) and not h['away'] and g['players'] > 1 and \
-                    (g['stage'], g['world']) != (h['stage'], h['world']) and not (g['stage'] == h['stage'] == 'Space')
+                    (g['stage'], g['world']) != (h['stage'], h['world']) and not (g['stage'] == h['stage'] == 'Space') \
+                    and 'share_wait=' not in h.get('rest', '')
                 if not apart:
                     since = None
                     continue

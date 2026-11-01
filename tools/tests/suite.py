@@ -194,6 +194,8 @@ add('tribe_own_height', P + 'coop_tribe_own_height.py', warm=True, minutes=3, fi
 add('civ_null_local', P + 'coop_civ_null_local.py', warm=True, minutes=4, fixture='civ')  # a frame without the city anchor keeps vehicles and owners (BUG-0223; --nofix fails)
 add('civ_shared', P + 'coop_civ_shared.py', warm=True, minutes=4, fixture='civ')  # crossing spends, offline money, roles on a rejoin, a spend at a join (BUG-0106, BUG-0049, BUG-0064, BUG-0220; --nofix fails)
 add('civ_city_join', P + 'coop_civ_city_join.py', warm=True, minutes=5, fixture='civ_npc')  # an NPC city founded while the guest joins (BUG-0120; --nofix fails)
+add('civ_city_burst', P + 'coop_civ_city_burst.py', warm=True, minutes=3, fixture='civ_npc')  # three NPC cities the guest missed reach it at once with their vehicles (BUG-0380; SPORE_FIX_OFF=civ.city_burst fails)
+add('civ_cursor', P + 'coop_civ_cursor.py', warm=True, minutes=3, fixture='civ')  # the sync-check leaves out a moving Civ pointer, a resting one is where the guest shows it (BUG-0380; SPORE_FIX_OFF=diag.rts_cursor fails)
 add('civ_ai_spawn', P + 'coop_civ_ai_spawn.py', warm=True, minutes=4, fixture='civ_npc')  # the NPC AI spawns no vehicles on the guest (BUG-0188; --nofix fails)
 add('civ_mirror_place', P + 'coop_civ_mirror_place.py', warm=True, minutes=3, fixture='civ_npc')  # the guest's game does not throw a mirrored vehicle off its place (BUG-0186; --nofix fails)
 add('civ_ruin_repair', P + 'coop_civ_ruin_repair.py', warm=True, minutes=3, fixture='civ_npc')  # a ruin the host rebuilt does not stay on the guest (BUG-0324; --nofix fails)
@@ -234,6 +236,7 @@ add('space_page', P + 'coop_space_page.py', ('smoke',), minutes=4)  # the F9 Spa
 add('space_map', P + 'coop_space_map.py', minutes=6)  # partners and their colonies on the galaxy map, the roster (space_map.h)
 add('space_jump', P + 'coop_space_jump.py', minutes=7)  # jumps into unvisited systems: planets, first contact
 add('space_share_takeoff', P + 'coop_space_share_takeoff.py', minutes=5)  # a guest's share saved as the host leaves a planet: the guest stays in the system (BUG-0301; SPORE_FIX_OFF=world.share_settle_context fails)
+add('space_share_wait', P + 'coop_space_share_wait.py', minutes=5)  # a guest waiting for the world while the host is on a planet is told why; the host's trace says share_wait=planet (BUG-0382; SPORE_FIX_OFF=world.share_wait_notice fails)
 add('space_share_landing', P + 'coop_space_share_landing.py', minutes=5)  # the host lands right after a guest's share save is posted: the save is made again off the planet (BUG-0357; SPORE_FIX_OFF=world.share_planet_save fails)
 add('space_death', P + 'coop_space_death.py', minutes=5)
 add('space_guest_ui', P + 'coop_space_guest_ui.py', minutes=4)  # a guest joining during the menu intro: no movie left over, real clicks work

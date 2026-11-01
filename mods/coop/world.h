@@ -28,6 +28,8 @@ void set_save_blocker(const char* (*probe)());
 bool save_busy();
 // host: a share waits for its save (not posted yet)
 bool save_pending();
+// host: a world share waits because the Space stage saves only off a planet (BUG-0382)
+bool share_waits_for_planet();
 // the session ended: drop the shares and transfers queued for its players (BUG-0140)
 void reset_shares();
 // the session ended: drop the guest's queued loads of a received world and a half-received

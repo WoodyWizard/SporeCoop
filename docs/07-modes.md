@@ -61,7 +61,9 @@ Every frame the mod detects the game mode (`GetActiveModeID`) and picks an **ada
   is up (`world.cpp load_slot`). Loading straight from a stage crashed from Space (null active
   star, docs/re/space.md 8) and misbehaved from Cell; test `coop_stage_switch.py`.
 * Space: the game only saves when off-planet. If the host is on a planet, the guest waits and the
-  host sees "a player is waiting for the world: leave the planet to save". Forcing a save on a
+  host sees "a player is waiting for the world: leave the planet to save" (since BUG-0382 every
+  player gets a notice that the world follows when the host's ship leaves the planet, and the
+  host's trace line ends with `share_wait=planet`). Forcing a save on a
   planet was tried and rejected: such a save loads with UI errors every frame (0xEBDD12)
   and a hang.
   The check is made when the save is posted; the game writes it up to ~1 s later, and a ship that

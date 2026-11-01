@@ -41,8 +41,9 @@ mechanic runs for real):
     damage path); when the stage does not end in time the host jumps to the next fixture (below).
   * Editors that need a creation (the empty spaceship editor): three parts dragged from the palette,
     the dice's random name; "Name Your Captain": the dice; the city specialty dialog: Military.
-  * Civ: the cities still to come appear at once (cCivExpansion::SpawnNextCity, as new_stage_game.py
-    --npc-cities), the other nations' cities are taken with the game's cCity::Capture for the
+  * Civ: the cities still to come appear at once (cCivExpansion::SpawnNextCity(ex, 0, 0) as the
+    game's own city tick calls it, so the co-op hook tells the guests: instant=1 was not broadcast
+    and left the guests to the catch-up, BUG-0380), the other nations' cities are taken with the game's cCity::Capture for the
     player's political id (the capture cinematics play), then History and its check, the vote, the
     spaceship editor; the host then leaves its home planet through the mission control (space_setup.py)
     so that the game can save its world for the guests.
@@ -1016,7 +1017,7 @@ class Campaign:
             n = 0
             while m and n < 20:
                 r = re.search(r'eax=0x([0-9A-Fa-f]+)',
-                              h.call(f'call Simulator::cCivExpansion::SpawnNextCity thiscall {m.group(1)} 1 0'))
+                              h.call(f'call Simulator::cCivExpansion::SpawnNextCity thiscall {m.group(1)} 0 0'))
                 if not r or int(r.group(1), 16) & 0xFF == 0:  # bool in al: no free site left
                     break
                 n += 1

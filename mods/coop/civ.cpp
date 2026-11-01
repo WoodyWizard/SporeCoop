@@ -1676,6 +1676,28 @@ static void kill_local(void* v)
     g_applying = false;
 }
 
+// BUG-0380: the catch-up founded one city per 15 s, so a guest that missed several foundings (the
+// campaign's shortcut founds the remaining cities with instant=1, which is not broadcast; a join)
+// lacked those cities, and every vehicle of their nations (no civilization to make the mirror
+// for), for up to a minute and a half: sync-check "v: 6 missing on the guest" in every
+// campaign_space. The city simulator counts its own foundings at once (+0xB0 sites not founded yet,
+// +0xAC all sites, docs/re/civ.md#civ-city-burst): a guest whose foundings (appeared or on their
+// way) are fewer than the host's cities founds the difference in one go, and never founds while its
+// own foundings are only waiting to appear (a paused game holds them). Off: one per 15 s (0.7.3.3).
+static bool g_city_burst_fix = true;
+COOP_FIX("civ.city_burst", "BUG-0380", g_city_burst_fix,
+         "civ: a guest founds every NPC city it is short of at once (by the game's own founding count), not one per 15 s");
+constexpr uintptr_t kExSites = 0xAC, kExSitesLeft = 0xB0; // cCivExpansion: all sites, sites not founded yet
+static size_t g_cities_waiting_told;                     // the "founded here, on their way" line, once per count
+// the sites this game founded (appeared or still on their way), -1 when the fields look wrong
+static int founded_here(void* ex)
+{
+    if (!ex || !skg::readable(ex, kExSitesLeft + 4))
+        return -1;
+    int all = F<int>(ex, kExSites), left = F<int>(ex, kExSitesLeft);
+    return all > 0 && all <= 64 && left >= 0 && left <= all ? all - left : -1;
+}
+
 // a founded city appears a few seconds after SpawnNextCity (docs/re/civ.md 9.3): the count must
 // stay short for 6 s, and 15 s must pass after any founding here, so a replayed event is not
 // founded a second time; never more cities than the host has
@@ -1688,12 +1710,45 @@ static void city_catch_up(size_t host_total)
     if (local_play())
         return;
     double now = H->time_seconds();
-    if (all_cities().size() >= host_total) {
+    size_t have = all_cities().size();
+    if (have >= host_total) {
         g_city_short_since = -1;
+        g_cities_waiting_told = 0;
         return;
     }
     if (g_city_short_since < 0)
         g_city_short_since = now;
+    if (g_city_burst_fix) {
+        void* ex = skg::cdecl_call<void*>(a_ExpansionGet);
+        int founded = founded_here(ex);
+        // 2 s short first: a founding of the host whose broadcast is on its way is not made twice
+        if (founded >= 0 && now - g_city_short_since < 2.0)
+            return;
+        if (founded >= 0 && (size_t)founded >= host_total) { // founded here: they appear by themselves
+            if (g_cities_waiting_told != host_total)
+                H->log(M, SK_INFO, "civ: the host has %u cities, this game %u and %d founded (on their way)",
+                       (unsigned)host_total, (unsigned)have, founded);
+            g_cities_waiting_told = host_total;
+            return;
+        }
+        if (founded >= 0) {
+            int n = (int)host_total - founded, made = 0;
+            g_applying = true;
+            for (int i = 0; i < n; i++)
+                if (o_SpawnNextCity(ex, 0, nullptr))
+                    made++;
+                else
+                    break; // no free site left
+            g_applying = false;
+            g_last_city_spawn = now;
+            g_city_short_since = -1;
+            g_cities_caught_up += made;
+            H->log(M, SK_INFO, "civ: the host has %u cities, this game %u (%d founded): founding %d of %d at once",
+                   (unsigned)host_total, (unsigned)have, founded, made, n);
+            return;
+        }
+        // fields that look wrong: the old pace below
+    }
     if (now - g_city_short_since < 6.0 || now - g_last_city_spawn < 15.0)
         return;
     void* ex = skg::cdecl_call<void*>(a_ExpansionGet);
@@ -2084,6 +2139,7 @@ void on_world_change()
     g_host_cities.clear();
     g_split_for.clear();
     g_city_short_since = -1;
+    g_cities_waiting_told = 0;
     g_rx_cycle = 0xFFFF;
     g_cycle_ids.clear();
     g_cycle_chunks.clear();

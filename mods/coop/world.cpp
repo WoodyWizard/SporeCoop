@@ -436,6 +436,7 @@ struct PendingShare {
     uint32_t mode = 0; // the game mode the save was made in
     int saves = 0;     // saves made for this share (the planet's file did not appear: save again)
     uint32_t tag = 0;  // the caller's tag, given back on a failure (coop.cpp: the guest's join serial)
+    bool on_planet = false; // the last save was refused: the ship is on a planet (BUG-0382: share_wait)
 };
 // BUG-0231: the final failure of a queued share ("cannot share the world"), for the caller's retry
 static void (*g_share_failed)(uint8_t peer, uint32_t tag, bool planet_missing);
@@ -559,6 +560,14 @@ void on_session_end()
 {
     if (g_world_reset_fix)
         drop_share_loads();
+}
+
+bool share_waits_for_planet()
+{
+    for (auto& p : g_pending)
+        if (p.need_save && p.on_planet)
+            return true;
+    return false;
 }
 
 bool save_pending()
@@ -978,6 +987,7 @@ void tick(net::Session& s)
             } else if (now >= p.next_try) {
                 std::string why;
                 if (save_game(why)) {
+                    p.on_planet = false;
                     g_share_saves++;
                     // support log (BUG-0276): how long the stage / place had been settled
                     H->log(M, SK_INFO, "world: saving for the share of player %u (%s, %.1f s in this place)", p.peer,
@@ -992,6 +1002,7 @@ void tick(net::Session& s)
                     }
                 } else {
                     p.next_try = now + g_share_retry_ms;
+                    p.on_planet = why.rfind("leave the planet", 0) == 0;
                     if (!p.told)
                         g_feed("a player is waiting for the world: " + why);
                     p.told = true;

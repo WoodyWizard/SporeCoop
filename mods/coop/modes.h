@@ -56,6 +56,9 @@ void test_tick();
 // tests (BUG-0280): the local Tribe / Civ pointer stays at `p` (as if the mouse pointed there);
 // pin=false: the mouse again
 void test_pin_marker(bool pin, const net::Vec3& p);
+// Tribe / Civ: the pointer marker `e` of adapter `a` (own or a partner's) moved in the last `within` s
+// (false for every other adapter); the sync-check leaves a moving pointer out (BUG-0380)
+bool rts_marker_moving(const Adapter* a, void* e, double within);
 uint32_t current_place(const Adapter* a); // adapter place() or current_world()
 std::string current_world_name(); // the planet file being played, UTF-8 ("Name.spo"; "SaveGame" in menus)
 std::string raw_world_name(); // the game's CurrentGameName as is (may be "snapshot.spo", BUG-0258)

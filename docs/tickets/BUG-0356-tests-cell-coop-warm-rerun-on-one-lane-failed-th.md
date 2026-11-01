@@ -39,3 +39,4 @@ How to reproduce: `lab.py run cell_coop --repeat 6` (warm reruns on one lane).
 
 ## History
 - 2026-10-31: opened.
+- 2026-11-01 (fix/w31-civ-gate): again on lane 9, warm rerun cell_coop#2 of lab 20261101-103417 (revives 2 hp 5, still knocked out, 50.1 m), and cold in 20261101-100204 (revives 1 hp 6); 2 of 4 runs that day. Also earlier in fix/w10-cell-4p 20261030-062715 and fix/w26-cell-spare 20261031-202750. The branch changes nothing in Cell.
