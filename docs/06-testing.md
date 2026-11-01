@@ -3009,3 +3009,21 @@ can eat a plant in the 2 s of the shared food check, which now allows the host's
 * Pitfalls: four lanes at once pushed the 30 fps games to 21-26 fps and one test killed the other's games
   when a second `lab.py run` took a lane still in use (start a run only after the last one on its lanes
   ended); the known caught startup fault at 0x11ECE4F on both games fails a run by the fault gate.
+## Tribe sync tests and the log gates (2026-11-01, fix/w32-tribe-sync)
+<a id="testing-tribe-sync-gates"></a>
+
+* `tribe_npc_form` (coop_tribe_npc_form.py, BUG-0381, cold: the tribes it makes stay in the host's
+  world): `coop.tribe npc_tribe <members> <metres>` on the host calls Simulator::SpawnNpcTribe that far
+  from the village. On the tribe fixture the host's own tribe controller then forms two more tribes
+  within a few seconds (archetypes 8 and 12, 5 members each, ~150 m away): the guest gets all three from
+  the fix (`npc_tribes_made=3` in `coop.tribe`), none without it. The test checks the guest's game's own
+  tribe list (`tribe N at (...): M members species=XXXXXXXX archetype=A`, new columns) within 15 s, before
+  the sync-check's first recheck: the FAIL run has no MISMATCH line, the check fails on the tribe list.
+* `creature` (coop_two_instances.py, BUG-0390): the guest's test hit goes to a proxy outside the host's
+  pack and family; the host's `coop.npc list` tags them ` pack` / ` family`. On the creature fixture 4 of
+  the 20 spawned proxies are the avatar's herd, and the first listed was one of them in 2 of 5 runs.
+* `play_tribe` (nightly, never run before 2026-11-01): 2 runs on lane 7, no sync-check MISMATCH, both
+  failed on their own checks (BUG-0397: the chiefs compare, fixed; a host bot whose box selects all
+  missed in one run; citizens' p90 1.9 m in the other).
+* Log gates on lane 7 with diag.rts_cursor (BUG-0380) in: chaos_tribe 2/2, tribe_coop 2/2, tribe_play 2/2,
+  play_tribe 2/2 without any sync-check MISMATCH (out/lab/20261101-115510).

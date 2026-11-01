@@ -43,6 +43,9 @@ struct Probe {
     std::function<std::string()> activity;
     // runtime settings that differ from the defaults ("share_world=0 ..."), "" = all default
     std::function<std::string()> settings;
+    // BUG-0381: one line about a synchronized object of this game by its key text ("n327", "t16"):
+    // written under a MISMATCH so the log says what the object apart was doing ("" = not known)
+    std::function<std::string(const std::string& key)> describe;
 };
 
 void init(const SkHost* host, SkMod* mod, const Probe& probe);

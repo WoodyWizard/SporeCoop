@@ -9,6 +9,7 @@
 #include <unordered_set>
 
 #include "coop_ui.h"
+#include "creations.h"
 #include "driver.h"
 #include "game.h"
 #include "modes.h"
@@ -43,7 +44,7 @@ constexpr uint32_t kTreeNoun = 0x6ABEE7E;    // cTreeData (planet flora: fruit t
 static uintptr_t a_TreeVt;    // Simulator::cTreeData::vftable (main vtable)
 
 static uintptr_t a_GetPlayerTribe, a_DoAction, a_SetValueVector3, a_BTTick, a_DoActionForObjects, a_WalkSelected,
-    a_SetSelected, a_CreateCitizen, a_AddMember;
+    a_SetSelected, a_CreateCitizen, a_AddMember, a_SpawnNpcTribe;
 
 template <typename T>
 static T& F(void* p, uintptr_t off) { return *(T*)((uint8_t*)p + off); }
@@ -401,6 +402,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     a_AddMember = H->sym("Simulator::cTribe::AddMember");
     a_CitizenVt = H->sym("Simulator::cCreatureCitizen::vftable");
     a_TreeVt = H->sym("Simulator::cTreeData::vftable");
+    a_SpawnNpcTribe = H->sym("Simulator::SpawnNpcTribe"); // BUG-0381 (optional)
     g_ok = a_GetPlayerTribe && a_DoAction && a_SetValueVector3 && a_BTTick && a_DoActionForObjects && a_WalkSelected &&
            a_SetSelected && a_CreateCitizen && a_AddMember && a_CitizenVt && a_TreeVt;
     if (!g_ok) {
@@ -434,6 +436,40 @@ static void arrival_place_due(double now)
 constexpr size_t kEntry = 2 + 1 + 1 + 1 + 12 + 12 + 16 + 4; // one member in a tribe state chunk
 constexpr uint32_t kStateTrailer = 0x54435354u; // BUG-0365: a chunk's trailer, magic + the host's ms
 constexpr size_t kTrailerSize = 8;
+
+// BUG-0381: an NPC tribe the host's game formed during play (cNpcTribeController, 0xCC6440: "a new
+// tribe has appeared") is formed by the host's game only: the guests' games never formed it (2 of 5
+// tribes on every guest for minutes in a 4-player campaign) and the host's members of it had no
+// tribe to be mirrored into on a guest (sync-check "t: 27 missing on the guest"). The host appends
+// each tribe's species and archetype to its state chunks (after the clock trailer); a guest makes a
+// host NPC tribe it has no tribe for (Simulator::SpawnNpcTribe at the host's tribe position, no
+// members: the mirrors are spawned into it as for any tribe). Off: the guest has only the tribes its
+// own game formed.
+static bool g_npc_tribes_fix = true;
+COOP_FIX("tribe.npc_tribes", "BUG-0381", g_npc_tribes_fix,
+         "tribe: a guest makes the host's NPC tribes its own game did not form (their members were missing)");
+constexpr uint32_t kTribeInfoTag = 0x49425254u; // "TRBI": the tribe table's species / archetype after the trailer
+constexpr size_t kTribeInfo = 12 + 1;           // species key (instance, type, group) + archetype (0xFF: none)
+constexpr uintptr_t kTribeArchetypeOff = 0x550; // cTribe: the archetype SpawnNpcTribe stores (< 0x20)
+static uint32_t g_npc_tribes_made, g_npc_tribes_failed;
+struct TribeInfo {
+    game::Key key{};
+    uint8_t arch = 0xFF;
+};
+static TribeInfo tribe_info(void* t)
+{
+    TribeInfo i;
+    uint32_t a = F<uint32_t>(t, kTribeArchetypeOff);
+    i.arch = a < 0x20 ? (uint8_t)a : 0xFF;
+    for (void* c : members(t)) { // a citizen is a cCreatureBase: its species key at +0xB28 (game::species_key)
+        game::Key k = game::species_key(c);
+        if (k.instance) {
+            i.key = k;
+            break;
+        }
+    }
+    return i;
+}
 static void host_tick(double now)
 {
     if (now - g_last_send < 0.12)
@@ -491,7 +527,11 @@ static void host_tick(double now)
     // removed those mirrors at the end of every cycle (play_tribe.py: the guest's tribe emptied)
     g_cycle++;
     size_t nt = std::min<size_t>(tribes.size(), 32);
-    size_t head = 2 + 1 + 1 + 1 + nt * 13 + 1 + kTrailerSize;
+    std::vector<TribeInfo> infos; // BUG-0381
+    if (g_npc_tribes_fix)
+        for (size_t ti = 0; ti < nt; ti++)
+            infos.push_back(tribes[ti] == pt ? TribeInfo{} : tribe_info(tribes[ti]));
+    size_t head = 2 + 1 + 1 + 1 + nt * 13 + 1 + kTrailerSize + (infos.empty() ? 0 : 4 + 1 + nt * kTribeInfo);
     size_t per = std::max<size_t>(1, (net::kMaxPacket - 64 - head) / kEntry);
     size_t chunks = std::max<size_t>(1, (entries.size() + per - 1) / per);
     for (size_t k = 0; k < chunks; k++) {
@@ -519,9 +559,21 @@ static void host_tick(double now)
         }
         w.u32(kStateTrailer); // BUG-0365: the host's clock (guests before 0.7.3.4 stop reading before it)
         w.u32((uint32_t)(now * 1000.0));
+        if (!infos.empty()) { // BUG-0381: after the trailer (guests before it stop reading at the trailer)
+            w.u32(kTribeInfoTag);
+            w.u8((uint8_t)infos.size());
+            for (auto& i : infos) {
+                w.u32(i.key.instance); w.u32(i.key.type); w.u32(i.key.group);
+                w.u8(i.arch);
+            }
+        }
         for (auto& p : C.sess->players())
-            if (p.id != 0)
+            if (p.id != 0) {
+                for (auto& i : infos) // the host's own creation among them: its records first (creations.h)
+                    if (i.key.instance)
+                        creations::host_species_out(p.id, {i.key.instance, i.key.type, i.key.group});
                 C.sess->send_unreliable_to(p.id, net::MSG_TRIBE_STATE, w);
+            }
     }
 }
 
@@ -679,6 +731,75 @@ static void remove_member(void* c)
         vcall<void>(t, 0x9C / 4, c, 1); // RemoveMember(c, destroy)
 }
 
+// BUG-0381 (tribe.npc_tribes): a guest makes each host NPC tribe that has no tribe of this game
+// within the mapping's 40 m (guest_state). `p`: the tribe table after the trailer (tag, count,
+// count x kTribeInfo). One try per host tribe every 5 s (an unknown species is asked for first).
+static std::map<std::pair<int, int>, double> g_npc_tribe_tried; // host tribe position (2 m grid) -> last try
+static std::map<std::pair<int, int>, void*> g_npc_tribe_made;   // ... -> the tribe made for it here
+static void make_npc_tribes(const uint8_t* p, size_t len, const std::vector<std::pair<net::Vec3, bool>>& htribes,
+                            const std::vector<void*>& locals)
+{
+    uint32_t tag;
+    memcpy(&tag, p, 4);
+    if (!g_npc_tribes_fix || !a_SpawnNpcTribe || tag != kTribeInfoTag || p[4] != htribes.size() || len < 5)
+        return;
+    double now = H->time_seconds();
+    for (size_t i = 0; i < htribes.size() && i < g_local_tribe_of.size(); i++) {
+        if (htribes[i].second || g_local_tribe_of[i])
+            continue;
+        const uint8_t* e = p + 5 + i * kTribeInfo;
+        game::Key k;
+        memcpy(&k.instance, e, 4);
+        memcpy(&k.type, e + 4, 4);
+        memcpy(&k.group, e + 8, 4);
+        uint8_t arch = e[12];
+        if (!k.instance)
+            continue; // no member yet: nothing to mirror
+        const net::Vec3& hp = htribes[i].first;
+        auto cell = std::make_pair((int)std::floor(hp.x / 2), (int)std::floor(hp.z / 2));
+        auto made = g_npc_tribe_made.find(cell);
+        if (made != g_npc_tribe_made.end()) { // made before (the game may have put it more than 40 m off)
+            if (std::find(locals.begin(), locals.end(), made->second) != locals.end()) {
+                g_local_tribe_of[i] = made->second;
+                continue;
+            }
+            g_npc_tribe_made.erase(made); // gone (a raid, a load): may be made again
+        }
+        if (g_npc_tribes_made >= 64)
+            continue; // a bound against a loop of tribes made and lost
+        auto tried = g_npc_tribe_tried.find(cell);
+        if (tried != g_npc_tribe_tried.end() && now - tried->second < 5.0)
+            continue;
+        g_npc_tribe_tried[cell] = now;
+        creations::Key lk = creations::local_species({k.instance, k.type, k.group});
+        void* species = game::species_by_key({lk.instance, lk.type, lk.group});
+        if (!species) { // a species of the host's world this game lacks: the host sends it
+            creations::want_species({k.instance, k.type, k.group});
+            g_npc_tribes_failed++;
+            continue;
+        }
+        skg::Vector3 pos{hp.x, hp.y, hp.z};
+        // cdecl cTribe* SpawnNpcTribe(const Vector3& pos, int archetype, int members, int food, bool, cSpeciesProfile*)
+        void* t = skg::cdecl_call<void*>(a_SpawnNpcTribe, &pos, arch == 0xFF ? 0 : (int)arch, 0, 0, 0, species);
+        if (!t) {
+            g_npc_tribes_failed++;
+            continue;
+        }
+        g_npc_tribes_made++;
+        g_local_tribe_of[i] = t;
+        g_npc_tribe_made[cell] = t;
+        net::Vec3 lp = tribe_pos(t);
+        H->log(M, SK_INFO,
+               "tribe: the host's NPC tribe %u at (%.0f %.0f %.0f) is not in this game: made it (species %08X, archetype %d) at "
+               "%.1f m",
+               (unsigned)i, hp.x, hp.y, hp.z, k.instance, arch == 0xFF ? -1 : (int)arch, net::dist(lp, hp));
+    }
+    if (g_npc_tribe_tried.size() > 256)
+        g_npc_tribe_tried.clear();
+    if (g_npc_tribe_made.size() > 64)
+        g_npc_tribe_made.clear();
+}
+
 static void guest_state(net::Reader& r)
 {
     uint16_t cycle = r.u16();
@@ -721,13 +842,18 @@ static void guest_state(net::Reader& r)
     // BUG-0365: the host's clock after the entries (none from a host before 0.7.3.4)
     bool timed = false;
     uint32_t host_ms = 0;
-    if (r.ok() && r.left() == n * kEntry + kTrailerSize) {
+    // BUG-0381: the tribe table's species / archetype after the trailer (a host with tribe.npc_tribes)
+    size_t extra = r.ok() && r.left() >= n * kEntry + kTrailerSize ? r.left() - n * kEntry - kTrailerSize : 0;
+    bool info = extra >= 5 && extra == 5 + (size_t)r.cur()[n * kEntry + kTrailerSize + 4] * kTribeInfo;
+    if (r.ok() && (r.left() == n * kEntry + kTrailerSize || info)) {
         const uint8_t* t = r.cur() + n * kEntry;
         uint32_t magic;
         memcpy(&magic, t, 4);
         memcpy(&host_ms, t + 4, 4);
         timed = magic == kStateTrailer;
     }
+    if (info && timed)
+        make_npc_tribes(r.cur() + n * kEntry + kTrailerSize, extra, htribes, locals);
     g_mirror_timed += timed;
     for (int i = 0; i < n && r.ok(); i++) {
         uint16_t id = r.u16();
@@ -1656,6 +1782,8 @@ void on_session_end()
     g_hm_by_id.clear();
     g_gm.clear();
     g_gid_of.clear();
+    g_npc_tribe_made.clear(); // BUG-0381
+    g_npc_tribe_tried.clear();
     g_player_members_seen = 0;
 }
 
@@ -1671,6 +1799,8 @@ void on_world_change()
     g_hm_by_id.clear();
     g_gm.clear();
     g_gid_of.clear();
+    g_npc_tribe_made.clear(); // BUG-0381
+    g_npc_tribe_tried.clear();
     g_player_members_seen = 0;
 }
 
@@ -1766,10 +1896,11 @@ std::string status()
     else
         snprintf(b, sizeof b,
                  "tribe(guest): mirrors=%u spawned=%u removed=%u cmds_sent=%u rx=%u skipped=%u resets=%u "
-                 "local_tribes=%u player_tribe=%p unselected=%u incomplete=%u ai_skipped=%u/%u away_orders=%u local=%d mirror_walks=%u timed=%u\n",
+                 "local_tribes=%u player_tribe=%p unselected=%u incomplete=%u ai_skipped=%u/%u away_orders=%u local=%d mirror_walks=%u timed=%u "
+                 "npc_tribes_made=%u failed=%u\n",
                  (unsigned)g_gm.size(), g_spawned, g_removed, g_cmds_sent, g_rx, g_rx_skipped, g_resets,
                  (unsigned)all_tribes().size(), player_tribe(), g_unselected, g_incomplete, g_bt_skipped, g_bt_calls, g_away_orders, (int)local_play(),
-                 g_mirror_walks, g_mirror_timed);
+                 g_mirror_walks, g_mirror_timed, g_npc_tribes_made, g_npc_tribes_failed);
     std::string out = b;
     if (!g_last_cmd.empty())
         out += "tribe last order: " + g_last_cmd + "\n";
@@ -2031,6 +2162,33 @@ std::string debug(const std::vector<std::string>& a)
         }
         return "spawned " + std::to_string(n);
     }
+    // npc_tribe <members> <metres>: tests (BUG-0381), the host's game forms an NPC tribe that far from the
+    // village (as the game's tribe controller does during play: the guests' games do not)
+    if (a.size() >= 3 && a[0] == "npc_tribe" && is_host() && a_SpawnNpcTribe) {
+        void* pt = player_tribe();
+        if (!pt)
+            return "no player tribe";
+        net::Vec3 c = tribe_pos(pt);
+        float r = drive::speed(c), d = (float)atof(a[2].c_str());
+        if (r < 1)
+            return "no village position";
+        // a direction across the surface: c x (0,1,0) (or x (1,0,0) at a pole), then back onto the sphere
+        net::Vec3 u{c.z, 0, -c.x};
+        if (drive::speed(u) < 1e-3f)
+            u = {0, -c.z, c.y};
+        float ul = drive::speed(u);
+        net::Vec3 q{c.x + u.x / ul * d, c.y + u.y / ul * d, c.z + u.z / ul * d};
+        float ql = drive::speed(q);
+        skg::Vector3 pos{q.x / ql * r, q.y / ql * r, q.z / ql * r};
+        void* t = skg::cdecl_call<void*>(a_SpawnNpcTribe, &pos, 0, atoi(a[1].c_str()), 0, 0, (void*)nullptr);
+        if (!t)
+            return "SpawnNpcTribe returned null";
+        net::Vec3 tp = tribe_pos(t);
+        char b[160];
+        snprintf(b, sizeof b, "npc tribe %p at (%.1f %.1f %.1f): %u members, %.0f m from the village", t, tp.x, tp.y, tp.z,
+                 (unsigned)members(t).size(), net::dist(tp, c));
+        return b;
+    }
     if (!a.empty() && a[0] == "trees") { // trees near the village with their raw fields (RE)
         net::Vec3 at;
         center(at);
@@ -2096,8 +2254,10 @@ std::string list()
     for (size_t ti = 0; ti < tribes.size(); ti++) {
         net::Vec3 p = tribe_pos(tribes[ti]);
         auto ms = members(tribes[ti]);
-        snprintf(b, sizeof b, "tribe %u%s at (%.0f %.0f %.0f): %u members\n", (unsigned)ti,
-                 tribes[ti] == pt ? " (player)" : "", p.x, p.y, p.z, (unsigned)ms.size());
+        TribeInfo ti_info = tribe_info(tribes[ti]); // the members' species (BUG-0381 tests)
+        snprintf(b, sizeof b, "tribe %u%s at (%.0f %.0f %.0f): %u members species=%08X archetype=%d\n", (unsigned)ti,
+                 tribes[ti] == pt ? " (player)" : "", p.x, p.y, p.z, (unsigned)ms.size(), ti_info.key.instance,
+                 ti_info.arch == 0xFF ? -1 : (int)ti_info.arch);
         out += b;
         for (void* c : ms) {
             net::Vec3 cp = game::position(c);

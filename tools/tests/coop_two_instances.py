@@ -14,6 +14,7 @@ usage: coop_two_instances.py [--no-restart] [--guest-menu] [--no-walk]
 """
 import os
 import subprocess
+import re
 import sys
 import threading
 import time
@@ -150,6 +151,19 @@ def main():
     spawned = [l for l in glist if l.strip().startswith('#') and 'spawned' in l and 'DEAD' not in l]
     print('guest:', glist[0] if glist else '?')
     ok &= len(spawned) > 0
+    # BUG-0390: a partner's hit on the host's pack or family (the avatar's herd) is dropped on purpose
+    # (npc.party_peace, BUG-0374): the hit goes to an NPC outside both, as the host lists them now
+    party = set()
+    for l in host.call('coop.npc list')['out'].splitlines():
+        m = re.match(r'\s*#(\d+) .*? (pack|family)\b', l)
+        if m:
+            party.add(m.group(1))
+    targets = [l for l in spawned if l.split()[0].lstrip('#') not in party]
+    first = spawned[0].split()[0].lstrip('#') if spawned else None
+    print(f'host pack / family: {sorted(party, key=int)}; targets {len(targets)} of {len(spawned)} '
+          f'(the first listed, #{first}, {"is" if first in party else "is not"} one of them)')
+    ok &= len(targets) > 0
+    spawned = targets
     if spawned:
         nid = spawned[0].split()[0].lstrip('#')
 

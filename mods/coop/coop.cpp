@@ -4236,6 +4236,19 @@ void support_init()
             add("sync_check", g_ini_sync);
         return s;
     };
+    p.describe = [](const std::string& key) { // BUG-0381: the object's line of coop.npc list / coop.tribe
+        std::string all = key[0] == 'n' ? npc::list() : key[0] == 't' ? tribe::list() : std::string();
+        std::string want = "#" + key.substr(1) + " ";
+        size_t at = 0;
+        while ((at = all.find(want, at)) != std::string::npos) {
+            if (at >= 2 && all[at - 1] == ' ' && all[at - 2] == ' ') { // "  #<id> " at a line's start
+                size_t end = all.find('\n', at);
+                return all.substr(at, end == std::string::npos ? std::string::npos : end - at);
+            }
+            at += want.size();
+        }
+        return std::string();
+    };
     support::init(H, M, p);
     H->subscribe(M, SK_EV_SHUTDOWN, [](void*, int, void*) { support::on_shutdown(); }, nullptr);
     H->command_add(M, "coop.diag",

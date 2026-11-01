@@ -1003,3 +1003,35 @@ method as [the Creature puppets](creature.md#creature-puppet-walk).
   (`own_height`, BUG-0329); the `hd` column of coop.track showed them 0.00 m over the ground while they
   walk (fixture village, flat).
 * ~ Members of NPC tribes (owner 0xFE) are mirrors too and get the same driving; not measured.
+
+## NPC tribes formed during play, and the guests (2026-11-01, fix/w32-tribe-sync)
+<a id="tribe-npc-forming"></a>
+
+* ✔ `Simulator::SpawnNpcTribe` (GOG 2024 0xC932F0): cdecl `cTribe*(const Vector3* pos, int archetype,
+  int members, int food, bool, cSpeciesProfile* species)`, plain ret. A null species takes one from
+  the species manager (0x4DF490). It creates noun 0x18C6D19, sets +0x18CC = species, +0x550 = archetype
+  (when < 0x20), then calls the tribe's vt 0x8C(pos, members, food, bool): the setup that puts the tribe on
+  the ground at pos (terrain height, orientation, the hut) and makes `members` citizens; then the names.
+* ✔ The game forms new NPC tribes during play in `cNpcTribeController` 0xCC6440 (vtable slot at
+  .rdata 0x147689C): when the planet has fewer tribes than its property list allows, it takes the spawn
+  marker (noun 0x36BE27E with +0x108 == 0x57F09E5E) nearest the player tribe, the next species of the
+  controller's list (+0xD0, by the number of tribes) and the archetype of the list, calls SpawnNpcTribe,
+  shows the event log entry (0xD82D8A26 / 0x182CD6CE), plays "TRG_PRE_FirstTribeAppears" for the first
+  one, destroys the marker and the herds near the new village (noun 0x1BE418E within its radius) or hands
+  them to it (0xCD48F0). The other caller, 0xB942A0, makes a tribe of n members with n*10 food and its tools.
+* ✔ (BUG-0381) In co-op this ran on the host only: in 4-player campaign runs (out/lab/20261031-000328
+  campaign#1, 20261031-185843 campaign_tribe#1) the host's tracked citizens went 22 -> 48 within 3 minutes
+  after a cinematic on the host (new tribes) while every guest kept `local_tribes=2` (its own game's tribe
+  objects) for the rest of the stage; in the other run two of three guests lacked the host's new second tribe (the third guest's own game had formed it at the same place). A guest maps the host's tribes
+  to its own by position (40 m) and had no tribe to spawn the host's new members into: sync-check
+  "t: N missing on the guest" (N up to 27), and the players on the guests never saw those tribes. Not
+  known why the guests' controllers never formed them (the trigger is probably the player tribe's
+  progress, which a guest's game does not have: its player tribe holds mirrors).
+* ✔ Fix `tribe.npc_tribes`: the host appends each tribe's species key (from a member, citizen +0xB28)
+  and archetype (+0x550) to its state chunks, after the BUG-0365 clock trailer (tag 0x49425254 "TRBI", a
+  count, 13 bytes per tribe); a guest that has no tribe of its own within 40 m of a host NPC tribe calls
+  SpawnNpcTribe(host position, archetype, 0 members, 0 food, false, the species: the host's own creations
+  through creations::local_species / want_species) and binds the mirrors into it. A tribe made this way
+  is remembered (a 2 m grid of the host position) and reused even if the setup put it farther off.
+* ~ A guest's own controller could still form a tribe later at the same marker (a second local tribe
+  near a mapped one, not mirrored): not seen in the runs.

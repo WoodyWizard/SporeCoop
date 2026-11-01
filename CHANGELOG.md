@@ -19,6 +19,12 @@
 - Creature: the eggs at other species' nests are the same on every game: a guest now sees the eggs the
   host's nests lay (where the host has them, on the ground), and an egg eaten by either player is gone
   for both. Before, a guest saw none of them (BUG-0384).
+- Tribe: the NPC tribes that form during play (the "a new tribe has appeared" event) were there only for
+  the host: guests never saw them or their members. A guest now gets each of them where the host has it,
+  of the same species, with its members (BUG-0381).
+- Tests: the `creature` test's guest hit could land on a member of the host's family or pack, a hit the
+  host drops on purpose since BUG-0374 ("hits applied 0 -> 0"); it now hits an NPC outside both (BUG-0390).
+- Tests: play_tribe compared the chiefs' line of both games with the host's own counters in it (BUG-0397).
 - Creature: a creature of a partner's earlier creature (before its editor) could be missing on the
   guest until the next world share: the host could not send its species any more (BUG-0370).
 - Tests: npc_far / npc_pooled walked the host into the sea, where the game's deep water cinematic held
