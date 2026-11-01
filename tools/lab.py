@@ -241,6 +241,8 @@ def fault_count(line):
 def run_one(t, lane, tree, logdir, warm, suffix=''):
     preflight()
     env = dict(os.environ, SPORE_LANE=str(lane), SPORE_WARM='1' if warm else '0', PYTHONUNBUFFERED='1')
+    if t.get('monitor') is not None:  # the invariant monitor's settings (tools/tests/monitor.py)
+        env['SPORE_MONITOR'] = t['monitor'] if isinstance(t['monitor'], str) else json.dumps(t['monitor'])
     log = os.path.join(logdir, t['name'] + suffix + '.log')
     t0 = time.time()
     reports0 = report_files(lane)

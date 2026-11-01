@@ -177,6 +177,8 @@ elif case == 'hitch_ok':
     w('host', 'perf: hitch 3500 ms (Creature, loading)')
     w('host', 'perf: hitch 2008 ms (Creature)')  # SporeKit's switch to game loop frames (2.0 s)
     w('host', 'perf: hitch 1500 ms (Creature)')
+elif case == 'monitor':
+    print('MONITOR-VIOLATION puppet guest: guest: partner 0 (Alice) in the same place is not shown', flush=True)
 elif case == 'memlow':
     w('host', "mem: the game's address space runs low: 250 MB free, largest free block 40 MB (a crash ...)")
 elif case in ('slope', 'slope_ok'):
@@ -248,6 +250,10 @@ def gate_cases(tree, tmp):
     check(r['ok'], f'gate_hitch: a hitch while loading, the 2.0 s frame source switch and 1.5 s do not ({r["fails"][:1]})')
     r = one('hitch', gates={'hitch_ms': 5000})
     check(r['ok'], 'gate_hitch: a test\'s own threshold (gates={"hitch_ms": 5000})')
+    r = one('monitor')
+    check(not r['ok'] and any('gate monitor' in x for x in r['fails']), 'gate_monitor: a MONITOR-VIOLATION line fails the test')
+    r = one('monitor', allow=[suite.allow('monitor', 'BUG-0001', 'selftest', kind='puppet')])
+    check(r['ok'] and any('allowed gate monitor' in x for x in r['gates']), 'gate_monitor: allowed by its invariant')
     r = one('memlow')
     check(not r['ok'] and any('gate mem-low' in x for x in r['fails']), 'gate_memlow: "address space runs low" fails')
     r = one('slope')

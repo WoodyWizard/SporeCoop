@@ -24,6 +24,7 @@ import sys
 import time
 
 import lane
+import twoinst
 from coop_chaos import Bot
 from coop_sync import LIMITS, pct
 from sporectl import Console
@@ -95,6 +96,7 @@ def start_extra(n):
             time.sleep(1)
         c.call('wait.frames 200 60000')
         out[NAMES[i]] = (c, inst)
+        twoinst.monitor_add(f'extra{i + 1}', inst)  # the invariant monitor follows them too (monitor.py)
     return out
 
 

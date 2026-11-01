@@ -16,6 +16,8 @@
             defaults (sync-check MISMATCH, hitch over 2 s in play, mem low, address space loss slope);
             a dict changes a threshold ({'hitch_ms': 5000}) or switches gates off ({'off': ('hitch',)});
             NO_GAME for tests that run no game (their lane's idle games are not theirs)
+  monitor   the invariant monitor's settings for this test (tools/tests/monitor.py DEFAULTS overrides, e.g.
+            {'census_period': 60} to poll coop.census; 'off': no monitor), passed as SPORE_MONITOR
   allow     log gate findings this test may have, each allow(gate, ticket, reason, ...) with a ticket
             id and a reason: printed as "allowed" in the result, never silent
   uses_free_lane  the test plays on SPORE_FREE_LANE (outside the run), takes that lane's lock
@@ -25,7 +27,7 @@
 """
 
 T = []
-NO_GAME = {'off': ('sync-check', 'hitch', 'mem-low', 'as-slope')}
+NO_GAME = {'off': ('sync-check', 'hitch', 'mem-low', 'as-slope', 'monitor')}
 
 
 def allow(gate, ticket, reason, stage=None, kind=None, who=None, match=None):
@@ -41,7 +43,7 @@ ALLOW_ALL = []
 
 
 def add(name, cmd, suites=('full',), warm=False, exclusive=False, minutes=4, fixture=None, reports=False,
-        uses_free_lane=False, timeout=None, gates=None, allow=()):
+        uses_free_lane=False, timeout=None, gates=None, allow=(), monitor=None):
     """reports=True: the test makes crash / hang reports or faults on purpose and checks them itself;
     for every other test the lab fails it on a new crash-*/report-* file of its lane, a game that
     dies right after it, or a non-zero fault count in its log (tools/lab.py run_one, BUG-0036/0042)"""
@@ -51,7 +53,8 @@ def add(name, cmd, suites=('full',), warm=False, exclusive=False, minutes=4, fix
         suites = set(suites) | ({'nightly'} if {'nightly', 'extended'} & set(suites) else {'full', 'nightly'})
     T.append(dict(name=name, cmd=cmd, suites=suites, warm=warm,
                   exclusive=exclusive, minutes=minutes, fixture=fixture, reports=reports,
-                  uses_free_lane=uses_free_lane, timeout=timeout, gates=gates, allow=list(allow)))
+                  uses_free_lane=uses_free_lane, timeout=timeout, gates=gates, allow=list(allow),
+                  monitor=monitor))
 
 
 P = 'python3 tools/tests/'

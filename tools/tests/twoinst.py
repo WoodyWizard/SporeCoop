@@ -162,6 +162,57 @@ class Monitor(threading.Thread):
 
 
 _monitors = []
+_watch = None  # the invariant monitor of the test's games (monitor.py, docs/06-testing.md#testing-monitor)
+
+
+def monitor_cfg():
+    """SPORE_MONITOR: off, or a JSON dict of monitor.DEFAULTS overrides (the lab sets it from suite.py
+    monitor=); SPORE_NET set: the link invariant is off (a bad network on purpose)"""
+    import json
+    v = os.environ.get('SPORE_MONITOR', '').strip()
+    if v == 'off':
+        return None
+    try:
+        cfg = json.loads(v) if v else {}
+    except ValueError:
+        print(f'  (SPORE_MONITOR is not JSON: {v!r}; defaults)', flush=True)
+        cfg = {}
+    return dict(cfg, netem=bool(os.environ.get('SPORE_NET')))
+
+
+def start_watch(players):
+    """the invariant monitor over {who: instance} (again: a new one, the old one stopped)"""
+    global _watch
+    import monitor
+    if _watch is not None:
+        _watch.stop_ev.set()
+        _watch = None
+    cfg = monitor_cfg()
+    if cfg is None:
+        return None
+    _watch = monitor.Watch({who: (inst, lane.game_log(inst)) for who, inst in players.items()}, cfg,
+                           console=lambda inst: Console(inst, timeout=10),
+                           out=lambda line: print(line, flush=True))
+    _watch.start()
+    return _watch
+
+
+def monitor_add(who, inst):
+    """another game of the test (the extra guests of a party, coop_multi.start_extra)"""
+    if _watch is not None:
+        _watch.add_player(who, inst, lane.game_log(inst))
+
+
+def monitor_flush():
+    """the monitor reads the logs once more and prints what it found (before the RESULT line)"""
+    if _watch is not None:
+        try:
+            _watch.step()
+        except Exception as e:  # noqa: BLE001
+            print(f'  (monitor: {e!r})', flush=True)
+        if _watch.violations:
+            print(f'  monitor: {len(_watch.violations)} invariant violation(s) (MONITOR-VIOLATION lines; the lab '
+                  f'fails the test on them)', flush=True)
 
 
 def watch(host_inst, guest_inst):
@@ -173,6 +224,7 @@ def watch(host_inst, guest_inst):
         m = Monitor(inst, name)
         m.start()
         _monitors.append(m)
+    start_watch({'host': host_inst, 'guest': guest_inst})
 
 
 def build_id():
@@ -456,5 +508,6 @@ class Checks:
             self.ok = False
 
     def result(self):
+        monitor_flush()
         print('RESULT:', 'OK' if self.ok else 'FAIL')
         return 0 if self.ok else 1

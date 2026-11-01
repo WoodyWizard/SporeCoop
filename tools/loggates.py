@@ -9,6 +9,8 @@ sporekit*.log while a test runs, judged after the test by tools/lab.py run_one.
               after a stage change, nor the 2.0 s step of SporeKit's frame source switch (Present
               lost: frames come from the game loop, sporekit/d3d9hook.cpp kPresentLostSec)
   mem-low     `mem: the game's address space runs low`
+  monitor     a `MONITOR-VIOLATION <invariant> <who>: <text>` line of the test's invariant monitor
+              (tools/tests/monitor.py, docs/06-testing.md#testing-monitor); allow(..., kind=<invariant>)
   as-slope    the free address space of the per-minute `perf: fps avg ...` lines falls faster than
               N MB per minute (least squares over the test's minutes in one game process, minutes
               without a load / editor / received world only)
@@ -28,7 +30,7 @@ import os
 import re
 import sys
 
-GATES = ('sync-check', 'hitch', 'mem-low', 'as-slope')
+GATES = ('sync-check', 'hitch', 'mem-low', 'as-slope', 'monitor')
 DEFAULTS = {
     'hitch_ms': 2000,          # a hitch longer than this while a stage is played fails
     'hitch_settle_s': 20.0,    # seconds after a stage change / load / boot in which hitches are loads
@@ -301,11 +303,20 @@ def window_lines(path, mark=None, start=None, end=None):
     return [ln for ln in lines if ln.t is not None and start <= ln.t <= end_time + 1]
 
 
+MONITOR_LINE = re.compile(r'^MONITOR-VIOLATION (\S+) (\S+): (.*)$', re.M)
+
+
+def monitor_findings(test_out):
+    """the invariant monitor's violations printed by the test (tools/tests/monitor.py)"""
+    return [Finding(gate='monitor', who=m.group(2), t=None, line=m.group(0).strip(), stage='', kinds=[m.group(1)],
+                    detail=f'{m.group(1)}: {m.group(3)}') for m in MONITOR_LINE.finditer(test_out or '')]
+
+
 def check_logs(logs, cfg=None, allows=None, test_out='', marks=None, start=None, end=None):
     """{who: game log path} -> (fails, notes, findings)"""
     c = dict(DEFAULTS, **(cfg or {}))
     forced = forced_windows(test_out, c['force_tail_s'])
-    findings = []
+    findings = monitor_findings(test_out)
     for who, path in sorted(logs.items()):
         if not path or not os.path.exists(path):
             continue
