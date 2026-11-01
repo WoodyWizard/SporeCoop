@@ -3,6 +3,10 @@
 ## [Unreleased]
 
 ### Fixed
+- Creature: a guest whose own creature has fewer abilities than the world's creature got an error
+  (caught by the game) at every key press, and its ability keys could use the world creature's
+  slots: the ability bar was not built again after the guest's avatar took its own creature
+  (BUG-0358).
 - Cell: with four players a guest's game could drop to 3 frames per second at the end of the Cell
   stage and never get into the Creature stage: a crowd of over 256 cells on its screen made the game
   lose soft-body particles every frame until its particle pool was full, and the cells that shared

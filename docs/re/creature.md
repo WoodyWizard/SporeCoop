@@ -1101,3 +1101,40 @@ BUG-0339. Extends [the pool cull](#creature-npc-pool-cull).
   in every census for 30 s and more and were still updated (the sync-check lists only NPCs updated in
   that frame). The cause was not found. A guest kept their proxies on the surface 511 m away.
   The host now logs "is updated at the planet's centre" for such an NPC.
+
+## The creature ability bar and the own creature swap (2026-10-31, fix/w27-creature-fault)
+<a id="creature-ability-bar"></a>
+
+* ✔ The HUD's ability bar is a table at `[SporeCoop::AbilityBar_ptr]` (0x169E3EC, 0xD8 bytes,
+  made by 0xD489B0 on the stage start, freed by 0xD48A90): 25 slots of `{int ability index (-1
+  empty), u8}` at `row * 0x28 + col * 8`, `+0xC8` rows (5), `+0xCC` slots per row (creature 5,
+  tribe 3), `+0xD0` / `+0xD4` the first button window ids. The row is the ability's `+0xC`
+  (row type), the column comes from 0xD48FA0 (by the ability's type `+8`).
+* ✔ `SporeCoop::AbilityBar_Rebuild` 0xD49400 (cdecl, no args, no null check of the table) clears
+  the 25 slots and puts each ability index of the avatar (0xD1E610: the creature/captain avatar,
+  the tribe's chief) into its slot, then refreshes the row buttons. Callers: the creature HUD
+  refresh 0xD2C000 (stage start), the message handler 0xB5F7B0. **`cCreatureAnimal::SetSpecies`
+  does not call it**: an avatar that gets another species keeps the old bar.
+* ✔ `SporeCoop::AbilityBar_Ability` 0xD1E830 (cdecl(slot index) -> ability*): an index below the
+  avatar's vt 0xB0 count is the avatar's vt 0xB4(index); a higher one in creature / captain mode
+  reads `cSpeciesManager::Get()->GetSpeciesProfile(sm + 0xA4)->[+0x6D4][index]` without a bound
+  check. `sm + 0xA4` was the loaded world's player species (065CBE70 on the creature fixture, not
+  the guest's own creature).
+* ✔ Every key without a modifier in the creature stage: OnKeyDown 0xD3AFF0 (thiscall(strategy, vk,
+  modifiers)) -> `AbilityBar_OnKey` 0xD4A450(vk) -> `AbilityBar_FindByKey` 0xD4A320(GetAbilityMode,
+  vk, 1), which walks every non-empty slot of the rows of the current stance through 0xD1E830 and
+  reads the ability's `+0xC` / `+0x38` (key) before comparing keys. A slot past the avatar's
+  abilities makes that a read past the species' ability array: garbage there faulted at 0xD4A397
+  (`mov eax,[esi+0xC]`, esi = 0x41900000 = float 18.0) once per key press (BUG-0358). Zero there is
+  skipped, a valid pointer is another species' ability: so the fault depends on the heap.
+* ✔ Measured on lane 6 (creature fixture, the guest's own creatures): world species 065CBE70 has 11
+  abilities (host bar 5 slots, highest index 7); the guest's own creatures 9, 13, 17, 16, 16 (bars
+  of 3 / 7 / 11 / 10 / 10 slots, highest 5 / 9 / 13 / 12 / 12). The bar built for the 17-ability
+  creature and then a swap to the 9-ability one (fix off): 11 slots, 5 past the abilities. On the
+  fixture alone (world bar highest index 7, smallest own creature 9) no slot is past the abilities
+  but the slots map keys to other abilities: why the creature tests never faulted, and why the
+  campaign (a world species evolved in the session, with more abilities) did.
+* Co-op (creations.cpp `bar_tick`, `coop.fix creations.ability_bar`): the bar is built again (outside
+  the frame) when the avatar's abilities change under the same avatar (our SetSpecies) or a slot
+  points past them. `coop.creations bar [rebuild]` prints the bar (`abilities= used= stale=
+  max_index= slots=row.col:index,...`) or has the game build it for the current avatar.
