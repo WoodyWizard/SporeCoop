@@ -1322,3 +1322,18 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Next steps: send the airborne state and put the puppet into the game's fall (or play the jump)
   on the observer; check with a creature that can jump.
 * Ticket: BUG-0376
+
+## Space: a fast partner ship is drawn off its path for a moment when it turns or stops (2026-11-01, fix/w31-space-gate)
+<a id="issue-space-fast-overshoot"></a>
+
+* What happens: in the galactic core's system the guest's ship (moved by the core's orbit at up to
+  ~210 m/s) was drawn on the host 20-31 m away from every point of its own path over the 0.5 s
+  before, for ~0.2 s, while it stopped (lab 20261101-100032, 11 of 84 `coop.fleet track` rows; the
+  run before: within 0.1 m at 207-235 m/s).
+* Reproduce: `lab.py run space_finale_wait`, the printed line `core: the guest ship on the host`
+  (not checked by the test).
+* Known: the pin itself is right (the host's still ship is drawn within 0.0 m on the guest);
+  inferred: the partner interpolation (extrapolation up to 0.25 s with the last velocity) or late
+  snapshots during the host's cinematic.
+* Not checked: a frame-by-frame look at the received states around the moment.
+* Ticket: BUG-0388.

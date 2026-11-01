@@ -3,6 +3,12 @@
 ## [Unreleased]
 
 ### Fixed
+- Space: in the galactic core's system each player saw the partner's ship 20-30 m above where it
+  really was; partners' ships and the host's ships seen on a guest are now drawn exactly where the
+  mod puts them (BUG-0378, BUG-0190).
+- Support sync-check: it no longer reports a difference for a fast Space ship that is only a moment
+  behind (the allowed distance grows with the ship's speed), nor for players in the galaxy view,
+  where nobody's ship is shown (BUG-0378).
 - Creature: each player now sees the partner's real health on the partner's creature (it always
   looked full, hits on the partner did not show) and its real max health (BUG-0373).
 - Creature: the host's pack and family no longer attack and kill a partner (a partner's hit on a

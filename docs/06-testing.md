@@ -2718,3 +2718,35 @@ Before a tag `vX.Y.Z` (CLAUDE.md 4):
   bug); a run on rock counts nothing (+0x137 is 0 on rock all the time, GetHeightAt is the terrain);
   the spawn moves after a `--goto`, so these tests are cold. Exploration with the fix off on the slope
   gave 4-7 falls per 40 s, so one FAIL run is not guaranteed every time (the check allows 1).
+
+## Space: what each game draws of the other's ships (2026-11-01, fix/w31-space-gate)
+<a id="testing-space-drawn"></a>
+
+* **Where the sync-check reads**: the digests are built in `g_sess.update()`, the first thing of the
+  mod's frame, before any puppet or mirror is driven: they hold what the game's own update made of
+  the last write, i.e. what the frame showed (docs/re/space.md#space-pinned-ship-drawn). `coop.sync`
+  (console) reads after the write: our own target, not what is drawn.
+* `coop.fleet track on|off|dump [from] [n]` (squadron.cpp): every ship each frame at the top of
+  `on_frame` on the session clock, `t kind id x y z ox oy oz zoom` (m own ship, p puppet, s NPC
+  ship / mirror; ox..oz the ship's mOffsetFromPosition, zoom its mZoomAltitude). The console answer
+  is cut at ~32 KB: dump at most ~400 rows per call. Rows come at the game's frame rate (~15/s with
+  two lab games on a lane).
+* `coop_space_drawn.py [--planet]` (suite `space_drawn`, `space_drawn_planet`): the host, then the
+  guest flies with real input (clicks into the view, WASD, on the planet the wheel); per kind the
+  drawn rows against the owner's own rows: `now` (same session time, lag included) and `path` (the
+  closest point of the owner's path over the 0.5 s before: lag taken out). Checks path p90 <= 3 m and
+  `now` <= 0.5 s x speed + 3 m in 90 %. Measured 2026-11-01 (lab 20261101-093823, -094339): in the
+  start system and on the planet puppets path p90 0.07-2.8 m with and without the pin fixes (the
+  offset is 0 there), mirrors 0-2.5 m; the ships flew 3-11 m/s (clicks and keys move a ship slowly;
+  NPC ships up to 123 m/s). It does not reproduce BUG-0378 (that needs the galactic core).
+* `coop_space_finale_wait.py` now also tracks both games for 6 s in the core's system after the
+  host entered: `core: the host ship on the guest` checked (BUG-0378: SPORE_FIX_OFF=space.puppet_pin
+  draws it 21.0 m off, median, lab 20261101-095432; with the fix 0.0 m, lab 20261101-100032), the
+  other direction printed only (the guest orbits at ~200 m/s there; BUG-0388).
+* Lag at Space speeds (observed, lab 20261101-095432): the guest's ship orbiting at 207-235 m/s was
+  drawn on the host 28.6 m (median) behind its own position at the same session time, 0.03 m from its
+  path: lag of ~0.13 s, not a desync. The sync-check's fixed 10 m for players flagged such ships
+  (`p1 29-31`, campaign planets 10-30 m at 60-100 m/s by the trace positions); `sync.speed_slack`
+  allows speed x (0.2 s + the guest's round trip [+ half the owner's]), capped at 1 s / 300 m.
+* `s missing` / `p0 missing, p<guest> extra` (the gate report's 12 + 4 Space results) were in world 0 in every recorded host log but two (`s1` missing in space_mirror_model, made on purpose: a host ship whose model the guest lacks gets no mirror, BUG-0323) (the galaxy view,
+  where no puppet is shown and no ship mirrored): `sync.no_place` compares no players or ships there.

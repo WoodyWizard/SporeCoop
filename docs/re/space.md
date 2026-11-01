@@ -1978,3 +1978,43 @@ Runtime findings of the wave 3 Space fixes (lane 6, GOG 2024):
   world line "shares saved again (written on a planet) N".
 * Frequency: 1 of 182 Space share saves in the lab history up to 2026-10-31 (a test bot clicked a
   planet in that second); the race is as old as the Space share saves (v0.5.0, commit 3989b34).
+
+## Where the game draws a pinned ship: the UFO controller after the mod's write (2026-11-01, fix/w31-space-gate)
+<a id="space-pinned-ship-drawn"></a>
+
+* ✔ **Frame order** (coop.cpp `on_frame`): the mod runs at Present: `support::tick`, then
+  `g_sess.update()` (every received message, the sync-check's digests among them), then the stage
+  ticks, then `drive_puppet` / `squadron::guest_tick` write the poses. The game's own update runs
+  between two Presents, so anything read in `g_sess.update()` (the sync-check digests) or at the top
+  of `on_frame` (`coop.fleet track`) is the pose the game's update made of our last write: what the
+  frame showed. `coop.sync` (a console command) reads after our write: our own target.
+* ✔ **The controller update** `UFOController_Update` 0x1062CF0 (GOG 2016 = GOG 2024 address, every
+  UFO, puppets and mirrors too): planet context -> `UFOController_Planet` 0x1060E00, else
+  `UFOController_System` 0x105F2E0; then it sets the loco velocity so the ship reaches
+  **`mNextPosition` +0x718 + `mOffsetFromPosition` +0x740** in this frame. So a ship pinned to
+  next = p is drawn at p + its own offset.
+* ✔ `UFOController_System`: in a star (or binary) system at its destination it calls
+  SnapToDestination (0xC37FC0 GOG 2024 / 0xC37FA0 GOG 2016): next = mDestination, mZoomAltitude =
+  |next|, SetPosition(next + offset). The offset is 0 there in the lab (`coop.fleet track`, puppets and
+  mirrors drawn within 0-3 m of the owner's path with or without the pin fix, lab 20261101-094339).
+* ✔ **The galactic core** (the active star is not a star): `UFOController_Core` 0x105E270 (returns
+  while the SPG_CenterOfGalaxy cinematic plays): pulls next to the orbit radius, turns it round z,
+  and lerps the offset to **(0, 0, 30 * min(1, r / 400))** (constants 0x15B9E04 = 30, 0x15B9E0C =
+  400, up axis 0x15B9DB4 = (0, 0, 1)) through `UFO_SetOffsetFromPosition` 0xC38340. A player at
+  r = 275.5 flies at z = 20.7 (trace `pos=(49.6 -271.0 20.7)`, `(-223.2 -161.5 20.7)`). A puppet pinned
+  to that position got the offset once more: drawn 20.7 m (r < 400) to 30 m (r >= 400) above the
+  partner's ship, the `p0 20.7` / `p1 29-31` of the sync-check (84 MISMATCH lines in Space 80820000 in
+  the recorded runs, every space_finale_wait run). BUG-0378.
+* ~ `UFOController_Planet` 0x1060E00: a ship at its destination whose mZoomAltitude differs from
+  |mDestination| by more than a tolerance leaves its destination and flies (0x1060160) at its own
+  zoom altitude. The pin now sets mZoomAltitude = |next| as SnapToDestination does. In the lab the
+  puppets' zoom followed |pos| already (`coop.fleet track` zoom column) and no offset was seen on
+  the planet: the zoom part is a precaution (inferred, not seen to matter).
+* **Fix** (`modes::space_pin`): mNextPosition = mDestination = p - the ship's own offset, mZoomAltitude
+  = their length; switches `space.puppet_pin` (partner puppets, BUG-0378) and `fleet.mirror_pin`
+  (host NPC ships' mirrors, BUG-0190).
+* **Measuring it**: `coop.fleet track on|off|dump [from] [n]` (rows `t kind id x y z ox oy oz zoom` on
+  the session clock: m = own ship, p = puppet, s = NPC ship / mirror; at most ~400 rows per console
+  call, the console answer is cut at ~32 KB); tools/tests/coop_space_drawn.py compares each game's
+  drawn rows with the owner's own rows at the same session time (`now`, lag included) and with its
+  path over the 0.5 s before (`path`, lag taken out).
