@@ -1003,3 +1003,87 @@ method as [the Creature puppets](creature.md#creature-puppet-walk).
   (`own_height`, BUG-0329); the `hd` column of coop.track showed them 0.00 m over the ground while they
   walk (fixture village, flat).
 * ~ Members of NPC tribes (owner 0xFE) are mirrors too and get the same driving; not measured.
+
+## NPC tribes formed during play, and the guests (2026-11-01, fix/w32-tribe-sync)
+<a id="tribe-npc-forming"></a>
+
+* ✔ `Simulator::SpawnNpcTribe` (GOG 2024 0xC932F0): cdecl `cTribe*(const Vector3* pos, int archetype,
+  int members, int food, bool, cSpeciesProfile* species)`, plain ret. A null species takes one from
+  the species manager (0x4DF490). It creates noun 0x18C6D19, sets +0x18CC = species, +0x550 = archetype
+  (when < 0x20), then calls the tribe's vt 0x8C(pos, members, food, bool): the setup that puts the tribe on
+  the ground at pos (terrain height, orientation, the hut) and makes `members` citizens; then the names.
+* ✔ The game forms new NPC tribes during play in `cNpcTribeController` 0xCC6440 (vtable slot at
+  .rdata 0x147689C): when the planet has fewer tribes than its property list allows, it takes the spawn
+  marker (noun 0x36BE27E with +0x108 == 0x57F09E5E) nearest the player tribe, the next species of the
+  controller's list (+0xD0, by the number of tribes) and the archetype of the list, calls SpawnNpcTribe,
+  shows the event log entry (0xD82D8A26 / 0x182CD6CE), plays "TRG_PRE_FirstTribeAppears" for the first
+  one, destroys the marker and the herds near the new village (noun 0x1BE418E within its radius) or hands
+  them to it (0xCD48F0). The other caller, 0xB942A0, makes a tribe of n members with n*10 food and its tools.
+* ✔ (BUG-0381) In co-op this ran on the host only: in 4-player campaign runs (out/lab/20261031-000328
+  campaign#1, 20261031-185843 campaign_tribe#1) the host's tracked citizens went 22 -> 48 within 3 minutes
+  after a cinematic on the host (new tribes) while every guest kept `local_tribes=2` (its own game's tribe
+  objects) for the rest of the stage; in the other run two of three guests lacked the host's new second tribe (the third guest's own game had formed it at the same place). A guest maps the host's tribes
+  to its own by position (40 m) and had no tribe to spawn the host's new members into: sync-check
+  "t: N missing on the guest" (N up to 27), and the players on the guests never saw those tribes. Not
+  known why the guests' controllers never formed them (the trigger is probably the player tribe's
+  progress, which a guest's game does not have: its player tribe holds mirrors).
+* ✔ Fix `tribe.npc_tribes`: the host appends each tribe's species key (from a member, citizen +0xB28)
+  and archetype (+0x550) to its state chunks, after the BUG-0365 clock trailer (tag 0x49425254 "TRBI", a
+  count, 13 bytes per tribe); a guest that has no tribe of its own within 40 m of a host NPC tribe calls
+  SpawnNpcTribe(host position, archetype, 0 members, 0 food, false, the species: the host's own creations
+  through creations::local_species / want_species) and binds the mirrors into it. A tribe made this way
+  is remembered (a 2 m grid of the host position) and reused even if the setup put it farther off.
+* ~ A guest's own controller could still form a tribe later at the same marker (a second local tribe
+  near a mapped one, not mirrored): not seen in the runs.
+
+## Animal proxies under the guest's ground (2026-11-01, fix/w33-proxy-ground)
+<a id="tribe-proxy-ground"></a>
+
+BUG-0399. GOG 2024, lane 7, tribe fixture (Zorispe), the monitor's `proxies` rule and the `npc: proxy N
+... under this game's ground` line (which now also says when and how high over the ground the proxy was made).
+* ✔ Only right after a cold join (the guest's trace lines at s 13-30), in about 1 of 5 cold tribe_coop /
+  chaos_tribe runs (and 3 of 3 runs of feat/w32-monitor-diag): 1-4 proxies 0.75-1.7 m under the guest's
+  ground for 1-30 s. 4 of the 5 named ones were of one herd (species 0680AA69 around (385 -70 318), ~100 m
+  from the guest's tribe); the same herd read 0.00 m (proxy, the host's position here and the host's NPC on
+  its own ground) in a warm game later.
+* ✔ They were made ON the guest's ground (`made 1.8-5.9 s ago at 0.00 m over the ground`: the host's
+  position was on this game's ground there) and were under it 0.8-6 s later, some while `placed on the
+  host's path` (walk_place), some standing (`driven`, drive::step). So not a spawn at the host's height
+  (the ticket's first inference).
+* ✔ Negative results (warm games at 30-60 fps, fix off): a proxy put 1.2 m under its ground without the
+  teleport mark (`coop.npc sink <id> 1.2`, as walk_place places) is back on the ground within 0.25-0.6 s,
+  standing and walking, near the tribe and ~100 m from it, also at 4 fps (`frame.limit 250`); with the mark
+  (`sink <id> 1.2 1`) at once. Host animals walked up and down 3-6 m slopes (`coop.npctrack walk`, 2.5-4 m/s,
+  2 x 40 s) went at most 0.52 m under. The guest making all proxies again (`coop.npc off` / `on`, 4 times)
+  left none under; the terrain radius at the proxies' places did not change after the join (sampled every
+  0.5 s from the join on).
+* ~ Inferred: in the seconds after a join the guest's game does not update its creatures (seen for the
+  partner's puppet, [creature-walk-30fps](creature.md#creature-walk-30fps): 7 s), so nothing grounds them
+  while the guest places them at their own distance from the centre (own_height, BUG-0329) on rising
+  ground; why some stay under for 20-30 s afterwards is not known.
+* Fix `npc.proxy_ground` (driver.h `out_of_ground`, npc.cpp): a Tribe proxy's walk is placed onto this
+  game's ground (`WalkPlace::ground`, the on_own_ground of BUG-0366: 5 cm into it when within 3 m under to
+  0.5 m over), `drive::step(.., ground)` teleports a standing proxy found more than 0.25 m (up to 15 m)
+  under the ground onto it, and a new proxy is made on the ground (a host position under a higher guest
+  ground, BUG-0329; inferred only). It does not need the game's grounding.
+* ~ The member mirrors walk with `own_height` and without `ground` too (tribe-mirror-walk); their `agl` stays
+  -0.01 to 0.00 m on the village's flat ground, so they are left as they are.
+* Diagnostics: `coop.npc list` lines end with `agl=` (host: its NPC over its ground); guest lines carry
+  `agl= want_agl= made_agl= grounded=` (the proxy, the host's position over this game's ground, at its
+  making, and how often drive::step put it out of the ground).
+
+## NPCs apart on the guests: not reproduced after npc.walk_tribe (2026-11-01, fix/w33-proxy-ground)
+<a id="tribe-npc-apart"></a>
+
+BUG-0402. GOG 2024, lane 7.
+* ✔ Every recorded `n apart` (one NPC 8-25 m on every guest for minutes; herds 8.2-10.5 m; 510 m) is from
+  2026-10-30/31 campaign runs, before npc.walk_tribe (BUG-0361). With it: none in campaign_tribe (4 players, live
+  Creature -> Tribe), play_tribe 10 min (co-op epic at s 480, hit by both), tribe_epic and 30+ other Tribe runs of
+  fix/w33-proxy-ground.
+* ✔ A co-op epic on the tribe fixture hit for 1 hp every 12 s (walks and fights at up to 6.5 m/s): its proxy, compared
+  at the proxy's distance from the centre, p50 0.13 / p90 0.99 / max 2.08 m with walk_place, p50 0.51 / p90 0.61 / max
+  2.57 m with the old drive::step (`coop.fix npc.walk_tribe off`). The epic alone does not explain 8-25 m.
+* ~ The sync-check compares absolute positions; a guest's Tribe proxies are at its own ground height (BUG-0329,
+  3.9-5.3 m radial in live campaign worlds), so a running herd's lag plus that radial part can pass the 8 m limit
+  (inferred, no current run showed it). The 510 m case is BUG-0339's NPC at the planet's
+  centre.

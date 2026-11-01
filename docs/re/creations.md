@@ -618,3 +618,53 @@ BUG-0369. GOG 2024 game files and lane 10 (`tools/tests/coop_guest_pack_paints.p
   pass (npc.strays) within a second; the players' NPC (BUG-0370) stayed, so its herd was not one.
 * Since creations.old_species the host keeps the records of the last 24 player creatures applied and
   answers a guest's `kAskSpecies` from them (`old_sent=` in `coop.creations`).
+
+## Collected parts: UnlockPart, LockPart, a count for the trace (2026-11-01, feat/w32-monitor-diag)
+<a id="creations-unlock-part"></a>
+
+GOG 2024, objdump of `SporeApp.exe` (dc04aee5) and lane 6.
+* ✔ `cCollectableItems::UnlockPart` 0x596DA0: thiscall(items, key_lo, key_hi, int cost) ret 0xC. False
+  when `IsUnlocked` 0x595110 says so already; a cost != 0 is taken from `this+0x6D70` (false when that
+  goes negative); then the state map entry (`+0x4D00`, find-or-insert 0x595EB0) gets bits 0-1 set and
+  the key is added to the set at `+0x6D80` (0x594B10); returns true.
+* ✔ `LockPart` 0x596E10: thiscall(items, key_lo, key_hi) ret 8: the same entry's bits 0-1 cleared, the
+  key added to the set at `+0x6D80` (0x5945B0); returns true.
+* The trace's `parts=<count>:<hash>` (own line, Creature) counts the unlockable items (the map at
+  `+0x1490`) that `IsUnlocked` answers true for, with an order-free hash of their keys
+  ([06-testing.md#testing-monitor](../06-testing.md#testing-monitor)). Lane 6, creature fixture: 54
+  of 312 on host and guest (the same hash). `coop.parts unlock <n>` unlocks n locked ones with cost 0
+  in that game only (the plant of the monitor's `unlocks` rule).
+
+## How a player gets a creature part, and the party's shared set (2026-11-01, fix/w33-unlocks)
+<a id="creations-part-pickup"></a>
+
+BUG-0401. GOG 2024, Ghidra (out/ghidra-2024) and lane 6 (`tools/tests/coop_parts_shared.py`).
+
+* ✔ (Ghidra) Every unlock in play goes into the cPlayer's collected parts (`cPlayer+0x10E8`), but **not
+  always through UnlockPart 0x596DA0**. The creature stage's finds and rewards:
+  `CreatureStageEventHandler` 0xD47FC0 (a listener of `cCreatureModeStrategy`, its messages) for
+  0xD335362C (a creature's drop after a hit / kill, any attacker; once per creature: `+0xB58 |= 2`),
+  0x49B56D7 (several rewards at once, posted by 0xD3FCA0) and **0x5371F11 (a part found: msg
+  `{creature, 0, level}`, the creature must be the avatar)** call 0xD47E50 (pick a locked part of the
+  level) -> cCollectableItems 0x5976D0 -> **0x597410**, which sets the state (`|= 3`) and appends the key
+  to the list at `+0x6D80` itself; then 0xD3D4A0 shows the UI (goal card `CRG_FirstPartUnlock`, the
+  part pop-up). 0x61B1320 (0xD3B640) marks a category's items state 4 (seen), not unlocked.
+* ✔ (Ghidra) 0x5371F11 is posted by 0xD46BE0, the reward of an interactable (kind +4: 0 health,
+  2 DNA, 3 / 5 messages, 4 death, 6 a part of level `round(+0x14)`), to every listener of the
+  strategy (`+0xBC..+0xC0`, vt 0x18), as `cCreatureModeStrategy::ExecuteAction` does.
+* ✔ (Ghidra) UnlockPart's callers are loads and set-ups: the start from Cell (0xC7A390 over the
+  creature's blocks, 0xDEB720 / 0xE83910), the editor's own items (0x5BF2E0, a new
+  "Editor/cCollectableItems" for some editors), the Cell game (0xE4FAA0), Space scans (0x1058430),
+  `cStarManager::ReadStarsFromSaveDB`, the outfitter UI (0x5EF4F0).
+* ✔ runtime (lane 6, creature fixture): `cCreatureModeStrategy::ExecuteAction(Get(), 0x5371F11,
+  {avatar, 0, 1})` (`coop.parts find 1`) unlocks one part (54 -> 55), on host and guest alike. The
+  trace's `parts=` hash moves with it.
+* So a part sync cannot hook UnlockPart: parts.cpp polls the unlocked unlockable items (the
+  `parts=` census, 1 Hz in Creature) and sends the difference.
+* The co-op rule (docs/07-modes.md 7.1: shared progress like DNA): the party has one set, the union,
+  held by the host's game. `parts.shared` (BUG-0401): a guest sends the parts the host's set lacks
+  (MSG_PARTS kind 2, resent every 3 s, at most 5 times a key), the host unlocks them (UnlockPart,
+  cost 0) and sends its whole set to every guest (kind 0, at once on a change, else every 10 s;
+  kind 1 the news with the finder, a notice "Bob found a new creature part"), a guest that plays the
+  host's world (same world id) unlocks what it lacks, also after a reload. Nothing is locked. The
+  host's world saved at a join holds the union, so a rejoin keeps the guests' finds.

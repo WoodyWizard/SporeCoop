@@ -243,6 +243,22 @@ static int c_hp(void*, int argc, const char* const* argv, SkOut* out)
         say("attack message sent\n");
         return 0;
     }
+    if (argc > 3 && !strcmp(argv[1], "packhit")) { // host (tests, the monitor's posse_damage): a pack member hits a puppet
+        void* p = C.puppet_of ? C.puppet_of((uint8_t)atoi(argv[2])) : nullptr;
+        void* nm = game::noun_manager();
+        void* member = nullptr;
+        for (void** it = nm ? skg::field<void**>(nm, 0x5C) : nullptr, **e = nm ? skg::field<void**>(nm, 0x60) : nullptr;
+             it && it < e && !member; ++it)
+            if (*it && !IsBadReadPtr(*it, 0x1680) && !game::is_dead(*it))
+                member = *it;
+        if (!p || !member) {
+            say("no puppet or no pack member\n");
+            return 1;
+        }
+        game::hit(p, (float)atof(argv[3]), 0, member); // through the damage filter (npc::damage_filter)
+        say("pack member hit the puppet\n");
+        return 0;
+    }
     say(status());
     return 0;
 }
@@ -259,7 +275,7 @@ void init(const SkHost* host, SkMod* mod, Ctx ctx)
         H->hook_create(M, (void*)a, (void*)h_BaseMaxHp, (void**)&o_BaseMaxHp);
     if (uintptr_t a = H->sym("SporeCoop::cCreatureAnimal_GetMaxHitPoints"))
         H->hook_create(M, (void*)a, (void*)h_GetMaxHp, (void**)&o_GetMaxHp);
-    H->command_add(M, "coop.hp", "coop.hp [pack|attack <player>] - creature health of the own avatar, partners' puppets, the pack (tests)",
+    H->command_add(M, "coop.hp", "coop.hp [pack|attack <player>|packhit <player> <hp>] - creature health of the own avatar, partners' puppets, the pack (tests)",
                    c_hp, nullptr, SK_CMD_MAIN_THREAD);
 }
 

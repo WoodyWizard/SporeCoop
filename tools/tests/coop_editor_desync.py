@@ -20,7 +20,12 @@ part does).
   5. Creature: the host finishes the Cell stage, enters the Creature stage, the first editor (legs)
      through the vote; the guest sees the host's evolved creature, also after a rejoin.
 
-  coop_editor_desync.py [--cell-only]
+  coop_editor_desync.py [--cell-only] [--old-wait]
+
+--old-wait: the waits before BUG-0411 (part 4 pressed the heart 5 s after the guest showed the host's
+new cell, a caption the only thing waited for): the presses fell into the guest's reload of the
+host's world (galaxy menu, the hatch with the game's input lock) and part 4 failed about every
+second run.
 """
 import re
 import sys
@@ -36,6 +41,7 @@ CANCEL = (1383, 1062)  # the editors' red cross
 STAGE_BTN = (1396, 1063)  # the cell HUD button under the portrait: History, then the next stage
 HISTORY_OK = (1415, 1055)
 CAPTION_OK = (1410, 1048)
+OLD_WAIT = '--old-wait' in sys.argv
 
 
 def mode(con):
@@ -61,28 +67,68 @@ def wait(cond, secs, step=1.0):
     return None
 
 
+def hud_ready(con):
+    """the cell HUD takes a click: in the Cell stage, no caption (cine=0) and the game's input lock off
+    (after a load the cell hatches: the lock is on for up to ~10 s and a click on the HUD is lost)"""
+    if 'Cell' not in mode(con) or 'cine=0' not in con.call('coop.pool')['out']:
+        return False
+    m = re.search(r'input_lock=(-?\d+)', con.call('coop.uistate')['out'])
+    return bool(m) and int(m.group(1)) <= 0
+
+
+def wait_reload(con, secs=40):
+    """BUG-0411: the host shares its world again a few seconds after its editor (the save waits until
+    the stage settled), the guest leaves the Cell stage and loads it. Wait for that load to end, so
+    the next step does not run in the galaxy menu or the hatch. True: the guest left and came back."""
+    t0 = time.time()
+    left = False
+    while time.time() - t0 < secs:
+        m = mode(con)
+        if 'Cell' not in m:
+            left = True
+        elif left:
+            return True
+        time.sleep(0.5)
+    return left and 'Cell' in mode(con)
+
+
 def mating_call(con, name, until):
     """press the mating-call button and swim to the mate (clicks at it) until `until()`;
     returns (mate seen alive 3 s after the call, reached)"""
-    # after a load the cell hatches (a cinematic, the HUD is hidden and takes no clicks)
-    wait(lambda: 'cine=0' in con.call('coop.pool')['out'], 30)
     alive = False
+    presses = 0
     for _ in range(3):  # a click right as the HUD comes back can be lost: a player clicks again
+        if OLD_WAIT:  # before BUG-0411: a caption only (the hatch and a load were not waited for)
+            wait(lambda: 'cine=0' in con.call('coop.pool')['out'], 30)
+        else:
+            wait(lambda: hud_ready(con), 40)
         con.call('coop.pool mate button')
         time.sleep(1)
         con.call('click %d %d' % HEART)
+        presses += 1
         time.sleep(3)
         alive = 'alive=1' in mate(con)
         if alive:
             break
-    print(f'  {name} mate 3 s after the call: {mate(con)}')
+    print(f'  {name} mate 3 s after the call: {mate(con)} ({presses} presses)')
+    gone = 0
     for _ in range(25):
         if until():
             return alive, True
         m = re.search(r'alive=1 .* at (-?\d+) (-?\d+)', mate(con))
         if not m:
+            gone += 1
+            # the mate went with a reload of the world (or never came): a player calls again
+            if not OLD_WAIT and gone >= 3 and presses < 6 and hud_ready(con):
+                con.call('coop.pool mate button')
+                con.call('click %d %d' % HEART)
+                presses += 1
+                gone = 0
+                time.sleep(2)
+                print(f'  {name} called its mate again: {mate(con)}')
             time.sleep(1)
             continue
+        gone = 0
         x, y = (min(max(int(v), 20), lim) for v, lim in ((m.group(1), 1420), (m.group(2), 1000)))
         con.call(f'click {x} {y}')
         time.sleep(2)
@@ -181,8 +227,11 @@ def main():
     print('  host:', host.call('coop.creations')['out'].splitlines()[0])
     shot(guest, 'editor_desync_cell_guest.png')
 
-    # 4. the guest can still call its mate
-    time.sleep(5)
+    # 4. the guest can still call its mate (after the world the host shares after its editor loaded)
+    if OLD_WAIT:
+        time.sleep(5)
+    else:
+        print(f'  guest loaded the host\'s world after its evolution: {wait_reload(guest)} ({mode(guest)})')
     alive, reached = mating_call(guest, 'guest', in_editor)
     ck(reached, "after the host's evolution the guest's own editor still opens")
     if reached:

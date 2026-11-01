@@ -30,9 +30,25 @@ a moment between two reads is no violation):
   stage_apart   a guest whose own stage / world differs from the host's for 90 s while both play a stage
                 (not while the host's line says its world share waits: share_wait=planet / cinematic)
 
-Hooks for invariants that need new mod diagnostics (inactive until the mod writes the field; the
-exact output each needs is in NEEDS and docs/06-testing.md#testing-monitor): drawn, ground,
-puppet_hp, posse_damage, unlocks.
+Invariants over the mod's monitor fields (active once a log has the field, so older logs replay as
+before; the fields are described in FIELDS and docs/06-testing.md#testing-monitor):
+
+  drawn         a partner's puppet as this game drew it (partner line `drawn=`, read back from the game at
+                the start of the frame) within DRAWN_BASE[stage] + its speed x (lag + rtt) of that partner's
+                own `pos=` on its line of the same moment (trace lines come at the session clock's 10 s
+                marks), on 2 lines in a row
+  ground        `agl=` (height over this game's terrain) of the own avatar, a puppet, the Tribe members
+                (lowest; `agl_hi=` the highest): under -0.5 m on 2 lines in a row; a Creature puppet over
+                3 m while its player's own creature is on its ground (own agl under 1 m: not jumping,
+                on a rock, swimming), Tribe members over 3 m, each on 2 lines in a row
+  puppet_hp     the puppet's own health (partner line `puppet_hp=`) equals its player's own hp / max hp on
+                its line of the same moment (within 1 hp or 10 %), on 2 lines in a row
+  posse_damage  `damage: <victim> hit by <kind> ... posse=1 amount=<hp>` with hp > 0: the hit player's own
+                party (pack, family) hurt it (BUG-0374 class), at once
+  unlocks       a guest's `parts=<count>` in Creature under the count the host had on its lines 70 s and
+                60 s before, in the same world, on 2 lines in a row (BUG-0368 class)
+  proxies       a guest's NPC proxies (own line `proxy_under=` / `proxy_stuck=`: under the ground for
+                1 s, over 3 m off the host's NPC for 2 s) on 2 lines in a row
 
   monitor.py replay <run dir | game log ...>   the trace invariants over recorded logs
   monitor.py report [out/lab dirs]             the same over every recorded result (calibration)
@@ -59,35 +75,43 @@ LINK = re.compile(r'resends=(\d+)/(\d+) silent=(\d+) ms pending=(\d+)')
 POOL = re.compile(r'cell pool (\d+)/(\d+)')
 SHARE = re.compile(r'world: (sharing) .* with player (\d+)$|world: (?:transfer) to (\d+) queued completely|'
                    r'session: player (\d+) \'.*\' (left)')
+DRAWN = re.compile(r' drawn=\(([-\d.e+naif]+) ([-\d.e+naif]+) ([-\d.e+naif]+)\) drawn_v=([-\d.naif]+)')
+AGL = re.compile(r' agl=(-?[\d.naif]+)(?: agl_hi=(-?[\d.naif]+))?')
+PUPPET_HP = re.compile(r' puppet_hp=(-?[\d.naif]+)/(-?[\d.naif]+)')
+PARTS = re.compile(r' parts=(\d+):([0-9A-Fa-f]{8})')
+PROXIES = re.compile(r' proxy_under=(\d+) proxy_stuck=(\d+)')
+DAMAGE = re.compile(r'coop: damage: (\d+) hit by (\S+) owner=(\S+) posse=([01?]) amount=(-?[\d.]+)(.*)$')
 KV = re.compile(r'(\w+)=(-?[\d.]+)(\(unsynced\))?')
 STAGES = ('Cell', 'Creature', 'Tribe', 'Civilization', 'Space')
 PF_IN_WORLD, PF_DEAD = 1, 16
 
 DEFAULTS = dict(together_s=20.0, apart_s=90.0, link_ratio=0.5, link_min_sent=50, link_pending=400, link_age=5.0,
                 link_lines=3, tot_abs=1.0, tot_rel=0.02, tot_n=3, tot_span=20.0, tot_dt=6.0, hp_n=2, hp_abs=1.0,
-                pool_frac=0.9, census_growth=3.0, census_extra=200, period=5.0, census_period=30.0)
+                pool_frac=0.9, census_growth=3.0, census_extra=200, period=5.0, census_period=30.0,
+                drawn_dt=1.0, drawn_lag=0.3, drawn_n=2, agl_under=-0.5, agl_over=3.0, agl_ground=1.0, agl_n=2,
+                php_n=2, unlock_s=60.0, unlock_span=10.0, unlock_n=2, proxy_n=2)
 OBJECT_LIMITS = {'c': 4000, 'v': 800}
-# what each hook invariant needs from the mod (a field appended at the END of the trace lines, after
-# `pending=` / `editor_pending=`, so the parsers of today keep working, or a log line of its own)
-NEEDS = {
-    'drawn': "partner line: `drawn=(x y z)` = the puppet's position as the game draws it (the creature / "
-             "vehicle object's own position read back from the game, not the mod's interpolation target); the monitor compares it with the partner's own `pos=` at the same session time (limit 3 m in "
-             "Creature / Tribe, 6 m Civ, 12 m Space). coop.track (BUG-0360) already has the drawn position per "
-             "frame, but for Creature puppets only and timed from the track's start on the local clock: rows with "
-             "the session clock would let the monitor compare them with the partner's own rows (and check per-frame "
-             "jumps, audit M2)",
-    'ground': "own and partner lines: `agl=<m>` = height of the avatar / puppet above the terrain under it "
-              "(terrain height query at its x/z); violation below -0.5 m or above 3 m while not jumping, flying, "
-              "swimming or in Space for 2 lines",
-    'puppet_hp': "partner line: `puppet_hp=<hp>/<max>` read from the puppet creature object itself (what the "
-                 "player sees on the health bar); equal to the partner's own `hp=` (BUG of the audit: "
-                 "modes.cpp pins puppet health to its max)",
-    'posse_damage': "log line on the hit player's game: `damage: <player id> hit by <attacker kind> owner=<host|"
-                    "guest id|npc> posse=<0|1> amount=<hp>`; violation: amount > 0 from an attacker of a player's "
-                    "posse / pack / ally (npc.cpp MSG_DAMAGE forwarding)",
-    'unlocks': "own trace line: `parts=<count>:<hash>` of the unlocked creature parts; violation: a guest's count "
-               "below the host's 60 s after a part was unlocked in a shared world",
+# the drawn invariant's distance per stage (m) before the speed slack (calibration: docs/06-testing.md#testing-monitor)
+DRAWN_BASE = {'Cell': 3.0, 'Creature': 3.0, 'Tribe': 3.0, 'Civilization': 6.0, 'Space': 12.0}
+# the mod's output each monitor-field invariant reads (at the END of the trace lines, after `pending=` /
+# `share_wait=`, before `version=`; or a log line of its own). The invariant is active once a log has it.
+FIELDS = {
+    'drawn': "partner line: `drawn=(x y z) drawn_v=<m/s>` = the puppet (Tribe / Civ: the pointer marker) read back "
+             "from the game at the start of the frame that writes the line (before any driving), and the "
+             "partner's speed as seen here; trace lines are written at the session clock's 10 s marks",
+    'ground': "own and partner lines in Creature / Tribe: `agl=<m>` = height over this game's terrain "
+              "(cPlanetModel::GetHeightAt) of the avatar / puppet as drawn; Tribe: `agl=<lowest> agl_hi=<highest>` "
+              "of the player's tribe members",
+    'puppet_hp': "partner line in Creature: `puppet_hp=<hp>/<max>` read from the puppet creature itself (BUG-0373)",
+    'posse_damage': "log line `damage: <victim id> hit by <kind> owner=<host|guest id|npc|-> posse=<0|1|?> "
+                    "amount=<hp>[ forwarded| dropped (npc.party_peace)| from the host]` where a hit on a player is "
+                    "applied, forwarded or dropped (npc.cpp)",
+    'unlocks': "own line in Creature: `parts=<count>:<hash>` of the unlocked creature parts (cCollectableItems "
+               "cPlayer+0x10E8)",
+    'proxies': "own line of a guest in Creature / Tribe: `proxy_under=<n> proxy_stuck=<n>` = NPC proxies under the "
+               "ground for 1 s / over 3 m off the host's NPC for 2 s since the last line (sampled 4x a second)",
 }
+NEEDS = FIELDS  # (the name of the hooks' time)
 
 
 def num(x):
@@ -107,29 +131,64 @@ def parse_line(who, line):
         if o:
             extra = o.group(16)
             res = {k: float(v) for k, v, uns in KV.findall(extra) if not uns}
-            return dict(kind='own', who=who, t=t, role=o.group(1), id=int(o.group(2)), players=int(o.group(3)),
-                        stage=o.group(4), world=o.group(5), avatar=o.group(7) == 'yes',
-                        pos=(num(o.group(8)), num(o.group(9)), num(o.group(10))), hp=num(o.group(11)),
-                        maxhp=num(o.group(12)), flags=int(o.group(14), 16), dna=float(o.group(15)), res=res,
-                        away=o.group(17) == '1', vote=o.group(18) != 'off', rest=o.group(19))
+            r = dict(kind='own', who=who, t=t, role=o.group(1), id=int(o.group(2)), players=int(o.group(3)),
+                     stage=o.group(4), world=o.group(5), avatar=o.group(7) == 'yes',
+                     pos=(num(o.group(8)), num(o.group(9)), num(o.group(10))), hp=num(o.group(11)),
+                     maxhp=num(o.group(12)), flags=int(o.group(14), 16), dna=float(o.group(15)), res=res,
+                     away=o.group(17) == '1', vote=o.group(18) != 'off', rest=o.group(19))
+            return monitor_fields(r)
         p = PARTNER.search(line)
         if p:
             lk = LINK.search(p.group(14))
-            return dict(kind='partner', who=who, t=t, pid=int(p.group(1)), name=p.group(2), stage=p.group(3),
-                        world=p.group(4), same=p.group(6) == '1', puppet=p.group(7), hp=num(p.group(8)),
-                        maxhp=num(p.group(9)), flags=int(p.group(11), 16), age=float(p.group(12)),
-                        rtt=int(p.group(13)), rest=p.group(14),
-                        link=tuple(int(lk.group(i)) for i in range(1, 5)) if lk else None)
+            r = dict(kind='partner', who=who, t=t, pid=int(p.group(1)), name=p.group(2), stage=p.group(3),
+                     world=p.group(4), same=p.group(6) == '1', puppet=p.group(7), hp=num(p.group(8)),
+                     maxhp=num(p.group(9)), flags=int(p.group(11), 16), age=float(p.group(12)),
+                     rtt=int(p.group(13)), rest=p.group(14),
+                     link=tuple(int(lk.group(i)) for i in range(1, 5)) if lk else None)
+            return monitor_fields(r)
     m = SHARE.search(line)  # a world transfer to a partner (its reliable chunks fill the link, see Link)
     if m:
         return dict(kind='share', who=who, t=t, pid=int(m.group(2) or m.group(3) or m.group(4)),
                     what='start' if m.group(1) == 'sharing' else 'end')
-    if 'coop: damage: ' in line:  # a hook's own log line (NEEDS['posse_damage'])
-        return dict(kind='hookline', who=who, t=t, rest=line)
+    if 'coop: damage: ' in line:  # FIELDS['posse_damage']
+        m = DAMAGE.search(line)
+        r = dict(kind='hookline', who=who, t=t, rest=line)
+        if m:
+            r.update(victim=int(m.group(1)), by=m.group(2), owner=m.group(3), posse=m.group(4),
+                     amount=float(m.group(5)), how=m.group(6).strip())
+        return r
     m = POOL.search(line)
     if m and 'tiles:' in line:
         return dict(kind='pool', who=who, t=t, n=int(m.group(1)), size=int(m.group(2)))
     return None
+
+
+def monitor_fields(r):
+    """the monitor fields (FIELDS) at the end of an own / partner record"""
+    rest = r['rest']
+    m = DRAWN.search(rest)
+    if m:
+        r['drawn'] = (num(m.group(1)), num(m.group(2)), num(m.group(3)))
+        r['drawn_v'] = num(m.group(4))
+    m = AGL.search(rest)
+    if m:
+        r['agl'] = num(m.group(1))
+        if m.group(2) is not None:
+            r['agl_hi'] = num(m.group(2))
+    m = PUPPET_HP.search(rest)
+    if m:
+        r['puppet_hp'] = (num(m.group(1)), num(m.group(2)))
+    m = PARTS.search(rest)
+    if m:
+        r['parts'] = (int(m.group(1)), m.group(2).upper())
+    m = PROXIES.search(rest)
+    if m:
+        r['proxies'] = (int(m.group(1)), int(m.group(2)))
+    return r
+
+
+def dist(a, b):
+    return sum((x - y) ** 2 for x, y in zip(a, b)) ** 0.5
 
 
 # ---------------------------------------------------------------- the invariants
@@ -445,19 +504,177 @@ class StageApart(Invariant):
 
 
 class Hook(Invariant):
-    """an invariant that needs a mod diagnostic not written yet: active once a trace line has the field"""
+    """an invariant over a monitor field of the mod (FIELDS): active once a record has the field"""
     field = None
 
     def available(self, tl):
-        return any(self.field in r.get('rest', '') for r in tl.records[-200:] if r['kind'] in ('own', 'partner', 'hookline'))
+        return any(self.field in r.get('rest', '') for r in tl.records if r['kind'] in ('own', 'partner', 'hookline'))
+
+    @staticmethod
+    def runs(lst, bad, n, key):
+        """[(first, last)] of the runs of n records in a row for which bad(r) is true (once per run)"""
+        out, run = [], []
+        for r in lst:
+            if bad(r):
+                run.append(r)
+                if len(run) == n:
+                    out.append((run[0], run[-1]))
+            else:
+                run = []
+        return out
+
+    def same_moment(self, tl, p):
+        """the own record of partner record p's subject at the same moment (the 10 s marks), None"""
+        subj = tl.who_at(p['pid'], p['t'], viewer=p['who'])  # ids are reused after leaves
+        if subj is None or p['t'] is None:
+            return None, None
+        return subj, tl.own_at(subj, p['t'], self.c['drawn_dt'])
 
 
-def hook(name, field):
-    return type(f'Hook_{name}', (Hook,), dict(name=name, field=field, needs=NEEDS[name]))
+class Drawn(Hook):
+    name, field, needs = 'drawn', 'drawn=', FIELDS['drawn']
+
+    def check(self, tl):
+        out = []
+        for (viewer, pid), lst in tl.partner.items():
+            def bad(p):
+                if 'drawn' not in p or not p['same'] or p['puppet'] != 'shown' or p['flags'] & PF_DEAD:
+                    return False
+                subj, o = self.same_moment(tl, p)
+                v = tl.own_at(viewer, p['t'], self.c['drawn_dt'])
+                if not o or not v or not playing(o) or not playing(v) or o['stage'] != p['stage'] or \
+                        (o['stage'], o['world']) != (v['stage'], v['world']):
+                    return False
+                # Tribe / Civ: the pointer jumps with the mouse (tests pin it: tens of m at once), its copy
+                # trails while it moves (sync-check finding BUG-0380): judged only at rest
+                if p['stage'] in ('Tribe', 'Civilization') and p['drawn_v'] > 0.5:
+                    return False
+                lim = DRAWN_BASE.get(p['stage'], 6.0) + p['drawn_v'] * (self.c['drawn_lag'] + max(p['rtt'], 0) / 1000.0
+                                                                       + abs(o['t'] - p['t']))
+                d = dist(p['drawn'], o['pos'])
+                p['_drawn'] = (d, lim, subj)
+                return d > lim
+            for a, b in self.runs(lst, bad, self.c['drawn_n'], None):
+                d, lim, subj = b['_drawn']
+                out.append((viewer, f'{viewer} draws {subj} {d:.1f} m from where {subj}\'s own game has it (limit '
+                                    f'{lim:.1f} m, {b["stage"]}) on {self.c["drawn_n"]} lines from s {a["t"]:.0f}',
+                            (viewer, pid, a['t'])))
+        return out
 
 
-HOOKS = [hook('drawn', 'drawn='), hook('ground', 'agl='), hook('puppet_hp', 'puppet_hp='),
-         hook('posse_damage', 'damage: '), hook('unlocks', 'parts=')]
+class Ground(Hook):
+    name, field, needs = 'ground', 'agl=', FIELDS['ground']
+
+    def check(self, tl):
+        c, out = self.c, []
+        n = c['agl_n']
+        series = [(who, None, lst) for who, lst in tl.own.items()] + \
+            [(viewer, pid, lst) for (viewer, pid), lst in tl.partner.items()]
+        for who, pid, lst in series:
+            what = 'its own creature' if pid is None else f'partner {pid}\'s puppet'
+
+            def ok(r):
+                return 'agl' in r and r['stage'] in ('Creature', 'Tribe') and (
+                    playing(r) if pid is None else (r['same'] and r['puppet'] == 'shown' and not r['flags'] & PF_DEAD))
+            for a, b in self.runs(lst, lambda r: ok(r) and r['agl'] < c['agl_under'], n, None):
+                out.append((who, f'{who}: {what if b["stage"] == "Creature" else ("the tribe members of " + (who if pid is None else f"partner {pid}"))} '
+                                 f'{-b["agl"]:.2f} m under the ground ({b["stage"]}) on {n} lines from s {a["t"]:.0f}',
+                            (who, pid, 'under', a['t'])))
+
+            def over(r):
+                if not ok(r):
+                    return False
+                if r['stage'] == 'Tribe':
+                    return r.get('agl_hi', r['agl']) > c['agl_over']
+                if pid is None:  # a creature on a rock reads 1-16 m (GetHeightAt is the terrain only)
+                    return False
+                _, o = self.same_moment(tl, r)
+                return r['agl'] > c['agl_over'] and o is not None and 'agl' in o and o['agl'] < c['agl_ground']
+            for a, b in self.runs(lst, over, n, None):
+                out.append((who, f'{who}: {"the tribe members" if b["stage"] == "Tribe" else what} '
+                                 f'{b.get("agl_hi", b["agl"]):.2f} m over the ground ({b["stage"]}) on {n} lines from s '
+                                 f'{a["t"]:.0f}', (who, pid, 'over', a['t'])))
+        return out
+
+
+class PuppetHp(Hook):
+    name, field, needs = 'puppet_hp', 'puppet_hp=', FIELDS['puppet_hp']
+
+    def check(self, tl):
+        out = []
+        for (viewer, pid), lst in tl.partner.items():
+            def bad(p):
+                if 'puppet_hp' not in p or not p['same'] or p['flags'] & PF_DEAD:
+                    return False
+                # the same moment (the 10 s marks): the puppet's health is ~0.15 s behind, no steady window needed
+                subj, o = self.same_moment(tl, p)
+                if not o or not playing(o) or o['maxhp'] <= 0 or abs(o['t'] - p['t']) > 0.5:
+                    return False
+                hp, mx = p['puppet_hp']
+                p['_php'] = (subj, o)
+                return abs(o['maxhp'] - mx) > 0.5 or abs(o['hp'] - hp) > max(self.c['hp_abs'], o['maxhp'] * 0.1)
+            for a, b in self.runs(lst, bad, self.c['php_n'], None):
+                subj, o = b['_php']
+                out.append((viewer, f'{viewer} shows {subj}\'s creature at {b["puppet_hp"][0]:.0f}/{b["puppet_hp"][1]:.0f}, '
+                                    f'{subj}\'s own game {o["hp"]:.0f}/{o["maxhp"]:.0f} (s {b["t"]:.0f})',
+                            (viewer, pid, a['t'])))
+        return out
+
+
+class PosseDamage(Hook):
+    name, field, needs = 'posse_damage', 'damage: ', FIELDS['posse_damage']
+
+    def check(self, tl):
+        return [(r['who'], f'{r["who"]}: player {r["victim"]} hit by its own party ({r["by"]}, posse=1) for '
+                           f'{r["amount"]:.1f} hp {r["how"]} (s {r["t"]})', (r['who'], r['t'], r['victim']))
+                for r in tl.records if r['kind'] == 'hookline' and r.get('posse') == '1' and r.get('amount', 0) > 0]
+
+
+class Unlocks(Hook):
+    name, field, needs = 'unlocks', 'parts=', FIELDS['unlocks']
+
+    def check(self, tl):
+        c, out = self.c, []
+        host = next((w for w, i in tl.ids.items() if i == 0), None)
+        if host is None:
+            return out
+        for who, lst in tl.own.items():
+            if who == host:
+                continue
+
+            def bad(g):
+                if 'parts' not in g or g['stage'] != 'Creature' or not playing(g) or g['t'] is None:
+                    return False
+                # the host's lines from unlock_s + unlock_span to unlock_s before (2 lines at the 10 s marks)
+                t1 = g['t'] - c['unlock_s'] - c['unlock_span'] / 2
+                hs = own_window(tl, host, t1, c['unlock_span'] / 2 + 5)
+                hs = [h for h in hs if 'parts' in h and h['stage'] == 'Creature' and h['world'] == g['world']]
+                if len(hs) < 2:
+                    return False
+                need = min(h['parts'][0] for h in hs)
+                g['_need'] = need
+                return g['parts'][0] < need
+            for a, b in self.runs(lst, bad, c['unlock_n'], None):
+                out.append((who, f'{who} has {b["parts"][0]} unlocked creature parts, the host had {b["_need"]} '
+                                 f'{c["unlock_s"]:.0f} s before (s {a["t"]:.0f})', (who, a['t'])))
+        return out
+
+
+class Proxies(Hook):
+    name, field, needs = 'proxies', 'proxy_under=', FIELDS['proxies']
+
+    def check(self, tl):
+        out = []
+        n = self.c['proxy_n']
+        for who, lst in tl.own.items():
+            for k, what in ((0, 'under the ground'), (1, 'over 3 m off the host\'s NPC')):
+                for a, b in self.runs(lst, lambda r: 'proxies' in r and r['proxies'][k] > 0, n, None):
+                    out.append((who, f'{who}: {b["proxies"][k]} NPC proxies {what} ({b["stage"]}) on {n} lines from '
+                                     f's {a["t"]:.0f}', (who, k, a['t'])))
+        return out
+
+
+HOOKS = [Drawn, Ground, PuppetHp, PosseDamage, Unlocks, Proxies]
 INVARIANTS = [Together, Puppet, Link, Totals, Hp, Objects, StageApart]
 
 

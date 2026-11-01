@@ -44,7 +44,7 @@ void set_stall_fix(bool on);                  // tests: off = no teleport of a p
 void set_known_fix(bool on);                  // tests: off = only host_tick forgets them (BUG-0125)
 bool is_proxy(void* creature);
 // TakeDamage filter shared with coop.cpp; returns true to let the game apply damage
-bool debug_host_hit(uint16_t id, float damage); // host avatar hits host NPC #id
+bool debug_host_hit(uint16_t id, float damage, float push = 0); // host avatar hits host NPC #id (push: thrown, tests)
 bool debug_recruit(uint16_t id);
 void* debug_spawn(uint32_t instance);           // host: an NPC of that crt species next to the avatar                 // host: NPC #id joins the pack (cPosseSimulator AddMember)
 void* debug_spawn_epic(uint8_t player, float dist, uint32_t archetype, uint32_t species = 0); // host (tests): an epic near a player's creature
@@ -52,6 +52,12 @@ void* proxy(uint16_t id);                       // guest: local creature mirrori
 bool damage_filter(void* creature, float& damage, int type, void* attacker);
 std::string status();
 std::string trace_line(const net::Vec3& me, float radius); // support trace: NPCs near `me`
+// the invariant monitor (docs/06-testing.md#testing-monitor), guest: the proxies as drawn, sampled at the
+// start of the mod's frame (4 times a second); fields " proxy_under=<n> proxy_stuck=<n>" for the own
+// trace line: proxies under this game's ground for 1 s / over 3 m off the host's NPC for 2 s since the
+// last line ("" on the host and outside Creature / Tribe)
+void monitor_tick(double now);
+std::string monitor_fields();
 std::vector<syncdbg::Entry> sync_entries(); // coop.sync (tests)
 std::string list();                                  // debug: mirrored NPCs
 std::string creatures(bool untuned_only, uint32_t species); // debug: creatures (+0xE84 = archetype tuning)
@@ -71,10 +77,12 @@ bool debug_hit(uint16_t id, float damage);           // guest: avatar hits proxy
 bool debug_hurt(uint8_t player, uint16_t id, float damage); // host: NPC `id` hits player's puppet
 void* host_npc(uint16_t id);     // host: NPC #id if it is alive this frame
 std::string debug_pool(uint16_t id); // host (tests, BUG-0339): NPC #id to the game's creature pool
+std::string debug_sink(uint16_t id, float m, bool mark = false); // guest (tests, BUG-0399): the proxy m under this game's ground once
 std::string debug_pwalk(uint16_t id, const net::Vec3& p, float speed, float secs, int mode = 0); // guest (tests, BUG-0281)
 std::string debug_dash(uint16_t id, float len, float speed, float secs, float width, uint16_t mate = 0, float off = 0); // host (tests, BUG-0305): NPC #id dashes back and forth
 int host_id(void* creature);     // host: net id of an NPC, -1
 int proxy_id(void* creature);    // guest: net id of a proxy, -1
+bool test_hit_now();             // guest: a test's hit (coop.npc hit) is being applied (BUG-0021 social.no_bite)
 int proxy_id_of_ai(void* ai);    // guest: the proxy whose AI block (+0xB4C) this is, -1
 void set_enabled(bool on);
 bool enabled();

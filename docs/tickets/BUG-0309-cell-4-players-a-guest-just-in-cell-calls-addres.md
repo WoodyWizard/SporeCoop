@@ -1,7 +1,7 @@
 ---
 id: BUG-0309
 title: Cell, 4 players: a guest just in Cell calls address 0 from UI code right after its test window is placed, then its main thread stops (no log, no frames)
-status: open
+status: duplicate
 kind: freeze
 stage: Cell
 reported: 2026-10-30
@@ -14,7 +14,7 @@ commits:
 tests: campaign
 signature:
 docs:
-related: 
+related: BUG-0398
 ---
 
 ## Report
@@ -46,3 +46,9 @@ Not reproduced on purpose yet.
   0x4234E8 the return after `call 0x41CB30`; neither calls through a pointer, so they are stale
   frames, not the caller of address 0. In the lab history 5683 "test window placed in the grid" lines
   are followed by no fault except this one. Nothing more to go on without a dump.
+- 2026-11-01 (fix/w33-null-call): same cause as BUG-0398 (inferred): eax = 0 and esi = 0x78 (VK_F9,
+  which coop_ui.cpp polls every frame through GetAsyncKeyState) are the registers of SporeKit's
+  h_GetAsyncKeyState calling its still-null original while an injected input of the campaign bot
+  hooked GetAsyncKeyState (whether a devkit input came at that moment is not checked); the stale "calls" tail `004234E8 0041DDF4 00537FF0` is the one of the
+  BUG-0398 puppet_slope fault, whose stack words show the detour's frame. Fixed there
+  (`kit.fix hookorig`).

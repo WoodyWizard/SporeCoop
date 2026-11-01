@@ -3,6 +3,24 @@
 ## [Unreleased]
 
 ### Fixed
+- Tests: `editor_desync` failed about every second run in the Cell part after the host's evolution:
+  the guest's mating call was pressed while the guest was still reloading the host's world or its
+  cell was hatching (the game takes no click then). The test now waits like a player; not a bug of
+  the mod (BUG-0411).
+- SporeKit: a hook made while the game runs could let a game thread call address 0 (a handled
+  fault, once followed by a frozen game): the hook's original function is now set before the hook is
+  switched on. Seen in test games when the first simulated input was sent (BUG-0398).
+- Creature: the creature parts a player finds (in a skeleton, from a creature, as a reward) are now the
+  whole party's, like DNA: a part the host finds is in every guest's editor too, a part a guest finds
+  is unlocked for the host and the others ("Bob found a new creature part"), and a guest keeps them
+  after a rejoin. Before, each player's game kept its own, and a guest lost its finds at the next
+  world load (BUG-0401). Both players need this version.
+- Tests: the `team` test could leave the guest's creature 0.94 m under the ground (its move next to
+  the host cut through the planet's curve); the test command now puts it onto the ground (BUG-0400).
+- Tribe: right after joining, some of the host's animals could stand up to 1.7 m inside the ground on the
+  other players' screens for up to half a minute; they are always shown on the ground now (BUG-0399).
+- Creature: the host's animals walking downhill no longer keep hopping on the other players' screens
+  (a short fall every few seconds) (BUG-0406).
 - Creature and Tribe: animals of the host now walk and run on the other players' screens with their
   walk animation, on the host's path: in the Creature stage a moving animal slid over the ground in
   its standing pose, in the Tribe stage animals moved in small steps and jumps (BUG-0361).
@@ -19,6 +37,12 @@
 - Creature: the eggs at other species' nests are the same on every game: a guest now sees the eggs the
   host's nests lay (where the host has them, on the ground), and an egg eaten by either player is gone
   for both. Before, a guest saw none of them (BUG-0384).
+- Tribe: the NPC tribes that form during play (the "a new tribe has appeared" event) were there only for
+  the host: guests never saw them or their members. A guest now gets each of them where the host has it,
+  of the same species, with its members (BUG-0381).
+- Tests: the `creature` test's guest hit could land on a member of the host's family or pack, a hit the
+  host drops on purpose since BUG-0374 ("hits applied 0 -> 0"); it now hits an NPC outside both (BUG-0390).
+- Tests: play_tribe compared the chiefs' line of both games with the host's own counters in it (BUG-0397).
 - Creature: a creature of a partner's earlier creature (before its editor) could be missing on the
   guest until the next world share: the host could not send its species any more (BUG-0370).
 - Tests: npc_far / npc_pooled walked the host into the sea, where the game's deep water cinematic held

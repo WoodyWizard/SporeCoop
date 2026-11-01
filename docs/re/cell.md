@@ -1354,3 +1354,22 @@ BUG-0355. GOG 2024, Ghidra and `tools/tests/coop_cell_spare.py` (suite `cell_spa
   out too. `coop.pool` counts them as `ko_eats_blocked=`. A partner's cell and the NPCs eat as before.
 * ~ inferred, not seen: the knocked-out cell's own soft body still collides and pushes; only eating
   is stopped.
+
+## The mating-call button and the hatch after a load (2026-11-01, fix/w34-cell-mate)
+<a id="cell-mate-button"></a>
+
+* ✔ (Ghidra GOG 2024, BUG-0411) Two callers reach the mating call 0xE760F0
+  (docs/re/cell.md, section 12): the HUD's message handler **0xE78E70** (registered in data at
+  0x01485338; window message id `+8 == 0x287259F6`, command `+0xC == 0x44837C0`) calls it with no
+  condition, and **0xE76320** (from 0xE7F630, probably the key binding) only when
+  `*(DAT_016B3C0C + 0x936) == 0`, `G+0x51CC <= 0` and `S+0x69 != 0`. 0xE760F0 creates the mate only
+  when `G+0x51D4` holds no live cell; `G+0x51D4 == 0` (`coop.pool mate` prints `mate=00000000`) means
+  the call never ran in this Cell game (a load starts a new one with 0).
+* ✔ runtime (lane 6, 2026-11-01): a Cell world loaded from the galaxy menu often starts with the
+  cell's hatch, the game's input lock on (`cGameInputManager +0x110`, `coop.uistate input_lock=1`)
+  and a cinematic playing (`coop.pool cine=1`) for about 5-10 s; a click on the heart button then
+  does nothing (no mate, `G+0x51D4` stays 0) and the press is not queued. Some loads show no hatch
+  at all (input_lock=0 at once): which ones is not known.
+* ✔ runtime: after the host's cell editor the host shares its world again (saved 3 s after the
+  stage settled); the guest leaves the Cell stage about 4-5 s after it got the host's new cell
+  record and is back in Cell another ~5 s later. A mate the guest called before that load is gone.

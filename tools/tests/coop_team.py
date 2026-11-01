@@ -127,6 +127,12 @@ def main():
         if close:
             break
     ck(close, f'the guest stands next to the host for the regen check ({players_apart(host, guest)} m)')
+    # BUG-0400: the move to host x + 1.5 m is a chord of the planet (0.5 m nearer its centre here): the
+    # guest's creature stood 0.94 m under the terrain for good (the game does not lift a grounded
+    # creature placed under it); gopos now puts it onto the ground
+    m = re.search(r'above=([-\d.]+)', guest.call('coop.avatar')['out'])
+    above = float(m.group(1)) if m else None
+    ck(above is not None and above > -0.3, f"the guest's creature stands on the ground after the move ({above} m)")
     hr0, mx0 = hp(guest)
     guest.call(f'coop.team hp {(mx0 or 10) * 0.6:.1f}')
     time.sleep(0.5)

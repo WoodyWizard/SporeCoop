@@ -1019,6 +1019,9 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   20261030-104149 campaign_short#3. Ticket: BUG-0308.
 * A guest 6 s into Cell jumped to address 0 in UI code right after its test window was moved and its
   main thread stopped, lab 20261030-104149 campaign#1. Ticket: BUG-0309.
+  CORRECTION (2026-11-01, fix/w33-null-call): not UI code; SporeKit's GetAsyncKeyState detour
+  called its still-null original while the input hooks were being made (inferred from the registers;
+  BUG-0398, fixed by `kit.fix hookorig`; esi = 0x78 = VK_F9, polled by coop every frame).
 * Both seen once, on an overloaded machine. Reproduce: not yet.
 
 ## GOG 2024 guest: the game time stays paused for seconds after its world load (2026-10-30, fix/w13-net)
@@ -1465,3 +1468,86 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Seen: sync_burst / sync_fps15burst, `civ/vehicles` p90 4.3-7.3 m (limit 3 m), one vehicle sampled.
 * Reproduce: `SPORE_LANE=N SPORE_NET=burst python3 tools/tests/coop_sync.py`.
 * Ticket: BUG-0438
+## Tribe: one animal 8-25 m apart on every guest for minutes (2026-11-01, lab log gates, fix/w32-tribe-sync)
+<a id="issue-tribe-npc-apart"></a>
+
+* What happens: in long 4-player campaigns one NPC animal stands 8-25 m from where the host has it, on
+  every guest, for up to 10 minutes (sync-check `n: 1 apart (n327 24.0)`); in the clearest run it began
+  6 s after the co-op epic came.
+* Reproduce: not reproduced on lane 7 (play_tribe, chaos_tribe, tribe_coop, campaign_tribe once); seen in
+  recorded `campaign` runs (out/lab/20261031-024148 campaign#1).
+* Known: the three kinds and the run ids in BUG-0402; inferred: the epic's proxy does not keep up.
+* Not checked: which NPC it was; since fix/w32-tribe-sync a MISMATCH names it on each game (`sync-check:
+  nNNN here: ...`).
+* Next steps: the next campaign run with the gates; the proxies' walking (npc.cpp) is reworked on another
+  branch.
+* Update (2026-11-01, fix/w33-proxy-ground): not reproduced on the current code (campaign_tribe 4 players, play_tribe
+  10 min with the co-op epic, tribe_epic: no `n apart`); every recorded case predates npc.walk_tribe (BUG-0361). An
+  epic hit now and then kept its proxy within 2.6 m with both drivings. Ticket status not-reproduced.
+* Ticket: BUG-0402
+## Creature: the guest's own creature under the terrain after the species swap (2026-11-01, feat/w32-monitor-diag)
+<a id="issue-creature-own-under"></a>
+
+* What happens: when the guest's own creature replaces the host's species as its avatar, it stood
+  0.94 m under the terrain (own trace line `agl=-0.94`) in one warm creature test on lane 6.
+* Reproduce: not reliably; the lab's ground rule reports it (allowed in the lab).
+* Ticket: BUG-0400
+* Fixed (2026-11-01, fix/w33-unlocks): not the swap. The `team` test's `coop.npc gopos` to host x + 1.5 m
+  (a chord of the planet, 0.5 m nearer its centre there) put the creature under the terrain, where the
+  game leaves a grounded creature; gopos now puts it onto the ground (`tools.gopos_ground`), the lab
+  allowance is gone.
+
+## Creature: the host's part unlocks never reach the guests (2026-11-01, feat/w32-monitor-diag)
+<a id="issue-creature-unlocks-sync"></a>
+
+* What happens: parts the host unlocks during a session stay locked in the guests' games (their own
+  editor offers the collected parts of the save they loaded).
+* Reproduce: `coop.parts unlock 3` on the host, `coop.parts` on both (monitor_plant does it).
+* Ticket: BUG-0401
+
+## SporeKit: a function hooked after boot can catch a thread in its first bytes (2026-11-01, fix/w33-null-call)
+<a id="issue-late-first-hook"></a>
+
+* What happens: nothing seen yet. The first hook of a function writes MinHook's 5-byte jmp without
+  stopping other threads (BUG-0202); hooks made at boot are safe, but the devkit input hooks
+  (GetAsyncKeyState / GetKeyState at the first injected input, test games only) and coop's Cell
+  SimUpdate / GetModelKey hooks (at the first cell, main thread) are made while the game runs.
+* Reproduce: not reproduced; `kit.test.hooknew` avoids this race on purpose (targets start with a
+  5-byte jmp). Its first version, whose targets started with two short instructions, crashed at an
+  eip 4 bytes into a target (lab 20261101-134603 / 134623-fix-w33-null-call).
+* Known: inferred from the code; the window is nanoseconds per call.
+* Next steps: make the input hooks at boot or on the main thread.
+* Ticket: BUG-0403
+* Fixed (2026-11-01, fix/w33-unlocks): the party shares its collected parts (`parts.shared`, test
+  `parts_shared`).
+
+## Cell: editor_desync, the guest finds no mate after the host's evolution (2026-11-01, fix/w33-unlocks)
+<a id="issue-cell-guest-mate-after-evolution"></a>
+
+* What happens: after the host evolved its cell (vote, editor), the guest's mating call shows the button
+  but no mate comes (`mate=00000000`), so the guest's own cell editor does not open.
+* Reproduce: `tools/lab.py run editor_desync --lane 6` (4 of 4 on 2026-11-01, also on main f0cf695).
+* Ticket: BUG-0411
+
+## Creature: a vote during the evolution's cinematic leaves the host in an editor without buttons (2026-11-01, feat/w33-tests-creature)
+<a id="issue-vote-during-evolution-cinematic"></a>
+
+* What happens: right after a vote's editors were left, the host's game plays the evolution cinematic
+  F4F96E43. A second vote started then (`coop.vote editor` + the guest's ready) took both games into their
+  editors; the guest left with "done", the host's editor had no buttons (no "done", no top bar), the cinematic
+  stayed "playing" with the input lock on, and the host's game stayed in the editor for minutes.
+* Reproduce: creature fixture, `coop.vote editor`, the guest's ready, "done" on both, and at once the same again
+  (coop_editor_soak.py before it waited for the cinematic).
+* Known: the creature stage's cinematic does not end in the editor mode; a deferred creature removal waits for it.
+* Not checked: whether a player can start a vote during this cinematic (the mating call, a guest's vote).
+* Ticket: BUG-0404
+
+## Creature: the partner's creature pops 1 m away and back when it uses an ability (2026-11-01, feat/w33-tests-creature)
+<a id="issue-puppet-ability-pop"></a>
+
+* What happens: a guest at 30 fps over the `player` network sees the host's standing creature drawn ~1 m off for
+  0.13 s and back while the host uses an ability (its animation 02481DE5).
+* Reproduce: `puppet_fight_player` (coop_puppet_fight.py with SPORE_FPS=guest:30 SPORE_NET=player): `drawn jumps
+  within the bound` fails, 2 of 2 runs.
+* Not checked: which abilities, whether the frame cap or the network is needed.
+* Ticket: BUG-0414

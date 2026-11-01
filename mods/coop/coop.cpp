@@ -43,6 +43,7 @@
 #include "npc.h"
 #include "creature_hp.h"
 #include "nest.h"
+#include "parts.h"
 #include "rejoin.h"
 #include "savestrip.h"
 #include "cell_logic.h"
@@ -103,6 +104,11 @@ struct Remote {
     int share_tries = 0;        // retries in this phase (share_try_key)
     uint64_t share_try_key = 0;
     double retry_at = 0;        // no share for this guest before
+    // the invariant monitor (docs/06-testing.md#testing-monitor): the puppet read back from the game at
+    // the start of the mod's frame (before any driving: where the game drew it) on a frame that writes
+    // the trace lines; drawn_at = that frame's time, -1: not read
+    net::PlayerState drawn_st;
+    double drawn_at = -1;
 };
 
 net::Session g_sess;
@@ -829,7 +835,7 @@ static bool world_state_msg(uint8_t type)
     return type == net::MSG_DNA || type == net::MSG_WORLD_TIME ||
            (type >= net::MSG_CELL_STATE && type <= net::MSG_CELL_FOOD) || type == net::MSG_CELL_KO ||
            type == net::MSG_CELL_BITTEN || type == net::MSG_TRIBE_STATE || type == net::MSG_TRIBE_CMD ||
-           type == net::MSG_SPECIES || type == net::MSG_SOCIAL || type == net::MSG_NEST;
+           type == net::MSG_SPECIES || type == net::MSG_SOCIAL || type == net::MSG_NEST || type == net::MSG_PARTS;
 }
 
 // the gate: does this machine drop the host's message? (0.7.3.0 with core.world_gate off: the old
@@ -1960,6 +1966,145 @@ const char* puppet_why(const Remote& r, double now)
     return r.puppet ? "shown" : "hidden: not spawned (yet)";
 }
 
+// ---- the invariant monitor's fields (docs/06-testing.md#testing-monitor) ----
+// The trace lines are written at the session clock's 10 s marks (every machine of a session in the same
+// frame, within the clock's error of a few ms), so the lab compares a partner's puppet with that partner's
+// own trace line of the same moment. Without a session clock: every 10 s of the local clock as before.
+double g_trace_slot = -1e9, g_trace_slot_now = -1e9;
+bool g_trace_due = false;
+
+// the start of the mod's frame (after the stale-world check, before any message, module or puppet
+// driving): is a trace due this frame, and if so each partner's puppet as the game drew it
+void monitor_frame_start(double now)
+{
+    bool ok = false;
+    double st = support::session_time(&ok);
+    g_trace_slot_now = ok ? std::floor(st / 10.0) : -1e9;
+    g_trace_due = g_trace_at < -50 || (ok ? g_trace_slot_now != g_trace_slot : now - g_trace_at >= 10.0);
+    if (!g_trace_due || !trace::on() || !g_sess.connected())
+        return;
+    for (auto& [id, r] : g_remotes) {
+        r.drawn_at = -1;
+        void* p = r.echo ? nullptr : puppet_now(r);
+        if (!p || (creature_puppet(r.puppet_adapter) && !game::creature_listed(p)))
+            continue;
+        r.drawn_st = net::PlayerState{};
+        r.puppet_adapter->fill(p, r.drawn_st);
+        r.drawn_at = now;
+    }
+}
+
+// height over this game's terrain (cPlanetModel::GetHeightAt); false without a planet
+static bool agl_of(const net::Vec3& p, float& h)
+{
+    float g = game::ground_radius(p);
+    if (g <= 0)
+        return false;
+    h = drive::speed(p) - g;
+    return std::isfinite(h);
+}
+
+// Tribe: the lowest and highest of the player tribe's members of `owner` as this game draws them
+// (host: its own members; guest: the mirrors, drawn before this frame's driving)
+static bool tribe_agl(uint8_t owner, float& lo, float& hi)
+{
+    struct Acc {
+        uint8_t owner;
+        float lo = 1e9f, hi = -1e9f;
+        int n = 0;
+    } a{owner};
+    tribe::for_each_tracked(
+        [](const tribe::TrackMember& m, void* u) {
+            auto* a = (Acc*)u;
+            float h;
+            if (m.owner != a->owner || !agl_of(m.drawn ? *m.drawn : game::position(m.c), h))
+                return;
+            a->lo = std::min(a->lo, h);
+            a->hi = std::max(a->hi, h);
+            a->n++;
+        },
+        &a);
+    lo = a.lo;
+    hi = a.hi;
+    return a.n > 0;
+}
+
+// " agl=<m>" (Creature: the creature; Tribe: " agl=<lowest> agl_hi=<highest>" of the player's members)
+static std::string agl_field(uint8_t owner, void* creature, const net::Vec3* at)
+{
+    char b[64];
+    float lo, hi;
+    if (g_mode == modes::kCreature && creature && at && agl_of(*at, lo)) {
+        snprintf(b, sizeof b, " agl=%.2f", lo);
+        return b;
+    }
+    if (g_mode == modes::kTribe && tribe_agl(owner, lo, hi)) {
+        snprintf(b, sizeof b, " agl=%.2f agl_hi=%.2f", lo, hi);
+        return b;
+    }
+    return "";
+}
+
+// BUG-0368 class: the unlocked creature parts of the cPlayer's collected parts (cCollectableItems,
+// docs/re/creations.md#creations-own-editor-items): over the unlockable items (the map at +0x1490),
+// the number unlocked and an order-free hash of their keys. `locked` gets the keys still locked.
+static bool parts_census(int& unlocked, uint32_t& hash, int& unlockable, std::vector<std::pair<uint32_t, uint32_t>>* locked = nullptr)
+{
+    return parts::census(unlocked, hash, unlockable, locked); // BUG-0401: parts.cpp holds it
+}
+
+// the partner's speed as this game sees it: its reported speed, or (the RTS pointer reports none) the
+// way its interpolated position went in the last 0.5 s
+static float seen_speed(const Remote& r, double now)
+{
+    net::PlayerState a, b;
+    if (!r.buf.sample(now, a) || !r.buf.sample(now - 0.5, b))
+        return 0;
+    float v = a.mode == b.mode && a.world == b.world ? net::dist(a.pos, b.pos) / 0.5f : 0.f;
+    return std::max(v, drive::speed(a.vel));
+}
+
+// the monitor's fields at the end of the own trace line
+static std::string monitor_own_fields(bool have)
+{
+    std::string out;
+    if (!have)
+        return out;
+    net::Vec3 p = g_local && g_mode == modes::kCreature ? game::position(g_local) : net::Vec3{};
+    out += agl_field(g_sess.my_id(), g_mode == modes::kCreature ? g_local : nullptr, &p);
+    if (g_mode == modes::kCreature) {
+        int n, all;
+        uint32_t h;
+        if (parts_census(n, h, all)) {
+            char b[48];
+            snprintf(b, sizeof b, " parts=%d:%08X", n, h);
+            out += b;
+        }
+    }
+    out += npc::monitor_fields();
+    return out;
+}
+
+// the monitor's fields at the end of a partner's trace line
+static std::string monitor_partner_fields(uint8_t id, const Remote& r, double now)
+{
+    std::string out;
+    char b[160];
+    bool drawn = r.drawn_at == now && strcmp(puppet_why(r, now), "shown") == 0;
+    if (drawn) {
+        const net::Vec3& d = r.drawn_st.pos;
+        snprintf(b, sizeof b, " drawn=(%.1f %.1f %.1f) drawn_v=%.1f", d.x, d.y, d.z, seen_speed(r, now));
+        out += b;
+    }
+    bool creature = drawn && creature_puppet(r.puppet_adapter) && g_mode == modes::kCreature;
+    out += agl_field(id, creature ? r.puppet : nullptr, creature ? &r.drawn_st.pos : nullptr);
+    if (creature && r.drawn_st.max_health > 0) { // read from the puppet (BUG-0373: the partner's health)
+        snprintf(b, sizeof b, " puppet_hp=%.0f/%.0f", r.drawn_st.health, r.drawn_st.max_health);
+        out += b;
+    }
+    return out;
+}
+
 // the first line of a module's status()
 std::string first_line(const std::string& s) { return s.substr(0, s.find('\n')); }
 
@@ -2014,9 +2159,11 @@ void trace_tick(double now)
         g_trace_since = now;
         g_trace_body_at = g_trace_stage_at = -100; // the stage lines with the next trace
     }
-    if (!g_sess.connected() || (!changed && now - g_trace_at < 10.0))
+    if (!g_sess.connected() || (!changed && !g_trace_due))
         return;
     g_trace_at = now;
+    if (g_trace_due)
+        g_trace_slot = g_trace_slot_now;
     char b[700];
     std::string res = shared::brief();
     snprintf(b, sizeof b,
@@ -2029,6 +2176,7 @@ void trace_tick(double now)
              g_vote.active ? "on" : "off", coop_ui::input_lock_now(), trace::hex(g_own_editor_due).c_str());
     if (const char* why = share_wait_reason()) // BUG-0382 (new fields go at the end: monitor.py)
         snprintf(b + strlen(b), sizeof b - strlen(b), " share_wait=%s", why);
+    snprintf(b + strlen(b), sizeof b - strlen(b), "%s", monitor_own_fields(have).c_str()); // (before version=)
     trace::line("trace", "%s%s%s", b, now - g_trace_ver_at > 60.0 ? " version=" : "",
                 now - g_trace_ver_at > 60.0 ? g_sess.version.c_str() : "");
     float host_d = -1;
@@ -2062,6 +2210,7 @@ void trace_tick(double now)
             snprintf(b, sizeof b, " resends=%u/%u silent=%u ms pending=%u", lk.resends, lk.sent, lk.silent_ms, lk.pending);
             l += b;
         }
+        l += monitor_partner_fields(id, r, now);
         trace::line("trace", "%s", l.c_str());
     }
     if (now - g_trace_ver_at > 60.0)
@@ -2131,6 +2280,8 @@ void on_frame(void*, int, void*)
     creations::tick(now);
     if (g_frame_fix) // BUG-0091: forget the puppets of a world the game tore down before any message uses them
         avatar_change_check();
+    monitor_frame_start(now); // the puppets as drawn, before any driving (docs/06-testing.md#testing-monitor)
+    npc::monitor_tick(now);   // the proxies as drawn
     // BUG-0231: the world a joining guest hears in WELCOME (before the host's first state); the
     // values of the last frame, as every message of this update sees them. Not switched: 0.7.3.0
     // guests never read it
@@ -2150,6 +2301,7 @@ void on_frame(void*, int, void*)
     savestrip::tick();
     npc::tick(now);
     nest::tick(now); // BUG-0384
+    parts::tick(now); // BUG-0401
     social::tick(now);
     shared::tick(g_sess, game::mode_id(), now, guest_elsewhere()); // BUG-0231: held while elsewhere
     if (g_sess.role() == net::Role::Host && game::avatar()) {
@@ -2611,6 +2763,7 @@ void end_session(EndPath path, bool cell)
     if (g_session_end_fix || path == EndPath::Disconnect) {
         npc::on_session_end();
         nest::on_session_end(); // BUG-0384: our egg mirrors
+        parts::on_session_end(); // BUG-0401
         social::on_session_end();
         tribe::on_session_end();
         if (cell)
@@ -2622,6 +2775,7 @@ void end_session(EndPath path, bool cell)
     } else if (path == EndPath::Leave) { // before BUG-0033 (tests)
         npc::on_session_end();
         nest::on_session_end(); // BUG-0384: our egg mirrors
+        parts::on_session_end(); // BUG-0401
         social::on_session_end();
         if (cell)
             cellsync::on_session_end();
@@ -2629,6 +2783,7 @@ void end_session(EndPath path, bool cell)
     } else if (path == EndPath::Unload) {
         npc::on_session_end();
         nest::on_session_end(); // BUG-0384: our egg mirrors
+        parts::on_session_end(); // BUG-0401
         social::on_session_end();
     }
     if (g_session_end_fix || path != EndPath::Restart) {
@@ -3003,6 +3158,9 @@ void setup_callbacks()
             return;
         case net::MSG_NEST: // BUG-0384
             nest::on_message(type, from, r);
+            return;
+        case net::MSG_PARTS: // BUG-0401
+            parts::on_message(type, from, r);
             return;
         }
         if (g_sess.role() == net::Role::Client && from == 0)
@@ -3405,6 +3563,10 @@ int c_share(void*, int argc, const char* const* argv, SkOut* out)
     return 0;
 }
 
+// BUG-0400: `coop.npc gopos` (tests) puts a point under the terrain onto it
+static bool g_gopos_ground_fix = true;
+COOP_FIX("tools.gopos_ground", "BUG-0400", g_gopos_ground_fix, "tests: coop.npc gopos puts the avatar onto the ground, never under it");
+
 int c_npc(void*, int argc, const char* const* argv, SkOut* out)
 {
     if (argc > 1 && !strcmp(argv[1], "list")) {
@@ -3443,6 +3605,10 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
         SAY("%s", npc::debug_pool((uint16_t)atoi(argv[2])).c_str());
         return 0;
     }
+    if (argc > 3 && !strcmp(argv[1], "sink")) { // guest (tests, BUG-0399): sink <id> <m> [mark]
+        SAY("%s", npc::debug_sink((uint16_t)atoi(argv[2]), (float)atof(argv[3]), argc > 4 && atoi(argv[4]) != 0).c_str());
+        return 0;
+    }
     if (argc > 7 && !strcmp(argv[1], "pwalk")) { // guest (tests, BUG-0281): pwalk <id> x y z <m/s> <s> [mode bits]
         SAY("%s", npc::debug_pwalk((uint16_t)atoi(argv[2]), {(float)atof(argv[3]), (float)atof(argv[4]), (float)atof(argv[5])},
                                    (float)atof(argv[6]), (float)atof(argv[7]), argc > 8 ? atoi(argv[8]) : 0).c_str());
@@ -3458,8 +3624,17 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
             SAY("no avatar");
             return 1;
         }
-        game::teleport(av, {(float)atof(argv[2]), (float)atof(argv[3]), (float)atof(argv[4])}, game::orientation(av));
-        SAY("avatar moved");
+        // BUG-0400: tests shift a partner's position along a world axis (team: host x + 1.5 m), which is
+        // a chord of the planet: up to 0.5 m nearer its centre, often under the terrain, and the game
+        // does not lift a grounded creature placed under it (docs/re/creature.md#creature-puppet-ground).
+        // A point under the ground goes onto it (`coop.fix tools.gopos_ground off`: as given, 0.7.3.3).
+        net::Vec3 p{(float)atof(argv[2]), (float)atof(argv[3]), (float)atof(argv[4])};
+        float r = drive::speed(p), g = game::ground_radius(p);
+        bool lifted = g_gopos_ground_fix && g > 1 && r > 1 && r < g;
+        if (lifted)
+            p = {p.x * g / r, p.y * g / r, p.z * g / r};
+        game::teleport(av, p, game::orientation(av));
+        SAY("avatar moved%s", lifted ? " (onto the ground)" : "");
         return 0;
     }
     if (argc > 2 && (!strcmp(argv[1], "goherd") || !strcmp(argv[1], "gonpc"))) { // tests: the avatar d m
@@ -3604,7 +3779,7 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
         return ok ? 0 : 1;
     }
     if (argc > 3 && !strcmp(argv[1], "hosthit")) { // host avatar hits host NPC #id
-        bool ok = npc::debug_host_hit((uint16_t)atoi(argv[2]), (float)atof(argv[3]));
+        bool ok = npc::debug_host_hit((uint16_t)atoi(argv[2]), (float)atof(argv[3]), argc > 4 ? (float)atof(argv[4]) : 0.f);
         SAY(ok ? "host hit applied" : "no such npc");
         return ok ? 0 : 1;
     }
@@ -4236,11 +4411,24 @@ void support_init()
             add("sync_check", g_ini_sync);
         return s;
     };
+    p.describe = [](const std::string& key) { // BUG-0381: the object's line of coop.npc list / coop.tribe
+        std::string all = key[0] == 'n' ? npc::list() : key[0] == 't' ? tribe::list() : std::string();
+        std::string want = "#" + key.substr(1) + " ";
+        size_t at = 0;
+        while ((at = all.find(want, at)) != std::string::npos) {
+            if (at >= 2 && all[at - 1] == ' ' && all[at - 2] == ' ') { // "  #<id> " at a line's start
+                size_t end = all.find('\n', at);
+                return all.substr(at, end == std::string::npos ? std::string::npos : end - at);
+            }
+            at += want.size();
+        }
+        return std::string();
+    };
     support::init(H, M, p);
     H->subscribe(M, SK_EV_SHUTDOWN, [](void*, int, void*) { support::on_shutdown(); }, nullptr);
     H->command_add(M, "coop.diag",
                    "coop.diag [status | sync now|on|off|<s>|force shift|drop|ghost|dna|off | summary | mark <text> | "
-                   "detail 0|1|2 | mem] - support diagnostics (docs/REPORTING.md#reporting-support)",
+                   "detail 0|1|2 | mem | reserve <MB> (tests: a planted leak)] - support diagnostics (docs/REPORTING.md#reporting-support)",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
                        SAY("%s", support::command(std::vector<std::string>(argv + 1, argv + argc)).c_str());
                        return 0;
@@ -4406,6 +4594,15 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         nc.host_away = ctx.host_away;
         nest::init(H, M, nc);
     }
+    { // BUG-0401: the party's collected creature parts
+        parts::Ctx pc;
+        pc.sess = &g_sess;
+        pc.items = [] { return collected_parts(); };
+        pc.guest_in_host_world = [] { return host_world_now() == host_world::HostWorld::Same; };
+        pc.world = [] { return g_world; };
+        pc.feed = feed;
+        parts::init(H, M, pc);
+    }
     savestrip::init(H, M); // BUG-0020: our objects never go into a save
     views::init(H, M);     // BUG-0280: the world lives around every player
     npc::set_enabled(H->config_int(M, "coop", "share_npcs", 1) != 0);
@@ -4504,7 +4701,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     H->command_add(M, "coop.echo", "coop.echo [on|off] [offset] [delay] - loopback puppet test", c_echo, nullptr, MT);
     H->command_add(M, "coop.overlay", "coop.overlay on|off|self", c_overlay, nullptr, MT);
     H->command_add(M, "coop.social", "coop.social [species | log | act <npc id> [slot] | goto <npc id>] - creature social games", c_social, nullptr, MT);
-    H->command_add(M, "coop.npc", "coop.npc [on|off|list|herds|hit <id> <dmg>|hosthit <id> <dmg>|recruit <id>|spawn <hex>|cinedefer on|off] - host-authoritative NPC sync", c_npc, nullptr, MT);
+    H->command_add(M, "coop.npc", "coop.npc [on|off|list|herds|hit <id> <dmg>|hosthit <id> <dmg> [push]|recruit <id>|spawn <hex>|cinedefer on|off] - host-authoritative NPC sync", c_npc, nullptr, MT);
     H->command_add(M, "coop.res", "coop.res [[joinsim] add <food|money> <n> | fix reset|floor [0|1]] - shared resources", c_res, nullptr, MT);
     H->command_add(M, "coop.ping", "coop.ping - show everybody the place under your mouse / where you are", c_ping,
                    nullptr, MT);
@@ -4601,6 +4798,34 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                        return 0;
                    },
                    nullptr, MT);
+    H->command_add(M, "coop.parts", "coop.parts [unlock <n>|find <level>] - the collected creature parts as the trace's parts= field counts them; "
+                   "unlock <n>: unlock n locked ones in this game only (tests: a player's unlock the other games miss); "
+                   "find <level>: the game's own 'a part was found' (a skeleton's reward, BUG-0401)",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       std::vector<std::pair<uint32_t, uint32_t>> locked;
+                       int n = 0, all = 0, done = 0;
+                       uint32_t h = 0;
+                       if (!parts_census(n, h, all, &locked)) {
+                           SAY("no collected parts (no cPlayer)\n");
+                           return 1;
+                       }
+                       if (argc > 2 && !strcmp(argv[1], "unlock")) {
+                           // cCollectableItems::UnlockPart(key, cost 0), as when the player finds the part
+                           uintptr_t unlock = H->sym("Simulator::cCollectableItems::UnlockPart");
+                           void* items = collected_parts();
+                           for (int i = 0; unlock && items && i < atoi(argv[2]) && i < (int)locked.size(); i++)
+                               done += skg::thiscall<bool>(unlock, items, locked[i].first, locked[i].second, 0) ? 1 : 0;
+                           parts_census(n, h, all);
+                       } else if (argc > 2 && !strcmp(argv[1], "find")) {
+                           int before = n, after = parts::find_part(atoi(argv[2]));
+                           done = after >= 0 ? after - before : 0;
+                           parts_census(n, h, all);
+                       }
+                       SAY("parts=%d:%08X unlockable=%d unlocked_now=%d\n", n, h, all, done);
+                       SAY("sync: %s\n", parts::status().c_str());
+                       return 0;
+                   },
+                   nullptr, SK_CMD_OUTSIDE_FRAME); // find shows the game's goal card
     H->command_add(M, "coop.vote", "coop.vote [test|go] - evolution vote (test: a vote without an editor)",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
                        if (argc > 1 && !strcmp(argv[1], "test") && g_sess.role() == net::Role::Host && !g_vote.active) {
