@@ -374,3 +374,5 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0362](BUG-0362-lab-two-lab-runs-started-in-the-same-second-shar.md) | open | tooling | All | 2026-11-01 |  | lab: two lab runs started in the same second share one run directory (summary.md overwritten) |
 | [BUG-0363](BUG-0363-tests-creature-npc-dash-fails-about-1-in-3-runs.md) | open | test | Creature | 2026-11-01 |  | tests: creature_npc_dash fails about 1 in 3 runs on 0.7.3.2 (p90 2.4-6.4 m, limit 1.2 m), with or without creature.puppet_walk |
 | [BUG-0364](BUG-0364-cell-a-knocked-out-cell-still-eats-food-so-it-re.md) | open | bug | Cell | 2026-11-01 |  | cell: a knocked-out cell still eats food, so it respawns bigger (cell_coop 'small again' failed) |
+| [BUG-0366](BUG-0366-creature-the-partner-s-creature-constantly-jumps.md) | open | desync | Creature | 2026-11-01 |  | Creature: the partner's creature constantly jumps on the host's screen (guest at 30 fps, 0.7.3.3) |
+| [BUG-0367](BUG-0367-creature-the-partner-s-creature-is-suddenly-unde.md) | open | desync | Creature | 2026-11-01 |  | Creature: the partner's creature is suddenly underground on the host's screen (0.7.3.3) |

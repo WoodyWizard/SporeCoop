@@ -87,9 +87,35 @@ constexpr double kGoalMinGap = 0.3;     // not more often than this (s: given ev
 constexpr double kGoalMaxGap = 1.5;     // and at least this often (s)
 constexpr float kCatchUp = 3.f;         // m/s faster than the partner while it is off the path
 
-static void creature_drive(void* p, const net::PlayerState& s, drive::State& ds, double now)
+// BUG-0366 / BUG-0367: the puppet was placed at the partner's own position, taken from the partner's
+// game, every frame (0.7.3.3, creature.puppet_walk). Walking downhill a creature placed exactly on the
+// ground is a few cm over it after the game's next step (its walk goes along, not down): the game
+// takes it as falling (+0x137 = 0) and plays the fall animation 0x0692E6A9 for 1-5 frames, again and
+// again ("constantly jumping"; 4-7 times in 40 s on a slope, the partner's own creature never). A
+// target under this game's ground (an extrapolated state, a ground that differs) was put there.
+// creature.puppet_ground: a target from kUnderGround under to kOverGround over this game's ground
+// (cPlanetModel::GetHeightAt) is put kSink into it; the game sets a grounded creature on its ground
+// (0-3 cm up) and it stays grounded. A partner higher up (a jump, a rock) is placed where it is.
+static bool g_puppet_ground_fix = true;
+COOP_FIX("creature.puppet_ground", "BUG-0366", g_puppet_ground_fix, "creature: the partner's creature is put on this game's ground (no fall animation walking downhill, never under the ground)");
+constexpr float kOverGround = 0.5f, kUnderGround = 3.f; // m
+constexpr float kSink = 0.05f;                          // m (0.15: the drawn puppet 0.13 m under at times)
+
+static net::Vec3 on_own_ground(const net::Vec3& pos)
+{
+    float r = std::sqrt(pos.x * pos.x + pos.y * pos.y + pos.z * pos.z), g = game::ground_radius(pos);
+    if (g <= 0 || r < 1.f || r - g > kOverGround || r - g < -kUnderGround)
+        return pos;
+    float k = (g - kSink) / r;
+    return {pos.x * k, pos.y * k, pos.z * k};
+}
+
+static void creature_drive(void* p, const net::PlayerState& s_in, drive::State& ds, double now)
 {
     ds.drawn = game::position(p);
+    net::PlayerState s = s_in;
+    if (g_puppet_ground_fix && game::in_creature_stage())
+        s.pos = on_own_ground(s.pos);
     float sp = drive::speed(s.vel);
     bool walk = g_puppet_walk_fix && game::in_creature_stage() && sp > 0.3f && net::dist(game::position(p), s.pos) < 8.f;
     if (walk) {
