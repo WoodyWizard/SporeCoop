@@ -1,20 +1,20 @@
 ---
 id: BUG-0393
 title: Lab gate: sync-check MISMATCH 'p: 1 apart' in Tribe while a player's view jumps (the RTS player point, 20-70 m)
-status: open
+status: fixed
 kind: test
 stage: Tribe
 reported: 2026-11-01
 source: lab gates (feat/w30-lab-gates) on fix/w30-tribe-walk and fix/w31-* branches
 role: both
 versions: unreleased
-fixed_in:
-branch:
-commits:
+fixed_in: unreleased
+branch: fix/w31-civ-gate (the fix), fix/w32-tribe-sync (the Tribe verification)
+commits: e052b04
 tests: chaos_tribe, tribe_walk_mobile
 signature:
 docs:
-related:
+related: BUG-0380, BUG-0381
 ---
 
 ## Report
@@ -25,18 +25,32 @@ tribe member (t) and animal (n) matched. The same line is in other branches' Tri
 (fix/w31-* lab dirs, p0 27.7 / p1 19.7 / p0 40.8, also 02:08 before these branches).
 
 ## Root cause
-Inferred: in Tribe a player's `p` entry is its RTS point (the view / cursor marker, rts_drive), which jumps
+Decided with runs on lane 7 (fix/w32-tribe-sync, 2026-11-01): the check, not the sync. `p` of a Tribe player
+is its RTS pointer (modes.cpp rts_fill: the planet point under its mouse, moved by the mouse and by every
+view change, the minimap jumps included); the other game's copy is the pointer a state and the
+interpolation delay behind, and the two digests are read half a round trip (more with resends) apart: a
+pointer that moves (or whose view jumps) is tens of metres "apart" without any desync. BUG-0380
+(fix/w31-civ-gate, `diag.rts_cursor`) leaves a Tribe / Civ pointer that moved within the last second out
+of the compare on both games; all the recorded runs of this ticket were made without it (their branches
+had not merged it yet). With it the Tribe runs had no `p apart` (below); with it off the same test had it
+again. At rest the copy matches (Civ: 0 m, coop_civ_cursor.py, BUG-0380), so the guests do show the
+partner's pointer where it is. Before (kept for the record): in Tribe a player's `p` entry is its RTS point (the view / cursor marker, rts_drive), which jumps
 tens of metres when the player moves the view by the minimap (both tests do, every second or so); the
 other game's copy is a state behind (over a mobile network 120-180 ms more). Not checked in diag_sync.cpp
 which point `p` is in Tribe.
 
 ## Fix
-Open: leave `p` out of the Tribe / Civ comparison (or compare it with a tolerance for a view jump), or
-allow the gate in suite.py with this ticket.
+No new code: `diag.rts_cursor` (BUG-0380, commit e052b04, on main since 85675b9) is the fix for Tribe too.
+A pointer that stands still for a second is still compared, so a real pointer desync would show.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+Log gates on, lane 7:
+* FAIL with `SPORE_FIX_OFF=diag.rts_cursor`: out/lab/20261101-130015 tribe_walk_mobile#2 ("p: 1 apart (p1 37.8)"
+  on both games while the guest walked its members; 1 of 3 runs).
+* PASS: out/lab/20261101-124441 (tribe_walk 3/3, tribe_walk_mobile 3/3), out/lab/20261101-115510 (chaos_tribe 2,
+  tribe_coop 2, tribe_play 2, play_tribe 2: no sync-check MISMATCH at all); before, on fix/w30-tribe-walk
+  without the switch, tribe_walk_mobile had `p apart` in most runs.
 
 ## History
 - 2026-11-01: opened.
+- 2026-11-01 (fix/w32-tribe-sync): decided: the check (moving pointer), fixed by BUG-0380's diag.rts_cursor; FAIL / PASS runs on lane 7.
