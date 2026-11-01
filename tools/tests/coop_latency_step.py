@@ -18,6 +18,13 @@ GOOD when it walks smoothly. The longest stretch of bad buckets with no good buc
 <= --max-bad seconds (5 s): a step of the latency may cost a moment, not the ~50 s of BUG-0133. At least
 --min-high seconds of the high-latency phase must have been measured (the walker walked).
 
+And against the truth (both games run on this machine, both tracks start together): per walking second of the
+high phase, the drawn puppet's median distance from the walker's own position `lag` s earlier, at the lag that
+fits best (0-1 s). At most 25 % of those seconds may be over 0.15 m. The game's creature driver hides BUG-0133's
+extrapolation from the step check (the drawn puppet stays smooth); the extrapolated puppet is off the real path
+at turns and stops instead: fix off 0.15-0.27 m in 13 of the high phase's seconds, best lag 0.22-0.30 s (it should
+follow the latency: 0.40-0.42 s with the fix); fix on 0.01-0.13 m (lab 20261101-144311 / 20261101-142943).
+
   SPORE_LANE=9 SPORE_NET="delay=30,jitter=5" python3 tools/tests/coop_latency_step.py [--seed N]
   SPORE_FIX_OFF=net.offset_window fails (the steps last until the offset crept up: tens of seconds)
 """
@@ -118,6 +125,46 @@ def longest_bad(bk):
     return best, start_s
 
 
+def truth(obs_rows, walker_rows):
+    """per 1 s of the observer's track while the walker walks (its own game speed > 1 m/s): (best lag s, median
+    distance m) between the drawn puppet and the walker's own position `lag` s earlier, the lag (0-1 s) that fits
+    that second best. Both games run on this machine and both tracks start within a few ms (coop.track start on
+    each), so the two track clocks are one: what the observer draws against where the walker really was. A
+    puppet rendered past the newest state (extrapolated, BUG-0133) is off the real path at every turn and stop"""
+    import bisect
+    own = [r for r in walker_rows if r['who'] == 255]
+    ts = [r['t'] for r in own]
+
+    def at(t):
+        i = bisect.bisect_left(ts, t)
+        if i <= 0 or i >= len(ts):
+            return None, 0.0
+        x, y = own[i - 1], own[i]
+        f = (t - x['t']) / (y['t'] - x['t']) if y['t'] > x['t'] else 0.0
+        return tuple(x['p'][k] + (y['p'][k] - x['p'][k]) * f for k in range(3)), max(x['gv'], y['gv'])
+    by = {}
+    for r in obs_rows:
+        if r['who'] != 255:
+            by.setdefault(int(r['t']), []).append(r)
+    out = {}
+    for sec, rows in by.items():
+        sp = [at(r['t'])[1] for r in rows]
+        if not sp or sorted(sp)[len(sp) // 2] < 1.0:
+            continue  # the walker stands (or turns on the spot) in this second
+        best = None
+        for k in range(50):
+            lag = k * 0.02
+            es = sorted(math.dist(p, r['d']) for r in rows for p in [at(r['t'] - lag)[0]] if p is not None)
+            if es and (best is None or es[len(es) // 2] < best[1]):
+                best = (lag, es[len(es) // 2])
+        if best:
+            out[sec] = best
+    return out
+
+
+ERR_M, ERR_SHARE = 0.15, 0.25
+
+
 def direction(walker, observer, wname, oname, rng, a, ck):
     proxy = netem.proxy()
     proxy.p['delay'] = float(a.low)
@@ -161,6 +208,17 @@ def direction(walker, observer, wname, oname, rng, a, ck):
           f'matched/stand/jumps), walker top speed {top:.2f} m/s:', flush=True)
     for k in range(0, len(line), 8):
         print('    ' + '  '.join(line[k:k + 8]), flush=True)
+    tr = truth(obs, wal)
+    hi = {sec: v for sec, v in tr.items() if hi0 + 1 <= sec < hi1}
+    off_path = [sec for sec, v in hi.items() if v[1] > ERR_M]
+    print(f'  {oname} watches {wname}, drawn vs the walker\'s real path per walking second (s into the walk: lag s / '
+          f'median m): ' + ' '.join(f'{sec - off:.0f}{"^" if hi0 <= sec < hi1 else ""}:{v[0]:.2f}/{v[1]:.2f}'
+                                   for sec, v in sorted(tr.items())), flush=True)
+    share = len(off_path) / len(hi) if hi else 1.0
+    ck(len(hi) >= a.min_high and share <= ERR_SHARE,
+       f'{oname} watches {wname}: at {a.high} ms the puppet is drawn on the walker\'s real path (median <= {ERR_M} m '
+       f'at the best lag) in all but {share:.0%} <= {ERR_SHARE:.0%} of {len(hi)} walking seconds '
+       f'(off: {[round(sec - off) for sec in sorted(off_path)]})')
     worst, at = longest_bad(bk)
     high_meas = sum(1 for sec in bk if hi0 <= sec < hi1 and verdict(bk[sec]) is not None)
     after = [sec for sec in bk if hi0 <= sec and verdict(bk[sec]) is not None]
