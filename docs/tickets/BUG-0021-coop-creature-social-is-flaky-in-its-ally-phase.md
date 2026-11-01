@@ -79,6 +79,8 @@ range: host_act refuses acts from more than kActRange + 4 m) instead of moving o
 - feat/w33-tests-creature, creature_social_ally: FAIL with `SPORE_FIX_OFF=social.no_bite` 3 of 3 (lab
   20261101-152905: (1, 0, 1), (1, 0, 1), (3, 1, 0); run 1 had reached the ally and lost it to `key 1 sent a HIT`);
   PASS with the first (engaged-only) fix 3 of 3 (20261101-151116: (6, 3, 0) each, 1-3 dropped hits per run);
+  PASS with the final fix (every proxy) 3 of 3: 20261101-153820 (with team, creature_kills, creature_party,
+  social_console, corpse_positions: all OK), 20261101-154734 (2 runs).
   before the fix 4 of 5 runs failed (lab 20261101-141938, -144024, -145803; by hand 1 of 2).
 - out/lab/20261028-030521: OK (ally (6, 3, 0)).
 - out/lab/20261028-033546 (--repeat 3): 3 FAIL. The retry ran ("n19: no impression ... played
