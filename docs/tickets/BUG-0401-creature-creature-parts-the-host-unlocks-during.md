@@ -10,7 +10,7 @@ role: guest
 versions: unreleased
 fixed_in: unreleased
 branch: fix/w33-unlocks
-commits: 4cc57da
+commits: 4cc57da 145a981
 tests: parts_shared (tools/tests/coop_parts_shared.py), monitor_plant (unlocks rule, with parts.shared off on the host)
 signature:
 docs: docs/re/creations.md#creations-unlock-part, docs/re/creations.md#creations-part-pickup, docs/06-testing.md#testing-parts-shared

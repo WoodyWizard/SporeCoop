@@ -10,7 +10,7 @@ role: guest
 versions: unreleased
 fixed_in: unreleased
 branch: fix/w33-unlocks
-commits: a876f0d
+commits: a876f0d 38c5f65 785b0a4
 tests: team, select, creature (warm creature fixture; monitor rule ground)
 signature:
 docs: docs/06-testing.md#testing-monitor-fields
@@ -48,7 +48,7 @@ removed. Also used by puppet_walk, migration, creature_party, nest_objects, trib
 ## Verification
 FAIL: SPORE_FIX_OFF=tools.gopos_ground team --repeat 2, lab 20261101-141844 (lane 6: the guest -0.82 m and
 -0.87 m under the ground after the move, 2 of 2).
-PASS: team in the smoke run of the regression (see History).
+PASS: team in the smoke run 20261101-143557 (lane 6: the guest 0.31 m over the ground after the move).
 
 ## History
 - 2026-11-01: opened.
