@@ -274,9 +274,13 @@ def walk_phase(host, guest, rng, secs, watch, log):
     hs, gs = host_npcs(host), proxies(guest)
     g = avatar_pos(guest)
     both = sorted((math.dist(gs[i][0], g), i) for i in hs if i in gs and g and math.dist(gs[i][0], g) < (120 if FIXTURE == 'tribe' else 30))
-    # BUG-0407: NPCs outside the host's family / pack first (two of them are hit in the flee phase, see main)
+    # BUG-0407: two NPCs outside the host's family / pack (they are hit in the flee phase, see main), from farther
+    # off when the nearest are all family (they follow the avatar: all 4 within 30 m were, lab 20261101-154000)
     fam = family(host)
-    ids = [i for _, i in sorted(both, key=lambda di: (di[1] in fam, di[0]))[:4]]
+    far = sorted((math.dist(gs[i][0], g), i) for i in hs if i in gs and g and i not in fam and
+                 math.dist(gs[i][0], g) < (150 if FIXTURE == 'tribe' else 80))
+    ids = [i for _, i in far[:2]]
+    ids += [i for _, i in both if i not in ids][:4 - len(ids)]
     log.append(f'family/pack {sorted(fam)}')
     home = {i: hs[i][0] for i in ids}  # Tribe: they walk around where they were (far from the tribe)
     log.append(f'walkers {ids} (of {len(hs)} host NPCs, {len(gs)} proxies)')
