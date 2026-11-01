@@ -18,7 +18,7 @@ import argparse
 import re
 import time
 
-from twoinst import Checks, start
+from twoinst import Checks, lab_mark, start
 
 
 def num(con, key):
@@ -41,6 +41,7 @@ def main():
     m0, v0 = num(guest, 'mirrors'), num(guest, 'vm_free_mb')
     print(f'  guest: {m0} mirrors, {v0} MB free', flush=True)
     low = []
+    lab_mark('sync-force', 'on')  # the rounds remove the guest's mirrors on purpose (BUG-0379)
     for i in range(a.rounds):
         guest.call('coop.pool zap 5000')
         time.sleep(2.5)
@@ -50,6 +51,7 @@ def main():
             print(f'  round {i + 1}: {m} mirrors, {v} MB free, created={num(guest, "created")}', flush=True)
         if (m or 0) < 10:
             low.append(i)
+    lab_mark('sync-force', 'off')
     time.sleep(5)
     v1 = num(guest, 'vm_free_mb')
     ck(len(low) <= a.rounds // 10, f'1. the mirrors came back after the rounds ({a.rounds - len(low)} of {a.rounds})')

@@ -29,7 +29,7 @@ import math
 import re
 import time
 
-from twoinst import Checks, start
+from twoinst import Checks, lab_mark, start
 
 
 MAX_STEP = 20.0  # m in one round (~3 s): shoves by the crowd reach 11 m (invulnerable, fixes on); the shared NaN spare flung it 64 m to 1e7 m
@@ -71,6 +71,7 @@ def main():
     p0 = own_pos(guest)
     counts, jumps, steps, minus1, head_bad = [], [], [], [], []
     last = p0
+    lab_mark('sync-force', 'on')  # the rounds remove the guest's mirrors on purpose (BUG-0379)
     for i in range(a.rounds):
         guest.call('coop.pool invuln 1')  # a knock-out's respawn moved it 18 m (not this test's subject)
         guest.call('coop.pool zap 5000')
@@ -93,6 +94,7 @@ def main():
               f'{steps[-1] if steps else "?"} m this round | own_n={num(pa, "own_n")} own_spare={num(pa, "own_spare")} '
               f'stripped={num(pa, "stripped")} spare_freed={num(pa, "spare_freed")} near_bare={num(pa, "near_bare")} nan_cells={num(pa, "nan_cells")}',
               flush=True)
+    lab_mark('sync-force', 'off')
     ok = [c for c in counts if c is not None]
     ck(len(ok) == len(counts) and min(ok) >= 0 and max(ok) <= 1500,
        f'3. the particle pool\'s count stays in 0..1500 ({min(ok) if ok else "?"}..{max(ok) if ok else "?"})')
