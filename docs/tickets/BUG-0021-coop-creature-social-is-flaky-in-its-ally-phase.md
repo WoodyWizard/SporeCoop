@@ -60,8 +60,18 @@ The lab run 20261101-144024 (creature_social_ally, SOCIAL_ALLY_PLANT run) lost t
 The test now prints `key 1 sent a HIT (stance before / now)` and `the click sent a HIT` when the guest's
 `hits_sent` grows, so the next failing run shows which input and stance attacked.
 
+Lab 20261101-145803 (with the hit print): `#19: key 1 sent a HIT (stance before the key 0, now 0)` in the second
+round of the alpha #19 (host log: event 2 then event 0, impressed 2 -> 0, killed 0 -> 1). So the guest's key 1 in
+the social stance, next to the creature it is impressing, can make the guest's game hit that proxy. Why the game
+plays an attack there is not known (inferred: the proxy has no AI and no social session, the game's key 1 then
+falls back to an attack on the targeted creature).
+
 ## Fix
-Not fixed. fix/w4-tests (5a72494) plays a refused game again with the same Kook (it walked out of the
+feat/w33-tests-creature: `social::drop_social_hit` (npc.cpp damage_filter, guest): a hit of the guest's own avatar
+on the proxy it is engaged with or played a social act on in the last 15 s, while the stance is social
+(GetAbilityMode 0), is not sent to the host. Test hits (`coop.npc hit`) and fights on other creatures are not
+touched. `coop.status` social line: `social_hits_dropped=`. Switch: `coop.fix social.no_bite off`. Not verified
+yet whether this covers every lost impression (see Verification). fix/w4-tests (5a72494) plays a refused game again with the same Kook (it walked out of the
 range: host_act refuses acts from more than kActRange + 4 m) instead of moving on. Not enough: 1 OK of
 4 runs.
 
