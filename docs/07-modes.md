@@ -64,6 +64,9 @@ Every frame the mod detects the game mode (`GetActiveModeID`) and picks an **ada
   host sees "a player is waiting for the world: leave the planet to save". Forcing a save on a
   planet was tried and rejected: such a save loads with UI errors every frame (0xEBDD12)
   and a hang.
+  The check is made when the save is posted; the game writes it up to ~1 s later, and a ship that
+  landed in between made such a save too (BUG-0357, docs/re/space.md#space-share-save-on-planet):
+  a share whose save was written on a planet is saved again.
 * Adventures are not saves. No world is transferred; everyone launches the same adventure
   themselves. Puppets appear once the adventure keys match.
 * A synchronous save (`MessageSend`) from the frame hook (inside `Present`) deadlocks the

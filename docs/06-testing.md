@@ -2430,3 +2430,18 @@ answered right after; a 1 s poller beside a standalone run saw no gap. Same sign
   `--no-fill`: the same churn without a full pool, suite `cell_particles_nofill`, extended). Do not
   trust a handful of smooth runs here: all fixes off gave 4 smooth runs in one lab and 6 of 12 with
   steps in another.
+
+## A share save written on a planet: space_share_landing (2026-10-31, fix/w27-space-fault)
+<a id="testing-space-share-landing"></a>
+
+* `coop_space_share_landing.py` (`space_share_landing`, ~1.5 min, space fixture, BUG-0357): the host
+  is in its solar system, the guest leaves and joins again, `coop.worldfix landsave 300` lands the
+  host's ship (LandOnActivePlanet) 0.3 s after the share save is posted, then the host takes off.
+  On the guest's own game after the load: no caught fault (and none in the next 15 s), its ship not
+  on a planet, in the host's system. `SPORE_FIX_OFF=world.share_planet_save` FAILS (~1000 faults in
+  15 s at 0x00EBDD12, the guest on the planet; labs 20261031-204700, 20261031-204721 with
+  `LANDSAVE_MS=700`). A landing in the frame of the post (`landsave 0`) does not reproduce: the
+  game drops that save and nothing is written (lab 20261031-204503 passed with the fix off).
+* Thousands of caught faults at one address in a campaign's findings with a guest's ship on a planet
+  the host is not on: look at the host's log for a "saving for the share" line followed by a
+  "stage: Space 80... -> Space 40..." line before its "save: N objects of ours" line.

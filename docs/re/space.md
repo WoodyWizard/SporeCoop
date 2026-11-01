@@ -1936,3 +1936,45 @@ Runtime findings of the wave 3 Space fixes (lane 6, GOG 2024):
   an unknown key); `coop.fleet fakemodel 1` (host, tests) sends made-up model instances.
 * Not done: sending the creation itself to the guest (creations.cpp does that for the players' own
   ships, not for NPC empires' ones).
+
+## A share save written on a planet (2026-10-31, fix/w27-space-fault)
+<a id="space-share-save-on-planet"></a>
+
+* ✔ **A save is written frames after it is posted.** `world::save_game` posts the game's save
+  message (0x1CD20F0, MessagePost) after checking `Simulator::GetCurrentContext` (0 planet, 1 solar
+  system, 2 galaxy). The game writes the world later in its own message processing: in lab
+  20261031-185843 campaign_space#3 the host posted the share save in its solar system (place
+  0x80AE3044, settled 14.5 s), its ship was on a planet (0x40AE3044) 0.3 s later, and the world was
+  serialized 1.1 s after the post (`save: N objects of ours are kept out of it`). The check at the
+  post does not cover the write. `cAppModeSpace::LandOnActivePlanet` (0xFE0E00) switches the
+  context to 0 at once (it calls 0x1003530). ✔ Runtime (labs 20261031-204503/204700/204721): a
+  landing in the frame of the post makes the game drop the save (no box, nothing written; BUG-0276's
+  check saves again); a landing 0.3 s or 0.7 s after the post (0.9 s in the log under load) comes
+  before the write (the world was serialized 0.17 s after the landing) and the save is made on the
+  planet.
+* ✔ **What a planet-made Space save does to the game that loads it** (GOG 2024, both builds have the
+  same code here): the guest's ship starts on the planet with the host's ship values, and the
+  game faults at every frame at 0x00EBDD12 (thousands of caught faults, its console busy for
+  seconds). 0xEBDD12 is inside FUN_00EBDBB0 (thiscall, `ret 8`, 1984 bytes; the labels
+  "SporeApp.exe+0xABDD12" / "Herd_Update" are only nearest names): `mov eax,[esp+0x18]` (the saved
+  `this`) then `mov edi,[eax+8]`: `this` is null. It walks a list of area effects at this+8..+0xC,
+  tests each one's distance to the object it gets (vt+0x5C casts 0x1186577, 0xB033B403 (UFO, +0x714
+  its kind), 0xCE9F6639) and applies damage through vt+0x18 (type 8). Callers: 0xEF1850 (plain
+  forward) and 0xFF63D0 (passes object+0x508), called from 0x1060E00+0xDDC. Inferred: a planet
+  hazard manager that does not exist after such a load.
+  The second address, 0x00FD9420 (label "Movie::MovieSystem::Init+0x350" is a nearest name), is
+  `cCityData::GetSpiceProduction` (`fld [ecx+0x1C]; ret`, see 5.2 above) called with a null city
+  data from 0xC82B70+0x10C (only caller 0xC82EE0): a planet record of that save with tech level 5
+  and no cCityData. A few per minute.
+* This is the documented "forcing a save on a planet" failure (docs/07-modes.md, Space) reached
+  through a race instead of a forced save. BUG-0301 (a save in the frame the ship left a planet) is
+  the mirror case at the post; this one is after the post.
+* **Fix (BUG-0357):** savestrip's COMSerializer::Write hook calls a watch when a save starts
+  writing (once per serializer and frame, main thread, whether or not the strip is on); world.cpp
+  notes the time when the Space context is 0 then. A share whose save was written on a planet saves
+  again (`save_game` refuses until the ship is off the planet, the guest waits with "leave the
+  planet to save"). Switch `coop.fix world.share_planet_save`; test knob `coop.worldfix landsave <ms>`
+  (LandOnActivePlanet <ms> after the next Space share save is posted; -1 off); `coop.status`
+  world line "shares saved again (written on a planet) N".
+* Frequency: 1 of 182 Space share saves in the lab history up to 2026-10-31 (a test bot clicked a
+  planet in that second); the race is as old as the Space share saves (v0.5.0, commit 3989b34).
