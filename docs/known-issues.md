@@ -1496,6 +1496,10 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Known: the creature stage's cinematic does not end in the editor mode; a deferred creature removal waits for it.
 * Not checked: whether a player can start a vote during this cinematic (the mating call, a guest's vote).
 * Ticket: BUG-0404
+* FIXED (2026-11-01, fix/w34-vote-cinematic, unreleased): the vote's editor waits at one busy gate
+  (mods/coop/busy.h: a cinematic, the input lock, the game time paused); the guest's own editor, an action
+  vote's result and the share after an evolution use the same gate. Switches `core.editor_cinematic`,
+  `core.own_editor_busy`, `core.vote_action_busy`, `world.share_busy`; tests `vote_during_cinematic`, `busy_gate`.
 
 ## Creature: the partner's creature pops 1 m away and back when it uses an ability (2026-11-01, feat/w33-tests-creature)
 <a id="issue-puppet-ability-pop"></a>

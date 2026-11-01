@@ -1,20 +1,21 @@
 ---
 id: BUG-0404
 title: Creature: an evolution vote while the host's post-editor cinematic plays opens an editor without its buttons; the host is stuck
-status: open
+status: fixed
 kind: bug
 stage: Creature
 reported: 2026-11-01
 source: coop_editor_soak.py (w33)
 role: host
 versions: 0.7.3.3 (main a05d1f6)
-fixed_in:
-branch: feat/w33-tests-creature
-commits:
-tests: tools/tests/coop_editor_soak.py (seen in its first run before it waited for the cinematic)
+fixed_in: unreleased
+branch: fix/w34-vote-cinematic
+commits: ddb7f14, 3b83b29
+tests: vote_during_cinematic, busy_gate (tools/tests/coop_vote_cinematic.py); npc_tests test_busy_gate
 signature:
-docs:
-related: BUG-0371, BUG-0273, BUG-0019
+docs: docs/re/creature.md#creature-busy-states, docs/06-testing.md#testing-busy-gate, docs/known-issues.md#issue-vote-during-evolution-cinematic
+related: BUG-0371, BUG-0273, BUG-0019, BUG-0331, BUG-0336, BUG-0319
+switch: core.editor_cinematic, core.own_editor_busy, core.vote_action_busy, world.share_busy
 ---
 
 ## Report
@@ -28,21 +29,64 @@ creature only) and the host's game stayed in the editor (`game.mode` 0x00DBDBA1)
 creature removal waited for the cinematic too (`destroys during cinematics: deferred=1 pending=1`).
 
 ## Root cause
-Observed: the cinematic of the Creature stage does not end while the game is in the editor mode, and its input
-lock keeps the editor's UI from being built or used. Inferred: the vote (or the editor request) does not wait
-for a cinematic that holds the input. Not checked: whether a player can start an evolution vote during this
-cinematic (the test started it with `coop.vote editor`; a guest's vote or the host's mating call during the
-cinematic would do the same), and whether the cinematic ends after a long wait.
+Observed (lane 5, 2026-11-01, `coop_vote_cinematic.py`): after every editor the Creature stage plays
+CRG_Fade_From_Black_Egg (F4F96E43) on both games, ~7 s on the host and ~10 s on the guest, with the input
+lock held. A vote ends whenever the others are ready (or its 60 s are up), whatever the host's game plays;
+`finish_vote` -> `hold_submit` -> `submit_tick` then submitted the host's editor request at once. An editor
+opened while a cinematic plays comes up without its buttons and the cinematic never ends in the editor
+mode (`cinematic F4F96E43 playing`, `input_lock=1` for minutes; Enter and "done" do nothing).
+EndCinematic called then brings the buttons back.
+Observed, the players' way: the guest leaves its editor, the host clicks "done", the next vote starts and the
+guest presses "I'm ready" within the ~7 s of the host's fade-in: the host is stuck (case
+`evolution_cinematic`, FAIL run below). The same for any cinematic or caption the host's game plays when the
+vote ends (inferred for the brain-upgrade and migration captions: the same cinematic manager state).
+The guest's own editor after a vote already waited for the guest's own cinematic (`own_editor_tick`,
+case `guest_cinematic` passes with the switches off), but not for a pause: due while the guest's pause
+menu was open it was dropped for good ("own editor not opened: the pause menu is open"); and the host's
+editor opened under the Sporepedia (the game time paused) when the vote ended there (in the editor
+afterwards, Esc gave a working editor: not stuck, but opened under the player's window).
+Same class (ticket audit C15, busy states): "paused" was known only as the pause menu's "Resume Game"
+button (BUG-0331, BUG-0336); `cGameTimeManager` +0x48 bit 0 is set by the pause menu, the Sporepedia and
+My Collections alike (docs/re/creature.md#creature-busy-states).
+Cell -> Creature: the same gate applies to the Cell stage's held editor (cell captions and the level-up zoom
+use the same cinematic manager state, docs/re/cell.md); not reproduced with a vote in the Cell stage.
 
 ## Fix
-Not fixed (outside this test branch). Candidate: a vote (or its editor request) waits while a cinematic holds
-the input lock (as the world share already does, BUG-0019); or the cinematic is ended before an editor opens.
-The soak test now waits for the cinematic like a player (Enter) between rounds.
+One busy gate (mods/coop/busy.h, `game_busy()` in coop.cpp: a cinematic, the input lock, the game time
+paused, an editor, a load; `busy:` in `coop.status`, `busy=` in the trace line):
+* `core.editor_cinematic`: the host's held editor (a vote's) waits at the gate and for 3 s after an editor
+  (the fade-in starts then); a pause as long as it lasts, a cinematic at most 60 s, then the cinematic is
+  ended natively right before the editor opens.
+* `core.own_editor_busy`: the guest's own editor after a vote waits through a pause (the 90 s limit counts
+  only unpaused time) instead of being dropped.
+* `core.vote_action_busy`: an action vote's result (the superweapon) waits at the gate (a pause as long as it
+  lasts, the rest 60 s); dropped when the stage was left or the session ended.
+* `world.share_busy`: the world share after a mode change waits for a pause and the input lock too, not only
+  a cinematic (BUG-0019's 120 s limit).
+* Test tools: the campaign's sync and census checks skip a guest whose game stands by `busy:` (paused,
+  editor, loading), not only by the "Resume Game" button (`OLD_PAUSE_CHECK=1`: the old check).
+* Test hook: `coop.share due` (a share due as after an evolution).
 
 ## Verification
-Repro: two games on the creature fixture; `coop.vote editor` on the host, the guest's "I'm ready", "done" on both
-(1416 1062); as soon as both are back in the stage, `coop.vote editor` again and ready: the host's editor has no
-buttons. Not in a suite test yet (the soak test avoids it).
+`tools/tests/coop_vote_cinematic.py`: vote_during_cinematic (host_cinematic by PlayCinematic,
+evolution_cinematic the players' way, guest_cinematic, host_paused by the Sporepedia, guest_paused by the
+pause menu) and busy_gate (`--part gate`: action_cinematic, action_paused, share_cinematic, share_paused);
+checks the busy game's own state (its mode, cinematic, input lock in the editor, a real click on "done",
+the guest's load).
+* FAIL with `SPORE_FIX_OFF=core.editor_cinematic` (first version of the test, cases 1-3): lab
+  20261101-161342 (host_cinematic and evolution_cinematic: the host's editor with cinematic F4F96E43 and
+  input lock 1, "done" does nothing).
+* FAIL with `SPORE_FIX_OFF=core.editor_cinematic,core.own_editor_busy`: lab 20261101-164848
+  (host_cinematic, evolution_cinematic, host_paused, guest_paused).
+* FAIL with `SPORE_FIX_OFF=core.vote_action_busy,world.share_busy`: lab 20261101-165714 (action_cinematic,
+  action_paused, share_paused).
+* PASS: lab 20261101-161924 (3/3, cases 1-3), 20261101-164247 (all five cases), 20261101-164000 (busy_gate),
+  PASS3_PLACEHOLDER
+* `make test`: npc_tests test_busy_gate (the gate's waits and limits).
 
 ## History
 - 2026-11-01: opened.
+- 2026-11-01 (fix/w34-vote-cinematic): reproduced deterministically (PlayCinematic on the host while the vote
+  ends) and the players' way (the next vote within the host's fade-in); fixed with one busy gate for the
+  vote's editor, the guest's own editor, action votes and shares (widened on the coordinator's request after
+  the ticket audit's class C15).

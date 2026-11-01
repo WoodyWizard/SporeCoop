@@ -3,6 +3,11 @@
 ## [Unreleased]
 
 ### Fixed
+- Creature: an evolution vote that ended while the host's game played a cinematic (the evolution's own
+  fade-in right after the last editor, a caption) left the host in an editor without its buttons. The
+  vote's editor now waits until the cinematic is over and the game is not paused (the pause menu, the
+  Sporepedia, My Collections); a guest's own editor after a vote waits through a pause instead of being
+  dropped, and an action vote's result and the world sent after an evolution wait the same way (BUG-0404).
 - SporeKit: a hook made while the game runs could let a game thread call address 0 (a handled
   fault, once followed by a frozen game): the hook's original function is now set before the hook is
   switched on. Seen in test games when the first simulated input was sent (BUG-0398).

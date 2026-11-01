@@ -64,3 +64,4 @@ must bring it to the galaxy view with the game time running (the game's context 
 - 2026-10-31: opened.
 - 2026-10-31 (fix/w19-space): test tools close windows that pause the game without a caption; FAIL 20261031-050021, PASS 20261031-045500 + 20261031-050839, campaign replay OK, Space regression 20261031-051044 7/7 (lane 8).
 - 2026-11-01: released in 0.7.3.2.
+- 2026-11-01 (fix/w34-vote-cinematic, BUG-0404): the mod's busy gate reads the game time's pause flag (cGameTimeManager +0x48 bit 0: the pause menu, the Sporepedia, My Collections alike); `coop.status` prints `busy:` and the campaign's sync and census checks skip a guest whose game stands by it, not only by the "Resume Game" button.

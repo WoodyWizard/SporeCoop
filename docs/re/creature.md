@@ -1442,3 +1442,26 @@ BUG-0394 / BUG-0387. GOG 2024, lanes 2-5, `SPORE_FPS=30`, `SPORE_NET=player`.
 * ~ The walker of puppet_walk sometimes did not walk: its clicks on the partner's tag (to walk back when
   12 m away) did nothing after a first walk ended 15-25 m apart; the test now puts the walker next to the
   observer before its walk (`coop.npc gopos`).
+
+## A cinematic left playing in an editor; the game's busy states (2026-11-01, fix/w34-vote-cinematic)
+<a id="creature-busy-states"></a>
+
+BUG-0404. GOG 2024, lane 5, `tools/tests/coop_vote_cinematic.py`.
+
+* ✔ After every editor the Creature stage plays CRG_Fade_From_Black_Egg (F4F96E43) on both games: ~7 s on
+  the host, ~10 s on the guest (`coop.status` "cinematic F4F96E43 playing", input lock 1), then it ends by
+  itself. The same cinematic started by hand (`call Simulator::cCinematicManager::PlayCinematic thiscall <cm>
+  s:CRG_Fade_From_Black_Egg 1 1 0 0 0`) behaves the same in the stage.
+* ✔ An editor opened while it plays (EditorRequest::Submit from the vote's held request) comes up without
+  its buttons (no top bar, no "done", the letterbox bars stay) and the cinematic never ends in the editor
+  mode: `cinematic F4F96E43 playing` and `input_lock=1` for minutes; Enter and clicks on "done" do nothing.
+  `SporeCoop::cCinematicManager_EndCinematic` called then (in the editor) ends it: the buttons appear at
+  once and "done" works.
+* ✔ `cGameTimeManager` +0x48 bit 0 is the game time standing still in Creature: the pause menu 0x03, the
+  Sporepedia (the 3rd small HUD button bottom left, 84 1054 in the 1440x1080 window) 0x01, My Collections
+  (the 4th, 114 1054) 0x03; 0 again after Esc. The input lock stays 0 for these windows. So "paused" is not
+  only the pause menu's "Resume Game" button (BUG-0331, BUG-0336): the mod reads the flag (`busy: paused` in
+  `coop.status`, `busy=` in the trace line).
+* ~ The co-op window opened by a vote does not stop the game time (the held editor opened right after the
+  vote with the window just closed; inferred from the passing runs, the flag was not read with the window up).
+

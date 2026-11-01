@@ -50,3 +50,4 @@ Test `coop_civ_pause_city.py`: a city founded during a guest's pause reaches it 
 - 2026-10-30: opened.
 - 2026-10-30 (fix/w17-tribe): the guest was paused; census skips paused guests; scenario test.
 - 2026-11-01: released in 0.7.3.2.
+- 2026-11-01 (fix/w34-vote-cinematic, BUG-0404): the mod's busy gate reads the game time's pause flag (cGameTimeManager +0x48 bit 0: the pause menu, the Sporepedia, My Collections alike); `coop.status` prints `busy:` and the campaign's sync and census checks skip a guest whose game stands by it, not only by the "Resume Game" button.
