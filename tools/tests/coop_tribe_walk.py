@@ -18,8 +18,12 @@ Checks for every view of mirrors, over the frames in which the host's state says
 * no jump: no frame step of the drawn member longer than TP_FACTOR x the members' top speed x the
   frame time (or the time of the frame before: a hitch of the game is made up in the next frame; and
   at least TP_MIN m);
-* no steps: in 0.1 s windows the drawn member moves at 0.6-1.4x the host's speed of it in at least
-  MATCHED_MIN of them and stands (< 0.3x) in at most STAND_MAX;
+* no steps: in 0.1 s windows the drawn member moves at 0.6-1.4x the speed of the target's path (the
+  host's state the driving aims at) in at least MATCHED_MIN of them and stands (< 0.3x) in at most
+  STAND_MAX;
+* no stop-and-go: in the frames in which the target's path moves at 1-SLOW m/s (the member speeds up
+  or slows down: every start and end of a walk) its drawn speed is off the path's by more than half of
+  it + 1 m/s in at most SLOW_UNEVEN_MAX (stands, then surges);
 * it walks: the animation's walk gait on in at least GAIT_MIN of the frames in which it is on the
   observer's screen.
 The host's own game (real members, not mirrors) is measured the same way as a reference.
@@ -44,10 +48,12 @@ from twoinst import Checks, shot, start
 TP_FACTOR, TP_MIN = 3.0, 0.75
 STAND_MAX, MATCHED_MIN = 0.05, 0.85
 GAIT_MIN = 0.80
-# while the host's member speeds up or slows down (1-SLOW m/s: every start and end of a walk), per frame:
-# standing (< 0.3x its speed) and surging (faster than its speed + SURGE m/s)
+# while the target's path moves at 1-SLOW m/s (the member speeds up or slows down: every start and end of a
+# walk), per frame (up to 0.1 s): uneven = the drawn speed off the path's by more than half of it + 1 m/s
+# (0.7.3.3, drive::step: 18-36 %, it stands and surges; walk_place: 5-6 %; the host's own game: ~1 %)
 SLOW, SURGE = 5.0, 4.0
-SLOW_STILL_MAX, SLOW_SURGE_MAX = 0.10, 0.10
+SLOW_UNEVEN_MAX = 0.12
+PATH_HALF = 0.1  # s: the target's path speed of a frame is taken over +-PATH_HALF
 W, H = 1440, 1080
 
 
@@ -79,12 +85,24 @@ def analyse(rows, owner, top, label):
         if r['who'] == owner and r['id']:
             by.setdefault(r['id'], []).append(r)
     frames, tps, steps, near, near_gait, win, errs, dts, drive_tp = 0, [], [], 0, 0, [], [], [], 0
-    slow, slow_still, slow_surge, hitches = 0, 0, 0, 0
+    slow, slow_still, slow_surge, slow_uneven, hitches = 0, 0, 0, 0, 0
     walked = set()
     for mid, rs in by.items():
         drive_tp += rs[-1]['tp'] - rs[0]['tp']
         prev_dt = 0
-        for a, b in zip(rs, rs[1:]):
+        # the speed of the target's path around each frame (+-PATH_HALF): what the mirror should show. Not the
+        # state's reported speed: interpolated from a standing state to a walking one the path moves
+        # slower than the newer state says
+        path = []
+        lo = hi = 0
+        for k in range(len(rs)):
+            while rs[k]['t'] - rs[lo]['t'] > PATH_HALF:
+                lo += 1
+            while hi + 1 < len(rs) and rs[hi + 1]['t'] - rs[k]['t'] <= PATH_HALF:
+                hi += 1
+            span = rs[hi]['t'] - rs[lo]['t']
+            path.append(math.dist(rs[lo]['tgt'], rs[hi]['tgt']) / span if span > 0 else 0.0)
+        for k, (a, b) in enumerate(zip(rs, rs[1:])):
             dt = b['t'] - a['t']
             # what a frame draws was placed in the frame before: after a hitch of the game (a 100-230 ms
             # frame) the next short frame shows the way made up for it
@@ -103,14 +121,16 @@ def analyse(rows, owner, top, label):
             if step > max(TP_MIN, TP_FACTOR * top * allow_dt):
                 tps.append((mid, round(b['t'], 2), round(step, 2), round(dt * 1000)))
             errs.append(math.dist(b['d'], b['tgt']))
-            if 1.0 <= b['rv'] < SLOW:  # the host's member speeds up or slows down
+            ps = path[k + 1]
+            if 1.0 <= ps < SLOW and dt <= 0.1:  # the host's member speeds up or slows down
                 slow += 1
-                slow_still += step < 0.3 * b['rv'] * dt
-                slow_surge += step > (b['rv'] + SURGE) * dt
+                slow_still += step < 0.3 * ps * dt
+                slow_surge += step > (ps + SURGE) * dt
+                slow_uneven += abs(step / dt - ps) > 0.5 * ps + 1.0
             if b['vis'] and 0 < b['sx'] < W and 0 < b['sy'] < H:
                 near += 1
                 near_gait += b['gait'] > 0
-        # 0.1 s windows while the host's member walks (> 1 m/s): drawn speed / the host's speed
+        # 0.1 s windows while the host's member walks (its target's path > 1 m/s): drawn speed / path speed
         i = 0
         while i < len(rs):
             j = i
@@ -119,8 +139,8 @@ def analyse(rows, owner, top, label):
             if j >= len(rs):
                 break
             dt = rs[j]['t'] - rs[i]['t']
-            sp = sum(r['rv'] for r in rs[i:j + 1]) / (j + 1 - i)
-            if min(r['rv'] for r in rs[i:j + 1]) > 1.0 and dt < 0.3:
+            sp = math.dist(rs[i]['tgt'], rs[j]['tgt']) / dt if dt > 0 else 0
+            if sp > 1.0 and min(r['rv'] for r in rs[i:j + 1]) > 0.5 and dt < 0.3:
                 win.append(math.dist(rs[i]['d'], rs[j]['d']) / dt / sp)
             i = j
     return {
@@ -130,6 +150,7 @@ def analyse(rows, owner, top, label):
         'err_p50': pct(errs, 0.5), 'err_p90': pct(errs, 0.9), 'err_max': max(errs) if errs else 0,
         'near': near, 'near_gait': near_gait / near if near else 0,
         'slow': slow, 'slow_still': slow_still / slow if slow else 0, 'slow_surge': slow_surge / slow if slow else 0,
+        'slow_uneven': slow_uneven / slow if slow else 0,
         'win': len(win), 'stand': sum(1 for w in win if w < 0.3) / len(win) if win else 1,
         'matched': sum(1 for w in win if 0.6 <= w <= 1.4) / len(win) if win else 0,
         'ratio_p10': pct(win, 0.1), 'ratio_p50': pct(win, 0.5), 'ratio_p90': pct(win, 0.9), 'drive_tp': drive_tp,
@@ -142,11 +163,12 @@ def report(r, ck, mirrors=True):
     print(f'    drawn speed p50 {r["speed_p50"]:.2f} p99 {r["speed_p99"]:.2f} max {r["speed_max"]:.1f} m/s; '
           f'off the target p50 {r["err_p50"]:.2f} p90 {r["err_p90"]:.2f} max {r["err_max"]:.2f} m; '
           f'driver teleports {r["drive_tp"]}', flush=True)
-    print(f'    0.1 s windows while they walk: {r["win"]}, standing (< 0.3x the host\'s speed) {r["stand"]:.0%}, '
+    print(f'    0.1 s windows while they walk: {r["win"]}, standing (< 0.3x the target path\'s speed) {r["stand"]:.0%}, '
           f'at 0.6-1.4x {r["matched"]:.0%} (ratio p10 {r["ratio_p10"]:.2f} p50 {r["ratio_p50"]:.2f} '
           f'p90 {r["ratio_p90"]:.2f})', flush=True)
-    print(f'    frames while it speeds up or slows down (1-{SLOW:.0f} m/s): {r["slow"]}, standing {r["slow_still"]:.0%}, '
-          f'faster than the host\'s speed + {SURGE:.0f} m/s {r["slow_surge"]:.0%}', flush=True)
+    print(f'    frames while it speeds up or slows down (path 1-{SLOW:.0f} m/s): {r["slow"]}, uneven (off the path\'s '
+          f'speed by more than half of it + 1 m/s) {r["slow_uneven"]:.0%}: standing {r["slow_still"]:.0%}, faster than '
+          f'the path + {SURGE:.0f} m/s {r["slow_surge"]:.0%}', flush=True)
     print(f'    jumps (id, t, m, frame ms): {len(r["teleports"])} {r["teleports"][:12]}', flush=True)
     print(f'    walk gait in {r["near_gait"]:.0%} of the {r["near"]} frames on the screen', flush=True)
     if not mirrors:
@@ -156,9 +178,9 @@ def report(r, ck, mirrors=True):
     ck(r['win'] > 50 and r['stand'] <= STAND_MAX and r['matched'] >= MATCHED_MIN,
        f'{r["label"]}: the members move with the host\'s, not in steps (stand in {r["stand"]:.0%} <= {STAND_MAX:.0%}, '
        f'at its speed in {r["matched"]:.0%} >= {MATCHED_MIN:.0%} of {r["win"]} windows)')
-    ck(r['slow'] >= 40 and r['slow_still'] <= SLOW_STILL_MAX and r['slow_surge'] <= SLOW_SURGE_MAX,
-       f'{r["label"]}: no stop-and-go while the members start and stop (of {r["slow"]} frames at 1-{SLOW:.0f} m/s: '
-       f'standing {r["slow_still"]:.0%} <= {SLOW_STILL_MAX:.0%}, surging {r["slow_surge"]:.0%} <= {SLOW_SURGE_MAX:.0%})')
+    ck(r['slow'] >= 40 and r['slow_uneven'] <= SLOW_UNEVEN_MAX,
+       f'{r["label"]}: no stop-and-go while the members start and stop (uneven in {r["slow_uneven"]:.0%} <= '
+       f'{SLOW_UNEVEN_MAX:.0%} of {r["slow"]} frames at 1-{SLOW:.0f} m/s)')
     ck(r['near'] >= 150 and r['near_gait'] >= GAIT_MIN,
        f'{r["label"]}: the members walk where the player sees them (walk gait in {r["near_gait"]:.0%} >= '
        f'{GAIT_MIN:.0%} of {r["near"]} frames on the screen)')

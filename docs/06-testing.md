@@ -2488,3 +2488,29 @@ answered right after; a 1 s poller beside a standalone run saw no gap. Same sign
   the fixture is 4.75 m/s; WASD turns (W+D) curve at top speed, where a puppet that only walks falls
   behind; screenshots of the puppet are hard to judge (Kooks of the same colour around, and
   `coop.targets all` gives the tag point).
+
+## Tribe members frame by frame: coop.track in Tribe and tribe_walk (2026-11-01, fix/w30-tribe-walk)
+<a id="testing-tribe-walk"></a>
+
+* `coop.track` in Tribe (BUG-0365): one row per member of the player tribe per frame, `who` = its
+  owner and a 24th column `id` = the member id (0 in Creature; parsers of the 23 Creature columns
+  take `len >= 23`). On the host its own game's members (the target = its position, `rv` = its game
+  speed); on a guest the mirrors: the drawn position (before the mod's driving), the target the
+  driving aims at this frame and `rv` = the speed of that host state. The ring holds 60 000 rows
+  (~2 min with 6 members at 70 fps).
+* `coop_tribe_walk.py` (suite `tribe_walk`, ~2.5 min cold; `tribe_walk_mobile` nightly: SPORE_NET=mobile,
+  both games at 30 fps): the host spawns 3 members (3 each), a player walks its members ~30 s by
+  box-select (one or the group) and right-clicks on the ground 220-420 px off, sometimes a new order
+  before they arrive; the other keeps them in view with the minimap. Both directions; the guest's own
+  members are mirrors too (`guest sees its own members`). Checks per view of mirrors: no frame step over
+  3x the top speed x max(this frame, the frame before) (min 0.75 m); 0.1 s windows standing <= 5 % and
+  at 0.6-1.4x the speed of the target's path >= 85 %; in the frames whose target path moves at 1-5 m/s
+  (starts and ends of walks) the drawn speed off the path's by more than half of it + 1 m/s in <= 12 %
+  (0.7.3.3: 18-36 %, the fix 5-6 %, the host's own game ~1 %); walk gait >= 80 % of the frames on screen.
+  The reference is the target's path (over +-0.1 s), not the state's reported speed: interpolated
+  from a standing state to a walking one the path moves slower than the newer state says. The
+  host's own game is printed as the reference. `--fps N` caps both games,
+  `--dir host|guest`, `--seed`. `SPORE_FIX_OFF=tribe.mirror_walk,tribe.mirror_time` fails.
+* Pitfalls: the lab's games ran at ~70 fps (14-15 ms frames), not 30; the minimap's camera jumps give
+  100-230 ms frames, and the next frame draws the way made up (allow the frame before's time); a click
+  on the ground near a tree or a member gives no walk (the test logs `nothing`).
