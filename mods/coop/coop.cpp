@@ -430,6 +430,81 @@ net::PlayerState local_state()
 // remote `s` is visible here only when both play the same mode in the same world
 bool same_place(const net::PlayerState& s) { return s.mode == g_mode && s.world == g_world && g_world != 0; }
 
+// ---- coop.track (BUG-0360): what this player sees of its partners, frame by frame. Tests sample the
+// partner's puppet (its game position, where its model is drawn, its game speed, its animation, the
+// interpolated target) and the own avatar every frame into a ring and read it back with `dump`.
+struct TrackSample {
+    float t;
+    uint8_t who; // remote id, 255 = the own avatar
+    uint8_t flags; // state flags of the target (PF_*), the own avatar: 0
+    uint16_t tp;   // the puppet's teleports so far (drive::State)
+    net::Vec3 p, d, tgt;
+    float gv, rv; // the game's speed of the creature, the remote's reported speed
+    uint32_t anim;
+};
+static std::deque<TrackSample> g_track;
+static bool g_track_on = false;
+static double g_track_t0 = 0;
+constexpr size_t kTrackMax = 30000;
+
+static void track_one(uint8_t who, void* c, const net::PlayerState* s, uint16_t tp, double now)
+{
+    TrackSample x{};
+    x.t = (float)(now - g_track_t0);
+    x.who = who;
+    x.tp = tp;
+    x.p = game::position(c);
+    x.d = x.p;
+    game::drawn_state(c, &x.d, &x.anim);
+    x.gv = drive::speed(game::velocity(c));
+    if (s) {
+        x.tgt = s->pos;
+        x.rv = drive::speed(s->vel);
+        x.flags = (uint8_t)s->flags;
+    }
+    g_track.push_back(x);
+    while (g_track.size() > kTrackMax)
+        g_track.pop_front();
+}
+
+void track_tick(double now)
+{
+    if (!g_track_on || g_mode != modes::kCreature || !g_local)
+        return;
+    track_one(255, g_local, nullptr, 0, now);
+    for (auto& [id, r] : g_remotes) {
+        void* pp = puppet_now(r);
+        if (!pp || !creature_puppet(r.puppet_adapter) || !game::creature_listed(pp))
+            continue;
+        net::PlayerState s;
+        if (r.buf.sample(now, s))
+            track_one((uint8_t)id, pp, &s, (uint16_t)r.drv.teleports, now);
+    }
+}
+
+int c_track(void*, int argc, const char* const* argv, SkOut* out)
+{
+    const char* a = argc > 1 ? argv[1] : "count";
+    if (!strcmp(a, "start")) {
+        g_track.clear();
+        g_track_on = true;
+        g_track_t0 = H->time_seconds();
+    } else if (!strcmp(a, "stop"))
+        g_track_on = false;
+    else if (!strcmp(a, "dump")) {
+        // dump [from] [n]: t who flags tp px py pz dx dy dz tx ty tz gv rv anim
+        size_t from = argc > 2 ? (size_t)atol(argv[2]) : 0, n = argc > 3 ? (size_t)atol(argv[3]) : 2000;
+        for (size_t i = from; i < g_track.size() && i < from + n; i++) {
+            const auto& x = g_track[i];
+            SAY("%.4f %u %u %u %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.2f %.2f %08X\n", x.t, x.who, x.flags,
+                x.tp, x.p.x, x.p.y, x.p.z, x.d.x, x.d.y, x.d.z, x.tgt.x, x.tgt.y, x.tgt.z, x.gv, x.rv, x.anim);
+        }
+        return 0;
+    }
+    SAY("track %s samples=%u\n", g_track_on ? "on" : "off", (unsigned)g_track.size());
+    return 0;
+}
+
 void drive_puppet(Remote& r, double now)
 {
     net::PlayerState s;
@@ -1982,6 +2057,7 @@ void on_frame(void*, int, void*)
         }
         drive_puppet(r, now);
     }
+    track_tick(now);
     trace_tick(now);
 }
 
@@ -4149,6 +4225,8 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                    },
                    nullptr, MT);
     H->command_add(M, "coop.status", "session, players and puppets", c_status, nullptr, MT);
+    H->command_add(M, "coop.track", "coop.track start|stop|count|dump [from] [n] - every frame: the partners' puppets and the own avatar (tests, BUG-0360)",
+                   c_track, nullptr, MT);
     H->command_add(M, "coop.log", "coop.log detail [0|1|2] - support logging: 0 = the old lines only, 1 = state trace + events "
                    "(default), 2 = verbose; coop.log trace - write the trace lines now",
                    [](void*, int argc, const char* const* argv, SkOut* out) {

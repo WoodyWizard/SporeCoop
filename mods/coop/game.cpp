@@ -642,6 +642,27 @@ net::Vec3 velocity(void* c)
 }
 
 float health(void* c) { return field<float>(c, kHpOff); }
+
+bool drawn_state(void* c, net::Vec3* drawn, uint32_t* anim)
+{
+    if (!c || !skg::readable((uint8_t*)c + 0xB54, 4))
+        return false;
+    uint8_t* ac = field<uint8_t*>(c, 0xB54);
+    if (!ac || !skg::readable(ac, 0x188) || !skg::readable(*(void**)ac, 0x5C))
+        return false;
+    if (drawn) {
+        auto& p = field<Vector3>(ac, 0x04);
+        *drawn = {p.x, p.y, p.z};
+    }
+    if (anim) {
+        // GetCurrentAnimation(u32* id, float* time, int*, int* index), thiscall ret 0x10 (GOG 2016
+        // 0xA05030, vtable 0x1449640): writes the id only when the creature has a main animation
+        uint32_t id = 0;
+        vcall<void>(ac, 0x58 / 4, &id, (float*)nullptr, (int*)nullptr, (int*)nullptr);
+        *anim = id;
+    }
+    return true;
+}
 // cCombatant::GetMaxHitPoints (vtable 0x58); the +0x2C field holds 1.0 for avatars in this build
 float max_health(void* c)
 {

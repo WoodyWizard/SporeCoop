@@ -95,6 +95,10 @@ float bounding_radius(void* c);
 // the terrain's distance from the planet's centre in the direction of pos (cPlanetModel::GetHeightAt), 0 without a planet
 float ground_radius(const net::Vec3& pos);
 void set_scale(void* c, float s);
+// BUG-0360 (coop.track): the creature's Anim::AnimatedCreature (cCreatureBase +0xB54): where its
+// model is drawn (+0x04) and the id of its current animation (vt 0x58 GetCurrentAnimation, 0 when
+// none). False when the creature has none.
+bool drawn_state(void* c, net::Vec3* drawn, uint32_t* anim);
 
 // Animation events: called for every PlayAnimation/PlayAnimationTo on any creature.
 using AnimListener = void (*)(void* creature, uint32_t anim_id, int block, bool disable_blend, bool to_target);

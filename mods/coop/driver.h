@@ -22,6 +22,7 @@ struct State {
     float last_err = 0, last_speed = 0;
     double hold_until = 0; // BUG-0305: after a trail teleport the nudge puts it on the path every frame
     double last_step = 0;  // BUG-0175: the time of the previous step (the nudge per second, not per frame)
+    bool kinematic = false; // BUG-0360: a partner's puppet placed on its path this frame (modes.cpp)
 };
 
 inline float speed(const net::Vec3& v) { return std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z); }

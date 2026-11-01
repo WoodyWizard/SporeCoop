@@ -65,12 +65,38 @@ static void* creature_spawn(const net::PlayerState& s, void* av)
     return p;
 }
 
+// BUG-0360: the partner's creature was driven like an NPC proxy before BUG-0281: a MoveTo again every
+// 0.1 s while the partner walks on (which restarts the game's walk: the puppet stood or crept) and a
+// pull towards the path (undone by its locomotion), so it fell behind and the 4 m snap teleported it
+// about every half second ("the partner teleports, sometimes it walks"). While the partner moves its
+// puppet is now placed on the interpolated path every frame with the partner's velocity (the game
+// animates its walk from it), like npc.kinematic; standing, the driving works as before.
+// `coop.fix creature.puppet_kinematic off`: always the driving (0.7.3.2).
+static bool g_puppet_kinematic_fix = true;
+COOP_FIX("creature.puppet_kinematic", "BUG-0360", g_puppet_kinematic_fix, "creature: the partner's walking creature follows its path every frame instead of teleporting every half second");
+
 static void creature_drive(void* p, const net::PlayerState& s, drive::State& ds, double now)
 {
-    // a partner's creature: lunges and charges move it faster than a puppet can walk, and attack
-    // animations undo the nudges (~10-20 % of them in fights): it trailed by 5-8 m after a fight
-    // move (play_creature.py 2026-10-23); snap at 4 m instead of 8
-    drive::step(p, s.pos, s.rot, s.vel, ds, now, 0, true, 4.f);
+    bool placed = g_puppet_kinematic_fix && game::in_creature_stage() && drive::speed(s.vel) > 0.3f &&
+                  net::dist(game::position(p), s.pos) < 8.f;
+    if (placed) {
+        if (!ds.kinematic)
+            game::stop(p); // its last MoveTo of the driving
+        ds.kinematic = true;
+        game::teleport(p, s.pos, s.rot);
+        *(net::Vec3*)((uint8_t*)p + game::kVelOff) = s.vel;
+        ds.last_step = now;
+        ds.track = drive::Track{};
+    } else {
+        if (ds.kinematic) { // it stands again: the driving takes over from here
+            ds.kinematic = false;
+            *(net::Vec3*)((uint8_t*)p + game::kVelOff) = {0, 0, 0};
+        }
+        // a partner's creature: lunges and charges move it faster than a puppet can walk, and attack
+        // animations undo the nudges (~10-20 % of them in fights): it trailed by 5-8 m after a fight
+        // move (play_creature.py 2026-10-23); snap at 4 m instead of 8
+        drive::step(p, s.pos, s.rot, s.vel, ds, now, 0, true, 4.f);
+    }
     if (game::herd_of(p) != game::avatar_herd()) {
         game::herd_quiet(game::herd_of(p)); // (the game may enable a herd again)
         game::herd_home(game::herd_of(p), game::position(p));
