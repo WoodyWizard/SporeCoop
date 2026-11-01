@@ -10,12 +10,12 @@ role: guest
 versions: 0.7.3.1 - main 15539ad
 fixed_in: unreleased
 branch: fix/w31-civ-gate
-commits: fe88228 e052b04 cea77bf
+commits: fe88228 e052b04 cea77bf e2aba88
 tests: civ_city_burst (coop_civ_city_burst.py), civ_cursor (coop_civ_cursor.py), gates_selftest.py (monitor totals)
 signature: sync-check: MISMATCH ... (Civilization ...): v: N missing on the guest / p: 1 apart (pN ...); MONITOR-VIOLATION totals ... money
 docs: docs/re/civ.md#civ-city-burst, docs/06-testing.md#testing-civ-gates
 related: BUG-0120, BUG-0319, BUG-0325, BUG-0122, BUG-0186, BUG-0381
-switch: civ.city_burst diag.rts_cursor
+switch: civ.city_burst diag.rts_cursor diag.rejoin_grace
 ---
 
 ## Report
@@ -55,6 +55,11 @@ Three separate things behind the three symptoms:
 * `diag.rts_cursor` (e052b04): the sync-check leaves out a Tribe / Civ pointer that moved within
   the last second on either machine (players_out); a resting pointer is compared. Tribe's `p apart`
   (BUG-0381) likely has the same cause: not verified in Tribe.
+* `diag.rejoin_grace` (e2aba88): the host kept the sync-check entry of a player who left, so the
+  same id joining again was checked on its old schedule; in civ_city_join (lab 20261101-100204,
+  test OK, gate red) 6 s after the guest's world load, while the city the catch-up had just founded
+  was still on its way (`v: 1 missing`). Entries of players who left are dropped: a returning
+  player is first checked 10 s after the join, like a newcomer.
 * Monitor (cea77bf, tools only): `totals` always includes the host's lines right before and after
   the guest's line. A replay over the recorded runs: campaign_space totals 42 -> 0.
 

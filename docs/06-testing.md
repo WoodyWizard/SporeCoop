@@ -2735,6 +2735,9 @@ Before a tag `vX.Y.Z` (CLAUDE.md 4):
   rejoins; the guest's log must show the host's notice and the host's trace `share_wait=planet`
   within 25 s; after the takeoff the guest loads the host's system. `SPORE_FIX_OFF=
   world.share_wait_notice` fails.
+* `diag.rejoin_grace` (BUG-0380): the host's sync-check dropped no entry of a player who left, so
+  a guest that left and joined again (civ_city_join) was checked on its old schedule, 6 s after
+  its world load; now a returning player is first checked 10 s after the join, like a newcomer.
 * Monitor (tools/tests/monitor.py): `totals` now always includes the host's trace lines right before
   and right after the guest's (a Civ treasury grows ~400 per 10 s: the +-6 s window often held one
   host line; the 42 campaign_space violations were all such samples, none in a replay now);
