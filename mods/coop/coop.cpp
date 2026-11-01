@@ -1437,6 +1437,36 @@ void share_failed(uint8_t peer, uint32_t tag, bool planet_missing)
     LOG("share for %s failed: retry %d of %d in %.0f s", r.name.c_str(), r.share_tries, kShareRetries, kShareRetryGap);
 }
 
+// BUG-0382: after Civ -> Space every guest stayed in its Civ world for ~90 s (campaign_space, the
+// monitor's stage_apart) and nobody said why: the host's share waits for the stage's cinematic
+// (BUG-0019) and then for the host's ship to leave the home planet (the Space stage saves only off a
+// planet, docs/07-modes.md 7.2). The host now tells everybody once per wait that the world goes out
+// when its ship leaves the planet, and its trace line says why the share waits (`share_wait=planet`
+// or `cinematic`, read by the monitor). Off: only the host's own feed line (0.7.3.3).
+static bool g_share_wait_fix = true;
+COOP_FIX("world.share_wait_notice", "BUG-0382", g_share_wait_fix,
+         "world: everybody is told that the host's world goes out when its ship leaves the planet; the trace says why a share waits");
+static double g_share_cine_held_at = -1e9; // host: a share was held for a cinematic (follow_phase)
+static bool g_planet_wait_told;
+// host: why a share waits now ("planet", "cinematic"), nullptr when none does
+static const char* share_wait_reason()
+{
+    if (!g_share_wait_fix || g_sess.role() != net::Role::Host)
+        return nullptr;
+    if (world::share_waits_for_planet())
+        return "planet";
+    return H->time_seconds() - g_share_cine_held_at < 2.0 ? "cinematic" : nullptr;
+}
+static void share_wait_tick()
+{
+    bool planet = g_share_wait_fix && g_sess.role() == net::Role::Host && world::share_waits_for_planet();
+    if (planet && !g_planet_wait_told)
+        notice(g_name + "'s world goes to the others when " + g_name +
+                   "'s ship leaves the planet (the Space stage saves only in a solar system or the galaxy)",
+               -1);
+    g_planet_wait_told = planet;
+}
+
 // The host decides when a phase ends: when the host plays a stage and a guest stays in another
 // stage (or its editor) for a few seconds, the host world is sent again and the guest loads it.
 void follow_phase(double now)
@@ -1455,8 +1485,11 @@ void follow_phase(double now)
                 double& since = g_share_cine_each_fix ? r.cine_wait_since : g_share_cine_since;
                 bool cine = world::cinematic_playing();
                 bool waited = since != 0 && cine;
-                if (share_wait::hold(since, cine, now, g_share_due_at))
+                if (share_wait::hold(since, cine, now, g_share_due_at)) {
+                    if (cine)
+                        g_share_cine_held_at = now; // BUG-0382: trace share_wait=cinematic
                     continue;
+                }
                 if (waited)
                     LOG("share: a cinematic plays for 120 s, the world is sent anyway");
             } else
@@ -1920,6 +1953,8 @@ void trace_tick(double now)
              st.max_health, g_mode == modes::kCell ? "-" : trace::hex(st.species).c_str(), (unsigned)st.flags,
              game::avatar() ? game::dna() : -1.f, res.empty() ? "" : " ", res.c_str(), (int)g_host_away,
              g_vote.active ? "on" : "off", coop_ui::input_lock_now(), trace::hex(g_own_editor_due).c_str());
+    if (const char* why = share_wait_reason()) // BUG-0382 (new fields go at the end: monitor.py)
+        snprintf(b + strlen(b), sizeof b - strlen(b), " share_wait=%s", why);
     trace::line("trace", "%s%s%s", b, now - g_trace_ver_at > 60.0 ? " version=" : "",
                 now - g_trace_ver_at > 60.0 ? g_sess.version.c_str() : "");
     float host_d = -1;
@@ -2076,6 +2111,7 @@ void on_frame(void*, int, void*)
 
     remove_strays(now);
     follow_phase(now);
+    share_wait_tick();
     host_away_tick(now);
     tribe::tick(now);
     bool walk_done = !gamefixes::leave_walk_armed();
