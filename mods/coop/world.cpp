@@ -189,7 +189,11 @@ static bool g_planet_save_fix = true;
 COOP_FIX("world.share_planet_save", "BUG-0357", g_planet_save_fix, "world: a Space share save that was written on a planet (the ship landed after it was posted) is made again off the planet");
 static uint64_t g_planet_write_at; // tick count of the last world write of a save in Space on a planet
 static unsigned g_planet_saves;    // tests: shares saved again because their save was written on a planet
-static bool g_land_after_save;     // tests (coop.worldfix landsave 1): land right after posting a Space share save
+// tests (coop.worldfix landsave <ms>): the ship lands <ms> after the next Space share save is posted
+// (-1 off). A landing in the frame of the post makes the game drop that save (nothing written); in
+// the lab the landing came 0.3 s after the post, when the game had taken the save but not written it.
+static int g_land_after_ms = -1;
+static uint64_t g_land_at;
 static void save_write_watch()
 {
     if (game::mode_id() != modes::kSpace)
@@ -205,7 +209,7 @@ void init(const SkHost* host, SkMod* mod, std::function<void(const std::string&)
     M = mod;
     g_feed = std::move(feed);
     H->command_add(M, "coop.worldfix",
-                   "coop.worldfix [<name> 0|1 | queue <id>... | failnext | retry <ms> | landsave 0|1] - world sharing fix switches (tests: 0 = the old behaviour); "
+                   "coop.worldfix [<name> 0|1 | queue <id>... | failnext | retry <ms> | landsave <ms>|-1] - world sharing fix switches (tests: 0 = the old behaviour); "
                    "queue: shares for these players in one frame, each with a save",
                    c_worldfix, nullptr, SK_CMD_MAIN_THREAD);
     savestrip::set_write_watch(save_write_watch);
@@ -937,6 +941,10 @@ void tick(net::Session& s)
             if (!o.done && !here(o.peer))
                 o.done = true;
     }
+    if (g_land_at && GetTickCount64() >= g_land_at) {
+        g_land_at = 0;
+        H->log(M, SK_INFO, "world: test: landing after the share save: %s", spacecoop::debug({"land"}).c_str());
+    }
     for (size_t i = 0; i < g_pending.size();) {
         auto& p = g_pending[i];
         uint64_t now = GetTickCount64();
@@ -978,10 +986,9 @@ void tick(net::Session& s)
                     p.at = now + 2500;
                     p.latest = now + 10000;
                     p.mode = game::mode_id();
-                    if (g_land_after_save && p.mode == modes::kSpace) { // tests: the ship lands before the save is written
-                        g_land_after_save = false;
-                        H->log(M, SK_INFO, "world: test: landing right after the share save: %s",
-                               spacecoop::debug({"land"}).c_str());
+                    if (g_land_after_ms >= 0 && p.mode == modes::kSpace) { // tests: the ship lands before the save is written
+                        g_land_at = now + (uint64_t)g_land_after_ms;
+                        g_land_after_ms = -1;
                     }
                 } else {
                     p.next_try = now + g_share_retry_ms;
@@ -1514,9 +1521,10 @@ static int c_worldfix(void*, int argc, const char* const* argv, SkOut* out)
         H->out_printf(out, "share save retry %u ms\n", g_share_retry_ms);
         return 0;
     }
-    if (argc > 2 && !strcmp(argv[1], "landsave")) { // tests (BUG-0357): the next Space share save is followed by a landing
-        g_land_after_save = atoi(argv[2]) != 0;
-        H->out_printf(out, "land after the next share save %d\n", g_land_after_save ? 1 : 0);
+    if (argc > 2 && !strcmp(argv[1], "landsave")) { // tests (BUG-0357): the ship lands <ms> after the next Space share save (-1 off)
+        g_land_after_ms = atoi(argv[2]);
+        g_land_at = 0;
+        H->out_printf(out, "land %d ms after the next share save\n", g_land_after_ms);
         return 0;
     }
     if (argc > 2 && !strcmp(argv[1], "autoload")) { // tests: auto_load_world of coop.ini

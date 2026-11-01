@@ -5,14 +5,17 @@ host's ship landed on a planet in between, the save was written on the planet, a
 loaded it faulted every frame at 0xEBDD12 (and at 0xFD9420), thousands of times, its console busy
 for seconds (lab 20261031-185843 campaign_space#3, the third player).
 
-The race is made certain with `coop.worldfix landsave 1`: the host's ship lands on the active planet
-(the game's own LandOnActivePlanet, as the landing of Respawn) right after the share save is posted.
+The race is made certain with `coop.worldfix landsave 300`: the host's ship lands on the active planet
+(the game's own LandOnActivePlanet, as the landing of Respawn) 0.3 s after the share save is posted
+(as in the lab; a landing in the frame of the post makes the game drop the save, nothing is written;
+env LANDSAVE_MS changes the delay).
 The host then takes off again. Checked on the guest's own game: no caught fault after the load, and
 its ship is in the host's solar system.
 
   SPORE_LANE=9 python3 tools/tests/coop_space_share_landing.py
   (SPORE_FIX_OFF=world.share_planet_save: FAILS, the guest faults every frame)
 """
+import os
 import re
 import time
 
@@ -40,14 +43,14 @@ def main():
     print('  land check:', sp(host, 'star'))
 
     # 1. the guest leaves and joins again; the host's ship lands right after the share save is posted
-    print(' ', host.call('coop.worldfix landsave 1')['out'].strip())
+    print(' ', host.call('coop.worldfix landsave ' + os.environ.get('LANDSAVE_MS', '300'))['out'].strip())
     h0, g0 = log_size(lane.HOST), log_size(lane.GUEST)
     print(' ', guest.call('coop.leave')['out'].strip())
     time.sleep(3)
     print(' ', guest.call(lane.JOIN)['out'].strip())
-    ok = wait(lambda: 'test: landing right after the share save' in log_tail(lane.HOST, h0), 60)
+    ok = wait(lambda: 'test: landing after the share save' in log_tail(lane.HOST, h0), 60)
     ck(ok, 'the host posted the share save and landed')
-    print('  host:', re.findall(r'test: landing right after the share save: .*', log_tail(lane.HOST, h0))[:1])
+    print('  host:', re.findall(r'test: landing after the share save: .*', log_tail(lane.HOST, h0))[:1])
     landed = wait(lambda: place(host) & 0x40000000, 25)
     print(f'  host place {place(host):08X} (landed {landed})')
 
@@ -82,7 +85,7 @@ def main():
     ck(f1 == f0, 'no fault every frame on the guest after the load')
     ck(not gp & 0x40000000, 'the guest\'s ship is not on a planet after the load')
     ck(gp == hp, 'the guest is in the host\'s solar system')
-    print(' ', host.call('coop.worldfix landsave 0')['out'].strip())
+    print(' ', host.call('coop.worldfix landsave -1')['out'].strip())
     ck.faults(host=host, guest=guest)
     return ck.result()
 
