@@ -832,22 +832,20 @@ static bool g_fix_ko = true;
 COOP_FIX("tribe.ko", "BUG-0173", g_fix_ko, "tribe: a guest's mirror of a member without health plays the death");
 static uint32_t g_ko_shown, g_ko_replaced;
 
-// BUG-0365: a mirror of a walking member was driven by drive::step towards the latest snapshot moved on by
-// its arrival age: a MoveTo 0.25 s ahead every 0.1 s and SetPosition pulls. The mirror walked at its full
-// speed (9 m/s: ~ the MoveTo given after SetDesiredSpeed resets it): while the host's member speeds up or slows down (1-5
-// m/s, every start and end of a walk) the mirror reached the point ahead within a frame or two, stopped
-// and walked again (standing in 9-25 % of those frames, surging faster than the member + 4 m/s in up to
-// 17 %), it set off 0.5-1.6 m late and caught up at 15-24 m/s (a 1.5 m jump once). Snapshots carried no
-// sender time, so network jitter went straight into the target (the BUG-0122 class).
-// * tribe.mirror_time: the host sends its clock with every chunk (an 8-byte trailer old guests ignore);
-//   each mirror keeps a net::SnapshotBuffer (as the Creature puppets) and is driven towards the
-//   interpolated state kMirrorDelay s back. Off (or from an older host): the latest state + vel * age.
-// * tribe.mirror_walk: while the host's member moves and the mirror is within kMirrorWalkMax of its path,
-//   the shared drive::walk_place (driver.h, BUG-0360) walks it and places it on the path every frame
-//   (at its own ground height, BUG-0329). Off: drive::step as in 0.7.3.3.
-
-// where the mirror should be now: the interpolated state (tribe.mirror_time) or the latest moved on by
-// its age; `age` is what drive::step still has to extrapolate
+// BUG-0365: a mirror of a walking member was driven by drive::step towards the latest snapshot moved on
+// by its arrival age: a MoveTo 0.25 s ahead every 0.1 s and SetPosition pulls. It walked at 9 m/s (~ the
+// MoveTo given after SetDesiredSpeed resets the speed): while the host's member speeds up or slows down
+// (1-5 m/s, every start and end of a walk) it reached the point ahead within a frame or two, stopped and
+// walked again (the drawn step off the target's in 14-29 % of those frames), set off 0.5-1.6 m late and
+// caught up at 15-24 m/s. The snapshots carried no sender time, so network jitter went straight into the
+// target (the BUG-0122 class; over a mobile network 0.1 s windows matched the path in 71-80 %).
+// * tribe.mirror_time: the host sends its clock with every chunk (an 8-byte trailer older guests ignore);
+//   each mirror keeps a net::SnapshotBuffer (as the Creature puppets) and is driven towards the state
+//   kMirrorDelay s back, walking at the interpolated path's velocity. Off (or from an older host): the
+//   latest state + vel * age.
+// * tribe.mirror_walk: while the member moves and the mirror is within kMirrorWalkMax of its path, the
+//   shared drive::walk_place (driver.h, BUG-0360) walks it and places it on the path every frame (at its
+//   own ground height, BUG-0329; the speed set after the MoveTo). Off: drive::step as in 0.7.3.3.
 static void mirror_target(GMember& g, double now, net::Vec3& pos, net::Quat& rot, net::Vec3& vel, double& age)
 {
     net::PlayerState s, back;

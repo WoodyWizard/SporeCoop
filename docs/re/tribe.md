@@ -988,7 +988,11 @@ method as [the Creature puppets](creature.md#creature-puppet-walk).
   reading a chunk without it falls back to the arrival time.
 * ✔ The fix: each mirror keeps a net::SnapshotBuffer (delay 0.2 s; `tribe.mirror_time`) and, while the
   interpolated member moves, the shared `drive::walk_place` (driver.h, BUG-0360's creature driving)
-  walks it and places it on the path at its own ground height (`tribe.mirror_walk`).
+  walks it at the interpolated path's velocity (over the last 0.1 s; the newer state's speed made it
+  walk ahead of its path at every start) and places it on the path at its own ground height
+  (`tribe.mirror_walk`; the speed set after the MoveTo).
+* ✔ The host's own members start and stop within one frame (0 -> 8 m/s); the drawn mirror is our
+  placing plus one game update of its locomotion, so its walk speed has to match the path.
 * ✔ The placing of a frame is drawn in the next one: after a hitch of the game (100-230 ms frames, a
   few per test while the camera jumps by the minimap) the next short frame shows the way made up
   (1.1-1.3 m in 13-14 ms). Not a teleport; a frame-step test has to allow the frame before's time.

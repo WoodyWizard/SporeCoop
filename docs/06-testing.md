@@ -2504,11 +2504,13 @@ answered right after; a 1 s poller beside a standalone run saw no gap. Same sign
   before they arrive; the other keeps them in view with the minimap. Both directions; the guest's own
   members are mirrors too (`guest sees its own members`). Checks per view of mirrors: no frame step over
   3x the top speed x max(this frame, the frame before) (min 0.75 m); 0.1 s windows standing <= 5 % and
-  at 0.6-1.4x the speed of the target's path >= 85 %; in the frames whose target path moves at 1-5 m/s
-  (starts and ends of walks) the drawn speed off the path's by more than half of it + 1 m/s in <= 12 %
-  (0.7.3.3: 18-36 %, the fix 5-6 %, the host's own game ~1 %); walk gait >= 80 % of the frames on screen.
-  The reference is the target's path (over +-0.1 s), not the state's reported speed: interpolated
-  from a standing state to a walking one the path moves slower than the newer state says. The
+  at 0.6-1.4x the speed of the target's path >= 85 %; in the frames whose target moves at 1-5 m/s
+  (starts and ends of walks) the drawn step off the target's step of the frame before (what a frame
+  draws was placed in the frame before) by more than half of it + 1 m/s x the frame time in <= 10 %
+  (0.7.3.3: 14-29 %, the fix 1-5 %, the host's own game 0-5 %); walk gait >= 80 % of the frames on
+  screen. Metrics tried and dropped: per-frame speed against the state's reported speed or a +-0.1 s
+  path (the host's own members start and stop within one frame, and the frame pacing makes single
+  frame speeds noisy: both flagged the host's own game in up to 24 %). The
   host's own game is printed as the reference. `--fps N` caps both games,
   `--dir host|guest`, `--seed`. `SPORE_FIX_OFF=tribe.mirror_walk,tribe.mirror_time` fails.
 * Pitfalls: the lab's games ran at ~70 fps (14-15 ms frames), not 30; the minimap's camera jumps give
