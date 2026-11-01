@@ -23,7 +23,7 @@ import sys
 import time
 
 import lane
-from twoinst import Checks, start
+from twoinst import Checks, lab_mark, start
 
 LOGS = os.path.join(lane.game_dir(), 'SporebinEP1', 'mods', 'logs')
 
@@ -131,6 +131,7 @@ def main():
            'in the merged timeline the MARK of both games is at the same moment (less than 0.25 s apart)')
 
         # 4b. a forced difference is reported as a MISMATCH on both games
+        lab_mark('sync-force', 'on')  # the lab's sync-check gate leaves this MISMATCH out
         guest.call('coop.diag sync force shift')
         h1, g1 = log_size(lane.HOST), log_size(lane.GUEST)
         host.call('coop.diag sync now')
@@ -140,6 +141,7 @@ def main():
         mg2 = wait(lambda: re.search(r'sync-check: MISMATCH with the host.*', log_from(lane.GUEST, g1)), 10)
         ck(mg2, 'the guest\'s log has the MISMATCH too')
         guest.call('coop.diag sync force off')
+        lab_mark('sync-force', 'off')
 
         # 5. the cost
         dh, dg = host.call('coop.diag')['out'], guest.call('coop.diag')['out']
@@ -166,6 +168,7 @@ def main():
         ck('session as guest' in summ and 'sync-check' in summ, 'the session summary of the guest')
     finally:
         guest.call('coop.diag sync force off')
+        lab_mark('sync-force', 'off')
     ck.faults(host=host, guest=guest)
     return ck.result()
 

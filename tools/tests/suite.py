@@ -12,6 +12,12 @@
   exclusive needs the machine alone (LAN discovery in the UI test sees other lanes' hosts)
   minutes   rough length, the scheduler starts long tests first
   timeout   seconds before the lab kills the test (default lab.TIMEOUT, 30 min)
+  gates     the log gates of the test (tools/loggates.py, docs/06-testing.md#testing-log-gates): None = the
+            defaults (sync-check MISMATCH, hitch over 2 s in play, mem low, address space loss slope);
+            a dict changes a threshold ({'hitch_ms': 5000}) or switches gates off ({'off': ('hitch',)});
+            NO_GAME for tests that run no game (their lane's idle games are not theirs)
+  allow     log gate findings this test may have, each allow(gate, ticket, reason, ...) with a ticket
+            id and a reason: printed as "allowed" in the result, never silent
   uses_free_lane  the test plays on SPORE_FREE_LANE (outside the run), takes that lane's lock
             (<lab folder>/.update_check-lane<N>.lock) and prints `LAB-WATCH lane=<N> since=<unix time>`
             once it holds it: the lab watches that lane for crash / hang reports and dead games from
@@ -19,10 +25,23 @@
 """
 
 T = []
+NO_GAME = {'off': ('sync-check', 'hitch', 'mem-low', 'as-slope')}
+
+
+def allow(gate, ticket, reason, stage=None, kind=None, who=None, match=None):
+    """a log gate finding a test may have (tools/loggates.py): gate sync-check | hitch | mem-low |
+    as-slope; ticket BUG-NNNN (the bug that makes it, open until fixed); reason: why it is not this
+    test's failure. stage / kind / who / match narrow it ('Tribe', 'p apart', 'guest', a regex on the
+    log line). tools/tests/lab_selftest.py checks that the ticket exists and the reason is given."""
+    return dict(gate=gate, ticket=ticket, reason=reason, stage=stage, kind=kind, who=who, match=match)
+
+
+# allowed in every test (each a known bug with its ticket; empty when every gate holds everywhere)
+ALLOW_ALL = []
 
 
 def add(name, cmd, suites=('full',), warm=False, exclusive=False, minutes=4, fixture=None, reports=False,
-        uses_free_lane=False, timeout=None):
+        uses_free_lane=False, timeout=None, gates=None, allow=()):
     """reports=True: the test makes crash / hang reports or faults on purpose and checks them itself;
     for every other test the lab fails it on a new crash-*/report-* file of its lane, a game that
     dies right after it, or a non-zero fault count in its log (tools/lab.py run_one, BUG-0036/0042)"""
@@ -32,12 +51,12 @@ def add(name, cmd, suites=('full',), warm=False, exclusive=False, minutes=4, fix
         suites = set(suites) | ({'nightly'} if {'nightly', 'extended'} & set(suites) else {'full', 'nightly'})
     T.append(dict(name=name, cmd=cmd, suites=suites, warm=warm,
                   exclusive=exclusive, minutes=minutes, fixture=fixture, reports=reports,
-                  uses_free_lane=uses_free_lane, timeout=timeout))
+                  uses_free_lane=uses_free_lane, timeout=timeout, gates=gates, allow=list(allow)))
 
 
 P = 'python3 tools/tests/'
-add('unit', 'make test', ('smoke',), minutes=1)
-add('win_unit', P + 'win_unit.py', minutes=1)  # Win32 file handling under Wine: updater backups / pending list / duplicate files, received world slots (BUG-0035/0087/0089/0105/0114/0150; --old fails)
+add('unit', 'make test', ('smoke',), minutes=1, gates=NO_GAME)
+add('win_unit', P + 'win_unit.py', minutes=1, gates=NO_GAME)  # Win32 file handling under Wine: updater backups / pending list / duplicate files, received world slots (BUG-0035/0087/0089/0105/0114/0150; --old fails)
 add('creature', P + 'coop_two_instances.py --guest-menu', ('smoke',), minutes=4)
 add('cell', P + 'coop_mode.py --fixture cell', minutes=3)
 add('tribe', P + 'coop_mode.py --fixture tribe', minutes=3)

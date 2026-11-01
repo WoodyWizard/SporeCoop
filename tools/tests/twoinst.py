@@ -63,6 +63,13 @@ def host_up(host, tries=3):
     return False
 
 
+def lab_mark(what, state):
+    """a line for the lab (tools/loggates.py): `LAB-MARK sync-force on|off <time>` around a sync-check
+    difference the test makes on purpose (`coop.diag sync force`), so the sync-check gate leaves the
+    MISMATCH lines of that window out (docs/06-testing.md#testing-log-gates)"""
+    print(f'LAB-MARK {what} {state} {time.time():.3f}', flush=True)
+
+
 def shot(con, name):
     path = os.path.join(lane.out_dir('shots'), name)
     if con.call('shot ' + path)['ok']:

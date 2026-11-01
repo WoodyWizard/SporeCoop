@@ -17,7 +17,10 @@ without a RESULT line (harness trouble: start, timeout) is retried once cold and
 when it passes then; a test that printed RESULT: FAIL is a failure, never retried (BUG-0073).
 A test also fails when a game of its lane wrote a crash / hang report while it ran or in the
 seconds after it, a game died right after it, or its log shows a non-zero fault count
-(BUG-0036, BUG-0042; suite.py reports=True for tests that make them on purpose). RESULT: SKIP is
+(BUG-0036, BUG-0042; suite.py reports=True for tests that make them on purpose), or when the games'
+own logs written during it break a log gate (tools/loggates.py: sync-check MISMATCH, a hitch over
+2 s in play, address space running low or lost by the minute; suite.py gates= / allow=;
+SPORE_GATES=report: report only, off: none). RESULT: SKIP is
 a skip, not a pass (BUG-0100). A timeout kills the test's whole process group (BUG-0052).
 Exclusive tests run at the end, alone. Results: out/lab/<run>/ (one log per test, results.json,
 summary.md).
@@ -36,7 +39,9 @@ import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, 'tools', 'tests'))
+sys.path.insert(0, os.path.join(ROOT, 'tools'))
 import suite  # noqa: E402
+import loggates  # noqa: E402
 
 TIMEOUT = 1800
 AFTER = 5.0  # seconds after a test in which a game of its lane may still crash or die (BUG-0036)
@@ -86,15 +91,45 @@ def lane_game(lane):
     return main if lane == 1 else os.path.join(os.path.dirname(main), 'SPORE-lab', f'lane{lane}')
 
 
+def game_logs(lane):
+    """{who: the game log} of a lane's instances (the extra guests of a 4-player test: 20+N, 30+N; BUG-0266)"""
+    logs = os.path.join(lane_game(lane), 'SporebinEP1', 'mods', 'logs')
+    return {who: os.path.join(logs, 'sporekit.log' if inst == 1 else f'sporekit.{inst}.log')
+            for inst, who in ((2 * lane - 1, 'host'), (2 * lane, 'guest'), (20 + lane, 'extra1'), (30 + lane, 'extra2'))}
+
+
+def test_logs(lane, since):
+    """the game logs a test of the lane wrote: host and guest, an extra guest's only when written since
+    the test started (2 s: the kernel's coarse file clock)"""
+    return {who: src for who, src in game_logs(lane).items()
+            if os.path.exists(src) and (who in ('host', 'guest') or os.path.getmtime(src) >= since - 2)}
+
+
 def save_game_logs(lane, logdir, name, since=0.0):
     """the games' own logs (SporeKit + mods) next to the test log: the next start overwrites them"""
-    logs = os.path.join(lane_game(lane), 'SporebinEP1', 'mods', 'logs')
-    # the extra guests of a 4-player test (instances 20+N, 30+N; BUG-0266) when it had them
-    for inst, who in ((2 * lane - 1, 'host'), (2 * lane, 'guest'), (20 + lane, 'extra1'), (30 + lane, 'extra2')):
-        src = os.path.join(logs, 'sporekit.log' if inst == 1 else f'sporekit.{inst}.log')
-        # an extra guest's log only when this test wrote it (2 s: the kernel's coarse file clock)
-        if os.path.exists(src) and (inst <= 2 * lane or os.path.getmtime(src) >= since - 2):
-            shutil.copy(src, os.path.join(logdir, f'{name}.{who}.game.log'))
+    for who, src in test_logs(lane, since).items():
+        shutil.copy(src, os.path.join(logdir, f'{name}.{who}.game.log'))
+
+
+GATES_MODE = os.environ.get('SPORE_GATES', 'fail')  # fail | report | off (docs/06-testing.md#testing-log-gates)
+
+
+def log_gates(t, lane, text, marks, since):
+    """(fails, notes, marks) of the log gates over the lines the lane's games wrote during the test:
+    from the offsets taken at its start (a game started again during it: its whole new log)"""
+    cfg = t.get('gates') or {}
+    if GATES_MODE == 'off' or set(loggates.GATES) <= set(cfg.get('off', ())):
+        return [], [], {}
+    logs = test_logs(lane, since)
+    try:
+        fails, notes, _ = loggates.check_logs(logs, cfg, list(t.get('allow') or []) + suite.ALLOW_ALL, text,
+                                              {w: marks.get(w) for w in logs})
+    except Exception as e:  # noqa: BLE001 (a broken gate must not lose the run; it is said)
+        return [], [f'log gates: error {e!r}'], marks
+    if GATES_MODE == 'report':
+        notes = [f'report only (SPORE_GATES=report): {f[len("FAIL lab: "):]}' for f in fails] + notes
+        fails = []
+    return fails, notes, marks
 
 
 def preflight():
@@ -209,6 +244,7 @@ def run_one(t, lane, tree, logdir, warm, suffix=''):
     log = os.path.join(logdir, t['name'] + suffix + '.log')
     t0 = time.time()
     reports0 = report_files(lane)
+    marks0 = {who: loggates.log_marks(p) for who, p in game_logs(lane).items()}  # where the test's lines begin
     with open(log, 'w') as f:
         f.write(f'# {t["cmd"]}  (lane {lane}, {"warm" if warm else "cold"})\n')
         f.flush()
@@ -255,6 +291,8 @@ def run_one(t, lane, tree, logdir, warm, suffix=''):
                       for i in died]
         lab_fails += [f'FAIL lab: new report {os.path.basename(p)}' for p in new_reports]
         lab_fails += [f'FAIL lab: faults in the log: {l}' for l in faults if fault_count(l) > 0]
+    gate_fails, gate_notes, _ = log_gates(t, lane, text, marks0, t0)
+    lab_fails += gate_fails
     ok = rc == 0 and 'RESULT: FAIL' not in text and 'Traceback' not in text and has_result and not lab_fails
     # the machine, not the mod: the game did not even start
     env = not ok and ('did not start' in text or "bwrap: Can't find" in text)
@@ -263,7 +301,8 @@ def run_one(t, lane, tree, logdir, warm, suffix=''):
                 harness=(not has_result or 'Traceback' in text) and not lab_fails,
                 seconds=round(time.time() - t0), start=f'{m.group(1)} {m.group(2)} s' if m else '',
                 fails=(lab_fails + [l.strip() for l in text.splitlines() if l.strip().startswith('FAIL')])[:8],
-                faults=faults, reports=[os.path.basename(p) for p in new_reports], died=died, log=log)
+                faults=faults, reports=[os.path.basename(p) for p in new_reports], died=died, log=log,
+                gates=gate_fails + gate_notes, log_marks={w: m for w, m in marks0.items() if m})
 
 
 def cmd_run(a):
@@ -324,7 +363,8 @@ def cmd_run(a):
             results.append(r)
             flag = 'SKIP' if r.get('skipped') else 'OK  ' if r['ok'] else 'FAIL'
             extra = ' (flaky)' if r.get('flaky') else ''
-            shown = r['fails'] + [x for x in r['faults'] if not any(x in y for y in r['fails'])]
+            shown = r['fails'] + [x for x in r['faults'] if not any(x in y for y in r['fails'])] + \
+                [x for x in r.get('gates', []) if not x.startswith('FAIL')]
             print(f'  {flag} {r["name"]:<15} lane {r["lane"]}{r.get("watched", "")}  {r["seconds"]:>4} s  {r["start"]}{extra}'
                   + ''.join(f'\n         {x}' for x in shown), flush=True)
 
@@ -471,6 +511,10 @@ def cmd_run(a):
         res = 'skip' if r.get('skipped') else 'ok' if r['ok'] else 'FAIL'
         lines.append(f'| {r["name"]} | {res}{" (flaky)" if r.get("flaky") else ""} | {r["lane"]} '
                      f'| {r["seconds"]} | {r["start"]} |')
+    gated = [r for r in results if r.get('gates')]
+    if gated:  # docs/06-testing.md#testing-log-gates: what the games' logs said, failed or allowed
+        lines += ['', '## Log gates', ''] + [f'- {r["name"]}: {g}' for r in sorted(gated, key=lambda r: r['name'])
+                                              for g in r['gates']]
     shaky = sorted(((h['flaky'] + h['failed']) / h['runs'], n) for n, h in hist.items() if h['flaky'] + h['failed'])
     if shaky:
         lines += ['', '## Unstable tests (all runs)', ''] + [
