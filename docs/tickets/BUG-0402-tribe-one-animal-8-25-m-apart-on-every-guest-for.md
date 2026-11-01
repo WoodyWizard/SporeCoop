@@ -31,7 +31,8 @@ Split off BUG-0381 (its `n apart`, 8 results). In the recorded Tribe runs `n apa
   updated at the planet's centre ... dead=1" warnings in Tribe).
 Not reproduced on lane 7 (fix/w32-tribe-sync): play_tribe 2 x 10 min, chaos_tribe 2, tribe_coop 2, campaign_tribe 1
 (out/lab/20261101-131136), all without an `n apart`; a co-op epic spawned next to the village and left alone
-(`coop.tribe epic`, 100 s, sampled every second on both games) stayed 0.5 m from its proxy (it stood still).
+(`coop.tribe epic`, 100 s, sampled every second on both games) stayed 0.5 m from its proxy (it stood still); hit once
+(`coop.tribe epic hit <member> 1`) it walked at 4-5.5 m/s for ~10 s, its proxy at most 2.3 m off (90 s).
 
 ## Root cause
 Open. Inferred for the first kind: the co-op epic (huge, fast while it fights the village) and its proxy
