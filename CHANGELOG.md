@@ -3,6 +3,14 @@
 ## [Unreleased]
 
 ### Fixed
+- Civilization: a guest that missed several new cities of other nations (joining, or cities founded
+  at once) now gets all of them and their vehicles within seconds; it used to get one city per
+  15 s, and those nations' vehicles were missing meanwhile (BUG-0380).
+- Civilization: the support sync-check no longer reports a partner's moving pointer as a desync
+  (BUG-0380).
+- Space: when the host's world cannot go out yet because its ship is on a planet (the Space stage
+  saves only off a planet, as right after Civilization), every player is now told that the world
+  follows when the host's ship leaves the planet (BUG-0382).
 - Creature: each player now sees the partner's real health on the partner's creature (it always
   looked full, hits on the partner did not show) and its real max health (BUG-0373).
 - Creature: the host's pack and family no longer attack and kill a partner (a partner's hit on a

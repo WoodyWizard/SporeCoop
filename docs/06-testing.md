@@ -2718,3 +2718,25 @@ Before a tag `vX.Y.Z` (CLAUDE.md 4):
   bug); a run on rock counts nothing (+0x137 is 0 on rock all the time, GetHeightAt is the terrain);
   the spawn moves after a `--goto`, so these tests are cold. Exploration with the fix off on the slope
   gave 4-7 falls per 40 s, so one FAIL run is not guaranteed every time (the check allows 1).
+## Civ cities, the Civ pointer, money totals and the planet wait in the gates (2026-11-01, fix/w31-civ-gate)
+<a id="testing-civ-gates"></a>
+
+* `coop_civ_city_burst.py` (suite `civ_city_burst`, ~60 s warm, BUG-0380): the host founds 3 NPC
+  cities with `SpawnNextCity(ex, 1, 0)` (instant: not broadcast, the campaign's shortcut); the
+  guest's own game must have every host city (60 m) and every host vehicle id bound to a game
+  object within 20 s, and no extra city 15 s later. `SPORE_FIX_OFF=civ.city_burst` fails (the old
+  catch-up needs 6 + 15 s per city).
+* `coop_civ_cursor.py` (suite `civ_cursor`, ~65 s warm, BUG-0380): the host's mouse goes round a
+  circle (`move x y` every ~0.1 s) while `coop.diag sync now` runs; the guest's copy of the host's
+  pointer trails 45 m median (coop.sync p0 on both), a pointer at rest matches to 0.0 m. Holding W
+  in Civ moved the pointer only for a moment (camera pan stops): use the mouse.
+  `SPORE_FIX_OFF=diag.rts_cursor` fails (`MISMATCH ... p: 1 apart (p0 74.9)`).
+* `coop_space_share_wait.py` (suite `space_share_wait`, cold, BUG-0382): the host lands, the guest
+  rejoins; the guest's log must show the host's notice and the host's trace `share_wait=planet`
+  within 25 s; after the takeoff the guest loads the host's system. `SPORE_FIX_OFF=
+  world.share_wait_notice` fails.
+* Monitor (tools/tests/monitor.py): `totals` now always includes the host's trace lines right before
+  and right after the guest's (a Civ treasury grows ~400 per 10 s: the +-6 s window often held one
+  host line; the 42 campaign_space violations were all such samples, none in a replay now);
+  `stage_apart` is no violation while the host's own line says `share_wait=planet|cinematic`.
+  gates_selftest.py has both cases (they fail on the old monitor).

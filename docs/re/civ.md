@@ -830,3 +830,23 @@ BUG-0186, the 13-17 m outliers of `play_civ.py` seeds 9 and 11 (always NPC vehic
 * Also `civ.extrap` (VelocityEstimate::max_ahead 0.15 s for vehicles, was 0.4): a fast air vehicle
   (25 u/s) whose host hitched was put up to 10 m past the host's (unit test test_velocity_hitch:
   10.0 -> 3.8 units; a 150 ms late packet costs 0.8 units either way).
+## A guest's catch-up founds every missed city at once (2026-11-01, fix/w31-civ-gate)
+<a id="civ-city-burst"></a>
+
+* ✔ (runtime, lane 9, civ_npc, GOG 2024) `cCivExpansion` (`Simulator::cCivExpansion::Get`) +0xAC =
+  all city sites (10), +0xB0 = sites not founded yet (6 with 4 cities). `SpawnNextCity` lowers +0xB0
+  in the same call; the city appears ~4 s later. A loaded save has the same values as the host's
+  (host and guest 10 / 6 after the guest loaded the host's world). So `+0xAC - +0xB0` = the cities
+  this game founded, appeared or still on their way (the player city included).
+* ✔ The campaign's shortcut `SpawnNextCity(ex, 1, 0)` (instant) is not broadcast by the co-op hook
+  (only `!instant && !who`): the guests got those cities only from the catch-up, one per 15 s
+  (6 s short + 15 s since the last founding). 6 cities took 75 s on a campaign guest; meanwhile
+  every vehicle of those nations was missing there (`CivByPol` gives no civilization, no mirror):
+  sync-check `v: 6 missing on the guest` in every campaign_space (BUG-0380). In the exploration run
+  2 missed cities took 26 s, the guest's vehicles 4 -> 6 only then.
+* Now (`civ.city_burst`): a guest whose founded count is under the host's city count (2 s short)
+  founds the difference in one go; when its founded count already reaches the host's, it waits
+  (a paused game holds the appearance, BUG-0331) and never founds a second time. coop_civ_city_burst:
+  3 missed cities and their vehicles on the guest in 7 s (was more than 30 s).
+* The single-vehicle `v: 1 missing` lines of the campaigns came in the same advance phase (after
+  the shortcut), not from another cause seen in the logs.
