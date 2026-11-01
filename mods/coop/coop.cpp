@@ -3982,6 +3982,12 @@ void on_unload()
 }
 
 // ---- support diagnostics (diag_coop.h, docs/REPORTING.md#reporting-support) ----
+// BUG-0380: the sync-check leaves out a Tribe / Civ pointer that moved within kCursorStill s
+static bool g_cursor_check_fix = true;
+COOP_FIX("diag.rts_cursor", "BUG-0380", g_cursor_check_fix,
+         "sync-check: a Tribe / Civ player's pointer is compared only after it stood still for a second");
+constexpr double kCursorStill = 1.0;
+
 int g_ini_auto_load = 1, g_ini_share_npcs = 1, g_ini_npc_targets = 1, g_ini_teamplay = 1, g_ini_update = 1, g_ini_sync = 30;
 
 void support_init()
@@ -4002,13 +4008,20 @@ void support_init()
         std::vector<uint8_t> v;
         double now = H->time_seconds();
         net::PlayerState own = local_state();
-        if (!local_now() || (own.flags & net::PF_DEAD) || !(own.flags & net::PF_IN_WORLD))
+        // BUG-0380: a Tribe / Civ player is a pointer (the planet point under the mouse, moved by the
+        // mouse and by the camera); a partner's copy is ~0.1 s + half a round trip behind it, so a
+        // moving pointer was "apart" (median 23 m in campaigns, sync-check `p apart`). Left out while
+        // it moved in the last second on this machine; a pointer that stands still is compared.
+        bool cursor = g_cursor_check_fix;
+        if (!local_now() || (own.flags & net::PF_DEAD) || !(own.flags & net::PF_IN_WORLD) ||
+            (cursor && modes::rts_marker_moving(g_adapter, local_now(), kCursorStill)))
             v.push_back(g_sess.my_id());
         for (auto& [id, r] : g_remotes) {
             if (r.echo)
                 continue;
             if (r.buf.empty() || r.buf.age(now) >= 5.0 || (r.buf.latest().flags & net::PF_DEAD) ||
-                !(r.buf.latest().flags & net::PF_IN_WORLD))
+                !(r.buf.latest().flags & net::PF_IN_WORLD) ||
+                (cursor && modes::rts_marker_moving(r.puppet_adapter, puppet_now(r), kCursorStill)))
                 v.push_back(id);
         }
         return v;

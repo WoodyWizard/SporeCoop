@@ -192,6 +192,7 @@ add('civ_null_local', P + 'coop_civ_null_local.py', warm=True, minutes=4, fixtur
 add('civ_shared', P + 'coop_civ_shared.py', warm=True, minutes=4, fixture='civ')  # crossing spends, offline money, roles on a rejoin, a spend at a join (BUG-0106, BUG-0049, BUG-0064, BUG-0220; --nofix fails)
 add('civ_city_join', P + 'coop_civ_city_join.py', warm=True, minutes=5, fixture='civ_npc')  # an NPC city founded while the guest joins (BUG-0120; --nofix fails)
 add('civ_city_burst', P + 'coop_civ_city_burst.py', warm=True, minutes=3, fixture='civ_npc')  # three NPC cities the guest missed reach it at once with their vehicles (BUG-0380; SPORE_FIX_OFF=civ.city_burst fails)
+add('civ_cursor', P + 'coop_civ_cursor.py', warm=True, minutes=3, fixture='civ')  # the sync-check leaves out a moving Civ pointer, a resting one is where the guest shows it (BUG-0380; SPORE_FIX_OFF=diag.rts_cursor fails)
 add('civ_ai_spawn', P + 'coop_civ_ai_spawn.py', warm=True, minutes=4, fixture='civ_npc')  # the NPC AI spawns no vehicles on the guest (BUG-0188; --nofix fails)
 add('civ_mirror_place', P + 'coop_civ_mirror_place.py', warm=True, minutes=3, fixture='civ_npc')  # the guest's game does not throw a mirrored vehicle off its place (BUG-0186; --nofix fails)
 add('civ_ruin_repair', P + 'coop_civ_ruin_repair.py', warm=True, minutes=3, fixture='civ_npc')  # a ruin the host rebuilt does not stay on the guest (BUG-0324; --nofix fails)

@@ -963,7 +963,16 @@ static float cell_tag(void* cp) { return *(float*)((uint8_t*)cp + 0x58) * 1.2f +
 // cities themselves already exist on every machine.
 struct Marker {
     net::Vec3 pos;
+    net::Vec3 still{};     // BUG-0380: where it last stood still (a move of 0.5 units starts a new one)
+    double moved_at = -1e9; // ... and when it left that point (H->time_seconds)
 };
+static void marker_moved(Marker* m)
+{
+    if (net::dist(m->pos, m->still) > 0.5f) {
+        m->still = m->pos;
+        m->moved_at = g_host_for_modes ? g_host_for_modes->time_seconds() : 0;
+    }
+}
 static Marker g_local_marker;
 static bool g_marker_pinned; // tests (coop.marker): the pointer stays where the test put it
 void test_pin_marker(bool pin, const net::Vec3& p)
@@ -1068,6 +1077,7 @@ static void rts_fill(void* m, net::PlayerState& st)
     net::Vec3 p;
     if (mk == &g_local_marker && !g_marker_pinned && mouse_on_planet(p))
         mk->pos = p;
+    marker_moved(mk);
     st.flags |= net::PF_IN_WORLD;
     st.pos = mk->pos;
 }
@@ -1079,9 +1089,20 @@ static void* rts_spawn(const net::PlayerState& s, void*)
     return m;
 }
 
-static void rts_drive(void* m, const net::PlayerState& s, drive::State&, double) { ((Marker*)m)->pos = s.pos; }
+static void rts_drive(void* m, const net::PlayerState& s, drive::State&, double)
+{
+    ((Marker*)m)->pos = s.pos;
+    marker_moved((Marker*)m);
+}
 static void rts_despawn(void* m) { delete (Marker*)m; }
 static float rts_tag(void*) { return 0.5f; }
+
+bool rts_marker_moving(const Adapter* a, void* e, double within)
+{
+    if (!a || !e || a->fill != rts_fill || !g_host_for_modes)
+        return false;
+    return g_host_for_modes->time_seconds() - ((Marker*)e)->moved_at < within;
+}
 
 static const Adapter kAdapters[] = {
     {"Tribe", kTribe, nullptr, false, rts_local, rts_fill, rts_spawn, rts_drive, rts_despawn, rts_tag},
