@@ -61,7 +61,7 @@ def add(name, cmd, suites=('full',), warm=False, exclusive=False, minutes=4, fix
 
 P = 'python3 tools/tests/'
 add('unit', 'make test', ('smoke',), minutes=1, gates=NO_GAME)
-add('win_unit', P + 'win_unit.py', minutes=1, gates=NO_GAME)  # Win32 file handling under Wine: updater backups / pending list / duplicate files, received world slots (BUG-0035/0087/0089/0105/0114/0150; --old fails)
+add('win_unit', P + 'win_unit.py', minutes=1, gates=NO_GAME)  # Win32 file handling under Wine: updater backups / pending list / duplicate files, received world slots (BUG-0035/0087/0089/0105/0114/0150; --old fails), the setup's Spore-without-GA folder and GitHub API 403 fallback (BUG-0391: SPORE_WIN_UNIT_ARGS=--old-ga fails; BUG-0392: SPORE_FIX_OFF=update.web_fallback fails)
 add('creature', P + 'coop_two_instances.py --guest-menu', ('smoke',), minutes=4)
 add('cell', P + 'coop_mode.py --fixture cell', minutes=3)
 add('tribe', P + 'coop_mode.py --fixture tribe', minutes=3)
@@ -281,6 +281,7 @@ add('menu_load', P + 'coop_rejoin_loop.py --rounds 5 --local-load 0:1.5 --cold',
 add('rejoin_race_long', P + 'coop_rejoin_loop.py --rounds 40 --race 1:9', ('nightly',), minutes=8)
 add('rejoin_awful', 'SPORE_NET=awful ' + P + 'coop_rejoin_net.py', ('nightly',), minutes=8)
 add('update', P + 'update_check.py', exclusive=True, minutes=6, uses_free_lane=True)  # alone: it rebuilds build/ and out/dist (package.sh) that win_unit runs (BUG-0211); a lane outside the run (SPORE_FREE_LANE), one game
+add('update_api403', P + 'update_check.py --api403', ('nightly',), exclusive=True, minutes=6, uses_free_lane=True)  # the same with the API path answering 403: the release page's redirect (BUG-0392; SPORE_FIX_OFF=update.web_fallback fails)
 # chaos bot (random real input by both players, network churn); smoke: 2 minutes of tribe
 add('chaos_tribe', P + 'coop_chaos.py --fixture tribe --minutes 2', ('smoke',), minutes=3)
 for st, m in (('creature', 6), ('cell', 6), ('tribe', 8), ('civ', 8), ('space', 6)):

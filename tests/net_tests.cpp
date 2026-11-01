@@ -882,6 +882,25 @@ static void test_updater()
     std::string h(64, 'a');
     CHECK(upd::sums_lookup(h + "  SporeCoop-0.5.1.pack\r\n" + std::string(64, 'b') + " *x.zip\n", "SporeCoop-0.5.1.pack") == h);
     CHECK(upd::sums_lookup(h + "  other.pack\n", "SporeCoop-0.5.1.pack").empty());
+    // BUG-0392: the release page when the API refuses; asset addresses only on github.com (or the test server)
+    const std::string api = "https://api.github.com/repos/WoodyWizard/SporeCoop/releases/latest",
+                      web = "https://github.com/WoodyWizard/SporeCoop/releases/latest";
+    CHECK(upd::web_latest_url(api) == web);
+    CHECK(upd::web_latest_url("http://127.0.0.1:47999/repos/o/r/releases/latest") == "http://127.0.0.1:47999/o/r/releases/latest");
+    CHECK(upd::web_latest_url("https://evil.example/repos/o/r/releases/latest").empty());
+    CHECK(upd::web_latest_url("http://127.0.0.1:9/").empty() && upd::web_latest_url("http://127.0.0.1:47999/latest").empty());
+    CHECK(upd::web_latest_url("https://api.github.com/repos/o/r/x/releases/latest").empty());
+    CHECK(upd::release_from_redirect(web, "https://github.com/WoodyWizard/SporeCoop/releases/tag/v0.7.3.3", r) &&
+          r.version == "0.7.3.3" && r.from_web &&
+          r.pack_url == "https://github.com/WoodyWizard/SporeCoop/releases/download/v0.7.3.3/SporeCoop-0.7.3.3.pack" &&
+          r.sums_url == "https://github.com/WoodyWizard/SporeCoop/releases/download/v0.7.3.3/SHA256SUMS.txt");
+    // a relative target; the assets stay on github.com whatever host the redirect names
+    CHECK(upd::release_from_redirect(web, "/WoodyWizard/SporeCoop/releases/tag/v0.8.0?x=1", r) && r.version == "0.8.0");
+    CHECK(upd::release_from_redirect(web, "https://evil.example/WoodyWizard/SporeCoop/releases/tag/v0.8.0", r) &&
+          r.pack_url.rfind("https://github.com/WoodyWizard/SporeCoop/releases/download/v0.8.0/", 0) == 0);
+    for (const char* bad : {"https://github.com/WoodyWizard/SporeCoop/releases", "/releases/tag/", "/releases/tag/v1/../x",
+                            "/releases/tag/v1%2F..", "/releases/tag/vX", "/releases/tag/v..1"})
+        CHECK(!upd::release_from_redirect(web, bad, r));
 }
 
 // A Session host for the fakepeer interoperability test (no game required).

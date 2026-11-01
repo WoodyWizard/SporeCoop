@@ -32,6 +32,7 @@ COOP_FIX_UNSAFE("update.old_suffix", "BUG-0114", upd::g_old_suffix_fix, "update:
 COOP_FIX_UNSAFE("update.paths", "BUG-0242", upd::g_path_fix, "update: pack paths Windows treats as one file, device and working names are refused");
 COOP_FIX_UNSAFE("update.lock", "BUG-0243", upd::g_lock_fix, "update: file swaps under a lock per game folder; cleanup and pending swaps wait for it");
 COOP_FIX("update.keep_failed", "BUG-0150", upd::g_keep_failed_fix, "update: a deferred file whose swap failed stays on the pending list");
+COOP_FIX("update.web_fallback", "BUG-0392", upd::g_web_fallback_fix, "update: when the GitHub API refuses (403/429), the newest release comes from the release page's redirect");
 
 // R6: unit-test only, no runtime switch (the off side reads received data out of bounds). Listed
 // here so tests/fixes_tests.cpp knows they are not forgotten; never registered.

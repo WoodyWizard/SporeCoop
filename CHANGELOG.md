@@ -13,6 +13,14 @@
 - Tests: npc_far / npc_pooled walked the host into the sea, where the game's deep water cinematic held
   it in the air (sync-check "p0 10.7" in every run); they now walk on land and check where the guest
   draws the host (BUG-0377).
+- Setup: a Spore folder without Galactic Adventures (Steam's base game: `SporeBin`, no
+  `SporebinEP1`) now says "Galactic Adventures is not installed" with what to install, instead of
+  "choose the SPORE folder"; choosing `SporeBin` or `SporebinEP1` takes the folder above it, and the
+  setup also looks in Steam's other library folders (BUG-0391).
+- Setup and in-game update: when GitHub's API refuses (403 / 429: its hourly limit per IP address,
+  hit on VPNs and shared networks) the newest release now comes from the release page, checked
+  against `SHA256SUMS.txt` as before; the setup could not install at all. If GitHub does not answer,
+  the setup says how to install with the release zip and `install.bat` (BUG-0392).
 - Creature: each player now sees the partner's real health on the partner's creature (it always
   looked full, hits on the partner did not show) and its real max health (BUG-0373).
 - Creature: the host's pack and family no longer attack and kill a partner (a partner's hit on a

@@ -2743,3 +2743,40 @@ Before a tag `vX.Y.Z` (CLAUDE.md 4):
   '<text>'`; a text may hold an apostrophe), the `dna: a -> b cause=...` lines of both game logs (read
   from the byte size before the test). `dna_notice_cell` (`--cell`, ~90 s): `coop.pool food N` on each
   side; the meal notices are gathered 15 s, the test waits up to 22 s. A feature: no FAIL twin.
+## Setup folder checks and the GitHub API limit (2026-11-01, fix/w31-installer)
+<a id="testing-installer-w31"></a>
+
+* `win_unit` (tests/win_tests.cpp) has four more tests:
+  * `test_ga_folder` (BUG-0391): a Steam-like Spore folder with `SporeBin` and no `SporebinEP1`:
+    `inst::game_root_of` steps up from `SporeBin`, `inst::folder_problem` / `do_install` say
+    "Galactic Adventures is not installed", `inst::steam_libraries` reads both formats of
+    `libraryfolders.vdf`, `inst::pick_game` returns that folder when no game is found.
+  * `test_setup_ga_window` (BUG-0391): the real `SporeCoopSetup.exe` (hidden window) with
+    `/dir:<spore>\SporeBin`; the test reads every child window's text with `WM_GETTEXT`
+    (`SendMessageTimeoutW`, works across processes) and checks the folder field and the "Game:" line.
+  * `test_web_fallback` (BUG-0392): an in-process HTTP server (Winsock, port from `bind(0)`) plays
+    api.github.com and github.com: `/repos/<o>/<r>/releases/latest` answers 403 or 429,
+    `/<o>/<r>/releases/latest` answers 302 to `.../releases/tag/v<x>` (absolute or relative
+    Location), the assets are under `.../releases/download/v<x>/`. Checked: the release is found,
+    a pack that does not match `SHA256SUMS.txt` or is of another version is refused, the page is not
+    asked while the API works, `do_install` installs, and with both refusing the message names
+    `install.bat`.
+  * `test_setup_api403` (BUG-0392): the real setup in silent mode (`/S /api:<fake API>`) installs.
+* Switches: `win_unit.py --old-ga` (setup-only `inst::g_ga_fix`, the setup's `/oldga`) and
+  `--old-web` (`update.web_fallback`, the setup's `/oldweb`); in the lab `SPORE_FIX_OFF=update.web_fallback`
+  and `SPORE_WIN_UNIT_ARGS=--old-ga` do the same. `win_unit.py --setup <exe>` runs the setup tests
+  against another `SporeCoopSetup.exe` (under the repository, e.g. `build/main-setup/`: one built
+  from `git archive main` fails `test_setup_ga_window` and `test_setup_api403`).
+* `update_check.py --api403` (suite `update`, in game, ~4 min): the local server's API path answers
+  403; the game must offer and install the next version through the release page (`coop.update`
+  shows `via=page`). `SPORE_FIX_OFF=update.web_fallback` switches the fix off after the start's check
+  and runs `coop.update check` again: FAIL ("the game finds SporeCoop ..." not met).
+* Wine's WinHTTP and the redirect: `request(..., follow=false)` sets `WINHTTP_DISABLE_REDIRECTS`
+  and the `NEVER` redirect policy and reads `Location`; when a 200 comes back anyway it takes
+  `WINHTTP_OPTION_URL` (where the request ended), so both behaviours give the tag. Wine (lane 4's
+  bottle, 2026-11-01) honours the switch: `test_web_fallback` prints "the redirect was not followed"
+  (the fake tag page is never asked).
+* Seen 2026-11-01 on this machine: api.github.com answered 403 ("API rate limit exceeded", remaining
+  0) to the setup; the setup built from main failed with the players' message, the fixed one
+  installed 0.7.3.3 from github.com through the release page (`/S` into a fake game folder in lane 4's
+  bottle).

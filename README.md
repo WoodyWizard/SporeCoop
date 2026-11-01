@@ -98,7 +98,10 @@ player installs the same SporeCoop version.
    and run it (on Linux: inside the game's Wine prefix, e.g. Bottles *Run Executable...*).
 2. It finds the game (GOG or Steam), shows which build you have, and **Install** downloads the
    newest release from GitHub and checks it. Steam: if it does not find the game, choose the
-   Spore folder in `steamapps\common` (the one with `SporebinEP1`).
+   Spore folder in `steamapps\common` (the one with `SporebinEP1`). No `SporebinEP1` there means
+   Galactic Adventures is not installed: SporeCoop needs the *Spore Galactic Adventures* DLC.
+   The setup says "GitHub not reachable"? See [Troubleshooting](docs/INSTALL.md#9-troubleshooting)
+   (or use the release zip's `install.bat`).
 3. Start Spore: the galaxy menu now has a **Co-op** item.
 
 **Updates** come from this repository's releases: SporeCoop checks for a new version when the game

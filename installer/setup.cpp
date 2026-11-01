@@ -74,7 +74,35 @@ std::wstring parent(std::wstring p)
     return k == std::wstring::npos ? L"" : p.substr(0, k);
 }
 
-// the game folder (the one with SporebinEP1 and Data)
+std::vector<uint8_t> read_file(const std::wstring& path);
+
+// Steam's game folders of Spore: <library>\steamapps\common\Spore for every library in
+// libraryfolders.vdf (BUG-0391: the game is often not in Steam's own folder)
+std::vector<std::wstring> steam_spore_dirs()
+{
+    std::vector<std::wstring> steam = {reg_str(HKEY_CURRENT_USER, L"Software\\Valve\\Steam", L"SteamPath"),
+                                       reg_str(HKEY_LOCAL_MACHINE, L"Software\\Valve\\Steam", L"InstallPath")};
+    std::vector<std::wstring> libs;
+    for (auto s : steam) {
+        if (s.empty())
+            continue;
+        for (auto& ch : s)
+            if (ch == L'/')
+                ch = L'\\';
+        s = trim_slash(s);
+        libs.push_back(s);
+        std::vector<uint8_t> vdf = read_file(s + L"\\steamapps\\libraryfolders.vdf");
+        for (auto& l : inst::steam_libraries(std::string(vdf.begin(), vdf.end())))
+            libs.push_back(trim_slash(l));
+    }
+    std::vector<std::wstring> out;
+    for (auto& l : libs)
+        out.push_back(l + L"\\steamapps\\common\\Spore");
+    return out;
+}
+
+// the game folder (the one with SporebinEP1 and Data); else a Spore folder without Galactic
+// Adventures (the window then says so, BUG-0391)
 std::wstring find_game()
 {
     std::vector<std::wstring> c;
@@ -91,12 +119,13 @@ std::wstring find_game()
                              L"C:\\Program Files (x86)\\GOG.com\\SPORE", L"C:\\Program Files (x86)\\Electronic Arts\\SPORE",
                              L"C:\\Program Files (x86)\\Steam\\steamapps\\common\\Spore"})
         c.push_back(d);
-    for (auto& p : c) {
-        std::wstring r = trim_slash(p);
-        if (is_game(r))
-            return r;
-    }
-    return {};
+    if (inst::g_ga_fix)
+        for (auto& d : steam_spore_dirs())
+            c.push_back(d);
+    if (inst::g_ga_fix)
+        for (auto& d : c)
+            d = inst::game_root_of(d);
+    return inst::pick_game(c);
 }
 
 std::vector<uint8_t> read_file(const std::wstring& path)
@@ -196,12 +225,16 @@ std::wstring dir_text()
     return trim_slash(b);
 }
 
+// the game folder the setup works on: the typed folder, or its parent when that is SporeBin or
+// SporebinEP1 (BUG-0391)
+std::wstring chosen_root() { return inst::game_root_of(dir_text()); }
+
 void refresh()
 {
-    std::wstring root = dir_text();
+    std::wstring root = chosen_root();
     std::wstring game;
     if (!is_game(root))
-        game = L"Game: SporeApp.exe is not in this folder's SporebinEP1. Choose the SPORE folder.";
+        game = upd::widen("Game: " + inst::folder_problem(root));
     else if (std::vector<uint8_t> exe = read_file(root + L"\\SporebinEP1\\SporeApp.exe");
              upd::sha256_hex(exe) == kGog2016Sha)
         game = L"Game: Spore Galactic Adventures, GOG 2016 build (supported)";
@@ -219,7 +252,8 @@ void refresh()
     std::string v = is_game(root) ? upd::installed_version(root) : "";
     SetWindowTextW(g_inst, upd::widen("Installed: " + (v.empty() ? std::string("not installed") : "SporeCoop " + v)).c_str());
     upd::ReleaseInfo ri = g_rel.get();
-    std::string latest = ri.ok ? "Newest release: SporeCoop " + ri.rel.version
+    std::string latest = ri.ok ? "Newest release: SporeCoop " + ri.rel.version +
+                                     (ri.rel.from_web ? " (from the release page)" : "")
                          : !ri.done ? "Newest release: checking GitHub..."
                                     : "Newest release: GitHub not reachable (" + ri.err + ")";
     SetWindowTextW(g_latest, upd::widen(latest).c_str());
@@ -296,7 +330,7 @@ void start_job(bool uninstall, bool downgrade = false)
     g_busy = true;
     SetWindowTextW(g_status, uninstall ? L"Removing SporeCoop..." : L"Installing SporeCoop...");
     refresh();
-    auto* j = new Job{uninstall, dir_text(), g_opt.inst, {}, false};
+    auto* j = new Job{uninstall, chosen_root(), g_opt.inst, {}, false};
     j->opt.downgrade = j->opt.downgrade || downgrade;
     if (g_job)
         CloseHandle(g_job);
@@ -307,7 +341,7 @@ void elevate()
 {
     wchar_t self[MAX_PATH];
     GetModuleFileNameW(nullptr, self, MAX_PATH);
-    std::wstring args = L"\"/dir:" + dir_text() + L"\"";
+    std::wstring args = L"\"/dir:" + chosen_root() + L"\"";
     if ((INT_PTR)ShellExecuteW(g_wnd, L"runas", self, args.c_str(), nullptr, SW_SHOWNORMAL) > 32)
         PostQuitMessage(0);
 }
@@ -340,15 +374,16 @@ LRESULT CALLBACK wndproc(HWND w, UINT m, WPARAM wp, LPARAM lp)
         add(L"STATIC", L"Game folder (the one with SporebinEP1):", 0, 20, 78, 520, 18);
         g_dir = add(L"EDIT", upd::widen(upd::narrow(find_game())).c_str(), ES_AUTOHSCROLL, 20, 98, 420, 24, ID_DIR);
         add(L"BUTTON", L"Browse...", BS_PUSHBUTTON, 448, 97, 92, 26, ID_BROWSE);
-        g_game = add(L"STATIC", L"", 0, 20, 134, 520, 18);
-        g_inst = add(L"STATIC", L"", 0, 20, 156, 520, 18);
-        g_latest = add(L"STATIC", L"", 0, 20, 178, 520, 18);
-        g_install = add(L"BUTTON", L"Install", BS_DEFPUSHBUTTON, 20, 214, 170, 32, ID_INSTALL);
-        g_remove = add(L"BUTTON", L"Uninstall", BS_PUSHBUTTON, 200, 214, 120, 32, ID_REMOVE);
-        g_close = add(L"BUTTON", L"Close", BS_PUSHBUTTON, 440, 214, 100, 32, ID_CLOSE);
-        g_status = add(L"STATIC", L"", 0, 20, 258, 520, 36);
+        // two lines each: "Galactic Adventures is not installed: ..." (BUG-0391), a GitHub error (BUG-0392)
+        g_game = add(L"STATIC", L"", 0, 20, 134, 520, 34);
+        g_inst = add(L"STATIC", L"", 0, 20, 170, 520, 18);
+        g_latest = add(L"STATIC", L"", 0, 20, 192, 520, 34);
+        g_install = add(L"BUTTON", L"Install", BS_DEFPUSHBUTTON, 20, 236, 170, 32, ID_INSTALL);
+        g_remove = add(L"BUTTON", L"Uninstall", BS_PUSHBUTTON, 200, 236, 120, 32, ID_REMOVE);
+        g_close = add(L"BUTTON", L"Close", BS_PUSHBUTTON, 440, 236, 100, 32, ID_CLOSE);
+        g_status = add(L"STATIC", L"", 0, 20, 280, 520, 52);
         add(L"STATIC", L"github.com/WoodyWizard/SporeCoop  -  every player needs the same SporeCoop version", 0, 20,
-            300, 520, 18);
+            340, 520, 18);
         refresh();
         CloseHandle(CreateThread(nullptr, 0, check_thread, nullptr, 0, nullptr));
         return 0;
@@ -364,7 +399,9 @@ LRESULT CALLBACK wndproc(HWND w, UINT m, WPARAM wp, LPARAM lp)
                 wchar_t p[MAX_PATH];
                 if (SHGetPathFromIDListW(id, p)) {
                     std::wstring r = trim_slash(p);
-                    if (!is_game(r) && is_game(parent(r)))
+                    if (inst::g_ga_fix)
+                        r = inst::game_root_of(r); // picked SporeBin or SporebinEP1 itself (BUG-0391)
+                    else if (!is_game(r) && is_game(parent(r)))
                         r = parent(r); // picked SporebinEP1 itself
                     SetWindowTextW(g_dir, r.c_str());
                 }
@@ -392,9 +429,17 @@ LRESULT CALLBACK wndproc(HWND w, UINT m, WPARAM wp, LPARAM lp)
             return 0;
         }
         break;
-    case WM_INFO:
+    case WM_INFO: {
         refresh();
+        // BUG-0392: GitHub did not answer (API and release page) and there is no pack next to the
+        // setup: say how to install without the setup before the player presses Install
+        upd::ReleaseInfo ri = g_rel.get();
+        wchar_t st[8] = {};
+        GetWindowTextW(g_status, st, 8);
+        if (inst::g_ga_fix && ri.done && !ri.ok && !g_busy && !st[0] && inst::local_pack(g_opt.inst).empty())
+            SetWindowTextW(g_status, upd::widen(std::string("GitHub does not answer. ") + inst::kManualInstall).c_str());
         return 0;
+    }
     case WM_DONE: {
         auto* j = (Job*)lp;
         g_busy = false;
@@ -412,6 +457,8 @@ LRESULT CALLBACK wndproc(HWND w, UINT m, WPARAM wp, LPARAM lp)
                 start_job(false, true);
             return 0;
         }
+        if (!j->ok && !g_test_mode && !g_opt.silent && j->msg.find(inst::kManualInstall) != std::string::npos)
+            MessageBoxW(w, upd::widen(j->msg).c_str(), L"SporeCoop Setup", MB_OK | MB_ICONWARNING); // BUG-0392
         if (denied && MessageBoxW(w, L"Windows does not let normal programs change this folder.\n\nRestart the setup as "
                                      L"administrator?", L"SporeCoop Setup", MB_YESNO | MB_ICONQUESTION) == IDYES)
             elevate();
@@ -454,6 +501,10 @@ void parse_args()
             g_opt.inst.downgrade = true;
         else if (s == L"/oldfix") // tests: the behaviour before BUG-0094 and BUG-0139
             inst::g_fix = false;
+        else if (s == L"/oldga") // tests: the folder handling before BUG-0391
+            inst::g_ga_fix = false;
+        else if (s == L"/oldweb") // tests: the API only, before BUG-0392
+            upd::g_web_fallback_fix = false;
         else if (s == L"/oldmerge") // tests: the check thread's get-then-set before BUG-0244
             upd::g_release_merge_fix = false;
         else if (!val(L"/pack:").empty())
@@ -479,6 +530,8 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, LPWSTR, int show)
     }
     if (g_opt.silent) {
         std::wstring root = g_opt.dir.empty() ? find_game() : g_opt.dir;
+        if (inst::g_ga_fix)
+            root = inst::game_root_of(root); // /dir: of SporeBin or SporebinEP1 (BUG-0391)
         std::string msg;
         bool ok = g_opt.uninstall ? inst::do_uninstall(root, msg)
                                   : inst::do_install(root, g_opt.inst, g_rel, msg) == inst::Result::Ok;
@@ -496,12 +549,12 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, LPWSTR, int show)
     wc.hIcon = LoadIconW(inst, MAKEINTRESOURCEW(1));
     wc.lpszClassName = L"SporeCoopSetup";
     RegisterClassW(&wc);
-    RECT r{0, 0, 560, 330};
+    RECT r{0, 0, 560, 370};
     AdjustWindowRect(&r, WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, FALSE);
     HWND w = CreateWindowW(L"SporeCoopSetup", L"SporeCoop Setup", WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
                            CW_USEDEFAULT, CW_USEDEFAULT, r.right - r.left, r.bottom - r.top, nullptr, nullptr, inst, nullptr);
     if (!g_opt.dir.empty())
-        SetWindowTextW(g_dir, g_opt.dir.c_str());
+        SetWindowTextW(g_dir, (inst::g_ga_fix ? inst::game_root_of(g_opt.dir) : g_opt.dir).c_str());
     ShowWindow(w, show);
     MSG msg;
     while (GetMessageW(&msg, nullptr, 0, 0)) {
