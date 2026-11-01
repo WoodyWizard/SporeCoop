@@ -29,7 +29,7 @@ import re
 import time
 
 import lane
-from coop_puppet_walk import Watch, back_to_partner, dump, partner_dist, screen, settle
+from coop_puppet_walk import Watch, back_to_partner, partner_dist, screen, settle
 from twoinst import Checks, shot, start
 
 TP_FACTOR, TP_MIN = 3.0, 0.75
@@ -37,6 +37,26 @@ ERR_P95 = 2.5
 LAG_MAX = 0.3  # s: the delay that fits the drawn path best (fix on 0.06-0.14 s; puppet_path + puppet_walk off 0.50-0.54 s)
 PER_MIN = 1.0
 ABILITY_KEYS = [0x31, 0x32, 0x33, 0x34, 0x35, 0x30]  # 1-5, 0
+
+
+def dump_anims(con):
+    """coop_puppet_walk.dump with the columns ranims / ranim (BUG-0414: the partner's animations played on the
+    puppet so far and the last one's id; on the own avatar's rows its own animations)"""
+    rows = []
+    n = int(re.search(r'samples=(\d+)', con.call('coop.track count')['out']).group(1))
+    for start_i in range(0, n, 1500):
+        for line in con.call(f'coop.track dump {start_i} 1500')['out'].splitlines():
+            f = line.split()
+            if len(f) < 26:
+                continue
+            rows.append({'hd': float(f[23]), 'ht': float(f[24]), 't': float(f[0]), 'who': int(f[1]),
+                         'flags': int(f[2]), 'tp': int(f[3]), 'p': tuple(map(float, f[4:7])),
+                         'd': tuple(map(float, f[7:10])), 'tgt': tuple(map(float, f[10:13])), 'gv': float(f[13]),
+                         'rv': float(f[14]), 'anim': f[15], 'gait': int(f[16]), 'gait2': int(f[17]),
+                         'moving': int(f[18]), 'ss': int(f[19]), 'vis': int(f[20]), 'sx': float(f[21]),
+                         'sy': float(f[22]), 'ranims': int(f[26]) if len(f) > 27 else 0,
+                         'ranim': f[27] if len(f) > 27 else ''})
+    return rows
 
 
 def pct(xs, q):
@@ -73,6 +93,15 @@ def combat_stance(con):
     return stance(con) == 1
 
 
+def full_hp(con):
+    """the fighter's health back to its maximum (not over it: `coop.team hp 1000` gave it 1000 of 10, which the
+    other game's puppet, capped at its maximum, cannot show, and the invariant monitor's puppet_hp rule failed the
+    run on it)"""
+    m = re.search(r'^own: hp=[-\d.]+/([\d.]+)', con.call('coop.hp')['out'], re.M)
+    if m:
+        con.call(f'coop.team hp {m.group(1)}')
+
+
 COME_SKIP = 1.5  # s around a teleport of the test (`coop.team come`) left out of the checks
 
 
@@ -83,7 +112,7 @@ def fight(con, rng, secs, log, t_track, comes):
     W, H = screen(con)
     lost = 0
     t_end = time.time() + secs
-    con.call('coop.team hp 1000')
+    full_hp(con)
     log.append(f'combat stance {combat_stance(con)}')
     while time.time() < t_end:
         d = partner_dist(con)
@@ -135,7 +164,7 @@ def fight(con, rng, secs, log, t_track, comes):
             con.call(f'drag {W // 2} {H // 2} {W // 2 + dx} {H // 2} right')
             time.sleep(0.4)
             log.append('turn')
-        con.call('coop.team hp 1000')
+        full_hp(con)
     return log
 
 
@@ -157,14 +186,30 @@ def interp(rows, t):
     return tuple(x + (y - x) * k for x, y in zip(a['p'], b['p']))
 
 
-def analyse(obs_rows, fighter_rows, label, comes=()):
+def in_view(r, wh):
+    """the puppet is on the observer's screen in this row (`coop.track` vis / sx / sy; wh None: every row counts)"""
+    return wh is None or (r['vis'] and 0 <= r['sx'] <= wh[0] and 0 <= r['sy'] <= wh[1])
+
+
+def radial_step(a, b):
+    """the change of the drawn puppet's distance from the planet's centre between two rows (m)"""
+    return abs(math.sqrt(sum(x * x for x in b['d'])) - math.sqrt(sum(x * x for x in a['d'])))
+
+
+def analyse(obs_rows, fighter_rows, label, comes=(), wh=None):
+    """wh: the observer's screen size. BUG-0414: a step is a jump only when the observer sees it (the puppet on
+    its screen in both frames). The game puts a creature outside the view on the plain terrain (GetHeightAt): on the
+    raised ground of a nest mound the puppet then sits 0.4-1 m under its place while the observer looks away and is
+    back on the mound when it is in view again; those steps (`off_view`) are not seen. The first frame back in view
+    is still drawn low (the game lifts it one update later): a radial step from that frame (`entry`) is listed, not
+    judged (BUG-0434)"""
     def near_come(t):
         return any(abs(t - c) <= COME_SKIP for c in comes)
     own = [r for r in fighter_rows if r['who'] == 255]
     pup = [r for r in obs_rows if r['who'] != 255 and (r['flags'] & 1)]
     top = max(pct([r['gv'] for r in own if r['gv'] > 0.3], 0.99), 4.0)
-    jumps, prev_dt, dts = [], 0.0, []
-    for a, b in zip(pup, pup[1:]):
+    jumps, off_view, entry, prev_dt, dts = [], [], [], 0.0, []
+    for i, (a, b) in enumerate(zip(pup, pup[1:])):
         dt = b['t'] - a['t']
         allow_dt, prev_dt = max(dt, prev_dt), dt
         if dt <= 0 or dt > 0.25:
@@ -172,7 +217,13 @@ def analyse(obs_rows, fighter_rows, label, comes=()):
         dts.append(dt)
         step = math.dist(a['d'], b['d'])
         if step > max(TP_MIN, TP_FACTOR * top * allow_dt) and not near_come(b['t']):
-            jumps.append((round(b['t'], 2), round(step, 2), round(dt * 1000)))
+            j = (round(b['t'], 2), round(step, 2), round(dt * 1000))
+            if not (in_view(a, wh) and in_view(b, wh)):
+                off_view.append(j)
+            elif i > 0 and not in_view(pup[i - 1], wh) and radial_step(a, b) >= 0.7 * step:
+                entry.append(j)
+            else:
+                jumps.append(j)
     span = (pup[-1]['t'] - pup[0]['t']) if len(pup) > 1 else 0.0
     tps = sum(1 for a, b in zip(pup, pup[1:]) if b['tp'] > a['tp'] and not near_come(b['t']))
     # the delay that fits best (over the frames in which the fighter moves faster than 1 m/s: standing frames fit
@@ -193,11 +244,41 @@ def analyse(obs_rows, fighter_rows, label, comes=()):
     errs0 = [math.dist(r['d'], interp(own, r['t'])) for r in pup if own and r['t'] >= own[0]['t']]
     errs_mov0 = [math.dist(r['d'], interp(own, r['t'])) for r in mov]
     moving = sum(1 for r in own if r['gv'] > 0.5) / len(own) if own else 0
+    seen = sum(1 for r in pup if in_view(r, wh)) / len(pup) if pup else 0
     return {'label': label, 'samples': len(pup), 'span': span, 'top': top, 'jumps': jumps, 'tps': tps,
+            'off_view': off_view, 'entry': entry, 'seen': seen,
             'lag': lag, 'err_p50': pct(errs, 0.5), 'err_p95': pct(errs, 0.95), 'err_max': max(errs) if errs else 0,
             'now_p95': pct(errs0, 0.95), 'mov_now_p95': pct(errs_mov0, 0.95), 'mov_n': len(mov),
             'fps': 1 / (sum(dts) / len(dts)) if dts else 0, 'moving': moving,
             'own_speed_p50': pct([r['gv'] for r in own if r['gv'] > 0.3], 0.5)}
+
+
+def anim_events(rows, who_own):
+    """[(t, anim)] of the animations counted in the rows (ranims grows): the partner's ones played on the puppet
+    (observer) or the own ones sent (fighter)"""
+    out, last = [], None
+    for r in rows:
+        if (r['who'] == 255) != who_own or 'ranims' not in r:
+            continue
+        if last is not None and r['ranims'] > last:
+            out.append((r['t'], r['ranim'], r['ranims'] - last))
+        last = r['ranims']
+    return out
+
+
+def jump_context(obs, fig, jumps):
+    """BUG-0414: per jump, the partner's animations played on the puppet in the 0.6 s before it, its state flags
+    and the fighter's own animations around then (the tracks start together)"""
+    pa, fa = anim_events(obs, False), anim_events(fig, True)
+    pup = {round(r['t'], 2): r for r in obs if r['who'] != 255}
+    out = []
+    for t, step, ms in jumps:
+        r = pup.get(t)
+        near = [f'{a}@{t - ta:.2f}' for ta, a, _ in pa if t - 0.6 <= ta <= t]
+        own = [f'{a}@{ta - t:+.2f}' for ta, a, _ in fa if t - 1.0 <= ta <= t + 0.3]
+        out.append(f'jump {t} {step} m: flags {r["flags"] if r else "?"} anim {r["anim"] if r else "?"}; played on it '
+                   f'before (s): {near or "none"}; the fighter\'s own (s from it): {own or "none"}')
+    return out
 
 
 def to_nest(host, guest):
@@ -236,12 +317,12 @@ def direction(fighter, observer, fname, oname, rng, secs, ck):
     shot(observer, f'puppet_fight_{oname}_sees_{fname}')
     for c in (fighter, observer):
         c.call('coop.track stop')
-    obs, fig = dump(observer), dump(fighter)
+    obs, fig = dump_anims(observer), dump_anims(fighter)
     path = os.path.join(lane.out_dir('track'), f'puppet_fight_{oname}_sees_{fname}_{time.strftime("%Y%m%d-%H%M%S")}.json')
     with open(path, 'w') as f:
         json.dump({'observer': obs, 'fighter': fig}, f)
     print(f'  per-frame samples: {path}', flush=True)
-    r = analyse(obs, fig, f'{oname} watches {fname} fight', comes)
+    r = analyse(obs, fig, f'{oname} watches {fname} fight', comes, screen(observer))
     print(f'  {fname} fought: {"; ".join(log)}', flush=True)
     mins = max(r['span'] / 60, 0.5)
     allowed = math.ceil(PER_MIN * mins)
@@ -250,6 +331,11 @@ def direction(fighter, observer, fname, oname, rng, secs, ck):
     print(f'    drawn vs the fighter\'s own path: at the same moment p95 {r["now_p95"]:.2f} m (while it moves: '
           f'{r["mov_now_p95"]:.2f} m, {r["mov_n"]} samples); after the best delay {r["lag"]:.2f} s: p50 {r["err_p50"]:.2f} p95 '
           f'{r["err_p95"]:.2f} max {r["err_max"]:.2f} m; driver teleports {r["tps"]}; jumps {len(r["jumps"])} {r["jumps"][:10]}', flush=True)
+    print(f'    the puppet on the observer\'s screen in {r["seen"]:.0%} of the frames; steps out of its view (not seen, '
+          f'BUG-0414) {len(r["off_view"])} {r["off_view"][:6]}; low first frames back in view (BUG-0434, not judged) '
+          f'{len(r["entry"])} {r["entry"][:6]}', flush=True)
+    for line in jump_context(obs, fig, r['jumps'] + r['off_view'] + r['entry']):
+        print('    ' + line, flush=True)
     ck(r['samples'] > 300 and r['moving'] > 0.12, f'{r["label"]}: it fought and moved ({r["samples"]} samples, moving '
        f'{r["moving"]:.0%} of its own frames)')
     ck(len(r['jumps']) <= allowed, f'{r["label"]}: drawn jumps within the bound ({len(r["jumps"])} <= {allowed})')
@@ -286,9 +372,7 @@ def main():
     if a.dir in ('guest', 'both'):
         direction(guest, host, 'guest', 'host', rng, a.secs, ck)
     for c in (host, guest):  # full health again (the next warm test)
-        m = re.search(r'^own: hp=[-\d.]+/([\d.]+)', c.call('coop.hp')['out'], re.M)
-        if m:
-            c.call(f'coop.team hp {m.group(1)}')
+        full_hp(c)
     ck.faults(host=host, guest=guest)
     return ck.result()
 
