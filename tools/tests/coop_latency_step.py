@@ -1,0 +1,212 @@
+#!/usr/bin/env python3
+"""A latency step while the partner walks: what the other player sees (BUG-0133 in the game; its own test
+was a unit test of the interpolation buffer only).
+
+Players' connections change their latency within a session (bufferbloat while somebody uploads, a mobile
+cell change). BUG-0133: after the one-way latency rose by ~300 ms the interpolation buffer rendered past its
+newest state for ~50 s, every partner puppet moved in 20 Hz steps (extrapolated) all that time. This test
+walks one player by real input (coop_puppet_walk.walk: WASD holds, clicks on the ground, turns back to
+the other) for --secs seconds while the guest's network proxy (netem, SPORE_NET) changes its one-way delay
+--low -> --high -> --low ms at --rise and --fall seconds into the walk, in both directions (the guest
+watches the host, the host watches the guest). The observer's game is sampled every frame (coop.track:
+the drawn position of the puppet, before the mod's driving).
+
+Check per direction: in 1 s buckets of the walk, a bucket is BAD when the drawn puppet moves in steps
+(of its windows of >= 4 frames while the walker's path moves, under 60 % at 0.6-1.4x the path's speed or
+over 20 % standing) or jumps (a frame step over 3x the walker's top speed x the frame time, >= 0.75 m);
+GOOD when it walks smoothly. The longest stretch of bad buckets with no good bucket in between must be
+<= --max-bad seconds (5 s): a step of the latency may cost a moment, not the ~50 s of BUG-0133. At least
+--min-high seconds of the high-latency phase must have been measured (the walker walked).
+
+  SPORE_LANE=9 SPORE_NET="delay=30,jitter=5" python3 tools/tests/coop_latency_step.py [--seed N]
+  SPORE_FIX_OFF=net.offset_window fails (the steps last until the offset crept up: tens of seconds)
+"""
+import argparse
+import json
+import math
+import os
+import random
+import re
+import threading
+import time
+
+import lane
+import netem
+from coop_puppet_walk import (TP_FACTOR, TP_MIN, WIN_FRAMES, Watch, beside, dump, pct, settle, walk)
+from twoinst import Checks, shot, start
+
+GOOD_MATCHED, BAD_MATCHED, BAD_STAND = 0.6, 0.6, 0.2
+
+
+class Stepper(threading.Thread):
+    """sets the proxy's base one-way delay at given seconds after start(): [(at, ms)]"""
+
+    def __init__(self, proxy, plan):
+        super().__init__(daemon=True)
+        self.proxy, self.plan, self.t0, self.done = proxy, plan, None, []
+
+    def run(self):
+        self.t0 = time.time()
+        for at, ms in self.plan:
+            wait = self.t0 + at - time.time()
+            if wait > 0:
+                time.sleep(wait)
+            self.proxy.p['delay'] = float(ms)
+            self.done.append((round(time.time() - self.t0, 2), ms))
+
+
+def buckets(obs_rows, walker_rows):
+    """per 1 s of the observer's track: (windows, matched share, stand share, jumps)"""
+    own = [r for r in walker_rows if r['who'] == 255]
+    top = pct([r['gv'] for r in own if r['gv'] > 0.3], 0.95) or 5.0
+    pup = [r for r in obs_rows if r['who'] != 255]
+    out = {}
+    prev_dt = 0.0
+    for a, b in zip(pup, pup[1:]):
+        dt = b['t'] - a['t']
+        allow_dt, prev_dt = max(dt, prev_dt), dt
+        if dt <= 0 or dt > 0.25 or b['rv'] < 0.5 or not (b['flags'] & 1):
+            continue
+        step = math.dist(a['d'], b['d'])
+        if step > max(TP_MIN, TP_FACTOR * top * allow_dt):
+            out.setdefault(int(b['t']), {'w': [], 'jumps': []})['jumps'].append((round(b['t'], 2), round(step, 2)))
+    i = 0
+    while i < len(pup):
+        j = i
+        while j < len(pup) and (pup[j]['t'] - pup[i]['t'] < 0.1 or j - i < WIN_FRAMES):
+            j += 1
+        if j >= len(pup):
+            break
+        dt = pup[j]['t'] - pup[i]['t']
+        path = math.dist(pup[i]['tgt'], pup[j]['tgt']) / dt if dt > 0 else 0
+        if path > 1.0 and dt < 0.3 and (pup[j]['flags'] & 1):
+            out.setdefault(int(pup[i]['t']), {'w': [], 'jumps': []})['w'].append(
+                math.dist(pup[i]['d'], pup[j]['d']) / dt / path)
+        i = j
+    res = {}
+    for sec, v in out.items():
+        w = v['w']
+        res[sec] = dict(n=len(w), matched=sum(1 for x in w if 0.6 <= x <= 1.4) / len(w) if w else 0.0,
+                        stand=sum(1 for x in w if x < 0.3) / len(w) if w else 0.0, jumps=v['jumps'])
+    return res, top
+
+
+def verdict(b):
+    """'bad', 'good' or None (too little walking in this second to say)"""
+    if b['jumps']:
+        return 'bad'
+    if b['n'] < 3:
+        return None
+    if b['matched'] < BAD_MATCHED or b['stand'] > BAD_STAND:
+        return 'bad'
+    return 'good' if b['matched'] >= GOOD_MATCHED else None
+
+
+def longest_bad(bk):
+    """the longest time from a bad second to a later bad second with no good second between (s), its start"""
+    best, start_s, run_start, last_bad = 0, None, None, None
+    for sec in sorted(bk):
+        v = verdict(bk[sec])
+        if v == 'good':
+            run_start = last_bad = None
+        elif v == 'bad':
+            if run_start is None:
+                run_start = sec
+            last_bad = sec
+            if last_bad - run_start + 1 > best:
+                best, start_s = last_bad - run_start + 1, run_start
+    return best, start_s
+
+
+def direction(walker, observer, wname, oname, rng, a, ck):
+    proxy = netem.proxy()
+    proxy.p['delay'] = float(a.low)
+    beside(walker, observer)
+    watch = Watch(observer)
+    watch.start()
+    time.sleep(2.0)
+    for c in (walker, observer):
+        c.call('coop.track start')
+    t_track = time.time()
+    time.sleep(0.5)
+    st = Stepper(proxy, [(a.rise, a.high), (a.fall, a.low)])
+    st.start()
+    t_walk = time.time()
+    log = walk(walker, rng, a.secs)
+    watch.stop.set()
+    watch.join()
+    st.join(5)
+    proxy.p['delay'] = float(a.low)
+    time.sleep(1.0)
+    shot(observer, f'latency_step_{oname}_sees_{wname}')
+    for c in (walker, observer):
+        c.call('coop.track stop')
+    obs, wal = dump(observer), dump(walker)
+    path = os.path.join(lane.out_dir('track'), f'latency_step_{oname}_sees_{wname}_{time.strftime("%Y%m%d-%H%M%S")}.json')
+    with open(path, 'w') as f:
+        json.dump({'observer': obs, 'walker': wal, 'steps': st.done, 'walk_start': t_walk - t_track}, f)
+    print(f'  per-frame samples: {path}', flush=True)
+    print(f'  {wname} walked: {"; ".join(log)}', flush=True)
+    off = t_walk - t_track  # track time of the walk's start (both on this machine's wall clock, ~0.1 s)
+    print(f'  latency steps (s into the walk, one-way ms): {st.done}; {proxy.describe()}', flush=True)
+    bk, top = buckets(obs, wal)
+    hi0, hi1 = off + a.rise, off + a.fall
+    line = []
+    for sec in sorted(bk):
+        v = verdict(bk[sec])
+        mark = '^' if hi0 <= sec < hi1 else ' '
+        line.append(f'{sec - off:5.0f}{mark}{"B" if v == "bad" else "g" if v == "good" else "."}'
+                    f'{bk[sec]["matched"]:.0%}/{bk[sec]["stand"]:.0%}/{len(bk[sec]["jumps"])}')
+    print(f'  {oname} watches {wname}, per second (s into the walk, ^ = {a.high} ms, B bad g good . unknown, '
+          f'matched/stand/jumps), walker top speed {top:.2f} m/s:', flush=True)
+    for k in range(0, len(line), 8):
+        print('    ' + '  '.join(line[k:k + 8]), flush=True)
+    worst, at = longest_bad(bk)
+    high_meas = sum(1 for sec in bk if hi0 <= sec < hi1 and verdict(bk[sec]) is not None)
+    after = [sec for sec in bk if hi0 <= sec and verdict(bk[sec]) is not None]
+    ck(high_meas >= a.min_high, f'{oname} watches {wname}: the walk was measured in {high_meas} s of the '
+       f'{a.fall - a.rise:.0f} s at {a.high} ms (>= {a.min_high})')
+    ck(len(after) >= a.min_high, f'{oname} watches {wname}: and in {len(after)} s from the rise on')
+    ck(worst <= a.max_bad, f'{oname} watches {wname}: the puppet moves in steps or jumps for at most {a.max_bad:.0f} s '
+       f'in a row ({worst} s' + (f' from {at - off:.0f} s into the walk' if at is not None else '') + ')')
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--dir', default='both', choices=('host', 'guest', 'both'), help='who walks')
+    ap.add_argument('--seed', type=int, default=None)
+    ap.add_argument('--secs', type=float, default=55, help='length of each walk')
+    ap.add_argument('--low', type=float, default=30, help='one-way delay before and after the step (ms)')
+    ap.add_argument('--high', type=float, default=300, help='one-way delay during the step (ms)')
+    ap.add_argument('--rise', type=float, default=12, help='s into the walk: low -> high')
+    ap.add_argument('--fall', type=float, default=34, help='s into the walk: high -> low')
+    ap.add_argument('--max-bad', type=float, default=5, help='s of steps / jumps in a row allowed')
+    ap.add_argument('--min-high', type=int, default=8, help='s of the high phase that must be measured')
+    a = ap.parse_args()
+    if not os.environ.get('SPORE_NET'):
+        print('RESULT: FAIL (needs SPORE_NET: the guest\'s proxy steps its delay)')
+        return 1
+    seed = a.seed if a.seed is not None else random.randrange(1 << 30)
+    print(f'  seed {seed}; network {os.environ["SPORE_NET"]}; steps {a.low} -> {a.high} ms at {a.rise} s -> '
+          f'{a.low} ms at {a.fall} s', flush=True)
+    rng = random.Random(seed)
+    host, guest = start('creature')
+    ck = Checks()
+    t0 = time.time()
+    while time.time() - t0 < 30:
+        if re.search(r'puppet pos=', host.call('coop.status')['out']) and \
+                re.search(r'puppet pos=', guest.call('coop.status')['out']):
+            break
+        time.sleep(1)
+    settle((host, guest))
+    time.sleep(1)
+    if a.dir in ('host', 'both'):
+        direction(host, guest, 'host', 'guest', rng, a, ck)
+    if a.dir in ('guest', 'both'):
+        direction(guest, host, 'guest', 'host', rng, a, ck)
+    ck.faults(host=host, guest=guest)
+    return ck.result()
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

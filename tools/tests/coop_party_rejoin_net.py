@@ -1,0 +1,141 @@
+#!/usr/bin/env python3
+"""Three or four players who leave and join again over their own bad networks (SPORE_NET: every guest
+has its own proxy, netem.py), checked in every machine's game (tools/tests/party.py). The invariant
+monitor (monitor.py) watches all games all the time (the lab fails the test on a MONITOR-VIOLATION).
+
+Rounds (each ends with the checks below):
+  1 one     the last guest leaves and joins again
+  2 swap    Bob (who plays his own creature) and the last guest leave; the last guest joins first and
+            gets Bob's old player id, then Bob joins (BUG-0076: a newcomer must not inherit the look
+            of the id's former player)
+  3 lost    a guest's goodbye is lost (its proxy drops everything for 1 s over the leave), it joins
+            again at once from the same address (protocol 6: the host must take the new HELLO)
+  4 both    every extra guest leaves at the same moment and they join at the same moment
+
+Checks after every round, on every machine's game (not the mod's counters):
+  together  every guest plays the host's stage with an avatar and the host has it in its world
+  see       each guest's game shows every other player where that player's own game has it
+  species   the creature each machine's game draws for a player (the puppet nearest to that player,
+            coop.census key) is the species that player's own game plays (its avatar's key)
+  shared    food / money the same on every machine
+Afterwards no machine has a caught fault.
+
+  SPORE_LANE=9 SPORE_NET=players python3 tools/tests/coop_party_rejoin_net.py --players 4
+  SPORE_FIX_OFF=core.id_reuse fails (round 2: the newcomer is drawn as Bob's creature)
+"""
+import argparse
+import math
+import os
+import time
+
+import census
+import netem
+from coop_multi import sample
+from party import NEAR, Party
+from twoinst import Checks
+
+
+def species_view(p, ck, label):
+    """each viewer's game draws every other player as that player's own species"""
+    own = {}
+    rows = {}
+    for x in p.all:
+        c = census.dump(x.con)
+        rows[x.name] = c
+        av = next((r for r in c.rows if r['own'] == 'avatar'), None)
+        own[x.name] = av
+    bad, seen = [], []
+    near = NEAR.get(p.stage(p.host), 6.0)
+    for v in p.all:
+        pups = [r for r in rows[v.name].rows if r['own'] == 'puppet']
+        for s in p.all:
+            if s is v or own[s.name] is None:
+                continue
+            # where the viewer's game shows the subject: coop.sync p<id> (the puppet the mod drives)
+            pid = 0 if s is p.host else s.pid
+            at = sample(v.con).get(f'p{pid}')
+            if at is None:
+                bad.append(f'{v.name} does not show {s.name}')
+                continue
+            best = min(pups, key=lambda r: math.dist(r['pos'], at), default=None)
+            if best is None or math.dist(best['pos'], at) > near:
+                bad.append(f'{v.name}: no creature where it shows {s.name}')
+                continue
+            seen.append(f'{v.name}->{s.name} {best["key"]}')
+            if best['key'] != own[s.name]['key']:
+                bad.append(f'{v.name} draws {s.name} as {best["key"]}, {s.name} plays {own[s.name]["key"]}')
+    print(f'  [{label}] species drawn: {", ".join(seen)}', flush=True)
+    ck(not bad, f'[{label}] every machine draws every other player as the species that player plays: {bad}')
+
+
+def checks(p, ck, label):
+    time.sleep(6)
+    if not p.check_together(ck, label):
+        return False
+    p.check_partners(ck, label)
+    if p.fixture == 'creature':
+        species_view(p, ck, label)
+    p.check_res(ck, label)
+    print(f'  [{label}] players {p.ids()}', flush=True)
+    return True
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--fixture', default='creature')
+    ap.add_argument('--players', type=int, default=4)
+    ap.add_argument('--rounds', default='one,swap,lost,both')
+    a = ap.parse_args()
+    print(f'  network per guest: {os.environ.get("SPORE_NET") or "plain"}', flush=True)
+    ck = Checks()
+    t0 = time.time()
+    p = Party.start(a.fixture, a.players)
+    try:
+        print(f'  players {p.ids()} in {time.time() - t0:.0f} s', flush=True)
+        if not checks(p, ck, 'start'):
+            return ck.result()
+        bob, last = p.byname('Bob'), p.guests[-1]
+        extra = p.guests[1:]
+        for rnd in filter(None, a.rounds.split(',')):
+            t1 = time.time()
+            if rnd == 'one':
+                ck(p.leave(last), f'[one] {last.name} leaves')
+                time.sleep(3)
+                ck(p.join(last), f'[one] {last.name} joins again')
+            elif rnd == 'swap':
+                ids0 = p.ids()
+                ck(p.leave(bob), '[swap] Bob leaves')
+                ck(p.leave(last), f'[swap] {last.name} leaves')
+                time.sleep(3)
+                ck(p.join(last), f'[swap] {last.name} joins first')
+                ids1 = p.ids()
+                print(f'  [swap] ids before {ids0}, {last.name} now {ids1.get(last.netname)}', flush=True)
+                ck(p.join(bob), '[swap] Bob joins again')
+            elif rnd == 'lost':
+                px = netem.proxy({'Bob': 'guest', 'Carol': 'extra1', 'Dave': 'extra2'}[last.name])
+                if px:
+                    px.outage(1.0)
+                last.call('coop.leave')
+                time.sleep(1.2)
+                ck(p.join(last), f'[lost] {last.name} joins again after a lost goodbye' + ('' if px else ' (no proxy)'))
+            elif rnd == 'both':
+                for gp in extra:
+                    gp.call('coop.leave')
+                time.sleep(4)
+                for gp in extra:
+                    gp.call(gp.join)
+                ok = all(p.wait_in(gp, 260, stable=4) for gp in extra)
+                ck(ok, f'[both] {", ".join(g.name for g in extra)} left and joined at the same moment')
+            print(f'  round {rnd}: {time.time() - t1:.0f} s', flush=True)
+            checks(p, ck, rnd)
+        for name, px in netem.proxies().items():
+            print(f'  {name}: {px.describe()}', flush=True)
+        p.faults(ck)
+        print(f'  ({time.time() - t0:.0f} s)', flush=True)
+        return ck.result()
+    finally:
+        p.stop()
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())
