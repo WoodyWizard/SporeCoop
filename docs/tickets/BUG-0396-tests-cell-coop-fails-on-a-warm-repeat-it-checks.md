@@ -1,16 +1,16 @@
 ---
 id: BUG-0396
 title: tests: cell_coop fails on a warm repeat: it checks the game's revive / respawn counters as absolute numbers
-status: open
+status: fixed
 kind: test
 stage: Cell
 reported: 2026-11-01
 source: lab 20261101-111447 cell_coop#2 (fix/w31-cell-gate); also 20261030-062715, 20261031-202750, 20261101-103417 on other branches
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
+fixed_in: unreleased
+branch: fix/w31-cell-gate
+commits: ba7bb49
 tests: cell_coop
 signature:
 docs:
@@ -34,8 +34,9 @@ knocked out 59 m away.
 Test only: the counters are compared with their values at the test's start.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+FAIL: lab 20261101-111447 cell_coop#2 (warm, the old test). PASS: 20261101-113006 cell_coop#2
+(warm reset, the changed test) and #1.
 
 ## History
 - 2026-11-01: opened.
+- 2026-11-01: fixed (test) on fix/w31-cell-gate.

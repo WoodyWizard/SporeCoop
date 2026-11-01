@@ -2768,3 +2768,9 @@ nearest plants on its screen (`coop.pool eat <key>`, EatFood); the food totals o
 not grow by them. `SPORE_FIX_OFF=cell.ko_no_eat` fails (+12 per plant on both games). Pitfalls: a
 `coop.pool tp` right after the start is undone by the hatch (the test moves again until 15 m away);
 the plants it touched drift off the screen or are eaten by the pool (printed only).
+
+cell_coop pitfalls found on the way (fix/w31-cell-gate): the `revives=` / `respawns=` counters of
+`coop.pool` belong to the game process and survive the warm reset, so the test compares them with
+their values at its start (BUG-0396: every warm `--repeat` run failed before); the host's idle cell
+can eat a plant in the 2 s of the shared food check, which now allows the host's own `own_points`
+(BUG-0395, 1 in 130 runs).

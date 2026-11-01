@@ -49,7 +49,7 @@ Per test (docs/06-testing.md#testing-cell-sync-check):
 cell_sync_check: FAIL with `SPORE_FIX_OFF=diag.total_lag` in lab 20261101-100218 (and with both off
 in 20261101-095302): `cell food: host 340.0, guest 338.0`, 3 MISMATCH in phase A. PASS: 20261101-100440
 cell_sync_check#3 (#1 and #2 failed only a precondition, how crowded the pool got, now printed
-instead; their sync-checks had no MISMATCH) and the reruns listed below. `diag.cell_margin` has no failing lab run in two players (20261101-095952: the send was
+instead; their sync-checks had no MISMATCH) and 20261101-111447 cell_sync_check#1-#3 (3 of 3, gates on). `diag.cell_margin` has no failing lab run in two players (20261101-095952: the send was
 capped in only a few rounds); its evidence is net_tests test_diag_compare (3 cells missing with
 cell_sure 1, none with 0.8) and campaign_short 20261031-181517 #3.
 cell_pause with the old test: the gate's MISMATCH in 6/6 recorded runs (e.g. 20261031-144455);
