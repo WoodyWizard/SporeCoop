@@ -3,7 +3,10 @@ duplicates and outages (both directions). twoinst.start() puts it in the guest's
 SPORE_NET is set, so every test and the chaos bot can run over it:
 
   SPORE_NET="delay=120,jitter=40,loss=0.03"   (ms, ms, fraction; also dup=0.01, outage=10)
-  SPORE_NET=dsl | mobile | awful              (presets)
+  SPORE_NET=dsl | mobile | awful | player      (presets)
+  BUG-0366, a home connection's own trouble: spike=0.1,spikems=300,spikelen=800 (a latency spike
+  starts with this chance per second: every packet meanwhile is held spikems longer, in order),
+  burst=0.1,burstlen=1500,burstloss=0.3 (a loss burst: burstloss of the packets for burstlen ms)
 
 proxy.outage(seconds) drops everything for a while (a short disconnect).
 """
@@ -18,12 +21,15 @@ PRESETS = {
     'dsl': 'delay=40,jitter=10,loss=0.005',
     'mobile': 'delay=120,jitter=60,loss=0.03,dup=0.01',
     'awful': 'delay=250,jitter=120,loss=0.10,dup=0.02',
+    # BUG-0366: the players' report (rtt 70-150 ms, spikes to 400+, bursts of 10-30 % loss)
+    'player': 'delay=45,jitter=15,loss=0.01,spike=0.15,spikems=250,spikelen=700,burst=0.1,burstlen=1500,burstloss=0.3',
 }
 
 
 def parse(spec):
     spec = PRESETS.get(spec, spec)
-    p = dict(delay=0.0, jitter=0.0, loss=0.0, dup=0.0)
+    p = dict(delay=0.0, jitter=0.0, loss=0.0, dup=0.0, spike=0.0, spikems=0.0, spikelen=0.0, burst=0.0,
+             burstlen=0.0, burstloss=0.0)
     for part in filter(None, (x.strip() for x in spec.split(','))):
         k, v = part.split('=')
         p[k] = float(v)
@@ -46,22 +52,40 @@ class Proxy:
             s.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4 << 20)
         self.queue, self.lock = [], threading.Lock()
         self.down_until = 0.0
-        self.stats = dict(up=0, down=0, lost=0, dup=0)
+        self.spike_until = self.burst_until = self.next_roll = 0.0
+        self.stats = dict(up=0, down=0, lost=0, dup=0, spikes=0, bursts=0)
         self.stop = False
         threading.Thread(target=self.pump, daemon=True).start()
 
     def outage(self, seconds):
         self.down_until = time.time() + seconds
 
+    def roll(self, now):
+        """spikes and loss bursts start by chance, rolled every 0.1 s"""
+        while self.next_roll <= now:
+            if self.next_roll == 0.0:
+                self.next_roll = now
+            if self.p['spike'] and now >= self.spike_until and self.rng.random() < self.p['spike'] / 10:
+                self.spike_until = now + self.p['spikelen'] / 1000
+                self.stats['spikes'] += 1
+            if self.p['burst'] and now >= self.burst_until and self.rng.random() < self.p['burst'] / 10:
+                self.burst_until = now + self.p['burstlen'] / 1000
+                self.stats['bursts'] += 1
+            self.next_roll += 0.1
+
     def send_later(self, sock, data, addr):
         now = time.time()
-        if now < self.down_until or self.rng.random() < self.p['loss']:
+        self.roll(now)
+        loss = self.p['burstloss'] if now < self.burst_until else self.p['loss']
+        if now < self.down_until or self.rng.random() < loss:
             self.stats['lost'] += 1
             return
         copies = 2 if self.rng.random() < self.p['dup'] else 1
         self.stats['dup'] += copies - 1
         for _ in range(copies):
             d = max(0.0, self.p['delay'] + self.rng.uniform(-self.p['jitter'], self.p['jitter'])) / 1000
+            if now < self.spike_until:  # the queue of a congested link: held longer, still in order
+                d += self.p['spikems'] * (self.spike_until - now) / (self.p['spikelen'] / 1000) / 1000
             with self.lock:
                 heapq.heappush(self.queue, (now + d, id(data) + _, sock, data, addr))
 
