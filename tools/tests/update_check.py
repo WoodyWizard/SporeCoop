@@ -12,7 +12,12 @@ lab a lane that is neither in the run nor skipped):
      and the replaced files (*.sporecoop-old) are gone
   5. SporeCoopSetup.exe /S /uninstall puts the game's own steam_api.dll back
 
-  python3 tools/tests/update_check.py [--lane 6]
+  python3 tools/tests/update_check.py [--lane 6] [--api403]
+
+--api403 (BUG-0392): the server's API path answers 403 (GitHub's rate limit for shared IPs / VPNs) and
+the game must find the release through the release page's redirect (github.com/<o>/<r>/releases/latest
+-> .../releases/tag/v<new>) and download it from .../releases/download/v<new>/. With
+SPORE_FIX_OFF=update.web_fallback (only the API) it must FAIL.
 """
 import argparse
 import fcntl
@@ -74,8 +79,12 @@ def build_new(dist):
     return pack
 
 
-def serve(pack):
-    """a local stand-in for the GitHub API and its downloads"""
+REPO = '/WoodyWizard/SporeCoop/releases'
+
+
+def serve(pack, api403=False):
+    """a local stand-in for the GitHub API and its downloads; api403: the API path refuses, the
+    release page redirects to the tag (BUG-0392)"""
     files = {f'/download/{os.path.basename(pack)}': open(pack, 'rb').read()}
     files['/download/SHA256SUMS.txt'] = (hashlib.sha256(files[f'/download/{os.path.basename(pack)}']).hexdigest()
                                          + f'  {os.path.basename(pack)}\n').encode()
@@ -85,8 +94,26 @@ def serve(pack):
         'assets': [{'name': n[10:], 'browser_download_url': base + n} for n in files if n.startswith('/download/')],
     }).encode()
 
+    # github.com's layout: releases/latest redirects to releases/tag/<tag>, assets by fixed names
+    for n in [n for n in files if n.startswith('/download/')]:
+        files[f'{REPO}/download/v{NEW}/{n[10:]}'] = files[n]
+    redirect = {f'{REPO}/latest': f'{base}{REPO}/tag/v{NEW}'}
+    files[f'{REPO}/tag/v{NEW}'] = b'<html>release</html>'
+    refused = {f'/repos{REPO}/latest'} if api403 else set()
+    if not api403:
+        files[f'/repos{REPO}/latest'] = files['/latest']
+
     class H(http.server.BaseHTTPRequestHandler):
         def do_GET(self):
+            if self.path in refused or self.path in redirect:
+                self.send_response(403 if self.path in refused else 302)
+                if self.path in redirect:
+                    self.send_header('Location', redirect[self.path])
+                body = b'{"message":"API rate limit exceeded"}' if self.path in refused else b''
+                self.send_header('Content-Length', str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
             body = files.get(self.path)
             self.send_response(200 if body is not None else 404)
             self.send_header('Content-Length', str(len(body or b'')))
@@ -98,7 +125,7 @@ def serve(pack):
 
     srv = http.server.ThreadingHTTPServer(('127.0.0.1', PORT), H)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
-    return base + '/latest'
+    return base + (f'/repos{REPO}/latest' if api403 else '/latest')
 
 
 def wine(bottle, exe, *args):
@@ -119,6 +146,7 @@ def main():
     # the lab gives a lane outside its run (SPORE_FREE_LANE, '' = none free); by hand: lane 6
     free = os.environ.get('SPORE_FREE_LANE')
     ap.add_argument('--lane', type=int, default=int(free) if free else 6)
+    ap.add_argument('--api403', action='store_true', help='the API answers 403: the release page (BUG-0392)')
     a = ap.parse_args()
     if free == '' and '--lane' not in sys.argv:
         print('RESULT: SKIP (no lane outside this lab run is free: this test wipes the mod from its lane)')
@@ -162,7 +190,7 @@ def main():
     cur_pack = os.path.join(dist, f'SporeCoop-{ver}.pack')
     setup = os.path.join(dist, 'SporeCoopSetup.exe')
     new_pack = build_new(dist)
-    api = serve(new_pack)
+    api = serve(new_pack, a.api403)
     log = os.path.join(game, 'setup-test.log')  # inside the bottle's view (Flatpak has its own /tmp)
     if os.path.exists(log):
         os.remove(log)
@@ -199,6 +227,15 @@ def main():
 
     c = start_game()
     st = ''
+    if 'update.web_fallback' in os.environ.get('SPORE_FIX_OFF', ''):
+        # the start's check ran with the fix on: let it end, switch the fix off, check again (only the API)
+        for _ in range(40):
+            time.sleep(1)
+            if 'update: checking' not in c.call('coop.update')['out']:
+                break
+        print('  SPORE_FIX_OFF: ' + c.call('coop.fix update.web_fallback off')['out'].strip(), flush=True)
+        c.call('coop.update check')
+        time.sleep(2)
     for _ in range(40):
         st = c.call('coop.update')['out']
         if 'available' in st or 'up to date' in st:
@@ -206,6 +243,8 @@ def main():
         time.sleep(1)
     print(' ', st.strip())
     ck('available' in st and 'latest=' + NEW in st, f'the game finds SporeCoop {NEW}')
+    if a.api403:
+        ck('via=page' in st, 'through the release page (the API answered 403)')
     ui = ''
     for _ in range(30):  # the menu item and the window are built once the galaxy menu is up
         c.call('coop.uistate 1')

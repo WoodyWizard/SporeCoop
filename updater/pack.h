@@ -54,8 +54,21 @@ struct Release {
     std::string tag, version;          // "v0.5.1", "0.5.1"
     std::string pack_url, sums_url;    // update pack, SHA256SUMS.txt
     std::string setup_url, page_url;   // SporeCoopSetup.exe, the release page
+    bool from_web = false;             // BUG-0392: found through the release page, not the API
 };
 bool parse_release(const std::string& json, Release& out);
+
+// BUG-0392: the GitHub API allows 60 calls an hour per IP without a login; a shared IP or a VPN
+// gets 403 (or 429) and the setup could not install at all. The web page <owner>/<repo>/releases/latest
+// is no API call: it redirects to .../releases/tag/<tag>, and every release has the same asset names
+// (SporeCoop-<version>.pack, SHA256SUMS.txt, SporeCoopSetup.exe) under .../releases/download/<tag>/.
+// web_latest_url: that page for an API address (https://api.github.com/repos/O/R/releases/latest ->
+// https://github.com/O/R/releases/latest; the local test server keeps its origin), "" when the address
+// has no web page (another host, not a releases/latest address).
+std::string web_latest_url(const std::string& api_url);
+// the release from the page's redirect target (absolute or "/O/R/releases/tag/<tag>"); the asset
+// addresses are built on web_latest, never on the redirect's host. false: no plain tag in it
+bool release_from_redirect(const std::string& web_latest, const std::string& location, Release& out);
 
 // BUG-0094: the version in an update pack's file name ("SporeCoop-0.11.0.pack" -> "0.11.0", case
 // ignored, a folder in front is fine), "" when the name is not one; pick_pack: the name with the
