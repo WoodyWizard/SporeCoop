@@ -11,8 +11,13 @@
   hookchurn  BUG-0132: a hook is made and removed 200 times while 3 threads run through it: no crash
              (the removal path of MinHook: `kit.fix hookpark 0` first)
   hookrace   BUG-0202: the same, and the hook is also made while the threads run through the function
+  hooknew    BUG-0398: 200 functions never hooked before are hooked while 3 threads call them: no
+             thread reaches the detour before the hook's original pointer is set (the guest's main
+             thread called address 0 when the first injected input hooked GetAsyncKeyState)
 
   --old      switch each case's fix off first (`kit.fix <name> 0`): every case must FAIL then
+  SPORE_FIX_OFF=<kit fix>[,...]  the same for the cases of those fixes only (the lab's twin runs,
+             e.g. SPORE_FIX_OFF=hookorig with `--case hooknew`)
   --case a,b only these cases
 
   SPORE_LANE=3 python3 tools/tests/kit_freeze.py [--old] [--case stack,cheat]
@@ -31,7 +36,8 @@ from sporectl import Console  # noqa: E402 (twoinst puts tools/ on the path)
 GAME = lane.game_dir()
 LOGDIR = os.path.join(GAME, 'SporebinEP1', 'mods', 'logs')
 FIX = {'stack': 'stackdump', 'hangdump': 'stackdump', 'cheat': 'cheatwait', 'logfault': 'reentry',
-       'excfault': 'reentry', 'hookchurn': 'hookkeep', 'hookrace': 'hookpark'}
+       'excfault': 'reentry', 'hookchurn': 'hookkeep', 'hookrace': 'hookpark',
+       'hooknew': 'hookorig'}
 CASES = list(FIX)
 
 
@@ -103,6 +109,14 @@ def run_case(ck, case):
         r, dt = timed('kit.test.hookchurn 200 3 nogate', 60)
         print(f'  hookchurn: {r["out"].strip() if r else "no answer"} ({dt:.1f} s)')
         ck(r is not None and 'rounds' in r['out'], 'hook churn finishes')
+    elif case == 'hooknew':
+        r, dt = timed('kit.test.hooknew 200 3', 60)
+        print(f'  hooknew: {r["out"].strip() if r else "no answer"} ({dt:.1f} s)')
+        m = re.search(r'null original (\d+) times', r['out']) if r else None
+        ck(m is not None and re.search(r'\((\d+) hooked\)', r['out']).group(1) == '200',
+           'all 200 new hooks made')
+        ck(m is not None and m.group(1) == '0',
+           f'no detour ran before its original was set ({m.group(1) if m else "?"} times; the game calls address 0 then)')
     ok, how = frames_go_on()
     ck(ok, f'after {case}: frames go on ({how})')
     time.sleep(1)
@@ -114,15 +128,19 @@ def run_case(ck, case):
 def main():
     ck = Checks()
     old = '--old' in sys.argv
+    off = {n.strip() for n in os.environ.get('SPORE_FIX_OFF', '').split(',') if n.strip()}
     cases = CASES
     if '--case' in sys.argv:
         cases = sys.argv[sys.argv.index('--case') + 1].split(',')
     c = start_host(ck)
     res = {}
     for case in cases:
-        print(f'== {case}' + (' (fix off)' if old else ''))
-        fx = timed(f'kit.fix {FIX[case]} {0 if old else 1}', 10)[0]
-        ck(fx is not None and fx['out'].strip().endswith(str(0 if old else 1)), f'kit.fix {FIX[case]}')
+        case_old = old or FIX[case] in off
+        print(f'== {case}' + (' (fix off)' if case_old else ''))
+        fx = timed(f'kit.fix {FIX[case]} {0 if case_old else 1}', 10)[0]
+        ck(fx is not None and fx['out'].strip().endswith(str(0 if case_old else 1)), f'kit.fix {FIX[case]}')
+        if FIX[case] in off:
+            print(f'  SPORE_FIX_OFF: {FIX[case]} off', flush=True)
         before = ck.ok
         ck.ok = True
         alive = run_case(ck, case)

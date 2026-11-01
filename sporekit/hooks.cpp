@@ -57,13 +57,19 @@ static Stub* stub_of(void* target)
 }
 
 // the hook through a stub; 0 or a MinHook status
+// The detour calls the original through *original, so *original is set before any thread can reach
+// the detour (BUG-0398): the old order made the jmp live first, and a game thread calling the
+// function in that window (the main thread polls GetAsyncKeyState every frame while the console
+// thread hooks it at the first injected input) called address 0.
 static int stub_hook(SkMod* mod, void* target, void* detour, void** original)
 {
+    bool first = fixed(g_fix_hookorig);
     if (Stub* s = stub_of(target)) {
         if (s->owner)
             return MH_ERROR_ALREADY_CREATED;
         s->owner = mod;
         *original = s->trampoline;
+        std::atomic_signal_fence(std::memory_order_seq_cst); // the store above is not moved below
         s->cur = detour; // no code written: a thread in the function's first bytes is not hurt
         return 0;
     }
@@ -76,11 +82,20 @@ static int stub_hook(SkMod* mod, void* target, void* detour, void** original)
     s->code[1] = 0x25;
     void* volatile* slot = &s->cur;
     memcpy(s->code + 2, &slot, 4);
-    s->cur = detour;
+    void* before = *original;
+    if (!first)
+        s->cur = detour; // the old order: the detour is reachable before *original is set
     MH_STATUS st = MH_CreateHook(target, s->code, &s->trampoline);
+    if (st == MH_OK && first) {
+        // the jmp is not written yet: nothing reaches the stub until MH_EnableHook
+        *original = s->trampoline;
+        std::atomic_signal_fence(std::memory_order_seq_cst);
+        s->cur = detour;
+    }
     if (st == MH_OK && (st = MH_EnableHook(target)) != MH_OK)
         MH_RemoveHook(target);
     if (st != MH_OK) {
+        *original = before;
         delete s; // its 8 bytes of code stay unused
         return (int)st;
     }
@@ -277,6 +292,95 @@ void hooks_churn_test(int rounds, int threads, std::string& out, bool nogate)
     snprintf(b, sizeof b, "hookchurn: %d rounds (%d hooked%s), %u calls on %d threads, trampolines %s, hooks %s", rounds,
              made, nogate ? ", threads running" : "", g_churn_calls.load(), (int)ts.size(),
              fixed(g_fix_hookkeep) ? "kept" : "freed", fixed(g_fix_hookpark) ? "parked" : "rewritten");
+    out = b;
+}
+
+// ---- kit.test hooknew: a NEW hook is made while threads call the function (BUG-0398) ----
+// Every round hooks a function that was never hooked before (a fresh copy of a small function in an
+// executable page), as the first injected input hooks GetAsyncKeyState while the game's main thread
+// polls it. The detour calls the original through the pointer hook_create fills, like
+// h_GetAsyncKeyState; when that pointer is still null the real detour calls address 0, this one
+// counts it and returns.
+static SkMod g_new_mod;
+using new_fn = int(__cdecl*)(int);
+static new_fn volatile o_new;      // filled by hook_create, as o_GetAsyncKeyState is
+static new_fn volatile g_new_ptr;  // the function the threads call now
+static std::atomic<bool> g_new_run{false};
+static std::atomic<uint32_t> g_new_calls{0}, g_new_null{0};
+
+__attribute__((noinline)) static int __cdecl new_detour(int x)
+{
+    new_fn o = o_new;
+    if (!o) {
+        g_new_null++; // the game's detour would call address 0 here
+        return x + 1;
+    }
+    return o(x);
+}
+static DWORD WINAPI new_thread(void*)
+{
+    while (g_new_run.load()) {
+        if (new_fn f = g_new_ptr)
+            f(1);
+        g_new_calls++;
+    }
+    return 0;
+}
+
+void hooks_new_test(int rounds, int threads, std::string& out)
+{
+    g_new_mod.name = "kit.test";
+    if (rounds < 1)
+        rounds = 1;
+    if (rounds > 2000)
+        rounds = 2000;
+    // mov eax,[esp+4]; lea eax,[eax+1]; nop; nop; ret; then int3 up to 16 bytes
+    static const uint8_t body[16] = {0x8B, 0x44, 0x24, 0x04, 0x8D, 0x40, 0x01, 0x90,
+                                     0x90, 0xC3, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC};
+    size_t size = ((size_t)rounds * 16 + 4095) & ~(size_t)4095;
+    auto* page = (uint8_t*)VirtualAlloc(nullptr, size, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    if (!page) {
+        out = "hooknew: no memory";
+        return;
+    }
+    for (int r = 0; r < rounds; r++)
+        memcpy(page + r * 16, body, 16);
+    FlushInstructionCache(GetCurrentProcess(), page, size);
+    g_new_calls = 0;
+    g_new_null = 0;
+    g_new_ptr = nullptr;
+    g_new_run = true;
+    std::vector<HANDLE> ts;
+    for (int i = 0; i < threads && i < 8; i++)
+        if (HANDLE t = CreateThread(nullptr, 0, new_thread, nullptr, 0, nullptr))
+            ts.push_back(t);
+    int made = 0, null_rounds = 0;
+    for (int r = 0; r < rounds; r++) {
+        void* target = page + r * 16;
+        o_new = nullptr; // a static of the mod that nobody set yet
+        g_new_ptr = (new_fn)target;
+        Sleep(1); // the threads run through the function now
+        uint32_t n0 = g_new_null.load();
+        if (hook_create(&g_new_mod, target, (void*)new_detour, (void**)&o_new) == 0)
+            made++;
+        Sleep(1);
+        if (g_new_null.load() != n0)
+            null_rounds++;
+        hooks_remove_all(&g_new_mod); // parked: the stub of this target is never used again
+    }
+    g_new_ptr = nullptr;
+    g_new_run = false;
+    if (!ts.empty())
+        WaitForMultipleObjects((DWORD)ts.size(), ts.data(), TRUE, 5000);
+    for (HANDLE t : ts)
+        CloseHandle(t);
+    // the page stays: parked stubs jump to trampolines that run its code
+    char b[256];
+    snprintf(b, sizeof b,
+             "hooknew: %d rounds (%d hooked), %u calls on %d threads, detour ran with a null original %u times "
+             "in %d rounds, originals %s",
+             rounds, made, g_new_calls.load(), (int)ts.size(), g_new_null.load(), null_rounds,
+             fixed(g_fix_hookorig) ? "set before the jump" : "set after the jump");
     out = b;
 }
 
