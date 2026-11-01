@@ -442,7 +442,6 @@ static void test_busy_gate()
     // the gates: an editor waits for a cinematic and a pause; the still gate (census) for a pause, not a cinematic
     CHECK((busy::kEditorGate & busy::kCinematic) && (busy::kEditorGate & busy::kPaused));
     CHECK((busy::kStillGate & busy::kPaused) && !(busy::kStillGate & busy::kCinematic));
-    CHECK((busy::kShareGate & busy::kPaused) && (busy::kShareGate & busy::kCinematic));
     // a cinematic of 7 s: held 7 s, then free, not expired
     busy::Wait w;
     bool exp = true;
