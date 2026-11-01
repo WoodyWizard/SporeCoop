@@ -293,6 +293,15 @@ def main():
     t0 = time.time()
     while time.time() - t0 < 30 and not proxies(guest):
         time.sleep(1)
+    # the centre coop.npctrack measures around (the avatar; Tribe: the player tribe) on both games: one lab run
+    # had none on either game for the whole test (0 rows; cause unknown, the trace said avatar=yes)
+    t0 = time.time()
+    while time.time() - t0 < 40 and not (avatar_pos(host) and avatar_pos(guest)):
+        time.sleep(1)
+    for name, c in (('host', host), ('guest', guest)):
+        if not avatar_pos(c):
+            print(f'  {name}: no centre: {c.call("coop.npctrack count")["out"].strip()} | '
+                  f'{c.call("coop.avatar")["out"].strip()[:160]} | {c.call("game.mode")["out"].strip()}', flush=True)
     time.sleep(3)
     W, H = screen(guest)
     watch = Watch(guest)
