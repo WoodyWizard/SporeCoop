@@ -3019,8 +3019,11 @@ counters. Every one has a `_player` twin (`SPORE_FPS=guest:30 SPORE_NET=player`)
   nest of another species; one fights for 40 s (combat stance, clicks on NPCs on its screen, ability keys 1-5 and
   0, WASD holds with abilities, camera turns, walks back to the partner beyond 14 m), the other's camera keeps it
   on screen (`coop_puppet_walk.Watch`). Checks on the observer's `coop.track` rows: frame steps over 3x the
-  fighter's own p99 speed x the frame time <= 1 per minute, driver teleports (`tp`) <= 1 per minute, the drawn
-  puppet against the fighter's own path after the best constant delay (0-0.8 s) p95 <= 2.5 m. The stance is read
+  fighter's own p99 speed x the frame time <= 1 per minute, driver teleports (`tp`) <= 1 per minute, over the
+  frames in which the fighter moves (> 1 m/s) the drawn puppet against the fighter's own position at the same
+  moment p95 <= 2.5 m and the constant delay that fits the drawn path best <= 0.3 s (fix on: 0.06-0.14 s, p95
+  0.5-0.9 m; `SPORE_FIX_OFF=creature.puppet_path,creature.puppet_walk`: 0.50-0.54 s, p95 3.5-4.0 m, one 4.5 m
+  step and one teleport per direction, lab 20261101-141158). The stance is read
   from the game (`call Simulator::cCreatureGameData::GetAbilityMode cdecl`: 0 social, 1 combat; the buttons are
   at 690 / 750, 998 in the 1440x1080 test window). The first version brought the fighter back with
   `coop.team come` (a teleport): the observer then saw an 8 m step; walks back by click now.

@@ -147,24 +147,33 @@ def ev_editor(host, guest, ck):
 
 
 def die(con, name, ck):
-    ck('lethal' in con.call('coop.team die')['out'], f'death: {name} takes a lethal hit')
-    back = False
+    out = ''
+    t0 = time.time()
+    while time.time() - t0 < 15 and 'lethal' not in out:  # (no avatar for a moment after a share's load)
+        out = con.call('coop.team die')['out']
+        if 'lethal' not in out:
+            time.sleep(1)
+    ck('lethal' in out, f'death: {name} takes a lethal hit')
+    died = back = False
     t0 = time.time()
     while time.time() - t0 < 60:
-        if uifind.shown(con, 'You were killed'):
+        cap = uifind.shown(con, 'You were killed')
+        if cap:
             con.call('key enter')
         time.sleep(1)
         close_pause(con)
         out = con.call('coop.avatar')['out']
         m = re.search(r'hp=([-\d.]+)/', out)
-        if time.time() - t0 > 6 and m and float(m.group(1)) > 0 and not uifind.shown(con, 'You were killed'):
+        died |= bool(cap) or not m or float(m.group(1)) <= 0
+        if died and time.time() - t0 > 6 and m and float(m.group(1)) > 0 and not uifind.shown(con, 'You were killed'):
             back = True
             break
-    ck(back, f'death: {name} respawned ({time.time() - t0:.0f} s)')
+    ck(died and back, f'death: {name} died and respawned ({time.time() - t0:.0f} s)')
     time.sleep(2)
 
 
 def ev_death(host, guest, ck):
+    settled(host, guest)
     die(guest, 'the guest', ck)
     both(ck, host, guest, 'death (guest)')
     die(host, 'the host', ck)
