@@ -29,7 +29,8 @@ struct State {
     net::Vec3 nudged_to;
     bool nudged = false;
     uint32_t nudges = 0, nudges_kept = 0, teleports = 0, stalls = 0, trails = 0, goals = 0;
-    uint32_t grounded = 0; // BUG-0399: put out of the ground (step with ground)
+    uint32_t grounded = 0;   // BUG-0399: put out of the ground (step with ground)
+    float grounded_from = 0; // BUG-0399: how far over (negative: under) the ground it was then (m)
     float last_err = 0, last_speed = 0;
     double hold_until = 0; // BUG-0305: after a trail teleport the nudge puts it on the path every frame
     double last_step = 0;  // BUG-0175: the time of the previous step (the nudge per second, not per frame)
@@ -89,11 +90,10 @@ inline net::Vec3 on_own_ground(const net::Vec3& pos)
     return {pos.x * k, pos.y * k, pos.z * k};
 }
 
-// BUG-0399 (npc.proxy_ground): a Tribe animal's proxy walked at its own height (own_height: the radius it has,
-// BUG-0329) was placed under the ground rising ahead of it and stayed there standing (the game does not lift
-// a creature placed under its terrain, creature-puppet-ground): 0.75-1.7 m under for 20-30 s. A proxy made at
-// the host's absolute height where this game's ground lies higher (BUG-0329: up to 5 m) would start under it
-// the same way (inferred). A target more than kUnderTol and at most
+// BUG-0399 (npc.proxy_ground): right after a join some Tribe animal proxies, driven at their own height
+// (own_height: the radius they have, BUG-0329), stood or walked 0.75-1.7 m under the guest's ground for 1-30 s
+// (docs/re/tribe.md#tribe-proxy-ground). A proxy made at the host's absolute height where this game's ground
+// lies higher (BUG-0329: up to 5 m) would start under it too (inferred). A target more than kUnderTol and at most
 // kOutMax under this game's ground (cPlanetModel::GetHeightAt, the terrain only: never under it legitimately)
 // goes onto it, kSink into it as on_own_ground.
 inline bool g_out_of_ground_fix = true;
@@ -139,6 +139,7 @@ inline void step(void* p, const net::Vec3& pos_in, const net::Quat& rot, const n
         // kept there by own_height) is put onto it at once (walked or pulled it would stay under)
         pos = out_of_ground(pos);
         if (g_out_of_ground_fix && net::dist(out_of_ground(cur), cur) > 0.01f) {
+            ds.grounded_from = over_ground(cur);
             game::teleport(p, pos, rot);
             ds.teleports++;
             ds.grounded++;

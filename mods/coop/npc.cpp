@@ -118,10 +118,11 @@ COOP_FIX("npc.path", "BUG-0394", g_path_fix, "creature, tribe: an NPC's proxy al
 // tests (BUG-0394): `coop.npctrack novel 1`: the host's NPC states without their speed (as a move carried by an
 // animation reports none)
 static bool g_npc_novel = false;
-// BUG-0399: in Tribe a host animal's proxy walked at its own height (BUG-0329: the radius it had) was placed
-// under the ground rising ahead of it (uphill) and stayed there, 0.75-1.7 m under, standing too (own height
-// again). Its walk is placed onto this game's ground now (WalkPlace::ground), drive::step puts a standing one
-// found under the ground onto it, and a new proxy is made on the ground (driver.h out_of_ground).
+// BUG-0399: in Tribe, right after a guest joined, some host animals' proxies (made on the ground) were
+// 0.75-1.7 m under the guest's ground for 1-30 s, walked and standing (driven at their own height, BUG-0329;
+// how they got there is inferred only, docs/re/tribe.md#tribe-proxy-ground). Their walk is placed onto this
+// game's ground now (WalkPlace::ground), drive::step puts a standing one found under the ground onto it, and a
+// new proxy is made on the ground (driver.h out_of_ground): no need for the game to ground them.
 // `coop.fix npc.proxy_ground off`: at its own height only (0.7.3.4).
 COOP_FIX("npc.proxy_ground", "BUG-0399", drive::g_out_of_ground_fix, "tribe: an animal's proxy is never left under this game's ground (made there, kept there standing)");
 // BUG-0406: placed exactly on the host's path, a proxy walking downhill is a few cm over the ground after the
@@ -1111,8 +1112,7 @@ static void guest_tick(double now)
                     px.drv.kinematic = false; // a new walk: its first goal at once
                 drive::WalkPlace o;
                 o.own_height = rts;     // BUG-0329
-                // BUG-0399: at its own height alone a proxy walking uphill was placed under the rising ground
-                // ahead (the game does not lift it) and went 1.3-1.7 m under; onto this game's ground instead
+                // BUG-0399: onto this game's ground, not only at its own height (proxies 1.3-1.7 m under after joins)
                 o.ground = rts ? drive::g_out_of_ground_fix : g_walk_ground_fix; // BUG-0406 (Creature)
                 o.walk_speed = walk_speed;
                 o.snap = 2.5f;
@@ -1147,9 +1147,15 @@ static void guest_tick(double now)
         }
         if (placed) {
             // placed on the host's path this frame: no driving
-        } else if (!px.killed)
+        } else if (!px.killed) {
+            const uint32_t gr = px.drv.grounded;
             drive::step(px.c, s.pos, s.rot, s.vel, px.drv, now, 0, true, 8.f, g_stall_fix, g_trail_fix, rts_stage(), // own height in Tribe (BUG-0329)
                         rts_stage()); // and never under the ground (BUG-0399)
+            if (px.drv.grounded != gr && px.drv.grounded <= 3) // (diagnostics: the fix at work, the first times)
+                H->log(M, SK_INFO, "npc: proxy %u (species %08X) was %.2f m under this game's ground, made %.1f s ago at %.2f m "
+                       "over it: put onto it (npc.proxy_ground)", id, px.key.instance, -px.drv.grounded_from, now - px.made_at,
+                       px.made_agl);
+        }
         else { // a corpse lies where the host has it: the guest's dead proxy shot off into the sky
                // (~2.5 km/s away from the planet; driven, it stayed ~80 m up: play_tribe.py)
             *(net::Vec3*)((uint8_t*)px.c + game::kVelOff) = {0, 0, 0};

@@ -30,13 +30,17 @@ The player tribe's members on the same guest read 0.00 m (`agl=` on the trace li
 the ground the members stand on.
 
 ## Root cause
-Observed (fix/w33-proxy-ground, lane 7, the under line now says where the proxy was made): the proxies that
-went under were made ON the guest's ground (`made 1.8-5.9 s ago at 0.00 m over the ground`) and were 1.3-1.7 m
-under it seconds later, while `placed on the host's path` (walking) and then standing (`driven`). The first
-inference below was wrong: `drive::walk_place` with `own_height` targets the proxy's current distance from the
-planet's centre, so a proxy walking uphill is placed under the ground rising ahead of it; the game does not lift
-a creature placed under its terrain and drive::step's own height keeps it there while it stands
-(docs/re/tribe.md#tribe-proxy-ground).
+Observed (fix/w33-proxy-ground, lane 7; the under line now says where the proxy was made): only right after
+cold joins (about 1 in 5 cold tribe_coop / chaos_tribe runs with the fix off); the proxies were made ON the
+guest's ground (`made 1.8-5.9 s ago at 0.00 m over the ground`) and were 1.3-1.7 m under it 0.8-6 s later,
+placed on the host's path (walking) or standing (`driven`); 4 of 5 of one herd of the fixture. So the first
+inference (made at the host's absolute height) was wrong.
+Not reproduced in warm games: a proxy put 1.2 m under the ground on purpose (`coop.npc sink`) is grounded by
+the game within 0.6 s (also at 4 fps); slope walks, proxies made again, terrain sampled after the join: none
+under (docs/re/tribe.md#tribe-proxy-ground).
+Inferred: right after a join the guest's game does not update (ground) its creatures for seconds, while the
+guest places them at their own distance from the centre (own_height) on rising ground; why some stayed under
+for 20-30 s is not known.
 ~ superseded (2026-11-01): the inference "made at the host's absolute height":
 Inferred, not checked: Tribe proxies are driven by `drive::step` with `own_height` (BUG-0329,
 drive_plan.h `at_own_height`): the target keeps the proxy's own distance from the planet's centre. A

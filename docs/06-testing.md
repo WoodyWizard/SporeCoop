@@ -3098,3 +3098,19 @@ ui skipped (exclusive). Second calibration (that run): drawn Creature 69 lines p
 lines aside under 1.3 m), Space 82 lines max 4.1 m (0.11 of the limit), Cell max 0.36 m, Civ 0 m, Tribe at
 rest 0 m except one line right after a join (151 m: the pointer copy of an older state, one line);
 agl Creature puppets -0.20 to 0.64 m, own -0.43 to 1.04 m; Tribe members -0.01 to 0.00 m.
+
+## Proxies on the ground: npc_walk_slope, the proxies rule after joins (2026-11-01, fix/w33-proxy-ground)
+<a id="testing-proxy-ground"></a>
+
+* `npc_walk_slope` (BUG-0406): `coop_npc_walk.py --goto=-195,-465,-45 --falls 3`: both avatars on the creature
+  fixture's slope, the walkers are the host's NPCs within 60 m; the test also prints the fall starts (+0x137
+  1 -> 0 while the host's NPC moves) per 100 s of walked proxy frames and of the host's own NPCs, and with
+  `--falls N` fails when the proxies' rate is over the host's + N. Without npc.walk_ground: 51.1 and 22.7 vs
+  0.8-0.9.
+* The monitor's `proxies` rule caught BUG-0399 only after cold joins, in about 1 of 5 cold Tribe runs: a
+  warm run (the guest already in the world) says nothing about it. FAIL / PASS evidence is a series of
+  `--cold` runs (`lab.py run tribe_coop,chaos_tribe --cold --repeat 4`).
+* `coop.npc sink <id> <m> [mark]` (guest): the proxy m under this game's ground once (without / with the
+  teleport mark). In a warm game the game itself grounds it again within 0.6 s, so it does not reproduce
+  BUG-0399 (docs/re/tribe.md#tribe-proxy-ground).
+* `coop.npc list` lines end with the heights over the ground (`agl=`; guest: `want_agl= made_agl= grounded=`).
