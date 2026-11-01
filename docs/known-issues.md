@@ -1263,3 +1263,12 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Reproduce: start two `lab.py run ... --branch <b>` in one second.
 * Next steps: a suffix when the directory exists. Meanwhile start parallel runs a few seconds apart.
 * Ticket: BUG-0362
+
+## Tests: creature_npc_dash fails about 1 in 3 runs (2026-11-01, fix/w29-puppet-move)
+<a id="issue-npc-dash-flaky"></a>
+
+* What happens: p90 2.4-6.4 m against the 1.2 m limit in 4 of 9 runs, also with the partner puppet
+  driving of 0.7.3.2 (`SPORE_FIX_OFF=creature.puppet_walk`); other lanes were busy.
+* Reproduce: `tools/lab.py run creature_npc_dash --repeat 3 --retry 0`.
+* Not checked: whether main fails as often on an idle machine; the cause.
+* Ticket: BUG-0363
