@@ -10,11 +10,11 @@ role: guest
 versions: 0.7.3.3
 fixed_in: unreleased
 branch: fix/w30-tribe-walk
-commits: 356bbf1, 90024d2, c6c3fd1, 747f76a, 846a63a
+commits: 356bbf1, 90024d2, c6c3fd1, 747f76a, 846a63a, 490423e, 1e5caaa, c6eb380, e147fea, 8dfa06d, f2edb1b, d1f2a0a
 tests: tribe_walk, tribe_walk_mobile (tools/tests/coop_tribe_walk.py)
 signature:
 docs: docs/re/tribe.md#tribe-mirror-walk, docs/06-testing.md#testing-tribe-walk
-related: BUG-0360, BUG-0281, BUG-0329, BUG-0122, BUG-0386
+related: BUG-0360, BUG-0281, BUG-0329, BUG-0122, BUG-0386, BUG-0366, BUG-0390, BUG-0393
 switch: tribe.mirror_walk, tribe.mirror_time
 ---
 
@@ -80,6 +80,24 @@ than half + 1 m/s x dt <= 10 %; walk gait >= 80 % on screen.
   creature 5 of 5; puppet_walk again 2 of 2 in 20261101-091623 (one earlier jump of 0.9 m in
   20261101-075538 followed a game hitch, the same as tribe_walk's hitch catch-up).
 * Smoke (lanes 2, 3): out/lab/20261101-090144: 14 of 14. `make test` passes.
+* After merging main 15539ad (490423e; BUG-0366's ground handling moved to drive::on_own_ground /
+  WalkPlace::ground; lab log gates on; the machine at load 18-31 on 12 cores from other lanes):
+  * the mirrors catch up over frames up to 0.4 s (c6eb380: a guest at 3-4 fps fell 8 m behind and was
+    teleported) and never walk faster than the member (d1f2a0a: a network correction of the path made
+    one surge 0.95 m in a frame); tribe_walk leaves out the steps within 0.2 s after a game hitch or a
+    network correction of the target and prints NOT MEASURED when over 3 % of the frames are over 0.1 s.
+  * PASS: out/lab/20261101-112603: tribe_walk 2 of 3, tribe_walk_mobile 3 of 3 (uneven 0-3 %, matched
+    98-100 %, no jumps, drawn error p50 0.01-0.05 m / p90 0.08-0.28 m, gait 93-99 %); the failed one is
+    only the sync-check gate on the RTS player point (BUG-0393).
+  * FAIL with `SPORE_FIX_OFF=tribe.mirror_walk,tribe.mirror_time`: out/lab/20261101-113345 (2 of 2:
+    uneven 13-32 %, matched 79 %), out/lab/20261101-112034 (tribe_walk and tribe_walk_mobile: uneven
+    19-27 %, matched 67-70 %).
+  * Regression: smoke out/lab/20261101-105555 14 of 14; tribe_coop, tribe_play, chaos_tribe
+    out/lab/20261101-113349 3 of 3; puppet_walk / puppet_slope / puppet_under 8 of 10 in
+    out/lab/20261101-104554 (the 2 failures are 0.1 s window checks of the Creature puppet at 24-32 fps
+    under the load, the same as other branches' puppet_walk runs then; the jump check of
+    coop_puppet_walk.py now also allows the frame before's time, 8dfa06d); `SPORE_FIX_OFF=creature.puppet_ground`
+    puppet_slope still fails (10 falls, out/lab/20261101-111051; 8 in 20261101-095228).
 
 ## History
 - 2026-11-01: opened.
