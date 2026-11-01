@@ -1035,3 +1035,28 @@ method as [the Creature puppets](creature.md#creature-puppet-walk).
   is remembered (a 2 m grid of the host position) and reused even if the setup put it farther off.
 * ~ A guest's own controller could still form a tribe later at the same marker (a second local tribe
   near a mapped one, not mirrored): not seen in the runs.
+
+## Animal proxies under the guest's ground (2026-11-01, fix/w33-proxy-ground)
+<a id="tribe-proxy-ground"></a>
+
+BUG-0399. GOG 2024, lane 7, tribe fixture (Zorispe), the monitor's `proxies` rule and the `npc: proxy N
+... under this game's ground` line (which now also says when and how high over the ground the proxy was made).
+* ✔ The proxies that went under were made ON the guest's ground (`made 1.8-5.9 s ago at 0.00 m over the
+  ground`: the host's position was on this game's ground there) and were 1.3-1.7 m under it seconds later,
+  some while `placed on the host's path` (walking), then standing (`driven`). So not the spawn height (the
+  ticket's first inference was wrong): `walk_place` with `own_height` targets the proxy's current distance
+  from the planet's centre, and a proxy walking uphill is placed under the ground rising ahead of it; the
+  game does not lift a creature placed under its terrain ([creature-puppet-ground](creature.md#creature-puppet-ground)),
+  so it sinks deeper with the slope and stands there afterwards (`drive::step`'s own height keeps it).
+* ✔ Fix `npc.proxy_ground` (driver.h `out_of_ground`, npc.cpp): a Tribe proxy's walk is placed onto this
+  game's ground (`WalkPlace::ground`, the on_own_ground of BUG-0366: 5 cm into it when within 3 m under to
+  0.5 m over), `drive::step(.., ground)` teleports a standing proxy found more than 0.25 m (up to 15 m) under
+  the ground onto it, and a new proxy is made on the ground. tribe_coop 3 of 3 without a proxy under the
+  ground after it (out/lab/20261101-141252), 1 of 1 with it off (20261101-140615).
+* ~ A proxy made at the host's absolute height where the guest's ground lies higher (BUG-0329, up to 5 m)
+  would start under it the same way (inferred; not seen on the fixture, whose grounds agree).
+* ~ The member mirrors walk with `own_height` and without `ground` too (tribe-mirror-walk); their `agl` stays
+  -0.01 to 0.00 m on the village's flat ground, so they are left as they are.
+* Diagnostics: `coop.npc list` lines end with `agl=` (host: its NPC over its ground), guest lines carry
+  `agl= want_agl= made_agl= grounded=` (the proxy, the host's position over this game's ground, at its
+  making, and how often drive::step put it out of the ground).

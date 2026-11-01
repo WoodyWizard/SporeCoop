@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### Fixed
+- Tribe: the host's animals no longer sink into the ground on the other players' screens: an animal that
+  walked uphill could end up to 1.7 m under the ground there and stay so until it walked again (BUG-0399).
 - Creature and Tribe: animals of the host now walk and run on the other players' screens with their
   walk animation, on the host's path: in the Creature stage a moving animal slid over the ground in
   its standing pose, in the Tribe stage animals moved in small steps and jumps (BUG-0361).
