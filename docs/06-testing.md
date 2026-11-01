@@ -3079,7 +3079,9 @@ counters. Every one has a `_player` twin (`SPORE_FPS=guest:30 SPORE_NET=player`)
   `coop.diag reserve 40` after each round: VirtualAlloc MEM_RESERVE, never freed; new test command) fails (lab
   20261101-141320, `SOAK_CYCLES=8`: host 39.8 MB per round). PASS 20261101-152216 (32 rounds, 28 min). An earlier
   32-round run (20261101-143943) met every check of its own and failed only on the known cold-start caught fault at
-  0x11ECE4F on both games.
+  0x11ECE4F on both games. Both 32-round runs: the guest lost 1.8-2.2 MB of free address space per round (3504 ->
+  3377, 3513 -> 3359 MB), the host 0.7-0.8; the largest block stayed 2037 MB (a large-address-aware game under
+  Wine: 4 GB). Not a failure at this rate (~200 MB per 100 rounds); worth watching in longer soaks.
 * Pitfall (BUG-0404): a vote started while the host's evolution cinematic (F4F96E43) still plays after an editor
   opened the next editor without its buttons and the host stayed in it with the cinematic "playing"; the editor
   helper now waits for the cinematics to end (Enter) like a player.
