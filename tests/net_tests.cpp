@@ -2183,6 +2183,37 @@ static void test_diag_compare()
     rts.npc_missing = false;
     for (auto& i : dg::compare(h, g2, rts).issues)
         CHECK(i.id != "missing:n4");
+    // no place on both (world 0, Space's galaxy view, BUG-0378): each game has only its own ship and
+    // the host's ships are not mirrored there: players and ships are not compared, the rest is
+    {
+        dg::Digest h4, g4;
+        h4.mode = g4.mode = 0x1654C05;
+        h4.self = 0;
+        g4.self = 1;
+        h4.entries = {{dg::make_key('p', 0), 0, 0, 0}, {dg::make_key('s', 1), 9, 0, 0}};
+        g4.entries = {{dg::make_key('p', 1), 300, 0, 0}};
+        dg::Limits none;
+        none.no_place = true;
+        CHECK(dg::compare(h4, g4).issues.size() == 3); // the old check: p0 missing, s1 missing, p1 extra
+        CHECK(dg::compare(h4, g4, none).issues.empty());
+        h4.totals = {{dg::kTotalDna, 100}};
+        g4.totals = {{dg::kTotalDna, 50}};
+        CHECK(dg::compare(h4, g4, none).issues.size() == 1); // totals still are
+    }
+    {   // a fast ship's lag allowance (BUG-0378): 22 m apart, flying 90 m/s with ~0.25 s between the reads
+        dg::Digest h5, g5;
+        h5.mode = g5.mode = 0x1654C05;
+        h5.world = g5.world = 0x40AE3044;
+        g5.self = 1;
+        h5.entries = {{dg::make_key('p', 0), 0, 0, 700}, {dg::make_key('p', 1), 100, 0, 700}};
+        g5.entries = {{dg::make_key('p', 0), 22, 0, 700}, {dg::make_key('p', 1), 100, 0, 700}};
+        CHECK(dg::compare(h5, g5).issues.size() == 1); // the fixed 10 m
+        dg::Limits fast;
+        fast.slack[dg::make_key('p', 0)] = 90 * 0.25f;
+        CHECK(dg::compare(h5, g5, fast).issues.empty());
+        g5.entries[0].x = 60; // far beyond its lag: still a difference
+        CHECK(dg::compare(h5, g5, fast).issues.size() == 1);
+    }
     // another stage: nothing compared
     g2.mode = 0x1654C00;
     c = dg::compare(h, g2);

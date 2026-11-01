@@ -215,6 +215,20 @@ struct Limits {
     // other players (BUG-0298)
     float cell_near = 60;
     std::size_t cell_sent = 900; // the host sends a guest at most its nearest 900 cells (BUG-0295)
+    // BUG-0378: no place on both games (world 0: Space's galaxy view, a load): no player is shown in
+    // it (coop.cpp same_place needs a world) and no host ship mirrored, so players and ships are not
+    // compared (each game had only its own ship: "p0 missing, p<guest> extra")
+    bool no_place = false;
+    // BUG-0378: extra metres per key: a moving player is drawn on the other game where it was a moment
+    // before (interpolation delay + one way + snapshot interval) and the two digests are read half a
+    // round trip apart: its speed times that time (Space ships fly 30-100+ m/s, the 10 m above is
+    // walking scale)
+    std::map<uint32_t, float> slack;
+    float slack_of(uint32_t key) const
+    {
+        auto it = slack.find(key);
+        return it == slack.end() ? 0.f : it->second;
+    }
     float pos(char kind) const
     {
         switch (kind) {
@@ -277,11 +291,14 @@ inline Compared compare(const Digest& host, const Digest& guest, const Limits& l
         for (uint8_t id : d->out)
             skip.insert(make_key('p', id));
     std::map<uint32_t, const Entry*> h, g;
+    auto shown = [&](uint32_t k) {
+        return !skip.count(k) && !(lim.no_place && (key_kind(k) == 'p' || key_kind(k) == 's'));
+    };
     for (auto& e : host.entries)
-        if (!skip.count(e.key))
+        if (shown(e.key))
             h[e.key] = &e;
     for (auto& e : guest.entries)
-        if (!skip.count(e.key))
+        if (shown(e.key))
             g[e.key] = &e;
     const Entry* me = nullptr; // the guest's own creature (its own game)
     if (auto it = g.find(make_key('p', guest.self)); it != g.end())
@@ -312,7 +329,7 @@ inline Compared compare(const Digest& host, const Digest& guest, const Limits& l
         }
         c.objects++;
         float d = dist(*he, *it->second);
-        if (d > lim.pos(kind))
+        if (d > lim.pos(kind) + lim.slack_of(k))
             c.issues.push_back({"pos:" + key_text(k), "pos", key_text(k), d, ""});
     }
     for (auto& [k, ge] : g)
