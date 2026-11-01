@@ -24,6 +24,7 @@
 #include "sporekit_game.hpp"
 #include "fixes.h"
 #include "dna_ledger.h"
+#include "trace.h"
 
 namespace npc {
 
@@ -138,6 +139,8 @@ static uint32_t g_proxy_unlisted = 0, g_proxy_nospecies = 0;
 static double g_listed_at = 0;
 static std::unordered_map<void*, uint16_t> g_proxy_of;
 static std::map<uint64_t, void*> g_herds; // species instance/group -> herd for proxies
+// the invariant monitor's damage line (definition at the end of the file)
+static void log_hit(uint8_t victim, void* attacker, float amount, const char* how, bool from_host = false);
 // guest: the game's own herd of each species (seen on the local NPCs the update filter removes).
 // Proxies go into it: Create then gives them the herd's archetype tuning (+0xE84) like any NPC of
 // the nest (social games, epic flag, DNA worth need it; docs/re/creature.md 8), and the species
@@ -1258,7 +1261,10 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         auto it = g_proxies.find(d.attacker);
         if (it != g_proxies.end())
             attacker = it->second.c;
-        game::apply_damage(av, teamplay::on_own_damage(av, d.damage), d.type, attacker);
+        float dmg = teamplay::on_own_damage(av, d.damage);
+        // (the host's family flag is all a guest knows of the host's party; the host's line has the pack)
+        log_hit(C.sess->my_id(), attacker, dmg, "from the host", true);
+        game::apply_damage(av, dmg, d.type, attacker);
         g_damage_in++;
         break;
     }
@@ -1287,8 +1293,10 @@ bool damage_filter(void* c, float& damage, int type, void* attacker)
         }
         if (game::is_puppet(c))
             return false; // no friendly fire on other players
-        if (c == av)
+        if (c == av) {
             damage = teamplay::on_own_damage(av, damage);
+            log_hit(C.sess->my_id(), attacker, damage, "");
+        }
         return true;
     }
     if (is_host()) {
@@ -1296,6 +1304,7 @@ bool damage_filter(void* c, float& damage, int type, void* attacker)
             tribe::note_animal_hit(c, attacker);
         if (c == av) {
             damage = teamplay::on_own_damage(av, damage);
+            log_hit(0, attacker, damage, "");
             return true;
         }
         if (!game::is_puppet(c)) {
@@ -1304,8 +1313,12 @@ bool damage_filter(void* c, float& damage, int type, void* attacker)
             return true;
         }
         // a guest's puppet was hit: forward real NPC hits to that guest
-        if (creature_hp::drop_party_hit(attacker)) // BUG-0374: never from the host's pack / family
+        if (creature_hp::drop_party_hit(attacker)) { // BUG-0374: never from the host's pack / family
+            for (auto& p : C.sess->players())
+                if (p.id != 0 && C.puppet_of(p.id) == c)
+                    log_hit(p.id, attacker, 0, "dropped (npc.party_peace)");
             return false;
+        }
         for (auto& p : C.sess->players()) {
             if (p.id == 0 || C.puppet_of(p.id) != c)
                 continue;
@@ -1319,6 +1332,7 @@ bool damage_filter(void* c, float& damage, int type, void* attacker)
                 net::Writer w;
                 d.write(w);
                 C.sess->send_reliable_to(p.id, net::MSG_DAMAGE, w);
+                log_hit(p.id, attacker, damage, "forwarded");
             }
         }
         return false; // puppets mirror the guest's own health
@@ -1756,6 +1770,113 @@ std::vector<syncdbg::Entry> sync_entries()
                 v.push_back({"n" + std::to_string(id), game::position(px.c), game::orientation(px.c)});
     }
     return v;
+}
+
+} // namespace npc
+
+// ---------------------------------------------------------------- the invariant monitor
+// docs/06-testing.md#testing-monitor: what the lab checks while a test plays, also in players' logs
+// (docs/REPORTING.md). Diagnostics only: nothing here changes the game.
+namespace npc {
+
+// `damage: <victim> hit by <kind> owner=<host|guest id|npc|-> posse=<0|1|?> amount=<hp>[ <how>]`, where a hit
+// on a player (its avatar, or its puppet on the host) is applied, forwarded or dropped. kind: none (no
+// attacker), avatar, player (a partner's puppet), proxy (guest: a host NPC's copy), pack / family (the
+// host's own party, cCreatureAnimal +0xB58 & 0x100 / the avatar's herd), npc. posse=1: the attacker is
+// of the hit game's player's party (BUG-0374 class); `?`: not known here (a guest knows only the host's
+// family flag). posse=1 hits that land are written every time, the others rate limited (trace::ev).
+static void log_hit(uint8_t victim, void* a, float amount, const char* how, bool from_host)
+{
+    if (!trace::on() || !C.sess)
+        return;
+    const char* kind = "npc";
+    std::string owner = "npc";
+    bool posse = false, known = true;
+    void* av = game::avatar();
+    if (!a) {
+        kind = "none";
+        owner = "-";
+        known = !from_host; // the host's NPC that hit is not mirrored here
+    } else if (a == av) {
+        kind = "avatar";
+        owner = is_host() ? "host" : std::to_string(C.sess->my_id());
+    } else if (auto pi = g_proxy_of.find(a); pi != g_proxy_of.end()) {
+        kind = "proxy";
+        auto px = g_proxies.find(pi->second);
+        posse = px != g_proxies.end() && (px->second.flags & net::NF_FAMILY);
+        known = posse;
+    } else if (game::is_puppet(a)) {
+        kind = "player";
+        owner = "-";
+        for (auto& p : C.sess->players())
+            if (C.puppet_of && C.puppet_of(p.id) == a)
+                owner = p.id == 0 ? "host" : std::to_string(p.id);
+    } else {
+        bool pack = (skg::field<uint32_t>(a, game::kFlagsOff) & 0x100) != 0;
+        posse = creature_hp::host_party(a);
+        kind = pack ? "pack" : posse ? "family" : "npc";
+    }
+    char b[200];
+    snprintf(b, sizeof b, "%u hit by %s owner=%s posse=%s amount=%.1f%s%s", victim, kind, owner.c_str(),
+             !known ? "?" : posse ? "1" : "0", amount, *how ? " " : "", how);
+    if (posse && amount > 0)
+        trace::line("damage", "%s", b);
+    else {
+        char key[64];
+        snprintf(key, sizeof key, "%u hit by %s%s", victim, kind, amount > 0 ? "" : " (none)");
+        trace::ev("damage", key, "%s", b);
+    }
+}
+
+struct ProxyAudit {
+    double under_since = -1, off_since = -1;
+    double seen = 0;
+};
+static std::unordered_map<uint16_t, ProxyAudit> g_audit;
+static std::set<uint16_t> g_audit_under, g_audit_stuck; // since the last trace line
+static double g_audit_at = 0;
+
+void monitor_tick(double now)
+{
+    if (!g_enabled || !is_guest() || !npc_stage() || g_host_away || now - g_audit_at < 0.25)
+        return;
+    g_audit_at = now;
+    for (auto& [id, px] : g_proxies) {
+        auto& a = g_audit[id];
+        a.seen = now;
+        net::PlayerState s;
+        if (!px.c || px.killed || now < px.manual_until || game::is_destroyed(px.c) || !game::object_alive(px.c) ||
+            game::destroy_pending(px.c) || game::is_dead(px.c) || !px.buf.sample(now, s) || (s.flags & net::NF_DEAD)) {
+            a.under_since = a.off_since = -1;
+            continue;
+        }
+        net::Vec3 p = game::position(px.c);
+        float r = drive::speed(p), rt = drive::speed(s.pos), g = game::ground_radius(p);
+        bool under = g > 0 && r - g < -0.5f;
+        // off: from the host's NPC taken to this proxy's distance from the centre (each game its own
+        // ground: Tribe drives at its own height, BUG-0329)
+        net::Vec3 t = rt > 1 && r > 1 ? net::Vec3{s.pos.x * r / rt, s.pos.y * r / rt, s.pos.z * r / rt} : s.pos;
+        bool off = net::dist(p, t) > 3.f;
+        a.under_since = under ? (a.under_since < 0 ? now : a.under_since) : -1;
+        a.off_since = off ? (a.off_since < 0 ? now : a.off_since) : -1;
+        if (under && now - a.under_since >= 1.0)
+            g_audit_under.insert(id);
+        if (off && now - a.off_since >= 2.0)
+            g_audit_stuck.insert(id);
+    }
+    for (auto it = g_audit.begin(); it != g_audit.end();)
+        it = now - it->second.seen > 5.0 ? g_audit.erase(it) : std::next(it);
+}
+
+std::string monitor_fields()
+{
+    if (!is_guest() || !npc_stage())
+        return "";
+    char b[64];
+    snprintf(b, sizeof b, " proxy_under=%u proxy_stuck=%u", (unsigned)g_audit_under.size(), (unsigned)g_audit_stuck.size());
+    g_audit_under.clear();
+    g_audit_stuck.clear();
+    return b;
 }
 
 } // namespace npc
