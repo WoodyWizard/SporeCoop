@@ -66,10 +66,11 @@ def host_npcs(con):
 
 
 def proxies(con):
-    """{id: (spawned, dead)} of the guest's proxies (dead: the game's own dead flag of the proxy)"""
+    """{id: (spawned, dead)} of the guest's proxies (dead: the game's own dead flag of the proxy, mbDead +0xB5E)"""
     out = {}
     for m in re.finditer(r'^\s*#(\d+) species=\S+ (spawned|pending) hp=\S+ dist=\S+ (.*)$', con.call('coop.npc list')['out'], re.M):
-        out[int(m.group(1))] = (m.group(2) == 'spawned', ' DEAD' in m.group(3).split(' want=')[0])
+        g = re.search(r'game_dead=(-?\d)', m.group(3))  # the game's own dead flag of the proxy (not the mod's)
+        out[int(m.group(1))] = (m.group(2) == 'spawned', bool(g and g.group(1) == '1'))
     return out
 
 

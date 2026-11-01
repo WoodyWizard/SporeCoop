@@ -209,7 +209,17 @@ static void SK_THISCALL h_RelEvent(void* mgr, int event, void* key, void* creatu
         g_events_dropped++;
         return;
     }
+    // BUG-0021 diagnostics: every species relationship event of the host's game (the Kooks' impressed count
+    // went from 2 back to 1 between two impressions with no Kook killed: coop_creature_social_ally.py)
+    uint32_t* rec = (a_RelRecord && key && mgr) ? thiscall<uint32_t*>(a_RelRecord, (uint8_t*)mgr + 0x20, key) : nullptr;
+    int32_t r0 = rec ? (int32_t)rec[0] : -99;
+    uint32_t i0 = rec ? rec[2] : 0, k0 = rec ? rec[3] : 0;
     o_RelEvent(mgr, event, key, creature);
+    rec = (a_RelRecord && key && mgr) ? thiscall<uint32_t*>(a_RelRecord, (uint8_t*)mgr + 0x20, key) : nullptr;
+    if (rec && ((int32_t)rec[0] != r0 || rec[2] != i0 || rec[3] != k0))
+        H->log(M, SK_INFO, "social: relationship event %d species %08X by %p (npc %d%s): relation %d -> %d, impressed %u -> %u, "
+               "killed %u -> %u", event, *(uint32_t*)key, creature, creature ? npc::host_id(creature) : -1,
+               creature && creature == game::avatar() ? ", the avatar" : "", r0, (int32_t)rec[0], i0, rec[2], k0, rec[3]);
 }
 
 // SpeciesGoal_Update 0xC2EE60 pays the card's DNA (allied: 25 for the Kook, extinct: its hunt

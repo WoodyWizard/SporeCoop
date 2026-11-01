@@ -4240,7 +4240,7 @@ void support_init()
     H->subscribe(M, SK_EV_SHUTDOWN, [](void*, int, void*) { support::on_shutdown(); }, nullptr);
     H->command_add(M, "coop.diag",
                    "coop.diag [status | sync now|on|off|<s>|force shift|drop|ghost|dna|off | summary | mark <text> | "
-                   "detail 0|1|2 | mem] - support diagnostics (docs/REPORTING.md#reporting-support)",
+                   "detail 0|1|2 | mem | reserve <MB> (tests: a planted leak)] - support diagnostics (docs/REPORTING.md#reporting-support)",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
                        SAY("%s", support::command(std::vector<std::string>(argv + 1, argv + argc)).c_str());
                        return 0;

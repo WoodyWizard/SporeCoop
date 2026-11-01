@@ -1,6 +1,6 @@
 ---
 id: BUG-0383
-title: Creature: bodies of killed NPCs reported out of sync between host and guest (not reproduced)
+title: Creature: bodies of killed NPCs reported out of sync between host and guest (one cause found: bodies of NPCs that died before the guest came near were never shown)
 status: open
 kind: desync
 stage: Creature
@@ -9,9 +9,9 @@ source: player report 2026-11-01 (host F9 note at s 1777)
 role: both
 versions: 0.7.3.3
 fixed_in:
-branch: fix/w30-npc-walk
+branch: fix/w30-npc-walk, feat/w33-tests-creature
 commits:
-tests: tools/tests/coop_npc_corpse.py (not in a suite)
+tests: tools/tests/coop_npc_corpse.py (suite corpse_positions, corpse_positions_player)
 signature:
 docs:
 related: BUG-0015, BUG-0339, BUG-0361
@@ -35,10 +35,26 @@ eaten on one machine (eating is local; the other machine keeps the body), NPCs k
 far from the guest that come into its view later, a guest at a low frame rate.
 
 ## Fix
-None.
+feat/w33-tests-creature: a guest skipped every NPC whose first state it received was dead
+(`npc.cpp` guest tick: `if (!px.c && (s.flags & NF_DEAD)) continue;`, meant for a body the guest's own game had
+removed). So the guest never showed the body of an NPC killed while it was more than 110 m away (the host sends
+NPCs within 110 m of a guest), killed by another NPC before its proxy was made, or lying there when it joined;
+the host's player saw the body, the guest saw nothing. Now the proxy of such a body is made and plays the death
+where the host's body lies, unless the guest's game had made it once already (`Proxy::ever`: a body the guest's
+game removed stays gone). Switch: `coop.fix npc.dead_proxy off` (0.7.3.3 behaviour).
 
 ## Verification
-no-fail-run: not reproduced.
+`coop_npc_corpse.py` (suite `corpse_positions`) kills standing, guest-killed, running (6 m/s), thrown (a hit with a
+push), slope (0.22) NPCs, an NPC killed by a spawned epic, one killed while the guest was 150 m away, and one the
+guest clicks to eat; checks at 3 s and 30 s that the guest shows each body dead (the game's own flag of the proxy),
+within 1.5 m of the host's body and on the ground on both.
+- FAIL with `SPORE_FIX_OFF=npc.dead_proxy`: out/lab/20261101-135546 (feat/w33-tests-creature worktree): the epic's
+  victim #26 and the `later` kill #6 have no body on the guest ("proxy not spawned"); every other kind 0.00 m apart.
+- PASS with the fix: see the ticket history (lab run of the branch).
+Still not reproduced: a body in another place on the two games (every body of every kind was 0.00 m apart: the guest
+puts a killed proxy where the host's body is every frame).
 
 ## History
 - 2026-11-01: opened.
+- 2026-11-01: feat/w33-tests-creature: corpse_positions in the suite; it found the bodies a guest never shows (NPCs
+  dead before its proxy was made); fixed behind `npc.dead_proxy`. Positions themselves matched (0.00 m) in every kind.

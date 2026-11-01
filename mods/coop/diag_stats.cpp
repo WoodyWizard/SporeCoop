@@ -527,6 +527,14 @@ std::string command(const std::vector<std::string>& a)
         mark(t);
         return "marked\n";
     }
+    if (a.size() >= 2 && a[0] == "reserve") { // tests (coop_editor_soak.py): a planted leak of address space
+        static int s_reserved_mb = 0;
+        int mb = std::max(0, std::min(512, atoi(a[1].c_str())));
+        void* p = mb ? VirtualAlloc(nullptr, (SIZE_T)mb << 20, MEM_RESERVE, PAGE_NOACCESS) : nullptr; // never freed
+        s_reserved_mb += p ? mb : 0;
+        return std::string(p ? "reserved " : "not reserved ") + std::to_string(mb) + " MB (" + std::to_string(s_reserved_mb) +
+               " MB in all)\n";
+    }
     if (a.size() >= 1 && a[0] == "mem") {
         mem_start();
         WaitForSingleObject(g_mem_thread, 5000);
