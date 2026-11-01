@@ -26,9 +26,11 @@ of the host being back in its stage with the guest in the world (editor); it mus
 Combat: when the NPC dies on the host it is dead in the guest's game within 10 s too.
 
   SPORE_LANE=9 python3 tools/tests/coop_join_during.py --case combat|editor
+  JOIN_PLANT=lift: the guest's game draws the host 5 m up from the join on (`coop.track lift 5`): must FAIL
 """
 import argparse
 import math
+import os
 import re
 import threading
 import time
@@ -135,6 +137,8 @@ def consistent(host, guest, nid=None):
 def settle_check(host, guest, ck, label, limit, nid=None, t_in=None):
     """reads every second until 3 consistent reads in a row; the first of them within limit s"""
     t_in = t_in or time.time()
+    if os.environ.get('JOIN_PLANT') == 'lift':  # a planted problem: the guest draws its partner 5 m up
+        print('  PLANTED: guest: ' + guest.call('coop.track lift 5')['out'].strip()[:100], flush=True)
     first, run, last = None, 0, []
     while time.time() - t_in < limit + 30:
         bad = consistent(host, guest, nid)
