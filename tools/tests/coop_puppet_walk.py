@@ -352,9 +352,11 @@ def direction(walker, observer, wname, oname, rng, secs, ck, stand=0, jumps=0.0,
     print(f'    walk animation (IsIdleWalk) in {r["walk_anim"]:.0%} of the frames; the walker\'s own avatar while it moves: '
           f'{r["own_walk"]:.0%}', flush=True)
     print(f'    puppet animations while it walks {r["anims_moving"]}; the walker\'s own {r["own_anims"]}', flush=True)
-    ck(r['frames'] > 200, f'{r["label"]}: the walker walked ({r["frames"]} frames of its states moving)')
+    # (BUG-0394: in seconds of the observer's frames, 200 / 150 frames were at 60 fps; at 30 fps half as many)
+    fps_k = min(1.0, (r['fps'] or 60) / 60)
+    ck(r['frames'] > 200 * fps_k, f'{r["label"]}: the walker walked ({r["frames"]} frames of its states moving)')
     ck(not r['teleports'], f'{r["label"]}: no jump of the puppet while it walks ({len(r["teleports"])})')
-    ck(r['win'] > 50 and r['stand'] <= STAND_MAX and r['matched'] >= MATCHED_MIN,
+    ck(r['win'] > 50 * fps_k and r['stand'] <= STAND_MAX and r['matched'] >= MATCHED_MIN,
        f'{r["label"]}: the puppet moves with the walker, not in steps (stands in {r["stand"]:.0%} <= {STAND_MAX:.0%}, '
        f'at its speed in {r["matched"]:.0%} >= {MATCHED_MIN:.0%} of {r["win"]} windows)')
     print(f'    falls (the game\'s fall animation): the puppet {r["falls"]}, the walker\'s own creature {r["own_falls"]}; '
@@ -364,7 +366,7 @@ def direction(walker, observer, wname, oname, rng, secs, ck, stand=0, jumps=0.0,
         ck(r['falls'] <= r['own_falls'] + 1, f'{r["label"]}: the puppet does not start falling ("jumping") more '
            f'than the walker\'s own creature ({r["falls"]} <= {r["own_falls"]} + 1)')
         ck(not r['under'], f'{r["label"]}: the puppet is never under the observer\'s ground ({len(r["under"])} frames)')
-    ck(r['near'] >= 150 and r['near_gait'] >= GAIT_MIN,
+    ck(r['near'] >= 150 * fps_k and r['near_gait'] >= GAIT_MIN,
        f'{r["label"]}: the puppet walks where the observer sees it (walk gait in {r["near_gait"]:.0%} >= {GAIT_MIN:.0%} '
        f'of {r["near"]} frames on its screen)')
 

@@ -190,8 +190,9 @@ struct WalkPlace {
     // BUG-0361 (NPC proxies): the speed the game walks it at when that is slower than the remote's reported
     // speed (a herd animal pushed by its mates walks slower than it reports); the placing follows the remote
     float walk_speed = -1.f;
-    // BUG-0361: farther off than this (m) it is teleported onto the path (the remote itself jumped: a host
-    // NPC put 4.8 m to the side stayed 2-7 m off for 2 s when closed at catch_up); 0: never
+    // BUG-0361: farther off than this (m) it is teleported onto the path when the remote itself jumped (its
+    // path moved over snap/2 in this frame: a host NPC put 4.8 m to the side stayed 2-7 m off for 2 s when
+    // closed at catch_up); needs path_update with this frame's target first; 0: never
     float snap = 0.f;
     // BUG-0361: when the game does not keep the place (a host NPC thrown back by a hit, 9 m/s slowing down:
     // without the teleport mark the proxy's own locomotion moved it back each frame by as much as it was
@@ -255,7 +256,10 @@ inline void walk_place(void* p, const net::Vec3& pos_in, const net::Quat& rot, c
         ds.place_lost += ds.held;
     }
     ds.last_err = err;
-    if (o.snap > 0 && err > o.snap) {
+    // (only when the path itself jumped this frame: a proxy thrown back with its NPC by a hit trails it by
+    // more than snap at 30 fps over the player network and was teleported 2.4-4 m, npc_walk_player)
+    if (o.snap > 0 && err > o.snap && net::dist(ds.path.prev, pos_in) < 0.01f &&
+        speed(ds.path.v) * (float)(now - ds.last_step) > 0.5f * o.snap) {
         game::teleport(p, pos, rot);
         ds.teleports++;
         ds.placed_to = pos;
