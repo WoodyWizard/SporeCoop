@@ -748,6 +748,17 @@ bool cinematic_playing()
     return cm && *(uint32_t*)(cm + kCineState);
 }
 
+bool end_cinematic(const char* where)
+{
+    uintptr_t end = H->sym("SporeCoop::cCinematicManager_EndCinematic");
+    uint8_t* cm = (uint8_t*)cinematic_mgr();
+    if (!cm || !end || !*(uint32_t*)(cm + kCineState))
+        return false;
+    H->log(M, SK_WARN, "world: cinematic %08X still playing %s: ended it", *(uint32_t*)(cm + kCineId), where);
+    skg::thiscall<void>(end, cm);
+    return true;
+}
+
 // the game's quit message: saves and leaves any stage for the galaxy menu (in space the planet first)
 static bool post_quit_to_menu(std::string& err)
 {

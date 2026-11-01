@@ -1205,6 +1205,23 @@ bool submit_now(void* req)
     return r;
 }
 
+// BUG-0404: an editor that opened while a cinematic of the stage played (the evolution's
+// CRG_Fade_From_Black_Egg F4F96E43 right after the last editor, a caption, a brain upgrade) came up
+// without its buttons, and the cinematic never ended in the editor mode: its input lock stayed on and
+// the host could not leave the editor. The vote ends whenever the others are ready or its time is up,
+// whatever the host's game plays. The held request now waits while a cinematic plays (and for 3 s
+// after the game came back from an editor: the evolution's cinematic starts then), at most 60 s; then
+// the cinematic is ended natively (EndCinematic) right before the editor opens. Off: the editor opens
+// at once (0.7.3.3).
+bool g_editor_cine_fix = true;
+COOP_FIX("core.editor_cinematic", "BUG-0404", g_editor_cine_fix, "core: a vote's editor waits for the cinematic that plays");
+constexpr double kEditorCineWait = 60.0;
+double g_editor_left_at = -100;  // the game came back from an editor into a stage
+double g_submit_cine_since = 0;  // the held request waits for a cinematic since then (0: not)
+bool g_submit_end_cine = false;  // the outside-frame submit ends the cinematic first
+unsigned g_submits_after_cine;   // tests: editor requests that waited for a cinematic
+unsigned g_submit_cines_ended;   // tests: cinematics ended because they outlasted the wait
+
 void hold_submit(void* req)
 {
     skg::vcall<int>(req, 1); // AddRef
@@ -1212,6 +1229,7 @@ void hold_submit(void* req)
         skg::vcall<int>(g_submit_later, 2); // a newer request replaces it
     g_submit_later = req;
     g_submit_held_at = H->time_seconds();
+    g_submit_cine_since = 0;
     if (share_save_due()) {
         g_submits_held++;
         LOG("the editor waits until the world save is written");
@@ -1227,8 +1245,25 @@ void submit_tick(double now)
         return;
     if (creations::avatar_swap_settling(now) && now - g_submit_held_at < 90.0)
         return;
+    bool end_cine = false;
+    if (g_editor_cine_fix && stage_mode(game::mode_id())) { // BUG-0404
+        bool cine = world::cinematic_playing();
+        if (cine || now - g_editor_left_at < 3.0) {
+            if (!g_submit_cine_since) {
+                g_submit_cine_since = now;
+                g_submits_after_cine++;
+                LOG("the editor waits until the cinematic is over");
+                if (cine)
+                    feed("your editor opens when the cinematic is over");
+            }
+            if (!cine || now - g_submit_cine_since < kEditorCineWait)
+                return;
+            end_cine = true;
+        }
+    }
     void* req = g_submit_later;
     g_submit_later = nullptr;
+    g_submit_cine_since = 0;
     if (!stage_mode(game::mode_id()) || mode_switch_pending()) { // the host left the stage meanwhile
         LOG("the held editor request is dropped: the game left the stage");
         skg::vcall<int>(req, 2);
@@ -1237,8 +1272,12 @@ void submit_tick(double now)
     if (now - g_submit_held_at > 0.05)
         LOG("the editor opens (held %.1f s: a world save or the avatar's new body)", now - g_submit_held_at);
     g_submit_queued = true; // no save from here until the game has the request (save_blocker)
+    g_submit_end_cine = end_cine;
     H->run_outside_frame(
         [](void* r) {
+            if (g_submit_end_cine && world::end_cinematic("before the held editor opens (BUG-0404)"))
+                g_submit_cines_ended++;
+            g_submit_end_cine = false;
             submit_now(r);
             g_submit_queued = false;
             skg::vcall<int>(r, 2); // Release
@@ -1451,8 +1490,10 @@ void on_mode_change(uint32_t from, uint32_t to)
     bool editor = to == modes::kEdit || to == modes::kEditor;
     if (editor && stage_mode(from))
         g_was_in_editor = true;
-    if (!editor && (from == modes::kEdit || from == modes::kEditor))
+    if (!editor && (from == modes::kEdit || from == modes::kEditor)) {
         g_own_editor = false;
+        g_editor_left_at = H->time_seconds(); // BUG-0404: the evolution's cinematic starts now
+    }
     if (!stage_mode(to))
         return;
     bool new_stage = g_last_stage && to != g_last_stage;
@@ -4855,10 +4896,12 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                            g_own_editor_hold_until = H->time_seconds() + atof(argv[2]);
                        SAY("vote %s: %s (%d s)\nown editor %d, part list waived %u, editor held for a save %u, "
                            "quit held for a save %u, repeated requests dropped %u, own editor due %d (waited %u frames)\n"
-                           "actions run %u, votes dropped %u",
+                           "actions run %u, votes dropped %u\neditor held for a cinematic %u, cinematics ended %u, "
+                           "editor held now %d",
                            g_vote.active ? "active" : "none", g_vote.text.c_str(), g_vote.left, (int)g_own_editor,
                            g_part_list_waivers, g_submits_held, g_quits_delayed, g_submits_repeated,
-                           g_own_editor_due ? 1 : 0, g_own_editor_waits, g_vote_actions_run, g_votes_dropped);
+                           g_own_editor_due ? 1 : 0, g_own_editor_waits, g_vote_actions_run, g_votes_dropped,
+                           g_submits_after_cine, g_submit_cines_ended, g_submit_later ? 1 : 0);
                        return 0;
                    },
                    // outside the frame: `editor` submits an editor request, which the game does
