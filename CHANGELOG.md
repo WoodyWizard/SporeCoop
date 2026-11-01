@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Fixed
+- Creature: the partner's creature no longer keeps "jumping" while it walks downhill: the game took
+  it for falling for a moment again and again and played its fall animation (BUG-0366).
+- Creature: the partner's creature is no longer drawn under the ground: it is now always put on
+  your own game's ground when the partner walks or stands on the ground (BUG-0367).
+
 ## [0.7.3.3] - 2026-11-01
 
 ### Fixed
