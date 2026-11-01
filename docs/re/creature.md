@@ -1181,3 +1181,47 @@ proxies](#creature-kinematic-proxies) on the animation.
   (only the constructor writes it); side effects not known.
 * ~ A running NPC's proxy (`npc.kinematic`, teleported every frame) is expected to slide without a
   walk gait for the same reason (inferred from the puppet measurement, BUG-0361).
+
+## Max hit points, the brain level and the players' health (2026-11-01, fix/w30-creature-hp)
+<a id="creature-max-hit-points"></a>
+
+GOG 2024 (dc04aee5), Ghidra 2026-11-01 and runtime on lane 9 (BUG-0373, BUG-0374, BUG-0375).
+
+* ✔ `GetMaxHitPoints` = combatant vt 0x58 of the creature combatant vtable 0x1469E30 =
+  **0xC05D50** (`SporeCoop::cCreatureAnimal_GetMaxHitPoints`, thiscall on creature+0x5A8, float in
+  st0): `BaseMaxHitPoints` x (avatar bit `+0xB58 & 0x200` ? [0x1582E80] = 1.0 : 1) x (age `+0xB34`
+  == 1 ? (`+0xB58 & 1` ? [0x1582F50] = 1.25 : 1) : [0x150C888] = 0.5, the hatchling's half).
+  Adventures: rounded up times a scenario factor.
+* ✔ `BaseMaxHitPoints` = creature vt 0x7C (vtable 0x146A080) = **0xC04170**
+  (`SporeCoop::cCreatureAnimal_BaseMaxHitPoints`): for a creature of **the world's player species**
+  (`+0xB20` == `cSpeciesManager_PlayerSpecies` 0x4DF490, the profile of the key at mgr +0xA4):
+  `CreatureLevelHealth(mpAvatar vt 0xD8())` + species health `+0x56C`. vt 0xD8 (0xC02A60) is the
+  brain level `[0x169E370]` for the avatar or a pack member, 0 for others. `CreatureLevelHealth`
+  0x4D1310 reads floats 0x150C890 + 4 x level (tuning, written by 0x4D24B0): **10 15 25 40 100 100
+  100** for levels 0..6 at runtime. Any other species: herd `+0x1674` -> `+0x154` if > 0, else tuning
+  `+0xE84` -> `+0x340`, else (both ~0) `LevelHealth(0)` + species health, i.e. never the brain level.
+* ✔ The report's numbers follow: the host's creature (species health 0, later 4) had 10 (level 0),
+  15 (level 1), 19 (4 after an editor), 29 (level 2), 44 (level 3). The guest played its own creature
+  (another species in its own game: its `+0xB20` is its creation, the player species stays the
+  host's world species) and kept 10 + 4 = 14 at every level. Lane 9: the guest's Kirgle (species
+  health 6) has 16 at level 0 and still 16 from the game at level 1 (21 with the fix); the host 10 -> 15.
+* ✔ A puppet's max is computed the same way on the observer's machine (its species is the partner's
+  creation, "other species": level 0 + species health), and mods/coop/modes.cpp pinned its health to
+  that max every frame: the partner looked full and never grew. creature_hp.cpp now keeps the
+  partner's reported health and answers the partner's max from GetMaxHitPoints for puppets
+  (`creature.partner_hp`), and gives the own avatar of another species the player species' rule
+  (`creature.own_brain_hp`). The brain-up caption heals to the new max on both.
+* ✔ A won brain level is the same on both machines (the DNA total cPlayer +0x10F0 is synced, each
+  game's NestTick raises `[0x169E370]` and plays CRG_BrainUpgradeN; the caption waits for Enter).
+* ✔ Retaliation of the host's pack: a guest's hit on a host pack member (`+0xB58 & 0x100`) is applied
+  with the guest's puppet as attacker; the victim's AI gets stimulus 0x400 with the puppet as sender
+  and attacks the puppet for good (lane 9: a hit of 0.5, then a hit on the guest every ~1.5 s for
+  minutes, `damage_in` 9 -> 64), every hit forwarded as MSG_DAMAGE. Not triggered: the pack does
+  not attack a puppet on its own (30 s next to it), nor when the host's avatar "attacks" the puppet
+  (`ExecuteAction(0xD335362C, {avatar, puppet})`, 3 times): no stimulus, no damage.
+  `npc.party_peace`: the host drops a partner's hit on its pack or family and never forwards their
+  hits on a puppet.
+* Test helpers: `coop.hp` (own hp/max, level, species vs player species, the game's base without the
+  fix; each puppet's game hp/max and the reported values), `coop.hp pack` (pack members, stimuli
+  naming a partner's puppet), `coop.hp attack <player>` (host: the avatar's attack message on a
+  puppet).

@@ -40,17 +40,18 @@ def hurt_and_watch(ck, victim, observer, vid, who):
     hp1, mx1 = own_hp(victim)
     ck(hp1 is not None and hp1 < 0.7 * mx, f'{who}: its own game took the hit ({hp1}/{mx1})')
     best = None
+    tol = max(0.6, 0.08 * mx)  # the regen next to the partner moves it between the two reads
     t0 = time.time()
     while time.time() - t0 < 3:
         own, omx = own_hp(victim)
         php, pmx = puppet_hp(observer, vid)
         if php is not None and own is not None:
             best = (php, pmx, own, omx)
-            if abs(php - own) <= 0.6 and pmx is not None and abs(pmx - omx) <= 0.05:
+            if abs(php - own) <= tol and pmx is not None and abs(pmx - omx) <= 0.05:
                 break
         time.sleep(0.2)
     print(f'  {who}: own {best and best[2]}/{best and best[3]}, the other game\'s puppet {best and best[0]}/{best and best[1]}', flush=True)
-    ck(best is not None and abs(best[0] - best[2]) <= 0.6,
+    ck(best is not None and abs(best[0] - best[2]) <= tol,
        f'{who}: the other game\'s puppet shows its health ({best and best[0]} / own {best and best[2]})')
     ck(best is not None and best[1] is not None and abs(best[1] - best[3]) <= 0.05,
        f'{who}: the other game\'s puppet has its max health ({best and best[1]} / own {best and best[3]})')
