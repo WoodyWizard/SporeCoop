@@ -416,3 +416,18 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0404](BUG-0404-creature-an-evolution-vote-while-the-host-s-post.md) | open | bug | Creature | 2026-11-01 |  | Creature: an evolution vote while the host's post-editor cinematic plays opens an editor without its buttons; the host is stuck |
 | [BUG-0411](BUG-0411-cell-editor-desync-fails-on-main-after-the-host.md) | open | test | Cell | 2026-11-01 |  | Cell: editor_desync fails on main: after the host's evolution the guest's mating call finds no mate (mate=00000000) |
 | [BUG-0414](BUG-0414-creature-the-partner-s-creature-pops-1-m-away-an.md) | open | desync | Creature | 2026-11-01 |  | Creature: the partner's creature pops ~1 m away and back for 0.13 s while the partner stands and uses an ability (guest at 30 fps, player network) |
+| [BUG-0418](BUG-0418-class-player-species-avatar-only-game-rules-a-gu.md) | open | bug | Creature | 2026-11-01 |  | class: player-species / avatar-only game rules a guest misses (umbrella) |
+| [BUG-0419](BUG-0419-class-state-sent-but-not-applied-on-the-receiver.md) | open | bug | All | 2026-11-01 |  | class: state sent but not applied on the receiver (umbrella) |
+| [BUG-0420](BUG-0420-class-hits-events-and-world-state-applied-withou.md) | open | bug | All | 2026-11-01 |  | class: hits, events and world state applied without a relation / partner / world filter (umbrella) |
+| [BUG-0421](BUG-0421-class-guest-local-game-objects-removed-or-never.md) | open | bug | All | 2026-11-01 |  | class: guest-local game objects removed or never created (umbrella) |
+| [BUG-0422](BUG-0422-class-per-player-state-under-a-reused-id-and-sta.md) | open | bug | All | 2026-11-01 |  | class: per-player state under a reused id, and state that existed before a proxy (umbrella) |
+| [BUG-0423](BUG-0423-class-credits-and-effects-dropped-or-undone-ledg.md) | open | bug | All | 2026-11-01 |  | class: credits and effects dropped or undone (ledger, ack, owed effects) (umbrella) |
+| [BUG-0424](BUG-0424-class-content-parts-paints-designs-the-other-gam.md) | open | bug | All | 2026-11-01 |  | class: content (parts, paints, designs) the other game lacks (umbrella) |
+| [BUG-0425](BUG-0425-class-remote-body-placement-catch-up-and-snapsho.md) | open | bug | All | 2026-11-01 |  | class: remote body placement, catch-up and snapshot timing (umbrella) |
+| [BUG-0426](BUG-0426-class-object-lifetime-and-identity-liveness-addr.md) | open | bug | All | 2026-11-01 |  | class: object lifetime and identity (liveness, address reuse, our objects in saves) (umbrella) |
+| [BUG-0427](BUG-0427-class-world-identity-and-transitions-umbrella.md) | open | bug | All | 2026-11-01 |  | class: world identity and transitions (umbrella) |
+| [BUG-0428](BUG-0428-class-game-rules-copied-by-hand-instead-of-calli.md) | open | bug | Cell | 2026-11-01 |  | class: game rules copied by hand instead of calling the game (umbrella) |
+| [BUG-0429](BUG-0429-class-mod-input-read-globally-instead-of-from-th.md) | open | bug | All | 2026-11-01 |  | class: mod input read globally instead of from the game window (umbrella) |
+| [BUG-0430](BUG-0430-class-tests-and-harness-that-hide-failures-umbre.md) | open | bug | Tests | 2026-11-01 |  | class: tests and harness that hide failures (umbrella) |
+| [BUG-0431](BUG-0431-class-requests-and-objects-the-mod-builds-are-in.md) | open | bug | Creature | 2026-11-01 |  | class: requests and objects the mod builds are incomplete vs the game's own (umbrella) |
+| [BUG-0432](BUG-0432-class-fixed-size-game-pools-overrun-by-co-op-obj.md) | open | bug | All | 2026-11-01 |  | class: fixed-size game pools overrun by co-op object counts (umbrella) |
