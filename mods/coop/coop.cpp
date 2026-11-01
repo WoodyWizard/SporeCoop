@@ -43,6 +43,7 @@
 #include "npc.h"
 #include "creature_hp.h"
 #include "nest.h"
+#include "parts.h"
 #include "rejoin.h"
 #include "savestrip.h"
 #include "cell_logic.h"
@@ -834,7 +835,7 @@ static bool world_state_msg(uint8_t type)
     return type == net::MSG_DNA || type == net::MSG_WORLD_TIME ||
            (type >= net::MSG_CELL_STATE && type <= net::MSG_CELL_FOOD) || type == net::MSG_CELL_KO ||
            type == net::MSG_CELL_BITTEN || type == net::MSG_TRIBE_STATE || type == net::MSG_TRIBE_CMD ||
-           type == net::MSG_SPECIES || type == net::MSG_SOCIAL || type == net::MSG_NEST;
+           type == net::MSG_SPECIES || type == net::MSG_SOCIAL || type == net::MSG_NEST || type == net::MSG_PARTS;
 }
 
 // the gate: does this machine drop the host's message? (0.7.3.0 with core.world_gate off: the old
@@ -2049,27 +2050,7 @@ static std::string agl_field(uint8_t owner, void* creature, const net::Vec3* at)
 // the number unlocked and an order-free hash of their keys. `locked` gets the keys still locked.
 static bool parts_census(int& unlocked, uint32_t& hash, int& unlockable, std::vector<std::pair<uint32_t, uint32_t>>* locked = nullptr)
 {
-    unlocked = unlockable = 0;
-    hash = 0;
-    void* items = collected_parts();
-    uintptr_t is_unlocked = H->sym("Simulator::cCollectableItems::IsUnlocked");
-    if (!items || !is_unlocked || !skg::readable((char*)items + 0x1490, 8))
-        return false;
-    void** b = skg::field<void**>(items, 0x1490);
-    uint32_t n = skg::field<uint32_t>(items, 0x1494);
-    for (uint32_t i = 0; b && n < 100000 && i < n && skg::readable(b + i, 4); i++)
-        for (uint32_t* nd = (uint32_t*)b[i]; nd && unlockable < 100000; nd = (uint32_t*)nd[10]) {
-            if (!skg::readable(nd, 0x2C))
-                break;
-            unlockable++;
-            if (skg::thiscall<bool>(is_unlocked, items, nd[0], nd[1])) {
-                unlocked++;
-                uint32_t h = (nd[0] ^ (nd[1] * 0x9E3779B1u)) * 0x85EBCA6Bu;
-                hash += h ^ (h >> 13);
-            } else if (locked)
-                locked->push_back({nd[0], nd[1]});
-        }
-    return true;
+    return parts::census(unlocked, hash, unlockable, locked); // BUG-0401: parts.cpp holds it
 }
 
 // the partner's speed as this game sees it: its reported speed, or (the RTS pointer reports none) the
@@ -2320,6 +2301,7 @@ void on_frame(void*, int, void*)
     savestrip::tick();
     npc::tick(now);
     nest::tick(now); // BUG-0384
+    parts::tick(now); // BUG-0401
     social::tick(now);
     shared::tick(g_sess, game::mode_id(), now, guest_elsewhere()); // BUG-0231: held while elsewhere
     if (g_sess.role() == net::Role::Host && game::avatar()) {
@@ -2781,6 +2763,7 @@ void end_session(EndPath path, bool cell)
     if (g_session_end_fix || path == EndPath::Disconnect) {
         npc::on_session_end();
         nest::on_session_end(); // BUG-0384: our egg mirrors
+        parts::on_session_end(); // BUG-0401
         social::on_session_end();
         tribe::on_session_end();
         if (cell)
@@ -2792,6 +2775,7 @@ void end_session(EndPath path, bool cell)
     } else if (path == EndPath::Leave) { // before BUG-0033 (tests)
         npc::on_session_end();
         nest::on_session_end(); // BUG-0384: our egg mirrors
+        parts::on_session_end(); // BUG-0401
         social::on_session_end();
         if (cell)
             cellsync::on_session_end();
@@ -2799,6 +2783,7 @@ void end_session(EndPath path, bool cell)
     } else if (path == EndPath::Unload) {
         npc::on_session_end();
         nest::on_session_end(); // BUG-0384: our egg mirrors
+        parts::on_session_end(); // BUG-0401
         social::on_session_end();
     }
     if (g_session_end_fix || path != EndPath::Restart) {
@@ -3173,6 +3158,9 @@ void setup_callbacks()
             return;
         case net::MSG_NEST: // BUG-0384
             nest::on_message(type, from, r);
+            return;
+        case net::MSG_PARTS: // BUG-0401
+            parts::on_message(type, from, r);
             return;
         }
         if (g_sess.role() == net::Role::Client && from == 0)
@@ -4589,6 +4577,15 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         nc.host_away = ctx.host_away;
         nest::init(H, M, nc);
     }
+    { // BUG-0401: the party's collected creature parts
+        parts::Ctx pc;
+        pc.sess = &g_sess;
+        pc.items = [] { return collected_parts(); };
+        pc.guest_in_host_world = [] { return host_world_now() == host_world::HostWorld::Same; };
+        pc.world = [] { return g_world; };
+        pc.feed = feed;
+        parts::init(H, M, pc);
+    }
     savestrip::init(H, M); // BUG-0020: our objects never go into a save
     views::init(H, M);     // BUG-0280: the world lives around every player
     npc::set_enabled(H->config_int(M, "coop", "share_npcs", 1) != 0);
@@ -4784,8 +4781,9 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                        return 0;
                    },
                    nullptr, MT);
-    H->command_add(M, "coop.parts", "coop.parts [unlock <n>] - the collected creature parts as the trace's parts= field counts them; "
-                   "unlock <n>: unlock n locked ones in this game only (tests: a player's unlock the other games miss)",
+    H->command_add(M, "coop.parts", "coop.parts [unlock <n>|find <level>] - the collected creature parts as the trace's parts= field counts them; "
+                   "unlock <n>: unlock n locked ones in this game only (tests: a player's unlock the other games miss); "
+                   "find <level>: the game's own 'a part was found' (a skeleton's reward, BUG-0401)",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
                        std::vector<std::pair<uint32_t, uint32_t>> locked;
                        int n = 0, all = 0, done = 0;
@@ -4801,11 +4799,16 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                            for (int i = 0; unlock && items && i < atoi(argv[2]) && i < (int)locked.size(); i++)
                                done += skg::thiscall<bool>(unlock, items, locked[i].first, locked[i].second, 0) ? 1 : 0;
                            parts_census(n, h, all);
+                       } else if (argc > 2 && !strcmp(argv[1], "find")) {
+                           int before = n, after = parts::find_part(atoi(argv[2]));
+                           done = after >= 0 ? after - before : 0;
+                           parts_census(n, h, all);
                        }
                        SAY("parts=%d:%08X unlockable=%d unlocked_now=%d\n", n, h, all, done);
+                       SAY("sync: %s\n", parts::status().c_str());
                        return 0;
                    },
-                   nullptr, MT);
+                   nullptr, SK_CMD_OUTSIDE_FRAME); // find shows the game's goal card
     H->command_add(M, "coop.vote", "coop.vote [test|go] - evolution vote (test: a vote without an editor)",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
                        if (argc > 1 && !strcmp(argv[1], "test") && g_sess.role() == net::Role::Host && !g_vote.active) {

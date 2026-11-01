@@ -74,6 +74,9 @@ enum MsgType : uint8_t {
                           // u8 outcome (6 ally, 5 extinct), f32 dna}, paid once per species and outcome
     MSG_NEST = 52,        // u8 kind: 0 host -> guest eggs at the NPC nests near it (unreliable, 1 Hz) {u8 n, n x
                           // {u32 id, vec3 pos, u8 state, f32 scale}}; 1 guest -> host u32 id: the guest ate it (nest.cpp)
+    MSG_PARTS = 53,       // the party's collected creature parts (parts.cpp, BUG-0401): u8 kind (0 host -> guests the
+                          // host's set, 1 host -> guests news, 2 guest -> host found here), u8 origin, u32 world,
+                          // u16 n, n x {u32 lo, u32 hi}. Older SporeCoop ignores it (an unknown type).
     MSG_CELL_KO = 44,     // any -> host -> all: u8 player, u8 state (0 up,1 out,2 revived,3 respawned),
                           // u8 tenths of a second left, u8 revive progress 0..255
     MSG_DIAG = 60,        // support diagnostics (net/diagmsg.h): u8 kind, payload; session clock, bug

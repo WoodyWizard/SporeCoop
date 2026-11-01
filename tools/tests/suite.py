@@ -124,6 +124,7 @@ add('reload_update', P + 'coop_reload_update.py', minutes=2)  # hot reload while
 add('update_leak', P + 'coop_update_leak.py', minutes=4)  # 5 refused update attempts free their 20 MB packs (BUG-0241; SPORE_FIX_OFF=core.update_unwind fails)
 add('guest_editor', P + 'coop_guest_editor.py', minutes=4)
 add('guest_editor_locks', P + 'coop_guest_editor_locks.py', minutes=4)  # the guest's own editor locks the parts the species has not collected (BUG-0368; SPORE_FIX_OFF=creations.own_editor_items fails)
+add('parts_shared', P + 'coop_parts_shared.py', minutes=6, fixture='creature')  # the parts a player finds are the party's: host -> guest, guest -> host, the guest's editor palette, a rejoin (BUG-0401; SPORE_FIX_OFF=parts.shared fails)
 add('old_species', P + 'coop_old_species.py', minutes=3)  # an NPC of a player's replaced creature shows on the guest: the host answers its species (BUG-0370; SPORE_FIX_OFF=creations.old_species fails)
 add('dna_notice', P + 'coop_dna_notice.py', minutes=3)  # shared DNA names its cause on the partner's screen (+N DNA from Bob's hunt) and in the logs (dna: a -> b cause=...); a feature, no switch
 add('dna_notice_cell', P + 'coop_dna_notice.py --cell', minutes=3)  # Cell: a partner's meals named on the other's screen (+10 food (DNA) from Bob's meals) and in the logs
