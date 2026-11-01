@@ -53,6 +53,11 @@ GAIT_MIN = 0.80
 # was placed then) by more than half of it + 1 m/s x the frame time (0.7.3.3, drive::step: 14-29 %, it
 # stands and surges; the fix: 1-5 %; the host's own game 0-5 %)
 SLOW, SURGE = 5.0, 4.0
+HITCH_QUIET = 0.2  # s after a frame over 0.1 s
+# more frames over 0.1 s than this share of the observer's frames: the machine is too loaded to judge the
+# steps (lab load 31 on 12 cores: 5-19 % of the frames, the rest jittering 25-120 ms; a calm machine,
+# also at 30 fps over a mobile network: 0-2.2 %, the 0.7.3.3 driving's failing runs 0.1-1.6 %)
+LOADED = 0.03
 SLOW_UNEVEN_MAX = 0.10
 W, H = 1440, 1080
 
@@ -86,11 +91,21 @@ def analyse(rows, owner, top, label):
         if r['who'] == owner and r['id']:
             by.setdefault(r['id'], []).append(r)
     frames, tps, steps, near, near_gait, win, errs, dts, drive_tp = 0, [], [], 0, 0, [], [], [], 0
-    slow, slow_still, slow_surge, slow_uneven, hitches = 0, 0, 0, 0, 0
+    slow, slow_still, slow_surge, slow_uneven, hitches, skipped = 0, 0, 0, 0, 0, 0
     walked = set()
+    all_frames = 0
     for mid, rs in by.items():
+        all_frames += max(0, len(rs) - 1)
         drive_tp += rs[-1]['tp'] - rs[0]['tp']
         prev_dt = 0
+        # frames after a hitch of the game (a frame over 0.1 s: a loaded machine, a camera jump) show the
+        # way made up and are no measure of the driving: steps and windows within HITCH_QUIET s after one
+        # are left out of the stop-and-go and window checks (counted and printed)
+        calm, last_hitch = [], -1e9
+        for k in range(len(rs)):
+            if k and rs[k]['t'] - rs[k - 1]['t'] > 0.1:
+                last_hitch = rs[k]['t']
+            calm.append(rs[k]['t'] - last_hitch > HITCH_QUIET)
         for k, (a, b) in enumerate(zip(rs, rs[1:])):
             dt = b['t'] - a['t']
             # what a frame draws was placed in the frame before: after a hitch of the game (a 100-230 ms
@@ -112,7 +127,9 @@ def analyse(rows, owner, top, label):
             errs.append(math.dist(b['d'], b['tgt']))
             # what this frame draws was placed in the frame before: compare the drawn step with the
             # target's step of the frame before
-            if k >= 1 and dt <= 0.1:
+            if not calm[k + 1]:
+                skipped += 1
+            elif k >= 1 and dt <= 0.1:
                 a0 = rs[k - 1]
                 dt0 = a['t'] - a0['t']
                 ts = math.dist(a0['tgt'], a['tgt'])
@@ -134,11 +151,12 @@ def analyse(rows, owner, top, label):
                 break
             dt = rs[j]['t'] - rs[i]['t']
             sp = math.dist(rs[i]['tgt'], rs[j]['tgt']) / dt if dt > 0 else 0
-            if sp > 1.0 and min(r['rv'] for r in rs[i:j + 1]) > 0.5 and dt < 0.3:
+            if sp > 1.0 and min(r['rv'] for r in rs[i:j + 1]) > 0.5 and dt < 0.3 and all(calm[i:j + 1]):
                 win.append(math.dist(rs[i]['d'], rs[j]['d']) / dt / sp)
             i = j
     return {
-        'label': label, 'members': len(by), 'hitches': hitches, 'walked': sorted(walked), 'frames': frames,
+        'label': label, 'members': len(by), 'hitches': hitches, 'skipped': skipped,
+        'loaded': hitches / all_frames if all_frames else 0, 'walked': sorted(walked), 'frames': frames,
         'fps': 1 / (sum(dts) / len(dts) / max(1, len(by))) if dts else 0, 'teleports': tps,
         'speed_p50': pct(steps, 0.5), 'speed_p99': pct(steps, 0.99), 'speed_max': max(steps) if steps else 0,
         'err_p50': pct(errs, 0.5), 'err_p90': pct(errs, 0.9), 'err_max': max(errs) if errs else 0,
@@ -153,7 +171,8 @@ def analyse(rows, owner, top, label):
 
 def report(r, ck, mirrors=True):
     print(f'  {r["label"]}: {r["members"]} members, {len(r["walked"])} walked {r["walked"]}, {r["frames"]} frames '
-          f'while they walk; frames over 0.1 s: {r["hitches"]}', flush=True)
+          f'while they walk; frames over 0.1 s: {r["hitches"]} ({r["skipped"]} walking frames within {HITCH_QUIET} s '
+          f'after one left out of the step checks)', flush=True)
     print(f'    drawn speed p50 {r["speed_p50"]:.2f} p99 {r["speed_p99"]:.2f} max {r["speed_max"]:.1f} m/s; '
           f'off the target p50 {r["err_p50"]:.2f} p90 {r["err_p90"]:.2f} max {r["err_max"]:.2f} m; '
           f'driver teleports {r["drive_tp"]}', flush=True)
@@ -169,6 +188,13 @@ def report(r, ck, mirrors=True):
         return
     ck(r['frames'] > 300, f'{r["label"]}: the members walked ({r["frames"]} frames of the host\'s states moving)')
     ck(not r['teleports'], f'{r["label"]}: no jump of a member while it walks ({len(r["teleports"])})')
+    if r['loaded'] > LOADED:
+        print(f'  NOT MEASURED {r["label"]}: {r["loaded"]:.0%} of the frames over 0.1 s (> {LOADED:.0%}): the machine '
+              f'is too loaded to judge the steps; the window and stop-and-go checks are skipped', flush=True)
+        ck(r['near'] >= 150 and r['near_gait'] >= GAIT_MIN,
+           f'{r["label"]}: the members walk where the player sees them (walk gait in {r["near_gait"]:.0%} >= '
+           f'{GAIT_MIN:.0%} of {r["near"]} frames on the screen)')
+        return
     ck(r['win'] > 50 and r['stand'] <= STAND_MAX and r['matched'] >= MATCHED_MIN,
        f'{r["label"]}: the members move with the host\'s, not in steps (stand in {r["stand"]:.0%} <= {STAND_MAX:.0%}, '
        f'at its speed in {r["matched"]:.0%} >= {MATCHED_MIN:.0%} of {r["win"]} windows)')

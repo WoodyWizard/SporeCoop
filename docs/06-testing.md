@@ -2515,6 +2515,11 @@ answered right after; a 1 s poller beside a standalone run saw no gap. Same sign
   frame speeds noisy: both flagged the host's own game in up to 24 %). The
   host's own game is printed as the reference. `--fps N` caps both games,
   `--dir host|guest`, `--seed`. `SPORE_FIX_OFF=tribe.mirror_walk,tribe.mirror_time` fails.
+* A loaded machine (lab load 31 on 12 cores, 2026-11-01): the observer's frames jitter 25-120 ms and
+  5-19 % are over 0.1 s; the steps then say nothing about the driving. The test leaves out the steps
+  within 0.2 s after a frame over 0.1 s and, when more than 3 % of the observer's frames are over 0.1 s,
+  prints `NOT MEASURED` and skips the window and stop-and-go checks for that view (calm runs: 0-2.2 %,
+  also the failing runs of the 0.7.3.3 driving: 0.1-1.6 %).
 * Pitfalls: the lab's games ran at ~70 fps (14-15 ms frames), not 30; the minimap's camera jumps give
   100-230 ms frames, and the next frame draws the way made up (allow the frame before's time); a click
   on the ground near a tree or a member gives no walk (the test logs `nothing`).
