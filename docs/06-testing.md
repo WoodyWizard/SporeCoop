@@ -2946,3 +2946,18 @@ cell_coop pitfalls found on the way (fix/w31-cell-gate): the `revives=` / `respa
 their values at its start (BUG-0396: every warm `--repeat` run failed before); the host's idle cell
 can eat a plant in the 2 s of the shared food check, which now allows the host's own `own_points`
 (BUG-0395, 1 in 130 runs).
+
+## Creature: eggs at the nests of other species (2026-11-01, fix/w32-nest-eggs)
+<a id="testing-nest-eggs"></a>
+
+* `coop.nest` (main thread, BUG-0384): `objs [r]` lists the game's eggs, fruit and nests within r m of
+  the avatar (`egg <ptr> pos= over_ground=<over the terrain> state= hatch= herd= family=<the avatar's
+  herd> serial= mirror_of=<the host's egg serial for an egg of ours>`); `herds`, `herd <h>` (members,
+  egg layer, eggs to lay, the herd's eggs); tests: `kill <h> <n>`, `respawn <h> <ms>` (+0x11C),
+  `target <h> <n>` (+0xF4), `hatch <egg> <ms>`, `eat <egg>` (cEgg::SetState(4), what the eat node does),
+  `look x y z [d]` (the avatar d m from a point, for screenshots). No args: the sync counters.
+* `nest_eggs` (`coop_nest_eggs.py`, ~50 s warm, ~95 s cold): the nearest nest of another species misses
+  2 members (`target` + 2, `respawn` 2 s); the game's own layer lays 2 eggs within ~20 s. Killing members
+  does not work as a trigger: corpses stay members for minutes. An egg in the nest's bowl lies 0.74-1.2
+  m over the terrain (the nest model), the check allows -0.5..1.3 m. Screenshots `eggs_host` / `eggs_guest`.
+  `SPORE_FIX_OFF=nest.eggs` fails (the guest has 0 of the host's 2 eggs).

@@ -8,6 +8,9 @@
   from Bob's meals"; the game logs write each change with its cause (BUG-0389).
 
 ### Fixed
+- Creature: the eggs at other species' nests are the same on every game: a guest now sees the eggs the
+  host's nests lay (where the host has them, on the ground), and an egg eaten by either player is gone
+  for both. Before, a guest saw none of them (BUG-0384).
 - Creature: a creature of a partner's earlier creature (before its editor) could be missing on the
   guest until the next world share: the host could not send its species any more (BUG-0370).
 - Tests: npc_far / npc_pooled walked the host into the sea, where the game's deep water cinematic held

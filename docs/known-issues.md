@@ -1365,3 +1365,21 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   point apart (p0 20-70 m), every member and animal matching; the tests move the view by the minimap.
 * Reproduce: `tools/lab.py run chaos_tribe,tribe_walk_mobile --repeat 3 --retry 0`.
 * Ticket: BUG-0393
+
+## Creature: nest eggs "flying mid air" not reproduced (2026-11-01, player report, fix/w32-nest-eggs)
+<a id="issue-nest-eggs-floating"></a>
+
+* What happens: a host's note (0.7.3.3) said the eggs at other species' nests were "bugged (flying mid
+  air)". The desync part is fixed (`nest.eggs`, BUG-0384: the guest had none of the host's eggs).
+* Reproduce: not reproduced. On lanes 9/10 every egg lay on the ground or in the nest bowl (0.74-1.2 m
+  over the terrain: the nest model, screenshots of both games); a freshly laid egg can be ~1 m up for a
+  few seconds and then falls (physics). The objects 3-4 m up seen on fix/w30-npc-walk were cFruit
+  (noun 0x2C9CC91, hanging fruit at the same places on both games), not eggs.
+* Known: NPC eggs are laid where the layer stands, not snapped (cHerd::LayEgg from 0xD6CDB0); a hatch
+  or an eat snaps them onto the collision surface (docs/re/creature.md#creature-nest-eggs).
+* Not checked: the guest's own eggs while its game runs its NPCs (the host in the main menu: no
+  snapshots, so the guest's own herds may lay eggs nobody else has); eggs laid by a layer on a slope,
+  rock or in the water; the player's world.
+* Also open: a guest eating a host egg does not change the guest's relation to that species (the
+  host's eat node does that for the avatar only).
+* Ticket: BUG-0384
