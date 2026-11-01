@@ -139,6 +139,28 @@ def monitor_cases(tmp):
                                                    guest_sees=dict(same=0, stage='Space', puppet='hidden: partner in another world'),
                                                    host_sees=dict(same=0, stage='Space', puppet='hidden: partner in another world')))
     check(not got, f'monitor: stage_apart: two star systems in Space are no violation ({got})')
+    # BUG-0382: the host's share waits for its ship to leave the planet (declared on its trace line)
+    h, g = clean_pair(n=14, guest_own=dict(stage='Civilization', world='BF000B7B'),
+                      host_own=dict(stage='Space', world='40AE3044'),
+                      guest_sees=dict(same=0, stage='Space', puppet='hidden: partner in another mode'),
+                      host_sees=dict(same=0, stage='Civilization', puppet='hidden: partner in another mode'))
+    got = scenario(tmp, 'apart_civ_space', h, g)
+    check(got == {'stage_apart'}, f'monitor: stage_apart: guests in Civ 2 minutes after the host entered Space ({got})')
+    h = [x + ' share_wait=planet' if 'trace: host' in x else x for x in h]
+    got = scenario(tmp, 'apart_planet', h, g)
+    check(not got, f'monitor: stage_apart: no violation while the host says its share waits for the planet ({got})')
+    # BUG-0380: a Civ treasury that grows 400 per 10 s; the guest's line lies between two host lines
+    h, g = clean_pair(n=10, host_own=dict(stage='Civilization', world='BF000B7B'),
+                      guest_own=dict(stage='Civilization', world='BF000B7B'))
+    h = [x.replace('dna=50', f'dna=-1 money={1000 + 40 * float(x.split("[s ")[1].split("]")[0]):.0f}')
+         if 'trace: host' in x else x for x in h]
+    g = [x.replace('dna=50', f'dna=-1 money={1000 + 40 * (float(x.split("[s ")[1].split("]")[0]) + 3):.0f}')
+         if 'trace: guest' in x else x for x in g]
+    got = scenario(tmp, 'money_ramp', h, g)
+    check(not got, f'monitor: totals: a growing treasury sampled between two host lines is no violation ({got})')
+    g = [x.replace('money=', 'money=1') if 'trace: guest' in x else x for x in g]  # 1xxxx: 10000 more
+    got = scenario(tmp, 'money_apart', h, g)
+    check(got == {'totals'}, f'monitor: totals: a treasury 10000 apart while it grows is a violation ({got})')
     h, g = clean_pair()
     h.append('12:00:00.000 [s 50.0] [INF] coop: tiles: pool 125/512, host list 51, partner lists 3 (74 tiles), level 3, '
              'flushes 6, full 0; cell pool 3900/4096')
