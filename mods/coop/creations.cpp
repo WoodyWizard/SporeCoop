@@ -410,6 +410,98 @@ static unsigned substitute_parts(std::vector<dbpf::Record>& recs)
     return n;
 }
 
+// BUG-0369: a creature model names its three paint layers (base, coat, detail) by their skin effect
+// ids, three dwords at byte 26 of the model's (unpacked) header. The pack's paints use effects only the
+// pack has: a game without it painted the host's creature without those layers (other colours). On a
+// game without the pack they are rewritten in this game's copy of the model to the base game effect of
+// the same layer (content_packs.h kCreepyCutePaintSubstitutes), as the parts above.
+// Old (`coop.fix creations.paint_substitute off`): the pack's effect ids stay (0.7.3.3).
+static bool g_paint_fix = true;
+COOP_FIX("creations.paint_substitute", "BUG-0369", g_paint_fix, "creations: on a game without Creepy & Cute a creature's pack paints are shown as similar base game paints");
+static unsigned g_paints_substituted;
+constexpr size_t kBemEffects = 26; // the unpacked header: base, coat, detail effect ids from here
+
+static uint32_t paint_substitute_of(uint32_t id)
+{
+    auto it = std::lower_bound(std::begin(kCreepyCutePaintSubstitutes), std::end(kCreepyCutePaintSubstitutes), id,
+                               [](const PartSubstitute& s, uint32_t v) { return s.pack < v; });
+    return it != std::end(kCreepyCutePaintSubstitutes) && it->pack == id ? it->base : 0;
+}
+
+// the three skin effect ids of a model record and where each is written (packed offset and length);
+// false when the header is too short or an id is not written byte by byte (a run)
+static bool model_effects(const std::vector<uint8_t>& m, uint32_t eff[3], size_t at[3], size_t len[3])
+{
+    size_t dec = 0, p = 0;
+    size_t first[12] = {}, last[12] = {};
+    uint8_t val[12] = {};
+    while (p < m.size() && dec < kBemEffects + 12) {
+        size_t start = p;
+        uint8_t b = m[p];
+        if (b == 0xFE) {
+            if (p + 1 >= m.size())
+                return false;
+            if (m[p + 1] != 0) { // a run: n more of the byte before
+                size_t n = m[p + 1];
+                if (dec + n > kBemEffects && dec < kBemEffects + 12)
+                    return false;
+                dec += n;
+                p += 2;
+                continue;
+            }
+            p += 2;
+        } else
+            p++;
+        if (dec >= kBemEffects) {
+            first[dec - kBemEffects] = start;
+            last[dec - kBemEffects] = p;
+            val[dec - kBemEffects] = b;
+        }
+        dec++;
+    }
+    if (dec < kBemEffects + 12)
+        return false;
+    for (int k = 0; k < 3; k++) {
+        eff[k] = val[4 * k] | val[4 * k + 1] << 8 | val[4 * k + 2] << 16 | (uint32_t)val[4 * k + 3] << 24;
+        at[k] = first[4 * k];
+        len[k] = last[4 * k + 3] - first[4 * k];
+    }
+    return true;
+}
+
+static bool is_cc_paint(uint32_t id) { return paint_substitute_of(id) != 0; }
+
+// rewrites the pack's skin effects of the creature's model records in place; returns how many
+static unsigned substitute_paints(std::vector<dbpf::Record>& recs, const std::string& whose)
+{
+    if (!g_paint_fix || have_creepy_cute())
+        return 0;
+    unsigned n = 0;
+    for (auto& r : recs) {
+        uint32_t eff[3];
+        size_t at[3], len[3];
+        if (r.key.type != kBem || !model_effects(r.data, eff, at, len))
+            continue;
+        for (int k = 0; k < 3; k++) {
+            uint32_t sub = paint_substitute_of(eff[k]);
+            if (!sub)
+                continue;
+            std::vector<uint8_t> enc;
+            encode_id(sub, enc);
+            if (enc.size() != len[k])
+                continue;
+            std::copy(enc.begin(), enc.end(), r.data.begin() + (long)at[k]);
+            n++;
+        }
+    }
+    if (n) {
+        g_paints_substituted += n;
+        H->log(M, SK_INFO, "creations: %s: %u Creepy & Cute paint layer(s) shown as similar base game paints (this game "
+               "does not have that pack, BUG-0369)", whose.c_str(), n);
+    }
+    return n;
+}
+
 // a log line and, once per session, a notice for the player
 static void told_substituted(unsigned n, const std::string& whose)
 {
@@ -663,6 +755,8 @@ static void apply(uint8_t owner, Kind k, uint32_t id, const std::vector<uint8_t>
     bool unusable = false;
     if (k == kCreature)
         told_substituted(substitute_parts(b.recs), "player " + std::to_string(owner) + "'s creature '" + name + "'");
+    if (k == kCreature)
+        substitute_paints(b.recs, "player " + std::to_string(owner) + "'s creature '" + name + "'");
     unsigned miss = k == kCreature ? missing_parts(b.recs) : 0;
     if (miss) { // BUG-0341: its puppet falls back as for an unknown creation
         use = {};
@@ -803,6 +897,7 @@ static void apply_species(const std::vector<uint8_t>& data)
     if (!unpack(data, b) || b.recs.empty() || !find_paths() || g_species_db.count(b.key.instance))
         return;
     told_substituted(substitute_parts(b.recs), "species " + trace::hex(b.key.instance) + " of the host's world");
+    substitute_paints(b.recs, "species " + trace::hex(b.key.instance) + " of the host's world");
     if (unsigned miss = missing_parts(b.recs)) { // BUG-0341: an NPC species this game cannot build
         g_parts_refused++;
         H->log(M, SK_WARN, "creations: species %08X of the host's world has %u Creepy & Cute part(s) this game does "
@@ -900,6 +995,7 @@ static void apply_own_species(const std::vector<uint8_t>& data)
     if (!unpack(data, b) || b.recs.empty() || !is_crt(b.key) || !find_paths())
         return;
     told_substituted(substitute_parts(b.recs), "the host's own creation " + trace::hex(b.key.instance));
+    substitute_paints(b.recs, "the host's own creation " + trace::hex(b.key.instance));
     if (unsigned miss = missing_parts(b.recs)) { // BUG-0341: not registered, the world is not loaded
         std::string name, author;
         for (auto& r : b.recs)
@@ -1684,6 +1780,27 @@ std::string debug(const std::vector<std::string>& a)
         snprintf(b, sizeof b, "parts %s n=%u cc=%u unknown=%u species=%d have_pack=%d substituted=%u refused=%u\n", hex(k.instance).c_str(),
                  n, cc, unknown, species, (int)have_creepy_cute(), g_parts_substituted, g_parts_refused);
         return b;
+    }
+    if (a.size() >= 2 && a[0] == "paints") { // paints <hex crt instance>: the paint layers of the model the game reads (tests, BUG-0369)
+        Key k{(uint32_t)strtoul(a[1].c_str(), nullptr, 16), kInfo[kCreature].type, kInfo[kCreature].group};
+        std::vector<dbpf::Record> recs;
+        if (!records_from_game(k, recs))
+            return "paints " + hex(k.instance) + " none\n";
+        std::string out = "paints " + hex(k.instance);
+        unsigned cc = 0;
+        for (auto& r : recs) {
+            uint32_t eff[3];
+            size_t at[3], len[3];
+            if (r.key.type != kBem || !model_effects(r.data, eff, at, len))
+                continue;
+            for (int i = 0; i < 3; i++) {
+                out += " " + hex(eff[i]);
+                cc += is_cc_paint(eff[i]);
+            }
+        }
+        char b[120];
+        snprintf(b, sizeof b, " cc=%u have_pack=%d substituted=%u\n", cc, (int)have_creepy_cute(), g_paints_substituted);
+        return out + b;
     }
     if (a.size() >= 2 && a[0] == "bem") { // bem <hex crt instance>: the body the game finds for that key (tests)
         Key k{(uint32_t)strtoul(a[1].c_str(), nullptr, 16), kInfo[kCreature].type, kInfo[kCreature].group};

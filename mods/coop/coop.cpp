@@ -1015,6 +1015,25 @@ uint32_t* SK_THISCALL h_BlockingErrors(void* ed, uint32_t* out, void* res, void*
     return r;
 }
 
+// BUG-0368: the creature stage's own evolution request (0xD42F2C) gives the editor the parts the
+// species has collected (cPlayer +0x10E8, a cCollectableItems, at request +0x94); the palette shows a
+// part locked only with that object (0x5C6820: null = every part available). The guest's own editor
+// had none, so it offered every part. Off: the request without it (0.7.3.3).
+bool g_own_editor_items_fix = true;
+COOP_FIX("creations.own_editor_items", "BUG-0368", g_own_editor_items_fix, "creations: a guest's own creature editor locks the parts the species has not collected");
+unsigned g_own_editor_items_set; // tests: own editor requests that got the collected parts
+
+// the cPlayer's collected creature parts (cCollectableItems), or null
+void* collected_parts()
+{
+    uintptr_t nouns = H->sym("Simulator::cGameNounManager::Get"), getp = H->sym("SporeCoop::cGameNounManager_GetPlayer");
+    void* nm = nouns ? skg::cdecl_call<void*>(nouns) : nullptr;
+    void* pl = nm && getp ? skg::thiscall<void*>(getp, nm) : nullptr;
+    if (!pl || !skg::readable((char*)pl + 0x10E8, 4))
+        return nullptr;
+    return skg::field<void*>(pl, 0x10E8);
+}
+
 // the creature editor for the own creature (EditorRequest + Submit, like ModAPI mods do)
 bool open_own_editor(uint32_t editor_id)
 {
@@ -1030,6 +1049,14 @@ bool open_own_editor(uint32_t editor_id)
     skg::field<uint32_t>(req, 0x10) = k.instance;
     skg::field<uint32_t>(req, 0x14) = k.type;
     skg::field<uint32_t>(req, 0x18) = k.group;
+    if (g_own_editor_items_fix && game::mode_id() == modes::kCreature) {
+        // the native request's intrusive pointer assignment (AddRef the new, Release the old)
+        uintptr_t assign = H->sym("SporeCoop::IntrusivePtr_Assign");
+        if (void* items = collected_parts(); items && assign) {
+            skg::thiscall<void*>(assign, (char*)req + 0x94, items);
+            g_own_editor_items_set++;
+        }
+    }
     g_vote_bypass = true;
     g_own_editor = true; // the editor loads the creature after Submit, on a later frame
     bool r = skg::cdecl_call<bool>(submit, req);
@@ -4321,6 +4348,50 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                        }
                        SAY("state mode override %08X for %.1f s\n", g_state_mode_override,
                            std::max(0.0, g_state_mode_until - H->time_seconds()));
+                       return 0;
+                   },
+                   nullptr, MT);
+    H->command_add(M, "coop.editor", "coop.editor - tests (BUG-0368): the open editor's request and the parts its palette shows locked",
+                   [](void*, int, const char* const*, SkOut* out) {
+                       // the editor game mode: the mode manager's list (+0x14..+0x18, entries of 0x18 bytes
+                       // {mode, id, name}) holds it under id 0xDBDBA1 (0x57F3E0); its request at +0x1CC
+                       // (OnEnter reads +0x94 there and gives it to the palette)
+                       void* mm = skg::cdecl_call<void*>(H->sym("App::IGameModeManager::Get"));
+                       void* ed = nullptr;
+                       if (mm && skg::readable((char*)mm + 0x14, 8)) {
+                           auto* b = skg::field<uint32_t*>(mm, 0x14);
+                           auto* e = skg::field<uint32_t*>(mm, 0x18);
+                           for (uint32_t* it = b; it && it < e && e - b < 6 * 64 && skg::readable(it, 8); it += 6)
+                               if (it[1] == 0xDBDBA1u)
+                                   ed = (void*)(uintptr_t)it[0];
+                       }
+                       void* req = ed && skg::readable((char*)ed + 0x1CC, 4) ? skg::field<void*>(ed, 0x1CC) : nullptr;
+                       if (!req || !skg::readable(req, 0x9C)) {
+                           SAY("no editor request (mode %p)\n", ed);
+                           return 1;
+                       }
+                       void* items = skg::field<void*>(req, 0x94);
+                       void* mine = collected_parts();
+                       // the palette's rule (0x5C6820): available = no items object, or the item unlocked;
+                       // counted over the unlockable items (the map at +0x1490 of the collected parts)
+                       int unlockable = 0, locked = 0;
+                       uintptr_t is_unlocked = H->sym("Simulator::cCollectableItems::IsUnlocked");
+                       void* src = items ? items : mine;
+                       if (src && is_unlocked && skg::readable((char*)src + 0x1490, 8)) {
+                           void** b = skg::field<void**>(src, 0x1490);
+                           uint32_t n = skg::field<uint32_t>(src, 0x1494);
+                           for (uint32_t i = 0; b && n < 100000 && i < n && skg::readable(b + i, 4); i++)
+                               for (uint32_t* nd = (uint32_t*)b[i]; nd && unlockable < 100000; nd = (uint32_t*)nd[10]) {
+                                   if (!skg::readable(nd, 0x2C))
+                                       break;
+                                   unlockable++;
+                                   if (items && !skg::thiscall<bool>(is_unlocked, items, nd[0], nd[1]))
+                                       locked++;
+                               }
+                       }
+                       SAY("editor %08X key %08X request %p items %p collected %p unlockable %d locked %d (own editor items set %u)\n",
+                           skg::field<uint32_t>(req, 0xC), skg::field<uint32_t>(req, 0x10), req, items, mine, unlockable,
+                           locked, g_own_editor_items_set);
                        return 0;
                    },
                    nullptr, MT);

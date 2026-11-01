@@ -2675,3 +2675,24 @@ Before a tag `vX.Y.Z` (CLAUDE.md 4):
 * `creature_brain_hp` (~65 s, cold): 250 DNA on the host (`AddEvolutionPoints f:250`) gives level 1 on
   both games through the DNA sync; Enter closes CRG_BrainUpgrade1 on each. The guest plays its own
   creature in the fixture (creations-guest: Kirgle, species health 6).
+## Creature: the guest's own editor's locked parts and a guest's view of pack paints (2026-11-01, fix/w30-progress)
+<a id="testing-own-editor-locks"></a>
+
+* `coop_guest_editor_locks.py` (suite `guest_editor_locks`, ~70 s, BUG-0368): the host's
+  `coop.vote editor`, the guest's ready, then on the guest `coop.editor`: the open editor (the editor
+  game mode from the mode manager's list, id 0xDBDBA1) and its request: `items` (+0x94) must be the
+  guest's collected parts and the palette's rule (no items = available) must leave parts locked
+  (258 of 312 on the creature fixture; 0 with the fix off). Screenshots `guest_editor_locks.png`
+  (locked silhouettes) and `host_editor_locks.png` (the test request of `coop.vote editor` has no
+  items: the host's test editor offers every part, the real host's editor is the game's own).
+  FAIL: `SPORE_FIX_OFF=creations.own_editor_items`.
+* `coop_guest_pack_paints.py` (suite `guest_pack_paints`, ~55 s, BUG-0369): one lane, the lane's
+  `bp1content/BoosterPack_01.package` moved aside for the whole test (both games without the pack; the
+  lane state is marked so the next warm test starts new games); the host plays Tiger Horse with the
+  pack's Dottie base and coat effects (header bytes 26..33 of its model). Checked on the guest:
+  `coop.creations paints 290229B9` cc=0 with the base substitute 8C077662, the species built, no
+  fault; screenshot `guest_sees_host_paints.png` (fix off: the host's creature is black).
+  FAIL: `SPORE_FIX_OFF=creations.paint_substitute` (cc=2).
+* `tools/crash_triage.py` (BUG-0372): the coop version comes from the crash file's Environment
+  (`mods: coop X`) or coop section, never from the Summary's "latest co-op summary" of an earlier
+  run; `tools_selftest.py triage` case (g).

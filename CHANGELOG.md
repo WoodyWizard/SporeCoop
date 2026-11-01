@@ -9,6 +9,13 @@
   pack member made it fight the partner for good); a partner's hits no longer hurt them (BUG-0374).
 - Creature: a player who plays its own creature in the host's world now gets the extra health of
   every brain upgrade (it stayed at the first level's health, 14 against the host's 44) (BUG-0375).
+- Creature: a guest's own creature editor (after the host's evolution vote) offered every part, also
+  the ones the species has not collected yet; it now locks them as the host's editor does (BUG-0368).
+- Creature: a guest whose game lacks the Creepy & Cute pack saw the host's creature without the
+  layers painted with the pack's paints (black or in other colours); they are now shown as similar
+  base game paints in the host's colours (BUG-0369).
+- Tools: crash_triage.py named the co-op version of an earlier session (from the crash file's
+  summary) instead of the one that crashed (BUG-0372).
 
 ## [0.7.3.3] - 2026-11-01
 

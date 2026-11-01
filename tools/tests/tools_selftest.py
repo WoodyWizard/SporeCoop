@@ -492,6 +492,19 @@ def test_triage():
         check('address    0xC6AE60' in out and 'BUG-0018' in out,
               f'(f) {name}: a relocated exe (base 0x760000) is rebased to 0xC6AE60 and finds BUG-0018 '
               f'({[l for l in out.splitlines() if l.startswith(("address", "known"))]})')
+    # BUG-0372: the Summary quotes the latest co-op summary, of an earlier run with another version;
+    # the version is the running one (Environment `mods:`), and the log tail's line of the same fault
+    # (without the module name) is not a second signature
+    got = sigs('crash-20261101-135058.txt', 'SporeCoop crash 20261101-135058 (unhandled exception)\n\n== Summary\n'
+               '(an earlier run) latest co-op summary (2026-10-31 19:33): session as host, 29 min; players P1 '
+               '(coop 0.7.3.1, SporeKit 0.3.5, Steam (the GOG 2024 code) 3010a413); faults 0\n\n== Environment\n'
+               + env + 'game mode: Editor, frame 1, up 1 s\nmods: coop 0.7.3.3  \n\n== Exception\n'
+               '0xC0000005 access violation at 0x00C6AE60 SporeApp.exe Simulator::cNest::Foo+0x20 (thread 7)\n\n'
+               '== coop\nSporeCoop 0.7.3.3, name \'x\', game mode 0x00DBDBA1\n\n== Log\n'
+               '[ERR] sporekit: exception 0xC0000005 at 0x00C6AE60 Simulator::cNest::Foo+0x20 (data 0x00000004)\n')
+    check('build      GOG 2024 (exe dc04aee5), SporeKit 0.7.3.0, coop 0.7.3.3, mode Editor' in got
+          and [g for g in got if g.startswith('signature')] == [want],
+          f'(g) the running coop version, not the earlier run\'s of the summary; one signature ({got})')
 
 
 # ---------------------------------------------------------------- noenv (BUG-0252)
