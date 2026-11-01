@@ -7,10 +7,12 @@
 #include <algorithm>
 #include <cctype>
 #include <climits>
+#include <cmath>
 #include <cstddef>
 #include <cstdio>
 #include <map>
 
+#include "fixes.h"
 #include "modes.h"
 #include "net/diagmsg.h"
 
@@ -184,9 +186,43 @@ static std::map<uint8_t, GuestCheck> g_guests; // host
 static uint32_t g_guest_told_place;            // guest: the stage of the last OK line written
 static uint32_t g_seq;
 
-static dg::Limits limits_for(uint32_t mode)
+// BUG-0378: players and ships are not compared where neither game has a place (world 0)
+static bool g_no_place_fix = true;
+COOP_FIX("sync.no_place", "BUG-0378", g_no_place_fix,
+         "sync-check: no players / ships compared in world 0 (the galaxy view: nobody's ship is shown there)");
+
+// BUG-0378: in Space a player's allowed distance grows with its speed. The guest's digest is read
+// when the host's request arrives, the host's when the guest's digest arrives (both at the start of
+// the mod's frame, before any puppet is driven: what the frames showed); a puppet is drawn 0.10 s
+// behind its newest state (interpolation), which is up to one send interval (1/15 s at 30 fps) plus
+// one way old. So a ship's two positions are ~0.2 s + a round trip (+ half the owner's round trip
+// when the state came through the host) apart in time: at Space speeds (30-100+ m/s) 10-30 m
+// (campaign "p apart" 10-30 m, BUG-0378). Off: the fixed 10 m.
+static bool g_speed_slack_fix = true;
+COOP_FIX("sync.speed_slack", "BUG-0378", g_speed_slack_fix,
+         "sync-check: in Space a player's position limit grows with its speed x the time between the two reads");
+
+static void add_speed_slack(dg::Limits& l, uint32_t mode, uint8_t guest)
+{
+    if (!g_speed_slack_fix || mode != modes::kSpace || !g_P.player_speeds || !g_P.sess)
+        return;
+    auto rtt = [](uint8_t id) {
+        net::Session::Link lk;
+        return g_P.sess->link_of(id, lk) && lk.rtt_ms >= 0 ? lk.rtt_ms / 1000.0 : 0.1;
+    };
+    double base = 0.2 + rtt(guest);
+    for (auto& [id, v] : g_P.player_speeds()) {
+        double t = base + (id != 0 && id != guest ? rtt(id) / 2 : 0.0);
+        t = std::min(t, 1.0);
+        if (std::isfinite(v) && v > 0)
+            l.slack[dg::make_key('p', id)] = (float)std::min(v * t, 300.0);
+    }
+}
+
+static dg::Limits limits_for(uint32_t mode, uint32_t world)
 {
     dg::Limits l;
+    l.no_place = g_no_place_fix && world == 0;
     if (mode == modes::kTribe || mode == modes::kCiv)
         l.npc_missing = false; // RTS stages: NPCs are sent around the tribe / cities
     return l;
@@ -264,7 +300,9 @@ static void on_digest(uint8_t from, const dg::Digest& gd, size_t bytes)
     double now = g_H->time_seconds();
     double t0 = now;
     dg::Digest hd = build_digest(gd.seq);
-    dg::Compared c = dg::compare(hd, gd, limits_for(hd.mode));
+    dg::Limits lim = limits_for(hd.mode, hd.world);
+    add_speed_slack(lim, hd.mode, from);
+    dg::Compared c = dg::compare(hd, gd, lim);
     double ms = (g_H->time_seconds() - t0) * 1000;
     g_c.sync_checks++;
     g_c.sync_ms_sum += ms;

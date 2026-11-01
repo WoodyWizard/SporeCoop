@@ -302,6 +302,40 @@ static void* space_spawn(const net::PlayerState& s, void* local)
     return u;
 }
 
+// BUG-0378: the pin that makes the game's own update draw a ship at `p`. The UFO controller update
+// (0x1062CF0, every frame after our write) moves the ship to mNextPosition + mOffsetFromPosition
+// (+0x740); in a star system at its destination it snaps there (SnapToDestination 0xC37FA0:
+// position = mDestination + offset, mZoomAltitude = |mDestination|); in the galactic core (0x105E270)
+// it keeps the offset at (0, 0, 30 * min(1, r / 400)) m and pulls the next position to its own orbit
+// radius and turns it (up to the whole difference in one frame); on a planet (0x1060E00) a ship at its
+// destination whose mZoomAltitude (+0x768) differs from |mDestination| leaves it and flies. So: the
+// ship is marked pinned for this frame (squadron's hook of the controller update leaves a pinned ship
+// where we put it, no velocity), and mNextPosition = mDestination = p minus the ship's own offset with
+// the zoom altitude their length, as SnapToDestination leaves it (what the controller would draw if
+// it ran). Off: the remote position itself, the controller runs (the partner drawn 20.7-30 m above or
+// off its orbit point in the core, BUG-0378).
+bool puppet_pin_fix = true;
+COOP_FIX("space.puppet_pin", "BUG-0378", puppet_pin_fix,
+         "space: a partner's ship is pinned minus its own controller offset, with its zoom altitude: drawn where it is (core: 20-30 m too high)");
+// the ships pinned since the last Present (squadron's controller hook leaves them where we put them)
+static std::unordered_set<void*> g_pinned;
+void space_pin_frame() { g_pinned.clear(); }
+bool space_pinned(void* u) { return !g_pinned.empty() && g_pinned.count(u); }
+
+void space_pin(void* u, const float pp[3], bool fix)
+{
+    skg::Vector3 p{pp[0], pp[1], pp[2]}, n = p;
+    if (fix) {
+        g_pinned.insert(u);
+        const auto& o = skg::field<skg::Vector3>(u, 0x740); // mOffsetFromPosition
+        if (std::isfinite(o.x) && std::isfinite(o.y) && std::isfinite(o.z))
+            n = {p.x - o.x, p.y - o.y, p.z - o.z};
+        skg::field<float>(u, 0x768) = std::sqrt(n.x * n.x + n.y * n.y + n.z * n.z); // mZoomAltitude
+    }
+    skg::field<skg::Vector3>(u, 0x718) = n; // mNextPosition
+    skg::field<skg::Vector3>(u, 0x750) = n; // mDestination
+}
+
 static void space_drive(void* u, const net::PlayerState& s, drive::State&, double)
 {
     // UFOs fly freely: place the puppet exactly where the remote ship is, every frame
@@ -311,10 +345,10 @@ static void space_drive(void* u, const net::PlayerState& s, drive::State&, doubl
     skg::vcall<void>((uint8_t*)u + kUfoLoco, 0x3C / 4, &q); // SetOrientation
     skg::field<skg::Vector3>(u, kUfoLoco + 0x1C8) = {s.vel.x, s.vel.y, s.vel.z};
     // the UFO update steers towards mNextPosition/mDestination: pin them to the remote state
-    skg::field<skg::Vector3>(u, 0x718) = p;    // mNextPosition
+    const float pa[3] = {p.x, p.y, p.z};
+    space_pin(u, pa, puppet_pin_fix);          // mNextPosition, mDestination (BUG-0378)
     skg::field<skg::Vector3>(u, 0x724) = {s.vel.x, s.vel.y, s.vel.z}; // mNextVelocity
     skg::field<skg::Quaternion>(u, 0x730) = q; // mNextOrientation
-    skg::field<skg::Vector3>(u, 0x750) = p;    // mDestination
     skg::field<uint8_t>(u, 0x74C) = 1;         // mbAtDestination
     float mh = skg::field<float>(u, kUfoCombat + 0x2C);
     if (mh > 0)

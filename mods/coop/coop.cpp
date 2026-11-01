@@ -2006,6 +2006,11 @@ void on_frame(void*, int, void*)
     double now = H->time_seconds();
     g_last_frame = now;
     support::tick(now); // first: its frame timing (FPS, hitches) and the session clock
+    {
+        bool clock_ok = false;
+        double st = support::session_time(&clock_ok);
+        squadron::frame_start(st, clock_ok); // BUG-0378 tests: the ships as drawn, before any write of ours
+    }
     diag_tick(now);
     notify::tick(now);
     game::world_epoch(); // BUG-0119: sees every frame outside the creature stage
@@ -4011,6 +4016,15 @@ void support_init()
                 !(r.buf.latest().flags & net::PF_IN_WORLD))
                 v.push_back(id);
         }
+        return v;
+    };
+    p.player_speeds = [] {
+        std::vector<std::pair<uint8_t, float>> v;
+        if (local_now())
+            v.push_back({g_sess.my_id(), drive::speed(local_state().vel)});
+        for (auto& [id, r] : g_remotes)
+            if (!r.echo && !r.buf.empty())
+                v.push_back({id, drive::speed(r.buf.latest().vel)});
         return v;
     };
     p.mode = [] { return g_mode; };

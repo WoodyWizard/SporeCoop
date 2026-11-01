@@ -5,6 +5,7 @@
 #include <cstring>
 #include <cmath>
 #include <cstdio>
+#include <deque>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -99,6 +100,11 @@ static bool g_rx_done;        // the removal pass of g_rx_cycle ran
 // BUG-0037: the removal pass (explosion of every mirror missing from the cycle) ran on the last
 // chunk even when an earlier chunk of the cycle was lost or late, and a late chunk of an older
 // cycle reset the cycle. `coop.fleet chunkfix 0` restores that (tests).
+// BUG-0190: a mirror is pinned so the game's controller update draws it where the host's ship is
+// (modes::space_pin: its own offset taken out, its zoom altitude set); off: the host position itself
+static bool g_mirror_pin_fix = true;
+COOP_FIX("fleet.mirror_pin", "BUG-0190", g_mirror_pin_fix,
+         "space: a host ship's mirror is pinned minus its own controller offset, with its zoom altitude (drawn where the ship is)");
 static bool g_chunk_fix = true;
 COOP_FIX("fleet.chunk", "BUG-0037", g_chunk_fix, "space: the mirror removal pass runs only on a complete cycle of ship chunks");
 // BUG-0084: the guest's own escort (posse, type 3 ships) is not the host's to simulate.
@@ -184,6 +190,26 @@ static int SK_THISCALL h_FireTool(void* mgr, void* tool, void* owner, const floa
     return o_FireTool(mgr, tool, owner, aim, dp, a5, target, show);
 }
 
+// BUG-0378, BUG-0190: the UFO controller update (SporeCoop::UFOController_Update, a virtual
+// thiscall(this, ctx) ret 4; ctx +0x14 = the ship's loco, +0x10 = dt, +0..8 = the velocity it asks
+// for) runs every frame after our Present and moves each ship to mNextPosition + its offset; in the
+// galactic core it also pulls the ship to its own orbit and offset. A puppet or mirror pinned this
+// frame (modes::space_pin with its switch on) keeps the pose we gave it: no velocity, original not
+// called. Off (space.puppet_pin / fleet.mirror_pin): the original runs for it.
+using CtlUpdate_t = void(SK_THISCALL*)(void*, float*);
+static CtlUpdate_t o_CtlUpdate;
+static uint32_t g_ctl_skipped;
+static void SK_THISCALL h_CtlUpdate(void* self, float* ctx)
+{
+    void* loco = ctx ? *(void**)((uint8_t*)ctx + 0x14) : nullptr;
+    if (loco && modes::space_pinned((uint8_t*)loco - kLoco)) {
+        ctx[0] = ctx[1] = ctx[2] = 0;
+        g_ctl_skipped++;
+        return;
+    }
+    o_CtlUpdate(self, ctx);
+}
+
 bool init(const SkHost* host, SkMod* mod, Ctx ctx)
 {
     H = host;
@@ -202,6 +228,8 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     }
     H->hook_create(M, (void*)a_TakeDamage, (void*)h_TakeDamage, (void**)&o_TakeDamage);
     H->hook_create(M, (void*)a_FireTool, (void*)h_FireTool, (void**)&o_FireTool);
+    if (uintptr_t a = H->sym("SporeCoop::UFOController_Update")) // GOG 2024 only (BUG-0378)
+        H->hook_create(M, (void*)a, (void*)h_CtlUpdate, (void**)&o_CtlUpdate);
     return true;
 }
 
@@ -497,13 +525,9 @@ static void guest_tick(double now)
         float p[3] = {at.x, at.y, at.z}, q[4] = {m.rot.x, m.rot.y, m.rot.z, m.rot.w};
         vcall<void>((uint8_t*)m.u + kLoco, 0x38 / 4, (const float*)p); // SetPosition
         vcall<void>((uint8_t*)m.u + kLoco, 0x3C / 4, (const float*)q); // SetOrientation
-        // the UFO's own controller steers to mNextPosition/mDestination: pin them
-        auto set3 = [&](uintptr_t off) {
-            auto& d = F<float[3]>(m.u, off);
-            d[0] = p[0]; d[1] = p[1]; d[2] = p[2];
-        };
-        set3(kNextPos);
-        set3(kDest);
+        // the UFO's own controller steers to mNextPosition/mDestination: pin them (BUG-0190: minus the
+        // mirror's own offset, with its zoom altitude, as for the puppets, modes::space_pin)
+        modes::space_pin(m.u, p, g_mirror_pin_fix);
         auto& nv = F<float[3]>(m.u, kNextVel);
         nv[0] = nv[1] = nv[2] = 0;
         auto& nr = F<float[4]>(m.u, kNextRot);
@@ -603,22 +627,93 @@ std::string status()
     if (C.sess && C.sess->role() == net::Role::Host)
         snprintf(b, sizeof b,
                  "space(host): ships=%u hits_in=%u damage_out=%u freed_by_game=%u puppet_shots_blocked=%u "
-                 "att_dropped=%u att_freed=%u\n",
+                 "att_dropped=%u att_freed=%u controller_skips=%u\n",
                  (unsigned)g_hid.size(), g_hits_in, g_damage_out, game::g_ufos_freed, g_puppet_shots, g_att_dropped,
-                 g_att_freed);
+                 g_att_freed, g_ctl_skipped);
     else
         snprintf(b, sizeof b,
                  "space(guest): mirrors=%u created=%u removed=%u local_removed=%u hits_sent=%u damage_in=%u "
                  "freed_by_game=%u puppet_shots_blocked=%u mirror_hits=%u att_dropped=%u att_freed=%u stale_chunks=%u "
-                 "partial_cycles=%u posse_kept=%u unknown_models=%u\n",
+                 "partial_cycles=%u posse_kept=%u unknown_models=%u controller_skips=%u\n",
                  (unsigned)g_mirrors.size(), g_created, g_removed, g_local_removed, g_hits_sent, g_damage_in,
                  game::g_ufos_freed, g_puppet_shots, g_mirror_hits, g_att_dropped, g_att_freed, g_stale_chunks,
-                 g_partial_cycles, g_posse_kept, g_unknown_models);
+                 g_partial_cycles, g_posse_kept, g_unknown_models, g_ctl_skipped);
+    return b;
+}
+
+// ---------------- coop.fleet track (BUG-0378) ----------------
+// What this game drew of every ship: sampled at the start of the mod's frame, i.e. after the game's
+// own update moved the ships and the frame was rendered, before the mod writes any pose. Rows on the
+// session clock, so a test compares one game's drawn ship with the other game's own ship at the same
+// session time (lag) and at an earlier one (lag taken out: a real offset stays). kind: m = our own
+// ship (the truth of this game), p = a partner's puppet, s = a host NPC ship (host: the ship itself,
+// guest: its mirror). off = mOffsetFromPosition (+0x740), zoom = mZoomAltitude (+0x768).
+struct TrackRow {
+    float t;
+    char kind;
+    uint16_t id;
+    float x, y, z, ox, oy, oz, zoom;
+};
+static std::deque<TrackRow> g_track;
+static bool g_track_on;
+constexpr size_t kTrackMax = 120000;
+
+void frame_start(double t, bool clock_ok)
+{
+    modes::space_pin_frame(); // BUG-0378: what was pinned for the game's last update is done
+    if (!g_track_on || !clock_ok || !in_space() || !C.sess || !C.sess->connected())
+        return;
+    void* me = player_ufo();
+    if (!me)
+        return;
+    auto row = [&](char kind, uint16_t id, void* u) {
+        auto& p = F<float[3]>(u, kPos);
+        auto& o = F<float[3]>(u, 0x740);
+        g_track.push_back({(float)t, kind, id, p[0], p[1], p[2], o[0], o[1], o[2], F<float>(u, 0x768)});
+    };
+    for (void* u : all_ufos()) {
+        if (u == me) {
+            row('m', C.sess->my_id(), u);
+            continue;
+        }
+        int owner = C.puppet_owner ? C.puppet_owner(u) : -1;
+        if (owner >= 0)
+            row('p', (uint16_t)owner, u);
+        else if (is_host() && g_hid.count(u))
+            row('s', g_hid[u], u);
+        else if (is_guest() && g_mirror_of.count(u))
+            row('s', g_mirror_of[u], u);
+    }
+    while (g_track.size() > kTrackMax)
+        g_track.pop_front();
+}
+
+static std::string track_cmd(const std::vector<std::string>& a)
+{
+    char b[160];
+    if (a.size() >= 2 && (a[1] == "on" || a[1] == "off")) {
+        g_track_on = a[1] == "on";
+        if (g_track_on)
+            g_track.clear();
+    } else if (a.size() >= 2 && a[1] == "dump") { // dump [from] [n]: t kind id x y z ox oy oz zoom
+        size_t from = a.size() > 2 ? (size_t)atol(a[2].c_str()) : 0, n = a.size() > 3 ? (size_t)atol(a[3].c_str()) : 2000;
+        std::string out;
+        for (size_t i = from; i < g_track.size() && i < from + n; i++) {
+            const auto& r = g_track[i];
+            snprintf(b, sizeof b, "%.4f %c %u %.2f %.2f %.2f %.2f %.2f %.2f %.1f\n", r.t, r.kind, r.id, r.x, r.y, r.z,
+                     r.ox, r.oy, r.oz, r.zoom);
+            out += b;
+        }
+        return out;
+    }
+    snprintf(b, sizeof b, "track %s samples=%u\n", g_track_on ? "on" : "off", (unsigned)g_track.size());
     return b;
 }
 
 std::string debug(const std::vector<std::string>& a)
 {
+    if (!a.empty() && a[0] == "track")
+        return track_cmd(a);
     void* me = player_ufo();
     if (!me || !in_space())
         return "not in space";

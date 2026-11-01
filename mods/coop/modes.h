@@ -94,6 +94,13 @@ const CellGoneStats& cell_gone_stats();
 // game Defender at a reused address became the partner's ship. coop.fleet typefix 0: the old check
 extern bool ufo_ident_fix;
 bool space_puppet_ok(void* u); // listed, alive and still our puppet
+// BUG-0378: pin a puppet / mirror UFO so the game's controller update draws it at p (its own offset
+// taken out, mNextPosition / mDestination / mZoomAltitude, marked for squadron's controller hook);
+// fix false: p itself (the old pin)
+void space_pin(void* u, const float p[3], bool fix);
+extern bool puppet_pin_fix; // coop.fix space.puppet_pin (BUG-0378)
+void space_pin_frame();       // every Present, before the drives: nothing pinned yet
+bool space_pinned(void* u);   // pinned (fix on) since the last Present: its controller update is skipped
 // BUG-0218: the identity is the object serial; our puppet taken by a game mission (owner mission
 // +0x800) is retired: held still, not sent to the guests, its shots dropped, destroyed (deferred)
 // once the mission lets go, left to the game at session end (a log line). fleet.puppet_id
