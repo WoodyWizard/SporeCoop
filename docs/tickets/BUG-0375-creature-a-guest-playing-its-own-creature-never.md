@@ -41,6 +41,8 @@ species' rule. The host shows it through BUG-0373's fix. Off: level 0's health (
 world's), the host gains 250 DNA, both games reach brain level 1 (captions closed with Enter); the
 guest's own max health rises by the host's step (16 -> 21, host 10 -> 15) and each game shows the
 other's new max on its puppet.
+* FAIL with `SPORE_FIX_OFF=creature.own_brain_hp`: out/lab/20261101-080931-fix-w30-creature-hp (the guest's own max 16.0 -> 16.0 at level 1, host +5.0).
+* PASS: out/lab/20261101-080343-fix-w30-creature-hp (with the other two tests), out/lab/20261101-081255-fix-w30-creature-hp (warm, with the regression tests creature, team, creature_desync, npc_run_hp, puppet_walk: 8/8).
 
 ## History
-- 2026-11-01: opened.
+- 2026-11-01: opened from the host's report (0.7.3.3); reproduced and fixed on lane 9 (fix/w30-creature-hp).

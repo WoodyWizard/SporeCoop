@@ -45,6 +45,8 @@ players), and a hit on a puppet by the host's pack or family is not forwarded. O
 the host and hits the pack member once; for 15 s the guest's own game health never drops (sampled
 every 0.2 s), the pack member's AI holds no stimulus naming the guest's puppet, the pack member's
 health is unchanged.
+* FAIL with `SPORE_FIX_OFF=npc.party_peace`: out/lab/20261101-080817-fix-w30-creature-hp (7 health drops on the guest in 15 s, 1 stimulus from the puppet in the pack member's AI, pack member 6.0 -> 5.5).
+* PASS: out/lab/20261101-080343-fix-w30-creature-hp (with the other two tests), out/lab/20261101-081255-fix-w30-creature-hp (warm, with the regression tests creature, team, creature_desync, npc_run_hp, puppet_walk: 8/8).
 
 ## History
-- 2026-11-01: opened.
+- 2026-11-01: opened from the host's report (0.7.3.3); reproduced and fixed on lane 9 (fix/w30-creature-hp).
