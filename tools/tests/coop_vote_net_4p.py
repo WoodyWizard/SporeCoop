@@ -17,6 +17,8 @@ host's log only for how a vote ended (tools/tests/party.py).
 No caught fault on any machine; the invariant monitor watches all four games.
 
   SPORE_LANE=9 SPORE_NET=players python3 tools/tests/coop_vote_net_4p.py
+  VOTE_PLANT=noready: Dave's ready in step 4 is not clicked (a ready that never counts): must FAIL.
+  SPORE_FIX_OFF=world.share_drop_peer did not fail it (lab 20261101-152552).
 """
 import argparse
 import os
@@ -136,6 +138,9 @@ def main():
         print('  host: ' + p.host.call('coop.vote action').strip().splitlines()[0], flush=True)
         time.sleep(2)
         for gp in p.guests:
+            if os.environ.get('VOTE_PLANT') == 'noready' and gp is dave:  # a planted problem: a ready that never counts
+                print('  PLANTED: Dave\'s "I\'m ready" is not clicked', flush=True)
+                continue
             ck(p.vote_ready(gp), f'[all] {gp.name} clicks "I\'m ready"')
         ck(wait_until(lambda: not p.host.call('coop.vote').startswith('vote active'), 10), '[all] the vote passes')
         ck(actions_run(p) == n1 + 1, f'[all] it ran once ({n1} -> {actions_run(p)})')
