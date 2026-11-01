@@ -6,6 +6,8 @@
             extended (paths outside the other suites: 3-4 players, hot reload; also nightly),
             multi (3-4 players per stage in minutes, coop_party.py; also extended / nightly),
             campaign (a whole game of four bot players, coop_campaign.py: in no other suite, run it alone)
+            mixed (the previous release and this build in one session, coop_mixed_version.py: in no other suite;
+            it uses the neighbour lane too, run it alone: `lab.py run mixed --lane 9` with lane 10 idle)
             players (generated variants of chosen tests under the conditions of real players: the guest
             at 15 fps, a mobile / bursty network, both, four players; docs/06-testing.md#testing-degraded)
   warm      may reuse running games of the lane (twoinst.start with SPORE_WARM=1: the fixture is
@@ -49,7 +51,7 @@ def add(name, cmd, suites=('full',), warm=False, exclusive=False, minutes=4, fix
     """reports=True: the test makes crash / hang reports or faults on purpose and checks them itself;
     for every other test the lab fails it on a new crash-*/report-* file of its lane, a game that
     dies right after it, or a non-zero fault count in its log (tools/lab.py run_one, BUG-0036/0042)"""
-    if 'campaign' in suites:  # hours of play on one lane: only when asked for
+    if 'campaign' in suites or 'mixed' in suites:  # hours on one lane / a second lane: only when asked for
         suites = set(suites)
     else:
         suites = set(suites) | ({'nightly'} if {'nightly', 'extended'} & set(suites) else {'full', 'nightly'})
@@ -379,7 +381,7 @@ add('campaign_ct', P + 'coop_campaign.py --from cell --to tribe --minutes 2 --no
     minutes=45, timeout=3600)
 
 
-SUITES = ('smoke', 'full', 'nightly', 'extended', 'campaign', 'multi', 'players')
+SUITES = ('smoke', 'full', 'nightly', 'extended', 'campaign', 'multi', 'players', 'mixed')
 
 
 def select(spec):
@@ -408,10 +410,12 @@ add('party_rejoin_net', 'SPORE_NET=players ' + P + 'coop_party_rejoin_net.py --p
 add('join_during_combat', P + 'coop_join_during.py --case combat', minutes=4)  # a guest joins while the host fights an NPC: its game agrees with the host's within 10 s (host drawn, NPCs alive / dead / health)
 add('join_during_host_editor', P + 'coop_join_during.py --case editor --allow-empty BUG-0412', minutes=5)  # a guest joins while the host is in its editor: agrees within 10 s of the host's return (host drawn as its species, NPCs)
 add('vote_net_4p', 'SPORE_NET=players ' + P + 'coop_vote_net_4p.py', ('multi', 'extended'), minutes=10)  # votes of 4 players over bad networks: evolution vote, an action vote while a guest edits and leaves, its return, all four
-# the previous release and this build in one session (SPORE_LANE_B: the neighbour lane, so exclusive)
-add('mixed_version_guest', P + 'coop_mixed_version.py --old guest', ('extended',), exclusive=True, minutes=7)  # v0.7.3.3 joins this build's host: version lines, puppets, DNA cause tail and nest eggs to the old game (--old-tag v0.7.2.4 fails)
-add('mixed_version_host', P + 'coop_mixed_version.py --old host', ('extended',), exclusive=True, minutes=7)  # this build joins a v0.7.3.3 host
-add('mixed_version_tribe', P + 'coop_mixed_version.py --old guest --fixture tribe', ('extended',), exclusive=True, minutes=7)  # v0.7.3.3 joins this build's Tribe host (chunks with the time trailer)
+# the previous release and this build in one session: suite `mixed`, only when asked for. The test also takes the
+# neighbour lane (SPORE_LANE_B, default lane+1, lane 10: 9), which must be idle: `lab.py run mixed --lane 9` alone
+# (lane 10 free). Not `exclusive` (that needs lanes 1-5, for the LAN tests)
+add('mixed_version_guest', P + 'coop_mixed_version.py --old guest', ('mixed',), minutes=7)  # v0.7.3.3 joins this build's host: version lines, puppets, DNA cause tail and nest eggs to the old game (--old-tag v0.7.2.4 fails)
+add('mixed_version_host', P + 'coop_mixed_version.py --old host', ('mixed',), minutes=7)  # this build joins a v0.7.3.3 host
+add('mixed_version_tribe', P + 'coop_mixed_version.py --old guest --fixture tribe', ('mixed',), minutes=7)  # v0.7.3.3 joins this build's Tribe host (chunks with the time trailer)
 
 # ---------------- generated variants: the conditions of real players (docs/06-testing.md#testing-degraded)
 # `lab.py run players`: each chosen test again with the guest at 15 fps (frame.limit, twoinst.apply_fps), over

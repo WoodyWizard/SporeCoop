@@ -3076,7 +3076,8 @@ the network and frame rate of real players; every check reads the other machine'
   `VOTE_PLANT=noready` (Dave's last ready not clicked) fails (lab 20261101-153741); `world.share_drop_peer`
   off did not (lab 20261101-152552).
 * `coop_mixed_version.py --old guest|host [--fixture tribe]` (suites `mixed_version_guest`,
-  `mixed_version_host`, `mixed_version_tribe`, exclusive: they use the neighbour lane as SPORE_LANE_B): the
+  `mixed_version_host`, `mixed_version_tribe` in suite `mixed` only: they also take the neighbour lane as
+  SPORE_LANE_B, so run them alone, `lab.py run mixed --lane 9` with lane 10 idle; `exclusive` would need lanes 1-5): the
   previous release (`--old-tag v0.7.3.3`, `git archive` built once into out/old/<tag>, its DLLs and symbol
   files copied into lane B) and this build in one session of three. Checks: every game logs every other
   player's version, Carol is in the host's world, all three draw each other where they are before and after
