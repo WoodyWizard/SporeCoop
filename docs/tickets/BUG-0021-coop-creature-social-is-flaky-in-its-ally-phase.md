@@ -53,6 +53,12 @@ social.cpp `GetAbilityMode() == 0`; the button at 690, 998 sets 0, the one at 75
 Kook again between the rounds of an alpha (engage). Next: on a guest in the social stance, press key 1 and click
 a mirrored Kook separately and watch `hits_sent` (`coop.npc` on the guest) and the host's `dna: ... cause=hunt:1`;
 check what GetAbilityMode 0 / 1 mean (ModAPI's CreatureGameData).
+Experiment (lane 4, 2026-11-01 15:0x, scratch script): next to a mirrored Kook on the guest, stance 0 + key 1: no
+hit; stance 0 + a click on it: no hit (and no engage); stance 1 + a click: no hit; stance 1 + key 1: a hit
+(`hits_sent` 0 -> 1). So 0 is the social stance (as the mod assumes) and key 1 bites only in the combat stance.
+The lab run 20261101-144024 (creature_social_ally, SOCIAL_ALLY_PLANT run) lost the Kooks the same way ((1, 0, 1)).
+The test now prints `key 1 sent a HIT (stance before / now)` and `the click sent a HIT` when the guest's
+`hits_sent` grows, so the next failing run shows which input and stance attacked.
 
 ## Fix
 Not fixed. fix/w4-tests (5a72494) plays a refused game again with the same Kook (it walked out of the

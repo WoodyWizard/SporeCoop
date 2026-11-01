@@ -34,6 +34,11 @@ def stance(con):
     return int(m.group(1), 16) if m else None
 
 
+def hits_sent(guest):
+    m = re.search(r'hits_sent=(\d+)', guest.call('coop.npc')['out'])
+    return int(m.group(1)) if m else -1
+
+
 def social_stance(con):
     for _ in range(3):
         if stance(con) == 0:
@@ -60,8 +65,11 @@ def engage(guest, nid, timeout=40):
             time.sleep(0.4)
             continue
         social_stance(guest)
+        k0 = hits_sent(guest)
         guest.call(f'click {o[1]} {o[2]}')
         time.sleep(0.8)
+        if hits_sent(guest) > k0:
+            print(f'  #{nid}: the click sent a HIT (stance {stance(guest)})', flush=True)
         if re.search(r'engaged=%d\b' % nid, social(guest)):
             return True
     return False
@@ -126,9 +134,11 @@ def main():
                 continue
             i0, f0 = num(r'impressed=(\d+)', social(host), 0), num(r'refused=(\d+)', social(host), 0)
             for _ in range(4):
-                s0 = stance(guest)
+                s0, k0 = stance(guest), hits_sent(guest)
                 hold(guest, 0x31)  # key 1: the first social ability (sing)
                 time.sleep(3)
+                if hits_sent(guest) > k0:  # BUG-0021: the guest's own hit on a Kook (it dies, its impression is lost)
+                    print(f'  #{nid}: key 1 sent a HIT (stance before the key {s0}, now {stance(guest)})', flush=True)
                 hs = social(host)
                 if num(r'impressed=(\d+)', hs, 0) > i0 or num(r'refused=(\d+)', hs, 0) > f0:
                     break
