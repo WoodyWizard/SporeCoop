@@ -13,7 +13,7 @@ violations itself):
                 npc.party_peace off: the host forwards it (`damage: ... posse=1`); first with the fix on:
                 dropped, no violation
   ground        the host takes the guest's states 3 m under its ground (`coop.track lift -3`) with
-                creature.puppet_ground off: the guest's creature drawn under the host's ground
+                creature.puppet_ground off while the guest walks: its creature drawn under the host's ground
   puppet_hp     creature.partner_hp off on the host (the guest's creature pinned to full health) while
                 the guest's own health is held at half (`coop.team hp`)
   drawn         the guest's game stops driving puppets (`coop.puppet hold on`) while the host walks away
@@ -88,10 +88,20 @@ def main():
     host.call('key w down')
     time.sleep(6)
     host.call('key w up')
+    # the guest walks in circles for 45 s: its puppet on the host is walked and placed on its path (3 m
+    # under the host's ground; standing, the driving's teleports put it back on the ground)
+    guest.call('key w down')
     t0 = time.time()
+    i = 0
     while time.time() - t0 < 150 and not set(WANT) <= seen():
         guest.call('coop.team hp %.2f' % (0.5 * mx))  # held at half (the regen next to the partner)
+        if i < 45:
+            guest.call('key a down' if i % 5 == 0 else 'key a up' if i % 5 == 1 else 'ping')
+        elif i == 45:
+            guest.call('key w up')
+        i += 1
         time.sleep(1)
+    guest.call('key w up')
     got = seen()
     print(f'  caught after {time.time() - t0:.0f} s: {sorted(got)}', flush=True)
 

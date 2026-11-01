@@ -508,6 +508,10 @@ class Drawn(Hook):
                 if not o or not v or not playing(o) or not playing(v) or o['stage'] != p['stage'] or \
                         (o['stage'], o['world']) != (v['stage'], v['world']):
                     return False
+                # Tribe / Civ: the pointer jumps with the mouse (tests pin it: tens of m at once), its copy
+                # trails while it moves (sync-check finding BUG-0380): judged only at rest
+                if p['stage'] in ('Tribe', 'Civilization') and p['drawn_v'] > 0.5:
+                    return False
                 lim = DRAWN_BASE.get(p['stage'], 6.0) + p['drawn_v'] * (self.c['drawn_lag'] + max(p['rtt'], 0) / 1000.0
                                                                        + abs(o['t'] - p['t']))
                 d = dist(p['drawn'], o['pos'])

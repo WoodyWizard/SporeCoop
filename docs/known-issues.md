@@ -1365,3 +1365,20 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   point apart (p0 20-70 m), every member and animal matching; the tests move the view by the minimap.
 * Reproduce: `tools/lab.py run chaos_tribe,tribe_walk_mobile --repeat 3 --retry 0`.
 * Ticket: BUG-0393
+
+## Tribe: host animals under the guest's ground after joining (2026-11-01, feat/w32-monitor-diag)
+<a id="issue-tribe-proxies-under"></a>
+
+* What happens: right after a guest enters the host's Tribe world, 1-4 of the host's animals are shown
+  0.75-1.25 m under the guest's own ground for 20-30 s (proxies driven at their own height).
+* Reproduce: `tools/lab.py run tribe_coop --retry 0`: the guest's trace lines at s 20 / 30 say
+  `proxy_under=1..4`, `npc: proxy <id> ... m under this game's ground` names them (allowed in the lab).
+* Ticket: BUG-0399
+
+## Creature: the guest's own creature under the terrain after the species swap (2026-11-01, feat/w32-monitor-diag)
+<a id="issue-creature-own-under"></a>
+
+* What happens: when the guest's own creature replaces the host's species as its avatar, it stood
+  0.94 m under the terrain (own trace line `agl=-0.94`) in one warm creature test on lane 6.
+* Reproduce: not reliably; the lab's ground rule reports it (allowed in the lab).
+* Ticket: BUG-0400
