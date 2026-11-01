@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.3.1+main 251d80d
 fixed_in: unreleased
 branch: fix/w26-cell-spare
-commits: 0b1e55e
+commits: 0b1e55e, cd89fd4
 tests: cell_spare
 signature: guest log "the soft-body particle pool is full (1499 of 1500): the spare slot instead of -1 (BUG-0338)" in ordinary play, then "N of our own 64 soft-body particles are held by another cell too", perf fps 3 for good; coop.pool orphans > 0 (allocated at 0xE5CC88)
 docs: docs/re/cell.md#cell-gfx-pool, docs/06-testing.md#testing-cell-spare, docs/05-re-notes.md#re-notes-sample
@@ -78,7 +78,14 @@ was not measured.
 FAIL: `SPORE_FIX_OFF=cell.gfx_full` cell_spare, lab 20261031-180500 (lane 5; run dirs of this branch
 are under SporeCoop-wt/fix/w26-cell-spare/out/lab/): host and guest lost 1490 particles each.
 PASS: cell_spare 2/2, lab 20261031-180540 (lanes 6, 8): 0 lost, no spare holder, no NaN cell, the
-guest at 45+ fps through the cinematic and in Creature.
+guest at 45+ fps through the cinematic and in Creature; again in 20261031-182516.
+campaign_short 3/3 with the fix, lab 20261031-181517 (lanes 5, 6, 8; the guards were not reached
+there); with the fix off 2/2 OK too, lab 20261031-174551 (not reached either: the campaign hits it
+in about 1 of 5 runs, so it is no FAIL test).
+Cell regression 8/8, lab 20261031-182516 (cell_coop, cell_particles, cell_sap, cell_spare,
+cell_leave, cell_evolve_poll, cell_nan, cell_churn); `make test` OK.
+Not verified: the 3 fps itself (not reproduced in 2 players, see Root cause).
 
 ## History
 - 2026-10-31: opened.
+- 2026-10-31 (fix/w26-cell-spare): root cause (a full cell graphics pool loses particles every frame), cell.gfx_full + cell.spare, cell_spare; fixed (unreleased).
