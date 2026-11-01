@@ -6,12 +6,22 @@
             extended (paths outside the other suites: 3-4 players, hot reload; also nightly),
             multi (3-4 players per stage in minutes, coop_party.py; also extended / nightly),
             campaign (a whole game of four bot players, coop_campaign.py: in no other suite, run it alone)
+            players (generated variants of chosen tests under the conditions of real players: the guest
+            at 15 fps, a mobile / bursty network, both, four players; docs/06-testing.md#testing-degraded)
   warm      may reuse running games of the lane (twoinst.start with SPORE_WARM=1: the fixture is
             loaded into a fresh save slot, the guest rejoins; no restart). Tests that change the
             profile, enter editors or start their own games are cold.
   exclusive needs the machine alone (LAN discovery in the UI test sees other lanes' hosts)
   minutes   rough length, the scheduler starts long tests first
   timeout   seconds before the lab kills the test (default lab.TIMEOUT, 30 min)
+  gates     the log gates of the test (tools/loggates.py, docs/06-testing.md#testing-log-gates): None = the
+            defaults (sync-check MISMATCH, hitch over 2 s in play, mem low, address space loss slope);
+            a dict changes a threshold ({'hitch_ms': 5000}) or switches gates off ({'off': ('hitch',)});
+            NO_GAME for tests that run no game (their lane's idle games are not theirs)
+  monitor   the invariant monitor's settings for this test (tools/tests/monitor.py DEFAULTS overrides, e.g.
+            {'census_period': 60} to poll coop.census; 'off': no monitor), passed as SPORE_MONITOR
+  allow     log gate findings this test may have, each allow(gate, ticket, reason, ...) with a ticket
+            id and a reason: printed as "allowed" in the result, never silent
   uses_free_lane  the test plays on SPORE_FREE_LANE (outside the run), takes that lane's lock
             (<lab folder>/.update_check-lane<N>.lock) and prints `LAB-WATCH lane=<N> since=<unix time>`
             once it holds it: the lab watches that lane for crash / hang reports and dead games from
@@ -19,10 +29,23 @@
 """
 
 T = []
+NO_GAME = {'off': ('sync-check', 'hitch', 'mem-low', 'as-slope', 'monitor')}
+
+
+def allow(gate, ticket, reason, stage=None, kind=None, who=None, match=None):
+    """a log gate finding a test may have (tools/loggates.py): gate sync-check | hitch | mem-low |
+    as-slope; ticket BUG-NNNN (the bug that makes it, open until fixed); reason: why it is not this
+    test's failure. stage / kind / who / match narrow it ('Tribe', 'p apart', 'guest', a regex on the
+    log line). tools/tests/lab_selftest.py checks that the ticket exists and the reason is given."""
+    return dict(gate=gate, ticket=ticket, reason=reason, stage=stage, kind=kind, who=who, match=match)
+
+
+# allowed in every test (each a known bug with its ticket; empty when every gate holds everywhere)
+ALLOW_ALL = []
 
 
 def add(name, cmd, suites=('full',), warm=False, exclusive=False, minutes=4, fixture=None, reports=False,
-        uses_free_lane=False, timeout=None):
+        uses_free_lane=False, timeout=None, gates=None, allow=(), monitor=None):
     """reports=True: the test makes crash / hang reports or faults on purpose and checks them itself;
     for every other test the lab fails it on a new crash-*/report-* file of its lane, a game that
     dies right after it, or a non-zero fault count in its log (tools/lab.py run_one, BUG-0036/0042)"""
@@ -32,12 +55,13 @@ def add(name, cmd, suites=('full',), warm=False, exclusive=False, minutes=4, fix
         suites = set(suites) | ({'nightly'} if {'nightly', 'extended'} & set(suites) else {'full', 'nightly'})
     T.append(dict(name=name, cmd=cmd, suites=suites, warm=warm,
                   exclusive=exclusive, minutes=minutes, fixture=fixture, reports=reports,
-                  uses_free_lane=uses_free_lane, timeout=timeout))
+                  uses_free_lane=uses_free_lane, timeout=timeout, gates=gates, allow=list(allow),
+                  monitor=monitor))
 
 
 P = 'python3 tools/tests/'
-add('unit', 'make test', ('smoke',), minutes=1)
-add('win_unit', P + 'win_unit.py', minutes=1)  # Win32 file handling under Wine: updater backups / pending list / duplicate files, received world slots (BUG-0035/0087/0089/0105/0114/0150; --old fails)
+add('unit', 'make test', ('smoke',), minutes=1, gates=NO_GAME)
+add('win_unit', P + 'win_unit.py', minutes=1, gates=NO_GAME)  # Win32 file handling under Wine: updater backups / pending list / duplicate files, received world slots (BUG-0035/0087/0089/0105/0114/0150; --old fails)
 add('creature', P + 'coop_two_instances.py --guest-menu', ('smoke',), minutes=4)
 add('cell', P + 'coop_mode.py --fixture cell', minutes=3)
 add('tribe', P + 'coop_mode.py --fixture tribe', minutes=3)
@@ -94,6 +118,7 @@ add('ui_menu_leave', P + 'coop_ui_menu_leave.py', minutes=2)  # the galaxy menu'
 add('reload_update', P + 'coop_reload_update.py', minutes=2)  # hot reload while the update check waits: the old thread stays in the old image (BUG-0060)
 add('update_leak', P + 'coop_update_leak.py', minutes=4)  # 5 refused update attempts free their 20 MB packs (BUG-0241; SPORE_FIX_OFF=core.update_unwind fails)
 add('guest_editor', P + 'coop_guest_editor.py', minutes=4)
+add('guest_editor_locks', P + 'coop_guest_editor_locks.py', minutes=4)  # the guest's own editor locks the parts the species has not collected (BUG-0368; SPORE_FIX_OFF=creations.own_editor_items fails)
 add('notify', P + 'coop_notify.py', minutes=3)
 add('window_layout', P + 'coop_window_layout.py', minutes=3)  # the co-op window re-centred after a smaller resolution, the status block never over the window or the panels (BUG-0113/0155; --old fails)
 add('sync', P + 'coop_sync.py', warm=True, minutes=6)
@@ -107,6 +132,7 @@ add('cell_own_load', P + 'coop_cell_own_load.py', minutes=4)  # BUG-0342
 add('host_old_choice', P + 'coop_host_old_choice.py', minutes=3)  # BUG-0344
 # BUG-0341: Carol (no Creepy & Cute pack) on a lane outside the run (SPORE_FREE_LANE), host and Bob on the run's lane
 add('guest_missing_pack', P + 'coop_guest_missing_pack.py', minutes=6, uses_free_lane=True)
+add('guest_pack_paints', P + 'coop_guest_pack_paints.py', minutes=4)  # a guest without Creepy & Cute sees the host's pack paints as base game paints (BUG-0369; SPORE_FIX_OFF=creations.paint_substitute fails)
 add('creations_rejoin', P + 'coop_creations_rejoin.py', minutes=5)  # a newcomer under a reused id is not shown with the previous player's creature (BUG-0076)
 add('editor_desync', P + 'coop_editor_desync.py', minutes=7)  # mating call and editors in Cell and Creature, real input
 add('creature_desync', P + 'coop_creature_desync.py', minutes=4)  # editors, a crash and a reload: companion of a host-only species, no NPC copies, kills, the guest's look
@@ -138,7 +164,7 @@ add('rejoin_saved_puppet', P + 'coop_rejoin_saved_puppet.py', minutes=6)  # BUG-
 add('tribe_far', P + 'coop_tribe_far.py', minutes=4, fixture='tribe')  # BUG-0280 (Tribe): the host's game keeps herds with animals where a guest points 300-450 m from the host (SPORE_FIX_OFF=npc.view_centres_tribe fails; SPORE_FIX_OFF=npc.rts_views fails its BUG-0291 check)
 add('npc_swap', P + 'coop_npc_swap.py', minutes=3)  # BUG-0110: an NPC tick that does not return leaves no puppet as the game's avatar
 add('world_reload', P + 'coop_world_reload.py', minutes=6)  # BUG-0119: after a reload the guest plays its own creature again although the avatar's address came back (--without-fix fails)
-add('leave_avatar', P + 'coop_leave_avatar.py', minutes=7)  # BUG-0264: a guest leaving the Creature stage for a shared world never uses the avatar the game tears down (SPORE_FIX_OFF=world.leave_avatar fails)
+add('leave_avatar', P + 'coop_leave_avatar.py', minutes=7)  # BUG-0264: a guest leaving the Creature stage for a shared world never uses the avatar the game tears down (no FAIL run: with the switch world.leave_avatar off it passed 5 times, lab 20261029-085208 / 085452 / 085805-fix-w6-avatar; BUG-0264 no-fail-run, not reproduced with 2 players)
 add('leave_avatar_cell', P + 'coop_leave_avatar.py --cell --rounds 3', minutes=8)  # BUG-0264: the campaign's way: Cell -> Creature, the host's first editor, the shares after it
 add('cell_evolve_poll', P + 'coop_cell_evolve_poll.py', minutes=6, fixture='cell')  # BUG-0271: the host ends the Cell stage while the consoles keep asking (coop.status / avatar / sync): no cell read from the freed pool (SPORE_FIX_OFF=core.stale_local fails)
 add('guest_editor_hold', P + 'coop_guest_editor_hold.py', suites=('extended',), minutes=9, fixture='cell')  # BUG-0283 (not reproduced in 3 runs): the host's new body reaches a guest while its own editor is open; one red cross click must leave the unchanged editor
@@ -190,7 +216,12 @@ add('tribe_walk_mobile', 'SPORE_NET=mobile ' + P + 'coop_tribe_walk.py --fps 30'
 add('tribe_npc_dash', P + 'coop_tribe_npc_dash.py', warm=True, minutes=4, fixture='tribe')  # two animals run side by side on the host: the guest shows them on their path (BUG-0305; SPORE_FIX_OFF=npc.trail fails)
 add('creature_npc_dash', 'DASH_FIXTURE=creature ' + P + 'coop_tribe_npc_dash.py', minutes=4, fixture='creature')  # BUG-0281: two nest NPCs run side by side at 4 m/s on the host, the guest (15 fps) stands beside the path's end: its proxies stay on the path (SPORE_FIX_OFF=npc.kinematic fails)
 add('puppet_walk', P + 'coop_puppet_walk.py', warm=True, minutes=4, fixture='creature')  # BUG-0360: each player walks by WASD and clicks, the other's game samples the puppet every frame: no jumps, it moves and walks (SPORE_FIX_OFF=creature.puppet_walk fails)
+add('puppet_slope', 'SPORE_NET=player ' + P + 'coop_puppet_walk.py --dir guest --guest-fps 30 --goto=-195,-465,-45 --secs 40 --ground', minutes=4, fixture='creature')  # BUG-0366: the guest at 30 fps over a home connection (spikes, loss bursts) walks on a slope of the fixture: its puppet on the host never starts to fall ("constantly jumping"; SPORE_FIX_OFF=creature.puppet_ground fails)
+add('puppet_under', 'PUPPET_WALK_CMDS="coop.track lift -1" ' + P + 'coop_puppet_walk.py --dir guest --secs 25 --stand 8 --ground', minutes=4, fixture='creature')  # BUG-0367: the guest's states 1 m under the host's ground (coop.track lift -1): its puppet is never drawn under the ground (SPORE_FIX_OFF=creature.puppet_ground fails)
 add('npc_run_hp', P + 'coop_npc_run_hp.py', warm=True, minutes=3, fixture='creature')  # BUG-0334: a running NPC's health and death reach the guest (SPORE_FIX_OFF=npc.kinematic_sync fails)
+add('creature_partner_hp', P + 'coop_creature_partner_hp.py', warm=True, minutes=3, fixture='creature')  # BUG-0373: each game shows the partner's real health and max health on its creature (SPORE_FIX_OFF=creature.partner_hp fails)
+add('creature_party', P + 'coop_creature_party.py', warm=True, minutes=3, fixture='creature')  # BUG-0374: the host's pack does not fight the guest after the guest's hit on it (SPORE_FIX_OFF=npc.party_peace fails)
+add('creature_brain_hp', P + 'coop_creature_brain_hp.py', minutes=4, fixture='creature')  # BUG-0375: a guest playing its own creature gets the brain level's health (SPORE_FIX_OFF=creature.own_brain_hp fails)
 add('away_refill', P + 'coop_away_refill.py', minutes=3)  # BUG-0180: the host leaves to the main menu: the guest's game has its own NPCs where the host's were at once (SPORE_FIX_OFF=npc.away_locals fails)
 add('editor_after_swap', P + 'coop_editor_after_swap.py', minutes=5)  # BUG-0318: a 6.7 fps guest's editor right after a rejoin draws and can be left (SPORE_FIX_OFF=creations.editor_after_swap fails)
 add('editor_after_load', P + 'coop_editor_after_swap.py --no-swap', minutes=5)  # BUG-0318: the same without an avatar swap (only the loaded world's new avatar)
@@ -325,15 +356,58 @@ add('campaign_ct', P + 'coop_campaign.py --from cell --to tribe --minutes 2 --no
     minutes=45, timeout=3600)
 
 
+SUITES = ('smoke', 'full', 'nightly', 'extended', 'campaign', 'multi', 'players')
+
+
 def select(spec):
-    """suites (smoke / full / nightly / extended / multi / campaign) and test names, comma-separated and mixed: 'smoke,vote'"""
+    """suites (smoke / full / nightly / extended / multi / campaign / players) and test names, comma-separated and mixed: 'smoke,vote'"""
     names = {t['name'] for t in T}
     want = set()
     for w in (x.strip() for x in spec.split(',') if x.strip()):
-        if w in ('smoke', 'full', 'nightly', 'extended', 'campaign', 'multi'):
+        if w in SUITES:
             want |= {t['name'] for t in T if w in t['suites']}
         else:
             assert w in names, f'unknown test: {w} (known: {sorted(names)})'
             want.add(w)
     return [t for t in T if t['name'] in want]
 add('trace_log', P + 'coop_trace_log.py', minutes=6)  # support logging: trace / eat / body lines on both games in Cell and Creature, the same eaten object in both logs, log size per minute
+
+
+# ---------------- generated variants: the conditions of real players (docs/06-testing.md#testing-degraded)
+# `lab.py run players`: each chosen test again with the guest at 15 fps (frame.limit, twoinst.apply_fps), over
+# a mobile network, over burst loss (netem.py Gilbert-Elliott), both, and four players. A variant is cold (other
+# frame caps / proxies than the lane's warm games) and keeps its base's gates / allow / monitor.
+VARIANTS = {
+    'fps15': 'SPORE_FPS=guest:15 ',
+    'mobile': 'SPORE_NET=mobile ',
+    'burst': 'SPORE_NET=burst ',
+    'fps15burst': 'SPORE_FPS=guest:15 SPORE_NET=burst ',
+    'players': 'SPORE_NET=players ',
+}
+VARIANT_TESTS = ('creature', 'team', 'tribe_coop', 'cell_coop', 'civ_coop', 'space_coop', 'puppet_walk', 'npc_run_hp',
+                 'sync', 'select', 'party_creature4', 'party_tribe4', 'party_space4')
+FOUR_P = {'party_cell3': 'party_cell4', 'party_civ3': 'party_civ4', 'multi3': 'multi4', 'npc_multi3': 'npc_multi4'}
+
+
+def _variants():
+    by = {t['name']: t for t in T}
+    out = []
+    for base in VARIANT_TESTS:
+        t = by[base]
+        for v, env in VARIANTS.items():
+            name = f'{base}_{v}'
+            if name in by:  # an older hand-made variant (tribe_coop_mobile, ...): it joins the suite
+                by[name]['suites'] = set(by[name]['suites']) | {'players'}
+                continue
+            out.append(dict(t, name=name, cmd=env + t['cmd'], suites={'players'}, warm=False,
+                            minutes=t['minutes'] + 2, fixture=None, variant_of=base))
+    for base, name in FOUR_P.items():
+        t = by[base]
+        out.append(dict(t, name=name, cmd=t['cmd'].replace('--players 3', '--players 4'), suites={'players'},
+                        warm=False, minutes=t['minutes'] + 2, fixture=None, variant_of=base))
+        out.append(dict(t, name=name + '_players', cmd='SPORE_NET=players ' + out[-1]['cmd'], suites={'players'},
+                        warm=False, minutes=t['minutes'] + 3, fixture=None, variant_of=base))
+    return out
+
+
+T += _variants()

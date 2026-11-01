@@ -1282,3 +1282,52 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   on the guest is the guess).
 * Reproduce: `tools/lab.py run tribe_walk_mobile --repeat 5 --retry 0`, look for "no jump" failures.
 * Ticket: BUG-0386
+## Creature: after an editor a guest asks the host for its own previous creature and gets nothing (2026-11-01, player report)
+<a id="issue-own-old-species"></a>
+
+* What happens: right after the host's evolution (both players evolved), the host's world share
+  still held a creature of the guest's previous creature (its key on the host, 7CA388E5). The guest
+  asked the host for that species ("creations: player 1 asks for species 7CA388E5: not found here" on
+  the host), could not build that NPC ("npc 142: proxy spawn failed (unknown species)") and the
+  sync-check reported it missing for one check; the next world share fixed it (OK 30 s later).
+* Reproduce: not tried. The player's logs: the guest's own editor gave it a new creature
+  (7CC73097), the host had registered the old one (7CA388E5) for player 1 and no longer finds it;
+  the host removed "a creature of species 7CA388E5 ... from a save made while a partner's puppet
+  existed" at the same moment.
+* Known (inferred): the host's `records_from_game` finds only creations still registered; a
+  partner's replaced creature is not, while a leftover of its puppet can still be in the world.
+* Not checked: whether the leftover NPC is the guest's old puppet or a herd member made from it.
+* Ticket: BUG-0370
+
+## Editor: the game runs out of address space in the skin painter (2026-11-01, player report)
+<a id="issue-editor-skin-painter-oom"></a>
+
+* What happens: the host crashed in its creature editor at RenderWare::Raster::Fill+0x7 (a null
+  raster, read of 0x4) from the skin painter (Skinner::cSkinPainterPipeline::ExecutePipeline) after
+  55 minutes of play: 1554 of 2047 MB of the game's address space used (493 MB free), large-address
+  flag off; 12 s before, 868 MB were free (largest block 346 MB). The editor before it had taken
+  ~180 MB (939 -> 763 MB free, largest block 413 -> 181 MB).
+* Reproduce: not reproduced; a long session (Cell > Creature, many editors) on a 32-bit game
+  without the 4GB patch.
+* Known: no coop.dll frame in the chain; the mod does not hook the skin painter or the texture
+  manager; the host's own creature had no partner puppet in the editor. Inferred: the game's own
+  allocation of a paint raster failed (the game does not check it). The mod's warning
+  (`mem: the game's address space runs low`) fires at < 300 MB free or a block < 48 MB and was not
+  reached at the last minute line.
+* Next steps: measure the address space the editor's paint mode takes on lane 10; tell players with
+  the large-address flag off to use the 4GB patch.
+* Ticket: BUG-0371
+## Creature: the partner's jumps are mostly not shown (2026-11-01, fix/w30-puppet-jump)
+<a id="issue-puppet-jumps"></a>
+
+* What happens: when the partner's creature leaves the ground (a jump, a fall), its puppet placed
+  in the air every frame (0.7.3.3) is put back on the ground by the game while it is grounded: in
+  21-22 of 24 simulated hops it stayed on the ground, in 2-3 it fell with the partner.
+* Reproduce: `coop_puppet_walk.py --dir guest --jumps 0.6` (hops by `coop.abilities lift 1.5`; the
+  fixture's creatures cannot jump), compare the walker's and the puppet's airborne episodes in the
+  track json (docs/re/creature.md#creature-puppet-ground).
+* Known: the game keeps a grounded creature (+0x137 = 1) on the terrain; the partner sends no
+  airborne flag (PF_JUMPING is never set).
+* Next steps: send the airborne state and put the puppet into the game's fall (or play the jump)
+  on the observer; check with a creature that can jump.
+* Ticket: BUG-0376

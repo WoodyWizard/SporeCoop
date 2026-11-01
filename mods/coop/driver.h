@@ -109,6 +109,21 @@ inline void step(void* p, const net::Vec3& pos_in, const net::Quat& rot, const n
 //   animation's gait. An error left from standing is closed at catch_up m/s faster than the remote.
 // walk_end when the remote stands again: a MoveTo to where it stands (not StopMovement, which put it back
 // up to 3 m to where its own walk was), then drive::step takes over.
+// BUG-0366 (creature.puppet_ground): a target from kUnderGround under to kOverGround over this game's
+// ground (cPlanetModel::GetHeightAt) goes kSink into it: placed exactly on the ground a walking creature is
+// a few cm over it after the game's next step downhill and plays its fall animation; under the ground it
+// stays there. Higher up (a jump, a rock) it is left where it is.
+constexpr float kOverGround = 0.5f, kUnderGround = 3.f; // m
+constexpr float kSink = 0.05f;                          // m (0.15: the drawn puppet 0.13 m under at times)
+inline net::Vec3 on_own_ground(const net::Vec3& pos)
+{
+    float r = std::sqrt(pos.x * pos.x + pos.y * pos.y + pos.z * pos.z), g = game::ground_radius(pos);
+    if (g <= 0 || r < 1.f || r - g > kOverGround || r - g < -kUnderGround)
+        return pos;
+    float k = (g - kSink) / r;
+    return {pos.x * k, pos.y * k, pos.z * k};
+}
+
 struct WalkPlace {
     float goal_ahead = 12.f;  // m: the MoveTo point ahead on the remote's path
     float turn_dot = 0.995f;  // a new MoveTo when its direction turns more than ~6 degrees,
@@ -119,6 +134,9 @@ struct WalkPlace {
     // BUG-0365: the speed after the MoveTo (~ a MoveTo sets a citizen's speed back to its default 9 m/s:
     // the first frame of a mirror's walk went at 9 m/s); the Creature puppets keep the old order
     bool speed_after_goal = false;
+    // BUG-0366: the target onto this game's ground (on_own_ground). The Creature puppet puts its target
+    // there before it chooses walk or stand (creature_drive), so it leaves this off
+    bool ground = false;
 };
 
 inline void walk_place(void* p, const net::Vec3& pos_in, const net::Quat& rot, const net::Vec3& vel, State& ds, double now,
@@ -128,6 +146,8 @@ inline void walk_place(void* p, const net::Vec3& pos_in, const net::Quat& rot, c
     if (sp <= 0.f)
         return;
     net::Vec3 pos = o.own_height ? at_own_height(pos_in, game::position(p)) : pos_in;
+    if (o.ground)
+        pos = on_own_ground(pos);
     bool was = ds.kinematic;
     ds.kinematic = true;
     if (!o.speed_after_goal)

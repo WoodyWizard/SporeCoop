@@ -58,9 +58,10 @@ def dump(con):
     for start_i in range(0, n, 1500):
         for line in con.call(f'coop.track dump {start_i} 1500')['out'].splitlines():
             f = line.split()
-            if len(f) < 23:
+            if len(f) < 23:  # 23 columns, then hd ht (BUG-0366), then id (BUG-0365): new ones go at the end
                 continue
-            rows.append({'t': float(f[0]), 'who': int(f[1]), 'flags': int(f[2]), 'tp': int(f[3]),
+            rows.append({'hd': float(f[23]) if len(f) > 23 else None, 'ht': float(f[24]) if len(f) > 23 else None,
+                         't': float(f[0]), 'who': int(f[1]), 'flags': int(f[2]), 'tp': int(f[3]),
                          'p': tuple(map(float, f[4:7])), 'd': tuple(map(float, f[7:10])),
                          'tgt': tuple(map(float, f[10:13])), 'gv': float(f[13]), 'rv': float(f[14]),
                          'anim': f[15], 'gait': int(f[16]), 'gait2': int(f[17]), 'moving': int(f[18]),
@@ -101,7 +102,17 @@ def back_to_partner(con, W, H):
 TETHER = 12.0  # m: the walker turns back to the observer beyond this
 
 
-def walk(con, rng, secs):
+HOP = 1.5  # m
+
+
+def jump(con):
+    """a jump: the fixture's creatures have no jump ability (Space does nothing, no ability of theirs
+    leaves the ground), so the walker's avatar is put HOP m higher and falls back by the game's
+    gravity (~1 s): its state carries the fall's mostly vertical velocity, as a jump's does"""
+    con.call(f'coop.abilities lift {HOP}')
+
+
+def walk(con, rng, secs, jumps=0.0):
     """a player walking: WASD holds with turns, stops, clicks on the ground ahead, staying near the
     partner"""
     W, H = screen(con)
@@ -118,9 +129,19 @@ def walk(con, rng, secs):
             hold = rng.uniform(1.0, 3.0)
             for k in keys:
                 con.call(f'key 0x{ord(k):02X} down')
-            time.sleep(hold)
+            if jumps and rng.random() < jumps:  # BUG-0366: it jumps while it walks
+                t1 = time.time() + hold
+                n = 0
+                while time.time() < t1 - 0.3:
+                    jump(con)
+                    n += 1
+                    time.sleep(min(rng.uniform(0.6, 1.2), max(0.0, t1 - time.time())))
+                keys = keys + [f'jump x{n}']
+            else:
+                time.sleep(hold)
             for k in keys:
-                con.call(f'key 0x{ord(k):02X} up')
+                if len(k) == 1:
+                    con.call(f'key 0x{ord(k):02X} up')
             log.append(f'{"+".join(keys)} {hold:.1f}s')
         elif r < 0.85:
             x, y = rng.randint(int(W * 0.2), int(W * 0.8)), rng.randint(int(H * 0.45), int(H * 0.75))
@@ -128,6 +149,12 @@ def walk(con, rng, secs):
             wait = rng.uniform(1.5, 3.0)
             time.sleep(wait)
             log.append(f'click {x},{y} {wait:.1f}s')
+        elif jumps and r < 0.93:  # BUG-0366: jumps on the spot
+            n = rng.randint(2, 4)
+            for _ in range(n):
+                jump(con)
+                time.sleep(rng.uniform(0.7, 1.3))
+            log.append(f'jumps x{n}')
         else:
             stop = rng.uniform(0.5, 1.5)
             time.sleep(stop)
@@ -138,6 +165,21 @@ def walk(con, rng, secs):
 def pct(xs, q):
     xs = sorted(xs)
     return xs[min(len(xs) - 1, int(q * len(xs)))] if xs else 0.0
+
+
+FALL_ANIM = '0692E6A9'  # the game's fall animation (an airborne creature, +0x137 = 0)
+UNDER = -0.3  # m: a drawn puppet this far under the observer's ground is under it
+
+
+def falls(rows):
+    """how often the creature starts to fall (the game plays its fall animation): a creature that walks
+    on the ground never does; the partner's puppet did walking downhill (BUG-0366)"""
+    n, prev = 0, False
+    for r in rows:
+        a = r['anim'] == FALL_ANIM
+        n += a and not prev
+        prev = a
+    return n
 
 
 def analyse(obs_rows, walker_rows, label):
@@ -214,6 +256,11 @@ def analyse(obs_rows, walker_rows, label):
         'drive_tp': (pup[-1]['tp'] - pup[0]['tp']) if pup else 0,
         'anims_moving': sorted(anims_moving.items(), key=lambda kv: -kv[1])[:5],
         'own_anims': sorted(own_anims.items(), key=lambda kv: -kv[1])[:5],
+        # BUG-0366 / 0367: the game's fall (+0x137 = 0 with the fall animation) and the height over the
+        # observer's ground
+        'falls': falls(pup), 'own_falls': falls(own),
+        'under': [round(r['hd'], 2) for r in pup if r.get('hd') is not None and r['hd'] < UNDER],
+        'hd_min': min((r['hd'] for r in pup if r.get('hd') is not None), default=0.0),
     }
     return res
 
@@ -238,14 +285,17 @@ class Watch(threading.Thread):
             self.stop.wait(0.6)
 
 
-def direction(walker, observer, wname, oname, rng, secs, ck):
+def direction(walker, observer, wname, oname, rng, secs, ck, stand=0, jumps=0.0, ground=False):
     watch = Watch(observer)
     watch.start()
     time.sleep(2.0)
     for c in (walker, observer):
         c.call('coop.track start')
     time.sleep(0.5)
-    log = walk(walker, rng, secs)
+    log = walk(walker, rng, secs, jumps)
+    if stand:  # then it stands (BUG-0366: "constantly jumping" while the partner stood)
+        time.sleep(stand)
+        log.append(f'stand {stand:.0f}s')
     watch.stop.set()
     watch.join()
     time.sleep(1.0)
@@ -279,6 +329,13 @@ def direction(walker, observer, wname, oname, rng, secs, ck):
     ck(r['win'] > 50 and r['stand'] <= STAND_MAX and r['matched'] >= MATCHED_MIN,
        f'{r["label"]}: the puppet moves with the walker, not in steps (stands in {r["stand"]:.0%} <= {STAND_MAX:.0%}, '
        f'at its speed in {r["matched"]:.0%} >= {MATCHED_MIN:.0%} of {r["win"]} windows)')
+    print(f'    falls (the game\'s fall animation): the puppet {r["falls"]}, the walker\'s own creature {r["own_falls"]}; '
+          f'lowest drawn height over the observer\'s ground {r["hd_min"]:.2f} m, frames under it ({UNDER} m) '
+          f'{len(r["under"])} {r["under"][:8]}', flush=True)
+    if ground:  # BUG-0366 / BUG-0367
+        ck(r['falls'] <= r['own_falls'] + 1, f'{r["label"]}: the puppet does not start falling ("jumping") more '
+           f'than the walker\'s own creature ({r["falls"]} <= {r["own_falls"]} + 1)')
+        ck(not r['under'], f'{r["label"]}: the puppet is never under the observer\'s ground ({len(r["under"])} frames)')
     ck(r['near'] >= 150 and r['near_gait'] >= GAIT_MIN,
        f'{r["label"]}: the puppet walks where the observer sees it (walk gait in {r["near_gait"]:.0%} >= {GAIT_MIN:.0%} '
        f'of {r["near"]} frames on its screen)')
@@ -288,6 +345,11 @@ def main():
     ap.add_argument('--dir', default='both', choices=('host', 'guest', 'both'), help='who walks')
     ap.add_argument('--seed', type=int, default=None)
     ap.add_argument('--secs', type=float, default=25)
+    ap.add_argument('--jumps', type=float, default=0, help='the walker jumps (Space) in this share of its walks and on the spot')
+    ap.add_argument('--ground', action='store_true', help='also check falls and the height over the ground (BUG-0366/0367)')
+    ap.add_argument('--goto', default='', help='x,y,z: both players go there first (hilly ground, BUG-0366)')
+    ap.add_argument('--stand', type=float, default=0, help='the walker stands this long after its walk (s)')
+    ap.add_argument('--guest-fps', type=float, default=0, help='the guest at ~N fps (frame.limit 1000/N): a weak PC (BUG-0366)')
     a = ap.parse_args()
     seed = a.seed if a.seed is not None else random.randrange(1 << 30)
     print(f'  seed {seed}', flush=True)
@@ -301,13 +363,22 @@ def main():
             break
         time.sleep(1)
     time.sleep(3)
+    if a.goto:  # both onto that ground, the guest 3 m beside the host
+        x, y, z = map(float, a.goto.split(','))
+        print('  host: ' + host.call(f'coop.abilities goto {x} {y} {z}')['out'].strip(), flush=True)
+        print('  guest: ' + guest.call(f'coop.abilities goto {x + 3} {y} {z}')['out'].strip(), flush=True)
+        time.sleep(4)
+    if a.guest_fps:
+        print('  guest: ' + guest.call(f'frame.limit {round(1000 / a.guest_fps)}')['out'].strip(), flush=True)
+    if os.environ.get('SPORE_NET'):
+        print('  network: ' + os.environ['SPORE_NET'], flush=True)
     for cmd in filter(None, os.environ.get('PUPPET_WALK_CMDS', '').split(';')):
         for c in (host, guest):
             print('  ' + cmd + ': ' + c.call(cmd)['out'].strip(), flush=True)
     if a.dir in ('host', 'both'):
-        direction(host, guest, 'host', 'guest', rng, a.secs, ck)
+        direction(host, guest, 'host', 'guest', rng, a.secs, ck, a.stand, a.jumps, a.ground)
     if a.dir in ('guest', 'both'):
-        direction(guest, host, 'guest', 'host', rng, a.secs, ck)
+        direction(guest, host, 'guest', 'host', rng, a.secs, ck, a.stand, a.jumps, a.ground)
     ck.faults(host=host, guest=guest)
     return ck.result()
 

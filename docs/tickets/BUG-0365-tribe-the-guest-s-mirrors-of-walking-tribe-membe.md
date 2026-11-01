@@ -53,7 +53,7 @@ members start and stop within one frame (0 -> 8 m/s).
   `drive::walk_place` (driver.h; BUG-0360's creature_drive walk branch moved there, the Creature puppet
   calls it unchanged) walks the mirror (speed after the MoveTo for citizens) and places it on the path
   every frame at its own ground height; `drive::walk_end` when it stands. Off: drive::step (0.7.3.3).
-* Diagnostics: `coop.track` in Tribe (a 24th column: the member id), `coop.status` tribe(guest)
+* Diagnostics: `coop.track` in Tribe (the member id as the last column, after main's hd ht), `coop.status` tribe(guest)
   `mirror_walks=` and `timed=` (chunks with the host's clock).
 
 ## Verification

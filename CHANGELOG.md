@@ -7,6 +7,23 @@
   or jump ahead, when they start or end a walk: they walk smoothly on the host's path, also on a
   network with jitter (BUG-0365). Plays together with 0.7.x; the guest needs this version, and the
   host too for the smoothing over a network with jitter.
+- Creature: each player now sees the partner's real health on the partner's creature (it always
+  looked full, hits on the partner did not show) and its real max health (BUG-0373).
+- Creature: the host's pack and family no longer attack and kill a partner (a partner's hit on a
+  pack member made it fight the partner for good); a partner's hits no longer hurt them (BUG-0374).
+- Creature: a player who plays its own creature in the host's world now gets the extra health of
+  every brain upgrade (it stayed at the first level's health, 14 against the host's 44) (BUG-0375).
+- Creature: a guest's own creature editor (after the host's evolution vote) offered every part, also
+  the ones the species has not collected yet; it now locks them as the host's editor does (BUG-0368).
+- Creature: a guest whose game lacks the Creepy & Cute pack saw the host's creature without the
+  layers painted with the pack's paints (black or in other colours); they are now shown as similar
+  base game paints in the host's colours (BUG-0369).
+- Tools: crash_triage.py named the co-op version of an earlier session (from the crash file's
+  summary) instead of the one that crashed (BUG-0372).
+- Creature: the partner's creature no longer keeps "jumping" while it walks downhill: the game took
+  it for falling for a moment again and again and played its fall animation (BUG-0366).
+- Creature: the partner's creature is no longer drawn under the ground: it is now always put on
+  your own game's ground when the partner walks or stands on the ground (BUG-0367).
 
 ## [0.7.3.3] - 2026-11-01
 

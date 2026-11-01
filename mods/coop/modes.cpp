@@ -9,6 +9,7 @@
 #include <unordered_set>
 
 #include "cell_logic.h"
+#include "creature_hp.h"
 #include "game.h"
 #include "sporekit.h"
 #include "sporekit_game.hpp"
@@ -81,9 +82,25 @@ static void* creature_spawn(const net::PlayerState& s, void* av)
 // `coop.fix creature.puppet_walk off`: the driving only (0.7.3.2).
 static bool g_puppet_walk_fix = true;
 COOP_FIX("creature.puppet_walk", "BUG-0360", g_puppet_walk_fix, "creature: the walking partner's creature walks on its path instead of moving in steps and teleporting");
-static void creature_drive(void* p, const net::PlayerState& s, drive::State& ds, double now)
+// BUG-0366 / BUG-0367: the puppet was placed at the partner's own position, taken from the partner's
+// game, every frame (0.7.3.3, creature.puppet_walk). Walking downhill a creature placed exactly on the
+// ground is a few cm over it after the game's next step (its walk goes along, not down): the game
+// takes it as falling (+0x137 = 0) and plays the fall animation 0x0692E6A9 for 1-5 frames, again and
+// again ("constantly jumping"; 4-7 times in 40 s on a slope, the partner's own creature never). A
+// target under this game's ground (an extrapolated state, a ground that differs) was put there.
+// creature.puppet_ground: a target from kUnderGround under to kOverGround over this game's ground
+// (cPlanetModel::GetHeightAt) is put kSink into it (drive::on_own_ground, driver.h: shared with the
+// other drivings as WalkPlace::ground); the game sets a grounded creature on its ground (0-3 cm up) and
+// it stays grounded. A partner higher up (a jump, a rock) is placed where it is.
+static bool g_puppet_ground_fix = true;
+COOP_FIX("creature.puppet_ground", "BUG-0366", g_puppet_ground_fix, "creature: the partner's creature is put on this game's ground (no fall animation walking downhill, never under the ground)");
+
+static void creature_drive(void* p, const net::PlayerState& s_in, drive::State& ds, double now)
 {
     ds.drawn = game::position(p);
+    net::PlayerState s = s_in;
+    if (g_puppet_ground_fix && game::in_creature_stage())
+        s.pos = drive::on_own_ground(s.pos);
     float sp = drive::speed(s.vel);
     bool walk = g_puppet_walk_fix && game::in_creature_stage() && sp > 0.3f && net::dist(game::position(p), s.pos) < 8.f;
     if (walk) {
@@ -101,12 +118,19 @@ static void creature_drive(void* p, const net::PlayerState& s, drive::State& ds,
         game::herd_quiet(game::herd_of(p)); // (the game may enable a herd again)
         game::herd_home(game::herd_of(p), game::position(p));
     }
-    float mh = game::max_health(p); // puppets mirror the remote health, never die locally
-    if (mh > 0)
-        game::set_health(p, mh);
+    // BUG-0373: the partner's health and max health (creature.partner_hp); off: pinned to full
+    if (!creature_hp::drive_puppet(p, s.health, s.max_health)) {
+        float mh = game::max_health(p); // puppets mirror the remote health, never die locally
+        if (mh > 0)
+            game::set_health(p, mh);
+    }
 }
 
-static void creature_despawn(void* p) { game::destroy_creature(p); }
+static void creature_despawn(void* p)
+{
+    creature_hp::forget_puppet(p);
+    game::destroy_creature(p);
+}
 
 static float creature_tag(void* p) { return game::bounding_radius(p) * 1.3f + 0.3f; }
 

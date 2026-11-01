@@ -63,13 +63,14 @@ def dump(con):
     for start_i in range(0, n, 1500):
         for line in con.call(f'coop.track dump {start_i} 1500')['out'].splitlines():
             f = line.split()
-            if len(f) != 24:
+            if len(f) < 26:  # 23 columns, hd ht (BUG-0366), id (BUG-0365)
                 continue
             rows.append({'t': float(f[0]), 'who': int(f[1]), 'flags': int(f[2]), 'tp': int(f[3]),
                          'p': tuple(map(float, f[4:7])), 'd': tuple(map(float, f[7:10])),
                          'tgt': tuple(map(float, f[10:13])), 'gv': float(f[13]), 'rv': float(f[14]),
                          'anim': f[15], 'gait': int(f[16]), 'ss': int(f[19]), 'vis': int(f[20]),
-                         'sx': float(f[21]), 'sy': float(f[22]), 'id': int(f[23])})
+                         'sx': float(f[21]), 'sy': float(f[22]), 'hd': float(f[23]), 'ht': float(f[24]),
+                         'id': int(f[25])})
     return rows
 
 

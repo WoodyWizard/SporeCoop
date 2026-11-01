@@ -129,7 +129,7 @@ def faults(text):
     found = [(('the game crashed:' not in text[text.rfind('\n', 0, m.start()) + 1:m.start()]),
               (m.group(1), m.group(2), clean_where(m.group(3)))) for m in FAULT.finditer(text)]
     for _, f in sorted(found, key=lambda x: x[0]):  # stable: crash lines first, then file order
-        if f not in out:
+        if not any(o[:2] == f[:2] for o in out):  # the same fault named twice (with and without the module)
             out.append(f)
     return out
 
@@ -140,9 +140,32 @@ def find(term):
     return [l for l in r.stdout.splitlines() if re.match(r'^BUG-\d{4} ', l)]
 
 
+# the running coop version, most reliable first (BUG-0372): the crash file's Environment (`mods: coop X`) and
+# coop section (`SporeCoop X, name ...`), the log's load line; a crash file's Summary quotes the latest
+# co-op summary, which can be of an earlier run with another version, so a plain `coop X` comes last
+# and never from a summary line
+COOP_VERSION = (re.compile(r'^mods: coop v?(\d+\.\d+[\w.]*\d)', re.M),
+                re.compile(r'^SporeCoop v?(\d+\.\d+[\w.]*\d)[ ,]', re.M),
+                re.compile(r'coop: (?:SporeCoop|loaded coop) v?(\d+\.\d+[\w.]*\d)'))
+
+
+def coop_version(text):
+    for rx in COOP_VERSION:
+        m = rx.search(text)
+        if m:
+            return m
+    for line in text.splitlines():
+        if 'summary' in line or 'an earlier run' in line:
+            continue
+        m = re.search(r'\bcoop v?(\d+\.\d+[\w.]*\d)', line)
+        if m:
+            return m
+    return None
+
+
 def triage(name, text):
     b = build_of(text)
-    coop = re.search(r'\bcoop v?(\d+\.\d+[\w.]*\d)', text)
+    coop = coop_version(text)
     mode = re.search(r'game mode: (\w+)', text)
     fl = faults(text)
     print(f'== {name}')
