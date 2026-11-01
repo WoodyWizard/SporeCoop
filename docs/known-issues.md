@@ -1458,3 +1458,11 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Ticket: BUG-0401
 * Fixed (2026-11-01, fix/w33-unlocks): the party shares its collected parts (`parts.shared`, test
   `parts_shared`).
+
+## Cell: editor_desync, the guest finds no mate after the host's evolution (2026-11-01, fix/w33-unlocks)
+<a id="issue-cell-guest-mate-after-evolution"></a>
+
+* What happens: after the host evolved its cell (vote, editor), the guest's mating call shows the button
+  but no mate comes (`mate=00000000`), so the guest's own cell editor does not open.
+* Reproduce: `tools/lab.py run editor_desync --lane 6` (4 of 4 on 2026-11-01, also on main f0cf695).
+* Ticket: BUG-0411

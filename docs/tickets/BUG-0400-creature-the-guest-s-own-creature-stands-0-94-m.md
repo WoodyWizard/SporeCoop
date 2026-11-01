@@ -2,7 +2,7 @@
 id: BUG-0400
 title: Creature: the guest's own creature stands 0.94 m under the terrain after its own species replaced the host's (creations swap)
 status: fixed
-kind: bug
+kind: test
 stage: Creature
 reported: 2026-11-01
 source: lab monitor (feat/w32-monitor-diag, ground rule), lane 6
