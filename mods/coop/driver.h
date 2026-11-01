@@ -24,6 +24,8 @@ struct State {
     double last_step = 0;  // BUG-0175: the time of the previous step (the nudge per second, not per frame)
     bool kinematic = false; // BUG-0360: a walking partner's puppet, walked and placed on its path (modes.cpp)
     net::Vec3 goal_dir;     // BUG-0360: the direction of the walk goal given to it
+    net::Vec3 drawn;        // BUG-0360 (coop.track): its position before this frame's driving, i.e. where the
+                            // game's update put it and drew it (the mod's frame runs at Present)
 };
 
 inline float speed(const net::Vec3& v) { return std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z); }

@@ -2460,3 +2460,28 @@ answered right after; a 1 s poller beside a standalone run saw no gap. Same sign
 * Thousands of caught faults at one address in a campaign's findings with a guest's ship on a planet
   the host is not on: look at the host's log for a "saving for the share" line followed by a
   "stage: Space 80... -> Space 40..." line before its "save: N objects of ours" line.
+
+## What the other player sees, frame by frame: coop.track and puppet_walk (2026-11-01, fix/w29-puppet-move)
+<a id="testing-puppet-track"></a>
+
+* `coop.track start|stop|count|dump [from] [n]` (main thread, BUG-0360): every frame in the
+  Creature stage, one row for the own avatar (who 255) and one per partner puppet: time, state
+  flags, the driver's teleports, the game position, where the model is drawn (AnimatedCreature
+  +0x04), the interpolated target, the game's speed of the creature, the partner's reported speed,
+  the current main animation id, the animation's walk gait state, +0x137 and the speed state
+  +0xF98 (docs/re/creature.md#creature-puppet-walk). A ring of 30 000 rows (~4 min at 60 fps per
+  puppet); `dump` in pages of 1500 rows.
+* `coop_puppet_walk.py` (suite `puppet_walk`, ~1.6 min cold): one player walks ~25 s by WASD holds
+  and clicks on the ground (seeded: `--seed N` repeats the same walk), the other's track is read
+  back (saved to `out/lane<N>/track/*.json`), both directions. Checks: no frame step beyond 3x the
+  walker's top speed (min 0.75 m), in 0.1 s windows at most 5 % standing (< 0.3x the walker's
+  speed) and at least 85 % at 0.6-1.4x, the walk gait on in at least 80 % of the moving frames.
+  `PUPPET_WALK_CMDS="cmd;cmd"` runs console commands on both games first (experiments).
+  `SPORE_FIX_OFF=creature.puppet_walk` fails (12-62 % standing windows, 1-3 jumps of 2.5-3.5 m,
+  gait 0-95 %); with the fix 0 % standing, 100 % matched, gait 100 %, path error 0.00 m.
+* Pitfalls: the main animation id is no walk measure for puppets (a puppet can keep
+  idle_walk_lookat_loop standing); the walker's own top speed in the fixture is 4.75 m/s; a
+  creature in WASD walk turns (W+D) curves at top speed, which is where a puppet that only walks
+  falls behind.
+* Screenshots of the puppet are hard to judge (tags and creatures of the same species around);
+  `coop.targets all` gives the partner's tag point, not its feet.

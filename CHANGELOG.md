@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+- Creature: the partner's creature no longer moves in steps and teleports while the partner walks:
+  it walks with its walk animation exactly on the partner's path (before it stood or crept between
+  restarted walk orders, fell up to 3.5 m behind and was put in place again; BUG-0360).
+
 ## [0.7.3.2] - 2026-11-01
 
 ### Fixed

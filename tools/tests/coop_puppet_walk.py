@@ -26,6 +26,7 @@ import argparse
 import math
 import random
 import re
+import threading
 import time
 
 import json
@@ -55,22 +56,60 @@ def dump(con):
     for start_i in range(0, n, 1500):
         for line in con.call(f'coop.track dump {start_i} 1500')['out'].splitlines():
             f = line.split()
-            if len(f) != 20:
+            if len(f) != 23:
                 continue
             rows.append({'t': float(f[0]), 'who': int(f[1]), 'flags': int(f[2]), 'tp': int(f[3]),
                          'p': tuple(map(float, f[4:7])), 'd': tuple(map(float, f[7:10])),
                          'tgt': tuple(map(float, f[10:13])), 'gv': float(f[13]), 'rv': float(f[14]),
                          'anim': f[15], 'gait': int(f[16]), 'gait2': int(f[17]), 'moving': int(f[18]),
-                         'ss': int(f[19])})
+                         'ss': int(f[19]), 'vis': int(f[20]), 'sx': float(f[21]), 'sy': float(f[22])})
     return rows
 
 
+def partner_dist(con):
+    """distance from our avatar to the partner's latest state (m), None when unknown"""
+    a = re.search(r'pos=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\)', con.call('coop.avatar')['out'])
+    b = re.search(r'remote \d+ .*? pos=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\)', con.call('coop.status')['out'])
+    return math.dist(tuple(map(float, a.groups())), tuple(map(float, b.groups()))) if a and b else None
+
+
+def partner_screen(con):
+    for line in con.call('coop.targets all')['out'].splitlines():
+        f = line.split()
+        if len(f) == 5 and f[0] == 'player':
+            return int(f[3]), int(f[4])
+    return None
+
+
+def back_to_partner(con, W, H):
+    """walk back next to the partner (a click on the ground at its tag; the camera turned until it
+    is on the screen): the observer's game animates a creature far behind its camera less (the walk
+    gait stayed off for a whole walk 20-45 m behind it)"""
+    for _ in range(5):
+        xy = partner_screen(con)
+        if xy and 40 < xy[0] < W - 40 and 90 < xy[1] < H - 170:
+            con.call(f'click {xy[0]} {min(H - 180, xy[1] + 60)}')
+            time.sleep(2.0)
+            return True
+        con.call(f'drag {W // 2} {H // 2} {W // 2 + 380} {H // 2} right')
+        time.sleep(0.4)
+    return False
+
+
+TETHER = 12.0  # m: the walker turns back to the observer beyond this
+
+
 def walk(con, rng, secs):
-    """a player walking: WASD holds with turns, stops, clicks on the ground ahead"""
+    """a player walking: WASD holds with turns, stops, clicks on the ground ahead, staying near the
+    partner"""
     W, H = screen(con)
     t_end = time.time() + secs
     log = []
     while time.time() < t_end:
+        d = partner_dist(con)
+        if d is not None and d > TETHER:
+            log.append(f'back {d:.0f}m' + ('' if back_to_partner(con, W, H) else ' (not found)'))
+            continue
         r = rng.random()
         if r < 0.45:
             keys = rng.choice([['W'], ['W'], ['W', 'A'], ['W', 'D'], ['A'], ['D'], ['S']])
@@ -128,6 +167,15 @@ def analyse(obs_rows, walker_rows, label):
             gait += 1
         anims_moving[b['anim']] = anims_moving.get(b['anim'], 0) + 1
     errs = [math.dist(r['d'], r['tgt']) for r in pup if r['rv'] > 0.5]
+    # the walk gait over the frames in which the puppet is on the observer's screen
+    obs_av, near, near_gait = None, 0, 0
+    for r in obs_rows:
+        if r['who'] == 255:
+            obs_av = r
+        elif r['rv'] > 0.5 and (r['flags'] & 1) and obs_av:
+            if r['vis'] and 0 < r['sx'] < 1440 and 0 < r['sy'] < 1080:
+                near += 1
+                near_gait += r['gait'] > 0
     # 0.1 s windows while the walker walks (> 1 m/s): the puppet's drawn speed / the walker's speed
     win, i = [], 0
     while i < len(pup):
@@ -155,6 +203,7 @@ def analyse(obs_rows, walker_rows, label):
         'err_p50': pct(errs, 0.5), 'err_p90': pct(errs, 0.9), 'err_max': max(errs) if errs else 0,
         'walk_anim': walk_anim / frames if frames else 0, 'own_walk': own_walk,
         'gait': gait / frames if frames else 0, 'own_gait': own_gait,
+        'near': near, 'near_gait': near_gait / near if near else 0,
         'win': len(win), 'stand': sum(1 for w in win if w < 0.3) / len(win) if win else 1,
         'matched': sum(1 for w in win if 0.6 <= w <= 1.4) / len(win) if win else 0,
         'drive_tp': (pup[-1]['tp'] - pup[0]['tp']) if pup else 0,
@@ -164,11 +213,36 @@ def analyse(obs_rows, walker_rows, label):
     return res
 
 
+class Watch(threading.Thread):
+    """the observer keeps the walker on its screen (right-drag turns its camera), as a player who
+    watches the partner does: the game animates a creature behind the camera rarely, so its walk
+    gait there says nothing (it stayed off for 18 s of walking 8-14 m behind the camera, then on
+    while it stood)"""
+    def __init__(self, con):
+        super().__init__(daemon=True)
+        self.con, self.stop, self.drags = con, threading.Event(), 0
+        self.W, self.H = screen(con)
+
+    def run(self):
+        while not self.stop.is_set():
+            xy = partner_screen(self.con)
+            if not xy or not (60 < xy[0] < self.W - 60 and 60 < xy[1] < self.H - 170):
+                dx = 300 if not xy or xy[0] > self.W // 2 else -300
+                self.con.call(f'drag {self.W // 2} {self.H // 2} {self.W // 2 + dx} {self.H // 2} right')
+                self.drags += 1
+            self.stop.wait(0.6)
+
+
 def direction(walker, observer, wname, oname, rng, secs, ck):
+    watch = Watch(observer)
+    watch.start()
+    time.sleep(2.0)
     for c in (walker, observer):
         c.call('coop.track start')
     time.sleep(0.5)
     log = walk(walker, rng, secs)
+    watch.stop.set()
+    watch.join()
     time.sleep(1.0)
     shot(observer, f'puppet_walk_{oname}_sees_{wname}')
     for c in (walker, observer):
@@ -189,7 +263,8 @@ def direction(walker, observer, wname, oname, rng, secs, ck):
     print(f'    0.1 s windows while it walks: {r["win"]}, the puppet stands (< 0.3 of the walker\'s speed) in '
           f'{r["stand"]:.0%}, moves at 0.6-1.4x its speed in {r["matched"]:.0%}', flush=True)
     print(f'    jumps (t, m, frame ms): {len(r["teleports"])} {r["teleports"][:12]}', flush=True)
-    print(f'    walk gait (animation gait state > 0) in {r["gait"]:.0%} of the frames; the walker\'s own avatar while it moves: '
+    print(f'    walk gait (animation gait state > 0) in {r["gait"]:.0%} of the frames, in {r["near_gait"]:.0%} of the '
+          f'{r["near"]} on the observer\'s screen; the walker\'s own avatar while it moves: '
           f'{r["own_gait"]:.0%}', flush=True)
     print(f'    walk animation (IsIdleWalk) in {r["walk_anim"]:.0%} of the frames; the walker\'s own avatar while it moves: '
           f'{r["own_walk"]:.0%}', flush=True)
@@ -199,7 +274,9 @@ def direction(walker, observer, wname, oname, rng, secs, ck):
     ck(r['win'] > 50 and r['stand'] <= STAND_MAX and r['matched'] >= MATCHED_MIN,
        f'{r["label"]}: the puppet moves with the walker, not in steps (stands in {r["stand"]:.0%} <= {STAND_MAX:.0%}, '
        f'at its speed in {r["matched"]:.0%} >= {MATCHED_MIN:.0%} of {r["win"]} windows)')
-    ck(r['gait'] >= GAIT_MIN, f'{r["label"]}: the puppet walks (walk gait in {r["gait"]:.0%} >= {GAIT_MIN:.0%})')
+    ck(r['near'] >= 150 and r['near_gait'] >= GAIT_MIN,
+       f'{r["label"]}: the puppet walks where the observer sees it (walk gait in {r["near_gait"]:.0%} >= {GAIT_MIN:.0%} '
+       f'of {r["near"]} frames on its screen)')
 
 def main():
     ap = argparse.ArgumentParser()

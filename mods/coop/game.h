@@ -84,6 +84,9 @@ void set_defer_keeps_puppet(bool on); // tests (off: a deferred puppet leaves th
 bool destroy_pending(void* c);     // queued by destroy_creature, still there
 std::string destroy_deferred_status();
 void teleport(void* c, const net::Vec3& pos, const net::Quat& rot);
+// BUG-0360: teleport without the teleport mark (+0xB5D, set by vt 0x44 0xC0C040): the locomotion takes
+// the position, the animation's walk gait goes on (with the mark it restarts every frame)
+void place(void* c, const net::Vec3& pos, const net::Quat& rot);
 // cSpatialObject::SetPosition (vtable 0x38): moves without touching locomotion/animation
 void set_position(void* c, const net::Vec3& pos);
 void set_orientation(void* c, const net::Quat& rot);

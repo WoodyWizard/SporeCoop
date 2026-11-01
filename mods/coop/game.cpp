@@ -820,6 +820,12 @@ void teleport(void* c, const net::Vec3& pos, const net::Quat& rot)
     vcall<void>(spatial(c), 0x44 / 4, &p, &q);
 }
 
+void place(void* c, const net::Vec3& pos, const net::Quat& rot)
+{
+    teleport(c, pos, rot);
+    field<uint8_t>(c, 0xB5D) = 0;
+}
+
 void set_position(void* c, const net::Vec3& pos)
 {
     Vector3 p{pos.x, pos.y, pos.z};

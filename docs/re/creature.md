@@ -1138,3 +1138,42 @@ BUG-0339. Extends [the pool cull](#creature-npc-pool-cull).
   the frame) when the avatar's abilities change under the same avatar (our SetSpecies) or a slot
   points past them. `coop.creations bar [rebuild]` prints the bar (`abilities= used= stale=
   max_index= slots=row.col:index,...`) or has the game build it for the current avatar.
+
+## The partner's puppet: walk gait, teleport vs SetPosition (2026-11-01, fix/w29-puppet-move)
+<a id="creature-puppet-walk"></a>
+
+BUG-0360. GOG 2024, lanes 2-4. Measured with `coop.track` (every frame of the observer's game) and
+`coop_puppet_walk.py` (the walker walks by WASD and clicks). Corrects [the kinematic
+proxies](#creature-kinematic-proxies) on the animation.
+
+* ✔ The partner's puppet was driven like an NPC proxy before BUG-0281 (`drive::step`: a MoveTo again
+  every 0.1 s, a SetPosition pull): in 0.1 s windows while the partner walked it stood (< 0.3 of the
+  partner's speed) in 12-23 % and moved at 0.6-1.4x its speed in 57-69 %; it trailed p50 0.4-1.6 m,
+  p90 1.1-3.0 m, max 3.4 m, and the 4 m snap teleported it now and then (60+ fps, rtt < 1 ms). In
+  the owner's game (longer straight walks) the snaps were most of what he saw.
+* ✔ `Anim::AnimatedCreature` (creature +0xB54): +0x04 is where the model is drawn; it equals the
+  creature's position every frame (both after SetPosition and teleport). vt 0x58 (GOG 2016
+  0xA05030, vtable 0x1449640, ret 0x10) `GetCurrentAnimation(u32* id, float*, int*, int*)` writes the
+  current main animation id.
+* ✔ The walk gait: `+0x17C` (anim cid) `+0x15B8` holds two ints, the first 0 when no walk gait runs,
+  1-3 while it walks (a walking avatar: > 0 in 94-97 % of its moving frames, 0 standing).
+  `Creature_ChooseIdleAnim` 0xC0C790 picks idle_walk_lookat (0x4866D8E / 0x4866DAB) from it and the
+  speed state +0xF98 (2 walking, 3 running, 0 standing); otherwise the plain idle 0x2481DE5. The main
+  animation id alone is no walk measure for puppets: a puppet can keep 0x4866DAB standing.
+* ✔ Teleport (creature spatial vt 0x44, 0xC0C040) sets +0xB5D = 1: a creature teleported every frame
+  never gets a walk gait (gait 0 in 97-100 % of the moving frames, with or without a MoveTo; the
+  main animation stays 0x2481DE5): it slides. SetPosition (vt 0x38, 0xC0DEA0) moves the model and the
+  animation without that flag.
+* ✔ SetPosition every frame onto the interpolated path while the game walks the creature (the
+  partner's speed via SetDesiredSpeed, a MoveTo 12 m ahead given again only when the direction turns
+  > ~6 degrees, at most every 0.3 s, at least every 1.5 s): the position stays exactly on the path
+  (error 0.00 m in all frames), gait > 0 in 100 % of the moving frames, 0 % standing windows,
+  100 % matched. Not undone by the locomotion here (BUG-0281 saw SetPosition nudges undone while a
+  MoveTo was given every 0.1 s).
+* ✔ Mixing teleports in breaks it: the same walking with a teleport snap at 2.5 m showed pairs of
+  2.5 m jumps (away and back) right after each snap; corrections by teleport every 0.1-0.25 s cost
+  the gait (15 %) or added standing windows (12 %). Walking by MoveTo alone (no SetPosition) keeps
+  the gait but trails up to 2.5 m on curves (the creature runs at its top speed and cannot catch up).
+* ~ A running NPC's proxy (`npc.kinematic`, teleported every frame) is expected to slide without a
+  walk gait for the same reason (inferred from the puppet measurement, BUG-0361, not measured on
+  proxies).

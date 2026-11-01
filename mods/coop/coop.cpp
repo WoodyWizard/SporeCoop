@@ -438,26 +438,29 @@ struct TrackSample {
     uint8_t who; // remote id, 255 = the own avatar
     uint8_t flags; // state flags of the target (PF_*), the own avatar: 0
     uint16_t tp;   // the puppet's teleports so far (drive::State)
-    net::Vec3 p, d, tgt;
+    net::Vec3 p, d, tgt; // p: now (after the driving), d: drawn this frame (before it)
     float gv, rv; // the game's speed of the creature, the remote's reported speed
     uint32_t anim;
     int16_t gait = -1, gait2 = -1; // the animation's gait state (game::gait_state)
     int8_t moving = -1, speed_state = -1;
+    int8_t vis = 0; // world_to_screen of its position answered (in front of the camera)
+    float sx = 0, sy = 0; // its screen position then
 };
 static std::deque<TrackSample> g_track;
 static bool g_track_on = false;
 static double g_track_t0 = 0;
 constexpr size_t kTrackMax = 30000;
 
-static void track_one(uint8_t who, void* c, const net::PlayerState* s, uint16_t tp, double now)
+static void track_one(uint8_t who, void* c, const net::PlayerState* s, uint16_t tp, double now,
+                      const net::Vec3* drawn = nullptr)
 {
     TrackSample x{};
     x.t = (float)(now - g_track_t0);
     x.who = who;
     x.tp = tp;
     x.p = game::position(c);
-    x.d = x.p;
-    game::drawn_state(c, &x.d, &x.anim);
+    game::drawn_state(c, nullptr, &x.anim);
+    x.d = drawn ? *drawn : x.p; // the puppet: where the game drew it this frame (before our driving)
     int g = -1, g2 = -1, mv = -1, ss = -1;
     if (game::gait_state(c, &g, &g2, &mv, &ss)) {
         x.gait = (int16_t)g;
@@ -466,6 +469,10 @@ static void track_one(uint8_t who, void* c, const net::PlayerState* s, uint16_t 
         x.speed_state = (int8_t)ss;
     }
     x.gv = drive::speed(game::velocity(c));
+    float w[3] = {x.p.x, x.p.y, x.p.z}, sc[2] = {0, 0};
+    x.vis = H->world_to_screen(w, sc) ? 1 : 0;
+    x.sx = sc[0];
+    x.sy = sc[1];
     if (s) {
         x.tgt = s->pos;
         x.rv = drive::speed(s->vel);
@@ -487,7 +494,7 @@ void track_tick(double now)
             continue;
         net::PlayerState s;
         if (r.buf.sample(now, s))
-            track_one((uint8_t)id, pp, &s, (uint16_t)r.drv.teleports, now);
+            track_one((uint8_t)id, pp, &s, (uint16_t)r.drv.teleports, now, g_puppet_hold ? nullptr : &r.drv.drawn);
     }
 }
 
@@ -501,13 +508,13 @@ int c_track(void*, int argc, const char* const* argv, SkOut* out)
     } else if (!strcmp(a, "stop"))
         g_track_on = false;
     else if (!strcmp(a, "dump")) {
-        // dump [from] [n]: t who flags tp px py pz dx dy dz tx ty tz gv rv anim gait gait2 moving speed_state
+        // dump [from] [n]: t who flags tp px py pz dx dy dz tx ty tz gv rv anim gait gait2 moving speed_state vis sx sy
         size_t from = argc > 2 ? (size_t)atol(argv[2]) : 0, n = argc > 3 ? (size_t)atol(argv[3]) : 2000;
         for (size_t i = from; i < g_track.size() && i < from + n; i++) {
             const auto& x = g_track[i];
-            SAY("%.4f %u %u %u %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.2f %.2f %08X %d %d %d %d\n", x.t, x.who,
-                x.flags, x.tp, x.p.x, x.p.y, x.p.z, x.d.x, x.d.y, x.d.z, x.tgt.x, x.tgt.y, x.tgt.z, x.gv, x.rv, x.anim,
-                x.gait, x.gait2, x.moving, x.speed_state);
+            SAY("%.4f %u %u %u %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.2f %.2f %08X %d %d %d %d %d %.0f %.0f\n", x.t,
+                x.who, x.flags, x.tp, x.p.x, x.p.y, x.p.z, x.d.x, x.d.y, x.d.z, x.tgt.x, x.tgt.y, x.tgt.z, x.gv, x.rv,
+                x.anim, x.gait, x.gait2, x.moving, x.speed_state, x.vis, x.sx, x.sy);
         }
         return 0;
     }
