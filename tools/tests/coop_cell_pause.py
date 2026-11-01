@@ -18,6 +18,10 @@ Creature, then froze.
 4. The guest leaves the session and then the Cell stage for the galaxy menu (`coop.menu`: the game
    frees the Cell pools and the broadphase, 0xE7F9B0): its game still answers, and no game faulted (the lab checks the logs and crash reports too).
 SPORE_FIX_OFF=cell.sap_pending must FAIL (pending grows past 20000 entries, objects left open).
+The churn holds the guest's mirrors on purpose (BUG-0348: no new cell while the pending list is near
+full): the guest really lacks the host's cells until it resumes, a sync-check MISMATCH the test makes
+itself (BUG-0379: `c: 700 missing` in 6 of 6 runs). The rounds are marked `LAB-MARK sync-force`
+for the lab's gate, and after the resume a sync-check of its own must find the two games equal.
 
   SPORE_LANE=8 python3 tools/tests/coop_cell_pause.py [--rounds 12]
 """
@@ -26,7 +30,7 @@ import re
 import time
 
 import uifind
-from twoinst import Checks, start
+from twoinst import Checks, lab_mark, start
 
 CAP = 8192  # entries per pending array: 2 x the object capacity (4096)
 
@@ -39,6 +43,11 @@ def sap(con):
 def num(con, key):
     m = re.search(r'\b' + key + r'=(-?\d+)', con.call('coop.pool')['out'])
     return int(m.group(1)) if m else None
+
+
+def sync_counts(con):
+    m = re.search(r'checks (\d+) ok (\d+) differs (\d+) mismatch (\d+)', con.call('coop.diag')['out'] or '')
+    return tuple(int(x) for x in m.groups()) if m else None
 
 
 def faults(con):
@@ -63,6 +72,7 @@ def main():
     paused = uifind.shown(guest, 'Resume Game')
     ck(bool(paused), f'1. the guest\'s pause menu is open ({paused})')
     peak = 0
+    lab_mark('sync-force', 'on')  # the churn holds the guest's mirrors: missing on purpose until the resume
     for i in range(a.rounds):
         guest.call('coop.pool zap 5000')
         time.sleep(2.5)
@@ -83,6 +93,19 @@ def main():
        f'duplicates {s.get("dup_min")})')
     m = num(guest, 'mirrors') or 0
     ck(m > 100, f'3. the guest mirrors the host\'s cells again ({m})')
+    time.sleep(4)
+    lab_mark('sync-force', 'off')
+    # the host's own sync-check: the guest has the host's cells again (an OK, no difference)
+    c0 = sync_counts(host)
+    host.call('coop.diag sync now')
+    c1 = c0
+    t0 = time.time()
+    while time.time() - t0 < 20 and c0 and c1 and c1[1] == c0[1] and c1[3] == c0[3]:  # an OK or a MISMATCH
+        time.sleep(1)
+        c1 = sync_counts(host)
+    print(f'  host sync-check counts (checks ok differs mismatch): {c0} -> {c1}', flush=True)
+    ck(c0 and c1 and c1[1] > c0[1] and c1[3] == c0[3],
+       f'3. after the resume the host\'s sync-check finds the guest equal ({c0} -> {c1})')
     print('  guest:', guest.call('coop.leave')['out'].strip()[:100], flush=True)
     time.sleep(3)
     # out of the Cell stage (the galaxy menu): the game frees the Cell pools and the broadphase
