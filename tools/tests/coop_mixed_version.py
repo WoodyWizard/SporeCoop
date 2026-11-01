@@ -221,9 +221,8 @@ def main():
                 deploy_old(lane.LANE, tree)
             return r
         twoinst.sh = sh_old
+    # every game here starts cold and writes a new log (SporeKit starts its log anew): read each from its start
     offs = {}
-    for inst in (lane.HOST, lane.GUEST, 2 * lane_b - 1):
-        offs[inst] = size(inst)
     h, g = start(a.fixture)
     lane_state(**{**lane_state(), 'build': ''})  # never reused by a warm test (old files / an extra game)
     old_side = a.old == 'host'
@@ -231,7 +230,6 @@ def main():
     c = run_extra(lane_b, 2 * lane_b - 1, 'mp1', None if old_side else tree)
     carol = P('Carol', c, 2 * lane_b - 1, not old_side)
     ps.append(carol)
-    offs[carol.inst] = size(carol.inst)
     ck = Checks()
     host = ps[0]
     carol.call(f'cheat coop join 127.0.0.1:{lane.PORT} Carol')
