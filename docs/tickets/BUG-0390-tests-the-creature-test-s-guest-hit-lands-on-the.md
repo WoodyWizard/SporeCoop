@@ -40,4 +40,6 @@ try the next one).
      or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
 
 ## History
+- 2026-11-01: fix/w30-npc-walk: also with an hp 5 NPC (out/lab/20261101-131942 creature#2); with that branch's walk switches off
+  1 of 3 passed (20261101-132700), on 2 of 3 (20261101-132708): not the walk driving.
 - 2026-11-01: opened.

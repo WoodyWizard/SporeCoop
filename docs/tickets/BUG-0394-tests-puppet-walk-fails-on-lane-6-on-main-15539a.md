@@ -69,7 +69,20 @@ Observed (fix/w30-npc-walk, lanes 2-5, `SPORE_FPS=30`, `SPORE_NET=player`; coop.
   97-98 %, no jumps, gait 98-99 %).
 * Variants at 30 fps / player network: out/lab/20261101-123326-fix-w30-npc-walk 12 of 14 (puppet_walk_player#1:
   the walker could not walk back, fixed in the test after; npc_walk_fps30#1: a 2.7 m teleport of a proxy whose
-  NPC moved without a speed, fixed by npc.path after). REGRESSION_TAIL
+  NPC moved without a speed, fixed by npc.path after).
+* Final code, gates on (lanes 2-5): out/lab/20261101-125335-fix-w30-npc-walk 12 of 17 (ok: puppet_under, npc_walk,
+  npc_walk_tribe, tribe_walk_mobile, creature_partner_hp, creature, team, sync, puppet_walk_fps30,
+  puppet_walk_player, npc_walk_fps30, npc_walk_player; failed: tribe_walk on the sync-check gate "n: 3 apart"
+  (BUG-0393, also in 11 main runs before), puppet_walk (the walker walked little, 26 windows), puppet_slope (guest
+  null call and freeze, BUG-0398), tribe_walk_fps30 / _player (frame counts for 60 fps and SPORE_FPS capping the
+  load: fixed in the test and the suite after)). Again on lanes 4-5: 20261101-130448 puppet_walk 2/2, puppet_slope
+  2/2, tribe_walk 2/2, tribe_walk_fps30 2/2, tribe_walk_player 1/2 (frame count, fixed after);
+  20261101-131942 tribe_walk_fps30 2/2, tribe_walk_player 2/2.
+* creature fails on BUG-0390 (no hit applied) with this branch's switches on and off alike: on 2 of 3
+  (20261101-132708), off (`SPORE_FIX_OFF=npc.walk,npc.path,npc.walk_tribe,creature.puppet_path`) 1 of 3
+  (20261101-132700).
+* Smoke (lanes 2-3): out/lab/20261101-130440-fix-w30-npc-walk 13 of 14 (creature: BUG-0390). make -j8 and
+  make test pass.
 
 ## History
 - 2026-11-01: opened.
