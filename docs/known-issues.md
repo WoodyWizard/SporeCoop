@@ -1339,3 +1339,11 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   BUG-0374 the host drops a partner's hit on it, and the check `hits applied 0 -> 1` fails (2 of 4 runs).
 * Reproduce: `tools/lab.py run creature --repeat 4 --retry 0`; a failing run prints `host hp 10.0 -> 10.0`.
 * Ticket: BUG-0390
+
+## Lab gate: sync-check "p: 1 apart" in Tribe while the view jumps (2026-11-01, fix/w30-tribe-walk)
+<a id="issue-tribe-p-gate"></a>
+
+* What happens: chaos_tribe and tribe_walk_mobile fail on the sync-check gate with only the players' RTS
+  point apart (p0 20-70 m), every member and animal matching; the tests move the view by the minimap.
+* Reproduce: `tools/lab.py run chaos_tribe,tribe_walk_mobile --repeat 3 --retry 0`.
+* Ticket: BUG-0393
