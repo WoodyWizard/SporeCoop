@@ -40,6 +40,20 @@ table (`social: relationship event <n> species ... relation a -> b, impressed x 
 next failing run names it. Candidate (inferred): the refused / timed-out social game of the guest leaves the
 host's NPC in a social game with the guest's puppet that the game then ends as failed (a negative event).
 
+Lab 20261101-141938 (creature_social_ally, lane 4) names the events (host log, the new diagnostics): the guest
+impressed #52 (event 3: impressed 0 -> 1); then a Kook alpha #42 (2 rounds: the guest's feed "Impressing: 1/2")
+got event 2 (impressed 1 -> 0) and event 0 (killed 0 -> 1) in the same frame, with `dna: 10 -> 19
+cause=hunt:1+9` and "+9 DNA from Bob's hunt": **the guest's own avatar killed the Kook** (a hit request of the
+guest applied by the host; the guest's health went 16 -> 14: the Kook bit back). Later #41 and #53 were impressed
+((1, 0, 1) -> (3, 1, 0) -> (4, 2, 0)) and #53 was killed 7 s after its impression the same way (event 2 then 0:
+impressed 2 -> 0, relation 4 -> 1), the species ended at (1, 0, 1): no ally. So BUG-0021's "Kooks die during the
+ally phase" are kills by the guest itself during its social play. Which input attacks is not settled: the test
+reads the game's stance before each key 1 (0 every time, which the mod and the tests take for social:
+social.cpp `GetAbilityMode() == 0`; the button at 690, 998 sets 0, the one at 750, 998 sets 1), and it clicks the
+Kook again between the rounds of an alpha (engage). Next: on a guest in the social stance, press key 1 and click
+a mirrored Kook separately and watch `hits_sent` (`coop.npc` on the guest) and the host's `dna: ... cause=hunt:1`;
+check what GetAbilityMode 0 / 1 mean (ModAPI's CreatureGameData).
+
 ## Fix
 Not fixed. fix/w4-tests (5a72494) plays a refused game again with the same Kook (it walked out of the
 range: host_act refuses acts from more than kActRange + 4 m) instead of moving on. Not enough: 1 OK of

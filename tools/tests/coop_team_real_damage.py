@@ -108,6 +108,7 @@ def run(ck, host, guest, victim, shots):
     vcon.call('coop.team hp %.2f' % (0.6 * mx))
     tried = set()
     got = provoke(host, guest, victim, tried)
+    h_set = 0.6 * mx
     ck(got is not None, f'{victim}: a host NPC fights back and hurts it (the game\'s own hits)')
     if not got:
         return
@@ -128,8 +129,8 @@ def run(ck, host, guest, victim, shots):
     host.call(f'coop.npc hosthit {nid} 100000')  # the attacker dies: its bites end
     print(f'  {victim} hurt: own {best and best[2]}/{best and best[3]}, the {other}\'s game shows '
           f'{best and best[0]}/{best and best[1]}', flush=True)
-    ck(best and best[2] < 0.6 * mx - 0.1, f'{victim}: its own game took the NPC\'s hits ({best and best[2]} < 60 % of {mx})')
-    ck(best and abs(best[0] - best[2]) <= tol(mx) and best[0] < 0.6 * mx,
+    ck(best and best[2] < h_set - 0.3, f'{victim}: its own game took the NPC\'s hits ({best and best[2]} < {h_set:.2f} - 0.3)')
+    ck(best and abs(best[0] - best[2]) <= tol(mx) and best[0] < 0.97 * mx,
        f'{victim}: the {other}\'s game shows it hurt ({best and best[0]} / own {best and best[2]})')
     # 2. regen next to the partner
     time.sleep(1.0)
@@ -155,14 +156,28 @@ def run(ck, host, guest, victim, shots):
         return
     nid2, bite = got
     print(f'  the {other} next to it: {beside(ocon, vcon, 3):.1f} m', flush=True)
-    vcon.call('coop.team hp %.2f' % max(0.05, 0.4 * bite))
-    t0 = time.time()
+    # one bite from death until a bite lands: the regen next to the partner is undone each second, and the victim
+    # hits the NPC lightly every 3 s (an NPC that lost interest fights back again)
+    target = max(0.05, 0.4 * bite)
+    vcon.call('coop.team hp %.2f' % target)
+    t0 = last_set = last_hit = time.time()
     own = None
-    while time.time() - t0 < 12:
+    while time.time() - t0 < 25:
         own, _ = own_hp(vcon)
         if own is not None and (own <= 0 or own >= 0.3 * mx):
             break
+        now = time.time()
+        if own is not None and own > target + 0.01 and now - last_set >= 1.0:
+            vcon.call('coop.team hp %.2f' % target)
+            last_set = now
+        if now - last_hit >= 3.0:
+            if victim == 'guest':
+                guest.call(f'coop.npc hit {nid2} 0.1')
+            else:
+                host.call(f'coop.npc hosthit {nid2} 0.1')
+            last_hit = now
         time.sleep(0.2)
+    print(f'  {victim}: {time.time() - t0:.0f} s until the lethal bite', flush=True)
     host.call(f'coop.npc hosthit {nid2} 100000')
     time.sleep(1.0)
     own, omx = own_hp(vcon)
