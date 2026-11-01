@@ -44,8 +44,6 @@ def allow(gate, ticket, reason, stage=None, kind=None, who=None, match=None):
 ALLOW_ALL = [
     allow('monitor', 'BUG-0399', 'the guest shows a few host animals under its ground for 20-30 s after joining Tribe',
           kind='proxies', match=r'under the ground \(Tribe\)'),
-    allow('monitor', 'BUG-0400', "the guest's own creature stands under the terrain after its own species replaced the "
-          "host's", kind='ground', who='guest', match=r'its own creature [\d.]+ m under the ground \(Creature\)'),
 ]
 
 

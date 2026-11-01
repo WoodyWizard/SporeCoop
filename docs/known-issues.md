@@ -1444,6 +1444,10 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   0.94 m under the terrain (own trace line `agl=-0.94`) in one warm creature test on lane 6.
 * Reproduce: not reliably; the lab's ground rule reports it (allowed in the lab).
 * Ticket: BUG-0400
+* Fixed (2026-11-01, fix/w33-unlocks): not the swap. The `team` test's `coop.npc gopos` to host x + 1.5 m
+  (a chord of the planet, 0.5 m nearer its centre there) put the creature under the terrain, where the
+  game leaves a grounded creature; gopos now puts it onto the ground (`tools.gopos_ground`), the lab
+  allowance is gone.
 
 ## Creature: the host's part unlocks never reach the guests (2026-11-01, feat/w32-monitor-diag)
 <a id="issue-creature-unlocks-sync"></a>
@@ -1452,3 +1456,5 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   editor offers the collected parts of the save they loaded).
 * Reproduce: `coop.parts unlock 3` on the host, `coop.parts` on both (monitor_plant does it).
 * Ticket: BUG-0401
+* Fixed (2026-11-01, fix/w33-unlocks): the party shares its collected parts (`parts.shared`, test
+  `parts_shared`).
