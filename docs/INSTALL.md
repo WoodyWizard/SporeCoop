@@ -45,8 +45,8 @@ GOG 2024 players can play together. The log says "the unpacked code is the code 
 Steam installs Spore and Galactic Adventures as two apps in two folders next to each other: base
 Spore (app 17390) in `steamapps\common\Spore` (only `SporeBin`, no `SporebinEP1`) and Galactic
 Adventures (app 24720) in **`steamapps\common\Spore 24720`** (Steam may write it `spore 24720`), which
-has `SporebinEP1`. SporeCoop goes into `Spore 24720`; the setup finds it by itself, also when you
-choose `Spore` or its `SporeBin`.
+has `SporebinEP1`. SporeCoop goes into `Spore 24720`: choose that folder in the setup (setups newer
+than 0.7.3.3 find it by themselves, also when you choose `Spore` or its `SporeBin`).
 
 **0.7.x is the last version for the GOG 2016 build.** From 0.8 SporeCoop supports only the current
 GOG build (the 2024 update; GOG Galaxy and the GOG installers give you that one): with the 2016
@@ -105,15 +105,16 @@ sha256sum "SPORE/SporebinEP1/SporeApp.exe"
 
 1. Download **`SporeCoopSetup.exe`** from the
    [latest release](https://github.com/WoodyWizard/SporeCoop/releases/latest) and run it.
-2. It finds the game by itself (GOG and EA registry entries, Steam's library folders, common
-   folders); if not, press **Browse...** and choose the SPORE folder (the one with `SporebinEP1`).
-   Choosing its `SporeBin` or `SporebinEP1` folder is fine too: the setup takes the folder above it.
-   **Steam:** Galactic Adventures has its own folder, `steamapps\common\Spore 24720`; if you choose
-   `steamapps\common\Spore` (base Spore, no `SporebinEP1`) the setup says "Galactic Adventures is
-   installed in ...\Spore 24720: using that folder" and installs there.
-   If it says **Galactic Adventures is not installed**, no Spore folder it found has `SporebinEP1`:
-   install Galactic Adventures first (on Steam: the *Spore Galactic Adventures* DLC, which Steam puts
-   into `steamapps\common\Spore 24720`), then run the setup again.
+2. It finds the game by itself (GOG and EA registry entries, common folders); if not, press
+   **Browse...** and choose the SPORE folder (the one with `SporebinEP1`).
+   **Steam:** Galactic Adventures has its own folder, **`steamapps\common\Spore 24720`**: choose that
+   one, not `steamapps\common\Spore` (base Spore, no `SporebinEP1`) and not `SporeBin`. No
+   `Spore 24720` folder means Galactic Adventures is not installed: install the *Spore Galactic
+   Adventures* DLC first, SporeCoop needs it.
+   Setups newer than 0.7.3.3 also search Steam's library folders, take the folder above a chosen
+   `SporeBin` / `SporebinEP1`, switch to `Spore 24720` by themselves ("Galactic Adventures is installed
+   in ...\Spore 24720: using that folder") and say **Galactic Adventures is not installed** when no
+   folder has it.
 3. It shows whether your game build is the tested one and which SporeCoop version is installed.
    Press **Install**. The setup downloads the newest release from GitHub and checks it.
 4. If the game is under `C:\Program Files (x86)`, the setup offers to restart itself as
@@ -258,7 +259,7 @@ Stuck? Ask in the [SporeCoop Discord](https://discord.gg/7Yre7u4b8x).
 
 | Problem | What to do |
 |---|---|
-| The setup says **Galactic Adventures is not installed** | No Spore folder the setup found has `SporebinEP1` (the Galactic Adventures game). On Steam, Galactic Adventures is its own DLC app and installs into its own folder, `steamapps\common\Spore 24720`, next to base Spore's `steamapps\common\Spore` (which never has `SporebinEP1`): install the *Spore Galactic Adventures* DLC in Steam, then run the setup again or choose `Spore 24720`. On GOG the SPORE Collection has it. |
+| The setup says **Galactic Adventures is not installed** (setups newer than 0.7.3.3) | No Spore folder the setup found has `SporebinEP1` (the Galactic Adventures game). On Steam, Galactic Adventures is its own DLC app and installs into its own folder, `steamapps\common\Spore 24720`, next to base Spore's `steamapps\common\Spore` (which never has `SporebinEP1`): install the *Spore Galactic Adventures* DLC in Steam, then run the setup again or choose `Spore 24720`. On GOG the SPORE Collection has it. |
 | The setup says **SporeApp.exe is not in this folder's SporebinEP1** | Choose the SPORE folder itself (the one that holds `SporebinEP1`, `Data`, ...). On Steam it is `steamapps\common\Spore 24720` (Galactic Adventures) in the library where Spore is installed, not `steamapps\common\Spore`. |
 | The setup says **GitHub not reachable** or **the server answered 403** | GitHub limits requests per IP address (VPNs and shared networks hit it). Versions after 0.7.3.3 fall back to the release page; if that fails too, wait an hour or turn the VPN off, or install by hand: download `SporeCoop-<version>.zip` from the [releases](https://github.com/WoodyWizard/SporeCoop/releases/latest), extract it into `SporebinEP1` and run `install.bat` (section 3, *With install.bat*). The release zip also has a `SporeCoopSetup.exe` that installs the pack next to it without the internet. |
 | No **Co-op** item in the menu | Check the build (section 2). Check that `steam_api.dll` in `SporebinEP1` is the SporeCoop one (about 8 KB) and `steam_api_orig.dll` exists. Look at `mods\logs\sporekit.log`. If it says `WATCHDOG (no frames` while the game draws, another overlay (Steam, Discord, RivaTuner) keeps the frames from SporeKit: update to 0.7.2 or newer, which then takes the frames from the game loop. |
