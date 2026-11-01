@@ -161,6 +161,8 @@ static void enforce_table()
 
 // ------------------------------------------------------------------ guest: actions on mirrors
 static int g_engaged = -1;            // proxy id the avatar engaged socially
+static int g_social_with = -1;     // the proxy of the guest's last social act / engagement (BUG-0021)
+static double g_social_with_at = -100;
 static double g_engaged_at = 0;
 static bool g_keys[4];
 static uint32_t g_engages = 0, g_acts_sent = 0, g_results_in = 0;
@@ -347,6 +349,31 @@ static bool act(int slot)
         return false; // no such ability, cooling down or no energy
     send_act((uint16_t)g_engaged, field<uint32_t>(ability(av, idx), 8));
     g_engaged_at = H->time_seconds();
+    g_social_with = g_engaged;
+    g_social_with_at = g_engaged_at;
+    return true;
+}
+
+// BUG-0021: in the social stance (GetAbilityMode 0) a guest's key 1 next to the Kook it was impressing sent a hit
+// now and then (coop_creature_social_ally.py: `hits_sent` +1 with the stance 0 before and after the key; the host
+// applied it, the Kook died and the species lost its impressions: (4, 2) -> (1, 0, killed 1), no ally). A player in
+// the social stance cannot attack: such a hit is not sent. `coop.fix social.no_bite off`: sent (0.7.3.3).
+static bool g_no_bite_fix = true;
+COOP_FIX("social.no_bite", "BUG-0021", g_no_bite_fix, "creature: a guest's hit in the social stance is not sent to the host (it killed the creature being impressed)");
+static uint32_t g_social_hits_dropped = 0;
+
+
+bool drop_social_hit(uint16_t proxy_id)
+{
+    // only the creature the avatar plays a social game with (engaged, or a social act on it in the last 15 s):
+    // test hits (`coop.npc hit`) and fights in the default stance elsewhere are not touched
+    bool socialising = (int)proxy_id == g_engaged ||
+                       ((int)proxy_id == g_social_with && H->time_seconds() - g_social_with_at < 15.0);
+    if (!g_no_bite_fix || !socialising || !a_AbilityMode || cdecl_call<int>(a_AbilityMode) != 0)
+        return false;
+    if (g_social_hits_dropped++ < 5)
+        H->log(M, SK_INFO, "social: a hit of the avatar on npc %u in the social stance is not sent (engaged %d)", proxy_id,
+               g_engaged);
     return true;
 }
 
@@ -688,9 +715,9 @@ std::string status()
     else
         snprintf(b, sizeof b,
                  "social(guest): engaged=%d engages=%u acts_sent=%u results_in=%u species_rx=%u species_fixed=%u "
-                 "events_dropped=%u cards_refreshed=%u goal_dna_sent=%u\n",
+                 "events_dropped=%u cards_refreshed=%u goal_dna_sent=%u social_hits_dropped=%u\n",
                  g_engaged, g_engages, g_acts_sent, g_results_in, g_table_rx, g_table_fixed, g_events_dropped,
-                 g_cards_refreshed, g_goal_dna_dropped);
+                 g_cards_refreshed, g_goal_dna_dropped, g_social_hits_dropped);
     return b;
 }
 

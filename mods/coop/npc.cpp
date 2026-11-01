@@ -18,6 +18,7 @@
 
 #include "creations.h"
 #include "creature_hp.h"
+#include "social.h"
 #include "driver.h"
 #include "game.h"
 #include "net/validate.h"
@@ -1537,6 +1538,8 @@ bool damage_filter(void* c, float& damage, int type, void* attacker)
     if (is_guest()) {
         auto it = g_proxy_of.find(c);
         if (it != g_proxy_of.end()) { // hit on a host NPC: the host applies it
+            if (attacker == av && social::drop_social_hit(it->second))
+                return false; // BUG-0021: the social stance does not attack
             if (attacker == av) {
                 net::DamageReq q;
                 q.net_id = it->second;
