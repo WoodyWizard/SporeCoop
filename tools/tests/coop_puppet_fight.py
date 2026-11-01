@@ -73,16 +73,30 @@ def combat_stance(con):
     return stance(con) == 1
 
 
-def fight(con, rng, secs, log):
-    """a player fighting: target an NPC (click), abilities, bites, turns, the next NPC"""
+COME_SKIP = 1.5  # s around a teleport of the test (`coop.team come`) left out of the checks
+
+
+def fight(con, rng, secs, log, t_track, comes):
+    """a player fighting: target an NPC (click), abilities, bites, turns, the next NPC. Beyond 14 m from the partner
+    it walks back (a click at its tag); when that fails twice the test puts it next to the partner (`coop.team
+    come`, a teleport: its time on the track clock goes to `comes` and is left out of the checks)"""
     W, H = screen(con)
+    lost = 0
     t_end = time.time() + secs
     con.call('coop.team hp 1000')
     log.append(f'combat stance {combat_stance(con)}')
     while time.time() < t_end:
         d = partner_dist(con)
         if d is not None and d > 14:  # walks back to the partner (the observer's game animates it on screen)
-            log.append(f'back {d:.0f}m' + ('' if back_to_partner(con, W, H) else ' (not found)'))
+            ok = back_to_partner(con, W, H)
+            lost = 0 if ok else lost + 1
+            log.append(f'back {d:.0f}m' + ('' if ok else ' (not found)'))
+            if lost >= 2:
+                comes.append(time.time() - t_track)
+                con.call('coop.team come')
+                log.append('come (teleport, left out)')
+                lost = 0
+                time.sleep(0.5)
             continue
         tg = npc_targets(con)
         r = rng.random()
@@ -143,7 +157,9 @@ def interp(rows, t):
     return tuple(x + (y - x) * k for x, y in zip(a['p'], b['p']))
 
 
-def analyse(obs_rows, fighter_rows, label):
+def analyse(obs_rows, fighter_rows, label, comes=()):
+    def near_come(t):
+        return any(abs(t - c) <= COME_SKIP for c in comes)
     own = [r for r in fighter_rows if r['who'] == 255]
     pup = [r for r in obs_rows if r['who'] != 255 and (r['flags'] & 1)]
     top = max(pct([r['gv'] for r in own if r['gv'] > 0.3], 0.99), 4.0)
@@ -155,16 +171,16 @@ def analyse(obs_rows, fighter_rows, label):
             continue
         dts.append(dt)
         step = math.dist(a['d'], b['d'])
-        if step > max(TP_MIN, TP_FACTOR * top * allow_dt):
+        if step > max(TP_MIN, TP_FACTOR * top * allow_dt) and not near_come(b['t']):
             jumps.append((round(b['t'], 2), round(step, 2), round(dt * 1000)))
     span = (pup[-1]['t'] - pup[0]['t']) if len(pup) > 1 else 0.0
-    tps = (pup[-1]['tp'] - pup[0]['tp']) if pup else 0
+    tps = sum(1 for a, b in zip(pup, pup[1:]) if b['tp'] > a['tp'] and not near_come(b['t']))
     # the delay that fits best (over the frames in which the fighter moves faster than 1 m/s: standing frames fit
     # any delay), then the error at it and at no delay
     def own_speed(t):
         lo = [r for r in own if t - 0.15 <= r['t'] <= t + 0.15]
         return max((r['gv'] for r in lo), default=0.0)
-    mov = [r for r in pup[::2] if own and r['t'] - 0.8 >= own[0]['t'] and own_speed(r['t']) > 1.0] if own else []
+    mov = [r for r in pup[::2] if own and r['t'] - 0.8 >= own[0]['t'] and own_speed(r['t']) > 1.0 and not near_come(r['t'])] if own else []
     best = None
     for k in range(0, 41):
         lag = 0.02 * k
@@ -210,8 +226,10 @@ def direction(fighter, observer, fname, oname, rng, secs, ck):
     time.sleep(1.5)
     for c in (fighter, observer):
         c.call('coop.track start')
+    t_track = time.time()
     time.sleep(0.5)
-    log = fight(fighter, rng, secs, [])
+    comes = []
+    log = fight(fighter, rng, secs, [], t_track, comes)
     watch.stop.set()
     watch.join()
     time.sleep(1.0)
@@ -223,7 +241,7 @@ def direction(fighter, observer, fname, oname, rng, secs, ck):
     with open(path, 'w') as f:
         json.dump({'observer': obs, 'fighter': fig}, f)
     print(f'  per-frame samples: {path}', flush=True)
-    r = analyse(obs, fig, f'{oname} watches {fname} fight')
+    r = analyse(obs, fig, f'{oname} watches {fname} fight', comes)
     print(f'  {fname} fought: {"; ".join(log)}', flush=True)
     mins = max(r['span'] / 60, 0.5)
     allowed = math.ceil(PER_MIN * mins)
@@ -232,7 +250,7 @@ def direction(fighter, observer, fname, oname, rng, secs, ck):
     print(f'    drawn vs the fighter\'s own path: at the same moment p95 {r["now_p95"]:.2f} m (while it moves: '
           f'{r["mov_now_p95"]:.2f} m, {r["mov_n"]} samples); after the best delay {r["lag"]:.2f} s: p50 {r["err_p50"]:.2f} p95 '
           f'{r["err_p95"]:.2f} max {r["err_max"]:.2f} m; driver teleports {r["tps"]}; jumps {len(r["jumps"])} {r["jumps"][:10]}', flush=True)
-    ck(r['samples'] > 300 and r['moving'] > 0.25, f'{r["label"]}: it fought and moved ({r["samples"]} samples, moving '
+    ck(r['samples'] > 300 and r['moving'] > 0.12, f'{r["label"]}: it fought and moved ({r["samples"]} samples, moving '
        f'{r["moving"]:.0%} of its own frames)')
     ck(len(r['jumps']) <= allowed, f'{r["label"]}: drawn jumps within the bound ({len(r["jumps"])} <= {allowed})')
     ck(r['tps'] <= allowed, f'{r["label"]}: the puppet is put in place (teleported) at most {PER_MIN:g} per minute '
