@@ -120,6 +120,18 @@ def monitor_cases(tmp):
     h = [x.replace('resends=9', f'resends={900 * i}', 1) if 'partner' in x else x for i, x in enumerate(h)]
     got = scenario(tmp, 'resend', h, g)
     check('link' in got, f'monitor: link: a resend ratio over 0.5 for 3 lines ({got})')
+    # BUG-0405 / BUG-0415: a world transfer to the partner (and 15 s after it) is no link trouble; a storm that goes on
+    # after it is
+    share = ["12:00:00.000 [s 0.500] [INF] coop: world: sharing X\\Games\\Game0, planet Zorispe (10 files, 3523661 "
+             "bytes, id 23E07504) with player 1"]
+    got = scenario(tmp, 'resend_share', share + h + ["12:00:00.000 [s 60.0] [INF] coop: world: transfer to 1 queued "
+                                                      "completely (3441 KB in 1.3 s, 2742 KB/s, rtt 25 ms)"], g)
+    check(not got, f'monitor: link: resends while the host sends its world to the partner ({got})')
+    got = scenario(tmp, 'resend_after', share + h + ["12:00:00.000 [s 10.0] [INF] coop: world: transfer to 1 queued "
+                                                      "completely (3441 KB in 1.3 s, 2742 KB/s, rtt 25 ms)"], g)
+    check('link' in got, f'monitor: link: a resend storm that goes on 15 s after the transfer ({got})')
+    got = scenario(tmp, 'resend_other', [x.replace('with player 1', 'with player 2') for x in share] + h, g)
+    check('link' in got, f'monitor: link: a transfer to another player does not cover this one ({got})')
     got = scenario(tmp, 'totals', *clean_pair(host_own=dict(res='food=40'), guest_own=dict(res='food=12')))
     check(got == {'totals'}, f'monitor: totals: food 40 on the host, 12 on the guest for a minute ({got})')
     got = scenario(tmp, 'dna', *clean_pair(host_own=dict(dna=120), guest_own=dict(dna=95)))
@@ -226,6 +238,18 @@ def field_cases(tmp):
     got = scenario(tmp, 'f_drawn_space', *aligned_pair(host_sees=' drawn=(9.0 2.0 3.0) drawn_v=0.0',
                                                        h=dict(stage='Space'), g=dict(stage='Space')))
     check(not got, f'monitor: drawn: 8 m in Space is within its limit ({got})')
+    # BUG-0416: Tribe / Civ pointers: the copy at rest 8 m off a pointer that stood still is a violation, a pointer that
+    # jumped 0.1 s before the mark is not (its copy still rests at the old point); without ptr_still= as before
+    tr = dict(h=dict(stage='Tribe'), g=dict(stage='Tribe'), hs=dict(stage='Tribe'))
+    got = scenario(tmp, 'f_drawn_ptr', *aligned_pair(host_sees=' drawn=(9.0 2.0 3.0) drawn_v=0.0', guest_own=' ptr_still=30.0', **tr))
+    check(got == {'drawn'}, f'monitor: drawn: a resting Tribe pointer drawn 8 m off ({got})')
+    got = scenario(tmp, 'f_drawn_jump', *aligned_pair(host_sees=' drawn=(9.0 2.0 3.0) drawn_v=0.0', guest_own=' ptr_still=0.1', **tr))
+    check(not got, f'monitor: drawn: a Tribe pointer that jumped 0.1 s before the mark, its copy not yet ({got})')
+    got = scenario(tmp, 'f_drawn_old', *aligned_pair(host_sees=' drawn=(9.0 2.0 3.0) drawn_v=0.0', **tr))
+    check(got == {'drawn'}, f'monitor: drawn: a Tribe log without ptr_still= is judged as before ({got})')
+    got = scenario(tmp, 'f_drawn_off', *aligned_pair(host_sees=' drawn=(9.0 2.0 3.0) drawn_v=0.0', guest_own=' ptr_still=0.1', **tr),
+                   dict(drawn_still=-1))
+    check(got == {'drawn'}, f'monitor: drawn: drawn_still=-1 (the rule before BUG-0416) judges the jumped pointer ({got})')
     got = scenario(tmp, 'f_under', *aligned_pair(host_sees=' drawn=(1.0 2.0 3.0) drawn_v=0.0 agl=-0.90'))
     check(got == {'ground'}, f'monitor: ground: the guest\'s puppet 0.9 m under the host\'s ground ({got})')
     got = scenario(tmp, 'f_under_own', *aligned_pair(guest_own=' agl=-1.20'))

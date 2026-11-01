@@ -2081,6 +2081,16 @@ static std::string monitor_own_fields(bool have)
             out += b;
         }
     }
+    if (g_mode == modes::kTribe || g_mode == modes::kCiv) {
+        // BUG-0416: how long the own pointer has stood still (its partner's copy is ~0.1 s + half a round
+        // trip behind a pointer that just jumped: the monitor's drawn rule judges only a resting one)
+        double still = modes::rts_marker_still(g_adapter, local_now());
+        if (still >= 0) {
+            char b[32];
+            snprintf(b, sizeof b, " ptr_still=%.1f", std::min(still, 999.0));
+            out += b;
+        }
+    }
     out += npc::monitor_fields();
     return out;
 }

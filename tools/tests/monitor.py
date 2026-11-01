@@ -18,7 +18,8 @@ a moment between two reads is no violation):
   puppet        a partner in the same place, alive and in a world, is shown (puppet=shown) on 2 trace
                 lines in a row (not "not spawned (yet)" / "state older than 5 s")
   link          on a clean network (no SPORE_NET): resends / sent between two trace lines under 0.5,
-                pending under 400 and the partner's state younger than 5 s, each on 3 lines in a row
+                pending under 400 and the partner's state younger than 5 s, each on 3 lines in a row (not
+                while the host sends its world to that partner and 15 s after: BUG-0405, BUG-0415)
   totals        the shared totals of the own trace lines (dna in Creature, food / money / ... of the
                 stage) the same on the host and every guest in its world, within 1 point or 2 %, on
                 3 comparisons in a row spanning 20 s
@@ -36,7 +37,8 @@ before; the fields are described in FIELDS and docs/06-testing.md#testing-monito
   drawn         a partner's puppet as this game drew it (partner line `drawn=`, read back from the game at
                 the start of the frame) within DRAWN_BASE[stage] + its speed x (lag + rtt) of that partner's
                 own `pos=` on its line of the same moment (trace lines come at the session clock's 10 s
-                marks), on 2 lines in a row
+                marks), on 2 lines in a row; Tribe / Civ only a pointer at rest on both games (the copy's
+                drawn_v, the partner's own `ptr_still=`: BUG-0416)
   ground        `agl=` (height over this game's terrain) of the own avatar, a puppet, the Tribe members
                 (lowest; `agl_hi=` the highest): under -0.5 m on 2 lines in a row; a Creature puppet over
                 3 m while its player's own creature is on its ground (own agl under 1 m: not jumping,
@@ -73,11 +75,15 @@ PARTNER = re.compile(r"trace:\s+partner (\d+) '(.*?)' (.+?) world=([0-9A-F]+) d=
                      r"rtt=(-?\d+) ms(.*)$")
 LINK = re.compile(r'resends=(\d+)/(\d+) silent=(\d+) ms pending=(\d+)')
 POOL = re.compile(r'cell pool (\d+)/(\d+)')
+# a world transfer to a partner (BUG-0405 / BUG-0415: its reliable chunks fill the link, see Link)
+SHARE = re.compile(r'world: (sharing) .* with player (\d+)$|world: (?:transfer) to (\d+) queued completely|'
+                   r'session: player (\d+) \'.*\' (left)')
 DRAWN = re.compile(r' drawn=\(([-\d.e+naif]+) ([-\d.e+naif]+) ([-\d.e+naif]+)\) drawn_v=([-\d.naif]+)')
 AGL = re.compile(r' agl=(-?[\d.naif]+)(?: agl_hi=(-?[\d.naif]+))?')
 PUPPET_HP = re.compile(r' puppet_hp=(-?[\d.naif]+)/(-?[\d.naif]+)')
 PARTS = re.compile(r' parts=(\d+):([0-9A-Fa-f]{8})')
 PROXIES = re.compile(r' proxy_under=(\d+) proxy_stuck=(\d+)')
+PTR_STILL = re.compile(r' ptr_still=([\d.]+)')
 DAMAGE = re.compile(r'coop: damage: (\d+) hit by (\S+) owner=(\S+) posse=([01?]) amount=(-?[\d.]+)(.*)$')
 KV = re.compile(r'(\w+)=(-?[\d.]+)(\(unsynced\))?')
 STAGES = ('Cell', 'Creature', 'Tribe', 'Civilization', 'Space')
@@ -87,7 +93,7 @@ DEFAULTS = dict(together_s=20.0, apart_s=90.0, link_ratio=0.5, link_min_sent=50,
                 link_lines=3, tot_abs=1.0, tot_rel=0.02, tot_n=3, tot_span=20.0, tot_dt=6.0, hp_n=2, hp_abs=1.0,
                 pool_frac=0.9, census_growth=3.0, census_extra=200, period=5.0, census_period=30.0,
                 drawn_dt=1.0, drawn_lag=0.3, drawn_n=2, agl_under=-0.5, agl_over=3.0, agl_ground=1.0, agl_n=2,
-                php_n=2, unlock_s=60.0, unlock_span=10.0, unlock_n=2, proxy_n=2)
+                php_n=2, unlock_s=60.0, unlock_span=10.0, unlock_n=2, proxy_n=2, drawn_still=1.0, share_after=15.0)
 OBJECT_LIMITS = {'c': 4000, 'v': 800}
 # the drawn invariant's distance per stage (m) before the speed slack (calibration: docs/06-testing.md#testing-monitor)
 DRAWN_BASE = {'Cell': 3.0, 'Creature': 3.0, 'Tribe': 3.0, 'Civilization': 6.0, 'Space': 12.0}
@@ -96,7 +102,8 @@ DRAWN_BASE = {'Cell': 3.0, 'Creature': 3.0, 'Tribe': 3.0, 'Civilization': 6.0, '
 FIELDS = {
     'drawn': "partner line: `drawn=(x y z) drawn_v=<m/s>` = the puppet (Tribe / Civ: the pointer marker) read back "
              "from the game at the start of the frame that writes the line (before any driving), and the "
-             "partner's speed as seen here; trace lines are written at the session clock's 10 s marks",
+             "partner's speed as seen here; trace lines are written at the session clock's 10 s marks; Tribe / Civ "
+             "own line: `ptr_still=<s>` = how long the own pointer has stood still (BUG-0416)",
     'ground': "own and partner lines in Creature / Tribe: `agl=<m>` = height over this game's terrain "
               "(cPlanetModel::GetHeightAt) of the avatar / puppet as drawn; Tribe: `agl=<lowest> agl_hi=<highest>` "
               "of the player's tribe members",
@@ -144,6 +151,10 @@ def parse_line(who, line):
                      rtt=int(p.group(13)), rest=p.group(14),
                      link=tuple(int(lk.group(i)) for i in range(1, 5)) if lk else None)
             return monitor_fields(r)
+    m = SHARE.search(line)  # a world transfer to a partner (its reliable chunks fill the link, see Link)
+    if m:
+        return dict(kind='share', who=who, t=t, pid=int(m.group(2) or m.group(3) or m.group(4)),
+                    what='start' if m.group(1) == 'sharing' else 'end')
     if 'coop: damage: ' in line:  # FIELDS['posse_damage']
         m = DAMAGE.search(line)
         r = dict(kind='hookline', who=who, t=t, rest=line)
@@ -178,6 +189,9 @@ def monitor_fields(r):
     m = PROXIES.search(rest)
     if m:
         r['proxies'] = (int(m.group(1)), int(m.group(2)))
+    m = PTR_STILL.search(rest)
+    if m:
+        r['ptr_still'] = float(m.group(1))
     return r
 
 
@@ -194,6 +208,7 @@ class Timeline:
         self.own_t = collections.defaultdict(list)     # who -> their session times (sorted, -inf: none)
         self.partner = collections.defaultdict(list)   # (viewer, pid) -> [partner records]
         self.ids = {}                                  # who -> session id (0 = host)
+        self.shares = collections.defaultdict(list)    # (who, pid) -> [[start, end or None]] world transfers
         self.records = []
 
     def add(self, r):
@@ -207,6 +222,17 @@ class Timeline:
             self.ids[r['who']] = r['id']
         elif r['kind'] == 'partner':
             self.partner[(r['who'], r['pid'])].append(r)
+        elif r['kind'] == 'share' and r['t'] is not None:
+            lst = self.shares[(r['who'], r['pid'])]
+            if r['what'] == 'start':
+                lst.append([r['t'], None])
+            elif lst and lst[-1][1] is None:
+                lst[-1][1] = r['t']
+
+    def sharing(self, who, pid, t, after=15.0):
+        """`who` sends its world to partner pid at session time t (or did within `after` s)"""
+        return t is not None and any(a <= t <= (b if b is not None else float('inf')) + after
+                                     for a, b in self.shares.get((who, pid), ()))
 
     def who_of(self, pid):
         return next((w for w, i in self.ids.items() if i == pid), None)
@@ -320,6 +346,13 @@ class Link(Invariant):
             bad, prev = [], None
             for p in lst:
                 if p['link'] is None:
+                    continue
+                if self.c['share_after'] >= 0 and tl.sharing(viewer, pid, p['t'], self.c['share_after']):
+                    # BUG-0405 / BUG-0415: a world transfer: its chunks fill the reliable window (pending 400-600,
+                    # 600 in flight on a LAN, more than the 128-packet ack window covers) and a loading guest acks
+                    # late: 50-99 % of the packets between two lines are resends on loopback (chaos_tribe's
+                    # rejoins 20261101-150122, rejoin_race_long 20261101-134020). Lines after it count again.
+                    bad, prev = [], None
                     continue
                 why = None
                 rs, sent, _, pend = p['link']
@@ -511,6 +544,14 @@ class Drawn(Hook):
                 # Tribe / Civ: the pointer jumps with the mouse (tests pin it: tens of m at once), its copy
                 # trails while it moves (sync-check finding BUG-0380): judged only at rest
                 if p['stage'] in ('Tribe', 'Civilization') and p['drawn_v'] > 0.5:
+                    return False
+                # BUG-0416: ... at rest on the partner's own game too. A pointer that jumped just before the mark
+                # (a click, a minimap jump, the mouse moved during a 0.8 s save hitch) has a copy that still rests
+                # at the old point (drawn_v 0: the new states are not interpolated yet): 164 m in chaos_tribe
+                # 20261101-140615. The own line's `ptr_still=` says how long the pointer has stood still.
+                # (drawn_still < 0: the rule before it, SPORE_MONITOR='{"drawn_still": -1}')
+                if p['stage'] in ('Tribe', 'Civilization') and 'ptr_still' in o and self.c['drawn_still'] >= 0 and \
+                        o['ptr_still'] < self.c['drawn_still'] + max(p['rtt'], 0) / 1000.0:
                     return False
                 lim = DRAWN_BASE.get(p['stage'], 6.0) + p['drawn_v'] * (self.c['drawn_lag'] + max(p['rtt'], 0) / 1000.0
                                                                        + abs(o['t'] - p['t']))
