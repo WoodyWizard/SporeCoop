@@ -217,7 +217,16 @@ def from_env(host_port, lane, who='guest'):
     key = {'Bob': 'guest', 'Carol': 'extra1', 'Dave': 'extra2'}.get(who, who)
     if key not in _proxies:
         seed = 1 + sorted(set(PORT_BASE.values())).index(PORT_BASE.get(key, 47900))
-        _proxies[key] = Proxy(port_of(lane, key), host_port, spec, seed)
+        try:
+            _proxies[key] = Proxy(port_of(lane, key), host_port, spec, seed)
+        except OSError as e:
+            import errno
+            if e.errno != errno.EADDRINUSE:
+                raise
+            # a helper of the test (load_game.py run by coop_two_instances.py, ...) imports lane while the
+            # test's own process runs this proxy: use it (every creature_* players variant died here at its
+            # host's load, lab 20261101-160125)
+            return port_of(lane, key)
         print(f'  (bad network for {key}: {spec} -> {parse(spec)})', flush=True)
     return port_of(lane, key)
 

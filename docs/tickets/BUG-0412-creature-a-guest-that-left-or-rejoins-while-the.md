@@ -48,3 +48,4 @@ same happens to any guest that left for more than 15 s before the host goes away
 
 ## History
 - 2026-11-01: opened.
+- 2026-11-01 (feat/w33-tests-session): the same empty copy fails the players suite's party_creature4_mobile and party_creature4_players (lab 20261101-160125) by the sync-check gate: Dave leaves (the vote step), joins again over the bad network and plays his old copy, now without creatures, until the host's world arrives: `sync-check: MISMATCH with player 3 'Dave' (Creature 68AC222A, 4 objects compared): n: 17 missing on the guest` 24 s after his leave (diag.rejoin_grace did not cover the slower share).
