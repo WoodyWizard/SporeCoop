@@ -3064,9 +3064,11 @@ counters. Every one has a `_player` twin (`SPORE_FPS=guest:30 SPORE_NET=player`)
   both games (host `coop.npc list` lines end with `impressed=<0|1>`), the ally record on both, the guest's card,
   then the host's `coop.npc recruit` of an allied Kook and a 20 m walk: the guest's proxy of it within 10 m of the
   host and 2.5 m of the host's own Kook. `SOCIAL_ALLY_PLANT=npcsync` fails the recruitment (lab 20261101-144024:
-  27 m). The ally part fails in about half of the runs on BUG-0021: the guest's own avatar kills an impressed
-  Kook (host log: event 2 then event 0, `dna: ... cause=hunt:1`), see the ticket; the test prints the guest's
-  `hits_sent` after each key and click. Its first run reproduced BUG-0021: impressions 3 by the host's counter
+  27 m). Before `social.no_bite` the ally part failed in 3 of 5 runs on BUG-0021: the guest's own avatar killed an
+  impressed Kook (host log: event 2 then event 0, `dna: ... cause=hunt:1`; the test prints `key 1 sent a HIT` /
+  `the click sent a HIT` when the guest's `hits_sent` grows, with the stance social before and after). The fix drops
+  a guest's hits on proxies in the social stance (`coop.npc hit` passes); its guest log says `social: a hit of the
+  avatar on npc N in the social stance is not sent` (1-3 per run). Its first run reproduced BUG-0021: impressions 3 by the host's counter
   (3 Kooks with the game's flag), the species record (relation, impressed) went (0, 1) -> (4, 2) -> (3, 1), no Kook
   killed, one game refused in between. The host now logs every change of the species table
   (`social: relationship event <n> species <key> by <creature> (npc <id>): relation a -> b, impressed ...`).
