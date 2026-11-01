@@ -1181,6 +1181,12 @@ proxies](#creature-kinematic-proxies) on the animation.
   (only the constructor writes it); side effects not known.
 * ~ A running NPC's proxy (`npc.kinematic`, teleported every frame) is expected to slide without a
   walk gait for the same reason (inferred from the puppet measurement, BUG-0361).
+* ✔ (2026-11-01, fix/w30-tribe-walk) The walk branch of creature_drive is `drive::walk_place` /
+  `drive::walk_end` in driver.h now, shared with the Tribe mirrors
+  ([tribe.md#tribe-mirror-walk](tribe.md#tribe-mirror-walk), BUG-0365); the Creature puppet's driving is
+  unchanged (the same constants, puppet_walk passes). After the merge with BUG-0366 the ground
+  handling (`creature.puppet_ground`) is `drive::on_own_ground` in driver.h and `WalkPlace::ground` for
+  other drivings; creature_drive applies it to the target before it chooses walk or stand, as before.
 
 ## Max hit points, the brain level and the players' health (2026-11-01, fix/w30-creature-hp)
 <a id="creature-max-hit-points"></a>

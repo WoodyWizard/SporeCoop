@@ -959,3 +959,47 @@ Ghidra, GOG 2024 (BUG-0359); ✔ = read in the disassembly, ~ = role inferred.
   the block's header was overwritten by a float: BUG-0359 (0x3F028F5C = 0.51f, a flora grid node,
   host at Creature -> Tribe), BUG-0308 / BUG-0348 (0x41FAECC0 = 31.37f, a Cell pool, guest leaving
   Cell). The site only says "corrupt header"; the block and its writer differ.
+
+## The guests' mirrors of walking members (2026-11-01, fix/w30-tribe-walk)
+<a id="tribe-mirror-walk"></a>
+
+BUG-0365. GOG 2024, lanes 2-3. Measured with `coop.track` (in Tribe one row per member of the player
+tribe, every frame) and `coop_tribe_walk.py` (members walked by box-select and right-click). Same
+method as [the Creature puppets](creature.md#creature-puppet-walk).
+* ✔ Under drive::step a mirror walks at a fixed speed: game speed exactly 9.0 m/s or 0 (the fixture's
+  members), whatever SetDesiredSpeed (spatial vt 0xC4) asked just before (2.6-6.5 m/s). Under
+  walk_place (SetDesiredSpeed every frame, MoveTo only every 0.3-1.5 s) its game speed is the one asked
+  (4.75, 9.0, 12.0 m/s seen). ~ So a MoveTo (vt 0xE0) sets the citizen's speed back to its default and a
+  SetDesiredSpeed has to come after it (inferred from the two drivings, not read in the code). The
+  host's own member speeds up from 0 to 9 m/s in ~0.5-0.8 s and slows down the same way.
+* ✔ The old driving (drive::step: MoveTo 0.25 s ahead of the target every 0.1 s, stop distance 0.3 m,
+  SetPosition pulls over 0.5 m) follows at full speed (0.1 s windows matched 88-98 %, the walk gait on
+  96-99 % on screen, no driver teleport), but while the host's member moves at 1-5 m/s (every start and
+  end of a walk) the mirror at 9 m/s reaches the point ahead in one or two frames, stops, and walks
+  again: standing in 9-25 % of those frames, faster than the member + 4 m/s in 1-17 %; its drawn speed
+  is off its target path's by more than half of it + 1 m/s in 18-36 % of them (the host's own game ~1 %);
+  it sets off 0.5-1.6 m late and catches up at 15-24 m/s; drawn error p50 0.46 m (the nudge only acts
+  over 0.5 m). Stop-and-go at the ends of a walk, not the Creature puppet's "every half second" steps.
+  With the fix: 5-6 % uneven, drawn error p50 0.01 m, p90 0.08-0.17 m.
+* ✔ The tribe state (MSG_TRIBE_STATE, every 0.12 s, unreliable) had no sender time: the target was the
+  latest snapshot moved on by its arrival age (`vel * min(age, 0.5)`), so jitter went into the path
+  (the BUG-0122 class). Since BUG-0365 every chunk ends with an 8-byte trailer (magic 0x54435354,
+  the host's ms); a guest before 0.7.3.4 stops reading after the entries and ignores it, a guest
+  reading a chunk without it falls back to the arrival time.
+* ✔ The fix: each mirror keeps a net::SnapshotBuffer (delay 0.2 s; `tribe.mirror_time`) and, while the
+  interpolated member moves, the shared `drive::walk_place` (driver.h, BUG-0360's creature driving)
+  walks it at the interpolated path's velocity (over the last 0.1 s; the newer state's speed made it
+  walk ahead of its path at every start) and places it on the path at its own ground height
+  (`tribe.mirror_walk`; the speed set after the MoveTo).
+* ✔ The host's own members start and stop within one frame (0 -> 8 m/s); the drawn mirror is our
+  placing plus one game update of its locomotion, so its walk speed has to match the path.
+* ✔ The placing of a frame is drawn in the next one: after a hitch of the game (100-230 ms frames, a
+  few per test while the camera jumps by the minimap) the next short frame shows the way made up
+  (1.1-1.3 m in 13-14 ms). Not a teleport; a frame-step test has to allow the frame before's time.
+* ✔ (after the merge with main) A guest at 3-4 fps (226-336 ms frames, lab load 31 on 12 cores) closed
+  only 1.2 m per frame of its member's 2-3 m (the catch-up scaled by at most 0.1 s), fell 8 m behind and
+  drive::step teleported it 8.1 m: the mirrors scale the catch-up by up to 0.4 s (`WalkPlace::max_dt`).
+* ~ `WalkPlace::ground` (BUG-0366's on_own_ground) is not on for the mirrors: they keep their own height
+  (`own_height`, BUG-0329); the `hd` column of coop.track showed them 0.00 m over the ground while they
+  walk (fixture village, flat).
+* ~ Members of NPC tribes (owner 0xFE) are mirrors too and get the same driving; not measured.

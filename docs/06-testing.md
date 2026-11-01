@@ -2489,6 +2489,45 @@ answered right after; a 1 s poller beside a standalone run saw no gap. Same sign
   behind; screenshots of the puppet are hard to judge (Kooks of the same colour around, and
   `coop.targets all` gives the tag point).
 
+## Tribe members frame by frame: coop.track in Tribe and tribe_walk (2026-11-01, fix/w30-tribe-walk)
+<a id="testing-tribe-walk"></a>
+
+* `coop.track` in Tribe (BUG-0365): one row per member of the player tribe per frame, `who` = its
+  owner and the member id in the last column. Column order of `coop.track dump` (stable; new columns go
+  at the end, parsers take `len >= ` the columns they know): t who flags tp px py pz dx dy dz tx ty tz
+  gv rv anim gait gait2 moving speed_state vis sx sy (23), hd ht (24-25, BUG-0366: heights over this
+  game's ground), id (26, BUG-0365: the Tribe member id, 0 in Creature). On the host its own game's members (the target = its position, `rv` = its game
+  speed); on a guest the mirrors: the drawn position (before the mod's driving), the target the
+  driving aims at this frame and `rv` = the speed of that host state. The ring holds 60 000 rows
+  (~2 min with 6 members at 70 fps).
+* `coop_tribe_walk.py` (suite `tribe_walk`, ~2.5 min cold; `tribe_walk_mobile` nightly: SPORE_NET=mobile,
+  both games at 30 fps): the host spawns 3 members (3 each), a player walks its members ~30 s by
+  box-select (one or the group) and right-clicks on the ground 220-420 px off, sometimes a new order
+  before they arrive; the other keeps them in view with the minimap. Both directions; the guest's own
+  members are mirrors too (`guest sees its own members`). Checks per view of mirrors: no frame step over
+  3x the top speed x max(this frame, the frame before) (min 0.75 m); 0.1 s windows standing <= 5 % and
+  at 0.6-1.4x the speed of the target's path >= 85 %; in the frames whose target moves at 1-5 m/s
+  (starts and ends of walks) the drawn step off the target's step of the frame before (what a frame
+  draws was placed in the frame before) by more than half of it + 1 m/s x the frame time in <= 10 %
+  (0.7.3.3: 14-29 %, the fix 1-5 %, the host's own game 0-5 %); walk gait >= 80 % of the frames on
+  screen. Metrics tried and dropped: per-frame speed against the state's reported speed or a +-0.1 s
+  path (the host's own members start and stop within one frame, and the frame pacing makes single
+  frame speeds noisy: both flagged the host's own game in up to 24 %). The
+  host's own game is printed as the reference. `--fps N` caps both games,
+  `--dir host|guest`, `--seed`. `SPORE_FIX_OFF=tribe.mirror_walk,tribe.mirror_time` fails.
+* A loaded machine (lab load 31 on 12 cores, 2026-11-01): the observer's frames jitter 25-120 ms and
+  5-19 % are over 0.1 s; the steps then say nothing about the driving. The test leaves out the steps
+  within 0.2 s after a frame over 0.1 s and, when more than 3 % of the observer's frames are over 0.1 s,
+  prints `NOT MEASURED` and skips the window and stop-and-go checks for that view (calm runs: 0-2.2 %,
+  also the failing runs of the 0.7.3.3 driving: 0.1-1.6 %). Under 40 frames at 1-5 m/s (a few walks at
+  30 fps) the stop-and-go check is skipped the same way (the 0.7.3.3 driving's failing runs: 98-1116).
+  Steps within 0.2 s after a jump of the target itself (faster than 1.5x the top speed: over a mobile
+  network a late or lost state corrects the extrapolated path by 0.3-0.8 m in a frame) are left out
+  too: the driving smooths such a jump on purpose, and the "step against the target's step" check
+  flagged that smoothing (10 % in a passing run; the 0.7.3.3 driving's runs still fail with it).
+* Pitfalls: the lab's games ran at ~70 fps (14-15 ms frames), not 30; the minimap's camera jumps give
+  100-230 ms frames, and the next frame draws the way made up (allow the frame before's time); a click
+  on the ground near a tree or a member gives no walk (the test logs `nothing`).
 ## Log gates: what the games' own logs say fails a test (2026-11-01, feat/w30-lab-gates)
 <a id="testing-log-gates"></a>
 

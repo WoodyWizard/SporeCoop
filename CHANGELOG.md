@@ -45,6 +45,10 @@
 - Support: the sync self-check no longer reports a Cell food total that reached a guest a moment
   late, nor the cells at the edge of the 900 a guest is sent in a crowded pool; tests that remove a
   guest's cells on purpose mark it for the lab (BUG-0379).
+- Tribe: on a guest's screen, tribe members (the host's and the guest's own) no longer stop and go,
+  or jump ahead, when they start or end a walk: they walk smoothly on the host's path, also on a
+  network with jitter (BUG-0365). Plays together with 0.7.x; the guest needs this version, and the
+  host too for the smoothing over a network with jitter.
 - Creature: each player now sees the partner's real health on the partner's creature (it always
   looked full, hits on the partner did not show) and its real max health (BUG-0373).
 - Creature: the host's pack and family no longer attack and kill a partner (a partner's hit on a

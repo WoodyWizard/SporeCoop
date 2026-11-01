@@ -1273,6 +1273,15 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Not checked: whether main fails as often on an idle machine; the cause.
 * Ticket: BUG-0363
 
+## Tribe: a walking mirror held back on the guest lurches to catch up (2026-11-01, fix/w30-tribe-walk)
+<a id="issue-tribe-mirror-held"></a>
+
+* What happens: seen once by tribe_walk_mobile (30 fps, mobile network): a guest's mirror walking at
+  9 m/s fell 3.6 m behind its target in 0.8 s although it was placed on the path every frame (its game
+  pushed it back), then moved ~1 m per frame for three frames to catch up. Cause not found (an obstacle
+  on the guest is the guess).
+* Reproduce: `tools/lab.py run tribe_walk_mobile --repeat 5 --retry 0`, look for "no jump" failures.
+* Ticket: BUG-0386
 ## Creature: after an editor a guest asks the host for its own previous creature and gets nothing (2026-11-01, player report)
 <a id="issue-own-old-species"></a>
 
@@ -1341,3 +1350,18 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   snapshots during the host's cinematic.
 * Not checked: a frame-by-frame look at the received states around the moment.
 * Ticket: BUG-0388.
+## Tests: the creature test's hit lands on the host's family and is dropped (2026-11-01, fix/w30-tribe-walk)
+<a id="issue-creature-test-party-hit"></a>
+
+* What happens: coop_two_instances.py (suite `creature`) sometimes hits an NPC of the host's family; since
+  BUG-0374 the host drops a partner's hit on it, and the check `hits applied 0 -> 1` fails (2 of 4 runs).
+* Reproduce: `tools/lab.py run creature --repeat 4 --retry 0`; a failing run prints `host hp 10.0 -> 10.0`.
+* Ticket: BUG-0390
+
+## Lab gate: sync-check "p: 1 apart" in Tribe while the view jumps (2026-11-01, fix/w30-tribe-walk)
+<a id="issue-tribe-p-gate"></a>
+
+* What happens: chaos_tribe and tribe_walk_mobile fail on the sync-check gate with only the players' RTS
+  point apart (p0 20-70 m), every member and animal matching; the tests move the view by the minimap.
+* Reproduce: `tools/lab.py run chaos_tribe,tribe_walk_mobile --repeat 3 --retry 0`.
+* Ticket: BUG-0393
