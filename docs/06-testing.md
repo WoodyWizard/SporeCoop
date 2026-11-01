@@ -3106,3 +3106,20 @@ ui skipped (exclusive). Second calibration (that run): drawn Creature 69 lines p
 lines aside under 1.3 m), Space 82 lines max 4.1 m (0.11 of the limit), Cell max 0.36 m, Civ 0 m, Tribe at
 rest 0 m except one line right after a join (151 m: the pointer copy of an older state, one line);
 agl Creature puppets -0.20 to 0.64 m, own -0.43 to 1.04 m; Tribe members -0.01 to 0.00 m.
+
+## Creature: the party's collected parts (2026-11-01, fix/w33-unlocks)
+<a id="testing-parts-shared"></a>
+
+* `coop_parts_shared.py` (suite `parts_shared`, ~70 s after the start, creature fixture, BUG-0401):
+  the host finds a part the game's way (`coop.parts find <level>`: `cCreatureModeStrategy::ExecuteAction`
+  with 0x5371F11 `{avatar, 0, level}`, a skeleton's reward with its goal card; level 1 gives one on the
+  fixture; `unlock 2` is the fallback), the guest's `parts=<count>:<hash>` must become the host's within
+  20 s; the guest finds one, the host's must become the guest's; the guest's own editor (the host's
+  `coop.vote editor`) must offer exactly the party's parts (`coop.editor`: locked = unlockable - party,
+  and still > 0: BUG-0368); the guest leaves and joins again: it still has every part. `coop.parts`
+  prints `sync: ...` (parts.cpp's counters: sets / news / finds sent and received, applied).
+  FAIL: `SPORE_FIX_OFF=parts.shared`.
+* `monitor_plant`'s unlocks plant switches `parts.shared` off on the host for its `coop.parts unlock 3`
+  (with the sync on the guest gets the parts within a second and the rule has nothing to catch).
+* Measured (lane 6): a part reaches the other game within 1 s (the 1 Hz poll); the fixture has 54 of
+  312 parts unlocked, a find at level 1 gives one.

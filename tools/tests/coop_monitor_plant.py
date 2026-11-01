@@ -7,7 +7,8 @@ one problem per rule over the mod's monitor fields in two games on the creature 
 that the monitor reports each of them (the lab's monitor gate is off for this test, it judges the
 violations itself):
 
-  unlocks       the host unlocks 3 creature parts in its game only (`coop.parts unlock 3`): the guest's
+  unlocks       the host unlocks 3 creature parts in its game only (`coop.parts unlock 3` with
+                parts.shared off on the host, BUG-0401): the guest's
                 `parts=` stays under the host's for over a minute
   posse_damage  the host's pack member hits the guest's creature (`coop.hp packhit`) with
                 npc.party_peace off: the host forwards it (`damage: ... posse=1`); first with the fix on:
@@ -50,6 +51,8 @@ def main():
 
     # all but posse_damage at once (a pack member that fought the puppet keeps it in combat: its knockback
     # undoes the placing under the ground, so the pack comes last)
+    # BUG-0401: the party shares its parts now; the plant is an unlock the guest misses (the host's sync off)
+    print('  coop.fix parts.shared off:', host.call('coop.fix parts.shared off')['out'].strip()[:80], flush=True)
     print('  unlock:', host.call('coop.parts unlock 3')['out'].strip(), flush=True)
     for con, cmd in ((host, 'coop.fix creature.partner_hp off'), (guest, 'coop.puppet hold on')):
         print(f'  {cmd}: {con.call(cmd)["out"].strip()[:120]}', flush=True)
@@ -77,6 +80,7 @@ def main():
     print(f'  caught after {time.time() - t0:.0f} s: {sorted(got)}', flush=True)
 
     host.call('coop.fix creature.partner_hp on')
+    host.call('coop.fix parts.shared on')
     guest.call('coop.puppet hold off')
     guest.call('coop.team hp %.2f' % mx)
 
