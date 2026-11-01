@@ -2394,3 +2394,33 @@ answered right after; a 1 s poller beside a standalone run saw no gap. Same sign
 * FAIL: `SPORE_FIX_OFF=creations.part_substitute` (BUG-0341's refusal: Carol stays in the galaxy menu);
   with `creations.missing_parts` off too: 0.7.3.1 (0x441F3B, the load hangs).
 
+## Cell: a crowd on screen and the soft-body particle pool (cell_spare, 2026-10-31, fix/w26-cell-spare)
+<a id="testing-cell-spare"></a>
+
+* `coop_cell_spare.py` (suite `cell_spare`, 2 players, ~2 min): food 300, then the host puts 1000
+  of its cells on a disc of 8 m around its own (`coop.pool crowd <n> <r>`): over 256 cells in both
+  games' active areas (20 x 15 m at that level), the cell graphics pool's capacity. Checked in both
+  games every 4 s for 12 s: `coop.pool orphans` (used slots of the particle pool no cell's list holds,
+  the game's own pool and lists; with the fix off 600-1500 within 4 s, all allocated at 0xE5CC88) and
+  `coop.pool parts` (cells holding the spare slot 1499, NaN cells; also `gfx=<live>/<capacity>`,
+  `soft_refused=`), then the end of Cell (food 1000, the captions, History) with the guest's fps from
+  its frame counter (> 10) and the guest in Creature. BUG-0355, docs/re/cell.md#cell-gfx-pool.
+  FAIL: `SPORE_FIX_OFF=cell.gfx_full`.
+* The crowd itself kills cells in both games, fix on or off: crammed cells are pushed out of the
+  world and destroyed by the cell update 0xE7C080 (DestroyCell from 0xE7C3E6, 1000-1700 in 12 s),
+  the host's live cells fall to 400-800 and the guest's mirrors with them. Not a fix effect (same
+  callers and counts with the fixes off); do not assert on the number of mirrors after a crowd.
+* Not reproduced in 2 players: the campaign guest's 3 fps. A 2-player crowd keeps 60+ fps with the
+  fix off. Tried and dropped: filling the pool with particles nobody holds (`coop.pool particles`
+  after `zap`: only 20-45 cells shared the spare), making the guest's mirrors bigger (cells without
+  a graphics object never re-tier), `crowd` with a 25 m disc (bigger than the active area).
+* `coop.sample [ms] [top]` (debug.cpp, runs on the console thread: SK_CMD_ANY_THREAD |
+  SK_CMD_NOT_ON_MAIN): suspends the game's main thread every ~1 ms and prints its most frequent EIPs
+  (`self:`, 16-byte buckets at 0x400000 addresses) and the image addresses found in the top 2 KB of
+  its stack (`stack:`, once per sample). Registered with the default flags (main thread) it
+  suspended itself and froze the game for good: the watchdog's hang report showed c_sample on the
+  main thread. Nothing that takes a lock may run while the thread is suspended (no allocation, no
+  ReadProcessMemory: the stack is copied with memcpy up to the TEB's StackBase).
+* `coop.pool orphans` also counts DestroyCell calls by caller module+offset and whether they gave
+  the cell's particles back; `coop_campaign.py` now passes SPORE_FIX_OFF to the extra players
+  (Carol, Dave) too.

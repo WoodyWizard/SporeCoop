@@ -1295,6 +1295,11 @@ def main():
     players = [Player('Alice', lane.HOST), Player('Bob', lane.GUEST, lane.JOIN)]
     for name, (c, inst) in extra.items():
         players.append(Player(name, inst, join_cmd(name)))
+    # SPORE_FIX_OFF reaches the extra players too (twoinst.start switched Alice and Bob; party.py does the same)
+    for fx in filter(None, (n.strip() for n in os.environ.get('SPORE_FIX_OFF', '').split(','))):
+        for p in players[2:]:
+            ans = (p.call(f'coop.fix {fx} off') or '').strip().splitlines()
+            print(f'  SPORE_FIX_OFF ({p.name}): ' + (ans[0] if ans else 'no answer'), flush=True)
     for p in players[2:]:
         p.call(p.join)
         time.sleep(1)

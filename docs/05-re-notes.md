@@ -238,3 +238,15 @@ fields: FormatParser* +4, refcount +8, data +0xC.
   `GetAbility(index)` (vtable 0xB4).
 * Full exe analysis in REA (requires a `REA_GHIDRA_STARTUP_TIMEOUT_MS` timeout of ≥ 2 h and
   reconnecting the MCP server).
+
+## Where a slow frame goes: coop.sample (2026-10-31, fix/w26-cell-spare)
+<a id="re-notes-sample"></a>
+
+* `coop.sample [ms] [top]` in a running game: a sampling profile of the main thread (suspend, read
+  EIP and the top of the stack, resume, every ~1 ms; `self:` and `stack:` lists at 0x400000
+  addresses, `outside_exe=` the samples in DLLs or Wine, e.g. waiting for the GPU). Map the addresses
+  with `tools/ghidra/q.sh --build 2024` (`info` / `dec`). Details and the pitfall (it must not run on
+  the main thread) in docs/06-testing.md#testing-cell-spare.
+* For "who calls X and with what result" a counter keyed by `__builtin_return_address(0)` in the
+  hook is quicker than the sampler (BUG-0355: DestroyCell by caller, ParticleAlloc by call site);
+  `coop_module_of()` (debug.cpp) prints module+offset for addresses outside the exe.

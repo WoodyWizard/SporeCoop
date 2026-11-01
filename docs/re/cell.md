@@ -1203,6 +1203,12 @@ BUG-0338. GOG 2024, Ghidra and `tools/tests/coop_cell_particles.py` (suite `cell
   +0x1BD54, high water +0x1BD58, free-list head +0x1BD5C; **1500 slots** (0x5DC).
   Simulator::Cell::ParticleAlloc 0xE4DBA0 returns -1 when 1499 are used (so it never hands out slot
   1499); Simulator::Cell::ParticleFree 0xE4EC10 has no bound check.
+  ~ superseded (2026-10-31): "never hands out slot 1499", see the CORRECTION below.
+  CORRECTION (2026-10-31, fix/w26-cell-spare): with no free slot below the high water,
+  ParticleAlloc's index is the new count (slots 1..1499, slot 0 never used), so it does hand out
+  1499 at 1498 used; BUG-0338's spare could then be a real cell's particle and that cell's free of
+  it was dropped (one slot lost, `coop.pool orphans`). With `cell.spare` the pool counts as full at
+  1498 used and 1499 is the spare alone (docs/re/cell.md#cell-gfx-pool).
 * ✔ A cell's soft body (cell +0x248 object, +0x24C tier, +0x250 count, +0x254 indices):
   CreateSoftBody 0xE6D8F0 picks the tier from size +0x58 (>=0.3: 1, >=1: 2, >=2: 3) and takes one
   particle per node of the quadtree 0x16AE800 at that depth (4 / 16 / 64); tier 0, another query or
@@ -1248,3 +1254,52 @@ BUG-0342. GOG 2024, lanes 5/6, `tools/tests/coop_cell_own_load.py` (34 + 18 runs
 * Fix `cell.puppet_index` (modes.cpp): a puppet is the cell at the address AND its pool index
   (index + generation, `cell_at`); entries whose index no longer leads to their address are dropped
   when a puppet is made. With it: see BUG-0342's Verification.
+
+## The cell graphics pool (256) loses soft-body particles when full (2026-10-31, fix/w26-cell-spare)
+<a id="cell-gfx-pool"></a>
+
+BUG-0355. GOG 2024, Ghidra and `tools/tests/coop_cell_spare.py` (suite `cell_spare`), lanes 5/6/8,
+`coop.pool parts` / `coop.pool orphans` / `coop.sample`.
+
+* ✔ Soft-body LOD: every frame UpdateCells 0xE7C8C0 calls Simulator::Cell::SoftBodyLod 0xE78C00 per
+  cell: 0xE5CDE0 asks whether a foreground cell's sphere (pos +0x4C, 1.7 x size +0x58) touches the
+  active area Simulator::Cell::ActiveBox 0x016B3C88 (min xyz, max xyz around the camera; 20 x 15 m
+  at level 4, it also spans the 20 x 15 bucket grid of the advect step 0xE4E8B0); outside it frees the
+  soft body (FreeSoftBody 0xE66010), inside it makes a missing one (+0x248 == 0: CreateSoftBody
+  0xE6D8F0). So only cells near the camera hold particles; the rest of the 900 mirrors have none.
+  Negative: the per-frame tier check 0xE5A1A0 skips cells of the background query (+0x35C ==
+  G+0x4100); a mirror's size changed by us does not re-tier a cell that has no +0x248.
+* ✔ CreateSoftBody allocates the particles (tree walk 0xE5CB60, call site 0xE5CC88) and writes the
+  count +0x250 first, then takes the graphics object (+0x248) from the cObjectPool at
+  `*Simulator::Cell::cCellGFX::_ptr + 0x168` (live +0xC, capacity +0x18 = **256**).
+  cObjectPool_::CreateObject 0xB72270 returns 0 when live == capacity; the 0 is kept, the object
+  set up is cObjectPool_::Get(0). DestroyCell 0xE780A0 calls FreeSoftBody only when +0x248 != 0, and
+  the next frame's LOD sees +0x248 == 0 and calls CreateSoftBody again over the old list. Every cell
+  in the active area beyond the 256th loses its 4-64 particles every frame.
+* ✔ Runtime (2 players, `coop.pool crowd 1000 8` on the host, fix off): within 12 s the pool was full
+  in both games; 611-1491 used slots (guest) and 195-1491 (host) held by no cell, all allocated at
+  0xE5CC88, 1195-1391 of their owners gone; 67 DestroyCell of cells with 616 particles gave back 40
+  (63 of them without +0x248). Then BUG-0338's spare slot is handed to every cell asking: its
+  position was NaN in every such run within seconds (each holder's soft-body step pulls it, up to 64
+  times per cell), the NaN spreads to every holder (the centre is the mean of the particles;
+  guest_tick moves a mirror's particles by the NaN difference): 26-31 NaN cells; the guest's own cell
+  grew in the end-of-Cell cinematic with 56-60 of its 64 particles the spare and went non-finite
+  (BUG-0292 / BUG-0307 lines every frame).
+* ✔ With `cell.gfx_full` (no CreateSoftBody while the graphics pool is full): gfx peak 256, 891
+  calls refused in 12 s, 20 DestroyCell with 164 particles gave back 164, no lost slot.
+* ~ Inferred (no graphics pool numbers in that log): ordinary 4-player play reaches it, the
+  campaign guest's 900 mirrors crowding its screen; its particle pool was full at 18:02:47 (lab 20261031-151552 campaign_short#1 extra1), the other three games and
+  two further fix-off campaign_short runs (lab 20261031-174551 of the branch) did not get there (1 of 5 campaign_short runs so far).
+* ~ Inferred, not reproduced: the campaign guest's 3 fps for good (frames of 300-400 ms) and its
+  address space falling 3526 -> 1899 MB in two minutes. A 2-player crowd with the fix off kept
+  60+ fps (`coop.sample`: no hot spot). Likely the per-frame CreateSoftBody calls of many cells on a
+  full graphics pool (each sets up Get(0)'s object again and plays an animation) once the
+  cinematic's zoom put more cells in the active area, and the own cell flying around with the NaN
+  spare. Both are gone with the fix.
+* A full particle pool can still come legitimately (256 cells x 16 particles at tier 2 is 4096):
+  `cell.spare` frees the soft bodies of the cells farthest from our own (not ours, no puppet, not the
+  asking cell) down to 1300 used and hands out a real slot; such a cell keeps its tier and becomes
+  the game's own "no particles" form (+0x250 = 1, +0x254 = -1, as a model type 0 / 5 cell), moved and
+  drawn without a soft body until the LOD or a re-tier gives it particles again. A cell left with
+  the spare is freed the same way once a frame; the spare is put back to a finite place.
+
