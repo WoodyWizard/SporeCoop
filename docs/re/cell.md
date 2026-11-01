@@ -1318,3 +1318,13 @@ BUG-0355. GOG 2024, Ghidra and `tools/tests/coop_cell_spare.py` (suite `cell_spa
   knock-out); kept because a bare mirror steered into ours is the one way left for the fix to push it.
   Tried and dropped: keeping the soft bodies of cells within 8 m of ours (they then share the spare
   again): 3 of 12 stepped, no better.
+* `cell.gfx_full`, corrected (2026-10-31, follow-up): a cell CreateCellObject makes has count +0x250
+  = 0 (the object pool's memset) until its first CreateSoftBody; refused, it kept 0 for good. In
+  cell_sap (1100 host cells in a column, the host's graphics pool full in every run) 3 of 5 runs
+  failed after the merge: first-interval jumps of the host's cell of 62 and 73 m (limit 60) and
+  once a host cell with a pose that was not finite and the host's own cell at (-9934064 -5482405).
+  Now a refused cell gets the game's "no particles" form (count 1, +0x254 = -1, `count0=` in
+  `coop.pool parts`): 4/4 passed (first intervals 4-37 m); with `cell.gfx_full` off 3/4 (46 m once,
+  one failure on a guest's view). ~ Inferred: some game code divides by or walks the count (the
+  NaN cell); the 62-73 m first intervals are the column pushing itself apart (up to 46 m with the
+  guard off too), not this.
