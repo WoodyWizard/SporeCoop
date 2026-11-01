@@ -21,7 +21,7 @@ Checked on the players' games:
             Carol stands at a nest; in Tribe the chunks carry the host's time trailer: the old game
             keeps playing, draws the others right, has no caught fault
   health    no caught fault on any game (exc), no crash / hang report of any of the three, all answer
-FAIL demo: --old-tag v0.7.2.4 (no version lines before 0.7.3.x: "version unknown").
+FAIL demo: --old-tag v0.7.2.4 or MIXED_OLD_TAG=v0.7.2.4 (no version lines before 0.7.3.x: "version unknown").
 
   SPORE_LANE=9 SPORE_LANE_B=10 python3 tools/tests/coop_mixed_version.py --old guest|host [--fixture creature|tribe]
 """
@@ -196,7 +196,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--old', choices=('guest', 'host'), required=True)
     ap.add_argument('--fixture', default='creature', choices=('creature', 'tribe'))
-    ap.add_argument('--old-tag', default='v0.7.3.3')
+    ap.add_argument('--old-tag', default=os.environ.get('MIXED_OLD_TAG', 'v0.7.3.3'))
     a = ap.parse_args()
     lane_a = lane.LANE
     # the other version's lane: SPORE_LANE_B, else the neighbour (the suite marks these tests exclusive)
