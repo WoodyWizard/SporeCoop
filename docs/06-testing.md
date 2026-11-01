@@ -3016,13 +3016,23 @@ can eat a plant in the 2 s of the shared food check, which now allows the host's
 Tests of whole session paths (stage changes, rejoins, joins at a busy moment, votes, mixed versions) with
 the network and frame rate of real players; every check reads the other machine's game:
 
-* `coop_latency_step.py` (suite `latency_step_ingame`, ~5 min, cold, `SPORE_NET="delay=30,jitter=5"`): one
-  player walks 55 s by real input (coop_puppet_walk.walk) while the guest's proxy changes its one-way delay
-  30 -> 300 ms at 12 s and back to 30 ms at 34 s (`netem.proxy().p['delay']` is read per packet, so a test
-  can step it at any moment); both directions. Per 1 s of the observer's coop.track: BAD when the drawn
-  puppet moves in steps (< 60 % of its >= 4-frame windows at 0.6-1.4x the path's speed, or > 20 %
-  standing) or jumps (puppet_walk's rule), GOOD when smooth. The longest stretch of BAD seconds with no
-  GOOD one between must be <= 5 s. `SPORE_FIX_OFF=net.offset_window` (BUG-0133) fails.
+* `coop_latency_step.py` (suite `latency_step_ingame`, ~6 min, cold, `SPORE_NET="delay=30,jitter=5"`): one
+  player walks 62 s by real input (coop_puppet_walk.walk) while the guest's proxy changes its one-way delay
+  30 -> 300 ms at 10 s and back to 30 ms at 42 s (`netem.proxy().p['delay']` is read per packet, so a test
+  can step it at any moment); both directions. Two checks over the observer's coop.track:
+  * steps: per 1 s, BAD when the drawn puppet moves in steps (< 60 % of its >= 4-frame windows at 0.6-1.4x
+    the path's speed, or > 20 % standing) or jumps (puppet_walk's rule); the longest stretch of BAD seconds
+    with no GOOD one between must be <= 5 s;
+  * truth: both games run on one machine and both tracks start together, so the observer's drawn puppet can
+    be compared with the walker's own position `lag` s earlier (the best lag of 0-1 s per second): in the
+    high phase at most 25 % of the walking seconds may be over 0.15 m median.
+  `SPORE_FIX_OFF=net.offset_window` (BUG-0133) passes the step check (the creature driver keeps the drawn
+  puppet smooth) and fails the truth check: the puppet is rendered past the newest state (best lag 0.20-0.30 s
+  at 300 ms one way instead of 0.40-0.42 s with the fix) and is 0.15-0.27 m off the real path at turns and
+  stops in 29-31 % of the walking seconds; with the fix 0-11 % (0.01-0.17 m). A second fix-off run passed
+  that (10 % / 22 %), so the truth check also wants the median best lag from 3 s after the rise to be at least
+  the one-way delay (what arrived is that old; a smaller lag is a guess past the newest state): fix off
+  0.18-0.26 s in the four directions of two runs, fix on 0.36-0.42 s.
 * `coop_transition_net.py` (suite `transition_net`, ~20 min, `SPORE_NET=player SPORE_FPS=guest:30`): Cell ->
   Creature -> Tribe through coop_campaign.Campaign.advance (the host's History button, the guest's real
   "I'm ready", editors left with "done"), two players. After each change: the guest plays the new stage in

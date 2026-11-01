@@ -130,6 +130,14 @@ def main():
                 ck(p.join(last), f'[swap] {last.name} joins first')
                 ids1 = p.ids()
                 print(f'  [swap] ids before {ids0}, {last.name} now {ids1.get(last.netname)}', flush=True)
+                # Bob's id went to the newcomer: now, before Bob is back, each game must draw it as its own species
+                time.sleep(5)
+                gone = p.guests
+                p.guests = [g for g in gone if g is not bob]
+                try:
+                    species_view(p, ck, 'swap, Bob away')
+                finally:
+                    p.guests = gone
                 ck(p.join(bob), '[swap] Bob joins again')
             elif rnd == 'lost':
                 px = netem.proxy({'Bob': 'guest', 'Carol': 'extra1', 'Dave': 'extra2'}[last.name])

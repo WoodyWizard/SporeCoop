@@ -24,6 +24,9 @@ fits best (0-1 s). At most 25 % of those seconds may be over 0.15 m. The game's 
 extrapolation from the step check (the drawn puppet stays smooth); the extrapolated puppet is off the real path
 at turns and stops instead: fix off 0.15-0.27 m in 13 of the high phase's seconds, best lag 0.22-0.30 s (it should
 follow the latency: 0.40-0.42 s with the fix); fix on 0.01-0.13 m (lab 20261101-144311 / 20261101-142943).
+The error share alone did not fail a second fix-off run (10 % / 22 %, lab 20261101-144849); the lag does: the
+median best lag from 3 s after the rise must be >= the one-way delay (0.30 s at 300 ms): what arrived is
+that old, a smaller lag is a guess. Fix off 0.18-0.26 s in the four directions of both runs, fix on 0.36-0.42 s.
 
   SPORE_LANE=9 SPORE_NET="delay=30,jitter=5" python3 tools/tests/coop_latency_step.py [--seed N]
   SPORE_FIX_OFF=net.offset_window fails (the steps last until the offset crept up: tens of seconds)
@@ -219,6 +222,15 @@ def direction(walker, observer, wname, oname, rng, a, ck):
        f'{oname} watches {wname}: at {a.high} ms the puppet is drawn on the walker\'s real path (median <= {ERR_M} m '
        f'at the best lag) in all but {share:.0%} <= {ERR_SHARE:.0%} of {len(hi)} walking seconds '
        f'(off: {[round(sec - off) for sec in sorted(off_path)]})')
+    # the puppet shows where the walker WAS: what arrived is at least the one-way delay old. A best lag under it
+    # means positions the observer's game guessed (rendered past the newest state, BUG-0133), wrong at every
+    # turn and stop. From 3 s after the rise (the offset follows a rise at 0.25 s/s)
+    lags = sorted(v[0] for sec, v in tr.items() if hi0 + 3 <= sec < hi1)
+    med = lags[len(lags) // 2] if lags else 0.0
+    want = a.high / 1000
+    ck(len(lags) >= 5 and med >= want, f'{oname} watches {wname}: at {a.high} ms the drawn puppet is where the walker '
+       f'was, not a guess ahead of the newest state: median lag {med:.2f} s >= {want:.2f} s over {len(lags)} walking '
+       f'seconds')
     worst, at = longest_bad(bk)
     high_meas = sum(1 for sec in bk if hi0 <= sec < hi1 and verdict(bk[sec]) is not None)
     after = [sec for sec in bk if hi0 <= sec and verdict(bk[sec]) is not None]
