@@ -24,6 +24,7 @@ import sys
 import time
 
 import lane
+import twoinst
 from coop_chaos import Bot
 from coop_sync import LIMITS, pct
 from sporectl import Console
@@ -95,10 +96,17 @@ def start_extra(n):
             time.sleep(1)
         c.call('wait.frames 200 60000')
         out[NAMES[i]] = (c, inst)
+        twoinst.monitor_add(f'extra{i + 1}', inst)  # the invariant monitor follows them too (monitor.py)
+        twoinst.apply_fps(c, f'extra{i + 1}')  # SPORE_FPS
     return out
 
 
 def join_cmd(name):
+    """the join line of an extra guest; with SPORE_NET through its own proxy (netem.py: one per guest, a
+    proxy has one guest address)"""
+    if os.environ.get('SPORE_NET'):
+        import netem
+        return f'cheat coop join 127.0.0.1:{netem.from_env(lane.PORT, lane.LANE, name)} {name}'
     return lane.JOIN.replace(' Bob', ' ' + name)
 
 
