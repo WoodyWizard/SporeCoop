@@ -170,6 +170,15 @@ class Timeline:
     def who_of(self, pid):
         return next((w for w, i in self.ids.items() if i == pid), None)
 
+    def who_at(self, pid, t, dt=15.0, viewer=None):
+        """the machine that had session id pid around session time t: ids are reused after a leave (a
+        newcomer takes the lowest free one, party_rejoin_net), so the latest id of each machine is not enough;
+        None when no machine or more than one had it then"""
+        if t is None:
+            return self.who_of(pid)
+        got = [w for w in self.own if w != viewer and (lambda o: o is not None and o['id'] == pid)(self.own_at(w, t, dt))]
+        return got[0] if len(got) == 1 else None
+
     def window(self, who, t, dt):
         """the own records of `who` within session time t +- dt"""
         ts = self.own_t.get(who)
@@ -223,13 +232,16 @@ class Together(Invariant):
     def check(self, tl):
         out = []
         for (viewer, pid), lst in tl.partner.items():
-            subj = tl.who_of(pid)
-            if subj is None:
-                continue
             run = []
             for p in lst:
                 if p['t'] is None:
                     continue
+                subj = tl.who_at(pid, p['t'], viewer=viewer)
+                if subj is None or (run and run[-1].get('_subj') != subj):
+                    run = []
+                    if subj is None:
+                        continue
+                p['_subj'] = subj
                 a, b = tl.own_at(viewer, p['t'], 6), tl.own_at(subj, p['t'], 6)
                 agree = a and b and playing(a) and playing(b) and a['stage'] == b['stage'] and a['world'] == b['world'] \
                     and (b['flags'] & PF_IN_WORLD)
@@ -355,11 +367,13 @@ class Hp(Invariant):
     def check(self, tl):
         out = []
         for (viewer, pid), lst in tl.partner.items():
-            subj = tl.who_of(pid)
-            if subj is None:
-                continue
-            run = []
+            run, last = [], None
             for p in lst:
+                subj = tl.who_at(pid, p['t'], viewer=viewer)
+                if subj is None or subj != last:
+                    run, last = [], subj
+                    if subj is None:
+                        continue
                 o = tl.own_at(subj, p['t'], 5.0) if p['t'] is not None else None
                 if not o or not p['same'] or not playing(o) or o['maxhp'] <= 0 or p['age'] > 1.0:
                     run = []

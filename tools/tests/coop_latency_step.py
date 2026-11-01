@@ -6,8 +6,8 @@ Players' connections change their latency within a session (bufferbloat while so
 cell change). BUG-0133: after the one-way latency rose by ~300 ms the interpolation buffer rendered past its
 newest state for ~50 s, every partner puppet moved in 20 Hz steps (extrapolated) all that time. This test
 walks one player by real input (coop_puppet_walk.walk: WASD holds, clicks on the ground, turns back to
-the other) for --secs seconds while the guest's network proxy (netem, SPORE_NET) changes its one-way delay
---low -> --high -> --low ms at --rise and --fall seconds into the walk, in both directions (the guest
+the other) for --secs seconds (62) while the guest's network proxy (netem, SPORE_NET) changes its one-way delay
+--low -> --high -> --low ms (30 -> 300 -> 30) at --rise and --fall seconds (10, 42) into the walk, in both directions (the guest
 watches the host, the host watches the guest). The observer's game is sampled every frame (coop.track:
 the drawn position of the puppet, before the mod's driving).
 
@@ -175,11 +175,11 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--dir', default='both', choices=('host', 'guest', 'both'), help='who walks')
     ap.add_argument('--seed', type=int, default=None)
-    ap.add_argument('--secs', type=float, default=55, help='length of each walk')
+    ap.add_argument('--secs', type=float, default=62, help='length of each walk')
     ap.add_argument('--low', type=float, default=30, help='one-way delay before and after the step (ms)')
     ap.add_argument('--high', type=float, default=300, help='one-way delay during the step (ms)')
-    ap.add_argument('--rise', type=float, default=12, help='s into the walk: low -> high')
-    ap.add_argument('--fall', type=float, default=34, help='s into the walk: high -> low')
+    ap.add_argument('--rise', type=float, default=10, help='s into the walk: low -> high')
+    ap.add_argument('--fall', type=float, default=42, help='s into the walk: high -> low')
     ap.add_argument('--max-bad', type=float, default=5, help='s of steps / jumps in a row allowed')
     ap.add_argument('--min-high', type=int, default=8, help='s of the high phase that must be measured')
     a = ap.parse_args()

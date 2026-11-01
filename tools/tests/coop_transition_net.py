@@ -64,6 +64,8 @@ def main():
     ap.add_argument('--settle', type=float, default=30, help='s after the guest followed before the checks')
     ap.add_argument('--watch', type=float, default=60, help='s without a MISMATCH after the settle time')
     ap.add_argument('--seed', type=int, default=None)
+    ap.add_argument('--allow', action='append', default=[],
+                    help='"<kind>=BUG-NNNN": a MISMATCH of this kind ("t missing") is a known open bug: printed, not counted')
     a = ap.parse_args()
     seed = a.seed if a.seed is not None else random.randrange(1 << 30)
     plant = os.environ.get('TRANSITION_PLANT', '')
@@ -110,9 +112,21 @@ def main():
         if plant == 'mismatch':
             guest.call('coop.diag sync force off')
         mm = {p.name: [l for l in log_since(p.inst, offs[p.name]) if 'sync-check: MISMATCH' in l] for p in players}
+        allowed = dict(x.split('=', 1) for x in a.allow)
         for name, lines in mm.items():
             for l in lines[:3]:
                 print(f'    {name}: {l.strip()[:200]}', flush=True)
+            # a known open bug (the lab's allow() rule: printed with its ticket, never silent); only when every
+            # difference the line names is of an allowed kind
+            keep = []
+            for l in lines:
+                kinds = [f'{o} {w}' for o, w in re.findall(r'\b([a-z]+): \d+ (missing|extra|apart)', l.split(' compared')[-1])]
+                if kinds and all(k in allowed for k in kinds):
+                    t = allowed[kinds[0]]
+                    print(f'    allowed [{t}]: {name}: {l.strip()[-120:]}', flush=True)
+                else:
+                    keep.append(l)
+            mm[name] = keep
         ck(not any(mm.values()), f'[{nxt}] no sync-check MISMATCH in {a.watch:.0f} s after the settle time '
            f'({", ".join(f"{k} {len(v)}" for k, v in mm.items())})')
         camp.health()

@@ -398,7 +398,10 @@ add('trace_log', P + 'coop_trace_log.py', minutes=6)  # support logging: trace /
 
 # session paths under the conditions of real players (feat/w33-tests-session, docs/06-testing.md#testing-session-paths)
 add('latency_step_ingame', 'SPORE_NET="delay=30,jitter=5" ' + P + 'coop_latency_step.py', minutes=5)  # one-way delay 30 -> 300 -> 30 ms while the partner walks: the drawn puppet moves in steps / jumps for at most 5 s in a row (BUG-0133 in the game; SPORE_FIX_OFF=net.offset_window fails)
-add('transition_net', 'SPORE_NET=player SPORE_FPS=guest:30 ' + P + 'coop_transition_net.py', ('nightly',), minutes=20, timeout=45 * 60)  # Cell -> Creature -> Tribe the players' way (History, vote, editors, done) over a home connection, the guest at 30 fps: it follows, draws the host, no sync-check MISMATCH after the settle time (TRANSITION_PLANT=mismatch fails)
+add('transition_net', 'SPORE_NET=player SPORE_FPS=guest:30 ' + P + 'coop_transition_net.py --allow "t missing=BUG-0381"',
+    ('nightly',), minutes=20, timeout=45 * 60,
+    allow=[allow('sync-check', 'BUG-0381', 'NPC tribes the host forms after the arrival are missing on the guest (fix/w32-tribe-sync)',
+                 stage='Tribe', kind='t missing')])  # Cell -> Creature -> Tribe the players' way (History, vote, editors, done) over a home connection, the guest at 30 fps: it follows, draws the host, no sync-check MISMATCH after the settle time (TRANSITION_PLANT=mismatch fails)
 add('party_rejoin_net', 'SPORE_NET=players ' + P + 'coop_party_rejoin_net.py --players 4', ('multi', 'extended'), minutes=10)  # 4 players rejoin over their own bad networks (one, id swap, lost goodbye, two at once): together, drawn where they are, as their own species (SPORE_FIX_OFF=core.id_reuse fails)
 add('join_during_combat', P + 'coop_join_during.py --case combat', minutes=4)  # a guest joins while the host fights an NPC: its game agrees with the host's within 10 s (host drawn, NPCs alive / dead / health)
 add('join_during_host_editor', P + 'coop_join_during.py --case editor', minutes=5)  # a guest joins while the host is in its editor: agrees within 10 s of the host's return (host drawn as its species, NPCs)

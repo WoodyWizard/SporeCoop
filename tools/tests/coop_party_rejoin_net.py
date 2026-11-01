@@ -26,6 +26,7 @@ Afterwards no machine has a caught fault.
 import argparse
 import math
 import os
+import re
 import time
 
 import census
@@ -35,15 +36,27 @@ from party import NEAR, Party
 from twoinst import Checks
 
 
+def creations(p):
+    """(own creature (key, name) or None, {player id: (key, name)} of the others' creatures in this game)"""
+    out = p.call('coop.creations')
+    m = re.search(r"mine creature: ([0-9A-F]{8}) '([^']*)'", out)
+    others = {int(x.group(1)): (x.group(2), x.group(3))
+              for x in re.finditer(r"player (\d+) creature: ([0-9A-F]{8})/\S+ '([^']*)'", out)}
+    return (m.groups() if m else None), others
+
+
 def species_view(p, ck, label):
-    """each viewer's game draws every other player as that player's own species"""
-    own = {}
-    rows = {}
+    """each viewer's game draws every other player as the species that player plays. Keys of a creation are
+    each game's own (an imported creation gets a new instance key): a player who plays its own creation must
+    be drawn as the viewer's import of that creation (same name, the key the viewer's game has for it), a
+    player of the world's species as that key (the same save)"""
+    own, rows, made = {}, {}, {}
+    p.ids()
     for x in p.all:
         c = census.dump(x.con)
         rows[x.name] = c
-        av = next((r for r in c.rows if r['own'] == 'avatar'), None)
-        own[x.name] = av
+        own[x.name] = next((r for r in c.rows if r['own'] == 'avatar'), None)
+        made[x.name] = creations(x)
     bad, seen = [], []
     near = NEAR.get(p.stage(p.host), 6.0)
     for v in p.all:
@@ -51,7 +64,6 @@ def species_view(p, ck, label):
         for s in p.all:
             if s is v or own[s.name] is None:
                 continue
-            # where the viewer's game shows the subject: coop.sync p<id> (the puppet the mod drives)
             pid = 0 if s is p.host else s.pid
             at = sample(v.con).get(f'p{pid}')
             if at is None:
@@ -61,9 +73,17 @@ def species_view(p, ck, label):
             if best is None or math.dist(best['pos'], at) > near:
                 bad.append(f'{v.name}: no creature where it shows {s.name}')
                 continue
+            mine = made[s.name][0]
+            if mine and mine[0] == own[s.name]['key']:  # the subject plays its own creation
+                imp = made[v.name][1].get(pid)
+                want = f"its own '{mine[1]}'"
+                ok = imp is not None and imp[1] == mine[1] and imp[0] == best['key']
+            else:
+                want = own[s.name]['key']
+                ok = best['key'] == want
             seen.append(f'{v.name}->{s.name} {best["key"]}')
-            if best['key'] != own[s.name]['key']:
-                bad.append(f'{v.name} draws {s.name} as {best["key"]}, {s.name} plays {own[s.name]["key"]}')
+            if not ok:
+                bad.append(f'{v.name} draws {s.name} as {best["key"]} ({made[v.name][1].get(pid)}), {s.name} plays {want}')
     print(f'  [{label}] species drawn: {", ".join(seen)}', flush=True)
     ck(not bad, f'[{label}] every machine draws every other player as the species that player plays: {bad}')
 

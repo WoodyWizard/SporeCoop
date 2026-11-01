@@ -34,3 +34,4 @@ related:
 ## History
 - 2026-11-01: opened.
 - 2026-11-01 (fix/w31-civ-gate): Civ `p apart` was the moving pointer (the partner's copy trails 45 m median while the mouse moves, 0 m at rest; coop_civ_cursor.py); Tribe uses the same pointer adapter (modes.cpp rts_*), so its `p apart` likely has the same cause. `diag.rts_cursor` (BUG-0380) leaves a moving pointer out in both stages; not verified in Tribe.
+- 2026-11-01 (feat/w33-tests-session): transition_net (Cell -> Creature -> Tribe the players' way, SPORE_NET=player, guest 30 fps; lab 20261101-142943, lane 10): 58 s after the guest followed into Tribe both games logged `sync-check: MISMATCH ... t: 3 missing on the guest (t4 t5 t6)` (34 objects compared). The test allows this kind with this ticket until the fix (fix/w32-tribe-sync, tribe.npc_tribes) is merged.

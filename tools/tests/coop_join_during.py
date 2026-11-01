@@ -8,7 +8,9 @@ joining guest's game (not the mod's counters) every second until it agrees with 
 --case combat   the host fights an NPC with real input (coop.social goto, the combat stance, a click on
                 the target, key 1 bites) and the guest joins 4 s into the fight.
 --case editor   the host opens its creature editor alone (`coop.vote editor` with nobody to wait for),
-                the guest joins while it edits, the host leaves the editor with "done" 25 s later.
+                the guest joins while it edits, the host leaves the editor with "done" 25 s later. While the
+                host edits, the guest's own creatures must move in its game (BUG-0205: the host sends no NPC
+                states then; frozen proxies are the bug; SPORE_FIX_OFF=core.away_editor).
 
 Consistent (all at once, read on the joining guest's game against the host's game):
   * the guest plays the host's stage with an avatar and the host has it in its world;
@@ -146,6 +148,24 @@ def settle_check(host, guest, ck, label, limit, nid=None, t_in=None):
        f'(first of 3 consistent reads at {first if first is None else round(first, 1)} s; last difference: {last[:3]})')
 
 
+def in_after_reload(host, guest, t_join, timeout=200):
+    """the guest is in the host's world: a guest that joins again first plays its old copy ("together" at once),
+    then loads the world the host sends: wait for that load too; the time it is in the reloaded world"""
+    from coop_rejoin_net import log_times
+    if not wait_guest_in(host, guest, timeout=timeout):
+        return None
+    t0 = time.time()
+    while time.time() - t0 < 90:
+        p = log_times(lane.HOST, t_join, {'share': r'world: sharing'})
+        p.update(log_times(lane.GUEST, t_join, {'loading': r'world: loading'}))
+        if 'share' not in p and time.time() - t_join > 25:
+            break  # no world sent
+        if 'loading' in p and wait_guest_in(host, guest, timeout=2):
+            break
+        time.sleep(1)
+    return time.time()
+
+
 def case_combat(host, guest, ck, a):
     fam = family(host)
     hp_ = own_pos(host)
@@ -161,10 +181,12 @@ def case_combat(host, guest, ck, a):
     n = npcs(host).get(nid)
     print(f'  {a.lead:.0f} s into the fight: NPC hp {n[2] if n else None}, dead {n[4] if n else None}, '
           f'{f.bites} bites; the guest joins', flush=True)
+    t_join = time.time()
     guest.call(lane.JOIN)
-    ok = wait_guest_in(host, guest, timeout=200)
-    ck(ok, 'the guest got into the host\'s world during the fight')
-    t_in = time.time()
+    t_in = in_after_reload(host, guest, t_join)
+    ck(t_in is not None, f'the guest got into the host\'s world during the fight '
+       f'({"-" if t_in is None else "%.0f s" % (t_in - t_join)} after the join, its world loaded)')
+    t_in = t_in or time.time()
     n = npcs(host).get(nid)
     print(f'  guest in after the join; NPC hp {n[2] if n else None}, dead {n[4] if n else None}', flush=True)
     settle_check(host, guest, ck, 'combat', a.limit, nid, t_in)
@@ -196,7 +218,18 @@ def case_editor(host, guest, ck, a):
     guest.call(lane.JOIN)
     t_join = time.time()
     seen = []
+    first = None
+    moving = None
     while time.time() - t_join < a.edit:
+        # BUG-0205: while the host edits, the joined guest's game plays its creatures itself (the host sends no
+        # NPC states): they move in the guest's game (not proxies standing frozen). Two census dumps 8 s apart
+        if moving is None and time.time() - t_join > 10 and guest.call('coop.avatar')['ok']:
+            first = census.dump(guest)
+            time.sleep(8)
+            ds = [d for _, d in census.moved(first, census.dump(guest), own=('local', 'proxy'))]
+            moving = (len([d for d in ds if d > 1.0]), len(ds))
+            print(f'    the guest\'s creatures that moved > 1 m in 8 s of the host\'s editor: {moving[0]} of {moving[1]}',
+                  flush=True)
         st = guest.call('coop.status')['out']
         line = f'{time.time() - t_join:4.0f} s: guest {mode(guest).strip()}, avatar {guest.call("coop.avatar")["ok"]}, ' \
                f'host_away={re.search(r"host_away=(\d)", st).group(1) if re.search(r"host_away=(\d)", st) else "?"}'
@@ -204,6 +237,8 @@ def case_editor(host, guest, ck, a):
             seen.append(line)
             print('   ', line, flush=True)
         time.sleep(2)
+    ck(moving is not None and moving[0] >= 1, f'[editor] while the host edits, the joined guest\'s creatures move in '
+       f'its game ({moving})')
     shot(guest, 'join_during_editor_guest')
     host.call(f'move {DONE[0]} {DONE[1]}')
     time.sleep(0.4)
@@ -212,9 +247,10 @@ def case_editor(host, guest, ck, a):
     while time.time() - t0 < 60 and cl.stage_of(mode(host)) is None:
         time.sleep(1)
     ck(cl.stage_of(mode(host)) == 'creature', f'the host left its editor with "done" ({mode(host).strip()})')
-    ok = wait_guest_in(host, guest, timeout=200)
-    ck(ok, 'the guest is in the host\'s world after the host\'s editor')
-    t_in = time.time()
+    t_back = time.time()
+    t_in = in_after_reload(host, guest, t_back)
+    ck(t_in is not None, 'the guest is in the host\'s world after the host\'s editor')
+    t_in = t_in or time.time()
     settle_check(host, guest, ck, 'editor', a.limit, None, t_in)
 
 
