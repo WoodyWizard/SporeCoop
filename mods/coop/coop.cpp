@@ -495,8 +495,13 @@ static std::deque<TrackSample> g_track;
 // the planet's centre (negative: under the ground), as a partner's position off this game's ground
 // would be (an extrapolated fall, a ground that differs)
 static float g_track_lift = 0;
-static void track_lift(net::PlayerState& s)
+// tests (BUG-0394): `coop.track novel 1`: this game takes the partners' Creature states without their
+// velocity, as a partner carried by an animation reports none (B4212A07: 3-4.6 m/s at velocity 0)
+static bool g_track_novel = false;
+static void track_lift(net::PlayerState& s, bool novel = true)
 {
+    if (novel && g_track_novel && g_mode == modes::kCreature)
+        s.vel = {0, 0, 0};
     float r = std::sqrt(s.pos.x * s.pos.x + s.pos.y * s.pos.y + s.pos.z * s.pos.z);
     if (g_track_lift == 0 || g_mode != modes::kCreature || r < 1.f)
         return;
@@ -575,7 +580,7 @@ void track_tick(double now)
         if (!pp || !creature_puppet(r.puppet_adapter) || !game::creature_listed(pp))
             continue;
         net::PlayerState s;
-        if (r.buf.sample(now, s) && (track_lift(s), true))
+        if (r.buf.sample(now, s) && (track_lift(s, false), true)) // (rv: the speed the partner reported)
             track_one((uint8_t)id, pp, &s, (uint16_t)r.drv.teleports, now, g_puppet_hold ? nullptr : &r.drv.drawn);
     }
 }
@@ -593,6 +598,11 @@ int c_track(void*, int argc, const char* const* argv, SkOut* out)
         if (argc > 2)
             g_track_lift = (float)atof(argv[2]);
         SAY("lift %.2f\n", g_track_lift);
+        return 0;
+    } else if (!strcmp(a, "novel")) {
+        if (argc > 2)
+            g_track_novel = atoi(argv[2]) != 0;
+        SAY("novel %d\n", (int)g_track_novel);
         return 0;
     }
     else if (!strcmp(a, "dump")) {
@@ -4458,7 +4468,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                    },
                    nullptr, MT);
     H->command_add(M, "coop.status", "session, players and puppets", c_status, nullptr, MT);
-    H->command_add(M, "coop.track", "coop.track start|stop|count|dump [from] [n]|lift <m> - every frame: the partners' puppets and the own avatar; in Tribe the player tribe's members (tests, BUG-0360, BUG-0365, BUG-0366)",
+    H->command_add(M, "coop.track", "coop.track start|stop|count|dump [from] [n]|lift <m>|novel 0|1 - every frame: the partners' puppets and the own avatar; in Tribe the player tribe's members (tests, BUG-0360, BUG-0365, BUG-0366)",
                    c_track, nullptr, MT);
     H->command_add(M, "coop.log", "coop.log detail [0|1|2] - support logging: 0 = the old lines only, 1 = state trace + events "
                    "(default), 2 = verbose; coop.log trace - write the trace lines now",

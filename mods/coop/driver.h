@@ -11,6 +11,16 @@
 
 namespace drive {
 
+// BUG-0361 / BUG-0394: the remote's interpolated path frame by frame (where the driver is asked to put the
+// creature), for a remote that moves without reporting a speed and for a walk's last frames
+struct PathTrack {
+    net::Vec3 prev{};
+    double prev_t = 0;
+    net::Vec3 v{};     // this frame's path velocity
+    net::Vec3 v_ema{}; // smoothed over ~0.2 s
+    float sp_ema = 0;  // its speed, smoothed over ~0.2 s
+};
+
 struct State {
     double last_cmd = 0;
     Track track;
@@ -24,6 +34,7 @@ struct State {
     double last_step = 0;  // BUG-0175: the time of the previous step (the nudge per second, not per frame)
     bool kinematic = false; // BUG-0360: a walking partner's puppet, walked and placed on its path (modes.cpp)
     net::Vec3 goal_dir;     // BUG-0360: the direction of the walk goal given to it
+    PathTrack path;          // BUG-0361 / BUG-0394: path_update
     net::Vec3 placed_to;    // BUG-0361 (walk_place): where it was placed last frame
     uint32_t place_lost = 0; // BUG-0361: frames the game did not keep that place (a teleport with the mark then)
     double stuck_since = 0;  // BUG-0361: since when its error grows although it is placed
@@ -33,6 +44,37 @@ struct State {
 };
 
 inline float speed(const net::Vec3& v) { return std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z); }
+
+// once per frame with the remote's interpolated position: the path's velocity (0 after a gap)
+inline void path_update(State& ds, const net::Vec3& pos, double now)
+{
+    PathTrack& t = ds.path;
+    double dt = now - t.prev_t;
+    if (t.prev_t > 0 && dt > 0 && dt < 0.25) {
+        float k = 1.f / (float)dt, a = (float)std::min(1.0, dt / 0.2);
+        t.v = {(pos.x - t.prev.x) * k, (pos.y - t.prev.y) * k, (pos.z - t.prev.z) * k};
+        t.v_ema = {t.v_ema.x + (t.v.x - t.v_ema.x) * a, t.v_ema.y + (t.v.y - t.v_ema.y) * a,
+                   t.v_ema.z + (t.v.z - t.v_ema.z) * a};
+        t.sp_ema += (speed(t.v) - t.sp_ema) * a;
+    } else {
+        t.v = t.v_ema = {};
+        t.sp_ema = 0;
+    }
+    t.prev = pos;
+    t.prev_t = now;
+}
+
+// the velocity of a remote that moves without reporting one: the smoothed path once it is over 0.5 m/s, before
+// that this frame's path from 0.8 m/s on (a walk's start: the smoothed one is frames late at 30 fps); not a
+// jump of the path (over 15 m/s). A remote that stands has a still path (turning on the spot moves nothing)
+inline net::Vec3 path_velocity(const State& ds)
+{
+    const PathTrack& t = ds.path;
+    if (speed(t.v_ema) > 0.5f)
+        return t.v_ema;
+    float v = speed(t.v);
+    return v > 0.8f && v < 15.f ? t.v : net::Vec3{};
+}
 
 // age: how old `pos` is (a snapshot received `age` seconds ago): the target moves on with the
 // remote velocity, so the puppet does not trail a walking creature by its latency

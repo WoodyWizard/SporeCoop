@@ -95,12 +95,24 @@ COOP_FIX("creature.puppet_walk", "BUG-0360", g_puppet_walk_fix, "creature: the w
 static bool g_puppet_ground_fix = true;
 COOP_FIX("creature.puppet_ground", "BUG-0366", g_puppet_ground_fix, "creature: the partner's creature is put on this game's ground (no fall animation walking downhill, never under the ground)");
 
+// BUG-0394: the partner's creature can move without a speed of its own: an animation that carries it
+// (B4212A07 after a click, 3-4.6 m/s for a second with the game's velocity 0 and speed state 0 on the
+// partner's screen). Its states then say "standing", the puppet stood (drive::step) while its path went
+// on, fell 2.9 m behind and was put in place (puppet_walk at 30 fps: 18 % standing windows). With
+// creature.puppet_path the puppet walks with the speed of its path (drive::path_velocity) when the state
+// reports none.
+static bool g_puppet_path_fix = true;
+COOP_FIX("creature.puppet_path", "BUG-0394", g_puppet_path_fix, "creature: the partner's creature also walks where the partner moves without a speed (moves carried by an animation)");
+
 static void creature_drive(void* p, const net::PlayerState& s_in, drive::State& ds, double now)
 {
     ds.drawn = game::position(p);
     net::PlayerState s = s_in;
     if (g_puppet_ground_fix && game::in_creature_stage())
         s.pos = drive::on_own_ground(s.pos);
+    drive::path_update(ds, s.pos, now);
+    if (g_puppet_path_fix && drive::speed(s.vel) <= 0.3f)
+        s.vel = drive::path_velocity(ds);
     float sp = drive::speed(s.vel);
     bool walk = g_puppet_walk_fix && game::in_creature_stage() && sp > 0.3f && net::dist(game::position(p), s.pos) < 8.f;
     if (walk) {

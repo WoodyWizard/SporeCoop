@@ -147,10 +147,7 @@ struct Proxy {
     double last_rx = 0; // local time of its last spawn / state from the host
     net::SnapshotBuffer buf;
     drive::State drv;
-    net::Vec3 prev_tgt{};   // BUG-0361: the interpolated host position of the previous frame
-    double prev_tgt_t = 0;
     float walk_sp = 0;      // BUG-0361: the host NPC's speed while it last moved
-    float path_sp = 0;      // BUG-0361: the speed of the interpolated host path (smoothed over ~0.2 s)
 };
 static std::map<uint16_t, Proxy> g_proxies;
 // BUG-0300: a guest in a 4-player campaign had a proxy in its list (states arriving) whose creature
@@ -1020,33 +1017,26 @@ static void guest_tick(double now)
         // walked proxy goes on with the speed of its path to the stop point instead of standing there
         net::Vec3 vel = s.vel;
         float walk_speed = -1.f;
+        drive::path_update(px.drv, s.pos, now);
         {
-            double pdt = now - px.prev_tgt_t;
-            if (pdt > 0 && pdt < 0.25) {
-                float a = (float)std::min(1.0, pdt / 0.2);
-                px.path_sp += (net::dist(s.pos, px.prev_tgt) / (float)pdt - px.path_sp) * a;
-            }
-            if (walking && px.kinematic && drive::speed(vel) <= 0.3f && pdt > 0 && pdt < 0.25) {
-                net::Vec3 pv{(s.pos.x - px.prev_tgt.x) / (float)pdt, (s.pos.y - px.prev_tgt.y) / (float)pdt,
-                             (s.pos.z - px.prev_tgt.z) / (float)pdt};
+            const drive::PathTrack& pt = px.drv.path;
+            if (walking && px.kinematic && drive::speed(vel) <= 0.3f) {
                 // not faster than it walked: at a stop the target can jump back up to 1 m (the extrapolation
                 // past the newest state corrected), which made a 37 m/s "path" and a 0.8 m jump of the proxy
-                float ps = drive::speed(pv);
+                float ps = drive::speed(pt.v);
                 if (ps > 0.5f) {
                     float k = px.walk_sp > 0.3f && ps > px.walk_sp ? px.walk_sp / ps : 1.f;
-                    vel = {pv.x * k, pv.y * k, pv.z * k};
+                    vel = {pt.v.x * k, pt.v.y * k, pt.v.z * k};
                 }
             } else if (drive::speed(vel) > 0.3f) {
                 px.walk_sp = drive::speed(vel);
                 // a host NPC that reports its speed but moves slower (pushed by its herd, against a rock, turning):
                 // the game walks the proxy at the path's speed, or its walk between two placings runs ahead
                 // (Tribe: 0.6-1.4x the path in 77 % of the 0.1 s windows where the path was slower than the speed)
-                float ps = std::max(px.path_sp * 1.1f, 0.5f);
+                float ps = std::max(pt.sp_ema * 1.1f, 0.5f);
                 if (walking && ps < px.walk_sp)
                     walk_speed = ps; // (only the walk: scaling the placing too made it trail at every start, creature_npc_dash)
             }
-            px.prev_tgt = s.pos;
-            px.prev_tgt_t = now;
         }
         if (!px.killed && ((g_kinematic_fix && game::in_creature_stage()) || (g_walk_tribe_fix && rts)) &&
             drive::speed(vel) > 0.3f && net::dist(game::position(px.c), s.pos) < 8.f) {
