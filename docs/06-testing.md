@@ -2696,3 +2696,25 @@ Before a tag `vX.Y.Z` (CLAUDE.md 4):
 * `tools/crash_triage.py` (BUG-0372): the coop version comes from the crash file's Environment
   (`mods: coop X`) or coop section, never from the Summary's "latest co-op summary" of an earlier
   run; `tools_selftest.py triage` case (g).
+## The puppet's height, a weak guest PC and a home connection (2026-11-01, fix/w30-puppet-jump)
+<a id="testing-puppet-ground"></a>
+
+* `coop.track` rows end with `hd ht`: the drawn puppet's and the target's height over this game's
+  ground (25 columns; `coop_puppet_walk.dump` reads 23 or 25). `coop.track lift <m>` (tests) takes the
+  partners' Creature states <m> further from the planet's centre in this game (negative: under the
+  ground). `coop.abilities [play <i> | lift <m> | goto <x> <y> <z>]` (tests): the avatar's abilities,
+  use one, put it <m> higher (it falls back: half a jump), put it on the ground elsewhere.
+* netem (`SPORE_NET`): preset `player` (the 2026-11-01 report: rtt 70-150 ms, spikes, 10-30 % loss
+  bursts), written with the shared spike / burst keys of docs/06-testing.md#testing-degraded (the
+  branch's own `spike=`/`burst=` keys were merged into those).
+* `coop_puppet_walk.py` options: `--guest-fps N` (frame.limit on the guest), `--goto x,y,z` (both
+  players to that ground first; `-195,-465,-45` is a slope 0.3-0.5 of the creature fixture, the hill
+  at `-205,-447,-118` is rock), `--stand S` (the walker stands after its walk), `--jumps P` (hops by
+  `coop.abilities lift 1.5`), `--ground` (checks: the puppet starts the fall animation 0x0692E6A9 at
+  most once more than the walker's own creature, and is never drawn 0.3 m under the observer's ground).
+* Suites `puppet_slope` (guest 30 fps, `SPORE_NET=player`, the slope) and `puppet_under`
+  (`coop.track lift -1`): `SPORE_FIX_OFF=creature.puppet_ground` fails both.
+* Pitfalls: the falls happen walking downhill only (flat fixture ground: 0-2 in 40 s even with the
+  bug); a run on rock counts nothing (+0x137 is 0 on rock all the time, GetHeightAt is the terrain);
+  the spawn moves after a `--goto`, so these tests are cold. Exploration with the fix off on the slope
+  gave 4-7 falls per 40 s, so one FAIL run is not guaranteed every time (the check allows 1).

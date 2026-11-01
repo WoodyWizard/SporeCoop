@@ -1225,3 +1225,44 @@ GOG 2024 (dc04aee5), Ghidra 2026-11-01 and runtime on lane 9 (BUG-0373, BUG-0374
   fix; each puppet's game hp/max and the reported values), `coop.hp pack` (pack members, stimuli
   naming a partner's puppet), `coop.hp attack <player>` (host: the avatar's attack message on a
   puppet).
+## The puppet on this game's ground: falls walking downhill, under the ground (2026-11-01, fix/w30-puppet-jump)
+<a id="creature-puppet-ground"></a>
+
+BUG-0366, BUG-0367, BUG-0376. GOG 2024, lanes 6-7, `coop.track` rows with the heights over the
+observer's ground (`hd` drawn, `ht` target: |pos| - `cPlanetModel::GetHeightAt`).
+* ✔ `+0x137` (`coop.track` column `moving`) is 1 while the creature is grounded on the terrain, 0
+  while it falls or stands on an object (a rock: 100 % of the frames on the rocky hill near the
+  fixture's spawn, own avatar and puppet alike). While it is 0 the game plays the fall animation
+  **0x0692E6A9** (the walker's own avatar after `coop.abilities lift 1.5`: 35 % of its frames).
+* ✔ A grounded creature (+0x137 = 1) placed over the terrain is put back on it by the game in the
+  same frame (a puppet placed 1.5 m up: drawn 0.00 m); placed under the terrain it is **not** lifted:
+  the 0.7.3.3 puppet driven 1 m under the ground (`coop.track lift -1`) was drawn at -0.64 to -1.00 m
+  in 1279 frames, walking and standing.
+* ✔ Placed exactly on the ground every frame (0.7.3.3 `game::place` onto the partner's path), a puppet
+  walking DOWNHILL is 2-3 cm over the ground after the game's next step (the walk goes along, not
+  down): +0x137 = 0 for 1-5 frames and the fall animation, again and again (4-7 times in 40 s on a
+  slope, radial speed of the path -0.3 to -1.9 m/s; the walker's own creature 0). On flat ground 0-2.
+  The 0.7.3.2 driving (no placing) 0-1.
+* ✔ Put 5 cm INTO the ground instead (`creature.puppet_ground`, kSink), the game sets the puppet on
+  the terrain (drawn -0.03 to 0.00 m) and it stays grounded: 0 falls in 4 runs on the slope. 15 cm:
+  drawn up to 0.13 m under at times.
+* ✔ The ground is the same on host and guest in the Creature stage: 283 points around both players
+  after a live Cell -> Creature (the players' way in) and on the creature fixture: 0.00 m difference
+  (unlike Tribe villages, [tribe-ground-height](tribe.md#tribe-ground-height)).
+* ✔ The 0.7.3.3 walk with the guest at 30 fps (15 states a second) over a home connection (netem
+  `player`: 45 ms, spikes +250 ms, 30 % loss bursts): puppet on its path (93-98 % matched windows, at
+  most one 0.8 m step), no vertical bounce. The 0.7.3.2 driving under the same: 4 m snaps 5 times in
+  40 s, 20 % standing windows.
+* ✔ `GetHeightAt` is the terrain only: a creature on the rocky hill at (-205, -447, -118) of the
+  fixture reads 1-16 m over it.
+* ✔ The fixture's creatures cannot jump: Space and every ability (`coop.abilities play <i>`, types
+  0xE 0x1D 0x28 0x10 0x25 0x1E 0x31-0x33, 0x11 0xD) leave the height at 0. A jump is simulated by
+  `coop.abilities lift 1.5` (the fall half of a jump, ~0.5 s).
+* ✔ BUG-0376: when the partner leaves the ground (lifted 1.5 m, 24 hops), the 0.7.3.3 puppet stays on
+  the ground in 21-22 of them (grounded, the game puts it down) and falls with the partner in 2-3;
+  the 0.7.3.2 driving teleports it up in 5.
+* ? Why the players' puppet went under the ground: inferred, an extrapolated state (0.25 s at most)
+  of a partner walking or running downhill when its states stall (rtt up to 1.1 s in their log), or
+  any target under the terrain: the game never lifted it.
+* ~ NPC proxies placed every frame (`npc.kinematic`, `drive::step` snaps) probably fall downhill the
+  same way (not measured).

@@ -5,7 +5,7 @@ one in each extra guest's way (its own port, its own random stream) when SPORE_N
 test, party and the chaos bot can run over it:
 
   SPORE_NET="delay=120,jitter=40,loss=0.03"   (one-way ms, ms, fraction; also dup=0.01)
-  SPORE_NET=dsl | mobile | awful | players | players_bad | burst | lowband | step   (PRESETS)
+  SPORE_NET=dsl | mobile | awful | player | players | players_bad | burst | lowband | step   (PRESETS)
 
   burst_every=S,burst_s=S,burst_loss=F   Gilbert-Elliott burst loss: a good state of S s on average
                                          (exponential), then a burst of burst_s s on average losing F
@@ -37,6 +37,10 @@ PRESETS = {
     'burst': 'delay=35,jitter=10,burst_every=20,burst_s=3,burst_loss=0.3',
     'lowband': 'delay=40,jitter=10,rate=512,queue=400',
     'step': 'delay=35,jitter=10,step=30:200/60:35',
+    # BUG-0366: the 2026-11-01 report as a home connection: ~0.15 latency spikes/s of 250 ms for 0.7 s,
+    # ~0.1 loss bursts/s of 30 % for 1.5 s
+    'player': 'delay=45,jitter=15,loss=0.01,spike_every=7,spike_s=0.7,spike_ms=250,'
+              'burst_every=10,burst_s=1.5,burst_loss=0.3',
 }
 KEYS = ('delay', 'jitter', 'loss', 'dup', 'outage', 'rate', 'queue', 'burst_every', 'burst_s', 'burst_loss',
         'spike_every', 'spike_s', 'spike_ms', 'step')

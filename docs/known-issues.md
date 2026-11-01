@@ -1308,3 +1308,17 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Next steps: measure the address space the editor's paint mode takes on lane 10; tell players with
   the large-address flag off to use the 4GB patch.
 * Ticket: BUG-0371
+## Creature: the partner's jumps are mostly not shown (2026-11-01, fix/w30-puppet-jump)
+<a id="issue-puppet-jumps"></a>
+
+* What happens: when the partner's creature leaves the ground (a jump, a fall), its puppet placed
+  in the air every frame (0.7.3.3) is put back on the ground by the game while it is grounded: in
+  21-22 of 24 simulated hops it stayed on the ground, in 2-3 it fell with the partner.
+* Reproduce: `coop_puppet_walk.py --dir guest --jumps 0.6` (hops by `coop.abilities lift 1.5`; the
+  fixture's creatures cannot jump), compare the walker's and the puppet's airborne episodes in the
+  track json (docs/re/creature.md#creature-puppet-ground).
+* Known: the game keeps a grounded creature (+0x137 = 1) on the terrain; the partner sends no
+  airborne flag (PF_JUMPING is never set).
+* Next steps: send the airborne state and put the puppet into the game's fall (or play the jump)
+  on the observer; check with a creature that can jump.
+* Ticket: BUG-0376

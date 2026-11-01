@@ -16,6 +16,10 @@
   base game paints in the host's colours (BUG-0369).
 - Tools: crash_triage.py named the co-op version of an earlier session (from the crash file's
   summary) instead of the one that crashed (BUG-0372).
+- Creature: the partner's creature no longer keeps "jumping" while it walks downhill: the game took
+  it for falling for a moment again and again and played its fall animation (BUG-0366).
+- Creature: the partner's creature is no longer drawn under the ground: it is now always put on
+  your own game's ground when the partner walks or stands on the ground (BUG-0367).
 
 ## [0.7.3.3] - 2026-11-01
 
