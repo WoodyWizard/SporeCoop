@@ -28,6 +28,17 @@ def dist(a, b):
     return math.sqrt(sum((x - y) ** 2 for x, y in zip(a, b)))
 
 
+def seg_dist(p, a, b):
+    """distance from p to the segment a-b"""
+    ab = [y - x for x, y in zip(a, b)]
+    n = sum(x * x for x in ab)
+    k = max(0.0, min(1.0, sum((q - x) * y for q, x, y in zip(p, a, ab)) / n)) if n > 1e-9 else 0.0
+    return dist(p, [x + y * k for x, y in zip(a, ab)])
+
+
+ROUNDS = 8  # BUG-0407: up to 8 rounds of 1 s, the first 4 always (the best counts)
+
+
 def main():
     host, guest = start('tribe')
     ck = Checks()
@@ -43,14 +54,28 @@ def main():
     print('  host :', {k: (v[0], v[3]) for k, v in hm.items()})
     print('  guest:', {k: (v[0], v[3]) for k, v in gm.items()})
     ck(len(hm) > 0 and set(hm) == set(gm), f'guest mirrors every citizen ({len(hm)} host, {len(gm)} guest)')
-    # walking citizens move between the two samples: take the best of a few rounds
-    errs = []
-    for _ in range(4):
-        h1, g1, h2 = members(host), members(guest), members(host)
-        errs.append(max((min(dist(h1[i][2], g1[i][2]), dist(h2[i][2], g1[i][2]))
-                         for i in h1 if i in g1 and i in h2), default=99))
+    # walking citizens move between the samples: take the best of a few rounds. BUG-0407: a member is judged by its
+    # distance from the host's path over the round (host samples before and after the guest's, the segments between
+    # them), not from the nearer end: the guest draws a walking member ~0.1-0.2 s behind the host (interpolation),
+    # and on a loaded machine one console call took 0.1-0.4 s, so a member at 9 m/s was 3.7-9.6 m from both ends
+    # while on the host's path (lab 20261101-135924). A member that stands is judged as before.
+    errs, worst = [], []
+    for _ in range(ROUNDS):
+        h0, h1, g1, h2 = members(host), members(host), members(guest), members(host)
+        es = {}
+        for i in h1:
+            if i in g1 and i in h0 and i in h2:
+                es[i] = min(seg_dist(g1[i][2], h0[i][2], h1[i][2]), seg_dist(g1[i][2], h1[i][2], h2[i][2]))
+        e = max(es.values(), default=99)
+        errs.append(e)
+        if es:
+            i = max(es, key=es.get)
+            worst.append(f'#{i} {es[i]:.1f} m (moved {dist(h0[i][2], h2[i][2]):.1f} m on the host)')
+        if len(errs) >= 4 and min(errs) < 3:
+            break
         time.sleep(1)
     err = min(errs)
+    print(f'  worst member per round: {worst}', flush=True)
     ck(err < 3, f'mirrors are where the host has them (max error {err:.2f} m; rounds {[round(e, 1) for e in errs]})')
     mine = [i for i, v in gm.items() if v[0] == 1 and v[3] == 'player']
     theirs = [i for i, v in gm.items() if v[0] == 0 and v[3] == 'player']

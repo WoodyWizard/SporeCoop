@@ -36,7 +36,14 @@ class Console:
             self.connect()
         self.sock.sendall(line.encode('utf-8') + b'\n')
         while b'\n' not in self.buf:
-            chunk = self.sock.recv(65536)
+            try:
+                chunk = self.sock.recv(65536)
+            except socket.timeout:
+                # BUG-0407: the reply may still come; on this connection it would be taken as the next call's (a
+                # test's fault check read a track row): a new connection for the next call
+                self.sock.close()
+                self.sock, self.buf = None, b''
+                raise
             if not chunk:
                 raise ConnectionError('console closed the connection')
             self.buf += chunk
