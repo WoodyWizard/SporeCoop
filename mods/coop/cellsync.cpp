@@ -1944,7 +1944,7 @@ static bool g_fix_gfx_full = true;
 COOP_FIX("cell.gfx_full", "BUG-0355", g_fix_gfx_full, "cell: no soft body is made while the cell graphics pool is full (the game lost the particles every frame: the particle pool filled, 3 fps)");
 static uintptr_t a_CreateSoft, a_GfxPtr;
 static void(SK_CDECL* o_CreateSoft)(uint32_t, int);
-static uint32_t g_soft_refused, g_soft_made, g_gfx_peak;
+static uint32_t g_soft_refused, g_soft_made, g_gfx_peak, g_soft_count0;
 static uint32_t* gfx_pool() // cObjectPool_ fields as uint32: [3] live, [6] capacity
 {
     uint8_t* gfx = a_GfxPtr ? *(uint8_t**)a_GfxPtr : nullptr;
@@ -1959,6 +1959,14 @@ static void SK_CDECL h_CreateSoft(uint32_t idx, int arg)
         if (!g_soft_refused++)
             H->log(M, SK_WARN, "cell: the cell graphics pool is full (%u of %u): no soft body for new cells on screen until there is room (BUG-0355)",
                    gp[3], gp[6]);
+        // a new cell has count 0 (the pool's memset) until its first CreateSoftBody: give it the
+        // game's own "no particles" form (count 1, -1), as CreateSoftBody does for tier 0
+        if (uint8_t* c = modes::cell_at(idx))
+            if (F<int>(c, 0x250) < 1) {
+                F<int>(c, 0x250) = 1;
+                F<int>(c, 0x254) = -1;
+                g_soft_count0++;
+            }
         return;
     }
     g_soft_made++;
@@ -1981,7 +1989,15 @@ static void SK_CDECL h_CreateSoft(uint32_t idx, int arg)
 static bool g_fix_spare = true;
 COOP_FIX("cell.spare", "BUG-0355", g_fix_spare, "cell: a full soft-body particle pool frees the particles of the cells farthest from ours instead of handing many cells one shared spare slot (it went NaN and spread)");
 constexpr int kRoomTo = 1300; // used particles after a full pool made room (our cell at tier 3 takes 64)
-static uint32_t g_part_room_runs, g_part_stripped, g_part_spare_freed;
+static uint32_t g_part_room_runs, g_part_stripped, g_part_spare_freed, g_bare_moves;
+// A mirror whose soft body cell.spare freed was moved like a mirror without one (tier 0): steered by
+// its velocity towards the host's pose (set_pos only when over 3 m off). A mirror made from a full
+// pool lands on top of its neighbours and the cells around ours; steered, they shoved our own cell
+// 8-18 m in a few seconds (cell_particles: 2 of 5 runs, BUG-0355 follow-up). Placed as a soft one
+// is (the host's pose, at rest), they do not (own cell at most 1.1 m per round in 6 runs).
+// Old (`coop.fix cell.bare_still off`): steered.
+static bool g_bare_still = true;
+COOP_FIX("cell.bare_still", "BUG-0355", g_bare_still, "cell: a guest's mirror whose soft body was freed for room in the particle pool is placed at the host's pose at rest, not steered into the cells around it");
 // the cell's soft body to the game's "no particles" form; returns the particles given back
 static int strip_soft_body(uint8_t* parts, uint8_t* c)
 {
@@ -2748,6 +2764,13 @@ static void guest_tick(double now)
             auto* acc = (float*)(c + 0x1C4);
             acc[0] = acc[1] = acc[2] = 0;
             g_soft_moves++;
+        } else if (g_bare_still && F<uint32_t>(c, 0x248) && n == 1 && F<int>(c, 0x24C) >= 1) {
+            // a mirror whose soft body we freed (BUG-0355, cell.spare): placed as a soft one is (the
+            // host's pose, at rest), not steered by velocity into the cells around it
+            set_pos(c, want);
+            auto* v = (float*)(c + kVel);
+            v[0] = v[1] = 0.f;
+            g_bare_moves++;
         } else {
             if (net::dist(cur, want) > 3.f)
                 set_pos(c, want);
@@ -4238,8 +4261,13 @@ std::string debug(const std::vector<std::string>& a)
                 nan_parts += !std::isfinite(((float*)(parts + 4 + 12 * k))[0]) || !std::isfinite(((float*)(parts + 4 + 12 * k))[1]);
         int t0_big = 0, t0_stamp = 0, t0_nogfx = 0;
         uint32_t stamp = G() ? F<uint32_t>(G(), 0x4100) : 0;
+        int near_bare = 0; // cells within 10 m with a graphics object and a tier but no particles (the "no particles" form)
         auto scan = [&](uint8_t* c, bool mirror) {
             int n = F<int>(c, 0x250), t = F<int>(c, 0x24C);
+            if (c != av && F<uint32_t>(c, 0x248) && n == 1 && t >= 1) {
+                net::Vec3 q = pos_of(c);
+                near_bare += std::hypot(q.x - me.x, q.y - me.y) < 10.f;
+            }
             if (t == 0) {
                 t0_big += F<float>(c, kSize) >= 0.3f;
                 t0_stamp += F<uint32_t>(c, 0x35C) == stamp;
@@ -4279,15 +4307,15 @@ std::string debug(const std::vector<std::string>& a)
         if (box)
             snprintf(bx, sizeof bx, " active_box=%.0fx%.0f m", box[3] - box[0], box[4] - box[1]);
         if (uint32_t* gp = gfx_pool())
-            snprintf(bx + strlen(bx), sizeof bx - strlen(bx), " gfx=%u/%u peak=%u soft_made=%u soft_refused=%u", gp[3], gp[6], g_gfx_peak,
-                     g_soft_made, g_soft_refused);
+            snprintf(bx + strlen(bx), sizeof bx - strlen(bx), " gfx=%u/%u peak=%u soft_made=%u soft_refused=%u count0=%u", gp[3], gp[6], g_gfx_peak,
+                     g_soft_made, g_soft_refused, g_soft_count0);
         char b[800];
         snprintf(b, sizeof b,
                  "parts: used=%d held=%d (mirrors %d, within 60 m %d, beyond %d) tiers=%d/%d/%d/%d spare_cells=%d spare_refs=%d own_spare=%d "
-                 "own_n=%d spare_at=(%.0f %.0f) farthest_particle=%.0f m nan_cells=%d nan_particles=%d room_runs=%u stripped=%u spare_freed=%u spare=%u tier0: size>=0.3 %d, +0x35C==G+0x4100 %d, no +0x248 %d%s\n",
+                 "own_n=%d spare_at=(%.0f %.0f) farthest_particle=%.0f m nan_cells=%d nan_particles=%d room_runs=%u stripped=%u spare_freed=%u spare=%u tier0: size>=0.3 %d, +0x35C==G+0x4100 %d, no +0x248 %d near_bare=%d bare_moves=%u%s\n",
                  particles_used(), held, mir_held, near_held, far_held, tiers[0], tiers[1], tiers[2], tiers[3], spare_cells, spare_refs,
                  own_spare, F<int>(av, 0x250), sp ? sp[0] : 0.f, sp ? sp[1] : 0.f, far_part, nan_cells, nan_parts, g_part_room_runs, g_part_stripped,
-                 g_part_spare_freed, g_part_spare, t0_big, t0_stamp, t0_nogfx, bx);
+                 g_part_spare_freed, g_part_spare, t0_big, t0_stamp, t0_nogfx, near_bare, g_bare_moves, bx);
         return b;
     }
     if (!a.empty() && a[0] == "orphans") { // RE (BUG-0355): used particles no cell's list holds

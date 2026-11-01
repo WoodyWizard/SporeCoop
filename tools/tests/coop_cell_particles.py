@@ -14,10 +14,15 @@ lab 20261031-124047-fix-w22-cell; 0x00E4E384 on a guest).
    near the camera asks for particles from a full pool, every removal frees what it got.
 3. Checked on the guest (the game's own state): no cell holds -1 among its particles, the pool's
    free-list head stays inside the pool, no caught fault, the pool's count (the game's header) never below 0 or
-   over 1500, its own cell stays where it was (no jump), the mirrors come back.
-SPORE_FIX_OFF=cell.particles must FAIL.
+   over 1500, its own cell stays where it was (no jump) and moves at most 20 m in a round, the
+   mirrors come back. The own cell is invulnerable: bitten and knocked out by the crowd it moved
+   5-18 m in a round (a respawn), with BUG-0355's fixes or without, and without a full pool too
+   (--no-fill); without the fixes the shared spare also flung it 64 m to 1e7 m in 4 of 12 runs
+   (BUG-0355 follow-up, docs/re/cell.md#cell-gfx-pool).
+SPORE_FIX_OFF=cell.particles must FAIL; SPORE_FIX_OFF=cell.spare,cell.gfx_full,cell.bare_still
+fails in about 1 run of 3 (--repeat).
 
-  SPORE_LANE=8 python3 tools/tests/coop_cell_particles.py [--rounds 10]
+  SPORE_LANE=8 python3 tools/tests/coop_cell_particles.py [--rounds 16]
 """
 import argparse
 import math
@@ -25,6 +30,9 @@ import re
 import time
 
 from twoinst import Checks, start
+
+
+MAX_STEP = 20.0  # m in one round (~3 s): shoves by the crowd reach 11 m (invulnerable, fixes on); the shared NaN spare flung it 64 m to 1e7 m
 
 
 def out(con, line):
@@ -48,7 +56,8 @@ def faults(con):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--rounds', type=int, default=10)
+    ap.add_argument('--rounds', type=int, default=16)
+    ap.add_argument('--no-fill', action='store_true', help='the mirrors churn without a full pool (control: what the churn alone does)')
     a = ap.parse_args()
     ck = Checks()
     host, guest = start('cell')
@@ -57,12 +66,16 @@ def main():
         time.sleep(1)
     host.call('coop.pool food 300')
     time.sleep(10)
-    print('  guest:', out(guest, 'coop.pool particles 1499').strip(), flush=True)
+    if not a.no_fill:
+        print('  guest:', out(guest, 'coop.pool particles 1499').strip(), flush=True)
     p0 = own_pos(guest)
-    counts, jumps, minus1, head_bad = [], [], [], []
+    counts, jumps, steps, minus1, head_bad = [], [], [], [], []
+    last = p0
     for i in range(a.rounds):
+        guest.call('coop.pool invuln 1')  # a knock-out's respawn moved it 18 m (not this test's subject)
         guest.call('coop.pool zap 5000')
-        guest.call('coop.pool particles 1499')  # the removals gave particles back: full again for the new mirrors
+        if not a.no_fill:
+            guest.call('coop.pool particles 1499')  # the removals gave particles back: full again for the new mirrors
         time.sleep(2.5)
         s = out(guest, 'coop.pool sap')
         counts.append(num(s, 'particles'))
@@ -71,8 +84,14 @@ def main():
         p = own_pos(guest)
         if p and p0:
             jumps.append(math.dist(p, p0))
+        if p and last:
+            steps.append(math.dist(p, last))
+        last = p or last
+        pa = out(guest, 'coop.pool parts')
         print(f'  round {i + 1}: particles={num(s, "particles")} spare={num(s, "spare")} bad_frees={num(s, "bad_frees")} '
-              f'minus1_cells={minus1[-1]} free_head_bad={head_bad[-1]} mirrors={num(out(guest, "coop.pool"), "mirrors")} own cell {jumps[-1] if jumps else "?"} m from the start',
+              f'minus1_cells={minus1[-1]} free_head_bad={head_bad[-1]} mirrors={num(out(guest, "coop.pool"), "mirrors")} own cell {jumps[-1] if jumps else "?"} m from the start, '
+              f'{steps[-1] if steps else "?"} m this round | own_n={num(pa, "own_n")} own_spare={num(pa, "own_spare")} '
+              f'stripped={num(pa, "stripped")} spare_freed={num(pa, "spare_freed")} near_bare={num(pa, "near_bare")} nan_cells={num(pa, "nan_cells")}',
               flush=True)
     ok = [c for c in counts if c is not None]
     ck(len(ok) == len(counts) and min(ok) >= 0 and max(ok) <= 1500,
@@ -80,6 +99,9 @@ def main():
     ck(max(minus1) == 0, f'3. no cell holds the pool\'s -1 among its particles (most: {max(minus1)} cells)')
     ck(max(head_bad) == 0, f'3. the pool\'s free list stays inside the pool (bad in {sum(head_bad)} of {len(head_bad)} rounds)')
     ck(bool(jumps) and max(jumps) < 30, f'3. the guest\'s own cell stays where it was (at most {max(jumps) if jumps else "?":.1f} m away)')
+    # BUG-0355 follow-up: a step of 13-18 m in one round (the cell flung by the crowd around it)
+    ck(bool(steps) and max(steps) < MAX_STEP, f'3. the guest\'s own cell moves at most {MAX_STEP:.0f} m in a round '
+                                              f'(most {max(steps) if steps else "?":.1f} m)')
     m = num(out(guest, 'coop.pool'), 'mirrors') or 0
     ck(m > 100, f'3. the guest mirrors the host\'s cells ({m})')
     for name, con in (('host', host), ('guest', guest)):

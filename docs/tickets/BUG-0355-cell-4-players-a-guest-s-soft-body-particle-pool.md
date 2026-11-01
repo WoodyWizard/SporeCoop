@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.3.1+main 251d80d
 fixed_in: unreleased
 branch: fix/w26-cell-spare
-commits: 0b1e55e, cd89fd4
+commits: 0b1e55e, cd89fd4, 1e827ed, cd75347
 tests: cell_spare
 signature: guest log "the soft-body particle pool is full (1499 of 1500): the spare slot instead of -1 (BUG-0338)" in ordinary play, then "N of our own 64 soft-body particles are held by another cell too", perf fps 3 for good; coop.pool orphans > 0 (allocated at 0xE5CC88)
 docs: docs/re/cell.md#cell-gfx-pool, docs/06-testing.md#testing-cell-spare, docs/05-re-notes.md#re-notes-sample
@@ -64,6 +64,10 @@ was not measured.
   made while the cell graphics pool is full; the cell stays as the game left it (+0x248 = 0, no
   particles, not drawn), the LOD asks again next frame and gets one when there is room. Off: the
   game's call (the leak). This is the root.
+  A refused cell gets the game's own "no particles" form (count 1, -1) instead of keeping the pool's
+  count 0 (follow-up: a NaN host cell and the own cell thrown 1e7 m in cell_sap).
+* `coop.fix cell.bare_still` (follow-up): a guest's mirror whose soft body cell.spare freed is
+  placed at the host's pose at rest every frame, as a soft mirror is, not steered by velocity.
 * `coop.fix cell.spare` (hook on ParticleAlloc; the pool can still fill legitimately, 256 cells x 16
   particles at tier 2 is 4096): a full pool frees the soft bodies of the cells farthest from our own
   (not ours, no puppet, not the asking cell) down to 1300 used and hands out a real slot; such a cell
@@ -85,8 +89,19 @@ in about 1 of 5 runs, so it is no FAIL test).
 Cell regression 8/8, lab 20261031-182516 (cell_coop, cell_particles, cell_sap, cell_spare,
 cell_leave, cell_evolve_poll, cell_nan, cell_churn); smoke 14/14, lab 20261031-183030 (lanes 5, 6, 8);
 `make test` OK.
+Follow-up (cd75347; run dirs under SporeCoop-wt/fix/w26-cell-spare/out/lab/): cell_particles 6/6
+(20261031-202705), cell_spare 3/3 (20261031-202750), cell_sap 4/4 (20261031-202009; before the
+count-1 form 3 of 5 failed: 20261031-201100, 20261031-201612), cell_coop 3/3 (20261031-203415; one
+warm rerun failed the knock-out part in 20261031-202750, BUG-0356). Step investigation: all switches
+off 6/12 stepped (20261031-194511, 20261031-194556), --no-fill 1/8 (20261031-195222, a knock-out
+respawn), invulnerable fixes on 6/6 and off 5/6 (20261031-195745, 20261031-195830).
 Not verified: the 3 fps itself (not reproduced in 2 players, see Root cause).
 
 ## History
 - 2026-10-31: opened.
 - 2026-10-31 (fix/w26-cell-spare): root cause (a full cell graphics pool loses particles every frame), cell.gfx_full + cell.spare, cell_spare; fixed (unreleased).
+- 2026-10-31 (follow-up after the merge 55da78b): cell_particles failed on main (own cell 32.4 m,
+  a step of 18 m). Not caused by the switches: all three off stepped in 6 of 12 runs (64 m to 1e7 m
+  in 4), without a full pool 1 of 8 (a knock-out's respawn). The test now keeps the own cell
+  invulnerable and checks a step of at most 20 m a round; cell.bare_still added (not shown to
+  matter). Found on the way: cell_sap failed 3 of 5 (count 0 of refused cells): fixed in cell.gfx_full.
