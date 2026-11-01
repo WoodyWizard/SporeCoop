@@ -8,7 +8,7 @@ reported: 2026-10-30
 source: fix/w9-tribe while analysing BUG-0288 (static, from docs/re/host-centric.md M5/M6/M12)
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w9-creature
 commits: f7eb82e 8c950ac 5cf09ff
 tests: tools/tests/coop_tribe_far.py (suite tribe_far)
@@ -59,3 +59,4 @@ proxies on the guest):
 ## History
 - 2026-10-30: opened.
 - 2026-10-30: reproduced and fixed on fix/w9-creature (npc.rts_views), with BUG-0280 in Tribe.
+- 2026-11-01: released in 0.7.3.2.

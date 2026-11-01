@@ -8,7 +8,7 @@ reported: 2026-10-31
 source: lab 20261031-024148 campaign#1 (lane 2), run dir out/lane2/campaign/20261031-024151
 role: host
 versions: main 8874eb1
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w19-space
 commits: 1b4e719, 71a5ebb
 tests: space_stray_window
@@ -63,3 +63,4 @@ must bring it to the galaxy view with the game time running (the game's context 
 ## History
 - 2026-10-31: opened.
 - 2026-10-31 (fix/w19-space): test tools close windows that pause the game without a caption; FAIL 20261031-050021, PASS 20261031-045500 + 20261031-050839, campaign replay OK, Space regression 20261031-051044 7/7 (lane 8).
+- 2026-11-01: released in 0.7.3.2.

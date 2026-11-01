@@ -8,7 +8,7 @@ reported: 2026-10-30
 source: lab 20261030-163302-fix-w14-tribe-civ civ_ai_spawn
 role: guest
 versions: fix/w14-tribe-civ
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w15-civ
 commits: 43ef004
 tests: civ_ai_spawn (coop_civ_ai_spawn.py)
@@ -42,3 +42,4 @@ test checks that counter. No behaviour change.
 ## History
 - 2026-10-30: opened.
 - 2026-10-30 (fix/w15-civ): a test race; the test counts only the guest's own vehicles.
+- 2026-11-01: released in 0.7.3.2.

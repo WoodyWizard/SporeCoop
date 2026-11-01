@@ -8,7 +8,7 @@ reported: 2026-10-29
 source: final campaign lab 20261029-203821 campaign_space#1 lane 7
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w9-tests
 commits: 2db65c9
 tests: campaign, campaign_space
@@ -33,3 +33,4 @@ FAIL: lab 20261029-203821 campaign_space#1 (20 min of "talk answered"). PASS: la
 - 2026-10-29: opened.
 - 2026-10-30: fix/w9-tests: the specialty box first, Esc for a talk that does not close.
 - 2026-10-30: fix/w9-tests: campaign_space passed (lab 20261030-004738).
+- 2026-11-01: released in 0.7.3.2.

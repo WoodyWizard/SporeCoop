@@ -8,7 +8,7 @@ reported: 2026-10-31
 source: lab 20261031-185843 campaign#2 (lane 4, 4 players, final 0.7.3.2 verification, main 55da78b)
 role: guest
 versions: coop 0.7.3.1 (main 55da78b), SporeKit 0.3.5, GOG 2024 dc04aee5
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w27-creature-fault
 commits: 656a7c9, e10c2b0
 tests: ability_bar (tools/tests/coop_ability_bar.py)
@@ -70,3 +70,4 @@ against the avatar's abilities / the game builds it now (tests).
 
 ## History
 - 2026-10-31: opened (lab 20261031-185843 campaign#2); root cause, fix and test on fix/w27-creature-fault.
+- 2026-11-01: released in 0.7.3.2.

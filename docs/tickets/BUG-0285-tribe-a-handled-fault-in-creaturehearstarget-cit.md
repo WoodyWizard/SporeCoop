@@ -8,7 +8,7 @@ reported: 2026-10-29
 source: lab campaign 20261029-174717 (4 players, lane 7)
 role: host
 versions: 0.7.3.0 (main b5ef74d)
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w9-tribe, fix/w13-tribe-civ
 commits: 22cbf89 d1cdf2e eb1bebf 4c6c6e1
 tests: tribe_leave_walk (coop_tribe_leave_walk.py)
@@ -82,3 +82,4 @@ Not verified: which citizen the game cleaned up while its action still ran, and 
 - 2026-10-29: opened (fix/w8-planet, found while fixing BUG-0284).
 - 2026-10-30: fix/w9-tribe: the fault's function and caller chain read (game code only), not reproduced; not-reproduced.
 - 2026-10-30: seen again (BUG-0310); fixed on fix/w13-tribe-civ by the guard tribe.leave_walk (stand-in test FAIL 20261030-135912, PASS 20261030-140307 2x); not-reproduced -> fixed.
+- 2026-11-01: released in 0.7.3.2.

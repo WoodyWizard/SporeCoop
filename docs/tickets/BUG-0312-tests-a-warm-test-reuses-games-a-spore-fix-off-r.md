@@ -8,7 +8,7 @@ reported: 2026-10-30
 source: fix/w13-creature BUG-0281 runs, lane 5
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w13-creature
 commits: df245fa
 tests: tools/tests/twoinst.py
@@ -39,3 +39,4 @@ keeps it); after the change the lab run right after a SPORE_FIX_OFF run (out/lab
 ## History
 - 2026-10-30: opened.
 - 2026-10-30: fixed on fix/w13-creature.
+- 2026-11-01: released in 0.7.3.2.

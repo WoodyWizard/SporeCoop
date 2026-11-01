@@ -8,7 +8,7 @@ reported: 2026-10-29
 source: lab 20261029-051251 (main eea6b46)
 role: guest
 versions: unreleased
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w9-tribe
 commits: 0e9b31d 273080f
 tests: coop_phase.py (suite phase), tools/tests/twoinst.py Monitor
@@ -49,3 +49,4 @@ console still fails. The event text now carries the exception, `loading` and the
 ## History
 - 2026-10-29: opened.
 - 2026-10-30: fix/w9-tribe: root cause (the console's single thread busy with the test's own wait.frames), Monitor fixed; kind test.
+- 2026-11-01: released in 0.7.3.2.

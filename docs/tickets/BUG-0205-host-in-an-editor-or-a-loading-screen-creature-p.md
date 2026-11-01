@@ -8,7 +8,7 @@ reported: 2026-10-28
 source: BUG-0151 rest (fix/w3-civ)
 role: both
 versions: main 5ae9744 and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w4-census, fix/w9-cell-away
 commits: 5780f32, cc0e7bd, a5911a7
 tests: coop_away_editor.py (suite away_editor; --nofix fails), coop_cell_away.py (suites cell_away, cell_away_editor; SPORE_FIX_OFF=pool.away fails)
@@ -94,3 +94,4 @@ Cell (fix/w9-cell-away), `coop_cell_away.py`, lane 3, GOG 2024:
 - 2026-10-28 (fix/w4-census): K_GOAL kept and paid on return (tested, FAIL/PASS), host in an editor or loading counted as away (implemented, effect on creatures not observed: see Verification), Cell left open. A `play_civ.py --seed 9` run with the change (host bot opened the city planner 5 times) was OK.
 - 2026-10-28: switch: core.away_editor, core.away_goal (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).
 - 2026-10-30 (fix/w9-cell-away): Cell part fixed: the guest plays its own pool while the host is away (menu, and now a host editor or load in Cell too) and takes the host's pool again when it is back, its food kept and sent (`pool.away`, cell_away FAIL/PASS).
+- 2026-11-01: released in 0.7.3.2.

@@ -8,7 +8,7 @@ reported: 2026-10-31
 source: final smoke lab 20261030-235253 team
 role: guest
 versions: main 0b76599 (0.7.3.2 candidate)
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w18-creature
 commits: 9d9cc68
 tests: npc_run_hp (tools/tests/coop_npc_run_hp.py), team
@@ -45,3 +45,4 @@ killed while it runs; the guest's game must show the health within 3 s and the d
 ## History
 - 2026-10-31: opened.
 - 2026-10-31: found and fixed on fix/w18-creature (regression of BUG-0281).
+- 2026-11-01: released in 0.7.3.2.

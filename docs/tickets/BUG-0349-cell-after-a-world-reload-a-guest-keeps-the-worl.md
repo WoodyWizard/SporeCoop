@@ -8,7 +8,7 @@ reported: 2026-10-31
 source: player reports 2026-10-31 (second batch: 11 zips, host and guest)
 role: guest
 versions: 0.7.3.1
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w22-reports
 commits: c8f91ff
 tests: cell_own_load (tools/tests/coop_cell_own_load.py)
@@ -59,3 +59,4 @@ applied again after every load.
 ## History
 - 2026-10-31: opened from the second batch of the 2026-10-31 report zips (host mark, guest log).
 - 2026-10-31: fixed on fix/w22-reports (creations.cell_reapply).
+- 2026-11-01: released in 0.7.3.2.

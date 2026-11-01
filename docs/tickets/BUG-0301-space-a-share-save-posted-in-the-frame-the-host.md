@@ -8,7 +8,7 @@ reported: 2026-10-30
 source: lab 20261030-075052 campaign_space#3 (lane 7)
 role: 
 versions: main 390f73d
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w11-space-join
 commits: 1b8430e
 tests: space_share_takeoff (coop_space_share_takeoff.py), campaign_space
@@ -55,3 +55,4 @@ why the game does that is not known).
 ## History
 - 2026-10-30: opened (fix/w11-space-join) from lab 20261030-075052 campaign_space#3; reproduced with
   a 2-player test, fixed.
+- 2026-11-01: released in 0.7.3.2.

@@ -8,7 +8,7 @@ reported: 2026-10-23
 source: docs/known-issues.md (ticket backfilled 2026-10-27)
 role: both
 versions: 0.7.2.4 (main) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w13-space
 commits: 0d69be7, 2d62fea, fdd1e69, 6cdb0d5
 tests: space_seed_profile
@@ -74,3 +74,4 @@ guest jumps there, the host follows; both games' loaded PlanetIDs must be equal.
 - 2026-10-30 (fix/w13-space): root cause found with logs of the seeded generation (species profile load draws), fixed behind space.seed_profile; FAIL 20261030-142550, PASS 20261030-142409 + direct runs.
 - 2026-10-30: Space regression on lanes 8/9, lab 20261030-142729: 12/13 (space_seed_profile, space_coop, space_play, space_page, space_share_takeoff, space_captain, space_puppet, space_rivalry, campaign_space, space_jump, space_seed_thread, space_land_early ok; space_finale failed on a counter race unrelated to this change, BUG-0320).
 - 2026-10-30: more PASS runs: lab 20261030-145308 (space_seed_profile x2, 8 and 8; #1 on lane 8 failed only on the lane-8 guest fault BUG-0323, also seen on main) and 20261030-150155 (space_seed_profile x3 on lane 9 ok; space_jump same planets 3/3, lane 8 runs failed on BUG-0323).
+- 2026-11-01: released in 0.7.3.2.

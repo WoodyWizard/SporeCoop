@@ -8,7 +8,7 @@ reported: 2026-10-30
 source: lab 20261030-075052 campaign#3
 role: 
 versions: 0.7.3.1
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w11-finale
 commits: 24a9a55
 tests: space_captain, campaign (finale)
@@ -51,3 +51,4 @@ notches", ctx=1, the screen still open). PASS: lab 20261030-100128-fix-w11-final
 
 ## History
 - 2026-10-30: opened; reproduced and fixed (test tooling) on fix/w11-finale.
+- 2026-11-01: released in 0.7.3.2.

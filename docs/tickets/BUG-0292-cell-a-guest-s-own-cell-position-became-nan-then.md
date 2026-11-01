@@ -8,7 +8,7 @@ reported: 2026-10-30
 source: fix/w9-cell-food lab 20261030-012925 cell_new_game
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w9-cell-food
 commits: de617d3
 tests: cell_new_game, cell_far_guest
@@ -70,3 +70,4 @@ no centre).
 - 2026-10-30: opened.
 - 2026-10-30: fix/w9-cell-food: seen once, not reproduced in two reruns; left open.
 - 2026-10-30: fix/w9-cell-food: guarded (pool.finite_state, finite view centres), not reproduced in 15 more runs; cause not confirmed.
+- 2026-11-01: released in 0.7.3.2.

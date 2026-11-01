@@ -8,7 +8,7 @@ reported: 2026-10-30
 source: lab 20261030-035318 campaign#1/#2, campaign_short#2
 role: 
 versions: main 1d51511
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w10-cell-4p
 commits: 08428c0, a964c90
 tests: cell_4p, campaign_short, unit (net_tests diag compare)
@@ -36,3 +36,4 @@ FAIL: lab 20261030-053709 campaign_short#1 / #3 (coverage 71-83% of 1080-1266 ho
 ## History
 - 2026-10-30: opened.
 - 2026-10-30: fix/w10-cell-4p: range rules in the sync-check and the coverage; fixed (unreleased).
+- 2026-11-01: released in 0.7.3.2.

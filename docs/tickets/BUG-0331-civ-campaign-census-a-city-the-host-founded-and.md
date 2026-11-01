@@ -8,7 +8,7 @@ reported: 2026-10-30
 source: lab 20261030-210914 campaign#3 (lane 7) civ/play 22:09:43
 role: guest
 versions: main be725db
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w17-tribe
 commits: 2d79697
 tests: civ_pause_city (coop_civ_pause_city.py)
@@ -49,3 +49,4 @@ Test `coop_civ_pause_city.py`: a city founded during a guest's pause reaches it 
 ## History
 - 2026-10-30: opened.
 - 2026-10-30 (fix/w17-tribe): the guest was paused; census skips paused guests; scenario test.
+- 2026-11-01: released in 0.7.3.2.

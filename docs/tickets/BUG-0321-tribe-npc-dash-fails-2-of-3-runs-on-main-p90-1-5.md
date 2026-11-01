@@ -8,7 +8,7 @@ reported: 2026-10-30
 source: lab 20261030-144611-tmp-w13-main-ref, 20261030-144027-fix-w13-tribe-civ
 role: guest
 versions: main 5d7f20e
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w14-tribe-civ
 commits: 4feb19c
 tests: tribe_npc_dash (coop_tribe_npc_dash.py)
@@ -62,3 +62,4 @@ should take the late-state samples out, not proven.
 ## History
 - 2026-10-30: opened.
 - 2026-10-30 (fix/w14-tribe-civ): analysed with evidence: the test is fragile under load, the trail fix holds; test made robust (fresh-state samples, SKIP when too few); BUG-0322 is a duplicate.
+- 2026-11-01: released in 0.7.3.2.

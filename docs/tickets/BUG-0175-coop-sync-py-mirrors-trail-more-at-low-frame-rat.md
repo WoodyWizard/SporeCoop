@@ -8,7 +8,7 @@ reported: 2026-10-24
 source: docs/known-issues.md (ticket backfilled 2026-10-27)
 role: guest
 versions: 0.7.2.4 (main) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w13-net
 commits: 755e432, fcba17c, a0f0c0b
 tests: tests/npc_tests.cpp test_pull_per_second; tools/tests/coop_sync.py --fps 15 (suite sync_lowfps, regression)
@@ -80,3 +80,4 @@ screen).
 - 2026-10-27: ticket backfilled from docs/known-issues.md (every entry carries its ticket id, CLAUDE.md 1).
 - 2026-10-28: fix/w4-tests (wave 4): not reached. The test-side cause is handled since 2026-10-23 (coop_sync waits for unpaused games); what is left is mod behaviour (drive.h's per-frame nudge, the 2024 guest's paused seconds), not a test change. Left open.
 - 2026-10-30: fixed on fix/w13-net (wave 13): drive::step's pull per second (drive.nudge_dt); the 2024 paused seconds split off as BUG-0313.
+- 2026-11-01: released in 0.7.3.2.

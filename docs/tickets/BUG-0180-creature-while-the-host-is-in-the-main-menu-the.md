@@ -8,7 +8,7 @@ reported: 2026-10-27
 source: docs/known-issues.md (ticket backfilled 2026-10-27)
 role: guest
 versions: 0.7.2.4 (main) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w13-creature
 commits: 2d444ef
 tests: tools/tests/coop_away_refill.py (suite away_refill)
@@ -52,3 +52,4 @@ them as before. `coop.fix npc.away_locals off`: the proxies just go (0.7.3.1).
 - 2026-10-27: ticket backfilled from docs/known-issues.md (every entry carries its ticket id, CLAUDE.md 1).
 - 2026-10-28: fix/w3-creature (wave 3): not worked on beyond reading; still open. What is left is how the game's own population refills a planet (its respawn rate of removed herds), which needs reverse engineering of the creature spawner; the known fallback (mirrors made local NPCs) failed before (docs/re/creature.md 8.3). Not a quick fix.
 - 2026-10-30: fix/w13-creature: reproduced (0 own NPCs near the guest for 25 s) and fixed by npc.away_locals.
+- 2026-11-01: released in 0.7.3.2.

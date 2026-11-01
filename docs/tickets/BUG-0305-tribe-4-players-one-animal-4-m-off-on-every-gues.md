@@ -8,7 +8,7 @@ reported: 2026-10-30
 source: lab 20261030-075052 campaign#3
 role: 
 versions: 0.7.3.1
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w12-tribe-npc
 commits: 8623721, 07c3c07
 tests: tribe_npc_dash (coop_tribe_npc_dash.py), coop_sync_multi --fixture tribe, campaign
@@ -85,3 +85,4 @@ npc_far, creature, creature_kills, creature_death, npc_pooled, tribe_npc_dash: 1
 - 2026-10-30: opened; A/B with the view-centre switches: no regression, open (fix/w11-finale).
 - 2026-10-30: root cause found with the `coop.npc list` probe (proxies of a running herd pushed off the path), fixed by `npc.trail`, test tribe_npc_dash (fix/w12-tribe-npc).
 - 2026-10-30: fix/w12-cell-fault: lab 20261030-104149 campaign#3 (main 813f8cd, overloaded machine, host fps 17-27): kind t (tribe members) 4.1-4.8 m off on all three guests at every check from 11:07 for 7 minutes (n stayed under 2 m mostly); recorded in BUG-0310's report.
+- 2026-11-01: released in 0.7.3.2.

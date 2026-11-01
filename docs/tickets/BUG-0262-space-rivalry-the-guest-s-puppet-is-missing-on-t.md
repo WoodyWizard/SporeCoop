@@ -8,7 +8,7 @@ reported: 2026-10-29
 source: lab 20261029-051251 (main eea6b46)
 role: all
 versions: unreleased
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w9-space
 commits: 1cc86fe
 tests: space_rivalry (coop_space_rivalry.py)
@@ -32,3 +32,4 @@ no-fail-run: test timing (1 failure in about 10 lab runs; the slow landing canno
 ## History
 - 2026-10-29: opened.
 - 2026-10-30: test fixed on fix/w9-space (landing rounds + waits).
+- 2026-11-01: released in 0.7.3.2.

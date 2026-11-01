@@ -8,7 +8,7 @@ reported: 2026-10-29
 source: fix/w7-sync BUG-0275 measurement
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w14-creature
 commits: aaa98ac
 tests: creature_npc_dash (coop_tribe_npc_dash.py with DASH_FIXTURE=creature)
@@ -104,3 +104,4 @@ Standing NPCs (the report's case) were not reproduced (see above); the standing 
 - 2026-10-30: BUG-0305 (Tribe) found proxies of a running herd pushed off their path; its `npc.trail` fix also acts here; not reproduced in Creature, stays open (fix/w12-tribe-npc).
 - 2026-10-30: fix/w13-creature: Creature check of npc.trail: standing case not reproduced; running NPCs p90 6.2 m -> 3.1-3.4 m with npc.trail at 15 fps; stays open.
 - 2026-10-30: fix/w14-creature: cause found (a MoveTo again every 0.1 s restarts the walk; pulls undone by the locomotion); fixed by npc.kinematic.
+- 2026-11-01: released in 0.7.3.2.

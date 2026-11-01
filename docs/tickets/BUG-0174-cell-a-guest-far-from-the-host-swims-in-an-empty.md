@@ -8,7 +8,7 @@ reported: 2026-10-23
 source: docs/known-issues.md (ticket backfilled 2026-10-27)
 role: guest
 versions: 0.7.2.4 (main) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w9-cell-food
 commits: f9f1861, 5e77f1b, 1b61757, 8b1a7b5, 1511d0b, ebf5ee2, a41caec, 12366b7, 7f76bd5, ac4a302, ab5f584, 3914f6d, 924507c, dc71981, 4241133, 6f9d26d, 6b23ebd, de617d3, c4b73fd, 1b46016, 21dad8b
 tests: cell_far_guest
@@ -103,3 +103,4 @@ from its registry; 1b46016: shared tiles hand over after a level change), lane 2
 - 2026-10-30: fix/w9-cell-food: fixed (host populates around every partner, `cell.partner_tiles`); two
   crashes on the way recorded in docs/re/cell.md#cell-partner-tiles (the erase bound to the host's
   list, the full tile pool, the world scale step refilling the host's list from every tile).
+- 2026-11-01: released in 0.7.3.2.

@@ -8,7 +8,7 @@ reported: 2026-10-31
 source: player report 2026-10-31 (host mark)
 role: host
 versions: 0.7.3.1
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w22-reports
 commits: 2a4420a
 tests: host_old_choice (tools/tests/coop_host_old_choice.py)
@@ -59,3 +59,4 @@ Lab: FAIL 20261031-125112 (fix off), PASS 20261031-125210. Not tested: the edito
 ## History
 - 2026-10-31: opened from the host's report zip (mark, creations and trace lines).
 - 2026-10-31: fixed on fix/w22-reports (creations.host_world_species); the second batch (fix/w22-reports2 evidence) adds: every load re-swapped the host.
+- 2026-11-01: released in 0.7.3.2.

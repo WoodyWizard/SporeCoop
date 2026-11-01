@@ -8,7 +8,7 @@ reported: 2026-10-31
 source: player reports 2026-10-31 (second batch: 11 zips, host and guest)
 role: guest
 versions: 0.7.3.1
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w22-reports2
 commits: 6f18d53, d12698c
 tests: tools/tests/coop_cell_reload_join.py (suite cell_reload_join)
@@ -53,3 +53,4 @@ cell_respawn_swap, creations_cell, cell); `make test` PASS.
 ## History
 - 2026-10-31: opened from the guest's log of the second batch of the 2026-10-31 report zips.
 - 2026-10-31: fixed on fix/w22-reports2 (cell.join_after_load).
+- 2026-11-01: released in 0.7.3.2.

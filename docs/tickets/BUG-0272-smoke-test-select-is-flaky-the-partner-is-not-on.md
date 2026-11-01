@@ -8,7 +8,7 @@ reported: 2026-10-29
 source: lab 20261029-120208 smoke
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w9-tests
 commits: 2db65c9
 tests: select
@@ -40,3 +40,4 @@ FAIL before: lab 20261029-120208, 20261029-121511, 20261029-121818 (about 1 in 3
 ## History
 - 2026-10-29: opened.
 - 2026-10-30: fix/w9-tests: the test waits for the partner on the screen and walks up to it; 11 of 11 passed. Fixed (the fallback is unproven).
+- 2026-11-01: released in 0.7.3.2.

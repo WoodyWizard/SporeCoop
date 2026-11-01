@@ -8,7 +8,7 @@ reported: 2026-10-31
 source: player reports 2026-10-31 (host and guest marks)
 role: guest
 versions: 0.7.3.1
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w25-reports
 commits: 2a4420a c8f91ff 3974bf8
 tests: cell_own_load (tools/tests/coop_cell_own_load.py)
@@ -77,3 +77,4 @@ Earlier notes (kept for the record):
   rebuild in good and bad runs alike) does not separate the cases. Tools for the next step:
   `coop.pool sapme [c<key>]`, `own_pairs=` in `coop.pool`, `pairs=` / `pairs_full=` in `coop.pool sap`.
 - 2026-10-31: cause found and fixed on fix/w25-reports (cell.puppet_index).
+- 2026-11-01: released in 0.7.3.2.

@@ -8,7 +8,7 @@ reported: 2026-10-29
 source: final campaign lab 20261029-203821 campaign#2 lane 4
 role: guest
 versions: 0.7.3.0 (main 3780da0)
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w9-tribe
 commits: 399bd97 2bc6ef1 0e9b31d
 tests: coop_tribe_bounce_mirrors.py (suite tribe_bounce_mirrors)
@@ -54,3 +54,4 @@ coop_multi.measure `missed`).
 ## History
 - 2026-10-29: opened.
 - 2026-10-30: root cause (the BUG-0172 guard on a guest's mirror tribe), fix and test on fix/w9-tribe.
+- 2026-11-01: released in 0.7.3.2.

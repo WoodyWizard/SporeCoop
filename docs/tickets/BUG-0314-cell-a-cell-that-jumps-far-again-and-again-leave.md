@@ -8,7 +8,7 @@ reported: 2026-10-30
 source: fix/w13-cell BUG-0307 hunt
 role: all
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w13-cell
 commits: 62a880d
 tests: cell_jumps, cell_jumps_host
@@ -56,3 +56,4 @@ most 600 background cells and (guest) the host's cells on its screen again.
 ## History
 - 2026-10-30: opened (fix/w13-cell, found hunting BUG-0307).
 - 2026-10-30: fixed by cell.bg_cull (fix/w13-cell).
+- 2026-11-01: released in 0.7.3.2.

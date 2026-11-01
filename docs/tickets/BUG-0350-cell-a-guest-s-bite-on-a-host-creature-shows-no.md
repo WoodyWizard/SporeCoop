@@ -8,7 +8,7 @@ reported: 2026-10-31
 source: player reports 2026-10-31 (second batch: 11 zips, host and guest)
 role: guest
 versions: 0.7.3.1
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w22-reports2
 commits: 6f18d53, 8e58c97
 tests: tools/tests/coop_cell_bite_ring.py (suite cell_bite_ring)
@@ -66,3 +66,4 @@ cell_respawn_swap, creations_cell, cell); `make test` PASS.
 ## History
 - 2026-10-31: opened from the second batch of the 2026-10-31 report zips (host mark, code reading).
 - 2026-10-31: the ring fixed on fix/w22-reports2 (cell.bite_ring); hurt and eat animations not done.
+- 2026-11-01: released in 0.7.3.2.

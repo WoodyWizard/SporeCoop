@@ -8,7 +8,7 @@ reported: 2026-10-31
 source: player reports 2026-10-31 (guest zip, Steam build, 3 crashes)
 role: guest
 versions: 0.7.3.1
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w22-reports
 commits: 2a4420a
 tests: guest_missing_pack (tools/tests/coop_guest_missing_pack.py)
@@ -110,3 +110,4 @@ records from the host only on demand, after the load).
 - 2026-10-31: opened from the guest's report zip (three crash reports with minidumps and logs) and the host's zip (logs of the same session).
 - 2026-10-31: reproduced on GOG lanes 5/6 (missing pack -> 0x441F3B); fixed on fix/w22-reports (creations.missing_parts).
 - 2026-10-31 (fix/w24-parts): the owner chose substitution over refusal: BUG-0354 shows the pack's parts as similar base parts on a game without it (`creations.part_substitute`); the refusal stays as the fallback for a part without a substitute.
+- 2026-11-01: released in 0.7.3.2.

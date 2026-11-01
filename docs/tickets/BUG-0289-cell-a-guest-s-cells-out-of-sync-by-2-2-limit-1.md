@@ -8,7 +8,7 @@ reported: 2026-10-29
 source: final campaign lab 20261029-203821 campaign#3 lane 7
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w9-cell-food
 commits: e07d9e4, 6b23ebd, 1983bea
 tests: campaign
@@ -45,3 +45,4 @@ rerun on this branch.
 ## History
 - 2026-10-29: opened.
 - 2026-10-30: fix/w9-cell-food: cause found (Bob paused, the pause menu left open); the campaign check skips paused guests.
+- 2026-11-01: released in 0.7.3.2.

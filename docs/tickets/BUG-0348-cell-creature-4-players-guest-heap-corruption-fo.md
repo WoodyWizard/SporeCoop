@@ -8,7 +8,7 @@ reported: 2026-10-31
 source: lab 20261031-120025 campaign#1
 role: guest
 versions: 0.7.3.1+main 242a7bd
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w22-cell
 commits: 21b178c, 90f091b, 27245c9
 tests: cell_pause
@@ -54,3 +54,4 @@ mirrors back, the guest reaches the galaxy menu, no fault); also 20261031-123047
 ## History
 - 2026-10-31: opened.
 - 2026-10-31: fix/w22-cell: root cause (pending arrays of the cell broadphase overflow while the guest is paused), cell.sap_pending, cell_pause; fixed (unreleased).
+- 2026-11-01: released in 0.7.3.2.

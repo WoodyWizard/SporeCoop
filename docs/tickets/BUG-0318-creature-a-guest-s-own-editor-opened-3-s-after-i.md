@@ -8,7 +8,7 @@ reported: 2026-10-30
 source: fix/w13-creature lab 20261030-141448 legless_guest_cancel
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w14-creature
 commits: 74e58b2, 103a369
 tests: tools/tests/coop_editor_after_swap.py (suite editor_after_swap)
@@ -70,3 +70,4 @@ later; the editor must draw (screenshot not black) and one red-cross click must 
 - 2026-10-30: opened.
 - 2026-10-30: opened on fix/w13-creature (not analysed, outside the batch time).
 - 2026-10-30: fix/w14-creature: reproduced at 6.7 fps after a rejoin (an editor during the avatar swap), fixed by creations.editor_after_swap.
+- 2026-11-01: released in 0.7.3.2.

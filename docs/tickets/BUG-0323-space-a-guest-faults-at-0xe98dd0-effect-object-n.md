@@ -8,7 +8,7 @@ reported: 2026-10-30
 source: lab runs 20261030-145308, -150155, -150848 (fix/w13-space) and 20261030-151438 (main 4dbacc5), lane 8
 role: guest
 versions: main 4dbacc5 and fix/w13-space
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w14-space
 commits: d903410, a5d117e, 4e8dcd5, 1634c63, 2dbb28a
 tests: space_mirror_model
@@ -67,3 +67,4 @@ model instances and spawns a pirate and an escort; the guest's game must not fau
 - 2026-10-30: opened.
 - 2026-10-30 (fix/w14-space): root cause found (host NPC ship model missing on the guest; lane 8's host Pollination.package as trigger), fixed behind fleet.model_check.
 - 2026-10-30: Space regression on lanes 8/9 with the fix, lab 20261030-170211: 15/15 (space_jump on lane 8 with the faulting host profile included).
+- 2026-11-01: released in 0.7.3.2.

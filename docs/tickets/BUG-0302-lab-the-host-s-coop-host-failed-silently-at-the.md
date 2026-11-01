@@ -8,7 +8,7 @@ reported: 2026-10-30
 source: lab 20261030-074023 space_coop (lane 4)
 role: 
 versions: main 390f73d
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w11-space-join
 commits: 1b8430e
 tests: every twoinst test (start), space_coop
@@ -49,3 +49,4 @@ the lane) can hold one for a moment.
 ## History
 - 2026-10-30: opened (fix/w11-space-join) from lab 20261030-074023 space_coop; diagnostics and a
   retry added, cause inferred.
+- 2026-11-01: released in 0.7.3.2.

@@ -8,7 +8,7 @@ reported: 2026-10-27
 source: docs/known-issues.md (ticket backfilled 2026-10-27)
 role: guest
 versions: 0.7.2.4 (main) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w13-tribe-civ, fix/w14-tribe-civ
 commits: eb1bebf 4f73f10 72e32e6 0b6a85a
 tests: civ_mirror_place (coop_civ_mirror_place.py), net_tests (test_velocity_jump_cap, test_velocity_hitch), play_civ
@@ -70,3 +70,4 @@ pushed mirror back (4f73f10 / e5d231d, removed in 72e32e6).
 - 2026-10-28 (fix/w4-census): `play_civ.py --minutes 10 --seed 9` on lane 7 (main 7874654 + this branch): n=2509, median 0.00 m, p90 0.25 m, max 9.35 m, no outlier over 10 m (the v2 event of the earlier runs did not come: the bots' actions differ from run to run, 248 actions this time). New diagnostics for the next sighting: `coop.civ` on the guest now ends every mirrored vehicle's line with `age=` (s since its last state), `err=` (distance from where it should be), `pushed=` / `pushed5s=` (how far the game moved it away from where guest_tick put it one frame before, now and the largest in the last 5 s), and play_civ prints that line for every outlier; `coop.census` + `tools/tests/census.py diff` compare all vehicles by net id. pushed > 1 m on a standing vehicle would prove the inferred cause (the guest's game pushes the mirror out of something only it has there, e.g. a building); age > 3 s would prove the other one (no state). Left open: needs one sighting with these fields. Log: scratchpad fix_w4-census/play_civ9.log.
 - 2026-10-30 (fix/w13-tribe-civ): `play_civ.py --minutes 10 --seed 9` on lane 7, before the cap: n=2352, p90 1.23 m, max 16.2 m: v7 and v10 (player vehicles) 16 m off at the same moment with `age=0.0`/`0.2`, `pushed` 0.0/0.3 and `err=27.0` on both: the target guest_tick wanted was 11+ m from the host's vehicle with a fresh state, so it came from the velocity estimate (observed); a step the host's game made by putting the vehicles somewhere (the bots had just given a defend order) became a speed (inferred). Fixed by civ.vel_cap (eb1bebf). With the cap (2 runs): run 1 n=2613, p90 0.49 m, max 14.6 m with two other causes, both `jumps=0`: v3 (NPC, owner 254) `pushed5s=13.1` and the guest's mirror had an order of its own (`order=8`, opos 0): the guest's game moved it (observed, why not known); v14 (NPC air, loco=1) `age=0.4` `err=19.6` `vel=25.2` `top=25.0`: a late state of a fast vehicle extrapolated while the host's vehicle turned (inferred). Logs: out/w13/play_civ9_a.log, play_civ9_fix1.log, play_civ9_fix2.log of the branch worktree (not in git). Stays open.
 - 2026-10-30 (fix/w14-tribe-civ): the recurring outlier traced to Vehicle_KeepOnValidGround on the guest (runtime probe), fixed by civ.mirror_place; civ.extrap added; fixed.
+- 2026-11-01: released in 0.7.3.2.

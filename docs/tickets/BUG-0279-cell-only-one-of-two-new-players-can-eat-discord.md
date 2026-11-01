@@ -8,7 +8,7 @@ reported: 2026-10-29
 source: Discord report 2026-10-29
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w9-cell-food
 commits: f9f1861, 5e77f1b, 1b61757, 8b1a7b5, 1511d0b, ebf5ee2, a41caec, 12366b7, 7f76bd5, ac4a302, ab5f584, 3914f6d, 924507c, dc71981, 4241133, 6f9d26d, 6b23ebd
 tests: cell_new_game, cell_far_guest
@@ -84,3 +84,4 @@ Not fixed, left open. The new test `cell_new_game` (both new players eat) PASSES
   an early join, on this branch and on v0.7.3.0; the far guest's empty pool (BUG-0174) measured at
   ~45 m. Left open until the players answer.
 - 2026-10-30: fix/w9-cell-food: closed with BUG-0174 (the far guest's empty pool, the likely cause).
+- 2026-11-01: released in 0.7.3.2.

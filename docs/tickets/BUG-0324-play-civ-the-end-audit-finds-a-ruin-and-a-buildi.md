@@ -8,7 +8,7 @@ reported: 2026-10-30
 source: play_civ.py --seed 11 / --seed 9, fix/w13-tribe-civ and fix/w14-tribe-civ
 role: guest
 versions: main 4dbacc5
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w14-tribe-civ
 commits: 9689722
 tests: civ_ruin_repair (coop_civ_ruin_repair.py)
@@ -51,3 +51,4 @@ Not verified: the host's rebuilding after a siege itself (the stand-in makes the
 ## History
 - 2026-10-30: opened.
 - 2026-10-30 (fix/w14-tribe-civ): fixed (civ.ruin_repair), stand-in test FAIL 20261030-162619, PASS 20261030-162734.
+- 2026-11-01: released in 0.7.3.2.

@@ -8,7 +8,7 @@ reported: 2026-10-30
 source: lab 20261030-142729 space_finale, lane 9 (fix/w13-space)
 role: host
 versions: main 5d7f20e (0.7.3.1+)
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w14-space
 commits: c89082a, 2752819
 tests: space_finale_wait
@@ -53,3 +53,4 @@ first; its `entries_with` must be 1.
 - 2026-10-30: opened.
 - 2026-10-30 (fix/w14-space): fixed behind space.finale_waited; FAIL 20261030-165154, PASS 20261030-164615 + 20261030-165209.
 - 2026-10-30: Space regression on lanes 8/9 with the fix, lab 20261030-170211: 15/15 (space_jump on lane 8 with the faulting host profile included).
+- 2026-11-01: released in 0.7.3.2.

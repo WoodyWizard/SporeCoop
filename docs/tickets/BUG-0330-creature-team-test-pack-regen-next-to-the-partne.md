@@ -8,7 +8,7 @@ reported: 2026-10-30
 source: final smoke lab 20261030-205830 lane 2
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w17-creature
 commits: 813d4e3
 tests: team (tools/tests/coop_team.py)
@@ -60,3 +60,4 @@ without the change.
 ## History
 - 2026-10-30: opened.
 - 2026-10-30: fix/w17-creature: two causes: the regen drift (not npc.kinematic; BUG-0333, test made robust) and the rescue cooldown surviving a rejoin (fixed, team.rescue_reset); team 12/12.
+- 2026-11-01: released in 0.7.3.2.

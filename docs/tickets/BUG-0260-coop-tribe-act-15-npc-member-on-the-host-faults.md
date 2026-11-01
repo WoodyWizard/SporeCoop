@@ -8,7 +8,7 @@ reported: 2026-10-29
 source: dev/campaign manual probe, lane 7
 role: 
 versions: main 8f1944b
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w9-tribe
 commits: 0e9b31d 499dce2
 tests: coop_tribe_act.py (suite tribe_act)
@@ -56,3 +56,4 @@ orders are untouched. Switch: `coop.fix tribe.act_check off`.
 ## History
 - 2026-10-29: opened by dev/campaign (seen once while probing; not used by the campaign).
 - 2026-10-30: fix/w9-tribe: reproduced on lane 8 (action 15 = RaidHuts on a citizen), the command refuses object actions on members; fixed.
+- 2026-11-01: released in 0.7.3.2.

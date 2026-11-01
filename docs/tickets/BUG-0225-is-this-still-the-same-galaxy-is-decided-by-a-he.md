@@ -8,7 +8,7 @@ reported: 2026-10-28
 source: GitHub #159 (review of release 0.7.3.0, 5801eea)
 role: all
 versions: 0.7.3.0
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w5-space, fix/w9-space
 commits: c5d89f1, f3e0432, 344f82f, 48bb9a3, 1cc86fe
 tests: space_allies_reload_addr (coop_space_allies_reload.py --same-address), space_trade_reload, space_trade_reload_same (coop_space_trade_reload.py), tests/space_tests.cpp owed action
@@ -42,3 +42,4 @@ Refunds: FAIL with `SPORE_FIX_OFF=space.owed_id` out/lab/20261030-001738 (space_
 - 2026-10-28: opened.
 - 2026-10-28: allies part fixed on fix/w5-space (Space world epoch, test space_allies_reload_addr); the trade part stays open: it needs the shared after-save hook of BUG-0217 (#151) and a two-game fixture.
 - 2026-10-30: refund part fixed on fix/w9-space (world ledger, `space.owed_id`, `space.world_file`; tests space_trade_reload, space_trade_reload_same, unit test).
+- 2026-11-01: released in 0.7.3.2.

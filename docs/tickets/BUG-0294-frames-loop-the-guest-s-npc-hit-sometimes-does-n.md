@@ -8,7 +8,7 @@ reported: 2026-10-30
 source: lab 20261030-033555
 role: test
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: main
 commits: 75a05bf
 tests: frames_loop
@@ -31,3 +31,4 @@ no-fail-run: an intermittent test failure (1 in 9 runs); the old test passed 4/4
 
 ## History
 - 2026-10-30: opened.
+- 2026-11-01: released in 0.7.3.2.

@@ -8,7 +8,7 @@ reported: 2026-10-28
 source: GitHub #165 (review of release 0.7.3.0, 5801eea)
 role: all
 versions: 0.7.3.0
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w5-core, fix/w9-core
 commits: c4f4981, 9202d71 (part, 0.7.3.1), c2e38eb, d4df16d, 6c28f39, 23e2e05
 tests: civ_other_world (coop_civ_other_world.py; --nofix and SPORE_FIX_OFF=res.elsewhere fail), tribe_other_world (--nofix fails), join_other_world (SPORE_FIX_OFF=core.world_dna fails), share_retry (SPORE_FIX_OFF=core.share_retry fails), make test (validate_tests test_host_world)
@@ -72,3 +72,4 @@ fix/w9-core (lane 4, GOG 2024):
 - 2026-10-28 (fix/w5-core): the Civ gate also covers the round trip before the host's first state (lab FAIL 20261028-230144, then PASS 3/3 20261028-231857).
 - 2026-10-29 (fix/w5-core): after the merge of main 8f1944b: lab out/lab/20261028-235045 all passed (vote_end_editor, vote_drop_editor, away_stages, civ_other_world, civ_shared, dna_away, creature, civ_coop, fix_registry, leave_cleanup, unit).
 - 2026-10-30 (fix/w9-core): the rest fixed: host_world.h with Welcome::world, host_absent_for, DNA row 2 (core.world_dna), shared hold (res.elsewhere), share retry (core.share_retry), city_catch_up guard; FAIL/PASS runs in Verification.
+- 2026-11-01: released in 0.7.3.2.

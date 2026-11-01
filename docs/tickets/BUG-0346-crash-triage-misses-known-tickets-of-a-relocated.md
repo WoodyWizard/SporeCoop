@@ -8,7 +8,7 @@ reported: 2026-10-31
 source: triage of the 2026-10-31 player reports
 role: 
 versions: all
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w22-reports
 commits: 7ce1249
 tests: tools/tests/tools_selftest.py triage (make test)
@@ -47,3 +47,4 @@ BUG-0018), PASS with the new one. On the real zips it now finds BUG-0008 and BUG
 
 ## History
 - 2026-10-31: opened and fixed on fix/w22-reports.
+- 2026-11-01: released in 0.7.3.2.

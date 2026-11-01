@@ -8,7 +8,7 @@ reported: 2026-10-29
 source: fix/w7-npc BUG-0274 analysis
 role: 
 versions: 0.7.3.0
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w9-creature
 commits: f7eb82e 8c950ac b6a3830 355bca5 20f36a8 4b555a7 e4f980c 83e9c20 bbdeb14 f430ef5
 tests: tools/tests/coop_npc_far.py (suite npc_far), tools/tests/coop_tribe_far.py (suite tribe_far)
@@ -66,3 +66,4 @@ Tribe (`coop_tribe_far.py`, the guest's pointer 332 m from the host's camera at 
 - 2026-10-29: opened.
 - 2026-10-30: fixed on fix/w9-creature (npc.view_centres), the cull found (Relevance_Update).
 - 2026-10-30: extended to the Tribe stage (npc.view_centres_tribe).
+- 2026-11-01: released in 0.7.3.2.

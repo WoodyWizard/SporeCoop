@@ -8,7 +8,7 @@ reported: 2026-10-30
 source: lab 20261030-035318 campaign#3 i27
 role: 
 versions: main 1d51511
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w10-cell-4p
 commits: 08428c0, 3a3292b, 1ebfd3e, 6a731e6, bea15ec
 tests: cell_4p, campaign_short
@@ -36,3 +36,4 @@ no-fail-run: a consequence of BUG-0295's overrun, not reproducible on its own; t
 ## History
 - 2026-10-30: opened.
 - 2026-10-30: fix/w10-cell-4p: a consequence of BUG-0295 (same game, after the 0xBBB07B fault); fixed with it.
+- 2026-11-01: released in 0.7.3.2.

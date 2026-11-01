@@ -8,7 +8,7 @@ reported: 2026-10-30
 source: lab 20261030-104149 campaign#2
 role: host
 versions: 0.7.3.1
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w12-cell-fault
 commits: aa2d02e, 111ca3e
 tests: cell_stale, campaign
@@ -63,3 +63,4 @@ behaviours), so nobody copied anything; the test now makes AI cells join such a 
 ## History
 - 2026-10-30: opened.
 - 2026-10-30: fix/w12-cell-fault: root cause by disassembly, guard `cell.pick_guard`, test cell_stale (not run yet).
+- 2026-11-01: released in 0.7.3.2.

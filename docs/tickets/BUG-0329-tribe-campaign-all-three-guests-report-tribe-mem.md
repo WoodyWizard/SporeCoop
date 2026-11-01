@@ -8,7 +8,7 @@ reported: 2026-10-30
 source: lab 20261030-175722 campaign#3 (lane 7)
 role: guest
 versions: main de87f05
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w16-tribe, fix/w17-tribe
 commits: cd4030a 2d79697
 tests: tribe_own_height (coop_tribe_own_height.py), npc_tests (test_own_height)
@@ -62,3 +62,4 @@ both machines).
 ## History
 - 2026-10-30: opened.
 - 2026-10-30 (fix/w17-tribe): root cause from the probe lines (a ground height difference, BUG-0332); mirrors driven at their own height (drive.own_height); the campaign classifies the ground difference.
+- 2026-11-01: released in 0.7.3.2.

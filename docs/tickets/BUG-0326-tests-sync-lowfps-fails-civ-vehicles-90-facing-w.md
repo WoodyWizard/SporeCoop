@@ -8,7 +8,7 @@ reported: 2026-10-30
 source: fix/w14-creature lab 20261030-163146, 20261030-163902
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w15-civ
 commits: 70bed48
 tests: sync_lowfps
@@ -53,3 +53,4 @@ facing error and the host's turn over the window. No game code changed.
 ## History
 - 2026-10-30: opened.
 - 2026-10-30 (fix/w15-civ): a test problem (180 deg flips every sample), test fixed.
+- 2026-11-01: released in 0.7.3.2.

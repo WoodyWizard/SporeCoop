@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.7.3.2] - 2026-11-01
+
 ### Fixed
 - Creature: a guest whose own creature has fewer abilities than the world's creature got an error
   (caught by the game) at every key press, and its ability keys could use the world creature's
@@ -26,10 +28,6 @@
 - Cell: a player who stays in the pause menu while the other players play no longer corrupts the
   game's memory (a broken collision state, then a crash or freeze when Cell ends; seen on the way
   to Creature with four players) (BUG-0348).
-- Creature: a guest whose game lacks the "Creepy & Cute" parts pack (sold apart on Steam) no longer
-  crashes loading the host's world when the host's creature has one of its parts: the guest is told
-  which creature needs the pack, and a player's creature with such parts is shown as another one
-  (BUG-0341).
 - Creature / Cell: the host keeps its world's species; an own creature or cell chosen in an earlier
   session (another world) no longer replaces the species the host just evolved (BUG-0344).
 - Cell: after a reload of the world a guest plays its own cell again, as the others see it (BUG-0349).
@@ -41,10 +39,10 @@
 - Cell: a guest that bites a creature of the host now sees its health ring, as the host does
   (BUG-0350).
 - Cell: the log names the food, the DNA spent and the editor's DNA budget at every cell editor and
-  stage entry, to explain reports of unexpected DNA (BUG-0351).
+  stage entry, to explain reports of unexpected DNA (diagnostics, BUG-0351 still open).
 - Tribe: at the arrival and after a rejoin, a player's chief that stands in another one is moved to
   its own spot round the village; two chiefs that end up in each other later are moved apart
-  (BUG-0340).
+  (BUG-0340 still open: the chiefs can still start in each other in some runs).
 - Cell: a game with more than 1024 cells in one column of the cell physics (seen on a guest of a
   four-player game, 0.7.3.1) no longer faults every frame with a half-second hitch each, a stopped
   simulation and a frozen game after the stage change (BUG-0337).
@@ -82,7 +80,7 @@
   its place on the other players' screens for a moment (BUG-0186).
 - Cell: a player leaving the Cell stage to load the host's world (after joining or rejoining) no
   longer has the mod create or move cells while the game is tearing the stage down (a guard after one
-  crash seen in testing, BUG-0308).
+  crash seen in testing, BUG-0308 still open).
 - Cell: a player whose cell was moved far again and again (for example put back after an invalid
   position) no longer fills its game with leftover background cells; a guest then stopped seeing
   the host's cells at all. Background cells far from the player are now removed (BUG-0314).
@@ -90,7 +88,8 @@
   around them (their own game runs them now); before, their planet stood empty and the nests
   brought their members back one at a time (BUG-0180).
 - Creature: a player's game checks every second that the copies of the host's animals are still in
-  its world and makes a lost one again, with a log line saying what happened (BUG-0300, diagnostics).
+  its world and makes a lost one again, with a log line saying what happened (diagnostics, BUG-0300
+  still open).
 - Tests: a test reusing running games no longer inherits fixes switched off by the previous test
   (BUG-0312); `coop_legless_guest.py --guest cancel` clicks the red cross as it says (BUG-0317).
 - Space: a star nobody had visited could still get different planets in the two games (for

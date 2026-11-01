@@ -8,7 +8,7 @@ reported: 2026-10-31
 source: lab 20261031-151552 campaign_short#1 (extra1, lane 2)
 role: guest
 versions: 0.7.3.1+main 251d80d
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w26-cell-spare
 commits: 0b1e55e, cd89fd4, 1e827ed, cd75347
 tests: cell_spare
@@ -106,3 +106,4 @@ Not verified: the 3 fps itself (not reproduced in 2 players, see Root cause).
   invulnerable and checks a step of at most 20 m a round; cell.bare_still added (not shown to
   matter). Found on the way: cell_sap failed 3 of 5 (count 0 of refused cells): fixed in cell.gfx_full.
 - 2026-11-01 (fix/w28-sap-test): final verification 10 (lab 20261031-214531) failed cell_sap only on its 60 m limit: [61.5, ..., 0.0, 70.1]; the 70.1 m was the host's cell knocked out and respawned next to a partner (host log `ko: own cell state 3`), and repeats (lab 20261031-235521) failed 2/6 on the first interval alone (60.3 m, 97.7 m), the crowd pushing itself apart. Observed: with cell.gfx_full on, first intervals reach 46-98 m (before BUG-0355: up to 36.6 m); inferred: cells with no soft body push apart harder in the artificial 1100-cell column. The check now leaves out the first interval, allows one respawn interval under 300 m and fails anything over 1000 m (the bug's jumps were 22685 m and 9934066 m). PASS 4/4 lab 20261101-000005; FAIL with `SPORE_FIX_OFF=cell.sap_sweep` 2/2 lab 20261101-000232 (no movement, 2737 / 2766 faults).
+- 2026-11-01: released in 0.7.3.2.

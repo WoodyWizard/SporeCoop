@@ -8,7 +8,7 @@ reported: 2026-10-28
 source: fix/w5-core test run (coop_vote_drop_editor.py, lane 4)
 role: guest
 versions: main b423f56 (0.7.3.0)
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w9-creature
 commits: bbdeb14 83e9c20 e4f980c d5279f6
 tests: tools/tests/coop_rejoin_saved_puppet.py (suite rejoin_saved_puppet)
@@ -67,3 +67,4 @@ its editor, the guest joins again and plays 20 s in the shared world; no fault o
 - 2026-10-28: opened.
 - 2026-10-29: looked at on fix/w5-world (BUG-0255): not covered. BUG-0255 strips empty herds and rebuilds the object list per save; the fault needs a guest puppet (species 7C329711) in the host's share save, and that save is written by the host, whose game log is not in the run folder, so why the filter missed the puppet is not known (candidates by reading: a puppet in the avatar's herd, the fallback for an unknown creation, which savestrip leaves on purpose; a puppet held by the deferred destroy during the evolution cinematic). Separately the guest side: `remove_saved_strays` destroys the creature while its herd still lists it (Herd_Update reads the freed member, data 0xB34): the stray removal should take it out of its herd first. Next: rerun the rejoin with the host log kept and `coop.savestrip` / `coop.npc herds` printed before the share save.
 - 2026-10-30: reproduced and fixed on fix/w9-creature (savestrip.pending, npc.herd_nulls).
+- 2026-11-01: released in 0.7.3.2.

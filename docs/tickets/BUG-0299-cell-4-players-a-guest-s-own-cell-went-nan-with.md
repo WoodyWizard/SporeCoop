@@ -8,7 +8,7 @@ reported: 2026-10-30
 source: lab 20261030-053709 campaign_short#2 i14 (fix/w10-cell-4p)
 role: guest
 versions: fix/w10-cell-4p aaa9f5f
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w10-cell-4p
 commits: a964c90
 tests: cell_nan
@@ -36,3 +36,4 @@ FAIL: `SPORE_FIX_OFF=cell.nan_guard` cell_nan, lab 20261030-055502 (position sta
 ## History
 - 2026-10-30: opened.
 - 2026-10-30: fix/w10-cell-4p: guarded and healed (cell.nan_guard), cell_nan; the NaN source stays open in known-issues#issue-cell-own-nan.
+- 2026-11-01: released in 0.7.3.2.

@@ -8,7 +8,7 @@ reported: 2026-10-30
 source: lab 20261030-104149 campaign#3
 role: host
 versions: 0.7.3.1
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w13-tribe-civ
 commits: 22cbf89 d1cdf2e eb1bebf 4c6c6e1
 tests: tribe_leave_walk (coop_tribe_leave_walk.py)
@@ -72,3 +72,4 @@ Not verified: which citizen the game cleaned up while its action still ran, and 
 ## History
 - 2026-10-30: opened.
 - 2026-10-30: fixed on fix/w13-tribe-civ (tribe.leave_walk), stand-in test FAIL 20261030-135912, PASS 20261030-140307 (2x).
+- 2026-11-01: released in 0.7.3.2.

@@ -8,7 +8,7 @@ reported: 2026-10-31
 source: owner decision 2026-10-31 (BUG-0341 follow-up)
 role: guest
 versions: 0.7.3.1+main 82c900f
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w24-parts
 commits: 8858a28, 964d084, 650980b
 tests: guest_missing_pack (tools/tests/coop_guest_missing_pack.py)
@@ -53,3 +53,4 @@ no fault). By hand first (lanes 8 + 9): the same.
 ## History
 - 2026-10-31: opened.
 - 2026-10-31: fix/w24-parts: substitution of the pack's parts (creations.part_substitute), guest_missing_pack extended; fixed (unreleased).
+- 2026-11-01: released in 0.7.3.2.

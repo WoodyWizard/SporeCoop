@@ -8,7 +8,7 @@ reported: 2026-10-31
 source: lab 20261031-054758 campaign#1
 role: guest
 versions: 0.7.3.1
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w20-cell
 commits: a649261, ad2d187, 0181edb, 46b2667
 tests: cell_sap
@@ -65,3 +65,4 @@ The campaign's own case was not reproduced (see Root cause).
 ## History
 - 2026-10-31: opened.
 - 2026-10-31: fix/w20-cell: root cause (UpdatePairs' open list on the stack), cell.sap_sweep, cell_sap; fixed (unreleased). The broken order on the guest stays open (known-issues).
+- 2026-11-01: released in 0.7.3.2.

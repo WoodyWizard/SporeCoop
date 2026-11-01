@@ -8,7 +8,7 @@ reported: 2026-10-29
 source: lab 20261029-093233 campaign
 role: guest
 versions: 0.7.3.0
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w9-space
 commits: 1cc86fe
 tests: dead_modal (coop_dead_modal.py)
@@ -38,3 +38,4 @@ Simulated state (`coop.deadmodal` puts an object with 0x65 vtable slots at WM+0x
 ## History
 - 2026-10-29: opened.
 - 2026-10-30: analysed and contained on fix/w9-space (dead modal window guard, test dead_modal).
+- 2026-11-01: released in 0.7.3.2.

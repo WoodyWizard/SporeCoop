@@ -8,7 +8,7 @@ reported: 2026-10-31
 source: lab 20261031-185843 campaign_space#3 (lane 7)
 role: guest
 versions: main 55da78b
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w27-space-fault
 commits: 3f1c37d 9532fa0 19896b3
 tests: space_share_landing (coop_space_share_landing.py), campaign_space
@@ -71,3 +71,4 @@ out with that save, 0.7.3.1). Test knob `coop.worldfix landsave <ms>|-1`.
 ## History
 - 2026-10-31: opened (fix/w27-space-fault) from lab 20261031-185843 campaign_space#3; reproduced with
   a 2-player test, fixed.
+- 2026-11-01: released in 0.7.3.2.

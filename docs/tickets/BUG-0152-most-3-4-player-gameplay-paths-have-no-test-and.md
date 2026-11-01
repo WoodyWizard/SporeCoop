@@ -8,7 +8,7 @@ reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#131
 role: 
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w4-tests, dev/campaign, fix/w9-tests
 commits: 2db65c9 da65c35 4994b7a ab94194 96d1a2f 081b936
 tests: multi3, npc_multi3, campaign, party_cell3, party_creature4, party_tribe4, party_civ3, party_space4, party_creature3_seq, party_cell_ko, party_creature_npc, party_tribe_split, party_civ_own, party_civ_trade, party_space_names
@@ -113,3 +113,4 @@ vote paths.
 - 2026-10-29: dev/campaign: `coop_campaign.py` (suite `campaign`, docs/06-testing.md#testing-campaign) plays a whole game with four players (lane N's two games plus instances 20+N / 30+N), every stage change through the vote, the editors and the world share to three guests at once, 4-player play per stage with the stage bots, rejoins, and checks every 30 s on every machine (stage, together, sync per kind, shared resources, census, faults, freezes, crash reports). It found BUG-0258 (after the live Creature -> Tribe change no guest is with the host). Its rejoins no longer press Enter on the host's save box. Still open here: focused 3-player tests that assert the game state on the other guest's machine per feature.
 - 2026-10-30: fix/w9-tests: `tools/tests/party.py` (Party: host + 1-3 guests in one lane, checks of each machine's own game: together, every guest sees every other player where it is, shared totals; join / leave / rejoin, a real "I'm ready" click, host away / back) and `coop_party.py` per stage in the new `multi` suite (also extended / nightly): two guests join at once, guest-to-guest views, a vote with 3-4 players (every window shows the same ready k/N, a leaver not ready lets it pass once), a rejoin of the 3rd / 4th player, the host in the menu with several guests. Lab 20261030-003549: 6 of 6 in 6.4 min on two lanes (2 min each). Negative: party_creature4 still passes with `SPORE_FIX_OFF=world.share_one_save` (lab 20261030-004236): it does not cover BUG-0112's one-save path (world_queue does). Still open: the per-stage gameplay between guests (KO / revive between guests, two guests and one NPC, tribe re-split and chiefs, civ ownership and superweapon requests from two guests, space rescue / gifts / rivals between guests, same names, a leave during another guest's transfer).
 - 2026-10-30: fix/w9-tests: one party test per stage for the gameplay between guests (cell KO, creature NPC, tribe split, civ ownership and trade, space names / gifts / sale / crew / mirrors / rivals / rescue), join during a vote, leaves during transfers; FAIL with the fix switches, PASS in the multi suite. Fixed.
+- 2026-11-01: released in 0.7.3.2.

@@ -8,7 +8,7 @@ reported: 2026-10-30
 source: lab 20261030-035318 campaign#2/#3
 role: 
 versions: 0.7.3.1+main 1d51511
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w10-cell-4p
 commits: 08428c0, f34dad4, 3a3292b, 1ebfd3e, e1962bd, 878a768, 6a731e6, bea15ec
 tests: cell_4p, campaign_short
@@ -39,3 +39,4 @@ Steps on the way: cap 1400 -> host peak 1714 (lab 20261030-053258); a far guest'
 ## History
 - 2026-10-30: opened.
 - 2026-10-30: fix/w10-cell-4p: root cause (broadphase stack buffer), budget fix, cell_4p; fixed (unreleased).
+- 2026-11-01: released in 0.7.3.2.

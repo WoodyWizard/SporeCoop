@@ -8,7 +8,7 @@ reported: 2026-10-31
 source: lab 20261031-000328 campaign#3 (lane 7), run dir out/lane7/campaign/20261031-000341
 role: guest
 versions: main 0b76599
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w18-space
 commits: 06419da
 tests: campaign (finale), coop_campaign.py --finale-from-galaxy
@@ -61,3 +61,4 @@ Replay of the finale alone, 4 players (direct runs of `coop_campaign.py --from s
 ## History
 - 2026-10-31: opened.
 - 2026-10-31 (fix/w18-space): test step issue, not a mod bug; the finale bot reads the finale state before each step. FAIL out/lane8/campaign/20261031-020044, PASS 3 runs.
+- 2026-11-01: released in 0.7.3.2.

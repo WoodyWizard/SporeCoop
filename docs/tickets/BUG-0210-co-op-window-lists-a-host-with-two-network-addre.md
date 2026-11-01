@@ -8,7 +8,7 @@ reported: 2026-10-28
 source: lab run 20261028-043811 ui_status
 role: guest
 versions: 0.7.2.4
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w13-net
 commits: 6b7cab0, 19779be
 tests: tools/tests/coop_lan_dedup.py (suite lan_dedup), tests/net_tests.cpp test_discovery_dedup
@@ -59,3 +59,4 @@ two rows. Protocol version unchanged. `coop.lanfake` now prints the listed rows 
 ## History
 - 2026-10-28: opened.
 - 2026-10-30: fixed on fix/w13-net (wave 13): a game id in the LAN answer.
+- 2026-11-01: released in 0.7.3.2.

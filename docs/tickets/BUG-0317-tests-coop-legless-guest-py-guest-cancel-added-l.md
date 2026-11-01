@@ -8,7 +8,7 @@ reported: 2026-10-30
 source: fix/w13-creature, BUG-0283
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w13-creature
 commits: 3922e14
 tests: tools/tests/coop_legless_guest.py --guest cancel (suite legless_guest_cancel)
@@ -38,3 +38,4 @@ the red cross leaves the unchanged editor"). It can still fail later for BUG-031
 ## History
 - 2026-10-30: opened.
 - 2026-10-30: found and fixed on fix/w13-creature.
+- 2026-11-01: released in 0.7.3.2.

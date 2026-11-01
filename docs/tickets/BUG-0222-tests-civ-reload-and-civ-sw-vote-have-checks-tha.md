@@ -8,7 +8,7 @@ reported: 2026-10-28
 source: GitHub #156 (review of release 0.7.3.0, 5801eea)
 role: all
 versions: 0.7.3.0
-fixed_in: unreleased
+fixed_in: 0.7.3.2
 branch: fix/w9-tests
 commits: ff34761 2db65c9 da65c35
 tests: civ_reload, civ_sw_vote
@@ -66,3 +66,4 @@ PASS with it: civ_sw_vote lab 20261030-002053 (2 of 2); civ_reload lab 20261030-
 - 2026-10-28: opened.
 - 2026-10-28: fix/w5-world did not reach it (budget went to BUG-0217, BUG-0223, BUG-0224, BUG-0255, BUG-0254). Still open: step 0 (the +0x218 boost speed without boost_tick, the GOG 2024 superweapon offsets +0x484 / +0x490), `coop.civ stale_hv`, the boost precondition and speed read in civ_reload, the cooldown and money checks and the host-request case in civ_sw_vote. Usable now: `cCinematicManager::PlayCinematic` is ported to GOG 2024 (BUG-0224); `coop.civ nulllocal` exists (BUG-0223).
 - 2026-10-30: fix/w9-tests: both tests check the game's state (money, speed, the order's place); FAIL with each switch off, PASS with it. Fixed.
+- 2026-11-01: released in 0.7.3.2.
