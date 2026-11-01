@@ -1299,5 +1299,5 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 
 * What happens: at 25-37 fps the walked puppet moves at 0.6-1.4x the walker's speed in 76-82 % of the
   0.1 s windows (limit 85 %); at 42-55 fps 93-99 %. Seen while other lanes ran games.
-* Reproduce: `tools/lab.py run puppet_walk` with other lanes busy, or `PUPPET_WALK_CMDS="frame.limit 33"`.
+* Reproduce: `tools/lab.py run puppet_walk` with other lanes busy (`PUPPET_WALK_CMDS="frame.limit 33"` not tried).
 * Ticket: BUG-0387
