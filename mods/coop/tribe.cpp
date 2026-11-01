@@ -859,6 +859,14 @@ static void mirror_target(GMember& g, double now, net::Vec3& pos, net::Quat& rot
         if (g.buf.sample(now - kPathDt, back)) {
             float k = (float)(1.0 / kPathDt);
             vel = {(s.pos.x - back.pos.x) * k, (s.pos.y - back.pos.y) * k, (s.pos.z - back.pos.z) * k};
+            // never faster than the member walks: a late state over a bad network corrects the path by
+            // 0.3-0.9 m at once, and walked at that path speed (13 m/s seen) the mirror surged ~1 m in a
+            // frame on top of the placing's catch-up
+            float ps = drive::speed(vel), ss = drive::speed(s.vel);
+            if (ss > 0.3f && ps > ss) {
+                float c = ss / ps;
+                vel = {vel.x * c, vel.y * c, vel.z * c};
+            }
         }
         age = 0;
         return;
