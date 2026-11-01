@@ -10,7 +10,7 @@ role: guest
 versions: unreleased
 fixed_in: unreleased
 branch: fix/w33-proxy-ground
-commits: ae25f85
+commits: ae25f85, 537484a
 tests: npc_walk_slope (tools/tests/coop_npc_walk.py --goto=-195,-465,-45 --falls 3)
 signature: walked proxies' +0x137 goes 1 -> 0 (fall) while the host's NPC walks downhill
 docs: docs/re/creature.md#creature-npc-ground

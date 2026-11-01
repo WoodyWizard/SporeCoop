@@ -10,7 +10,7 @@ role: guest
 versions: unreleased
 fixed_in: unreleased
 branch: fix/w33-proxy-ground
-commits: d185b5b, 537484a
+commits: d185b5b, 351daac, 998898b, 537484a
 tests: tribe_coop, chaos_tribe (monitor rule proxies)
 signature:
 docs: docs/re/tribe.md#tribe-proxy-ground, docs/06-testing.md#testing-proxy-ground
