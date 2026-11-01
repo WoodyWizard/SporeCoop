@@ -118,6 +118,12 @@ COOP_FIX("npc.path", "BUG-0394", g_path_fix, "creature, tribe: an NPC's proxy al
 // tests (BUG-0394): `coop.npctrack novel 1`: the host's NPC states without their speed (as a move carried by an
 // animation reports none)
 static bool g_npc_novel = false;
+// BUG-0399: in Tribe a host animal's proxy walked at its own height (BUG-0329: the radius it had) was placed
+// under the ground rising ahead of it (uphill) and stayed there, 0.75-1.7 m under, standing too (own height
+// again). Its walk is placed onto this game's ground now (WalkPlace::ground), drive::step puts a standing one
+// found under the ground onto it, and a new proxy is made on the ground (driver.h out_of_ground).
+// `coop.fix npc.proxy_ground off`: at its own height only (0.7.3.4).
+COOP_FIX("npc.proxy_ground", "BUG-0399", drive::g_out_of_ground_fix, "tribe: an animal's proxy is never left under this game's ground (made there, kept there standing)");
 static bool g_walk_tribe_fix = true;
 COOP_FIX("npc.walk_tribe", "BUG-0361", g_walk_tribe_fix, "tribe: a walking or running animal's proxy walks on its path instead of moving in steps");
 // tests (coop.npctrack variant, drive::walk_place): 0 the fix; 1 place only (no walk goal); 2 walk goal +
@@ -156,6 +162,8 @@ struct Proxy {
     net::SnapshotBuffer buf;
     drive::State drv;
     float walk_sp = 0;      // BUG-0361: the host NPC's speed while it last moved
+    double made_at = 0;     // BUG-0399 (diagnostics): when its creature was made and the host's
+    float made_agl = 0;     // position's height over this game's ground then (m)
 };
 static std::map<uint16_t, Proxy> g_proxies;
 // BUG-0300: a guest in a 4-player campaign had a proxy in its list (states arriving) whose creature
@@ -1013,7 +1021,10 @@ static void guest_tick(double now)
             }
             game::puppet_register(px.c); // no local AI
             g_proxy_of[px.c] = id;
-            game::teleport(px.c, s.pos, s.rot);
+            px.made_at = now;
+            px.made_agl = drive::over_ground(s.pos);
+            // BUG-0399: on this game's ground (Tribe: the ground can lie higher than the host's)
+            game::teleport(px.c, rts_stage() ? drive::out_of_ground(s.pos) : s.pos, s.rot);
         }
         if (now < px.manual_until) {
             if (px.c && (px.manual_mode & 1) && now - px.manual_last > 0.1) {
@@ -1068,6 +1079,9 @@ static void guest_tick(double now)
                     px.drv.kinematic = false; // a new walk: its first goal at once
                 drive::WalkPlace o;
                 o.own_height = rts;     // BUG-0329
+                // BUG-0399: at its own height alone a proxy walking uphill was placed under the rising ground
+                // ahead (the game does not lift it) and went 1.3-1.7 m under; onto this game's ground instead
+                o.ground = rts && drive::g_out_of_ground_fix;
                 o.walk_speed = walk_speed;
                 o.snap = 2.5f;
                 o.keep_lost = true;
@@ -1102,7 +1116,8 @@ static void guest_tick(double now)
         if (placed) {
             // placed on the host's path this frame: no driving
         } else if (!px.killed)
-            drive::step(px.c, s.pos, s.rot, s.vel, px.drv, now, 0, true, 8.f, g_stall_fix, g_trail_fix, rts_stage()); // own height in Tribe (BUG-0329)
+            drive::step(px.c, s.pos, s.rot, s.vel, px.drv, now, 0, true, 8.f, g_stall_fix, g_trail_fix, rts_stage(), // own height in Tribe (BUG-0329)
+                        rts_stage()); // and never under the ground (BUG-0399)
         else { // a corpse lies where the host has it: the guest's dead proxy shot off into the sky
                // (~2.5 km/s away from the planet; driven, it stayed ~80 m up: play_tribe.py)
             *(net::Vec3*)((uint8_t*)px.c + game::kVelOff) = {0, 0, 0};
@@ -1692,14 +1707,14 @@ std::string list()
             }
             net::Vec3 p = game::position(c);
             // " DEAD" right after dist: tests match "dist=N( DEAD)?"
-            snprintf(b, sizeof b, "  #%u %p species=%08X hp=%.2f dist=%.1f%s pos=(%.1f %.1f %.1f) spd=%.1f vel=(%.1f %.1f %.1f) upd=%d/64 velfr=%d/64 moved64=%.1f%s%s%s body=%08X\n", hn.id,
+            snprintf(b, sizeof b, "  #%u %p species=%08X hp=%.2f dist=%.1f%s pos=(%.1f %.1f %.1f) spd=%.1f vel=(%.1f %.1f %.1f) upd=%d/64 velfr=%d/64 moved64=%.1f%s%s%s body=%08X agl=%.2f\n", hn.id,
                      c, game::species_key(c).instance, game::health(c), net::dist(p, ap), game::is_dead(c) ? " DEAD" : "",
                      p.x, p.y, p.z, drive::speed(game::velocity(c)), game::velocity(c).x, game::velocity(c).y, game::velocity(c).z,
                      __builtin_popcountll(hn.seen_bits), __builtin_popcountll(hn.vel_bits),
                      net::dist(hn.pos_hist[hn.hist_at], hn.pos_hist[(hn.hist_at + 1) & 63]), game::pack_member(c) ? " pack" : "",
                      // BUG-0390: the avatar's herd (family): a partner's hit on it is dropped (npc.party_peace)
                      game::herd_of(c) && game::herd_of(c) == game::avatar_herd() ? " family" : "",
-                     g_ai_target.count(c) ? " on_partner" : "", body_print(c));
+                     g_ai_target.count(c) ? " on_partner" : "", body_print(c), drive::over_ground(p));
             out += b;
         }
     } else {
@@ -1715,10 +1730,11 @@ std::string list()
             float err = px.c && have ? net::dist(game::position(px.c), st.pos) : -1.f;
             net::Vec3 at = px.c ? game::position(px.c) : net::Vec3{};
             snprintf(b, sizeof b, "  #%u species=%08X %s hp=%.2f dist=%.1f err=%.2f age=%.2f%s want=(%.1f %.1f %.1f) at=(%.1f %.1f %.1f) "
-                     "rx=%d/s spd=%.1f vel=(%.1f %.1f %.1f) own=%.1f tp=%u stall=%u trail=%u nudge=%u/%u puppet=%d ptr=%p herd=%p body=%08X\n",
+                     "agl=%.2f want_agl=%.2f made_agl=%.2f grounded=%u rx=%d/s spd=%.1f vel=(%.1f %.1f %.1f) own=%.1f tp=%u stall=%u trail=%u nudge=%u/%u puppet=%d ptr=%p herd=%p body=%08X\n",
                      id, px.key.instance, px.c ? "spawned" : "pending", px.c ? game::health(px.c) : 0.f,
                      px.c ? net::dist(at, ap) : -1.f, err, px.buf.age(now),
-                     px.killed ? " DEAD" : "", st.pos.x, st.pos.y, st.pos.z, at.x, at.y, at.z, px.buf.received_in(1.0), drive::speed(st.vel), st.vel.x, st.vel.y, st.vel.z,
+                     px.killed ? " DEAD" : "", st.pos.x, st.pos.y, st.pos.z, at.x, at.y, at.z, px.c ? drive::over_ground(at) : 0.f,
+                     have ? drive::over_ground(st.pos) : 0.f, px.made_agl, px.drv.grounded, px.buf.received_in(1.0), drive::speed(st.vel), st.vel.x, st.vel.y, st.vel.z,
                      px.c ? drive::speed(game::velocity(px.c)) : 0.f, px.drv.teleports, px.drv.stalls, px.drv.trails, px.drv.nudges_kept,
                      px.drv.nudges, px.c ? (int)game::is_puppet(px.c) : -1, px.c, px.c ? game::herd_of(px.c) : nullptr, body_print(px.c));
             out += b;
@@ -2119,9 +2135,10 @@ void monitor_tick(double now)
         // which one and where (players' reports too): the first of each kind per line
         if (under && now - a.under_since >= 1.0 && g_audit_under.insert(id).second && g_audit_under.size() == 1)
             trace::line("npc", "proxy %u (species %08X) %.2f m under this game's ground at (%.1f %.1f %.1f) for %.1f s, the "
-                        "host's NPC %.1f m from it (%s%s)", id, px.key.instance, g - r, p.x, p.y, p.z, now - a.under_since,
-                        net::dist(p, t), px.kinematic ? "placed on the host's path" : "driven",
-                        now < px.manual_until ? ", test walk" : "");
+                        "host's NPC %.1f m from it (%s%s), made %.1f s ago at %.2f m over the ground", id, px.key.instance,
+                        g - r, p.x, p.y, p.z, now - a.under_since, net::dist(p, t),
+                        px.kinematic ? "placed on the host's path" : "driven", now < px.manual_until ? ", test walk" : "",
+                        now - px.made_at, px.made_agl);
         if (off && now - a.off_since >= 2.0 && g_audit_stuck.insert(id).second && g_audit_stuck.size() == 1)
             trace::line("npc", "proxy %u (species %08X) %.1f m off the host's NPC for %.1f s at (%.1f %.1f %.1f), host's speed "
                         "%.1f m/s (%s%s)", id, px.key.instance, net::dist(p, t), now - a.off_since, p.x, p.y, p.z,

@@ -29,6 +29,7 @@ struct State {
     net::Vec3 nudged_to;
     bool nudged = false;
     uint32_t nudges = 0, nudges_kept = 0, teleports = 0, stalls = 0, trails = 0, goals = 0;
+    uint32_t grounded = 0; // BUG-0399: put out of the ground (step with ground)
     float last_err = 0, last_speed = 0;
     double hold_until = 0; // BUG-0305: after a trail teleport the nudge puts it on the path every frame
     double last_step = 0;  // BUG-0175: the time of the previous step (the nudge per second, not per frame)
@@ -76,6 +77,45 @@ inline net::Vec3 path_velocity(const State& ds)
     return v > 0.8f && v < 15.f ? t.v : net::Vec3{};
 }
 
+// BUG-0366 (creature.puppet_ground): see walk_place below
+constexpr float kOverGround = 0.5f, kUnderGround = 3.f; // m
+constexpr float kSink = 0.05f;                          // m (0.15: the drawn puppet 0.13 m under at times)
+inline net::Vec3 on_own_ground(const net::Vec3& pos)
+{
+    float r = std::sqrt(pos.x * pos.x + pos.y * pos.y + pos.z * pos.z), g = game::ground_radius(pos);
+    if (g <= 0 || r < 1.f || r - g > kOverGround || r - g < -kUnderGround)
+        return pos;
+    float k = (g - kSink) / r;
+    return {pos.x * k, pos.y * k, pos.z * k};
+}
+
+// BUG-0399 (npc.proxy_ground): a Tribe animal's proxy walked at its own height (own_height: the radius it has,
+// BUG-0329) was placed under the ground rising ahead of it and stayed there standing (the game does not lift
+// a creature placed under its terrain, creature-puppet-ground): 0.75-1.7 m under for 20-30 s. A proxy made at
+// the host's absolute height where this game's ground lies higher (BUG-0329: up to 5 m) would start under it
+// the same way (inferred). A target more than kUnderTol and at most
+// kOutMax under this game's ground (cPlanetModel::GetHeightAt, the terrain only: never under it legitimately)
+// goes onto it, kSink into it as on_own_ground.
+inline bool g_out_of_ground_fix = true;
+constexpr float kUnderTol = 0.25f, kOutMax = 15.f; // m
+inline net::Vec3 out_of_ground(const net::Vec3& pos, bool fix = g_out_of_ground_fix)
+{
+    float r = std::sqrt(pos.x * pos.x + pos.y * pos.y + pos.z * pos.z);
+    if (!fix || r < 1.f)
+        return pos;
+    float g = game::ground_radius(pos);
+    if (g <= 0 || r - g >= -kUnderTol || r - g < -kOutMax)
+        return pos;
+    float k = (g - kSink) / r;
+    return {pos.x * k, pos.y * k, pos.z * k};
+}
+// how far `pos` is over this game's ground (m; 0 when unknown)
+inline float over_ground(const net::Vec3& pos)
+{
+    float r = std::sqrt(pos.x * pos.x + pos.y * pos.y + pos.z * pos.z), g = r > 1.f ? game::ground_radius(pos) : 0.f;
+    return g > 0 ? r - g : 0.f;
+}
+
 // age: how old `pos` is (a snapshot received `age` seconds ago): the target moves on with the
 // remote velocity, so the puppet does not trail a walking creature by its latency
 // nudge: also pull the puppet a part of the way every frame (it cannot walk faster than the
@@ -87,13 +127,27 @@ inline net::Vec3 path_velocity(const State& ds)
 // a herd that flees together push each other off the path and cannot run faster than the animal)
 inline void step(void* p, const net::Vec3& pos_in, const net::Quat& rot, const net::Vec3& vel, State& ds, double now,
                  double age = 0, bool nudge = false, float snap = 8.f, bool stall = false, bool trail = false,
-                 bool own_height = false)
+                 bool own_height = false, bool ground = false)
 {
     float a = (float)std::min(std::max(age, 0.0), 0.5);
     net::Vec3 pos{pos_in.x + vel.x * a, pos_in.y + vel.y * a, pos_in.z + vel.z * a};
     net::Vec3 cur = game::position(p);
     if (own_height) // BUG-0329: the guest's own ground height, not the host's
         pos = at_own_height(pos, cur);
+    if (ground) {
+        // BUG-0399: never a target under this game's ground; a creature found under it (made there, or
+        // kept there by own_height) is put onto it at once (walked or pulled it would stay under)
+        pos = out_of_ground(pos);
+        if (g_out_of_ground_fix && net::dist(out_of_ground(cur), cur) > 0.01f) {
+            game::teleport(p, pos, rot);
+            ds.teleports++;
+            ds.grounded++;
+            ds.last_step = now;
+            ds.last_cmd = now;
+            ds.track = Track{};
+            return;
+        }
+    }
     const double dt = ds.last_step > 0 && now > ds.last_step ? now - ds.last_step : 1.0 / 60;
     ds.last_step = now;
     if (ds.nudged && net::dist(cur, ds.nudged_to) < 0.5f)
@@ -159,17 +213,6 @@ inline void step(void* p, const net::Vec3& pos_in, const net::Quat& rot, const n
 // ground (cPlanetModel::GetHeightAt) goes kSink into it: placed exactly on the ground a walking creature is
 // a few cm over it after the game's next step downhill and plays its fall animation; under the ground it
 // stays there. Higher up (a jump, a rock) it is left where it is.
-constexpr float kOverGround = 0.5f, kUnderGround = 3.f; // m
-constexpr float kSink = 0.05f;                          // m (0.15: the drawn puppet 0.13 m under at times)
-inline net::Vec3 on_own_ground(const net::Vec3& pos)
-{
-    float r = std::sqrt(pos.x * pos.x + pos.y * pos.y + pos.z * pos.z), g = game::ground_radius(pos);
-    if (g <= 0 || r < 1.f || r - g > kOverGround || r - g < -kUnderGround)
-        return pos;
-    float k = (g - kSink) / r;
-    return {pos.x * k, pos.y * k, pos.z * k};
-}
-
 struct WalkPlace {
     float goal_ahead = 12.f;  // m: the MoveTo point ahead on the remote's path
     float turn_dot = 0.995f;  // a new MoveTo when its direction turns more than ~6 degrees,
