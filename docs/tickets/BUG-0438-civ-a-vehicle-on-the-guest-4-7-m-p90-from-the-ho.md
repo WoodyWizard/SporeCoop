@@ -40,3 +40,4 @@ its last state; a driving vehicle that turns or stops meanwhile is several metre
 
 ## History
 - 2026-11-01: opened.
+- 2026-11-01 (feat/w33-tests-session): again in a rerun of sync_burst (lab 20261101-173700): `vehicles n=1 pos med 0.13 p90 3.53 max 4.20 m`, raw p90 6.00 m.
