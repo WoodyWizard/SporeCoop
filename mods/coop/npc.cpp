@@ -491,6 +491,31 @@ std::string debug_pwalk(uint16_t id, const net::Vec3& p, float speed, float secs
              p.x, p.y, p.z, speed, secs);
     return b;
 }
+// tests (BUG-0399): the guest's proxy #id put <m> under this game's ground once (where the monitor found
+// proxies after joins); the sync drives it on from there
+std::string debug_sink(uint16_t id, float m, bool mark)
+{
+    auto it = g_proxies.find(id);
+    if (it == g_proxies.end() || !it->second.c)
+        return "no such spawned proxy";
+    void* c = it->second.c;
+    net::Vec3 p = game::position(c);
+    float r = drive::speed(p), g = game::ground_radius(p);
+    if (r < 1 || g <= 0)
+        return "no ground";
+    float k = (g - m) / r;
+    net::Vec3 q{p.x * k, p.y * k, p.z * k};
+    // without the teleport mark (+0xB5D), as walk_place places: with it the game set the creature back onto
+    // its terrain at once (fix off, standing, 6 of 6)
+    if (mark)
+        game::teleport(c, q, game::orientation(c));
+    else
+        game::place(c, q, game::orientation(c));
+    char b[160];
+    snprintf(b, sizeof b, "proxy %u put %.2f m under the ground at (%.1f %.1f %.1f): now %.2f m over it", id, m, q.x, q.y,
+             q.z, drive::over_ground(game::position(c)));
+    return b;
+}
 std::string debug_dash(uint16_t id, float len, float speed, float secs, float width, uint16_t mate, float off)
 {
     void* c = host_npc(id);
