@@ -2947,3 +2947,20 @@ cell_coop pitfalls found on the way (fix/w31-cell-gate): the `revives=` / `respa
 their values at its start (BUG-0396: every warm `--repeat` run failed before); the host's idle cell
 can eat a plant in the 2 s of the shared food check, which now allows the host's own `own_points`
 (BUG-0395, 1 in 130 runs).
+
+## The monitor's fields from the mod: drawn, ground, puppet health, posse hits, unlocks, proxies (2026-11-01, feat/w32-monitor-diag)
+<a id="testing-monitor-fields"></a>
+
+The hooks of [testing-monitor](#testing-monitor) are active: the mod writes their fields and
+`monitor.py` checks them in every test and campaign (`monitor.FIELDS` has the exact output, player
+logs carry them too: [REPORTING.md#reporting-monitor-fields](REPORTING.md#reporting-monitor-fields)).
+
+* **Timing**: the `trace:` lines are written at the session clock's 10 s marks (`[s 20.0xx]` on every
+  machine, within the clock's error; local 10 s without a session clock; a stage change still writes
+  at once). So a partner line of one machine and the partner's own line of the same mark describe the
+  same moment (measured 2-40 ms apart), which the drawn / ground / puppet_hp rules need.
+* **Read at the start of the frame**: on a frame that writes the trace, `monitor_frame_start`
+  (coop.cpp, right after the stale-world check, before any message, module tick or puppet driving)
+  reads each partner's puppet through its adapter (`fill`: Creature `game::position`, health, max
+  health; Cell / Space the object's own fields; Tribe / Civ the pointer marker). That is what the
+  game drew last (the BUG-0360 measuring pitfall: after the driving it is our own target).

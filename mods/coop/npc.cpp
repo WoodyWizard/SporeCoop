@@ -1859,10 +1859,17 @@ void monitor_tick(double now)
         bool off = net::dist(p, t) > 3.f;
         a.under_since = under ? (a.under_since < 0 ? now : a.under_since) : -1;
         a.off_since = off ? (a.off_since < 0 ? now : a.off_since) : -1;
-        if (under && now - a.under_since >= 1.0)
-            g_audit_under.insert(id);
-        if (off && now - a.off_since >= 2.0)
-            g_audit_stuck.insert(id);
+        // which one and where (players' reports too): the first of each kind per line
+        if (under && now - a.under_since >= 1.0 && g_audit_under.insert(id).second && g_audit_under.size() == 1)
+            trace::line("npc", "proxy %u (species %08X) %.2f m under this game's ground at (%.1f %.1f %.1f) for %.1f s, the "
+                        "host's NPC %.1f m from it (%s%s)", id, px.key.instance, g - r, p.x, p.y, p.z, now - a.under_since,
+                        net::dist(p, t), px.kinematic ? "placed on the host's path" : "driven",
+                        now < px.manual_until ? ", test walk" : "");
+        if (off && now - a.off_since >= 2.0 && g_audit_stuck.insert(id).second && g_audit_stuck.size() == 1)
+            trace::line("npc", "proxy %u (species %08X) %.1f m off the host's NPC for %.1f s at (%.1f %.1f %.1f), host's speed "
+                        "%.1f m/s (%s%s)", id, px.key.instance, net::dist(p, t), now - a.off_since, p.x, p.y, p.z,
+                        drive::speed(s.vel), px.kinematic ? "placed on the host's path" : "driven",
+                        now < px.manual_until ? ", test walk" : "");
     }
     for (auto it = g_audit.begin(); it != g_audit.end();)
         it = now - it->second.seen > 5.0 ? g_audit.erase(it) : std::next(it);
