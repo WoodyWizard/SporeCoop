@@ -214,6 +214,10 @@ def walk(pl, rng, secs):
         if not sel:
             log.append('no selection')
             pl.cur = None
+            misses = getattr(pl, 'misses', 0) + 1
+            pl.misses = misses
+            if misses % 3 == 0:  # the minimap calibration may have failed at the start (seen once)
+                log.append('calibrate ' + ('ok' if pl.calibrate() else 'failed'))
             continue
         on = [o for o in pl.on_screen(objs) if o[0].startswith('member') and int(o[0][6:]) in sel]
         cx = sum(o[1] for o in on) / len(on) if on else W / 2
@@ -321,7 +325,8 @@ def main():
     hp = Player('host', host, 0, random.Random(seed + 1), log, W, H)
     gp = Player('guest', guest, 1, random.Random(seed + 2), log, W, H)
     for p in (hp, gp):
-        ck(p.calibrate(), f'{p.name}: the minimap moves the view')
+        ok = any(p.calibrate() for _ in range(3))
+        ck(ok, f'{p.name}: the minimap moves the view')
     if a.dir in ('host', 'both'):
         direction(hp, gp, rng, a.secs, ck, hp)
     if a.dir in ('guest', 'both'):

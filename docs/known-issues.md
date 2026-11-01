@@ -1272,3 +1272,13 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Reproduce: `tools/lab.py run creature_npc_dash --repeat 3 --retry 0`.
 * Not checked: whether main fails as often on an idle machine; the cause.
 * Ticket: BUG-0363
+
+## Tribe: a walking mirror held back on the guest lurches to catch up (2026-11-01, fix/w30-tribe-walk)
+<a id="issue-tribe-mirror-held"></a>
+
+* What happens: seen once by tribe_walk_mobile (30 fps, mobile network): a guest's mirror walking at
+  9 m/s fell 3.6 m behind its target in 0.8 s although it was placed on the path every frame (its game
+  pushed it back), then moved ~1 m per frame for three frames to catch up. Cause not found (an obstacle
+  on the guest is the guess).
+* Reproduce: `tools/lab.py run tribe_walk_mobile --repeat 5 --retry 0`, look for "no jump" failures.
+* Ticket: BUG-0386
