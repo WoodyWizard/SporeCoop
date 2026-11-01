@@ -316,6 +316,10 @@ add('campaign_tribe', P + 'coop_campaign.py --from creature --to tribe --minutes
     minutes=30, timeout=3600)
 add('campaign_space', P + 'coop_campaign.py --from civ --to space --minutes 2 --no-finale', ('campaign',),
     minutes=35, timeout=3600)
+# BUG-0359: the host's heap corruption that surfaced at Creature -> Tribe in a whole campaign (Cell ran
+# in the same process first): Cell -> Creature -> Tribe with four players, the stress of that path
+add('campaign_ct', P + 'coop_campaign.py --from cell --to tribe --minutes 2 --no-finale', ('campaign',),
+    minutes=45, timeout=3600)
 
 
 def select(spec):
