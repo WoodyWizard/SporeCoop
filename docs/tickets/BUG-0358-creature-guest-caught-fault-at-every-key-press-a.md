@@ -1,16 +1,16 @@
 ---
 id: BUG-0358
 title: Creature (guest): caught fault at every key press after the own creature swap, stale ability bar (dc04aee5:0xD4A397)
-status: open
+status: fixed
 kind: crash
 stage: creature
 reported: 2026-10-31
 source: lab 20261031-185843 campaign#2 (lane 4, 4 players, final 0.7.3.2 verification, main 55da78b)
 role: guest
 versions: coop 0.7.3.1 (main 55da78b), SporeKit 0.3.5, GOG 2024 dc04aee5
-fixed_in:
+fixed_in: unreleased
 branch: fix/w27-creature-fault
-commits:
+commits: 656a7c9, e10c2b0
 tests: ability_bar (tools/tests/coop_ability_bar.py)
 signature: dc04aee5:0xD4A397 read [esi+0xC], esi = 0x41900000 (AbilityBar_FindByKey 0xD4A320 <- AbilityBar_OnKey 0xD4A450 <- creature OnKeyDown 0xD3AFF0); crash_triage names it Simulator::CreatureStageEventHandler+0x23D7 (nearest symbol, not the function)
 docs: docs/re/creature.md#creature-ability-bar, docs/06-testing.md#testing-ability-bar
@@ -60,8 +60,13 @@ outside the frame. A new avatar (a load) is left to the game, which builds its b
 against the avatar's abilities / the game builds it now (tests).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+* FAIL: 20261031-205235 (`SPORE_FIX_OFF=creations.ability_bar`, lane 6): bar of 11 slots, 5 past
+  the guest's 9 abilities; not the bar the game builds for the avatar. (No caught fault: the reads
+  past the species' array returned 0 on the fixture, see Root cause.)
+* PASS: 20261031-205349 (lane 8), 20261031-205913 (lane 6, with creature, team, creations, select,
+  editor_after_swap, editor_after_load: 7/7). Run dirs under the worktree's out/lab.
+* Not done: a 4-player campaign rerun (the fault itself needs garbage past the array and showed
+  in 1 of the campaign runs only).
 
 ## History
-- 2026-10-31: opened.
+- 2026-10-31: opened (lab 20261031-185843 campaign#2); root cause, fix and test on fix/w27-creature-fault.
