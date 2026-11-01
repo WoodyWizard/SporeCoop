@@ -432,7 +432,12 @@ class Bot(Player):
             self.g.bump('move_nosel')
             return 'nothing selected'
         # 30-70 m away from the group, along the ground (tangent), to a random side
-        mid = tuple(sum(my_v[i]['pos'][k] for i in sel) / len(sel) for k in range(3))
+        # (the box may select a vehicle bought after the state was read: use the known ones)
+        known = [i for i in sel if i in my_v]
+        if not known:
+            self.g.bump('move_nosel')
+            return 'nothing known selected'
+        mid = tuple(sum(my_v[i]['pos'][k] for i in known) / len(known) for k in range(3))
         up = norm(mid)
         a = self.rng.uniform(0, 2 * math.pi)
         t1 = norm(tuple(x - y for x, y in zip((1.0, 0.0, 0.0), tuple(up[0] * u for u in up))))
