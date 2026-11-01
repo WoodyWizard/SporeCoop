@@ -1019,6 +1019,9 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   20261030-104149 campaign_short#3. Ticket: BUG-0308.
 * A guest 6 s into Cell jumped to address 0 in UI code right after its test window was moved and its
   main thread stopped, lab 20261030-104149 campaign#1. Ticket: BUG-0309.
+  CORRECTION (2026-11-01, fix/w33-null-call): not UI code; SporeKit's GetAsyncKeyState detour
+  called its still-null original while the input hooks were being made (inferred from the registers;
+  BUG-0398, fixed by `kit.fix hookorig`; esi = 0x78 = VK_F9, polled by coop every frame).
 * Both seen once, on an overloaded machine. Reproduce: not yet.
 
 ## GOG 2024 guest: the game time stays paused for seconds after its world load (2026-10-30, fix/w13-net)
@@ -1414,3 +1417,17 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Also open: a guest eating a host egg does not change the guest's relation to that species (the
   host's eat node does that for the avatar only).
 * Ticket: BUG-0384
+
+## SporeKit: a function hooked after boot can catch a thread in its first bytes (2026-11-01, fix/w33-null-call)
+<a id="issue-late-first-hook"></a>
+
+* What happens: nothing seen yet. The first hook of a function writes MinHook's 5-byte jmp without
+  stopping other threads (BUG-0202); hooks made at boot are safe, but the devkit input hooks
+  (GetAsyncKeyState / GetKeyState at the first injected input, test games only) and coop's Cell
+  SimUpdate / GetModelKey hooks (at the first cell, main thread) are made while the game runs.
+* Reproduce: not reproduced; `kit.test.hooknew` avoids this race on purpose (targets start with a
+  5-byte jmp). Its first version, whose targets started with two short instructions, crashed at an
+  eip 4 bytes into a target (lab 20261101-134603 / 134623-fix-w33-null-call).
+* Known: inferred from the code; the window is nanoseconds per call.
+* Next steps: make the input hooks at boot or on the main thread.
+* Ticket: BUG-0403

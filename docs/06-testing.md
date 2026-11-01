@@ -1141,6 +1141,14 @@ Each has an environment switch that turns its fix off; that run must FAIL:
   through the function (BUG-0202); `kit.fix hookpark 0` crashes the game (eip two bytes into the
   hooked function). The `hookchurn` case switches `hookpark` off itself: it tests MinHook's removal
   (BUG-0132).
+* `kit_freeze.py hooknew` (suite `kit_hooknew`, BUG-0398): `kit.test.hooknew 200 3` hooks 200 functions
+  never hooked before (copies in an executable page, each starting with a 5-byte jmp so MinHook's
+  write cannot catch a thread between instructions, BUG-0202) while 3 threads call them; every round
+  has its own original pointer and detour thunk, the detour counts runs with a null original (the
+  real detour calls address 0). `SPORE_FIX_OFF=hookorig` (kit_freeze reads it for SporeKit switches,
+  as `--old` does for all) fails: ~34000 such runs in 200 of 200 rounds; with the fix 0 (about 30 s
+  with the game start). In game logs the fault is `exception ... at 0x00000000` with a sporekit.dll /
+  mod return address as the first stack word (docs/02-modkit.md#modkit-hook-original).
 * `win_unit.py`: `test_ini_unicode` writes "Вася 太郎" through the profile API into an ASCII
   coop.ini, reads a UTF-8 file edited by hand (BUG-0142); `--old` reads "????" / "JÃ¶rg".
 * `make test` runs `tests/text_tests.cpp` (net strings cut between characters, name caps, overlay
