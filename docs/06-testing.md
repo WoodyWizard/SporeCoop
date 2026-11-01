@@ -2430,3 +2430,19 @@ answered right after; a 1 s poller beside a standalone run saw no gap. Same sign
   `--no-fill`: the same churn without a full pool, suite `cell_particles_nofill`, extended). Do not
   trust a handful of smooth runs here: all fixes off gave 4 smooth runs in one lab and 6 of 12 with
   steps in another.
+
+## Creature: the ability bar after the own creature swap (ability_bar, 2026-10-31, fix/w27-creature-fault)
+<a id="testing-ability-bar"></a>
+
+* `coop_ability_bar.py` (suite `ability_bar`, 2 players, ~3 min): the guest plays each of its own
+  creatures once (`coop.creations choose creature <key>`, waits for `coop.avatar key=`) and reads
+  its ability count by calling the avatar's vt 0xB0 through `call`; the biggest one gets a bar built
+  by the game (`coop.creations bar rebuild`, the game's own builder, as at a stage start), then the
+  guest takes the smallest one. Checked in the guest's game memory (`mem.read` of
+  `SporeCoop::AbilityBar_ptr`): no slot past the avatar's abilities, and the bar is the one the game
+  builds for this avatar; then W / 1 / 2 / E are pressed and no game may have a caught fault.
+  BUG-0358, docs/re/creature.md#creature-ability-bar. FAIL: `SPORE_FIX_OFF=creations.ability_bar`.
+* The fault itself (0xD4A397) needs garbage past a species' ability array and is not deterministic:
+  with the fix off the slots past the abilities are there every run, the key presses faulted in the
+  campaign but not on the fixture (the read found zeros or valid pointers). The test fails on the
+  slots, the fault check is extra.
