@@ -1225,3 +1225,20 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   reaction, not wanted on a passive mirror; puppets get no animation from the mod).
 * Ticket: BUG-0350 (the ring fixed, the animations open). Open question "a bunch of DNA" after a
   cell editor: BUG-0351 (the log now has the numbers).
+
+## Tribe: the host froze 0.25 s into Tribe after a heap fault freeing a tree's grid node (2026-10-31, lab campaign)
+<a id="issue-host-heap-creature-tribe"></a>
+
+* What happens: in a 4-player campaign the host faulted at `GeneralAllocator_FreeInternal+0x64`
+  (from 0x702C44) 0.25 s after the game entered Tribe, while a world share was waiting to save
+  again; the host then froze (no frames). The guests were fine.
+* Reproduce: not reproduced. Seen once in 72 Creature -> Tribe changes in the lab's logs (lab
+  20261031-185843 campaign#3, seed 132463235). Stress: `tools/lab.py run campaign_ct,campaign_tribe
+  --lane N --repeat N --retry 0`.
+* Known: the flora rebuilds its trees as Tribe begins and frees their spatial-grid nodes; one node's
+  heap header held the float 0.51 (written over by someone earlier). Not today's Cell switches (Cell
+  only code, host left Cell 11 min before). docs/re/tribe.md#tribe-flora-grid-free.
+* Not checked: who wrote the float; whether the heap was damaged in Creature or in the editors.
+* Next steps: a heap walk tripwire (PPMalloc chunk sizes) run once a second in a stress campaign
+  would date the damage.
+* Ticket: BUG-0359

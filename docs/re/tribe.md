@@ -928,3 +928,34 @@ BUG-0340 (players' chiefs on the same spot), measured with `coop.tribe` (member 
   every 2 s for 20 s), a chief closer than the sum of the radii + 1 m to another chief goes to its
   ring spot: 12 m from the tribe's centre, a quarter turn per player, on the game's ground.
   tribe.spread_chiefs: later, two chiefs standing in each other (< 1.5 m, 1 s) are parted the same way.
+
+## The flora's tree grid freed when Tribe begins (2026-10-31, fix/w27-heap)
+<a id="tribe-flora-grid-free"></a>
+
+Ghidra, GOG 2024 (BUG-0359); ✔ = read in the disassembly, ~ = role inferred.
+* ✔ The flora object (`SporeCoop::Flora_Get` 0xB3D540, the patches at +0x1E5F0 / +0x1E5F4 of the
+  "Trees" section above) is a message listener: its vtable at 0x0145C7C4 has the Gonzago subsystem
+  slots, then the IMessageListener part {0xB0BEE0 dtor, **0xB081C0 HandleMessage**, AddRef, Release}
+  at 0x0145C818. HandleMessage `thiscall(flora, uint32 msg, Msg* m)` ret 8 handles 0x02F3FC35 and
+  0x025630B7 / 0x0477C00D / 0x02E9977E (names unknown); for the last three it calls 0xB04A00
+  (patch lookup by m+0x20, species 0x29C388A / 0x3A8BE428 / 0x6D60A1CC: sets or clears a vec3 of the
+  patch) and then **0xB07F00** (m+8 == 0) or 0xB078E0.
+* ✔ 0xB07F00 `thiscall(flora, Msg*, char, void* flora+0x165A0)` ret 0xC: for the trees of the
+  message's key it releases each tree's model (+0x1C4, vt 0xC then Release), resets its slots, and
+  for each record of 0xB04B00(key, species) with a handle at +0x78 >= 0 calls **0x702E30** on the
+  grid at flora+0x16500 and sets +0x78 = -1.
+* ✔ 0x702E30 `thiscall(grid, uint handle)` ret 4 (~ a hierarchical grid remove; the string
+  "Simulator/HierGrid" follows the flora vtable): handle slots in blocks of 128 x 16 bytes at
+  *(grid+0x60)[h >> 7], free-slot list head at +0x7C, count at +0x20 -1, then **0x702B80**
+  (unlink, ret 4): levels of 0x44 bytes at grid+0x24, the slot's list node is unlinked and freed with
+  `GeneralAllocator::delete_` (0x702C3F, the return address 0x702C44 in a crash stack; the nearest
+  ModAPI name, `Graphics::cFrustumCull::FrustumTestAABB+0x2A94`, is wrong).
+* ✔ The return addresses 0xB78155 / 0xB78764 that the stack scan shows beside them are
+  cObstacleManager's (vtable 0x01465068 after the string "Simulator/cObstacleManager"; its
+  HandleMessage 0xB78500 switches on the same message ids): stale, it ran on the same message first ~.
+* ✔ GeneralAllocator_FreeInternal 0x927260 (PPMalloc): chunk = ptr - 8, size = [ptr - 4] &
+  0x7FFFFFF8; over the small-bin limit ([alloc+4], 0x48 here) it reads the next chunk's header at
+  chunk + size + 4 (+0x64, 0x9272C4). A fault there with EDI (the size) a float bit pattern means
+  the block's header was overwritten by a float: BUG-0359 (0x3F028F5C = 0.51f, a flora grid node,
+  host at Creature -> Tribe), BUG-0308 / BUG-0348 (0x41FAECC0 = 31.37f, a Cell pool, guest leaving
+  Cell). The site only says "corrupt header"; the block and its writer differ.
