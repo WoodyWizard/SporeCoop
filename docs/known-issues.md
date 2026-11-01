@@ -1414,3 +1414,16 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Also open: a guest eating a host egg does not change the guest's relation to that species (the
   host's eat node does that for the avatar only).
 * Ticket: BUG-0384
+
+## Creature: a vote during the evolution's cinematic leaves the host in an editor without buttons (2026-11-01, feat/w33-tests-creature)
+<a id="issue-vote-during-evolution-cinematic"></a>
+
+* What happens: right after a vote's editors were left, the host's game plays the evolution cinematic
+  F4F96E43. A second vote started then (`coop.vote editor` + the guest's ready) took both games into their
+  editors; the guest left with "done", the host's editor had no buttons (no "done", no top bar), the cinematic
+  stayed "playing" with the input lock on, and the host's game stayed in the editor for minutes.
+* Reproduce: creature fixture, `coop.vote editor`, the guest's ready, "done" on both, and at once the same again
+  (coop_editor_soak.py before it waited for the cinematic).
+* Known: the creature stage's cinematic does not end in the editor mode; a deferred creature removal waits for it.
+* Not checked: whether a player can start a vote during this cinematic (the mating call, a guest's vote).
+* Ticket: BUG-0404

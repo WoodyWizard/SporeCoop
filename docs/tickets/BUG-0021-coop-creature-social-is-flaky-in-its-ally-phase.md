@@ -11,7 +11,7 @@ versions: 0.7.2.2+
 fixed_in: 
 branch: fix/w4-tests
 commits: 5a72494
-tests: 
+tests: tools/tests/coop_creature_social_ally.py (suite creature_social_ally, creature_social_ally_player)
 signature: 
 docs: docs/06-testing.md#testing-w4-tests
 related:
@@ -27,6 +27,18 @@ clicks the social stance button on every call, a second click may leave the soci
 next key 1 is then a bite (a Kook killed, impressions lost). Next: print the stance before each key
 press (or only click the button when the stance is not social) and log Kook deaths
 (`coop.npc list` DEAD, attacker).
+
+## Root cause (2026-11-01, feat/w33-tests-creature)
+Not only the test: coop_creature_social_ally.py reads the stance from the game (GetAbilityMode, clicked only when
+not social, so the "second click leaves the stance" hypothesis is excluded) and still saw the species record fall
+in its first run (lane 4, 14:01): the guest impressed Kooks #21, #18, #20 (the host's counter impressed=3, each
+of the three with the game's impressed flag on the host and on the guest), one game refused in between (#19, out
+of range), no Kook killed (killed 0), and the Kook record (relation, impressed, killed) went (0, 1, 0) -> (4, 2, 0)
+-> (3, 1, 0) instead of (6, 3, 0). The second run passed ((0, 1) -> (4, 2) -> (6, 3), each step event 3 by the
+impressed NPC). Which event lowered the record is not known yet: the host now logs every change of the species
+table (`social: relationship event <n> species ... relation a -> b, impressed x -> y`, social.cpp h_RelEvent) so the
+next failing run names it. Candidate (inferred): the refused / timed-out social game of the guest leaves the
+host's NPC in a social game with the guest's puppet that the game then ends as failed (a negative event).
 
 ## Fix
 Not fixed. fix/w4-tests (5a72494) plays a refused game again with the same Kook (it walked out of the
@@ -44,3 +56,4 @@ range: host_act refuses acts from more than kActRange + 4 m) instead of moving o
 - 2026-10-25: reported (test runs).
 - 2026-10-25: ticket written from the CHANGELOG, commits and reports (backfill).
 - 2026-10-28: fix/w4-tests: refused games are played again; still 1 of 4 OK (Kooks die during the ally phase); not in the suite; left open.
+- 2026-11-01: feat/w33-tests-creature: creature_social_ally (stance from the game); the record fell (4, 2) -> (3, 1) with no kill in 1 of 2 runs; diagnostics added.

@@ -102,7 +102,20 @@ def ev_rejoin(host, guest, ck):
     time.sleep(2)
 
 
+def settled(host, guest, secs=6, timeout=120):
+    """both games in the Creature stage and together for `secs` seconds in a row (a share's load is over)"""
+    t0, run = time.time(), 0
+    while time.time() - t0 < timeout and run < secs:
+        ok = 'Creature' in mode(host) and 'Creature' in mode(guest) and wait_guest_in(host, guest, timeout=2)
+        run = run + 1 if ok else 0
+        time.sleep(0.3)
+    return run >= secs
+
+
 def ev_editor(host, guest, ck):
+    # both in the stage and the guest in the host's world first (an evolution's world share reloads the guest:
+    # a vote then found it in the galaxy menu or loading, not in its editor)
+    settled(host, guest)
     m0 = mode(host)
     gu = Ui(guest, 'guest')
     print('  ' + host.call('coop.vote editor')['out'].strip(), flush=True)
@@ -110,9 +123,9 @@ def ev_editor(host, guest, ck):
     gu.wait(lambda s: s['ready']['vis'], 10, 'ready button')
     gu.click('ready')
     t0 = time.time()
-    while time.time() - t0 < 60 and (mode(host) == m0 or mode(guest) == m0):
+    while time.time() - t0 < 60 and not ('Editor' in mode(host) and 'Editor' in mode(guest)):
         time.sleep(1)
-    ck(mode(host) != m0 and mode(guest) != m0, f'editor: both games in an editor ({mode(host)} / {mode(guest)})')
+    ck('Editor' in mode(host) and 'Editor' in mode(guest), f'editor: both games in an editor ({mode(host)} / {mode(guest)})')
     host.call('wait.frames 200 60000')
     guest.call('wait.frames 200 60000')
     for con in (host, guest):
