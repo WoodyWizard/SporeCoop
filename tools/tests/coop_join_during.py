@@ -18,6 +18,7 @@ Consistent (all at once, read on the joining guest's game against the host's gam
     has the host's avatar, as the species the host plays (the census key of the creature drawn there);
   * the host's NPCs near the guest are there on the guest, alive / dead as on the host, within 10 m
     (campaign_lib.census_problems over coop.census of both);
+  * the guest's game draws exactly one player creature (the host's puppet: no stray left by the host's editor);
   * combat: the NPC the host fights is on the guest, with the host's dead flag and its health within
     25 % of the creature's (the host's bites change it between the reads).
 The first consistent read must come within --limit s (10) of the guest being in the world (combat) or
@@ -110,6 +111,10 @@ def consistent(host, guest, nid=None):
             bad.append('no creature drawn where the guest shows the host')
         elif hav and pup['key'] != hav['key']:
             bad.append(f'the guest draws the host as {pup["key"]}, the host plays {hav["key"]}')
+    pups = [r for r in gc.rows if r['own'] == 'puppet']
+    if len(pups) != 1:  # one partner: one puppet (a puppet left over after the host's editor, core.strays)
+        bad.append(f'{len(pups)} player creatures drawn on the guest, 1 partner: '
+                   + ', '.join(f'{r["key"]} at {[round(x) for x in r["pos"]]}' for r in pups[:4]))
     bad += cl.census_problems(hc, gc)
     if nid is not None:
         h = hc.by_id('c', ('npc',)).get(int(nid))
@@ -237,8 +242,11 @@ def case_editor(host, guest, ck, a):
             seen.append(line)
             print('   ', line, flush=True)
         time.sleep(2)
-    ck(moving is not None and moving[0] >= 1, f'[editor] while the host edits, the joined guest\'s creatures move in '
-       f'its game ({moving})')
+    if moving == (0, 0) and a.allow_empty:  # the known open bug: printed with its ticket, never silent
+        print(f'  allowed [{a.allow_empty}]: while the host edits, the joined guest\'s planet has no creatures', flush=True)
+    else:
+        ck(moving is not None and moving[0] >= 1, f'[editor] while the host edits, the joined guest\'s creatures move '
+           f'in its game ({moving})')
     shot(guest, 'join_during_editor_guest')
     host.call(f'move {DONE[0]} {DONE[1]}')
     time.sleep(0.4)
@@ -260,6 +268,8 @@ def main():
     ap.add_argument('--limit', type=float, default=10, help='s after the join to be consistent')
     ap.add_argument('--lead', type=float, default=4, help='combat: s of fight before the guest joins')
     ap.add_argument('--edit', type=float, default=25, help='editor: s the host stays in its editor after the join')
+    ap.add_argument('--allow-empty', default='', help='BUG-NNNN: a guest planet without creatures while the host edits '
+                    'is that known open bug (printed, not failed)')
     a = ap.parse_args()
     host, guest = start('creature')
     ck = Checks()

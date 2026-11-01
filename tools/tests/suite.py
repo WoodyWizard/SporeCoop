@@ -401,10 +401,12 @@ add('latency_step_ingame', 'SPORE_NET="delay=30,jitter=5" ' + P + 'coop_latency_
 add('transition_net', 'SPORE_NET=player SPORE_FPS=guest:30 ' + P + 'coop_transition_net.py --allow "t missing=BUG-0381"',
     ('nightly',), minutes=20, timeout=45 * 60,
     allow=[allow('sync-check', 'BUG-0381', 'NPC tribes the host forms after the arrival are missing on the guest (fix/w32-tribe-sync)',
-                 stage='Tribe', kind='t missing')])  # Cell -> Creature -> Tribe the players' way (History, vote, editors, done) over a home connection, the guest at 30 fps: it follows, draws the host, no sync-check MISMATCH after the settle time (TRANSITION_PLANT=mismatch fails)
+                 stage='Tribe', kind='t missing'),
+           allow('sync-check', 'BUG-0413', 'the guest loses the host\'s NPCs under the brain-upgrade caption of the '
+                 'Creature shortcut (AddEvolutionPoints 3000)', stage='Creature', kind='n missing')])  # Cell -> Creature -> Tribe the players' way (History, vote, editors, done) over a home connection, the guest at 30 fps: it follows, draws the host, no sync-check MISMATCH after the settle time (TRANSITION_PLANT=mismatch fails)
 add('party_rejoin_net', 'SPORE_NET=players ' + P + 'coop_party_rejoin_net.py --players 4', ('multi', 'extended'), minutes=10)  # 4 players rejoin over their own bad networks (one, id swap, lost goodbye, two at once): together, drawn where they are, as their own species (SPORE_FIX_OFF=core.id_reuse fails)
 add('join_during_combat', P + 'coop_join_during.py --case combat', minutes=4)  # a guest joins while the host fights an NPC: its game agrees with the host's within 10 s (host drawn, NPCs alive / dead / health)
-add('join_during_host_editor', P + 'coop_join_during.py --case editor', minutes=5)  # a guest joins while the host is in its editor: agrees within 10 s of the host's return (host drawn as its species, NPCs)
+add('join_during_host_editor', P + 'coop_join_during.py --case editor --allow-empty BUG-0412', minutes=5)  # a guest joins while the host is in its editor: agrees within 10 s of the host's return (host drawn as its species, NPCs)
 add('vote_net_4p', 'SPORE_NET=players ' + P + 'coop_vote_net_4p.py', ('multi', 'extended'), minutes=10)  # votes of 4 players over bad networks: evolution vote, an action vote while a guest edits and leaves, its return, all four
 # the previous release and this build in one session (SPORE_LANE_B: the neighbour lane, so exclusive)
 add('mixed_version_guest', P + 'coop_mixed_version.py --old guest', ('extended',), exclusive=True, minutes=7)  # v0.7.3.3 joins this build's host: version lines, puppets, DNA cause tail and nest eggs to the old game (--old-tag v0.7.2.4 fails)

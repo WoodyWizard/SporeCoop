@@ -1432,3 +1432,20 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   animals 1.0 m.
 * Reproduce: `SPORE_LANE=N python3 tools/tests/play_tribe.py --minutes 10 --seed 789470738`.
 * Ticket: BUG-0410
+
+## Creature: a guest that left, or rejoins while the host edits, has no creatures (2026-11-01, feat/w33-tests-session)
+<a id="known-empty-planet-after-leave"></a>
+
+* Seen: join_during_host_editor: after its Leave the guest plays its copy without any creature (the host's 20
+  proxies destroyed, none kept as its own NPCs); rejoining while the host is in its editor, `0 of 0`
+  creatures until the host is back.
+* Reproduce: `SPORE_LANE=N python3 tools/tests/coop_join_during.py --case editor`.
+* Ticket: BUG-0412
+
+## Creature: the guest loses the host's NPCs under the brain-upgrade caption (2026-11-01, feat/w33-tests-session)
+<a id="known-npcs-lost-in-caption"></a>
+
+* Seen: transition_net (1 of 2 runs): after the host's AddEvolutionPoints 3000 the guest's mirrored NPCs went
+  13 -> 1 -> 0 under the caption while the host kept 13; sync-check `n: 15 missing on the guest`.
+* Reproduce: two games on the creature fixture, `AddEvolutionPoints f:3000` on the host, `coop.npc` on the guest.
+* Ticket: BUG-0413
