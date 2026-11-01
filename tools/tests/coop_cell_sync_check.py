@@ -12,14 +12,15 @@ A. A shared total sent late: the host sends its food total every 0.5 s (MSG_CELL
 B. A crowded pool: the host sends a guest its 900 nearest cells, picked around the guest's position
    as the host last saw it, while the check counted the 900 nearest to the guest's own position:
    cells near rank 900 came out "missing" although the guest had all 900 it was sent (campaign_short,
-   "904 objects compared: c: 14 missing"). Here food 300 crowds the pool (over 900 host cells around
-   the guest) and the guest swims to and fro while the host checks every 5 s.
+   "904 objects compared: c: 14 missing"). Here food 300 at the start crowds the pool (as in
+   cell_pause: the host sends the guest 900 of more) and the guest swims to and fro while the host
+   checks every 5 s.
 
 Each phase: no new MISMATCH on the host's sync-check, and at least 2 checks with an OK. The guest's
 own game must hold the host's cells (more than 500 mirrors) and the same food total.
 SPORE_FIX_OFF=diag.total_lag fails A, SPORE_FIX_OFF=diag.cell_margin fails B.
 
-  SPORE_LANE=7 python3 tools/tests/coop_cell_sync_check.py [--phase a|b|ab]
+  SPORE_LANE=7 python3 tools/tests/coop_cell_sync_check.py [--phase a|b|ba]
 """
 import argparse
 import re
@@ -65,7 +66,7 @@ def phase(ck, name, host, seconds, step):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--phase', default='ab')
+    ap.add_argument('--phase', default='ba')
     a = ap.parse_args()
     ck = Checks()
     host, guest = start('cell')
@@ -73,14 +74,10 @@ def main():
     while time.time() - t0 < 30 and mirrors(guest) < 10:
         time.sleep(1)
 
-    if 'a' in a.phase:
-        phase(ck, 'A (food coming in)', host, 20, lambda i: host.call('coop.pool food 1'))
-        time.sleep(1.5)
-        hf, gf = food(host), food(guest)
-        ck(hf is not None and hf == gf, f'A: both games have the same food total afterwards (host {hf}, guest {gf})')
-
     if 'b' in a.phase:
-        host.call('coop.pool food 300')  # a crowded pool: more cells than a guest is sent
+        # a crowded pool: food 300 at the start takes the host to the next levels, whose pool around the
+        # two cells holds more than the 900 a guest is sent (cell_pause: 900 mirrors on the guest)
+        host.call('coop.pool food 300')
         time.sleep(12)
         moves = [(14, 0), (-14, 0), (0, 14), (0, -14)]
         phase(ck, 'B (crowded pool, the guest swims)', host, 30,
@@ -90,6 +87,12 @@ def main():
         print(f'  B: guest mirrors {m}, host send_capped {sent.group(1) if sent else "?"}', flush=True)
         ck(sent and int(sent.group(1)) > 0, 'B: the host sent the guest only its nearest 900 (the pool is crowded)')
         ck(m > 500, f'B: the guest\'s game holds the host\'s cells ({m} mirrors)')
+    if 'a' in a.phase:
+        phase(ck, 'A (food coming in)', host, 20, lambda i: host.call('coop.pool food 1'))
+        time.sleep(1.5)
+        hf, gf = food(host), food(guest)
+        ck(hf is not None and hf == gf, f'A: both games have the same food total afterwards (host {hf}, guest {gf})')
+
     return ck.result()
 
 
