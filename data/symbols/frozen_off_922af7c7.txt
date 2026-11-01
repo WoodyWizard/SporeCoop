@@ -45,3 +45,5 @@ SweepPrune::OverlapOther ; Cell: the game's own broadphase sweep stays (BUG-0337
 Simulator::Cell::DNAForFood ; Cell: the editor's DNA budget in the log (BUG-0351)
 Simulator::Cell::ParticleFree ; Cell: no guard for a full soft-body particle pool (BUG-0338)
 Simulator::Cell::ParticleAlloc ; Cell: no guard for a full soft-body particle pool (BUG-0338)
+Simulator::Cell::ActiveBox ; Cell: the active area's size in the coop.pool parts diagnostic (BUG-0355)
+Simulator::Cell::CreateSoftBody ; Cell: no guard for a full cell graphics pool (BUG-0355)

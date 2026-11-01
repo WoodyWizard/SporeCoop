@@ -779,6 +779,7 @@ static void SK_CDECL h_Break(uint8_t* victim, uint8_t* attacker, float f)
 
 using Destroy_t = void(SK_CDECL*)(uint32_t, bool, float, int);
 static Destroy_t o_Destroy;
+static uint32_t g_dbg_destroys, g_dbg_expect, g_dbg_freed, g_dbg_nogfx, g_dbg_alive; // RE (BUG-0355)
 // Guest: the cells our avatar touched lately (HandleCollisionPair with the avatar), local index -> time.
 // Only these can have been eaten or swallowed by us.
 static std::unordered_map<uint32_t, double> g_touched;
@@ -828,7 +829,19 @@ static void SK_CDECL h_Destroy(uint32_t idx, bool loot, float f, int x)
             loot = false;
         }
     }
+    // RE (BUG-0355): does the game's DestroyCell give the cell's soft-body particles back?
+    uint8_t* dc = modes::cell_at(idx);
+    uint8_t* dparts = G() ? F<uint8_t*>(G(), 0x4108) : nullptr;
+    int dn = dc ? F<int>(dc, 0x250) : 0, before = dparts ? F<int>(dparts, 0x1BD54) : 0;
+    bool dgfx = dc && F<uint32_t>(dc, 0x248);
     o_Destroy(idx, loot, f, x);
+    if (dc && dparts && dn > 1) {
+        g_dbg_destroys++;
+        g_dbg_expect += (uint32_t)dn;
+        g_dbg_freed += (uint32_t)std::max(0, before - F<int>(dparts, 0x1BD54));
+        g_dbg_nogfx += !dgfx;
+        g_dbg_alive += modes::cell_at(idx) != nullptr;
+    }
 }
 
 using AddFood_t = void(SK_CDECL*)(int, bool);
@@ -1877,6 +1890,7 @@ static uintptr_t a_PartAlloc, a_PartFree;
 static int(SK_CDECL* o_PartAlloc)(uint8_t*, const float*, const float*, float, int);
 static void(SK_CDECL* o_PartFree)(uint8_t*, int);
 static uint32_t g_part_spare, g_part_bad_frees, g_particles_peak;
+static uintptr_t g_part_site[1500]; // RE (BUG-0355): the return address of each slot's last allocation
 static int particles_used()
 {
     uint8_t* parts = G() ? F<uint8_t*>(G(), 0x4108) : nullptr;
@@ -1909,13 +1923,148 @@ static void particle_state(int* minus1_cells, int* head_bad)
                 }
     }
 }
+// ---- the cells' graphics pool (BUG-0355, docs/re/cell.md#cell-gfx-pool) ----
+// A foreground cell gets a soft body when it comes into the active area (SoftBodyLod 0xE78C00 ->
+// CreateSoftBody 0xE6D8F0): its particles first, then a graphics object from the cell graphics pool
+// (cCellGFX +0x168). That pool has a fixed capacity; full, it hands out 0, the cell keeps +0x248 = 0
+// with its particles in the list, and the next frame's LOD pass asks again: 4 to 64 particles lost
+// per such cell per frame (DestroyCell / FreeSoftBody free only with +0x248 set), the graphics
+// object Get(0) set up again each time. A 4-player guest's crowd of mirrors on screen filled the
+// particle pool in seconds that way, then every cell shared BUG-0338's spare slot (it went NaN and
+// spread), and the frame took 300 ms for good. The fix: no CreateSoftBody while the graphics pool
+// is full; the cell stays as it was (no soft body, not drawn: what the game meant), the LOD asks
+// again next frame and gets one when there is room.
+// Old (`coop.fix cell.gfx_full off`): the game's call, the leak.
+static bool g_fix_gfx_full = true;
+COOP_FIX("cell.gfx_full", "BUG-0355", g_fix_gfx_full, "cell: no soft body is made while the cell graphics pool is full (the game lost the particles every frame: the particle pool filled, 3 fps)");
+static uintptr_t a_CreateSoft, a_GfxPtr;
+static void(SK_CDECL* o_CreateSoft)(uint32_t, int);
+static uint32_t g_soft_refused, g_soft_made, g_gfx_peak;
+static uint32_t* gfx_pool() // cObjectPool_ fields as uint32: [3] live, [6] capacity
+{
+    uint8_t* gfx = a_GfxPtr ? *(uint8_t**)a_GfxPtr : nullptr;
+    return gfx ? (uint32_t*)(gfx + 0x168) : nullptr;
+}
+static void SK_CDECL h_CreateSoft(uint32_t idx, int arg)
+{
+    uint32_t* gp = gfx_pool();
+    if (gp && gp[3] > g_gfx_peak)
+        g_gfx_peak = gp[3];
+    if (g_fix_gfx_full && gp && gp[6] && gp[3] >= gp[6]) {
+        if (!g_soft_refused++)
+            H->log(M, SK_WARN, "cell: the cell graphics pool is full (%u of %u): no soft body for new cells on screen until there is room (BUG-0355)",
+                   gp[3], gp[6]);
+        return;
+    }
+    g_soft_made++;
+    o_CreateSoft(idx, arg);
+}
+
+// ---- room in the particle pool (BUG-0355, docs/re/cell.md#cell-gfx-pool) ----
+// BUG-0338's spare slot is one particle for every cell that asks a full pool: a 4-player guest with
+// 900 mirrors filled the pool in ordinary play, hundreds of cells then held slot 1499 (up to 64
+// times each, the own cell 56 of its 64 when it grew in the end-of-Cell cinematic), every soft-body
+// step pulled it towards its own cell, it went NaN within seconds and the NaN spread through every
+// cell holding it (their centres are the mean of their particles; guest_tick moves a mirror's
+// particles by the NaN difference). The fix: a full pool frees the soft bodies of the cells
+// farthest from our own (not our cell, not a partner's puppet, not the cell asking), down to
+// kRoomTo used, and hands out a real slot; such a cell keeps its tier and becomes the game's own
+// "no particles" form (+0x250 = 1, +0x254 = -1, as a model type 0 / 5 cell has), moved without a
+// soft body. A cell left holding the spare (no cell to take from) is freed the same way once a
+// frame, and the spare is put back to a finite place.
+// Old (`coop.fix cell.spare off`): BUG-0338's shared spare slot.
+static bool g_fix_spare = true;
+COOP_FIX("cell.spare", "BUG-0355", g_fix_spare, "cell: a full soft-body particle pool frees the particles of the cells farthest from ours instead of handing many cells one shared spare slot (it went NaN and spread)");
+constexpr int kRoomTo = 1300; // used particles after a full pool made room (our cell at tier 3 takes 64)
+static uint32_t g_part_room_runs, g_part_stripped, g_part_spare_freed;
+// the cell's soft body to the game's "no particles" form; returns the particles given back
+static int strip_soft_body(uint8_t* parts, uint8_t* c)
+{
+    int n = F<int>(c, 0x250);
+    if (!F<uint32_t>(c, 0x248) || n < 2 || n > 64)
+        return 0;
+    int freed = 0;
+    for (int i = 0; i < n; i++) {
+        int k = F<int>(c, 0x254 + 4 * i);
+        if (k >= 0 && k < kSpare) {
+            o_PartFree(parts, k);
+            freed++;
+        }
+        F<int>(c, 0x254 + 4 * i) = -1;
+    }
+    F<int>(c, 0x250) = 1;
+    g_part_stripped++;
+    return freed;
+}
+// a full pool: free the soft bodies of the farthest cells (not ours, no puppet, not `asking`)
+static void make_particle_room(uint8_t* parts, int asking)
+{
+    uint8_t* av = avatar();
+    net::Vec3 me = av ? pos_of(av) : net::Vec3{0, 0, 0};
+    std::vector<std::pair<float, uint8_t*>> takers;
+    for_each_cell([&](uint8_t* c, uint32_t idx) {
+        int n = F<int>(c, 0x250);
+        if (!F<uint32_t>(c, 0x248) || n < 2 || n > 64 || (idx & 0xFFFF) == ((uint32_t)asking & 0xFFFF) ||
+            modes::cell_is_puppet(c))
+            return;
+        net::Vec3 p = pos_of(c);
+        float d = std::hypot(p.x - me.x, p.y - me.y);
+        takers.push_back({std::isfinite(d) ? d : 1e30f, c}); // a NaN cell first
+    });
+    std::sort(takers.begin(), takers.end(), [](auto& x, auto& y) { return x.first > y.first; });
+    g_part_room_runs++;
+    for (auto& [d, c] : takers) {
+        if (F<int>(parts, 0x1BD54) <= kRoomTo)
+            break;
+        strip_soft_body(parts, c);
+    }
+}
+// once a frame: no cell but ours (or a puppet) keeps the spare, the spare stays finite
+static void spare_tick()
+{
+    uint8_t* parts = G() ? F<uint8_t*>(G(), 0x4108) : nullptr;
+    if (!g_fix_spare || !g_fix_particles || !parts || !g_part_spare)
+        return;
+    uint8_t* av = avatar();
+    for_each_cell([&](uint8_t* c, uint32_t) {
+        int n = F<int>(c, 0x250);
+        if (!F<uint32_t>(c, 0x248) || n < 2 || n > 64 || modes::cell_is_puppet(c))
+            return;
+        for (int i = 0; i < n; i++)
+            if (F<int>(c, 0x254 + 4 * i) == kSpare) {
+                strip_soft_body(parts, c);
+                g_part_spare_freed++;
+                return;
+            }
+    });
+    auto* q = (float*)(parts + 4 + 12 * kSpare);
+    auto* v = (float*)(parts + 0x4654 + 12 * kSpare);
+    if (!std::isfinite(q[0]) || !std::isfinite(q[1]) || !std::isfinite(q[2]) || !std::isfinite(v[0]) || !std::isfinite(v[1])) {
+        net::Vec3 me = av ? pos_of(av) : net::Vec3{0, 0, 0};
+        q[0] = std::isfinite(me.x) ? me.x : 0.f, q[1] = std::isfinite(me.y) ? me.y : 0.f, q[2] = 0.f;
+        v[0] = v[1] = v[2] = 0.f;
+    }
+}
 static int SK_CDECL h_PartAlloc(uint8_t* parts, const float* pos, const float* vel, float w, int cell)
 {
     int used = parts ? F<int>(parts, 0x1BD54) : 0;
     if (used > (int)g_particles_peak)
         g_particles_peak = (uint32_t)used;
-    if (!g_fix_particles || !parts || used + 1 < kParticles)
-        return o_PartAlloc(parts, pos, vel, w, cell);
+    // The game's own last slot is 1499 too: with no free slot below the high water it hands out
+    // index = the new count (slots 1..1499; 1499 at 1498 used), so BUG-0338's spare could be a
+    // real cell's particle (and its free was dropped: one slot lost). With cell.spare the pool
+    // counts as full at 1498 used and slot 1499 is the spare alone.
+    int full_at = g_fix_spare ? kParticles - 2 : kParticles - 1;
+    if (g_fix_spare && g_fix_particles && parts && used >= full_at && o_PartFree) {
+        make_particle_room(parts, cell);
+        used = F<int>(parts, 0x1BD54);
+    }
+    if (!g_fix_particles || !parts || used < full_at) {
+        int k = o_PartAlloc(parts, pos, vel, w, cell);
+        if (k >= 0 && k < kParticles) // RE (BUG-0355): who took each slot (coop.pool orphans)
+            g_part_site[k] = (uintptr_t)__builtin_return_address(0);
+        return k;
+    }
     for (int j = 0; j < 3; j++) { // the spare stands where the asking cell is, at rest
         ((float*)(parts + 4 + 12 * kSpare))[j] = pos ? pos[j] : 0.f;
         ((float*)(parts + 0x4654 + 12 * kSpare))[j] = vel ? vel[j] : 0.f;
@@ -2142,6 +2291,10 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
         H->hook_create(M, (void*)a_Bite, (void*)h_Bite, (void**)&o_Bite);
     if (a_PickTargets) // BUG-0306
         H->hook_create(M, (void*)a_PickTargets, (void*)h_PickTargets, (void**)&o_PickTargets);
+    a_CreateSoft = H->sym("Simulator::Cell::CreateSoftBody");
+    a_GfxPtr = H->sym("Simulator::Cell::cCellGFX::_ptr");
+    if (a_CreateSoft && a_GfxPtr) // GOG 2024 only (BUG-0355)
+        H->hook_create(M, (void*)a_CreateSoft, (void*)h_CreateSoft, (void**)&o_CreateSoft);
     a_PartAlloc = H->sym("Simulator::Cell::ParticleAlloc");
     a_PartFree = H->sym("Simulator::Cell::ParticleFree");
     if (a_PartAlloc && a_PartFree) { // GOG 2024 only (BUG-0338)
@@ -2906,6 +3059,7 @@ void tick(double now)
     if (!in_cell() || !C.sess || !C.sess->connected() || !avatar())
         return;
     bg_cull(now);
+    spare_tick(); // BUG-0355
     if (is_host())
         host_tick(now);
     else if (is_guest() && !g_solo)
@@ -4066,6 +4220,133 @@ std::string debug(const std::vector<std::string>& a)
                  F<uint32_t>(lc, 0), dead, g_stale_targets);
         return b + ts + "\n";
     }
+    if (!a.empty() && a[0] == "parts") { // RE (BUG-0355): who holds the soft-body particles
+        // cells by tier and distance from our cell, mirrors apart, holders of the spare slot, how far
+        // the spare and the cells' particles are from their cells
+        net::Vec3 me = pos_of(av);
+        uint8_t* parts = G() ? F<uint8_t*>(G(), 0x4108) : nullptr;
+        int tiers[4] = {}, held = 0, mir_held = 0, spare_cells = 0, spare_refs = 0, own_spare = 0, near_held = 0, far_held = 0;
+        float far_part = 0;
+        int nan_cells = 0, nan_parts = 0;
+        if (parts)
+            for (int k = 0; k < kParticles; k++)
+                nan_parts += !std::isfinite(((float*)(parts + 4 + 12 * k))[0]) || !std::isfinite(((float*)(parts + 4 + 12 * k))[1]);
+        int t0_big = 0, t0_stamp = 0, t0_nogfx = 0;
+        uint32_t stamp = G() ? F<uint32_t>(G(), 0x4100) : 0;
+        auto scan = [&](uint8_t* c, bool mirror) {
+            int n = F<int>(c, 0x250), t = F<int>(c, 0x24C);
+            if (t == 0) {
+                t0_big += F<float>(c, kSize) >= 0.3f;
+                t0_stamp += F<uint32_t>(c, 0x35C) == stamp;
+                t0_nogfx += !F<uint32_t>(c, 0x248);
+            }
+            nan_cells += !std::isfinite(F<float>(c, 0x4C)) || !std::isfinite(F<float>(c, 0x50));
+            if (t >= 0 && t < 4)
+                tiers[t]++;
+            if (!F<uint32_t>(c, 0x248) || n < 2 || n > 64)
+                return;
+            net::Vec3 p = pos_of(c);
+            float d = std::hypot(p.x - me.x, p.y - me.y);
+            held += n;
+            if (mirror)
+                mir_held += n;
+            (d < 60.f ? near_held : far_held) += n;
+            int s = 0;
+            for (int i = 0; i < n; i++) {
+                int k = F<int>(c, 0x254 + 4 * i);
+                s += k == kSpare;
+                if (parts && k >= 0 && k < kParticles) {
+                    auto* q = (float*)(parts + 4 + 12 * k);
+                    far_part = std::max(far_part, std::hypot(q[0] - p.x, q[1] - p.y));
+                }
+            }
+            spare_refs += s;
+            spare_cells += s > 0;
+            if (c == av)
+                own_spare = s;
+        };
+        for_each_cell([&](uint8_t* c, uint32_t idx) { scan(c, g_host_of.count(idx) > 0); });
+        scan(av, false);
+        float* sp = parts ? (float*)(parts + 4 + 12 * kSpare) : nullptr;
+        static uintptr_t a_box = H->sym("Simulator::Cell::ActiveBox");
+        auto* box = (const float*)a_box;
+        char bx[200] = "";
+        if (box)
+            snprintf(bx, sizeof bx, " active_box=%.0fx%.0f m", box[3] - box[0], box[4] - box[1]);
+        if (uint32_t* gp = gfx_pool())
+            snprintf(bx + strlen(bx), sizeof bx - strlen(bx), " gfx=%u/%u peak=%u soft_made=%u soft_refused=%u", gp[3], gp[6], g_gfx_peak,
+                     g_soft_made, g_soft_refused);
+        char b[800];
+        snprintf(b, sizeof b,
+                 "parts: used=%d held=%d (mirrors %d, within 60 m %d, beyond %d) tiers=%d/%d/%d/%d spare_cells=%d spare_refs=%d own_spare=%d "
+                 "own_n=%d spare_at=(%.0f %.0f) farthest_particle=%.0f m nan_cells=%d nan_particles=%d room_runs=%u stripped=%u spare_freed=%u spare=%u tier0: size>=0.3 %d, +0x35C==G+0x4100 %d, no +0x248 %d%s\n",
+                 particles_used(), held, mir_held, near_held, far_held, tiers[0], tiers[1], tiers[2], tiers[3], spare_cells, spare_refs,
+                 own_spare, F<int>(av, 0x250), sp ? sp[0] : 0.f, sp ? sp[1] : 0.f, far_part, nan_cells, nan_parts, g_part_room_runs, g_part_stripped,
+                 g_part_spare_freed, g_part_spare, t0_big, t0_stamp, t0_nogfx, bx);
+        return b;
+    }
+    if (!a.empty() && a[0] == "orphans") { // RE (BUG-0355): used particles no cell's list holds
+        uint8_t* g = G();
+        uint8_t* parts = g ? F<uint8_t*>(g, 0x4108) : nullptr;
+        uint8_t* data = g ? F<uint8_t*>(g, 0x1C) : nullptr;
+        if (!parts || !data)
+            return "orphans: no pool\n";
+        std::vector<int> holders(kParticles, 0);
+        uint32_t nslots = F<uint32_t>(g, 0x1C + 0x10);
+        int big_lists = 0, nogfx_lists = 0;
+        for (uint32_t slot = 0; slot < nslots && slot < 4096; slot++) {
+            uint8_t* c = data + (size_t)slot * 0x398;
+            if ((F<uint32_t>(c, 0) & 0xFFFF) != slot)
+                continue;
+            int k = F<int>(c, 0x250);
+            if (k > 64) {
+                big_lists++;
+                continue;
+            }
+            if (k > 1 && !F<uint32_t>(c, 0x248))
+                nogfx_lists++;
+            if (k > 1)
+                for (int i = 0; i < k; i++) {
+                    int j = F<int>(c, 0x254 + 4 * i);
+                    if (j >= 0 && j < kParticles)
+                        holders[j]++;
+                }
+        }
+        int high = F<int>(parts, 0x1BD58), used = F<int>(parts, 0x1BD54), owned = 0, orphans = 0, dead_owner = 0, own_av = 0, multi = 0;
+        // the free list: slots on it are free
+        std::vector<char> on_free(kParticles + 1, 0);
+        int head = F<int>(parts, 0x1BD5C), free_n = 0;
+        for (int guard = 0; head >= 0 && head < kParticles && !on_free[head] && guard < kParticles; guard++) {
+            on_free[head] = 1;
+            free_n++;
+            head = F<int>(parts, 0x1A5E4 + 4 * head);
+        }
+        uint32_t avi = avatar_idx();
+        std::map<uintptr_t, int> sites;
+        for (int i = 0; i <= high && i < kParticles; i++) {
+            if (on_free[i])
+                continue;
+            uint32_t ow = F<uint32_t>(parts, 0x18E74 + 4 * i);
+            owned += ow != 0;
+            multi += holders[i] > 1;
+            if (holders[i] == 0 && ow) {
+                orphans++;
+                own_av += ow == avi;
+                dead_owner += !modes::cell_at(ow);
+                sites[g_part_site[i] ? g_part_site[i] - H->image_base() + 0x400000 : 0]++;
+            }
+        }
+        std::string st;
+        for (auto& [a_, n_] : sites)
+            st += " " + std::to_string(n_) + "@" + [&] { char h[16]; snprintf(h, sizeof h, "%08X", (unsigned)a_); return std::string(h); }();
+        char b[300];
+        snprintf(b, sizeof b, "orphans: used=%d high=%d on_free_list=%d owned=%d orphans=%d (owner gone %d, owner our cell %d) held_twice=%d lists_over_64=%d lists_without_gfx=%d\n",
+                 used, high, free_n, owned, orphans, dead_owner, own_av, multi, big_lists, nogfx_lists);
+        std::string first = b;
+        snprintf(b, sizeof b, "  destroys of cells with particles: %u, particles %u, given back %u, without +0x248 %u, still alive after %u\n",
+                 g_dbg_destroys, g_dbg_expect, g_dbg_freed, g_dbg_nogfx, g_dbg_alive);
+        return first + std::string(b) + "  orphans allocated from:" + st + "\n";
+    }
     if (a.size() >= 2 && a[0] == "particles") { // tests (BUG-0338): fill the soft-body particle pool up to <n> used (owner: our cell)
         uint8_t* parts = G() ? F<uint8_t*>(G(), 0x4108) : nullptr;
         int want = std::min(atoi(a[1].c_str()), kParticles - 1), made = 0;
@@ -4182,6 +4463,24 @@ std::string debug(const std::vector<std::string>& a)
     }
     if (!a.empty() && a[0] == "sap") // the cell broadphase's axis-0 sweep, as UpdatePairs would run it (BUG-0337)
         return sap_report() + "\n";
+    if (a.size() >= 3 && a[0] == "crowd") { // tests (BUG-0355): <n> of our cells on a disc of <r> m around us (a crowd on screen)
+        net::Vec3 me = pos_of(av);
+        int want = atoi(a[1].c_str()), moved = 0;
+        float r = (float)atof(a[2].c_str());
+        for_each_cell([&](uint8_t* c, uint32_t) {
+            if (moved >= want || modes::cell_is_puppet(c) || F<uint8_t>(c, kDead) || F<uint8_t>(c, kDying))
+                return;
+            // a sunflower spiral: even density, no two cells on one spot, none on our own (from 3 m)
+            float t = (float)(moved + 1) / (float)std::max(want, 1), ang = 2.39996323f * (float)moved;
+            float d = 3.f + (r - 3.f) * std::sqrt(t);
+            set_pos(c, {me.x + d * std::cos(ang), me.y + d * std::sin(ang), me.z});
+            moved++;
+        });
+        char b[96];
+        snprintf(b, sizeof b, "crowd: %d cells moved\n", moved);
+        H->log(M, SK_INFO, "cell: %s", b);
+        return b;
+    }
     if (a.size() >= 2 && a[0] == "column") { // tests (BUG-0337): <n> of our cells on one vertical line next to us (all open at once in the sweep)
         net::Vec3 me = pos_of(av);
         int want = atoi(a[1].c_str()), moved = 0;

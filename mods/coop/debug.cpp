@@ -3,6 +3,11 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <algorithm>
+#include <atomic>
+#include <unordered_map>
+#include <vector>
+#include <windows.h>
 
 #include "cell_logic.h"
 #include "game.h"
@@ -197,9 +202,101 @@ int c_cam(void*, int argc, const char* const* argv, SkOut* out)
     return 0;
 }
 } // namespace
+
+// ---- coop.sample: where the game's main thread spends its time (BUG-0355, a 3 fps guest) ----
+// Suspends the main thread every ~1 ms for <ms>, reads its EIP and the return-address-like words of
+// the top of its stack (inside SporeApp.exe's image), and prints the most frequent ones at their
+// 0x400000 addresses: "self" is where the thread was, "stack" counts each address once per sample
+// (an inclusive profile of the callers). Runs on the console thread; the game goes on running.
+namespace {
+std::atomic<DWORD> g_main_tid{0};
+int c_sample(void*, int argc, const char* const* argv, SkOut* out)
+{
+    int ms = argc > 1 ? atoi(argv[1]) : 2000, top = argc > 2 ? atoi(argv[2]) : 25;
+    ms = std::clamp(ms, 100, 30000);
+    DWORD tid = g_main_tid.load();
+    if (tid == GetCurrentThreadId()) {
+        SAY("not on the main thread");
+        return 1;
+    }
+    HANDLE th = tid ? OpenThread(THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT | THREAD_QUERY_INFORMATION, FALSE, tid) : nullptr;
+    if (!th) {
+        SAY("no main thread (tid %lu)", tid);
+        return 1;
+    }
+    uintptr_t base = H->image_base();
+    auto* dos = (IMAGE_DOS_HEADER*)base;
+    auto* nt = (IMAGE_NT_HEADERS32*)(base + dos->e_lfanew);
+    uintptr_t lo = base + 0x1000, hi = base + nt->OptionalHeader.SizeOfImage;
+    auto va = [&](uintptr_t a) { return (unsigned)(a - base + 0x400000); };
+    // the main thread's stack top (its TEB's StackBase): the copy below stays inside its stack
+    struct { LONG status; void* teb; uintptr_t pid, tid, mask; LONG prio, base; } tbi{};
+    using NtQIT = LONG(WINAPI*)(HANDLE, int, void*, ULONG, ULONG*);
+    auto qit = (NtQIT)GetProcAddress(GetModuleHandleA("ntdll.dll"), "NtQueryInformationThread");
+    uintptr_t stack_top = 0;
+    if (qit && qit(th, 0 /* ThreadBasicInformation */, &tbi, sizeof tbi, nullptr) == 0 && tbi.teb)
+        stack_top = ((uintptr_t*)tbi.teb)[1];
+    std::unordered_map<uintptr_t, uint32_t> self, stack;
+    self.reserve(4096);
+    stack.reserve(16384);
+    uint32_t n = 0, outside = 0;
+    DWORD t0 = GetTickCount();
+    std::vector<uintptr_t> seen;
+    seen.reserve(512);
+    static uint32_t words[512];
+    while (GetTickCount() - t0 < (DWORD)ms) {
+        // nothing that takes a lock while the thread is suspended (it may hold the heap's or
+        // Wine's virtual memory lock): no allocation, no ReadProcessMemory, only a plain copy
+        if (SuspendThread(th) == (DWORD)-1)
+            break;
+        CONTEXT ctx{};
+        ctx.ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
+        size_t got = 0;
+        bool ok = GetThreadContext(th, &ctx);
+        if (ok && stack_top > ctx.Esp && stack_top - ctx.Esp >= 4) {
+            got = std::min<size_t>(sizeof words, (stack_top - ctx.Esp) & ~(size_t)3);
+            memcpy(words, (void*)(uintptr_t)ctx.Esp, got);
+        }
+        ResumeThread(th);
+        if (ok) {
+            n++;
+            uintptr_t eip = ctx.Eip;
+            if (eip >= lo && eip < hi)
+                self[eip & ~(uintptr_t)0xF]++;
+            else
+                outside++;
+            seen.clear();
+            for (size_t i = 0; i < got / 4; i++)
+                if (words[i] >= lo && words[i] < hi && std::find(seen.begin(), seen.end(), words[i]) == seen.end()) {
+                    seen.push_back(words[i]);
+                    stack[words[i]]++;
+                }
+        }
+        Sleep(1);
+    }
+    CloseHandle(th);
+    auto print = [&](const char* what, std::unordered_map<uintptr_t, uint32_t>& m) {
+        std::vector<std::pair<uint32_t, uintptr_t>> v;
+        for (auto& [a, c] : m)
+            v.push_back({c, a});
+        std::sort(v.rbegin(), v.rend());
+        SAY("%s:", what);
+        for (int i = 0; i < top && i < (int)v.size(); i++)
+            SAY(" %08X=%u", va(v[i].second), v[i].first);
+        SAY("\n");
+    };
+    SAY("samples=%u outside_exe=%u ms=%d\n", n, outside, ms);
+    print("self", self);
+    print("stack", stack);
+    return 0;
+}
+} // namespace
 void coop_register_debug_commands(const SkHost* host, SkMod* self)
 {
     H = host;
+    host->subscribe(self, SK_EV_FRAME, [](void*, int, void*) { g_main_tid.store(GetCurrentThreadId()); }, nullptr);
+    host->command_add(self, "coop.sample", "coop.sample [ms] [top] - sample the main thread's EIP and stack (RE, BUG-0355)", c_sample,
+                      nullptr, SK_CMD_ANY_THREAD | SK_CMD_NOT_ON_MAIN);
     void coop_register_debug_commands2(const SkHost*, SkMod*);
     coop_register_debug_commands2(host, self);
     host->command_add(self, "coop.cam", "coop.cam [x y] - dump camera, optional screen ray", c_cam, nullptr,
