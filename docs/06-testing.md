@@ -3106,3 +3106,12 @@ the network and frame rate of real players; every check reads the other machine'
 * Monitor pitfall: player ids are reused (a newcomer takes the lowest free id), so `Timeline.who_at(pid, t)`
   maps a partner line to the machine that had that id at that moment; the latest id per machine
   (`who_of`) gave false `hp` violations after the id swap of party_rejoin_net.
+* The players suite on lanes 9/10 (lab 20261101-160125, 73 tests, 94 min): 63 OK. FAIL: creature_burst,
+  creature_fps15burst, creature_mobile, creature_players (a test bug: with SPORE_NET set, the helper
+  load_game.py that coop_two_instances.py runs imported lane.py, which binds the guest's proxy port the test
+  already holds: EADDRINUSE, the host never loaded its world; netem.from_env now uses the test's proxy. In
+  creature_fps15burst the test then hosted on a game still starting and it crashed: BUG-0433),
+  party_creature4_mobile / _players (sync-check gate: a rejoined guest's empty old copy, BUG-0412),
+  sync_burst / sync_fps15burst (Civ vehicle p90 4-7 m, BUG-0438), puppet_walk_burst (the guest walked 22
+  windows only, 82 % matched) and puppet_walk_players (84 % matched, limit 85 %): the walk checks are at their
+  edge under loss bursts and spikes.

@@ -1449,3 +1449,19 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   13 -> 1 -> 0 under the caption while the host kept 13; sync-check `n: 15 missing on the guest`.
 * Reproduce: two games on the creature fixture, `AddEvolutionPoints f:3000` on the host, `coop.npc` on the guest.
 * Ticket: BUG-0413
+
+## Crash: hosting before the main menu (2026-11-01, feat/w33-tests-session)
+<a id="known-host-before-menu"></a>
+
+* Seen: a test host whose world load failed was told `cheat coop host` while its game was still starting
+  (game mode none); 3 ms later it crashed at 0x01020F35 (TimeOfDay_Unavailable, read 0x10) from the host's
+  time-of-day sync.
+* Reproduce: `cheat coop host <port> Alice` on a game before its galaxy menu is up.
+* Ticket: BUG-0433
+
+## Civ: a vehicle trails under loss bursts (2026-11-01, feat/w33-tests-session)
+<a id="known-civ-vehicle-bursts"></a>
+
+* Seen: sync_burst / sync_fps15burst, `civ/vehicles` p90 4.3-7.3 m (limit 3 m), one vehicle sampled.
+* Reproduce: `SPORE_LANE=N SPORE_NET=burst python3 tools/tests/coop_sync.py`.
+* Ticket: BUG-0438
