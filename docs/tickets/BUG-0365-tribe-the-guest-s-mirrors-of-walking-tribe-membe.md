@@ -10,11 +10,11 @@ role: guest
 versions: 0.7.3.3
 fixed_in: unreleased
 branch: fix/w30-tribe-walk
-commits: 356bbf1, 90024d2, c6c3fd1, 747f76a
+commits: 356bbf1, 90024d2, c6c3fd1, 747f76a, 846a63a
 tests: tribe_walk, tribe_walk_mobile (tools/tests/coop_tribe_walk.py)
 signature:
 docs: docs/re/tribe.md#tribe-mirror-walk, docs/06-testing.md#testing-tribe-walk
-related: BUG-0360, BUG-0281, BUG-0329, BUG-0122
+related: BUG-0360, BUG-0281, BUG-0329, BUG-0122, BUG-0386
 switch: tribe.mirror_walk, tribe.mirror_time
 ---
 
@@ -71,8 +71,17 @@ than half + 1 m/s x dt <= 10 %; walk gait >= 80 % on screen.
   91-100 %, standing 0-3 %, no jumps, drawn error p50 0.01-0.07 m / p90 0.08-0.25 m, gait 95-99 % on
   screen; tribe_walk_mobile#1 did not start: the host game did not answer `game.mode` at the load,
   a lab start-up timeout, no check ran).
-* Regression and smoke: see History.
+* More PASS runs: 20261101-092116 (tribe_walk 2 of 2, tribe_walk_mobile 1 of 2: the failed one ran while
+  `make test` compiled on the same machine, the guest's game had 558 frames over 0.1 s, 3 driver
+  teleports, matched 70 %), 20261101-092756 (tribe_walk_mobile 2 of 2), 20261101-091623 (tribe_walk_mobile
+  1 of 2: the failed one had the host's minimap calibration fail (no host walk; the test calibrates
+  again now) and one held-back mirror that lurched 0.9-1.1 m per frame to catch up: BUG-0386).
+* Regression (lanes 2, 3): out/lab/20261101-085611: tribe_coop, tribe_play, chaos_tribe, puppet_walk,
+  creature 5 of 5; puppet_walk again 2 of 2 in 20261101-091623 (one earlier jump of 0.9 m in
+  20261101-075538 followed a game hitch, the same as tribe_walk's hitch catch-up).
+* Smoke (lanes 2, 3): out/lab/20261101-090144: 14 of 14. `make test` passes.
 
 ## History
 - 2026-11-01: opened.
-- 2026-11-01: measured and fixed on fix/w30-tribe-walk (tribe.mirror_walk, tribe.mirror_time).
+- 2026-11-01: measured and fixed on fix/w30-tribe-walk (tribe.mirror_walk, tribe.mirror_time); BUG-0386
+  opened on the way.
