@@ -1304,3 +1304,64 @@ Observed on lane 6 (GOG 2024, creature fixture Scalinus, BUG-0377):
   f32 only. Every machine logs `dna: <a> -> <b> cause=<cause>:<player><+amount>[,...]` (`unknown`: an
   editor's spending, a catch-up, an older host); Cell: `dna: food <a> -> <b> cause=meal:<player>+N`
   (255 on a guest: the host's total, some partner's meal). mods/coop/dna_ledger.h.
+
+## Eggs at the nests (2026-11-01, fix/w32-nest-eggs)
+<a id="creature-nest-eggs"></a>
+
+BUG-0384 (player report: "in enemy nests eggs are desynced and bugged (flying mid air)"). GOG 2024,
+Ghidra (out/ghidra-2024) and lane 9/10 at runtime (`coop.nest`, creature fixture).
+
+* ✔ Nouns (RegisterNounType calls in 0xB24720): **cEgg 0x2A034CD** (factory 0xB1EEA0, size 0x228,
+  ctor 0xC6A410, vt 0x20 0xC6A500), **cNest 0x52AA6122** (size 0x130), **cFruit 0x2C9CC91**, cFruitGroup
+  0x2E96892. CORRECTION (2026-11-01, fix/w32-nest-eggs) of the BUG-0384 note on fix/w30-npc-walk ("noun
+  0x2C9CC91 ... most likely the eggs"): 0x2C9CC91 is cFruit (`RegisterNounType(0x2C9CC91, 0x2C9CC8E,
+  "cFruit")`, vt 0x20 0xAFF290), a pool of fruit objects of the flora (made by 0xB00180 from the flora
+  update 0xB0B0B0, model from the planet's property 0x463CDA3): fallen and hanging fruit, not eggs. Their
+  host / guest counts differ (each game drops its own fruit); the ones 2-4.6 m over the terrain were at
+  the same places on both games (hanging in trees, ~ inferred, not seen on a screenshot).
+* ✔ cEgg fields (attribute table 0x134CF40): +0x1E8 mState, +0x1EC "changed" (the view replays its
+  effect), +0x1F0 mTimeToHatch (ms), +0x1F4 mpHerd (ref-counted), +0x1F8 mBrokenTimer, +0x218 mpToHatch
+  (a creature that comes out of it), +0x220 mEffectScale; spatial subobject +0x34 (position +0x38).
+  States: 0 in the player's nest before the editor (cHerd::SetEggsInNest 0xC6EFE0), 5 the avatar's
+  family eggs after a hatch (0xC6D290), 6 laid by an NPC, 3 hatched, 4 eaten / broken.
+* ✔ cHerd fields (attribute table 0x134D380, all names): +0x40 mHerd (members), **+0x54 mEggs**
+  (vector of cEgg*), +0x84 mOwnedByAvatar, +0xF4 mTargetHerdSize, +0xFC mbEggStatusChanged, +0x11C
+  mRespawnRate (ms, 240000 at the fixture's nests), +0x12C mEggIndex (the egg's look, 0..9), +0x160
+  mpNest, +0x164 mpHerdMom, **+0x194 mpEggLayer**, +0x198 mbEggsInNest, +0x218 mbEnabled; also
+  mInitialShortfall +0xF8, mFeedingGrounds +0x68, mTerritoryRadius +0x108, mbExtinction +0x190.
+* ✔ How NPC nests get eggs (cHerd::Update 0xC6D960): when members (+0x40 vector, **corpses count**)
+  are fewer than the target, min(shortfall, cap 0x1582F34 = 2 at runtime) minus the eggs there, after
+  mRespawnRate a living member nearest the nest becomes the egg layer (+0x194) with that many eggs to
+  lay (creature +0x1678, setter 0xC02D80). Its behaviour node 0xD6CDB0 plays the lay animation and calls
+  cHerd::LayEgg 0xC6D0B0 at the creature (state 6, **not snapped to the ground**: snap = the avatar bit),
+  registers the egg's collision ("useGameplayPhantom", 0xB48870) and walks away. Runtime: 2 eggs within
+  ~20 s with mRespawnRate 2000 and the target raised by 2 (`coop.nest respawn` / `target`); killing
+  members alone laid nothing for 2 min (the corpses stayed members). Without a living member nothing is
+  laid (a herd whose 3 of 4 were killed stayed so).
+* ✔ Eggs fall and roll after laying (physics): one was laid 0.97 m over the terrain and lay at 0.14 m
+  10 s later. In the nest's bowl an egg lies 0.74-1.2 m over the terrain (the nest model; screenshots
+  show it in the nest, not floating): `over_ground` measures the terrain only.
+* ✔ Hatch: cEgg update 0xC6B1E0 (only from cHerd::Update for the eggs of mEggs) counts +0x1F0 down
+  (150-180 s left right after laying), at 0: state 3, cEgg::SnapToGround 0xC6A2A0 (onto the collision
+  surface: the nest's top at its centre), the to_hatch creature placed there or a new member made
+  (cCreatureAnimal::Create). The herd destroys hatched and eaten eggs ~10 s later.
+* ✔ Eat: the eat node 0xDBD460 (animation 0x2796B30) calls cEgg::SetState(4) 0xC6A810, and when the
+  eater is the avatar and the egg's herd is not its own, changes the relation to that species
+  (0xC230B0 / 0xC90070, not followed). A hard collision (0xD3A450, impulse > 10) breaks an egg too.
+* ✔ Drawing (cEggView, vtable 0x1486678, update 0xE8E5B0): an egg is drawn only while its mpHerd is
+  set and the herd is enabled (+0x218, 0xC6A1C0); a change (+0x1EC) plays the state's effect
+  (state 6: 0xB70973F3, 3: 0x4A9D2F4C, 4: 0x91363BFD, ...) with the scale +0x220 and the herd's
+  mEggIndex +0x12C. An egg with no herd is invisible (first mirror attempt: listed, not drawn).
+* ✔ Co-op (observed, lanes 9/10): the guest's own nest herds have **no members** (the mod removes the
+  guest's NPCs; the proxies live in herds of ours), so no layer and no eggs: with the host's herd laying
+  2 eggs the guest had 0. That is the "desync". Floating on the guest was not reproduced; the eggs that
+  were "in the air" may be eggs in the nest bowl (0.8 m over the terrain), eggs falling after laying, or
+  the guest's own eggs while its game ran its NPCs (host away); not checked.
+* ✔ The fix (`nest.eggs`, mods/coop/nest.cpp): the host sends the eggs of NPC herds (not the avatar
+  family's) within 110 m of each guest at 1 Hz (MSG_NEST 52: serial, position, state, scale, the herd's
+  home +0x34); the guest makes a cEgg (CreateInstance) per host egg, sets its mpHerd to its own herd of
+  the same home (AddRef, **not added to mEggs**: its update never hatches or clears ours), places and
+  snaps it to its own ground, follows the host's state 3 / 4 by SetState and removes it (Release of the
+  herd, DestroyInstance, Release) when the host's egg is gone; savestrip leaves them out of saves. An
+  egg of ours eaten on the guest (state 4) sends MSG_NEST kind 1 and the host calls SetState(4) on its
+  egg (the species' relation change of the host's eat node is not applied for the guest).
