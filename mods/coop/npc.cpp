@@ -124,6 +124,13 @@ static bool g_npc_novel = false;
 // found under the ground onto it, and a new proxy is made on the ground (driver.h out_of_ground).
 // `coop.fix npc.proxy_ground off`: at its own height only (0.7.3.4).
 COOP_FIX("npc.proxy_ground", "BUG-0399", drive::g_out_of_ground_fix, "tribe: an animal's proxy is never left under this game's ground (made there, kept there standing)");
+// BUG-0406: placed exactly on the host's path, a proxy walking downhill is a few cm over the ground after the
+// game's next step and starts to fall (+0x137 = 0, the fall animation): 51 fall starts per 100 s of walking on
+// a slope of the creature fixture, the host's own NPCs 0.9 (npc_walk_slope). As the partner's puppet
+// (BUG-0366, creature.puppet_ground) its walk is placed 5 cm into this game's ground (WalkPlace::ground).
+// `coop.fix npc.walk_ground off`: on the host's path exactly.
+static bool g_walk_ground_fix = true;
+COOP_FIX("npc.walk_ground", "BUG-0406", g_walk_ground_fix, "creature: a walking NPC's proxy is placed onto the ground, so it does not keep starting to fall downhill");
 static bool g_walk_tribe_fix = true;
 COOP_FIX("npc.walk_tribe", "BUG-0361", g_walk_tribe_fix, "tribe: a walking or running animal's proxy walks on its path instead of moving in steps");
 // tests (coop.npctrack variant, drive::walk_place): 0 the fix; 1 place only (no walk goal); 2 walk goal +
@@ -1081,7 +1088,7 @@ static void guest_tick(double now)
                 o.own_height = rts;     // BUG-0329
                 // BUG-0399: at its own height alone a proxy walking uphill was placed under the rising ground
                 // ahead (the game does not lift it) and went 1.3-1.7 m under; onto this game's ground instead
-                o.ground = rts && drive::g_out_of_ground_fix;
+                o.ground = rts ? drive::g_out_of_ground_fix : g_walk_ground_fix; // BUG-0406 (Creature)
                 o.walk_speed = walk_speed;
                 o.snap = 2.5f;
                 o.keep_lost = true;
