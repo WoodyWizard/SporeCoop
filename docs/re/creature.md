@@ -1215,6 +1215,12 @@ the creature fixture's NPCs reach 4-4.5 m/s, the tribe fixture's animals 6.5-7.5
 * ✔ A host NPC that reports its speed but moves slower (herd mates pushing, turning): walked at the
   reported speed the proxy runs ahead between two placings; it is walked at the path's speed
   (smoothed over 0.2 s, at least 0.5 m/s).
+* ✔ The host's NPC itself jumping (creature_npc_dash's mate put 4.8 m to the side at the dash's start):
+  closed at the catch-up speed the proxy stayed 2-7 m off for 2 s; `walk_place` teleports (with the
+  mark) when it is more than 2.5 m off. Slowing the placing to the path's speed (only the walk should be)
+  made it trail at every start of the dash.
+* ✔ At 15 fps the drawn proxy is one locomotion step (speed x frame time, 0.26 m at 4 m/s) off its
+  target: p50 0.25 m, p90 0.4 m (creature_npc_dash's NPCs, `coop.npctrack`).
 * ~ Tribe herds 50-120 m from the tribe: the game itself moved a proxy 1.3 m in one 31 ms frame
   (collision with herd mates, inferred); off the screen the game updates far creatures in bursts
   (gv 0 for 0.6 s, then 1.2 m at once).
