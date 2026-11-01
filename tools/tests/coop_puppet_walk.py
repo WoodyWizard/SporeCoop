@@ -289,7 +289,25 @@ class Watch(threading.Thread):
             self.stop.wait(0.6)
 
 
+def beside(walker, observer, d=4.0):
+    """the walker next to the observer before its walk (BUG-0394: the first walk ended 15-25 m apart and the
+    second walker's clicks on the partner's tag did not bring it back: it never walked)"""
+    m = re.search(r'pos=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\)', observer.call('coop.avatar')['out'])
+    dist = partner_dist(walker)
+    if not m or dist is None or dist <= TETHER * 0.75:
+        return
+    p = [float(x) for x in m.groups()]
+    r = math.sqrt(sum(x * x for x in p))
+    up = [x / r for x in p]
+    a = [0.0, -up[2], up[1]] if abs(up[0]) < 0.9 else [-up[2], 0.0, up[0]]
+    al = math.sqrt(sum(x * x for x in a))
+    q = [p[i] + a[i] / al * d + up[i] * 1.0 for i in range(3)]
+    print(f'  walker {dist:.0f} m away: ' + walker.call('coop.npc gopos %.1f %.1f %.1f' % tuple(q))['out'].strip(), flush=True)
+    time.sleep(3.0)
+
+
 def direction(walker, observer, wname, oname, rng, secs, ck, stand=0, jumps=0.0, ground=False):
+    beside(walker, observer)
     watch = Watch(observer)
     watch.start()
     time.sleep(2.0)
@@ -307,7 +325,7 @@ def direction(walker, observer, wname, oname, rng, secs, ck, stand=0, jumps=0.0,
     for c in (walker, observer):
         c.call('coop.track stop')
     obs, wal = dump(observer), dump(walker)
-    path = os.path.join(lane.out_dir('track'), f'puppet_walk_{oname}_sees_{wname}.json')
+    path = os.path.join(lane.out_dir('track'), f'puppet_walk_{oname}_sees_{wname}_{time.strftime("%Y%m%d-%H%M%S")}.json')
     with open(path, 'w') as f:
         json.dump({'observer': obs, 'walker': wal}, f)
     print(f'  per-frame samples: {path}', flush=True)
@@ -344,6 +362,28 @@ def direction(walker, observer, wname, oname, rng, secs, ck, stand=0, jumps=0.0,
        f'{r["label"]}: the puppet walks where the observer sees it (walk gait in {r["near_gait"]:.0%} >= {GAIT_MIN:.0%} '
        f'of {r["near"]} frames on its screen)')
 
+
+def settle(cons, secs=40, need=20, runs=3):
+    """BUG-0394: right after the join a guest loads for seconds (18 fps on average, one 5.6 s frame) and its
+    game did not update the partner's puppet for 7 s (it moved only where it was placed, no walk gait):
+    measure from when every game has run `runs` 1 s windows of at least `need` frames in a row"""
+    import re as _re
+    def frame(c):
+        m = _re.search(r'frame=(\d+)', c.call('frame')['out'])
+        return int(m.group(1)) if m else None
+    ok = {id(c): 0 for c in cons}
+    last = {id(c): (frame(c), time.time()) for c in cons}
+    t0 = time.time()
+    while time.time() - t0 < secs and min(ok.values()) < runs:
+        time.sleep(1.0)
+        for c in cons:
+            f, t = frame(c), time.time()
+            f0, t1 = last[id(c)]
+            if f is not None and f0 is not None:
+                ok[id(c)] = ok[id(c)] + 1 if (f - f0) / (t - t1) >= need else 0
+            last[id(c)] = (f, t)
+    print(f'  settled after {time.time() - t0:.0f} s', flush=True)
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--dir', default='both', choices=('host', 'guest', 'both'), help='who walks')
@@ -366,7 +406,8 @@ def main():
         if re.search(r'puppet pos=', st) and re.search(r'puppet pos=', guest.call('coop.status')['out']):
             break
         time.sleep(1)
-    time.sleep(3)
+    settle((host, guest))
+    time.sleep(1)
     if a.goto:  # both onto that ground, the guest 3 m beside the host
         x, y, z = map(float, a.goto.split(','))
         print('  host: ' + host.call(f'coop.abilities goto {x} {y} {z}')['out'].strip(), flush=True)

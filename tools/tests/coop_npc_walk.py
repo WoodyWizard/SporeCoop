@@ -266,6 +266,28 @@ def walk_phase(host, guest, rng, secs, watch, log):
     return ids
 
 
+
+def settle(cons, secs=40, need=20, runs=3):
+    """BUG-0394: right after the join a guest loads for seconds (18 fps on average, one 5.6 s frame) and its
+    game did not update the partner's puppet for 7 s (it moved only where it was placed, no walk gait):
+    measure from when every game has run `runs` 1 s windows of at least `need` frames in a row"""
+    import re as _re
+    def frame(c):
+        m = _re.search(r'frame=(\d+)', c.call('frame')['out'])
+        return int(m.group(1)) if m else None
+    ok = {id(c): 0 for c in cons}
+    last = {id(c): (frame(c), time.time()) for c in cons}
+    t0 = time.time()
+    while time.time() - t0 < secs and min(ok.values()) < runs:
+        time.sleep(1.0)
+        for c in cons:
+            f, t = frame(c), time.time()
+            f0, t1 = last[id(c)]
+            if f is not None and f0 is not None:
+                ok[id(c)] = ok[id(c)] + 1 if (f - f0) / (t - t1) >= need else 0
+            last[id(c)] = (f, t)
+    print(f'  settled after {time.time() - t0:.0f} s', flush=True)
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--seed', type=int, default=None)
@@ -302,7 +324,7 @@ def main():
         if not avatar_pos(c):
             print(f'  {name}: no centre: {c.call("coop.npctrack count")["out"].strip()} | '
                   f'{c.call("coop.avatar")["out"].strip()[:160]} | {c.call("game.mode")["out"].strip()}', flush=True)
-    time.sleep(3)
+    settle((host, guest))
     W, H = screen(guest)
     watch = Watch(guest)
     watch.start()
