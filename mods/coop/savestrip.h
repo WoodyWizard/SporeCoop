@@ -24,5 +24,9 @@ void add_filter(Filter fn);
 void set_enabled(bool on); // `coop.savestrip 0|1` (tests: 0 = the old behaviour)
 bool enabled();
 std::string status();
+// BUG-0357: `f` runs when a save starts writing the world (main thread, once per serializer and
+// frame), whether or not the strip is on: world.cpp notes where a Space save was really written
+// (a save is posted as a message and written frames later).
+void set_write_watch(void (*f)());
 
 } // namespace savestrip

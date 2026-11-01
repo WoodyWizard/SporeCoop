@@ -198,6 +198,7 @@ add('space_page', P + 'coop_space_page.py', ('smoke',), minutes=4)  # the F9 Spa
 add('space_map', P + 'coop_space_map.py', minutes=6)  # partners and their colonies on the galaxy map, the roster (space_map.h)
 add('space_jump', P + 'coop_space_jump.py', minutes=7)  # jumps into unvisited systems: planets, first contact
 add('space_share_takeoff', P + 'coop_space_share_takeoff.py', minutes=5)  # a guest's share saved as the host leaves a planet: the guest stays in the system (BUG-0301; SPORE_FIX_OFF=world.share_settle_context fails)
+add('space_share_landing', P + 'coop_space_share_landing.py', minutes=5)  # the host lands right after a guest's share save is posted: the save is made again off the planet (BUG-0357; SPORE_FIX_OFF=world.share_planet_save fails)
 add('space_death', P + 'coop_space_death.py', minutes=5)
 add('space_guest_ui', P + 'coop_space_guest_ui.py', minutes=4)  # a guest joining during the menu intro: no movie left over, real clicks work
 add('space_puppet', P + 'coop_space_puppet.py', minutes=5)  # the game frees partner puppets

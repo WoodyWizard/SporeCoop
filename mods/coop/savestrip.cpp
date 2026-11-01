@@ -36,6 +36,10 @@ constexpr uint32_t kCreatureNoun = 0x018EB45Eu;
 constexpr uint32_t kSerializableIID = 0x0179C807u; // what WriteObjectPointer 0x69D950 casts to
 
 void add_filter(Filter fn) { g_filters.push_back(fn); }
+static void (*g_write_watch)();
+static void* g_watch_ser;
+static uint32_t g_watch_frame;
+void set_write_watch(void (*f)()) { g_write_watch = f; }
 void set_enabled(bool on) { g_on = on; }
 bool enabled() { return g_on; }
 
@@ -154,6 +158,11 @@ using Write_t = bool(SK_THISCALL*)(void*, void*, void*);
 static Write_t o_Write;
 static bool SK_THISCALL h_Write(void* self, void* stream, void* obj)
 {
+    if (g_write_watch && (self != g_watch_ser || g_frame != g_watch_frame) && GetCurrentThreadId() == g_main_tid) {
+        g_watch_ser = self;
+        g_watch_frame = g_frame;
+        g_write_watch();
+    }
     if (!g_on || !obj)
         return o_Write(self, stream, obj);
     if (GetCurrentThreadId() != g_main_tid) { // not a save of the world (those run on the main thread)
