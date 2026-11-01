@@ -2478,7 +2478,8 @@ answered right after; a 1 s poller beside a standalone run saw no gap. Same sign
   and clicks on the ground, turning back when more than 12 m from the other (seeded: `--seed N`
   repeats the walk), the other's camera keeps it on the screen (right-drags), the track is read
   back (saved to `out/lane<N>/track/*.json`), both directions. Checks: no frame step beyond 3x the
-  walker's top speed (min 0.75 m), in 0.1 s windows at most 5 % standing (< 0.3x the walker's
+  walker's top speed (min 0.75 m), in 0.1 s windows at most 5 % standing (< 0.3x the
+  speed of the walker's path, the interpolated target: an avatar turning on the spot reports a
   speed) and at least 85 % at 0.6-1.4x, the walk gait on in at least 80 % of the moving frames on
   the observer's screen (at least 150 of them). `PUPPET_WALK_CMDS="cmd;cmd"` runs console commands
   on both games first. `SPORE_FIX_OFF=creature.puppet_walk` fails.
