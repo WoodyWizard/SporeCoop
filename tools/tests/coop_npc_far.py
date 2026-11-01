@@ -7,7 +7,8 @@ the fix the host's game pooled every NPC around a guest that stood 300 m from th
 had none left, and the nest spawned a missing member that was pooled again 1-3 s later: on the
 guest a family member appeared and vanished every 3-6 s, each time with a new net id.
 
-The guest stays where both start (at the nest), the host walks 450 m away and waits 40 s. Checked
+The guest stays where both start (at the nest), the host walks 450 m away on land (BUG-0377: the
+walk of 0.7.3.3 went into the sea, see coop_npc_pooled.SEA) and waits 40 s. Checked
 on the guest's game (its census: proxies are creatures in its world) and on the host's (NPCs in its
 world, not at the planet's centre, near the guest's puppet):
   * the guest still has the NPCs within 120 m of its avatar (at least 85 % of the count it had
@@ -20,7 +21,7 @@ import math
 import time
 
 import census
-from coop_npc_pooled import away, on_sphere
+from coop_npc_pooled import drawn_apart, land_path, walk_to
 from twoinst import Checks, start
 
 NEAR = 120.0
@@ -38,8 +39,9 @@ def main():
     hc = census.dump(host)
     av = next(r for r in hc.rows if r['own'] == 'avatar')
     a = list(av['pos'])
-    b = away(a, 450)
-    guest.call('coop.npc gopos %.1f %.1f %.1f' % tuple(on_sphere(a, a, 0)))
+    b, dry = land_path(host, a, 450)  # BUG-0377: on land, not into the sea
+    print(f'  the walk stays {dry:.1f} m or more over the water', flush=True)
+    guest.call('coop.abilities goto %.1f %.1f %.1f' % tuple(a))
     time.sleep(8)
 
     def guest_centre(g):
@@ -57,7 +59,7 @@ def main():
     print(f'  before: the guest has {n0} NPCs within {NEAR:.0f} m (samples {base})', flush=True)
 
     for k in range(21):  # the host walks away in 20 steps
-        host.call('coop.npc gopos %.1f %.1f %.1f' % tuple(on_sphere(a, b, k / 20)))
+        walk_to(host, a, b, k / 20)
         time.sleep(1.2)
     time.sleep(8)  # the relevance pass runs every 5 s
     seen, counts, host_counts, samples = set(), [], [], 0
@@ -84,9 +86,13 @@ def main():
     new_ids = len(seen - (first or set()))
     print(f'  new NPC ids near the guest during the hold: {new_ids}', flush=True)
     print('  host ' + host.call('coop.views')['out'].strip().replace('\n', '\n  '), flush=True)
+    apart = drawn_apart(host, guest)
+    print(f'  the guest draws the host {apart if apart is not None else -1:.1f} m from where the host is', flush=True)
     need = max(2, math.ceil(0.85 * n0))  # without the fix the host's game pooled 8 of 20 (lane 9)
     good = sum(1 for n in counts if n >= need)
     ck(math.dist(hp, a) > 350, 'the host stands far from the guest')
+    ck(dry > 0, f'the host walks on land ({dry:.1f} m over the water at the lowest)')
+    ck(apart is not None and apart < 3.0, 'the guest draws the host\'s creature where the host is (BUG-0377)')
     ck(samples >= 20, f'censuses of both games compared ({samples})')
     ck(n0 >= 2, f'the guest had NPCs around it before ({n0})')
     ck(good >= 0.8 * max(1, samples), f'the guest keeps NPCs around it ({good}/{samples} samples with >= {need})')

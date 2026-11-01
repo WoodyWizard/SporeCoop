@@ -74,3 +74,4 @@ returning 0 (the call works, no fault). Status stays open until then.
 - 2026-10-31: opened from the second batch of the 2026-10-31 report zips (host mark).
 - 2026-10-31: the diagnostics added on fix/w22-reports2.
 - 2026-11-01: fix/w30-progress: the 0.7.3.3 reports explain it (game editor refund, shared food and DNA); wontfix (by design).
+- 2026-11-01: the shared DNA now names its cause on screen and in the logs (`dna: a -> b cause=...`, "+9 DNA from Bob's hunt", Cell "+10 food (DNA) from Bob's meals"): BUG-0389 (feature), fix/w31-creature-gate.

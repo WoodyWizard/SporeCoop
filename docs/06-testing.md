@@ -2718,3 +2718,28 @@ Before a tag `vX.Y.Z` (CLAUDE.md 4):
   bug); a run on rock counts nothing (+0x137 is 0 on rock all the time, GetHeightAt is the terrain);
   the spawn moves after a `--goto`, so these tests are cold. Exploration with the fix off on the slope
   gave 4-7 falls per 40 s, so one FAIL run is not guaranteed every time (the check allows 1).
+
+## Walks far from the start stay on land; shared DNA notices (2026-11-01, fix/w31-creature-gate)
+<a id="testing-walk-on-land"></a>
+
+* `coop_npc_pooled.land_path(con, a, metres)`: of 16 directions the one whose lowest ground along the
+  walk is highest (`coop.abilities ground x y z`: the terrain radius there, no move) and its height over
+  the water (`SEA` = 499.2 m on the creature fixture); `walk_to(con, a, b, t)` puts the avatar onto the
+  ground (`coop.abilities goto`); `drawn_apart(host, guest)`: how far the guest's game draws the host's
+  puppet from the host's own avatar (coop.track column d, after the game's update, not the mod's write).
+* Pitfall (BUG-0377): `coop.npc gopos` at a fixed radius (510 m) puts a creature in the air or under the
+  ground; over the sea the deep water caption cinematic 5E205931 freezes the host's avatar there and the
+  guest's game draws the puppet on the water: sync-check `p0 10.7`. npc_far / npc_pooled walked into the
+  sea until 2026-11-01.
+* `old_species` (~60 s, cold, BUG-0370): the guest switches its creature (`coop.creations next
+  creature`), the host spawns a creature of the old key (`coop.npc spawn`, with `coop.fix npc.strays off`:
+  the stray pass removes it within a second otherwise); the guest's census must show a proxy of that
+  species. Marks the lane state so the next test starts cold. FAIL: `SPORE_FIX_OFF=creations.old_species`.
+
+<a id="testing-dna-causes"></a>
+
+* `dna_notice` (~60 s, cold): the guest kills a host NPC (`coop.npc hit <id> 100000`), the host one
+  (`coop.npc hosthit`); the notification panels read back from `coop.status` (`toast <kind> (...)
+  '<text>'`; a text may hold an apostrophe), the `dna: a -> b cause=...` lines of both game logs (read
+  from the byte size before the test). `dna_notice_cell` (`--cell`, ~90 s): `coop.pool food N` on each
+  side; the meal notices are gathered 15 s, the test waits up to 22 s. A feature: no FAIL twin.

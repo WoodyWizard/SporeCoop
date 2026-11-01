@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <deque>
 #include <map>
 #include <set>
 
@@ -701,6 +702,31 @@ static bool g_world_drop = true;
 COOP_FIX("creations.world_drop", "BUG-0055", g_world_drop, "creations: the host's world creations are dropped at the session end (coop.creations worlddrop)");
 static unsigned g_world_dropped;
 
+// BUG-0370: a player's creature replaced by a newer one (its editor, the co-op window's arrows) is
+// unregistered at once on every machine, while creatures of it can still be in the host's world (a
+// puppet's leftover a world share or a save brought back): the host sent such an NPC, the guest
+// asked for its species and the host answered "not found here", so the NPC was missing on the guest
+// until the next world share. The records of every player creature applied here are kept by their
+// instance (the newest kKeepOld) and the host answers from them when the game no longer finds the
+// key. `coop.fix creations.old_species off`: not kept, not answered (0.7.3.3).
+static bool g_old_species_fix = true;
+COOP_FIX("creations.old_species", "BUG-0370", g_old_species_fix, "creations: the host answers a guest's request for a player's replaced creature (an NPC of it is still in the world)");
+constexpr size_t kKeepOld = 24;
+static std::map<uint32_t, std::vector<dbpf::Record>> g_old_recs; // instance -> its records (renamed)
+static std::deque<uint32_t> g_old_order;
+static unsigned g_old_served;
+static void keep_records(uint32_t inst, const std::vector<dbpf::Record>& recs)
+{
+    if (!inst || recs.empty() || g_old_recs.count(inst))
+        return;
+    g_old_recs[inst] = recs;
+    g_old_order.push_back(inst);
+    while (g_old_order.size() > kKeepOld) {
+        g_old_recs.erase(g_old_order.front());
+        g_old_order.pop_front();
+    }
+}
+
 static void* package_for(std::wstring path, const std::vector<dbpf::Record>& recs, int priority)
 {
     auto it = g_pkgs.find(path);
@@ -776,6 +802,7 @@ static void apply(uint8_t owner, Kind k, uint32_t id, const std::vector<uint8_t>
         for (auto& r : recs)
             if (r.key.instance == b.key.instance)
                 r.key.instance = inst;
+        keep_records(inst, recs); // BUG-0370
         // the host's own creation is also its world's species: register it under the original
         // key too, above everybody's own My Creations (a guest may own another creation there).
         // A newer version under the same key replaces the older package (both at the same
@@ -878,9 +905,16 @@ static void serve_species(uint8_t guest, uint32_t instance)
     Bundle b;
     b.key = {instance, kInfo[kCreature].type, kInfo[kCreature].group};
     if (!records_from_game(b.key, b.recs)) {
-        g_species_missing++;
-        H->log(M, SK_WARN, "creations: player %u asks for species %08X: not found here", guest, instance);
-        return;
+        auto old = g_old_species_fix ? g_old_recs.find(instance) : g_old_recs.end();
+        if (old == g_old_recs.end()) {
+            g_species_missing++;
+            H->log(M, SK_WARN, "creations: player %u asks for species %08X: not found here", guest, instance);
+            return;
+        }
+        b.recs = old->second; // BUG-0370: a player's replaced creature
+        g_old_served++;
+        H->log(M, SK_INFO, "creations: species %08X is a player's earlier creature (no longer registered): sent from "
+               "its kept records", instance);
     }
     std::vector<uint8_t> data = pack(b);
     send_bundle(guest, 0, (Kind)kWorldSpecies, instance, data);
@@ -1709,9 +1743,9 @@ std::string status()
     char b[400];
     snprintf(b, sizeof b,
              "creations: in=%u out=%u registered=%u avatar_swaps=%u waits_on_disk=%u unusable=%u world_swaps=%u "
-             "species asked=%u got=%u sent=%u missing=%u own_out=%u own_in=%u rx_dropped=%u adopt_skipped=%u parts_refused=%u world_missing=%u cc=%d%s%s\n",
+             "species asked=%u got=%u sent=%u missing=%u old_sent=%u own_out=%u own_in=%u rx_dropped=%u adopt_skipped=%u parts_refused=%u world_missing=%u cc=%d%s%s\n",
              g_bundles_in, g_bundles_out, g_registered, g_swaps, g_waits_on_disk, g_unusable, g_world_swaps,
-             g_species_asked, g_species_got, g_species_sent, g_species_missing, g_own_out, g_own_in, g_rx_dropped, g_adopt_skipped, g_parts_refused, (unsigned)g_world_missing.size(), g_have_cc, g_last_error.empty() ? "" : " error=", g_last_error.c_str());
+             g_species_asked, g_species_got, g_species_sent, g_species_missing, g_old_served, g_own_out, g_own_in, g_rx_dropped, g_adopt_skipped, g_parts_refused, (unsigned)g_world_missing.size(), g_have_cc, g_last_error.empty() ? "" : " error=", g_last_error.c_str());
     s += b;
     if (uint8_t* g = modes::cell_game(); g && game::mode_id() == modes::kCell) {
         uint8_t* av = modes::cell_at(*(uint32_t*)(g + 0x411C));

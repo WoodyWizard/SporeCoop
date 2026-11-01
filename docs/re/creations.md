@@ -604,3 +604,17 @@ BUG-0369. GOG 2024 game files and lane 10 (`tools/tests/coop_guest_pack_paints.p
 * ? Not reproduced: "cubes". The black creature above is the only effect seen of a missing paint; the
   pack parts are substituted since BUG-0354 (10 on the player's guest, logged). Not checked: a pack
   part whose substitute has another parent block (eye children map to children of other eyes).
+
+## A player's replaced creature in the host's world (2026-11-01, fix/w31-creature-gate)
+<a id="creations-old-species"></a>
+
+* ✔ A player's creature is registered on every machine as `0x7C000000 | fnv(owner, bundle id)`. A new
+  bundle (an editor, `coop.creations next creature`) registers the new key and unregisters the old
+  package at once, on the host and on the owner's own game (BUG-0370).
+* ✔ The host's game keeps the species profile of the old key: `coop.npc spawn <old key>` still makes a
+  creature of it after the drop, and the NPC sync sends such a creature with the old key. Its census
+  row shows no species (the key reads 0).
+* ✔ A creature of it in a herd like a puppet's (no archetype, no nest) is removed by the host's stray
+  pass (npc.strays) within a second; the players' NPC (BUG-0370) stayed, so its herd was not one.
+* Since creations.old_species the host keeps the records of the last 24 player creatures applied and
+  answers a guest's `kAskSpecies` from them (`old_sent=` in `coop.creations`).

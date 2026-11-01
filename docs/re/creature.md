@@ -1266,3 +1266,35 @@ observer's ground (`hd` drawn, `ht` target: |pos| - `cPlanetModel::GetHeightAt`)
   any target under the terrain: the game never lifted it.
 * ~ NPC proxies placed every frame (`npc.kinematic`, `drive::step` snaps) probably fall downhill the
   same way (not measured).
+
+## Deep water: the caption cinematic holds the avatar, a guest holds the puppet on the water (2026-11-01, fix/w31-creature-gate)
+<a id="creature-deep-water"></a>
+
+Observed on lane 6 (GOG 2024, creature fixture Scalinus, BUG-0377):
+* ✔ The fixture planet's water surface is at radius 499.2 m (the start ground ~505 m; 450 m away in
+  some directions the sea floor is 484-497 m). `coop.abilities ground x y z` gives the terrain radius
+  (cPlanetModel::GetHeightAt) in any direction, also far from the camera; it is the floor under water.
+* ✔ An avatar over deep water starts the caption cinematic 5E205931 ("Dangerous creatures lurk in the
+  deep. Don't stray too far from shore!"; `coop.status`: `cinematic 5E205931 playing`, trace
+  `input_lock=1`). While it plays the game does not move the avatar: its velocity stays frozen and a
+  teleport leaves it where it was put, also in the air.
+* ✔ A puppet (any creature of ours) above the water there is put on the water surface by the game's
+  update every frame (drawn at 499.2 m whatever the mod writes); one put under the surface stays
+  there. coop.sync / sync-check read it between frames, so they see where the game draws it.
+* ? Whether the cinematic would end on its own (with the sea monster) was not waited for: the test
+  teleported the avatar every 1.2 s.
+
+## Shared DNA and its causes (2026-11-01, fix/w31-creature-gate)
+<a id="creature-dna-causes"></a>
+
+* ✔ The game's DNA gains all pass `cCreatureGameData::AddEvolutionPoints` (hooked, game.cpp h_AddEvo
+  -> coop.cpp on_dna); `game::dna_add_raw` calls the original and is not seen by the listener.
+* ✔ A guest's lethal hit on a host NPC is applied as the host avatar's (npc.cpp kill credit); the
+  game's DNA for it arrived within 3 s (coop_team.py, coop_dna_notice.py: 0 -> 8.8 after the kill).
+  The ledger counts the host's gains within 2.5 s of a credit as that guest's hunt (~ inferred
+  window: a host kill in the same 2.5 s is counted as the guest's).
+* MSG_DNA (host -> guests) has an optional tail since 0.8: u8 n, then n x {u8 cause (1 host, 2 hunt,
+  3 earned, 4 owed), u8 player, f32 amount}: the gains since the last total. Older guests read the
+  f32 only. Every machine logs `dna: <a> -> <b> cause=<cause>:<player><+amount>[,...]` (`unknown`: an
+  editor's spending, a catch-up, an older host); Cell: `dna: food <a> -> <b> cause=meal:<player>+N`
+  (255 on a guest: the host's total, some partner's meal). mods/coop/dna_ledger.h.
