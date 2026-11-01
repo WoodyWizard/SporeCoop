@@ -86,7 +86,7 @@ moving frames on screen; Tribe also drawn error p50 <= 0.1 m.
   ok, sync FAIL once on civ/vehicles (n=1, not NPCs), puppet_walk FAIL at a 25 fps observer (BUG-0387, the
   puppet driving is unchanged here); 20261101-095149 sync FAIL once on tribe/NPC creatures p90 1.51 m (limit
   1.5; 0.11 and 0.65 m in the two runs before), puppet_walk FAIL at 37 fps (BUG-0387); 20261101-095826
-  puppet_walk 1 of 2 (27 fps observer FAIL, 55 fps 98-99 %). Smoke: SMOKE_TAIL
+  puppet_walk 1 of 2 (27 fps observer FAIL, 55 fps 98-99 %). Smoke: out/lab/20261101-100220-fix-w30-npc-walk 14 of 14 (lanes 4, 5).
 
 ## History
 - 2026-11-01: opened.
