@@ -12,14 +12,14 @@ violations itself):
   posse_damage  the host's pack member hits the guest's creature (`coop.hp packhit`) with
                 npc.party_peace off: the host forwards it (`damage: ... posse=1`); first with the fix on:
                 dropped, no violation
-  ground        the host takes the guest's states 3 m under its ground (`coop.track lift -3`) with
-                creature.puppet_ground off while the guest walks: its creature drawn under the host's ground
   puppet_hp     creature.partner_hp off on the host (the guest's creature pinned to full health) while
                 the guest's own health is held at half (`coop.team hp`)
   drawn         the guest's game stops driving puppets (`coop.puppet hold on`) while the host walks away
   proxies       the guest walks one NPC proxy away from the host's NPC (`coop.npc pwalk`)
 
-The switches are put back at the end. On a build without the monitor fields this test fails (no
+ground is planted by puppet_under with SPORE_FIX_OFF=creature.puppet_ground (the guest's states 1 m
+under the host's ground while it walks; here a standing puppet is put back on the ground by the game and
+the driving: `coop.track lift -0.9` / `-3` never showed under). The switches are put back at the end. On a build without the monitor fields this test fails (no
 rule can fire)."""
 import re
 import time
@@ -27,7 +27,7 @@ import time
 import twoinst
 from twoinst import Checks, start
 
-WANT = ('unlocks', 'posse_damage', 'ground', 'puppet_hp', 'drawn', 'proxies')
+WANT = ('unlocks', 'posse_damage', 'puppet_hp', 'drawn', 'proxies')
 
 
 def seen():
@@ -47,6 +47,38 @@ def main():
     ck(guest.call('coop.avatar')['ok'], 'guest is in the host world')
     gid = '1'  # the guest of a 2-player session
     print('  host parts:', host.call('coop.parts')['out'].strip(), '| guest:', guest.call('coop.parts')['out'].strip(), flush=True)
+
+    # all but posse_damage at once (a pack member that fought the puppet keeps it in combat: its knockback
+    # undoes the placing under the ground, so the pack comes last)
+    print('  unlock:', host.call('coop.parts unlock 3')['out'].strip(), flush=True)
+    for con, cmd in ((host, 'coop.fix creature.partner_hp off'), (guest, 'coop.puppet hold on')):
+        print(f'  {cmd}: {con.call(cmd)["out"].strip()[:120]}', flush=True)
+    mx = max_hp(guest) or 10.0
+    nl = re.findall(r'#(\d+) .*spawned', guest.call('coop.npc list')['out'])
+    if nl:
+        p = re.search(r'pos=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\)', guest.call('coop.avatar')['out'])
+        x, y, z = (float(v) for v in p.groups()) if p else (0, 0, 0)
+        print('  pwalk:', guest.call(f'coop.npc pwalk {nl[0]} {x + 25:.1f} {y:.1f} {z:.1f} 4 60 1')['out'].strip(), flush=True)
+    host.call('key w down')
+    time.sleep(6)
+    host.call('key w up')
+    t0 = time.time()
+    hp_at = 0.0
+
+    def hold_hp():
+        nonlocal hp_at
+        if time.time() - hp_at > 1.0:
+            guest.call('coop.team hp %.2f' % (0.5 * mx))  # held at half (the regen next to the partner)
+            hp_at = time.time()
+    while time.time() - t0 < 150 and not (set(WANT) - {'posse_damage'}) <= seen():
+        hold_hp()
+        time.sleep(1)
+    got = seen()
+    print(f'  caught after {time.time() - t0:.0f} s: {sorted(got)}', flush=True)
+
+    host.call('coop.fix creature.partner_hp on')
+    guest.call('coop.puppet hold off')
+    guest.call('coop.team hp %.2f' % mx)
 
     # posse_damage: a pack member of the host (a recruited wild NPC); with the fix on the hit is dropped
     hsp = re.search(r'key=0x([0-9A-F]+)', host.call('coop.avatar')['out'])
@@ -71,45 +103,12 @@ def main():
         ck('posse_damage' not in seen(), 'a pack hit the fix drops is no violation')
         host.call('coop.fix npc.party_peace off')
         print('  fix off:', host.call(f'coop.hp packhit {gid} 0.5')['out'].strip(), flush=True)
+        t1 = time.time()
+        while time.time() - t1 < 15 and 'posse_damage' not in seen():
+            time.sleep(1)
         host.call('coop.fix npc.party_peace on')
 
-    # the others at once
-    print('  unlock:', host.call('coop.parts unlock 3')['out'].strip(), flush=True)
-    host.call('coop.fix creature.puppet_ground off')
-    host.call('coop.track lift -3')
-    host.call('coop.fix creature.partner_hp off')
-    guest.call('coop.puppet hold on')
-    mx = max_hp(guest) or 10.0
-    nl = re.findall(r'#(\d+) .*spawned', guest.call('coop.npc list')['out'])
-    if nl:
-        p = re.search(r'pos=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\)', guest.call('coop.avatar')['out'])
-        x, y, z = (float(v) for v in p.groups()) if p else (0, 0, 0)
-        print('  pwalk:', guest.call(f'coop.npc pwalk {nl[0]} {x + 25:.1f} {y:.1f} {z:.1f} 4 60 1')['out'].strip(), flush=True)
-    host.call('key w down')
-    time.sleep(6)
-    host.call('key w up')
-    # the guest walks in circles for 45 s: its puppet on the host is walked and placed on its path (3 m
-    # under the host's ground; standing, the driving's teleports put it back on the ground)
-    guest.call('key w down')
-    t0 = time.time()
-    i = 0
-    while time.time() - t0 < 150 and not set(WANT) <= seen():
-        guest.call('coop.team hp %.2f' % (0.5 * mx))  # held at half (the regen next to the partner)
-        if i < 45:
-            guest.call('key a down' if i % 5 == 0 else 'key a up' if i % 5 == 1 else 'ping')
-        elif i == 45:
-            guest.call('key w up')
-        i += 1
-        time.sleep(1)
-    guest.call('key w up')
     got = seen()
-    print(f'  caught after {time.time() - t0:.0f} s: {sorted(got)}', flush=True)
-
-    host.call('coop.track lift 0')
-    host.call('coop.fix creature.puppet_ground on')
-    host.call('coop.fix creature.partner_hp on')
-    guest.call('coop.puppet hold off')
-    guest.call('coop.team hp %.2f' % mx)
     for inv in WANT:
         ck(inv in got, f'the monitor caught the planted {inv} problem')
     ck.faults(host=host, guest=guest)
