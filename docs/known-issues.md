@@ -1427,3 +1427,13 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Known: the creature stage's cinematic does not end in the editor mode; a deferred creature removal waits for it.
 * Not checked: whether a player can start a vote during this cinematic (the mating call, a guest's vote).
 * Ticket: BUG-0404
+
+## Creature: the partner's creature pops 1 m away and back when it uses an ability (2026-11-01, feat/w33-tests-creature)
+<a id="issue-puppet-ability-pop"></a>
+
+* What happens: a guest at 30 fps over the `player` network sees the host's standing creature drawn ~1 m off for
+  0.13 s and back while the host uses an ability (its animation 02481DE5).
+* Reproduce: `puppet_fight_player` (coop_puppet_fight.py with SPORE_FPS=guest:30 SPORE_NET=player): `drawn jumps
+  within the bound` fails, 2 of 2 runs.
+* Not checked: which abilities, whether the frame cap or the network is needed.
+* Ticket: BUG-0414
