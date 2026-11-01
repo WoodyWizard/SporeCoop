@@ -9,6 +9,7 @@
 #include <unordered_set>
 
 #include "cell_logic.h"
+#include "creature_hp.h"
 #include "game.h"
 #include "sporekit.h"
 #include "sporekit_game.hpp"
@@ -135,12 +136,19 @@ static void creature_drive(void* p, const net::PlayerState& s, drive::State& ds,
         game::herd_quiet(game::herd_of(p)); // (the game may enable a herd again)
         game::herd_home(game::herd_of(p), game::position(p));
     }
-    float mh = game::max_health(p); // puppets mirror the remote health, never die locally
-    if (mh > 0)
-        game::set_health(p, mh);
+    // BUG-0373: the partner's health and max health (creature.partner_hp); off: pinned to full
+    if (!creature_hp::drive_puppet(p, s.health, s.max_health)) {
+        float mh = game::max_health(p); // puppets mirror the remote health, never die locally
+        if (mh > 0)
+            game::set_health(p, mh);
+    }
 }
 
-static void creature_despawn(void* p) { game::destroy_creature(p); }
+static void creature_despawn(void* p)
+{
+    creature_hp::forget_puppet(p);
+    game::destroy_creature(p);
+}
 
 static float creature_tag(void* p) { return game::bounding_radius(p) * 1.3f + 0.3f; }
 

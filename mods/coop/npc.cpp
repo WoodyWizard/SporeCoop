@@ -15,6 +15,7 @@
 #include "sporekit_game.hpp"
 
 #include "creations.h"
+#include "creature_hp.h"
 #include "driver.h"
 #include "game.h"
 #include "net/validate.h"
@@ -1227,6 +1228,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         if (it == g_host_by_id.end() || !g_seen_now.count(it->second))
             return;
         void* npc = it->second;
+        if (creature_hp::drop_partner_hit(npc)) // BUG-0374: the host's pack / family (npc.party_peace)
+            break;
         void* attacker = C.puppet_of(from);
         float dmg = teamplay::on_player_hit(npc, from, net::sane_damage(q.damage, kMaxHit));
         // kill credit: the game pays DNA, goal progress and the kill popup only for a kill by the
@@ -1299,6 +1302,8 @@ bool damage_filter(void* c, float& damage, int type, void* attacker)
             return true;
         }
         // a guest's puppet was hit: forward real NPC hits to that guest
+        if (creature_hp::drop_party_hit(attacker)) // BUG-0374: never from the host's pack / family
+            return false;
         for (auto& p : C.sess->players()) {
             if (p.id == 0 || C.puppet_of(p.id) != c)
                 continue;
