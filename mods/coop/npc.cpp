@@ -6,6 +6,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
+#include <deque>
 #include <map>
 #include <set>
 #include <unordered_map>
@@ -90,6 +92,27 @@ COOP_FIX("npc.kinematic_sync", "BUG-0334", g_kinematic_sync_fix, "creature: a ru
 COOP_FIX("npc.kinematic", "BUG-0281", g_kinematic_fix, "creature: the proxy of a running NPC follows the host's path exactly");
 static bool g_trail_fix = true;
 COOP_FIX("npc.trail", "BUG-0305", g_trail_fix, "creature, tribe: a proxy 1.5 m off its path for 0.5 s is put in place");
+// BUG-0361: npc.kinematic (BUG-0281) teleported a moving NPC's proxy onto the host's path every frame.
+// A teleport (vt 0x44) sets the teleport mark +0xB5D, which restarts the animation's walk gait: the
+// proxies of walking and running NPCs slid over the ground in the idle pose (walk gait on in 4 % of
+// their moving frames on the guest's screen, coop_npc_walk.py). Now, as for the partner's puppet
+// (BUG-0360, creature.puppet_walk), the game walks the proxy (the host NPC's speed, a MoveTo 12 m
+// ahead on its path given again only when the direction turns, at most every 0.3 s, at least every
+// 1.5 s) and game::place (teleport, then +0xB5D = 0) puts it on the interpolated path every frame;
+// an error left from standing is closed at kWalkCatchUp faster than the NPC. The end of a walk is
+// a MoveTo to the stop point. `coop.fix npc.walk off`: the teleport of npc.kinematic (0.7.3.3).
+static bool g_walk_fix = true;
+COOP_FIX("npc.walk", "BUG-0361", g_walk_fix, "creature: a walking or running NPC's proxy walks on its path instead of sliding in the idle pose");
+// Tribe: the moving animals' proxies were driven by drive::step (a MoveTo again every 0.1 s, pulls, the
+// stall / trail teleports): in 0.1 s windows of a moving host animal they stood in 4 % and moved at its
+// speed in only 77 %, with 0.8-2.3 m jumps (coop_npc_walk.py, TRACK_FIXTURE=tribe). They are walked and
+// placed as in the Creature stage now, at the guest's own ground height (BUG-0329).
+// `coop.fix npc.walk_tribe off`: the driving (0.7.3.3).
+static bool g_walk_tribe_fix = true;
+COOP_FIX("npc.walk_tribe", "BUG-0361", g_walk_tribe_fix, "tribe: a walking or running animal's proxy walks on its path instead of moving in steps");
+// tests (coop.npctrack variant, drive::walk_place): 0 the fix; 1 place only (no walk goal); 2 walk goal +
+// teleport with the mark
+static int g_walk_variant = 0;
 // 0.7.2.x fixes kept for the tests (off: the code before them)
 static bool g_stale_fix = true, g_world_despawn_fix = true, g_death_fix = true;
 COOP_FIX("npc.stale_proxy", "BUG-0009", g_stale_fix, "creature: a guest drops a proxy the host stopped sending states for");
@@ -122,6 +145,8 @@ struct Proxy {
     double last_rx = 0; // local time of its last spawn / state from the host
     net::SnapshotBuffer buf;
     drive::State drv;
+    net::Vec3 prev_tgt{};   // BUG-0361: the interpolated host position of the previous frame
+    double prev_tgt_t = 0;
 };
 static std::map<uint16_t, Proxy> g_proxies;
 // BUG-0300: a guest in a 4-player campaign had a proxy in its list (states arriving) whose creature
@@ -230,6 +255,7 @@ static void* ai_target(void* c)
     return pick;
 }
 
+static int c_npctrack(void*, int argc, const char* const* argv, SkOut* out);
 void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
 {
     H = host;
@@ -237,6 +263,8 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
     C = ctx;
     game::set_update_filter(update_filter);
     game::set_ai_target_picker(ai_target);
+    H->command_add(M, "coop.npctrack", "coop.npctrack start [radius m]|stop|count|dump [from] [n]|walk <id> x y z <m/s> - every frame: the guest's NPC proxies (tests, BUG-0361)",
+                   c_npctrack, nullptr, SK_CMD_MAIN_THREAD);
 }
 
 static net::NpcState host_state(uint16_t id, void* c)
@@ -457,6 +485,131 @@ std::string debug_dash(uint16_t id, float len, float speed, float secs, float wi
     return t;
 }
 
+// ---- coop.npctrack (BUG-0361): what a guest shows of the host's NPCs, frame by frame, as coop.track
+// does for the partner's puppet (BUG-0360). One row per proxy within the radius of the guest's avatar
+// per frame: the position the game drew (the proxy's position before this frame's driving: the mod's
+// frame runs at Present, after the drawing), the interpolated host state (the target), the game's
+// speed, the animation and its walk gait, whether it is on the screen.
+struct NpcTrackRow {
+    float t;
+    uint16_t id;
+    uint8_t how;   // 0 driven (drive::step), 1 placed (npc.kinematic), 2 killed, 3 walked (npc.walk)
+    uint8_t flags; // the host state's NF_*
+    uint16_t tp;   // the driver's teleports so far
+    net::Vec3 d, p, tgt;
+    float gv, rv, da; // the game's speed, the host's speed, the distance to the guest's avatar
+    uint32_t anim;
+    int16_t gait = -1, gait2 = -1;
+    int8_t moving = -1, speed_state = -1;
+    int8_t vis = 0;
+    float sx = 0, sy = 0;
+};
+static std::deque<NpcTrackRow> g_ntrack;
+static bool g_ntrack_on = false;
+static double g_ntrack_t0 = 0;
+static float g_ntrack_r = 40.f;
+static constexpr size_t kNtrackMax = 200000;
+
+// the guest's avatar, in Tribe the player tribe (no avatar there)
+static bool ntrack_centre(net::Vec3& c)
+{
+    if (void* av = game::avatar()) {
+        c = game::position(av);
+        return true;
+    }
+    return rts_stage() && tribe::center(c);
+}
+
+static void ntrack_push(uint16_t id, void* c, uint8_t how, uint8_t flags, uint16_t tp, const net::Vec3& drawn,
+                        const net::Vec3& tgt, float rv, double now)
+{
+    net::Vec3 ctr;
+    if (!g_ntrack_on || !c || !ntrack_centre(ctr))
+        return;
+    NpcTrackRow x{};
+    x.p = game::position(c);
+    x.da = net::dist(x.p, ctr);
+    if (x.da > g_ntrack_r)
+        return;
+    x.t = (float)(now - g_ntrack_t0);
+    x.id = id;
+    x.how = how;
+    x.flags = flags;
+    x.tp = tp;
+    x.d = drawn;
+    x.tgt = tgt;
+    x.gv = drive::speed(game::velocity(c));
+    x.rv = rv;
+    game::drawn_state(c, nullptr, &x.anim);
+    int g = -1, g2 = -1, mv = -1, ss = -1;
+    if (game::gait_state(c, &g, &g2, &mv, &ss)) {
+        x.gait = (int16_t)g;
+        x.gait2 = (int16_t)g2;
+        x.moving = (int8_t)mv;
+        x.speed_state = (int8_t)ss;
+    }
+    float w[3] = {drawn.x, drawn.y, drawn.z}, sc[2] = {0, 0};
+    x.vis = H->world_to_screen(w, sc) ? 1 : 0;
+    x.sx = sc[0];
+    x.sy = sc[1];
+    g_ntrack.push_back(x);
+    while (g_ntrack.size() > kNtrackMax)
+        g_ntrack.pop_front();
+}
+
+static void ntrack_row(uint16_t id, const Proxy& px, const net::PlayerState& s, const net::Vec3& drawn, uint8_t how,
+                       double now)
+{
+    ntrack_push(id, px.c, how, s.flags, (uint16_t)px.drv.teleports, drawn, s.pos, drive::speed(s.vel), now);
+}
+
+static int c_npctrack(void*, int argc, const char* const* argv, SkOut* out)
+{
+    const char* a = argc > 1 ? argv[1] : "count";
+    if (!strcmp(a, "start")) {
+        g_ntrack.clear();
+        g_ntrack_on = true;
+        g_ntrack_t0 = H->time_seconds();
+        if (argc > 2)
+            g_ntrack_r = (float)atof(argv[2]);
+    } else if (!strcmp(a, "stop"))
+        g_ntrack_on = false;
+    else if (!strcmp(a, "dump")) {
+        // dump [from] [n] (how: 0 driven, 1 placed, 2 killed, 3 walked, 4 an NPC of the host itself): t id how flags tp dx dy dz px py pz tx ty tz gv rv da anim gait gait2 moving ss vis sx sy
+        size_t from = argc > 2 ? (size_t)atol(argv[2]) : 0, n = argc > 3 ? (size_t)atol(argv[3]) : 2000;
+        for (size_t i = from; i < g_ntrack.size() && i < from + n; i++) {
+            const auto& x = g_ntrack[i];
+            H->out_printf(out, "%.4f %u %u %u %u %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.2f %.2f %.1f %08X %d %d %d %d %d %.0f %.0f\n",
+                          x.t, x.id, x.how, x.flags, x.tp, x.d.x, x.d.y, x.d.z, x.p.x, x.p.y, x.p.z, x.tgt.x, x.tgt.y,
+                          x.tgt.z, x.gv, x.rv, x.da, x.anim, x.gait, x.gait2, x.moving, x.speed_state, x.vis, x.sx, x.sy);
+        }
+        return 0;
+    } else if (!strcmp(a, "variant") && argc > 2) { // tests (BUG-0361): how npc.walk moves a proxy
+        g_walk_variant = atoi(argv[2]);
+        H->out_printf(out, "npc.walk variant %d (0 walk goal + place, 1 place only, 2 walk goal + teleport)\n", g_walk_variant);
+        return 0;
+    } else if (!strcmp(a, "walk") && argc > 6) {
+        // host (tests): the game walks host NPC #id to x y z at <m/s> (its own locomotion, MoveTo)
+        void* c = host_npc((uint16_t)atoi(argv[2]));
+        if (!is_host() || !c) {
+            H->out_printf(out, "no such host npc\n");
+            return 1;
+        }
+        net::Vec3 to{(float)atof(argv[3]), (float)atof(argv[4]), (float)atof(argv[5])};
+        game::set_speed(c, (float)atof(argv[6]));
+        game::move_to(c, to, 0.5f);
+        net::Vec3 p = game::position(c);
+        H->out_printf(out, "npc %s at (%.1f %.1f %.1f) walks to (%.1f %.1f %.1f) at %s m/s\n", argv[2], p.x, p.y, p.z,
+                      to.x, to.y, to.z, argv[6]);
+        return 0;
+    }
+    net::Vec3 ctr{};
+    bool have = ntrack_centre(ctr);
+    H->out_printf(out, "npctrack %s samples=%u r=%.0f centre=%s(%.1f %.1f %.1f)\n", g_ntrack_on ? "on" : "off",
+                  (unsigned)g_ntrack.size(), g_ntrack_r, have ? "" : "none", ctr.x, ctr.y, ctr.z);
+    return 0;
+}
+
 static void host_tick(double now, const std::vector<void*>& creatures)
 {
     void* av = game::avatar();
@@ -534,6 +687,12 @@ static void host_tick(double now, const std::vector<void*>& creatures)
     // host's object at the planet's centre in the census) and got it again with the next respawn.
     if (g_pool_fix && g_seen_now.size() < g_host_npcs.size())
         retire_pooled();
+    if (g_ntrack_on) // coop.npctrack on the host: its own NPCs (the reference for the guest's proxies)
+        for (void* c : g_seen_now) {
+            net::Vec3 p = game::position(c);
+            ntrack_push(g_host_npcs[c].id, c, 4, game::is_dead(c) ? net::NF_DEAD : 0, 0, p, p,
+                        drive::speed(game::velocity(c)), now);
+        }
     dash_tick(now);
     // forget creatures that stopped updating (destroyed / unloaded)
     for (auto it = g_host_npcs.begin(); it != g_host_npcs.end();) {
@@ -818,27 +977,58 @@ static void guest_tick(double now)
                 game::set_orientation(px.c, game::orientation(px.c));
             continue;
         }
-        bool placed = false;
-        if (!px.killed && g_kinematic_fix && game::in_creature_stage() && drive::speed(s.vel) > 0.3f &&
-            net::dist(game::position(px.c), s.pos) < 8.f) {
+        const net::Vec3 drawn = game::position(px.c); // where the game drew it (before this frame's driving)
+        bool placed = false, walked = false;
+        const bool rts = rts_stage();
+        const bool walking = g_walk_fix || rts;
+        // BUG-0361: the last 0.1 s of a walk is interpolated towards a state that stands (velocity 0): a
+        // walked proxy goes on with the speed of its path to the stop point instead of standing there
+        net::Vec3 vel = s.vel;
+        {
+            double pdt = now - px.prev_tgt_t;
+            if (walking && px.kinematic && drive::speed(vel) <= 0.3f && pdt > 0 && pdt < 0.25) {
+                net::Vec3 pv{(s.pos.x - px.prev_tgt.x) / (float)pdt, (s.pos.y - px.prev_tgt.y) / (float)pdt,
+                             (s.pos.z - px.prev_tgt.z) / (float)pdt};
+                if (drive::speed(pv) > 0.5f)
+                    vel = pv;
+            }
+            px.prev_tgt = s.pos;
+            px.prev_tgt_t = now;
+        }
+        if (!px.killed && ((g_kinematic_fix && game::in_creature_stage()) || (g_walk_tribe_fix && rts)) &&
+            drive::speed(vel) > 0.3f && net::dist(game::position(px.c), s.pos) < 8.f) {
             // BUG-0281: a running NPC's proxy follows the host's path itself (see g_kinematic_fix)
-            if (!px.kinematic)
-                game::stop(px.c);
+            if (walking) { // BUG-0361: the game walks it, placed on the path
+                if (!px.kinematic)
+                    px.drv.kinematic = false; // a new walk: its first goal at once
+                drive::walk_place(px.c, s.pos, vel, s.rot, px.drv, now, g_walk_variant, rts);
+                walked = true;
+            } else {
+                if (!px.kinematic)
+                    game::stop(px.c);
+                game::teleport(px.c, s.pos, s.rot);
+                *(net::Vec3*)((uint8_t*)px.c + game::kVelOff) = s.vel;
+                px.drv.last_step = now;
+            }
             px.kinematic = true;
-            game::teleport(px.c, s.pos, s.rot);
-            *(net::Vec3*)((uint8_t*)px.c + game::kVelOff) = s.vel;
-            px.drv.last_step = now;
             placed = true;
             // BUG-0334: health, death and the impressed flag below are synced for a running NPC too
             // (0.7.3.2's first npc.kinematic went on to the next proxy here: a fleeing NPC kept its
             // old health on the guest and did not die there until it stopped).
             // `coop.fix npc.kinematic_sync off`: that first version.
-            if (!g_kinematic_sync_fix)
+            if (!g_kinematic_sync_fix) {
+                ntrack_row(id, px, s, drawn, walked ? 3 : 1, now);
                 continue;
+            }
         }
         if (!placed && px.kinematic) { // it stands again: the driving takes over from here
             px.kinematic = false;
-            *(net::Vec3*)((uint8_t*)px.c + game::kVelOff) = {0, 0, 0};
+            if (px.drv.kinematic) { // walked (npc.walk): a MoveTo to where it stops, as the partner's puppet
+                px.drv.kinematic = false;
+                game::move_to(px.c, s.pos, 0.3f);
+                px.drv.last_cmd = now;
+            } else
+                *(net::Vec3*)((uint8_t*)px.c + game::kVelOff) = {0, 0, 0};
         }
         if (placed) {
             // placed on the host's path this frame: no driving
@@ -866,6 +1056,7 @@ static void guest_tick(double now)
             game::set_health(px.c, s.health);
         if (!px.killed) // the host's NPC was impressed (by anybody): the proxy shows it too
             game::set_impressed(px.c, (s.flags & net::NF_IMPRESSED) != 0);
+        ntrack_row(id, px, s, drawn, px.killed ? 2 : walked ? 3 : placed ? 1 : 0, now);
     }
 }
 

@@ -96,4 +96,55 @@ inline void step(void* p, const net::Vec3& pos_in, const net::Quat& rot, const n
     }
 }
 
+// BUG-0361 (NPC proxies; the same as creature.puppet_walk, BUG-0360, for the partner's puppet in modes.cpp):
+// a creature whose remote original moves is walked by the game and placed on the remote path every
+// frame. The game walks it (SetDesiredSpeed = the remote speed, a MoveTo kWalkAhead m ahead on the path,
+// given again only when the direction turns more than ~6 degrees, at most every kWalkMinGap s, at least
+// every kWalkMaxGap s: given every 0.1 s a MoveTo restarts the walk, BUG-0281), so its walk gait and walk
+// animation run; game::place (teleport, then the teleport mark +0xB5D = 0, which restarts the gait) puts
+// it on the path, since the locomotion keeps its own position (SetPosition alone is undone). An error
+// left from standing is closed at kWalkCatchUp m/s faster than the remote, not in one frame.
+// ds.kinematic: walked last frame (false: a new walk, the first goal at once). The caller ends a walk with
+// a MoveTo to the stop point (not StopMovement). variant (tests): 1 place only, no walk goal (the velocity
+// written instead); 2 the walk goal, but a teleport with the mark. own_height: on the guest's own ground
+// (BUG-0329, Tribe).
+constexpr float kWalkAhead = 12.f, kWalkTurnDot = 0.995f, kWalkCatchUp = 3.f;
+constexpr double kWalkMinGap = 0.3, kWalkMaxGap = 1.5;
+
+inline void walk_place(void* c, const net::Vec3& pos_in, const net::Vec3& vel, const net::Quat& rot, State& ds, double now,
+                       int variant = 0, bool own_height = false)
+{
+    net::Vec3 pos = own_height ? at_own_height(pos_in, game::position(c)) : pos_in; // BUG-0329
+    float sp = speed(vel);
+    bool was = ds.kinematic;
+    ds.kinematic = true;
+    if (variant != 1 && sp > 0.01f) {
+        game::set_speed(c, sp);
+        net::Vec3 hd{vel.x / sp, vel.y / sp, vel.z / sp};
+        float dot = hd.x * ds.goal_dir.x + hd.y * ds.goal_dir.y + hd.z * ds.goal_dir.z;
+        if (!was || (now - ds.last_cmd > kWalkMinGap && dot < kWalkTurnDot) || now - ds.last_cmd > kWalkMaxGap) {
+            game::move_to(c, {pos.x + hd.x * kWalkAhead, pos.y + hd.y * kWalkAhead, pos.z + hd.z * kWalkAhead}, 0.3f);
+            ds.goal_dir = hd;
+            ds.last_cmd = now;
+            ds.goals++;
+        }
+    } else if (variant == 1)
+        *(net::Vec3*)((uint8_t*)c + game::kVelOff) = vel;
+    net::Vec3 cur = game::position(c);
+    float err = net::dist(cur, pos);
+    double dt = was && now > ds.last_step ? std::min(now - ds.last_step, 0.1) : 1.0 / 60;
+    float max_step = (sp + kWalkCatchUp) * (float)dt;
+    net::Vec3 to = pos;
+    if (err > max_step) {
+        float k = max_step / err;
+        to = {cur.x + (pos.x - cur.x) * k, cur.y + (pos.y - cur.y) * k, cur.z + (pos.z - cur.z) * k};
+    }
+    if (variant == 2)
+        game::teleport(c, to, rot);
+    else
+        game::place(c, to, rot);
+    ds.last_step = now;
+    ds.track = Track{};
+}
+
 } // namespace drive
