@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: owner's manual test, lane 8, report SporeCoop-report-20261101-012349-i15
 role: both
 versions: 0.7.3.2
-fixed_in: unreleased
+fixed_in: 0.7.3.3
 branch: fix/w29-puppet-move
 commits: c36b4c7, f3bb7cd, 0e499ab, 88221d9, aede668
 tests: puppet_walk (tools/tests/coop_puppet_walk.py)
@@ -77,3 +77,4 @@ windows, walk gait >= 80 % of the frames on screen.
 - 2026-11-01: opened.
 - 2026-11-01: root cause found and fixed on fix/w29-puppet-move (creature.puppet_walk); BUG-0361 and
   BUG-0362 and BUG-0363 opened on the way.
+- 2026-11-01: released in 0.7.3.3.
