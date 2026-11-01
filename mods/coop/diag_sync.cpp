@@ -7,10 +7,12 @@
 #include <algorithm>
 #include <cctype>
 #include <climits>
+#include <deque>
 #include <cstddef>
 #include <cstdio>
 #include <map>
 
+#include "fixes.h"
 #include "modes.h"
 #include "net/diagmsg.h"
 
@@ -180,13 +182,37 @@ struct GuestCheck {
     double ok_window_since = 0;
     uint32_t ok_told_place = 0; // the stage of the last OK line written
 };
+// BUG-0379: the host's own shared totals (dna, cell food) of the last seconds. A guest shows a total
+// the host sends it (MSG_CELL_FOOD) up to ~0.5 s after the host counted it, and the host builds its
+// digest a round trip after the guest built its own: in a 4-player Cell game that ate every few
+// seconds two checks 3 s apart each caught the guest one meal behind ("cell food: host 252, guest
+// 240", the guest at 252 0.15 s later), a MISMATCH without a desync. A guest value the host had
+// within kTotalLag s before it asked is no difference.
+static bool g_fix_total_lag = true;
+COOP_FIX("diag.total_lag", "BUG-0379", g_fix_total_lag, "sync-check: a guest's total the host had within 3 s before asking is no difference (food sent late)");
+constexpr double kTotalLag = 3.0;
+struct TotalAt {
+    double t;
+    uint8_t id;
+    float v;
+};
+static std::deque<TotalAt> g_host_totals;
+static double g_host_totals_next;
+
 static std::map<uint8_t, GuestCheck> g_guests; // host
 static uint32_t g_guest_told_place;            // guest: the stage of the last OK line written
 static uint32_t g_seq;
 
+// BUG-0379: in a crowded pool the host's choice of a guest's 900 nearest cells (around its view
+// centre, a state late) and the compare's (around the guest's own position) differ near rank 900
+static bool g_fix_cell_margin = true;
+COOP_FIX("diag.cell_margin", "BUG-0379", g_fix_cell_margin, "sync-check: a guest must have only the nearest 80% of the 900 cells it is sent (the host picks them around a late position)");
+
 static dg::Limits limits_for(uint32_t mode)
 {
     dg::Limits l;
+    if (!g_fix_cell_margin)
+        l.cell_sure = 1.f;
     if (mode == modes::kTribe || mode == modes::kCiv)
         l.npc_missing = false; // RTS stages: NPCs are sent around the tribe / cities
     return l;
@@ -264,7 +290,12 @@ static void on_digest(uint8_t from, const dg::Digest& gd, size_t bytes)
     double now = g_H->time_seconds();
     double t0 = now;
     dg::Digest hd = build_digest(gd.seq);
-    dg::Compared c = dg::compare(hd, gd, limits_for(hd.mode));
+    std::vector<std::pair<uint8_t, float>> recent;
+    if (g_fix_total_lag)
+        for (auto& r : g_host_totals)
+            if (r.t >= g.asked - kTotalLag)
+                recent.push_back({r.id, r.v});
+    dg::Compared c = dg::compare(hd, gd, limits_for(hd.mode), g_fix_total_lag ? &recent : nullptr);
     double ms = (g_H->time_seconds() - t0) * 1000;
     g_c.sync_checks++;
     g_c.sync_ms_sum += ms;
@@ -385,6 +416,17 @@ void sync_tick(double now)
             g_guests.clear();
         return;
     }
+    if (now >= g_host_totals_next) { // BUG-0379: the host's totals of the last seconds
+        g_host_totals_next = now + 0.1;
+        float dna;
+        int food;
+        if (g_P.dna && g_P.dna(dna))
+            g_host_totals.push_back({now, dg::kTotalDna, dna});
+        if (g_P.cell_food && g_P.cell_food(food))
+            g_host_totals.push_back({now, dg::kTotalCellFood, (float)food});
+        while (!g_host_totals.empty() && g_host_totals.front().t < now - kTotalLag - 25.0)
+            g_host_totals.pop_front(); // a guest answers within 20 s (or is asked again)
+    }
     // one guest per frame at most: the cost of a check is spread over frames
     for (auto& p : g_P.sess->players()) {
         if (p.id == 0)
@@ -430,6 +472,7 @@ void sync_tick(double now)
 void sync_on_session_end()
 {
     g_guests.clear();
+    g_host_totals.clear();
     g_guest_told_place = 0;
     g_host_t0 = -1;
     g_clock.clear();
