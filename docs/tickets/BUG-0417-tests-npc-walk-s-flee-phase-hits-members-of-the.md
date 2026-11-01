@@ -21,7 +21,9 @@ related:
 out/lab/20261101-153010-fix-w33-proxy-ground npc_walk (lane 7) FAILED only on the monitor gate `posse_damage: host: player 0
 hit by its own party (family, posse=1) for 1.0 hp (s 64.884)`: 14 hits of 1.0 hp from s 64.9 on, right after the test's
 flee phase (`coop.npc hosthit <id> 0.5` on two of its walkers, the NPCs nearest the guest). All the test's own checks
-passed.
+passed. Also with this branch's fixes off (`SPORE_FIX_OFF=npc.walk_ground,npc.proxy_ground`: out/lab/20261101-163228,
+the same gate at s 73.5) and in out/lab/20261101-161258 npc_walk#1, #2; fix/w33-null-call's 20261101-141648 npc_walk
+(other walkers, #5 and #4 hit) passed.
 
 ## Root cause
 Inferred: the walkers can be members of the host avatar's own herd (family, `coop.npc list` ` family`); the test's

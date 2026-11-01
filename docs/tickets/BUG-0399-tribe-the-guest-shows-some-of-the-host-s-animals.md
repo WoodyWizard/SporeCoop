@@ -1,20 +1,21 @@
 ---
 id: BUG-0399
 title: Tribe: the guest shows some of the host's animals 0.75-1.25 m under its ground for 20-30 s after joining (driven at their own height)
-status: open
+status: fixed
 kind: bug
 stage: Tribe
 reported: 2026-11-01
 source: lab monitor (feat/w32-monitor-diag, proxies rule), lane 6
 role: guest
 versions: unreleased
-fixed_in:
-branch:
-commits:
+fixed_in: unreleased
+branch: fix/w33-proxy-ground
+commits: d185b5b, 537484a
 tests: tribe_coop, chaos_tribe (monitor rule proxies)
 signature:
-docs: docs/06-testing.md#testing-monitor-fields
-related: BUG-0329
+docs: docs/re/tribe.md#tribe-proxy-ground, docs/06-testing.md#testing-proxy-ground
+related: BUG-0329, BUG-0366, BUG-0406
+switch: npc.proxy_ground
 ---
 
 ## Report
@@ -57,8 +58,21 @@ ground, BUG-0329). `coop.fix npc.proxy_ground off`: own height only (0.7.3.4). T
 removed.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+The monitor's `proxies` gate (no ALLOW_ALL entry any more) in tribe_coop / chaos_tribe, lane 7. The bug shows only
+after cold joins and not in every one, so the evidence is a rate, not a deterministic test (a deterministic plant,
+`coop.npc sink`, does not reproduce it: the game grounds such a proxy within 0.6 s; slope walks did not either).
+* FAIL with `SPORE_FIX_OFF=npc.proxy_ground`: out/lab/20261101-140615 tribe_coop (gate: `1 NPC proxies under the
+  ground (Tribe) on 2 lines from s 20`; proxy 27 1.32-1.66 m under, chaos_tribe's guest proxy 6 1.41 m under on one
+  line); 20261101-150122 (8 cold runs: proxies 14 and 19 1.30 / 0.51 m under on one line each, under the gate's 2
+  lines); 20261101-142745 (4 runs, none). Before this branch: feat/w32-monitor-diag 20261101-123454 tribe_coop
+  and chaos_tribe, 20261101-120947 chaos_tribe.
+* PASS (fix on): 0 proxies under the ground on any trace line in out/lab/20261101-141252 (tribe_coop and chaos_tribe
+  3 of 3 each), 20261101-153010 (tribe, tribe_coop, tribe_play, chaos_tribe, tribe_walk, tribe_walk_player,
+  npc_walk_tribe, tribe_epic, play_tribe 10 min, campaign_tribe 4 players), 20261101-161258 (tribe_coop, chaos_tribe
+  2 of 2 each, cold).
+* Not shown: a run where the fix visibly acted (`npc: proxy N was X m under ... put onto it` lines, since 537484a): none
+  in the PASS runs after that commit either (the state is rare).
 
 ## History
 - 2026-11-01: opened.
+- 2026-11-01: fix/w33-proxy-ground: the made-at-the-host's-height inference disproved, fixed by npc.proxy_ground (allow entry removed).

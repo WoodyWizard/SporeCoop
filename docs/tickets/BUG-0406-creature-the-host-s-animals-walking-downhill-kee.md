@@ -1,16 +1,16 @@
 ---
 id: BUG-0406
 title: Creature: the host's animals walking downhill keep starting to fall on the guest's screen (walked proxies placed exactly on the ground)
-status: open
+status: fixed
 kind: desync
 stage: Creature
 reported: 2026-11-01
 source: lab measurement (fix/w33-proxy-ground, npc_walk_slope), lane 7
 role: guest
 versions: unreleased
-fixed_in:
-branch:
-commits:
+fixed_in: unreleased
+branch: fix/w33-proxy-ground
+commits: ae25f85
 tests: npc_walk_slope (tools/tests/coop_npc_walk.py --goto=-195,-465,-45 --falls 3)
 signature: walked proxies' +0x137 goes 1 -> 0 (fall) while the host's NPC walks downhill
 docs: docs/re/creature.md#creature-npc-ground
@@ -37,8 +37,13 @@ on_own_ground: a target from 3 m under to 0.5 m over this game's ground goes 5 c
 creature.puppet_ground. `coop.fix npc.walk_ground off`: on the host's path exactly (0.7.3.4).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+`npc_walk_slope` (`coop_npc_walk.py --goto=-195,-465,-45 --falls 3`, lane 7): FAIL when the walked proxies start
+to fall more than 3 per 100 s more often than the host's own NPCs.
+* FAIL without the fix (code before npc.walk_ground): out/lab/20261101-142745 npc_walk_slope#1 (51.1 vs 0.9 per
+  100 s), #2 (22.7 vs 0.8); with `SPORE_FIX_OFF=npc.walk_ground`: out/lab/20261101-161058 (33.1 vs 0.7).
+* PASS: out/lab/20261101-153010 (2.5 vs 2.6; gait 99 %, 94 % matched windows, no jump).
+* Regression: npc_walk (0 vs 2.8 fall starts on the fixture's flat start, gait, matched windows ok; the run failed
+  only on the monitor's posse_damage gate, BUG-0417), npc_walk_tribe ok (drawn error p50 0.04 m with the 5 cm sink).
 
 ## History
-- 2026-11-01: opened.
+- 2026-11-01: opened and fixed on fix/w33-proxy-ground (npc.walk_ground).
