@@ -39,4 +39,7 @@ allow the gate in suite.py with this ticket.
      or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
 
 ## History
+- 2026-11-01: fix/w30-npc-walk: the same gate also on animals in Tribe: out/lab/20261101-125335 tribe_walk "n: 3 apart
+  (n51 9.1 n53 8.5 n50 8.3)" at s 19 after the join, both checks 3 s apart; the same signature (n 8.2-11 m) in 11 main-checkout
+  runs before (not from this branch). Not analysed.
 - 2026-11-01: opened.

@@ -2489,6 +2489,39 @@ answered right after; a 1 s poller beside a standalone run saw no gap. Same sign
   behind; screenshots of the puppet are hard to judge (Kooks of the same colour around, and
   `coop.targets all` gives the tag point).
 
+## NPC proxies frame by frame: coop.npctrack, npc_walk (2026-11-01, fix/w30-npc-walk)
+<a id="testing-npc-track"></a>
+
+* `coop.npctrack start [radius m]|stop|count|dump [from] [n]` (main thread, BUG-0361): every frame,
+  on a guest one row per NPC proxy within the radius (default 40 m) of its avatar (Tribe: its player
+  tribe), on the host one row per own NPC (`how` 4, the reference). Columns: t id how (0 driven, 1
+  placed by npc.kinematic, 2 killed, 3 walked by npc.walk / npc.walk_tribe, 4 host) flags tp, the
+  drawn position (before the mod's driving), the position after it, the interpolated host target,
+  the game's speed, the host's speed, the distance to the centre, the animation id, the walk gait
+  (two ints), +0x137, +0xF98, on screen, screen x y. A ring of 200 000 rows; `count` prints the centre.
+  `coop.npctrack walk <id> x y z <m/s>` (host): the game walks host NPC #id there (SetDesiredSpeed +
+  MoveTo, as its AI does). `coop.npctrack variant N` (guest): how npc.walk moves (0 the fix, 1 place
+  only, 2 MoveTo + teleport with the mark, 3 never teleport when the game loses the place).
+* `coop_npc_walk.py [--seed N] [--wander s] [--walk s] [--flee s]` (suites `npc_walk`, ~1.8 min,
+  creature; `npc_walk_tribe`, `TRACK_FIXTURE=tribe`, ~2 min): 15 s of the NPCs' own wandering, 30 s of
+  up to 4 NPCs walked by the host's game to points around the guest (Tribe: around where they were)
+  at 2-6 m/s, 15 s after the host hit two of them; the guest's camera keeps one walker on its screen.
+  Checks over the 0.1 s windows where the target moves: no frame step on the guest's screen beyond 3x
+  the top speed times the longer of this and the previous frame time (the game moves a creature by the
+  previous frame's time: 0.74 m between samples 42 ms apart after an 86 ms frame; off the screen the
+  game updates far creatures in bursts: counted only), <= 5 % standing, >= 85 % at 0.6-1.4x, walk gait
+  >= 80 % of the moving frames on the guest's screen. Windows in which the host's path itself jumped
+  (a late state, the extrapolation corrected: 1.3 m in one frame on a loaded guest) are left out and
+  counted. Tribe (herd mates push each other, 36-60 fps, more late states): >= 75 % matched, up to 3
+  steps under 2.5 m, and the drawn proxy's median distance from the host's path <= 0.1 m (fix on
+  0.01-0.03 m, off 0.23-0.33 m). The per-frame rows go to
+  `out/lane<N>/track/npc_walk_<fixture>_<time>.json` (with the host's rows and the phases).
+  `NPC_WALK_GUEST_CMDS="cmd;cmd"` runs console commands on the guest first (`frame.limit 66`: 15 fps);
+  `NPC_WALK_INTRO=1|2` plays the menu intro on the guest first (2: and makes its proxies again).
+  `SPORE_FIX_OFF=npc.walk` fails the creature test (gait 3-5 %), `npc.walk_tribe` the Tribe one
+  (matched 72-77 %).
+* Pitfall: a creature far from the camera is updated in bursts (no movement for 0.5 s, then 1 m at
+  once); judge what the player sees (on-screen frames), report the rest.
 ## Tribe members frame by frame: coop.track in Tribe and tribe_walk (2026-11-01, fix/w30-tribe-walk)
 <a id="testing-tribe-walk"></a>
 
@@ -2961,3 +2994,18 @@ can eat a plant in the 2 s of the shared food check, which now allows the host's
   does not work as a trigger: corpses stay members for minutes. An egg in the nest's bowl lies 0.74-1.2
   m over the terrain (the nest model), the check allows -0.5..1.3 m. Screenshots `eggs_host` / `eggs_guest`.
   `SPORE_FIX_OFF=nest.eggs` fails (the guest has 0 of the host's 2 eggs).
+## Walk tests at 30 fps and over the player network (2026-11-01, fix/w30-npc-walk)
+<a id="testing-walk-30fps"></a>
+
+* Suites `puppet_walk_fps30`, `puppet_walk_player`, `npc_walk_fps30`, `npc_walk_player`, `tribe_walk_fps30`,
+  `tribe_walk_player` (`SPORE_FPS=30`, `_player` also `SPORE_NET=player`; cold) and `puppet_walk_novel`
+  (`coop.track novel 1` on both games: the partner's states without their speed;
+  `SPORE_FIX_OFF=creature.puppet_path` fails).
+* The walk tests' speed windows span at least 4 frames (`WIN_FRAMES`; at 60 fps still 0.1 s); puppet_walk's
+  "walked", window and on-screen counts scale with the observer's frame rate (200 / 50 / 150 at 60 fps).
+* puppet_walk and npc_walk wait (`settle`) until both games ran three 1 s windows of at least 20 frames
+  (up to 40 s) before they measure; puppet_walk puts the walker next to the observer before each walk.
+* puppet_walk / npc_walk write their per-frame rows to `out/lane<N>/track/*_<time>.json` (one file per run).
+* Pitfalls: four lanes at once pushed the 30 fps games to 21-26 fps and one test killed the other's games
+  when a second `lab.py run` took a lane still in use (start a run only after the last one on its lanes
+  ended); the known caught startup fault at 0x11ECE4F on both games fails a run by the fault gate.

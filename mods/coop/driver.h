@@ -11,6 +11,16 @@
 
 namespace drive {
 
+// BUG-0361 / BUG-0394: the remote's interpolated path frame by frame (where the driver is asked to put the
+// creature), for a remote that moves without reporting a speed and for a walk's last frames
+struct PathTrack {
+    net::Vec3 prev{};
+    double prev_t = 0;
+    net::Vec3 v{};     // this frame's path velocity
+    net::Vec3 v_ema{}; // smoothed over ~0.2 s
+    float sp_ema = 0;  // its speed, smoothed over ~0.2 s
+};
+
 struct State {
     double last_cmd = 0;
     Track track;
@@ -24,11 +34,47 @@ struct State {
     double last_step = 0;  // BUG-0175: the time of the previous step (the nudge per second, not per frame)
     bool kinematic = false; // BUG-0360: a walking partner's puppet, walked and placed on its path (modes.cpp)
     net::Vec3 goal_dir;     // BUG-0360: the direction of the walk goal given to it
+    PathTrack path;          // BUG-0361 / BUG-0394: path_update
+    net::Vec3 placed_to;    // BUG-0361 (walk_place): where it was placed last frame
+    uint32_t place_lost = 0; // BUG-0361: frames the game did not keep that place (a teleport with the mark then)
+    double stuck_since = 0;  // BUG-0361: since when its error grows although it is placed
+    bool held = false;       // BUG-0361: teleported (with the mark) onto the path until it is on it again
     net::Vec3 drawn;        // BUG-0360 (coop.track): its position before this frame's driving, i.e. where the
                             // game's update put it and drew it (the mod's frame runs at Present)
 };
 
 inline float speed(const net::Vec3& v) { return std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z); }
+
+// once per frame with the remote's interpolated position: the path's velocity (0 after a gap)
+inline void path_update(State& ds, const net::Vec3& pos, double now)
+{
+    PathTrack& t = ds.path;
+    double dt = now - t.prev_t;
+    if (t.prev_t > 0 && dt > 0 && dt < 0.25) {
+        float k = 1.f / (float)dt, a = (float)std::min(1.0, dt / 0.2);
+        t.v = {(pos.x - t.prev.x) * k, (pos.y - t.prev.y) * k, (pos.z - t.prev.z) * k};
+        t.v_ema = {t.v_ema.x + (t.v.x - t.v_ema.x) * a, t.v_ema.y + (t.v.y - t.v_ema.y) * a,
+                   t.v_ema.z + (t.v.z - t.v_ema.z) * a};
+        t.sp_ema += (speed(t.v) - t.sp_ema) * a;
+    } else {
+        t.v = t.v_ema = {};
+        t.sp_ema = 0;
+    }
+    t.prev = pos;
+    t.prev_t = now;
+}
+
+// the velocity of a remote that moves without reporting one: the smoothed path once it is over 0.5 m/s, before
+// that this frame's path from 0.8 m/s on (a walk's start: the smoothed one is frames late at 30 fps); not a
+// jump of the path (over 15 m/s). A remote that stands has a still path (turning on the spot moves nothing)
+inline net::Vec3 path_velocity(const State& ds)
+{
+    const PathTrack& t = ds.path;
+    if (speed(t.v_ema) > 0.5f)
+        return t.v_ema;
+    float v = speed(t.v);
+    return v > 0.8f && v < 15.f ? t.v : net::Vec3{};
+}
 
 // age: how old `pos` is (a snapshot received `age` seconds ago): the target moves on with the
 // remote velocity, so the puppet does not trail a walking creature by its latency
@@ -141,7 +187,25 @@ struct WalkPlace {
     // frames, lab load 31 on 12 cores) closed 1.2 m per frame of a 2-3 m step of its member, fell 8 m
     // behind and was teleported; the Creature puppet keeps 0.1
     double max_dt = 0.1;
+    // BUG-0361 (NPC proxies): the speed the game walks it at when that is slower than the remote's reported
+    // speed (a herd animal pushed by its mates walks slower than it reports); the placing follows the remote
+    float walk_speed = -1.f;
+    // BUG-0361: farther off than this (m) it is teleported onto the path when the remote itself jumped (its
+    // path moved over snap/2 in this frame: a host NPC put 4.8 m to the side stayed 2-7 m off for 2 s when
+    // closed at catch_up); needs path_update with this frame's target first; 0: never
+    float snap = 0.f;
+    // BUG-0361: when the game does not keep the place (a host NPC thrown back by a hit, 9 m/s slowing down:
+    // without the teleport mark the proxy's own locomotion moved it back each frame by as much as it was
+    // placed, it stood and ended 4.5 m off), i.e. its error grows over kWalkLostErr for kWalkLostAfter s or
+    // last frame's place is lost outright, it is moved by teleports with the mark (at the same catch-up
+    // speed) until it is on the path again
+    bool keep_lost = false;
+    // tests (coop.npctrack variant): 1 place only, no walk goal (the velocity written); 2 the walk goal
+    // but teleports with the mark; 3 keep_lost off
+    int variant = 0;
 };
+constexpr float kWalkLostErr = 0.75f;   // m
+constexpr double kWalkLostAfter = 0.15; // s
 
 inline void walk_place(void* p, const net::Vec3& pos_in, const net::Quat& rot, const net::Vec3& vel, State& ds, double now,
                        const WalkPlace& o = {})
@@ -154,30 +218,67 @@ inline void walk_place(void* p, const net::Vec3& pos_in, const net::Quat& rot, c
         pos = on_own_ground(pos);
     bool was = ds.kinematic;
     ds.kinematic = true;
-    if (!o.speed_after_goal)
-        game::set_speed(p, sp);
-    net::Vec3 hd{vel.x / sp, vel.y / sp, vel.z / sp};
-    float dot = hd.x * ds.goal_dir.x + hd.y * ds.goal_dir.y + hd.z * ds.goal_dir.z;
-    if (!was || (now - ds.last_cmd > o.min_gap && dot < o.turn_dot) || now - ds.last_cmd > o.max_gap) {
-        game::move_to(p, {pos.x + hd.x * o.goal_ahead, pos.y + hd.y * o.goal_ahead, pos.z + hd.z * o.goal_ahead}, 0.3f);
-        ds.goal_dir = hd;
-        ds.last_cmd = now;
-        ds.goals++;
+    if (!was) {
+        ds.held = false;
+        ds.stuck_since = 0;
     }
-    if (o.speed_after_goal)
-        game::set_speed(p, sp);
+    const float walk_sp = o.walk_speed > 0 ? std::min(o.walk_speed, sp) : sp;
+    if (o.variant != 1) {
+        if (!o.speed_after_goal)
+            game::set_speed(p, walk_sp);
+        net::Vec3 hd{vel.x / sp, vel.y / sp, vel.z / sp};
+        float dot = hd.x * ds.goal_dir.x + hd.y * ds.goal_dir.y + hd.z * ds.goal_dir.z;
+        if (!was || (now - ds.last_cmd > o.min_gap && dot < o.turn_dot) || now - ds.last_cmd > o.max_gap) {
+            game::move_to(p, {pos.x + hd.x * o.goal_ahead, pos.y + hd.y * o.goal_ahead, pos.z + hd.z * o.goal_ahead}, 0.3f);
+            ds.goal_dir = hd;
+            ds.last_cmd = now;
+            ds.goals++;
+        }
+        if (o.speed_after_goal)
+            game::set_speed(p, walk_sp);
+    } else
+        *(net::Vec3*)((uint8_t*)p + game::kVelOff) = vel;
     net::Vec3 cur = game::position(p);
     float err = net::dist(cur, pos);
     double dt = was && now > ds.last_step ? std::min(now - ds.last_step, o.max_dt) : 1.0 / 60;
+    if (o.keep_lost && o.variant != 3) {
+        bool lost = was && net::dist(cur, ds.placed_to) > std::max(0.5f, 2.f * (sp + o.catch_up) * (float)dt);
+        if (was && err > kWalkLostErr && err > ds.last_err + 0.005f) {
+            if (ds.stuck_since <= 0)
+                ds.stuck_since = now;
+            lost = lost || now - ds.stuck_since > kWalkLostAfter;
+        } else if (err <= kWalkLostErr)
+            ds.stuck_since = 0;
+        if (lost)
+            ds.held = true;
+        else if (err < 0.2f)
+            ds.held = false;
+        ds.place_lost += ds.held;
+    }
+    ds.last_err = err;
+    // (only when the path itself jumped this frame: a proxy thrown back with its NPC by a hit trails it by
+    // more than snap at 30 fps over the player network and was teleported 2.4-4 m, npc_walk_player)
+    if (o.snap > 0 && err > o.snap && net::dist(ds.path.prev, pos_in) < 0.01f &&
+        speed(ds.path.v) * (float)(now - ds.last_step) > 0.5f * o.snap) {
+        game::teleport(p, pos, rot);
+        ds.teleports++;
+        ds.placed_to = pos;
+        ds.last_step = now;
+        ds.track = Track{};
+        return;
+    }
     float max_step = (sp + o.catch_up) * (float)dt;
     net::Vec3 to = pos;
     if (err > max_step) {
         float k = max_step / err;
         to = {cur.x + (pos.x - cur.x) * k, cur.y + (pos.y - cur.y) * k, cur.z + (pos.z - cur.z) * k};
     }
-    game::place(p, to, rot);
+    if (o.variant == 2 || ds.held) // held: closed at the same speed, but with the mark (the game keeps it)
+        game::teleport(p, to, rot);
+    else
+        game::place(p, to, rot);
+    ds.placed_to = to;
     ds.last_step = now;
-    ds.last_err = err;
     ds.track = Track{};
 }
 

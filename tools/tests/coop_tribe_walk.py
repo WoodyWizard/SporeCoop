@@ -62,6 +62,14 @@ SLOW_UNEVEN_MAX = 0.10
 W, H = 1440, 1080
 
 
+# BUG-0394: a window spans at least WIN_FRAMES frames: at 21-29 fps a 0.1 s window held 1-3 frames and its speed
+# ratio swung 0.3-2x with the frame times (the game moves a creature by its own frame time), 79-81 % matched
+# with drawn errors of 0.01-0.6 m; over 4 frames 89-98 %. At 60 fps 4 frames are shorter than 0.1 s (unchanged);
+# a puppet that stands 4 frames while its path moves still counts as standing
+WIN_FRAMES = 4
+# BUG-0394: the frame counts below (300 walking, 150 on the screen, 50 windows) were for 60 fps; --fps N scales them
+FPS_K = 1.0
+
 def dump(con):
     rows = []
     n = int(re.search(r'samples=(\d+)', con.call('coop.track count')['out']).group(1))
@@ -151,7 +159,7 @@ def analyse(rows, owner, top, label):
         i = 0
         while i < len(rs):
             j = i
-            while j < len(rs) and rs[j]['t'] - rs[i]['t'] < 0.1:
+            while j < len(rs) and (rs[j]['t'] - rs[i]['t'] < 0.1 or j - i < WIN_FRAMES):
                 j += 1
             if j >= len(rs):
                 break
@@ -192,16 +200,16 @@ def report(r, ck, mirrors=True):
     print(f'    walk gait in {r["near_gait"]:.0%} of the {r["near"]} frames on the screen', flush=True)
     if not mirrors:
         return
-    ck(r['frames'] > 300, f'{r["label"]}: the members walked ({r["frames"]} frames of the host\'s states moving)')
+    ck(r['frames'] > 300 * FPS_K, f'{r["label"]}: the members walked ({r["frames"]} frames of the host\'s states moving)')
     ck(not r['teleports'], f'{r["label"]}: no jump of a member while it walks ({len(r["teleports"])})')
     if r['loaded'] > LOADED:
         print(f'  NOT MEASURED {r["label"]}: {r["loaded"]:.0%} of the frames over 0.1 s (> {LOADED:.0%}): the machine '
               f'is too loaded to judge the steps; the window and stop-and-go checks are skipped', flush=True)
-        ck(r['near'] >= 150 and r['near_gait'] >= GAIT_MIN,
+        ck(r['near'] >= 150 * FPS_K and r['near_gait'] >= GAIT_MIN,
            f'{r["label"]}: the members walk where the player sees them (walk gait in {r["near_gait"]:.0%} >= '
            f'{GAIT_MIN:.0%} of {r["near"]} frames on the screen)')
         return
-    ck(r['win'] > 50 and r['stand'] <= STAND_MAX and r['matched'] >= MATCHED_MIN,
+    ck(r['win'] > 50 * FPS_K and r['stand'] <= STAND_MAX and r['matched'] >= MATCHED_MIN,
        f'{r["label"]}: the members move with the host\'s, not in steps (stand in {r["stand"]:.0%} <= {STAND_MAX:.0%}, '
        f'at its speed in {r["matched"]:.0%} >= {MATCHED_MIN:.0%} of {r["win"]} windows)')
     if r['slow'] < 40:  # (a few walks at 30 fps: 16-26 such frames; 3 uneven ones are no measure)
@@ -211,7 +219,7 @@ def report(r, ck, mirrors=True):
         ck(r['slow_uneven'] <= SLOW_UNEVEN_MAX,
            f'{r["label"]}: no stop-and-go while the members start and stop (uneven in {r["slow_uneven"]:.0%} <= '
            f'{SLOW_UNEVEN_MAX:.0%} of {r["slow"]} frames at 1-{SLOW:.0f} m/s)')
-    ck(r['near'] >= 150 and r['near_gait'] >= GAIT_MIN,
+    ck(r['near'] >= 150 * FPS_K and r['near_gait'] >= GAIT_MIN,
        f'{r["label"]}: the members walk where the player sees them (walk gait in {r["near_gait"]:.0%} >= '
        f'{GAIT_MIN:.0%} of {r["near"]} frames on the screen)')
 
@@ -355,7 +363,9 @@ def main():
         time.sleep(2)
     time.sleep(3)
     print(f'  host owns {sorted(own(host, 0))}, guest owns {sorted(own(guest, 1))}', flush=True)
+    global FPS_K
     if a.fps:
+        FPS_K = min(1.0, a.fps / 60)
         for c in (host, guest):
             print('  frame.limit:', c.call(f'frame.limit {round(1000 / a.fps)}')['out'].strip(), flush=True)
     log = []

@@ -1246,6 +1246,9 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 ## Creature: running NPCs probably slide without a walk gait on guests (2026-11-01, fix/w29-puppet-move)
 <a id="issue-proxy-no-gait"></a>
 
+* FIXED (2026-11-01, fix/w30-npc-walk): measured (gait 3-5 % of the moving frames on screen) and fixed by
+  `npc.walk` / `npc.walk_tribe` (docs/re/creature.md#creature-npc-walk).
+
 * What happens (inferred): `npc.kinematic` teleports the proxy of a running host NPC onto the host's
   path every frame; a creature teleported every frame has no walk gait (measured on the partner's
   puppet: gait state 0 in 97-100 % of its moving frames), so it slides.
@@ -1273,6 +1276,34 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Not checked: whether main fails as often on an idle machine; the cause.
 * Ticket: BUG-0363
 
+## Creature: eggs at other species' nests differ between host and guest (2026-11-01, fix/w30-npc-walk)
+<a id="issue-nest-eggs"></a>
+
+* What happens: the nest food objects (noun 0x2C9CC91, most likely the eggs) are each game's own; their
+  numbers differed at 3 of 3 nests (14/13, 6/9, 12/8); at one nest 4 of them were 3-4 m over the ground on
+  both games. A player saw eggs "desynced and flying mid air".
+* Reproduce: `SPORE_LANE=N python3 tools/tests/coop_nest_objects.py` (lists both games' objects per nest).
+* Not checked: that these objects are the eggs; why some float.
+* Ticket: BUG-0384
+
+## Creature: corpses reported out of sync (not reproduced) (2026-11-01, fix/w30-npc-walk)
+<a id="issue-corpses"></a>
+
+* What happens (player report): bodies of killed NPCs in other places or states on the two machines.
+* Reproduce: not reproduced; `coop_npc_corpse.py [--by guest]` compares the bodies (0.00 m apart in 6 kills).
+* Not checked: a corpse eaten on one machine, NPCs killed by NPCs, low frame rates.
+* Ticket: BUG-0383
+
+## Tests: puppet_walk fails when the observer runs below ~40 fps (2026-11-01, fix/w30-npc-walk)
+<a id="issue-puppet-walk-low-fps"></a>
+
+* FIXED (2026-11-01, fix/w30-npc-walk): duplicate of BUG-0394; causes and fixes in
+  docs/re/creature.md#creature-walk-30fps (creature.puppet_path, npc.path, the tests' timing and windows).
+
+* What happens: at 25-37 fps the walked puppet moves at 0.6-1.4x the walker's speed in 76-82 % of the
+  0.1 s windows (limit 85 %); at 42-55 fps 93-99 %. Seen while other lanes ran games.
+* Reproduce: `tools/lab.py run puppet_walk` with other lanes busy (`PUPPET_WALK_CMDS="frame.limit 33"` not tried).
+* Ticket: BUG-0387
 ## Tribe: a walking mirror held back on the guest lurches to catch up (2026-11-01, fix/w30-tribe-walk)
 <a id="issue-tribe-mirror-held"></a>
 
