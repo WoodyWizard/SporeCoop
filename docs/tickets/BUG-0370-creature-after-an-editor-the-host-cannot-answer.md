@@ -55,7 +55,7 @@ FAIL: SPORE_FIX_OFF=creations.old_species old_species, lab 20261101-095328 (lane
 asks for species 7C329711: not found here", guest "npc 22: proxy spawn failed (unknown species)",
 no proxy of the species on the guest); also 20261101-094534 and 20261101-094850.
 PASS: old_species 2/2, lab 20261101-095454 (the guest has npc 22 of species 7C329711 in its world,
-host old_sent=1); again in the regression run of the branch.
+host old_sent=1); again in the regression run of the branch, lab 20261101-100420.
 
 ## History
 - 2026-11-01: opened from the 2026-11-01 reports (found while checking the "cubes" mark).

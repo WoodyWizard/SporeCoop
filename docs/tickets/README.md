@@ -392,3 +392,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0381](BUG-0381-tribe-partner-members-apart-and-citizens-missing.md) | open | bug | Tribe | 2026-11-01 |  | tribe: partner / members apart and citizens missing on guests (sync-check p apart, t missing, n apart) |
 | [BUG-0382](BUG-0382-campaign-a-guest-still-in-civ-90-s-after-the-hos.md) | open | bug | Civ | 2026-11-01 |  | campaign: a guest still in Civ 90 s after the host entered Space (monitor stage_apart) |
 | [BUG-0389](BUG-0389-creature-cell-shared-dna-names-its-cause-notice.md) | fixed | feature | Creature | 2026-11-01 | unreleased | Creature, Cell: shared DNA names its cause (notice and DNA cause ledger) |
+| [BUG-0394](BUG-0394-tests-puppet-walk-fails-on-lane-6-on-main-15539a.md) | open | test | Creature | 2026-11-01 |  | tests: puppet_walk fails on lane 6 on main 15539ad (3 of 3 runs, each on another check) |
