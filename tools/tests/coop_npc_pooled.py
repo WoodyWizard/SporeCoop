@@ -15,6 +15,7 @@ in a row is a ghost.
   coop_npc_pooled.py [--without-fix]   (--without-fix: `coop.fix npc.pooled off`, must FAIL;
                                         SPORE_FIX_OFF=npc.pooled does the same)"""
 import math
+import re
 import sys
 import time
 
@@ -22,6 +23,11 @@ import census
 from twoinst import Checks, start
 
 R = 510.0  # the fixture planet's radius is about 505 m
+# BUG-0377: the fixture planet's water surface (the guest's game holds a creature above deep water
+# there). 0.7.3.3's walk went 450 m in a fixed direction at R into the sea: the game's deep water
+# caption cinematic 5E205931 ("Dangerous creatures lurk in the deep") froze the host's avatar in
+# the air 10.7 m above the water, the guest drew its puppet on the water (sync-check `p0 10.7`).
+SEA = 499.2
 
 
 def on_sphere(a, b, t):
@@ -30,14 +36,52 @@ def on_sphere(a, b, t):
     return [x / n * R for x in p]
 
 
-def away(p, metres):
-    """a point `metres` along the surface from p (any direction)"""
+def away(p, metres, turn=0.0):
+    """a point `metres` along the surface from p (`turn`: the direction, radians)"""
     n = math.sqrt(sum(x * x for x in p))
     u = [x / n for x in p]
-    side = [0.0, -u[2], u[1]] if abs(u[0]) < 0.9 else [-u[2], 0.0, u[0]]
-    sl = math.sqrt(sum(x * x for x in side))
+    s1 = [0.0, -u[2], u[1]] if abs(u[0]) < 0.9 else [-u[2], 0.0, u[0]]
+    sl = math.sqrt(sum(x * x for x in s1))
+    s1 = [x / sl for x in s1]
+    s2 = [u[1] * s1[2] - u[2] * s1[1], u[2] * s1[0] - u[0] * s1[2], u[0] * s1[1] - u[1] * s1[0]]
+    side = [math.cos(turn) * x + math.sin(turn) * y for x, y in zip(s1, s2)]
     ang = metres / n
-    return [n * (math.cos(ang) * a + math.sin(ang) * s / sl) for a, s in zip(u, side)]
+    return [n * (math.cos(ang) * a + math.sin(ang) * s) for a, s in zip(u, side)]
+
+
+def ground(con, p):
+    m = re.search(r'ground ([-\d.]+)', con.call('coop.abilities ground %.2f %.2f %.2f' % tuple(p))['out'])
+    return float(m.group(1)) if m else 0.0
+
+
+def land_path(con, a, metres, steps=20, dirs=16):
+    """BUG-0377: the end of a walk of `metres` from a that stays on land (the direction whose lowest
+    ground along the path is highest) and that lowest ground's height over the water"""
+    best = None
+    for d in range(dirs):
+        b = away(a, metres, 2 * math.pi * d / dirs)
+        low = min(ground(con, on_sphere(a, b, k / steps)) for k in range(steps + 1))
+        if best is None or low > best[1]:
+            best = (b, low)
+    return best[0], best[1] - SEA
+
+
+def walk_to(con, a, b, t):
+    """the avatar onto the ground at fraction t of the way a -> b"""
+    con.call('coop.abilities goto %.2f %.2f %.2f' % tuple(on_sphere(a, b, t)))
+
+
+def drawn_apart(host, guest):
+    """how far the guest draws the host's creature from where the host's own game has it (m): the
+    puppet as the guest's game placed it in its last update (coop.track's d column), not the
+    mod's own write"""
+    hp = next(r['pos'] for r in census.dump(host).rows if r['own'] == 'avatar')
+    guest.call('coop.track start')
+    time.sleep(1.0)
+    guest.call('coop.track stop')
+    from coop_puppet_walk import dump
+    rows = [r for r in dump(guest) if r['who'] == 0]
+    return math.dist(hp, rows[-1]['d']) if rows else None
 
 
 def main():
@@ -49,8 +93,9 @@ def main():
     hc = census.dump(host)
     av = next(r for r in hc.rows if r['own'] == 'avatar')
     a = list(av['pos'])
-    b = away(a, 300)
-    guest.call('coop.npc gopos %.1f %.1f %.1f' % tuple(on_sphere(a, a, 0)))
+    b, dry = land_path(host, a, 300)
+    print(f'  the walk stays {dry:.1f} m or more over the water', flush=True)
+    guest.call('coop.abilities goto %.1f %.1f %.1f' % tuple(a))
     time.sleep(4)
     streak, ghosts, centre_rows, matched, samples = {}, {}, 0, [], 0
 
@@ -78,7 +123,7 @@ def main():
 
     # the host walks away in 20 steps, then stays there 30 s
     for k in range(21):
-        host.call('coop.npc gopos %.1f %.1f %.1f' % tuple(on_sphere(a, b, k / 20)))
+        walk_to(host, a, b, k / 20)
         t0 = time.time()
         while time.time() - t0 < 1.2:
             sample()
@@ -93,6 +138,10 @@ def main():
     print('  host:', ' '.join(w for w in st.split() if w.startswith(('tracked=', 'pooled=', 'mirrored='))))
     for i, (hp, gp) in sorted(ghosts.items())[:8]:
         print(f'  ghost c{i}: host {census.fmt(hp) if hp else "none"}, guest proxy {census.fmt(gp)}')
+    apart = drawn_apart(host, guest)
+    print(f'  the guest draws the host {apart if apart is not None else -1:.1f} m from where the host is', flush=True)
+    ck(dry > 0, f'the host walks on land ({dry:.1f} m over the water at the lowest)')
+    ck(apart is not None and apart < 3.0, 'the guest draws the host\'s creature where the host is (BUG-0377)')
     ck(samples >= 40, f'censuses of both games compared ({samples})')
     ck(not ghosts, f'every proxy of the guest is an NPC the host has in its world ({len(ghosts)} ghosts)')
     host.call('coop.fix npc.pooled on')
