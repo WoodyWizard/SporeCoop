@@ -6,6 +6,9 @@
             (Wine's clock around a DST change), forced windows, allow entries
   monitor   every invariant of tools/tests/monitor.py on planted logs: caught when broken, quiet when
             not; the live thread over logs that grow
+  netem     the bad network's statistics offline (netem.Model with its own clock): loss, Gilbert-Elliott
+            bursts, latency spikes and steps, the bandwidth cap, duplicates; the presets; one port per guest
+  fps       SPORE_FPS parsing (twoinst.fps_limits)
   suite     every allow(...) of suite.py names an existing ticket and a reason
 """
 import os
@@ -167,6 +170,123 @@ def monitor_cases(tmp):
           f'monitor: the live thread prints a violation once ({lines_out[:2]})')
 
 
+def netem_cases():
+    import netem
+
+    def run(spec, seconds=600, rate=100, size=200, seed=3):
+        m = netem.Model(spec, seed, 0.0)
+        sent, got = [], []
+        n = int(seconds * rate)
+        for i in range(n):
+            t = i / rate
+            d = m.decide(i % 2, size, t)
+            sent.append(t)
+            got.append(d)
+        return m, sent, got
+    m, sent, got = run('loss=0.1')
+    loss = sum(not g for g in got) / len(got)
+    check(0.09 < loss < 0.11, f'netem: loss=0.1 loses {loss:.3f}')
+    m, sent, got = run('delay=50,jitter=20')
+    d = [g[0] - t for t, g in zip(sent, got)]
+    check(0.030 <= min(d) and max(d) <= 0.070 and abs(sum(d) / len(d) - 0.05) < 0.002,
+          f'netem: delay 50 +- 20 ms ({min(d) * 1000:.0f}..{max(d) * 1000:.0f} ms)')
+    m, sent, got = run('burst_every=20,burst_s=3,burst_loss=0.3', seconds=3000)
+    loss = sum(not g for g in got) / len(got)
+    want = 3 / 23 * 0.3
+    # loss in 5 s windows: bursts, not a steady trickle
+    win = {}
+    for t, g in zip(sent, got):
+        w = win.setdefault(int(t // 5), [0, 0])
+        w[0] += 1
+        w[1] += not g
+    heavy = sum(1 for a, b in win.values() if b / a >= 0.1)
+    clean = sum(1 for a, b in win.values() if b == 0)
+    check(abs(loss - want) < want * 0.35 and 90 < m.stats['bursts'] < 170 and heavy >= 40 and clean >= 300,
+          f'netem: Gilbert-Elliott bursts: loss {loss:.3f} (expected {want:.3f}), {m.stats["bursts"]} bursts, '
+          f'{heavy} 5 s windows with >= 10 % loss, {clean} without loss')
+    m, sent, got = run('delay=40,spike_every=30,spike_s=3,spike_ms=250', seconds=600)
+    d = [g[0] - t for t, g in zip(sent, got)]
+    hi = sum(1 for x in d if x > 0.25) / len(d)
+    check(m.stats['spikes'] >= 15 and 0.05 < hi < 0.16, f'netem: spikes: {m.stats["spikes"]}, {hi:.1%} of the packets '
+                                                       f'over 250 ms')
+    m, sent, got = run('delay=35,step=30:200/60:35', seconds=90)
+    d = {int(t): g[0] - t for t, g in zip(sent, got)}
+    check(abs(d[10] - 0.035) < 1e-6 and abs(d[45] - 0.2) < 1e-6 and abs(d[80] - 0.035) < 1e-6,
+          f'netem: a latency step at 30 s to 200 ms and back at 60 s ({d[10]:.3f}, {d[45]:.3f}, {d[80]:.3f})')
+    m, sent, got = run('rate=512,queue=400', seconds=60, rate=200, size=1000)
+    up = [g[0] for t, g, i in zip(sent, got, range(len(got))) if g and i % 2 == 0]
+    thr = len(up) * 1000 * 8 / (max(up) - min(up)) / 1000
+    worst = max(g[0] - t for t, g in zip(sent, got) if g)
+    check(480 < thr < 530 and m.stats['rate_drop'] > 0 and worst <= 0.41,
+          f'netem: rate=512 kbit/s carries {thr:.0f} kbit/s, drops {m.stats["rate_drop"]} past the 400 ms queue '
+          f'(longest wait {worst * 1000:.0f} ms)')
+    m, sent, got = run('dup=0.05')
+    dups = sum(len(g) == 2 for g in got) / len(got)
+    check(0.04 < dups < 0.06, f'netem: dup=0.05 duplicates {dups:.3f}')
+    ok = all(netem.parse(k) for k in netem.PRESETS)
+    try:
+        netem.parse('delay=10,lsos=0.1')
+        typo = False
+    except ValueError:
+        typo = True
+    check(ok and typo, 'netem: every preset parses, a misspelt key is refused')
+    ports = {(n, w): netem.port_of(n, w) for n in range(1, 11) for w in ('guest', 'extra1', 'extra2')}
+    check(len(set(ports.values())) == 30, 'netem: every guest of every lane has its own proxy port')
+    # two guests through their own proxies: the host sees two addresses, each guest gets its own answers
+    import socket
+    host = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    host.bind(('127.0.0.1', 0))
+    host.settimeout(0.05)
+    px = [netem.Proxy(0, host.getsockname()[1], 'delay=5', seed=i) for i in (1, 2)]
+    gs = []
+    for i, p in enumerate(px):
+        g = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        g.bind(('127.0.0.1', 0))
+        g.settimeout(1.0)
+        g.sendto(f'hello {i}'.encode(), p.a.getsockname())
+        gs.append(g)
+    seen = {}
+    t0 = time.time()
+    while len(seen) < 2 and time.time() - t0 < 2:
+        try:
+            data, addr = host.recvfrom(100)
+        except socket.timeout:
+            continue
+        seen[addr] = data
+        host.sendto(b're ' + data, addr)
+    answers = []
+    for g in gs:
+        try:
+            answers.append(g.recvfrom(100)[0])
+        except socket.timeout:
+            answers.append(None)
+    for p in px:
+        p.stop = True
+    check(len(seen) == 2 and answers == [b're hello 0', b're hello 1'],
+          f'netem: two guests through two proxies: {len(seen)} host-side addresses, answers {answers}')
+    # the players preset: rtt 70-150 ms most of the time (one-way delay doubled)
+    m, sent, got = run('players', seconds=1200)
+    rtt = sorted(2 * (g[0] - t) for t, g in zip(sent, got) if g)
+    med, p99 = rtt[len(rtt) // 2], rtt[int(len(rtt) * 0.995)]
+    check(0.07 <= med <= 0.15 and p99 >= 0.4, f'netem: players: median rtt {med * 1000:.0f} ms, 99.5 % {p99 * 1000:.0f} ms')
+
+
+def fps_cases():
+    import twoinst
+    check(twoinst.fps_limits('host:15,guest:30,extra:20') == {'host': 15, 'guest': 30, 'extra': 20},
+          'fps: host:15,guest:30,extra:20')
+    lim = twoinst.fps_limits('15')
+    check(lim == {'host': 15, 'guest': 15, 'extra': 15} and twoinst.fps_of('extra2', lim) == 15, 'fps: one number for all')
+    check(twoinst.fps_of('extra1', twoinst.fps_limits('extra1:10')) == 10 and
+          twoinst.fps_of('extra2', twoinst.fps_limits('extra1:10')) is None, 'fps: one extra guest')
+    try:
+        twoinst.fps_limits('gust:15')
+        bad = False
+    except ValueError:
+        bad = True
+    check(bad, 'fps: a misspelt role is refused')
+
+
 def suite_cases():
     import suite
     tickets = {f.split('-')[0] + '-' + f.split('-')[1] for f in os.listdir(os.path.join(ROOT, 'docs', 'tickets'))
@@ -188,6 +308,8 @@ def main():
     loggates_cases()
     with tempfile.TemporaryDirectory(prefix='gatesselftest-') as tmp:
         monitor_cases(tmp)
+    netem_cases()
+    fps_cases()
     suite_cases()
     print('RESULT:', 'OK' if not FAILS else f'FAIL ({len(FAILS)})')
     return 0 if not FAILS else 1

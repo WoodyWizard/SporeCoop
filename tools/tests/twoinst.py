@@ -359,7 +359,43 @@ def start(*a, **kw):
                 raise SystemExit(1)
             if ' unsafe ' in out.splitlines()[0]:
                 print(f'  SPORE_FIX_OFF: warning: {name} is unsafe (its off side can corrupt memory or data)', flush=True)
+    apply_fps(host, 'host')
+    apply_fps(guest, 'guest')
     return host, guest
+
+
+def fps_limits(spec=None):
+    """SPORE_FPS="host:15,guest:30,extra:20" (or one number for every game) -> {'host': 15.0, ...}
+    (docs/06-testing.md#testing-degraded); extra1 / extra2 name one extra guest, extra both"""
+    spec = os.environ.get('SPORE_FPS', '') if spec is None else spec
+    out = {}
+    for part in filter(None, (x.strip() for x in spec.split(','))):
+        who, _, v = part.rpartition(':')
+        fps = float(v)
+        if not 1 <= fps <= 240:
+            raise ValueError(f'SPORE_FPS: {part}: 1..240 fps')
+        for w in ((who,) if who else ('host', 'guest', 'extra')):
+            if w not in ('host', 'guest', 'extra', 'extra1', 'extra2'):
+                raise ValueError(f'SPORE_FPS: {part}: host, guest, extra, extra1 or extra2')
+            out[w] = fps
+    return out
+
+
+def fps_of(who, limits):
+    return limits.get(who, limits.get('extra') if who.startswith('extra') else None)
+
+
+def apply_fps(con, who):
+    """the game's frame time cap from SPORE_FPS (`frame.limit <ms>`); these games then are no warm games"""
+    fps = fps_of(who, fps_limits())
+    if fps is None:
+        return None
+    ms = max(1, round(1000 / fps))
+    out = (con.call(f'frame.limit {ms}').get('out') or '').strip()
+    print(f'  SPORE_FPS: {who} at {fps:g} fps (frame.limit {ms}): {out.splitlines()[0] if out else "no answer"}',
+          flush=True)
+    lane_state(**{**lane_state(), 'fps': os.environ.get('SPORE_FPS', '')})
+    return ms
 
 
 def fix_off_ok(name, answer):
@@ -381,7 +417,7 @@ def _start(fixture='creature', planet=None, load_args=(), join_in_intro=False, g
     # coop_stage_switch.py, but go through the galaxy menu and take longer)
     if os.environ.get('SPORE_WARM') == '1' and planet and not join_in_intro and st.get('build') == build_id() \
             and st.get('fixture') == fixture and st.get('guest_creations', True) == guest_creations \
-            and not st.get('fix_off') and not PRESET_CHOICES \
+            and not st.get('fix_off') and not st.get('fps') and not PRESET_CHOICES \
             and alive(lane.HOST) and alive(lane.GUEST):
         host, guest = Console(lane.HOST), Console(lane.GUEST)
         try:
