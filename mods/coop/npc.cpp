@@ -1834,12 +1834,17 @@ std::string herds(bool all)
     return b + a.out;
 }
 
+static bool g_test_hit = false;
+bool test_hit_now() { return g_test_hit; }
+
 bool debug_hit(uint16_t id, float damage)
 {
     auto it = g_proxies.find(id);
     if (it == g_proxies.end() || !it->second.c || !game::avatar())
         return false;
+    g_test_hit = true; // (social.no_bite lets a test's hit pass in the social stance)
     game::hit(it->second.c, damage, 0, game::avatar());
+    g_test_hit = false;
     return true;
 }
 

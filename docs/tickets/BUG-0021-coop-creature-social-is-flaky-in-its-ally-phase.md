@@ -68,9 +68,9 @@ falls back to an attack on the targeted creature).
 
 ## Fix
 feat/w33-tests-creature: `social::drop_social_hit` (npc.cpp damage_filter, guest): a hit of the guest's own avatar
-on the proxy it is engaged with or played a social act on in the last 15 s, while the stance is social
-(GetAbilityMode 0), is not sent to the host. Test hits (`coop.npc hit`) and fights on other creatures are not
-touched. `coop.status` social line: `social_hits_dropped=`. Switch: `coop.fix social.no_bite off`. Not verified
+on an NPC proxy while the stance is social (GetAbilityMode 0) is not sent to the host. A first version dropped
+only hits on the engaged creature; lab 20261101-151116 #3 showed the click that engages a Kook sending a hit
+before any social act, so every proxy counts now. Test hits (`coop.npc hit`, npc::debug_hit) pass. `coop.status` social line: `social_hits_dropped=`. Switch: `coop.fix social.no_bite off`. Not verified
 yet whether this covers every lost impression (see Verification). fix/w4-tests (5a72494) plays a refused game again with the same Kook (it walked out of the
 range: host_act refuses acts from more than kActRange + 4 m) instead of moving on. Not enough: 1 OK of
 4 runs.
