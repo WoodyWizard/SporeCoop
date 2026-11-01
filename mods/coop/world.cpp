@@ -1017,7 +1017,7 @@ void tick(net::Session& s)
             continue;
         }
         if (g_planet_save_fix && p.mode == modes::kSpace && g_saved_at && g_planet_write_at >= g_saved_at) {
-            H->log(M, SK_WARN, "world: the save for player %u was written on a planet (the ship landed %llu ms after it was posted): "
+            H->log(M, SK_WARN, "world: the save for player %u was written on a planet (%llu ms after it was posted, the ship had landed): "
                    "saving again off the planet", p.peer, (unsigned long long)(g_planet_write_at - g_saved_at));
             g_planet_saves++; // (g_planet_write_at stays: a share that went out with the same save sees it too)
             p.need_save = true;
