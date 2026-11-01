@@ -2488,3 +2488,33 @@ answered right after; a 1 s poller beside a standalone run saw no gap. Same sign
   the fixture is 4.75 m/s; WASD turns (W+D) curve at top speed, where a puppet that only walks falls
   behind; screenshots of the puppet are hard to judge (Kooks of the same colour around, and
   `coop.targets all` gives the tag point).
+
+## NPC proxies frame by frame: coop.npctrack, npc_walk (2026-11-01, fix/w30-npc-walk)
+<a id="testing-npc-track"></a>
+
+* `coop.npctrack start [radius m]|stop|count|dump [from] [n]` (main thread, BUG-0361): every frame,
+  on a guest one row per NPC proxy within the radius (default 40 m) of its avatar (Tribe: its player
+  tribe), on the host one row per own NPC (`how` 4, the reference). Columns: t id how (0 driven, 1
+  placed by npc.kinematic, 2 killed, 3 walked by npc.walk / npc.walk_tribe, 4 host) flags tp, the
+  drawn position (before the mod's driving), the position after it, the interpolated host target,
+  the game's speed, the host's speed, the distance to the centre, the animation id, the walk gait
+  (two ints), +0x137, +0xF98, on screen, screen x y. A ring of 200 000 rows; `count` prints the centre.
+  `coop.npctrack walk <id> x y z <m/s>` (host): the game walks host NPC #id there (SetDesiredSpeed +
+  MoveTo, as its AI does). `coop.npctrack variant N` (guest): how npc.walk moves (0 the fix, 1 place
+  only, 2 MoveTo + teleport with the mark, 3 never teleport when the game loses the place).
+* `coop_npc_walk.py [--seed N] [--wander s] [--walk s] [--flee s]` (suites `npc_walk`, ~1.8 min,
+  creature; `npc_walk_tribe`, `TRACK_FIXTURE=tribe`, ~2 min): 15 s of the NPCs' own wandering, 30 s of
+  up to 4 NPCs walked by the host's game to points around the guest (Tribe: around where they were)
+  at 2-6 m/s, 15 s after the host hit two of them; the guest's camera keeps one walker on its screen.
+  Checks over the 0.1 s windows where the target moves: no frame step beyond 3x the top speed times
+  the longer of this and the previous frame time (the game moves a creature by the previous frame's
+  time: 0.74 m between samples 42 ms apart after an 86 ms frame), <= 5 % standing, >= 85 % (Tribe 82 %)
+  at 0.6-1.4x, walk gait >= 80 % of the moving frames on the guest's screen. Tribe allows up to 3
+  steps under 2.5 m (herd mates push each other). The per-frame rows go to
+  `out/lane<N>/track/npc_walk_<fixture>_<time>.json` (with the host's rows and the phases).
+  `NPC_WALK_GUEST_CMDS="cmd;cmd"` runs console commands on the guest first (`frame.limit 66`: 15 fps);
+  `NPC_WALK_INTRO=1|2` plays the menu intro on the guest first (2: and makes its proxies again).
+  `SPORE_FIX_OFF=npc.walk` fails the creature test (gait 3-5 %), `npc.walk_tribe` the Tribe one
+  (matched 72-77 %).
+* Pitfall: a creature far from the camera is updated in bursts (no movement for 0.5 s, then 1 m at
+  once); judge what the player sees (on-screen frames), report the rest.

@@ -1181,3 +1181,45 @@ proxies](#creature-kinematic-proxies) on the animation.
   (only the constructor writes it); side effects not known.
 * ~ A running NPC's proxy (`npc.kinematic`, teleported every frame) is expected to slide without a
   walk gait for the same reason (inferred from the puppet measurement, BUG-0361).
+
+## NPC proxies walking on the host's path (2026-11-01, fix/w30-npc-walk)
+<a id="creature-npc-walk"></a>
+
+BUG-0361. GOG 2024, lanes 4-5. Measured with `coop.npctrack` (every frame, every proxy within 40 m of
+the guest's avatar, 150 m of its tribe in Tribe; the host's own NPCs as the reference) and
+`coop_npc_walk.py` (the host's game walks NPCs around the guest with MoveTo at 2-6 m/s, then hits two;
+the creature fixture's NPCs reach 4-4.5 m/s, the tribe fixture's animals 6.5-7.5 m/s).
+
+* ✔ The proxies of moving host NPCs slid: `npc.kinematic` (BUG-0281) teleported them (vt 0x44, with the
+  mark +0xB5D) onto the path every frame. On the path (0 % standing windows, drawn error p50 0.00-0.01 m)
+  but the walk gait was on in 4-6 % of their moving frames on the guest's screen and the main animation
+  stayed the plain idle 0x2481DE5. The host's own NPCs at the same time: gait 94-99 % on its screen.
+  This confirms the inference of [the puppet walk](#creature-puppet-walk) for proxies.
+* ✔ Which part matters (variants, `coop.npctrack variant N`): MoveTo ahead + speed but teleport with
+  the mark: gait 6 %; placed without the mark, no MoveTo (the velocity field written): 68 %; MoveTo
+  ahead + speed + `game::place`: 99-100 % (walk animations 0x4866DAB / 0x4866D8E).
+* ✔ The fix (`npc.walk`, `drive::walk_place` in driver.h, the method of `creature.puppet_walk`): gait
+  96-100 %, 0.6-1.4x the path's speed in 94-99 % of the 0.1 s windows, no jumps; also at 15 and 30 fps
+  and over `SPORE_NET=mobile`.
+* ✔ A host NPC thrown back by a hit (9.4 m/s, slowing down for 1.5 s): placed without the mark, the
+  proxy's own locomotion moved it back each frame by as much as it was placed (it stood, 4.5 m off at
+  the end). `walk_place` notices a growing error (0.75 m, 0.15 s) or a lost place and then moves it
+  by teleports with the mark at the catch-up speed until it is on the path.
+* ✔ At a stop the interpolated target can jump back up to 1 m in one frame (the extrapolation past the
+  newest state corrected by the stop state); the last 0.1 s of a walk is interpolated towards a state
+  with velocity 0. A walked proxy goes on with the path's speed, capped at the speed it walked.
+* ✔ Tribe: the animals' proxies were driven by `drive::step` (no npc.kinematic there): walk gait
+  98 %, but 0.6-1.4x the path in only 72-77 % of the windows, 4-7 % standing, drawn error p50
+  0.27-0.30 m, steps of 0.8-2.3 m. With `npc.walk_tribe` (walk_place at the guest's own ground height,
+  BUG-0329): 85-93 %, 1-3 % standing, error p50 0.01-0.02 m.
+* ✔ A host NPC that reports its speed but moves slower (herd mates pushing, turning): walked at the
+  reported speed the proxy runs ahead between two placings; it is walked at the path's speed
+  (smoothed over 0.2 s, at least 0.5 m/s).
+* ~ Tribe herds 50-120 m from the tribe: the game itself moved a proxy 1.3 m in one 31 ms frame
+  (collision with herd mates, inferred); off the screen the game updates far creatures in bursts
+  (gv 0 for 0.6 s, then 1.2 m at once).
+* ? One lab run (1 of 9 with the fix, Creature) had gait 0 on every walked proxy for the whole run
+  (anim 0x2481DE5, +0x137 = 1, speed state 2) and drawn error p50 0.18 m. Its guest ended the menu
+  intro in the stage (`world: cinematic 8915F9BB still playing in a stage`), but playing GGE_Intro on
+  the guest by hand (also while its proxies were made again) did not reproduce it. Cause unknown; the
+  test prints the walked proxies' (anim, gait, +0x137, +0xF98) counts now.

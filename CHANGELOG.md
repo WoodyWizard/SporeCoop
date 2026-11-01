@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+- Creature and Tribe: animals of the host now walk and run on the other players' screens with their
+  walk animation, on the host's path: in the Creature stage a moving animal slid over the ground in
+  its standing pose, in the Tribe stage animals moved in small steps and jumps (BUG-0361).
+
 ## [0.7.3.3] - 2026-11-01
 
 ### Fixed

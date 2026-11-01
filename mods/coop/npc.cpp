@@ -499,6 +499,7 @@ struct NpcTrackRow {
     uint8_t flags; // the host state's NF_*
     uint16_t tp;   // the driver's teleports so far
     net::Vec3 d, p, tgt;
+    net::Vec3 m; // the model's position (AnimatedCreature +0x04): where a corpse's body lies
     float gv, rv, da; // the game's speed, the host's speed, the distance to the guest's avatar
     uint32_t anim;
     int16_t gait = -1, gait2 = -1;
@@ -542,7 +543,7 @@ static void ntrack_push(uint16_t id, void* c, uint8_t how, uint8_t flags, uint16
     x.tgt = tgt;
     x.gv = drive::speed(game::velocity(c));
     x.rv = rv;
-    game::drawn_state(c, nullptr, &x.anim);
+    game::drawn_state(c, &x.m, &x.anim);
     int g = -1, g2 = -1, mv = -1, ss = -1;
     if (game::gait_state(c, &g, &g2, &mv, &ss)) {
         x.gait = (int16_t)g;
@@ -577,14 +578,44 @@ static int c_npctrack(void*, int argc, const char* const* argv, SkOut* out)
     } else if (!strcmp(a, "stop"))
         g_ntrack_on = false;
     else if (!strcmp(a, "dump")) {
-        // dump [from] [n] (how: 0 driven, 1 placed, 2 killed, 3 walked, 4 an NPC of the host itself): t id how flags tp dx dy dz px py pz tx ty tz gv rv da anim gait gait2 moving ss vis sx sy
+        // dump [from] [n] (how: 0 driven, 1 placed, 2 killed, 3 walked, 4 an NPC of the host itself): t id how flags tp dx dy dz px py pz tx ty tz gv rv da anim gait gait2 moving ss vis sx sy mx my mz
         size_t from = argc > 2 ? (size_t)atol(argv[2]) : 0, n = argc > 3 ? (size_t)atol(argv[3]) : 2000;
         for (size_t i = from; i < g_ntrack.size() && i < from + n; i++) {
             const auto& x = g_ntrack[i];
-            H->out_printf(out, "%.4f %u %u %u %u %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.2f %.2f %.1f %08X %d %d %d %d %d %.0f %.0f\n",
+            H->out_printf(out, "%.4f %u %u %u %u %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.2f %.2f %.1f %08X %d %d %d %d %d %.0f %.0f %.3f %.3f %.3f\n",
                           x.t, x.id, x.how, x.flags, x.tp, x.d.x, x.d.y, x.d.z, x.p.x, x.p.y, x.p.z, x.tgt.x, x.tgt.y,
-                          x.tgt.z, x.gv, x.rv, x.da, x.anim, x.gait, x.gait2, x.moving, x.speed_state, x.vis, x.sx, x.sy);
+                          x.tgt.z, x.gv, x.rv, x.da, x.anim, x.gait, x.gait2, x.moving, x.speed_state, x.vis, x.sx, x.sy, x.m.x,
+                          x.m.y, x.m.z);
         }
+        return 0;
+    } else if (!strcmp(a, "objects")) {
+        // objects [r] [noun hex]: every game object within r m of the centre: noun, its position, its height over
+        // the ground (cPlanetModel::GetHeightAt), alive (tests: nest eggs, corpses; player report 2026-11-01)
+        net::Vec3 ctr{};
+        if (!ntrack_centre(ctr)) {
+            H->out_printf(out, "no centre\n");
+            return 1;
+        }
+        struct U {
+            net::Vec3 c;
+            float r;
+            uint32_t noun;
+            SkOut* out;
+            int n;
+        } u{ctr, argc > 2 ? (float)atof(argv[2]) : 30.f, argc > 3 ? (uint32_t)strtoul(argv[3], nullptr, 16) : 0u, out, 0};
+        game::for_each_object(
+            [](void* o, uint32_t noun, void* p) {
+                auto* u = (U*)p;
+                net::Vec3 q;
+                if ((u->noun && noun != u->noun) || !game::object_position(o, q) || net::dist(q, u->c) > u->r || u->n >= 400)
+                    return true;
+                float rad = std::sqrt(q.x * q.x + q.y * q.y + q.z * q.z), gr = game::ground_radius(q);
+                H->out_printf(u->out, "obj %p noun=%08X pos=(%.2f %.2f %.2f) over_ground=%.2f alive=%d dist=%.1f\n", o, noun, q.x,
+                              q.y, q.z, gr > 1 ? rad - gr : -999.f, (int)game::object_alive(o), net::dist(q, u->c));
+                u->n++;
+                return true;
+            },
+            &u);
         return 0;
     } else if (!strcmp(a, "variant") && argc > 2) { // tests (BUG-0361): how npc.walk moves a proxy
         g_walk_variant = atoi(argv[2]);

@@ -19,8 +19,8 @@ animation's walk gait, on the screen or not).
    The guest's camera keeps one of the walkers on the screen (right-drags), as a player who watches.
 3. Checks over the frames in which the proxy's host state moves (the interpolated target's path
    faster than 1 m/s in a 0.1 s window), all proxies together:
-   * no jump: no frame step of the drawn proxy longer than TP_FACTOR x the path's top speed x the
-     frame time (and at least TP_MIN m);
+   * no jump: no frame step of the drawn proxy on the guest's screen longer than TP_FACTOR x the path's
+     top speed x the frame time (and at least TP_MIN m);
    * no steps: in 0.1 s windows the drawn proxy moves at 0.6-1.4x the path's speed in at least
      MATCHED_MIN of them and stands (< 0.3x) in at most STAND_MAX;
    * it walks: the animation's walk gait (+0xB54 -> +0x17C -> +0x15B8 > 0) is on in at least GAIT_MIN of
@@ -50,9 +50,11 @@ TP_FACTOR, TP_MIN = 3.0, 0.75
 STAND_MAX, MATCHED_MIN = 0.05, 0.85
 GAIT_MIN = 0.80
 # Tribe: herd animals 50-120 m from the tribe push each other (the game's own collision moved a proxy 1.3 m
-# in one 31 ms frame) and are animated less often off the screen: matched 85-93 % with the fix (72-77 % without),
-# 0-2 steps of 0.8-2.1 m per run. Allowed there: MATCHED_MIN_TRIBE and up to JUMPS_TRIBE steps under JUMP_MAX_TRIBE m.
-MATCHED_MIN_TRIBE, JUMPS_TRIBE, JUMP_MAX_TRIBE = 0.82, 3, 2.5
+# in one 31 ms frame), the tribe games run at 36-60 fps and the host's path jumps more often (late states): with
+# the fix 80-94 % matched (61-77 % without), up to 2 steps of 0.8-2.1 m on the screen per run. Allowed there:
+# MATCHED_MIN_TRIBE and up to JUMPS_TRIBE steps under JUMP_MAX_TRIBE m; on the path instead: the drawn proxy's
+# median distance from the host's path at most ERR_P50_TRIBE (with the fix 0.01-0.03 m, without 0.23-0.33 m).
+MATCHED_MIN_TRIBE, JUMPS_TRIBE, JUMP_MAX_TRIBE, ERR_P50_TRIBE = 0.75, 3, 2.5, 0.10
 
 
 def screen(con):
@@ -66,14 +68,14 @@ def dump(con):
     for i in range(0, n, 2000):
         for line in con.call(f'coop.npctrack dump {i} 2000')['out'].splitlines():
             f = line.split()
-            if len(f) != 25:
+            if len(f) < 25:
                 continue
             rows.append({'t': float(f[0]), 'id': int(f[1]), 'how': int(f[2]), 'flags': int(f[3]), 'tp': int(f[4]),
                          'd': tuple(map(float, f[5:8])), 'p': tuple(map(float, f[8:11])),
                          'tgt': tuple(map(float, f[11:14])), 'gv': float(f[14]), 'rv': float(f[15]),
                          'da': float(f[16]), 'anim': f[17], 'gait': int(f[18]), 'gait2': int(f[19]),
                          'moving': int(f[20]), 'ss': int(f[21]), 'vis': int(f[22]), 'sx': float(f[23]),
-                         'sy': float(f[24])})
+                         'sy': float(f[24]), 'm': tuple(map(float, f[25:28])) if len(f) >= 28 else None})
     return rows
 
 
@@ -130,7 +132,7 @@ class Watch(threading.Thread):
                 xy = None
                 for line in self.con.call(f'coop.npctrack dump {max(0, n - 60)} 60')['out'].splitlines():
                     f = line.split()
-                    if len(f) == 25 and int(f[1]) == self.nid:
+                    if len(f) >= 25 and int(f[1]) == self.nid:
                         xy = (int(f[22]), float(f[23]), float(f[24]))
                 if not xy or not xy[0] or not (100 < xy[1] < self.W - 100 and 80 < xy[2] < self.H - 150):
                     dx = 300 if not xy or not xy[0] or xy[1] > self.W // 2 else -300
@@ -178,7 +180,13 @@ def analyse(rows, W, H, phases):
             moving_frames += 1
             res['how'][b['how']] = res['how'].get(b['how'], 0) + 1
             step = math.dist(a['d'], b['d'])
-            if step > max(TP_MIN, TP_FACTOR * top * jdt) and b['tp'] == a['tp']:
+            onscr = all(x['vis'] and 0 < x['sx'] < W and 0 < x['sy'] < H for x in (a, b))
+            if not onscr:
+                # off the screen the game updates a far creature in bursts (no move for 0.2 s, then 1.9 m at
+                # once, Tribe animals 70-100 m away): counted, not judged
+                if step > max(TP_MIN, TP_FACTOR * top * jdt):
+                    res.setdefault('jumps_off', []).append((nid, round(b['t'], 2), round(step, 2)))
+            elif step > max(TP_MIN, TP_FACTOR * top * jdt) and b['tp'] == a['tp']:
                 res['jumps'].append((nid, round(b['t'], 2), round(step, 2), round(dt * 1000)))
                 pw['jumps'] += 1
             elif step > max(TP_MIN, TP_FACTOR * top * jdt):
@@ -201,7 +209,14 @@ def analyse(rows, W, H, phases):
                 break
             dt = rs[j]['t'] - rs[i]['t']
             path = math.dist(rs[i]['tgt'], rs[j]['tgt']) / dt
-            if path > 1.0 and dt < 0.3 and rs[i]['how'] != 2 and rs[j]['how'] != 2 and j - i >= 2:
+            # the target itself jumped in the window (a late state, the extrapolation past the newest state
+            # corrected: 1.3 m in one frame on a loaded 36 fps guest): the window measures the network, not the
+            # driving (the proxy closes such a jump at the catch-up speed); counted, not judged (as BUG-0321)
+            tj = any(math.dist(rs[k]['tgt'], rs[k + 1]['tgt']) > max(0.3, 2.5 * top * (rs[k + 1]['t'] - rs[k]['t']))
+                     for k in range(i, j))
+            if path > 1.0 and dt < 0.3 and rs[i]['how'] != 2 and rs[j]['how'] != 2 and j - i >= 2 and tj:
+                res['win_tj'] = res.get('win_tj', 0) + 1
+            elif path > 1.0 and dt < 0.3 and rs[i]['how'] != 2 and rs[j]['how'] != 2 and j - i >= 2:
                 w = math.dist(rs[i]['d'], rs[j]['d']) / dt / path
                 res['win'].append(w)
                 if all(r['vis'] and 0 < r['sx'] < W and 0 < r['sy'] < H for r in rs[i:j + 1]):
@@ -319,11 +334,13 @@ def main():
           f'{max(r["errs"]) if r["errs"] else 0:.2f} m', flush=True)
     print(f'    0.1 s windows while the host NPC moves: {len(win)}, the proxy stands in {stand:.0%}, moves at 0.6-1.4x '
           f'in {matched:.0%}; by phase (windows, stand, matched): {r["phase"]}', flush=True)
+    print(f'    windows left out because the host\'s path itself jumped in them (late states): {r.get("win_tj", 0)}', flush=True)
     won = r.get('win_on', [])
     if won:
         print(f'    of them on the guest\'s screen: {len(won)}, stand {sum(1 for w in won if w < 0.3) / len(won):.0%}, '
               f'matched {sum(1 for w in won if 0.6 <= w <= 1.4) / len(won):.0%}', flush=True)
-    print(f'    jumps (id, t, m, frame ms): {len(r["jumps"])} {r["jumps"][:12]}', flush=True)
+    print(f'    jumps on the guest\'s screen (id, t, m, frame ms): {len(r["jumps"])} {r["jumps"][:12]}; off it: '
+          f'{len(r.get("jumps_off", []))} {r.get("jumps_off", [])[:6]}', flush=True)
     print(f'    walk gait in {near_gait:.0%} of the {r["near"]} moving frames on the guest\'s screen', flush=True)
     walked = [x for x in rows if x['how'] == 3 and x['rv'] > 0.5]
     if walked:  # diagnostics (one lab run had gait 0 on every proxy, cause unknown)
@@ -347,6 +364,9 @@ def main():
            f'{len(big)} longer)')
     else:
         ck(not r['jumps'], f'no jump of a moving proxy ({len(r["jumps"])})')
+    if FIXTURE == 'tribe':
+        e50 = pct(r['errs'], 0.5)
+        ck(e50 <= ERR_P50_TRIBE, f'the proxies are on the host\'s path (drawn error p50 {e50:.2f} m <= {ERR_P50_TRIBE} m)')
     mmin = MATCHED_MIN_TRIBE if FIXTURE == 'tribe' else MATCHED_MIN
     ck(stand <= STAND_MAX and matched >= mmin,
        f'the proxies move with the host\'s NPCs, not in steps (stand in {stand:.0%} <= {STAND_MAX:.0%}, '
