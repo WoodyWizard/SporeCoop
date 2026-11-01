@@ -21,7 +21,7 @@ Every frame the mod detects the game mode (`GetActiveModeID`) and picks an **ada
 | Mode | What the player has | Puppet seen by others | Place | Shared progress | Test |
 |---|---|---|---|---|---|
 | Cell | avatar cell (`cCellGame` pool) | cell with the avatar's model, invulnerable | save | - | `coop_mode.py --fixture cell` ✅ |
-| Creature | avatar creature | creature in the avatar's pack | save | DNA, host-side NPCs, damage via the host | `coop_two_instances.py` ✅ |
+| Creature | avatar creature | creature in the avatar's pack | save | DNA, collected parts (the union, [creations-part-pickup](re/creations.md#creations-part-pickup)), host-side NPCs, damage via the host | `coop_two_instances.py` ✅ |
 | Tribe | mouse pointer on the planet | name-tagged pointer + `coop ping` marks | save | tribe food | `--fixture tribe` ✅ |
 | Civilization | mouse pointer on the planet | name-tagged pointer + marks | save | civilization money | `--fixture civ` ✅ |
 | Space | player's ship (`cSimulatorPlayerUFO`) | "defender" ship, invulnerable | star (StarID) or planet (PlanetID) | empire money | `--fixture space` ✅ |

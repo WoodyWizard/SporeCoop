@@ -3563,6 +3563,10 @@ int c_share(void*, int argc, const char* const* argv, SkOut* out)
     return 0;
 }
 
+// BUG-0400: `coop.npc gopos` (tests) puts a point under the terrain onto it
+static bool g_gopos_ground_fix = true;
+COOP_FIX("tools.gopos_ground", "BUG-0400", g_gopos_ground_fix, "tests: coop.npc gopos puts the avatar onto the ground, never under it");
+
 int c_npc(void*, int argc, const char* const* argv, SkOut* out)
 {
     if (argc > 1 && !strcmp(argv[1], "list")) {
@@ -3616,8 +3620,17 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
             SAY("no avatar");
             return 1;
         }
-        game::teleport(av, {(float)atof(argv[2]), (float)atof(argv[3]), (float)atof(argv[4])}, game::orientation(av));
-        SAY("avatar moved");
+        // BUG-0400: tests shift a partner's position along a world axis (team: host x + 1.5 m), which is
+        // a chord of the planet: up to 0.5 m nearer its centre, often under the terrain, and the game
+        // does not lift a grounded creature placed under it (docs/re/creature.md#creature-puppet-ground).
+        // A point under the ground goes onto it (`coop.fix tools.gopos_ground off`: as given, 0.7.3.3).
+        net::Vec3 p{(float)atof(argv[2]), (float)atof(argv[3]), (float)atof(argv[4])};
+        float r = drive::speed(p), g = game::ground_radius(p);
+        bool lifted = g_gopos_ground_fix && g > 1 && r > 1 && r < g;
+        if (lifted)
+            p = {p.x * g / r, p.y * g / r, p.z * g / r};
+        game::teleport(av, p, game::orientation(av));
+        SAY("avatar moved%s", lifted ? " (onto the ground)" : "");
         return 0;
     }
     if (argc > 2 && (!strcmp(argv[1], "goherd") || !strcmp(argv[1], "gonpc"))) { // tests: the avatar d m
