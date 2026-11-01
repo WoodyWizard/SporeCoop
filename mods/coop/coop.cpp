@@ -3775,7 +3775,7 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
         return ok ? 0 : 1;
     }
     if (argc > 3 && !strcmp(argv[1], "hosthit")) { // host avatar hits host NPC #id
-        bool ok = npc::debug_host_hit((uint16_t)atoi(argv[2]), (float)atof(argv[3]));
+        bool ok = npc::debug_host_hit((uint16_t)atoi(argv[2]), (float)atof(argv[3]), argc > 4 ? (float)atof(argv[4]) : 0.f);
         SAY(ok ? "host hit applied" : "no such npc");
         return ok ? 0 : 1;
     }
@@ -4424,7 +4424,7 @@ void support_init()
     H->subscribe(M, SK_EV_SHUTDOWN, [](void*, int, void*) { support::on_shutdown(); }, nullptr);
     H->command_add(M, "coop.diag",
                    "coop.diag [status | sync now|on|off|<s>|force shift|drop|ghost|dna|off | summary | mark <text> | "
-                   "detail 0|1|2 | mem] - support diagnostics (docs/REPORTING.md#reporting-support)",
+                   "detail 0|1|2 | mem | reserve <MB> (tests: a planted leak)] - support diagnostics (docs/REPORTING.md#reporting-support)",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
                        SAY("%s", support::command(std::vector<std::string>(argv + 1, argv + argc)).c_str());
                        return 0;
@@ -4697,7 +4697,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     H->command_add(M, "coop.echo", "coop.echo [on|off] [offset] [delay] - loopback puppet test", c_echo, nullptr, MT);
     H->command_add(M, "coop.overlay", "coop.overlay on|off|self", c_overlay, nullptr, MT);
     H->command_add(M, "coop.social", "coop.social [species | log | act <npc id> [slot] | goto <npc id>] - creature social games", c_social, nullptr, MT);
-    H->command_add(M, "coop.npc", "coop.npc [on|off|list|herds|hit <id> <dmg>|hosthit <id> <dmg>|recruit <id>|spawn <hex>|cinedefer on|off] - host-authoritative NPC sync", c_npc, nullptr, MT);
+    H->command_add(M, "coop.npc", "coop.npc [on|off|list|herds|hit <id> <dmg>|hosthit <id> <dmg> [push]|recruit <id>|spawn <hex>|cinedefer on|off] - host-authoritative NPC sync", c_npc, nullptr, MT);
     H->command_add(M, "coop.res", "coop.res [[joinsim] add <food|money> <n> | fix reset|floor [0|1]] - shared resources", c_res, nullptr, MT);
     H->command_add(M, "coop.ping", "coop.ping - show everybody the place under your mouse / where you are", c_ping,
                    nullptr, MT);

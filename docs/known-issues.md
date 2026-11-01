@@ -1483,3 +1483,26 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   but no mate comes (`mate=00000000`), so the guest's own cell editor does not open.
 * Reproduce: `tools/lab.py run editor_desync --lane 6` (4 of 4 on 2026-11-01, also on main f0cf695).
 * Ticket: BUG-0411
+
+## Creature: a vote during the evolution's cinematic leaves the host in an editor without buttons (2026-11-01, feat/w33-tests-creature)
+<a id="issue-vote-during-evolution-cinematic"></a>
+
+* What happens: right after a vote's editors were left, the host's game plays the evolution cinematic
+  F4F96E43. A second vote started then (`coop.vote editor` + the guest's ready) took both games into their
+  editors; the guest left with "done", the host's editor had no buttons (no "done", no top bar), the cinematic
+  stayed "playing" with the input lock on, and the host's game stayed in the editor for minutes.
+* Reproduce: creature fixture, `coop.vote editor`, the guest's ready, "done" on both, and at once the same again
+  (coop_editor_soak.py before it waited for the cinematic).
+* Known: the creature stage's cinematic does not end in the editor mode; a deferred creature removal waits for it.
+* Not checked: whether a player can start a vote during this cinematic (the mating call, a guest's vote).
+* Ticket: BUG-0404
+
+## Creature: the partner's creature pops 1 m away and back when it uses an ability (2026-11-01, feat/w33-tests-creature)
+<a id="issue-puppet-ability-pop"></a>
+
+* What happens: a guest at 30 fps over the `player` network sees the host's standing creature drawn ~1 m off for
+  0.13 s and back while the host uses an ability (its animation 02481DE5).
+* Reproduce: `puppet_fight_player` (coop_puppet_fight.py with SPORE_FPS=guest:30 SPORE_NET=player): `drawn jumps
+  within the bound` fails, 2 of 2 runs.
+* Not checked: which abilities, whether the frame cap or the network is needed.
+* Ticket: BUG-0414

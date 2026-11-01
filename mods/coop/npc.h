@@ -44,7 +44,7 @@ void set_stall_fix(bool on);                  // tests: off = no teleport of a p
 void set_known_fix(bool on);                  // tests: off = only host_tick forgets them (BUG-0125)
 bool is_proxy(void* creature);
 // TakeDamage filter shared with coop.cpp; returns true to let the game apply damage
-bool debug_host_hit(uint16_t id, float damage); // host avatar hits host NPC #id
+bool debug_host_hit(uint16_t id, float damage, float push = 0); // host avatar hits host NPC #id (push: thrown, tests)
 bool debug_recruit(uint16_t id);
 void* debug_spawn(uint32_t instance);           // host: an NPC of that crt species next to the avatar                 // host: NPC #id joins the pack (cPosseSimulator AddMember)
 void* debug_spawn_epic(uint8_t player, float dist, uint32_t archetype, uint32_t species = 0); // host (tests): an epic near a player's creature
@@ -81,6 +81,7 @@ std::string debug_pwalk(uint16_t id, const net::Vec3& p, float speed, float secs
 std::string debug_dash(uint16_t id, float len, float speed, float secs, float width, uint16_t mate = 0, float off = 0); // host (tests, BUG-0305): NPC #id dashes back and forth
 int host_id(void* creature);     // host: net id of an NPC, -1
 int proxy_id(void* creature);    // guest: net id of a proxy, -1
+bool test_hit_now();             // guest: a test's hit (coop.npc hit) is being applied (BUG-0021 social.no_bite)
 int proxy_id_of_ai(void* ai);    // guest: the proxy whose AI block (+0xB4C) this is, -1
 void set_enabled(bool on);
 bool enabled();

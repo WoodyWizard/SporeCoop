@@ -3123,3 +3123,79 @@ agl Creature puppets -0.20 to 0.64 m, own -0.43 to 1.04 m; Tribe members -0.01 t
   (with the sync on the guest gets the parts within a second and the rule has nothing to catch).
 * Measured (lane 6): a part reaches the other game within 1 s (the 1 Hz poll); the fixture has 54 of
   312 parts unlocked, a find at level 1 gives one.
+## Creature tests of what the other player sees: fights, events, bodies, the pack, allies, editor soak (2026-11-01, feat/w33-tests-creature)
+<a id="testing-creature-w33"></a>
+
+Each test judges the other machine's game (the drawn creature, the game's own flags and health), not the mod's
+counters. Every one has a `_player` twin (`SPORE_FPS=guest:30 SPORE_NET=player`) except the soak.
+
+* `puppet_fight` (`coop_puppet_fight.py [--dir] [--seed] [--secs]`, ~4 min warm): both players go to the nearest
+  nest of another species; one fights for 40 s (combat stance, clicks on NPCs on its screen, ability keys 1-5 and
+  0, WASD holds with abilities, camera turns, walks back to the partner beyond 14 m), the other's camera keeps it
+  on screen (`coop_puppet_walk.Watch`). Checks on the observer's `coop.track` rows: frame steps over 3x the
+  fighter's own p99 speed x the frame time <= 1 per minute, driver teleports (`tp`) <= 1 per minute, over the
+  frames in which the fighter moves (> 1 m/s) the drawn puppet against the fighter's own position at the same
+  moment p95 <= 2.5 m and the constant delay that fits the drawn path best <= 0.3 s (fix on: 0.06-0.14 s, p95
+  0.5-0.9 m; `SPORE_FIX_OFF=creature.puppet_path,creature.puppet_walk`: 0.50-0.54 s, p95 3.5-4.0 m, one 4.5 m
+  step and one teleport per direction, lab 20261101-141158). The stance is read
+  from the game (`call Simulator::cCreatureGameData::GetAbilityMode cdecl`: 0 social, 1 combat; the buttons are
+  at 690 / 750, 998 in the 1440x1080 test window). The first version brought the fighter back with
+  `coop.team come` (a teleport): the observer then saw an 8 m step; walks back by click now.
+* `puppet_after_events` (`coop_puppet_after_events.py [--only ...]`, ~9 min cold): after a rejoin, the vote's
+  editors (`coop.vote editor`, ready, "done" clicked until the editor is left), a death and respawn of each
+  player (`coop.team die`, Enter on the caption), Alt+Enter twice on each game (the renderer's fullscreen flag
+  must toggle and come back), CRG_ClaimNest on each game (Enter until it ends) and a world share
+  (`coop.share`): each game has the partner's puppet object (`coop.status` `remote N ... puppet=`) and draws it
+  within 2 m of the partner's own position (`coop.track`) within 20 s. `PUPPET_EVENTS_PLANT=hold` (the host's
+  `coop.puppet hold on` after the first event) fails (lab 20261101-144621: 4.1 m after the deaths, Alt+Enter and
+  the cinematic; the editor and the share made new puppets, which hold does not stop). An evolution reloads the
+  guest with the host's world a few seconds after the editors (the share waits for the cinematic): the next step
+  waits until both games are in the stage and together for 6 s (`settled`), `coop.team die` is retried while there
+  is no avatar, and a respawn counts only after a death was seen (the `_player` run's first death found no avatar
+  and its "respawn" passed on the living creature).
+* `corpse_positions` (`coop_npc_corpse.py [--only] [--skip]`, ~5 min warm, BUG-0383): kinds stand, guest, run
+  (`coop.npctrack walk` at 6 m/s, killed running), thrown (`coop.npc hosthit <id> <dmg> <push>`: TakeDamage with a
+  push away from the avatar and up, new test argument), slope (an 065CB8BD walked onto the fixture slope; the
+  walk is asked again every 0.5 s, its AI takes it back to the nest otherwise), npc (`coop.npc epic 0 6`: the
+  epic killed an NPC within 1-2 s in every run), later (the guest 150 m away on land during the kill), eaten (the
+  guest clicks the body's screen position from `coop.npctrack`; what eating does is printed). 3 s and 30 s after
+  each death: the guest's proxy dead by the game's own flag (`coop.npc list` on a guest now ends with
+  `game_dead=<0|1> impressed=<0|1>`, the proxy's mbDead and impressed flags; the old `DEAD` there is the mod's
+  `killed`), its model within 1.5 m of the host's, both on their ground (model height over the terrain
+  -0.6..1.2 m). All bodies were 0.00 m apart: a guest puts a killed proxy where the host's body is every frame.
+  `SPORE_FIX_OFF=npc.dead_proxy` fails `npc` and `later` (lab 20261101-135546), `npc.play_death` every kind
+  (20261101-145148); PASS 20261101-141938, `_player` 20261101-142305.
+* `team_real_damage` (`coop_team_real_damage.py [--victim]`, ~3 min warm): the victim walks up to a host NPC of
+  another species and hits it with 0.3 (`coop.npc hit` / `hosthit`) until one bites back (the 065CB8AB and
+  065CB811 Kooks do within 1-3 s, their bites take 0.2-0.5); hurt with the partner 25 m away (no regen), regen 5 s
+  next to it (+10 %), rescue: the victim's health set to 0.4 of one bite, the NPC's next bite would kill. Each
+  judged on the other game's puppet (`coop.hp`). `SPORE_FIX_OFF=creature.partner_hp` fails the other game's
+  hurt / regen / rescue checks (lab 20261101-143808). An NPC stops biting now and then: the rescue phase holds the
+  victim at 0.4 of a bite (undoing the regen each second) and the victim hits the NPC with 0.1 every 3 s until a
+  bite lands (up to 25 s); the first version waited 12 s and timed out in 2 of 4 runs.
+* `creature_social_ally` (`coop_creature_social_ally.py`, ~4 min warm, BUG-0021): coop_creature_social's ally
+  phase with the stance read from the game (clicked only when not social), the game's impressed flag per Kook on
+  both games (host `coop.npc list` lines end with `impressed=<0|1>`), the ally record on both, the guest's card,
+  then the host's `coop.npc recruit` of an allied Kook and a 20 m walk: the guest's proxy of it within 10 m of the
+  host and 2.5 m of the host's own Kook. `SOCIAL_ALLY_PLANT=npcsync` fails the recruitment (lab 20261101-144024:
+  27 m). Before `social.no_bite` the ally part failed in 3 of 5 runs on BUG-0021: the guest's own avatar killed an
+  impressed Kook (host log: event 2 then event 0, `dna: ... cause=hunt:1`; the test prints `key 1 sent a HIT` /
+  `the click sent a HIT` when the guest's `hits_sent` grows, with the stance social before and after). The fix drops
+  a guest's hits on proxies in the social stance (`coop.npc hit` passes); its guest log says `social: a hit of the
+  avatar on npc N in the social stance is not sent` (1-3 per run). Its first run reproduced BUG-0021: impressions 3 by the host's counter
+  (3 Kooks with the game's flag), the species record (relation, impressed) went (0, 1) -> (4, 2) -> (3, 1), no Kook
+  killed, one game refused in between. The host now logs every change of the species table
+  (`social: relationship event <n> species <key> by <creature> (npc <id>): relation a -> b, impressed ...`).
+* `creature_editor_soak` (`coop_editor_soak.py [--cycles]`, extended, ~30 min): 32 rounds (`SOAK_CYCLES`) of the
+  vote's editors with a world share every 4, `coop.diag mem` on both after each round (free MB, largest block):
+  loss <= 8 MB per round after round 3, largest block >= 128 MB. Calibration (lane 5, 12 rounds): free address
+  space 3410-3470 MB, no trend, largest block 2037 MB throughout, ~45 s per round. `SOAK_PLANT_MB=40` (the host's
+  `coop.diag reserve 40` after each round: VirtualAlloc MEM_RESERVE, never freed; new test command) fails (lab
+  20261101-141320, `SOAK_CYCLES=8`: host 39.8 MB per round). PASS 20261101-152216 (32 rounds, 28 min). An earlier
+  32-round run (20261101-143943) met every check of its own and failed only on the known cold-start caught fault at
+  0x11ECE4F on both games. Both 32-round runs: the guest lost 1.8-2.2 MB of free address space per round (3504 ->
+  3377, 3513 -> 3359 MB), the host 0.7-0.8; the largest block stayed 2037 MB (a large-address-aware game under
+  Wine: 4 GB). Not a failure at this rate (~200 MB per 100 rounds); worth watching in longer soaks.
+* Pitfall (BUG-0404): a vote started while the host's evolution cinematic (F4F96E43) still plays after an editor
+  opened the next editor without its buttons and the host stayed in it with the cinematic "playing"; the editor
+  helper now waits for the cinematics to end (Enter) like a player.

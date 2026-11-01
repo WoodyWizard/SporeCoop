@@ -35,6 +35,9 @@ void on_session_end();
 // outcome, whichever machine's card saw it; true = swallow it here
 bool goal_dna(float delta);
 std::string status();
+// guest (BUG-0021): true when a hit of the own avatar on an NPC proxy must not be sent because the avatar is in the
+// social stance (it plays a social game: a hit then killed the Kook it was impressing)
+bool drop_social_hit(uint16_t proxy_id);
 std::string species_dump(); // coop.social species (tests)
 bool debug_send_goal(uint32_t crt_instance, int outcome, float dna); // guest, tests: a goal card's reward (K_GOAL)
 extern bool g_goal_owe_fix; // BUG-0205: a K_GOAL without a host creature waits for it (false: dropped)
