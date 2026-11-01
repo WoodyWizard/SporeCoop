@@ -2,7 +2,17 @@
 
 ## [Unreleased]
 
+### Added
+- Creature and Cell: DNA (and the cell's food) that a partner or the pack earned now says where it came
+  from in a short notice: "+9 DNA from Bob's hunt", "+7 DNA shared by Alice's pack", "+10 food (DNA)
+  from Bob's meals"; the game logs write each change with its cause (BUG-0389).
+
 ### Fixed
+- Creature: a creature of a partner's earlier creature (before its editor) could be missing on the
+  guest until the next world share: the host could not send its species any more (BUG-0370).
+- Tests: npc_far / npc_pooled walked the host into the sea, where the game's deep water cinematic held
+  it in the air (sync-check "p0 10.7" in every run); they now walk on land and check where the guest
+  draws the host (BUG-0377).
 - Creature: each player now sees the partner's real health on the partner's creature (it always
   looked full, hits on the partner did not show) and its real max health (BUG-0373).
 - Creature: the host's pack and family no longer attack and kill a partner (a partner's hit on a

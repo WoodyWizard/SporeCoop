@@ -1289,6 +1289,10 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   partner's replaced creature is not, while a leftover of its puppet can still be in the world.
 * Not checked: whether the leftover NPC is the guest's old puppet or a herd member made from it.
 * Ticket: BUG-0370
+* FIXED (2026-11-01, fix/w31-creature-gate, unreleased): reproduced (`coop_old_species.py`: the guest
+  switches its creature, the host's game still makes creatures of the old key); the host now keeps the
+  records of the players' last creatures and answers from them (creations.old_species,
+  docs/re/creations.md#creations-old-species).
 
 ## Editor: the game runs out of address space in the skin painter (2026-11-01, player report)
 <a id="issue-editor-skin-painter-oom"></a>
