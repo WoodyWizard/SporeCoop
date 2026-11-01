@@ -3004,3 +3004,17 @@ game only, `cCollectableItems::UnlockPart`, docs/re/creations.md#creations-unloc
 <player> <hp>` (host: the first pack member hits that player's puppet through the damage filter).
 Pitfall: `tools/tests/monitor.py replay` over whole lane logs mixes sessions (the session clock starts
 at 0 at every join): cut them where `[s ...]` goes back.
+
+Evidence (lane 6): the rules failing on planted problems: `monitor_plant` PASS in
+`out/lab/20261101-131215-feat-w32-monitor-diag` (drawn 15.7 m, puppet_hp 16/16 vs 8/16, proxies, unlocks
+54 vs 57, posse_damage 0.5 hp forwarded; with the fix on the dropped pack hit is no violation); ground:
+`SPORE_FIX_OFF=creature.puppet_ground` puppet_under `20261101-125249` (`partner 1's puppet 1.00 m under
+the ground on 2 lines`); posse_damage in its own bug test: `SPORE_FIX_OFF=npc.party_peace` creature_party
+`20261101-131058` (8 violations). `SPORE_FIX_OFF=creature.partner_hp` creature_partner_hp
+(`20261101-130959`) fails on its own checks, not on the monitor: its hit lasts 3 s, the rule needs two
+10 s marks. The clean run `20261101-131215` (smoke + puppet_walk + monitor_plant on lane 6): no monitor
+violation in any passing test; creature failed on BUG-0390, puppet_walk on BUG-0394 (walk gait 0 %),
+ui skipped (exclusive). Second calibration (that run): drawn Creature 69 lines p50 0.32 m (planted
+lines aside under 1.3 m), Space 82 lines max 4.1 m (0.11 of the limit), Cell max 0.36 m, Civ 0 m, Tribe at
+rest 0 m except one line right after a join (151 m: the pointer copy of an older state, one line);
+agl Creature puppets -0.20 to 0.64 m, own -0.43 to 1.04 m; Tribe members -0.01 to 0.00 m.
