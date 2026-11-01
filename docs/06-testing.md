@@ -3204,3 +3204,18 @@ counters. Every one has a `_player` twin (`SPORE_FPS=guest:30 SPORE_NET=player`)
 * Pitfall (BUG-0404): a vote started while the host's evolution cinematic (F4F96E43) still plays after an editor
   opened the next editor without its buttons and the host stayed in it with the cinematic "playing"; the editor
   helper now waits for the cinematics to end (Enter) like a player.
+## Proxies on the ground: npc_walk_slope, the proxies rule after joins (2026-11-01, fix/w33-proxy-ground)
+<a id="testing-proxy-ground"></a>
+
+* `npc_walk_slope` (BUG-0406): `coop_npc_walk.py --goto=-195,-465,-45 --falls 3`: both avatars on the creature
+  fixture's slope, the walkers are the host's NPCs within 60 m; the test also prints the fall starts (+0x137
+  1 -> 0 while the host's NPC moves) per 100 s of walked proxy frames and of the host's own NPCs, and with
+  `--falls N` fails when the proxies' rate is over the host's + N. Without npc.walk_ground: 51.1 and 22.7 vs
+  0.8-0.9.
+* The monitor's `proxies` rule caught BUG-0399 only after cold joins, in about 1 of 5 cold Tribe runs: a
+  warm run (the guest already in the world) says nothing about it. FAIL / PASS evidence is a series of
+  `--cold` runs (`lab.py run tribe_coop,chaos_tribe --cold --repeat 4`).
+* `coop.npc sink <id> <m> [mark]` (guest): the proxy m under this game's ground once (without / with the
+  teleport mark). In a warm game the game itself grounds it again within 0.6 s, so it does not reproduce
+  BUG-0399 (docs/re/tribe.md#tribe-proxy-ground).
+* `coop.npc list` lines end with the heights over the ground (`agl=`; guest: `want_agl= made_agl= grounded=`).

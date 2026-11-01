@@ -1442,3 +1442,17 @@ BUG-0394 / BUG-0387. GOG 2024, lanes 2-5, `SPORE_FPS=30`, `SPORE_NET=player`.
 * ~ The walker of puppet_walk sometimes did not walk: its clicks on the partner's tag (to walk back when
   12 m away) did nothing after a first walk ended 15-25 m apart; the test now puts the walker next to the
   observer before its walk (`coop.npc gopos`).
+
+## NPC proxies walking downhill fall (2026-11-01, fix/w33-proxy-ground)
+<a id="creature-npc-ground"></a>
+
+BUG-0406. GOG 2024, lane 7, creature fixture, `coop_npc_walk.py --goto=-195,-465,-45` (suite
+`npc_walk_slope`: both avatars on the slope of [creature-puppet-ground](#creature-puppet-ground), the host's
+game walks 4 NPCs to points 4-12 m around the guest, `coop.npctrack` every frame on both games; the test now
+counts fall starts, +0x137 going 1 -> 0 while the host's NPC moves).
+* ✔ The inference of creature-puppet-ground holds for NPC proxies: walked by `npc.walk` (placed exactly on
+  the host's path every frame) they started to fall 51.1 and 22.7 times per 100 s of walking on the slope;
+  the host's own NPCs walking the same paths 0.9 and 0.8 (out/lab/20261101-142745 npc_walk_slope#1, #2). Their
+  walk gait (98 % on screen) and the path (93 % matched windows) were fine: the falls are single frames.
+* `npc.walk_ground`: the proxies' walk is placed with `WalkPlace::ground` (on_own_ground, 5 cm into the ground)
+  as the partner's puppet (creature.puppet_ground).

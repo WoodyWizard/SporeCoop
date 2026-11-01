@@ -119,6 +119,20 @@ COOP_FIX("npc.path", "BUG-0394", g_path_fix, "creature, tribe: an NPC's proxy al
 // tests (BUG-0394): `coop.npctrack novel 1`: the host's NPC states without their speed (as a move carried by an
 // animation reports none)
 static bool g_npc_novel = false;
+// BUG-0399: in Tribe, right after a guest joined, some host animals' proxies (made on the ground) were
+// 0.75-1.7 m under the guest's ground for 1-30 s, walked and standing (driven at their own height, BUG-0329;
+// how they got there is inferred only, docs/re/tribe.md#tribe-proxy-ground). Their walk is placed onto this
+// game's ground now (WalkPlace::ground), drive::step puts a standing one found under the ground onto it, and a
+// new proxy is made on the ground (driver.h out_of_ground): no need for the game to ground them.
+// `coop.fix npc.proxy_ground off`: at its own height only (0.7.3.4).
+COOP_FIX("npc.proxy_ground", "BUG-0399", drive::g_out_of_ground_fix, "tribe: an animal's proxy is never left under this game's ground (made there, kept there standing)");
+// BUG-0406: placed exactly on the host's path, a proxy walking downhill is a few cm over the ground after the
+// game's next step and starts to fall (+0x137 = 0, the fall animation): 51 fall starts per 100 s of walking on
+// a slope of the creature fixture, the host's own NPCs 0.9 (npc_walk_slope). As the partner's puppet
+// (BUG-0366, creature.puppet_ground) its walk is placed 5 cm into this game's ground (WalkPlace::ground).
+// `coop.fix npc.walk_ground off`: on the host's path exactly.
+static bool g_walk_ground_fix = true;
+COOP_FIX("npc.walk_ground", "BUG-0406", g_walk_ground_fix, "creature: a walking NPC's proxy is placed onto the ground, so it does not keep starting to fall downhill");
 static bool g_walk_tribe_fix = true;
 COOP_FIX("npc.walk_tribe", "BUG-0361", g_walk_tribe_fix, "tribe: a walking or running animal's proxy walks on its path instead of moving in steps");
 // tests (coop.npctrack variant, drive::walk_place): 0 the fix; 1 place only (no walk goal); 2 walk goal +
@@ -158,6 +172,8 @@ struct Proxy {
     drive::State drv;
     float walk_sp = 0;      // BUG-0361: the host NPC's speed while it last moved
     bool ever = false;      // BUG-0383: an object was made for it once (a body the guest's game removed stays gone)
+    double made_at = 0;     // BUG-0399 (diagnostics): when its creature was made and the host's
+    float made_agl = 0;     // position's height over this game's ground then (m)
 };
 static std::map<uint16_t, Proxy> g_proxies;
 // BUG-0383: a guest made no proxy for an NPC that was dead when it first came into the guest's range (killed
@@ -483,6 +499,31 @@ std::string debug_pwalk(uint16_t id, const net::Vec3& p, float speed, float secs
     char b[160];
     snprintf(b, sizeof b, "proxy %u at (%.1f %.1f %.1f) walks to (%.1f %.1f %.1f) at %.1f m/s for %.0f s", id, c.x, c.y, c.z,
              p.x, p.y, p.z, speed, secs);
+    return b;
+}
+// tests (BUG-0399): the guest's proxy #id put <m> under this game's ground once (where the monitor found
+// proxies after joins); the sync drives it on from there
+std::string debug_sink(uint16_t id, float m, bool mark)
+{
+    auto it = g_proxies.find(id);
+    if (it == g_proxies.end() || !it->second.c)
+        return "no such spawned proxy";
+    void* c = it->second.c;
+    net::Vec3 p = game::position(c);
+    float r = drive::speed(p), g = game::ground_radius(p);
+    if (r < 1 || g <= 0)
+        return "no ground";
+    float k = (g - m) / r;
+    net::Vec3 q{p.x * k, p.y * k, p.z * k};
+    // without the teleport mark (+0xB5D), as walk_place places: with it the game set the creature back onto
+    // its terrain at once (fix off, standing, 6 of 6)
+    if (mark)
+        game::teleport(c, q, game::orientation(c));
+    else
+        game::place(c, q, game::orientation(c));
+    char b[160];
+    snprintf(b, sizeof b, "proxy %u put %.2f m under the ground at (%.1f %.1f %.1f): now %.2f m over it", id, m, q.x, q.y,
+             q.z, drive::over_ground(game::position(c)));
     return b;
 }
 std::string debug_dash(uint16_t id, float len, float speed, float secs, float width, uint16_t mate, float off)
@@ -1023,7 +1064,10 @@ static void guest_tick(double now)
             game::puppet_register(px.c); // no local AI
             g_proxy_of[px.c] = id;
             px.ever = true;
-            game::teleport(px.c, s.pos, s.rot);
+            px.made_at = now;
+            px.made_agl = drive::over_ground(s.pos);
+            // BUG-0399: on this game's ground (Tribe: the ground can lie higher than the host's)
+            game::teleport(px.c, rts_stage() ? drive::out_of_ground(s.pos) : s.pos, s.rot);
         }
         if (now < px.manual_until) {
             if (px.c && (px.manual_mode & 1) && now - px.manual_last > 0.1) {
@@ -1078,6 +1122,8 @@ static void guest_tick(double now)
                     px.drv.kinematic = false; // a new walk: its first goal at once
                 drive::WalkPlace o;
                 o.own_height = rts;     // BUG-0329
+                // BUG-0399: onto this game's ground, not only at its own height (proxies 1.3-1.7 m under after joins)
+                o.ground = rts ? drive::g_out_of_ground_fix : g_walk_ground_fix; // BUG-0406 (Creature)
                 o.walk_speed = walk_speed;
                 o.snap = 2.5f;
                 o.keep_lost = true;
@@ -1111,8 +1157,15 @@ static void guest_tick(double now)
         }
         if (placed) {
             // placed on the host's path this frame: no driving
-        } else if (!px.killed)
-            drive::step(px.c, s.pos, s.rot, s.vel, px.drv, now, 0, true, 8.f, g_stall_fix, g_trail_fix, rts_stage()); // own height in Tribe (BUG-0329)
+        } else if (!px.killed) {
+            const uint32_t gr = px.drv.grounded;
+            drive::step(px.c, s.pos, s.rot, s.vel, px.drv, now, 0, true, 8.f, g_stall_fix, g_trail_fix, rts_stage(), // own height in Tribe (BUG-0329)
+                        rts_stage()); // and never under the ground (BUG-0399)
+            if (px.drv.grounded != gr && px.drv.grounded <= 3) // (diagnostics: the fix at work, the first times)
+                H->log(M, SK_INFO, "npc: proxy %u (species %08X) was %.2f m under this game's ground, made %.1f s ago at %.2f m "
+                       "over it: put onto it (npc.proxy_ground)", id, px.key.instance, -px.drv.grounded_from, now - px.made_at,
+                       px.made_agl);
+        }
         else { // a corpse lies where the host has it: the guest's dead proxy shot off into the sky
                // (~2.5 km/s away from the planet; driven, it stayed ~80 m up: play_tribe.py)
             *(net::Vec3*)((uint8_t*)px.c + game::kVelOff) = {0, 0, 0};
@@ -1704,14 +1757,14 @@ std::string list()
             }
             net::Vec3 p = game::position(c);
             // " DEAD" right after dist: tests match "dist=N( DEAD)?"
-            snprintf(b, sizeof b, "  #%u %p species=%08X hp=%.2f dist=%.1f%s pos=(%.1f %.1f %.1f) spd=%.1f vel=(%.1f %.1f %.1f) upd=%d/64 velfr=%d/64 moved64=%.1f%s%s%s body=%08X impressed=%d\n", hn.id,
+            snprintf(b, sizeof b, "  #%u %p species=%08X hp=%.2f dist=%.1f%s pos=(%.1f %.1f %.1f) spd=%.1f vel=(%.1f %.1f %.1f) upd=%d/64 velfr=%d/64 moved64=%.1f%s%s%s body=%08X impressed=%d agl=%.2f\n", hn.id,
                      c, game::species_key(c).instance, game::health(c), net::dist(p, ap), game::is_dead(c) ? " DEAD" : "",
                      p.x, p.y, p.z, drive::speed(game::velocity(c)), game::velocity(c).x, game::velocity(c).y, game::velocity(c).z,
                      __builtin_popcountll(hn.seen_bits), __builtin_popcountll(hn.vel_bits),
                      net::dist(hn.pos_hist[hn.hist_at], hn.pos_hist[(hn.hist_at + 1) & 63]), game::pack_member(c) ? " pack" : "",
                      // BUG-0390: the avatar's herd (family): a partner's hit on it is dropped (npc.party_peace)
                      game::herd_of(c) && game::herd_of(c) == game::avatar_herd() ? " family" : "",
-                     g_ai_target.count(c) ? " on_partner" : "", body_print(c), (int)game::impressed(c));
+                     g_ai_target.count(c) ? " on_partner" : "", body_print(c), (int)game::impressed(c), drive::over_ground(p));
             out += b;
         }
     } else {
@@ -1727,11 +1780,12 @@ std::string list()
             float err = px.c && have ? net::dist(game::position(px.c), st.pos) : -1.f;
             net::Vec3 at = px.c ? game::position(px.c) : net::Vec3{};
             snprintf(b, sizeof b, "  #%u species=%08X %s hp=%.2f dist=%.1f err=%.2f age=%.2f%s want=(%.1f %.1f %.1f) at=(%.1f %.1f %.1f) "
-                     "rx=%d/s spd=%.1f vel=(%.1f %.1f %.1f) own=%.1f tp=%u stall=%u trail=%u nudge=%u/%u puppet=%d ptr=%p herd=%p body=%08X"
+                     "agl=%.2f want_agl=%.2f made_agl=%.2f grounded=%u rx=%d/s spd=%.1f vel=(%.1f %.1f %.1f) own=%.1f tp=%u stall=%u trail=%u nudge=%u/%u puppet=%d ptr=%p herd=%p body=%08X"
                      " game_dead=%d impressed=%d\n", // (the game's own flags of the proxy, tests: BUG-0383, w33)
                      id, px.key.instance, px.c ? "spawned" : "pending", px.c ? game::health(px.c) : 0.f,
                      px.c ? net::dist(at, ap) : -1.f, err, px.buf.age(now),
-                     px.killed ? " DEAD" : "", st.pos.x, st.pos.y, st.pos.z, at.x, at.y, at.z, px.buf.received_in(1.0), drive::speed(st.vel), st.vel.x, st.vel.y, st.vel.z,
+                     px.killed ? " DEAD" : "", st.pos.x, st.pos.y, st.pos.z, at.x, at.y, at.z, px.c ? drive::over_ground(at) : 0.f,
+                     have ? drive::over_ground(st.pos) : 0.f, px.made_agl, px.drv.grounded, px.buf.received_in(1.0), drive::speed(st.vel), st.vel.x, st.vel.y, st.vel.z,
                      px.c ? drive::speed(game::velocity(px.c)) : 0.f, px.drv.teleports, px.drv.stalls, px.drv.trails, px.drv.nudges_kept,
                      px.drv.nudges, px.c ? (int)game::is_puppet(px.c) : -1, px.c, px.c ? game::herd_of(px.c) : nullptr, body_print(px.c),
                      px.c ? (int)game::is_dead(px.c) : -1, px.c ? (int)game::impressed(px.c) : -1);
@@ -2149,9 +2203,10 @@ void monitor_tick(double now)
         // which one and where (players' reports too): the first of each kind per line
         if (under && now - a.under_since >= 1.0 && g_audit_under.insert(id).second && g_audit_under.size() == 1)
             trace::line("npc", "proxy %u (species %08X) %.2f m under this game's ground at (%.1f %.1f %.1f) for %.1f s, the "
-                        "host's NPC %.1f m from it (%s%s)", id, px.key.instance, g - r, p.x, p.y, p.z, now - a.under_since,
-                        net::dist(p, t), px.kinematic ? "placed on the host's path" : "driven",
-                        now < px.manual_until ? ", test walk" : "");
+                        "host's NPC %.1f m from it (%s%s), made %.1f s ago at %.2f m over the ground", id, px.key.instance,
+                        g - r, p.x, p.y, p.z, now - a.under_since, net::dist(p, t),
+                        px.kinematic ? "placed on the host's path" : "driven", now < px.manual_until ? ", test walk" : "",
+                        now - px.made_at, px.made_agl);
         if (off && now - a.off_since >= 2.0 && g_audit_stuck.insert(id).second && g_audit_stuck.size() == 1)
             trace::line("npc", "proxy %u (species %08X) %.1f m off the host's NPC for %.1f s at (%.1f %.1f %.1f), host's speed "
                         "%.1f m/s (%s%s)", id, px.key.instance, net::dist(p, t), now - a.off_since, p.x, p.y, p.z,
