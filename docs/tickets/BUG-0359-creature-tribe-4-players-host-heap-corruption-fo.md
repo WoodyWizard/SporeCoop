@@ -65,16 +65,30 @@ cell.bare_still, cell.particles, cell.sap_pending, cell.sap_sweep):
   (spare_tick, the guest / host ticks) run only `in_cell()`;
 * the host's log has none of their warnings in Cell (no full graphics pool, no full particle pool /
   spare, no broadphase sweep over 1024, no pending-list bound).
+Today's other change at the Tribe arrival, tribe.place_chiefs / spread_chiefs (BUG-0340, host), did
+not act before the fault: place_chiefs waits 3 s after the arrival, spread_chiefs needs two chiefs
+stacked for 1 s, and both log when they move a chief (no such line; the fault came 0.25 s in).
 Pre-existing and rare: the Creature -> Tribe change during a share save happens in nearly every
 campaign (77 game logs since 2026-10-29 have "went from Creature to Tribe during the save", 72
 logged Creature -> Tribe changes in the lab history); this is the only fault within 20 s of one.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+None: the writer of the float is not known, so there is nothing to switch. Next step: a heap walk
+tripwire (PPMalloc chunk sizes inside each core block, or the flora grid's nodes alone) run once a
+second in a stress campaign would date the damage to an event (a share save, an editor, a rejoin).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+Not reproduced. Stress on main 3606699 + the suite entry (fix/w27-heap 0fe73b8), lanes 3 and 5,
+all fixes on (the release configuration): out/lab/20261031-204524-fix-w27-heap, 8 tests in 41 min,
+all passed: 4x campaign_ct (Cell -> Creature -> Tribe, 4 players, 2 min per stage) and 4x
+campaign_tribe (Creature -> Tribe). Every one of the 8 hosts took the same path (the game entered
+Tribe during a share save: "went from Creature to Tribe during the save" x3 in each host log); no
+exception in any of the 32 game logs. Runs with `SPORE_FIX_OFF=` the Cell switches were not made:
+with 0 faults in 8 runs and 1 in ~25 before, they could not tell the two apart.
+no-fail-run: not reproducible (1 fault in 72 logged Creature -> Tribe changes; 0 in 8 stress runs).
 
 ## History
 - 2026-10-31: opened.
+- 2026-10-31 (fix/w27-heap): analysed (Ghidra: the flora's tree grid node, header overwritten by
+  0.51f); not today's Cell switches (Cell-only callers, host left Cell 11 min before, no warnings);
+  stress out/lab/20261031-204524-fix-w27-heap 8/8 ok. Stays open, no fix.
