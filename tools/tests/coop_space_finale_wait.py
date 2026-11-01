@@ -55,15 +55,15 @@ def main():
     ck(ok, 'host: entered the core once the guest was at the gate')
     ck(g.get('entered') == '0', 'guest: did not enter (the host entered first)')
     ck(int(h.get('entries_with', '0')) >= 1, 'host: the entry after waiting counts as together (entries_with)')
-    # BUG-0378: both in the core's system: where the guest draws the host's ship (the game's own update
+    # BUG-0378: both in the core's system (10 s): where the guest draws the host's ship (the game's own update
     # in the core keeps every ship 20-30 m above its orbit point: the puppet was drawn 20.7 m too high)
     for c in (host, guest):
         c.call('coop.fleet track on')
-    time.sleep(6)
+    time.sleep(10)  # the core's system draws at 5-15 fps in the lab: 40+ rows
     hv, gv = dump(host), dump(guest)
     for c in (host, guest):
         c.call('coop.fleet track off')
-    report(ck, 'core: the host ship on the guest', *compare(gv, hv, ('p', 0), ('m', 0)))
+    report(ck, 'core: the host ship on the guest', *compare(gv, hv, ('p', 0), ('m', 0)), need=20)
     # printed only: the guest's ship orbits at the gate (up to ~210 m/s in the core) and a short
     # interpolation overshoot when it turns or stops is not this test's subject (BUG-0388)
     report(ck, 'core: the guest ship on the host', *compare(hv, gv, ('p', 1), ('m', 1)), check=False)
