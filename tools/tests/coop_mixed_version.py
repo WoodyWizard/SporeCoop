@@ -292,6 +292,13 @@ def main():
     dirs = {os.path.dirname(lane.game_log(p.inst)) for p in ps}
     rep = reports(dirs, t_start)
     ck(not rep, f'[health] no crash / hang report: {rep}')
+    # Carol's game log (the other lane's: the lab keeps this lane's only)
+    keep = os.path.join(lane.out_dir('mixed'), f'{time.strftime("%Y%m%d-%H%M%S")}-carol-{carol.inst}.log')
+    try:
+        shutil.copy(lane.game_log(carol.inst), keep)
+        print(f'  Carol\'s game log: {os.path.relpath(keep, lane.ROOT)}', flush=True)
+    except OSError as e:
+        print(f'  (Carol\'s log not kept: {e})', flush=True)
     print(f'  ({time.time() - t_start:.0f} s)', flush=True)
     r = ck.result()
     # the lanes go back to this build's files (the next test of lane B must not start the old release)
