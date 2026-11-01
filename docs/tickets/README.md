@@ -377,3 +377,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0383](BUG-0383-creature-bodies-of-killed-npcs-reported-out-of-s.md) | open | desync | Creature | 2026-11-01 |  | Creature: bodies of killed NPCs reported out of sync between host and guest (not reproduced) |
 | [BUG-0384](BUG-0384-creature-eggs-at-other-species-nests-differ-betw.md) | open | desync | Creature | 2026-11-01 |  | Creature: eggs at other species' nests differ between host and guest and some float in the air |
 | [BUG-0385](BUG-0385-creature-the-host-sends-a-stray-puppet-of-a-save.md) | open | desync | Creature | 2026-11-01 |  | Creature: the host sends a stray puppet of a saved world as an NPC for a moment; the guest cannot spawn its species (sync-check n missing) |
+| [BUG-0387](BUG-0387-tests-puppet-walk-fails-when-the-observer-runs-b.md) | open | test | Creature | 2026-11-01 |  | tests: puppet_walk fails when the observer runs below ~40 fps (0.6-1.4x in 76-82 % of the windows) |

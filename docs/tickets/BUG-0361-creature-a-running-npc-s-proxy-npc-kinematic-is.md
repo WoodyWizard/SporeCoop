@@ -10,11 +10,11 @@ role: guest
 versions: 0.7.3.2, 0.7.3.3
 fixed_in: unreleased
 branch: fix/w30-npc-walk
-commits: cc489d4, 0436a20, a738cb0, COMMITS_TAIL
+commits: cc489d4, 0436a20, a738cb0, 5cd211d, fccd6f1, 5d14f1f
 tests: npc_walk, npc_walk_tribe (tools/tests/coop_npc_walk.py)
 signature:
 docs: docs/re/creature.md#creature-npc-walk, docs/06-testing.md#testing-npc-track
-related: BUG-0360, BUG-0281, BUG-0305, BUG-0329, BUG-0363
+related: BUG-0360, BUG-0281, BUG-0305, BUG-0329, BUG-0363, BUG-0387
 switch: npc.walk, npc.walk_tribe
 ---
 
@@ -76,7 +76,17 @@ moving frames on screen; Tribe also drawn error p50 <= 0.1 m.
 * Not explained: in 1 of 9 Creature runs with the fix (out/lab/20261101-080500 npc_walk#1, before the
   knockback handling) every walked proxy had gait 0 for the whole run; not seen again in 12 later runs; the
   test prints the walked proxies' animation state now (docs/re/creature.md#creature-npc-walk).
-* Regression: REGRESSION_TAIL
+* Final code (5cd211d, the 2.5 m snap and the walk at the path's speed added): npc_walk PASS in
+  out/lab/20261101-095149-fix-w30-npc-walk (gait 99 %, matched 88 %, on screen 90 %), npc_walk_tribe PASS in
+  20261101-094111. One npc_walk run there had no measuring centre on either game (0 rows; the test now waits
+  for it and says so).
+* Regression (lanes 4, 5): 20261101-090121 creature, creature_desync, sync, puppet_walk, npc_run_hp, team ok,
+  creature_npc_dash FAIL (BUG-0363: fails in half the runs with npc.walk on and off alike, 4 of 8 each:
+  20261101-092700 / 093400 on, 092708 / 093351 off); 20261101-094111 creature, creature_desync, team, npc_run_hp
+  ok, sync FAIL once on civ/vehicles (n=1, not NPCs), puppet_walk FAIL at a 25 fps observer (BUG-0387, the
+  puppet driving is unchanged here); 20261101-095149 sync FAIL once on tribe/NPC creatures p90 1.51 m (limit
+  1.5; 0.11 and 0.65 m in the two runs before), puppet_walk FAIL at 37 fps (BUG-0387); 20261101-095826
+  puppet_walk 1 of 2 (27 fps observer FAIL, 55 fps 98-99 %). Smoke: SMOKE_TAIL
 
 ## History
 - 2026-11-01: opened.
