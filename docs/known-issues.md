@@ -1246,6 +1246,9 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 ## Creature: running NPCs probably slide without a walk gait on guests (2026-11-01, fix/w29-puppet-move)
 <a id="issue-proxy-no-gait"></a>
 
+* FIXED (2026-11-01, fix/w30-npc-walk): measured (gait 3-5 % of the moving frames on screen) and fixed by
+  `npc.walk` / `npc.walk_tribe` (docs/re/creature.md#creature-npc-walk).
+
 * What happens (inferred): `npc.kinematic` teleports the proxy of a running host NPC onto the host's
   path every frame; a creature teleported every frame has no walk gait (measured on the partner's
   puppet: gait state 0 in 97-100 % of its moving frames), so it slides.

@@ -10,7 +10,7 @@
 3. For SETTLE..END s after each death the host's and the guest's bodies are compared (the model
    position; the object's too). PASS: every body within LIMIT m of the host's (median over the frames).
 
-  coop_npc_corpse.py [--kills N] [--secs S]"""
+  coop_npc_corpse.py [--kills N] [--secs S] [--by host|guest]"""
 import argparse
 import math
 import os
@@ -51,6 +51,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--kills', type=int, default=3)
     ap.add_argument('--secs', type=float, default=15)
+    ap.add_argument('--by', default='host', choices=('host', 'guest'), help='who kills (guest: coop.npc hit, its damage request)')
     a = ap.parse_args()
     host, guest = start('creature')
     ck = Checks()
@@ -71,7 +72,10 @@ def main():
             break
         nid = cand[0][1]
         hp = hs[nid][0]
-        out = host.call(f'coop.npc hosthit {nid} {hp + 0.5:.2f}')['out'].strip()
+        if a.by == 'guest':
+            out = guest.call(f'coop.npc hit {nid} {hp + 0.5:.2f}')['out'].strip()
+        else:
+            out = host.call(f'coop.npc hosthit {nid} {hp + 0.5:.2f}')['out'].strip()
         kills.append((nid, time.time() - tt0))
         print(f'  kill #{nid} (hp {hp}, {cand[0][0]:.0f} m from the host): {out[:80]}', flush=True)
         time.sleep(a.secs / a.kills)

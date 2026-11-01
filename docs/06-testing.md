@@ -2506,11 +2506,15 @@ answered right after; a 1 s poller beside a standalone run saw no gap. Same sign
   creature; `npc_walk_tribe`, `TRACK_FIXTURE=tribe`, ~2 min): 15 s of the NPCs' own wandering, 30 s of
   up to 4 NPCs walked by the host's game to points around the guest (Tribe: around where they were)
   at 2-6 m/s, 15 s after the host hit two of them; the guest's camera keeps one walker on its screen.
-  Checks over the 0.1 s windows where the target moves: no frame step beyond 3x the top speed times
-  the longer of this and the previous frame time (the game moves a creature by the previous frame's
-  time: 0.74 m between samples 42 ms apart after an 86 ms frame), <= 5 % standing, >= 85 % (Tribe 82 %)
-  at 0.6-1.4x, walk gait >= 80 % of the moving frames on the guest's screen. Tribe allows up to 3
-  steps under 2.5 m (herd mates push each other). The per-frame rows go to
+  Checks over the 0.1 s windows where the target moves: no frame step on the guest's screen beyond 3x
+  the top speed times the longer of this and the previous frame time (the game moves a creature by the
+  previous frame's time: 0.74 m between samples 42 ms apart after an 86 ms frame; off the screen the
+  game updates far creatures in bursts: counted only), <= 5 % standing, >= 85 % at 0.6-1.4x, walk gait
+  >= 80 % of the moving frames on the guest's screen. Windows in which the host's path itself jumped
+  (a late state, the extrapolation corrected: 1.3 m in one frame on a loaded guest) are left out and
+  counted. Tribe (herd mates push each other, 36-60 fps, more late states): >= 75 % matched, up to 3
+  steps under 2.5 m, and the drawn proxy's median distance from the host's path <= 0.1 m (fix on
+  0.01-0.03 m, off 0.23-0.33 m). The per-frame rows go to
   `out/lane<N>/track/npc_walk_<fixture>_<time>.json` (with the host's rows and the phases).
   `NPC_WALK_GUEST_CMDS="cmd;cmd"` runs console commands on the guest first (`frame.limit 66`: 15 fps);
   `NPC_WALK_INTRO=1|2` plays the menu intro on the guest first (2: and makes its proxies again).
