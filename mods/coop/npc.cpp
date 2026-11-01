@@ -155,8 +155,16 @@ struct Proxy {
     net::SnapshotBuffer buf;
     drive::State drv;
     float walk_sp = 0;      // BUG-0361: the host NPC's speed while it last moved
+    bool ever = false;      // BUG-0383: an object was made for it once (a body the guest's game removed stays gone)
 };
 static std::map<uint16_t, Proxy> g_proxies;
+// BUG-0383: a guest made no proxy for an NPC that was dead when it first came into the guest's range (killed
+// while the guest was more than 110 m away, killed by another NPC before its proxy was made, a body that lay
+// there when the guest joined): the host's player saw the body, the guest saw nothing. Now the proxy of a body
+// is made too and plays the death where the host's body lies, unless the guest's game had made and removed
+// it already (eaten, decayed). `coop.fix npc.dead_proxy off`: no proxy for a body (0.7.3.3).
+static bool g_dead_proxy_fix = true;
+COOP_FIX("npc.dead_proxy", "BUG-0383", g_dead_proxy_fix, "creature: a guest shows the bodies of NPCs that were dead before it came near");
 // BUG-0300: a guest in a 4-player campaign had a proxy in its list (states arriving) whose creature
 // was no creature of its world (not in the census, sync-check "missing on the guest") for 30 s and
 // more, while the host's NPC stood 90 m from it. Cause not found. Once a second the guest now checks
@@ -985,7 +993,7 @@ static void guest_tick(double now)
             px.drv = drive::State{};
             g_proxy_lost++;
         }
-        if (!px.c && (s.flags & net::NF_DEAD))
+        if (!px.c && (s.flags & net::NF_DEAD) && (px.ever || !g_dead_proxy_fix))
             continue;
         if (!px.c) {
             void* species = game::species_by_key(px.key);
@@ -1010,6 +1018,7 @@ static void guest_tick(double now)
             }
             game::puppet_register(px.c); // no local AI
             g_proxy_of[px.c] = id;
+            px.ever = true;
             game::teleport(px.c, s.pos, s.rot);
         }
         if (now < px.manual_until) {
@@ -1961,11 +1970,22 @@ void* debug_spawn_epic(uint8_t player, float dist, uint32_t arch, uint32_t speci
     return c;
 }
 
-bool debug_host_hit(uint16_t id, float damage)
+bool debug_host_hit(uint16_t id, float damage, float push)
 {
     auto it = g_host_by_id.find(id);
     if (it == g_host_by_id.end() || !g_seen_now.count(it->second) || !game::avatar())
         return false;
+    if (push > 0) { // BUG-0383 (tests): a hit that throws it, away from the avatar and up (as a charge does)
+        net::Vec3 a = game::position(game::avatar()), b = game::position(it->second);
+        float r = std::sqrt(b.x * b.x + b.y * b.y + b.z * b.z);
+        net::Vec3 up = r > 1 ? net::Vec3{b.x / r, b.y / r, b.z / r} : net::Vec3{0, 0, 1};
+        net::Vec3 d{b.x - a.x, b.y - a.y, b.z - a.z};
+        float dl = std::sqrt(d.x * d.x + d.y * d.y + d.z * d.z);
+        d = dl > 0.1f ? net::Vec3{d.x / dl, d.y / dl, d.z / dl} : up;
+        game::hit_push(it->second, damage, 0, game::avatar(),
+                       {(d.x + up.x * 0.5f) * push, (d.y + up.y * 0.5f) * push, (d.z + up.z * 0.5f) * push});
+        return true;
+    }
     game::hit(it->second, damage, 0, game::avatar()); // through the damage filter
     return true;
 }

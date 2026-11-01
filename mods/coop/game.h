@@ -142,6 +142,8 @@ using DamageFilter = bool (*)(void* creature, float& damage, int type, void* att
 void set_damage_filter(DamageFilter fn);
 void apply_damage(void* c, float damage, int type, void* attacker_creature); // bypasses the filter
 void hit(void* c, float damage, int type, void* attacker_creature);          // goes through the filter
+// the same with a push (knockback impulse, the 4th TakeDamage argument; tests: a charge's throw, BUG-0383)
+void hit_push(void* c, float damage, int type, void* attacker_creature, const net::Vec3& push);
 void set_health(void* c, float hp);
 // A hatchling (age +0xB34 == 0) whose behaviour tree waits for a family member of its nest to greet it
 // (tree 0x9413EDEB): after a respawn or a hatch the greeting NPC makes it grow up (docs/re/creature.md 13).
