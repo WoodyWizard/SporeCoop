@@ -36,6 +36,7 @@ puppet_hp, posse_damage, unlocks.
   monitor.py replay <run dir | game log ...>   the trace invariants over recorded logs
   monitor.py report [out/lab dirs]             the same over every recorded result (calibration)
 """
+import bisect
 import collections
 import os
 import re
@@ -68,7 +69,10 @@ OBJECT_LIMITS = {'c': 4000, 'v': 800}
 NEEDS = {
     'drawn': "partner line: `drawn=(x y z)` = the puppet's position as the game draws it (the creature / "
              "vehicle object's own position read back from the game, not the mod's interpolation target); the monitor compares it with the partner's own `pos=` at the same session time (limit 3 m in "
-             "Creature / Tribe, 6 m Civ, 12 m Space)",
+             "Creature / Tribe, 6 m Civ, 12 m Space). coop.track (BUG-0360) already has the drawn position per "
+             "frame, but for Creature puppets only and timed from the track's start on the local clock: rows with "
+             "the session clock would let the monitor compare them with the partner's own rows (and check per-frame "
+             "jumps, audit M2)",
     'ground': "own and partner lines: `agl=<m>` = height of the avatar / puppet above the terrain under it "
               "(terrain height query at its x/z); violation below -0.5 m or above 3 m while not jumping, flying, "
               "swimming or in Space for 2 lines",
@@ -127,6 +131,7 @@ class Timeline:
 
     def __init__(self):
         self.own = collections.defaultdict(list)       # who -> [own records]
+        self.own_t = collections.defaultdict(list)     # who -> their session times (sorted, -inf: none)
         self.partner = collections.defaultdict(list)   # (viewer, pid) -> [partner records]
         self.ids = {}                                  # who -> session id (0 = host)
         self.records = []
@@ -134,7 +139,11 @@ class Timeline:
     def add(self, r):
         self.records.append(r)
         if r['kind'] == 'own':
-            self.own[r['who']].append(r)
+            t = r['t'] if r['t'] is not None else float('-inf')
+            ts = self.own_t[r['who']]
+            i = bisect.bisect_right(ts, t)  # in order (a replay of several files sorts by the clock)
+            ts.insert(i, t)
+            self.own[r['who']].insert(i, r)
             self.ids[r['who']] = r['id']
         elif r['kind'] == 'partner':
             self.partner[(r['who'], r['pid'])].append(r)
@@ -142,22 +151,22 @@ class Timeline:
     def who_of(self, pid):
         return next((w for w, i in self.ids.items() if i == pid), None)
 
+    def window(self, who, t, dt):
+        """the own records of `who` within session time t +- dt"""
+        ts = self.own_t.get(who)
+        if not ts or t is None:
+            return []
+        return self.own[who][bisect.bisect_left(ts, t - dt):bisect.bisect_right(ts, t + dt)]
+
     def own_at(self, who, t, dt):
         """the own record of `who` closest to session time t (within dt), None"""
-        best = None
-        for r in reversed(self.own.get(who, ())):
-            if r['t'] is None:
-                continue
-            if best is None or abs(r['t'] - t) < abs(best['t'] - t):
-                best = r
-            if r['t'] < t - dt:
-                break
-        return best if best is not None and abs(best['t'] - t) <= dt else None
+        w = self.window(who, t, dt)
+        return min(w, key=lambda r: abs(r['t'] - t)) if w else None
 
 
 def own_window(tl, who, t, dt):
     """the own records of `who` within session time t +- dt"""
-    return [r for r in tl.own.get(who, ()) if r['t'] is not None and abs(r['t'] - t) <= dt]
+    return tl.window(who, t, dt)
 
 
 def playing(r):
@@ -521,9 +530,6 @@ def replay(logs, cfg=None, only=None):
                 r = parse_line(who, line)
                 if r:
                     tl.add(r)
-    # the machines' lines interleaved by the session clock (the live thread reads them in steps)
-    for k in tl.own:
-        tl.own[k].sort(key=lambda r: r['t'] if r['t'] is not None else -1)
     return evaluate(tl, cfg, only=only)
 
 
