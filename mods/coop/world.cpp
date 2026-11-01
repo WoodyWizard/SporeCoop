@@ -19,6 +19,8 @@
 #include "sui.h"
 #include "fixes.h"
 #include "creations.h"
+#include "savestrip.h"
+#include "spacecoop.h"
 
 namespace world {
 
@@ -177,6 +179,29 @@ static std::wstring newest_slot()
 // so the save lands in the first frame the game allows it (the race of the lab, made certain)
 static unsigned g_share_retry_ms = 2000;
 static int c_worldfix(void*, int argc, const char* const* argv, SkOut* out);
+// BUG-0357: a Space save is posted as a message and written frames later (1.1 s under load in the
+// lab): the host's ship landed on a planet in between, the save was written there, and a guest that
+// loaded it faulted every frame at 0xEBDD12 (a planet-made Space save, docs/07-modes.md 7.2). The
+// context is read when the save really writes the world (savestrip's write watch); a share whose
+// save was written on a planet saves again (save_game then waits until the ship is off the planet).
+// Off: the share goes out with that save (0.7.3.1).
+static bool g_planet_save_fix = true;
+COOP_FIX("world.share_planet_save", "BUG-0357", g_planet_save_fix, "world: a Space share save that was written on a planet (the ship landed after it was posted) is made again off the planet");
+static uint64_t g_planet_write_at; // tick count of the last world write of a save in Space on a planet
+static unsigned g_planet_saves;    // tests: shares saved again because their save was written on a planet
+// tests (coop.worldfix landsave <ms>): the ship lands <ms> after the next Space share save is posted
+// (-1 off). A landing in the frame of the post makes the game drop that save (nothing written); in
+// the lab the landing came 0.3 s after the post, when the game had taken the save but not written it.
+static int g_land_after_ms = -1;
+static uint64_t g_land_at;
+static void save_write_watch()
+{
+    if (game::mode_id() != modes::kSpace)
+        return;
+    uintptr_t get = H->sym("Simulator::GetCurrentContext");
+    if (get && skg::cdecl_call<int>(get) == 0)
+        g_planet_write_at = GetTickCount64();
+}
 
 void init(const SkHost* host, SkMod* mod, std::function<void(const std::string&)> feed)
 {
@@ -184,9 +209,10 @@ void init(const SkHost* host, SkMod* mod, std::function<void(const std::string&)
     M = mod;
     g_feed = std::move(feed);
     H->command_add(M, "coop.worldfix",
-                   "coop.worldfix [<name> 0|1 | queue <id>... | failnext | retry <ms>] - world sharing fix switches (tests: 0 = the old behaviour); "
+                   "coop.worldfix [<name> 0|1 | queue <id>... | failnext | retry <ms> | landsave <ms>|-1] - world sharing fix switches (tests: 0 = the old behaviour); "
                    "queue: shares for these players in one frame, each with a save",
                    c_worldfix, nullptr, SK_CMD_MAIN_THREAD);
+    savestrip::set_write_watch(save_write_watch);
 }
 
 static std::wstring current_db_dir(bool lower = true);
@@ -915,6 +941,10 @@ void tick(net::Session& s)
             if (!o.done && !here(o.peer))
                 o.done = true;
     }
+    if (g_land_at && GetTickCount64() >= g_land_at) {
+        g_land_at = 0;
+        H->log(M, SK_INFO, "world: test: landing after the share save: %s", spacecoop::debug({"land"}).c_str());
+    }
     for (size_t i = 0; i < g_pending.size();) {
         auto& p = g_pending[i];
         uint64_t now = GetTickCount64();
@@ -956,6 +986,10 @@ void tick(net::Session& s)
                     p.at = now + 2500;
                     p.latest = now + 10000;
                     p.mode = game::mode_id();
+                    if (g_land_after_ms >= 0 && p.mode == modes::kSpace) { // tests: the ship lands before the save is written
+                        g_land_at = now + (uint64_t)g_land_after_ms;
+                        g_land_after_ms = -1;
+                    }
                 } else {
                     p.next_try = now + g_share_retry_ms;
                     if (!p.told)
@@ -978,6 +1012,16 @@ void tick(net::Session& s)
                    modes::mode_name(p.mode), modes::mode_name(game::mode_id()), p.peer);
             p.need_save = true;
             p.next_try = now + 2000;
+            p.latest = 0;
+            i++;
+            continue;
+        }
+        if (g_planet_save_fix && p.mode == modes::kSpace && g_saved_at && g_planet_write_at >= g_saved_at) {
+            H->log(M, SK_WARN, "world: the save for player %u was written on a planet (%llu ms after it was posted, the ship had landed): "
+                   "saving again off the planet", p.peer, (unsigned long long)(g_planet_write_at - g_saved_at));
+            g_planet_saves++; // (g_planet_write_at stays: a share that went out with the same save sees it too)
+            p.need_save = true;
+            p.next_try = now + 1000;
             p.latest = 0;
             i++;
             continue;
@@ -1418,6 +1462,8 @@ std::string status()
     snprintf(b, sizeof b, "share saves held while the stage settled %u, shares saved again (nothing written) %u\n",
              g_settle_waits, g_stale_saves); // tests (BUG-0276)
     s += b;
+    snprintf(b, sizeof b, "shares saved again (written on a planet) %u\n", g_planet_saves); // tests (BUG-0357)
+    s += b;
     snprintf(b, sizeof b, "stale menu player cleared %u\n", g_menu_player_cleared); // tests (BUG-0284)
     s += b;
     if (g_in.active) {
@@ -1473,6 +1519,12 @@ static int c_worldfix(void*, int argc, const char* const* argv, SkOut* out)
     if (argc > 2 && !strcmp(argv[1], "retry")) { // tests (BUG-0301): retry of a refused share save, ms
         g_share_retry_ms = (unsigned)atoi(argv[2]);
         H->out_printf(out, "share save retry %u ms\n", g_share_retry_ms);
+        return 0;
+    }
+    if (argc > 2 && !strcmp(argv[1], "landsave")) { // tests (BUG-0357): the ship lands <ms> after the next Space share save (-1 off)
+        g_land_after_ms = atoi(argv[2]);
+        g_land_at = 0;
+        H->out_printf(out, "land %d ms after the next share save\n", g_land_after_ms);
         return 0;
     }
     if (argc > 2 && !strcmp(argv[1], "autoload")) { // tests: auto_load_world of coop.ini

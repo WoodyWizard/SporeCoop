@@ -7,6 +7,9 @@
   (caught by the game) at every key press, and its ability keys could use the world creature's
   slots: the ability bar was not built again after the guest's avatar took its own creature
   (BUG-0358).
+- Space: a player who joined (or rejoined) while the host's ship was landing on a planet could get a
+  world saved on that planet: their game then logged errors at every frame and stalled for seconds
+  at a time. Such a save is now made again once the host's ship is off the planet (BUG-0357).
 - Cell: with four players a guest's game could drop to 3 frames per second at the end of the Cell
   stage and never get into the Creature stage: a crowd of over 256 cells on its screen made the game
   lose soft-body particles every frame until its particle pool was full, and the cells that shared
