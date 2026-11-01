@@ -1414,3 +1414,21 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Also open: a guest eating a host egg does not change the guest's relation to that species (the
   host's eat node does that for the avatar only).
 * Ticket: BUG-0384
+
+## A world transfer to a guest that loads resends most of its packets (2026-11-01, feat/w33-tests-session)
+<a id="known-transfer-resends"></a>
+
+* Seen: rejoin_race_long on a clean loopback link: while the host sent its world (3.4 MB) to a guest whose
+  frames stalled in a load, `resends=4673/6838` and `pending=600` on the host's partner line, 324 KB/s
+  instead of ~2.6 MB/s. The transfer completed every time.
+* Reproduce: `SPORE_LANE=N python3 tools/tests/coop_rejoin_loop.py --rounds 40 --race 1:9`, the host's
+  trace lines around each `world: sharing`.
+* Ticket: BUG-0405
+
+## Tribe: the player tribe's citizens trail on the guest in play (2026-11-01, feat/w33-tests-session)
+<a id="known-tribe-citizens-trail"></a>
+
+* Seen: play_tribe, citizens on the guest p90 1.89 / 1.98 m from the host's (limit 1.5 m) in both runs;
+  animals 1.0 m.
+* Reproduce: `SPORE_LANE=N python3 tools/tests/play_tribe.py --minutes 10 --seed 789470738`.
+* Ticket: BUG-0410
