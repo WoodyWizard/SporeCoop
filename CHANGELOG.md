@@ -3,6 +3,10 @@
 ## [Unreleased]
 
 ### Fixed
+- Tests: `editor_desync` failed about every second run in the Cell part after the host's evolution:
+  the guest's mating call was pressed while the guest was still reloading the host's world or its
+  cell was hatching (the game takes no click then). The test now waits like a player; not a bug of
+  the mod (BUG-0411).
 - SporeKit: a hook made while the game runs could let a game thread call address 0 (a handled
   fault, once followed by a frozen game): the hook's original function is now set before the hook is
   switched on. Seen in test games when the first simulated input was sent (BUG-0398).
