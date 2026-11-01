@@ -1,13 +1,13 @@
 ---
 id: BUG-0351
 title: Cell: the host reports 'a bunch of DNA' after its second cell editor (cause not known)
-status: open
+status: wontfix
 kind: bug
 stage: Cell
 reported: 2026-10-31
 source: player reports 2026-10-31 (second batch: 11 zips, host and guest)
 role: host
-versions: 0.7.3.1
+versions: 0.7.3.1, 0.7.3.3
 fixed_in:
 branch: fix/w22-reports2
 commits: 6f18d53
@@ -37,6 +37,26 @@ DNA of both players arrives (by design, never explained to players; after 19:16:
 meals were applied on the host, food 405 -> 1000 in 2.5 min); (b) something reset or did not keep
 S+0x2C (spent DNA) across the host's evolution / RebuildLevel; (c) the player meant something else.
 
+2026-11-01 (fix/w30-progress, the same players' 0.7.3.3 reports, with the diagnostics of the
+fix below): **by design plus the game's own editor, not a co-op bug.** Host mark (Creature, 13:21):
+"i keep getting alot of DNA (64) randomly ... since cell stage". Observed:
+* Cell, host log: `DNA on entering Cell` after the first cell editor: food=267 spent=**-40**
+  dna_for_food=20 budget=60 (at the request: spent=0, budget=20); after the second editor spent=-19
+  (21 spent), after the third -20. The mod never writes S+0x2C: the game's cell editor wrote a
+  negative "spent", i.e. the edited cell is worth 40 DNA less than the starting carnivore cell
+  E3B1B67B (the model 0.82 -> 0.55 in size, diet carn -> omni). Inferred: the editor's sell-back of
+  the starting cell's parts (vanilla; not checked in a solo game). The guest's game got the same
+  values with the host's world share.
+* Cell: food is shared by design (the guest's meals `eat: from 1 ... applied` on the host): food
+  375 -> 849 in 2.5 min, so DNAForFood 26 -> 55 between two editors.
+* Creature: the pack's DNA is shared by design (docs/03-gameplay.md: a kill or befriend by any player
+  gives DNA to everyone): the host's total jumped 38 -> 65 in 10 s from its own kills while the guest
+  was in its editor (4 dead NPCs nearby), and later by the guest's kills (guest log `dna: host total
+  70 -> +9`, `100 -> +30`, ...). The mark's "64" is the host's 65 at that moment. Only DNA a guest
+  earns itself and sends (MSG_DNA_ADD) shows "<name> earned N DNA" on the host; NPC kills a guest
+  makes on the host's NPCs are paid by the host's own game without a line, so they look random.
+Status wontfix (by design); a clearer notice for shared DNA would be a feature.
+
 ## Fix
 Diagnostics only (fix/w22-reports2, no behaviour change): `cellsync::dna_note` logs
 `cell: DNA <when>: food= plant= spent= dna_for_food= budget=` at each cell editor request (h_Submit,
@@ -53,3 +73,5 @@ returning 0 (the call works, no fault). Status stays open until then.
 ## History
 - 2026-10-31: opened from the second batch of the 2026-10-31 report zips (host mark).
 - 2026-10-31: the diagnostics added on fix/w22-reports2.
+- 2026-11-01: fix/w30-progress: the 0.7.3.3 reports explain it (game editor refund, shared food and DNA); wontfix (by design).
+- 2026-11-01: the shared DNA now names its cause on screen and in the logs (`dna: a -> b cause=...`, "+9 DNA from Bob's hunt", Cell "+10 food (DNA) from Bob's meals"): BUG-0389 (feature), fix/w31-creature-gate.

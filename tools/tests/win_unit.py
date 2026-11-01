@@ -6,11 +6,16 @@ SporeCoopSetup.exe with a hidden window) and install.bat (BUG-0080: the player's
 the real Win32 file API under Wine in the lane's bottle. No game is started; the tests work in
 %TEMP%\\sporecoop-win-tests of the bottle.
 
-  SPORE_LANE=3 python3 tools/tests/win_unit.py [--old | --old-suffix | --old-keep | --old-iniencode | --old-inilock | --old-paths | --old-lock]
+  SPORE_LANE=3 python3 tools/tests/win_unit.py [--old | --old-suffix | --old-keep | --old-iniencode | --old-inilock | --old-paths | --old-lock
+                                                | --old-ga | --old-gadir | --old-web] [--setup <SporeCoopSetup.exe>]
 
 --old switches the fixes off: the run must then FAIL (a test you never saw fail proves nothing).
 --old-suffix / --old-keep switch off only update.old_suffix (BUG-0114) / update.keep_failed (BUG-0150).
 For install.bat, --old runs the install.bat of 7874654 (before BUG-0080, from tools/package.sh).
+--old-ga / --old-web: the setup's folder handling before BUG-0391 / the API-only release check before
+BUG-0392; --old-gadir: before the Steam Galactic Adventures folder "Spore 24720" was known (BUG-0391).
+A Steam folder in ~/.local/share/Steam is read (never written) to check the vdf / acf parsing. --setup runs the setup tests against another SporeCoopSetup.exe (a path under the repository:
+Bottles does not see /tmp), for example one built from main.
 """
 import os
 import re
@@ -57,6 +62,23 @@ def main():
     exe = os.path.join(ROOT, 'build', 'win_tests.exe')
     out = os.path.join(lane.out_dir('win_unit'), 'win_tests.txt')
     args = [a for a in sys.argv[1:] if a == '--old' or a.startswith('--old-')]  # --old-<switch>: one fix off
+    # the lab's way to switch one fix off (SPORE_FIX_OFF=update.web_fallback) and to pass the setup-only
+    # switches (SPORE_WIN_UNIT_ARGS=--old-ga): a FAIL run with a lab run id
+    fix_off = {'update.old_suffix': '--old-suffix', 'update.keep_failed': '--old-keep', 'update.paths': '--old-paths',
+               'update.lock': '--old-lock', 'update.web_fallback': '--old-web'}
+    for name in [n.strip() for n in os.environ.get('SPORE_FIX_OFF', '').split(',') if n.strip()]:
+        if name not in fix_off:
+            print(f'RESULT: FAIL (SPORE_FIX_OFF: win_unit has no switch {name})')
+            return 1
+        print(f'  SPORE_FIX_OFF: {name} off', flush=True)
+        args.append(fix_off[name])
+    args += [a for a in os.environ.get('SPORE_WIN_UNIT_ARGS', '').split() if a.startswith('--old')]
+    # read only: the parsing of libraryfolders.vdf / appmanifest_24720.acf against the user's own Steam
+    steam = os.path.expanduser('~/.local/share/Steam')
+    if os.path.isfile(os.path.join(steam, 'steamapps', 'libraryfolders.vdf')):
+        args += ['--steam', win(steam)]
+    if '--setup' in sys.argv[1:-1]:  # another SporeCoopSetup.exe (e.g. one built from main: its tests must fail)
+        args += ['--setup', win(os.path.abspath(sys.argv[sys.argv.index('--setup') + 1]))]
     bat, excl = stage_bat('--old' in args)
     args += ['--bat', win(bat), '--exclude', win(excl)]
     w = 'Z:' + exe.replace('/', '\\')

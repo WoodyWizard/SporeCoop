@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <map>
 #include <unordered_map>
 #include <unordered_set>
@@ -185,8 +186,19 @@ struct GMember {
     float hp = 0;
     double seen = 0;
     drive::State ds;
+    net::SnapshotBuffer buf; // BUG-0365 (tribe.mirror_time): the host's states by its clock
+    net::Vec3 aim;           // coop.track: where the driving aimed this frame
+    float aim_speed = 0;     // and the host's speed of that state
 };
 static std::unordered_map<uint16_t, GMember> g_gm;
+// BUG-0365 (see mirror_drive)
+static bool g_mirror_walk_fix = true, g_mirror_time_fix = true;
+COOP_FIX("tribe.mirror_walk", "BUG-0365", g_mirror_walk_fix, "tribe: a guest's mirror of a walking member walks on the host's path instead of stop-and-go and surges");
+COOP_FIX("tribe.mirror_time", "BUG-0365", g_mirror_time_fix, "tribe: a guest's mirrors follow the host's states by its clock (an interpolation buffer), not by their arrival");
+static uint32_t g_mirror_walks, g_mirror_timed;
+constexpr double kMirrorDelay = 0.2;  // s: the interpolation delay (the host sends every 0.12 s or more)
+constexpr float kMirrorWalkMax = 8.f; // farther off: drive::step (it teleports at 8 m)
+constexpr double kPathDt = 0.1;       // s: the interpolated path's velocity is taken over this
 static std::unordered_map<void*, uint16_t> g_gid_of;
 static std::unordered_set<uint16_t> g_cycle_ids;
 static std::unordered_set<uint8_t> g_cycle_chunks; // chunks of the current cycle received
@@ -419,6 +431,9 @@ static void arrival_place_due(double now)
     g_place_due = now + 3.0;   // the split and the chiefs settle first
     g_place_until = now + 60.0; // a player still loading: the guests' games come in later
 }
+constexpr size_t kEntry = 2 + 1 + 1 + 1 + 12 + 12 + 16 + 4; // one member in a tribe state chunk
+constexpr uint32_t kStateTrailer = 0x54435354u; // BUG-0365: a chunk's trailer, magic + the host's ms
+constexpr size_t kTrailerSize = 8;
 static void host_tick(double now)
 {
     if (now - g_last_send < 0.12)
@@ -476,8 +491,7 @@ static void host_tick(double now)
     // removed those mirrors at the end of every cycle (play_tribe.py: the guest's tribe emptied)
     g_cycle++;
     size_t nt = std::min<size_t>(tribes.size(), 32);
-    constexpr size_t kEntry = 2 + 1 + 1 + 1 + 12 + 12 + 16 + 4;
-    size_t head = 2 + 1 + 1 + 1 + nt * 13 + 1;
+    size_t head = 2 + 1 + 1 + 1 + nt * 13 + 1 + kTrailerSize;
     size_t per = std::max<size_t>(1, (net::kMaxPacket - 64 - head) / kEntry);
     size_t chunks = std::max<size_t>(1, (entries.size() + per - 1) / per);
     for (size_t k = 0; k < chunks; k++) {
@@ -503,6 +517,8 @@ static void host_tick(double now)
             w.f32(q.x); w.f32(q.y); w.f32(q.z); w.f32(q.w);
             w.f32(game::health(e.c));
         }
+        w.u32(kStateTrailer); // BUG-0365: the host's clock (guests before 0.7.3.4 stop reading before it)
+        w.u32((uint32_t)(now * 1000.0));
         for (auto& p : C.sess->players())
             if (p.id != 0)
                 C.sess->send_unreliable_to(p.id, net::MSG_TRIBE_STATE, w);
@@ -702,6 +718,17 @@ static void guest_state(net::Reader& r)
     }
     double now = H->time_seconds();
     uint8_t n = r.u8();
+    // BUG-0365: the host's clock after the entries (none from a host before 0.7.3.4)
+    bool timed = false;
+    uint32_t host_ms = 0;
+    if (r.ok() && r.left() == n * kEntry + kTrailerSize) {
+        const uint8_t* t = r.cur() + n * kEntry;
+        uint32_t magic;
+        memcpy(&magic, t, 4);
+        memcpy(&host_ms, t + 4, 4);
+        timed = magic == kStateTrailer;
+    }
+    g_mirror_timed += timed;
     for (int i = 0; i < n && r.ok(); i++) {
         uint16_t id = r.u16();
         GMember m;
@@ -723,6 +750,16 @@ static void guest_state(net::Reader& r)
                 float k = (r + g_test_lift) / r;
                 g.pos = {g.pos.x * k, g.pos.y * k, g.pos.z * k};
             }
+        }
+        if (timed) {
+            net::PlayerState ps{};
+            ps.time_ms = host_ms;
+            ps.flags = net::PF_IN_WORLD;
+            ps.pos = g.pos;
+            ps.rot = g.rot;
+            ps.vel = g.vel;
+            g.buf.delay = kMirrorDelay;
+            g.buf.push(ps, now);
         }
         if (c && !game::object_alive(c)) {
             g_gid_of.erase(c);
@@ -795,6 +832,74 @@ static bool g_fix_ko = true;
 COOP_FIX("tribe.ko", "BUG-0173", g_fix_ko, "tribe: a guest's mirror of a member without health plays the death");
 static uint32_t g_ko_shown, g_ko_replaced;
 
+// BUG-0365: a mirror of a walking member was driven by drive::step towards the latest snapshot moved on
+// by its arrival age: a MoveTo 0.25 s ahead every 0.1 s and SetPosition pulls. It walked at 9 m/s (~ the
+// MoveTo given after SetDesiredSpeed resets the speed): while the host's member speeds up or slows down
+// (1-5 m/s, every start and end of a walk) it reached the point ahead within a frame or two, stopped and
+// walked again (the drawn step off the target's in 14-29 % of those frames), set off 0.5-1.6 m late and
+// caught up at 15-24 m/s. The snapshots carried no sender time, so network jitter went straight into the
+// target (the BUG-0122 class; over a mobile network 0.1 s windows matched the path in 71-80 %).
+// * tribe.mirror_time: the host sends its clock with every chunk (an 8-byte trailer older guests ignore);
+//   each mirror keeps a net::SnapshotBuffer (as the Creature puppets) and is driven towards the state
+//   kMirrorDelay s back, walking at the interpolated path's velocity. Off (or from an older host): the
+//   latest state + vel * age.
+// * tribe.mirror_walk: while the member moves and the mirror is within kMirrorWalkMax of its path, the
+//   shared drive::walk_place (driver.h, BUG-0360) walks it and places it on the path every frame (at its
+//   own ground height, BUG-0329; the speed set after the MoveTo). Off: drive::step as in 0.7.3.3.
+static void mirror_target(GMember& g, double now, net::Vec3& pos, net::Quat& rot, net::Vec3& vel, double& age)
+{
+    net::PlayerState s, back;
+    if (g_mirror_time_fix && !g.buf.empty() && g.buf.sample(now, s)) {
+        pos = s.pos;
+        rot = s.rot;
+        // the velocity of the interpolated path over the last kPathDt, not the newer state's: from a
+        // standing state to a walking one the path moves slower than the walking state says, and the
+        // game walks the mirror at this speed between two placings (it showed as stop-and-go)
+        vel = s.vel;
+        if (g.buf.sample(now - kPathDt, back)) {
+            float k = (float)(1.0 / kPathDt);
+            vel = {(s.pos.x - back.pos.x) * k, (s.pos.y - back.pos.y) * k, (s.pos.z - back.pos.z) * k};
+            // never faster than the member walks: a late state over a bad network corrects the path by
+            // 0.3-0.9 m at once, and walked at that path speed (13 m/s seen) the mirror surged ~1 m in a
+            // frame on top of the placing's catch-up
+            float ps = drive::speed(vel), ss = drive::speed(s.vel);
+            if (ss > 0.3f && ps > ss) {
+                float c = ss / ps;
+                vel = {vel.x * c, vel.y * c, vel.z * c};
+            }
+        }
+        age = 0;
+        return;
+    }
+    pos = g.pos;
+    rot = g.rot;
+    vel = g.vel;
+    age = now - g.seen;
+}
+
+static void mirror_drive(GMember& g, double now)
+{
+    net::Vec3 pos, vel;
+    net::Quat rot;
+    double age;
+    mirror_target(g, now, pos, rot, vel, age);
+    float a = (float)std::min(std::max(age, 0.0), 0.5);
+    g.aim = drive::at_own_height(net::Vec3{pos.x + vel.x * a, pos.y + vel.y * a, pos.z + vel.z * a}, game::position(g.c));
+    float sp = drive::speed(vel);
+    g.aim_speed = sp;
+    if (g_mirror_walk_fix && sp > 0.3f && net::dist(game::position(g.c), g.aim) < kMirrorWalkMax) {
+        drive::WalkPlace o;
+        o.own_height = true;
+        o.speed_after_goal = true;
+        o.max_dt = 0.4; // a slow guest keeps up with its members (driver.h)
+        drive::walk_place(g.c, g.aim, rot, vel, g.ds, now, o);
+        g_mirror_walks++;
+        return;
+    }
+    drive::walk_end(g.c, g.aim, g.ds, now);
+    drive::step(g.c, pos, rot, vel, g.ds, now, age, true, 8.f, false, false, true);
+}
+
 static void guest_tick(double now)
 {
     if (local_play())
@@ -802,6 +907,7 @@ static void guest_tick(double now)
     for (auto& [id, g] : g_gm) {
         if (!g.c || !game::object_alive(g.c) || now - g.seen > 3.0)
             continue;
+        g.ds.drawn = game::position(g.c); // coop.track (BUG-0365): where the game drew it this frame
         if (g_fix_ko && g.hp <= 0) {
             if (!game::is_dead(g.c)) {
                 game::set_health(g.c, 0);
@@ -818,7 +924,7 @@ static void guest_tick(double now)
             g_ko_replaced++;
             continue;
         }
-        drive::step(g.c, g.pos, g.rot, g.vel, g.ds, now, now - g.seen, true, 8.f, false, false, true);
+        mirror_drive(g, now);
         float hp = game::health(g.c);
         if (std::fabs(hp - g.hp) > 0.01f && g.hp > 0)
             game::set_health(g.c, g.hp);
@@ -1633,6 +1739,24 @@ void for_each_owned(void (*fn)(void* citizen, uint8_t owner, void* user), void* 
     }
 }
 
+void for_each_tracked(void (*fn)(const TrackMember& m, void* user), void* user)
+{
+    if (!active())
+        return;
+    if (is_host()) {
+        for (auto& [c, hm] : g_hm)
+            if (hm.owner < 0xFE && game::object_alive(c))
+                fn({hm.id, hm.owner, c, nullptr, drive::speed(game::velocity(c)), 0, nullptr}, user);
+        return;
+    }
+    double now = H->time_seconds();
+    for (auto& [id, g] : g_gm) {
+        if (g.owner >= 0xFE || !g.c || !game::object_alive(g.c) || now - g.seen > 3.0)
+            continue;
+        fn({id, g.owner, g.c, &g.aim, g.aim_speed, (uint16_t)g.ds.teleports, &g.ds.drawn}, user);
+    }
+}
+
 std::string status()
 {
     char b[384];
@@ -1642,9 +1766,10 @@ std::string status()
     else
         snprintf(b, sizeof b,
                  "tribe(guest): mirrors=%u spawned=%u removed=%u cmds_sent=%u rx=%u skipped=%u resets=%u "
-                 "local_tribes=%u player_tribe=%p unselected=%u incomplete=%u ai_skipped=%u/%u away_orders=%u local=%d\n",
+                 "local_tribes=%u player_tribe=%p unselected=%u incomplete=%u ai_skipped=%u/%u away_orders=%u local=%d mirror_walks=%u timed=%u\n",
                  (unsigned)g_gm.size(), g_spawned, g_removed, g_cmds_sent, g_rx, g_rx_skipped, g_resets,
-                 (unsigned)all_tribes().size(), player_tribe(), g_unselected, g_incomplete, g_bt_skipped, g_bt_calls, g_away_orders, (int)local_play());
+                 (unsigned)all_tribes().size(), player_tribe(), g_unselected, g_incomplete, g_bt_skipped, g_bt_calls, g_away_orders, (int)local_play(),
+                 g_mirror_walks, g_mirror_timed);
     std::string out = b;
     if (!g_last_cmd.empty())
         out += "tribe last order: " + g_last_cmd + "\n";

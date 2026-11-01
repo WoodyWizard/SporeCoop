@@ -882,6 +882,25 @@ static void test_updater()
     std::string h(64, 'a');
     CHECK(upd::sums_lookup(h + "  SporeCoop-0.5.1.pack\r\n" + std::string(64, 'b') + " *x.zip\n", "SporeCoop-0.5.1.pack") == h);
     CHECK(upd::sums_lookup(h + "  other.pack\n", "SporeCoop-0.5.1.pack").empty());
+    // BUG-0392: the release page when the API refuses; asset addresses only on github.com (or the test server)
+    const std::string api = "https://api.github.com/repos/WoodyWizard/SporeCoop/releases/latest",
+                      web = "https://github.com/WoodyWizard/SporeCoop/releases/latest";
+    CHECK(upd::web_latest_url(api) == web);
+    CHECK(upd::web_latest_url("http://127.0.0.1:47999/repos/o/r/releases/latest") == "http://127.0.0.1:47999/o/r/releases/latest");
+    CHECK(upd::web_latest_url("https://evil.example/repos/o/r/releases/latest").empty());
+    CHECK(upd::web_latest_url("http://127.0.0.1:9/").empty() && upd::web_latest_url("http://127.0.0.1:47999/latest").empty());
+    CHECK(upd::web_latest_url("https://api.github.com/repos/o/r/x/releases/latest").empty());
+    CHECK(upd::release_from_redirect(web, "https://github.com/WoodyWizard/SporeCoop/releases/tag/v0.7.3.3", r) &&
+          r.version == "0.7.3.3" && r.from_web &&
+          r.pack_url == "https://github.com/WoodyWizard/SporeCoop/releases/download/v0.7.3.3/SporeCoop-0.7.3.3.pack" &&
+          r.sums_url == "https://github.com/WoodyWizard/SporeCoop/releases/download/v0.7.3.3/SHA256SUMS.txt");
+    // a relative target; the assets stay on github.com whatever host the redirect names
+    CHECK(upd::release_from_redirect(web, "/WoodyWizard/SporeCoop/releases/tag/v0.8.0?x=1", r) && r.version == "0.8.0");
+    CHECK(upd::release_from_redirect(web, "https://evil.example/WoodyWizard/SporeCoop/releases/tag/v0.8.0", r) &&
+          r.pack_url.rfind("https://github.com/WoodyWizard/SporeCoop/releases/download/v0.8.0/", 0) == 0);
+    for (const char* bad : {"https://github.com/WoodyWizard/SporeCoop/releases", "/releases/tag/", "/releases/tag/v1/../x",
+                            "/releases/tag/v1%2F..", "/releases/tag/vX", "/releases/tag/v..1"})
+        CHECK(!upd::release_from_redirect(web, bad, r));
 }
 
 // A Session host for the fakepeer interoperability test (no game required).
@@ -2139,6 +2158,42 @@ static void test_diag_compare()
             c5 |= i.id == "missing:c5";
         CHECK(!c5);
     }
+    {   // BUG-0379: in a crowded pool the cells near rank 900 depend on the centre the host used
+        dg::Digest hc, gc;
+        hc.mode = gc.mode = 0x1654C00;
+        hc.world = gc.world = 7;
+        gc.self = 1;
+        hc.entries.push_back({dg::make_key('p', 1), 0, 0, 0});
+        gc.entries.push_back({dg::make_key('p', 1), 0, 0, 0});
+        for (uint32_t i = 0; i < 1000; i++)
+            hc.entries.push_back({dg::make_key('c', 100 + i), 0.05f * (float)i, 0, 0});
+        for (uint32_t i = 0; i < 906; i++) // the host's 900 picked a little off: 897-899 not sent, 900-905 sent
+            if (i < 897 || i >= 900)
+                gc.entries.push_back({dg::make_key('c', 100 + i), 0.05f * (float)i, 0, 0});
+        auto missing = [&](const dg::Limits& l) {
+            int n = 0;
+            for (auto& i : dg::compare(hc, gc, l).issues)
+                n += i.cat == "missing";
+            return n;
+        };
+        dg::Limits old;
+        old.cell_sure = 1.f;
+        CHECK(missing(dg::Limits{}) == 0 && missing(old) == 3);
+        gc.entries.erase(gc.entries.begin() + 10); // a near cell the guest lacks: missing either way
+        CHECK(missing(dg::Limits{}) == 1 && missing(old) == 4);
+    }
+    {   // BUG-0379: a guest total the host had a moment before it asked is no difference (sent late)
+        std::vector<std::pair<uint8_t, float>> recent = {{dg::kTotalDna, 90}, {dg::kTotalDna, 80}};
+        bool dna = false;
+        for (auto& i : dg::compare(h, g, {}, &recent).issues)
+            dna |= i.id == "total:1";
+        CHECK(!dna);
+        recent = {{dg::kTotalDna, 90}, {dg::kTotalCellFood, 80}}; // another total's value does not count
+        dna = false;
+        for (auto& i : dg::compare(h, g, {}, &recent).issues)
+            dna |= i.id == "total:1";
+        CHECK(dna);
+    }
     std::string t = dg::describe(c.issues);
     printf("  %s\n", t.c_str());
     CHECK(t.find("n: 1 missing on the guest (n4)") != std::string::npos && t.find("n: 1 apart (n1 30.0)") != std::string::npos);
@@ -2164,6 +2219,37 @@ static void test_diag_compare()
     rts.npc_missing = false;
     for (auto& i : dg::compare(h, g2, rts).issues)
         CHECK(i.id != "missing:n4");
+    // no place on both (world 0, Space's galaxy view, BUG-0378): each game has only its own ship and
+    // the host's ships are not mirrored there: players and ships are not compared, the rest is
+    {
+        dg::Digest h4, g4;
+        h4.mode = g4.mode = 0x1654C05;
+        h4.self = 0;
+        g4.self = 1;
+        h4.entries = {{dg::make_key('p', 0), 0, 0, 0}, {dg::make_key('s', 1), 9, 0, 0}};
+        g4.entries = {{dg::make_key('p', 1), 300, 0, 0}};
+        dg::Limits none;
+        none.no_place = true;
+        CHECK(dg::compare(h4, g4).issues.size() == 3); // the old check: p0 missing, s1 missing, p1 extra
+        CHECK(dg::compare(h4, g4, none).issues.empty());
+        h4.totals = {{dg::kTotalDna, 100}};
+        g4.totals = {{dg::kTotalDna, 50}};
+        CHECK(dg::compare(h4, g4, none).issues.size() == 1); // totals still are
+    }
+    {   // a fast ship's lag allowance (BUG-0378): 22 m apart, flying 90 m/s with ~0.25 s between the reads
+        dg::Digest h5, g5;
+        h5.mode = g5.mode = 0x1654C05;
+        h5.world = g5.world = 0x40AE3044;
+        g5.self = 1;
+        h5.entries = {{dg::make_key('p', 0), 0, 0, 700}, {dg::make_key('p', 1), 100, 0, 700}};
+        g5.entries = {{dg::make_key('p', 0), 22, 0, 700}, {dg::make_key('p', 1), 100, 0, 700}};
+        CHECK(dg::compare(h5, g5).issues.size() == 1); // the fixed 10 m
+        dg::Limits fast;
+        fast.slack[dg::make_key('p', 0)] = 90 * 0.25f;
+        CHECK(dg::compare(h5, g5, fast).issues.empty());
+        g5.entries[0].x = 60; // far beyond its lag: still a difference
+        CHECK(dg::compare(h5, g5, fast).issues.size() == 1);
+    }
     // another stage: nothing compared
     g2.mode = 0x1654C00;
     c = dg::compare(h, g2);

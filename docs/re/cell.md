@@ -1328,3 +1328,29 @@ BUG-0355. GOG 2024, Ghidra and `tools/tests/coop_cell_spare.py` (suite `cell_spa
   one failure on a guest's view). ~ Inferred: some game code divides by or walks the count (the
   NaN cell); the 62-73 m first intervals are the column pushing itself apart (up to 46 m with the
   guard off too), not this.
+
+## A negative "spent DNA" after the cell editor (2026-11-01, fix/w30-progress)
+<a id="cell-editor-negative-spent"></a>
+
+* ✔ (player logs 0.7.3.3, BUG-0351) `S+0x2C` (DNA spent) can be negative after the game's cell editor:
+  the host's first editor (budget 20, the starting carnivore cell E3B1B67B) came back with spent=-40
+  (budget 60 on the next request), then -19 and -20. The mod writes neither field
+  (#cell-editor-dna). ~ Inferred: the editor charges the difference of the cells' worth, so removing the
+  starting cell's parts pays DNA back (vanilla sell-back; not checked in a solo game).
+
+## A knocked-out cell still ate what touched it (2026-11-01, fix/w31-cell-gate)
+<a id="cell-ko-eat"></a>
+
+* ✔ observed (BUG-0364, lab 20261101-023131 cell_coop; reproduced by cell_ko_food with
+  `coop.fix cell.ko_no_eat off`, lab 20261101-093513 and 20261101-094736): the knockout
+  (`go_down` / `downed_tick`: hp held at 1, invulnerable, `stop_at` its spot every frame) does not
+  stop the game's contact events. EatFood 0xE7DF40 (event 0x12) still ran for the avatar: OnEat ->
+  AvatarEat -> AddFoodPoints, +12 per plant, shared with the partner, the plant shrank or was
+  destroyed. The respawn's "small again" body follows the food total (regrow, +0.01 per point), so
+  the cell came back bigger (cell_coop target 0.41 instead of 0.28).
+* Fix `cell.ko_no_eat`: EatFood is hooked (GOG 2024 symbol; the GOG 2016 file has none, the hook is
+  then skipped); while our cell is knocked out a call with our avatar as the eater returns at once
+  (the food stays where it is), and our mouth's chunk bites (events 0x13 / 0x14, `chunk`) are left
+  out too. `coop.pool` counts them as `ko_eats_blocked=`. A partner's cell and the NPCs eat as before.
+* ~ inferred, not seen: the knocked-out cell's own soft body still collides and pushes; only eating
+  is stopped.

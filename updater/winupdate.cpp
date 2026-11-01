@@ -17,6 +17,7 @@ int g_swap_delay_ms = 0;
 std::string g_swap_delay_file; // not a lab switch: test hook (BUG-0243)
 int g_fail_swap_at = 0;         // not a lab switch: test hook (BUG-0242)
 FIX_SWITCH(g_lock_fix); // update.lock, BUG-0243: the update lock of a game folder
+FIX_SWITCH(g_web_fallback_fix); // update.web_fallback, BUG-0392: the release page when the API refuses
 
 // BUG-0243: the update lock of a game folder, made so that a game run by the player and a setup run
 // as administrator can open each other's (a NULL DACL); waits at most wait_ms. nullptr: not taken
@@ -63,10 +64,13 @@ std::string narrow(const std::wstring& w)
     return s;
 }
 
-bool http_get(const std::string& url, std::vector<uint8_t>& out, std::string& err, const Progress& progress,
-              uint32_t max_bytes)
+// one GET. follow = false: a redirect is not followed, its target goes to *location (the release
+// page's redirect, BUG-0392); a 200 then also tells the address it ended at
+static bool request(const std::string& url, bool follow, std::vector<uint8_t>* out, std::string* location,
+                    std::string& err, const Progress& progress, uint32_t max_bytes)
 {
-    out.clear();
+    if (out)
+        out->clear();
     std::wstring wurl = widen(url);
     URL_COMPONENTS uc{};
     uc.dwStructSize = sizeof uc;
@@ -93,8 +97,16 @@ bool http_get(const std::string& url, std::vector<uint8_t>& out, std::string& er
                     : nullptr;
     bool ok = false;
     if (r) {
-        // GitHub answers the API in JSON and redirects downloads to its file host
-        const wchar_t* hdr = L"Accept: application/vnd.github+json, application/octet-stream\r\n";
+        if (!follow) {
+            DWORD v = WINHTTP_DISABLE_REDIRECTS;
+            WinHttpSetOption(r, WINHTTP_OPTION_DISABLE_FEATURE, &v, sizeof v);
+            v = WINHTTP_OPTION_REDIRECT_POLICY_NEVER;
+            WinHttpSetOption(r, WINHTTP_OPTION_REDIRECT_POLICY, &v, sizeof v);
+        }
+        // GitHub answers the API in JSON and redirects downloads to its file host; the release page
+        // is asked for as a browser does (with an Accept of JSON github.com answers it differently)
+        const wchar_t* hdr = follow ? L"Accept: application/vnd.github+json, application/octet-stream\r\n"
+                                    : L"Accept: text/html\r\n";
         if (WinHttpSendRequest(r, hdr, (DWORD)-1, WINHTTP_NO_REQUEST_DATA, 0, 0, 0) &&
             WinHttpReceiveResponse(r, nullptr)) {
             DWORD status = 0, len = sizeof status;
@@ -104,7 +116,24 @@ bool http_get(const std::string& url, std::vector<uint8_t>& out, std::string& er
             len = sizeof total;
             WinHttpQueryHeaders(r, WINHTTP_QUERY_CONTENT_LENGTH | WINHTTP_QUERY_FLAG_NUMBER,
                                 WINHTTP_HEADER_NAME_BY_INDEX, &total, &len, WINHTTP_NO_HEADER_INDEX);
-            if (status != 200) {
+            if (location) {
+                wchar_t loc[2048] = {};
+                len = sizeof loc - sizeof(wchar_t);
+                if (status >= 300 && status < 400 &&
+                    WinHttpQueryHeaders(r, WINHTTP_QUERY_LOCATION, WINHTTP_HEADER_NAME_BY_INDEX, loc, &len,
+                                        WINHTTP_NO_HEADER_INDEX)) {
+                    *location = narrow(loc);
+                    ok = true;
+                } else if (status == 200) { // the redirect was followed after all: where it ended
+                    len = sizeof loc - sizeof(wchar_t);
+                    if (WinHttpQueryOption(r, WINHTTP_OPTION_URL, loc, &len)) {
+                        *location = narrow(loc);
+                        ok = true;
+                    } else
+                        err = "no release address from " + url;
+                } else
+                    err = "the server answered " + std::to_string(status) + " for " + url;
+            } else if (status != 200) {
                 err = "the server answered " + std::to_string(status) + " for " + url;
             } else {
                 ok = true;
@@ -117,22 +146,22 @@ bool http_get(const std::string& url, std::vector<uint8_t>& out, std::string& er
                     }
                     if (avail == 0)
                         break;
-                    size_t at = out.size();
+                    size_t at = out->size();
                     if (at + avail > max_bytes) {
                         ok = false;
                         err = "the download is too big";
                         break;
                     }
-                    out.resize(at + avail);
+                    out->resize(at + avail);
                     DWORD got = 0;
-                    if (!WinHttpReadData(r, out.data() + at, avail, &got)) {
+                    if (!WinHttpReadData(r, out->data() + at, avail, &got)) {
                         ok = false;
                         err = "the download broke off";
                         break;
                     }
-                    out.resize(at + got);
+                    out->resize(at + got);
                     if (progress)
-                        progress(out.size(), total);
+                        progress(out->size(), total);
                 }
             }
         } else
@@ -146,13 +175,40 @@ bool http_get(const std::string& url, std::vector<uint8_t>& out, std::string& er
     return ok;
 }
 
+bool http_get(const std::string& url, std::vector<uint8_t>& out, std::string& err, const Progress& progress,
+              uint32_t max_bytes)
+{
+    return request(url, true, &out, nullptr, err, progress, max_bytes);
+}
+
+bool http_location(const std::string& url, std::string& location, std::string& err)
+{
+    location.clear();
+    return request(url, false, nullptr, &location, err, {}, 0);
+}
+
 bool latest_release(const std::string& api_url, Release& out, std::string& err)
 {
     std::vector<uint8_t> body;
-    if (!http_get(api_url, body, err, {}, 4u << 20))
+    std::string api_err;
+    if (http_get(api_url, body, api_err, {}, 4u << 20)) {
+        if (parse_release(std::string(body.begin(), body.end()), out))
+            return true;
+        api_err = "no release found";
+    }
+    err = api_err;
+    // BUG-0392: the API refused (403 / 429: 60 calls an hour per IP without a login, shared IPs and
+    // VPNs hit it) or failed: the release page's redirect names the newest tag without the API
+    std::string web = g_web_fallback_fix ? web_latest_url(api_url) : std::string();
+    if (web.empty())
         return false;
-    if (!parse_release(std::string(body.begin(), body.end()), out)) {
-        err = "no release found";
+    std::string loc, web_err;
+    if (!http_location(web, loc, web_err)) {
+        err = api_err + "; the release page: " + web_err;
+        return false;
+    }
+    if (!release_from_redirect(web, loc, out)) {
+        err = api_err + "; the release page names no release (" + loc + ")";
         return false;
     }
     return true;
@@ -173,7 +229,15 @@ bool download_pack(const Release& r, Pack& out, std::string& err, const Progress
         err = "the downloaded update does not match the release checksum";
         return false;
     }
-    return parse_pack(pack, out, err);
+    if (!parse_pack(pack, out, err))
+        return false;
+    // BUG-0392: a release found through the page has no asset list from the API; its pack must also
+    // be the version of its tag
+    if (r.from_web && compare_versions(out.version, r.version) != 0) {
+        err = "the release " + r.tag + " holds the pack of version " + out.version;
+        return false;
+    }
+    return true;
 }
 
 bool read_pack_file(const std::wstring& path, Pack& out, std::string& err)

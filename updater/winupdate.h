@@ -24,6 +24,11 @@ using Progress = std::function<void(uint64_t got, uint64_t total)>;
 bool http_get(const std::string& url, std::vector<uint8_t>& out, std::string& err, const Progress& progress = {},
               uint32_t max_bytes = 96u << 20);
 
+// the target of url's redirect (not followed); false when it answers neither a redirect nor a 200
+bool http_location(const std::string& url, std::string& location, std::string& err);
+
+// the newest release from the GitHub API; when the API fails (BUG-0392: 403 / 429 rate limit) from
+// the redirect of the release page web_latest_url(api_url) (out.from_web)
 bool latest_release(const std::string& api_url, Release& out, std::string& err);
 // download the release's pack, check it against SHA256SUMS.txt of the same release, parse it
 bool download_pack(const Release& r, Pack& out, std::string& err, const Progress& progress = {});
@@ -48,7 +53,8 @@ extern int g_fail_swap_at; // tests (BUG-0242): the Nth swap (1-based) fails lik
 // BUG-0243: apply_pack swaps under a named mutex per game folder; cleanup_old and the pending swaps
 // skip while it is held. false = no lock (update.lock off, win_tests --old-lock)
 extern bool g_lock_fix;
-extern int g_swap_delay_ms; // tests (BUG-0139): apply_pack waits this long between a file's two moves
+extern int g_swap_delay_ms;
+extern bool g_web_fallback_fix; // update.web_fallback, BUG-0392: false = the API only (win_tests --old-web) // tests (BUG-0139): apply_pack waits this long between a file's two moves
 
 // the version installed in a game folder (SporebinEP1/mods/sporecoop.version), "" if none
 std::string installed_version(const std::wstring& game_root);

@@ -25,6 +25,9 @@ struct Ctx {
     net::Session* sess = nullptr;
     std::function<std::vector<std::pair<std::string, net::Vec3>>()> partners; // same place
     std::function<void(const std::string&)> notice;
+    // a partner's meals added to the shared food here (the DNA cause ledger, dna_ledger.h): `from` the
+    // guest whose meal the host applied, 0xFF on a guest (the host's total: some partner's)
+    std::function<void(int from, int before, int amount)> food_cause;
     std::function<std::string()> my_name;
     std::function<int(void* cell)> puppet_owner; // host: player id of a puppet cell, -1 if none
     struct Puppet {

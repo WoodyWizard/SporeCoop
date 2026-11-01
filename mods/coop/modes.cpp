@@ -9,6 +9,7 @@
 #include <unordered_set>
 
 #include "cell_logic.h"
+#include "creature_hp.h"
 #include "game.h"
 #include "sporekit.h"
 #include "sporekit_game.hpp"
@@ -81,51 +82,33 @@ static void* creature_spawn(const net::PlayerState& s, void* av)
 // `coop.fix creature.puppet_walk off`: the driving only (0.7.3.2).
 static bool g_puppet_walk_fix = true;
 COOP_FIX("creature.puppet_walk", "BUG-0360", g_puppet_walk_fix, "creature: the walking partner's creature walks on its path instead of moving in steps and teleporting");
-constexpr float kGoalAhead = 12.f;      // m: the MoveTo point ahead on the partner's path
-constexpr float kGoalTurnDot = 0.995f;  // a new MoveTo when its direction turns more than ~6 degrees,
-constexpr double kGoalMinGap = 0.3;     // not more often than this (s: given every 0.1 s it restarts the walk)
-constexpr double kGoalMaxGap = 1.5;     // and at least this often (s)
-constexpr float kCatchUp = 3.f;         // m/s faster than the partner while it is off the path
+// BUG-0366 / BUG-0367: the puppet was placed at the partner's own position, taken from the partner's
+// game, every frame (0.7.3.3, creature.puppet_walk). Walking downhill a creature placed exactly on the
+// ground is a few cm over it after the game's next step (its walk goes along, not down): the game
+// takes it as falling (+0x137 = 0) and plays the fall animation 0x0692E6A9 for 1-5 frames, again and
+// again ("constantly jumping"; 4-7 times in 40 s on a slope, the partner's own creature never). A
+// target under this game's ground (an extrapolated state, a ground that differs) was put there.
+// creature.puppet_ground: a target from kUnderGround under to kOverGround over this game's ground
+// (cPlanetModel::GetHeightAt) is put kSink into it (drive::on_own_ground, driver.h: shared with the
+// other drivings as WalkPlace::ground); the game sets a grounded creature on its ground (0-3 cm up) and
+// it stays grounded. A partner higher up (a jump, a rock) is placed where it is.
+static bool g_puppet_ground_fix = true;
+COOP_FIX("creature.puppet_ground", "BUG-0366", g_puppet_ground_fix, "creature: the partner's creature is put on this game's ground (no fall animation walking downhill, never under the ground)");
 
-static void creature_drive(void* p, const net::PlayerState& s, drive::State& ds, double now)
+static void creature_drive(void* p, const net::PlayerState& s_in, drive::State& ds, double now)
 {
     ds.drawn = game::position(p);
+    net::PlayerState s = s_in;
+    if (g_puppet_ground_fix && game::in_creature_stage())
+        s.pos = drive::on_own_ground(s.pos);
     float sp = drive::speed(s.vel);
     bool walk = g_puppet_walk_fix && game::in_creature_stage() && sp > 0.3f && net::dist(game::position(p), s.pos) < 8.f;
     if (walk) {
-        bool was = ds.kinematic;
-        ds.kinematic = true;
-        game::set_speed(p, sp);
-        net::Vec3 hd{s.vel.x / sp, s.vel.y / sp, s.vel.z / sp};
-        float dot = hd.x * ds.goal_dir.x + hd.y * ds.goal_dir.y + hd.z * ds.goal_dir.z;
-        if (!was || (now - ds.last_cmd > kGoalMinGap && dot < kGoalTurnDot) || now - ds.last_cmd > kGoalMaxGap) {
-            game::move_to(p, {s.pos.x + hd.x * kGoalAhead, s.pos.y + hd.y * kGoalAhead, s.pos.z + hd.z * kGoalAhead}, 0.3f);
-            ds.goal_dir = hd;
-            ds.last_cmd = now;
-            ds.goals++;
-        }
-        // on the path; an error left from standing (the driving keeps it within ~1 m) is closed at
-        // kCatchUp faster than the partner instead of in one frame
-        net::Vec3 cur = game::position(p);
-        float err = net::dist(cur, s.pos);
-        double dt = was && now > ds.last_step ? std::min(now - ds.last_step, 0.1) : 1.0 / 60;
-        float max_step = (sp + kCatchUp) * (float)dt;
-        net::Vec3 to = s.pos;
-        if (err > max_step) {
-            float k = max_step / err;
-            to = {cur.x + (s.pos.x - cur.x) * k, cur.y + (s.pos.y - cur.y) * k, cur.z + (s.pos.z - cur.z) * k};
-        }
-        game::place(p, to, s.rot);
-        ds.last_step = now;
-        ds.track = drive::Track{};
+        drive::walk_place(p, s.pos, s.rot, s.vel, ds, now); // (the shared driver, driver.h)
     } else {
-        if (ds.kinematic) { // it stands again: no walk to the goal ahead, the driving takes over
-            ds.kinematic = false;
-            // a MoveTo to where it stands, not StopMovement (vt 0xEC: SetDesiredSpeed(0, 1)): with the
-            // placing by SetPosition (tried first) the stop put it back up to 3 m to where its own walk was
-            game::move_to(p, s.pos, 0.3f);
-            ds.last_cmd = now;
-        }
+        // it stands again: no walk to the goal ahead (a MoveTo to where it stands, not StopMovement: with
+        // the placing by SetPosition, tried first, the stop put it back up to 3 m), the driving takes over
+        drive::walk_end(p, s.pos, ds, now);
         // a partner's creature: lunges and charges move it faster than a puppet can walk, and attack
         // animations undo the nudges (~10-20 % of them in fights): it trailed by 5-8 m after a fight
         // move (play_creature.py 2026-10-23); snap at 4 m instead of 8
@@ -135,12 +118,19 @@ static void creature_drive(void* p, const net::PlayerState& s, drive::State& ds,
         game::herd_quiet(game::herd_of(p)); // (the game may enable a herd again)
         game::herd_home(game::herd_of(p), game::position(p));
     }
-    float mh = game::max_health(p); // puppets mirror the remote health, never die locally
-    if (mh > 0)
-        game::set_health(p, mh);
+    // BUG-0373: the partner's health and max health (creature.partner_hp); off: pinned to full
+    if (!creature_hp::drive_puppet(p, s.health, s.max_health)) {
+        float mh = game::max_health(p); // puppets mirror the remote health, never die locally
+        if (mh > 0)
+            game::set_health(p, mh);
+    }
 }
 
-static void creature_despawn(void* p) { game::destroy_creature(p); }
+static void creature_despawn(void* p)
+{
+    creature_hp::forget_puppet(p);
+    game::destroy_creature(p);
+}
 
 static float creature_tag(void* p) { return game::bounding_radius(p) * 1.3f + 0.3f; }
 
@@ -268,6 +258,40 @@ static void* space_spawn(const net::PlayerState& s, void* local)
     return u;
 }
 
+// BUG-0378: the pin that makes the game's own update draw a ship at `p`. The UFO controller update
+// (0x1062CF0, every frame after our write) moves the ship to mNextPosition + mOffsetFromPosition
+// (+0x740); in a star system at its destination it snaps there (SnapToDestination 0xC37FA0:
+// position = mDestination + offset, mZoomAltitude = |mDestination|); in the galactic core (0x105E270)
+// it keeps the offset at (0, 0, 30 * min(1, r / 400)) m and pulls the next position to its own orbit
+// radius and turns it (up to the whole difference in one frame); on a planet (0x1060E00) a ship at its
+// destination whose mZoomAltitude (+0x768) differs from |mDestination| leaves it and flies. So: the
+// ship is marked pinned for this frame (squadron's hook of the controller update leaves a pinned ship
+// where we put it, no velocity), and mNextPosition = mDestination = p minus the ship's own offset with
+// the zoom altitude their length, as SnapToDestination leaves it (what the controller would draw if
+// it ran). Off: the remote position itself, the controller runs (the partner drawn 20.7-30 m above or
+// off its orbit point in the core, BUG-0378).
+bool puppet_pin_fix = true;
+COOP_FIX("space.puppet_pin", "BUG-0378", puppet_pin_fix,
+         "space: a partner's ship stays where the mod puts it (its controller update skipped, pinned minus its offset): drawn where it is (core: 20-30 m off)");
+// the ships pinned since the last Present (squadron's controller hook leaves them where we put them)
+static std::unordered_set<void*> g_pinned;
+void space_pin_frame() { g_pinned.clear(); }
+bool space_pinned(void* u) { return !g_pinned.empty() && g_pinned.count(u); }
+
+void space_pin(void* u, const float pp[3], bool fix)
+{
+    skg::Vector3 p{pp[0], pp[1], pp[2]}, n = p;
+    if (fix) {
+        g_pinned.insert(u);
+        const auto& o = skg::field<skg::Vector3>(u, 0x740); // mOffsetFromPosition
+        if (std::isfinite(o.x) && std::isfinite(o.y) && std::isfinite(o.z))
+            n = {p.x - o.x, p.y - o.y, p.z - o.z};
+        skg::field<float>(u, 0x768) = std::sqrt(n.x * n.x + n.y * n.y + n.z * n.z); // mZoomAltitude
+    }
+    skg::field<skg::Vector3>(u, 0x718) = n; // mNextPosition
+    skg::field<skg::Vector3>(u, 0x750) = n; // mDestination
+}
+
 static void space_drive(void* u, const net::PlayerState& s, drive::State&, double)
 {
     // UFOs fly freely: place the puppet exactly where the remote ship is, every frame
@@ -277,10 +301,10 @@ static void space_drive(void* u, const net::PlayerState& s, drive::State&, doubl
     skg::vcall<void>((uint8_t*)u + kUfoLoco, 0x3C / 4, &q); // SetOrientation
     skg::field<skg::Vector3>(u, kUfoLoco + 0x1C8) = {s.vel.x, s.vel.y, s.vel.z};
     // the UFO update steers towards mNextPosition/mDestination: pin them to the remote state
-    skg::field<skg::Vector3>(u, 0x718) = p;    // mNextPosition
+    const float pa[3] = {p.x, p.y, p.z};
+    space_pin(u, pa, puppet_pin_fix);          // mNextPosition, mDestination (BUG-0378)
     skg::field<skg::Vector3>(u, 0x724) = {s.vel.x, s.vel.y, s.vel.z}; // mNextVelocity
     skg::field<skg::Quaternion>(u, 0x730) = q; // mNextOrientation
-    skg::field<skg::Vector3>(u, 0x750) = p;    // mDestination
     skg::field<uint8_t>(u, 0x74C) = 1;         // mbAtDestination
     float mh = skg::field<float>(u, kUfoCombat + 0x2C);
     if (mh > 0)
@@ -929,7 +953,16 @@ static float cell_tag(void* cp) { return *(float*)((uint8_t*)cp + 0x58) * 1.2f +
 // cities themselves already exist on every machine.
 struct Marker {
     net::Vec3 pos;
+    net::Vec3 still{};     // BUG-0380: where it last stood still (a move of 0.5 units starts a new one)
+    double moved_at = -1e9; // ... and when it left that point (H->time_seconds)
 };
+static void marker_moved(Marker* m)
+{
+    if (net::dist(m->pos, m->still) > 0.5f) {
+        m->still = m->pos;
+        m->moved_at = g_host_for_modes ? g_host_for_modes->time_seconds() : 0;
+    }
+}
 static Marker g_local_marker;
 static bool g_marker_pinned; // tests (coop.marker): the pointer stays where the test put it
 void test_pin_marker(bool pin, const net::Vec3& p)
@@ -1034,6 +1067,7 @@ static void rts_fill(void* m, net::PlayerState& st)
     net::Vec3 p;
     if (mk == &g_local_marker && !g_marker_pinned && mouse_on_planet(p))
         mk->pos = p;
+    marker_moved(mk);
     st.flags |= net::PF_IN_WORLD;
     st.pos = mk->pos;
 }
@@ -1045,9 +1079,20 @@ static void* rts_spawn(const net::PlayerState& s, void*)
     return m;
 }
 
-static void rts_drive(void* m, const net::PlayerState& s, drive::State&, double) { ((Marker*)m)->pos = s.pos; }
+static void rts_drive(void* m, const net::PlayerState& s, drive::State&, double)
+{
+    ((Marker*)m)->pos = s.pos;
+    marker_moved((Marker*)m);
+}
 static void rts_despawn(void* m) { delete (Marker*)m; }
 static float rts_tag(void*) { return 0.5f; }
+
+bool rts_marker_moving(const Adapter* a, void* e, double within)
+{
+    if (!a || !e || a->fill != rts_fill || !g_host_for_modes)
+        return false;
+    return g_host_for_modes->time_seconds() - ((Marker*)e)->moved_at < within;
+}
 
 static const Adapter kAdapters[] = {
     {"Tribe", kTribe, nullptr, false, rts_local, rts_fill, rts_spawn, rts_drive, rts_despawn, rts_tag},

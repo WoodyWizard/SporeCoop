@@ -6,6 +6,70 @@
 - Creature and Tribe: animals of the host now walk and run on the other players' screens with their
   walk animation, on the host's path: in the Creature stage a moving animal slid over the ground in
   its standing pose, in the Tribe stage animals moved in small steps and jumps (BUG-0361).
+### Added
+- Creature and Cell: DNA (and the cell's food) that a partner or the pack earned now says where it came
+  from in a short notice: "+9 DNA from Bob's hunt", "+7 DNA shared by Alice's pack", "+10 food (DNA)
+  from Bob's meals"; the game logs write each change with its cause (BUG-0389).
+
+### Fixed
+- Creature: a creature of a partner's earlier creature (before its editor) could be missing on the
+  guest until the next world share: the host could not send its species any more (BUG-0370).
+- Tests: npc_far / npc_pooled walked the host into the sea, where the game's deep water cinematic held
+  it in the air (sync-check "p0 10.7" in every run); they now walk on land and check where the guest
+  draws the host (BUG-0377).
+- Setup: a Spore folder without Galactic Adventures (Steam's base game: `SporeBin`, no
+  `SporebinEP1`) now says "Galactic Adventures is not installed" with what to install, instead of
+  "choose the SPORE folder"; choosing `SporeBin` or `SporebinEP1` takes the folder above it, and the
+  setup also looks in Steam's other library folders (BUG-0391).
+- Setup: on Steam, Galactic Adventures (app 24720) has its own folder `steamapps\common\Spore 24720`
+  next to base Spore's `steamapps\common\Spore`; the setup now finds it first, and when base Spore
+  (or its `SporeBin`) is chosen it says "Galactic Adventures is installed in ...\Spore 24720: using
+  that folder" and installs there, instead of saying Galactic Adventures is not installed (BUG-0391).
+- Setup and in-game update: when GitHub's API refuses (403 / 429: its hourly limit per IP address,
+  hit on VPNs and shared networks) the newest release now comes from the release page, checked
+  against `SHA256SUMS.txt` as before; the setup could not install at all. If GitHub does not answer,
+  the setup says how to install with the release zip and `install.bat` (BUG-0392).
+- Space: in the galactic core's system each player saw the partner's ship 20-30 m above where it
+  really was; partners' ships and the host's ships seen on a guest are now drawn exactly where the
+  mod puts them (BUG-0378, BUG-0190).
+- Support sync-check: it no longer reports a difference for a fast Space ship that is only a moment
+  behind (the allowed distance grows with the ship's speed), nor for players in the galaxy view,
+  where nobody's ship is shown (BUG-0378).
+- Civilization: a guest that missed several new cities of other nations (joining, or cities founded
+  at once) now gets all of them and their vehicles within seconds; it used to get one city per
+  15 s, and those nations' vehicles were missing meanwhile (BUG-0380).
+- Civilization: the support sync-check no longer reports a partner's moving pointer as a desync
+  (BUG-0380).
+- Space: when the host's world cannot go out yet because its ship is on a planet (the Space stage
+  saves only off a planet, as right after Civilization), every player is now told that the world
+  follows when the host's ship leaves the planet (BUG-0382).
+- Cell: a knocked-out cell no longer eats the food that floats into it, so it no longer comes back
+  from its respawn bigger than "small again" and the shared food no longer grows while it is out
+  (BUG-0364).
+- Support: the sync self-check no longer reports a Cell food total that reached a guest a moment
+  late, nor the cells at the edge of the 900 a guest is sent in a crowded pool; tests that remove a
+  guest's cells on purpose mark it for the lab (BUG-0379).
+- Tribe: on a guest's screen, tribe members (the host's and the guest's own) no longer stop and go,
+  or jump ahead, when they start or end a walk: they walk smoothly on the host's path, also on a
+  network with jitter (BUG-0365). Plays together with 0.7.x; the guest needs this version, and the
+  host too for the smoothing over a network with jitter.
+- Creature: each player now sees the partner's real health on the partner's creature (it always
+  looked full, hits on the partner did not show) and its real max health (BUG-0373).
+- Creature: the host's pack and family no longer attack and kill a partner (a partner's hit on a
+  pack member made it fight the partner for good); a partner's hits no longer hurt them (BUG-0374).
+- Creature: a player who plays its own creature in the host's world now gets the extra health of
+  every brain upgrade (it stayed at the first level's health, 14 against the host's 44) (BUG-0375).
+- Creature: a guest's own creature editor (after the host's evolution vote) offered every part, also
+  the ones the species has not collected yet; it now locks them as the host's editor does (BUG-0368).
+- Creature: a guest whose game lacks the Creepy & Cute pack saw the host's creature without the
+  layers painted with the pack's paints (black or in other colours); they are now shown as similar
+  base game paints in the host's colours (BUG-0369).
+- Tools: crash_triage.py named the co-op version of an earlier session (from the crash file's
+  summary) instead of the one that crashed (BUG-0372).
+- Creature: the partner's creature no longer keeps "jumping" while it walks downhill: the game took
+  it for falling for a moment again and again and played its fall animation (BUG-0366).
+- Creature: the partner's creature is no longer drawn under the ground: it is now always put on
+  your own game's ground when the partner walks or stands on the ground (BUG-0367).
 
 ## [0.7.3.3] - 2026-11-01
 

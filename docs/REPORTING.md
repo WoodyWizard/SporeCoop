@@ -192,11 +192,16 @@ as the guest's game has it (`MSG_DIAG` digest request / digest / result):
 
 The host builds its own digest when the guest's arrives and compares: positions per kind (players
 10, NPCs 8, cells 4, citizens 8, vehicles 25, ships 150 world units: the guest shows host objects
-~0.15 s late and the two digests are taken half a round trip apart), totals (0.5), objects missing
+~0.15 s late and the two digests are taken half a round trip apart; in Space a player gets its
+speed times 0.2 s plus a round trip more, as fast ships are drawn tens of metres behind, BUG-0378;
+in world 0, the galaxy view, players and ships are not compared), totals (0.5), objects missing
 on the guest (an NPC only within 90 m of the guest's creature: farther ones are never sent to it;
 not in Tribe / Civ, where NPCs are sent around the tribe), objects on the guest the host does not
 have (ghosts), the vote. A difference is looked at again 3 s later; only what is still there
-counts:
+counts. Since BUG-0379 (2026-11-01): a guest total the host itself had within 3 s before it asked is
+no difference (the host sends the Cell food total every 0.5 s), and in a pool where the host sends a
+guest only its nearest 900 cells, only the nearest 720 of them must be on the guest (the host picks
+the 900 around the guest's position as it last saw it):
 
     sync-check: OK with player 1 'Bob' (Cell 9652F8AD, 389 objects compared: c387 p2; check 0.19 ms, 6325 bytes)
     sync-check: MISMATCH with player 1 'Bob' (Creature 68AC222A, 2 checks 3 s apart, 22 objects compared): p: 1 apart (p1 100.1)

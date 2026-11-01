@@ -103,7 +103,8 @@ static void check_work(bool exit_inside, void* self)
         g_rel = r;
         g_state = upd::compare_versions(r.version, g_version) > 0 && !r.pack_url.empty() ? Available : UpToDate;
         if (!g_unloaded)
-            H->log(M, SK_INFO, "update check: latest %s, running %s", r.version.c_str(), g_version.c_str());
+            H->log(M, SK_INFO, "update check: latest %s, running %s%s", r.version.c_str(), g_version.c_str(),
+                   r.from_web ? " (from the release page: the GitHub API refused, BUG-0392)" : "");
     }
     if (exit_inside)
         end_thread(self); // the 0.7.3.0 leak (r, err never destroyed)
@@ -251,6 +252,7 @@ std::string command(const std::string& arg)
     static const char* names[] = {"idle", "checking", "up to date", "available", "downloading", "ready", "failed"};
     std::lock_guard<std::mutex> l(g_mu);
     return std::string("update: ") + names[g_state] + " running=" + g_version + " latest=" + g_rel.version +
+           (g_rel.from_web ? " via=page" : "") +
            " check=" + (g_enabled ? "on" : "off") + " url=" + g_url + (g_err.empty() ? "" : " error=" + g_err);
 }
 

@@ -62,5 +62,19 @@ void for_each_tribe_center(void (*fn)(const std::string& key, const net::Vec3& p
 void for_each_tree_pos(void (*fn)(const net::Vec3& pos, bool fruit, void* user), void* user);
 bool is_chief(void* citizen);
 void for_each_owned(void (*fn)(void* citizen, uint8_t owner, void* user), void* user);
+// tests (coop.track, BUG-0365): every member of the player tribe as this game shows it. Host: its own
+// game's members (tgt null, drawn = its position). Guest: the mirrors, with the target the driving
+// aims at (the host's state moved on by its age), the host's reported speed, the driver's teleports
+// and where the game drew it this frame (its position before the mod's driving).
+struct TrackMember {
+    uint16_t id;
+    uint8_t owner;
+    void* c;
+    const net::Vec3* tgt; // null on the host
+    float rv;        // the speed of the host's state the driving aims at (guest), its own game speed (host)
+    uint16_t teleports;
+    const net::Vec3* drawn; // null: its position now
+};
+void for_each_tracked(void (*fn)(const TrackMember& m, void* user), void* user);
 
 } // namespace tribe

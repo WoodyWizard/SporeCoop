@@ -385,6 +385,76 @@ bool parse_release(const std::string& json, Release& out)
     return !out.version.empty();
 }
 
+std::string web_latest_url(const std::string& api_url)
+{
+    // the API host's web twin; the local test server (win_tests, update_check.py) answers both
+    std::string origin;
+    if (api_url.rfind("https://api.github.com/", 0) == 0)
+        origin = "https://api.github.com";
+    else if (api_url.rfind("http://127.0.0.1:", 0) == 0) {
+        size_t i = 17; // after "http://127.0.0.1:"
+        while (i < api_url.size() && isdigit((unsigned char)api_url[i]))
+            i++;
+        if (i == 17)
+            return {};
+        origin = api_url.substr(0, i);
+    } else
+        return {};
+    // "/repos/O/R/releases/latest" -> "/O/R/releases/latest"
+    if (api_url.compare(origin.size(), 7, "/repos/") != 0)
+        return {};
+    std::string rest = api_url.substr(origin.size() + 6);
+    const std::string tail = "/releases/latest";
+    if (rest.size() <= tail.size() + 1 || rest.compare(rest.size() - tail.size(), tail.size(), tail) != 0)
+        return {};
+    std::string repo = rest.substr(1, rest.size() - tail.size() - 1); // "O/R"
+    size_t slash = repo.find('/');
+    if (slash == std::string::npos || slash == 0 || slash + 1 >= repo.size() || repo.find('/', slash + 1) != std::string::npos)
+        return {};
+    for (char c : repo)
+        if (!isalnum((unsigned char)c) && c != '-' && c != '_' && c != '.' && c != '/')
+            return {};
+    if (origin == "https://api.github.com")
+        origin = "https://github.com";
+    return origin + rest;
+}
+
+bool release_from_redirect(const std::string& web_latest, const std::string& location, Release& out)
+{
+    out = Release{};
+    const std::string latest = "/latest";
+    if (web_latest.size() <= latest.size() ||
+        web_latest.compare(web_latest.size() - latest.size(), latest.size(), latest) != 0)
+        return false;
+    std::string base = web_latest.substr(0, web_latest.size() - latest.size()); // ".../O/R/releases"
+    const std::string mark = "/releases/tag/";
+    size_t k = location.find(mark);
+    if (k == std::string::npos)
+        return false;
+    std::string tag = location.substr(k + mark.size());
+    size_t end = tag.find_first_of("?#");
+    if (end != std::string::npos)
+        tag.resize(end);
+    // a plain tag only: it becomes part of the download addresses
+    if (tag.empty() || tag.size() > 64)
+        return false;
+    for (char c : tag)
+        if (!isalnum((unsigned char)c) && c != '.' && c != '-' && c != '_')
+            return false;
+    std::string version = tag[0] == 'v' || tag[0] == 'V' ? tag.substr(1) : tag;
+    if (version.empty() || !isdigit((unsigned char)version[0]) || version.find("..") != std::string::npos)
+        return false;
+    std::string dl = base + "/download/" + tag + "/";
+    out.tag = tag;
+    out.version = version;
+    out.page_url = base + "/tag/" + tag;
+    out.pack_url = dl + "SporeCoop-" + version + ".pack";
+    out.sums_url = dl + "SHA256SUMS.txt";
+    out.setup_url = dl + "SporeCoopSetup.exe";
+    out.from_web = true;
+    return true;
+}
+
 std::string sums_lookup(const std::string& sums, const std::string& file)
 {
     size_t p = 0;

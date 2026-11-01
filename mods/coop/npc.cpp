@@ -17,6 +17,7 @@
 #include "sporekit_game.hpp"
 
 #include "creations.h"
+#include "creature_hp.h"
 #include "driver.h"
 #include "game.h"
 #include "net/validate.h"
@@ -24,6 +25,7 @@
 #include "world.h"
 #include "sporekit_game.hpp"
 #include "fixes.h"
+#include "dna_ledger.h"
 
 namespace npc {
 
@@ -1052,7 +1054,13 @@ static void guest_tick(double now)
             if (walking) { // BUG-0361: the game walks it, placed on the path
                 if (!px.kinematic)
                     px.drv.kinematic = false; // a new walk: its first goal at once
-                drive::walk_place(px.c, s.pos, vel, s.rot, px.drv, now, g_walk_variant, rts, walk_speed);
+                drive::WalkPlace o;
+                o.own_height = rts;     // BUG-0329
+                o.walk_speed = walk_speed;
+                o.snap = 2.5f;
+                o.keep_lost = true;
+                o.variant = g_walk_variant;
+                drive::walk_place(px.c, s.pos, s.rot, vel, px.drv, now, o);
                 walked = true;
             } else {
                 if (!px.kinematic)
@@ -1074,11 +1082,9 @@ static void guest_tick(double now)
         }
         if (!placed && px.kinematic) { // it stands again: the driving takes over from here
             px.kinematic = false;
-            if (px.drv.kinematic) { // walked (npc.walk): a MoveTo to where it stops, as the partner's puppet
-                px.drv.kinematic = false;
-                game::move_to(px.c, s.pos, 0.3f);
-                px.drv.last_cmd = now;
-            } else
+            if (px.drv.kinematic) // walked (npc.walk): a MoveTo to where it stops, as the partner's puppet
+                drive::walk_end(px.c, s.pos, px.drv, now);
+            else
                 *(net::Vec3*)((uint8_t*)px.c + game::kVelOff) = {0, 0, 0};
         }
         if (placed) {
@@ -1469,6 +1475,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         if (it == g_host_by_id.end() || !g_seen_now.count(it->second))
             return;
         void* npc = it->second;
+        if (creature_hp::drop_partner_hit(npc)) // BUG-0374: the host's pack / family (npc.party_peace)
+            break;
         void* attacker = C.puppet_of(from);
         float dmg = teamplay::on_player_hit(npc, from, net::sane_damage(q.damage, kMaxHit));
         // kill credit: the game pays DNA, goal progress and the kill popup only for a kill by the
@@ -1479,6 +1487,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         if (av && !game::is_dead(npc) && game::health(npc) > 0 && game::health(npc) <= dmg) {
             attacker = av;
             g_kills_credited++;
+            dna_ledger::g_credit.kill(from, H->time_seconds()); // the DNA it pays is that guest's hunt
         }
         game::apply_damage(npc, dmg, q.type, attacker);
         g_hits_applied++;
@@ -1541,6 +1550,8 @@ bool damage_filter(void* c, float& damage, int type, void* attacker)
             return true;
         }
         // a guest's puppet was hit: forward real NPC hits to that guest
+        if (creature_hp::drop_party_hit(attacker)) // BUG-0374: never from the host's pack / family
+            return false;
         for (auto& p : C.sess->players()) {
             if (p.id == 0 || C.puppet_of(p.id) != c)
                 continue;

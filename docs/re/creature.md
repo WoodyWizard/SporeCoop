@@ -1229,3 +1229,126 @@ the creature fixture's NPCs reach 4-4.5 m/s, the tribe fixture's animals 6.5-7.5
   intro in the stage (`world: cinematic 8915F9BB still playing in a stage`), but playing GGE_Intro on
   the guest by hand (also while its proxies were made again) did not reproduce it. Cause unknown; the
   test prints the walked proxies' (anim, gait, +0x137, +0xF98) counts now.
+* ✔ (2026-11-01, fix/w30-tribe-walk) The walk branch of creature_drive is `drive::walk_place` /
+  `drive::walk_end` in driver.h now, shared with the Tribe mirrors
+  ([tribe.md#tribe-mirror-walk](tribe.md#tribe-mirror-walk), BUG-0365); the Creature puppet's driving is
+  unchanged (the same constants, puppet_walk passes). After the merge with BUG-0366 the ground
+  handling (`creature.puppet_ground`) is `drive::on_own_ground` in driver.h and `WalkPlace::ground` for
+  other drivings; creature_drive applies it to the target before it chooses walk or stand, as before.
+
+## Max hit points, the brain level and the players' health (2026-11-01, fix/w30-creature-hp)
+<a id="creature-max-hit-points"></a>
+
+GOG 2024 (dc04aee5), Ghidra 2026-11-01 and runtime on lane 9 (BUG-0373, BUG-0374, BUG-0375).
+
+* ✔ `GetMaxHitPoints` = combatant vt 0x58 of the creature combatant vtable 0x1469E30 =
+  **0xC05D50** (`SporeCoop::cCreatureAnimal_GetMaxHitPoints`, thiscall on creature+0x5A8, float in
+  st0): `BaseMaxHitPoints` x (avatar bit `+0xB58 & 0x200` ? [0x1582E80] = 1.0 : 1) x (age `+0xB34`
+  == 1 ? (`+0xB58 & 1` ? [0x1582F50] = 1.25 : 1) : [0x150C888] = 0.5, the hatchling's half).
+  Adventures: rounded up times a scenario factor.
+* ✔ `BaseMaxHitPoints` = creature vt 0x7C (vtable 0x146A080) = **0xC04170**
+  (`SporeCoop::cCreatureAnimal_BaseMaxHitPoints`): for a creature of **the world's player species**
+  (`+0xB20` == `cSpeciesManager_PlayerSpecies` 0x4DF490, the profile of the key at mgr +0xA4):
+  `CreatureLevelHealth(mpAvatar vt 0xD8())` + species health `+0x56C`. vt 0xD8 (0xC02A60) is the
+  brain level `[0x169E370]` for the avatar or a pack member, 0 for others. `CreatureLevelHealth`
+  0x4D1310 reads floats 0x150C890 + 4 x level (tuning, written by 0x4D24B0): **10 15 25 40 100 100
+  100** for levels 0..6 at runtime. Any other species: herd `+0x1674` -> `+0x154` if > 0, else tuning
+  `+0xE84` -> `+0x340`, else (both ~0) `LevelHealth(0)` + species health, i.e. never the brain level.
+* ✔ The report's numbers follow: the host's creature (species health 0, later 4) had 10 (level 0),
+  15 (level 1), 19 (4 after an editor), 29 (level 2), 44 (level 3). The guest played its own creature
+  (another species in its own game: its `+0xB20` is its creation, the player species stays the
+  host's world species) and kept 10 + 4 = 14 at every level. Lane 9: the guest's Kirgle (species
+  health 6) has 16 at level 0 and still 16 from the game at level 1 (21 with the fix); the host 10 -> 15.
+* ✔ A puppet's max is computed the same way on the observer's machine (its species is the partner's
+  creation, "other species": level 0 + species health), and mods/coop/modes.cpp pinned its health to
+  that max every frame: the partner looked full and never grew. creature_hp.cpp now keeps the
+  partner's reported health and answers the partner's max from GetMaxHitPoints for puppets
+  (`creature.partner_hp`), and gives the own avatar of another species the player species' rule
+  (`creature.own_brain_hp`). The brain-up caption heals to the new max on both.
+* ✔ A won brain level is the same on both machines (the DNA total cPlayer +0x10F0 is synced, each
+  game's NestTick raises `[0x169E370]` and plays CRG_BrainUpgradeN; the caption waits for Enter).
+* ✔ Retaliation of the host's pack: a guest's hit on a host pack member (`+0xB58 & 0x100`) is applied
+  with the guest's puppet as attacker; the victim's AI gets stimulus 0x400 with the puppet as sender
+  and attacks the puppet for good (lane 9: a hit of 0.5, then a hit on the guest every ~1.5 s for
+  minutes, `damage_in` 9 -> 64), every hit forwarded as MSG_DAMAGE. Not triggered: the pack does
+  not attack a puppet on its own (30 s next to it), nor when the host's avatar "attacks" the puppet
+  (`ExecuteAction(0xD335362C, {avatar, puppet})`, 3 times): no stimulus, no damage.
+  `npc.party_peace`: the host drops a partner's hit on its pack or family and never forwards their
+  hits on a puppet.
+* Test helpers: `coop.hp` (own hp/max, level, species vs player species, the game's base without the
+  fix; each puppet's game hp/max and the reported values), `coop.hp pack` (pack members, stimuli
+  naming a partner's puppet), `coop.hp attack <player>` (host: the avatar's attack message on a
+  puppet).
+## The puppet on this game's ground: falls walking downhill, under the ground (2026-11-01, fix/w30-puppet-jump)
+<a id="creature-puppet-ground"></a>
+
+BUG-0366, BUG-0367, BUG-0376. GOG 2024, lanes 6-7, `coop.track` rows with the heights over the
+observer's ground (`hd` drawn, `ht` target: |pos| - `cPlanetModel::GetHeightAt`).
+* ✔ `+0x137` (`coop.track` column `moving`) is 1 while the creature is grounded on the terrain, 0
+  while it falls or stands on an object (a rock: 100 % of the frames on the rocky hill near the
+  fixture's spawn, own avatar and puppet alike). While it is 0 the game plays the fall animation
+  **0x0692E6A9** (the walker's own avatar after `coop.abilities lift 1.5`: 35 % of its frames).
+* ✔ A grounded creature (+0x137 = 1) placed over the terrain is put back on it by the game in the
+  same frame (a puppet placed 1.5 m up: drawn 0.00 m); placed under the terrain it is **not** lifted:
+  the 0.7.3.3 puppet driven 1 m under the ground (`coop.track lift -1`) was drawn at -0.64 to -1.00 m
+  in 1279 frames, walking and standing.
+* ✔ Placed exactly on the ground every frame (0.7.3.3 `game::place` onto the partner's path), a puppet
+  walking DOWNHILL is 2-3 cm over the ground after the game's next step (the walk goes along, not
+  down): +0x137 = 0 for 1-5 frames and the fall animation, again and again (4-7 times in 40 s on a
+  slope, radial speed of the path -0.3 to -1.9 m/s; the walker's own creature 0). On flat ground 0-2.
+  The 0.7.3.2 driving (no placing) 0-1.
+* ✔ Put 5 cm INTO the ground instead (`creature.puppet_ground`, kSink), the game sets the puppet on
+  the terrain (drawn -0.03 to 0.00 m) and it stays grounded: 0 falls in 4 runs on the slope. 15 cm:
+  drawn up to 0.13 m under at times.
+* ✔ The ground is the same on host and guest in the Creature stage: 283 points around both players
+  after a live Cell -> Creature (the players' way in) and on the creature fixture: 0.00 m difference
+  (unlike Tribe villages, [tribe-ground-height](tribe.md#tribe-ground-height)).
+* ✔ The 0.7.3.3 walk with the guest at 30 fps (15 states a second) over a home connection (netem
+  `player`: 45 ms, spikes +250 ms, 30 % loss bursts): puppet on its path (93-98 % matched windows, at
+  most one 0.8 m step), no vertical bounce. The 0.7.3.2 driving under the same: 4 m snaps 5 times in
+  40 s, 20 % standing windows.
+* ✔ `GetHeightAt` is the terrain only: a creature on the rocky hill at (-205, -447, -118) of the
+  fixture reads 1-16 m over it.
+* ✔ The fixture's creatures cannot jump: Space and every ability (`coop.abilities play <i>`, types
+  0xE 0x1D 0x28 0x10 0x25 0x1E 0x31-0x33, 0x11 0xD) leave the height at 0. A jump is simulated by
+  `coop.abilities lift 1.5` (the fall half of a jump, ~0.5 s).
+* ✔ BUG-0376: when the partner leaves the ground (lifted 1.5 m, 24 hops), the 0.7.3.3 puppet stays on
+  the ground in 21-22 of them (grounded, the game puts it down) and falls with the partner in 2-3;
+  the 0.7.3.2 driving teleports it up in 5.
+* ? Why the players' puppet went under the ground: inferred, an extrapolated state (0.25 s at most)
+  of a partner walking or running downhill when its states stall (rtt up to 1.1 s in their log), or
+  any target under the terrain: the game never lifted it.
+* ~ NPC proxies placed every frame (`npc.kinematic`, `drive::step` snaps) probably fall downhill the
+  same way (not measured).
+
+## Deep water: the caption cinematic holds the avatar, a guest holds the puppet on the water (2026-11-01, fix/w31-creature-gate)
+<a id="creature-deep-water"></a>
+
+Observed on lane 6 (GOG 2024, creature fixture Scalinus, BUG-0377):
+* ✔ The fixture planet's water surface is at radius 499.2 m (the start ground ~505 m; 450 m away in
+  some directions the sea floor is 484-497 m). `coop.abilities ground x y z` gives the terrain radius
+  (cPlanetModel::GetHeightAt) in any direction, also far from the camera; it is the floor under water.
+* ✔ An avatar over deep water starts the caption cinematic 5E205931 ("Dangerous creatures lurk in the
+  deep. Don't stray too far from shore!"; `coop.status`: `cinematic 5E205931 playing`, trace
+  `input_lock=1`). While it plays the game does not move the avatar: its velocity stays frozen and a
+  teleport leaves it where it was put, also in the air.
+* ✔ A puppet (any creature of ours) above the water there is put on the water surface by the game's
+  update every frame (drawn at 499.2 m whatever the mod writes); one put under the surface stays
+  there. coop.sync / sync-check read it between frames, so they see where the game draws it.
+* ? Whether the cinematic would end on its own (with the sea monster) was not waited for: the test
+  teleported the avatar every 1.2 s.
+
+## Shared DNA and its causes (2026-11-01, fix/w31-creature-gate)
+<a id="creature-dna-causes"></a>
+
+* ✔ The game's DNA gains all pass `cCreatureGameData::AddEvolutionPoints` (hooked, game.cpp h_AddEvo
+  -> coop.cpp on_dna); `game::dna_add_raw` calls the original and is not seen by the listener.
+* ✔ A guest's lethal hit on a host NPC is applied as the host avatar's (npc.cpp kill credit); the
+  game's DNA for it arrived within 3 s (coop_team.py, coop_dna_notice.py: 0 -> 8.8 after the kill).
+  The ledger counts the host's gains within 2.5 s of a credit as that guest's hunt (~ inferred
+  window: a host kill in the same 2.5 s is counted as the guest's).
+* MSG_DNA (host -> guests) has an optional tail since 0.8: u8 n, then n x {u8 cause (1 host, 2 hunt,
+  3 earned, 4 owed), u8 player, f32 amount}: the gains since the last total. Older guests read the
+  f32 only. Every machine logs `dna: <a> -> <b> cause=<cause>:<player><+amount>[,...]` (`unknown`: an
+  editor's spending, a catch-up, an older host); Cell: `dna: food <a> -> <b> cause=meal:<player>+N`
+  (255 on a guest: the host's total, some partner's meal). mods/coop/dna_ledger.h.

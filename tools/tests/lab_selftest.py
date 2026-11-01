@@ -25,6 +25,12 @@ Cases (ticket):
   interrupt_*   Ctrl+C / SIGTERM in the exclusive phase: no test left, the run's lanes killed, exit
                 non-zero; a retry does not start after it; the free lane is killed only when its lock
                 is free; SIGHUP ignored stays ignored (BUG-0250)
+  gate_*        the log gates (tools/loggates.py, docs/06-testing.md#testing-log-gates) over the lines the
+                lane's games write during a test: a sync-check MISMATCH, a hitch over 2 s in play, the
+                address space low or lost by the minute fail it; lines of an earlier test (a warm game's
+                log), a forced mismatch inside LAB-MARK sync-force lines, an allow(...) of suite.py,
+                SPORE_GATES=report, a game that started again (its whole new log is the test's) and
+                a hitch of a load or of the frame source switch are handled
   kill_args     lab.py kill: --lanes 3 is refused as ambiguous, --lane / --upto / --lanes 2,3, lane 1 only
                 with --include-lane-1, an empty selection exits 1 (BUG-0253)
 """
@@ -145,11 +151,123 @@ def lab_cases(tree, tmp):
             pass
 
 
+GATE_TEST = r'''
+import sys, time
+logs, case = sys.argv[1], sys.argv[2]
+def tod(t):
+    return time.strftime('%H:%M:%S', time.localtime(t)) + '.%03d' % int((t % 1) * 1000)
+def w(who, text, t=None, mode='a'):
+    with open(f'{logs}/sporekit.{19 if who == "host" else 20}.log', mode) as f:
+        f.write(f'{tod(t or time.time())} [s 1.0] [INF] coop: {text}\n')
+MM = "sync-check: MISMATCH with player 1 'Bob' (Tribe A3930F03, 2 checks 3 s apart, 37 objects compared): p: 1 apart (p1 22.3)"
+if case == 'clean':
+    w('host', 'sync-check: OK with player 1 (Tribe A3930F03, 37 objects compared)')
+elif case in ('mismatch', 'allowed', 'report', 'nogame'):
+    w('guest', MM.replace("player 1 'Bob'", 'the host'))
+elif case == 'forced':
+    print('LAB-MARK sync-force on %.3f' % time.time(), flush=True)
+    w('host', MM)
+    print('LAB-MARK sync-force off %.3f' % time.time(), flush=True)
+elif case == 'restart':  # the game started again: a new log, its MISMATCH is the test's
+    w('host', 'sporekit: SporeKit 0.3.5 booting (instance 19, pid 7)', mode='w')
+    w('host', MM)
+elif case == 'hitch':
+    w('host', 'perf: hitch 3500 ms (Creature)')
+elif case == 'hitch_ok':
+    w('host', 'perf: hitch 3500 ms (Creature, loading)')
+    w('host', 'perf: hitch 2008 ms (Creature)')  # SporeKit's switch to game loop frames (2.0 s)
+    w('host', 'perf: hitch 1500 ms (Creature)')
+elif case == 'monitor':
+    print('MONITOR-VIOLATION puppet guest: guest: partner 0 (Alice) in the same place is not shown', flush=True)
+elif case == 'memlow':
+    w('host', "mem: the game's address space runs low: 250 MB free, largest free block 40 MB (a crash ...)")
+elif case in ('slope', 'slope_ok'):
+    now = time.time()
+    loss = 120 if case == 'slope' else 2
+    for k in range(7):
+        w('host', f'perf: fps avg 60 min 55 (1 s windows), longest frame 30 ms, hitches 0 | address space '
+                  f'{3500 - loss * k} of 4095 MB free, largest free block 2000 MB | Cell', t=now - 360 + 60 * k)
+print('RESULT: OK')
+'''
+
+
+def gate_cases(tree, tmp):
+    """the log gates in lab.run_one: a fake lane whose game logs the fake test writes"""
+    sys.path.insert(0, os.path.join(tree, 'tools'))
+    import lab
+    import suite
+    games = os.path.join(tmp, 'gates')
+    logs = os.path.join(games, 'SporebinEP1', 'mods', 'logs')
+    os.makedirs(logs)
+    lab.lane_game = lambda lane: games
+    lab.lane_alive = lambda lane: {2 * lane - 1: False, 2 * lane: False}
+    lab.preflight = lambda: True
+    script = os.path.join(tmp, 'gate_test.py')
+    open(script, 'w').write(GATE_TEST)
+    logdir = os.path.join(tmp, 'gatelogs')
+    os.makedirs(logdir)
+    if not hasattr(lab, 'log_gates'):
+        check(False, 'gate: the lab has no log gates')
+        return
+
+    def one(case, mode='fail', **kw):
+        # an earlier test's MISMATCH in both warm games' logs: never this test's
+        for inst in (19, 20):
+            with open(os.path.join(logs, f'sporekit.{inst}.log'), 'w') as f:
+                f.write(f'{time.strftime("%H:%M:%S")}.000 [INF] sporekit: SporeKit 0.3.5 booting (instance {inst}, pid 5)\n'
+                        f'{time.strftime("%H:%M:%S")}.100 [WRN] coop: sync-check: MISMATCH with the host (Cell 1234ABCD, '
+                        f'3 objects compared): c: 3 missing on the guest (c1 c2 c3)\n')
+        t = dict(name=f'gate_{case}', cmd=f'{sys.executable} {script} {logs} {case}', warm=False, fixture=None,
+                 exclusive=False, minutes=1, reports=False, **kw)
+        lab.GATES_MODE = mode
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                return lab.run_one(t, LANE, tree, logdir, False)
+        finally:
+            lab.GATES_MODE = 'fail'
+    r = one('clean')
+    check(r['ok'] and not r['gates'], f'gate_clean: an earlier test\'s MISMATCH in a warm log does not count ({r["fails"]})')
+    r = one('mismatch')
+    check(not r['ok'] and any('gate sync-check' in x for x in r['fails']),
+          f'gate_mismatch: a sync-check MISMATCH during the test fails it ({r["fails"][:1]})')
+    r = one('allowed', allow=[suite.allow('sync-check', 'BUG-0001', 'selftest', stage='Tribe', kind='p apart')])
+    check(r['ok'] and any('allowed' in x and 'BUG-0001' in x for x in r['gates']),
+          f'gate_allowed: an allow(...) with its ticket passes and says so ({r["gates"][:1]})')
+    r = one('allowed', allow=[suite.allow('sync-check', 'BUG-0001', 'selftest', stage='Cell')])
+    check(not r['ok'], 'gate_allowed: an allow of another stage does not cover it')
+    r = one('report', mode='report')
+    check(r['ok'] and any('report only' in x for x in r['gates']), f'gate_report: SPORE_GATES=report says it, passes ({r["gates"][:1]})')
+    r = one('nogame', gates=suite.NO_GAME)
+    check(r['ok'], 'gate_nogame: NO_GAME tests are not judged by the lane\'s idle games')
+    r = one('forced')
+    check(r['ok'], f'gate_forced: a MISMATCH inside LAB-MARK sync-force on/off is left out ({r["fails"][:1]})')
+    r = one('restart')
+    check(not r['ok'] and any('gate sync-check' in x for x in r['fails']),
+          'gate_restart: a game started again during the test: its new log is judged whole')
+    r = one('hitch')
+    check(not r['ok'] and any('gate hitch' in x for x in r['fails']), f'gate_hitch: a 3.5 s hitch in play fails ({r["fails"][:1]})')
+    r = one('hitch_ok')
+    check(r['ok'], f'gate_hitch: a hitch while loading, the 2.0 s frame source switch and 1.5 s do not ({r["fails"][:1]})')
+    r = one('hitch', gates={'hitch_ms': 5000})
+    check(r['ok'], 'gate_hitch: a test\'s own threshold (gates={"hitch_ms": 5000})')
+    r = one('monitor')
+    check(not r['ok'] and any('gate monitor' in x for x in r['fails']), 'gate_monitor: a MONITOR-VIOLATION line fails the test')
+    r = one('monitor', allow=[suite.allow('monitor', 'BUG-0001', 'selftest', kind='puppet')])
+    check(r['ok'] and any('allowed gate monitor' in x for x in r['gates']), 'gate_monitor: allowed by its invariant')
+    r = one('memlow')
+    check(not r['ok'] and any('gate mem-low' in x for x in r['fails']), 'gate_memlow: "address space runs low" fails')
+    r = one('slope')
+    check(not r['ok'] and any('gate as-slope' in x for x in r['fails']),
+          f'gate_slope: 120 MB/min of address space lost over 6 minutes fails ({r["fails"][:1]})')
+    r = one('slope_ok')
+    check(r['ok'], f'gate_slope: 2 MB/min does not ({r["fails"][:1]})')
+
+
 def worktree_case(tree, tmp):
     """lab.worktree() of a branch whose name is a prefix of another checked-out branch; the tree's
     lab.py runs from a copy inside a scratch repository (it never sees the real one)"""
     repo = os.path.join(tmp, 'wt', 'SporeCoop')
-    for f in ('tools/lab.py', 'tools/tests/suite.py'):
+    for f in ('tools/lab.py', 'tools/loggates.py', 'tools/tests/suite.py'):
         os.makedirs(os.path.dirname(os.path.join(repo, f)), exist_ok=True)
         shutil.copy(os.path.join(tree, f), os.path.join(repo, f))
     git(repo, 'init', '-q', '-b', 'main')
@@ -408,6 +526,7 @@ def main():
         worktree_case(tree, tmp)
         game_log_case(tree, tmp)
         kill_case(tree, tmp)
+        gate_cases(tree, tmp)
         watch_cases(tree, tmp)
         interrupt_cases(tree, tmp)
     print('RESULT:', 'OK' if not FAILS else f'FAIL ({len(FAILS)})')

@@ -215,6 +215,26 @@ struct Limits {
     // other players (BUG-0298)
     float cell_near = 60;
     std::size_t cell_sent = 900; // the host sends a guest at most its nearest 900 cells (BUG-0295)
+    // BUG-0378: no place on both games (world 0: Space's galaxy view, a load): no player is shown in
+    // it (coop.cpp same_place needs a world) and no host ship mirrored, so players and ships are not
+    // compared (each game had only its own ship: "p0 missing, p<guest> extra")
+    bool no_place = false;
+    // BUG-0378: extra metres per key: a moving player is drawn on the other game where it was a moment
+    // before (interpolation delay + one way + snapshot interval) and the two digests are read half a
+    // round trip apart: its speed times that time (Space ships fly 30-100+ m/s, the 10 m above is
+    // walking scale)
+    std::map<uint32_t, float> slack;
+    float slack_of(uint32_t key) const
+    {
+        auto it = slack.find(key);
+        return it == slack.end() ? 0.f : it->second;
+    }
+    // BUG-0379: the host picks those 900 around the guest's position as it last saw it (its view
+    // centre, a state late), the compare around the guest's own position at its digest: in a crowded
+    // pool (900 cells within 60 m, 4 players) the cells near rank 900 differ between the two and were
+    // "missing" although the guest had all 900 it was sent. Only the nearest cell_sure part of
+    // cell_sent must be there (0.8: a ring of ~6 m at that crowding). 1 = the old compare.
+    float cell_sure = 0.8f;
     float pos(char kind) const
     {
         switch (kind) {
@@ -249,8 +269,12 @@ inline float dist(const Entry& a, const Entry& b)
     return std::sqrt(dx * dx + dy * dy + dz * dz);
 }
 
-// host: its own digest against a guest's
-inline Compared compare(const Digest& host, const Digest& guest, const Limits& lim = {})
+// host: its own digest against a guest's. `recent` (optional): totals the host had in the seconds
+// before it asked (BUG-0379): a guest shows a shared total a moment after the host counted it (the
+// host sends it, MSG_CELL_FOOD), and the host's digest is built a round trip after the guest's, so a
+// guest value the host had a moment ago is no difference.
+inline Compared compare(const Digest& host, const Digest& guest, const Limits& lim = {},
+                        const std::vector<std::pair<uint8_t, float>>* recent = nullptr)
 {
     Compared c;
     char b[160];
@@ -268,7 +292,10 @@ inline Compared compare(const Digest& host, const Digest& guest, const Limits& l
     }
     for (auto& [id, hv] : host.totals)
         for (auto& [gid, gv] : guest.totals)
-            if (gid == id && std::fabs(hv - gv) > lim.total) {
+            if (gid == id && std::fabs(hv - gv) > lim.total &&
+                !(recent && std::any_of(recent->begin(), recent->end(), [&, id = id, gv = gv](const std::pair<uint8_t, float>& r) {
+                      return r.first == id && std::fabs(r.second - gv) <= lim.total;
+                  }))) {
                 snprintf(b, sizeof b, "%s: host %.1f, guest %.1f", total_name(id), hv, gv);
                 c.issues.push_back({"total:" + std::to_string(id), "total", total_name(id), std::fabs(hv - gv), b});
             }
@@ -277,11 +304,14 @@ inline Compared compare(const Digest& host, const Digest& guest, const Limits& l
         for (uint8_t id : d->out)
             skip.insert(make_key('p', id));
     std::map<uint32_t, const Entry*> h, g;
+    auto shown = [&](uint32_t k) {
+        return !skip.count(k) && !(lim.no_place && (key_kind(k) == 'p' || key_kind(k) == 's'));
+    };
     for (auto& e : host.entries)
-        if (!skip.count(e.key))
+        if (shown(e.key))
             h[e.key] = &e;
     for (auto& e : guest.entries)
-        if (!skip.count(e.key))
+        if (shown(e.key))
             g[e.key] = &e;
     const Entry* me = nullptr; // the guest's own creature (its own game)
     if (auto it = g.find(make_key('p', guest.self)); it != g.end())
@@ -293,9 +323,11 @@ inline Compared compare(const Digest& host, const Digest& guest, const Limits& l
         for (auto& [k, he] : h)
             if (key_kind(k) == 'c')
                 cd.push_back({dist(*he, *me), k});
-        if (cd.size() > lim.cell_sent) {
-            std::nth_element(cd.begin(), cd.begin() + lim.cell_sent, cd.end());
-            for (std::size_t i = lim.cell_sent; i < cd.size(); i++)
+        std::size_t sure = cd.size() > lim.cell_sent ? (std::size_t)((float)lim.cell_sent * std::min(1.f, std::max(0.f, lim.cell_sure)))
+                                                     : cd.size();
+        if (cd.size() > sure) {
+            std::nth_element(cd.begin(), cd.begin() + sure, cd.end());
+            for (std::size_t i = sure; i < cd.size(); i++)
                 far_cells.insert(cd[i].second);
         }
     }
@@ -312,7 +344,7 @@ inline Compared compare(const Digest& host, const Digest& guest, const Limits& l
         }
         c.objects++;
         float d = dist(*he, *it->second);
-        if (d > lim.pos(kind))
+        if (d > lim.pos(kind) + lim.slack_of(k))
             c.issues.push_back({"pos:" + key_text(k), "pos", key_text(k), d, ""});
     }
     for (auto& [k, ge] : g)

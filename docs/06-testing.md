@@ -2522,3 +2522,460 @@ answered right after; a 1 s poller beside a standalone run saw no gap. Same sign
   (matched 72-77 %).
 * Pitfall: a creature far from the camera is updated in bursts (no movement for 0.5 s, then 1 m at
   once); judge what the player sees (on-screen frames), report the rest.
+## Tribe members frame by frame: coop.track in Tribe and tribe_walk (2026-11-01, fix/w30-tribe-walk)
+<a id="testing-tribe-walk"></a>
+
+* `coop.track` in Tribe (BUG-0365): one row per member of the player tribe per frame, `who` = its
+  owner and the member id in the last column. Column order of `coop.track dump` (stable; new columns go
+  at the end, parsers take `len >= ` the columns they know): t who flags tp px py pz dx dy dz tx ty tz
+  gv rv anim gait gait2 moving speed_state vis sx sy (23), hd ht (24-25, BUG-0366: heights over this
+  game's ground), id (26, BUG-0365: the Tribe member id, 0 in Creature). On the host its own game's members (the target = its position, `rv` = its game
+  speed); on a guest the mirrors: the drawn position (before the mod's driving), the target the
+  driving aims at this frame and `rv` = the speed of that host state. The ring holds 60 000 rows
+  (~2 min with 6 members at 70 fps).
+* `coop_tribe_walk.py` (suite `tribe_walk`, ~2.5 min cold; `tribe_walk_mobile` nightly: SPORE_NET=mobile,
+  both games at 30 fps): the host spawns 3 members (3 each), a player walks its members ~30 s by
+  box-select (one or the group) and right-clicks on the ground 220-420 px off, sometimes a new order
+  before they arrive; the other keeps them in view with the minimap. Both directions; the guest's own
+  members are mirrors too (`guest sees its own members`). Checks per view of mirrors: no frame step over
+  3x the top speed x max(this frame, the frame before) (min 0.75 m); 0.1 s windows standing <= 5 % and
+  at 0.6-1.4x the speed of the target's path >= 85 %; in the frames whose target moves at 1-5 m/s
+  (starts and ends of walks) the drawn step off the target's step of the frame before (what a frame
+  draws was placed in the frame before) by more than half of it + 1 m/s x the frame time in <= 10 %
+  (0.7.3.3: 14-29 %, the fix 1-5 %, the host's own game 0-5 %); walk gait >= 80 % of the frames on
+  screen. Metrics tried and dropped: per-frame speed against the state's reported speed or a +-0.1 s
+  path (the host's own members start and stop within one frame, and the frame pacing makes single
+  frame speeds noisy: both flagged the host's own game in up to 24 %). The
+  host's own game is printed as the reference. `--fps N` caps both games,
+  `--dir host|guest`, `--seed`. `SPORE_FIX_OFF=tribe.mirror_walk,tribe.mirror_time` fails.
+* A loaded machine (lab load 31 on 12 cores, 2026-11-01): the observer's frames jitter 25-120 ms and
+  5-19 % are over 0.1 s; the steps then say nothing about the driving. The test leaves out the steps
+  within 0.2 s after a frame over 0.1 s and, when more than 3 % of the observer's frames are over 0.1 s,
+  prints `NOT MEASURED` and skips the window and stop-and-go checks for that view (calm runs: 0-2.2 %,
+  also the failing runs of the 0.7.3.3 driving: 0.1-1.6 %). Under 40 frames at 1-5 m/s (a few walks at
+  30 fps) the stop-and-go check is skipped the same way (the 0.7.3.3 driving's failing runs: 98-1116).
+  Steps within 0.2 s after a jump of the target itself (faster than 1.5x the top speed: over a mobile
+  network a late or lost state corrects the extrapolated path by 0.3-0.8 m in a frame) are left out
+  too: the driving smooths such a jump on purpose, and the "step against the target's step" check
+  flagged that smoothing (10 % in a passing run; the 0.7.3.3 driving's runs still fail with it).
+* Pitfalls: the lab's games ran at ~70 fps (14-15 ms frames), not 30; the minimap's camera jumps give
+  100-230 ms frames, and the next frame draws the way made up (allow the frame before's time); a click
+  on the ground near a tree or a member gives no walk (the test logs `nothing`).
+## Log gates: what the games' own logs say fails a test (2026-11-01, feat/w30-lab-gates)
+<a id="testing-log-gates"></a>
+
+Up to 0.7.3.3 the lab read only the test's own output (`faults:` lines, `RESULT:`): a passed test
+could hold `sync-check: MISMATCH` lines, hitches and address space trouble in its game logs, and
+186 passed results did. `tools/lab.py run_one` now judges the lines the lane's games wrote during
+the test (`tools/loggates.py`):
+
+* **Which lines**: at the test's start the lab takes each game log's size and first line
+  (`loggates.log_marks`, stored as `log_marks` in results.json); afterwards only what follows that
+  offset counts, so a warm game's log with an earlier test's lines is no problem. A game that
+  started again during the test (another first line) wrote a new log: all of it counts. Extra
+  guests' logs (instances 20+N / 30+N) count when written since the start.
+* **sync-check**: a `sync-check: MISMATCH` line (the mod's own digest compare found a difference
+  that lasted 3 s; docs/REPORTING.md). Tests that force one on purpose print
+  `LAB-MARK sync-force on|off <time>` around it (`twoinst.lab_mark`, used by coop_diag.py): the
+  gate leaves out MISMATCH lines from 1 s before `on` to 15 s after `off`.
+* **hitch**: `perf: hitch N ms (<activity>)` with N over 2000 while a stage is played: not when the
+  activity says loading, saving, receiving, editor, cinematic, vote or nothing controlled, not in
+  the galaxy menu, not within 20 s of a `stage:` / `world: loading` / boot / "game saved box" line,
+  and not 2000-2039 ms (SporeKit's frame source switch: Present lost for kPresentLostSec = 2 s,
+  frames come from the game loop; 54 of the 66 in-play hitches over 2 s in the recorded logs were
+  exactly this step).
+* **mem-low**: `mem: the game's address space runs low` (diag_stats.cpp: under 300 MB free or a
+  largest block under 48 MB).
+* **as-slope**: the free address space of the per-minute `perf: fps avg ...` lines, least squares
+  per stay in one stage of one process (a new segment at every `stage:` line / load / boot; the
+  first sample of a segment and samples within 90 s of its start are the load's own growth; at
+  least 4 samples over 3 minutes): a loss over 25 MB/min fails. Recorded passed runs: 99 % under
+  6 MB/min, at most 7 (campaign games); BUG-0307's leak was ~350 MB/min.
+* **monitor**: `MONITOR-VIOLATION` lines of the invariant monitor (#testing-monitor).
+* Per test in suite.py: `gates={'hitch_ms': 5000}` (a threshold of `loggates.DEFAULTS`),
+  `gates={'off': ('hitch',)}`, `gates=NO_GAME` (unit, win_unit: the lane's idle games are not
+  theirs); `allow=[allow('sync-check', 'BUG-NNNN', 'reason', stage='Tribe', kind='p apart')]`
+  (also `who=`, `match=` a regex; gate `monitor` with `kind=<invariant>`); `ALLOW_ALL` for every
+  test. An allowed finding is printed as `allowed ... [BUG-NNNN: reason]` in the lab's output and
+  in summary.md's "Log gates" section, never silent; gates_selftest.py checks that every allow names
+  an existing ticket and a reason.
+* `SPORE_GATES=report lab.py run ...`: the gates only report (`report only` lines), `off`: none.
+* `lab.py gates` (= `tools/loggates.py report`): the gates over every recorded result of the main
+  checkout and the worktrees, report only. Recorded results have no offsets: their window is the
+  test log's last write minus the test's seconds, and the game clock is matched to the lab's in
+  half-hour steps (Wine's clock was an hour ahead of the lab's on 2026-10-29: last line 23:01,
+  copy 22:01).
+
+First report (2026-11-01, 3980 results with game logs, 3438 passed): 185 passed results would
+have turned red, 182 of them on sync-check, 3 on hitches (3.4-4.0 s in Civilization,
+campaign_space), none on mem-low or as-slope. Red in most of their runs: campaign_space 45/45,
+campaign 21/24, npc_far 15/15 (Creature `p0 10.7` apart on the guest: the host's puppet ~10.7 m
+from the host), npc_pooled 9/11 (the same), cell_pause 6/6 (Cell `c missing`), space_finale_wait
+4/4 (Space `p0 20.7` apart), guest_editor_hold 3/3, cell_far_guest 8/14, campaign_tribe 20/50,
+campaign_short 18/74; rarely: chaos_tribe 4/89, tribe_coop 1/90 (Tribe `p apart`), cell_particles
+1/87. diag_cell / diag_creature were the forced mismatch (now cut out by LAB-MARK). The kinds per
+stage: Civilization `v missing` (35 results), Cell `c missing` (31), Tribe `p apart` (31),
+Civilization `p apart` (29), Creature `p apart` (27), Space `p apart` (25), Space `p missing` /
+`p extra` (12), Tribe `t missing` (10), Creature `n missing` (9), Tribe `n apart` (8), Cell
+`cell food total` (5), Space `s missing` (4). Each needs a fix or an allow entry with a ticket
+before the suites that hold it are green with the gates on.
+
+## The invariant monitor: checks while a test plays (2026-11-01, feat/w30-lab-gates)
+<a id="testing-monitor"></a>
+
+`tools/tests/monitor.py`: `twoinst.watch()` (every `twoinst.start`) starts a thread over the
+test's games, `coop_multi.start_extra` adds the extra guests (party, campaign). Every 5 s it reads
+the new lines of each game log (the mod's `trace:` lines, every 10 s per machine, with the shared
+session clock `[s T]`) and evaluates:
+
+| invariant | violation (each needs its state on several lines in a row) |
+|---|---|
+| together | two machines' own trace lines say the same stage and world (both playing: avatar, no vote, in world) for 20 s, but one's partner line says `same_place=0` |
+| puppet | a partner line with `same_place=1`, alive and in a world, `puppet=hidden: not spawned (yet)` or `state older than 5 s` on 2 lines |
+| link | clean network only (no SPORE_NET): resends / sent between two lines over 0.5 (at least 50 sent), `pending` over 400 or a state 5 s old in the same place, 3 lines in a row |
+| totals | the shared totals of the own lines (dna in Creature, the stage's `food=` / `money=` ...; `(unsynced)` values left out) of a guest outside every value the host had within 6 s, beyond 1 point or 2 %, on 3 comparisons spanning 20 s |
+| hp | a partner line's `hp=a/b` (the state received) differs from that player's own line (max hp, or hp by more than 1 or 10 %) while the player's own hp is steady for 12 s, 2 lines |
+| objects | `tiles: ... cell pool N/M` over 90 %; with `monitor={'census_period': 60}` also `coop.census` counts over `OBJECT_LIMITS` (c 4000, v 800) or over 3x the first count + 200 |
+| stage_apart | a guest plays another stage / world than the host (both playing, the host not away; not two star systems in Space) for 90 s |
+
+A violation is printed once per episode as `MONITOR-VIOLATION <invariant> <who>: <text>`;
+`Checks.result()` reads the logs once more first. The lab fails the test on these lines (log gate
+`monitor`, allowed per test by `allow('monitor', ticket, reason, kind='hp')`). `SPORE_MONITOR=off`
+or a JSON dict of `monitor.DEFAULTS` overrides (suite.py `monitor=`); `SPORE_MONITOR_SKIP=hp,link`.
+
+Calibration over the recorded passed results (`monitor.py report`, 2026-11-01): campaign_space
+totals 42 (Civilization `money`: the host 10960, both guests 10590 for 20+ s, beyond the 2 % that
+party.check_res allows), stage_apart 11 (a guest still in Civilization 90 s after the host entered
+Space), link 3; campaign link 2, totals 2; cell_rejoin_leave link 4 (pending 600 after rejoins);
+single ones in campaign_short, nest_species (puppet: state older than 5 s), chaos_tribe, ui_status,
+chaos_creature_long. Every other test: none.
+
+Hooks (inactive until the mod writes their field; `monitor.NEEDS` has the exact text). New fields
+go at the END of a trace line (after `pending=` / `editor_pending=`) so today's parsers keep
+working:
+
+* drawn (audit M1/M2): partner line `drawn=(x y z)`, the puppet's position read back from the game
+  object (not the interpolation target); compared with the partner's own `pos=` at the same session
+  time (3 m Creature / Tribe, 6 m Civ, 12 m Space). coop.track has drawn positions per frame for
+  Creature puppets, but timed from the track start on the local clock: session-clock rows would
+  also allow a per-frame jump check.
+* ground (M3): own and partner lines `agl=<m>`, height above the terrain under the avatar /
+  puppet; violation below -0.5 m or above 3 m while not jumping, flying, swimming or in Space.
+* puppet_hp (M4): partner line `puppet_hp=<hp>/<max>` read from the puppet creature itself (what
+  the health bar shows; modes.cpp pins puppet health to its max today).
+* posse_damage (M8): a log line on the hit player's game `coop: damage: <player id> hit by <kind>
+  owner=<host|guest id|npc> posse=<0|1> amount=<hp>`; violation: damage from a posse / pack / ally
+  member (npc.cpp forwards any non-avatar, non-puppet hit on a guest puppet as MSG_DAMAGE).
+* unlocks (M15): own line `parts=<count>:<hash>` of the unlocked creature parts; violation: a
+  guest's count under the host's 60 s after an unlock in a shared world.
+
+## Degraded conditions: frame caps, a network per guest, bursts (2026-11-01, feat/w30-lab-gates)
+<a id="testing-degraded"></a>
+
+* `SPORE_FPS=host:30,guest:15,extra:20` (or one number for every game; `extra1` / `extra2` one
+  extra guest): `twoinst.start` and `coop_multi.start_extra` cap the frame time with `frame.limit
+  <1000/N ms>`. Such games are not reused by the next warm test (lane_state `fps`).
+* `SPORE_NET` (tools/tests/netem.py) now gives every guest its own UDP proxy and port (lane N:
+  Bob 47900+N, Carol / extra1 47920+N, Dave / extra2 47930+N; `coop_multi.join_cmd`): a proxy
+  knows one guest address, so 3-4 player parties over SPORE_NET sent every extra guest's packets
+  to the host from Bob's proxy before. Each proxy has its own random stream.
+* New keys: `burst_every=S,burst_s=S,burst_loss=F` (Gilbert-Elliott in time: good state S s on
+  average, exponential, then a burst of burst_s s losing F of the packets), `spike_every=S,spike_s=S,
+  spike_ms=MS` (latency spikes every ~S s +-30 %), `step=AT:MS[/AT:MS]` (the base delay from AT s
+  after the start), `rate=KBIT,queue=MS` (a bandwidth cap per direction; a packet that would wait
+  over MS ms, default 300, is dropped). A misspelt key is refused (it was silently ignored).
+* Presets from the players' logs (rtt 70-150 ms, spikes to 400+ ms, bursts of 10-30 % loss):
+  `players` (delay 50 +- 25 ms one way: median rtt ~100 ms, 99.5 % ~540 ms; bursts of 20 % for
+  ~4 s every ~45 s; spikes +200 ms for 3 s every ~60 s), `players_bad` (rtt ~150 ms, 30 % bursts
+  every ~25 s, spikes every ~30 s, 2 Mbit/s), `burst` (rtt 70 ms and 30 % bursts every ~20 s),
+  `lowband` (512 kbit/s), `step` (rtt 70 ms, 400 ms from 30 s to 60 s). The old `dsl` / `mobile` /
+  `awful` are unchanged.
+* `netem.Model` decides each packet with its own clock: gates_selftest.py checks the loss,
+  burst, spike, step, rate and duplicate statistics offline and two guests through two proxies.
+
+## Coverage, fix switch claims and the players suite (2026-11-01, feat/w30-lab-gates)
+<a id="testing-coverage"></a>
+
+* `lab.py run players`: generated variants (suite.py `VARIANTS`, `VARIANT_TESTS`, `FOUR_P`) of
+  creature, team, tribe_coop, cell_coop, civ_coop, space_coop, puppet_walk, npc_run_hp, sync,
+  select, party_creature4, party_tribe4, party_space4 as `<test>_fps15` (guest at 15 fps),
+  `_mobile`, `_burst`, `_fps15burst`, `_players` (the players preset), plus party_cell4,
+  party_civ4, multi4, npc_multi4 (four players) and their `_players` runs. 73 tests, cold, not in
+  full / nightly. The older hand-made `<test>_mobile` nightly tests joined the suite.
+* `lab.py coverage [--days 7]`: every suite test with its last recorded run (main checkout and
+  every worktree's out/lab), its result, how often it ran and passed; `NEVER RUN` first. On
+  2026-11-01: 83 never ran, 11 outside the new players suite: chaos_cell_long, chaos_civ_long,
+  chaos_space_long, chaos_tribe_long, chaos_tribe_awful, legless_guest_dontsave, play_civ,
+  play_space, play_tribe, rejoin_awful, rejoin_race_long.
+* `lab.py fixcheck`: every "SPORE_FIX_OFF=x fails" claim of suite.py (on an add() line or in the
+  comment right above it) against the recorded runs of that test whose output switched x off
+  (`SPORE_FIX_OFF: x off`): confirmed by a FAIL run, CONTRADICTED when it only passed, unverified
+  without a run; exit 1 on a contradiction. 2026-11-01: 47 confirmed, 1 unverified (update_leak,
+  core.update_unwind), and leave_avatar's world.leave_avatar claim was contradicted (5 PASS runs,
+  lab 20261029-085208 / 085452 / 085805-fix-w6-avatar; BUG-0264 records no-fail-run): the comment
+  now says so.
+
+## Release rule: what must have run on the release commit (2026-11-01, feat/w30-lab-gates)
+<a id="testing-release-rule"></a>
+
+Before a tag `vX.Y.Z` (CLAUDE.md 4):
+
+1. On the release commit itself, with the log gates on (`SPORE_GATES` unset): `smoke`, `full` and
+   `multi` passed (allowed findings are fine, each has its ticket). Check:
+   `tools/lab.py coverage --commit <commit> --require smoke,full,multi` (exit 0).
+2. Since the previous release, on a commit with the release's mod code (no change to mods/ or sdk/
+   after it): `nightly`, `extended`, `players` and one whole `campaign` (or `campaign_short` three
+   times). `lab.py coverage` shows no `NEVER RUN` and nothing "not run for" more than the cycle in
+   these suites; a test that cannot run (a lane, a fixture) is named in the release notes.
+3. `tools/lab.py fixcheck` has no CONTRADICTED claim.
+4. `make test` passed (it runs lab_selftest.py and gates_selftest.py).
+## Creature health between players: coop.hp, partner_hp, party, brain_hp (2026-11-01, fix/w30-creature-hp)
+<a id="testing-creature-hp"></a>
+
+* `coop.hp` (main thread): `own: hp=<health>/<GetMaxHitPoints> level=<brain level> species=
+  player_species= same|other base_game=<the game's BaseMaxHitPoints without the fix>`, then
+  `puppet <id>: hp=<game health>/<game max> reported=<state>`: what each game shows, not mod counters.
+  `coop.hp pack` lists the host's pack members with `from_partner=` (AI stimuli naming a partner's
+  puppet), `coop.hp attack <player>` sends the host avatar's attack message on a puppet.
+* `creature_partner_hp` (~45 s cold, warm-capable): `coop.team hit` is a real TakeDamage on the own
+  avatar; the pack regen (2 %/s of max next to the partner) moves health between the two reads, the
+  test allows 8 % of max.
+* `creature_party` (~45 s warm): `coop.npc recruit` + `gonpc 3` + the guest's `gopos` puts all three
+  together; the recruit walks to the host on its own only sometimes. While a brain-upgrade cinematic
+  plays (`coop.status`: `cinematic F6A4B1E1 playing`) hits on the host's NPCs land with no health
+  change: close the captions (Enter on both) first.
+* `creature_brain_hp` (~65 s, cold): 250 DNA on the host (`AddEvolutionPoints f:250`) gives level 1 on
+  both games through the DNA sync; Enter closes CRG_BrainUpgrade1 on each. The guest plays its own
+  creature in the fixture (creations-guest: Kirgle, species health 6).
+## Creature: the guest's own editor's locked parts and a guest's view of pack paints (2026-11-01, fix/w30-progress)
+<a id="testing-own-editor-locks"></a>
+
+* `coop_guest_editor_locks.py` (suite `guest_editor_locks`, ~70 s, BUG-0368): the host's
+  `coop.vote editor`, the guest's ready, then on the guest `coop.editor`: the open editor (the editor
+  game mode from the mode manager's list, id 0xDBDBA1) and its request: `items` (+0x94) must be the
+  guest's collected parts and the palette's rule (no items = available) must leave parts locked
+  (258 of 312 on the creature fixture; 0 with the fix off). Screenshots `guest_editor_locks.png`
+  (locked silhouettes) and `host_editor_locks.png` (the test request of `coop.vote editor` has no
+  items: the host's test editor offers every part, the real host's editor is the game's own).
+  FAIL: `SPORE_FIX_OFF=creations.own_editor_items`.
+* `coop_guest_pack_paints.py` (suite `guest_pack_paints`, ~55 s, BUG-0369): one lane, the lane's
+  `bp1content/BoosterPack_01.package` moved aside for the whole test (both games without the pack; the
+  lane state is marked so the next warm test starts new games); the host plays Tiger Horse with the
+  pack's Dottie base and coat effects (header bytes 26..33 of its model). Checked on the guest:
+  `coop.creations paints 290229B9` cc=0 with the base substitute 8C077662, the species built, no
+  fault; screenshot `guest_sees_host_paints.png` (fix off: the host's creature is black).
+  FAIL: `SPORE_FIX_OFF=creations.paint_substitute` (cc=2).
+* `tools/crash_triage.py` (BUG-0372): the coop version comes from the crash file's Environment
+  (`mods: coop X`) or coop section, never from the Summary's "latest co-op summary" of an earlier
+  run; `tools_selftest.py triage` case (g).
+## The puppet's height, a weak guest PC and a home connection (2026-11-01, fix/w30-puppet-jump)
+<a id="testing-puppet-ground"></a>
+
+* `coop.track` rows end with `hd ht`: the drawn puppet's and the target's height over this game's
+  ground (25 columns; `coop_puppet_walk.dump` reads 23 or 25). `coop.track lift <m>` (tests) takes the
+  partners' Creature states <m> further from the planet's centre in this game (negative: under the
+  ground). `coop.abilities [play <i> | lift <m> | goto <x> <y> <z>]` (tests): the avatar's abilities,
+  use one, put it <m> higher (it falls back: half a jump), put it on the ground elsewhere.
+* netem (`SPORE_NET`): preset `player` (the 2026-11-01 report: rtt 70-150 ms, spikes, 10-30 % loss
+  bursts), written with the shared spike / burst keys of docs/06-testing.md#testing-degraded (the
+  branch's own `spike=`/`burst=` keys were merged into those).
+* `coop_puppet_walk.py` options: `--guest-fps N` (frame.limit on the guest), `--goto x,y,z` (both
+  players to that ground first; `-195,-465,-45` is a slope 0.3-0.5 of the creature fixture, the hill
+  at `-205,-447,-118` is rock), `--stand S` (the walker stands after its walk), `--jumps P` (hops by
+  `coop.abilities lift 1.5`), `--ground` (checks: the puppet starts the fall animation 0x0692E6A9 at
+  most once more than the walker's own creature, and is never drawn 0.3 m under the observer's ground).
+* Suites `puppet_slope` (guest 30 fps, `SPORE_NET=player`, the slope) and `puppet_under`
+  (`coop.track lift -1`): `SPORE_FIX_OFF=creature.puppet_ground` fails both.
+* Pitfalls: the falls happen walking downhill only (flat fixture ground: 0-2 in 40 s even with the
+  bug); a run on rock counts nothing (+0x137 is 0 on rock all the time, GetHeightAt is the terrain);
+  the spawn moves after a `--goto`, so these tests are cold. Exploration with the fix off on the slope
+  gave 4-7 falls per 40 s, so one FAIL run is not guaranteed every time (the check allows 1).
+
+## Walks far from the start stay on land; shared DNA notices (2026-11-01, fix/w31-creature-gate)
+<a id="testing-walk-on-land"></a>
+
+* `coop_npc_pooled.land_path(con, a, metres)`: of 16 directions the one whose lowest ground along the
+  walk is highest (`coop.abilities ground x y z`: the terrain radius there, no move) and its height over
+  the water (`SEA` = 499.2 m on the creature fixture); `walk_to(con, a, b, t)` puts the avatar onto the
+  ground (`coop.abilities goto`); `drawn_apart(host, guest)`: how far the guest's game draws the host's
+  puppet from the host's own avatar (coop.track column d, after the game's update, not the mod's write).
+* Pitfall (BUG-0377): `coop.npc gopos` at a fixed radius (510 m) puts a creature in the air or under the
+  ground; over the sea the deep water caption cinematic 5E205931 freezes the host's avatar there and the
+  guest's game draws the puppet on the water: sync-check `p0 10.7`. npc_far / npc_pooled walked into the
+  sea until 2026-11-01.
+* `old_species` (~60 s, cold, BUG-0370): the guest switches its creature (`coop.creations next
+  creature`), the host spawns a creature of the old key (`coop.npc spawn`, with `coop.fix npc.strays off`:
+  the stray pass removes it within a second otherwise); the guest's census must show a proxy of that
+  species. Marks the lane state so the next test starts cold. FAIL: `SPORE_FIX_OFF=creations.old_species`.
+
+<a id="testing-dna-causes"></a>
+
+* `dna_notice` (~60 s, cold): the guest kills a host NPC (`coop.npc hit <id> 100000`), the host one
+  (`coop.npc hosthit`); the notification panels read back from `coop.status` (`toast <kind> (...)
+  '<text>'`; a text may hold an apostrophe), the `dna: a -> b cause=...` lines of both game logs (read
+  from the byte size before the test). `dna_notice_cell` (`--cell`, ~90 s): `coop.pool food N` on each
+  side; the meal notices are gathered 15 s, the test waits up to 22 s. A feature: no FAIL twin.
+## Setup folder checks and the GitHub API limit (2026-11-01, fix/w31-installer)
+<a id="testing-installer-w31"></a>
+
+* `win_unit` (tests/win_tests.cpp) has four more tests:
+  * `test_ga_folder` (BUG-0391): a Steam-like Spore folder with `SporeBin` and no `SporebinEP1`:
+    `inst::game_root_of` steps up from `SporeBin`, `inst::folder_problem` / `do_install` say
+    "Galactic Adventures is not installed", `inst::steam_libraries` reads both formats of
+    `libraryfolders.vdf`, `inst::pick_game` returns that folder when no game is found.
+  * `test_setup_ga_window` (BUG-0391): the real `SporeCoopSetup.exe` (hidden window) with
+    `/dir:<spore>\SporeBin`; the test reads every child window's text with `WM_GETTEXT`
+    (`SendMessageTimeoutW`, works across processes) and checks the folder field and the "Game:" line.
+  * `test_web_fallback` (BUG-0392): an in-process HTTP server (Winsock, port from `bind(0)`) plays
+    api.github.com and github.com: `/repos/<o>/<r>/releases/latest` answers 403 or 429,
+    `/<o>/<r>/releases/latest` answers 302 to `.../releases/tag/v<x>` (absolute or relative
+    Location), the assets are under `.../releases/download/v<x>/`. Checked: the release is found,
+    a pack that does not match `SHA256SUMS.txt` or is of another version is refused, the page is not
+    asked while the API works, `do_install` installs, and with both refusing the message names
+    `install.bat`.
+  * `test_setup_api403` (BUG-0392): the real setup in silent mode (`/S /api:<fake API>`) installs.
+* Switches: `win_unit.py --old-ga` (setup-only `inst::g_ga_fix`, the setup's `/oldga`) and
+  `--old-web` (`update.web_fallback`, the setup's `/oldweb`); in the lab `SPORE_FIX_OFF=update.web_fallback`
+  and `SPORE_WIN_UNIT_ARGS=--old-ga` do the same. `win_unit.py --setup <exe>` runs the setup tests
+  against another `SporeCoopSetup.exe` (under the repository, e.g. `build/main-setup/`: one built
+  from `git archive main` fails `test_setup_ga_window` and `test_setup_api403`).
+* `update_check.py --api403` (suite `update`, in game, ~4 min): the local server's API path answers
+  403; the game must offer and install the next version through the release page (`coop.update`
+  shows `via=page`). `SPORE_FIX_OFF=update.web_fallback` switches the fix off after the start's check
+  and runs `coop.update check` again: FAIL ("the game finds SporeCoop ..." not met).
+* Wine's WinHTTP and the redirect: `request(..., follow=false)` sets `WINHTTP_DISABLE_REDIRECTS`
+  and the `NEVER` redirect policy and reads `Location`; when a 200 comes back anyway it takes
+  `WINHTTP_OPTION_URL` (where the request ended), so both behaviours give the tag. Wine (lane 4's
+  bottle, 2026-11-01) honours the switch: `test_web_fallback` prints "the redirect was not followed"
+  (the fake tag page is never asked).
+* Seen 2026-11-01 on this machine: api.github.com answered 403 ("API rate limit exceeded", remaining
+  0) to the setup; the setup built from main failed with the players' message, the fixed one
+  installed 0.7.3.3 from github.com through the release page (`/S` into a fake game folder in lane 4's
+  bottle).
+## Space: what each game draws of the other's ships (2026-11-01, fix/w31-space-gate)
+<a id="testing-space-drawn"></a>
+
+* **Where the sync-check reads**: the digests are built in `g_sess.update()`, the first thing of the
+  mod's frame, before any puppet or mirror is driven: they hold what the game's own update made of
+  the last write, i.e. what the frame showed (docs/re/space.md#space-pinned-ship-drawn). `coop.sync`
+  (console) reads after the write: our own target, not what is drawn.
+* `coop.fleet track on|off|dump [from] [n]` (squadron.cpp): every ship each frame at the top of
+  `on_frame` on the session clock, `t kind id x y z ox oy oz zoom` (m own ship, p puppet, s NPC
+  ship / mirror; ox..oz the ship's mOffsetFromPosition, zoom its mZoomAltitude). The console answer
+  is cut at ~32 KB: dump at most ~400 rows per call. Rows come at the game's frame rate (~15/s with
+  two lab games on a lane).
+* `coop_space_drawn.py [--planet]` (suite `space_drawn`, `space_drawn_planet`): the host, then the
+  guest flies with real input (clicks into the view, WASD, on the planet the wheel); per kind the
+  drawn rows against the owner's own rows: `now` (same session time, lag included) and `path` (the
+  closest point of the owner's path over the 0.5 s before: lag taken out). Checks path p90 <= 3 m and
+  `now` <= 0.5 s x speed + 3 m in 90 %. Measured 2026-11-01 (lab 20261101-093823, -094339): in the
+  start system and on the planet puppets path p90 0.07-2.8 m with and without the pin fixes (the
+  offset is 0 there), mirrors 0-2.5 m; the ships flew 3-11 m/s (clicks and keys move a ship slowly;
+  NPC ships up to 123 m/s). It does not reproduce BUG-0378 (that needs the galactic core).
+* `coop_space_finale_wait.py` now also tracks both games for 6 s in the core's system after the
+  host entered: `core: the host ship on the guest` checked (BUG-0378: SPORE_FIX_OFF=space.puppet_pin
+  draws it 21.0 m off, median, lab 20261101-095432; with the fix 0.0 m, lab 20261101-100032), the
+  other direction printed only (the guest orbits at ~200 m/s there; BUG-0388).
+* Lag at Space speeds (observed, lab 20261101-095432): the guest's ship orbiting at 207-235 m/s was
+  drawn on the host 28.6 m (median) behind its own position at the same session time, 0.03 m from its
+  path: lag of ~0.13 s, not a desync. The sync-check's fixed 10 m for players flagged such ships
+  (`p1 29-31`, campaign planets 10-30 m at 60-100 m/s by the trace positions); `sync.speed_slack`
+  allows speed x (0.2 s + the guest's round trip [+ half the owner's]), capped at 1 s / 300 m.
+* `s missing` / `p0 missing, p<guest> extra` (the gate report's 12 + 4 Space results) were in world 0 in every recorded host log but two (`s1` missing in space_mirror_model, made on purpose: a host ship whose model the guest lacks gets no mirror, BUG-0323) (the galaxy view,
+  where no puppet is shown and no ship mirrored): `sync.no_place` compares no players or ships there.
+* CORRECTION (2026-11-01, fix/w31-installer): the first BUG-0391 fix took a Steam `common\Spore`
+  without `SporebinEP1` for "Galactic Adventures is not installed". On Steam GA is its own app
+  (24720) in its own folder `steamapps\common\spore 24720` (appmanifest_24720.acf "installdir";
+  seen on this machine's Steam, `SporebinEP1\SporeApp.exe` 25 066 744 bytes), base Spore (17390) in
+  `common\Spore` never has `SporebinEP1`. More win_unit tests: `test_steam_ga_folder`
+  (`inst::resolve_root`: sibling `Spore 24720` / the appmanifest's installdir / another library),
+  `test_setup_steam_ga` (the real setup's window and `/S` with `/dir:<lib>\steamapps\common\Spore\SporeBin`
+  install into `spore 24720`), `test_real_steam` (read only: `win_unit.py` passes
+  `--steam Z:\home\...\.local\share\Steam` when that Steam exists; Bottles' Wine sees it under Z:).
+  Switch `inst::g_ga_dir_fix` (setup `/oldgadir`, `win_tests --old-gadir`, lab
+  `SPORE_WIN_UNIT_ARGS=--old-gadir`). The setup built from c891445 (`--setup build/main-setup/...`)
+  fails `test_setup_steam_ga` with "Galactic Adventures is not installed".
+## Civ cities, the Civ pointer, money totals and the planet wait in the gates (2026-11-01, fix/w31-civ-gate)
+<a id="testing-civ-gates"></a>
+
+* `coop_civ_city_burst.py` (suite `civ_city_burst`, ~60 s warm, BUG-0380): the host founds 3 NPC
+  cities with `SpawnNextCity(ex, 1, 0)` (instant: not broadcast, the campaign's shortcut); the
+  guest's own game must have every host city (60 m) and every host vehicle id bound to a game
+  object within 20 s, and no extra city 15 s later. `SPORE_FIX_OFF=civ.city_burst` fails (the old
+  catch-up needs 6 + 15 s per city).
+* `coop_civ_cursor.py` (suite `civ_cursor`, ~65 s warm, BUG-0380): the host's mouse goes round a
+  circle (`move x y` every ~0.1 s) while `coop.diag sync now` runs; the guest's copy of the host's
+  pointer trails 45 m median (coop.sync p0 on both), a pointer at rest matches to 0.0 m. Holding W
+  in Civ moved the pointer only for a moment (camera pan stops): use the mouse.
+  `SPORE_FIX_OFF=diag.rts_cursor` fails (`MISMATCH ... p: 1 apart (p0 74.9)`).
+* `coop_space_share_wait.py` (suite `space_share_wait`, cold, BUG-0382): the host lands, the guest
+  rejoins; the guest's log must show the host's notice and the host's trace `share_wait=planet`
+  within 25 s; after the takeoff the guest loads the host's system. `SPORE_FIX_OFF=
+  world.share_wait_notice` fails.
+* coop_campaign.py's Civ shortcut founds the remaining cities with `SpawnNextCity(ex, 0, 0)` now (the
+  game's own call, broadcast to the guests); `(ex, 1, 0)` was not broadcast and left every guest to
+  the catch-up (campaign_space: Civ v missing in 45 of 45 runs). Lab 20261101-110949: no Civ
+  MISMATCH, no monitor violation; the run stays red on Space `p apart` (BUG-0378).
+* `diag.rejoin_grace` (BUG-0380): the host's sync-check dropped no entry of a player who left, so
+  a guest that left and joined again (civ_city_join) was checked on its old schedule, 6 s after
+  its world load; now a returning player is first checked 10 s after the join, like a newcomer.
+* Monitor (tools/tests/monitor.py): `totals` now always includes the host's trace lines right before
+  and right after the guest's (a Civ treasury grows ~400 per 10 s: the +-6 s window often held one
+  host line; the 42 campaign_space violations were all such samples, none in a replay now);
+  `stage_apart` is no violation while the host's own line says `share_wait=planet|cinematic`.
+  gates_selftest.py has both cases (they fail on the old monitor).
+## Cell sync-check findings of the log gates: what was a desync (2026-11-01, fix/w31-cell-gate)
+<a id="testing-cell-sync-check"></a>
+
+BUG-0379: the first `lab.py gates` report had Cell `c missing` in 31 passed results and `cell food
+total` in 5. Per test, with the evidence:
+
+* **cell_pause** (6/6): the test removes the guest's mirrors 12 times (`coop.pool zap 5000`) while
+  its pause menu is open; BUG-0348's fix then holds new cells (the broadphase's pending list is
+  near full), so the guest really has none of the host's cells until it resumes (`c: 706 missing`,
+  `2 objects compared` = the two players only). A difference the test makes, not one a player gets
+  (without the churn a paused guest creates a few cells). The rounds are now marked `LAB-MARK
+  sync-force on|off` and after the resume the host's own sync-check must count an OK (no MISMATCH):
+  `ok 3. after the resume the host's sync-check finds the guest equal`. cell_particles (1/87, the same
+  `2 objects compared`) and cell_churn remove the mirrors the same way and are marked too.
+* **cell_far_guest** (8/14), **guest_editor_hold** (3/3), **cell_leave** (3/23): every red result
+  is from 2026-10-30 runs of fix/w9-* branches, before the cell budget and partner fixes (BUG-0295,
+  BUG-0298). guest_editor_hold's: the test's `coop.pool food 1000` jumps several levels; the guest
+  had 7 mirrors at s 17.7 and 128 at s 27.7 (the new level's pool still coming). Not seen on 15539ad.
+* **cell_sap** (3/31): all three in one run that failed with 1332 caught faults (the BUG-0337 work
+  before its fix): a broken game, not the check.
+* **campaign_short** (12 `c missing`): the recent one (20261031-181517 #3, Dave: `904 objects
+  compared ... c: 14 missing`): four players, the guest held exactly the 900 cells it was sent, the
+  check wanted the 900 nearest to the guest's own position, the host had picked them around its
+  view centre of the guest (a state late): the cells near rank 900 differ. Fixed in the check
+  (`diag.cell_margin`: only the nearest 80 % of the 900 must be there). The 2026-10-29/30 ones
+  (`1098 objects compared`, 447 missing) were before the 900 cap. Not run again (four players, long).
+* **cell food total** (5: campaign, campaign_short, cell_new_game): the host sends its total every
+  0.5 s (MSG_CELL_FOOD) and builds its digest a round trip after the guest's; with food coming in
+  steadily both checks 3 s apart caught the guest one meal behind, a different meal each time
+  (campaign_short 20261031-103900 #3: host 240 at s 176.9 and 252 at s 179.95, Carol 240 at s
+  177.3 and 252 at s 180.4, the MISMATCH at s 180.26). Fixed in the check (`diag.total_lag`: a guest
+  value the host had within 3 s before asking counts as equal); both games' totals were equal.
+
+Test `cell_sync_check` (`coop_cell_sync_check.py`, ~2.5 min): B: food 300 crowds the pool (the
+host sends the guest 900 of more, `send_capped`), the guest swims to and fro, the host asks for a
+check every 5 s; A: the host eats a point every 0.3 s for 20 s. Each phase: no new MISMATCH, at least
+3 checks; afterwards the guest holds the host's cells and the same food total. How crowded the
+pool gets varies (the send was capped in 0 to 9 rounds of 5 runs): printed, not checked. `SPORE_FIX_OFF=diag.total_lag`
+fails A (lab 20261101-095302, 20261101-100218: `cell food: host 340.0, guest 338.0`).
+`diag.cell_margin` off did not fail in 2 players (lab 20261101-095952: the host capped the send in
+only 3-9 rounds; the boundary needs a pool crowded for long, as with four players): its check is
+the unit test in net_tests (test_diag_compare) and the campaign log above.
+
+Test `cell_ko_food` (`coop_cell_ko_food.py`, ~1.5 min, BUG-0364): the guest (30 m from the host,
+nobody revives it) and then the host are knocked out; while out, the game's eat event for the 2-4
+nearest plants on its screen (`coop.pool eat <key>`, EatFood); the food totals of both games must
+not grow by them. `SPORE_FIX_OFF=cell.ko_no_eat` fails (+12 per plant on both games). Pitfalls: a
+`coop.pool tp` right after the start is undone by the hatch (the test moves again until 15 m away);
+the plants it touched drift off the screen or are eaten by the pool (printed only).
+
+cell_coop pitfalls found on the way (fix/w31-cell-gate): the `revives=` / `respawns=` counters of
+`coop.pool` belong to the game process and survive the warm reset, so the test compares them with
+their values at its start (BUG-0396: every warm `--repeat` run failed before); the host's idle cell
+can eat a plant in the 2 s of the shared food check, which now allows the host's own `own_points`
+(BUG-0395, 1 in 130 runs).

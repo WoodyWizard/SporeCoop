@@ -3,9 +3,12 @@
 // works in its own folder under %TEMP%. `win_tests.exe --old` switches the fixes off: every
 // check of a fixed bug must then fail.
 #define WIN32_LEAN_AND_MEAN
+#include <winsock2.h>
 #include <windows.h>
 
+#include <algorithm>
 #include <cstdio>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -13,6 +16,7 @@
 #include "../mods/coop/slotfs.h"
 #include "../sporekit/inifile.h"
 #include "../updater/pending.h"
+#include "../updater/sha256.h"
 #include "../updater/winupdate.h"
 
 static int g_fail;
@@ -28,6 +32,8 @@ static std::wstring g_tmp;
 static bool g_old;          // --old
 static std::wstring g_bat;  // --bat <install.bat to test> (tools/tests/win_unit.py)
 static std::wstring g_excl; // --exclude <installer/ini.exclude>
+static std::wstring g_steam; // --steam <a real Steam folder, read only> (win_unit.py: the user's, if any)
+static std::wstring g_setup; // --setup <SporeCoopSetup.exe to test> (default: the one next to win_tests.exe)
 
 static bool exists(const std::wstring& p) { return GetFileAttributesW(p.c_str()) != INVALID_FILE_ATTRIBUTES; }
 
@@ -633,6 +639,19 @@ static upd::Pack make_pack(const std::string& v)
     return p;
 }
 
+static std::string get_all(const std::wstring& p)
+{
+    HANDLE f = CreateFileW(p.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
+    if (f == INVALID_HANDLE_VALUE)
+        return {};
+    std::string b(1 << 20, '\0');
+    DWORD got = 0;
+    ReadFile(f, b.data(), (DWORD)b.size(), &got, nullptr);
+    CloseHandle(f);
+    b.resize(got);
+    return b;
+}
+
 static void put_bytes(const std::wstring& p, const std::vector<uint8_t>& b) { put(p, std::string(b.begin(), b.end())); }
 
 static std::wstring fake_game(const wchar_t* name)
@@ -855,6 +874,526 @@ static void test_install_bat()
     CHECK(get(bin + L"\\mods\\sporekit\\symbols\\gog2024_dc04aee5.sym") == "sym 2");
 }
 
+// ---------------- BUG-0391: a Spore folder without Galactic Adventures ----------------
+
+// Steam's base Spore: SporeBin, Data, Support, ... and no SporebinEP1 (the Galactic Adventures DLC)
+static std::wstring spore_no_ga(const wchar_t* name)
+{
+    std::wstring g = fresh_dir(name);
+    put(g + L"\\SporeBin\\SporeApp.exe", "base spore");
+    put(g + L"\\Data\\Spore_Game.package", "data");
+    put(g + L"\\Support\\readme.txt", "support");
+    put(g + L"\\steam_appid.txt", "17390");
+    return g;
+}
+
+static void test_ga_folder()
+{
+    printf("setup: a Spore folder without Galactic Adventures (BUG-0391)\n");
+    std::wstring lib = fresh_dir(L"ga_lib");
+    std::wstring spore = lib + L"\\steamapps\\common\\Spore";
+    CreateDirectoryW((lib + L"\\steamapps").c_str(), nullptr);
+    CreateDirectoryW((lib + L"\\steamapps\\common").c_str(), nullptr);
+    put(spore + L"\\SporeBin\\SporeApp.exe", "base spore");
+    put(spore + L"\\steam_appid.txt", "17390");
+    CreateDirectoryW((spore + L"\\Data").c_str(), nullptr);
+    CHECK(!inst::is_game(spore));
+    // the player picked SporeBin (the report) or typed the folder with a slash
+    std::wstring r = inst::game_root_of(spore + L"\\SporeBin");
+    printf("  SporeBin -> %s\n", upd::narrow(r).c_str());
+    CHECK(r == spore);
+    CHECK(inst::game_root_of(spore + L"\\SporeBin\\") == spore);
+    CHECK(inst::game_root_of(spore) == spore);
+    std::string why = inst::folder_problem(spore);
+    printf("  says: %s\n", why.c_str());
+    CHECK(why.find("Galactic Adventures is not installed") != std::string::npos);
+    CHECK(why.find("Spore Galactic Adventures DLC") != std::string::npos);
+    // the install job says the same (silent mode: its log)
+    upd::ReleaseBox box;
+    inst::Options o;
+    o.api = "http://127.0.0.1:9/";
+    std::string msg;
+    CHECK(inst::do_install(spore, o, box, msg) == inst::Result::Failed);
+    CHECK(msg.find("Galactic Adventures is not installed") != std::string::npos);
+    // a folder that is no Spore at all keeps the plain advice
+    std::wstring other = fresh_dir(L"ga_other");
+    CHECK(inst::folder_problem(other).find("Galactic Adventures") == std::string::npos);
+    CHECK(inst::game_root_of(other) == other);
+    // a real game folder: SporebinEP1 picked -> the game folder (the old rule stays)
+    std::wstring g = fake_game(L"ga_game");
+    CHECK(inst::game_root_of(g + L"\\SporebinEP1") == g);
+    CHECK(inst::folder_problem(g).empty());
+    // the auto-detection: Steam's libraryfolders.vdf (new and old format) leads to the library
+    std::string lib_esc; // the vdf escapes backslashes
+    for (char c : upd::narrow(lib))
+        lib_esc += c == '\\' ? std::string("\\\\") : std::string(1, c);
+    std::string vdf = "\"libraryfolders\"\n{\n\t\"0\"\n\t{\n\t\t\"path\"\t\t\"C:\\\\Program Files (x86)\\\\Steam\"\n"
+                      "\t\t\"apps\"\n\t\t{\n\t\t\t\"17390\"\t\t\"1234\"\n\t\t}\n\t}\n\t\"1\"\n\t{\n\t\t\"path\"\t\t\"" +
+                      lib_esc + "\"\n\t}\n}\n";
+    auto libs = inst::steam_libraries(vdf);
+    CHECK(libs.size() == 2 && libs[0] == L"C:\\Program Files (x86)\\Steam" && libs.size() > 1 && libs[1] == lib);
+    auto old_libs = inst::steam_libraries("\"LibraryFolders\"\n{\n\t\"TimeNextStatsReport\"\t\t\"1\"\n\t\"1\"\t\t\"D:\\\\Games\\\\Steam\"\n}\n");
+    CHECK(old_libs.size() == 1 && old_libs[0] == L"D:\\Games\\Steam");
+    // no game anywhere, one Spore without GA: the setup shows that folder (and says why)
+    std::vector<std::wstring> cand = {L"", other, libs.size() > 1 ? libs[1] + L"\\steamapps\\common\\Spore" : L""};
+    std::wstring picked = inst::pick_game(cand);
+    printf("  detected: %s\n", upd::narrow(picked).c_str());
+    CHECK(picked == spore);
+    cand.push_back(g); // a real game wins over it
+    CHECK(inst::pick_game(cand) == g);
+}
+
+// child windows' texts of the setup window, joined by '\n'
+static BOOL CALLBACK child_text(HWND c, LPARAM lp)
+{
+    wchar_t b[1024] = {};
+    DWORD_PTR n = 0;
+    SendMessageTimeoutW(c, WM_GETTEXT, 1024, (LPARAM)b, SMTO_ABORTIFHUNG, 2000, &n);
+    *(std::wstring*)lp += std::wstring(b) + L"\n";
+    return TRUE;
+}
+
+static std::wstring setup_exe() { return g_setup.empty() ? exe_dir() + L"\\SporeCoopSetup.exe" : g_setup; }
+
+// starts the setup window hidden with these arguments; returns its window (or nullptr)
+static HWND start_setup(const std::wstring& args, PROCESS_INFORMATION& pi)
+{
+    std::wstring cmd = L"\"" + setup_exe() + L"\" " + args;
+    SetEnvironmentVariableW(L"SPORECOOP_SETUP_TEST_DELAY", L"1"); // no "Spore is running" question
+    STARTUPINFOW si{sizeof si};
+    si.dwFlags = STARTF_USESHOWWINDOW;
+    si.wShowWindow = SW_HIDE;
+    pi = {};
+    BOOL started = CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi);
+    SetEnvironmentVariableW(L"SPORECOOP_SETUP_TEST_DELAY", nullptr);
+    if (!started)
+        return nullptr;
+    HWND w = nullptr;
+    for (int i = 0; i < 100 && !w; i++) {
+        Sleep(100);
+        w = setup_window(pi.dwProcessId);
+    }
+    return w;
+}
+
+static void stop_setup(HWND w, PROCESS_INFORMATION& pi)
+{
+    if (w)
+        PostMessageW(w, WM_CLOSE, 0, 0);
+    if (pi.hProcess && WaitForSingleObject(pi.hProcess, 10000) != WAIT_OBJECT_0)
+        TerminateProcess(pi.hProcess, 1);
+    if (pi.hProcess)
+        CloseHandle(pi.hProcess);
+    if (pi.hThread)
+        CloseHandle(pi.hThread);
+}
+
+// what the player saw: the setup window with SporeBin chosen in a Spore folder without SporebinEP1
+static void test_setup_ga_window()
+{
+    printf("setup window: SporeBin of a Spore without Galactic Adventures (BUG-0391)\n");
+    if (!exists(setup_exe())) {
+        printf("  FAIL no %s\n", upd::narrow(setup_exe()).c_str());
+        g_fail++;
+        return;
+    }
+    std::wstring spore = spore_no_ga(L"ga_window");
+    PROCESS_INFORMATION pi;
+    HWND w = start_setup(L"\"/dir:" + spore + L"\\SporeBin\" /api:http://127.0.0.1:9/" + (inst::g_ga_fix ? L"" : L" /oldga"), pi);
+    CHECK(w != nullptr);
+    std::wstring texts;
+    if (w) {
+        Sleep(500);
+        EnumChildWindows(w, child_text, (LPARAM)&texts);
+    }
+    std::string t = upd::narrow(texts);
+    printf("  window: %s\n", t.substr(0, t.find("Installed:")).c_str());
+    CHECK(t.find("Game: Galactic Adventures is not installed") != std::string::npos);
+    CHECK(t.find(upd::narrow(spore) + "\n") != std::string::npos); // the folder field stepped up from SporeBin
+    HWND btn = w ? GetDlgItem(w, 11) : nullptr; // ID_INSTALL
+    CHECK(btn && !IsWindowEnabled(btn));
+    stop_setup(w, pi);
+}
+
+// ---------------- BUG-0391, Steam: Galactic Adventures is app 24720 in "Spore 24720" ----------------
+
+static void put_acf(const std::wstring& steamapps, const char* installdir)
+{
+    put(steamapps + L"\\appmanifest_24720.acf", std::string("\"AppState\"\n{\n\t\"appid\"\t\t\"24720\"\n\t\"name\"\t\t") +
+                                                    "\"Spore: Galactic Adventures\"\n\t\"installdir\"\t\t\"" + installdir +
+                                                    "\"\n}\n");
+}
+
+// a Steam library as Steam lays out Spore + Galactic Adventures: base Spore (17390) in common\Spore
+// (SporeBin, no SporebinEP1), GA (24720) in common\<ga_dir> with SporebinEP1. Returns the library
+static std::wstring steam_lib(const wchar_t* name, const wchar_t* ga_dir, const char* acf_dir)
+{
+    std::wstring lib = fresh_dir(name);
+    std::wstring common = lib + L"\\steamapps\\common";
+    put(common + L"\\Spore\\SporeBin\\SporeApp.exe", "base spore");
+    put(common + L"\\Spore\\runme.exe", "runme");
+    CreateDirectoryW((common + L"\\Spore\\Data").c_str(), nullptr);
+    if (ga_dir) {
+        put(common + L"\\" + ga_dir + L"\\SporebinEP1\\SporeApp.exe", "spore ga");
+        put(common + L"\\" + ga_dir + L"\\SporebinEP1\\steam_api.dll", "the game's steam api");
+        put(common + L"\\" + ga_dir + L"\\SporeBin\\SporeApp.exe", "base spore");
+        CreateDirectoryW((common + L"\\" + ga_dir + L"\\Data").c_str(), nullptr);
+    }
+    if (acf_dir)
+        put_acf(lib + L"\\steamapps", acf_dir);
+    return lib;
+}
+
+static std::wstring lower_w(std::wstring s)
+{
+    for (auto& c : s)
+        c = towlower(c);
+    return s;
+}
+
+static void test_steam_ga_folder()
+{
+    printf("setup: Steam's Galactic Adventures folder next to base Spore (BUG-0391)\n");
+    std::wstring lib = steam_lib(L"steam_lib", L"spore 24720", "spore 24720"); // as Steam writes it
+    std::wstring common = lib + L"\\steamapps\\common", spore = common + L"\\Spore", ga = common + L"\\spore 24720";
+    CHECK(inst::spore_without_ga(spore) && inst::is_game(ga));
+    CHECK(inst::acf_installdir("\"AppState\"\n{\n\t\"installdir\"\t\t\"spore 24720\"\n}\n") == "spore 24720");
+    auto gf = inst::ga_folders(lib);
+    CHECK(!gf.empty() && gf[0] == ga);
+    // the player's choice: SporeBin of base Spore, or base Spore itself, or steamapps\common
+    std::string note;
+    std::wstring r = inst::resolve_root(spore + L"\\SporeBin", {}, &note);
+    printf("  SporeBin -> %s\n  says: %s\n", upd::narrow(r).c_str(), note.c_str());
+    CHECK(lower_w(r) == lower_w(ga));
+    CHECK(note.find("Galactic Adventures is installed in") != std::string::npos && note.find("using that folder") != std::string::npos);
+    CHECK(lower_w(inst::resolve_root(spore)) == lower_w(ga));
+    CHECK(lower_w(inst::resolve_root(common)) == lower_w(ga));
+    CHECK(inst::resolve_root(ga, {}, &note) == ga && note.empty()); // a game folder stays
+    // no appmanifest: "Spore 24720" by name (any case)
+    std::wstring lib2 = steam_lib(L"steam_lib2", L"Spore 24720", nullptr);
+    CHECK(lower_w(inst::resolve_root(lib2 + L"\\steamapps\\common\\Spore")) == lower_w(lib2 + L"\\steamapps\\common\\Spore 24720"));
+    // another installdir in the appmanifest wins
+    std::wstring lib3 = steam_lib(L"steam_lib3", L"Galactic", "Galactic");
+    CHECK(inst::resolve_root(lib3 + L"\\steamapps\\common\\Spore") == lib3 + L"\\steamapps\\common\\Galactic");
+    // base Spore in one library, GA in another one
+    std::wstring lib4 = steam_lib(L"steam_lib4", nullptr, nullptr);
+    std::wstring r4 = inst::resolve_root(lib4 + L"\\steamapps\\common\\Spore\\SporeBin", {lib4, lib}, &note);
+    CHECK(lower_w(r4) == lower_w(ga));
+    // no GA anywhere: "not installed", and where Steam would put it
+    std::wstring r5 = inst::resolve_root(lib4 + L"\\steamapps\\common\\Spore", {lib4});
+    std::string why = inst::folder_problem(r5);
+    printf("  no GA: %s\n", why.c_str());
+    CHECK(r5 == lib4 + L"\\steamapps\\common\\Spore");
+    CHECK(why.find("Galactic Adventures is not installed") != std::string::npos && why.find("Spore 24720") != std::string::npos);
+}
+
+// the real setup: the window with base Spore's SporeBin chosen, and silent mode installing there
+static void test_setup_steam_ga()
+{
+    printf("setup: base Spore chosen, Galactic Adventures in \"Spore 24720\" (BUG-0391)\n");
+    if (!exists(setup_exe())) {
+        printf("  FAIL no %s\n", upd::narrow(setup_exe()).c_str());
+        g_fail++;
+        return;
+    }
+    std::wstring lib = steam_lib(L"steam_setup", L"spore 24720", "spore 24720");
+    std::wstring spore = lib + L"\\steamapps\\common\\Spore", ga = lib + L"\\steamapps\\common\\spore 24720";
+    PROCESS_INFORMATION pi;
+    HWND w = start_setup(L"\"/dir:" + spore + L"\\SporeBin\" /api:http://127.0.0.1:9/" +
+                             (inst::g_ga_dir_fix ? L"" : L" /oldgadir") + (inst::g_ga_fix ? L"" : L" /oldga"), pi);
+    CHECK(w != nullptr);
+    std::wstring texts;
+    if (w) {
+        Sleep(500);
+        EnumChildWindows(w, child_text, (LPARAM)&texts);
+    }
+    std::string t = upd::narrow(texts);
+    size_t g0 = t.find("Browse...\n");
+    printf("  window: %s\n", g0 == std::string::npos ? "?" : t.substr(g0 + 10, t.find("Installed:") - g0 - 10).c_str());
+    CHECK(t.find("Galactic Adventures is installed in " + upd::narrow(ga) + ": using that folder.") != std::string::npos);
+    CHECK(t.find("not installed: SporeCoop needs") == std::string::npos);
+    HWND btn = w ? GetDlgItem(w, 11) : nullptr;
+    CHECK(btn && IsWindowEnabled(btn));
+    stop_setup(w, pi);
+    // silent mode, as the player's choice: SporeCoop goes into the GA folder, base Spore stays as it is
+    std::wstring dir = fresh_dir(L"steam_setup_dl");
+    put_bytes(dir + L"\\SporeCoop-0.14.0.pack", upd::write_pack(make_pack("0.14.0")));
+    std::wstring log = dir + L"\\setup.log";
+    std::wstring cmd = L"\"" + setup_exe() + L"\" /S \"/dir:" + spore + L"\\SporeBin\" \"/pack:" + dir +
+                       L"\\SporeCoop-0.14.0.pack\" /api:http://127.0.0.1:9/ \"/log:" + log + L"\"" +
+                       (inst::g_ga_dir_fix ? L"" : L" /oldgadir") + (inst::g_ga_fix ? L"" : L" /oldga");
+    STARTUPINFOW si{sizeof si};
+    PROCESS_INFORMATION p2{};
+    DWORD code = 99;
+    if (CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &p2)) {
+        if (WaitForSingleObject(p2.hProcess, 60000) != WAIT_OBJECT_0)
+            TerminateProcess(p2.hProcess, 1);
+        GetExitCodeProcess(p2.hProcess, &code);
+        CloseHandle(p2.hProcess);
+        CloseHandle(p2.hThread);
+    }
+    printf("  /S exit %lu, log: %s", code, get(log).c_str());
+    CHECK(code == 0);
+    CHECK(all_of_version(ga, "0.14.0"));
+    CHECK(!exists(spore + L"\\SporebinEP1"));
+}
+
+// read only: the parsing against a real Steam folder (win_unit.py passes the user's when present)
+static void test_real_steam()
+{
+    if (g_steam.empty())
+        return;
+    printf("setup: a real Steam folder, read only (BUG-0391)\n");
+    std::string vdf = get_all(g_steam + L"\\steamapps\\libraryfolders.vdf");
+    auto libs = inst::steam_libraries(vdf);
+    for (auto& l : libs)
+        printf("  library: %s\n", upd::narrow(l).c_str());
+    CHECK(!libs.empty());
+    std::string acf = get_all(g_steam + L"\\steamapps\\appmanifest_24720.acf");
+    if (acf.empty()) {
+        printf("  no appmanifest_24720.acf (Galactic Adventures not installed there)\n");
+        return;
+    }
+    std::string dir = inst::acf_installdir(acf);
+    printf("  GA installdir: '%s'\n", dir.c_str());
+    CHECK(!dir.empty());
+    auto gf = inst::ga_folders(g_steam);
+    CHECK(!gf.empty() && gf[0] == g_steam + L"\\steamapps\\common\\" + upd::widen(dir));
+    std::wstring base = g_steam + L"\\steamapps\\common\\Spore";
+    if (exists(base + L"\\SporeBin") && inst::is_game(gf[0])) {
+        std::string note;
+        std::wstring r = inst::resolve_root(base + L"\\SporeBin", {}, &note);
+        printf("  base Spore\\SporeBin -> %s (%s)\n", upd::narrow(r).c_str(), note.c_str());
+        CHECK(r == gf[0]);
+    }
+}
+
+// ---------------- BUG-0392: the GitHub API answers 403 / 429 ----------------
+
+// a local stand-in for api.github.com and github.com: the API path refuses, the release page
+// redirects to the tag, the assets are under releases/download/<tag>/
+struct FakeGithub {
+    int api_status = 403;          // the API's answer (200: a JSON release)
+    int web_status = 302;          // the release page: 302 to the tag, else this status
+    bool relative = false;         // the redirect's Location without the origin
+    std::string tag = "v0.12.0";
+    std::vector<uint8_t> pack;     // served as SporeCoop-<tag without v>.pack
+    std::string sums;              // SHA256SUMS.txt
+    int api_hits = 0, web_hits = 0, asset_hits = 0, tag_hits = 0; // tag_hits: the redirect was followed
+};
+static FakeGithub g_gh;
+static std::mutex g_gh_mu;
+static SOCKET g_gh_sock = INVALID_SOCKET;
+static int g_gh_port;
+
+static void gh_answer(SOCKET c)
+{
+    std::string req;
+    char b[2048];
+    while (req.find("\r\n\r\n") == std::string::npos) {
+        int n = recv(c, b, sizeof b, 0);
+        if (n <= 0)
+            return;
+        req.append(b, n);
+    }
+    std::string path = req.substr(4, req.find(' ', 4) - 4); // "GET <path> HTTP/1.1"
+    std::lock_guard<std::mutex> l(g_gh_mu);
+    std::string base = "http://127.0.0.1:" + std::to_string(g_gh_port);
+    std::string repo = "/WoodyWizard/SporeCoop/releases";
+    std::string ver = g_gh.tag.substr(1);
+    std::string status = "404 Not Found", extra, body;
+    std::vector<uint8_t> bin;
+    if (path == "/repos" + repo + "/latest") {
+        g_gh.api_hits++;
+        if (g_gh.api_status == 200) {
+            status = "200 OK";
+            std::string dl = base + repo + "/download/" + g_gh.tag + "/";
+            body = "{\"tag_name\":\"" + g_gh.tag + "\",\"html_url\":\"" + base + repo + "/tag/" + g_gh.tag +
+                   "\",\"assets\":[{\"browser_download_url\":\"" + dl + "SporeCoop-" + ver +
+                   ".pack\"},{\"browser_download_url\":\"" + dl + "SHA256SUMS.txt\"}]}";
+        } else {
+            status = std::to_string(g_gh.api_status) + (g_gh.api_status == 429 ? " Too Many Requests" : " Forbidden");
+            body = "{\"message\":\"API rate limit exceeded for 127.0.0.1.\"}";
+        }
+    } else if (path == repo + "/latest") {
+        g_gh.web_hits++;
+        if (g_gh.web_status == 302) {
+            status = "302 Found";
+            extra = "Location: " + (g_gh.relative ? std::string() : base) + repo + "/tag/" + g_gh.tag + "\r\n";
+        } else
+            status = std::to_string(g_gh.web_status) + " Refused";
+    } else if (path == repo + "/tag/" + g_gh.tag) {
+        g_gh.tag_hits++;
+        status = "200 OK";
+        body = "<html>release " + g_gh.tag + "</html>";
+    } else if (path == repo + "/download/" + g_gh.tag + "/SHA256SUMS.txt") {
+        g_gh.asset_hits++;
+        status = "200 OK";
+        body = g_gh.sums;
+    } else if (path == repo + "/download/" + g_gh.tag + "/SporeCoop-" + ver + ".pack") {
+        g_gh.asset_hits++;
+        status = "200 OK";
+        bin = g_gh.pack;
+    }
+    if (bin.empty())
+        bin.assign(body.begin(), body.end());
+    std::string head = "HTTP/1.1 " + status + "\r\n" + extra + "Content-Length: " + std::to_string(bin.size()) +
+                       "\r\nConnection: close\r\n\r\n";
+    send(c, head.data(), (int)head.size(), 0);
+    for (size_t at = 0; at < bin.size();) {
+        int n = send(c, (const char*)bin.data() + at, (int)std::min<size_t>(bin.size() - at, 65536), 0);
+        if (n <= 0)
+            break;
+        at += n;
+    }
+}
+
+static DWORD WINAPI gh_serve(void*)
+{
+    for (;;) {
+        SOCKET c = accept(g_gh_sock, nullptr, nullptr);
+        if (c == INVALID_SOCKET)
+            return 0;
+        gh_answer(c);
+        shutdown(c, SD_SEND);
+        closesocket(c);
+    }
+}
+
+static bool gh_start()
+{
+    WSADATA wd;
+    WSAStartup(MAKEWORD(2, 2), &wd);
+    g_gh_sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    sockaddr_in a{};
+    a.sin_family = AF_INET;
+    a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    a.sin_port = 0;
+    if (bind(g_gh_sock, (sockaddr*)&a, sizeof a) || listen(g_gh_sock, 8))
+        return false;
+    int len = sizeof a;
+    getsockname(g_gh_sock, (sockaddr*)&a, &len);
+    g_gh_port = ntohs(a.sin_port);
+    CloseHandle(CreateThread(nullptr, 0, gh_serve, nullptr, 0, nullptr));
+    return true;
+}
+
+// the release v<version> on the fake server; sums_ok false = SHA256SUMS.txt names another hash
+static void gh_release(const std::string& version, const std::string& pack_version, bool sums_ok = true)
+{
+    std::lock_guard<std::mutex> l(g_gh_mu);
+    g_gh.tag = "v" + version;
+    g_gh.pack = upd::write_pack(make_pack(pack_version));
+    std::string h = sums_ok ? upd::sha256_hex(g_gh.pack) : std::string(64, 'a');
+    g_gh.sums = std::string(64, 'b') + "  SporeCoop-" + version + ".zip\n" + h + "  SporeCoop-" + version + ".pack\n" +
+                std::string(64, 'c') + "  SporeCoopSetup.exe\n";
+    g_gh.api_status = 403;
+    g_gh.web_status = 302;
+    g_gh.relative = false;
+    g_gh.api_hits = g_gh.web_hits = g_gh.asset_hits = g_gh.tag_hits = 0;
+}
+
+static std::string gh_api() { return "http://127.0.0.1:" + std::to_string(g_gh_port) + "/repos/WoodyWizard/SporeCoop/releases/latest"; }
+
+static void test_web_fallback()
+{
+    printf("updater: the GitHub API refuses (403 / 429), the release page still works (BUG-0392)\n");
+    if (g_gh_port == 0 && !gh_start()) {
+        printf("  FAIL no local server\n");
+        g_fail++;
+        return;
+    }
+    CHECK(upd::web_latest_url("https://api.github.com/repos/WoodyWizard/SporeCoop/releases/latest") ==
+          "https://github.com/WoodyWizard/SporeCoop/releases/latest");
+    CHECK(upd::web_latest_url("https://example.com/repos/a/b/releases/latest").empty());
+    upd::Release bad;
+    CHECK(!upd::release_from_redirect("https://github.com/a/b/releases/latest", "https://github.com/a/b/releases/tag/v1/../../x", bad));
+    // 1. the in-game check and the setup's check: 403 from the API
+    gh_release("0.12.0", "0.12.0");
+    upd::Release r;
+    std::string err;
+    bool ok = upd::latest_release(gh_api(), r, err);
+    printf("  403: %s %s%s, the redirect %s\n", ok ? "found" : "FAILED:", ok ? r.version.c_str() : err.c_str(),
+           ok && r.from_web ? " (from the release page)" : "", g_gh.tag_hits ? "was followed" : "was not followed");
+    CHECK(ok && r.version == "0.12.0" && r.tag == "v0.12.0");
+    CHECK(ok && r.pack_url == "http://127.0.0.1:" + std::to_string(g_gh_port) +
+                                  "/WoodyWizard/SporeCoop/releases/download/v0.12.0/SporeCoop-0.12.0.pack");
+    upd::Pack p;
+    CHECK(ok && upd::download_pack(r, p, err) && p.version == "0.12.0");
+    // 2. 429, a relative Location
+    gh_release("0.12.1", "0.12.1");
+    g_gh.api_status = 429;
+    g_gh.relative = true;
+    ok = upd::latest_release(gh_api(), r, err);
+    CHECK(ok && r.version == "0.12.1");
+    // 3. the checks stay: a pack that does not match SHA256SUMS.txt, a pack of another version
+    gh_release("0.12.2", "0.12.2", false);
+    ok = upd::latest_release(gh_api(), r, err) && upd::download_pack(r, p, err);
+    printf("  bad checksum: %s\n", ok ? "accepted" : err.c_str());
+    CHECK(!ok && err.find("checksum") != std::string::npos);
+    gh_release("0.12.3", "0.9.0");
+    ok = upd::latest_release(gh_api(), r, err) && upd::download_pack(r, p, err);
+    printf("  wrong version: %s\n", ok ? "accepted" : err.c_str());
+    CHECK(!ok);
+    // 4. the API works: the page is not asked
+    gh_release("0.12.4", "0.12.4");
+    g_gh.api_status = 200;
+    ok = upd::latest_release(gh_api(), r, err);
+    CHECK(ok && r.version == "0.12.4" && !r.from_web && g_gh.web_hits == 0);
+    // 5. the setup's install: no pack next to it, GitHub's API refuses
+    gh_release("0.12.0", "0.12.0");
+    std::wstring g = fake_game(L"web_install");
+    inst::Options o;
+    o.pack_dir = fresh_dir(L"web_install_dl"); // no pack: the release from "GitHub"
+    o.api = gh_api();
+    upd::ReleaseBox box;
+    std::string msg;
+    inst::Result res = inst::do_install(g, o, box, msg);
+    printf("  setup: %s\n", msg.c_str());
+    CHECK(res == inst::Result::Ok);
+    CHECK(all_of_version(g, "0.12.0"));
+    // 6. both refuse: the setup says how to install by hand
+    gh_release("0.12.5", "0.12.5");
+    g_gh.web_status = 403;
+    upd::ReleaseBox box2;
+    res = inst::do_install(g, o, box2, msg);
+    printf("  both refuse: %s\n", msg.c_str());
+    CHECK(res == inst::Result::Failed);
+    CHECK(msg.find("install.bat") != std::string::npos || g_old);
+    CHECK(all_of_version(g, "0.12.0"));
+}
+
+// the real setup (silent mode, as scripts and update_check.py run it) against the refusing API
+static void test_setup_api403()
+{
+    printf("setup /S: the GitHub API answers 403 (BUG-0392)\n");
+    if (!exists(setup_exe()) || (g_gh_port == 0 && !gh_start())) {
+        printf("  FAIL no setup or no local server\n");
+        g_fail++;
+        return;
+    }
+    gh_release("0.13.0", "0.13.0");
+    std::wstring g = fake_game(L"web_setup");
+    std::wstring log = g + L"\\setup.log";
+    std::wstring cmd = L"\"" + setup_exe() + L"\" /S \"/dir:" + g + L"\" /api:" + upd::widen(gh_api()) + L" \"/log:" + log +
+                       L"\"" + (upd::g_web_fallback_fix ? L"" : L" /oldweb");
+    STARTUPINFOW si{sizeof si};
+    PROCESS_INFORMATION pi{};
+    DWORD code = 99;
+    if (CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi)) {
+        if (WaitForSingleObject(pi.hProcess, 60000) != WAIT_OBJECT_0)
+            TerminateProcess(pi.hProcess, 1);
+        GetExitCodeProcess(pi.hProcess, &code);
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+    }
+    std::string l = get(log);
+    printf("  exit %lu, log: %s", code, l.c_str());
+    CHECK(code == 0);
+    CHECK(all_of_version(g, "0.13.0"));
+    printf("  requests: api %d, release page %d, assets %d\n", g_gh.api_hits, g_gh.web_hits, g_gh.asset_hits);
+}
+
 int main(int argc, char** argv)
 {
     for (int i = 1; i < argc; i++) {
@@ -872,6 +1411,16 @@ int main(int argc, char** argv)
             upd::g_path_fix = false;
         else if (!strcmp(argv[i], "--old-lock")) // BUG-0243
             upd::g_lock_fix = false;
+        else if (!strcmp(argv[i], "--old-ga")) // BUG-0391 (setup only)
+            inst::g_ga_fix = false;
+        else if (!strcmp(argv[i], "--old-gadir")) // BUG-0391, the Steam GA folder (setup only)
+            inst::g_ga_dir_fix = false;
+        else if (!strcmp(argv[i], "--steam") && i + 1 < argc)
+            g_steam = upd::widen(argv[++i]);
+        else if (!strcmp(argv[i], "--old-web")) // BUG-0392 (update.web_fallback)
+            upd::g_web_fallback_fix = false;
+        else if (!strcmp(argv[i], "--setup") && i + 1 < argc)
+            g_setup = upd::widen(argv[++i]);
         else if (!strcmp(argv[i], "--bat") && i + 1 < argc)
             g_bat = upd::widen(argv[++i]);
         else if (!strcmp(argv[i], "--exclude") && i + 1 < argc)
@@ -887,6 +1436,8 @@ int main(int argc, char** argv)
         skini::g_encode_fix = skini::g_lock_fix = false;
         upd::g_path_fix = false;
         upd::g_lock_fix = false;
+        inst::g_ga_fix = inst::g_ga_dir_fix = false;
+        upd::g_web_fallback_fix = false;
     }
     wchar_t t[MAX_PATH];
     GetTempPathW(MAX_PATH, t);
@@ -908,6 +1459,13 @@ int main(int argc, char** argv)
     test_setup_packs();
     test_setup_close();
     test_install_bat();
+    test_ga_folder();
+    test_setup_ga_window();
+    test_steam_ga_folder();
+    test_setup_steam_ga();
+    test_real_steam();
+    test_web_fallback();
+    test_setup_api403();
     rmtree(g_tmp);
     printf(g_fail ? "FAILED (%d)\n" : "ALL OK\n", g_fail);
     return g_fail ? 1 : 0;

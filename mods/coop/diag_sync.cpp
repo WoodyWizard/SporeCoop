@@ -7,11 +7,15 @@
 #include <algorithm>
 #include <cctype>
 #include <climits>
+#include <cmath>
+#include <deque>
 #include <cstddef>
 #include <cstdio>
 #include <map>
 
+#include "fixes.h"
 #include "modes.h"
+#include "fixes.h"
 #include "net/diagmsg.h"
 
 namespace support {
@@ -180,13 +184,74 @@ struct GuestCheck {
     double ok_window_since = 0;
     uint32_t ok_told_place = 0; // the stage of the last OK line written
 };
+// BUG-0379: the host's own shared totals (dna, cell food) of the last seconds. A guest shows a total
+// the host sends it (MSG_CELL_FOOD) up to ~0.5 s after the host counted it, and the host builds its
+// digest a round trip after the guest built its own: in a 4-player Cell game that ate every few
+// seconds two checks 3 s apart each caught the guest one meal behind ("cell food: host 252, guest
+// 240", the guest at 252 0.15 s later), a MISMATCH without a desync. A guest value the host had
+// within kTotalLag s before it asked is no difference.
+static bool g_fix_total_lag = true;
+COOP_FIX("diag.total_lag", "BUG-0379", g_fix_total_lag, "sync-check: a guest's total the host had within 3 s before asking is no difference (food sent late)");
+constexpr double kTotalLag = 3.0;
+struct TotalAt {
+    double t;
+    uint8_t id;
+    float v;
+};
+static std::deque<TotalAt> g_host_totals;
+static double g_host_totals_next;
+
 static std::map<uint8_t, GuestCheck> g_guests; // host
+static bool g_rejoin_grace_fix = true;
+COOP_FIX("diag.rejoin_grace", "BUG-0380", g_rejoin_grace_fix,
+         "sync-check: a player who leaves and joins again is first checked 10 s after the join, like a newcomer");
 static uint32_t g_guest_told_place;            // guest: the stage of the last OK line written
 static uint32_t g_seq;
 
-static dg::Limits limits_for(uint32_t mode)
+// BUG-0378: players and ships are not compared where neither game has a place (world 0)
+static bool g_no_place_fix = true;
+COOP_FIX("sync.no_place", "BUG-0378", g_no_place_fix,
+         "sync-check: no players / ships compared in world 0 (the galaxy view: nobody's ship is shown there)");
+
+// BUG-0378: in Space a player's allowed distance grows with its speed. The guest's digest is read
+// when the host's request arrives, the host's when the guest's digest arrives (both at the start of
+// the mod's frame, before any puppet is driven: what the frames showed); a puppet is drawn 0.10 s
+// behind its newest state (interpolation), which is up to one send interval (1/15 s at 30 fps) plus
+// one way old. So a ship's two positions are ~0.2 s + a round trip (+ half the owner's round trip
+// when the state came through the host) apart in time: at Space speeds (30-100+ m/s) 10-30 m
+// (campaign "p apart" 10-30 m, BUG-0378). Off: the fixed 10 m.
+static bool g_speed_slack_fix = true;
+COOP_FIX("sync.speed_slack", "BUG-0378", g_speed_slack_fix,
+         "sync-check: in Space a player's position limit grows with its speed x the time between the two reads");
+
+static void add_speed_slack(dg::Limits& l, uint32_t mode, uint8_t guest)
+{
+    if (!g_speed_slack_fix || mode != modes::kSpace || !g_P.player_speeds || !g_P.sess)
+        return;
+    auto rtt = [](uint8_t id) {
+        net::Session::Link lk;
+        return g_P.sess->link_of(id, lk) && lk.rtt_ms >= 0 ? lk.rtt_ms / 1000.0 : 0.1;
+    };
+    double base = 0.2 + rtt(guest);
+    for (auto& [id, v] : g_P.player_speeds()) {
+        double t = base + (id != 0 && id != guest ? rtt(id) / 2 : 0.0);
+        t = std::min(t, 1.0);
+        if (std::isfinite(v) && v > 0)
+            l.slack[dg::make_key('p', id)] = (float)std::min(v * t, 300.0);
+    }
+}
+
+// BUG-0379: in a crowded pool the host's choice of a guest's 900 nearest cells (around its view
+// centre, a state late) and the compare's (around the guest's own position) differ near rank 900
+static bool g_fix_cell_margin = true;
+COOP_FIX("diag.cell_margin", "BUG-0379", g_fix_cell_margin, "sync-check: a guest must have only the nearest 80% of the 900 cells it is sent (the host picks them around a late position)");
+
+static dg::Limits limits_for(uint32_t mode, uint32_t world)
 {
     dg::Limits l;
+    l.no_place = g_no_place_fix && world == 0;
+    if (!g_fix_cell_margin)
+        l.cell_sure = 1.f;
     if (mode == modes::kTribe || mode == modes::kCiv)
         l.npc_missing = false; // RTS stages: NPCs are sent around the tribe / cities
     return l;
@@ -264,7 +329,14 @@ static void on_digest(uint8_t from, const dg::Digest& gd, size_t bytes)
     double now = g_H->time_seconds();
     double t0 = now;
     dg::Digest hd = build_digest(gd.seq);
-    dg::Compared c = dg::compare(hd, gd, limits_for(hd.mode));
+    dg::Limits lim = limits_for(hd.mode, hd.world);
+    add_speed_slack(lim, hd.mode, from);
+    std::vector<std::pair<uint8_t, float>> recent;
+    if (g_fix_total_lag)
+        for (auto& r : g_host_totals)
+            if (r.t >= g.asked - kTotalLag)
+                recent.push_back({r.id, r.v});
+    dg::Compared c = dg::compare(hd, gd, lim, g_fix_total_lag ? &recent : nullptr);
     double ms = (g_H->time_seconds() - t0) * 1000;
     g_c.sync_checks++;
     g_c.sync_ms_sum += ms;
@@ -385,6 +457,27 @@ void sync_tick(double now)
             g_guests.clear();
         return;
     }
+    // BUG-0380: a player who left kept its entry, so the same id joining again was checked on the old
+    // schedule (6 s after its world load in civ_city_join: the catch-up's city was still on its way)
+    // instead of 10 s after the join like a newcomer. Off: the entry stays (0.7.3.3).
+    if (g_rejoin_grace_fix)
+        for (auto it = g_guests.begin(); it != g_guests.end();) {
+            bool here = false;
+            for (auto& p : g_P.sess->players())
+                here = here || p.id == it->first;
+            it = here ? std::next(it) : g_guests.erase(it);
+        }
+    if (now >= g_host_totals_next) { // BUG-0379: the host's totals of the last seconds
+        g_host_totals_next = now + 0.1;
+        float dna;
+        int food;
+        if (g_P.dna && g_P.dna(dna))
+            g_host_totals.push_back({now, dg::kTotalDna, dna});
+        if (g_P.cell_food && g_P.cell_food(food))
+            g_host_totals.push_back({now, dg::kTotalCellFood, (float)food});
+        while (!g_host_totals.empty() && g_host_totals.front().t < now - kTotalLag - 25.0)
+            g_host_totals.pop_front(); // a guest answers within 20 s (or is asked again)
+    }
     // one guest per frame at most: the cost of a check is spread over frames
     for (auto& p : g_P.sess->players()) {
         if (p.id == 0)
@@ -430,6 +523,7 @@ void sync_tick(double now)
 void sync_on_session_end()
 {
     g_guests.clear();
+    g_host_totals.clear();
     g_guest_told_place = 0;
     g_host_t0 = -1;
     g_clock.clear();

@@ -1301,3 +1301,95 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   0.1 s windows (limit 85 %); at 42-55 fps 93-99 %. Seen while other lanes ran games.
 * Reproduce: `tools/lab.py run puppet_walk` with other lanes busy (`PUPPET_WALK_CMDS="frame.limit 33"` not tried).
 * Ticket: BUG-0387
+## Tribe: a walking mirror held back on the guest lurches to catch up (2026-11-01, fix/w30-tribe-walk)
+<a id="issue-tribe-mirror-held"></a>
+
+* What happens: seen once by tribe_walk_mobile (30 fps, mobile network): a guest's mirror walking at
+  9 m/s fell 3.6 m behind its target in 0.8 s although it was placed on the path every frame (its game
+  pushed it back), then moved ~1 m per frame for three frames to catch up. Cause not found (an obstacle
+  on the guest is the guess).
+* Reproduce: `tools/lab.py run tribe_walk_mobile --repeat 5 --retry 0`, look for "no jump" failures.
+* Ticket: BUG-0386
+## Creature: after an editor a guest asks the host for its own previous creature and gets nothing (2026-11-01, player report)
+<a id="issue-own-old-species"></a>
+
+* What happens: right after the host's evolution (both players evolved), the host's world share
+  still held a creature of the guest's previous creature (its key on the host, 7CA388E5). The guest
+  asked the host for that species ("creations: player 1 asks for species 7CA388E5: not found here" on
+  the host), could not build that NPC ("npc 142: proxy spawn failed (unknown species)") and the
+  sync-check reported it missing for one check; the next world share fixed it (OK 30 s later).
+* Reproduce: not tried. The player's logs: the guest's own editor gave it a new creature
+  (7CC73097), the host had registered the old one (7CA388E5) for player 1 and no longer finds it;
+  the host removed "a creature of species 7CA388E5 ... from a save made while a partner's puppet
+  existed" at the same moment.
+* Known (inferred): the host's `records_from_game` finds only creations still registered; a
+  partner's replaced creature is not, while a leftover of its puppet can still be in the world.
+* Not checked: whether the leftover NPC is the guest's old puppet or a herd member made from it.
+* Ticket: BUG-0370
+* FIXED (2026-11-01, fix/w31-creature-gate, unreleased): reproduced (`coop_old_species.py`: the guest
+  switches its creature, the host's game still makes creatures of the old key); the host now keeps the
+  records of the players' last creatures and answers from them (creations.old_species,
+  docs/re/creations.md#creations-old-species).
+
+## Editor: the game runs out of address space in the skin painter (2026-11-01, player report)
+<a id="issue-editor-skin-painter-oom"></a>
+
+* What happens: the host crashed in its creature editor at RenderWare::Raster::Fill+0x7 (a null
+  raster, read of 0x4) from the skin painter (Skinner::cSkinPainterPipeline::ExecutePipeline) after
+  55 minutes of play: 1554 of 2047 MB of the game's address space used (493 MB free), large-address
+  flag off; 12 s before, 868 MB were free (largest block 346 MB). The editor before it had taken
+  ~180 MB (939 -> 763 MB free, largest block 413 -> 181 MB).
+* Reproduce: not reproduced; a long session (Cell > Creature, many editors) on a 32-bit game
+  without the 4GB patch.
+* Known: no coop.dll frame in the chain; the mod does not hook the skin painter or the texture
+  manager; the host's own creature had no partner puppet in the editor. Inferred: the game's own
+  allocation of a paint raster failed (the game does not check it). The mod's warning
+  (`mem: the game's address space runs low`) fires at < 300 MB free or a block < 48 MB and was not
+  reached at the last minute line.
+* Next steps: measure the address space the editor's paint mode takes on lane 10; tell players with
+  the large-address flag off to use the 4GB patch.
+* Ticket: BUG-0371
+## Creature: the partner's jumps are mostly not shown (2026-11-01, fix/w30-puppet-jump)
+<a id="issue-puppet-jumps"></a>
+
+* What happens: when the partner's creature leaves the ground (a jump, a fall), its puppet placed
+  in the air every frame (0.7.3.3) is put back on the ground by the game while it is grounded: in
+  21-22 of 24 simulated hops it stayed on the ground, in 2-3 it fell with the partner.
+* Reproduce: `coop_puppet_walk.py --dir guest --jumps 0.6` (hops by `coop.abilities lift 1.5`; the
+  fixture's creatures cannot jump), compare the walker's and the puppet's airborne episodes in the
+  track json (docs/re/creature.md#creature-puppet-ground).
+* Known: the game keeps a grounded creature (+0x137 = 1) on the terrain; the partner sends no
+  airborne flag (PF_JUMPING is never set).
+* Next steps: send the airborne state and put the puppet into the game's fall (or play the jump)
+  on the observer; check with a creature that can jump.
+* Ticket: BUG-0376
+
+## Space: a fast partner ship is drawn off its path for a moment when it turns or stops (2026-11-01, fix/w31-space-gate)
+<a id="issue-space-fast-overshoot"></a>
+
+* What happens: in the galactic core's system the guest's ship (moved by the core's orbit at up to
+  ~210 m/s) was drawn on the host 20-31 m away from every point of its own path over the 0.5 s
+  before, for ~0.2 s, while it stopped (lab 20261101-100032, 11 of 84 `coop.fleet track` rows; the
+  run before: within 0.1 m at 207-235 m/s).
+* Reproduce: `lab.py run space_finale_wait`, the printed line `core: the guest ship on the host`
+  (not checked by the test).
+* Known: the pin itself is right (the host's still ship is drawn within 0.0 m on the guest);
+  inferred: the partner interpolation (extrapolation up to 0.25 s with the last velocity) or late
+  snapshots during the host's cinematic.
+* Not checked: a frame-by-frame look at the received states around the moment.
+* Ticket: BUG-0388.
+## Tests: the creature test's hit lands on the host's family and is dropped (2026-11-01, fix/w30-tribe-walk)
+<a id="issue-creature-test-party-hit"></a>
+
+* What happens: coop_two_instances.py (suite `creature`) sometimes hits an NPC of the host's family; since
+  BUG-0374 the host drops a partner's hit on it, and the check `hits applied 0 -> 1` fails (2 of 4 runs).
+* Reproduce: `tools/lab.py run creature --repeat 4 --retry 0`; a failing run prints `host hp 10.0 -> 10.0`.
+* Ticket: BUG-0390
+
+## Lab gate: sync-check "p: 1 apart" in Tribe while the view jumps (2026-11-01, fix/w30-tribe-walk)
+<a id="issue-tribe-p-gate"></a>
+
+* What happens: chaos_tribe and tribe_walk_mobile fail on the sync-check gate with only the players' RTS
+  point apart (p0 20-70 m), every member and animal matching; the tests move the view by the minimap.
+* Reproduce: `tools/lab.py run chaos_tribe,tribe_walk_mobile --repeat 3 --retry 0`.
+* Ticket: BUG-0393

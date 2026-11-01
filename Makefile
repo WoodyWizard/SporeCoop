@@ -96,6 +96,7 @@ endif
 	$(B)/host/net_tests
 	python3 tools/tests/fakepeer_check.py $(B)/host/net_tests
 	python3 tools/tests/lab_selftest.py
+	python3 tools/tests/gates_selftest.py
 ifneq ($(SKIP_SANITIZERS),1)
 	$(MAKE) --no-print-directory test-asan
 	$(MAKE) --no-print-directory test-tsan
@@ -152,7 +153,7 @@ test-tsan: sanitizer-probe
 test-win: $(B)/win_tests.exe $(B)/SporeCoopSetup.exe
 $(B)/win_tests.exe: tests/win_tests.cpp installer/install.cpp installer/install.h mods/coop/slotfs.cpp mods/coop/slotfs.h updater/winupdate.cpp updater/pending.h updater/pack.cpp updater/sha256.cpp sporekit/inifile.cpp sporekit/inifile.h
 	@mkdir -p $(B)
-	$(CXX) $(CXXFLAGS) -static -o $@ tests/win_tests.cpp installer/install.cpp mods/coop/slotfs.cpp updater/winupdate.cpp updater/pack.cpp updater/sha256.cpp sporekit/inifile.cpp -lwinhttp
+	$(CXX) $(CXXFLAGS) -static -o $@ tests/win_tests.cpp installer/install.cpp mods/coop/slotfs.cpp updater/winupdate.cpp updater/pack.cpp updater/sha256.cpp sporekit/inifile.cpp -lwinhttp -lws2_32
 
 clean:
 	rm -rf $(B)

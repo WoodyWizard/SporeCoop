@@ -40,7 +40,7 @@ enum MsgType : uint8_t {
     MSG_NPC_DESPAWN = 20, // host -> guest: stop mirroring an NPC
     MSG_DAMAGE_REQ = 21,  // guest -> host: my attack hit NPC net_id
     MSG_WORLD_TIME = 22,  // host -> guests: time of day (sky orientation quaternion)
-    MSG_DNA = 23,         // host -> guests: shared DNA total (f32)
+    MSG_DNA = 23,         // host -> guests: shared DNA total (f32), then (optional) u8 n x {u8 cause, u8 player, f32 amount} (dna_ledger.h)
     MSG_DNA_ADD = 24,     // guest -> host: DNA the guest earned (f32 delta)
     MSG_RES = 25,         // host -> guests: shared resource total (u8 id, f64)
     MSG_RES_ADD = 26,     // guest -> host: local change of a shared resource (u8 id, f64 delta)

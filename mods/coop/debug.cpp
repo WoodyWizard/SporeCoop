@@ -78,6 +78,57 @@ int c_ground(void*, int argc, const char* const* argv, SkOut* out)
     return 0;
 }
 
+// tests (BUG-0366): coop.abilities [play <i>] - the own avatar's abilities (vt 0xB0 count, vt 0xB4
+// get(i): +8 type, +0x10) and its height over the ground; `play` uses one (PlayAbility)
+int c_abilities(void*, int argc, const char* const* argv, SkOut* out)
+{
+    void* av = game::avatar();
+    if (!av) {
+        SAY("no avatar");
+        return 1;
+    }
+    if (argc > 2 && !strcmp(argv[1], "play")) {
+        uintptr_t pa = H->sym("Simulator::cCreatureBase::PlayAbility");
+        int r = pa ? skg::thiscall<int>(pa, av, atoi(argv[2]), (void*)nullptr) : -2;
+        SAY("play %d -> %d\n", atoi(argv[2]), r);
+        return 0;
+    }
+    if (argc > 4 && !strcmp(argv[1], "ground")) { // BUG-0377: the ground radius in the direction of x y z, no move
+        net::Vec3 p{(float)atof(argv[2]), (float)atof(argv[3]), (float)atof(argv[4])};
+        SAY("ground %.2f\n", game::ground_radius(p));
+        return 0;
+    }
+    if (argc > 4 && !strcmp(argv[1], "goto")) { // onto the ground in the direction of x y z
+        net::Vec3 p{(float)atof(argv[2]), (float)atof(argv[3]), (float)atof(argv[4])};
+        float r = std::sqrt(p.x * p.x + p.y * p.y + p.z * p.z), g = game::ground_radius(p);
+        if (r < 1.f || g <= 0) {
+            SAY("no ground there");
+            return 1;
+        }
+        float k = (g + 0.05f) / r;
+        game::teleport(av, {p.x * k, p.y * k, p.z * k}, game::orientation(av));
+        SAY("at ground %.2f\n", g);
+        return 0;
+    }
+    if (argc > 2 && !strcmp(argv[1], "lift")) { // put it <m> higher (its fall is the second half of a jump)
+        net::Vec3 p = game::position(av);
+        float r = std::sqrt(p.x * p.x + p.y * p.y + p.z * p.z), k = (r + (float)atof(argv[2])) / r;
+        game::teleport(av, {p.x * k, p.y * k, p.z * k}, game::orientation(av));
+        SAY("lifted %.2f\n", (float)atof(argv[2]));
+        return 0;
+    }
+    int n = skg::vcall<int>(av, 0xB0 / 4);
+    for (int i = 0; i < n && i < 64; i++) {
+        uint8_t* a = skg::vcall<uint8_t*>(av, 0xB4 / 4, i);
+        if (a && skg::readable(a, 0x14))
+            SAY("%d type=0x%X +0x10=%u\n", i, *(uint32_t*)(a + 8), *(uint32_t*)(a + 0x10));
+    }
+    net::Vec3 p = game::position(av);
+    float g = game::ground_radius(p);
+    SAY("above=%.2f", std::sqrt(p.x * p.x + p.y * p.y + p.z * p.z) - g);
+    return 0;
+}
+
 int c_load(void*, int argc, const char* const* argv, SkOut* out)
 {
     if (argc < 3) {
@@ -470,6 +521,8 @@ void coop_register_debug_commands2(const SkHost* host, SkMod* self)
     host->command_add(self, "coop.load", "coop.load <GameN> <Planet> - load a local save (also from the menu)",
                       c_load, nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.ground", "coop.ground <x> <y> <z> - terrain radius under a point (tests, BUG-0329)", c_ground,
+                      nullptr, SK_CMD_MAIN_THREAD);
+    host->command_add(self, "coop.abilities", "coop.abilities [play <i> | lift <m> | goto <x> <y> <z> | ground <x> <y> <z>] - the own avatar's abilities (tests, BUG-0366)", c_abilities,
                       nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.menu", "coop.menu - save and leave the stage for the galaxy menu (tests)", c_menu,
                       nullptr, SK_CMD_MAIN_THREAD);

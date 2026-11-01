@@ -63,6 +63,13 @@ def host_up(host, tries=3):
     return False
 
 
+def lab_mark(what, state):
+    """a line for the lab (tools/loggates.py): `LAB-MARK sync-force on|off <time>` around a sync-check
+    difference the test makes on purpose (`coop.diag sync force`), so the sync-check gate leaves the
+    MISMATCH lines of that window out (docs/06-testing.md#testing-log-gates)"""
+    print(f'LAB-MARK {what} {state} {time.time():.3f}', flush=True)
+
+
 def shot(con, name):
     path = os.path.join(lane.out_dir('shots'), name)
     if con.call('shot ' + path)['ok']:
@@ -155,6 +162,57 @@ class Monitor(threading.Thread):
 
 
 _monitors = []
+_watch = None  # the invariant monitor of the test's games (monitor.py, docs/06-testing.md#testing-monitor)
+
+
+def monitor_cfg():
+    """SPORE_MONITOR: off, or a JSON dict of monitor.DEFAULTS overrides (the lab sets it from suite.py
+    monitor=); SPORE_NET set: the link invariant is off (a bad network on purpose)"""
+    import json
+    v = os.environ.get('SPORE_MONITOR', '').strip()
+    if v == 'off':
+        return None
+    try:
+        cfg = json.loads(v) if v else {}
+    except ValueError:
+        print(f'  (SPORE_MONITOR is not JSON: {v!r}; defaults)', flush=True)
+        cfg = {}
+    return dict(cfg, netem=bool(os.environ.get('SPORE_NET')))
+
+
+def start_watch(players):
+    """the invariant monitor over {who: instance} (again: a new one, the old one stopped)"""
+    global _watch
+    import monitor
+    if _watch is not None:
+        _watch.stop_ev.set()
+        _watch = None
+    cfg = monitor_cfg()
+    if cfg is None:
+        return None
+    _watch = monitor.Watch({who: (inst, lane.game_log(inst)) for who, inst in players.items()}, cfg,
+                           console=lambda inst: Console(inst, timeout=10),
+                           out=lambda line: print(line, flush=True))
+    _watch.start()
+    return _watch
+
+
+def monitor_add(who, inst):
+    """another game of the test (the extra guests of a party, coop_multi.start_extra)"""
+    if _watch is not None:
+        _watch.add_player(who, inst, lane.game_log(inst))
+
+
+def monitor_flush():
+    """the monitor reads the logs once more and prints what it found (before the RESULT line)"""
+    if _watch is not None:
+        try:
+            _watch.step()
+        except Exception as e:  # noqa: BLE001
+            print(f'  (monitor: {e!r})', flush=True)
+        if _watch.violations:
+            print(f'  monitor: {len(_watch.violations)} invariant violation(s) (MONITOR-VIOLATION lines; the lab '
+                  f'fails the test on them)', flush=True)
 
 
 def watch(host_inst, guest_inst):
@@ -166,6 +224,7 @@ def watch(host_inst, guest_inst):
         m = Monitor(inst, name)
         m.start()
         _monitors.append(m)
+    start_watch({'host': host_inst, 'guest': guest_inst})
 
 
 def build_id():
@@ -300,7 +359,43 @@ def start(*a, **kw):
                 raise SystemExit(1)
             if ' unsafe ' in out.splitlines()[0]:
                 print(f'  SPORE_FIX_OFF: warning: {name} is unsafe (its off side can corrupt memory or data)', flush=True)
+    apply_fps(host, 'host')
+    apply_fps(guest, 'guest')
     return host, guest
+
+
+def fps_limits(spec=None):
+    """SPORE_FPS="host:15,guest:30,extra:20" (or one number for every game) -> {'host': 15.0, ...}
+    (docs/06-testing.md#testing-degraded); extra1 / extra2 name one extra guest, extra both"""
+    spec = os.environ.get('SPORE_FPS', '') if spec is None else spec
+    out = {}
+    for part in filter(None, (x.strip() for x in spec.split(','))):
+        who, _, v = part.rpartition(':')
+        fps = float(v)
+        if not 1 <= fps <= 240:
+            raise ValueError(f'SPORE_FPS: {part}: 1..240 fps')
+        for w in ((who,) if who else ('host', 'guest', 'extra')):
+            if w not in ('host', 'guest', 'extra', 'extra1', 'extra2'):
+                raise ValueError(f'SPORE_FPS: {part}: host, guest, extra, extra1 or extra2')
+            out[w] = fps
+    return out
+
+
+def fps_of(who, limits):
+    return limits.get(who, limits.get('extra') if who.startswith('extra') else None)
+
+
+def apply_fps(con, who):
+    """the game's frame time cap from SPORE_FPS (`frame.limit <ms>`); these games then are no warm games"""
+    fps = fps_of(who, fps_limits())
+    if fps is None:
+        return None
+    ms = max(1, round(1000 / fps))
+    out = (con.call(f'frame.limit {ms}').get('out') or '').strip()
+    print(f'  SPORE_FPS: {who} at {fps:g} fps (frame.limit {ms}): {out.splitlines()[0] if out else "no answer"}',
+          flush=True)
+    lane_state(**{**lane_state(), 'fps': os.environ.get('SPORE_FPS', '')})
+    return ms
 
 
 def fix_off_ok(name, answer):
@@ -322,7 +417,7 @@ def _start(fixture='creature', planet=None, load_args=(), join_in_intro=False, g
     # coop_stage_switch.py, but go through the galaxy menu and take longer)
     if os.environ.get('SPORE_WARM') == '1' and planet and not join_in_intro and st.get('build') == build_id() \
             and st.get('fixture') == fixture and st.get('guest_creations', True) == guest_creations \
-            and not st.get('fix_off') and not PRESET_CHOICES \
+            and not st.get('fix_off') and not st.get('fps') and not PRESET_CHOICES \
             and alive(lane.HOST) and alive(lane.GUEST):
         host, guest = Console(lane.HOST), Console(lane.GUEST)
         try:
@@ -449,5 +544,6 @@ class Checks:
             self.ok = False
 
     def result(self):
+        monitor_flush()
         print('RESULT:', 'OK' if self.ok else 'FAIL')
         return 0 if self.ok else 1
