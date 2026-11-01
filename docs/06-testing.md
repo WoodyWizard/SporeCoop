@@ -2852,3 +2852,58 @@ Before a tag `vX.Y.Z` (CLAUDE.md 4):
   host line; the 42 campaign_space violations were all such samples, none in a replay now);
   `stage_apart` is no violation while the host's own line says `share_wait=planet|cinematic`.
   gates_selftest.py has both cases (they fail on the old monitor).
+## Cell sync-check findings of the log gates: what was a desync (2026-11-01, fix/w31-cell-gate)
+<a id="testing-cell-sync-check"></a>
+
+BUG-0379: the first `lab.py gates` report had Cell `c missing` in 31 passed results and `cell food
+total` in 5. Per test, with the evidence:
+
+* **cell_pause** (6/6): the test removes the guest's mirrors 12 times (`coop.pool zap 5000`) while
+  its pause menu is open; BUG-0348's fix then holds new cells (the broadphase's pending list is
+  near full), so the guest really has none of the host's cells until it resumes (`c: 706 missing`,
+  `2 objects compared` = the two players only). A difference the test makes, not one a player gets
+  (without the churn a paused guest creates a few cells). The rounds are now marked `LAB-MARK
+  sync-force on|off` and after the resume the host's own sync-check must count an OK (no MISMATCH):
+  `ok 3. after the resume the host's sync-check finds the guest equal`. cell_particles (1/87, the same
+  `2 objects compared`) and cell_churn remove the mirrors the same way and are marked too.
+* **cell_far_guest** (8/14), **guest_editor_hold** (3/3), **cell_leave** (3/23): every red result
+  is from 2026-10-30 runs of fix/w9-* branches, before the cell budget and partner fixes (BUG-0295,
+  BUG-0298). guest_editor_hold's: the test's `coop.pool food 1000` jumps several levels; the guest
+  had 7 mirrors at s 17.7 and 128 at s 27.7 (the new level's pool still coming). Not seen on 15539ad.
+* **cell_sap** (3/31): all three in one run that failed with 1332 caught faults (the BUG-0337 work
+  before its fix): a broken game, not the check.
+* **campaign_short** (12 `c missing`): the recent one (20261031-181517 #3, Dave: `904 objects
+  compared ... c: 14 missing`): four players, the guest held exactly the 900 cells it was sent, the
+  check wanted the 900 nearest to the guest's own position, the host had picked them around its
+  view centre of the guest (a state late): the cells near rank 900 differ. Fixed in the check
+  (`diag.cell_margin`: only the nearest 80 % of the 900 must be there). The 2026-10-29/30 ones
+  (`1098 objects compared`, 447 missing) were before the 900 cap. Not run again (four players, long).
+* **cell food total** (5: campaign, campaign_short, cell_new_game): the host sends its total every
+  0.5 s (MSG_CELL_FOOD) and builds its digest a round trip after the guest's; with food coming in
+  steadily both checks 3 s apart caught the guest one meal behind, a different meal each time
+  (campaign_short 20261031-103900 #3: host 240 at s 176.9 and 252 at s 179.95, Carol 240 at s
+  177.3 and 252 at s 180.4, the MISMATCH at s 180.26). Fixed in the check (`diag.total_lag`: a guest
+  value the host had within 3 s before asking counts as equal); both games' totals were equal.
+
+Test `cell_sync_check` (`coop_cell_sync_check.py`, ~2.5 min): B: food 300 crowds the pool (the
+host sends the guest 900 of more, `send_capped`), the guest swims to and fro, the host asks for a
+check every 5 s; A: the host eats a point every 0.3 s for 20 s. Each phase: no new MISMATCH, at least
+3 checks; afterwards the guest holds the host's cells and the same food total. How crowded the
+pool gets varies (the send was capped in 0 to 9 rounds of 5 runs): printed, not checked. `SPORE_FIX_OFF=diag.total_lag`
+fails A (lab 20261101-095302, 20261101-100218: `cell food: host 340.0, guest 338.0`).
+`diag.cell_margin` off did not fail in 2 players (lab 20261101-095952: the host capped the send in
+only 3-9 rounds; the boundary needs a pool crowded for long, as with four players): its check is
+the unit test in net_tests (test_diag_compare) and the campaign log above.
+
+Test `cell_ko_food` (`coop_cell_ko_food.py`, ~1.5 min, BUG-0364): the guest (30 m from the host,
+nobody revives it) and then the host are knocked out; while out, the game's eat event for the 2-4
+nearest plants on its screen (`coop.pool eat <key>`, EatFood); the food totals of both games must
+not grow by them. `SPORE_FIX_OFF=cell.ko_no_eat` fails (+12 per plant on both games). Pitfalls: a
+`coop.pool tp` right after the start is undone by the hatch (the test moves again until 15 m away);
+the plants it touched drift off the screen or are eaten by the pool (printed only).
+
+cell_coop pitfalls found on the way (fix/w31-cell-gate): the `revives=` / `respawns=` counters of
+`coop.pool` belong to the game process and survive the warm reset, so the test compares them with
+their values at its start (BUG-0396: every warm `--repeat` run failed before); the host's idle cell
+can eat a plant in the 2 s of the shared food check, which now allows the host's own `own_points`
+(BUG-0395, 1 in 130 runs).

@@ -2158,6 +2158,42 @@ static void test_diag_compare()
             c5 |= i.id == "missing:c5";
         CHECK(!c5);
     }
+    {   // BUG-0379: in a crowded pool the cells near rank 900 depend on the centre the host used
+        dg::Digest hc, gc;
+        hc.mode = gc.mode = 0x1654C00;
+        hc.world = gc.world = 7;
+        gc.self = 1;
+        hc.entries.push_back({dg::make_key('p', 1), 0, 0, 0});
+        gc.entries.push_back({dg::make_key('p', 1), 0, 0, 0});
+        for (uint32_t i = 0; i < 1000; i++)
+            hc.entries.push_back({dg::make_key('c', 100 + i), 0.05f * (float)i, 0, 0});
+        for (uint32_t i = 0; i < 906; i++) // the host's 900 picked a little off: 897-899 not sent, 900-905 sent
+            if (i < 897 || i >= 900)
+                gc.entries.push_back({dg::make_key('c', 100 + i), 0.05f * (float)i, 0, 0});
+        auto missing = [&](const dg::Limits& l) {
+            int n = 0;
+            for (auto& i : dg::compare(hc, gc, l).issues)
+                n += i.cat == "missing";
+            return n;
+        };
+        dg::Limits old;
+        old.cell_sure = 1.f;
+        CHECK(missing(dg::Limits{}) == 0 && missing(old) == 3);
+        gc.entries.erase(gc.entries.begin() + 10); // a near cell the guest lacks: missing either way
+        CHECK(missing(dg::Limits{}) == 1 && missing(old) == 4);
+    }
+    {   // BUG-0379: a guest total the host had a moment before it asked is no difference (sent late)
+        std::vector<std::pair<uint8_t, float>> recent = {{dg::kTotalDna, 90}, {dg::kTotalDna, 80}};
+        bool dna = false;
+        for (auto& i : dg::compare(h, g, {}, &recent).issues)
+            dna |= i.id == "total:1";
+        CHECK(!dna);
+        recent = {{dg::kTotalDna, 90}, {dg::kTotalCellFood, 80}}; // another total's value does not count
+        dna = false;
+        for (auto& i : dg::compare(h, g, {}, &recent).issues)
+            dna |= i.id == "total:1";
+        CHECK(dna);
+    }
     std::string t = dg::describe(c.issues);
     printf("  %s\n", t.c_str());
     CHECK(t.find("n: 1 missing on the guest (n4)") != std::string::npos && t.find("n: 1 apart (n1 30.0)") != std::string::npos);

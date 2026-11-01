@@ -167,6 +167,9 @@ COOP_FIX("pool.guestbite", "BUG-0078", g_fix_guestbite, "cell: a guest's bite pa
 // wave 5 (review of 0.7.3.0)
 static bool g_fix_ko_grace = true; // BUG-0238: a remote knockout lasts to its own deadline through late refreshes
 COOP_FIX("pool.ko_grace", "BUG-0238", g_fix_ko_grace, "cell: a late knockout refresh does not end it, replay its effect; KO_UP when ours ends on a stage leave");
+static bool g_fix_ko_no_eat = true; // BUG-0364: a knocked-out cell eats nothing (food, chunks) until it is up again
+COOP_FIX("cell.ko_no_eat", "BUG-0364", g_fix_ko_no_eat, "cell: a knocked-out cell does not eat what touches it (EatFood, chunk bites), so it does not respawn bigger");
+static uint32_t g_ko_eats_blocked; // BUG-0364: meals and chunk bites of our knocked-out cell left out
 static double g_kodrop_until; // tests (`coop.pool kodrop <s>`): MSG_CELL_KO ignored until then
 static bool g_fix_food_ack_away = true; // BUG-0239: the host acknowledges a guest's meal it cannot count
 COOP_FIX("pool.food_ack_away", "BUG-0239", g_fix_food_ack_away, "cell: a guest's meal reaching a host in an editor (no avatar) is acknowledged, not left on the way");
@@ -689,6 +692,10 @@ static void chunk(Chunk_t orig, uint32_t eater, uint32_t victim, uint32_t a, uin
         orig(eater, victim, a, b, dt);
         return;
     }
+    if (g_fix_ko_no_eat && g_downed && e == avatar()) { // BUG-0364: a knocked-out mouth does not bite
+        g_ko_eats_blocked++;
+        return;
+    }
     if (e == avatar() && !is_guest())
         g_own_chunks++;
     auto it = is_guest() ? g_host_of.find(victim) : g_host_of.end();
@@ -847,6 +854,21 @@ static void SK_CDECL h_Destroy(uint32_t idx, bool loot, float f, int x)
         g_dbg_nogfx += !dgfx;
         g_dbg_alive += modes::cell_at(idx) != nullptr;
     }
+}
+
+// BUG-0364: the knockout holds our cell in place at hp 1 (downed_tick), but the game's contact
+// events still ran: food floating into it was eaten (event 0x12, EatFood 0xE7DF40 -> OnEat ->
+// AvatarEat -> AddFoodPoints), so the cell came back from its respawn bigger than "small again".
+// A knocked-out cell eats nothing: the food stays where it is for whoever comes.
+using EatFood_t = void(SK_CDECL*)(uint32_t, uint32_t, void*, float);
+static EatFood_t o_EatFood;
+static void SK_CDECL h_EatFood(uint32_t eater, uint32_t food, void* ref, float dt)
+{
+    if (g_fix_ko_no_eat && g_downed && in_cell() && eater == avatar_idx() && avatar()) {
+        g_ko_eats_blocked++;
+        return;
+    }
+    o_EatFood(eater, food, ref, dt);
 }
 
 using AddFood_t = void(SK_CDECL*)(int, bool);
@@ -2327,6 +2349,8 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     a_Overlap = H->sym("SweepPrune::OverlapOther");
     if (a_UpdatePairs && a_MergeAxis && a_Overlap) // GOG 2024 only (BUG-0337)
         H->hook_create(M, (void*)a_UpdatePairs, (void*)h_UpdatePairs, (void**)&o_UpdatePairs);
+    if (a_EatFood) // BUG-0364
+        H->hook_create(M, (void*)a_EatFood, (void*)h_EatFood, (void**)&o_EatFood);
     if (a_ChunkA && a_ChunkB) {
         H->hook_create(M, (void*)a_ChunkA, (void*)h_ChunkA, (void**)&o_ChunkA);
         H->hook_create(M, (void*)a_ChunkB, (void*)h_ChunkB, (void**)&o_ChunkB);
@@ -4623,9 +4647,9 @@ std::string debug(const std::vector<std::string>& a)
     }
     snprintf(b, sizeof b,
              "avatar hp=%d invuln=%d own_eats=%u own_points=%u bites_taken=%u damage_taken=%u pos=(%.1f %.1f) size=%.2f target=%.2f body=%.2f downed=%d partner_dist=%.1f "
-             "revive_dist=%.1f local_gameplay_cells=%d own_pairs=%u\n",
+             "revive_dist=%.1f local_gameplay_cells=%d own_pairs=%u ko_eats_blocked=%u\n",
              F<int>(av, kHp), F<uint8_t>(av, kInvuln), g_own_eats, g_own_food, g_bites_taken, g_damage_taken, pos_of(av).x, pos_of(av).y, F<float>(av, kSize), F<float>(av, kTargetSize), g_body,
-             g_downed ? 1 : 0, pd, revive_dist(av), local, g_own_pairs);
+             g_downed ? 1 : 0, pd, revive_dist(av), local, g_own_pairs, g_ko_eats_blocked);
     // cine=1: a caption waits for the player's OK (cinematic manager +0x2C, docs/re/space.md 7.2);
     // parts: the unlocked part flags S+0x34 (13 bytes)
     void* cm = a_Cine ? skg::cdecl_call<void*>(a_Cine) : nullptr;

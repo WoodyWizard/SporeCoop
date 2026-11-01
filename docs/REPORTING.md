@@ -198,7 +198,10 @@ in world 0, the galaxy view, players and ships are not compared), totals (0.5), 
 on the guest (an NPC only within 90 m of the guest's creature: farther ones are never sent to it;
 not in Tribe / Civ, where NPCs are sent around the tribe), objects on the guest the host does not
 have (ghosts), the vote. A difference is looked at again 3 s later; only what is still there
-counts:
+counts. Since BUG-0379 (2026-11-01): a guest total the host itself had within 3 s before it asked is
+no difference (the host sends the Cell food total every 0.5 s), and in a pool where the host sends a
+guest only its nearest 900 cells, only the nearest 720 of them must be on the guest (the host picks
+the 900 around the guest's position as it last saw it):
 
     sync-check: OK with player 1 'Bob' (Cell 9652F8AD, 389 objects compared: c387 p2; check 0.19 ms, 6325 bytes)
     sync-check: MISMATCH with player 1 'Bob' (Creature 68AC222A, 2 checks 3 s apart, 22 objects compared): p: 1 apart (p1 100.1)

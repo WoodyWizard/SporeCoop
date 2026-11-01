@@ -1,19 +1,19 @@
 ---
 id: BUG-0364
 title: cell: a knocked-out cell still eats food, so it respawns bigger (cell_coop 'small again' failed)
-status: open
+status: fixed
 kind: bug
 stage: Cell
 reported: 2026-11-01
 source: lab 20261101-023131 cell_coop (main d6b81d9, lane 3)
 role: guest
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
-signature:
-docs:
+fixed_in: unreleased
+branch: fix/w31-cell-gate
+commits: f84df60
+tests: cell_ko_food
+signature: "own cell ate" lines between "ko: own cell state 1" and state 2/3
+docs: docs/re/cell.md#cell-ko-eat
 related:
 ---
 
@@ -29,14 +29,23 @@ How to reproduce: `lab.py run cell_coop --repeat 6`, look for "ate" lines betwee
 <!-- what the player (or the test) saw, in our words; no player names, no paths from their PC -->
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+Observed (cell_ko_food with the fix off): the knockout holds the cell at hp 1 on its spot, but the
+game's eat event still runs for it: EatFood 0xE7DF40 (event 0x12) -> OnEat -> AvatarEat ->
+AddFoodPoints, +12 shared food per plant on both games, the plant eaten. Its chunk bites (events
+0x13 / 0x14) were not stopped either (inferred from the same code path, not seen in a run). The
+respawn's small body grows by food (+0.01 per point), so it came back bigger.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+EatFood is hooked (GOG 2024): while our cell is knocked out, a call with our avatar as the eater
+returns at once (the food stays), and our mouth's chunk bites are left out; counted in `coop.pool`
+as `ko_eats_blocked=`. Switch `coop.fix cell.ko_no_eat`.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+cell_ko_food (guest and then host knocked out, 4 plants touched through the game's eat event; the
+food totals of both games): FAIL with `SPORE_FIX_OFF=cell.ko_no_eat` in lab 20261101-093513 and
+20261101-094736 (guest 0 -> 36 on both games, host 36 -> 84), PASS in 20261101-094930 (2 runs,
+0 -> 0, ko_eats_blocked 3-4 / 2) and 20261101-100440 (3 of 3, gates on).
 
 ## History
 - 2026-11-01: opened.
+- 2026-11-01: fixed on fix/w31-cell-gate (cell.ko_no_eat, test cell_ko_food).
