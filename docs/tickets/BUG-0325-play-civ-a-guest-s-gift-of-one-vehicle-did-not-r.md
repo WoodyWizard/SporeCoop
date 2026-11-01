@@ -42,3 +42,4 @@ died on the host between the guest's selection and the gift, or a command raced 
 ## History
 - 2026-10-30: opened.
 - 2026-10-30 (fix/w14-tribe-civ): again in seed 5 (2 rejected guest commands; "1 own vehicles selected but no give button (My role: none - pick one)"). The host now logs every rejected command with its kind ("civ: rejected command kind K from player P"). Open.
+- 2026-11-01 (fix/w31-civ-gate): play_civ on lane 9 (lab 20261101-104353, default seed): "did not happen: guest sees [8] owned by the partner and no longer selected" at 10:45:20; the host logged "Bob gave 1 vehicle to Alice" at 10:45:11 (the gift arrived) and "Alice gave 1 vehicle to Bob" at 10:45:20, the moment of the check: likely the host's bot gave the vehicle back (inferred, the vehicle id of the host's gift is not logged). No rejected command (rejected=0).
