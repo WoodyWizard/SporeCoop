@@ -50,7 +50,9 @@ guest clicks to eat; checks at 3 s and 30 s that the guest shows each body dead 
 within 1.5 m of the host's body and on the ground on both.
 - FAIL with `SPORE_FIX_OFF=npc.dead_proxy`: out/lab/20261101-135546 (feat/w33-tests-creature worktree): the epic's
   victim #26 and the `later` kill #6 have no body on the guest ("proxy not spawned"); every other kind 0.00 m apart.
-- PASS with the fix: see the ticket history (lab run of the branch).
+- PASS with the fix: out/lab/20261101-141938 (corpse_positions), 20261101-142305 (corpse_positions_player: guest at
+  30 fps over the `player` network).
+- `SPORE_FIX_OFF=npc.play_death` fails too (the guest's proxies of the bodies are not dead in its game): 20261101-145148.
 Still not reproduced: a body in another place on the two games (every body of every kind was 0.00 m apart: the guest
 puts a killed proxy where the host's body is every frame).
 

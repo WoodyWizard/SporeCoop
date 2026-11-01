@@ -3033,7 +3033,12 @@ counters. Every one has a `_player` twin (`SPORE_FPS=guest:30 SPORE_NET=player`)
   must toggle and come back), CRG_ClaimNest on each game (Enter until it ends) and a world share
   (`coop.share`): each game has the partner's puppet object (`coop.status` `remote N ... puppet=`) and draws it
   within 2 m of the partner's own position (`coop.track`) within 20 s. `PUPPET_EVENTS_PLANT=hold` (the host's
-  `coop.puppet hold on` after the first event) must fail.
+  `coop.puppet hold on` after the first event) fails (lab 20261101-144621: 4.1 m after the deaths, Alt+Enter and
+  the cinematic; the editor and the share made new puppets, which hold does not stop). An evolution reloads the
+  guest with the host's world a few seconds after the editors (the share waits for the cinematic): the next step
+  waits until both games are in the stage and together for 6 s (`settled`), `coop.team die` is retried while there
+  is no avatar, and a respawn counts only after a death was seen (the `_player` run's first death found no avatar
+  and its "respawn" passed on the living creature).
 * `corpse_positions` (`coop_npc_corpse.py [--only] [--skip]`, ~5 min warm, BUG-0383): kinds stand, guest, run
   (`coop.npctrack walk` at 6 m/s, killed running), thrown (`coop.npc hosthit <id> <dmg> <push>`: TakeDamage with a
   push away from the avatar and up, new test argument), slope (an 065CB8BD walked onto the fixture slope; the
@@ -3044,17 +3049,24 @@ counters. Every one has a `_player` twin (`SPORE_FPS=guest:30 SPORE_NET=player`)
   `game_dead=<0|1> impressed=<0|1>`, the proxy's mbDead and impressed flags; the old `DEAD` there is the mod's
   `killed`), its model within 1.5 m of the host's, both on their ground (model height over the terrain
   -0.6..1.2 m). All bodies were 0.00 m apart: a guest puts a killed proxy where the host's body is every frame.
-  `SPORE_FIX_OFF=npc.dead_proxy` fails `npc` and `later`.
+  `SPORE_FIX_OFF=npc.dead_proxy` fails `npc` and `later` (lab 20261101-135546), `npc.play_death` every kind
+  (20261101-145148); PASS 20261101-141938, `_player` 20261101-142305.
 * `team_real_damage` (`coop_team_real_damage.py [--victim]`, ~3 min warm): the victim walks up to a host NPC of
   another species and hits it with 0.3 (`coop.npc hit` / `hosthit`) until one bites back (the 065CB8AB and
   065CB811 Kooks do within 1-3 s, their bites take 0.2-0.5); hurt with the partner 25 m away (no regen), regen 5 s
   next to it (+10 %), rescue: the victim's health set to 0.4 of one bite, the NPC's next bite would kill. Each
-  judged on the other game's puppet (`coop.hp`). The partner_hp fix off fails the hurt / regen checks.
+  judged on the other game's puppet (`coop.hp`). `SPORE_FIX_OFF=creature.partner_hp` fails the other game's
+  hurt / regen / rescue checks (lab 20261101-143808). An NPC stops biting now and then: the rescue phase holds the
+  victim at 0.4 of a bite (undoing the regen each second) and the victim hits the NPC with 0.1 every 3 s until a
+  bite lands (up to 25 s); the first version waited 12 s and timed out in 2 of 4 runs.
 * `creature_social_ally` (`coop_creature_social_ally.py`, ~4 min warm, BUG-0021): coop_creature_social's ally
   phase with the stance read from the game (clicked only when not social), the game's impressed flag per Kook on
   both games (host `coop.npc list` lines end with `impressed=<0|1>`), the ally record on both, the guest's card,
   then the host's `coop.npc recruit` of an allied Kook and a 20 m walk: the guest's proxy of it within 10 m of the
-  host and 2.5 m of the host's own Kook. Its first run reproduced BUG-0021: impressions 3 by the host's counter
+  host and 2.5 m of the host's own Kook. `SOCIAL_ALLY_PLANT=npcsync` fails the recruitment (lab 20261101-144024:
+  27 m). The ally part fails in about half of the runs on BUG-0021: the guest's own avatar kills an impressed
+  Kook (host log: event 2 then event 0, `dna: ... cause=hunt:1`), see the ticket; the test prints the guest's
+  `hits_sent` after each key and click. Its first run reproduced BUG-0021: impressions 3 by the host's counter
   (3 Kooks with the game's flag), the species record (relation, impressed) went (0, 1) -> (4, 2) -> (3, 1), no Kook
   killed, one game refused in between. The host now logs every change of the species table
   (`social: relationship event <n> species <key> by <creature> (npc <id>): relation a -> b, impressed ...`).
