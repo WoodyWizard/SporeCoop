@@ -17,6 +17,10 @@
   `SporebinEP1`) now says "Galactic Adventures is not installed" with what to install, instead of
   "choose the SPORE folder"; choosing `SporeBin` or `SporebinEP1` takes the folder above it, and the
   setup also looks in Steam's other library folders (BUG-0391).
+- Setup: on Steam, Galactic Adventures (app 24720) has its own folder `steamapps\common\Spore 24720`
+  next to base Spore's `steamapps\common\Spore`; the setup now finds it first, and when base Spore
+  (or its `SporeBin`) is chosen it says "Galactic Adventures is installed in ...\Spore 24720: using
+  that folder" and installs there, instead of saying Galactic Adventures is not installed (BUG-0391).
 - Setup and in-game update: when GitHub's API refuses (403 / 429: its hourly limit per IP address,
   hit on VPNs and shared networks) the newest release now comes from the release page, checked
   against `SHA256SUMS.txt` as before; the setup could not install at all. If GitHub does not answer,
