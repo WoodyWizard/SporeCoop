@@ -1293,3 +1293,11 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Reproduce: not reproduced; `coop_npc_corpse.py [--by guest]` compares the bodies (0.00 m apart in 6 kills).
 * Not checked: a corpse eaten on one machine, NPCs killed by NPCs, low frame rates.
 * Ticket: BUG-0383
+
+## Tests: puppet_walk fails when the observer runs below ~40 fps (2026-11-01, fix/w30-npc-walk)
+<a id="issue-puppet-walk-low-fps"></a>
+
+* What happens: at 25-37 fps the walked puppet moves at 0.6-1.4x the walker's speed in 76-82 % of the
+  0.1 s windows (limit 85 %); at 42-55 fps 93-99 %. Seen while other lanes ran games.
+* Reproduce: `tools/lab.py run puppet_walk` with other lanes busy, or `PUPPET_WALK_CMDS="frame.limit 33"`.
+* Ticket: BUG-0387
