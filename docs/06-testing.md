@@ -3076,7 +3076,10 @@ counters. Every one has a `_player` twin (`SPORE_FPS=guest:30 SPORE_NET=player`)
   vote's editors with a world share every 4, `coop.diag mem` on both after each round (free MB, largest block):
   loss <= 8 MB per round after round 3, largest block >= 128 MB. Calibration (lane 5, 12 rounds): free address
   space 3410-3470 MB, no trend, largest block 2037 MB throughout, ~45 s per round. `SOAK_PLANT_MB=40` (the host's
-  `coop.diag reserve 40` after each round: VirtualAlloc MEM_RESERVE, never freed; new test command) fails.
+  `coop.diag reserve 40` after each round: VirtualAlloc MEM_RESERVE, never freed; new test command) fails (lab
+  20261101-141320, `SOAK_CYCLES=8`: host 39.8 MB per round). PASS 20261101-152216 (32 rounds, 28 min). An earlier
+  32-round run (20261101-143943) met every check of its own and failed only on the known cold-start caught fault at
+  0x11ECE4F on both games.
 * Pitfall (BUG-0404): a vote started while the host's evolution cinematic (F4F96E43) still plays after an editor
   opened the next editor without its buttons and the host stayed in it with the cinematic "playing"; the editor
   helper now waits for the cinematics to end (Enter) like a player.
