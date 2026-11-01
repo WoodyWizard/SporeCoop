@@ -14,11 +14,13 @@ lab 20261031-124047-fix-w22-cell; 0x00E4E384 on a guest).
    near the camera asks for particles from a full pool, every removal frees what it got.
 3. Checked on the guest (the game's own state): no cell holds -1 among its particles, the pool's
    free-list head stays inside the pool, no caught fault, the pool's count (the game's header) never below 0 or
-   over 1500, its own cell stays where it was (no jump) and moves at most 5 m in a round (BUG-0355:
-   mirrors whose soft body cell.spare freed were steered into it and shoved it 8-18 m), the mirrors
-   come back.
-SPORE_FIX_OFF=cell.particles must FAIL; SPORE_FIX_OFF=cell.bare_still fails the step check in about
-1 run of 3 (--repeat).
+   over 1500, its own cell stays where it was (no jump) and moves at most 20 m in a round, the
+   mirrors come back. The own cell is invulnerable: bitten and knocked out by the crowd it moved
+   5-18 m in a round (a respawn), with BUG-0355's fixes or without, and without a full pool too
+   (--no-fill); without the fixes the shared spare also flung it 64 m to 1e7 m in 4 of 12 runs
+   (BUG-0355 follow-up, docs/re/cell.md#cell-gfx-pool).
+SPORE_FIX_OFF=cell.particles must FAIL; SPORE_FIX_OFF=cell.spare,cell.gfx_full,cell.bare_still
+fails in about 1 run of 3 (--repeat).
 
   SPORE_LANE=8 python3 tools/tests/coop_cell_particles.py [--rounds 16]
 """
@@ -30,7 +32,7 @@ import time
 from twoinst import Checks, start
 
 
-MAX_STEP = 5.0  # m in one round (~3 s): the own cell drifts 0-3 m a round on its own (at most 1.1 with the fix)
+MAX_STEP = 20.0  # m in one round (~3 s): shoves by the crowd reach 11 m (invulnerable, fixes on); the shared NaN spare flung it 64 m to 1e7 m
 
 
 def out(con, line):
@@ -55,6 +57,7 @@ def faults(con):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--rounds', type=int, default=16)
+    ap.add_argument('--no-fill', action='store_true', help='the mirrors churn without a full pool (control: what the churn alone does)')
     a = ap.parse_args()
     ck = Checks()
     host, guest = start('cell')
@@ -63,13 +66,16 @@ def main():
         time.sleep(1)
     host.call('coop.pool food 300')
     time.sleep(10)
-    print('  guest:', out(guest, 'coop.pool particles 1499').strip(), flush=True)
+    if not a.no_fill:
+        print('  guest:', out(guest, 'coop.pool particles 1499').strip(), flush=True)
     p0 = own_pos(guest)
     counts, jumps, steps, minus1, head_bad = [], [], [], [], []
     last = p0
     for i in range(a.rounds):
+        guest.call('coop.pool invuln 1')  # a knock-out's respawn moved it 18 m (not this test's subject)
         guest.call('coop.pool zap 5000')
-        guest.call('coop.pool particles 1499')  # the removals gave particles back: full again for the new mirrors
+        if not a.no_fill:
+            guest.call('coop.pool particles 1499')  # the removals gave particles back: full again for the new mirrors
         time.sleep(2.5)
         s = out(guest, 'coop.pool sap')
         counts.append(num(s, 'particles'))

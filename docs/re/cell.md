@@ -1302,4 +1302,19 @@ BUG-0355. GOG 2024, Ghidra and `tools/tests/coop_cell_spare.py` (suite `cell_spa
   the game's own "no particles" form (+0x250 = 1, +0x254 = -1, as a model type 0 / 5 cell), moved and
   drawn without a soft body until the LOD or a re-tier gives it particles again. A cell left with
   the spare is freed the same way once a frame; the spare is put back to a finite place.
-
+* Follow-up (2026-10-31, after the merge 55da78b): cell_particles (the pool filled with particles no
+  cell holds, `coop.pool particles 1499`, then the mirrors made again 10-16 times) showed steps of
+  the guest's own cell of 13-18 m in one round on main (2 of 5 runs). Not introduced by BUG-0355: with
+  `cell.spare`, `cell.gfx_full` (and `cell.bare_still`) all off it stepped in 6 of 12 runs, 64 m to
+  1e7 m in 4 of them (the shared NaN spare); with them on 2-4 of 12 at 5-16 m; without a full pool at
+  all (`--no-fill`) 1 of 8 (18.5 m: the own cell was knocked out by the crowd and respawned, its
+  soft body 4 -> 1). With the own cell invulnerable (`coop.pool invuln 1`) the most in a round was
+  4.3 m in 6 runs and 10.8 m in 1 of 6 more (fixes on), 4.8 m in 6 runs (off; one of them drifted 34
+  m in all). ✔ observed: a knock-out's respawn moves the passive own cell; ~ inferred: bites and the
+  mirrors made again on top of it shove it the rest.
+* `cell.bare_still` (with this follow-up): a mirror whose soft body `cell.spare` freed is placed at
+  the host's pose at rest every frame (as a soft mirror is), not steered by velocity like a tier-0
+  mirror. ~ Not shown to matter: steered 4 of 12 runs stepped over 5 m, at rest 2 of 12 (one a
+  knock-out); kept because a bare mirror steered into ours is the one way left for the fix to push it.
+  Tried and dropped: keeping the soft bodies of cells within 8 m of ours (they then share the spare
+  again): 3 of 12 stepped, no better.

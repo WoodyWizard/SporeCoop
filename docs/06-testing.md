@@ -2424,3 +2424,9 @@ answered right after; a 1 s poller beside a standalone run saw no gap. Same sign
 * `coop.pool orphans` also counts DestroyCell calls by caller module+offset and whether they gave
   the cell's particles back; `coop_campaign.py` now passes SPORE_FIX_OFF to the extra players
   (Carol, Dave) too.
+* cell_particles (BUG-0355 follow-up): the guest's own cell is invulnerable for the rounds (bites and
+  a knock-out's respawn moved it 5-18 m in a round) and may move at most 20 m in a round (16 rounds;
+  invulnerable, with the fixes, the crowd still shoved it up to 10.8 m in 1 of 12 runs;
+  `--no-fill`: the same churn without a full pool, suite `cell_particles_nofill`, extended). Do not
+  trust a handful of smooth runs here: all fixes off gave 4 smooth runs in one lab and 6 of 12 with
+  steps in another.

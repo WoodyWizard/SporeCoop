@@ -1944,7 +1944,7 @@ static bool g_fix_gfx_full = true;
 COOP_FIX("cell.gfx_full", "BUG-0355", g_fix_gfx_full, "cell: no soft body is made while the cell graphics pool is full (the game lost the particles every frame: the particle pool filled, 3 fps)");
 static uintptr_t a_CreateSoft, a_GfxPtr;
 static void(SK_CDECL* o_CreateSoft)(uint32_t, int);
-static uint32_t g_soft_refused, g_soft_made, g_gfx_peak;
+static uint32_t g_soft_refused, g_soft_made, g_gfx_peak, g_soft_count0;
 static uint32_t* gfx_pool() // cObjectPool_ fields as uint32: [3] live, [6] capacity
 {
     uint8_t* gfx = a_GfxPtr ? *(uint8_t**)a_GfxPtr : nullptr;
@@ -1959,6 +1959,14 @@ static void SK_CDECL h_CreateSoft(uint32_t idx, int arg)
         if (!g_soft_refused++)
             H->log(M, SK_WARN, "cell: the cell graphics pool is full (%u of %u): no soft body for new cells on screen until there is room (BUG-0355)",
                    gp[3], gp[6]);
+        // a new cell has count 0 (the pool's memset) until its first CreateSoftBody: give it the
+        // game's own "no particles" form (count 1, -1), as CreateSoftBody does for tier 0
+        if (uint8_t* c = modes::cell_at(idx))
+            if (F<int>(c, 0x250) < 1) {
+                F<int>(c, 0x250) = 1;
+                F<int>(c, 0x254) = -1;
+                g_soft_count0++;
+            }
         return;
     }
     g_soft_made++;
@@ -4299,8 +4307,8 @@ std::string debug(const std::vector<std::string>& a)
         if (box)
             snprintf(bx, sizeof bx, " active_box=%.0fx%.0f m", box[3] - box[0], box[4] - box[1]);
         if (uint32_t* gp = gfx_pool())
-            snprintf(bx + strlen(bx), sizeof bx - strlen(bx), " gfx=%u/%u peak=%u soft_made=%u soft_refused=%u", gp[3], gp[6], g_gfx_peak,
-                     g_soft_made, g_soft_refused);
+            snprintf(bx + strlen(bx), sizeof bx - strlen(bx), " gfx=%u/%u peak=%u soft_made=%u soft_refused=%u count0=%u", gp[3], gp[6], g_gfx_peak,
+                     g_soft_made, g_soft_refused, g_soft_count0);
         char b[800];
         snprintf(b, sizeof b,
                  "parts: used=%d held=%d (mirrors %d, within 60 m %d, beyond %d) tiers=%d/%d/%d/%d spare_cells=%d spare_refs=%d own_spare=%d "
