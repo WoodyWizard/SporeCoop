@@ -3,6 +3,9 @@
 ## [Unreleased]
 
 ### Fixed
+- SporeKit: a hook made while the game runs could let a game thread call address 0 (a handled
+  fault, once followed by a frozen game): the hook's original function is now set before the hook is
+  switched on. Seen in test games when the first simulated input was sent (BUG-0398).
 - Creature and Tribe: animals of the host now walk and run on the other players' screens with their
   walk animation, on the host's path: in the Creature stage a moving animal slid over the ground in
   its standing pose, in the Tribe stage animals moved in small steps and jumps (BUG-0361).

@@ -225,6 +225,10 @@ For bug reports of players, who send a file, not a debugger session:
   takes it over: the game's code is written once per process. The first hook of a target is still
   a plain write (at boot, before the game's threads call it). `kit.fix hookpark 0` = MinHook's
   create / remove each time.
+  CORRECTION (2026-11-01, fix/w33-null-call): not every first hook is made at boot: the devkit's
+  input commands hook GetAsyncKeyState / GetKeyState at the first injected input, coop hooks Cell
+  SimUpdate at its first cell (see "A new hook's original before its jump" below, BUG-0398, and
+  BUG-0403 for the jmp write itself).
 
 ## Support diagnostics in SporeKit 0.3.5 (2026-10-29, feat/w7-diag)
 <a id="modkit-support-035"></a>
@@ -241,3 +245,19 @@ For bug reports of players, who send a file, not a debugger session:
   a ModAPI folder, extra `.package` files in `Data\`, `DataEP1\` and the player's
   `AppData\Roaming\Spore` (name, size, date; at most 12 per list) and the sizes of the GOG 2024
   build's 12 base packages and exe.
+
+## A new hook's original before its jump (2026-11-01, fix/w33-null-call)
+<a id="modkit-hook-original"></a>
+
+* A detour calls the original through the pointer `hook_create` fills (`o_X`). For a target hooked
+  for the first time the stub path set that pointer only after MH_EnableHook had made the jmp live:
+  a thread calling the target in between ran the detour with `o_X` null and called address 0
+  (BUG-0398: test guests' main thread in GetAsyncKeyState while the console thread made the input
+  hooks; one froze). Since `kit.fix hookorig` (on): `*original` is set first, then the stub's `cur`
+  = the detour, then the jmp is written; the take-over of a parked stub also sets `*original` first.
+* How it looks in a log: `exception 0xC0000005 at 0x00000000`, the record's first stack word a
+  return address into sporekit.dll or a mod (the detour), the next one the detour's argument; the
+  "calls" line scans only the exe, so it shows the game's caller of the hooked function or stale
+  frames, never the detour.
+* Still open (BUG-0403): the first write of the jmp itself can catch a thread inside the first 5
+  bytes of a function hooked after boot (BUG-0202's crash, nanoseconds per call).
