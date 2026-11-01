@@ -49,3 +49,5 @@ Simulator::Cell::ActiveBox ; Cell: the active area's size in the coop.pool parts
 Simulator::Cell::CreateSoftBody ; Cell: no guard for a full cell graphics pool (BUG-0355)
 SporeCoop::AbilityBar_ptr ; Creature: the ability bar is not built again after the own creature swap (BUG-0358)
 SporeCoop::AbilityBar_Rebuild ; Creature: the ability bar is not built again after the own creature swap (BUG-0358)
+SporeCoop::IntrusivePtr_Assign ; BUG-0368: on GOG 2016 a guest's own creature editor still offers every part (no collected parts in its request)
+Simulator::cCollectableItems::IsUnlocked ; BUG-0368: coop.editor (tests) counts no locked parts on GOG 2016

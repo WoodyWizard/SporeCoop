@@ -94,6 +94,7 @@ add('ui_menu_leave', P + 'coop_ui_menu_leave.py', minutes=2)  # the galaxy menu'
 add('reload_update', P + 'coop_reload_update.py', minutes=2)  # hot reload while the update check waits: the old thread stays in the old image (BUG-0060)
 add('update_leak', P + 'coop_update_leak.py', minutes=4)  # 5 refused update attempts free their 20 MB packs (BUG-0241; SPORE_FIX_OFF=core.update_unwind fails)
 add('guest_editor', P + 'coop_guest_editor.py', minutes=4)
+add('guest_editor_locks', P + 'coop_guest_editor_locks.py', minutes=4)  # the guest's own editor locks the parts the species has not collected (BUG-0368; SPORE_FIX_OFF=creations.own_editor_items fails)
 add('notify', P + 'coop_notify.py', minutes=3)
 add('window_layout', P + 'coop_window_layout.py', minutes=3)  # the co-op window re-centred after a smaller resolution, the status block never over the window or the panels (BUG-0113/0155; --old fails)
 add('sync', P + 'coop_sync.py', warm=True, minutes=6)
