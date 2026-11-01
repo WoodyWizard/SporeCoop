@@ -291,6 +291,18 @@ int c_sample(void*, int argc, const char* const* argv, SkOut* out)
     return 0;
 }
 } // namespace
+// "module+offset" of an address (RE, BUG-0355)
+void coop_module_of(uintptr_t a, char* out, size_t cap)
+{
+    HMODULE m = nullptr;
+    char name[MAX_PATH] = "?";
+    if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCSTR)a, &m) && m) {
+        GetModuleFileNameA(m, name, sizeof name);
+        const char* b = strrchr(name, '\\');
+        snprintf(out, cap, "%s+0x%X", b ? b + 1 : name, (unsigned)(a - (uintptr_t)m));
+    } else
+        snprintf(out, cap, "%08X", (unsigned)a);
+}
 void coop_register_debug_commands(const SkHost* host, SkMod* self)
 {
     H = host;

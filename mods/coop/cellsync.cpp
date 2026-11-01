@@ -24,6 +24,8 @@
 #include "fixes.h"
 #include "trace.h"
 
+void coop_module_of(uintptr_t a, char* out, size_t cap); // debug.cpp (RE, BUG-0355)
+
 namespace cellsync {
 
 static const SkHost* H;
@@ -780,6 +782,7 @@ static void SK_CDECL h_Break(uint8_t* victim, uint8_t* attacker, float f)
 using Destroy_t = void(SK_CDECL*)(uint32_t, bool, float, int);
 static Destroy_t o_Destroy;
 static uint32_t g_dbg_destroys, g_dbg_expect, g_dbg_freed, g_dbg_nogfx, g_dbg_alive; // RE (BUG-0355)
+static std::map<uintptr_t, uint32_t> g_dbg_destroy_by; // RE (BUG-0355): DestroyCell calls by return address
 // Guest: the cells our avatar touched lately (HandleCollisionPair with the avatar), local index -> time.
 // Only these can have been eaten or swallowed by us.
 static std::unordered_map<uint32_t, double> g_touched;
@@ -834,6 +837,8 @@ static void SK_CDECL h_Destroy(uint32_t idx, bool loot, float f, int x)
     uint8_t* dparts = G() ? F<uint8_t*>(G(), 0x4108) : nullptr;
     int dn = dc ? F<int>(dc, 0x250) : 0, before = dparts ? F<int>(dparts, 0x1BD54) : 0;
     bool dgfx = dc && F<uint32_t>(dc, 0x248);
+    if (dc)
+        g_dbg_destroy_by[(uintptr_t)__builtin_return_address(0)]++;
     o_Destroy(idx, loot, f, x);
     if (dc && dparts && dn > 1) {
         g_dbg_destroys++;
@@ -4345,7 +4350,14 @@ std::string debug(const std::vector<std::string>& a)
         std::string first = b;
         snprintf(b, sizeof b, "  destroys of cells with particles: %u, particles %u, given back %u, without +0x248 %u, still alive after %u\n",
                  g_dbg_destroys, g_dbg_expect, g_dbg_freed, g_dbg_nogfx, g_dbg_alive);
-        return first + std::string(b) + "  orphans allocated from:" + st + "\n";
+        std::string by;
+        for (auto& [ra, n_] : g_dbg_destroy_by) {
+            char h[96], mod[80];
+            coop_module_of(ra, mod, sizeof mod);
+            snprintf(h, sizeof h, " %u@%s", n_, mod);
+            by += h;
+        }
+        return first + std::string(b) + "  orphans allocated from:" + st + "\n  DestroyCell from:" + by + "\n";
     }
     if (a.size() >= 2 && a[0] == "particles") { // tests (BUG-0338): fill the soft-body particle pool up to <n> used (owner: our cell)
         uint8_t* parts = G() ? F<uint8_t*>(G(), 0x4108) : nullptr;

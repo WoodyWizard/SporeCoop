@@ -98,7 +98,7 @@ def main():
         time.sleep(4)
         for name, con in (('host', host), ('guest', guest)):
             o, p = out(con, 'coop.pool orphans'), out(con, 'coop.pool parts')
-            print(f'  {name} {4 * (k + 1)} s:', p.strip(), flush=True)
+            print(f'  {name} {4 * (k + 1)} s: cells={num(out(con, "coop.pool"), "cells")}', p.strip(), flush=True)
             print(f'  {name} {4 * (k + 1)} s:', o.strip().replace('\n', ' |'), flush=True)
             lost[name] = max(lost.get(name, 0), num(o, 'orphans') or 0)
             spare[name] = max(spare.get(name, 0), (num(p, 'spare_cells') or 0) + (1 if (num(p, 'own_spare') or 0) else 0))

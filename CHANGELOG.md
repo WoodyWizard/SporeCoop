@@ -3,6 +3,10 @@
 ## [Unreleased]
 
 ### Fixed
+- Cell: with four players a guest's game could drop to 3 frames per second at the end of the Cell
+  stage and never get into the Creature stage: a crowd of over 256 cells on its screen made the game
+  lose soft-body particles every frame until its particle pool was full, and the cells that shared
+  the last one were thrown around (BUG-0355).
 - Cell: a guest playing its own cell is no longer a "ghost" after joining or a reload (it swam
   through everything and could not eat, bite or be hit): the mod took the rebuilt cell for the
   partner's old puppet (BUG-0342).
