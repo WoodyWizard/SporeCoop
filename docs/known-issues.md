@@ -1365,3 +1365,18 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   point apart (p0 20-70 m), every member and animal matching; the tests move the view by the minimap.
 * Reproduce: `tools/lab.py run chaos_tribe,tribe_walk_mobile --repeat 3 --retry 0`.
 * Ticket: BUG-0393
+
+## Tribe: one animal 8-25 m apart on every guest for minutes (2026-11-01, lab log gates, fix/w32-tribe-sync)
+<a id="issue-tribe-npc-apart"></a>
+
+* What happens: in long 4-player campaigns one NPC animal stands 8-25 m from where the host has it, on
+  every guest, for up to 10 minutes (sync-check `n: 1 apart (n327 24.0)`); in the clearest run it began
+  6 s after the co-op epic came.
+* Reproduce: not reproduced on lane 7 (play_tribe, chaos_tribe, tribe_coop, campaign_tribe once); seen in
+  recorded `campaign` runs (out/lab/20261031-024148 campaign#1).
+* Known: the three kinds and the run ids in BUG-0402; inferred: the epic's proxy does not keep up.
+* Not checked: which NPC it was; since fix/w32-tribe-sync a MISMATCH names it on each game (`sync-check:
+  nNNN here: ...`).
+* Next steps: the next campaign run with the gates; the proxies' walking (npc.cpp) is reworked on another
+  branch.
+* Ticket: BUG-0402

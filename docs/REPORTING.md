@@ -207,6 +207,12 @@ the 900 around the guest's position as it last saw it):
     sync-check: MISMATCH with player 1 'Bob' (Creature 68AC222A, 2 checks 3 s apart, 22 objects compared): p: 1 apart (p1 100.1)
     sync-check: MISMATCH with the host (Cell 9652F8AD, 380 objects compared): c: 3 missing on the guest (c12 c40 c41), cell food: host 30.0, guest 25.0
 
+Since BUG-0381 (2026-11-01) a MISMATCH that names NPCs (`n…`) or tribe citizens (`t…`) is followed on
+each game by what it has of the first three of them: their `coop.npc list` / `coop.tribe` line, or
+`not listed`:
+
+    sync-check:   n327 here: #327 species=065D089D hp=... pos=(...) spd=... (the host's line)
+
 Both games log the result (the host `with player N`, the guest `with the host`). An OK is written
 for the first check in each stage, then once per 10 minutes (`OK x20 ...`); the same mismatch is
 written again after 5 minutes at the earliest. `log_detail=2` also writes the differences that

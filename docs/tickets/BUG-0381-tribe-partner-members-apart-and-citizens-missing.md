@@ -1,20 +1,20 @@
 ---
 id: BUG-0381
 title: tribe: partner / members apart and citizens missing on guests (sync-check p apart, t missing, n apart)
-status: open
+status: fixed
 kind: bug
 stage: Tribe
 reported: 2026-11-01
 source: lab log gates report over recorded runs (feat/w30-lab-gates, 2026-11-01)
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w32-tribe-sync
+commits: 58f0c35 2b338e2
+tests: tools/tests/coop_tribe_npc_form.py (suite tribe_npc_form)
 signature:
-docs:
-related:
+docs: docs/re/tribe.md#tribe-npc-forming, docs/06-testing.md#testing-tribe-sync-gates
+related: BUG-0380, BUG-0393, BUG-0402, BUG-0288
 ---
 
 ## Report
@@ -22,6 +22,14 @@ related:
 <!-- what the player (or the test) saw, in our words; no player names, no paths from their PC -->
 
 ## Root cause
+Three findings in one ticket:
+* **p apart** is the moving RTS pointer (the check, not the sync): BUG-0393, fixed by BUG-0380's
+  `diag.rts_cursor`; FAIL / PASS runs in Tribe there.
+* **n apart** is split off to BUG-0402 (not reproduced; one NPC on every guest for minutes after the co-op
+  epic came, herds just over the limit, an NPC at the planet's centre); a MISMATCH now names what each game
+  knows of the NPCs / citizens in it (`sync-check:   n327 here: ...`, commit 2b338e2) so the next run says.
+* **t missing**, below.
+
 **t missing (observed, logs + runtime on lane 7):** the host's game forms new NPC tribes during Tribe
 (`cNpcTribeController` 0xCC6440, Simulator::SpawnNpcTribe; docs/re/tribe.md#tribe-npc-forming); the guests'
 games did not (out/lab/20261031-000328 campaign#1: host 22 -> 48 tracked citizens in 3 minutes after a
@@ -50,3 +58,4 @@ species, each within 8 m (the guest's game's own tribe list and member vectors).
 ## History
 - 2026-11-01: opened.
 - 2026-11-01 (fix/w31-civ-gate): Civ `p apart` was the moving pointer (the partner's copy trails 45 m median while the mouse moves, 0 m at rest; coop_civ_cursor.py); Tribe uses the same pointer adapter (modes.cpp rts_*), so its `p apart` likely has the same cause. `diag.rts_cursor` (BUG-0380) leaves a moving pointer out in both stages; not verified in Tribe.
+- 2026-11-01 (fix/w32-tribe-sync): t missing = NPC tribes the host's game formed and the guests' did not; fixed (tribe.npc_tribes). p apart -> BUG-0393 / BUG-0380, n apart -> BUG-0402.
