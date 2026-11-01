@@ -30,6 +30,8 @@ def main():
     ck(not any(int(f, 16) & 1 for f in boxes), f'no "game saved" box left open on the host ({boxes})')
     h, ho = pool(host)
     g, go = pool(guest)
+    # the counters belong to the game process: a warm run (lab --repeat) starts with the last run's
+    rv0, rs0 = g['revives'] or 0, g['respawns'] or 0
     print(' ', ho.strip().replace('\n', ' | '))
     print(' ', go.strip().replace('\n', ' | '))
     ck((g['mirrors'] or 0) > 0, f'guest mirrors the host pool ({g["mirrors"]} cells)')
@@ -118,8 +120,8 @@ def main():
     time.sleep(1)
     g5, go5 = pool(guest)
     print(' ', go5.splitlines()[0])
-    ck(g5['downed'] == 0 and g5['revives'] == 1 and 3 <= (g5['hp'] or 0) <= 5,  # 3, +1 regen every 3 s near the partner
-       f'the partner right next to it revives it (revives {g5["revives"]}, hp {g5["hp"]})')
+    ck(g5['downed'] == 0 and (g5['revives'] or 0) - rv0 == 1 and 3 <= (g5['hp'] or 0) <= 5,  # 3, +1 regen every 3 s near the partner
+       f'the partner right next to it revives it (revives +{(g5["revives"] or 0) - rv0}, hp {g5["hp"]})')
     ck(g5['body'] == 1.0, 'a revived cell keeps its size')
     ck('revived' in host.call('coop.status')['out'], 'everybody sees the revive')
 
@@ -133,16 +135,16 @@ def main():
     shot(host, 'ko_arrow_host.png')
     time.sleep(3)
     g6, _ = pool(guest)
-    ck(g6['downed'] == 1 and g6['respawns'] == 0, 'still knocked out after 6 s')
+    ck(g6['downed'] == 1 and (g6['respawns'] or 0) == rs0, 'still knocked out after 6 s')
     # the pool lives on after the respawn: the small cell drifts, gets pushed and eats what floats by
     # (seen: 23 m away and body 0.62 four seconds later), so the respawn is checked on the first sample
     for _ in range(40):
         g7, go7 = pool(guest)
-        if g7['respawns']:
+        if (g7['respawns'] or 0) > rs0:
             break
         time.sleep(0.25)
     print(' ', go7.splitlines()[0])
-    ck(g7['downed'] == 0 and g7['respawns'] == 1 and g7['hp'] == 6, f'respawn after 10 s (respawns {g7["respawns"]}, hp {g7["hp"]})')
+    ck(g7['downed'] == 0 and (g7['respawns'] or 0) - rs0 == 1 and g7['hp'] == 6, f'respawn after 10 s (respawns +{(g7["respawns"] or 0) - rs0}, hp {g7["hp"]})')
     ck(g7['partner_dist'] is not None and 0 <= g7['partner_dist'] < 6, f'next to the partner (distance {g7["partner_dist"]})')
     ck(g7['body'] == 0.5 and g7['target'] < size0 * 0.6, f'small again (target size {size0} -> {g7["target"]})')
     for _ in range(16):  # the game smooths the size towards the target
