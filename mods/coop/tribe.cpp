@@ -198,6 +198,7 @@ COOP_FIX("tribe.mirror_time", "BUG-0365", g_mirror_time_fix, "tribe: a guest's m
 static uint32_t g_mirror_walks, g_mirror_timed;
 constexpr double kMirrorDelay = 0.2;  // s: the interpolation delay (the host sends every 0.12 s or more)
 constexpr float kMirrorWalkMax = 8.f; // farther off: drive::step (it teleports at 8 m)
+constexpr double kPathDt = 0.1;       // s: the interpolated path's velocity is taken over this
 static std::unordered_map<void*, uint16_t> g_gid_of;
 static std::unordered_set<uint16_t> g_cycle_ids;
 static std::unordered_set<uint8_t> g_cycle_chunks; // chunks of the current cycle received
@@ -832,8 +833,8 @@ COOP_FIX("tribe.ko", "BUG-0173", g_fix_ko, "tribe: a guest's mirror of a member 
 static uint32_t g_ko_shown, g_ko_replaced;
 
 // BUG-0365: a mirror of a walking member was driven by drive::step towards the latest snapshot moved on by
-// its arrival age: a MoveTo 0.25 s ahead every 0.1 s and SetPosition pulls. A citizen walks at its full
-// speed (9 m/s; SetDesiredSpeed does not slow it): while the host's member speeds up or slows down (1-5
+// its arrival age: a MoveTo 0.25 s ahead every 0.1 s and SetPosition pulls. The mirror walked at its full
+// speed (9 m/s: ~ the MoveTo given after SetDesiredSpeed resets it): while the host's member speeds up or slows down (1-5
 // m/s, every start and end of a walk) the mirror reached the point ahead within a frame or two, stopped
 // and walked again (standing in 9-25 % of those frames, surging faster than the member + 4 m/s in up to
 // 17 %), it set off 0.5-1.6 m late and caught up at 15-24 m/s (a 1.5 m jump once). Snapshots carried no
@@ -849,11 +850,18 @@ static uint32_t g_ko_shown, g_ko_replaced;
 // its age; `age` is what drive::step still has to extrapolate
 static void mirror_target(GMember& g, double now, net::Vec3& pos, net::Quat& rot, net::Vec3& vel, double& age)
 {
-    net::PlayerState s;
+    net::PlayerState s, back;
     if (g_mirror_time_fix && !g.buf.empty() && g.buf.sample(now, s)) {
         pos = s.pos;
         rot = s.rot;
+        // the velocity of the interpolated path over the last kPathDt, not the newer state's: from a
+        // standing state to a walking one the path moves slower than the walking state says, and the
+        // game walks the mirror at this speed between two placings (it showed as stop-and-go)
         vel = s.vel;
+        if (g.buf.sample(now - kPathDt, back)) {
+            float k = (float)(1.0 / kPathDt);
+            vel = {(s.pos.x - back.pos.x) * k, (s.pos.y - back.pos.y) * k, (s.pos.z - back.pos.z) * k};
+        }
         age = 0;
         return;
     }
@@ -876,6 +884,7 @@ static void mirror_drive(GMember& g, double now)
     if (g_mirror_walk_fix && sp > 0.3f && net::dist(game::position(g.c), g.aim) < kMirrorWalkMax) {
         drive::WalkPlace o;
         o.own_height = true;
+        o.speed_after_goal = true;
         drive::walk_place(g.c, g.aim, rot, vel, g.ds, now, o);
         g_mirror_walks++;
         return;

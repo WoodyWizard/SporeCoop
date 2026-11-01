@@ -21,9 +21,9 @@ Checks for every view of mirrors, over the frames in which the host's state says
 * no steps: in 0.1 s windows the drawn member moves at 0.6-1.4x the speed of the target's path (the
   host's state the driving aims at) in at least MATCHED_MIN of them and stands (< 0.3x) in at most
   STAND_MAX;
-* no stop-and-go: in the frames in which the target's path moves at 1-SLOW m/s (the member speeds up
-  or slows down: every start and end of a walk) its drawn speed is off the path's by more than half of
-  it + 1 m/s in at most SLOW_UNEVEN_MAX (stands, then surges);
+* no stop-and-go: in the frames in which the target moves at 1-SLOW m/s (the member speeds up or
+  slows down: every start and end of a walk) the drawn step is off the target's step of the frame before
+  by more than half of it + 1 m/s x the frame time in at most SLOW_UNEVEN_MAX (stands, then surges);
 * it walks: the animation's walk gait on in at least GAIT_MIN of the frames in which it is on the
   observer's screen.
 The host's own game (real members, not mirrors) is measured the same way as a reference.
@@ -48,12 +48,12 @@ from twoinst import Checks, shot, start
 TP_FACTOR, TP_MIN = 3.0, 0.75
 STAND_MAX, MATCHED_MIN = 0.05, 0.85
 GAIT_MIN = 0.80
-# while the target's path moves at 1-SLOW m/s (the member speeds up or slows down: every start and end of a
-# walk), per frame (up to 0.1 s): uneven = the drawn speed off the path's by more than half of it + 1 m/s
-# (0.7.3.3, drive::step: 18-36 %, it stands and surges; walk_place: 5-6 %; the host's own game: ~1 %)
+# while the target moves at 1-SLOW m/s (the member speeds up or slows down: every start and end of a walk),
+# per frame: uneven = the drawn step off the target's step of the frame before (what this frame draws
+# was placed then) by more than half of it + 1 m/s x the frame time (0.7.3.3, drive::step: 14-29 %, it
+# stands and surges; the fix: 1-5 %; the host's own game 0-5 %)
 SLOW, SURGE = 5.0, 4.0
-SLOW_UNEVEN_MAX = 0.12
-PATH_HALF = 0.1  # s: the target's path speed of a frame is taken over +-PATH_HALF
+SLOW_UNEVEN_MAX = 0.10
 W, H = 1440, 1080
 
 
@@ -90,18 +90,6 @@ def analyse(rows, owner, top, label):
     for mid, rs in by.items():
         drive_tp += rs[-1]['tp'] - rs[0]['tp']
         prev_dt = 0
-        # the speed of the target's path around each frame (+-PATH_HALF): what the mirror should show. Not the
-        # state's reported speed: interpolated from a standing state to a walking one the path moves
-        # slower than the newer state says
-        path = []
-        lo = hi = 0
-        for k in range(len(rs)):
-            while rs[k]['t'] - rs[lo]['t'] > PATH_HALF:
-                lo += 1
-            while hi + 1 < len(rs) and rs[hi + 1]['t'] - rs[k]['t'] <= PATH_HALF:
-                hi += 1
-            span = rs[hi]['t'] - rs[lo]['t']
-            path.append(math.dist(rs[lo]['tgt'], rs[hi]['tgt']) / span if span > 0 else 0.0)
         for k, (a, b) in enumerate(zip(rs, rs[1:])):
             dt = b['t'] - a['t']
             # what a frame draws was placed in the frame before: after a hitch of the game (a 100-230 ms
@@ -121,12 +109,17 @@ def analyse(rows, owner, top, label):
             if step > max(TP_MIN, TP_FACTOR * top * allow_dt):
                 tps.append((mid, round(b['t'], 2), round(step, 2), round(dt * 1000)))
             errs.append(math.dist(b['d'], b['tgt']))
-            ps = path[k + 1]
-            if 1.0 <= ps < SLOW and dt <= 0.1:  # the host's member speeds up or slows down
-                slow += 1
-                slow_still += step < 0.3 * ps * dt
-                slow_surge += step > (ps + SURGE) * dt
-                slow_uneven += abs(step / dt - ps) > 0.5 * ps + 1.0
+            # what this frame draws was placed in the frame before: compare the drawn step with the
+            # target's step of the frame before
+            if k >= 1 and dt <= 0.1:
+                a0 = rs[k - 1]
+                dt0 = a['t'] - a0['t']
+                ts = math.dist(a0['tgt'], a['tgt'])
+                if 0 < dt0 <= 0.1 and 1.0 <= ts / dt0 < SLOW:  # the member speeds up or slows down
+                    slow += 1
+                    slow_still += step < 0.3 * ts
+                    slow_surge += step > ts + SURGE * dt0
+                    slow_uneven += abs(step - ts) > 0.5 * ts + 1.0 * dt0
             if b['vis'] and 0 < b['sx'] < W and 0 < b['sy'] < H:
                 near += 1
                 near_gait += b['gait'] > 0
@@ -166,9 +159,9 @@ def report(r, ck, mirrors=True):
     print(f'    0.1 s windows while they walk: {r["win"]}, standing (< 0.3x the target path\'s speed) {r["stand"]:.0%}, '
           f'at 0.6-1.4x {r["matched"]:.0%} (ratio p10 {r["ratio_p10"]:.2f} p50 {r["ratio_p50"]:.2f} '
           f'p90 {r["ratio_p90"]:.2f})', flush=True)
-    print(f'    frames while it speeds up or slows down (path 1-{SLOW:.0f} m/s): {r["slow"]}, uneven (off the path\'s '
-          f'speed by more than half of it + 1 m/s) {r["slow_uneven"]:.0%}: standing {r["slow_still"]:.0%}, faster than '
-          f'the path + {SURGE:.0f} m/s {r["slow_surge"]:.0%}', flush=True)
+    print(f'    frames while it speeds up or slows down (target 1-{SLOW:.0f} m/s): {r["slow"]}, uneven (the step off the '
+          f'target\'s by more than half + 1 m/s) {r["slow_uneven"]:.0%}: standing {r["slow_still"]:.0%}, faster than '
+          f'the target + {SURGE:.0f} m/s {r["slow_surge"]:.0%}', flush=True)
     print(f'    jumps (id, t, m, frame ms): {len(r["teleports"])} {r["teleports"][:12]}', flush=True)
     print(f'    walk gait in {r["near_gait"]:.0%} of the {r["near"]} frames on the screen', flush=True)
     if not mirrors:
@@ -284,7 +277,7 @@ def direction(walker, observer, rng, secs, ck, host_pl):
     for p in (walker, observer):
         p.con.call('coop.track stop')
     rows = {p.name: dump(p.con) for p in (walker, observer)}
-    path = os.path.join(lane.out_dir('track'), f'tribe_walk_{walker.name}_walks.json')
+    path = os.path.join(lane.out_dir('track'), f'tribe_walk_{walker.name}_walks_{time.strftime("%H%M%S")}.json')
     with open(path, 'w') as f:
         json.dump(rows, f)
     print(f'  per-frame samples: {path}', flush=True)

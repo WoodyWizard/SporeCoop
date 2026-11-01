@@ -966,17 +966,21 @@ Ghidra, GOG 2024 (BUG-0359); ✔ = read in the disassembly, ~ = role inferred.
 BUG-0365. GOG 2024, lanes 2-3. Measured with `coop.track` (in Tribe one row per member of the player
 tribe, every frame) and `coop_tribe_walk.py` (members walked by box-select and right-click). Same
 method as [the Creature puppets](creature.md#creature-puppet-walk).
-* ✔ A citizen walks at a fixed speed: game speed exactly 9.0 m/s or 0 (the fixture's members),
-  whatever SetDesiredSpeed (spatial vt 0xC4) asked (drive::step asked 2.6-12 m/s). The host's own
-  member speeds up from 0 to 9 m/s in ~0.5-0.8 s and slows down the same way (its velocity, not its
-  locomotion speed state).
+* ✔ Under drive::step a mirror walks at a fixed speed: game speed exactly 9.0 m/s or 0 (the fixture's
+  members), whatever SetDesiredSpeed (spatial vt 0xC4) asked just before (2.6-6.5 m/s). Under
+  walk_place (SetDesiredSpeed every frame, MoveTo only every 0.3-1.5 s) its game speed is the one asked
+  (4.75, 9.0, 12.0 m/s seen). ~ So a MoveTo (vt 0xE0) sets the citizen's speed back to its default and a
+  SetDesiredSpeed has to come after it (inferred from the two drivings, not read in the code). The
+  host's own member speeds up from 0 to 9 m/s in ~0.5-0.8 s and slows down the same way.
 * ✔ The old driving (drive::step: MoveTo 0.25 s ahead of the target every 0.1 s, stop distance 0.3 m,
   SetPosition pulls over 0.5 m) follows at full speed (0.1 s windows matched 88-98 %, the walk gait on
   96-99 % on screen, no driver teleport), but while the host's member moves at 1-5 m/s (every start and
   end of a walk) the mirror at 9 m/s reaches the point ahead in one or two frames, stops, and walks
-  again: standing in 9-25 % of those frames, faster than the member + 4 m/s in 1-17 %; it sets off
-  0.5-1.6 m late and catches up at 15-24 m/s; drawn error p50 0.46 m (the nudge only acts over 0.5 m).
-  Stop-and-go at the ends of a walk, not the Creature puppet's "every half second" steps.
+  again: standing in 9-25 % of those frames, faster than the member + 4 m/s in 1-17 %; its drawn speed
+  is off its target path's by more than half of it + 1 m/s in 18-36 % of them (the host's own game ~1 %);
+  it sets off 0.5-1.6 m late and catches up at 15-24 m/s; drawn error p50 0.46 m (the nudge only acts
+  over 0.5 m). Stop-and-go at the ends of a walk, not the Creature puppet's "every half second" steps.
+  With the fix: 5-6 % uneven, drawn error p50 0.01 m, p90 0.08-0.17 m.
 * ✔ The tribe state (MSG_TRIBE_STATE, every 0.12 s, unreliable) had no sender time: the target was the
   latest snapshot moved on by its arrival age (`vel * min(age, 0.5)`), so jitter went into the path
   (the BUG-0122 class). Since BUG-0365 every chunk ends with an 8-byte trailer (magic 0x54435354,

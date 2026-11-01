@@ -1,6 +1,6 @@
 ---
 id: BUG-0365
-title: Tribe: the guest's mirrors of walking tribe members move in steps and teleport (drive::step restarts their walk)
+title: Tribe: the guest's mirrors of walking tribe members stop and go at every start and end of a walk (drive::step; no sender time)
 status: open
 kind: desync
 stage: Tribe
@@ -9,12 +9,13 @@ source: owner's request after BUG-0360 (re-check the other modes)
 role: guest
 versions: 0.7.3.3
 fixed_in:
-branch:
+branch: fix/w30-tribe-walk
 commits:
-tests:
+tests: tribe_walk, tribe_walk_mobile (tools/tests/coop_tribe_walk.py)
 signature:
-docs:
-related:
+docs: docs/re/tribe.md#tribe-mirror-walk, docs/06-testing.md#testing-tribe-walk
+related: BUG-0360, BUG-0281, BUG-0329, BUG-0122
+switch: tribe.mirror_walk, tribe.mirror_time
 ---
 
 ## Report

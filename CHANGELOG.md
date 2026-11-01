@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Fixed
+- Tribe: on a guest's screen, tribe members (the host's and the guest's own) no longer stop and go,
+  or jump ahead, when they start or end a walk: they walk smoothly on the host's path, also on a
+  network with jitter (BUG-0365). Plays together with 0.7.x; the guest needs this version, and the
+  host too for the smoothing over a network with jitter.
+
 ## [0.7.3.3] - 2026-11-01
 
 ### Fixed

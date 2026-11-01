@@ -98,7 +98,7 @@ inline void step(void* p, const net::Vec3& pos_in, const net::Quat& rot, const n
 
 // BUG-0360 (Creature puppets), BUG-0365 (Tribe mirrors): a remote creature that walks is walked by the game
 // and placed on its path. drive::step gave a MoveTo again every 0.1 s (which restarts the game's walk: the
-// creature stood or crept, or a citizen at its fixed 9 m/s reached the point ahead and stopped) and pulled
+// creature stood or crept, or a citizen at its default 9 m/s reached the point ahead and stopped) and pulled
 // it with SetPosition (which the locomotion undoes), so it moved in steps and trailed until a snap.
 // walk_place, every frame while the remote moves:
 // * the game walks it: the remote's speed (SetDesiredSpeed) and a MoveTo goal_ahead m ahead on its path,
@@ -116,6 +116,9 @@ struct WalkPlace {
     double max_gap = 1.5;     // and at least this often (s)
     float catch_up = 3.f;     // m/s faster than the remote while it is off the path
     bool own_height = false;  // BUG-0329: at the creature's own distance from the planet's centre
+    // BUG-0365: the speed after the MoveTo (~ a MoveTo sets a citizen's speed back to its default 9 m/s:
+    // the first frame of a mirror's walk went at 9 m/s); the Creature puppets keep the old order
+    bool speed_after_goal = false;
 };
 
 inline void walk_place(void* p, const net::Vec3& pos_in, const net::Quat& rot, const net::Vec3& vel, State& ds, double now,
@@ -127,7 +130,8 @@ inline void walk_place(void* p, const net::Vec3& pos_in, const net::Quat& rot, c
     net::Vec3 pos = o.own_height ? at_own_height(pos_in, game::position(p)) : pos_in;
     bool was = ds.kinematic;
     ds.kinematic = true;
-    game::set_speed(p, sp);
+    if (!o.speed_after_goal)
+        game::set_speed(p, sp);
     net::Vec3 hd{vel.x / sp, vel.y / sp, vel.z / sp};
     float dot = hd.x * ds.goal_dir.x + hd.y * ds.goal_dir.y + hd.z * ds.goal_dir.z;
     if (!was || (now - ds.last_cmd > o.min_gap && dot < o.turn_dot) || now - ds.last_cmd > o.max_gap) {
@@ -136,6 +140,8 @@ inline void walk_place(void* p, const net::Vec3& pos_in, const net::Quat& rot, c
         ds.last_cmd = now;
         ds.goals++;
     }
+    if (o.speed_after_goal)
+        game::set_speed(p, sp);
     net::Vec3 cur = game::position(p);
     float err = net::dist(cur, pos);
     double dt = was && now > ds.last_step ? std::min(now - ds.last_step, 0.1) : 1.0 / 60;
