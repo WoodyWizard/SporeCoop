@@ -3083,9 +3083,17 @@ the network and frame rate of real players; every check reads the other machine'
   player's version, Carol is in the host's world, all three draw each other where they are before and after
   two of them walk, the shared DNA total (with this build's cause tail) reaches the old game, nest eggs
   (MSG_NEST) are sent while the old game stands at a nest, Tribe chunks with the time trailer, no caught
-  fault, no crash report. Both lanes get this build's files again at the end. `--old-tag v0.7.2.4` fails
-  (no version lines before 0.7.3.x).
-* First runs of the never-run tests (lab 20261101-134020, lanes 9/10, main a05d1f6): OK rejoin_awful,
+  fault, no crash report. Both lanes get this build's files again at the end; Carol's log (the other lane's)
+  is kept in out/lane<N>/mixed/. v0.7.3.3 against main a05d1f6+: all three pass (lab 20261101-155537:
+  the old game gets the DNA total with the cause tail, 143 nest snapshots were sent while it stood at a nest,
+  Tribe chunks with the time trailer; no fault anywhere). `MIXED_OLD_TAG=v0.7.2.4` fails (lab
+  20261101-155327): no version lines before 0.7.3.x ("version unknown (pre-0.7.4)"), and the 0.7.2.4 game
+  had 3256 caught faults (`exception 0xC0000005 at 0x00B0EC8C`; not analysed). Pitfalls: main still says
+  `coop 0.7.3.3` (COOP_VERSION is bumped at the release), so the version lines cannot tell main from the
+  release; every game of the test starts cold and SporeKit starts its log anew, so the version lines are
+  read from each log's start (an offset taken before the start pointed past the new log's end).
+* First runs of the never-run tests (lab 20261101-134020, lanes 9/10, main a05d1f6; reruns with the test fixes
+  in lab 20261101-145528: chaos_civ_long and rejoin_race_long OK, play_tribe FAIL on BUG-0410 only): OK rejoin_awful,
   chaos_cell_long, chaos_space_long, chaos_tribe_long, chaos_tribe_awful, play_space, legless_guest_dontsave.
   FAIL and why: play_civ (one rejected guest order, open BUG-0325), play_tribe (a test bug: the chiefs compare
   took the host's own `spread= placed=` counters of tribe.place_chiefs as chiefs; also the guest's 9 click
