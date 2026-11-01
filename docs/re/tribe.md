@@ -1071,3 +1071,19 @@ BUG-0399. GOG 2024, lane 7, tribe fixture (Zorispe), the monitor's `proxies` rul
 * Diagnostics: `coop.npc list` lines end with `agl=` (host: its NPC over its ground); guest lines carry
   `agl= want_agl= made_agl= grounded=` (the proxy, the host's position over this game's ground, at its
   making, and how often drive::step put it out of the ground).
+
+## NPCs apart on the guests: not reproduced after npc.walk_tribe (2026-11-01, fix/w33-proxy-ground)
+<a id="tribe-npc-apart"></a>
+
+BUG-0402. GOG 2024, lane 7.
+* ✔ Every recorded `n apart` (one NPC 8-25 m on every guest for minutes; herds 8.2-10.5 m; 510 m) is from
+  2026-10-30/31 campaign runs, before npc.walk_tribe (BUG-0361). With it: none in campaign_tribe (4 players, live
+  Creature -> Tribe), play_tribe 10 min (co-op epic at s 480, hit by both), tribe_epic and 30+ other Tribe runs of
+  fix/w33-proxy-ground.
+* ✔ A co-op epic on the tribe fixture hit for 1 hp every 12 s (walks and fights at up to 6.5 m/s): its proxy, compared
+  at the proxy's distance from the centre, p50 0.13 / p90 0.99 / max 2.08 m with walk_place, p50 0.51 / p90 0.61 / max
+  2.57 m with the old drive::step (`coop.fix npc.walk_tribe off`). The epic alone does not explain 8-25 m.
+* ~ The sync-check compares absolute positions; a guest's Tribe proxies are at its own ground height (BUG-0329,
+  3.9-5.3 m radial in live campaign worlds), so a running herd's lag plus that radial part can pass the 8 m limit
+  (inferred, no current run showed it). The 510 m case is BUG-0339's NPC at the planet's
+  centre.

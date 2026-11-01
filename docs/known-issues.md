@@ -1427,6 +1427,9 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   nNNN here: ...`).
 * Next steps: the next campaign run with the gates; the proxies' walking (npc.cpp) is reworked on another
   branch.
+* Update (2026-11-01, fix/w33-proxy-ground): not reproduced on the current code (campaign_tribe 4 players, play_tribe
+  10 min with the co-op epic, tribe_epic: no `n apart`); every recorded case predates npc.walk_tribe (BUG-0361). An
+  epic hit now and then kept its proxy within 2.6 m with both drivings. Ticket status not-reproduced.
 * Ticket: BUG-0402
 ## Creature: the guest's own creature under the terrain after the species swap (2026-11-01, feat/w32-monitor-diag)
 <a id="issue-creature-own-under"></a>
