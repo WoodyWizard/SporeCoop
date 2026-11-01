@@ -24,6 +24,10 @@ struct State {
     double last_step = 0;  // BUG-0175: the time of the previous step (the nudge per second, not per frame)
     bool kinematic = false; // BUG-0360: a walking partner's puppet, walked and placed on its path (modes.cpp)
     net::Vec3 goal_dir;     // BUG-0360: the direction of the walk goal given to it
+    net::Vec3 placed_to;    // BUG-0361 (walk_place): where it was placed last frame
+    uint32_t place_lost = 0; // BUG-0361: frames the game did not keep that place (a teleport with the mark then)
+    double stuck_since = 0;  // BUG-0361: since when its error grows although it is placed
+    bool held = false;       // BUG-0361: teleported (with the mark) onto the path until it is on it again
     net::Vec3 drawn;        // BUG-0360 (coop.track): its position before this frame's driving, i.e. where the
                             // game's update put it and drew it (the mod's frame runs at Present)
 };
@@ -106,10 +110,12 @@ inline void step(void* p, const net::Vec3& pos_in, const net::Quat& rot, const n
 // left from standing is closed at kWalkCatchUp m/s faster than the remote, not in one frame.
 // ds.kinematic: walked last frame (false: a new walk, the first goal at once). The caller ends a walk with
 // a MoveTo to the stop point (not StopMovement). variant (tests): 1 place only, no walk goal (the velocity
-// written instead); 2 the walk goal, but a teleport with the mark. own_height: on the guest's own ground
+// written instead); 2 the walk goal, but a teleport with the mark; 3 no teleport when the place was lost. own_height: on the guest's own ground
 // (BUG-0329, Tribe).
 constexpr float kWalkAhead = 12.f, kWalkTurnDot = 0.995f, kWalkCatchUp = 3.f;
 constexpr double kWalkMinGap = 0.3, kWalkMaxGap = 1.5;
+constexpr float kWalkLostErr = 0.75f;   // m
+constexpr double kWalkLostAfter = 0.15; // s
 
 inline void walk_place(void* c, const net::Vec3& pos_in, const net::Vec3& vel, const net::Quat& rot, State& ds, double now,
                        int variant = 0, bool own_height = false)
@@ -118,6 +124,10 @@ inline void walk_place(void* c, const net::Vec3& pos_in, const net::Vec3& vel, c
     float sp = speed(vel);
     bool was = ds.kinematic;
     ds.kinematic = true;
+    if (!was) {
+        ds.held = false;
+        ds.stuck_since = 0;
+    }
     if (variant != 1 && sp > 0.01f) {
         game::set_speed(c, sp);
         net::Vec3 hd{vel.x / sp, vel.y / sp, vel.z / sp};
@@ -132,6 +142,27 @@ inline void walk_place(void* c, const net::Vec3& pos_in, const net::Vec3& vel, c
         *(net::Vec3*)((uint8_t*)c + game::kVelOff) = vel;
     net::Vec3 cur = game::position(c);
     float err = net::dist(cur, pos);
+    // the game did not keep the place: a host NPC thrown back by a hit (9 m/s, slowing down) stood on the guest
+    // for 1.5 s and ended 4.5 m off: the proxy's own locomotion moved it back each frame by as much as it was
+    // placed (without the teleport mark a creature keeps its locomotion's position while that stops). Its
+    // error grows for kWalkLostAfter s although it is placed, or last frame's place is lost outright: it is
+    // moved towards the path by teleports with the mark (as npc.kinematic did; at the catch-up speed, no jump)
+    // until it is on it again.
+    bool lost = was && net::dist(cur, ds.placed_to) > std::max(0.5f, 2.f * (sp + kWalkCatchUp) * (float)std::min(now - ds.last_step, 0.1));
+    if (was && err > kWalkLostErr && err > ds.last_err + 0.005f) {
+        if (ds.stuck_since <= 0)
+            ds.stuck_since = now;
+        lost = lost || now - ds.stuck_since > kWalkLostAfter;
+    } else if (err <= kWalkLostErr)
+        ds.stuck_since = 0;
+    ds.last_err = err;
+    if (variant == 3)
+        lost = false;
+    if (lost)
+        ds.held = true;
+    else if (err < 0.2f)
+        ds.held = false;
+    ds.place_lost += ds.held;
     double dt = was && now > ds.last_step ? std::min(now - ds.last_step, 0.1) : 1.0 / 60;
     float max_step = (sp + kWalkCatchUp) * (float)dt;
     net::Vec3 to = pos;
@@ -139,10 +170,11 @@ inline void walk_place(void* c, const net::Vec3& pos_in, const net::Vec3& vel, c
         float k = max_step / err;
         to = {cur.x + (pos.x - cur.x) * k, cur.y + (pos.y - cur.y) * k, cur.z + (pos.z - cur.z) * k};
     }
-    if (variant == 2)
+    if (variant == 2 || ds.held) // held: closed at the same speed, but with the mark (the game keeps it)
         game::teleport(c, to, rot);
     else
         game::place(c, to, rot);
+    ds.placed_to = to;
     ds.last_step = now;
     ds.track = Track{};
 }
