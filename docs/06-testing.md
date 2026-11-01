@@ -3042,17 +3042,24 @@ the network and frame rate of real players; every check reads the other machine'
 * `coop_party_rejoin_net.py` (suite `party_rejoin_net`, ~10 min, `SPORE_NET=players`, 4 players): rounds
   `one` (the last guest rejoins), `swap` (Bob, who plays his own creature, and the last guest leave; the
   last joins first and takes Bob's id), `lost` (a goodbye lost by a 1 s proxy outage), `both` (the extra
-  guests leave and join at the same moment). After each: together, each guest draws every other player
-  where it is, and every machine draws every other player as the species that player plays (the census
-  key of the puppet nearest to where the viewer shows it against the subject's own avatar key).
-  `SPORE_FIX_OFF=core.id_reuse` (BUG-0076) fails.
+  guests leave and join at the same moment). After each (and in `swap` once more while Bob is away): together,
+  each guest draws every other player where it is, and every machine draws every other player as the species
+  that player plays. Species keys are each game's own (a creation imported from another player gets a new
+  instance key: Kirgle is 290225CD in Bob's game, 7C329711 in the others', 7CF261BB after a rejoin), so a player
+  who plays its own creation must be drawn as the viewer's import of it (`coop.creations`: `player <id>
+  creature: <key> '<name>'` with the subject's `mine creature` name and the census key of the drawn puppet), a
+  player of the world's species as that key.
 * `coop_join_during.py --case combat|editor` (suites `join_during_combat`, `join_during_host_editor`, ~4-5
   min): the guest leaves after the start and joins 4 s into the host's fight with an NPC (real bites), or
-  while the host is in its editor (`coop.vote editor` alone; "done" 25 s after the join). Then every second
-  on the guest: the host drawn within 4 m as the species it plays, campaign_lib.census_problems empty (NPCs
-  near the guest, alive / dead, 10 m), the fought NPC there with the host's dead flag and health within 25 %;
-  3 such reads in a row, the first within 10 s of the guest being in the world (editor: of the host's
-  return). Combat: the host's kill is dead in the guest's game within 10 s.
+  while the host is in its editor (`coop.vote editor` alone; "done" 25 s after the join). A guest that joins
+  again first plays its old copy ("together" at once) and loads the host's world a few seconds later: the
+  clock starts when that load is done (`in_after_reload`). Then every second on the guest: the host drawn
+  within 4 m as the species it plays, campaign_lib.census_problems empty (NPCs near the guest, alive / dead,
+  10 m), the fought NPC there with the host's dead flag and health within 25 %; 3 such reads in a row, the
+  first within 10 s. Combat: the host's kill is dead in the guest's game within 10 s
+  (`SPORE_FIX_OFF=npc.play_death` fails: alive=1). Editor: while the host edits, the joined guest's own
+  creatures move in its game (census dumps 8 s apart; `SPORE_FIX_OFF=core.away_editor` fails: the guest has
+  no creatures at all, 0 of 0).
 * `coop_vote_net_4p.py` (suite `vote_net_4p`, ~10 min, `SPORE_NET=players`, 4 players): the evolution vote
   (three real ready clicks; it must end "everybody is ready" and every game opens an editor), an action
   vote while Dave stays in his editor (the windows show 3/4, the vote waits; Dave leaves from his editor:
@@ -3066,3 +3073,16 @@ the network and frame rate of real players; every check reads the other machine'
   (MSG_NEST) are sent while the old game stands at a nest, Tribe chunks with the time trailer, no caught
   fault, no crash report. Both lanes get this build's files again at the end. `--old-tag v0.7.2.4` fails
   (no version lines before 0.7.3.x).
+* First runs of the never-run tests (lab 20261101-134020, lanes 9/10, main a05d1f6): OK rejoin_awful,
+  chaos_cell_long, chaos_space_long, chaos_tribe_long, chaos_tribe_awful, play_space, legless_guest_dontsave.
+  FAIL and why: play_civ (one rejected guest order, open BUG-0325), play_tribe (a test bug: the chiefs compare
+  took the host's own `spread= placed=` counters of tribe.place_chiefs as chiefs; also the guest's 9 click
+  orders < 10, and citizens p90 1.89 m > 1.5 m), chaos_civ_long (a test bug: a random key opened a design
+  editor on the guest, it rejoined inside it and waited there for the world by design; the bot now leaves an
+  editor with "done" after a rejoin), rejoin_race_long (two test bugs: `twoinst.wait_guest_in` looked for
+  `together 1 1` but a rejoin that reaches the host before its old entry is gone gets id 2; the monitor's
+  `link` check fired during world transfers to a loading guest: pending 600 / 50-90 % resends, now left out
+  while a share runs, the resends themselves are BUG-0405).
+* Monitor pitfall: player ids are reused (a newcomer takes the lowest free id), so `Timeline.who_at(pid, t)`
+  maps a partner line to the machine that had that id at that moment; the latest id per machine
+  (`who_of`) gave false `hp` violations after the id swap of party_rejoin_net.
