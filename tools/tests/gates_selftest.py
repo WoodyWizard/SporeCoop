@@ -9,7 +9,10 @@
   netem     the bad network's statistics offline (netem.Model with its own clock): loss, Gilbert-Elliott
             bursts, latency spikes and steps, the bandwidth cap, duplicates; the presets; one port per guest
   fps       SPORE_FPS parsing (twoinst.fps_limits)
-  suite     every allow(...) of suite.py names an existing ticket and a reason
+  labcov    lab.py coverage flags a test that never ran, the release rule finds a missing / failed test on
+            a commit, lab.py fixcheck calls a "SPORE_FIX_OFF=x fails" claim contradicted when the test only
+            passed with x off (the world.leave_avatar claim of 0.7.3.3: 5 PASS runs)
+  suite     every allow(...) of suite.py names an existing ticket and a reason; the players variants
 """
 import os
 import sys
@@ -287,6 +290,40 @@ def fps_cases():
     check(bad, 'fps: a misspelt role is refused')
 
 
+def labcov_cases(tmp):
+    import json
+    import labcov
+    lab = os.path.join(tmp, 'cov', 'out', 'lab')
+
+    def rec(run, head, results):
+        d = os.path.join(lab, run)
+        os.makedirs(d, exist_ok=True)
+        rs = []
+        for name, ok, out in results:
+            open(os.path.join(d, name + '.log'), 'w').write(out)
+            rs.append(dict(name=name, ok=ok, seconds=10, log=os.path.join(d, name + '.log')))
+        json.dump(dict(head=head, branch='main', results=rs), open(os.path.join(d, 'results.json'), 'w'))
+    rec('20261101-010000', 'abc1234 x', [('a', True, 'RESULT: OK\n'), ('b', False, 'RESULT: FAIL\n')])
+    rec('20261101-020000-fix-y', 'def5678 y', [('a#1', True, '  SPORE_FIX_OFF: sw.one off (BUG-1)\nRESULT: OK\n'),
+                                              ('b', False, '  SPORE_FIX_OFF: sw.two off (BUG-2)\nRESULT: FAIL\n')])
+    tests = [dict(name=n, suites={'smoke'} if n != 'c' else {'full'}) for n in ('a', 'b', 'c')]
+    runs = labcov.runs_by_test([lab])
+    cov = {r[0]: r for r in labcov.coverage(tests, runs)}
+    check(cov['c'][6] == 'NEVER RUN' and cov['a'][4] == 2 and cov['a'][3] == 'ok',
+          f'labcov: c never ran, a ran twice ({cov["c"][6]}, {cov["a"][4]})')
+    rule = dict(labcov.commit_rule(tests, runs, 'abc1234', ['smoke']))
+    check(rule == {'a': 'ok', 'b': 'FAIL'}, f'labcov: the release rule on abc1234 ({rule})')
+    rule = dict(labcov.commit_rule(tests, runs, 'abc1234', ['smoke', 'full']))
+    check(rule.get('c') == 'missing', 'labcov: a test of a required suite that did not run on the commit is missing')
+    sp = os.path.join(tmp, 'suite_claims.py')
+    open(sp, 'w').write("add('a', P + 'x.py')  # BUG-1 (SPORE_FIX_OFF=sw.one fails)\n"
+                        "# BUG-2: the comment above names the switch: SPORE_FIX_OFF=sw.two / sw.three fail\n"
+                        "add('b', P + 'y.py')\n")
+    fc = {(r[0], r[1]): r[5] for r in labcov.fixcheck(sp, [lab])}
+    check(fc == {('a', 'sw.one'): 'CONTRADICTED', ('b', 'sw.two'): 'confirmed', ('b', 'sw.three'): 'unverified'},
+          f'labcov: fixcheck ({fc})')
+
+
 def suite_cases():
     import suite
     tickets = {f.split('-')[0] + '-' + f.split('-')[1] for f in os.listdir(os.path.join(ROOT, 'docs', 'tickets'))
@@ -300,6 +337,11 @@ def suite_cases():
         unknown = set(g) - set(loggates.DEFAULTS) - {'off'} or set(g.get('off', ())) - set(loggates.GATES)
         if unknown:
             bad.append((t['name'], 'gates', sorted(unknown)))
+    names = [t['name'] for t in suite.T]
+    pl = [t for t in suite.T if 'players' in t['suites']]
+    check(len(names) == len(set(names)) and len(pl) >= 60 and all(not t['warm'] for t in pl if t.get('variant_of'))
+          and all('full' not in t['suites'] for t in pl if t.get('variant_of')),
+          f'suite: {len(pl)} players variants, cold, outside full; no name twice')
     check(not bad, f'suite: every allow names an existing ticket, a reason and a gate; gates= keys known ({bad[:5]})')
 
 
@@ -308,6 +350,7 @@ def main():
     loggates_cases()
     with tempfile.TemporaryDirectory(prefix='gatesselftest-') as tmp:
         monitor_cases(tmp)
+        labcov_cases(tmp)
     netem_cases()
     fps_cases()
     suite_cases()

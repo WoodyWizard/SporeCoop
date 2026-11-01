@@ -7,6 +7,10 @@
   lab.py run tribe_play,select         chosen tests (names: tools/tests/suite.py)
   lab.py reload --lane 2               build, deploy and hot-reload coop.dll in the lane's running games
   lab.py run tribe_play --repeat 6 --retry 0   hunt a flaky bug: 6 runs, no retries
+  lab.py coverage [--days 7]           every suite test with its last run (main + worktrees), never-run ones
+  lab.py coverage --commit <rev> --require smoke,full,multi   the release rule (docs/06-testing.md#testing-release-rule)
+  lab.py fixcheck                      "SPORE_FIX_OFF=x fails" claims of suite.py against recorded FAIL runs
+  lab.py gates [out/lab dirs]          the log gates over recorded results, report only (tools/loggates.py)
   lab.py kill [--lane N ... | --upto N | --lanes 2,3] [--include-lane-1]
                                        stop the games of lanes 2..10, of lane N, of lanes 2..N or of a list
                                        (lane 1: only with --include-lane-1, its test games only)
@@ -572,7 +576,19 @@ def main():
     k.add_argument('--upto', type=int, help='lanes 2..N')
     k.add_argument('--include-lane-1', action='store_true',
                    help='also lane 1 (the real install): its test games only, never the owner\'s own Spore')
+    cv = sub.add_parser('coverage')
+    cv.add_argument('--days', type=float, default=7.0)
+    cv.add_argument('--commit')
+    cv.add_argument('--require', default='smoke,full')
+    sub.add_parser('fixcheck')
+    gt = sub.add_parser('gates')
+    gt.add_argument('dirs', nargs='*')
     a = ap.parse_args()
+    if a.cmd in ('coverage', 'fixcheck'):
+        import labcov
+        return labcov.cmd_coverage(a) if a.cmd == 'coverage' else labcov.cmd_fixcheck(a)
+    if a.cmd == 'gates':
+        return loggates.main(['report', *a.dirs])
     if a.cmd == 'run':
         return cmd_run(a)
     if a.cmd == 'lanes':
