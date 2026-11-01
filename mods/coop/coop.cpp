@@ -445,14 +445,15 @@ struct TrackSample {
     int8_t moving = -1, speed_state = -1;
     int8_t vis = 0; // world_to_screen of its position answered (in front of the camera)
     float sx = 0, sy = 0; // its screen position then
+    uint16_t id = 0;      // Tribe (BUG-0365): the member id (who = its owner), 0 in Creature
 };
 static std::deque<TrackSample> g_track;
 static bool g_track_on = false;
 static double g_track_t0 = 0;
-constexpr size_t kTrackMax = 30000;
+constexpr size_t kTrackMax = 60000;
 
-static void track_one(uint8_t who, void* c, const net::PlayerState* s, uint16_t tp, double now,
-                      const net::Vec3* drawn = nullptr)
+static TrackSample& track_one(uint8_t who, void* c, const net::PlayerState* s, uint16_t tp, double now,
+                              const net::Vec3* drawn = nullptr)
 {
     TrackSample x{};
     x.t = (float)(now - g_track_t0);
@@ -478,13 +479,33 @@ static void track_one(uint8_t who, void* c, const net::PlayerState* s, uint16_t 
         x.rv = drive::speed(s->vel);
         x.flags = (uint8_t)s->flags;
     }
-    g_track.push_back(x);
-    while (g_track.size() > kTrackMax)
+    while (g_track.size() >= kTrackMax)
         g_track.pop_front();
+    g_track.push_back(x);
+    return g_track.back();
 }
 
 void track_tick(double now)
 {
+    if (g_track_on && g_mode == modes::kTribe) { // BUG-0365: the player tribe's members (mirrors on guests)
+        tribe::for_each_tracked(
+            [](const tribe::TrackMember& m, void* u) {
+                net::PlayerState s{};
+                if (m.tgt) {
+                    s.pos = *m.tgt;
+                    s.flags = net::PF_IN_WORLD | (m.rv > 0.3f ? net::PF_MOVING : 0);
+                }
+                TrackSample& x = track_one(m.owner, m.c, m.tgt ? &s : nullptr, m.teleports, *(double*)u, m.drawn);
+                x.id = m.id;
+                x.rv = m.rv;
+                if (!m.tgt) { // the host's own member: its own state is the reference
+                    x.tgt = x.p;
+                    x.flags = net::PF_IN_WORLD | (m.rv > 0.3f ? net::PF_MOVING : 0);
+                }
+            },
+            &now);
+        return;
+    }
     if (!g_track_on || g_mode != modes::kCreature || !g_local)
         return;
     track_one(255, g_local, nullptr, 0, now);
@@ -508,13 +529,13 @@ int c_track(void*, int argc, const char* const* argv, SkOut* out)
     } else if (!strcmp(a, "stop"))
         g_track_on = false;
     else if (!strcmp(a, "dump")) {
-        // dump [from] [n]: t who flags tp px py pz dx dy dz tx ty tz gv rv anim gait gait2 moving speed_state vis sx sy
+        // dump [from] [n]: t who flags tp px py pz dx dy dz tx ty tz gv rv anim gait gait2 moving speed_state vis sx sy id
         size_t from = argc > 2 ? (size_t)atol(argv[2]) : 0, n = argc > 3 ? (size_t)atol(argv[3]) : 2000;
         for (size_t i = from; i < g_track.size() && i < from + n; i++) {
             const auto& x = g_track[i];
-            SAY("%.4f %u %u %u %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.2f %.2f %08X %d %d %d %d %d %.0f %.0f\n", x.t,
+            SAY("%.4f %u %u %u %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.2f %.2f %08X %d %d %d %d %d %.0f %.0f %u\n", x.t,
                 x.who, x.flags, x.tp, x.p.x, x.p.y, x.p.z, x.d.x, x.d.y, x.d.z, x.tgt.x, x.tgt.y, x.tgt.z, x.gv, x.rv,
-                x.anim, x.gait, x.gait2, x.moving, x.speed_state, x.vis, x.sx, x.sy);
+                x.anim, x.gait, x.gait2, x.moving, x.speed_state, x.vis, x.sx, x.sy, (unsigned)x.id);
         }
         return 0;
     }
@@ -4242,7 +4263,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                    },
                    nullptr, MT);
     H->command_add(M, "coop.status", "session, players and puppets", c_status, nullptr, MT);
-    H->command_add(M, "coop.track", "coop.track start|stop|count|dump [from] [n] - every frame: the partners' puppets and the own avatar (tests, BUG-0360)",
+    H->command_add(M, "coop.track", "coop.track start|stop|count|dump [from] [n] - every frame: the partners' puppets and the own avatar; in Tribe the player tribe's members (tests, BUG-0360, BUG-0365)",
                    c_track, nullptr, MT);
     H->command_add(M, "coop.log", "coop.log detail [0|1|2] - support logging: 0 = the old lines only, 1 = state trace + events "
                    "(default), 2 = verbose; coop.log trace - write the trace lines now",

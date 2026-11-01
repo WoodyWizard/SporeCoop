@@ -96,4 +96,68 @@ inline void step(void* p, const net::Vec3& pos_in, const net::Quat& rot, const n
     }
 }
 
+// BUG-0360 (Creature puppets), BUG-0365 (Tribe mirrors): a remote creature that walks is walked by the game
+// and placed on its path. drive::step gave a MoveTo again every 0.1 s (which restarts the game's walk: the
+// creature stood or crept, or a citizen at its fixed 9 m/s reached the point ahead and stopped) and pulled
+// it with SetPosition (which the locomotion undoes), so it moved in steps and trailed until a snap.
+// walk_place, every frame while the remote moves:
+// * the game walks it: the remote's speed (SetDesiredSpeed) and a MoveTo goal_ahead m ahead on its path,
+//   given again only when that direction turns more than ~6 degrees (at most every min_gap s, at least
+//   every max_gap s): its walk gait and walk animation run;
+// * game::place puts it on the remote's path with the remote's facing: a teleport (the locomotion keeps
+//   its own position, SetPosition alone is undone) without the teleport mark +0xB5D, which restarts the
+//   animation's gait. An error left from standing is closed at catch_up m/s faster than the remote.
+// walk_end when the remote stands again: a MoveTo to where it stands (not StopMovement, which put it back
+// up to 3 m to where its own walk was), then drive::step takes over.
+struct WalkPlace {
+    float goal_ahead = 12.f;  // m: the MoveTo point ahead on the remote's path
+    float turn_dot = 0.995f;  // a new MoveTo when its direction turns more than ~6 degrees,
+    double min_gap = 0.3;     // not more often than this (s: given every 0.1 s it restarts the walk)
+    double max_gap = 1.5;     // and at least this often (s)
+    float catch_up = 3.f;     // m/s faster than the remote while it is off the path
+    bool own_height = false;  // BUG-0329: at the creature's own distance from the planet's centre
+};
+
+inline void walk_place(void* p, const net::Vec3& pos_in, const net::Quat& rot, const net::Vec3& vel, State& ds, double now,
+                       const WalkPlace& o = {})
+{
+    float sp = speed(vel);
+    if (sp <= 0.f)
+        return;
+    net::Vec3 pos = o.own_height ? at_own_height(pos_in, game::position(p)) : pos_in;
+    bool was = ds.kinematic;
+    ds.kinematic = true;
+    game::set_speed(p, sp);
+    net::Vec3 hd{vel.x / sp, vel.y / sp, vel.z / sp};
+    float dot = hd.x * ds.goal_dir.x + hd.y * ds.goal_dir.y + hd.z * ds.goal_dir.z;
+    if (!was || (now - ds.last_cmd > o.min_gap && dot < o.turn_dot) || now - ds.last_cmd > o.max_gap) {
+        game::move_to(p, {pos.x + hd.x * o.goal_ahead, pos.y + hd.y * o.goal_ahead, pos.z + hd.z * o.goal_ahead}, 0.3f);
+        ds.goal_dir = hd;
+        ds.last_cmd = now;
+        ds.goals++;
+    }
+    net::Vec3 cur = game::position(p);
+    float err = net::dist(cur, pos);
+    double dt = was && now > ds.last_step ? std::min(now - ds.last_step, 0.1) : 1.0 / 60;
+    float max_step = (sp + o.catch_up) * (float)dt;
+    net::Vec3 to = pos;
+    if (err > max_step) {
+        float k = max_step / err;
+        to = {cur.x + (pos.x - cur.x) * k, cur.y + (pos.y - cur.y) * k, cur.z + (pos.z - cur.z) * k};
+    }
+    game::place(p, to, rot);
+    ds.last_step = now;
+    ds.last_err = err;
+    ds.track = Track{};
+}
+
+inline void walk_end(void* p, const net::Vec3& pos, State& ds, double now)
+{
+    if (!ds.kinematic)
+        return;
+    ds.kinematic = false;
+    game::move_to(p, pos, 0.3f);
+    ds.last_cmd = now;
+}
+
 } // namespace drive

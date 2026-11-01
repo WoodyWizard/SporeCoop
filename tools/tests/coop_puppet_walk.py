@@ -58,7 +58,7 @@ def dump(con):
     for start_i in range(0, n, 1500):
         for line in con.call(f'coop.track dump {start_i} 1500')['out'].splitlines():
             f = line.split()
-            if len(f) != 23:
+            if len(f) < 23:
                 continue
             rows.append({'t': float(f[0]), 'who': int(f[1]), 'flags': int(f[2]), 'tp': int(f[3]),
                          'p': tuple(map(float, f[4:7])), 'd': tuple(map(float, f[7:10])),
