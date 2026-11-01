@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Fixed
+- Creature: each player now sees the partner's real health on the partner's creature (it always
+  looked full, hits on the partner did not show) and its real max health (BUG-0373).
+- Creature: the host's pack and family no longer attack and kill a partner (a partner's hit on a
+  pack member made it fight the partner for good); a partner's hits no longer hurt them (BUG-0374).
+- Creature: a player who plays its own creature in the host's world now gets the extra health of
+  every brain upgrade (it stayed at the first level's health, 14 against the host's 44) (BUG-0375).
+
 ## [0.7.3.3] - 2026-11-01
 
 ### Fixed

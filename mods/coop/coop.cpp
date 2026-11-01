@@ -41,6 +41,7 @@
 #include "spacecoop.h"
 #include "squadron.h"
 #include "npc.h"
+#include "creature_hp.h"
 #include "rejoin.h"
 #include "savestrip.h"
 #include "cell_logic.h"
@@ -4163,6 +4164,15 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     };
     ctx.stage_center = [](net::Vec3& p) { return tribe::center(p); };
     npc::init(H, M, ctx);
+    { // BUG-0373 / BUG-0374 / BUG-0375: creature health between players
+        creature_hp::Ctx hc;
+        hc.puppet_of = [](uint8_t id) -> void* {
+            auto it = g_remotes.find(id);
+            return it == g_remotes.end() ? nullptr : it->second.puppet;
+        };
+        hc.is_host = [] { return g_sess.role() == net::Role::Host; };
+        creature_hp::init(H, M, hc);
+    }
     savestrip::init(H, M); // BUG-0020: our objects never go into a save
     views::init(H, M);     // BUG-0280: the world lives around every player
     npc::set_enabled(H->config_int(M, "coop", "share_npcs", 1) != 0);

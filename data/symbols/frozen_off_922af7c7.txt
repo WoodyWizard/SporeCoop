@@ -49,3 +49,7 @@ Simulator::Cell::ActiveBox ; Cell: the active area's size in the coop.pool parts
 Simulator::Cell::CreateSoftBody ; Cell: no guard for a full cell graphics pool (BUG-0355)
 SporeCoop::AbilityBar_ptr ; Creature: the ability bar is not built again after the own creature swap (BUG-0358)
 SporeCoop::AbilityBar_Rebuild ; Creature: the ability bar is not built again after the own creature swap (BUG-0358)
+SporeCoop::cCreatureAnimal_GetMaxHitPoints ; Creature: a partner's creature keeps its own max health, not the partner's (BUG-0373)
+SporeCoop::cCreatureAnimal_BaseMaxHitPoints ; Creature: an own creature of another species keeps level 0's health (BUG-0375)
+SporeCoop::CreatureLevelHealth ; Creature: an own creature of another species keeps level 0's health (BUG-0375)
+SporeCoop::cSpeciesManager_PlayerSpecies ; Creature: an own creature of another species keeps level 0's health (BUG-0375)
