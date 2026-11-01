@@ -300,17 +300,20 @@ void hooks_churn_test(int rounds, int threads, std::string& out, bool nogate)
 // executable page), as the first injected input hooks GetAsyncKeyState while the game's main thread
 // polls it. The detour calls the original through the pointer hook_create fills, like
 // h_GetAsyncKeyState; when that pointer is still null the real detour calls address 0, this one
-// counts it and returns.
+// counts it and returns. Each round has its own pointer (a thread still inside an older round's
+// detour reads that round's pointer, which stays set) and its own detour thunk
+// (mov eax, &pointer; jmp new_detour).
 static SkMod g_new_mod;
 using new_fn = int(__cdecl*)(int);
-static new_fn volatile o_new;      // filled by hook_create, as o_GetAsyncKeyState is
-static new_fn volatile g_new_ptr;  // the function the threads call now
+static const int kNewMax = 2000;
+static new_fn volatile g_new_orig[kNewMax]; // filled by hook_create, as o_GetAsyncKeyState is
+static new_fn volatile g_new_ptr;           // the function the threads call now
 static std::atomic<bool> g_new_run{false};
 static std::atomic<uint32_t> g_new_calls{0}, g_new_null{0};
 
-__attribute__((noinline)) static int __cdecl new_detour(int x)
+__attribute__((noinline, regparm(1))) static int new_detour(new_fn volatile* orig, int x)
 {
-    new_fn o = o_new;
+    new_fn o = *orig;
     if (!o) {
         g_new_null++; // the game's detour would call address 0 here
         return x + 1;
@@ -332,19 +335,32 @@ void hooks_new_test(int rounds, int threads, std::string& out)
     g_new_mod.name = "kit.test";
     if (rounds < 1)
         rounds = 1;
-    if (rounds > 2000)
-        rounds = 2000;
-    // mov eax,[esp+4]; lea eax,[eax+1]; nop; nop; ret; then int3 up to 16 bytes
-    static const uint8_t body[16] = {0x8B, 0x44, 0x24, 0x04, 0x8D, 0x40, 0x01, 0x90,
-                                     0x90, 0xC3, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC};
-    size_t size = ((size_t)rounds * 16 + 4095) & ~(size_t)4095;
+    if (rounds > kNewMax)
+        rounds = kNewMax;
+    // the function starts at +3 with `jmp +0` (E9 00000000) to its body at +8 (mov eax,[esp+4]; inc eax;
+    // ret): MinHook's jmp replaces exactly that instruction with one aligned 4-byte store of the
+    // operand (the opcode stays E9), so no thread is caught between instructions of the first 5 bytes
+    // (that is BUG-0202, a different race); only the order of the jmp and *original is tested
+    static const uint8_t body[16] = {0xCC, 0xCC, 0xCC, 0xE9, 0x00, 0x00, 0x00, 0x00,
+                                     0x8B, 0x44, 0x24, 0x04, 0x40, 0xC3, 0xCC, 0xCC};
+    size_t size = ((size_t)rounds * 32 + 4095) & ~(size_t)4095;
     auto* page = (uint8_t*)VirtualAlloc(nullptr, size, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
     if (!page) {
         out = "hooknew: no memory";
         return;
     }
-    for (int r = 0; r < rounds; r++)
+    for (int r = 0; r < rounds; r++) {
         memcpy(page + r * 16, body, 16);
+        g_new_orig[r] = nullptr; // a static of the mod that nobody set yet
+        uint8_t* t = page + rounds * 16 + r * 16; // the round's detour thunk
+        uint32_t slot = (uint32_t)(uintptr_t)&g_new_orig[r];
+        int32_t rel = (int32_t)((uintptr_t)(void*)new_detour - (uintptr_t)(t + 10));
+        t[0] = 0xB8;
+        memcpy(t + 1, &slot, 4);
+        t[5] = 0xE9;
+        memcpy(t + 6, &rel, 4);
+        memset(t + 10, 0xCC, 6);
+    }
     FlushInstructionCache(GetCurrentProcess(), page, size);
     g_new_calls = 0;
     g_new_null = 0;
@@ -356,12 +372,11 @@ void hooks_new_test(int rounds, int threads, std::string& out)
             ts.push_back(t);
     int made = 0, null_rounds = 0;
     for (int r = 0; r < rounds; r++) {
-        void* target = page + r * 16;
-        o_new = nullptr; // a static of the mod that nobody set yet
+        void* target = page + r * 16 + 3;
         g_new_ptr = (new_fn)target;
         Sleep(1); // the threads run through the function now
         uint32_t n0 = g_new_null.load();
-        if (hook_create(&g_new_mod, target, (void*)new_detour, (void**)&o_new) == 0)
+        if (hook_create(&g_new_mod, target, page + rounds * 16 + r * 16, (void**)&g_new_orig[r]) == 0)
             made++;
         Sleep(1);
         if (g_new_null.load() != n0)
