@@ -1462,6 +1462,10 @@ BUG-0404. GOG 2024, lane 5, `tools/tests/coop_vote_cinematic.py`.
   (the 4th, 114 1054) 0x03; 0 again after Esc. The input lock stays 0 for these windows. So "paused" is not
   only the pause menu's "Resume Game" button (BUG-0331, BUG-0336): the mod reads the flag (`busy: paused` in
   `coop.status`, `busy=` in the trace line).
+* ✔ Right after a world load (a guest loading the host's share) the pause flag is set for some seconds
+  (`busy=paused` in the guest's trace from the first Creature frame, gone ~10 s later; lab
+  20261101-170147, run 2). An Esc in that window did not open the pause menu (the flag went to 0): tests wait
+  for `busy: -` before they pause a game by hand.
 * ~ The co-op window opened by a vote does not stop the game time (the held editor opened right after the
   vote with the window just closed; inferred from the passing runs, the flag was not read with the window up).
 

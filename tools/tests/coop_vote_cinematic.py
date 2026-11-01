@@ -169,8 +169,15 @@ def busy(con):
     return m.group(1) if m else '?'
 
 
+def wait_free(con, secs=30):
+    """the game is not busy (right after a load the game time stands for some seconds: busy=paused; an Esc
+    or a click then does something else than opening the pause menu / the Sporepedia)"""
+    return within(lambda: busy(con) == '-', secs)
+
+
 def pause_host_ui(con, ck, name):
     """the Sporepedia by a real click (the game time stands: busy=paused); True when it is up"""
+    wait_free(con)
     for _ in range(3):
         con.call('click %d %d' % SPOREPEDIA)
         time.sleep(2)
@@ -244,8 +251,12 @@ def guest_paused(host, guest, gu, ck, m0):
     if not vote_and_ready(host, gu):
         ck(False, f'{name}: the guest sees the vote and its ready button')
         return True
-    guest.call('key esc')  # the guest's pause menu
-    time.sleep(2)
+    wait_free(guest)
+    for _ in range(2):
+        guest.call('key esc')  # the guest's pause menu
+        time.sleep(2)
+        if 'paused' in busy(guest):
+            break
     ck('paused' in busy(guest), f'{name}: the guest\'s pause menu stops its game time (busy={busy(guest)})')
     host.call('coop.vote go')  # the host starts it: the guest's own editor is due now
     h_in, _, _ = editor_state(host, 'host', 30)
