@@ -62,6 +62,12 @@ SLOW_UNEVEN_MAX = 0.10
 W, H = 1440, 1080
 
 
+# BUG-0394: a window spans at least WIN_FRAMES frames: at 21-29 fps a 0.1 s window held 1-3 frames and its speed
+# ratio swung 0.3-2x with the frame times (the game moves a creature by its own frame time), 79-81 % matched
+# with drawn errors of 0.01-0.6 m; over 4 frames 89-98 %. At 60 fps 4 frames are shorter than 0.1 s (unchanged);
+# a puppet that stands 4 frames while its path moves still counts as standing
+WIN_FRAMES = 4
+
 def dump(con):
     rows = []
     n = int(re.search(r'samples=(\d+)', con.call('coop.track count')['out']).group(1))
@@ -151,7 +157,7 @@ def analyse(rows, owner, top, label):
         i = 0
         while i < len(rs):
             j = i
-            while j < len(rs) and rs[j]['t'] - rs[i]['t'] < 0.1:
+            while j < len(rs) and (rs[j]['t'] - rs[i]['t'] < 0.1 or j - i < WIN_FRAMES):
                 j += 1
             if j >= len(rs):
                 break

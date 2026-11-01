@@ -57,6 +57,12 @@ GAIT_MIN = 0.80
 MATCHED_MIN_TRIBE, JUMPS_TRIBE, JUMP_MAX_TRIBE, ERR_P50_TRIBE = 0.75, 3, 2.5, 0.10
 
 
+# BUG-0394: a window spans at least WIN_FRAMES frames: at 21-29 fps a 0.1 s window held 1-3 frames and its speed
+# ratio swung 0.3-2x with the frame times (the game moves a creature by its own frame time), 79-81 % matched
+# with drawn errors of 0.01-0.6 m; over 4 frames 89-98 %. At 60 fps 4 frames are shorter than 0.1 s (unchanged);
+# a puppet that stands 4 frames while its path moves still counts as standing
+WIN_FRAMES = 4
+
 def screen(con):
     m = re.search(r'viewport x=\d+ y=\d+ w=(\d+) h=(\d+)', con.call('coop.cam')['out'])
     return (int(m.group(1)), int(m.group(2))) if m else (1440, 1080)
@@ -203,7 +209,7 @@ def analyse(rows, W, H, phases):
         i = 0
         while i < len(rs):
             j = i
-            while j < len(rs) and rs[j]['t'] - rs[i]['t'] < 0.1:
+            while j < len(rs) and (rs[j]['t'] - rs[i]['t'] < 0.1 or j - i < WIN_FRAMES):
                 j += 1
             if j >= len(rs):
                 break
