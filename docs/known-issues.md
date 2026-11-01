@@ -1242,3 +1242,33 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Next steps: a heap walk tripwire (PPMalloc chunk sizes) run once a second in a stress campaign
   would date the damage.
 * Ticket: BUG-0359
+
+## Creature: running NPCs probably slide without a walk gait on guests (2026-11-01, fix/w29-puppet-move)
+<a id="issue-proxy-no-gait"></a>
+
+* What happens (inferred): `npc.kinematic` teleports the proxy of a running host NPC onto the host's
+  path every frame; a creature teleported every frame has no walk gait (measured on the partner's
+  puppet: gait state 0 in 97-100 % of its moving frames), so it slides.
+* Reproduce: `creature_npc_dash` with `coop.track` extended to proxies (not done).
+* Known: teleport (vt 0x44) sets +0xB5D and restarts the gait; `game::place` (teleport, then
+  +0xB5D = 0) keeps it (docs/re/creature.md#creature-puppet-walk).
+* Next steps: the `creature.puppet_walk` technique (MoveTo ahead + speed, `game::place` every frame).
+* Ticket: BUG-0361
+
+## Lab: two runs started in the same second share one run directory (2026-11-01, fix/w29-puppet-move)
+<a id="issue-lab-run-id"></a>
+
+* What happens: `out/lab/<YYYYMMDD-HHMMSS>-<branch>` is the same for both runs; the second run's
+  `summary.md` / `results.json` replace the first's.
+* Reproduce: start two `lab.py run ... --branch <b>` in one second.
+* Next steps: a suffix when the directory exists. Meanwhile start parallel runs a few seconds apart.
+* Ticket: BUG-0362
+
+## Tests: creature_npc_dash fails about 1 in 3 runs (2026-11-01, fix/w29-puppet-move)
+<a id="issue-npc-dash-flaky"></a>
+
+* What happens: p90 2.4-6.4 m against the 1.2 m limit in 4 of 9 runs, also with the partner puppet
+  driving of 0.7.3.2 (`SPORE_FIX_OFF=creature.puppet_walk`); other lanes were busy.
+* Reproduce: `tools/lab.py run creature_npc_dash --repeat 3 --retry 0`.
+* Not checked: whether main fails as often on an idle machine; the cause.
+* Ticket: BUG-0363

@@ -84,6 +84,9 @@ void set_defer_keeps_puppet(bool on); // tests (off: a deferred puppet leaves th
 bool destroy_pending(void* c);     // queued by destroy_creature, still there
 std::string destroy_deferred_status();
 void teleport(void* c, const net::Vec3& pos, const net::Quat& rot);
+// BUG-0360: teleport without the teleport mark (+0xB5D, set by vt 0x44 0xC0C040): the locomotion takes
+// the position, the animation's walk gait goes on (with the mark it restarts every frame)
+void place(void* c, const net::Vec3& pos, const net::Quat& rot);
 // cSpatialObject::SetPosition (vtable 0x38): moves without touching locomotion/animation
 void set_position(void* c, const net::Vec3& pos);
 void set_orientation(void* c, const net::Quat& rot);
@@ -95,6 +98,14 @@ float bounding_radius(void* c);
 // the terrain's distance from the planet's centre in the direction of pos (cPlanetModel::GetHeightAt), 0 without a planet
 float ground_radius(const net::Vec3& pos);
 void set_scale(void* c, float s);
+// BUG-0360 (coop.track): the creature's Anim::AnimatedCreature (cCreatureBase +0xB54): where its
+// model is drawn (+0x04) and the id of its current animation (vt 0x58 GetCurrentAnimation, 0 when
+// none). False when the creature has none.
+bool drawn_state(void* c, net::Vec3* drawn, uint32_t* anim);
+// BUG-0360: the walk state the creature's idle animation is chosen by (0xC0C790): the animation's
+// gait state (AnimatedCreature +0x17C -> +0x15B8, two ints: 0 = no gait), the creature's +0x137 and
+// its speed state +0xF98. False when it has no animation.
+bool gait_state(void* c, int* gait, int* gait2, int* moving, int* speed_state);
 
 // Animation events: called for every PlayAnimation/PlayAnimationTo on any creature.
 using AnimListener = void (*)(void* creature, uint32_t anim_id, int block, bool disable_blend, bool to_target);
