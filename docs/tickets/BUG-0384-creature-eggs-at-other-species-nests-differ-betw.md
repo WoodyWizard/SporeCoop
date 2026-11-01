@@ -62,6 +62,12 @@ the host another.
 * PASS: out/lab/20261101-122753 (lanes 9 and 10, 2/2: 2 / 2 eggs, each within 1 m, guest eggs 0.76-0.77 m
   over the terrain in the nest bowl, eaten on the guest -> state 4 on the host, eaten on the host -> state
   4 on the guest).
+* Regression (lanes 9/10, gates on): out/lab/20261101-122949 creature, team, nest_species,
+  creature_kills, npc_run_hp OK; migration failed on the known cold-start caught fault at 0x11ECE4F
+  (before the session, docs/06-testing.md), rerun OK out/lab/20261101-123541. Smoke
+  out/lab/20261101-123904: 11/14 (ui skipped: needs lanes 1-5); creature failed on BUG-0390 (the guest's
+  hit lands on the host's family, open on main); unit failed on re_lint (cPlanetModel::GetOrientation
+  only in the generated .sym: added to overrides), `make test` passes after that.
 
 ## History
 - 2026-11-01: opened (fix/w30-npc-walk).
