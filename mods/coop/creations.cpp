@@ -272,10 +272,118 @@ bool key_known(const Key& k) { return key_exists(k); }
 // world_missing_parts): the player gets a message instead of a crash.
 static bool g_parts_fix = true;
 COOP_FIX("creations.missing_parts", "BUG-0341", g_parts_fix, "creations: a creature with Creepy & Cute parts is not built on a game without that pack, and a world that needs one is not loaded (0x441F3B)");
+// BUG-0452: the same for every part id of every creature, cell and UFO model that reaches this game,
+// not only the hard-coded Creepy & Cute list. A species of the host's world with a part of another
+// parts pack (or of a mod) crashed a guest at the same 0x41F3B: the bake found no property list for
+// the id. Each such id is logged; a part this game lacks is shown as a base game part (Creepy &
+// Cute's table first) or, when no substitute of the right length is known, the creation is refused
+// and the game's fallback shows instead. Off (`coop.fix creations.unknown_parts off`): 0.7.3.4, only
+// the Creepy & Cute list is checked.
+static bool g_unknown_fix = true;
+COOP_FIX("creations.unknown_parts", "BUG-0452", g_unknown_fix, "creations: every part id of a received creature, cell and UFO model is checked against this game, not only Creepy & Cute's (0x41F3B)");
 constexpr uint32_t kPartProp = 0x00B1B104, kPartGroup = 0x40626000;
+constexpr uint32_t kCellPartGroup = 0x40616000, kUfoPartGroup = 0x40646000; // parts of a cell / UFO model
+constexpr uint32_t kEffectProp = 0x497767B9, kEffectGroup = 0xEA5118B1; // a base game skin effect
+// a part entry's slot and parent are small indexes (-1: none); an entry whose fields are not is not
+// a part reference (the group bytes occur in other data too: a base game model has such entries, and
+// the fixture Kirgle names 05D58995 that no package holds and builds fine, docs/re/creations.md)
+constexpr uint32_t kMaxPartSlot = 0x10000;
 static int g_have_cc = -1; // this game has the Creepy & Cute parts (-1: not asked yet)
-static unsigned g_parts_refused;
+static unsigned g_parts_refused, g_parts_fallback, g_paints_fallback, g_unknown_logged;
 static std::map<uint32_t, std::string> g_world_missing; // the host's world creatures this game cannot build
+// key_exists is an RM lookup: the packs are mounted for the session, so an id's answer does not change
+static std::map<std::pair<uint32_t, uint32_t>, bool> g_key_cache; // part id + group -> this game has it
+static std::map<uint32_t, bool> g_effect_cache;                  // paint effect id -> this game has it
+
+// the part property group of a model kind (the model groups are kInfo[k].group + 0x20000)
+static uint32_t part_group(Kind k)
+{
+    return k == kCell ? kCellPartGroup : k == kUfo ? kUfoPartGroup : kPartGroup;
+}
+
+// ---- part ids of a model (all kinds: the same group+instance key layout) ----
+struct PartRef {
+    uint32_t id;
+    size_t at;    // raw offset of the first id byte in the model
+    size_t len;   // raw length of the id (0xFE is written FE 00)
+    bool safe;    // rewriting the id cannot change the slot that follows it
+};
+
+// decodes n bytes of the model's byte-run stream from `j` (0xFE n: the byte before, n more times;
+// FE 00: the byte 0xFE); `last` is the byte before j
+static bool decode_run(const std::vector<uint8_t>& m, size_t& j, uint8_t& last, uint8_t* out, int n)
+{
+    int got = 0;
+    while (got < n) {
+        if (j >= m.size())
+            return false;
+        uint8_t b = m[j];
+        if (b != 0xFE) {
+            out[got++] = b;
+            last = b;
+            j++;
+            continue;
+        }
+        if (j + 1 >= m.size())
+            return false;
+        unsigned run = m[j + 1];
+        if (run == 0) {
+            out[got++] = 0xFE;
+            last = 0xFE;
+            j += 2;
+            continue;
+        }
+        j += 2;
+        for (unsigned r = 0; r < run && got < n; r++)
+            out[got++] = last;
+    }
+    return true;
+}
+
+// the model's part references of `group`. A part key is written as its group (little endian) and
+// the instance right after it; byte runs are packed (0xFE n = the byte before, n more times; a 0xFE
+// byte is written 0xFE 0x00) and an id with a run inside it is skipped. Only entries whose slot and
+// parent are plausible count: docs/re/creations.md#creations-unknown-parts
+static std::vector<PartRef> model_part_refs(const std::vector<uint8_t>& m, uint32_t group)
+{
+    std::vector<PartRef> out;
+    uint8_t g[4] = {(uint8_t)group, (uint8_t)(group >> 8), (uint8_t)(group >> 16), (uint8_t)(group >> 24)};
+    for (size_t i = 0; i + 16 <= m.size(); i++) {
+        if (m[i] != g[0] || m[i + 1] != g[1] || m[i + 2] != g[2] || m[i + 3] != g[3])
+            continue;
+        uint8_t id[4];
+        int got = 0;
+        size_t j = i + 4;
+        bool ok = true;
+        while (got < 4 && j < m.size()) {
+            if (m[j] == 0xFE) {
+                if (j + 1 >= m.size() || m[j + 1] != 0) { // a run inside the id: not a part id we can read
+                    ok = false;
+                    break;
+                }
+                id[got++] = 0xFE;
+                j += 2;
+            } else
+                id[got++] = m[j++];
+        }
+        if (!ok || got != 4)
+            continue;
+        uint32_t v = id[0] | id[1] << 8 | id[2] << 16 | (uint32_t)id[3] << 24;
+        size_t at = i + 4, len = j - at;
+        // the slot and parent follow the id in the same byte-run stream
+        uint8_t f[8];
+        uint8_t last = id[3];
+        bool safe = !(j + 1 < m.size() && m[j] == 0xFE && m[j + 1] != 0); // a run repeats the id's last byte
+        if (!v || !decode_run(m, j, last, f, 8))
+            continue;
+        uint32_t slot = f[0] | f[1] << 8 | f[2] << 16 | (uint32_t)f[3] << 24;
+        uint32_t parent = f[4] | f[5] << 8 | f[6] << 16 | (uint32_t)f[7] << 24;
+        if (!(slot == 0xFFFFFFFFu || slot < kMaxPartSlot) || !(parent == 0xFFFFFFFFu || parent < kMaxPartSlot))
+            continue; // not a part entry (the group bytes occur in other data)
+        out.push_back({v, at, len, safe});
+    }
+    return out;
+}
 
 bool have_creepy_cute()
 {
@@ -286,34 +394,12 @@ bool have_creepy_cute()
     return g_have_cc != 0;
 }
 
-// the part ids a creature model (bem record) names: a part key is written as its group 0x40626000
-// (bytes 60 62 40 after a 00) and the instance right after it. The model packs byte runs as 0xFE n
-// (the byte before, n more times) and writes a 0xFE byte as 0xFE 0x00; an id with a run in it is
-// skipped (docs/re/creations.md#creations-content-packs)
+// the part ids a creature model (bem record) names, for the tests and the support trace
 std::vector<uint32_t> model_parts(const std::vector<uint8_t>& m)
 {
     std::vector<uint32_t> out;
-    for (size_t i = 0; i + 7 <= m.size(); i++) {
-        if (m[i] != 0x60 || m[i + 1] != 0x62 || m[i + 2] != 0x40)
-            continue;
-        uint8_t id[4];
-        int n = 0;
-        size_t j = i + 3;
-        bool ok = true;
-        while (n < 4 && j < m.size()) {
-            if (m[j] == 0xFE) {
-                if (j + 1 >= m.size() || m[j + 1] != 0) {
-                    ok = false;
-                    break;
-                }
-                id[n++] = 0xFE;
-                j += 2;
-            } else
-                id[n++] = m[j++];
-        }
-        if (ok && n == 4)
-            out.push_back(id[0] | id[1] << 8 | id[2] << 16 | (uint32_t)id[3] << 24);
-    }
+    for (auto& ref : model_part_refs(m, kPartGroup))
+        out.push_back(ref.id);
     return out;
 }
 
@@ -322,17 +408,60 @@ static bool is_cc_part(uint32_t id)
     return std::binary_search(std::begin(kCreepyCuteParts), std::end(kCreepyCuteParts), id);
 }
 
-// how many parts of the creation this game cannot build (0 with the fix off or the pack present)
-static unsigned missing_parts(const std::vector<dbpf::Record>& recs)
+// whether this game has the part (cached: key_exists is an RM lookup)
+static bool part_known(uint32_t id, uint32_t group)
 {
-    if (!g_parts_fix || have_creepy_cute())
-        return 0;
-    unsigned n = 0;
-    for (auto& r : recs)
-        if (r.key.type == kBem)
-            for (uint32_t id : model_parts(r.data))
-                n += is_cc_part(id);
-    return n;
+    auto k = std::make_pair(id, group);
+    auto it = g_key_cache.find(k);
+    if (it != g_key_cache.end())
+        return it->second;
+    bool have = key_exists({id, kPartProp, group});
+    g_key_cache[k] = have;
+    return have;
+}
+
+// the base game part written in place of a part this game does not have and whose kind is not known
+// here (content_packs.h kBasePartFallbacks), for an id of `fe` 0xFE bytes; 0: none
+static uint32_t part_fallback(Kind k, int fe)
+{
+    uint32_t group = part_group(k);
+    for (auto& f : kBasePartFallbacks)
+        if (f.kind == (uint8_t)k && f.fe == fe && part_known(f.base, group))
+            return f.base;
+    return 0;
+}
+
+// the unbuildable part ids of these records, each once (with the generic check off only the Creepy &
+// Cute ids count, as 0.7.3.4); 0 with the fixes off
+static std::vector<uint32_t> unknown_part_ids(const std::vector<dbpf::Record>& recs, Kind k)
+{
+    std::vector<uint32_t> out;
+    if (!g_parts_fix)
+        return out;
+    uint32_t group = part_group(k);
+    bool cc = k == kCreature && have_creepy_cute();
+    for (auto& r : recs) {
+        if (r.key.type != kBem)
+            continue;
+        for (auto& ref : model_part_refs(r.data, group)) {
+            bool unknown = g_unknown_fix ? !part_known(ref.id, group)
+                                         : (k == kCreature && is_cc_part(ref.id) && !cc);
+            if (unknown && std::find(out.begin(), out.end(), ref.id) == out.end())
+                out.push_back(ref.id);
+        }
+    }
+    return out;
+}
+
+// the unknown ids in the log, one line each (BUG-0452)
+static void log_unknown_parts(const std::vector<uint32_t>& ids, Kind k, const std::string& what)
+{
+    for (uint32_t id : ids) {
+        H->log(M, SK_INFO, "creations: %s: part %08X unknown here: this game does not have it (%s%08X/%08X%s)",
+               what.c_str(), id, k == kCreature ? "crt" : k == kCell ? "cll" : "ufo", kPartProp, part_group(k),
+               k == kCreature && is_cc_part(id) ? ", Creepy & Cute" : "");
+        g_unknown_logged++;
+    }
 }
 
 // BUG-0341, the owner's choice: on a game without the pack each pack part of a creature is shown as a
@@ -363,51 +492,54 @@ static void encode_id(uint32_t id, std::vector<uint8_t>& out)
     }
 }
 
-// rewrites the pack parts of the creature's model records (bem) to their substitutes in place;
-// returns how many were rewritten
-static unsigned substitute_parts(std::vector<dbpf::Record>& recs)
+// rewrites the parts of the model records (bem) this game does not have to their substitutes in
+// place; returns how many were rewritten. The Creepy & Cute table first (the same kind), then a base
+// game detail of the same group and length (kBasePartFallbacks: the kind of another pack's part is not
+// known here). A part with neither is left in place: unknown_part_ids refuses the creation.
+static unsigned substitute_parts(std::vector<dbpf::Record>& recs, Kind k, const std::string& whose)
 {
-    if (!g_parts_fix || !g_subst_fix || have_creepy_cute())
+    if (!g_parts_fix || !g_subst_fix)
         return 0;
-    unsigned n = 0;
+    uint32_t group = part_group(k);
+    bool cc = k == kCreature && have_creepy_cute();
+    unsigned n = 0, fb = 0;
     for (auto& r : recs) {
         if (r.key.type != kBem)
             continue;
         auto& m = r.data;
-        for (size_t i = 0; i + 7 <= m.size(); i++) {
-            if (m[i] != 0x60 || m[i + 1] != 0x62 || m[i + 2] != 0x40)
+        for (auto& ref : model_part_refs(m, group)) {
+            if (!ref.safe)
+                continue; // a run after the id repeats its last byte: rewriting it would change the slot
+            bool unknown = g_unknown_fix ? !part_known(ref.id, group)
+                                         : (k == kCreature && is_cc_part(ref.id) && !cc);
+            if (!unknown)
                 continue;
-            uint8_t id[4];
-            int got = 0;
-            size_t j = i + 3;
-            bool ok = true;
-            while (got < 4 && j < m.size()) { // as model_parts
-                if (m[j] == 0xFE) {
-                    if (j + 1 >= m.size() || m[j + 1] != 0) {
-                        ok = false;
-                        break;
-                    }
-                    id[got++] = 0xFE;
-                    j += 2;
-                } else
-                    id[got++] = m[j++];
+            uint32_t sub = 0;
+            if (k == kCreature) { // the Creepy & Cute table first (creature parts)
+                uint32_t s = substitute_of(ref.id);
+                if (s && part_known(s, kPartGroup))
+                    sub = s;
             }
-            if (!ok || got != 4)
-                continue;
-            uint32_t v = id[0] | id[1] << 8 | id[2] << 16 | (uint32_t)id[3] << 24;
-            uint32_t sub = is_cc_part(v) ? substitute_of(v) : 0;
-            if (!sub || !key_exists({sub, kPartProp, kPartGroup}))
+            int fe = 0;
+            for (int i = 0; i < 4; i++)
+                fe += (((ref.id >> (8 * i)) & 0xFF) == 0xFE) ? 1 : 0;
+            if (!sub && g_unknown_fix) {
+                sub = part_fallback(k, fe);
+                if (sub)
+                    fb++;
+            }
+            if (!sub)
                 continue;
             std::vector<uint8_t> enc;
             encode_id(sub, enc);
-            if (enc.size() != j - (i + 3)) // not the same length: left as it is (refused below)
+            if (enc.size() != ref.len) // not the same length: left as it is (refused below)
                 continue;
-            std::copy(enc.begin(), enc.end(), m.begin() + (long)(i + 3));
+            std::copy(enc.begin(), enc.end(), m.begin() + (long)ref.at);
             n++;
-            i = j - 1;
         }
     }
     g_parts_substituted += n;
+    g_parts_fallback += fb;
     return n;
 }
 
@@ -472,21 +604,71 @@ static bool model_effects(const std::vector<uint8_t>& m, uint32_t eff[3], size_t
 
 static bool is_cc_paint(uint32_t id) { return paint_substitute_of(id) != 0; }
 
-// rewrites the pack's skin effects of the creature's model records in place; returns how many
+// the 0xFE bytes of an id as a model writes it (FE 00 each): the encoded length is 4 + this
+static int fe_count(uint32_t id)
+{
+    int n = 0;
+    for (int i = 0; i < 4; i++)
+        n += (((id >> (8 * i)) & 0xFF) == 0xFE) ? 1 : 0;
+    return n;
+}
+
+// BUG-0452: an effect this game has. key_exists finds the base game's effect records; 14 of the base
+// game's 111 skin paints have no record (the game defines them itself), so the generated list counts
+// too. Creepy & Cute's effects are only present with that pack (its table names them).
+static bool paint_known(uint32_t id)
+{
+    auto it = g_effect_cache.find(id);
+    if (it != g_effect_cache.end())
+        return it->second;
+    bool known = key_exists({id, kEffectProp, kEffectGroup}) ||
+                 std::binary_search(std::begin(kBasePaintEffects), std::end(kBasePaintEffects), id) ||
+                 (is_cc_paint(id) && have_creepy_cute());
+    g_effect_cache[id] = known;
+    return known;
+}
+
+// the base game effect written in place of an unknown paint (content_packs.h kBasePaintFallbacks)
+static uint32_t paint_fallback(int layer, int fe)
+{
+    for (auto& f : kBasePaintFallbacks)
+        if (f.layer == layer && f.fe == fe && paint_known(f.base))
+            return f.base;
+    return 0;
+}
+
+// rewrites the skin effects of the creature's model records this game does not have in place; returns
+// how many. Creepy & Cute's table first (BUG-0369), then a base game paint of the same layer and
+// length; an effect with neither stays (the game leaves that layer unpainted, no crash).
 static unsigned substitute_paints(std::vector<dbpf::Record>& recs, const std::string& whose)
 {
-    if (!g_paint_fix || have_creepy_cute())
+    if (!g_parts_fix || !g_paint_fix)
         return 0;
-    unsigned n = 0;
+    bool cc = have_creepy_cute();
+    if (cc && !g_unknown_fix)
+        return 0; // 0.7.3.3: nothing to substitute when the pack is here
+    unsigned n = 0, fb = 0;
     for (auto& r : recs) {
         uint32_t eff[3];
         size_t at[3], len[3];
         if (r.key.type != kBem || !model_effects(r.data, eff, at, len))
             continue;
         for (int k = 0; k < 3; k++) {
-            uint32_t sub = paint_substitute_of(eff[k]);
-            if (!sub)
+            if (!eff[k])
                 continue;
+            bool unknown = g_unknown_fix ? !paint_known(eff[k]) : (is_cc_paint(eff[k]) && !cc);
+            if (!unknown)
+                continue;
+            uint32_t sub = paint_substitute_of(eff[k]);
+            if (sub && !paint_known(sub))
+                sub = 0;
+            if (!sub && g_unknown_fix) {
+                sub = paint_fallback(k, fe_count(eff[k]));
+                if (sub)
+                    fb++;
+            }
+            if (!sub)
+                continue; // unknown_paint_ids refuses the creation
             std::vector<uint8_t> enc;
             encode_id(sub, enc);
             if (enc.size() != len[k])
@@ -497,23 +679,80 @@ static unsigned substitute_paints(std::vector<dbpf::Record>& recs, const std::st
     }
     if (n) {
         g_paints_substituted += n;
-        H->log(M, SK_INFO, "creations: %s: %u Creepy & Cute paint layer(s) shown as similar base game paints (this game "
-               "does not have that pack, BUG-0369)", whose.c_str(), n);
+        g_paints_fallback += fb;
+        H->log(M, SK_INFO, "creations: %s: %u paint layer(s) this game does not have shown as base game paints%s",
+               whose.c_str(), n, fb ? " (a base game paint: the pack's kind is not known here, BUG-0452)" : " (the pack's, BUG-0369)");
     }
     return n;
 }
 
+// the unknown paint effects of these records, each once (BUG-0452)
+static std::vector<uint32_t> unknown_paint_ids(const std::vector<dbpf::Record>& recs)
+{
+    std::vector<uint32_t> out;
+    if (!g_parts_fix)
+        return out;
+    bool cc = have_creepy_cute();
+    for (auto& r : recs) {
+        uint32_t eff[3];
+        size_t at[3], len[3];
+        if (r.key.type != kBem || !model_effects(r.data, eff, at, len))
+            continue;
+        for (int i = 0; i < 3; i++) {
+            if (!eff[i])
+                continue;
+            bool unknown = g_unknown_fix ? !paint_known(eff[i]) : (is_cc_paint(eff[i]) && !cc);
+            if (unknown && std::find(out.begin(), out.end(), eff[i]) == out.end())
+                out.push_back(eff[i]);
+        }
+    }
+    return out;
+}
+
 // a log line and, once per session, a notice for the player
-static void told_substituted(unsigned n, const std::string& whose)
+static void told_substituted(unsigned n, unsigned fallbacks, const std::string& whose)
 {
     if (!n)
         return;
-    H->log(M, SK_INFO, "creations: %s: %u Creepy & Cute part(s) shown as similar base game parts (this game does "
-           "not have that pack, BUG-0341)", whose.c_str(), n);
+    H->log(M, SK_INFO, "creations: %s: %u part(s) this game does not have shown as base game parts%s", whose.c_str(), n,
+           fallbacks ? " (a base game detail: the pack part's kind is not known here, BUG-0452)"
+                     : " (similar base game parts, BUG-0341)");
     if (!g_subst_told && C.feed) {
         g_subst_told = true;
-        C.feed("Some Creepy & Cute parts are shown as similar base game parts (this game does not have that pack)");
+        C.feed("Some parts a player uses are shown as similar base game parts (this game does not have that pack)");
     }
+}
+
+// BUG-0452: checks and fixes every part and paint id of these model records; returns how many ids
+// remain unknown (the creation must not be built then, the game's fallback shows instead)
+static unsigned ensure_content(std::vector<dbpf::Record>& recs, Kind k, const std::string& whose)
+{
+    if (!g_parts_fix)
+        return 0;
+    // BUG-0452: log every id this game does not have, before substituting it
+    std::vector<uint32_t> unknown = unknown_part_ids(recs, k);
+    log_unknown_parts(unknown, k, whose);
+    if (k == kCreature) {
+        std::vector<uint32_t> paints = unknown_paint_ids(recs);
+        for (uint32_t id : paints)
+            H->log(M, SK_WARN, "creations: %s: paint %08X unknown here: this game does not have it (BUG-0452)",
+                   whose.c_str(), id);
+        unknown.insert(unknown.end(), paints.begin(), paints.end());
+    }
+    // substitute what this game can
+    unsigned fb0 = g_parts_fallback;
+    unsigned n = substitute_parts(recs, k, whose);
+    if (k == kCreature)
+        n += substitute_paints(recs, whose);
+    if (n)
+        told_substituted(n, g_parts_fallback - fb0, whose);
+    // what is still unknown after substitution is refused
+    std::vector<uint32_t> remaining = unknown_part_ids(recs, k);
+    if (k == kCreature) {
+        std::vector<uint32_t> paints = unknown_paint_ids(recs);
+        remaining.insert(remaining.end(), paints.begin(), paints.end());
+    }
+    return (unsigned)remaining.size();
 }
 
 std::string world_missing_parts()
@@ -779,21 +1018,18 @@ static void apply(uint8_t owner, Kind k, uint32_t id, const std::vector<uint8_t>
     void* old = ap.db;
     void* db = nullptr;
     bool unusable = false;
-    if (k == kCreature)
-        told_substituted(substitute_parts(b.recs), "player " + std::to_string(owner) + "'s creature '" + name + "'");
-    if (k == kCreature)
-        substitute_paints(b.recs, "player " + std::to_string(owner) + "'s creature '" + name + "'");
-    unsigned miss = k == kCreature ? missing_parts(b.recs) : 0;
-    if (miss) { // BUG-0341: its puppet falls back as for an unknown creation
+    const char* noun = k == kCreature ? "creature" : k == kCell ? "cell" : "UFO";
+    unsigned miss = ensure_content(b.recs, k, "player " + std::to_string(owner) + "'s " + noun + " '" + name + "'");
+    if (miss) { // BUG-0452: its puppet falls back as for an unknown creation
         use = {};
         unusable = true;
         g_unusable++;
-        g_parts_refused++;
-        H->log(M, SK_WARN, "creations: player %u's creature '%s' has %u Creepy & Cute part(s) this game does not have: "
-               "not built here (BUG-0341)", owner, name.c_str(), miss);
+        g_parts_refused += miss;
+        H->log(M, SK_WARN, "creations: player %u's %s '%s' has %u part(s) this game does not have: "
+               "not built here (BUG-0452)", owner, noun, name.c_str(), miss);
         if (C.feed)
-            C.feed((C.name_of ? C.name_of(owner) : "a player") + "'s creature uses Creepy & Cute parts this game does "
-                   "not have: shown as another creature here");
+            C.feed((C.name_of ? C.name_of(owner) : "a player") + std::string("'s ") + noun + " uses parts this game does "
+                   "not have: shown as another " + noun + " here");
     } else if (!b.recs.empty() && find_paths()) {
         // the same id everywhere: owner + content hash (a new version after an editor = a new key)
         uint8_t seed[5] = {owner, (uint8_t)id, (uint8_t)(id >> 8), (uint8_t)(id >> 16), (uint8_t)(id >> 24)};
@@ -930,12 +1166,11 @@ static void apply_species(const std::vector<uint8_t>& data)
     Bundle b;
     if (!unpack(data, b) || b.recs.empty() || !find_paths() || g_species_db.count(b.key.instance))
         return;
-    told_substituted(substitute_parts(b.recs), "species " + trace::hex(b.key.instance) + " of the host's world");
-    substitute_paints(b.recs, "species " + trace::hex(b.key.instance) + " of the host's world");
-    if (unsigned miss = missing_parts(b.recs)) { // BUG-0341: an NPC species this game cannot build
-        g_parts_refused++;
-        H->log(M, SK_WARN, "creations: species %08X of the host's world has %u Creepy & Cute part(s) this game does "
-               "not have: not registered (BUG-0341)", b.key.instance, miss);
+    unsigned miss = ensure_content(b.recs, kCreature, "species " + trace::hex(b.key.instance) + " of the host's world");
+    if (miss) { // BUG-0452: an NPC species this game cannot build
+        g_parts_refused += miss;
+        H->log(M, SK_WARN, "creations: species %08X of the host's world has %u part(s) this game does "
+               "not have: not registered (BUG-0452)", b.key.instance, miss);
         return;
     }
     std::wstring path = g_dir + L"\\species_" + std::to_wstring(b.key.instance) + L".package";
@@ -1028,17 +1263,16 @@ static void apply_own_species(const std::vector<uint8_t>& data)
     Bundle b;
     if (!unpack(data, b) || b.recs.empty() || !is_crt(b.key) || !find_paths())
         return;
-    told_substituted(substitute_parts(b.recs), "the host's own creation " + trace::hex(b.key.instance));
-    substitute_paints(b.recs, "the host's own creation " + trace::hex(b.key.instance));
-    if (unsigned miss = missing_parts(b.recs)) { // BUG-0341: not registered, the world is not loaded
+    unsigned miss = ensure_content(b.recs, kCreature, "the host's own creation " + trace::hex(b.key.instance));
+    if (miss) { // BUG-0452: not registered, the world is not loaded
         std::string name, author;
         for (auto& r : b.recs)
             if (r.key.type == kMeta)
                 dbpf::metadata_names(r.data, author, name);
         g_world_missing[b.key.instance] = name.empty() ? trace::hex(b.key.instance) : name;
-        g_parts_refused++;
-        H->log(M, SK_WARN, "creations: the host's own creation %08X '%s' of its world has %u Creepy & Cute part(s) this "
-               "game does not have: not registered, the world cannot be loaded here (BUG-0341)", b.key.instance,
+        g_parts_refused += miss;
+        H->log(M, SK_WARN, "creations: the host's own creation %08X '%s' of its world has %u part(s) this "
+               "game does not have: not registered, the world cannot be loaded here (BUG-0452)", b.key.instance,
                name.c_str(), miss);
         return;
     }
@@ -1743,9 +1977,9 @@ std::string status()
     char b[400];
     snprintf(b, sizeof b,
              "creations: in=%u out=%u registered=%u avatar_swaps=%u waits_on_disk=%u unusable=%u world_swaps=%u "
-             "species asked=%u got=%u sent=%u missing=%u old_sent=%u own_out=%u own_in=%u rx_dropped=%u adopt_skipped=%u parts_refused=%u world_missing=%u cc=%d%s%s\n",
+             "species asked=%u got=%u sent=%u missing=%u old_sent=%u own_out=%u own_in=%u rx_dropped=%u adopt_skipped=%u parts_refused=%u world_missing=%u paints_fb=%u unknown_logged=%u cc=%d%s%s\n",
              g_bundles_in, g_bundles_out, g_registered, g_swaps, g_waits_on_disk, g_unusable, g_world_swaps,
-             g_species_asked, g_species_got, g_species_sent, g_species_missing, g_old_served, g_own_out, g_own_in, g_rx_dropped, g_adopt_skipped, g_parts_refused, (unsigned)g_world_missing.size(), g_have_cc, g_last_error.empty() ? "" : " error=", g_last_error.c_str());
+             g_species_asked, g_species_got, g_species_sent, g_species_missing, g_old_served, g_own_out, g_own_in, g_rx_dropped, g_adopt_skipped, g_parts_refused, (unsigned)g_world_missing.size(), g_paints_fallback, g_unknown_logged, g_have_cc, g_last_error.empty() ? "" : " error=", g_last_error.c_str());
     s += b;
     if (uint8_t* g = modes::cell_game(); g && game::mode_id() == modes::kCell) {
         uint8_t* av = modes::cell_at(*(uint32_t*)(g + 0x411C));
@@ -1794,34 +2028,38 @@ std::string debug(const std::vector<std::string>& a)
         return std::string("the host's world creations are dropped at the session end: ") + (g_world_drop ? "on" : "off") +
                " (dropped " + std::to_string(g_world_dropped) + ", registered " + std::to_string(g_world_pkgs.size()) + ")";
     }
-    if (a.size() >= 2 && a[0] == "parts") { // parts <hex crt instance>: the parts of the model the game reads for that key (tests, BUG-0341)
+    if (a.size() >= 2 && a[0] == "parts") { // parts <hex crt instance>: the parts of the model the game reads for that key (tests, BUG-0452)
         Key k{(uint32_t)strtoul(a[1].c_str(), nullptr, 16), kInfo[kCreature].type, kInfo[kCreature].group};
         std::vector<dbpf::Record> recs;
         if (!records_from_game(k, recs))
             return "parts " + hex(k.instance) + " none\n";
-        unsigned n = 0, cc = 0, unknown = 0;
+        std::vector<uint32_t> unknown = unknown_part_ids(recs, kCreature);
+        unsigned n = 0, cc = 0;
         for (auto& r : recs)
             if (r.key.type == kBem)
-                for (uint32_t id : model_parts(r.data)) {
+                for (auto& ref : model_part_refs(r.data, kPartGroup)) {
                     n++;
-                    cc += is_cc_part(id);
-                    unknown += is_cc_part(id) && !key_exists({id, kPartProp, kPartGroup});
+                    cc += is_cc_part(ref.id);
                 }
-        // the game's own species profile (it builds the model): only when it can (a pack part it does
-        // not have faults in the bake, 0x441F3B)
-        int species = unknown ? -1 : game::species_by_key({k.instance, k.type, k.group}) != nullptr;
-        char b[200];
-        snprintf(b, sizeof b, "parts %s n=%u cc=%u unknown=%u species=%d have_pack=%d substituted=%u refused=%u\n", hex(k.instance).c_str(),
-                 n, cc, unknown, species, (int)have_creepy_cute(), g_parts_substituted, g_parts_refused);
+        // the game's own species profile (it builds the model): only when it can (a part it does
+        // not have faults in the bake, 0x41F3B)
+        int species = unknown.empty() ? game::species_by_key({k.instance, k.type, k.group}) != nullptr : -1;
+        char b[300];
+        snprintf(b, sizeof b, "parts %s n=%u cc=%u unknown=%u species=%d have_pack=%d substituted=%u refused=%u",
+                 hex(k.instance).c_str(), n, cc, (unsigned)unknown.size(), species, (int)have_creepy_cute(),
+                 g_parts_substituted, g_parts_refused);
+        for (uint32_t id : unknown)
+            snprintf(b + strlen(b), sizeof b - strlen(b), " %08X", id);
+        snprintf(b + strlen(b), sizeof b - strlen(b), "\n");
         return b;
     }
-    if (a.size() >= 2 && a[0] == "paints") { // paints <hex crt instance>: the paint layers of the model the game reads (tests, BUG-0369)
+    if (a.size() >= 2 && a[0] == "paints") { // paints <hex crt instance>: the paint layers of the model the game reads (tests, BUG-0452)
         Key k{(uint32_t)strtoul(a[1].c_str(), nullptr, 16), kInfo[kCreature].type, kInfo[kCreature].group};
         std::vector<dbpf::Record> recs;
         if (!records_from_game(k, recs))
             return "paints " + hex(k.instance) + " none\n";
         std::string out = "paints " + hex(k.instance);
-        unsigned cc = 0;
+        unsigned cc = 0, unknown = 0;
         for (auto& r : recs) {
             uint32_t eff[3];
             size_t at[3], len[3];
@@ -1830,10 +2068,12 @@ std::string debug(const std::vector<std::string>& a)
             for (int i = 0; i < 3; i++) {
                 out += " " + hex(eff[i]);
                 cc += is_cc_paint(eff[i]);
+                unknown += g_unknown_fix ? !paint_known(eff[i]) : (is_cc_paint(eff[i]) && !have_creepy_cute());
             }
         }
         char b[120];
-        snprintf(b, sizeof b, " cc=%u have_pack=%d substituted=%u\n", cc, (int)have_creepy_cute(), g_paints_substituted);
+        snprintf(b, sizeof b, " cc=%u unknown=%u have_pack=%d substituted=%u\n", cc, unknown, (int)have_creepy_cute(),
+                 g_paints_substituted);
         return out + b;
     }
     if (a.size() >= 2 && a[0] == "bem") { // bem <hex crt instance>: the body the game finds for that key (tests)
