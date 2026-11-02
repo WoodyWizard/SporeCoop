@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: lab gates (feat/w30-lab-gates) on fix/w30-tribe-walk and fix/w31-* branches
 role: both
 versions: unreleased
-fixed_in: unreleased
+fixed_in: 0.7.3.4
 branch: fix/w31-civ-gate (the fix), fix/w32-tribe-sync (the Tribe verification)
 commits: e052b04
 tests: chaos_tribe, tribe_walk_mobile
@@ -57,3 +57,4 @@ Log gates on, lane 7:
   runs before (not from this branch). Not analysed.
 - 2026-11-01: opened.
 - 2026-11-01 (fix/w32-tribe-sync): decided: the check (moving pointer), fixed by BUG-0380's diag.rts_cursor; FAIL / PASS runs on lane 7.
+- 2026-11-02: released in 0.7.3.4.

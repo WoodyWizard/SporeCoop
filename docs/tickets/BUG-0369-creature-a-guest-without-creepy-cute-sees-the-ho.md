@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: player reports 2026-11-01 (host GOG 2024 + Steam guest, 0.7.3.3)
 role: guest
 versions: 0.7.3.3
-fixed_in: unreleased
+fixed_in: 0.7.3.4
 branch: fix/w30-progress
 commits: 94c24fd
 tests: guest_pack_paints (tools/tests/coop_guest_pack_paints.py)
@@ -47,3 +47,4 @@ painted).
 ## History
 - 2026-11-01: opened from the host's mark in the 2026-11-01 reports.
 - 2026-11-01: fix/w30-progress: pack paints substituted; fixed (unreleased). "Cubes" not reproduced.
+- 2026-11-02: released in 0.7.3.4.

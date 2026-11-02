@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: lab monitor (feat/w32-monitor-diag, ground rule), lane 6
 role: guest
 versions: unreleased
-fixed_in: unreleased
+fixed_in: 0.7.3.4
 branch: fix/w33-unlocks
 commits: a876f0d 38c5f65 785b0a4
 tests: team, select, creature (warm creature fixture; monitor rule ground)
@@ -53,3 +53,4 @@ PASS: team in the smoke run 20261101-143557 (lane 6: the guest 0.31 m over the g
 ## History
 - 2026-11-01: opened.
 - 2026-11-01: fix/w33-unlocks: cause found (the team test's gopos), fixed in the test command (unreleased).
+- 2026-11-02: released in 0.7.3.4.

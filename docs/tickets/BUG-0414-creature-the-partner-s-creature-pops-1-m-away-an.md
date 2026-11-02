@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: puppet_fight_player (w33)
 role: guest
 versions: 0.7.3.3+ (feat/w33-tests-creature de258df)
-fixed_in: unreleased
+fixed_in: 0.7.3.4
 branch: fix/w34-ability-pop
 commits: f8f41de 1e5bc71
 tests: tools/tests/coop_puppet_fight.py (suites puppet_fight, puppet_fight_player)
@@ -65,3 +65,4 @@ failed every run on since the monitor was merged).
 ## History
 - 2026-11-01: opened.
 - 2026-11-01: root cause found, the test fixed (fix/w34-ability-pop).
+- 2026-11-02: released in 0.7.3.4.

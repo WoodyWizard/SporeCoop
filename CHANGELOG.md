@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+## [0.7.3.4] - 2026-11-02
+
+### Added
+- Problem reports: when a player marks a problem (`/bug <text>` in the co-op chat, `coop.bug`, or F9
+  "Report a problem"), the game keeps a screenshot of what that player saw, overlay included (JPEG, at
+  most 1280 px wide, a few hundred KB; the newest 5). The report file includes them under `shots/`
+  and lists each next to its mark; every player of the session keeps its own screenshot of a mark.
+  Crash and hang reports take none of their own moment (not safe there). `[report] screenshot=0` in
+  `mods\coop.ini` turns them off and removes the kept ones (BUG-0442). Needs SporeKit 0.3.6.
+- Creature and Cell: DNA (and the cell's food) that a partner or the pack earned now says where it came
+  from in a short notice: "+9 DNA from Bob's hunt", "+7 DNA shared by Alice's pack", "+10 food (DNA)
+  from Bob's meals"; the game logs write each change with its cause (BUG-0389).
+- Logs: in the Tribe and Civilization stages the 10 s `trace:` line now says how long the player's own
+  pointer has stood still (`ptr_still=`), so a report shows whether the partner's copy of it could have
+  caught up yet (BUG-0416).
+
 ### Fixed
 - Tribe: the game could fault in its physics update in every frame (seen once on a guest, GOG 2024) when
   a physics body had lost its owner, skipping the rest of the physics each frame. Such a body is now left
@@ -61,21 +77,6 @@
   ahead when they move without walking themselves (carried by an animation): they move along with
   them (BUG-0394).
 
-### Added
-- Problem reports: when a player marks a problem (`/bug <text>` in the co-op chat, `coop.bug`, or F9
-  "Report a problem"), the game keeps a screenshot of what that player saw, overlay included (JPEG, at
-  most 1280 px wide, a few hundred KB; the newest 5). The report file includes them under `shots/`
-  and lists each next to its mark; every player of the session keeps its own screenshot of a mark.
-  Crash and hang reports take none of their own moment (not safe there). `[report] screenshot=0` in
-  `mods\coop.ini` turns them off and removes the kept ones (BUG-0442). Needs SporeKit 0.3.6.
-- Creature and Cell: DNA (and the cell's food) that a partner or the pack earned now says where it came
-  from in a short notice: "+9 DNA from Bob's hunt", "+7 DNA shared by Alice's pack", "+10 food (DNA)
-  from Bob's meals"; the game logs write each change with its cause (BUG-0389).
-- Logs: in the Tribe and Civilization stages the 10 s `trace:` line now says how long the player's own
-  pointer has stood still (`ptr_still=`), so a report shows whether the partner's copy of it could have
-  caught up yet (BUG-0416).
-
-### Fixed
 - Creature: the eggs at other species' nests are the same on every game: a guest now sees the eggs the
   host's nests lay (where the host has them, on the ground), and an egg eaten by either player is gone
   for both. Before, a guest saw none of them (BUG-0384).
@@ -84,7 +85,7 @@
   of the same species, with its members (BUG-0381).
 - Tests: the `creature` test's guest hit could land on a member of the host's family or pack, a hit the
   host drops on purpose since BUG-0374 ("hits applied 0 -> 0"); it now hits an NPC outside both (BUG-0390).
-- Tests: play_tribe compared the chiefs' line of both games with the host's own counters in it (BUG-0397).
+- Tests: play_tribe compared the chiefs' line of both games with the host's own counters in it (BUG-0397 still open: other play_tribe checks).
 - Creature: a creature of a partner's earlier creature (before its editor) could be missing on the
   guest until the next world share: the host could not send its species any more (BUG-0370).
 - Tests: npc_far / npc_pooled walked the host into the sea, where the game's deep water cinematic held
@@ -104,7 +105,7 @@
   the setup says how to install with the release zip and `install.bat` (BUG-0392).
 - Space: in the galactic core's system each player saw the partner's ship 20-30 m above where it
   really was; partners' ships and the host's ships seen on a guest are now drawn exactly where the
-  mod puts them (BUG-0378, BUG-0190).
+  mod puts them (BUG-0378; BUG-0190 still open: NPC ships in the core not measured yet).
 - Support sync-check: it no longer reports a difference for a fast Space ship that is only a moment
   behind (the allowed distance grows with the ship's speed), nor for players in the galaxy view,
   where nobody's ship is shown (BUG-0378).

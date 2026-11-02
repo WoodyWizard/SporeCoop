@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: owner
 role: both
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.3.4
 branch: feat/w35-report-shot
 commits: d4bf614, 47474c9, fa723b5
 tests: report_shot (tools/tests/coop_report_shot.py), unit (tests/jpeg_tests.cpp, tools/tests/jpeg_check.py)
@@ -54,3 +54,4 @@ Regression: smoke on lane 6 in 20261101-183818: 12 OK, `ui` skipped (exclusive, 
 
 ## History
 - 2026-11-01: opened.
+- 2026-11-02: released in 0.7.3.4.

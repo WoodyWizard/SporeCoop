@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: lab log gates report over recorded runs (feat/w30-lab-gates, 2026-11-01)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.3.4
 branch: fix/w31-space-gate
 commits: 14bb610, f445dfd, 503873b, fd155ea
 tests: space_finale_wait (coop_space_finale_wait.py), space_drawn, space_drawn_planet (coop_space_drawn.py), net_tests test_diag_compare
@@ -72,3 +72,4 @@ is 0 there.
 ## History
 - 2026-11-01: opened.
 - 2026-11-01: fix/w31-space-gate: fixed (controller skip + offset pin, sync-check speed slack and no place).
+- 2026-11-02: released in 0.7.3.4.

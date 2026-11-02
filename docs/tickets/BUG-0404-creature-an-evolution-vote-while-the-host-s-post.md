@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: coop_editor_soak.py (w33)
 role: host
 versions: 0.7.3.3 (main a05d1f6)
-fixed_in: unreleased
+fixed_in: 0.7.3.4
 branch: fix/w34-vote-cinematic
 commits: ddb7f14, 3b83b29
 tests: vote_during_cinematic, busy_gate (tools/tests/coop_vote_cinematic.py); npc_tests test_busy_gate
@@ -101,3 +101,4 @@ the guest's load).
   ends) and the players' way (the next vote within the host's fade-in); fixed with one busy gate for the
   vote's editor, the guest's own editor, action votes and shares (widened on the coordinator's request after
   the ticket audit's class C15).
+- 2026-11-02: released in 0.7.3.4.

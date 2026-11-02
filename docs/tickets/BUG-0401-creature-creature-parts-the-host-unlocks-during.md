@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: lab monitor (feat/w32-monitor-diag, unlocks rule plant), lane 6
 role: guest
 versions: unreleased
-fixed_in: unreleased
+fixed_in: 0.7.3.4
 branch: fix/w33-unlocks
 commits: 4cc57da 145a981
 tests: parts_shared (tools/tests/coop_parts_shared.py), monitor_plant (unlocks rule, with parts.shared off on the host)
@@ -56,3 +56,4 @@ the host in 1 s, the guest's own editor 56 of 312 available and 256 locked, afte
 ## History
 - 2026-11-01: opened.
 - 2026-11-01: fix/w33-unlocks: the party shares its collected parts (parts.shared); fixed (unreleased).
+- 2026-11-02: released in 0.7.3.4.

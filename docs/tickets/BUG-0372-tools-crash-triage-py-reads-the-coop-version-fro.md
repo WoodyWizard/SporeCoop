@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: player reports 2026-11-01 (host GOG 2024 + Steam guest, 0.7.3.3)
 role: 
 versions: 0.7.3.3
-fixed_in: unreleased
+fixed_in: 0.7.3.4
 branch: fix/w30-progress
 commits: 600fd2d
 tests: tools_selftest.py triage (g)
@@ -36,3 +36,4 @@ PASS: tools_selftest.py triage (g) ok, also in `make test`.
 
 ## History
 - 2026-11-01: opened and fixed on fix/w30-progress.
+- 2026-11-02: released in 0.7.3.4.

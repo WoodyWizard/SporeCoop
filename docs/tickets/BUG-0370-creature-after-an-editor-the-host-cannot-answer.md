@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: player reports 2026-11-01 (host GOG 2024 + Steam guest, 0.7.3.3)
 role: guest
 versions: 0.7.3.3
-fixed_in: unreleased
+fixed_in: 0.7.3.4
 branch: fix/w31-creature-gate
 commits: 50bfff7
 tests: old_species (tools/tests/coop_old_species.py)
@@ -60,3 +60,4 @@ host old_sent=1); again in the regression run of the branch, lab 20261101-100420
 ## History
 - 2026-11-01: opened from the 2026-11-01 reports (found while checking the "cubes" mark).
 - 2026-11-01: reproduced and fixed (fix/w31-creature-gate, creations.old_species).
+- 2026-11-02: released in 0.7.3.4.

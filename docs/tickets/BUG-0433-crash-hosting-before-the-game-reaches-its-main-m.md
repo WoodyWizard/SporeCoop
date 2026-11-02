@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: players suite creature_fps15burst, lab 20261101-160125 (feat/w33-tests-session)
 role: host
 versions: main a05d1f6
-fixed_in: unreleased
+fixed_in: 0.7.3.4
 branch: feat/w33-tests-session
 commits: d0cb069
 tests: tools/tests/coop_tod_early.py (suite tod_early)
@@ -63,3 +63,4 @@ exist (the first frame), then `cheat coop host` at once: the line runs on frame 
 
 ## History
 - 2026-11-01: opened.
+- 2026-11-02: released in 0.7.3.4.

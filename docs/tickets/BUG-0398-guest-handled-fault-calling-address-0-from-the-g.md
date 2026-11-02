@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: found on fix/w30-npc-walk (lab 20261101-121954 npc_walk_player#1)
 role: guest
 versions: 0.7.3.3
-fixed_in: unreleased
+fixed_in: 0.7.3.4
 branch: fix/w33-null-call
 commits: 60671e6, 793e207
 tests: kit_hooknew, kit_freeze
@@ -85,3 +85,4 @@ The lab's own walk tests hit the original fault about once in 30 runs; not count
 - 2026-11-01: opened.
 - 2026-11-01 (fix/w33-null-call): cause found (the detour of a new hook ran before its original
   pointer was set), fixed behind `kit.fix hookorig`, test kit_hooknew; BUG-0309 is the same cause.
+- 2026-11-02: released in 0.7.3.4.

@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: lab: tribe_walk, out/lab/20261101-204356 (lane 6)
 role: guest
 versions: 0.7.3.3
-fixed_in: unreleased
+fixed_in: 0.7.3.4
 branch: fix/w37-tribe-fault
 commits: 03aa8d9c fc77189e 81c2f03f
 tests: physics_orphan (tools/tests/coop_physics_orphan.py), tribe_walk
@@ -73,3 +73,4 @@ physics_orphan (tools/tests/coop_physics_orphan.py, guest in Tribe, the stand-in
 ## History
 - 2026-11-01: opened from the 0.7.3.4 verification run; contained behind game.physics_owner on
   fix/w37-tribe-fault (the cause of the ownerless body stays unknown).
+- 2026-11-02: released in 0.7.3.4.

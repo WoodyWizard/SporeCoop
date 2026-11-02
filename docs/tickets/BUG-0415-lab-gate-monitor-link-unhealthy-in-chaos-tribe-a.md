@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: lab 20261101-150122 chaos_tribe#3, lane 7 (fix/w33-proxy-ground)
 role: host
 versions: unreleased
-fixed_in: unreleased
+fixed_in: 0.7.3.4
 branch: fix/w35-monitor-gates
 commits: e64551b, f19d618
 tests: monitor_tribe, chaos_tribe, make test (gates_selftest.py)
@@ -58,3 +58,4 @@ a transfer, one that goes on after it, or a transfer to another player still fir
 ## History
 - 2026-11-01 (fix/w35-monitor-gates): decided: the rule; link leaves world transfers out (+15 s).
 - 2026-11-01: opened.
+- 2026-11-02: released in 0.7.3.4.

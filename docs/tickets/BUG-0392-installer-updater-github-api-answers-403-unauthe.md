@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: player report on Discord 2026-11-02 (setup 0.7.3.3: 'GitHub not reachable (the server answered 403 for ...)')
 role: 
 versions: 0.7.3.3 (setup and in-game update)
-fixed_in: unreleased
+fixed_in: 0.7.3.4
 branch: fix/w31-installer
 commits: 82d2314
 tests: win_unit, update_api403, unit
@@ -68,3 +68,4 @@ update_check.py `--api403` (suite update_api403, in game); net_tests (URL parsin
 - 2026-11-01: opened.
 - 2026-11-01: fix/w31-installer: release page fallback in the setup and the in-game check, manual
   install message; fixed (unreleased).
+- 2026-11-02: released in 0.7.3.4.

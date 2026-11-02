@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: lab 20261101-104055 cell_coop (fix/w31-cell-gate, lane 7)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.3.4
 branch: fix/w31-cell-gate
 commits: b04df64
 tests: cell_coop
@@ -41,3 +41,4 @@ FAIL: lab 20261101-104055 cell_coop (the old test, host 0 -> 32). PASS with the 
 ## History
 - 2026-11-01: opened.
 - 2026-11-01: fixed (test) on fix/w31-cell-gate.
+- 2026-11-02: released in 0.7.3.4.

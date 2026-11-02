@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: lab 20261101-210646
 role: host
 versions: main f0cefbaa (0.7.3.4 rc)
-fixed_in: unreleased
+fixed_in: 0.7.3.4
 branch: fix/w37-vote-leaver
 commits: 8ca6a86b, 29074770
 tests: vote_net_4p, party, vote
@@ -67,3 +67,4 @@ shows the check only held while the result ran at once. PASS (the new check, gat
 ## History
 - 2026-11-01: opened.
 - 2026-11-01: fixed on fix/w37-vote-leaver (test / judge only).
+- 2026-11-02: released in 0.7.3.4.

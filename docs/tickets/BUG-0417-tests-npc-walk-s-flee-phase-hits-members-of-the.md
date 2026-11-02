@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: lab 20261101-153010 npc_walk, lane 7 (fix/w33-proxy-ground)
 role: host
 versions: unreleased
-fixed_in: unreleased
+fixed_in: 0.7.3.4
 branch: fix/w35-monitor-gates
 commits: 4293fc9, 36a86b6
 tests: npc_walk, npc_walk_tribe (tools/tests/coop_npc_walk.py)
@@ -53,3 +53,4 @@ fails without 2 walkers). It prints the party and whether a walker is in it. NPC
 ## History
 - 2026-11-01 (fix/w35-monitor-gates): decided: the test hit the host's family with the host's avatar; walkers outside the party.
 - 2026-11-01: opened.
+- 2026-11-02: released in 0.7.3.4.

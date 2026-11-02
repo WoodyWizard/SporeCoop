@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: lab measurement (fix/w33-proxy-ground, npc_walk_slope), lane 7
 role: guest
 versions: unreleased
-fixed_in: unreleased
+fixed_in: 0.7.3.4
 branch: fix/w33-proxy-ground
 commits: ae25f85, 537484a
 tests: npc_walk_slope (tools/tests/coop_npc_walk.py --goto=-195,-465,-45 --falls 3)
@@ -47,3 +47,4 @@ to fall more than 3 per 100 s more often than the host's own NPCs.
 
 ## History
 - 2026-11-01: opened and fixed on fix/w33-proxy-ground (npc.walk_ground).
+- 2026-11-02: released in 0.7.3.4.

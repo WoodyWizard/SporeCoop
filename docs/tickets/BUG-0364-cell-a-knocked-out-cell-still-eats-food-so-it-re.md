@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: lab 20261101-023131 cell_coop (main d6b81d9, lane 3)
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.3.4
 branch: fix/w31-cell-gate
 commits: f84df60
 tests: cell_ko_food
@@ -49,3 +49,4 @@ food totals of both games): FAIL with `SPORE_FIX_OFF=cell.ko_no_eat` in lab 2026
 ## History
 - 2026-11-01: opened.
 - 2026-11-01: fixed on fix/w31-cell-gate (cell.ko_no_eat, test cell_ko_food).
+- 2026-11-02: released in 0.7.3.4.

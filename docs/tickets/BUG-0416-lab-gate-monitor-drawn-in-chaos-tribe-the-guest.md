@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: lab 20261101-140615 chaos_tribe, lane 7 (fix/w33-proxy-ground)
 role: guest
 versions: unreleased
-fixed_in: unreleased
+fixed_in: 0.7.3.4
 branch: fix/w35-monitor-gates
 commits: e64551b, f19d618
 tests: monitor_tribe, chaos_tribe, make test (gates_selftest.py)
@@ -60,3 +60,4 @@ and 42.5 m off, each with the host's `ptr_still=0.0` (just moved), none with a p
 ## History
 - 2026-11-01 (fix/w35-monitor-gates): decided: the rule (a jumped pointer's copy before its new state); ptr_still= and the rule fixed.
 - 2026-11-01: opened.
+- 2026-11-02: released in 0.7.3.4.

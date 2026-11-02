@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: lab runs on fix/w30-tribe-walk after merging main 15539ad
 role: host
 versions: unreleased
-fixed_in: unreleased
+fixed_in: 0.7.3.4
 branch: fix/w32-tribe-sync
 commits: 08ae615
 tests: creature (tools/tests/coop_two_instances.py)
@@ -49,3 +49,4 @@ spawned proxy outside them (it prints whether the first listed proxy was one of 
   1 of 3 passed (20261101-132700), on 2 of 3 (20261101-132708): not the walk driving.
 - 2026-11-01: opened.
 - 2026-11-01 (fix/w32-tribe-sync): the test hits an NPC outside the host's pack / family; 5/5 on lane 7.
+- 2026-11-02: released in 0.7.3.4.

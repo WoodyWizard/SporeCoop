@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: player report 2026-11-01, host F9 mark s 640 (later session)
 role: host
 versions: 0.7.3.3
-fixed_in: unreleased
+fixed_in: 0.7.3.4
 branch: fix/w30-puppet-jump
 commits: dbadb92, 4e74918
 tests: puppet_under (tools/tests/coop_puppet_walk.py --ground, coop.track lift -1)
@@ -49,3 +49,4 @@ lift -1"` (suite puppet_under): never drawn 0.3 m under the observer's ground.
 ## History
 - 2026-11-01: opened.
 - 2026-11-01: mechanism reproduced and fixed on fix/w30-puppet-jump (creature.puppet_ground).
+- 2026-11-02: released in 0.7.3.4.

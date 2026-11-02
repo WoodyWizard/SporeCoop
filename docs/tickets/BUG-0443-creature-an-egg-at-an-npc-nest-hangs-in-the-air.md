@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: player report 2026-11-01 (host screenshot, video seen by the owner)
 role: host
 versions: 0.7.3.3
-fixed_in: unreleased
+fixed_in: 0.7.3.4
 branch: fix/w35-egg-kick
 commits: 6f02d3b 86062d1f
 tests: tools/tests/coop_nest_eggs_air.py (suite nest_eggs_air)
@@ -67,3 +67,4 @@ guest's copy lies on its surface.
 ## History
 - 2026-11-01: opened.
 - 2026-11-01: eggs without gravity found and fixed with `nest.egg_ground` on fix/w35-egg-kick (lane 4).
+- 2026-11-02: released in 0.7.3.4.

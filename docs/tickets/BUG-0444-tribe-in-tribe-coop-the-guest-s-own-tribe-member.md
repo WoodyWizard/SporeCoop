@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: tribe_coop (smoke), lab 20261101-183414 (feat/w33-tests-session, main 6ac351e merged)
 role: guest
 versions: main 6ac351e
-fixed_in: unreleased
+fixed_in: 0.7.3.4
 branch: fix/w36-tribe-ground
 commits: f606ce34
 tests: tribe_mirror_ground, tribe_coop
@@ -62,3 +62,4 @@ nothing else grounds it then. `coop.tribe lift` now applies to a new mirror's po
 ## History
 - 2026-11-01: opened.
 - 2026-11-01: fixed on fix/w36-tribe-ground (tribe.mirror_ground), test tribe_mirror_ground.
+- 2026-11-02: released in 0.7.3.4.

@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: player request 2026-11-01 (BUG-0351)
 role: both
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.3.4
 branch: fix/w31-creature-gate
 commits: d89e8c5
 tests: dna_notice, dna_notice_cell (tools/tests/coop_dna_notice.py), validate_tests (dna_ledger)
@@ -50,3 +50,4 @@ out/lane6/shots/dna_notice_*.png.
 
 ## History
 - 2026-11-01: opened and implemented (fix/w31-creature-gate).
+- 2026-11-02: released in 0.7.3.4.

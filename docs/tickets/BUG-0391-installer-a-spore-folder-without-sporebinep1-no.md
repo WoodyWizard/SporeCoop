@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: player report on Discord 2026-11-02 (Steam, base Spore only)
 role: 
 versions: 0.7.3.3 (setup)
-fixed_in: unreleased
+fixed_in: 0.7.3.4
 branch: fix/w31-installer
 commits: 82d2314, 6608204
 tests: win_unit, unit
@@ -93,3 +93,4 @@ through Wine's Z:: libraryfolders.vdf, installdir 'spore 24720', base Spore\Spor
   SporeBin / SporebinEP1, looks in Steam's library folders; fixed (unreleased).
 - 2026-11-01: correction: Steam installs GA into its own folder "Spore 24720"; the setup now uses it
   (6608204).
+- 2026-11-02: released in 0.7.3.4.

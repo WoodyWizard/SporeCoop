@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: lab log gates report over recorded runs (feat/w30-lab-gates, 2026-11-01)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.3.4
 branch: fix/w32-tribe-sync
 commits: 58f0c35 2b338e2
 tests: tools/tests/coop_tribe_npc_form.py (suite tribe_npc_form)
@@ -60,3 +60,4 @@ species, each within 8 m (the guest's game's own tribe list and member vectors).
 - 2026-11-01 (fix/w31-civ-gate): Civ `p apart` was the moving pointer (the partner's copy trails 45 m median while the mouse moves, 0 m at rest; coop_civ_cursor.py); Tribe uses the same pointer adapter (modes.cpp rts_*), so its `p apart` likely has the same cause. `diag.rts_cursor` (BUG-0380) leaves a moving pointer out in both stages; not verified in Tribe.
 - 2026-11-01 (fix/w32-tribe-sync): t missing = NPC tribes the host's game formed and the guests' did not; fixed (tribe.npc_tribes). p apart -> BUG-0393 / BUG-0380, n apart -> BUG-0402.
 - 2026-11-01 (feat/w33-tests-session): transition_net (Cell -> Creature -> Tribe the players' way, SPORE_NET=player, guest 30 fps; lab 20261101-142943, lane 10): 58 s after the guest followed into Tribe both games logged `sync-check: MISMATCH ... t: 3 missing on the guest (t4 t5 t6)` (34 objects compared). Reproduced 2 of 2 on main a05d1f6 (also lab 20261101-145528) before the fix was merged; transition_net allowed it by name until then.
+- 2026-11-02: released in 0.7.3.4.

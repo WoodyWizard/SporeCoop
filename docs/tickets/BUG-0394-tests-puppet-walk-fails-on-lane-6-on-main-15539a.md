@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: fix/w31-creature-gate regression run 2026-11-01
 role: both
 versions: 0.7.3.3
-fixed_in: unreleased
+fixed_in: 0.7.3.4
 branch: fix/w30-npc-walk
 commits: 75e3371, 59db48a, b3c3acd, 6be0e20, e20e9a3, fa06a11
 tests: puppet_walk_novel, npc_walk_novel, puppet_walk_fps30, puppet_walk_player, npc_walk_fps30, npc_walk_player, tribe_walk_fps30, tribe_walk_player
@@ -87,3 +87,4 @@ Observed (fix/w30-npc-walk, lanes 2-5, `SPORE_FPS=30`, `SPORE_NET=player`; coop.
 ## History
 - 2026-11-01: opened.
 - 2026-11-01: fix/w30-npc-walk: causes measured, creature.puppet_path, npc.path, test fixes.
+- 2026-11-02: released in 0.7.3.4.

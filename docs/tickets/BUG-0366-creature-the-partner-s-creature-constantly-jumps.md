@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: player report 2026-11-01, host F9 mark s 1743
 role: host
 versions: 0.7.3.3
-fixed_in: unreleased
+fixed_in: 0.7.3.4
 branch: fix/w30-puppet-jump
 commits: dbadb92, 4e74918
 tests: puppet_slope (tools/tests/coop_puppet_walk.py --ground)
@@ -65,3 +65,4 @@ the walker's own creature, never under the ground.
 ## History
 - 2026-11-01: opened.
 - 2026-11-01: reproduced and fixed on fix/w30-puppet-jump (creature.puppet_ground); BUG-0376 opened.
+- 2026-11-02: released in 0.7.3.4.

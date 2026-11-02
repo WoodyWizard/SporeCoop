@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: player report 2026-11-01 (host F9 note at s 1907)
 role: both
 versions: 0.7.3.3
-fixed_in: unreleased
+fixed_in: 0.7.3.4
 branch: fix/w32-nest-eggs
 commits: 2a77943
 tests: tools/tests/coop_nest_eggs.py (suite nest_eggs), tools/tests/coop_nest_objects.py (fix/w30-npc-walk, not in a suite)
@@ -73,3 +73,4 @@ the host another.
 - 2026-11-01: opened (fix/w30-npc-walk).
 - 2026-11-01: the objects were fruit; eggs found (cEgg), the guest had none of the host's; fixed with
   `nest.eggs` on fix/w32-nest-eggs (lanes 9/10).
+- 2026-11-02: released in 0.7.3.4.

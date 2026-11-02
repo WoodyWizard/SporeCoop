@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: found on fix/w29-puppet-move (BUG-0360 measurement)
 role: guest
 versions: 0.7.3.2, 0.7.3.3
-fixed_in: unreleased
+fixed_in: 0.7.3.4
 branch: fix/w30-npc-walk
 commits: cc489d4, 0436a20, a738cb0, 5cd211d, fccd6f1, 5d14f1f
 tests: npc_walk, npc_walk_tribe (tools/tests/coop_npc_walk.py)
@@ -92,3 +92,4 @@ moving frames on screen; Tribe also drawn error p50 <= 0.1 m.
 ## History
 - 2026-11-01: opened.
 - 2026-11-01: measured and fixed on fix/w30-npc-walk (npc.walk, npc.walk_tribe).
+- 2026-11-02: released in 0.7.3.4.

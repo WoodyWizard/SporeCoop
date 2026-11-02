@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: lab monitor (feat/w32-monitor-diag, proxies rule), lane 6
 role: guest
 versions: unreleased
-fixed_in: unreleased
+fixed_in: 0.7.3.4
 branch: fix/w33-proxy-ground
 commits: d185b5b, 351daac, 998898b, 537484a
 tests: tribe_coop, chaos_tribe (monitor rule proxies)
@@ -76,3 +76,4 @@ after cold joins and not in every one, so the evidence is a rate, not a determin
 ## History
 - 2026-11-01: opened.
 - 2026-11-01: fix/w33-proxy-ground: the made-at-the-host's-height inference disproved, fixed by npc.proxy_ground (allow entry removed).
+- 2026-11-02: released in 0.7.3.4.

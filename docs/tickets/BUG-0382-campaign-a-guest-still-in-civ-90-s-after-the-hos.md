@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: lab log gates report over recorded runs (feat/w30-lab-gates, 2026-11-01)
 role: guest
 versions: 0.7.3.1 - main 15539ad
-fixed_in: unreleased
+fixed_in: 0.7.3.4
 branch: fix/w31-civ-gate
 commits: d463fc0 cea77bf
 tests: space_share_wait (coop_space_share_wait.py), gates_selftest.py (monitor stage_apart)
@@ -60,3 +60,4 @@ when the host's ship leaves the planet (not changed: a planet save does not load
 ## History
 - 2026-11-01: opened.
 - 2026-11-01 (fix/w31-civ-gate): cause found (the game's planet rule + the Space cinematic wait), the wait declared and told to everybody.
+- 2026-11-02: released in 0.7.3.4.

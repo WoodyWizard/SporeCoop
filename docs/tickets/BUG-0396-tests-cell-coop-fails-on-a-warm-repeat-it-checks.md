@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: lab 20261101-111447 cell_coop#2 (fix/w31-cell-gate); also 20261030-062715, 20261031-202750, 20261101-103417 on other branches
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.3.4
 branch: fix/w31-cell-gate
 commits: ba7bb49
 tests: cell_coop
@@ -40,3 +40,4 @@ FAIL: lab 20261101-111447 cell_coop#2 (warm, the old test). PASS: 20261101-11300
 ## History
 - 2026-11-01: opened.
 - 2026-11-01: fixed (test) on fix/w31-cell-gate.
+- 2026-11-02: released in 0.7.3.4.

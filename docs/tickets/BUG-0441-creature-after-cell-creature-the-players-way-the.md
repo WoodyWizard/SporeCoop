@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: transition_net, lab 20261101-180254 (feat/w33-tests-session, main 6ac351e)
 role: guest
 versions: main 6ac351e
-fixed_in: unreleased
+fixed_in: 0.7.3.4
 branch: fix/w36-parts-transition
 commits: 27605dc 70c5e5f bf25d7b fac2bb6
 tests: parts_transition (tools/tests/coop_parts_shared.py --from-cell), transition_net (allow removed)
@@ -72,3 +72,4 @@ guest_editor_locks, creations, guest_editor and smoke: 18/19 OK, `ui` skipped (e
   missing sync and not a host-only reward (the guest's game had the 6 parts unlocked); fixed (unreleased).
   The test found the host's Creature intro caption (cinematic 0A34E41F) waiting for its check after the
   transition, and a vote during it stuck the host's editor (BUG-0404, fixed on fix/w34-vote-cinematic).
+- 2026-11-02: released in 0.7.3.4.

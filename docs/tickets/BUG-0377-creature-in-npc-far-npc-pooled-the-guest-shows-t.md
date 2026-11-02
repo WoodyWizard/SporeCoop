@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: lab log gates report over recorded runs (feat/w30-lab-gates, 2026-11-01)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.3.4
 branch: fix/w31-creature-gate
 commits: 1cfccdd
 tests: npc_far, npc_pooled (tools/tests/coop_npc_far.py, coop_npc_pooled.py)
@@ -57,3 +57,4 @@ regression run of the branch, lab 20261101-100420.
 ## History
 - 2026-11-01: opened.
 - 2026-11-01: fixed in the tests (fix/w31-creature-gate): the walk went into the sea, the deep water cinematic froze the host in the air.
+- 2026-11-02: released in 0.7.3.4.

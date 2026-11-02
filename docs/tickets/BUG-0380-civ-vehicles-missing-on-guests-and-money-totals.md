@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: lab log gates report over recorded runs (feat/w30-lab-gates, 2026-11-01)
 role: guest
 versions: 0.7.3.1 - main 15539ad
-fixed_in: unreleased
+fixed_in: 0.7.3.4
 branch: fix/w31-civ-gate
 commits: fe88228 e052b04 cea77bf e2aba88
 tests: civ_city_burst (coop_civ_city_burst.py), civ_cursor (coop_civ_cursor.py), gates_selftest.py (monitor totals)
@@ -82,3 +82,4 @@ Three separate things behind the three symptoms:
 ## History
 - 2026-11-01: opened.
 - 2026-11-01 (fix/w31-civ-gate): three causes found and fixed (above); the campaign's Civ shortcut founds with (ex, 0, 0) now (broadcast, as the game's tick).
+- 2026-11-02: released in 0.7.3.4.

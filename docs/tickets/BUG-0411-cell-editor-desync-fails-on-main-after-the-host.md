@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: lab regression (fix/w33-unlocks), lane 6
 role: guest
 versions: unreleased
-fixed_in: unreleased
+fixed_in: 0.7.3.4
 branch: fix/w34-cell-mate
 commits: f798e20 3d3c42d
 tests: editor_desync (tools/tests/coop_editor_desync.py, part 4)
@@ -68,3 +68,4 @@ reload, `input_lock=1`, and the first press after it brought the mate).
 ## History
 - 2026-11-01: opened.
 - 2026-11-01: fix/w34-cell-mate: a race in the test, not a regression (the last passing commit fails the same way); fixed in the test (unreleased).
+- 2026-11-02: released in 0.7.3.4.

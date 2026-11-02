@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: lab
 role: 
 versions: 0.7.3.3
-fixed_in: unreleased
+fixed_in: 0.7.3.4
 branch: fix/w34-walk-stable
 commits: cce264b, 5557071, abc2b80
 tests: puppet_walk, puppet_slope, puppet_under, npc_walk, tribe_walk, tribe_coop, walk_selftest (make test)
@@ -64,3 +64,4 @@ A/B on lanes 2-3 (load 14-41 on 12 cores, not idle):
 ## History
 - 2026-11-01: opened.
 - 2026-11-01: fixed on fix/w34-walk-stable (tests).
+- 2026-11-02: released in 0.7.3.4.

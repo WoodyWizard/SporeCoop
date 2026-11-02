@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: lab 20261101-223011 vote_net_4p
 role: host
 versions: main f0cefbaa (0.7.3.4 rc)
-fixed_in: unreleased
+fixed_in: 0.7.3.4
 branch: fix/w37-vote-leaver
 commits: 324752dc
 tests: gates_selftest (make test), vote_net_4p
@@ -43,3 +43,4 @@ hitch with the change; vote_net_4p 20261101-223718 #1, 20261101-224307 #1/#2 pas
 ## History
 - 2026-11-01: opened.
 - 2026-11-01: fixed on fix/w37-vote-leaver (test / judge only).
+- 2026-11-02: released in 0.7.3.4.

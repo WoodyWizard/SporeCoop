@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: owner's request after BUG-0360 (re-check the other modes)
 role: guest
 versions: 0.7.3.3
-fixed_in: unreleased
+fixed_in: 0.7.3.4
 branch: fix/w30-tribe-walk
 commits: 356bbf1, 90024d2, c6c3fd1, 747f76a, 846a63a, 490423e, 1e5caaa, c6eb380, e147fea, 8dfa06d, f2edb1b, d1f2a0a
 tests: tribe_walk, tribe_walk_mobile (tools/tests/coop_tribe_walk.py)
@@ -103,3 +103,4 @@ than half + 1 m/s x dt <= 10 %; walk gait >= 80 % on screen.
 - 2026-11-01: opened.
 - 2026-11-01: measured and fixed on fix/w30-tribe-walk (tribe.mirror_walk, tribe.mirror_time); BUG-0386
   opened on the way.
+- 2026-11-02: released in 0.7.3.4.

@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: lab log gates report over recorded runs (feat/w30-lab-gates, 2026-11-01)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.3.4
 branch: fix/w31-cell-gate
 commits: 4713a99 f906d51 f84df60 b9cde0e 3fb4045 7da457c
 tests: cell_sync_check cell_pause cell_particles cell_churn
@@ -60,3 +60,4 @@ their old `c missing` is not reproduced on 15539ad.
 ## History
 - 2026-11-01: opened.
 - 2026-11-01: analysed and fixed on fix/w31-cell-gate (check changes, test marks).
+- 2026-11-02: released in 0.7.3.4.

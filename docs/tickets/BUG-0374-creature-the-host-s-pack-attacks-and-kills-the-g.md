@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: player reports 2026-11-01 (host mark 13:30:57)
 role: guest
 versions: 0.7.3.3
-fixed_in: unreleased
+fixed_in: 0.7.3.4
 branch: fix/w30-creature-hp
 commits: d62e750
 tests: tools/tests/coop_creature_party.py (suite creature_party)
@@ -50,3 +50,4 @@ health is unchanged.
 
 ## History
 - 2026-11-01: opened from the host's report (0.7.3.3); reproduced and fixed on lane 9 (fix/w30-creature-hp).
+- 2026-11-02: released in 0.7.3.4.
