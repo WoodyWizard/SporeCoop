@@ -5,6 +5,7 @@
 #include <atomic>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <string>
 
 #include "fixes.h"
@@ -308,6 +309,99 @@ std::string arm_leave_walk()
     return "armed: the next citizen checked while the Tribe stage is left becomes a cleaned-up one\n";
 }
 
+// BUG-0449: the physics update (SporeCoop::PhysicsManager_Update 0xB4C370, thiscall(mgr, dt ms) ret 4,
+// vtable slot 0x38 of the Simulator subsystem "Simulator/cPhysics") walks the body pool of the physics
+// world (SporeCoop::PhysicsWorld_ptr, pool at +0x3C: base, free head, generation, count, high water,
+// element size 0x138, capacity 0x1000). A body of kind 0 or 1 (+4) is read through its owner (+0x40)
+// without a check: `mov eax,[esi+0x40]; cmp byte [eax+0x75],0` at 0xB4C5B4. A guest in tribe_walk had
+// a live body (index word +0 matching its slot, as cObjectPool_::Iterate tests) of kind 0 with a null
+// owner: the game faulted at 0xB4C5B4 in every frame from then on (1819 caught faults in 30 s), its
+// handler unwound the rest of the physics update each frame. Who left the body without an owner is not
+// known (docs/re/tribe.md#tribe-physics-orphan). The guard looks for such bodies before the update and
+// gives them kind 3, which no physics loop handles (0xB4C370, 0xB46E10 and the contact check 0xB3FD80
+// skip any kind but 0..2): the body is left out, the rest of the world is updated.
+using PhysUpdateFn = void(__thiscall*)(void*, uint32_t);
+static PhysUpdateFn g_phys_orig;
+static uintptr_t g_phys_world; // address of the physics world pointer
+static bool g_phys_owner_fix = true;
+COOP_FIX("game.physics_owner", "BUG-0449", g_phys_owner_fix,
+         "gamefixes: a physics body without an owner is left out of the physics update (the game faulted on it in every frame)");
+constexpr uint32_t kBodySize = 0x138, kBodyKindOff = 0x4, kBodyOwnerOff = 0x40, kBodyKindSkip = 3;
+static std::atomic<unsigned> g_phys_orphans{0}, g_phys_scans{0};
+static std::atomic<bool> g_phys_test{false}; // tests: the next update first gets a body without an owner
+
+struct BodyPool {
+    uint32_t* f; // the pool's fields (+0 base ... +0x18 capacity)
+    uint8_t* base;
+    uint32_t head, count, high, size, cap;
+};
+
+static bool body_pool(BodyPool& p)
+{
+    uint8_t* w = g_phys_world && readable((void*)g_phys_world, 4) ? *(uint8_t**)g_phys_world : nullptr;
+    if (!w || !readable(w + 0x3C, 7 * 4))
+        return false;
+    uint32_t* f = (uint32_t*)(w + 0x3C);
+    p = {f, (uint8_t*)(uintptr_t)f[0], f[1], f[3], f[4], f[5], f[6]};
+    return p.base && p.size == kBodySize && p.high <= p.cap && p.cap <= 0x10000 &&
+           readable(p.base, (size_t)p.high * p.size);
+}
+
+static bool body_live(const BodyPool& p, uint32_t i) { return (*(uint32_t*)(p.base + (size_t)i * p.size) & 0xFFFF) == i; }
+
+// tests: a live body of kind 0 without an owner that no owner refers to, as the one the guest's game faulted
+// on: the next slot past the pool's high water made live as cObjectPool_::CreateObject does (zeroed, handle
+// generation << 16 | index), kind 0, owner 0. No hash entry or broadphase proxy knows it (one slot is lost).
+static void make_orphan(BodyPool& p)
+{
+    uint32_t i = p.high;
+    if (i >= p.cap || !readable(p.base + (size_t)i * p.size, p.size)) { // (count and high go up together: free slots stay)
+        H->log(M, SK_WARN, "game fixes: tests: no slot for a physics body without an owner (count %u high %u cap %u)", p.count,
+               p.high, p.cap);
+        return;
+    }
+    uint8_t* e = p.base + (size_t)i * p.size;
+    memset(e, 0, p.size);
+    uint32_t gen = ++p.f[2];
+    *(uint32_t*)e = gen << 16 | i;
+    p.f[3] = ++p.count;
+    p.f[4] = ++p.high;
+    H->log(M, SK_WARN, "game fixes: tests: physics body %u (word %08X, kind 0) made without an owner (BUG-0449)", i, *(uint32_t*)e);
+}
+
+static void __fastcall phys_update_guard(void* mgr, void*, uint32_t dt)
+{
+    BodyPool p;
+    if ((g_phys_owner_fix || g_phys_test) && body_pool(p)) {
+        if (g_phys_test.exchange(false))
+            make_orphan(p);
+        if (g_phys_owner_fix) {
+            g_phys_scans++;
+            for (uint32_t i = 0; i < p.high; i++) {
+                uint8_t* e = p.base + (size_t)i * p.size;
+                int kind = at<int>(e, kBodyKindOff);
+                if ((kind != 0 && kind != 1) || at<void*>(e, kBodyOwnerOff) || !body_live(p, i))
+                    continue;
+                unsigned n = ++g_phys_orphans;
+                if (n <= 8) // (head == the slot: freed twice, the pool's free list points at itself)
+                    H->log(M, SK_WARN, "game fixes: physics body %u (word %08X, kind %d) has no owner: left out of the physics "
+                           "update (pool head %u count %u high %u%s)", i, at<uint32_t>(e, 0), kind, p.head, p.count, p.high,
+                           p.head == i ? ", the free list's head: freed twice?" : "");
+                *(int*)(e + kBodyKindOff) = kBodyKindSkip;
+            }
+        }
+    }
+    g_phys_orig(mgr, dt);
+}
+
+std::string arm_physics_orphan()
+{
+    if (!g_phys_orig)
+        return "no physics update guard\n";
+    g_phys_test = true;
+    return "armed: the next physics update gets a body of kind 0 without an owner\n";
+}
+
 static bool patch_slot(uintptr_t* slot, uintptr_t value)
 {
     DWORD old;
@@ -357,6 +451,12 @@ void init(const SkHost* host, SkMod* mod)
     if (!walk)
         g_offstage_orig = nullptr;
     H->log(M, SK_INFO, "game fixes: cleaned-up citizen walk guard %s", walk ? "on" : "off");
+    uintptr_t pu = H->sym("SporeCoop::PhysicsManager_Update");
+    g_phys_world = H->sym("SporeCoop::PhysicsWorld_ptr");
+    bool phys = pu && g_phys_world && H->hook_create(M, (void*)pu, (void*)&phys_update_guard, (void**)&g_phys_orig) == 0;
+    if (!phys)
+        g_phys_orig = nullptr;
+    H->log(M, SK_INFO, "game fixes: physics body owner guard %s", phys ? "on" : "off");
 }
 
 void shutdown()
@@ -374,7 +474,9 @@ std::string status()
            std::to_string(g_adapter_keys.load()) + ", dead modal windows dropped " + std::to_string(g_dead_modal.load()) +
            ", off-stage checks " + std::to_string(g_offstage_calls.load()) + " (citizens while the stage is left " +
            std::to_string(g_offstage_citizens.load()) + "), cleaned-up citizen walks skipped " +
-           std::to_string(g_leave_walk_skipped.load()) + ", test citizens " + std::to_string(g_leave_walk_test_done) + "\n";
+           std::to_string(g_leave_walk_skipped.load()) + ", test citizens " + std::to_string(g_leave_walk_test_done) +
+           ", physics bodies without an owner left out " + std::to_string(g_phys_orphans.load()) + " (scans " +
+           std::to_string(g_phys_scans.load()) + ")\n";
 }
 
 } // namespace gamefixes

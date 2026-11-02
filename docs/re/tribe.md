@@ -1119,3 +1119,36 @@ BUG-0444. GOG 2024, lane 10, tribe fixture (Zorispe).
   down. With it: -0.12 to 0.02 m over the ground on the same walks, the new mirrors -0.11 m.
 * `coop.tribe` (guest) ends with `mirror_grounded=` (standing mirrors put out of the ground), and the first three
   per mirror log `tribe: mirror N (owner O) was X m under this game's ground: put onto it`.
+
+## The physics update and a body without an owner (2026-11-01, fix/w37-tribe-fault)
+<a id="tribe-physics-orphan"></a>
+
+GOG 2024 (Ghidra, `tools/ghidra/q.sh --build 2024`); GOG 2016 has the same code 0x10 lower (0xB4C360,
+world pointer 0x167FB50). BUG-0449.
+
+* ✔ The Simulator subsystem "Simulator/cPhysics" (vtable 0x01461160, ctor 0xB4D320, dtor 0xB4CDC0) keeps a
+  physics world at `[0x167EB70]` (`SporeCoop::PhysicsWorld_ptr`, 0xBC bytes): +0x08 a contact pool
+  (cObjectPool_, 0x3C x 0x800), +0x3C the body pool (0x138 x 0x1000), +0x58 a hash map owner -> {body
+  handle, ?, broadphase id}. Its per-frame Update (`SporeCoop::PhysicsManager_Update` 0xB4C370, thiscall,
+  ret 4; slot 0x38 through the thunk 0xB4C6E0, called from 0xB5D0F0) works in mode +0x20 == 1 in Tribe.
+* ✔ cObjectPool_ layout: +0 base, +4 free head (-1 = none), +8 generation, +0xC count, +0x10 high water,
+  +0x14 element size, +0x18 capacity. An element's first dword is its handle (generation << 16 | index);
+  DeleteObject writes the free list's next index there. `Iterate` (0xB72340 over 0xB72230) takes every slot
+  whose low 16 bits equal its index as live; `GetIfNotDeleted` compares the whole handle.
+* ✔ A body (0xB47830 creates it): +4 kind (0 = with a 0x116DD1B-cast object, which is +0x40 then; 1 = the
+  object itself in +0x40; 2 = static, no owner read), +0x34..+0x37 flags, +0x40 owner. Kinds 0/1 read
+  the owner without a null check in Update (0xB4C5B1 `mov eax,[esi+0x40]`, 0xB4C5B4 `cmp byte [eax+0x75],0`),
+  in 0xB46E10 and in the contact check 0xB3FD80; any kind but 0..2 is skipped by all three.
+* ✔ Bodies are deleted by 0xB43810 (owner removed: hash lookup, broadphase 0xBBC380, DeleteObject) and
+  0xB47FE0 (owner +0x75 or +0x70 cleared), both through the hash map.
+* Observed once (tribe_walk, out/lab/20261101-204356, guest, lane 6): a live body of kind 0 with owner 0
+  (eax 0, ecx = kind 0, esi = the body) at 0xB4C5B4 in every frame from s 90.4 to the end (1819 caught
+  faults); the game's handler unwound the rest of the physics update each frame (a mirror 9.6 m off
+  afterwards). The guest had just box-selected its own members; nothing was spawned or removed then.
+* ? How the body lost its owner is not known. A body freed twice would turn the pool's free list onto
+  itself (the slot then looks live to Iterate and the next two creates share it); the guard logs whether
+  the pool's free head equals the slot. Not reproduced in 6+ tribe_walk runs on lanes 9/10.
+* The guard (`game.physics_owner`, mods/coop/gamefixes.cpp) gives such bodies kind 3 before each Update;
+  `coop.physorphan` (tests) makes a live body of kind 0 without an owner past the pool's high water, which no
+  owner refers to (coop_physics_orphan.py). Taking the owner off a body that an owner still refers to faults
+  elsewhere first: 0xB3DD60 (0xB3DCB0 via 0xB47FE0 from the dirty-object loops at 0xB4C55F).
