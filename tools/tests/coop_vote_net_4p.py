@@ -26,7 +26,7 @@ import re
 import time
 
 import lane
-from coop_party import actions_run, ready_counts, wait_until
+from coop_party import actions_run, ran_once, ready_counts, wait_until
 from coop_party_rejoin_net import species_view
 from party import Party
 from twoinst import Checks, shot
@@ -112,11 +112,17 @@ def main():
         ck(all(v == want for v in rc.values()), f'[leaver] the host\'s, Bob\'s and Carol\'s windows show ready {want}: {rc}')
         ck(p.host.call('coop.vote').startswith('vote active') and actions_run(p) == n0,
            '[leaver] the vote waits for Dave, who edits')
+        off = log_size()
         dave.call('coop.leave')
         t1 = time.time()
         ck(wait_until(lambda: not p.host.call('coop.vote').startswith('vote active'), 10),
            f'[leaver] Dave left from his editor: the vote passes within 10 s ({time.time() - t1:.1f} s)')
-        ck(actions_run(p) == n0 + 1, f'[leaver] it ran once ({n0} -> {actions_run(p)})')
+        # the result may wait on the host at the busy gate after the vote ended (BUG-0404; lab
+        # 20261101-210646: 0.9 s for the "game saved" box of the world share to Bob and Carol, BUG-0447)
+        n = ran_once(p, n0, max(1.0, 10 - (time.time() - t1)))
+        waits = [l.split('coop: ')[-1] for l in host_log_since(off).splitlines() if "vote's action" in l]
+        print(f'  host log: {" | ".join(waits) or "the action did not wait"}', flush=True)
+        ck(n == n0 + 1, f'[leaver] it ran once within 10 s of the leave ({n0} -> {n})')
         ck(dave.ok('game.mode'), f'[leaver] Dave\'s game runs ({dave.call("game.mode").strip()})')
         shot(dave.con, 'vote_net_4p_dave_editor')
 
@@ -143,7 +149,8 @@ def main():
                 continue
             ck(p.vote_ready(gp), f'[all] {gp.name} clicks "I\'m ready"')
         ck(wait_until(lambda: not p.host.call('coop.vote').startswith('vote active'), 10), '[all] the vote passes')
-        ck(actions_run(p) == n1 + 1, f'[all] it ran once ({n1} -> {actions_run(p)})')
+        n = ran_once(p, n1)
+        ck(n == n1 + 1, f'[all] it ran once ({n1} -> {n})')
         p.faults(ck)
         print(f'  ({time.time() - t0:.0f} s)', flush=True)
         return ck.result()

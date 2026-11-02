@@ -36,6 +36,16 @@ def actions_run(p):
     return int(m.group(1)) if m else -1
 
 
+def ran_once(p, n0, secs=10, settle=2.0):
+    """the action vote's result ran on the host after the vote ended: it may wait there at the busy
+    gate (core.vote_action_busy, BUG-0404: the host's game paused, a cinematic, a load; the "game
+    saved" box of the mod's own world share pauses it for about a second), so this waits up to `secs`
+    for the count to rise, then `settle` s more so a second run shows too. Returns the count."""
+    wait_until(lambda: actions_run(p) > n0, secs)
+    time.sleep(settle)
+    return actions_run(p)
+
+
 def wait_until(cond, secs):
     t0 = time.time()
     while time.time() - t0 < secs:
@@ -91,7 +101,8 @@ def main():
             while time.time() - t1 < 10 and p.host.call('coop.vote').startswith('vote active'):
                 time.sleep(0.5)
             ck(not p.host.call('coop.vote').startswith('vote active'), '[vote] the vote ends when the one not ready left')
-            ck(actions_run(p) == n0 + 1, f'[vote] it ran once ({n0} -> {actions_run(p)})')
+            n = ran_once(p, n0, max(1.0, 10 - (time.time() - t1)))
+            ck(n == n0 + 1, f'[vote] it ran once ({n0} -> {n})')
             if 'rejoin' in skip:
                 ck(p.join(last), f'[vote] {last.name} joins again')
 
@@ -125,7 +136,8 @@ def main():
                 ck(p.vote_ready(p.guests[-2]), f'[join in a vote] {p.guests[-2].name} clicks "I\'m ready"')
                 ck(wait_until(lambda: not p.host.call('coop.vote').startswith('vote active'), 8),
                    '[join in a vote] the vote passes')
-                ck(actions_run(p) == n1 + 1, f'[join in a vote] it ran once ({n1} -> {actions_run(p)})')
+                n = ran_once(p, n1)
+                ck(n == n1 + 1, f'[join in a vote] it ran once ({n1} -> {n})')
             time.sleep(5)
             p.check_together(ck, 'rejoin')
             p.check_partners(ck, 'rejoin')

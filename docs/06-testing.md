@@ -3434,6 +3434,10 @@ the walk and fight tests) swings the view over it (docs/re/creature.md#creature-
   cinematics between rounds (it would test BUG-0404, not the address space).
 * The campaign's sync and census checks skip a guest whose game stands (`busy:` paused, editor, loading)
   instead of only one with the "Resume Game" button shown (`OLD_PAUSE_CHECK=1`: the old check).
+* Pitfall (BUG-0447): an action vote's result runs on the host at the gate, not at the vote's end: a test
+  that reads `actions run` right after `coop.vote` stops saying `vote active` can read the count before the
+  run (vote_net_4p 20261101-210646: 0.94 s under the "game saved" box of a world share that was just
+  written). Read it with `coop_party.ran_once()` (waits for the count, then 2 s for a second run).
 
 ## Monitor gates that misjudged: rejoin transfers, a jumped pointer, the party hit (2026-11-01, fix/w35-monitor-gates)
 <a id="testing-monitor-w35"></a>
