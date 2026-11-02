@@ -1552,3 +1552,11 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   within the bound` fails, 2 of 2 runs.
 * Not checked: which abilities, whether the frame cap or the network is needed.
 * Ticket: BUG-0414
+
+## Creature: parts not shared after Cell -> Creature the players' way (2026-11-01, feat/w33-tests-session)
+<a id="known-parts-after-cell"></a>
+
+* Seen: transition_net on main 6ac351e: host `parts=55`, guest `parts=49` for the whole Creature stage, no
+  `parts:` log line on either game (monitor rule `unlocks`).
+* Reproduce: `SPORE_LANE=N SPORE_NET=player SPORE_FPS=guest:30 python3 tools/tests/coop_transition_net.py --to creature`.
+* Ticket: BUG-0441

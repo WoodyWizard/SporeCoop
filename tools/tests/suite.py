@@ -422,7 +422,9 @@ add('latency_step_ingame', 'SPORE_NET="delay=30,jitter=5" ' + P + 'coop_latency_
 add('transition_net', 'SPORE_NET=player SPORE_FPS=guest:30 ' + P + 'coop_transition_net.py',
     ('nightly',), minutes=20, timeout=45 * 60,
     allow=[allow('sync-check', 'BUG-0413', 'the guest loses the host\'s NPCs under the brain-upgrade caption of the '
-                 'Creature shortcut (AddEvolutionPoints 3000)', stage='Creature', kind='n missing')])  # Cell -> Creature -> Tribe the players' way (History, vote, editors, done) over a home connection, the guest at 30 fps: it follows, draws the host, no sync-check MISMATCH after the settle time (TRANSITION_PLANT=mismatch fails)
+                 'Creature shortcut (AddEvolutionPoints 3000)', stage='Creature', kind='n missing'),
+           allow('monitor', 'BUG-0441', 'after Cell -> Creature the guest lacks part of the host\'s unlocked parts '
+                 '(parts.shared does not act)', kind='unlocks')])  # Cell -> Creature -> Tribe the players' way (History, vote, editors, done) over a home connection, the guest at 30 fps: it follows, draws the host, no sync-check MISMATCH after the settle time (TRANSITION_PLANT=mismatch fails)
 add('party_rejoin_net', 'SPORE_NET=players ' + P + 'coop_party_rejoin_net.py --players 4', ('multi', 'extended'), minutes=10)  # 4 players rejoin over their own bad networks (one, id swap, lost goodbye, two at once): together, drawn where they are, as their own species (PARTY_PLANT=lift fails; BUG-0076's switches did not)
 add('join_during_combat', P + 'coop_join_during.py --case combat', minutes=4)  # a guest joins while the host fights an NPC: its game agrees with the host's within 10 s (host drawn, NPCs alive / dead / health)
 add('join_during_host_editor', P + 'coop_join_during.py --case editor --allow-empty BUG-0412', minutes=5)  # a guest joins while the host is in its editor: agrees within 10 s of the host's return (host drawn as its species, NPCs)
