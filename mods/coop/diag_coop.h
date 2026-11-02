@@ -58,6 +58,15 @@ void on_message(uint8_t from, net::Reader& r);
 bool chat_command(const std::string& text);
 void mark(const std::string& text); // a bug mark in every player's log
 
+// Report screenshots (SporeKit 0.3.6+, docs/REPORTING.md#reporting-shots): [report] screenshot in
+// coop.ini (default 1) and a SporeKit that can
+bool shot_setting();      // [report] screenshot=1
+// a screenshot of this frame for the report archive: 1 requested, 0 not (busy, too soon, no
+// SporeKit support), -1 switched off; its name ("shots/...jpg") into name
+int report_shot(const char* tag, const std::string& caption, std::string* name = nullptr);
+int report_shot_state();  // 1 being taken, 0 written, -1 failed (SkHost::report_shot_pending)
+void report_shots_forget(); // switched off: the kept screenshots are removed
+
 void on_session_start();                    // host() / join() succeeded
 void on_connected();                        // guest: welcomed by the host
 void on_player_join(const net::PlayerInfo& p); // with its versions (CAP_VERSION, trace.h)

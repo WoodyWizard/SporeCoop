@@ -354,6 +354,8 @@ static std::string report_base(bool crash)
 
 static std::string diag_write_report_as(const std::string& base, const char* reason, EXCEPTION_POINTERS* ep,
                                         bool dump = true, DWORD fault_tid = 0);
+// > 0 while a crash, hang or exit report is written (report_step): no screenshot of that moment
+static std::atomic<int> g_in_problem_report{0};
 
 std::string diag_write_report(const char* reason, EXCEPTION_POINTERS* ep, DWORD fault_tid)
 {
@@ -438,7 +440,14 @@ static std::string diag_write_report_as(const std::string& base, const char* rea
         snprintf(b, sizeof b, "  %08X %8X %s\n", (unsigned)m.base, m.size, m.path.c_str());
         s += b;
     }
-    s += "\n== The last log lines\n";
+    s += "\n";
+    // the screenshots of the marks (reportshot.cpp); a crash or hang report, written outside the frame
+    // (another thread, or a main thread stopped somewhere), never takes one of its own
+    try {
+        s += report_shots_text(ep != nullptr || g_in_problem_report.load() > 0);
+    } catch (...) {
+    }
+    s += "== The last log lines\n";
     for (auto& l : log_tail(300))
         s += l + "\n";
     write_text(txt, mask_paths(s)); // no private path in full (the module list, a mod's state)
@@ -613,6 +622,8 @@ std::string diag_write_bundle_with(const char* reason, const std::string& existi
         "  crashes/          crash reports and minidumps (.dmp: memory of the crashed game, no files of yours)\n"
         "  reports/          earlier reports (hangs, problems)\n"
         "  previous/         the logs of the last runs\n"
+        "  shots/            screenshots of the game taken when a problem was marked (/bug, \"Report a problem\");\n"
+        "                    off with [report] screenshot=0 in mods\\coop.ini\n"
         "  settings/         mods\\*.ini (your player name is in coop.ini; the last address you joined is hidden)\n";
     z.push_back({"README.txt", std::vector<uint8_t>(readme.begin(), readme.end())});
     std::wstring rep_w = widen(report);
@@ -620,6 +631,8 @@ std::string diag_write_bundle_with(const char* reason, const std::string& existi
     add(rep_w, narrow(rep_name), kLogCap, false);
     for (auto& f : files_in(dir, L"sporekit*.log"))
         add(dir + L"\\" + f, "logs/" + narrow(f), kLogCap, false);
+    for (auto& [full, name] : report_shot_files()) // the newest few, each under 450 KB
+        add(full, name, 1u << 20, true);
     auto newest = [](std::vector<std::wstring> v, size_t n) {
         if (v.size() > n)
             v.erase(v.begin(), v.end() - (ptrdiff_t)n);
@@ -686,6 +699,10 @@ static std::atomic<int> g_test_oom{0}; // crash.test oom: the archive fails like
 
 template <class F> static bool report_step(const char* what, F f)
 {
+    struct InProblem { // the report's screenshot section says none was taken of this moment
+        InProblem() { g_in_problem_report++; }
+        ~InProblem() { g_in_problem_report--; }
+    } in_problem;
     if (!fixed(g_fix_crashsafe)) {
         f();
         return true;

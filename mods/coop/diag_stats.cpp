@@ -373,6 +373,8 @@ void init(const SkHost* host, SkMod* mod, const Probe& probe)
     g_M = mod;
     g_P = probe;
     sync_set_interval(std::max(0, g_H->config_int(g_M, "coop", "sync_check", 30)));
+    if (!shot_setting()) // [report] screenshot=0: no screenshot of an earlier run goes into a report either
+        report_shots_forget();
     // the summary of the last session of an earlier run stays at the top of reports until a new one
     std::string f = summary_file();
     if (!f.empty() && kit_has_headline())

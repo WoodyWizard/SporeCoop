@@ -69,6 +69,9 @@ struct Api {
     std::function<uint32_t()> mode; // game mode id
     std::function<std::string()> version_line; // "SporeCoop 0.7.2.1  -  GOG 2024" (window footer)
     std::function<std::string()> report;       // writes a problem report, returns its path ("" = cannot)
+    // a screenshot for the report first: 1 requested, 0 not possible, -1 switched off (coop.ini)
+    std::function<int()> report_shot;
+    std::function<int()> report_shot_state;    // 1 being taken, 0 written, -1 failed
     uint16_t default_port = 0;
 };
 

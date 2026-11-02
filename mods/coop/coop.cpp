@@ -1852,6 +1852,8 @@ std::string make_report(const char* reason)
         return "";
     g_diag_t = -100;
     diag_tick(H->time_seconds()); // the state right now
+    if (!support::shot_setting()) // switched off since the screenshots were taken
+        support::report_shots_forget();
     char path[MAX_PATH * 2] = {0};
     H->diag_report(reason, path, sizeof path);
     return path;
@@ -4220,6 +4222,8 @@ void init_ui()
         return s;
     };
     a.report = [] { return make_report("from the co-op window"); };
+    a.report_shot = [] { return support::report_shot("report", "\"Report a problem\" in the co-op window"); };
+    a.report_shot_state = [] { return support::report_shot_state(); };
     a.update_do = autoupdate::start_update;
     a.jump_do = [] {
         H->run_outside_frame(

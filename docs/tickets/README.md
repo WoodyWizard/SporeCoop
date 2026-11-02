@@ -439,3 +439,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0435](BUG-0435-creature-on-the-lower-part-of-a-nest-mound-the-p.md) | open | bug | Creature | 2026-11-01 |  | Creature: on the lower part of a nest mound the partner's creature stands 0.4 m in the ground and steps 0.5 m when the partner crosses 0.5 m over the plain terrain |
 | [BUG-0437](BUG-0437-tests-team-fails-warm-after-puppet-fight-the-hos.md) | open | test | Creature | 2026-11-01 |  | Tests: team fails warm after puppet_fight: the host's own family bites the host |
 | [BUG-0440](BUG-0440-tests-chaos-tribe-fails-on-the-monitor-s-proxies.md) | open | test | Tribe | 2026-11-01 |  | Tests: chaos_tribe fails on the monitor's proxies gate (one Tribe NPC proxy over 3 m off the host's NPC) |
+| [BUG-0442](BUG-0442-report-archives-include-a-screenshot-of-the-game.md) | open | feature | any | 2026-11-01 |  | Report archives include a screenshot of the game at each problem mark |

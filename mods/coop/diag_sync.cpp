@@ -101,6 +101,43 @@ static void on_clock_answer(const dg::ClockAns& a)
     }
 }
 
+// ---------------- report screenshots ----------------
+// Each MARK (own or a partner's: every player's report shows what that player saw at that moment) and
+// "Report a problem" ask SporeKit for a screenshot of the frame for the report archive
+// (docs/REPORTING.md#reporting-shots). SporeKit takes it at the next Present, never waiting.
+static bool kit_has_shot()
+{
+    return g_H->size >= offsetof(SkHost, report_shot_pending) + sizeof(void*) && g_H->report_shot &&
+           g_H->report_shot_pending;
+}
+
+bool shot_setting() { return g_H->config_int(g_M, "report", "screenshot", 1) != 0; }
+
+int report_shot(const char* tag, const std::string& caption, std::string* name)
+{
+    if (!shot_setting()) {
+        SLOG("report shot: off ([report] screenshot=0 in coop.ini)");
+        return -1;
+    }
+    if (!kit_has_shot())
+        return 0;
+    char out[300] = {0};
+    int r = g_H->report_shot(tag, caption.c_str(), out, sizeof out);
+    if (name)
+        *name = r ? out : "";
+    return r ? 1 : 0;
+}
+
+int report_shot_state() { return kit_has_shot() ? g_H->report_shot_pending() : -1; }
+
+void report_shots_forget()
+{
+    if (!kit_has_shot())
+        return;
+    char out[64];
+    g_H->report_shot(nullptr, nullptr, out, sizeof out);
+}
+
 // ---------------- bug marks ----------------
 static std::string clean(std::string s)
 {
@@ -114,15 +151,22 @@ static void log_mark(const dg::Mark& m, bool own)
 {
     g_c.marks++;
     std::string who = clean(m.name);
+    char line[400];
     if (m.t_session >= 0)
-        SWARN("MARK by '%s' (player %u) at s %.3f: %s", who.c_str(), m.origin, m.t_session, clean(m.text).c_str());
+        snprintf(line, sizeof line, "MARK by '%s' (player %u) at s %.3f: %s", who.c_str(), m.origin, m.t_session,
+                 clean(m.text).c_str());
     else
-        SWARN("MARK by '%s' (player %u), no session clock: %s", who.c_str(), m.origin, clean(m.text).c_str());
+        snprintf(line, sizeof line, "MARK by '%s' (player %u), no session clock: %s", who.c_str(), m.origin,
+                 clean(m.text).c_str());
+    SWARN("%s", line);
+    // the screen of this game at the mark, for the report (a "report shot:" line follows when written)
+    bool shot = report_shot("mark", line) > 0;
     if (own) {
         if (g_P.chat_log)
             g_P.chat_log("* marked for the report: " + m.text);
         if (g_P.feed)
-            g_P.feed("Marked for the report (F9, \"Report a problem\" makes the file to send)");
+            g_P.feed(shot ? "Marked for the report with a screenshot (F9, \"Report a problem\" makes the file to send)"
+                          : "Marked for the report (F9, \"Report a problem\" makes the file to send)");
     } else if (g_P.chat_log)
         g_P.chat_log("* " + who + " marked a problem for the report: " + m.text);
 }
