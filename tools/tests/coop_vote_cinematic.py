@@ -368,6 +368,7 @@ def main():
         for nm, pz in (('share_cinematic', False), ('share_paused', True)):
             share_case(host, guest, ck, cm_h, nm, pz)
             wait_quiet(host, guest)
+            time.sleep(35)  # two world transfers close together trip the monitor's link rule (BUG-0439)
         if a.part == 'gate':
             ck.faults(host=host, guest=guest)
             return ck.result()
