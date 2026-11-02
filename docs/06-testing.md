@@ -3351,3 +3351,19 @@ the walk and fight tests) swings the view over it (docs/re/creature.md#creature-
   `SPORE_FIX_OFF=core.tod_guard` faults at 0x01020F35 and hangs before the menu (lab 20261101-175729).
   `--ui` takes the player's way (F9 from the boot on, a real click on Host): the window first shows in the
   galaxy menu (9.2 s after the start), so players do not reach the crash through the window.
+
+## The guest's paused game and its mirrors' ground: tribe_mirror_ground (2026-11-01, fix/w36-tribe-ground)
+<a id="testing-tribe-mirror-ground"></a>
+
+* `coop_tribe_mirror_ground.py` (suite `tribe_mirror_ground`, warm, ~1 min; ~1.3 min cold), BUG-0444: the
+  guest's game time held paused (the state a cold join leaves for 10-40 s: `cGameTimeManager` +0x48 = 3,
+  written with `mem.write` at `[0x167EB04]`+0x48, GOG 2024 only; resumed at the end), the guest's own member
+  walked to the steepest rise within 60 m of it on the guest's ground (16 directions, `coop.ground`) and back,
+  sampled every ~0.3 s (`coop.tribe` + `coop.ground`); then `coop.tribe lift -2` on the guest and
+  `coop.tribe spawn 2` on the host (the new mirrors made at host positions 2 m under the guest's ground; lift
+  now applies at the spawn too). PASS: the walked mirror between -0.5 and 1 m over the ground, under 3 m off the
+  host's member at the end, the new mirrors not under -0.5 m. `SPORE_FIX_OFF=tribe.mirror_ground` fails
+  (5-9 m under, up to 10 m over, the new mirrors at -2.0 m; the monitor's `ground` rule too).
+* Pitfall: a cold join's own pause ends by itself during the test, so the test writes the flag on every sample;
+  a manual run right after `lab.py reload` started its games cold here (seen 3 times on lane 10, cause not
+  looked at), and then prints `after the cold join`.
