@@ -3351,3 +3351,24 @@ the walk and fight tests) swings the view over it (docs/re/creature.md#creature-
   `SPORE_FIX_OFF=core.tod_guard` faults at 0x01020F35 and hangs before the menu (lab 20261101-175729).
   `--ui` takes the player's way (F9 from the boot on, a real click on Host): the window first shows in the
   galaxy menu (9.2 s after the start), so players do not reach the crash through the window.
+
+## The busy gate: votes, editors and shares during a cinematic or a pause (2026-11-01, fix/w34-vote-cinematic)
+<a id="testing-busy-gate"></a>
+
+* `coop_vote_cinematic.py` (suites `vote_during_cinematic`, ~5 min, and `busy_gate` with `--part gate`):
+  starts each gated action while the host's (or the guest's) game is busy and checks the game state on the
+  machine that was busy: the vote's editor (the game's mode, `cinematic`, `input_lock` in the editor, a real
+  click on "done"), the guest's own editor after a vote, an action vote's result, a share due as after an
+  evolution (the guest's mode leaves Creature / "receiving world"; held for a cinematic, not for a pause).
+* Busy by hand: a cinematic with `PlayCinematic ... s:CRG_Fade_From_Black_Egg` (~7 s, ends by itself); the
+  game time paused with a real click on the Sporepedia's HUD button (84 1054) or Esc (the pause menu);
+  `coop.status` prints `busy: <reasons>` (`-` when free).
+* Test hooks: `coop.share due` (a share due as after an evolution, the gate path of follow_phase);
+  `coop.vote` prints `editor held for a cinematic N, cinematics ended N, editor held now N, actions waited N,
+  action due N`.
+* Pitfall: a vote ended by a guest right after the host's "done" lands inside the evolution's own
+  cinematic (~7 s): that is the players' way to BUG-0404, and coop_editor_soak.py's helper now waits for the
+  cinematics between rounds (it would test BUG-0404, not the address space).
+* The campaign's sync and census checks skip a guest whose game stands (`busy:` paused, editor, loading)
+  instead of only one with the "Resume Game" button shown (`OLD_PAUSE_CHECK=1`: the old check).
+

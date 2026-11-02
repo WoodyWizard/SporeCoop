@@ -47,6 +47,7 @@
 #include "rejoin.h"
 #include "savestrip.h"
 #include "cell_logic.h"
+#include "busy.h"
 #include "social.h"
 #include "world.h"
 #include "net/discovery.h"
@@ -1196,6 +1197,16 @@ bool mode_switch_pending()
     return mgr && skg::field<uint8_t>(mgr, 0x28);
 }
 
+// The one busy gate (busy.h, BUG-0404): why the game is busy right now (busy::k* bits). Cheap,
+// callable in the frame.
+unsigned game_busy()
+{
+    uint32_t m = game::mode_id();
+    return busy::bits(world::cinematic_playing(), coop_ui::input_lock_now(), world::time_paused(),
+                      m == modes::kEditor || m == modes::kEdit,
+                      m == modes::kLoad || mode_switch_pending() || world::load_queued());
+}
+
 // An editor request that waits until the host's save for a world share is written (a save made
 // while the editor opens does not load again: world::save_game). One reference held.
 void* g_submit_later = nullptr;
@@ -1219,6 +1230,25 @@ bool submit_now(void* req)
     return r;
 }
 
+// BUG-0404: an editor that opened while a cinematic of the stage played (the evolution's
+// CRG_Fade_From_Black_Egg F4F96E43 right after the last editor, a caption, a brain upgrade) came up
+// without its buttons, and the cinematic never ended in the editor mode: its input lock stayed on and
+// the host could not leave the editor. The vote ends whenever the others are ready or its time is up,
+// whatever the host's game plays. The held request now waits at the busy gate (busy::kEditorGate: a
+// cinematic, the input lock, the game time paused) and for 3 s after the game came back from an
+// editor (the evolution's cinematic starts then). A pause waits as long as it lasts; a cinematic at
+// most 60 s, then it is ended natively (EndCinematic) right before the editor opens. Off: the editor
+// opens at once (0.7.3.3).
+bool g_editor_cine_fix = true;
+COOP_FIX("core.editor_cinematic", "BUG-0404", g_editor_cine_fix, "core: a vote's editor waits at the busy gate (cinematic, input lock, pause)");
+constexpr double kEditorCineWait = 60.0;
+double g_editor_left_at = -100;  // the game came back from an editor into a stage
+busy::Wait g_submit_wait;        // the held request's wait at the busy gate
+bool g_submit_busy_told = false; // the held request's wait was logged
+bool g_submit_end_cine = false;  // the outside-frame submit ends the cinematic first
+unsigned g_submits_after_cine;   // tests: editor requests that waited for a cinematic
+unsigned g_submit_cines_ended;   // tests: cinematics ended because they outlasted the wait
+
 void hold_submit(void* req)
 {
     skg::vcall<int>(req, 1); // AddRef
@@ -1226,6 +1256,8 @@ void hold_submit(void* req)
         skg::vcall<int>(g_submit_later, 2); // a newer request replaces it
     g_submit_later = req;
     g_submit_held_at = H->time_seconds();
+    g_submit_wait = {};
+    g_submit_busy_told = false;
     if (share_save_due()) {
         g_submits_held++;
         LOG("the editor waits until the world save is written");
@@ -1241,8 +1273,30 @@ void submit_tick(double now)
         return;
     if (creations::avatar_swap_settling(now) && now - g_submit_held_at < 90.0)
         return;
+    bool end_cine = false;
+    if (g_editor_cine_fix && stage_mode(game::mode_id())) { // BUG-0404: the busy gate
+        unsigned b = game_busy() & busy::kEditorGate;
+        bool expired = false;
+        bool settling = now - g_editor_left_at < 3.0; // (the evolution's cinematic is about to start)
+        bool was = g_submit_busy_told;
+        if (busy::hold(g_submit_wait, b, now, kEditorCineWait, busy::kPaused, 300.0, &expired) || settling) {
+            if (!was) {
+                g_submits_after_cine++;
+                LOG("the editor waits: the game is busy (%s)", busy::names(b).c_str());
+                if (b)
+                    feed(b & busy::kPaused ? "your editor opens when the game goes on"
+                                           : "your editor opens when the cinematic is over");
+            }
+            g_submit_busy_told = true;
+            return;
+        }
+        end_cine = expired && (b & busy::kCinematic);
+        g_submit_busy_told = false;
+    }
     void* req = g_submit_later;
     g_submit_later = nullptr;
+    g_submit_wait = {};
+    g_submit_busy_told = false;
     if (!stage_mode(game::mode_id()) || mode_switch_pending()) { // the host left the stage meanwhile
         LOG("the held editor request is dropped: the game left the stage");
         skg::vcall<int>(req, 2);
@@ -1251,8 +1305,12 @@ void submit_tick(double now)
     if (now - g_submit_held_at > 0.05)
         LOG("the editor opens (held %.1f s: a world save or the avatar's new body)", now - g_submit_held_at);
     g_submit_queued = true; // no save from here until the game has the request (save_blocker)
+    g_submit_end_cine = end_cine;
     H->run_outside_frame(
         [](void* r) {
+            if (g_submit_end_cine && world::end_cinematic("before the held editor opens (BUG-0404)"))
+                g_submit_cines_ended++;
+            g_submit_end_cine = false;
             submit_now(r);
             g_submit_queued = false;
             skg::vcall<int>(r, 2); // Release
@@ -1351,6 +1409,45 @@ bool SK_CDECL h_Submit(void* req)
     return r;
 }
 
+// BUG-0404 (the busy gate): an action vote's result (a superweapon ...) ran the moment the vote
+// ended, also during a cinematic, a pause or a load. It now waits at the gate (busy::kActionGate):
+// a pause as long as it lasts, the rest at most 60 s; it is dropped when the stage was left. Off: at
+// once (0.7.3.3).
+bool g_vote_action_busy_fix = true;
+COOP_FIX("core.vote_action_busy", "BUG-0404", g_vote_action_busy_fix, "core: an action vote's result waits at the busy gate");
+std::function<void()> g_vote_action_due;
+busy::Wait g_vote_action_wait;
+bool g_vote_action_told = false;
+uint32_t g_vote_action_mode = 0;
+unsigned g_vote_actions_waited; // tests
+
+void vote_action_tick(double now)
+{
+    if (!g_vote_action_due)
+        return;
+    unsigned all = game_busy();
+    if (game::mode_id() != g_vote_action_mode && !(all & (busy::kLoading | busy::kEditor))) {
+        LOG("the vote's action is dropped: the stage was left");
+        g_vote_action_due = nullptr;
+        return;
+    }
+    unsigned b = all & busy::kActionGate;
+    if (busy::hold(g_vote_action_wait, b, now, 60.0, busy::kPaused)) {
+        if (!g_vote_action_told) {
+            g_vote_action_told = true;
+            g_vote_actions_waited++;
+            LOG("the vote's action waits: the game is busy (%s)", busy::names(b).c_str());
+        }
+        return;
+    }
+    static std::function<void()> run;
+    run = std::move(g_vote_action_due);
+    g_vote_action_due = nullptr;
+    g_vote_action_wait = {};
+    g_vote_action_told = false;
+    H->run_outside_frame([](void*) { g_vote_actions_run++; if (run) run(); }, nullptr);
+}
+
 void finish_vote(const char* why)
 {
     if (!g_vote.active)
@@ -1375,7 +1472,15 @@ void finish_vote(const char* why)
         static std::function<void()> run;
         run = std::move(g_vote_action);
         g_vote_action = nullptr;
-        H->run_outside_frame([](void*) { g_vote_actions_run++; run(); }, nullptr);
+        if (g_vote_action_busy_fix) { // BUG-0404: vote_action_tick runs it at the busy gate
+            g_vote_action_due = std::move(run);
+            run = nullptr;
+            g_vote_action_wait = {};
+            g_vote_action_told = false;
+            g_vote_action_mode = game::mode_id();
+            vote_action_tick(H->time_seconds());
+        } else
+            H->run_outside_frame([](void*) { g_vote_actions_run++; run(); }, nullptr);
     }
     if (req) { // the editor opens from submit_tick (outside the frame) once no world save is written
         hold_submit(req);
@@ -1465,8 +1570,10 @@ void on_mode_change(uint32_t from, uint32_t to)
     bool editor = to == modes::kEdit || to == modes::kEditor;
     if (editor && stage_mode(from))
         g_was_in_editor = true;
-    if (!editor && (from == modes::kEdit || from == modes::kEditor))
+    if (!editor && (from == modes::kEdit || from == modes::kEditor)) {
         g_own_editor = false;
+        g_editor_left_at = H->time_seconds(); // BUG-0404: the evolution's cinematic starts now
+    }
     if (!stage_mode(to))
         return;
     bool new_stage = g_last_stage && to != g_last_stage;
@@ -1576,7 +1683,9 @@ void follow_phase(double now)
         if (r.needs_world && g_local) { // joined while the host was in a menu
             if (g_share_cine_fix) { // BUG-0019: after the evolution cinematic, at most 120 s
                 double& since = g_share_cine_each_fix ? r.cine_wait_since : g_share_cine_since;
-                bool cine = world::cinematic_playing();
+                // the busy gate's share mask (busy.h kShareGate: the cinematic, not a pause, BUG-0404)
+                unsigned gate = game_busy() & busy::kShareGate;
+                bool cine = gate != 0;
                 bool waited = since != 0 && cine;
                 if (share_wait::hold(since, cine, now, g_share_due_at)) {
                     if (cine)
@@ -1584,7 +1693,7 @@ void follow_phase(double now)
                     continue;
                 }
                 if (waited)
-                    LOG("share: a cinematic plays for 120 s, the world is sent anyway");
+                    LOG("share: the game is busy for 120 s (%s), the world is sent anyway", busy::names(gate).c_str());
             } else
                 g_share_cine_since = 0;
             r.cine_wait_since = 0;
@@ -1822,6 +1931,7 @@ static void diag_tick(double now)
              game::mode_id(), g_world);
     std::string s = b;
     s += g_sess.status() + world::status();
+    s += "busy: " + busy::names(game_busy()) + "\n"; // BUG-0404: the busy gate
     for (auto& [id, r] : g_remotes)
         s += "remote " + std::to_string(id) + " '" + r.name + "' puppet " + (r.puppet ? "yes" : "no") + "\n";
     size_t first = g_chat.size() > 8 ? g_chat.size() - 8 : 0;
@@ -1865,12 +1975,23 @@ std::string make_report(const char* reason)
 // played for 15 s and no cinematic or caption is up, at most 90 s.
 uint32_t g_own_editor_due = 0;
 double g_own_editor_due_at = 0;
+double g_own_editor_due_first = 0; // (BUG-0404: the 90 s may be pushed by pauses, not past 300 s)
 bool g_own_editor_queued = false;
 unsigned g_own_editor_waits; // tests: frames the own editor waited for the stage to settle
 double g_own_editor_hold_until = 0; // tests (coop.vote hold <s>): the own editor waits until then
 void* g_settle_avatar = nullptr;
 double g_settle_since = 0;
 bool pause_ui_up();
+
+// BUG-0404 (the busy gate): the guest's own editor waited for a cinematic but not for a pause: due
+// while the guest's game time stood (the pause menu, the Sporepedia, My Collections) it was dropped
+// for good ("your editor did not open (pause menu)") or opened under the Sporepedia. It now waits at
+// the gate (busy::kEditorGate) while the 90 s limit counts only the time the game was not paused, and
+// a pause menu found by the outside-frame check makes it wait again instead of dropping it. Off: as
+// in 0.7.3.3.
+bool g_own_editor_busy_fix = true;
+COOP_FIX("core.own_editor_busy", "BUG-0404", g_own_editor_busy_fix, "core: a guest's own editor after a vote waits through a pause");
+double g_own_editor_last_tick = 0;
 
 void own_editor_tick(double now)
 {
@@ -1879,9 +2000,15 @@ void own_editor_tick(double now)
         g_settle_avatar = av;
         g_settle_since = now;
     }
+    double dt = g_own_editor_last_tick ? now - g_own_editor_last_tick : 0;
+    g_own_editor_last_tick = now;
     if (!g_own_editor_due || g_own_editor_queued)
         return;
-    if (now - g_own_editor_due_at > 90.0 || (g_mode != modes::kCreature && stage_mode(g_mode))) {
+    unsigned b = g_own_editor_busy_fix ? game_busy() & busy::kEditorGate : 0u;
+    if ((b & busy::kPaused) && dt > 0 && dt < 5.0)
+        g_own_editor_due_at += dt; // a pause does not count against the 90 s (all in all 300 s)
+    if (now - g_own_editor_due_at > 90.0 || now - g_own_editor_due_first > 300.0 ||
+        (g_mode != modes::kCreature && stage_mode(g_mode))) {
         LOG("own editor not opened: the stage did not settle (or was left)");
         feed("evolution: your editor did not open; evolve at your nest later");
         g_own_editor_due = 0;
@@ -1889,7 +2016,7 @@ void own_editor_tick(double now)
     }
     if (!av || !g_local || now - g_settle_since < 15.0 || now < g_own_editor_hold_until ||
         creations::avatar_swap_settling(now) || // BUG-0318
-        world::cinematic_playing() || mode_switch_pending() || world::load_queued()) { // a received world loads first (BUG-0157)
+        world::cinematic_playing() || b || mode_switch_pending() || world::load_queued()) { // a received world loads first (BUG-0157)
         g_own_editor_waits++;
         return;
     }
@@ -1905,6 +2032,8 @@ void own_editor_tick(double now)
                 return; // own_editor_tick decides again
             // an editor opened under the pause menu or its "save your game?" boxes: a click on
             // "Don't Save" right after left the guest in a black editor for good
+            if (pause_ui_up() && g_own_editor_busy_fix)
+                return; // BUG-0404: own_editor_tick waits for the pause (or a message box) to go
             if (pause_ui_up()) {
                 LOG("own editor not opened: the pause menu is open");
                 feed("evolution: your editor did not open (pause menu); evolve at your nest later");
@@ -2190,6 +2319,8 @@ void trace_tick(double now)
              g_vote.active ? "on" : "off", coop_ui::input_lock_now(), trace::hex(g_own_editor_due).c_str());
     if (const char* why = share_wait_reason()) // BUG-0382 (new fields go at the end: monitor.py)
         snprintf(b + strlen(b), sizeof b - strlen(b), " share_wait=%s", why);
+    if (unsigned gb = game_busy()) // BUG-0404: the busy gate (census / sync checks skip a game that stands)
+        snprintf(b + strlen(b), sizeof b - strlen(b), " busy=%s", busy::names(gb).c_str());
     snprintf(b + strlen(b), sizeof b - strlen(b), "%s", monitor_own_fields(have).c_str()); // (before version=)
     trace::line("trace", "%s%s%s", b, now - g_trace_ver_at > 60.0 ? " version=" : "",
                 now - g_trace_ver_at > 60.0 ? g_sess.version.c_str() : "");
@@ -2306,6 +2437,7 @@ void on_frame(void*, int, void*)
     vote_tick(now);
     submit_tick(now);
     own_editor_tick(now);
+    vote_action_tick(now);
     coop_ui::tick();
     menu_tick(now);
     if (g_sess.role() == net::Role::Host)
@@ -2812,6 +2944,7 @@ void end_session(EndPath path, bool cell)
     }
     if (g_vote_scope_fix)
         drop_vote("the session ended");
+    g_vote_action_due = nullptr; // BUG-0404: a result still waiting at the busy gate ends with its session
     g_puppet_hold = false; // tests (coop.puppet hold, BUG-0251)
     world::reset_shares();
     shared::on_session_end();
@@ -3046,7 +3179,7 @@ void setup_callbacks()
             // the evolution starts: everybody evolves its own creature in its own editor (own_editor_tick)
             if (ended && g_vote.editor && g_mode == modes::kCreature && g_local) {
                 g_own_editor_due = g_vote.editor;
-                g_own_editor_due_at = H->time_seconds();
+                g_own_editor_due_at = g_own_editor_due_first = H->time_seconds();
             }
             g_vote.active = on;
             g_vote.left = left;
@@ -3376,7 +3509,7 @@ int c_leave(void*, int, const char* const*, SkOut* out)
 
 int c_status(void*, int, const char* const*, SkOut* out)
 {
-    SAY("%s%s", g_sess.status().c_str(), world::status().c_str());
+    SAY("%s%sbusy: %s\n", g_sess.status().c_str(), world::status().c_str(), busy::names(game_busy()).c_str());
     for (auto& pl : g_sess.players()) // CAP_VERSION: each player's mod, SporeKit and game build
         SAY("version %u '%s': %s\n", pl.id, pl.name.c_str(), pl.version.empty() ? "unknown (pre-0.7.4)" : pl.version.c_str());
     SAY("remote animations: received %u, played %u\n", g_anims_rx, g_anims_played);
@@ -3566,6 +3699,18 @@ int c_share(void*, int argc, const char* const* argv, SkOut* out)
     if (g_sess.role() != net::Role::Host) {
         SAY("only the host shares its world");
         return 1;
+    }
+    if (argc > 1 && !strcmp(argv[1], "due")) { // tests (BUG-0404): a share due as after an evolution (the gate path)
+        int k = 0;
+        for (auto& [id, r] : g_remotes)
+            if (!r.echo) {
+                r.needs_world = true;
+                r.cine_wait_since = 0;
+                k++;
+            }
+        g_share_due_at = H->time_seconds();
+        SAY("share due for %d player(s), the game is busy: %s", k, busy::names(game_busy()).c_str());
+        return 0;
     }
     int n = 0;
     for (auto& p : g_sess.players()) {
@@ -4723,7 +4868,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     H->command_add(M, "coop.res", "coop.res [[joinsim] add <food|money> <n> | fix reset|floor [0|1]] - shared resources", c_res, nullptr, MT);
     H->command_add(M, "coop.ping", "coop.ping - show everybody the place under your mouse / where you are", c_ping,
                    nullptr, MT);
-    H->command_add(M, "coop.share", "coop.share [player id] - (re)send the host world (save) to guests", c_share,
+    H->command_add(M, "coop.share", "coop.share [player id|due] - (re)send the host world (save) to guests (due: tests, as after an evolution)", c_share,
                    nullptr, MT);
     H->command_add(M, "coop.leaving", "coop.leaving - tests (BUG-0264): the avatar while the game leaves a stage for the galaxy menu",
                    [](void*, int, const char* const*, SkOut* out) {
@@ -4877,10 +5022,13 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                            g_own_editor_hold_until = H->time_seconds() + atof(argv[2]);
                        SAY("vote %s: %s (%d s)\nown editor %d, part list waived %u, editor held for a save %u, "
                            "quit held for a save %u, repeated requests dropped %u, own editor due %d (waited %u frames)\n"
-                           "actions run %u, votes dropped %u",
+                           "actions run %u, votes dropped %u\neditor held for a cinematic %u, cinematics ended %u, "
+                           "editor held now %d, actions waited %u, action due %d",
                            g_vote.active ? "active" : "none", g_vote.text.c_str(), g_vote.left, (int)g_own_editor,
                            g_part_list_waivers, g_submits_held, g_quits_delayed, g_submits_repeated,
-                           g_own_editor_due ? 1 : 0, g_own_editor_waits, g_vote_actions_run, g_votes_dropped);
+                           g_own_editor_due ? 1 : 0, g_own_editor_waits, g_vote_actions_run, g_votes_dropped,
+                           g_submits_after_cine, g_submit_cines_ended, g_submit_later ? 1 : 0, g_vote_actions_waited,
+                           g_vote_action_due ? 1 : 0);
                        return 0;
                    },
                    // outside the frame: `editor` submits an editor request, which the game does

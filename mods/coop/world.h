@@ -68,6 +68,13 @@ bool menu_intro_playing();
 // a cinematic or a caption of the game plays (cCinematicManager +0x2C): the HUD is hidden, an editor
 // opened meanwhile came up without its interface (coop.cpp own editor)
 bool cinematic_playing();
+// ends the cinematic that plays (EndCinematic: stop, release the input lock, post its end message);
+// outside the frame. True if one played (BUG-0404: a cinematic left playing in an editor keeps it
+// without its buttons)
+bool end_cinematic(const char* where);
+// the game time stands (cGameTimeManager +0x48 bit 0): the pause menu, the Sporepedia, My Collections,
+// a planner (busy.h kPaused); callable in the frame
+bool time_paused();
 
 // BUG-0225 (#159): the save file of the game being played, "<slot dir>\<planet>.spo" in lower case
 // (UTF-8): the planet file alone is not unique (co-op worlds alternate between two slots of the same

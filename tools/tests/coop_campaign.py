@@ -114,6 +114,17 @@ def drag_slow(con, sx, sy, tx, ty):
     time.sleep(1)
 
 
+def stands(con):
+    """the game's simulation stands (BUG-0404, the mod's busy gate: the game time paused by the pause menu,
+    the Sporepedia, My Collections or a planner; an editor; a load): its state compared now is stale.
+    Before, only the pause menu's "Resume Game" button counted (BUG-0289, BUG-0331). OLD_PAUSE_CHECK=1: that."""
+    if os.environ.get('OLD_PAUSE_CHECK') != '1':
+        m = re.search(r'^busy: (\S+)', con.call('coop.status')['out'], re.M)
+        if m and any(w in m.group(1).split(',') for w in ('paused', 'editor', 'loading')):
+            return True
+    return bool(uifind.shown(con, 'Resume Game'))
+
+
 def now():
     return time.strftime('%H:%M:%S')
 
@@ -311,7 +322,7 @@ class Campaign:
                 # a guest in its pause menu runs no simulation: its cell mirrors move only by the
                 # 3 m jumps of cellsync's guest_tick, a 0-3 m sawtooth that read as a desync of
                 # p90 2.2 (BUG-0289, a noise pause whose Resume click was lost under an input lock)
-                if uifind.shown(g.con, 'Resume Game'):
+                if stands(g.con):  # (any pause, an editor, a load: BUG-0404's busy gate)
                     paused.append(g.name)
                     continue
                 # the host's path right before each guest (BUG-0269), its last 0.25 s: the guest
@@ -347,7 +358,7 @@ class Campaign:
                                     for w2, c2 in (('host', host), (g.name, g)):
                                         nums.append(f'{g.name} {key} ground on {w2}: ' + c2.call('coop.ground ' + ' '.join(m.groups())).strip())
             if paused:
-                self.note('sync: not compared (pause menu open): ' + ', '.join(paused))
+                self.note('sync: not compared (paused, an editor or a load): ' + ', '.join(paused))
             if terrain:  # BUG-0329: the same place on each game's own ground, the grounds differ in height
                 self.note('sync: ground height differs (objects in place on their own ground): ' + ', '.join(terrain)
                           + ' | ' + '; '.join(n for n in nums if 'ground' in n or ' on ' in n))

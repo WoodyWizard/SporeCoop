@@ -12,6 +12,7 @@
 #include "savestrip_rule.h"
 #include "stage_epoch.h"
 #include "share_wait.h"
+#include "busy.h"
 #include "swap_ledger.h"
 #include "world_name.h"
 
@@ -429,10 +430,57 @@ static void test_pull_per_second()
     CHECK(drive::pull_k(0.15f, 0.0) == 0.15f);
 }
 
+// BUG-0404: the busy gate (busy.h) - the reasons, their names and the wait of one action
+static void test_busy_gate()
+{
+    printf("busy gate: reasons, names, waits (BUG-0404)\n");
+    CHECK(busy::bits(false, 0, false, false, false) == 0);
+    CHECK(busy::bits(true, 1, false, false, false) == (busy::kCinematic | busy::kInputLock));
+    CHECK(busy::bits(false, 0, true, true, true) == (busy::kPaused | busy::kEditor | busy::kLoading));
+    CHECK(busy::names(0) == "-");
+    CHECK(busy::names(busy::kCinematic | busy::kPaused) == "cinematic,paused");
+    // the gates: an editor waits for a cinematic and a pause; the still gate (census) for a pause, not a cinematic
+    CHECK((busy::kEditorGate & busy::kCinematic) && (busy::kEditorGate & busy::kPaused));
+    CHECK((busy::kStillGate & busy::kPaused) && !(busy::kStillGate & busy::kCinematic));
+    // a cinematic of 7 s: held 7 s, then free, not expired
+    busy::Wait w;
+    bool exp = true;
+    int held = 0;
+    for (double t = 100; t < 120; t += 1)
+        held += busy::hold(w, t < 107 ? busy::kCinematic : 0u, t, 60.0, busy::kPaused, 300.0, &exp);
+    CHECK(held == 7 && !exp && w.since == 0);
+    // a cinematic that never ends: held 60 s, then expired (the action's own fallback)
+    w = {};
+    double went = 0;
+    for (double t = 100; t < 200 && !went; t += 1)
+        if (!busy::hold(w, busy::kCinematic, t, 60.0, busy::kPaused, 300.0, &exp))
+            went = t;
+    CHECK(went == 160 && exp);
+    // a pause alone waits 300 s; a cinematic that starts after 100 s of pause still gets its full 60 s
+    w = {};
+    held = 0;
+    for (double t = 1; t < 100; t += 1)
+        held += busy::hold(w, busy::kPaused, t, 60.0, busy::kPaused, 300.0, &exp);
+    CHECK(held == 99 && w.since == 1 && w.other_since == 0);
+    CHECK(busy::hold(w, busy::kCinematic | busy::kPaused, 100, 60.0, busy::kPaused, 300.0, &exp) && w.other_since == 100);
+    CHECK(busy::hold(w, busy::kCinematic | busy::kPaused, 159, 60.0, busy::kPaused, 300.0, &exp));
+    CHECK(!busy::hold(w, busy::kCinematic | busy::kPaused, 160, 60.0, busy::kPaused, 300.0, &exp) && exp);
+    // a pause that never ends: 300 s, then expired
+    w = {};
+    went = 0;
+    for (double t = 1000; t < 1400 && !went; t += 1)
+        if (!busy::hold(w, busy::kPaused, t, 60.0, busy::kPaused, 300.0, &exp))
+            went = t;
+    CHECK(went == 1300 && exp);
+    // the share gate is BUG-0019's cinematic only (a pause of the game's own held shares 120 s)
+    CHECK(busy::kShareGate == busy::kCinematic);
+}
+
 int main(int argc, char** argv)
 {
     g_nofix = argc > 1 && std::string(argv[1]) == "--nofix";
     test_share_wait();
+    test_busy_gate();
     test_stage_epoch();
     test_own_height();
     test_world_name();

@@ -103,6 +103,8 @@ add('space_coop', P + 'coop_space.py', ('smoke',), warm=True, minutes=2, fixture
 add('stage_switch', P + 'coop_stage_switch.py', minutes=13)  # every stage pair that matters, in game
 add('vote', P + 'coop_vote.py', minutes=5)
 add('vote_caption', P + 'coop_vote_caption.py', minutes=4)  # a guest's I'm ready counts while a caption holds the input lock (BUG-0273; SPORE_FIX_OFF=core.ui_locked_clicks fails)
+add('vote_during_cinematic', P + 'coop_vote_cinematic.py', warm=True, minutes=10, fixture='creature')  # a vote that ends while a cinematic plays or the game time stands: the host's editor and the guest's own editor open after it, with their buttons (BUG-0404; SPORE_FIX_OFF=core.editor_cinematic and core.own_editor_busy fail)
+add('busy_gate', P + 'coop_vote_cinematic.py --part gate', warm=True, minutes=7, fixture='creature')  # an action vote's result waits at the busy gate (a cinematic, the game time paused) and runs after it; a share waits for a cinematic, not a pause (BUG-0404; SPORE_FIX_OFF=core.vote_action_busy fails)
 add('vote_stale', P + 'coop_vote_stale.py', minutes=5)  # a vote ends with its session and its stage (BUG-0043)
 add('vote_end_editor', P + 'coop_vote_drop_editor.py --case 1', minutes=3)  # a guest's own editor due from a vote does not open after a Leave (BUG-0234; --nofix fails)
 add('vote_drop_editor', P + 'coop_vote_drop_editor.py --case 2', minutes=3)  # a cancelled evolution vote opens no guest editor (BUG-0234; --nofix fails)
