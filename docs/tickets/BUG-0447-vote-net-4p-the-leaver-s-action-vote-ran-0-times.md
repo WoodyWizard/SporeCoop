@@ -10,8 +10,8 @@ role: host
 versions: main f0cefbaa (0.7.3.4 rc)
 fixed_in: unreleased
 branch: fix/w37-vote-leaver
-commits: 8ca6a86b
-tests: vote_net_4p, party
+commits: 8ca6a86b, COMMIT_VOTE
+tests: vote_net_4p, party, vote
 signature:
 docs: docs/06-testing.md#testing-busy-gate
 related: BUG-0404
@@ -39,11 +39,20 @@ The test read the counter at the instant the vote ended, which only held while t
 (0.7.3.3, or the gate off). The host is the machine that acts for an action vote, so the gate waited for
 the right machine. coop_party.py (suite `party`) had the same instant read in two places.
 
+The same class in `vote` (coop_vote.py), lab 20261101-223733 (lane 6): `after the evolution the guest still
+plays its own creature` FAIL ("avatar 065CBE70", own 290225CD). Observed: host `Editor -> Creature` at s 40.0,
+the world share after the evolution waited for the evolution's cinematic (BUG-0404 kShareGate) and went out
+at s 50.1; the guest reloaded (Creature -> Galaxy menu at s 56.8, Loading -> Creature at s 61.0, the
+world's species first) and took its own body at s 64.0 (`own avatar species 065CBE70 -> 290225CD`, the
+planned swap 3 s after a load). The test checked once after a fixed 20 s from "evolved the species", inside
+that reload.
+
 ## Fix
 Test only, no product change (so no switch): `coop_party.ran_once()` waits for the result to run (up to
 the rest of the 10 s window after the leave, 10 s elsewhere), then 2 s more so a second run shows too.
 vote_net_4p ([leaver], [all]) and coop_party.py ([vote], [join in a vote]) use it; vote_net_4p prints
-the host's `the vote's action ...` lines of the leaver step.
+the host's `the vote's action ...` lines of the leaver step. coop_vote.py waits up to 60 s more for the
+guest's avatar to be its own creation (a guest that keeps the world's species still fails).
 
 ## Verification
 FAIL (the old check, gate on): 20261101-210646 (main), 20261101-223011 (`[leaver] it ran once (0 -> 0)`,
@@ -52,6 +61,8 @@ the action waited for `cinematic,input_lock` 1.75 s). The old check PASSES with 
 shows the check only held while the result ran at once. PASS (the new check, gate on): 20261101-223718 #1
 (waited for `cinematic,input_lock`), #2 (waited for `paused`; the run failed on BUG-0450, another check),
 20261101-224307 #1 and #2 (waited for `paused`): 4 of 4 leaver steps ran once within 10 s.
+`vote`: FAIL 20261101-223733 (the fixed 20 s read, the reload 21 s after the evolution); PASS 20261101-225404
+#1-#3 (the guest's own body 0, 0 and 4 s after the old read).
 
 ## History
 - 2026-11-01: opened.

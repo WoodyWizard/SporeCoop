@@ -19,9 +19,10 @@
 - Creature: eggs at the nests of other species could hang in the air on the host: the game lays them
   where the layer stands and an egg that is not touched has no gravity. The host now puts an egg that
   hangs over the ground onto it (BUG-0443).
-- Tests: `vote_net_4p` (and `party`) read an action vote's result the instant the vote ended; the result
-  now waits on the host while its game is busy (BUG-0404) and ran 0.9 s later under the "game saved" box of
-  the mod's own world share. The tests wait for it; the vote and its result were right (BUG-0447).
+- Tests: since the busy gate (BUG-0404) an action vote's result and the world share after an evolution can
+  wait for a pause or a cinematic on the host. `vote_net_4p` and `party` read the action's result the instant
+  the vote ended (it ran 0.9-1.8 s later), `vote` read the guest's body at a fixed time after the evolution
+  (its reload came later). The tests wait for them now; the votes and their results were right (BUG-0447).
 - Tests: the lab's hitch gate failed a test on the frame that opens an editor (logged just before the
   stage change); that frame now counts as the switch, not as a stall in play (BUG-0448).
 - Tests: `editor_desync` failed about every second run in the Cell part after the host's evolution:
