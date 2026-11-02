@@ -458,3 +458,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0446](BUG-0446-cell-a-guest-s-own-cell-parts-do-not-give-their.md) | open | desync | Cell | 2026-11-01 |  | cell: a guest's own Cell parts do not give their creature twins at Cell -> Creature (the guest loads the host's world) |
 | [BUG-0447](BUG-0447-vote-net-4p-the-leaver-s-action-vote-ran-0-times.md) | open | test | Creature | 2026-11-01 |  | vote_net_4p: the leaver's action vote ran 0 times (its result waited at the busy gate after the check) |
 | [BUG-0448](BUG-0448-log-gate-the-frame-that-opens-an-editor-fails-th.md) | open | tooling | all | 2026-11-01 |  | log gate: the frame that opens an editor fails the hitch gate (logged just before its stage line) |
+| [BUG-0450](BUG-0450-vote-net-4p-return-two-viewers-draw-a-player-as.md) | open | test | Creature | 2026-11-01 |  | vote_net_4p [return]: two viewers draw a player as the species of another player standing next to it |
