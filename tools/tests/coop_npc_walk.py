@@ -28,7 +28,11 @@ animation's walk gait, on the screen or not).
      animated rarely: its gait says nothing).
    The drawn position is the proxy's position before the mod's frame (the mod runs at Present).
 
-  coop_npc_walk.py [--seed N] [--wander S] [--walk S] [--flee S]
+  coop_npc_walk.py [--seed N] [--wander S] [--walk S] [--flee S] [--goto x,y,z] [--falls N]
+  --goto: both avatars onto that ground first (a slope of the creature fixture: -195,-465,-45); the walkers are
+  the host's NPCs within 60 m then. --falls N: also fail when the walked proxies start to fall (+0x137 going
+  1 -> 0 while the host's NPC moves) more than N times more often than the host's own moving NPCs
+  (BUG-0366's downhill falls, for proxies)
   NPC_WALK_GUEST_CMDS="cmd;cmd": console commands on the guest first (e.g. frame.limit 66)
   (SPORE_FIX_OFF=npc.walk must FAIL)"""
 import argparse
@@ -269,16 +273,16 @@ def analyse(rows, W, H, phases):
     return res
 
 
-def walk_phase(host, guest, rng, secs, watch, log):
+def walk_phase(host, guest, rng, secs, watch, log, near=30):
     """the host's game walks up to 4 NPCs the guest mirrors around the guest's avatar"""
     hs, gs = host_npcs(host), proxies(guest)
     g = avatar_pos(guest)
-    both = sorted((math.dist(gs[i][0], g), i) for i in hs if i in gs and g and math.dist(gs[i][0], g) < (120 if FIXTURE == 'tribe' else 30))
+    both = sorted((math.dist(gs[i][0], g), i) for i in hs if i in gs and g and math.dist(gs[i][0], g) < (120 if FIXTURE == 'tribe' else near))
     # BUG-0407: two NPCs outside the host's family / pack (they are hit in the flee phase, see main), from farther
     # off when the nearest are all family (they follow the avatar: all 4 within 30 m were, lab 20261101-154000)
     fam = family(host)
     far = sorted((math.dist(gs[i][0], g), i) for i in hs if i in gs and g and i not in fam and
-                 math.dist(gs[i][0], g) < (150 if FIXTURE == 'tribe' else 80))
+                 math.dist(gs[i][0], g) < (150 if FIXTURE == 'tribe' else max(80, near)))
     ids = [i for _, i in far[:2]]
     ids += [i for _, i in both if i not in ids][:4 - len(ids)]
     log.append(f'family/pack {sorted(fam)}')
@@ -335,6 +339,9 @@ def main():
     ap.add_argument('--wander', type=float, default=15)
     ap.add_argument('--walk', type=float, default=30)
     ap.add_argument('--flee', type=float, default=15)
+    ap.add_argument('--goto', default='', help='x,y,z: both players onto that ground first (a slope)')
+    ap.add_argument('--falls', type=float, default=-1, help='fail over this many fall starts per 100 s of walked proxy '
+                    'over the host\'s own NPCs\' rate (-1: report only)')
     a = ap.parse_args()
     seed = a.seed if a.seed is not None else random.randrange(1 << 30)
     print(f'  seed {seed}', flush=True)
@@ -365,6 +372,11 @@ def main():
         if not avatar_pos(c):
             print(f'  {name}: no centre: {c.call("coop.npctrack count")["out"].strip()} | '
                   f'{c.call("coop.avatar")["out"].strip()[:160]} | {c.call("game.mode")["out"].strip()}', flush=True)
+    if a.goto:  # both onto that ground, the guest 3 m beside the host (coop_puppet_walk.py --goto)
+        x, y, z = map(float, a.goto.split(','))
+        print('  host: ' + host.call(f'coop.abilities goto {x} {y} {z}')['out'].strip(), flush=True)
+        print('  guest: ' + guest.call(f'coop.abilities goto {x + 3} {y} {z}')['out'].strip(), flush=True)
+        time.sleep(3)
     settle((host, guest))
     W, H = screen(guest)
     watch = Watch(guest)
@@ -376,7 +388,7 @@ def main():
     time.sleep(a.wander)
     phases.append(('wander', 0, time.time() - tt0))
     t1 = time.time() - tt0
-    ids = walk_phase(host, guest, rng, a.walk, watch, log)
+    ids = walk_phase(host, guest, rng, a.walk, watch, log, near=60 if a.goto else 30)
     phases.append(('walk', t1, time.time() - tt0))
     t2 = time.time() - tt0
     # BUG-0407: not a member of the host's own family or pack: hit, it fights back and its hits on the host's avatar
@@ -426,6 +438,24 @@ def main():
             k = (x['anim'], x['gait'], x['moving'], x['ss'])
             cnt[k] = cnt.get(k, 0) + 1
         print(f'    walked proxies (anim, gait, +0x137, +0xF98): {sorted(cnt.items(), key=lambda kv: -kv[1])[:4]}', flush=True)
+    # falls (BUG-0366 for proxies): +0x137 going 1 -> 0 while the host's NPC moves, per 100 s of such frames
+    def falls(rs, how):
+        by, n, t = {}, 0, 0.0
+        for x in rs:
+            if x['how'] in how:
+                by.setdefault(x['id'], []).append(x)
+        for xs in by.values():
+            xs.sort(key=lambda x: x['t'])
+            for u, v in zip(xs, xs[1:]):
+                if v['rv'] > 0.5 and 0 < v['t'] - u['t'] < 0.25:
+                    t += v['t'] - u['t']
+                    n += u['moving'] == 1 and v['moving'] == 0
+        return n, t
+    fp, tp_ = falls(rows, (3,))
+    fh, th = falls(hrows, (4,))
+    rp, rh = fp / tp_ * 100 if tp_ else 0, fh / th * 100 if th else 0
+    print(f'    fall starts (+0x137 1 -> 0) while moving: walked proxies {fp} in {tp_:.0f} s ({rp:.1f} per 100 s), '
+          f'the host\'s own NPCs {fh} in {th:.0f} s ({rh:.1f} per 100 s)', flush=True)
     hm = [x for x in hrows if x['rv'] > 0.5 and x['how'] == 4]
     hv = [x for x in hm if x['vis'] and 0 < x['sx'] < W and 0 < x['sy'] < H]
     print(f'    reference, the host\'s own NPCs while they move: walk gait in {sum(x["gait"] > 0 for x in hm) / max(1, len(hm)):.0%} '
@@ -451,6 +481,9 @@ def main():
     ck(r['near'] >= 150 and near_gait >= GAIT_MIN,
        f'the proxies walk where the guest sees them (walk gait in {near_gait:.0%} >= {GAIT_MIN:.0%} of {r["near"]} '
        f'moving frames on its screen)')
+    if a.falls >= 0:
+        ck(tp_ >= 30 and rp <= rh + a.falls, f'the walked proxies do not keep falling (fall starts {rp:.1f} per 100 s '
+           f'<= the host\'s own NPCs {rh:.1f} + {a.falls:g}; {tp_:.0f} s of walked frames)')
     ck.faults(host=host, guest=guest)
     return ck.result()
 

@@ -3,9 +3,27 @@
 ## [Unreleased]
 
 ### Fixed
+- Tests: `editor_desync` failed about every second run in the Cell part after the host's evolution:
+  the guest's mating call was pressed while the guest was still reloading the host's world or its
+  cell was hatching (the game takes no click then). The test now waits like a player; not a bug of
+  the mod (BUG-0411).
+- Tests: `puppet_fight` counted steps of the other player's creature that the observer could not see: out of
+  the view the game puts a creature on the plain terrain instead of on a nest mound, 1 m lower. Only steps on
+  the observer's screen count now; it was not an ability (BUG-0414).
 - SporeKit: a hook made while the game runs could let a game thread call address 0 (a handled
   fault, once followed by a frozen game): the hook's original function is now set before the hook is
   switched on. Seen in test games when the first simulated input was sent (BUG-0398).
+- Creature: the creature parts a player finds (in a skeleton, from a creature, as a reward) are now the
+  whole party's, like DNA: a part the host finds is in every guest's editor too, a part a guest finds
+  is unlocked for the host and the others ("Bob found a new creature part"), and a guest keeps them
+  after a rejoin. Before, each player's game kept its own, and a guest lost its finds at the next
+  world load (BUG-0401). Both players need this version.
+- Tests: the `team` test could leave the guest's creature 0.94 m under the ground (its move next to
+  the host cut through the planet's curve); the test command now puts it onto the ground (BUG-0400).
+- Tribe: right after joining, some of the host's animals could stand up to 1.7 m inside the ground on the
+  other players' screens for up to half a minute; they are always shown on the ground now (BUG-0399).
+- Creature: the host's animals walking downhill no longer keep hopping on the other players' screens
+  (a short fall every few seconds) (BUG-0406).
 - Creature and Tribe: animals of the host now walk and run on the other players' screens with their
   walk animation, on the host's path: in the Creature stage a moving animal slid over the ground in
   its standing pose, in the Tribe stage animals moved in small steps and jumps (BUG-0361).

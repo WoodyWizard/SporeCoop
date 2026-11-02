@@ -42,10 +42,6 @@ def allow(gate, ticket, reason, stage=None, kind=None, who=None, match=None):
 
 # allowed in every test (each a known bug with its ticket; empty when every gate holds everywhere)
 ALLOW_ALL = [
-    allow('monitor', 'BUG-0399', 'the guest shows a few host animals under its ground for 20-30 s after joining Tribe',
-          kind='proxies', match=r'under the ground \(Tribe\)'),
-    allow('monitor', 'BUG-0400', "the guest's own creature stands under the terrain after its own species replaced the "
-          "host's", kind='ground', who='guest', match=r'its own creature [\d.]+ m under the ground \(Creature\)'),
 ]
 
 
@@ -124,6 +120,7 @@ add('reload_update', P + 'coop_reload_update.py', minutes=2)  # hot reload while
 add('update_leak', P + 'coop_update_leak.py', minutes=4)  # 5 refused update attempts free their 20 MB packs (BUG-0241; SPORE_FIX_OFF=core.update_unwind fails)
 add('guest_editor', P + 'coop_guest_editor.py', minutes=4)
 add('guest_editor_locks', P + 'coop_guest_editor_locks.py', minutes=4)  # the guest's own editor locks the parts the species has not collected (BUG-0368; SPORE_FIX_OFF=creations.own_editor_items fails)
+add('parts_shared', P + 'coop_parts_shared.py', minutes=6, fixture='creature')  # the parts a player finds are the party's: host -> guest, guest -> host, the guest's editor palette, a rejoin (BUG-0401; SPORE_FIX_OFF=parts.shared fails)
 add('old_species', P + 'coop_old_species.py', minutes=3)  # an NPC of a player's replaced creature shows on the guest: the host answers its species (BUG-0370; SPORE_FIX_OFF=creations.old_species fails)
 add('dna_notice', P + 'coop_dna_notice.py', minutes=3)  # shared DNA names its cause on the partner's screen (+N DNA from Bob's hunt) and in the logs (dna: a -> b cause=...); a feature, no switch
 add('dna_notice_cell', P + 'coop_dna_notice.py --cell', minutes=3)  # Cell: a partner's meals named on the other's screen (+10 food (DNA) from Bob's meals) and in the logs
@@ -142,7 +139,7 @@ add('host_old_choice', P + 'coop_host_old_choice.py', minutes=3)  # BUG-0344
 add('guest_missing_pack', P + 'coop_guest_missing_pack.py', minutes=6, uses_free_lane=True)
 add('guest_pack_paints', P + 'coop_guest_pack_paints.py', minutes=4)  # a guest without Creepy & Cute sees the host's pack paints as base game paints (BUG-0369; SPORE_FIX_OFF=creations.paint_substitute fails)
 add('creations_rejoin', P + 'coop_creations_rejoin.py', minutes=5)  # a newcomer under a reused id is not shown with the previous player's creature (BUG-0076)
-add('editor_desync', P + 'coop_editor_desync.py', minutes=7)  # mating call and editors in Cell and Creature, real input
+add('editor_desync', P + 'coop_editor_desync.py', minutes=7)  # mating call and editors in Cell and Creature, real input (BUG-0411: --old-wait fails about 1 run in 2)
 add('creature_desync', P + 'coop_creature_desync.py', minutes=4)  # editors, a crash and a reload: companion of a host-only species, no NPC copies, kills, the guest's look
 add('editor_strays', P + 'coop_editor_strays.py', minutes=6)  # two evolutions: no puppet left over, herd homes on the surface (crash 0xB88BEA)
 add('creature_e84', P + 'coop_creature_e84.py', minutes=5)  # a save with the partner's puppet, loaded after a restart: no crash on attack (0xD48634), removed
@@ -229,6 +226,7 @@ add('tribe_npc_dash', P + 'coop_tribe_npc_dash.py', warm=True, minutes=4, fixtur
 add('creature_npc_dash', 'DASH_FIXTURE=creature ' + P + 'coop_tribe_npc_dash.py', minutes=4, fixture='creature')  # BUG-0281: two nest NPCs run side by side at 4 m/s on the host, the guest (15 fps) stands beside the path's end: its proxies stay on the path (SPORE_FIX_OFF=npc.kinematic fails)
 add('puppet_walk', P + 'coop_puppet_walk.py', warm=True, minutes=4, fixture='creature')  # BUG-0360: each player walks by WASD and clicks, the other's game samples the puppet every frame: no jumps, it moves and walks (SPORE_FIX_OFF=creature.puppet_walk fails)
 add('npc_walk', P + 'coop_npc_walk.py', warm=True, minutes=4, fixture='creature')  # BUG-0361: the host's NPCs wander, walk and run (MoveTo) and flee around the guest, its game samples their proxies every frame: no jumps, no steps, walk gait on screen (SPORE_FIX_OFF=npc.walk fails)
+add('npc_walk_slope', P + 'coop_npc_walk.py --goto=-195,-465,-45 --falls 3', warm=True, minutes=4, fixture='creature')  # BUG-0366 for NPC proxies: the host's NPCs walked on a slope of the creature fixture; the guest's walked proxies start to fall at most 3 per 100 s more often than the host's own NPCs
 add('npc_walk_tribe', 'TRACK_FIXTURE=tribe ' + P + 'coop_npc_walk.py', warm=True, minutes=4, fixture='tribe')  # BUG-0361 (Tribe): the same around the guest's tribe (SPORE_FIX_OFF=npc.walk_tribe fails)
 add('puppet_slope', 'SPORE_NET=player ' + P + 'coop_puppet_walk.py --dir guest --guest-fps 30 --goto=-195,-465,-45 --secs 40 --ground', minutes=4, fixture='creature')  # BUG-0366: the guest at 30 fps over a home connection (spikes, loss bursts) walks on a slope of the fixture: its puppet on the host never starts to fall ("constantly jumping"; SPORE_FIX_OFF=creature.puppet_ground fails)
 add('puppet_under', 'PUPPET_WALK_CMDS="coop.track lift -1" ' + P + 'coop_puppet_walk.py --dir guest --secs 25 --stand 8 --ground', minutes=4, fixture='creature')  # BUG-0367: the guest's states 1 m under the host's ground (coop.track lift -1): its puppet is never drawn under the ground (SPORE_FIX_OFF=creature.puppet_ground fails)
@@ -247,6 +245,18 @@ add('monitor_plant', P + 'coop_monitor_plant.py', minutes=5, fixture='creature',
 add('creature_party', P + 'coop_creature_party.py', warm=True, minutes=3, fixture='creature')  # BUG-0374: the host's pack does not fight the guest after the guest's hit on it (SPORE_FIX_OFF=npc.party_peace fails)
 add('nest_eggs', P + 'coop_nest_eggs.py', warm=True, minutes=3, fixture='creature')  # BUG-0384: the host's eggs at a nest of another species are on the guest at the same places, on the ground; an egg eaten on one game is eaten on the other (SPORE_FIX_OFF=nest.eggs fails)
 add('creature_brain_hp', P + 'coop_creature_brain_hp.py', minutes=4, fixture='creature')  # BUG-0375: a guest playing its own creature gets the brain level's health (SPORE_FIX_OFF=creature.own_brain_hp fails)
+# w33 (audit items 15, 17, 19, 22, 26, 27): what the other player sees in fights, after events, of bodies, of the pack
+add('corpse_positions', P + 'coop_npc_corpse.py', warm=True, minutes=6, fixture='creature')  # BUG-0383: bodies of NPCs killed standing, running, thrown, on a slope, by another NPC, while the guest was away, eaten: the guest shows each where the host has it, dead, on the ground at 3 s and 30 s (SPORE_FIX_OFF=npc.dead_proxy fails; SPORE_FIX_OFF=npc.play_death fails)
+add('corpse_positions_player', 'SPORE_FPS=guest:30 SPORE_NET=player ' + P + 'coop_npc_corpse.py', minutes=7, fixture='creature')  # corpse_positions with the guest at 30 fps over the player network
+add('team_real_damage', P + 'coop_team_real_damage.py', warm=True, minutes=4, fixture='creature')  # the pack's regen and rescue after an NPC's own bites (no coop.team hit): the other game shows the hurt, the regen, the rescued creature alive and the notice (SPORE_FIX_OFF=creature.partner_hp fails)
+add('team_real_damage_player', 'SPORE_FPS=guest:30 SPORE_NET=player ' + P + 'coop_team_real_damage.py', minutes=5, fixture='creature')  # team_real_damage with the guest at 30 fps over the player network
+add('puppet_fight', P + 'coop_puppet_fight.py', warm=True, minutes=4, fixture='creature')  # each player fights NPCs (clicks, ability keys, sprints, turns), the other's game samples its creature every frame: drawn jumps and teleports <= 1 per minute, drawn p95 <= 2.5 m off the fighter at the same moment while it moves, drawn path <= 0.3 s late (both creature.puppet_path and creature.puppet_walk off: FAIL, lab 20261101-141612)
+add('puppet_fight_player', 'SPORE_FPS=guest:30 SPORE_NET=player ' + P + 'coop_puppet_fight.py', minutes=5, fixture='creature')  # puppet_fight with the guest at 30 fps over the player network (BUG-0414: steps out of the observer's view, a creature on a nest mound drawn on the plain terrain, are not judged)
+add('puppet_after_events', P + 'coop_puppet_after_events.py', minutes=9, fixture='creature', gates={'hitch_ms': 5000})  # the partner's creature shown within 2 m after a rejoin, the vote's editors, deaths and respawns, Alt+Enter, cinematics, a world share (PUPPET_EVENTS_PLANT=hold fails)
+add('puppet_after_events_player', 'SPORE_FPS=guest:30 SPORE_NET=player ' + P + 'coop_puppet_after_events.py', minutes=10, fixture='creature', gates={'hitch_ms': 5000})  # puppet_after_events with the guest at 30 fps over the player network (hitch gate 5 s: its Alt+Enter device reset took 2.3 s on the 30 fps guest)
+add('creature_social_ally', P + 'coop_creature_social_ally.py', warm=True, minutes=5, fixture='creature')  # BUG-0021: the guest impresses 3 Kooks by real input: each impressed on both games, the species allied on both, the guest's card; an allied Kook recruited by the host follows it on both games (SOCIAL_ALLY_PLANT=npcsync fails; SPORE_FIX_OFF=social.no_bite fails in about half of the runs: the guest's key 1 kills a Kook)
+add('creature_social_ally_player', 'SPORE_FPS=guest:30 SPORE_NET=player ' + P + 'coop_creature_social_ally.py', minutes=6, fixture='creature')  # creature_social_ally with the guest at 30 fps over the player network
+add('creature_editor_soak', P + 'coop_editor_soak.py', ('extended',), minutes=30, timeout=3600, fixture='creature')  # BUG-0371: 32 rounds of vote, editors and done (a world share every 4): every round back, address space loss <= 8 MB per round, largest free block >= 128 MB, no fault (SOAK_PLANT_MB=40 fails)
 add('away_refill', P + 'coop_away_refill.py', minutes=3)  # BUG-0180: the host leaves to the main menu: the guest's game has its own NPCs where the host's were at once (SPORE_FIX_OFF=npc.away_locals fails)
 add('editor_after_swap', P + 'coop_editor_after_swap.py', minutes=5)  # BUG-0318: a 6.7 fps guest's editor right after a rejoin draws and can be left (SPORE_FIX_OFF=creations.editor_after_swap fails)
 add('editor_after_load', P + 'coop_editor_after_swap.py --no-swap', minutes=5)  # BUG-0318: the same without an avatar swap (only the loaded world's new avatar)

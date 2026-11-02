@@ -209,7 +209,17 @@ static void SK_THISCALL h_RelEvent(void* mgr, int event, void* key, void* creatu
         g_events_dropped++;
         return;
     }
+    // BUG-0021 diagnostics: every species relationship event of the host's game (the Kooks' impressed count
+    // went from 2 back to 1 between two impressions with no Kook killed: coop_creature_social_ally.py)
+    uint32_t* rec = (a_RelRecord && key && mgr) ? thiscall<uint32_t*>(a_RelRecord, (uint8_t*)mgr + 0x20, key) : nullptr;
+    int32_t r0 = rec ? (int32_t)rec[0] : -99;
+    uint32_t i0 = rec ? rec[2] : 0, k0 = rec ? rec[3] : 0;
     o_RelEvent(mgr, event, key, creature);
+    rec = (a_RelRecord && key && mgr) ? thiscall<uint32_t*>(a_RelRecord, (uint8_t*)mgr + 0x20, key) : nullptr;
+    if (rec && ((int32_t)rec[0] != r0 || rec[2] != i0 || rec[3] != k0))
+        H->log(M, SK_INFO, "social: relationship event %d species %08X by %p (npc %d%s): relation %d -> %d, impressed %u -> %u, "
+               "killed %u -> %u", event, *(uint32_t*)key, creature, creature ? npc::host_id(creature) : -1,
+               creature && creature == game::avatar() ? ", the avatar" : "", r0, (int32_t)rec[0], i0, rec[2], k0, rec[3]);
 }
 
 // SpeciesGoal_Update 0xC2EE60 pays the card's DNA (allied: 25 for the Kook, extinct: its hunt
@@ -337,6 +347,27 @@ static bool act(int slot)
         return false; // no such ability, cooling down or no energy
     send_act((uint16_t)g_engaged, field<uint32_t>(ability(av, idx), 8));
     g_engaged_at = H->time_seconds();
+    return true;
+}
+
+// BUG-0021: in the social stance (GetAbilityMode 0) a guest's key 1 next to the Kook it was impressing (and the click
+// that engages one) sent a hit now and then (coop_creature_social_ally.py: `hits_sent` +1 with the stance 0 before and after the key; the host
+// applied it, the Kook died and the species lost its impressions: (4, 2) -> (1, 0, killed 1), no ally). A player in
+// the social stance cannot attack: such a hit is not sent. `coop.fix social.no_bite off`: sent (0.7.3.3).
+static bool g_no_bite_fix = true;
+COOP_FIX("social.no_bite", "BUG-0021", g_no_bite_fix, "creature: a guest's hit in the social stance is not sent to the host (it killed the creature being impressed)");
+static uint32_t g_social_hits_dropped = 0;
+
+
+bool drop_social_hit(uint16_t proxy_id)
+{
+    // any proxy: the click that engages a Kook sent a hit too (before any social act, lab 20261101-151116 #3).
+    // Test hits (`coop.npc hit`, npc::debug_hit) pass: they are no input of the player
+    if (!g_no_bite_fix || npc::test_hit_now() || !a_AbilityMode || cdecl_call<int>(a_AbilityMode) != 0)
+        return false;
+    if (g_social_hits_dropped++ < 5)
+        H->log(M, SK_INFO, "social: a hit of the avatar on npc %u in the social stance is not sent (engaged %d)", proxy_id,
+               g_engaged);
     return true;
 }
 
@@ -678,9 +709,9 @@ std::string status()
     else
         snprintf(b, sizeof b,
                  "social(guest): engaged=%d engages=%u acts_sent=%u results_in=%u species_rx=%u species_fixed=%u "
-                 "events_dropped=%u cards_refreshed=%u goal_dna_sent=%u\n",
+                 "events_dropped=%u cards_refreshed=%u goal_dna_sent=%u social_hits_dropped=%u\n",
                  g_engaged, g_engages, g_acts_sent, g_results_in, g_table_rx, g_table_fixed, g_events_dropped,
-                 g_cards_refreshed, g_goal_dna_dropped);
+                 g_cards_refreshed, g_goal_dna_dropped, g_social_hits_dropped);
     return b;
 }
 

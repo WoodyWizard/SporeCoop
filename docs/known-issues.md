@@ -1430,16 +1430,10 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   nNNN here: ...`).
 * Next steps: the next campaign run with the gates; the proxies' walking (npc.cpp) is reworked on another
   branch.
+* Update (2026-11-01, fix/w33-proxy-ground): not reproduced on the current code (campaign_tribe 4 players, play_tribe
+  10 min with the co-op epic, tribe_epic: no `n apart`); every recorded case predates npc.walk_tribe (BUG-0361). An
+  epic hit now and then kept its proxy within 2.6 m with both drivings. Ticket status not-reproduced.
 * Ticket: BUG-0402
-## Tribe: host animals under the guest's ground after joining (2026-11-01, feat/w32-monitor-diag)
-<a id="issue-tribe-proxies-under"></a>
-
-* What happens: right after a guest enters the host's Tribe world, 1-4 of the host's animals are shown
-  0.75-1.25 m under the guest's own ground for 20-30 s (proxies driven at their own height).
-* Reproduce: `tools/lab.py run tribe_coop --retry 0`: the guest's trace lines at s 20 / 30 say
-  `proxy_under=1..4`, `npc: proxy <id> ... m under this game's ground` names them (allowed in the lab).
-* Ticket: BUG-0399
-
 ## Creature: the guest's own creature under the terrain after the species swap (2026-11-01, feat/w32-monitor-diag)
 <a id="issue-creature-own-under"></a>
 
@@ -1447,6 +1441,10 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   0.94 m under the terrain (own trace line `agl=-0.94`) in one warm creature test on lane 6.
 * Reproduce: not reliably; the lab's ground rule reports it (allowed in the lab).
 * Ticket: BUG-0400
+* Fixed (2026-11-01, fix/w33-unlocks): not the swap. The `team` test's `coop.npc gopos` to host x + 1.5 m
+  (a chord of the planet, 0.5 m nearer its centre there) put the creature under the terrain, where the
+  game leaves a grounded creature; gopos now puts it onto the ground (`tools.gopos_ground`), the lab
+  allowance is gone.
 
 ## Creature: the host's part unlocks never reach the guests (2026-11-01, feat/w32-monitor-diag)
 <a id="issue-creature-unlocks-sync"></a>
@@ -1493,3 +1491,59 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   the stops; on a slope it may play the fall animation for 0.2 s there.
 * Reproduce: puppet_walk prints the stops (`stops: N, drawn past the stop by more than 0.3 m in M`).
 * Ticket: BUG-0408
+* Fixed (2026-11-01, fix/w33-unlocks): the party shares its collected parts (`parts.shared`, test
+  `parts_shared`).
+
+## Cell: editor_desync, the guest finds no mate after the host's evolution (2026-11-01, fix/w33-unlocks)
+<a id="issue-cell-guest-mate-after-evolution"></a>
+
+* What happens: after the host evolved its cell (vote, editor), the guest's mating call shows the button
+  but no mate comes (`mate=00000000`), so the guest's own cell editor does not open.
+* Reproduce: `tools/lab.py run editor_desync --lane 6` (4 of 4 on 2026-11-01, also on main f0cf695).
+* Ticket: BUG-0411
+
+## Creature: a vote during the evolution's cinematic leaves the host in an editor without buttons (2026-11-01, feat/w33-tests-creature)
+<a id="issue-vote-during-evolution-cinematic"></a>
+
+* What happens: right after a vote's editors were left, the host's game plays the evolution cinematic
+  F4F96E43. A second vote started then (`coop.vote editor` + the guest's ready) took both games into their
+  editors; the guest left with "done", the host's editor had no buttons (no "done", no top bar), the cinematic
+  stayed "playing" with the input lock on, and the host's game stayed in the editor for minutes.
+* Reproduce: creature fixture, `coop.vote editor`, the guest's ready, "done" on both, and at once the same again
+  (coop_editor_soak.py before it waited for the cinematic).
+* Known: the creature stage's cinematic does not end in the editor mode; a deferred creature removal waits for it.
+* Not checked: whether a player can start a vote during this cinematic (the mating call, a guest's vote).
+* Ticket: BUG-0404
+
+## Creature: the partner's creature pops 1 m away and back when it uses an ability (2026-11-01, feat/w33-tests-creature)
+<a id="issue-puppet-ability-pop"></a>
+
+* What happens: a guest at 30 fps over the `player` network sees the host's standing creature drawn ~1 m off for
+  0.13 s and back while the host uses an ability (its animation 02481DE5).
+* Reproduce: `puppet_fight_player` (coop_puppet_fight.py with SPORE_FPS=guest:30 SPORE_NET=player): `drawn jumps
+  within the bound` fails, 2 of 2 runs.
+* Not checked: which abilities, whether the frame cap or the network is needed.
+* Resolved (2026-11-01, fix/w34-ability-pop): not an ability. The steps were out of the observer's view (the
+  game puts a creature outside the view on the plain terrain, under a nest mound); the test now judges what is on
+  screen. What remains visible: [issue-puppet-mound-entry](#issue-puppet-mound-entry) (BUG-0434).
+* Ticket: BUG-0414
+
+## Creature: the partner's creature on a nest mound is drawn 1 m low for one frame when it comes into view (2026-11-01, fix/w34-ability-pop)
+<a id="issue-puppet-mound-entry"></a>
+
+* What happens: the partner stands on the raised ground of a nest mound (up to 1 m over the plain terrain); when
+  the observer turns its camera so that the partner's creature comes into view, its first frame is drawn on the
+  plain terrain (up to 1 m low), the next one on the mound.
+* Reproduce: docs/tickets BUG-0434 (the host on the fixture's nest mound, the guest turning its camera);
+  coop_puppet_fight.py prints these steps as `entry`.
+* Known: the game puts every creature of ours outside the view on the plain terrain; writes at the mod's frame
+  cannot keep it up (docs/re/creature.md#creature-out-of-view-ground).
+* Ticket: BUG-0434
+
+## Creature: on the lower part of a nest mound the partner's creature stands 0.4 m in the ground (2026-11-01, fix/w34-ability-pop)
+<a id="issue-puppet-mound-sink"></a>
+
+* What happens: a partner standing 0-0.5 m over the plain terrain on a mound is drawn 5 cm into the plain terrain,
+  i.e. up to 0.45 m under the mound's surface; crossing 0.5 m it steps 0.4-0.5 m up or down.
+* Cause: `creature.puppet_ground` takes the plain terrain (`GetHeightAt`, without the mound) as the ground.
+* Ticket: BUG-0435

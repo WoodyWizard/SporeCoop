@@ -253,6 +253,13 @@ void hit(void* c, float dmg, int type, void* attacker)
     h_TakeDamage((uint8_t*)c + kCombatOff, dmg, attacker ? political_id(attacker) : 0xFFFFFFFFu, type, &push,
                  attacker ? (uint8_t*)attacker + kCombatOff : nullptr);
 }
+
+void hit_push(void* c, float dmg, int type, void* attacker, const net::Vec3& p)
+{
+    Vector3 push{p.x, p.y, p.z};
+    h_TakeDamage((uint8_t*)c + kCombatOff, dmg, attacker ? political_id(attacker) : 0xFFFFFFFFu, type, &push,
+                 attacker ? (uint8_t*)attacker + kCombatOff : nullptr);
+}
 static uintptr_t a_PlayAnim, a_PlayAnimTo;
 static AnimListener g_anim_listener;
 static bool g_in_puppet_anim;
