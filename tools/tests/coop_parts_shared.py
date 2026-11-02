@@ -91,15 +91,27 @@ def cinematic(con):
     return m.group(1) if m else None
 
 
+CAPTION_OK = (1410, 1048)  # the green check of a caption that waits for the player (coop_campaign.py)
+
+
 def wait_no_cinematic(host, guest, t=90):
     """a vote while the host's game plays a cinematic opens an editor that never draws (BUG-0404, fixed on
-    fix/w34-vote-cinematic): after Cell -> Creature the evolution's and the brain upgrade's cinematics come
-    after the editors; a player starts the next vote once they are over"""
+    fix/w34-vote-cinematic). After Cell -> Creature the host's game shows the stage's intro (cinematic
+    0A34E41F, "It is the beginning of a new day...") and waits for its green check; a player reads it and
+    clicks it (after 6 s, then every 10 s, as coop_campaign.py does) before starting the next vote"""
     t0 = time.time()
+    last = 0.0
     while time.time() - t0 < t:
-        c = cinematic(host) or cinematic(guest)
-        if not c:
+        playing = [(con, c) for con, c in ((host, cinematic(host)), (guest, cinematic(guest))) if c]
+        if not playing:
             return True
+        if time.time() - t0 >= 6 and time.time() - last >= 10:
+            last = time.time()
+            for con, c in playing:
+                print(f'  cinematic {c} plays: its check clicked like a player', flush=True)
+                con.call(f'move {CAPTION_OK[0]} {CAPTION_OK[1]}')
+                time.sleep(0.4)
+                con.call(f'click {CAPTION_OK[0]} {CAPTION_OK[1]}')
         time.sleep(2)
     print(f'  (a cinematic still plays after {t} s: {cinematic(host)} / {cinematic(guest)})', flush=True)
     return False
