@@ -10,7 +10,7 @@ role: host
 versions: main f0cefbaa (0.7.3.4 rc)
 fixed_in: unreleased
 branch: fix/w37-vote-leaver
-commits: 8ca6a86b, COMMIT_VOTE
+commits: 8ca6a86b, 29074770
 tests: vote_net_4p, party, vote
 signature:
 docs: docs/06-testing.md#testing-busy-gate
