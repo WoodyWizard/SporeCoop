@@ -59,6 +59,15 @@ def loggates_cases():
     check(loggates.allowed(f, a)['ticket'] == 'BUG-0002', 'loggates: an allow matches its stage and kind only')
     fails, notes = loggates.verdict([f], a[:1])
     check(fails and not notes, 'loggates: a finding no allow covers fails')
+    # BUG-0448: the frame that opens an editor is a hitch of the stage it leaves, logged just before
+    # the stage line (vote_net_4p 20261101-223011); the same hitch 3 s before the switch is a stall
+    def hitches(gap):
+        lines = loggates.timed(['12:00:00.000 x coop: stage: Galaxy -> Creature 68AC222A',
+                                '12:01:00.000 x coop: perf: hitch 2522 ms (Creature)',
+                                '12:01:%06.3f x coop: stage: Creature 68AC222A -> Editor 68AC222A' % gap], 1e9)
+        return [x for x in loggates.scan(lines, 'host') if x['gate'] == 'hitch']
+    check(not hitches(0.029), 'loggates: a hitch 29 ms before a stage line is the switch, not a stall')
+    check(len(hitches(3.0)) == 1, 'loggates: a hitch 3 s before a stage line still fails')
     m = loggates.monitor_findings('x\nMONITOR-VIOLATION puppet guest: not shown\n')
     check(len(m) == 1 and m[0]['kinds'] == ['puppet'], 'loggates: monitor lines are findings of the monitor gate')
 

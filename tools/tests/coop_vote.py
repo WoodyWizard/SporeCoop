@@ -72,8 +72,17 @@ def main():
     ck('evolved the species' in st, 'everybody is told about the evolution')
     ck(re.search(r"remote 0 'Alice' puppet=[0-9A-F]{8} ", st) and 'puppet=00000000' not in st.split("remote 0")[1][:40],
        'the guest got the evolved world and sees the host again')
-    gav = re.search(r'key=0x([0-9A-F]{8})', guest.call('coop.avatar')['out'])
-    g_now = re.search(r'mine creature: ([0-9A-F]{8})', guest.call('coop.creations')['out'])
+    # the world share after the evolution waits for the evolution's cinematic on the host (BUG-0404), the
+    # guest then reloads and gets its own body 3 s after the load: wait for it, up to 60 s more
+    # (lab 20261101-223733: the reload came 21 s after "evolved the species", BUG-0447)
+    t0 = time.time()
+    while True:
+        gav = re.search(r'key=0x([0-9A-F]{8})', guest.call('coop.avatar')['out'])
+        g_now = re.search(r'mine creature: ([0-9A-F]{8})', guest.call('coop.creations')['out'])
+        if (gav and g_now and gav.group(1) == g_now.group(1)) or time.time() - t0 > 60:
+            break
+        time.sleep(2)
+    print(f'  (the guest\'s own body after {time.time() - t0:.0f} s more)')
     print(f'  guest own creature {g_own} -> {g_now and g_now.group(1)}, avatar {gav and gav.group(1)}')
     ck(gav and g_now and gav.group(1) == g_now.group(1), 'after the evolution the guest still plays its own creature')
     hp = re.search(r"remote 1 'Bob'.*\n.*species=([0-9A-F]{8})", host.call('coop.status')['out'])
