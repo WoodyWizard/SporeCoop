@@ -1558,3 +1558,70 @@ BUG-0443 (the host's screenshot of the "eggs flying mid air" report). GOG 2024, 
   (state 5 / 6) within 60 m of its avatar; one that did not move for two checks and lies more than 0.3 m
   over the surface is put onto it with cEgg_SnapToGround (what the game does to the avatar's eggs and to
   every egg at its hatch).
+
+## Creature effects relay (2026-11-02, fix/w38-effects)
+<a id="creature-effects-relay"></a>
+
+BUG-0451: a player's creature made effects (the mating call, ability particles, ...) that only that
+player saw; the partner's puppet played the relayed animation but no effect. The owner's screenshots:
+hearts over the host's red creature (`out/hearts_host.png`), none over the host's puppet on the guest
+(`out/hearts_guest.png`).
+
+### Where the game makes a creature's effects
+
+Two game functions make every effect on or at a creature (GOG 2024):
+
+* **`Simulator::cCreatureBase::CreateEffect` 0xC150D0** (thiscall(creature, int bone, u32 effect id,
+  u32 unused) ret 0xC -> effect*): a one-shot effect. It calls `Swarm::IEffectsManager::Get()` vt 0x2C
+  (`Swarm::cEffectsManager::CreateEffect` 0xA6CAD0 -> `Swarm::EffectWorld::CreateEffect` 0xA71300),
+  sets the effect's transform to the creature's model (+0xC0) position (vt 0x2C) and rotation (vt 0x30),
+  starts it (effect vt 8) and, when bone != -1, attaches it to that bone (`0x9CB230` / `0x9CA970`).
+  Callers for the player's creature: the ability/social code (`0xC155D0`, `0xC17DE0`, `0xC17E20`,
+  `0xC17EC0`) and the creature-stage action handlers (`0xD75F70`, `0xD812C0`, `0xD8ECB0`).
+* **The two effect pools** (persistent effects the creature keeps): pool 1 map at +0xCC8,
+  `CreateEffectForPool1` 0xC1D3F0 and `CreateEffectForPool1Renamed` 0xC1D280; pool 2 map at +0xD68,
+  `CreateEffectForPool2Renamed` 0xC1D5C0; `StartOrStopEffectFromPool1/2` 0xC20300 / 0xC1D740 start or
+  stop by key; `StopEffectFromPools` 0xC174B0 stops a key (effect vt 0xC).
+
+Effects created by the **animation system** of an animation the puppet plays are made by the guest's
+own game (`FUN_009FBF00` -> effect world, and the manager for animation events): the animation relay
+(MSG_ANIM, `on_remote_anim`) already shows those on the puppet. Measured on the creature fixture: the
+footstep puffs (`2D4ADB36`) and the mating call's green ring (the `E699F6E4` copied from the effect
+object's name `CRG_growUp_brainUp` was the brain-upgrade effect; the ring came through the animation
+event path) were created on the guest before any effect relay. The **hearts** were not: the mating call
+creates `E1B24DDB` (bone 9) through 0xC150D0 on the host's avatar only, and the pack members make
+`4EC6CD85` through the same function (not the player's own creature, so not relayed).
+
+### The relay (mods/coop/effects.cpp, game.cpp)
+
+* The game hooks report every effect of `CreateEffect` (pool 3, key = bone) and of the pool creators
+  and `StopEffectFromPools` (pool 1 / 2, key = pool key) for a creature. effects.cpp sends one only
+  when the creature is the **local avatar** (`game::avatar()`, not a puppet, so a relayed effect is
+  never echoed) and the session is connected: `MSG_EFFECT 61` = u8 player, u8 stop, u8 pool, u32 effect
+  id, u32 key. The host relays a guest's message to the other guests. Rate limit 40/s (token bucket),
+  a stop is sent only for a key this game sent a start for (the game stops some keys every frame).
+* The receiver calls the **same game function** on the partner's puppet: pool 3 ->
+  `CreateEffect(puppet, bone, id, 0)` (the game puts it at the puppet's model and bone); pool 1 / 2 ->
+  `StartOrStopEffectFromPool1/2(puppet, 1, id, key)`. No per-effect list.
+* Switch: `coop.fix creature.effects_relay off` (COOP_FIX, BUG-0451); counters and the last sent /
+  received effect in `coop.effects` and `coop.status`; `coop.effects map` dumps the puppets' pool maps,
+  `coop.effects probe <key>` asks the game's pool, `coop.effects log on` logs the hooks.
+
+### What was measured (creature fixture, lane 2, 2026-11-02)
+
+| effect | made on the actor by | partner before | partner after |
+|---|---|---|---|
+| mating call, hearts/call effect `E1B24DDB` bone 9 (host) | 0xC150D0 | no (only the animation) | yes, game effect active at the puppet (0.47 m) |
+| the same from the guest (bone 0x11) | 0xC150D0 | no | yes (0.11 m) |
+| guest join greeting `E1A4BD93` | 0xC150D0 | yes: the greeting animation is relayed and the guest's own animation event makes the effect on the puppet | yes (this module does not duplicate it) |
+| pack members' `4EC6CD85` | 0xC150D0 on herd members, not the avatar | no | no: not the player's own creature |
+| persistent effect pool 2 `D7BE955C` (the guest's own creature after the join) | pool 2 | no | yes (`StartOrStopEffectFromPool2` on the puppet) |
+| footstep puffs `2D4ADB36` / animation-event effects | `FUN_009FBF00`, animation event | yes (the animation is relayed) | yes, still once (not in this relay) |
+| level-up / brain upgrade `E699F6E4` | the guest's own game too (it gets the DNA) | yes | yes |
+
+Cells, Tribe, Civ and Space are not covered by this module. The Cell stage has its own one-shot
+effect path (`Simulator::Cell::cCellGFX::InstanceEffectOnCell` 0xE66840) and its own mirror map
+(cellsync's host index -> mirror, the partner's puppet cell); relaying it needs that map (not done
+here). The Cell death / knockout / hatch effects already replay on the partner's cell in cellsync for
+the events it handles. Tribe, Civ and Space effects belong to their stage modules (tribe.cpp, civ.cpp,
+squadron.cpp, spacecoop.cpp); they were not measured here and are not in this relay.

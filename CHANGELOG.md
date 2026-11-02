@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Fixed
+- Creature: the effects a player's own creature makes (the mating call's hearts, social and ability
+  particles, ...) were made only in that player's game, so the other players saw the animation on the
+  puppet but no effect. They are relayed and played on the partner's puppet with the game's own effect
+  functions (`coop.fix creature.effects_relay off` restores the old behaviour; BUG-0451).
+
 ## [0.7.3.4] - 2026-11-02
 
 ### Added
