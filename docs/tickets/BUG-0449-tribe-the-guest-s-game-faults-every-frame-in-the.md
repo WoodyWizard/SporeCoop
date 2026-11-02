@@ -1,7 +1,7 @@
 ---
 id: BUG-0449
 title: Tribe: the guest's game faults every frame in the physics update at 0xB4C5B4 (a body with no owner; dc04aee5:SporeApp.exe+0x74C5B4)
-status: open
+status: fixed
 kind: crash
 stage: tribe
 reported: 2026-11-01
@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.3.3
 fixed_in:
 branch: fix/w37-tribe-fault
-commits:
+commits: 03aa8d9c fc77189e 81c2f03f
 tests: physics_orphan (tools/tests/coop_physics_orphan.py), tribe_walk
 signature: dc04aee5:SporeApp.exe+0x74C5B4
 docs: docs/re/tribe.md#tribe-physics-orphan
@@ -56,8 +56,20 @@ owner that nothing refers to (the observed state; a slot past the pool's high wa
 does).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+physics_orphan (tools/tests/coop_physics_orphan.py, guest in Tribe, the stand-in of the observed body):
+* FAIL with `SPORE_FIX_OFF=game.physics_owner`: out/lab/20261101-225013 (lane 9, 2 of 2): the guest faults
+  at 0x00B4C5B4 data 0x75 in every frame (143 and 141 faults), call chain 00B4C6F1 00B5D229 00CDF46C ... as
+  in the report.
+* PASS with the fix: out/lab/20261101-225038 (lane 10, 2 of 2): 0 faults, one body left out each run.
+* An earlier stand-in (owner taken off a body its owner still refers to) faulted elsewhere first (0xB3DD60,
+  out/lab/20261101-224546) and was replaced.
+* Not reproduced naturally: tribe_walk x6 on main f0cefbaa, out/lab/20261101-223231 (0 faults).
+* Regression (lanes 9/10, fix on, 0 faults anywhere, the guard never fired on its own):
+  tribe_walk x5 out/lab/20261101-225322 (4/5; #2 failed on the host's minimap calibration, no host walk:
+  the known test flake of BUG-0365/BUG-0397), tribe_coop x2 out/lab/20261101-230117 (2/2),
+  tribe_walk_player, tribe_mirror_ground, npc_walk_tribe, chaos_tribe out/lab/20261101-230308 (4/4),
+  smoke out/lab/20261101-230838 (13/13, unit's lab selftest rows are its own expected fails). make test OK.
 
 ## History
-- 2026-11-01: opened.
+- 2026-11-01: opened from the 0.7.3.4 verification run; contained behind game.physics_owner on
+  fix/w37-tribe-fault (the cause of the ownerless body stays unknown).
