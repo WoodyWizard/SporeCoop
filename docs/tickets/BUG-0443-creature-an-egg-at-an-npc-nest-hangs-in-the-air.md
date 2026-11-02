@@ -60,6 +60,9 @@ guest's copy lies on its surface.
   surface, the lifted one 2.43 m for 10 s; screenshot air_host: a green egg hanging in the air next to the nest).
 * PASS: out/lab/20261101-184507 (lane 4, 2/2: laid eggs 0.0-0.05 m, the lifted one on the surface 1 s
   later, both eggs in the nest bowl on the screenshot).
+* Regression (lane 4, gates on): out/lab/20261101-184846: nest_eggs, puppet_walk, puppet_slope, creature,
+  team and the smoke suite 16/17 OK; unit failed on re_lint (the new symbol had no GOG 2016 frozen-off
+  line), fixed (data/symbols/frozen_off_922af7c7.txt), `make test` passes after that.
 
 ## History
 - 2026-11-01: opened.
