@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: lab: tribe_walk, out/lab/20261101-204356 (lane 6)
 role: guest
 versions: 0.7.3.3
-fixed_in:
+fixed_in: unreleased
 branch: fix/w37-tribe-fault
 commits: 03aa8d9c fc77189e 81c2f03f
 tests: physics_orphan (tools/tests/coop_physics_orphan.py), tribe_walk
