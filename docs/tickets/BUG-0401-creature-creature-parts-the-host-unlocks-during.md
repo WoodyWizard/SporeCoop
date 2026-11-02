@@ -57,3 +57,4 @@ the host in 1 s, the guest's own editor 56 of 312 available and 256 locked, afte
 - 2026-11-01: opened.
 - 2026-11-01: fix/w33-unlocks: the party shares its collected parts (parts.shared); fixed (unreleased).
 - 2026-11-02: released in 0.7.3.4.
+- 2026-11-02 (0.7.3.4, guest's mark): after a crash and a reload of the host's older save the guest kept parts it had unlocked later ('parts I didn't unlock'): parts are a union that is never taken away; by design for now, revisit with save-bound parts.
