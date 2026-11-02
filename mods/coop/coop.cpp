@@ -4793,32 +4793,27 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                        }
                        void* items = skg::field<void*>(req, 0x94);
                        void* mine = collected_parts();
-                       // the palette's rule (0x5C6820): available = no items object, or the item unlocked;
-                       // counted over the unlockable items (the map at +0x1490 of the collected parts)
-                       int unlockable = 0, locked = 0;
-                       uintptr_t is_unlocked = H->sym("Simulator::cCollectableItems::IsUnlocked");
-                       void* src = items ? items : mine;
-                       if (src && is_unlocked && skg::readable((char*)src + 0x1490, 8)) {
-                           void** b = skg::field<void**>(src, 0x1490);
-                           uint32_t n = skg::field<uint32_t>(src, 0x1494);
-                           for (uint32_t i = 0; b && n < 100000 && i < n && skg::readable(b + i, 4); i++)
-                               for (uint32_t* nd = (uint32_t*)b[i]; nd && unlockable < 100000; nd = (uint32_t*)nd[10]) {
-                                   if (!skg::readable(nd, 0x2C))
-                                       break;
-                                   unlockable++;
-                                   if (items && !skg::thiscall<bool>(is_unlocked, items, nd[0], nd[1]))
-                                       locked++;
-                               }
+                       // the palette's rule (0x5C6820): available = no items object, or the item unlocked
+                       // (IsUnlocked); counted over the unlockable items of the collected parts (parts::census:
+                       // the map at +0x1490 and, BUG-0441, the item states)
+                       int unlockable = 0, locked = 0, avail = 0;
+                       uint32_t avail_hash = 0;
+                       if (items && parts::census(avail, avail_hash, unlockable, nullptr, nullptr, items))
+                           locked = unlockable - avail;
+                       else if (!items && mine && parts::census(avail, avail_hash, unlockable, nullptr, nullptr, mine)) {
+                           avail = unlockable; // no items: every part offered
+                           avail_hash = 0;
                        }
-                       SAY("editor %08X key %08X request %p items %p collected %p unlockable %d locked %d (own editor items set %u)\n",
+                       SAY("editor %08X key %08X request %p items %p collected %p unlockable %d locked %d (own editor items set %u) "
+                           "available=%d:%08X\n",
                            skg::field<uint32_t>(req, 0xC), skg::field<uint32_t>(req, 0x10), req, items, mine, unlockable,
-                           locked, g_own_editor_items_set);
+                           locked, g_own_editor_items_set, avail, avail_hash);
                        return 0;
                    },
                    nullptr, MT);
-    H->command_add(M, "coop.parts", "coop.parts [unlock <n>|find <level>] - the collected creature parts as the trace's parts= field counts them; "
+    H->command_add(M, "coop.parts", "coop.parts [unlock <n>|find <level>|keys|states] - the collected creature parts as the trace's parts= field counts them; "
                    "unlock <n>: unlock n locked ones in this game only (tests: a player's unlock the other games miss); "
-                   "find <level>: the game's own 'a part was found' (a skeleton's reward, BUG-0401)",
+                   "find <level>: the game's own 'a part was found' (a skeleton's reward, BUG-0401); keys: the unlocked unlockable keys; states: every item state (BUG-0441)",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
                        std::vector<std::pair<uint32_t, uint32_t>> locked;
                        int n = 0, all = 0, done = 0;
@@ -4826,6 +4821,10 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                        if (!parts_census(n, h, all, &locked)) {
                            SAY("no collected parts (no cPlayer)\n");
                            return 1;
+                       }
+                       if (argc > 1 && (!strcmp(argv[1], "keys") || !strcmp(argv[1], "states"))) {
+                           SAY("%s", parts::dump(argv[1]).c_str());
+                           return 0;
                        }
                        if (argc > 2 && !strcmp(argv[1], "unlock")) {
                            // cCollectableItems::UnlockPart(key, cost 0), as when the player finds the part

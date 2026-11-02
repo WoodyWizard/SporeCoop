@@ -15,10 +15,24 @@ own editor palette (`coop.editor`: the parts its palette shows locked, BUG-0368'
   4. the guest leaves and joins again (the host's world is saved and loaded again): the guest still
      has every part of the party.
 
+--from-cell (BUG-0441, suite `parts_transition`): the two players start in the `cell` fixture and the host
+changes Cell -> Creature the players' way (coop_campaign.py Campaign.advance: the food bar, History and
+its check, the guest's real "I'm ready", the editors left with "done"); first
+  0. within 10 s of the guest playing Creature its collected parts are the host's (count and hash); the
+     live start from Cell added 12 creature twins of Cell parts to the host's unlockable map
+     (docs/re/creations.md#creations-cell-twins), the guest's loaded world has them only in its item
+     states;
+then 1-4 as above, and in 3 the guest's own editor offers exactly the host's parts (the palette's check,
+the same hash).
+
 Runs that must FAIL: SPORE_FIX_OFF=parts.shared (each game keeps its own parts: 1 and 2 time out, the
-rejoin loses the guest's find)."""
+rejoin loses the guest's find); --from-cell with SPORE_FIX_OFF=parts.census_states (0: the guest counts 6
+parts fewer, the host's twins)."""
+import argparse
+import random
 import re
 import time
+from types import SimpleNamespace
 
 import lane
 from coop_ui import Ui
@@ -72,9 +86,46 @@ def editor_locked(con):
     return out, (int(m.group(1)), int(m.group(2))) if m else None
 
 
+def editor_offers(out):
+    """the parts the open editor's palette offers (its check 0x5C6820 over every item): count, hash"""
+    m = re.search(r'available=(\d+):([0-9A-F]{8})', out)
+    return (int(m.group(1)), m.group(2)) if m else (None, None)
+
+
+def from_cell(ck):
+    """BUG-0441: Cell -> Creature the players' way (as transition_net), then the parts of both games"""
+    from coop_campaign import Campaign, Player
+    host, guest = start('cell')
+    players = [Player('Alice', lane.HOST), Player('Bob', lane.GUEST, lane.JOIN)]
+    seed = random.randrange(1 << 30)
+    ca = SimpleNamespace(start='cell', end='creature', minutes=0, advance_minutes=None, players=2, noise=0.0,
+                         rejoins=False, finale=False, finale_from_galaxy=False, jump=False, seed=seed)
+    camp = Campaign(ca, players, lane.out_dir('parts_transition', time.strftime('%Y%m%d-%H%M%S')), seed)
+    camp.ids()
+    t0 = time.time()
+    ok = camp.advance('cell')
+    ck(ok, f"the host changed Cell -> Creature the players' way and the guest followed ({time.time() - t0:.0f} s)")
+    ck('Creature' in mode(guest) and guest.call('coop.avatar')['ok'], f"the guest plays Creature with an avatar ({mode(guest)})")
+    ok, ph, pg, dt = wait_same(host, guest, 10)
+    print(f'  after the transition ({dt:.0f} s): host {ph}, guest {pg} | guest sync: {sync_line(guest)}', flush=True)
+    ck(ok, f"within 10 s of the transition the guest's collected parts are the host's (guest {pg[0]}:{pg[1]} of {pg[2]}, "
+           f"host {ph[0]}:{ph[1]} of {ph[2]})")
+    for it in camp.F.items:
+        if it['kind'] != 'info':
+            print(f'    finding [{it["kind"]}] {it["stage"]}: {it["text"]}', flush=True)
+    ck(not [it for it in camp.F.items if it['kind'] != 'info'], 'no campaign finding (dead game, crash, freeze, fault)')
+    return host, guest
+
+
 def main():
-    host, guest = start('creature')
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--from-cell', action='store_true', help='start in Cell, change to Creature the players\' way (BUG-0441)')
+    a = ap.parse_args()
     ck = Checks()
+    if a.from_cell:
+        host, guest = from_cell(ck)
+    else:
+        host, guest = start('creature')
     ck(guest.call('coop.avatar')['ok'], 'the guest is in the host world')
     h0, g0 = parts(host), parts(guest)
     print(f'  start: host {h0}, guest {g0}', flush=True)
@@ -106,6 +157,7 @@ def main():
     # 3. the guest's own editor offers the party's parts, and locks the rest (BUG-0368)
     gu = Ui(guest, 'guest')
     m0 = mode(host)
+    party = parts(host)  # the party's set (the host's game holds it) before the editors
     print(' ', host.call('coop.vote editor')['out'].strip())
     time.sleep(2)
     gu.wait(lambda s: s['ready']['vis'], 10, 'ready button')
@@ -125,6 +177,9 @@ def main():
         ck(locked == unlockable - union,
            f"the guest's palette offers the party's {union} parts: {unlockable - locked} of {unlockable} available")
         ck(locked > 0, f'the guest\'s palette still locks the parts nobody found ({locked}, BUG-0368)')
+        off = editor_offers(out)
+        ck(off == party[:2], f"the guest's palette offers the host's parts, the same ones ({off[0]}:{off[1]}, host "
+                             f"{party[0]}:{party[1]})")
     host.call('click %d %d' % DONE)
     t0 = time.time()
     while time.time() - t0 < 60 and mode(host) != m0:
