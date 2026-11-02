@@ -417,6 +417,7 @@ add('trace_log', P + 'coop_trace_log.py', minutes=6)  # support logging: trace /
 
 
 # session paths under the conditions of real players (feat/w33-tests-session, docs/06-testing.md#testing-session-paths)
+add('tod_early', P + 'coop_tod_early.py', minutes=2)  # BUG-0433: a session hosted before the main menu (game mode 0) does not crash in the time-of-day send (SPORE_FIX_OFF=core.tod_guard fails)
 add('latency_step_ingame', 'SPORE_NET="delay=30,jitter=5" ' + P + 'coop_latency_step.py', minutes=5)  # one-way delay 30 -> 300 -> 30 ms while the partner walks: the drawn puppet moves in steps / jumps for at most 5 s in a row (BUG-0133 in the game; SPORE_FIX_OFF=net.offset_window fails)
 add('transition_net', 'SPORE_NET=player SPORE_FPS=guest:30 ' + P + 'coop_transition_net.py',
     ('nightly',), minutes=20, timeout=45 * 60,

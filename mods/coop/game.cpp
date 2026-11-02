@@ -984,8 +984,21 @@ void dna_add_raw(float delta)
 
 void set_dna_listener(DnaListener fn) { g_dna_listener = fn; }
 
+// BUG-0433: TimeOfDay_Unavailable (= Simulator::GetCurrentContext, [[SpacePlayerData]+0x10]) reads the
+// game's SpacePlayerData, which does not exist before the game reaches its main menu: a session hosted then
+// (game mode 0) crashed in the host's once-a-second time-of-day send (on_frame -> time_of_day). Off: the
+// read as before (the test coop_tod_early.py crashes the host).
+static bool g_tod_guard_fix = true;
+COOP_FIX("core.tod_guard", "BUG-0433", g_tod_guard_fix,
+         "core: no time-of-day read or write while the game has no SpacePlayerData yet (before the main menu)");
+
 static void* tod_object()
 {
+    if (g_tod_guard_fix) {
+        uintptr_t spd = H->sym("Simulator::SpacePlayerData::ptr");
+        if (!mode_id() || !spd || !*(void**)spd)
+            return nullptr;
+    }
     uintptr_t un = H->sym("SporeCoop::TimeOfDay_Unavailable"), get = H->sym("SporeCoop::TimeOfDay_GetObject");
     if (!un || !get || cdecl_call<int>(un) != 0)
         return nullptr;
