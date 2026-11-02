@@ -5,6 +5,7 @@
 #include <atomic>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <string>
 
 #include "fixes.h"
@@ -327,9 +328,10 @@ COOP_FIX("game.physics_owner", "BUG-0449", g_phys_owner_fix,
          "gamefixes: a physics body without an owner is left out of the physics update (the game faulted on it in every frame)");
 constexpr uint32_t kBodySize = 0x138, kBodyKindOff = 0x4, kBodyOwnerOff = 0x40, kBodyKindSkip = 3;
 static std::atomic<unsigned> g_phys_orphans{0}, g_phys_scans{0};
-static std::atomic<bool> g_phys_test{false}; // tests: the next update first takes the owner off one body
+static std::atomic<bool> g_phys_test{false}; // tests: the next update first gets a body without an owner
 
 struct BodyPool {
+    uint32_t* f; // the pool's fields (+0 base ... +0x18 capacity)
     uint8_t* base;
     uint32_t head, count, high, size, cap;
 };
@@ -339,27 +341,32 @@ static bool body_pool(BodyPool& p)
     uint8_t* w = g_phys_world && readable((void*)g_phys_world, 4) ? *(uint8_t**)g_phys_world : nullptr;
     if (!w || !readable(w + 0x3C, 7 * 4))
         return false;
-    const uint32_t* f = (const uint32_t*)(w + 0x3C);
-    p = {(uint8_t*)(uintptr_t)f[0], f[1], f[3], f[4], f[5], f[6]};
+    uint32_t* f = (uint32_t*)(w + 0x3C);
+    p = {f, (uint8_t*)(uintptr_t)f[0], f[1], f[3], f[4], f[5], f[6]};
     return p.base && p.size == kBodySize && p.high <= p.cap && p.cap <= 0x10000 &&
            readable(p.base, (size_t)p.high * p.size);
 }
 
 static bool body_live(const BodyPool& p, uint32_t i) { return (*(uint32_t*)(p.base + (size_t)i * p.size) & 0xFFFF) == i; }
 
-// tests: a live body of kind 0 loses its owner, as the one the guest's game faulted on
-static void make_orphan(const BodyPool& p)
+// tests: a live body of kind 0 without an owner that no owner refers to, as the one the guest's game faulted
+// on: the next slot past the pool's high water made live as cObjectPool_::CreateObject does (zeroed, handle
+// generation << 16 | index), kind 0, owner 0. No hash entry or broadphase proxy knows it (one slot is lost).
+static void make_orphan(BodyPool& p)
 {
-    for (uint32_t i = p.high; i-- > 0;) {
-        uint8_t* e = p.base + (size_t)i * p.size;
-        if (!body_live(p, i) || at<int>(e, kBodyKindOff) != 0 || !at<void*>(e, kBodyOwnerOff))
-            continue;
-        H->log(M, SK_WARN, "game fixes: tests: physics body %u (owner %p) has no owner now (BUG-0449)", i,
-               at<void*>(e, kBodyOwnerOff));
-        *(void**)(e + kBodyOwnerOff) = nullptr;
+    uint32_t i = p.high;
+    if (i >= p.cap || !readable(p.base + (size_t)i * p.size, p.size)) { // (count and high go up together: free slots stay)
+        H->log(M, SK_WARN, "game fixes: tests: no slot for a physics body without an owner (count %u high %u cap %u)", p.count,
+               p.high, p.cap);
         return;
     }
-    H->log(M, SK_WARN, "game fixes: tests: no physics body of kind 0 to take the owner off");
+    uint8_t* e = p.base + (size_t)i * p.size;
+    memset(e, 0, p.size);
+    uint32_t gen = ++p.f[2];
+    *(uint32_t*)e = gen << 16 | i;
+    p.f[3] = ++p.count;
+    p.f[4] = ++p.high;
+    H->log(M, SK_WARN, "game fixes: tests: physics body %u (word %08X, kind 0) made without an owner (BUG-0449)", i, *(uint32_t*)e);
 }
 
 static void __fastcall phys_update_guard(void* mgr, void*, uint32_t dt)
@@ -392,7 +399,7 @@ std::string arm_physics_orphan()
     if (!g_phys_orig)
         return "no physics update guard\n";
     g_phys_test = true;
-    return "armed: the next physics update takes the owner off a body of kind 0\n";
+    return "armed: the next physics update gets a body of kind 0 without an owner\n";
 }
 
 static bool patch_slot(uintptr_t* slot, uintptr_t value)

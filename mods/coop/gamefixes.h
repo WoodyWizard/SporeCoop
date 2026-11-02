@@ -17,7 +17,7 @@ std::string arm_leave_walk();
 // tests (BUG-0310): once armed, puts `citizen` through the guard in the first frame Tribe is left
 bool leave_walk_tick(void* citizen);
 bool leave_walk_armed(); // the stand-in is armed (the frame loop asks before walking the members)
-// tests (BUG-0449): the next physics update first takes the owner off a live body of kind 0
+// tests (BUG-0449): the next physics update gets a live body of kind 0 that no owner refers to and without an owner
 std::string arm_physics_orphan();
 
 } // namespace gamefixes

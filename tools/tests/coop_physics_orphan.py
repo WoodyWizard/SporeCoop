@@ -5,7 +5,8 @@ A guest in tribe_walk (out/lab/20261101-204356) faulted at 0xB4C5B4 in every fra
 test (1819 caught faults): the physics update (SporeCoop::PhysicsManager_Update) walks the body pool and
 reads each body's owner (+0x40) without a check, and one live body of kind 0 had none. How the game came
 to leave it so is not known (seen once in the lab), so this test puts the same state in directly
-(`coop.physorphan`: the next physics update first takes the owner off a live body of kind 0) on the
+(`coop.physorphan`: the next physics update gets a live body of kind 0 without an owner that no owner
+refers to, in the slot past the pool's high water) on the
 guest in Tribe, lets the game run, and asserts the game's own exception counter (`exc`) stays at 0 and
 the game keeps drawing frames. With the fix the guard leaves that body out of the update (kind 3).
 
@@ -31,10 +32,10 @@ def main():
     print('  physorphan:', out)
     ck(out.startswith('armed'), f'the guest has the physics update guard ({out})')
     t0 = time.time()
-    while time.time() - t0 < 60 and 'has no owner now' not in guest.call('log 200')['out']:
+    while time.time() - t0 < 60 and 'made without an owner' not in guest.call('log 200')['out']:
         time.sleep(1)  # the update runs only while the game time runs
-    taken = 'has no owner now' in guest.call('log 400')['out']
-    ck(taken, 'a live physics body of kind 0 lost its owner (as on the guest that faulted)')
+    taken = 'made without an owner' in guest.call('log 400')['out']
+    ck(taken, 'a live physics body of kind 0 without an owner (as on the guest that faulted)')
     out = guest.call('wait.frames 120 20000')['out'].strip()
     print('  wait.frames:', out)
     n1 = left_out(guest)

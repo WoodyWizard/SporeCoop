@@ -51,8 +51,9 @@ through the body pool before each update and gives a live body of kind 0/1 with 
 no physics loop handles (Update, 0xB46E10 and the contact check 0xB3FD80 skip any kind but 0..2). The rest
 of the world is updated again; the first 8 such bodies are logged with the pool's free head (the
 "freed twice" sign) for the next occurrence. GOG 2016 is frozen: the guard is off there
-(frozen_off_922af7c7.txt). Tests: `coop.physorphan` takes the owner off a live body of kind 0 in the next
-update (the observed state).
+(frozen_off_922af7c7.txt). Tests: `coop.physorphan` makes, in the next update, a live body of kind 0 with no
+owner that nothing refers to (the observed state; a slot past the pool's high water made live as CreateObject
+does).
 
 ## Verification
 <!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);

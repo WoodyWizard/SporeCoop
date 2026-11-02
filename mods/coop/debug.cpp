@@ -539,7 +539,7 @@ void coop_register_debug_commands2(const SkHost* host, SkMod* self)
                       c_deadmodal, nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.leavewalk", "tests (BUG-0310): the next citizen walked off-stage is a cleaned-up one",
                       c_leavewalk, nullptr, SK_CMD_MAIN_THREAD);
-    host->command_add(self, "coop.physorphan", "tests (BUG-0449): the next physics update takes the owner off a body of kind 0",
+    host->command_add(self, "coop.physorphan", "tests (BUG-0449): the next physics update gets a body of kind 0 without an owner",
                       c_physorphan, nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.save", "save the game (like the pause menu Save)", c_save, nullptr,
                       SK_CMD_MAIN_THREAD);

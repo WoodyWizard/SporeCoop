@@ -1149,4 +1149,6 @@ world pointer 0x167FB50). BUG-0449.
   itself (the slot then looks live to Iterate and the next two creates share it); the guard logs whether
   the pool's free head equals the slot. Not reproduced in 6+ tribe_walk runs on lanes 9/10.
 * The guard (`game.physics_owner`, mods/coop/gamefixes.cpp) gives such bodies kind 3 before each Update;
-  `coop.physorphan` (tests) takes the owner off a live body of kind 0 (coop_physics_orphan.py).
+  `coop.physorphan` (tests) makes a live body of kind 0 without an owner past the pool's high water, which no
+  owner refers to (coop_physics_orphan.py). Taking the owner off a body that an owner still refers to faults
+  elsewhere first: 0xB3DD60 (0xB3DCB0 via 0xB47FE0 from the dirty-object loops at 0xB4C55F).
