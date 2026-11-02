@@ -61,7 +61,30 @@ constexpr int kMaxSnap = 20;           // eggs per snapshot (49 bytes each, one 
 constexpr float kEggRelevance = 110.f; // m around a guest (the NPCs' relevance)
 constexpr double kSnapInterval = 1.0, kStale = 3.5;
 
-static uintptr_t a_NounGet, a_CreateInstance, a_DestroyInstance, a_SetState, a_Snap;
+static uintptr_t a_NounGet, a_CreateInstance, a_DestroyInstance, a_SetState, a_Snap, a_Surface, a_PlanetGet;
+
+// the surface under / over q on its radial line, as cEgg_SnapToGround finds it (the terrain or a collision
+// object over it: the nest mound, a rock; only where the collision is loaded, near the camera)
+static bool surface_at(const net::Vec3& q, net::Vec3& s)
+{
+    void* pm = a_PlanetGet ? cdecl_call<void*>(a_PlanetGet) : nullptr;
+    if (!pm || !a_Surface || !(q.x * q.x + q.y * q.y + q.z * q.z > 1.f))
+        return false;
+    float in[3] = {q.x, q.y, q.z}, o[3] = {0, 0, 0};
+    thiscall<float*>(a_Surface, pm, o, (const float*)in, 0);
+    s = {o[0], o[1], o[2]};
+    return s.x * s.x + s.y * s.y + s.z * s.z > 1.f;
+}
+
+// how far q is over the surface (negative: under it, e.g. inside the nest mound)
+static bool over_surface(const net::Vec3& q, float& os)
+{
+    net::Vec3 s;
+    if (!surface_at(q, s))
+        return false;
+    os = std::sqrt(q.x * q.x + q.y * q.y + q.z * q.z) - std::sqrt(s.x * s.x + s.y * s.y + s.z * s.z);
+    return true;
+}
 
 struct HostEgg {
     uint32_t id;
@@ -362,6 +385,68 @@ static void on_eat(uint8_t from, net::Reader& r)
         }
 }
 
+
+// ---------------------------------------------------------------- BUG-0443
+// An NPC egg has no gravity while it is asleep: the lay node puts it at the layer's position (cHerd_LayEgg
+// 0xC6D0B0, snapped onto the surface only for the avatar's eggs), it settles with the physics for a moment
+// and then stays where it is; an egg moved 2 m up stayed there until a creature came close and woke it
+// (docs/re/creature.md#creature-egg-gravity). An egg that ends up over the surface (laid by a layer in the
+// air, pushed up by a creature) hangs there on the host for minutes, and the guests' copies (nest.eggs,
+// snapped onto their own surface) lie on the ground: the player report "eggs flying mid air".
+// The host puts an NPC egg that hangs more than kHang over the surface (the terrain or the nest mound, as
+// cEgg_SnapToGround finds it) and has not moved for a second onto that surface with cEgg_SnapToGround, what
+// the game does to the avatar's eggs when they are laid and to every egg when it hatches. Only near the
+// host's avatar (kGroundNear): farther away the nest's collision is not loaded and the surface would be the
+// bare terrain under the mound. `coop.fix nest.egg_ground off`: they stay in the air (0.7.3.3).
+static bool g_ground_fix = true;
+COOP_FIX("nest.egg_ground", "BUG-0443", g_ground_fix, "creature: an NPC egg left hanging in the air on the host is put onto the ground");
+
+constexpr float kHang = 0.3f;        // m over the surface (settled eggs: 0.00-0.1, measured)
+constexpr float kGroundNear = 60.f;  // m from the host's avatar
+constexpr float kStill = 0.02f;      // m between two checks: asleep
+constexpr double kGroundInterval = 0.5;
+struct Still {
+    net::Vec3 pos{};
+    int n = 0;
+    double seen = 0;
+};
+static std::map<uint32_t, Still> g_still; // egg serial -> its last check
+static double g_last_ground = 0;
+static uint32_t g_grounded = 0;
+static float g_grounded_max = 0;
+
+static void ground_tick(double now)
+{
+    if (now - g_last_ground < kGroundInterval)
+        return;
+    g_last_ground = now;
+    void* av = game::avatar();
+    if (!av)
+        return;
+    net::Vec3 me = game::position(av);
+    for (auto& [o, e] : host_eggs()) {
+        if ((e.state != 5 && e.state != 6) || net::dist(e.pos, me) > kGroundNear)
+            continue;
+        Still& st = g_still[e.id];
+        st.n = st.seen > 0 && net::dist(st.pos, e.pos) < kStill ? st.n + 1 : 0;
+        st.pos = e.pos;
+        st.seen = now;
+        float os = 0;
+        if (st.n < 2 || !over_surface(e.pos, os) || os <= kHang)
+            continue;
+        cdecl_call<void>(a_Snap, o);
+        net::Vec3 p{};
+        game::object_position(o, p);
+        st.pos = p;
+        st.n = 0;
+        g_grounded++;
+        g_grounded_max = std::max(g_grounded_max, os);
+        H->log(M, SK_INFO, "nest: egg %u hung %.2f m over the surface: put onto it (BUG-0443)", e.id, os);
+    }
+    for (auto it = g_still.begin(); it != g_still.end();) // eggs gone (hatched, eaten, out of range)
+        it = now - it->second.seen > 10.0 ? g_still.erase(it) : std::next(it);
+}
+
 void tick(double now)
 {
     if (!a_SetState || !a_Snap || !a_CreateInstance || !a_DestroyInstance || !a_NounGet)
@@ -369,6 +454,8 @@ void tick(double now)
     if (is_host()) {
         if (g_eggs_fix && game::in_creature_stage())
             host_tick(now);
+        if (g_ground_fix && a_Surface && a_PlanetGet && game::in_creature_stage())
+            ground_tick(now);
     } else if (is_guest())
         guest_tick(now);
     else if (!g_mirrors.empty())
@@ -392,6 +479,7 @@ void on_session_end() { clear_mirrors(); }
 
 void on_world_change()
 {
+    g_still.clear();
     for (auto& [id, m] : g_mirrors)
         m.egg = nullptr; // freed with the world
     g_mirrors.clear();
@@ -419,8 +507,10 @@ static void list_objs(SkOut* out, float r)
             net::Vec3 q;
             if (!game::object_position(o, q) || net::dist(q, u->c) > u->r || u->n >= 400)
                 return true;
-            float og = 0;
+            float og = 0, os = -999.f;
             over_ground(q, og);
+            if (noun == kEggNoun)
+                over_surface(q, os);
             const char* kind = noun == kEggNoun ? "egg" : noun == kFruitNoun ? "fruit" : "nest";
             H->out_printf(u->out, "%s %p pos=(%.2f %.2f %.2f) over_ground=%.2f alive=%d dist=%.1f", kind, o, q.x, q.y, q.z, og,
                           (int)game::object_alive(o), net::dist(q, u->c));
@@ -430,9 +520,9 @@ static void list_objs(SkOut* out, float r)
                     if (m.egg == o)
                         host_id = id;
                 void* herd = field<void*>(o, kEggHerd);
-                H->out_printf(u->out, " state=%d hatch=%d herd=%p family=%d serial=%u mirror_of=%u tohatch=%p", field<int>(o, kEggState),
+                H->out_printf(u->out, " state=%d hatch=%d herd=%p family=%d serial=%u mirror_of=%u tohatch=%p over_surface=%.2f", field<int>(o, kEggState),
                               field<int>(o, kEggHatch), herd, herd && !IsBadReadPtr(herd, 0x88) ? (int)field<uint8_t>(herd, 0x84) : 0,
-                              game::object_serial(o), host_id, field<void*>(o, kEggToHatch));
+                              game::object_serial(o), host_id, field<void*>(o, kEggToHatch), os);
             }
             H->out_printf(u->out, "\n");
             u->n++;
@@ -571,6 +661,22 @@ static int c_nest(void*, int argc, const char* const* argv, SkOut* out)
         H->out_printf(out, "hatch in %d ms\n", field<int>(o, kEggHatch));
         return 0;
     }
+    if (!strcmp(a, "lift") && argc > 3) { // tests: egg <hex> <m> higher (cSpatialObject::SetPosition, as a layer in the air puts it)
+        void* o = (void*)strtoul(argv[2], nullptr, 16);
+        if (IsBadReadPtr(o, 0x228) || game::noun_id(o) != kEggNoun) {
+            H->out_printf(out, "no such egg\n");
+            return 1;
+        }
+        net::Vec3 p{};
+        game::object_position(o, p);
+        float r = std::sqrt(p.x * p.x + p.y * p.y + p.z * p.z), k = (r + (float)atof(argv[3])) / r;
+        float v[3] = {p.x * k, p.y * k, p.z * k};
+        vcall<void>((uint8_t*)o + 0x34, 0x38 / 4, (const float*)v);
+        float og = 0;
+        over_ground({v[0], v[1], v[2]}, og);
+        H->out_printf(out, "egg at %.2f m over the terrain\n", og);
+        return 0;
+    }
     if (!strcmp(a, "herd") && argc > 2) {
         show_herd(out, (void*)strtoul(argv[2], nullptr, 16));
         return 0;
@@ -607,8 +713,8 @@ std::string status()
     int live = 0;
     for (auto& [id, m] : g_mirrors)
         live += mirror_ok(m);
-    snprintf(b, sizeof b, "nest eggs fix=%d role=%s mirrors=%u live=%d made=%u removed=%u snaps_tx=%u snaps_rx=%u eats_sent=%u eats_applied=%u\n",
-             (int)g_eggs_fix, is_host() ? "host" : is_guest() ? "guest" : "none", (unsigned)g_mirrors.size(), live, g_made, g_removed,
+    snprintf(b, sizeof b, "nest eggs fix=%d ground_fix=%d grounded=%u grounded_max=%.2f role=%s mirrors=%u live=%d made=%u removed=%u snaps_tx=%u snaps_rx=%u eats_sent=%u eats_applied=%u\n",
+             (int)g_eggs_fix, (int)g_ground_fix, g_grounded, g_grounded_max, is_host() ? "host" : is_guest() ? "guest" : "none", (unsigned)g_mirrors.size(), live, g_made, g_removed,
              g_snaps_tx, g_snaps_rx, g_eats_sent, g_eats_applied);
     return b;
 }
@@ -623,6 +729,8 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
     a_DestroyInstance = H->sym("Simulator::cGameNounManager::DestroyInstance");
     a_SetState = H->sym("SporeCoop::cEgg_SetState");
     a_Snap = H->sym("SporeCoop::cEgg_SnapToGround");
+    a_Surface = H->sym("SporeCoop::cPlanetModel_SurfacePoint");
+    a_PlanetGet = H->sym("Simulator::cPlanetModel::Get");
     savestrip::add_filter(savestrip_filter); // BUG-0384: the guest's egg mirrors are not its world
     H->command_add(M, "coop.nest", "coop.nest [objs [r]|herds|herd <h>|kill <h> <n>|respawn <h> <ms>|target <h> <n>|hatch <egg> <ms>|eat <egg>|look x y z [d]] - eggs at the nests (BUG-0384)", c_nest,
                    nullptr, SK_CMD_MAIN_THREAD);

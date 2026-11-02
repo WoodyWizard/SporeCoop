@@ -58,3 +58,4 @@ Simulator::cCollectableItems::IsUnlocked ; BUG-0368: coop.editor (tests) counts 
 SporeCoop::UFOController_Update ; BUG-0378: the hook that leaves pinned Space puppets / mirrors where the mod put them is off (the offset pin of modes::space_pin still applies)
 SporeCoop::cEgg_SetState ; BUG-0384: on GOG 2016 the host's nest eggs are not shown on guests (no egg mirrors, no eating them)
 SporeCoop::cEgg_SnapToGround ; BUG-0384: on GOG 2016 the host's nest eggs are not shown on guests
+SporeCoop::cPlanetModel_SurfacePoint ; BUG-0443: on GOG 2016 NPC eggs hanging over the surface are not put onto it (nest.egg_ground off there)

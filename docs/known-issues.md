@@ -1414,6 +1414,11 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Not checked: the guest's own eggs while its game runs its NPCs (the host in the main menu: no
   snapshots, so the guest's own herds may lay eggs nobody else has); eggs laid by a layer on a slope,
   rock or in the water; the player's world.
+* UPDATE (2026-11-01, fix/w35-egg-kick, BUG-0443): the floating is reproduced and fixed on the host
+  (`nest.egg_ground`): an asleep egg has no gravity, and the eggs the game lays settle up to 0.5 m over
+  the surface (docs/re/creature.md#creature-egg-gravity). Still open: eggs laid while the host is far
+  from the nest (a guest keeps the herd running) lie inside the nest mound on the host, on the mound on
+  the guest.
 * Also open: a guest eating a host egg does not change the guest's relation to that species (the
   host's eat node does that for the avatar only).
 * Ticket: BUG-0384
