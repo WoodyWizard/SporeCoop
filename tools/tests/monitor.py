@@ -630,7 +630,10 @@ class PuppetHp(Hook):
                     return False
                 hp, mx = p['puppet_hp']
                 p['_php'] = (subj, o)
-                return abs(o['maxhp'] - mx) > 0.5 or abs(o['hp'] - hp) > max(self.c['hp_abs'], o['maxhp'] * 0.1)
+                # a player's own hp above its max is a test's invulnerability (`coop.team hp 1000`): the puppet
+                # carries the partner's health capped at the max, which is what the game can show
+                own = min(o['hp'], o['maxhp'])
+                return abs(o['maxhp'] - mx) > 0.5 or abs(own - hp) > max(self.c['hp_abs'], o['maxhp'] * 0.1)
             for a, b in self.runs(lst, bad, self.c['php_n'], None):
                 subj, o = b['_php']
                 out.append((viewer, f'{viewer} shows {subj}\'s creature at {b["puppet_hp"][0]:.0f}/{b["puppet_hp"][1]:.0f}, '
