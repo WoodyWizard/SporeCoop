@@ -10,7 +10,7 @@ role: both
 versions: 
 fixed_in: unreleased
 branch: feat/w35-report-shot
-commits: d4bf614
+commits: d4bf614, 47474c9, fa723b5
 tests: report_shot (tools/tests/coop_report_shot.py), unit (tests/jpeg_tests.cpp, tools/tests/jpeg_check.py)
 signature:
 docs: docs/REPORTING.md#reporting-shots, docs/02-modkit.md#modkit-report-shots, docs/06-testing.md#testing-report-shots
