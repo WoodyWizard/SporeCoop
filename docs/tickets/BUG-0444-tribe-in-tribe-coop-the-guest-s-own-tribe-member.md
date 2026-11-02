@@ -55,7 +55,9 @@ nothing else grounds it then. `coop.tribe lift` now applies to a new mirror's po
   (walked mirror 9.2-9.8 m under, up to 9.8 m over, new mirrors at -2.0 m; the monitor's `ground` rule in one).
 * PASS: out/lab/20261101-191251 tribe_mirror_ground 3 of 3 (1 cold, 2 warm): -0.12 to 0.02 m, new mirrors
   -0.11 m.
-* Regression: see the branch report (lane 10).
+* Regression (lane 10, gates on): out/lab/20261101-192144 (tribe, tribe_play, tribe_walk, tribe_walk_player,
+  npc_walk_tribe 5/5), 20261101-193010 (tribe_coop x3, chaos_tribe x3 6/6; the guests' lowest `agl` -0.03 /
+  -0.05 m), 20261101-194242 (smoke 13/14, `ui` skipped: needs lanes 1-5).
 
 ## History
 - 2026-11-01: opened.
