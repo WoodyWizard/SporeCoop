@@ -221,7 +221,19 @@ def diff(host, guest, area=None):
             add('noun_only_host' if g == 0 else 'noun_only_guest', noun_name(noun), max(h, g),
                 f'{noun_name(noun)}: {h} in the host\'s game, {g} in the guest\'s (whole list)'
                 + (f', vtable 0x{vt:X}' if vt else ''))
-    return out
+    # one finding per signature and comparison (objects summed, the first text as the example)
+    merged = {}
+    for f in out:
+        m = merged.get(f['sig'])
+        if m is None:
+            merged[f['sig']] = Finding(f, more=0)
+        else:
+            m['n'] += f['n']
+            m['more'] += 1
+    for m in merged.values():
+        if m['more']:
+            m['text'] += f' (+{m["more"]} more)'
+    return list(merged.values())
 
 
 def main():
