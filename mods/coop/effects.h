@@ -29,6 +29,8 @@ struct Ctx {
     // true when a world position is on the local player's own controlled object (the avatar in
     // Creature / Cell, the tribe members in Tribe, the vehicles in Civ, the UFO in Space)
     std::function<bool(const net::Vec3&)> near_local;
+    // where that object is now (the perf workload `coop.effects load` creates effects there)
+    std::function<net::Vec3()> local_pos;
 };
 
 void init(const SkHost* host, SkMod* mod, const Ctx& ctx);
@@ -37,6 +39,9 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r);
 void on_session_end();
 std::string status(); // counters and the last sent / received effect (coop.effects, coop.status)
 bool set_log(bool on);
+// the frame-time workload (`coop.effects load`): `n` effects every `period_ms` at the local player,
+// created through the game's effect manager like an effect of the game's own code. 0 stops it.
+void set_load(uint32_t n, uint32_t period_ms, uint32_t id);
 // tests: the game's own effect pools of `key` on the local avatar and every partner's puppet:
 // `game=<pointer> active=<0|1>` for each (empty when the game symbols are missing)
 std::string probe(uint32_t key);

@@ -92,8 +92,6 @@ struct Pending {
     bool world = false;
     uint32_t id = 0;
     void* fx = nullptr;
-    uintptr_t caller = 0;
-    uint8_t xf[0x44] = {};
 };
 static Pending g_q[256];
 static uint32_t g_qh, g_qt;
@@ -139,18 +137,17 @@ static void on_local_effect(void* creature, const game::EffectEvent& ev)
     q_push(p);
 }
 
-// an effect created for any object: keep its id and transform; tick decides whether it is on the
-// local player's own object and sends it
-static void on_world_effect(void* fx, uint32_t id, const void* xform, uintptr_t caller)
+// an effect created for any object: keep it; tick reads the position the game gave it (+0x9C) and
+// decides whether it is on the local player's own object (the hooks run on the main thread only, so
+// no transform is copied here)
+static void on_world_effect(void* fx, uint32_t id)
 {
-    if (!fx || !id || !xform)
+    if (!fx || !id)
         return;
     Pending p;
     p.world = true;
     p.fx = fx;
     p.id = id;
-    p.caller = caller;
-    memcpy(p.xf, xform, sizeof p.xf);
     q_push(p);
 }
 
@@ -206,16 +203,16 @@ static void process_local(void* creature, const game::EffectEvent& ev)
     C.sess->send_event(net::MSG_EFFECT, w);
 }
 
-static void process_world(void* fx, uint32_t id, const void* xform, uintptr_t caller)
+static void process_world(void* fx, uint32_t id)
 {
-    if (!g_fix || !fx || !id || !xform || !C.sess || !C.sess->connected())
+    if (!g_fix || !fx || !id || !C.sess || !C.sess->connected())
         return;
-    // animation-event effects are already shown by the animation relay (MSG_ANIM): the effect
-    // wrapper 0x9FBF00 and its caller make them on the puppet too, so do not duplicate them
-    if (caller >= 0x009FBF00 && caller <= 0x009FBF90)
+    if (game::effect_relayed(fx)) // a creature hook already sent this effect
         return;
-    const float* p = (const float*)((const uint8_t*)xform + 4);
-    if (!C.near_local || !C.near_local(net::Vec3{p[0], p[1], p[2]}))
+    // the position the game's transform setter put into effect+0x9C. Animation-event effects are
+    // skipped in the hook (0x9FBF00 sets a thread-local flag): the animation relay shows those.
+    net::Vec3 p;
+    if (!game::effect_position(fx, p) || !C.near_local || !C.near_local(p))
         return;
     for (size_t i = 0; i < 2048; i++)
         if (g_world_sent[i].fx == fx && g_world_sent[i].id == id)
@@ -234,25 +231,93 @@ static void process_world(void* fx, uint32_t id, const void* xform, uintptr_t ca
     g_last_tx.at = t;
     g_sent++;
     if (g_log)
-        H->log(M, SK_INFO, "effect: sent world id %08X at %.2f %.2f %.2f (caller %p)", id, p[0], p[1], p[2], (void*)caller);
+        H->log(M, SK_INFO, "effect: sent world id %08X at %.2f %.2f %.2f", id, p.x, p.y, p.z);
+    // the receiver's game sets the position with the base transform setter, which reads only the
+    // three floats at +4; the rest of the 0x44-byte transform stays zero
+    uint8_t xf[0x44] = {};
+    float* q = (float*)(xf + 4);
+    q[0] = p.x;
+    q[1] = p.y;
+    q[2] = p.z;
     net::Writer w;
     w.u8(C.sess->my_id());
     w.u8(0);
     w.u8(5);
     w.u32(id);
     w.u32(0);
-    w.raw(xform, 0x44);
+    w.raw(xf, 0x44);
     C.sess->send_event(net::MSG_EFFECT, w);
 }
 
+// the workload of the frame-time measurement (out/REPORT.md): every period the game creates `n`
+// effects at the local player, which the relay hooks see like effects of the game's own code
+static uint32_t g_load_n;
+static uint32_t g_load_ms = 1000;
+static uint32_t g_load_id = 0xE1B24DDBu; // the mating call's hearts
+static double g_load_at;
+
+static void load_tick(double t)
+{
+    if (!g_load_n || t < g_load_at || !C.local_pos)
+        return;
+    g_load_at = t + g_load_ms / 1000.0;
+    if (g_load_at < t)
+        g_load_at = t + 1.0;
+    net::Vec3 p = C.local_pos();
+    uint8_t xf[0x44] = {};
+    float* q = (float*)(xf + 4);
+    q[0] = p.x;
+    q[1] = p.y;
+    q[2] = p.z;
+    for (uint32_t i = 0; i < g_load_n; i++)
+        game::create_local_effect(g_load_id, xf);
+}
+
+// the cost of this module on the main thread, printed in coop.status and once a minute as a
+// `perf:` line in the game log (the frame-time numbers in out/REPORT.md)
+static double g_tick_sum, g_tick_max;
+static uint64_t g_tick_frames;
+static double g_perf_at;
+static uint32_t g_perf_creates, g_perf_probes, g_perf_evicted, g_perf_sent;
+
 void tick(double)
 {
+    double t0 = H ? H->time_seconds() : 0;
+    game::set_effect_relay_enabled(g_fix); // also notes the game's main thread id
+    if (g_fix)
+        load_tick(t0);
     Pending p;
     while (q_pop(p)) {
         if (p.world)
-            process_world(p.fx, p.id, p.xf, p.caller);
+            process_world(p.fx, p.id);
         else
             process_local(p.creature, p.ev);
+    }
+    game::clear_effect_table();
+    if (!H)
+        return;
+    double dt = H->time_seconds() - t0;
+    g_tick_sum += dt;
+    g_tick_max = dt > g_tick_max ? dt : g_tick_max;
+    g_tick_frames++;
+    if (g_perf_at <= 0)
+        g_perf_at = t0;
+    if (t0 - g_perf_at >= 60) {
+        g_perf_at = t0;
+        uint32_t c = 0, pr = 0, ev = 0;
+        game::effect_table_stats(c, pr, ev);
+        H->log(M, SK_INFO,
+               "perf: effects tick avg %.4f max %.3f ms/frame over %llu frames; hooks %u creates, %u table probes, "
+               "%u evicted; sent %u; load %u effects per %u ms",
+               g_tick_frames ? g_tick_sum / g_tick_frames * 1000 : 0.0, g_tick_max * 1000,
+               (unsigned long long)g_tick_frames, c - g_perf_creates, pr - g_perf_probes, ev - g_perf_evicted,
+               g_sent - g_perf_sent, g_load_n, g_load_ms);
+        g_tick_sum = g_tick_max = 0;
+        g_tick_frames = 0;
+        g_perf_creates = c;
+        g_perf_probes = pr;
+        g_perf_evicted = ev;
+        g_perf_sent = g_sent;
     }
 }
 
@@ -357,6 +422,11 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
     g_sent_n = 0;
     g_world_n_entries = 0;
     g_world = 0;
+    g_tick_sum = g_tick_max = 0;
+    g_tick_frames = 0;
+    g_perf_at = 0;
+    g_perf_creates = g_perf_probes = g_perf_evicted = g_perf_sent = 0;
+    game::set_effect_relay_enabled(g_fix);
     game::set_effect_listener(on_local_effect);
     game::set_world_effect_listener(on_world_effect);
 }
@@ -375,6 +445,15 @@ bool set_log(bool on)
     g_log = on;
     game::set_effect_log(on);
     return g_log;
+}
+
+void set_load(uint32_t n, uint32_t period_ms, uint32_t id)
+{
+    g_load_n = n;
+    g_load_ms = period_ms ? period_ms : 1000;
+    g_load_at = now();
+    if (id)
+        g_load_id = id;
 }
 
 static std::string pool_map(void* c, uint32_t off)
@@ -458,6 +537,14 @@ std::string status()
     snprintf(b, sizeof b,
              "effects: fix=%d sent=%u received=%u played=%u stopped=%u skipped=%u failed=%u dropped_rate=%u world=%u\n",
              (int)g_fix, g_sent, g_rx, g_played, g_stopped, g_skipped, g_failed, g_dropped, g_world);
+    s += b;
+    uint32_t creates = 0, probes = 0, evicted = 0;
+    game::effect_table_stats(creates, probes, evicted);
+    snprintf(b, sizeof b,
+             "effects cost: tick avg %.4f max %.3f ms/frame over %llu frames; hooks %u creates, %u table probes, "
+             "%u evicted; load %u per %u ms\n",
+             g_tick_frames ? g_tick_sum / g_tick_frames * 1000 : 0.0, g_tick_max * 1000,
+             (unsigned long long)g_tick_frames, creates, probes, evicted, g_load_n, g_load_ms);
     s += b;
     if (g_last_tx.at > 0) {
         snprintf(b, sizeof b, "effects sent last: id=%08X key=%08X pool=%u stop=%d age=%.1fs\n", g_last_tx.id,

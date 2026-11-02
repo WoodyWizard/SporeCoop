@@ -2499,7 +2499,10 @@ void on_frame(void*, int, void*)
 
     uint32_t prev_mode = g_mode;
     g_mode = game::mode_id();
-    game::set_world_create_hook(g_mode == modes::kCreature || g_mode == modes::kCell);
+    // the effect hooks are installed once (game::init); this only gates their work to the played
+    // stages (a hook removed at a stage change faulted the UI skinner's render thread, BUG-0451 review)
+    game::set_world_relay(g_mode == modes::kCell || g_mode == modes::kCreature || g_mode == modes::kTribe
+                          || g_mode == modes::kCiv || g_mode == modes::kSpace);
     if (g_mode != prev_mode)
         on_mode_change(prev_mode, g_mode);
     g_adapter = modes::for_mode(g_mode);
@@ -4806,6 +4809,17 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                 return civ::near_vehicle(p, 1.8f);
             return false;
         };
+        ec.local_pos = [] {
+            void* av = game::avatar();
+            if (av)
+                return game::position(av);
+            if (g_adapter && g_adapter->local) {
+                void* l = g_adapter->local();
+                if (l)
+                    return modes::entity_pos(g_adapter, l);
+            }
+            return net::Vec3{};
+        };
         effects::init(H, M, ec);
     }
     { // BUG-0384: eggs at the nests
@@ -4905,11 +4919,20 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                    nullptr, MT);
     H->command_add(M, "coop.status", "session, players and puppets", c_status, nullptr, MT);
     H->command_add(M, "coop.effects",
-                   "coop.effects [probe <hex key> | map | log on|off] - creature effects relayed to the partners' puppets "
-                   "(BUG-0451); probe: the game's own effect pool of a key on the avatar and every puppet",
+                   "coop.effects [probe <hex key> | map | log on|off | load <n> [period_ms] [hex id]] - creature effects "
+                   "relayed to the partners' puppets (BUG-0451); probe: the game's own effect pool of a key on the avatar "
+                   "and every puppet; load: n effects per period at the local player (the frame-time measurement)",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
                        if (argc > 1 && !strcmp(argv[1], "log")) {
                            SAY("effects log %s\n", effects::set_log(argc > 2 && (!strcmp(argv[2], "on") || !strcmp(argv[2], "1"))) ? "on" : "off");
+                           return 0;
+                       }
+                       if (argc > 1 && !strcmp(argv[1], "load")) {
+                           uint32_t n = argc > 2 ? (uint32_t)strtoul(argv[2], nullptr, 10) : 0;
+                           uint32_t ms = argc > 3 ? (uint32_t)strtoul(argv[3], nullptr, 10) : 1000;
+                           uint32_t id = argc > 4 ? (uint32_t)strtoul(argv[4], nullptr, 16) : 0;
+                           effects::set_load(n, ms, id);
+                           SAY("%s", effects::status().c_str());
                            return 0;
                        }
                        if (argc > 2 && !strcmp(argv[1], "probe")) {

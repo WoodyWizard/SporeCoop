@@ -1,6 +1,7 @@
 #include "game.h"
 
 #include <algorithm>
+#include <atomic>
 #include <map>
 #include <set>
 #include <cmath>
@@ -308,93 +309,136 @@ typedef void*(SK_THISCALL* StartStopFx_t)(void*, int, uint32_t, uint32_t);
 typedef int(SK_THISCALL* StopFx_t)(void*, uint32_t, uint32_t);
 typedef void*(SK_THISCALL* GetFx_t)(void*, uint32_t);
 static bool g_fx_log;
-// effect object -> id, for the transform setter. A fixed ring, not a std::map: the transformer
-// setter also runs in the UI skinner's render pipeline, where an allocation from our code faults
-// (Skinner::StartRender, measured in Tribe/Civ).
-struct FxCreated { void* fx; uint32_t id; uintptr_t caller; bool relayed; };
-static FxCreated g_fx_ids[4096];
-static size_t g_fx_n;
+// The game calls effect creation from its UI skinner's render thread too (Tribe/Civ, measured in
+// Skinner::cSkinPainterPipeline::ExecutePipeline). Everything of ours that touches game objects,
+// the effect table or the network happens on the game's main thread only; on any other thread a
+// hook body calls the original and returns. The id is set from the frame callback (main thread).
+static std::atomic<unsigned long> g_main_tid{0};
+static inline bool fx_main_thread() { return GetCurrentThreadId() == g_main_tid.load(std::memory_order_relaxed); }
+static std::atomic<bool> g_fx_relay_on{false}; // effects.cpp's switch, read by the hooks
+void set_effect_relay_enabled(bool on)
+{
+    g_main_tid.store(GetCurrentThreadId(), std::memory_order_relaxed); // effects::tick: main thread
+    g_fx_relay_on.store(on, std::memory_order_relaxed);
+}
+// effect object -> id. A world effect created inside a creature effect creator must not be relayed
+// twice, and effects.cpp reads the position the game gave it (effect +0x9C) in its tick. Open
+// addressing keyed by the effect pointer: one probe for nearly every effect, fixed size, no
+// allocation, no linear scan (the old scan over 4096 entries ran for every transform set of every
+// effect in every stage). Cleared once per frame after effects::tick read what it needed.
+struct FxCreated { void* fx; uint32_t id; bool relayed; };
+static constexpr size_t kFxSlots = 1024; // power of two; far more than a frame creates
+static FxCreated g_fx_ids[kFxSlots];
+static uint32_t g_fx_creates, g_fx_probes, g_fx_evicted;
+static inline size_t fx_slot(void* fx)
+{
+    uint32_t h = (uint32_t)((uintptr_t)fx >> 4) * 2654435761u; // objects are at least 16-aligned
+    return (h >> 20) & (kFxSlots - 1);
+}
 static FxCreated* fx_find(void* fx)
 {
-    for (size_t i = 0; i < 4096; i++)
+    size_t i = fx_slot(fx);
+    for (unsigned n = 0; n < 6; n++, i = (i + 1) & (kFxSlots - 1)) {
+        g_fx_probes++;
         if (g_fx_ids[i].fx == fx)
             return &g_fx_ids[i];
+        if (!g_fx_ids[i].fx)
+            return nullptr;
+    }
     return nullptr;
 }
-static void fx_add(void* fx, uint32_t id, uintptr_t caller)
+static void fx_add(void* fx, uint32_t id)
 {
-    FxCreated& e = g_fx_ids[g_fx_n++ & 4095];
-    e = {fx, id, caller, false};
+    g_fx_creates++;
+    size_t i = fx_slot(fx);
+    for (unsigned n = 0; n < 6; n++, i = (i + 1) & (kFxSlots - 1)) {
+        if (!g_fx_ids[i].fx || g_fx_ids[i].fx == fx) {
+            g_fx_ids[i] = FxCreated{fx, id, false};
+            return;
+        }
+    }
+    g_fx_evicted++; // 6 probes over: take the home slot (does not happen with 1024 slots)
+    g_fx_ids[fx_slot(fx)] = FxCreated{fx, id, false};
 }
-static bool g_in_relay;
+void clear_effect_table()
+{
+    for (auto& e : g_fx_ids)
+        if (e.fx)
+            e = FxCreated{};
+}
+void effect_table_stats(uint32_t& creates, uint32_t& probes, uint32_t& evicted)
+{
+    creates = g_fx_creates;
+    probes = g_fx_probes;
+    evicted = g_fx_evicted;
+}
+bool effect_position(void* fx, net::Vec3& out)
+{
+    if (!fx || !skg::readable((uint8_t*)fx + 0x9C, 12))
+        return false;
+    const float* p = (const float*)((uint8_t*)fx + 0x9C); // where VisualEffect_SetTransform put it
+    out = net::Vec3{p[0], p[1], p[2]};
+    return p[0] != 0 || p[1] != 0 || p[2] != 0;
+}
+bool effect_relayed(void* fx)
+{
+    FxCreated* e = fx_find(fx);
+    return e && e->relayed;
+}
+static bool g_in_relay;        // a relayed effect played by us: never put it in the table again
+static thread_local bool t_in_anim_fx; // inside the animation system's effect wrapper (main thread)
 static WorldEffectListener g_world_listener;
 static uintptr_t a_EffectsGet;
 typedef int(SK_THISCALL* MgrCreate_t)(void*, uint32_t, uint32_t, void**);
 static MgrCreate_t f_MgrCreate;
-// diagnostic hook (coop.effects log on): every visual effect the game creates passes this one
-// function; the creature one-shot and pool hooks below report the ones we relay. The caller is
-// taken from the stack by a naked entry (__builtin_return_address(0) is not reliable on i386
-// without a frame pointer).
+// the manager's create (cEffectsManager vt 0x2C): every IEffectsManager creation passes it
 typedef int(SK_THISCALL* MgrCreateFx_t)(void*, uint32_t, uint32_t, void**);
 static MgrCreateFx_t o_MgrCreateFx;
-extern "C" uintptr_t g_fxmgr_ret = 0;
-extern "C" int SK_THISCALL mgr_fx_c(void* mgr, uint32_t id, uint32_t a3, void** out)
+static int SK_THISCALL h_MgrCreateFx(void* mgr, uint32_t id, uint32_t a3, void** out)
 {
     int r = o_MgrCreateFx(mgr, id, a3, out);
-    if ((r & 0xFF) && out && *out)
-        fx_add(*out, id, g_fxmgr_ret);
+    if (!fx_main_thread() || !g_fx_relay_on.load(std::memory_order_relaxed) || t_in_anim_fx || g_in_relay)
+        return r;
+    if ((r & 0xFF) && out && *out) {
+        fx_add(*out, id);
+        if (g_world_listener)
+            g_world_listener(*out, id);
+    }
     return r;
-}
-extern "C" __attribute__((naked)) void mgr_fx_naked()
-{
-    __asm__ __volatile__("movl (%esp), %eax\n\tmovl %eax, _g_fxmgr_ret\n\tjmp _mgr_fx_c\n");
 }
 typedef int(SK_THISCALL* WorldCreateFx_t)(void*, uint32_t, uint32_t, void**);
 static WorldCreateFx_t o_WorldCreateFx;
 static uintptr_t a_WorldCreateFx;
-static bool g_world_hook_on;
-extern "C" uintptr_t g_fxworld_ret = 0;
-extern "C" int SK_THISCALL world_fx_c(void* world, uint32_t id, uint32_t a3, void** out)
+static bool g_world_on; // the stage logic's gate (set_world_relay): no work outside a played stage
+static int SK_THISCALL h_WorldCreateFx(void* world, uint32_t id, uint32_t a3, void** out)
 {
     int r = o_WorldCreateFx(world, id, a3, out);
-    if ((r & 0xFF) && out && *out)
-        fx_add(*out, id, g_fxworld_ret);
+    if (!g_world_on || !fx_main_thread() || !g_fx_relay_on.load(std::memory_order_relaxed) || t_in_anim_fx || g_in_relay)
+        return r;
+    if ((r & 0xFF) && out && *out) {
+        fx_add(*out, id);
+        if (g_world_listener)
+            g_world_listener(*out, id);
+    }
     return r;
 }
-extern "C" __attribute__((naked)) void world_fx_naked()
+// The hooks are installed once, in init(); a hook removed while the UI skinner's render thread was
+// inside it faulted (Skinner::cSkinnerTexturePainter::StartRender+0x28, thousands of caught faults
+// in Tribe/Civ), so a stage change only flips this flag.
+void set_world_relay(bool on) { g_world_on = on; }
+// The animation system's effect wrapper 0x9FBF00: the animation relay (MSG_ANIM) already shows the
+// effects of an animation on the partner's puppet, so the world create of such an effect must not
+// be relayed again. The wrapper is called on the main thread; the flag is thread local so a worker
+// thread can never read half of it (it replaces the caller-address check the old setter hook did).
+typedef int(SK_CDECL* AnimFxCreate_t)(void*, int, uint32_t, uint32_t, uint32_t, void**);
+static AnimFxCreate_t o_AnimFxCreate;
+static int SK_CDECL h_AnimFxCreate(void* world, int a, uint32_t id, uint32_t b, uint32_t c, void** out)
 {
-    __asm__ __volatile__("movl (%esp), %eax\n\tmovl %eax, _g_fxworld_ret\n\tjmp _world_fx_c\n");
-}
-void set_world_create_hook(bool on)
-{
-    if (!a_WorldCreateFx || on == g_world_hook_on)
-        return;
-    if (on) {
-        if (H->hook_create(M, (void*)a_WorldCreateFx, (void*)world_fx_naked, (void**)&o_WorldCreateFx) == 0) {
-            g_world_hook_on = true;
-            H->log(M, SK_INFO, "fxworld hook on");
-        }
-    } else {
-        H->hook_remove(M, (void*)a_WorldCreateFx);
-        g_world_hook_on = false;
-        H->log(M, SK_INFO, "fxworld hook off");
-    }
-}
-typedef void(SK_THISCALL* SetFxXform_t)(void*, const float*);
-static SetFxXform_t o_SetFxXform;
-extern "C" uintptr_t g_setfx_ret = 0;
-extern "C" void SK_THISCALL setfx_c(void* fx, const float* xf)
-{
-    o_SetFxXform(fx, xf);
-    if (!fx || !xf || !g_world_listener)
-        return;
-    FxCreated* e = fx_find(fx);
-    if (e && !e->relayed && !g_in_relay) // effects.cpp only queues it; tick sends on the main thread
-        g_world_listener(fx, e->id, xf, g_setfx_ret);
-}
-extern "C" __attribute__((naked)) void setfx_naked()
-{
-    __asm__ __volatile__("movl (%esp), %eax\n\tmovl %eax, _g_setfx_ret\n\tjmp _setfx_c\n");
+    bool was = t_in_anim_fx;
+    t_in_anim_fx = true;
+    int r = o_AnimFxCreate(world, a, id, b, c, out);
+    t_in_anim_fx = was;
+    return r;
 }
 
 static void report_effect(void* c, const EffectEvent& ev);
@@ -403,13 +447,15 @@ static CreateCreatureFx_t o_CreateCreatureFx;
 static void* SK_THISCALL h_CreateCreatureFx(void* self, int bone, uint32_t id, uint32_t extra)
 {
     void* fx = o_CreateCreatureFx ? o_CreateCreatureFx(self, bone, id, extra) : nullptr;
-    if (fx) {
+    if (!fx_main_thread()) // the UI skinner's render thread: the original only
+        return fx;
+    if (g_fx_log)
+        H->log(M, SK_INFO, "fxcr: self %p avatar %p id %08X bone %d fx %p", self, avatar(), id, bone, fx);
+    if (fx && g_fx_relay_on.load(std::memory_order_relaxed)) {
         if (FxCreated* e = fx_find(fx))
             e->relayed = true;
         report_effect(self, {id, (uint32_t)bone, 3, false});
     }
-    if (g_fx_log)
-        H->log(M, SK_INFO, "fxcr: self %p avatar %p id %08X bone %d fx %p", self, avatar(), id, bone, fx);
     return fx;
 }
 static CreateFx1_t o_CreateFx1;
@@ -428,9 +474,11 @@ static void report_effect(void* c, const EffectEvent& ev)
 
 static void* SK_THISCALL h_CreateFx1(void* self, uint32_t id)
 {
-    if (g_fx_log) H->log(M, SK_INFO, "fx1: self %p avatar %p id %08X", self, avatar(), id);
     void* fx = o_CreateFx1(self, id);
-    if (fx) {
+    if (!fx_main_thread())
+        return fx;
+    if (g_fx_log) H->log(M, SK_INFO, "fx1: self %p avatar %p id %08X", self, avatar(), id);
+    if (fx && g_fx_relay_on.load(std::memory_order_relaxed)) {
         if (FxCreated* e = fx_find(fx))
             e->relayed = true;
         report_effect(self, {id, id, 1, false});
@@ -440,9 +488,11 @@ static void* SK_THISCALL h_CreateFx1(void* self, uint32_t id)
 
 static void* SK_THISCALL h_CreateFx1Keyed(void* self, uint32_t id, uint32_t key)
 {
-    if (g_fx_log) H->log(M, SK_INFO, "fx1k: self %p avatar %p id %08X key %08X", self, avatar(), id, key);
     void* fx = o_CreateFx1Keyed(self, id, key);
-    if (fx) {
+    if (!fx_main_thread())
+        return fx;
+    if (g_fx_log) H->log(M, SK_INFO, "fx1k: self %p avatar %p id %08X key %08X", self, avatar(), id, key);
+    if (fx && g_fx_relay_on.load(std::memory_order_relaxed)) {
         if (FxCreated* e = fx_find(fx))
             e->relayed = true;
         report_effect(self, {id, key, 1, false});
@@ -452,9 +502,11 @@ static void* SK_THISCALL h_CreateFx1Keyed(void* self, uint32_t id, uint32_t key)
 
 static void* SK_THISCALL h_CreateFx2Keyed(void* self, uint32_t id, uint32_t key)
 {
-    if (g_fx_log) H->log(M, SK_INFO, "fx2k: self %p avatar %p id %08X key %08X", self, avatar(), id, key);
     void* fx = o_CreateFx2Keyed(self, id, key);
-    if (fx) {
+    if (!fx_main_thread())
+        return fx;
+    if (g_fx_log) H->log(M, SK_INFO, "fx2k: self %p avatar %p id %08X key %08X", self, avatar(), id, key);
+    if (fx && g_fx_relay_on.load(std::memory_order_relaxed)) {
         if (FxCreated* e = fx_find(fx))
             e->relayed = true;
         report_effect(self, {id, key, 2, false});
@@ -465,7 +517,7 @@ static void* SK_THISCALL h_CreateFx2Keyed(void* self, uint32_t id, uint32_t key)
 static int SK_THISCALL h_StopFx(void* self, uint32_t key, uint32_t arg)
 {
     int r = o_StopFx(self, key, arg);
-    if (r)
+    if (r && fx_main_thread() && g_fx_relay_on.load(std::memory_order_relaxed))
         report_effect(self, {0, key, 0, true});
     return r;
 }
@@ -474,7 +526,7 @@ void set_effect_listener(EffectListener fn) { g_effect_listener = fn; }
 void set_world_effect_listener(WorldEffectListener fn) { g_world_listener = fn; }
 void set_effect_log(bool on) { g_fx_log = on; }
 
-void* create_world_effect(uint32_t id, const void* xform)
+static void* create_effect_at(uint32_t id, const void* xform, bool relayed)
 {
     if (!a_EffectsGet || !f_MgrCreate || !xform)
         return nullptr;
@@ -482,7 +534,8 @@ void* create_world_effect(uint32_t id, const void* xform)
     if (!mgr)
         return nullptr;
     void* fx = nullptr;
-    g_in_relay = true;
+    bool was = g_in_relay;
+    g_in_relay = relayed; // a relayed effect: the hooks must not send it back
     int ok = f_MgrCreate(mgr, id, 0, &fx);
     if ((ok & 0xFF) && fx) {
         vcall<void>(fx, 0x18 / 4, xform); // SetTransform
@@ -490,22 +543,38 @@ void* create_world_effect(uint32_t id, const void* xform)
     } else {
         fx = nullptr;
     }
-    g_in_relay = false;
+    g_in_relay = was;
     return fx;
 }
 
+// the receiver: create the partner's effect; the hooks skip it (no echo)
+void* create_world_effect(uint32_t id, const void* xform) { return create_effect_at(id, xform, true); }
+
+// diagnostics and the perf workload (coop.effects load): an effect the game would make at the local
+// player, but one of ours; the relay hooks see it like a game effect and send it to the partners
+void* create_local_effect(uint32_t id, const void* xform) { return create_effect_at(id, xform, false); }
+
 void* create_creature_effect(void* c, int bone, uint32_t effect_id)
 {
-    return c && o_CreateCreatureFx ? o_CreateCreatureFx(c, bone, effect_id, 0) : nullptr;
+    if (!c || !o_CreateCreatureFx)
+        return nullptr;
+    bool was = g_in_relay;
+    g_in_relay = true; // relayed: the hooks must not send it back
+    void* fx = o_CreateCreatureFx(c, bone, effect_id, 0);
+    g_in_relay = was;
+    return fx;
 }
 
 void* start_effect(void* c, const EffectEvent& ev)
 {
     if (!c)
         return nullptr;
-    if (ev.pool == 2 && o_StartStopFx2)
-        return o_StartStopFx2(c, 1, ev.id, ev.key);
-    return o_StartStopFx1 ? o_StartStopFx1(c, 1, ev.id, ev.key) : nullptr;
+    bool was = g_in_relay;
+    g_in_relay = true; // relayed: the hooks must not send it back
+    void* fx = ev.pool == 2 && o_StartStopFx2 ? o_StartStopFx2(c, 1, ev.id, ev.key)
+                                                : o_StartStopFx1 ? o_StartStopFx1(c, 1, ev.id, ev.key) : nullptr;
+    g_in_relay = was;
+    return fx;
 }
 
 bool stop_effect(void* c, uint32_t key) { return c && o_StopFx && o_StopFx(c, key, 0) != 0; }
@@ -704,14 +773,25 @@ bool init(const SkHost* host, SkMod* mod)
         }
     a_WorldCreateFx = H->sym("Swarm::EffectWorld::CreateEffect");
     if (uintptr_t a = H->sym("Swarm::cEffectsManager::CreateEffect")) {
-        int r = H->hook_create(M, (void*)a, (void*)mgr_fx_naked, (void**)&o_MgrCreateFx);
+        int r = H->hook_create(M, (void*)a, (void*)h_MgrCreateFx, (void**)&o_MgrCreateFx);
         H->log(M, r ? SK_WARN : SK_INFO, "fxmgr hook at %p: %d", (void*)a, r);
     }
     a_EffectsGet = H->sym("Swarm::IEffectsManager::Get");
     f_MgrCreate = (MgrCreate_t)H->sym("Swarm::cEffectsManager::CreateEffect");
-    if (uintptr_t a = H->sym("SporeCoop::VisualEffect_SetTransform")) {
-        int r = H->hook_create(M, (void*)a, (void*)setfx_naked, (void**)&o_SetFxXform);
-        H->log(M, r ? SK_WARN : SK_INFO, "setfx hook at %p: %d", (void*)a, r);
+    // Every hook is installed once here, for the life of the game (BUG-0451 review): the stage
+    // logic only gates the work with set_world_relay/set_effect_relay_enabled. A hook removed while
+    // the UI skinner's render thread was inside it faulted in Tribe/Civ.
+    if (a_WorldCreateFx) {
+        int r = H->hook_create(M, (void*)a_WorldCreateFx, (void*)h_WorldCreateFx, (void**)&o_WorldCreateFx);
+        H->log(M, r ? SK_WARN : SK_INFO, "fxworld hook at %p: %d", (void*)a_WorldCreateFx, r);
+    } else {
+        H->log(M, SK_WARN, "fxworld hook: no symbol");
+    }
+    if (uintptr_t a = H->sym("SporeCoop::AnimEffect_Create")) {
+        int r = H->hook_create(M, (void*)a, (void*)h_AnimFxCreate, (void**)&o_AnimFxCreate);
+        H->log(M, r ? SK_WARN : SK_INFO, "fxanim hook at %p: %d", (void*)a, r);
+    } else {
+        H->log(M, SK_WARN, "fxanim hook: no symbol (animation effects may be relayed twice)");
     }
     if (uintptr_t a = H->sym("Simulator::cCreatureBase::CreateEffect")) {
         int r = H->hook_create(M, (void*)a, (void*)h_CreateCreatureFx, (void**)&o_CreateCreatureFx);
