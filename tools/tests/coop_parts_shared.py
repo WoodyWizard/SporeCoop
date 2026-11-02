@@ -86,6 +86,25 @@ def editor_locked(con):
     return out, (int(m.group(1)), int(m.group(2))) if m else None
 
 
+def cinematic(con):
+    m = re.search(r'cinematic ([0-9A-F]{8}) playing', con.call('coop.status')['out'])
+    return m.group(1) if m else None
+
+
+def wait_no_cinematic(host, guest, t=90):
+    """a vote while the host's game plays a cinematic opens an editor that never draws (BUG-0404, fixed on
+    fix/w34-vote-cinematic): after Cell -> Creature the evolution's and the brain upgrade's cinematics come
+    after the editors; a player starts the next vote once they are over"""
+    t0 = time.time()
+    while time.time() - t0 < t:
+        c = cinematic(host) or cinematic(guest)
+        if not c:
+            return True
+        time.sleep(2)
+    print(f'  (a cinematic still plays after {t} s: {cinematic(host)} / {cinematic(guest)})', flush=True)
+    return False
+
+
 def editor_offers(out):
     """the parts the open editor's palette offers (its check 0x5C6820 over every item): count, hash"""
     m = re.search(r'available=(\d+):([0-9A-F]{8})', out)
@@ -158,6 +177,7 @@ def main():
     gu = Ui(guest, 'guest')
     m0 = mode(host)
     party = parts(host)  # the party's set (the host's game holds it) before the editors
+    wait_no_cinematic(host, guest)
     print(' ', host.call('coop.vote editor')['out'].strip())
     time.sleep(2)
     gu.wait(lambda s: s['ready']['vis'], 10, 'ready button')
