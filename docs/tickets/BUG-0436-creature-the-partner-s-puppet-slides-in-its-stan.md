@@ -40,3 +40,7 @@ no-fail-run: open
 
 ## History
 - 2026-11-01: opened.
+- 2026-11-01: the same on NPC proxies: npc_walk_slope with `SPORE_FIX_OFF=npc.walk_ground` (cold, lane 2, lab
+  20261101-184751): every walked proxy 02481DE5 with gait 0 in all 3407 moving frames (0 fall starts, so the
+  ground check measured nothing); the two runs after it (20261101-185011) walked normally and failed on falls
+  (21.1 / 27.2 vs 0.0 / 1.5 per 100 s). BUG-0361 recorded a run like it ("every walked proxy had gait 0").
