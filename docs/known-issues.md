@@ -1499,4 +1499,27 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Reproduce: `puppet_fight_player` (coop_puppet_fight.py with SPORE_FPS=guest:30 SPORE_NET=player): `drawn jumps
   within the bound` fails, 2 of 2 runs.
 * Not checked: which abilities, whether the frame cap or the network is needed.
+* Resolved (2026-11-01, fix/w34-ability-pop): not an ability. The steps were out of the observer's view (the
+  game puts a creature outside the view on the plain terrain, under a nest mound); the test now judges what is on
+  screen. What remains visible: [issue-puppet-mound-entry](#issue-puppet-mound-entry) (BUG-0434).
 * Ticket: BUG-0414
+
+## Creature: the partner's creature on a nest mound is drawn 1 m low for one frame when it comes into view (2026-11-01, fix/w34-ability-pop)
+<a id="issue-puppet-mound-entry"></a>
+
+* What happens: the partner stands on the raised ground of a nest mound (up to 1 m over the plain terrain); when
+  the observer turns its camera so that the partner's creature comes into view, its first frame is drawn on the
+  plain terrain (up to 1 m low), the next one on the mound.
+* Reproduce: docs/tickets BUG-0434 (the host on the fixture's nest mound, the guest turning its camera);
+  coop_puppet_fight.py prints these steps as `entry`.
+* Known: the game puts every creature of ours outside the view on the plain terrain; writes at the mod's frame
+  cannot keep it up (docs/re/creature.md#creature-out-of-view-ground).
+* Ticket: BUG-0434
+
+## Creature: on the lower part of a nest mound the partner's creature stands 0.4 m in the ground (2026-11-01, fix/w34-ability-pop)
+<a id="issue-puppet-mound-sink"></a>
+
+* What happens: a partner standing 0-0.5 m over the plain terrain on a mound is drawn 5 cm into the plain terrain,
+  i.e. up to 0.45 m under the mound's surface; crossing 0.5 m it steps 0.4-0.5 m up or down.
+* Cause: `creature.puppet_ground` takes the plain terrain (`GetHeightAt`, without the mound) as the ground.
+* Ticket: BUG-0435

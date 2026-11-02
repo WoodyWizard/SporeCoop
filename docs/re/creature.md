@@ -1456,3 +1456,37 @@ counts fall starts, +0x137 going 1 -> 0 while the host's NPC moves).
   walk gait (98 % on screen) and the path (93 % matched windows) were fine: the falls are single frames.
 * `npc.walk_ground`: the proxies' walk is placed with `WalkPlace::ground` (on_own_ground, 5 cm into the ground)
   as the partner's puppet (creature.puppet_ground).
+## A creature outside the view stands on the plain terrain, not on a nest mound (2026-11-01, fix/w34-ability-pop)
+<a id="creature-out-of-view-ground"></a>
+
+BUG-0414, BUG-0434. GOG 2024, lane 4, guest at 30 fps over netem `player`, `coop.track` rows (hd / ht: height over
+`cPlanetModel::GetHeightAt` of the drawn puppet / of its target; vis / sx / sy: its screen position).
+* ✔ The fixture's nest at about (-127, -488, -65) (the 065CB8AB herd, NPCs #18-#21) stands on a mound: a creature
+  walks and stands there 0.4-1.03 m over `GetHeightAt` and is grounded (+0x137 = 1), own avatar and puppet alike
+  (`GetHeightAt` is the plain terrain without the mound). The NPCs of that nest stood next to it at -0.05-0.0 m.
+* ✔ A creature of ours (the partner's puppet) **outside the observer's view** is put on the plain terrain by the
+  game: with the host standing on the mound at 1.03 m and the guest's camera turned away (right-drags), the
+  puppet was drawn at 0.00 m in every frame it was off the screen (1503 of 2113 frames of `lod_exp`), at 1.03 m in
+  the frames it was on it; the steps are 1.03 m each way, every time the view swings over it (at 7, 15, 25 and
+  40 m from the observer alike). With the camera still and the puppet in view: no step.
+* ✔ The first frame back in view is still drawn low; the game lifts the creature one update later (26-28 such
+  frames in 70 s of camera turns): a visible one-frame step (BUG-0434).
+* ✔ Writes at the mod's frame (Present) cannot keep it up while it is out of view: a teleport to the target with
+  the teleport mark (the driver's stuck teleport every 1.5 s, `tp` 2 -> 19 in 70 s), the same plus +0x137 = 0,
+  or clearing bit 0x800 of +0xB58 (+0xB59 & 0x08, set in 6 of 6 memory samples off screen and in 0 of 6 on it)
+  each frame: the next update put it on the plain terrain again every time. `or [creature+0xB58], 0x800` is
+  written by about 15 places (0xD2600D, 0xE8CB6A, 0xF10799, ...; 0xE8CB6A is in a behaviour node of the Creature
+  and Adventure modes, not a view test) and tested at 0xC1CFCC in 0xC1CF30 (an ability tick, types 0xD / 0x52):
+  so the bit is not (only) the view state. ? Which update grounds a culled creature on `GetHeightAt`.
+* ✔ `cCreatureAnimal::Update` (0xC0AE30) does not move a puppet: its position before and after the call was the
+  same in every sampled frame (moved 0.00 m, also in the frames of these drops). The game calls it about 15 times
+  a second per creature (dt 31-100 ms; 22 puppets and proxies on a guest: ~300 calls a second), not every frame.
+* ✔ BUG-0414's "pops when it uses an ability" were these steps: every 0.77-1.0 m step of the w33 runs
+  (20261101-142305, 20261101-151044) was out of the observer's view (vis 0 or sx -800..4700) while the fighter
+  stood or walked on the mound (its own hd 0.97 / 1.03), with the test's camera drags (`Watch`). The partner's
+  animations played on the puppet (MSG_ANIM, `coop.track` columns ranims / ranim) are rare in a fight (7 in 50 s)
+  and none came within 0.6 s before a step; 02481DE5 is the animation of a stop (speed state 0), not an ability.
+* ✔ `creature.puppet_ground` (kOverGround 0.5 m) puts a target 0-0.5 m over `GetHeightAt` 5 cm into it: on the
+  lower part of the mound (0.39-0.44 m) the standing puppet stays 0.44 m under the partner (drawn -0.05 m while
+  the partner's own creature is at 0.39-0.44 m; the game does not lift a creature put under its ground), and a
+  partner walking over the 0.5 m line makes the puppet step 0.4-0.5 m (BUG-0435).

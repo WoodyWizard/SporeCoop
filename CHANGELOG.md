@@ -7,6 +7,9 @@
   the guest's mating call was pressed while the guest was still reloading the host's world or its
   cell was hatching (the game takes no click then). The test now waits like a player; not a bug of
   the mod (BUG-0411).
+- Tests: `puppet_fight` counted steps of the other player's creature that the observer could not see: out of
+  the view the game puts a creature on the plain terrain instead of on a nest mound, 1 m lower. Only steps on
+  the observer's screen count now; it was not an ability (BUG-0414).
 - SporeKit: a hook made while the game runs could let a game thread call address 0 (a handled
   fault, once followed by a frozen game): the hook's original function is now set before the hook is
   switched on. Seen in test games when the first simulated input was sent (BUG-0398).

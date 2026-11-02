@@ -3219,3 +3219,22 @@ counters. Every one has a `_player` twin (`SPORE_FPS=guest:30 SPORE_NET=player`)
   teleport mark). In a warm game the game itself grounds it again within 0.6 s, so it does not reproduce
   BUG-0399 (docs/re/tribe.md#tribe-proxy-ground).
 * `coop.npc list` lines end with the heights over the ground (`agl=`; guest: `want_agl= made_agl= grounded=`).
+
+## puppet_fight judges what is on the observer's screen (2026-11-01, fix/w34-ability-pop)
+<a id="testing-fight-in-view"></a>
+
+BUG-0414. The game puts a creature outside the view on the plain terrain (`GetHeightAt`): standing on a nest
+mound the partner's puppet is drawn up to 1 m lower while the observer looks away, and `Watch` (the camera drags of
+the walk and fight tests) swings the view over it (docs/re/creature.md#creature-out-of-view-ground).
+* `coop_puppet_fight.analyse(..., wh)` counts a step as a drawn jump only when the puppet is on the observer's
+  screen in both frames (`coop.track` vis and sx / sy inside the window); `off_view` lists the others, `entry` a
+  radial step from the first frame back in view (drawn low once, BUG-0434, not judged). It prints the share of
+  frames on screen (84-100 % in fights) and, per step, the partner's animations played on the puppet in the
+  0.6 s before it and the fighter's own ones (new `coop.track dump` columns `ranims ranim`: on a puppet's rows
+  the MSG_ANIM played on it so far and the last id, on the own avatar's rows its own animations sent).
+* Re-judged, the two failing w33 runs (20261101-142305: 3 jumps, 20261101-151044: 2) have 0 jumps on screen
+  (3 out of view, 2 `entry`).
+* The fighter's health is set to its maximum (`coop.hp` own max), not to 1000: the invariant monitor's
+  `puppet_hp` rule failed every run on the puppet that cannot show 1000 of 10 (lab 20261101-160710, 2 of 2).
+* Pitfall: a nest mound is not in `GetHeightAt`; heights over the ground (`hd`, `ht`, `agl`) of a creature on it
+  read 0.4-1.03 m although it stands on its ground.
