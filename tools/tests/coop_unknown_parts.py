@@ -43,6 +43,18 @@ def pack_path(b):
     return os.path.join(lane.game_dir(b), 'Data', PACK_FILE)
 
 
+def clean_caches(d):
+    """a fresh profile: a stale Sporepedia cache (Pollination.package) or a baked model under the
+    host's key answers for 290229B9 and the guest's game then never uses the host's creation"""
+    for f in ('Pollination.package', 'GraphicsCache.package', 'EditorSaves.package',
+              'Planets.package', 'RigblockInfo.package'):
+        try:
+            os.remove(os.path.join(d, f))
+        except OSError:
+            pass
+    shutil.rmtree(os.path.join(d, 'SporeCoop'), ignore_errors=True)
+
+
 def patch_host_creations():
     """the host's My Creations: Tiger Horse with one part of Spore_Pack_03"""
     from coop_nest_species import read_pkg, write_pkg, fixtures_dir
@@ -74,6 +86,8 @@ def main():
         orig(guest)
         patch_host_creations()
     twoinst.restore_creations = restore
+    clean_caches(lane.HOST_DIR)
+    clean_caches(lane.GUEST_DIR)
     host, bob = start('creature')
     ck = Checks()
     print(' ', host.call(f'coop.creations choose creature {TIGER:08X}')['out'].strip())
@@ -89,6 +103,8 @@ def main():
     print(f'LAB-WATCH lane={b} since={time.time():.1f}', flush=True)
     os.rename(pk, off)
     try:
+        appdata = lane.APPDATA.replace(f'/{lane.BOTTLE}/', f'/SporeLab{b}/' if b > 1 else '/Games/')
+        clean_caches(os.path.join(appdata, 'SporeKit-mp1', 'Spore'))
         carol, carol_inst = start_extra(1)['Carol']
         for name in filter(None, os.environ.get('SPORE_FIX_OFF', '').split(',')):  # the run that must FAIL
             print('  carol:', carol.call(f'coop.fix {name.strip()} off')['out'].strip().splitlines()[0])
