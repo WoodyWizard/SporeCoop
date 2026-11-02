@@ -44,6 +44,9 @@
 - Creature and Cell: DNA (and the cell's food) that a partner or the pack earned now says where it came
   from in a short notice: "+9 DNA from Bob's hunt", "+7 DNA shared by Alice's pack", "+10 food (DNA)
   from Bob's meals"; the game logs write each change with its cause (BUG-0389).
+- Logs: in the Tribe and Civilization stages the 10 s `trace:` line now says how long the player's own
+  pointer has stood still (`ptr_still=`), so a report shows whether the partner's copy of it could have
+  caught up yet (BUG-0416).
 
 ### Fixed
 - Creature: the eggs at other species' nests are the same on every game: a guest now sees the eggs the

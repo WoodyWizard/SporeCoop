@@ -3372,3 +3372,41 @@ the walk and fight tests) swings the view over it (docs/re/creature.md#creature-
 * The campaign's sync and census checks skip a guest whose game stands (`busy:` paused, editor, loading)
   instead of only one with the "Resume Game" button shown (`OLD_PAUSE_CHECK=1`: the old check).
 
+## Monitor gates that misjudged: rejoin transfers, a jumped pointer, the party hit (2026-11-01, fix/w35-monitor-gates)
+<a id="testing-monitor-w35"></a>
+
+Three monitor findings of the w33 runs were the rule or the test, not the mod (each with its ticket):
+
+* **link across rejoins (BUG-0415)**: a world transfer to a guest on loopback sends up to 4x the world's bytes
+  again (the LAN window of 600 reliable chunks outruns the 128-packet ack window, a loading guest acks late;
+  BUG-0405 on feat/w33-tests-session): chaos_tribe 20261101-150122 #3 had two rejoins 16 s apart, the host's
+  partner line said resends/sent 0.66, pending 401, 0.99 on the three lines from s 50 (`out 17181 KB` for a
+  3442 KB world). The rule now leaves out a partner line while the host sends its world to that partner and
+  15 s after "queued completely" (`Timeline.sharing`, the same code as feat/w33-tests-session's; config
+  `share_after`, < 0 = the rule before). A storm outside a transfer (or one that goes on after it, or a transfer
+  to another player) still fires: gates_selftest `resend_after`, `resend_other`.
+* **drawn on a Tribe / Civ pointer (BUG-0416)**: `drawn_v` is the copy's speed over the newest states this game
+  has (`r.buf.sample(now)` and `now - 0.5`), not the drawn copy's. A pointer that jumped a few frames before the
+  mark has a copy still resting at the old point with `drawn_v` 0 only while no state with the new point has
+  arrived: a late state, as after the host's 0.8 s save hitch at s 99.9 of chaos_tribe 20261101-140615 (164 m;
+  its sync-check at s 99.1 had compared both pointers OK). Own trace lines in Tribe / Civ now end with
+  `ptr_still=<s>` (seconds since the own pointer last moved, modes::rts_marker_still); the drawn rule judges a
+  copy only when its player's pointer stood still for `drawn_still` (1 s) + rtt (< 0: the rule before). A
+  pointer that has rested for a second is where the copy must be: the rule still fires on it.
+* **posse_damage in npc_walk (BUG-0417)**: the walkers (the proxies nearest the guest) were often members of
+  the host avatar's family; the flee phase's `coop.npc hosthit` (the host's avatar as attacker) made the family
+  fight the host back: the game's own answer to the host attacking its own party, a hit only the test makes (a
+  guest's hit on the host's family is dropped by npc.party_peace; no hit path of the mod is involved). npc_walk now walks and hits NPCs outside the host's pack and family (BUG-0390's rule);
+  `NPC_WALK_PARTY=1` puts them first again (the gate fails).
+* `monitor_tribe` (coop_monitor_tribe.py, ~3 min, tribe fixture, monitor and sync-check gates off: it judges
+  the monitor itself): (1) the host runs 600 ms frames (`frame.limit 600`) and pins its pointer 176 m away in its
+  first frame after three marks in a row (the command sent 0.03 s before the mark; the session clock from
+  `coop.diag sync`): the guest's line at the mark has the copy 175.9 m off with drawn_v 0.0, the host's
+  ptr_still=0.0, and no drawn violation; (2) `coop.puppet hold on` on the guest and the host's pointer pinned to
+  a third point: drawn reported within ~20 s; (3) two rejoins in a row: no link violation. FAIL with
+  `SPORE_MONITOR='{"drawn_still": -1}'`. Pitfalls: a point the copy already shows plants nothing (the first
+  version pinned the jump phase's last point again); with 60 fps games a pin 0.06 s before the mark landed only
+  when the rtt happened to be high (1 of 2), because the new state arrives within a frame.
+* Seen on the way: a guest whose mouse never was over its planet (the lab's guest windows) sends its Tribe
+  pointer as (0 0 0): the host draws it at the planet's centre (`drawn=(0.0 0.0 0.0)`, d=506). Harmless (not
+  visible); the drawn rule compares it with the guest's own (0 0 0) and agrees.

@@ -1587,3 +1587,12 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   `parts:` log line on either game (monitor rule `unlocks`).
 * Reproduce: `SPORE_LANE=N SPORE_NET=player SPORE_FPS=guest:30 python3 tools/tests/coop_transition_net.py --to creature`.
 * Ticket: BUG-0441
+## Tribe: walked animals step ~3 m in one frame on the guest's screen (2026-11-01, fix/w35-monitor-gates)
+<a id="issue-tribe-proxy-step"></a>
+
+* What happens: while the host walks its animals (`coop.npctrack walk`), a guest sometimes draws a walked animal
+  2.6-3.1 m further in one 15 ms frame, at times several animals in the same frame.
+* Reproduce: `tools/lab.py run npc_walk_tribe --repeat 3`: "no jump of a moving proxy" fails in about 2 of 3 runs
+  on lane 7 (also with main's own test file).
+* Not checked: whether the host's states arrive bunched (late) then, or the walk driving.
+* Ticket: BUG-0445

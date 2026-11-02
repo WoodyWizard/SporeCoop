@@ -1106,6 +1106,13 @@ bool rts_marker_moving(const Adapter* a, void* e, double within)
     return g_host_for_modes->time_seconds() - ((Marker*)e)->moved_at < within;
 }
 
+double rts_marker_still(const Adapter* a, void* e)
+{
+    if (!a || !e || a->fill != rts_fill || !g_host_for_modes)
+        return -1;
+    return g_host_for_modes->time_seconds() - ((Marker*)e)->moved_at;
+}
+
 static const Adapter kAdapters[] = {
     {"Tribe", kTribe, nullptr, false, rts_local, rts_fill, rts_spawn, rts_drive, rts_despawn, rts_tag},
     {"Civilization", kCiv, nullptr, false, rts_local, rts_fill, rts_spawn, rts_drive, rts_despawn, rts_tag},
