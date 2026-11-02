@@ -331,6 +331,11 @@ static constexpr size_t kFxSlots = 1024; // power of two; far more than a frame 
 static FxCreated g_fx_ids[kFxSlots];
 static uint32_t g_fx_creates, g_fx_probes, g_fx_evicted;
 static uint32_t g_fx_mgr, g_fx_world, g_fx_anim; // creates seen per hook, animation effects skipped
+static uint32_t g_fx_last_id; // the last effect id the game created (the perf workload uses it in every stage)
+// the cost of our own work in the create hooks (the original call is not counted): the frame-time
+// number in out/REPORT.md. Two QPC reads per created effect, on the main thread only.
+static double g_fx_hook_sum, g_fx_hook_max;
+static uint64_t g_fx_hook_calls;
 static inline size_t fx_slot(void* fx)
 {
     uint32_t h = (uint32_t)((uintptr_t)fx >> 4) * 2654435761u; // objects are at least 16-aligned
@@ -377,6 +382,12 @@ void effect_table_stats(uint32_t& creates, uint32_t& probes, uint32_t& evicted, 
     world = g_fx_world;
     anim = g_fx_anim;
 }
+void effect_hook_cost(double& sum, double& max, uint64_t& calls)
+{
+    sum = g_fx_hook_sum;
+    max = g_fx_hook_max;
+    calls = g_fx_hook_calls;
+}
 bool effect_position(void* fx, net::Vec3& out)
 {
     // VisualEffect_SetTransform 0xA827B0 assigns Transform+4 to the math Vector3 object at effect
@@ -393,6 +404,7 @@ bool effect_relayed(void* fx)
     FxCreated* e = fx_find(fx);
     return e && e->relayed;
 }
+uint32_t last_effect_id() { return g_fx_last_id; }
 static bool g_in_relay;        // a relayed effect played by us: never put it in the table again
 static thread_local bool t_in_anim_fx; // inside the animation system's effect wrapper (main thread)
 static WorldEffectListener g_world_listener;
@@ -414,10 +426,16 @@ static int SK_THISCALL h_MgrCreateFx(void* mgr, uint32_t id, uint32_t a3, void**
     if (g_in_relay)
         return r;
     if ((r & 0xFF) && out && *out) {
+        double t0 = H->time_seconds();
         g_fx_mgr++;
+        g_fx_last_id = id;
         fx_add(*out, id);
         if (g_world_listener)
             g_world_listener(*out, id);
+        double dt = H->time_seconds() - t0;
+        g_fx_hook_sum += dt;
+        g_fx_hook_max = dt > g_fx_hook_max ? dt : g_fx_hook_max;
+        g_fx_hook_calls++;
     }
     return r;
 }
@@ -437,10 +455,16 @@ static int SK_THISCALL h_WorldCreateFx(void* world, uint32_t id, uint32_t a3, vo
     if (g_in_relay)
         return r;
     if ((r & 0xFF) && out && *out) {
+        double t0 = H->time_seconds();
         g_fx_world++;
+        g_fx_last_id = id;
         fx_add(*out, id);
         if (g_world_listener)
             g_world_listener(*out, id);
+        double dt = H->time_seconds() - t0;
+        g_fx_hook_sum += dt;
+        g_fx_hook_max = dt > g_fx_hook_max ? dt : g_fx_hook_max;
+        g_fx_hook_calls++;
     }
     return r;
 }

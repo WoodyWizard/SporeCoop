@@ -142,9 +142,12 @@ void* create_local_effect(uint32_t id, const void* xform);
 // what effects::tick reads about the effects the hooks recorded this frame
 bool effect_position(void* effect, net::Vec3& out);
 bool effect_relayed(void* effect); // a creature hook already sent it
+uint32_t last_effect_id();          // the last effect id the game created (a valid id in this stage)
 void clear_effect_table();         // after effects::tick (once a frame, main thread)
 void effect_table_stats(uint32_t& creates, uint32_t& probes, uint32_t& evicted, uint32_t& mgr, uint32_t& world,
                         uint32_t& anim);
+// our own work in the create hooks (the original game call is not counted)
+void effect_hook_cost(double& sum, double& max, uint64_t& calls);
 void set_effect_log(bool on); // support logging of every effect the game creates (coop.effects log on)
 // the game's own pool calls, for a relayed effect (start: the same create+start as StartOrStop...)
 void* start_effect(void* c, const EffectEvent& ev);

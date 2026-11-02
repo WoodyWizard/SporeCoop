@@ -270,7 +270,8 @@ static void process_world(void* fx, uint32_t id)
 // effects at the local player, which the relay hooks see like effects of the game's own code
 static uint32_t g_load_n;
 static uint32_t g_load_ms = 1000;
-static uint32_t g_load_id = 0xE1B24DDBu; // the mating call's hearts
+static uint32_t g_load_id; // 0: the last effect id the game created (a valid id in this stage)
+static uint32_t g_load_ok, g_load_failed;
 static double g_load_at;
 
 static void load_tick(double t)
@@ -280,14 +281,24 @@ static void load_tick(double t)
     g_load_at = t + g_load_ms / 1000.0;
     if (g_load_at < t)
         g_load_at = t + 1.0;
+    uint32_t id = g_load_id ? g_load_id : game::last_effect_id();
+    if (!id) {
+        if (g_log)
+            H->log(M, SK_INFO, "effect: perf load waits for the game to create an effect (no id yet)");
+        return;
+    }
     net::Vec3 p = C.local_pos();
     uint8_t xf[0x44] = {};
     float* q = (float*)(xf + 4);
     q[0] = p.x;
     q[1] = p.y;
     q[2] = p.z;
-    for (uint32_t i = 0; i < g_load_n; i++)
-        game::create_local_effect(g_load_id, xf);
+    for (uint32_t i = 0; i < g_load_n; i++) {
+        if (game::create_local_effect(id, xf))
+            g_load_ok++;
+        else
+            g_load_failed++;
+    }
 }
 
 // the cost of this module on the main thread, printed in coop.status and once a minute as a
@@ -295,7 +306,10 @@ static void load_tick(double t)
 static double g_tick_sum, g_tick_max;
 static uint64_t g_tick_frames;
 static double g_perf_at;
-static uint32_t g_perf_creates, g_perf_probes, g_perf_evicted, g_perf_sent;
+static double g_started_at;
+static uint32_t g_perf_creates, g_perf_probes, g_perf_evicted, g_perf_sent, g_perf_mgr, g_perf_world, g_perf_anim;
+static double g_perf_hook_sum;
+static uint64_t g_perf_hook_calls;
 
 void tick(double)
 {
@@ -320,21 +334,35 @@ void tick(double)
     if (g_perf_at <= 0)
         g_perf_at = t0;
     if (t0 - g_perf_at >= 60) {
+        double wall = t0 - g_perf_at;
         g_perf_at = t0;
         uint32_t c = 0, pr = 0, ev = 0, mg = 0, wo = 0, an = 0;
         game::effect_table_stats(c, pr, ev, mg, wo, an);
+        double hs = 0, hm = 0;
+        uint64_t hc = 0;
+        game::effect_hook_cost(hs, hm, hc);
+        double dh = hs - g_perf_hook_sum;
+        uint64_t dc = hc - g_perf_hook_calls;
         H->log(M, SK_INFO,
-               "perf: effects tick avg %.4f max %.3f ms/frame over %llu frames; hooks %u creates (mgr %u, world %u, "
+               "perf: effects hooks %.4f %% of the main thread (%.3f ms work over %.0f s, %llu calls, avg %.3f us, "
+               "max %.3f us); tick avg %.4f max %.3f ms/frame over %llu frames; hooks %u creates (mgr %u, world %u, "
                "animation %u skipped), %u table probes, %u evicted; sent %u; load %u effects per %u ms",
-               g_tick_frames ? g_tick_sum / g_tick_frames * 1000 : 0.0, g_tick_max * 1000,
-               (unsigned long long)g_tick_frames, c - g_perf_creates, mg, wo, an, pr - g_perf_probes,
-               ev - g_perf_evicted, g_sent - g_perf_sent, g_load_n, g_load_ms);
+               wall > 0 ? dh / wall * 100 : 0.0, dh * 1000, wall, (unsigned long long)dc,
+               dc ? dh / dc * 1e6 : 0.0, hm * 1e6, g_tick_frames ? g_tick_sum / g_tick_frames * 1000 : 0.0,
+               g_tick_max * 1000, (unsigned long long)g_tick_frames, c - g_perf_creates, mg - g_perf_mgr,
+               wo - g_perf_world, an - g_perf_anim, pr - g_perf_probes, ev - g_perf_evicted,
+               g_sent - g_perf_sent, g_load_n, g_load_ms);
         g_tick_sum = g_tick_max = 0;
         g_tick_frames = 0;
         g_perf_creates = c;
         g_perf_probes = pr;
         g_perf_evicted = ev;
         g_perf_sent = g_sent;
+        g_perf_mgr = mg;
+        g_perf_world = wo;
+        g_perf_anim = an;
+        g_perf_hook_sum = hs;
+        g_perf_hook_calls = hc;
     }
 }
 
@@ -442,7 +470,10 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
     g_world = 0;
     g_tick_sum = g_tick_max = 0;
     g_tick_frames = 0;
-    g_perf_at = 0;
+    g_perf_at = g_started_at = now();
+    g_perf_hook_sum = 0;
+    g_perf_hook_calls = 0;
+    g_load_n = g_load_ms = g_load_id = g_load_ok = g_load_failed = 0;
     g_perf_creates = g_perf_probes = g_perf_evicted = g_perf_sent = 0;
     game::set_effect_relay_enabled(g_fix);
     game::set_effect_listener(on_local_effect);
@@ -470,8 +501,8 @@ void set_load(uint32_t n, uint32_t period_ms, uint32_t id)
     g_load_n = n;
     g_load_ms = period_ms ? period_ms : 1000;
     g_load_at = now();
-    if (id)
-        g_load_id = id;
+    g_load_id = id;
+    g_load_ok = g_load_failed = 0;
 }
 
 static std::string pool_map(void* c, uint32_t off)
@@ -560,13 +591,27 @@ std::string status()
     game::effect_table_stats(creates, probes, evicted, mgr, world, anim);
     snprintf(b, sizeof b,
              "effects cost: tick avg %.4f max %.3f ms/frame over %llu frames; hooks %u creates (mgr %u, world %u, "
-             "animation %u skipped), %u table probes, %u evicted; load %u per %u ms\n",
+             "animation %u skipped), %u table probes, %u evicted; last game effect id %08X; load %u per %u ms: "
+             "%u created, %u failed\n",
              g_tick_frames ? g_tick_sum / g_tick_frames * 1000 : 0.0, g_tick_max * 1000,
-             (unsigned long long)g_tick_frames, creates, mgr, world, anim, probes, evicted, g_load_n, g_load_ms);
+             (unsigned long long)g_tick_frames, creates, mgr, world, anim, probes, evicted, game::last_effect_id(),
+             g_load_n, g_load_ms, g_load_ok, g_load_failed);
     s += b;
     snprintf(b, sizeof b, "effects world drops: no_pos=%u relayed=%u far=%u seen=%u rate=%u\n", g_w_no_pos, g_w_relayed,
              g_w_far, g_w_seen, g_w_rate);
     s += b;
+    {
+        double hs = 0, hm = 0;
+        uint64_t hc = 0;
+        game::effect_hook_cost(hs, hm, hc);
+        double wall = g_started_at > 0 ? now() - g_started_at : 0;
+        snprintf(b, sizeof b,
+                 "effects hook work: %.3f ms over %.1f s (%.4f %% of the main thread), %llu calls, avg %.3f us, "
+                 "max %.3f us\n",
+                 hs * 1000, wall, wall > 0 ? hs / wall * 100 : 0.0, (unsigned long long)hc,
+                 hc ? hs / hc * 1e6 : 0.0, hm * 1e6);
+        s += b;
+    }
     if (g_last_tx.at > 0) {
         snprintf(b, sizeof b, "effects sent last: id=%08X key=%08X pool=%u stop=%d age=%.1fs\n", g_last_tx.id,
                  g_last_tx.key, g_last_tx.pool, g_last_tx.stop ? 1 : 0, now() - g_last_tx.at);
