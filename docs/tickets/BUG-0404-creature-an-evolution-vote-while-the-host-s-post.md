@@ -92,6 +92,7 @@ the guest's load).
   wait, removed); vote, vote_caption, vote_stale, vote_end_editor, vote_drop_editor, guest_editor,
   evolve_world, civ_sw_vote, cell_editor_timed pass in 20261101-175912; editor_desync fails there at part 4,
   the known BUG-0411 (also on main).
+* smoke 14/14 on lane 5: lab 20261101-182611. creature_editor_soak not run on this branch.
 * `make test`: npc_tests test_busy_gate (the gate's waits and limits).
 
 ## History
