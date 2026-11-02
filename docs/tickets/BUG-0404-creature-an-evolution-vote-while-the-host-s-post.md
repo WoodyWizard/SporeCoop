@@ -85,7 +85,13 @@ the guest's load).
 * FAIL with `SPORE_FIX_OFF=core.vote_action_busy,world.share_busy` (the share's pause wait, removed since):
   lab 20261101-165714 (action_cinematic, action_paused; share_paused was the removed switch's case).
 * PASS: lab 20261101-161924 (3/3, cases 1-3), 20261101-164247 (all five cases), 20261101-164000 (busy_gate),
-  PASS3_PLACEHOLDER
+  final code (3faabb0+): vote_during_cinematic 3/3 in lab 20261101-173721, busy_gate 3/3 in lab
+  20261101-181701 (busy_gate#3 of 20261101-173721 met its checks and failed on the monitor's link rule
+  over two world transfers 18 s apart: BUG-0439, the test now spaces them).
+* Regression (lane 5): guest_editor_hold 20261101-173422 (it failed in 20261101-172428 with the share's pause
+  wait, removed); vote, vote_caption, vote_stale, vote_end_editor, vote_drop_editor, guest_editor,
+  evolve_world, civ_sw_vote, cell_editor_timed pass in 20261101-175912; editor_desync fails there at part 4,
+  the known BUG-0411 (also on main).
 * `make test`: npc_tests test_busy_gate (the gate's waits and limits).
 
 ## History
