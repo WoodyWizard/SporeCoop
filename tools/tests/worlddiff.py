@@ -101,6 +101,10 @@ def _near(p, c, r):
     return c is not None and all(map(math.isfinite, p)) and math.dist(p, c) <= r
 
 
+def _origin(p):
+    return all(math.isfinite(v) and abs(v) < 0.01 for v in p)
+
+
 def _fmt(p):
     return f'({p[0]:.0f} {p[1]:.0f} {p[2]:.0f})'
 
@@ -136,14 +140,17 @@ def diff(host, guest, area=None):
     if host.modeid != guest.modeid or host.world != guest.world:
         return [Finding(sig='apart', stage=stage, n=0, text=f'not in the same place: host {host.mode} {host.world}, '
                                                             f'guest {guest.mode} {guest.world}')]
-    c = guest.me
+    # Tribe / Civ: a player's position is its mouse pointer, (0 0 0) when it has none (a game in the
+    # background): the host's centre then (the planet's centre is no place to compare)
+    c = guest.me if guest.me and not _origin(guest.me) else host.me if host.me and not _origin(host.me) else None
     if c is None:
-        return [Finding(sig='nocentre', stage=stage, n=0, text='the guest has no own player position')]
+        return [Finding(sig='nocentre', stage=stage, n=0, text='no player position to compare around')]
     r = area or AREA.get(stage, 70.0)
     inner = r * 0.8  # a host object near the edge may be just outside on the guest (dumps are not simultaneous)
 
-    def rows(w, kind, own=None, lim=r):
-        return [x for x in w.rows if x['kind'] == kind and (own is None or x['own'] in own) and _near(x['pos'], c, lim)]
+    def rows(w, kind, own=None, lim=r):  # objects at (0 0 0) are not placed (pooled): not compared
+        return [x for x in w.rows if x['kind'] == kind and (own is None or x['own'] in own) and not _origin(x['pos'])
+                and _near(x['pos'], c, lim)]
 
     # creatures: host npc <-> guest proxy by net id
     for kind, hown, gown, label in (('c', ('npc',), ('proxy',), 'creature'), ('l', ('npc',), ('proxy',), 'cell')):
@@ -197,7 +204,7 @@ def diff(host, guest, area=None):
         vt = host.vts.get(noun) or guest.vts.get(noun)
         vts = f' [vtable 0x{vt:X}]' if vt and noun not in NOUNS else ''
         a, b = hg.get(noun, []), gg.get(noun, [])
-        tol = TOL_MOVING if name in MOVING else TOL_STATIC
+        tol = TOL_MOVING if name in MOVING or stage == 'Space' else TOL_STATIC  # Space: ships and planets' objects move
         pairs, ua, ub = _match(a, b, tol)
         ua = [x for x in ua if _near(x['pos'], c, inner)]
         ub = [x for x in ub if _near(x['pos'], c, inner)]
