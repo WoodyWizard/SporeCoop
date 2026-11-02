@@ -3,10 +3,12 @@
 ## [Unreleased]
 
 ### Fixed
-- Creature: the effects a player's own creature makes (the mating call's hearts, social and ability
-  particles, ...) were made only in that player's game, so the other players saw the animation on the
-  puppet but no effect. They are relayed and played on the partner's puppet with the game's own effect
-  functions (`coop.fix creature.effects_relay off` restores the old behaviour; BUG-0451).
+- Creature, Cell and Tribe: the effects a player's own creature, cell or tribe member makes (the
+  mating call's hearts, being hit, death, a part found, the brain upgrade, a cell's hit/death, a
+  member's death, ...) were made only in that player's game, so the other players saw the animation
+  on the puppet but no effect. They are relayed and played on the partner's puppet/cell/mirror with
+  the game's own effect functions, including the generic world-effect path
+  (`coop.fix creature.effects_relay off` restores the old behaviour; BUG-0451).
 
 ## [0.7.3.4] - 2026-11-02
 

@@ -10,8 +10,8 @@ role:
 versions:
 fixed_in: unreleased
 branch: fix/w38-effects
-commits: 0d704785 (relay), 646dfc97 (test), 40c7834b (docs)
-tests: creature_effects
+commits: 0d704785 (relay), 646dfc97 (test), 40c7834b (docs), d4e5a367 (world relay), c26a1d10 (tests)
+tests: creature_effects, cell_effects, tribe_effects
 signature:
 docs: docs/re/creature.md#creature-effects-relay
 related:
@@ -55,6 +55,21 @@ creator or its effect pools". Animation-event effects are already covered by the
   a stop is sent only for a key this game sent a start for.
 * The receiver calls the same game function on the partner's puppet: `CreateEffect(puppet, bone, id)`
   for a one-shot, `StartOrStopEffectFromPool1/2(puppet, 1, id, key)` for a pool effect.
+* A second, generic path for effects that bypass both (a death, a part found, a cell's effects, a
+  tribe member's effects): the base effect transform setter 0xA827B0 is hooked; when the effect's
+  position is on a local player-controlled object (`near_local`: avatar in Creature/Cell,
+  `tribe::local_member_positions`, `civ::local_positions`, the local UFO in Space), the effect id and
+  the 0x44-byte transform are sent (pool 5) and the partner creates the same effect at the same world
+  position with `cEffectsManager::CreateEffect` (0xA6CAD0) and the same transform. Animation-event
+  effects (caller 0x9FBF00) are skipped: the animation relay already makes them on the puppet.
+* Cell, Tribe, Civ and Space use this same world path; only `near_local` differs. Cell and Tribe are
+  tested (below). No effect could be made on a player's Civ vehicle or Space UFO with the fixture and
+  the available test commands (no weapon-fire command; `coop.space hit` and `coop.fleet spawn` made
+  no effect at all), so those two are wired but not verified here.
+* The direct `EffectWorld::CreateEffect` hook faults when it sees the UI skinner's render pipeline
+  (Tribe/Civ: `Skinner::cSkinnerTexturePainter::StartRender+0x28`, thousands of caught faults). It is
+  installed only in Creature/Cell; the always-on `cEffectsManager::CreateEffect` forwarder covers
+  Tribe. The hooks only queue into a fixed ring, `effects::tick` sends on the main thread.
 * Diagnostics: `coop.effects` (counters, last sent/received effect with the game's effect object
   active flag and its position), `coop.effects map`, `coop.effects probe <key>`,
   `coop.effects log on`; counters also in `coop.status`.
@@ -68,20 +83,23 @@ greeting; the partner's own game must have the game's effect object active at th
 (`coop.effects` reads the effect's vt 0x10 and its position, compared with `coop.status`'s puppet
 position).
 
-* PASS: `python3 tools/lab.py run creature_effects --lane 2 --lane 3 --retry 0` ->
-  out/lab/20261102-070230 (lane 2: OK; the host's effect was 0.47 m from the puppet, the guest's
-  0.11 m; both games `total faults: 0`).
-* FAIL: `SPORE_FIX_OFF=creature.effects_relay python3 tools/lab.py run creature_effects --lane 3
-  --retry 0` -> out/lab/20261102-070312 (both directions: `sent 0 -> 0`, no effect reached the
-  partner).
-* Regression with the gates on: `python3 tools/lab.py run
-  smoke,creature,team,puppet_walk,creature_social_ally --lane 2 --lane 3` ->
-  out/lab/20261102-064552 (16/16 passed).
+* PASS: `python3 tools/lab.py run creature_effects,cell_effects,tribe_effects --lane 2 --lane 3
+  --retry 0` -> out/lab/20261102-093244 (3/3 OK).
+* FAIL: `SPORE_FIX_OFF=creature.effects_relay python3 tools/lab.py run
+  creature_effects,cell_effects,tribe_effects --lane 2 --lane 3 --retry 0` ->
+  out/lab/20261102-094033 (0/3: every case failed).
+* The earlier creature-only pass/fail: out/lab/20261102-070230 / 20261102-070312.
+* Final regression: `python3 tools/lab.py run
+  smoke,creature,team,puppet_walk,creature_social_ally,cell_coop,tribe_coop,civ_coop,space_coop,creature_effects
+  --lane 2 --lane 3` -> out/lab/20261102-094358 (17/17 passed).
+* The Tribe/Civ UI Skinner fault of the first world-hook shape was fixed (the world hook is only in
+  Creature/Cell now, the hooks queue and tick on the main thread): tribe_coop, civ_coop and
+  chaos_tribe -> out/lab/20261102-093433 (3/3 OK).
 * `make test` passed.
 
 ## History
 
 - 2026-11-02: opened.
-- 2026-11-02: fixed on fix/w38-effects (relay through 0xC150D0 and the effect pools; test
-  creature_effects; docs/re/creature.md#creature-effects-relay). Not released yet (`fixed_in:
-  unreleased`).
+- 2026-11-02: fixed on fix/w38-effects (relay through 0xC150D0, the effect pools and the generic
+  world-effect/transform path; tests creature_effects, cell_effects, tribe_effects; docs/re/creature.md
+  #creature-effects-relay). Not released yet (`fixed_in: unreleased`).

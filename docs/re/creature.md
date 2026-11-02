@@ -1606,22 +1606,47 @@ creates `E1B24DDB` (bone 9) through 0xC150D0 on the host's avatar only, and the 
 * Switch: `coop.fix creature.effects_relay off` (COOP_FIX, BUG-0451); counters and the last sent /
   received effect in `coop.effects` and `coop.status`; `coop.effects map` dumps the puppets' pool maps,
   `coop.effects probe <key>` asks the game's pool, `coop.effects log on` logs the hooks.
+* The game also creates effects **inside its UI skinner's render pipeline** (Tribe and Civ):
+  `Skinner::cSkinPainterPipeline::ExecutePipeline` -> `EffectWorld_CreateEffect`. Hooking the
+  direct `EffectWorld::CreateEffect` there made the game fault at
+  `Skinner::cSkinnerTexturePainter::StartRender+0x28` (4852 times on a Tribe host, 2863 in Civ); the
+  allocation the first fix made in that pipeline was the trigger. The final shape: the direct world
+  create hook is installed **only in Creature and Cell** (the stage module calls
+  `game::set_world_create_hook` on a mode change); the small `cEffectsManager::CreateEffect`
+  forwarder 0xA6CAD0 is always hooked; the hooks only copy into a fixed ring and
+  `effects::tick` (main thread, once a frame) filters and sends. No allocation and no network call
+  happens in the render pipeline.
 
-### What was measured (creature fixture, lane 2, 2026-11-02)
+### What was measured (lane 2, GOG 2024, 2026-11-02)
 
-| effect | made on the actor by | partner before | partner after |
-|---|---|---|---|
-| mating call, hearts/call effect `E1B24DDB` bone 9 (host) | 0xC150D0 | no (only the animation) | yes, game effect active at the puppet (0.47 m) |
-| the same from the guest (bone 0x11) | 0xC150D0 | no | yes (0.11 m) |
-| guest join greeting `E1A4BD93` | 0xC150D0 | yes: the greeting animation is relayed and the guest's own animation event makes the effect on the puppet | yes (this module does not duplicate it) |
-| pack members' `4EC6CD85` | 0xC150D0 on herd members, not the avatar | no | no: not the player's own creature |
-| persistent effect pool 2 `D7BE955C` (the guest's own creature after the join) | pool 2 | no | yes (`StartOrStopEffectFromPool2` on the puppet) |
-| footstep puffs `2D4ADB36` / animation-event effects | `FUN_009FBF00`, animation event | yes (the animation is relayed) | yes, still once (not in this relay) |
-| level-up / brain upgrade `E699F6E4` | the guest's own game too (it gets the DNA) | yes | yes |
+Every "made by" below is the game function the effect came from; "before" is without this relay
+(the old behaviour) and "after" with `coop.fix creature.effects_relay on`.
 
-Cells, Tribe, Civ and Space are not covered by this module. The Cell stage has its own one-shot
-effect path (`Simulator::Cell::cCellGFX::InstanceEffectOnCell` 0xE66840) and its own mirror map
-(cellsync's host index -> mirror, the partner's puppet cell); relaying it needs that map (not done
-here). The Cell death / knockout / hatch effects already replay on the partner's cell in cellsync for
-the events it handles. Tribe, Civ and Space effects belong to their stage modules (tribe.cpp, civ.cpp,
-squadron.cpp, spacecoop.cpp); they were not measured here and are not in this relay.
+| stage | effect | made on the actor by | on the partner before | after |
+|---|---|---|---|---|
+| Creature | mating call `E1B24DDB` bone 9 (host), bone 0x11 (guest) | `cCreatureBase::CreateEffect` 0xC150D0 | no (only the relayed animation) | yes, game effect active at the puppet (0.1-0.5 m) |
+| Creature | being hit `E1A4BD93` bone 0 | 0xC150D0 | no | yes (0.1-0.5 m) |
+| Creature | death: `EF8F883F`, `BED2AD51` (world), `7809F8FD` (pool 1), `E1A4BD93` | effect world + pool 1 + 0xC150D0 | no | yes (the world effects at the avatar; the pool and one-shot through their hooks) |
+| Creature | a part found `A3C5EB2B` (world) | effect world at the avatar | no | yes (1.3-1.6 m) |
+| Creature | brain upgrade `D7BE955C` (pool 2); the cinematic's `E699F6E4` | pool 2 here; the cinematic effect is made by both games (both got the DNA) | no (the cinematic effect: yes, the guest plays its own) | yes |
+| Creature | an ability's kept effect `3A616FEE` (pool 1, `coop.abilities play 10`) | pool 1 | no | yes |
+| Creature | social abilities (sing, dance, charm, pose) and the social result | the ability animation; animation-event effects (`FUN_009FBF00`) | yes: the animation relay makes them on the puppet | yes (not duplicated by this relay) |
+| Creature | attack abilities bite, charge, strike, spit (`coop.abilities play 0..9`) | the ability animation; animation-event effects | yes (animation relay) | yes (no one-shot/pool effect was made by these in the fixture) |
+| Creature | sprint, sneak, glide | the locomotion animation and its animation-event effects (footsteps `2D4ADB36`, dust `E6D770B8`) | yes (animation relay) | yes (not duplicated); the fixture cannot glide (no jump) |
+| Creature | eating fruit / meat | not measured: the fixture has no reachable fruit and no deterministic eat command; the world relay would catch an effect at the avatar | not measured | not measured |
+| Creature | level-up / brain upgrade (see above) | `AddEvolutionPoints` -> pool 2 + cinematic | no | yes |
+| Cell | a hit / knock-out death `F3BA1C83`, `2C34420C`, `A6D4590B`, `44894CD7`, `94AF0B82` (world) | effect world at the cell | no | yes, the partner's game creates it at the same world position (test: 0.0-0.2 m from the cell, 0.05 m from the puppet) |
+| Cell | eating, bites, electric/poison/spikes | not separated from the hit effects above; the same world path | no | yes (same relay; not a separate case) |
+| Tribe | a member's death `EF8F883F`, `E55DC391` (world) | effect world at the member | no | yes, at the member's mirror (0.18 m; test) |
+| Tribe | tool use, gathering, dance/social, fire | not measured: `coop.tribe act 7` ordered the attack but made no effect in the create/pool hooks in the fixture; their visible part is animation | not measured | not measured |
+| Civ | vehicle weapon / ability | not measured: `coop.civ` has no command that fires a vehicle weapon in the fixture (move/buy/build/siege do not), and no effect appeared in the create/world hooks during them | not measured | not measured |
+| Space | UFO weapon / ability | not measured: `coop.space hit 1|50` (the game's damage path on the own UFO) and `coop.fleet spawn 6` made no effect (`coop.effects world=0`); firing at a target would make one, but the fixture has no target in range and no test command fires the player's weapon | not measured | not measured |
+
+The generic relay is in place for every stage that makes an effect at the local player's own
+controlled object: `effects.cpp` decides by the effect's world position against
+`coop.cpp`'s `near_local` (the avatar in Creature and Cell, `tribe::local_member_positions()` in
+Tribe, `civ::local_positions()` in Civ, the adapter's local UFO in Space). The receiver creates the
+same effect id at the same world position with `Swarm::cEffectsManager::CreateEffect` and the same
+transform, so no per-stage puppet mapping is needed. Civ and Space are wired but no effect could be
+made to test them (above).
+
