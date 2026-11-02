@@ -3366,3 +3366,8 @@ the walk and fight tests) swings the view over it (docs/re/creature.md#creature-
   IsUnlocked): diff the two games' lists to see which parts differ.
 * Measured (lane 9): after a live Cell -> Creature start the host's census has 324 items (the `creature`
   fixture 312); a loaded game counts 324 too with the switch on.
+* Pitfall: after the players' Cell -> Creature the host's game shows the stage's intro caption ("It is the
+  beginning of a new day...", cinematic 0A34E41F, `coop.status` `cinematic 0A34E41F playing`, trace
+  `input_lock=1`) and waits for its green check (1410, 1048) for as long as nobody clicks it (minutes in
+  transition_net, until the History click). A `coop.vote editor` during it left the host's editor black and
+  stuck (BUG-0404, fixed on fix/w34-vote-cinematic); the test clicks the check like a player first.

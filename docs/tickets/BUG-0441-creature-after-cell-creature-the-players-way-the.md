@@ -9,12 +9,12 @@ source: transition_net, lab 20261101-180254 (feat/w33-tests-session, main 6ac351
 role: guest
 versions: main 6ac351e
 fixed_in:
-branch:
-commits:
-tests:
+branch: fix/w36-parts-transition
+commits: 27605dc
+tests: parts_transition (tools/tests/coop_parts_shared.py --from-cell), transition_net (allow removed)
 signature:
-docs:
-related:
+docs: docs/re/creations.md#creations-cell-twins, docs/06-testing.md#testing-parts-transition
+related: BUG-0401, BUG-0368, BUG-0446
 ---
 
 ## Report
@@ -30,14 +30,29 @@ How to reproduce: `SPORE_LANE=N SPORE_NET=player SPORE_FPS=guest:30 python3 tool
 --to creature`, then `coop.parts` on both games (`sync: shared=... host_world=... have_set=...`).
 
 ## Root cause
-Not analysed. Inferred from parts.cpp: `guest_tick` returns early unless the guest has the host's set
-(`g_have_set`), `C.world()` equals the host's announced world (`g_host_world`, the sender's save CRC) and the
-guest plays the host's world; after an in-game stage change both games have a new save (the host's share
-after its evolution), so the world ids the host announces and the guest compares may not match. BUG-0401's
-own test starts in the creature fixture, where they do.
+Observed (lane 9, `coop.parts keys|states` on both games after the players' Cell -> Creature; Ghidra GOG 2024):
+not a missing sync. The guest had the host's set (`have_set=1 host_set=55 host_world=9652F8AD`, same world,
+rx_sets every 10 s) and nothing to apply. The 6 parts the guest's census lacked (02B3EDDB 7E262CF0
+BE830BDE DEF1C7FF FE534766 3A3C49A5, type 0x40626000) are creature twins of Cell parts: the live Cell ->
+Creature start 0xE83910 adds the 12 twins of table 0x1485FE8 to the unlockable map `+0x1490`
+(AddUnlockableItem) and unlocks the twins of the Cell parts the cell had. The host made that start (map
+324 items); the guest loaded the host's world, and a load rebuilds the map from the game's data without
+them (312), but the item states `+0x4D04` came with the save: **both games' 324 states were identical**,
+the 6 twins state 5 (unlocked) on the guest too. IsUnlocked (the palette's check 0x5C6820) reads the
+state first, so the guest's editor offered them; the census (trace `parts=`, the monitor's `unlocks`
+rule, `coop.editor`, and parts.shared's locked list) went over the map only: 55 against 49. A latent
+real gap followed from it: parts.shared could never unlock a twin on a guest (not in its locked list).
+docs/re/creations.md#creations-cell-twins.
+
+Not a reward given to the host only (no C1 / BUG-0418 case): the guest's game has every part the host has.
+The world ids matched (9652F8AD on both, the gate said Same): the inferred cause above was wrong.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+`parts.census_states` (parts.cpp `census`): the census goes over the map `+0x1490` and the item states
+together (each key once), counting IsUnlocked: every game counts what its palette offers (host 55 of 324,
+guest 55 of 324), the twins are in the locked list parts.shared unlocks from, and `coop.editor` counts
+the same way (`available=<count>:<hash>`). Test commands `coop.parts keys` / `coop.parts states`.
+New symbols (documentation): `SporeCoop::CreatureStart_FromCell`, `SporeCoop::CellTwinParts`.
 
 ## Verification
 <!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
