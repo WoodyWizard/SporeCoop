@@ -702,3 +702,37 @@ BUG-0441. GOG 2024, Ghidra (out/ghidra-2024) and lane 9 (`coop_transition_net.py
 * Not a reward of the host only: the guest's game has the host's twins. Not checked: whether a guest's
   own Cell parts (collected in its game during co-op Cell) should count for the twins; the guest
   loads the host's world, so the host's cell decides (BUG-0446).
+
+## Unknown parts check (2026-11-02, fix/w38-content)
+<a id="creations-unknown-parts"></a>
+
+BUG-0452. GOG 2024, lanes 4/5 (`tools/tests/coop_unknown_parts.py`), the game files' index.
+
+* ✔ A part key in a model is the group's last three bytes (`60 62 40` for the creature parts group
+  0x40626000, `60 61 40` for the cell group 0x40616000, `60 64 40` for the UFO group 0x40646000) and the
+  instance right after them. The group's least significant byte (`0x00`) is usually written as a byte run
+  (the byte before, repeated), so a scan for the literal four bytes finds only the keys whose `0x00` is
+  literal: the 33-part Tiger Horse model yielded 1 reference, not 33. `model_part_refs` matches the three
+  bytes and reads the instance after them; the slot and parent that follow must be plausible (a small
+  index or -1), which keeps the group bytes that occur in other data out.
+* ✔ The 0.7.3.4 checks only know the Creepy & Cute part and paint lists. A guest without
+  `Data/Spore_Pack_03.package` and a host creation with one part of that pack (`0x75A5D2D4`) faults at
+  `0x00441F3B` (data 0) in the bake, exactly as BUG-0341 (`coop_unknown_parts.py`, FAIL run
+  `out/lab/20261102-122525`).
+* ✔ Every part id of every received creature, cell and UFO model is now checked with `key_exists` (cached
+  per session). An unknown part is shown as a base game detail of the same group and the same number of
+  `0xFE` bytes (`content_packs.h` `kBasePartFallbacks`); the Creepy & Cute table is the first choice. An
+  unknown paint is shown as a base game paint of the same layer and length (`kBasePaintFallbacks`); the
+  base game's 111 skin paint effects are `kBasePaintEffects` (14 of them have no effect record in any
+  package, the game defines them itself).
+* ✔ An id that cannot be replaced refuses the creation: a puppet falls back, an NPC species is not
+  registered, the host's own world creation keeps the world from loading (the message in `world.cpp`).
+  Each unknown id is logged (`creations: ... part <id> unknown here: this game does not have it ...`).
+* ✔ Runtime (lanes 4/5, PASS run `out/lab/20261102-122224`): Carol without Spore_Pack_03 plays the host's
+  Creature world, no fault, logs the unknown part id; the model her game reads has 33 parts, none unknown,
+  the species profile built (`parts 290229B9 n=33 cc=0 unknown=0 species=1 ... substituted=2`).
+* Covered kinds: creature, cell, UFO (the only `Kind` values; the mod has no vehicle or building creation
+  path). Paints are checked for creature models only.
+* ? Not verified: a part of another pack whose kind is not a detail (the kind is in the prop record the
+  guest lacks, so it is shown as a detail, not the same kind); the three paint effect dwords of cell and
+  UFO models; a paint effect that has no base game substitute (the creation is refused, never baked).

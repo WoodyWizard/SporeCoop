@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Fixed
+- Creature: a guest whose game lacks a parts pack (for example the Bot Parts pack) no longer crashes
+  when it loads a host world whose creature uses a part of that pack: the part is shown as a similar
+  base game part (the Creepy & Cute parts first), an unknown paint as a base game paint, and an id that
+  cannot be replaced makes the game use its own fallback instead of baking the model. Each unknown id is
+  written to the log (BUG-0452).
+
 ## [0.7.3.4] - 2026-11-02
 
 ### Added

@@ -144,6 +144,7 @@ add('host_old_choice', P + 'coop_host_old_choice.py', minutes=3)  # BUG-0344
 # BUG-0341: Carol (no Creepy & Cute pack) on a lane outside the run (SPORE_FREE_LANE), host and Bob on the run's lane
 add('guest_missing_pack', P + 'coop_guest_missing_pack.py', minutes=6, uses_free_lane=True)
 add('guest_pack_paints', P + 'coop_guest_pack_paints.py', minutes=4)  # a guest without Creepy & Cute sees the host's pack paints as base game paints (BUG-0369; SPORE_FIX_OFF=creations.paint_substitute fails)
+add('unknown_parts', P + 'coop_unknown_parts.py', minutes=6, uses_free_lane=True)  # a guest without a parts pack (Spore_Pack_03) does not crash on a part it lacks and logs the id (BUG-0452; SPORE_FIX_OFF=creations.unknown_parts fails)
 add('creations_rejoin', P + 'coop_creations_rejoin.py', minutes=5)  # a newcomer under a reused id is not shown with the previous player's creature (BUG-0076)
 add('editor_desync', P + 'coop_editor_desync.py', minutes=7)  # mating call and editors in Cell and Creature, real input (BUG-0411: --old-wait fails about 1 run in 2)
 add('creature_desync', P + 'coop_creature_desync.py', minutes=4)  # editors, a crash and a reload: companion of a host-only species, no NPC copies, kills, the guest's look
