@@ -1609,15 +1609,9 @@ creates `E1B24DDB` (bone 9) through 0xC150D0 on the host's avatar only, and the 
 * The game also creates effects **inside its UI skinner's render pipeline** (Tribe and Civ):
   `Skinner::cSkinPainterPipeline::ExecutePipeline` -> `EffectWorld_CreateEffect`. Hooking the
   direct `EffectWorld::CreateEffect` there made the game fault at
-  `Skinner::cSkinnerTexturePainter::StartRender+0x28` (4852 times on a Tribe host, 2863 in Civ); the
-  allocation the first fix made in that pipeline was the trigger. The final shape: the direct world
-  create hook is installed **only in Creature and Cell** (the stage module calls
-  `game::set_world_create_hook` on a mode change); the small `cEffectsManager::CreateEffect`
-  forwarder 0xA6CAD0 is always hooked; the hooks only copy into a fixed ring and
-  `effects::tick` (main thread, once a frame) filters and sends. No allocation and no network call
-  happens in the render pipeline.
-
-### What was measured (lane 2, GOG 2024, 2026-11-02)
+  `Skinner::cSkinnerTexturePainter::StartRender+0x28` (4852 times on a Tribe host, 2863 in Civ);
+  the hook was removed and re-installed at every stage change while the render thread was inside it.
+  The final shape (### What was measured (lane 2, GOG 2024, 2026-11-02)
 
 Every "made by" below is the game function the effect came from; "before" is without this relay
 (the old behaviour) and "after" with `coop.fix creature.effects_relay on`.
@@ -1650,3 +1644,60 @@ same effect id at the same world position with `Swarm::cEffectsManager::CreateEf
 transform, so no per-stage puppet mapping is needed. Civ and Space are wired but no effect could be
 made to test them (above).
 
+### Review: cost, threads and hook lifetime below): every hook is installed
+  **once** in `game::init`, the stage logic only flips a work flag, and a hook body on any thread
+  but the game's main thread only calls the original and returns. The hooks record into a fixed
+  open-addressing table (no allocation, no linear scan) and `effects::tick` (main thread, once a
+  frame) reads the effect's position and sends. No allocation and no network call happens in the
+  render thread.
+
+### Review: cost, threads and hook lifetime (2026-11-02, fix/w38-effects)
+<a id="creature-effects-relay-review"></a>
+
+A code review of the first shape found three problems; this is what changed and what was measured
+(lane 2, GOG 2024, 2026-11-02, `out/measure_effects_perf.py`).
+
+* **Cost**: the base transform setter `VisualEffect_SetTransform` 0xA827B0 ran on every transform
+  set of every effect, in every stage, and looked the effect up with a linear scan of 4096 entries.
+  The setter is no longer hooked: `cEffectsManager::CreateEffect` and `EffectWorld::CreateEffect`
+  record the effect in a fixed 1024-slot open-addressing table keyed by the effect pointer (one
+  probe for nearly every effect, cleared once a frame), and `effects::tick` reads the position
+  `VisualEffect_SetTransform` wrote (`effect+0xA0`, see the correction below) when it drains the
+  queue. Per created effect the hooks cost 0.16-0.26 us (two QPC reads included), which is
+  0.0001-0.0006 % of the main thread's time; `effects::tick` costs 0.001-0.02 ms/frame
+  (0.01-0.1 % of a 15 ms frame). Frame time with the relay on against
+  `coop.fix creature.effects_relay off`, 20 effects/s at the local player over four 20 s windows
+  (the windows alternate and a second run swaps the order, because the fourth window of a session
+  drifts down for both settings):
+
+  | stage | fps off | fps on | ms/frame off | ms/frame on | difference |
+  |---|---|---|---|---|---|
+  | Creature (both orders, paired) | 64.74 / 64.81 | 63.41 / 66.19 | 15.447 / 15.439 | 15.779 / 15.107 | -0.002 % (ordering cancels) |
+  | Tribe | 67.72 | 67.44 | 14.768 | 14.829 | +0.41 % |
+  | Civ | 66.82 | 66.76 | 14.966 | 14.979 | +0.09 % |
+
+  The measured cost is under 1 % in every stage (the Tribe +0.41 % is inside the run-to-run noise,
+  the tick cost there is 0.016 ms/frame).
+
+* **Threads**: the game creates effects from the UI skinner's render thread too. Every hook body
+  now checks the game's main thread id (set by `effects::tick`, `game::set_effect_relay_enabled`)
+  and only calls the original when it is another thread; the table and the queue are written on
+  the main thread only. The naked stubs are gone (no shared return-address slot): the animation
+  effect wrapper `AnimEffect_Create` 0x9FBF00 is a normal cdecl hook that sets a **thread-local**
+  flag, so the effects of a relayed animation are still skipped (the animation relay shows them)
+  without a caller-address match.
+* **Hook lifetime**: `set_world_create_hook` called `hook_create`/`hook_remove` at stage changes;
+  the removal while the render thread was inside the function is what faulted. All effect hooks
+  are installed once in `game::init` for the life of the game; `game::set_world_relay` (the stage
+  logic: Cell, Creature, Tribe, Civ, Space) and `game::set_effect_relay_enabled` (the fix switch)
+  only gate the work.
+* **Correction (2026-11-02, fix/w38-effects)**: `VisualEffect_SetTransform` 0xA827B0 assigns
+  Transform+4 to the math Vector3 object at `effect+0x9C`, and that object has a 4-byte header: the
+  position floats are at `effect+0xA0`. Reading `+0x9C` returned `(0, x, y)`, so every world effect
+  looked like it was not on the local player and nothing was relayed (measured: part found
+  `A3C5EB2B` at `(0.00, -170.10, -468.99)` while the avatar was at `(-169.51, -467.81, -87.11)`).
+  The receiver's displayed position in `coop.effects` had the same wrong offset.
+
+* Faults after the change: 0 in cell_coop, creature, tribe_coop, civ_coop, space_coop, chaos_tribe,
+  guest_editor and editor_desync (`out/lab/20261102-164724`,
+  `out/lab/20261102-170849`; every test prints `total faults: 0` for both games).
