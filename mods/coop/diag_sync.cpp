@@ -159,8 +159,16 @@ static void log_mark(const dg::Mark& m, bool own)
         snprintf(line, sizeof line, "MARK by '%s' (player %u), no session clock: %s", who.c_str(), m.origin,
                  clean(m.text).c_str());
     SWARN("%s", line);
-    // the screen of this game at the mark, for the report (a "report shot:" line follows when written)
-    bool shot = report_shot("mark", line) > 0;
+    // the screen of this game at the mark, for the report (a "report shot:" line follows when written).
+    // Its caption must not read "MARK by": tools (merge_logs.py, coop_diag.py) count those lines as marks
+    char cap[400];
+    if (m.t_session >= 0)
+        snprintf(cap, sizeof cap, "the mark by '%s' (player %u) at s %.3f: %s", who.c_str(), m.origin, m.t_session,
+                 clean(m.text).c_str());
+    else
+        snprintf(cap, sizeof cap, "the mark by '%s' (player %u), no session clock: %s", who.c_str(), m.origin,
+                 clean(m.text).c_str());
+    bool shot = report_shot("mark", cap) > 0;
     if (own) {
         if (g_P.chat_log)
             g_P.chat_log("* marked for the report: " + m.text);

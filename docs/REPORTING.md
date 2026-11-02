@@ -391,9 +391,10 @@ the kept ones are removed at the next start or report.
 **For maintainers:** the archive has them as `shots/<what>-<date>-<time>[-s<session second>].jpg`
 (`mark-20261101-174020-s14.jpg`: the MARK at local 17:40:20, session time 14.x s; `report-...`: the
 button). The report text lists them under `== Screenshots` with the MARK line each belongs to
-(`shots/mark-...jpg  1280x720 245 KB | MARK by 'Bob' (player 1) at s 14.374: ...`), and the log has
-`report shot: shots/... <size> q<quality> of <back buffer size> (on the frame N ms, ...) for: MARK
-...` right after the MARK, or `report shot: ... not taken (<why>)`. A crash or hang report has none of
+(`shots/mark-...jpg  1280x720 245 KB | the mark by 'Bob' (player 1) at s 14.374: ...`), and the log
+has `report shot: shots/... <size> q<quality> of <back buffer size> (on the frame N ms, ...) for: the
+mark by ...` right after the MARK (never "MARK by": `merge_logs.py` and the tests count those lines
+as marks), or `report shot: ... not taken (<why>)`. A crash or hang report has none of
 its own moment ("No screenshot of this moment": the graphics device is not used from a crash handler
 or a hung game); its archive still has the marks' screenshots. How they are taken:
 docs/02-modkit.md#modkit-report-shots.

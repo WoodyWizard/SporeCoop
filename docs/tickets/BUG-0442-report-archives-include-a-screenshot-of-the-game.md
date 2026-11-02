@@ -45,6 +45,12 @@ shots/ in either archive, no "screenshot included" status); PASS in 20261101-183
 button's archive has shots/report-*.jpg). The first runs 20261101-182627 (a test regex bug) and
 20261101-182830 (the mark's shot black: the warm guest's screen before the world shows; the test
 now waits for it) are the test's own.
+Final code (the shot line's caption "the mark by ..." instead of "MARK by ...": diag_creature
+20261101-190234 FAILED on it, merge_logs and coop_diag.py count "MARK by" lines as marks): FAIL off
+in 20261101-191135, PASS with report_shot, diag_cell, diag_creature in 20261101-190909.
+Regression: smoke on lane 6 in 20261101-183818: 12 OK, `ui` skipped (exclusive, needs lanes 1-5),
+`tribe_coop` FAIL "the guest box-selects its member" (seen the same on feat/w33-tests-session
+20261101-180254, no report shot in it; OK on a rerun in 20261101-190234 with `diag`).
 
 ## History
 - 2026-11-01: opened.

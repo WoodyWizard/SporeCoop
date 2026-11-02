@@ -141,8 +141,9 @@ def main():
             sess = int(float(mm.group(1)))
             ck(ms.group(3) is not None and abs(int(ms.group(3)) - sess) <= 1,
                f'its name carries the MARK\'s session second ({ms.group(2)}, MARK at s {mm.group(1)})')
-            ck(text in ms.group(11), 'the shot line names the MARK it belongs to')
-        hl = wait(lambda: re.search(r'report shot: shots/mark-\S+\.jpg .*for: MARK by .*' + re.escape(text),
+            ck(text in ms.group(11) and 'MARK' not in ms.group(11),
+               'the shot line names the mark it belongs to (not as a second "MARK by" line: tools count those)')
+        hl = wait(lambda: re.search(r'report shot: shots/mark-\S+\.jpg .*for: the mark by .*' + re.escape(text),
                                     log_from(lane.HOST, h0)), 10)
         ck(hl, 'the host took its own screenshot of the guest\'s mark')
 
@@ -183,7 +184,7 @@ def main():
             rtxt = z.read(rep).decode('utf-8', 'replace') if rep else ''
             sec = rtxt.split('== Screenshots', 1)[1].split('\n== ', 1)[0] if '== Screenshots' in rtxt else ''
             print('  report:', ('== Screenshots' + sec).strip().replace('\n', ' | ')[:400])
-            ck(re.search(re.escape(name) + r'\s+\d+x\d+ \d+ KB \| MARK by .*' + re.escape(text), sec),
+            ck(re.search(re.escape(name) + r'\s+\d+x\d+ \d+ KB \| the mark by .*' + re.escape(text), sec),
                'the report lists the screenshot next to its MARK line')
             readme = z.read('README.txt').decode('utf-8', 'replace') if 'README.txt' in names else ''
             ck('shots/' in readme and 'screenshot=0' in readme, 'the archive\'s README explains shots/ and how to turn them off')
