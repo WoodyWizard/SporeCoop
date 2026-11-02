@@ -30,6 +30,8 @@ static double g_tokens = 20.0;
 static double g_tokens_at = 0;
 
 static uint32_t g_sent, g_rx, g_played, g_stopped, g_skipped, g_failed, g_dropped;
+// why a world effect the hooks queued was not sent (coop.effects: the frame-time and test diagnosis)
+static uint32_t g_w_no_pos, g_w_relayed, g_w_far, g_w_seen, g_w_rate;
 static bool g_log;
 
 struct Last {
@@ -207,19 +209,34 @@ static void process_world(void* fx, uint32_t id)
 {
     if (!g_fix || !fx || !id || !C.sess || !C.sess->connected())
         return;
-    if (game::effect_relayed(fx)) // a creature hook already sent this effect
+    if (game::effect_relayed(fx)) { // a creature hook already sent this effect
+        g_w_relayed++;
         return;
+    }
     // the position the game's transform setter put into effect+0x9C. Animation-event effects are
     // skipped in the hook (0x9FBF00 sets a thread-local flag): the animation relay shows those.
     net::Vec3 p;
-    if (!game::effect_position(fx, p) || !C.near_local || !C.near_local(p))
+    if (!game::effect_position(fx, p)) {
+        g_w_no_pos++;
+        if (g_log)
+            H->log(M, SK_INFO, "effect: world id %08X dropped, no position at %p", id, fx);
         return;
+    }
+    if (!C.near_local || !C.near_local(p)) {
+        g_w_far++;
+        if (g_log)
+            H->log(M, SK_INFO, "effect: world id %08X at %.2f %.2f %.2f is not on the local player", id, p.x, p.y, p.z);
+        return;
+    }
     for (size_t i = 0; i < 2048; i++)
-        if (g_world_sent[i].fx == fx && g_world_sent[i].id == id)
+        if (g_world_sent[i].fx == fx && g_world_sent[i].id == id) {
+            g_w_seen++;
             return;
+        }
     double t = now();
     if (!take_token(t)) {
         g_dropped++;
+        g_w_rate++;
         return;
     }
     g_world_sent[g_world_n_entries++ & 2047] = {fx, id};
@@ -304,14 +321,14 @@ void tick(double)
         g_perf_at = t0;
     if (t0 - g_perf_at >= 60) {
         g_perf_at = t0;
-        uint32_t c = 0, pr = 0, ev = 0;
-        game::effect_table_stats(c, pr, ev);
+        uint32_t c = 0, pr = 0, ev = 0, mg = 0, wo = 0, an = 0;
+        game::effect_table_stats(c, pr, ev, mg, wo, an);
         H->log(M, SK_INFO,
-               "perf: effects tick avg %.4f max %.3f ms/frame over %llu frames; hooks %u creates, %u table probes, "
-               "%u evicted; sent %u; load %u effects per %u ms",
+               "perf: effects tick avg %.4f max %.3f ms/frame over %llu frames; hooks %u creates (mgr %u, world %u, "
+               "animation %u skipped), %u table probes, %u evicted; sent %u; load %u effects per %u ms",
                g_tick_frames ? g_tick_sum / g_tick_frames * 1000 : 0.0, g_tick_max * 1000,
-               (unsigned long long)g_tick_frames, c - g_perf_creates, pr - g_perf_probes, ev - g_perf_evicted,
-               g_sent - g_perf_sent, g_load_n, g_load_ms);
+               (unsigned long long)g_tick_frames, c - g_perf_creates, mg, wo, an, pr - g_perf_probes,
+               ev - g_perf_evicted, g_sent - g_perf_sent, g_load_n, g_load_ms);
         g_tick_sum = g_tick_max = 0;
         g_tick_frames = 0;
         g_perf_creates = c;
@@ -387,8 +404,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
                 last.x = p.x;
                 last.y = p.y;
                 last.z = p.z;
-            } else if (skg::readable((uint8_t*)fx + 0x9C, 12)) {
-                const float* p = (const float*)((uint8_t*)fx + 0x9C);
+            } else if (skg::readable((uint8_t*)fx + 0xA0, 12)) {
+                const float* p = (const float*)((uint8_t*)fx + 0xA0); // the Vector3 at effect +0x9C
                 last.has_pos = true;
                 last.x = p[0];
                 last.y = p[1];
@@ -415,6 +432,7 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
     g_tokens = 20.0;
     g_tokens_at = 0;
     g_sent = g_rx = g_played = g_stopped = g_skipped = g_failed = g_dropped = 0;
+    g_w_no_pos = g_w_relayed = g_w_far = g_w_seen = g_w_rate = 0;
     g_last_tx = Last{};
     g_last_rx.clear();
     g_last_rx_start.clear();
@@ -538,13 +556,16 @@ std::string status()
              "effects: fix=%d sent=%u received=%u played=%u stopped=%u skipped=%u failed=%u dropped_rate=%u world=%u\n",
              (int)g_fix, g_sent, g_rx, g_played, g_stopped, g_skipped, g_failed, g_dropped, g_world);
     s += b;
-    uint32_t creates = 0, probes = 0, evicted = 0;
-    game::effect_table_stats(creates, probes, evicted);
+    uint32_t creates = 0, probes = 0, evicted = 0, mgr = 0, world = 0, anim = 0;
+    game::effect_table_stats(creates, probes, evicted, mgr, world, anim);
     snprintf(b, sizeof b,
-             "effects cost: tick avg %.4f max %.3f ms/frame over %llu frames; hooks %u creates, %u table probes, "
-             "%u evicted; load %u per %u ms\n",
+             "effects cost: tick avg %.4f max %.3f ms/frame over %llu frames; hooks %u creates (mgr %u, world %u, "
+             "animation %u skipped), %u table probes, %u evicted; load %u per %u ms\n",
              g_tick_frames ? g_tick_sum / g_tick_frames * 1000 : 0.0, g_tick_max * 1000,
-             (unsigned long long)g_tick_frames, creates, probes, evicted, g_load_n, g_load_ms);
+             (unsigned long long)g_tick_frames, creates, mgr, world, anim, probes, evicted, g_load_n, g_load_ms);
+    s += b;
+    snprintf(b, sizeof b, "effects world drops: no_pos=%u relayed=%u far=%u seen=%u rate=%u\n", g_w_no_pos, g_w_relayed,
+             g_w_far, g_w_seen, g_w_rate);
     s += b;
     if (g_last_tx.at > 0) {
         snprintf(b, sizeof b, "effects sent last: id=%08X key=%08X pool=%u stop=%d age=%.1fs\n", g_last_tx.id,

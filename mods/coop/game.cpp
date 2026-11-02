@@ -330,6 +330,7 @@ struct FxCreated { void* fx; uint32_t id; bool relayed; };
 static constexpr size_t kFxSlots = 1024; // power of two; far more than a frame creates
 static FxCreated g_fx_ids[kFxSlots];
 static uint32_t g_fx_creates, g_fx_probes, g_fx_evicted;
+static uint32_t g_fx_mgr, g_fx_world, g_fx_anim; // creates seen per hook, animation effects skipped
 static inline size_t fx_slot(void* fx)
 {
     uint32_t h = (uint32_t)((uintptr_t)fx >> 4) * 2654435761u; // objects are at least 16-aligned
@@ -366,17 +367,24 @@ void clear_effect_table()
         if (e.fx)
             e = FxCreated{};
 }
-void effect_table_stats(uint32_t& creates, uint32_t& probes, uint32_t& evicted)
+void effect_table_stats(uint32_t& creates, uint32_t& probes, uint32_t& evicted, uint32_t& mgr, uint32_t& world,
+                        uint32_t& anim)
 {
     creates = g_fx_creates;
     probes = g_fx_probes;
     evicted = g_fx_evicted;
+    mgr = g_fx_mgr;
+    world = g_fx_world;
+    anim = g_fx_anim;
 }
 bool effect_position(void* fx, net::Vec3& out)
 {
-    if (!fx || !skg::readable((uint8_t*)fx + 0x9C, 12))
+    // VisualEffect_SetTransform 0xA827B0 assigns Transform+4 to the math Vector3 object at effect
+    // +0x9C: that object has a 4-byte header, its three floats are at +0xA0 (measured: reading
+    // +0x9C gave (0, x, y)).
+    if (!fx || !skg::readable((uint8_t*)fx + 0xA0, 12))
         return false;
-    const float* p = (const float*)((uint8_t*)fx + 0x9C); // where VisualEffect_SetTransform put it
+    const float* p = (const float*)((uint8_t*)fx + 0xA0);
     out = net::Vec3{p[0], p[1], p[2]};
     return p[0] != 0 || p[1] != 0 || p[2] != 0;
 }
@@ -397,9 +405,16 @@ static MgrCreateFx_t o_MgrCreateFx;
 static int SK_THISCALL h_MgrCreateFx(void* mgr, uint32_t id, uint32_t a3, void** out)
 {
     int r = o_MgrCreateFx(mgr, id, a3, out);
-    if (!fx_main_thread() || !g_fx_relay_on.load(std::memory_order_relaxed) || t_in_anim_fx || g_in_relay)
+    if (!fx_main_thread() || !g_fx_relay_on.load(std::memory_order_relaxed))
+        return r;
+    if (t_in_anim_fx) {
+        g_fx_anim++;
+        return r;
+    }
+    if (g_in_relay)
         return r;
     if ((r & 0xFF) && out && *out) {
+        g_fx_mgr++;
         fx_add(*out, id);
         if (g_world_listener)
             g_world_listener(*out, id);
@@ -413,9 +428,16 @@ static bool g_world_on; // the stage logic's gate (set_world_relay): no work out
 static int SK_THISCALL h_WorldCreateFx(void* world, uint32_t id, uint32_t a3, void** out)
 {
     int r = o_WorldCreateFx(world, id, a3, out);
-    if (!g_world_on || !fx_main_thread() || !g_fx_relay_on.load(std::memory_order_relaxed) || t_in_anim_fx || g_in_relay)
+    if (!g_world_on || !fx_main_thread() || !g_fx_relay_on.load(std::memory_order_relaxed))
+        return r;
+    if (t_in_anim_fx) {
+        g_fx_anim++;
+        return r;
+    }
+    if (g_in_relay)
         return r;
     if ((r & 0xFF) && out && *out) {
+        g_fx_world++;
         fx_add(*out, id);
         if (g_world_listener)
             g_world_listener(*out, id);
