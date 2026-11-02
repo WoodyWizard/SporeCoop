@@ -18,14 +18,20 @@ REPEAT=${REPEAT:-3}
 PERIOD=${SPORE_DETECTOR:-30}
 start=$(date +%Y%m%d-%H%M)
 
-busy_lane() {  # a game of this lane is running (its bottle's SporeApp.exe)
-    local l=$1 pid
-    for pid in $(pgrep -x SporeApp.exe); do
-        if tr '\0' '\n' < "/proc/$pid/environ" 2>/dev/null | grep -qx "SPORE_LANE=$l"; then
-            return 0
-        fi
-    done
-    return 1
+busy_lane() {  # a game of this lane answers its console (another job runs there)
+    python3 - "$1" <<'PY'
+import sys
+sys.path.insert(0, 'tools')
+from sporectl import Console
+lane = int(sys.argv[1])
+for inst in (2 * lane - 1, 2 * lane):
+    try:
+        if Console(inst, timeout=3).call('ping').get('ok'):
+            sys.exit(0)
+    except (OSError, ValueError):
+        pass
+sys.exit(1)
+PY
 }
 
 args=()
