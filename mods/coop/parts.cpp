@@ -69,29 +69,75 @@ constexpr int kMaxTries = 5;
 static bool is_host() { return C.sess && C.sess->role() == net::Role::Host && C.sess->connected(); }
 static bool is_guest() { return C.sess && C.sess->role() == net::Role::Client && C.sess->connected(); }
 
-bool census(int& unlocked, uint32_t& hash, int& unlockable, std::vector<Key>* locked, std::vector<Key>* unlocked_keys)
+// ---------------------------------------------------------------- BUG-0441
+// The live Cell -> Creature start (0xE83910) adds 12 creature parts, the creature twins of Cell parts
+// (table 0x1485FE8: {cell instance, creature instance} x 12, types 0x40616000 / 0x40626000), to the
+// unlockable map (+0x1490, AddUnlockableItem) and unlocks the twins of the Cell parts the cell had
+// (state 5). A loaded save rebuilds the map from the game's data without them (312 instead of 324),
+// but its item states (+0x4D04) keep them, and IsUnlocked (the palette's check 0x5C6820) reads the state
+// first: a guest that loaded the host's world after the evolution offers the same parts in its editor,
+// yet the census counted the map only (host parts=55 of 324, guest 49 of 312), and parts.shared never
+// unlocked a twin on a guest (its locked list came from the map). Now the census goes over the map and
+// the item states together: every game counts what its palette offers.
+// `coop.fix parts.census_states off`: the map only (0.7.3.3, BUG-0401's first version).
+static bool g_states_fix = true;
+COOP_FIX("parts.census_states", "BUG-0441", g_states_fix, "creature: the parts census counts the item states too (a loaded game agrees with the one that came from Cell)");
+
+// the state map (+0x4D04 buckets, +0x4D08 count; node {u32 lo, u32 hi, u8 state (bit 0 unlocked, 4 seen),
+// ..., next at +0x10}): every item the game has a state for, also items that are not in the map +0x1490
+static bool states(void* items, std::vector<std::pair<Key, uint8_t>>& out)
+{
+    if (!items || !readable((char*)items + 0x4D04, 8))
+        return false;
+    void** b = field<void**>(items, 0x4D04);
+    uint32_t n = field<uint32_t>(items, 0x4D08);
+    for (uint32_t i = 0; b && n < 100000 && i < n && readable(b + i, 4); i++)
+        for (uint32_t* nd = (uint32_t*)b[i]; nd && out.size() < 100000; nd = (uint32_t*)nd[4]) {
+            if (!readable(nd, 0x14))
+                break;
+            out.push_back({{nd[0], nd[1]}, (uint8_t)nd[2]});
+        }
+    return true;
+}
+
+bool census(int& unlocked, uint32_t& hash, int& unlockable, std::vector<Key>* locked, std::vector<Key>* unlocked_keys,
+            void* items)
 {
     unlocked = unlockable = 0;
     hash = 0;
-    void* items = C.items ? C.items() : nullptr;
+    if (!items)
+        items = C.items ? C.items() : nullptr;
     if (!items || !a_IsUnlocked || !readable((char*)items + 0x1490, 8))
         return false;
+    std::set<Key> seen;
+    auto count = [&](uint32_t lo, uint32_t hi) {
+        unlockable++;
+        if (thiscall<bool>(a_IsUnlocked, items, lo, hi)) {
+            unlocked++;
+            uint32_t h = (lo ^ (hi * 0x9E3779B1u)) * 0x85EBCA6Bu;
+            hash += h ^ (h >> 13);
+            if (unlocked_keys)
+                unlocked_keys->push_back({lo, hi});
+        } else if (locked)
+            locked->push_back({lo, hi});
+    };
     void** b = field<void**>(items, 0x1490);
     uint32_t n = field<uint32_t>(items, 0x1494);
     for (uint32_t i = 0; b && n < 100000 && i < n && readable(b + i, 4); i++)
         for (uint32_t* nd = (uint32_t*)b[i]; nd && unlockable < 100000; nd = (uint32_t*)nd[10]) {
             if (!readable(nd, 0x2C))
                 break;
-            unlockable++;
-            if (thiscall<bool>(a_IsUnlocked, items, nd[0], nd[1])) {
-                unlocked++;
-                uint32_t h = (nd[0] ^ (nd[1] * 0x9E3779B1u)) * 0x85EBCA6Bu;
-                hash += h ^ (h >> 13);
-                if (unlocked_keys)
-                    unlocked_keys->push_back({nd[0], nd[1]});
-            } else if (locked)
-                locked->push_back({nd[0], nd[1]});
+            if (g_states_fix)
+                seen.insert({nd[0], nd[1]});
+            count(nd[0], nd[1]);
         }
+    if (g_states_fix) { // the items a live Cell -> Creature start added: in the states, not in the map
+        std::vector<std::pair<Key, uint8_t>> st;
+        if (states(items, st))
+            for (auto& [k, v] : st)
+                if (!seen.count(k) && unlockable < 100000)
+                    count(k.first, k.second);
+    }
     return true;
 }
 
@@ -301,6 +347,38 @@ int find_part(int level)
     int n, all;
     uint32_t h;
     return census(n, h, all) ? n : -1;
+}
+
+std::string dump(const std::string& what)
+{
+    std::string s;
+    char b[64];
+    if (what == "keys") { // the unlocked unlockable items (the census)
+        std::vector<Key> mine;
+        int n, all;
+        uint32_t h;
+        if (!census(n, h, all, nullptr, &mine))
+            return "no collected parts\n";
+        std::sort(mine.begin(), mine.end());
+        for (auto& k : mine) {
+            snprintf(b, sizeof b, "%08X:%08X ", k.first, k.second);
+            s += b;
+        }
+        return s + "\n";
+    }
+    std::vector<std::pair<Key, uint8_t>> st;
+    void* items = C.items ? C.items() : nullptr;
+    if (!states(items, st))
+        return "no collected parts\n";
+    std::sort(st.begin(), st.end());
+    snprintf(b, sizeof b, "states=%zu default(+0xC)=%u\n", st.size(), (unsigned)field<uint8_t>(items, 0xC));
+    s = b;
+    for (auto& [k, v] : st) {
+        snprintf(b, sizeof b, "%08X:%08X=%X%s ", k.first, k.second, v,
+                 thiscall<bool>(a_IsUnlocked, items, k.first, k.second) ? "u" : "");
+        s += b;
+    }
+    return s + "\n";
 }
 
 std::string status()

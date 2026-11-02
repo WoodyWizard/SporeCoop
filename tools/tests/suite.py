@@ -126,6 +126,7 @@ add('update_leak', P + 'coop_update_leak.py', minutes=4)  # 5 refused update att
 add('guest_editor', P + 'coop_guest_editor.py', minutes=4)
 add('guest_editor_locks', P + 'coop_guest_editor_locks.py', minutes=4)  # the guest's own editor locks the parts the species has not collected (BUG-0368; SPORE_FIX_OFF=creations.own_editor_items fails)
 add('parts_shared', P + 'coop_parts_shared.py', minutes=6, fixture='creature')  # the parts a player finds are the party's: host -> guest, guest -> host, the guest's editor palette, a rejoin (BUG-0401; SPORE_FIX_OFF=parts.shared fails)
+add('parts_transition', P + 'coop_parts_shared.py --from-cell', minutes=10, fixture='cell')  # BUG-0441: after Cell -> Creature the players' way the guest's collected parts are the host's within 10 s (the Cell twins), then parts_shared's finds, editor (the palette offers the host's parts) and rejoin (SPORE_FIX_OFF=parts.census_states fails)
 add('old_species', P + 'coop_old_species.py', minutes=3)  # an NPC of a player's replaced creature shows on the guest: the host answers its species (BUG-0370; SPORE_FIX_OFF=creations.old_species fails)
 add('dna_notice', P + 'coop_dna_notice.py', minutes=3)  # shared DNA names its cause on the partner's screen (+N DNA from Bob's hunt) and in the logs (dna: a -> b cause=...); a feature, no switch
 add('dna_notice_cell', P + 'coop_dna_notice.py --cell', minutes=3)  # Cell: a partner's meals named on the other's screen (+10 food (DNA) from Bob's meals) and in the logs
@@ -428,9 +429,7 @@ add('latency_step_ingame', 'SPORE_NET="delay=30,jitter=5" ' + P + 'coop_latency_
 add('transition_net', 'SPORE_NET=player SPORE_FPS=guest:30 ' + P + 'coop_transition_net.py',
     ('nightly',), minutes=20, timeout=45 * 60,
     allow=[allow('sync-check', 'BUG-0413', 'the guest loses the host\'s NPCs under the brain-upgrade caption of the '
-                 'Creature shortcut (AddEvolutionPoints 3000)', stage='Creature', kind='n missing'),
-           allow('monitor', 'BUG-0441', 'after Cell -> Creature the guest lacks part of the host\'s unlocked parts '
-                 '(parts.shared does not act)', kind='unlocks')])  # Cell -> Creature -> Tribe the players' way (History, vote, editors, done) over a home connection, the guest at 30 fps: it follows, draws the host, no sync-check MISMATCH after the settle time (TRANSITION_PLANT=mismatch fails)
+                 'Creature shortcut (AddEvolutionPoints 3000)', stage='Creature', kind='n missing')])  # Cell -> Creature -> Tribe the players' way (History, vote, editors, done) over a home connection, the guest at 30 fps: it follows, draws the host, no sync-check MISMATCH after the settle time (TRANSITION_PLANT=mismatch fails)
 add('party_rejoin_net', 'SPORE_NET=players ' + P + 'coop_party_rejoin_net.py --players 4', ('multi', 'extended'), minutes=10)  # 4 players rejoin over their own bad networks (one, id swap, lost goodbye, two at once): together, drawn where they are, as their own species (PARTY_PLANT=lift fails; BUG-0076's switches did not)
 add('join_during_combat', P + 'coop_join_during.py --case combat', minutes=4)  # a guest joins while the host fights an NPC: its game agrees with the host's within 10 s (host drawn, NPCs alive / dead / health)
 add('join_during_host_editor', P + 'coop_join_during.py --case editor --allow-empty BUG-0412', minutes=5)  # a guest joins while the host is in its editor: agrees within 10 s of the host's return (host drawn as its species, NPCs)

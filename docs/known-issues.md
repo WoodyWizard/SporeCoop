@@ -1615,6 +1615,11 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Seen: transition_net on main 6ac351e: host `parts=55`, guest `parts=49` for the whole Creature stage, no
   `parts:` log line on either game (monitor rule `unlocks`).
 * Reproduce: `SPORE_LANE=N SPORE_NET=player SPORE_FPS=guest:30 python3 tools/tests/coop_transition_net.py --to creature`.
+* FIXED (2026-11-01, fix/w36-parts-transition, unreleased): not a missing sync. The 6 parts were the
+  creature twins of the host's Cell parts, which the live Cell -> Creature start adds to its unlockable
+  map; the guest's loaded world had them unlocked in its item states (its editor offered them) and the
+  census counted the map only. `parts.census_states` counts both
+  (docs/re/creations.md#creations-cell-twins).
 * Ticket: BUG-0441
 ## Tribe: walked animals step ~3 m in one frame on the guest's screen (2026-11-01, fix/w35-monitor-gates)
 <a id="issue-tribe-proxy-step"></a>

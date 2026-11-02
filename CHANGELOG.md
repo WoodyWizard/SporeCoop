@@ -7,6 +7,11 @@
   the guest's screen when the host walked them up or down a slope in the first half minute after the guest
   joined (the guest's game is still paused then) or while the guest's game was paused; they stay on the
   ground now, and new members appear on it (BUG-0444).
+- Creature: after Cell -> Creature the shared creature parts were counted differently in the host's game
+  and the guests': the parts a cell brings into the Creature stage (the creature versions of its Cell
+  parts) counted only for the host, although every guest's editor offered them too. Every game now counts
+  the parts its editor offers, so the party's set agrees after the evolution, a load, a join and a rejoin
+  (BUG-0441).
 - A game told to host before it reached its main menu (a console line during the start) crashed in the
   host's first time-of-day message: the time of day is now read only once the game has its space player
   data. Players hosting from the co-op window were not affected: the window first shows in the galaxy

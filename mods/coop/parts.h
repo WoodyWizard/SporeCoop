@@ -32,13 +32,17 @@ void tick(double now); // every frame
 void on_message(uint8_t type, uint8_t from, net::Reader& r);
 void on_session_end();
 
-// over the unlockable items (the map at +0x1490): how many are unlocked, an order-free hash of their
-// keys (the trace's parts= field), and optionally the locked / unlocked keys
+// over the unlockable items (the map at +0x1490 and, BUG-0441, the item states +0x4D04: the parts a
+// live Cell -> Creature start added): how many are unlocked (IsUnlocked, the palette's own check), an
+// order-free hash of their keys (the trace's parts= field), and optionally the locked / unlocked keys.
+// items: a cCollectableItems (an editor request's), default the cPlayer's.
 bool census(int& unlocked, uint32_t& hash, int& unlockable, std::vector<Key>* locked = nullptr,
-            std::vector<Key>* unlocked_keys = nullptr);
+            std::vector<Key>* unlocked_keys = nullptr, void* items = nullptr);
 // tests: the game's own "a part was found" (a skeleton's reward): cCreatureModeStrategy's message
 // 0x5371F11 {avatar, 0, level}. Outside the frame (it shows the goal card). Unlocked count after.
 int find_part(int level);
 std::string status();
+// tests: "keys" the unlocked unlockable keys, "states" every state entry (key=state, u = IsUnlocked)
+std::string dump(const std::string& what);
 
 } // namespace parts

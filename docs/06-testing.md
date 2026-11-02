@@ -3517,3 +3517,22 @@ Three monitor findings of the w33 runs were the rule or the test, not the mod (e
 * Pitfall: a cold join's own pause ends by itself during the test, so the test writes the flag on every sample;
   a manual run right after `lab.py reload` started its games cold here (seen 3 times on lane 10, cause not
   looked at), and then prints `after the cold join`.
+## Creature: the party's parts after Cell -> Creature (2026-11-01, fix/w36-parts-transition)
+<a id="testing-parts-transition"></a>
+
+* `coop_parts_shared.py --from-cell` (suite `parts_transition`, ~5 min, `cell` fixture, BUG-0441): the host
+  changes Cell -> Creature the players' way (coop_campaign.py `Campaign.advance('cell')`: food bar, History,
+  the guest's real ready, the editors left with "done", about 90 s), then the guest's `parts=<count>:<hash>`
+  must be the host's within 10 s; then the steps of `parts_shared` (host find, guest find, the guest's own
+  editor, rejoin), where the guest's editor must also offer the host's very parts (`coop.editor`
+  `available=<count>:<hash>`, the palette's IsUnlocked over every item, against the host's `parts=`).
+  FAIL: `SPORE_FIX_OFF=parts.census_states` (the guest counts 49 against the host's 55).
+* `coop.parts keys` lists the unlocked keys, `coop.parts states` every item state (`key=state`, `u` =
+  IsUnlocked): diff the two games' lists to see which parts differ.
+* Measured (lane 9): after a live Cell -> Creature start the host's census has 324 items (the `creature`
+  fixture 312); a loaded game counts 324 too with the switch on.
+* Pitfall: after the players' Cell -> Creature the host's game shows the stage's intro caption ("It is the
+  beginning of a new day...", cinematic 0A34E41F, `coop.status` `cinematic 0A34E41F playing`, trace
+  `input_lock=1`) and waits for its green check (1410, 1048) for as long as nobody clicks it (minutes in
+  transition_net, until the History click). A `coop.vote editor` during it left the host's editor black and
+  stuck (BUG-0404, fixed on fix/w34-vote-cinematic); the test clicks the check like a player first.
