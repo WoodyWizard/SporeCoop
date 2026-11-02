@@ -1,6 +1,7 @@
 // Census of the shared objects (census.h, docs/06-testing.md#testing-census).
 #include "census.h"
 
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -124,10 +125,13 @@ static int c_census(void*, int argc, const char* const* argv, SkOut* out)
     std::map<uint32_t, uintptr_t> vts;
     net::Vec3 me{};
     bool have_me = C.self_pos && C.self_pos(me);
+    // Tribe / Civ: the own position is the mouse pointer, (0 0 0) when there is none (a game in the
+    // background): no radius then (the compare picks its centre, worlddiff.py)
+    bool centred = have_me && (std::fabs(me.x) > 0.01f || std::fabs(me.y) > 0.01f || std::fabs(me.z) > 0.01f);
     if (all) {
         if (mode == modes::kCell)
             cellsync::census_rows(rows);
-        AllQ q{&rows, &nouns, &vts, me, have_me, radius > 0 ? radius * radius : 1e30f};
+        AllQ q{&rows, &nouns, &vts, me, centred, radius > 0 ? radius * radius : 1e30f};
         all_rows(q);
     }
     std::string buf;
