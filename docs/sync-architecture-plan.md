@@ -79,24 +79,66 @@ One module owns session / world / stage / editor / busy transitions and tells ev
 through observers. When a transition ends, L2 does a **full resync of every kind**. Editors,
 evolution, death and reload stop being special cases in each module.
 
-## 4. Order for 0.7.4
+## 4. Scope decision (owner, 2026-11-02)
+
+**0.7.4 = Cell and Creature** on all four layers. Tribe, Civ and Space follow in later versions with the
+**same layers and the same rules**: the differences between stages are allowed only inside a stage
+adapter, never as a new mechanism. The owner does not want to wait for player reports for any stage,
+so the detection part (L0 and the discovery work below) runs on **every stage from 0.7.4 on**.
+
+### Stage-independent design
+
+The layers are written once, in stage-free code; a stage supplies only an adapter:
+
+* L0: the object dump and diff are generic; a stage adds its object kinds and tolerances.
+* L1: `request(object, action)` and the owner rule are generic; a stage lists its actions and the
+  game function that performs each one.
+* L2: the replication engine (snapshot, delta, full refresh, resync of unknown ids, versioned
+  ledgers) is generic; a stage supplies one descriptor per object kind (fields with read / apply,
+  spawn through the game).
+* L3: chokepoint hooks are game-wide (effects, animation events, ability flags); a stage only says
+  which local objects are "the player's" (avatar cell, avatar creature, own tribe members, own
+  vehicles, own ship).
+* L4: one lifecycle service for all stages.
+
+A new stage is "done" when its adapter exists for every kind the detector finds and the detector
+shows no difference in its scenarios. Old per-stage messages are retired one by one behind switches.
+
+### Finding problems before players do (all stages, from 0.7.4)
+
+1. **Detector in every two-instance test**, all stages, as a gate (monitor rule `world_diff`).
+2. **Scripted playthroughs per stage** (bots on both games doing what players do: eat, fight,
+   social, pick up, carry, editor, evolve, die, reload, join late, rejoin) with the detector on,
+   on the lab nightly. Every one-side-only kind or field becomes a ticket automatically
+   (`tools/tickets.py new --source detector`).
+3. **Inventory from the game, not from reports**: per stage, list the game's object kinds (nouns),
+   player-only code paths (callers of the player / avatar / PlayerSpecies accessors) and ability
+   functions from Ghidra; each entry gets a row in the sync matrix (owner, layer, test, status).
+   An entry with no row is a known gap before any player meets it.
+4. A player report that the matrix did not predict is a bug in the inventory: add the missing row
+   and the detector field, not only the fix.
+
+## 5. Order for 0.7.4
 
 | Step | What | Fixes or proves |
 |---|---|---|
-| 1 | L0 detector + generated sync matrix for Creature and Cell | finds the unknown list (A); every later step is measured by it |
-| 2 | L4 lifecycle + full resync after transitions | 0457, 0466, 0343, part of the editor crashes |
-| 3 | L2 for Creature: puppets, proxies, nests, pickups, carried objects (pilot) | 0461, 0457, 0460, 0458, 0459 |
-| 4 | L1 requests for Creature interactions (pickup, eat, hit, roar, social) | 0459, 0462, 0467 |
-| 5 | L3: merge the effects relay, then sneak / ability flags | 0451, 0463, 0462 roar |
-| 6 | Unknown kinds from the detector (kraken 0465, nest evolution 0464) on the new layers | A |
-| 7 | Crashes 0453-0456 in parallel (G9 lifetime, editor) | |
+| 1 | L0 detector (generic) + adapters for Cell and Creature; dumps also for Tribe / Civ / Space (report-only) | finds the unknown list (A) on every stage |
+| 2 | L4 lifecycle + full resync after transitions (all stages) | 0457, 0466, 0343, part of the editor crashes |
+| 3 | L2 engine + Creature descriptors (pilot): puppets, proxies, nests, pickups, carried objects | 0461, 0457, 0460, 0458, 0459 |
+| 4 | L1 requests for Creature (pickup, eat, hit, roar, social) | 0459, 0462 |
+| 5 | L3: merge the effects relay, then sneak / ability flags (game-wide) | 0451, 0463, 0462 roar |
+| 6 | Cell on L1 / L2 with the engine proven by the pilot: cells, food, part pickups, KO, hits | 0467, 0343, Cell classes |
+| 7 | Kinds the detector finds in Cell / Creature (kraken 0465, nest evolution 0464, ...) | A |
+| 8 | Inventory + scripted playthroughs for all stages; tickets for Tribe / Civ / Space gaps | the next versions' lists |
+| 9 | Crashes 0453-0456 in parallel (G9 lifetime, editor) | |
 
-Cell, Tribe, Civ and Space move to L1 / L2 in 0.7.5+, measured by the same detector. Old paths
-stay behind switches until the new layer passes the same tests. Risks: host CPU and bandwidth for
-full-state replication (measure with 4 players), objects the game cannot spawn on request, and
-the size of the change: steps 1-2 are small and safe, 3-4 are the real work.
+Then: Tribe, Civ (0.7.5), Space (its own galaxy model, 0.7.6), each through the same adapters.
+Urgent crash fixes ship as 0.7.3.x / 0.7.4.x hotfixes instead of waiting. Risks: host CPU and
+bandwidth for full-state replication (measure with 4 players), objects the game cannot spawn on
+request, and the size of the change: old paths stay behind switches until the new layer passes
+the same tests.
 
-## 5. Today's reports mapped
+## 6. Today's reports mapped
 
 | Ticket | Cause | Step |
 |---|---|---|
@@ -107,8 +149,8 @@ the size of the change: steps 1-2 are small and safe, 3-4 are the real work.
 | BUG-0461 babies as adults | C | 3 |
 | BUG-0462 relations, roar | B, D | 4, 5 |
 | BUG-0463 sneak | B | 5 |
-| BUG-0464 nest evolution | A | 6 |
-| BUG-0465 kraken | A | 6 |
+| BUG-0464 nest evolution | A | 7 |
+| BUG-0465 kraken | A | 7 |
 | BUG-0466 DNA after editor | E, F | 2, 3 |
-| BUG-0467 Cell part pickup | D | 0.7.5 (Cell L1) |
-| BUG-0453..0456 crashes | lifetime / editor | 7 |
+| BUG-0467 Cell part pickup | D | 6 |
+| BUG-0453..0456 crashes | lifetime / editor | 9 |
