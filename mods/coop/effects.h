@@ -26,9 +26,13 @@ struct Ctx {
     net::Session* sess = nullptr;
     std::function<void*(uint8_t id)> puppet_of; // the creature of player `id` on this game
     std::function<std::vector<std::pair<uint8_t, void*>>()> all_puppets; // every partner's puppet
+    // true when a world position is on the local player's own controlled object (the avatar in
+    // Creature / Cell, the tribe members in Tribe, the vehicles in Civ, the UFO in Space)
+    std::function<bool(const net::Vec3&)> near_local;
 };
 
 void init(const SkHost* host, SkMod* mod, const Ctx& ctx);
+void tick(double now); // main thread: send the effects the hooks queued
 void on_message(uint8_t type, uint8_t from, net::Reader& r);
 void on_session_end();
 std::string status(); // counters and the last sent / received effect (coop.effects, coop.status)

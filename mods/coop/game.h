@@ -123,6 +123,15 @@ struct EffectEvent {
 };
 using EffectListener = void (*)(void* creature, const EffectEvent& ev);
 void set_effect_listener(EffectListener fn);
+// A visual effect created for an arbitrary object (not only a creature): the transform the game set
+// (flags at +0, position +4, scale +0x10, matrix +0x14; 0x44 bytes) and its creator's return address.
+using WorldEffectListener = void (*)(void* effect, uint32_t id, const void* xform, uintptr_t caller);
+void set_world_effect_listener(WorldEffectListener fn);
+// the direct EffectWorld create hook is only installed in Creature/Cell (its UI skinner path in
+// Tribe/Civ calls the same function from the render thread and faulted); the manager hook is always on
+void set_world_create_hook(bool on);
+// the receiver: create an effect by id in the game's effect world, set the same transform, start it
+void* create_world_effect(uint32_t id, const void* xform);
 void set_effect_log(bool on); // support logging of every effect the game creates (coop.effects log on)
 // the game's own pool calls, for a relayed effect (start: the same create+start as StartOrStop...)
 void* start_effect(void* c, const EffectEvent& ev);

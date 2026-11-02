@@ -1997,6 +1997,29 @@ static void* local_of(uint16_t id)
     return it == g_gm.end() ? nullptr : it->second.c;
 }
 
+bool near_member(const net::Vec3& p, float radius)
+{
+    struct Ctx { const net::Vec3* p; float r; uint8_t me; bool hit; } ctx{&p, radius, (uint8_t)(C.sess ? C.sess->my_id() : 0), false};
+    for_each_owned([](void* c, uint8_t owner, void* user) {
+        auto* q = (Ctx*)user;
+        if (!q->hit && owner == q->me && net::dist(game::position(c), *q->p) < q->r)
+            q->hit = true;
+    }, &ctx);
+    return ctx.hit;
+}
+
+std::vector<net::Vec3> local_member_positions()
+{
+    std::vector<net::Vec3> v;
+    std::pair<std::vector<net::Vec3>*, uint8_t> ctx{&v, C.sess ? C.sess->my_id() : 0};
+    for_each_owned([](void* c, uint8_t owner, void* user) {
+        auto* p = (std::pair<std::vector<net::Vec3>*, uint8_t>*)user;
+        if (owner == p->second)
+            p->first->push_back(game::position(c));
+    }, &ctx);
+    return v;
+}
+
 std::string debug(const std::vector<std::string>& a)
 {
     // tests of the co-op mechanics through the game's damage path (host): ids as in coop.tribe

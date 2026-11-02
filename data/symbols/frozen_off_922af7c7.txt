@@ -62,3 +62,6 @@ SporeCoop::cPlanetModel_SurfacePoint ; BUG-0443: on GOG 2016 NPC eggs hanging ov
 SporeCoop::PhysicsManager_Update ; BUG-0449: on GOG 2016 a physics body without an owner is not left out of the physics update (game.physics_owner off there)
 SporeCoop::PhysicsWorld_ptr ; BUG-0449: on GOG 2016 a physics body without an owner is not left out of the physics update
 Simulator::cCreatureBase::CreateEffect ; Creature: a player's creature effects (mating call, ability particles) show on the partner's puppet (BUG-0451)
+Swarm::cEffectsManager::CreateEffect ; Creature/Cell/Tribe: the effect relay (the receiver creates the relayed effect) (BUG-0451)
+SporeCoop::VisualEffect_SetTransform ; Creature/Cell/Tribe: the effect relay reads the effect's transform to decide whose it is and replays it (BUG-0451)
+Swarm::EffectWorld::CreateEffect ; Creature/Cell: the effect relay for effects the game makes at the local player object (BUG-0451)

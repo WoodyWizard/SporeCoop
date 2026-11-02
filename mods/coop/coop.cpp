@@ -2461,6 +2461,7 @@ void on_frame(void*, int, void*)
     npc::tick(now);
     nest::tick(now); // BUG-0384
     parts::tick(now); // BUG-0401
+    effects::tick(now); // BUG-0451: sends the queued effects on the main thread
     social::tick(now);
     shared::tick(g_sess, game::mode_id(), now, guest_elsewhere()); // BUG-0231: held while elsewhere
     if (g_sess.role() == net::Role::Host && game::avatar()) {
@@ -2498,6 +2499,7 @@ void on_frame(void*, int, void*)
 
     uint32_t prev_mode = g_mode;
     g_mode = game::mode_id();
+    game::set_world_create_hook(g_mode == modes::kCreature || g_mode == modes::kCell);
     if (g_mode != prev_mode)
         on_mode_change(prev_mode, g_mode);
     g_adapter = modes::for_mode(g_mode);
@@ -4784,6 +4786,25 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
             for (auto& [id, r] : g_remotes)
                 v.push_back({id, r.puppet});
             return v;
+        };
+        ec.near_local = [](const net::Vec3& p) {
+            void* av = game::avatar();
+            if (av) {
+                net::Vec3 a = game::position(av);
+                return net::dist(a, p) < 1.8f;
+            }
+            if (g_adapter && g_adapter->local) {
+                void* l = g_adapter->local();
+                if (l && net::dist(modes::entity_pos(g_adapter, l), p) < 1.8f)
+                    return true;
+            }
+            // allocation-free: this runs from inside the game's effect transform setter, also in
+            // the UI skinner's render pipeline (a vector here faulted in Skinner::StartRender)
+            if (g_mode == modes::kTribe)
+                return tribe::near_member(p, 1.8f);
+            if (g_mode == modes::kCiv)
+                return civ::near_vehicle(p, 1.8f);
+            return false;
         };
         effects::init(H, M, ec);
     }

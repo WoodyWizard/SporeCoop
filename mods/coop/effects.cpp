@@ -1,8 +1,11 @@
 #include "effects.h"
 
+#include <atomic>
 #include <cstdio>
+#include <cstring>
 #include <map>
 #include <set>
+#include <utility>
 
 #include "fixes.h"
 #include "game.h"
@@ -41,9 +44,19 @@ struct Last {
 };
 static Last g_last_tx;
 static std::map<uint8_t, Last> g_last_rx;
-// the pool keys we sent a start for: a stop is sent once, not on every frame the game stops a key
-static std::set<uint32_t> g_sent_keys;
+static std::map<uint8_t, Last> g_last_rx_start; // the last start per player (a stop may follow)
+// the pool keys we sent a start for: a stop is sent once, not on every frame the game stops a key.
+// A fixed array: this is filled from inside the game's effect creation (no allocation there).
+static uint32_t g_sent_keys[64];
+static size_t g_sent_n;
 static uint8_t g_last_rx_from = 0xFF;
+// world effects already sent (effect pointer, id): the transform setter runs every frame for
+// persistent effects; a one-shot world effect is sent once. A fixed ring (no allocation in the
+// render pipeline).
+struct WorldSent { void* fx; uint32_t id; };
+static WorldSent g_world_sent[2048];
+static size_t g_world_n_entries;
+static uint32_t g_world;
 
 static double now() { return H ? H->time_seconds() : 0; }
 
@@ -70,10 +83,80 @@ static const char* who(void* c)
     return game::is_puppet(c) ? "puppet" : "other";
 }
 
-// every effect made for the local player's own creature (not an NPC, not a partner's puppet)
+// The game calls the effect hooks also from its UI skinner render pipeline (Tribe/Civ): nothing
+// there may allocate, call game code other than the hook itself, or send on the network. The hooks
+// only copy the event into this fixed ring; effects::tick (main thread) decides and sends.
+struct Pending {
+    void* creature = nullptr;
+    game::EffectEvent ev;
+    bool world = false;
+    uint32_t id = 0;
+    void* fx = nullptr;
+    uintptr_t caller = 0;
+    uint8_t xf[0x44] = {};
+};
+static Pending g_q[256];
+static uint32_t g_qh, g_qt;
+static std::atomic_flag g_qlock = ATOMIC_FLAG_INIT;
+static std::atomic<uint32_t> g_qdropped{0};
+
+static bool q_push(const Pending& p)
+{
+    while (g_qlock.test_and_set(std::memory_order_acquire)) {
+    }
+    uint32_t h = g_qh;
+    bool ok = ((h + 1) & 255) != g_qt;
+    if (ok) {
+        g_q[h] = p;
+        g_qh = (h + 1) & 255;
+    }
+    g_qlock.clear(std::memory_order_release);
+    if (!ok)
+        g_qdropped++;
+    return ok;
+}
+
+static bool q_pop(Pending& p)
+{
+    while (g_qlock.test_and_set(std::memory_order_acquire)) {
+    }
+    bool ok = g_qt != g_qh;
+    if (ok) {
+        p = g_q[g_qt];
+        g_qt = (g_qt + 1) & 255;
+    }
+    g_qlock.clear(std::memory_order_release);
+    return ok;
+}
+
 static void on_local_effect(void* creature, const game::EffectEvent& ev)
 {
-    if (!g_fix || !creature || !H)
+    if (!creature || !H)
+        return;
+    Pending p;
+    p.creature = creature;
+    p.ev = ev;
+    q_push(p);
+}
+
+// an effect created for any object: keep its id and transform; tick decides whether it is on the
+// local player's own object and sends it
+static void on_world_effect(void* fx, uint32_t id, const void* xform, uintptr_t caller)
+{
+    if (!fx || !id || !xform)
+        return;
+    Pending p;
+    p.world = true;
+    p.fx = fx;
+    p.id = id;
+    p.caller = caller;
+    memcpy(p.xf, xform, sizeof p.xf);
+    q_push(p);
+}
+
+static void process_local(void* creature, const game::EffectEvent& ev)
+{
+    if (!g_fix || !creature)
         return;
     if (creature != game::avatar() || game::is_puppet(creature))
         return;
@@ -84,12 +167,18 @@ static void on_local_effect(void* creature, const game::EffectEvent& ev)
     if (!ev.stop && !ev.id)
         return;
     if (ev.stop) { // a stop only for a start the partner got: the game stops some keys every frame
-        auto it = g_sent_keys.find(ev.key);
-        if (it == g_sent_keys.end())
+        size_t i = 0;
+        while (i < g_sent_n && g_sent_keys[i] != ev.key)
+            i++;
+        if (i == g_sent_n)
             return;
-        g_sent_keys.erase(it);
+        g_sent_keys[i] = g_sent_keys[--g_sent_n];
     } else if (ev.pool == 1 || ev.pool == 2) {
-        g_sent_keys.insert(ev.key);
+        bool have = false;
+        for (size_t i = 0; i < g_sent_n; i++)
+            have |= g_sent_keys[i] == ev.key;
+        if (!have && g_sent_n < 64)
+            g_sent_keys[g_sent_n++] = ev.key;
     }
     double t = now();
     if (!take_token(t)) {
@@ -117,12 +206,68 @@ static void on_local_effect(void* creature, const game::EffectEvent& ev)
     C.sess->send_event(net::MSG_EFFECT, w);
 }
 
+static void process_world(void* fx, uint32_t id, const void* xform, uintptr_t caller)
+{
+    if (!g_fix || !fx || !id || !xform || !C.sess || !C.sess->connected())
+        return;
+    // animation-event effects are already shown by the animation relay (MSG_ANIM): the effect
+    // wrapper 0x9FBF00 and its caller make them on the puppet too, so do not duplicate them
+    if (caller >= 0x009FBF00 && caller <= 0x009FBF90)
+        return;
+    const float* p = (const float*)((const uint8_t*)xform + 4);
+    if (!C.near_local || !C.near_local(net::Vec3{p[0], p[1], p[2]}))
+        return;
+    for (size_t i = 0; i < 2048; i++)
+        if (g_world_sent[i].fx == fx && g_world_sent[i].id == id)
+            return;
+    double t = now();
+    if (!take_token(t)) {
+        g_dropped++;
+        return;
+    }
+    g_world_sent[g_world_n_entries++ & 2047] = {fx, id};
+    g_world++;
+    g_last_tx = Last{};
+    g_last_tx.id = id;
+    g_last_tx.key = 0;
+    g_last_tx.pool = 5;
+    g_last_tx.at = t;
+    g_sent++;
+    if (g_log)
+        H->log(M, SK_INFO, "effect: sent world id %08X at %.2f %.2f %.2f (caller %p)", id, p[0], p[1], p[2], (void*)caller);
+    net::Writer w;
+    w.u8(C.sess->my_id());
+    w.u8(0);
+    w.u8(5);
+    w.u32(id);
+    w.u32(0);
+    w.raw(xform, 0x44);
+    C.sess->send_event(net::MSG_EFFECT, w);
+}
+
+void tick(double)
+{
+    Pending p;
+    while (q_pop(p)) {
+        if (p.world)
+            process_world(p.fx, p.id, p.xf, p.caller);
+        else
+            process_local(p.creature, p.ev);
+    }
+}
+
 void on_message(uint8_t type, uint8_t from, net::Reader& r)
 {
     if (type != net::MSG_EFFECT)
         return;
     uint8_t player = r.u8(), stop = r.u8(), pool = r.u8();
     uint32_t id = r.u32(), key = r.u32();
+    uint8_t xf[0x44];
+    if (r.ok() && pool == 5) {
+        if (r.left() < sizeof xf)
+            return;
+        r.raw(xf, sizeof xf);
+    }
     if (!r.ok())
         return;
     if (C.sess && C.sess->role() == net::Role::Host && from != 0) { // relay to the other guests
@@ -137,7 +282,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
     g_rx++;
     if (!g_fix)
         return;
-    void* puppet = C.puppet_of ? C.puppet_of(player) : nullptr;
+    void* puppet = pool == 5 ? reinterpret_cast<void*>(1) : (C.puppet_of ? C.puppet_of(player) : nullptr);
     if (!puppet) {
         g_skipped++;
         if (g_log)
@@ -158,12 +303,20 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             g_failed++; // the partner's game had no such effect (yet): nothing to stop
         }
     } else {
-        void* fx = pool == 3 ? game::create_creature_effect(puppet, (int)key, id) : game::start_effect(puppet, ev);
+        void* fx = pool == 5 ? game::create_world_effect(id, xf)
+                  : pool == 3 ? game::create_creature_effect(puppet, (int)key, id)
+                              : game::start_effect(puppet, ev);
         if (fx) {
             g_played++;
             last.game = true;
             last.active = game::effect_active(fx);
-            if (pool == 3) { // a one-shot effect has no pool entry: the game created it on the puppet
+            if (pool == 5) {
+                const float* p = (const float*)(xf + 4);
+                last.has_pos = true;
+                last.x = p[0];
+                last.y = p[1];
+                last.z = p[2];
+            } else if (pool == 3) { // a one-shot effect has no pool entry: the game created it on the puppet
                 net::Vec3 p = game::position(puppet);
                 last.has_pos = true;
                 last.x = p.x;
@@ -181,6 +334,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         }
     }
     g_last_rx[player] = last;
+    if (!ev.stop)
+        g_last_rx_start[player] = last;
     g_last_rx_from = player;
     if (g_log)
         H->log(M, SK_INFO, "effect: from %u played on %s id %08X key %08X pool %u stop %d game %d active %d",
@@ -197,16 +352,22 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
     g_sent = g_rx = g_played = g_stopped = g_skipped = g_failed = g_dropped = 0;
     g_last_tx = Last{};
     g_last_rx.clear();
+    g_last_rx_start.clear();
     g_last_rx_from = 0xFF;
-    g_sent_keys.clear();
+    g_sent_n = 0;
+    g_world_n_entries = 0;
+    g_world = 0;
     game::set_effect_listener(on_local_effect);
+    game::set_world_effect_listener(on_world_effect);
 }
 
 void on_session_end()
 {
     g_last_rx.clear();
+    g_last_rx_start.clear();
     g_last_rx_from = 0xFF;
-    g_sent_keys.clear();
+    g_sent_n = 0;
+    g_world_n_entries = 0;
 }
 
 bool set_log(bool on)
@@ -295,13 +456,22 @@ std::string status()
     std::string s;
     char b[320];
     snprintf(b, sizeof b,
-             "effects: fix=%d sent=%u received=%u played=%u stopped=%u skipped=%u failed=%u dropped_rate=%u\n",
-             (int)g_fix, g_sent, g_rx, g_played, g_stopped, g_skipped, g_failed, g_dropped);
+             "effects: fix=%d sent=%u received=%u played=%u stopped=%u skipped=%u failed=%u dropped_rate=%u world=%u\n",
+             (int)g_fix, g_sent, g_rx, g_played, g_stopped, g_skipped, g_failed, g_dropped, g_world);
     s += b;
     if (g_last_tx.at > 0) {
         snprintf(b, sizeof b, "effects sent last: id=%08X key=%08X pool=%u stop=%d age=%.1fs\n", g_last_tx.id,
                  g_last_tx.key, g_last_tx.pool, g_last_tx.stop ? 1 : 0, now() - g_last_tx.at);
         s += b;
+    }
+    for (auto& [id, l] : g_last_rx_start) {
+        snprintf(b, sizeof b, "effects received start from %u: id=%08X key=%08X pool=%u game=%d active=%d age=%.1fs%s\n",
+                 id, l.id, l.key, l.pool, l.game ? 1 : 0, l.active ? 1 : 0, now() - l.at, l.has_pos ? "" : " at none");
+        s += b;
+        if (l.has_pos) {
+            snprintf(b, sizeof b, "effects received start at: %.2f %.2f %.2f\n", l.x, l.y, l.z);
+            s += b;
+        }
     }
     if (g_last_rx_from != 0xFF) {
         const Last& l = g_last_rx[g_last_rx_from];

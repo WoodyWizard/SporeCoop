@@ -2355,6 +2355,27 @@ static void* local_vehicle(uint16_t id)
     return it == g_gv.end() ? nullptr : it->second.v;
 }
 
+bool near_vehicle(const net::Vec3& p, float radius)
+{
+    struct Ctx { const net::Vec3* p; float r; uint8_t me; bool hit; } ctx{&p, radius, (uint8_t)(C.sess ? C.sess->my_id() : 0), false};
+    for_each_target([](const char* kind, int, int owner, const net::Vec3& pos, void* user) {
+        auto* q = (Ctx*)user;
+        if (!q->hit && owner == q->me && !strcmp(kind, "vehicle") && net::dist(pos, *q->p) < q->r)
+            q->hit = true;
+    }, &ctx);
+    return ctx.hit;
+}
+
+std::vector<net::Vec3> local_positions()
+{
+    std::vector<net::Vec3> v;
+    uint8_t me = C.sess ? C.sess->my_id() : 0;
+    for (void* x : all_vehicles())
+        if (owner_of_vehicle(x) == me)
+            v.push_back(game::position(x));
+    return v;
+}
+
 std::string debug(const std::vector<std::string>& a)
 {
     if (a.size() >= 3 && a[0] == "fix") { // fix boost|world 0|1: the code before BUG-0040 / BUG-0059 (tests)
