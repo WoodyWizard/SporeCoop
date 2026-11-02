@@ -73,6 +73,7 @@ add('space', P + 'coop_mode.py --fixture space', minutes=3)
 add('phase', P + 'coop_phase.py', minutes=6)
 add('ui', P + 'coop_ui.py', ('smoke',), exclusive=True, minutes=5)
 add('team', P + 'coop_team.py', ('smoke',), warm=True, minutes=3, fixture='creature')
+add('creature_effects', P + 'coop_creature_effects.py', warm=True, minutes=3, fixture='creature')  # BUG-0451: a player's creature effects (mating call, greeting) on the partner's puppet; SPORE_FIX_OFF=creature.effects_relay fails
 add('tribe_coop', P + 'coop_tribe.py', ('smoke',), warm=True, minutes=4, fixture='tribe')
 add('civ_coop', P + 'coop_civ.py', ('smoke',), warm=True, minutes=3, fixture='civ')
 add('cell_coop', P + 'coop_cell.py', ('smoke',), warm=True, minutes=4, fixture='cell')
