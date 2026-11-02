@@ -4,6 +4,7 @@
 #include "jpeg.h"
 
 #include <cmath>
+#include <cstddef>
 #include <cstring>
 
 namespace sk {
@@ -229,7 +230,7 @@ bool jpeg_encode(const uint8_t* rgb, int w, int h, int quality, std::vector<uint
         size_t n = comment.size() > 60000 ? 60000 : comment.size();
         o.push_back(0xFF), o.push_back(0xFE);
         put16(o, (int)n + 2);
-        o.insert(o.end(), comment.begin(), comment.begin() + (ptrdiff_t)n);
+        o.insert(o.end(), comment.begin(), comment.begin() + (std::ptrdiff_t)n);
     }
     marker_dqt(o, 0, ql);
     marker_dqt(o, 1, qc);
