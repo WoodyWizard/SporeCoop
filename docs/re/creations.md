@@ -668,3 +668,37 @@ BUG-0401. GOG 2024, Ghidra (out/ghidra-2024) and lane 6 (`tools/tests/coop_parts
   kind 1 the news with the finder, a notice "Bob found a new creature part"), a guest that plays the
   host's world (same world id) unlocks what it lacks, also after a reload. Nothing is locked. The
   host's world saved at a join holds the union, so a rejoin keeps the guests' finds.
+
+## The Cell twins: creature parts a live Cell -> Creature start adds (2026-11-01, fix/w36-parts-transition)
+<a id="creations-cell-twins"></a>
+
+BUG-0441. GOG 2024, Ghidra (out/ghidra-2024) and lane 9 (`coop_transition_net.py --to creature`,
+`coop.parts keys|states`).
+
+* ✔ (Ghidra) The live start of Creature from Cell, 0xE83910, after 0xC7A390 (the creature's blocks) calls
+  0x598540(0x465C50BA) and then, over the table **0x1485FE8** (12 pairs `{cell instance, creature
+  instance}`, ends at 0x148604C), for each pair: the cell key (type 0x40616000 = DAT 0x150D6D8) and the
+  creature key (type 0x40626000 = DAT 0x150D6DC) through 0x593980; `AddUnlockableItem` 0x598DB0
+  (creature key, all other arguments 0: level -1) into the unlockable map `+0x1490`; 0x596D70 (state
+  = 4, seen); `UnlockPart` (cost 0) when the cell key is unlocked (the cell had that part). Then
+  `sub_594010` 0x5942E0 clears bit 1 (new) of every state.
+* Creature twins (instance, type 0x40626000): 02B3EDDB 7E262CF0 BE830BDE 4908E576 B70894B6 C5744537
+  1610AD94 30E66572 DEF1C7FF 32AC9620 FE534766 3A3C49A5 (cell keys 3824091B 026D3C30 5683C01E
+  2FC35736 BAAFF976 2A889977 12599FD4 7DD30832 35916FD9 64028FE0 2494A726 A1C47665).
+* ✔ runtime (lane 9, `cell` fixture, Cell -> Creature the players' way): the host's map has 324 items
+  (55 unlocked: 49 + the 6 twins of its cell's parts, state 5), the guest that loaded the host's world
+  has 312 in the map (the fixture's 312 too) but **the same 324 item states** (`coop.parts states`
+  identical on both games, the 6 twins state 5 and IsUnlocked). So a load rebuilds the map from the
+  game's data without the twins and keeps their states from the save.
+* ✔ (Ghidra) `IsUnlocked` 0x595110 reads the state map `+0x4D04` first (bit 0), then 0 for an item of
+  the map `+0x1490`, else `+0xC` (1 on both games: an item the game knows nothing about is offered).
+  The palette's check 0x5C6820 is IsUnlocked: a loaded game offers the unlocked twins too, so the
+  guest's editor was right; only a census over `+0x1490` (BUG-0401's first version) counted 6 fewer.
+* The state map: buckets `+0x4D04`, count `+0x4D08`, node `{u32 lo, u32 hi, u8 state, ..., next
+  +0x10}` (as `sub_594010` walks it). In Creature it held only creature parts (type 0x40626000).
+* So parts.cpp's census (`parts.census_states`) goes over the map and the states together (each key
+  once): every game counts what its palette offers, and the locked twins are in the locked list that
+  parts.shared unlocks from.
+* Not a reward of the host only: the guest's game has the host's twins. Not checked: whether a guest's
+  own Cell parts (collected in its game during co-op Cell) should count for the twins; the guest
+  loads the host's world, so the host's cell decides (BUG-0446).
