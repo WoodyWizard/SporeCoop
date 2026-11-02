@@ -6,7 +6,8 @@ sporekit*.log while a test runs, judged after the test by tools/lab.py run_one.
               ones of `coop.diag sync force` are cut out by the test's LAB-MARK lines)
   hitch       `perf: hitch N ms (<activity>)` over 2 s while a stage is played: not during a load, a
               save, a received world, an editor, a cinematic, the galaxy menu, the first seconds
-              after a stage change, nor the 2.0 s step of SporeKit's frame source switch (Present
+              after a stage change, nor the frame of the switch itself (logged up to 0.5 s before its
+              `stage:` line, BUG-0448), nor the 2.0 s step of SporeKit's frame source switch (Present
               lost: frames come from the game loop, sporekit/d3d9hook.cpp kPresentLostSec)
   mem-low     `mem: the game's address space runs low`
   monitor     a `MONITOR-VIOLATION <invariant> <who>: <text>` line of the test's invariant monitor
@@ -34,6 +35,7 @@ GATES = ('sync-check', 'hitch', 'mem-low', 'as-slope', 'monitor')
 DEFAULTS = {
     'hitch_ms': 2000,          # a hitch longer than this while a stage is played fails
     'hitch_settle_s': 20.0,    # seconds after a stage change / load / boot in which hitches are loads
+    'hitch_switch_s': 0.5,     # a hitch logged this soon BEFORE a stage line is that switch's own frame (BUG-0448)
     'present_lost_ms': (2000, 2040),  # SporeKit's frame source switch: a 2.0 s step, not a stall
     'slope_mb_min': 25.0,      # address space lost per minute (least squares) that fails
     'slope_points': 4,         # at least this many per-minute samples in one process
@@ -166,6 +168,9 @@ def scan(lines, who, cfg=None, forced=()):
     present_lost_at = None
     samples = []  # (t, free MB, activity, segment): one segment per stay in a stage of one process
     seg, seg_from = 0, None
+    # the frame that switches the mode (an editor opening) is logged as a hitch of the stage it leaves,
+    # just before the `stage:` line (vote_net_4p 20261101-223011: 2522 ms 29 ms before Creature -> Editor)
+    switches = [ln.t for ln in lines if ln.t is not None and 'coop: stage: ' in ln.text]
     for ln in lines:
         s = ln.text
         if SETTLE.search(s) and ln.t is not None:
@@ -192,6 +197,8 @@ def scan(lines, who, cfg=None, forced=()):
             if stage not in STAGES or any(b in act for b in BUSY):
                 continue
             if ln.t is not None and ln.t <= settle_until:
+                continue
+            if ln.t is not None and any(0 <= t - ln.t <= c['hitch_switch_s'] for t in switches):
                 continue
             lo, hi = c['present_lost_ms']
             if lo <= ms < hi:  # the frame source switch, not a stall
