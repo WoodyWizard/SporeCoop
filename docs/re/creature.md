@@ -1490,3 +1490,39 @@ BUG-0414, BUG-0434. GOG 2024, lane 4, guest at 30 fps over netem `player`, `coop
   lower part of the mound (0.39-0.44 m) the standing puppet stays 0.44 m under the partner (drawn -0.05 m while
   the partner's own creature is at 0.39-0.44 m; the game does not lift a creature put under its ground), and a
   partner walking over the 0.5 m line makes the puppet step 0.4-0.5 m (BUG-0435).
+## Eggs have no gravity while asleep (2026-11-01, fix/w35-egg-kick)
+<a id="creature-egg-gravity"></a>
+
+BUG-0443 (the host's screenshot of the "eggs flying mid air" report). GOG 2024, lane 4, creature fixture,
+`coop.nest lift` / `objs` (over_surface).
+
+* ✔ An NPC egg (state 6) does not fall by itself: moved 2-2.5 m up with SetPosition (`coop.nest lift`, the
+  call cHerd_LayEgg makes with the layer's position), fresh (lifted within 1 s of being laid) or settled,
+  it stayed at that height for 8-10 s and longer (host, nobody within 6 m). A creature that came to it
+  (the partner's puppet put onto the other egg, ~2 m away) woke it: it fell from 2.71 m to 0.82 m over the
+  terrain within 3 s. So the physics moves an egg only while it is awake (right after laying, or touched);
+  asleep it stays where it is, in the air too.
+* ✔ The eggs the game lays settle over the surface: right after laying the physics pushes the egg up out
+  of the layer's body / the mound (0.76 -> 0.93, 1.04 -> 1.29 m over the terrain) and it goes to sleep
+  there. Over the surface (the ray cast below), fix off, 5 nests of the fixture: 0.05/0.47, 0.04/0.05,
+  0.21/0.33, 0.05/0.46, 0.05/0.43 m (2.5 m apart: not one egg on the other). One in two eggs hangs
+  0.3-0.5 m in the air. Inferred: a bigger layer (the player's species) leaves it higher. On the screenshot
+  of the FAIL run an egg 2.4 m up looks like the player's ("a green egg hanging over the slope").
+* ✔ `SporeCoop::cPlanetModel_SurfacePoint` 0xB82AC0 (what cEgg_SnapToGround uses): the terrain point
+  (0xB816F0) and, when the physics manager (0xB3D410) +0x20 is 0, a ray cast (0xB65C10, layer
+  [0x167ECD0]) from the terrain's top down to it; a farther hit (the nest mound, a rock) wins. An egg
+  snapped with cEgg_SnapToGround lies 0.00 m over that point. It hits only collision that is loaded:
+  far from the host's camera the nest mound has none (below).
+* ✔ Far from the host's camera (the host 450 m away, the guest at the nest: the herd kept by the view
+  centres, BUG-0280) the members stand on the bare terrain (0.00 m over `GetHeightAt`; 0.75 m on the
+  mound when the host is near) and lay their eggs there: inside the nest mound, asleep, still there after
+  the host came back (-0.01 m). On the guest their copies (nest.eggs) are snapped onto the guest's
+  surface (on the mound). Not fixed (BUG-0443 fixes eggs over the surface only).
+* ✔ `GetHeightAt` around a nest is the same with the host near or 450 m away and on the guest (25
+  points, 0.00 m): no terrain LOD in it.
+* ✘ The partner's puppet does not launch eggs: the guest's avatar put onto a host egg (the host's puppet
+  placed there) pushed it up 0.14 m (0.95 -> 1.09) and woke the other egg, which fell.
+* ✔ The fix (`nest.egg_ground`, mods/coop/nest.cpp): every 0.5 s the host checks the eggs of NPC herds
+  (state 5 / 6) within 60 m of its avatar; one that did not move for two checks and lies more than 0.3 m
+  over the surface is put onto it with cEgg_SnapToGround (what the game does to the avatar's eggs and to
+  every egg at its hatch).

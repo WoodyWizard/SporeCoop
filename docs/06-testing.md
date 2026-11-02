@@ -3238,3 +3238,18 @@ the walk and fight tests) swings the view over it (docs/re/creature.md#creature-
   `puppet_hp` rule failed every run on the puppet that cannot show 1000 of 10 (lab 20261101-160710, 2 of 2).
 * Pitfall: a nest mound is not in `GetHeightAt`; heights over the ground (`hd`, `ht`, `agl`) of a creature on it
   read 0.4-1.03 m although it stands on its ground.
+## Eggs hanging in the air (2026-11-01, fix/w35-egg-kick)
+<a id="testing-nest-eggs-air"></a>
+
+* `coop.nest objs` prints `over_surface=` for an egg: its height over the surface on its radial line as
+  cEgg_SnapToGround finds it (the terrain, or the nest mound / a rock where their collision is loaded,
+  near the camera); `over_ground` is over the bare terrain only (0.74-1.2 m in the nest bowl). A snapped
+  egg lies at 0.00. `coop.nest lift <egg> <m>` puts an egg m higher (SetPosition): it stays there unless
+  a creature wakes it (eggs have no gravity while asleep, docs/re/creature.md#creature-egg-gravity).
+  `coop.nest` (no args) shows `ground_fix=` and `grounded=` (eggs the host put onto the surface).
+* `nest_eggs_air` (`coop_nest_eggs_air.py`, ~80 s warm, ~110 s cold, BUG-0443): the herd lays 2 eggs, then
+  one is lifted 2 m; the host 6 m and the guest 8 m from the nest so nobody wakes the eggs (the guest's
+  creature put onto an egg woke the other one, which fell). `SPORE_FIX_OFF=nest.egg_ground` fails: one in
+  two laid eggs hangs 0.3-0.5 m over the surface and the lifted one stays 2 m up (screenshot `air_host`).
+* Far from the host's camera the nest mound has no collision: the surface there is the bare terrain, so
+  a check of eggs over the surface needs the host near the nest (the fix only acts within 60 m).
