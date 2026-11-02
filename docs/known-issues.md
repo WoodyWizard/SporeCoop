@@ -1460,6 +1460,7 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   (game mode none); 3 ms later it crashed at 0x01020F35 (TimeOfDay_Unavailable, read 0x10) from the host's
   time-of-day sync.
 * Reproduce: `cheat coop host <port> Alice` on a game before its galaxy menu is up.
+* Fixed on feat/w33-tests-session (core.tod_guard): no time-of-day read before SpacePlayerData exists.
 * Ticket: BUG-0433
 
 ## Civ: a vehicle trails under loss bursts (2026-11-01, feat/w33-tests-session)

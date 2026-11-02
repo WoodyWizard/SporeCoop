@@ -3052,10 +3052,11 @@ the network and frame rate of real players; every check reads the other machine'
   "I'm ready", editors left with "done"), two players. After each change: the guest plays the new stage in
   the host's world, after 30 s draws the host where it is (3 reads), and neither log has a `sync-check:
   MISMATCH` line in the 60 s after. `TRANSITION_PLANT=mismatch` (`coop.diag sync force shift` on the guest
-  in the last watch, no LAB-MARK) fails (lab 20261101-152859). It found two open bugs on main, allowed by
-  name until their fixes merge: Tribe `t missing` 58 s after the arrival in both runs (BUG-0381, NPC tribes the
-  host forms; `--allow "t missing=BUG-0381"` and a suite allow), and Creature `n missing` under the
-  brain-upgrade caption of the AddEvolutionPoints shortcut in one of two runs (BUG-0413, a suite allow).
+  in the last watch, no LAB-MARK) fails (lab 20261101-152859). On main a05d1f6 it found Tribe `t missing` 58 s
+  after the arrival in both runs (BUG-0381, NPC tribes the host forms; fixed on main 6ac351e by tribe.npc_tribes,
+  so the test allows it no more; `--allow "<kind>=BUG-NNNN"` stays for the next known bug) and Creature
+  `n missing` under the brain-upgrade caption of the AddEvolutionPoints shortcut in one of two runs (BUG-0413,
+  a suite allow).
 * `coop_party_rejoin_net.py` (suite `party_rejoin_net`, ~10 min, `SPORE_NET=players`, 4 players): rounds
   `one` (the last guest rejoins), `swap` (Bob, who plays his own creature, and the last guest leave; the
   last joins first and takes Bob's id), `lost` (a goodbye lost by a 1 s proxy outage), `both` (the extra
@@ -3325,3 +3326,9 @@ counters. Every one has a `_player` twin (`SPORE_FPS=guest:30 SPORE_NET=player`)
   teleport mark). In a warm game the game itself grounds it again within 0.6 s, so it does not reproduce
   BUG-0399 (docs/re/tribe.md#tribe-proxy-ground).
 * `coop.npc list` lines end with the heights over the ground (`agl=`; guest: `want_agl= made_agl= grounded=`).
+* `coop_tod_early.py` (suite `tod_early`, ~1 min, BUG-0433): the host game alone, `cheat coop host` on its
+  console from the first moment (coop's commands exist from the first frame: `coop.fix` is asked until it
+  answers, then the host line runs on frame 2, game mode 0). No fault, the galaxy menu, still hosting.
+  `SPORE_FIX_OFF=core.tod_guard` faults at 0x01020F35 and hangs before the menu (lab 20261101-175729).
+  `--ui` takes the player's way (F9 from the boot on, a real click on Host): the window first shows in the
+  galaxy menu (9.2 s after the start), so players do not reach the crash through the window.

@@ -1,17 +1,17 @@
 ---
 id: BUG-0433
 title: crash: hosting before the game reaches its main menu faults in the time-of-day sync (TimeOfDay_Unavailable 0x01020F35, GOG 2024)
-status: open
+status: fixed
 kind: crash
 stage: All
 reported: 2026-11-01
 source: players suite creature_fps15burst, lab 20261101-160125 (feat/w33-tests-session)
 role: host
 versions: main a05d1f6
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: feat/w33-tests-session
+commits: d0cb069
+tests: tools/tests/coop_tod_early.py (suite tod_early)
 signature: 0xC0000005 at 0x01020F35 (SporeCoop::TimeOfDay_Unavailable+0x5, read 0x10) from game::tod_object <- on_frame time sync, game mode none
 docs:
 related:
@@ -39,11 +39,27 @@ from the co-op window (galaxy menu or later), so the window of risk is the conso
 early; not seen in a player report.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+`game::tod_object()` (game.cpp), the one door to the time of day for the host's MSG_WORLD_TIME send and the
+guest's apply, reads nothing while the game mode is 0 or `Simulator::SpacePlayerData::ptr` is still null.
+Switch `core.tod_guard` (BUG-0433), off: the read as before.
+
+Can a player reach it? Checked: the co-op window ("F9 anywhere in the game") first shows in the galaxy menu:
+F9 pressed from the boot on and a real click on Host hosted 9.2 s after the start in mode GalaxyGameEntry, no
+fault, with the switch off (`coop_tod_early.py --ui`); SpacePlayerData exists there (hosting from the menu is
+every test's path). No auto-host or rejoin-at-start exists (coop.ini has none; rejoin.cpp only keeps a token).
+So players reach it only through a console line sent during the boot (the dev console accepts connections
+from the first moment, its commands run from the first frame: what the creature test did after its load
+failed). Not verified: a host quitting the game to the desktop (whether the game frees SpacePlayerData while
+frames still run); the guard catches a null pointer there, not a freed one.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+`coop_tod_early.py` (suite `tod_early`): the lane's host game alone, `coop.fix` asked until coop's commands
+exist (the first frame), then `cheat coop host` at once: the line runs on frame 2, game mode 0.
+* FAIL: out/lab/20261101-175729 (`SPORE_FIX_OFF=core.tod_guard`): 2 ms after `hosting on UDP port 47826`
+  `exception 0xC0000005 at 0x01020F35 Simulator::GetCurrentContext+0x5 (data 0x00000010)`, total faults 1, a
+  report file, and the game never reached its galaxy menu (147 s).
+* PASS: out/lab/20261101-175959 (and 20261101-175606 / 175631 with the switch on): no fault, the galaxy menu
+  in ~15 s, still hosting.
 
 ## History
 - 2026-11-01: opened.
