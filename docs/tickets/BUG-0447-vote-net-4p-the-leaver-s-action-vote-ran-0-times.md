@@ -1,19 +1,19 @@
 ---
 id: BUG-0447
 title: vote_net_4p: the leaver's action vote ran 0 times (its result waited at the busy gate after the check)
-status: open
+status: fixed
 kind: test
 stage: Creature
 reported: 2026-11-01
 source: lab 20261101-210646
 role: host
 versions: main f0cefbaa (0.7.3.4 rc)
-fixed_in:
-branch:
-commits:
+fixed_in: unreleased
+branch: fix/w37-vote-leaver
+commits: 8ca6a86b
 tests: vote_net_4p, party
 signature:
-docs:
+docs: docs/06-testing.md#testing-busy-gate
 related: BUG-0404
 ---
 
@@ -46,8 +46,13 @@ vote_net_4p ([leaver], [all]) and coop_party.py ([vote], [join in a vote]) use i
 the host's `the vote's action ...` lines of the leaver step.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+FAIL (the old check, gate on): 20261101-210646 (main), 20261101-223011 (`[leaver] it ran once (0 -> 0)`,
+the action waited for `cinematic,input_lock` 1.75 s). The old check PASSES with the gate off
+(`SPORE_FIX_OFF=core.vote_action_busy`): 20261101-223032 (the action ran 6 ms after the vote's end), which
+shows the check only held while the result ran at once. PASS (the new check, gate on): 20261101-223718 #1
+(waited for `cinematic,input_lock`), #2 (waited for `paused`; the run failed on BUG-0450, another check),
+20261101-224307 #1 and #2 (waited for `paused`): 4 of 4 leaver steps ran once within 10 s.
 
 ## History
 - 2026-11-01: opened.
+- 2026-11-01: fixed on fix/w37-vote-leaver (test / judge only).

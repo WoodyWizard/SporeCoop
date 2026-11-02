@@ -1,16 +1,16 @@
 ---
 id: BUG-0448
 title: log gate: the frame that opens an editor fails the hitch gate (logged just before its stage line)
-status: open
+status: fixed
 kind: tooling
 stage: all
 reported: 2026-11-01
 source: lab 20261101-223011 vote_net_4p
 role: host
 versions: main f0cefbaa (0.7.3.4 rc)
-fixed_in:
-branch:
-commits:
+fixed_in: unreleased
+branch: fix/w37-vote-leaver
+commits: 324752dc
 tests: gates_selftest (make test), vote_net_4p
 signature:
 docs:
@@ -35,8 +35,11 @@ switch's own frame and is left out (gates= per test can set it to 0 for the old 
 stage line still fails. Judge only, no game code.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+gates_selftest (make test): "a hitch 29 ms before a stage line is the switch" FAILS with the loggates.py of
+main f0cefbaa and PASSES with the change; "a hitch 3 s before a stage line still fails" passes on both.
+Lab: 20261101-223011 vote_net_4p failed the hitch gate (FAIL); `loggates.py scan` of its host log finds no
+hitch with the change; vote_net_4p 20261101-223718 #1, 20261101-224307 #1/#2 pass the gates (PASS).
 
 ## History
 - 2026-11-01: opened.
+- 2026-11-01: fixed on fix/w37-vote-leaver (test / judge only).

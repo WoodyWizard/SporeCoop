@@ -22,6 +22,8 @@
 - Tests: `vote_net_4p` (and `party`) read an action vote's result the instant the vote ended; the result
   now waits on the host while its game is busy (BUG-0404) and ran 0.9 s later under the "game saved" box of
   the mod's own world share. The tests wait for it; the vote and its result were right (BUG-0447).
+- Tests: the lab's hitch gate failed a test on the frame that opens an editor (logged just before the
+  stage change); that frame now counts as the switch, not as a stall in play (BUG-0448).
 - Tests: `editor_desync` failed about every second run in the Cell part after the host's evolution:
   the guest's mating call was pressed while the guest was still reloading the host's world or its
   cell was hatching (the game takes no click then). The test now waits like a player; not a bug of
