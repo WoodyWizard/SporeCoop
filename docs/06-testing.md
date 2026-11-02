@@ -3580,3 +3580,8 @@ on a guest, compared, so unsynced systems are found by the lab, not by players.
   session: `scale:creature` in every comparison (NPC proxies 0.93 where the host has 0.80: BUG-0461,
   found without a player), `unmatched:fruit` (about half of the fruit lie elsewhere on each game: fruit is
   local), `guest_only:018C84A9` (a noun type only the guest's game has, near its avatar: class not known yet).
+* Tribe / Civ / Space (2026-11-02, lanes 9-10, after the RTS centre fix: a background game's pointer is
+  (0 0 0), so the dump takes every object and the compare centres on the host): Tribe `host_only:egg` /
+  `noun_only_host:egg` (eggs in the host's game only), `unmatched:fruit`; Civ `unmatched:citizen` (about
+  half the citizens elsewhere) and `scale:citizen`; Space `scale:018EBADC` (4.95 host, 3.30 guest) and
+  two noun types never at the same place. Unknown noun types carry their vtable for Ghidra.
