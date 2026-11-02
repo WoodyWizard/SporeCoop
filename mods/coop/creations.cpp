@@ -344,16 +344,19 @@ static bool decode_run(const std::vector<uint8_t>& m, size_t& j, uint8_t& last, 
 // the instance right after it; byte runs are packed (0xFE n = the byte before, n more times; a 0xFE
 // byte is written 0xFE 0x00) and an id with a run inside it is skipped. Only entries whose slot and
 // parent are plausible count: docs/re/creations.md#creations-unknown-parts
+// The group's least significant byte (0x00 for the part groups) is often encoded as a run (the byte
+// before, repeated), so the scan matches the group's last three bytes and reads the id after them:
+// a model has 33 parts, and looking for the literal 4 bytes finds only the one whose 0x00 is literal.
 static std::vector<PartRef> model_part_refs(const std::vector<uint8_t>& m, uint32_t group)
 {
     std::vector<PartRef> out;
-    uint8_t g[4] = {(uint8_t)group, (uint8_t)(group >> 8), (uint8_t)(group >> 16), (uint8_t)(group >> 24)};
-    for (size_t i = 0; i + 16 <= m.size(); i++) {
-        if (m[i] != g[0] || m[i + 1] != g[1] || m[i + 2] != g[2] || m[i + 3] != g[3])
+    uint8_t g[3] = {(uint8_t)(group >> 8), (uint8_t)(group >> 16), (uint8_t)(group >> 24)};
+    for (size_t i = 0; i + 15 <= m.size(); i++) {
+        if (m[i] != g[0] || m[i + 1] != g[1] || m[i + 2] != g[2])
             continue;
         uint8_t id[4];
         int got = 0;
-        size_t j = i + 4;
+        size_t j = i + 3;
         bool ok = true;
         while (got < 4 && j < m.size()) {
             if (m[j] == 0xFE) {
@@ -369,7 +372,7 @@ static std::vector<PartRef> model_part_refs(const std::vector<uint8_t>& m, uint3
         if (!ok || got != 4)
             continue;
         uint32_t v = id[0] | id[1] << 8 | id[2] << 16 | (uint32_t)id[3] << 24;
-        size_t at = i + 4, len = j - at;
+        size_t at = i + 3, len = j - at;
         // the slot and parent follow the id in the same byte-run stream
         uint8_t f[8];
         uint8_t last = id[3];
