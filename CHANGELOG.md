@@ -32,6 +32,12 @@
   them (BUG-0394).
 
 ### Added
+- Problem reports: when a player marks a problem (`/bug <text>` in the co-op chat, `coop.bug`, or F9
+  "Report a problem"), the game keeps a screenshot of what that player saw, overlay included (JPEG, at
+  most 1280 px wide, a few hundred KB; the newest 5). The report file includes them under `shots/`
+  and lists each next to its mark; every player of the session keeps its own screenshot of a mark.
+  Crash and hang reports take none of their own moment (not safe there). `[report] screenshot=0` in
+  `mods\coop.ini` turns them off and removes the kept ones (BUG-0442). Needs SporeKit 0.3.6.
 - Creature and Cell: DNA (and the cell's food) that a partner or the pack earned now says where it came
   from in a short notice: "+9 DNA from Bob's hunt", "+7 DNA shared by Alice's pack", "+10 food (DNA)
   from Bob's meals"; the game logs write each change with its cause (BUG-0389).

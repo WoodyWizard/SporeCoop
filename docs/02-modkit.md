@@ -261,3 +261,41 @@ For bug reports of players, who send a file, not a debugger session:
   frames, never the detour.
 * Still open (BUG-0403): the first write of the jmp itself can catch a thread inside the first 5
   bytes of a function hooked after boot (BUG-0202's crash, nanoseconds per call).
+
+## Report screenshots (SporeKit 0.3.6, 2026-11-01, feat/w35-report-shot)
+<a id="modkit-report-shots"></a>
+
+`SkHost::report_shot(tag, caption, out, cap)` / `report_shot_pending()` (`sporekit/reportshot.cpp`,
+`sporekit/jpeg.cpp`), used by SporeCoop for every MARK and "Report a problem" (BUG-0442,
+docs/REPORTING.md#reporting-shots):
+
+* **The request never waits.** It only records the wish (main thread) and returns the file name
+  (`shots/<tag>-<date>-<time>[-s<session second>].jpg`). Refused (a log line, return 0) when a shot
+  is still being written, another was requested under 2 s ago, or there is no device yet. A request
+  no Present picks up within 3 s (the game does not draw, or frames come from the game loop because
+  another overlay took Present: 2.2 "Second frame source") fails with a log line.
+* **The capture** runs in the Present hook after the overlay pass (the frame the player is about to
+  see, overlay included), on the device's own thread, never from a console thread (the BUG-0065
+  rule: nothing waits for the main thread): `TestCooperativeLevel` (a lost fullscreen device: no
+  shot), the back buffer (a multisampled one resolved first) `StretchRect`-ed with the linear filter
+  into a 1280-wide X8R8G8B8 render target (any back buffer format converts), one
+  `GetRenderTargetData` of that small surface, the rows copied out. Measured under DXVK (lab, 1440x1080
+  window): 10-19 ms on that one frame, no `perf: hitch`. If the GPU cannot scale it, a plain 32-bit
+  back buffer is read in full and shrunk on the worker (box filter).
+* **The JPEG** (baseline, 4:2:0, the standard tables, quality 80; again at 65 / 50 / 35 while over
+  450 KB) is made by a worker thread (30-50 ms for 1280x960) and written as `.tmp`, then renamed;
+  `<name>.jpg.txt` beside it holds "<size> | <caption>". `mods\logs\shots` (`shots-i<N>` for
+  instance N > 1, so the lab's two games of a lane keep theirs apart) keeps the newest 5 (by time);
+  boot removes unfinished `.tmp` files. `report_shot(NULL, NULL, ...)` removes them all (the
+  player's `[report] screenshot=0`).
+* **Reports:** every archive adds the kept JPEGs under `shots/` (optional entries: dropped first when
+  the archive would pass 24 MB); the report text gets `== Screenshots` before the log lines. A
+  crash, hang or exit report (written by `report_step`, outside the frame) takes no screenshot of its
+  own: D3D from a crash handler or another thread while the game is stopped is not safe, and the
+  text says so.
+* **Native D3D9 on Windows:** the same calls (no DXVK-only path); fullscreen and windowed differ only
+  in the device-lost case above. Tested in the lab under Wine/DXVK (windowed); Windows and an
+  exclusive fullscreen device are not tested yet.
+* Tests: `tests/jpeg_tests.cpp` + `tools/tests/jpeg_check.py` (`make test`: the encoder decoded by
+  Pillow against its source, the shrink), `tools/tests/coop_report_shot.py` (lab `report_shot`).
+

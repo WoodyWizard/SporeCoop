@@ -13,7 +13,10 @@ Thanks for helping! One file from each player is usually all we need.
   Each game's log says what that game saw; the two together show what went wrong between them.
 
 The file holds the game build, Windows or Wine, memory and graphics card, the co-op session, the
-logs of the last runs and the mod settings. Your player name is in it; the address you joined is
+logs of the last runs, the mod settings and **screenshots of the game** taken when a problem was
+marked (`/bug`) or "Report a problem" was pressed: they show your game screen at that moment (see
+[screenshots](#reporting-shots); `[report] screenshot=0` in `mods\coop.ini` turns them off). Your
+player name is in it; the address you joined is
 not, and the logs show other players' addresses only as their network class ("192.168.x.x",
 "public #3F2A"). How much the log says is set in `mods\coop.ini` (`[coop] log_detail=1`, the
 default; `0` = less, `2` = more, `coop.log detail N` in the F11 console); please keep the default
@@ -369,3 +372,29 @@ its id or `host`), `proxy` (on a guest: the host's animal), `pack` / `family` (t
 sends a hit on the guest's creature to that guest), `dropped (npc.party_peace)`, `from the host` (the
 guest applies the host's forwarded hit). "My own pack attacks my friend" (BUG-0374) shows as a
 `posse=1` line with an amount over 0.
+
+## Screenshots in reports (2026-11-01, feat/w35-report-shot)
+<a id="reporting-shots"></a>
+
+**For players (privacy):** a screenshot shows your whole game screen as you saw it, with the co-op
+overlay and the co-op window if it was open (player names, the chat). It is taken:
+
+* when you or a partner mark a problem (`/bug <text>` in the co-op chat, `coop.bug <text>` in the
+  console): every player's game keeps its own screenshot of that moment;
+* when you press **Report a problem** in the co-op window (the window then says "A screenshot of the
+  game is included").
+
+The screenshots stay in `mods\logs\shots` on your PC (the newest 5) and go only into the report
+file you send. `[report] screenshot=0` in `mods\coop.ini` turns them off: no new screenshots, and
+the kept ones are removed at the next start or report.
+
+**For maintainers:** the archive has them as `shots/<what>-<date>-<time>[-s<session second>].jpg`
+(`mark-20261101-174020-s14.jpg`: the MARK at local 17:40:20, session time 14.x s; `report-...`: the
+button). The report text lists them under `== Screenshots` with the MARK line each belongs to
+(`shots/mark-...jpg  1280x720 245 KB | MARK by 'Bob' (player 1) at s 14.374: ...`), and the log has
+`report shot: shots/... <size> q<quality> of <back buffer size> (on the frame N ms, ...) for: MARK
+...` right after the MARK, or `report shot: ... not taken (<why>)`. A crash or hang report has none of
+its own moment ("No screenshot of this moment": the graphics device is not used from a crash handler
+or a hung game); its archive still has the marks' screenshots. How they are taken:
+docs/02-modkit.md#modkit-report-shots.
+

@@ -3238,3 +3238,17 @@ the walk and fight tests) swings the view over it (docs/re/creature.md#creature-
   `puppet_hp` rule failed every run on the puppet that cannot show 1000 of 10 (lab 20261101-160710, 2 of 2).
 * Pitfall: a nest mound is not in `GetHeightAt`; heights over the ground (`hd`, `ht`, `agl`) of a creature on it
   read 0.4-1.03 m although it stands on its ground.
+
+## Report screenshots test (2026-11-01, feat/w35-report-shot)
+<a id="testing-report-shots"></a>
+
+* `coop_report_shot.py` (suite `report_shot`, warm Creature, ~1 min, `reports=True`: it writes
+  archives): the guest's `/bug` gives `shots/mark-...jpg` in its archive (a JPEG <= 1280 wide with the
+  back buffer's aspect, 5-500 KB, mean brightness within 30 of a `shot` of the same frame), listed
+  next to its MARK in the report; the capture costs the frame under 100 ms, no `perf: hitch` after;
+  the host's "Report a problem" click puts `shots/report-...jpg` into its archive and the window says
+  "A screenshot of the game is included". `--off` / `SPORE_REPORT_SHOT=0` writes `[report]
+  screenshot=0` into the lane's coop.ini for the run (restored after): the test must FAIL then.
+* Pitfall: a warm guest's screen is black for some seconds after its join (only the overlay is
+  drawn): the test waits until a `shot` of the guest shows the world before it marks, else the mark's
+  screenshot is (rightly) black.
