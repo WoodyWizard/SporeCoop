@@ -9,9 +9,9 @@ source: final verification of 0.7.3.5 (2026-11-02, out/lab/20261102-163032)
 role: 
 versions: 
 fixed_in: unreleased
-branch:
-commits:
-tests:
+branch: feat/w39-detector
+commits: d4382bfb
+tests: unknown_parts, guest_missing_pack
 signature:
 docs:
 related:
@@ -32,17 +32,11 @@ Observed: the lab code (`range(2, 9)`, no check of other work, no serialization 
 The free lane is a lane of 2..10, never 1 or 8, not in the run, not --skip, and with no game answering
 its console at the start of the run; uses_free_lane tests of one run take it one at a time (a lock).
 Branch feat/w39-detector.
-<!-- what the player (or the test) saw, in our words; no player names, no paths from their PC -->
-
-## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
-
-## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+FAIL run: out/lab/20261102-163032 (lanes 4-7, an agent on 2-3): guest_missing_pack and unknown_parts both on
+lane 2 at once, the pack-less guest had the pack (have_pack=1). PASS run: out/lab/20261102-170442 (lane 4,
+--skip of the busy lanes, free lane 5): guest_missing_pack and unknown_parts one after the other.
 
 ## History
 - 2026-11-02: opened.
