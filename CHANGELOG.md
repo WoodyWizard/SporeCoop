@@ -3,6 +3,10 @@
 ## [Unreleased]
 
 ### Fixed
+- A game told to host before it reached its main menu (a console line during the start) crashed in the
+  host's first time-of-day message: the time of day is now read only once the game has its space player
+  data. Players hosting from the co-op window were not affected: the window first shows in the galaxy
+  menu (BUG-0433).
 - Tests: `editor_desync` failed about every second run in the Cell part after the host's evolution:
   the guest's mating call was pressed while the guest was still reloading the host's world or its
   cell was hatching (the game takes no click then). The test now waits like a player; not a bug of
