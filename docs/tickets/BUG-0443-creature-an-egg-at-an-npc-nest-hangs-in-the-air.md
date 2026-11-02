@@ -10,7 +10,7 @@ role: host
 versions: 0.7.3.3
 fixed_in: unreleased
 branch: fix/w35-egg-kick
-commits: 6f02d3b
+commits: 6f02d3b 86062d1f
 tests: tools/tests/coop_nest_eggs_air.py (suite nest_eggs_air)
 signature:
 docs: docs/re/creature.md#creature-egg-gravity, docs/known-issues.md#issue-nest-eggs-floating, docs/06-testing.md#testing-nest-eggs-air
