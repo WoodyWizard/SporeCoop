@@ -63,6 +63,8 @@ comparison 6 apart, also the guest's editor 51 against the party's 57 and after 
 PASS: parts_transition, lab 20261101-194722 (lane 9: host and guest 54:72501FA3 of 324 at once after the
 transition; finds both ways in 1-2 s; the guest's editor offers 56:F33F0AF9 = the host's set, 268 locked;
 after the rejoin 56 = 56).
+Regression: lab 20261101-195534 (lane 9, gates on): transition_net (without the BUG-0441 allow), parts_shared,
+guest_editor_locks, creations, guest_editor and smoke: 18/19 OK, `ui` skipped (exclusive, lanes 1-5 only).
 
 ## History
 - 2026-11-01: opened.
