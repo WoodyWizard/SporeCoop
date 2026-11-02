@@ -2,7 +2,9 @@
 #include "census.h"
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <map>
 
 #include "game.h"
 #include "modes.h"
@@ -38,6 +40,9 @@ static void creature_rows(std::vector<Row>& rows)
             r.hp = game::health(o);
             r.ai = game::is_puppet(o) ? 0 : 1;
             r.pos = game::position(o);
+            r.noun = noun;
+            r.serial = game::object_serial(o);
+            r.scale = game::scale(o);
             int pid = npc::proxy_id(o), hid = npc::host_id(o);
             if (o == u->av)
                 r.own = "avatar";
@@ -55,8 +60,51 @@ static void creature_rows(std::vector<Row>& rows)
         &u);
 }
 
-static int c_census(void*, int, const char* const*, SkOut* out)
+// every placed game object other than the creatures (they have their c rows) within r m of `c`,
+// and the count of every noun in the list
+struct AllQ {
+    std::vector<Row>* rows;
+    std::map<uint32_t, int>* nouns;
+    net::Vec3 c;
+    bool have_c;
+    float r2;
+};
+
+static void all_rows(AllQ& q)
 {
+    game::for_each_object(
+        [](void* o, uint32_t noun, void* p) {
+            auto* q = (AllQ*)p;
+            if (!game::object_alive(o))
+                return true;
+            (*q->nouns)[noun]++;
+            if (noun == kCreatureNoun || q->rows->size() >= 6000)
+                return true;
+            net::Vec3 pos;
+            if (!game::object_position(o, pos))
+                return true;
+            if (q->have_c) {
+                float dx = pos.x - q->c.x, dy = pos.y - q->c.y, dz = pos.z - q->c.z;
+                if (dx * dx + dy * dy + dz * dz > q->r2)
+                    return true;
+            }
+            Row r;
+            r.kind = 'g';
+            r.pos = pos;
+            r.noun = noun;
+            r.serial = game::object_serial(o);
+            r.scale = game::object_scale(o);
+            r.own = "world";
+            q->rows->push_back(r);
+            return true;
+        },
+        &q);
+}
+
+static int c_census(void*, int argc, const char* const* argv, SkOut* out)
+{
+    bool all = argc >= 2 && !strcmp(argv[1], "all");
+    float radius = argc >= 3 ? (float)atof(argv[2]) : 250.f;
     uint32_t mode = 0, world = 0;
     if (C.place)
         C.place(mode, world);
@@ -69,11 +117,24 @@ static int c_census(void*, int, const char* const*, SkOut* out)
         creature_rows(rows);
     else if (mode == modes::kCiv)
         civ::census_rows(rows);
+    std::map<uint32_t, int> nouns;
+    net::Vec3 me{};
+    bool have_me = C.self_pos && C.self_pos(me);
+    if (all) {
+        if (mode == modes::kCell)
+            cellsync::census_rows(rows);
+        AllQ q{&rows, &nouns, me, have_me, radius > 0 ? radius * radius : 1e30f};
+        all_rows(q);
+    }
     std::string buf;
     for (auto& r : rows) { // a console answer is built from pieces of at most 8 KB
         char b[256];
-        snprintf(b, sizeof b, "obj %c%d key=%08X alive=%d hp=%.1f ai=%d own=%s owner=%d pos=(%.1f %.1f %.1f)\n", r.kind,
-                 r.id, r.key, r.alive, r.hp, r.ai, r.own, r.owner, r.pos.x, r.pos.y, r.pos.z);
+        int n = snprintf(b, sizeof b, "obj %c%d key=%08X alive=%d hp=%.1f ai=%d own=%s owner=%d pos=(%.1f %.1f %.1f)", r.kind,
+                         r.id, r.key, r.alive, r.hp, r.ai, r.own, r.owner, r.pos.x, r.pos.y, r.pos.z);
+        if (all && n > 0 && n < (int)sizeof b - 64)
+            snprintf(b + n, sizeof b - n, " noun=%08X ser=%u scale=%.3f\n", r.noun, r.serial, r.scale);
+        else if (n > 0 && n < (int)sizeof b - 2)
+            strcat(b, "\n");
         if (buf.size() + strlen(b) > 7000) {
             SAY("%s", buf.c_str());
             buf.clear();
@@ -82,6 +143,20 @@ static int c_census(void*, int, const char* const*, SkOut* out)
     }
     if (!buf.empty())
         SAY("%s", buf.c_str());
+    if (all) {
+        SAY("me pos=(%.1f %.1f %.1f) ok=%d\n", me.x, me.y, me.z, have_me ? 1 : 0);
+        std::string ln = "nouns";
+        for (auto& [k, v] : nouns) {
+            char b[32];
+            snprintf(b, sizeof b, " %08X=%d", k, v);
+            if (ln.size() > 7000) {
+                SAY("%s\n", ln.c_str());
+                ln = "nouns";
+            }
+            ln += b;
+        }
+        SAY("%s\n", ln.c_str());
+    }
     SAY("end objects=%u\n", (unsigned)rows.size());
     return 0;
 }
@@ -92,8 +167,8 @@ void init(const SkHost* host, SkMod* mod, Ctx ctx)
     M = mod;
     C = std::move(ctx);
     H->command_add(M, "coop.census",
-                   "coop.census - the shared objects of this mode as the game has them, with net ids (tests: "
-                   "tools/tests/census.py)",
+                   "coop.census [all [r]] - the shared objects of this mode as the game has them, with net ids (tests: "
+                   "tools/tests/census.py); all: every placed game object within r m and the noun counts (worlddiff.py)",
                    c_census, nullptr, SK_CMD_MAIN_THREAD);
 }
 

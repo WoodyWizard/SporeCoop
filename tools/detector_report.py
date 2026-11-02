@@ -1,0 +1,131 @@
+#!/usr/bin/env python3
+"""Summary of the divergence detector over lab runs (docs/sync-architecture-plan.md L0).
+
+Tests run with SPORE_DETECTOR=<s> print, from their monitor (tools/tests/monitor.py), one
+`DETECTOR-SAMPLE {...}` line per comparison of the host's world with a guest's and one `DETECTOR {...}`
+line per finding (tools/tests/worlddiff.py). This script reads the test logs of the given lab run
+directories (default: the runs of today) and writes, per stage, how often each finding signature was
+seen, in which tests, with examples, and which ticket already covers it (KNOWN).
+
+  tools/detector_report.py [run dir ...] [--since YYYYMMDD-HHMM] [--out out/detector/<date>.md]
+"""
+import argparse
+import collections
+import datetime
+import glob
+import json
+import os
+import re
+import sys
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# signature (or its prefix up to a kind) -> the ticket that already covers it
+KNOWN = {
+    'Creature:scale:creature': 'BUG-0461 (NPC scale sent, not applied)',
+    'Creature:host_only:nest': 'BUG-0460',
+    'Creature:guest_only:nest': 'BUG-0460',
+    'Creature:unmatched:nest': 'BUG-0460',
+    'Creature:unmatched:egg': 'BUG-0421 class (eggs)',
+    'Creature:host_only:egg': 'BUG-0421 class (eggs)',
+    'Creature:guest_only:egg': 'BUG-0421 class (eggs)',
+    'Creature:guest_local:creature': 'BUG-0421 class (guest-local objects)',
+    'Cell:guest_local:cell': 'BUG-0421 class / host-centric M2',
+}
+
+
+def known(sig):
+    if sig in KNOWN:
+        return KNOWN[sig]
+    return ''
+
+
+def runs_since(since):
+    out = []
+    for d in sorted(glob.glob(os.path.join(ROOT, 'out', 'lab', '2*'))):
+        name = os.path.basename(d)
+        if name >= since:
+            out.append(d)
+    return out
+
+
+def test_logs(run):
+    return [p for p in sorted(glob.glob(os.path.join(run, '*.log'))) if not p.endswith('.game.log')]
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument('runs', nargs='*')
+    ap.add_argument('--since', default=datetime.date.today().strftime('%Y%m%d'))
+    ap.add_argument('--out', default='')
+    a = ap.parse_args()
+    runs = a.runs or runs_since(a.since)
+    samples = collections.Counter()          # stage -> comparisons made
+    skipped = collections.Counter()          # reason -> comparisons skipped (not in the same place)
+    seen = collections.Counter()             # sig -> comparisons it was in
+    objs = collections.Counter()             # sig -> objects
+    tests = collections.defaultdict(set)     # sig -> tests
+    examples = collections.defaultdict(list)
+    files = 0
+    for run in runs:
+        for p in test_logs(run):
+            test = os.path.basename(p)[:-4]
+            files += 1
+            try:
+                lines = open(p, encoding='utf-8', errors='replace').read().splitlines()
+            except OSError:
+                continue
+            for line in lines:
+                if line.startswith('DETECTOR-SAMPLE '):
+                    try:
+                        d = json.loads(line[16:])
+                    except ValueError:
+                        continue
+                    if d.get('skipped'):
+                        skipped[d['skipped']] += 1
+                    else:
+                        samples[d.get('stage') or '?'] += 1
+                elif line.startswith('DETECTOR '):
+                    try:
+                        d = json.loads(line[9:])
+                    except ValueError:
+                        continue
+                    s = d['sig']
+                    seen[s] += 1
+                    objs[s] += int(d.get('n', 0))
+                    tests[s].add(test)
+                    if len(examples[s]) < 3 and d['text'] not in examples[s]:
+                        examples[s].append(d['text'])
+    out = [f'# Divergence detector report ({datetime.datetime.now():%Y-%m-%d %H:%M})', '',
+           f'{len(runs)} lab run(s), {files} test log(s). Comparisons per stage: '
+           + (', '.join(f'{k} {v}' for k, v in sorted(samples.items())) or 'none')
+           + (f'; skipped (not in the same place): {sum(skipped.values())}' if skipped else '') + '.', '',
+           'A signature is `<stage>:<what>:<kind>`: host_only / guest_only (objects near the guest on one game only), '
+           'unmatched (both have the kind, some without a partner), guest_local / host_local (objects the mod does not '
+           'track), alive / scale / model / hp / pos (matched objects that differ), noun_only_* (a noun type in one '
+           'game\'s whole list only). `seen` = comparisons with the finding, `share` = of that stage\'s comparisons.', '']
+    by_stage = collections.defaultdict(list)
+    for s in seen:
+        by_stage[s.split(':')[0]].append(s)
+    for stage in sorted(by_stage):
+        n = samples.get(stage, 0) or 1
+        out += [f'## {stage}', '', '| signature | seen | share | objects | tests | ticket | example |', '|---|---|---|---|---|---|---|']
+        for s in sorted(by_stage[stage], key=lambda s: -seen[s]):
+            ex = examples[s][0].replace('|', '/') if examples[s] else ''
+            out.append(f'| `{s}` | {seen[s]} | {100 * seen[s] / n:.0f}% | {objs[s]} | {", ".join(sorted(tests[s]))[:80]} | '
+                       f'{known(s) or "**new**"} | {ex[:160]} |')
+        out.append('')
+    if not seen:
+        out.append('No findings' + (' (no comparisons: was SPORE_DETECTOR set?)' if not samples else '.'))
+    text = '\n'.join(out) + '\n'
+    dest = a.out or os.path.join(ROOT, 'out', 'detector', f'{datetime.datetime.now():%Y%m%d-%H%M}.md')
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    with open(dest, 'w') as f:
+        f.write(text)
+    print(text)
+    print(f'written: {dest}')
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())
