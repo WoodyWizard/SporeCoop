@@ -59,3 +59,5 @@ SporeCoop::UFOController_Update ; BUG-0378: the hook that leaves pinned Space pu
 SporeCoop::cEgg_SetState ; BUG-0384: on GOG 2016 the host's nest eggs are not shown on guests (no egg mirrors, no eating them)
 SporeCoop::cEgg_SnapToGround ; BUG-0384: on GOG 2016 the host's nest eggs are not shown on guests
 SporeCoop::cPlanetModel_SurfacePoint ; BUG-0443: on GOG 2016 NPC eggs hanging over the surface are not put onto it (nest.egg_ground off there)
+SporeCoop::PhysicsManager_Update ; BUG-0449: on GOG 2016 a physics body without an owner is not left out of the physics update (game.physics_owner off there)
+SporeCoop::PhysicsWorld_ptr ; BUG-0449: on GOG 2016 a physics body without an owner is not left out of the physics update

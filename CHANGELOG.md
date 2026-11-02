@@ -3,6 +3,9 @@
 ## [Unreleased]
 
 ### Fixed
+- Tribe: the game could fault in its physics update in every frame (seen once on a guest, GOG 2024) when
+  a physics body had lost its owner, skipping the rest of the physics each frame. Such a body is now left
+  out of the update (BUG-0449).
 - Tribe: a guest's own tribe members (and the host's) could walk 3-9 m inside the ground, or float over it, on
   the guest's screen when the host walked them up or down a slope in the first half minute after the guest
   joined (the guest's game is still paused then) or while the guest's game was paused; they stay on the
