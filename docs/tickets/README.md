@@ -477,3 +477,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0465](BUG-0465-the-kraken-water-monster-is-not-visible-to-other.md) | open | bug | Creature | 2026-11-02 |  | the kraken (water monster) is not visible to other players |
 | [BUG-0466](BUG-0466-after-the-guest-s-own-editor-its-dna-is-back-to.md) | open | bug | Creature | 2026-11-02 |  | after the guest's own editor its DNA is back to what it had before (DNA spent in the editor is not kept) |
 | [BUG-0467](BUG-0467-a-cell-part-the-guest-picks-up-is-not-unlocked-f.md) | open | bug | Cell | 2026-11-02 |  | a Cell part the guest picks up is not unlocked for the host |
+| [BUG-0468](BUG-0468-lab-the-free-lane-for-uses-free-lane-tests-can-b.md) | fixed | tooling | lab | 2026-11-02 | unreleased | lab: the free lane for uses_free_lane tests can be a lane busy with other work or the owner's lane 8, and two such tests share it at once |
