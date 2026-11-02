@@ -10,7 +10,7 @@ role:
 versions:
 fixed_in: unreleased
 branch: fix/w38-effects
-commits: 0d704785 (relay), 646dfc97 (test), 40c7834b (docs), d4e5a367 (world relay), c26a1d10 (tests)
+commits: 0d704785 (relay), 646dfc97 (test), 40c7834b (docs), d4e5a367 (world relay), c26a1d10 (tests), 41c0d56f (docs)
 tests: creature_effects, cell_effects, tribe_effects
 signature:
 docs: docs/re/creature.md#creature-effects-relay
