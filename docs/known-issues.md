@@ -1524,6 +1524,30 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Known: inferred from the code; the window is nanoseconds per call.
 * Next steps: make the input hooks at boot or on the main thread.
 * Ticket: BUG-0403
+
+## Creature: the partner's creature slides in its standing pose for a whole walk (2026-11-01, fix/w34-walk-stable)
+<a id="issue-puppet-no-walk-anim"></a>
+
+* What happens: on the host, the guest's creature moves on its path but keeps its standing animation (02481DE5,
+  walk gait 0) for a whole 25-40 s walk.
+* Reproduce: about 1 run in 10 of the cold tests puppet_walk / puppet_slope / puppet_under (host watches guest).
+* Ticket: BUG-0436
+
+## Creature: a hit animal is held off its path on the guest for a second (2026-11-01, fix/w34-walk-stable)
+<a id="issue-npc-hit-held"></a>
+
+* What happens: after the host hits an animal, the guest's game moves its copy 3-4 m in one frame (or throws it at
+  8-11 m/s) against the placing; it stands 4.8 m off for 1.1 s or is put back 2.4-4 m in one frame.
+* Reproduce: npc_walk's flee phase (`coop.npc hosthit`), a few runs in 20.
+* Ticket: BUG-0409
+
+## Creature: the partner's creature slides past a stop (2026-11-01, fix/w34-walk-stable)
+<a id="issue-puppet-stop-slide"></a>
+
+* What happens: when the partner stops, its creature on the other screen slides 0.3-0.7 m past the spot in ~2 % of
+  the stops; on a slope it may play the fall animation for 0.2 s there.
+* Reproduce: puppet_walk prints the stops (`stops: N, drawn past the stop by more than 0.3 m in M`).
+* Ticket: BUG-0408
 * Fixed (2026-11-01, fix/w33-unlocks): the party shares its collected parts (`parts.shared`, test
   `parts_shared`).
 

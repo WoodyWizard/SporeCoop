@@ -59,6 +59,13 @@ HITCH_QUIET = 0.2  # s after a frame over 0.1 s
 # also at 30 fps over a mobile network: 0-2.2 %, the 0.7.3.3 driving's failing runs 0.1-1.6 %)
 LOADED = 0.03
 SLOW_UNEVEN_MAX = 0.10
+# BUG-0407: a frame of the stop-and-go check whose time differs from the frame before's by more than STEADY x is left
+# out (counted): the drawn step follows the frame before's time, the target's this frame's, and on a loaded machine
+# (lab load 26-31 on 12 cores, frames jittering 15-90 ms) that alone made the host's own game, which no driving
+# moves, "uneven" in 5-10 % of its frames and failed a fix-on run at 11 %. Left out: the host's own game 0-2 %, the
+# fix 0-7 %, the 0.7.3.3 driving (tribe.mirror_walk,tribe.mirror_time off) unchanged 10-31 %
+STEADY = 1.5
+WALK_MORE = 2  # BUG-0407: walks of `secs` more when the first measured too little
 W, H = 1440, 1080
 
 
@@ -100,6 +107,7 @@ def analyse(rows, owner, top, label):
             by.setdefault(r['id'], []).append(r)
     frames, tps, steps, near, near_gait, win, errs, dts, drive_tp = 0, [], [], 0, 0, [], [], [], 0
     slow, slow_still, slow_surge, slow_uneven, hitches, skipped, target_jumps = 0, 0, 0, 0, 0, 0, 0
+    jittery = 0
     walked = set()
     all_frames = 0
     for mid, rs in by.items():
@@ -147,7 +155,9 @@ def analyse(rows, owner, top, label):
                 a0 = rs[k - 1]
                 dt0 = a['t'] - a0['t']
                 ts = math.dist(a0['tgt'], a['tgt'])
-                if 0 < dt0 <= 0.1 and 1.0 <= ts / dt0 < SLOW:  # the member speeds up or slows down
+                if 0 < dt0 <= 0.1 and 1.0 <= ts / dt0 < SLOW and STEADY and max(dt, dt0) > STEADY * min(dt, dt0):
+                    jittery += 1
+                elif 0 < dt0 <= 0.1 and 1.0 <= ts / dt0 < SLOW:  # the member speeds up or slows down
                     slow += 1
                     slow_still += step < 0.3 * ts
                     slow_surge += step > ts + SURGE * dt0
@@ -176,7 +186,7 @@ def analyse(rows, owner, top, label):
         'err_p50': pct(errs, 0.5), 'err_p90': pct(errs, 0.9), 'err_max': max(errs) if errs else 0,
         'near': near, 'near_gait': near_gait / near if near else 0,
         'slow': slow, 'slow_still': slow_still / slow if slow else 0, 'slow_surge': slow_surge / slow if slow else 0,
-        'slow_uneven': slow_uneven / slow if slow else 0,
+        'slow_uneven': slow_uneven / slow if slow else 0, 'jittery': jittery,
         'win': len(win), 'stand': sum(1 for w in win if w < 0.3) / len(win) if win else 1,
         'matched': sum(1 for w in win if 0.6 <= w <= 1.4) / len(win) if win else 0,
         'ratio_p10': pct(win, 0.1), 'ratio_p50': pct(win, 0.5), 'ratio_p90': pct(win, 0.9), 'drive_tp': drive_tp,
@@ -193,7 +203,8 @@ def report(r, ck, mirrors=True):
     print(f'    0.1 s windows while they walk: {r["win"]}, standing (< 0.3x the target path\'s speed) {r["stand"]:.0%}, '
           f'at 0.6-1.4x {r["matched"]:.0%} (ratio p10 {r["ratio_p10"]:.2f} p50 {r["ratio_p50"]:.2f} '
           f'p90 {r["ratio_p90"]:.2f})', flush=True)
-    print(f'    frames while it speeds up or slows down (target 1-{SLOW:.0f} m/s): {r["slow"]}, uneven (the step off the '
+    print(f'    frames while it speeds up or slows down (target 1-{SLOW:.0f} m/s, {r["jittery"]} more left out: a frame time '
+          f'{STEADY}x off the one before): {r["slow"]}, uneven (the step off the '
           f'target\'s by more than half + 1 m/s) {r["slow_uneven"]:.0%}: standing {r["slow_still"]:.0%}, faster than '
           f'the target + {SURGE:.0f} m/s {r["slow_surge"]:.0%}', flush=True)
     print(f'    jumps (id, t, m, frame ms): {len(r["teleports"])} {r["teleports"][:12]}', flush=True)
@@ -297,15 +308,20 @@ class Watch(threading.Thread):
     def __init__(self, pl, owner):
         super().__init__(daemon=True)
         self.pl, self.owner, self.stop, self.looks = pl, owner, threading.Event(), 0
+        self.lock = threading.Lock()  # BUG-0407: the main thread reads the observer's track while it watches
 
     def run(self):
         while not self.stop.is_set():
-            ms = own(self.pl.con, self.owner)
-            if ms:
-                c = [sum(v['pos'][i] for v in ms.values()) / len(ms) for i in range(3)]
-                if not self.pl.cur or math.dist(self.pl.cur, c) > 12:
-                    self.pl.look(c, tol=12)
-                    self.looks += 1
+            try:
+                with self.lock:
+                    ms = own(self.pl.con, self.owner)
+                    if ms:
+                        c = [sum(v['pos'][i] for v in ms.values()) / len(ms) for i in range(3)]
+                        if not self.pl.cur or math.dist(self.pl.cur, c) > 12:
+                            self.pl.look(c, tol=12)
+                            self.looks += 1
+            except OSError as e:  # BUG-0407: a console call that timed out on a loaded machine
+                print(f'  watch: {e!r}', flush=True)
             self.stop.wait(1.0)
 
 
@@ -319,6 +335,20 @@ def direction(walker, observer, rng, secs, ck, host_pl):
         p.con.call('coop.track start')
     time.sleep(0.3)
     log = walk(walker, rng, secs)
+    # BUG-0407: a walk that measured too little on the guest (a loaded machine at 21-29 fps, clicks that gave no
+    # walk: 294 frames, 135 on the screen) is walked on instead of failing checks that measured nothing
+    for _ in range(WALK_MORE):
+        with watch.lock:
+            hrows = dump(host_pl.con)
+            grows = dump(observer.con if observer.name == 'guest' else walker.con)
+        top = pct([r['rv'] for r in hrows if r['who'] == walker.pid and r['id'] and r['rv'] > 0.3], 0.95) or 5.0
+        r = analyse(grows, walker.pid, top, '')
+        if r['frames'] > 300 * FPS_K and r['near'] >= 150 * FPS_K and r['win'] > 50 * FPS_K:
+            break
+        print(f'  measured too little on the guest ({r["frames"]} frames while they walk, {r["near"]} on the screen, '
+              f'{r["win"]} windows): {walker.name} walks on', flush=True)
+        log.append('| on')
+        log += walk(walker, rng, secs)
     watch.stop.set()
     watch.join()
     time.sleep(1.0)

@@ -97,6 +97,7 @@ endif
 	python3 tools/tests/fakepeer_check.py $(B)/host/net_tests
 	python3 tools/tests/lab_selftest.py
 	python3 tools/tests/gates_selftest.py
+	python3 tools/tests/walk_selftest.py
 ifneq ($(SKIP_SANITIZERS),1)
 	$(MAKE) --no-print-directory test-asan
 	$(MAKE) --no-print-directory test-tsan

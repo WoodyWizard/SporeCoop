@@ -70,6 +70,7 @@ MATCHED_MIN_TRIBE, JUMPS_TRIBE, JUMP_MAX_TRIBE, ERR_P50_TRIBE = 0.75, 3, 2.5, 0.
 # with drawn errors of 0.01-0.6 m; over 4 frames 89-98 %. At 60 fps 4 frames are shorter than 0.1 s (unchanged);
 # a puppet that stands 4 frames while its path moves still counts as standing
 WIN_FRAMES = 4
+HITCH = 0.1  # s: a guest frame this long is a hitch of its game (BUG-0407)
 
 def screen(con):
     m = re.search(r'viewport x=\d+ y=\d+ w=(\d+) h=(\d+)', con.call('coop.cam')['out'])
@@ -108,6 +109,12 @@ def host_party(con):
     return {int(m.group(1)) for m in re.finditer(r'^\s*#(\d+) .*? (?:pack|family)\b', con.call('coop.npc list')['out'], re.M)}
 
 
+def family(con):
+    """the host's NPCs in its avatar's herd or pack (`coop.npc list` tags ` family` / ` pack`)"""
+    return {int(m.group(1)) for m in re.finditer(r'^\s*#(\d+) .*', con.call('coop.npc list')['out'], re.M)
+            if ' family' in m.group(0) or ' pack' in m.group(0)}
+
+
 def proxies(con):
     """the guest's spawned proxies: id -> (pos, distance to its avatar)"""
     return {int(m.group(1)): (tuple(map(float, m.group(3, 4, 5))), float(m.group(2)))
@@ -139,25 +146,34 @@ class Watch(threading.Thread):
         super().__init__(daemon=True)
         self.con, self.stop, self.drags, self.nid = con, threading.Event(), 0, None
         self.W, self.H = screen(con)
+        # BUG-0407: walk_phase asks the guest for its avatar while this thread turns its camera: one console, one
+        # caller at a time (two threads on one socket can take each other's replies)
+        self.lock = threading.Lock()
 
     def run(self):
         while not self.stop.is_set():
-            if self.nid is not None:
-                m = re.search(r'samples=(\d+)', self.con.call('coop.npctrack count')['out'])
-                if not m:
-                    self.stop.wait(0.6)
-                    continue
-                n = int(m.group(1))
-                xy = None
-                for line in self.con.call(f'coop.npctrack dump {max(0, n - 60)} 60')['out'].splitlines():
-                    f = line.split()
-                    if len(f) >= 25 and int(f[1]) == self.nid:
-                        xy = (int(f[22]), float(f[23]), float(f[24]))
-                if not xy or not xy[0] or not (100 < xy[1] < self.W - 100 and 80 < xy[2] < self.H - 150):
-                    dx = 300 if not xy or not xy[0] or xy[1] > self.W // 2 else -300
-                    self.con.call(f'drag {self.W // 2} {self.H // 2} {self.W // 2 + dx} {self.H // 2} right')
-                    self.drags += 1
+            try:
+                with self.lock:
+                    self.turn()
+            except OSError as e:  # a console call that timed out on a loaded machine
+                print(f'  watch: {e!r}', flush=True)
             self.stop.wait(0.6)
+
+    def turn(self):
+        if self.nid is not None:
+            m = re.search(r'samples=(\d+)', self.con.call('coop.npctrack count')['out'])
+            if not m:
+                return
+            n = int(m.group(1))
+            xy = None
+            for line in self.con.call(f'coop.npctrack dump {max(0, n - 60)} 60')['out'].splitlines():
+                f = line.split()
+                if len(f) >= 25 and int(f[1]) == self.nid:
+                    xy = (int(f[22]), float(f[23]), float(f[24]))
+            if not xy or not xy[0] or not (100 < xy[1] < self.W - 100 and 80 < xy[2] < self.H - 150):
+                dx = 300 if not xy or not xy[0] or xy[1] > self.W // 2 else -300
+                self.con.call(f'drag {self.W // 2} {self.H // 2} {self.W // 2 + dx} {self.H // 2} right')
+                self.drags += 1
 
 
 def pct(xs, q):
@@ -200,15 +216,19 @@ def analyse(rows, W, H, phases):
             res['how'][b['how']] = res['how'].get(b['how'], 0) + 1
             step = math.dist(a['d'], b['d'])
             onscr = all(x['vis'] and 0 < x['sx'] < W and 0 < x['sy'] < H for x in (a, b))
+            # BUG-0407: TP_FACTOR x the speed the host's NPC has now when that is over the run's top speed (the p95
+            # of every reported speed, 4 m/s): a proxy that caught up 0.76 m in a 62 ms frame behind its host NPC
+            # fleeing at 9.2 m/s (1.3x its speed) was a "jump" (npc_walk, lab 20261101-135017)
+            lim = max(TP_MIN, TP_FACTOR * max(top, a['rv'], b['rv']) * jdt)
             if not onscr:
                 # off the screen the game updates a far creature in bursts (no move for 0.2 s, then 1.9 m at
                 # once, Tribe animals 70-100 m away): counted, not judged
-                if step > max(TP_MIN, TP_FACTOR * top * jdt):
+                if step > lim:
                     res.setdefault('jumps_off', []).append((nid, round(b['t'], 2), round(step, 2)))
-            elif step > max(TP_MIN, TP_FACTOR * top * jdt) and b['tp'] == a['tp']:
+            elif step > lim and b['tp'] == a['tp']:
                 res['jumps'].append((nid, round(b['t'], 2), round(step, 2), round(dt * 1000)))
                 pw['jumps'] += 1
-            elif step > max(TP_MIN, TP_FACTOR * top * jdt):
+            elif step > lim:
                 res['jumps'].append((nid, round(b['t'], 2), round(step, 2), round(dt * 1000), 'driver tp'))
                 pw['jumps'] += 1
             res['errs'].append(math.dist(b['d'], b['tgt']))
@@ -233,10 +253,17 @@ def analyse(rows, W, H, phases):
             # driving (the proxy closes such a jump at the catch-up speed); counted, not judged (as BUG-0321)
             tj = any(math.dist(rs[k]['tgt'], rs[k + 1]['tgt']) > max(0.3, 2.5 * top * (rs[k + 1]['t'] - rs[k]['t']))
                      for k in range(i, j))
+            # BUG-0407: drawn one frame after the path (what a frame draws was placed in the frame before), and a
+            # window with a guest frame over HITCH in it or just before it left out (counted), as in puppet_walk
+            sh = j + 1 < len(rs) and rs[j + 1]['t'] - rs[j]['t'] < 0.25 and rs[j + 1]['how'] != 2
+            hitch = any(rs[k + 1]['t'] - rs[k]['t'] > HITCH for k in range(max(0, i - 1), min(j + 1, len(rs) - 1)))
             if path > 1.0 and dt < 0.3 and rs[i]['how'] != 2 and rs[j]['how'] != 2 and j - i >= 2 and tj:
                 res['win_tj'] = res.get('win_tj', 0) + 1
+            elif path > 1.0 and dt < 0.3 and rs[i]['how'] != 2 and rs[j]['how'] != 2 and j - i >= 2 and (hitch or not sh):
+                res['win_hitch'] = res.get('win_hitch', 0) + 1
             elif path > 1.0 and dt < 0.3 and rs[i]['how'] != 2 and rs[j]['how'] != 2 and j - i >= 2:
-                w = math.dist(rs[i]['d'], rs[j]['d']) / dt / path
+                res.setdefault('win_legacy', []).append(math.dist(rs[i]['d'], rs[j]['d']) / dt / path)
+                w = math.dist(rs[i + 1]['d'], rs[j + 1]['d']) / (dt * path)
                 res['win'].append(w)
                 if all(r['vis'] and 0 < r['sx'] < W and 0 < r['sy'] < H for r in rs[i:j + 1]):
                     res.setdefault('win_on', []).append(w)
@@ -281,7 +308,8 @@ def walk_phase(host, guest, rng, secs, watch, log, near=30):
     t_end = time.time() + secs
     nxt = {i: 0 for i in ids}
     while time.time() < t_end:
-        g = avatar_pos(guest)
+        with watch.lock:
+            g = avatar_pos(guest)
         for i in ids:
             if time.time() < nxt[i] or not g:
                 continue
@@ -378,7 +406,10 @@ def main():
     ck(len(ids) >= 2, f'walkers for the walk and flee phases ({next((x for x in log if x.startswith("walkers")), ids)})')
     phases.append(('walk', t1, time.time() - tt0))
     t2 = time.time() - tt0
-    for i in ids[:2]:
+    # BUG-0407: not a member of the host's own family or pack: hit, it fights back and its hits on the host's avatar
+    # are hits by the player's own party (the posse_damage monitor gate failed npc_walk, lab 20261101-143049)
+    fam = family(host)
+    for i in [i for i in ids if i not in fam][:2]:
         log.append(f'hit #{i}: ' + host.call(f'coop.npc hosthit {i} 0.5')['out'].strip()[:80])
     time.sleep(a.flee)
     phases.append(('flee', t2, time.time() - tt0))
@@ -405,7 +436,9 @@ def main():
           f'{max(r["errs"]) if r["errs"] else 0:.2f} m', flush=True)
     print(f'    0.1 s windows while the host NPC moves: {len(win)}, the proxy stands in {stand:.0%}, moves at 0.6-1.4x '
           f'in {matched:.0%}; by phase (windows, stand, matched): {r["phase"]}', flush=True)
-    print(f'    windows left out because the host\'s path itself jumped in them (late states): {r.get("win_tj", 0)}', flush=True)
+    print(f'    windows left out because the host\'s path itself jumped in them (late states): {r.get("win_tj", 0)}; with a '
+          f'guest frame over {HITCH * 1000:.0f} ms: {r.get("win_hitch", 0)} ({sum(1 for x in r["dts"] if x > HITCH) / max(1, len(r["dts"])):.1%} '
+          f'of its frames); unshifted (BUG-0407): matched {sum(1 for w in r.get("win_legacy", []) if 0.6 <= w <= 1.4) / max(1, len(r.get("win_legacy", []))):.0%}', flush=True)
     won = r.get('win_on', [])
     if won:
         print(f'    of them on the guest\'s screen: {len(won)}, stand {sum(1 for w in won if w < 0.3) / len(won):.0%}, '

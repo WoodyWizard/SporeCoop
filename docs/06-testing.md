@@ -3219,6 +3219,69 @@ lines aside under 1.3 m), Space 82 lines max 4.1 m (0.11 of the limit), Cell max
 rest 0 m except one line right after a join (151 m: the pointer copy of an older state, one line);
 agl Creature puppets -0.20 to 0.64 m, own -0.43 to 1.04 m; Tribe members -0.01 to 0.00 m.
 
+## Walk tests on a loaded machine: what they judge, and the A/B (2026-11-01, fix/w34-walk-stable)
+<a id="testing-walk-loaded"></a>
+
+The walk smoothness tests (#testing-puppet-track, #testing-npc-track, #testing-tribe-walk, #testing-walk-30fps)
+failed on main and every branch while 5+ agents ran 8+ lanes (lab load 26-34 on 12 cores, observers at 11-29 fps).
+BUG-0407 classified every failure of the current driving (e20e9a3 and later) from the recorded track JSONs:
+
+* **Measurement** (the drawn motion was right): puppet_walk 84 % / 81-91 % matched windows at 22-24 fps with 4-10 %
+  of the observer's frames over 0.1 s: the off windows swung 0.25-2.4x around long frames with drawn errors of
+  0.1-0.4 m (lab 20261101-135017, 20261101-141648, 20261101-143049 #7); npc_walk "1 jump": a 0.76 m catch-up in a
+  62 ms frame behind a host NPC fleeing at 9.2 m/s (1.3x its speed) against a limit made of the run's top speed
+  4 m/s (20261101-135017); tribe_walk "uneven 11 %": the host's own game, which no driving moves, measured 5-10 %
+  uneven on the same frames (frame-time jitter 15-90 ms; 20261101-143049 #4).
+* **Test input / harness**: the walker did not walk (a guest at 8-18 fps took no keys for 6 s: 99 frames, 11 windows;
+  clicks that gave no walk: 26-30 windows; tribe_walk 294 frames, 135 on the screen); an observer at 11 fps with 41 %
+  of its frames over 0.1 s (5 windows); npc_walk 10 of 10 on the posse_damage monitor gate: the test hit members of
+  the host's own family (they follow the avatar, all 4 nearest NPCs were family) and they fought back; puppet_under:
+  a console call of the camera thread timed out, its late reply was read as the next call's (the fault check parsed
+  a track row).
+* **Real** (tickets, still caught): puppet_slope "falls 3" (all at stops, BUG-0408: rare, 0-1 per run in 20 runs);
+  the hit NPC's proxy held 4.8 m off for 1.1 s or knocked off and teleported back 2.4-4 m (BUG-0409); the puppet
+  sliding in its standing animation for a whole walk (gait 0 %, BUG-0436, ~1 run in 20); tribe_coop's 3.7 m was not
+  seen again in 30 runs (old test printed no per-member data); tribe_walk's `n apart` gate is BUG-0402, the Tribe
+  `drawn` monitor gate on the RTS pointer (37.6 m after a minimap jump) the class of BUG-0393 / BUG-0416.
+
+What the tests do now (BUG-0407):
+* puppet_walk / npc_walk windows: the drawn way of frames i+1..j+1 against the path's way of frames i..j (what a
+  frame draws was placed in the frame before); a window with a frame over 0.1 s in it or just before it is left out
+  and counted; puppet_walk also leaves out windows in which the target itself jumped and counts a drawn way within
+  0.1 m of the path's as matched (`WIN_SLACK`). The old numbers are printed beside the new (`unshifted`).
+* puppet_walk: a walk that measured too little (frames or windows) is walked on up to 2 x `--secs`; more than 20 %
+  of the observer's frames over 0.1 s: `NOT MEASURED` (the window check skipped, printed); stops are reported
+  (BUG-0408: the drawn slide past the stop over the error at the stop, and a fall animation there).
+* npc_walk: the jump limit is 3x the larger of the run's top speed and the NPC's own reported speed; the walkers and
+  the two hit NPCs are taken outside the host's family / pack (`coop.npc list` tags), from up to 80 m.
+* tribe_walk: a stop-and-go frame whose time differs from the frame before's by more than 1.5x is left out
+  (`STEADY`, counted); a walk that measured too little on the guest is walked on up to 2 x.
+* tribe_coop: each member's mirror against the host's path over the round (segments between host samples before
+  and after the guest's), up to 8 rounds, the worst member printed.
+* The camera threads share their console under a lock and survive a timed-out call; `sporectl.Console` drops a
+  connection whose call timed out. `walk_selftest.py` (make test): the window measure passes a smooth puppet drawn
+  one frame late at 22-24 fps with 10 % hitches and fails one that moves in steps.
+
+A/B on main's driving (lanes 2-3 only were this branch's; the machine was not idle: load 14-41, mean 27, on 12
+cores, 6-20 other games running; per-minute load in the branch's notes). Main's tests (A, fix on, lab
+20261101-143049): puppet_walk 7/10, npc_walk 0/10 (the family hits), tribe_walk 8/10, tribe_coop 10/10, puppet_slope
+10/10, puppet_under 9/10. The new tests, fix on (C, 20261101-154000; D, 20261101-173719) and with
+`SPORE_FIX_OFF=creature.puppet_walk,creature.puppet_path,npc.walk,npc.path,tribe.mirror_walk` (B, 20261101-154246):
+
+| test | fix on: passed | fix on: the measure | fixes off: failed | fixes off: the measure |
+|---|---|---|---|---|
+| puppet_walk | 15/15 | matched 90-100 %, standing 0-2 % per direction (A rescored: 88-100 %, the 88 % one of 26 windows now walks on) | 10/10 | worst direction per run matched 16-56 %, standing 17-58 %, 1-5 jumps |
+| puppet_slope | 14/15 | matched 97-100 %, falls 0-1 | 10/10 | matched 18-71 %, standing 7-52 %, 2-5 jumps |
+| puppet_under | 14/15 | matched 92-100 % | 10/10 | matched 33-66 %, standing 8-45 % |
+| npc_walk | 15/15 | walk gait 93-100 %, matched 94-100 %, no jump (A rescored: matched 95-99 %) | 10/10 | walk gait 0-7 % (matched 97-100 %: the off driving teleports along the path) |
+| tribe_walk | 13/15 | uneven 0-7 % (worst direction), matched 96-100 % (A rescored: 1-7 %, one run at 10 % NOT MEASURED) | 10/10 | uneven 19-57 % (worst direction), matched 80-97 % |
+| tribe_coop | 10/10 | max error 0.17-0.75 m | 0/10 | max error 0.06-0.95 m: a position check, not a walk measure; no twin among the walk switches |
+
+The failures of the fixed driving in C and D were real problems or another gate, none a walk measure's noise (0 of 75 fix-on runs failed on a walk measure):
+BUG-0436 (the puppet slides in its standing animation for a whole walk: puppet_under#2, puppet_slope#6 of C) and the
+Tribe `drawn` monitor gate on a jumped RTS pointer (37.6 m, tribe_walk#7 of C, tribe_walk#5 of D; BUG-0416's class).
+Pitfall: `coop.npc list` tags the host's family and pack (` family` / ` pack`); hitting one of them makes the host's
+own family fight its avatar, which the posse_damage monitor gate fails.
 ## Creature: the party's collected parts (2026-11-01, fix/w33-unlocks)
 <a id="testing-parts-shared"></a>
 

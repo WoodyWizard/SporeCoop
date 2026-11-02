@@ -114,6 +114,7 @@ def back_to_partner(con, W, H):
 
 
 TETHER = 12.0  # m: the walker turns back to the observer beyond this
+WALK_MORE = 2  # BUG-0407: walks of `secs` more when the first measured too little
 
 
 HOP = 1.5  # m
@@ -210,6 +211,78 @@ def falls(rows):
     return n
 
 
+WIN_SLACK = 0.1  # m (BUG-0407)
+# BUG-0407: more of the observer's frames over HITCH than this: not measured (the window check skipped, printed). A
+# guest at 11 fps with 41 % of its frames over 0.1 s (lab load 26 on 12 cores) left 5 windows; the recorded runs that
+# were judged: 0-10 %, the 0.7.3.2 driving's FAIL runs 0-1 %
+LOADED = 0.20
+HITCH = 0.1  # s: an observer frame this long is a hitch of its game (a loaded machine), not the driving's
+
+
+def windows(pup, top):
+    """0.1 s windows (at least WIN_FRAMES frames) while the walker's path moves (> 1 m/s): the drawn puppet's
+    way / the path's way (the path: the interpolated target; the reported speed is no measure, an avatar
+    turning on the spot reports one). Returns (ratios, windows left out for a hitch, windows left out for a
+    jump of the target itself, the ratios as measured before BUG-0407).
+    BUG-0407 (the walk tests were flaky on a loaded machine, puppet_walk 81-91 % matched at 22-24 fps):
+    * what a frame draws was placed in the frame before (the mod runs at Present, after the drawing): the
+      drawn way of frames i+1..j+1 is compared with the path's way of frames i..j. Measured unshifted, a
+      window that ends after a long frame and starts after a short one swung 0.5-2.4x at 22-24 fps with drawn
+      errors of 0.1-0.4 m (no visible step); shifted 90-96 % matched there, the old driving unchanged (15-35 %);
+    * a window with an observer frame over HITCH (in it or just before it) is left out and counted: after a
+      hitch the game moves the creature by the long frame's time and the next frames make up the rest (with
+      10 % of the frames over 0.1 s, a 0.1-0.2 s window held 1-2 of them);
+    * a window in which the target itself jumped (a late state corrected the extrapolated path) is left out
+      and counted, as in npc_walk: it measures the network, the driving closes such a jump on purpose."""
+    win, legacy, hitch, tj = [], [], 0, 0
+    n, i = len(pup), 0
+    while i < n:
+        j = i
+        while j < n and (pup[j]['t'] - pup[i]['t'] < 0.1 or j - i < WIN_FRAMES):
+            j += 1
+        if j >= n - 1:
+            break
+        dt = pup[j]['t'] - pup[i]['t']
+        way = math.dist(pup[i]['tgt'], pup[j]['tgt'])
+        if dt > 0 and way / dt > 1.0 and dt < 0.3 and (pup[j]['flags'] & 1):
+            legacy.append(math.dist(pup[i]['d'], pup[j]['d']) / way)
+            fts = [pup[k + 1]['t'] - pup[k]['t'] for k in range(max(0, i - 1), j + 1)]
+            if max(fts) > HITCH:
+                hitch += 1
+            elif any(math.dist(pup[k]['tgt'], pup[k + 1]['tgt']) >
+                     max(0.3, 2.5 * top * (pup[k + 1]['t'] - pup[k]['t'])) for k in range(i, j)):
+                tj += 1
+            else:
+                dd = math.dist(pup[i + 1]['d'], pup[j + 1]['d'])
+                # a way within WIN_SLACK of the path's counts as at its speed (a 0.15-0.3 s window at the start or
+                # end of a walk, 1-2 m/s: 0.4-1.7x were 0.1-0.17 m apart, less than one step of the creature)
+                win.append(1.0 if abs(dd - way) <= WIN_SLACK else dd / way)
+        i = j
+    return win, hitch, tj, legacy
+
+
+STOP_SLIDE = 0.3  # m: a puppet drawn this far from where the walker stopped in the second after the stop slid past it
+
+
+def stops(pup):
+    """BUG-0408: per stop of the walker (its path moved > 1.5 m/s over 0.3 s, then < 0.15 m in the next second): the
+    largest drawn distance from the path in that second (over the one at the stop) and whether the fall animation played"""
+    ev, k, n = [], 1, len(pup)
+    while k < n - 5:
+        prev = [r for r in pup[max(0, k - 40):k] if r['t'] > pup[k]['t'] - 0.3]
+        if len(prev) >= 3 and math.dist(prev[0]['tgt'], pup[k]['tgt']) / (pup[k]['t'] - prev[0]['t']) > 1.5:
+            post = [r for r in pup[k:k + 200] if r['t'] < pup[k]['t'] + 1.0]
+            if len(post) > 5 and math.dist(post[0]['tgt'], post[-1]['tgt']) < 0.15:
+                # (less the error at the stop: puppet_under's targets are 1 m under the ground all the time)
+                e0 = math.dist(pup[k]['d'], pup[k]['tgt'])
+                ev.append((round(pup[k]['t'], 1), max(math.dist(r['d'], r['tgt']) for r in post) - e0,
+                           any(r['anim'] == FALL_ANIM for r in post)))
+                k += len(post)
+                continue
+        k += 1
+    return ev
+
+
 def analyse(obs_rows, walker_rows, label):
     """per-frame motion of the walker's puppet in the observer's game"""
     own = [r for r in walker_rows if r['who'] == 255]
@@ -252,21 +325,7 @@ def analyse(obs_rows, walker_rows, label):
             if r['vis'] and 0 < r['sx'] < 1440 and 0 < r['sy'] < 1080:
                 near += 1
                 near_gait += r['gait'] > 0
-    # 0.1 s windows while the walker's path moves (> 1 m/s): the drawn puppet's speed / the path's speed
-    # (the path: the interpolated target; the reported speed is no measure, an avatar turning on the
-    # spot reports one)
-    win, i = [], 0
-    while i < len(pup):
-        j = i
-        while j < len(pup) and (pup[j]['t'] - pup[i]['t'] < 0.1 or j - i < WIN_FRAMES):
-            j += 1
-        if j >= len(pup):
-            break
-        dt = pup[j]['t'] - pup[i]['t']
-        path = math.dist(pup[i]['tgt'], pup[j]['tgt']) / dt
-        if path > 1.0 and dt < 0.3 and (pup[j]['flags'] & 1):
-            win.append(math.dist(pup[i]['d'], pup[j]['d']) / dt / path)
-        i = j
+    win, win_hitch, win_tj, win_legacy = windows(pup, top)
     own_anims = {}
     own_moving = [r for r in own if r['gv'] > 0.5]
     own_walk = sum(1 for r in own_moving if int(r['anim'], 16) in WALK_ANIMS) / len(own_moving) if own_moving else 0
@@ -285,6 +344,11 @@ def analyse(obs_rows, walker_rows, label):
         'near': near, 'near_gait': near_gait / near if near else 0,
         'win': len(win), 'stand': sum(1 for w in win if w < 0.3) / len(win) if win else 1,
         'matched': sum(1 for w in win if 0.6 <= w <= 1.4) / len(win) if win else 0,
+        'win_hitch': win_hitch, 'win_tj': win_tj, 'stops': stops(pup),
+        'hitch_share': (sum(1 for a, b in zip(pup, pup[1:]) if b['t'] - a['t'] > HITCH) / (len(pup) - 1)
+                        if len(pup) > 1 else 0),
+        'legacy_matched': sum(1 for w in win_legacy if 0.6 <= w <= 1.4) / len(win_legacy) if win_legacy else 0,
+        'legacy_win': len(win_legacy),
         'drive_tp': (pup[-1]['tp'] - pup[0]['tp']) if pup else 0,
         'anims_moving': sorted(anims_moving.items(), key=lambda kv: -kv[1])[:5],
         'own_anims': sorted(own_anims.items(), key=lambda kv: -kv[1])[:5],
@@ -306,14 +370,19 @@ class Watch(threading.Thread):
         super().__init__(daemon=True)
         self.con, self.stop, self.drags = con, threading.Event(), 0
         self.W, self.H = screen(con)
+        self.lock = threading.Lock()  # BUG-0407: the main thread reads the observer's track while it watches
 
     def run(self):
         while not self.stop.is_set():
-            xy = partner_screen(self.con)
-            if not xy or not (60 < xy[0] < self.W - 60 and 60 < xy[1] < self.H - 170):
-                dx = 300 if not xy or xy[0] > self.W // 2 else -300
-                self.con.call(f'drag {self.W // 2} {self.H // 2} {self.W // 2 + dx} {self.H // 2} right')
-                self.drags += 1
+            try:
+                with self.lock:
+                    xy = partner_screen(self.con)
+                    if not xy or not (60 < xy[0] < self.W - 60 and 60 < xy[1] < self.H - 170):
+                        dx = 300 if not xy or xy[0] > self.W // 2 else -300
+                        self.con.call(f'drag {self.W // 2} {self.H // 2} {self.W // 2 + dx} {self.H // 2} right')
+                        self.drags += 1
+            except OSError as e:  # BUG-0407: a console call that timed out on a loaded machine ended the watching
+                print(f'  watch: {e!r}', flush=True)
             self.stop.wait(0.6)
 
 
@@ -343,6 +412,20 @@ def direction(walker, observer, wname, oname, rng, secs, ck, stand=0, jumps=0.0,
         c.call('coop.track start')
     time.sleep(0.5)
     log = walk(walker, rng, secs, jumps)
+    # BUG-0407: a walk that measured too little (the walker's game at 8-18 fps did not take its keys for 6 s and
+    # walked 8 of 27 s: 99 frames, 11 windows) is walked on, up to WALK_MORE times, instead of failing a check
+    # that measured nothing
+    for _ in range(WALK_MORE):
+        with watch.lock:
+            obs = dump(observer)
+        r = analyse(obs, dump(walker), '')
+        fps_k = min(1.0, (r['fps'] or 60) / 60)
+        if (r['frames'] > 200 * fps_k and r['win'] > 50 * fps_k) or r['hitch_share'] > LOADED:
+            break
+        print(f'  measured too little ({r["frames"]} frames while it walks, {r["win"]} windows, '
+              f'{r["win_hitch"]} left out for hitches): it walks on', flush=True)
+        log.append('| on')
+        log += walk(walker, rng, secs, jumps)
     if stand:  # then it stands (BUG-0366: "constantly jumping" while the partner stood)
         time.sleep(stand)
         log.append(f'stand {stand:.0f}s')
@@ -366,8 +449,14 @@ def direction(walker, observer, wname, oname, rng, secs, ck, stand=0, jumps=0.0,
           f'off the target p50 {r["err_p50"]:.2f} p90 {r["err_p90"]:.2f} max {r["err_max"]:.2f} m; '
           f'driver teleports {r["drive_tp"]}', flush=True)
     print(f'    0.1 s windows while it walks: {r["win"]}, the puppet stands (< 0.3 of its path\'s speed) in '
-          f'{r["stand"]:.0%}, moves at 0.6-1.4x its speed in {r["matched"]:.0%}', flush=True)
+          f'{r["stand"]:.0%}, moves at 0.6-1.4x its speed in {r["matched"]:.0%} (drawn one frame after the path); left '
+          f'out: {r["win_hitch"]} with an observer frame over {HITCH * 1000:.0f} ms ({r["hitch_share"]:.1%} of its frames), '
+          f'{r["win_tj"]} with a jump of the target itself; unshifted, hitches in: {r["legacy_matched"]:.0%} of '
+          f'{r["legacy_win"]}', flush=True)
     print(f'    jumps (t, m, frame ms): {len(r["teleports"])} {r["teleports"][:12]}', flush=True)
+    st = r['stops']
+    print(f'    stops: {len(st)}, drawn past the stop by more than {STOP_SLIDE} m in {sum(1 for x in st if x[1] > STOP_SLIDE)} '
+          f'(max {max((x[1] for x in st), default=0):.2f} m), the fall animation at {sum(1 for x in st if x[2])}', flush=True)
     print(f'    walk gait (animation gait state > 0) in {r["gait"]:.0%} of the frames, in {r["near_gait"]:.0%} of the '
           f'{r["near"]} on the observer\'s screen; the walker\'s own avatar while it moves: '
           f'{r["own_gait"]:.0%}', flush=True)
@@ -378,9 +467,14 @@ def direction(walker, observer, wname, oname, rng, secs, ck, stand=0, jumps=0.0,
     fps_k = min(1.0, (r['fps'] or 60) / 60)
     ck(r['frames'] > 200 * fps_k, f'{r["label"]}: the walker walked ({r["frames"]} frames of its states moving)')
     ck(not r['teleports'], f'{r["label"]}: no jump of the puppet while it walks ({len(r["teleports"])})')
-    ck(r['win'] > 50 * fps_k and r['stand'] <= STAND_MAX and r['matched'] >= MATCHED_MIN,
-       f'{r["label"]}: the puppet moves with the walker, not in steps (stands in {r["stand"]:.0%} <= {STAND_MAX:.0%}, '
-       f'at its speed in {r["matched"]:.0%} >= {MATCHED_MIN:.0%} of {r["win"]} windows)')
+    if r['hitch_share'] > LOADED:
+        print(f'  NOT MEASURED {r["label"]}: {r["hitch_share"]:.0%} of the observer\'s frames over {HITCH * 1000:.0f} ms '
+              f'(> {LOADED:.0%}, {r["fps"]:.0f} fps): its game hitched too often to judge steps; the window check is '
+              f'skipped', flush=True)
+    else:
+        ck(r['win'] > 50 * fps_k and r['stand'] <= STAND_MAX and r['matched'] >= MATCHED_MIN,
+           f'{r["label"]}: the puppet moves with the walker, not in steps (stands in {r["stand"]:.0%} <= '
+           f'{STAND_MAX:.0%}, at its speed in {r["matched"]:.0%} >= {MATCHED_MIN:.0%} of {r["win"]} windows)')
     print(f'    falls (the game\'s fall animation): the puppet {r["falls"]}, the walker\'s own creature {r["own_falls"]}; '
           f'lowest drawn height over the observer\'s ground {r["hd_min"]:.2f} m, frames under it ({UNDER} m) '
           f'{len(r["under"])} {r["under"][:8]}', flush=True)
