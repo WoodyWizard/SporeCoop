@@ -8,7 +8,7 @@ reported: 2026-11-02
 source: player report SporeCoop-report-20261102-223006.zip (0.7.3.4, both Steam, guest without Creepy & Cute; 3 crashes)
 role: guest
 versions: 0.7.3.4
-fixed_in: unreleased
+fixed_in: 0.7.3.5
 branch: fix/w38-content
 commits: 2089bed2, ddcc43d9, 96558106
 tests: unknown_parts (tools/tests/coop_unknown_parts.py)
@@ -88,3 +88,4 @@ Creepy & Cute list):
 - 2026-11-02 (fix/w38-content): generic part and paint check behind `creations.unknown_parts`; the part
   parser now finds every key (the group's `0x00` is a byte run); test `coop_unknown_parts.py` (FAIL and
   PASS lab runs above).
+- 2026-11-02: released in 0.7.3.5.

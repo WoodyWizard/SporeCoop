@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.7.3.5] - 2026-11-02
+
 ### Fixed
 - Creature: a guest whose game lacks a parts pack (for example the Bot Parts pack) no longer crashes
   when it loads a host world whose creature uses a part of that pack: the part is shown as a similar
