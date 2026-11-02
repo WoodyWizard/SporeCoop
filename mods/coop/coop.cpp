@@ -42,6 +42,7 @@
 #include "squadron.h"
 #include "npc.h"
 #include "creature_hp.h"
+#include "effects.h"
 #include "nest.h"
 #include "parts.h"
 #include "rejoin.h"
@@ -2926,6 +2927,7 @@ void end_session(EndPath path, bool cell)
         npc::on_session_end();
         nest::on_session_end(); // BUG-0384: our egg mirrors
         parts::on_session_end(); // BUG-0401
+        effects::on_session_end(); // BUG-0451
         social::on_session_end();
         tribe::on_session_end();
         if (cell)
@@ -2938,6 +2940,7 @@ void end_session(EndPath path, bool cell)
         npc::on_session_end();
         nest::on_session_end(); // BUG-0384: our egg mirrors
         parts::on_session_end(); // BUG-0401
+        effects::on_session_end(); // BUG-0451
         social::on_session_end();
         if (cell)
             cellsync::on_session_end();
@@ -2946,6 +2949,7 @@ void end_session(EndPath path, bool cell)
         npc::on_session_end();
         nest::on_session_end(); // BUG-0384: our egg mirrors
         parts::on_session_end(); // BUG-0401
+        effects::on_session_end(); // BUG-0451
         social::on_session_end();
     }
     if (g_session_end_fix || path != EndPath::Restart) {
@@ -3117,6 +3121,10 @@ void setup_callbacks()
             net::AnimEvent ev;
             if (ev.read(r))
                 on_remote_anim(ev);
+            return;
+        }
+        if (type == net::MSG_EFFECT) { // BUG-0451: a partner's creature made an effect
+            effects::on_message(type, from, r);
             return;
         }
         // (also before the host's first state when the host named no world in WELCOME: one Civ
@@ -3525,6 +3533,7 @@ int c_status(void*, int, const char* const*, SkOut* out)
     for (auto& pl : g_sess.players()) // CAP_VERSION: each player's mod, SporeKit and game build
         SAY("version %u '%s': %s\n", pl.id, pl.name.c_str(), pl.version.empty() ? "unknown (pre-0.7.4)" : pl.version.c_str());
     SAY("remote animations: received %u, played %u\n", g_anims_rx, g_anims_played);
+    SAY("%s", effects::status().c_str()); // BUG-0451
     SAY("%s", npc::status().c_str());
     SAY("%s", social::status().c_str());
     SAY("%s", tribe::status().c_str());
@@ -4763,6 +4772,21 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         hc.is_host = [] { return g_sess.role() == net::Role::Host; };
         creature_hp::init(H, M, hc);
     }
+    { // BUG-0451: the creatures' visual effects on the partner's puppet
+        effects::Ctx ec;
+        ec.sess = &g_sess;
+        ec.puppet_of = [](uint8_t id) -> void* {
+            auto it = g_remotes.find(id);
+            return it == g_remotes.end() ? nullptr : it->second.puppet;
+        };
+        ec.all_puppets = [] {
+            std::vector<std::pair<uint8_t, void*>> v;
+            for (auto& [id, r] : g_remotes)
+                v.push_back({id, r.puppet});
+            return v;
+        };
+        effects::init(H, M, ec);
+    }
     { // BUG-0384: eggs at the nests
         nest::Ctx nc;
         nc.sess = &g_sess;
@@ -4859,6 +4883,26 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                    },
                    nullptr, MT);
     H->command_add(M, "coop.status", "session, players and puppets", c_status, nullptr, MT);
+    H->command_add(M, "coop.effects",
+                   "coop.effects [probe <hex key> | map | log on|off] - creature effects relayed to the partners' puppets "
+                   "(BUG-0451); probe: the game's own effect pool of a key on the avatar and every puppet",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       if (argc > 1 && !strcmp(argv[1], "log")) {
+                           SAY("effects log %s\n", effects::set_log(argc > 2 && (!strcmp(argv[2], "on") || !strcmp(argv[2], "1"))) ? "on" : "off");
+                           return 0;
+                       }
+                       if (argc > 2 && !strcmp(argv[1], "probe")) {
+                           SAY("%s", effects::probe((uint32_t)strtoul(argv[2], nullptr, 16)).c_str());
+                           return 0;
+                       }
+                       if (argc > 1 && !strcmp(argv[1], "map")) {
+                           SAY("%s", effects::map_dump().c_str());
+                           return 0;
+                       }
+                       SAY("%s", effects::status().c_str());
+                       return 0;
+                   },
+                   nullptr, MT);
     H->command_add(M, "coop.track", "coop.track start|stop|count|dump [from] [n]|lift <m>|novel 0|1 - every frame: the partners' puppets and the own avatar; in Tribe the player tribe's members (tests, BUG-0360, BUG-0365, BUG-0366)",
                    c_track, nullptr, MT);
     H->command_add(M, "coop.log", "coop.log detail [0|1|2] - support logging: 0 = the old lines only, 1 = state trace + events "

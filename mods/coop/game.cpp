@@ -292,6 +292,109 @@ void play_animation(void* c, uint32_t anim_id, int block, bool disable_blend)
     g_in_puppet_anim = false;
 }
 
+// ---- creature visual effects (BUG-0451) ----
+// Every effect the game makes on or at a creature is created by one of the two effect pools of
+// cCreatureBase (docs/re/creature.md#creature-effects-relay): pool 1 (map +0xCC8) by
+// CreateEffectForPool1 / CreateEffectForPool1Renamed, pool 2 (map +0xD68) by
+// CreateEffectForPool2Renamed, and stopped by StopEffectFromPools. They are hooked here; the
+// listener decides whose effect it is and what to send. The relay receiver calls the game's own
+// StartOrStopEffectFromPool1/2, so it gets the effect the same way the actor's game made it.
+typedef void*(SK_THISCALL* CreateFx1_t)(void*, uint32_t);
+typedef void*(SK_THISCALL* CreateFx1Keyed_t)(void*, uint32_t, uint32_t);
+typedef void*(SK_THISCALL* CreateFx2Keyed_t)(void*, uint32_t, uint32_t);
+typedef void*(SK_THISCALL* StartStopFx_t)(void*, int, uint32_t, uint32_t);
+typedef int(SK_THISCALL* StopFx_t)(void*, uint32_t, uint32_t);
+typedef void*(SK_THISCALL* GetFx_t)(void*, uint32_t);
+static bool g_fx_log;
+static void report_effect(void* c, const EffectEvent& ev);
+typedef void*(SK_THISCALL* CreateCreatureFx_t)(void*, int, uint32_t, uint32_t);
+static CreateCreatureFx_t o_CreateCreatureFx;
+static void* SK_THISCALL h_CreateCreatureFx(void* self, int bone, uint32_t id, uint32_t extra)
+{
+    void* fx = o_CreateCreatureFx ? o_CreateCreatureFx(self, bone, id, extra) : nullptr;
+    if (fx)
+        report_effect(self, {id, (uint32_t)bone, 3, false});
+    if (g_fx_log)
+        H->log(M, SK_INFO, "fxcr: self %p avatar %p id %08X bone %d fx %p", self, avatar(), id, bone, fx);
+    return fx;
+}
+static CreateFx1_t o_CreateFx1;
+static CreateFx1Keyed_t o_CreateFx1Keyed;
+static CreateFx2Keyed_t o_CreateFx2Keyed;
+static StartStopFx_t o_StartStopFx1, o_StartStopFx2;
+static StopFx_t o_StopFx;
+static GetFx_t o_GetFx;
+static EffectListener g_effect_listener;
+
+static void report_effect(void* c, const EffectEvent& ev)
+{
+    if (g_effect_listener)
+        g_effect_listener(c, ev);
+}
+
+static void* SK_THISCALL h_CreateFx1(void* self, uint32_t id)
+{
+    if (g_fx_log) H->log(M, SK_INFO, "fx1: self %p avatar %p id %08X", self, avatar(), id);
+    void* fx = o_CreateFx1(self, id);
+    if (fx)
+        report_effect(self, {id, id, 1, false});
+    return fx;
+}
+
+static void* SK_THISCALL h_CreateFx1Keyed(void* self, uint32_t id, uint32_t key)
+{
+    if (g_fx_log) H->log(M, SK_INFO, "fx1k: self %p avatar %p id %08X key %08X", self, avatar(), id, key);
+    void* fx = o_CreateFx1Keyed(self, id, key);
+    if (fx)
+        report_effect(self, {id, key, 1, false});
+    return fx;
+}
+
+static void* SK_THISCALL h_CreateFx2Keyed(void* self, uint32_t id, uint32_t key)
+{
+    if (g_fx_log) H->log(M, SK_INFO, "fx2k: self %p avatar %p id %08X key %08X", self, avatar(), id, key);
+    void* fx = o_CreateFx2Keyed(self, id, key);
+    if (fx)
+        report_effect(self, {id, key, 2, false});
+    return fx;
+}
+
+static int SK_THISCALL h_StopFx(void* self, uint32_t key, uint32_t arg)
+{
+    int r = o_StopFx(self, key, arg);
+    if (r)
+        report_effect(self, {0, key, 0, true});
+    return r;
+}
+
+void set_effect_listener(EffectListener fn) { g_effect_listener = fn; }
+void set_effect_log(bool on) { g_fx_log = on; }
+
+void* create_creature_effect(void* c, int bone, uint32_t effect_id)
+{
+    return c && o_CreateCreatureFx ? o_CreateCreatureFx(c, bone, effect_id, 0) : nullptr;
+}
+
+void* start_effect(void* c, const EffectEvent& ev)
+{
+    if (!c)
+        return nullptr;
+    if (ev.pool == 2 && o_StartStopFx2)
+        return o_StartStopFx2(c, 1, ev.id, ev.key);
+    return o_StartStopFx1 ? o_StartStopFx1(c, 1, ev.id, ev.key) : nullptr;
+}
+
+bool stop_effect(void* c, uint32_t key) { return c && o_StopFx && o_StopFx(c, key, 0) != 0; }
+
+void* effect_from_pools(void* c, uint32_t key) { return c && o_GetFx ? o_GetFx(c, key) : nullptr; }
+
+bool effect_active(void* effect)
+{
+    if (!effect)
+        return false;
+    return vcall<bool>(effect, 0x10 / 4); // IVisualEffect::IsActive
+}
+
 typedef void(SK_THISCALL* NPCTickAI_t)(void*, float);
 static NPCTickAI_t o_NPCTickAI;
 
@@ -457,6 +560,31 @@ bool init(const SkHost* host, SkMod* mod)
         H->hook_create(M, (void*)a_PlayAnim, (void*)h_PlayAnim, (void**)&o_PlayAnim);
     if (a_PlayAnimTo)
         H->hook_create(M, (void*)a_PlayAnimTo, (void*)h_PlayAnimTo, (void**)&o_PlayAnimTo);
+    // BUG-0451: the two creature effect pools, their creators and the one stop
+    struct {
+        const char* name;
+        void* hook;
+        void** orig;
+    } fx[] = {
+        {"Simulator::cCreatureBase::CreateEffectForPool1", (void*)h_CreateFx1, (void**)&o_CreateFx1},
+        {"Simulator::cCreatureBase::CreateEffectForPool1Renamed", (void*)h_CreateFx1Keyed, (void**)&o_CreateFx1Keyed},
+        {"Simulator::cCreatureBase::CreateEffectForPool2Renamed", (void*)h_CreateFx2Keyed, (void**)&o_CreateFx2Keyed},
+        {"Simulator::cCreatureBase::StopEffectFromPools", (void*)h_StopFx, (void**)&o_StopFx},
+    };
+    for (auto& f : fx)
+        if (uintptr_t a = H->sym(f.name)) {
+            int r = H->hook_create(M, (void*)a, f.hook, f.orig);
+            H->log(M, r ? SK_WARN : SK_INFO, "effect hook %s at %p: %d", f.name, (void*)a, r);
+        } else {
+            H->log(M, SK_WARN, "effect hook %s: no symbol", f.name);
+        }
+    if (uintptr_t a = H->sym("Simulator::cCreatureBase::CreateEffect")) {
+        int r = H->hook_create(M, (void*)a, (void*)h_CreateCreatureFx, (void**)&o_CreateCreatureFx);
+        H->log(M, r ? SK_WARN : SK_INFO, "fxcr hook at %p: %d", (void*)a, r);
+    }
+    o_StartStopFx1 = (StartStopFx_t)H->sym("Simulator::cCreatureBase::StartOrStopEffectFromPool1");
+    o_StartStopFx2 = (StartStopFx_t)H->sym("Simulator::cCreatureBase::StartOrStopEffectFromPool2");
+    o_GetFx = (GetFx_t)H->sym("Simulator::cCreatureBase::GetEffectFromPools");
     g_ready = true;
     return true;
 }

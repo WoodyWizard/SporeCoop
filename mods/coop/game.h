@@ -112,6 +112,27 @@ using AnimListener = void (*)(void* creature, uint32_t anim_id, int block, bool 
 void set_anim_listener(AnimListener fn);
 void play_animation(void* c, uint32_t anim_id, int block, bool disable_blend);
 
+// Visual effects of a creature (BUG-0451): every effect the game makes on or at a creature goes
+// through its two effect pools (cCreatureBase +0xCC8 pool 1, +0xD68 pool 2); these are the only
+// creators and the one stop (docs/re/creature.md#creature-effects-relay).
+struct EffectEvent {
+    uint32_t id = 0;    // the effect id (FNV hash of its name)
+    uint32_t key = 0;   // the key it is kept under in the pool (the effect id unless the game renames it)
+    uint8_t pool = 0;   // 1 or 2 for a start, 0 for a stop
+    bool stop = false;
+};
+using EffectListener = void (*)(void* creature, const EffectEvent& ev);
+void set_effect_listener(EffectListener fn);
+void set_effect_log(bool on); // support logging of every effect the game creates (coop.effects log on)
+// the game's own pool calls, for a relayed effect (start: the same create+start as StartOrStop...)
+void* start_effect(void* c, const EffectEvent& ev);
+// the game's one-shot creature effect (pool 3 in EffectEvent: key = the bone index)
+void* create_creature_effect(void* c, int bone, uint32_t effect_id);
+bool stop_effect(void* c, uint32_t key);
+// the game's state: the effect object of `key` in the creature's pools, and whether it is active (vt 0x10)
+void* effect_from_pools(void* c, uint32_t key);
+bool effect_active(void* effect);
+
 // ---- creature registry: every cCreatureAnimal that ran Update since the last call ----
 const std::vector<void*>& creatures_updated();   // swap per frame (call once per frame)
 using UpdateFilter = bool (*)(void* creature);   // return false to skip the creature's Update
