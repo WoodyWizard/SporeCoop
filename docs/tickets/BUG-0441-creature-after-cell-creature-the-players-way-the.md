@@ -1,20 +1,21 @@
 ---
 id: BUG-0441
 title: creature: after Cell -> Creature the players' way the guest lacks 6 of the host's unlocked parts for the whole stage (parts.shared does not apply)
-status: open
+status: fixed
 kind: desync
 stage: Creature
 reported: 2026-11-01
 source: transition_net, lab 20261101-180254 (feat/w33-tests-session, main 6ac351e)
 role: guest
 versions: main 6ac351e
-fixed_in:
+fixed_in: unreleased
 branch: fix/w36-parts-transition
-commits: 27605dc
+commits: 27605dc 70c5e5f bf25d7b fac2bb6
 tests: parts_transition (tools/tests/coop_parts_shared.py --from-cell), transition_net (allow removed)
 signature:
 docs: docs/re/creations.md#creations-cell-twins, docs/06-testing.md#testing-parts-transition
-related: BUG-0401, BUG-0368, BUG-0446
+related: BUG-0401, BUG-0368, BUG-0446, BUG-0404
+switch: parts.census_states
 ---
 
 ## Report
@@ -55,8 +56,17 @@ the same way (`available=<count>:<hash>`). Test commands `coop.parts keys` / `co
 New symbols (documentation): `SporeCoop::CreatureStart_FromCell`, `SporeCoop::CellTwinParts`.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+FAIL: SPORE_FIX_OFF=parts.census_states parts_transition, lab 20261101-195028 (lane 9: after the players'
+Cell -> Creature guest 49 of 312 against the host's 55 of 324; the monitor's `unlocks` gate; every later
+comparison 6 apart, also the guest's editor 51 against the party's 57 and after the rejoin). Also
+20261101-190047 (an earlier version of the test).
+PASS: parts_transition, lab 20261101-194722 (lane 9: host and guest 54:72501FA3 of 324 at once after the
+transition; finds both ways in 1-2 s; the guest's editor offers 56:F33F0AF9 = the host's set, 268 locked;
+after the rejoin 56 = 56).
 
 ## History
 - 2026-11-01: opened.
+- 2026-11-01: fix/w36-parts-transition: the census counts the item states too (parts.census_states); not a
+  missing sync and not a host-only reward (the guest's game had the 6 parts unlocked); fixed (unreleased).
+  The test found the host's Creature intro caption (cinematic 0A34E41F) waiting for its check after the
+  transition, and a vote during it stuck the host's editor (BUG-0404, fixed on fix/w34-vote-cinematic).
