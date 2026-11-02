@@ -3536,3 +3536,9 @@ Three monitor findings of the w33 runs were the rule or the test, not the mod (e
   `input_lock=1`) and waits for its green check (1410, 1048) for as long as nobody clicks it (minutes in
   transition_net, until the History click). A `coop.vote editor` during it left the host's editor black and
   stuck (BUG-0404, fixed on fix/w34-vote-cinematic); the test clicks the check like a player first.
+* `coop_physics_orphan.py` (suite `physics_orphan`, warm, ~1.5 min cold), BUG-0449: `coop.physorphan` on the
+  guest in Tribe makes the next physics update find a live body of kind 0 without an owner (the slot past the
+  body pool's high water made live, as the body the guest's game faulted on in tribe_walk); the guest's `exc`
+  must stay at 0 and `coop.status` must count one body left out. `SPORE_FIX_OFF=game.physics_owner` faults at
+  0xB4C5B4 in every frame and FAILS. The physics update runs only while the guest's game time runs (the test
+  waits up to 60 s for the stand-in to be made).
