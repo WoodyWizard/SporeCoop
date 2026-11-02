@@ -181,6 +181,7 @@ static uint32_t g_gifts;
 static float g_test_lift = 0.f; // tests (BUG-0329): `coop.tribe lift <m>` on a guest
 struct GMember {
     void* c = nullptr;
+    uint16_t id = 0; // the host's member id
     uint8_t tribe = 0, owner = 0xFE, age = 1;
     net::Vec3 pos, vel;
     net::Quat rot;
@@ -197,6 +198,18 @@ static bool g_mirror_walk_fix = true, g_mirror_time_fix = true;
 COOP_FIX("tribe.mirror_walk", "BUG-0365", g_mirror_walk_fix, "tribe: a guest's mirror of a walking member walks on the host's path instead of stop-and-go and surges");
 COOP_FIX("tribe.mirror_time", "BUG-0365", g_mirror_time_fix, "tribe: a guest's mirrors follow the host's states by its clock (an interpolation buffer), not by their arrival");
 static uint32_t g_mirror_walks, g_mirror_timed;
+// BUG-0444: the mirrors kept their own distance from the planet's centre (own_height, BUG-0329) and were never
+// put onto this game's ground: that is the game's own locomotion, and a guest's game does not update its
+// citizens for 20-40 s after a cold join (game time paused, no BehaviorTreeTick) or while it is paused. A member
+// the host walked up a slope then was placed on the host's path at its old height, deeper and deeper under the
+// guest's ground (2.6-3.3 m for ~20 s in tribe_coop's hunt; 9 m in 60 m up a hill, tribe_mirror_ground).
+// tribe.mirror_ground: the ground policy of the animal proxies (npc.proxy_ground, BUG-0399, driver.h): a new
+// mirror is made on this game's ground when the host's position is under it, a walking one is placed onto it
+// (WalkPlace::ground, and out_of_ground for a mirror deeper than its 3 m), a standing one found more than 0.25 m
+// under it is teleported onto it (drive::step's ground). `coop.fix tribe.mirror_ground off`: own height only.
+static bool g_mirror_ground_fix = true;
+COOP_FIX("tribe.mirror_ground", "BUG-0444", g_mirror_ground_fix, "tribe: a guest's mirrors of members are made and kept on this game's ground, never left under it (as the animal proxies)");
+static uint32_t g_mirror_grounded; // diagnostics (coop.tribe): standing mirrors put out of the ground
 constexpr double kMirrorDelay = 0.2;  // s: the interpolation delay (the host sends every 0.12 s or more)
 constexpr float kMirrorWalkMax = 8.f; // farther off: drive::step (it teleports at 8 m)
 constexpr double kPathDt = 0.1;       // s: the interpolated path's velocity is taken over this
@@ -867,6 +880,7 @@ static void guest_state(net::Reader& r)
             return;
         g_cycle_ids.insert(id);
         auto& g = g_gm[id];
+        g.id = id;
         void* c = g.c;
         g.tribe = m.tribe; g.owner = m.owner; g.age = m.age;
         g.pos = m.pos; g.vel = m.vel; g.rot = m.rot; g.hp = m.hp; g.seen = now;
@@ -911,7 +925,9 @@ static void guest_state(net::Reader& r)
             c = spawn_member(t, m.age);
             if (!c)
                 continue;
-            game::teleport(c, m.pos, m.rot);
+            // BUG-0444: the host's position (g.pos: with the tests' lift), onto this game's ground where that lies
+            // higher (BUG-0329)
+            game::teleport(c, g_mirror_ground_fix ? drive::out_of_ground(g.pos, true) : g.pos, m.rot);
             g_spawned++;
         }
         g.c = c;
@@ -1003,6 +1019,35 @@ static void mirror_target(GMember& g, double now, net::Vec3& pos, net::Quat& rot
     age = now - g.seen;
 }
 
+// BUG-0444: this game's time is paused (cGameTimeManager +0x48 bit 0: after a cold join for 10-40 s, the pause
+// menu): no citizen update runs, so nothing but the mod moves or grounds the mirrors
+static bool game_time_paused()
+{
+    static uintptr_t get = H->sym("Simulator::cGameTimeManager::Get");
+    uint8_t* tm = get ? skg::cdecl_call<uint8_t*>(get) : nullptr;
+    return tm && !IsBadReadPtr(tm + 0x48, 1) && (tm[0x48] & 1);
+}
+
+// drive::step at the mirror's own height (BUG-0329) and, with tribe.mirror_ground, out of this game's ground
+// (onto it from above too while the game is paused: nothing else brings it down)
+static void mirror_step(GMember& g, const net::Vec3& pos, const net::Quat& rot, const net::Vec3& vel, double now, double age)
+{
+    const uint32_t gr = g.ds.grounded;
+    if (g_mirror_ground_fix && game_time_paused()) {
+        float a = (float)std::min(std::max(age, 0.0), 0.5);
+        net::Vec3 t = drive::onto_ground(
+            drive::at_own_height(net::Vec3{pos.x + vel.x * a, pos.y + vel.y * a, pos.z + vel.z * a}, game::position(g.c)));
+        drive::step(g.c, t, rot, vel, g.ds, now, 0, true, 8.f, false, false, false, true);
+    } else
+        drive::step(g.c, pos, rot, vel, g.ds, now, age, true, 8.f, false, false, true, g_mirror_ground_fix);
+    if (g.ds.grounded == gr)
+        return;
+    g_mirror_grounded++;
+    if (g.ds.grounded <= 3) // (diagnostics: the fix at work, the first times per mirror)
+        H->log(M, SK_INFO, "tribe: mirror %u (owner %u) was %.2f m under this game's ground: put onto it (tribe.mirror_ground)",
+               (unsigned)g.id, (unsigned)g.owner, -g.ds.grounded_from);
+}
+
 static void mirror_drive(GMember& g, double now)
 {
     net::Vec3 pos, vel;
@@ -1013,17 +1058,22 @@ static void mirror_drive(GMember& g, double now)
     g.aim = drive::at_own_height(net::Vec3{pos.x + vel.x * a, pos.y + vel.y * a, pos.z + vel.z * a}, game::position(g.c));
     float sp = drive::speed(vel);
     g.aim_speed = sp;
+    // BUG-0444: never aimed under this game's ground (walk_place's ground takes 3 m only), nor over it while the
+    // game is paused (walked down a slope it stayed at its height, 3 m over the ground)
+    if (g_mirror_ground_fix)
+        g.aim = game_time_paused() ? drive::onto_ground(g.aim) : drive::out_of_ground(g.aim, true);
     if (g_mirror_walk_fix && sp > 0.3f && net::dist(game::position(g.c), g.aim) < kMirrorWalkMax) {
         drive::WalkPlace o;
-        o.own_height = true;
+        o.own_height = !g_mirror_ground_fix; // (the aim is at its own height already)
         o.speed_after_goal = true;
         o.max_dt = 0.4; // a slow guest keeps up with its members (driver.h)
+        o.ground = g_mirror_ground_fix; // BUG-0444
         drive::walk_place(g.c, g.aim, rot, vel, g.ds, now, o);
         g_mirror_walks++;
         return;
     }
     drive::walk_end(g.c, g.aim, g.ds, now);
-    drive::step(g.c, pos, rot, vel, g.ds, now, age, true, 8.f, false, false, true);
+    mirror_step(g, pos, rot, vel, now, age);
 }
 
 static void guest_tick(double now)
@@ -1040,7 +1090,7 @@ static void guest_tick(double now)
                 game::play_death(g.c);
                 g_ko_shown++;
             }
-            drive::step(g.c, g.pos, g.rot, g.vel, g.ds, now, now - g.seen, true, 8.f, false, false, true);
+            mirror_step(g, g.pos, g.rot, g.vel, now, now - g.seen);
             continue;
         }
         if (g_fix_ko && game::is_dead(g.c)) { // back on its feet on the host
@@ -1889,7 +1939,7 @@ void for_each_tracked(void (*fn)(const TrackMember& m, void* user), void* user)
 
 std::string status()
 {
-    char b[384];
+    char b[448];
     if (C.sess && C.sess->role() == net::Role::Host)
         snprintf(b, sizeof b, "tribe(host): members=%u cmds_done=%u rejected=%u gifts=%u unselected=%u\n",
                  (unsigned)g_hm.size(), g_cmds_done, g_cmds_rejected, g_gifts, g_unselected);
@@ -1897,10 +1947,10 @@ std::string status()
         snprintf(b, sizeof b,
                  "tribe(guest): mirrors=%u spawned=%u removed=%u cmds_sent=%u rx=%u skipped=%u resets=%u "
                  "local_tribes=%u player_tribe=%p unselected=%u incomplete=%u ai_skipped=%u/%u away_orders=%u local=%d mirror_walks=%u timed=%u "
-                 "npc_tribes_made=%u failed=%u\n",
+                 "npc_tribes_made=%u failed=%u mirror_grounded=%u\n",
                  (unsigned)g_gm.size(), g_spawned, g_removed, g_cmds_sent, g_rx, g_rx_skipped, g_resets,
                  (unsigned)all_tribes().size(), player_tribe(), g_unselected, g_incomplete, g_bt_skipped, g_bt_calls, g_away_orders, (int)local_play(),
-                 g_mirror_walks, g_mirror_timed, g_npc_tribes_made, g_npc_tribes_failed);
+                 g_mirror_walks, g_mirror_timed, g_npc_tribes_made, g_npc_tribes_failed, g_mirror_grounded);
     std::string out = b;
     if (!g_last_cmd.empty())
         out += "tribe last order: " + g_last_cmd + "\n";

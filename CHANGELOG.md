@@ -3,6 +3,10 @@
 ## [Unreleased]
 
 ### Fixed
+- Tribe: a guest's own tribe members (and the host's) could walk 3-9 m inside the ground, or float over it, on
+  the guest's screen when the host walked them up or down a slope in the first half minute after the guest
+  joined (the guest's game is still paused then) or while the guest's game was paused; they stay on the
+  ground now, and new members appear on it (BUG-0444).
 - A game told to host before it reached its main menu (a console line during the start) crashed in the
   host's first time-of-day message: the time of day is now read only once the game has its space player
   data. Players hosting from the co-op window were not affected: the window first shows in the galaxy

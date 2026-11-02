@@ -1087,3 +1087,35 @@ BUG-0402. GOG 2024, lane 7.
   3.9-5.3 m radial in live campaign worlds), so a running herd's lag plus that radial part can pass the 8 m limit
   (inferred, no current run showed it). The 510 m case is BUG-0339's NPC at the planet's
   centre.
+
+## Mirrors under the guest's ground while its game is paused (2026-11-01, fix/w36-tribe-ground)
+<a id="tribe-mirror-ground"></a>
+
+BUG-0444. GOG 2024, lane 10, tribe fixture (Zorispe).
+* ✔ After a cold join the guest's game time stays paused (`cGameTimeManager::Get()` +0x48 = 3) and no
+  BehaviorTreeTick runs (`coop.tribe`'s `ai_skipped=0/0`): the ticks started by themselves ~15-30 s after the
+  guest was in the world in this branch's cold runs; in recorded tribe_coop runs `ai_skipped=0/0` was still
+  there at s 40 in two of them. A running game reads `00` there. Writing 3 (`mem.write`) pauses a running game
+  the same way (no AI tick within 1 s), writing 0 resumes it.
+* ✔ While it is paused, nothing but the mod moves or grounds the mirrors: walk_place's placing still moves them
+  (game::place works while paused), the game's locomotion does not run. With own_height (BUG-0329: the mirror's
+  own distance from the centre) a member the host walked 60 m up a 7-12 m rise went 9.3 m under the guest's
+  ground (the host's member at 0.0 on the host's ground, also measured on the guest's terrain), walked back down
+  it floated up to 10 m over it. Resumed, the game put it onto the ground and onto the host's position within a
+  second.
+* ✔ In the failing tribe_coop (lab 20261101-183414, feat/w33-tests-session) the guest's BT ticks were still 0
+  at s 40.6 and only 2394 at s 80 (passing runs: 665-6705 at s 50, 11-23 k at s 90): its game was paused well
+  into the hunt order, whose run took the guest's member [2] ~220 m away (pos s 70 -> s 80). ~ So the 2.6-3.3 m
+  under (s 60-70) are this, inferred from the counters (no per-frame data of that run). 1 of 152 recorded Tribe
+  guest logs with the `agl_hi` field had a member under -0.5 m.
+* ~ A new mirror is teleported to the host's absolute position: under the guest's ground where that lies higher
+  (BUG-0329 / BUG-0332, up to 5 m in live campaign worlds), and nothing grounds it while the game is paused.
+  `coop.tribe lift -2` with a spawn on the host (tribe_mirror_ground): the new mirrors at -2.0 m (fix off).
+* Fix `tribe.mirror_ground` (tribe.cpp mirror_drive / mirror_step / guest_state): the animal proxies' ground
+  policy (npc.proxy_ground, [tribe-proxy-ground](#tribe-proxy-ground)): a new mirror on the ground
+  (`out_of_ground`), the walk aim out of the ground and walk_place's `ground` (on_own_ground), a standing mirror
+  more than 0.25 m under it teleported onto it (drive::step's `ground`, now the caller's switch); while the game
+  time is paused also from above (`drive::onto_ground`, within 15 m both ways), since nothing else brings it
+  down. With it: -0.12 to 0.02 m over the ground on the same walks, the new mirrors -0.11 m.
+* `coop.tribe` (guest) ends with `mirror_grounded=` (standing mirrors put out of the ground), and the first three
+  per mirror log `tribe: mirror N (owner O) was X m under this game's ground: put onto it`.

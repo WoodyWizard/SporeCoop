@@ -1160,7 +1160,7 @@ static void guest_tick(double now)
         } else if (!px.killed) {
             const uint32_t gr = px.drv.grounded;
             drive::step(px.c, s.pos, s.rot, s.vel, px.drv, now, 0, true, 8.f, g_stall_fix, g_trail_fix, rts_stage(), // own height in Tribe (BUG-0329)
-                        rts_stage()); // and never under the ground (BUG-0399)
+                        rts_stage() && drive::g_out_of_ground_fix); // and never under the ground (BUG-0399)
             if (px.drv.grounded != gr && px.drv.grounded <= 3) // (diagnostics: the fix at work, the first times)
                 H->log(M, SK_INFO, "npc: proxy %u (species %08X) was %.2f m under this game's ground, made %.1f s ago at %.2f m "
                        "over it: put onto it (npc.proxy_ground)", id, px.key.instance, -px.drv.grounded_from, now - px.made_at,
