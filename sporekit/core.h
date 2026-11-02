@@ -12,7 +12,7 @@
 
 #include "../sdk/include/sporekit.h"
 
-#define SK_VERSION "0.3.5"
+#define SK_VERSION "0.3.6"
 
 // ---- SkMod (opaque for mods) ----
 struct SkMod {
@@ -129,6 +129,16 @@ void frame_from_game_loop();          // after App::Canvas::Tick: the frame when
 const char* frame_source();           // "Present" / "game loop (...)" for info
 void set_frame_source_mode(bool loop); // tests: true = ignore Present, frames from the game loop
 void request_screenshot(const std::wstring& path, std::function<void(bool, std::string)> done);
+
+// reportshot.cpp: screenshots for report archives (docs/02-modkit.md#modkit-report-shots)
+int report_shot_request(const char* tag, const char* caption, char* out, int cap); // main thread; caption NULL: remove all
+int report_shot_pending();
+int report_shot_clear();
+void report_shot_on_present(void* dev); // the Present hook, after the overlay
+void report_shot_tick();                // every frame
+void report_shot_boot();
+std::vector<std::pair<std::wstring, std::string>> report_shot_files(); // full path, name in the archive
+std::string report_shots_text(bool crash);                             // the report's "== Screenshots"
 void overlay_text(int x, int y, uint32_t argb, const char* utf8);
 int world_to_screen(const float* w, float* out);
 void screen_size(int* w, int* h);

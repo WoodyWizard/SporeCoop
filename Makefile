@@ -113,6 +113,10 @@ endif
 	$(B)/host/space_tests
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/text_tests tests/text_tests.cpp
 	$(B)/host/text_tests
+	@mkdir -p $(B)/host/jpeg
+	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -o $(B)/host/jpeg_tests tests/jpeg_tests.cpp sporekit/jpeg.cpp
+	$(B)/host/jpeg_tests $(B)/host/jpeg
+	python3 tools/tests/jpeg_check.py $(B)/host/jpeg
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/fixes_tests tests/fixes_tests.cpp mods/coop/fixes.cpp
 	$(B)/host/fixes_tests $(wildcard mods/coop/*.cpp mods/coop/*.h mods/coop/net/*.cpp mods/coop/net/*.h updater/*.cpp updater/*.h)
 	python3 tools/re_lint.py

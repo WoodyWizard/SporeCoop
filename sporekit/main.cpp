@@ -141,6 +141,11 @@ static const char* h_last_problem() { return diag_last_problem(); }
 static void h_log_session_clock(double off, int on) { log_session_clock(off, on); }
 static void h_diag_headline(SkMod* mod, const char* text) { diag_headline(mod, text); }
 static const char* h_diag_files() { return diag_files_text().c_str(); }
+static int h_report_shot(const char* tag, const char* caption, char* out, int cap)
+{
+    return report_shot_request(tag, caption, out, cap);
+}
+static int h_report_shot_pending() { return report_shot_pending(); }
 static const char* h_logs_dir()
 {
     static std::string d = diag_logs_dir();
@@ -181,6 +186,8 @@ SkHost g_host = {
     h_log_session_clock,
     h_diag_headline,
     h_diag_files,
+    h_report_shot,
+    h_report_shot_pending,
 };
 
 } // namespace sk
@@ -288,6 +295,7 @@ extern "C" __declspec(dllexport) int __cdecl sporekit_boot(HMODULE loader)
           GetCurrentProcessId());
 
     diag_read_last_problem(); // the previous run crashed / hung: its archive, told to the player
+    report_shot_boot();       // the newest report screenshots stay, unfinished ones go
     watchdog_start();
     exceptions_install();
     watchdog_mark("hooks_init");

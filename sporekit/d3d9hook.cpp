@@ -202,6 +202,7 @@ static void frame_common()
     cheats_flush_pending();
     pump_main_tasks();
     exceptions_pump();
+    report_shot_tick();
     if (g_frame == 30)
         diag_after_device();
     fire(SK_EV_FRAME, &dt);
@@ -240,6 +241,7 @@ static void on_frame_begin_present()
         }
     }
     capture_if_requested();
+    report_shot_on_present(g_dev); // a report screenshot: this frame with the overlay
     g_in_frame = false;
 }
 

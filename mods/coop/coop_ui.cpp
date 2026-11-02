@@ -448,10 +448,19 @@ static void do_host()
     set_status("", kYellow);
 }
 
-// "Report a problem": SporeKit writes mods\logs\report-<time>.txt (environment, co-op state, the
-// last log lines, faults); the folder opens with the file selected so the player can attach it
-static void do_report()
+// "Report a problem": SporeKit writes mods\logs\SporeCoop-report-<time>.zip (environment, co-op state,
+// the logs, faults, the screenshots of the marks); the folder opens with the file selected so the
+// player can attach it. A screenshot of the screen at the click goes in first: SporeKit takes it at
+// the next frame, the archive is written once it is there (at most kReportShotWait s later).
+static constexpr double kReportShotWait = 4.0;
+static double g_report_wait_until;  // > 0: the report waits for its screenshot
+static bool g_report_queued;        // finish_report is queued outside the frame
+static int g_report_shot;           // what report_shot answered (1 requested, 0 not, -1 off)
+
+static void finish_report(void*)
 {
+    g_report_queued = false;
+    bool shot = g_report_shot > 0 && A.report_shot_state && A.report_shot_state() == 0;
     std::string p = A.report ? A.report() : "";
     if (p.empty()) {
         set_status(T("This SporeKit cannot write reports (update SporeCoop)", "Этот SporeKit не умеет писать отчёты (обновите SporeCoop)"),
@@ -460,7 +469,10 @@ static void do_report()
     }
     set_status(std::string(T("Report saved: ", "Отчёт сохранён: ")) + p.substr(p.find_last_of("\\/") + 1) +
                    T(" - attach it to an issue on GitHub; the other players should send theirs too",
-                     " - приложите его к issue на GitHub; другие игроки пусть пришлют свои"),
+                     " - приложите его к issue на GitHub; другие игроки пусть пришлют свои") +
+                   (shot ? T(". A screenshot of the game is included (coop.ini [report] screenshot=0 turns it off)",
+                             ". В отчёт входит снимок экрана игры (отключить: coop.ini [report] screenshot=0)")
+                         : ""),
                kGreen);
     std::wstring w(p.begin(), p.end()); // the path is ASCII-safe enough for /select; UTF-8 below if not
     int n = MultiByteToWideChar(CP_UTF8, 0, p.c_str(), -1, nullptr, 0);
@@ -471,6 +483,32 @@ static void do_report()
     }
     std::wstring args = L"/select,\"" + w + L"\"";
     ShellExecuteW(nullptr, L"open", L"explorer.exe", args.c_str(), nullptr, SW_SHOWNORMAL);
+}
+
+static void do_report()
+{
+    if (g_report_wait_until > 0 || g_report_queued)
+        return; // one is being made
+    g_report_shot = A.report_shot ? A.report_shot() : 0;
+    if (g_report_shot > 0) {
+        H->log(M, SK_INFO, "ui: report: waiting for its screenshot");
+        g_report_wait_until = H->time_seconds() + kReportShotWait;
+        set_status(T("Making the report...", "Создаю отчёт..."), kYellow);
+        return;
+    }
+    finish_report(nullptr);
+}
+
+// tick: the report's screenshot is written (or failed, or did not come): the archive, outside the frame
+static void report_tick(double now)
+{
+    if (g_report_wait_until <= 0 || g_report_queued)
+        return;
+    if (A.report_shot_state && A.report_shot_state() == 1 && now < g_report_wait_until)
+        return;
+    g_report_wait_until = 0;
+    g_report_queued = true;
+    H->run_outside_frame(finish_report, nullptr);
 }
 
 static void do_send_chat()
@@ -1017,6 +1055,7 @@ void tick()
         }
     }
     double now = H->time_seconds();
+    report_tick(now);
     if (g_status_until > 0 && now >= g_status_until) { // a message of a finished action (BUG-0104)
         g_status.clear();
         g_status_until = 0;
