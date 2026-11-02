@@ -22,7 +22,8 @@
 //   obj l<id> key=<model> alive= hp= ai= own=<npc|proxy|local> owner=-1 pos=(...) scale=<size>  Cell: the
 //       foreground cells (host: its pool, id = the cell index; guest: mirrors with the host's index, its
 //       own cells as local)
-//   nouns <hex>=<count> ...                       every noun in the game's list (placed or not, any distance)
+//   nouns <hex>=<count>@<vt> ...                  every noun in the game's list (placed or not, any distance), with
+//       the Ghidra address of one object's vtable (no RTTI in the exe: the class is found from it)
 // and `scale=` / `noun=` on the c rows. The v1 parsers ignore what they do not know.
 #pragma once
 

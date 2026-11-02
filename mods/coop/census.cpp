@@ -65,6 +65,7 @@ static void creature_rows(std::vector<Row>& rows)
 struct AllQ {
     std::vector<Row>* rows;
     std::map<uint32_t, int>* nouns;
+    std::map<uint32_t, uintptr_t>* vts; // a vtable of each noun (Ghidra address: the class in the exe)
     net::Vec3 c;
     bool have_c;
     float r2;
@@ -78,6 +79,8 @@ static void all_rows(AllQ& q)
             if (!game::object_alive(o))
                 return true;
             (*q->nouns)[noun]++;
+            if (!q->vts->count(noun))
+                (*q->vts)[noun] = *(uintptr_t*)o - H->image_base() + 0x400000;
             if (noun == kCreatureNoun || q->rows->size() >= 6000)
                 return true;
             net::Vec3 pos;
@@ -118,12 +121,13 @@ static int c_census(void*, int argc, const char* const* argv, SkOut* out)
     else if (mode == modes::kCiv)
         civ::census_rows(rows);
     std::map<uint32_t, int> nouns;
+    std::map<uint32_t, uintptr_t> vts;
     net::Vec3 me{};
     bool have_me = C.self_pos && C.self_pos(me);
     if (all) {
         if (mode == modes::kCell)
             cellsync::census_rows(rows);
-        AllQ q{&rows, &nouns, me, have_me, radius > 0 ? radius * radius : 1e30f};
+        AllQ q{&rows, &nouns, &vts, me, have_me, radius > 0 ? radius * radius : 1e30f};
         all_rows(q);
     }
     std::string buf;
@@ -147,8 +151,8 @@ static int c_census(void*, int argc, const char* const* argv, SkOut* out)
         SAY("me pos=(%.1f %.1f %.1f) ok=%d\n", me.x, me.y, me.z, have_me ? 1 : 0);
         std::string ln = "nouns";
         for (auto& [k, v] : nouns) {
-            char b[32];
-            snprintf(b, sizeof b, " %08X=%d", k, v);
+            char b[48];
+            snprintf(b, sizeof b, " %08X=%d@%X", k, v, (unsigned)vts[k]);
             if (ln.size() > 7000) {
                 SAY("%s\n", ln.c_str());
                 ln = "nouns";

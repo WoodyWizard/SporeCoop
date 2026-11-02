@@ -52,6 +52,7 @@ class World:
     def __init__(self, text, who=''):
         self.who, self.role, self.mode, self.modeid, self.world, self.t = who, None, None, None, None, 0.0
         self.me, self.rows, self.nouns, self.complete = None, [], {}, False
+        self.vts = {}  # noun -> Ghidra address of a vtable of its class
         for line in text.splitlines():
             line = line.strip()
             m = HEAD.match(line)
@@ -76,7 +77,10 @@ class World:
             if line.startswith('nouns'):
                 for kv in line.split()[1:]:
                     k, _, v = kv.partition('=')
+                    v, _, vt = v.partition('@')
                     self.nouns[int(k, 16)] = self.nouns.get(int(k, 16), 0) + int(v)
+                    if vt:
+                        self.vts[int(k, 16)] = int(vt, 16)
                 continue
             if line.startswith('end objects='):
                 self.complete = int(line.split('=')[1]) == len(self.rows)
@@ -190,6 +194,8 @@ def diff(host, guest, area=None):
         gg[x['noun']].append(x)
     for noun in sorted(set(hg) | set(gg)):
         name = noun_name(noun)
+        vt = host.vts.get(noun) or guest.vts.get(noun)
+        vts = f' [vtable 0x{vt:X}]' if vt and noun not in NOUNS else ''
         a, b = hg.get(noun, []), gg.get(noun, [])
         tol = TOL_MOVING if name in MOVING else TOL_STATIC
         pairs, ua, ub = _match(a, b, tol)
@@ -197,12 +203,12 @@ def diff(host, guest, area=None):
         ub = [x for x in ub if _near(x['pos'], c, inner)]
         if ua and not b:
             add('host_only', name, len(ua), f'{len(ua)} {name} near the guest on the host, none on the guest '
-                                            f'(e.g. at {_fmt(ua[0]["pos"])})')
+                                            f'(e.g. at {_fmt(ua[0]["pos"])}){vts}')
         elif ub and not a:
-            add('guest_only', name, len(ub), f'{len(ub)} {name} on the guest, none on the host (e.g. at {_fmt(ub[0]["pos"])})')
+            add('guest_only', name, len(ub), f'{len(ub)} {name} on the guest, none on the host (e.g. at {_fmt(ub[0]["pos"])}){vts}')
         elif ua or ub:
             add('unmatched', name, len(ua) + len(ub), f'{name}: {len(a)} on the host, {len(b)} on the guest, '
-                                                       f'{len(ua)} host / {len(ub)} guest without a partner within {tol:.0f} m')
+                                                       f'{len(ua)} host / {len(ub)} guest without a partner within {tol:.0f} m{vts}')
         sc = [(x, y) for x, y in pairs if _rel(x['scale'], y['scale']) > 0.12]
         if sc:
             x, y = sc[0]
@@ -211,8 +217,10 @@ def diff(host, guest, area=None):
     for noun in sorted(set(host.nouns) | set(guest.nouns)):
         h, g = host.nouns.get(noun, 0), guest.nouns.get(noun, 0)
         if (h == 0) != (g == 0) and max(h, g) >= 1:
+            vt = host.vts.get(noun) or guest.vts.get(noun)
             add('noun_only_host' if g == 0 else 'noun_only_guest', noun_name(noun), max(h, g),
-                f'{noun_name(noun)}: {h} in the host\'s game, {g} in the guest\'s (whole list)')
+                f'{noun_name(noun)}: {h} in the host\'s game, {g} in the guest\'s (whole list)'
+                + (f', vtable 0x{vt:X}' if vt else ''))
     return out
 
 
