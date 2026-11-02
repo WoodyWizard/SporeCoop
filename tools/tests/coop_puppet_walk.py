@@ -132,10 +132,24 @@ def walk(con, rng, secs, jumps=0.0):
     W, H = screen(con)
     t_end = time.time() + secs
     log = []
+    lost = 0
     while time.time() < t_end:
         d = partner_dist(con)
         if d is not None and d > TETHER:
-            log.append(f'back {d:.0f}m' + ('' if back_to_partner(con, W, H) else ' (not found)'))
+            found = back_to_partner(con, W, H)
+            log.append(f'back {d:.0f}m' + ('' if found else ' (not found)'))
+            lost = 0 if found else lost + 1
+            if lost >= 2:  # the partner's tag is nowhere on the screen (the camera behind a hill): go there
+                # (latency_step_ingame, lab 20261101-180254: 'back 17m (not found)' for the whole walk)
+                b = re.search(r'remote \d+ .*? pos=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\)', con.call('coop.status')['out'])
+                if b:
+                    q = [float(x) for x in b.groups()]
+                    r = math.sqrt(sum(x * x for x in q))
+                    q = [x + x / r * 1.0 for x in q]  # a metre up: it falls onto the ground
+                    con.call('coop.npc gopos %.1f %.1f %.1f' % (q[0] + 3, q[1], q[2]))
+                    log.append('to the partner (gopos)')
+                    time.sleep(2.0)
+                lost = 0
             continue
         r = rng.random()
         if r < 0.45:

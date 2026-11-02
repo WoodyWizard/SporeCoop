@@ -66,6 +66,22 @@ class Bot:
                 out.append((m.group(1), int(m.group(3)), int(m.group(4)), int(m.group(5))))
         return out
 
+    def leave_editor(self, who):
+        """a random key or click can open an editor (Civ: a design editor, "Bob edits a design"); a guest that
+        joins in it gets the host's world when it leaves the editor (by design: "the world of Alice is loaded
+        when you leave the editor"), so it leaves like a player: "done", the dice's name when one is asked
+        (chaos_civ_long, lab 20261101-134020: the guest waited in its editor)"""
+        for i in range(4):
+            if 'Editor' not in self.do(who, 'game.mode'):
+                return
+            time.sleep(2)
+            if i >= 2:
+                self.do(who, 'click 614 826')  # the name panel's dice
+                time.sleep(1)
+            self.do(who, 'click 1416 1062')  # the editors' green "done"
+            self.log.append(f'{time.strftime("%H:%M:%S")} {who}: leaves its editor ("done")')
+            time.sleep(3)
+
     def step(self):
         rng = self.rng
         who = rng.choice(list(self.c))
@@ -111,6 +127,7 @@ class Bot:
             time.sleep(rng.uniform(1, 4))
             self.do(g, self.join_cmd[g])
             self.joins += 1
+            self.leave_editor(g)
             if not self.back_in(g):
                 self.log.append(f'  !! {g} did not get back into the host world')
                 return False

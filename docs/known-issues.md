@@ -1417,6 +1417,58 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Also open: a guest eating a host egg does not change the guest's relation to that species (the
   host's eat node does that for the avatar only).
 * Ticket: BUG-0384
+
+## A world transfer to a guest that loads resends most of its packets (2026-11-01, feat/w33-tests-session)
+<a id="known-transfer-resends"></a>
+
+* Seen: rejoin_race_long on a clean loopback link: while the host sent its world (3.4 MB) to a guest whose
+  frames stalled in a load, `resends=4673/6838` and `pending=600` on the host's partner line, 324 KB/s
+  instead of ~2.6 MB/s. The transfer completed every time.
+* Reproduce: `SPORE_LANE=N python3 tools/tests/coop_rejoin_loop.py --rounds 40 --race 1:9`, the host's
+  trace lines around each `world: sharing`.
+* Ticket: BUG-0405
+
+## Tribe: the player tribe's citizens trail on the guest in play (2026-11-01, feat/w33-tests-session)
+<a id="known-tribe-citizens-trail"></a>
+
+* Seen: play_tribe, citizens on the guest p90 1.89 / 1.98 m from the host's (limit 1.5 m) in both runs;
+  animals 1.0 m.
+* Reproduce: `SPORE_LANE=N python3 tools/tests/play_tribe.py --minutes 10 --seed 789470738`.
+* Ticket: BUG-0410
+
+## Creature: a guest that left, or rejoins while the host edits, has no creatures (2026-11-01, feat/w33-tests-session)
+<a id="known-empty-planet-after-leave"></a>
+
+* Seen: join_during_host_editor: after its Leave the guest plays its copy without any creature (the host's 20
+  proxies destroyed, none kept as its own NPCs); rejoining while the host is in its editor, `0 of 0`
+  creatures until the host is back.
+* Reproduce: `SPORE_LANE=N python3 tools/tests/coop_join_during.py --case editor`.
+* Ticket: BUG-0412
+
+## Creature: the guest loses the host's NPCs under the brain-upgrade caption (2026-11-01, feat/w33-tests-session)
+<a id="known-npcs-lost-in-caption"></a>
+
+* Seen: transition_net (1 of 2 runs): after the host's AddEvolutionPoints 3000 the guest's mirrored NPCs went
+  13 -> 1 -> 0 under the caption while the host kept 13; sync-check `n: 15 missing on the guest`.
+* Reproduce: two games on the creature fixture, `AddEvolutionPoints f:3000` on the host, `coop.npc` on the guest.
+* Ticket: BUG-0413
+
+## Crash: hosting before the main menu (2026-11-01, feat/w33-tests-session)
+<a id="known-host-before-menu"></a>
+
+* Seen: a test host whose world load failed was told `cheat coop host` while its game was still starting
+  (game mode none); 3 ms later it crashed at 0x01020F35 (TimeOfDay_Unavailable, read 0x10) from the host's
+  time-of-day sync.
+* Reproduce: `cheat coop host <port> Alice` on a game before its galaxy menu is up.
+* Fixed on feat/w33-tests-session (core.tod_guard): no time-of-day read before SpacePlayerData exists.
+* Ticket: BUG-0433
+
+## Civ: a vehicle trails under loss bursts (2026-11-01, feat/w33-tests-session)
+<a id="known-civ-vehicle-bursts"></a>
+
+* Seen: sync_burst / sync_fps15burst, `civ/vehicles` p90 4.3-7.3 m (limit 3 m), one vehicle sampled.
+* Reproduce: `SPORE_LANE=N SPORE_NET=burst python3 tools/tests/coop_sync.py`.
+* Ticket: BUG-0438
 ## Tribe: one animal 8-25 m apart on every guest for minutes (2026-11-01, lab log gates, fix/w32-tribe-sync)
 <a id="issue-tribe-npc-apart"></a>
 
@@ -1523,3 +1575,10 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   i.e. up to 0.45 m under the mound's surface; crossing 0.5 m it steps 0.4-0.5 m up or down.
 * Cause: `creature.puppet_ground` takes the plain terrain (`GetHeightAt`, without the mound) as the ground.
 * Ticket: BUG-0435
+## Creature: parts not shared after Cell -> Creature the players' way (2026-11-01, feat/w33-tests-session)
+<a id="known-parts-after-cell"></a>
+
+* Seen: transition_net on main 6ac351e: host `parts=55`, guest `parts=49` for the whole Creature stage, no
+  `parts:` log line on either game (monitor rule `unlocks`).
+* Reproduce: `SPORE_LANE=N SPORE_NET=player SPORE_FPS=guest:30 python3 tools/tests/coop_transition_net.py --to creature`.
+* Ticket: BUG-0441

@@ -3023,6 +3023,113 @@ can eat a plant in the 2 s of the shared food check, which now allows the host's
 * Pitfalls: four lanes at once pushed the 30 fps games to 21-26 fps and one test killed the other's games
   when a second `lab.py run` took a lane still in use (start a run only after the last one on its lanes
   ended); the known caught startup fault at 0x11ECE4F on both games fails a run by the fault gate.
+
+## Session paths under players' conditions (2026-11-01, feat/w33-tests-session)
+<a id="testing-session-paths"></a>
+
+Tests of whole session paths (stage changes, rejoins, joins at a busy moment, votes, mixed versions) with
+the network and frame rate of real players; every check reads the other machine's game:
+
+* `coop_latency_step.py` (suite `latency_step_ingame`, ~6 min, cold, `SPORE_NET="delay=30,jitter=5"`): one
+  player walks 62 s by real input (coop_puppet_walk.walk) while the guest's proxy changes its one-way delay
+  30 -> 300 ms at 10 s and back to 30 ms at 42 s (`netem.proxy().p['delay']` is read per packet, so a test
+  can step it at any moment); both directions. Two checks over the observer's coop.track:
+  * steps: per 1 s, BAD when the drawn puppet moves in steps (< 60 % of its >= 4-frame windows at 0.6-1.4x
+    the path's speed, or > 20 % standing) or jumps (puppet_walk's rule); the longest stretch of BAD seconds
+    with no GOOD one between must be <= 5 s;
+  * truth: both games run on one machine and both tracks start together, so the observer's drawn puppet can
+    be compared with the walker's own position `lag` s earlier (the best lag of 0-1 s per second): in the
+    high phase at most 25 % of the walking seconds may be over 0.15 m median.
+  `SPORE_FIX_OFF=net.offset_window` (BUG-0133) passes the step check (the creature driver keeps the drawn
+  puppet smooth) and fails the truth check: the puppet is rendered past the newest state (best lag 0.20-0.30 s
+  at 300 ms one way instead of 0.40-0.42 s with the fix) and is 0.15-0.27 m off the real path at turns and
+  stops in 29-31 % of the walking seconds; with the fix 0-11 % (0.01-0.17 m). A second fix-off run passed
+  that (10 % / 22 %), so the truth check also wants the median best lag from 3 s after the rise to be at least
+  the one-way delay (what arrived is that old; a smaller lag is a guess past the newest state): fix off
+  0.18-0.26 s in the four directions of two runs, fix on 0.36-0.42 s.
+* `coop_transition_net.py` (suite `transition_net`, ~20 min, `SPORE_NET=player SPORE_FPS=guest:30`): Cell ->
+  Creature -> Tribe through coop_campaign.Campaign.advance (the host's History button, the guest's real
+  "I'm ready", editors left with "done"), two players. After each change: the guest plays the new stage in
+  the host's world, after 30 s draws the host where it is (3 reads), and neither log has a `sync-check:
+  MISMATCH` line in the 60 s after. `TRANSITION_PLANT=mismatch` (`coop.diag sync force shift` on the guest
+  in the last watch, no LAB-MARK) fails (lab 20261101-152859). On main a05d1f6 it found Tribe `t missing` 58 s
+  after the arrival in both runs (BUG-0381, NPC tribes the host forms; fixed on main 6ac351e by tribe.npc_tribes,
+  so the test allows it no more; `--allow "<kind>=BUG-NNNN"` stays for the next known bug) and Creature
+  `n missing` under the brain-upgrade caption of the AddEvolutionPoints shortcut in one of two runs (BUG-0413,
+  a suite allow).
+* `coop_party_rejoin_net.py` (suite `party_rejoin_net`, ~10 min, `SPORE_NET=players`, 4 players): rounds
+  `one` (the last guest rejoins), `swap` (Bob, who plays his own creature, and the last guest leave; the
+  last joins first and takes Bob's id), `lost` (a goodbye lost by a 1 s proxy outage), `both` (the extra
+  guests leave and join at the same moment). After each (and in `swap` once more while Bob is away): together,
+  each guest draws every other player where it is, and every machine draws every other player as the species
+  that player plays. Species keys are each game's own (a creation imported from another player gets a new
+  instance key: Kirgle is 290225CD in Bob's game, 7C329711 in the others', 7CF261BB after a rejoin), so a player
+  who plays its own creation must be drawn as the viewer's import of it (`coop.creations`: `player <id>
+  creature: <key> '<name>'` with the subject's `mine creature` name and the census key of the drawn puppet), a
+  player of the world's species as that key. BUG-0076's switches (`core.id_reuse`, `core.creations_leave`,
+  both) did not fail it: the newcomer with Bob's old id was drawn as its own species (labs 20261101-144314 /
+  144852 / 152157); `PARTY_PLANT=lift` (Carol's game draws its partners 5 m up after the swap, `coop.track
+  lift 5`) fails it (lab 20261101-153001).
+* `coop_join_during.py --case combat|editor` (suites `join_during_combat`, `join_during_host_editor`, ~4-5
+  min): the guest leaves after the start and joins 4 s into the host's fight with an NPC (real bites), or
+  while the host is in its editor (`coop.vote editor` alone; "done" 25 s after the join). A guest that joins
+  again first plays its old copy ("together" at once) and loads the host's world a few seconds later: the
+  clock starts when that load is done (`in_after_reload`). Then every second on the guest: the host drawn
+  within 4 m as the species it plays, campaign_lib.census_problems empty (NPCs near the guest, alive / dead,
+  10 m), the fought NPC there with the host's dead flag and health within 25 %; 3 such reads in a row, the
+  first within 10 s. Combat: the host's kill is dead in the guest's game within 10 s
+  (`SPORE_FIX_OFF=npc.play_death` fails: alive=1, lab 20261101-145305). Each read also wants exactly one player
+  creature on the guest (no stray puppet after the host's editor; `core.strays` off did not leave one).
+  Editor: while the host edits, the joined guest's own creatures should move in its game (census dumps 8 s
+  apart): they do not exist at all (`0 of 0`, with every fix on too): BUG-0412, allowed by name
+  (`--allow-empty BUG-0412`, printed). `JOIN_PLANT=leave` (the guest drops out right after the join) fails
+  it; `JOIN_PLANT=lift` did not (a standing host's puppet stays on the ground).
+* `coop_vote_net_4p.py` (suite `vote_net_4p`, ~10 min, `SPORE_NET=players`, 4 players): the evolution vote
+  (three real ready clicks; it must end "everybody is ready" and every game opens an editor), an action
+  vote while Dave stays in his editor (the windows show 3/4, the vote waits; Dave leaves from his editor:
+  it passes within 10 s, once), Dave's return (together, drawn where and as what he is), a vote of all four.
+  `VOTE_PLANT=noready` (Dave's last ready not clicked) fails (lab 20261101-153741); `world.share_drop_peer`
+  off did not (lab 20261101-152552).
+* `coop_mixed_version.py --old guest|host [--fixture tribe]` (suites `mixed_version_guest`,
+  `mixed_version_host`, `mixed_version_tribe` in suite `mixed` only: they also take the neighbour lane as
+  SPORE_LANE_B, so run them alone, `lab.py run mixed --lane 9` with lane 10 idle; `exclusive` would need lanes 1-5): the
+  previous release (`--old-tag v0.7.3.3`, `git archive` built once into out/old/<tag>, its DLLs and symbol
+  files copied into lane B) and this build in one session of three. Checks: every game logs every other
+  player's version, Carol is in the host's world, all three draw each other where they are before and after
+  two of them walk, the shared DNA total (with this build's cause tail) reaches the old game, nest eggs
+  (MSG_NEST) are sent while the old game stands at a nest, Tribe chunks with the time trailer, no caught
+  fault, no crash report. Both lanes get this build's files again at the end; Carol's log (the other lane's)
+  is kept in out/lane<N>/mixed/. v0.7.3.3 against main a05d1f6+: all three pass (lab 20261101-155537:
+  the old game gets the DNA total with the cause tail, 143 nest snapshots were sent while it stood at a nest,
+  Tribe chunks with the time trailer; no fault anywhere). `MIXED_OLD_TAG=v0.7.2.4` fails (lab
+  20261101-155327): no version lines before 0.7.3.x ("version unknown (pre-0.7.4)"), and the 0.7.2.4 game
+  had 3256 caught faults (`exception 0xC0000005 at 0x00B0EC8C`; not analysed). Pitfalls: main still says
+  `coop 0.7.3.3` (COOP_VERSION is bumped at the release), so the version lines cannot tell main from the
+  release; every game of the test starts cold and SporeKit starts its log anew, so the version lines are
+  read from each log's start (an offset taken before the start pointed past the new log's end).
+* First runs of the never-run tests (lab 20261101-134020, lanes 9/10, main a05d1f6; reruns with the test fixes
+  in lab 20261101-145528: chaos_civ_long and rejoin_race_long OK, play_tribe FAIL on BUG-0410 only): OK rejoin_awful,
+  chaos_cell_long, chaos_space_long, chaos_tribe_long, chaos_tribe_awful, play_space, legless_guest_dontsave.
+  FAIL and why: play_civ (one rejected guest order, open BUG-0325), play_tribe (a test bug: the chiefs compare
+  took the host's own `spread= placed=` counters of tribe.place_chiefs as chiefs; also the guest's 9 click
+  orders < 10, and citizens p90 1.89 m > 1.5 m), chaos_civ_long (a test bug: a random key opened a design
+  editor on the guest, it rejoined inside it and waited there for the world by design; the bot now leaves an
+  editor with "done" after a rejoin), rejoin_race_long (two test bugs: `twoinst.wait_guest_in` looked for
+  `together 1 1` but a rejoin that reaches the host before its old entry is gone gets id 2; the monitor's
+  `link` check fired during world transfers to a loading guest: pending 600 / 50-90 % resends, now left out
+  while a share runs, the resends themselves are BUG-0405).
+* Monitor pitfall: player ids are reused (a newcomer takes the lowest free id), so `Timeline.who_at(pid, t)`
+  maps a partner line to the machine that had that id at that moment; the latest id per machine
+  (`who_of`) gave false `hp` violations after the id swap of party_rejoin_net.
+* The players suite on lanes 9/10 (lab 20261101-160125, 73 tests, 94 min): 63 OK. FAIL: creature_burst,
+  creature_fps15burst, creature_mobile, creature_players (a test bug: with SPORE_NET set, the helper
+  load_game.py that coop_two_instances.py runs imported lane.py, which binds the guest's proxy port the test
+  already holds: EADDRINUSE, the host never loaded its world; netem.from_env now uses the test's proxy. In
+  creature_fps15burst the test then hosted on a game still starting and it crashed: BUG-0433),
+  party_creature4_mobile / _players (sync-check gate: a rejoined guest's empty old copy, BUG-0412),
+  sync_burst / sync_fps15burst (Civ vehicle p90 4-7 m, BUG-0438), puppet_walk_burst (the guest walked 22
+  windows only, 82 % matched) and puppet_walk_players (84 % matched, limit 85 %): the walk checks are at their
+  edge under loss bursts and spikes.
 ## Tribe sync tests and the log gates (2026-11-01, fix/w32-tribe-sync)
 <a id="testing-tribe-sync-gates"></a>
 
@@ -3238,3 +3345,9 @@ the walk and fight tests) swings the view over it (docs/re/creature.md#creature-
   `puppet_hp` rule failed every run on the puppet that cannot show 1000 of 10 (lab 20261101-160710, 2 of 2).
 * Pitfall: a nest mound is not in `GetHeightAt`; heights over the ground (`hd`, `ht`, `agl`) of a creature on it
   read 0.4-1.03 m although it stands on its ground.
+* `coop_tod_early.py` (suite `tod_early`, ~1 min, BUG-0433): the host game alone, `cheat coop host` on its
+  console from the first moment (coop's commands exist from the first frame: `coop.fix` is asked until it
+  answers, then the host line runs on frame 2, game mode 0). No fault, the galaxy menu, still hosting.
+  `SPORE_FIX_OFF=core.tod_guard` faults at 0x01020F35 and hangs before the menu (lab 20261101-175729).
+  `--ui` takes the player's way (F9 from the boot on, a real click on Host): the window first shows in the
+  galaxy menu (9.2 s after the start), so players do not reach the crash through the window.

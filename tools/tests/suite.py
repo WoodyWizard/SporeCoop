@@ -6,6 +6,8 @@
             extended (paths outside the other suites: 3-4 players, hot reload; also nightly),
             multi (3-4 players per stage in minutes, coop_party.py; also extended / nightly),
             campaign (a whole game of four bot players, coop_campaign.py: in no other suite, run it alone)
+            mixed (the previous release and this build in one session, coop_mixed_version.py: in no other suite;
+            it uses the neighbour lane too, run it alone: `lab.py run mixed --lane 9` with lane 10 idle)
             players (generated variants of chosen tests under the conditions of real players: the guest
             at 15 fps, a mobile / bursty network, both, four players; docs/06-testing.md#testing-degraded)
   warm      may reuse running games of the lane (twoinst.start with SPORE_WARM=1: the fixture is
@@ -50,7 +52,7 @@ def add(name, cmd, suites=('full',), warm=False, exclusive=False, minutes=4, fix
     """reports=True: the test makes crash / hang reports or faults on purpose and checks them itself;
     for every other test the lab fails it on a new crash-*/report-* file of its lane, a game that
     dies right after it, or a non-zero fault count in its log (tools/lab.py run_one, BUG-0036/0042)"""
-    if 'campaign' in suites:  # hours of play on one lane: only when asked for
+    if 'campaign' in suites or 'mixed' in suites:  # hours on one lane / a second lane: only when asked for
         suites = set(suites)
     else:
         suites = set(suites) | ({'nightly'} if {'nightly', 'extended'} & set(suites) else {'full', 'nightly'})
@@ -397,7 +399,7 @@ add('campaign_ct', P + 'coop_campaign.py --from cell --to tribe --minutes 2 --no
     minutes=45, timeout=3600)
 
 
-SUITES = ('smoke', 'full', 'nightly', 'extended', 'campaign', 'multi', 'players')
+SUITES = ('smoke', 'full', 'nightly', 'extended', 'campaign', 'multi', 'players', 'mixed')
 
 
 def select(spec):
@@ -413,6 +415,26 @@ def select(spec):
     return [t for t in T if t['name'] in want]
 add('trace_log', P + 'coop_trace_log.py', minutes=6)  # support logging: trace / eat / body lines on both games in Cell and Creature, the same eaten object in both logs, log size per minute
 
+
+# session paths under the conditions of real players (feat/w33-tests-session, docs/06-testing.md#testing-session-paths)
+add('tod_early', P + 'coop_tod_early.py', minutes=2)  # BUG-0433: a session hosted before the main menu (game mode 0) does not crash in the time-of-day send (SPORE_FIX_OFF=core.tod_guard fails)
+add('latency_step_ingame', 'SPORE_NET="delay=30,jitter=5" ' + P + 'coop_latency_step.py', minutes=5)  # one-way delay 30 -> 300 -> 30 ms while the partner walks: the drawn puppet moves in steps / jumps for at most 5 s in a row (BUG-0133 in the game; SPORE_FIX_OFF=net.offset_window fails)
+add('transition_net', 'SPORE_NET=player SPORE_FPS=guest:30 ' + P + 'coop_transition_net.py',
+    ('nightly',), minutes=20, timeout=45 * 60,
+    allow=[allow('sync-check', 'BUG-0413', 'the guest loses the host\'s NPCs under the brain-upgrade caption of the '
+                 'Creature shortcut (AddEvolutionPoints 3000)', stage='Creature', kind='n missing'),
+           allow('monitor', 'BUG-0441', 'after Cell -> Creature the guest lacks part of the host\'s unlocked parts '
+                 '(parts.shared does not act)', kind='unlocks')])  # Cell -> Creature -> Tribe the players' way (History, vote, editors, done) over a home connection, the guest at 30 fps: it follows, draws the host, no sync-check MISMATCH after the settle time (TRANSITION_PLANT=mismatch fails)
+add('party_rejoin_net', 'SPORE_NET=players ' + P + 'coop_party_rejoin_net.py --players 4', ('multi', 'extended'), minutes=10)  # 4 players rejoin over their own bad networks (one, id swap, lost goodbye, two at once): together, drawn where they are, as their own species (PARTY_PLANT=lift fails; BUG-0076's switches did not)
+add('join_during_combat', P + 'coop_join_during.py --case combat', minutes=4)  # a guest joins while the host fights an NPC: its game agrees with the host's within 10 s (host drawn, NPCs alive / dead / health)
+add('join_during_host_editor', P + 'coop_join_during.py --case editor --allow-empty BUG-0412', minutes=5)  # a guest joins while the host is in its editor: agrees within 10 s of the host's return (host drawn as its species, NPCs)
+add('vote_net_4p', 'SPORE_NET=players ' + P + 'coop_vote_net_4p.py', ('multi', 'extended'), minutes=10)  # votes of 4 players over bad networks: evolution vote, an action vote while a guest edits and leaves, its return, all four
+# the previous release and this build in one session: suite `mixed`, only when asked for. The test also takes the
+# neighbour lane (SPORE_LANE_B, default lane+1, lane 10: 9), which must be idle: `lab.py run mixed --lane 9` alone
+# (lane 10 free). Not `exclusive` (that needs lanes 1-5, for the LAN tests)
+add('mixed_version_guest', P + 'coop_mixed_version.py --old guest', ('mixed',), minutes=7)  # v0.7.3.3 joins this build's host: version lines, puppets, DNA cause tail and nest eggs to the old game (--old-tag v0.7.2.4 fails)
+add('mixed_version_host', P + 'coop_mixed_version.py --old host', ('mixed',), minutes=7)  # this build joins a v0.7.3.3 host
+add('mixed_version_tribe', P + 'coop_mixed_version.py --old guest --fixture tribe', ('mixed',), minutes=7)  # v0.7.3.3 joins this build's Tribe host (chunks with the time trailer)
 
 # ---------------- generated variants: the conditions of real players (docs/06-testing.md#testing-degraded)
 # `lab.py run players`: each chosen test again with the guest at 15 fps (frame.limit, twoinst.apply_fps), over

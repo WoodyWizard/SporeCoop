@@ -42,9 +42,14 @@ def wait_guest_in(host, guest, timeout=240, close=lambda h: h.call('key enter'))
         time.sleep(0.7)
         if host_frame(host) == f1:
             close(host)
-        # in the host's world: the guest plays and the host sees it in the same place
-        if guest.call('coop.avatar')['ok'] and 'together 1 1' in host.call('coop.status')['out']:
-            return True
+        # in the host's world: the guest plays and the host sees it in the same place. The guest's own id
+        # (not always 1: a rejoin that reaches the host before its old entry is gone gets id 2,
+        # rejoin_race_long round 12, lab 20261101-134020)
+        if guest.call('coop.avatar')['ok']:
+            import re
+            m = re.search(r'client id=(\d+) connected', guest.call('coop.status').get('out', ''))
+            if f'together {m.group(1) if m else 1} 1' in host.call('coop.status')['out']:
+                return True
     return False
 
 

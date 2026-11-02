@@ -73,6 +73,8 @@ PARTNER = re.compile(r"trace:\s+partner (\d+) '(.*?)' (.+?) world=([0-9A-F]+) d=
                      r"rtt=(-?\d+) ms(.*)$")
 LINK = re.compile(r'resends=(\d+)/(\d+) silent=(\d+) ms pending=(\d+)')
 POOL = re.compile(r'cell pool (\d+)/(\d+)')
+SHARE = re.compile(r'world: (sharing) .* with player (\d+)$|world: (?:transfer) to (\d+) queued completely|'
+                   r'session: player (\d+) \'.*\' (left)')
 DRAWN = re.compile(r' drawn=\(([-\d.e+naif]+) ([-\d.e+naif]+) ([-\d.e+naif]+)\) drawn_v=([-\d.naif]+)')
 AGL = re.compile(r' agl=(-?[\d.naif]+)(?: agl_hi=(-?[\d.naif]+))?')
 PUPPET_HP = re.compile(r' puppet_hp=(-?[\d.naif]+)/(-?[\d.naif]+)')
@@ -144,6 +146,10 @@ def parse_line(who, line):
                      rtt=int(p.group(13)), rest=p.group(14),
                      link=tuple(int(lk.group(i)) for i in range(1, 5)) if lk else None)
             return monitor_fields(r)
+    m = SHARE.search(line)  # a world transfer to a partner (its reliable chunks fill the link, see Link)
+    if m:
+        return dict(kind='share', who=who, t=t, pid=int(m.group(2) or m.group(3) or m.group(4)),
+                    what='start' if m.group(1) == 'sharing' else 'end')
     if 'coop: damage: ' in line:  # FIELDS['posse_damage']
         m = DAMAGE.search(line)
         r = dict(kind='hookline', who=who, t=t, rest=line)
@@ -194,6 +200,7 @@ class Timeline:
         self.own_t = collections.defaultdict(list)     # who -> their session times (sorted, -inf: none)
         self.partner = collections.defaultdict(list)   # (viewer, pid) -> [partner records]
         self.ids = {}                                  # who -> session id (0 = host)
+        self.shares = collections.defaultdict(list)    # (who, pid) -> [[start, end or None]] world transfers
         self.records = []
 
     def add(self, r):
@@ -207,9 +214,29 @@ class Timeline:
             self.ids[r['who']] = r['id']
         elif r['kind'] == 'partner':
             self.partner[(r['who'], r['pid'])].append(r)
+        elif r['kind'] == 'share' and r['t'] is not None:
+            lst = self.shares[(r['who'], r['pid'])]
+            if r['what'] == 'start':
+                lst.append([r['t'], None])
+            elif lst and lst[-1][1] is None:
+                lst[-1][1] = r['t']
+
+    def sharing(self, who, pid, t, after=15.0):
+        """`who` sends its world to partner pid at session time t (or did within `after` s)"""
+        return t is not None and any(a <= t <= (b if b is not None else float('inf')) + after
+                                     for a, b in self.shares.get((who, pid), ()))
 
     def who_of(self, pid):
         return next((w for w, i in self.ids.items() if i == pid), None)
+
+    def who_at(self, pid, t, dt=15.0, viewer=None):
+        """the machine that had session id pid around session time t: ids are reused after a leave (a
+        newcomer takes the lowest free one, party_rejoin_net), so the latest id of each machine is not enough;
+        None when no machine or more than one had it then"""
+        if t is None:
+            return self.who_of(pid)
+        got = [w for w in self.own if w != viewer and (lambda o: o is not None and o['id'] == pid)(self.own_at(w, t, dt))]
+        return got[0] if len(got) == 1 else None
 
     def window(self, who, t, dt):
         """the own records of `who` within session time t +- dt"""
@@ -264,13 +291,16 @@ class Together(Invariant):
     def check(self, tl):
         out = []
         for (viewer, pid), lst in tl.partner.items():
-            subj = tl.who_of(pid)
-            if subj is None:
-                continue
             run = []
             for p in lst:
                 if p['t'] is None:
                     continue
+                subj = tl.who_at(pid, p['t'], viewer=viewer)
+                if subj is None or (run and run[-1].get('_subj') != subj):
+                    run = []
+                    if subj is None:
+                        continue
+                p['_subj'] = subj
                 a, b = tl.own_at(viewer, p['t'], 6), tl.own_at(subj, p['t'], 6)
                 agree = a and b and playing(a) and playing(b) and a['stage'] == b['stage'] and a['world'] == b['world'] \
                     and (b['flags'] & PF_IN_WORLD)
@@ -320,6 +350,11 @@ class Link(Invariant):
             bad, prev = [], None
             for p in lst:
                 if p['link'] is None:
+                    continue
+                if tl.sharing(viewer, pid, p['t']):
+                    # a world transfer: its chunks fill the reliable window (pending 600) and a loading
+                    # guest acks late (50-90 % resends on loopback, rejoin_race_long 20261101-134020)
+                    bad, prev = [], None
                     continue
                 why = None
                 rs, sent, _, pend = p['link']
@@ -391,11 +426,13 @@ class Hp(Invariant):
     def check(self, tl):
         out = []
         for (viewer, pid), lst in tl.partner.items():
-            subj = tl.who_of(pid)
-            if subj is None:
-                continue
-            run = []
+            run, last = [], None
             for p in lst:
+                subj = tl.who_at(pid, p['t'], viewer=viewer)
+                if subj is None or subj != last:
+                    run, last = [], subj
+                    if subj is None:
+                        continue
                 o = tl.own_at(subj, p['t'], 5.0) if p['t'] is not None else None
                 if not o or not p['same'] or not playing(o) or o['maxhp'] <= 0 or p['age'] > 1.0:
                     run = []
@@ -488,7 +525,7 @@ class Hook(Invariant):
 
     def same_moment(self, tl, p):
         """the own record of partner record p's subject at the same moment (the 10 s marks), None"""
-        subj = tl.who_of(p['pid'])
+        subj = tl.who_at(p['pid'], p['t'], viewer=p['who'])  # ids are reused after leaves
         if subj is None or p['t'] is None:
             return None, None
         return subj, tl.own_at(subj, p['t'], self.c['drawn_dt'])
