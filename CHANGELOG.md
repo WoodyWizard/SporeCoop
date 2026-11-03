@@ -14,6 +14,22 @@
   relayed effects the receiver keeps are stopped after 8 s or when there are more than 64, so a
   looping one does not pile up, and the relay releases the game reference it holds on each one
   (they no longer leak for the session).
+## [0.7.3.6] - 2026-11-02
+
+### Fixed
+- Civ and Space: a partner's vehicle, building or ship whose model uses parts or paints from a pack, a
+  mod or another profile's Sporepedia no longer crashes the game that does not have them. Such a model
+  is shown with similar base game parts, a vehicle falls back to one of the game's own designs, and a
+  building whose design cannot be shown is left out (the log names each unknown part once) (BUG-0469).
+
+## [0.7.3.5] - 2026-11-02
+
+### Fixed
+- Creature: a guest whose game lacks a parts pack (for example the Bot Parts pack) no longer crashes
+  when it loads a host world whose creature uses a part of that pack: the part is shown as a similar
+  base game part (the Creepy & Cute parts first), an unknown paint as a base game paint, and an id that
+  cannot be replaced makes the game use its own fallback instead of baking the model. Each unknown id is
+  written to the log (BUG-0452).
 
 ## [0.7.3.4] - 2026-11-02
 

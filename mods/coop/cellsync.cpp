@@ -1,4 +1,5 @@
 #include "cellsync.h"
+#include "census.h"
 #include "coop_ui.h"
 
 #include <algorithm>
@@ -4783,6 +4784,44 @@ std::vector<syncdbg::Entry> sync_entries()
                 entry(c, h);
     }
     return v;
+}
+
+// the divergence detector (census.h `coop.census all`): host: its foreground cells (id = cell index);
+// guest: its mirrors (id = the host's index) and the cells of its own (local: the guest's own
+// population, purged in a session)
+void census_rows(std::vector<census::Row>& out)
+{
+    if (!in_cell())
+        return;
+    auto row = [&](uint8_t* c, int id, const char* own) {
+        if (out.size() >= 6000)
+            return;
+        census::Row r;
+        r.kind = 'l';
+        r.id = id;
+        r.key = F<uint32_t>(c, kModelKey);
+        r.alive = F<uint8_t>(c, kDead) || F<uint8_t>(c, kDying) ? 0 : 1;
+        r.hp = (float)F<int>(c, kHp);
+        r.ai = F<uint8_t>(c, kAiLock) ? 0 : 1;
+        r.own = own;
+        r.pos = pos_of(c);
+        r.scale = F<float>(c, kSize);
+        r.noun = F<uint32_t>(c, kLevel);
+        out.push_back(r);
+    };
+    if (is_guest()) {
+        for_each_cell([&](uint8_t* c, uint32_t idx) {
+            if (modes::cell_is_puppet(c))
+                return;
+            auto it = g_host_of.find(idx);
+            row(c, it != g_host_of.end() ? (int)it->second : -1, it != g_host_of.end() ? "proxy" : "local");
+        });
+    } else {
+        for_each_cell([&](uint8_t* c, uint32_t idx) {
+            if (!modes::cell_is_puppet(c))
+                row(c, (int)idx, "npc");
+        });
+    }
 }
 
 bool food_total(int& food)

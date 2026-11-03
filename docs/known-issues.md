@@ -1630,3 +1630,14 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   on lane 7 (also with main's own test file).
 * Not checked: whether the host's states arrive bunched (late) then, or the walk driving.
 * Ticket: BUG-0445
+## Civ: the mirror vehicles (and other objects the mod creates on a guest) go into the guest's save (2026-11-02, fix/w39-content-all)
+<a id="issue-civ-mirrors-in-save"></a>
+
+* What happens: the mod's save filter only knows creatures and herds, so the mirror vehicles a guest shows
+  for the host's civilization are written into the guest's own save (the mod's objects, CLAUDE.md 2). They
+  come back as ordinary vehicles of the loaded world without a co-op session, and nothing updates them.
+* Reproduce: `tools/tests/coop_content_civ.py` steps 6-7 (save with `coop.save`, restart without a session,
+  load): the reloaded world lists 2 vehicles. Seen in out/lab/20261102-213135.
+* Not fixed: a strip needs the civ / tribe / space object registry and a null-safe removal from
+  `civ+0xB0` / `civ+0xD4` and the city's lists (BUG-0020's null rule), with a save + reload test per stage.
+* Ticket: BUG-0470

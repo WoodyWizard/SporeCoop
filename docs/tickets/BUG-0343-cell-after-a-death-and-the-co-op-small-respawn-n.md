@@ -43,3 +43,4 @@ the own cell's position on the host before and 2 s after the respawn. Must FAIL 
 
 ## History
 - 2026-10-31: opened from the host's report zip (mark and cell trace).
+- 2026-11-02: reported again on Discord ('Decentered screen': when the host evolves the cell in the Cell stage, the other player's screen is off centre when it reappears), 0.7.3.4. Target 0.7.4.

@@ -52,7 +52,7 @@ def add(name, cmd, suites=('full',), warm=False, exclusive=False, minutes=4, fix
     """reports=True: the test makes crash / hang reports or faults on purpose and checks them itself;
     for every other test the lab fails it on a new crash-*/report-* file of its lane, a game that
     dies right after it, or a non-zero fault count in its log (tools/lab.py run_one, BUG-0036/0042)"""
-    if 'campaign' in suites or 'mixed' in suites:  # hours on one lane / a second lane: only when asked for
+    if {'campaign', 'mixed', 'detector'} & set(suites):  # hours on one lane / a second lane / the detector: only when asked for
         suites = set(suites)
     else:
         suites = set(suites) | ({'nightly'} if {'nightly', 'extended'} & set(suites) else {'full', 'nightly'})
@@ -151,6 +151,9 @@ add('host_old_choice', P + 'coop_host_old_choice.py', minutes=3)  # BUG-0344
 # BUG-0341: Carol (no Creepy & Cute pack) on a lane outside the run (SPORE_FREE_LANE), host and Bob on the run's lane
 add('guest_missing_pack', P + 'coop_guest_missing_pack.py', minutes=6, uses_free_lane=True)
 add('guest_pack_paints', P + 'coop_guest_pack_paints.py', minutes=4)  # a guest without Creepy & Cute sees the host's pack paints as base game paints (BUG-0369; SPORE_FIX_OFF=creations.paint_substitute fails)
+add('unknown_parts', P + 'coop_unknown_parts.py', minutes=6, uses_free_lane=True)  # a guest without a parts pack (Spore_Pack_03) does not crash on a part it lacks and logs the id (BUG-0452; SPORE_FIX_OFF=creations.unknown_parts fails)
+add('content_civ', P + 'coop_content_civ.py', minutes=10, uses_free_lane=True)  # a civ mirror vehicle whose design model names a part the guest's game lacks does not fault and is shown, and the save it gets into reloads without the mod's key (BUG-0469; SPORE_FIX_OFF=content.all_kinds / content.model_key fail)
+add('content_space', P + 'coop_content_space.py', minutes=6, uses_free_lane=True)  # a host ship whose model names a part the guest's game lacks does not fault and is mirrored (BUG-0469; SPORE_FIX_OFF=content.all_kinds fails)
 add('creations_rejoin', P + 'coop_creations_rejoin.py', minutes=5)  # a newcomer under a reused id is not shown with the previous player's creature (BUG-0076)
 add('editor_desync', P + 'coop_editor_desync.py', minutes=7)  # mating call and editors in Cell and Creature, real input (BUG-0411: --old-wait fails about 1 run in 2)
 add('creature_desync', P + 'coop_creature_desync.py', minutes=4)  # editors, a crash and a reload: companion of a host-only species, no NPC copies, kills, the guest's look
@@ -279,7 +282,7 @@ add('editor_after_swap', P + 'coop_editor_after_swap.py', minutes=5)  # BUG-0318
 add('editor_after_load', P + 'coop_editor_after_swap.py --no-swap', minutes=5)  # BUG-0318: the same without an avatar swap (only the loaded world's new avatar)
 add('ability_bar', P + 'coop_ability_bar.py', minutes=5)  # a guest's ability bar holds its own creature's abilities after the swap, keys do not fault (BUG-0358; SPORE_FIX_OFF=creations.ability_bar fails)
 # two bots play Civilization for 10 minutes through real input (docs/stability/civ.md)
-add('play_civ', P + 'play_civ.py --minutes 10', ('nightly',), minutes=13, fixture='civ_npc')
+add('play_civ', P + 'play_civ.py --minutes 10', ('nightly', 'detector'), minutes=13, fixture='civ_npc')
 add('space_play', P + 'coop_space_play.py', ('smoke',), minutes=6)
 add('space_page', P + 'coop_space_page.py', ('smoke',), minutes=4)  # the F9 Space page (space_ext.h), jump by a real click
 add('space_map', P + 'coop_space_map.py', minutes=6)  # partners and their colonies on the galaxy map, the roster (space_map.h)
@@ -341,17 +344,17 @@ add('chaos_tribe', P + 'coop_chaos.py --fixture tribe --minutes 2', ('smoke',), 
 for st, m in (('creature', 6), ('cell', 6), ('tribe', 8), ('civ', 8), ('space', 6)):
     add(f'chaos_{st}_long', P + f'coop_chaos.py --fixture {st} --minutes {m}', ('nightly',), minutes=m + 1)
 # two bots PLAY the Cell stage together (real input: swim, eat, flee, revive), sync / food / regression checks
-add('play_cell', P + 'play_cell.py --minutes 10', ('nightly',), warm=True, minutes=12, fixture='cell')
+add('play_cell', P + 'play_cell.py --minutes 10', ('nightly', 'detector'), warm=True, minutes=12, fixture='cell')
 # played like people play (real input, measurements; docs/stability/creature.md)
-add('play_creature', P + 'play_creature.py --minutes 10', ('nightly',), minutes=12)
+add('play_creature', P + 'play_creature.py --minutes 10', ('nightly', 'detector'), minutes=12)
 # games played by bots through real input for many minutes (docs/stability/<stage>.md)
-add('play_tribe', P + 'play_tribe.py --minutes 10', ('nightly',), warm=True, minutes=12, fixture='tribe')
+add('play_tribe', P + 'play_tribe.py --minutes 10', ('nightly', 'detector'), warm=True, minutes=12, fixture='tribe')
 # the same tests over a bad network between guest and host (tools/tests/netem.py)
 for name, cmd in (('tribe_coop', 'coop_tribe.py'), ('cell_coop', 'coop_cell.py'), ('civ_coop', 'coop_civ.py'),
                   ('team', 'coop_team.py'), ('space_coop', 'coop_space.py')):
     add(f'{name}_mobile', 'SPORE_NET=mobile ' + P + cmd, ('nightly',), minutes=4)
 # the Space stage played by two bots with real input (docs/stability/space.md)
-add('play_space', P + 'play_space.py --minutes 12', ('nightly',), minutes=14)
+add('play_space', P + 'play_space.py --minutes 12', ('nightly', 'detector'), minutes=14)
 add('chaos_tribe_awful', 'SPORE_NET=awful ' + P + 'coop_chaos.py --fixture tribe --minutes 5', ('nightly',),
     minutes=6)
 
@@ -399,22 +402,27 @@ add('cell_spare', P + 'coop_cell_spare.py', minutes=6)  # a crowd of cells on bo
 # the lab's suites; campaign_short is the first stage change only (a quick check of the tool itself)
 add('campaign', P + 'coop_campaign.py --minutes 8', ('campaign',), minutes=150,
     timeout=5 * 3600)
-add('campaign_short', P + 'coop_campaign.py --to creature --minutes 3 --advance-minutes 8', ('campaign',),
+add('campaign_short', P + 'coop_campaign.py --to creature --minutes 3 --advance-minutes 8', ('campaign', 'detector'),
     minutes=25, timeout=3600)
 # BUG-0276: the guests get the host's world after a live stage change with four players (the share
 # save posted in the first frames of Tribe / of the solar system); a stuck finding is the bug.
 # A timing race: FAIL with SPORE_FIX_OFF=world.share_settle_reset in about 1 of 3 games (--repeat)
-add('campaign_tribe', P + 'coop_campaign.py --from creature --to tribe --minutes 2 --no-finale', ('campaign',),
+add('campaign_tribe', P + 'coop_campaign.py --from creature --to tribe --minutes 2 --no-finale', ('campaign', 'detector'),
     minutes=30, timeout=3600)
-add('campaign_space', P + 'coop_campaign.py --from civ --to space --minutes 2 --no-finale', ('campaign',),
+add('campaign_space', P + 'coop_campaign.py --from civ --to space --minutes 2 --no-finale', ('campaign', 'detector'),
     minutes=35, timeout=3600)
 # BUG-0359: the host's heap corruption that surfaced at Creature -> Tribe in a whole campaign (Cell ran
 # in the same process first): Cell -> Creature -> Tribe with four players, the stress of that path
-add('campaign_ct', P + 'coop_campaign.py --from cell --to tribe --minutes 2 --no-finale', ('campaign',),
+add('campaign_ct', P + 'coop_campaign.py --from cell --to tribe --minutes 2 --no-finale', ('campaign', 'detector'),
     minutes=45, timeout=3600)
 
 
-SUITES = ('smoke', 'full', 'nightly', 'extended', 'campaign', 'multi', 'players', 'mixed')
+# the divergence detector (docs/sync-architecture-plan.md L0): a quiet session per stage, then the play bots
+# and the campaigns; run with SPORE_DETECTOR=<s> (tools/nightly_detect.sh), read with tools/detector_report.py
+for _st, _fx in (('cell', 'cell'), ('creature', 'creature'), ('tribe', 'tribe'), ('civ', 'civ_npc'), ('space', 'space')):
+    add(f'detect_{_st}', P + f'coop_detect.py --fixture {_fx} --minutes 4', ('detector',), minutes=7, fixture=_fx)
+
+SUITES = ('smoke', 'full', 'nightly', 'extended', 'campaign', 'multi', 'players', 'mixed', 'detector')
 
 
 def select(spec):

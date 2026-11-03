@@ -733,6 +733,13 @@ class Watch(threading.Thread):
         self.out = out
         self.lock = threading.Lock()
         self.census_at = 0.0
+        # the divergence detector (worlddiff.py): SPORE_DETECTOR=<seconds> compares the host's world with
+        # every guest's that often and prints DETECTOR lines (data for tools/detector_report.py, no gate)
+        try:
+            self.detect_period = float(os.environ.get('SPORE_DETECTOR', '0') or 0)
+        except ValueError:
+            self.detect_period = 0.0
+        self.detect_at = time.time()
         skip = os.environ.get('SPORE_MONITOR_SKIP', '')
         self.skip = {s.strip() for s in skip.split(',') if s.strip()}
 
@@ -781,12 +788,43 @@ class Watch(threading.Thread):
                 self.tl.add(dict(kind='census', who=who, t=last[-1]['t'] if last else None, stage=m.group(1),
                                  counts=dict(counts)))
 
+    def detect(self):
+        """one detector sample: the host's world against every guest's (worlddiff.diff)"""
+        import json
+        import worlddiff
+        host = self.players.get('host')
+        if host is None:
+            return
+        for who, (inst, _) in list(self.players.items()):
+            if who == 'host':
+                continue
+            try:
+                hw, gw = worlddiff.pair_dump(self.console(host[0]), self.console(inst), 250)
+                hw.who, gw.who = 'host', who
+            except (OSError, ValueError) as e:
+                self.out(f'  (detector: {who} dump failed: {e!r})')
+                continue
+            found = worlddiff.diff(hw, gw)
+            skip = [f for f in found if f['sig'] in ('apart', 'nocentre')]
+            real = [f for f in found if f['sig'] not in ('apart', 'nocentre')]
+            self.out('DETECTOR-SAMPLE ' + json.dumps(dict(guest=who, stage=hw.mode, gstage=gw.mode, host_rows=len(hw.rows),
+                                                          guest_rows=len(gw.rows), findings=len(real),
+                                                          skipped=skip[0]['sig'] if skip else '')))
+            for f in real:
+                self.out('DETECTOR ' + json.dumps(dict(guest=who, stage=f['stage'], sig=f['sig'], n=f['n'], text=f['text'])))
+
     def step(self):
         with self.lock:
             self.read_logs()
             if self.console is not None and time.time() - self.census_at >= self.cfg['census_period']:
                 self.census_at = time.time()
                 self.poll_census()
+            if self.console is not None and self.detect_period > 0 and time.time() - self.detect_at >= self.detect_period:
+                self.detect_at = time.time()
+                try:
+                    self.detect()
+                except Exception as e:  # noqa: BLE001 (the detector must not end a test)
+                    self.out(f'  (detector: {e!r})')
             for inv, who, text, key in evaluate(self.tl, self.cfg, skip=self.skip):
                 if (inv, key) in self.seen:
                     continue

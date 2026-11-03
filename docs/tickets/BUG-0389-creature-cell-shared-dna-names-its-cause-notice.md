@@ -51,3 +51,4 @@ out/lane6/shots/dna_notice_*.png.
 ## History
 - 2026-11-01: opened and implemented (fix/w31-creature-gate).
 - 2026-11-02: released in 0.7.3.4.
+- 2026-11-02 (0.7.3.4, host's mark in Cell): 'Getting a lot of DNA from guest like 40-60 randomly for eating in cell stage': the shared food is by design and the notice shows it; players still read it as random: make the Cell notice clearer (amount and source in one line) in 0.7.4.

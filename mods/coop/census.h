@@ -13,6 +13,18 @@
 //   end objects=<n>
 // kind: c creature, v vehicle; id: the net id (-1 none: the avatar, a local object).
 // own (creatures): avatar, npc (host), proxy (guest), puppet (a player's), local (no net id).
+//
+// `coop.census all [r]` (the divergence detector, docs/sync-architecture-plan.md, tools/tests/worlddiff.py)
+// adds, after the v1 rows:
+//   me pos=(x y z) ok=<0|1>                       the own player's position (the compare area's centre)
+//   obj g-1 key=... pos=(x y z) noun=<hex> ser=<n> scale=<f>   every other placed game object (cGameData
+//       with a cSpatialObject) within r m of the own player (default 250), at most 6000
+//   obj l<id> key=<model> alive= hp= ai= own=<npc|proxy|local> owner=-1 pos=(...) scale=<size>  Cell: the
+//       foreground cells (host: its pool, id = the cell index; guest: mirrors with the host's index, its
+//       own cells as local)
+//   nouns <hex>=<count>@<vt> ...                  every noun in the game's list (placed or not, any distance), with
+//       the Ghidra address of one object's vtable (no RTTI in the exe: the class is found from it)
+// and `scale=` / `noun=` on the c rows. The v1 parsers ignore what they do not know.
 #pragma once
 
 #include <cstdint>
@@ -36,11 +48,15 @@ struct Row {
     const char* own = "";
     int owner = -1;
     net::Vec3 pos{};
+    uint32_t noun = 0;
+    uint32_t serial = 0;
+    float scale = -1;
 };
 
 struct Ctx {
     net::Session* sess = nullptr;
     std::function<void(uint32_t& mode, uint32_t& world)> place; // g_mode, g_world
+    std::function<bool(net::Vec3& pos)> self_pos;               // the own player (false: none)
 };
 
 void init(const SkHost* host, SkMod* mod, Ctx ctx); // registers coop.census
@@ -49,4 +65,7 @@ void init(const SkHost* host, SkMod* mod, Ctx ctx); // registers coop.census
 
 namespace civ {
 void census_rows(std::vector<census::Row>& out); // the vehicles (civ.cpp)
+}
+namespace cellsync {
+void census_rows(std::vector<census::Row>& out); // the foreground cells (cellsync.cpp)
 }

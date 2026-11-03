@@ -702,3 +702,119 @@ BUG-0441. GOG 2024, Ghidra (out/ghidra-2024) and lane 9 (`coop_transition_net.py
 * Not a reward of the host only: the guest's game has the host's twins. Not checked: whether a guest's
   own Cell parts (collected in its game during co-op Cell) should count for the twins; the guest
   loads the host's world, so the host's cell decides (BUG-0446).
+
+## Unknown parts check (2026-11-02, fix/w38-content)
+<a id="creations-unknown-parts"></a>
+
+BUG-0452. GOG 2024, lanes 4/5 (`tools/tests/coop_unknown_parts.py`), the game files' index.
+
+* ✔ A part key in a model is the group's last three bytes (`60 62 40` for the creature parts group
+  0x40626000, `60 61 40` for the cell group 0x40616000, `60 64 40` for the UFO group 0x40646000) and the
+  instance right after them. The group's least significant byte (`0x00`) is usually written as a byte run
+  (the byte before, repeated), so a scan for the literal four bytes finds only the keys whose `0x00` is
+  literal: the 33-part Tiger Horse model yielded 1 reference, not 33. `model_part_refs` matches the three
+  bytes and reads the instance after them; the slot and parent that follow must be plausible (a small
+  index or -1), which keeps the group bytes that occur in other data out.
+* ✔ The 0.7.3.4 checks only know the Creepy & Cute part and paint lists. A guest without
+  `Data/Spore_Pack_03.package` and a host creation with one part of that pack (`0x75A5D2D4`) faults at
+  `0x00441F3B` (data 0) in the bake, exactly as BUG-0341 (`coop_unknown_parts.py`, FAIL run
+  `out/lab/20261102-122525`).
+* ✔ Every part id of every received creature, cell and UFO model is now checked with `key_exists` (cached
+  per session). An unknown part is shown as a base game detail of the same group and the same number of
+  `0xFE` bytes (`content_packs.h` `kBasePartFallbacks`); the Creepy & Cute table is the first choice. An
+  unknown paint is shown as a base game paint of the same layer and length (`kBasePaintFallbacks`); the
+  base game's 111 skin paint effects are `kBasePaintEffects` (14 of them have no effect record in any
+  package, the game defines them itself).
+* ✔ An id that cannot be replaced refuses the creation: a puppet falls back, an NPC species is not
+  registered, the host's own world creation keeps the world from loading (the message in `world.cpp`).
+  Each unknown id is logged (`creations: ... part <id> unknown here: this game does not have it ...`).
+* ✔ Runtime (lanes 4/5, PASS run `out/lab/20261102-122224`): Carol without Spore_Pack_03 plays the host's
+  Creature world, no fault, logs the unknown part id; the model her game reads has 33 parts, none unknown,
+  the species profile built (`parts 290229B9 n=33 cc=0 unknown=0 species=1 ... substituted=2`).
+* Covered kinds: creature, cell, UFO (the only `Kind` values; the mod has no vehicle or building creation
+  path). Paints are checked for creature models only.
+* ? Not verified: a part of another pack whose kind is not a detail (the kind is in the prop record the
+  guest lacks, so it is shown as a detail, not the same kind); the three paint effect dwords of cell and
+  UFO models; a paint effect that has no base game substitute (the creation is refused, never baked).
+
+## Content check for every model kind (2026-11-02, fix/w39-content-all)
+<a id="creations-content-all-kinds"></a>
+
+BUG-0469, GOG 2024, lanes 4/5-6 (`tools/tests/coop_content_civ.py`, `tools/tests/coop_content_space.py`),
+the game files' index and Ghidra. The rest of BUG-0424 after BUG-0452.
+
+* ✔ `creations::ensure_model(model, kind)` (`mods/coop/creations.cpp`) answers for any model key the mod
+  makes this game build: this game has the key AND every part / paint id the model names (the
+  `model_part_refs` / `part_known` / `paint_known` of BUG-0452). An id this game lacks is shown as a
+  substitute in a copy of the model's records (`content_packs.h` tables, as for a received creation),
+  registered at once **under the model's own key** (see the next bullet); a model with an id that has no
+  substitute, or whose key cannot be shadowed, is refused (the caller uses the game's own default or
+  leaves the object out). Each unknown id is logged once per session:
+  `creations: content: <kind> model <id> part <id> unknown here: this game does not have it`.
+  Switch `content.all_kinds` off: 0.7.3.5, the new call sites pass the key as they get it.
+* ✔ The copy goes under the model's own key, never under a key of the mod's (BUG-0469 review,
+  2026-11-02): the first version registered it under an instance of our own (0x7D......, as a received
+  creation is), and a civ mirror vehicle is created from that key: mirror vehicles are not kept out of
+  saves (BUG-0470), so the guest's save named a model key that no package answers after a restart (or
+  without the mod). The package is written into `SporeCoop\` as before but registered at priority
+  **3000**, above the game's own packages, the host's world packages (2000) and My Creations (1000):
+  `RegisterDatabase` 0x8E1000 keeps the databases in a priority-sorted list (+0x2C) and
+  `FindDatabase` 0x8DE620 walks it highest first, probing `OpenRecord` (no global key index), so the
+  key now answers from our package. `ensure_model` checks that after registering (`FindRecord` 0x8DFC80
+  then the database's `GetLocation` 0xA426C0 = our file) and **refuses** when another package still
+  answers, so the caller never builds a model that would fault and never sees a key of ours.
+  Nothing of the game was found that resolves a model key once and keeps it: the model bake re-reads the
+  parts on every build and the earlier FAIL run faults on every attempt (456 faults in one civ run), and
+  the runtime runs below show the copy in use at once. `coop.fix content.model_key off` keeps the first
+  version (a key of our own) for the lab. Runtime (civ, lane 4 + guest lane 5): the guest's save names
+  the design's own key 0x29030001 and no 0x7D instance, and the save loads in a game restarted without a
+  session with the mirror vehicles (`out/lab/20261102-213135`); with `content.model_key` off the save
+  names 0x7D72C793 instead (`out/lab/20261102-213354`, FAIL).
+* ✔ Model kinds and their keys: creature `crt` 0x2B978C46 / 0x40626200 (parts 0x40626000), cell `cll`
+  0x3D97A8E4 / 0x40616200 (parts 0x40616000), UFO `ufo` 0x476A98C7 / 0x40656200, **vehicle** `vcl`
+  0x24682294 / 0x40646200 and **building** `bld` 0x2399BE55 / 0x40636200.
+* ✔ Vehicles and UFOs name their parts in the *same* group 0x40646000 (`Data/Spore_Content.package`: the
+  4 sampled models of each kind name 13 to 31 part references with `model_part_refs`; the count of literal
+  `60 64 40` bytes is lower, the group's 0x00 is usually a byte run); a vehicle design key
+  {vcl, 0x40646200, X} resolves to a {bem, 0x40646200, X} record (the game's type mapping, as for `crt`).
+  Building models name their parts in 0x40636000 (the base game has 224 parts of that group, none with a
+  0xFE byte: a building part with one would be refused).
+* ✔ The bem header of a vehicle, UFO and building model carries the three paint effect ids at byte 26 as
+  a creature model does: 42 of the 285 vehicle, 32 of the 91 UFO and 17 of the 310 building models of
+  `Data/Spore_Content.package` name a nonzero id there (the others are all 0: no layer painted); those
+  ids are base game skin paints of `kBasePaintEffects` or have an effect record (0x00628C255 of a
+  building model), except the 3 of the next point, so `ensure_model` checks and substitutes paints for
+  these kinds too.
+* ~ 3 paint ids that shipped vehicle, UFO and building models (and 14 shipped creature models) name in
+  their base layer are in no paint prop and in no effect record: 0x791C8201, 0x7A2E9EB3, 0xDCAD3E09.
+  `paint_known` takes them for unknown and shows a base game base paint instead (as 0.7.3.5 does for the
+  creature models): a colour difference, never a refusal (all are base layers without a 0xFE byte, so
+  `kBasePaintFallbacks` has an entry).
+* ✔ A *cell* model's header is not the creature one: of the 44 cell models of `Data/Spore_Content.package`
+  43 name an id at byte 26 that is neither a base game skin paint nor an effect record (19 distinct ids;
+  the ids look like cell paints, which the game defines elsewhere), and the second and third dwords are 0.
+  `paint_known` would take almost every cell model for one with an unknown paint, so cell paints are not
+  checked.
+* ✔ A model that names a part this game does not have faults in the *model bake*, at a different place per
+  kind: the creature bake at 0x00441F3B (BUG-0452) and the vehicle/UFO bake at 0x0046C82A
+  (`SporeCoop::ModelBake_PartProp_Null`, `mov eax,[edx]` where edx is the part's property object, prop
+  0xAFFF3A14). Runtime: the guest of the two tests with `SPORE_FIX_OFF=content.all_kinds` faults 456 and
+  467 times (civ, every frame the mirror is tried) and twice (space, once per mirror) in one run
+  (`out/lab/20261102-202807`).
+* ✔ Call sites (`content.all_kinds`): a civ mirror vehicle (`civ.cpp` `guest_state`: the civ's
+  `GetDesignKey(VehicleDesignId(purpose, loco))`, then `CreateVehicle` with the checked copy's key; a
+  design whose model cannot be built at all is created from a zero key, which the game fills with its own
+  design of that purpose and locomotion: docs/re/civ.md#civ-content-all-kinds), a building of a city on a
+  guest (`civ.cpp` `build_in_city`: `SetBuildingModel` reads the civ's design key itself, so a design
+  whose model names ids this game lacks is left out and logged, nothing can be substituted for it), a
+  host ship's mirror (`squadron.cpp`: the model key AND its parts, a substituted copy, else the local
+  model of a ship of that empire as BUG-0323: docs/re/space.md#space-mirror-content).
+* ✔ Not built by the mod: tribe huts, tools and outfits (a tribe's members are creatures and their
+  outfits are creature parts of the species model, covered by the creature check of BUG-0452), a player's
+  own puppet in Space (its key is the local key of an applied creation, already checked), the host's own
+  vehicles and buildings (the host's game bakes its own designs itself).
+* ? Not verified: the refusal path of a model whose id has no substitute (a part with 2 or more 0xFE
+  bytes cannot be written into a fixture model in place); a paint of a pack in a ship or vehicle model
+  (no pack in this install has ship or vehicle paints: the Creepy & Cute pack has creature parts and
+  paints only); a key whose records are not in a package the mod can read (a baked resource): the model is
+  built as it is and a warning is logged once.

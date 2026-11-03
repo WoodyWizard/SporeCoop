@@ -7,6 +7,11 @@ ONE outcome check (monitor rule, sync-check digest or test) that catches the cla
 A class is done when its umbrella ticket's sibling list is empty or each item is marked covered with
 evidence. Audit notes (not in git): out/ticket-audit-*.md and the session reports.
 
+**0.7.4 order of work:** [sync-architecture-plan.md](sync-architecture-plan.md) (2026-11-02) explains why
+these classes keep appearing (six structural causes) and orders the work as four layers (divergence
+detector, lifecycle service, replicated state, ownership requests, chokepoint relay). The classes below
+are the checklist each layer must close.
+
 | Class | Umbrella ticket | General fix | Outcome check |
 |---|---|---|---|
 | G1 player-species / avatar-only rules | BUG-0418 | guest-side rule: the guest's own avatar species counts as the player species for every rule that reads PlayerSpecies 0x4DF490 / IsPlayerSpecies vt 0xD0 (audit each caller for host/save effects); run the game's own reward functions with the puppet as the avatar instead of re-implementing them | trace `own_rule` vs `as_player_species` (max HP, scale, damage) equal; puppet scale = player's own scale |

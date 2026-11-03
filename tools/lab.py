@@ -339,7 +339,16 @@ def cmd_run(a):
         a.lanes = len(a.lane_ids)
     # a lane for tests that take a whole lane of their own outside the run (update_check.py wipes
     # the mod from its lane): neither used by this run nor by other work (--skip); '' = none
-    os.environ['SPORE_FREE_LANE'] = str(next((n for n in range(2, 9) if n not in a.lane_ids and n not in skip), ''))
+    # BUG-0468: never lane 8 (the owner's) or 1, never a lane whose games answer (other work: another run or
+    # agent), and lanes 9-10 count too; one such test at a time (free_lock below)
+    def _free(n):
+        if n in (1, 8) or n in a.lane_ids or n in skip:
+            return False
+        try:
+            return not any(lane_alive(n).values())
+        except Exception:  # noqa: BLE001
+            return False
+    os.environ['SPORE_FREE_LANE'] = str(next((n for n in range(2, 11) if _free(n)), ''))
     print(f'lab run {run_id}: {len(tests)} tests on {a.lanes} lane(s), tree {tree} [{tree_branch}] ({head})')
     if not a.no_build:
         build(tree)
@@ -374,7 +383,15 @@ def cmd_run(a):
             print(f'  {flag} {r["name"]:<15} lane {r["lane"]}{r.get("watched", "")}  {r["seconds"]:>4} s  {r["start"]}{extra}'
                   + ''.join(f'\n         {x}' for x in shown), flush=True)
 
+    free_lock = threading.Lock()  # BUG-0468: two tests on the one free lane at once broke both
+
     def attempt(t, lane, warm_ok):
+        if t.get('uses_free_lane'):
+            with free_lock:
+                return attempt1(t, lane, warm_ok)
+        return attempt1(t, lane, warm_ok)
+
+    def attempt1(t, lane, warm_ok):
         if t.get('uses_free_lane') and os.environ.get('SPORE_FREE_LANE'):
             free_used.append(int(os.environ['SPORE_FREE_LANE']))
         r = run_one(t, lane, tree, logdir, t['warm'] and warm_ok and not a.cold)
