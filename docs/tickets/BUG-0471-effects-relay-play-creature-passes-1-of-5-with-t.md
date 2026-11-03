@@ -44,3 +44,4 @@ Target: 0.7.4.
 ## History
 - 2026-11-02: opened.
 - 2026-11-02: the chat symptom (1 line lost) also happened WITHOUT the relay (rel/0.7.3.6b, out/lab/20261102-232023): that one is not the relay's; the puppet-apart and freeze runs stay to be measured.
+- 2026-11-03: on main 0.7.3.6 (no relay) play_creature failed 2 of 3 in the nightly run (chat line lost, n missing, joint hunts): its flakiness is not only the relay's; the A/B must be repeated with more runs per side before blaming the relay.
