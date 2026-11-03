@@ -78,6 +78,7 @@ void* spawn_creature(const net::Vec3& pos, void* species, void* herd);
 // cGameNounManager::DestroyInstance; a creature (cCreatureAnimal) is kept until the running
 // cinematic is over (it may be one of its actors), destroy_deferred_tick() removes it then
 void destroy_creature(void* c);
+void destroy_untracked(void* c); // tests (BUG-0507): the game's destroy without the mod's bookkeeping
 void destroy_deferred_tick(); // once per frame
 void set_destroy_defer(bool on); // tests (off: at once)
 void set_defer_keeps_puppet(bool on); // tests (off: a deferred puppet leaves the puppet list at once, BUG-0066)

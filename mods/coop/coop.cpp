@@ -3763,6 +3763,9 @@ int c_status(void*, int, const char* const*, SkOut* out)
                 SAY("   drive err=%.2f speed=%.2f nudges=%u kept=%u teleports=%u walk_goals=%u\n", r.drv.last_err,
                     r.drv.last_speed, r.drv.nudges, r.drv.nudges_kept, r.drv.teleports, r.drv.goals);
         }
+        // tests (BUG-0507): the puppet the mod holds is a live creature in the game's own object list
+        if (r.puppet && creature_puppet(r.puppet_adapter))
+            SAY("puppet_listed %u %d gone_by_game=%u\n", id, (int)game::creature_listed(r.puppet), modes::g_puppets_gone_alive);
         // tests: both players are in the same world and place right now
         SAY("together %u %d\n", id, !r.buf.empty() && r.buf.age(now) < 3.0 && same_place(r.buf.latest()) ? 1 : 0);
     }
@@ -5097,7 +5100,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     H->command_add(M, "coop.leave", "leave the session", c_leave, nullptr, MT);
     H->command_add(M, "coop.framefix", "coop.framefix [0|1] - forget a torn-down world's puppets before the frame's messages (tests: 0 = the old order, BUG-0091)",
                    c_framefix, nullptr, MT);
-    H->command_add(M, "coop.puppet", "coop.puppet hold on|off | respawn [s] - tests: the remote players' puppets are not moved (a seeded failure for coop_mode.py, BUG-0251); respawn: removed now, shown again next frame or after s seconds (BUG-0453)",
+    H->command_add(M, "coop.puppet", "coop.puppet hold on|off | respawn [s] | gamekill - tests: the remote players' puppets are not moved (a seeded failure for coop_mode.py, BUG-0251); respawn: removed now, shown again next frame or after s seconds (BUG-0453); gamekill: the game destroys the Creature puppets behind the mod's back (BUG-0507)",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
                        if (argc > 1 && !strcmp(argv[1], "respawn")) { // tests (BUG-0453): every partner's puppet
                            int n = 0; // goes now (as on a death or a hide) and is shown again next frame or in <s> s
@@ -5108,6 +5111,16 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                                    n++;
                                }
                            SAY("%d puppet(s) removed\n", n);
+                           return 0;
+                       }
+                       if (argc > 1 && !strcmp(argv[1], "gamekill")) { // tests (BUG-0507): the game destroys
+                           int n = 0; // every partner's Creature puppet behind the mod's back (as it did on a
+                           for (auto& [id, r] : g_remotes) // player's PC): the mod must notice and show it again
+                               if (r.puppet && creature_puppet(r.puppet_adapter)) {
+                                   game::destroy_untracked(r.puppet);
+                                   n++;
+                               }
+                           SAY("%d puppet(s) destroyed by the game\n", n);
                            return 0;
                        }
                        if (argc > 2 && !strcmp(argv[1], "hold"))

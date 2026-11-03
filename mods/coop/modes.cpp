@@ -48,6 +48,53 @@ static void creature_fill(void* av, net::PlayerState& st)
     st.species = game::species_instance(av);
 }
 
+// BUG-0507: a guest crashed in drive_puppet -> creature_drive -> walk_place -> set_speed on a puppet whose
+// memory was another object's (a cModelObject vtable at +0xC0): the game had freed the partner's puppet and
+// the Creature adapter had no liveness check (Cell and Space have one), so coop.cpp's puppet_now() and
+// drive_puppet() kept driving the raw pointer. With creature.puppet_alive a puppet is alive only while the
+// game's object list still holds it as a live creature (noun 0x18EB45E, +0x21 not set) with the serial
+// (cGameData::mID +0x24) it had when we made it: a freed puppet, or its memory reused by a new creature,
+// is dropped and the partner is shown again with a new puppet. The list walk runs once per frame and
+// puppet (a cache by frame index). `coop.fix creature.puppet_alive off`: no check (0.7.3.6).
+static bool g_puppet_alive_fix = true;
+COOP_FIX("creature.puppet_alive", "BUG-0507", g_puppet_alive_fix, "creature: a partner's creature the game removed is shown again instead of being used after it was freed (crash)");
+struct AliveNote {
+    uint32_t serial = 0;
+    uint64_t frame = ~0ull; // the frame of the last check that found it alive
+};
+static std::unordered_map<void*, AliveNote> g_puppet_serials;
+uint32_t g_puppets_gone_alive = 0; // tests: creature puppets found freed by the game (coop.status)
+
+static void puppet_alive_note(void* p)
+{
+    if (g_puppet_serials.size() > 64) // (forgotten puppets of old worlds)
+        g_puppet_serials.clear();
+    g_puppet_serials[p] = AliveNote{game::object_serial(p), ~0ull};
+}
+
+static bool creature_alive(void* p)
+{
+    if (!g_puppet_alive_fix || !p)
+        return true;
+    uint64_t f = g_host_for_modes ? g_host_for_modes->frame_index() : 0;
+    auto it = g_puppet_serials.find(p);
+    if (it != g_puppet_serials.end() && it->second.frame == f && f)
+        return true; // checked this frame
+    bool ok = game::creature_listed(p) && (it == g_puppet_serials.end() || !it->second.serial ||
+                                           game::object_serial(p) == it->second.serial);
+    if (!ok) {
+        if (it != g_puppet_serials.end())
+            g_puppet_serials.erase(it);
+        g_puppets_gone_alive++;
+        game::puppet_unregister(p); // (a new creature at this address is no puppet of ours)
+        creature_hp::forget_puppet(p);
+        return false;
+    }
+    if (it != g_puppet_serials.end())
+        it->second.frame = f;
+    return true;
+}
+
 static void* creature_spawn(const net::PlayerState& s, void* av)
 {
     void* own = g_species_for_player ? g_species_for_player(s.id) : nullptr;
@@ -66,6 +113,7 @@ static void* creature_spawn(const net::PlayerState& s, void* av)
     game::puppet_register(p);
     game::teleport(p, s.pos, s.rot);
     game::set_scale(p, game::scale(p) * 1.15f);
+    puppet_alive_note(p);
     return p;
 }
 
@@ -165,6 +213,7 @@ static void creature_drive(void* p, const net::PlayerState& s_in, drive::State& 
 
 static void creature_despawn(void* p)
 {
+    g_puppet_serials.erase(p);
     creature_hp::forget_puppet(p);
     game::destroy_creature(p);
 }
@@ -1174,9 +1223,9 @@ static const Adapter kAdapters[] = {
     {"Tribe", kTribe, nullptr, false, rts_local, rts_fill, rts_spawn, rts_drive, rts_despawn, rts_tag},
     {"Civilization", kCiv, nullptr, false, rts_local, rts_fill, rts_spawn, rts_drive, rts_despawn, rts_tag},
     {"Cell", kCell, nullptr, false, cell_local, cell_fill, cell_spawn, cell_drive, cell_despawn, cell_tag, cell_alive, true},
-    {"Creature", kCreature, nullptr, false, creature_local, creature_fill, creature_spawn, creature_drive, creature_despawn, creature_tag},
+    {"Creature", kCreature, nullptr, false, creature_local, creature_fill, creature_spawn, creature_drive, creature_despawn, creature_tag, creature_alive},
     // adventures are not saves: every player starts the same adventure, puppets meet inside it
-    {"Adventure", kScenario, adventure_place, true, creature_local, creature_fill, creature_spawn, creature_drive, creature_despawn, creature_tag},
+    {"Adventure", kScenario, adventure_place, true, creature_local, creature_fill, creature_spawn, creature_drive, creature_despawn, creature_tag, creature_alive},
     {"Space", kSpace, space_place, false, space_local, space_fill, space_spawn, space_drive, space_despawn, space_tag, space_alive},
 };
 
