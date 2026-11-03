@@ -77,3 +77,7 @@ SporeCoop::CreatureReward_Find ; world objects of the host (a bone used for ever
 SporeCoop::CreatureStageRewardHandler_vftable ; world objects of the host (a bone used for everybody) off on GOG 2016 (BUG-0459)
 SporeCoop::cHerd_SetExtinct ; world objects of the host (extinct nests everywhere) off on GOG 2016 (BUG-0460)
 SporeCoop::cHerd_SetExtinction ; world objects of the host (extinct nests everywhere) off on GOG 2016 (BUG-0460)
+Simulator::Cell::CollectPart ; BUG-0467: the party's shared Cell parts (parts.shared_cell) are off on GOG 2016
+SporeCoop::VectorU32_PushBack ; BUG-0457: the test helper coop.vote evolve (the native evolution request) is off on GOG 2016
+SporeCoop::CreatureEvolutionPending_flag ; BUG-0457: the test helper coop.vote evolve is off on GOG 2016
+SporeCoop::CreatureGame_HandleMessage ; BUG-0466: on GOG 2016 the guest's own editor charges no DNA (creations.own_editor_dna off there)

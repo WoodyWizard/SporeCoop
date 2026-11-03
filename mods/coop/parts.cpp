@@ -267,8 +267,183 @@ static void guest_tick(double now)
     H->log(M, SK_INFO, "parts: sent %zu part(s) found here to the host", extra.size());
 }
 
+// ---------------------------------------------------------------- BUG-0467
+// The Cell stage keeps its collected parts apart from the creature parts: 13 ints at
+// cCellSerializableData +0x34 (0 locked, 1 unlocked, 2 collected and not seen in the editor yet; the
+// cell editor's palette is built from them by 0xE4FAA0, docs/re/cell.md#cell-parts-shared). A part
+// token is collected by 0xE5D7B0(part) in the collecting player's game only (state 2, the
+// mating-call button S+0x68 / S+0x69, the part callout, the palette rebuilt), so a part the guest
+// picked up was never unlocked for the host (and the other way round). The party shares them like
+// the creature parts: every game polls the 13 states (1 Hz in Cell), a guest sends the parts it has
+// and the host lacks (MSG_PARTS kind 4), the host collects them through the game's own 0xE5D7B0 and
+// sends its set (kind 3: at once on a change, else every 10 s), a guest that plays the host's world
+// collects what it lacks the same way. Nothing is locked. Older SporeCoop ignores kinds 3 and 4.
+// `coop.fix parts.shared_cell off`: every game keeps its own Cell parts (0.7.3.6).
+static bool g_cell_fix = true;
+COOP_FIX("parts.shared_cell", "BUG-0467", g_cell_fix, "cell: the Cell parts a player collects are unlocked for the whole party (host-held union)");
+constexpr uint8_t kKindCellSet = 3;   // host -> guests: the host's collected Cell parts ({index, 0} keys)
+constexpr uint8_t kKindCellFound = 4; // guest -> host: Cell parts this guest has that the host's set lacks
+constexpr int kCellParts = 13;
+static uintptr_t a_CellCollect;
+static double g_cell_last_poll = -100, g_cell_last_full = -100, g_cell_last_tx = -100;
+static uint32_t g_cell_announced = 0, g_cell_announced_world = 0; // host
+static bool g_cell_announced_valid = false;
+static uint32_t g_cell_pending = 0;      // host: guests' finds not collected yet
+static uint8_t g_cell_pending_from[kCellParts];
+static uint32_t g_cell_host = 0, g_cell_host_world = 0; // guest: the host's set
+static bool g_cell_have = false;
+static int g_cell_tries[kCellParts];
+static uint32_t g_cell_queued = 0; // parts whose collect waits for the next time outside the frame
+static uint8_t g_cell_queued_from[kCellParts];
+static uint32_t g_cell_collected = 0, g_cell_tx_sets = 0, g_cell_tx_found = 0, g_cell_rx_sets = 0, g_cell_rx_found = 0;
+
+static uint32_t cell_mask(const int* st)
+{
+    uint32_t m = 0;
+    for (int i = 0; i < kCellParts; i++)
+        if (st[i] != 0)
+            m |= 1u << i;
+    return m;
+}
+
+static int* cell_states()
+{
+    int* st = C.cell_parts ? C.cell_parts() : nullptr;
+    return st && readable(st, kCellParts * 4) ? st : nullptr;
+}
+
+// outside the frame (the collect shows the part callout and rebuilds the palette's items)
+static void cell_collect_now(void*)
+{
+    uint32_t q = g_cell_queued;
+    g_cell_queued = 0;
+    int* st = cell_states();
+    if (!st || !a_CellCollect || game::mode_id() != modes::kCell)
+        return;
+    int got = 0;
+    uint8_t from = 0;
+    for (int i = 0; i < kCellParts; i++)
+        if ((q & (1u << i)) && st[i] == 0) {
+            cdecl_call<void>(a_CellCollect, i); // the game's own "a part token was collected"
+            g_cell_collected++;
+            got++;
+            from = g_cell_queued_from[i];
+        }
+    if (got) {
+        H->log(M, SK_INFO, "parts: %d Cell part(s) of the party collected here (found by player %u)", got, from);
+        if (C.feed && C.sess)
+            C.feed((from && from != C.sess->my_id() ? C.sess->name_of(from) : std::string("Your partner")) + " found " +
+                   (got == 1 ? std::string("a new cell part") : std::to_string(got) + " new cell parts") +
+                   ": it is in your editor too");
+    }
+}
+
+static void cell_queue(uint32_t mask, uint8_t from)
+{
+    mask &= ~g_cell_queued;
+    if (!mask)
+        return;
+    for (int i = 0; i < kCellParts; i++)
+        if (mask & (1u << i))
+            g_cell_queued_from[i] = from;
+    bool was = g_cell_queued != 0;
+    g_cell_queued |= mask;
+    if (!was)
+        H->run_outside_frame(cell_collect_now, nullptr);
+}
+
+static void cell_send(uint8_t kind, uint32_t world, uint32_t mask, bool to_host)
+{
+    std::vector<Key> keys;
+    for (int i = 0; i < kCellParts; i++)
+        if (mask & (1u << i))
+            keys.push_back({(uint32_t)i, 0});
+    net::Writer w;
+    write_keys(w, kind, C.sess->my_id(), world, keys.data(), keys.size());
+    if (to_host)
+        C.sess->send_reliable_to(0, net::MSG_PARTS, w);
+    else
+        C.sess->broadcast_reliable(net::MSG_PARTS, w);
+}
+
+static void cell_tick(double now)
+{
+    if (!g_cell_fix || !a_CellCollect || now - g_cell_last_poll < kPoll)
+        return;
+    int* st = cell_states();
+    uint32_t world = C.world ? C.world() : 0;
+    if (!st || !world)
+        return;
+    g_cell_last_poll = now;
+    uint32_t mine = cell_mask(st);
+    if (is_host()) {
+        if (world != g_cell_announced_world) {
+            g_cell_announced_world = world;
+            g_cell_announced_valid = false;
+            g_cell_pending = 0;
+        }
+        if (uint32_t want = g_cell_pending & ~mine) {
+            for (int i = 0; i < kCellParts; i++)
+                if (want & (1u << i))
+                    cell_queue(1u << i, g_cell_pending_from[i]);
+        }
+        g_cell_pending = 0;
+        if (!g_cell_announced_valid || mine != g_cell_announced || now - g_cell_last_full >= kFullEvery) {
+            if (g_cell_announced_valid && mine != g_cell_announced)
+                H->log(M, SK_INFO, "parts: the party's Cell parts %04X -> %04X", g_cell_announced, mine);
+            g_cell_announced = mine;
+            g_cell_announced_valid = true;
+            g_cell_last_full = now;
+            cell_send(kKindCellSet, world, mine, false);
+            g_cell_tx_sets++;
+        }
+        return;
+    }
+    if (!is_guest() || !g_cell_have || world != g_cell_host_world || !C.guest_in_host_world || !C.guest_in_host_world())
+        return;
+    if (uint32_t want = g_cell_host & ~mine)
+        cell_queue(want, 0);
+    uint32_t extra = 0;
+    for (int i = 0; i < kCellParts; i++)
+        if ((mine & ~g_cell_host & (1u << i)) && g_cell_tries[i] < kMaxTries)
+            extra |= 1u << i;
+    if (!extra || now - g_cell_last_tx < kResend)
+        return;
+    g_cell_last_tx = now;
+    for (int i = 0; i < kCellParts; i++)
+        if (extra & (1u << i))
+            g_cell_tries[i]++;
+    cell_send(kKindCellFound, world, extra, true);
+    g_cell_tx_found++;
+    H->log(M, SK_INFO, "parts: sent Cell part(s) %04X found here to the host", extra);
+}
+
+std::string cell_debug(const std::vector<std::string>& a)
+{
+    int* st = cell_states();
+    if (!st)
+        return "not in a Cell game\n";
+    if (a.size() >= 2 && a[0] == "collect") { // tests: the game's own collect of part i (outside the frame)
+        int i = atoi(a[1].c_str());
+        if (i < 0 || i >= kCellParts || !a_CellCollect)
+            return "usage: coop.parts cell collect <0..12>\n";
+        if (st[i] == 0)
+            cdecl_call<void>(a_CellCollect, i);
+    }
+    std::string s = "cell parts=";
+    for (int i = 0; i < kCellParts; i++)
+        s += (char)('0' + (st[i] >= 0 && st[i] <= 9 ? st[i] : 9));
+    char b[200];
+    snprintf(b, sizeof b, " shared=%d host_set=%04X host_world=%08X have=%d announced=%04X collected=%u tx_sets=%u tx_found=%u rx_sets=%u rx_found=%u\n",
+             g_cell_fix ? 1 : 0, g_cell_host, g_cell_host_world, g_cell_have ? 1 : 0, g_cell_announced, g_cell_collected,
+             g_cell_tx_sets, g_cell_tx_found, g_cell_rx_sets, g_cell_rx_found);
+    return s + b;
+}
+
 void tick(double now)
 {
+    if (C.sess && game::mode_id() == modes::kCell)
+        cell_tick(now); // BUG-0467
     if (!g_fix || !C.sess || !a_IsUnlocked || !a_UnlockPart)
         return;
     if (game::mode_id() != modes::kCreature || !game::avatar() || now - g_last_poll < kPoll)
@@ -295,6 +470,35 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
     for (auto& k : keys) {
         k.first = r.u32();
         k.second = r.u32();
+    }
+    if (kind == kKindCellFound || kind == kKindCellSet) { // BUG-0467
+        if (!g_cell_fix)
+            return;
+        uint32_t mask = 0;
+        for (auto& k : keys)
+            if (k.first < (uint32_t)kCellParts)
+                mask |= 1u << k.first;
+        if (is_host() && kind == kKindCellFound && from != 0) {
+            g_cell_rx_found++;
+            if (world == 0 || world != (C.world ? C.world() : 0)) {
+                g_stale++;
+                return;
+            }
+            for (int i = 0; i < kCellParts; i++)
+                if (mask & (1u << i)) {
+                    g_cell_pending |= 1u << i;
+                    g_cell_pending_from[i] = from;
+                }
+        } else if (is_guest() && from == 0 && kind == kKindCellSet) {
+            g_cell_rx_sets++;
+            if (world != g_cell_host_world) {
+                g_cell_host_world = world;
+                memset(g_cell_tries, 0, sizeof g_cell_tries);
+            }
+            g_cell_host = mask; // the whole set every time
+            g_cell_have = true;
+        }
+        return;
     }
     if (is_host() && kind == kKindFound && from != 0) {
         g_rx_found++;
@@ -331,6 +535,12 @@ void on_session_end()
     g_have_set = false;
     g_found_tries.clear();
     g_last_full = g_last_poll = g_last_found_tx = -100;
+    g_cell_announced = g_cell_announced_world = g_cell_pending = 0; // BUG-0467
+    g_cell_announced_valid = false;
+    g_cell_host = g_cell_host_world = 0;
+    g_cell_have = false;
+    memset(g_cell_tries, 0, sizeof g_cell_tries);
+    g_cell_last_full = g_cell_last_poll = g_cell_last_tx = -100;
 }
 
 int find_part(int level)
@@ -401,6 +611,7 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
     a_UnlockPart = H->sym("Simulator::cCollectableItems::UnlockPart");
     a_StrategyGet = H->sym("App::cCreatureModeStrategy::Get");
     a_ExecuteAction = H->sym("App::cCreatureModeStrategy::ExecuteAction");
+    a_CellCollect = H->sym("Simulator::Cell::CollectPart"); // BUG-0467
 }
 
 } // namespace parts

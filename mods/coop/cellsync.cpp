@@ -68,6 +68,12 @@ static uint8_t* S()
     return s ? s : (a_S ? *(uint8_t**)a_S : nullptr);
 }
 
+int* part_states()
+{
+    uint8_t* s = S();
+    return s && avatar() && skg::readable(s + 0x34, 13 * 4) ? (int*)(s + 0x34) : nullptr;
+}
+
 // every live foreground cell (gameplay layer), avatar excluded
 template <typename Fn>
 static void for_each_cell(Fn fn)
@@ -4652,12 +4658,12 @@ std::string debug(const std::vector<std::string>& a)
              F<int>(av, kHp), F<uint8_t>(av, kInvuln), g_own_eats, g_own_food, g_bites_taken, g_damage_taken, pos_of(av).x, pos_of(av).y, F<float>(av, kSize), F<float>(av, kTargetSize), g_body,
              g_downed ? 1 : 0, pd, revive_dist(av), local, g_own_pairs, g_ko_eats_blocked);
     // cine=1: a caption waits for the player's OK (cinematic manager +0x2C, docs/re/space.md 7.2);
-    // parts: the unlocked part flags S+0x34 (13 bytes)
+    // parts: the part states S+0x34 (13 ints, 0 locked; until BUG-0467 this read 13 bytes)
     void* cm = a_Cine ? skg::cdecl_call<void*>(a_Cine) : nullptr;
     std::string parts;
     if (uint8_t* s = S())
         for (int i = 0; i < 13; i++)
-            parts += s[0x34 + i] ? '1' : '0';
+            parts += F<int>(s, 0x34 + 4 * i) ? '1' : '0';
     char ob[160];
     snprintf(ob, sizeof ob, "avatar_opacity=%.2f cine=%d parts=%s chasing_me=%d chasing_partner=%d\n",
              F<float>(av, kOpacity), cm && F<uint32_t>(cm, 0x2C) ? 1 : 0, parts.c_str(), chase_me, chase_partner);

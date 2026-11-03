@@ -27,6 +27,12 @@
   a tree falls in every game (BUG-0472).
 - Creature: a nest whose species the host's game made extinct is extinct for every player (BUG-0460).
 - Tribe: the eggs at the animal nests are now in every player's game, not only in the host's (BUG-0474).
+- Cell: a part one player collects is now unlocked for the whole party (the host and every guest get
+  it in their cell editor, with the mating call), not only in the game of the player who touched it
+  (BUG-0467).
+- Creature: the parts a guest adds in its own editor of an evolution vote now cost DNA, and the DNA a
+  guest spends is taken off the party's total for everybody; before, the guest had the same DNA as
+  before the editor (BUG-0466).
 
 ## [0.7.3.6] - 2026-11-02
 

@@ -1373,3 +1373,34 @@ BUG-0355. GOG 2024, Ghidra and `tools/tests/coop_cell_spare.py` (suite `cell_spa
 * ✔ runtime: after the host's cell editor the host shares its world again (saved 3 s after the
   stage settled); the guest leaves the Cell stage about 4-5 s after it got the host's new cell
   record and is back in Cell another ~5 s later. A mate the guest called before that load is gone.
+
+## The Cell parts a player collects, and the party's shared set (2026-11-03, fix/w40-editor)
+<a id="cell-parts-shared"></a>
+
+BUG-0467. GOG 2024, objdump of `SporeApp.exe` (dc04aee5).
+
+* ✔ (disassembly) The Cell stage's collected parts are **13 ints** at cCellSerializableData (`S`,
+  cCellGame+0x5190) **+0x34 + 4*part**, not bytes: 0 locked, 1 unlocked, 2 collected and not seen in
+  the editor yet. 0xE4FB90 turns every 2 into 1 (the editor's return); 0xE4FAA0(int* states) builds
+  the cCollectableItems of the cell editor (`G+0x5164`) from them: state 1 -> UnlockPart, 0 ->
+  LockPart, then state 2 -> UnlockPart, over the table **0x1483DD8** ({part index, item instance} x 12,
+  type 0x150D6D8).
+  CORRECTION (2026-11-03, fix/w40-editor): `coop.pool`'s `parts=` read 13 bytes at `S+0x34` (only the
+  first 3-4 parts' low bytes); it reads the 13 ints now.
+* ✔ (disassembly) **0xE5D7B0 `Simulator::Cell::CollectPart`**, cdecl void(int part), plain ret: a part
+  token collected (from the collision code 0xE7B630; a debug key 0xE81120). The first time
+  (`S+0x69 == 0`) timers `G+0x51D0` / `G+0x51CC` and a callout; then the parts mission (`S+0x90`
+  1 -> 3, counter `S+0x94` up to 6), `S+0x69 = S+0x68 = 1` (the mating-call button), `state[part] = 2`,
+  the part's item key from the table, 0xE83430 (the part pop-up), 0xE4FAA0 over `S+0x34` (the
+  palette's items rebuilt). It runs in the collecting player's game only: a part a guest picked up
+  never reached the host (BUG-0467) and the other way round.
+* The co-op rule (as BUG-0401 for the creature parts): the party has one set, the union, held by the
+  host's game. `parts.shared_cell` (parts.cpp, MSG_PARTS kinds 3 and 4, keys `{part, 0}`): every game
+  polls the 13 states in a live Cell game (1 Hz); a guest that plays the host's world sends the parts
+  it has and the host lacks (kind 4, resent every 3 s, at most 5 times a part), the host collects them
+  through CollectPart (outside the frame: it shows the pop-up) and sends its set (kind 3, at once on a
+  change, else every 10 s); a guest collects what it lacks of the host's set the same way. The notice
+  "Bob found a new cell part: it is in your editor too". Nothing is locked. Older SporeCoop ignores
+  the new kinds. `coop.parts cell [collect <i>]` prints the states (tests: the game's own collect).
+* ~ inferred, not seen: the cell editor opened while a part arrives keeps its palette until the next
+  editor (0xE4FAA0 builds it from the states at the collect and the editor request).

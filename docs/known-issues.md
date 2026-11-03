@@ -1704,3 +1704,11 @@ What mods/coop/worldobj.cpp does not cover yet (docs/re/creature.md#creature-wor
   of that array and the host's unlock of it with the game's own pickup path (not the world object table:
   it is a ledger, like the creature parts).
 * Ornaments in Tribe: no reward handler there (no cCreatureModeStrategy), the kind runs in Creature only.
+
+## Creature: after the host's evolution editor a guest may still show the host's previous creature (2026-11-03, fix/w40-editor)
+* Report 2026-11-02 (0.7.3.4): the guest's screen showed the host's creature from before its editor.
+* Reproduce: not yet. `tools/tests/coop_editor_sync.py --case host` (lane, creature fixture) needs the host's
+  real evolution; `coop.vote editor` and `coop.vote evolve` do not apply it (docs/re/creations.md#creations-own-editor-dna).
+* Suspected: a stage species edited under the same key (a key-only bundle that never changes, the guest's
+  cached species profile). Not verified.
+* Ticket: BUG-0457

@@ -3634,3 +3634,23 @@ the other player's game, both ways where the kind has two:
 * Detector numbers of this branch (24 comparisons per stage each, SPORE_DETECTOR=20): switches off
   out/lab/20261103-130419: `Creature:unmatched:fruit` 96%, `Tribe:unmatched:fruit` 92%, `Tribe:host_only:egg`
   54%; on out/lab/20261103-131403: 46%, 8%, 0%.
+## Editors, DNA and Cell parts between the players: editor_sync, dna_spend, cell_parts (2026-11-03, fix/w40-editor)
+<a id="testing-editor-sync"></a>
+
+* `coop_editor_sync.py --case guest` (suite `editor_sync_guest`, ~3 min, creature fixture): +40 DNA on
+  the host, `coop.vote evolve`, the guest's "I'm ready", both editors open (real input); the host leaves
+  with done, the guest drags an unlocked mouth (its own editor locks the species' uncollected parts:
+  the first column's lower rows at y 780) and presses done. Checked: the guest's game's DNA drops by the
+  price and stays there, the host's total too (BUG-0466; `SPORE_FIX_OFF=creations.own_editor_dna` fails).
+* `--case spend` (suite `dna_spend`, ~1.5 min): `coop.dna add -25` on the guest (AddEvolutionPoints in its
+  own game): the host's total and the guest's game both lose 25 (`SPORE_FIX_OFF=core.dna_spend` fails).
+* `--case host` (in no suite): the host edits and evolves, the guest's puppet should take the host's new
+  species (BUG-0457). The host's evolution is not applied in the test yet (docs/re/creations.md#creations-own-editor-dna).
+* Pitfalls: `coop.vote editor` opens the "edit a creation" editor also for the host: its done never
+  evolves the species and costs no DNA. +150 DNA on the creature fixture grows the brain: a paused
+  caption holds the vote's editor for 60 s (Enter on the caption: `cinematic ... playing` in coop.status).
+  The DNA shown in an editor is the editor's own budget: `coop.dna` reads the game's value, which changes
+  only when the editor closes.
+* `coop_cell_parts.py` (suite `cell_parts`, ~1 min, cell fixture): `coop.parts cell collect <i>` on the
+  guest (the game's own CollectPart), the host's part state and mating-call button within 15 s, then the
+  other way (BUG-0467; `SPORE_FIX_OFF=parts.shared_cell` fails). `coop.parts cell` prints the 13 states.
