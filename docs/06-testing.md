@@ -3684,3 +3684,14 @@ the other player's game, both ways where the kind has two:
   (`coop.npc untune`). `SPORE_FIX_OFF=creature.relations` and `SPORE_FIX_OFF=npc.tuning` fail.
 * `coop_npc_anims.py` (not in a suite: BUG-0464 open): samples `coop.npc cur` (vt 0x58 GetCurrentAnimation per NPC
   id) on both games for 40 s; fails on this code (7-9 % of the samples match).
+
+## NPC animations on the guest: npc_anims (2026-11-03, fix/w40-npc-anims)
+<a id="testing-npc-anims"></a>
+
+* `npc_anims` (coop_npc_anims.py, ~1.7 min cold, suite full): 40 s of the NPCs' own behaviour (no command), both
+  games sampled twice a second with `coop.npc cur` (GetCurrentAnimation per NPC id); a sample matches when the
+  proxy plays the host NPC's animation within 1.2 s; >= 60 %. Then a fight: the guest hits an NPC of another species
+  (`coop.npc hit`) until it is in its attack node against the puppet; 15 s sampled, the proxy shows the attack
+  animations (>= 60 %, at least one attack animation). Prints the miss pairs (host's, guest's) and `coop.npc anims`
+  of both games (seen, idle, sent, played, snapshot counters). `SPORE_FIX_OFF=npc.anims` fails (15-22 %, fight 0 %);
+  on: 79-82 %, fight 83 %. `coop.npc animquiet <s>` (guest): how long the snapshot waits after a start (1.5).

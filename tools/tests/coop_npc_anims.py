@@ -3,7 +3,7 @@
 
 Player report (0.7.3.4, host mark): "other species is evolving in nest for host but for guest they are standing
 still". An NPC's behaviour tree plays its animations (eating, looking around, social answers, a nest's evolution,
-fights) through cCreatureBase::PlayAnimation / PlayAnimationTo in the host's game; the guest's proxies have no AI
+fights) through SporeCoop::CreaturePlayAnim in the host's game; the guest's proxies have no AI
 and played only their walk.
 
 The NPCs do what their AI does by itself (no command). For 40 s both games are sampled twice a second: the
@@ -13,8 +13,11 @@ games play by themselves is a behaviour animation; the check: the guest's proxie
 animations (the same animation within 1 s of the host's sample) in most of those samples, and play at least
 one of them at all.
 
-  coop_npc_anims.py   (fails on 0.7.4: BUG-0464 is open; a relay of PlayAnimation / PlayAnimationTo was tried and
-                       did not change the proxies' animations, docs/re/creature.md#creature-npc-anims)"""
+Then a fight: an NPC of another species attacks the guest's puppet on the host (the guest hit it); its proxy must
+show the attack animations.
+
+  coop_npc_anims.py   (SPORE_FIX_OFF=npc.anims fails: 15-22 % of the samples, fight 0 %; the behaviour tree starts
+                       its animations with CreaturePlayAnim 0xC122F0, docs/re/creature.md#creature-bt-anims)"""
 import collections
 import re
 import time
