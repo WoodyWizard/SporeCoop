@@ -1897,8 +1897,14 @@ static void reconcile_buildings(void* city, size_t n,
     g_applying = false;
 }
 
+static bool g_fix_mirror_remove = true; // BUG-0478 (kill_local below)
+COOP_FIX("civ.mirror_remove", "BUG-0478", g_fix_mirror_remove,
+         "civ: a guest's mirror the host no longer has is removed from the world, not left as a wreck");
 // BUG-0493: vehicles of this game the mod removes once the city planner no longer moves them
 static std::unordered_set<void*> g_kill_later;
+// a removal waits while the planner moves the vehicle, and (BUG-0478: the removal frees it now, Die
+// alone did not) while a cinematic plays (its actors are the game's raw pointers, CLAUDE.md 2)
+static bool hold_removal(void* v) { return planner_moves(v) || (g_fix_mirror_remove && movie_playing()); }
 
 // BUG-0470: the guest's mirror vehicles are the host's world, not this one's: a save of the guest's
 // game keeps them out (savestrip writes a null reference; the civilization's vehicle lists are cleaned
@@ -1961,9 +1967,7 @@ static bool save_filter(void* o, uint32_t noun)
 // game, the guest kept a wreck (the detector's "a vehicle more on the guest", more the longer it
 // played). The game removes a vehicle with 0xCAA7B0 (the disband path: Die, the behavior manager,
 // cCivilization 0xBF3D90 which destroys it). `coop.fix civ.mirror_remove off`: Die only (0.7.3.6).
-static bool g_fix_mirror_remove = true;
-COOP_FIX("civ.mirror_remove", "BUG-0478", g_fix_mirror_remove,
-         "civ: a guest's mirror the host no longer has is removed from the world, not left as a wreck");
+
 
 static void kill_local(void* v)
 {
@@ -2296,7 +2300,7 @@ static void guest_state(net::Reader& r)
     for (auto it = g_gv.begin(); it != g_gv.end();) {
         if (!g_cycle_ids.count(it->first)) {
             if (it->second.v && game::object_alive(it->second.v) && !F<uint8_t>(it->second.v, kVDead)) {
-                if (planner_moves(it->second.v)) { // BUG-0493: killed when the planner lets it go
+                if (hold_removal(it->second.v)) { // BUG-0493: removed when the planner (or a cinematic) lets it go
                     g_kill_later.insert(it->second.v);
                     g_planner_kills_held++;
                 } else {
@@ -2314,7 +2318,7 @@ static void guest_state(net::Reader& r)
         if (!g_gv_of.count(lv)) {
             if (g_kill_later.count(lv))
                 continue;
-            if (planner_moves(lv)) {
+            if (hold_removal(lv)) {
                 g_kill_later.insert(lv);
                 g_planner_kills_held++;
                 continue;
@@ -2331,7 +2335,7 @@ static void guest_tick(double now)
         void* v = *it;
         if (!exists(v) || F<uint8_t>(v, kVDead) || g_gv_of.count(v)) { // gone, or a mirror again
             it = g_kill_later.erase(it);
-        } else if (!planner_moves(v)) {
+        } else if (!hold_removal(v)) {
             kill_local(v);
             g_removed++;
             it = g_kill_later.erase(it);
