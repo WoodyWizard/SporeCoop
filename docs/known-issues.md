@@ -1641,3 +1641,17 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Not fixed: a strip needs the civ / tribe / space object registry and a null-safe removal from
   `civ+0xB0` / `civ+0xD4` and the city's lists (BUG-0020's null rule), with a save + reload test per stage.
 * Ticket: BUG-0470
+* 2026-11-03 (fix/w40-civ-crashes): the Civ half is fixed (`civ.save_strip`, test `civ_save_strip`):
+  the guest's mirror vehicles stay out of its saves and leave no null in the civilizations' lists. Still
+  open: the Tribe mirrors (SpawnNpcTribe tribes and their members) and the Space UFO mirrors / puppets.
+
+## Civ: roads between cities built on the host are missing on the guest (2026-11-03, fix/w40-civ-crashes)
+<a id="issue-civ-roads-not-mirrored"></a>
+
+* What happens: the detector finds `noun_only_host:inter_city_road` in 10% of the Civ comparisons: the
+  host's game has a road (noun 0x02B8A4E7) between two cities, the guest's has none. Cosmetic (no
+  gameplay of the guest depends on it as far as known).
+* Not fixed: the code that makes a road in the host's game is not traced (docs/re/civ.md#civ-planner-lifetime);
+  a fix needs that function (and its arguments: the two cities) to replay it on the guest from the
+  host's snapshot.
+* Ticket: BUG-0478 (its vehicle half is fixed: `civ.mirror_remove`).

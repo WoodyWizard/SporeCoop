@@ -888,3 +888,81 @@ docs/re/creations.md#creations-content-all-kinds.
   fault, the save slot names the design's own key (0x29030001) and no key of the mod's
   (`out/lab/20261102-213135`; with `coop.fix content.model_key off`, the first version's 0x7D72C793:
   `out/lab/20261102-213354` FAIL). The mirror vehicles themselves stay in the save, which is BUG-0470.
+
+## The city planner, discovery cards and vehicle removal on a guest (2026-11-03, fix/w40-civ-crashes)
+<a id="civ-planner-lifetime"></a>
+
+GOG 2024 addresses (dc04aee5; the Steam build 3010a413 has the same code). Found from the three guest
+crashes of BUG-0491 / BUG-0492 / BUG-0493 (0.7.3.6) and the detector's BUG-0478.
+
+**City planner (cCommunityEditor, size 0x2FC, ctor 0xD0D200, main vtable 0x147956C in GOG 2024).**
+One editor object lives in the city input strategy (+0x80, made in 0xCF47C0) and serves the Tribe,
+Civ and Space planners (update callers 0xCDFA5D, 0xCFE56B, 0xFE126E).
+* ✔ +0x40: the community being edited (Civ: the cCity, cast 0xEE9B2232), 0 while closed. The update
+  0xD124E0 (`SporeCoop::CommunityEditor_Update`, thiscall(ed, int) ret 4) runs every frame and returns
+  at once when +0x40 is 0; it runs while the planner pauses the game (runtime: `coop.civ planner` sees
+  the editor and the city while the planner is open, nothing after the green check).
+* ✔ +0xC0: the object in the hand (a spatial interface, `building+0x34`); +0xF4: the layout it is placed
+  in (0xD09B10 picks it: buildings city+0x3EC, turrets 0xBD80B0, others); +0xF8: the slot index.
+* ✔ +0x118: an eastl map (anchor right +0, left +4, root +8, size +0x128) of objects the planner moves:
+  node +0x10 the spatial interface, +0x14 the target position. The update lerps them
+  (0xD0C5F0: vt 0x2C GetPosition, vt 0x38 SetPosition), the exit 0xD100B0 -> 0xD0C7A0 puts them at
+  their target (vehicles get PushEvent 10). A placed building is entered here while it slides into its
+  slot (0xD10720 via 0xD0FEE0). No check that an object is still alive: a freed one is read through
+  a null vtable (BUG-0493: read of 0x2C at 0xD0C662).
+* ✔ Pick-up 0xD0FCC0 (`SporeCoop::CommunityEditor_PickUp`, thiscall(ed, spatial) ret 4 -> 0 / 2):
+  slot = the slot of layout +0xF4 nearest to the object (0xAFAAF0, occupied or not); when that slot's
+  occupant (0xFCC1D0, `slot+4`) is not the object (cast 0x17F243B), +0xF8 = -1, and then
+  `cLayoutSlot::RemoveObject` and `SetObject` run on `slots + (-1)*0x18`: the 0x18 bytes before the
+  slot vector (BUG-0491: RemoveObject+0x13 reading a float of heap memory as a pointer).
+  A direct call on a building out of its slot returned 2 before that point in the lab (the editor
+  state of a click was not there); the guard `civ.planner_pick` refuses such a pick-up itself.
+* ✔ The planner's adjacency links (0xD11F80) read the occupant of every linked slot at +0x289 with no
+  null check (139 first-chance faults at 0xD122A8 in the lab when a slot was emptied under it).
+* Rule (`civ.planner_hold`): while the local planner edits a city, the mod changes nothing of it:
+  no reconciliation, no host building, ruin or capture for that city, no removal of a vehicle in the
+  +0x118 map (removed when the planner lets it go); the host holds a guest's build for the city its own
+  planner edits (a shared capital) until the planner closes. The snapshots after the planner bring the
+  city up to date (runtime: within 2 s, `civ_planner`).
+* ✔ `cLayoutSlot` {+0 u8 occupied, +4 occupant (ref-counted), +8 int, +0xC Vector3}: SetObject
+  0xAF9FB0 sets the flag and swaps the occupant, RemoveObject 0xAFA020 clears all three. The nearest
+  *free* slot is 0xAFA550 (SnapBuildingToSlot uses it through 0xAFACF0, returns 0 when no slot is free).
+* ✔ `build_in_city` with no free slot left the building it had made in the world (in no city list, no
+  slot, owner city set, at the host's spot over another building): the next save kept it and a pick-up
+  of it is the -1 case above. It is destroyed now (`civ.build_orphan`). `coop.civ planner` lists such
+  buildings as `orphan`.
+
+**Discovery cards (BUG-0492).**
+* ✔ `SporeCoop::AssetDiscovery_AddCard` 0xE30CF0 thiscall(cUIAssetDiscoveryManager*, data) ret 4 makes a
+  "UI/AssetDiscoveryCard" and fills it in 0xE2F6B0, which reads `data+0xC` at once: data null -> read
+  of 0xC at 0xE2F7AF (crash reports name it SetImageForWindow+0x21F).
+* ✔ `SporeCoop::CivDiscovery_Meet` 0xC746F0 thiscall(planet context = `TimeOfDay_GetObject()`, const
+  uint32* pol) ret 4: not met yet -> data 0xBA5B60(GetCivilizationByPoliticalID(pol), 1), null when
+  that civilization does not exist, then the card. Called by the city click handler 0xCE8C30 (message
+  6 on a city hall: the city's political id) and cCommManager::CreateCivCommEvent. Reproduced:
+  `coop.civ discover 7EADBEEF` on a guest crashes at 0xE2F7AF with `civ.discovery_card` off.
+* ~ How a guest got a city whose owner has no civilization in its game is not observed. Inferred: the
+  host's snapshot changed the city's owner to a political id the guest's game does not have
+  (ChangeOwner takes any id). In the lab the political ids of the first cities and of three cities the
+  host founded were the same on both games. The guest now keeps such a city's owner (logged once).
+
+**Vehicle removal (BUG-0478).**
+* ✔ `cVehicle::Die(v, effects, killer)` alone only marks the vehicle dead (+0xBCD): it stays in the
+  noun list and the civilization's lists, and its AI drives the wreck on (runtime: a dead vehicle of the
+  host moved 300 m in 90 s). The game removes a vehicle with `SporeCoop::Vehicle_Remove` 0xCAA7B0
+  thiscall(v, bool refund) ret 4: refund, a recycle effect, Die(0, -1), cGameBehaviorManager vt 0x3C,
+  then cCivilization 0xBF3D90 (destroys it) or DestroyInstance (callers: disband 0xCF5BB9, the
+  planner 0xD118D3, 0xBF75D2). An NPC vehicle that dies in the host's combat is gone from the host's
+  noun list at once; the guest's Die(0, -1) left a wreck for good (the detector's extra guest vehicle,
+  growing with the play time). The guest removes its mirrors with 0xCAA7B0 now (`civ.mirror_remove`).
+* ? Roads (`inter_city_road`, noun 0x02B8A4E7, vtable 0x146CE08) are not mirrored: where the host's game
+  makes them (the input commands "CityBuildRoad" 4000 and "CityCreateTradeRoute" 0x37E95BC are
+  registered in 0xCF47C0) is not traced. Open in BUG-0478.
+
+**Saves (BUG-0470).**
+* ✔ A guest's mirror vehicle stripped from a save (a null reference) is read back as a null entry in the
+  civilization's vehicle vector (+0xB0) and selectable vector (+0xD4): 4 + 4 nulls for 4 mirrors and a
+  fault at 0xBF2BF2 on load (`coop.civ civlists`, lab 2026-11-03). The mirrors now leave both vectors
+  while the save is written (savestrip's save hooks, the save is written within one frame) and are put
+  back on the next frame: the reloaded world has no mirror, no null and no fault. A world loaded with no
+  vehicle at all gets the game's free first vehicle at its city.
