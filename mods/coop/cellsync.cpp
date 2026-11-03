@@ -180,6 +180,7 @@ static uint32_t g_ko_eats_blocked; // BUG-0364: meals and chunk bites of our kno
 static double g_kodrop_until; // tests (`coop.pool kodrop <s>`): MSG_CELL_KO ignored until then
 static double g_statehold_until; // tests (`coop.pool statehold <s>`): MSG_CELL_STATE dropped until then (a dead link, BUG-0480)
 static uint32_t g_statehold_dropped;
+static uint32_t g_sent_unresolved; // host: cells sent that modes::cell_at does not find (BUG-0480 diagnostics)
 static bool g_fix_food_ack_away = true; // BUG-0239: the host acknowledges a guest's meal it cannot count
 COOP_FIX("pool.food_ack_away", "BUG-0239", g_fix_food_ack_away, "cell: a guest's meal reaching a host in an editor (no avatar) is acknowledged, not left on the way");
 static bool g_fix_guestbite_type = true; // BUG-0240: a guest's bite also needs IsDamageable's cell type and AI type
@@ -2489,6 +2490,8 @@ static void send_state(int dest, const std::vector<SendCell>& cells)
             auto* v = (float*)(c + kVel);
             net::Quat q;
             modes::mat_to_quat((float*)(c + kRot), q);
+            if (modes::cell_at(cells[i].idx) != c && !g_sent_unresolved++) // BUG-0480 diagnostics
+                H->log(M, SK_WARN, "coop: cell: host cell %08X is sent but cell_at does not find it (BUG-0480)", cells[i].idx);
             w.u32(cells[i].idx);
             w.u32(inst);
             w.u32(key[0]); w.u32(key[1]); w.u32(key[2]);
@@ -4229,7 +4232,7 @@ std::string debug(const std::vector<std::string>& a)
         double s = std::clamp(atof(a[1].c_str()), 0.0, 30.0);
         g_statehold_until = s > 0 ? H->time_seconds() + s : 0;
         char b[96];
-        snprintf(b, sizeof b, "statehold %.1f s (dropped so far %u)", s, g_statehold_dropped);
+        snprintf(b, sizeof b, "statehold %.1f s (dropped so far %u, sent unresolved %u)", s, g_statehold_dropped, g_sent_unresolved);
         return b;
     }
     if (a.size() >= 3 && a[0] == "cull") { // host, tests (BUG-0480): DestroyCell on <n> NPC cells within <r> m of the nearest partner

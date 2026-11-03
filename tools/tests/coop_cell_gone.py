@@ -101,6 +101,7 @@ def main():
             for k in list(stale)[:3]:  # what each game knows of it (the guest: its mirror entry; the host: the cell)
                 print(f'    guest: {guest.call(f"coop.pool cell {k}")["out"].strip()} | host: {host.call(f"coop.pool cell {k}")["out"].strip()}')
             if stale:
+                print('    host:', host.call('coop.pool statehold 0')['out'].strip())
                 print('    guest pool:', ' '.join(w for w in pool(guest).split() if w.startswith(('late_chunks=', 'rounds_partial=', 'host_of=', 'mirrors=', 'kept=', 'created=', 'destroyed='))))
             if a.case == 'held':
                 guest.call('coop.pool statehold 0')
