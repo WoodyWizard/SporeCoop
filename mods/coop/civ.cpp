@@ -204,6 +204,26 @@ static int SK_THISCALL h_EditorPickUp(void* ed, void* sp)
     }
     return o_EditorPickUp(ed, sp);
 }
+// BUG-0492: the "new discovery" card (cUIAssetDiscoveryManager, 0xE30CF0 thiscall(mgr, data) ret 4)
+// reads data+0xC at once; the civilization's card data (0xBA5B60) is null when the political id has
+// no civilization in this game (GetCivilizationByPoliticalID null): a guest clicked a city whose owner
+// its game does not know (0.7.3.6 crash at SetImageForWindow+0x21F). No data: no card.
+static bool g_fix_discovery_card = true;
+COOP_FIX("civ.discovery_card", "BUG-0492", g_fix_discovery_card,
+         "civ: no discovery card for a civilization this game does not have (the game read a null card)");
+static uint32_t g_cards_skipped, g_owner_unknown;
+static int g_met = -1; // tests: the last `coop.civ discover`
+using DiscoveryCard_t = void(SK_THISCALL*)(void*, void*);
+static DiscoveryCard_t o_DiscoveryCard;
+static void SK_THISCALL h_DiscoveryCard(void* mgr, void* data)
+{
+    if (!data && g_fix_discovery_card) {
+        if (g_cards_skipped++ < 10)
+            H->log(M, SK_INFO, "civ: a discovery card without data (a civilization this game does not have): skipped (BUG-0492)");
+        return;
+    }
+    o_DiscoveryCard(mgr, data);
+}
 using EditorUpdate_t = int(SK_THISCALL*)(void*, int);
 static EditorUpdate_t o_EditorUpdate;
 static int SK_THISCALL h_EditorUpdate(void* ed, int x)
@@ -1133,6 +1153,8 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     a_DestroyInstance = H->sym("Simulator::cGameNounManager::DestroyInstance");
     if ((a_EditorUpdate = H->sym("SporeCoop::CommunityEditor_Update")))
         H->hook_create(M, (void*)a_EditorUpdate, (void*)h_EditorUpdate, (void**)&o_EditorUpdate);
+    if (uintptr_t dc = H->sym("SporeCoop::AssetDiscovery_AddCard"))
+        H->hook_create(M, (void*)dc, (void*)h_DiscoveryCard, (void**)&o_DiscoveryCard);
     if ((a_EditorPickUp = H->sym("SporeCoop::CommunityEditor_PickUp")))
         H->hook_create(M, (void*)a_EditorPickUp, (void*)h_EditorPickUp, (void**)&o_EditorPickUp);
     return true;
@@ -1993,6 +2015,13 @@ static bool guest_cities(net::Reader& r) // false: the list does not fit the mes
             g_city_owner.erase(c);
         if (pol_of(c) != pol && planner_holds(c)) // BUG-0493: the next snapshot after the planner
             g_planner_held++;
+        else if (pol_of(c) != pol && g_fix_discovery_card && !thiscall<void*>(a_CivByPol, nm(), pol)) {
+            // BUG-0492: an owner this game has no civilization for: the city would belong to nobody
+            // here (its menu and discovery card read the missing civilization)
+            if (g_owner_unknown++ < 10)
+                H->log(M, SK_INFO, "civ: the host's owner %08X of city %d is no civilization here: not changed (BUG-0492)", pol,
+                       c0 + i);
+        }
         else if (pol_of(c) != pol) { // captured on the host
             g_applying = true;
             thiscall<void>(a_ChangeOwner, c, pol, 0, 0);
@@ -2512,9 +2541,9 @@ std::string status()
                  g_captures_in, g_orders_dropped, g_growth_blocked, g_nodes_in, g_cities_in, g_cities_blocked, g_unselected, (int)movie_playing(), g_bfix_added,
                  g_bfix_removed, g_ruins_in, g_ruins_differ, g_incomplete, g_income_blocked, g_cities_caught_up, g_ai_spawns_blocked, g_away_orders, (int)local_play(), g_founds_outside, g_mirror_place_skipped, g_removed_local);
     char pl[200];
-    snprintf(pl, sizeof pl, "planner: open=%d held=%u kills_held=%u kills_waiting=%u picks_refused=%u builds_held=%u build_orphans=%u\n",
+    snprintf(pl, sizeof pl, "planner: open=%d held=%u kills_held=%u kills_waiting=%u picks_refused=%u builds_held=%u build_orphans=%u cards_skipped=%u owner_unknown=%u met=%d\n",
              planner_city() ? 1 : 0, g_planner_held, g_planner_kills_held, (unsigned)g_kill_later.size(),
-             g_planner_picks_refused, (unsigned)g_held_builds.size(), g_build_orphans);
+             g_planner_picks_refused, (unsigned)g_held_builds.size(), g_build_orphans, g_cards_skipped, g_owner_unknown, g_met);
     return std::string(b) + pl;
 }
 
@@ -2937,6 +2966,25 @@ std::string debug(const std::vector<std::string>& a)
         g_chunk_budget = std::clamp<size_t>((size_t)atoi(a[1].c_str()), 200, net::kMaxPacket - 48);
         g_max_chunk = 0;
         return "chunk budget " + std::to_string(g_chunk_budget);
+    }
+    if (a.size() >= 2 && a[0] == "discover") {
+        // discover <hex pol> (tests, BUG-0492): the game meets that civilization outside the frame (0xC746F0
+        // on the planet context, what a first click on one of its cities does: the discovery card);
+        // the result is in the `planner:` status line (met=)
+        static uint32_t pol;
+        pol = (uint32_t)strtoul(a[1].c_str(), nullptr, 16);
+        if (!H->sym("SporeCoop::CivDiscovery_Meet") || !H->sym("SporeCoop::TimeOfDay_GetObject"))
+            return "no symbol";
+        g_met = -1;
+        H->run_outside_frame(
+            [](void*) {
+                void* ctx = skg::cdecl_call<void*>(H->sym("SporeCoop::TimeOfDay_GetObject"));
+                g_met = ctx ? (int)thiscall<char>(H->sym("SporeCoop::CivDiscovery_Meet"), ctx, &pol) : -2;
+            },
+            nullptr);
+        char b[96];
+        snprintf(b, sizeof b, "meeting %08X (civ=%p)", pol, thiscall<void*>(a_CivByPol, nm(), pol));
+        return b;
     }
     if (a.size() >= 2 && a[0] == "kill" && is_host()) { // kill <id>: the vehicle dies (Die with effects, tests)
         void* v = local_vehicle((uint16_t)atoi(a[1].c_str()));

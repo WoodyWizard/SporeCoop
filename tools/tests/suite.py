@@ -214,6 +214,7 @@ add('civ_ai_spawn', P + 'coop_civ_ai_spawn.py', warm=True, minutes=4, fixture='c
 add('civ_mirror_place', P + 'coop_civ_mirror_place.py', warm=True, minutes=3, fixture='civ_npc')  # the guest's game does not throw a mirrored vehicle off its place (BUG-0186; --nofix fails)
 add('civ_ruin_repair', P + 'coop_civ_ruin_repair.py', warm=True, minutes=3, fixture='civ_npc')  # a ruin the host rebuilt does not stay on the guest (BUG-0324; --nofix fails)
 add('civ_planner', P + 'coop_civ_planner.py', warm=True, minutes=3, fixture='civ_npc')  # the guest's open city planner: the mod changes nothing it holds (BUG-0493, BUG-0491; SPORE_FIX_OFF=civ.planner_hold fails)
+add('civ_discovery', P + 'coop_civ_discovery.py', warm=True, minutes=3, fixture='civ_npc')  # meeting a civilization the guest's game lacks shows no card and does not crash (BUG-0492; SPORE_FIX_OFF=civ.discovery_card crashes)
 add('civ_pause_city', P + 'coop_civ_pause_city.py', warm=True, minutes=3, fixture='civ_npc')  # a city founded while a guest is paused reaches it after the pause (BUG-0331)
 add('civ_leave', P + 'coop_civ_leave.py', warm=True, minutes=4, fixture='civ')  # the vehicles of a guest who left go to a present player (BUG-0031; --nofix fails)
 add('civ_sw_vote', P + 'coop_civ_sw_vote.py', warm=True, minutes=3, fixture='civ')  # a second superweapon request does not change the running vote (BUG-0117; --nofix fails)
