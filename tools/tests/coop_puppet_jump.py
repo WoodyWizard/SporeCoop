@@ -23,9 +23,10 @@ import uifind
 from coop_puppet_walk import dump
 from twoinst import Checks, start
 
-JUMP = 2.0    # m within 0.25 s: a jump of the partner's own creature (a walk is ~1.2 m in 0.25 s at most)
+JUMP = 2.0    # m: a jump of the partner's own creature ...
+FAST = 25.0   # m/s: ... made of frames faster than any creature walks or charges (the fixture's top: 4.75)
 NEAR = 1.0    # m
-CATCH = 0.3   # s from the jump's start
+CATCH = 0.15  # s from the jump's start (0.7.3.6: the target slid for 0.1 s and the puppet walked, 0.30 s for 6 m)
 
 
 def die(con, name, ck):
@@ -47,18 +48,19 @@ def die(con, name, ck):
 
 
 def jumps(rows):
-    """[(t0, t_land, landed pos)] of the target's jumps"""
-    out, i = [], 0
+    """[(t_start, t_land, landed pos, index of the landing row)]: runs of frames in which the target moves
+    faster than FAST m/s, JUMP m or more in all (rows of one time stamp once)"""
+    out, i = [], 1
     while i < len(rows):
-        j = i
-        while j + 1 < len(rows) and rows[j + 1]['t'] - rows[i]['t'] <= 0.25:
-            j += 1
-        if math.dist(rows[i]['tgt'], rows[j]['tgt']) > JUMP:
-            k = i + 1  # where the target came to rest
-            while k + 1 < len(rows) and math.dist(rows[k]['tgt'], rows[k + 1]['tgt']) > 0.2 and \
-                    rows[k + 1]['t'] - rows[i]['t'] < 1.0:
+        def fast(k):
+            dt = rows[k]['t'] - rows[k - 1]['t']
+            return dt > 0 and math.dist(rows[k]['tgt'], rows[k - 1]['tgt']) / dt > FAST
+        if fast(i):
+            k = i
+            while k + 1 < len(rows) and fast(k + 1):
                 k += 1
-            out.append((rows[i]['t'], rows[k]['t'], rows[k]['tgt'], k))
+            if math.dist(rows[i - 1]['tgt'], rows[k]['tgt']) >= JUMP:
+                out.append((rows[i - 1]['t'], rows[k]['t'], rows[k]['tgt'], k, math.dist(rows[i - 1]['tgt'], rows[k]['tgt'])))
             i = k + 1
             continue
         i += 1
@@ -69,24 +71,28 @@ def main():
     host, guest = start('creature')
     ck = Checks()
     time.sleep(3)
+    all_jumps = []
     for name, me, viewer, pid in (('guest', guest, host, 1), ('host', host, guest, 0)):
         viewer.call('coop.track stop')
         viewer.call('coop.track start')
         ck(die(me, name, ck), f'{name}: the death caption came and was answered')
-        time.sleep(22)  # the respawn, the hatchling waits ~10 s and steps out of its egg
+        time.sleep(28)  # the respawn, the hatchling waits ~10 s and steps out of its egg
         viewer.call('coop.track stop')
-        rows = [r for r in dump(viewer) if r['who'] == pid]
+        rows, seen_t = [], set()
+        for r in dump(viewer):
+            if r['who'] == pid and r['t'] not in seen_t:
+                seen_t.add(r['t'])
+                rows.append(r)
         print(f'  {name} died: {len(rows)} frames of its puppet on the other game', flush=True)
         js = jumps(rows)
-        for t0, tl, land, k in js:
+        for t0, tl, land, k, size in js:
             caught = next((r['t'] for r in rows[k:] if math.dist(r['d'], land) <= NEAR), None)
             dt = None if caught is None else caught - t0
-            print(f'  {name}: the target jumped {math.dist(rows[[r["t"] for r in rows].index(t0)]["tgt"], land):.1f} m '
-                  f'at {t0:.2f} s (landed {tl - t0:.2f} s later); the puppet there after '
-                  f'{"never" if dt is None else f"{dt:.2f} s"}', flush=True)
+            print(f'  {name}: the target jumped {size:.1f} m at {t0:.2f} s (landed {tl - t0:.2f} s later); the puppet '
+                  f'there after {"never" if dt is None else f"{dt:.2f} s"}', flush=True)
             ck(dt is not None and dt <= CATCH, f'{name}: the partner\'s puppet jumps with its creature '
                                                f'({"never" if dt is None else f"{dt:.2f} s"} <= {CATCH} s)')
-        ck(js, f'{name}: its creature jumped on its own game at least once (respawn / out of the egg: {len(js)})')
+        all_jumps.extend(js)
         # the first frames after it shows again (a gap of over 1 s in its rows: hidden while dead)
         for a, b in zip(rows, rows[1:]):
             if b['t'] - a['t'] > 1.0:
@@ -95,6 +101,8 @@ def main():
                 print(f'  {name}: shown again at {b["t"]:.2f} s, the next frames {far:.2f} m off the target', flush=True)
                 ck(far <= NEAR, f'{name}: shown again where its creature is ({far:.2f} m)')
         time.sleep(3)
+    # (the guest's hatchling steps out of its egg ~10 s after the respawn; the host's waits for its family)
+    ck(all_jumps, f'a creature jumped on its own game at least once (out of the egg: {len(all_jumps)})')
     ck.faults(host=host, guest=guest)
     return ck.result()
 
