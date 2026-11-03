@@ -1711,3 +1711,5 @@ Found by fix/w40-play (2026-11-03), not fixed:
   Ticket: BUG-0503.
 * Creature: under the brain upgrade caption both own creatures read 0.63-0.71 m under the ground once (monitor
   rule `ground`, 20261103-124913 play_creature#2); not reproduced at the fixture's nest. Ticket: BUG-0504.
+* play_tribe: in 2 of 3 runs the guest's members stayed idle on 7-12 orders the host took, and the host's bot
+  gave only 8-9 orders (its minimap look missed 24 times once). Ticket: BUG-0505.
