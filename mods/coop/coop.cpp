@@ -4809,6 +4809,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                 return civ::near_vehicle(p, 1.8f);
             return false;
         };
+        ec.world = [] { return g_world; };
         ec.local_pos = [] {
             void* av = game::avatar();
             if (av)

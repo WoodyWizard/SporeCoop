@@ -648,11 +648,28 @@ bool stop_effect(void* c, uint32_t key) { return c && o_StopFx && o_StopFx(c, ke
 
 void* effect_from_pools(void* c, uint32_t key) { return c && o_GetFx ? o_GetFx(c, key) : nullptr; }
 
+// an effect object we may call: it is alive and its vtable is readable (the slot calls below)
+static bool effect_callable(void* effect)
+{
+    if (!effect || !skg::readable(effect, 4))
+        return false;
+    void** vt = *(void***)effect;
+    return vt && skg::readable(vt, 0x20);
+}
+
 bool effect_active(void* effect)
 {
-    if (!effect)
+    return effect_callable(effect) && vcall<bool>(effect, 0x10 / 4); // IVisualEffect::IsActive
+}
+
+// Stop an effect the relay created (vt 0xC, the slot StopEffectFromPools 0xC174B0 calls with its
+// arg; 0 ends it). BUG-0451 review item 4: a looping relayed effect has no stop otherwise.
+bool stop_world_effect(void* effect)
+{
+    if (!effect_callable(effect))
         return false;
-    return vcall<bool>(effect, 0x10 / 4); // IVisualEffect::IsActive
+    vcall<void>(effect, 0xC / 4, 0);
+    return true;
 }
 
 typedef void(SK_THISCALL* NPCTickAI_t)(void*, float);

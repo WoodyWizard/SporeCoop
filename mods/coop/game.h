@@ -159,6 +159,8 @@ bool stop_effect(void* c, uint32_t key);
 // the game's state: the effect object of `key` in the creature's pools, and whether it is active (vt 0x10)
 void* effect_from_pools(void* c, uint32_t key);
 bool effect_active(void* effect);
+// stop a world effect the relay created (IVisualEffect vt 0xC with 0); false if the object is not callable
+bool stop_world_effect(void* effect);
 
 // ---- creature registry: every cCreatureAnimal that ran Update since the last call ----
 const std::vector<void*>& creatures_updated();   // swap per frame (call once per frame)

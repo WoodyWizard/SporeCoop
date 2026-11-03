@@ -31,6 +31,8 @@ struct Ctx {
     std::function<bool(const net::Vec3&)> near_local;
     // where that object is now (the perf workload `coop.effects load` creates effects there)
     std::function<net::Vec3()> local_pos;
+    // the world being played (0 = none): a change means the game freed the relayed effects
+    std::function<uint32_t()> world;
 };
 
 void init(const SkHost* host, SkMod* mod, const Ctx& ctx);

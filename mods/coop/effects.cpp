@@ -112,6 +112,18 @@ struct WorldSent { void* fx; uint32_t id; };
 static WorldSent g_world_sent[2048];
 static size_t g_world_n_entries;
 static uint32_t g_world;
+// The world effects the relay created on this game (BUG-0451 review item 4). A looping effect (a
+// fire, an aura) never ends by itself, so without a stop the relayed ones pile up. Fixed array:
+// 64 live at most, the oldest stopped first; anything still active after 8 s is stopped. A stage or
+// world change drops the list without touching the effects: the game freed them with its effect
+// manager.
+struct Live { void* fx; double at; };
+static constexpr size_t kLiveMax = 64;
+static constexpr double kLiveSec = 8.0;
+static Live g_live[kLiveMax];
+static size_t g_live_n;
+static uint32_t g_live_stopped, g_live_expired, g_live_mode, g_live_world;
+static bool g_live_init;
 
 static double now() { return H ? H->time_seconds() : 0; }
 
@@ -319,6 +331,45 @@ static void process_world(void* fx, uint32_t id)
     C.sess->send_event(net::MSG_EFFECT, w);
 }
 
+static void live_add(void* fx, double t)
+{
+    if (!fx)
+        return;
+    if (g_live_n >= kLiveMax) { // more than 64 live: stop the oldest
+        if (game::effect_active(g_live[0].fx) && game::stop_world_effect(g_live[0].fx))
+            g_live_stopped++;
+        memmove(g_live, g_live + 1, (g_live_n - 1) * sizeof g_live[0]);
+        g_live_n--;
+    }
+    g_live[g_live_n++] = {fx, t};
+}
+
+static void live_tick(double t, uint32_t mode, uint32_t world)
+{
+    if (!g_live_init || mode != g_live_mode || world != g_live_world) {
+        g_live_n = 0; // stage / world change: the game freed these effects, do not call into them
+        g_live_mode = mode;
+        g_live_world = world;
+        g_live_init = true;
+        return;
+    }
+    size_t w = 0;
+    for (size_t i = 0; i < g_live_n; i++) {
+        Live e = g_live[i];
+        bool active = game::effect_active(e.fx);
+        if (!active)
+            continue; // it ended by itself: forget it
+        if (t - e.at >= kLiveSec) {
+            if (game::stop_world_effect(e.fx))
+                g_live_stopped++;
+            g_live_expired++;
+            continue;
+        }
+        g_live[w++] = e;
+    }
+    g_live_n = w;
+}
+
 // the workload of the frame-time measurement (out/REPORT.md): every period the game creates `n`
 // effects at the local player, which the relay hooks see like effects of the game's own code
 static uint32_t g_load_n;
@@ -377,6 +428,7 @@ void tick(double)
         else
             process_local(p.creature, p.ev);
     }
+    live_tick(t0, game::mode_id(), C.world ? C.world() : 0);
     game::clear_effect_table();
     if (!H)
         return;
@@ -496,6 +548,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             last.game = true;
             last.active = game::effect_active(fx);
             if (pool == 5) {
+                live_add(fx, now());
                 const float* p = (const float*)(xf + 4);
                 last.has_pos = true;
                 last.x = p[0];
@@ -573,6 +626,10 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
     g_perf_hook_calls = 0;
     g_load_n = g_load_ms = g_load_id = g_load_ok = g_load_failed = 0;
     g_perf_creates = g_perf_probes = g_perf_evicted = g_perf_sent = 0;
+    g_live_n = 0;
+    g_live_stopped = g_live_expired = 0;
+    g_live_mode = g_live_world = 0;
+    g_live_init = false;
     game::set_effect_relay_enabled(g_fix);
     game::set_effect_listener(on_local_effect);
     game::set_world_effect_listener(on_world_effect);
@@ -585,6 +642,10 @@ void on_session_end()
     g_last_rx_from = 0xFF;
     g_sent_n = 0;
     g_world_n_entries = 0;
+    for (size_t i = 0; i < g_live_n; i++) // the session ends: stop the effects the relay still holds
+        if (game::effect_active(g_live[i].fx) && game::stop_world_effect(g_live[i].fx))
+            g_live_stopped++;
+    g_live_n = 0;
 }
 
 bool set_log(bool on)
@@ -700,6 +761,9 @@ std::string status()
     s += b;
     snprintf(b, sizeof b, "effects received drops: spoof=%u pool=%u id=%u bone=%u transform=%u short=%u\n",
              g_dropped_spoof, g_bad_pool, g_bad_id, g_bad_bone, g_bad_xf, g_bad_short);
+    s += b;
+    snprintf(b, sizeof b, "effects world live: live=%u stopped=%u expired=%u\n", (unsigned)g_live_n, g_live_stopped,
+             g_live_expired);
     s += b;
     {
         double hs = 0, hm = 0;
