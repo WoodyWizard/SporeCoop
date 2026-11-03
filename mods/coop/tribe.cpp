@@ -21,6 +21,7 @@
 #include "net/validate.h"
 #include "sporekit_game.hpp"
 #include "fixes.h"
+#include "fields.h"
 
 using skg::thiscall;
 using skg::vcall;
@@ -399,11 +400,38 @@ static int SK_THISCALL h_WalkSelected(void* self, const float* pos)
 
 static void coop_init();
 
+// BUG-0475: a member's size is its own game's pick (cCreatureCitizen GetDesiredScale vt 0x80: a random
+// size per member, the chief's bigger): the guest's mirror (bound to a local member or spawned) kept a
+// size of its own (3.79 host, 4.47 guest). The members are one kind of the field replication (fields.h):
+// the guest sets the host member's scale on its mirror. `coop.fix tribe.scale off`: own sizes (0.7.3.6).
+static bool g_scale_fix = true;
+COOP_FIX("tribe.scale", "BUG-0475", g_scale_fix, "tribe: a guest's mirror of a tribe member gets the host member's size");
+static const fields::Field kMemberFields[] = {fields::kScale};
+
+static void member_each(void (*cb)(uint16_t, void*, void*), void* u)
+{
+    // the tribes' own member lists now (a g_hm entry can be a member freed since the last cycle)
+    for (void* t : all_tribes())
+        for (void* c : members(t)) {
+            auto it = g_hm.find(c);
+            if (it != g_hm.end())
+                cb(it->second.id, c, u);
+        }
+}
+
+static void* member_mirror(uint16_t id)
+{
+    auto it = g_gm.find(id);
+    return it != g_gm.end() && it->second.c && game::object_alive(it->second.c) ? it->second.c : nullptr;
+}
+
 bool init(const SkHost* host, SkMod* mod, Ctx ctx)
 {
     H = host;
     M = mod;
     C = std::move(ctx);
+    fields::add_kind({fields::K_TRIBE_MEMBER, "tribe_member", &g_scale_fix, kMemberFields, 1, member_each, member_mirror,
+                      [] { return active(); }});
     a_GetPlayerTribe = H->sym("Simulator::cGameNounManager::GetPlayerTribe");
     a_DoAction = H->sym("Simulator::cCreatureCitizen::DoAction");
     a_SetValueVector3 = H->sym("App::Property::SetValueVector3");

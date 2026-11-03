@@ -211,6 +211,58 @@ static void SK_THISCALL h_CtlUpdate(void* self, float* ctx)
     o_CtlUpdate(self, ctx);
 }
 
+// BUG-0479: a partner's ship is a Defender NPC UFO here (modes.cpp space_spawn), and the game sizes every
+// UFO itself each frame (cModelObject_SetScale 0xC88630 on the ship's loco +0x34, the scale at loco +0x64):
+// an NPC ship smaller than the player's own (3.30 vs 4.95 in a star system, 0.84 vs 4.82 seen on a
+// planet), so each player saw the other's ship at an NPC's size. A size set by the mod lasts one frame
+// (measured: 4.95 set, 3.30 again 2 s later), so this is not a replicated field: the game's own setter
+// is hooked and a partner's puppet gets the size the game gives the own ship in this view.
+// `coop.fix space.puppet_scale off`: the game's NPC size (0.7.3.6).
+static bool g_puppet_scale_fix = true;
+COOP_FIX("space.puppet_scale", "BUG-0479", g_puppet_scale_fix,
+         "space: a partner's ship is drawn at a player ship's size, not an NPC ship's");
+using SetScale_t = void(SK_THISCALL*)(void*, float);
+static SetScale_t o_SetScale;
+static void* g_loco_vt;                      // the UFO loco's vtable (read from the own ship)
+static uint32_t g_scale_puppet_calls, g_scale_replaced;
+static uintptr_t g_scale_caller;             // diagnostics: where the game sizes a puppet from
+static float g_scale_game = 0, g_scale_own = 0;
+// BUG-0485 (diagnostics): who gives an object the scale 10 the detector saw on the host's commodity
+// nodes (noun 0x0403DF5C, loco vtable 0x1469A28 -> this setter): caller and the object's vtable, logged
+// once per caller
+static uintptr_t g_ten_callers[8];
+static void SK_THISCALL h_SetScale(void* obj, float s)
+{
+    if (s > 9.99f && s < 10.01f && obj) {
+        uintptr_t ra = (uintptr_t)__builtin_return_address(0) - H->image_base() + 0x400000;
+        for (auto& c : g_ten_callers)
+            if (c == ra)
+                break;
+            else if (!c) {
+                c = ra;
+                H->log(M, SK_INFO, "scale 10 set on an object with vtable %08X from %08X (BUG-0485 diagnostics)",
+                       (unsigned)(*(uintptr_t*)obj - H->image_base() + 0x400000), (unsigned)ra);
+                break;
+            }
+    }
+    if (g_ok && obj && g_loco_vt && *(void**)obj == g_loco_vt && in_space()) {
+        void* u = (uint8_t*)obj - kLoco;
+        void* me = player_ufo();
+        if (me && u != me && C.puppet_owner && C.puppet_owner(u) >= 0) {
+            g_scale_puppet_calls++;
+            g_scale_caller = (uintptr_t)__builtin_return_address(0) - H->image_base() + 0x400000;
+            g_scale_game = s;
+            float own = F<float>(me, kLoco + 0x64); // cModelObject_GetScale: loco +0x64
+            g_scale_own = own;
+            if (g_puppet_scale_fix && std::isfinite(own) && own > 0.01f && own < 1000.f) {
+                s = own;
+                g_scale_replaced++;
+            }
+        }
+    }
+    o_SetScale(obj, s);
+}
+
 bool init(const SkHost* host, SkMod* mod, Ctx ctx)
 {
     H = host;
@@ -231,6 +283,8 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     H->hook_create(M, (void*)a_FireTool, (void*)h_FireTool, (void**)&o_FireTool);
     if (uintptr_t a = H->sym("SporeCoop::UFOController_Update")) // GOG 2024 only (BUG-0378)
         H->hook_create(M, (void*)a, (void*)h_CtlUpdate, (void**)&o_CtlUpdate);
+    if (uintptr_t a = H->sym("cModelObject_SetScale")) // BUG-0479
+        H->hook_create(M, (void*)a, (void*)h_SetScale, (void**)&o_SetScale);
     return true;
 }
 
@@ -568,6 +622,7 @@ void tick(double now)
     modes::space_retired_tick(); // BUG-0218 (reads the UFO list only, before it touches a ship)
     if (!in_space() || !C.sess || !C.sess->connected() || !player_ufo())
         return;
+    g_loco_vt = *(void**)((uint8_t*)player_ufo() + kLoco); // BUG-0479 (h_SetScale)
     if (is_host())
         host_tick(now);
     else if (is_guest())
@@ -619,6 +674,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
     }
 }
 
+static std::string status_ships();
 void on_session_end()
 {
     for (auto& [id, m] : g_mirrors)
@@ -639,6 +695,15 @@ void on_session_end()
 }
 
 std::string status()
+{
+    char sc[200];
+    snprintf(sc, sizeof sc, "space puppet scale: fix=%d sized=%u replaced=%u game=%.3f own=%.3f from=%08X\n",
+             g_puppet_scale_fix ? 1 : 0, g_scale_puppet_calls, g_scale_replaced, g_scale_game, g_scale_own,
+             (unsigned)g_scale_caller);
+    return status_ships() + sc;
+}
+
+static std::string status_ships()
 {
     char b[420];
     if (C.sess && C.sess->role() == net::Role::Host)

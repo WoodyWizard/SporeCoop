@@ -228,6 +228,12 @@ float object_scale(void* obj)
     return sp ? vcall<float>(sp, 0x34 / 4) : -1.f;
 }
 
+void set_object_scale(void* obj, float s)
+{
+    if (void* sp = cast(obj, 0x1186577))
+        vcall<void>(sp, 0x40 / 4, s); // cSpatialObject::SetScale
+}
+
 void* find_object(uint32_t noun, const net::Vec3& pos, float max_dist)
 {
     struct Q {

@@ -34,3 +34,4 @@ Target: 0.7.4.
 
 ## History
 - 2026-11-02: opened.
+- 2026-11-03: looked at on fix/w40-scale: does not fit the float-field path (a species key and a model rebuild after the host's editor, the creations / world share lifecycle: steps 2 and 3 of docs/sync-architecture-plan.md, causes C and F); left open, no reproduction made (it needs a real edit in the host's editor, coop_editor_desync.py part 5 is the closest test).

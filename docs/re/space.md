@@ -2038,3 +2038,26 @@ BUG-0469, GOG 2024, lanes 4/5 (`tools/tests/coop_content_space.py`).
   (a base game UFO model with a part of `Spore_Pack_03`): with `SPORE_FIX_OFF=content.all_kinds` the guest
   faults (`out/lab/20261102-202807`), with the fix on it builds a substitute copy and shows the mirror
   (`substituted=1`, `content_checked=2`, `out/lab/20261102-202217`).
+
+## The size of a UFO (2026-11-03, fix/w40-scale)
+<a id="space-ufo-scale"></a>
+
+* ✔ Every ship is sized by the game every frame: `SporeCoop::UFO_UpdateScale` 0xC3B550 (callers 0xE9D2E0,
+  the UFO gfx update, and 0xFFC960) sets loco (+0x34) vt 0x40 `cModelObject_SetScale` 0xC88630 (scale at
+  loco +0x64 = ship +0x98, a copy at +0x7C) to the model's bounding box size clamped by the UFO tuning
+  (`[0x168DF68]` +0x28 / +0x2C) times `UFO_ViewScale` 0xC3AFD0 times 0xC3AEA0. A size the mod sets lasts
+  one frame (lane 6: 4.946 set on the partner's puppet, 3.297 again 2 s later), so a size can not be
+  replicated as a field; the setter itself is hooked (`squadron.cpp h_SetScale`).
+* ~ `UFO_ViewScale` takes the view (0x1020F30 result 1: a star system, 2: a planet, inferred), a cinematic,
+  the ship's +0x7DC bit 9, the camera distance (interpolated between two tuning values) and the type
+  (+0x714 == 0, the player's own ship, gets its own tuning entry).
+* ✔ Measured in the `space` fixture's star system: the own ship 4.946 on both games, each partner's puppet
+  (a Defender NPC UFO, modes.cpp space_spawn, type 6) 3.297: each player saw the other's ship at an NPC
+  ship's size, two thirds of its own (the detector's `Space:scale:ufo`, 97 % of the Space comparisons;
+  the 4.82 / 0.84 pair of the night report is the same on a planet, inferred).
+* Fix (BUG-0479, `space.puppet_scale`): when the game sizes a partner's puppet, the puppet gets the size
+  the game gave the own ship in this view (the own ship's loco +0x64). `coop.status` line `space puppet
+  scale:` (sized, replaced, the game's and the own value, the caller: 0xC3B61F inside UFO_UpdateScale).
+* The same hook logs once per caller who sets the scale 10 on any object (`scale 10 set on an object
+  with vtable ... from ...`): diagnostics for BUG-0485 (the commodity nodes, noun 0x0403DF5C, whose loco
+  vtable 0x1469A28 uses the same setter).

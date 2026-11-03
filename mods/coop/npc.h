@@ -87,4 +87,8 @@ int proxy_id_of_ai(void* ai);    // guest: the proxy whose AI block (+0xB4C) thi
 void set_enabled(bool on);
 bool enabled();
 
+// tests (BUG-0487): the guest forgets a proxy without telling the host; the resync's counters
+std::string debug_forget(uint16_t id);
+std::string resync_status();
+
 } // namespace npc

@@ -36,3 +36,4 @@ Source: docs/generalisation-plan.md G2.
 
 ## History
 - 2026-11-01: opened.
+- 2026-11-03: fix/w40-scale: the replicated-field engine (mods/coop/fields.h, docs/sync-architecture-plan.md#sync-fields) with the first kinds: NPC proxies and tribe members (scale), BUG-0461 / BUG-0475; NpcSpawn.scale is applied now.

@@ -154,3 +154,36 @@ the same tests.
 | BUG-0466 DNA after editor | E, F | 2, 3 |
 | BUG-0467 Cell part pickup | D | 6 |
 | BUG-0453..0456 crashes | lifetime / editor | 9 |
+
+## Replicated fields: the first L2 piece (2026-11-03, fix/w40-scale)
+<a id="sync-fields"></a>
+
+The divergence detector (docs/06-testing.md#testing-detector) found one class in every stage: a mirror
+keeps another size than its original (`Creature:scale:creature` 94 % of the Creature comparisons,
+`Tribe:scale:citizen` 70 %, `Space:scale:ufo` 97 %). The fix is one stage-free mechanism, not a patch per
+object: `mods/coop/fields.{h,cpp}` (wire codec `fields_wire.h`, unit test in tests/npc_tests.cpp).
+
+* A module that mirrors a kind registers one row (`fields::add_kind`): the kind's id and name, its fix
+  switch, its fields, `each` (the host's objects with their net ids), `mirror` (the guest's object of a
+  host id, or none yet) and `active` (its stage). A field is `{id, name, read, apply, tolerance}`; a
+  field without an `apply` is refused at registration, so "sent and never applied" cannot happen for
+  a registered kind.
+* Host, every 0.5 s: every field of every object; only the changed ones (beyond half the tolerance) and
+  every value again every 4 s (`MSG_FIELDS` = 56, unreliable, chunked to one packet, through the
+  world gate like the other world state). Guest: the newest value per (kind, id, field), forgotten 12 s
+  after the host stops sending it; every 0.25 s each mirror is read from the game and set when it
+  differs (a mirror made later, a game that changed it). The kind's switch acts on the apply only.
+* `coop.fields` (counters per kind: sent, received, applied, reapplied: the game changed a value
+  back, pending: no mirror yet, differ: an apply that did not take), `coop.fields list <kind>` (host:
+  the game's values; guest: the mirror's value and the host's), `coop.fields scale <obj> [v]`.
+* Kinds now: `npc` (creature NPC proxies, Creature and the Tribe stage's animals, `npc.scale`,
+  BUG-0461), `tribe_member` (the members of every tribe, `tribe.scale`, BUG-0475). One field: `scale`
+  (cSpatialObject GetScale vt 0x34 / SetScale vt 0x40, 2 %). Adding a field to a kind is one row.
+* Not a field: a value the game recomputes every frame. UFOs (BUG-0479) are sized each frame by the
+  game from the view and the ship's type (docs/re/space.md#space-ufo-scale): a size set from outside
+  lasts one frame, so the partner's ship is fixed at the game's own setter (`space.puppet_scale`).
+* Class G5 next to it (BUG-0487): a guest that gets NPC states for an id it has no proxy of asks the
+  host for the spawn again (`MSG_NPC_RESYNC` = 57, `npc.resync`): the "resync of unknown ids" of L2 for
+  the NPC kind.
+* Not covered yet: Civ city citizens (BUG-0475's Civ half): each game simulates its own citizens
+  (BUG-0476), there is no mirror to apply a size to; the size follows once citizens are mirrored.
