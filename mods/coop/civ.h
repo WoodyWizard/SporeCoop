@@ -56,5 +56,9 @@ void for_each_owned(void (*fn)(void* obj, const net::Vec3& pos, uint8_t owner, b
 // test bots (coop.targets): every city ("city", host index, owner: player id, 253 shared, -1 other nation)
 // and every player vehicle ("vehicle", net id, owner)
 void for_each_target(void (*fn)(const char* kind, int id, int owner, const net::Vec3& pos, void* user), void* user);
+// the local player's own vehicles (positions), for the effect relay
+std::vector<net::Vec3> local_positions();
+// allocation-free test for the effect relay: is p on one of the local player's vehicles?
+bool near_vehicle(const net::Vec3& p, float radius);
 
 } // namespace civ

@@ -66,3 +66,7 @@ SporeCoop::CommunityEditor_PickUp ; BUG-0491: on GOG 2016 the city planner's pic
 SporeCoop::AssetDiscovery_AddCard ; BUG-0492: on GOG 2016 a discovery card without data is not skipped (civ.discovery_card off there)
 SporeCoop::CivDiscovery_Meet ; BUG-0492: on GOG 2016 the test command coop.civ discover does nothing
 SporeCoop::Vehicle_Remove ; BUG-0478: on GOG 2016 a guest's mirror is removed with Die only (civ.mirror_remove off there)
+Simulator::cCreatureBase::CreateEffect ; Creature: a player's creature effects (mating call, ability particles) show on the partner's puppet (BUG-0451)
+Swarm::cEffectsManager::CreateEffect ; Creature/Cell/Tribe: the effect relay (the receiver creates the relayed effect) (BUG-0451)
+SporeCoop::AnimEffect_Create ; Creature/Cell/Tribe: the effect relay leaves the effects of a relayed animation to the animation relay (BUG-0451)
+Swarm::EffectWorld::CreateEffect ; Creature/Cell/Tribe: the effect relay for effects the game makes at the local player object (BUG-0451)

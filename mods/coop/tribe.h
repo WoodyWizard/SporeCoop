@@ -62,6 +62,10 @@ void for_each_tribe_center(void (*fn)(const std::string& key, const net::Vec3& p
 void for_each_tree_pos(void (*fn)(const net::Vec3& pos, bool fruit, void* user), void* user);
 bool is_chief(void* citizen);
 void for_each_owned(void (*fn)(void* citizen, uint8_t owner, void* user), void* user);
+// the local player's own tribe members (positions), for the effect relay
+std::vector<net::Vec3> local_member_positions();
+// allocation-free test for the effect relay: is p on one of the local player's members?
+bool near_member(const net::Vec3& p, float radius);
 // tests (coop.track, BUG-0365): every member of the player tribe as this game shows it. Host: its own
 // game's members (tgt null, drawn = its position). Guest: the mirrors, with the target the driving
 // aims at (the host's state moved on by its age), the host's reported speed, the driver's teleports

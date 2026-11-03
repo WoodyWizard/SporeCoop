@@ -86,6 +86,11 @@ enum MsgType : uint8_t {
                           // u8 tenths of a second left, u8 revive progress 0..255
     MSG_DIAG = 60,        // support diagnostics (net/diagmsg.h): u8 kind, payload; session clock, bug
                           // marks, sync self-check. Older SporeCoop ignores it (an unknown type).
+    MSG_EFFECT = 61,      // a player's own creature started / stopped a visual effect (BUG-0451,
+                          // effects.h): u8 player, u8 stop, u8 pool (1/2), u32 effect id, u32 key.
+                          // The host relays a guest's message to the other guests; the receiver
+                          // plays it on that player's puppet with the game's own effect pools.
+                          // Older SporeCoop ignores it (an unknown type).
 };
 
 // LAN discovery: plain datagrams outside any connection, answered by hosts on their game port

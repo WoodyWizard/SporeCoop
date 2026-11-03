@@ -1676,3 +1676,13 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   a fix needs that function (and its arguments: the two cities) to replay it on the guest from the
   host's snapshot.
 * Ticket: BUG-0494 (split from BUG-0478, whose vehicle half is fixed: `civ.mirror_remove`).
+
+## play_creature: a puppet once far off, no joint hunt (2026-11-03, fix/w40-effects)
+<a id="issue-play-creature-puppet-far"></a>
+
+* One sample of ~140 per player: the partner's puppet 11-177 m from where its own game has it,
+  speed 0 (BUG-0499); some runs have no joint hunt or the host's creature 0.71 m under the ground
+  for 2 log lines (BUG-0500). Both with and without the effect relay (out/lab/20261103-124913 in
+  SporeCoop-wt/fix/w40-effects, relay off) and on main.
+* Reproduce: `tools/lab.py run play_creature --repeat 4` (about 1 run in 4).
+* Tickets: BUG-0499, BUG-0500

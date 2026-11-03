@@ -1575,3 +1575,273 @@ BUG-0443 (the host's screenshot of the "eggs flying mid air" report). GOG 2024, 
 * BUG-0487 (class G5): the host sends a spawn once per guest (npc.cpp `g_known`); a guest without the proxy
   of an id dropped that NPC's states for good. Now it asks for the spawn again (`MSG_NPC_RESYNC`,
   `npc.resync`; `coop.npc forget <id>` makes the case on purpose, `coop.npc resync` counts).
+## Creature effects relay (2026-11-02, fix/w38-effects)
+<a id="creature-effects-relay"></a>
+
+BUG-0451: a player's creature made effects (the mating call, ability particles, ...) that only that
+player saw; the partner's puppet played the relayed animation but no effect. The owner's screenshots:
+hearts over the host's red creature (`out/hearts_host.png`), none over the host's puppet on the guest
+(`out/hearts_guest.png`).
+
+### Where the game makes a creature's effects
+
+Two game functions make every effect on or at a creature (GOG 2024):
+
+* **`Simulator::cCreatureBase::CreateEffect` 0xC150D0** (thiscall(creature, int bone, u32 effect id,
+  u32 unused) ret 0xC -> effect*): a one-shot effect. It calls `Swarm::IEffectsManager::Get()` vt 0x2C
+  (`Swarm::cEffectsManager::CreateEffect` 0xA6CAD0 -> `Swarm::EffectWorld::CreateEffect` 0xA71300),
+  sets the effect's transform to the creature's model (+0xC0) position (vt 0x2C) and rotation (vt 0x30),
+  starts it (effect vt 8) and, when bone != -1, attaches it to that bone (`0x9CB230` / `0x9CA970`).
+  Callers for the player's creature: the ability/social code (`0xC155D0`, `0xC17DE0`, `0xC17E20`,
+  `0xC17EC0`) and the creature-stage action handlers (`0xD75F70`, `0xD812C0`, `0xD8ECB0`).
+* **The two effect pools** (persistent effects the creature keeps): pool 1 map at +0xCC8,
+  `CreateEffectForPool1` 0xC1D3F0 and `CreateEffectForPool1Renamed` 0xC1D280; pool 2 map at +0xD68,
+  `CreateEffectForPool2Renamed` 0xC1D5C0; `StartOrStopEffectFromPool1/2` 0xC20300 / 0xC1D740 start or
+  stop by key; `StopEffectFromPools` 0xC174B0 stops a key (effect vt 0xC).
+
+Effects created by the **animation system** of an animation the puppet plays are made by the guest's
+own game (`FUN_009FBF00` -> effect world, and the manager for animation events): the animation relay
+(MSG_ANIM, `on_remote_anim`) already shows those on the puppet. Measured on the creature fixture: the
+footstep puffs (`2D4ADB36`) and the mating call's green ring (the `E699F6E4` copied from the effect
+object's name `CRG_growUp_brainUp` was the brain-upgrade effect; the ring came through the animation
+event path) were created on the guest before any effect relay. The **hearts** were not: the mating call
+creates `E1B24DDB` (bone 9) through 0xC150D0 on the host's avatar only, and the pack members make
+`4EC6CD85` through the same function (not the player's own creature, so not relayed).
+
+### The relay (mods/coop/effects.cpp, game.cpp)
+
+* The game hooks report every effect of `CreateEffect` (pool 3, key = bone) and of the pool creators
+  and `StopEffectFromPools` (pool 1 / 2, key = pool key) for a creature. effects.cpp sends one only
+  when the creature is the **local avatar** (`game::avatar()`, not a puppet, so a relayed effect is
+  never echoed) and the session is connected: `MSG_EFFECT 61` = u8 player, u8 stop, u8 pool, u32 effect
+  id, u32 key. The host relays a guest's message to the other guests. Rate limit 40/s (token bucket),
+  a stop is sent only for a key this game sent a start for (the game stops some keys every frame).
+* The receiver calls the **same game function** on the partner's puppet: pool 3 ->
+  `CreateEffect(puppet, bone, id, 0)` (the game puts it at the puppet's model and bone); pool 1 / 2 ->
+  `StartOrStopEffectFromPool1/2(puppet, 1, id, key)`. No per-effect list.
+* Switch: `coop.fix creature.effects_relay off` (COOP_FIX, BUG-0451); counters and the last sent /
+  received effect in `coop.effects` and `coop.status`; `coop.effects map` dumps the puppets' pool maps,
+  `coop.effects probe <key>` asks the game's pool, `coop.effects log on` logs the hooks.
+* The game also creates effects **inside its UI skinner's render pipeline** (Tribe and Civ):
+  `Skinner::cSkinPainterPipeline::ExecutePipeline` -> `EffectWorld_CreateEffect`. Hooking the
+  direct `EffectWorld::CreateEffect` there made the game fault at
+  `Skinner::cSkinnerTexturePainter::StartRender+0x28` (4852 times on a Tribe host, 2863 in Civ);
+  the hook was removed and re-installed at every stage change while the render thread was inside it.
+  The final shape (### What was measured (lane 2, GOG 2024, 2026-11-02)
+
+Every "made by" below is the game function the effect came from; "before" is without this relay
+(the old behaviour) and "after" with `coop.fix creature.effects_relay on`.
+
+| stage | effect | made on the actor by | on the partner before | after |
+|---|---|---|---|---|
+| Creature | mating call `E1B24DDB` bone 9 (host), bone 0x11 (guest) | `cCreatureBase::CreateEffect` 0xC150D0 | no (only the relayed animation) | yes, game effect active at the puppet (0.1-0.5 m) |
+| Creature | being hit `E1A4BD93` bone 0 | 0xC150D0 | no | yes (0.1-0.5 m) |
+| Creature | death: `EF8F883F`, `BED2AD51` (world), `7809F8FD` (pool 1), `E1A4BD93` | effect world + pool 1 + 0xC150D0 | no | yes (the world effects at the avatar; the pool and one-shot through their hooks) |
+| Creature | a part found `A3C5EB2B` (world) | effect world at the avatar | no | yes (1.3-1.6 m) |
+| Creature | brain upgrade `D7BE955C` (pool 2); the cinematic's `E699F6E4` | pool 2 here; the cinematic effect is made by both games (both got the DNA) | no (the cinematic effect: yes, the guest plays its own) | yes |
+| Creature | an ability's kept effect `3A616FEE` (pool 1, `coop.abilities play 10`) | pool 1 | no | yes |
+| Creature | social abilities (sing, dance, charm, pose) and the social result | the ability animation; animation-event effects (`FUN_009FBF00`) | yes: the animation relay makes them on the puppet | yes (not duplicated by this relay) |
+| Creature | attack abilities bite, charge, strike, spit (`coop.abilities play 0..9`) | the ability animation; animation-event effects | yes (animation relay) | yes (no one-shot/pool effect was made by these in the fixture) |
+| Creature | sprint, sneak, glide | the locomotion animation and its animation-event effects (footsteps `2D4ADB36`, dust `E6D770B8`) | yes (animation relay) | yes (not duplicated); the fixture cannot glide (no jump) |
+| Creature | eating fruit / meat | not measured: the fixture has no reachable fruit and no deterministic eat command; the world relay would catch an effect at the avatar | not measured | not measured |
+| Creature | level-up / brain upgrade (see above) | `AddEvolutionPoints` -> pool 2 + cinematic | no | yes |
+| Cell | a hit / knock-out death `F3BA1C83`, `2C34420C`, `A6D4590B`, `44894CD7`, `94AF0B82` (world) | effect world at the cell | no | yes, the partner's game creates it at the same world position (test: 0.0-0.2 m from the cell, 0.05 m from the puppet) |
+| Cell | eating, bites, electric/poison/spikes | not separated from the hit effects above; the same world path | no | yes (same relay; not a separate case) |
+| Tribe | a member's death `EF8F883F`, `E55DC391` (world) | effect world at the member | no | yes, at the member's mirror (0.18 m; test) |
+| Tribe | tool use, gathering, dance/social, fire | not measured: `coop.tribe act 7` ordered the attack but made no effect in the create/pool hooks in the fixture; their visible part is animation | not measured | not measured |
+| Civ | vehicle weapon / ability | not measured: `coop.civ` has no command that fires a vehicle weapon in the fixture (move/buy/build/siege do not), and no effect appeared in the create/world hooks during them | not measured | not measured |
+| Space | UFO weapon / ability | not measured: `coop.space hit 1|50` (the game's damage path on the own UFO) and `coop.fleet spawn 6` made no effect (`coop.effects world=0`); firing at a target would make one, but the fixture has no target in range and no test command fires the player's weapon | not measured | not measured |
+
+The generic relay is in place for every stage that makes an effect at the local player's own
+controlled object: `effects.cpp` decides by the effect's world position against
+`coop.cpp`'s `near_local` (the avatar in Creature and Cell, `tribe::local_member_positions()` in
+Tribe, `civ::local_positions()` in Civ, the adapter's local UFO in Space). The receiver creates the
+same effect id at the same world position with `Swarm::cEffectsManager::CreateEffect` and the same
+transform, so no per-stage puppet mapping is needed. Civ and Space are wired but no effect could be
+made to test them (above).
+
+### Review: cost, threads and hook lifetime below): every hook is installed
+  **once** in `game::init`, the stage logic only flips a work flag, and a hook body on any thread
+  but the game's main thread only calls the original and returns. The hooks record into a fixed
+  open-addressing table (no allocation, no linear scan) and `effects::tick` (main thread, once a
+  frame) reads the effect's position and sends. No allocation and no network call happens in the
+  render thread.
+
+### Review: cost, threads and hook lifetime (2026-11-02, fix/w38-effects)
+<a id="creature-effects-relay-review"></a>
+
+A code review of the first shape found three problems; this is what changed and what was measured
+(lane 2, GOG 2024, 2026-11-02, `out/measure_effects_perf.py`).
+
+* **Cost**: the base transform setter `VisualEffect_SetTransform` 0xA827B0 ran on every transform
+  set of every effect, in every stage, and looked the effect up with a linear scan of 4096 entries.
+  The setter is no longer hooked: `cEffectsManager::CreateEffect` and `EffectWorld::CreateEffect`
+  record the effect in a fixed 1024-slot open-addressing table keyed by the effect pointer (one
+  probe for nearly every effect, cleared once a frame), and `effects::tick` reads the position
+  `VisualEffect_SetTransform` wrote (`effect+0xA0`, see the correction below) when it drains the
+  queue. Per created effect the hooks cost 0.16-0.26 us (two QPC reads included), which is
+  0.0001-0.0006 % of the main thread's time; `effects::tick` costs 0.001-0.02 ms/frame
+  (0.01-0.1 % of a 15 ms frame). Frame time with the relay on against
+  `coop.fix creature.effects_relay off`, 20 effects/s at the local player over four 20 s windows
+  (the windows alternate and a second run swaps the order, because the fourth window of a session
+  drifts down for both settings):
+
+  | stage | fps off | fps on | ms/frame off | ms/frame on | difference |
+  |---|---|---|---|---|---|
+  | Creature (both orders, paired) | 64.74 / 64.81 | 63.41 / 66.19 | 15.447 / 15.439 | 15.779 / 15.107 | -0.002 % (ordering cancels) |
+  | Tribe | 67.72 | 67.44 | 14.768 | 14.829 | +0.41 % |
+  | Civ | 66.82 | 66.76 | 14.966 | 14.979 | +0.09 % |
+
+  The measured cost is under 1 % in every stage (the Tribe +0.41 % is inside the run-to-run noise,
+  the tick cost there is 0.016 ms/frame). Reproduce: `coop.effects load 20 1000 [hex id]` on both
+  games (`coop.effects load 0` stops it; no id = the last effect id the game created, which is a
+  valid id in every stage), then read `coop.effects` (tick cost, hook work, created/failed) and the
+  `perf: effects` lines in the game log; compare four 20 s windows with
+  `coop.fix creature.effects_relay on|off` and swap the order in a second run, because the fourth
+  window of a session drifts down for both settings.
+
+* **Threads**: the game creates effects from the UI skinner's render thread too. Every hook body
+  now checks the game's main thread id (set by `effects::tick`, `game::set_effect_relay_enabled`)
+  and only calls the original when it is another thread; the table and the queue are written on
+  the main thread only. The naked stubs are gone (no shared return-address slot): the animation
+  effect wrapper `AnimEffect_Create` 0x9FBF00 is a normal cdecl hook that sets a **thread-local**
+  flag, so the effects of a relayed animation are still skipped (the animation relay shows them)
+  without a caller-address match.
+* **Hook lifetime**: `set_world_create_hook` called `hook_create`/`hook_remove` at stage changes;
+  the removal while the render thread was inside the function is what faulted. All effect hooks
+  are installed once in `game::init` for the life of the game; `game::set_world_relay` (the stage
+  logic: Cell, Creature, Tribe, Civ, Space) and `game::set_effect_relay_enabled` (the fix switch)
+  only gate the work.
+* **Correction (2026-11-02, fix/w38-effects)**: `VisualEffect_SetTransform` 0xA827B0 assigns
+  Transform+4 to the math Vector3 object at `effect+0x9C`, and that object has a 4-byte header: the
+  position floats are at `effect+0xA0`. Reading `+0x9C` returned `(0, x, y)`, so every world effect
+  looked like it was not on the local player and nothing was relayed (measured: part found
+  `A3C5EB2B` at `(0.00, -170.10, -468.99)` while the avatar was at `(-169.51, -467.81, -87.11)`).
+  The receiver's displayed position in `coop.effects` had the same wrong offset.
+
+* Faults after the change: 0 in cell_coop, creature, tribe_coop, civ_coop, space_coop, chaos_tribe
+  (`out/lab/20261102-180357`), guest_editor and editor_desync (`out/lab/20261102-170849`); every
+  test prints `total faults: 0` for both games.
+
+### Review fixes, second pass (2026-11-02, fix/w38-effects)
+
+<a id="creature-effects-relay-review2"></a>
+
+The orchestrator's review of the first relay found six more problems; fixed in this order (one
+commit each, tests where asked):
+
+1. **Three players**: the host's relay of a guest's message wrote only the header, so the 0x44-byte
+   transform of a pool 5 effect was missing for the other guests and their `on_message` dropped the
+   message. The relay now forwards the transform. Test: `tools/tests/coop_effects_party.py`
+   (`effects_party`, three players from the same lane): the host's world effect reaches guest 2 and
+   guest 1's world effect reaches guest 2. Without the forward the guest 1 -> guest 2 case fails
+   (`out/lab/20261102-184838`); with it all pass (`out/lab/20261102-184722`).
+2. **Spoofing** (BUG-0201): the `player` byte of a message chooses whose puppet plays it. The host
+   drops a guest message whose byte is not the sender and a guest drops anything that did not come
+   from the host (messages are never sent guest to guest). `coop.effects inject <from> <player>
+   <stop> <pool> <id> <key> [x y z]` feeds a crafted message through the same `on_message` (the
+   transport cannot make a guest claim another player); `coop.effects` counts the drops
+   (`spoof=`).
+3. **Validation before the game**: a stop must have pool 0 and a key; a start a non-zero effect id
+   and a pool the sender uses (1, 2, 3, 5); a pool 3 bone index must be inside the puppet model's
+   bone array; a pool 5 transform must have finite floats and a position within 1e5. Counters:
+   `pool= id= bone= transform= short=`. The bone range: `cCreatureBase::CreateEffect` 0xC150D0
+   indexes `[AnimatedCreature +0xB54] -> +0x17C -> +0x2E4` with `bone * 700` and has **no check**
+   (the only test is `bone != -1`, which returns null); the array end at `model+0x2E8` gives the
+   count (24 bones for the fixture creature). Test: `tools/tests/coop_effects_validate.py`
+   (`effects_validate`): every rejection is counted and not played, a valid message still plays.
+   Without the validation call the bad cases fail (`out/lab/20261102-185729`), with it all pass
+   (`out/lab/20261102-185635`).
+4. **A relayed world effect is stopped**: a looping effect (the mating-call hearts id stays active
+   when the effect world owns it) never ends on the receiver. The receiver keeps a fixed list of 64
+   live relayed world effects: the oldest is stopped when the 65th arrives, any still active after
+   8 s is stopped (`IVisualEffect` vt 0xC with 0, the slot `StopEffectFromPools` 0xC174B0 calls),
+   and a stage / world change (mode or world id differs) drops the list **without** calling into
+   the effects (the game's effect manager freed them); a session end stops what is still there.
+   `game::effect_active` and the new `game::stop_world_effect` only call the object when it and its
+   vtable are readable. Test: `tools/tests/coop_effects_live.py` (`effects_live`): 20 effects/s for
+   30 s, the guest stays at or under 64 (it reaches 64) and returns to 0 after the load stops
+   (`out/lab/20261102-190208`; with the switch off nothing is relayed and it fails).
+5. **Full transform**: the relayed 0x44-byte Transform had a zero scale and a zero 3x3 matrix. The
+   layout (`cCreatureBase`'s creators, `VisualEffect_SetTransform` 0xA827B0): u16 flags, u16 change
+   counter, Vec3 position at +4, **uniform scale at +0x10**, **3x3 rotation at +0x14** (36 bytes,
+   the rest of the object). The relay now sends position, scale 1.0 and the identity rotation. Proof
+   on the partner's screen: `out/effect_relay_on_1.png` (guest's view, the host makes the hearts
+   with `coop.effects load 2 1000 E1B24DDB`: the effect is at the host's puppet "Alice"),
+   `out/effect_relay_off_1.png` (same camera and moment after the switch off: no effect) and
+   `out/effect_relay_host.png` (the host's own screen with the same effect, for comparison);
+   `out/effects_shot.py` (lane 2).
+6. **O(1) dedupe**: `process_world` scanned the 2048-entry `g_world_sent` ring for every queued
+   world effect (the manager and the world create hooks queue the same effect). It is a fixed
+   512-slot open-addressing set keyed by the effect pointer, cleared once a frame, and
+   `coop.effects` shows the probe count (`sent_probes=`).
+
+7. **Reference leak** (added after 15bd1ebc): `EffectWorld::CreateEffect` 0xA71300 writes the new
+   effect into the caller's intrusive pointer and calls its AddRef (vtable slot 0x00 at 0x923720,
+   refcount at object+0x10); the game drops such a pointer with Release (slot 0x04 at 0xA81CE0, as
+   the pool map erase 0xD2C9F0 does). The relay never released it, so every received world effect
+   stayed allocated for the session, even after Stop. The live list now owns that reference and
+   releases it when the effect ends by itself, is stopped after 8 s, is evicted as the oldest, or
+   the session ends. Because the reference is held until then, `IsActive` and `Stop` on a listed
+   effect are safe even after the effect path ended (the object cannot be freed while we hold it);
+   after the Release nothing uses the pointer. A stage / world change still drops the list without
+   calling into the objects (their internals may be gone). `create_local_effect` (the perf
+   workload) releases its reference right away. Switch `coop.fix effects.release off` is the old
+   leaking behaviour, for the measurement; `coop.effects` prints `released=` and `dropped=`.
+   Test `tools/tests/coop_effects_release.py` (`effects_release`, 60 s per window at the relay rate
+   limit): fix on 2380 effects created, 2380 released, live 0, private commit flat/negative; fix off
+   2320 created, 0 released, private commit +8.2 MB (about 3.5 KB per leaked effect), 25 MB
+   difference (`out/lab/20261102-195942`). Without the release the on window fails
+   (`out/lab/20261102-200305`).
+
+Verification of the second pass (lane 2 and 3, GOG 2024): the effects tests (creature, cell, tribe,
+effects_party, effects_validate, effects_live) pass in
+`out/lab/20261102-191038` and fail with `SPORE_FIX_OFF=creature.effects_relay` in
+`out/lab/20261102-193333`; the regression (smoke, creature, team, puppet_walk and the effect tests)
+is in `out/lab/20261102-191038`; the `unit` test of that run fails in its own lab selftest's lane
+lock checks under the run's CPU load (no game code; `make test` alone and `unit` alone in the lab,
+`out/lab/20261102-194317`, pass). Item 7: `out/lab/20261102-202254` (effects tests + effects_release pass);
+`out/lab/20261102-202617` with the relay switch off.
+
+## The effects relay and play_creature: A/B, and effects only between players in one place (2026-11-03, fix/w40-effects)
+<a id="creature-effects-relay-ab"></a>
+
+BUG-0471 asked whether the relay (#creature-effects-relay) makes play_creature fail. Measured on one
+build (fix/w40-effects fe5afc69, lane 4, GOG 2024), play_creature 10 min x4 with the relay on and x4
+with `SPORE_FIX_OFF=creature.effects_relay`, sequentially (out/lab/20261103-120602 on,
+out/lab/20261103-124913 off; table and parser `out/ab_parse.py` in out/REPORT.md):
+
+* ✔ pass rate: relay on 3 of 4 test OK (2 of 4 with the lab's log gates), relay off 0 of 4. Main
+  0.7.3.6 without the relay: 2 of 6 (nightly 20261103-000836, -012624). The failure kinds are the
+  same with and without the relay: a chat line lost (BUG-0482), a puppet once 11-177 m off with
+  speed 0 (BUG-0499), no joint hunt (BUG-0500), an NPC missing / apart on the guest (sync-check gate).
+* ✔ net and sync numbers do not move with the relay: puppet p90 0.49-0.52 m on vs 0.50-0.72 off,
+  NPC p90 0.30-0.39 vs 0.08-0.40, moving delay p90 0.24-0.26 s both, state_age p90 0.1 s / max
+  0.5-0.7 s both, host backlog max 600 in both (the guest's return from the main menu: the world
+  transfer), resends after the join minute 3.5k-10k on vs 3.2k-5.6k off (the same world transfers;
+  main without the relay 5.4k-8.9k), rtt max 650-830 ms both, fps 64-68 both.
+* ✔ the relay's traffic is tiny in play: 7-41 effects sent per 10 min by the host and 7-13 by the
+  guest (under 0.1 messages a second, against the 40/s limit); head-of-line blocking of the reliable
+  channel by effect messages is ruled out by the rate alone.
+* ✔ main-thread cost in play: hooks at most 0.0006 % of the main thread, `effects::tick` 0.0032-0.0034
+  ms a frame (0.02 % of a 15 ms frame).
+* So the 1-of-5 of 2026-11-02 was play_creature's own flakiness plus a loaded machine (7 lanes),
+  not the relay.
+
+Found on the way (fixed, switch `coop.fix effects.here`, BUG-0471): the relay sent every effect to
+every partner and the receiver created a world effect in whatever world its game had then. A guest
+in the main menu (play_creature's guest leaves and comes back), an editor, a loading screen or at
+another star got the host's effects created there. Now a start is sent only while some partner
+plays in the sender's place (`same_place` + `PF_IN_WORLD` of its last state) and a received start
+is played only while its owner plays in the receiver's place; stops are always passed. Counters:
+`effects elsewhere: not sent=N not played=N` in `coop.effects`. Test `coop_effects_here.py`
+(`effects_here`): the guest in the main menu, the host making 2 effects a second: fix on, host
+`not sent` 24 and the guest's game called 0 times; back in the world the effects reach it again.
+
+With `SPORE_FIX_OFF=effects.here` the guest's game in the main menu (GalaxyGameEntry) did create
+12 of the host's world effects (`played` +12, none failed: the menu's effect world accepts them),
+out/lab/20261103-141143; on, 0 (out/lab/20261103-133351). Three players in every stage
+(`coop_effects_party.py --fixture cell|creature|tribe|civ|space`, out/lab/20261103-134650): the
+host's and a guest's world effect reach the second guest at the actor (0.00-0.17 m) in all five
+stages; the relay's cost with all three games making 2.5 effects a second is 0.11-0.51 % of the
+frame time (the third game, two extra instances in one bottle, the highest).

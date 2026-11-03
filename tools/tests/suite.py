@@ -73,6 +73,16 @@ add('space', P + 'coop_mode.py --fixture space', minutes=3)
 add('phase', P + 'coop_phase.py', minutes=6)
 add('ui', P + 'coop_ui.py', ('smoke',), exclusive=True, minutes=5)
 add('team', P + 'coop_team.py', ('smoke',), warm=True, minutes=3, fixture='creature')
+add('creature_effects', P + 'coop_creature_effects.py', warm=True, minutes=3, fixture='creature', monitor={'proxy_n': 1000})  # BUG-0451: a player's creature effects (mating call, hit, part, brain, death) on the partner's puppet; SPORE_FIX_OFF=creature.effects_relay fails; proxy_n: the known NPC proxies under the ground, not this test
+add('cell_effects', P + 'coop_cell_effects.py', warm=True, minutes=3, fixture='cell', monitor={'proxy_n': 1000})  # BUG-0451: a cell's world effects on the partner's cell; SPORE_FIX_OFF=creature.effects_relay fails
+add('tribe_effects', P + 'coop_tribe_effects.py', warm=True, minutes=4, fixture='tribe', monitor={'proxy_n': 1000})  # BUG-0451: a tribe member's effect on the partner's mirror; SPORE_FIX_OFF=creature.effects_relay fails
+add('effects_party', P + 'coop_effects_party.py', minutes=6, monitor={'proxy_n': 1000})  # BUG-0451 review: a guest's world effect reaches the second guest through the host relay (3 players); SPORE_FIX_OFF=creature.effects_relay fails
+for st in ('cell', 'tribe', 'civ', 'space'):  # BUG-0471: the same 3-player relay in every stage, cost under 1 % of the frame time
+    add(f'effects_party_{st}', P + f'coop_effects_party.py --fixture {st}', minutes=6, monitor={'proxy_n': 1000})
+add('effects_here', P + 'coop_effects_here.py', minutes=5, fixture='creature', monitor={'proxy_n': 1000})  # BUG-0471: no effect relayed into a guest's main menu, back in the world it is; SPORE_FIX_OFF=effects.here fails
+add('effects_validate', P + 'coop_effects_validate.py', warm=True, minutes=3, fixture='creature', monitor={'proxy_n': 1000})  # BUG-0451 review: spoofed and malformed effect messages are dropped before a game call, counted in coop.effects
+add('effects_live', P + 'coop_effects_live.py', warm=True, minutes=2, fixture='creature', monitor={'proxy_n': 1000})  # BUG-0451 review: relayed world effects stay bounded (64, 8 s) and return to 0
+add('effects_release', P + 'coop_effects_release.py', minutes=6, fixture='creature', monitor={'proxy_n': 1000})  # BUG-0451 review item 7: 60 s at the rate limit, the relay releases the effect reference (off: the game's private commit grows)
 add('tribe_coop', P + 'coop_tribe.py', ('smoke',), warm=True, minutes=4, fixture='tribe')
 add('civ_coop', P + 'coop_civ.py', ('smoke',), warm=True, minutes=3, fixture='civ')
 add('cell_coop', P + 'coop_cell.py', ('smoke',), warm=True, minutes=4, fixture='cell')

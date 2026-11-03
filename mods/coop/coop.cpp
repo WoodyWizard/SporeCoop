@@ -42,6 +42,7 @@
 #include "squadron.h"
 #include "npc.h"
 #include "creature_hp.h"
+#include "effects.h"
 #include "nest.h"
 #include "fields.h"
 #include "parts.h"
@@ -2464,6 +2465,7 @@ void on_frame(void*, int, void*)
     nest::tick(now); // BUG-0384
     fields::tick(now); // BUG-0419 G2 (after the modules that make the mirrors)
     parts::tick(now); // BUG-0401
+    effects::tick(now); // BUG-0451: sends the queued effects on the main thread
     social::tick(now);
     shared::tick(g_sess, game::mode_id(), now, guest_elsewhere()); // BUG-0231: held while elsewhere
     if (g_sess.role() == net::Role::Host && game::avatar()) {
@@ -2501,6 +2503,10 @@ void on_frame(void*, int, void*)
 
     uint32_t prev_mode = g_mode;
     g_mode = game::mode_id();
+    // the effect hooks are installed once (game::init); this only gates their work to the played
+    // stages (a hook removed at a stage change faulted the UI skinner's render thread, BUG-0451 review)
+    game::set_world_relay(g_mode == modes::kCell || g_mode == modes::kCreature || g_mode == modes::kTribe
+                          || g_mode == modes::kCiv || g_mode == modes::kSpace);
     if (g_mode != prev_mode)
         on_mode_change(prev_mode, g_mode);
     g_adapter = modes::for_mode(g_mode);
@@ -2931,6 +2937,7 @@ void end_session(EndPath path, bool cell)
         nest::on_session_end(); // BUG-0384: our egg mirrors
         fields::on_session_end();
         parts::on_session_end(); // BUG-0401
+        effects::on_session_end(); // BUG-0451
         social::on_session_end();
         tribe::on_session_end();
         if (cell)
@@ -2944,6 +2951,7 @@ void end_session(EndPath path, bool cell)
         nest::on_session_end(); // BUG-0384: our egg mirrors
         fields::on_session_end();
         parts::on_session_end(); // BUG-0401
+        effects::on_session_end(); // BUG-0451
         social::on_session_end();
         if (cell)
             cellsync::on_session_end();
@@ -2953,6 +2961,7 @@ void end_session(EndPath path, bool cell)
         nest::on_session_end(); // BUG-0384: our egg mirrors
         fields::on_session_end();
         parts::on_session_end(); // BUG-0401
+        effects::on_session_end(); // BUG-0451
         social::on_session_end();
     }
     if (g_session_end_fix || path != EndPath::Restart) {
@@ -3124,6 +3133,10 @@ void setup_callbacks()
             net::AnimEvent ev;
             if (ev.read(r))
                 on_remote_anim(ev);
+            return;
+        }
+        if (type == net::MSG_EFFECT) { // BUG-0451: a partner's creature made an effect
+            effects::on_message(type, from, r);
             return;
         }
         // (also before the host's first state when the host named no world in WELCOME: one Civ
@@ -3535,6 +3548,7 @@ int c_status(void*, int, const char* const*, SkOut* out)
     for (auto& pl : g_sess.players()) // CAP_VERSION: each player's mod, SporeKit and game build
         SAY("version %u '%s': %s\n", pl.id, pl.name.c_str(), pl.version.empty() ? "unknown (pre-0.7.4)" : pl.version.c_str());
     SAY("remote animations: received %u, played %u\n", g_anims_rx, g_anims_played);
+    SAY("%s", effects::status().c_str()); // BUG-0451
     SAY("%s", npc::status().c_str());
     SAY("%s", social::status().c_str());
     SAY("%s", tribe::status().c_str());
@@ -4781,6 +4795,69 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         hc.is_host = [] { return g_sess.role() == net::Role::Host; };
         creature_hp::init(H, M, hc);
     }
+    { // BUG-0451: the creatures' visual effects on the partner's puppet
+        effects::Ctx ec;
+        ec.sess = &g_sess;
+        ec.puppet_of = [](uint8_t id) -> void* {
+            auto it = g_remotes.find(id);
+            return it == g_remotes.end() ? nullptr : it->second.puppet;
+        };
+        ec.all_puppets = [] {
+            std::vector<std::pair<uint8_t, void*>> v;
+            for (auto& [id, r] : g_remotes)
+                v.push_back({id, r.puppet});
+            return v;
+        };
+        ec.near_local = [](const net::Vec3& p) {
+            void* av = game::avatar();
+            if (av) {
+                net::Vec3 a = game::position(av);
+                return net::dist(a, p) < 1.8f;
+            }
+            if (g_adapter && g_adapter->local) {
+                void* l = g_adapter->local();
+                if (l && net::dist(modes::entity_pos(g_adapter, l), p) < 1.8f)
+                    return true;
+            }
+            // allocation-free: this runs from inside the game's effect transform setter, also in
+            // the UI skinner's render pipeline (a vector here faulted in Skinner::StartRender)
+            if (g_mode == modes::kTribe)
+                return tribe::near_member(p, 1.8f);
+            if (g_mode == modes::kCiv)
+                return civ::near_vehicle(p, 1.8f);
+            return false;
+        };
+        ec.world = [] { return g_world; };
+        ec.here = [](uint8_t id) {
+            auto it = g_remotes.find(id);
+            if (it == g_remotes.end() || it->second.echo || it->second.buf.empty())
+                return false;
+            const auto& ls = it->second.buf.latest();
+            return same_place(ls) && (ls.flags & net::PF_IN_WORLD) != 0;
+        };
+        ec.anyone_here = [] {
+            for (auto& [id, r] : g_remotes) {
+                if (r.echo || r.buf.empty())
+                    continue;
+                const auto& ls = r.buf.latest();
+                if (same_place(ls) && (ls.flags & net::PF_IN_WORLD))
+                    return true;
+            }
+            return false;
+        };
+        ec.local_pos = [] {
+            void* av = game::avatar();
+            if (av)
+                return game::position(av);
+            if (g_adapter && g_adapter->local) {
+                void* l = g_adapter->local();
+                if (l)
+                    return modes::entity_pos(g_adapter, l);
+            }
+            return net::Vec3{};
+        };
+        effects::init(H, M, ec);
+    }
     { // BUG-0384: eggs at the nests
         nest::Ctx nc;
         nc.sess = &g_sess;
@@ -4883,6 +4960,53 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                    },
                    nullptr, MT);
     H->command_add(M, "coop.status", "session, players and puppets", c_status, nullptr, MT);
+    H->command_add(M, "coop.effects",
+                   "coop.effects [probe <hex key> | map | log on|off | load <n> [period_ms] [hex id]] - creature effects "
+                   "relayed to the partners' puppets (BUG-0451); probe: the game's own effect pool of a key on the avatar "
+                   "and every puppet; load: n effects per period at the local player (the frame-time measurement)",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       if (argc > 1 && !strcmp(argv[1], "log")) {
+                           SAY("effects log %s\n", effects::set_log(argc > 2 && (!strcmp(argv[2], "on") || !strcmp(argv[2], "1"))) ? "on" : "off");
+                           return 0;
+                       }
+                       if (argc > 1 && !strcmp(argv[1], "inject")) {
+                           // tests: a crafted MSG_EFFECT as if peer `from` sent it (validation)
+                           if (argc < 8) {
+                               SAY("inject <from> <player> <stop> <pool> <id hex> <key> [x y z]");
+                               return 1;
+                           }
+                           net::Vec3 p{};
+                           if (argc > 10) {
+                               p.x = (float)atof(argv[8]);
+                               p.y = (float)atof(argv[9]);
+                               p.z = (float)atof(argv[10]);
+                           }
+                           effects::inject((uint8_t)strtoul(argv[2], nullptr, 0), (uint8_t)strtoul(argv[3], nullptr, 0),
+                                           (uint8_t)strtoul(argv[4], nullptr, 0), (uint8_t)strtoul(argv[5], nullptr, 0),
+                                           (uint32_t)strtoul(argv[6], nullptr, 16), (uint32_t)strtoul(argv[7], nullptr, 0), p);
+                           SAY("%s", effects::status().c_str());
+                           return 0;
+                       }
+                       if (argc > 1 && !strcmp(argv[1], "load")) {
+                           uint32_t n = argc > 2 ? (uint32_t)strtoul(argv[2], nullptr, 10) : 0;
+                           uint32_t ms = argc > 3 ? (uint32_t)strtoul(argv[3], nullptr, 10) : 1000;
+                           uint32_t id = argc > 4 ? (uint32_t)strtoul(argv[4], nullptr, 16) : 0;
+                           effects::set_load(n, ms, id);
+                           SAY("%s", effects::status().c_str());
+                           return 0;
+                       }
+                       if (argc > 2 && !strcmp(argv[1], "probe")) {
+                           SAY("%s", effects::probe((uint32_t)strtoul(argv[2], nullptr, 16)).c_str());
+                           return 0;
+                       }
+                       if (argc > 1 && !strcmp(argv[1], "map")) {
+                           SAY("%s", effects::map_dump().c_str());
+                           return 0;
+                       }
+                       SAY("%s", effects::status().c_str());
+                       return 0;
+                   },
+                   nullptr, MT);
     H->command_add(M, "coop.track", "coop.track start|stop|count|dump [from] [n]|lift <m>|novel 0|1 - every frame: the partners' puppets and the own avatar; in Tribe the player tribe's members (tests, BUG-0360, BUG-0365, BUG-0366)",
                    c_track, nullptr, MT);
     H->command_add(M, "coop.log", "coop.log detail [0|1|2] - support logging: 0 = the old lines only, 1 = state trace + events "
