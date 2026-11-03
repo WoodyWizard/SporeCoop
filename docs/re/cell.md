@@ -1424,3 +1424,21 @@ signature of BUG-0004 on another path.
   `creations::key_known` (RM FindRecord) first; `cell_create` makes no cell of an unknown creation
   (cellsync tries again with the next state round; `unknown_models=` in coop.status), `cell_spawn`
   (puppets) falls back to the own avatar's model.
+
+## Does a guest's mirror die when the host's cell is gone? (2026-11-03, fix/w40-cell-evo)
+<a id="cell-stale-mirrors"></a>
+
+BUG-0480. Lane 4, `tools/tests/coop_cell_gone.py` (docs/06-testing.md#testing-world-lod).
+
+* ✔ (runtime) The purge of guest_state: a mirror not listed in a complete round of the host's MSG_CELL_STATE
+  goes at the round's last chunk; after a lost chunk one not listed for 1 s. A 4 s dead link
+  (`coop.pool statehold 4`) while the host destroyed 8 cells near the guest left no mirror of them 2.5 s after
+  the state came back (6 of 6 rounds).
+* ✔ (runtime) The detector's `Cell:guest_only:cell` / `host_only:cell` came mostly from its single host dump:
+  Cell cells live for seconds and a host level change replaces hundreds between two dumps. Bracketing the guest's
+  dump by two host dumps 1.5 s apart: 0 where one dump gave 2 (10 rounds).
+* ? (runtime, 3 of 9 cold runs) 28-49 mirrors at once (meat / rock / bubble, level 0-1) of host indices the host
+  had in neither dump and not in `coop.pool cell` (cell_at) a moment later, though the guest's entry had been
+  refreshed 0.1-0.2 s before; the host never sent an index cell_at did not find at the send. Inferred: cells that
+  exist in the host's pool during part of its frame only (the partner tiles populated for the guest's view);
+  not verified.

@@ -1699,8 +1699,9 @@ What mods/coop/worldobj.cpp does not cover yet (docs/re/creature.md#creature-wor
 * A fruit that fell in the host's game where the guest's tree had no fruit left in that slot (the guest's
   own fall came first) is not shown on the guest: the mechanism does not make fruit, it only binds, eats and
   drops them. Trees that grow fruit again (not seen, ~) would not be copied either. Ticket: BUG-0497.
-* Plants and rocks (`game_plant` 0x18C84A9 next to the fixture's big fruit tree on the guest only, `rock`):
-  no kind yet. Tickets: BUG-0473, BUG-0498 (rocks made per camera, inferred).
+* Plants and rocks (`game_plant` 0x18C84A9, `rock`): not a desync (2026-11-03, fix/w40-cell-evo): each game
+  makes them around its own player's camera (tools/tests/coop_world_lod.py, docs/06-testing.md#testing-world-lod);
+  the detector leaves them out. Tickets: BUG-0473, BUG-0498.
 * The guest's home nest heal ("I don't get any heals from it", BUG-0496, split from BUG-0460) is not reproduced or analysed;
   only the extinct nests are copied.
 * A Cell part a guest collects (BUG-0467, open) is not unlocked for the host: parts.shared polls the creature
@@ -1712,10 +1713,12 @@ What mods/coop/worldobj.cpp does not cover yet (docs/re/creature.md#creature-wor
 
 ## Creature: after the host's evolution editor a guest may still show the host's previous creature (2026-11-03, fix/w40-editor)
 * Report 2026-11-02 (0.7.3.4): the guest's screen showed the host's creature from before its editor.
-* Reproduce: not yet. `tools/tests/coop_editor_sync.py --case host` (lane, creature fixture) needs the host's
-  real evolution; `coop.vote editor` and `coop.vote evolve` do not apply it (docs/re/creations.md#creations-own-editor-dna).
-* Suspected: a stage species edited under the same key (a key-only bundle that never changes, the guest's
-  cached species profile). Not verified.
+* Reproduce: not reproduced on 0.7.4 (2026-11-03, fix/w40-cell-evo): `coop.vote evolve` does apply the
+  host's evolution once the editor really adds a part (the test dragged a locked one before), every evolution
+  gives the host a new species key, and the guest's game draws the host with it (`editor_sync_host`,
+  `editor_sync_host2`: one and two evolutions in a row; docs/re/creations.md#creations-host-evolution).
+* Still suspected, not seen: a host species changed under the same key (a key-only bundle, the guest's cached
+  species profile), or a bundle the guest cannot use (another build's parts) on the reporter's PCs.
 * Ticket: BUG-0457
 
 ## Creature: what fix/w40-creature-acts left open (2026-11-03, fix/w40-creature-acts)

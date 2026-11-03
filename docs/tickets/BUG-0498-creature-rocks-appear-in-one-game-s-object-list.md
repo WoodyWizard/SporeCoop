@@ -1,20 +1,20 @@
 ---
 id: BUG-0498
 title: Creature: rocks appear in one game's object list only, dozens at once 100-160 m from the walking player (detector unmatched:rock)
-status: open
+status: fixed
 kind: desync
 stage: Creature
 reported: 2026-11-03
 source: divergence detector, fix/w40-world-objects lane 9 out/lab/20261103-131403
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w40-cell-evo
+commits: eca11f6d, e136676f
+tests: world_lod (coop_world_lod.py)
 signature:
-docs:
-related:
+docs: docs/re/creature.md#creature-plants-rocks-lod, docs/06-testing.md#testing-world-lod
+related: BUG-0473
 ---
 
 ## Report
@@ -22,14 +22,17 @@ Detector `Creature:unmatched:rock` in 62% of the comparisons of out/lab/20261103
 <!-- what the player (or the test) saw, in our words; no player names, no paths from their PC -->
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+Observed (coop_world_lod.py, out/lab/20261103-161705): the walking guest's game adds 28 rocks 30-75 m ahead of it
+and keeps them; the host's game, whose player stood 1 m from the guest at the start, never has them. Made by each
+game around its own camera: not a desync.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+The detector leaves `rock` out (worlddiff.IGNORE), see BUG-0473.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+world_lod PASS out/lab/20261103-161705.
+no-fail-run: a detector compare rule (worlddiff.IGNORE), not game code.
 
 ## History
 - 2026-11-03: opened.
+- 2026-11-03: fix/w40-cell-evo: per-camera objects, left out of the detector.

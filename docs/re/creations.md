@@ -851,3 +851,31 @@ BUG-0466, BUG-0457. GOG 2024, objdump of `SporeApp.exe` (dc04aee5) and lanes 6 /
   065CBE70 for 60+ s, with hearts over the nest: the evolution was not applied. `coop.vote editor` (all
   older editor tests) is the "edit a creation" editor for the host too: its result never changes the
   host's species (BUG-0457 not reproduced through it).
+
+## The host's evolution in the Creature stage reaches the guest (2026-11-03, fix/w40-cell-evo)
+<a id="creations-host-evolution"></a>
+
+BUG-0457. GOG 2024, lane 4 (`tools/tests/coop_editor_sync.py --case host|host2`).
+
+* CORRECTION (2026-11-03, fix/w40-cell-evo): the `?` of #creations-own-editor-dna ("a request built like
+  that by the mod: the evolution was not applied") was the test's drag: the part at the palette's first
+  column, row y 170, is locked in the host's evolution editor (uncollected parts are locked there too), so the
+  host pressed done on an unchanged creature. Dragging the unlocked mouth (y 780) the evolution is applied:
+  GetEvolutionPoints 40 -> 15 after the editor, the avatar's species 065CBE70 -> 29141F13 'Burpee' (lab
+  20261103-160241, 20261103-160839), the stage's return applying the result as 0xD44545 / 0xD445AA describe.
+  `coop.vote evolve` is a working evolution request.
+* ✔ (runtime) Every evolution gives the host's species a **new key** (065CBE70 -> 29141FE7 -> 29141FEC in two
+  evolutions in a row, lab 20261103-161211), saved in its My Creations: share_own sends a bundle with its
+  records, the guest registers it under a content key (0x7C...... from owner + bundle id, new per version) and
+  the host's world key 29141FEC as 0x7D...... (world package), rebuilds the puppet (appearance_changed ->
+  despawn -> spawn with the new profile). The guest's puppet species = the bundle key with the host's creature
+  name, in every run. ~ The screenshots (out/lane4/shots/editor_sync_host_on_guest.png, _self.png) show a red biped
+  for the host on both games (by eye only).
+* ✔ (disassembly) 0xD42E50 message 0x4471C60 (posted by 0xE45E0F at the end of the mating scene) builds the
+  request only when `this+0xDA` (creature game base +0xDE) is set; it is set at 0xD2C709 on message
+  0x287259F6 with data+0xC == 0x6455B55 (the mating-call command), cleared in the constructor 0xD3BA3F.
+  The stage's return 0xD43DE0 applies a stored result (this+0x60) only when it comes back from the editor
+  modes 0x1654C06 / 0xDBDBA1 (0xD44442).
+* ? Not reproduced: the report's "previous version". The same-key path (a key-only bundle of a stage species
+  edited in place, the guest's species manager keeping its cached profile of that key, §2.1) did not happen
+  here: the evolution never kept the key.
