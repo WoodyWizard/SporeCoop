@@ -96,6 +96,7 @@ struct Remote {
     const modes::Adapter* puppet_adapter = nullptr; // adapter that created `puppet`
     uint32_t puppet_world = 0; // the place `puppet` was made in
     bool echo = false; // local loopback test remote
+    bool silent_said = false; // BUG-0513: "is not responding" was told (core.partner_silent)
     uint64_t world_sent = 0; // host: (mode << 32 | save crc) last sent to this guest
     double other_mode_since = -1; // host: since when the guest plays another mode
     bool joined_phase = false; // host: the guest played the host's mode after the last world send
@@ -667,11 +668,34 @@ int c_track(void*, int argc, const char* const* argv, SkOut* out)
     return 0;
 }
 
+// BUG-0513: a partner whose game stops sending (minimized, alt-tabbed full screen, a stall of 17-38 s) was hidden
+// after 5 s without a word ("the guest is bugged into the ground"). With core.partner_silent the others are told
+// once that the partner is not responding and when it plays again. Off: 0.7.3.6.
+static bool g_partner_silent_fix = true;
+COOP_FIX("core.partner_silent", "BUG-0513", g_partner_silent_fix, "core: a partner whose game stopped answering (minimized, frozen) is announced, and when it is back");
+uint32_t g_silent_notices = 0; // tests
+
+static void silent_tick(Remote& r, double now)
+{
+    if (!g_partner_silent_fix || r.echo || r.buf.empty())
+        return;
+    double age = r.buf.age(now);
+    if (!r.silent_said && age > 5.0 && g_sess.connected()) {
+        r.silent_said = true;
+        g_silent_notices++;
+        feed(r.name + " is not responding (game minimized or frozen?)");
+    } else if (r.silent_said && age < 1.0) {
+        r.silent_said = false;
+        feed(r.name + " is responding again");
+    }
+}
+
 void drive_puppet(Remote& r, double now)
 {
     net::PlayerState s;
     if (!r.buf.sample(now, s))
         return;
+    silent_tick(r, now);
     // dead players are hidden until they respawn
     bool visible = g_adapter && g_local && (s.flags & net::PF_IN_WORLD) && !(s.flags & net::PF_DEAD) &&
                    r.buf.age(now) < 5.0 && (r.echo || same_place(s)) && now >= g_puppet_hide_until;

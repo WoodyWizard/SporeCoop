@@ -145,6 +145,13 @@ COOP_FIX("creature.puppet_walk", "BUG-0360", g_puppet_walk_fix, "creature: the w
 // it stays grounded. A partner higher up (a jump, a rock) is placed where it is.
 static bool g_puppet_ground_fix = true;
 COOP_FIX("creature.puppet_ground", "BUG-0366", g_puppet_ground_fix, "creature: the partner's creature is put on this game's ground (no fall animation walking downhill, never under the ground)");
+// BUG-0513: a guest whose game stalled (minimized, alt-tabbed, paused while it received a world) reported its own
+// creature 3-7 m under its ground (its own trace: agl=-6.53, busy=paused), and the host drew the puppet there:
+// on_own_ground leaves a target more than kUnderGround under the ground where it is ("the guest is bugged into the
+// ground"). With creature.puppet_deep a target 3-15 m under this game's ground (the terrain only: a creature is never
+// there legitimately) is put onto it as the proxies are (drive::out_of_ground). Off: 0.7.3.6.
+static bool g_puppet_deep_fix = true;
+COOP_FIX("creature.puppet_deep", "BUG-0513", g_puppet_deep_fix, "creature: a partner reported deep under the ground (a stalled or minimized game) is drawn on this game's ground");
 
 // BUG-0394: the partner's creature can move without a speed of its own: an animation that carries it
 // (B4212A07 after a click, 3-4.6 m/s for a second with the game's velocity 0 and speed state 0 on the
@@ -183,6 +190,8 @@ static void creature_drive(void* p, const net::PlayerState& s_in, drive::State& 
     net::PlayerState s = s_in;
     if (g_puppet_ground_fix && game::in_creature_stage())
         s.pos = drive::on_own_ground(s.pos);
+    if (g_puppet_deep_fix && game::in_creature_stage())
+        s.pos = drive::out_of_ground(s.pos, true); // BUG-0513: 3-15 m under this game's ground
     drive::path_update(ds, s.pos, now);
     if (g_puppet_path_fix && drive::speed(s.vel) <= 0.3f)
         s.vel = drive::path_velocity(ds);
