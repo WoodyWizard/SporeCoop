@@ -91,6 +91,7 @@ bool enabled();
 std::string debug_forget(uint16_t id);
 std::string resync_status();
 std::string tuning_status();
+std::string current_anims(); // coop.npc cur (tests): each NPC's current animation
 std::string debug_untune(uint16_t id); // guest (tests): proxy <id> without tuning, as Create made it in a herd of ours // BUG-0462: proxies given the host NPC's archetype tuning
 
 } // namespace npc

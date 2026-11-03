@@ -456,6 +456,29 @@ std::string tuning_status()
     return b;
 }
 
+// tests (BUG-0464): the animation each NPC plays now, as the game holds it (vt 0x58 GetCurrentAnimation):
+// host: its NPCs by net id, guest: the proxies
+std::string current_anims()
+{
+    std::string out;
+    char b[80];
+    auto line = [&](int id, void* c) {
+        uint32_t a = 0;
+        net::Vec3 m;
+        if (c && game::creature_listed(c) && game::drawn_state(c, &m, &a)) {
+            snprintf(b, sizeof b, "cur %d anim=%08X%s\n", id, a, game::is_dead(c) ? " DEAD" : "");
+            out += b;
+        }
+    };
+    if (is_host())
+        for (auto& [id, c] : g_host_by_id)
+            line(id, c);
+    else
+        for (auto& [id, px] : g_proxies)
+            line(id, px.c);
+    return out;
+}
+
 static net::NpcState host_state(uint16_t id, void* c)
 {
     net::NpcState s;

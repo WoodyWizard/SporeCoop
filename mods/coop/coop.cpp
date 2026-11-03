@@ -3928,6 +3928,10 @@ COOP_FIX("tools.gopos_ground", "BUG-0400", g_gopos_ground_fix, "tests: coop.npc 
 
 int c_npc(void*, int argc, const char* const* argv, SkOut* out)
 {
+    if (argc > 1 && !strcmp(argv[1], "cur")) { // BUG-0464 (tests): each NPC's current animation
+        SAY("%s", npc::current_anims().c_str());
+        return 0;
+    }
     if (argc > 2 && !strcmp(argv[1], "untune")) { // guest (tests, BUG-0462): proxy <id> as made in a herd of ours
         SAY("%s", npc::debug_untune((uint16_t)atoi(argv[2])).c_str());
         return 0;

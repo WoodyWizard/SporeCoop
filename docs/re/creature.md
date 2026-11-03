@@ -1961,3 +1961,43 @@ BUG-0462. GOG 2024, Ghidra (out/ghidra-2024) and lane 9 at runtime (`coop.social
   had the tuning. Fixed by `npc.tuning` (the host's key after MSG_NPC_SPAWN, the guest sets the same tuning).
 * ~ Inferred: on the host the NPCs' AI with a guest's puppet as the avatar (npc.cpp ai_target) used the rule too; the
   hook covers the puppets' species there.
+
+## Carried objects, herd evolution, NPC animations on the guest (2026-11-03, fix/w40-creature-acts)
+<a id="creature-npc-anims"></a>
+
+BUG-0458, BUG-0464 (both open). GOG 2024, Ghidra (out/ghidra-2024) and lane 9 (creature fixture). Findings only.
+
+### Picking up and throwing (BUG-0458)
+
+* ✔ The Creature stage's cursor choice 0xD311B0 asks 0xD30830 -> 0xD2FFD0 (the object under the mouse) for a cursor
+  kind: 0xB / 0x19 load cursor 0x3B360DC ("cursor-crg-pickup", the strings are loaded in 0xD366C0), 0xD / 0x16 cursor
+  0x3B360E4 ("cursor-crg-throw"). 0x19 / 0x16 are returned for an object of noun **0x2A8FB3F (cRock)** with interface
+  0x1186577 (+0x50 bit 0x100, +0x70) when 0xC13DC0(obj, 0, ..) says it can be taken; 0x1A for an ornament of sort 2.
+* ✔ The carry behaviour (a BT node without a direct caller, 0xD84120): walks to the object (WalkTo), plays animation
+  0x39E4C77 (or 0x39E4C77 + 0x1597E79), and at the end, by the object: a fruit (0x2C9CC91), a cRock (0x2A8FB3F) or an
+  interactive ornament (0x3A2511E) of **sort 3** (the stick, ~ inferred from the sort list of
+  docs/re/creature.md#creature-world-objects) posts BT stimulus 0x40000 (value 60) with slot +0xC = 1 (carrying).
+  0xD3A0D0 (a creature bumping into an object) pushes cRocks and sort-6 ornaments.
+* ✔ The fixture has one cRock (census noun 0x2A8FB3F = 1, vtable 0x1473228) and 12 ornaments, 5 of them sort 2.
+* Not done: the carried object follows the carrier's hand in each game separately, and a throw moves it with the
+  physics of the game that threw it. A fix is a host-owned world object with a carrier (worldobj.cpp: a kind for
+  cRock and sort-3 ornaments with pos / rot / carried-by at 10+ Hz, the guest's carry as a request) or the carry
+  stimulus relayed to the partner's puppet. Neither tried.
+
+### Herd evolution (BUG-0464)
+
+* ✔ cHerd's serialized fields (descriptor 0x134D380): `mGeneration` +0xF0, `mEvolvedSpeciesProfileKeys` +0xA8 (a
+  vector of species keys), `mDNAEvolutionThreshold` +0x94, `mbShouldEvolve` +0x85, `mbBestFriends` (after it).
+  cHerd::Update 0xC6D960 reads the archetype tuning with `cSpeciesManager_GetTuning(herd +0x88, herd +0xF0)`: the
+  generation is the tuning's variant. ~ Inferred: a nest "evolves" by a new generation / species key from the list;
+  the guest's herds are not simulated (its NPCs are removed), so its nest never does.
+* ✔ The NPCs' own animations do not reach the guest at all: sampled twice a second for 40 s (coop_npc_anims.py,
+  `coop.npc cur`, vt 0x58 GetCurrentAnimation), the host's 21 NPCs played B31EB92C (760 samples), 731EA3EA, 0519E154,
+  042A1CAF, 02481DE5, 05807346, ...; their proxies 02481DE5 (1444 of 1617), the death F14FAA46 and 04866Dxx. The proxy
+  showed the host NPC's animation in 7-9 % of the samples (lab runs 20261103-153901, 20261103-154027).
+* ✗ Tried and reverted: relaying the host NPCs' cCreatureBase::PlayAnimation / PlayAnimationTo calls (the hooks of the
+  players' MSG_ANIM) to the proxies: 287 calls in 40 s (171 more over a rate limit of 80/s), 279 played on proxies, and
+  the proxies' current animation did not change (7 % before, 9 % with it). So the behaviour animations (B31EB92C ...)
+  are not started through those two functions, or the proxy's driving replaces them at once. Next: find the caller
+  of the AnimatedCreature (Anim::AnimatedCreature::PlayAnimation 0xA0C5D0) for B31EB92C, or replicate the current
+  animation as state (host: GetCurrentAnimation per NPC; guest: play it when the proxy's differs).
