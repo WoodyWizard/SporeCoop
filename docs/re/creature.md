@@ -1786,3 +1786,46 @@ is in `out/lab/20261102-191038`; the `unit` test of that run fails in its own la
 lock checks under the run's CPU load (no game code; `make test` alone and `unit` alone in the lab,
 `out/lab/20261102-194317`, pass). Item 7: `out/lab/20261102-202254` (effects tests + effects_release pass);
 `out/lab/20261102-202617` with the relay switch off.
+
+## The effects relay and play_creature: A/B, and effects only between players in one place (2026-11-03, fix/w40-effects)
+<a id="creature-effects-relay-ab"></a>
+
+BUG-0471 asked whether the relay (#creature-effects-relay) makes play_creature fail. Measured on one
+build (fix/w40-effects fe5afc69, lane 4, GOG 2024), play_creature 10 min x4 with the relay on and x4
+with `SPORE_FIX_OFF=creature.effects_relay`, sequentially (out/lab/20261103-120602 on,
+out/lab/20261103-124913 off; table and parser `out/ab_parse.py` in out/REPORT.md):
+
+* ✔ pass rate: relay on 3 of 4 test OK (2 of 4 with the lab's log gates), relay off 0 of 4. Main
+  0.7.3.6 without the relay: 2 of 6 (nightly 20261103-000836, -012624). The failure kinds are the
+  same with and without the relay: a chat line lost (BUG-0482), a puppet once 11-177 m off with
+  speed 0 (BUG-0499), no joint hunt (BUG-0500), an NPC missing / apart on the guest (sync-check gate).
+* ✔ net and sync numbers do not move with the relay: puppet p90 0.49-0.52 m on vs 0.50-0.72 off,
+  NPC p90 0.30-0.39 vs 0.08-0.40, moving delay p90 0.24-0.26 s both, state_age p90 0.1 s / max
+  0.5-0.7 s both, host backlog max 600 in both (the guest's return from the main menu: the world
+  transfer), resends after the join minute 3.5k-10k on vs 3.2k-5.6k off (the same world transfers;
+  main without the relay 5.4k-8.9k), rtt max 650-830 ms both, fps 64-68 both.
+* ✔ the relay's traffic is tiny in play: 7-41 effects sent per 10 min by the host and 7-13 by the
+  guest (under 0.1 messages a second, against the 40/s limit); head-of-line blocking of the reliable
+  channel by effect messages is ruled out by the rate alone.
+* ✔ main-thread cost in play: hooks at most 0.0006 % of the main thread, `effects::tick` 0.0032-0.0034
+  ms a frame (0.02 % of a 15 ms frame).
+* So the 1-of-5 of 2026-11-02 was play_creature's own flakiness plus a loaded machine (7 lanes),
+  not the relay.
+
+Found on the way (fixed, switch `coop.fix effects.here`, BUG-0471): the relay sent every effect to
+every partner and the receiver created a world effect in whatever world its game had then. A guest
+in the main menu (play_creature's guest leaves and comes back), an editor, a loading screen or at
+another star got the host's effects created there. Now a start is sent only while some partner
+plays in the sender's place (`same_place` + `PF_IN_WORLD` of its last state) and a received start
+is played only while its owner plays in the receiver's place; stops are always passed. Counters:
+`effects elsewhere: not sent=N not played=N` in `coop.effects`. Test `coop_effects_here.py`
+(`effects_here`): the guest in the main menu, the host making 2 effects a second: fix on, host
+`not sent` 24 and the guest's game called 0 times; back in the world the effects reach it again.
+
+With `SPORE_FIX_OFF=effects.here` the guest's game in the main menu (GalaxyGameEntry) did create
+12 of the host's world effects (`played` +12, none failed: the menu's effect world accepts them),
+out/lab/20261103-141143; on, 0 (out/lab/20261103-133351). Three players in every stage
+(`coop_effects_party.py --fixture cell|creature|tribe|civ|space`, out/lab/20261103-134650): the
+host's and a guest's world effect reach the second guest at the actor (0.00-0.17 m) in all five
+stages; the relay's cost with all three games making 2.5 effects a second is 0.11-0.51 % of the
+frame time (the third game, two extra instances in one bottle, the highest).

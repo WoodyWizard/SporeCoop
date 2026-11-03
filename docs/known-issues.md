@@ -1641,3 +1641,11 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Not fixed: a strip needs the civ / tribe / space object registry and a null-safe removal from
   `civ+0xB0` / `civ+0xD4` and the city's lists (BUG-0020's null rule), with a save + reload test per stage.
 * Ticket: BUG-0470
+
+### play_creature: a puppet once far off, no joint hunt (2026-11-03, fix/w40-effects)
+* One sample of ~140 per player: the partner's puppet 11-177 m from where its own game has it,
+  speed 0 (BUG-0499); some runs have no joint hunt or the host's creature 0.71 m under the ground
+  for 2 log lines (BUG-0500). Both with and without the effect relay (out/lab/20261103-124913 in
+  SporeCoop-wt/fix/w40-effects, relay off) and on main.
+* Reproduce: `tools/lab.py run play_creature --repeat 4` (about 1 run in 4).
+* Tickets: BUG-0499, BUG-0500
