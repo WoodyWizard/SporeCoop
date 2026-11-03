@@ -50,7 +50,9 @@ def commit_kb(con):
 
 
 def mem_line(con):
-    for line in con.call('coop.status')['out'].splitlines():
+    # the support diagnostics: the `mem:` line is the game's free address space (the memory walk on
+    # its thread; empty until the first minute) next to the private commit from `mem.commit`
+    for line in con.call('coop.diag status')['out'].splitlines():
         if line.startswith('mem:'):
             return line.strip()
     return ''

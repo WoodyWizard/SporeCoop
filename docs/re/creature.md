@@ -1784,5 +1784,5 @@ effects_party, effects_validate, effects_live) pass in
 `out/lab/20261102-193333`; the regression (smoke, creature, team, puppet_walk and the effect tests)
 is in `out/lab/20261102-191038`; the `unit` test of that run fails in its own lab selftest's lane
 lock checks under the run's CPU load (no game code; `make test` alone and `unit` alone in the lab,
-`out/lab/20261102-194317`, pass). Item 7: `out/lab/20261102-200634` (effects tests + effects_release pass);
-`out/lab/20261102-201025` with the relay switch off.
+`out/lab/20261102-194317`, pass). Item 7: `out/lab/20261102-202254` (effects tests + effects_release pass);
+`out/lab/20261102-202617` with the relay switch off.

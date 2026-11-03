@@ -194,7 +194,7 @@ reference and releases it when it forgets the effect (ended, stopped, expired, e
 end); a stage/world change still drops the list without a call. `coop.fix effects.release off` is
 the old leaking behaviour; `coop.effects` prints released=/dropped=. Test effects_release (60 s per
 window at the rate limit): on 2380 created / 2380 released / live 0 / commit flat, off 2320 / 0 /
-+8.2 MB, 25 MB difference (out/lab/20261102-195942); without the release the on window fails
-(out/lab/20261102-200305). The effects tests and effects_release pass in out/lab/20261102-200634 and fail
-with SPORE_FIX_OFF=creature.effects_relay in out/lab/20261102-201025.
++8.2 MB, 25 MB difference (out/lab/20261102-195942; a second run with coop.diag's mem line:
+out/lab/20261102-201933); without the release the on window fails (out/lab/20261102-200305). The effects tests and effects_release pass in out/lab/20261102-202254 and fail
+with SPORE_FIX_OFF=creature.effects_relay in out/lab/20261102-202617.
 
