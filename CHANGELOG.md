@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### Fixed
+- Creature: animals are neutral, hostile or allied to a guest as they are to the host; a guest playing its own
+  creature no longer sees neutral species as hostile (BUG-0462).
 - Creature: a partner who sneaks is shown sneaking (see-through) on your screen too, and the host's animals
   no longer hear a sneaking guest (BUG-0463).
 - Creature: animals of other species now have the same size on every player's screen; young ones are no

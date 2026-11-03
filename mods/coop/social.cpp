@@ -727,6 +727,42 @@ std::string species_dump()
     return out.empty() ? "no species records\n" : out;
 }
 
+// tests (BUG-0462): how the game sees each NPC's relation to the own avatar, per NPC net id (host: its NPCs,
+// guest: the proxies): the record or else the creature's archetype tuning (+0xE84) +0x390 decides
+// (GetRelationship 0xBA40E0, docs/re/creature.md#creature-relations); CreatureSocialMode is what the click uses
+std::string relations_dump()
+{
+    struct U {
+        std::string out;
+        void* av;
+        void* mgr;
+    } u{{}, game::avatar(), rel_mgr()};
+    if (!u.av || !u.mgr || !a_RelGet)
+        return "no avatar\n";
+    game::for_each_object(
+        [](void* o, uint32_t noun, void* p) {
+            auto* u = (U*)p;
+            if (noun != 0x18EB45Eu || !game::object_alive(o) || IsBadReadPtr(o, 0x1680) || !game::species_profile(o))
+                return true;
+            int id = is_host() ? npc::host_id(o) : npc::proxy_id(o);
+            if (id < 0 || u->out.size() > 12000)
+                return true;
+            uint8_t* t = *(uint8_t**)((uint8_t*)o + 0xE84);
+            int def = t && !IsBadReadPtr(t + 0x390, 4) ? *(int*)(t + 0x390) : -1;
+            int rel = thiscall<int>(a_RelGet, u->mgr, (uint8_t*)o + 0xB28, u->av, o);
+            int mode = a_SocialMode ? thiscall<int>(a_SocialMode, o) : -1;
+            char b[200];
+            snprintf(b, sizeof b, "rel %d species=%08X tuning=%p default=%d relation=%d mode=%d herd=%p arch=%08X tkey=%08X%s\n", id,
+                     game::species_key(o).instance, t, def, rel, mode, game::herd_of(o),
+                     game::herd_of(o) ? *(uint32_t*)((uint8_t*)game::herd_of(o) + 0x88) : 0u,
+                     t && !IsBadReadPtr(t - 4, 4) ? *(uint32_t*)(t - 4) : 0u, game::is_dead(o) ? " DEAD" : "");
+            u->out += b;
+            return true;
+        },
+        &u);
+    return (u.out.empty() ? std::string("no NPCs\n") : u.out) + npc::tuning_status();
+}
+
 // tests (BUG-0205): a guest reports a goal card's reward for species <inst> the way goal_dna does
 bool debug_send_goal(uint32_t inst, int outcome, float dna)
 {

@@ -39,6 +39,7 @@ std::string status();
 // social stance (it plays a social game: a hit then killed the Kook it was impressing)
 bool drop_social_hit(uint16_t proxy_id);
 std::string species_dump(); // coop.social species (tests)
+std::string relations_dump(); // coop.social rel (tests, BUG-0462): each NPC's relation to the own avatar as the game sees it
 bool debug_send_goal(uint32_t crt_instance, int outcome, float dna); // guest, tests: a goal card's reward (K_GOAL)
 extern bool g_goal_owe_fix; // BUG-0205: a K_GOAL without a host creature waits for it (false: dropped)
 bool debug_set_record(uint32_t crt_instance, int relation, uint32_t impressed); // host, tests: a record of the table

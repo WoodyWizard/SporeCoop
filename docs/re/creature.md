@@ -1936,3 +1936,28 @@ BUG-0463. GOG 2024, Ghidra (out/ghidra-2024) and lane 9 at runtime (creature fix
   (`creature.sneak`); the puppet's energy is kept above 0.
 * ~ Inferred, not run as a behaviour test: the host's NPCs with a guest's puppet swapped in as the avatar (npc.cpp
   ai_target) now get noise 0 and the sneak flag from the puppet, as from a sneaking host avatar.
+
+## Relations to a player of another species, proxies without tuning (2026-11-03, fix/w40-creature-acts)
+<a id="creature-relations"></a>
+
+BUG-0462. GOG 2024, Ghidra (out/ghidra-2024) and lane 9 at runtime (`coop.social rel`).
+
+* ✔ `GetRelationship` 0xBA40E0 `thiscall(mgr, key*, a, b) ret 0xC` in the Creature stage (mode not 0x1654C10): when
+  neither a nor b answers creature vt 0xD0 (`cCreatureBase_IsPlayerSpecies` 0xC0C430: +0xB20 == cSpeciesManager
+  PlayerSpecies 0x4DF490), it returns the **diet / size rule** 0xBA2900(a, b) (6 same species, else 1-4 by herbivore /
+  carnivore and a size class from 0xC0BA40 against 0x156C194 / 0x156C198). Else: the species record (map +0x24, node
+  +0xC) when not 0, else the tuning +0x390 of the one that is not the avatar (0xC0C300 = +0xE84), else the rule.
+  CreatureSocialMode 0xC0E800 calls it with (avatar, npc); vt 0xD4 0xC0C3B0 ("friendly") with the same.
+* ✔ So a guest playing its own creature (another species in its own game) got the rule for every NPC: on the fixture
+  4 instead of the tuning's 3 for 12 herbivores (social mode 1 instead of 2). Fixed by `creature.relations`
+  (creature_hp.cpp hooks vt 0xD0: the own avatar's and the puppets' species count as the player species).
+* ✔ The archetype tuning: `cCreatureAnimal::Create` 0xC09B40 sets it with `cCreatureBase_SetTuning` 0xC0C2E0 (+0xE84,
+  +0xE80 = tuning +0x10) from `cSpeciesManager_GetTuning` 0x4E00C0(mgr, key, variant) (the player species: key
+  0xAED08DD4). The tuning is the value of a map node: the dword before it is its key, the same as the herd's archetype
+  +0x88 (lane 9: tkey B5BC62BF = arch B5BC62BF on the host).
+* ✔ A proxy made in a herd of ours (archetype 0: the species' nest herd not found on the guest yet) got no tuning (lane
+  9, the first proxies of species 06805133 after a join); its relation then came from the rule: 1 (hostile) where the
+  host's NPC had 3 (neutral). Made again a minute later, the same proxy went into the game's herd (arch B5BC62BF) and
+  had the tuning. Fixed by `npc.tuning` (the host's key after MSG_NPC_SPAWN, the guest sets the same tuning).
+* ~ Inferred: on the host the NPCs' AI with a guest's puppet as the avatar (npc.cpp ai_target) used the rule too; the
+  hook covers the puppets' species there.
