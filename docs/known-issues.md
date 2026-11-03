@@ -1725,3 +1725,20 @@ What mods/coop/worldobj.cpp does not cover yet (docs/re/creature.md#creature-wor
   only walk and stand (BUG-0464, test tools/tests/coop_npc_anims.py fails).
 - Creature: the sea monster ("kraken") of a player in deep water shows only on that player's screen (BUG-0465).
 - Creature: a guest's roar does nothing to the animals (BUG-0501).
+
+## Player reports of 2026-11-04 still open after rel/0.7.4 (2026-11-03, fix/w40-reports)
+
+- Galaxy menu (Steam build, no session): opening the game settings can crash the game (null resource database
+  0x011AC197 at 0x6025A9) (BUG-0506).
+- Creature: a guest's game can crash right after a long freeze (minimized / alt-tab) when the partner's creature
+  it draws was freed (BUG-0507).
+- Cell and Creature: every host evolution sends the whole world again; the guest goes to the galaxy menu and
+  loads it (BUG-0508).
+- Cell: a knocked-out cell can still bite and kill (BUG-0509).
+- Cell and Creature: far more DNA than single player; a guest's meals land at once in the host's open editor
+  (BUG-0510).
+- Cell: other cells float around very fast on the guest after the cell grows (BUG-0511).
+- Creature: the host's pack attacks the guest when the host targets it (BUG-0512).
+- Creature: a guest whose game stops drawing for many seconds is shown sunk into the ground on the host (BUG-0513).
+- Tribe: the guest's members cannot pick up tools from the host's tool buildings (BUG-0514).
+- Tribe: epic creatures deal only 8 damage (unclear which side, BUG-0515).

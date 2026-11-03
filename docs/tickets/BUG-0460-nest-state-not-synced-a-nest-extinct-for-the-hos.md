@@ -45,3 +45,4 @@ another species; the herd's extinct bits in the guest's game.
 ## History
 - 2026-11-02: opened.
 - 2026-11-03: fix/w40-world-objects: fixed (worldobj.cpp / nest.cpp).
+- 2026-11-03: seen again in a player report 2026-11-03 (0.7.3.6, host mark 'map desynced on extinct nests (dead nests)', report 20261103-192547), fixed in 0.7.4 (unreleased).

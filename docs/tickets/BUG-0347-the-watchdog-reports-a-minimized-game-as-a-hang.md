@@ -42,3 +42,4 @@ writes the WATCHDOG dump.
 
 ## History
 - 2026-10-31: opened from the host's and the guest's report zips.
+- 2026-11-03: seen in a player report (0.7.3.6 guest, report 20261104-012758): WATCHDOG 'no frames' during 17-38 s gaps with a device Reset after each (minimized / alt-tab). The host meanwhile showed the guest sunk into the ground: BUG-0513; a crash right after such a gap: BUG-0507.

@@ -51,3 +51,4 @@ health is unchanged.
 ## History
 - 2026-11-01: opened from the host's report (0.7.3.3); reproduced and fixed on lane 9 (fix/w30-creature-hp).
 - 2026-11-02: released in 0.7.3.4.
+- 2026-11-03: a related report on 0.7.3.6: the pack attacks the guest when the HOST targets or attacks it (another path, BUG-0512).
