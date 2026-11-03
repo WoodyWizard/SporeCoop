@@ -30,22 +30,37 @@ def named(sig):
     return ':'.join(p)
 
 # signature (or its prefix up to a kind) -> the ticket that already covers it
-KNOWN = {
-    'Creature:scale:creature': 'BUG-0461 (NPC scale sent, not applied)',
-    'Creature:host_only:nest': 'BUG-0460',
-    'Creature:guest_only:nest': 'BUG-0460',
-    'Creature:unmatched:nest': 'BUG-0460',
-    'Creature:unmatched:egg': 'BUG-0421 class (eggs)',
-    'Creature:host_only:egg': 'BUG-0421 class (eggs)',
-    'Creature:guest_only:egg': 'BUG-0421 class (eggs)',
+KNOWN = {  # <stage>:<what>:<kind> (or <stage>:*:<kind>, <*>:*:<kind>) -> the ticket that covers it
+    'Creature:scale:creature': 'BUG-0461',
+    '*:*:fruit': 'BUG-0472',
+    'Tribe:*:game_bundle': 'BUG-0472',
+    'Creature:*:game_plant': 'BUG-0473',
+    'Creature:*:rock': 'BUG-0473',
+    'Creature:*:interactive_ornament': 'BUG-0473 / BUG-0459',
+    'Tribe:*:egg': 'BUG-0474',
+    'Creature:*:egg': 'BUG-0421 class (eggs, BUG-0384)',
+    'Tribe:scale:citizen': 'BUG-0475',
+    'Civilization:scale:citizen': 'BUG-0475',
+    'Civilization:*:citizen': 'BUG-0476',
+    '*:*:default_tool_projectile': 'BUG-0477',
+    '*:*:resource_projectile': 'BUG-0477',
+    '*:*:cultural_projectile': 'BUG-0477',
+    '*:*:default_beam_projectile': 'BUG-0477',
+    '*:*:default_ao_e_area': 'BUG-0477',
+    'Civilization:*:vehicle': 'BUG-0478',
+    'Civilization:*:inter_city_road': 'BUG-0478',
+    'Space:*:ufo': 'BUG-0479',
+    'Space:*:planetary_artifact': 'BUG-0479',
+    'Cell:*:cell': 'BUG-0480',
     'Creature:guest_local:creature': 'BUG-0421 class (guest-local objects)',
-    'Cell:guest_local:cell': 'BUG-0421 class / host-centric M2',
 }
 
 
 def known(sig):
-    if sig in KNOWN:
-        return KNOWN[sig]
+    st, what, kind = (sig.split(':') + ['', '', ''])[:3]
+    for k in (sig, f'{st}:*:{kind}', f'*:*:{kind}'):
+        if k in KNOWN:
+            return KNOWN[k]
     return ''
 
 

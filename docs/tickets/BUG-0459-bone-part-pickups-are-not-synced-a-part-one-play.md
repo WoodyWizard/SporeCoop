@@ -34,3 +34,4 @@ Target: 0.7.4.
 
 ## History
 - 2026-11-02: opened.
+- 2026-11-03: the detector sees the pickups themselves differ: `Creature:host_only:interactive_ornament` (bones / skeletons only in the host's game) in 6% of Creature comparisons (out/lab/20261103-012624).

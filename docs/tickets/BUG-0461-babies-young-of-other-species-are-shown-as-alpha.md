@@ -34,3 +34,4 @@ Target: 0.7.4.
 
 ## History
 - 2026-11-02: opened.
+- 2026-11-03: the divergence detector shows it in 94% of 343 Creature comparisons (`Creature:scale:creature`, e.g. 0.59 host / 0.68 guest), without a player (out/lab/20261103-012624).
