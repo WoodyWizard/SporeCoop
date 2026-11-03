@@ -69,7 +69,7 @@ KNOWN = {  # <stage>:<what>:<kind> (or <stage>:*:<kind>, <*>:*:<kind>) -> the ti
 
 def known(sig):
     st, what, kind = (sig.split(':') + ['', '', ''])[:3]
-    for k in (sig, f'{st}:*:{kind}', f'*:*:{kind}'):
+    for k in (sig, f'*:{what}:{kind}', f'{st}:*:{kind}', f'*:*:{kind}'):
         if k in KNOWN:
             return KNOWN[k]
     return ''
@@ -126,6 +126,10 @@ def main():
                     except ValueError:
                         continue
                     s = named(d['sig'])
+                    st, what, kind = (s.split(':') + ['', '', ''])[:3]
+                    if kind in worlddiff.IGNORE or (st == 'Space' and what.startswith('noun_only')
+                                                    and kind in ('creature', 'citizen')):
+                        continue  # not compared any more (a log from before worlddiff.IGNORE had it)
                     seen[s] += 1
                     objs[s] += int(d.get('n', 0))
                     tests[s].add(test)
