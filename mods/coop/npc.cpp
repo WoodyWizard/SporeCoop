@@ -175,6 +175,8 @@ struct Proxy {
     bool ever = false;      // BUG-0383: an object was made for it once (a body the guest's game removed stays gone)
     double made_at = 0;     // BUG-0399 (diagnostics): when its creature was made and the host's
     float made_agl = 0;     // position's height over this game's ground then (m)
+    uint32_t tuning = 0;    // BUG-0462: the host NPC's archetype tuning key (spawn trailer), 0 unknown
+    uint32_t tuning_set = 0; // the key last given to its creature
 };
 static std::map<uint16_t, Proxy> g_proxies;
 // BUG-0383: a guest made no proxy for an NPC that was dead when it first came into the guest's range (killed
@@ -392,6 +394,91 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
                    c_npctrack, nullptr, SK_CMD_MAIN_THREAD);
 }
 
+// BUG-0462: an NPC's archetype tuning (+0xE84) decides its relation to the player when its species has no
+// record (GetRelationship 0xBA40E0 -> tuning +0x390), and the social games and the avatar-event handler read
+// it. Create takes it from the species profile (+0x58C archetype, +0x5F4 variant) through the species
+// manager's tuning map (0x4E00C0): a proxy of a species the guest's game knows differently (lane 9: 06805133)
+// was made without tuning, so its relation came from the diet / size rule (1, hostile, where the host's NPC
+// had 3). The tuning is a node of that map: its key is the dword before it. The host sends the key after
+// the spawn; the guest gives the proxy the same tuning (SetTuning 0xC0C2E0) when it has another or none.
+// `coop.fix npc.tuning off`: the proxy keeps the tuning its own Create picked.
+static bool g_tuning_fix = true;
+COOP_FIX("npc.tuning", "BUG-0462", g_tuning_fix, "creature: an animal on the guest has the host's archetype (its relation, social game and behaviour data)");
+static uint32_t g_tunings_set = 0, g_tunings_missing = 0;
+
+static uint32_t tuning_key(void* c)
+{
+    uint8_t* t = c ? *(uint8_t**)((uint8_t*)c + 0xE84) : nullptr;
+    return t && skg::readable(t - 4, 8) ? *(uint32_t*)(t - 4) : 0;
+}
+
+static void* tuning_of_key(uint32_t key)
+{
+    static uintptr_t get = H->sym("Editors::cSpeciesManager::Get"), find = H->sym("SporeCoop::cSpeciesManager_GetTuning");
+    void* mgr = get && find && key ? skg::cdecl_call<void*>(get) : nullptr;
+    return mgr ? skg::thiscall<void*>(find, mgr, key, 0) : nullptr;
+}
+
+static void proxy_tuning(Proxy& px)
+{
+    if (!g_tuning_fix || !px.c || !px.tuning || px.tuning_set == px.tuning)
+        return;
+    px.tuning_set = px.tuning;
+    if (tuning_key(px.c) == px.tuning)
+        return;
+    static uintptr_t set = H->sym("SporeCoop::cCreatureBase_SetTuning");
+    void* t = tuning_of_key(px.tuning);
+    if (!t || !set) {
+        g_tunings_missing++;
+        return;
+    }
+    skg::thiscall<void>(set, px.c, t);
+    g_tunings_set++;
+}
+
+// tests: a proxy without tuning, as Create makes one in a herd of ours (the species' nest herd not found yet:
+// lane 9, the first proxies of species 06805133 after a join); the fix gives it the host's again
+std::string debug_untune(uint16_t id)
+{
+    static uintptr_t set = H->sym("SporeCoop::cCreatureBase_SetTuning");
+    auto it = g_proxies.find(id);
+    if (it == g_proxies.end() || !it->second.c || !set)
+        return "no proxy " + std::to_string(id) + "\n";
+    skg::thiscall<void>(set, it->second.c, (void*)nullptr);
+    it->second.tuning_set = 0;
+    return "proxy " + std::to_string(id) + " has no tuning now\n";
+}
+
+std::string tuning_status()
+{
+    char b[120];
+    snprintf(b, sizeof b, "npc tuning: fix=%d set=%u missing=%u\n", (int)g_tuning_fix, g_tunings_set, g_tunings_missing);
+    return b;
+}
+
+// tests (BUG-0464): the animation each NPC plays now, as the game holds it (vt 0x58 GetCurrentAnimation):
+// host: its NPCs by net id, guest: the proxies
+std::string current_anims()
+{
+    std::string out;
+    char b[80];
+    auto line = [&](int id, void* c) {
+        uint32_t a = 0;
+        net::Vec3 m;
+        if (c && game::creature_listed(c) && game::drawn_state(c, &m, &a)) {
+            snprintf(b, sizeof b, "cur %d anim=%08X%s\n", id, a, game::is_dead(c) ? " DEAD" : "");
+            out += b;
+        }
+    };
+    if (is_host())
+        for (auto& [id, c] : g_host_by_id)
+            line(id, c);
+    else
+        for (auto& [id, px] : g_proxies)
+            line(id, px.c);
+    return out;
+}
+
 static net::NpcState host_state(uint16_t id, void* c)
 {
     net::NpcState s;
@@ -424,6 +511,7 @@ static void send_spawn(uint8_t guest, uint16_t id, void* c)
     sp.max_health = game::max_health(c);
     net::Writer w;
     sp.write(w);
+    w.u32(tuning_key(c)); // BUG-0462 trailer: older SporeCoop ignores it
     C.sess->send_reliable_to(guest, net::MSG_NPC_SPAWN, w);
 }
 
@@ -1153,11 +1241,13 @@ static void guest_tick(double now)
             game::puppet_register(px.c); // no local AI
             g_proxy_of[px.c] = id;
             px.ever = true;
+            px.tuning_set = 0; // (a new creature: its own Create's tuning)
             px.made_at = now;
             px.made_agl = drive::over_ground(s.pos);
             // BUG-0399: on this game's ground (Tribe: the ground can lie higher than the host's)
             game::teleport(px.c, rts_stage() ? drive::out_of_ground(s.pos) : s.pos, s.rot);
         }
+        proxy_tuning(px);
         if (now < px.manual_until) {
             if (px.c && (px.manual_mode & 1) && now - px.manual_last > 0.1) {
                 game::set_speed(px.c, px.manual_speed);
@@ -1584,6 +1674,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         px.flags = sp.flags;
         px.health = sp.health;
         px.max_health = sp.max_health;
+        px.tuning = r.left() >= 4 ? r.u32() : 0; // BUG-0462 trailer
         net::PlayerState s;
         // the spawn carries no host time: older than any state. The guest's own clock here made
         // every state older than this snapshot whenever the guest's clock was ahead of the host's

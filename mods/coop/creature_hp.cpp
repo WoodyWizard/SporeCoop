@@ -105,6 +105,64 @@ static float SK_THISCALL h_GetMaxHp(void* combatant)
     return o_GetMaxHp(combatant);
 }
 
+// ---------------------------------------------------------------- BUG-0462
+// The game asks "is this creature of the player's species" through creature vt 0xD0 (0xC0C430: +0xB20 ==
+// cSpeciesManager PlayerSpecies, the world's species). GetRelationship 0xBA40E0 takes the species record or
+// the NPC's archetype tuning (+0xE84 +0x390) only when one of the two creatures is of the player species;
+// otherwise it falls back to a diet / size rule (0xBA2900). A guest playing its own creature in the host's
+// world is another species in its own game: every NPC's relation to it came from that rule (4 instead of the
+// tuning's 3 for the fixture's herbivores, 1 "hostile" for others), and CreatureSocialMode (the click, the
+// face) differed from the host's. On the host the same happened to the guests' puppets the NPCs' AI looks at
+// (npc.cpp ai_target). With creature.relations every player's species counts as the player species: the own
+// avatar's and the partners' puppets' (refreshed every frame in tick()).
+// `coop.fix creature.relations off`: the old rule (0.7.3.4).
+static bool g_relations_fix = true;
+COOP_FIX("creature.relations", "BUG-0462", g_relations_fix, "creature: animals have the same relation (neutral, hostile, allied) to every player as to the host");
+
+typedef bool(SK_THISCALL* IsPlayerSpecies_t)(void*);
+static IsPlayerSpecies_t o_IsPlayerSpecies;
+static void* g_party_species[8];
+static int g_party_n = 0;
+static uint32_t g_party_answers = 0;
+
+static bool SK_THISCALL h_IsPlayerSpecies(void* c)
+{
+    bool r = o_IsPlayerSpecies(c);
+    if (r || !g_relations_fix || !g_party_n || !c)
+        return r;
+    void* sp = *(void**)((uint8_t*)c + game::kSpeciesOff);
+    for (int i = 0; i < g_party_n; i++)
+        if (sp == g_party_species[i]) {
+            g_party_answers++;
+            return true;
+        }
+    return false;
+}
+
+void tick()
+{
+    int n = 0;
+    if (g_relations_fix && o_IsPlayerSpecies && game::in_creature_stage()) {
+        void* ps = player_species();
+        auto add = [&](void* c) {
+            void* sp = c && skg::readable(c, 0xB24) ? skg::field<void*>(c, game::kSpeciesOff) : nullptr;
+            if (!sp || sp == ps || n >= 8)
+                return;
+            for (int i = 0; i < n; i++)
+                if (g_party_species[i] == sp)
+                    return;
+            g_party_species[n++] = sp;
+        };
+        add(game::avatar());
+        if (C.puppet_of)
+            for (uint8_t id = 0; id < 8; id++)
+                if (void* p = C.puppet_of(id))
+                    if (game::is_puppet(p))
+                        add(p);
+    }
+    g_party_n = n;
+}
+
 bool drive_puppet(void* p, float health, float max_health)
 {
     if (!g_partner_hp || !o_GetMaxHp) {
@@ -190,6 +248,8 @@ std::string status()
                      it != g_puppets.end() ? it->second.hp : -1.f, it != g_puppets.end() ? it->second.max : -1.f);
             out += b;
         }
+    snprintf(b, sizeof b, "relations: fix=%d party_species=%d answers=%u\n", (int)g_relations_fix, g_party_n, g_party_answers);
+    out += b;
     snprintf(b, sizeof b, "fixes: partner_hp=%d party_peace=%d own_brain_hp=%d sets=%u partner_hits_dropped=%u party_hits_dropped=%u\n",
              (int)g_partner_hp, (int)g_party_peace, (int)g_own_brain_hp, g_puppet_sets, g_partner_hits_dropped, g_party_hits_dropped);
     out += b;
@@ -263,6 +323,43 @@ static int c_hp(void*, int argc, const char* const* argv, SkOut* out)
     return 0;
 }
 
+// tests (BUG-0463): coop.sneak [on|off|ability] - the sneak state the game holds for the own avatar and the
+// partners' puppets (+0xBB1, noise radius +0xB80, alpha +0xB7C, energy +0xE58); on / off: the game's setter on
+// the own avatar without force (it needs the sneak ability, as the ability key does)
+static int c_sneak(void*, int argc, const char* const* argv, SkOut* out)
+{
+    char b[256];
+    std::string s;
+    void* av = game::avatar();
+    if (argc > 1 && (!strcmp(argv[1], "on") || !strcmp(argv[1], "off") || !strcmp(argv[1], "force"))) {
+        uintptr_t a = H->sym("SporeCoop::CreatureSetSneaking");
+        if (!av || !a) {
+            H->out_printf(out, "no avatar\n");
+            return 1;
+        }
+        // force: the setter's own force flag (a creature without the sneak ability, tests only)
+        skg::thiscall<void>(a, av, (int)(argv[1][1] != 'f'), (int)(argv[1][0] == 'f'));
+    }
+    auto line = [&](const char* who, int id, void* c) {
+        uint8_t* model = skg::field<uint8_t*>(c, 0xB54);
+        snprintf(b, sizeof b, "%s %d: sneak=%d noise=%.2f alpha=%.2f energy=%.2f model_alpha=%.2f b5e=%d b58=%X ptr=%p\n", who, id,
+                 (int)game::sneaking(c), game::noise_radius(c), game::sneak_alpha(c),
+                 skg::readable(c, 0xE5C) ? skg::field<float>(c, 0xE58) : -1.f,
+                 model && skg::readable(model + 0x80, 4) ? *(float*)(model + 0x80) : -1.f, (int)skg::field<uint8_t>(c, 0xB5E),
+                 skg::field<uint32_t>(c, 0xB58), c);
+        s += b;
+    };
+    if (av)
+        line("own", -1, av);
+    if (C.puppet_of)
+        for (uint8_t id = 0; id < 8; id++)
+            if (void* p = C.puppet_of(id))
+                if (game::is_puppet(p))
+                    line("puppet", id, p);
+    H->out_printf(out, "%s", s.c_str());
+    return 0;
+}
+
 void init(const SkHost* host, SkMod* mod, Ctx ctx)
 {
     H = host;
@@ -273,10 +370,14 @@ void init(const SkHost* host, SkMod* mod, Ctx ctx)
     a_LevelHealth = H->sym("SporeCoop::CreatureLevelHealth");
     if (uintptr_t a = H->sym("SporeCoop::cCreatureAnimal_BaseMaxHitPoints"))
         H->hook_create(M, (void*)a, (void*)h_BaseMaxHp, (void**)&o_BaseMaxHp);
+    if (uintptr_t a = H->sym("SporeCoop::cCreatureBase_IsPlayerSpecies"))
+        H->hook_create(M, (void*)a, (void*)h_IsPlayerSpecies, (void**)&o_IsPlayerSpecies);
     if (uintptr_t a = H->sym("SporeCoop::cCreatureAnimal_GetMaxHitPoints"))
         H->hook_create(M, (void*)a, (void*)h_GetMaxHp, (void**)&o_GetMaxHp);
     H->command_add(M, "coop.hp", "coop.hp [pack|attack <player>|packhit <player> <hp>] - creature health of the own avatar, partners' puppets, the pack (tests)",
                    c_hp, nullptr, SK_CMD_MAIN_THREAD);
+    H->command_add(M, "coop.sneak", "coop.sneak [on|off|force] - the sneak state of the own avatar and the partners' puppets (tests, BUG-0463)",
+                   c_sneak, nullptr, SK_CMD_MAIN_THREAD);
 }
 
 } // namespace creature_hp

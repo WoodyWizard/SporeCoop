@@ -13,7 +13,7 @@ branch:
 commits:
 tests:
 signature:
-docs:
+docs: docs/re/creature.md#creature-sea-monster
 related:
 ---
 
@@ -23,7 +23,10 @@ Target: 0.7.4.
 <!-- what the player (or the test) saw, in our words; no player names, no paths from their PC -->
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+Not fixed (fix/w40-creature-acts, 2026-11-03). Observed (Ghidra strings): the sea monster is cSeaMonsterEvent, an
+event of the avatar in deep water; the avatar's death of cause 9 plays CRG_AvatarDied_SeaMonster (0xD38E60).
+Inferred, not seen at runtime: it is made by the drowning player's own game for its avatar only, so the partner's game
+never has it. See docs/re/creature.md#creature-sea-monster.
 
 ## Fix
 <!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
@@ -34,3 +37,4 @@ Target: 0.7.4.
 
 ## History
 - 2026-11-02: opened.
+- 2026-11-03: analysed on fix/w40-creature-acts (strings only), not fixed.

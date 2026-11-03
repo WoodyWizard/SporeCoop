@@ -2605,6 +2605,7 @@ void on_frame(void*, int, void*)
     parts::tick(now); // BUG-0401
     effects::tick(now); // BUG-0451: sends the queued effects on the main thread
     social::tick(now);
+    creature_hp::tick();
     shared::tick(g_sess, game::mode_id(), now, guest_elsewhere()); // BUG-0231: held while elsewhere
     if (g_sess.role() == net::Role::Host && game::avatar()) {
         float total = game::dna();
@@ -3929,6 +3930,14 @@ COOP_FIX("tools.gopos_ground", "BUG-0400", g_gopos_ground_fix, "tests: coop.npc 
 
 int c_npc(void*, int argc, const char* const* argv, SkOut* out)
 {
+    if (argc > 1 && !strcmp(argv[1], "cur")) { // BUG-0464 (tests): each NPC's current animation
+        SAY("%s", npc::current_anims().c_str());
+        return 0;
+    }
+    if (argc > 2 && !strcmp(argv[1], "untune")) { // guest (tests, BUG-0462): proxy <id> as made in a herd of ours
+        SAY("%s", npc::debug_untune((uint16_t)atoi(argv[2])).c_str());
+        return 0;
+    }
     if (argc > 2 && !strcmp(argv[1], "forget")) { // guest (tests, BUG-0487): forget <id>
         SAY("%s", npc::debug_forget((uint16_t)atoi(argv[2])).c_str());
         return 0;
@@ -4185,6 +4194,10 @@ int c_social(void*, int argc, const char* const* argv, SkOut* out)
     }
     if (argc > 1 && !strcmp(argv[1], "species")) {
         SAY("%s", social::species_dump().c_str());
+        return 0;
+    }
+    if (argc > 1 && !strcmp(argv[1], "rel")) {
+        SAY("%s", social::relations_dump().c_str());
         return 0;
     }
     if (argc > 4 && !strcmp(argv[1], "goal")) { // tests: goal <hex crt> <outcome 5|6> <dna> (guest -> host, BUG-0205)

@@ -3670,3 +3670,17 @@ the other player's game, both ways where the kind has two:
   dy <level> <model instance hex>` on the host makes a copy of an NPC cell and sends it to the guests
   with that model instance (cellsync::set_fake_model; 0 clears it). SPORE_FIX_OFF=cell.unknown_model:
   the guest faults at 0xE83EC8 (read 0x9C) and makes no further mirrors.
+
+## Creature: sneak, relations, NPC animations (2026-11-03, fix/w40-creature-acts)
+<a id="testing-creature-acts"></a>
+
+* `creature_sneak` (coop_creature_sneak.py, ~1 min warm): each player sneaks (`coop.sneak on`, the game's setter;
+  the guest's fixture creature has no sneak ability, so `coop.sneak force`); the other game's puppet is read with
+  `coop.sneak` (+0xBB1, noise radius +0xB80, alpha +0xB7C, model alpha). The alpha eases over 2-5 s, the test
+  compares it with the actor's own after 3 s. `SPORE_FIX_OFF=creature.sneak` fails.
+* `creature_relations` (coop_creature_relations.py, ~1 min warm): `coop.social rel` lists per NPC id the game's
+  GetRelationship(avatar, npc), CreatureSocialMode(npc), the tuning and its key; the guest's proxies are made again
+  after the switches (`coop.npc forget`, the host resends) and put into the state of a proxy made in a herd of ours
+  (`coop.npc untune`). `SPORE_FIX_OFF=creature.relations` and `SPORE_FIX_OFF=npc.tuning` fail.
+* `coop_npc_anims.py` (not in a suite: BUG-0464 open): samples `coop.npc cur` (vt 0x58 GetCurrentAnimation per NPC
+  id) on both games for 40 s; fails on this code (7-9 % of the samples match).

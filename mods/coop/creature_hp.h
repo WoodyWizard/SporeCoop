@@ -32,5 +32,6 @@ bool drop_partner_hit(void* npc);
 bool drop_party_hit(void* attacker);
 
 std::string status();
+void tick(); // every frame: the players' species that count as the player species (BUG-0462)
 
 } // namespace creature_hp

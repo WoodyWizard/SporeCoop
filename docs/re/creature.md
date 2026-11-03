@@ -1955,3 +1955,110 @@ Player reports BUG-0453 (host crash 0xD65D23, read 0, twice) and BUG-0456 (host 
 * Test tools: `coop.puppet respawn [s]` (host: every partner's puppet goes now, shown again after s
   seconds), `coop.attackcut` (the next NPC in its attack animation has its target cleared by vt 0x84
   (null), as the destroy does).
+
+## Sneak: the creature's state and the partner's puppet (2026-11-03, fix/w40-creature-acts)
+<a id="creature-sneak"></a>
+
+BUG-0463. GOG 2024, Ghidra (out/ghidra-2024) and lane 9 at runtime (creature fixture, `coop.sneak`).
+
+* ✔ `CreatureSetSneaking` 0xC1B030 `thiscall(creature, bool on, bool force) ret 8`: on: without force it returns when
+  the creature has no ability of type 0xD or 0x52 (`GetAbilityIndexByType`); sets +0xB80 (noise radius) = 0, +0xBB1 = 1
+  and plays the procedural sound 0xC881120E at the creature. Off (only when +0xBB1 is set): +0xB80 back (the avatar,
+  +0xB58 bit 0x200: from its sneak ability via 0xC19900; others: the constant at 0x150C8C0, 6.0), +0xBB1 = 0, sound
+  0x529FEC69. 30 callers (TakeDamage ends a sneak, the creature-stage action handlers 0xD6xxxx / 0xD8xxxx).
+* ✔ 0xC0C290 (fastcall) returns +0xBB1: NPCTickAI calls it 4 times (the notice step, docs/re/creature.md 14.2),
+  cCreatureCitizen::Update and the stage's UI code too. 0xC11730 (a vtable slot, 0x146A650 / 0x146ADC0) returns false
+  at once for a sneaking target (a sight / distance check).
+* ✔ The sneak's look: `0xC1CF30` (called from cCreatureAnimal::Update 0xC0AE30 and cCreatureBase::Update every frame,
+  for puppets too) eases +0xB7C towards 0.2 while sneaking (1.0 else) and writes it to the model (+0xB54) +0x80, unless
+  +0xB5E or +0xB58 bit 0x800; with the sneak ability it consumes energy (+0xE58, ability +0x104 per ms) and ends the
+  sneak at 0 energy. Runtime: the fixture's creatures have energy 1000; the alpha reached 0.2-0.26 within 2-5 s of the
+  sneak on both the avatar and the puppet.
+* ✔ The guest's fixture creature has no sneak ability (types 0xE 0x1D 0x28 0x10 0x25 0x1E 0x31 0x32 0x33), the host's
+  has 0xD (index 7): the guest's sneak in the test uses the force flag.
+* ✔ Before the fix the partner's puppet kept +0xBB1 0, noise 6.0, alpha 1.0 while the partner sneaked: nothing of it was
+  sent. Now PlayerState flag PF_SNEAKING (modes.cpp) and `CreatureSetSneaking(puppet, on, 1)` on the receiver
+  (`creature.sneak`); the puppet's energy is kept above 0.
+* ~ Inferred, not run as a behaviour test: the host's NPCs with a guest's puppet swapped in as the avatar (npc.cpp
+  ai_target) now get noise 0 and the sneak flag from the puppet, as from a sneaking host avatar.
+
+## Relations to a player of another species, proxies without tuning (2026-11-03, fix/w40-creature-acts)
+<a id="creature-relations"></a>
+
+BUG-0462. GOG 2024, Ghidra (out/ghidra-2024) and lane 9 at runtime (`coop.social rel`).
+
+* ✔ `GetRelationship` 0xBA40E0 `thiscall(mgr, key*, a, b) ret 0xC` in the Creature stage (mode not 0x1654C10): when
+  neither a nor b answers creature vt 0xD0 (`cCreatureBase_IsPlayerSpecies` 0xC0C430: +0xB20 == cSpeciesManager
+  PlayerSpecies 0x4DF490), it returns the **diet / size rule** 0xBA2900(a, b) (6 same species, else 1-4 by herbivore /
+  carnivore and a size class from 0xC0BA40 against 0x156C194 / 0x156C198). Else: the species record (map +0x24, node
+  +0xC) when not 0, else the tuning +0x390 of the one that is not the avatar (0xC0C300 = +0xE84), else the rule.
+  CreatureSocialMode 0xC0E800 calls it with (avatar, npc); vt 0xD4 0xC0C3B0 ("friendly") with the same.
+* ✔ So a guest playing its own creature (another species in its own game) got the rule for every NPC: on the fixture
+  4 instead of the tuning's 3 for 12 herbivores (social mode 1 instead of 2). Fixed by `creature.relations`
+  (creature_hp.cpp hooks vt 0xD0: the own avatar's and the puppets' species count as the player species).
+* ✔ The archetype tuning: `cCreatureAnimal::Create` 0xC09B40 sets it with `cCreatureBase_SetTuning` 0xC0C2E0 (+0xE84,
+  +0xE80 = tuning +0x10) from `cSpeciesManager_GetTuning` 0x4E00C0(mgr, key, variant) (the player species: key
+  0xAED08DD4). The tuning is the value of a map node: the dword before it is its key, the same as the herd's archetype
+  +0x88 (lane 9: tkey B5BC62BF = arch B5BC62BF on the host).
+* ✔ A proxy made in a herd of ours (archetype 0: the species' nest herd not found on the guest yet) got no tuning (lane
+  9, the first proxies of species 06805133 after a join); its relation then came from the rule: 1 (hostile) where the
+  host's NPC had 3 (neutral). Made again a minute later, the same proxy went into the game's herd (arch B5BC62BF) and
+  had the tuning. Fixed by `npc.tuning` (the host's key after MSG_NPC_SPAWN, the guest sets the same tuning).
+* ~ Inferred: on the host the NPCs' AI with a guest's puppet as the avatar (npc.cpp ai_target) used the rule too; the
+  hook covers the puppets' species there.
+
+## Carried objects, herd evolution, NPC animations on the guest (2026-11-03, fix/w40-creature-acts)
+<a id="creature-npc-anims"></a>
+
+BUG-0458, BUG-0464 (both open). GOG 2024, Ghidra (out/ghidra-2024) and lane 9 (creature fixture). Findings only.
+
+### Picking up and throwing (BUG-0458)
+
+* ✔ The Creature stage's cursor choice 0xD311B0 asks 0xD30830 -> 0xD2FFD0 (the object under the mouse) for a cursor
+  kind: 0xB / 0x19 load cursor 0x3B360DC ("cursor-crg-pickup", the strings are loaded in 0xD366C0), 0xD / 0x16 cursor
+  0x3B360E4 ("cursor-crg-throw"). 0x19 / 0x16 are returned for an object of noun **0x2A8FB3F (cRock)** with interface
+  0x1186577 (+0x50 bit 0x100, +0x70) when 0xC13DC0(obj, 0, ..) says it can be taken; 0x1A for an ornament of sort 2.
+* ✔ The carry behaviour (a BT node without a direct caller, 0xD84120): walks to the object (WalkTo), plays animation
+  0x39E4C77 (or 0x39E4C77 + 0x1597E79), and at the end, by the object: a fruit (0x2C9CC91), a cRock (0x2A8FB3F) or an
+  interactive ornament (0x3A2511E) of **sort 3** (the stick, ~ inferred from the sort list of
+  docs/re/creature.md#creature-world-objects) posts BT stimulus 0x40000 (value 60) with slot +0xC = 1 (carrying).
+  0xD3A0D0 (a creature bumping into an object) pushes cRocks and sort-6 ornaments.
+* ✔ The fixture has one cRock (census noun 0x2A8FB3F = 1, vtable 0x1473228) and 12 ornaments, 5 of them sort 2.
+* Not done: the carried object follows the carrier's hand in each game separately, and a throw moves it with the
+  physics of the game that threw it. A fix is a host-owned world object with a carrier (worldobj.cpp: a kind for
+  cRock and sort-3 ornaments with pos / rot / carried-by at 10+ Hz, the guest's carry as a request) or the carry
+  stimulus relayed to the partner's puppet. Neither tried.
+
+### Herd evolution (BUG-0464)
+
+* ✔ cHerd's serialized fields (descriptor 0x134D380): `mGeneration` +0xF0, `mEvolvedSpeciesProfileKeys` +0xA8 (a
+  vector of species keys), `mDNAEvolutionThreshold` +0x94, `mbShouldEvolve` +0x85, `mbBestFriends` (after it).
+  cHerd::Update 0xC6D960 reads the archetype tuning with `cSpeciesManager_GetTuning(herd +0x88, herd +0xF0)`: the
+  generation is the tuning's variant. ~ Inferred: a nest "evolves" by a new generation / species key from the list;
+  the guest's herds are not simulated (its NPCs are removed), so its nest never does.
+* ✔ The NPCs' own animations do not reach the guest at all: sampled twice a second for 40 s (coop_npc_anims.py,
+  `coop.npc cur`, vt 0x58 GetCurrentAnimation), the host's 21 NPCs played B31EB92C (760 samples), 731EA3EA, 0519E154,
+  042A1CAF, 02481DE5, 05807346, ...; their proxies 02481DE5 (1444 of 1617), the death F14FAA46 and 04866Dxx. The proxy
+  showed the host NPC's animation in 7-9 % of the samples (lab runs 20261103-153901, 20261103-154027).
+* ✗ Tried and reverted: relaying the host NPCs' cCreatureBase::PlayAnimation / PlayAnimationTo calls (the hooks of the
+  players' MSG_ANIM) to the proxies: 287 calls in 40 s (171 more over a rate limit of 80/s), 279 played on proxies, and
+  the proxies' current animation did not change (7 % before, 9 % with it). So the behaviour animations (B31EB92C ...)
+  are not started through those two functions, or the proxy's driving replaces them at once. Next: find the caller
+  of the AnimatedCreature (Anim::AnimatedCreature::PlayAnimation 0xA0C5D0) for B31EB92C, or replicate the current
+  animation as state (host: GetCurrentAnimation per NPC; guest: play it when the proxy's differs).
+
+## The sea monster (the players' "kraken", 2026-11-03, fix/w40-creature-acts)
+<a id="creature-sea-monster"></a>
+
+BUG-0465 (open). GOG 2024, Ghidra strings only, not seen at runtime.
+
+* ✔ There is no "kraken" / "monster" creature or noun in the exe's strings; the game's sea monster is
+  `cSeaMonsterEvent` (class name strings 0x147AEEC / 0x147B2F8, used by 0xD4AE00 and 0xD4C4D0; the component path
+  "SP_Simulator/cSeaMonsterEvent/COM" at 0xD4D450). The avatar's death of cause 9 plays the cinematic
+  `CRG_AvatarDied_SeaMonster` (0xD38E60, called by 0xD401E0; cause 5 starvation, others CRG_AvatarDied).
+* ✔ Known before (docs/re/creature.md#creature-deep-water): an avatar over deep water starts caption cinematic
+  5E205931 ("Dangerous creatures lurk in the deep").
+* ~ Inferred: the monster is an avatar event (the player's own game makes it for its own avatar, as its death
+  cinematic), not a world object: the partner's game has no such event for a puppet, so it never shows. Class B of
+  docs/sync-architecture-plan.md (the game knows one player). A fix would relay the event (or the death cause 9) to
+  the partner and play the monster there at the puppet; the event's object and how it is drawn are not analysed.

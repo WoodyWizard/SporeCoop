@@ -82,3 +82,7 @@ SporeCoop::VectorU32_PushBack ; BUG-0457: the test helper coop.vote evolve (the 
 SporeCoop::CreatureEvolutionPending_flag ; BUG-0457: the test helper coop.vote evolve is off on GOG 2016
 SporeCoop::CreatureGame_HandleMessage ; BUG-0466: on GOG 2016 the guest's own editor charges no DNA (creations.own_editor_dna off there)
 SporeCoop::BT_AttackTick ; BUG-0453: the attack-without-a-target guard is off on GOG 2016 (frozen build, GOG 2024 address only)
+SporeCoop::CreatureSetSneaking ; the partner's sneak on its puppet (creature.sneak) (BUG-0463)
+SporeCoop::cCreatureBase_IsPlayerSpecies ; BUG-0462: on GOG 2016 a guest's own species keeps the diet / size relations (creature.relations off there)
+SporeCoop::cSpeciesManager_GetTuning ; BUG-0462: on GOG 2016 a guest's NPC keeps its own archetype tuning (npc.tuning off there)
+SporeCoop::cCreatureBase_SetTuning ; BUG-0462: on GOG 2016 a guest's NPC keeps its own archetype tuning (npc.tuning off there)

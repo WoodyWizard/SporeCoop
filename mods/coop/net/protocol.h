@@ -140,6 +140,7 @@ enum PlayerFlags : uint8_t {
     PF_JUMPING = 8,
     PF_DEAD = 16,
     PF_SWIMMING = 32,
+    PF_SNEAKING = 64, // BUG-0463: the creature sneaks (+0xBB1); older SporeCoop ignores the bit
 };
 
 struct Vec3 {
