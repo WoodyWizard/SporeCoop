@@ -79,6 +79,7 @@ add('tribe_effects', P + 'coop_tribe_effects.py', warm=True, minutes=4, fixture=
 add('effects_party', P + 'coop_effects_party.py', minutes=6, monitor={'proxy_n': 1000})  # BUG-0451 review: a guest's world effect reaches the second guest through the host relay (3 players); SPORE_FIX_OFF=creature.effects_relay fails
 add('effects_validate', P + 'coop_effects_validate.py', warm=True, minutes=3, fixture='creature', monitor={'proxy_n': 1000})  # BUG-0451 review: spoofed and malformed effect messages are dropped before a game call, counted in coop.effects
 add('effects_live', P + 'coop_effects_live.py', warm=True, minutes=2, fixture='creature', monitor={'proxy_n': 1000})  # BUG-0451 review: relayed world effects stay bounded (64, 8 s) and return to 0
+add('effects_release', P + 'coop_effects_release.py', minutes=6, fixture='creature', monitor={'proxy_n': 1000})  # BUG-0451 review item 7: 60 s at the rate limit, the relay releases the effect reference (off: the game's private commit grows)
 add('tribe_coop', P + 'coop_tribe.py', ('smoke',), warm=True, minutes=4, fixture='tribe')
 add('civ_coop', P + 'coop_civ.py', ('smoke',), warm=True, minutes=3, fixture='civ')
 add('cell_coop', P + 'coop_cell.py', ('smoke',), warm=True, minutes=4, fixture='cell')

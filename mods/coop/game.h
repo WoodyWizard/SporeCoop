@@ -161,6 +161,8 @@ void* effect_from_pools(void* c, uint32_t key);
 bool effect_active(void* effect);
 // stop a world effect the relay created (IVisualEffect vt 0xC with 0); false if the object is not callable
 bool stop_world_effect(void* effect);
+// drop the reference the relay holds on a created world effect (IVisualEffect vt 0x4, Release)
+bool release_world_effect(void* effect);
 
 // ---- creature registry: every cCreatureAnimal that ran Update since the last call ----
 const std::vector<void*>& creatures_updated();   // swap per frame (call once per frame)

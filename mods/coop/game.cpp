@@ -672,6 +672,18 @@ bool stop_world_effect(void* effect)
     return true;
 }
 
+// Drop the reference cEffectsManager::CreateEffect 0xA6CAD0 gave us (EffectWorld::CreateEffect
+// 0xA71300 writes the effect into *out and calls its AddRef, vtable slot 0x0 at 0x923720; the
+// game lets go of such a pointer with the Release slot 0x4 at 0xA81CE0, e.g. the pool map erase
+// 0xD2C9F0). Without this the relay keeps every received world effect alive for the session.
+bool release_world_effect(void* effect)
+{
+    if (!effect_callable(effect))
+        return false;
+    vcall<void>(effect, 0x4 / 4); // may destroy the object when this was the last reference
+    return true;
+}
+
 typedef void(SK_THISCALL* NPCTickAI_t)(void*, float);
 static NPCTickAI_t o_NPCTickAI;
 

@@ -158,8 +158,14 @@ static constexpr size_t kLiveMax = 64;
 static constexpr double kLiveSec = 8.0;
 static Live g_live[kLiveMax];
 static size_t g_live_n;
-static uint32_t g_live_stopped, g_live_expired, g_live_mode, g_live_world;
+static uint32_t g_live_stopped, g_live_expired, g_live_released, g_live_dropped, g_live_mode, g_live_world;
 static bool g_live_init;
+// BUG-0451 review item 7: the reference cEffectsManager::CreateEffect gives the caller is released
+// when the relay forgets the effect. Off: the old behaviour (every relayed world effect stays
+// allocated for the session), for the 60 s measurement test.
+static bool g_release_fix = true;
+COOP_FIX("effects.release", "BUG-0451", g_release_fix,
+         "effects: the relay releases the reference it holds on a world effect it created (no leak)");
 
 static double now() { return H ? H->time_seconds() : 0; }
 
@@ -384,13 +390,24 @@ static void process_world(void* fx, uint32_t id)
     C.sess->send_event(net::MSG_EFFECT, w);
 }
 
+// forget a listed effect and drop our reference on it. We hold that reference until here, so the
+// object is still alive even when the effect ended by itself (IsActive false): IsActive and Stop on
+// a listed effect are safe. After the Release the object may be destroyed, so nothing may use the
+// pointer afterwards.
+static void live_forget(void* fx, bool release)
+{
+    if (release && g_release_fix && game::release_world_effect(fx))
+        g_live_released++;
+}
+
 static void live_add(void* fx, double t)
 {
     if (!fx)
         return;
-    if (g_live_n >= kLiveMax) { // more than 64 live: stop the oldest
+    if (g_live_n >= kLiveMax) { // more than 64 live: stop and forget the oldest
         if (game::effect_active(g_live[0].fx) && game::stop_world_effect(g_live[0].fx))
             g_live_stopped++;
+        live_forget(g_live[0].fx, true);
         memmove(g_live, g_live + 1, (g_live_n - 1) * sizeof g_live[0]);
         g_live_n--;
     }
@@ -400,7 +417,12 @@ static void live_add(void* fx, double t)
 static void live_tick(double t, uint32_t mode, uint32_t world)
 {
     if (!g_live_init || mode != g_live_mode || world != g_live_world) {
-        g_live_n = 0; // stage / world change: the game freed these effects, do not call into them
+        // Stage / world change: the game's effect manager tore its effects down. Do NOT call into
+        // them (Stop, IsActive or Release: the world may have destroyed their internals already),
+        // just drop the pointers; the references we held stay with those objects (the game's
+        // teardown path; never Release here, BUG-0451 review item 7).
+        g_live_dropped += (uint32_t)g_live_n;
+        g_live_n = 0;
         g_live_mode = mode;
         g_live_world = world;
         g_live_init = true;
@@ -410,12 +432,15 @@ static void live_tick(double t, uint32_t mode, uint32_t world)
     for (size_t i = 0; i < g_live_n; i++) {
         Live e = g_live[i];
         bool active = game::effect_active(e.fx);
-        if (!active)
-            continue; // it ended by itself: forget it
+        if (!active) { // it ended by itself: forget it and drop our reference
+            live_forget(e.fx, true);
+            continue;
+        }
         if (t - e.at >= kLiveSec) {
             if (game::stop_world_effect(e.fx))
                 g_live_stopped++;
             g_live_expired++;
+            live_forget(e.fx, true);
             continue;
         }
         g_live[w++] = e;
@@ -676,7 +701,7 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
     g_load_n = g_load_ms = g_load_id = g_load_ok = g_load_failed = 0;
     g_perf_creates = g_perf_probes = g_perf_evicted = g_perf_sent = 0;
     g_live_n = 0;
-    g_live_stopped = g_live_expired = 0;
+    g_live_stopped = g_live_expired = g_live_released = g_live_dropped = 0;
     g_live_mode = g_live_world = 0;
     g_live_init = false;
     game::set_effect_relay_enabled(g_fix);
@@ -691,9 +716,11 @@ void on_session_end()
     g_last_rx_from = 0xFF;
     g_sent_n = 0;
     world_sent_clear();
-    for (size_t i = 0; i < g_live_n; i++) // the session ends: stop the effects the relay still holds
+    for (size_t i = 0; i < g_live_n; i++) { // the session ends: stop and release what the relay holds
         if (game::effect_active(g_live[i].fx) && game::stop_world_effect(g_live[i].fx))
             g_live_stopped++;
+        live_forget(g_live[i].fx, true);
+    }
     g_live_n = 0;
 }
 
@@ -811,8 +838,10 @@ std::string status()
     snprintf(b, sizeof b, "effects received drops: spoof=%u pool=%u id=%u bone=%u transform=%u short=%u\n",
              g_dropped_spoof, g_bad_pool, g_bad_id, g_bad_bone, g_bad_xf, g_bad_short);
     s += b;
-    snprintf(b, sizeof b, "effects world live: live=%u stopped=%u expired=%u\n", (unsigned)g_live_n, g_live_stopped,
-             g_live_expired);
+    snprintf(b, sizeof b,
+             "effects world live: live=%u stopped=%u expired=%u released=%u dropped=%u release_fix=%d\n",
+             (unsigned)g_live_n, g_live_stopped, g_live_expired, g_live_released, g_live_dropped,
+             (int)g_release_fix);
     s += b;
     {
         double hs = 0, hm = 0;
