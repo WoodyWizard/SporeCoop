@@ -8,6 +8,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 
 namespace mouse {
 
@@ -20,6 +21,9 @@ void install(const void* game_window);
 void shutdown();
 // primary clicks seen so far; a consumer keeps the last value it handled
 uint32_t clicks();
+// BUG-0482: the characters (WM_CHAR) the game window took from its queue since the last call, and
+// forget them; main thread (the hook runs on the thread that pumps the game's messages)
+std::u16string take_chars();
 // where the last one was, in the game window's client pixels
 void last_click(int& x, int& y);
 
