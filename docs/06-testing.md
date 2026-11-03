@@ -3591,3 +3591,18 @@ on a guest, compared, so unsynced systems are found by the lab, not by players.
   the Space level of detail: `visible_planet` and a planet's creatures / citizens in the whole lists, which
   only the game whose camera is on that planet loads). A new `**new**` row in a later report is a new
   finding: give it a ticket or an IGNORE entry with the reason, never leave it.
+
+## Mirror sizes and the NPC resync (2026-11-03, fix/w40-scale)
+<a id="testing-mirror-scale"></a>
+
+* `coop_mirror_scale.py --kind npc|tribe_member|ufo` (suites `mirror_scale_npc`, `mirror_scale_tribe`,
+  `mirror_scale_space`, warm, about 80 s each): the size the game gives each original and its mirror on the
+  other game (GetScale: the census `scale=` for NPC proxies and the players' ships, `coop.fields list
+  tribe_member` for tribe members), 4 rounds 5 s apart after 20 s; FAIL when more than 5 % of the pairs differ
+  by more than 12 % (the detector's tolerance). It prints the detector's `<stage>:scale:<kind>` per round.
+  Twins: `SPORE_FIX_OFF=npc.scale`, `tribe.scale`, `space.puppet_scale`.
+* `coop_npc_resync.py` (suite `npc_resync`): the guest destroys three of its NPC proxies without telling the
+  host (`coop.npc forget <id>`); 10 s later each must be a creature of the guest's game again, alive as on the
+  host and within 6 m. With the fix the spawn is back within about a second. Twin: `SPORE_FIX_OFF=npc.resync`.
+* Pitfall met on the way: a shell loop `until ! pgrep -f <script>` waits for itself (its own command line
+  holds the pattern), the same trap as `pkill -f` (CLAUDE.md 3): wait on the background task, not on pgrep.

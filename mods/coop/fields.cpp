@@ -44,6 +44,10 @@ struct Want {
     float v;
     double t;   // received
     bool applied = false;
+    // the mirror's own value before the first apply: a switch turned off (a lab twin run, after the join
+    // applied the host's) gives it back, so the off side is the mirror's own value as before the fix
+    void* own_obj = nullptr;
+    float own = 0;
 };
 // guest: (kind << 24 | field << 16 | id) -> the host's value
 static std::map<uint32_t, Want> g_want;
@@ -175,11 +179,20 @@ static void guest_tick(double now)
         const Kind* k = kind_of(kid);
         const Field* f = k ? field_of(*k, fid) : nullptr;
         Stats& st = g_stats[kid];
-        if (!f || !kind_on(*k)) {
+        if (!f || !kind_active(*k)) {
             ++it;
             continue;
         }
         void* obj = k->mirror(id);
+        if (!kind_on(*k)) { // switched off: the mirror's own value again
+            if (obj && obj == it->second.own_obj) {
+                f->apply(obj, it->second.own);
+                it->second.own_obj = nullptr;
+                it->second.applied = false;
+            }
+            ++it;
+            continue;
+        }
         if (!obj) {
             st.pending++;
             ++it;
@@ -188,6 +201,10 @@ static void guest_tick(double now)
         st.checked++;
         float cur = f->read(obj);
         if (fields_wire::differs(cur, it->second.v, f->tol)) {
+            if (obj != it->second.own_obj) { // a new mirror object: remember its own value
+                it->second.own_obj = obj;
+                it->second.own = cur;
+            }
             f->apply(obj, it->second.v);
             if (it->second.applied)
                 st.reapplied++; // the game (or a module) changed the mirror's value again

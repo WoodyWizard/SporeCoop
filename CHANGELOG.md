@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Fixed
+- Creature: animals of other species now have the same size on every player's screen; young ones are no
+  longer shown at an adult's size on the guest (BUG-0461).
+- Tribe: tribe members (yours, your partners' and other tribes') have the same size on every screen; the
+  guest no longer sees them bigger or smaller than the host does (BUG-0475).
+- Space: your partner's ship is shown at a player ship's size, not at the smaller size of an NPC ship
+  (BUG-0479).
+- Creature: an animal near a guest no longer stays missing on its screen (or keeps living there after
+  the host killed it) when its first message was lost; the guest asks the host for it again (BUG-0487).
+
 ## [0.7.3.6] - 2026-11-02
 
 ### Fixed

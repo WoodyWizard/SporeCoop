@@ -1641,3 +1641,23 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Not fixed: a strip needs the civ / tribe / space object registry and a null-safe removal from
   `civ+0xB0` / `civ+0xD4` and the city's lists (BUG-0020's null rule), with a save + reload test per stage.
 * Ticket: BUG-0470
+## Civ: city citizens have another size on each game (2026-11-03, fix/w40-scale)
+<a id="issue-civ-citizen-scale"></a>
+
+* What happens: the detector's `Civilization:scale:citizen` (50 % of the Civ comparisons). Each game simulates
+  its own city citizens (BUG-0476): the citizen the detector pairs by position is another individual with its
+  own random size (GetDesiredScale vt 0x80), not a mirror. The replicated-field engine
+  (docs/sync-architecture-plan.md#sync-fields) needs a mirror to apply a size to.
+* Not fixed: comes with mirrored citizens (BUG-0476): then they are one more field kind.
+* Ticket: BUG-0475 (its Tribe half is fixed), BUG-0476
+## Commodity nodes at scale 10 on the host only (2026-11-03, fix/w40-scale)
+<a id="issue-node-scale"></a>
+
+* What happens: after the live Cell -> Creature transition the host's game has one node (noun 0x0403DF5C,
+  vtable 0x1469AC0) at scale 10.0 near the players, the guest's copy (from the shared world) 1.0
+  (`Creature:scale:node` / `Tribe:scale:node`, campaign_short, campaign_ct). On the `creature` / `tribe`
+  fixtures (loaded saves) all 16 nodes are 1.0 on both games: the 10 is set at runtime, not saved.
+* Not fixed: who sets it and what a player sees are not known; the SetScale hook (squadron.cpp) logs
+  `scale 10 set on an object with vtable ... from ...` once per caller, so the next campaign run names it.
+* Reproduce: `tools/lab.py run campaign_short` with SPORE_DETECTOR=20 (detector line `scale:node`).
+* Ticket: BUG-0485
