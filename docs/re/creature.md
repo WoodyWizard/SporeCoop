@@ -2098,3 +2098,25 @@ BUG-0464. GOG 2024, Ghidra (out/ghidra-2024) and lane 9 at runtime (creature fix
   now plays the host's on the body.
 * ~ Not verified: a nest's real evolution (cHerd generation +0xF0, docs/re/creature.md#creature-npc-anims): an
   evolved NPC is a new species (host_tick gives it a new id and spawn), its animations go through the same relay.
+
+## The roar: what is known (2026-11-03, fix/w40-npc-anims)
+<a id="creature-roar"></a>
+
+BUG-0501 (open). GOG 2024, Ghidra strings and decompiles only, not seen at runtime. Findings only.
+
+* ✔ The only "roar" string in the exe is the BT blackboard variable `HeardRagingRoar` (0x147C000; "Raging Roar", the
+  Creature stage's consequence ability of a carnivore Cell, ~ inferred from the name), registered with `Loudness`,
+  `HeardSirenSong` and `WasMother` in the static init 0x13674D0 through 0xBC9FA0 (thiscall(var, float max, init,
+  on_end, update, name) ret 0x14: a variable object at a global: Loudness 0x169F0F0, HeardRagingRoar 0x169F134,
+  HeardSirenSong 0x169F178, WasMother 0x169F1BC). The roar and the siren song share the end callback 0xD85400 (posts
+  BT stimulus (0, hi 0x4000000) with value FLT_MAX, clears stimulus 0x400000, stops effect 0x4F26350B on the NPC);
+  the siren song has an update 0xD85470 (counts its value down, keeps it while the NPC's node +0x1D8 is 0x341BD4BE).
+* ✔ The globals of HeardRagingRoar / HeardSirenSong are referenced only by that init (`scan`): the BT reads them by
+  name / registry index, the setter (the ability that roars) was not found. Loudness is written by 0xD8B290.
+* ✔ The avatar's ability use 0xC1E8B0 (thiscall(creature, float) ret 4) posts its hit stimuli (0x2000, or hi 0x80000
+  for a citizen) with value 10.0 to the target or to every creature in range (0xD99A20 distance), sender the avatar.
+* ~ Inferred: the roar sets HeardRagingRoar on the NPCs around the roaring avatar in that player's own game only; a
+  guest's NPCs are AI-less proxies, so nothing reacts and the host's NPCs never hear it. A fix is an L1 request: the
+  guest's roar sent to the host, the host sets the same variable on its NPCs around the guest's puppet. Neither
+  fixture creature has the ability (types 0xD 0xE 0x10 0x11 0x1D 0x1E 0x25 0x28 0x31 0x32 0x33): a test needs a
+  creature from a carnivore Cell.
