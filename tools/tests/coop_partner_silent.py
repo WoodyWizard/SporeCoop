@@ -6,19 +6,16 @@ Player report (0.7.3.6, host): "guest is bugged into the ground in my pov". The 
 6.5 m under its ground while paused, and the host drew the puppet 3-6 m under its ground (agl -3.2 .. -6.3), then
 hid it after 5 s without a word.
 
-1. The host takes the guest's states DEEP m under its ground (`coop.track lift -6`, as the stalled guest reported):
-   for 6 s the puppet's drawn height over the host's ground (`coop.track`, column hd) never goes under UNDER.
-2. The guest's game stalls (`frame.limit 9000`: a frame every 9 s, its states stop) for ~16 s: the host's screen
+The puppet deep under the ground is suite puppet_deep (coop_puppet_walk.py with `coop.track lift -6`: standing,
+the game keeps a puppet on its ground by itself, only a walking one went under).
+The guest's game stalls (`frame.limit 9000`: a frame every 9 s, its states stop) for ~16 s: the host's screen
    shows a notice that the guest is not responding (a toast in `coop.status`), and another when it is back.
 
-  coop_partner_silent.py   (SPORE_FIX_OFF=creature.puppet_deep,core.partner_silent: FAILS)"""
+  coop_partner_silent.py   (SPORE_FIX_OFF=core.partner_silent: FAILS)"""
 import re
 import time
 
 from twoinst import Checks, start
-
-DEEP = -6.0
-UNDER = -0.5
 
 
 def toasts(con):
@@ -31,20 +28,6 @@ def main():
     p = re.search(r'pos=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\)', host.call('coop.avatar')['out'])
     guest.call('coop.npc gopos %s %s %s' % p.groups())
     time.sleep(3)
-
-    # 1. states deep under the host's ground
-    host.call(f'coop.track lift {DEEP}')
-    time.sleep(1.0)
-    host.call('coop.track start')
-    time.sleep(6)
-    host.call('coop.track stop')
-    host.call('coop.track lift 0')
-    rows = [r.split() for r in host.call('coop.track dump 0 100000')['out'].splitlines()]
-    hd = [float(r[23]) for r in rows if len(r) > 24 and r[1] == '1']
-    low = min(hd) if hd else None
-    under = sum(h < UNDER for h in hd)
-    ck(hd and under == 0, f'the guest\'s puppet stays on the host\'s ground with states {-DEEP:.0f} m under it '
-                          f'(lowest {low if low is None else round(low, 2)} m, {under} of {len(hd)} frames under {UNDER} m)')
 
     # 2. the guest's game stalls
     time.sleep(2)
