@@ -105,12 +105,48 @@ static std::map<uint8_t, Last> g_last_rx_start; // the last start per player (a 
 static uint32_t g_sent_keys[64];
 static size_t g_sent_n;
 static uint8_t g_last_rx_from = 0xFF;
-// world effects already sent (effect pointer, id): the transform setter runs every frame for
-// persistent effects; a one-shot world effect is sent once. A fixed ring (no allocation in the
-// render pipeline).
+// world effects already sent this frame (effect pointer, id): the manager and the world create
+// hooks both queue the same effect, so the second one is skipped. Open addressing keyed by the
+// pointer: one probe for nearly every effect, fixed size, no allocation, cleared once a frame
+// (BUG-0451 review item 6; the old shape scanned 2048 entries per queued world effect).
 struct WorldSent { void* fx; uint32_t id; };
-static WorldSent g_world_sent[2048];
-static size_t g_world_n_entries;
+static constexpr size_t kWorldSentSlots = 512; // power of two; far more than a frame queues
+static WorldSent g_world_sent[kWorldSentSlots];
+static uint32_t g_world_sent_probes;
+static inline size_t ws_slot(void* fx)
+{
+    uint32_t h = (uint32_t)((uintptr_t)fx >> 4) * 2654435761u;
+    return (h >> 20) & (kWorldSentSlots - 1);
+}
+static bool world_sent_seen(void* fx, uint32_t id)
+{
+    size_t i = ws_slot(fx);
+    for (unsigned n = 0; n < 6; n++, i = (i + 1) & (kWorldSentSlots - 1)) {
+        g_world_sent_probes++;
+        if (g_world_sent[i].fx == fx && g_world_sent[i].id == id)
+            return true;
+        if (!g_world_sent[i].fx)
+            return false;
+    }
+    return false;
+}
+static void world_sent_add(void* fx, uint32_t id)
+{
+    size_t i = ws_slot(fx);
+    for (unsigned n = 0; n < 6; n++, i = (i + 1) & (kWorldSentSlots - 1)) {
+        if (!g_world_sent[i].fx || (g_world_sent[i].fx == fx && g_world_sent[i].id == id)) {
+            g_world_sent[i] = {fx, id};
+            return;
+        }
+    }
+    g_world_sent[ws_slot(fx)] = {fx, id}; // 6 probes over: take the home slot (does not happen here)
+}
+static void world_sent_clear()
+{
+    for (auto& e : g_world_sent)
+        if (e.fx)
+            e = WorldSent{};
+}
 static uint32_t g_world;
 // The world effects the relay created on this game (BUG-0451 review item 4). A looping effect (a
 // fire, an aura) never ends by itself, so without a stop the relayed ones pile up. Fixed array:
@@ -316,18 +352,17 @@ static void process_world(void* fx, uint32_t id)
             H->log(M, SK_INFO, "effect: world id %08X at %.2f %.2f %.2f is not on the local player", id, p.x, p.y, p.z);
         return;
     }
-    for (size_t i = 0; i < 2048; i++)
-        if (g_world_sent[i].fx == fx && g_world_sent[i].id == id) {
-            g_w_seen++;
-            return;
-        }
+    if (world_sent_seen(fx, id)) {
+        g_w_seen++;
+        return;
+    }
     double t = now();
     if (!take_token(t)) {
         g_dropped++;
         g_w_rate++;
         return;
     }
-    g_world_sent[g_world_n_entries++ & 2047] = {fx, id};
+    world_sent_add(fx, id);
     g_world++;
     g_last_tx = Last{};
     g_last_tx.id = id;
@@ -444,6 +479,7 @@ void tick(double)
             process_local(p.creature, p.ev);
     }
     live_tick(t0, game::mode_id(), C.world ? C.world() : 0);
+    world_sent_clear();
     game::clear_effect_table();
     if (!H)
         return;
@@ -629,7 +665,8 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
     g_last_rx_start.clear();
     g_last_rx_from = 0xFF;
     g_sent_n = 0;
-    g_world_n_entries = 0;
+    world_sent_clear();
+    g_world_sent_probes = 0;
     g_world = 0;
     g_tick_sum = g_tick_max = 0;
     g_tick_frames = 0;
@@ -653,7 +690,7 @@ void on_session_end()
     g_last_rx_start.clear();
     g_last_rx_from = 0xFF;
     g_sent_n = 0;
-    g_world_n_entries = 0;
+    world_sent_clear();
     for (size_t i = 0; i < g_live_n; i++) // the session ends: stop the effects the relay still holds
         if (game::effect_active(g_live[i].fx) && game::stop_world_effect(g_live[i].fx))
             g_live_stopped++;
@@ -768,8 +805,8 @@ std::string status()
              (unsigned long long)g_tick_frames, creates, mgr, world, anim, probes, evicted, game::last_effect_id(),
              g_load_n, g_load_ms, g_load_ok, g_load_failed);
     s += b;
-    snprintf(b, sizeof b, "effects world drops: no_pos=%u relayed=%u far=%u seen=%u rate=%u\n", g_w_no_pos, g_w_relayed,
-             g_w_far, g_w_seen, g_w_rate);
+    snprintf(b, sizeof b, "effects world drops: no_pos=%u relayed=%u far=%u seen=%u rate=%u sent_probes=%u\n",
+             g_w_no_pos, g_w_relayed, g_w_far, g_w_seen, g_w_rate, g_world_sent_probes);
     s += b;
     snprintf(b, sizeof b, "effects received drops: spoof=%u pool=%u id=%u bone=%u transform=%u short=%u\n",
              g_dropped_spoof, g_bad_pool, g_bad_id, g_bad_bone, g_bad_xf, g_bad_short);
