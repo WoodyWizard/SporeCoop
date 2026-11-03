@@ -505,6 +505,14 @@ static unsigned scrub_stimuli(uint8_t* stim, const uint8_t* dying)
     return n;
 }
 
+unsigned clear_stimuli_from(void* c, void* sender)
+{
+    if (!c || !sender || !readable(c, kAiOff + 4))
+        return 0;
+    uint8_t* ai = at<uint8_t*>(c, kAiOff);
+    return ai && readable(ai + kStimOff, kStimUnion + 8) ? scrub_stimuli(ai + kStimOff, (const uint8_t*)sender) : 0;
+}
+
 static void forget_sender(void* dying)
 {
     Scrub sc{(uint8_t*)dying, 0};
