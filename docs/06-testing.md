@@ -3684,3 +3684,12 @@ the other player's game, both ways where the kind has two:
   (`coop.npc untune`). `SPORE_FIX_OFF=creature.relations` and `SPORE_FIX_OFF=npc.tuning` fail.
 * `coop_npc_anims.py` (not in a suite: BUG-0464 open): samples `coop.npc cur` (vt 0x58 GetCurrentAnimation per NPC
   id) on both games for 40 s; fails on this code (7-9 % of the samples match).
+
+## Puppets freed by the game, guest combat (2026-11-03, fix/w40-guest-combat)
+<a id="testing-guest-combat"></a>
+
+* `puppet_freed` (coop_puppet_freed.py, ~1 min warm, BUG-0507): the guest toggles fullscreen twice (two device
+  Resets), then its game destroys the host's puppet itself 3 times (`coop.puppet gamekill`: DestroyInstance, none
+  of the mod's bookkeeping); `coop.status` `puppet_listed <id> <0|1>` says whether the puppet pointer the mod holds
+  is a live creature in the game's object list. `SPORE_FIX_OFF=creature.puppet_alive` fails (the dead pointer is
+  kept, listed=0).

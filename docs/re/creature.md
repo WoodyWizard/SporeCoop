@@ -2062,3 +2062,22 @@ BUG-0465 (open). GOG 2024, Ghidra strings only, not seen at runtime.
   cinematic), not a world object: the partner's game has no such event for a puppet, so it never shows. Class B of
   docs/sync-architecture-plan.md (the game knows one player). A fix would relay the event (or the death cause 9) to
   the partner and play the monster there at the puppet; the event's object and how it is drawn are not analysed.
+
+## A partner's puppet freed by the game, liveness of puppets (2026-11-03, fix/w40-guest-combat)
+<a id="creature-puppet-alive"></a>
+
+* ✔ The Creature (and Adventure) adapter had no `alive` callback (Cell and Space had one), so `puppet_now()` and
+  `drive_puppet()` never checked that the raw puppet pointer `Remote::puppet` was still a creature: a puppet the
+  game destroyed by itself was driven on every frame (BUG-0507: a guest crash in set_speed, the memory reused by
+  a cModelObject). `creature.puppet_alive` adds `creature_alive` (modes.cpp): the game's object list holds the
+  pointer as a live creature (noun 0x18EB45E, +0x21 = 0) and its cGameData serial (+0x24) is the one recorded at
+  the spawn; checked once per frame and puppet (cache by `frame_index`). A dead one is dropped from the puppet
+  list (`puppet_unregister`, a new creature at the address is no puppet) and drive_puppet makes a new puppet.
+* ✔ Lab (lane 2): cGameNounManager::DestroyInstance on a puppet (`coop.puppet gamekill`) takes it out of the
+  object list at once; the memory was not reused within 4 s and driving the dead creature did not fault (with
+  the switch off the mod kept the dead pointer, the partner was gone from the screen for good).
+* ✔ Negative: two device Resets (Alt+Enter on the guest) do not free or replace the partner's puppet.
+* ? What freed the puppet on the player's PC is not known: the log has no hide / despawn line of ours (the puppet
+  was shown, d=7 m, 30/44 hp, a cinematic had run 40 s before), then a 4.1 s hitch, a device Reset and the crash
+  0.6 s later. Candidates not checked: the game's own cleanup of a creature after a frame of 4 s (fell out of the
+  world?), a cinematic's actor cleanup. The check covers any of them.

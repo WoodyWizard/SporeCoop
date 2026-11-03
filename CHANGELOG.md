@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### Fixed
+- Creature: a guest no longer crashes when its game removes the partner's creature by itself (seen after
+  a long freeze or alt-tab); the partner is shown again (BUG-0507).
 - Creature: animals are neutral, hostile or allied to a guest as they are to the host; a guest playing its own
   creature no longer sees neutral species as hostile (BUG-0462).
 - Creature: a partner who sneaks is shown sneaking (see-through) on your screen too, and the host's animals
