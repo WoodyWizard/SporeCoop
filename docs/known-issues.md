@@ -1713,7 +1713,7 @@ What mods/coop/worldobj.cpp does not cover yet (docs/re/creature.md#creature-wor
   cached species profile). Not verified.
 * Ticket: BUG-0457
 
-### Creature: what fix/w40-creature-acts left open (2026-11-03)
+## Creature: what fix/w40-creature-acts left open (2026-11-03, fix/w40-creature-acts)
 
 - Creature: a picked-up and thrown stick (or rock) moves in each player's game separately (BUG-0458).
 - Creature: the animals' own animations (eating, social, a nest's evolution) do not show on a guest; its copies
