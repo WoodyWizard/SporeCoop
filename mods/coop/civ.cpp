@@ -117,7 +117,7 @@ static void* player_civ() { return thiscall<void*>(a_PlayerCiv, nm()); }
 // cLayoutSlot::RemoveObject on a garbage slot and on a freed object of that map (0.7.3.6).
 constexpr uintptr_t kEdCity = 0x40, kEdMoved = 0x118, kEdMovedSize = 0x128;
 constexpr uint32_t kCityType = 0xEE9B2232;
-static uintptr_t a_EditorUpdate, a_EditorPickUp, a_DestroyInstance;
+static uintptr_t a_EditorUpdate, a_EditorPickUp, a_DestroyInstance, a_VehicleRemove;
 static void* g_editor;                  // the editor whose update ran last
 static uint64_t g_editor_frame = ~0ull; // the frame of that update
 static bool g_fix_planner_hold = true;
@@ -1157,6 +1157,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     savestrip::add_save_hooks(save_start, save_end);
     // the city planner (BUG-0491, BUG-0493; GOG 2024 symbols, optional)
     a_DestroyInstance = H->sym("Simulator::cGameNounManager::DestroyInstance");
+    a_VehicleRemove = H->sym("SporeCoop::Vehicle_Remove");
     if ((a_EditorUpdate = H->sym("SporeCoop::CommunityEditor_Update")))
         H->hook_create(M, (void*)a_EditorUpdate, (void*)h_EditorUpdate, (void**)&o_EditorUpdate);
     if (uintptr_t dc = H->sym("SporeCoop::AssetDiscovery_AddCard"))
@@ -1955,10 +1956,23 @@ static bool save_filter(void* o, uint32_t noun)
     return true;
 }
 
+// BUG-0478: Die(v, 0, -1) alone leaves the dead vehicle in the world for good (in the noun list, the
+// civilization's lists, moved on by its AI): the host's vehicle that died is gone from the host's
+// game, the guest kept a wreck (the detector's "a vehicle more on the guest", more the longer it
+// played). The game removes a vehicle with 0xCAA7B0 (the disband path: Die, the behavior manager,
+// cCivilization 0xBF3D90 which destroys it). `coop.fix civ.mirror_remove off`: Die only (0.7.3.6).
+static bool g_fix_mirror_remove = true;
+COOP_FIX("civ.mirror_remove", "BUG-0478", g_fix_mirror_remove,
+         "civ: a guest's mirror the host no longer has is removed from the world, not left as a wreck");
+
 static void kill_local(void* v)
 {
     g_applying = true;
-    thiscall<void>(a_Die, v, 0, 0xFFFFFFFFu);
+    if (g_fix_mirror_remove && a_VehicleRemove) {
+        thiscall<void>(a_VehicleRemove, v, 0); // no refund
+        g_exist_frame = ~0ull;                 // freed: the frame's list of vehicles is read again
+    } else
+        thiscall<void>(a_Die, v, 0, 0xFFFFFFFFu);
     g_applying = false;
 }
 
@@ -2974,8 +2988,9 @@ std::string debug(const std::vector<std::string>& a)
                 if (!q->h->world_to_screen(w, sc))
                     sc[0] = sc[1] = -1;
                 char line[128];
-                snprintf(line, sizeof line, "obj %p %.0f %.0f %.0f %d %d pol=%08X%s\n", o, p.x, p.y, p.z, (int)sc[0],
-                         (int)sc[1], pol_of(o), q->type && !game::cast(o, q->type) ? " (not that type)" : "");
+                snprintf(line, sizeof line, "obj %p %.0f %.0f %.0f %d %d pol=%08X%s%s\n", o, p.x, p.y, p.z, (int)sc[0],
+                         (int)sc[1], pol_of(o), q->type && !game::cast(o, q->type) ? " (not that type)" : "",
+                         n == 0x18C6DE8 && F<uint8_t>(o, kVDead) ? " dead" : "");
                 q->out += line;
                 return true;
             },
@@ -3070,6 +3085,14 @@ std::string debug(const std::vector<std::string>& a)
         char b[96];
         snprintf(b, sizeof b, "meeting %08X (civ=%p)", pol, thiscall<void*>(a_CivByPol, nm(), pol));
         return b;
+    }
+    if (a.size() >= 2 && a[0] == "remove" && is_host()) { // remove <id>: the game removes it (disband path, tests)
+        void* v = local_vehicle((uint16_t)atoi(a[1].c_str()));
+        if (!v || !exists(v) || !a_VehicleRemove)
+            return "no such vehicle";
+        thiscall<void>(a_VehicleRemove, v, 0);
+        g_exist_frame = ~0ull;
+        return "removed";
     }
     if (a.size() >= 2 && a[0] == "kill" && is_host()) { // kill <id>: the vehicle dies (Die with effects, tests)
         void* v = local_vehicle((uint16_t)atoi(a[1].c_str()));
