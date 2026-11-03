@@ -176,6 +176,14 @@ static bool g_fix_ko_grace = true; // BUG-0238: a remote knockout lasts to its o
 COOP_FIX("pool.ko_grace", "BUG-0238", g_fix_ko_grace, "cell: a late knockout refresh does not end it, replay its effect; KO_UP when ours ends on a stage leave");
 static bool g_fix_ko_no_eat = true; // BUG-0364: a knocked-out cell eats nothing (food, chunks) until it is up again
 COOP_FIX("cell.ko_no_eat", "BUG-0364", g_fix_ko_no_eat, "cell: a knocked-out cell does not eat what touches it (EatFood, chunk bites), so it does not respawn bigger");
+// BUG-0509: a knocked-out cell (held at hp 1, invulnerable, see go_down) still bit, spiked and poisoned: the game's
+// attack code ran for the avatar (Bite 0xE7B0A0, DamageCell with the avatar as attacker, BreakOrSwallow on a lethal
+// bite), a guest's bites went to the host as MSG_CELL_HIT and killed. With cell.ko_no_bite a downed avatar's attacks
+// do nothing on its own game, and the host refuses MSG_CELL_HIT from a guest it knows to be knocked out (KO_OUT).
+// Off: 0.7.3.6.
+static bool g_fix_ko_no_bite = true;
+COOP_FIX("cell.ko_no_bite", "BUG-0509", g_fix_ko_no_bite, "cell: a knocked-out cell cannot bite, spike or poison anybody until it is revived or respawns");
+static uint32_t g_ko_bites_blocked = 0, g_ko_hits_refused = 0;
 static uint32_t g_ko_eats_blocked; // BUG-0364: meals and chunk bites of our knocked-out cell left out
 static double g_kodrop_until; // tests (`coop.pool kodrop <s>`): MSG_CELL_KO ignored until then
 static bool g_fix_food_ack_away = true; // BUG-0239: the host acknowledges a guest's meal it cannot count
@@ -625,6 +633,10 @@ static bool SK_CDECL h_DamageCell(uint8_t* victim, uint8_t* attacker, const floa
 {
     if (!in_cell())
         return o_DamageCell(victim, attacker, dir, type, x, dt);
+    if (g_fix_ko_no_bite && g_downed && attacker && attacker == avatar() && victim != attacker) {
+        g_ko_bites_blocked++; // BUG-0509: a knocked-out cell's spike, poison or bite hurts nobody
+        return false;
+    }
     // Damage to a player's cell is decided on that player's machine: there the host's NPC is a
     // mirror that swims into the real cell, and the guest's own collision step bites it (hurt_local,
     // then its DamageCell / KillCell hooks: knockout, revive). The host's picture of the guest
@@ -770,6 +782,10 @@ using Break_t = void(SK_CDECL*)(uint8_t*, uint8_t*, float);
 static Break_t o_Break;
 static void SK_CDECL h_Break(uint8_t* victim, uint8_t* attacker, float f)
 {
+    if (g_fix_ko_no_bite && g_downed && in_cell() && attacker && attacker == avatar() && victim != attacker) {
+        g_ko_bites_blocked++; // BUG-0509: nor kills
+        return;
+    }
     if (uint32_t hidx = g_mirror_fixes && in_cell() ? mirror_key(victim) : 0) {
         // Bite 0xE7B0A0 breaks the victim instead of damaging it when the bite is lethal: effect, then
         // (event 5 0xE7ADD0) its loot and DestroyCell(idx, 1). On a mirror all of it happened here only
@@ -1067,8 +1083,13 @@ using Bite_t = bool(SK_CDECL*)(uint32_t, uint32_t, void*, void*, int, float);
 static Bite_t o_Bite;
 static bool SK_CDECL h_Bite(uint32_t att, uint32_t vic, void* p, void* d, int x, float dt)
 {
-    if (in_cell() && att == avatar_idx())
+    if (in_cell() && att == avatar_idx()) {
+        if (g_fix_ko_no_bite && g_downed) { // BUG-0509: a knocked-out mouth does not bite
+            g_ko_bites_blocked++;
+            return false;
+        }
         g_bite_events++;
+    }
     return o_Bite(att, vic, p, d, x, dt);
 }
 static void SK_CDECL h_Pair(uint8_t* a, uint8_t* b, float dt)
@@ -3242,6 +3263,14 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
                       !c ? "no such cell here" : c == avatar() || modes::cell_is_puppet(c) ? "a player's cell" : "dying");
             return;
         }
+        if (g_fix_ko_no_bite) { // BUG-0509: a knocked-out guest bites nothing (an old guest, or one in flight)
+            auto ko = g_ko.find(from);
+            if (ko != g_ko.end() && ko->second.state == KO_OUT) {
+                g_ko_hits_refused++;
+                trace::ev("bite", "refused ko", "from %u c%u refused: that player is knocked out", from, idx);
+                return;
+            }
+        }
         g_hits_in++;
         uint8_t* pc = puppet_cell(from);
         // BUG-0078: judged as DamageCell judges the host's own bite (0xE7A7C0): nothing happens when
@@ -4630,7 +4659,7 @@ std::string debug(const std::vector<std::string>& a)
         C.sess->send_reliable_to((uint8_t)atoi(a[1].c_str()), net::MSG_CELL_HIT, w);
         return "bite sent";
     }
-    char b[400];
+    char b[640];
     int local = 0, chase_me = 0, chase_partner = 0;
     std::unordered_set<uint32_t> partner_idx;
     if (C.puppets)
@@ -4661,9 +4690,9 @@ std::string debug(const std::vector<std::string>& a)
     }
     snprintf(b, sizeof b,
              "avatar hp=%d invuln=%d own_eats=%u own_points=%u bites_taken=%u damage_taken=%u pos=(%.1f %.1f) size=%.2f target=%.2f body=%.2f downed=%d partner_dist=%.1f "
-             "revive_dist=%.1f local_gameplay_cells=%d own_pairs=%u ko_eats_blocked=%u\n",
+             "revive_dist=%.1f local_gameplay_cells=%d own_pairs=%u ko_eats_blocked=%u ko_bites_blocked=%u ko_hits_refused=%u\n",
              F<int>(av, kHp), F<uint8_t>(av, kInvuln), g_own_eats, g_own_food, g_bites_taken, g_damage_taken, pos_of(av).x, pos_of(av).y, F<float>(av, kSize), F<float>(av, kTargetSize), g_body,
-             g_downed ? 1 : 0, pd, revive_dist(av), local, g_own_pairs, g_ko_eats_blocked);
+             g_downed ? 1 : 0, pd, revive_dist(av), local, g_own_pairs, g_ko_eats_blocked, g_ko_bites_blocked, g_ko_hits_refused);
     // cine=1: a caption waits for the player's OK (cinematic manager +0x2C, docs/re/space.md 7.2);
     // parts: the part states S+0x34 (13 ints, 0 locked; until BUG-0467 this read 13 bytes)
     void* cm = a_Cine ? skg::cdecl_call<void*>(a_Cine) : nullptr;
