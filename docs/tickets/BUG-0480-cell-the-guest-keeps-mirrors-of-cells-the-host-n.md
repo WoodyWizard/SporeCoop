@@ -33,7 +33,7 @@ host 397 rows / guest 1050, out/lab/20261103-012624 play_cell#2); the purge then
 Observed, cause not found: in 3 of 9 play runs (cold starts, round 5 or 6) 28-49 mirrors at once (kinds meat /
 rock / bubble, level 0-1, keepalive) whose host index the host had in neither dump nor in `coop.pool cell` a moment
 later, although the guest's mirror entry had been refreshed by the host's state 0.1-0.2 s before and the host
-never sent an index its cell_at did not find (out/lab/20261103-155103, 20261103-155433, 20261103-161952 #3).
+never sent an index its cell_at did not find at the send (a one-off check, removed: out/lab/20261103-155103, 20261103-155433, 20261103-161952 #3).
 Inferred, not verified: cells the host's game has only during part of its frame (the partner tiles populate for
 the guest's view, 21 partner tiles in that log): sent from inside the frame, gone when the console looks.
 
@@ -42,7 +42,7 @@ Detector: the Cell compare dumps the host before and after the guest (tools/test
 SPORE_DETECTOR_BRACKET=0 = the old single dump): a proxy is `guest_only` only when the host had the index in
 neither dump. No mod change: the lifecycle path (rounds, 1 s fallback) was not shown wrong. Test commands
 `coop.pool statehold <s>` (guest), `coop.pool cull <r> <n>` (host), `coop.pool cell <key>` now shows a mirror's
-age and the foreground flag; the host counts sent-but-unresolvable cells (statehold's answer).
+age and the foreground flag; a one-off check in the host's send (removed again) counted sent cells cell_at did not find: none.
 
 ## Verification
 cell_gone PASS out/lab/20261103-154618; cell_gone_probe (the probe sees mirrors kept while the state is lost:

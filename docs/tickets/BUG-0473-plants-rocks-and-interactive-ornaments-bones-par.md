@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in: unreleased
 branch: fix/w40-world-objects, fix/w40-cell-evo
-commits:
+commits: eca11f6d, e136676f
 tests: wobj_ornament, detect_creature, world_lod
 signature:
 docs: docs/re/creature.md#creature-world-objects, docs/re/creature.md#creature-plants-rocks-lod, docs/06-testing.md#testing-world-lod
@@ -43,7 +43,8 @@ evidence) (fix/w40-cell-evo).
 ## Verification
 The bones: see BUG-0459 (wobj_ornament). Plants (`game_plant` 71-96%) and rocks (BUG-0498) not done.
 Plants and rocks: world_lod PASS out/lab/20261103-161705 (the evidence run; it fails when one-game-only objects
-lie near the other player). no-fail-run for the detector change: a compare rule, not game code.
+lie near the other player).
+no-fail-run: a detector compare rule (worlddiff.IGNORE), not game code; the evidence run is world_lod above.
 
 ## History
 - 2026-11-03: opened.

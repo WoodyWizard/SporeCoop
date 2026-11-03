@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in: unreleased
 branch: fix/w40-cell-evo
-commits:
+commits: eca11f6d, e136676f
 tests: world_lod (coop_world_lod.py)
 signature:
 docs: docs/re/creature.md#creature-plants-rocks-lod, docs/06-testing.md#testing-world-lod
@@ -30,7 +30,8 @@ game around its own camera: not a desync.
 The detector leaves `rock` out (worlddiff.IGNORE), see BUG-0473.
 
 ## Verification
-world_lod PASS out/lab/20261103-161705. no-fail-run: a detector compare rule.
+world_lod PASS out/lab/20261103-161705.
+no-fail-run: a detector compare rule (worlddiff.IGNORE), not game code.
 
 ## History
 - 2026-11-03: opened.
