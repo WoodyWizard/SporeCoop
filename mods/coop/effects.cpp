@@ -127,6 +127,29 @@ static bool g_live_init;
 
 static double now() { return H ? H->time_seconds() : 0; }
 
+// The game's 0x44-byte Transform (VisualEffect_SetTransform 0xA827B0 as cCreatureBase's creators
+// build it): u16 flags, u16 change counter, Vec3 position at +4, uniform scale at +0x10, 3x3
+// rotation at +0x14. A world effect we relay gets the position the game put on it, scale 1 and the
+// identity rotation (BUG-0451 review item 5; the first shape sent a zero scale and a zero matrix).
+static void make_transform(uint8_t* xf, const net::Vec3& p)
+{
+    memset(xf, 0, 0x44);
+    float* f = (float*)(xf + 4);
+    f[0] = p.x;
+    f[1] = p.y;
+    f[2] = p.z;
+    f[3] = 1.0f; // scale
+    f[4] = 1.0f; // rotation: identity
+    f[5] = 0.0f;
+    f[6] = 0.0f;
+    f[7] = 0.0f;
+    f[8] = 1.0f;
+    f[9] = 0.0f;
+    f[10] = 0.0f;
+    f[11] = 0.0f;
+    f[12] = 1.0f;
+}
+
 static bool take_token(double t)
 {
     if (g_tokens_at <= 0)
@@ -314,13 +337,8 @@ static void process_world(void* fx, uint32_t id)
     g_sent++;
     if (g_log)
         H->log(M, SK_INFO, "effect: sent world id %08X at %.2f %.2f %.2f", id, p.x, p.y, p.z);
-    // the receiver's game sets the position with the base transform setter, which reads only the
-    // three floats at +4; the rest of the 0x44-byte transform stays zero
-    uint8_t xf[0x44] = {};
-    float* q = (float*)(xf + 4);
-    q[0] = p.x;
-    q[1] = p.y;
-    q[2] = p.z;
+    uint8_t xf[0x44];
+    make_transform(xf, p);
     net::Writer w;
     w.u8(C.sess->my_id());
     w.u8(0);
@@ -392,11 +410,8 @@ static void load_tick(double t)
         return;
     }
     net::Vec3 p = C.local_pos();
-    uint8_t xf[0x44] = {};
-    float* q = (float*)(xf + 4);
-    q[0] = p.x;
-    q[1] = p.y;
-    q[2] = p.z;
+    uint8_t xf[0x44];
+    make_transform(xf, p);
     for (uint32_t i = 0; i < g_load_n; i++) {
         if (game::create_local_effect(id, xf))
             g_load_ok++;
@@ -590,11 +605,8 @@ void inject(uint8_t from, uint8_t player, uint8_t stop, uint8_t pool, uint32_t i
     w.u32(id);
     w.u32(key);
     if (pool == 5) {
-        uint8_t xf[0x44] = {};
-        float* q = (float*)(xf + 4);
-        q[0] = pos.x;
-        q[1] = pos.y;
-        q[2] = pos.z;
+        uint8_t xf[0x44];
+        make_transform(xf, pos);
         w.raw(xf, sizeof xf);
     }
     net::Reader r(w.data.data(), w.size());
