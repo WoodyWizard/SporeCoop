@@ -1,17 +1,17 @@
 ---
 id: BUG-0470
 title: civ mirror vehicles (and other civ, tribe and space objects the mod creates on a guest) go into the guest's saves
-status: open
+status: fixed
 kind: bug
 stage: Civ
 reported: 2026-11-02
 source: code review of BUG-0469 (fix/w39-content-all review, item 2); class G9 of docs/generalisation-plan.md (BUG-0426)
 role: guest
-versions: 0.7.3.5
-fixed_in:
-branch:
-commits:
-tests: content_civ (steps 6-7: the guest saves, restarts without a session, loads the save; the mirror vehicles are in the loaded world)
+versions: 0.7.3.5, 0.7.3.6
+fixed_in: unreleased
+branch: fix/w40-civ-crashes
+commits: a8299ba2, 9a9262ab
+tests: civ_save_strip, content_civ
 signature:
 docs: docs/re/civ.md
 related: BUG-0426, BUG-0020, BUG-0469, BUG-0255
@@ -43,6 +43,10 @@ filter for `kCreatureNoun` / `kHerdNoun` (nest.cpp:734), so a civ vehicle, city,
 never reaches it.
 
 ## Root cause
+* Observed (lab 2026-11-03, `civ_save_strip` with only the strip filter): stripped mirrors are read back
+  as null entries in the civilization's vehicle vector (+0xB0) and selectable vector (+0xD4) (4 + 4 nulls
+  for 4 mirrors, `coop.civ civlists`) and the load faults at 0xBF2BF2 and in cLayoutSlot::SetObject: the
+  null rule of the ticket confirmed.
 * Observed: `savestrip::add_filter` has one user (nest.cpp) and the filter in savestrip.cpp returns
   false for any noun that is not a creature or a herd; no civ / tribe / space object is looked at.
   The COM serializer writes every object of the world, so the mod's mirror vehicles (real cVehicles,
@@ -57,6 +61,11 @@ never reaches it.
   cleaning the lists that hold it would leave nulls where the city / civ code reads a pointer.
 
 ## Fix
+`civ.save_strip`: a savestrip filter for the guest's mirror vehicles (`g_gv_of`, and those waiting for
+the planner), and save hooks in savestrip (`add_save_hooks`: called when a save starts writing, and on the
+next frame): the mirrors leave both civ vectors while the save is written and come back after it. The
+Tribe and Space objects of the ticket moved to BUG-0495 (docs/known-issues.md#issue-civ-mirrors-in-save).
+content_civ no longer expects the mirrors in the reloaded world.
 Not fixed here: this is not the one-filter change the review allows without a verified save + reload
 test. It needs
 * a registry of the objects the mod creates per stage (mirror vehicles, cities/buildings the mod
@@ -69,6 +78,9 @@ test. It needs
   vehicles of the loaded save).
 
 ## Verification
+* FAIL (`SPORE_FIX_OFF=civ.save_strip`): `out/lab/20261103-131305`: the reloaded world has the session's mirror vehicles.
+* PASS: `out/lab/20261103-125816` (civ_save_strip#1, #2): the reloaded world has no mirror (at most the
+  game's free first vehicle), no null in the civ lists, no fault.
 no-fail-run: this ticket only records the issue; the reproducer is the PASS run of
 `content_civ` in out/lab/20261102-213135 (the reloaded world lists 2 mirror vehicles, `saved files:
 0 key(s) of the mod`). A fix must make those 2 vehicles absent from the reloaded world while the
@@ -78,3 +90,4 @@ switched off.
 ## History
 - 2026-11-02: opened (review of BUG-0469, item 2: the guest's save holds the session's mirror
   vehicles; reproducible with `content_civ`'s save and reload step).
+- 2026-11-03: Civ half fixed on fix/w40-civ-crashes (civ.save_strip); Tribe / Space moved to BUG-0495.
