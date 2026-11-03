@@ -106,6 +106,112 @@ static bool exists(void* v)
     return v && g_exist.count(v);
 }
 static void* player_civ() { return thiscall<void*>(a_PlayerCiv, nm()); }
+
+// ---------------- the local city planner (BUG-0491, BUG-0493) ----------------
+// The city planner (cCommunityEditor, docs/re/civ.md#civ-planner-lifetime) pauses this game and keeps
+// raw pointers into the city it edits: the building in the hand (+0xC0), the city's layout slots
+// (+0xF4) and a map of objects it moves out of the way (+0x118, vehicles too) that its update
+// (0xD124E0) reads every frame. The game itself changes nothing while it is open; the mod did (the
+// host's buildings, ruins, captures and mirror removals arrived): a guest crashed in the planner at
+// cLayoutSlot::RemoveObject on a garbage slot and on a freed object of that map (0.7.3.6).
+constexpr uintptr_t kEdCity = 0x40, kEdMoved = 0x118, kEdMovedSize = 0x128;
+constexpr uint32_t kCityType = 0xEE9B2232;
+static uintptr_t a_EditorUpdate, a_EditorPickUp, a_DestroyInstance;
+static void* g_editor;                  // the editor whose update ran last
+static uint64_t g_editor_frame = ~0ull; // the frame of that update
+static bool g_fix_planner_hold = true;
+COOP_FIX("civ.planner_hold", "BUG-0493", g_fix_planner_hold,
+         "civ: the mod changes no building, owner or mirror the open city planner holds until it closes");
+static uint32_t g_planner_held, g_planner_kills_held, g_planner_picks_refused;
+
+// the city the local planner edits now, or null (the update runs every frame while it is open)
+static void* planner_city()
+{
+    if (!g_editor || H->frame_index() - g_editor_frame > 3 || !skg::readable(g_editor, kEdMovedSize + 4))
+        return nullptr;
+    void* o = F<void*>(g_editor, kEdCity);
+    return o ? game::cast(o, kCityType) : nullptr;
+}
+static bool planner_holds(void* city) { return g_fix_planner_hold && city && city == planner_city(); }
+// the spatial objects in the planner's moved-objects map (an eastl rbtree: anchor right +0, left +4,
+// root +8; node value at +0x10 = the object's spatial interface, then its target position)
+static void planner_moved(std::vector<void*>& out)
+{
+    if (!planner_city())
+        return;
+    uint8_t* anchor = (uint8_t*)g_editor + kEdMoved;
+    size_t n = F<uint32_t>(g_editor, kEdMovedSize);
+    std::vector<uint8_t*> st;
+    if (uint8_t* root = F<uint8_t*>(anchor, 8))
+        st.push_back(root);
+    while (!st.empty() && out.size() < std::min<size_t>(n, 256)) {
+        uint8_t* nd = st.back();
+        st.pop_back();
+        if (!nd || nd == anchor || !skg::readable(nd, 0x20))
+            continue;
+        out.push_back(F<void*>(nd, 0x10));
+        st.push_back(F<uint8_t*>(nd, 0));
+        st.push_back(F<uint8_t*>(nd, 4));
+    }
+}
+static bool planner_moves(void* v)
+{
+    if (!g_fix_planner_hold || !v)
+        return false;
+    std::vector<void*> m;
+    planner_moved(m);
+    return std::find(m.begin(), m.end(), (uint8_t*)v + kVSpatial) != m.end();
+}
+// BUG-0491: the planner's pick-up (0xD0FCC0, thiscall(editor, spatial) ret 4; 0 picked, 2 not) looks
+// for the layout slot nearest to the building and, when that slot holds another object, goes on with
+// slot index -1: cLayoutSlot::RemoveObject and SetObject on the 0x18 bytes before the slot vector
+// (heap memory). A building in no slot of its own (or in a slot of another) is refused like a click on
+// nothing. `coop.fix civ.planner_pick off`: the game's own code.
+static bool g_fix_planner_pick = true;
+COOP_FIX("civ.planner_pick", "BUG-0491", g_fix_planner_pick,
+         "civ: the city planner does not pick up a building that is not in its layout slot (the game wrote before the slot list)");
+static bool planner_pick_ok(void* ed, void* sp)
+{
+    void* city = F<void*>(ed, kEdCity) ? game::cast(F<void*>(ed, kEdCity), kCityType) : nullptr;
+    if (!city || !sp || !vcall<void*>(sp, 0xB8 / 4, kBuildingType))
+        return true; // not a building of a city: the game's own checks
+    void* occupant = vcall<void*>(sp, 0xB8 / 4, (uint32_t)0x17F243B); // what the game compares
+    const float* p = vcall<const float*>(sp, 0x2C / 4);
+    uint8_t* b = F<uint8_t*>(city, kCitySlots);
+    uint8_t* e = F<uint8_t*>(city, kCitySlots + 4);
+    if (!p || !b || e <= b)
+        return false;
+    int best = -1;
+    float bd = 3.4e38f;
+    for (int k = 0; b + (k + 1) * 0x18 <= e && k < 64; k++) {
+        float* s = (float*)(b + k * 0x18 + 0xC);
+        float d = (p[0] - s[0]) * (p[0] - s[0]) + (p[1] - s[1]) * (p[1] - s[1]) + (p[2] - s[2]) * (p[2] - s[2]);
+        if (d < bd) {
+            bd = d;
+            best = k;
+        }
+    }
+    return best >= 0 && F<void*>(b + best * 0x18, 4) == occupant;
+}
+using EditorPickUp_t = int(SK_THISCALL*)(void*, void*);
+static EditorPickUp_t o_EditorPickUp;
+static int SK_THISCALL h_EditorPickUp(void* ed, void* sp)
+{
+    if (g_fix_planner_pick && g_ok && game::mode_id() == modes::kCiv && !planner_pick_ok(ed, sp)) {
+        if (g_planner_picks_refused++ < 10)
+            H->log(M, SK_INFO, "civ: the city planner picked up a building that is in no slot of its own: refused (BUG-0491)");
+        return 2;
+    }
+    return o_EditorPickUp(ed, sp);
+}
+using EditorUpdate_t = int(SK_THISCALL*)(void*, int);
+static EditorUpdate_t o_EditorUpdate;
+static int SK_THISCALL h_EditorUpdate(void* ed, int x)
+{
+    g_editor = ed;
+    g_editor_frame = H->frame_index();
+    return o_EditorUpdate(ed, x);
+}
 static uint32_t pol_of(void* o) { return F<uint32_t>(o, kPol); }
 static net::Vec3 city_pos(void* c)
 {
@@ -1023,6 +1129,12 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     for (auto& o : opts)
         if (uintptr_t a = H->sym(o.name))
             H->hook_create(M, (void*)a, o.hook, o.orig);
+    // the city planner (BUG-0491, BUG-0493; GOG 2024 symbols, optional)
+    a_DestroyInstance = H->sym("Simulator::cGameNounManager::DestroyInstance");
+    if ((a_EditorUpdate = H->sym("SporeCoop::CommunityEditor_Update")))
+        H->hook_create(M, (void*)a_EditorUpdate, (void*)h_EditorUpdate, (void**)&o_EditorUpdate);
+    if ((a_EditorPickUp = H->sym("SporeCoop::CommunityEditor_PickUp")))
+        H->hook_create(M, (void*)a_EditorPickUp, (void*)h_EditorPickUp, (void**)&o_EditorPickUp);
     return true;
 }
 
@@ -1270,8 +1382,29 @@ static void movie_tick()
                  (g_fix_caption && (!g_fix_caption_only || g_caption_armed > 0) && C.sess->players().size() >= 2 ? " (or " + std::to_string((int)g_caption_wait) + " s)" : ""));
 }
 
+// BUG-0493: a guest's building for the city the host's own planner edits (a shared capital) is built
+// when that planner closes
+struct HeldBuild {
+    uint8_t from;
+    void* city;
+    uint32_t noun;
+    net::Vec3 pos;
+};
+static std::vector<HeldBuild> g_held_builds;
+static void* build_in_city(void* city, uint32_t noun, const net::Vec3& pos, bool pay);
 static void host_tick(double now)
 {
+    if (!g_held_builds.empty() && !planner_city()) {
+        auto held = std::move(g_held_builds);
+        g_held_builds.clear();
+        auto cities = all_cities();
+        for (auto& h : held)
+            if (std::find(cities.begin(), cities.end(), h.city) != cities.end()) {
+                g_build_from = h.from;
+                build_in_city(h.city, h.noun, h.pos, false);
+                g_build_from = -1;
+            }
+    }
     trade_tick(now);
     boost_tick(now);
     movie_tick();
@@ -1467,6 +1600,10 @@ static void* host_buy(void* city, int loco)
     return v;
 }
 
+static bool g_fix_build_orphan = true;
+COOP_FIX("civ.build_orphan", "BUG-0491", g_fix_build_orphan,
+         "civ: a building the mod makes for a full city is destroyed, not left in the world outside every slot");
+static uint32_t g_build_orphans;
 // build `noun` in `city` at the free slot nearest to `pos` (the game's planner sequence)
 static void* build_in_city(void* city, uint32_t noun, const net::Vec3& pos, bool pay)
 {
@@ -1483,8 +1620,15 @@ static void* build_in_city(void* city, uint32_t noun, const net::Vec3& pos, bool
     vcall<void>(b, 0x54 / 4, city); // SetOwnerCity
     float p[3] = {pos.x, pos.y, pos.z};
     vcall<void>((uint8_t*)b + 0x34, 0x38 / 4, (const float*)p);
-    if (!thiscall<bool>(a_SnapToSlot, city, b, 1))
-        return nullptr; // no free slot (left for the game to collect)
+    if (!thiscall<bool>(a_SnapToSlot, city, b, 1)) {
+        // no free slot: the building was made for nothing. It stayed in the world (in no city list and
+        // no slot, nobody collects it, the next save keeps it) at the host's spot, over the slot of
+        // another building: a pick in the planner faulted on it (BUG-0491). Off: left as it was.
+        g_build_orphans++;
+        if (g_fix_build_orphan && a_DestroyInstance)
+            thiscall<void>(a_DestroyInstance, nm(), o);
+        return nullptr;
+    }
     thiscall<int>(a_AddBuilding, city, b, 0);
     if (pay)
         if (void* civ = player_civ())
@@ -1608,6 +1752,12 @@ static void host_command(uint8_t from, net::Reader& r)
         uint8_t co = city ? owner_of_city(city) : 0xFF;
         if (!r.ok() || !city || (co != from && co != kShared))
             return reject();
+        if (planner_holds(city)) {
+            g_held_builds.push_back({from, city, noun, p});
+            g_planner_held++;
+            g_cmds_done++;
+            return;
+        }
         g_build_from = from; // the guest already has it
         void* b = build_in_city(city, noun, p, false); // the guest paid in its planner (shared money)
         g_build_from = -1;
@@ -1646,6 +1796,11 @@ static uint32_t g_bfix_added, g_bfix_removed, g_ruins_differ, g_ruins_in;
 static void reconcile_buildings(void* city, size_t n,
                                 const std::function<void(size_t, uint32_t&, net::Vec3&, bool&)>& host_b)
 {
+    if (planner_holds(city)) { // BUG-0493: after the planner closes (the next snapshot)
+        g_planner_held++;
+        g_bfix_seen[city] = 0;
+        return;
+    }
     auto local = vec_of((uint8_t*)city + kCityBuildings);
     std::vector<bool> used(local.size(), false);
     std::vector<size_t> missing;
@@ -1713,6 +1868,8 @@ static void reconcile_buildings(void* city, size_t n,
     g_applying = false;
 }
 
+// BUG-0493: vehicles of this game the mod removes once the city planner no longer moves them
+static std::unordered_set<void*> g_kill_later;
 static void kill_local(void* v)
 {
     g_applying = true;
@@ -1834,7 +1991,9 @@ static bool guest_cities(net::Reader& r) // false: the list does not fit the mes
             g_city_owner[c] = owner; // kShared included
         else
             g_city_owner.erase(c);
-        if (pol_of(c) != pol) { // captured on the host
+        if (pol_of(c) != pol && planner_holds(c)) // BUG-0493: the next snapshot after the planner
+            g_planner_held++;
+        else if (pol_of(c) != pol) { // captured on the host
             g_applying = true;
             thiscall<void>(a_ChangeOwner, c, pol, 0, 0);
             g_applying = false;
@@ -2031,8 +2190,13 @@ static void guest_state(net::Reader& r)
     for (auto it = g_gv.begin(); it != g_gv.end();) {
         if (!g_cycle_ids.count(it->first)) {
             if (it->second.v && game::object_alive(it->second.v) && !F<uint8_t>(it->second.v, kVDead)) {
-                kill_local(it->second.v);
-                g_removed++;
+                if (planner_moves(it->second.v)) { // BUG-0493: killed when the planner lets it go
+                    g_kill_later.insert(it->second.v);
+                    g_planner_kills_held++;
+                } else {
+                    kill_local(it->second.v);
+                    g_removed++;
+                }
             }
             g_gv_of.erase(it->second.v);
             it = g_gv.erase(it);
@@ -2042,6 +2206,13 @@ static void guest_state(net::Reader& r)
     // the guest's own vehicles that the host does not have (its local civ AI, the start vehicle)
     for (void* lv : all_vehicles())
         if (!g_gv_of.count(lv)) {
+            if (g_kill_later.count(lv))
+                continue;
+            if (planner_moves(lv)) {
+                g_kill_later.insert(lv);
+                g_planner_kills_held++;
+                continue;
+            }
             kill_local(lv);
             g_removed++;
             g_removed_local++; // tests: a vehicle of this game's own, not a mirror the host no longer has
@@ -2050,6 +2221,17 @@ static void guest_state(net::Reader& r)
 
 static void guest_tick(double now)
 {
+    for (auto it = g_kill_later.begin(); it != g_kill_later.end();) {
+        void* v = *it;
+        if (!exists(v) || F<uint8_t>(v, kVDead) || g_gv_of.count(v)) { // gone, or a mirror again
+            it = g_kill_later.erase(it);
+        } else if (!planner_moves(v)) {
+            kill_local(v);
+            g_removed++;
+            it = g_kill_later.erase(it);
+        } else
+            ++it;
+    }
     static double last_sel;
     if (now - last_sel > 0.2) {
         last_sel = now;
@@ -2112,6 +2294,10 @@ static void guest_build(net::Reader& r)
     void* city = ci < g_host_cities.size() ? g_host_cities[ci] : nullptr;
     if (!r.ok() || !city)
         return;
+    if (planner_holds(city)) { // BUG-0493: the snapshots' reconciliation builds it after the planner
+        g_planner_held++;
+        return;
+    }
     g_applying = true;
     if (build_in_city(city, noun, p, false))
         g_builds_in++;
@@ -2191,6 +2377,8 @@ static void clear_coop_tables(bool restore_speed)
     g_city_gifted.clear();
     g_bfix_seen.clear();
     g_ui_city = nullptr;
+    g_kill_later.clear();
+    g_held_builds.clear();
 }
 
 void on_session_end()
@@ -2323,7 +2511,11 @@ std::string status()
                  (unsigned)g_gv.size(), g_created, g_removed, (unsigned)g_host_cities.size(), g_cmds_sent, g_builds_in,
                  g_captures_in, g_orders_dropped, g_growth_blocked, g_nodes_in, g_cities_in, g_cities_blocked, g_unselected, (int)movie_playing(), g_bfix_added,
                  g_bfix_removed, g_ruins_in, g_ruins_differ, g_incomplete, g_income_blocked, g_cities_caught_up, g_ai_spawns_blocked, g_away_orders, (int)local_play(), g_founds_outside, g_mirror_place_skipped, g_removed_local);
-    return b;
+    char pl[200];
+    snprintf(pl, sizeof pl, "planner: open=%d held=%u kills_held=%u kills_waiting=%u picks_refused=%u builds_held=%u build_orphans=%u\n",
+             planner_city() ? 1 : 0, g_planner_held, g_planner_kills_held, (unsigned)g_kill_later.size(),
+             g_planner_picks_refused, (unsigned)g_held_builds.size(), g_build_orphans);
+    return std::string(b) + pl;
 }
 
 void for_each_target(void (*fn)(const char* kind, int id, int owner, const net::Vec3& pos, void* user), void* user)
@@ -2745,6 +2937,92 @@ std::string debug(const std::vector<std::string>& a)
         g_chunk_budget = std::clamp<size_t>((size_t)atoi(a[1].c_str()), 200, net::kMaxPacket - 48);
         g_max_chunk = 0;
         return "chunk budget " + std::to_string(g_chunk_budget);
+    }
+    if (a.size() >= 2 && a[0] == "kill" && is_host()) { // kill <id>: the vehicle dies (Die with effects, tests)
+        void* v = local_vehicle((uint16_t)atoi(a[1].c_str()));
+        if (!v || !exists(v))
+            return "no such vehicle";
+        thiscall<void>(a_Die, v, 1, 0xFFFFFFFFu);
+        return "died";
+    }
+    if (!a.empty() && a[0] == "planner") {
+        // planner [pick <obj>]: the open city planner (BUG-0491/0493 tests): its city, the objects it moves,
+        // the buildings in the world outside every city list (orphans); pick: the planner's own pick-up
+        // of that object (what a click on it does)
+        std::string out;
+        char line[160];
+        void* pc = planner_city();
+        snprintf(line, sizeof line, "planner editor=%p city=%p host_index=%d\n", g_editor, pc, pc ? host_index_of_city(pc) : -1);
+        out += line;
+        std::vector<void*> moved;
+        planner_moved(moved);
+        for (void* sp : moved) {
+            void* v = sp ? (uint8_t*)sp - kVSpatial : nullptr;
+            bool veh = v && exists(v);
+            snprintf(line, sizeof line, "moved %p %s%s\n", sp, veh ? "vehicle" : "object",
+                     veh && g_gv_of.count(v) ? " (mirror)" : "");
+            out += line;
+        }
+        if (pc)
+            for (void* bl : vec_of((uint8_t*)pc + kCityBuildings)) {
+                snprintf(line, sizeof line, "city building %p noun=%08X pick_ok=%d\n", bl, game::noun_id(bl),
+                         (int)planner_pick_ok(g_editor, (uint8_t*)bl + 0x34));
+                out += line;
+            }
+        std::unordered_set<void*> in_city;
+        for (void* c : all_cities())
+            for (void* bl : vec_of((uint8_t*)c + kCityBuildings))
+                in_city.insert(bl);
+        struct O {
+            std::unordered_set<void*>* in;
+            std::string* out;
+        } o{&in_city, &out};
+        game::for_each_object(
+            [](void* x, uint32_t n, void* u) {
+                auto* o = (O*)u;
+                net::Vec3 p;
+                if (type_for_noun(n) && game::object_alive(x) && !o->in->count(x) && game::object_position(x, p) &&
+                    o->out->size() < 4000) {
+                    char l[96];
+                    snprintf(l, sizeof l, "orphan %p noun=%08X pos=(%.1f %.1f %.1f)\n", x, n, p.x, p.y, p.z);
+                    *o->out += l;
+                }
+                return true;
+            },
+            &o);
+        if (a.size() >= 3 && a[1] == "pick") {
+            void* x = (void*)(uintptr_t)strtoul(a[2].c_str(), nullptr, 16);
+            if (!pc || !x || !a_EditorPickUp)
+                return out + "no planner open / no object\n";
+            int r = thiscall<int>(a_EditorPickUp, g_editor, (uint8_t*)x + 0x34);
+            snprintf(line, sizeof line, "pick -> %d held=%p\n", r, F<void*>(g_editor, 0xC0));
+            out += line;
+        }
+        return out;
+    }
+    if (a.size() >= 3 && a[0] == "unslot") {
+        // unslot <host city index> <k> (tests, BUG-0491): the state an orphan has: building k of the city
+        // leaves its layout slot (cLayoutSlot::RemoveObject) and stays in the world
+        int ci = atoi(a[1].c_str());
+        void* city = ci >= 0 && ci < (int)g_host_cities.size() ? g_host_cities[ci] : nullptr;
+        if (!city)
+            return "no such city";
+        auto bl = vec_of((uint8_t*)city + kCityBuildings);
+        size_t k = (size_t)atoi(a[2].c_str());
+        uint8_t* b = F<uint8_t*>(city, kCitySlots);
+        uint8_t* e = F<uint8_t*>(city, kCitySlots + 4);
+        if (k >= bl.size())
+            return "no such building";
+        for (uint8_t* s = b; s && s + 0x18 <= e; s += 0x18)
+            if (F<void*>(s, 4) == bl[k]) {
+                F<uint8_t>(s, 0) = 0; // the slot's flag and occupant as RemoveObject leaves them
+                F<int>(s, 8) = 0;
+                F<void*>(s, 4) = nullptr; // the city's list keeps its reference
+                char l[96];
+                snprintf(l, sizeof l, "building %p out of its slot", bl[k]);
+                return l;
+            }
+        return "that building is in no slot";
     }
     if (a.size() >= 2 && a[0] == "slots") { // slots <host city index>: building plots, where they are on screen
         int ci = atoi(a[1].c_str());
