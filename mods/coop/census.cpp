@@ -109,6 +109,10 @@ static int c_census(void*, int argc, const char* const* argv, SkOut* out)
 {
     bool all = argc >= 2 && !strcmp(argv[1], "all");
     float radius = argc >= 3 ? (float)atof(argv[2]) : 250.f;
+    // `all <r> <x> <y> <z>`: the area around a given point (the detector centres the host's dump on
+    // the guest's player, worlddiff.pair_dump), not around the own player
+    bool at = argc >= 6;
+    net::Vec3 centre{at ? (float)atof(argv[3]) : 0.f, at ? (float)atof(argv[4]) : 0.f, at ? (float)atof(argv[5]) : 0.f};
     uint32_t mode = 0, world = 0;
     if (C.place)
         C.place(mode, world);
@@ -131,7 +135,7 @@ static int c_census(void*, int argc, const char* const* argv, SkOut* out)
     if (all) {
         if (mode == modes::kCell)
             cellsync::census_rows(rows);
-        AllQ q{&rows, &nouns, &vts, me, centred, radius > 0 ? radius * radius : 1e30f};
+        AllQ q{&rows, &nouns, &vts, at ? centre : me, at || centred, radius > 0 ? radius * radius : 1e30f};
         all_rows(q);
     }
     std::string buf;
@@ -175,7 +179,7 @@ void init(const SkHost* host, SkMod* mod, Ctx ctx)
     M = mod;
     C = std::move(ctx);
     H->command_add(M, "coop.census",
-                   "coop.census [all [r]] - the shared objects of this mode as the game has them, with net ids (tests: "
+                   "coop.census [all [r [x y z]]] - the shared objects of this mode as the game has them, with net ids (tests: "
                    "tools/tests/census.py); all: every placed game object within r m and the noun counts (worlddiff.py)",
                    c_census, nullptr, SK_CMD_MAIN_THREAD);
 }

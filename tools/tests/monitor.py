@@ -795,16 +795,12 @@ class Watch(threading.Thread):
         host = self.players.get('host')
         if host is None:
             return
-        try:
-            hw = worlddiff.World(self.console(host[0]).call('coop.census all 250').get('out', ''), 'host')
-        except (OSError, ValueError) as e:
-            self.out(f'  (detector: host dump failed: {e!r})')
-            return
         for who, (inst, _) in list(self.players.items()):
             if who == 'host':
                 continue
             try:
-                gw = worlddiff.World(self.console(inst).call('coop.census all 250').get('out', ''), who)
+                hw, gw = worlddiff.pair_dump(self.console(host[0]), self.console(inst), 250)
+                hw.who, gw.who = 'host', who
             except (OSError, ValueError) as e:
                 self.out(f'  (detector: {who} dump failed: {e!r})')
                 continue

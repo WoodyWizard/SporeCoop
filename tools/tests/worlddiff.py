@@ -20,10 +20,84 @@ import math
 import re
 import sys
 
-NOUNS = {  # known noun types (mods/coop/*: k...Noun); unknown ones print as hex
-    0x018EB45E: 'creature', 0x018EB4B7: 'citizen', 0x02A034CD: 'egg', 0x02C9CC91: 'fruit',
-    0x01BE418E: 'herd', 0x52AA6122: 'nest', 0x0403DF5C: 'node', 0x1406A572: 'species_goal',
+NOUNS = {  # GameNounIDs of the Spore ModAPI (Simulator/SimulatorEnums.h); unknown ones print as hex
+    0x061494BE: 'animal_trap',
+    0x018C9380: 'artillery_projectile',
+    0x018EA1EB: 'building_city_hall',
+    0x01A56ABA: 'building_entertainment',
+    0x018EB106: 'building_house',
+    0x018EA2CC: 'building_industry',
+    0x070703B3: 'building_scenario',
+    0x038CFB6B: 'celestial_body',
+    0x02A37E35: 'cheat_object',
+    0x018C43E8: 'city',
+    0x0244FB08: 'city_territory',
+    0x018C7C97: 'city_walls',
+    0x018C816A: 'civilization',
+    0x0403DF5C: 'node',
+    0x018EB45E: 'creature',
+    0x018EB4B7: 'citizen',
+    0x1406A572: 'species_goal',
+    0x34066DBA: 'creature_tutorial_mission',
+    0x03DF2CC5: 'cultural_convert_city_order',
+    0x04F76F0D: 'cultural_projectile',
+    0x03D5C325: 'cultural_target',
+    0x024270C7: 'deep_space_projectile',
+    0x04167186: 'default_ao_e_area',
+    0x024630D7: 'default_beam_projectile',
+    0x024270C5: 'default_tool_projectile',
+    0x02A034CD: 'egg',
+    0x018EB9D2: 'empire',
+    0x14D9597F: 'find_mission',
+    0x0240E3BF: 'flak_projectile',
+    0x02C9CC91: 'fruit',
+    0x02E96892: 'fruit_group',
+    0x018C431C: 'game_bundle',
+    0x01906183: 'game_bundle_ground_container',
+    0x017F243B: 'game_data',
+    0x018EBADC: 'ufo',
+    0x018C84A9: 'game_plant',
+    0x018C40BC: 'game_terrain_cursor',
+    0x036BE27E: 'gameplay_marker',
+    0x01BE418E: 'herd',
+    0x02E72CAE: 'hit_sphere',
+    0x049CEC61: 'icbm',
+    0x02B8A4E7: 'inter_city_road',
+    0x03A2511E: 'interactive_ornament',
+    0x02E9AE6C: 'military_attack_city_order',
+    0x0283DDB1: 'movable_destructible_ornament',
+    0x06EF0F11: 'nano_drone',
+    0x52AA6122: 'nest',
+    0x03ED8573: 'obstacle',
+    0x018C88E4: 'ornament',
+    0x07B38BA7: 'placeable_effect',
+    0x074E0069: 'placeable_sound',
+    0x03275728: 'planet',
+    0x02DD8C42: 'planetary_artifact',
+    0x02C21781: 'player',
+    0x02265FDC: 'player_inventory',
+    0x05776A2C: 'resource_projectile',
+    0x02A8FB3F: 'rock',
+    0x03572E72: 'sim_planet_low_l_o_d',
+    0x032F9778: 'solar_hit_sphere',
+    0x038CF94C: 'solar_system',
+    0x018EB641: 'sound_loop_object',
+    0x0244D3C8: 'space_defense_missile',
+    0x021FFA3F: 'space_inventory',
+    0x024270C9: 'spear',
+    0x0355C93A: 'star',
+    0x04E3FAB5: 'tool_object',
+    0x055CF865: 'totem_pole',
     0x018C6D19: 'tribe',
+    0x0629BAFE: 'tribe_food_mat',
+    0x01E4DAAE: 'tribe_hut',
+    0x3098AF98: 'tribe_planner',
+    0x5436411A: 'tribe_to_tribe_mission',
+    0x018C8F0C: 'tribe_tool',
+    0x0436F342: 'turret',
+    0x018C6DE8: 'vehicle',
+    0x02E98AB7: 'vehicle_group_order',
+    0x044462A6: 'visible_planet',
 }
 
 OBJ = re.compile(r'obj ([a-z])(-?\d+) key=([0-9A-F]{8}) alive=(-?\d+) hp=(\S+) ai=(-?\d+) own=(\S*) owner=(-?\d+) '
@@ -34,7 +108,12 @@ ME = re.compile(r'me pos=\(([-\d.e+na]+) ([-\d.e+na]+) ([-\d.e+na]+)\) ok=(\d)')
 # compare area around the guest's own player (m) and the position tolerance of a match, per stage
 AREA = {'Cell': 40.0, 'Creature': 70.0, 'Tribe': 90.0, 'Civilization': 160.0, 'Space': 120.0}
 TOL_STATIC, TOL_MOVING = 3.0, 15.0
-MOVING = {'creature', 'citizen', 'herd'}
+# objects that belong to one game by design (per-player logic, invisible helpers): never compared
+IGNORE = {'hit_sphere', 'solar_hit_sphere', 'game_terrain_cursor', 'species_goal', 'creature_tutorial_mission',
+          'tribe_to_tribe_mission', 'find_mission', 'military_attack_city_order', 'cultural_convert_city_order',
+          'vehicle_group_order', 'sound_loop_object', 'placeable_sound', 'player', 'player_inventory',
+          'space_inventory', 'cheat_object'}
+MOVING = {'creature', 'citizen', 'herd', 'vehicle', 'ufo', 'tribe_tool'}
 
 
 def noun_name(n):
@@ -86,8 +165,23 @@ class World:
                 self.complete = int(line.split('=')[1]) == len(self.rows)
 
 
-def dump(con, r=250):
-    return World(con.call(f'coop.census all {r}')['out'])
+def dump(con, r=250, at=None):
+    cmd = f'coop.census all {r}' + (f' {at[0]:.1f} {at[1]:.1f} {at[2]:.1f}' if at else '')
+    return World(con.call(cmd)['out'])
+
+
+def pair_dump(host, guest, r=250):
+    """(host World, guest World) over the same area: around the guest's player, or around the host's
+    when the guest has no position (an RTS pointer at (0 0 0)). Each game lists only the objects near
+    the centre it is given, so both dumps must use the same centre (a player far from the other one
+    showed the other's objects as missing)."""
+    gw = dump(guest, r)
+    if gw.me and not _origin(gw.me):
+        return dump(host, r, gw.me), gw
+    hw = dump(host, r)
+    if hw.me and not _origin(hw.me):
+        gw = dump(guest, r, hw.me)
+    return hw, gw
 
 
 class Finding(dict):
@@ -171,7 +265,8 @@ def diff(host, guest, area=None):
                 add('alive', label, 1, f'{label} {i}: alive={x["alive"]} on the host, {y["alive"]} on the guest')
             if _rel(x['scale'], y['scale']) > 0.12:
                 add('scale', label, 1, f'{label} {i} key={x["key"]}: scale {x["scale"]:.2f} on the host, {y["scale"]:.2f} on the guest')
-            if x['key'] != y['key']:
+            # a guest registers a received creation under a key of its own (0x7C / 0x7D......): not a difference
+            if x['key'] != y['key'] and not (y['key'][:2] in ('7C', '7D') or x['key'][:2] in ('7C', '7D')):
                 add('model', label, 1, f'{label} {i}: model {x["key"]} on the host, {y["key"]} on the guest')
             if x['alive'] and y['alive'] and math.isfinite(x['hp']) and math.isfinite(y['hp']) and abs(x['hp'] - y['hp']) > max(2.0, 0.2 * max(x['hp'], y['hp'])):
                 add('hp', label, 1, f'{label} {i}: hp {x["hp"]:.0f} on the host, {y["hp"]:.0f} on the guest')
@@ -201,6 +296,8 @@ def diff(host, guest, area=None):
         gg[x['noun']].append(x)
     for noun in sorted(set(hg) | set(gg)):
         name = noun_name(noun)
+        if name in IGNORE:
+            continue
         vt = host.vts.get(noun) or guest.vts.get(noun)
         vts = f' [vtable 0x{vt:X}]' if vt and noun not in NOUNS else ''
         a, b = hg.get(noun, []), gg.get(noun, [])
@@ -222,6 +319,8 @@ def diff(host, guest, area=None):
             add('scale', name, len(sc), f'{len(sc)} {name} with another scale (e.g. {x["scale"]:.2f} host, {y["scale"]:.2f} guest)')
     # the whole lists: noun types one game has and the other has none of (any distance)
     for noun in sorted(set(host.nouns) | set(guest.nouns)):
+        if noun_name(noun) in IGNORE:
+            continue
         h, g = host.nouns.get(noun, 0), guest.nouns.get(noun, 0)
         if (h == 0) != (g == 0) and max(h, g) >= 1:
             vt = host.vts.get(noun) or guest.vts.get(noun)

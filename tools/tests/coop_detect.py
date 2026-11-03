@@ -48,7 +48,7 @@ def main():
     time.sleep(10)
     while time.time() < t_end:
         t0 = time.time()
-        hw, gw = worlddiff.dump(host), worlddiff.dump(guest)
+        hw, gw = worlddiff.pair_dump(host, guest)
         dt = time.time() - t0
         n += 1
         if n == 1:

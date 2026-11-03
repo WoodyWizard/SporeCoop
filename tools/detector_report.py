@@ -19,6 +19,15 @@ import re
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(ROOT, 'tools', 'tests'))
+import worlddiff  # noqa: E402  (noun names: older logs carry hex kinds)
+
+
+def named(sig):
+    p = sig.split(':')
+    if len(p) == 3 and re.fullmatch(r'[0-9A-F]{8}', p[2]) and int(p[2], 16) in worlddiff.NOUNS:
+        p[2] = worlddiff.NOUNS[int(p[2], 16)]
+    return ':'.join(p)
 
 # signature (or its prefix up to a kind) -> the ticket that already covers it
 KNOWN = {
@@ -90,7 +99,7 @@ def main():
                         d = json.loads(line[9:])
                     except ValueError:
                         continue
-                    s = d['sig']
+                    s = named(d['sig'])
                     seen[s] += 1
                     objs[s] += int(d.get('n', 0))
                     tests[s].add(test)
