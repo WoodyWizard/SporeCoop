@@ -10,7 +10,7 @@ role:
 versions:
 fixed_in: unreleased
 branch: fix/w38-effects
-commits: 0d704785 (relay), 646dfc97 (test), 40c7834b (docs), d4e5a367 (world relay), c26a1d10 (tests), 41c0d56f (docs), 45ebc478 (review: no hook churn, main thread only, O(1) table), 091b056f (position +0xA0), 13cdfa7c (cost measurement)
+commits: 0d704785 (relay), 646dfc97 (test), 40c7834b (docs), d4e5a367 (world relay), c26a1d10 (tests), 41c0d56f (docs), 45ebc478 (review: no hook churn, main thread only, O(1) table), 091b056f (position +0xA0), 13cdfa7c (cost measurement), 02586842 (atomic stage gate)
 tests: creature_effects, cell_effects, tribe_effects
 signature:
 docs: docs/re/creature.md#creature-effects-relay
@@ -124,14 +124,22 @@ A code review found three problems in the first shape; fixed on the same branch:
 
 Verification of the review shape:
 
-* PASS: `python3 tools/lab.py run
-  smoke,creature,team,puppet_walk,creature_social_ally,cell_coop,tribe_coop,civ_coop,space_coop,creature_effects,cell_effects,tribe_effects
-  --lane 2 --lane 3` -> out/lab/20261102-164724 (the 18 game tests OK, every stage 0 faults;
-  the `unit` test's lane-lock selftest failed because lane 5 was held by another run).
-* FAIL: `SPORE_FIX_OFF=creature.effects_relay python3 tools/lab.py run
+* PASS (final code, 02586842): `python3 tools/lab.py run
   creature_effects,cell_effects,tribe_effects --lane 2 --lane 3 --retry 0` ->
-  out/lab/20261102-164353 (0/3, every case failed).
+  out/lab/20261102-182618 (3/3 OK); the three are OK in the final regression too.
+* FAIL (final code, 02586842): `SPORE_FIX_OFF=creature.effects_relay python3 tools/lab.py run
+  creature_effects,cell_effects,tribe_effects --lane 2 --lane 3 --retry 0` ->
+  out/lab/20261102-182754 (0/3, every case failed).
+* Regression (final code): `python3 tools/lab.py run
+  smoke,creature,team,puppet_walk,creature_social_ally,cell_coop,tribe_coop,civ_coop,space_coop,creature_effects,cell_effects,tribe_effects
+  --lane 2 --lane 3` -> out/lab/20261102-180357 (the 18 game tests OK, every stage 0 faults; the
+  `unit` test's lane-lock selftest is timing sensitive under the run's CPU load and failed its
+  free-lane checks, `make test` alone passes on the same commit).
+* The review-shape runs before the final one: PASS out/lab/20261102-164724, FAIL
+  out/lab/20261102-164353 and out/lab/20261102-174202.
 * Editors: guest_editor and editor_desync -> out/lab/20261102-170849 (2/2, 0 faults).
+* Faults in the final regression: 0 for both games in cell_coop, creature, tribe_coop, civ_coop,
+  space_coop and chaos_tribe (out/lab/20261102-180357).
 * Perf runs: out/perf-creature.json, out/perf-creature-onfirst.json, out/perf-tribe.json,
   out/perf-civ.json (out/measure_effects_perf.py, lane 2).
 * `make -j8` and `make test` passed.

@@ -1698,6 +1698,6 @@ A code review of the first shape found three problems; this is what changed and 
   `A3C5EB2B` at `(0.00, -170.10, -468.99)` while the avatar was at `(-169.51, -467.81, -87.11)`).
   The receiver's displayed position in `coop.effects` had the same wrong offset.
 
-* Faults after the change: 0 in cell_coop, creature, tribe_coop, civ_coop, space_coop, chaos_tribe,
-  guest_editor and editor_desync (`out/lab/20261102-164724`,
-  `out/lab/20261102-170849`; every test prints `total faults: 0` for both games).
+* Faults after the change: 0 in cell_coop, creature, tribe_coop, civ_coop, space_coop, chaos_tribe
+  (`out/lab/20261102-180357`), guest_editor and editor_desync (`out/lab/20261102-170849`); every
+  test prints `total faults: 0` for both games.
