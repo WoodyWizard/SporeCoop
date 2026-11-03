@@ -162,6 +162,7 @@ add('social_console', P + 'coop_social_console.py', warm=True, minutes=3, fixtur
 add('creature_kills', P + 'coop_creature_kills.py', minutes=3)  # a guest's kill dies on the guest too (no 0 hp mirror standing), NPCs notice the partner
 add('creature_death', P + 'coop_creature_death.py', minutes=4)  # alone: die, skip the caption and the respawn cutscene
 add('creature_respawn', P + 'coop_creature_respawn.py', minutes=5)  # both players die (also after a pack rescue): the hatchling grows up and walks
+add('npc_lost_target', P + 'coop_npc_lost_target.py', minutes=5)  # NPCs fight the partner's puppet when it goes: no fault at 0xD65D23 in the attack node, no stimulus names the destroyed puppet (BUG-0453/0456; SPORE_FIX_OFF=npc.attack_lost_target,npc.stale_sender fails)
 add('diag', P + 'diag_check.py --crash', minutes=5, reports=True)  # kept logs, environment, version in the menu, report button, hang / crash reports
 add('kit_freeze', P + 'kit_freeze.py', minutes=4, reports=True)  # stack / hangdump under a held heap, cheat-console waits, faults inside the log / fault logger, hook churn, hooks made while threads run the function, new hooks' originals (BUG-0050/0065/0115/0132/0202/0398; --old: every case fails)
 add('kit_hooknew', P + 'kit_freeze.py --case hooknew', minutes=2, reports=True)  # new hooks made while threads call the functions: no detour runs before its original is set (BUG-0398, the guest's call to address 0; SPORE_FIX_OFF=hookorig fails)

@@ -402,6 +402,151 @@ std::string arm_physics_orphan()
     return "armed: the next physics update gets a body of kind 0 without an owner\n";
 }
 
+// BUG-0453: the tick of the creature attack node 0x02D852E6 (SporeCoop::BT_AttackTick 0xD67CD0, cdecl,
+// BT action table .data 0x1583F30 {id, enter 0xD67980, tick, exit 0xD672A0}; tree owner first) reads
+// the NPC's target (+0xE7C, the target's combatant, set by enter through vt 0x84). Its own check for a
+// missing target (0xD65980: null -> the node ends) is skipped while the node's attack animation
+// (data +0x30) still plays, and then 0xD65BE0 calls target->vt 8 on null at 0xD65D23 (host crashes on
+// 0.7.3.3 and 0.7.3.4). The game clears the target of every NPC aimed at a creature that is destroyed
+// (seen in the lab when a partner's puppet went on the partner's death): an attack on our puppet that
+// is cut by the puppet's removal hits this. With no target the guard ends the node as the game's own
+// check does (return 0), animation or not.
+using AttackTickFn = int(__cdecl*)(void*, void*, void*, void*, void*, void*, void*, void*, void*, void*);
+static AttackTickFn g_attack_orig;
+static bool g_attack_target_fix = true;
+COOP_FIX("npc.attack_lost_target", "BUG-0453", g_attack_target_fix,
+         "creature: an NPC whose target is removed during its attack animation ends the attack (the game read the missing target)");
+static std::atomic<unsigned> g_attack_ended{0};
+static std::atomic<int> g_attack_cut_test{0}; // tests: armed by coop.attackcut
+static unsigned g_attack_cuts = 0;
+
+// tests: the state the hosts crashed in, made on purpose: the node's attack animation (+0x30) plays, no
+// other animation of it (+0x34 / +0x38 / +0x3C: 0xD65BE0 returns before the target is read), the AI's
+// node data (+0x600) set; the target is cleared by the creature's own SetTarget (vt 0x84, (null, 1, 0))
+static void attack_cut(void* c, const uint8_t* data)
+{
+    uint8_t* ai = at<uint8_t*>(c, 0xB4C);
+    if (!data || !readable(data, 0x48) || !at<uint32_t>(data, 0x30) || at<uint32_t>(data, 0x34) ||
+        at<uint32_t>(data, 0x38) || at<uint32_t>(data, 0x3C) || !ai || !readable(ai + 0x600, 4) || !at<void*>(ai, 0x600))
+        return;
+    g_attack_cut_test = 0;
+    g_attack_cuts++;
+    H->log(M, SK_WARN, "game fixes: tests: NPC %p loses its target %p in its attack animation %08X (BUG-0453)", c,
+           at<void*>(c, 0xE7C), at<uint32_t>(data, 0x30));
+    skg::vcall<void>(c, 0x84 / 4, (void*)nullptr, 1, 0);
+}
+
+static int __cdecl attack_tick_guard(void* c, void* a2, void* a3, void* a4, void* a5, void* a6, void* a7, void* a8,
+                                     void* a9, void* a10)
+{
+    if (g_attack_cut_test && c && readable(c, 0xE80) && at<void*>(c, 0xE7C))
+        attack_cut(c, (const uint8_t*)a6);
+    if (g_attack_target_fix && c && readable(c, 0xE80) && !at<void*>(c, 0xE7C)) {
+        unsigned n = ++g_attack_ended;
+        if (n <= 8 || n % 100 == 0)
+            H->log(M, SK_INFO, "game fixes: NPC %p is in its attack with no target (removed): the attack ends (BUG-0453, %u)",
+                   c, n);
+        return 0;
+    }
+    // (the game's tick is cdecl: the caller cleans the stack, the extra arguments are its own words)
+    return g_attack_orig(c, a2, a3, a4, a5, a6, a7, a8, a9, a10);
+}
+
+// BUG-0456 (class G9, BUG-0426): a creature's behaviour tree keeps up to 8 stimuli (AI block +0xB4C, +8:
+// slots of 0x38 bytes, masks +0 / +4, value +8, sender +0x2C with a reference; union of the masks at
+// +0x1C0 / +0x1C4; BT_PostStimulus 0xBC9960, the game's clear 0xBC9A60). A stimulus outlives its sender
+// by seconds (it decays): the game never destroys a creature in the middle of a fight (corpses stay
+// 60 s), co-op does (a partner's puppet when the partner dies, hides, leaves or rejoins). In the lab the
+// "noticed the player" stimulus named a destroyed puppet for 4 s after its destroy; a host aborted with
+// a pure virtual call (0x40000015 at 0xD8F2AD) where the herd-help node 0xD8F1C0 read the sender of an
+// "attacked" stimulus whose object had been destroyed (its vtables were the base class's). Before any
+// creature or citizen is destroyed (cGameNounManager::DestroyInstance), every stimulus naming it is
+// cleared as 0xBC9A60 clears one (masks, value, the sender released), the others stay.
+using DestroyFn = void(__thiscall*)(void*, void*);
+static DestroyFn g_destroy_orig;
+static bool g_stale_sender_fix = true;
+COOP_FIX("npc.stale_sender", "BUG-0456", g_stale_sender_fix,
+         "creature: a destroyed creature is taken out of every NPC's stimuli (the AI read it after it was gone)");
+static std::atomic<unsigned> g_senders_cleared{0}, g_destroys_scanned{0};
+constexpr uint32_t kAnimalNoun = 0x018EB45Eu; // (kCitizenNoun 0x18EB4B7: above)
+constexpr size_t kAiOff = 0xB4C, kStimOff = 8, kStimSlot = 0x38, kStimSender = 0x2C, kStimUnion = 0x1C0;
+constexpr size_t kCreatureSpan = 0x1700; // the sender may be a sub-object (combatant +0x5A8, spatial +0xC0)
+
+struct Scrub {
+    uint8_t* dying;
+    unsigned cleared;
+};
+
+static unsigned scrub_stimuli(uint8_t* stim, const uint8_t* dying)
+{
+    unsigned n = 0;
+    for (int i = 0; i < 8; i++) {
+        uint8_t* s = stim + i * kStimSlot;
+        uint8_t* snd = at<uint8_t*>(s, kStimSender);
+        if (!(at<uint32_t>(s, 0) | at<uint32_t>(s, 4)) || snd < dying || snd >= dying + kCreatureSpan)
+            continue;
+        *(uint32_t*)s = 0;
+        *(uint32_t*)(s + 4) = 0;
+        *(uint32_t*)(s + 8) = 0;
+        *(void**)(s + kStimSender) = nullptr;
+        if (readable(snd, 4) && readable(*(void**)snd, 8)) // Release, as the game's clear does
+            ((void(__thiscall*)(void*))(*(void***)snd)[1])(snd);
+        n++;
+    }
+    if (n) { // the union of what is left
+        uint32_t lo = 0, hi = 0;
+        for (int i = 0; i < 8; i++) {
+            lo |= at<uint32_t>(stim + i * kStimSlot, 0);
+            hi |= at<uint32_t>(stim + i * kStimSlot, 4);
+        }
+        *(uint32_t*)(stim + kStimUnion) = lo;
+        *(uint32_t*)(stim + kStimUnion + 4) = hi;
+    }
+    return n;
+}
+
+static void forget_sender(void* dying)
+{
+    Scrub sc{(uint8_t*)dying, 0};
+    game::for_each_object(
+        [](void* o, uint32_t noun, void* u) {
+            auto* sc = (Scrub*)u;
+            if ((noun != kAnimalNoun && noun != kCitizenNoun) || o == sc->dying || !game::object_alive(o) ||
+                !readable(o, kAiOff + 4))
+                return true;
+            uint8_t* ai = at<uint8_t*>(o, kAiOff);
+            if (ai && readable(ai + kStimOff, kStimUnion + 8))
+                sc->cleared += scrub_stimuli(ai + kStimOff, sc->dying);
+            return true;
+        },
+        &sc);
+    g_destroys_scanned++;
+    if (sc.cleared) {
+        unsigned n = g_senders_cleared += sc.cleared;
+        if (n <= 16 || n % 100 < sc.cleared)
+            H->log(M, SK_INFO, "game fixes: %u stimulus(es) of NPCs named %p, destroyed now: cleared (BUG-0456, %u in all)",
+                   sc.cleared, dying, n);
+    }
+}
+
+static void __fastcall destroy_guard(void* nm, void*, void* obj)
+{
+    if (g_stale_sender_fix && obj && readable(obj, 0x30)) {
+        uint32_t noun = game::noun_id(obj);
+        if (noun == kAnimalNoun || noun == kCitizenNoun)
+            forget_sender(obj);
+    }
+    g_destroy_orig(nm, obj);
+}
+
+std::string arm_attack_cut()
+{
+    if (!g_attack_orig)
+        return "no attack node guard\n";
+    g_attack_cut_test = 1;
+    return "armed: the next NPC in its attack animation loses its target (" + std::to_string(g_attack_cuts) + " so far)\n";
+}
+
 static bool patch_slot(uintptr_t* slot, uintptr_t value)
 {
     DWORD old;
@@ -457,6 +602,16 @@ void init(const SkHost* host, SkMod* mod)
     if (!phys)
         g_phys_orig = nullptr;
     H->log(M, SK_INFO, "game fixes: physics body owner guard %s", phys ? "on" : "off");
+    uintptr_t at_ = H->sym("SporeCoop::BT_AttackTick");
+    bool attack = at_ && H->hook_create(M, (void*)at_, (void*)&attack_tick_guard, (void**)&g_attack_orig) == 0;
+    if (!attack)
+        g_attack_orig = nullptr;
+    H->log(M, SK_INFO, "game fixes: attack without a target guard %s", attack ? "on" : "off");
+    uintptr_t di = H->sym("Simulator::cGameNounManager::DestroyInstance");
+    bool dest = di && H->hook_create(M, (void*)di, (void*)&destroy_guard, (void**)&g_destroy_orig) == 0;
+    if (!dest)
+        g_destroy_orig = nullptr;
+    H->log(M, SK_INFO, "game fixes: stale stimulus sender guard %s", dest ? "on" : "off");
 }
 
 void shutdown()
@@ -476,7 +631,10 @@ std::string status()
            std::to_string(g_offstage_citizens.load()) + "), cleaned-up citizen walks skipped " +
            std::to_string(g_leave_walk_skipped.load()) + ", test citizens " + std::to_string(g_leave_walk_test_done) +
            ", physics bodies without an owner left out " + std::to_string(g_phys_orphans.load()) + " (scans " +
-           std::to_string(g_phys_scans.load()) + ")\n";
+           std::to_string(g_phys_scans.load()) + "), attacks ended without a target " + std::to_string(g_attack_ended.load()) +
+           " (test cuts " + std::to_string(g_attack_cuts) + (g_attack_cut_test ? ", armed" : "") + ")" +
+           ", stale stimulus senders cleared " + std::to_string(g_senders_cleared.load()) + " (destroys " +
+           std::to_string(g_destroys_scanned.load()) + ")\n";
 }
 
 } // namespace gamefixes

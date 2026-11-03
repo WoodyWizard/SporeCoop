@@ -70,6 +70,13 @@ int c_physorphan(void*, int, const char* const*, SkOut* out)
     return 0;
 }
 
+// tests (BUG-0453): the next NPC in its attack animation loses its target (as when the target is destroyed)
+int c_attackcut(void*, int, const char* const*, SkOut* out)
+{
+    SAY("%s", gamefixes::arm_attack_cut().c_str());
+    return 0;
+}
+
 // tests (BUG-0329): coop.ground <x> <y> <z> - the terrain radius in that direction (GetHeightAt) and
 // the point's own radius: how high a position is over this game's ground
 int c_ground(void*, int argc, const char* const* argv, SkOut* out)
@@ -541,6 +548,8 @@ void coop_register_debug_commands2(const SkHost* host, SkMod* self)
                       c_leavewalk, nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.physorphan", "tests (BUG-0449): the next physics update gets a body of kind 0 without an owner",
                       c_physorphan, nullptr, SK_CMD_MAIN_THREAD);
+    host->command_add(self, "coop.attackcut", "tests (BUG-0453): the next NPC in its attack animation loses its target (cleared as on the target's destroy)",
+                      c_attackcut, nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.save", "save the game (like the pause menu Save)", c_save, nullptr,
                       SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.dna", "coop.dna [add|local <n>] - shared DNA debug", c_dna, nullptr, SK_CMD_MAIN_THREAD);
