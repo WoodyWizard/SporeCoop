@@ -35,6 +35,9 @@ of an RTS pointer). Switch `nest.eggs_tribe`.
 `coop_world_objects.py --kind eggs` (suite nest_eggs_tribe, tribe fixture), the eggs in both games' noun lists.
 * FAIL with `SPORE_FIX_OFF=nest.eggs_tribe`: out/lab/20261103-123633 (4 host eggs, 0 on the guest).
 * PASS: out/lab/20261103-123333 (5 / 5, each within 1.5 m).
+* The regression out/lab/20261103-132915 failed it once after a warm reset (1 of 4 eggs on the guest): the eggs
+  farther than 110 m from the guest's roaming RTS pointer were not sent. Tribe now sends the eggs within 400 m;
+  PASS 3 of 3 (cold, warm, warm): out/lab/20261103-142031.
 * Detector (detect_tribe, SPORE_DETECTOR=20, 24 comparisons each): off out/lab/20261103-130419 `Tribe:host_only:egg`
   54%, `noun_only_host:egg` 54%; on out/lab/20261103-131403: neither.
 

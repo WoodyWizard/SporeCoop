@@ -68,6 +68,9 @@ static bool egg_stage() { return game::in_creature_stage() || (g_tribe_fix && ga
 constexpr uint8_t kKindSnap = 0, kKindEat = 1;
 constexpr int kMaxSnap = 20;           // eggs per snapshot (49 bytes each, one packet)
 constexpr float kEggRelevance = 110.f; // m around a guest (the NPCs' relevance)
+// Tribe (BUG-0474): a player is a pointer that roams the small map; the camera sees the nests far from it (lane 9:
+// 3 of 4 eggs farther than 110 m from the guest's pointer were missing on it)
+constexpr float kEggRelevanceTribe = 400.f;
 constexpr double kSnapInterval = 1.0, kStale = 3.5;
 
 static uintptr_t a_NounGet, a_CreateInstance, a_DestroyInstance, a_SetState, a_Snap, a_Surface, a_PlanetGet;
@@ -266,7 +269,7 @@ static void host_tick(double now)
         }
         std::vector<const HostEgg*> close;
         for (auto& [o, e] : eggs)
-            if (net::dist(e.pos, gp) < kEggRelevance)
+            if (net::dist(e.pos, gp) < (game::mode_id() == modes::kTribe ? kEggRelevanceTribe : kEggRelevance))
                 close.push_back(&e);
         std::sort(close.begin(), close.end(), [&](const HostEgg* a, const HostEgg* b) { return net::dist(a->pos, gp) < net::dist(b->pos, gp); });
         if (close.size() > (size_t)kMaxSnap)
