@@ -52,7 +52,8 @@ void dna_note(const char* when); // BUG-0351: food, spent DNA and the editor bud
 void join_partner(); // our cell next to the nearest partner (after a level rebuild) // knockout countdown / revive progress / off-screen arrows (SK_EV_OVERLAY)
 std::string status();
 const views::Set& view_centres(); // host: itself + every partner in the Cell stage (BUG-0174)
-uint32_t own_model(); // the own cell's model instance (0: none)
+uint32_t own_model();
+int* part_states(); // BUG-0467: the collected Cell parts (S+0x34, 13 ints), null outside a live Cell game // the own cell's model instance (0: none)
 std::string trace_line(); // support trace (trace.h): the own cell, food around it, what it did since the last line
 std::vector<syncdbg::Entry> sync_entries(); // coop.sync (tests)
 std::string debug(const std::vector<std::string>& args);

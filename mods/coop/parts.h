@@ -23,6 +23,9 @@ struct Ctx {
     std::function<bool()> guest_in_host_world; // guest: the host's world is the one this game plays
     std::function<uint32_t()> world;           // this game's world id (the save's CRC, 0 = unknown)
     std::function<void(const std::string&)> feed;
+    // BUG-0467: the Cell stage's part states (cCellSerializableData +0x34, 13 ints: 0 locked, 1
+    // unlocked, 2 collected and not seen in the editor yet), null outside a live Cell game
+    std::function<int*()> cell_parts;
 };
 
 using Key = std::pair<uint32_t, uint32_t>; // the item's key as the game passes it (lo, hi)
@@ -42,6 +45,9 @@ bool census(int& unlocked, uint32_t& hash, int& unlockable, std::vector<Key>* lo
 // 0x5371F11 {avatar, 0, level}. Outside the frame (it shows the goal card). Unlocked count after.
 int find_part(int level);
 std::string status();
+// tests (BUG-0467): the game's own "a Cell part token was collected" (0xE5D7B0) for part i, outside
+// the frame; the part states as a 13-digit string
+std::string cell_debug(const std::vector<std::string>& args);
 // tests: "keys" the unlocked unlockable keys, "states" every state entry (key=state, u = IsUnlocked)
 std::string dump(const std::string& what);
 

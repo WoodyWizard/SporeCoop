@@ -61,3 +61,5 @@ SporeCoop::cEgg_SnapToGround ; BUG-0384: on GOG 2016 the host's nest eggs are no
 SporeCoop::cPlanetModel_SurfacePoint ; BUG-0443: on GOG 2016 NPC eggs hanging over the surface are not put onto it (nest.egg_ground off there)
 SporeCoop::PhysicsManager_Update ; BUG-0449: on GOG 2016 a physics body without an owner is not left out of the physics update (game.physics_owner off there)
 SporeCoop::PhysicsWorld_ptr ; BUG-0449: on GOG 2016 a physics body without an owner is not left out of the physics update
+Simulator::Cell::CollectPart ; BUG-0467: the party's shared Cell parts (parts.shared_cell) are off on GOG 2016
+SporeCoop::VectorU32_PushBack ; BUG-0457: the test helper coop.vote evolve (the native evolution request) is off on GOG 2016

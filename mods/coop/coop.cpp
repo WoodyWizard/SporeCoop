@@ -145,6 +145,24 @@ uint32_t g_dna_owed_paid; // tests
 bool g_world_dna_fix = true;
 COOP_FIX("core.world_dna", "BUG-0231", g_world_dna_fix, "core: DNA a guest earns in its own world stays in that world");
 uint32_t g_dna_own = 0; // tests: gains kept in the guest's own world (row 2)
+// BUG-0466 (class G6, BUG-0423): a guest's own DNA spend (its own creature editor of a vote: the
+// editor takes the price from the game's GetEvolutionPoints when it closes) was never sent: the guest
+// forwards only gains (on_dna), so the host's next total (sent on a change and every 2 s) put the
+// guest's DNA back to what it had before the editor (free DNA, and the host's total never paid for
+// the guest's parts). Now a guest samples its own DNA while it plays the host's world: a drop it
+// made itself (not a host total, not a load) is a spend; it is kept across the editor (the stage
+// epoch: an editor and its Done keep it, a load does not), held while the host is away, sent once
+// to the host as a negative MSG_DNA_ADD (an older host ignores it: d > 0 only) and taken off the
+// party's total there (never below 0). Off: only gains go to the host (0.7.3.6).
+bool g_dna_spend_fix = true;
+COOP_FIX("core.dna_spend", "BUG-0466", g_dna_spend_fix, "core: the DNA a guest spends in its own editor leaves the party's total and is not given back");
+static float g_dna_seen = 0;           // guest: the game's DNA after the last sample / host total / own gain
+static bool g_dna_seen_ok = false;
+static uint32_t g_dna_seen_epoch = 0;  // the Creature stage epoch of g_dna_seen (a load starts a new one)
+static float g_dna_spend = 0;          // guest: spent here, not sent yet (<= 0)
+static uint32_t g_dna_spend_world = 0; // the world it was spent in
+static float g_dna_spend_owed = 0;     // host: guests' spends that arrived while it had no creature (<= 0)
+static uint32_t g_dna_spends_sent = 0, g_dna_spends_got = 0; // tests
 void feed_kind(const std::string& s, const char* kind);
 // the DNA cause ledger and its notices (dna_ledger.h; player request 2026-11-01, BUG-0351)
 static std::vector<dna_ledger::Part> g_dna_out; // host: the causes since the last total sent
@@ -194,6 +212,7 @@ bool on_dna(float delta)
         if (g_solo_dna <= 0)
             g_solo_mode = g_mode; // the stage it is earned in (BUG-0233)
         g_solo_dna += delta; // nobody to send it to: kept here, given to the pack on the host's return
+        g_dna_seen += delta;  // BUG-0466: applied here now, not a spend
         return true;
     }
     if (social::goal_dna(delta))
@@ -862,6 +881,62 @@ static bool gate_drops(uint8_t type)
     return g_world_gate_fix ? guest_elsewhere() : host_elsewhere(type == net::MSG_DNA);
 }
 
+// BUG-0466: the guest's own spends (see g_dna_spend_fix)
+static void dna_spend_sample()
+{
+    if (!g_dna_spend_fix || g_sess.role() != net::Role::Client || !g_sess.connected()) {
+        g_dna_seen_ok = false;
+        g_dna_spend = 0;
+        return;
+    }
+    if (g_mode != modes::kCreature)
+        return; // an editor, a load: the last value is kept (an editor's price shows when it closes;
+                // a world held for the editor's end may load before the avatar is back: no avatar asked)
+    uint32_t epoch = game::stage_epoch(modes::kCreature);
+    if (guest_elsewhere() || !g_dna_seen_ok || epoch != g_dna_seen_epoch) {
+        g_dna_seen = game::dna(); // another world or a load: its value is not a change of ours
+        g_dna_seen_ok = !guest_elsewhere();
+        g_dna_seen_epoch = epoch;
+        return;
+    }
+    float cur = game::dna(), d = cur - g_dna_seen;
+    if (d < -0.5f) {
+        if (g_dna_spend == 0)
+            g_dna_spend_world = g_world;
+        g_dna_spend += d;
+        LOG("dna: spent %.0f here (%.0f -> %.0f): goes to the host", -d, g_dna_seen, cur);
+    }
+    g_dna_seen = cur;
+}
+
+// the game's DNA was set by the mod (a host total): the next sample starts from it
+static void dna_spend_resync()
+{
+    if (g_dna_seen_ok)
+        g_dna_seen = game::dna();
+}
+
+static void dna_spend_tick(double now)
+{
+    static double last_send = -100;
+    dna_spend_sample();
+    if (g_dna_spend > -0.5f)
+        return;
+    if (g_dna_spend_world != g_world && g_mode == modes::kCreature && game::avatar()) {
+        LOG("dna: a spend of %.0f made in world %08X dropped (now %08X)", -g_dna_spend, g_dna_spend_world, g_world);
+        g_dna_spend = 0; // that world is gone (another save): its DNA has no total to come off
+        return;
+    }
+    if (g_host_away || !host_here() || guest_elsewhere() || now - last_send < 0.25)
+        return; // held: the host has no creature now (its own editor) or plays elsewhere
+    net::Writer w;
+    w.f32(g_dna_spend);
+    g_sess.send_reliable_to(0, net::MSG_DNA_ADD, w);
+    g_dna_spends_sent++;
+    last_send = now;
+    g_dna_spend = 0;
+}
+
 void host_away_tick(double now)
 {
     if (stage_mode(g_mode) && g_world)
@@ -881,6 +956,12 @@ void host_away_tick(double now)
             g_dna_owed = 0;
             g_owed_dropped++;
         }
+    }
+    if (g_dna_spend_owed < 0 && g_sess.role() == net::Role::Host && g_mode == modes::kCreature && game::avatar()) {
+        float d = std::max(g_dna_spend_owed, -game::dna()); // BUG-0466: never below 0
+        dna_host_gain({dna_ledger::Cause::Earned, 0, d}, game::dna());
+        game::dna_add_raw(d);
+        g_dna_spend_owed = 0;
     }
     if (g_dna_pending >= 0 && g_sess.role() == net::Role::Client && host_here() && game::avatar() && !g_host_away) {
         float d = g_dna_pending - game::dna(); // the host's total, once we play its world
@@ -2511,6 +2592,7 @@ void on_frame(void*, int, void*)
     follow_phase(now);
     share_wait_tick();
     host_away_tick(now);
+    dna_spend_tick(now); // BUG-0466
     dna_notices_tick(now);
     tribe::tick(now);
     bool walk_done = !gamefixes::leave_walk_armed();
@@ -2970,6 +3052,7 @@ void end_session(EndPath path, bool cell)
     }
     g_dna_owed = 0;
     g_dna_owed_world = 0;
+    g_dna_spend_owed = 0; // BUG-0466
     g_dna_out.clear();
     g_dna_notices.clear();
     g_state_mode_override = 0; // tests
@@ -3144,6 +3227,9 @@ void setup_callbacks()
                 }
             }
             if (r.ok() && dna_route::host_total(false, g_host_away, game::avatar() != nullptr) == dna_route::Total::Apply) {
+                dna_spend_sample(); // BUG-0466: a spend since the last tick is ours, not undone by this total
+                if (g_dna_spend_fix)
+                    total = std::max(0.f, total + g_dna_spend); // a spend not sent yet stays off
                 float before = game::dna(), d = total - before;
                 if (d != 0) {
                     LOG("dna: %.0f -> %.0f cause=%s", before, total, dna_ledger::causes_text(parts).c_str());
@@ -3151,6 +3237,7 @@ void setup_callbacks()
                     for (auto& p : parts)
                         dna_note(p, g_sess.my_id());
                 }
+                dna_spend_resync();
                 g_dna_rx++;
             }
             return;
@@ -3162,6 +3249,14 @@ void setup_callbacks()
                 dna_host_gain({dna_ledger::Cause::Earned, from, d}, game::dna());
                 game::dna_add_raw(d);
                 feed(g_sess.name_of(from) + " earned " + std::to_string((int)d) + " DNA");
+            } else if (g_dna_spend_fix && r.ok() && d < 0 && d > -100000) { // BUG-0466: a guest's own spend
+                g_dna_spends_got++;
+                if (add == dna_route::Add::Pay) {
+                    float dd = std::max(d, -game::dna()); // the total never goes below 0
+                    dna_host_gain({dna_ledger::Cause::Earned, from, dd}, game::dna());
+                    game::dna_add_raw(dd);
+                } else
+                    g_dna_spend_owed += d; // in an editor or a load: taken off when our creature is back
             } else if (r.ok() && d > 0 && d < 10000 && add == dna_route::Add::Owe && g_dna_owed < 100000) {
                 trace::line("dna", "from %u +%.0f kept as owed (no own creature now)", from, d);
                 if (g_dna_owed <= 0)
@@ -3539,6 +3634,8 @@ int c_status(void*, int, const char* const*, SkOut* out)
     SAY("%s", gamefixes::status().c_str());
     SAY("dna=%.1f (rx %u totals, forwarded %u gains) solo=%.1f owed=%.1f owed_paid=%u away=%d\n", game::dna(), g_dna_rx,
         g_dna_fwd, g_solo_dna, g_dna_owed, g_dna_owed_paid, (int)g_host_away);
+    SAY("dna spend: unsent=%.1f sent=%u got=%u owed=%.1f seen=%.1f/%d\n", g_dna_spend, g_dna_spends_sent, g_dna_spends_got,
+        g_dna_spend_owed, g_dna_seen, (int)g_dna_seen_ok); // BUG-0466
     for (size_t i = g_chat.size() > 6 ? g_chat.size() - 6 : 0; i < g_chat.size(); i++)
         SAY("chat: %s\n", g_chat[i].c_str());
     void* av = g_local;
@@ -4778,6 +4875,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         pc.guest_in_host_world = [] { return host_world_now() == host_world::HostWorld::Same; };
         pc.world = [] { return g_world; };
         pc.feed = feed;
+        pc.cell_parts = [] { return cellsync::part_states(); }; // BUG-0467
         parts::init(H, M, pc);
     }
     savestrip::init(H, M); // BUG-0020: our objects never go into a save
@@ -4970,10 +5068,17 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                        return 0;
                    },
                    nullptr, MT);
-    H->command_add(M, "coop.parts", "coop.parts [unlock <n>|find <level>|keys|states] - the collected creature parts as the trace's parts= field counts them; "
+    H->command_add(M, "coop.parts", "coop.parts [unlock <n>|find <level>|keys|states|cell [collect <i>]] - the collected creature parts as the trace's parts= field counts them; "
                    "unlock <n>: unlock n locked ones in this game only (tests: a player's unlock the other games miss); "
                    "find <level>: the game's own 'a part was found' (a skeleton's reward, BUG-0401); keys: the unlocked unlockable keys; states: every item state (BUG-0441)",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
+                       if (argc > 1 && !strcmp(argv[1], "cell")) { // BUG-0467: cell [collect <i>]
+                           std::vector<std::string> a;
+                           for (int i = 2; i < argc; i++)
+                               a.push_back(argv[i]);
+                           SAY("%s", parts::cell_debug(a).c_str());
+                           return 0;
+                       }
                        std::vector<std::pair<uint32_t, uint32_t>> locked;
                        int n = 0, all = 0, done = 0;
                        uint32_t h = 0;
@@ -5025,6 +5130,41 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                            skg::field<uint32_t>(req, 0x18) = k.group;
                            bool r = skg::cdecl_call<bool>(submit, req);
                            SAY("editor request submitted -> %d\n", (int)r);
+                       } else if (argc > 1 && !strcmp(argv[1], "evolve") && game::mode_id() == modes::kCreature) {
+                           // tests (BUG-0457): the creature stage's own evolution request, as its message handler
+                           // 0xD42E50 builds it when the avatar meets its mate (docs/re/creations.md#creations-evolution-request):
+                           // +0x90 the evolution tag (the editor's result is applied to the species), +0x94 the
+                           // collected parts, the flags, +0x70 cPlayer +0x10FC..+0x1108; through the vote (the hook)
+                           uintptr_t ctor = H->sym("EditorRequest_ctor"), submit = H->sym("Editors::EditorRequest::Submit"),
+                                     assign = H->sym("SporeCoop::IntrusivePtr_Assign"), push = H->sym("SporeCoop::VectorU32_PushBack"),
+                                     nouns = H->sym("Simulator::cGameNounManager::Get"), getp = H->sym("SporeCoop::cGameNounManager_GetPlayer");
+                           void* av = game::avatar();
+                           void* nm = nouns ? skg::cdecl_call<void*>(nouns) : nullptr;
+                           void* pl = nm && getp ? skg::thiscall<void*>(getp, nm) : nullptr;
+                           if (!ctor || !submit || !assign || !push || !av || !pl || !skg::readable((char*)pl + 0x10E8, 0x24)) {
+                               SAY("not possible here");
+                               return 1;
+                           }
+                           void* req = skg::cdecl_call<void*>(H->sym("GeneralAllocator::new_"), (size_t)0x9C, "EditorRequest", 0, 0, 0, 0);
+                           skg::thiscall<void*>(ctor, req);
+                           skg::field<uint32_t>(req, 0xC) = 0x465C50BAu;
+                           game::Key k = game::species_key(av);
+                           skg::field<uint32_t>(req, 0x10) = k.instance;
+                           skg::field<uint32_t>(req, 0x14) = k.type;
+                           skg::field<uint32_t>(req, 0x18) = k.group;
+                           skg::field<uint32_t>(req, 0x90) = 0x64AA168u;
+                           if (void* items = skg::field<void*>(pl, 0x10E8))
+                               skg::thiscall<void*>(assign, (char*)req + 0x94, items);
+                           for (int o : {0x34, 0x36, 0x37, 0x38, 0x39, 0x3B})
+                               skg::field<uint8_t>(req, o) = 0;
+                           skg::field<uint8_t>(req, 0x3C) = 1;
+                           skg::field<uint8_t>(req, 0x3D) = 1;
+                           for (int o = 0x10FC; o <= 0x1108; o += 4) {
+                               uint32_t v = skg::field<uint32_t>(pl, o);
+                               skg::thiscall<void*>(push, (char*)req + 0x70, &v);
+                           }
+                           bool r = skg::cdecl_call<bool>(submit, req);
+                           SAY("evolution request submitted -> %d\n", (int)r);
                        } else if (argc > 1 && !strcmp(argv[1], "action") && g_sess.role() == net::Role::Host) {
                            // an action vote like the superweapon's (tests, BUG-0043)
                            start_action_vote(g_name + " wants to test an action", "the test action runs",
