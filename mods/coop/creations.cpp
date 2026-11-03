@@ -2222,6 +2222,15 @@ std::string status()
 
 std::string debug(const std::vector<std::string>& a)
 {
+    if (a.size() >= 2 && a[0] == "profile") { // tests (BUG-0457): the species profile the game has for a creature key
+        uint32_t inst = (uint32_t)strtoul(a[1].c_str(), nullptr, 16);
+        void* p = game::species_by_key({inst, kInfo[kCreature].type, kInfo[kCreature].group});
+        char b[160];
+        snprintf(b, sizeof b, "profile %08X = %p key=%08X version=%u\n", inst, p,
+                 p && skg::readable((char*)p + 0x504, 0x40) ? skg::field<uint32_t>(p, 0x504) : 0,
+                 p && skg::readable((char*)p + 0x53C, 4) ? skg::field<uint32_t>(p, 0x53C) : 0);
+        return b;
+    }
     if (a.size() >= 2 && (a[0] == "next" || a[0] == "prev")) {
         int k = a[1] == "cell" ? kCell : a[1] == "ufo" ? kUfo : kCreature;
         cycle((Kind)k, a[0] == "next" ? 1 : -1);

@@ -119,7 +119,11 @@ IGNORE = {'hit_sphere', 'solar_hit_sphere', 'game_terrain_cursor', 'species_goal
           'vehicle_group_order', 'sound_loop_object', 'placeable_sound', 'player', 'player_inventory',
           'space_inventory', 'cheat_object',
           # level of detail by each game's own camera (the planet a camera is close to is loaded): not a desync
-          'visible_planet', 'sim_planet_low_l_o_d'}
+          'visible_planet', 'sim_planet_low_l_o_d',
+          # BUG-0473 / BUG-0498 (coop_world_lod.py, lab 20261103-161705): each game makes these around its own
+          # player's camera (28 rocks on the walking guest only, 30-75 m ahead of it, never on the host that
+          # stood 1 m from it at the start; 1-2 plants 8-14 m from the own player only): not a desync
+          'rock', 'game_plant'}
 MOVING = {'creature', 'citizen', 'herd', 'vehicle', 'ufo', 'tribe_tool'}
 
 
