@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in: unreleased
 branch: fix/w40-scale
-commits: 59c64045 3fa7d38c d4f3ff94 cfa77d8b
+commits: 59c64045 3fa7d38c d4f3ff94 cfa77d8b f07fcbb0
 tests: mirror_scale_tribe (tools/tests/coop_mirror_scale.py --kind tribe_member)
 signature:
 docs: docs/re/tribe.md#tribe-member-scale, docs/known-issues.md#issue-civ-citizen-scale

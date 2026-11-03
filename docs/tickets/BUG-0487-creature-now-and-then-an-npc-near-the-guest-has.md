@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in: unreleased
 branch: fix/w40-scale
-commits: 59c64045 3fa7d38c d4f3ff94 cfa77d8b
+commits: 59c64045 3fa7d38c d4f3ff94 cfa77d8b f07fcbb0
 tests: npc_resync (tools/tests/coop_npc_resync.py)
 signature:
 docs: docs/re/creature.md#creature-npc-scale, docs/sync-architecture-plan.md#sync-fields
