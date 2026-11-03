@@ -850,3 +850,34 @@ BUG-0186, the 13-17 m outliers of `play_civ.py` seeds 9 and 11 (always NPC vehic
   3 missed cities and their vehicles on the guest in 7 s (was more than 30 s).
 * The single-vehicle `v: 1 missing` lines of the campaigns came in the same advance phase (after
   the shortcut), not from another cause seen in the logs.
+
+## The model check of mirror vehicles and buildings (2026-11-02, fix/w39-content-all)
+<a id="civ-content-all-kinds"></a>
+
+BUG-0469, GOG 2024, Ghidra and lanes 4/5 (`tools/tests/coop_content_civ.py`). The civ paths of
+docs/re/creations.md#creations-content-all-kinds.
+
+* ✔ A mirror vehicle is created from the design key the guest's own copy of that civilization returns:
+  `cCivilization::GetDesignKey(civ, VehicleDesignId(purpose, loco))` -> `CreateVehicle(civ, purpose, loco,
+  key, &pos, 0)` (`civ.cpp` `guest_state`). That design's model is checked with its parts and paints
+  (`creations::ensure_model`, kind vehicle) and the mirror is created from the returned key (a copy with
+  base game parts if this game lacks some). A design whose model cannot be built at all (refused) is
+  created from a **zero key**: `cVehicle::Load` (`Simulator::cVehicle::Load` 0x00CA67C0, 0xCA68E9) builds
+  the design of `VehicleDesignId(purpose, loco)` itself from the object template DB (prop 0x2DC9D1E) for
+  a key instance of 0 or -1 and sets that key, i.e. the game's own design of the same purpose and
+  locomotion. Logged once per design.
+* ✔ A building's model is the design `cCity::SetBuildingModel` (0xBDB940) asks the city's civilization for:
+  a design id per building type (house 0xFF10521 -> 0x4E3F7777, entertainment 0x1A55E4D -> 0x72C49181,
+  factory 0xECADE42 -> 0x47C10953, every other type -> 0x4E3F7777; `civ.cpp` `building_design_id`), then
+  `GetDesignKey(city+0x590, designId)`; a key instance of 0 makes it build the design first
+  (FUN_00bf98c0 -> FUN_00bf9440, the design generator from the object template DB). The mod cannot pass
+  another key here, so on a guest a design whose model names parts or paints this game lacks is left out
+  (the building stays missing on that guest, logged once per design; `build_in_city` returns nothing) and
+  a design that this game has is built as it is. The host builds from its own designs (its own game
+  baked them).
+* ✔ Runtime (lane 4 + guest lane 5, PASS run `out/lab/20261102-200921`): the guest's house design key is
+  `0679F5DE/2399BE55/40636200` (`coop.civ design <city> house`) and its model is complete (`model ok`);
+  with the guest's design forced to a vehicle model that names a part of a pack the guest lacks
+  (`coop.civ fakeveh`, test only) the guest builds a substitute copy and shows the mirror
+  (`coop.creations content`: `substituted=1`, `refused=0`). With `SPORE_FIX_OFF=content.all_kinds` the
+  same guest faults at 0x0046C82A (`out/lab/20261102-201454`).

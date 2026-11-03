@@ -147,8 +147,11 @@ def main():
         except OSError:
             logtext = ''
         ck(not crashed, 'the guest without the pack did not crash')
-        ck('0x0041F3B' not in out and 'total faults: 0' in out,
-           f"no fault in the model bake (0x41F3B) on the guest without the pack ({(out.strip().splitlines() or ['-'])[0][:80]})")
+        # the bake of a model with a part this game does not have: the creature bake faults at
+        # 0x00441F3B (BUG-0452), the vehicle and UFO bake at 0x0046C82A (FUN_0046C4D0, BUG-0469)
+        ck('0x0041F3B' not in out and '0x0046C82A' not in out and 'total faults: 0' in out,
+           f"no fault in the model bake (0x41F3B / 0x46C82A) on the guest without the pack "
+           f"({(out.strip().splitlines() or ['-'])[0][:80]})")
         ck(re.search(rf'content: vehicle model {DESIGN:08X} part {PACK_PART} unknown here', logtext) is not None,
            'the guest logs the unknown part id once (creations: content: vehicle model ... part ...)')
         ck(re.search(r'substituted=[1-9]', content) is not None,

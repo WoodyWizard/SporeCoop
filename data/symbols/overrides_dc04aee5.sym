@@ -84,6 +84,13 @@ Simulator::cCivExpansion::SpawnNextCity=0x00AE3AB0 ; verified port from GOG 2016
 Simulator::cCivilization::AddMoney=0x00BEFED0 ; verified port from GOG 2016 0x00BEFEB0: +0x20; thiscall ret 8, bool arg -> difficulty multipliers, mWealth(+0x98)+=x clamped to float 999999.0 (0x1469310)
 Simulator::cCivilization::CreateVehicle=0x00BF58F0 ; verified port from GOG 2016 0x00BF58D0: +0x20; CreateInstance(0x18C6DE8) -> AddVehicle 0xBF5770 (old BF5750) -> cVehicle::Load 0xCA67C0 (ModAPI m17), ret 0x1C
 Simulator::cCivilization::FireSuperweapon=0x00BF8BB0 ; verified port from GOG 2016 0x00BF8B90: +0x20; ret 8; calls CanUse 0xBF8B40, 0xBDA1D0, launch 0xBE5D30, cost 0xBF6DF0 (all old+0x20), mWealth-=cost; callers CF1D40 (SelectSuperweapon) and CF56A0
+Simulator::cVehicle::Load=0x00CA67C0 ; likely thiscall(loco, purpose, key instance, key type, key group) ret 20 (the argument order CreateVehicle 0xBF58F0 passes): +0xB1C loco, +0xB20 purpose, calls the
+  locomotive's SetModel (vt+0x94) with the key, and 0xCA68E9: a key instance of 0 or -1 makes it build the design of VehicleDesignId(purpose, loco) itself from the object template DB (cObjectTemplateDB::Get,
+  prop 0x2DC9D1E) and set that key: the game's own design of that purpose and locomotion (BUG-0469 uses that as the fallback), verified by reading the function (GOG 2024, run 20261102-200921: the
+  game's own designs build on a guest)
+SporeCoop::ModelBake_PartProp_Null=0x0046C82A ; verified runtime: the fault site of the vehicle and UFO model bake when a model names a part with no property list, 0xC0000005 read 0 at `mov eax,[edx]`
+  (prop 0xAFFF3A14) inside FUN_0046C4D0 (the creation model builder: Editors::cEditor::GetEditorForAssetType, the model's parts, stride 0x18/0x8C/0x1D8); the creature bake faults at 0x00441F3B instead
+  (BUG-0452, FUN_00441910+0x62B); seen on lanes 4/5 with SPORE_FIX_OFF=content.all_kinds (out/lab/20261102-201454)
 Simulator::cCivilization::GetDesignKey=0x00BF98B0 ; verified port from GOG 2016 0x00BF9890: +0x20; add ecx,0x6C; jmp 0xBF9840 (old BF9820), target = map lookup returning ResourceKey*, ret 4. Next stub 0xBF98C0 jumps elsewhere (0xBF9440) - not it
 Simulator::cCivilization::GetMoney=0x00BEF820 ; verified port from GOG 2016 0x00BEF800: +0x20; +0x89 player flag, +0x98 wealth (+0x4AC/+0x4B0 for NPC), fld result, ret
 Simulator::cCivilization::GetVehicleCost=0x00BF22B0 ; verified port from GOG 2016 0x00BF2290: +0x20; thiscall ret 8, purpose==4 -> fldz, float ST0
