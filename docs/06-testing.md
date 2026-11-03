@@ -3697,3 +3697,8 @@ the other player's game, both ways where the kind has two:
   guest's creature (the avatar's +0xE7C; the pack did not follow in the lab), then `coop.hp packtarget 1 combatant`
   gives every pack member the puppet as target (SetTarget with the combatant); the host's game must hold no pack
   member aimed at the puppet 0.5 s later. `SPORE_FIX_OFF=npc.pack_spares_partners` fails (16 of 16 samples).
+* `cell_ko_bite` (coop_cell_ko_bite.py, ~1.5 min, BUG-0509): the guest (then the host) is knocked out as in
+  cell_ko_food and bites the nearest creature 5 times through the game's Bite (`coop.pool realbite`, the first
+  bite names it: `bit c<host key>`); the creature's hp in the host's game (`coop.pool cell c<key>`) must hold.
+  `SPORE_FIX_OFF=cell.ko_no_bite` fails (killed). The host's refusal of a knocked-out guest's MSG_CELL_HIT is not
+  reached by it (the guest blocks first).

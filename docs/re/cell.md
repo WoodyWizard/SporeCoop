@@ -1424,3 +1424,16 @@ signature of BUG-0004 on another path.
   `creations::key_known` (RM FindRecord) first; `cell_create` makes no cell of an unknown creation
   (cellsync tries again with the next state round; `unknown_models=` in coop.status), `cell_spawn`
   (puppets) falls back to the own avatar's model.
+
+## A knocked-out cell's attacks (2026-11-03, fix/w40-guest-combat)
+<a id="cell-ko-attacks"></a>
+
+* ✔ The knockout (cellsync go_down / downed_tick: hp 1, dead/dying 0, invulnerable +0x111, translucent, held in
+  place) did not stop the avatar's attacks: the game's Bite 0xE7B0A0 for the avatar still ran and killed (lab
+  lane 2, `coop.pool realbite` while downed: a guest's creature 6 -> 3 -> 0 on the host through MSG_CELL_HIT; the
+  host's own bites the same in its game). Only the mouth's chunks and food were blocked (cell.ko_no_eat, BUG-0364).
+* `cell.ko_no_bite` (BUG-0509): while downed, h_Bite (the avatar as attacker) returns false, h_DamageCell drops a
+  hit whose attacker is the avatar (spikes, poison) and h_Break drops a lethal one; the host refuses MSG_CELL_HIT
+  from a guest whose last MSG_CELL_KO state is KO_OUT (an old guest, a hit in flight).
+* ? "got damaged" while knocked out (the report) is not looked at: the cell is invulnerable and its hp forced to 1
+  every frame; inferred: the health ring moving.

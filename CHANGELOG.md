@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### Fixed
+- Cell: a knocked-out cell can no longer bite, spike or kill anything while it waits to be revived
+  (BUG-0509).
 - Creature: the host's pack no longer turns on a partner when the host targets the partner's creature or
   fights next to it (BUG-0512).
 - Creature: a guest no longer crashes when its game removes the partner's creature by itself (seen after
