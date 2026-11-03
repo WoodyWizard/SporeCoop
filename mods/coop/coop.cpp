@@ -4903,7 +4903,28 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     H->command_add(M, "coop.overlay", "coop.overlay on|off|self", c_overlay, nullptr, MT);
     H->command_add(M, "coop.social", "coop.social [species | log | act <npc id> [slot] | goto <npc id>] - creature social games", c_social, nullptr, MT);
     H->command_add(M, "coop.fields", "coop.fields - replicated state fields of mirrored objects per kind (BUG-0419 G2, fields.h)",
-                   [](void*, int, const char* const*, SkOut* out) -> int { SAY("%s", fields::status().c_str()); return 0; },
+                   [](void*, int argc, const char* const* argv, SkOut* out) -> int {
+                       // tests / RE: `coop.fields scale <hex object> [value]` reads (and sets) an object's scale
+                       if (argc > 2 && !strcmp(argv[1], "scale")) {
+                           void* o = (void*)(uintptr_t)strtoul(argv[2], nullptr, 16);
+                           if (!o || IsBadReadPtr(o, 0x40) || !game::object_alive(o)) {
+                               SAY("no object %s\n", argv[2]);
+                               return 0;
+                           }
+                           if (argc > 3)
+                               game::set_object_scale(o, (float)atof(argv[3]));
+                           SAY("scale %p %.3f\n", o, game::object_scale(o));
+                           return 0;
+                       }
+                       if (argc > 2 && !strcmp(argv[1], "list")) {
+                           std::string l = fields::list(argv[2]);
+                           for (size_t at = 0; at < l.size(); at += 6000) // out_printf keeps 8 KB per call
+                               SAY("%s", l.substr(at, 6000).c_str());
+                           return 0;
+                       }
+                       SAY("%s", fields::status().c_str());
+                       return 0;
+                   },
                    nullptr, MT);
     H->command_add(M, "coop.npc", "coop.npc [on|off|list|herds|hit <id> <dmg>|hosthit <id> <dmg> [push]|recruit <id>|spawn <hex>|cinedefer on|off] - host-authoritative NPC sync", c_npc, nullptr, MT);
     H->command_add(M, "coop.res", "coop.res [[joinsim] add <food|money> <n> | fix reset|floor [0|1]] - shared resources", c_res, nullptr, MT);

@@ -71,6 +71,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r);
 void on_world_change();
 void on_session_end();
 std::string status();
+// tests: `obj <kind> <id> <field>=<value> ...` per object (host: its own; guest: mirror and host value)
+std::string list(const char* kind_name);
 
 // tests: how many applies a kind had on this machine, and differences left after the last check
 struct Stats {

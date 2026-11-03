@@ -67,7 +67,10 @@ static const Field* field_of(const Kind& k, uint8_t fid)
     return nullptr;
 }
 
-static bool kind_on(const Kind& k) { return (!k.on || *k.on) && (!k.active || k.active()); }
+static bool kind_active(const Kind& k) { return !k.active || k.active(); }
+// the switch acts on the apply only: the host sends with it off too, so a test can compare the guest's
+// own values (`coop.fields list`) with the host's in both runs
+static bool kind_on(const Kind& k) { return (!k.on || *k.on) && kind_active(k); }
 
 void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
 {
@@ -96,7 +99,7 @@ static void host_tick(double now)
         return;
     g_sent_at = now;
     for (const Kind& k : g_kinds) {
-        if (!kind_on(k))
+        if (!kind_active(k))
             continue;
         struct Obj {
             uint16_t id;
@@ -249,6 +252,49 @@ void on_session_end()
 }
 
 Stats stats(uint8_t kind) { return g_stats[kind]; }
+
+std::string list(const char* kind_name)
+{
+    const Kind* k = nullptr;
+    for (auto& x : g_kinds)
+        if (!strcmp(x.name, kind_name))
+            k = &x;
+    if (!k)
+        return std::string("no kind ") + kind_name + "\n";
+    std::string s;
+    char b[160];
+    if (is_host()) { // the owner's objects: the game's own values
+        struct Acc {
+            const Kind* k;
+            std::string* s;
+        } a{k, &s};
+        k->each(
+            [](uint16_t id, void* obj, void* u) {
+                auto* a = (Acc*)u;
+                if (a->s->size() > 60000)
+                    return;
+                char b[160];
+                int n = snprintf(b, sizeof b, "obj %s %u", a->k->name, id);
+                for (int i = 0; i < a->k->nfields && n > 0 && n < 120; i++)
+                    n += snprintf(b + n, sizeof b - n, " %s=%.3f", a->k->fields[i].name, a->k->fields[i].read(obj));
+                *a->s += std::string(b) + "\n";
+            },
+            &a);
+        return s;
+    }
+    // a guest: every id it has a value of, its mirror's value read from the game and the host's
+    for (auto& [key, w] : g_want) {
+        if ((key >> 24) != k->id || s.size() > 60000)
+            continue;
+        const Field* f = field_of(*k, (key >> 16) & 0xFF);
+        void* obj = k->mirror(key & 0xFFFF);
+        if (!f)
+            continue;
+        snprintf(b, sizeof b, "obj %s %u %s=%.3f host=%.3f\n", k->name, key & 0xFFFF, f->name, obj ? f->read(obj) : -1.f, w.v);
+        s += b;
+    }
+    return s;
+}
 
 std::string status()
 {
