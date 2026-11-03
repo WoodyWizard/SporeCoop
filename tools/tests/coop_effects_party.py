@@ -91,6 +91,10 @@ def cost(a, b):
     return ((b[0] - a[0]) + (b[1] - a[1])) / ((b[2] - a[2]) * 1000) * 100
 
 
+def dist(a, b):
+    return math.sqrt(sum((x - y) ** 2 for x, y in zip(a, b))) if a and b else None
+
+
 FX_ID = 'E1B24DDB'
 OWN_POS = None
 
