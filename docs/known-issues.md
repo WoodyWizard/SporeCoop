@@ -1641,3 +1641,11 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Not fixed: a strip needs the civ / tribe / space object registry and a null-safe removal from
   `civ+0xB0` / `civ+0xD4` and the city's lists (BUG-0020's null rule), with a save + reload test per stage.
 * Ticket: BUG-0470
+
+## Creature: after the host's evolution editor a guest may still show the host's previous creature (2026-11-03, fix/w40-editor)
+* Report 2026-11-02 (0.7.3.4): the guest's screen showed the host's creature from before its editor.
+* Reproduce: not yet. `tools/tests/coop_editor_sync.py --case host` (lane, creature fixture) needs the host's
+  real evolution; `coop.vote editor` and `coop.vote evolve` do not apply it (docs/re/creations.md#creations-own-editor-dna).
+* Suspected: a stage species edited under the same key (a key-only bundle that never changes, the guest's
+  cached species profile). Not verified.
+* Ticket: BUG-0457

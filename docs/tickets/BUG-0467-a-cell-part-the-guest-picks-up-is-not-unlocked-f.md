@@ -10,7 +10,7 @@ role: host
 versions: 
 fixed_in: unreleased
 branch: fix/w40-editor
-commits:
+commits: 43ef1445 9681b9d3
 tests: cell_parts (tools/tests/coop_cell_parts.py)
 signature:
 docs: docs/re/cell.md#cell-parts-shared

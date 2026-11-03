@@ -818,3 +818,36 @@ the game files' index and Ghidra. The rest of BUG-0424 after BUG-0452.
   (no pack in this install has ship or vehicle paints: the Creepy & Cute pack has creature parts and
   paints only); a key whose records are not in a package the mod can read (a baked resource): the model is
   built as it is and a warning is logged once.
+
+## The own editor's price, the evolution request, the result message (2026-11-03, fix/w40-editor)
+<a id="creations-own-editor-dna"></a>
+
+BUG-0466, BUG-0457. GOG 2024, objdump of `SporeApp.exe` (dc04aee5) and lanes 6 / 7
+(`tools/tests/coop_editor_sync.py`).
+
+* ✔ (runtime) The guest's own editor (`open_own_editor`, no evolution tag) shows the DNA budget and the
+  price of new parts (a mouth 25: 40 -> 15), but **the game never takes the price**: back in the stage
+  GetEvolutionPoints was 40 again, no mod code wrote it (lab 20261103-141812).
+* ✔ (disassembly) `SporeCoop::CreatureGame_HandleMessage` 0xD42E50, thiscall bool(this, u32 msg, void* data)
+  ret 8: message 0x30C11C7 is an editor's result; data +0xC carries the request's +0x90, +0x18 the
+  species key, **+0x34 the remaining DNA (int)**, +0x44 cancelled. Only the tags 0x12191CA (the Cell ->
+  Creature editor) and 0x64AA168 (an evolution, not cancelled) go to 0x572620(this+0x5C, data), which
+  keeps the result for the stage's return (state machine 0xD43DE0): 0xD44545 the species from +0x18,
+  0xD445AA `SetEvolutionPoints` 0xD2E480 = (float) +0x34. ✔ runtime: the own editor's result had tag 0,
+  remaining 15, cancelled 0 (lab 20261103-143345).
+* ✔ The DNA value is the float 0x169E398: GetEvolutionPoints 0xD2E350 reads it, AddEvolutionPoints 0xD2E8A0
+  adds, **SetEvolutionPoints 0xD2E480** (cdecl(float), plain ret) writes it (callers 0xD402CB, 0xD44222
+  from cPlayer +0x10EC, 0xD445AA). After Submit the creature stage posts **0x90A03FDF** with +8 = (int)
+  GetEvolutionPoints (0xD455FD: the editor's budget, the same message as the Cell editor's).
+* Fix `creations.own_editor_dna` (coop.cpp h_CreatureGameMsg): the own editor's result (no evolution tag,
+  not cancelled) sets the DNA to its +0x34 through the game; `core.dna_spend` sends the spend to the host.
+* ✔ (disassembly) 0xD42E50 message 0x4471C60 (Creature mode, `this+0xDA` set) builds the evolution request
+  (docs above, #creations-own-editor-items) and after Submit posts 0x5D02A72 {+8 the collected parts' count
+  object} and sets **0x1686AF0 = 1** (`SporeCoop::CreatureEvolutionPending_flag`; read by 0xB5EB94 and
+  0xCD00C0, cleared at 0xB5F19D). Push into the request's +0x70 vector: `SporeCoop::VectorU32_PushBack`
+  0x454D30, thiscall(vector*, const u32*) ret 4.
+* ? (runtime, lab 20261103-142443) A request built like that by the mod (`coop.vote evolve`) opened the
+  host's editor through the vote; after an edit and done the host's DNA stayed 40 and its avatar key
+  065CBE70 for 60+ s, with hearts over the nest: the evolution was not applied. `coop.vote editor` (all
+  older editor tests) is the "edit a creation" editor for the host too: its result never changes the
+  host's species (BUG-0457 not reproduced through it).
