@@ -6,7 +6,7 @@ I could still attack". The knockout holds the cell at hp 1 (invulnerable, transl
 still ran for the avatar: its bites hurt and killed (a guest's through MSG_CELL_HIT on the host).
 
 1. The guest swims 30 m away from the host; the host bites it lethally (`coop.pool hurt`): knocked out.
-2. While it is out it bites the nearest creature BITES times through the game's own Bite (`coop.pool realbite`,
+2. While it is out it bites the nearest creature (the first bite names it) and BITES times more through the game's own Bite (`coop.pool realbite`,
    what the bite event runs). That creature's health in the HOST's game (`coop.pool cell c<key>` on the host,
    the owner of the NPCs) must not drop, and it must not die.
 3. The same with the host knocked out (`coop.pool selfhit 50`, the guest far away): the host's bites change
@@ -22,14 +22,11 @@ from twoinst import Checks, start
 BITES = 4
 
 
-def nearest_creature(con, radius=60):
-    """(key, hp) of the nearest creature on this game's screen"""
-    for _ in range(6):
-        for m in re.finditer(r'see c(\d+) creature [\d.]+ (-?\d+) ([\d.]+)', con.call(f'coop.pool see {radius}')['out']):
-            if int(m.group(2)) > 0:
-                return m.group(1), int(m.group(2))
-        time.sleep(1)
-    return None, None
+def bite(con, key=None):
+    """the knocked-out cell bites (the nearest creature within 200 m, or c<key>): (host key, text)"""
+    out = con.call(f'coop.pool realbite {"c" + key if key else 200}')['out'].strip()
+    m = re.search(r'bit c(\d+)', out)
+    return (m.group(1) if m else None), out[:60]
 
 
 def host_hp(host, key):
@@ -40,17 +37,19 @@ def host_hp(host, key):
 def knocked_out_bites(ck, name, biter, host, knock):
     knock()
     ck(wait_downed(biter, 1), f'{name}: knocked out (its own game says downed=1, hp {pool(biter)["hp"]})')
-    key, _ = nearest_creature(biter)
-    ck(key is not None, f'{name}: a creature to bite near it (c{key})')
+    # the first bite names the creature (the nearest one); its health on the host is read after it
+    key, out = bite(biter)
+    ck(key is not None, f'{name}: a creature to bite near it (c{key}: {out})')
     if key is None:
         return
+    time.sleep(0.5)
     hp0 = host_hp(host, key)
     low = hp0
-    outs = []
+    outs = [out]
     for _ in range(BITES):
         if pool(biter)['downed'] != 1:
             break
-        outs.append(biter.call(f'coop.pool realbite c{key}')['out'].strip()[:60])
+        outs.append(bite(biter, key)[1])
         time.sleep(0.4)
         h = host_hp(host, key)
         low = h if h is None or low is None else min(low, h)
@@ -96,7 +95,12 @@ def main():
 
     def knock_host():
         away(guest)
-        print(' ', host.call('coop.pool selfhit 50')['out'].strip(), flush=True)
+        time.sleep(3)  # the guest's respawn reaches the host (a knocked-out partner cannot rescue)
+        for _ in range(3):
+            print(' ', host.call('coop.pool selfhit 50')['out'].strip(), flush=True)
+            if wait_downed(host, 1, 3):
+                return
+            time.sleep(4)  # died the vanilla way: the respawn, then again
 
     knocked_out_bites(ck, 'host', host, host, knock_host)
     ck.faults(host=host, guest=guest)
