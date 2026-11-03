@@ -52,6 +52,7 @@ def main():
     ids = set(i for _, d in hs for i in d) & set(i for _, d in gs for i in d)
     match = miss = 0
     shown = set()
+    pairs = collections.Counter()  # misses: (host's, guest's nearest sample)
     for k, (t, d) in enumerate(hs):
         for i, a in d.items():
             if i not in ids:
@@ -63,8 +64,12 @@ def main():
                 shown.add(a)
             else:
                 miss += 1
+                pairs[(a, near[0] if near else None)] += 1
     print(f'  NPCs on both: {len(ids)}; samples where the proxy plays the host NPC\'s animation: {match} of {match + miss}',
           flush=True)
+    for name, con in (('host', host), ('guest', guest)):
+        print(f'  {name}:', con.call('coop.npc anims')['out'].strip(), flush=True)
+    print('  misses (host, guest):', pairs.most_common(10), flush=True)
     ck(len(ids) >= 4, f'NPCs on both games ({len(ids)})')
     rate = match / max(1, match + miss)
     ck(rate >= 0.6, f'the proxies play the host NPCs\' animations ({rate:.0%} of the samples)')

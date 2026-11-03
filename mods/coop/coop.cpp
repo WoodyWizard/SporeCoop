@@ -3930,6 +3930,11 @@ COOP_FIX("tools.gopos_ground", "BUG-0400", g_gopos_ground_fix, "tests: coop.npc 
 
 int c_npc(void*, int argc, const char* const* argv, SkOut* out)
 {
+    if (argc > 2 && !strcmp(argv[1], "animquiet")) { // guest (tests, BUG-0464)
+        npc::set_anim_quiet((float)atof(argv[2]));
+        SAY("ok\n");
+        return 0;
+    }
     if (argc > 1 && !strcmp(argv[1], "anims")) { // BUG-0464: the behaviour animation relay's counters
         SAY("%s", npc::anims_status().c_str());
         return 0;
