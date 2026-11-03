@@ -10,9 +10,12 @@ with one part id of that pack (model_fixture.py, instance 0x29030001) and `coop.
 every mirror vehicle the guest creates use it as its design.
 
 PASS: the guest does not fault, logs the unknown id once ("creations: content: vehicle model ..."), the
-model is built from a copy with a base game part (creations::ensure_model), and the mirror is shown.
+model is built from a copy with a base game part (creations::ensure_model), and the mirror is shown. The
+guest then saves its game, its game is restarted WITHOUT a co-op session and loads that save: the saved
+mirror vehicles load (no bake fault) and the saved files hold no model key of the mod's own (0x7D......).
 FAIL (`SPORE_FIX_OFF=content.all_kinds`, the switch off: 0.7.3.5): the guest builds the model with the
-pack part and faults at 0x41F3B.
+pack part and faults at 0x41F3B. FAIL (`SPORE_FIX_OFF=content.model_key`, the first version of the fix:
+the copy under a key of ours): the save holds that key and the reloaded world cannot build the vehicles.
 
   SPORE_LANE=4 SPORE_LANE_B=5 python3 tools/tests/coop_content_civ.py
 """
@@ -24,12 +27,90 @@ import time
 import lane
 import model_fixture as mf
 import twoinst
+from coop_creature_e84 import close_boxes
 from coop_multi import join_cmd, start_extra
 from coop_unknown_parts import clean_caches, lane_b, pack_path
+from sporectl import Console
 from twoinst import Checks, start
 
 DESIGN = 0x29030001  # the test's own vehicle design: a base game model with one part of the pack
 PACK_PART = '75A5D2D4'
+# the creation key types a model key is written with (BUG-0469: a key of the mod's own would be an
+# instance 0x7D...... followed by one of these, and no package answers it after a restart)
+MODEL_TYPES = (0x2B978C46, 0x3D97A8E4, 0x476A98C7, 0x24682294, 0x2399BE55)
+
+
+def fnv_model_instance(kind, inst):
+    """the instance the first version of the content check registered a model copy under (0x7D......,
+    creations::ensure_model; must not reach a save)"""
+    h = 0x811C9DC5
+    for byte in (kind, inst & 0xFF, (inst >> 8) & 0xFF, (inst >> 16) & 0xFF, (inst >> 24) & 0xFF):
+        h = ((h * 0x1000193) & 0xFFFFFFFF) ^ byte
+    return 0x7D000000 | (h & 0xFFFFFF)
+
+
+def save_slot(con, carol_dir):
+    """(slot name, its folder, the planet it holds) of the save the guest plays (coop.savedb gives the
+    save DB's location, a Windows path ending with the slot folder, e.g. ...Spore/Games/Game1/)"""
+    m = re.search(r'location=(\S+)', con.call('coop.savedb')['out'])
+    parts = [p for p in re.split(r'[\\/]+', m.group(1) if m else '') if p]
+    slot = parts[-1] if parts else ''
+    folder = os.path.join(carol_dir, 'Games', slot)
+    planets = sorted(f for f in os.listdir(folder) if f.lower().endswith('.spo')) if os.path.isdir(folder) else []
+    return slot, folder, (os.path.splitext(planets[0])[0] if planets else '')
+
+
+def wait_saved(folder, since, secs=90):
+    """the game wrote the save: a file of the slot is newer than the request"""
+    t0 = time.time()
+    while time.time() - t0 < secs:
+        try:
+            for name in os.listdir(folder):
+                if os.path.getmtime(os.path.join(folder, name)) >= since:
+                    return True
+        except OSError:
+            pass
+        time.sleep(1)
+    return False
+
+
+def mod_model_keys(folder):
+    """(the model keys of the first version (0x7D...... / a creation type) in the files of a save slot:
+    a key only this mod has, that no package answers after a restart, the files read; BUG-0469 review)"""
+    want = {fnv_model_instance(3, DESIGN)}
+    hits, read = [], 0
+    for root, _, files in os.walk(folder):
+        for name in files:
+            try:
+                data = open(os.path.join(root, name), 'rb').read()
+            except OSError:
+                continue
+            read += 1
+            for i in range(len(data) - 7):
+                inst = int.from_bytes(data[i:i + 4], 'little')
+                if inst not in want and data[i + 3] != 0x7D:
+                    continue
+                typ = int.from_bytes(data[i + 4:i + 8], 'little')
+                if typ in MODEL_TYPES:
+                    hits.append(f'{name}:{i}:{inst:08X}/{typ:08X}')
+    return hits, read
+
+
+def restart_without_session(b, inst):
+    """the guest's game again on lane B, no co-op session (its save slot stays)"""
+    env = dict(os.environ, SPORE_LANE=str(b))
+    subprocess.run([lane.SPORE, 'kill'], env=env, capture_output=True)
+    time.sleep(2)
+    subprocess.run([lane.SPORE, 'run', '-i', str(inst), '-p', 'mp1'], env=env, check=True,
+                   stdout=subprocess.DEVNULL)
+    assert twoinst.wait_up(inst, 240), f'Carol did not start again on lane {b}'
+    con = Console(inst)
+    for _ in range(240):
+        if 'GalaxyGameEntry' in con.call('game.mode')['out']:
+            break
+        time.sleep(1)
+    con.call('wait.frames 240 120000')
+    return con
 
 
 def player_city(con):
@@ -168,6 +249,49 @@ def main():
             print('  (the guest had no design for houses: its game generates one, nothing to check)')
         ck(after[1] > before[1], f'the guest made a new mirror vehicle ({before} -> {after})')
         ck(after[0] > before[0], f'the guest shows its mirror vehicles ({before} -> {after})')
+
+        # BUG-0469 review: a save never gets a key only the mod has. The guest saves its game (the
+        # game's own save, as the pause menu's), its game is restarted WITHOUT a co-op session and
+        # loads that save: the saved mirror vehicles must load (no fault on the guest), and no
+        # 0x7D...... model key (the first version's copy, `coop.fix content.model_key off`) may be in
+        # the saved files.
+        slot, folder, planet = save_slot(carol, carol_dir)
+        ck(slot != '' and planet != '', f'the guest plays a save of its own ({slot}/{planet})')
+        t_save = time.time()
+        print(' ', carol.call('coop.savedb')['out'].strip()[:130], flush=True)
+        print(' ', carol.call('coop.save')['out'].strip()[:80], flush=True)
+        close_boxes(carol, 12)  # the "game saved" box stops its frames
+        ck(wait_saved(folder, t_save), f'the guest wrote its save ({folder})')
+        hits, read = mod_model_keys(folder)
+        print(f'  saved files: {read} file(s) read, {len(hits)} key(s) of the mod (0x7D......): {hits[:3]}', flush=True)
+        ck(read > 0, f'the save slot has files to check ({read})')
+        ck(not hits, f'the saved files hold no model key of the mod ({len(hits)})')
+        print(' ', carol.call('coop.leave')['out'].strip()[:80], flush=True)  # a clean leave: no puppet left
+        t0 = time.time()
+        while time.time() - t0 < 20 and 'puppet pos=' in host.call('coop.status')['out']:
+            time.sleep(1)
+        time.sleep(3)
+        reloaded = restart_without_session(b, carol_inst)
+        print('  guest restarted without a session:', reloaded.call('coop.status')['out'].strip().splitlines()[0][:110],
+              flush=True)
+        print(' ', reloaded.call(f'coop.load {slot} {planet}')['out'].strip()[:120], flush=True)  # slot = 'GameN'
+        loaded, t0 = False, time.time()
+        while time.time() - t0 < 240:
+            try:
+                if reloaded.call('coop.avatar')['ok']:
+                    loaded = True
+                    break
+            except (OSError, ValueError):
+                break
+            time.sleep(2)
+        ck(loaded, 'the guest loads the save it wrote, alone (no session)')
+        time.sleep(8)  # the simulator's updates build the loaded vehicles (a saved model faults here)
+        out2 = reloaded.call('exc')['out']
+        veh = [ln for ln in reloaded.call('coop.civ')['out'].splitlines() if ' veh #' in ln]
+        print('  after the reload:', (out2.strip().splitlines() or ['-'])[0][:120], '| vehicles', len(veh), flush=True)
+        ck('total faults: 0' in out2 and '0x0046C82A' not in out2 and '0x0041F3B' not in out2,
+           f'the saved vehicles load without a model bake fault ({(out2.strip().splitlines() or ['-'])[0][:90]})')
+        ck(len(veh) > 0, f'the saved vehicles are in the loaded world ({len(veh)})')
     finally:
         subprocess.run([lane.SPORE, 'kill'], env=dict(os.environ, SPORE_LANE=str(b)), capture_output=True)
         time.sleep(2)
