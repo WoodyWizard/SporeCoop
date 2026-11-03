@@ -477,3 +477,5 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0465](BUG-0465-the-kraken-water-monster-is-not-visible-to-other.md) | open | bug | Creature | 2026-11-02 |  | the kraken (water monster) is not visible to other players |
 | [BUG-0466](BUG-0466-after-the-guest-s-own-editor-its-dna-is-back-to.md) | open | bug | Creature | 2026-11-02 |  | after the guest's own editor its DNA is back to what it had before (DNA spent in the editor is not kept) |
 | [BUG-0467](BUG-0467-a-cell-part-the-guest-picks-up-is-not-unlocked-f.md) | open | bug | Cell | 2026-11-02 |  | a Cell part the guest picks up is not unlocked for the host |
+| [BUG-0469](BUG-0469-content-check-for-every-model-kind-civ-vehicles.md) | fixed | crash | All | 2026-11-02 | unreleased | content check for every model kind: Civ vehicles, buildings and city designs, Space NPC ship parts, cell and UFO paints (rest of BUG-0424 after BUG-0452) |
+| [BUG-0470](BUG-0470-civ-mirror-vehicles-and-other-civ-tribe-and-spac.md) | open | bug | Civ | 2026-11-02 |  | civ mirror vehicles (and other civ, tribe and space objects the mod creates on a guest) go into the guest's saves |

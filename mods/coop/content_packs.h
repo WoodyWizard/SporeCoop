@@ -247,8 +247,12 @@ inline constexpr PaintFallback kBasePaintFallbacks[] = {
 // the same group and the same number of 0xFE bytes: the model no longer names an id this game does
 // not have, so the bake runs. A detail part keeps the model's slots and parents as they are. No
 // candidate for a creature part with 2 or more 0xFE bytes: such a creature is refused instead.
+// BUG-0469: the kinds of the models the mod builds for a civ (a mirror vehicle, a building of a city);
+// a vehicle model names its parts in the UFO part group (0x40646000, as its own models do: counted in
+// Data/Spore_Content.package), a building model in 0x40636000. The base game has 224 parts of the
+// building group, all of them with no 0xFE byte (no candidate for a building part with one).
 struct PartFallback {
-    uint8_t kind; // Kind: 0 creature, 1 cell, 2 ufo
+    uint8_t kind; // ModelKind: 0 creature, 1 cell, 2 ufo, 3 vehicle, 4 building
     uint8_t fe;
     uint32_t base;
 };
@@ -257,6 +261,8 @@ inline constexpr PartFallback kBasePartFallbacks[] = {
     {0, 1, 0x07FEA56F}, {0, 1, 0xE8FEEBAD},
     {1, 0, 0x026D3C30}, {1, 0, 0x12599FD4}, {1, 0, 0x21C38321},
     {2, 0, 0x00046BAE}, {2, 0, 0x011015FB}, {2, 0, 0x01568CD8}, {2, 1, 0x0AE2FEE9}, {2, 1, 0x1ED67DFE},
+    {3, 0, 0x00046BAE}, {3, 0, 0x011015FB}, {3, 0, 0x01568CD8}, {3, 1, 0x0AE2FEE9}, {3, 1, 0x1ED67DFE},
+    {4, 0, 0x0007AD270}, {4, 0, 0x0007AD275}, {4, 0, 0x00058D816},
 };
 
 } // namespace creations

@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Fixed
+- Civ and Space: a partner's vehicle, building or ship whose model uses parts or paints from a pack, a
+  mod or another profile's Sporepedia no longer crashes the game that does not have them. Such a model
+  is shown with similar base game parts, a vehicle falls back to one of the game's own designs, and a
+  building whose design cannot be shown is left out (the log names each unknown part once) (BUG-0469).
+- Saving: a game that was shown such a model keeps no key of its own that would not exist after a
+  restart, so a save made in a session loads again on its own (BUG-0469).
+
 ## [0.7.3.5] - 2026-11-02
 
 ### Fixed
