@@ -2001,3 +2001,19 @@ BUG-0458, BUG-0464 (both open). GOG 2024, Ghidra (out/ghidra-2024) and lane 9 (c
   are not started through those two functions, or the proxy's driving replaces them at once. Next: find the caller
   of the AnimatedCreature (Anim::AnimatedCreature::PlayAnimation 0xA0C5D0) for B31EB92C, or replicate the current
   animation as state (host: GetCurrentAnimation per NPC; guest: play it when the proxy's differs).
+
+## The sea monster (the players' "kraken", 2026-11-03, fix/w40-creature-acts)
+<a id="creature-sea-monster"></a>
+
+BUG-0465 (open). GOG 2024, Ghidra strings only, not seen at runtime.
+
+* ✔ There is no "kraken" / "monster" creature or noun in the exe's strings; the game's sea monster is
+  `cSeaMonsterEvent` (class name strings 0x147AEEC / 0x147B2F8, used by 0xD4AE00 and 0xD4C4D0; the component path
+  "SP_Simulator/cSeaMonsterEvent/COM" at 0xD4D450). The avatar's death of cause 9 plays the cinematic
+  `CRG_AvatarDied_SeaMonster` (0xD38E60, called by 0xD401E0; cause 5 starvation, others CRG_AvatarDied).
+* ✔ Known before (docs/re/creature.md#creature-deep-water): an avatar over deep water starts caption cinematic
+  5E205931 ("Dangerous creatures lurk in the deep").
+* ~ Inferred: the monster is an avatar event (the player's own game makes it for its own avatar, as its death
+  cinematic), not a world object: the partner's game has no such event for a puppet, so it never shows. Class B of
+  docs/sync-architecture-plan.md (the game knows one player). A fix would relay the event (or the death cause 9) to
+  the partner and play the monster there at the puppet; the event's object and how it is drawn are not analysed.
