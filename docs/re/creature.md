@@ -1677,7 +1677,12 @@ A code review of the first shape found three problems; this is what changed and 
   | Civ | 66.82 | 66.76 | 14.966 | 14.979 | +0.09 % |
 
   The measured cost is under 1 % in every stage (the Tribe +0.41 % is inside the run-to-run noise,
-  the tick cost there is 0.016 ms/frame).
+  the tick cost there is 0.016 ms/frame). Reproduce: `coop.effects load 20 1000 [hex id]` on both
+  games (`coop.effects load 0` stops it; no id = the last effect id the game created, which is a
+  valid id in every stage), then read `coop.effects` (tick cost, hook work, created/failed) and the
+  `perf: effects` lines in the game log; compare four 20 s windows with
+  `coop.fix creature.effects_relay on|off` and swap the order in a second run, because the fourth
+  window of a session drifts down for both settings.
 
 * **Threads**: the game creates effects from the UI skinner's render thread too. Every hook body
   now checks the game's main thread id (set by `effects::tick`, `game::set_effect_relay_enabled`)
