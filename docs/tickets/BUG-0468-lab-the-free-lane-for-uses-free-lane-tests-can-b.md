@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in: unreleased
 branch: feat/w39-detector
-commits: 5563c87e
+commits: 3ebba62e
 tests: unknown_parts, guest_missing_pack
 signature:
 docs:
