@@ -143,6 +143,8 @@ void* create_local_effect(uint32_t id, const void* xform);
 bool effect_position(void* effect, net::Vec3& out);
 bool effect_relayed(void* effect); // a creature hook already sent it
 uint32_t last_effect_id();          // the last effect id the game created (a valid id in this stage)
+// a bone index inside the creature model's bone array (the range cCreatureBase::CreateEffect indexes)
+bool creature_bone_ok(void* creature, int bone);
 void clear_effect_table();         // after effects::tick (once a frame, main thread)
 void effect_table_stats(uint32_t& creates, uint32_t& probes, uint32_t& evicted, uint32_t& mgr, uint32_t& world,
                         uint32_t& anim);

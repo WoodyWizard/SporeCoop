@@ -35,6 +35,56 @@ static uint32_t g_sent, g_rx, g_played, g_stopped, g_skipped, g_failed, g_droppe
 static uint32_t g_w_no_pos, g_w_relayed, g_w_far, g_w_seen, g_w_rate;
 // received messages dropped before any game call (BUG-0451 review: a peer's message is data)
 static uint32_t g_dropped_spoof;
+static uint32_t g_bad_pool, g_bad_id, g_bad_bone, g_bad_xf, g_bad_short;
+static constexpr float kPosMax = 1e5f; // a world position further out is not a planet's stage
+// Every field of a received start / stop is checked here before the game is called (BUG-0451
+// review item 3); false = dropped and counted.
+static bool valid_message(uint8_t player, uint8_t stop, uint8_t pool, uint32_t id, uint32_t key, const uint8_t* xf)
+{
+    if (stop) { // the sender stops a pool key: pool 0, the key in `key`
+        if (pool != 0) {
+            g_bad_pool++;
+            return false;
+        }
+        if (!key) {
+            g_bad_id++;
+            return false;
+        }
+        return true;
+    }
+    if (pool != 1 && pool != 2 && pool != 3 && pool != 5) {
+        g_bad_pool++;
+        return false;
+    }
+    if (!id) {
+        g_bad_id++;
+        return false;
+    }
+    if (pool == 5) {
+        const float* f = (const float*)(xf + 4); // position, uniform scale, 3x3 matrix
+        for (int i = 0; i < 16; i++) {
+            float v;
+            memcpy(&v, f + i, 4);
+            if (!std::isfinite(v)) {
+                g_bad_xf++;
+                return false;
+            }
+        }
+        if (!(fabsf(f[0]) < kPosMax && fabsf(f[1]) < kPosMax && fabsf(f[2]) < kPosMax)) {
+            g_bad_xf++;
+            return false;
+        }
+    } else if (pool == 3) {
+        // the game indexes the model's bone array (stride 0x2bc = 700) with this index and does not
+        // check it (cCreatureBase::CreateEffect 0xC150D0); the array's end gives the count
+        void* puppet = C.puppet_of ? C.puppet_of(player) : nullptr;
+        if (!puppet || !game::creature_bone_ok(puppet, (int32_t)key)) {
+            g_bad_bone++;
+            return false;
+        }
+    }
+    return true;
+}
 static bool g_log;
 
 struct Last {
@@ -377,12 +427,16 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
     uint32_t id = r.u32(), key = r.u32();
     uint8_t xf[0x44];
     if (r.ok() && pool == 5) {
-        if (r.left() < sizeof xf)
+        if (r.left() < sizeof xf) {
+            g_bad_short++;
             return;
+        }
         r.raw(xf, sizeof xf);
     }
-    if (!r.ok())
+    if (!r.ok()) {
+        g_bad_short++;
         return;
+    }
     // Whose message is it? The host relays only a guest's own effect (a guest cannot name another
     // player, BUG-0201: the id would choose whose puppet plays it); a guest accepts only the host's
     // relay (messages are never sent guest to guest).
@@ -391,6 +445,12 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         g_dropped_spoof++;
         if (g_log)
             H->log(M, SK_INFO, "effect: from %u dropped, it names player %u (spoofed)", from, player);
+        return;
+    }
+    if (!valid_message(player, stop, pool, id, key, xf)) {
+        if (g_log)
+            H->log(M, SK_INFO, "effect: from %u dropped by validation (player %u stop %u pool %u id %08X key %08X)",
+                   from, player, stop, pool, id, key);
         return;
     }
     if (C.sess && role == net::Role::Host && from != 0) { // relay to the other guests
@@ -498,6 +558,7 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
     g_sent = g_rx = g_played = g_stopped = g_skipped = g_failed = g_dropped = 0;
     g_w_no_pos = g_w_relayed = g_w_far = g_w_seen = g_w_rate = 0;
     g_dropped_spoof = 0;
+    g_bad_pool = g_bad_id = g_bad_bone = g_bad_xf = g_bad_short = 0;
     g_last_tx = Last{};
     g_last_rx.clear();
     g_last_rx_start.clear();
@@ -637,7 +698,8 @@ std::string status()
     snprintf(b, sizeof b, "effects world drops: no_pos=%u relayed=%u far=%u seen=%u rate=%u\n", g_w_no_pos, g_w_relayed,
              g_w_far, g_w_seen, g_w_rate);
     s += b;
-    snprintf(b, sizeof b, "effects received drops: spoof=%u\n", g_dropped_spoof);
+    snprintf(b, sizeof b, "effects received drops: spoof=%u pool=%u id=%u bone=%u transform=%u short=%u\n",
+             g_dropped_spoof, g_bad_pool, g_bad_id, g_bad_bone, g_bad_xf, g_bad_short);
     s += b;
     {
         double hs = 0, hm = 0;

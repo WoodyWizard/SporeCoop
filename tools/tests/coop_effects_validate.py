@@ -72,6 +72,9 @@ def case(ck, con, what, args, key, delta=1, rx_from=None):
     after = nums(con)
     got = after.get(key, 0) - before.get(key, 0)
     ck(got == delta, f'{what}: {key} {got:+d} (expected {delta:+d})')
+    if key.startswith('bad_'):
+        ck(after.get('received', 0) == before.get('received', 0), f'{what}: it is not received')
+        ck(after.get('played', 0) == before.get('played', 0), f'{what}: it is not played')
     if rx_from is not None:
         rx = last_rx(con, rx_from)
         ck(rx is not None and rx['pool'] in (1, 2, 3, 5), f'{what}: the valid message plays on the puppet')
@@ -84,13 +87,24 @@ def main():
     ck(free_games(h, g), f'both games take input (busy: {busy(h)} / {busy(g)})')
     time.sleep(2)
     n = nums(h)
-    ck('spoof' in n, f'coop.effects has the drop counter ({n})')
+    ck('spoof' in n and n.get('bad_pool') is not None, f'coop.effects has the drop counters ({n})')
     # ---- item 2: whose message is it ----
     case(ck, h, 'host: a guest names another player', (1, 2, 0, 3, 'E1A4BD93', 0), 'spoof')
     case(ck, h, 'host: a guest names itself (valid)', (1, 1, 0, 3, 'E1A4BD93', 0), 'received', 1, rx_from=1)
     ck(nums(h).get('played', 0) >= 1, 'the valid guest message was played on the guest\'s puppet')
     case(ck, g, 'guest: a message from a guest is not relayed to it', (1, 1, 0, 3, 'E1A4BD93', 0), 'spoof')
     case(ck, g, 'guest: from the host (valid)', (0, 0, 0, 3, 'E1A4BD93', 0), 'received', 1, rx_from=0)
+    # ---- item 3: the header and the payload ----
+    case(ck, h, 'pool 9 is not used', (1, 1, 0, 9, 'E1A4BD93', 0), 'bad_pool')
+    case(ck, h, 'an effect id 0', (1, 1, 0, 3, '00000000', 0), 'bad_id')
+    case(ck, h, 'a bone outside the model', (1, 1, 0, 3, 'E1A4BD93', 100000), 'bad_bone')
+    case(ck, h, 'a negative bone', (1, 1, 0, 3, 'E1A4BD93', '0xFFFFFFFF'), 'bad_bone')
+    case(ck, h, 'a valid bone', (1, 1, 0, 3, 'E1A4BD93', 0), 'received', 1)
+    case(ck, h, 'a world position 1e6 out', (1, 1, 0, 5, 'E1B24DDB', 0, 1000000, 0, 0), 'bad_xf')
+    case(ck, h, 'a NaN transform', (1, 1, 0, 5, 'E1B24DDB', 0, 'nan', 0, 0), 'bad_xf')
+    case(ck, h, 'a valid world effect', (1, 1, 0, 5, 'E1B24DDB', 0, -170, -467, -85), 'received', 1)
+    case(ck, h, 'a stop without a key', (1, 1, 1, 0, 0, 0), 'bad_id')
+    case(ck, h, 'a stop with a key (valid, nothing to stop)', (1, 1, 1, 0, 0, '0xABCD1234'), 'received', 1)
     ck.faults(host=h, guest=g)
     raise SystemExit(ck.result())
 

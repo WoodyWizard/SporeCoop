@@ -399,6 +399,26 @@ bool effect_position(void* fx, net::Vec3& out)
     out = net::Vec3{p[0], p[1], p[2]};
     return p[0] != 0 || p[1] != 0 || p[2] != 0;
 }
+// A bone index the game will accept for this creature: cCreatureBase::CreateEffect 0xC150D0
+// indexes the model's bone array (AnimatedCreature +0xB54 -> +0x17C -> +0x2E4) with `bone * 700`
+// without a check; the array's end (+0x2E8) gives the count (the fixture creature: 24 bones).
+bool creature_bone_ok(void* c, int bone)
+{
+    if (!c || bone < 0 || !skg::readable((uint8_t*)c + 0xB54, 4))
+        return false;
+    uint8_t* ac = field<uint8_t*>(c, 0xB54);
+    if (!ac || !skg::readable(ac + 0x17C, 4))
+        return false;
+    uint8_t* model = field<uint8_t*>(ac, 0x17C);
+    if (!model || !skg::readable(model + 0x2E4, 8))
+        return false;
+    uint32_t begin = field<uint32_t>(model, 0x2E4), end = field<uint32_t>(model, 0x2E8);
+    if (!begin || end <= begin || (end - begin) % 700)
+        return false;
+    uint32_t count = (end - begin) / 700;
+    return count <= 1000 && (uint32_t)bone < count;
+}
+
 bool effect_relayed(void* fx)
 {
     FxCreated* e = fx_find(fx);
