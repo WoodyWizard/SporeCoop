@@ -74,11 +74,14 @@ def wait_saved(folder, since, secs=90):
     return False
 
 
-def mod_model_keys(folder):
-    """(the model keys of the first version (0x7D...... / a creation type) in the files of a save slot:
-    a key only this mod has, that no package answers after a restart, the files read; BUG-0469 review)"""
-    want = {fnv_model_instance(3, DESIGN)}
-    hits, read = [], 0
+def saved_model_keys(folder):
+    """(the mod's model key in the files, the original key in them, the files read) of a save slot: the
+    instance the first version of the content check made for the test's design (0x7D......) and the
+    design's own instance. A key of the mod's is one no package answers after a restart (BUG-0469
+    review)."""
+    want = fnv_model_instance(3, DESIGN).to_bytes(4, 'little')
+    orig = DESIGN.to_bytes(4, 'little')
+    hits, original, read = [], [], 0
     for root, _, files in os.walk(folder):
         for name in files:
             try:
@@ -86,14 +89,12 @@ def mod_model_keys(folder):
             except OSError:
                 continue
             read += 1
-            for i in range(len(data) - 7):
-                inst = int.from_bytes(data[i:i + 4], 'little')
-                if inst not in want and data[i + 3] != 0x7D:
-                    continue
-                typ = int.from_bytes(data[i + 4:i + 8], 'little')
-                if typ in MODEL_TYPES:
-                    hits.append(f'{name}:{i}:{inst:08X}/{typ:08X}')
-    return hits, read
+            if want in data:
+                hits.append(f'{name}: the model copy of {DESIGN:08X} '
+                            f'({int.from_bytes(want, "little"):08X})')
+            if orig in data:
+                original.append(f'{name}: {DESIGN:08X}')
+    return hits, original, read
 
 
 def restart_without_session(b, inst):
@@ -262,9 +263,11 @@ def main():
         print(' ', carol.call('coop.save')['out'].strip()[:80], flush=True)
         close_boxes(carol, 12)  # the "game saved" box stops its frames
         ck(wait_saved(folder, t_save), f'the guest wrote its save ({folder})')
-        hits, read = mod_model_keys(folder)
-        print(f'  saved files: {read} file(s) read, {len(hits)} key(s) of the mod (0x7D......): {hits[:3]}', flush=True)
+        hits, original, read = saved_model_keys(folder)
+        print(f'  saved files: {read} file(s) read, {len(hits)} key(s) of the mod '
+              f'(0x7D{fnv_model_instance(3, DESIGN) & 0xFFFFFF:06X}): {hits[:3]}', flush=True)
         ck(read > 0, f'the save slot has files to check ({read})')
+        ck(bool(original), f'the saved world names the model key this game has ({DESIGN:08X})')
         ck(not hits, f'the saved files hold no model key of the mod ({len(hits)})')
         print(' ', carol.call('coop.leave')['out'].strip()[:80], flush=True)  # a clean leave: no puppet left
         t0 = time.time()
