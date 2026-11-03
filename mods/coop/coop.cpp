@@ -43,6 +43,7 @@
 #include "npc.h"
 #include "creature_hp.h"
 #include "nest.h"
+#include "worldobj.h"
 #include "parts.h"
 #include "rejoin.h"
 #include "savestrip.h"
@@ -2067,6 +2068,7 @@ void avatar_change_check()
         forget_puppets();
         npc::on_world_change();
         nest::on_world_change();
+        wobj::on_world_change();
         if (!tribe::editor_world_fix()) // BUG-0217: else tribe::world_check() decides
             tribe::on_world_change();
         if (!civ::world_epoch_fix()) // BUG-0223: else civ::world_check() decides
@@ -2459,6 +2461,7 @@ void on_frame(void*, int, void*)
     savestrip::tick();
     npc::tick(now);
     nest::tick(now); // BUG-0384
+    wobj::tick(now); // BUG-0472, BUG-0459
     parts::tick(now); // BUG-0401
     social::tick(now);
     shared::tick(g_sess, game::mode_id(), now, guest_elsewhere()); // BUG-0231: held while elsewhere
@@ -2925,6 +2928,7 @@ void end_session(EndPath path, bool cell)
     if (g_session_end_fix || path == EndPath::Disconnect) {
         npc::on_session_end();
         nest::on_session_end(); // BUG-0384: our egg mirrors
+        wobj::on_session_end();
         parts::on_session_end(); // BUG-0401
         social::on_session_end();
         tribe::on_session_end();
@@ -2937,6 +2941,7 @@ void end_session(EndPath path, bool cell)
     } else if (path == EndPath::Leave) { // before BUG-0033 (tests)
         npc::on_session_end();
         nest::on_session_end(); // BUG-0384: our egg mirrors
+        wobj::on_session_end();
         parts::on_session_end(); // BUG-0401
         social::on_session_end();
         if (cell)
@@ -2945,6 +2950,7 @@ void end_session(EndPath path, bool cell)
     } else if (path == EndPath::Unload) {
         npc::on_session_end();
         nest::on_session_end(); // BUG-0384: our egg mirrors
+        wobj::on_session_end();
         parts::on_session_end(); // BUG-0401
         social::on_session_end();
     }
@@ -3324,6 +3330,9 @@ void setup_callbacks()
             return;
         case net::MSG_PARTS: // BUG-0401
             parts::on_message(type, from, r);
+            return;
+        case net::MSG_WOBJ: // BUG-0472, BUG-0459
+            wobj::on_message(type, from, r);
             return;
         }
         if (g_sess.role() == net::Role::Client && from == 0)
@@ -4770,6 +4779,15 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         nc.in_place = ctx.in_place;
         nc.host_away = ctx.host_away;
         nest::init(H, M, nc);
+    }
+    { // BUG-0472, BUG-0459: world objects owned by the host
+        wobj::Ctx wc;
+        wc.sess = &g_sess;
+        wc.player_pos = ctx.player_pos;
+        wc.in_place = ctx.in_place;
+        wc.host_away = ctx.host_away;
+        wc.stage_center = ctx.stage_center;
+        wobj::init(H, M, wc);
     }
     { // BUG-0401: the party's collected creature parts
         parts::Ctx pc;

@@ -77,6 +77,9 @@ enum MsgType : uint8_t {
     MSG_PARTS = 53,       // the party's collected creature parts (parts.cpp, BUG-0401): u8 kind (0 host -> guests the
                           // host's set, 1 host -> guests news, 2 guest -> host found here), u8 origin, u32 world,
                           // u16 n, n x {u32 lo, u32 hi}. Older SporeCoop ignores it (an unknown type).
+    MSG_WOBJ = 54,        // world objects owned by the host (worldobj.cpp, BUG-0472 / BUG-0459): u8 kind (0 host -> guest
+                          // snapshot {u8 obj kind, vec3 centre, f32 r, u8 n, n x {u32 id, vec3 pos, u32 state}}, unreliable 1 Hz;
+                          // 1 guest -> host request {u8 obj kind, u32 id, vec3 pos, u32 state now}). Older SporeCoop ignores it.
     MSG_CELL_KO = 44,     // any -> host -> all: u8 player, u8 state (0 up,1 out,2 revived,3 respawned),
                           // u8 tenths of a second left, u8 revive progress 0..255
     MSG_DIAG = 60,        // support diagnostics (net/diagmsg.h): u8 kind, payload; session clock, bug
