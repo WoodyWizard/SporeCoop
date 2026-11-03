@@ -212,6 +212,8 @@ static bool g_mirror_ground_fix = true;
 COOP_FIX("tribe.mirror_ground", "BUG-0444", g_mirror_ground_fix, "tribe: a guest's mirrors of members are made and kept on this game's ground, never left under it (as the animal proxies)");
 static uint32_t g_mirror_grounded; // diagnostics (coop.tribe): standing mirrors put out of the ground
 constexpr double kMirrorDelay = 0.2;  // s: the interpolation delay (the host sends every 0.12 s or more)
+// tests (BUG-0481): `coop.tribe delay <s>` on a guest: a planted late mirror (play_tribe's sync check must fail)
+static double g_test_delay = kMirrorDelay;
 constexpr float kMirrorWalkMax = 8.f; // farther off: drive::step (it teleports at 8 m)
 constexpr double kPathDt = 0.1;       // s: the interpolated path's velocity is taken over this
 static std::unordered_map<void*, uint16_t> g_gid_of;
@@ -926,7 +928,7 @@ static void guest_state(net::Reader& r)
             ps.pos = g.pos;
             ps.rot = g.rot;
             ps.vel = g.vel;
-            g.buf.delay = kMirrorDelay;
+            g.buf.delay = g_test_delay;
             g.buf.push(ps, now);
         }
         if (c && !game::object_alive(c)) {
@@ -2247,6 +2249,10 @@ std::string debug(const std::vector<std::string>& a)
                 n++;
             }
         return "stacked " + std::to_string(n) + " chiefs on the chief of player " + std::to_string(first.first);
+    }
+    if (a.size() >= 2 && a[0] == "delay" && is_guest()) { // delay <s>: tests (BUG-0481), the mirrors' interpolation delay
+        g_test_delay = std::max(0.0, std::min(3.0, atof(a[1].c_str())));
+        return "mirrors follow the host's states " + std::to_string(g_test_delay) + " s back";
     }
     if (a.size() >= 2 && a[0] == "lift" && is_guest()) { // lift <m>: tests (BUG-0329), the host's members m higher
         g_test_lift = (float)atof(a[1].c_str());
