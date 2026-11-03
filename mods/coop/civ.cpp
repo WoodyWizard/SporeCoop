@@ -2508,6 +2508,24 @@ std::string debug(const std::vector<std::string>& a)
     if (!a.empty() && a[0] == "content") { // tests (BUG-0469): the model checks of the mirrors
         return creations::content_status();
     }
+    if (a.size() >= 2 && a[0] == "design") { // design <city> [house|factory|fun]: the civ's building design key
+        // and the model check of it (tests, BUG-0469: the guest checks a design it has)
+        int ci = atoi(a[1].c_str());
+        void* city = ci >= 0 && ci < (int)g_host_cities.size() ? g_host_cities[ci] : nullptr;
+        uint32_t noun = a.size() > 2 && a[2] == "factory" ? 0x18EA2CC : a.size() > 2 && a[2] == "fun" ? 0x1A56ABA
+                                                                                                      : 0x18EB106;
+        uint32_t type = type_for_noun(noun), did = building_design_id(type);
+        void* civ = city ? F<void*>(city, kCityCiv) : nullptr;
+        uint32_t* k = civ && did ? thiscall<uint32_t*>(a_DesignKey, civ, (int)did) : nullptr;
+        char b[220];
+        snprintf(b, sizeof b, "design noun=%08X type=%08X id=%08X city=%p civ=%p key=%08X/%08X/%08X\n", noun, type, did,
+                 city, civ, k ? k[0] : 0, k ? k[1] : 0, k ? k[2] : 0);
+        if (!k || !k[0])
+            return std::string(b) + "no design here: the game generates one\n";
+        creations::Model m = creations::ensure_model({k[0], k[1], k[2]}, creations::kMkBuilding, false);
+        return std::string(b) + "model " +
+               (m.key.instance ? "ok" : "not in this game") + ", " + creations::content_status();
+    }
     if (!a.empty() && a[0] == "nulllocal") { // tests (BUG-0223): the stage's local entity is null for N frames
         int n = a.size() > 1 ? atoi(a[1].c_str()) : 1;
         modes::test_null_local(n < 1 ? 1 : n > 600 ? 600 : n);
