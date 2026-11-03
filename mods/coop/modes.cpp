@@ -127,8 +127,8 @@ static void puppet_sneak(void* p, const net::PlayerState& s)
     if (game::sneaking(p) != want)
         game::set_sneaking(p, want);
 }
-// BUG-0499: the partner's own game puts its creature somewhere else at once: the hatchling steps out of
 
+// BUG-0499: the partner's own game puts its creature somewhere else at once: the hatchling steps out of
 // its egg (5-11 m in one frame, ~10 s after the respawn), the respawn at the nest (100+ m). The states
 // were blended across that step (the target slid the whole way in 0.1 s), the puppet walked or was
 // nudged after it and stood 6-23 m off for up to a second (play_creature `never more than 6 m apart`,
