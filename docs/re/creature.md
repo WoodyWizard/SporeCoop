@@ -2081,3 +2081,22 @@ BUG-0465 (open). GOG 2024, Ghidra strings only, not seen at runtime.
   was shown, d=7 m, 30/44 hp, a cinematic had run 40 s before), then a 4.1 s hitch, a device Reset and the crash
   0.6 s later. Candidates not checked: the game's own cleanup of a creature after a frame of 4 s (fell out of the
   world?), a cinematic's actor cleanup. The check covers any of them.
+
+## The host's pack and a partner as its target (2026-11-03, fix/w40-guest-combat)
+<a id="creature-pack-target"></a>
+
+* ✔ A left click on a creature sets the avatar's target **+0xE7C** to that creature's combatant (+0x5A8): a click on
+  the partner's puppet on the host gave avatar +0xE7C = puppet + 0x5A8 (lane 2, 3 times).
+* ✔ Negative: neither that click, nor 10 PlayAbility calls of ability 0 or the key 1 after it, made the recruited pack
+  member take the puppet as its target in 15 s (its +0xE7C stayed 0, node 0x02D852F6). The pack's "help the leader"
+  trigger is not found.
+* ✔ SetTarget (creature vt 0x84, `thiscall(target, 1, 0)`) takes the target's **combatant** (creature + 0x5A8), not
+  the creature: called with the creature pointer the host game hung or died at once (lane 2). With the combatant the
+  pack member held +0xE7C on the puppet for good (node 0x02D852F6, no bite in 10 s).
+* ✔ The players' host log (0.7.3.6): during that fight the pack's hits on the guest's puppet arrived every 0.3 s and
+  were all dropped by `npc.party_peace` (`hit by pack posse=1 amount=0.0 dropped`); the hits that reached the guest
+  were from other NPCs (`hit by npc posse=0`, forwarded). So on 0.7.3.6 the pack fought the guest on both screens
+  without damage; the guest's losses in that fight came from the wild NPCs.
+* `npc.pack_spares_partners` (npc.cpp, BUG-0512): on the host every frame, a pack member (the pack list
+  cGameNounManager +0x5C..+0x60: it is not always in the creature update list) or family member aimed at a partner's
+  puppet gets SetTarget(null, 1, 0) and its stimuli naming the puppet cleared.

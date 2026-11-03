@@ -3693,3 +3693,7 @@ the other player's game, both ways where the kind has two:
   of the mod's bookkeeping); `coop.status` `puppet_listed <id> <0|1>` says whether the puppet pointer the mod holds
   is a live creature in the game's object list. `SPORE_FIX_OFF=creature.puppet_alive` fails (the dead pointer is
   kept, listed=0).
+* `pack_target` (coop_creature_pack_target.py, ~1 min warm, BUG-0512): the host recruits a pack member, clicks the
+  guest's creature (the avatar's +0xE7C; the pack did not follow in the lab), then `coop.hp packtarget 1 combatant`
+  gives every pack member the puppet as target (SetTarget with the combatant); the host's game must hold no pack
+  member aimed at the puppet 0.5 s later. `SPORE_FIX_OFF=npc.pack_spares_partners` fails (16 of 16 samples).
