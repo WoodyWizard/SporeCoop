@@ -8,7 +8,7 @@ reported: 2026-11-02
 source: BUG-0424 sibling list, owner request 2026-11-02 (0.7.3.6)
 role: guest
 versions: 0.7.3.5
-fixed_in: unreleased
+fixed_in: 0.7.3.6
 branch: fix/w39-content-all
 commits: 2a99049e, 7d95b829, 4cfa199a, cf065107, 9130fa96, 958b870c, e328a099, a63959db, d4859b3c, 5d1ef97b, 8dc2cf80
 tests: content_civ (tools/tests/coop_content_civ.py), content_space (tools/tests/coop_content_space.py)
@@ -127,3 +127,4 @@ key as they get it).
   refused otherwise; switch `content.model_key`; the civ test now saves, restarts without a session and
   loads the save (PASS out/lab/20261102-213135, FAIL with `content.model_key` off out/lab/20261102-213354);
   BUG-0470 opened for the mirror vehicles that stay in the guest's save.
+- 2026-11-02: released in 0.7.3.6.

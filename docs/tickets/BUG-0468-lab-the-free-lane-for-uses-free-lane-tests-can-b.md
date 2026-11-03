@@ -8,7 +8,7 @@ reported: 2026-11-02
 source: final verification of 0.7.3.5 (2026-11-02, out/lab/20261102-163032)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.3.6
 branch: feat/w39-detector
 commits: 3ebba62e
 tests: unknown_parts, guest_missing_pack
@@ -40,3 +40,4 @@ lane 2 at once, the pack-less guest had the pack (have_pack=1). PASS run: out/la
 
 ## History
 - 2026-11-02: opened.
+- 2026-11-02: released in 0.7.3.6.

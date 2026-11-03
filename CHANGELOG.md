@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.7.3.6] - 2026-11-02
+
 ### Fixed
 - Civ and Space: a partner's vehicle, building or ship whose model uses parts or paints from a pack, a
   mod or another profile's Sporepedia no longer crashes the game that does not have them. Such a model
