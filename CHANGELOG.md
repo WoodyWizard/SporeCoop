@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+- Cell: a part one player collects is now unlocked for the whole party (the host and every guest get
+  it in their cell editor, with the mating call), not only in the game of the player who touched it
+  (BUG-0467).
+
 ## [0.7.3.6] - 2026-11-02
 
 ### Fixed

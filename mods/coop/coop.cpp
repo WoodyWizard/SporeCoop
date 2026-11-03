@@ -889,7 +889,7 @@ static void dna_spend_sample()
         g_dna_spend = 0;
         return;
     }
-    if (g_mode != modes::kCreature)
+    if (game::mode_id() != modes::kCreature)
         return; // an editor, a load: the last value is kept (an editor's price shows when it closes;
                 // a world held for the editor's end may load before the avatar is back: no avatar asked)
     uint32_t epoch = game::stage_epoch(modes::kCreature);
@@ -902,11 +902,25 @@ static void dna_spend_sample()
     float cur = game::dna(), d = cur - g_dna_seen;
     if (d < -0.5f) {
         if (g_dna_spend == 0)
-            g_dna_spend_world = g_world;
+            g_dna_spend_world = g_stage_world; // (an editor has no world of its own)
         g_dna_spend += d;
         LOG("dna: spent %.0f here (%.0f -> %.0f): goes to the host", -d, g_dna_seen, cur);
     }
     g_dna_seen = cur;
+}
+
+// a spend the mod made for the game (the own editor's price): counted at once, not left to the
+// sample (a host total can arrive before the next tick: it would undo it)
+static void dna_spend_note(float d)
+{
+    if (!g_dna_spend_fix || g_sess.role() != net::Role::Client || !g_sess.connected() || d >= 0)
+        return;
+    if (g_dna_spend == 0)
+        g_dna_spend_world = g_stage_world; // (an editor has no world of its own)
+    g_dna_spend += d;
+    if (g_dna_seen_ok)
+        g_dna_seen += d;
+    LOG("dna: spent %.0f here (the own editor's price): goes to the host", -d);
 }
 
 // the game's DNA was set by the mod (a host total): the next sample starts from it
@@ -1206,6 +1220,7 @@ bool SK_THISCALL h_StageMsg(void* self, uint32_t id, void* msg)
 // works). In the own editor such parts are allowed: the bit is dropped from the blocking set
 // (docs/re/creations.md 7).
 bool g_own_editor = false; // the own editor was requested and the player has not left it yet
+static bool g_own_editor_charge_due = false; // BUG-0466: the own editor opened; its result charges once
 using BlockingErrors_t = uint32_t*(SK_THISCALL*)(void*, uint32_t*, void*, void*, int);
 BlockingErrors_t o_BlockingErrors;
 unsigned g_part_list_waivers; // tests: how often the part-list error was waived
@@ -1263,6 +1278,7 @@ bool open_own_editor(uint32_t editor_id)
     }
     g_vote_bypass = true;
     g_own_editor = true; // the editor loads the creature after Submit, on a later frame
+    g_own_editor_charge_due = true; // BUG-0466: its result charges the price
     bool r = skg::cdecl_call<bool>(submit, req);
     g_vote_bypass = false;
     if (!r)
@@ -1446,6 +1462,43 @@ int SK_THISCALL h_SimMsg(void* self, uint32_t id, void* data)
     if (id == 0x4715068u) // BUG-0264: the game leaves the stage now (any source of the quit)
         game::stage_leaving("quit message handled");
     return o_SimMsg(self, id, data);
+}
+
+// BUG-0466 (observed, lab 20261103-141812 editor_sync_guest): the guest's own editor of a vote
+// (open_own_editor: an EditorRequest without the evolution tag +0x90) showed the DNA budget and the
+// price of the new parts (40 -> 15), but the game never charged it: the creature game's handler
+// 0xD42E50 applies an editor's result (message 0x30C11C7, data +0xC the request's tag) only for the
+// evolution tag 0x64AA168 (then the stage's return sets GetEvolutionPoints to the result's
+// remaining DNA, +0x34, 0xD445AA). The guest kept its DNA and the host's total stayed the same:
+// free parts. Now the result of the own editor (not cancelled, +0x44 == 0) charges the price
+// through the game (the remaining DNA at +0x34), and core.dna_spend sends it to the host.
+// `coop.fix creations.own_editor_dna off`: the own editor costs nothing (0.7.3.6).
+static void dna_spend_note(float d);
+bool g_own_editor_dna_fix = true;
+COOP_FIX("creations.own_editor_dna", "BUG-0466", g_own_editor_dna_fix, "creature: the parts a guest adds in its own editor cost DNA (the editor's price is charged)");
+static unsigned g_own_editor_charged = 0;
+typedef bool(SK_THISCALL* CreatureGameMsg_t)(void*, uint32_t, void*);
+CreatureGameMsg_t o_CreatureGameMsg;
+bool SK_THISCALL h_CreatureGameMsg(void* self, uint32_t id, void* data)
+{
+    if (id == 0x30C11C7u && g_own_editor_charge_due && data && skg::readable(data, 0x48)) {
+        uint32_t tag = skg::field<uint32_t>(data, 0xC);
+        int left = skg::field<int32_t>(data, 0x34);
+        uint8_t cancelled = skg::field<uint8_t>(data, 0x44);
+        float now = game::dna();
+        LOG("own editor result: tag %08X remaining DNA %d cancelled %u, DNA here %.0f%s", tag, left, (unsigned)cancelled, now,
+            g_own_editor_dna_fix ? "" : " (creations.own_editor_dna off)");
+        if (tag != 0x64AA168u && tag != 0x12191CAu) {
+            g_own_editor_charge_due = false;
+            if (g_own_editor_dna_fix && !cancelled && left >= 0 && left < now) {
+                game::dna_add_raw((float)left - now); // the editor's price, as the evolution's return sets it
+                g_own_editor_charged++;
+                dna_spend_note((float)left - now); // a spend of ours: to the host (core.dna_spend)
+                feed("your new parts cost " + std::to_string((int)(now - left)) + " DNA");
+            }
+        }
+    }
+    return o_CreatureGameMsg(self, id, data);
 }
 
 bool SK_CDECL h_Submit(void* req)
@@ -5014,6 +5067,8 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         H->hook_create(M, (void*)a, (void*)h_StageMsg, (void**)&o_StageMsg);
     if (uintptr_t a = H->sym("Editors::EditorRequest::Submit"))
         H->hook_create(M, (void*)a, (void*)h_Submit, (void**)&o_Submit);
+    if (uintptr_t a = H->sym("SporeCoop::CreatureGame_HandleMessage")) // BUG-0466
+        H->hook_create(M, (void*)a, (void*)h_CreatureGameMsg, (void**)&o_CreatureGameMsg);
     if (uintptr_t a = H->sym("SporeCoop::Simulator_HandleMessage"))
         H->hook_create(M, (void*)a, (void*)h_SimMsg, (void**)&o_SimMsg);
     if (uintptr_t a = H->sym("Editors::cEditor::GetBlockingErrors"))
@@ -5164,6 +5219,8 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                                skg::thiscall<void*>(push, (char*)req + 0x70, &v);
                            }
                            bool r = skg::cdecl_call<bool>(submit, req);
+                           if (uintptr_t f = H->sym("SporeCoop::CreatureEvolutionPending_flag")) // as 0xD43069
+                               *(uint8_t*)f = 1;
                            SAY("evolution request submitted -> %d\n", (int)r);
                        } else if (argc > 1 && !strcmp(argv[1], "action") && g_sess.role() == net::Role::Host) {
                            // an action vote like the superweapon's (tests, BUG-0043)

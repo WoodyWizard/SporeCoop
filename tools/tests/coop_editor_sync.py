@@ -14,7 +14,10 @@ done without a change.
                 party's total on the host's game and stays gone on the guest's (it came back to
                 the value before the editor with the next total of the host).
 
-  coop_editor_sync.py --case host|guest   (SPORE_FIX_OFF=creations.editor_species | core.dna_spend fails)
+  --case spend  BUG-0466's class (G6): the guest's own game spends DNA (AddEvolutionPoints -25, no
+                editor): the host's total loses it and the guest's game keeps it.
+
+  coop_editor_sync.py --case host|guest|spend   (host: SPORE_FIX_OFF=creations.editor_species, guest: creations.own_editor_dna, spend: core.dna_spend fail)
 """
 import re
 import sys
@@ -125,6 +128,18 @@ def main():
         d_h0, d_g0 = dna(host), dna(guest)
         print(f'  DNA after +40 on the host: host {d_h0} guest {d_g0}', flush=True)
 
+    if case == 'spend':  # the class (G6): a spend of the guest's own game, no editor
+        print('  guest:', guest.call('coop.dna add -25')['out'].strip(), '(AddEvolutionPoints -25 in its game)', flush=True)
+        samples = []
+        for _ in range(8):
+            time.sleep(2)
+            samples.append((dna(host), dna(guest)))
+        d_h1, d_g1 = samples[-1]
+        print(f'  DNA after: host {d_h0} -> {d_h1}, guest {d_g0} -> {d_g1} (samples {samples})', flush=True)
+        ck(d_h1 is not None and abs(d_h1 - (d_h0 - 25)) < 1, "the guest's spend left the party's total on the host's game")
+        ck(d_g1 is not None and abs(d_g1 - (d_g0 - 25)) < 1, "the guest's game kept its spend (not given back by the host's next total)")
+        ck.faults(host=host, guest=guest)
+        return ck.result()
     print(' ', host.call('coop.vote evolve')['out'].strip(), flush=True)  # the game's own evolution request
     time.sleep(2)
     gu.wait(lambda s: s['ready']['vis'], 10, 'ready button')
@@ -179,6 +194,8 @@ def main():
     back(guest, m0, 120)
     time.sleep(10)  # several totals of the host (every 2 s), the bundles (every 2 s)
 
+    shot(host, f'editor_sync_{case}_host_after.png')
+    print('  host creations:', host.call('coop.creations')['out'].strip().splitlines()[:6], flush=True)
     if case == 'host':
         hk1 = wait(lambda: (lambda k: k if k and k != hk0 else None)(avatar_key(host)), 60)
         print(f'  host species {hk0} -> {hk1}', flush=True)
