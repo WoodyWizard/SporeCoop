@@ -442,11 +442,12 @@ static int SK_THISCALL h_MgrCreateFx(void* mgr, uint32_t id, uint32_t a3, void**
 typedef int(SK_THISCALL* WorldCreateFx_t)(void*, uint32_t, uint32_t, void**);
 static WorldCreateFx_t o_WorldCreateFx;
 static uintptr_t a_WorldCreateFx;
-static bool g_world_on; // the stage logic's gate (set_world_relay): no work outside a played stage
+static std::atomic<bool> g_world_on{false}; // the stage logic's gate (set_world_relay): no work outside a played stage
 static int SK_THISCALL h_WorldCreateFx(void* world, uint32_t id, uint32_t a3, void** out)
 {
     int r = o_WorldCreateFx(world, id, a3, out);
-    if (!g_world_on || !fx_main_thread() || !g_fx_relay_on.load(std::memory_order_relaxed))
+    if (!g_world_on.load(std::memory_order_relaxed) || !fx_main_thread()
+        || !g_fx_relay_on.load(std::memory_order_relaxed))
         return r;
     if (t_in_anim_fx) {
         g_fx_anim++;
@@ -471,7 +472,7 @@ static int SK_THISCALL h_WorldCreateFx(void* world, uint32_t id, uint32_t a3, vo
 // The hooks are installed once, in init(); a hook removed while the UI skinner's render thread was
 // inside it faulted (Skinner::cSkinnerTexturePainter::StartRender+0x28, thousands of caught faults
 // in Tribe/Civ), so a stage change only flips this flag.
-void set_world_relay(bool on) { g_world_on = on; }
+void set_world_relay(bool on) { g_world_on.store(on, std::memory_order_relaxed); }
 // The animation system's effect wrapper 0x9FBF00: the animation relay (MSG_ANIM) already shows the
 // effects of an animation on the partner's puppet, so the world create of such an effect must not
 // be relayed again. The wrapper is called on the main thread; the flag is thread local so a worker
