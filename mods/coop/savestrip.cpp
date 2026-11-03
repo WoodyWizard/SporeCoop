@@ -40,6 +40,9 @@ static void (*g_write_watch)();
 static void* g_watch_ser;
 static uint32_t g_watch_frame;
 void set_write_watch(void (*f)()) { g_write_watch = f; }
+static std::vector<std::pair<void (*)(), void (*)()>> g_save_hooks;
+static bool g_hooks_ended = true;
+void add_save_hooks(void (*start)(), void (*end)()) { g_save_hooks.push_back({start, end}); }
 void set_enabled(bool on) { g_on = on; }
 bool enabled() { return g_on; }
 
@@ -183,6 +186,12 @@ static bool SK_THISCALL h_Write(void* self, void* stream, void* obj)
     if (g_save_last_frame - g_save_first_frame > g_max_span)
         g_max_span = g_save_last_frame - g_save_first_frame;
     if (fresh) {
+        if (!g_hooks_ended) // a second save in the same frame: the first one's objects back first
+            for (auto& h : g_save_hooks)
+                h.second();
+        for (auto& h : g_save_hooks)
+            h.first();
+        g_hooks_ended = false;
         rebuild();
         g_saves++;
         g_last_count = (uint32_t)g_ours.size();
@@ -230,6 +239,11 @@ void tick()
 {
     g_main_tid = GetCurrentThreadId();
     g_frame++;
+    if (!g_hooks_ended) {
+        g_hooks_ended = true;
+        for (auto& h : g_save_hooks)
+            h.second();
+    }
 }
 
 std::string status()

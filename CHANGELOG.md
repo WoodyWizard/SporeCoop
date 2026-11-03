@@ -11,6 +11,13 @@
   (BUG-0479).
 - Creature: an animal near a guest no longer stays missing on its screen (or keeps living there after
   the host killed it) when its first message was lost; the guest asks the host for it again (BUG-0487).
+- Civ: a guest no longer crashes in its city planner while the host's world goes on (attacks, new
+  buildings, vehicles that die): the planner's city is left as it is until the planner closes, and a
+  building outside its plot can no longer be picked up (BUG-0491, BUG-0493).
+- Civ: a guest no longer crashes when it clicks a city of a nation its game does not know (BUG-0492).
+- Civ: a guest's saves no longer keep the host's vehicles it was showing; the save loads cleanly on its
+  own (BUG-0470).
+- Civ: a vehicle that is gone on the host no longer stays behind as a wreck on the guest (BUG-0478).
 
 ## [0.7.3.6] - 2026-11-02
 
