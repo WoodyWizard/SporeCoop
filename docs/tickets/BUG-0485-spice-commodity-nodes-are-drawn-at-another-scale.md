@@ -34,3 +34,4 @@ Found by the lab (no player report). Target: 0.7.4.
 
 ## History
 - 2026-11-03: opened.
+- 2026-11-03: investigated on fix/w40-scale: on the creature / tribe fixtures all 16 nodes are 1.0 on both games (the 10 is set at runtime after the live Cell -> Creature start, not saved); the node loco vtable 0x1469A28 uses cModelObject_SetScale, hooked now, which logs `scale 10 set on an object with vtable ... from ...` once per caller: the next campaign_short run names the setter. Not fixed (what the player sees and who sets it unknown); docs/known-issues.md#issue-node-scale.
