@@ -86,6 +86,19 @@ static uint32_t choice_epoch_now(int k)
     return game::stage_epoch(k == 1 ? modes::kCell : modes::kCreature);
 }
 static bool g_chosen[kKinds]; // the player chose (even "none")
+// BUG-0508 (world.evolve_in_place): a guest that plays the host world's species (no creation of its
+// own, no choice) takes the host's new creature in place after the host's editor, as the reloaded
+// world gave it before: `g_follow` is the host's new creation, valid in the stage world it came in
+// (a load gives the avatar the world's species again). g_seen_own: the own key last seen in a stage
+// (in the vote's editor the avatar is not there when the host's bundle comes).
+// The host's side (no world after the editor) is world.evolve_in_place (coop.cpp). Off: the guest's
+// avatar keeps the species it had until a world load (0.7.3.6).
+static bool g_follow_fix = true;
+COOP_FIX("creations.follow_evolution", "BUG-0508", g_follow_fix,
+         "creations: a guest that plays the world's species takes the host's evolved one in place");
+static Key g_follow[kKinds], g_seen_own[kKinds];
+static uint32_t g_follow_epoch[kKinds];
+static unsigned g_follows;
 
 // ---- bundles: a creation with its records ----
 struct Bundle {
@@ -867,6 +880,8 @@ Option mine(Kind k)
     // default: a guest plays its newest creation; the host keeps the one of its world
     if (guest && !g_opts[k].empty())
         return g_opts[k].front();
+    if (guest && g_follow_fix && g_follow[k].instance && g_follow_epoch[k] == choice_epoch_now(k))
+        return named(g_follow[k]); // BUG-0508: the host's evolved species, in place
     Key a = k == kCreature ? avatar_species_key() : cell_key();
     if (a.instance)
         return named(a);
@@ -1228,6 +1243,16 @@ static void apply(uint8_t owner, Kind k, uint32_t id, const std::vector<uint8_t>
             std::string author;
             dbpf::metadata_names(r.data, author, name);
         }
+    // BUG-0508: a guest that played the host's previous creation as the world's species follows it
+    bool follow = false;
+    if (g_follow_fix && owner == 0 && k != kUfo && C.sess && C.sess->role() == net::Role::Client && ap.orig.instance &&
+        b.key.instance && !(b.key == ap.orig) && g_opts[k].empty() && !g_chosen[k]) {
+        Key before = mine(k).key;
+        if (!before.instance)
+            before = g_seen_own[k];
+        follow = before == ap.orig || (g_follow[k] == ap.orig && g_follow_epoch[k] == choice_epoch_now(k));
+    }
+    const uint32_t orig_before = ap.orig.instance;
     Key use = b.key;
     void* old = ap.db;
     void* db = nullptr;
@@ -1297,6 +1322,13 @@ static void apply(uint8_t owner, Kind k, uint32_t id, const std::vector<uint8_t>
     H->log(M, SK_INFO, "creations: player %u %s = %08X/%08X/%08X '%s' (%u records)%s", owner, kInfo[k].name,
            use.instance, use.type, use.group, name.c_str(), (unsigned)b.recs.size(),
            unusable ? ": unknown here, not used" : "");
+    if (follow && !unusable) {
+        g_follow[k] = b.key;
+        g_follow_epoch[k] = choice_epoch_now(k);
+        g_follows++;
+        H->log(M, SK_INFO, "creations: the host's %s changed %08X -> %08X: this game's world species follows it in place (BUG-0508)",
+               kInfo[k].name, orig_before, b.key.instance);
+    }
     if (C.appearance_changed)
         C.appearance_changed(owner);
 }
@@ -1593,6 +1625,7 @@ static void share_own(double now)
         Option o = mine((Kind)k);
         if (!o.key.instance)
             continue;
+        g_seen_own[k] = o.key; // BUG-0508
         Bundle b;
         Key hk = host_species(o.key);
         bool world_own = g_pre_editor_fix && !is_host() && k != kUfo && g_chosen[k] && !g_choice[k].instance;
@@ -2113,6 +2146,8 @@ void on_session_end()
     g_unmap.clear();
     g_store.clear();
     g_rx.clear();
+    for (int k = 0; k < kKinds; k++) // BUG-0508: the session's host and its species
+        g_follow[k] = g_seen_own[k] = Key{};
     for (auto& s : g_sent_id)
         s = 0;
     // registered packages stay (cheap); keys of other players are forgotten
@@ -2208,6 +2243,12 @@ std::string status()
                  (unsigned)g_opts[k].size());
         s += b;
     }
+    for (int k = 0; k < kKinds; k++)
+        if (g_follow[k].instance) { // BUG-0508
+            snprintf(b, sizeof b, "  follow %s: %08X%s (follows %u)\n", kInfo[k].name, g_follow[k].instance,
+                     g_follow_epoch[k] == choice_epoch_now(k) ? "" : " (another world)", g_follows);
+            s += b;
+        }
     for (auto& [hk, ours] : g_remap) {
         snprintf(b, sizeof b, "  host species %08X = %08X here\n", hk, ours);
         s += b;
