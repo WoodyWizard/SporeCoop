@@ -40,7 +40,8 @@ play_creature.py: the bots answer the "Brain power!" caption with Enter like a p
 ## Verification
 no-fail-run: test bot change (the caption was found in the failing runs' logs: out/lab/20261103-124913
 play_creature#2, 20261103-012624 #1/#2); the final play_creature x3 of fix/w40-play shows whether the joint
-hunt now happens (see the branch report).
+hunt now happens: out/lab/20261103-160342 play_creature 3 of 3 OK, joint hits +3 / +7 / +10, the caption
+answered once per run (`caption_ok=1`), no chat line lost.
 
 ## History
 - 2026-11-03: opened.

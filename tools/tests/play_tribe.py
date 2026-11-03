@@ -610,7 +610,7 @@ class Game:
                 self.roster_mismatch.append(f'gift of #{mid} to {to}: host owner {ho}, guest owner {go}')
 
 
-PROBE_S = 0.6  # s of the host's path kept before each guest sample
+PROBE_S = 0.45  # s of the host's path kept before each guest sample (>= TRIBE_LAG; each costs the bots ~0.5 s)
 # BUG-0481: a guest shows the host's members TRIBE_LAG s late on purpose: the mirrors follow the host's
 # states kMirrorDelay = 0.2 s back (tribe.cpp, net::SnapshotBuffer) and the host sends every 0.12 s or
 # more. Measured in play_tribe (lab 20261103-150636): walking members (p50 8.4 m/s) were on the host's path

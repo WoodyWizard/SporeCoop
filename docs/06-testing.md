@@ -3642,7 +3642,7 @@ the other player's game, both ways where the kind has two:
   member with where the host has it now, but the mirrors follow the host's states 0.2 s back on purpose
   (docs/re/tribe.md#tribe-mirror-lag); the members run at 8-9 m/s, so 0.22 s x 8.4 m/s = 1.85 m p90 while the
   mirrors were 0.09 m p90 off the host's path. play_tribe now reads the host's coop.sync back to back for
-  0.6 s before each guest read (the probe: `probe standing / walking` lines, best lag, rows in
+  0.45 s (0.6 s in the measuring runs) before each guest read (the probe: `probe standing / walking` lines, best lag, rows in
   `out/lane<N>/track/play_tribe_probe_*.json`) and compares a citizen with the host's path over 0.32 s
   (TRIBE_LAG: the 0.2 s delay + one 0.12 s send interval), as coop_sync.py does with its LAG_WINDOW; the raw
   p90 is printed. Planted desync: `PLAY_TRIBE_GUEST_CMDS="coop.tribe delay 0.6"` (mirrors 0.6 s late) fails
