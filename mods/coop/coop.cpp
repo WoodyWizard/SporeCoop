@@ -1739,14 +1739,17 @@ static const std::string* peer_version(uint8_t id)
 // host: may guest r take the host's evolution in place (same world, the host's stage or an editor)?
 static bool evolve_inplace_ok(uint8_t id, const Remote& r, uint32_t stage)
 {
-    if (!g_evolve_inplace_fix || r.echo || r.buf.empty() || !g_adapter || g_adapter->own_worlds)
+    // (called from on_mode_change too, before g_adapter / g_world follow the new mode)
+    const modes::Adapter* ad = modes::for_mode(stage);
+    uint32_t world = ad ? modes::current_place(ad) : 0;
+    if (!g_evolve_inplace_fix || r.echo || r.buf.empty() || !ad || ad->own_worlds)
         return false;
     const std::string* v = peer_version(id);
     if (!v || v->empty())
         return false; // an older SporeCoop: it does not follow the host's species in place
     const auto& ls = r.buf.latest();
     bool editor = ls.mode == modes::kEdit || ls.mode == modes::kEditor;
-    return (ls.mode == stage || editor) && g_world && ls.world == g_world;
+    return (ls.mode == stage || editor) && world && ls.world == world;
 }
 
 void on_mode_change(uint32_t from, uint32_t to)

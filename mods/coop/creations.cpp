@@ -99,6 +99,35 @@ COOP_FIX("creations.follow_evolution", "BUG-0508", g_follow_fix,
 static Key g_follow[kKinds], g_seen_own[kKinds];
 static uint32_t g_follow_epoch[kKinds];
 static unsigned g_follows;
+// The world's player species (cSpeciesManager +0xA4, a ResourceKey read by PlayerSpecies 0x4DF490 on
+// every call): a reloaded world had the host's evolved species there. In place the guest's game gets
+// it too: from the host's previous creature to the new one (g_ps_from -> g_ps_to), written in a stage
+// frame (not in the vote's editor). Every guest, also one playing its own creature (its world's player
+// species is the host's then as well).
+static uintptr_t a_SpeciesMgr;
+static Key g_ps_from, g_ps_to;
+static unsigned g_ps_set;
+static uint32_t* player_species_slot()
+{
+    void* mgr = a_SpeciesMgr ? cdecl_call<void*>(a_SpeciesMgr) : nullptr;
+    auto* k = mgr ? (uint32_t*)((uint8_t*)mgr + 0xA4) : nullptr;
+    return k && skg::readable(k, 12) ? k : nullptr;
+}
+static void player_species_tick()
+{
+    if (!g_ps_to.instance || game::mode_id() != modes::kCreature || !game::avatar())
+        return;
+    uint32_t* k = player_species_slot();
+    Key to = g_ps_to;
+    g_ps_to = {};
+    if (!k || k[0] != g_ps_from.instance || k[1] != to.type || k[2] != to.group)
+        return; // a load or another species since
+    if (!game::species_by_key({to.instance, to.type, to.group}))
+        return;
+    k[0] = to.instance;
+    g_ps_set++;
+    H->log(M, SK_INFO, "creations: the world's player species %08X -> %08X (BUG-0508)", g_ps_from.instance, to.instance);
+}
 
 // ---- bundles: a creation with its records ----
 struct Bundle {
@@ -1322,6 +1351,11 @@ static void apply(uint8_t owner, Kind k, uint32_t id, const std::vector<uint8_t>
     H->log(M, SK_INFO, "creations: player %u %s = %08X/%08X/%08X '%s' (%u records)%s", owner, kInfo[k].name,
            use.instance, use.type, use.group, name.c_str(), (unsigned)b.recs.size(),
            unusable ? ": unknown here, not used" : "");
+    if (g_follow_fix && owner == 0 && k == kCreature && !unusable && orig_before && b.key.instance &&
+        C.sess && C.sess->role() == net::Role::Client && orig_before != b.key.instance) {
+        g_ps_from = {orig_before, b.key.type, b.key.group};
+        g_ps_to = b.key;
+    }
     if (follow && !unusable) {
         g_follow[k] = b.key;
         g_follow_epoch[k] = choice_epoch_now(k);
@@ -1944,6 +1978,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     a_DbCtor = H->sym("Resource::DatabasePackedFile::ctor");
     a_RmPtr = H->sym("Resource::ResourceManager_ptr");
     a_SetSpecies = H->sym("Simulator::cCreatureAnimal::SetSpecies");
+    a_SpeciesMgr = H->sym("Editors::cSpeciesManager::Get");
     a_GetEmpire = H->sym("Simulator::GetPlayerEmpire");
     a_CellPreload = H->sym("Simulator::Cell::PreloadModel");
     a_BarPtr = H->sym("SporeCoop::AbilityBar_ptr");
@@ -2041,6 +2076,7 @@ void tick(double now)
         share_own(now);
     }
     apply_own_avatar();
+    player_species_tick(); // BUG-0508
     bar_tick(); // BUG-0358
 }
 
@@ -2148,6 +2184,7 @@ void on_session_end()
     g_rx.clear();
     for (int k = 0; k < kKinds; k++) // BUG-0508: the session's host and its species
         g_follow[k] = g_seen_own[k] = Key{};
+    g_ps_from = g_ps_to = Key{};
     for (auto& s : g_sent_id)
         s = 0;
     // registered packages stay (cheap); keys of other players are forgotten
@@ -2241,6 +2278,10 @@ std::string status()
         Option o = mine((Kind)k);
         snprintf(b, sizeof b, "  mine %s: %08X '%s' (%u own)\n", kInfo[k].name, o.key.instance, o.name.c_str(),
                  (unsigned)g_opts[k].size());
+        s += b;
+    }
+    if (uint32_t* ps = player_species_slot()) { // BUG-0508
+        snprintf(b, sizeof b, "  world player species %08X (set in place %u)\n", ps[0], g_ps_set);
         s += b;
     }
     for (int k = 0; k < kKinds; k++)
