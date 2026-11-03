@@ -1898,8 +1898,9 @@ static void guest_nodes_and_buildings(net::Reader& r)
 // 0xCA67C0). The civ's own design for the purpose and locomotion is checked with the parts and paints
 // of its model (creations::ensure_model):
 //  - the design this game has: the key itself;
-//  - a part or paint this game does not have, with a substitute: our copy of the model (a key of its
-//    own), the mirror is shown with the similar base game parts;
+//  - a part or paint this game does not have, with a substitute: our copy of the model (under the
+//    design's own key, above the game's packages: the mirror gets the similar base game parts and no
+//    key of ours reaches the save);
 //  - one that cannot be built here at all: a zero key, the game's own design of the same purpose and
 //    locomotion (cVehicle::Load generates one from the object templates for 0 and -1), logged;
 //  - false: the civilization has no design for that purpose and locomotion here (no mirror, 0.7.3.5).

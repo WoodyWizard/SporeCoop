@@ -449,8 +449,9 @@ static void guest_state(net::Reader& r)
             bool known = have_key;
             // BUG-0469: the model's key alone does not say whether this game can build the model: its
             // parts and paints (a ship design of another player's Sporepedia or of a pack) are checked
-            // too. A model with ids this game does not have is built from our copy of it with the
-            // substitutes; one that cannot be built here is a model this game does not have (below).
+            // too. A model with ids this game does not have is built from our copy of it (registered
+            // under the model's own key, so the key stays one the game has) with the substitutes; one
+            // that cannot be built here is a model this game does not have (below).
             if (known && (key[0] | key[1] | key[2])) {
                 creations::Model cm = creations::ensure_model({key[0], key[1], key[2]}, creations::kMkUfo);
                 if (cm.key.instance) {

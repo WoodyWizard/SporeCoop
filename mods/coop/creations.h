@@ -79,7 +79,8 @@ Key host_species(const Key& k);  // guest: ours -> the host's
 // BUG-0469: the model a caller may build from `model` (docs/re/creations.md#creations-content-all-kinds):
 //  - kSame: this game has the model and every part / paint it names, build it from that key
 //  - kSubstituted: some ids this game does not have were shown as substitutes in a copy of the model
-//    records (registered here): build it from the returned key
+//    records, registered under the model's own key above the game's packages: build it from the
+//    returned key (the key itself, unchanged: what the game reads for it is our copy)
 //  - kRefused: do not build the model here (the caller uses the game's own default or waits)
 // allow_copy stays false when the caller cannot pass another key to the game (a building: the game
 // reads the civ's design key itself), then a model with unknown ids is refused.

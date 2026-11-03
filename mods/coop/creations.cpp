@@ -40,6 +40,10 @@ static const KindInfo kInfo[kKinds] = {
 constexpr uint32_t kBem = 0x1A99B06B, kMeta = 0x030BDEE3, kCreatureData = 0x0F43029A;
 constexpr uint32_t kEditorSavesArea = 0x11AC199;
 constexpr int kPrioPlayer = 1000, kPrioWorld = 2000; // EditorSaves is 1000; the list is searched highest first
+// BUG-0469 review: our copy of a model the game cannot build is registered under the model's OWN key,
+// above every package of the game (and above the host's world packages at 2000), so no key of ours
+// ever reaches the game or a save
+constexpr int kPrioModel = 3000;
 // MSG_CREATION kinds after the player creations (older versions drop kind >= kKinds): a species of
 // the host's world for a guest that lacks it (owner 0, id = the crt instance), and a guest's request
 // and a species of the host's world that is one of the host's own creations (owner 0, id = the crt
@@ -288,6 +292,15 @@ COOP_FIX("creations.unknown_parts", "BUG-0452", g_unknown_fix, "creations: every
 // pass the key as they get it.
 static bool g_all_kinds_fix = true;
 COOP_FIX("content.all_kinds", "BUG-0469", g_all_kinds_fix, "civ, space: every model the mod makes the game build (a mirror vehicle, a building, a host ship) is checked with its parts and paints, not only its key");
+// BUG-0469 review: the substitute copy of a model was registered under an instance of our own
+// (0x7D......, the fix's first version). Such a key reaches the guest's save (mirror vehicles are not
+// stripped) and no package answers it after a restart (or without the mod): the game then cannot
+// build the saved object. The copy now goes under the model's OWN key, in a package above every
+// package of the game, so no key of ours reaches the game at all (kPrioModel, model_shadow_answers).
+// Off (`coop.fix content.model_key off`): the first version, an instance of our own (the lab's run
+// that shows the saved key).
+static bool g_model_key_fix = true;
+COOP_FIX("content.model_key", "BUG-0469", g_model_key_fix, "creations: the copy of a model this game cannot build is registered under that model's own key, never a key of the mod's (a save must not name a key only this mod has)");
 constexpr uint32_t kPartProp = 0x00B1B104, kPartGroup = 0x40626000;
 constexpr uint32_t kCellPartGroup = 0x40616000, kUfoPartGroup = 0x40646000; // parts of a cell / UFO model
 constexpr uint32_t kEffectProp = 0x497767B9, kEffectGroup = 0xEA5118B1; // a base game skin effect
@@ -999,11 +1012,15 @@ static void keep_records(uint32_t inst, const std::vector<dbpf::Record>& recs)
     }
 }
 
-static void* package_for(std::wstring path, const std::vector<dbpf::Record>& recs, int priority)
+static void* package_for(std::wstring path, const std::vector<dbpf::Record>& recs, int priority,
+                         std::wstring* used = nullptr)
 {
     auto it = g_pkgs.find(path);
-    if (it != g_pkgs.end())
+    if (it != g_pkgs.end()) {
+        if (used)
+            *used = path;
         return it->second;
+    }
     std::vector<uint8_t> file = dbpf::write(recs);
     if (!write_file(path, file)) { // in use (a package we stopped using is still open): another name
         std::wstring base = path.substr(0, path.size() - 8); // without ".package"
@@ -1018,6 +1035,8 @@ static void* package_for(std::wstring path, const std::vector<dbpf::Record>& rec
     void* db = register_package(path, priority);
     if (db)
         g_pkgs[path] = db;
+    if (db && used)
+        *used = path;
     return db;
 }
 
@@ -1033,9 +1052,42 @@ static void drop_package(void* db)
 // BUG-0469: every model the mod makes this game build from a key it did not create itself (a civ
 // mirror vehicle, a building of a city, a host ship) gets this check: the key is in this game AND
 // every part / paint id the model names is here. Ids this game lacks are shown as substitutes in a
-// copy of the model's records, which is registered at once under an instance of our own (the same way
-// a received creation is registered); a model with an id that has no substitute is refused, the
-// caller uses the game's own default or waits. Each unknown id is logged once per session.
+// copy of the model's records, which is registered at once under the model's OWN key, above every
+// package the game has (kPrioModel), so no key of ours is passed to the game or can reach a save; a
+// model with an id that has no substitute (or whose key cannot be shadowed) is refused, the caller
+// uses the game's own default or waits. Each unknown id is logged once per session.
+static bool same_path(const wchar_t* a, const std::wstring& b);
+
+// the database that answers `k` is the package at `path` (our copy of the model's records): what the
+// game builds for that key is our copy, not the record the original package holds (BUG-0469 review).
+// FindDatabase walks the priority-sorted list highest first and probes OpenRecord (no global key
+// index, docs/re/creations.md §3), so a package registered last at the highest priority answers.
+static bool model_shadow_answers(const std::wstring& path, const Key& k)
+{
+    void* rm = a_RmPtr ? *(void**)a_RmPtr : nullptr;
+    uint32_t key[3] = {k.instance, k.type, k.group}, real[3] = {};
+    void* db = rm ? vcall<void*>(rm, 0x30 / 4, (const uint32_t*)key, real, (void*)nullptr) : nullptr; // FindRecord
+    if (!db)
+        return false;
+    return same_path(vcall<const wchar_t*>(db, 0x28 / 4), path); // GetLocation (as find_paths)
+}
+
+static bool same_path(const wchar_t* a, const std::wstring& b)
+{
+    if (!a || !a[0])
+        return false;
+    size_t i = 0;
+    for (; a[i] && i < b.size(); i++) {
+        wchar_t x = a[i], y = b[i];
+        if (x >= L'A' && x <= L'Z')
+            x = (wchar_t)(x - L'A' + L'a'); // Windows paths: case is not part of a path
+        if (y >= L'A' && y <= L'Z')
+            y = (wchar_t)(y - L'A' + L'a');
+        if (x != y)
+            return false;
+    }
+    return a[i] == 0 && i == b.size();
+}
 static std::map<std::pair<uint8_t, uint32_t>, Model> g_model_use; // (kind, instance) -> the verdict
 static std::set<std::pair<uint64_t, uint32_t>> g_model_logged;    // (kind+model, id) already logged
 static unsigned g_models_checked, g_models_same, g_models_substituted, g_models_refused, g_models_unreadable;
@@ -1117,26 +1169,35 @@ Model ensure_model(const Key& model, ModelKind kind, bool allow_copy)
                ": not built here", name, model.instance, (unsigned)left.size());
         return refuse();
     }
-    // our copy of the model records, under an instance of our own (owner-like: 0x7D......), as apply()
-    uint8_t seed[5] = {(uint8_t)kind, (uint8_t)model.instance, (uint8_t)(model.instance >> 8),
-                       (uint8_t)(model.instance >> 16), (uint8_t)(model.instance >> 24)};
-    uint32_t inst = 0x7D000000u | (fnv(seed, sizeof seed) & 0x00FFFFFFu);
+    // our copy of the model records, under the model's own key: the game builds our copy instead of
+    // the record it finds for that key (BUG-0469 review: a key of our own, 0x7D......, would reach the
+    // guest's save and no package would answer it after a restart). The old scheme stays behind
+    // `coop.fix content.model_key off` for the lab.
     std::vector<dbpf::Record> copy = recs;
-    for (auto& r : copy)
-        if (r.key.instance == model.instance)
-            r.key.instance = inst;
+    Key use = model;
+    if (!g_model_key_fix) { // the first version: a key of our own (0x7D......, as apply() registers)
+        uint8_t seed[5] = {(uint8_t)kind, (uint8_t)model.instance, (uint8_t)(model.instance >> 8),
+                           (uint8_t)(model.instance >> 16), (uint8_t)(model.instance >> 24)};
+        use.instance = 0x7D000000u | (fnv(seed, sizeof seed) & 0x00FFFFFFu);
+        for (auto& r : copy)
+            if (r.key.instance == model.instance)
+                r.key.instance = use.instance;
+    }
     std::wstring path = g_dir + L"\\model_" + std::to_wstring((int)kind) + L"_" + std::to_wstring(model.instance) +
-                        L".package";
-    if (!package_for(path, copy, kPrioWorld)) {
-        g_last_error = "cannot write the model package";
-        H->log(M, SK_WARN, "creations: content: %s model %08X: cannot write the model's copy (%s): not built here", name,
-               model.instance, g_last_error.c_str());
+                        L".package", used = path;
+    bool shadowed = package_for(path, copy, g_model_key_fix ? kPrioModel : kPrioWorld, &used) &&
+                    (!g_model_key_fix || model_shadow_answers(used, model));
+    if (!shadowed) {
+        g_last_error = g_model_key_fix ? "cannot put the model's copy above the game's own record"
+                                      : "cannot write the model's copy";
+        H->log(M, SK_WARN, "creations: content: %s model %08X: %s (%s): not built here", name, model.instance,
+               g_last_error.c_str(), slotfs::narrow(used).c_str());
         return refuse();
     }
-    Model m{Model::kSubstituted, Key{inst, model.type, model.group}};
+    Model m{Model::kSubstituted, use}; // the model's own key: the game builds our copy of it
     g_models_substituted++;
-    H->log(M, SK_INFO, "creations: content: %s model %08X is built as %08X here: %u id(s) shown as substitutes", name,
-           model.instance, inst, n);
+    H->log(M, SK_INFO, "creations: content: %s model %08X: %u id(s) shown as substitutes%s", name, model.instance, n,
+           g_model_key_fix ? ", our copy answers its key" : ", built as a key of ours");
     return remember(m);
 }
 
