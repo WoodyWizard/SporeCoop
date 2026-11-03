@@ -118,6 +118,7 @@ void space_retired_clear(const char* why); // session end, unload
 std::string space_ident_test(void* u, const std::string& what, bool on);
 void cell_forget();               // the Cell stage was left: forget the puppets' pool indices
 uint32_t cell_create(const net::Vec3& pos, void* res_ref, int level, const uint32_t key[3], const net::Quat* rot);
+uint32_t cell_unknown_models(); // BUG-0455: cells not made because their model's creation is not here
 void cell_destroy(uint32_t idx);
 // BUG-0308: the Cell stage is being left (quit posted for a world load or the menu) and coop.fix
 // cell.leave_guard is on: no mirror creation and no pool write of ours until the mode changes

@@ -539,6 +539,31 @@ static void __fastcall destroy_guard(void* nm, void*, void* obj)
     g_destroy_orig(nm, obj);
 }
 
+// BUG-0454 (BUG-0371): the host's creature editor crashed three times at RenderWare::Raster::Fill+0x7
+// (0x11F02C7, read 0x4): the skin painter's mip builder (0x7AFFC0, from ExecutePipeline 0x51CCE2) got a
+// texture from the texture manager (vt 0x3C) whose raster (+0) was null and filled each level of that
+// null raster. Fill (thiscall(raster, source, level) ret 8) has its own failure return (0, when the raster
+// cannot be locked); a null raster takes that return instead of the fault. The editor then has a skin
+// texture without pixels (not seen: the lab's GPU never failed a texture), not a crash.
+using FillFn = int(__thiscall*)(void*, void*, int);
+static FillFn g_fill_orig;
+static bool g_null_raster_fix = true;
+COOP_FIX("game.null_raster_fill", "BUG-0454", g_null_raster_fix,
+         "gamefixes: filling a texture whose raster the graphics driver did not make fails like a raster that cannot be locked (the editor crashed at 0x11F02C7)");
+static std::atomic<unsigned> g_null_fills{0};
+
+static int __fastcall fill_guard(void* raster, void*, void* src, int level)
+{
+    if (!raster && g_null_raster_fix) {
+        unsigned n = ++g_null_fills;
+        if (n <= 4 || n % 100 == 0)
+            H->log(M, SK_WARN, "game fixes: a texture without a raster was to be filled (level %d): skipped (BUG-0454, %u)",
+                   level, n);
+        return 0;
+    }
+    return g_fill_orig(raster, src, level);
+}
+
 std::string arm_attack_cut()
 {
     if (!g_attack_orig)
@@ -607,6 +632,11 @@ void init(const SkHost* host, SkMod* mod)
     if (!attack)
         g_attack_orig = nullptr;
     H->log(M, SK_INFO, "game fixes: attack without a target guard %s", attack ? "on" : "off");
+    uintptr_t rf = H->sym("RenderWare::Raster::Fill");
+    bool fill = rf && H->hook_create(M, (void*)rf, (void*)&fill_guard, (void**)&g_fill_orig) == 0;
+    if (!fill)
+        g_fill_orig = nullptr;
+    H->log(M, SK_INFO, "game fixes: null raster fill guard %s", fill ? "on" : "off");
     uintptr_t di = H->sym("Simulator::cGameNounManager::DestroyInstance");
     bool dest = di && H->hook_create(M, (void*)di, (void*)&destroy_guard, (void**)&g_destroy_orig) == 0;
     if (!dest)
@@ -633,6 +663,7 @@ std::string status()
            ", physics bodies without an owner left out " + std::to_string(g_phys_orphans.load()) + " (scans " +
            std::to_string(g_phys_scans.load()) + "), attacks ended without a target " + std::to_string(g_attack_ended.load()) +
            " (test cuts " + std::to_string(g_attack_cuts) + (g_attack_cut_test ? ", armed" : "") + ")" +
+           ", null raster fills skipped " + std::to_string(g_null_fills.load()) +
            ", stale stimulus senders cleared " + std::to_string(g_senders_cleared.load()) + " (destroys " +
            std::to_string(g_destroys_scanned.load()) + ")\n";
 }
