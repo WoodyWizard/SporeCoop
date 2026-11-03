@@ -473,7 +473,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0461](BUG-0461-babies-young-of-other-species-are-shown-as-alpha.md) | fixed | bug | Creature | 2026-11-02 | unreleased | babies (young) of other species are shown as alphas (adult size) on the guest |
 | [BUG-0462](BUG-0462-creature-relations-differ-species-neutral-for-th.md) | fixed | bug | Creature | 2026-11-02 | unreleased | creature relations differ: species neutral for the host are hostile for the guest; the guest's roar does nothing |
 | [BUG-0463](BUG-0463-sneak-is-not-synced-a-player-in-sneak-mode-is-no.md) | fixed | bug | Creature | 2026-11-02 | unreleased | sneak is not synced: a player in sneak mode is not shown as sneaking / invisible on the other screen |
-| [BUG-0464](BUG-0464-npc-species-evolving-in-their-nest-on-the-host-s.md) | open | bug | Creature | 2026-11-02 |  | NPC species evolving in their nest on the host stand still on the guest |
+| [BUG-0464](BUG-0464-npc-species-evolving-in-their-nest-on-the-host-s.md) | fixed | bug | Creature | 2026-11-02 | unreleased | NPC species evolving in their nest on the host stand still on the guest |
 | [BUG-0465](BUG-0465-the-kraken-water-monster-is-not-visible-to-other.md) | open | bug | Creature | 2026-11-02 |  | the kraken (water monster) is not visible to other players |
 | [BUG-0466](BUG-0466-after-the-guest-s-own-editor-its-dna-is-back-to.md) | fixed | bug | Creature | 2026-11-02 | unreleased | after the guest's own editor its DNA is back to what it had before (DNA spent in the editor is not kept) |
 | [BUG-0467](BUG-0467-a-cell-part-the-guest-picks-up-is-not-unlocked-f.md) | fixed | bug | Cell | 2026-11-02 | unreleased | a Cell part the guest picks up is not unlocked for the host |

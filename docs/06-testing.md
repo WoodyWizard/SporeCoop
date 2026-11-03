@@ -3744,3 +3744,13 @@ the other player's game, both ways where the kind has two:
   game has for a creature key (pointer, +0x504 key, +0x53C version).
 * Pitfall met: a new test file named like an existing one (`coop_cell_stale.py` is BUG-0306's) replaces it
   silently with Write: check `ls tools/tests/<name>` first.
+## NPC animations on the guest: npc_anims (2026-11-03, fix/w40-npc-anims)
+<a id="testing-npc-anims"></a>
+
+* `npc_anims` (coop_npc_anims.py, ~1.7 min cold, suite full): 40 s of the NPCs' own behaviour (no command), both
+  games sampled twice a second with `coop.npc cur` (GetCurrentAnimation per NPC id); a sample matches when the
+  proxy plays the host NPC's animation within 1.2 s; >= 60 %. Then a fight: the guest hits an NPC of another species
+  (`coop.npc hit`) until it is in its attack node against the puppet; 15 s sampled, the proxy shows the attack
+  animations (>= 60 %, at least one attack animation). Prints the miss pairs (host's, guest's) and `coop.npc anims`
+  of both games (seen, idle, sent, played, snapshot counters). `SPORE_FIX_OFF=npc.anims` fails (15-22 %, fight 0 %);
+  on: 79-82 %, fight 83 %. `coop.npc animquiet <s>` (guest): how long the snapshot waits after a start (1.5).

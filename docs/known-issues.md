@@ -1725,7 +1725,8 @@ What mods/coop/worldobj.cpp does not cover yet (docs/re/creature.md#creature-wor
 
 - Creature: a picked-up and thrown stick (or rock) moves in each player's game separately (BUG-0458).
 - Creature: the animals' own animations (eating, social, a nest's evolution) do not show on a guest; its copies
-  only walk and stand (BUG-0464, test tools/tests/coop_npc_anims.py fails).
+  only walk and stand (BUG-0464, test tools/tests/coop_npc_anims.py fails). Fixed on fix/w40-npc-anims (npc.anims,
+  2026-11-03); a nest's real evolution (the herd's new generation) is not reproduced in a test.
 - Creature: the sea monster ("kraken") of a player in deep water shows only on that player's screen (BUG-0465).
 - Creature: a guest's roar does nothing to the animals (BUG-0501).
 

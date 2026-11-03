@@ -65,6 +65,7 @@ struct HostNpc {
     net::Vec3 pos_hist[64] = {}; // diagnostics: the position of the last 64 frames (ring)
     uint8_t hist_at = 0;
     bool centre_said = false; // BUG-0339 diagnostics: logged once per stay at the planet's centre
+    uint32_t bhv_anim = 0;    // BUG-0464: the last behaviour animation its BT started
 };
 static std::unordered_map<void*, HostNpc> g_host_npcs;  // creature -> id
 static std::unordered_map<uint16_t, void*> g_host_by_id;
@@ -177,6 +178,8 @@ struct Proxy {
     float made_agl = 0;     // position's height over this game's ground then (m)
     uint32_t tuning = 0;    // BUG-0462: the host NPC's archetype tuning key (spawn trailer), 0 unknown
     uint32_t tuning_set = 0; // the key last given to its creature
+    double anim_fix_at = 0;  // BUG-0464: when the snapshot last played the host's animation on it
+    double anim_rx_at = 0;   // BUG-0464: when the host's last start of an animation of it came
 };
 static std::map<uint16_t, Proxy> g_proxies;
 // BUG-0383: a guest made no proxy for an NPC that was dead when it first came into the guest's range (killed
@@ -382,6 +385,8 @@ std::string resync_status()
 }
 
 static int c_npctrack(void*, int argc, const char* const* argv, SkOut* out);
+static void on_behaviour_anim(void* c, uint32_t anim, int how, int a, int b);
+
 void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
 {
     H = host;
@@ -389,6 +394,7 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
     C = ctx;
     game::set_update_filter(update_filter);
     game::set_ai_target_picker(ai_target);
+    game::set_behaviour_anim_listener(on_behaviour_anim); // BUG-0464
     fields::add_kind({fields::K_NPC, "npc", &g_scale_fix, kNpcFields, 1, npc_each, npc_mirror, nullptr}); // BUG-0461
     H->command_add(M, "coop.npctrack", "coop.npctrack start [radius m]|stop|count|dump [from] [n]|walk <id> x y z <m/s> - every frame: the guest's NPC proxies (tests, BUG-0361)",
                    c_npctrack, nullptr, SK_CMD_MAIN_THREAD);
@@ -453,6 +459,117 @@ std::string tuning_status()
 {
     char b[120];
     snprintf(b, sizeof b, "npc tuning: fix=%d set=%u missing=%u\n", (int)g_tuning_fix, g_tunings_set, g_tunings_missing);
+    return b;
+}
+
+// BUG-0464: the guest's proxies showed the host NPC's animation in 7-9 % of the samples (coop_npc_anims.py): a
+// proxy has no AI (NPCTickAI is skipped for puppets), and the behaviour tree's nodes start their animations
+// (the carnivores' and herbivores' idle node 0xD8DC30: B31EB92C, 731EA3EA, 0519E154 ...; eating, social
+// answers, fights) with SporeCoop::CreaturePlayAnim, which nothing relayed (the relay tried before hooked
+// cCreatureBase::PlayAnimation, the idle refresh's other path). Now the host reports every CreaturePlayAnim
+// of its NPCs outside the idle refresh 0xC148B0 (game.cpp) and sends them once a frame to the guests that
+// mirror the NPC (MSG_NPC_ANIM); the guest plays the same call on the proxy. The proxy's own idle / walk
+// choice stays the game's: cCreatureAnimal::Update asks the idle refresh only when no main animation is left,
+// so a played behaviour animation runs to its end there as on the host (docs/re/creature.md#creature-bt-anims).
+// `coop.fix npc.anims off`: nothing sent, nothing played (0.7.3.4).
+static bool g_anims_fix = true;
+COOP_FIX("npc.anims", "BUG-0464", g_anims_fix, "creature: a guest sees the host's animals eat, look around, fight and answer as on the host");
+struct NpcAnim {
+    uint16_t id;
+    uint32_t anim;
+    uint8_t how; // 0 CreaturePlayAnim, 1 PlayAnimation, 2 PlayAnimationTo
+    uint8_t a;
+    int32_t b;
+};
+static std::vector<NpcAnim> g_anim_out; // host: this frame's behaviour animations of its NPCs
+static uint32_t g_anims_sent = 0, g_anims_dropped = 0, g_anims_rx = 0, g_anims_played = 0, g_anims_noproxy = 0,
+                g_anims_failed = 0, g_anims_snap_sent = 0, g_anims_snap_rx = 0, g_anims_snap_played = 0;
+static double g_anim_snap_at = 0;
+static float g_anim_snap_quiet = 1.5f; // guest: no snapshot play this soon after a start (s); tests: coop.npc animquiet
+
+static void on_behaviour_anim(void* c, uint32_t anim, int how, int a, int b)
+{
+    if (!g_anims_fix || !is_host() || !npc_stage())
+        return;
+    auto it = g_host_npcs.find(c);
+    if (it == g_host_npcs.end() || it->second.dead)
+        return;
+    it->second.bhv_anim = anim;
+    if (g_anim_out.size() >= 200) {
+        g_anims_dropped++;
+        return;
+    }
+    g_anim_out.push_back({it->second.id, anim, (uint8_t)how, (uint8_t)(a & 0xFF), (int32_t)b});
+}
+
+// host, once a frame after the states: the guest gets the animations of the NPCs it mirrors
+static void send_anims(uint8_t guest, const std::set<uint16_t>& known)
+{
+    std::vector<const NpcAnim*> v;
+    for (auto& e : g_anim_out)
+        if (known.count(e.id))
+            v.push_back(&e);
+    const size_t per = (net::kMaxPacket - 64) / 12;
+    for (size_t i = 0; i < v.size(); i += per) {
+        size_t n = std::min(per, v.size() - i);
+        net::Writer w;
+        w.u8(0); // started now
+        w.u8((uint8_t)n);
+        for (size_t j = 0; j < n; j++) {
+            w.u16(v[i + j]->id);
+            w.u32(v[i + j]->anim);
+            w.u8(v[i + j]->how);
+            w.u8(v[i + j]->a);
+            w.u32((uint32_t)v[i + j]->b);
+        }
+        C.sess->send_unreliable_to(guest, net::MSG_NPC_ANIM, w);
+        g_anims_sent += (uint32_t)n;
+    }
+}
+
+// host, once a second: the animation each NPC the guest mirrors plays now, when it is one its BT started (or
+// it is dead: the body's animation). A proxy made after the start, a lost message, a proxy whose animation was
+// cut (the driving's nudges) shows it again within a second.
+static void send_anim_snapshot(uint8_t guest, const std::set<uint16_t>& known)
+{
+    std::vector<std::pair<uint16_t, uint32_t>> v;
+    for (uint16_t id : known) {
+        auto b = g_host_by_id.find(id);
+        if (b == g_host_by_id.end() || !g_seen_now.count(b->second))
+            continue;
+        auto hn = g_host_npcs.find(b->second);
+        uint32_t cur = 0;
+        if (hn == g_host_npcs.end() || !game::drawn_state(b->second, nullptr, &cur) || !cur)
+            continue;
+        if (cur == hn->second.bhv_anim || game::is_dead(b->second))
+            v.push_back({id, cur});
+    }
+    const size_t per = (net::kMaxPacket - 64) / 6;
+    for (size_t i = 0; i < v.size(); i += per) {
+        size_t n = std::min(per, v.size() - i);
+        net::Writer w;
+        w.u8(1); // what plays now
+        w.u8((uint8_t)n);
+        for (size_t j = 0; j < n; j++) {
+            w.u16(v[i + j].first);
+            w.u32(v[i + j].second);
+        }
+        C.sess->send_unreliable_to(guest, net::MSG_NPC_ANIM, w);
+        g_anims_snap_sent += (uint32_t)n;
+    }
+}
+
+void set_anim_quiet(float s) { g_anim_snap_quiet = s; }
+
+std::string anims_status()
+{
+    uint32_t seen = 0, idle = 0;
+    game::behaviour_anim_counts(&seen, &idle);
+    char b[256];
+    snprintf(b, sizeof b, "npc anims: fix=%d seen=%u idle=%u sent=%u dropped=%u rx=%u played=%u noproxy=%u failed=%u "
+             "snap_sent=%u snap_rx=%u snap_played=%u\n",
+             (int)g_anims_fix, seen, idle, g_anims_sent, g_anims_dropped, g_anims_rx, g_anims_played, g_anims_noproxy,
+             g_anims_failed, g_anims_snap_sent, g_anims_snap_rx, g_anims_snap_played);
     return b;
 }
 
@@ -979,6 +1096,9 @@ static void host_tick(double now, const std::vector<void*>& creatures)
     bool send_states = now - g_last_state >= kStateInterval;
     if (send_states)
         g_last_state = now;
+    const bool send_snap = now - g_anim_snap_at >= 1.0; // BUG-0464
+    if (send_snap)
+        g_anim_snap_at = now;
     for (auto& p : C.sess->players()) {
         if (p.id == 0)
             continue;
@@ -1033,7 +1153,12 @@ static void host_tick(double now, const std::vector<void*>& creatures)
                 batch[i + j].write(w);
             C.sess->send_unreliable_to(p.id, net::MSG_NPC_STATE, w);
         }
+        if (g_anims_fix && !g_anim_out.empty())
+            send_anims(p.id, known); // BUG-0464
+        if (g_anims_fix && send_snap)
+            send_anim_snapshot(p.id, known);
     }
+    g_anim_out.clear();
     for (auto it = g_known.begin(); it != g_known.end();) { // guests that left
         bool present = false;
         for (auto& p : C.sess->players())
@@ -1546,11 +1671,14 @@ static void tick_frame(double now)
         remove_saved_strays(now);
     hatch_tick(now, !creatures.empty());
     // creature stage only: adventure creatures are scripted by the adventure on every machine
-    if (!g_enabled || !C.sess || !npc_stage())
+    if (!g_enabled || !C.sess || !npc_stage()) {
+        g_anim_out.clear();
         return;
-    if (is_host())
+    }
+    if (is_host()) {
         host_tick(now, creatures);
-    else if (is_guest()) {
+        g_anim_out.clear(); // (host_tick returns early in some frames: never send an old frame's)
+    } else if (is_guest()) {
         uint32_t n = 0;
         for (void* c : creatures)
             n += !game::is_puppet(c) && c != game::avatar();
@@ -1726,6 +1854,59 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         }
         if (whole) // the host sends states (an empty or cut batch says nothing about stale proxies)
             g_last_states_rx = now;
+        break;
+    }
+    case net::MSG_NPC_ANIM: { // guest: the host's NPCs' behaviour animations (BUG-0464)
+        if (!is_guest())
+            return;
+        uint8_t kind = r.u8();
+        uint8_t n = r.u8();
+        if (kind == 1) { // what the host's NPCs play now: the proxy plays it too when it plays another
+            for (int i = 0; i < n && r.ok(); i++) {
+                uint16_t id = r.u16();
+                uint32_t anim = r.u32();
+                if (!r.ok())
+                    break;
+                g_anims_snap_rx++;
+                auto it = g_proxies.find(id);
+                if (!g_anims_fix || it == g_proxies.end())
+                    continue;
+                Proxy& px = it->second;
+                uint32_t cur = 0;
+                if (!px.c || game::is_destroyed(px.c) || now - px.anim_fix_at < 2.0 || now - px.anim_rx_at < g_anim_snap_quiet ||
+                    !game::drawn_state(px.c, nullptr, &cur) || cur == anim)
+                    continue;
+                px.anim_fix_at = now; // (at most every 2 s: never restarts an animation that will not take)
+                if (game::play_behaviour_anim(px.c, anim, 0, 1, -1))
+                    g_anims_snap_played++;
+            }
+            break;
+        }
+        if (kind != 0)
+            return;
+        for (int i = 0; i < n && r.ok(); i++) {
+            uint16_t id = r.u16();
+            uint32_t anim = r.u32();
+            uint8_t how = r.u8();
+            uint8_t a = r.u8();
+            int32_t b = (int32_t)r.u32();
+            if (!r.ok())
+                break;
+            g_anims_rx++;
+            if (!g_anims_fix)
+                continue;
+            auto it = g_proxies.find(id);
+            void* c = it == g_proxies.end() ? nullptr : it->second.c;
+            if (!c || it->second.killed || game::is_destroyed(c) || game::is_dead(c)) {
+                g_anims_noproxy++;
+                continue;
+            }
+            it->second.anim_rx_at = now;
+            if (game::play_behaviour_anim(c, anim, how, a, b))
+                g_anims_played++;
+            else
+                g_anims_failed++;
+        }
         break;
     }
     case net::MSG_NPC_RESYNC: { // host: a guest gets states of NPCs it has no spawn of (BUG-0487)

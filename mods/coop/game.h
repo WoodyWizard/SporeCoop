@@ -111,6 +111,14 @@ bool gait_state(void* c, int* gait, int* gait2, int* moving, int* speed_state);
 using AnimListener = void (*)(void* creature, uint32_t anim_id, int block, bool disable_blend, bool to_target);
 void set_anim_listener(AnimListener fn);
 void play_animation(void* c, uint32_t anim_id, int block, bool disable_blend);
+// BUG-0464: animations started on a creature outside its idle refresh 0xC148B0 (the idle / walk choice every
+// game makes by itself): how 0 SporeCoop::CreaturePlayAnim (thiscall(creature, anim, int a, int b) ret 0xC, the
+// behaviour tree's), 1 cCreatureBase::PlayAnimation (a = disable blend, b = block), 2 PlayAnimationTo (b = block).
+// Called after the play, not for plays of the mod (play_animation, play_behaviour_anim).
+using BehaviourAnimListener = void (*)(void* creature, uint32_t anim_id, int how, int a, int b);
+void set_behaviour_anim_listener(BehaviourAnimListener fn);
+bool play_behaviour_anim(void* c, uint32_t anim_id, int how, int a, int b); // how 2 is played as 1
+void behaviour_anim_counts(uint32_t* seen, uint32_t* idle);
 
 // Visual effects of a creature (BUG-0451): every effect the game makes on or at a creature goes
 // through its two effect pools (cCreatureBase +0xCC8 pool 1, +0xD68 pool 2); these are the only

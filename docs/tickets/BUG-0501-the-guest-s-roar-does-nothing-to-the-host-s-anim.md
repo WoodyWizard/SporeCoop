@@ -13,7 +13,7 @@ branch:
 commits:
 tests:
 signature:
-docs:
+docs: docs/re/creature.md#creature-roar
 related: BUG-0462, BUG-0418
 ---
 
@@ -29,7 +29,11 @@ host as a request, the host posts it with the guest's puppet as sender.
 <!-- what the player (or the test) saw, in our words; no player names, no paths from their PC -->
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+Not fixed (fix/w40-npc-anims, 2026-11-03, about 20 minutes of static analysis). Observed (Ghidra): the roar is the BT
+blackboard variable `HeardRagingRoar` (global 0x169F134, end callback 0xD85400 shared with HeardSirenSong); its
+setter, the ability that roars, was not found (the global is referenced only by its static init). Inferred: the
+roar affects the NPCs of the roaring player's own game only. docs/re/creature.md#creature-roar. A test needs a
+creature with the Raging Roar (a carnivore Cell's consequence ability); the fixtures have none.
 
 ## Fix
 <!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
@@ -41,3 +45,4 @@ host as a request, the host posts it with the guest's puppet as sender.
 ## History
 - 2026-11-03: opened.
 - 2026-11-03: likely reported again (0.7.3.6, guest's report 20261104-012758, text 'ability doesn't work', Creature; the mark itself has no text). Not confirmed which ability.
+- 2026-11-03: analysed on fix/w40-npc-anims (static only), not fixed.

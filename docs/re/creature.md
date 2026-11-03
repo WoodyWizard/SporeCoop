@@ -2046,6 +2046,9 @@ BUG-0458, BUG-0464 (both open). GOG 2024, Ghidra (out/ghidra-2024) and lane 9 (c
   are not started through those two functions, or the proxy's driving replaces them at once. Next: find the caller
   of the AnimatedCreature (Anim::AnimatedCreature::PlayAnimation 0xA0C5D0) for B31EB92C, or replicate the current
   animation as state (host: GetCurrentAnimation per NPC; guest: play it when the proxy's differs).
+* CORRECTION (2026-11-03, fix/w40-npc-anims): the behaviour animations are started with SporeCoop::CreaturePlayAnim
+  0xC122F0, not through PlayAnimation / PlayAnimationTo; relayed through it they stick on the proxies (79-82 % of the
+  samples): docs/re/creature.md#creature-bt-anims.
 
 ## The sea monster (the players' "kraken", 2026-11-03, fix/w40-creature-acts)
 <a id="creature-sea-monster"></a>
@@ -2106,3 +2109,57 @@ BUG-0473 (plants, rocks), BUG-0498. Lane 4, `tools/tests/coop_world_lod.py` (out
   #creature-world-objects).
 * So neither is a world object the players share: no worldobj kind. The detector leaves them out
   (tools/tests/worlddiff.py IGNORE, docs/06-testing.md#testing-world-lod).
+## How the behaviour tree starts an NPC's animations (2026-11-03, fix/w40-npc-anims)
+<a id="creature-bt-anims"></a>
+
+BUG-0464. GOG 2024, Ghidra (out/ghidra-2024) and lane 9 at runtime (creature fixture, `coop.npc cur`, `coop.npc anims`).
+
+* ✔ The behaviour animations are started with `SporeCoop::CreaturePlayAnim` 0xC122F0 (thiscall(creature, anim, int a,
+  int b) ret 0xC, returns the animation's handle, 0 when not played), not with cCreatureBase::PlayAnimation 0xC12470
+  (that is why the PlayAnimation relay of fix/w40-creature-acts changed nothing). ~150 callers, the BT nodes
+  0xD6xxxx-0xDBxxxx among them. Example: the idle / look-around node 0xD8DC30 (state in its node data +0, handle +0x10:
+  it waits while the handle plays, 0xC0E420): carnivores B31EB92C, herbivores 731EA3EA, every third step
+  0519E154 / 731EA494 / 051C689B / F31EA59C, a social variant 0x42A1CA0.. + RandomInt(species +0x5E4..0x5F0) by the
+  species' kind +0x620 (0x22-0x25); with a target creature 0xC14AA0 (CreaturePlayAnim + a look-at 0xC0B670).
+* ✔ The idle refresh `SporeCoop::Creature_IdleRefresh` 0xC148B0 (thiscall(creature, bool force) ret 4) plays the choice
+  of Creature_ChooseIdleAnim 0xC0C790 through 0xC146F0 (mode 0: CreaturePlayAnim(anim, 1, -1), 1: PlayAnimation,
+  2: a second layer) when it differs from the current animation. Creature_ChooseIdleAnim returns the BT's idle override
+  +0xE3C first (set by 0xC0B4D0, -1 = none, reset in 0xC08210 / 0xC1FFE0). cCreatureAnimal::Update 0xC0AE30 calls the
+  refresh only when no main animation is left (0xA02AE0 < 1), and ~120 BT nodes call it at their end.
+* ✔ So a proxy (no NPCTickAI) keeps an animation played on it until it ends, then its own game picks idle / walk:
+  the relay sticks. Runtime (lane 9, 40 s, 21 NPCs): the host's NPCs started ~11 behaviour animations a second
+  (seen 355-627 per run, idle refresh plays 337-912 not counted); on the guest 93-100 % of them played.
+* ✔ Fix `npc.anims`: the host hooks CreaturePlayAnim and PlayAnimation / PlayAnimationTo outside the idle refresh (a
+  depth counter around 0xC148B0) for its NPCs and sends them once a frame (MSG_NPC_ANIM 59 kind 0, 12 bytes each);
+  once a second it sends what each mirrored NPC plays now when that is its last BT animation or it is dead (kind 1,
+  6 bytes each); the guest plays a snapshot's animation when the proxy plays another, not within 1.5 s of a start and
+  at most every 2 s per proxy (a proxy made after the start, a lost message, an animation cut). Samples where the
+  proxy plays the host NPC's animation: 15-22 % off, 79-82 % on; an NPC attacking the guest's puppet (attack node
+  0x02D852E6, attack animations 044DDEA6, 026EDE51, 035EE245): 0 % off, 83 % on. The rest are phase differences of
+  the 0.5 s sampling (a pair seen both ways: 0519E154 / B31EB92C).
+* ~ A dead host NPC plays 05807346 (a body's animation) where the guest's play_death played F14FAA46: the snapshot
+  now plays the host's on the body.
+* ~ Not verified: a nest's real evolution (cHerd generation +0xF0, docs/re/creature.md#creature-npc-anims): an
+  evolved NPC is a new species (host_tick gives it a new id and spawn), its animations go through the same relay.
+
+## The roar: what is known (2026-11-03, fix/w40-npc-anims)
+<a id="creature-roar"></a>
+
+BUG-0501 (open). GOG 2024, Ghidra strings and decompiles only, not seen at runtime. Findings only.
+
+* ✔ The only "roar" string in the exe is the BT blackboard variable `HeardRagingRoar` (0x147C000; "Raging Roar", the
+  Creature stage's consequence ability of a carnivore Cell, ~ inferred from the name), registered with `Loudness`,
+  `HeardSirenSong` and `WasMother` in the static init 0x13674D0 through 0xBC9FA0 (thiscall(var, float max, init,
+  on_end, update, name) ret 0x14: a variable object at a global: Loudness 0x169F0F0, HeardRagingRoar 0x169F134,
+  HeardSirenSong 0x169F178, WasMother 0x169F1BC). The roar and the siren song share the end callback 0xD85400 (posts
+  BT stimulus (0, hi 0x4000000) with value FLT_MAX, clears stimulus 0x400000, stops effect 0x4F26350B on the NPC);
+  the siren song has an update 0xD85470 (counts its value down, keeps it while the NPC's node +0x1D8 is 0x341BD4BE).
+* ✔ The globals of HeardRagingRoar / HeardSirenSong are referenced only by that init (`scan`): the BT reads them by
+  name / registry index, the setter (the ability that roars) was not found. Loudness is written by 0xD8B290.
+* ✔ The avatar's ability use 0xC1E8B0 (thiscall(creature, float) ret 4) posts its hit stimuli (0x2000, or hi 0x80000
+  for a citizen) with value 10.0 to the target or to every creature in range (0xD99A20 distance), sender the avatar.
+* ~ Inferred: the roar sets HeardRagingRoar on the NPCs around the roaring avatar in that player's own game only; a
+  guest's NPCs are AI-less proxies, so nothing reacts and the host's NPCs never hear it. A fix is an L1 request: the
+  guest's roar sent to the host, the host sets the same variable on its NPCs around the guest's puppet. Neither
+  fixture creature has the ability (types 0xD 0xE 0x10 0x11 0x1D 0x1E 0x25 0x28 0x31 0x32 0x33): a test needs a
+  creature from a carnivore Cell.
