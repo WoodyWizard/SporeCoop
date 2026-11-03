@@ -1724,6 +1724,16 @@ static uint32_t g_evo_key_before = 0; // host: its avatar's species when its edi
 static int g_evo_age_before = -1;     // host: its avatar's age (+0xB34) then
 static bool g_evo_cine = false;       // host: a cinematic held a share since the last evolution
 static unsigned g_evo_inplace = 0, g_evo_fallback = 0; // tests: guests kept in place, worlds sent after all
+// the migration state of this game's player (cPlayer +0x69C property 0x514A219, docs/re/creature.md:
+// CreatureGame_AfterEditor): 1 = a migration started by this evolution (CRG_SpeciesMigrate), 2 = its goal
+static int host_migration()
+{
+    static uintptr_t a_GetProperty = H->sym("SporeCoop::Player_GetProperty");
+    uint8_t* nm = (uint8_t*)game::noun_manager();
+    void* pl = nm && skg::readable(nm + 0x74, 4) ? *(void**)(nm + 0x74) : nullptr;
+    return a_GetProperty && pl ? skg::thiscall<int>(a_GetProperty, pl, 0x514A219u) : -1;
+}
+static int g_evo_migration_before = -1;
 static int host_avatar_age()
 {
     void* av = game::mode_id() == modes::kCreature ? game::avatar() : nullptr;
@@ -1762,6 +1772,7 @@ void on_mode_change(uint32_t from, uint32_t to)
         void* av = from == modes::kCreature ? game::avatar() : nullptr; // BUG-0508: what the evolution changes
         g_evo_key_before = av ? game::species_instance(av) : 0;
         g_evo_age_before = from == modes::kCreature ? host_avatar_age() : -1;
+        g_evo_migration_before = from == modes::kCreature ? host_migration() : -1;
     }
     if (!editor && (from == modes::kEdit || from == modes::kEditor)) {
         g_own_editor = false;
@@ -1897,20 +1908,24 @@ void follow_phase(double now)
             r.cine_wait_since = 0;
             if (r.evo_inplace) { // BUG-0508: the evolution in place, unless it needs the world after all
                 r.evo_inplace = false;
-                int age = host_avatar_age();
-                const char* why = !evolve_inplace_ok(id, r, g_mode)               ? "left the world or stage"
-                                  : g_evo_cine                                    ? "a cinematic played"
-                                  : g_evo_age_before >= 0 && age != g_evo_age_before ? "the age changed"
-                                                                                  : nullptr;
+                // (every Creature evolution plays a cinematic after the editor, ~10 s, and the host's avatar
+                // takes the new species only after it: lab 20261103-173315; the migration is what the
+                // guest's game cannot get without the world, BUG-0019)
+                int age = host_avatar_age(), mig = g_mode == modes::kCreature ? host_migration() : -1;
+                const char* why = !evolve_inplace_ok(id, r, g_mode)                      ? "left the world or stage"
+                                  : mig > 0 && mig != g_evo_migration_before              ? "a migration started"
+                                  : g_evo_age_before >= 0 && age >= 0 && age != g_evo_age_before ? "the age changed"
+                                                                                         : nullptr;
                 if (!why) {
                     r.needs_world = false;
                     r.world_sent = key;
                     r.joined_phase = true;
                     r.evo_check_until = g_mode == modes::kCreature && g_evo_key_before ? now + 30.0 : 0;
                     g_evo_inplace++;
-                    LOG("evolved in place: %s keeps its world (host species %08X -> %08X, age %d -> %d)", r.name.c_str(),
-                        g_evo_key_before, g_mode == modes::kCreature && game::avatar() ? game::species_instance(game::avatar()) : 0,
-                        g_evo_age_before, age);
+                    LOG("evolved in place: %s keeps its world (host species %08X -> %08X, age %d -> %d, migration %d -> %d, cinematic %d)",
+                        r.name.c_str(), g_evo_key_before,
+                        g_mode == modes::kCreature && game::avatar() ? game::species_instance(game::avatar()) : 0,
+                        g_evo_age_before, age, g_evo_migration_before, mig, (int)g_evo_cine);
                     feed(r.name + " gets your new body in place (no reload)");
                     continue;
                 }
