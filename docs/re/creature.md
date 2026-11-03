@@ -2100,3 +2100,20 @@ BUG-0465 (open). GOG 2024, Ghidra strings only, not seen at runtime.
 * `npc.pack_spares_partners` (npc.cpp, BUG-0512): on the host every frame, a pack member (the pack list
   cGameNounManager +0x5C..+0x60: it is not always in the creature update list) or family member aimed at a partner's
   puppet gets SetTarget(null, 1, 0) and its stimuli naming the puppet cleared.
+
+## A stalled partner drawn under the ground (2026-11-03, fix/w40-guest-combat)
+<a id="creature-partner-stalled"></a>
+
+* ✔ Players' logs (0.7.3.6, BUG-0513): the guest's own trace showed its creature at agl=-6.53 (6.5 m under its own
+  ground) while `busy=paused` during a 12 s stall (receiving a world), then 0.31 after; the host drew the puppet at
+  agl -6.32 and later -3.2 (states arriving), then hid it after 5 s without states (`state older than 5 s`).
+  `creature.puppet_ground` (BUG-0367) leaves a target more than 3 m under this game's ground where it is.
+* ✔ Lab (lane 2): with the guest's states 6 m under the host's ground (`coop.track lift -6`) a standing puppet stays
+  on the ground (the game's own grounding); a walking one is drawn under it (144 frames, switch off).
+* `creature.puppet_deep`: a target 3-15 m under this game's ground goes onto it (`drive::out_of_ground`, as the
+  proxies, BUG-0399). `core.partner_silent`: "<name> is not responding (game minimized or frozen?)" once when a
+  partner's states are older than 5 s, "<name> is responding again" when they come back (coop.cpp silent_tick).
+* `frame.limit 9000` on a game stalls it in the lab (a frame every 9 s, no states between them): the hitch gate and
+  the monitor's "hidden" rule see it.
+* ? Why the guest's game holds its creature under its ground while paused or stalled is not known (inferred: the
+  terrain of a world being received, or the creature not grounded while the game does not update).

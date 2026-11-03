@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### Fixed
+- Creature: a partner whose game froze or was minimized is no longer shown sunk into the ground; you
+  are told that the partner is not responding, and when it is back (BUG-0513).
 - Cell: a knocked-out cell can no longer bite, spike or kill anything while it waits to be revived
   (BUG-0509).
 - Creature: the host's pack no longer turns on a partner when the host targets the partner's creature or
