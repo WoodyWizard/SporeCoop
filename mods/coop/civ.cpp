@@ -19,6 +19,7 @@
 #include "net/validate.h"
 #include "sporekit_game.hpp"
 #include "fixes.h"
+#include "creations.h"
 
 using skg::thiscall;
 using skg::vcall;
@@ -36,7 +37,7 @@ static uintptr_t a_VehicleVt, a_PlannerAddBuildingRet, a_GrowthRetBudget, a_Grow
 constexpr uintptr_t kVSpatial = 0x34, kVPos = 0x38, kVRot = 0x44, kVSelected = 0xA0, kVHp = 0x540, kVLoco = 0xB1C,
                     kVPurpose = 0xB20, kVDead = 0xBCD, kPol = 0x30,
                     kVOrders = 0xB68;
-constexpr uintptr_t kCityPos = 0x124, kCitySpecialty = 0x540, kCitySlots = 0x43C,
+constexpr uintptr_t kCityPos = 0x124, kCitySpecialty = 0x540, kCitySlots = 0x43C, kCityCiv = 0x590,
                     kCityCapture = 0x748, // + 4: capturing political id
                     kCityBuildings = 0x340, kBuildingState = 0x120 + 0x34; // combatant state, 2 = destroyed
 constexpr uint8_t kShared = 0xFD; // a city everybody may use (the capital while cities < players)
@@ -431,6 +432,47 @@ static uint32_t type_for_noun(uint32_t noun)
     case 0x1A56ABA: return 0x1A55E4D; // entertainment
     }
     return 0;
+}
+
+// BUG-0469: the design id cCity::SetBuildingModel (0xBDB940, switch at 0xBDB944) asks the city's
+// civilization for, per building type: house 0xFF10521 -> 0x4E3F7777, entertainment 0x1A55E4D ->
+// 0x72C49181, factory 0xECADE42 -> 0x47C10953 (every other type: 0x4E3F7777); 0: not a design we know
+static uint32_t building_design_id(uint32_t type)
+{
+    switch (type) {
+    case 0xFF10521: return 0x4E3F7777; // house
+    case 0xECADE42: return 0x47C10953; // factory
+    case 0x1A55E4D: return 0x72C49181; // entertainment
+    }
+    return 0;
+}
+
+// BUG-0469: a building's model is the design of its city's civilization, and SetBuildingModel reads
+// that key itself (a substituted key cannot be passed to it): on a guest, a design whose model names
+// parts or paints this game does not have is not built here (the host's building stays missing on that
+// guest: logged once per design, see docs/re/civ.md#civ-content-all-kinds). The host builds from its
+// own designs, which are its own game's content (the game has them, it bakes them itself).
+static unsigned g_build_skipped;
+static std::unordered_set<uint32_t> g_build_skipped_logged;
+static bool building_model_ok(void* city, uint32_t type, uint32_t noun)
+{
+    if (!is_guest())
+        return true;
+    void* civ = city ? F<void*>(city, kCityCiv) : nullptr;
+    uint32_t did = building_design_id(type);
+    if (!civ || !did)
+        return true;
+    uint32_t* k = thiscall<uint32_t*>(a_DesignKey, civ, (int)did);
+    if (!k || !k[0])
+        return true; // the game generates the design itself (FUN_00bf98c0)
+    creations::Model m = creations::ensure_model({k[0], k[1], k[2]}, creations::kMkBuilding, false);
+    if (m.key.instance)
+        return true;
+    g_build_skipped++;
+    if (g_build_skipped_logged.insert(k[0]).second)
+        H->log(M, SK_INFO, "civ: the model of the building design %08X (noun %08X) cannot be built here: the building "
+               "is left out on this guest (BUG-0469)", k[0], noun);
+    return false;
 }
 
 static void broadcast_building(void* city, uint32_t noun, const net::Vec3& pos)
@@ -1431,6 +1473,8 @@ static void* build_in_city(void* city, uint32_t noun, const net::Vec3& pos, bool
     uint32_t type = type_for_noun(noun);
     if (!type || !city)
         return nullptr;
+    if (!building_model_ok(city, type, noun)) // BUG-0469: the building's design model is not in this game
+        return nullptr;
     void* o = thiscall<void*>(a_CreateInstance, nm(), noun);
     void* b = o ? game::cast(o, kBuildingType) : nullptr;
     if (!b)
@@ -1849,6 +1893,56 @@ static void guest_nodes_and_buildings(net::Reader& r)
         });
 }
 
+// BUG-0469: the design key a mirror vehicle of that purpose and locomotion is built with, and the
+// vehicle is created from that key (CreateVehicle reads the model of the design: cVehicle::Load
+// 0xCA67C0). The civ's own design for the purpose and locomotion is checked with the parts and paints
+// of its model (creations::ensure_model):
+//  - the design this game has: the key itself;
+//  - a part or paint this game does not have, with a substitute: our copy of the model (a key of its
+//    own), the mirror is shown with the similar base game parts;
+//  - one that cannot be built here at all: a zero key, the game's own design of the same purpose and
+//    locomotion (cVehicle::Load generates one from the object templates for 0 and -1), logged;
+//  - false: the civilization has no design for that purpose and locomotion here (no mirror, 0.7.3.5).
+// `coop.fix content.all_kinds off`: the design key as it is (0.7.3.5).
+static unsigned g_veh_design_checked, g_veh_design_fallback;
+static std::unordered_set<uint32_t> g_veh_design_logged;
+static bool g_veh_force; // tests (BUG-0469): mirrors are built with this design key instead
+static uint32_t g_veh_force_key[3];
+
+static bool mirror_design(void* civ, int purpose, int loco, uint32_t key[3])
+{
+    if (!civ)
+        return false; // no civilization of that political id here: no mirror (as 0.7.3.5)
+    if (g_veh_force) { // tests (BUG-0469): a design key the guest builds in the mirror path
+        key[0] = g_veh_force_key[0];
+        key[1] = g_veh_force_key[1];
+        key[2] = g_veh_force_key[2];
+    } else {
+        uint32_t* k = thiscall<uint32_t*>(a_DesignKey, civ, skg::cdecl_call<int>(a_DesignId, purpose, loco));
+        if (!k)
+            return false;
+        key[0] = k[0];
+        key[1] = k[1];
+        key[2] = k[2];
+    }
+    if (!key[0])
+        return true; // the game's own design for that purpose and locomotion (it generates one)
+    creations::Model m = creations::ensure_model({key[0], key[1], key[2]}, creations::kMkVehicle);
+    if (m.key.instance) {
+        g_veh_design_checked++;
+        key[0] = m.key.instance;
+        key[1] = m.key.type;
+        key[2] = m.key.group;
+        return true;
+    }
+    if (g_veh_design_logged.insert(key[0]).second)
+        H->log(M, SK_INFO, "civ: the model of the vehicle design %08X cannot be built here: the mirror takes the "
+               "game's own design of that purpose and locomotion (BUG-0469)", key[0]);
+    key[0] = key[1] = key[2] = 0;
+    g_veh_design_fallback++;
+    return true;
+}
+
 static void guest_state(net::Reader& r)
 {
     uint16_t cycle = r.u16();
@@ -1906,10 +2000,8 @@ static void guest_state(net::Reader& r)
         }
         if (!v) {
             void* civ = thiscall<void*>(a_CivByPol, nm(), m.pol);
-            uint32_t* key = civ ? thiscall<uint32_t*>(a_DesignKey, civ,
-                                                       skg::cdecl_call<int>(a_DesignId, (int)m.purpose, (int)m.loco))
-                                : nullptr;
-            if (key) {
+            uint32_t key[3] = {0, 0, 0};
+            if (mirror_design(civ, (int)m.purpose, (int)m.loco, key)) { // BUG-0469
                 float p[3] = {m.pos.x, m.pos.y, m.pos.z};
                 v = thiscall<void*>(a_CreateVehicle, civ, (int)m.purpose, (int)m.loco, key[0], key[1], key[2],
                                     (const float*)p, 0);
@@ -2393,12 +2485,27 @@ std::string debug(const std::vector<std::string>& a)
         char b[320];
         snprintf(b, sizeof b,
                  "tables: hv=%u boost=%u alarm_at=%u siege=%u joint=%u gifted=%u bfix=%u host_cities=%u city_owner=%u "
-                 "gv=%u world_resets=%u fix_boost=%d fix_world=%d next_id=%u world_changes=%u\n",
+                 "gv=%u world_resets=%u fix_boost=%d fix_world=%d next_id=%u world_changes=%u "
+                 "mirror_designs=%u veh_fallback=%u build_skipped=%u\n",
                  (unsigned)g_hv.size(), (unsigned)g_boost.size(), (unsigned)g_alarm_at.size(), (unsigned)g_siege.size(),
                  (unsigned)g_joint_told.size(), (unsigned)g_city_gifted.size(), (unsigned)g_bfix_seen.size(),
                  (unsigned)g_host_cities.size(), (unsigned)g_city_owner.size(), (unsigned)g_gv.size(), g_world_resets,
-                 (int)g_fix_boost, (int)g_fix_world, (unsigned)g_next_id, g_world_checks_fired);
+                 (int)g_fix_boost, (int)g_fix_world, (unsigned)g_next_id, g_world_checks_fired, g_veh_design_checked,
+                 g_veh_design_fallback, g_build_skipped);
         return b;
+    }
+    if (!a.empty() && a[0] == "fakeveh") { // tests (BUG-0469): fakeveh <hex design instance|off> [<hex type> <hex group>]
+        // every mirror vehicle is built with that design key (the guest's own civ design otherwise)
+        g_veh_force = a.size() > 1 && a[1] != "off";
+        if (g_veh_force) {
+            g_veh_force_key[0] = (uint32_t)strtoul(a[1].c_str(), nullptr, 16);
+            g_veh_force_key[1] = a.size() > 2 ? (uint32_t)strtoul(a[2].c_str(), nullptr, 16) : 0x24682294; // vcl
+            g_veh_force_key[2] = a.size() > 3 ? (uint32_t)strtoul(a[3].c_str(), nullptr, 16) : 0x40646200;
+        }
+        return std::string("mirror vehicles: the design key ") + (g_veh_force ? "is forced for the tests" : "is the civ's own");
+    }
+    if (!a.empty() && a[0] == "content") { // tests (BUG-0469): the model checks of the mirrors
+        return creations::content_status();
     }
     if (!a.empty() && a[0] == "nulllocal") { // tests (BUG-0223): the stage's local entity is null for N frames
         int n = a.size() > 1 ? atoi(a[1].c_str()) : 1;

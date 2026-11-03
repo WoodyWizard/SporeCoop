@@ -20,6 +20,10 @@
 namespace creations {
 
 enum Kind : uint8_t { kCreature = 0, kCell = 1, kUfo = 2, kKinds = 3 };
+// BUG-0469: every kind of model this game can be asked to build for the mod, not only a player's
+// creation: a civ mirror vehicle or a building of a city, a host ship. (Kind stays the creations'
+// own: its numbers are on the wire.)
+enum ModelKind : uint8_t { kMkCreature = 0, kMkCell, kMkUfo, kMkVehicle, kMkBuilding, kMkKinds };
 using Key = dbpf::Key;
 
 struct Option {
@@ -71,6 +75,20 @@ void host_species_out(uint8_t peer, const Key& k); // host: before an NPC of spe
 void world_species_out(uint8_t peer, const std::vector<const std::vector<uint8_t>*>& files); // host: before a world share
 Key local_species(const Key& k); // guest: the host's key of a species -> the key its NPCs use here
 Key host_species(const Key& k);  // guest: ours -> the host's
+
+// BUG-0469: the model a caller may build from `model` (docs/re/creations.md#creations-content-all-kinds):
+//  - kSame: this game has the model and every part / paint it names, build it from that key
+//  - kSubstituted: some ids this game does not have were shown as substitutes in a copy of the model
+//    records (registered here): build it from the returned key
+//  - kRefused: do not build the model here (the caller uses the game's own default or waits)
+// allow_copy stays false when the caller cannot pass another key to the game (a building: the game
+// reads the civ's design key itself), then a model with unknown ids is refused.
+struct Model {
+    enum Status : uint8_t { kSame = 0, kSubstituted, kRefused } status = kRefused;
+    Key key; // {} = do not build it here
+};
+Model ensure_model(const Key& model, ModelKind kind, bool allow_copy = true);
+std::string content_status(); // the counters of ensure_model, for the tests and the support trace
 
 // BUG-0341: creatures with parts of the "Creepy & Cute" pack on a game without it (the game faulted
 // at 0x441F3B building them): not built here; the host's world is not loaded while one of its own
