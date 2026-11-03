@@ -1760,10 +1760,29 @@ commit each, tests where asked):
    512-slot open-addressing set keyed by the effect pointer, cleared once a frame, and
    `coop.effects` shows the probe count (`sent_probes=`).
 
+7. **Reference leak** (added after 15bd1ebc): `EffectWorld::CreateEffect` 0xA71300 writes the new
+   effect into the caller's intrusive pointer and calls its AddRef (vtable slot 0x00 at 0x923720,
+   refcount at object+0x10); the game drops such a pointer with Release (slot 0x04 at 0xA81CE0, as
+   the pool map erase 0xD2C9F0 does). The relay never released it, so every received world effect
+   stayed allocated for the session, even after Stop. The live list now owns that reference and
+   releases it when the effect ends by itself, is stopped after 8 s, is evicted as the oldest, or
+   the session ends. Because the reference is held until then, `IsActive` and `Stop` on a listed
+   effect are safe even after the effect path ended (the object cannot be freed while we hold it);
+   after the Release nothing uses the pointer. A stage / world change still drops the list without
+   calling into the objects (their internals may be gone). `create_local_effect` (the perf
+   workload) releases its reference right away. Switch `coop.fix effects.release off` is the old
+   leaking behaviour, for the measurement; `coop.effects` prints `released=` and `dropped=`.
+   Test `tools/tests/coop_effects_release.py` (`effects_release`, 60 s per window at the relay rate
+   limit): fix on 2380 effects created, 2380 released, live 0, private commit flat/negative; fix off
+   2320 created, 0 released, private commit +8.2 MB (about 3.5 KB per leaked effect), 25 MB
+   difference (`out/lab/20261102-195942`). Without the release the on window fails
+   (`out/lab/20261102-200305`).
+
 Verification of the second pass (lane 2 and 3, GOG 2024): the effects tests (creature, cell, tribe,
 effects_party, effects_validate, effects_live) pass in
 `out/lab/20261102-191038` and fail with `SPORE_FIX_OFF=creature.effects_relay` in
 `out/lab/20261102-193333`; the regression (smoke, creature, team, puppet_walk and the effect tests)
 is in `out/lab/20261102-191038`; the `unit` test of that run fails in its own lab selftest's lane
 lock checks under the run's CPU load (no game code; `make test` alone and `unit` alone in the lab,
-`out/lab/20261102-194317`, pass).
+`out/lab/20261102-194317`, pass). Item 7: `out/lab/20261102-200634` (effects tests + effects_release pass);
+`out/lab/20261102-201025` with the relay switch off.

@@ -10,8 +10,8 @@ role:
 versions:
 fixed_in: unreleased
 branch: fix/w38-effects
-commits: 0d704785 (relay), 646dfc97 (test), 40c7834b (docs), d4e5a367 (world relay), c26a1d10 (tests), 41c0d56f (docs), 45ebc478 (review: no hook churn, main thread only, O(1) table), 091b056f (position +0xA0), 13cdfa7c (cost measurement), 02586842 (atomic stage gate), 4d09ecd3 (3-player relay transform), aedd0954 (spoofing), 8706ea33 (validation), 15bd1ebc (stop relayed world effects), 7eb1478b (full transform + screenshots), 1e5ab55e (O(1) sent table)
-tests: creature_effects, cell_effects, tribe_effects, effects_party, effects_validate, effects_live
+commits: 0d704785 (relay), 646dfc97 (test), 40c7834b (docs), d4e5a367 (world relay), c26a1d10 (tests), 41c0d56f (docs), 45ebc478 (review: no hook churn, main thread only, O(1) table), 091b056f (position +0xA0), 13cdfa7c (cost measurement), 02586842 (atomic stage gate), f81ef9bd (Release the relay's effect reference), 4d09ecd3 (3-player relay transform), aedd0954 (spoofing), 8706ea33 (validation), 15bd1ebc (stop relayed world effects), 7eb1478b (full transform + screenshots), 1e5ab55e (O(1) sent table)
+tests: creature_effects, cell_effects, tribe_effects, effects_party, effects_validate, effects_live, effects_release
 signature:
 docs: docs/re/creature.md#creature-effects-relay
 related:
@@ -186,4 +186,15 @@ SPORE_FIX_OFF=creature.effects_relay out/lab/20261102-193333. The full rerun (sm
 team, puppet_walk and the effect tests) is in out/lab/20261102-191038 (the `unit` test's own lab
 selftest lane-lock checks fail under the run's CPU load; `make test` alone and `unit` alone in the
 lab, out/lab/20261102-194317, pass). Screenshots as above.
+
+Item 7 (reference leak, after the orchestrator reviewed 15bd1ebc): EffectWorld::CreateEffect
+0xA71300 AddRefs the effect for the caller (vt 0x00 at 0x923720), the game Releases such a pointer
+with vt 0x04 (0xA81CE0, as the pool map erase 0xD2C9F0 does). The relay's live list now owns that
+reference and releases it when it forgets the effect (ended, stopped, expired, evicted, session
+end); a stage/world change still drops the list without a call. `coop.fix effects.release off` is
+the old leaking behaviour; `coop.effects` prints released=/dropped=. Test effects_release (60 s per
+window at the rate limit): on 2380 created / 2380 released / live 0 / commit flat, off 2320 / 0 /
++8.2 MB, 25 MB difference (out/lab/20261102-195942); without the release the on window fails
+(out/lab/20261102-200305). The effects tests and effects_release pass in out/lab/20261102-200634 and fail
+with SPORE_FIX_OFF=creature.effects_relay in out/lab/20261102-201025.
 

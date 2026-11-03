@@ -12,7 +12,8 @@
   guest also reaches the other guests (it used to stop at the second player), a message is checked
   before the game is called (whose effect it is, the pool, the bone, the transform), and the
   relayed effects the receiver keeps are stopped after 8 s or when there are more than 64, so a
-  looping one does not pile up.
+  looping one does not pile up, and the relay releases the game reference it holds on each one
+  (they no longer leak for the session).
 
 ## [0.7.3.4] - 2026-11-02
 
