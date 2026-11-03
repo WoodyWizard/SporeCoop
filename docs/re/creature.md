@@ -2089,3 +2089,20 @@ BUG-0465 (open). GOG 2024, Ghidra strings only, not seen at runtime.
   `creature.puppet_jump` (modes.cpp, net::SnapshotBuffer::jump_speed 40 m/s, the PF_DEAD flag): no blend
   across those steps, a target that moves over 3 m in one frame teleports the puppet (`jumps=` in
   coop.status): 0.03 s for the same 6 m, and the puppet shows again 0.00 m from its target (0.35 m off).
+
+## Plants and rocks are made by each game around its own camera (2026-11-03, fix/w40-cell-evo)
+<a id="creature-plants-rocks-lod"></a>
+
+BUG-0473 (plants, rocks), BUG-0498. Lane 4, `tools/tests/coop_world_lod.py` (out/lab/20261103-161705).
+
+* ✔ (runtime) `rock` (noun 0x2A8FB3F, vtable 0x1473228): the fixture's save has 1 rock, in both games' lists
+  at the same place. 28 more appear in the walking guest's list only (30-75 m ahead of it at the first step,
+  then where it walks), never in the host's list although the host stood 1 m from the guest at the start;
+  they stay in the guest's list while it walks 200 m away and back. Serials differ per game even for the
+  shared rock.
+* ✔ (runtime) `game_plant` (noun 0x18C84A9, vtable 0x146C2A8): 0-2 objects in a whole list, each 8-14 m from
+  that game's own player, never in the other game's list. Its factory is registered at 0xC83B0B; who places
+  them was not looked up (~ inferred: decoration near the camera, like the hanging fruit of
+  #creature-world-objects).
+* So neither is a world object the players share: no worldobj kind. The detector leaves them out
+  (tools/tests/worlddiff.py IGNORE, docs/06-testing.md#testing-world-lod).

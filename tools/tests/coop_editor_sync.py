@@ -140,59 +140,73 @@ def main():
         ck(d_g1 is not None and abs(d_g1 - (d_g0 - 25)) < 1, "the guest's game kept its spend (not given back by the host's next total)")
         ck.faults(host=host, guest=guest)
         return ck.result()
-    print(' ', host.call('coop.vote evolve')['out'].strip(), flush=True)  # the game's own evolution request
-    time.sleep(2)
-    gu.wait(lambda s: s['ready']['vis'], 10, 'ready button')
-    gu.click('ready')
-    ck(wait(lambda: in_editor(host), 60), 'the host is in its editor')
-    ck(wait(lambda: in_editor(guest), 120), "the guest's own editor opened")
-    ck(wait(lambda: editor_ui(host) and editor_ui(guest), 90, 2), 'both editors show their interface')
-    host.call('wait.frames 200 60000')
-    guest.call('wait.frames 200 60000')
-    time.sleep(3)
-
-    editor, other = (host, guest) if case == 'host' else (guest, host)
-    d_in = dna(editor)
-    # the guest's own editor locks the parts the species has not collected (BUG-0368): the unlocked
-    # mouths of the fixture's guest are lower in the first column
-    add_part(editor, 170 if case == 'host' else 780)
-    time.sleep(2)
-    d_edit = dna(editor)
-    shot(editor, f'editor_sync_{case}_edited.png')
-    print(f'  the {case} added a part: DNA in its editor {d_in} -> {d_edit}', flush=True)
-    # the other player leaves its editor first without a change
-    other.call('click %d %d' % DONE)
-    if other is host:
-        confirm_captions((host,), 20)
-    ck(back(other, m0), f'the {"guest" if case == "host" else "host"} is back in the stage (done, no change)')
-    editor.call('click %d %d' % DONE)
-    if case == 'guest':  # the own editor asks: save as a new creation
+    rounds = 2 if case == 'host2' else 1  # host2: a second evolution of the species the first one made
+    if case == 'host2':
+        case = 'host'
+    for rnd in range(rounds):
+        if rnd:  # the species of the first evolution is now the host's own creation (My Creations)
+            hk0 = avatar_key(host)
+            print(f'  second evolution: the host plays {hk0}, the guest draws it as {puppet_species(guest, 0)}', flush=True)
+            shot(guest, 'editor_sync_host2_first_on_guest.png')
+            host.call('call Simulator::cCreatureGameData::AddEvolutionPoints cdecl f:40')
+            time.sleep(3)
+            confirm_captions((host, guest), 12)
+        print(' ', host.call('coop.vote evolve')['out'].strip(), flush=True)  # the game's own evolution request
+        time.sleep(2)
+        gu.wait(lambda s: s['ready']['vis'], 10, 'ready button')
+        gu.click('ready')
+        ck(wait(lambda: in_editor(host), 60), 'the host is in its editor')
+        ck(wait(lambda: in_editor(guest), 120), "the guest's own editor opened")
+        ck(wait(lambda: editor_ui(host) and editor_ui(guest), 90, 2), 'both editors show their interface')
+        host.call('wait.frames 200 60000')
+        guest.call('wait.frames 200 60000')
         time.sleep(3)
-        shot(editor, 'editor_sync_guest_dialog.png')
-        if in_editor(editor):
-            editor.call('click %d %d' % SAVE_NEW)
-    # the lowest DNA the editing player's game shows on its way back (a host total may undo the
-    # spend a moment later: that is what is checked below)
-    low, t0, left = None, time.time(), False
-    while time.time() - t0 < 90 and not left:
-        v = dna(editor)
-        if v is not None and editor.call('coop.avatar')['ok']:
-            low = v if low is None else min(low, v)
-        left = mode(editor) == m0 and editor.call('coop.avatar')['ok']
-        time.sleep(0.2)
-    for _ in range(10):
-        v = dna(editor)
-        low = v if low is None or (v is not None and v < low) else low
-        time.sleep(0.2)
-    ck(left, f'the {case} left its editor with done')
-    d_exit = low
-    print(f'  the {case} back in the stage: DNA {d_exit}', flush=True)
 
-    # the host's evolution: its new body, the cinematic (its captions), a world share to the guest
-    confirm_captions((host, guest), 45)
-    back(host, m0, 60)
-    back(guest, m0, 120)
-    time.sleep(10)  # several totals of the host (every 2 s), the bundles (every 2 s)
+        editor, other = (host, guest) if case == 'host' else (guest, host)
+        d_in = dna(editor)
+        # the guest's own editor locks the parts the species has not collected (BUG-0368): the unlocked
+        # mouths of the fixture's guest are lower in the first column
+        # (the host's evolution editor locks them too: at y 170 nothing was added, DNA 40 -> 40, lab 20261103-142443)
+        add_part(editor, 780)
+        if case == 'host' and dna(editor) == d_in:
+            add_part(editor, 170)
+        time.sleep(2)
+        d_edit = dna(editor)
+        shot(editor, f'editor_sync_{case}_edited.png')
+        print(f'  the {case} added a part: DNA in its editor {d_in} -> {d_edit}', flush=True)
+        # the other player leaves its editor first without a change
+        other.call('click %d %d' % DONE)
+        if other is host:
+            confirm_captions((host,), 20)
+        ck(back(other, m0), f'the {"guest" if case == "host" else "host"} is back in the stage (done, no change)')
+        editor.call('click %d %d' % DONE)
+        if case == 'guest':  # the own editor asks: save as a new creation
+            time.sleep(3)
+            shot(editor, 'editor_sync_guest_dialog.png')
+            if in_editor(editor):
+                editor.call('click %d %d' % SAVE_NEW)
+        # the lowest DNA the editing player's game shows on its way back (a host total may undo the
+        # spend a moment later: that is what is checked below)
+        low, t0, left = None, time.time(), False
+        while time.time() - t0 < 90 and not left:
+            v = dna(editor)
+            if v is not None and editor.call('coop.avatar')['ok']:
+                low = v if low is None else min(low, v)
+            left = mode(editor) == m0 and editor.call('coop.avatar')['ok']
+            time.sleep(0.2)
+        for _ in range(10):
+            v = dna(editor)
+            low = v if low is None or (v is not None and v < low) else low
+            time.sleep(0.2)
+        ck(left, f'the {case} left its editor with done')
+        d_exit = low
+        print(f'  the {case} back in the stage: DNA {d_exit}', flush=True)
+
+        # the host's evolution: its new body, the cinematic (its captions), a world share to the guest
+        confirm_captions((host, guest), 45)
+        back(host, m0, 60)
+        back(guest, m0, 120)
+        time.sleep(10)  # several totals of the host (every 2 s), the bundles (every 2 s)
 
     shot(host, f'editor_sync_{case}_host_after.png')
     print('  host creations:', host.call('coop.creations')['out'].strip().splitlines()[:6], flush=True)
@@ -200,14 +214,28 @@ def main():
         hk1 = wait(lambda: (lambda k: k if k and k != hk0 else None)(avatar_key(host)), 60)
         print(f'  host species {hk0} -> {hk1}', flush=True)
         ck(hk1, "the host's editor gave it a new species")
-        want = host_key_on_guest(guest, hk1) if hk1 else None
-        got = wait(lambda: (lambda p: p if p and p == want else None)(puppet_species(guest, 0)), 60, 2)
+        # the guest draws the host from the host's bundle (its records under a content key, a new key for a
+        # new version) or from the host's world package (the original key, the same records)
+        bundle_key = lambda: field(guest.call('coop.creations')['out'], r'player 0 creature: ([0-9A-F]{8})/')
+        world_key = host_key_on_guest(guest, hk1) if hk1 else None
+        got = wait(lambda: (lambda p: p if p and p in (bundle_key(), world_key) else None)(puppet_species(guest, 0)), 60, 2)
         got = got or puppet_species(guest, 0)
-        print(f"  the guest's game draws the host as {got} (the host's species there: {want})", flush=True)
+        name_h = field(host.call('coop.creations')['out'], r"mine creature: [0-9A-F]{8} '([^']*)'")
+        name_g = field(guest.call('coop.creations')['out'], r"player 0 creature: [0-9A-F/]+ '([^']*)'")
+        print(f"  the guest's game draws the host as {got} (the host's bundle there {bundle_key()}, its world key {world_key}); "
+              f"the host's creature '{name_h}', the guest's copy '{name_g}'", flush=True)
         print('  guest creations:', ' '.join(w for w in guest.call('coop.creations')['out'].split()
                                              if w.startswith(('bundles', 'swaps', 'registered', 'world_swaps'))), flush=True)
+        # both cameras on the host's creature: the host walks next to the guest's
+        gp = field(guest.call('coop.avatar')['out'], r'pos=\(([-\d.]+ [-\d.]+ [-\d.]+)\)')
+        if gp:
+            x, y, z = map(float, gp.split())
+            host.call(f'coop.abilities goto {x + 3:.1f} {y:.1f} {z + 3:.1f}')
+            time.sleep(4)
         shot(guest, 'editor_sync_host_on_guest.png')
-        ck(want and got == want, "the guest's game draws the host with its new species")
+        shot(host, 'editor_sync_host_self.png')
+        ck(got and got in (bundle_key(), world_key), "the guest's game draws the host with its new species")
+        ck(name_h and name_g == name_h, f"the creature the guest has for the host is the host's new one ('{name_g}' / '{name_h}')")
     else:
         spent = (d_g0 or 0) - (d_exit or 0)
         print(f'  the guest spent {spent:.0f} DNA in its editor', flush=True)

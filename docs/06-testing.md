@@ -3708,3 +3708,39 @@ the other player's game, both ways where the kind has two:
   jumping target landed within 0.15 s (off: 0.29 s for the 6 m egg jump).
 * `coop_chat_caption.py` (`chat_caption`, ~1.6 min cold): CRG_ClaimNest on one game (input_lock=1), F9, one
   click on the chat line, `text`, Send: the line in both chats; then without a caption, typed once.
+## Cell mirrors that outlive the host's cell, plants and rocks per camera, the host's real evolution (2026-11-03, fix/w40-cell-evo)
+<a id="testing-world-lod"></a>
+
+* `coop_cell_gone.py` (BUG-0480, cell fixture, ~1 min warm): a guest's mirror is *stale* when the host's game
+  had that cell index in neither of two dumps around the guest's dump (`coop.census all`, the first one 2.5 s
+  before it). `--case lost` (suite `cell_gone`): the guest drops the host's MSG_CELL_STATE for 4 s
+  (`coop.pool statehold <s>`) while the host destroys 8 cells near it (`coop.pool cull <r> <n>`, DestroyCell),
+  then the state flows again: no stale mirror (0 in 6 rounds, out/lab/20261103-154618). `--case held` (suite
+  `cell_gone_probe`): the state stays lost during the sample: the probe must see stale mirrors (its own FAIL
+  case, out/lab/20261103-155103). `--case play` (suite `cell_gone_play`, extended): both swim, the host bites;
+  0 stale in 4 of 6 runs, 49 meat mirrors at once in 2 cold runs (round 5 both times; the guest's mirror entry
+  was refreshed 0.2 s before, the host's `coop.pool cell` and its census did not have the index:
+  out/lab/20261103-155103, 20261103-155433; cause not found, BUG-0480).
+* The detector's Cell compare (tools/tests/worlddiff.py `pair_dump`, `CELL_BRACKET`): the host is dumped before
+  and after the guest, 1.5 s apart; a guest's proxy counts as `guest_only:cell` only when the host had its
+  index in neither dump, a host cell as `host_only:cell` only when it had it in both. Cell cells live for
+  seconds (food eaten, prey killed, a level change replacing the pool: 369 at once in out/lab/20261103-012624
+  play_cell#2, host 397 rows / guest 1050), and one host dump next to one guest dump took a mirror on its way
+  out (0.1 s, or 1 s after a lost chunk) for a stale one. `SPORE_DETECTOR_BRACKET=0`: one host dump (the old compare).
+* `coop_world_lod.py` (suite `world_lod`, creature fixture, ~2 min, BUG-0473 / BUG-0498): the host stands, the
+  guest walks away in 35 m steps to 200 m and back; both games' whole lists every step. Rocks: the 1 rock of the
+  save is in both; 28 more appear in the guest's list only once it walks (30-75 m ahead of it, never in the
+  host's, which stood 1 m from the guest at the start) and stay there. Plants (`game_plant`): 0-2 in a whole
+  list, always 8-14 m from that game's own player, never in the other game (out/lab/20261103-161705). Both are
+  made by each game around its own camera: `rock` and `game_plant` are in worlddiff.IGNORE. The test fails when
+  an object one game has only lies near the other player (a real difference that player could walk to).
+* `coop_editor_sync.py --case host` (suite `editor_sync_host`) and `--case host2` (`editor_sync_host2`, two
+  evolutions in a row): the drag at y 170 never added a part in the host's evolution editor (the uncollected
+  parts are locked there too); at y 780 it does, and the host's evolution is applied (DNA 40 -> 15 after the
+  editor, the avatar's key 065CBE70 -> 29141F13, then 29141FE7 -> 29141FEC). The DNA shown during the editor is
+  the editor's own budget (40 -> 40 in the log even after the part). The check: the guest's puppet species is
+  the host's bundle key there (`player 0 creature:` of `coop.creations`, a content key, new per version) or
+  its world key, with the host's creature's name. `coop.creations profile <hex>` prints the species profile the
+  game has for a creature key (pointer, +0x504 key, +0x53C version).
+* Pitfall met: a new test file named like an existing one (`coop_cell_stale.py` is BUG-0306's) replaces it
+  silently with Write: check `ls tools/tests/<name>` first.
