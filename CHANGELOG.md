@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Fixed
+- Creature: the host's game no longer crashes when an animal was attacking the partner's creature at the
+  moment that creature disappeared (the partner died, left or came back); the animal stops its attack
+  (BUG-0453).
+- Creature: the host's game no longer aborts ("pure virtual function call") when animals still
+  remembered a partner's creature that had just disappeared (BUG-0456).
+- Cell: a guest's game no longer crashes when the host comes back from its editor with a new cell before
+  the new cell has reached the guest; such cells show up as soon as it arrives (BUG-0455).
+- Editor: a skin texture the graphics driver could not make no longer crashes the creature editor
+  (RenderWare::Raster::Fill) (BUG-0454).
+
 ## [0.7.3.6] - 2026-11-02
 
 ### Fixed

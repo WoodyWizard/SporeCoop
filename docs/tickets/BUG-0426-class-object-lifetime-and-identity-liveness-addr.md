@@ -36,3 +36,4 @@ Source: docs/generalisation-plan.md G9.
 
 ## History
 - 2026-11-01: opened.
+- 2026-11-03: fix/w40-crashes: one class piece in the game itself: every NPC stimulus naming a creature is cleared before the creature is destroyed (npc.stale_sender, BUG-0456), and the attack node ends when the destroy clears its target (BUG-0453).

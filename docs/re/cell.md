@@ -1373,3 +1373,24 @@ BUG-0355. GOG 2024, Ghidra and `tools/tests/coop_cell_spare.py` (suite `cell_spa
 * ✔ runtime: after the host's cell editor the host shares its world again (saved 3 s after the
   stage settled); the guest leaves the Cell stage about 4-5 s after it got the host's new cell
   record and is back in Cell another ~5 s later. A mate the guest called before that load is gone.
+
+## A mirror of a creation this game does not have (2026-11-03, fix/w40-crashes)
+<a id="cell-unknown-model"></a>
+
+BUG-0455 (a guest's crash at 0xE83EC8, read 0x9C, "when the host left the evolution editor"), the
+signature of BUG-0004 on another path.
+
+* ✔ The player's dump: CreateCellObject+0x4B9 (0xE74ED9) <- coop.dll `cellsync::guest_state`
+  (cellsync.cpp, `modes::cell_create` with the model key the host sent) -> 0xE6CAF7 -> 0xE69726 ->
+  0xE67A41 (GetCellModelData 0xE679E0: the model data of a key, built on first use) -> 0xE83E30, which
+  calls `Editors::cEditor::LoadCreatureData` (0x4BB500) and reads `[result+0x9C]` at **0xE83EC8**: ecx
+  = 0, the creation's file was not found. Symbolized with a v0.7.3.4 build (`git archive v0.7.3.4`).
+* ~ After the host's Cell editor its cells of the player's species carry the new creation's key; the
+  guest mirrored them before the creation's records reached it (the creation bundle comes later, docs/re
+  /creations.md 8). Lab: a host cell sent with an unknown model instance (`coop.cell spawn <slot> dx dy
+  level <instance>`, cellsync::set_fake_model) faulted the guest at 0xE83EC8 with the players' chain
+  (0xE67A41 0xE69726 0xE6CAF7 0xE4F9E4 0xE74ED9) and the guest made no mirror after it.
+* Fix (`cell.unknown_model`, mods/coop/modes.cpp): every forced model key is checked with
+  `creations::key_known` (RM FindRecord) first; `cell_create` makes no cell of an unknown creation
+  (cellsync tries again with the next state round; `unknown_models=` in coop.status), `cell_spawn`
+  (puppets) falls back to the own avatar's model.

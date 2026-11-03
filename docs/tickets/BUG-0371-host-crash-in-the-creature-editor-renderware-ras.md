@@ -41,3 +41,4 @@ no-fail-run: a game crash, not reproduced; triage only.
 ## History
 - 2026-11-01: opened from the host's crash in the 2026-11-01 reports; game-bug (out of memory).
 - 2026-11-02: two more host crashes at the same address within 15 minutes on 0.7.3.4 (not 12 h of play): reopened as BUG-0454 for analysis; the out-of-memory verdict is in doubt.
+- 2026-11-03: the out-of-memory verdict is superseded by BUG-0454 (same host, 868+ MB free; a texture the driver did not make); guarded there (game.null_raster_fill).

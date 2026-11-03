@@ -1,20 +1,20 @@
 ---
 id: BUG-0454
 title: host crash in the creature editor at RenderWare::Raster::Fill+0x7 again: twice in 15 minutes on 0.7.3.4 (BUG-0371 said out of memory after 12 h)
-status: open
+status: fixed
 kind: crash
 stage: Creature
 reported: 2026-11-02
 source: player reports on Discord 2026-11-02 (bug-reports forum, 0.7.3.4, GOG host + Steam guest)
 role: host
-versions: 
-fixed_in:
-branch:
-commits:
-tests:
-signature:
-docs:
-related:
+versions: 0.7.3.3, 0.7.3.4
+fixed_in: unreleased
+branch: fix/w40-crashes
+commits: 0074b298
+tests: editor_desync
+signature: dc04aee5:SporeApp.exe RenderWare::Raster::Fill+0x7
+docs: docs/re/graphics.md#graphics-null-raster, docs/known-issues.md#issue-editor-skin-painter-oom
+related: BUG-0371, BUG-0442
 ---
 
 ## Report
@@ -23,14 +23,16 @@ Target: 0.7.4.
 <!-- what the player (or the test) saw, in our words; no player names, no paths from their PC -->
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+Observed (dumps crash-20261102-182128.dmp / -183402.dmp): ecx = esi = ebp = 0 at Fill; the caller is `SporeCoop::Texture_BuildMips` 0x7AFFC0 (from the skin painter, ExecutePipeline 0x51CCE2): the texture manager's vt 0x3C returned a texture object whose raster (+0) is null (flags +4 bit 0 set), and the level loop called Raster::Fill on it. No coop.dll / sporekit.dll frame.
+Not our screenshot (BUG-0442): the same crash on 0.7.3.3 (2026-11-01 13:50, before report screenshots existed); on 0.7.3.4 the guest's marks were 8 s and 65 s before the crashes, and the shot releases every surface in the same Present. Address space was not short (0.7.3.3: 868 MB free, largest block 346 MB): BUG-0371's out-of-memory verdict is superseded.
+Inferred: the graphics driver did not make that texture (only this host: AMD Radeon RX 9060 XT, amdxn32 32.0.32015.7029); why is not known.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+mods/coop/gamefixes.cpp: a hook on RenderWare::Raster::Fill: a null raster takes Fill's own failure return (0, as when Raster_Lock fails) instead of the fault. Switch `coop.fix game.null_raster_fill off`. The editor then has that skin texture without paint for the bake (not seen in the game).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+no-fail-run: the driver's failure to make a texture does not happen on the lab's GPUs (Wine, Mesa), so the null raster cannot be made the way the host got it; the guard only adds the null check Fill's own failure path already has (Fill returns 0 when the raster cannot be locked, and its callers handle 0: 0x7AFFC0 ignores the result). Regression: the editors in editor_desync / play_creature.
 
 ## History
 - 2026-11-02: opened.
+- 2026-11-03: analysed (not the report screenshot; a texture without a raster), guarded on fix/w40-crashes (game.null_raster_fill).

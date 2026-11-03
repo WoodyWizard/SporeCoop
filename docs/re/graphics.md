@@ -82,3 +82,28 @@ underground most likely stands on the collision height while the drawn terrain i
 terrain is redrawn after the Reset (sphere+0xA40 = 1) and on that Windows/AMD setup it came back
 different. SporeCoop does not move the local avatar (only test commands do), the puppets and NPCs it
 moves are other creatures. docs/known-issues.md has the open entry.
+
+## The skin painter's texture without a raster (2026-11-03, fix/w40-crashes)
+<a id="graphics-null-raster"></a>
+
+BUG-0454 / BUG-0371: three host crashes in the creature editor at `RenderWare::Raster::Fill`+0x7
+(0x11F02C7, read 0x4) on 2026-11-01 (0.7.3.3) and 2026-11-02 18:21 / 18:34 (0.7.3.4), the same host
+(GOG 2024, AMD Radeon RX 9060 XT, driver amdxn32 32.0.32015.7029, Windows 10 build 26300).
+
+* ✔ Both 0.7.3.4 dumps: ecx = esi = ebp = 0 at Fill (`mov ebp,ecx; test [ebp+4],0x10`), the caller
+  0x7B009F is `SporeCoop::Texture_BuildMips` 0x7AFFC0: `ITextureManager::Get()->vt 0x3C` returned a
+  texture object (ebx, refcount +8 raised) whose raster `[tex+0]` is null, flags +4 bit 0 set (taken as
+  ready, vt 0x34 not called); the level loop calls `Raster::Fill(null, image+0x28, 0)`. Called from
+  0x7A95EA (FUN_007A95A0) <- the skin painter (`Skinner::cSkinPainterPipeline::ExecutePipeline`
+  0x51CCE2). No coop.dll or sporekit.dll frame on either stack.
+* ✔ **Not the report screenshot (BUG-0442)**: the 0.7.3.3 crash (2026-11-01 13:50) came before the
+  screenshots existed; on 0.7.3.4 the guest's marks were 8 s and 65 s before the crashes, and the shot
+  (StretchRect + GetRenderTargetData in Present, every surface released at once) changes no state the
+  game's renderer keeps.
+* ~ The raster is what the graphics driver did not make (a texture creation that failed). Address
+  space was not short (0.7.3.3: 868 MB free, largest block 346 MB 12 s before; BUG-0371's "out of
+  memory" verdict is superseded). Why the driver refused it is not known (only this host, only the
+  editor's skin textures).
+* Fix (`game.null_raster_fill`, gamefixes.cpp): Fill on a null raster returns 0, Fill's own failure
+  return (Raster_Lock failed, 0x11F047D). Not verified in the game: the lab's GPU never fails a
+  texture; the skin may stay without paint for that bake.
