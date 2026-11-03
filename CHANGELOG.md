@@ -3,6 +3,10 @@
 ## [Unreleased]
 
 ### Fixed
+- Co-op window: a chat line typed while a caption is on the screen (a new part, the brain upgrade, a nest)
+  is no longer lost; the line takes the typing and Enter sends it (BUG-0482).
+- Creature: after a death your partner's creature appears at the nest and steps out of its egg where its
+  own game has it, instead of sliding there or standing a few metres away for a moment (BUG-0499).
 - Creature: animals of other species now have the same size on every player's screen; young ones are no
   longer shown at an adult's size on the guest (BUG-0461).
 - Tribe: tribe members (yours, your partners' and other tribes') have the same size on every screen; the

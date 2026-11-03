@@ -1704,3 +1704,10 @@ What mods/coop/worldobj.cpp does not cover yet (docs/re/creature.md#creature-wor
   of that array and the host's unlock of it with the game's own pickup path (not the world object table:
   it is a ledger, like the creature parts).
 * Ornaments in Tribe: no reward handler there (no cCreatureModeStrategy), the kind runs in Creature only.
+
+Found by fix/w40-play (2026-11-03), not fixed:
+* Tribe: an animal proxy that the guest places on the host's path can stay 3.5-8 m off the host's NPC for
+  2-11 s (the lab's monitor rule `proxies`; play_tribe 1 of 3, campaign_tribe 1 of 3 in 20261103-012624).
+  Ticket: BUG-0503.
+* Creature: under the brain upgrade caption both own creatures read 0.63-0.71 m under the ground once (monitor
+  rule `ground`, 20261103-124913 play_creature#2); not reproduced at the fixture's nest. Ticket: BUG-0504.

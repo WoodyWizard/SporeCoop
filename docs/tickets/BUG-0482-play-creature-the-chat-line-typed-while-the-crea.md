@@ -1,20 +1,20 @@
 ---
 id: BUG-0482
 title: play_creature: the chat line typed while the creature lives loses a line now and then (1 of N), with and without the effect relay
-status: open
+status: fixed
 kind: test
 stage: Creature
 reported: 2026-11-03
 source: nightly detector run 2026-11-03
-role: 
+role: both
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w40-play
+commits: fbe3916a
+tests: chat_caption, play_creature
 signature:
-docs:
-related:
+docs: docs/re/creature.md#creature-chat-under-caption
+related: BUG-0273, BUG-0500
 ---
 
 ## Report
@@ -23,14 +23,31 @@ Target: 0.7.4.
 <!-- what the player (or the test) saw, in our words; no player names, no paths from their PC -->
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+Observed (logs of out/lab/20261103-012624 play_creature#1/#2 and 20261103-124913 #2): every lost line was
+typed while the player's game showed a caption: `busy=cinematic,input_lock` on the trace lines around it
+(the brain upgrade "Brain power!" caption, cinematic F6A4B1E1, after 100 DNA; the bots did not answer it,
+BUG-0500), hp full, not dying. Under the game's input lock (cGameInputManager +0x110 > 0) the game drops every
+click on the UI (docs/re/creature.md#creature-input-lock-clicks); core.ui_locked_clicks (BUG-0273) presses
+buttons for it, but a click on the chat line only gives it the focus, and that click was dropped too: the
+line never took the focus and the typing went nowhere. A real player who opens the co-op window during a
+caption loses the line the same way: a game bug, not the bot typing too early.
+Reproduced (observed): coop_chat_caption.py, CRG_ClaimNest on one game (input_lock=1), F9, one click on the
+chat line, `text`: the line stays empty on both the host and the guest (out/lab/20261103-151853).
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+coop_ui.cpp `locked_edit_tick` / `locked_edit_apply`, mouse.cpp `take_chars`: a click under the input lock on
+a visible text line of the co-op window makes the mod take the typing: the game window's WM_CHAR messages
+(seen by the WH_GETMESSAGE hook, real keys and the tests' input alike) go into that line (Backspace erases,
+Enter sends the chat line), outside the frame. It stops at the next click, when the window closes, or as soon
+as the game changes the line's text itself (never typed twice). Switch `coop.fix core.ui_locked_edit off`.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+chat_caption (tools/tests/coop_chat_caption.py), both players, during CRG_ClaimNest and without a caption:
+- FAIL with SPORE_FIX_OFF=core.ui_locked_edit: out/lab/20261103-151853 (`the chat line takes the typing ('')`
+  for the guest and the host during the caption; without a caption OK);
+- PASS with the fix: out/lab/20261103-152037 (the line in both chats, typed once, `the mod takes the typing`
+  in both logs).
 
 ## History
 - 2026-11-03: opened.
+- 2026-11-03: fixed on fix/w40-play (the click on the chat line under a caption's input lock; the mod types).
