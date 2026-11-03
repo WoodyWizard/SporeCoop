@@ -650,6 +650,7 @@ int c_track(void*, int argc, const char* const* argv, SkOut* out)
 void drive_puppet(Remote& r, double now)
 {
     net::PlayerState s;
+    r.buf.jump_speed = g_mode == modes::kCreature ? modes::puppet_jump_speed() : 0.f; // BUG-0499
     if (!r.buf.sample(now, s))
         return;
     // dead players are hidden until they respawn
@@ -3607,8 +3608,8 @@ int c_status(void*, int, const char* const*, SkOut* out)
                 : g_mode == modes::kCell   ? *(uint32_t*)((uint8_t*)r.puppet + 0xFC) // cell model
                                            : 0u);
             if (g_mode == modes::kCreature)
-                SAY("   drive err=%.2f speed=%.2f nudges=%u kept=%u teleports=%u walk_goals=%u\n", r.drv.last_err,
-                    r.drv.last_speed, r.drv.nudges, r.drv.nudges_kept, r.drv.teleports, r.drv.goals);
+                SAY("   drive err=%.2f speed=%.2f nudges=%u kept=%u teleports=%u walk_goals=%u jumps=%u\n", r.drv.last_err,
+                    r.drv.last_speed, r.drv.nudges, r.drv.nudges_kept, r.drv.teleports, r.drv.goals, r.drv.jumps);
         }
         // tests: both players are in the same world and place right now
         SAY("together %u %d\n", id, !r.buf.empty() && r.buf.age(now) < 3.0 && same_place(r.buf.latest()) ? 1 : 0);

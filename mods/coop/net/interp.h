@@ -101,6 +101,11 @@ class SnapshotBuffer {
 public:
     double delay = 0.10;       // interpolation delay (s)
     double max_extrap = 0.25;  // extrapolation limit (s)
+    // BUG-0499: > 0: no blend across a step between two snapshots faster than this (m/s): the sender's
+    // creature was put somewhere else (the hatchling out of its egg 5-11 m, a respawn at the nest), not a
+    // walk; nor across the death flag (the dead state at the place of the death, the next one at the nest).
+    // Blended, the puppet's target slid the whole way in 0.1 s and the puppet walked after it (0 = off)
+    float jump_speed = 0;
 
     void clear()
     {
@@ -176,6 +181,9 @@ public:
                 // between the planet's centre and the surface, and the herd made for it kept that
                 // home (crash 0xB88BEA in the herd's land search, docs/re/creature.md 10)
                 if (a.s.mode != b.s.mode || a.s.world != b.s.world || ((a.s.flags ^ b.s.flags) & PF_IN_WORLD))
+                    return true;
+                if (jump_speed > 0 && (((a.s.flags ^ b.s.flags) & PF_DEAD) ||
+                                       dist(a.s.pos, b.s.pos) > jump_speed * (float)std::max(b.t - a.t, 0.01)))
                     return true;
                 float f = (float)((t - a.t) / (b.t - a.t));
                 out.pos = lerp(a.s.pos, b.s.pos, f);

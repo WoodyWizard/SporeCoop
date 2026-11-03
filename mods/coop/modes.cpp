@@ -104,12 +104,39 @@ COOP_FIX("creature.puppet_ground", "BUG-0366", g_puppet_ground_fix, "creature: t
 static bool g_puppet_path_fix = true;
 COOP_FIX("creature.puppet_path", "BUG-0394", g_puppet_path_fix, "creature: the partner's creature also walks where the partner moves without a speed (moves carried by an animation)");
 
+// BUG-0499: the partner's own game puts its creature somewhere else at once: the hatchling steps out of
+// its egg (5-11 m in one frame, ~10 s after the respawn), the respawn at the nest (100+ m). The states
+// were blended across that step (the target slid the whole way in 0.1 s), the puppet walked or was
+// nudged after it and stood 6-23 m off for up to a second (play_creature `never more than 6 m apart`,
+// one sample, puppet speed 0). With creature.puppet_jump the buffer does not blend across such a step
+// (net::SnapshotBuffer::jump_speed, the death flag) and a target that jumps more than kJumpM in one
+// frame puts the puppet there (a teleport), as the partner's own game did. Off: blended and walked.
+static bool g_puppet_jump_fix = true;
+COOP_FIX("creature.puppet_jump", "BUG-0499", g_puppet_jump_fix, "creature: the partner's creature jumps where its own game put it (out of the egg, the respawn) instead of walking there");
+constexpr float kJumpM = 3.f;          // m in one frame: no creature walks that fast (180 m/s at 60 fps)
+constexpr float kJumpSpeed = 40.f;     // m/s between two states: a jump (sprints and charges stay under ~15)
+float puppet_jump_speed() { return g_puppet_jump_fix ? kJumpSpeed : 0.f; }
+
 static void creature_drive(void* p, const net::PlayerState& s_in, drive::State& ds, double now)
 {
     ds.drawn = game::position(p);
     net::PlayerState s = s_in;
     if (g_puppet_ground_fix && game::in_creature_stage())
         s.pos = drive::on_own_ground(s.pos);
+    const bool jumped = g_puppet_jump_fix && ds.jump_have && net::dist(s.pos, ds.jump_from) > kJumpM;
+    ds.jump_from = s.pos;
+    ds.jump_have = true;
+    if (jumped && net::dist(game::position(p), s.pos) > kJumpM) {
+        drive::walk_end(p, s.pos, ds, now);
+        game::teleport(p, s.pos, s.rot);
+        ds.teleports++;
+        ds.jumps++;
+        ds.path = drive::PathTrack{}; // (no path velocity across the jump)
+        ds.track = drive::Track{};
+        ds.last_step = now;
+        ds.last_cmd = now;
+        return;
+    }
     drive::path_update(ds, s.pos, now);
     if (g_puppet_path_fix && drive::speed(s.vel) <= 0.3f)
         s.vel = drive::path_velocity(ds);

@@ -41,6 +41,9 @@ struct State {
     uint32_t place_lost = 0; // BUG-0361: frames the game did not keep that place (a teleport with the mark then)
     double stuck_since = 0;  // BUG-0361: since when its error grows although it is placed
     bool held = false;       // BUG-0361: teleported (with the mark) onto the path until it is on it again
+    net::Vec3 jump_from;    // BUG-0499: the target of the frame before (a jump of the target: the puppet jumps too)
+    bool jump_have = false;
+    uint32_t jumps = 0;     // BUG-0499: puppets put at a target that jumped
     net::Vec3 drawn;        // BUG-0360 (coop.track): its position before this frame's driving, i.e. where the
                             // game's update put it and drew it (the mod's frame runs at Present)
 };
