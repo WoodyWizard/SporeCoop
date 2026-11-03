@@ -1,16 +1,16 @@
 ---
 id: BUG-0460
 title: nest state not synced: a nest extinct for the host is not extinct for the guest (minimap, home nest heal)
-status: open
+status: fixed
 kind: bug
 stage: Creature
 reported: 2026-11-02
 source: player reports on Discord 2026-11-02 (bug-reports forum, 0.7.3.4, GOG host + Steam guest)
 role: guest
 versions: 
-fixed_in:
+fixed_in: unreleased
 branch: fix/w40-world-objects
-commits:
+commits: 9445045a 5ec41dc0 ffed3f29 0209a1c2
 tests: wobj_herd (tools/tests/coop_world_objects.py --kind herd)
 signature:
 docs: docs/re/creature.md#creature-world-objects, docs/06-testing.md#testing-world-objects
@@ -35,8 +35,13 @@ worldobj.cpp kind `herd` (Creature): the host's herd +0x190 / nest +0x120 is app
 same home with the game's setters (cHerd_SetExtinct, cHerd_SetExtinction 0xC70160). Switch `wobj.herd`.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+`coop_world_objects.py --kind herd` (suite wobj_herd): the host's avatar kills the creatures of the nearest nest of
+another species; the herd's extinct bits in the guest's game.
+* FAIL with `SPORE_FIX_OFF=wobj.herd`: out/lab/20261103-132808 (host +0x190 = 1, guest 0).
+* PASS: out/lab/20261103-132718.
+* The home nest heal is BUG-0496 (not analysed). The minimap itself was not looked at (~ nest +0x120 is inferred
+  to be what it shows).
 
 ## History
 - 2026-11-02: opened.
+- 2026-11-03: fix/w40-world-objects: fixed (worldobj.cpp / nest.cpp).

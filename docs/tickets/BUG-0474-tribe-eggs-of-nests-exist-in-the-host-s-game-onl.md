@@ -1,16 +1,16 @@
 ---
 id: BUG-0474
 title: Tribe: eggs of nests exist in the host's game only (the guest never shows them)
-status: open
+status: fixed
 kind: desync
 stage: Tribe
 reported: 2026-11-03
 source: divergence detector, nightly run 2026-11-03 (out/lab/20261103-012624, report out/detector/20261103-0236.md)
 role: 
 versions: 
-fixed_in:
+fixed_in: unreleased
 branch: fix/w40-world-objects
-commits:
+commits: 9445045a 5ec41dc0 ffed3f29 0209a1c2
 tests: nest_eggs_tribe (tools/tests/coop_world_objects.py --kind eggs), detect_tribe
 signature:
 docs: docs/re/creature.md#creature-world-objects, docs/06-testing.md#testing-world-objects
@@ -32,8 +32,12 @@ nest.cpp runs the egg mirrors in Tribe too (centred on the player tribe when a p
 of an RTS pointer). Switch `nest.eggs_tribe`.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+`coop_world_objects.py --kind eggs` (suite nest_eggs_tribe, tribe fixture), the eggs in both games' noun lists.
+* FAIL with `SPORE_FIX_OFF=nest.eggs_tribe`: out/lab/20261103-123633 (4 host eggs, 0 on the guest).
+* PASS: out/lab/20261103-123333 (5 / 5, each within 1.5 m).
+* Detector (detect_tribe, SPORE_DETECTOR=20, 24 comparisons each): off out/lab/20261103-130419 `Tribe:host_only:egg`
+  54%, `noun_only_host:egg` 54%; on out/lab/20261103-131403: neither.
 
 ## History
 - 2026-11-03: opened.
+- 2026-11-03: fix/w40-world-objects: fixed (worldobj.cpp / nest.cpp).

@@ -3613,3 +3613,10 @@ the other player's game, both ways where the kind has two:
 * `coop.wobj` prints per kind the binds, applied / dropped / missing counts and the requests;
   `coop.wobj list <kind> [r] [x y z]` this game's objects of a kind with the host object each is bound to.
 * Each fails with its switch off (`SPORE_FIX_OFF=wobj.ornament|wobj.fruit|wobj.tree|wobj.herd|nest.eggs_tribe`).
+* The detector's `coop.census all` leaves fruit hanging in a tree (cFruit +0x16C state 0) out of its rows (the
+  noun counts keep them): each game's flora makes them near its own camera, so a walking guest had 15 "unmatched"
+  hanging fruit at trees whose masks were equal on both games. The trees are compared by `wobj.tree`. Rocks
+  show the same pattern (BUG-0498, 29 at once on the walking guest only, gone again): not left out yet.
+* Detector numbers of this branch (24 comparisons per stage each, SPORE_DETECTOR=20): switches off
+  out/lab/20261103-130419: `Creature:unmatched:fruit` 96%, `Tribe:unmatched:fruit` 92%, `Tribe:host_only:egg`
+  54%; on out/lab/20261103-131403: 46%, 8%, 0%.

@@ -34,8 +34,8 @@ The bones: worldobj.cpp kind `interactive_ornament` (see BUG-0459). Plants and r
 (docs/known-issues.md#issue-world-objects-left).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+The bones: see BUG-0459 (wobj_ornament). Plants (`game_plant` 71-96%) and rocks (BUG-0498) not done.
 
 ## History
 - 2026-11-03: opened.
+- 2026-11-03: fix/w40-world-objects: partly fixed (worldobj.cpp / nest.cpp).

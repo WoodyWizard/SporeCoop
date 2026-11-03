@@ -1,16 +1,16 @@
 ---
 id: BUG-0472
 title: fruit differs between the games: about a tenth of the fruit near a player lies elsewhere or exists on one game only (Creature and Tribe)
-status: open
+status: fixed
 kind: desync
 stage: Creature
 reported: 2026-11-03
 source: divergence detector, nightly run 2026-11-03 (out/lab/20261103-012624, report out/detector/20261103-0236.md)
 role: 
 versions: 
-fixed_in:
+fixed_in: unreleased
 branch: fix/w40-world-objects
-commits:
+commits: 9445045a 5ec41dc0 ffed3f29 0209a1c2
 tests: wobj_fruit, wobj_tree (tools/tests/coop_world_objects.py), detect_creature, detect_tribe
 signature:
 docs: docs/re/creature.md#creature-world-objects, docs/06-testing.md#testing-world-objects
@@ -40,8 +40,15 @@ tree's). Switches `wobj.fruit`, `wobj.tree`. Not done: fruit that fell in the ho
 was already empty is not made on the guest; Tribe food bundles (`game_bundle`) have no kind yet.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+`coop_world_objects.py --kind fruit` / `--kind tree` (suites wobj_fruit, wobj_tree, creature fixture).
+* fruit: FAIL with `SPORE_FIX_OFF=wobj.fruit`: out/lab/20261103-123122 (both eaten fruit stay in the other game);
+  PASS out/lab/20261103-122753.
+* tree: FAIL with `SPORE_FIX_OFF=wobj.tree`: out/lab/20261103-123223; PASS out/lab/20261103-122753.
+* Detector (SPORE_DETECTOR=20, 24 comparisons per stage, the census without hanging fruit): off (all switches of
+  this branch off) out/lab/20261103-130419: `Creature:unmatched:fruit` 96% (116 objects), `Tribe:unmatched:fruit`
+  92% (63); on out/lab/20261103-131403: 46% (12 objects), 8% (2). What is left: BUG-0497. Tribe food bundles
+  (`game_bundle` 17% / 4%) have no kind yet.
 
 ## History
 - 2026-11-03: opened.
+- 2026-11-03: fix/w40-world-objects: fixed (worldobj.cpp / nest.cpp).
