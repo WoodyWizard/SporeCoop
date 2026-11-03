@@ -10,7 +10,7 @@ role: guest
 versions: 
 fixed_in: unreleased
 branch: fix/w40-creature-acts
-commits:
+commits: fc6119e0
 tests: creature_sneak (tools/tests/coop_creature_sneak.py)
 signature:
 docs: docs/re/creature.md#creature-sneak

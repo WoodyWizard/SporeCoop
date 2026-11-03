@@ -10,7 +10,7 @@ role: host
 versions: 
 fixed_in: unreleased
 branch: fix/w40-creature-acts
-commits:
+commits: 1cea6d51
 tests: creature_relations (tools/tests/coop_creature_relations.py)
 signature:
 docs: docs/re/creature.md#creature-relations
