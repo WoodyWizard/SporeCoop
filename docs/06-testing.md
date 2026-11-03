@@ -3546,3 +3546,42 @@ Three monitor findings of the w33 runs were the rule or the test, not the mod (e
   must stay at 0 and `coop.status` must count one body left out. `SPORE_FIX_OFF=game.physics_owner` faults at
   0xB4C5B4 in every frame and FAILS. The physics update runs only while the guest's game time runs (the test
   waits up to 60 s for the stand-in to be made).
+
+## Divergence detector (2026-11-02, feat/w39-detector)
+<a id="testing-detector"></a>
+
+Step L0 of [sync-architecture-plan.md](sync-architecture-plan.md): the game's own world on the host and
+on a guest, compared, so unsynced systems are found by the lab, not by players.
+
+* `coop.census all [r]` (mods/coop/census.h): besides the v1 rows, every placed game object (every
+  cGameData with a cSpatialObject in cGameNounManager's list) within r m of the own player (default 250,
+  at most 6000), the Cell stage's foreground cells (host: its pool with the cell index; guest: mirrors
+  with the host's index, its own cells as `local`), `scale=` / `noun=` on every row, the own position
+  (`me pos=`) and the count of every noun type in the whole list with the Ghidra address of one object's
+  vtable (`nouns <noun>=<count>@<vt>`: the exe has no RTTI, the class is found from the vtable).
+* `tools/tests/worlddiff.py`: `diff(host, guest)` around the guest's own player (Cell 40 m, Creature
+  70 m, Tribe 90 m, Civ 160 m, Space 120 m). Matching: by net id (creature npc / proxy, Cell index), else
+  by noun type and the nearest position (3 m static, 15 m moving). Findings, one per signature and
+  comparison, `<stage>:<what>:<kind>`: `host_only` / `guest_only` / `unmatched` (objects of a kind near
+  the guest on one game only), `guest_local` / `host_local` (objects the mod does not track), `alive`,
+  `scale`, `model`, `hp`, `pos` (matched objects that differ), `noun_only_host` / `noun_only_guest` (a noun
+  type in one game's whole list only). `SPORE_LANE=N python3 tools/tests/worlddiff.py` diffs a running lane.
+* Live in any test: `SPORE_DETECTOR=<s>` makes the monitor (monitor.Watch.detect) compare the host with
+  every guest every s seconds and print `DETECTOR-SAMPLE {...}` / `DETECTOR {...}` lines into the test log.
+  Not a gate: tests pass or fail as before.
+* `tools/tests/coop_detect.py --fixture <f>`: a quiet session of one stage, a comparison every 20 s (fails
+  only on a broken dump or a fault). Suite `detector`: `detect_<stage>` for every stage, the play bots
+  (`play_*`) and the campaigns.
+* The night run: `tools/nightly_detect.sh` (lanes 2-7, 9, 10 that are free, 3 rounds, `SPORE_DETECTOR=30`),
+  then `tools/detector_report.py --since <YYYYMMDD-HHMM>` writes `out/detector/<date>.md`: per stage,
+  each signature with how many comparisons had it, the tests, an example and the ticket that covers it
+  (`KNOWN` in the script; `**new**` otherwise).
+* First runs (2026-11-02, lanes 9-10): Cell quiet session: no finding in 8 of 9 comparisons. Creature quiet
+  session: `scale:creature` in every comparison (NPC proxies 0.93 where the host has 0.80: BUG-0461,
+  found without a player), `unmatched:fruit` (about half of the fruit lie elsewhere on each game: fruit is
+  local), `guest_only:018C84A9` (a noun type only the guest's game has, near its avatar: class not known yet).
+* Tribe / Civ / Space (2026-11-02, lanes 9-10, after the RTS centre fix: a background game's pointer is
+  (0 0 0), so the dump takes every object and the compare centres on the host): Tribe `host_only:egg` /
+  `noun_only_host:egg` (eggs in the host's game only), `unmatched:fruit`; Civ `unmatched:citizen` (about
+  half the citizens elsewhere) and `scale:citizen`; Space `scale:018EBADC` (4.95 host, 3.30 guest) and
+  two noun types never at the same place. Unknown noun types carry their vtable for Ghidra.

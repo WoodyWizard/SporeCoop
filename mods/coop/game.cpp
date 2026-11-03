@@ -222,6 +222,12 @@ bool object_position(void* obj, net::Vec3& out)
     return true;
 }
 
+float object_scale(void* obj)
+{
+    void* sp = cast(obj, 0x1186577);
+    return sp ? vcall<float>(sp, 0x34 / 4) : -1.f;
+}
+
 void* find_object(uint32_t noun, const net::Vec3& pos, float max_dist)
 {
     struct Q {

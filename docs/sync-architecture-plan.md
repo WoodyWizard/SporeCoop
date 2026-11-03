@@ -122,7 +122,7 @@ shows no difference in its scenarios. Old per-stage messages are retired one by 
 
 | Step | What | Fixes or proves |
 |---|---|---|
-| 1 | L0 detector (generic) + adapters for Cell and Creature; dumps also for Tribe / Civ / Space (report-only) | finds the unknown list (A) on every stage |
+| 1 | L0 detector (generic) + adapters for Cell and Creature; dumps also for Tribe / Civ / Space (report-only). **First version done 2026-11-02** (feat/w39-detector, [06-testing.md#testing-detector](06-testing.md#testing-detector)): generic noun dump on every stage, Cell cells, `tools/nightly_detect.sh` | finds the unknown list (A) on every stage |
 | 2 | L4 lifecycle + full resync after transitions (all stages) | 0457, 0466, 0343, part of the editor crashes |
 | 3 | L2 engine + Creature descriptors (pilot): puppets, proxies, nests, pickups, carried objects | 0461, 0457, 0460, 0458, 0459 |
 | 4 | L1 requests for Creature (pickup, eat, hit, roar, social) | 0459, 0462 |

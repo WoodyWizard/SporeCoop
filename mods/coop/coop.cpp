@@ -5179,6 +5179,12 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         m = g_mode;
         w = g_world;
     };
+    csc.self_pos = [](net::Vec3& p) {
+        if (!local_now())
+            return false;
+        p = local_state().pos;
+        return true;
+    };
     census::init(H, M, std::move(csc));
     squadron::Ctx sqc;
     sqc.sess = &g_sess;
