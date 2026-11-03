@@ -3606,3 +3606,31 @@ on a guest, compared, so unsynced systems are found by the lab, not by players.
   host and within 6 m. With the fix the spawn is back within about a second. Twin: `SPORE_FIX_OFF=npc.resync`.
 * Pitfall met on the way: a shell loop `until ! pgrep -f <script>` waits for itself (its own command line
   holds the pattern), the same trap as `pkill -f` (CLAUDE.md 3): wait on the background task, not on pgrep.
+## World objects owned by the host (2026-11-03, fix/w40-world-objects)
+<a id="testing-world-objects"></a>
+
+`tools/tests/coop_world_objects.py --kind <k>` (mods/coop/worldobj.cpp, nest.cpp;
+docs/re/creature.md#creature-world-objects), warm, ~1-3 min each. Every kind asserts the game's own state in
+the other player's game, both ways where the kind has two:
+
+* `wobj_ornament` (BUG-0459 / BUG-0473): a bone with a part reward at the same place on both games; the guest
+  uses it (`coop.wobj use`: what the game's interact node does at its end), the host's reward is used up, the
+  host's avatar uses it too: one part more on each game (`coop.parts`), not two.
+* `wobj_fruit` (BUG-0472): two fruit on the ground at the same places; the host eats one (`coop.wobj eat`:
+  cFruit_SetState 5, the eat node's end), it is gone from the guest's game; the guest eats the other.
+* `wobj_tree` (BUG-0472): a fruit falls from a tree (`coop.wobj drop <tree> <slot>`: the flora's DropFruit)
+  in one game: the same tree's mask in the other game loses the slot and a fruit lies under it, both ways.
+* `wobj_herd` (BUG-0460): the host's avatar kills the creatures of the nearest nest of another species until
+  the species is extinct: the herd +0x190 / nest +0x120 in the guest's game too.
+* `nest_eggs_tribe` (BUG-0474, tribe fixture): every egg at the animal nests in the host's game is in the
+  guest's within 1.5 m (`coop.census all`).
+* `coop.wobj` prints per kind the binds, applied / dropped / missing counts and the requests;
+  `coop.wobj list <kind> [r] [x y z]` this game's objects of a kind with the host object each is bound to.
+* Each fails with its switch off (`SPORE_FIX_OFF=wobj.ornament|wobj.fruit|wobj.tree|wobj.herd|nest.eggs_tribe`).
+* The detector's `coop.census all` leaves fruit hanging in a tree (cFruit +0x16C state 0) out of its rows (the
+  noun counts keep them): each game's flora makes them near its own camera, so a walking guest had 15 "unmatched"
+  hanging fruit at trees whose masks were equal on both games. The trees are compared by `wobj.tree`. Rocks
+  show the same pattern (BUG-0498, 29 at once on the walking guest only, gone again): not left out yet.
+* Detector numbers of this branch (24 comparisons per stage each, SPORE_DETECTOR=20): switches off
+  out/lab/20261103-130419: `Creature:unmatched:fruit` 96%, `Tribe:unmatched:fruit` 92%, `Tribe:host_only:egg`
+  54%; on out/lab/20261103-131403: 46%, 8%, 0%.

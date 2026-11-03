@@ -1,6 +1,8 @@
 // Census of the shared objects (census.h, docs/06-testing.md#testing-census).
 #include "census.h"
 
+#include <windows.h>
+
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -83,6 +85,12 @@ static void all_rows(AllQ& q)
             if (!q->vts->count(noun))
                 (*q->vts)[noun] = *(uintptr_t*)o - H->image_base() + 0x400000;
             if (noun == kCreatureNoun || q->rows->size() >= 6000)
+                return true;
+            // a fruit hanging in a tree (cFruit +0x16C state 0) is made by each game's flora near its own camera:
+            // both games hold the same tree masks (cTreeData +0x48) while only one has the fruit objects there
+            // (lane 9, 2026-11-03: 23-41 m from any fruit of the other game, the trees' masks equal). Their state
+            // is the tree's (worldobj.cpp kind "tree"); only fruit that left the tree are rows (BUG-0472).
+            if (noun == 0x02C9CC91 && !IsBadReadPtr(o, 0x170) && *(uint32_t*)((uint8_t*)o + 0x16C) == 0)
                 return true;
             net::Vec3 pos;
             if (!game::object_position(o, pos))

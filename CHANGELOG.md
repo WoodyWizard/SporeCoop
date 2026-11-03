@@ -21,6 +21,12 @@
 - The effects of your creature, cell or tribe (mating-call hearts, being hit, death, a part found,
   the brain upgrade, ...) now show on the other players' screens too, while they play in the same
   place as you (BUG-0451, BUG-0471).
+- Creature: a bone or skeleton one player takes is taken for everybody: the party gets one new part, not
+  two (BUG-0459).
+- Creature and Tribe: fruit one player eats is gone for the other players too, and fruit that falls from
+  a tree falls in every game (BUG-0472).
+- Creature: a nest whose species the host's game made extinct is extinct for every player (BUG-0460).
+- Tribe: the eggs at the animal nests are now in every player's game, not only in the host's (BUG-0474).
 
 ## [0.7.3.6] - 2026-11-02
 

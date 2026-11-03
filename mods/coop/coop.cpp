@@ -45,6 +45,7 @@
 #include "effects.h"
 #include "nest.h"
 #include "fields.h"
+#include "worldobj.h"
 #include "parts.h"
 #include "rejoin.h"
 #include "savestrip.h"
@@ -2071,6 +2072,7 @@ void avatar_change_check()
         npc::on_world_change();
         nest::on_world_change();
         fields::on_world_change();
+        wobj::on_world_change();
         if (!tribe::editor_world_fix()) // BUG-0217: else tribe::world_check() decides
             tribe::on_world_change();
         if (!civ::world_epoch_fix()) // BUG-0223: else civ::world_check() decides
@@ -2464,6 +2466,7 @@ void on_frame(void*, int, void*)
     npc::tick(now);
     nest::tick(now); // BUG-0384
     fields::tick(now); // BUG-0419 G2 (after the modules that make the mirrors)
+    wobj::tick(now); // BUG-0472, BUG-0459
     parts::tick(now); // BUG-0401
     effects::tick(now); // BUG-0451: sends the queued effects on the main thread
     social::tick(now);
@@ -2936,6 +2939,7 @@ void end_session(EndPath path, bool cell)
         npc::on_session_end();
         nest::on_session_end(); // BUG-0384: our egg mirrors
         fields::on_session_end();
+        wobj::on_session_end();
         parts::on_session_end(); // BUG-0401
         effects::on_session_end(); // BUG-0451
         social::on_session_end();
@@ -2950,6 +2954,7 @@ void end_session(EndPath path, bool cell)
         npc::on_session_end();
         nest::on_session_end(); // BUG-0384: our egg mirrors
         fields::on_session_end();
+        wobj::on_session_end();
         parts::on_session_end(); // BUG-0401
         effects::on_session_end(); // BUG-0451
         social::on_session_end();
@@ -2960,6 +2965,7 @@ void end_session(EndPath path, bool cell)
         npc::on_session_end();
         nest::on_session_end(); // BUG-0384: our egg mirrors
         fields::on_session_end();
+        wobj::on_session_end();
         parts::on_session_end(); // BUG-0401
         effects::on_session_end(); // BUG-0451
         social::on_session_end();
@@ -3347,6 +3353,9 @@ void setup_callbacks()
             return;
         case net::MSG_PARTS: // BUG-0401
             parts::on_message(type, from, r);
+            return;
+        case net::MSG_WOBJ: // BUG-0472, BUG-0459
+            wobj::on_message(type, from, r);
             return;
         }
         if (g_sess.role() == net::Role::Client && from == 0)
@@ -4864,6 +4873,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         nc.player_pos = ctx.player_pos;
         nc.in_place = ctx.in_place;
         nc.host_away = ctx.host_away;
+        nc.stage_center = ctx.stage_center;
         nest::init(H, M, nc);
     }
     { // BUG-0419 G2: replicated fields (the modules register their kinds in their init)
@@ -4871,6 +4881,15 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         fc.sess = &g_sess;
         fc.in_place = ctx.in_place;
         fields::init(H, M, fc);
+    }
+    { // BUG-0472, BUG-0459: world objects owned by the host
+        wobj::Ctx wc;
+        wc.sess = &g_sess;
+        wc.player_pos = ctx.player_pos;
+        wc.in_place = ctx.in_place;
+        wc.host_away = ctx.host_away;
+        wc.stage_center = ctx.stage_center;
+        wobj::init(H, M, wc);
     }
     { // BUG-0401: the party's collected creature parts
         parts::Ctx pc;
