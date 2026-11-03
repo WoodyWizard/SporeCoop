@@ -144,6 +144,19 @@ void apply_damage(void* c, float dmg, int type, void* attacker)
 
 void set_health(void* c, float hp) { field<float>(c, kHpOff) = hp; }
 
+bool sneaking(void* c) { return c && skg::readable(c, 0xBB4) && field<uint8_t>(c, 0xBB1) != 0; }
+float noise_radius(void* c) { return c && skg::readable(c, 0xB84) ? field<float>(c, 0xB80) : -1.f; }
+float sneak_alpha(void* c) { return c && skg::readable(c, 0xB80) ? field<float>(c, 0xB7C) : -1.f; }
+
+bool set_sneaking(void* c, bool on)
+{
+    static uintptr_t a = H ? H->sym("SporeCoop::CreatureSetSneaking") : 0;
+    if (!a || !c)
+        return false;
+    thiscall<void>(a, c, (int)(on ? 1 : 0), 1);
+    return true;
+}
+
 bool hatchling_waiting(void* c)
 {
     if (!c || !skg::readable(c, 0xB50) || field<int32_t>(c, 0xB34) != 0)

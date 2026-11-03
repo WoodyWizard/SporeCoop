@@ -40,6 +40,8 @@ static void creature_fill(void* av, net::PlayerState& st)
         st.flags |= net::PF_RUNNING;
     if (game::is_dead(av))
         st.flags |= net::PF_DEAD;
+    if (game::sneaking(av))
+        st.flags |= net::PF_SNEAKING;
     st.health = game::health(av);
     st.max_health = game::max_health(av);
     st.species = game::species_instance(av);
@@ -104,8 +106,30 @@ COOP_FIX("creature.puppet_ground", "BUG-0366", g_puppet_ground_fix, "creature: t
 static bool g_puppet_path_fix = true;
 COOP_FIX("creature.puppet_path", "BUG-0394", g_puppet_path_fix, "creature: the partner's creature also walks where the partner moves without a speed (moves carried by an animation)");
 
+// BUG-0463: a player's sneak (the sneak ability: the creature +0xBB1, the noise radius +0xB80 = 0, the model
+// eased to alpha 0.2 by the creature's update) ran only on the sneaking player's game. The partner's puppet
+// walked upright and opaque, and on the host the NPCs whose AI looks at the puppet (npc.cpp ai_target: the
+// puppet as the avatar of NPCTickAI) heard it at the full noise radius. With creature.sneak the puppet is
+// put into the same state with the game's own setter (CreatureSetSneaking 0xC1B030, force: no ability
+// check) whenever the partner's PF_SNEAKING differs from it; the puppet's energy is kept so the game's
+// update does not end the sneak (it does at 0 energy). `coop.fix creature.sneak off`: the old behaviour.
+static bool g_sneak_fix = true;
+COOP_FIX("creature.sneak", "BUG-0463", g_sneak_fix, "creature: a sneaking partner is shown sneaking (see-through) and the host's NPCs do not hear it");
+
+static void puppet_sneak(void* p, const net::PlayerState& s)
+{
+    if (!g_sneak_fix || !game::in_creature_stage())
+        return;
+    bool want = (s.flags & net::PF_SNEAKING) && !(s.flags & net::PF_DEAD);
+    if (want && skg::readable(p, 0xE5C) && skg::field<float>(p, 0xE58) < 1.f)
+        skg::field<float>(p, 0xE58) = 1.f; // (the update ends a sneak at 0 energy, +0xE58)
+    if (game::sneaking(p) != want)
+        game::set_sneaking(p, want);
+}
+
 static void creature_drive(void* p, const net::PlayerState& s_in, drive::State& ds, double now)
 {
+    puppet_sneak(p, s_in);
     ds.drawn = game::position(p);
     net::PlayerState s = s_in;
     if (g_puppet_ground_fix && game::in_creature_stage())

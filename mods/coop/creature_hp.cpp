@@ -263,6 +263,43 @@ static int c_hp(void*, int argc, const char* const* argv, SkOut* out)
     return 0;
 }
 
+// tests (BUG-0463): coop.sneak [on|off|ability] - the sneak state the game holds for the own avatar and the
+// partners' puppets (+0xBB1, noise radius +0xB80, alpha +0xB7C, energy +0xE58); on / off: the game's setter on
+// the own avatar without force (it needs the sneak ability, as the ability key does)
+static int c_sneak(void*, int argc, const char* const* argv, SkOut* out)
+{
+    char b[256];
+    std::string s;
+    void* av = game::avatar();
+    if (argc > 1 && (!strcmp(argv[1], "on") || !strcmp(argv[1], "off") || !strcmp(argv[1], "force"))) {
+        uintptr_t a = H->sym("SporeCoop::CreatureSetSneaking");
+        if (!av || !a) {
+            H->out_printf(out, "no avatar\n");
+            return 1;
+        }
+        // force: the setter's own force flag (a creature without the sneak ability, tests only)
+        skg::thiscall<void>(a, av, (int)(argv[1][1] != 'f'), (int)(argv[1][0] == 'f'));
+    }
+    auto line = [&](const char* who, int id, void* c) {
+        uint8_t* model = skg::field<uint8_t*>(c, 0xB54);
+        snprintf(b, sizeof b, "%s %d: sneak=%d noise=%.2f alpha=%.2f energy=%.2f model_alpha=%.2f b5e=%d b58=%X ptr=%p\n", who, id,
+                 (int)game::sneaking(c), game::noise_radius(c), game::sneak_alpha(c),
+                 skg::readable(c, 0xE5C) ? skg::field<float>(c, 0xE58) : -1.f,
+                 model && skg::readable(model + 0x80, 4) ? *(float*)(model + 0x80) : -1.f, (int)skg::field<uint8_t>(c, 0xB5E),
+                 skg::field<uint32_t>(c, 0xB58), c);
+        s += b;
+    };
+    if (av)
+        line("own", -1, av);
+    if (C.puppet_of)
+        for (uint8_t id = 0; id < 8; id++)
+            if (void* p = C.puppet_of(id))
+                if (game::is_puppet(p))
+                    line("puppet", id, p);
+    H->out_printf(out, "%s", s.c_str());
+    return 0;
+}
+
 void init(const SkHost* host, SkMod* mod, Ctx ctx)
 {
     H = host;
@@ -277,6 +314,8 @@ void init(const SkHost* host, SkMod* mod, Ctx ctx)
         H->hook_create(M, (void*)a, (void*)h_GetMaxHp, (void**)&o_GetMaxHp);
     H->command_add(M, "coop.hp", "coop.hp [pack|attack <player>|packhit <player> <hp>] - creature health of the own avatar, partners' puppets, the pack (tests)",
                    c_hp, nullptr, SK_CMD_MAIN_THREAD);
+    H->command_add(M, "coop.sneak", "coop.sneak [on|off|force] - the sneak state of the own avatar and the partners' puppets (tests, BUG-0463)",
+                   c_sneak, nullptr, SK_CMD_MAIN_THREAD);
 }
 
 } // namespace creature_hp

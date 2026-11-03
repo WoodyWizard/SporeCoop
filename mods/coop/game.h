@@ -197,6 +197,14 @@ void hit(void* c, float damage, int type, void* attacker_creature);          // 
 // the same with a push (knockback impulse, the 4th TakeDamage argument; tests: a charge's throw, BUG-0383)
 void hit_push(void* c, float damage, int type, void* attacker_creature, const net::Vec3& push);
 void set_health(void* c, float hp);
+// BUG-0463 sneak (docs/re/creature.md#creature-sneak): +0xBB1 is 1 while the creature sneaks, +0xB80 its
+// noise radius (0 while sneaking, what the NPCs' hearing check reads), +0xB7C the model's alpha the
+// creature's update eases to 0.2 while sneaking (written to the model +0x80)
+bool sneaking(void* c);
+float noise_radius(void* c);
+float sneak_alpha(void* c);
+// the game's own setter CreatureSetSneaking 0xC1B030 (c, on, force 1: no ability check); false: no symbol
+bool set_sneaking(void* c, bool on);
 // A hatchling (age +0xB34 == 0) whose behaviour tree waits for a family member of its nest to greet it
 // (tree 0x9413EDEB): after a respawn or a hatch the greeting NPC makes it grow up (docs/re/creature.md 13).
 constexpr uint32_t kHatchlingTree = 0x9413EDEBu;

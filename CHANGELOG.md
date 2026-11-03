@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### Fixed
+- Creature: a partner who sneaks is shown sneaking (see-through) on your screen too, and the host's animals
+  no longer hear a sneaking guest (BUG-0463).
 - Creature: animals of other species now have the same size on every player's screen; young ones are no
   longer shown at an adult's size on the guest (BUG-0461).
 - Tribe: tribe members (yours, your partners' and other tribes') have the same size on every screen; the

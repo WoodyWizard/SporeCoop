@@ -1910,3 +1910,29 @@ docs/sync-architecture-plan.md L1 / L2).
 * ? Not known: whether trees grow fruit again (a host's new fruit cannot be given to the guest: no set-bit
   path is used); what the game shows on a used bone (no visual change seen); who else rewards ornaments in
   Tribe (no cCreatureModeStrategy there: the ornament kind is Creature only).
+
+## Sneak: the creature's state and the partner's puppet (2026-11-03, fix/w40-creature-acts)
+<a id="creature-sneak"></a>
+
+BUG-0463. GOG 2024, Ghidra (out/ghidra-2024) and lane 9 at runtime (creature fixture, `coop.sneak`).
+
+* ✔ `CreatureSetSneaking` 0xC1B030 `thiscall(creature, bool on, bool force) ret 8`: on: without force it returns when
+  the creature has no ability of type 0xD or 0x52 (`GetAbilityIndexByType`); sets +0xB80 (noise radius) = 0, +0xBB1 = 1
+  and plays the procedural sound 0xC881120E at the creature. Off (only when +0xBB1 is set): +0xB80 back (the avatar,
+  +0xB58 bit 0x200: from its sneak ability via 0xC19900; others: the constant at 0x150C8C0, 6.0), +0xBB1 = 0, sound
+  0x529FEC69. 30 callers (TakeDamage ends a sneak, the creature-stage action handlers 0xD6xxxx / 0xD8xxxx).
+* ✔ 0xC0C290 (fastcall) returns +0xBB1: NPCTickAI calls it 4 times (the notice step, docs/re/creature.md 14.2),
+  cCreatureCitizen::Update and the stage's UI code too. 0xC11730 (a vtable slot, 0x146A650 / 0x146ADC0) returns false
+  at once for a sneaking target (a sight / distance check).
+* ✔ The sneak's look: `0xC1CF30` (called from cCreatureAnimal::Update 0xC0AE30 and cCreatureBase::Update every frame,
+  for puppets too) eases +0xB7C towards 0.2 while sneaking (1.0 else) and writes it to the model (+0xB54) +0x80, unless
+  +0xB5E or +0xB58 bit 0x800; with the sneak ability it consumes energy (+0xE58, ability +0x104 per ms) and ends the
+  sneak at 0 energy. Runtime: the fixture's creatures have energy 1000; the alpha reached 0.2-0.26 within 2-5 s of the
+  sneak on both the avatar and the puppet.
+* ✔ The guest's fixture creature has no sneak ability (types 0xE 0x1D 0x28 0x10 0x25 0x1E 0x31 0x32 0x33), the host's
+  has 0xD (index 7): the guest's sneak in the test uses the force flag.
+* ✔ Before the fix the partner's puppet kept +0xBB1 0, noise 6.0, alpha 1.0 while the partner sneaked: nothing of it was
+  sent. Now PlayerState flag PF_SNEAKING (modes.cpp) and `CreatureSetSneaking(puppet, on, 1)` on the receiver
+  (`creature.sneak`); the puppet's energy is kept above 0.
+* ~ Inferred, not run as a behaviour test: the host's NPCs with a guest's puppet swapped in as the avatar (npc.cpp
+  ai_target) now get noise 0 and the sneak flag from the puppet, as from a sneaking host avatar.
