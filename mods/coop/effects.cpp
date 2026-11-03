@@ -1,6 +1,7 @@
 #include "effects.h"
 
 #include <atomic>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <map>
@@ -32,6 +33,8 @@ static double g_tokens_at = 0;
 static uint32_t g_sent, g_rx, g_played, g_stopped, g_skipped, g_failed, g_dropped;
 // why a world effect the hooks queued was not sent (coop.effects: the frame-time and test diagnosis)
 static uint32_t g_w_no_pos, g_w_relayed, g_w_far, g_w_seen, g_w_rate;
+// received messages dropped before any game call (BUG-0451 review: a peer's message is data)
+static uint32_t g_dropped_spoof;
 static bool g_log;
 
 struct Last {
@@ -380,7 +383,17 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
     }
     if (!r.ok())
         return;
-    if (C.sess && C.sess->role() == net::Role::Host && from != 0) { // relay to the other guests
+    // Whose message is it? The host relays only a guest's own effect (a guest cannot name another
+    // player, BUG-0201: the id would choose whose puppet plays it); a guest accepts only the host's
+    // relay (messages are never sent guest to guest).
+    net::Role role = C.sess ? C.sess->role() : net::Role::None;
+    if (role == net::Role::Host ? (from != 0 && player != from) : (from != 0)) {
+        g_dropped_spoof++;
+        if (g_log)
+            H->log(M, SK_INFO, "effect: from %u dropped, it names player %u (spoofed)", from, player);
+        return;
+    }
+    if (C.sess && role == net::Role::Host && from != 0) { // relay to the other guests
         net::Writer w;
         w.u8(player);
         w.u8(stop);
@@ -454,6 +467,27 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
                player, who(puppet), id, key, pool, ev.stop ? 1 : 0, last.game ? 1 : 0, last.active ? 1 : 0);
 }
 
+void inject(uint8_t from, uint8_t player, uint8_t stop, uint8_t pool, uint32_t id, uint32_t key,
+            const net::Vec3& pos)
+{
+    net::Writer w;
+    w.u8(player);
+    w.u8(stop);
+    w.u8(pool);
+    w.u32(id);
+    w.u32(key);
+    if (pool == 5) {
+        uint8_t xf[0x44] = {};
+        float* q = (float*)(xf + 4);
+        q[0] = pos.x;
+        q[1] = pos.y;
+        q[2] = pos.z;
+        w.raw(xf, sizeof xf);
+    }
+    net::Reader r(w.data.data(), w.size());
+    on_message(net::MSG_EFFECT, from, r);
+}
+
 void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
 {
     H = host;
@@ -463,6 +497,7 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
     g_tokens_at = 0;
     g_sent = g_rx = g_played = g_stopped = g_skipped = g_failed = g_dropped = 0;
     g_w_no_pos = g_w_relayed = g_w_far = g_w_seen = g_w_rate = 0;
+    g_dropped_spoof = 0;
     g_last_tx = Last{};
     g_last_rx.clear();
     g_last_rx_start.clear();
@@ -601,6 +636,8 @@ std::string status()
     s += b;
     snprintf(b, sizeof b, "effects world drops: no_pos=%u relayed=%u far=%u seen=%u rate=%u\n", g_w_no_pos, g_w_relayed,
              g_w_far, g_w_seen, g_w_rate);
+    s += b;
+    snprintf(b, sizeof b, "effects received drops: spoof=%u\n", g_dropped_spoof);
     s += b;
     {
         double hs = 0, hm = 0;

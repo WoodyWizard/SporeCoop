@@ -46,5 +46,9 @@ void set_load(uint32_t n, uint32_t period_ms, uint32_t id);
 // `game=<pointer> active=<0|1>` for each (empty when the game symbols are missing)
 std::string probe(uint32_t key);
 std::string map_dump(); // tests: the effect pool maps of the avatar and the puppets (their keys and effect objects)
+// tests: feed a crafted MSG_EFFECT through on_message as if it came from peer `from` (spoofing and
+// validation checks: the transport cannot make a guest claim another player)
+void inject(uint8_t from, uint8_t player, uint8_t stop, uint8_t pool, uint32_t id, uint32_t key,
+            const net::Vec3& pos);
 
 } // namespace effects

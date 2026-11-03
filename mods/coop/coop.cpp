@@ -4927,6 +4927,24 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                            SAY("effects log %s\n", effects::set_log(argc > 2 && (!strcmp(argv[2], "on") || !strcmp(argv[2], "1"))) ? "on" : "off");
                            return 0;
                        }
+                       if (argc > 1 && !strcmp(argv[1], "inject")) {
+                           // tests: a crafted MSG_EFFECT as if peer `from` sent it (validation)
+                           if (argc < 8) {
+                               SAY("inject <from> <player> <stop> <pool> <id hex> <key> [x y z]");
+                               return 1;
+                           }
+                           net::Vec3 p{};
+                           if (argc > 10) {
+                               p.x = (float)atof(argv[8]);
+                               p.y = (float)atof(argv[9]);
+                               p.z = (float)atof(argv[10]);
+                           }
+                           effects::inject((uint8_t)strtoul(argv[2], nullptr, 0), (uint8_t)strtoul(argv[3], nullptr, 0),
+                                           (uint8_t)strtoul(argv[4], nullptr, 0), (uint8_t)strtoul(argv[5], nullptr, 0),
+                                           (uint32_t)strtoul(argv[6], nullptr, 16), (uint32_t)strtoul(argv[7], nullptr, 0), p);
+                           SAY("%s", effects::status().c_str());
+                           return 0;
+                       }
                        if (argc > 1 && !strcmp(argv[1], "load")) {
                            uint32_t n = argc > 2 ? (uint32_t)strtoul(argv[2], nullptr, 10) : 0;
                            uint32_t ms = argc > 3 ? (uint32_t)strtoul(argv[3], nullptr, 10) : 1000;
