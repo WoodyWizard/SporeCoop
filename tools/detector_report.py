@@ -53,6 +53,17 @@ KNOWN = {  # <stage>:<what>:<kind> (or <stage>:*:<kind>, <*>:*:<kind>) -> the ti
     'Space:*:planetary_artifact': 'BUG-0479',
     'Cell:*:cell': 'BUG-0480',
     'Creature:guest_local:creature': 'BUG-0421 class (guest-local objects)',
+    '*:*:tribe': 'BUG-0483', '*:*:tribe_hut': 'BUG-0483', '*:*:tribe_food_mat': 'BUG-0483',
+    'Civilization:*:tribe_tool': 'BUG-0483', 'Tribe:guest_only:tribe_tool': 'BUG-0483', 'Tribe:guest_only:citizen': 'BUG-0483',
+    'Civilization:*:cultural_target': 'BUG-0484', 'Civilization:*:game_bundle': 'BUG-0484', 'Civilization:*:turret': 'BUG-0484',
+    '*:scale:node': 'BUG-0485',
+    'Creature:*:ufo': 'BUG-0486',
+    'Creature:host_only:creature': 'BUG-0487', 'Creature:hp:creature': 'BUG-0487', 'Creature:alive:creature': 'BUG-0487',
+    'Creature:host_local:creature': 'BUG-0487', 'Creature:guest_only:creature': 'BUG-0487',
+    'Tribe:unmatched:tribe_tool': 'BUG-0488', 'Tribe:unmatched:citizen': 'BUG-0488', 'Tribe:*:nest': 'BUG-0488',
+    'Tribe:*:interactive_ornament': 'BUG-0488',
+    '*:*:gameplay_marker': 'BUG-0489',
+    'Space:*:citizen': 'BUG-0490', 'Space:*:vehicle': 'BUG-0490',
 }
 
 

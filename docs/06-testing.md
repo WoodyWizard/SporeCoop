@@ -3585,3 +3585,9 @@ on a guest, compared, so unsynced systems are found by the lab, not by players.
   `noun_only_host:egg` (eggs in the host's game only), `unmatched:fruit`; Civ `unmatched:citizen` (about
   half the citizens elsewhere) and `scale:citizen`; Space `scale:018EBADC` (4.95 host, 3.30 guest) and
   two noun types never at the same place. Unknown noun types carry their vtable for Ghidra.
+* Triage of the first full night (2026-11-03, out/detector/20261103-final.md): every signature has a ticket
+  (BUG-0461, BUG-0472..0480, BUG-0483..0490; `KNOWN` in tools/detector_report.py) or is not compared by
+  design (`worlddiff.IGNORE`: invisible hit spheres, the terrain cursor, missions, orders, inventories, and
+  the Space level of detail: `visible_planet` and a planet's creatures / citizens in the whole lists, which
+  only the game whose camera is on that planet loads). A new `**new**` row in a later report is a new
+  finding: give it a ticket or an IGNORE entry with the reason, never leave it.

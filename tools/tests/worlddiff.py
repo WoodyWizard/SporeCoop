@@ -112,7 +112,9 @@ TOL_STATIC, TOL_MOVING = 3.0, 15.0
 IGNORE = {'hit_sphere', 'solar_hit_sphere', 'game_terrain_cursor', 'species_goal', 'creature_tutorial_mission',
           'tribe_to_tribe_mission', 'find_mission', 'military_attack_city_order', 'cultural_convert_city_order',
           'vehicle_group_order', 'sound_loop_object', 'placeable_sound', 'player', 'player_inventory',
-          'space_inventory', 'cheat_object'}
+          'space_inventory', 'cheat_object',
+          # level of detail by each game's own camera (the planet a camera is close to is loaded): not a desync
+          'visible_planet', 'sim_planet_low_l_o_d'}
 MOVING = {'creature', 'citizen', 'herd', 'vehicle', 'ufo', 'tribe_tool'}
 
 
@@ -320,6 +322,10 @@ def diff(host, guest, area=None):
     # the whole lists: noun types one game has and the other has none of (any distance)
     for noun in sorted(set(host.nouns) | set(guest.nouns)):
         if noun_name(noun) in IGNORE:
+            continue
+        # Space: a planet's life (creatures, citizens) is loaded only by a game whose camera is on that
+        # planet (level of detail): the whole-list counts differ by design; the area compare still runs
+        if stage == 'Space' and noun_name(noun) in ('creature', 'citizen'):
             continue
         h, g = host.nouns.get(noun, 0), guest.nouns.get(noun, 0)
         if (h == 0) != (g == 0) and max(h, g) >= 1:
