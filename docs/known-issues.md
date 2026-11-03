@@ -1642,7 +1642,9 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   `civ+0xB0` / `civ+0xD4` and the city's lists (BUG-0020's null rule), with a save + reload test per stage.
 * Ticket: BUG-0470
 
-### play_creature: a puppet once far off, no joint hunt (2026-11-03, fix/w40-effects)
+## play_creature: a puppet once far off, no joint hunt (2026-11-03, fix/w40-effects)
+<a id="issue-play-creature-puppet-far"></a>
+
 * One sample of ~140 per player: the partner's puppet 11-177 m from where its own game has it,
   speed 0 (BUG-0499); some runs have no joint hunt or the host's creature 0.71 m under the ground
   for 2 log lines (BUG-0500). Both with and without the effect relay (out/lab/20261103-124913 in
