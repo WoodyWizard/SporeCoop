@@ -33,6 +33,10 @@ struct Ctx {
     std::function<net::Vec3()> local_pos;
     // the world being played (0 = none): a change means the game freed the relayed effects
     std::function<uint32_t()> world;
+    // BUG-0471: player `id` plays in this game's place right now (its state: same stage and world,
+    // in the world); `anyone_here`: some partner does (an effect nobody can see is not sent)
+    std::function<bool(uint8_t id)> here;
+    std::function<bool()> anyone_here;
 };
 
 void init(const SkHost* host, SkMod* mod, const Ctx& ctx);

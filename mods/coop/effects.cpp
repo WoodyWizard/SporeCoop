@@ -24,6 +24,16 @@ static bool g_fix = true;
 COOP_FIX("creature.effects_relay", "BUG-0451", g_fix,
          "creature: every effect a player's creature makes (hearts, social, attack, ...) shows on the partner's puppet");
 
+// BUG-0471: an effect is sent only while a partner plays in the same place, and a received start
+// is played only while its owner does (a guest in the main menu, an editor, a loading screen or at
+// another star does not create the host's effects in whatever world its game has then). Off: the
+// old behaviour (sent and played in any place).
+static bool g_here_fix = true;
+COOP_FIX("effects.here", "BUG-0471", g_here_fix,
+         "effects: relayed only between players in the same place (not into a menu, editor or loading screen)");
+static uint32_t g_elsewhere_tx, g_elsewhere_rx;
+static bool nobody_here() { return g_here_fix && C.anyone_here && !C.anyone_here(); }
+
 // Rate limit: a creature can make a burst of one-shot effects (footsteps, bites, particles). 40 a
 // second is far above every effect the game makes for one avatar and below a packet flood.
 static constexpr double kRate = 40.0;
@@ -295,6 +305,10 @@ static void process_local(void* creature, const game::EffectEvent& ev)
         return;
     if (!ev.stop && !ev.id)
         return;
+    if (!ev.stop && nobody_here()) {
+        g_elsewhere_tx++;
+        return;
+    }
     if (ev.stop) { // a stop only for a start the partner got: the game stops some keys every frame
         size_t i = 0;
         while (i < g_sent_n && g_sent_keys[i] != ev.key)
@@ -356,6 +370,10 @@ static void process_world(void* fx, uint32_t id)
         g_w_far++;
         if (g_log)
             H->log(M, SK_INFO, "effect: world id %08X at %.2f %.2f %.2f is not on the local player", id, p.x, p.y, p.z);
+        return;
+    }
+    if (nobody_here()) {
+        g_elsewhere_tx++;
         return;
     }
     if (world_sent_seen(fx, id)) {
@@ -595,6 +613,12 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
     g_rx++;
     if (!g_fix)
         return;
+    if (!stop && g_here_fix && C.here && !C.here(player)) {
+        g_elsewhere_rx++;
+        if (g_log)
+            H->log(M, SK_INFO, "effect: from %u skipped, not in this place (id %08X pool %u)", player, id, pool);
+        return;
+    }
     void* puppet = pool == 5 ? reinterpret_cast<void*>(1) : (C.puppet_of ? C.puppet_of(player) : nullptr);
     if (!puppet) {
         g_skipped++;
@@ -683,6 +707,7 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
     g_tokens_at = 0;
     g_sent = g_rx = g_played = g_stopped = g_skipped = g_failed = g_dropped = 0;
     g_w_no_pos = g_w_relayed = g_w_far = g_w_seen = g_w_rate = 0;
+    g_elsewhere_tx = g_elsewhere_rx = 0;
     g_dropped_spoof = 0;
     g_bad_pool = g_bad_id = g_bad_bone = g_bad_xf = g_bad_short = 0;
     g_last_tx = Last{};
@@ -843,6 +868,9 @@ std::string status()
     s += b;
     snprintf(b, sizeof b, "effects received drops: spoof=%u pool=%u id=%u bone=%u transform=%u short=%u\n",
              g_dropped_spoof, g_bad_pool, g_bad_id, g_bad_bone, g_bad_xf, g_bad_short);
+    s += b;
+    snprintf(b, sizeof b, "effects elsewhere: not sent=%u not played=%u here_fix=%d\n", g_elsewhere_tx, g_elsewhere_rx,
+             (int)g_here_fix);
     s += b;
     snprintf(b, sizeof b,
              "effects world live: live=%u stopped=%u expired=%u released=%u dropped=%u release_fix=%d\n",

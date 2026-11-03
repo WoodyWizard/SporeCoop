@@ -4810,6 +4810,23 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
             return false;
         };
         ec.world = [] { return g_world; };
+        ec.here = [](uint8_t id) {
+            auto it = g_remotes.find(id);
+            if (it == g_remotes.end() || it->second.echo || it->second.buf.empty())
+                return false;
+            const auto& ls = it->second.buf.latest();
+            return same_place(ls) && (ls.flags & net::PF_IN_WORLD) != 0;
+        };
+        ec.anyone_here = [] {
+            for (auto& [id, r] : g_remotes) {
+                if (r.echo || r.buf.empty())
+                    continue;
+                const auto& ls = r.buf.latest();
+                if (same_place(ls) && (ls.flags & net::PF_IN_WORLD))
+                    return true;
+            }
+            return false;
+        };
         ec.local_pos = [] {
             void* av = game::avatar();
             if (av)
