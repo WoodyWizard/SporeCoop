@@ -780,9 +780,9 @@ the game files' index and Ghidra. The rest of BUG-0424 after BUG-0452.
 * ✔ A model that names a part this game does not have faults in the *model bake*, at a different place per
   kind: the creature bake at 0x00441F3B (BUG-0452) and the vehicle/UFO bake at 0x0046C82A
   (`SporeCoop::ModelBake_PartProp_Null`, `mov eax,[edx]` where edx is the part's property object, prop
-  0xAFFF3A14). Runtime: the guest of the two tests with `SPORE_FIX_OFF=content.all_kinds` faults 487 to
-  494 times (civ, every frame the mirror is tried) and twice (space, once per mirror) in one run
-  (`out/lab/20261102-201454`).
+  0xAFFF3A14). Runtime: the guest of the two tests with `SPORE_FIX_OFF=content.all_kinds` faults 456 and
+  467 times (civ, every frame the mirror is tried) and twice (space, once per mirror) in one run
+  (`out/lab/20261102-202807`).
 * ✔ Call sites (`content.all_kinds`): a civ mirror vehicle (`civ.cpp` `guest_state`: the civ's
   `GetDesignKey(VehicleDesignId(purpose, loco))`, then `CreateVehicle` with the checked copy's key; a
   design whose model cannot be built at all is created from a zero key, which the game fills with its own

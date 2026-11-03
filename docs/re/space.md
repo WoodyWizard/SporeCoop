@@ -2035,5 +2035,5 @@ BUG-0469, GOG 2024, lanes 4/5 (`tools/tests/coop_content_space.py`).
   not cover: the guest faulted in the model bake at 0x0046C82A (`SporeCoop::ModelBake_PartProp_Null`),
   not at 0xE98DD0. Runtime: `coop.fleet fakemodel 2 <instance>` makes the host send the test's ship model
   (a base game UFO model with a part of `Spore_Pack_03`): with `SPORE_FIX_OFF=content.all_kinds` the guest
-  faults (`out/lab/20261102-201454`), with the fix on it builds a substitute copy and shows the mirror
-  (`substituted=1`, `content_checked=2`, `out/lab/20261102-200921`).
+  faults (`out/lab/20261102-202807`), with the fix on it builds a substitute copy and shows the mirror
+  (`substituted=1`, `content_checked=2`, `out/lab/20261102-202217`).

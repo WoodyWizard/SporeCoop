@@ -875,9 +875,9 @@ docs/re/creations.md#creations-content-all-kinds.
   (the building stays missing on that guest, logged once per design; `build_in_city` returns nothing) and
   a design that this game has is built as it is. The host builds from its own designs (its own game
   baked them).
-* ✔ Runtime (lane 4 + guest lane 5, PASS run `out/lab/20261102-200921`): the guest's house design key is
+* ✔ Runtime (lane 4 + guest lane 5, PASS run `out/lab/20261102-202217`): the guest's house design key is
   `0679F5DE/2399BE55/40636200` (`coop.civ design <city> house`) and its model is complete (`model ok`);
   with the guest's design forced to a vehicle model that names a part of a pack the guest lacks
   (`coop.civ fakeveh`, test only) the guest builds a substitute copy and shows the mirror
   (`coop.creations content`: `substituted=1`, `refused=0`). With `SPORE_FIX_OFF=content.all_kinds` the
-  same guest faults at 0x0046C82A (`out/lab/20261102-201454`).
+  same guest faults at 0x0046C82A (`out/lab/20261102-202807`).

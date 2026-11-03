@@ -36,7 +36,7 @@ Observed (Ghidra, lanes 4/5-6, `tools/tests/coop_content_civ.py`, `coop_content_
 * Civ: the guest builds a mirror vehicle from its own copy of the civilization's design
   (`GetDesignKey(VehicleDesignId(purpose, loco))` -> `CreateVehicle`); that design's model is what the
   guest's game bakes, and nothing checked it. A vehicle whose design model names a part the guest lacks
-  faults 338 times in one run with `content.all_kinds` off (FAIL run out/lab/20261102-201454).
+  faults 456 times in one run with `content.all_kinds` off (FAIL run out/lab/20261102-202807).
 * Civ buildings: `cCity::SetBuildingModel` (0xBDB940) picks the design id by building type
   (0xFF10521/0x1A55E4D/0xECADE42 -> 0x4E3F7777/0x72C49181/0x47C10953) and reads the civ's design key
   itself; when its key instance is 0 it generates the design (FUN_00bf9440). The guest's own building
@@ -76,10 +76,10 @@ key as they get it).
   building parts (the base game's 224 building parts have no 0xFE byte).
 
 ## Verification
-* FAIL (`SPORE_FIX_OFF=content.all_kinds`): `out/lab/20261102-201454` (lane 4 + guest lane 5, 2 repeats).
-  4/4 FAIL: the civ guest faults 338 and 494 times at 0x0046C82A (data 0), the space guest 2 times at the
+* FAIL (`SPORE_FIX_OFF=content.all_kinds`): `out/lab/20261102-202807` (lane 4 + guest lane 5, 2 repeats).
+  4/4 FAIL: the civ guest faults 456 and 467 times at 0x0046C82A (data 0), the space guest 2 times at the
   same address; no unknown-id log line, `coop.creations content` = `checks=0` (the switch off).
-* PASS (fix on): `out/lab/20261102-200921` (lane 4 + guest lane 5, 2 repeats). 4/4 OK: the civ guest logs
+* PASS (fix on): `out/lab/20261102-202217` (lane 4 + guest lane 5, 2 repeats). 4/4 OK: the civ guest logs
   `creations: content: vehicle model 29030001 part 75A5D2D4 unknown here`, builds the mirror from a
   substitute copy (`checks=2 same=1 substituted=1 refused=0`, `mirror_designs=1`, a new mirror created)
   and the host's house from the civ's own building design (`model ok`, buildings 1 -> 2); the space guest
