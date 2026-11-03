@@ -52,6 +52,15 @@ def main():
     off = pk + '.bug0469-off'
     if os.path.exists(off) and not os.path.exists(pk):
         os.rename(off, pk)  # an earlier run that died
+    orig = twoinst.restore_creations
+
+    def restore(guest=True):
+        # Bob (lane A, with the pack) gets the same ship model: his game has the part, so he mirrors the
+        # host's ships with that key as they are and the sync-check finds nothing missing (the fixture
+        # model is one test data set, both guests have the key)
+        orig(guest)
+        mf.install(lane.GUEST_DIR, 'ufo', SHIP)
+    twoinst.restore_creations = restore
     host, bob = start('space')
     ck = Checks()
     time.sleep(3)
