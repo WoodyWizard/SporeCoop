@@ -162,6 +162,7 @@ add('content_civ', P + 'coop_content_civ.py', minutes=10, uses_free_lane=True)  
 add('content_space', P + 'coop_content_space.py', minutes=6, uses_free_lane=True)  # a host ship whose model names a part the guest's game lacks does not fault and is mirrored (BUG-0469; SPORE_FIX_OFF=content.all_kinds fails)
 add('creations_rejoin', P + 'coop_creations_rejoin.py', minutes=5)  # a newcomer under a reused id is not shown with the previous player's creature (BUG-0076)
 add('editor_desync', P + 'coop_editor_desync.py', minutes=7)  # mating call and editors in Cell and Creature, real input (BUG-0411: --old-wait fails about 1 run in 2)
+add('cell_unknown_model', P + 'coop_cell_unknown_model.py', minutes=3, fixture='cell')  # the host sends a cell of a creation the guest does not have: no fault at 0xE83EC8, the mirror comes once the model is known (BUG-0455; SPORE_FIX_OFF=cell.unknown_model fails)
 add('creature_desync', P + 'coop_creature_desync.py', minutes=4)  # editors, a crash and a reload: companion of a host-only species, no NPC copies, kills, the guest's look
 add('editor_strays', P + 'coop_editor_strays.py', minutes=6)  # two evolutions: no puppet left over, herd homes on the surface (crash 0xB88BEA)
 add('creature_e84', P + 'coop_creature_e84.py', minutes=5)  # a save with the partner's puppet, loaded after a restart: no crash on attack (0xD48634), removed
@@ -175,6 +176,7 @@ add('social_console', P + 'coop_social_console.py', warm=True, minutes=3, fixtur
 add('creature_kills', P + 'coop_creature_kills.py', minutes=3)  # a guest's kill dies on the guest too (no 0 hp mirror standing), NPCs notice the partner
 add('creature_death', P + 'coop_creature_death.py', minutes=4)  # alone: die, skip the caption and the respawn cutscene
 add('creature_respawn', P + 'coop_creature_respawn.py', minutes=5)  # both players die (also after a pack rescue): the hatchling grows up and walks
+add('npc_lost_target', P + 'coop_npc_lost_target.py', minutes=5, allow=[allow('monitor', 'BUG-0453', 'the test takes the partner\'s puppet away for 3 s on purpose (coop.puppet respawn 3)', kind='puppet', match='hidden: not spawned')])  # NPCs fight the partner's puppet when it goes: no fault at 0xD65D23 in the attack node, no stimulus names the destroyed puppet (BUG-0453/0456; SPORE_FIX_OFF=npc.attack_lost_target,npc.stale_sender fails)
 add('diag', P + 'diag_check.py --crash', minutes=5, reports=True)  # kept logs, environment, version in the menu, report button, hang / crash reports
 add('kit_freeze', P + 'kit_freeze.py', minutes=4, reports=True)  # stack / hangdump under a held heap, cheat-console waits, faults inside the log / fault logger, hook churn, hooks made while threads run the function, new hooks' originals (BUG-0050/0065/0115/0132/0202/0398; --old: every case fails)
 add('kit_hooknew', P + 'kit_freeze.py --case hooknew', minutes=2, reports=True)  # new hooks made while threads call the functions: no detour runs before its original is set (BUG-0398, the guest's call to address 0; SPORE_FIX_OFF=hookorig fails)

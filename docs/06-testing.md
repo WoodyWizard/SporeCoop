@@ -3654,3 +3654,19 @@ the other player's game, both ways where the kind has two:
 * `coop_cell_parts.py` (suite `cell_parts`, ~1 min, cell fixture): `coop.parts cell collect <i>` on the
   guest (the game's own CollectPart), the host's part state and mating-call button within 15 s, then the
   other way (BUG-0467; `SPORE_FIX_OFF=parts.shared_cell` fails). `coop.parts cell` prints the 13 states.
+## NPCs and mirrors of objects that go away (2026-11-03, fix/w40-crashes)
+<a id="testing-lost-objects"></a>
+
+* `coop_npc_lost_target.py` (suite `npc_lost_target`, ~2 min, BUG-0453 / BUG-0456): the guest hits a host
+  NPC through the damage filter (`coop.npc hit <id> 0.3`) until the NPC is in its attack node 0x02D852E6
+  with the puppet as its target (host: `[npc+0xE7C] == puppet+0x5A8`, `[[npc+0xB4C]+0x1D8]`), then
+  `coop.puppet respawn 3` (host: every partner's puppet is destroyed now and shown again 3 s later, as
+  on a death) and reads every NPC's 8 stimulus slots for the destroyed puppet; then `coop.attackcut`
+  (the next NPC in its attack animation gets SetTarget(null)) twice. SPORE_FIX_OFF=npc.attack_lost_target,
+  npc.stale_sender: ~135 faults at 0xD65D23 and ~30 stale senders. A removal alone hits the crash only
+  when the attack animation plays in that frame (none in 3 runs of 6-8 removals): the armed cut is the
+  deterministic half. The puppet's own 3 s hide makes a `puppet` monitor line (allowed in suite.py).
+* `coop_cell_unknown_model.py` (suite `cell_unknown_model`, ~1 min, BUG-0455): `coop.cell spawn <slot> dx
+  dy <level> <model instance hex>` on the host makes a copy of an NPC cell and sends it to the guests
+  with that model instance (cellsync::set_fake_model; 0 clears it). SPORE_FIX_OFF=cell.unknown_model:
+  the guest faults at 0xE83EC8 (read 0x9C) and makes no further mirrors.

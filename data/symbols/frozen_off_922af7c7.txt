@@ -81,3 +81,4 @@ Simulator::Cell::CollectPart ; BUG-0467: the party's shared Cell parts (parts.sh
 SporeCoop::VectorU32_PushBack ; BUG-0457: the test helper coop.vote evolve (the native evolution request) is off on GOG 2016
 SporeCoop::CreatureEvolutionPending_flag ; BUG-0457: the test helper coop.vote evolve is off on GOG 2016
 SporeCoop::CreatureGame_HandleMessage ; BUG-0466: on GOG 2016 the guest's own editor charges no DNA (creations.own_editor_dna off there)
+SporeCoop::BT_AttackTick ; BUG-0453: the attack-without-a-target guard is off on GOG 2016 (frozen build, GOG 2024 address only)

@@ -368,6 +368,7 @@ uint32_t g_mode = 0, g_world = 0;
 bool g_save_on_share = true; // host saves before sending the world, so guests get the current state
 const modes::Adapter* g_adapter = nullptr;
 bool g_puppet_hold = false; // tests (coop.puppet hold): remote puppets are not driven (BUG-0251), never saved
+double g_puppet_hide_until = 0; // tests (coop.puppet respawn <s>): partners' puppets stay away until then (BUG-0453)
 void* g_local = nullptr; // entity the local player controls (adapter specific)
 
 // Creature puppets the game did not destroy when we forgot them: the creature stage world stays
@@ -673,7 +674,7 @@ void drive_puppet(Remote& r, double now)
         return;
     // dead players are hidden until they respawn
     bool visible = g_adapter && g_local && (s.flags & net::PF_IN_WORLD) && !(s.flags & net::PF_DEAD) &&
-                   r.buf.age(now) < 5.0 && (r.echo || same_place(s));
+                   r.buf.age(now) < 5.0 && (r.echo || same_place(s)) && now >= g_puppet_hide_until;
     // BUG-0280: the host keeps its world simulated around every partner it shows in its own place
     if (visible && g_sess.role() == net::Role::Host)
         views::note(r.id, s.pos, g_mode, now);
@@ -3115,6 +3116,7 @@ void end_session(EndPath path, bool cell)
         drop_vote("the session ended");
     g_vote_action_due = nullptr; // BUG-0404: a result still waiting at the busy gate ends with its session
     g_puppet_hold = false; // tests (coop.puppet hold, BUG-0251)
+    g_puppet_hide_until = 0; // tests (coop.puppet respawn <s>, BUG-0453)
     world::reset_shares();
     shared::on_session_end();
     world::on_session_end(); // the guest's queued loads of the host's world (BUG-0074)
@@ -5082,8 +5084,19 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     H->command_add(M, "coop.leave", "leave the session", c_leave, nullptr, MT);
     H->command_add(M, "coop.framefix", "coop.framefix [0|1] - forget a torn-down world's puppets before the frame's messages (tests: 0 = the old order, BUG-0091)",
                    c_framefix, nullptr, MT);
-    H->command_add(M, "coop.puppet", "coop.puppet hold on|off - tests: the remote players' puppets are not moved (a seeded failure for coop_mode.py, BUG-0251)",
+    H->command_add(M, "coop.puppet", "coop.puppet hold on|off | respawn [s] - tests: the remote players' puppets are not moved (a seeded failure for coop_mode.py, BUG-0251); respawn: removed now, shown again next frame or after s seconds (BUG-0453)",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
+                       if (argc > 1 && !strcmp(argv[1], "respawn")) { // tests (BUG-0453): every partner's puppet
+                           int n = 0; // goes now (as on a death or a hide) and is shown again next frame or in <s> s
+                           g_puppet_hide_until = argc > 2 ? H->time_seconds() + atof(argv[2]) : 0;
+                           for (auto& [id, r] : g_remotes)
+                               if (r.puppet) {
+                                   despawn(r);
+                                   n++;
+                               }
+                           SAY("%d puppet(s) removed\n", n);
+                           return 0;
+                       }
                        if (argc > 2 && !strcmp(argv[1], "hold"))
                            g_puppet_hold = !strcmp(argv[2], "on") || !strcmp(argv[2], "1");
                        SAY("puppet hold %s\n", g_puppet_hold ? "on" : "off");

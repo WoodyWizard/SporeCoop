@@ -2468,6 +2468,13 @@ static void host_tick(double now)
     }
 }
 
+static uint32_t g_fake_idx, g_fake_inst; // tests (BUG-0455, coop.cell spawn ... <model>)
+void set_fake_model(uint32_t idx, uint32_t inst)
+{
+    g_fake_idx = idx;
+    g_fake_inst = inst;
+}
+
 static void send_state(int dest, const std::vector<SendCell>& cells)
 {
     size_t per = 14, chunks = std::max<size_t>(1, (cells.size() + per - 1) / per);
@@ -2489,7 +2496,7 @@ static void send_state(int dest, const std::vector<SendCell>& cells)
             modes::mat_to_quat((float*)(c + kRot), q);
             w.u32(cells[i].idx);
             w.u32(inst);
-            w.u32(key[0]); w.u32(key[1]); w.u32(key[2]);
+            w.u32(g_fake_inst && cells[i].idx == g_fake_idx ? g_fake_inst : key[0]); w.u32(key[1]); w.u32(key[2]);
             w.u8((uint8_t)F<int>(c, kLevel));
             w.f32(F<float>(c, kSize));
             w.f32(p.x); w.f32(p.y); w.f32(p.z);
@@ -4735,7 +4742,7 @@ std::string status()
     vm.dwLength = sizeof vm;
     GlobalMemoryStatusEx(&vm);
     char d[320];
-    snprintf(d, sizeof d, "cell_contacts: creature_pairs=%u bite_events=%u nonfinite_skipped=%u nonfinite_dropped=%u stale_targets=%u own_nf=%u shared_parts=%u vm_free_mb=%llu created=%u destroyed=%u leave_writes=%u leave_dropped=%u\n", g_creature_pairs, g_bite_events, g_nonfinite_sent_skipped, g_nonfinite_dropped, g_stale_targets, g_own_nf_events, g_shared_parts, vm.ullAvailVirtual >> 20, g_created, g_destroyed, g_leave_writes, g_leave_dropped);
+    snprintf(d, sizeof d, "cell_contacts: creature_pairs=%u bite_events=%u nonfinite_skipped=%u nonfinite_dropped=%u stale_targets=%u own_nf=%u shared_parts=%u vm_free_mb=%llu created=%u destroyed=%u leave_writes=%u leave_dropped=%u unknown_models=%u\n", g_creature_pairs, g_bite_events, g_nonfinite_sent_skipped, g_nonfinite_dropped, g_stale_targets, g_own_nf_events, g_shared_parts, vm.ullAvailVirtual >> 20, g_created, g_destroyed, g_leave_writes, g_leave_dropped, modes::cell_unknown_models());
     char b[1100];
     uint8_t* s = S();
     int food = s ? F<int32_t>(s, 0x1C) : -1;

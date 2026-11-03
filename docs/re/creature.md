@@ -1910,3 +1910,48 @@ docs/sync-architecture-plan.md L1 / L2).
 * ? Not known: whether trees grow fruit again (a host's new fruit cannot be given to the guest: no set-bit
   path is used); what the game shows on a used bone (no visual change seen); who else rewards ornaments in
   Tribe (no cCreatureModeStrategy there: the ornament kind is Creature only).
+## NPCs that fight a creature which is destroyed (2026-11-03, fix/w40-crashes)
+<a id="creature-lost-target"></a>
+
+Player reports BUG-0453 (host crash 0xD65D23, read 0, twice) and BUG-0456 (host abort 0x40000015 at
+0xD8F2AD). GOG 2024 addresses; static analysis in the private Ghidra project, runtime on lane 2
+(`coop_npc_lost_target.py`).
+
+* ✔ The creature attack node is BT id **0x02D852E6** (action table .data 0x1583F30: id, enter
+  0xD67980, tick `SporeCoop::BT_AttackTick` 0xD67CD0, exit 0xD672A0). Enter takes the target from the
+  "attacked" stimuli (0x200 / 0x400 senders, 0xD998E0 / 0xD99930) or its argument and calls the
+  creature's **SetTarget** vt 0x84 (0xC0EEC0 / 0xC03DF0: thiscall(target, bool, int), the target is
+  stored at **+0xE7C** as the target's combatant (creature +0x5A8), AddRef vt 0x60 / Release vt 0x64).
+* ✔ The tick reads the target (0xC0EFC0 = `[c+0xE7C]`). Its own check for a missing target (0xD65980:
+  null -> 1, the node ends with 0) is only called when the node's attack animation (node data +0x30)
+  is finished (`*(data+0x30) == 0 || IsAnimDone 0xC0E420`). While it plays the tick goes on and
+  0xD65BE0 (data +0x34 / +0x38 / +0x3C: other animations; game mode != 0x1654C10; `[c+0xB4C]+0x600`
+  set) calls `target->vt 8` on null at **0xD65D23** (`mov edx,[ebx]`, ebx = the target argument).
+  Both player dumps: ebx = 0, the node's tick on the stack (0xD680B2), cinematic F0428C29 playing.
+* ✔ **The game clears the target of every NPC aimed at a creature it destroys** (lab: an NPC in node
+  0x02D852E6 with the partner's puppet as target; the puppet destroyed by the guest's death: +0xE7C = 0
+  within 0.2 s, the node changed to 0x02D852F3). An NPC whose attack animation plays at that moment
+  then faults at 0xD65D23 in every tick (lab, fix off: 135 faults at 0xD65D23 with the players' call
+  chain 0xD680B2 <- 0xD8F463 <- 0xD8B88A <- 0xD7D942 <- 0xBC8B44). The vanilla game never destroys a
+  creature in a fight (corpses stay 60 s); co-op destroys a partner's puppet when the partner dies, is
+  hidden, leaves or rejoins (both player crashes came ~4 s after the guest's death and the puppet's
+  removal, 50 ms after the host's own respawn).
+* ✔ **Stimuli outlive their sender**: BT_PostStimulus 0xBC9960 keeps a reference to the sender
+  (slot +0x2C); the game's clear is `SporeCoop::BT_ClearStimulus` 0xBC9A60 (thiscall(stimuli, lo, hi)
+  ret 8). After the puppet's destroy the NPC's "noticed" stimulus 0x4000000 still named it for 4 s
+  (the object's vtables still cCreatureAnimal 0x146A080 / combatant 0x1469E30 in the lab), 28-37 stale
+  senders over 6 removals in one run.
+* ✔ BUG-0456: the herd-help node 0xD8F1C0 (`SporeCoop::BT_HerdHelpEval`, likely) takes the sender of
+  the "attacked" stimulus 0x200 (0xD998E0), checks +0x135 and vt 0x2C, then calls its combatant
+  `[c+0x5A8]` vt 0xC(0x18EB45E) at 0xD8F2AB. In the player's dump the object (ebp) had the root base
+  vtable 0x13EB92C (slots 0 and 1 `_purecall` 0x11E0710): it had been destroyed; the call went to
+  msvcr90's _purecall -> abort -> 0x40000015 (the context's eip is the return address 0xD8F2AD).
+  **Who calls abort: the CRT's pure-virtual-call handler (R6025)**, reached through the destroyed sender.
+* Fix (mods/coop/gamefixes.cpp): `npc.attack_lost_target` hooks BT_AttackTick: no target -> return 0
+  (what the node's own check does); `npc.stale_sender` hooks `cGameNounManager::DestroyInstance`:
+  before a creature (0x18EB45E) or citizen (0x18EB4B7) is destroyed, every creature's and citizen's
+  stimulus naming it (sender inside [obj, obj+0x1700)) is cleared as 0xBC9A60 does (masks, value,
+  sender released) and the union of the rest rewritten. Any destroy, ours or the game's.
+* Test tools: `coop.puppet respawn [s]` (host: every partner's puppet goes now, shown again after s
+  seconds), `coop.attackcut` (the next NPC in its attack animation has its target cleared by vt 0x84
+  (null), as the destroy does).

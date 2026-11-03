@@ -9,6 +9,7 @@
 #include <unordered_set>
 
 #include "cell_logic.h"
+#include "creations.h"
 #include "creature_hp.h"
 #include "game.h"
 #include "sporekit.h"
@@ -829,8 +830,37 @@ bool cell_sap_room()
     return false;
 }
 
+// BUG-0455 (the class of BUG-0004): a cell made with a forced model key builds that key's cell model data
+// on first use (GetCellModelData 0xE679E0 -> 0xE83E30 -> Editors::cEditor::LoadCreatureData); a key whose
+// creation this game does not have yet loads nothing and the game reads the missing data at 0xE83EC8 (read
+// 0x9C). A guest mirrored the host's cells of the host's new creation right after the host left its Cell
+// editor, before the creation's records arrived. Every forced key is checked first: a cell of an unknown
+// creation is not made (cellsync tries again with the next state round, the creation's bundle follows),
+// a puppet falls back to the own avatar's model. Off (`coop.fix cell.unknown_model off`): 0.7.3.4.
+static bool g_fix_unknown_model = true;
+COOP_FIX("cell.unknown_model", "BUG-0455", g_fix_unknown_model,
+         "cell: no cell is made with the model of a creation this game does not have (yet): the game read its missing data at 0xE83EC8");
+static uint32_t g_unknown_models, g_unknown_last;
+
+static bool model_known(const uint32_t key[3])
+{
+    if (!g_fix_unknown_model || !key[0] || creations::key_known(creations::Key{key[0], key[1], key[2]}))
+        return true;
+    if (key[0] != g_unknown_last || g_unknown_models % 200 == 0) // (once per key, then rarely)
+        g_host_for_modes->log(g_mod_for_modes, SK_INFO,
+                              "cell: model %08X/%08X/%08X is not in this game (a creation not received yet): no cell with it "
+                              "now (BUG-0455, %u)", key[0], key[1], key[2], g_unknown_models + 1);
+    g_unknown_last = key[0];
+    g_unknown_models++;
+    return false;
+}
+
+uint32_t cell_unknown_models() { return g_unknown_models; }
+
 uint32_t cell_create(const net::Vec3& pos, void* res_ref, int level, const uint32_t key[3], const net::Quat* rot)
 {
+    if (!model_known(key))
+        return 0;
     ensure_model_hook();
     uint8_t* g = cell_game();
     uintptr_t create = S("Simulator::Cell::CreateCellObject");
@@ -872,8 +902,11 @@ static void* cell_spawn(const net::PlayerState& s, void* local)
     }
     g_key = skg::field<skg::ResourceKey>(me, 0xFC);
     uint32_t own[3];
-    if (g_model_for_player && g_model_for_player(s.id, 1, own)) // the player's own cell
+    if (g_model_for_player && g_model_for_player(s.id, 1, own) && model_known(own)) // the player's own cell
         g_key = {own[0], own[1], own[2]};
+    uint32_t forced[3] = {g_key.instance, g_key.type, g_key.group};
+    if (!model_known(forced)) // (the own avatar's model: known; else the game's own choice for the resource)
+        g_key.instance = 0;
     g_force_key = o_GetModelKey && g_key.instance != 0;
     uint32_t idx = skg::cdecl_call<uint32_t>(create, query, &p, 0.f, res, scale, 1.f, 1.f, 1, (void*)nullptr, 0);
     g_force_key = false;

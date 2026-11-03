@@ -10,6 +10,7 @@
 #include <windows.h>
 
 #include "cell_logic.h"
+#include "cellsync.h"
 #include "game.h"
 #include "gamefixes.h"
 #include "modes.h"
@@ -67,6 +68,13 @@ int c_leavewalk(void*, int, const char* const*, SkOut* out)
 int c_physorphan(void*, int, const char* const*, SkOut* out)
 {
     SAY("%s", gamefixes::arm_physics_orphan().c_str());
+    return 0;
+}
+
+// tests (BUG-0453): the next NPC in its attack animation loses its target (as when the target is destroyed)
+int c_attackcut(void*, int, const char* const*, SkOut* out)
+{
+    SAY("%s", gamefixes::arm_attack_cut().c_str());
     return 0;
 }
 
@@ -207,10 +215,12 @@ int c_cell(void*, int argc, const char* const* argv, SkOut* out)
         Vector3 pos{mp[0] + (argc > 3 ? (float)atof(argv[3]) : 4.f), mp[1] + (argc > 4 ? (float)atof(argv[4]) : 0.f), mp[2]};
         uint32_t idx = cdecl_call<uint32_t>(H->sym("Simulator::Cell::CreateCellObject"), *(void**)(g + 0x40FC), &pos, 0.f,
                                             *(void**)(src + 0x108), argc > 5 ? atoi(argv[5]) : *(int*)(src + 0x358), 1.f, 1.f, 1, (void*)nullptr, 0);
+        if (argc > 6) // tests (BUG-0455): the guests get this cell with a model instance they do not have
+            cellsync::set_fake_model(idx, strtoul(argv[6], nullptr, 16));
         SAY("created %08X from #%u", idx, slot);
         return 0;
     }
-    SAY("usage: coop.cell list | spawn <slot> [dx dy]");
+    SAY("usage: coop.cell list | spawn <slot> [dx dy [level [model instance hex sent to the guests]]]");
     return 1;
 }
 
@@ -541,6 +551,8 @@ void coop_register_debug_commands2(const SkHost* host, SkMod* self)
                       c_leavewalk, nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.physorphan", "tests (BUG-0449): the next physics update gets a body of kind 0 without an owner",
                       c_physorphan, nullptr, SK_CMD_MAIN_THREAD);
+    host->command_add(self, "coop.attackcut", "tests (BUG-0453): the next NPC in its attack animation loses its target (cleared as on the target's destroy)",
+                      c_attackcut, nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.save", "save the game (like the pause menu Save)", c_save, nullptr,
                       SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.dna", "coop.dna [add|local <n>] - shared DNA debug", c_dna, nullptr, SK_CMD_MAIN_THREAD);

@@ -57,6 +57,8 @@ int* part_states(); // BUG-0467: the collected Cell parts (S+0x34, 13 ints), nul
 std::string trace_line(); // support trace (trace.h): the own cell, food around it, what it did since the last line
 std::vector<syncdbg::Entry> sync_entries(); // coop.sync (tests)
 std::string debug(const std::vector<std::string>& args);
+// tests (BUG-0455): the host sends its cell `idx` with the model instance `inst` (a creation the guests lack)
+void set_fake_model(uint32_t idx, uint32_t inst);
 
 bool food_total(int& food); // the own game's food total S+0x1C (support sync-check); false outside Cell
 

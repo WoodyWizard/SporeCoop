@@ -1355,6 +1355,11 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Next steps: measure the address space the editor's paint mode takes on lane 10; tell players with
   the large-address flag off to use the 4GB patch.
 * Ticket: BUG-0371
+* CORRECTION (2026-11-03, fix/w40-crashes): ~ superseded: the same host crashed twice more in 15
+  minutes on 0.7.3.4 with 868+ MB free; the dumps show a texture the texture manager returned without a
+  raster (the driver did not make it), not an allocation of ours or of the address space
+  (docs/re/graphics.md#graphics-null-raster). Guarded (game.null_raster_fill, BUG-0454): the fill is
+  skipped; why the driver refuses that texture is still not known.
 ## Creature: the partner's jumps are mostly not shown (2026-11-01, fix/w30-puppet-jump)
 <a id="issue-puppet-jumps"></a>
 
