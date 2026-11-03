@@ -747,11 +747,29 @@ the game files' index and Ghidra. The rest of BUG-0424 after BUG-0452.
   makes this game build: this game has the key AND every part / paint id the model names (the
   `model_part_refs` / `part_known` / `paint_known` of BUG-0452). An id this game lacks is shown as a
   substitute in a copy of the model's records (`content_packs.h` tables, as for a received creation),
-  registered at once under an instance of our own (0x7D......, a package in `SporeCoop\` next to My
-  Creations); a model with an id that has no substitute is refused (the caller uses the game's own
-  default or leaves the object out). Each unknown id is logged once per session:
+  registered at once **under the model's own key** (see the next bullet); a model with an id that has no
+  substitute, or whose key cannot be shadowed, is refused (the caller uses the game's own default or
+  leaves the object out). Each unknown id is logged once per session:
   `creations: content: <kind> model <id> part <id> unknown here: this game does not have it`.
   Switch `content.all_kinds` off: 0.7.3.5, the new call sites pass the key as they get it.
+* ✔ The copy goes under the model's own key, never under a key of the mod's (BUG-0469 review,
+  2026-11-02): the first version registered it under an instance of our own (0x7D......, as a received
+  creation is), and a civ mirror vehicle is created from that key: mirror vehicles are not kept out of
+  saves (BUG-0470), so the guest's save named a model key that no package answers after a restart (or
+  without the mod). The package is written into `SporeCoop\` as before but registered at priority
+  **3000**, above the game's own packages, the host's world packages (2000) and My Creations (1000):
+  `RegisterDatabase` 0x8E1000 keeps the databases in a priority-sorted list (+0x2C) and
+  `FindDatabase` 0x8DE620 walks it highest first, probing `OpenRecord` (no global key index), so the
+  key now answers from our package. `ensure_model` checks that after registering (`FindRecord` 0x8DFC80
+  then the database's `GetLocation` 0xA426C0 = our file) and **refuses** when another package still
+  answers, so the caller never builds a model that would fault and never sees a key of ours.
+  Nothing of the game was found that resolves a model key once and keeps it: the model bake re-reads the
+  parts on every build and the earlier FAIL run faults on every attempt (456 faults in one civ run), and
+  the runtime runs below show the copy in use at once. `coop.fix content.model_key off` keeps the first
+  version (a key of our own) for the lab. Runtime (civ, lane 4 + guest lane 5): the guest's save names
+  the design's own key 0x29030001 and no 0x7D instance, and the save loads in a game restarted without a
+  session with the mirror vehicles (`out/lab/20261102-213135`); with `content.model_key` off the save
+  names 0x7D72C793 instead (`out/lab/20261102-213354`, FAIL).
 * ✔ Model kinds and their keys: creature `crt` 0x2B978C46 / 0x40626200 (parts 0x40626000), cell `cll`
   0x3D97A8E4 / 0x40616200 (parts 0x40616000), UFO `ufo` 0x476A98C7 / 0x40656200, **vehicle** `vcl`
   0x24682294 / 0x40646200 and **building** `bld` 0x2399BE55 / 0x40636200.

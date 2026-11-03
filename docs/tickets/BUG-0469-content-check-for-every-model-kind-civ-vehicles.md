@@ -10,12 +10,12 @@ role: guest
 versions: 0.7.3.5
 fixed_in: unreleased
 branch: fix/w39-content-all
-commits: 2a99049e, 7d95b829, 4cfa199a, cf065107
+commits: 2a99049e, 7d95b829, 4cfa199a, cf065107, 9130fa96, 958b870c, e328a099, a63959db, d4859b3c, 5d1ef97b, 8dc2cf80
 tests: content_civ (tools/tests/coop_content_civ.py), content_space (tools/tests/coop_content_space.py)
 signature: 3010a413:SporeApp.exe+0x46C82A read 0x00000000 (dc04aee5 0x46C82A, FUN_0046C4D0: the vehicle/UFO model bake, a part's property object null, prop 0xAFFF3A14)
 docs: docs/re/creations.md#creations-content-all-kinds, docs/re/civ.md#civ-content-all-kinds, docs/re/space.md#space-mirror-content
 related: BUG-0424, BUG-0452, BUG-0323
-switch: content.all_kinds
+switch: content.all_kinds, content.model_key
 ---
 
 ## Report
@@ -57,13 +57,23 @@ so the id is one no game has for a ship or vehicle model: the "another profile's
 key as they get it).
 * `creations::ensure_model(model, ModelKind, allow_copy)` (mods/coop/creations.cpp): this game has the key
   AND every part / paint id the model names (`model_part_refs`, `part_known`, `paint_known`). An id this
-  game lacks is shown as a substitute in a copy of the model's records (the `content_packs.h` tables,
-  registered at once under an instance of our own, 0x7D......); a model with an id that has no substitute
-  (or whose copy cannot be written) is refused. Each unknown id is logged once per session
-  (`creations: content: <kind> model <id> part <id> unknown here: ...`). Kinds: creature, cell, UFO,
-  vehicle (vcl 0x24682294 / 0x40646200, parts 0x40646000), building (bld 0x2399BE55 / 0x40636200, parts
-  0x40636000). Paints are checked for creature, vehicle, UFO and building models; not for cell models
-  (their header is not the creature one).
+  game lacks is shown as a substitute in a copy of the model's records (the `content_packs.h` tables),
+  registered at once **under the model's own key** in a package at priority 3000; a model with an id that
+  has no substitute (or whose copy cannot be written or cannot be shadowed) is refused. Each unknown id is
+  logged once per session (`creations: content: <kind> model <id> part <id> unknown here: ...`). Kinds:
+  creature, cell, UFO, vehicle (vcl 0x24682294 / 0x40646200, parts 0x40646000), building (bld 0x2399BE55 /
+  0x40636200, parts 0x40636000). Paints are checked for creature, vehicle, UFO and building models; not for
+  cell models (their header is not the creature one).
+* Review fix (2026-11-02, item 1 of out/TASK2.md): the copy used to be registered under an instance of the
+  mod's own (0x7D......), and a civ mirror vehicle was created from it. Mirror vehicles are not kept out
+  of saves (BUG-0470), so the guest's save named a model key no package answers after a restart (or
+  without the mod), which is the very bake fault this ticket fixes. The copy now shadows the model's own
+  key: package at priority 3000 (above the game's packages, the host's world at 2000 and My Creations at
+  1000), the resource manager walks that list highest first and probes `OpenRecord` (no global key index,
+  docs/re/creations.md §3), and `ensure_model` verifies after registering that the key answers from our
+  package (`FindRecord` 0x8DFC80 + the database's `GetLocation`), refusing otherwise: no key of the mod's
+  reaches the game or a save. `coop.fix content.model_key off` = the first version (a key of ours), for
+  the lab.
 * `civ.cpp`: a mirror vehicle is built with the checked key; a design this game cannot build at all falls
   back to a zero key, which the game fills with its own design of the same purpose and locomotion
   (`Simulator::cVehicle::Load` 0xCA67C0, 0xCA68E9; logged once per design). A building's design cannot be
@@ -87,6 +97,11 @@ key as they get it).
   copy (`substituted=1`, `content_checked=2`, `unknown_models=0`) and shows them.
 * `coop.fleet spawn` sends the test model to both guests; the unpatched BUG-0323 test
   (`space_mirror_model`) and the civ tests are unchanged.
+* Review fix (item 1), civ: PASS (fix on, `content_civ`, new save/reload step) `out/lab/20261102-213135`:
+  the guest saves after the mirror was built, its game is restarted without a co-op session and loads the
+  save: 2 saved vehicles load with `total faults: 0`, the save slot names the design's own key 0x29030001
+  and the old scheme's instance 0x7D72C793 is absent. FAIL (`SPORE_FIX_OFF=content.model_key`, the first
+  version): `out/lab/20261102-213354`, the save names 0x7D72C793 and not 0x29030001 (2 checks fail).
 * The lab gives no free lane when the run lanes plus `--skip 1,2,3,7,8,9,10` cover lanes 2..9 (both tests
   are `uses_free_lane`, the guest needs a lane without the pack), so the two runs above were made with
   `--lane 4` (free lane 5); the same tests on `--lane 4 --lane 5 --lane 6` SKIP (`out/lab/20261102-185757`).
@@ -107,3 +122,8 @@ key as they get it).
   failed at 0x0046C82A with the switch off; tests `coop_content_civ.py` / `coop_content_space.py` (FAIL and
   PASS runs above); docs/re/creations.md#creations-content-all-kinds, docs/re/civ.md#civ-content-all-kinds,
   docs/re/space.md#space-mirror-content.
+- 2026-11-02 (fix/w39-content-all, review of out/TASK2.md): the substitute copy goes under the model's own
+  key at priority 3000 (never a 0x7D key of the mod's), verified with FindRecord after registering and
+  refused otherwise; switch `content.model_key`; the civ test now saves, restarts without a session and
+  loads the save (PASS out/lab/20261102-213135, FAIL with `content.model_key` off out/lab/20261102-213354);
+  BUG-0470 opened for the mirror vehicles that stay in the guest's save.

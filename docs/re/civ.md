@@ -860,8 +860,10 @@ docs/re/creations.md#creations-content-all-kinds.
 * ✔ A mirror vehicle is created from the design key the guest's own copy of that civilization returns:
   `cCivilization::GetDesignKey(civ, VehicleDesignId(purpose, loco))` -> `CreateVehicle(civ, purpose, loco,
   key, &pos, 0)` (`civ.cpp` `guest_state`). That design's model is checked with its parts and paints
-  (`creations::ensure_model`, kind vehicle) and the mirror is created from the returned key (a copy with
-  base game parts if this game lacks some). A design whose model cannot be built at all (refused) is
+  (`creations::ensure_model`, kind vehicle) and the mirror is created from the returned key (the design's
+  own key, whose record a package of ours answers above the game's own, with base game parts if this game
+  lacks some: no key of the mod's reaches the save, BUG-0469 review / BUG-0470). A design whose model
+  cannot be built at all (refused) is
   created from a **zero key**: `cVehicle::Load` (`Simulator::cVehicle::Load` 0x00CA67C0, 0xCA68E9) builds
   the design of `VehicleDesignId(purpose, loco)` itself from the object template DB (prop 0x2DC9D1E) for
   a key instance of 0 or -1 and sets that key, i.e. the game's own design of the same purpose and
@@ -881,3 +883,8 @@ docs/re/creations.md#creations-content-all-kinds.
   (`coop.civ fakeveh`, test only) the guest builds a substitute copy and shows the mirror
   (`coop.creations content`: `substituted=1`, `refused=0`). With `SPORE_FIX_OFF=content.all_kinds` the
   same guest faults at 0x0046C82A (`out/lab/20261102-202807`).
+* ✔ The guest saves its world after the mirror was built (`coop.save`, the game's SaveGame), its game is
+  restarted without a co-op session and loads that save: the saved mirror vehicles load with no bake
+  fault, the save slot names the design's own key (0x29030001) and no key of the mod's
+  (`out/lab/20261102-213135`; with `coop.fix content.model_key off`, the first version's 0x7D72C793:
+  `out/lab/20261102-213354` FAIL). The mirror vehicles themselves stay in the save, which is BUG-0470.

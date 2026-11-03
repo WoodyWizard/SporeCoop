@@ -2028,9 +2028,10 @@ BUG-0469, GOG 2024, lanes 4/5 (`tools/tests/coop_content_space.py`).
   spawned with `SpawnUFO(type, &pol, &key)`. BUG-0323 checked the key alone (`creations::key_known`).
   Now the model's parts and paints are checked too (`creations::ensure_model`, kind UFO: the UFO model
   names its parts in group 0x40646000, its three paint effect dwords at byte 26 of the bem header):
-  a model with ids this game lacks is built from our copy of the model records with base game substitutes,
-  and a model that cannot be built here is handled as an unknown model (the local model of a ship of that
-  empire, else no mirror yet).
+  a model with ids this game lacks is built from our copy of the model records with base game substitutes
+  (under the model's own key, above the game's packages: no key of ours, BUG-0469 review), and a model
+  that cannot be built here is handled as an unknown model (the local model of a ship of that empire, else
+  no mirror yet).
 * ✔ A model key the guest's game *has* whose model names a part it does not have is the case BUG-0323 did
   not cover: the guest faulted in the model bake at 0x0046C82A (`SporeCoop::ModelBake_PartProp_Null`),
   not at 0xE98DD0. Runtime: `coop.fleet fakemodel 2 <instance>` makes the host send the test's ship model
