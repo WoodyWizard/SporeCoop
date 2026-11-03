@@ -1926,6 +1926,7 @@ void follow_phase(double now)
                 // guest's game cannot get without the world, BUG-0019)
                 int age = host_avatar_age(), mig = g_mode == modes::kCreature ? host_migration() : -1;
                 const char* why = !evolve_inplace_ok(id, r, g_mode)                      ? "left the world or stage"
+                                  : g_mode == modes::kCreature && mig < 0                  ? "the migration state is unknown"
                                   : mig > 0 && mig != g_evo_migration_before              ? "a migration started"
                                                                                          : nullptr;
                 // (the age is no sign: the evolved avatar is a hatchling, age 0, for a few seconds after the
