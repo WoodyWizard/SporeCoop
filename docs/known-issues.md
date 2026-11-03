@@ -1641,3 +1641,21 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Not fixed: a strip needs the civ / tribe / space object registry and a null-safe removal from
   `civ+0xB0` / `civ+0xD4` and the city's lists (BUG-0020's null rule), with a save + reload test per stage.
 * Ticket: BUG-0470
+
+## Creature / Tribe: world objects not yet owned by the host (2026-11-03, fix/w40-world-objects)
+<a id="issue-world-objects-left"></a>
+
+What mods/coop/worldobj.cpp does not cover yet (docs/re/creature.md#creature-world-objects):
+* A fruit that fell in the host's game where the guest's tree had no fruit left in that slot (the guest's
+  own fall came first) is not shown on the guest: the mechanism does not make fruit, it only binds, eats and
+  drops them. Trees that grow fruit again (not seen, ~) would not be copied either. Ticket: BUG-0472.
+* Plants and rocks (`game_plant` 0x18C84A9 next to the fixture's big fruit tree on the guest only, `rock`):
+  no kind yet. Ticket: BUG-0473.
+* The guest's home nest heal ("I don't get any heals from it", BUG-0460) is not reproduced or analysed;
+  only the extinct nests are copied.
+* A Cell part a guest collects (BUG-0467) is not unlocked for the host: parts.shared polls the creature
+  parts (cCollectableItems) in Creature only; the Cell game keeps its parts in its own state
+  (`S+0x34+4*part = 2`, the token pickup 0xE5D7B0, docs/re/cell.md section 12). A Cell variant needs a poll
+  of that array and the host's unlock of it with the game's own pickup path (not the world object table:
+  it is a ledger, like the creature parts).
+* Ornaments in Tribe: no reward handler there (no cCreatureModeStrategy), the kind runs in Creature only.

@@ -15,11 +15,15 @@ kind has two ways:
   --kind tree      (BUG-0472, creature) a fruit falls from a tree in the host's game (the flora's DropFruit):
                    the same slot falls in the guest's game (its tree's fruit mask, a fruit on the ground near
                    it); the other way round from the guest. SPORE_FIX_OFF=wobj.tree fails.
+  --kind herd      (BUG-0460, creature) the host's avatar kills a species at its nest until the species is
+                   extinct (the game's own TakeDamage -> ApplyEvent -> 0xBA4750): the nest is extinct in the
+                   guest's game too (herd +0x190, nest +0x120, what the minimap shows).
+                   SPORE_FIX_OFF=wobj.herd fails.
   --kind eggs      (BUG-0474, tribe) the eggs at the animal nests in the host's game are in the guest's game
                    at the same places (coop.census all: the game's noun list). SPORE_FIX_OFF=nest.eggs_tribe
                    fails.
 
-  coop_world_objects.py --kind ornament|fruit|tree|eggs
+  coop_world_objects.py --kind ornament|fruit|tree|herd|eggs
 """
 import argparse
 import math
@@ -122,6 +126,26 @@ def tree(host, guest, ck):
         ck(down, f'a fruit lies under that tree in the {other}\'s game ({len(down)})')
 
 
+def herd(host, guest, ck):
+    from coop_nest_eggs import nest_herds
+    ns = nest_herds(host)
+    print('  nests of other species (dist, herd, members, home):', ns[:4], flush=True)
+    if not ck(ns, 'a nest of another species with members on the host'):
+        return
+    dist, h, members, home = ns[0]
+    hs = lambda con: near(objs(con, 'herd', 5, home), home, 1.0)
+    print('  before: host', hs(host), 'guest', hs(guest), flush=True)
+    ck(hs(guest) and not hs(guest)[0]['st'] & 1, 'the guest has that nest, not extinct')
+    for _ in range(4):  # the species dies out: its creatures killed by the host's avatar (TakeDamage -> ApplyEvent)
+        print('  host:', host.call(f'coop.nest kill {h} 20')['out'].strip(), flush=True)
+        if wait(lambda: [x for x in hs(host) if x['st'] & 1], 4):
+            break
+    ck([x for x in hs(host) if x['st'] == 3], 'the species is extinct in the host\'s game (herd +0x190, nest +0x120)')
+    ext = wait(lambda: [x for x in hs(guest) if x['st'] == 3], 8)
+    print('  after: host', hs(host), 'guest', hs(guest), flush=True)
+    ck(ext, 'the nest is extinct in the guest\'s game too (herd +0x190, nest +0x120: the minimap)')
+
+
 def eggs(host, guest, ck):
     t0, hw, gw = time.time(), None, None
     while time.time() - t0 < 120:
@@ -144,12 +168,12 @@ def eggs(host, guest, ck):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--kind', choices=('ornament', 'fruit', 'tree', 'eggs'), required=True)
+    ap.add_argument('--kind', choices=('ornament', 'fruit', 'tree', 'herd', 'eggs'), required=True)
     a = ap.parse_args()
     host, guest = start('tribe' if a.kind == 'eggs' else 'creature')
     ck = Checks()
     time.sleep(6)  # the first snapshots
-    {'ornament': ornament, 'fruit': fruit, 'tree': tree, 'eggs': eggs}[a.kind](host, guest, ck)
+    {'ornament': ornament, 'fruit': fruit, 'tree': tree, 'herd': herd, 'eggs': eggs}[a.kind](host, guest, ck)
     print('  guest:', guest.call('coop.wobj')['out'].strip().replace('\n', ' | '), flush=True)
     print('  host:', host.call('coop.wobj')['out'].strip().replace('\n', ' | '), flush=True)
     ck.faults(host=host, guest=guest)

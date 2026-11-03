@@ -1558,3 +1558,69 @@ BUG-0443 (the host's screenshot of the "eggs flying mid air" report). GOG 2024, 
   (state 5 / 6) within 60 m of its avatar; one that did not move for two checks and lies more than 0.3 m
   over the surface is put onto it with cEgg_SnapToGround (what the game does to the avatar's eggs and to
   every egg at its hatch).
+
+## World objects the players take: fruit, trees, bone rewards, extinct nests (2026-11-03, fix/w40-world-objects)
+<a id="creature-world-objects"></a>
+
+BUG-0472, BUG-0459 / BUG-0473, BUG-0460, BUG-0474. GOG 2024, Ghidra (out/ghidra-2024) and lane 9 at runtime
+(creature and tribe fixtures, `coop.wobj`). The mod's use: mods/coop/worldobj.cpp (one table of kinds,
+docs/sync-architecture-plan.md L1 / L2).
+
+* ✔ **Fruit** cFruit (noun 0x2C9CC91, size 0x170, vtable 0x145C568): +0x16C state, set by
+  `cFruit_SetState` 0xAFFFE0 `thiscall(fruit, state, force) ret 8`: 0 hanging in a tree, 1 falling, 2 on the
+  ground (+0x168 = 0, then a time there), 3 held by a creature eating it, 4 hidden (model off), 5 / 6 eaten
+  (+0x108 holder dropped). +0x158 the plant species (0x029C388A big fruit tree, 0x6D60A1CC small plant),
+  +0x160 the tree's index, +0x164 the slot on the tree (-1 once fallen). Runtime: SetState(5) on a fruit takes
+  it out of the noun list within 2 s, on host and guest alike.
+* ✔ The eat node 0xD87590 (case 3, the meal's end): fruit state 3 -> when +0x148 & 1 message 0xD335362B
+  {creature, fruit, 0} and DestroyInstance; then SetState(5), 0xD335362B again, health; the avatar gets DNA.
+* ✔ Hanging fruit are not lasting objects: the flora makes and frees their cFruit as it likes (the pointers
+  near a resting avatar changed within minutes, the serials differ between games: 4013.. on the host, 4679..
+  on the guest). Their truth is the tree: cTreeData +0x48 / +0x4C, a u64 mask of the fruit left (bit per slot:
+  0x07 small plants, 0x1F big trees on the fixture). The same trees and masks on both games after a load.
+* ✔ A fruit falls with `Flora_DropFruit` 0xB09AE0 `thiscall(flora, tree, slot, make_fruit) ret 0xC` (flora =
+  `Flora_Get`): nothing when the slot's bit is clear, else 0xB09790 clears it and makes a falling cFruit
+  (state 1) at the slot. The creature's tree bump 0xD38DD0 calls it for a hanging fruit it hits. Runtime: a
+  drop on the host clears the bit and puts a fruit on the ground 1.1-1.3 m from the trunk; the same drop on
+  the guest puts its fruit within 0.2 m of the host's.
+* ✔ Fallen fruit from the save (state 2) are at the same places on both games (serials 317, 2561, 2562 on
+  both); fruit that fell later fell in one game only (each game's flora and creatures drop their own): the
+  detector's `unmatched:fruit`.
+* ✔ **Interactive ornaments** cInteractiveOrnament (noun 0x3A2511E, size 0x260): from the save, the same
+  objects at the same places with the same serials (2555..2568 on the fixture). +0x110 a sort (2 bones /
+  skeletons with a part, 3, 6 pushable like a rock (0xD3A0D0), 7), +0x108 the creature using it, +0xA3 can be
+  used, +0x248 / +0x24C..+0x250 the index into a list of 12-byte models (empty on the fixture: -1).
+* ✔ The interact node 0xD869B0 walks the creature there, plays animation 0x3DF6DFF, calls
+  `cInteractiveOrnament_NextModel` 0xC40360 (the next model; 0 at the last), clears +0xA3 and posts
+  0xD3353638 {creature, ornament, 0} through `cCreatureModeStrategy::ExecuteAction`. The listener
+  CreatureStageRewardHandler (vtable 0x147AD48, slot 0x18 = 0xD47860, one of strategy +0xBC..+0xC0) finds the
+  reward with `CreatureReward_Find` 0xD475E0 `thiscall(handler, msg, obj) ret 8` (rewards made from the
+  model's property 0x3D03B03 at the first lookup, per object) and pays it with 0xD46BE0 when +0x08 is 0 or
+  the creature is the avatar.
+* ✔ The reward {+0x04 kind (6 a part), +0x08 avatar only, +0x0C trigger (0xA07DDE8F any), +0x10 uses left,
+  +0x14 part level, +0x1C effect, +0x20 event, +0x24 used up}. Runtime (lane 9): the 5 ornaments of sort 2
+  near the fixture's avatar have a part reward (level 1 or 2, one use); sorts 3, 6, 7 none. A use paid one part
+  (54 -> 55), +0x10 1 -> 0, +0x24 0 -> 1; a second use paid nothing. **The ornament itself does not change**
+  (no next model on the fixture's bones): the used state lives in the reward only.
+* ✔ So BUG-0459: each game has its own reward per bone; with parts.shared (the union) a bone used in both
+  games unlocks two different parts for everybody (lane 9, switch off: 54 -> 56 on both games).
+* ✔ **Extinct nests** (BUG-0460): cSpeciesRelationshipManager::ApplyEvent's "species extinct" 0xBA4750 (GOG
+  2024; the 0xBA4730 above is its GOG 2016 neighbour): achievement, relation 6 via 0xBA5F10, and
+  `cHerd_SetExtinct` 0xC6AED0 on every herd whose +0xA4 species is the dead creature's: +0x190 mbExtinction
+  = 1 and the nest (+0x160) +0x120 = 1 (the extinct nest on the minimap, ~ inferred from the name). The guest
+  writes the host's relationship table (social.cpp) but never runs 0xBA4750, so its herds and nests stayed
+  alive. Other writers of +0x190: 0xC70160 (a setter, called from scenario code 0xFE0150 / 0xFF96B0).
+* ✔ **Eggs in Tribe** (BUG-0474): the animal nests of the Tribe stage are the same cHerd / cEgg; the guest's
+  game removes its animals there too (tribe proxies), so no layer, no eggs; the nest.cpp mirrors work there
+  unchanged (the guest's own herds of the host's nests are found by home), centred on the player tribe when a
+  player's position is the (0 0 0) of an RTS pointer. Runtime: 5 host eggs, 5 guest mirrors at the same places.
+* What worldobj.cpp does with it: the host sends per kind the objects near each guest (1 Hz, unreliable,
+  MSG_WOBJ); the guest binds them to its own by position (fruit 3 m, tree 0.5 m, ornament 1.5 m, herd 1 m) and
+  applies the host's state with the game's own function (fruit eaten: SetState 5; tree: DropFruit of the
+  slots the host lost; ornament: reward +0x10 = 0, +0x24 = 1, +0xA3 = 0, no reward; herd: cHerd_SetExtinct).
+  Loose fruit of the guest's own (no host partner for 3 snapshots) are eaten away (SetState 5). What a guest
+  player does to a bound copy (ate it, made a fruit fall, used a bone) goes to the host as a request; the host
+  does the same to its object (no reward: the guest had it) and the next snapshot carries it to the others.
+* ? Not known: whether trees grow fruit again (a host's new fruit cannot be given to the guest: no set-bit
+  path is used); what the game shows on a used bone (no visual change seen); who else rewards ornaments in
+  Tribe (no cCreatureModeStrategy there: the ornament kind is Creature only).

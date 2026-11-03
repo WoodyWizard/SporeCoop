@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Fixed
+- Creature: a bone or skeleton one player takes is taken for everybody: the party gets one new part, not
+  two (BUG-0459, BUG-0473).
+- Creature and Tribe: fruit one player eats is gone for the other players too, and fruit that falls from
+  a tree falls in every game (BUG-0472).
+- Creature: a nest whose species the host's game made extinct is extinct for every player (BUG-0460).
+- Tribe: the eggs at the animal nests are now in every player's game, not only in the host's (BUG-0474).
+
 ## [0.7.3.6] - 2026-11-02
 
 ### Fixed

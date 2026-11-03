@@ -27,7 +27,7 @@ static const SkHost* H;
 static SkMod* M;
 static Ctx C;
 
-static uintptr_t a_FruitSetState, a_FloraGet, a_DropFruit, a_TreeVt, a_StrategyGet, a_ExecuteAction, a_OrnUsed, a_RewardFind, a_RewardHandlerVt;
+static uintptr_t a_FruitSetState, a_FloraGet, a_DropFruit, a_TreeVt, a_StrategyGet, a_ExecuteAction, a_OrnUsed, a_RewardFind, a_RewardHandlerVt, a_HerdSetExtinct;
 
 // ---------------------------------------------------------------- the kinds' common shape
 // One object of a kind in this game: its pointer (valid in this frame only), the id the host's game
@@ -222,10 +222,42 @@ static void orn_apply(const Item& l, uint32_t) { orn_use(l.p); }
 static bool orn_acted(uint32_t was, uint32_t now, uint32_t host) { return !orn_used(was) && orn_used(now) && !orn_used(host); }
 static void orn_act(const Item& o, uint32_t) { orn_use(o.p); }
 
+// ---------------------------------------------------------------- kind: herd (a nest's species extinct, BUG-0460)
+// cHerd (noun 0x1BE418E, game::kHerdNoun): +0x34 its home (the save's: the same on every game), +0x84 the avatar's
+// own, +0xA4 its species, +0x160 its nest, +0x190 mbExtinction. When a species dies out the host's game runs
+// 0xBA4750 from cSpeciesRelationshipManager::ApplyEvent: the relation 6, the "extinct" card, and cHerd_SetExtinct
+// 0xC6AED0 on every herd of the species (+0x190 = 1, nest +0x120 = 1: the extinct nest of the minimap). A guest
+// gets the host's relationship table (social.cpp, MSG_SPECIES) but writes it, it never runs 0xBA4750: its herds
+// and nests stayed alive. Extinction is the host's: a guest only applies it (no request).
+static bool g_herd_fix = true;
+COOP_FIX("wobj.herd", "BUG-0460", g_herd_fix, "creature: a nest whose species died out in the host's game is extinct in every game");
+
+static void herd_collect(Items& out)
+{
+    game::for_each_object(
+        [](void* o, uint32_t noun, void* p) {
+            if (noun != game::kHerdNoun || !game::object_alive(o) || IsBadReadPtr(o, 0x220) || field<uint8_t>(o, 0x84))
+                return true;
+            void* nest = field<void*>(o, 0x160);
+            if (!nest || IsBadReadPtr(nest, 0x130))
+                return true; // only nests are on the map
+            const float* hp = &field<float>(o, 0x34);
+            uint32_t st = (field<uint8_t>(o, 0x190) ? 1u : 0u) | (field<uint8_t>(nest, 0x120) ? 2u : 0u);
+            ((Items*)p)->push_back(Item{o, game::object_serial(o), {hp[0], hp[1], hp[2]}, st});
+            return true;
+        },
+        &out);
+}
+static bool herd_behind(uint32_t local, uint32_t host) { return host != kGone && (host & 1) && !(local & 1); }
+static void herd_apply(const Item& l, uint32_t) { thiscall<void>(a_HerdSetExtinct, l.p); }
+static bool herd_acted(uint32_t, uint32_t, uint32_t) { return false; }
+static void herd_act(const Item&, uint32_t) {}
+
 // ---------------------------------------------------------------- the table
 static Kind g_kinds[] = {
     {"fruit", &g_fruit_fix, kStCreature | kStTribe, 3.0f, 70.f, 48, fruit_collect, fruit_behind, fruit_apply, fruit_acted, fruit_act, true, true},
     {"tree", &g_tree_fix, kStCreature | kStTribe, 0.5f, 70.f, 48, tree_collect, tree_behind, tree_apply, tree_acted, tree_act, false, false},
+    {"herd", &g_herd_fix, kStCreature, 1.0f, 3000.f, 60, herd_collect, herd_behind, herd_apply, herd_acted, herd_act, false, false},
     {"interactive_ornament", &g_orn_fix, kStCreature, 1.5f, 90.f, 40, orn_collect, orn_behind, orn_apply, orn_acted, orn_act, false, false},
 };
 constexpr int kKinds = (int)(sizeof g_kinds / sizeof g_kinds[0]);
@@ -673,7 +705,8 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
     a_OrnUsed = H->sym("SporeCoop::cInteractiveOrnament_NextModel");
     a_RewardFind = H->sym("SporeCoop::CreatureReward_Find");
     a_RewardHandlerVt = H->sym("SporeCoop::CreatureStageRewardHandler_vftable");
-    if (!a_FruitSetState || !a_FloraGet || !a_DropFruit || !a_TreeVt || !a_OrnUsed || !a_RewardFind || !a_RewardHandlerVt)
+    a_HerdSetExtinct = H->sym("SporeCoop::cHerd_SetExtinct");
+    if (!a_FruitSetState || !a_FloraGet || !a_DropFruit || !a_TreeVt || !a_OrnUsed || !a_RewardFind || !a_RewardHandlerVt || !a_HerdSetExtinct)
         for (auto& k : g_kinds)
             k.stages = 0; // a symbol missing on this build: every game keeps its own (logged below)
     if (!a_FruitSetState || !a_DropFruit || !a_OrnUsed)
