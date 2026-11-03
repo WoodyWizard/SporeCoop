@@ -1706,3 +1706,64 @@ A code review of the first shape found three problems; this is what changed and 
 * Faults after the change: 0 in cell_coop, creature, tribe_coop, civ_coop, space_coop, chaos_tribe
   (`out/lab/20261102-180357`), guest_editor and editor_desync (`out/lab/20261102-170849`); every
   test prints `total faults: 0` for both games.
+
+### Review fixes, second pass (2026-11-02, fix/w38-effects)
+
+<a id="creature-effects-relay-review2"></a>
+
+The orchestrator's review of the first relay found six more problems; fixed in this order (one
+commit each, tests where asked):
+
+1. **Three players**: the host's relay of a guest's message wrote only the header, so the 0x44-byte
+   transform of a pool 5 effect was missing for the other guests and their `on_message` dropped the
+   message. The relay now forwards the transform. Test: `tools/tests/coop_effects_party.py`
+   (`effects_party`, three players from the same lane): the host's world effect reaches guest 2 and
+   guest 1's world effect reaches guest 2. Without the forward the guest 1 -> guest 2 case fails
+   (`out/lab/20261102-184838`); with it all pass (`out/lab/20261102-184722`).
+2. **Spoofing** (BUG-0201): the `player` byte of a message chooses whose puppet plays it. The host
+   drops a guest message whose byte is not the sender and a guest drops anything that did not come
+   from the host (messages are never sent guest to guest). `coop.effects inject <from> <player>
+   <stop> <pool> <id> <key> [x y z]` feeds a crafted message through the same `on_message` (the
+   transport cannot make a guest claim another player); `coop.effects` counts the drops
+   (`spoof=`).
+3. **Validation before the game**: a stop must have pool 0 and a key; a start a non-zero effect id
+   and a pool the sender uses (1, 2, 3, 5); a pool 3 bone index must be inside the puppet model's
+   bone array; a pool 5 transform must have finite floats and a position within 1e5. Counters:
+   `pool= id= bone= transform= short=`. The bone range: `cCreatureBase::CreateEffect` 0xC150D0
+   indexes `[AnimatedCreature +0xB54] -> +0x17C -> +0x2E4` with `bone * 700` and has **no check**
+   (the only test is `bone != -1`, which returns null); the array end at `model+0x2E8` gives the
+   count (24 bones for the fixture creature). Test: `tools/tests/coop_effects_validate.py`
+   (`effects_validate`): every rejection is counted and not played, a valid message still plays.
+   Without the validation call the bad cases fail (`out/lab/20261102-185729`), with it all pass
+   (`out/lab/20261102-185635`).
+4. **A relayed world effect is stopped**: a looping effect (the mating-call hearts id stays active
+   when the effect world owns it) never ends on the receiver. The receiver keeps a fixed list of 64
+   live relayed world effects: the oldest is stopped when the 65th arrives, any still active after
+   8 s is stopped (`IVisualEffect` vt 0xC with 0, the slot `StopEffectFromPools` 0xC174B0 calls),
+   and a stage / world change (mode or world id differs) drops the list **without** calling into
+   the effects (the game's effect manager freed them); a session end stops what is still there.
+   `game::effect_active` and the new `game::stop_world_effect` only call the object when it and its
+   vtable are readable. Test: `tools/tests/coop_effects_live.py` (`effects_live`): 20 effects/s for
+   30 s, the guest stays at or under 64 (it reaches 64) and returns to 0 after the load stops
+   (`out/lab/20261102-190208`; with the switch off nothing is relayed and it fails).
+5. **Full transform**: the relayed 0x44-byte Transform had a zero scale and a zero 3x3 matrix. The
+   layout (`cCreatureBase`'s creators, `VisualEffect_SetTransform` 0xA827B0): u16 flags, u16 change
+   counter, Vec3 position at +4, **uniform scale at +0x10**, **3x3 rotation at +0x14** (36 bytes,
+   the rest of the object). The relay now sends position, scale 1.0 and the identity rotation. Proof
+   on the partner's screen: `out/effect_relay_on_1.png` (guest's view, the host makes the hearts
+   with `coop.effects load 2 1000 E1B24DDB`: the effect is at the host's puppet "Alice"),
+   `out/effect_relay_off_1.png` (same camera and moment after the switch off: no effect) and
+   `out/effect_relay_host.png` (the host's own screen with the same effect, for comparison);
+   `out/effects_shot.py` (lane 2).
+6. **O(1) dedupe**: `process_world` scanned the 2048-entry `g_world_sent` ring for every queued
+   world effect (the manager and the world create hooks queue the same effect). It is a fixed
+   512-slot open-addressing set keyed by the effect pointer, cleared once a frame, and
+   `coop.effects` shows the probe count (`sent_probes=`).
+
+Verification of the second pass (lane 2 and 3, GOG 2024): the effects tests (creature, cell, tribe,
+effects_party, effects_validate, effects_live) pass in
+`out/lab/20261102-191038` and fail with `SPORE_FIX_OFF=creature.effects_relay` in
+`out/lab/20261102-193333`; the regression (smoke, creature, team, puppet_walk and the effect tests)
+is in `out/lab/20261102-191038`; the `unit` test of that run fails in its own lab selftest's lane
+lock checks under the run's CPU load (no game code; `make test` alone and `unit` alone in the lab,
+`out/lab/20261102-194317`, pass).

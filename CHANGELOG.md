@@ -8,7 +8,11 @@
   member's death, ...) were made only in that player's game, so the other players saw the animation
   on the puppet but no effect. They are relayed and played on the partner's puppet/cell/mirror with
   the game's own effect functions, including the generic world-effect path
-  (`coop.fix creature.effects_relay off` restores the old behaviour; BUG-0451).
+  (`coop.fix creature.effects_relay off` restores the old behaviour; BUG-0451). A world effect of a
+  guest also reaches the other guests (it used to stop at the second player), a message is checked
+  before the game is called (whose effect it is, the pool, the bone, the transform), and the
+  relayed effects the receiver keeps are stopped after 8 s or when there are more than 64, so a
+  looping one does not pile up.
 
 ## [0.7.3.4] - 2026-11-02
 

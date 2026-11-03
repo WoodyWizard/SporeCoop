@@ -10,8 +10,8 @@ role:
 versions:
 fixed_in: unreleased
 branch: fix/w38-effects
-commits: 0d704785 (relay), 646dfc97 (test), 40c7834b (docs), d4e5a367 (world relay), c26a1d10 (tests), 41c0d56f (docs), 45ebc478 (review: no hook churn, main thread only, O(1) table), 091b056f (position +0xA0), 13cdfa7c (cost measurement), 02586842 (atomic stage gate)
-tests: creature_effects, cell_effects, tribe_effects
+commits: 0d704785 (relay), 646dfc97 (test), 40c7834b (docs), d4e5a367 (world relay), c26a1d10 (tests), 41c0d56f (docs), 45ebc478 (review: no hook churn, main thread only, O(1) table), 091b056f (position +0xA0), 13cdfa7c (cost measurement), 02586842 (atomic stage gate), 4d09ecd3 (3-player relay transform), aedd0954 (spoofing), 8706ea33 (validation), 15bd1ebc (stop relayed world effects), 7eb1478b (full transform + screenshots), 1e5ab55e (O(1) sent table)
+tests: creature_effects, cell_effects, tribe_effects, effects_party, effects_validate, effects_live
 signature:
 docs: docs/re/creature.md#creature-effects-relay
 related:
@@ -153,3 +153,37 @@ Verification of the review shape:
 - 2026-11-02: review fix on the same branch: setter hook replaced by an O(1) table and a position
   read in the tick, main-thread-only hook bodies, hooks installed once (no churn). Measured under
   1 % frame time, 0 faults in every stage and in both editors. Tests and docs updated.
+
+## Second review fix (2026-11-02)
+
+The orchestrator's review found six more problems; each has its own commit and test where asked.
+
+1. The host's relay to the other guests dropped the 0x44-byte transform of a pool 5 effect, so a
+   third player never got a world effect (guest 2 dropped the short message). Fixed and tested by
+   `effects_party` (3 players, `coop_effects_party.py`): the host's effect reaches guest 2 and guest
+   1's effect reaches guest 2; without the forward the guest 1 -> guest 2 case fails
+   (out/lab/20261102-184838).
+2. Spoofing (BUG-0201): the host drops a guest message whose `player` byte is not the sender; a
+   guest accepts only the host's relay. `coop.effects inject` feeds crafted messages through
+   `on_message`; `coop.effects` counts `spoof=`.
+3. Validation before a game call: stop pool/key, start id and pool (1, 2, 3, 5), pool 3 bone inside
+   the model's bone array (cCreatureBase::CreateEffect 0xC150D0 indexes `bone * 700` without a
+   check; the array end at model+0x2E8 gives the count, 24 in the fixture), pool 5 transform finite
+   and position under 1e5. Counters `pool= id= bone= transform= short=`. `effects_validate` covers
+   every rejection and a valid message that still plays.
+4. Relayed world effects are stopped: 64 live at most (oldest stopped first), still active after 8 s
+   stopped (IVisualEffect vt 0xC(0)), list dropped without a call on a stage / world change.
+   `effects_live` relays 20/s for 30 s: the guest reaches 64, stays bounded, returns to 0.
+5. The relayed transform now has scale 1.0 (+0x10) and the identity 3x3 (+0x14), the layout
+   cCreatureBase's creators build. Visible proof: out/effect_relay_on_1.png (guest's screen with
+   the effect at the host's puppet), out/effect_relay_off_1.png (same camera, no effect),
+   out/effect_relay_host.png (the host's own screen); script out/effects_shot.py.
+6. The 2048-entry linear scan of g_world_sent is a fixed 512-slot open-addressing set keyed by the
+   effect pointer (cleared once a frame); `coop.effects` shows `sent_probes=`.
+
+Runs (lane 2 and 3, the effects tests): PASS out/lab/20261102-191038, FAIL with
+SPORE_FIX_OFF=creature.effects_relay out/lab/20261102-193333. The full rerun (smoke, creature,
+team, puppet_walk and the effect tests) is in out/lab/20261102-191038 (the `unit` test's own lab
+selftest lane-lock checks fail under the run's CPU load; `make test` alone and `unit` alone in the
+lab, out/lab/20261102-194317, pass). Screenshots as above.
+
