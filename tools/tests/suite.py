@@ -76,6 +76,7 @@ add('team', P + 'coop_team.py', ('smoke',), warm=True, minutes=3, fixture='creat
 add('creature_effects', P + 'coop_creature_effects.py', warm=True, minutes=3, fixture='creature', monitor={'proxy_n': 1000})  # BUG-0451: a player's creature effects (mating call, hit, part, brain, death) on the partner's puppet; SPORE_FIX_OFF=creature.effects_relay fails; proxy_n: the known NPC proxies under the ground, not this test
 add('cell_effects', P + 'coop_cell_effects.py', warm=True, minutes=3, fixture='cell', monitor={'proxy_n': 1000})  # BUG-0451: a cell's world effects on the partner's cell; SPORE_FIX_OFF=creature.effects_relay fails
 add('tribe_effects', P + 'coop_tribe_effects.py', warm=True, minutes=4, fixture='tribe', monitor={'proxy_n': 1000})  # BUG-0451: a tribe member's effect on the partner's mirror; SPORE_FIX_OFF=creature.effects_relay fails
+add('effects_party', P + 'coop_effects_party.py', minutes=6, monitor={'proxy_n': 1000})  # BUG-0451 review: a guest's world effect reaches the second guest through the host relay (3 players); SPORE_FIX_OFF=creature.effects_relay fails
 add('tribe_coop', P + 'coop_tribe.py', ('smoke',), warm=True, minutes=4, fixture='tribe')
 add('civ_coop', P + 'coop_civ.py', ('smoke',), warm=True, minutes=3, fixture='civ')
 add('cell_coop', P + 'coop_cell.py', ('smoke',), warm=True, minutes=4, fixture='cell')

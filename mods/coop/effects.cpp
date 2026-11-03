@@ -387,6 +387,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         w.u8(pool);
         w.u32(id);
         w.u32(key);
+        if (pool == 5)
+            w.raw(xf, sizeof xf); // the world effect's transform, or guest 3+ never gets the position
         C.sess->broadcast_reliable(net::MSG_EFFECT, w, from);
     }
     g_rx++;
