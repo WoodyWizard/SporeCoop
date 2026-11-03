@@ -15,6 +15,7 @@ struct Ctx {
     std::function<bool(uint8_t id, net::Vec3& pos)> player_pos; // host: where guest `id` is (false: not in the world)
     std::function<bool(uint8_t id)> in_place;                   // host: guest `id` plays our world
     std::function<bool()> host_away;                            // guest: its own game runs its NPCs
+    std::function<bool(net::Vec3& pos)> stage_center;           // Tribe: the player tribe's place (BUG-0474)
 };
 
 void init(const SkHost* host, SkMod* mod, const Ctx& ctx);

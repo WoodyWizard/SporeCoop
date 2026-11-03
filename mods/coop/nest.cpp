@@ -13,6 +13,7 @@
 
 #include "fixes.h"
 #include "game.h"
+#include "modes.h"
 #include "net/interp.h"
 #include "net/protocol.h"
 #include "savestrip.h"
@@ -55,6 +56,14 @@ static bool over_ground(const net::Vec3& q, float& og)
 // `coop.fix nest.eggs off`: each game keeps its own eggs (0.7.3.3).
 static bool g_eggs_fix = true;
 COOP_FIX("nest.eggs", "BUG-0384", g_eggs_fix, "creature: the host's eggs at the NPC nests are shown and eaten on the guests");
+
+// BUG-0474: the animal nests of the Tribe stage are the same cHerd / cEgg objects, and the guest's game removes its
+// own animals there too (tribe proxies): the host's eggs were missing on every guest. The mirrors run in Tribe too.
+// `coop.fix nest.eggs_tribe off`: Creature only (0.7.3.6).
+static bool g_tribe_fix = true;
+COOP_FIX("nest.eggs_tribe", "BUG-0474", g_tribe_fix, "tribe: the host's eggs at the animal nests are shown and eaten on the guests");
+
+static bool egg_stage() { return game::in_creature_stage() || (g_tribe_fix && game::mode_id() == modes::kTribe); }
 
 constexpr uint8_t kKindSnap = 0, kKindEat = 1;
 constexpr int kMaxSnap = 20;           // eggs per snapshot (49 bytes each, one packet)
@@ -248,8 +257,13 @@ static void host_tick(double now)
         if (p.id == 0)
             continue;
         net::Vec3 gp;
-        if ((C.in_place && !C.in_place(p.id)) || !C.player_pos || !C.player_pos(p.id, gp))
+        if (C.in_place && !C.in_place(p.id))
             continue;
+        if (!C.player_pos || !C.player_pos(p.id, gp) || (gp.x == 0 && gp.y == 0 && gp.z == 0)) {
+            // Tribe (BUG-0474): a player is a pointer, often (0 0 0) in a background game: the tribe's place
+            if (!(g_tribe_fix && game::mode_id() == modes::kTribe && C.stage_center && C.stage_center(gp)))
+                continue;
+        }
         std::vector<const HostEgg*> close;
         for (auto& [o, e] : eggs)
             if (net::dist(e.pos, gp) < kEggRelevance)
@@ -284,7 +298,7 @@ static void guest_tick(double now)
         g_mirrors.clear();
         g_epoch = game::world_epoch();
     }
-    if (!g_mirrors.empty() && (now - g_last_snap_rx > kStale || !game::in_creature_stage())) {
+    if (!g_mirrors.empty() && (now - g_last_snap_rx > kStale || !egg_stage())) {
         clear_mirrors(); // the host stopped sending (left the stage, its own world, gone)
         return;
     }
@@ -333,7 +347,7 @@ static void on_snapshot(net::Reader& r, double now)
             continue;
         v.push_back(e);
     }
-    if (!g_eggs_fix || !game::in_creature_stage() || (C.host_away && C.host_away()))
+    if (!g_eggs_fix || !egg_stage() || (C.host_away && C.host_away()))
         return;
     g_snaps_rx++;
     g_last_snap_rx = now;
@@ -374,7 +388,7 @@ static void on_snapshot(net::Reader& r, double now)
 static void on_eat(uint8_t from, net::Reader& r)
 {
     uint32_t id = r.u32();
-    if (!r.ok() || !g_eggs_fix || !game::in_creature_stage())
+    if (!r.ok() || !g_eggs_fix || !egg_stage())
         return;
     for (auto& [o, e] : host_eggs())
         if (e.id == id && (e.state == 5 || e.state == 6)) {
@@ -452,7 +466,7 @@ void tick(double now)
     if (!a_SetState || !a_Snap || !a_CreateInstance || !a_DestroyInstance || !a_NounGet)
         return;
     if (is_host()) {
-        if (g_eggs_fix && game::in_creature_stage())
+        if (g_eggs_fix && egg_stage())
             host_tick(now);
         if (g_ground_fix && a_Surface && a_PlanetGet && game::in_creature_stage())
             ground_tick(now);

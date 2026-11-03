@@ -4778,6 +4778,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         nc.player_pos = ctx.player_pos;
         nc.in_place = ctx.in_place;
         nc.host_away = ctx.host_away;
+        nc.stage_center = ctx.stage_center;
         nest::init(H, M, nc);
     }
     { // BUG-0472, BUG-0459: world objects owned by the host
