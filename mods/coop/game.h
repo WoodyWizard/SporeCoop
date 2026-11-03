@@ -179,6 +179,7 @@ uint32_t noun_id(void* obj);                    // ISimulatorSerializable::GetNo
 void* cast(void* obj, uint32_t type);           // Object::Cast (vt 0x0C)
 bool object_position(void* obj, net::Vec3& out); // via cSpatialObject (TYPE 0x1186577), position +4
 float object_scale(void* obj);                   // cSpatialObject::GetScale (vt 0x34), -1 without one
+void set_object_scale(void* obj, float s);         // cSpatialObject::SetScale (vt 0x40), nothing without one
 bool object_alive(void* obj);                    // cGameData::mbIsDestroyed (+0x21) not set
 // cGameData::mID (+0x24): `++[counter]` in cGameNounManager::CreateInstance (GOG 2024 0xB20BF0,
 // counter 0x167BE28): unique among the objects CreateInstance made in this process. The pointer

@@ -43,6 +43,7 @@
 #include "npc.h"
 #include "creature_hp.h"
 #include "nest.h"
+#include "fields.h"
 #include "parts.h"
 #include "rejoin.h"
 #include "savestrip.h"
@@ -850,7 +851,8 @@ static bool world_state_msg(uint8_t type)
     return type == net::MSG_DNA || type == net::MSG_WORLD_TIME ||
            (type >= net::MSG_CELL_STATE && type <= net::MSG_CELL_FOOD) || type == net::MSG_CELL_KO ||
            type == net::MSG_CELL_BITTEN || type == net::MSG_TRIBE_STATE || type == net::MSG_TRIBE_CMD ||
-           type == net::MSG_SPECIES || type == net::MSG_SOCIAL || type == net::MSG_NEST || type == net::MSG_PARTS;
+           type == net::MSG_SPECIES || type == net::MSG_SOCIAL || type == net::MSG_NEST || type == net::MSG_PARTS ||
+           type == net::MSG_FIELDS;
 }
 
 // the gate: does this machine drop the host's message? (0.7.3.0 with core.world_gate off: the old
@@ -2067,6 +2069,7 @@ void avatar_change_check()
         forget_puppets();
         npc::on_world_change();
         nest::on_world_change();
+        fields::on_world_change();
         if (!tribe::editor_world_fix()) // BUG-0217: else tribe::world_check() decides
             tribe::on_world_change();
         if (!civ::world_epoch_fix()) // BUG-0223: else civ::world_check() decides
@@ -2459,6 +2462,7 @@ void on_frame(void*, int, void*)
     savestrip::tick();
     npc::tick(now);
     nest::tick(now); // BUG-0384
+    fields::tick(now); // BUG-0419 G2 (after the modules that make the mirrors)
     parts::tick(now); // BUG-0401
     social::tick(now);
     shared::tick(g_sess, game::mode_id(), now, guest_elsewhere()); // BUG-0231: held while elsewhere
@@ -2925,6 +2929,7 @@ void end_session(EndPath path, bool cell)
     if (g_session_end_fix || path == EndPath::Disconnect) {
         npc::on_session_end();
         nest::on_session_end(); // BUG-0384: our egg mirrors
+        fields::on_session_end();
         parts::on_session_end(); // BUG-0401
         social::on_session_end();
         tribe::on_session_end();
@@ -2937,6 +2942,7 @@ void end_session(EndPath path, bool cell)
     } else if (path == EndPath::Leave) { // before BUG-0033 (tests)
         npc::on_session_end();
         nest::on_session_end(); // BUG-0384: our egg mirrors
+        fields::on_session_end();
         parts::on_session_end(); // BUG-0401
         social::on_session_end();
         if (cell)
@@ -2945,6 +2951,7 @@ void end_session(EndPath path, bool cell)
     } else if (path == EndPath::Unload) {
         npc::on_session_end();
         nest::on_session_end(); // BUG-0384: our egg mirrors
+        fields::on_session_end();
         parts::on_session_end(); // BUG-0401
         social::on_session_end();
     }
@@ -3313,7 +3320,7 @@ void setup_callbacks()
         }
         switch (type) {
         case net::MSG_NPC_SPAWN: case net::MSG_NPC_DESPAWN: case net::MSG_NPC_STATE:
-        case net::MSG_DAMAGE_REQ: case net::MSG_DAMAGE:
+        case net::MSG_DAMAGE_REQ: case net::MSG_DAMAGE: case net::MSG_NPC_RESYNC:
             npc::on_message(type, from, r);
             return;
         case net::MSG_SPECIES: case net::MSG_SOCIAL:
@@ -3321,6 +3328,9 @@ void setup_callbacks()
             return;
         case net::MSG_NEST: // BUG-0384
             nest::on_message(type, from, r);
+            return;
+        case net::MSG_FIELDS: // BUG-0419 G2: replicated fields of mirrored objects
+            fields::on_message(type, from, r);
             return;
         case net::MSG_PARTS: // BUG-0401
             parts::on_message(type, from, r);
@@ -3744,6 +3754,14 @@ COOP_FIX("tools.gopos_ground", "BUG-0400", g_gopos_ground_fix, "tests: coop.npc 
 
 int c_npc(void*, int argc, const char* const* argv, SkOut* out)
 {
+    if (argc > 2 && !strcmp(argv[1], "forget")) { // guest (tests, BUG-0487): forget <id>
+        SAY("%s", npc::debug_forget((uint16_t)atoi(argv[2])).c_str());
+        return 0;
+    }
+    if (argc > 1 && !strcmp(argv[1], "resync")) {
+        SAY("%s", npc::resync_status().c_str());
+        return 0;
+    }
     if (argc > 1 && !strcmp(argv[1], "list")) {
         SAY("%s", npc::status().c_str());
         // out_printf keeps 8 KB per call: a guest's list with 40 proxies is longer (BUG-0305)
@@ -4771,6 +4789,12 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         nc.host_away = ctx.host_away;
         nest::init(H, M, nc);
     }
+    { // BUG-0419 G2: replicated fields (the modules register their kinds in their init)
+        fields::Ctx fc;
+        fc.sess = &g_sess;
+        fc.in_place = ctx.in_place;
+        fields::init(H, M, fc);
+    }
     { // BUG-0401: the party's collected creature parts
         parts::Ctx pc;
         pc.sess = &g_sess;
@@ -4878,6 +4902,9 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     H->command_add(M, "coop.echo", "coop.echo [on|off] [offset] [delay] - loopback puppet test", c_echo, nullptr, MT);
     H->command_add(M, "coop.overlay", "coop.overlay on|off|self", c_overlay, nullptr, MT);
     H->command_add(M, "coop.social", "coop.social [species | log | act <npc id> [slot] | goto <npc id>] - creature social games", c_social, nullptr, MT);
+    H->command_add(M, "coop.fields", "coop.fields - replicated state fields of mirrored objects per kind (BUG-0419 G2, fields.h)",
+                   [](void*, int, const char* const*, SkOut* out) -> int { SAY("%s", fields::status().c_str()); return 0; },
+                   nullptr, MT);
     H->command_add(M, "coop.npc", "coop.npc [on|off|list|herds|hit <id> <dmg>|hosthit <id> <dmg> [push]|recruit <id>|spawn <hex>|cinedefer on|off] - host-authoritative NPC sync", c_npc, nullptr, MT);
     H->command_add(M, "coop.res", "coop.res [[joinsim] add <food|money> <n> | fix reset|floor [0|1]] - shared resources", c_res, nullptr, MT);
     H->command_add(M, "coop.ping", "coop.ping - show everybody the place under your mouse / where you are", c_ping,

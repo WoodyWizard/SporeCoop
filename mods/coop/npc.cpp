@@ -26,6 +26,7 @@
 #include "world.h"
 #include "sporekit_game.hpp"
 #include "fixes.h"
+#include "fields.h"
 #include "dna_ledger.h"
 #include "trace.h"
 
@@ -291,6 +292,93 @@ static void* ai_target(void* c)
     return pick;
 }
 
+// ------------------------------------------------------------------ BUG-0461: replicated fields
+// NpcSpawn.scale was sent and never read: every proxy kept the size its own game gave it (a random
+// size per individual of the species, and a grown-up's for a young one: babies were shown as alphas).
+// The proxies are one kind of the field replication (fields.h): the host reads every NPC's scale, the
+// guest sets it on its proxy whenever the proxy's own differs (made later, grown by the game).
+// `coop.fix npc.scale off`: proxies keep their own size (0.7.3.6).
+static bool g_scale_fix = true;
+COOP_FIX("npc.scale", "BUG-0461", g_scale_fix, "creature: NPC proxies get the host NPC's size (young ones small)");
+static const fields::Field kNpcFields[] = {fields::kScale};
+
+static void npc_each(void (*cb)(uint16_t, void*, void*), void* u)
+{
+    for (void* c : g_seen_now) {
+        auto it = g_host_npcs.find(c);
+        if (it != g_host_npcs.end() && !game::is_destroyed(c))
+            cb(it->second.id, c, u);
+    }
+}
+
+static void* npc_mirror(uint16_t id)
+{
+    auto it = g_proxies.find(id);
+    if (it == g_proxies.end() || !it->second.c || game::is_destroyed(it->second.c))
+        return nullptr;
+    return it->second.c;
+}
+
+// ------------------------------------------------------------------ BUG-0487: resync of unknown ids (G5)
+// The host sends an NPC's spawn once per guest (g_known); a guest that has no proxy of an id it gets
+// states for (its proxy dropped as stale while the host still counts it as known, a spawn that came
+// while the guest was in another world, a world change on the guest) dropped those states for good: a
+// host NPC near the guest without a proxy, or a proxy whose death / health never came. Now the guest
+// asks the host for the spawn of every id it gets states for and does not know (at most once per id in
+// kResyncEvery s), and the host sends it again. `coop.fix npc.resync off`: states of unknown ids dropped.
+static bool g_resync_fix = true;
+COOP_FIX("npc.resync", "BUG-0487", g_resync_fix, "creature: a guest asks the host again for an NPC it gets states of and has no proxy of");
+constexpr double kResyncEvery = 2.0;
+static std::map<uint16_t, double> g_unknown_ids; // guest: id -> when it was asked for last (0: not yet)
+static double g_resync_at = 0;
+static uint32_t g_resync_asked = 0, g_resync_sent = 0, g_forgotten = 0;
+static void destroy_proxy(uint16_t id);
+
+static void resync_tick(double now)
+{
+    if (!g_resync_fix || g_unknown_ids.empty() || now - g_resync_at < 0.5)
+        return;
+    g_resync_at = now;
+    std::vector<uint16_t> ask;
+    for (auto it = g_unknown_ids.begin(); it != g_unknown_ids.end();) {
+        if (g_proxies.count(it->first)) { // the spawn came
+            it = g_unknown_ids.erase(it);
+            continue;
+        }
+        if (now - it->second >= kResyncEvery && ask.size() < 200) {
+            ask.push_back(it->first);
+            it->second = now;
+        }
+        ++it;
+    }
+    if (ask.empty())
+        return;
+    net::Writer w;
+    w.u8((uint8_t)ask.size());
+    for (uint16_t id : ask)
+        w.u16(id);
+    C.sess->send_reliable_to(0, net::MSG_NPC_RESYNC, w);
+    g_resync_asked += (uint32_t)ask.size();
+}
+
+// guest (tests, BUG-0487): forget the proxy of `id` without telling the host, as a lost spawn would
+std::string debug_forget(uint16_t id)
+{
+    if (!g_proxies.count(id))
+        return "no proxy " + std::to_string(id) + "\n";
+    destroy_proxy(id);
+    g_forgotten++;
+    return "forgot proxy " + std::to_string(id) + " (the host still counts it as known)\n";
+}
+
+std::string resync_status()
+{
+    char b[200];
+    snprintf(b, sizeof b, "npc resync: fix=%d unknown=%zu asked=%u spawns_resent=%u forgotten=%u\n", g_resync_fix ? 1 : 0,
+             g_unknown_ids.size(), g_resync_asked, g_resync_sent, g_forgotten);
+    return b;
+}
+
 static int c_npctrack(void*, int argc, const char* const* argv, SkOut* out);
 void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
 {
@@ -299,6 +387,7 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
     C = ctx;
     game::set_update_filter(update_filter);
     game::set_ai_target_picker(ai_target);
+    fields::add_kind({fields::K_NPC, "npc", &g_scale_fix, kNpcFields, 1, npc_each, npc_mirror, nullptr}); // BUG-0461
     H->command_add(M, "coop.npctrack", "coop.npctrack start [radius m]|stop|count|dump [from] [n]|walk <id> x y z <m/s> - every frame: the guest's NPC proxies (tests, BUG-0361)",
                    c_npctrack, nullptr, SK_CMD_MAIN_THREAD);
 }
@@ -1391,6 +1480,7 @@ static void tick_frame(double now)
         g_host_away = away;
         if (!away) {
             guest_tick(now);
+            resync_tick(now); // BUG-0487
             if (g_away_locals_fix && game::in_creature_stage())
                 away_snapshot(now);
         }
@@ -1437,6 +1527,7 @@ void on_world_change()
         px.drv = drive::State{};
     }
     g_proxy_of.clear();
+    g_unknown_ids.clear();
     g_herds.clear();
     g_local_herds.clear();
     g_kill.clear();
@@ -1473,6 +1564,7 @@ void on_session_end()
     g_known.clear();
     g_kill.clear();
     g_ai_target.clear();
+    g_unknown_ids.clear();
     teamplay::reset();
 }
 
@@ -1526,8 +1618,11 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
                 break;
             }
             auto it = g_proxies.find(st.net_id);
-            if (it == g_proxies.end())
+            if (it == g_proxies.end()) {
+                if (g_resync_fix && !g_unknown_ids.count(st.net_id) && g_unknown_ids.size() < 4000)
+                    g_unknown_ids[st.net_id] = 0; // BUG-0487: ask for its spawn (resync_tick)
                 continue;
+            }
             net::PlayerState s;
             s.time_ms = t;
             s.pos = st.pos;
@@ -1540,6 +1635,22 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         }
         if (whole) // the host sends states (an empty or cut batch says nothing about stale proxies)
             g_last_states_rx = now;
+        break;
+    }
+    case net::MSG_NPC_RESYNC: { // host: a guest gets states of NPCs it has no spawn of (BUG-0487)
+        if (!is_host() || !g_resync_fix)
+            return;
+        uint8_t n = r.u8();
+        auto& known = g_known[from];
+        for (int i = 0; i < n && r.ok(); i++) {
+            uint16_t id = r.u16();
+            auto it = g_host_by_id.find(id);
+            // only what this guest mirrors (the host sends it states): others come with the relevance rule
+            if (!r.ok() || it == g_host_by_id.end() || !known.count(id) || !g_seen_now.count(it->second))
+                continue;
+            send_spawn(from, id, it->second);
+            g_resync_sent++;
+        }
         break;
     }
     case net::MSG_DAMAGE_REQ: { // host: a guest hit one of our NPCs
