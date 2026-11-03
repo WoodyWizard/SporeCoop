@@ -36,3 +36,4 @@ Source: docs/generalisation-plan.md G7.
 
 ## History
 - 2026-11-01: opened.
+- 2026-11-02 (0.7.3.5, BUG-0452): generic check (key_exists on every part id, base game substitutes, refuse otherwise) now covers creature, cell and UFO models on every path that registers received creation records (a player's creation, NPC species served by the host, the host's own creations of its world, the world load). Still open: Civ vehicles and buildings, city designs, the host's NPC ship models in Space (squadron SpawnUFO), paints of cell and UFO models, tribe tools / huts if they reference pack parts. Target 0.7.4 (one ensure_content for every kind; stage-independent).
