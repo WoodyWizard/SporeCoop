@@ -320,6 +320,57 @@ void play_animation(void* c, uint32_t anim_id, int block, bool disable_blend)
     g_in_puppet_anim = false;
 }
 
+// ---- behaviour animations (BUG-0464) ----
+// The behaviour tree's nodes (eat, look around, social answers, fights, the carnivores' idle node 0xD8DC30
+// with B31EB92C ...) start their animations with SporeCoop::CreaturePlayAnim (0xC122F0), not with
+// cCreatureBase::PlayAnimation. The creature's idle refresh 0xC148B0 (cCreatureAnimal::Update when no main
+// animation is left, a jump landing, the BT nodes' ends) plays the idle / walk choice of 0xC0C790 through the
+// same function: those plays are its own choice in every game and are not reported (depth counter).
+typedef int(SK_THISCALL* CreaturePlayAnim_t)(void*, uint32_t, int, int);
+typedef void(SK_THISCALL* IdleRefresh_t)(void*, int);
+static CreaturePlayAnim_t o_CreaturePlayAnim;
+static IdleRefresh_t o_IdleRefresh;
+static BehaviourAnimListener g_bhv_listener;
+static int g_idle_depth = 0;
+static uint32_t g_bhv_seen = 0, g_bhv_idle = 0;
+
+static int SK_THISCALL h_CreaturePlayAnim(void* self, uint32_t id, int a, int b)
+{
+    int r = o_CreaturePlayAnim(self, id, a, b);
+    if (g_idle_depth > 0)
+        g_bhv_idle++;
+    else if (r && g_bhv_listener && !g_in_puppet_anim) {
+        g_bhv_seen++;
+        g_bhv_listener(self, id, a, b);
+    }
+    return r;
+}
+
+static void SK_THISCALL h_IdleRefresh(void* self, int force)
+{
+    g_idle_depth++;
+    o_IdleRefresh(self, force);
+    g_idle_depth--;
+}
+
+void set_behaviour_anim_listener(BehaviourAnimListener fn) { g_bhv_listener = fn; }
+
+bool play_behaviour_anim(void* c, uint32_t anim_id, int a, int b)
+{
+    if (!o_CreaturePlayAnim || !c)
+        return false;
+    g_in_puppet_anim = true;
+    int r = o_CreaturePlayAnim(c, anim_id, a, b);
+    g_in_puppet_anim = false;
+    return r != 0;
+}
+
+void behaviour_anim_counts(uint32_t* seen, uint32_t* idle)
+{
+    *seen = g_bhv_seen;
+    *idle = g_bhv_idle;
+}
+
 // ---- creature visual effects (BUG-0451) ----
 // Every effect the game makes on or at a creature is created by one of the two effect pools of
 // cCreatureBase (docs/re/creature.md#creature-effects-relay): pool 1 (map +0xCC8) by
@@ -874,6 +925,14 @@ bool init(const SkHost* host, SkMod* mod)
         H->hook_create(M, (void*)a_PlayAnim, (void*)h_PlayAnim, (void**)&o_PlayAnim);
     if (a_PlayAnimTo)
         H->hook_create(M, (void*)a_PlayAnimTo, (void*)h_PlayAnimTo, (void**)&o_PlayAnimTo);
+    // BUG-0464: the behaviour tree's animation starter and the idle refresh
+    if (uintptr_t a = H->sym("SporeCoop::CreaturePlayAnim")) {
+        uintptr_t idle = H->sym("SporeCoop::Creature_IdleRefresh");
+        if (idle && H->hook_create(M, (void*)idle, (void*)h_IdleRefresh, (void**)&o_IdleRefresh) == 0)
+            H->hook_create(M, (void*)a, (void*)h_CreaturePlayAnim, (void**)&o_CreaturePlayAnim);
+        else
+            H->log(M, SK_WARN, "behaviour anim hooks: no idle refresh hook (NPC animations not relayed)");
+    }
     // BUG-0451: the two creature effect pools, their creators and the one stop
     struct {
         const char* name;

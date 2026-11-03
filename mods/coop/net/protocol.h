@@ -82,6 +82,9 @@ enum MsgType : uint8_t {
                           // Older SporeCoop ignores it (an unknown type).
     MSG_NPC_RESYNC = 57,  // guest -> host: u8 n, n x u16 NPC id the guest gets states for and has no spawn of
                           // (BUG-0487 / G5): the host sends that spawn again. Older SporeCoop ignores it.
+    MSG_NPC_ANIM = 59,    // host -> guest: animations the host's NPCs' behaviour trees started (BUG-0464, npc.cpp):
+                          // u8 n, n x {u16 NPC id, u32 anim, u8 arg, u32 arg2}; unreliable, at most once a frame.
+                          // Older SporeCoop ignores it (an unknown type).
     MSG_WOBJ = 54,        // world objects owned by the host (worldobj.cpp, BUG-0472 / BUG-0459): u8 kind (0 host -> guest
                           // snapshot {u8 obj kind, vec3 centre, f32 r, u8 n, n x {u32 id, vec3 pos, u32 state}}, unreliable 1 Hz;
                           // 1 guest -> host request {u8 obj kind, u32 id, vec3 pos, u32 state now}). Older SporeCoop ignores it.

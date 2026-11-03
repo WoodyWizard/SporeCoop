@@ -111,6 +111,12 @@ bool gait_state(void* c, int* gait, int* gait2, int* moving, int* speed_state);
 using AnimListener = void (*)(void* creature, uint32_t anim_id, int block, bool disable_blend, bool to_target);
 void set_anim_listener(AnimListener fn);
 void play_animation(void* c, uint32_t anim_id, int block, bool disable_blend);
+// BUG-0464: animations started by the behaviour tree (SporeCoop::CreaturePlayAnim, thiscall(creature, anim,
+// int, int) ret 0xC), not the idle / walk choice of the creature's idle refresh. Called after the play.
+using BehaviourAnimListener = void (*)(void* creature, uint32_t anim_id, int a, int b);
+void set_behaviour_anim_listener(BehaviourAnimListener fn);
+bool play_behaviour_anim(void* c, uint32_t anim_id, int a, int b); // not reported to the listener
+void behaviour_anim_counts(uint32_t* seen, uint32_t* idle);
 
 // Visual effects of a creature (BUG-0451): every effect the game makes on or at a creature goes
 // through its two effect pools (cCreatureBase +0xCC8 pool 1, +0xD68 pool 2); these are the only
