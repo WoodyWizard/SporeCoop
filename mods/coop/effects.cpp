@@ -716,11 +716,17 @@ void on_session_end()
     g_last_rx_from = 0xFF;
     g_sent_n = 0;
     world_sent_clear();
-    for (size_t i = 0; i < g_live_n; i++) { // the session ends: stop and release what the relay holds
+    // the session ends: stop and release what the relay holds, but only while the world those effects
+    // live in is still the one being played (a session can end during a world teardown: then the list
+    // is dropped like on a stage change, never called into)
+    bool same_world = g_live_init && game::mode_id() == g_live_mode && (C.world ? C.world() : 0) == g_live_world;
+    for (size_t i = 0; i < g_live_n && same_world; i++) {
         if (game::effect_active(g_live[i].fx) && game::stop_world_effect(g_live[i].fx))
             g_live_stopped++;
         live_forget(g_live[i].fx, true);
     }
+    if (!same_world)
+        g_live_dropped += (uint32_t)g_live_n;
     g_live_n = 0;
 }
 
