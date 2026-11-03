@@ -27,7 +27,7 @@ static const SkHost* H;
 static SkMod* M;
 static Ctx C;
 
-static uintptr_t a_FruitSetState, a_FloraGet, a_DropFruit, a_TreeVt, a_StrategyGet, a_ExecuteAction, a_OrnUsed, a_RewardFind, a_RewardHandlerVt, a_HerdSetExtinct;
+static uintptr_t a_FruitSetState, a_FloraGet, a_DropFruit, a_TreeVt, a_StrategyGet, a_ExecuteAction, a_OrnUsed, a_RewardFind, a_RewardHandlerVt, a_HerdSetExtinct, a_HerdSetExtinctFlag;
 
 // ---------------------------------------------------------------- the kinds' common shape
 // One object of a kind in this game: its pointer (valid in this frame only), the id the host's game
@@ -248,8 +248,19 @@ static void herd_collect(Items& out)
         },
         &out);
 }
-static bool herd_behind(uint32_t local, uint32_t host) { return host != kGone && (host & 1) && !(local & 1); }
-static void herd_apply(const Item& l, uint32_t) { thiscall<void>(a_HerdSetExtinct, l.p); }
+// host state: bit 0 herd +0x190, bit 1 nest +0x120 (runtime, lane 9: a herd whose members the host's avatar killed had
+// +0x190 = 1 and its nest +0x120 = 0: +0x190 came first another way, so cHerd_SetExtinct did not touch the nest)
+static bool herd_behind(uint32_t local, uint32_t host) { return host != kGone && (host & ~local & 3) != 0; }
+static void herd_apply(const Item& l, uint32_t host)
+{
+    if ((host & 2) && !(l.st & 1))
+        thiscall<void>(a_HerdSetExtinct, l.p); // both, as the species' extinction does
+    else if (host & 1)
+        thiscall<void>(a_HerdSetExtinctFlag, l.p, true);
+    void* nest = field<void*>(l.p, 0x160);
+    if ((host & 2) && nest && !IsBadReadPtr(nest, 0x130))
+        field<uint8_t>(nest, 0x120) = 1; // what cHerd_SetExtinct writes
+}
 static bool herd_acted(uint32_t, uint32_t, uint32_t) { return false; }
 static void herd_act(const Item&, uint32_t) {}
 
@@ -257,10 +268,12 @@ static void herd_act(const Item&, uint32_t) {}
 static Kind g_kinds[] = {
     {"fruit", &g_fruit_fix, kStCreature | kStTribe, 3.0f, 70.f, 48, fruit_collect, fruit_behind, fruit_apply, fruit_acted, fruit_act, true, true},
     {"tree", &g_tree_fix, kStCreature | kStTribe, 0.5f, 70.f, 48, tree_collect, tree_behind, tree_apply, tree_acted, tree_act, false, false},
-    {"herd", &g_herd_fix, kStCreature, 1.0f, 3000.f, 60, herd_collect, herd_behind, herd_apply, herd_acted, herd_act, false, false},
+    {"herd", &g_herd_fix, kStCreature, 1.0f, 3000.f, 48, herd_collect, herd_behind, herd_apply, herd_acted, herd_act, false, false},
     {"interactive_ornament", &g_orn_fix, kStCreature, 1.5f, 90.f, 40, orn_collect, orn_behind, orn_apply, orn_acted, orn_act, false, false},
 };
 constexpr int kKinds = (int)(sizeof g_kinds / sizeof g_kinds[0]);
+// a snapshot is one unreliable message: 19 bytes + 20 per object within net::Connection::kMaxSingle (1163)
+constexpr int kMaxPerSnap = 56;
 
 // ---------------------------------------------------------------- engine
 constexpr uint8_t kMsgSnap = 0, kMsgAct = 1;
@@ -320,7 +333,7 @@ static void host_tick(double now)
     uint8_t sb = stage_bit();
     for (int k = 0; k < kKinds; k++) {
         Kind& K = g_kinds[k];
-        if (!*K.fix || !(K.stages & sb))
+        if (!*K.fix || !(K.stages & sb) || K.max > kMaxPerSnap)
             continue;
         Items all;
         K.collect(all);
@@ -706,7 +719,8 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
     a_RewardFind = H->sym("SporeCoop::CreatureReward_Find");
     a_RewardHandlerVt = H->sym("SporeCoop::CreatureStageRewardHandler_vftable");
     a_HerdSetExtinct = H->sym("SporeCoop::cHerd_SetExtinct");
-    if (!a_FruitSetState || !a_FloraGet || !a_DropFruit || !a_TreeVt || !a_OrnUsed || !a_RewardFind || !a_RewardHandlerVt || !a_HerdSetExtinct)
+    a_HerdSetExtinctFlag = H->sym("SporeCoop::cHerd_SetExtinction");
+    if (!a_FruitSetState || !a_FloraGet || !a_DropFruit || !a_TreeVt || !a_OrnUsed || !a_RewardFind || !a_RewardHandlerVt || !a_HerdSetExtinct || !a_HerdSetExtinctFlag)
         for (auto& k : g_kinds)
             k.stages = 0; // a symbol missing on this build: every game keeps its own (logged below)
     if (!a_FruitSetState || !a_DropFruit || !a_OrnUsed)

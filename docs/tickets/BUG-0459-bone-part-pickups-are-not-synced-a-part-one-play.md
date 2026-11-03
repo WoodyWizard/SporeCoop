@@ -9,12 +9,13 @@ source: player reports on Discord 2026-11-02 (bug-reports forum, 0.7.3.4, GOG ho
 role: host
 versions: 
 fixed_in:
-branch:
+branch: fix/w40-world-objects
 commits:
-tests:
+tests: wobj_ornament (tools/tests/coop_world_objects.py), parts_shared
 signature:
-docs:
+docs: docs/re/creature.md#creature-world-objects, docs/06-testing.md#testing-world-objects
 related:
+switch: wobj.ornament
 ---
 
 ## Report
@@ -23,10 +24,16 @@ Target: 0.7.4.
 <!-- what the player (or the test) saw, in our words; no player names, no paths from their PC -->
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+Observed (lane 9): a bone / skeleton is a cInteractiveOrnament from the save (the same object, place and serial on
+every game); its part reward is a separate record per game (CreatureReward_Find 0xD475E0, +0x24 used up), paid
+by 0xD46BE0 after the interact node. The ornament itself does not change. Each game paid its own reward, and
+parts.shared (the union) then gave everybody both parts: with the fix off the test went 54 -> 56 parts on both
+games for one bone.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+worldobj.cpp kind `interactive_ornament` (ornaments with a reward, Creature): the guest's use (its reward used up)
+goes to the host as a request; the host marks its reward used up without paying it (+0x10 = 0, +0x24 = 1, +0xA3 =
+0) and every guest gets the same with the next snapshot. Switch `wobj.ornament`.
 
 ## Verification
 <!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);

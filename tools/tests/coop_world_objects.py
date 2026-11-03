@@ -140,10 +140,12 @@ def herd(host, guest, ck):
         print('  host:', host.call(f'coop.nest kill {h} 20')['out'].strip(), flush=True)
         if wait(lambda: [x for x in hs(host) if x['st'] & 1], 4):
             break
-    ck([x for x in hs(host) if x['st'] == 3], 'the species is extinct in the host\'s game (herd +0x190, nest +0x120)')
-    ext = wait(lambda: [x for x in hs(guest) if x['st'] == 3], 8)
+    hx = [x for x in hs(host) if x['st'] & 1]
+    ck(hx, 'the nest is extinct in the host\'s game (herd +0x190)')
+    want = hx[0]['st'] if hx else 1
+    ext = wait(lambda: [x for x in hs(guest) if x['st'] & want == want], 8)
     print('  after: host', hs(host), 'guest', hs(guest), flush=True)
-    ck(ext, 'the nest is extinct in the guest\'s game too (herd +0x190, nest +0x120: the minimap)')
+    ck(ext, f'the nest is extinct in the guest\'s game too (the host\'s state {want}: herd +0x190 bit 1, nest +0x120 bit 2)')
 
 
 def eggs(host, guest, ck):

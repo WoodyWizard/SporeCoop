@@ -9,12 +9,13 @@ source: divergence detector, nightly run 2026-11-03 (out/lab/20261103-012624, re
 role: 
 versions: 
 fixed_in:
-branch:
+branch: fix/w40-world-objects
 commits:
-tests:
+tests: nest_eggs_tribe (tools/tests/coop_world_objects.py --kind eggs), detect_tribe
 signature:
-docs:
+docs: docs/re/creature.md#creature-world-objects, docs/06-testing.md#testing-world-objects
 related:
+switch: nest.eggs_tribe
 ---
 
 ## Report
@@ -23,10 +24,12 @@ Found by the lab (no player report). Target: 0.7.4.
 <!-- what the player (or the test) saw, in our words; no player names, no paths from their PC -->
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+Observed: the Tribe stage's animal nests are the same cHerd / cEgg; the guest's game removes its animals there
+(tribe proxies), so its herds lay no eggs; the egg mirrors of BUG-0384 (nest.cpp) were gated to Creature.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+nest.cpp runs the egg mirrors in Tribe too (centred on the player tribe when a player's position is the (0 0 0)
+of an RTS pointer). Switch `nest.eggs_tribe`.
 
 ## Verification
 <!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
