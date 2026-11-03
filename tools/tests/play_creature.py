@@ -33,7 +33,11 @@ from twoinst import Checks, Monitor, shot, start
 COMBAT_KEYS = ['1', '1', '1', '2', '3', '4']  # the first ability is the one every creature has
 DIALOGS = [('Do you want to save your game?', 'Cancel'), ('Are you sure?', 'Cancel'),
            ('Resume Game', 'Resume Game'),  # what a player closes when it is in the way
-           ('You were killed', 'key enter')]  # the death caption waits for OK (docs/re/creature.md 7)
+           ('You were killed', 'key enter'),  # the death caption waits for OK (docs/re/creature.md 7)
+           # BUG-0500: the brain upgrade (100 DNA and up) plays cinematic F6A4B1E1 with this caption and waits
+           # for OK; unanswered, both bots stood in it for the rest of the run (no hunts, no joint hits,
+           # every chat line typed under its input lock)
+           ('Brain power!', 'key enter')]
 
 
 def screen(con):
@@ -151,7 +155,7 @@ class Player(threading.Thread):
             if uifind.shown(self.con, caption):
                 self.notes.append(f'{time.strftime("%H:%M:%S")} "{caption}" was up: {button}')
                 if button.startswith('key '):
-                    self.add('died')
+                    self.add('died' if caption == 'You were killed' else 'caption_ok')
                     self.sleep(1, 3)
                     self.do(button)
                     self.sleep(2)
