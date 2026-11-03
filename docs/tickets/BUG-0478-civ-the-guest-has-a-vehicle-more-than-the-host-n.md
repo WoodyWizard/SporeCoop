@@ -10,7 +10,7 @@ role:
 versions: 0.7.3.6
 fixed_in: unreleased
 branch: fix/w40-civ-crashes
-commits: 0823fb59, 9a9262ab
+commits: 0823fb59, 9a9262ab, c269e094
 tests: civ_mirror_remove
 signature:
 docs: docs/re/civ.md#civ-planner-lifetime
@@ -39,7 +39,8 @@ Found by the lab (no player report). Target: 0.7.4.
 * FAIL (`SPORE_FIX_OFF=civ.mirror_remove`): `out/lab/20261103-131214`: the guest keeps the two dead vehicles the host's
   game removed.
 * PASS: `out/lab/20261103-125816` (civ_mirror_remove#1, #2): the guest has no vehicle the host lacks and
-  no dead vehicle.
+  no dead vehicle. After c269e094 (the removal waits while a cinematic plays): `out/lab/20261103-135157`
+  (civ_mirror_remove, civ_planner, civ_caption, civ_coop, civ_ruin_repair, civ_discovery: all OK).
 
 ## History
 - 2026-11-03: opened.
