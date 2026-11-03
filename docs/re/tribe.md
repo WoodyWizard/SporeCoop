@@ -1162,3 +1162,24 @@ world pointer 0x167FB50). BUG-0449.
   The members are a replicated-field kind now (`tribe_member`, docs/sync-architecture-plan.md#sync-fields,
   `tribe.scale`). The chiefs' marker (chiefs_tick: desired scale x 1.3, on every machine) ends on the
   host's size too: the host's chief already carries the marker.
+
+## How late a guest shows the members, measured in play (2026-11-03, fix/w40-play)
+<a id="tribe-mirror-lag"></a>
+
+BUG-0481: play_tribe failed `sync t*: 90% within 1.5 m` on every run (citizens p90 1.78-1.89 m, p50 0.04 m).
+Measured with play_tribe's probe (the host's coop.sync read back to back for 0.6 s before each guest read,
+the guest's member compared with every point of that path, `out/lane<N>/track/play_tribe_probe_*.json`),
+lab 20261103-150636, 298 samples:
+* ✔ standing members (< 0.3 m/s over 0.4 s): raw p90 0.04 m. Nothing drifts or stands apart.
+* ✔ walking members (p50 8.4 m/s, p90 9.0 m/s: the members run to their orders): raw distance to where the
+  host has them now p90 2.14 m, but on the host's path 0.21 / 0.22 / 0.25 s back (best lag p10 / p50 / p90,
+  max 0.37 s) and only 0.09 m p90 (0.70 m max) off it there. 0.22 s x 8.4 m/s = 1.85 m: the raw failures.
+* So the mirrors are on the host's path, `kMirrorDelay` (0.2 s, tribe.cpp, BUG-0365's interpolation
+  buffer) + ~0.02 s late, by design (the host sends every 0.12 s or more). No mirror lags behind that,
+  walks its own path or gets snapped in play. The 1.5 m limit is coop_sync.py's, which compares with the
+  host's path over its LAG_WINDOW (players: 0.10 s delay + one 20 Hz interval); play_tribe compared with
+  the host's present position, delay included: a measurement error, not a desync.
+* play_tribe now compares a citizen with the host's path over TRIBE_LAG = 0.32 s (0.2 s delay + one 0.12 s
+  send interval) and prints the raw p90 next to it. `coop.tribe delay <s>` (guest, tests) sets the mirrors'
+  interpolation delay: `PLAY_TRIBE_GUEST_CMDS="coop.tribe delay 0.6"` is a planted late mirror the check
+  must fail.

@@ -1742,3 +1742,11 @@ What mods/coop/worldobj.cpp does not cover yet (docs/re/creature.md#creature-wor
 - Creature: a guest whose game stops drawing for many seconds is shown sunk into the ground on the host (BUG-0513).
 - Tribe: the guest's members cannot pick up tools from the host's tool buildings (BUG-0514).
 - Tribe: epic creatures deal only 8 damage (unclear which side, BUG-0515).
+Found by fix/w40-play (2026-11-03), not fixed:
+* Tribe: an animal proxy that the guest places on the host's path can stay 3.5-8 m off the host's NPC for
+  2-11 s (the lab's monitor rule `proxies`; play_tribe 1 of 3, campaign_tribe 1 of 3 in 20261103-012624).
+  Ticket: BUG-0503.
+* Creature: under the brain upgrade caption both own creatures read 0.63-0.71 m under the ground once (monitor
+  rule `ground`, 20261103-124913 play_creature#2); not reproduced at the fixture's nest. Ticket: BUG-0504.
+* play_tribe: in 2 of 3 runs the guest's members stayed idle on 7-12 orders the host took, and the host's bot
+  gave only 8-9 orders (its minimap look missed 24 times once). Ticket: BUG-0505.

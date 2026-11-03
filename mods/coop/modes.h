@@ -127,5 +127,7 @@ bool cell_leaving();
 void cell_move(uint8_t* c, const net::Vec3& p, bool still = false);
 void mat_to_quat(const float* m, net::Quat& q);
 void quat_to_mat(const net::Quat& q, float* m);
+// BUG-0499 (creature.puppet_jump): the speed a partner's states may not be blended over (0: off)
+float puppet_jump_speed();
 
 } // namespace modes

@@ -1,19 +1,19 @@
 ---
 id: BUG-0499
 title: play_creature: a player's puppet once 11-177 m from where its own game has it, puppet speed 0, with and without the effect relay
-status: open
+status: fixed
 kind: desync
 stage: Creature
 reported: 2026-11-03
 source: BUG-0471 A/B, lane 4, 2026-11-03
-role: 
+role: both
 versions: 
-fixed_in:
-branch:
-commits:
-tests: play_creature
+fixed_in: unreleased
+branch: fix/w40-play
+commits: d0635944, 9d0c9b48
+tests: puppet_jump, play_creature
 signature:
-docs:
+docs: docs/re/creature.md#creature-chat-under-caption
 related: BUG-0471, BUG-0482
 ---
 
@@ -31,17 +31,29 @@ Every other sample of the same runs is within 1.7 m (p90 0.5 m). Not caused by t
 (BUG-0471: it happens with the relay off and on main).
 
 ## Root cause
-Not analysed. Inferred from the far line: the puppet is behind its target by more than the
-distance it moves (speed 0: not driven that frame), so the sample falls in the moment after a
-teleport of the player (respawn, the death caption, the guest's return from the main menu) before
-the puppet is snapped to it. Next: `coop.track` around the far sample (docs/re/creature.md, BUG-0360).
-
+Observed: every far sample came right after a death of the far player (`"You were killed" was up` 2-5 s
+before in play_creature's notes, its game log `alive again` / `the hatchling waited ... grows up now`). After
+a death the player's own game moves its creature at once twice: the respawn at the nest (100+ m, while the
+puppet is hidden) and ~10 s later the hatchling out of its egg (5.6-6.0 m in one frame at the fixture's
+nest, 10-11 m in 124913#3). The partner's puppet buffer (net::SnapshotBuffer) blended across both steps:
+the target slid there in 0.1 s and the puppet walked after it (coop_puppet_jump.py with the switch off: 0.29
+s to be within 1 m of where the target landed after a 6 m jump, out/lab/20261103-154101); at the respawn
+the blend from the dead state at the place of the death put the shown puppet's first target between there
+and the nest (0.35 m off at the fixture's nest where both places are close; 23 m in 000836#1). One of
+play_creature's ~140 samples per player fell into such a moment.
+Inferred: the 177 m case (20261102-204139, `at a respawn`) is the respawn blend over a longer way.
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+Switch `creature.puppet_jump` (modes.cpp, coop.cpp drive_puppet, net/interp.h): the partner's buffer does not
+blend across a step faster than 40 m/s or a change of the death flag, and a target that moves more than 3 m
+in one frame teleports the puppet there (drive::State::jumps, `jumps=` in coop.status). Off: blended and
+walked (0.7.3.6).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+puppet_jump (tools/tests/coop_puppet_jump.py): each player dies, the other records its puppet (coop.track).
+- FAIL with SPORE_FIX_OFF=creature.puppet_jump: out/lab/20261103-154101 (6.0 m jump out of the egg, the puppet
+  there after 0.29 s > 0.15 s);
+- PASS with the fix: out/lab/20261103-154306 (0.03 s; shown again 0.00 m from the target).
 
 ## History
 - 2026-11-03: opened.
+- 2026-11-03: fixed on fix/w40-play (no blend across the respawn and the egg jump, the puppet jumps too).

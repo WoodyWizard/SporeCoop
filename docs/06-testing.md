@@ -3684,3 +3684,27 @@ the other player's game, both ways where the kind has two:
   (`coop.npc untune`). `SPORE_FIX_OFF=creature.relations` and `SPORE_FIX_OFF=npc.tuning` fail.
 * `coop_npc_anims.py` (not in a suite: BUG-0464 open): samples `coop.npc cur` (vt 0x58 GetCurrentAnimation per NPC
   id) on both games for 40 s; fails on this code (7-9 % of the samples match).
+
+## The play_* bots: what their chronic failures were (2026-11-03, fix/w40-play)
+<a id="testing-play-chronic"></a>
+
+* play_tribe `sync t*: 90% within 1.5 m` (0 of 9 runs, BUG-0481) was the measurement: it compared a guest's
+  member with where the host has it now, but the mirrors follow the host's states 0.2 s back on purpose
+  (docs/re/tribe.md#tribe-mirror-lag); the members run at 8-9 m/s, so 0.22 s x 8.4 m/s = 1.85 m p90 while the
+  mirrors were 0.09 m p90 off the host's path. play_tribe now reads the host's coop.sync back to back for
+  0.45 s (0.6 s in the measuring runs) before each guest read (the probe: `probe standing / walking` lines, best lag, rows in
+  `out/lane<N>/track/play_tribe_probe_*.json`) and compares a citizen with the host's path over 0.32 s
+  (TRIBE_LAG: the 0.2 s delay + one 0.12 s send interval), as coop_sync.py does with its LAG_WINDOW; the raw
+  p90 is printed. Planted desync: `PLAY_TRIBE_GUEST_CMDS="coop.tribe delay 0.6"` (mirrors 0.6 s late) fails
+  it (p90 2.71 m, best lag 0.60 s, out/lab/20261103-152720). The guest's minimap calibration prints the three
+  points and the busy state when it fails (seen once, 20261103-012624 #3, not analysed).
+* play_creature: the brain upgrade caption ("Brain power!", cinematic F6A4B1E1, after 100 DNA) waits for OK;
+  the bots did not answer it and stood in it for the rest of the run: no hunts, `joint hunts happened (+0)`
+  (BUG-0500) and the chat lines typed under its input lock were lost (a real bug, BUG-0482, fixed by
+  `core.ui_locked_edit`). The bots press Enter on it now (`caption_ok`).
+* play_creature `sync p*: never more than 6 m apart` on one sample right after a death (BUG-0499): the
+  puppet slid after its creature's respawn / egg jump; `creature.puppet_jump`. Test `coop_puppet_jump.py`
+  (`puppet_jump`, ~1.6 min cold): each player dies, the other's coop.track: the puppet within 1 m of where a
+  jumping target landed within 0.15 s (off: 0.29 s for the 6 m egg jump).
+* `coop_chat_caption.py` (`chat_caption`, ~1.6 min cold): CRG_ClaimNest on one game (input_lock=1), F9, one
+  click on the chat line, `text`, Send: the line in both chats; then without a caption, typed once.

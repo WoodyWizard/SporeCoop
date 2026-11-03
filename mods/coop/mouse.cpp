@@ -3,6 +3,7 @@
 #include "fixes.h"
 
 #include <windows.h>
+#include <string>
 
 namespace mouse {
 
@@ -12,6 +13,7 @@ static HHOOK g_hook;
 static HWND g_wnd;
 static volatile uint32_t g_clicks;
 static volatile int g_x, g_y;
+static std::u16string g_chars; // BUG-0482: WM_CHAR seen since the last take_chars (main thread)
 
 static bool ours(HWND w)
 {
@@ -30,6 +32,8 @@ static LRESULT CALLBACK proc(int code, WPARAM wp, LPARAM lp)
             g_y = p.y;
             g_clicks = g_clicks + 1;
         }
+        if (m->message == WM_CHAR && ours(m->hwnd) && g_chars.size() < 256)
+            g_chars.push_back((char16_t)m->wParam);
     }
     return CallNextHookEx(g_hook, code, wp, lp);
 }
@@ -50,6 +54,13 @@ void shutdown()
 }
 
 uint32_t clicks() { return g_clicks; }
+
+std::u16string take_chars()
+{
+    std::u16string r;
+    r.swap(g_chars);
+    return r;
+}
 
 void last_click(int& x, int& y)
 {

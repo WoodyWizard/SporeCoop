@@ -2062,3 +2062,30 @@ BUG-0465 (open). GOG 2024, Ghidra strings only, not seen at runtime.
   cinematic), not a world object: the partner's game has no such event for a puppet, so it never shows. Class B of
   docs/sync-architecture-plan.md (the game knows one player). A fix would relay the event (or the death cause 9) to
   the partner and play the monster there at the puppet; the event's object and how it is drawn are not analysed.
+
+## Captions in play: the chat line, the brain upgrade, the jumps after a death (2026-11-03, fix/w40-play)
+<a id="creature-chat-under-caption"></a>
+
+* ✔ A click on a text line of the co-op window (the chat line) under the game's input lock (any caption,
+  #creature-input-lock-clicks) is dropped like the button clicks: the line never takes the focus and
+  the typing is lost (BUG-0482; coop_chat_caption.py with CRG_ClaimNest, both roles, out/lab/20261103-151853).
+  The WM_CHAR messages still reach the game window's queue (a WH_GETMESSAGE hook sees them, mouse.cpp
+  `take_chars`); the mod types them into the clicked line itself (`core.ui_locked_edit`, coop_ui.cpp).
+  `locked_typed=` in `coop.uistate` counts the characters it typed.
+* ✔ The brain upgrade at 100 DNA plays cinematic `F6A4B1E1` with the caption window (control id 0x0445C9AB)
+  "Brain power! You've grown a little smarter and taken your first step towards sentience! ..." on both
+  games (the DNA is shared); it holds the input lock and the game time stands until Enter / OK. At the
+  fixture's nest the own creature's height over the ground did not change under it (0.32 / 0.39 m before
+  and during, lane 6 probe 2026-11-03). play_creature's bots did not answer it and stood in it for the rest
+  of the run (BUG-0500: no hunts from s 290, `+0 joint hits`, every chat line typed under its lock).
+* ✔ After a death the partner's own game moves its creature at once twice: the respawn at the nest (while
+  the puppet is hidden: dead) and, ~10 s later (the guest's hatchling; the host's waits for its family), the
+  hatchling stepping out of its egg: 5.6-6.0 m in one frame at the fixture's nest (lane 6 probe and
+  coop_puppet_jump.py), 10-11 m in play (out/lab/20261103-124913 play_creature#3: the guest's own position
+  (-171.8 -467.8 -84.0) -> (-175.1 -464.2 -94.2) between two trace lines). The puppet's buffer blended across
+  that step (the target slid the whole way in 0.1 s) and the puppet walked after it: 0.29-0.30 s for 6 m,
+  6-23 m off on the sample play_creature took then (BUG-0499, `never more than 6 m apart`, puppet speed 0).
+  The respawn blended from the dead state at the place of the death (no PF_IN_WORLD change) to the nest.
+  `creature.puppet_jump` (modes.cpp, net::SnapshotBuffer::jump_speed 40 m/s, the PF_DEAD flag): no blend
+  across those steps, a target that moves over 3 m in one frame teleports the puppet (`jumps=` in
+  coop.status): 0.03 s for the same 6 m, and the puppet shows again 0.00 m from its target (0.35 m off).
