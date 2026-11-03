@@ -178,6 +178,8 @@ static bool g_fix_ko_no_eat = true; // BUG-0364: a knocked-out cell eats nothing
 COOP_FIX("cell.ko_no_eat", "BUG-0364", g_fix_ko_no_eat, "cell: a knocked-out cell does not eat what touches it (EatFood, chunk bites), so it does not respawn bigger");
 static uint32_t g_ko_eats_blocked; // BUG-0364: meals and chunk bites of our knocked-out cell left out
 static double g_kodrop_until; // tests (`coop.pool kodrop <s>`): MSG_CELL_KO ignored until then
+static double g_statehold_until; // tests (`coop.pool statehold <s>`): MSG_CELL_STATE dropped until then (a dead link, BUG-0480)
+static uint32_t g_statehold_dropped;
 static bool g_fix_food_ack_away = true; // BUG-0239: the host acknowledges a guest's meal it cannot count
 COOP_FIX("pool.food_ack_away", "BUG-0239", g_fix_food_ack_away, "cell: a guest's meal reaching a host in an editor (no avatar) is acknowledged, not left on the way");
 static bool g_fix_guestbite_type = true; // BUG-0240: a guest's bite also needs IsDamageable's cell type and AI type
@@ -3224,6 +3226,10 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
     if (g_solo_owed && is_guest() && (type == net::MSG_CELL_STATE || type == net::MSG_CELL_FOOD))
         solo_send(); // before the host's first total is applied: it then counts them as on the way (no dip)
     if (type == net::MSG_CELL_STATE && is_guest()) {
+        if (g_statehold_until > 0 && H->time_seconds() < g_statehold_until) {
+            g_statehold_dropped++;
+            return; // tests: the host's state lost on the way (coop.pool statehold)
+        }
         guest_state(r);
     } else if (type == net::MSG_CELL_HIT && is_host()) {
         uint32_t idx = r.u32();
@@ -3377,6 +3383,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
 void on_session_end()
 {
     g_kodrop_until = 0;
+    g_statehold_until = 0;
     g_test_away = false;
     if (g_fix_koreset)
         reset_knockout();
@@ -3938,20 +3945,43 @@ std::string debug(const std::vector<std::string>& a)
     if (a.size() >= 2 && a[0] == "cell") { // a cell by its sync key (host index): local state
         uint32_t key = (uint32_t)strtoul(a[1].c_str() + (a[1][0] == 'c' ? 1 : 0), nullptr, 10);
         uint8_t* c = nullptr;
+        double seen_age = -1;
         if (is_guest()) {
             auto it = g_mirrors.find(key);
             c = it != g_mirrors.end() && it->second.local ? modes::cell_at(it->second.local) : nullptr;
+            if (it != g_mirrors.end())
+                seen_age = H->time_seconds() - it->second.seen;
+            if (!c) { // BUG-0480: a proxy row of the census is a local cell mapped to this host index
+                for (auto& [l, h] : g_host_of)
+                    if (h == key && (c = modes::cell_at(l)) != nullptr)
+                        break;
+                if (c) {
+                    char b[160];
+                    snprintf(b, sizeof b, "cell %s: local %08X maps to it, mirror %s (seen %.1f s ago) fg=%d\n", a[1].c_str(), F<uint32_t>(c, 0),
+                             it != g_mirrors.end() ? "listed" : "not listed", seen_age, F<void*>(c, kQuery) == fg_query() ? 1 : 0);
+                    return b;
+                }
+            }
         } else
             c = modes::cell_at(key);
         if (!c)
             return "no such cell";
+        std::string pre;
+        if (is_guest() || F<void*>(c, kQuery) != fg_query()) {
+            char b[128];
+            snprintf(b, sizeof b, "cell %s: fg=%d seen=%.1f s ago puppet=%d dying=%d dead=%d\n", a[1].c_str(), F<void*>(c, kQuery) == fg_query() ? 1 : 0,
+                     seen_age, modes::cell_is_puppet(c) ? 1 : 0, F<uint8_t>(c, kDying), F<uint8_t>(c, kDead));
+            if (F<void*>(c, kQuery) != fg_query())
+                return b;
+            pre = b;
+        }
         char b[256];
         auto* v = (float*)(c + kVel);
         snprintf(b, sizeof b, "cell %s %s pos=(%.2f %.2f) vel=(%.2f %.2f) size=%.2f gfx=%u particles=%d hp=%d level=%d "
                  "ailock=%d keepalive=%d ring=%.2f anim=%X idx=%08X onscreen=%d\n", a[1].c_str(), kind_of(c), pos_of(c).x, pos_of(c).y, v[0], v[1],
                  F<float>(c, kSize), F<uint32_t>(c, 0x248), F<int>(c, 0x250), F<int>(c, kHp), F<int>(c, kLevel),
                  F<uint8_t>(c, kAiLock), F<uint8_t>(c, kKeepAlive), rollover_of(F<uint32_t>(c, 0)), F<uint32_t>(c, 0x1B0), F<uint32_t>(c, 0), on_screen_dbg(c));
-        return b;
+        return pre + b;
     }
     if (!a.empty() && a[0] == "diet") { // what each cell's mouth eats (the model data CanEat 0xE68470 reads)
         std::string out;
@@ -4194,6 +4224,40 @@ std::string debug(const std::vector<std::string>& a)
     if (a.size() >= 2 && a[0] == "away") { // host, tests: Cell messages handled as in an editor (BUG-0239)
         g_test_away = a[1] == "1";
         return g_test_away ? "away 1" : "away 0";
+    }
+    if (a.size() >= 2 && a[0] == "statehold") { // guest, tests (BUG-0480): drop the host's MSG_CELL_STATE for <s> seconds
+        double s = std::clamp(atof(a[1].c_str()), 0.0, 30.0);
+        g_statehold_until = s > 0 ? H->time_seconds() + s : 0;
+        char b[96];
+        snprintf(b, sizeof b, "statehold %.1f s (dropped so far %u)", s, g_statehold_dropped);
+        return b;
+    }
+    if (a.size() >= 3 && a[0] == "cull") { // host, tests (BUG-0480): DestroyCell on <n> NPC cells within <r> m of the nearest partner
+        if (!is_host() || !avatar())
+            return "host only";
+        float r = (float)atof(a[1].c_str());
+        int n = atoi(a[2].c_str());
+        net::Vec3 at = pos_of(avatar());
+        nearest_partner(1e9f, &at);
+        std::vector<std::pair<float, uint32_t>> v;
+        for_each_cell([&](uint8_t* c, uint32_t idx) {
+            if (modes::cell_is_puppet(c) || c == avatar() || F<uint8_t>(c, kDying) || F<uint8_t>(c, kDead))
+                return;
+            float d = net::dist(pos_of(c), at);
+            if (d <= r)
+                v.push_back({d, idx});
+        });
+        std::sort(v.begin(), v.end());
+        std::string o;
+        int k = 0;
+        for (auto& [d, idx] : v) {
+            if (k >= n)
+                break;
+            o += " c" + std::to_string(idx);
+            modes::cell_destroy(idx);
+            k++;
+        }
+        return "culled=" + std::to_string(k) + o;
     }
     if (a.size() >= 2 && a[0] == "kodrop") { // tests: ignore MSG_CELL_KO for <s> seconds (a late refresh, BUG-0238)
         double s = std::clamp(atof(a[1].c_str()), 0.0, 30.0);

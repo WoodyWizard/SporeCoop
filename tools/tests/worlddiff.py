@@ -17,8 +17,10 @@ that differs on matched objects (alive, scale, hp, model). Matching: by net id w
 """
 import collections
 import math
+import os
 import re
 import sys
+import time
 
 NOUNS = {  # GameNounIDs of the Spore ModAPI (Simulator/SimulatorEnums.h); unknown ones print as hex
     0x061494BE: 'animal_trap',
@@ -108,6 +110,9 @@ ME = re.compile(r'me pos=\(([-\d.e+na]+) ([-\d.e+na]+) ([-\d.e+na]+)\) ok=(\d)')
 # compare area around the guest's own player (m) and the position tolerance of a match, per stage
 AREA = {'Cell': 40.0, 'Creature': 70.0, 'Tribe': 90.0, 'Civilization': 160.0, 'Space': 120.0}
 TOL_STATIC, TOL_MOVING = 3.0, 15.0
+# BUG-0480: Cell: the host dumped before and after the guest, CELL_GAP s apart (SPORE_DETECTOR_BRACKET=0: one host dump)
+CELL_BRACKET = os.environ.get('SPORE_DETECTOR_BRACKET', '1') != '0'
+CELL_GAP = 1.5
 # objects that belong to one game by design (per-player logic, invisible helpers): never compared
 IGNORE = {'hit_sphere', 'solar_hit_sphere', 'game_terrain_cursor', 'species_goal', 'creature_tutorial_mission',
           'tribe_to_tribe_mission', 'find_mission', 'military_attack_city_order', 'cultural_convert_city_order',
@@ -179,6 +184,18 @@ def pair_dump(host, guest, r=250):
     showed the other's objects as missing)."""
     gw = dump(guest, r)
     if gw.me and not _origin(gw.me):
+        if gw.mode == 'Cell' and CELL_BRACKET:
+            # BUG-0480: Cell cells live for seconds (food eaten, prey killed, a level change replaces the
+            # pool): one host dump next to one guest dump made a mirror on its 0.1-1 s way out look stale.
+            # The host is dumped before and after the guest (CELL_GAP s apart): a guest's mirror counts as
+            # stale only when the host had that cell in neither, a host cell as missing only when it
+            # had it in both (docs/06-testing.md#testing-detector).
+            hb = dump(host, r, gw.me)
+            time.sleep(CELL_GAP)
+            gw = dump(guest, r, gw.me) if gw.me else dump(guest, r)
+            ha = dump(host, r, gw.me)
+            ha.before = hb
+            return ha, gw
         return dump(host, r, gw.me), gw
     hw = dump(host, r)
     if hw.me and not _origin(hw.me):
@@ -249,15 +266,19 @@ def diff(host, guest, area=None):
                 and _near(x['pos'], c, lim)]
 
     # creatures: host npc <-> guest proxy by net id
+    before = getattr(host, 'before', None)  # pair_dump's earlier host dump (Cell), see CELL_BRACKET
     for kind, hown, gown, label in (('c', ('npc',), ('proxy',), 'creature'), ('l', ('npc',), ('proxy',), 'cell')):
         h = {x['id']: x for x in rows(host, kind, hown, lim=r * 1.5)}
         g = {x['id']: x for x in rows(guest, kind, gown, lim=r * 1.5)}
+        hb = {x['id'] for x in rows(before, kind, hown, lim=r * 1.5)} if before is not None else None
         for i, x in h.items():
+            if hb is not None and i not in hb:
+                continue  # new on the host since its first dump: the guest may not have it yet
             if i not in g and _near(x['pos'], c, inner):
                 add('host_only', label, 1, f'{label} {i} key={x["key"]} at {_fmt(x["pos"])} '
                                           f'{math.dist(x["pos"], c):.0f} m from the guest: the guest has no proxy')
         for i, y in g.items():
-            if i not in h and _near(y['pos'], c, inner):
+            if i not in h and (hb is None or i not in hb) and _near(y['pos'], c, inner):
                 add('guest_only', label, 1, f'{label} proxy {i} key={y["key"]} at {_fmt(y["pos"])}: the host has no such object here')
         for i in set(h) & set(g):
             x, y = h[i], g[i]

@@ -91,6 +91,9 @@ add('cell_spin', P + 'coop_cell_spin.py', warm=True, minutes=4, fixture='cell') 
 add('cell_leave', P + 'coop_cell_leave.py', minutes=4)  # Cell -> Creature with mirrors on the guest, then the session ends
 add('cell_sync', P + 'coop_cell_sync.py', minutes=8, fixture='cell')  # mirror map, missed totals, regrowth over a level line, knockout and leave (BUG-0088, 0128, 0041, 0070, 0061)
 add('cell_net', 'SPORE_NET="delay=250,loss=0.05" ' + P + 'coop_cell_net.py', minutes=8, fixture='cell')  # lost state chunks, food race over a level line (BUG-0032, 0051)
+add('cell_gone', P + 'coop_cell_gone.py --case lost', warm=True, minutes=3, fixture='cell')  # BUG-0480: a guest's mirror of a cell the host destroyed while the host's state was lost dies once the state flows again
+add('cell_gone_play', P + 'coop_cell_gone.py --case play', warm=True, minutes=4, fixture='cell')  # BUG-0480: no guest mirror of a cell the host has not had for 2.5 s while both swim around; the detector's Cell compare with one host dump and bracketed
+add('cell_gone_probe', P + 'coop_cell_gone.py --case held', warm=True, minutes=3, fixture='cell')  # BUG-0480: the stale-mirror probe sees mirrors kept while the host's state is lost (the probe's own FAIL case)
 add('cell_guest_bite', P + 'coop_cell_guest_bite.py', warm=True, minutes=4, fixture='cell')  # a guest's bite passes DamageCell's gate (BUG-0078; SPORE_CELL_FIX=0 fails)
 add('cell_rescue', P + 'coop_cell_rescue.py', warm=True, minutes=3, fixture='cell')  # a knocked-out partner rescues nobody (BUG-0131; SPORE_CELL_FIX=0 fails)
 add('cell_ko_gap', P + 'coop_cell_ko_gap.py', warm=True, minutes=3, fixture='cell')  # a knockout lasts through a late refresh (BUG-0238; SPORE_FIX_OFF=pool.ko_grace fails)
