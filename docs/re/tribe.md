@@ -1152,3 +1152,13 @@ world pointer 0x167FB50). BUG-0449.
   `coop.physorphan` (tests) makes a live body of kind 0 without an owner past the pool's high water, which no
   owner refers to (coop_physics_orphan.py). Taking the owner off a body that an owner still refers to faults
   elsewhere first: 0xB3DD60 (0xB3DCB0 via 0xB47FE0 from the dirty-object loops at 0xB4C55F).
+
+## The size of the members' mirrors (2026-11-03, fix/w40-scale)
+<a id="tribe-member-scale"></a>
+
+* ✔ A member's size is its own game's pick (cCreatureCitizen GetDesiredScale vt 0x80: random per member,
+  the chief's bigger, this file's chief section): a guest's mirror (bound to a local member or made by
+  SpawnMember) had another size (the detector's `Tribe:scale:citizen` 70 %, 3.79 host / 4.47 guest).
+  The members are a replicated-field kind now (`tribe_member`, docs/sync-architecture-plan.md#sync-fields,
+  `tribe.scale`). The chiefs' marker (chiefs_tick: desired scale x 1.3, on every machine) ends on the
+  host's size too: the host's chief already carries the marker.

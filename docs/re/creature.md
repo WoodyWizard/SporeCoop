@@ -1558,3 +1558,20 @@ BUG-0443 (the host's screenshot of the "eggs flying mid air" report). GOG 2024, 
   (state 5 / 6) within 60 m of its avatar; one that did not move for two checks and lies more than 0.3 m
   over the surface is put onto it with cEgg_SnapToGround (what the game does to the avatar's eggs and to
   every egg at its hatch).
+
+## The size of NPCs and their proxies (2026-11-03, fix/w40-scale)
+<a id="creature-npc-scale"></a>
+
+* ✔ NPC sizes differ per individual: on the creature fixture the four members of one herd had 0.69, 0.75,
+  0.85, 0.86 (the bigger one with 7.5 health instead of 6), another herd 0.87-1.06; all age 1 (+0xB34).
+  A proxy made by `game::spawn_creature` gets a size of its own game's pick (0.65 / 0.73 / 0.81 / 0.86 for
+  that herd): the detector's `Creature:scale:creature` in 94 % of the comparisons. A young one (age 0) is
+  smaller on the host; its proxy was made at an adult's size (player report BUG-0461: babies shown as
+  alphas). `NpcSpawn.scale` was always sent and never read.
+* ✔ SetScale (spatial vt 0x40) on a proxy stays: 19 of 21 proxies set once, 0 set again over 2 minutes
+  (`coop.fields`: applied 19, reapplied 0). The proxies' size is a replicated field now
+  (docs/sync-architecture-plan.md#sync-fields, `npc.scale`); a young one that grows up on the host grows on
+  the guest with the next delta.
+* BUG-0487 (class G5): the host sends a spawn once per guest (npc.cpp `g_known`); a guest without the proxy
+  of an id dropped that NPC's states for good. Now it asks for the spawn again (`MSG_NPC_RESYNC`,
+  `npc.resync`; `coop.npc forget <id>` makes the case on purpose, `coop.npc resync` counts).

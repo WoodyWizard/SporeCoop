@@ -95,8 +95,12 @@ def main():
         time.sleep(5)
     shot(host, f'mirror_scale_{a.kind}_host.png')
     shot(guest, f'mirror_scale_{a.kind}_guest.png')
-    print('  host ' + (host.call('coop.fields')['out'].strip().splitlines() or ['?'])[0], flush=True)
-    print('  guest ' + (guest.call('coop.fields')['out'].strip().splitlines() or ['?'])[0], flush=True)
+    for who, con in (('host', host), ('guest', guest)):
+        if a.kind == 'ufo':
+            lines = [ln for ln in con.call('coop.status')['out'].splitlines() if ln.startswith('space puppet scale')]
+        else:
+            lines = [ln for ln in con.call('coop.fields')['out'].splitlines() if ln.startswith(f'fields {a.kind} ')]
+        print(f'  {who} ' + (lines[0] if lines else '?'), flush=True)
     need = 2 if a.kind == 'ufo' else 3
     ck(len(last) >= need, f'enough pairs to compare in the last round: {len(last)} (at least {need})')
     share = bad_total / total if total else 1.0

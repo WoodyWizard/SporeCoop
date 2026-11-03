@@ -39,12 +39,13 @@ def main():
     ids = sorted((i for i in set(h) & set(g) if me and math.dist(g[i]['pos'], me) < 60 and h[i]['alive']),
                  key=lambda i: math.dist(g[i]['pos'], me))[:a.n]
     ck(len(ids) >= min(a.n, 2), f'proxies near the guest to forget: {ids} (of {len(g)} proxies)')
+    took = []
     for i in ids:
-        print('  guest: ' + guest.call(f'coop.npc forget {i}')['out'].strip(), flush=True)
-    time.sleep(1)
-    gw1 = worlddiff.dump(guest)
-    gone = [i for i in ids if not any(x['kind'] == 'c' and x['own'] == 'proxy' and x['id'] == i for x in gw1.rows)]
-    ck(gone == ids, f'right after: the guest has no creature for {gone} (the forget took)')
+        out = guest.call(f'coop.npc forget {i}')['out'].strip()
+        print('  guest: ' + out, flush=True)
+        took += [i] if out.startswith('forgot proxy') else []
+    # (with the fix the spawn is back within about a second: the answer of the forget is the evidence)
+    ck(took == ids, f'the guest destroyed the proxies of {took} without telling the host')
     time.sleep(a.wait)
     hw, gw = worlddiff.pair_dump(host, guest)
     h = {x['id']: x for x in hw.rows if x['kind'] == 'c' and x['own'] == 'npc'}
