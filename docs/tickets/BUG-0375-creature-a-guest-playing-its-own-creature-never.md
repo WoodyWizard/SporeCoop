@@ -47,3 +47,4 @@ other's new max on its puppet.
 ## History
 - 2026-11-01: opened from the host's report (0.7.3.3); reproduced and fixed on lane 9 (fix/w30-creature-hp).
 - 2026-11-02: released in 0.7.3.4.
+- 2026-11-03: an older direct message (2026-10-25..11-01, version not given): after evolving the brain in Creature only the host gets more HP; also 'no extra HP for each evolution piece (10 HP instead of 25)'. Fixed in 0.7.3.4 for the brain level; if the player had 0.7.3.4 or newer, the per-part health is a second path (BUG-0418).

@@ -44,3 +44,4 @@ world's species until the player picks an own one in the co-op dialog; (c) a hos
 
 ## History
 - 2026-10-31: opened from the host's report zips (two marks).
+- 2026-11-03: reported again (0.7.3.6 direct message: the guest spawns in Cell with its previous cell creature; older message: the guest gets a monster from a different playthrough). Guest log (report 20261104-005925): `own=29122D00 from newest own creation ... the game has E219E5D3 (DIFFERENT)` then swapped to its own; in Creature `own=29149794 from choices.ini`. Players read it as a bug; the DNA half is BUG-0510.

@@ -41,3 +41,4 @@ Not fixed yet.
 ## History
 - 2026-10-23: first recorded in docs/known-issues.md.
 - 2026-10-27: ticket backfilled from docs/known-issues.md (every entry carries its ticket id, CLAUDE.md 1).
+- 2026-11-03: reported again (0.7.3.4 forum post and a 0.7.3.6 direct message): the guest cannot befriend / socialize in the Creature stage (animals do not want to be friends). Still open; a top Creature complaint.

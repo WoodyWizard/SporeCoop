@@ -40,3 +40,4 @@ host as a request, the host posts it with the guest's puppet as sender.
 
 ## History
 - 2026-11-03: opened.
+- 2026-11-03: likely reported again (0.7.3.6, guest's report 20261104-012758, text 'ability doesn't work', Creature; the mark itself has no text). Not confirmed which ability.

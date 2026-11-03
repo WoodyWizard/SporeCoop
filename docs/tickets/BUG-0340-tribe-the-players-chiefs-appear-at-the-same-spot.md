@@ -63,3 +63,4 @@ stacked chiefs itself).
 - 2026-10-31: opened.
 - 2026-10-31 (fix/w21-tribe): not reproduced with 2 players; defensive parting of stacked chiefs behind tribe.spread_chiefs; scenario test.
 - 2026-10-31 (fix/w21-tribe): reproduced with 4 players at the live arrival; arrival placement added (tribe.place_chiefs); it holds in 1 of 2 runs, the game's idle behaviour gathers the members again. Open.
+- 2026-11-03: an older direct message (2026-10-25..11-01, version and stage not given): the joining player spawns under the host and can get stuck. Same symptom as this ticket (Creature twin: BUG-0333).
