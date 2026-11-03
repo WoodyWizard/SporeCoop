@@ -3,6 +3,9 @@
 ## [Unreleased]
 
 ### Fixed
+- Cell and Creature: after the host's editor a guest in the same world keeps playing: it no longer drops
+  to the galaxy menu and loads the whole world again; the host's new creature and (when you play the host's
+  species) your own new body arrive in place. A migration to a new nest still sends the world (BUG-0508).
 - Creature: animals are neutral, hostile or allied to a guest as they are to the host; a guest playing its own
   creature no longer sees neutral species as hostile (BUG-0462).
 - Creature: a partner who sneaks is shown sneaking (see-through) on your screen too, and the host's animals
