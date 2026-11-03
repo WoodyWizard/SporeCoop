@@ -28,5 +28,9 @@ std::string status();
 // frame), whether or not the strip is on: world.cpp notes where a Space save was really written
 // (a save is posted as a message and written frames later).
 void set_write_watch(void (*f)());
+// BUG-0470: `start` runs when a save starts writing the world while the strip is on (main thread,
+// before any object record is written), `end` on the next frame (the save is written within one
+// frame): a mode takes its objects out of the lists that hold them and puts them back.
+void add_save_hooks(void (*start)(), void (*end)());
 
 } // namespace savestrip

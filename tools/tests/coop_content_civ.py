@@ -294,7 +294,9 @@ def main():
         print('  after the reload:', (out2.strip().splitlines() or ['-'])[0][:120], '| vehicles', len(veh), flush=True)
         ck('total faults: 0' in out2 and '0x0046C82A' not in out2 and '0x0041F3B' not in out2,
            f'the saved vehicles load without a model bake fault ({(out2.strip().splitlines() or ['-'])[0][:90]})')
-        ck(len(veh) > 0, f'the saved vehicles are in the loaded world ({len(veh)})')
+        # BUG-0470: the session's mirror vehicles are no longer saved (civ.save_strip): the loaded world
+        # has at most the game's own free first vehicle; their model bake on load is not reached here
+        print(f'  vehicles in the loaded world: {len(veh)} (mirrors are kept out of the save, BUG-0470)', flush=True)
     finally:
         subprocess.run([lane.SPORE, 'kill'], env=dict(os.environ, SPORE_LANE=str(b)), capture_output=True)
         time.sleep(2)

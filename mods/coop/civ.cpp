@@ -20,6 +20,7 @@
 #include "sporekit_game.hpp"
 #include "fixes.h"
 #include "creations.h"
+#include "savestrip.h"
 
 using skg::thiscall;
 using skg::vcall;
@@ -1054,6 +1055,9 @@ static void host_superweapon_request(uint8_t from, net::Reader& r)
         g_votes++;
 }
 
+static bool save_filter(void* o, uint32_t noun);
+static void save_start();
+static void save_end();
 bool init(const SkHost* host, SkMod* mod, Ctx ctx)
 {
     H = host;
@@ -1149,6 +1153,8 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     for (auto& o : opts)
         if (uintptr_t a = H->sym(o.name))
             H->hook_create(M, (void*)a, o.hook, o.orig);
+    savestrip::add_filter(save_filter); // BUG-0470
+    savestrip::add_save_hooks(save_start, save_end);
     // the city planner (BUG-0491, BUG-0493; GOG 2024 symbols, optional)
     a_DestroyInstance = H->sym("Simulator::cGameNounManager::DestroyInstance");
     if ((a_EditorUpdate = H->sym("SporeCoop::CommunityEditor_Update")))
@@ -1892,6 +1898,63 @@ static void reconcile_buildings(void* city, size_t n,
 
 // BUG-0493: vehicles of this game the mod removes once the city planner no longer moves them
 static std::unordered_set<void*> g_kill_later;
+
+// BUG-0470: the guest's mirror vehicles are the host's world, not this one's: a save of the guest's
+// game keeps them out (savestrip writes a null reference; the civilization's vehicle lists are cleaned
+// of nulls on load, savestrip.cpp). `coop.fix civ.save_strip off`: saved like the game's own (0.7.3.6).
+static bool g_fix_save_strip = true;
+COOP_FIX("civ.save_strip", "BUG-0470", g_fix_save_strip, "saves: a Civ guest's mirror vehicles are kept out of its saves");
+static uint32_t g_save_stripped;
+// The civilizations' vehicle vector (+0xB0) and selectable vector (+0xD4, the vehicles' spatial
+// interfaces) read null entries back on load and faulted (0xBF2BF2): the mirrors leave both lists
+// while the save is written and come back on the next frame (savestrip::add_save_hooks).
+struct Took {
+    void* civ;
+    uintptr_t off;
+    void* p;
+};
+static std::vector<Took> g_took;
+static bool is_mirror(void* v) { return v && (g_gv_of.count(v) || g_kill_later.count(v)); }
+static void save_start()
+{
+    if (!g_fix_save_strip || !is_guest() || game::mode_id() != modes::kCiv || !nm())
+        return;
+    for (void* civ : vec_of(thiscall<void*>(a_GetAllCivs, nm())))
+        for (uintptr_t off : {(uintptr_t)0xB0, (uintptr_t)0xD4}) {
+            void**& b = F<void**>(civ, off);
+            void**& e = F<void**>(civ, off + 4);
+            if (!b || e < b)
+                continue;
+            void** w = b;
+            for (void** it = b; it != e; ++it) {
+                void* v = *it ? (off == 0xB0 ? *it : (uint8_t*)*it - kVSpatial) : nullptr;
+                if (is_mirror(v))
+                    g_took.push_back({civ, off, *it});
+                else
+                    *w++ = *it;
+            }
+            for (void** it = w; it != e; ++it)
+                *it = nullptr;
+            e = w;
+        }
+}
+static void save_end()
+{
+    for (auto& t : g_took) { // back at the end of the list (the capacity is the one they left)
+        void**& e = F<void**>(t.civ, t.off + 4);
+        if (e < F<void**>(t.civ, t.off + 8))
+            *e++ = t.p;
+    }
+    g_took.clear();
+}
+static bool save_filter(void* o, uint32_t noun)
+{
+    if (!g_fix_save_strip || noun != 0x18C6DE8 || !(g_gv_of.count(o) || g_kill_later.count(o)))
+        return false;
+    g_save_stripped++;
+    return true;
+}
+
 static void kill_local(void* v)
 {
     g_applying = true;
@@ -2541,9 +2604,9 @@ std::string status()
                  g_captures_in, g_orders_dropped, g_growth_blocked, g_nodes_in, g_cities_in, g_cities_blocked, g_unselected, (int)movie_playing(), g_bfix_added,
                  g_bfix_removed, g_ruins_in, g_ruins_differ, g_incomplete, g_income_blocked, g_cities_caught_up, g_ai_spawns_blocked, g_away_orders, (int)local_play(), g_founds_outside, g_mirror_place_skipped, g_removed_local);
     char pl[200];
-    snprintf(pl, sizeof pl, "planner: open=%d held=%u kills_held=%u kills_waiting=%u picks_refused=%u builds_held=%u build_orphans=%u cards_skipped=%u owner_unknown=%u met=%d\n",
+    snprintf(pl, sizeof pl, "planner: open=%d held=%u kills_held=%u kills_waiting=%u picks_refused=%u builds_held=%u build_orphans=%u save_stripped=%u cards_skipped=%u owner_unknown=%u met=%d\n",
              planner_city() ? 1 : 0, g_planner_held, g_planner_kills_held, (unsigned)g_kill_later.size(),
-             g_planner_picks_refused, (unsigned)g_held_builds.size(), g_build_orphans, g_cards_skipped, g_owner_unknown, g_met);
+             g_planner_picks_refused, (unsigned)g_held_builds.size(), g_build_orphans, g_save_stripped, g_cards_skipped, g_owner_unknown, g_met);
     return std::string(b) + pl;
 }
 
@@ -2966,6 +3029,28 @@ std::string debug(const std::vector<std::string>& a)
         g_chunk_budget = std::clamp<size_t>((size_t)atoi(a[1].c_str()), 200, net::kMaxPacket - 48);
         g_max_chunk = 0;
         return "chunk budget " + std::to_string(g_chunk_budget);
+    }
+    if (!a.empty() && a[0] == "civlists") {
+        // civlists (tests, BUG-0470): every civilization's vehicle vector (+0xB0) and selectable vector
+        // (+0xD4): entries and nulls (a stripped vehicle read back as null)
+        std::string out;
+        for (void* civ : vec_of(thiscall<void*>(a_GetAllCivs, nm()))) {
+            int n[2] = {0, 0}, z[2] = {0, 0};
+            const uintptr_t offs[2] = {0xB0, 0xD4};
+            for (int k = 0; k < 2; k++) {
+                void** b = F<void**>(civ, offs[k]);
+                void** e = F<void**>(civ, offs[k] + 4);
+                for (void** it = b; it && it < e && n[k] < 512; ++it) {
+                    n[k]++;
+                    z[k] += *it == nullptr;
+                }
+            }
+            char line[128];
+            snprintf(line, sizeof line, "civ %p pol=%08X vehicles=%d nulls=%d selectable=%d nulls=%d\n", civ, pol_of(civ), n[0],
+                     z[0], n[1], z[1]);
+            out += line;
+        }
+        return out.empty() ? "no civilizations\n" : out;
     }
     if (a.size() >= 2 && a[0] == "discover") {
         // discover <hex pol> (tests, BUG-0492): the game meets that civilization outside the frame (0xC746F0
