@@ -1140,6 +1140,8 @@ Model ensure_model(const Key& model, ModelKind kind, bool allow_copy)
     return remember(m);
 }
 
+bool content_all_kinds() { return g_all_kinds_fix; }
+
 std::string content_status()
 {
     char b[160];

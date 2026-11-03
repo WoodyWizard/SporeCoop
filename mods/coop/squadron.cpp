@@ -455,7 +455,8 @@ static void guest_state(net::Reader& r)
                 creations::Model cm = creations::ensure_model({key[0], key[1], key[2]}, creations::kMkUfo);
                 if (cm.key.instance) {
                     key[0] = cm.key.instance; key[1] = cm.key.type; key[2] = cm.key.group;
-                    g_content_checked++;
+                    if (creations::content_all_kinds())
+                        g_content_checked++;
                 } else
                     known = false;
             }

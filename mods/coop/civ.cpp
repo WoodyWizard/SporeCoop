@@ -1986,10 +1986,11 @@ static void guest_state(net::Reader& r)
         }
         if (v)
             continue;
-        // bind a local vehicle of the same kind nearby, else create one for that civilization
+        // bind a local vehicle of the same kind nearby, else create one for that civilization (with a
+        // design key the tests force (BUG-0469): always create, so the creation path is reached)
         float best = 25.f;
         for (void* lv : all_vehicles()) {
-            if (g_gv_of.count(lv) || pol_of(lv) != m.pol || F<int>(lv, kVPurpose) != m.purpose ||
+            if (g_veh_force || g_gv_of.count(lv) || pol_of(lv) != m.pol || F<int>(lv, kVPurpose) != m.purpose ||
                 F<int>(lv, kVLoco) != m.loco)
                 continue;
             float d = net::dist(veh_pos(lv), m.pos);

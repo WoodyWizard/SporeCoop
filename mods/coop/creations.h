@@ -89,6 +89,7 @@ struct Model {
 };
 Model ensure_model(const Key& model, ModelKind kind, bool allow_copy = true);
 std::string content_status(); // the counters of ensure_model, for the tests and the support trace
+bool content_all_kinds(); // the switch content.all_kinds (off: 0.7.3.5 for the new call sites)
 
 // BUG-0341: creatures with parts of the "Creepy & Cute" pack on a game without it (the game faulted
 // at 0x441F3B building them): not built here; the host's world is not loaded while one of its own
