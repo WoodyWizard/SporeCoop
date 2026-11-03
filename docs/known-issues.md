@@ -1712,3 +1712,11 @@ What mods/coop/worldobj.cpp does not cover yet (docs/re/creature.md#creature-wor
 * Suspected: a stage species edited under the same key (a key-only bundle that never changes, the guest's
   cached species profile). Not verified.
 * Ticket: BUG-0457
+
+### Creature: what fix/w40-creature-acts left open (2026-11-03)
+
+- Creature: a picked-up and thrown stick (or rock) moves in each player's game separately (BUG-0458).
+- Creature: the animals' own animations (eating, social, a nest's evolution) do not show on a guest; its copies
+  only walk and stand (BUG-0464, test tools/tests/coop_npc_anims.py fails).
+- Creature: the sea monster ("kraken") of a player in deep water shows only on that player's screen (BUG-0465).
+- Creature: a guest's roar does nothing to the animals (BUG-0501).
