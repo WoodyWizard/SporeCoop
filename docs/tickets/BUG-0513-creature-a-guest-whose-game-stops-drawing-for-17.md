@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.3.6
 fixed_in: unreleased
 branch: fix/w40-guest-combat
-commits: 111958f0, the tests commit after it
+commits: 111958f0, 306b9ecf, 8c41e570
 tests: coop_puppet_walk.py (puppet_deep), coop_partner_silent.py
 signature:
 docs: docs/re/creature.md#creature-partner-stalled

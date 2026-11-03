@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.3.6
 fixed_in: unreleased
 branch: fix/w40-guest-combat
-commits: f0902456
+commits: f0902456, 22870f85
 tests: coop_creature_pack_target.py
 signature:
 docs: docs/re/creature.md#creature-pack-target

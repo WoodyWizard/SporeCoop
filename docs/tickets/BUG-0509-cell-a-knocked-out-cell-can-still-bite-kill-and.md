@@ -10,7 +10,7 @@ role: both
 versions: 0.7.3.6
 fixed_in: unreleased
 branch: fix/w40-guest-combat
-commits: 75c44630, 0785a1cd
+commits: 75c44630, 0785a1cd, 33104459
 tests: coop_cell_ko_bite.py
 signature:
 docs: docs/re/cell.md#cell-ko-attacks

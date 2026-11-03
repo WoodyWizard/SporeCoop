@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.3.6
 fixed_in: unreleased
 branch: fix/w40-guest-combat
-commits: d581fbba
+commits: d581fbba, 65730701
 tests: coop_puppet_freed.py
 signature: 3010a413:windows.storage.dll+0x37626D 0xC0000096 (EIP = string bytes 'mbIs' read from past the end of a vtable), coop.dll 0.7.3.6 +0xCA0AC game::set_speed <- +0xD464E drive::walk_place <- +0xD2324 modes::creature_drive <- +0x53890 drive_puppet
 docs: docs/re/creature.md#creature-puppet-alive
