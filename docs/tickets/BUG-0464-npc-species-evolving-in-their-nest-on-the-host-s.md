@@ -10,7 +10,7 @@ role: host
 versions: 
 fixed_in: unreleased
 branch: fix/w40-npc-anims
-commits:
+commits: 8ea68520, 92a146f0, d5741801, 271ee35c
 tests: npc_anims
 signature:
 docs: docs/re/creature.md#creature-npc-anims, docs/re/creature.md#creature-bt-anims
