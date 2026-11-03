@@ -19,6 +19,8 @@ import collections
 import re
 import time
 
+from coop_creature_kills import family, npcs, proxies
+from coop_npc_lost_target import ATTACK_NODE, ai_state, engage, puppet
 from twoinst import Checks, start
 
 CUR = re.compile(r'^cur (\d+) anim=([0-9A-F]{8})', re.M)
@@ -26,6 +28,56 @@ CUR = re.compile(r'^cur (\d+) anim=([0-9A-F]{8})', re.M)
 
 def cur(con):
     return {int(m.group(1)): m.group(2) for m in CUR.finditer(con.call('coop.npc cur')['out'])}
+
+
+def fight(host, guest, ck, idle_anims):
+    """an NPC of another species attacks the guest's puppet on the host (the guest hit it): its proxy on the
+    guest plays the host NPC's attack animations"""
+    fam = family(host)
+    prox = proxies(guest)
+    cand = [i for _, i in sorted((n[3], i) for i, n in npcs(host).items()
+                                 if i in prox and not n[4] and n[2] > 0 and n[1] != fam)]
+    nid = ptr = None
+    for i in cand[:4]:
+        n = npcs(host).get(i)
+        pup = puppet(host)
+        if not n or not pup:
+            continue
+        tgt, node = engage(host, guest, i, n[0], pup)
+        if tgt == pup + 0x5A8 and node == ATTACK_NODE:
+            nid, ptr = i, n[0]
+            break
+    ck(nid is not None, f'a host NPC attacks the guest\'s puppet ({nid})')
+    if nid is None:
+        return
+    k = int(nid)
+    match = miss = 0
+    attack = collections.Counter()
+    shown = collections.Counter()
+    t0 = last_hit = time.time()
+    while time.time() - t0 < 15:
+        if time.time() - last_hit > 2:
+            guest.call(f'coop.npc hit {nid} 0.2')  # (it keeps attacking)
+            last_hit = time.time()
+        h = cur(host).get(k)
+        tgt, node = ai_state(host, ptr)
+        g = [cur(guest).get(k) for _ in range(3) if time.sleep(0.15) is None]
+        if not h or node != ATTACK_NODE:
+            continue
+        if h not in idle_anims:
+            attack[h] += 1
+        if h in g:
+            match += 1
+            shown[h] += 1
+        else:
+            miss += 1
+    print(f'  fight: NPC #{nid}: host animations in its attack node {attack.most_common(8)}, shown on the proxy '
+          f'{shown.most_common(8)}; {match} of {match + miss} samples', flush=True)
+    ck(match + miss >= 8, f'samples of the attack ({match + miss})')
+    ck(sum(attack.values()) > 0, 'the host NPC played attack animations of its own (not seen while it wandered)')
+    rate = match / max(1, match + miss)
+    ck(rate >= 0.6, f'the proxy plays the host NPC\'s animations while it attacks the puppet ({rate:.0%})')
+    ck(any(a in shown for a in attack), 'the proxy shows an attack animation')
 
 
 def main():
@@ -73,6 +125,7 @@ def main():
     ck(len(ids) >= 4, f'NPCs on both games ({len(ids)})')
     rate = match / max(1, match + miss)
     ck(rate >= 0.6, f'the proxies play the host NPCs\' animations ({rate:.0%} of the samples)')
+    fight(host, guest, ck, set(host_count))
     ck.faults(host=host, guest=guest)
     return ck.result()
 
