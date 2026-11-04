@@ -4011,3 +4011,18 @@ its game's `world_scale=` from coop.pool, read before and after the dump). Fails
   world's species it announces first. Verified in both orders, --cold: creations, creations_cell, creations_rejoin,
   old_species, npc_swap, creation_leave OK (lab 20261104-053801 .. 20261104-060316); legless_guest fails either way
   (BUG-0533, not the rule).
+
+## Creature leftovers of 0.7.6 (2026-11-04, fix/w42-creature-left)
+<a id="testing-creature-leftovers-076"></a>
+
+* `creature_social_prompts` (coop_creature_social_prompts.py, ~70 s warm, BUG-0525): a real engagement of a Kook, then
+  the answers as the key / bar path sends them (`coop.social act <id> 0`, `coop.social answer <id> <hex type>` for an
+  ability of another kind). The prompt's animation is checked on the guest's mirror with `coop.npc cur` (the game may
+  play another of the animation's family: 042A1CAF as 042A1CB3). A failed social game leaves the guest not engaged; the
+  test engages again with `coop.social act` (the click's camera sweep found the Kook again in 1 of 2 runs).
+* `puppet_air` and BUG-0532: the 1-3 frame drops come in about 1 run of 3; a FAIL / PASS claim needs a series
+  (`--repeat 3 --retry 0` on, `--repeat 4` off). `coop.track air` prints the air hold's counters.
+* `PUPPET_JUMP_WORLD=1 coop_puppet_jump.py` (BUG-0536) runs it with the world's species; a lane whose guest profile
+  recorded its own creature for the fixture world plays its own creature anyway: the first run clears the record and
+  fails, the next `--cold` run plays the world's species. Put the record back afterwards (`coop.creations worlds set
+  creature <key>`), other tests choose the own creature themselves.
