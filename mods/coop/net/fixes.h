@@ -23,6 +23,8 @@ struct Fixes {
     bool addr_label = true; // BUG-0236: a pasted "Friends connect to: a:p, ..." line joins its first host:port
     // wave 13
     bool lan_dedup = true; // BUG-0210: a host answering on two addresses is one LAN game (DiscoverReply id)
+    // 0.7.5
+    bool bulk_acks = true; // BUG-0405: an ack every 48 packets received; resend only on a later ack or a long silence
 };
 inline Fixes g_fix;
 

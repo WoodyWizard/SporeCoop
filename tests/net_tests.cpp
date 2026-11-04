@@ -749,6 +749,101 @@ static void test_bulk_bad_link()
     }
 }
 
+// BUG-0405: the world sent to a guest that loads. The guest reads its socket once per frame (frames of
+// 200-950 ms while it loads), up to 256 packets per update, and acknowledges at the end of the frame:
+// the ack bits covered the last 128 packets only and the sender's rto (from a 5-80 ms rtt) fired long
+// before the guest read the rest, so 50-90 % of the packets went out twice on a clean loopback.
+struct BusyResult {
+    int got = 0;
+    double secs = 0;
+    uint32_t sent = 0, resends = 0;
+};
+static BusyResult bulk_busy_case(bool fix, bool busy, uint32_t delay, float loss, int seed)
+{
+    bool was = g_fix.bulk_acks;
+    g_fix.bulk_acks = fix;
+    struct Pk {
+        uint32_t t;
+        std::vector<uint8_t> d;
+    };
+    Connection a, b;
+    std::mt19937 rng(seed);
+    std::uniform_real_distribution<float> U(0, 1);
+    std::deque<Pk> ab, ba; // in flight (constant delay: in order)
+    auto send = [&](std::deque<Pk>& q, const std::vector<uint8_t>& p, uint32_t now) {
+        if (U(rng) >= loss && q.size() < 3600) // udp.cpp: a 4 MB receive buffer, the rest is dropped
+            q.push_back({now + delay, p});
+    };
+    const int N = 3400; // a tribe world: ~3.4 MB in 1 KB chunks
+    int queued = 0, got = 0;
+    bool ordered = true;
+    uint32_t now = 1000, guest_next = 1000;
+    std::vector<uint8_t> pkt;
+    for (; got < N && now < 1000 + 120000; now += 1) {
+        if (now % 33 == 0) { // the host's frame: world.cpp's window, Session::flush's burst
+            size_t window = a.rtt_ms < 40 ? 600 : 160;
+            while (queued < N && a.pending_reliable() < window) {
+                Writer w;
+                w.u32(queued++);
+                std::vector<uint8_t> pad(1010, 0x55);
+                w.raw(pad.data(), pad.size());
+                a.send_reliable(42, w);
+            }
+            int burst = a.rtt_ms < 40.f ? (int)kAckWindow : (int)kAckWindow / 3;
+            for (int i = 0; i < burst && a.build_packet(now, pkt); i++)
+                send(ab, pkt, now);
+        }
+        while (!ba.empty() && ba.front().t <= now) { // the host reads in its frame too, but often
+            a.on_packet(ba.front().d.data(), ba.front().d.size(), now, [](uint8_t, Reader&) {});
+            ba.pop_front();
+        }
+        if (now >= guest_next) { // the guest's frame: Session::update, then Session::flush
+            for (int i = 0; i < 256 && !ab.empty() && ab.front().t <= now; i++) {
+                b.on_packet(ab.front().d.data(), ab.front().d.size(), now, [&](uint8_t type, Reader& r) {
+                    if (type == 42 && r.u32() != (uint32_t)got++)
+                        ordered = false;
+                });
+                ab.pop_front();
+                if (b.ack_urgent() && b.build_packet(now, pkt))
+                    send(ba, pkt, now);
+            }
+            while (b.build_packet(now, pkt))
+                send(ba, pkt, now);
+            guest_next = now + (busy ? 200 + (uint32_t)(U(rng) * 750) : 33);
+        }
+    }
+    g_fix.bulk_acks = was;
+    CHECK(ordered);
+    return {got, (now - 1000) / 1000.0, a.stats.packets_sent, a.stats.resends};
+}
+
+static void test_bulk_busy_receiver()
+{
+    printf("bulk transfer to a guest that loads (BUG-0405)\n");
+    struct Case {
+        const char* name;
+        bool busy;
+        uint32_t delay;
+        float loss;
+    } cases[] = {{"clean, guest loads", true, 1, 0}, {"clean, guest plays", false, 1, 0},
+                 {"40 ms, 3% loss, guest loads", true, 40, 0.03f}, {"40 ms, 3% loss, guest plays", false, 40, 0.03f},
+                 {"150 ms, 10% loss, guest loads", true, 150, 0.10f}};
+    for (auto& c : cases) {
+        BusyResult r[2];
+        for (int fix = 0; fix < 2; fix++) {
+            r[fix] = bulk_busy_case(fix, c.busy, c.delay, c.loss, 3);
+            printf("  %-30s fix %s: %d/3400 in %.1f s, sent %u, resends %u (%.0f %%)\n", c.name, fix ? "on " : "off",
+                   r[fix].got, r[fix].secs, r[fix].sent, r[fix].resends, 100.0 * r[fix].resends / std::max(1u, r[fix].sent));
+        }
+        CHECK(r[1].got == 3400);
+        CHECK(r[1].secs <= r[0].secs * 1.1 + 0.5); // not slower
+        if (c.loss == 0)
+            CHECK(r[1].resends * 10 <= r[1].sent); // a clean link resends little (was 50-90 %)
+        else
+            CHECK(r[1].resends <= r[0].resends);
+    }
+}
+
 // creations arrive from other players: the RefPack decoder must survive any input
 static void test_refpack_untrusted()
 {
@@ -2436,6 +2531,7 @@ int main(int argc, char** argv)
     test_ackbits();
     test_bulk();
     test_bulk_bad_link();
+    test_bulk_busy_receiver();
     test_session();
     test_session_end_in_delivery();
     test_rejoin_same_endpoint();

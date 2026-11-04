@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "buffer.h"
+#include "fixes.h"
 #include "udp.h"
 
 namespace net {
@@ -94,6 +95,11 @@ public:
     // Parses a datagram, updates acks, delivers messages in order. false = invalid packet.
     bool on_packet(const uint8_t* data, size_t n, uint32_t now, const Deliver& deliver);
 
+    // BUG-0405: so many packets arrived since our last one that the oldest of them would fall out
+    // of the ack bits of the next one: acknowledge now, not at the end of the frame
+    bool ack_urgent() const { return g_fix.bulk_acks && recv_since_send_ >= kAckEvery; }
+    static constexpr unsigned kAckEvery = 48;
+
     static bool looks_valid(const uint8_t* data, size_t n);
     static uint32_t peek_conn(const uint8_t* data, size_t n); // conn id of a valid packet
 
@@ -104,6 +110,7 @@ private:
         std::vector<uint8_t> payload;
         bool more = false; // a piece of a split message, more pieces follow (wire flag 2)
         uint32_t last_sent = 0;
+        uint16_t last_seq = 0; // the packet it went out in last (BUG-0405)
         int sends = 0;
     };
     struct SentPkt {
@@ -126,6 +133,11 @@ private:
     bool have_remote_ = false;
     bool ack_pending_ = false;
     uint32_t last_send_ms_ = 0;
+    // BUG-0405: packets received since our last packet (its ack bits cover 128 back), and the newest
+    // of our packets the peer acknowledged (a message sent before it and not acknowledged is lost)
+    unsigned recv_since_send_ = 0;
+    uint16_t newest_acked_seq_ = 0;
+    bool any_acked_ = false;
 
     std::deque<SentPkt> sent_;
     uint16_t next_rel_id_ = 0;
