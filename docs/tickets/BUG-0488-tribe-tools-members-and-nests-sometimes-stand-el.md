@@ -41,3 +41,4 @@ Analysis 2026-11-03 (fix/w41-tribe-world):
 ## History
 - 2026-11-03: opened.
 - 2026-11-03: analysed on fix/w41-tribe-world; tools split into BUG-0523, not fixed.
+- 2026-11-04 (fix/w42-tribe-left): with BUG-0523's fix, SPORE_DETECTOR=20 over play_tribe, campaign_tribe and the Tribe tests (out/lab/20261104-102948, out/detector/20261104-1056.md, 62 Tribe comparisons): no `Tribe:unmatched:tribe_tool` row (was 4%), no `nest` row, `Tribe:unmatched:citizen` once (2%, "8 on the host, 7 on the guest, 1 host without a partner": a late mirror, BUG-0481's kind). Tools part done by BUG-0523; left open for the members' row.
