@@ -8,9 +8,9 @@ reported: 2026-11-03
 source: fix/w41-tribe-actions (found while fixing BUG-0514)
 role: guest
 versions: 
-fixed_in:
+fixed_in: unreleased
 branch: fix/w42-tribe-left
-commits:
+commits: 97b06246 748cf8ed
 tests: tribe_tool_buy (coop_tribe_tool_buy.py)
 signature:
 docs: docs/re/tribe.md#tribe-tools-all

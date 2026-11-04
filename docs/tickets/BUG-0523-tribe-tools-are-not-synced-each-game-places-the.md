@@ -8,9 +8,9 @@ reported: 2026-11-03
 source: BUG-0488 analysis (fix/w41-tribe-world)
 role: 
 versions: 
-fixed_in:
+fixed_in: unreleased
 branch: fix/w42-tribe-left
-commits:
+commits: 97b06246 748cf8ed
 tests: tribe_tools_all (coop_tribe_tools_all.py)
 signature:
 docs: docs/re/tribe.md#tribe-tools-all
