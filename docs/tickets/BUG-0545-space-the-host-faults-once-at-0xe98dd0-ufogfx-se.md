@@ -1,7 +1,7 @@
 ---
 id: BUG-0545
 title: Space: the host faults once at 0xE98DD0 (UfoGfx SetVisible, model null) in coop_space_diplomacy.py
-status: open
+status: duplicate
 kind: crash
 stage: Space
 reported: 2026-11-04
@@ -14,7 +14,7 @@ commits:
 tests:
 signature: 0xC0000005 at 0x00E98DD0 (SporeCoop::UfoGfx_SetVisible+0x40) data 0x4, host
 docs:
-related: BUG-0323
+related: BUG-0323, BUG-0546
 ---
 
 ## Report
@@ -26,7 +26,7 @@ apply; probably a guest puppet whose model the host does not have. The rerun pas
 Not caused by fix/w42-space-play's changes as far as seen (they do not touch ships). Not analysed.
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+Duplicate of BUG-0546 (the same host fault in space_diplomacy, the same call chain 00E9AE74 00E9290C ... 00B3687C): the game's own null ship model for an NPC empire ship whose creation the host's Sporepedia cache has without its model record (docs/re/space.md#space-ufo-null-model), not a guest puppet.
 
 ## Fix
 <!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
@@ -37,3 +37,4 @@ Not caused by fix/w42-space-play's changes as far as seen (they do not touch shi
 
 ## History
 - 2026-11-04: opened.
+- 2026-11-04: closed as a duplicate of BUG-0546 (fix/w42-infra).

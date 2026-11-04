@@ -2181,6 +2181,32 @@ empire 8000216E "Plushio The 3rd Empire"; lane 5 only).
   BUG-0323, there a guest mirror). Whether the game without the mod does the same with such a cache is not
   checked; a player whose cache holds no complete UFO might hit it. A guard (BUG-0323's model check for the
   host's own NPC ships) belongs to the Space packages.
+
+## The ship gfx's model and the game's own null model at 0xE98DD0 (2026-11-04, fix/w42-infra)
+<a id="space-ufo-null-model"></a>
+
+BUG-0546, follow-up of [lane 5's cache](#space-lane5-pollination).
+
+* ✔ The game's own bug, not the mod's: one game, no co-op session (`coop.status`: offline), the space_empire
+  fixture and lane 5's Sporepedia cache, `coop.space jumpto 4849684` (star 004A0014): fault at 0xE98DD0 (lab
+  test space_npc_model with `SPORE_FIX_OFF=game.ufo_model`).
+* ✔ The path (Ghidra, GOG 2024): `UfoGfx_InitFromUfo` 0xE9B180 (thiscall(gfx, ufo) ret 4) reads the ship's model
+  key (0xC37390 on the cGameDataUFO cast 0xB033B403). Only a key of all zeros gets the default
+  {0x9D5DB21A, 0x476A98C7, [0x015A8B3C] = 0x40656200}. Then `UfoGfx_SetModel` 0xE9A920 (thiscall(gfx, const
+  ResourceKey*, bool bake) ret 8, the bake request via IBakeManager vt 0x4C) asks the model world (vt 0xC) for the
+  model and stores it (gfx vt 0x30) only when one is made, and calls `UfoGfx_SetVisible` 0xE98D90, which writes
+  [gfx vt 0x2C (GetModel)]+4 without a null check. The gfx object: `Simulator/cUFOGfx`, 0xD8 bytes, made by
+  0xE994D0.
+* ✔ The keys seen: NPC ships of the empire 8000216E with 29133E22 / 2913505D (type 0x476A98C7, group 0x40656200):
+  in lane 5's cache only their summary record (type 0x02D5C9AF), no model record. The NPC empire picks its ships
+  from the cache's UFO list; which one varies between runs.
+* ✔ The game's default UFO 0x9D5DB21A/0x476A98C7/0x40656200 is not known to the resource manager on the lab's GOG
+  2024 install (giving it to SetModel made no model either; the game then crashed at 0xE99524, a later use of the
+  null model, and at 0xE9A908).
+* Fix (gamefixes, `game.ufo_model`): SetModel with a key the resource manager does not have (`creations::key_known`
+  with the model type) gets the default UFO when this game has it, else the last ship model key SetModel had that
+  was known (the player's own ship, set up first: 0675F7B2 in the test); SetVisible on a gfx whose GetModel is null
+  returns (backstop). Not covered: a ship set up before any known ship in a session (the key is kept, as before).
 ## Space play: gifts at the session end, partner colonies in own systems, diplomacy while away (2026-11-04, fix/w42-space-play)
 <a id="space-play-w42"></a>
 
@@ -2215,3 +2241,6 @@ empire 8000216E "Plushio The 3rd Empire"; lane 5 only).
   and the host's next periodic table then removed the change from the guest that made it too (its 8 s guard had
   run out). They now wait in the Space world they arrived in (`spaceext::world_epoch`) and are replayed when the
   game is back in Space; the host sends no periodic table while such changes wait.
+* ~ Inferred (2026-11-04): the trigger needs the profile's caches together. Lane 4 with lane 5's
+  Pollination.package copied over did not hit the case (no ship needed the guard, out/lab/20261104-130333);
+  probably its GraphicsCache.package holds those ships' baked models. Lane 5 hits it every run.

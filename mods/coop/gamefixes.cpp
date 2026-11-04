@@ -8,6 +8,7 @@
 #include <cstring>
 #include <string>
 
+#include "creations.h"
 #include "fixes.h"
 #include "game.h"
 #include "sporekit_game.hpp"
@@ -572,6 +573,78 @@ static int __fastcall fill_guard(void* raster, void*, void* src, int level)
     return g_fill_orig(raster, src, level);
 }
 
+// BUG-0546: an NPC empire's ship whose model this game's resources do not have. The ship gfx's SetModel
+// (SporeCoop::UfoGfx_SetModel 0xE9A920, thiscall(gfx, const Key* model, bool bake) ret 8) asks the model world
+// for the key (vt 0xC) and keeps a model only when one is made, then calls SetVisible (0xE98D90), which writes
+// [GetModel()]+4 without a null check: a read of 0x4 at 0xE98DD0. The game's own init (0xE9B180) puts in the
+// default UFO {0x9D5DB21A, 0x476A98C7, 0x40656200} only for a ship with no key at all; an NPC empire's ship whose
+// key names a creation of the player's Sporepedia cache (Pollination.package) without its model record (the
+// cache holds only the summary 0x02D5C9AF) keeps that key. Seen with one game and no co-op session (lab lane 5's
+// cache). The guard gives such a key the default UFO when this game has it, else the last ship model key it had
+// (the player's own ship is set up first); SetVisible on a gfx without a model is skipped (a backstop).
+using UfoSetModelFn = void(__thiscall*)(void*, const uint32_t*, uint32_t);
+using UfoSetVisibleFn = void(__thiscall*)(void*, uint32_t);
+static UfoSetModelFn g_ufo_model_orig;
+static UfoSetVisibleFn g_ufo_visible_orig;
+static bool g_ufo_model_fix = true;
+COOP_FIX("game.ufo_model", "BUG-0546", g_ufo_model_fix,
+         "gamefixes: a ship whose model this game lacks (an incomplete Sporepedia cache) gets the default UFO model instead of a crash at 0xE98DD0");
+static std::atomic<unsigned> g_ufo_defaulted{0}, g_ufo_invisible_skipped{0};
+static const uint32_t kUfoModelType = 0x476A98C7, kDefaultUfo[3] = {0x9D5DB21A, kUfoModelType, 0x40656200};
+
+static uint32_t g_ufo_good[3]; // the last ship model key this game had (the player's own ship comes first)
+static bool g_default_known, g_default_checked;
+
+static bool ufo_key_known(const uint32_t* key)
+{
+    creations::Key k;
+    k.instance = key[0];
+    k.type = key[1] ? key[1] : kUfoModelType;
+    k.group = key[2];
+    return creations::key_known(k);
+}
+
+static void __fastcall ufo_set_model_guard(void* gfx, void*, const uint32_t* key, uint32_t bake)
+{
+    if (g_ufo_model_fix && key && readable(key, 12) && (key[0] || key[2])) {
+        if (ufo_key_known(key)) {
+            memcpy(g_ufo_good, key, sizeof g_ufo_good);
+        } else {
+            if (!g_default_checked) { // the game's own default UFO is not in every install (lane 5: not built)
+                g_default_checked = true;
+                g_default_known = ufo_key_known(kDefaultUfo);
+            }
+            const uint32_t* sub = g_default_known ? kDefaultUfo : (g_ufo_good[0] || g_ufo_good[2]) ? g_ufo_good : nullptr;
+            unsigned n = ++g_ufo_defaulted;
+            if (n <= 8 || n % 100 == 0)
+                H->log(M, SK_WARN, "game fixes: ship model %08X/%08X/%08X is not in this game: %s %08X/%08X/%08X (BUG-0546, %u)",
+                       key[0], key[1], key[2], g_default_known ? "the default UFO" : sub ? "the last known ship model" : "none known, kept",
+                       sub ? sub[0] : 0, sub ? sub[1] : 0, sub ? sub[2] : 0, n);
+            if (sub) {
+                uint32_t k[3] = {sub[0], sub[1], sub[2]};
+                g_ufo_model_orig(gfx, k, bake);
+                return;
+            }
+        }
+    }
+    g_ufo_model_orig(gfx, key, bake);
+}
+
+static void __fastcall ufo_set_visible_guard(void* gfx, void*, uint32_t visible)
+{
+    if (g_ufo_model_fix && gfx && readable(gfx, 4)) {
+        void** vt = *(void***)gfx;
+        using GetModelFn = void*(__thiscall*)(void*);
+        if (vt && readable(vt + 0x2C / 4, 4) && !((GetModelFn)vt[0x2C / 4])(gfx)) {
+            unsigned n = ++g_ufo_invisible_skipped;
+            if (n <= 8 || n % 100 == 0)
+                H->log(M, SK_WARN, "game fixes: a ship gfx without a model: SetVisible skipped (BUG-0546, %u)", n);
+            return;
+        }
+    }
+    g_ufo_visible_orig(gfx, visible);
+}
+
 std::string arm_attack_cut()
 {
     if (!g_attack_orig)
@@ -756,6 +829,10 @@ void init(const SkHost* host, SkMod* mod)
         g_areas_init_orig = nullptr;
     H->log(M, SK_INFO, "game fixes: missing save area guard %s (startup hook %s)", areas ? "on" : "off",
            g_areas_init_orig ? "on" : "off");
+    uintptr_t um = H->sym("SporeCoop::UfoGfx_SetModel"), uv = H->sym("SporeCoop::UfoGfx_SetVisible");
+    bool ufo = um && uv && H->hook_create(M, (void*)um, (void*)&ufo_set_model_guard, (void**)&g_ufo_model_orig) == 0 &&
+               H->hook_create(M, (void*)uv, (void*)&ufo_set_visible_guard, (void**)&g_ufo_visible_orig) == 0;
+    H->log(M, SK_INFO, "game fixes: ship model guard %s", ufo ? "on" : "off");
 }
 
 void shutdown()
@@ -780,7 +857,9 @@ std::string status()
            ", null raster fills skipped " + std::to_string(g_null_fills.load()) +
            ", stale stimulus senders cleared " + std::to_string(g_senders_cleared.load()) + " (destroys " +
            std::to_string(g_destroys_scanned.load()) + "), missing save areas made " +
-           std::to_string(g_areas_made.load()) + " (failed " + std::to_string(g_areas_failed.load()) + ")\n";
+           std::to_string(g_areas_made.load()) + " (failed " + std::to_string(g_areas_failed.load()) + ")" +
+           ", ship models defaulted " + std::to_string(g_ufo_defaulted.load()) + " (SetVisible without a model skipped " +
+           std::to_string(g_ufo_invisible_skipped.load()) + ")\n";
 }
 
 } // namespace gamefixes

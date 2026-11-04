@@ -4125,3 +4125,14 @@ numbers were 1.27 % (Alice, Tribe), 1.21 % (Carol, Tribe) and 1.00 % (Alice, Civ
   lab's warm reset carries over (BUG-0257) shows in a single run; it skips when the reset takes over 58 s.
 * BUG-0257 pitfall: tests that leave a ship disabled change the next warm test on the same games for 60 s; since
   `space.down_epoch` a load ends that, but other per-world state may still carry over a warm reset.
+
+## A Sporepedia cache without ship models: space_npc_model (2026-11-04, fix/w42-infra)
+<a id="testing-space-npc-model"></a>
+
+BUG-0546. `coop_space_npc_model.py --solo` (suite `space_npc_model`; `space_npc_model_coop` with a guest) copies
+lane 5's Sporepedia cache of 2026-11-04 (no UFO with its model record) over the host profile's
+Pollination.package, loads space_empire, flies to star 004A0014 and checks there is no fault; the lane's own file
+comes back at the end. The cache copy is not in git: `out/fixtures/bug0546-Pollination.package` of the main
+checkout (else `out/bug0546/lane5-Pollination.package` of the fix/w42-infra worktree); without it the test SKIPs.
+It also SKIPs when the guard had no ship to fix (lane 4: its other caches have the models). About 1.5 minutes.
+`SPORE_FIX_OFF=game.ufo_model` must FAIL (lane 5: out/lab/20261104-130233).
