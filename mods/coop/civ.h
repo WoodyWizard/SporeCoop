@@ -63,5 +63,9 @@ bool near_vehicle(const net::Vec3& p, float radius);
 // BUG-0476: the host's capital (the player civilization's first city), the centre of what a guest without a
 // pointer is sent; false outside Civ
 bool center(net::Vec3& p);
+// BUG-0477: the FireTool hook (squadron.cpp) tells the host who fires where; a guest drops the hits of the
+// host's shots it shows (attacker: the combatant of a mirror, or of a turret it fired from)
+void fire_observed(void* tool, void* owner, const float* aim, void* target);
+bool hit_is_cosmetic(void* attacker);
 
 } // namespace civ
