@@ -199,3 +199,6 @@ out/lab/20261102-201933); without the release the on window fails (out/lab/20261
 with SPORE_FIX_OFF=creature.effects_relay in out/lab/20261102-202617.
 
 - 2026-11-02: not in 0.7.3.6: play_creature 1/5 with the relay vs 3/3 without (see BUG-0471); kept on fix/w38-effects for 0.7.4.
+- 2026-11-03: rel/0.7.4 final check: a relayed world effect in Civilization faulted the receivers in the skin
+  painter (effects_party_civ, out/lab/20261103-215559); 0.7.4 relays starts only in Cell, Creature and Tribe
+  (`coop.fix effects.civ_space`, off), docs/known-issues.md#issue-effects-civ-space.

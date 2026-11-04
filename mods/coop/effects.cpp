@@ -10,6 +10,7 @@
 
 #include "fixes.h"
 #include "game.h"
+#include "modes.h"
 #include "net/protocol.h"
 #include "sporekit_game.hpp"
 
@@ -33,6 +34,27 @@ COOP_FIX("effects.here", "BUG-0471", g_here_fix,
          "effects: relayed only between players in the same place (not into a menu, editor or loading screen)");
 static uint32_t g_elsewhere_tx, g_elsewhere_rx;
 static bool nobody_here() { return g_here_fix && C.anyone_here && !C.anyone_here(); }
+
+// 0.7.4 scope: in Civilization and Space a relayed world effect could start the game's skin painter
+// without its context (EffectWorld_CreateEffect -> cSkinPainterPipeline -> cSkinnerTexturePainter::StartRender
+// read 0, hundreds of caught faults, effects_party_civ out/lab/20261103-215559). Until those stages are
+// checked (0.7.5 / 0.7.6), effect starts are neither sent nor played there; stops always pass.
+// `coop.fix effects.civ_space on`: relayed in every stage (as in the branch's first tests).
+static bool g_civ_space = false;
+COOP_FIX("effects.civ_space", "BUG-0451", g_civ_space,
+         "effects: also relayed in Civilization and Space (off in 0.7.4: unverified, the skin painter faulted)");
+static uint32_t g_stage_skipped;
+static bool stage_off()
+{
+    if (g_civ_space)
+        return false;
+    uint32_t m = game::mode_id();
+    if (m == modes::kCiv || m == modes::kSpace) {
+        g_stage_skipped++;
+        return true;
+    }
+    return false;
+}
 
 // Rate limit: a creature can make a burst of one-shot effects (footsteps, bites, particles). 40 a
 // second is far above every effect the game makes for one avatar and below a packet flood.
@@ -305,6 +327,8 @@ static void process_local(void* creature, const game::EffectEvent& ev)
         return;
     if (!ev.stop && !ev.id)
         return;
+    if (!ev.stop && stage_off())
+        return;
     if (!ev.stop && nobody_here()) {
         g_elsewhere_tx++;
         return;
@@ -372,6 +396,8 @@ static void process_world(void* fx, uint32_t id)
             H->log(M, SK_INFO, "effect: world id %08X at %.2f %.2f %.2f is not on the local player", id, p.x, p.y, p.z);
         return;
     }
+    if (stage_off())
+        return;
     if (nobody_here()) {
         g_elsewhere_tx++;
         return;
@@ -612,6 +638,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
     }
     g_rx++;
     if (!g_fix)
+        return;
+    if (!stop && stage_off())
         return;
     if (!stop && g_here_fix && C.here && !C.here(player)) {
         g_elsewhere_rx++;
@@ -869,8 +897,8 @@ std::string status()
     snprintf(b, sizeof b, "effects received drops: spoof=%u pool=%u id=%u bone=%u transform=%u short=%u\n",
              g_dropped_spoof, g_bad_pool, g_bad_id, g_bad_bone, g_bad_xf, g_bad_short);
     s += b;
-    snprintf(b, sizeof b, "effects elsewhere: not sent=%u not played=%u here_fix=%d\n", g_elsewhere_tx, g_elsewhere_rx,
-             (int)g_here_fix);
+    snprintf(b, sizeof b, "effects elsewhere: not sent=%u not played=%u here_fix=%d civ_space=%d stage_skipped=%u\n",
+             g_elsewhere_tx, g_elsewhere_rx, (int)g_here_fix, (int)g_civ_space, g_stage_skipped);
     s += b;
     snprintf(b, sizeof b,
              "effects world live: live=%u stopped=%u expired=%u released=%u dropped=%u release_fix=%d\n",
