@@ -2106,3 +2106,39 @@ BUG-0473 (plants, rocks), BUG-0498. Lane 4, `tools/tests/coop_world_lod.py` (out
   #creature-world-objects).
 * So neither is a world object the players share: no worldobj kind. The detector leaves them out
   (tools/tests/worlddiff.py IGNORE, docs/06-testing.md#testing-world-lod).
+
+## The party's DNA pace: each gain counts 1/N (2026-11-03, fix/w40-dna-social)
+<a id="creature-dna-pace"></a>
+
+BUG-0510 (players: "3-4x the DNA of a solo game", Cell and Creature). Code: `mods/coop/dna_pace.h`,
+coop.cpp `dna_pace_gain` / `dna_pace_meal`, cellsync.cpp `h_AddFood`; test `coop_dna_pace.py`
+(suite `dna_pace`, `dna_pace_cell`).
+
+* ✔ observed (lab 20261103-180306, `SPORE_FIX_OFF=core.dna_pace`): two players' gains of 20 each
+  (AddEvolutionPoints, the game's reward call) made the shared total grow by 40 on both games; Cell: two
+  meals of 20 (AddFoodPoints) +40 food on both (lab 20261103-180539). The party's total is the sum of
+  every player's progress, so N players evolve about N times faster than the game is tuned for.
+* Design (orchestrator's decision): one shared total stays; every GAIN entering it is scaled by 1/N,
+  N = the host plus the guests whose latest state has the host's mode and world crc (`pace_playing`,
+  a guest in an editor or a load does not count while it is there); spends (< 0) stay whole.
+* Each gain is scaled once, where its game made it: the host's own AddEvolutionPoints (its kills,
+  meals, friends, a guest's kill credited to the host's avatar) in `on_dna`, a guest's forwarded gain
+  before MSG_DNA_ADD (the host adds it whole), a guest's social win in `social::apply_success`, an
+  own Cell meal in `h_AddFood` on the eater's game (the guest applies and sends its share, so its food
+  bar does not jump up and back). Integer food points keep the remainder (`dna_pace::Carry`).
+* Not scaled: a species goal card's reward (paid once per party, `social::goal_dna`), the owed / solo
+  DNA paths (already scaled when they were forwarded, or earned alone while the host was away: N = 1
+  then), the guest's own world (core.world_dna), and the test setup commands `coop.dna add` /
+  `coop.pool food` (exact N; `coop.dna gain` / `coop.pool meal` are the paced reward).
+* The host decides: `coop.ini [coop] dna_pace` (1 default, 0 = the full sum; `coop.dna pace 0|1`).
+  It announces the divisor in an optional last byte of MSG_DNA (after the causes) and of the host's
+  MSG_CELL_FOOD total (after the ack); older guests stop reading before it, a newer guest of an older
+  host reads none and uses 1 (the full sum, as that host does).
+* The host's open Cell editor (report 2, "+68 from the guest's meals" 7 s after the editor request):
+  ✔ (Ghidra, #cell-editor-dna in cell.md) the editor's budget is computed once, at the request
+  (0xE59800: DNAForFood(S+0x1C) - S+0x2C), and the meals are those that arrive during the ~10 s mating
+  cinematic before the stage is left (the host is still in Cell, so they are applied); in the editor
+  itself a guest's meal is refused (BUG-0239). Decision: nothing more is held; such meals go into
+  the food total and count at the next editor, now at 1/N. ~ inferred, not checked at runtime: the
+  85 DNA on the screenshot is the budget of the next request (or a negative "spent",
+  cell.md#cell-editor-negative-spent).

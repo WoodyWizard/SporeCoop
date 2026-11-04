@@ -56,7 +56,7 @@ Why not the other stages (initially):
 | Guest attack/ability on an NPC | guest sends "ability X on target Y", host computes damage | animation for everyone, target health from the host |
 | Damage to a guest from an NPC | host | guest receives a damage event |
 | Guest death | - | respawns at the host's nest after 10 s |
-| DNA | host's shared pool: a kill/befriend by any player gives DNA to everyone within 50 m | single progress bar |
+| DNA | host's shared pool: a kill/befriend by any player gives DNA to everyone within 50 m; each gain counts 1/N with N players in the world, so the party evolves at the single-player pace (`dna_pace=1` in `mods\coop.ini` [coop] on the host; 0 = every gain whole, BUG-0510) | single progress bar |
 | Body parts (bones, finds) | shared unlocks | - |
 | Mating call → editor | host decides when; guests wait in an "editor lobby" | M4: everyone edits their own creature |
 | Transition to the Tribe stage | session ends cleanly with a message | - |

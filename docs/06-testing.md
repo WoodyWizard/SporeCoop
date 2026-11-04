@@ -3744,3 +3744,16 @@ the other player's game, both ways where the kind has two:
   game has for a creature key (pointer, +0x504 key, +0x53C version).
 * Pitfall met: a new test file named like an existing one (`coop_cell_stale.py` is BUG-0306's) replaces it
   silently with Write: check `ls tools/tests/<name>` first.
+
+## The party's DNA pace: dna_pace, dna_pace_cell (2026-11-03, fix/w40-dna-social)
+<a id="testing-dna-pace"></a>
+
+* `coop_dna_pace.py [--cell]` (BUG-0510, docs/re/creature.md#creature-dna-pace): both players earn 20
+  through the game's reward function (`coop.dna gain 20`, `coop.pool meal 20`), checked on both games'
+  own value: +20 with the pace, a guest's spend of 10 whole, `coop.dna pace 0` on the host +40.
+  `SPORE_FIX_OFF=core.dna_pace` fails (+40). ~70 s each, cold.
+* Test setups keep exact amounts: `coop.dna add N` and `coop.pool food N` are NOT scaled by the pace
+  (`dna_pace::g_bypass`); use `coop.dna gain N` / `coop.pool meal N [plant]` for a gain as the game
+  makes it. Real kills / social wins / meals in other tests are scaled (N = 2 in a two-player test):
+  a test that expects a kill's full DNA reward on the shared total must read the divisor
+  (`coop.status` line `dna pace: div=...`).
