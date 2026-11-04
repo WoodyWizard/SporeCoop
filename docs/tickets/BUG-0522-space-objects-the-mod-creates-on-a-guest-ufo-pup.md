@@ -10,7 +10,7 @@ role: guest
 versions: 
 fixed_in: unreleased
 branch: fix/w42-space-life
-commits:
+commits: 1d839bae
 tests: space_save_strip
 signature:
 docs: docs/re/space.md#space-save-strip

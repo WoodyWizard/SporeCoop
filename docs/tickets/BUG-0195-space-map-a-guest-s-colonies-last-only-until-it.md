@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.2.4 (main) and earlier
 fixed_in: unreleased
 branch: fix/w42-space-life
-commits:
+commits: a8504fa0
 tests: space_colony_rejoin, space_map
 signature:
 docs: docs/11-rivals.md#rivals-guest-colonies
