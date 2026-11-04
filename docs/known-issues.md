@@ -271,7 +271,10 @@ anchor so other docs can link to it:
   since BUG-0518, a click on the ability's button of the bar). The host's own
   game is native. The success message 0x60B4123 (CreatureStageEventHandler) is not posted for a
   guest's win. Reproduce: `tools/tests/coop_creature_social.py`.
-* Ticket: BUG-0179.
+* 2026-11-03 (fix/w41-creature-left): the meter and the win message are shown / posted on the guest now
+  (BUG-0179, social.guest_meter); still open: the NPC's prompts and any social ability counting as the
+  answer (BUG-0525, docs/re/creature.md#creature-guest-meter).
+* Ticket: BUG-0179 (meter, message: fixed), BUG-0525 (prompts: open).
 
 ## Creature: while the host is in the main menu the guest's planet fills up slowly
 

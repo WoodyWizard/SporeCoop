@@ -189,7 +189,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0176](BUG-0176-coop-civ-play-the-guest-s-i-m-ready-click-was-lo.md) | fixed | test | Civ | 2026-10-23 | 0.7.3.0 | coop_civ_play: the guest's "I'm ready" click was lost twice |
 | [BUG-0177](BUG-0177-creature-the-mating-call-did-not-lead-to-the-edi.md) | open | test | Creature | 2026-10-24 |  | Creature: the mating call did not lead to the editor in the bot |
 | [BUG-0178](BUG-0178-editors-what-is-still-open-after-the-2026-10-24.md) | not-reproduced | bug | Creature | 2026-10-24 |  | Editors: what is still open after the 2026-10-24 report (item 4) |
-| [BUG-0179](BUG-0179-creature-guest-the-social-game-is-simplified.md) | open | feature | Creature | 2026-10-23 |  | Creature (guest): the social game is simplified |
+| [BUG-0179](BUG-0179-creature-guest-the-social-game-is-simplified.md) | fixed | feature | Creature | 2026-10-23 | unreleased | Creature (guest): the social game is simplified |
 | [BUG-0180](BUG-0180-creature-while-the-host-is-in-the-main-menu-the.md) | fixed | bug | Creature | 2026-10-27 | 0.7.3.2 | Creature: while the host is in the main menu the guest's planet fills up slowly |
 | [BUG-0181](BUG-0181-space-no-test-save-after-the-tutorial-missions.md) | open | test | Space | 2026-10-27 |  | Space: no test save after the tutorial missions |
 | [BUG-0182](BUG-0182-space-gog-2024-zooming-in-does-not-land-in-the-f.md) | not-reproduced | bug | Space | 2026-10-27 |  | Space (GOG 2024): zooming in does not land in the first minute after a load |
