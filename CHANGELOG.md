@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### Fixed
+- Space: the game no longer crashes when an NPC empire's ship uses a creation whose model is missing from your
+  Sporepedia cache; the ship is shown with a known ship model instead (BUG-0546).
 - Tribe: the tools of every tribe (the other tribes' fire pits, racks and huts too) now stand at the same places in
   every player's game; a guest's game no longer shows tools there the host's game does not have (BUG-0523).
 - Tribe: a tool a guest buys and places now appears in the host's game too, at the same spot, and the guest's
