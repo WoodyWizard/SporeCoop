@@ -46,3 +46,4 @@ Not fixed yet.
   run #3 failed the lab's sync-check gate instead (p0 46 m during the rescue flight: new ticket BUG-0547).
   coop_space_death.py: 3 of 3 (lab 20261104-114611 #1-#3); the 47 s dead ship of the report was not seen again,
   cause not found. Left open for BUG-0547 and the death case.
+- 2026-11-04 (fix/w42-space-play): space_rescue --repeat 3 again: 3/3 (lab 20261104-123228).
