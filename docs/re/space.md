@@ -2241,3 +2241,6 @@ BUG-0546, follow-up of [lane 5's cache](#space-lane5-pollination).
   and the host's next periodic table then removed the change from the guest that made it too (its 8 s guard had
   run out). They now wait in the Space world they arrived in (`spaceext::world_epoch`) and are replayed when the
   game is back in Space; the host sends no periodic table while such changes wait.
+* ~ Inferred (2026-11-04): the trigger needs the profile's caches together. Lane 4 with lane 5's
+  Pollination.package copied over did not hit the case (no ship needed the guard, out/lab/20261104-130333);
+  probably its GraphicsCache.package holds those ships' baked models. Lane 5 hits it every run.

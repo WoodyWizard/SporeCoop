@@ -144,6 +144,13 @@ def run():
         ck.faults(host=host, guest=guest)
     else:
         ck.faults(host=host)
+    # the case must have happened: with the guard on, a ship model it had to replace (lane 4's run with lane 5's
+    # Pollination.package had none: inferred, its own GraphicsCache.package holds those ships' baked models)
+    n = int(re.search(r'defaulted (\d+)', m.group(0)).group(1)) if m else None
+    guard_on = 'game.ufo_model' not in os.environ.get('SPORE_FIX_OFF', '')
+    if ck.ok and guard_on and n == 0:
+        print('RESULT: SKIP (no NPC ship without its model in this run: the case did not happen on this lane)', flush=True)
+        return 0
     return ck.result()
 
 
