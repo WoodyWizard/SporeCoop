@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+- Civilization: the people walking in the cities are where the host's are and have their size on a guest's
+  screen, instead of walking somewhere else (BUG-0476, BUG-0475).
+- Civilization: roads between cities (trade routes) that appear in the host's game appear in the guest's game too
+  (BUG-0494).
+
 ## [0.7.4] - 2026-11-03
 
 ### Fixed

@@ -52,6 +52,7 @@ enum KindId : uint8_t {
     K_NPC = 1,          // creature NPCs (npc.cpp: Creature and Tribe animals)
     K_TRIBE_MEMBER = 2, // tribe members of every tribe (tribe.cpp)
     K_UFO = 3,          // NPC ships of the host's place (spacecoop.cpp)
+    K_CIV_CITIZEN = 4,  // Civ city citizens bound by the world-object kind `citizen` (worldobj.cpp, BUG-0475 / BUG-0476)
 };
 
 struct Ctx {

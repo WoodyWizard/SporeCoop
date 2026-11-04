@@ -257,6 +257,8 @@ add('civ_planner', P + 'coop_civ_planner.py', warm=True, minutes=3, fixture='civ
 add('civ_discovery', P + 'coop_civ_discovery.py', warm=True, minutes=3, fixture='civ_npc')  # meeting a civilization the guest's game lacks shows no card and does not crash (BUG-0492; SPORE_FIX_OFF=civ.discovery_card crashes)
 add('civ_save_strip', P + 'coop_civ_save_strip.py', minutes=10, uses_free_lane=True)  # a Civ guest's save holds no mirror vehicle and reloads alone without a fault or a null in the civ lists (BUG-0470; SPORE_FIX_OFF=civ.save_strip fails)
 add('civ_mirror_remove', P + 'coop_civ_mirror_remove.py', warm=True, minutes=3, fixture='civ_npc')  # a vehicle the host's game removed leaves no dead vehicle on the guest (BUG-0478; SPORE_FIX_OFF=civ.mirror_remove fails)
+add('civ_roads', P + 'coop_civ_roads.py', warm=True, minutes=3, fixture='civ_npc')  # a road (trade route) the host's game makes is on the guest too (BUG-0494; SPORE_FIX_OFF=civ.roads fails)
+add('civ_citizens', P + 'coop_civ_citizens.py', warm=True, minutes=4, fixture='civ_npc')  # the city citizens near the guest walk where the host's walk, at the host's size (BUG-0476, BUG-0475; SPORE_FIX_OFF=civ.citizens / civ.citizen_scale fail)
 add('civ_pause_city', P + 'coop_civ_pause_city.py', warm=True, minutes=3, fixture='civ_npc')  # a city founded while a guest is paused reaches it after the pause (BUG-0331)
 add('civ_leave', P + 'coop_civ_leave.py', warm=True, minutes=4, fixture='civ')  # the vehicles of a guest who left go to a present player (BUG-0031; --nofix fails)
 add('civ_sw_vote', P + 'coop_civ_sw_vote.py', warm=True, minutes=3, fixture='civ')  # a second superweapon request does not change the running vote (BUG-0117; --nofix fails)
