@@ -5439,6 +5439,19 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         wc.host_away = ctx.host_away;
         wc.stage_center = ctx.stage_center;
         wc.civ_center = [](net::Vec3& p) { return civ::center(p); };
+        // BUG-0490: Space planets (modes place PlanetID | 0x40000000)
+        wc.space_on_planet = [] { return g_mode == modes::kSpace && (g_world & 0x40000000u) != 0; };
+        wc.space_partner = [](uint8_t id, net::Vec3& pos) {
+            auto it = g_remotes.find(id);
+            if (it == g_remotes.end() || it->second.echo || it->second.buf.empty() || !(g_world & 0x40000000u))
+                return false;
+            const net::PlayerState& s = it->second.buf.latest();
+            if (s.mode != modes::kSpace || s.world != g_world || it->second.buf.age(H->time_seconds()) > 3.0 ||
+                !(s.flags & net::PF_IN_WORLD))
+                return false;
+            pos = s.pos;
+            return true;
+        };
         wobj::init(H, M, wc);
     }
     { // BUG-0401: the party's collected creature parts
