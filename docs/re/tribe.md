@@ -1389,3 +1389,6 @@ of the two chiefs' bounding radii from the first, standing):
 * ✔ At the fixture's arrival (session s 5) the two chiefs stood closer than 0.6 of the sum for 2 s before
   place_chiefs or the game parted them (a watchdog's log in lab 20261104-102249 and -102641; the watchdog,
   `tribe.chiefs_overlap`, was removed again for want of a failing run).
+* ✔ 4 players (campaign_tribe, out/lab/20261104-102948): the three chiefs place_chiefs put on ring spots at the
+  arrival were back within 14-28 s at 5.0-5.3 m from the host's chief (bounding radii sum 5.8-6.2 m) on all four
+  machines: the idle behaviour gathers idle members round the host's chief / the centre. ? which node and target.
