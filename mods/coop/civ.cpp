@@ -342,6 +342,297 @@ static void SK_THISCALL h_KeepGround(void* v)
     }
     o_KeepGround(v);
 }
+// ---------------- BUG-0477: the host's shots on the guests ----------------
+// Every Civ weapon (vehicles, city turrets) fires through cToolManager::FireTool (0x01050080, called each
+// update by cCombatSimulator::Update 0xAE7360 for a combatant whose target is in range; the tool's own
+// refire time decides whether a projectile leaves). A guest's mirrors run no behaviour tree, so they never
+// had a target and the guest saw the host's fights only as falling hit points. Now the host notes who
+// fires where (squadron.cpp's FireTool hook calls fire_observed) and sends the shooters of the last 0.25 s
+// every 0.2 s (MSG_CIV_STATE with chunk 0xFE / chunks 0: an older guest drops it at cycle_chunk_ok); the
+// guest fires its mirror's own weapon at the same point with the same FireTool, so the game makes the
+// projectile, its flight and its explosion. Its hits do nothing on the guest (cosmetic_hit: the damage
+// of a mirror's weapon is dropped in the TakeDamage hooks; the host's state brings the real damage).
+// `coop.fix civ.shots off`: the guest shows no shot (0.7.4).
+static bool g_fix_shots = true;
+COOP_FIX("civ.shots", "BUG-0477", g_fix_shots, "civ: a guest sees the host's vehicles and turrets fire (no damage of their own)");
+constexpr uint8_t kShotChunk = 0xFE;     // MSG_CIV_STATE chunk index of a shot list (chunks 0)
+constexpr uint32_t kTurretNoun = 0x0436F342;
+constexpr uintptr_t kVCombatant = 0x508, kBCombatant = 0x120;
+constexpr double kShotSend = 0.2, kShotKeep = 0.25, kShotFireEvery = 0.1;
+static uintptr_t a_FireTool, a_ToolMgrGet;
+struct Shot {
+    uint8_t kind = 0;   // 1 vehicle (host net id), 3 turret (its position)
+    uint16_t id = 0;
+    net::Vec3 at{};     // turret: where it stands
+    net::Vec3 aim{};
+    uint8_t tkind = 0;  // its target (FireTool's, a spatial: object + 0x34): 0 none, 1 vehicle id, 3 noun + position
+    uint16_t tid = 0;
+    uint32_t tnoun = 0;
+    net::Vec3 tpos{};
+    double seen = -100; // host: the last FireTool; guest: until when it fires
+    double tried = -100; // guest: the last FireTool of the mirror
+};
+static std::map<std::pair<uint16_t, uint32_t>, Shot> g_shots;   // host: shooter -> last shot
+static std::map<std::pair<uint16_t, uint32_t>, Shot> g_shots_in; // guest: shooter -> its shots
+static double g_shots_sent_at = -100;
+static uint32_t g_shots_seen, g_shots_tx, g_shots_rx, g_shots_fired, g_shots_nomirror, g_shots_notool,
+    g_hits_dropped;
+static uint32_t g_shots_tgt_wanted, g_shots_tgt_found;
+static std::unordered_set<void*> g_turret_shooters; // guest: turrets fired from (their hits are dropped too)
+
+static uint32_t pos_key(const net::Vec3& p)
+{
+    return (uint32_t)(int)std::lround(p.x) * 73856093u ^ (uint32_t)(int)std::lround(p.y) * 19349663u ^
+           (uint32_t)(int)std::lround(p.z) * 83492791u;
+}
+
+void fire_observed(void* tool, void* owner, const float* aim, void* target)
+{
+    if (!g_fix_shots || !owner || !aim || !tool || !is_host() || !active())
+        return;
+    void* o = (uint8_t*)owner - kVSpatial;
+    Shot s;
+    auto it = g_hv.find(o);
+    if (it != g_hv.end()) {
+        s.kind = 1;
+        s.id = it->second.id;
+    } else if (!IsBadReadPtr(o, 0x40) && game::noun_id(o) == kTurretNoun && game::object_position(o, s.at)) {
+        s.kind = 3;
+    } else
+        return;
+    s.aim = {aim[0], aim[1], aim[2]};
+    if (!std::isfinite(s.aim.x) || !std::isfinite(s.aim.y) || !std::isfinite(s.aim.z))
+        return;
+    if (target && target != owner && !IsBadReadPtr((uint8_t*)target - kVSpatial, 0x40)) {
+        void* t = (uint8_t*)target - kVSpatial;
+        auto tv = g_hv.find(t);
+        if (tv != g_hv.end()) {
+            s.tkind = 1;
+            s.tid = tv->second.id;
+        } else if (!IsBadReadPtr(*(void**)t, 0x24) && game::object_alive(t) && game::object_position(t, s.tpos)) {
+            s.tkind = 3;
+            s.tnoun = game::noun_id(t);
+        }
+    }
+    s.seen = H->time_seconds();
+    g_shots[{s.id, s.kind == 3 ? pos_key(s.at) : 0u}] = s;
+    g_shots_seen++;
+}
+
+static void host_send_shots(double now)
+{
+    if (!g_fix_shots || now - g_shots_sent_at < kShotSend)
+        return;
+    g_shots_sent_at = now;
+    net::Writer w;
+    w.u16(0); w.u8(kShotChunk); w.u8(0);
+    uint8_t n = 0;
+    std::vector<const Shot*> list;
+    for (auto it = g_shots.begin(); it != g_shots.end();) {
+        if (now - it->second.seen > kShotKeep) {
+            it = g_shots.erase(it);
+            continue;
+        }
+        if (list.size() < 40)
+            list.push_back(&it->second);
+        ++it;
+    }
+    if (list.empty())
+        return;
+    n = (uint8_t)list.size();
+    w.u8(n);
+    for (const Shot* s : list) {
+        w.u8(s->kind); w.u16(s->id);
+        w.f32(s->at.x); w.f32(s->at.y); w.f32(s->at.z);
+        w.f32(s->aim.x); w.f32(s->aim.y); w.f32(s->aim.z);
+        w.u8(s->tkind); w.u16(s->tid); w.u32(s->tnoun);
+        w.f32(s->tpos.x); w.f32(s->tpos.y); w.f32(s->tpos.z);
+    }
+    for (auto& pl : C.sess->players())
+        if (pl.id != 0)
+            C.sess->send_unreliable_to(pl.id, net::MSG_CIV_STATE, w);
+    g_shots_tx++;
+}
+
+static void guest_shots(net::Reader& r)
+{
+    uint8_t n = r.u8();
+    double now = H->time_seconds();
+    for (int i = 0; i < n && r.ok(); i++) {
+        Shot s;
+        s.kind = r.u8(); s.id = r.u16();
+        s.at.x = r.f32(); s.at.y = r.f32(); s.at.z = r.f32();
+        s.aim.x = r.f32(); s.aim.y = r.f32(); s.aim.z = r.f32();
+        s.tkind = r.u8(); s.tid = r.u16(); s.tnoun = r.u32();
+        s.tpos.x = r.f32(); s.tpos.y = r.f32(); s.tpos.z = r.f32();
+        if (!r.ok() || (s.kind != 1 && s.kind != 3) || !std::isfinite(s.aim.x) || !std::isfinite(s.aim.y) ||
+            !std::isfinite(s.aim.z) || !std::isfinite(s.at.x))
+            return;
+        auto& e = g_shots_in[{s.id, s.kind == 3 ? pos_key(s.at) : 0u}];
+        double tried = e.tried;
+        e = s;
+        e.tried = tried;
+        e.seen = now + kShotKeep + 0.05; // fires on until then (the next list keeps it going; not much past the host's last shot)
+        g_shots_rx++;
+    }
+}
+
+// guest: the weapon of a local shooter (combatant vt 0x14, as cCombatSimulator::Update gets it)
+static void* weapon_of(void* comb)
+{
+    if (!comb || IsBadReadPtr(comb, 8) || IsBadReadPtr(*(void**)comb, 0x18))
+        return nullptr;
+    void* t = vcall<void*>(comb, 0x14 / 4);
+    return t && !IsBadReadPtr(t, 0x120) ? t : nullptr;
+}
+
+// guest: objects by noun near a place, all found in one walk of the noun list (turret shooters, building targets)
+struct Want {
+    uint32_t noun;
+    net::Vec3 pos;
+    float best;
+    void* found;
+};
+static void find_wanted(std::vector<Want>& w)
+{
+    if (w.empty())
+        return;
+    game::for_each_object(
+        [](void* o, uint32_t n, void* u) {
+            auto& w = *(std::vector<Want>*)u;
+            net::Vec3 p;
+            bool have = false;
+            for (auto& x : w) {
+                if (x.noun != n)
+                    continue;
+                if (!have && !(game::object_alive(o) && game::object_position(o, p)))
+                    return true;
+                have = true;
+                float d = net::dist(p, x.pos);
+                if (d < x.best) {
+                    x.best = d;
+                    x.found = o;
+                }
+            }
+            return true;
+        },
+        &w);
+}
+
+static void guest_fire(double now)
+{
+    if (!g_fix_shots || !a_FireTool || !a_ToolMgrGet || local_play()) {
+        g_shots_in.clear();
+        return;
+    }
+    std::vector<Shot*> due;
+    std::vector<Want> want; // per due shot: [2i] its turret (kind 3), [2i + 1] its target (tkind 3)
+    for (auto it = g_shots_in.begin(); it != g_shots_in.end();) {
+        Shot& s = it->second;
+        if (now > s.seen) {
+            it = g_shots_in.erase(it);
+            continue;
+        }
+        ++it;
+        if (now - s.tried < kShotFireEvery)
+            continue;
+        s.tried = now;
+        due.push_back(&s);
+        want.push_back({s.kind == 3 ? kTurretNoun : 0u, s.at, 6.f, nullptr});
+        want.push_back({s.tkind == 3 ? s.tnoun : 0u, s.tpos, 4.f, nullptr});
+    }
+    bool any = false;
+    for (auto& w : want)
+        any |= w.noun != 0;
+    if (any)
+        find_wanted(want);
+    for (size_t i = 0; i < due.size(); i++) {
+        Shot& s = *due[i];
+        void* o = nullptr;
+        void* comb = nullptr;
+        if (s.kind == 1) {
+            auto g = g_gv.find(s.id);
+            o = g == g_gv.end() ? nullptr : g->second.v;
+            if (o && (!exists(o) || F<uint8_t>(o, kVDead)))
+                o = nullptr;
+            comb = o ? (uint8_t*)o + kVCombatant : nullptr;
+        } else {
+            o = want[2 * i].found;
+            comb = o ? (uint8_t*)o + kBCombatant : nullptr;
+        }
+        if (!o) {
+            g_shots_nomirror++;
+            continue;
+        }
+        void* tool = weapon_of(comb);
+        void* mgr = tool ? skg::cdecl_call<void*>(a_ToolMgrGet) : nullptr;
+        if (!mgr) {
+            g_shots_notool++;
+            continue;
+        }
+        if (s.kind == 3)
+            g_turret_shooters.insert(o);
+        // the target in this game (the projectile homes on it as the host's does); its place is the aim
+        void* t = nullptr;
+        if (s.tkind == 1) {
+            auto g = g_gv.find(s.tid);
+            t = g == g_gv.end() ? nullptr : g->second.v;
+            if (t && (!exists(t) || F<uint8_t>(t, kVDead)))
+                t = nullptr;
+        } else if (s.tkind == 3)
+            t = want[2 * i + 1].found;
+        net::Vec3 ap = s.aim;
+        if (s.tkind)
+            g_shots_tgt_wanted++;
+        if (t) {
+            g_shots_tgt_found++;
+            net::Vec3 tp;
+            if (game::object_position(t, tp)) // the host aimed at its own copy's place: the same offset here
+                ap = {s.aim.x + tp.x - (s.tkind == 3 ? s.tpos.x : tp.x), s.aim.y + tp.y - (s.tkind == 3 ? s.tpos.y : tp.y),
+                      s.aim.z + tp.z - (s.tkind == 3 ? s.tpos.z : tp.z)};
+        }
+        float aim[3] = {ap.x, ap.y, ap.z};
+        thiscall<int>(a_FireTool, mgr, tool, (uint8_t*)o + kVSpatial, (const float*)aim, -1, 0,
+                      t ? (void*)((uint8_t*)t + kVSpatial) : nullptr, 0);
+        g_shots_fired++;
+    }
+}
+
+// guest: a hit from a mirror's (or a fired-from turret's) weapon: the shot is the host's, its damage too
+static bool g_fix_shot_damage = true;
+COOP_FIX("civ.shot_damage", "BUG-0477", g_fix_shot_damage,
+         "civ: the host's shots a guest's game shows hurt nothing there (the host's state brings the damage)");
+static uint32_t g_hits_guest, g_hits_noatt; // guest: TakeDamage calls in Civ seen by the hooks, without an attacker
+static uintptr_t g_hit_att_vt;               // the vtable of the last attacker (diagnostics)
+static bool cosmetic_hit(void* att)
+{
+    if (is_guest() && game::mode_id() == modes::kCiv) {
+        g_hits_guest++;
+        if (!att || IsBadReadPtr(att, 4))
+            g_hits_noatt++;
+        else
+            g_hit_att_vt = *(uintptr_t*)att;
+    }
+    if (!g_fix_shots || !g_fix_shot_damage || !att || !is_guest() || game::mode_id() != modes::kCiv || local_play() || IsBadReadPtr(att, 4) ||
+        IsBadReadPtr(*(void**)att, 0x60))
+        return false;
+    void* v = vcall<void*>(att, 0x5C / 4, 0x137E8E0u); // the vehicle behind a combatant
+    bool ours = (v && g_gv_of.count(v)) || g_turret_shooters.count((uint8_t*)att - kBCombatant);
+    if (ours)
+        g_hits_dropped++;
+    return ours;
+}
+bool hit_is_cosmetic(void* attacker) { return cosmetic_hit(attacker); }
+
+using VTakeDamage_t = int(SK_THISCALL*)(void*, float, uint32_t, int, const void*, void*);
+static VTakeDamage_t o_VTakeDamage;
+static int SK_THISCALL h_VTakeDamage(void* s, float d, uint32_t pol, int t, const void* dir, void* a)
+{
+    if (cosmetic_hit(a))
+        return 0;
+    return o_VTakeDamage(s, d, pol, t, dir, a);
+}
+
 static uint32_t g_removed_local; // the guest's own vehicles removed (civ_ai_spawn: not the host's departed ones)
 static uint32_t g_created, g_removed, g_cmds_sent, g_builds_in, g_captures_in, g_orders_dropped, g_growth_blocked, g_nodes_in;
 
@@ -922,6 +1213,8 @@ using BTakeDamage_t = int(SK_THISCALL*)(void*, float, uint32_t, int, const void*
 static BTakeDamage_t o_BTakeDamage, o_HallTakeDamage;
 static int b_damage(BTakeDamage_t orig, void* self, float dmg, uint32_t pol, int type, const void* dir, void* att)
 {
+    if (cosmetic_hit(att)) // BUG-0477: a relayed shot of the host's
+        return 0;
     uint8_t p = is_host() && active() ? player_of_combatant(att) : 0xFF;
     if (p != 0xFF && role(p) == 1) {
         dmg *= 1.25f;
@@ -1264,6 +1557,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     } opts[] = {
         {"Simulator::cBuilding::TakeDamage", (void*)h_BTakeDamage, (void**)&o_BTakeDamage},
         {"Simulator::cCityHall::TakeDamage", (void*)h_HallTakeDamage, (void**)&o_HallTakeDamage},
+        {"Simulator::cVehicle::TakeDamage", (void*)h_VTakeDamage, (void**)&o_VTakeDamage}, // BUG-0477
         {"Simulator::cCity::AddCaptureDamage", (void*)h_AddCapture, (void**)&o_AddCapture},
         {"Simulator::cCity::ConvertCitizens", (void*)h_Convert, (void**)&o_Convert},
         {"Simulator::cCity::OnAttacked", (void*)h_OnAttacked, (void**)&o_OnAttacked},
@@ -1272,6 +1566,8 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     for (auto& o : opts)
         if (uintptr_t a = H->sym(o.name))
             H->hook_create(M, (void*)a, o.hook, o.orig);
+    a_FireTool = H->sym("Simulator::cToolManager::FireTool"); // BUG-0477 (optional)
+    a_ToolMgrGet = H->sym("Simulator::cToolManager::Get");
     savestrip::add_filter(save_filter); // BUG-0470
     savestrip::add_save_hooks(save_start, save_end);
     // the city planner (BUG-0491, BUG-0493; GOG 2024 symbols, optional)
@@ -1557,6 +1853,7 @@ static void host_tick(double now)
     trade_tick(now);
     boost_tick(now);
     movie_tick();
+    host_send_shots(now); // BUG-0477
     if (now - g_last_send < 0.1)
         return;
     g_last_send = now;
@@ -2463,6 +2760,7 @@ static void guest_state(net::Reader& r)
 
 static void guest_tick(double now)
 {
+    guest_fire(now); // BUG-0477
     for (auto it = g_kill_later.begin(); it != g_kill_later.end();) {
         void* v = *it;
         if (!exists(v) || F<uint8_t>(v, kVDead) || g_gv_of.count(v)) { // gone, or a mirror again
@@ -2595,8 +2893,16 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         return;
     }
     prune_gone();
-    if (type == net::MSG_CIV_STATE && is_guest())
-        guest_state(r);
+    if (type == net::MSG_CIV_STATE && is_guest()) {
+        net::Reader peek = r;
+        peek.u16();
+        uint8_t chunk = peek.u8(), chunks = peek.u8();
+        if (peek.ok() && chunk == kShotChunk && chunks == 0) { // BUG-0477: the host's shooters
+            if (g_fix_shots)
+                guest_shots(peek);
+        } else
+            guest_state(r);
+    }
     else if (type == net::MSG_CIV_CMD && is_host())
         host_command(from, r);
     else if (type == net::MSG_CIV_BUILD && is_guest())
@@ -2625,6 +2931,9 @@ static void clear_coop_tables(bool restore_speed)
     g_ui_city = nullptr;
     g_kill_later.clear();
     g_held_builds.clear();
+    g_shots.clear(); // BUG-0477
+    g_shots_in.clear();
+    g_turret_shooters.clear();
 }
 
 void on_session_end()
@@ -2632,6 +2941,9 @@ void on_session_end()
     caption_disarm(); // BUG-0224
     if (g_fix_boost)
         clear_coop_tables(true);
+    g_shots.clear();
+    g_shots_in.clear();
+    g_turret_shooters.clear();
     g_hv.clear();
     g_hv_by_id.clear();
     g_gv.clear();
@@ -2761,7 +3073,11 @@ std::string status()
     snprintf(pl, sizeof pl, "planner: open=%d held=%u kills_held=%u kills_waiting=%u picks_refused=%u builds_held=%u build_orphans=%u save_stripped=%u cards_skipped=%u owner_unknown=%u met=%d\n",
              planner_city() ? 1 : 0, g_planner_held, g_planner_kills_held, (unsigned)g_kill_later.size(),
              g_planner_picks_refused, (unsigned)g_held_builds.size(), g_build_orphans, g_save_stripped, g_cards_skipped, g_owner_unknown, g_met);
-    return std::string(b) + pl;
+    char sh[200];
+    snprintf(sh, sizeof sh, "shots: fix=%d seen=%u tx=%u rx=%u active=%u fired=%u no_mirror=%u no_tool=%u hits_dropped=%u hits=%u no_attacker=%u att_vt=%08X targets=%u/%u\n",
+             (int)g_fix_shots, g_shots_seen, g_shots_tx, g_shots_rx, (unsigned)g_shots_in.size(), g_shots_fired,
+             g_shots_nomirror, g_shots_notool, g_hits_dropped, g_hits_guest, g_hits_noatt, (unsigned)g_hit_att_vt, g_shots_tgt_found, g_shots_tgt_wanted);
+    return std::string(b) + pl + sh;
 }
 
 void for_each_target(void (*fn)(const char* kind, int id, int owner, const net::Vec3& pos, void* user), void* user)
@@ -3092,6 +3408,27 @@ std::string debug(const std::vector<std::string>& a)
     }
     if (!a.empty() && a[0] == "pushprobe" && is_guest()) // tests (BUG-0186): who moves a mirror
         return push_probe();
+    if (a.size() >= 3 && a[0] == "attack" && is_host()) {
+        // attack <id> <host city index | v<vehicle id>> [type]: the game's own attack order (tests, BUG-0477):
+        // type 2 the military attack of a city (default for a city), 1 a unit (default for a vehicle)
+        void* v = local_vehicle((uint16_t)atoi(a[1].c_str()));
+        void* t = nullptr;
+        int type = 2;
+        if (a[2][0] == 'v') {
+            t = local_vehicle((uint16_t)atoi(a[2].c_str() + 1));
+            type = 1;
+        } else {
+            int ci = atoi(a[2].c_str());
+            t = ci >= 0 && ci < (int)g_host_cities.size() ? g_host_cities[ci] : nullptr;
+        }
+        if (a.size() >= 4)
+            type = atoi(a[3].c_str());
+        if (!v || !t)
+            return "no such vehicle or target";
+        thiscall<int>(a_SetOrder, v, t, type, 1);
+        thiscall<void>(a_OrderStamp, v, 0);
+        return "attack ordered";
+    }
     if (a.size() >= 5 && a[0] == "move") { // move <id> <x> <y> <z>
         void* v = local_vehicle((uint16_t)atoi(a[1].c_str()));
         if (!v)

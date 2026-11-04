@@ -8,6 +8,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include "civ.h"
 #include "coop_ui.h"
 #include "creations.h"
 #include "driver.h"
@@ -1602,6 +1603,8 @@ static bool is_epic_animal(void* a)
 }
 static int SK_THISCALL h_CitizenTD(void* comb, float dmg, uint32_t pol, int type, const void* pos, void* att)
 {
+    if (civ::hit_is_cosmetic(att)) // BUG-0477: a Civ guest's copy of a host's shot hurts nobody
+        return 0;
     if (is_host() && active()) {
         void* victim = (uint8_t*)comb - 0x5A8;
         void* pt = player_tribe();

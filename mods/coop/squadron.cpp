@@ -1,4 +1,5 @@
 #include "squadron.h"
+#include "civ.h"
 
 #include <algorithm>
 #include <array>
@@ -188,6 +189,7 @@ static int SK_THISCALL h_FireTool(void* mgr, void* tool, void* owner, const floa
         g_puppet_shots++;
         return 0;
     }
+    civ::fire_observed(tool, owner, aim, target); // BUG-0477: the host's Civ shots go to the guests
     return o_FireTool(mgr, tool, owner, aim, dp, a5, target, show);
 }
 

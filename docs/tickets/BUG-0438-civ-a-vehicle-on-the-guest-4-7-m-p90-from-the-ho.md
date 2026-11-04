@@ -41,3 +41,16 @@ its last state; a driving vehicle that turns or stops meanwhile is several metre
 ## History
 - 2026-11-01: opened.
 - 2026-11-01 (feat/w33-tests-session): again in a rerun of sync_burst (lab 20261101-173700): `vehicles n=1 pos med 0.13 p90 3.53 max 4.20 m`, raw p90 6.00 m.
+- 2026-11-04 (fix/w41-civ-combat): reproduced with suite `sync_civ_loss` (coop_sync.py civ under SPORE_NET=burst):
+  1 of 4 runs fails `civ/vehicles: 90% within 3.0 m` (p90 4.13 m, max 9.58 m; out/lab/20261104-020256, 4 runs:
+  p90 1.57 / 4.13 / 2.15 / 1.56 m). The same loss all the time (SPORE_NET="delay=35,jitter=10,loss=0.3") passed
+  with p90 0.91 m (out/lab/20261104-020029): the gaps of a 30 % loss alone do not explain it. Tried: a longer
+  extrapolation (0.6 s instead of 0.15 s) for 5 s after a gap in the state cycle numbers (a loss, not a host
+  hitch): 1 of 4 runs failed again (p90 2.66 / 3.11 / 1.06 / 1.38 m, max 10.5 m; out/lab/20261104-020316), no
+  measurable gain, so it was not kept. Observed: the large samples come with large facing errors (14-45 deg):
+  the test's vehicle turns round (coop_sync's stir drives it 40 m away and back) while the states are lost.
+  Inferred: the velocity estimate (smoothed 0.6, from the last states) still points the old way after a turn
+  inside a burst, and with n=1 and 16 samples one such moment decides the p90. Next: send the vehicle's own
+  velocity (or its order target) in the state instead of estimating it; and sample more vehicles / rounds
+  in coop_sync for Civ so one burst does not decide a run. Status stays open.
+
