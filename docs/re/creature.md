@@ -2394,3 +2394,17 @@ BUG-0501 (still open, time box of about 20 minutes, Ghidra only). Follows #creat
   stimulus the NPCs' BT turns into HeardRagingRoar; on a guest it reaches only AI-less mirrors.
 * Not done: a fix (the host replaying a guest's area ability from the puppet) cannot be checked without a creature
   that has the roar (neither fixture creature has it; a carnivore Cell's consequence ability).
+
+## The chat line under a modal box of the game (2026-11-03, fix/w41-creature-left)
+<a id="creature-chat-under-modal"></a>
+
+BUG-0482 follow-up. Lane 9, `tools/tests/coop_chat_modal.py`.
+
+* ✔ (runtime) The "game saved" box (control id 0x06318E78, world.cpp) is the UTFWin window manager's modal window
+  (`[IWindowManager::Get()] +0x82C` non-null while it is up, null after OK) and holds no input lock
+  (cGameInputManager +0x110 = 0). Under it a click on the co-op window's chat line is dropped like under a caption:
+  the line stays empty (out/lab/20261103-235548, switch off).
+* `core.ui_modal_edit` (coop_ui.cpp `clicks_locked`): the locked paths of BUG-0273 (buttons) and BUG-0482 (text
+  lines) take "a modal window of the game is up" (+0x82C, not our own window) like the input lock. `coop.uistate`
+  prints `modal=` / `modal_seen=`; `coop.save hold` keeps our save's box up for a test, `coop.save confirm` lets the
+  mod confirm it again, `coop.save box` says whether it is up.

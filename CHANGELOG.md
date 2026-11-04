@@ -5,6 +5,8 @@
 ### Fixed
 - Creature: a guest's social game now shows the game's social meter, like the host's, and a creature the
   guest befriends can give it a new part as in a single-player game (BUG-0179).
+- A chat line typed in the co-op window while the game's "game saved" box (or another box of the game) is up
+  is no longer lost; the window's buttons work then too (BUG-0482).
 
 ## [0.7.4] - 2026-11-03
 
