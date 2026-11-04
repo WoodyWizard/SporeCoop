@@ -53,6 +53,10 @@ GAIT_MIN = 0.80
 # a puppet that stands 4 frames while its path moves still counts as standing
 WIN_FRAMES = 4
 
+def pup_rows(rows):
+    return [r for r in rows if r['who'] != 255]
+
+
 def screen(con):
     m = re.search(r'viewport x=\d+ y=\d+ w=(\d+) h=(\d+)', con.call('coop.cam')['out'])
     return (int(m.group(1)), int(m.group(2))) if m else (1440, 1080)
@@ -118,6 +122,10 @@ WALK_MORE = 2  # BUG-0407: walks of `secs` more when the first measured too litt
 
 
 HOP = 1.5  # m
+STOP_WALK = False  # --stop-walk (BUG-0408)
+MOUND = None  # --mound x,y,z (BUG-0435): the walker stands there MOUND_LIFT m up (it lands on the mound) first
+MOUND_LIFT, MOUND_STAND = 0.5, 10.0  # m, s
+IN_MOUND, IN_MOUND_MAX = 0.15, 0.1  # m drawn under the target's height, share of the frames
 
 
 def jump(con):
@@ -153,6 +161,20 @@ def walk(con, rng, secs, jumps=0.0):
                 lost = 0
             continue
         r = rng.random()
+        if STOP_WALK:  # BUG-0408: walks of 1-2.5 s by W (and a turn), each followed by a stop
+            keys = rng.choice([['W'], ['W'], ['W', 'A'], ['W', 'D']])
+            hold = rng.uniform(1.0, 2.5)
+            for k in keys:
+                con.call(f'key 0x{ord(k):02X} down')
+            time.sleep(hold)
+            halt = rng.random() < 0.6
+            for k in keys:
+                con.call(f'key 0x{ord(k):02X} up')
+            if halt:  # it stops at once (a partner's creature stopped by something, not slowing down by itself)
+                con.call('coop.abilities halt')
+            time.sleep(1.4)
+            log.append(f'{"+".join(keys)} {hold:.1f}s, {"halt" if halt else "stop"}')
+            continue
         if r < 0.45:
             keys = rng.choice([['W'], ['W'], ['W', 'A'], ['W', 'D'], ['A'], ['D'], ['S']])
             hold = rng.uniform(1.0, 3.0)
@@ -261,6 +283,7 @@ def windows(pup, top):
     return win, hitch, tj, legacy
 
 
+STOP_MOVE, STOP_MOVES = 0.15, 0.1  # BUG-0408 (--stop-walk): m slid on after a stop, share of the stops
 STOP_SLIDE = 0.3  # m: a puppet drawn this far from where the walker stopped in the second after the stop slid past it
 
 
@@ -275,8 +298,12 @@ def stops(pup):
             if len(post) > 5 and math.dist(post[0]['tgt'], post[-1]['tgt']) < 0.15:
                 # (less the error at the stop: puppet_under's targets are 1 m under the ground all the time)
                 e0 = math.dist(pup[k]['d'], pup[k]['tgt'])
+                # the drawn way after the target stood (from its third frame on: what the frame before placed),
+                # less the target's own way then: a puppet that slides on after the stop
+                slide = (sum(math.dist(a['d'], b['d']) for a, b in zip(post[2:], post[3:])) -
+                         sum(math.dist(a['tgt'], b['tgt']) for a, b in zip(post[1:], post[2:-1])))
                 ev.append((round(pup[k]['t'], 1), max(math.dist(r['d'], r['tgt']) for r in post) - e0,
-                           any(r['anim'] == FALL_ANIM for r in post)))
+                           any(r['anim'] == FALL_ANIM for r in post), round(slide, 2)))
                 k += len(post)
                 continue
         k += 1
@@ -456,7 +483,16 @@ def direction(walker, observer, wname, oname, rng, secs, ck, stand=0, jumps=0.0,
     for c in (walker, observer):
         c.call('coop.track start')
     time.sleep(0.5)
-    log = walk(walker, rng, secs, jumps)
+    log = []
+    if MOUND:  # BUG-0435: the walker first stands on the lower part of the nest mound, then walks from there
+        x, y, z = MOUND
+        r0 = math.sqrt(x * x + y * y + z * z)
+        k = (r0 + MOUND_LIFT) / r0
+        print('  walker onto the mound: ' + walker.call('coop.npc gopos %.2f %.2f %.2f' % (x * k, y * k, z * k))['out'].strip(),
+              flush=True)
+        time.sleep(MOUND_STAND)
+        log.append(f'stood on the mound {MOUND_STAND:.0f}s')
+    log += walk(walker, rng, secs, jumps)
     # BUG-0407: a walk that measured too little (the walker's game at 8-18 fps did not take its keys for 6 s and
     # walked 8 of 27 s: 99 frames, 11 windows) is walked on, up to WALK_MORE times, instead of failing a check
     # that measured nothing
@@ -500,8 +536,15 @@ def direction(walker, observer, wname, oname, rng, secs, ck, stand=0, jumps=0.0,
           f'{r["legacy_win"]}', flush=True)
     print(f'    jumps (t, m, frame ms): {len(r["teleports"])} {r["teleports"][:12]}', flush=True)
     st = r['stops']
+    sl = sorted(x[3] for x in st)
     print(f'    stops: {len(st)}, drawn past the stop by more than {STOP_SLIDE} m in {sum(1 for x in st if x[1] > STOP_SLIDE)} '
-          f'(max {max((x[1] for x in st), default=0):.2f} m), the fall animation at {sum(1 for x in st if x[2])}', flush=True)
+          f'(max {max((x[1] for x in st), default=0):.2f} m), the fall animation at {sum(1 for x in st if x[2])}; '
+          f'slid on after the stop (drawn way less the path\'s) p50 {pct(sl, 0.5):.2f} p90 {pct(sl, 0.9):.2f} max '
+          f'{max(sl, default=0):.2f} m, over {STOP_MOVE} m in {sum(1 for x in sl if x > STOP_MOVE)}', flush=True)
+    if STOP_WALK:  # BUG-0408
+        ck(len(st) >= 8 and sum(1 for x in sl if x > STOP_MOVE) <= STOP_MOVES * len(st),
+           f'{r["label"]}: the puppet stops where the walker stopped (slid on over {STOP_MOVE} m after '
+           f'{sum(1 for x in sl if x > STOP_MOVE)} of {len(st)} stops <= {STOP_MOVES:.0%})')
     print(f'    walk gait (animation gait state > 0) in {r["gait"]:.0%} of the frames, in {r["near_gait"]:.0%} of the '
           f'{r["near"]} on the observer\'s screen; the walker\'s own avatar while it moves: '
           f'{r["own_gait"]:.0%}', flush=True)
@@ -527,6 +570,17 @@ def direction(walker, observer, wname, oname, rng, secs, ck, stand=0, jumps=0.0,
         ck(r['falls'] <= r['own_falls'] + 1, f'{r["label"]}: the puppet does not start falling ("jumping") more '
            f'than the walker\'s own creature ({r["falls"]} <= {r["own_falls"]} + 1)')
         ck(not r['under'], f'{r["label"]}: the puppet is never under the observer\'s ground ({len(r["under"])} frames)')
+    # BUG-0435: on raised ground (the target, a grounded walker, over 0.15 m above GetHeightAt) in the frames the puppet is
+    # on the observer's screen: drawn more than IN_MOUND under the walker's own height (in the mound)
+    raised = [(a, b) for a, b in zip(pup_rows(obs), pup_rows(obs)[1:]) if a.get('ht') is not None and a['ht'] > 0.15
+              and not (a['flags'] & 8) and b['vis'] and 0 < b['sx'] < 1440 and 0 < b['sy'] < 1080]
+    low = [round(b['hd'] - a['ht'], 2) for a, b in raised if b['hd'] < a['ht'] - IN_MOUND]
+    print(f'    on raised ground (target over 0.15 m, on the screen): {len(raised)} frames, drawn more than {IN_MOUND} m '
+          f'under the walker\'s height in {len(low)} {low[:8]}', flush=True)
+    if MOUND:
+        ck(len(raised) >= 100 and len(low) <= IN_MOUND_MAX * len(raised),
+           f'{r["label"]}: the puppet stands on the mound, not in it (drawn {IN_MOUND} m under the walker in {len(low)} of '
+           f'{len(raised)} frames <= {IN_MOUND_MAX:.0%})')
     ar = r['airs']
     shown = sum(1 for x in ar if x[3])
     print(f'    jumps of the walker (its target over {AIR_MIN} m, peak >= {AIR_PEAK} m): {len(ar)}, drawn up to at least '
@@ -575,7 +629,12 @@ def main():
     ap.add_argument('--goto', default='', help='x,y,z: both players go there first (hilly ground, BUG-0366)')
     ap.add_argument('--stand', type=float, default=0, help='the walker stands this long after its walk (s)')
     ap.add_argument('--guest-fps', type=float, default=0, help='the guest at ~N fps (frame.limit 1000/N): a weak PC (BUG-0366)')
+    ap.add_argument('--stop-walk', action='store_true', help='short walks, each followed by a stop, and check the stops (BUG-0408)')
+    ap.add_argument('--mound', default='', help='x,y,z: the walker stands there (lifted, it lands on a nest mound) before its walk (BUG-0435)')
     a = ap.parse_args()
+    global STOP_WALK, MOUND
+    STOP_WALK = a.stop_walk
+    MOUND = tuple(map(float, a.mound.split(','))) if a.mound else None
     seed = a.seed if a.seed is not None else random.randrange(1 << 30)
     print(f'  seed {seed}', flush=True)
     rng = random.Random(seed)
