@@ -601,6 +601,7 @@ def direction(walker, observer, wname, oname, rng, secs, ck, stand=0, jumps=0.0,
     print(f'    frames with the walker\'s target over {AIR_MIN} m: {an}, the puppet drawn at least {AIR_SHOWN:.0%} as high '
           f'in the next frame in {aok} ({aok / an if an else 0:.0%})', flush=True)
     if air:  # BUG-0376
+        print('    observer ' + observer.call('coop.track air')['out'].strip().replace('\n', '; '), flush=True)
         ck(len(ar) >= AIR_EPISODES and an and aok >= AIR_OK * an,
            f'{r["label"]}: the walker\'s jumps leave the ground on the observer\'s screen too (drawn up in {aok} of {an} '
            f'frames >= {AIR_OK:.0%}, {len(ar)} jumps >= {AIR_EPISODES})')
