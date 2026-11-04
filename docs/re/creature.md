@@ -2564,3 +2564,54 @@ BUG-0376, BUG-0435, BUG-0408, BUG-0436, BUG-0434. GOG 2024, lane 2, `coop.track`
   gait stays on (puppet 969 / 969 frames, the walker's own 1250 / 1296).
 * ? BUG-0434 (the first frame back in view drawn on the plain terrain) not looked at again: the update that grounds a
   culled creature is still not found.
+
+## The social game's prompts on a guest (2026-11-04, fix/w42-creature-left)
+<a id="creature-social-prompts"></a>
+
+BUG-0525 (fixed), follows #creature-guest-meter. GOG 2024, Ghidra and lane 6 (creature fixture).
+
+* ✔ (Ghidra) The session block of SocialPropose (`S` = session +0x1A4): +8 prompt count (= rounds, tuning +0x424,
+  -1 for a baby 0x1582F14, +1 for an alpha 0x1582F10), +0xC prompt index, +0x10 / +0x14 the open prompt's ability +8 /
+  +0x10, +0x18 the meter scorer (needed = 2 x the sum of the prompts' rounded +0x3C points), +0x44 the answer wait,
+  +0x58 flags. The tick 0xDA4950 (`SocialSession_Tick`, jump table 0xDA4E30) state 4 plays prompt i of the NPC's list
+  (npc +0x1020, picked from species profile +0x7A4 at the start) with cCreatureBase::PlayAnimation(GetAnimationID(0),
+  -1, 0), state 6 waits: 0xD9B070 takes the answer each frame, the wait is 10 s (0x1582F20) after the NPC's animation;
+  state 7 plays 0x68D8F9C and goes back to 4; at the end of the list an unfilled meter is a failure (state 8, the NPC
+  plays 0x53685D8F).
+* ✔ (Ghidra) The answer is stimulus 0x10000000 kind 1, posted to the NPC by the answering creature's BT node 0xD9C100
+  (the avatar's: ConsumeEnergy, `+0x14` = the ability's +0x10, `+0x18` its points 0xD9C060 = +0x3C plus 0.1 of it per
+  pack member with an ability of the same +0x10). 0xD9B070 gives the points to the meter, x0.1 (0x1582F1C) when +0x14
+  is not the prompt's; one answer per prompt. So the kind an answer must match is the ability's **+0x10**, not +8.
+* ✔ (runtime, `coop.social abil`) In the creature fixture every creature has exactly one ability with +0x10 = 1
+  (type 0x25, the sing: points 1 on the host's species and the NPCs, 5 on the guest's own creature) and the others
+  +0x10 = 0; every species' prompt candidates (+0x7A4) are that one ability (index 4 or 5). The ability kind +0x7C:
+  0 for all but type 0x1D (kind 1, range 100). So the fixture cannot show two social kinds; a combat ability (+0x10
+  0) is the answer "of another kind" in the test.
+* ✔ (runtime) The prompt's animation (Kook: 042A1CAF) is sometimes played as another of its family (042A1CB3) and the
+  host's NPC, whose BT keeps running, plays 0404FC23 / 0404FC25 around it.
+* Fix `social.prompts` (social.cpp): the guest tells the host when it engages a mirror (MSG_SOCIAL kind 4 K_ENGAGE
+  {u16 npc}); the host picks the prompts as SocialPropose does, 2 s later starts them one by one: plays the prompt on its
+  NPC (CreaturePlayAnim, relayed by npc.anims) and sends it (kind 5 K_PROMPT {u16 npc, u8 i, u8 n, u32 type, u32 key,
+  u32 anim}: the guest plays it on its mirror); a guest's answer (K_ACT) counts only while a prompt is open (13 s), by
+  the puppet's ability of that type: its points (at least 1) when its +0x10 is the prompt's, else 0.1 of them; won at the
+  sum of the prompts' points; after the list a failure (K_RESULT ok 0 with 0x53685D8F, played on the mirror). The
+  meter's bar follows the score (K_PROGRESS in tenths of points). Older SporeCoop ignores the two kinds.
+* ? Not done: the native meter's own prompt marks (0xD9AFF0 -> 0xE33A70 on bar 0) on the guest's meter, and the x2 of
+  0xBCA230 (not known what it asks): the guest's needed score is the sum of the prompt points, not twice it.
+* `coop.social abil <npc id | -1>` lists a creature's abilities (+8, +0x10, +0x3C, +0x7C, range +0xA8) and its
+  species' prompt candidates; `coop.social answer <npc id> <hex type>` answers with any own ability (tests).
+
+## puppet_jump with the world's species: the game does not jump (2026-11-04, fix/w42-creature-left)
+<a id="creature-world-species-hatch"></a>
+
+BUG-0536 (not ours). Lane 6, `PUPPET_JUMP_WORLD=1 tools/tests/coop_puppet_jump.py` (the guest's record of the fixture
+world cleared first: the lane's profile had 290225CD recorded, so the guest played its own creature by default).
+
+* ✔ (runtime, lab 20261104-114050) With both players of the world's species (065CBE70), each dying at the fixture's
+  nest, the dying player's **own game** never moved its creature more than 1.5 m in 0.5 s during the 28 s after the
+  death caption (`coop.avatar` sampled on the dying game); the other game's puppet was shown again 0.00 m off the
+  target. With the guest's own creature (another species, lab 20261104-113744) the guest's game stepped it 6 m at
+  10.9 s (out of its egg) and the puppet followed in 0.08 s; the host (world species) again no step.
+* ~ Inferred: a creature of the nest's species respawns in its egg at the nest where it died here, and its hatch is
+  not a step; one of another species is hatched off its egg's place. Our track and puppet are not involved. The test
+  keeps choosing the guest's own creature (a jump is needed to check the catch).
