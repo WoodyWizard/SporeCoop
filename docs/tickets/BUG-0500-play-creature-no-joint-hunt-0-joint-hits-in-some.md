@@ -8,7 +8,7 @@ reported: 2026-11-03
 source: BUG-0471 A/B, lane 4, 2026-11-03
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.4
 branch: fix/w40-play
 commits: 5016c091
 tests: play_creature
@@ -46,3 +46,4 @@ answered once per run (`caption_ok=1`), no chat line lost.
 ## History
 - 2026-11-03: opened.
 - 2026-11-03: fixed on fix/w40-play (the bots answer the brain upgrade caption); the ground part split into BUG-0504.
+- 2026-11-03: released in 0.7.4.

@@ -8,7 +8,7 @@ reported: 2026-11-02
 source: player reports on Discord 2026-11-02 (bug-reports forum, 0.7.3.4, GOG host + Steam guest)
 role: host
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.4
 branch: fix/w40-editor
 commits: 43ef1445 9681b9d3
 tests: cell_parts (tools/tests/coop_cell_parts.py)
@@ -49,3 +49,4 @@ host part 1 -> guest state 2).
 ## History
 - 2026-11-02: opened.
 - 2026-11-03: fix/w40-editor: the party shares its Cell parts (parts.shared_cell); fixed (unreleased).
+- 2026-11-03: released in 0.7.4.

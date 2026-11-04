@@ -8,7 +8,7 @@ reported: 2026-11-03
 source: player reports 2026-11-04 (Discord, w40 triage), GitHub issue #190
 role: none
 versions: 0.7.3.3, 0.7.3.4
-fixed_in: unreleased
+fixed_in: 0.7.4
 branch: fix/w40-misc
 commits: 0a02f72a, dcf91148
 tests: save_areas (tools/tests/coop_save_areas.py), save_areas_editor (tools/tests/coop_save_areas_editor.py)
@@ -46,3 +46,4 @@ Follow-up (GitHub #190): the fallback runs right after the game's own startup ma
 - 2026-11-03: two players' reports (0.7.3.3, 0.7.3.4), 6 crashes with one signature; triage on fix/w40-reports.
 - 2026-11-03: cause found and fixed on fix/w40-misc (game.save_areas), reproduced in the lab.
 - 2026-11-03: GitHub issue #190: the editor crash, the ru-ru PlayerDir cause reproduced; the fallback moved to right after the game's startup (fix/w40-misc).
+- 2026-11-03: released in 0.7.4.

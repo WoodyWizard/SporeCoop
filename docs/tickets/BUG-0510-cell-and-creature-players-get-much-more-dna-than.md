@@ -8,7 +8,7 @@ reported: 2026-11-03
 source: player reports 2026-11-04 (Discord, w40 triage)
 role: both
 versions: 0.7.3.4, 0.7.3.6
-fixed_in: unreleased
+fixed_in: 0.7.4
 branch: fix/w40-dna-social
 commits: f384cc0f 9d90117e 0b0f811c
 tests: dna_pace (tools/tests/coop_dna_pace.py), dna_pace_cell (--cell)
@@ -57,3 +57,4 @@ dna_pace_cell, lab 20261103-180425 (+20 food on both, dna_pace=0 +40).
 - 2026-11-03: opened.
 - 2026-11-03: opened (w40 triage), three reports merged.
 - 2026-11-03: fix/w40-dna-social: each gain counts 1/N players (core.dna_pace, coop.ini dna_pace); fixed (unreleased).
+- 2026-11-03: released in 0.7.4.

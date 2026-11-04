@@ -8,7 +8,7 @@ reported: 2026-11-03
 source: BUG-0471 A/B, lane 4, 2026-11-03
 role: both
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.4
 branch: fix/w40-play
 commits: d0635944, 9d0c9b48
 tests: puppet_jump, play_creature
@@ -57,3 +57,4 @@ puppet_jump (tools/tests/coop_puppet_jump.py): each player dies, the other recor
 ## History
 - 2026-11-03: opened.
 - 2026-11-03: fixed on fix/w40-play (no blend across the respawn and the egg jump, the puppet jumps too).
+- 2026-11-03: released in 0.7.4.

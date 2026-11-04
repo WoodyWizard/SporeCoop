@@ -8,7 +8,7 @@ reported: 2026-11-02
 source: player reports on Discord 2026-11-02 (bug-reports forum, 0.7.3.4, GOG host + Steam guest)
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.4
 branch: fix/w40-scale
 commits: 59c64045 3fa7d38c d4f3ff94 cfa77d8b f07fcbb0
 tests: mirror_scale_npc (tools/tests/coop_mirror_scale.py --kind npc)
@@ -40,3 +40,4 @@ FAIL with SPORE_FIX_OFF=npc.scale: out/lab/20261103-125642 (16 of 52 pairs diffe
 - 2026-11-02: opened.
 - 2026-11-03: the divergence detector shows it in 94% of 343 Creature comparisons (`Creature:scale:creature`, e.g. 0.59 host / 0.68 guest), without a player (out/lab/20261103-012624).
 - 2026-11-03: fixed on fix/w40-scale (replicated fields, docs/sync-architecture-plan.md#sync-fields).
+- 2026-11-03: released in 0.7.4.

@@ -8,7 +8,7 @@ reported: 2026-11-02
 source: player reports on Discord 2026-11-02 (bug-reports forum, 0.7.3.4, GOG host + Steam guest)
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.4
 branch: fix/w40-editor
 commits: 43ef1445 9681b9d3
 tests: editor_sync_guest (tools/tests/coop_editor_sync.py --case guest), dna_spend (--case spend)
@@ -57,3 +57,4 @@ PASS dna_spend, lab 20261103-142938 (host and guest 15).
 ## History
 - 2026-11-02: opened.
 - 2026-11-03: fix/w40-editor: the own editor charges its price (creations.own_editor_dna) and a guest's spend reaches the host (core.dna_spend); fixed (unreleased).
+- 2026-11-03: released in 0.7.4.

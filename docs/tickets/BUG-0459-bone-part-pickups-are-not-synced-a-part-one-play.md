@@ -8,7 +8,7 @@ reported: 2026-11-02
 source: player reports on Discord 2026-11-02 (bug-reports forum, 0.7.3.4, GOG host + Steam guest)
 role: host
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.4
 branch: fix/w40-world-objects
 commits: 9445045a 5ec41dc0 ffed3f29 0209a1c2
 tests: wobj_ornament (tools/tests/coop_world_objects.py), parts_shared
@@ -46,3 +46,4 @@ reward (the interact node's end), the host's reward is used up, the host's avata
 - 2026-11-02: opened.
 - 2026-11-03: the detector sees the pickups themselves differ: `Creature:host_only:interactive_ornament` (bones / skeletons only in the host's game) in 6% of Creature comparisons (out/lab/20261103-012624).
 - 2026-11-03: fix/w40-world-objects: fixed (worldobj.cpp / nest.cpp).
+- 2026-11-03: released in 0.7.4.

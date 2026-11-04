@@ -8,7 +8,7 @@ reported: 2026-11-03
 source: player reports 2026-11-04 (Discord, w40 triage)
 role: guest
 versions: 0.7.3.6
-fixed_in: unreleased
+fixed_in: 0.7.4
 branch: fix/w40-guest-combat
 commits: d581fbba, 65730701
 tests: coop_puppet_freed.py
@@ -52,3 +52,4 @@ coop_puppet_freed.py (suite puppet_freed).
 - 2026-11-03: opened from report 20261104-014642 (guest, 0.7.3.6); symbolized with a v0.7.3.6 build (out of tree).
 - 2026-11-03: fixed on fix/w40-guest-combat (creature.puppet_alive), reproduced with the game's own destroy on lane 2.
 - 2026-11-03 (fix/w40-gh-issues): GitHub issue #194 (host, 0.7.3.6, GOG 2024): the same crash (EIP 0x7349626D, same coop.dll frames and registers), every time a UFO of the game's abduction event took a creature near the players (the player's text); also crash-20261102-163856 (0.7.3.3) of the same PC. So the host gets it too, and the inferred trigger there is the UFO event freeing the partner's puppet. Ticket BUG-0520 (duplicate of this one).
+- 2026-11-03: released in 0.7.4.

@@ -8,7 +8,7 @@ reported: 2026-11-02
 source: player reports on Discord 2026-11-02 (bug-reports forum, 0.7.3.4, GOG host + Steam guest)
 role: host
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.4
 branch: fix/w40-creature-acts
 commits: 1cea6d51
 tests: creature_relations (tools/tests/coop_creature_relations.py)
@@ -52,3 +52,4 @@ out/lab/20261103-152848 (12 of 21: the proxies without tuning); both on PASS out
 - 2026-11-02: opened.
 - 2026-11-03: relations fixed on fix/w40-creature-acts (creature.relations, npc.tuning); the roar split to BUG-0501.
 - 2026-11-03: seen again in player reports 2026-11-03 (0.7.3.4 forum post: the guest is attacked by animals that look indifferent on its screen, its hp goes down without an attack animation; 0.7.3.6 direct message: neutral animals, even allies outside the host's pack, target the guest), fixed in 0.7.4 (unreleased). The missing attack animation on the guest's screen is not verified by this fix.
+- 2026-11-03: released in 0.7.4.

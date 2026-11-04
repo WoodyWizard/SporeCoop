@@ -8,7 +8,7 @@ reported: 2026-11-03
 source: nightly detector run 2026-11-03
 role: both
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.4
 branch: fix/w40-play
 commits: fbe3916a
 tests: chat_caption, play_creature
@@ -51,3 +51,7 @@ chat_caption (tools/tests/coop_chat_caption.py), both players, during CRG_ClaimN
 ## History
 - 2026-11-03: opened.
 - 2026-11-03: fixed on fix/w40-play (the click on the chat line under a caption's input lock; the mod types).
+- 2026-11-03: seen again on rel/0.7.4 (out/lab/20261103-224540 play_creature): one line lost while the host's "game saved"
+  box was up (the host saved the world for a guest coming back from the main menu); the same class as the caption
+  (a modal box of the game takes the click), not covered by core.ui_locked_edit. Next: 0.7.5.
+- 2026-11-03: released in 0.7.4.

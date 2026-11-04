@@ -8,7 +8,7 @@ reported: 2026-11-03
 source: divergence detector, nightly run 2026-11-03 (out/lab/20261103-012624, report out/detector/20261103-0236.md)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.4
 branch: fix/w40-world-objects, fix/w40-cell-evo
 commits: eca11f6d, e136676f
 tests: wobj_ornament, detect_creature, world_lod
@@ -50,3 +50,4 @@ no-fail-run: a detector compare rule (worlddiff.IGNORE), not game code; the evid
 - 2026-11-03: opened.
 - 2026-11-03: fix/w40-world-objects: partly fixed (worldobj.cpp / nest.cpp).
 - 2026-11-03: fix/w40-cell-evo: plants and rocks shown to be per camera; left out of the detector.
+- 2026-11-03: released in 0.7.4.

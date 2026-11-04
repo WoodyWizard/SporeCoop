@@ -8,7 +8,7 @@ reported: 2026-11-02
 source: player reports on Discord 2026-11-02 (bug-reports forum, 0.7.3.4, GOG host + Steam guest)
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.4
 branch: fix/w40-creature-acts
 commits: fc6119e0
 tests: creature_sneak (tools/tests/coop_creature_sneak.py)
@@ -47,3 +47,4 @@ noise 0, alpha within 0.15 of the actor's own).
 ## History
 - 2026-11-02: opened.
 - 2026-11-03: fixed on fix/w40-creature-acts (creature.sneak).
+- 2026-11-03: released in 0.7.4.

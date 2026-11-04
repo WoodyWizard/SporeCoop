@@ -8,7 +8,7 @@ reported: 2026-11-02
 source: player reports on Discord 2026-11-02 (bug-reports forum, 0.7.3.4, GOG host + Steam guest)
 role: host
 versions: 0.7.3.3, 0.7.3.4
-fixed_in: unreleased
+fixed_in: 0.7.4
 branch: fix/w40-crashes
 commits: 0074b298
 tests: editor_desync
@@ -37,3 +37,4 @@ no-fail-run: the driver's failure to make a texture does not happen on the lab's
 - 2026-11-02: opened.
 - 2026-11-03: analysed (not the report screenshot; a texture without a raster), guarded on fix/w40-crashes (game.null_raster_fill).
 - 2026-11-03 (fix/w40-gh-issues): GitHub issue #191 (host, 0.7.3.4 GOG 2024, NVIDIA RTX 5060 Ti, 3 players, Creature editor): "the game crashes right after clicking Save". Observed in its report zip (crash-20261103-004744): the same fault, 0xC0000005 at RenderWare::Raster::Fill+0x7 data 0x4, ecx = esi = ebp = 0, calls 0x7B0042 / 0x7B009F (Texture_BuildMips) <- 0x51CCE2 (cSkinPainterPipeline::ExecutePipeline): the skin bake the editor runs for the save. So not only the AMD host of the first reports (the inference "the AMD driver" above is too narrow). Seen before it in the same editor visit: a 32 s frame with a device Reset (window away) 57 s before the crash, and address space 879 MB free but the largest free block only 256 MB (large-address flag off): inferred, a texture the game could not allocate in the fragmented address space. The same report's other dump (crash-20261102-232741, Creature) is BUG-0453. Issue #192 (a guest of the same kind of session, 0.7.3.4, "crashes after saving the creature", no files): inferred the same crash, not verified. Covered by game.null_raster_fill (0.7.4); the save then has that skin texture without paint at worst.
+- 2026-11-03: released in 0.7.4.

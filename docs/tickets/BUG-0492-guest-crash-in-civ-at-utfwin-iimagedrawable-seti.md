@@ -8,7 +8,7 @@ reported: 2026-11-03
 source: player report SporeCoop-report-20261103-194448.zip (owner downloaded 2026-11-03; 0.7.3.6, Steam guest, Civ), out/reports/2026-11-03
 role: guest
 versions: 0.7.3.6
-fixed_in: unreleased
+fixed_in: 0.7.4
 branch: fix/w40-civ-crashes
 commits: df52d3ed, 9a9262ab
 tests: civ_discovery
@@ -49,3 +49,4 @@ owner that names no civilization in the guest's game is not applied to the guest
 ## History
 - 2026-11-03: opened.
 - 2026-11-03: fixed on fix/w40-civ-crashes (civ.discovery_card).
+- 2026-11-03: released in 0.7.4.

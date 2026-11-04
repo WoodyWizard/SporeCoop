@@ -8,7 +8,7 @@ reported: 2026-11-03
 source: divergence detector, fix/w40-world-objects lane 9 out/lab/20261103-131403
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.4
 branch: fix/w40-cell-evo
 commits: eca11f6d, e136676f
 tests: world_lod (coop_world_lod.py)
@@ -36,3 +36,4 @@ no-fail-run: a detector compare rule (worlddiff.IGNORE), not game code.
 ## History
 - 2026-11-03: opened.
 - 2026-11-03: fix/w40-cell-evo: per-camera objects, left out of the detector.
+- 2026-11-03: released in 0.7.4.

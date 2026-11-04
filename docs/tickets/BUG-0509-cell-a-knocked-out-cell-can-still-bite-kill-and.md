@@ -8,7 +8,7 @@ reported: 2026-11-03
 source: player reports 2026-11-04 (Discord, w40 triage)
 role: both
 versions: 0.7.3.6
-fixed_in: unreleased
+fixed_in: 0.7.4
 branch: fix/w40-guest-combat
 commits: 75c44630, 0785a1cd, 33104459
 tests: coop_cell_ko_bite.py
@@ -46,3 +46,4 @@ coop_cell_ko_bite.py (suite cell_ko_bite).
 - 2026-11-03: opened.
 - 2026-11-03: opened (w40 triage).
 - 2026-11-03: fixed on fix/w40-guest-combat (cell.ko_no_bite).
+- 2026-11-03: released in 0.7.4.

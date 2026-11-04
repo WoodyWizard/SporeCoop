@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.7.4] - 2026-11-03
 
 ### Fixed
 - When Spore itself fails to start (the game closes at once after the mod was installed), you now get a

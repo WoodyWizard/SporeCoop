@@ -8,7 +8,7 @@ reported: 2026-11-02
 source: orchestrator A/B, 2026-11-02 (rel/0.7.3.6 candidate)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.4
 branch: fix/w40-effects
 commits: 9aad65c7 (effects.here), f7dff4b5 (effects_party in every stage), 607f0092 (effects_here test), 74b1fa5a (test fix)
 tests: play_creature, effects_here, effects_party, effects_party_cell, effects_party_tribe, effects_party_civ, effects_party_space
@@ -72,3 +72,4 @@ All run dirs in SporeCoop-wt/fix/w40-effects, lane 4.
 - 2026-11-02: the chat symptom (1 line lost) also happened WITHOUT the relay (rel/0.7.3.6b, out/lab/20261102-232023): that one is not the relay's; the puppet-apart and freeze runs stay to be measured.
 - 2026-11-03: on main 0.7.3.6 (no relay) play_creature failed 2 of 3 in the nightly run (chat line lost, n missing, joint hunts): its flakiness is not only the relay's; the A/B must be repeated with more runs per side before blaming the relay.
 - 2026-11-03: A/B on one build (4+4 runs): the relay does not worsen play_creature or its net numbers; fixed the relay into other places (effects.here) on fix/w40-effects.
+- 2026-11-03: released in 0.7.4.

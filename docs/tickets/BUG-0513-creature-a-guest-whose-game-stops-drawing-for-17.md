@@ -8,7 +8,7 @@ reported: 2026-11-03
 source: player reports 2026-11-04 (Discord, w40 triage)
 role: guest
 versions: 0.7.3.6
-fixed_in: unreleased
+fixed_in: 0.7.4
 branch: fix/w40-guest-combat
 commits: 111958f0, 306b9ecf, 8c41e570
 tests: coop_puppet_walk.py (puppet_deep), coop_partner_silent.py
@@ -48,3 +48,4 @@ minimized game (SporeKit background mode) is not done.
 - 2026-11-03: opened.
 - 2026-11-03: opened (w40 triage).
 - 2026-11-03: fixed on fix/w40-guest-combat (creature.puppet_deep, core.partner_silent).
+- 2026-11-03: released in 0.7.4.

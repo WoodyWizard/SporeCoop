@@ -8,7 +8,7 @@ reported: 2026-11-03
 source: GitHub issue #193 (2026-11-03)
 role: single
 versions: 0.7.3.6
-fixed_in: unreleased
+fixed_in: 0.7.4
 branch: fix/w40-gh-issues
 commits: 23a436a5, 2331426b, 3dc95658
 tests: kit_initfail (tools/tests/kit_initfail.py)
@@ -40,3 +40,4 @@ Not verified: the message box (lab instances are > 1, so it is not shown there);
 ## History
 - 2026-11-03: opened from GitHub issue #193.
 - 2026-11-03: the report and the message on a failed start (fix/w40-gh-issues, kit.fix initfail); the cause on the player's PC not known.
+- 2026-11-03: released in 0.7.4.

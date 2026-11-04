@@ -8,7 +8,7 @@ reported: 2026-11-02
 source: player reports on Discord 2026-11-02 (bug-reports forum, 0.7.3.4, GOG host + Steam guest)
 role: host
 versions: 0.7.3.4
-fixed_in: unreleased
+fixed_in: 0.7.4
 branch: fix/w40-crashes
 commits: b063830c
 tests: npc_lost_target
@@ -38,3 +38,4 @@ coop_npc_lost_target.py: "no NPC stimulus named the removed puppet": FAIL with t
 ## History
 - 2026-11-02: opened.
 - 2026-11-03: root cause (a destroyed creature named by NPC stimuli, pure virtual call), fixed on fix/w40-crashes (npc.stale_sender).
+- 2026-11-03: released in 0.7.4.

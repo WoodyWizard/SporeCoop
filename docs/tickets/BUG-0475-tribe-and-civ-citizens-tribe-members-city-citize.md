@@ -8,7 +8,7 @@ reported: 2026-11-03
 source: divergence detector, nightly run 2026-11-03 (out/lab/20261103-012624, report out/detector/20261103-0236.md)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.4
 branch: fix/w40-scale
 commits: 59c64045 3fa7d38c d4f3ff94 cfa77d8b f07fcbb0
 tests: mirror_scale_tribe (tools/tests/coop_mirror_scale.py --kind tribe_member)
@@ -39,3 +39,4 @@ FAIL with SPORE_FIX_OFF=tribe.scale: out/lab/20261103-125805 (4 of 28 pairs, 14 
 ## History
 - 2026-11-03: opened.
 - 2026-11-03: fixed on fix/w40-scale (replicated fields, docs/sync-architecture-plan.md#sync-fields).
+- 2026-11-03: released in 0.7.4.

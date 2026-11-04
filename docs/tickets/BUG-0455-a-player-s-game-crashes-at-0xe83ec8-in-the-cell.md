@@ -8,7 +8,7 @@ reported: 2026-11-02
 source: player reports on Discord 2026-11-02 (bug-reports forum, 0.7.3.4, GOG host + Steam guest)
 role: guest
 versions: 0.7.3.4
-fixed_in: unreleased
+fixed_in: 0.7.4
 branch: fix/w40-crashes
 commits: 0074b298
 tests: cell_unknown_model
@@ -36,3 +36,4 @@ coop_cell_unknown_model.py (suite cell_unknown_model): FAIL with SPORE_FIX_OFF=c
 - 2026-11-02: opened.
 - 2026-11-03: root cause (cellsync mirrors with an unknown model key), fixed on fix/w40-crashes (cell.unknown_model).
 - 2026-11-03: seen again in a player report 2026-11-02 (0.7.3.4, Steam guest, reports 20261102-231251 and -231730, two crashes, same chain: coop.dll 0.7.3.4 +0xCD31E CreateCellObject <- +0x108F7 cellsync::guest_state; 'host is back' from its Cell editor 0.07 s before the fault; the player: 'when the host goes from the editor to the game and the guest opens the editor at the same time, the guest crashes'), fixed in 0.7.4 (unreleased).
+- 2026-11-03: released in 0.7.4.

@@ -8,7 +8,7 @@ reported: 2026-11-02
 source: player reports on Discord 2026-11-02 (bug-reports forum, 0.7.3.4, GOG host + Steam guest)
 role: host
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.4
 branch: fix/w40-npc-anims
 commits: 8ea68520, 92a146f0, d5741801, 271ee35c
 tests: npc_anims
@@ -53,3 +53,4 @@ out/lab/20261103-165317 (81 %, fight 83 %).
 - 2026-11-02: opened.
 - 2026-11-03: analysed on fix/w40-creature-acts, not fixed (findings in the docs).
 - 2026-11-03: fixed on fix/w40-npc-anims (npc.anims).
+- 2026-11-03: released in 0.7.4.

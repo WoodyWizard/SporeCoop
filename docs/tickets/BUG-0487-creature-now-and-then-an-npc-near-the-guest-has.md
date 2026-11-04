@@ -8,7 +8,7 @@ reported: 2026-11-03
 source: divergence detector, nightly run 2026-11-03 (out/lab/20261103-012624, out/detector/20261103-final.md)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.4
 branch: fix/w40-scale
 commits: 59c64045 3fa7d38c d4f3ff94 cfa77d8b f07fcbb0
 tests: npc_resync (tools/tests/coop_npc_resync.py)
@@ -39,3 +39,4 @@ FAIL with SPORE_FIX_OFF=npc.resync: out/lab/20261103-124409 (back [], missing [4
 ## History
 - 2026-11-03: opened.
 - 2026-11-03: fixed on fix/w40-scale (replicated fields, docs/sync-architecture-plan.md#sync-fields).
+- 2026-11-03: released in 0.7.4.

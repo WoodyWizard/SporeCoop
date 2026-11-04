@@ -8,7 +8,7 @@ reported: 2026-11-03
 source: nightly detector run 2026-11-03
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.4
 branch: fix/w40-play
 commits: e8c36083
 tests: play_tribe
@@ -54,3 +54,4 @@ mirror for the check: `coop.tribe delay <s>` on the guest (tribe.cpp, tests), `P
 ## History
 - 2026-11-03: opened.
 - 2026-11-03: fixed on fix/w40-play (a measurement error: the check compares with the host's path over the mirrors' delay); the proxies part split into BUG-0503.
+- 2026-11-03: released in 0.7.4.

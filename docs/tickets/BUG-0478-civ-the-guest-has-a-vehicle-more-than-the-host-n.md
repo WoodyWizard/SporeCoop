@@ -8,7 +8,7 @@ reported: 2026-11-03
 source: divergence detector, nightly run 2026-11-03 (out/lab/20261103-012624, report out/detector/20261103-0236.md)
 role: 
 versions: 0.7.3.6
-fixed_in: unreleased
+fixed_in: 0.7.4
 branch: fix/w40-civ-crashes
 commits: 0823fb59, 9a9262ab, c269e094
 tests: civ_mirror_remove
@@ -45,3 +45,4 @@ Found by the lab (no player report). Target: 0.7.4.
 ## History
 - 2026-11-03: opened.
 - 2026-11-03: vehicle half fixed on fix/w40-civ-crashes (civ.mirror_remove); roads moved to BUG-0494.
+- 2026-11-03: released in 0.7.4.

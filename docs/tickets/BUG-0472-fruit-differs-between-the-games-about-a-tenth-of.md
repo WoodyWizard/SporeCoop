@@ -8,7 +8,7 @@ reported: 2026-11-03
 source: divergence detector, nightly run 2026-11-03 (out/lab/20261103-012624, report out/detector/20261103-0236.md)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.4
 branch: fix/w40-world-objects
 commits: 9445045a 5ec41dc0 ffed3f29 0209a1c2
 tests: wobj_fruit, wobj_tree (tools/tests/coop_world_objects.py), detect_creature, detect_tribe
@@ -52,3 +52,4 @@ was already empty is not made on the guest; Tribe food bundles (`game_bundle`) h
 ## History
 - 2026-11-03: opened.
 - 2026-11-03: fix/w40-world-objects: fixed (worldobj.cpp / nest.cpp).
+- 2026-11-03: released in 0.7.4.

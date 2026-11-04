@@ -8,7 +8,7 @@ reported: 2026-11-03
 source: player reports 2026-11-04 (Discord, w40 triage)
 role: guest
 versions: 0.7.3.6
-fixed_in: unreleased
+fixed_in: 0.7.4
 branch: fix/w40-guest-combat
 commits: f0902456, 22870f85
 tests: coop_creature_pack_target.py
@@ -52,3 +52,4 @@ reproduced); the host's own click on the guest is checked as well (no pack targe
 - 2026-11-03: opened.
 - 2026-11-03: opened (w40 triage); the 0.7.3.4 fix BUG-0374 covers another path.
 - 2026-11-03: fixed on fix/w40-guest-combat (npc.pack_spares_partners); trigger not reproduced, the state made by the test.
+- 2026-11-03: released in 0.7.4.

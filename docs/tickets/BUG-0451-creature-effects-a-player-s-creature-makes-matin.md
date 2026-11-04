@@ -8,7 +8,7 @@ reported: 2026-11-02
 source: owner's manual test, lane 8, 2026-11-02 (screenshots: hearts over the host's creature on the host, none on the guest)
 role:
 versions:
-fixed_in: unreleased
+fixed_in: 0.7.4
 branch: fix/w38-effects
 commits: 0d704785 (relay), 646dfc97 (test), 40c7834b (docs), d4e5a367 (world relay), c26a1d10 (tests), 41c0d56f (docs), 45ebc478 (review: no hook churn, main thread only, O(1) table), 091b056f (position +0xA0), 13cdfa7c (cost measurement), 02586842 (atomic stage gate), f81ef9bd (Release the relay's effect reference), 4d09ecd3 (3-player relay transform), aedd0954 (spoofing), 8706ea33 (validation), 15bd1ebc (stop relayed world effects), 7eb1478b (full transform + screenshots), 1e5ab55e (O(1) sent table)
 tests: creature_effects, cell_effects, tribe_effects, effects_party, effects_validate, effects_live, effects_release
@@ -202,3 +202,4 @@ with SPORE_FIX_OFF=creature.effects_relay in out/lab/20261102-202617.
 - 2026-11-03: rel/0.7.4 final check: a relayed world effect in Civilization faulted the receivers in the skin
   painter (effects_party_civ, out/lab/20261103-215559); 0.7.4 relays starts only in Cell and Creature
   (`coop.fix effects.other_stages`, off; Tribe faulted the same way, out/lab/20261103-223036), docs/known-issues.md#issue-effects-civ-space.
+- 2026-11-03: released in 0.7.4.

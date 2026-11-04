@@ -8,7 +8,7 @@ reported: 2026-11-03
 source: player reports 2026-11-04 (Discord, w40 triage)
 role: guest
 versions: 0.7.3.4, 0.7.3.6
-fixed_in: unreleased
+fixed_in: 0.7.4
 branch: fix/w40-misc
 commits: 0c898b87
 tests: cell_grow (tools/tests/coop_cell_grow.py)
@@ -40,3 +40,4 @@ mods/coop/cellsync.cpp: the host appends its world scale G+0x514C to every MSG_C
 - 2026-11-03: opened.
 - 2026-11-03: opened (w40 triage), report text only.
 - 2026-11-03: cause found, fixed and tested on fix/w40-misc (cell.world_scale).
+- 2026-11-03: released in 0.7.4.

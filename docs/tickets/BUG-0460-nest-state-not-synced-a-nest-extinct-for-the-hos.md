@@ -8,7 +8,7 @@ reported: 2026-11-02
 source: player reports on Discord 2026-11-02 (bug-reports forum, 0.7.3.4, GOG host + Steam guest)
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.4
 branch: fix/w40-world-objects
 commits: 9445045a 5ec41dc0 ffed3f29 0209a1c2
 tests: wobj_herd (tools/tests/coop_world_objects.py --kind herd)
@@ -46,3 +46,4 @@ another species; the herd's extinct bits in the guest's game.
 - 2026-11-02: opened.
 - 2026-11-03: fix/w40-world-objects: fixed (worldobj.cpp / nest.cpp).
 - 2026-11-03: seen again in a player report 2026-11-03 (0.7.3.6, host mark 'map desynced on extinct nests (dead nests)', report 20261103-192547), fixed in 0.7.4 (unreleased).
+- 2026-11-03: released in 0.7.4.

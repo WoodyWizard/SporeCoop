@@ -8,7 +8,7 @@ reported: 2026-11-03
 source: player reports 2026-11-04 (Discord, w40 triage)
 role: guest
 versions: 0.7.3.4, 0.7.3.6
-fixed_in: unreleased
+fixed_in: 0.7.4
 branch: fix/w40-no-reload
 commits: b3bf9bd2, ae5fdf86, fc5ba8bc, fcb93d69, 299c8461, 01cc5fa6
 tests: evolve_in_place_cell, evolve_in_place_creature (coop_evolve_in_place.py --case cell|creature)
@@ -65,3 +65,4 @@ docs/re/creations.md#creations-evolve-in-place:
 - 2026-11-03: opened.
 - 2026-11-03: opened from the 0.7.3.4 forum post and its logs (w40 triage).
 - 2026-11-03: fixed on fix/w40-no-reload (evolve in place, Cell and Creature; FAIL / PASS runs above).
+- 2026-11-03: released in 0.7.4.

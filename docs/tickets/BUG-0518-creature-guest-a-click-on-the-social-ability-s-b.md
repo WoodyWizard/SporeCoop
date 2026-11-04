@@ -8,7 +8,7 @@ reported: 2026-11-03
 source: BUG-0179 player reports 2026-11-03 (two groups), w40 lab measure
 role: guest
 versions: 0.7.3.6
-fixed_in: unreleased
+fixed_in: 0.7.4
 branch: fix/w40-dna-social
 commits: 7d2bfa0d 9a5bfb11
 tests: creature_social_bar (tools/tests/coop_creature_social_bar.py)
@@ -52,3 +52,4 @@ proxy, the species table 0 -> 1 impressed on both).
 ## History
 - 2026-11-03: opened.
 - 2026-11-03: fix/w40-dna-social: the bar's click plays the social game (social.bar_click); fixed (unreleased).
+- 2026-11-03: released in 0.7.4.

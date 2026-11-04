@@ -8,7 +8,7 @@ reported: 2026-11-02
 source: code review of BUG-0469 (fix/w39-content-all review, item 2); class G9 of docs/generalisation-plan.md (BUG-0426)
 role: guest
 versions: 0.7.3.5, 0.7.3.6
-fixed_in: unreleased
+fixed_in: 0.7.4
 branch: fix/w40-civ-crashes
 commits: a8299ba2, 9a9262ab
 tests: civ_save_strip, content_civ
@@ -91,3 +91,4 @@ switched off.
 - 2026-11-02: opened (review of BUG-0469, item 2: the guest's save holds the session's mirror
   vehicles; reproducible with `content_civ`'s save and reload step).
 - 2026-11-03: Civ half fixed on fix/w40-civ-crashes (civ.save_strip); Tribe / Space moved to BUG-0495.
+- 2026-11-03: released in 0.7.4.
