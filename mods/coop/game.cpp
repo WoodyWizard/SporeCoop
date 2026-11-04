@@ -1322,6 +1322,15 @@ void destroy_creature(void* c)
         thiscall<void>(a_DestroyInstance, nm, c);
 }
 
+// tests (BUG-0507): the game destroys c as it does on its own (cGameNounManager::DestroyInstance), without
+// the mod's bookkeeping (no puppet_unregister, no deferring): a puppet freed behind the mod's back
+void destroy_untracked(void* c)
+{
+    void* nm = g_ready && c ? cdecl_call<void*>(a_NounGet) : nullptr;
+    if (nm)
+        thiscall<void>(a_DestroyInstance, nm, c);
+}
+
 void destroy_deferred_tick()
 {
     if (g_destroy_later.empty())

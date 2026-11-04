@@ -27,6 +27,7 @@
 #include "sporekit_game.hpp"
 #include "fixes.h"
 #include "fields.h"
+#include "gamefixes.h"
 #include "dna_ledger.h"
 #include "trace.h"
 
@@ -1001,6 +1002,54 @@ static int c_npctrack(void*, int argc, const char* const* argv, SkOut* out)
     return 0;
 }
 
+// BUG-0512: the host's pack (+0xB58 & 0x100) and family (the avatar's herd) take the host's fights as theirs:
+// a partner's puppet the host targeted (a click sets the avatar's +0xE7C to the puppet), or one that got into
+// a pack member's "attacked" stimuli, became the pack's target and the pack chased and bit the partner on both
+// screens (npc.party_peace, BUG-0374, only drops the damage). With npc.pack_spares_partners the host clears, for
+// every pack or family member the game updates, a target (+0xE7C, a combatant: inside the creature) on a
+// partner's puppet with the creature's own SetTarget (vt 0x84, (null, 1, 0): the BUG-0453 guard ends an attack
+// node left without a target) and its stimuli naming the puppet. Off: 0.7.3.6.
+static bool g_pack_spares_fix = true;
+COOP_FIX("npc.pack_spares_partners", "BUG-0512", g_pack_spares_fix, "creature: the host's pack and family never take a partner as their target");
+static uint32_t g_pack_targets_cleared = 0, g_pack_stimuli_cleared = 0;
+constexpr size_t kTargetOff = 0xE7C, kCreatureSpan = 0x1700;
+
+static void* partner_puppet_at(const void* sub)
+{
+    for (void* p : game::puppets())
+        if (sub >= p && (const uint8_t*)sub < (const uint8_t*)p + kCreatureSpan)
+            return p;
+    return nullptr;
+}
+
+static void pack_spares_partners(const std::vector<void*>& creatures)
+{
+    if (!g_pack_spares_fix || !game::in_creature_stage() || game::puppets().empty())
+        return;
+    // the pack (cGameNounManager +0x5C..+0x60, it may not be in the update list) and the creatures updated
+    std::vector<void*> party;
+    if (void* nm = game::noun_manager())
+        for (void** it = skg::field<void**>(nm, 0x5C), **e = skg::field<void**>(nm, 0x60); it && it < e && it - skg::field<void**>(nm, 0x5C) < 32; ++it)
+            if (*it && skg::readable(*it, 0x1680))
+                party.push_back(*it);
+    for (void* c : creatures)
+        if (std::find(party.begin(), party.end(), c) == party.end())
+            party.push_back(c);
+    for (void* c : party) {
+        if (game::is_puppet(c) || c == game::avatar() || !skg::readable(c, kTargetOff + 4) || !creature_hp::host_party(c) ||
+            game::is_dead(c))
+            continue;
+        if (void* pup = partner_puppet_at(skg::field<void*>(c, kTargetOff))) {
+            skg::vcall<void>(c, 0x84 / 4, (void*)nullptr, 1, 0);
+            if (++g_pack_targets_cleared <= 8 || g_pack_targets_cleared % 100 == 0)
+                H->log(M, SK_INFO, "npc: the host's pack member %p had the partner's puppet %p as its target: cleared (BUG-0512, %u)",
+                       c, pup, g_pack_targets_cleared);
+        }
+        for (void* pup : game::puppets())
+            g_pack_stimuli_cleared += gamefixes::clear_stimuli_from(c, pup);
+    }
+}
+
 static void host_tick(double now, const std::vector<void*>& creatures)
 {
     void* av = game::avatar();
@@ -1071,6 +1120,7 @@ static void host_tick(double now, const std::vector<void*>& creatures)
                 hn.centre_said = false;
         }
     }
+    pack_spares_partners(creatures); // BUG-0512
     // creatures the game took out of the world (BUG-0274): the creature stage keeps NPCs only around
     // the host's avatar; one farther away goes back to the creature pool (herd cleared, position
     // (0 0 0), no more updates) and the nest spawns it again when it misses a member. It used to keep
@@ -2087,6 +2137,10 @@ std::string status()
                  (unsigned)g_host_npcs.size(), (unsigned)g_seen_now.size(), (unsigned)known, g_hits_applied,
                  g_kills_credited, g_strays_removed, g_hatch_helped, (int)g_partner_targets, (unsigned)on_partner,
                  g_ai_partner_picks, game::ai_swaps(), game::swaps_restored(), game::swap_ledger_restored(), g_reused, (unsigned)teamplay::hit_targets(), g_pooled_retired);
+        char b2[128]; // BUG-0512
+        snprintf(b2, sizeof b2, "npc(host) pack: partner_targets_cleared=%u partner_stimuli_cleared=%u\n", g_pack_targets_cleared,
+                 g_pack_stimuli_cleared);
+        return std::string(b) + b2 + game::destroy_deferred_status() + "\n";
     } else {
         unsigned spawned = 0;
         for (auto& [id, px] : g_proxies)

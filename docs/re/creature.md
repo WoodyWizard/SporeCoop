@@ -2163,3 +2163,57 @@ BUG-0501 (open). GOG 2024, Ghidra strings and decompiles only, not seen at runti
   guest's roar sent to the host, the host sets the same variable on its NPCs around the guest's puppet. Neither
   fixture creature has the ability (types 0xD 0xE 0x10 0x11 0x1D 0x1E 0x25 0x28 0x31 0x32 0x33): a test needs a
   creature from a carnivore Cell.
+## A partner's puppet freed by the game, liveness of puppets (2026-11-03, fix/w40-guest-combat)
+<a id="creature-puppet-alive"></a>
+
+* ✔ The Creature (and Adventure) adapter had no `alive` callback (Cell and Space had one), so `puppet_now()` and
+  `drive_puppet()` never checked that the raw puppet pointer `Remote::puppet` was still a creature: a puppet the
+  game destroyed by itself was driven on every frame (BUG-0507: a guest crash in set_speed, the memory reused by
+  a cModelObject). `creature.puppet_alive` adds `creature_alive` (modes.cpp): the game's object list holds the
+  pointer as a live creature (noun 0x18EB45E, +0x21 = 0) and its cGameData serial (+0x24) is the one recorded at
+  the spawn; checked once per frame and puppet (cache by `frame_index`). A dead one is dropped from the puppet
+  list (`puppet_unregister`, a new creature at the address is no puppet) and drive_puppet makes a new puppet.
+* ✔ Lab (lane 2): cGameNounManager::DestroyInstance on a puppet (`coop.puppet gamekill`) takes it out of the
+  object list at once; the memory was not reused within 4 s and driving the dead creature did not fault (with
+  the switch off the mod kept the dead pointer, the partner was gone from the screen for good).
+* ✔ Negative: two device Resets (Alt+Enter on the guest) do not free or replace the partner's puppet.
+* ? What freed the puppet on the player's PC is not known: the log has no hide / despawn line of ours (the puppet
+  was shown, d=7 m, 30/44 hp, a cinematic had run 40 s before), then a 4.1 s hitch, a device Reset and the crash
+  0.6 s later. Candidates not checked: the game's own cleanup of a creature after a frame of 4 s (fell out of the
+  world?), a cinematic's actor cleanup. The check covers any of them.
+
+## The host's pack and a partner as its target (2026-11-03, fix/w40-guest-combat)
+<a id="creature-pack-target"></a>
+
+* ✔ A left click on a creature sets the avatar's target **+0xE7C** to that creature's combatant (+0x5A8): a click on
+  the partner's puppet on the host gave avatar +0xE7C = puppet + 0x5A8 (lane 2, 3 times).
+* ✔ Negative: neither that click, nor 10 PlayAbility calls of ability 0 or the key 1 after it, made the recruited pack
+  member take the puppet as its target in 15 s (its +0xE7C stayed 0, node 0x02D852F6). The pack's "help the leader"
+  trigger is not found.
+* ✔ SetTarget (creature vt 0x84, `thiscall(target, 1, 0)`) takes the target's **combatant** (creature + 0x5A8), not
+  the creature: called with the creature pointer the host game hung or died at once (lane 2). With the combatant the
+  pack member held +0xE7C on the puppet for good (node 0x02D852F6, no bite in 10 s).
+* ✔ The players' host log (0.7.3.6): during that fight the pack's hits on the guest's puppet arrived every 0.3 s and
+  were all dropped by `npc.party_peace` (`hit by pack posse=1 amount=0.0 dropped`); the hits that reached the guest
+  were from other NPCs (`hit by npc posse=0`, forwarded). So on 0.7.3.6 the pack fought the guest on both screens
+  without damage; the guest's losses in that fight came from the wild NPCs.
+* `npc.pack_spares_partners` (npc.cpp, BUG-0512): on the host every frame, a pack member (the pack list
+  cGameNounManager +0x5C..+0x60: it is not always in the creature update list) or family member aimed at a partner's
+  puppet gets SetTarget(null, 1, 0) and its stimuli naming the puppet cleared.
+
+## A stalled partner drawn under the ground (2026-11-03, fix/w40-guest-combat)
+<a id="creature-partner-stalled"></a>
+
+* ✔ Players' logs (0.7.3.6, BUG-0513): the guest's own trace showed its creature at agl=-6.53 (6.5 m under its own
+  ground) while `busy=paused` during a 12 s stall (receiving a world), then 0.31 after; the host drew the puppet at
+  agl -6.32 and later -3.2 (states arriving), then hid it after 5 s without states (`state older than 5 s`).
+  `creature.puppet_ground` (BUG-0367) leaves a target more than 3 m under this game's ground where it is.
+* ✔ Lab (lane 2): with the guest's states 6 m under the host's ground (`coop.track lift -6`) a standing puppet stays
+  on the ground (the game's own grounding); a walking one is drawn under it (144 frames, switch off).
+* `creature.puppet_deep`: a target 3-15 m under this game's ground goes onto it (`drive::out_of_ground`, as the
+  proxies, BUG-0399). `core.partner_silent`: "<name> is not responding (game minimized or frozen?)" once when a
+  partner's states are older than 5 s, "<name> is responding again" when they come back (coop.cpp silent_tick).
+* `frame.limit 9000` on a game stalls it in the lab (a frame every 9 s, no states between them): the hitch gate and
+  the monitor's "hidden" rule see it.
+* ? Why the guest's game holds its creature under its ground while paused or stalled is not known (inferred: the
+  terrain of a world being received, or the creature not grounded while the game does not update).

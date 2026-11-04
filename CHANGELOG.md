@@ -5,6 +5,14 @@
 ### Fixed
 - Creature: a guest now sees the host's animals look around, eat, answer and fight as they do on the host,
   instead of standing still or only walking (BUG-0464).
+- Creature: a partner whose game froze or was minimized is no longer shown sunk into the ground; you
+  are told that the partner is not responding, and when it is back (BUG-0513).
+- Cell: a knocked-out cell can no longer bite, spike or kill anything while it waits to be revived
+  (BUG-0509).
+- Creature: the host's pack no longer turns on a partner when the host targets the partner's creature or
+  fights next to it (BUG-0512).
+- Creature: a guest no longer crashes when its game removes the partner's creature by itself (seen after
+  a long freeze or alt-tab); the partner is shown again (BUG-0507).
 - Creature: animals are neutral, hostile or allied to a guest as they are to the host; a guest playing its own
   creature no longer sees neutral species as hostile (BUG-0462).
 - Creature: a partner who sneaks is shown sneaking (see-through) on your screen too, and the host's animals

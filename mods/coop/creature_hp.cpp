@@ -303,6 +303,24 @@ static int c_hp(void*, int argc, const char* const* argv, SkOut* out)
         say("attack message sent\n");
         return 0;
     }
+    if (argc > 2 && !strcmp(argv[1], "packtarget")) { // host (tests, BUG-0512): every pack member takes a partner's
+        void* p = C.puppet_of ? C.puppet_of((uint8_t)atoi(argv[2])) : nullptr; // puppet as its target (SetTarget
+        void* nm = game::noun_manager();                                        // vt 0x84, as the attack node's enter)
+        bool sub = argc > 3 && !strcmp(argv[3], "combatant"); // the combatant (+0x5A8) instead of the creature
+        int n = 0;
+        for (void** it = nm && p ? skg::field<void**>(nm, 0x5C) : nullptr, **e = nm ? skg::field<void**>(nm, 0x60) : nullptr;
+             it && it < e; ++it)
+            if (*it && !IsBadReadPtr(*it, 0x1680) && !game::is_dead(*it)) {
+                skg::vcall<void>(*it, 0x84 / 4, sub ? (void*)((uint8_t*)p + 0x5A8) : p, 1, 0);
+                char b[96];
+                snprintf(b, sizeof b, "pack %p target %p (puppet %p)\n", *it, skg::field<void*>(*it, 0xE7C), p);
+                say(b);
+                n++;
+            }
+        if (!n)
+            say("no puppet or no pack member\n");
+        return n ? 0 : 1;
+    }
     if (argc > 3 && !strcmp(argv[1], "packhit")) { // host (tests, the monitor's posse_damage): a pack member hits a puppet
         void* p = C.puppet_of ? C.puppet_of((uint8_t)atoi(argv[2])) : nullptr;
         void* nm = game::noun_manager();
@@ -374,7 +392,7 @@ void init(const SkHost* host, SkMod* mod, Ctx ctx)
         H->hook_create(M, (void*)a, (void*)h_IsPlayerSpecies, (void**)&o_IsPlayerSpecies);
     if (uintptr_t a = H->sym("SporeCoop::cCreatureAnimal_GetMaxHitPoints"))
         H->hook_create(M, (void*)a, (void*)h_GetMaxHp, (void**)&o_GetMaxHp);
-    H->command_add(M, "coop.hp", "coop.hp [pack|attack <player>|packhit <player> <hp>] - creature health of the own avatar, partners' puppets, the pack (tests)",
+    H->command_add(M, "coop.hp", "coop.hp [pack|attack <player>|packhit <player> <hp>|packtarget <player> [combatant]] - creature health of the own avatar, partners' puppets, the pack (tests)",
                    c_hp, nullptr, SK_CMD_MAIN_THREAD);
     H->command_add(M, "coop.sneak", "coop.sneak [on|off|force] - the sneak state of the own avatar and the partners' puppets (tests, BUG-0463)",
                    c_sneak, nullptr, SK_CMD_MAIN_THREAD);

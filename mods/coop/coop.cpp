@@ -96,6 +96,7 @@ struct Remote {
     const modes::Adapter* puppet_adapter = nullptr; // adapter that created `puppet`
     uint32_t puppet_world = 0; // the place `puppet` was made in
     bool echo = false; // local loopback test remote
+    bool silent_said = false; // BUG-0513: "is not responding" was told (core.partner_silent)
     uint64_t world_sent = 0; // host: (mode << 32 | save crc) last sent to this guest
     double other_mode_since = -1; // host: since when the guest plays another mode
     bool joined_phase = false; // host: the guest played the host's mode after the last world send
@@ -667,12 +668,35 @@ int c_track(void*, int argc, const char* const* argv, SkOut* out)
     return 0;
 }
 
+// BUG-0513: a partner whose game stops sending (minimized, alt-tabbed full screen, a stall of 17-38 s) was hidden
+// after 5 s without a word ("the guest is bugged into the ground"). With core.partner_silent the others are told
+// once that the partner is not responding and when it plays again. Off: 0.7.3.6.
+static bool g_partner_silent_fix = true;
+COOP_FIX("core.partner_silent", "BUG-0513", g_partner_silent_fix, "core: a partner whose game stopped answering (minimized, frozen) is announced, and when it is back");
+uint32_t g_silent_notices = 0; // tests
+
+static void silent_tick(Remote& r, double now)
+{
+    if (!g_partner_silent_fix || r.echo || r.buf.empty())
+        return;
+    double age = r.buf.age(now);
+    if (!r.silent_said && age > 5.0 && g_sess.connected()) {
+        r.silent_said = true;
+        g_silent_notices++;
+        feed(r.name + " is not responding (game minimized or frozen?)");
+    } else if (r.silent_said && age < 1.0) {
+        r.silent_said = false;
+        feed(r.name + " is responding again");
+    }
+}
+
 void drive_puppet(Remote& r, double now)
 {
     net::PlayerState s;
     r.buf.jump_speed = g_mode == modes::kCreature ? modes::puppet_jump_speed() : 0.f; // BUG-0499
     if (!r.buf.sample(now, s))
         return;
+    silent_tick(r, now);
     // dead players are hidden until they respawn
     bool visible = g_adapter && g_local && (s.flags & net::PF_IN_WORLD) && !(s.flags & net::PF_DEAD) &&
                    r.buf.age(now) < 5.0 && (r.echo || same_place(s)) && now >= g_puppet_hide_until;
@@ -3764,6 +3788,9 @@ int c_status(void*, int, const char* const*, SkOut* out)
                 SAY("   drive err=%.2f speed=%.2f nudges=%u kept=%u teleports=%u walk_goals=%u jumps=%u\n", r.drv.last_err,
                     r.drv.last_speed, r.drv.nudges, r.drv.nudges_kept, r.drv.teleports, r.drv.goals, r.drv.jumps);
         }
+        // tests (BUG-0507): the puppet the mod holds is a live creature in the game's own object list
+        if (r.puppet && creature_puppet(r.puppet_adapter))
+            SAY("puppet_listed %u %d gone_by_game=%u\n", id, (int)game::creature_listed(r.puppet), modes::g_puppets_gone_alive);
         // tests: both players are in the same world and place right now
         SAY("together %u %d\n", id, !r.buf.empty() && r.buf.age(now) < 3.0 && same_place(r.buf.latest()) ? 1 : 0);
     }
@@ -5107,7 +5134,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     H->command_add(M, "coop.leave", "leave the session", c_leave, nullptr, MT);
     H->command_add(M, "coop.framefix", "coop.framefix [0|1] - forget a torn-down world's puppets before the frame's messages (tests: 0 = the old order, BUG-0091)",
                    c_framefix, nullptr, MT);
-    H->command_add(M, "coop.puppet", "coop.puppet hold on|off | respawn [s] - tests: the remote players' puppets are not moved (a seeded failure for coop_mode.py, BUG-0251); respawn: removed now, shown again next frame or after s seconds (BUG-0453)",
+    H->command_add(M, "coop.puppet", "coop.puppet hold on|off | respawn [s] | gamekill - tests: the remote players' puppets are not moved (a seeded failure for coop_mode.py, BUG-0251); respawn: removed now, shown again next frame or after s seconds (BUG-0453); gamekill: the game destroys the Creature puppets behind the mod's back (BUG-0507)",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
                        if (argc > 1 && !strcmp(argv[1], "respawn")) { // tests (BUG-0453): every partner's puppet
                            int n = 0; // goes now (as on a death or a hide) and is shown again next frame or in <s> s
@@ -5118,6 +5145,16 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                                    n++;
                                }
                            SAY("%d puppet(s) removed\n", n);
+                           return 0;
+                       }
+                       if (argc > 1 && !strcmp(argv[1], "gamekill")) { // tests (BUG-0507): the game destroys
+                           int n = 0; // every partner's Creature puppet behind the mod's back (as it did on a
+                           for (auto& [id, r] : g_remotes) // player's PC): the mod must notice and show it again
+                               if (r.puppet && creature_puppet(r.puppet_adapter)) {
+                                   game::destroy_untracked(r.puppet);
+                                   n++;
+                               }
+                           SAY("%d puppet(s) destroyed by the game\n", n);
                            return 0;
                        }
                        if (argc > 2 && !strcmp(argv[1], "hold"))
