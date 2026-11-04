@@ -10,11 +10,11 @@ role: both
 versions: 0.7.3.4, 0.7.3.6
 fixed_in: unreleased
 branch: fix/w40-dna-social
-commits: f384cc0f
+commits: f384cc0f 9d90117e
 tests: dna_pace (tools/tests/coop_dna_pace.py), dna_pace_cell (--cell)
 signature:
 docs: docs/re/creature.md#creature-dna-pace
-switch: core.dna_pace (coop.ini [coop] dna_pace)
+switch: core.dna_pace
 related: BUG-0351, BUG-0345, BUG-0466, BUG-0423
 ---
 

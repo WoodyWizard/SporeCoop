@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.3.6
 fixed_in: unreleased
 branch: fix/w40-dna-social
-commits: 7d2bfa0d
+commits: 7d2bfa0d 9a5bfb11
 tests: creature_social_bar (tools/tests/coop_creature_social_bar.py)
 signature:
 docs: docs/re/creature.md#creature-guest-social-bar
