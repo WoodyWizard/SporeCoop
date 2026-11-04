@@ -109,13 +109,21 @@ def main():
     print('  guest:', out)
     held_h = held_g = None
     t0 = time.time()
-    while time.time() - t0 < 60:
+    again = False
+    while time.time() - t0 < 90:
         time.sleep(3)
         _, hh = tools(host)
         _, gh = tools(guest)
         held_h, held_g = hh.get(pick), gh.get(pick)
         if held_h == a.type and held_g == a.type:
             break
+        if not again and time.time() - t0 > 40 and held_h != a.type:
+            # the host's member did not go for it (seen once in 5 runs: the order done, the member busy
+            # with something of its own game): a player clicks the rack again
+            again = True
+            line = next((l.strip() for l in host.call('coop.tribe')['out'].splitlines() if re.match(rf'\s+#{pick} ', l)), '')
+            print(f'  host member after 40 s: {line[:150]}')
+            print('  guest (again):', guest.call(f'coop.tribe grab {pick} {rack[0]}')['out'].strip())
     m = re.search(r'tribe last order: (.*)', host.call('coop.status')['out'])
     print('  host order:', m.group(1) if m else '')
     ck(held_h == a.type, f'the guest\'s member #{pick} took the weapon in the host\'s game (tool {held_h})')
