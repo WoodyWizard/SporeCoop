@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in: unreleased
 branch: fix/w42-space-life
-commits:
+commits: 003267c3
 tests: space_finale_wait
 signature:
 docs: docs/re/space.md#space-fast-ship-track
