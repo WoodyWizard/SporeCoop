@@ -1821,3 +1821,18 @@ Found by fix/w40-play (2026-11-03), not fixed:
   own spot (the detector's `Tribe:unmatched:tribe_tool`). A guest's tribe the host no longer has loses its members
   (tribe.guest_tribes) but its hut, tools and food mat stay: no game function to remove a whole tribe is known.
 * Ticket: BUG-0523, BUG-0483
+* Update (2026-11-04, fix/w42-tribe-left): the tools are synced now (BUG-0523 fixed: every tribe's tools are the
+  host's; a guest's own tools the host has not are removed with the game's RemoveTool, so an emptied village loses
+  its tools too). Its hut and food mat still stay (BUG-0483). Left: a tool made by the mod is in no village layout
+  slot; a guest selling a tool is not sent (the host keeps it).
+## Tribe: a member stalled in the gather behaviour, the chiefs at a 4-player arrival (2026-11-04, fix/w42-tribe-left)
+<a id="issue-tribe-gather-chiefs"></a>
+
+* What happens: play_tribe saw a member in the gather node (state 1, standing, its walk goal the old tree) that did
+  not act on new orders (BUG-0531); with 4 players the chiefs arrive close together and the game's idle behaviour
+  brings them back next to each other (BUG-0340).
+* Not reproduced with 2 players: a guest's walk order took a gathering member out of the node in 7 of 7 runs
+  (tribe_gather_stall), and chiefs put in each other after the arrival were parted by the game within 14 s
+  (tribe_chiefs_apart check 5). Both tests are regression checks; next step a 4-player campaign
+  (`coop_campaign.py --from creature --to tribe --players 4`) and play_tribe's idle order lines (`coop.tribe ai`).
+* Ticket: BUG-0531, BUG-0340

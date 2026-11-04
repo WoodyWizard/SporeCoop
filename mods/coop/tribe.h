@@ -88,4 +88,22 @@ void for_each_player_tool(void (*fn)(void* tool, int type, const net::Vec3& pos,
 // makes it (cTribe::CreateTool, SetTribe, the model, the purchased bit); nullptr: failed
 void* make_player_tool(int type, const net::Vec3& pos);
 
+// BUG-0523: the tools of every tribe of this game (`all` false: the player tribe's only). `tribe` is the host's
+// index of the tool's tribe (the MSG_TRIBE_STATE table order; on a guest its local tribe mapped back, -1 when no
+// host tribe maps to it), `player` the player tribe's. A tool the palette is dragging (its spatial +0x72, set by
+// the placement's drag 0xD09FA0) is left out: it is not placed yet.
+using ToolFn = void (*)(void* tool, int type, int tribe, bool player, const net::Vec3& pos, void* user);
+void for_each_tool(bool all, ToolFn fn, void* user);
+// a tool of `type` for the tribe the host's index `tribe` names (on a guest its mapped local tribe) at `pos`;
+// nullptr: no such tribe here, the tribe is not near `pos` or the game failed
+void* make_tool(int tribe, int type, const net::Vec3& pos);
+// this game's tribe of host index `tribe` has a tool of `type` (also one being dragged); -1: no such tribe here
+int has_tool_type(int tribe, int type);
+// the game's cTribe::RemoveTool (vt 0xB8: out of the village's layout slots and tool lists, destroyed), as the
+// palette does with a tool that is sold or placed again
+bool remove_tool(void* tool);
+// BUG-0524 (host): a guest bought a tool of `type` for the player tribe and placed it at `pos`: the same here (a
+// tool of that type elsewhere goes, as the palette's placement of a type the tribe has); false: nothing done
+bool buy_player_tool(int type, const net::Vec3& pos);
+
 } // namespace tribe

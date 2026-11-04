@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Fixed
+- Tribe: the tools of every tribe (the other tribes' fire pits, racks and huts too) now stand at the same places in
+  every player's game; a guest's game no longer shows tools there the host's game does not have (BUG-0523).
+- Tribe: a tool a guest buys and places now appears in the host's game too, at the same spot, and the guest's
+  members can take the weapon or instrument from it (BUG-0524).
+
 ## [0.7.5] - 2026-11-04
 
 ### Fixed

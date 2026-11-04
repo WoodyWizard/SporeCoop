@@ -514,11 +514,170 @@ void* make_player_tool(int type, const net::Vec3& pos)
     thiscall<void>(a_SetToolPurchased, t, type);
     return tool;
 }
+
+// ---- every tribe's tools (BUG-0523 / BUG-0524, docs/re/tribe.md#tribe-tools-all) ----
+constexpr uintptr_t kToolDragOff = 0x34 + 0x72; // the tool's spatial (+0x34) +0x72: the palette is dragging it
+static std::vector<void*> tribe_tools(void* t)
+{
+    std::vector<void*> v;
+    if (!t || IsBadReadPtr((uint8_t*)t + kToolsOff, 8))
+        return v;
+    void** b = F<void**>(t, kToolsOff);
+    void** e = F<void**>(t, kToolsOff + 4);
+    if (!b || e < b || e - b > 64 || IsBadReadPtr(b, (e - b) * 4))
+        return v;
+    for (void** it = b; it < e; ++it)
+        if (*it && game::object_alive(*it))
+            v.push_back(*it);
+    return v;
+}
+static bool tool_dragged(void* tool) { return F<uint8_t>(tool, kToolDragOff) != 0; }
+static void* g_test_dragged; // tests: the tool `coop.tribe buy` drags
+
+// this game's tribe of the host's index i (the host: its own list; a guest: the mapping of the last tribe state)
+static void* tribe_of_index(int i)
+{
+    if (i < 0)
+        return nullptr;
+    if (is_host()) {
+        auto ts = all_tribes();
+        return i < (int)ts.size() && i < 32 ? ts[i] : nullptr;
+    }
+    return i < (int)g_local_tribe_of.size() ? g_local_tribe_of[i] : nullptr;
+}
+
+void for_each_tool(bool all, ToolFn fn, void* user)
+{
+    if (!g_ok)
+        return;
+    void* pt = player_tribe();
+    std::vector<void*> ts;
+    if (all)
+        ts = all_tribes();
+    else if (pt)
+        ts.push_back(pt);
+    for (size_t ti = 0; ti < ts.size() && ti < 64; ti++) {
+        void* t = ts[ti];
+        int ix = -1;
+        if (is_host())
+            ix = all ? (ti < 32 ? (int)ti : -1) : -1;
+        else
+            for (size_t i = 0; i < g_local_tribe_of.size(); i++)
+                if (g_local_tribe_of[i] == t) {
+                    ix = (int)i;
+                    break;
+                }
+        if (is_host() && !all) { // the player tribe's index in the host's table
+            auto at = all_tribes();
+            auto f = std::find(at.begin(), at.end(), t);
+            ix = f != at.end() && f - at.begin() < 32 ? (int)(f - at.begin()) : -1;
+        }
+        for (void* tool : tribe_tools(t)) { // a copy: fn may make or remove a tool
+            net::Vec3 p;
+            if (tool_dragged(tool) || !game::object_position(tool, p))
+                continue;
+            fn(tool, tool_type(tool), ix, t == pt, p, user);
+        }
+    }
+}
+
+static void* make_tool_in(void* t, int type, const net::Vec3& pos)
+{
+    if (!t || type < 1 || type > 10 || !a_ToolModelReset || !a_SetToolPurchased)
+        return nullptr;
+    void* tool = vcall<void*>(t, 0xB4 / 4, type);
+    if (!tool)
+        return nullptr;
+    vcall<void>(tool, 0x64 / 4, t);
+    thiscall<void>(a_ToolModelReset, tool);
+    void* sp = game::cast(tool, 0x1186577);
+    if (sp) {
+        float p[3] = {pos.x, pos.y, pos.z};
+        net::Quat r = upright(pos);
+        float q[4] = {r.x, r.y, r.z, r.w};
+        vcall<void>(sp, 0x38 / 4, (const float*)p);
+        vcall<void>(sp, 0x3C / 4, (const float*)q);
+    }
+    thiscall<void>(a_SetToolPurchased, t, type);
+    return tool;
+}
+
+void* make_tool(int tribe, int type, const net::Vec3& pos)
+{
+    void* t = g_ok ? tribe_of_index(tribe) : nullptr;
+    if (!t || net::dist(tribe_pos(t), pos) > 150.f) // a tool stands in its village (a stale mapping: not here)
+        return nullptr;
+    return make_tool_in(t, type, pos);
+}
+
+int has_tool_type(int tribe, int type)
+{
+    void* t = g_ok ? tribe_of_index(tribe) : nullptr;
+    if (!t)
+        return -1;
+    for (void* tool : tribe_tools(t))
+        if (tool_type(tool) == type)
+            return 1;
+    return 0;
+}
+
+bool remove_tool(void* tool)
+{
+    if (!g_ok || !tool)
+        return false;
+    for (void* t : all_tribes())
+        for (void* x : tribe_tools(t))
+            if (x == tool) {
+                vcall<void>(t, 0xB8 / 4, tool);
+                return true;
+            }
+    return false;
+}
+
+static uint32_t g_tools_bought;
+bool buy_player_tool(int type, const net::Vec3& pos)
+{
+    void* pt = g_ok ? player_tribe() : nullptr;
+    if (!pt || type < 1 || type > 10 || !std::isfinite(pos.x) || !std::isfinite(pos.y) || !std::isfinite(pos.z) ||
+        !(net::dist(tribe_pos(pt), pos) <= 150.f)) // a guest's request: a place near the player tribe only
+        return false;
+    for (void* tool : tribe_tools(pt)) {
+        net::Vec3 p;
+        if (tool_type(tool) != type || !game::object_position(tool, p))
+            continue;
+        if (net::dist(p, pos) < 2.f)
+            return false; // there already
+        if (tool_dragged(tool))
+            return false; // this game's player is placing one of the type now
+    }
+    // the palette's placement of a type the tribe has: the old one goes (0xD13C05: RemoveObject, RemoveTool)
+    for (void* tool : tribe_tools(pt))
+        if (tool_type(tool) == type)
+            vcall<void>(pt, 0xB8 / 4, tool);
+    void* tool = make_tool_in(pt, type, pos);
+    if (tool)
+        g_tools_bought++;
+    return tool != nullptr;
+}
 // BUG-0505: what a member does in its game (docs/re/tribe.md#tribe-orders): the order record (ai+0x60C list,
 // rec+0 action, +0x28 target, +0x38 has target), the behaviour node (ai+0x1D8) with its depth (ai+0x1DC) and
 // the leaf node's memory (ai+0x1D0 + 4 * (0xF + 0x2B * (depth - 1)), the 6th argument of a node's enter /
 // tick), the walk (spatial c+0xC0: goal mode +0x250, flags +0x270, goal = last of the list +0x1F4..+0x1F8
 // minus 0x3C, or +0x208)
+// BUG-0531: the food a member carries (its cGameBundleContainer at c+0x38: bundle vector +4..+8, amount at
+// bundle +0x134), what the gather node's 0xCEE4E0 sums
+static float carried(void* c)
+{
+    void** b = F<void**>(c, 0x3C);
+    void** e = F<void**>(c, 0x40);
+    float sum = 0;
+    if (!b || e < b || e - b > 32 || !skg::readable(b, (e - b) * 4))
+        return 0;
+    for (void** it = b; it < e; ++it)
+        if (*it && skg::readable(*it, 0x138))
+            sum += *(float*)((uint8_t*)*it + 0x134);
+    return sum;
+}
 static std::string ai_line(void* c)
 {
     uint8_t* ai = F<uint8_t*>(c, 0xB4C);
@@ -548,7 +707,9 @@ static std::string ai_line(void* c)
              rec ? *(int*)rec : -1, rec ? *(void**)(rec + 0x28) : nullptr, rec ? (int)rec[0x38] : 0, node, depth, (int)mem[0],
              mem[1], *(float*)&mem[2], *(float*)&mem[3], *(float*)&mem[4], mem[5], (int)mem[6], (int)mem[7], mode, lf,
              goal[0], goal[1], goal[2], goal[3], p.x, p.y, p.z, F<uint8_t>(c, kSelectedOff));
-    return b;
+    char e[64];
+    snprintf(e, sizeof e, " carry=%.1f tool=%d", carried(c), F<int>(c, kHeldToolOff));
+    return std::string(b) + e;
 }
 static bool save_filter(void* o, uint32_t noun); // BUG-0495 (below)
 static void* SK_THISCALL h_Form(void* self, int arg); // BUG-0483 (below)
@@ -2752,7 +2913,7 @@ std::string debug(const std::vector<std::string>& a)
         thiscall<int>(a_WalkSelected, (void*)nullptr, (const float*)p);
         return "walk ordered";
     }
-    if (!a.empty() && a[0] == "tools") { // BUG-0514: the player tribe's tools, and what the own members hold
+    if (!a.empty() && a[0] == "tools" && (a.size() < 2 || a[1] != "all")) { // BUG-0514: the player tribe's tools, and what the own members hold
         std::string s;
         struct U {
             std::string* s;
@@ -2776,9 +2937,9 @@ std::string debug(const std::vector<std::string>& a)
             snprintf(b, sizeof b, "held %u owner=%u tool=%d\n", id, owner_of(c), F<int>(c, kHeldToolOff));
             s += b;
         }
-        char b[96];
-        snprintf(b, sizeof b, "tools n=%d tool_sets=%u hold_fix=%d grab_spot=%d moves=%u\n", u.i, g_tool_sets, (int)g_tool_hold_fix,
-                 (int)g_grab_spot_fix, g_grab_spot_moves);
+        char b[192];
+        snprintf(b, sizeof b, "tools n=%d tool_sets=%u hold_fix=%d grab_spot=%d moves=%u\n", u.i, g_tool_sets,
+                 (int)g_tool_hold_fix, (int)g_grab_spot_fix, g_grab_spot_moves);
         return s + b;
     }
     if (a.size() >= 2 && a[0] == "build" && is_host()) { // build <type> [metres]: test setup, a tool as if bought
@@ -2803,6 +2964,94 @@ std::string debug(const std::vector<std::string>& a)
         char b[128];
         snprintf(b, sizeof b, "built %p type=%s at (%.2f %.2f %.2f)", tool, a[1].c_str(), p.x, p.y, p.z);
         return tool ? std::string(b) : std::string("build failed");
+    }
+    // BUG-0523 / BUG-0524 (tests): every tribe's tools with the host's index of their tribe
+    if (a.size() >= 2 && a[0] == "tools" && a[1] == "all") {
+        std::string s;
+        for_each_tool(
+            true,
+            [](void* t, int type, int ix, bool player, const net::Vec3& p, void* up) {
+                char b[160];
+                snprintf(b, sizeof b, "atool %p serial=%u tribe=%d player=%d type=%d pos=(%.2f %.2f %.2f)\n", t, game::object_serial(t), ix,
+                         (int)player, type, p.x, p.y, p.z);
+                *(std::string*)up += b;
+            },
+            &s);
+        char b[96];
+        snprintf(b, sizeof b, "tribes=%u mapped=%u bought=%u\n", (unsigned)all_tribes().size(), (unsigned)g_local_tribe_of.size(), g_tools_bought);
+        return s + b;
+    }
+    // place <tribe index | p> <type> <metres> [degrees]: test setup, a tool for a tribe of this game (the host's index;
+    // p the player tribe) that far from the tribe's centre, as a tribe's purchase makes it (no drag)
+    // buy <type> <metres> [degrees]: the palette's placement in this game's player tribe (0xD13C05): the old tool of
+    // the type goes, the new one is made and dragged (spatial +0x72) until `buy_end`, which sets the purchased bit
+    if (a.size() >= 4 && (a[0] == "place" || a[0] == "buy")) {
+        bool buy = a[0] == "buy";
+        size_t o = buy ? 0 : 1;
+        void* t = buy || a[1] == "p" ? player_tribe() : tribe_of_index(atoi(a[1].c_str()));
+        if (!t)
+            return "no such tribe";
+        int type = atoi(a[1 + o].c_str());
+        float d = (float)atof(a[2 + o].c_str()), deg = a.size() > 3 + o ? (float)atof(a[3 + o].c_str()) : 0.f;
+        net::Vec3 c = tribe_pos(t);
+        float l = std::sqrt(c.x * c.x + c.y * c.y + c.z * c.z);
+        if (l < 1.f)
+            return "no tribe position";
+        net::Vec3 n{c.x / l, c.y / l, c.z / l};
+        net::Vec3 ax = std::fabs(n.z) < 0.9f ? net::Vec3{0, 0, 1} : net::Vec3{1, 0, 0};
+        net::Vec3 u{n.y * ax.z - n.z * ax.y, n.z * ax.x - n.x * ax.z, n.x * ax.y - n.y * ax.x};
+        float ul = std::sqrt(u.x * u.x + u.y * u.y + u.z * u.z);
+        u = {u.x / ul, u.y / ul, u.z / ul};
+        net::Vec3 w{n.y * u.z - n.z * u.y, n.z * u.x - n.x * u.z, n.x * u.y - n.y * u.x};
+        float ca = std::cos(deg * 3.14159265f / 180.f), sa = std::sin(deg * 3.14159265f / 180.f);
+        net::Vec3 p{c.x + (u.x * ca + w.x * sa) * d, c.y + (u.y * ca + w.y * sa) * d, c.z + (u.z * ca + w.z * sa) * d};
+        float g = game::ground_radius(p), pl = std::sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
+        if (g > 1.f && pl > 1.f)
+            p = {p.x / pl * g, p.y / pl * g, p.z / pl * g};
+        void* tool = nullptr;
+        if (buy) {
+            std::vector<void*> old;
+            for (void* x : tribe_tools(t))
+                if (tool_type(x) == type)
+                    old.push_back(x);
+            tool = vcall<void*>(t, 0xB4 / 4, type);
+            if (tool) {
+                F<uint32_t>(tool, 0x84) |= 8;
+                vcall<void>(tool, 0x64 / 4, t);
+                thiscall<void>(a_ToolModelReset, tool);
+                F<uint8_t>(tool, kToolDragOff) = 1;
+                void* sp = game::cast(tool, 0x1186577);
+                if (sp) {
+                    float pp[3] = {p.x, p.y, p.z};
+                    net::Quat r = upright(p);
+                    float q[4] = {r.x, r.y, r.z, r.w};
+                    vcall<void>(sp, 0x38 / 4, (const float*)pp);
+                    vcall<void>(sp, 0x3C / 4, (const float*)q);
+                }
+                for (void* x : old)
+                    vcall<void>(t, 0xB8 / 4, x);
+                g_test_dragged = tool;
+            }
+        } else
+            tool = make_tool_in(t, type, p);
+        char b[160];
+        snprintf(b, sizeof b, "%s %p type=%d at (%.2f %.2f %.2f)", buy ? "dragging" : "placed", tool, type, p.x, p.y, p.z);
+        return tool ? std::string(b) : std::string("failed");
+    }
+    if (!a.empty() && a[0] == "buy_end") { // the end of `buy`'s drag: placed, the purchased bit (0xD10F90)
+        void* pt = player_tribe();
+        void* tool = g_test_dragged;
+        g_test_dragged = nullptr;
+        auto ts = tribe_tools(pt);
+        if (!tool || std::find(ts.begin(), ts.end(), tool) == ts.end())
+            return "nothing dragged";
+        F<uint8_t>(tool, kToolDragOff) = 0;
+        thiscall<void>(a_SetToolPurchased, pt, tool_type(tool));
+        net::Vec3 p;
+        game::object_position(tool, p);
+        char b[128];
+        snprintf(b, sizeof b, "placed %p type=%d at (%.2f %.2f %.2f)", tool, tool_type(tool), p.x, p.y, p.z);
+        return b;
     }
     if (a.size() >= 2 && a[0] == "layout" && a_ToolLayout) { // layout <tool type>: the tribe's grab spots of a type
         void* pt = player_tribe();
@@ -2837,6 +3086,26 @@ std::string debug(const std::vector<std::string>& a)
         char b[96];
         snprintf(b, sizeof b, "put #%s at (%.1f %.1f %.1f)", a[1].c_str(), p.x, p.y, p.z);
         return b;
+    }
+    // order <member id> <action> <x> <y> <z>: test setup (BUG-0531, host), the member's DoAction as an order gives it:
+    // 4 walks there, 2 gathers the tree there, others take the object of this game nearest there (8 m)
+    if (a.size() >= 6 && a[0] == "order" && is_host()) {
+        void* c = local_of((uint16_t)atoi(a[1].c_str()));
+        int action = atoi(a[2].c_str());
+        net::Vec3 p{(float)atof(a[3].c_str()), (float)atof(a[4].c_str()), (float)atof(a[5].c_str())};
+        if (!c)
+            return "no such member";
+        if (action == 4) {
+            void* rec = thiscall<void*>(a_DoAction, c, 4, (void*)nullptr, (void*)nullptr);
+            if (rec)
+                thiscall<void>(a_SetValueVector3, (uint8_t*)rec + 0x39, (const float*)&p);
+            return "walk ordered";
+        }
+        void* tgt = action == 2 ? find_tree(p, 3.f) : nullptr;
+        if (!tgt)
+            return "no target there";
+        thiscall<void*>(a_DoAction, c, action, tgt, (void*)nullptr);
+        return "ordered " + std::to_string(action);
     }
     if (a.size() >= 2 && a[0] == "ai") { // ai <member id>: BUG-0505, the member's order record, node and walk
         void* c = local_of((uint16_t)atoi(a[1].c_str()));
@@ -2882,6 +3151,32 @@ std::string debug(const std::vector<std::string>& a)
         void* vec[3] = {sel.data(), sel.data() + sel.size(), sel.data() + sel.size()};
         int r = thiscall<int>(a_DoActionForObjects, (void*)nullptr, (void*)vec, action, t, (void*)nullptr);
         return "action ordered (" + std::to_string(sel.size()) + " selected, ret " + std::to_string(r) + ")";
+    }
+    if (a.size() >= 2 && a[0] == "near" && is_host()) { // near <ratio>: tests (BUG-0340), the later chief put that
+        // part of the sum of the two chiefs' bounding radii from the first one, standing (no order)
+        if (g_chief.size() < 2)
+            return "no two chiefs";
+        std::vector<std::pair<uint8_t, void*>> ch(g_chief.begin(), g_chief.end());
+        std::sort(ch.begin(), ch.end());
+        void *c0 = ch[0].second, *c1 = ch[1].second;
+        float d = (float)atof(a[1].c_str()) * (game::bounding_radius(c0) + game::bounding_radius(c1));
+        net::Vec3 p0 = game::position(c0);
+        float l = std::sqrt(p0.x * p0.x + p0.y * p0.y + p0.z * p0.z);
+        if (l < 1.f)
+            return "no position";
+        net::Vec3 n{p0.x / l, p0.y / l, p0.z / l};
+        net::Vec3 ax = std::fabs(n.z) < 0.9f ? net::Vec3{0, 0, 1} : net::Vec3{1, 0, 0};
+        net::Vec3 u{n.y * ax.z - n.z * ax.y, n.z * ax.x - n.x * ax.z, n.x * ax.y - n.y * ax.x};
+        float ul = std::sqrt(u.x * u.x + u.y * u.y + u.z * u.z);
+        net::Vec3 p{p0.x + u.x / ul * d, p0.y + u.y / ul * d, p0.z + u.z / ul * d};
+        float g = game::ground_radius(p), pl = std::sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
+        if (g > 1.f && pl > 1.f)
+            p = {p.x / pl * g, p.y / pl * g, p.z / pl * g};
+        game::teleport(c1, p, game::orientation(c1));
+        char b[128];
+        snprintf(b, sizeof b, "put player %u's chief %.1f m from player %u's (radii %.1f + %.1f)", ch[1].first, d, ch[0].first,
+                 game::bounding_radius(c0), game::bounding_radius(c1));
+        return b;
     }
     if (!a.empty() && a[0] == "stack" && is_host()) { // tests (BUG-0340): every chief onto the first one
         if (g_chief.empty())

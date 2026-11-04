@@ -1308,3 +1308,87 @@ the tribe's grab spots of a tool type).
   its goal the old tree 100 m off, not moving) keeps that node when a new order comes (rec=4 walk, rec=10 hunt with
   its target set): the record is replaced, the node is not left. ? what ends the gather node's state 1 (tick
   0xD75F70 case 1 runs while the list at c+0x38 is empty or +0xFC8 != +0xFC4, unless 0xC26DF0(0x30000)); BUG-0505.
+## Every tribe's tools, the palette's drag and a guest's purchase (2026-11-04, fix/w42-tribe-left)
+<a id="tribe-tools-all"></a>
+
+BUG-0523 (each game places the tools its tribes buy at its own spots), BUG-0524 (a guest's purchase only in its
+game). GOG 2024, Ghidra (`tools/ghidra/q.sh --build 2024`):
+* ✔ One tool per type and tribe: the palette's placement start (0xD130D0, the tool branch at 0xD13C05, message
+  property 0x4294750 = the tool type) calls `GetToolByType(type)`, makes the new tool (CreateTool vt 0xB4), sets
+  `tool+0x84 |= 8`, SetTribe (vt 0x64), 0xC9D2D0, starts the drag 0xD09FA0(tool+0x34), sets `tool+0xA2 = 1`, and
+  when the tribe had a tool of the type: `cLayoutSlot::RemoveObject` and **RemoveTool (vt 0xB8) of the old one at
+  once** (a move of a tool is a new tool, the old one destroyed).
+* ✔ The drag: 0xD09FA0 thiscall(placement, spatial) ret 4 keeps the dragged spatial at placement+0xC0, clears
+  `+0x72` of the last one and sets **`spatial+0x72 = 1`** on the new one (a tool's spatial is tool+0x34: the byte
+  tool+0xA6 is 1 while the cursor drags it). The finish 0xD10F90 (thiscall(placement), ret 8, only caller
+  0xD12910) puts the tool into the village's layout slot nearest (0xD0B750, `cLayoutSlot::SetObject`), sets the
+  purchased bit for a new type (0xC8ED90 test, 0xC8ED70 set) and posts message 0x53850BAF {type, tribe +0x504};
+  0xD09FA0(0) ends the drag. A cancel / sell is 0xD09D70: message 0x53850BAF, RemoveTool, then 0xC8F600(0,
+  0x800000, FLT_MAX, 0) = SporeCoop::BT_PostStimulus 0x800000 on every member (vt 0x90).
+* ✔ cTribe::RemoveTool GOG 2024 0xC97020, thiscall(tool) ret 4: the village's layout slots holding it
+  (tribe+0x404..+0x408, 0x18 each) `RemoveObject`, out of +0x380 and +0x36C, tool vt 0x44, DestroyInstance,
+  0xC96B90(&type).
+* So a tool the host was dragging was in its tool list (and in BUG-0514's snapshots) at the cursor's places: a
+  guest could copy it mid-drag. Tools with spatial+0x72 set are not world objects now.
+* Fix (worldobj kind `tribe_tool`, state = type | host tribe index << 8 | 1 << 16 for the player tribe):
+  `wobj.tribe_tools_all` every tribe's tools (host index = the MSG_TRIBE_STATE table order, a guest's local tribe
+  by tribe.cpp's mapping g_local_tribe_of), a guest's own tool the host has not goes (RemoveTool, kind drop_own),
+  the host's is made in the mapped tribe only when that tribe has no tool of the type (one per type: a dragged
+  purchase or an own one about to go waits); `wobj.tribe_tool_buy` a guest's own player-tribe tool without a host
+  partner is a request (MSG_WOBJ kind 1 with id 0, state as above, every 2 s for 20 s): the host removes its tool
+  of the type elsewhere and makes the same at the guest's place (tribe.cpp buy_player_tool); the next snapshot
+  binds the guest's copy. The food: the guest's palette paid in its game, the shared food ledger (shared.cpp
+  MSG_RES_ADD) takes the change to the host; the host pays nothing more.
+* ? Not done: a tool made by the mod (a guest's copy, the host's copy of a guest's purchase) is not put into a
+  village layout slot (the finish's 0xD0B750 / SetObject): the slot looks free to that game's palette. A guest
+  selling a tool (0xD09D70) is not sent: the host keeps it and the guest gets its copy back.
+## The gather behaviour and a new order (2026-11-04, fix/w42-tribe-left)
+<a id="tribe-gather-orders"></a>
+
+BUG-0531 (a member in the gather node does not act on a new order). GOG 2024, Ghidra + runtime lane 6
+(`coop_tribe_gather_stall.py`, `coop.tribe ai` now also prints `carry=` the food the member carries and `tool=`):
+* ✔ The gather node's table entry 0x1584260: `{0x42464100, 0x2B8CBCCC, 100.0, 0x0569236E, enter 0xD75A80, tick
+  0xD75F70, exit 0xD75520, 6, 0, 1.0, 0, FLT_MAX, 4.3125, ...}` (100.0: the range the ticket saw next to the id).
+* ✔ Its memory (the leaf's): `+0 state, +4 an object (refcounted, its +0x108 released at state 0), +8 the tree,
+  +0xC, +0x10 a timer, +0x18 a counter (state 0 fails when it passes a tuning value 0x78F4963A), +0x1C byte, +0x1D
+  byte "ordered" (from the enter's argument +0x18), +0x20 a claimed food-mat slot (0xDBA5C0(c, 0xD)), +0x24 an
+  object`. The enter zeroes it, state 1 when it starts with a walk.
+* ✔ 0xCEE490 / 0xCEE4E0 on the member's own cGameBundleContainer (c+0x38: bundle vector +4..+8): the first bundle /
+  the sum of the bundles' +0x134 (the food it carries). 0xC26DF0 thiscall(c, mask, x) ret 8: the handheld item of
+  the member's tool (+0x102C; 0 on the tribe's leader = item 0x11) tested against `mask` (0x30000 in the gather).
+* ✔ The tick's state 1 returns "running" while (it carries nothing, or c+0xFC8 != c+0xFC4) and 0xC26DF0(0x30000)
+  is false; then the walk's arrival (0xC42F80) -> state 0; otherwise, unless +0x1D, "running" again: **no time
+  limit**. State 0xF with +4 = 0 returns 0 ("done") at once; the failure path (LAB 0xD76512) is 0xDA61D0(c, 2) then
+  0. States 0x12 -> 0x13 (claim a food-mat slot, 0xDBA5C0(c, 0xD)) -> 0x14 (walk there; arrived and 0xAF0B50 ->
+  state 0, else the failure path).
+* ✔ The exit 0xD75520 releases +0x24 and +4, drops or keeps the carried bundles (0xC23460 / cBundleManager), frees
+  the food-mat slot (0xC988E0 / 0xC97ED0 with 0xD) and 0xD753C0. It does not touch the order queue.
+* ✔ Runtime (lab 20261104-095422, -100046, -100245, -100604; 'tribe' fixture, a guest's member sent by
+  `coop.tribe order <id> 2 <tree>` to a fruit tree 90-130 m off): the member walks there in state 1 (walk mode 1,
+  goal the tree, carry 0), then states 5, 2 (at the tree), 19 = 0x13 (back home to a food-mat slot, goal near the
+  village), then the delivery node 0x04623E0C and 0x05524115. A walk order (the guest's own: select + walk, run
+  by host_command's DoAction(4) + SetValueVector3) in state 1 at the tree or in state 19 carrying the food home
+  took the member out of the gather node every time (7 runs): rec=-1 and node 0x04626360 (an idle / walk-end
+  node) within 3 s, the member at the goal on both games. After a walk that ends, the game's own behaviour goes on
+  (a member carrying food delivers it).
+* ~ So the play_tribe stall of BUG-0531 (state 1, walk mode 1, goal the old tree, standing) was not reproduced:
+  inferred, it needs the state-1 wait with the walk itself stopped (the member standing short of the tree, as the
+  grab spots of BUG-0505), which the gather's state 1 never leaves without arriving. Not fixed.
+* ✔ A test pitfall: a walk goal 12 m from the village toward some trees ended at the hut's edge (the game's walk
+  stopped at (413.8 -22.6 291.4) in three runs, the member 8 m short): check that a member walks, not that it
+  reaches a point near the village.
+## Chiefs put in each other after the arrival (2026-11-04, fix/w42-tribe-left)
+<a id="tribe-chiefs-overlap"></a>
+
+BUG-0340, 2 players, 'tribe' fixture, lane 6 (`coop.tribe near <ratio>`: the later chief put that part of the sum
+of the two chiefs' bounding radii from the first, standing):
+* ✔ The chiefs' bounding radii (spatial vt 0x70) are ~8 m in this fixture: 15 m apart is 0.92 of the sum. The
+  bounding sphere is much larger than the body: "closer than the sum" is not a visible overlap.
+* ✔ Put at 0.46 of the sum (~7 m, more than spread_chiefs' 1.5 m) with no mod parting: 0.92 within 14 s on both
+  games (the game's avoidance; lab 20261104-102641).
+* ✔ At the fixture's arrival (session s 5) the two chiefs stood closer than 0.6 of the sum for 2 s before
+  place_chiefs or the game parted them (a watchdog's log in lab 20261104-102249 and -102641; the watchdog,
+  `tribe.chiefs_overlap`, was removed again for want of a failing run).
+* ✔ 4 players (campaign_tribe, out/lab/20261104-102948): the three chiefs place_chiefs put on ring spots at the
+  arrival were back within 14-28 s at 5.0-5.3 m from the host's chief (bounding radii sum 5.8-6.2 m) on all four
+  machines: the idle behaviour gathers idle members round the host's chief / the centre. ? which node and target.
