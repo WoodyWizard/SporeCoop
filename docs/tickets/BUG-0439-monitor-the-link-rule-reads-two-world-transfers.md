@@ -1,20 +1,20 @@
 ---
 id: BUG-0439
 title: monitor: the link rule reads two world transfers 18 s apart as an unhealthy link on a clean network
-status: open
+status: fixed
 kind: test
 stage: all
 reported: 2026-11-01
 source: lab 20261101-173721 busy_gate#3 (fix/w34-vote-cinematic)
 role: host
 versions: main 279e364 + fix/w34-vote-cinematic
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w42-infra
+commits: e64551ba, 37990984
+tests: tools/tests/gates_selftest.py two_shares (make test), busy_gate
 signature:
 docs:
-related: BUG-0404
+related: BUG-0404, BUG-0405, BUG-0415
 ---
 
 ## Report
@@ -33,13 +33,11 @@ Not analysed: whether the resends during a transfer are needed (the world's own 
 send window that is too big for a loading peer.
 
 ## Fix
-Not fixed (outside BUG-0404's branch). The test busy_gate now waits 35 s between its two shares. Candidates:
-the monitor leaves out the trace lines of a world transfer (the host's own log says when it started and
-when it was queued completely), or the trace line carries the transfer's share of the resends.
+Already fixed by BUG-0415 (e64551ba, merged 2026-11-01 17:31, minutes before the run of this report on a branch without it): the link rule leaves out the trace lines while the host sends its world to that partner and 15 s after (`share_after`). Observed 2026-11-04: `monitor.py replay` of busy_gate#3 (fix/w34-vote-cinematic out/lab/20261101-173721) with the monitor before e64551ba prints the violation of this report (`resends/sent 0.53; 0.88; 0.63` from s 60.007); with the current monitor the same logs are clean. 37990984: busy_gate no longer waits 35 s between its two shares; gates_selftest plants two transfers 18 s apart.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+gates_selftest `two_shares`: two shares 18 s apart with resends/sent 0.6, 0.9, 0.7 over three lines: no violation; the same lines with share_after=-1 (no share rule): a link violation (the case bites). Lab: busy_gate without the 35 s wait on lane 4: PASS, no MONITOR-VIOLATION (out/lab/20261104-120727 in fix/w42-infra; shares at s 56.9 and s 73.5). Old monitor FAIL / current PASS: the replay above.
 
 ## History
 - 2026-11-01: opened.
+- 2026-11-04: closed on fix/w42-infra: covered by the BUG-0415 rule since e64551ba (replay shows it); regression case, busy_gate wait removed.

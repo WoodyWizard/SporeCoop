@@ -23,7 +23,8 @@ guest's puppet), after the editors, after the guest's rejoin and after the host'
   * every case: the guest can still change its creature in its own next editor (it opens on the
     creature the guest plays).
 
-  coop_legless_guest.py [--guest done|cancel|new|replace|dontsave]
+  coop_legless_guest.py [--guest done|cancel|new|replace|dontsave] [--no-dna]
+  --no-dna: no DNA gain before the guest's next editor (the run before BUG-0533: the edit fails)
 """
 import re
 import sys
@@ -109,6 +110,21 @@ def add_part(con):
     time.sleep(0.5)
     con.call('button 930 560 up')
     time.sleep(1)
+
+
+def dna(con):
+    v = field(con.call('coop.dna')['out'], r'dna=(-?[\d.]+)')
+    return float(v) if v is not None else None
+
+
+def confirm_captions(cons, secs):
+    """Enter on a caption of a cinematic (a brain upgrade after a DNA gain), as a player does, for secs"""
+    t0 = time.time()
+    while time.time() - t0 < secs:
+        for con in cons:
+            if re.search(r'cinematic ([0-9A-F]{8}) playing', con.call('coop.status')['out']):
+                con.call('key enter')
+        time.sleep(2)
 
 
 def avatar_key(con):
@@ -239,6 +255,18 @@ def main():
     # (evolution editor through the game's own entry, which the mod turns into a vote)
     before = avatar_key(guest)
     shown_before = puppet_of_guest(host)  # the body the host shows for it before that editor
+    # BUG-0533: since BUG-0466 the own editors charge their parts: after the first one the party has ~15 DNA and
+    # the mouth add_part drags costs 25, so the edit does not happen and done leaves without a save. A player
+    # earns DNA before the next editor: the host's game gains 40 (the party's total), the guest's own game must
+    # show it before its editor opens (its editor reads its own total). Not more: a bigger gain grows the brain,
+    # whose cinematic's caption holds the editor (out/lab/20261104-054104 with +200). --no-dna: the old run.
+    if '--no-dna' not in sys.argv:
+        need = (dna(guest) or 0) + 40
+        print('  host:', host.call('coop.dna add 40')['out'].strip(), f'(the guest needs {need:.0f} before its editor)')
+        got = wait(lambda: (dna(guest) or 0) >= need - 1, 30)
+        confirm_captions((host, guest), 8)
+        print(f'  DNA before the next editor: host {dna(host)}, guest {dna(guest)}')
+        ck(got, 'the guest\'s own game has the DNA for a part before its next editor')
     guest.call('coop.vote editor')
     opened = wait(lambda: 'Editor' in mode(guest), 60)
     ck(opened, "the guest's next own editor opens")

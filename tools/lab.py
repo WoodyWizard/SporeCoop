@@ -311,14 +311,35 @@ def run_one(t, lane, tree, logdir, warm, suffix=''):
                 gates=gate_fails + gate_notes, log_marks={w: m for w, m in marks0.items() if m})
 
 
+def new_run_dir(branch=None, now=None):
+    """BUG-0353 / BUG-0362: a run directory of this run only. The id is the start time to the second (and the
+    branch); a run started in the same second as another one (two lab processes at once) gets the next free
+    suffix -2, -3, ... The directory is taken with os.mkdir, which fails when it exists, so two processes that
+    race for one name never both get it. COOP_FIX-like switch for the self-test: SPORE_LAB_SHARED_RUNDIR=1
+    keeps the old behaviour (one shared directory)."""
+    base = os.path.join(ROOT, 'out', 'lab')
+    os.makedirs(base, exist_ok=True)
+    stamp = (now or datetime.datetime.now()).strftime('%Y%m%d-%H%M%S')
+    tail = '-' + branch.replace('/', '-') if branch else ''
+    if os.environ.get('SPORE_LAB_SHARED_RUNDIR') == '1':  # the old behaviour, for the self-test's FAIL case
+        os.makedirs(os.path.join(base, stamp + tail), exist_ok=True)
+        return stamp + tail, os.path.join(base, stamp + tail)
+    for k in range(1, 1000):
+        run_id = stamp + ('' if k == 1 else f'-{k}') + tail
+        try:
+            os.mkdir(os.path.join(base, run_id))
+        except FileExistsError:
+            continue
+        return run_id, os.path.join(base, run_id)
+    raise RuntimeError(f'lab: no free run directory for {stamp}{tail}')
+
+
 def cmd_run(a):
     tree = worktree(a.branch) if a.branch else ROOT
     tests = suite.select(a.tests)
     if a.repeat > 1:  # hunting a flaky bug: the same tests many times
         tests = [dict(t, name=f'{t["name"]}#{k + 1}') for k in range(a.repeat) for t in tests]
-    run_id = datetime.datetime.now().strftime('%Y%m%d-%H%M%S') + ('-' + a.branch.replace('/', '-') if a.branch else '')
-    logdir = os.path.join(ROOT, 'out', 'lab', run_id)
-    os.makedirs(logdir, exist_ok=True)
+    run_id, logdir = new_run_dir(a.branch)
     head = git('log', '-1', '--format=%h %s', cwd=tree)
     tree_branch = git('branch', '--show-current', cwd=tree) or '(detached)'
     if a.branch and tree_branch != a.branch:  # never test another branch's tree under this name (BUG-0048)
@@ -514,6 +535,9 @@ def cmd_run(a):
     notes = ''.join([f', {skipped} skipped' if skipped else '', f', {flaky} flaky (harness)' if flaky else ''])
     # flaky history across runs: which tests fail now and then (fix the test or the bug behind it)
     hist_path = os.path.join(ROOT, 'out', 'lab', 'flaky.json')
+    import fcntl
+    hist_lock = open(hist_path + '.lock', 'a')  # BUG-0362: two runs ending together each read-modify-write it
+    fcntl.flock(hist_lock, fcntl.LOCK_EX)
     try:
         hist = json.load(open(hist_path))
     except (OSError, ValueError):
@@ -525,7 +549,12 @@ def cmd_run(a):
         h['failed'] += not r['ok']
         if r.get('flaky') or not r['ok']:
             h['last'] = (h['last'] + [f'{run_id}: ' + '; '.join(r.get('first') or r['fails'])[:300]])[-5:]
-    json.dump(hist, open(hist_path, 'w'), indent=1)
+    tmp_hist = f'{hist_path}.{os.getpid()}'
+    with open(tmp_hist, 'w') as f:
+        json.dump(hist, f, indent=1)
+    os.replace(tmp_hist, hist_path)
+    fcntl.flock(hist_lock, fcntl.LOCK_UN)
+    hist_lock.close()
     json.dump(dict(run=run_id, tree=tree, branch=tree_branch, head=head, skipped=skipped, lanes=a.lanes, seconds=round(total), ok=ok, results=results),
               open(os.path.join(logdir, 'results.json'), 'w'), indent=1)
     lines = [f'# lab run {run_id}', '', f'{tree_branch} {head} - {len(results)} tests, {a.lanes} lanes, '
