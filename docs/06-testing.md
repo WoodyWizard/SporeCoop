@@ -3754,3 +3754,13 @@ the other player's game, both ways where the kind has two:
   animations (>= 60 %, at least one attack animation). Prints the miss pairs (host's, guest's) and `coop.npc anims`
   of both games (seen, idle, sent, played, snapshot counters). `SPORE_FIX_OFF=npc.anims` fails (15-22 %, fight 0 %);
   on: 79-82 %, fight 83 %. `coop.npc animquiet <s>` (guest): how long the snapshot waits after a start (1.5).
+
+## The settings window without My Spore Creations: save_areas (2026-11-03, fix/w40-misc)
+<a id="testing-save-areas"></a>
+
+`coop_save_areas.py` (suite `save_areas`, ~1 min, one game: the lane's guest instance) replaces the guest
+profile's `Documents\My Spore Creations` with a plain file, starts the game, waits for the galaxy menu and its
+intro cinematic (`(menu intro)` in coop.status, the buttons are hidden until it ends; 900 frames were not
+enough), then clicks the Spore button (16,1062) and Settings (660,560) in the 1440x1080 window. It checks `exc`,
+the three save areas (`call Resource::GetDatabaseByID cdecl 0x11AC197`) and the window manager's modal window;
+the folder is put back at the end. BUG-0506: SPORE_FIX_OFF=game.save_areas FAILS (fault at 0x6025A9).

@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### Fixed
+- The game no longer crashes when you open Settings in the galaxy menu on a PC where Spore cannot make its
+  Documents\My Spore Creations folder; videos and pictures then go to the Spore folder in AppData (BUG-0506).
 - Creature: a guest now sees the host's animals look around, eat, answer and fight as they do on the host,
   instead of standing still or only walking (BUG-0464).
 - Creature: animals are neutral, hostile or allied to a guest as they are to the host; a guest playing its own
