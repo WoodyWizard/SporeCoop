@@ -437,7 +437,7 @@ static void* member_mirror(uint16_t id)
 // its mirror with the game's SetSpecializedTool. `coop.fix tribe.tool_hold off`: mirrors keep their own.
 constexpr uintptr_t kToolsOff = 0x36C;    // cTribe: vector<cTribeTool*> mTools
 constexpr uintptr_t kHeldToolOff = 0x102C; // cCreatureCitizen: mSpecializedTool
-static uintptr_t a_SetSpecializedTool, a_ToolModelReset, a_SetToolPurchased;
+static uintptr_t a_SetSpecializedTool, a_ToolModelReset, a_SetToolPurchased, a_ToolLayout;
 static bool g_tool_hold_fix = true;
 COOP_FIX("tribe.tool_hold", "BUG-0514", g_tool_hold_fix, "tribe: a guest's mirror of a member holds the tool the host's member took (weapon, instrument, heal)");
 static uint32_t g_tool_sets;
@@ -513,6 +513,42 @@ void* make_player_tool(int type, const net::Vec3& pos)
     thiscall<void>(a_SetToolPurchased, t, type);
     return tool;
 }
+// BUG-0505: what a member does in its game (docs/re/tribe.md#tribe-orders): the order record (ai+0x60C list,
+// rec+0 action, +0x28 target, +0x38 has target), the behaviour node (ai+0x1D8) with its depth (ai+0x1DC) and
+// the leaf node's memory (ai+0x1D0 + 4 * (0xF + 0x2B * (depth - 1)), the 6th argument of a node's enter /
+// tick), the walk (spatial c+0xC0: goal mode +0x250, flags +0x270, goal = last of the list +0x1F4..+0x1F8
+// minus 0x3C, or +0x208)
+static std::string ai_line(void* c)
+{
+    uint8_t* ai = F<uint8_t*>(c, 0xB4C);
+    if (!ai || !skg::readable(ai, 0x620))
+        return "no ai";
+    char b[400];
+    uint8_t* head = ai + 0x60C;
+    uint8_t* first = *(uint8_t**)head;
+    uint8_t* rec = first != head && skg::readable(first, 0x50) ? first + 8 : nullptr;
+    uint32_t node = *(uint32_t*)(ai + 0x1D8);
+    int depth = *(int*)(ai + 0x1DC);
+    uint32_t mem[8] = {};
+    if (depth >= 1 && depth < 16)
+        memcpy(mem, ai + 0x1D0 + 4 * (0xF + 0x2B * (depth - 1)), sizeof mem);
+    uint8_t* sp = (uint8_t*)c + 0xC0;
+    int mode = *(int*)(sp + 0x250);
+    uint8_t lf = *(uint8_t*)(sp + 0x270);
+    uint8_t* lb = *(uint8_t**)(sp + 0x1F4);
+    uint8_t* le = *(uint8_t**)(sp + 0x1F8);
+    float* goal = (float*)(lb == le ? sp + 0x208 : le - 0x3C);
+    if (!skg::readable(goal, 16))
+        goal = (float*)(sp + 0x208);
+    net::Vec3 p = game::position(c);
+    snprintf(b, sizeof b,
+             "rec=%d target=%p has=%d node=%08X depth=%d mem=%d %08X %.1f %.1f %.1f %08X %d %d walk mode=%d flags=%02X "
+             "goal=(%.1f %.1f %.1f) r=%.1f pos=(%.1f %.1f %.1f) sel=%u",
+             rec ? *(int*)rec : -1, rec ? *(void**)(rec + 0x28) : nullptr, rec ? (int)rec[0x38] : 0, node, depth, (int)mem[0],
+             mem[1], *(float*)&mem[2], *(float*)&mem[3], *(float*)&mem[4], mem[5], (int)mem[6], (int)mem[7], mode, lf,
+             goal[0], goal[1], goal[2], goal[3], p.x, p.y, p.z, F<uint8_t>(c, kSelectedOff));
+    return b;
+}
 static bool save_filter(void* o, uint32_t noun); // BUG-0495 (below)
 static void* SK_THISCALL h_Form(void* self, int arg); // BUG-0483 (below)
 using Form_t = void*(SK_THISCALL*)(void*, int);
@@ -533,6 +569,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     a_SetSpecializedTool = H->sym("Simulator::cCreatureCitizen::SetSpecializedTool");
     a_ToolModelReset = H->sym("SporeCoop::cTribeTool_PlacementReset");
     a_SetToolPurchased = H->sym("SporeCoop::cTribe_SetToolPurchased");
+    a_ToolLayout = H->sym("SporeCoop::cTribe_ToolLayout");
     a_GetPlayerTribe = H->sym("Simulator::cGameNounManager::GetPlayerTribe");
     a_DoAction = H->sym("Simulator::cCreatureCitizen::DoAction");
     a_SetValueVector3 = H->sym("App::Property::SetValueVector3");
@@ -2644,6 +2681,31 @@ std::string debug(const std::vector<std::string>& a)
         char b[128];
         snprintf(b, sizeof b, "built %p type=%s at (%.2f %.2f %.2f)", tool, a[1].c_str(), p.x, p.y, p.z);
         return tool ? std::string(b) : std::string("build failed");
+    }
+    if (a.size() >= 2 && a[0] == "layout" && a_ToolLayout) { // layout <tool type>: the tribe's grab spots of a type
+        void* pt = player_tribe();
+        if (!pt)
+            return "no player tribe";
+        int type = atoi(a[1].c_str());
+        uint8_t* l = thiscall<uint8_t*>(a_ToolLayout, (uint8_t*)pt + 0x394, &type);
+        if (!l || !skg::readable(l, 0x58))
+            return "no layout";
+        uint8_t *sb = *(uint8_t**)(l + 0x50), *se = *(uint8_t**)(l + 0x54);
+        char b[160];
+        snprintf(b, sizeof b, "layout type=%d at=(%.1f %.1f %.1f) slots=%d\n", type, *(float*)(l + 0x14), *(float*)(l + 0x18),
+                 *(float*)(l + 0x1C), sb && se > sb ? (int)((se - sb) / 0x18) : 0);
+        std::string s = b;
+        for (uint8_t* q = sb; q && q < se && skg::readable(q, 0x18); q += 0x18) {
+            void* o = *(void**)(q + 4);
+            snprintf(b, sizeof b, "  slot used=%u obj=%p member=%d pos=(%.1f %.1f %.1f)\n", q[0], o,
+                     is_citizen(o) ? (int)member_id(o) : -1, *(float*)(q + 0xC), *(float*)(q + 0x10), *(float*)(q + 0x14));
+            s += b;
+        }
+        return s;
+    }
+    if (a.size() >= 2 && a[0] == "ai") { // ai <member id>: BUG-0505, the member's order record, node and walk
+        void* c = local_of((uint16_t)atoi(a[1].c_str()));
+        return c ? ai_line(c) : "no such member";
     }
     if (a.size() >= 3 && a[0] == "grab") { // grab <member id> <tool index>: the member's GrabTool (3) order as a
         // click on the tool gives it (DoToolActionForAllSelected -> DoActionForObjects): a guest sends it to the host

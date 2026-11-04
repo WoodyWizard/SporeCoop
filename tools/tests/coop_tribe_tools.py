@@ -63,6 +63,7 @@ def main():
     ap.add_argument('--nofix', action='store_true')
     ap.add_argument('--type', type=int, default=1)
     ap.add_argument('--dist', type=float, default=9.0)
+    ap.add_argument('--own', action='store_true', help='the host orders one of its own members (a control, BUG-0505)')
     a = ap.parse_args()
     host, guest = start('tribe')
     ck = Checks()
@@ -98,15 +99,20 @@ def main():
         print('  guest tools:', tools(guest)[0])
         ck.faults(host=host, guest=guest)
         return ck.result()
+    print('  host', host.call(f'coop.tribe layout {a.type}')['out'].strip().replace(chr(10), chr(10) + '    '))
     mem = members(guest)
     own = sorted(i for i, o in mem.items() if o != 0)
+    if a.own:
+        own = sorted(i for i, o in members(host).items() if o == 0)
     ck(bool(own), f'the guest has members of its own ({len(own)} of {len(mem)})')
     if not own:
         return ck.result()
     _, hh = tools(host)
-    pick = next((i for i in own if hh.get(i, 0) != a.type), own[0])
-    out = guest.call(f'coop.tribe grab {pick} {rack[0]}')['out'].strip()
-    print('  guest:', out)
+    pick = next((i for i in own if hh.get(i, 0) not in (a.type, 11)), own[0])  # 11: a chief's own (no grab)
+    who = host if a.own else guest
+    hidx = next((i for i, t, p in tools(host)[0] if t == a.type and dist(p, at) < 1), rack[0])
+    out = who.call(f'coop.tribe grab {pick} {hidx if a.own else rack[0]}')['out'].strip()
+    print('  host (own member):' if a.own else '  guest:', out)
     held_h = held_g = None
     t0 = time.time()
     again = False
@@ -115,8 +121,12 @@ def main():
         _, hh = tools(host)
         _, gh = tools(guest)
         held_h, held_g = hh.get(pick), gh.get(pick)
+        if a.own and held_h == a.type:
+            held_g = held_h
         if held_h == a.type and held_g == a.type:
             break
+        if int(time.time() - t0) % 9 < 3:  # BUG-0505: the host member's order record, node and walk
+            print(f'  host ai {time.time() - t0:.0f} s: {host.call(f"coop.tribe ai {pick}")["out"].strip()}')
         if not again and time.time() - t0 > 40 and held_h != a.type:
             # the host's member did not go for it (seen once in 5 runs: the order done, the member busy
             # with something of its own game): a player clicks the rack again
