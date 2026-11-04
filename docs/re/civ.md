@@ -1112,6 +1112,9 @@ GOG 2024 addresses (dc04aee5).
   the two count series), so a detector sample often saw them in one game only (both ways: `noun_only_host` rows
   too once the counts matched). Fix `civ.shot_now`: a shot that left goes out at once (at most every 0.05 s) and
   the guest fires a new count on the frame it arrives: 0.10-0.20 s (lab 20261104-104140).
+* ~ The delay was not all of it: after civ.shot_now one play_civ run still had guest-only AoE areas in 26 % and
+  cultural projectiles in 13 % of the comparisons (lab 20261104-113023; another 3 % / 6 %, lab 20261104-110843).
+  Inferred: those objects live longer on the guest (a copy that misses). Open in BUG-0530.
 
 **Turrets (BUG-0484).**
 * ✔ `City_AddTurret` 0xBE39A0 fastcall(city) -> 1 / 0: the next free turret slot, CreateTurret 0xBE2100,

@@ -5,8 +5,8 @@
 ### Fixed
 - Civilization: a city the host's vehicles hit now shows its damage on every guest's screen too, not full health
   until a building falls (BUG-0529).
-- Civilization: a guest sees only the shots the host's vehicles really fired, not extra religious shots of its own
-  (BUG-0530).
+- Civilization: the host's shots (religious ones too) appear on a guest's screen about 0.2 s sooner, nearly at the
+  same time as on the host's; a guest's game fires exactly the shots that left on the host (BUG-0530, BUG-0538).
 - Civilization: a city's defence turrets are the same in every game: a guest's game no longer builds its own, and
   a turret the host's city builds appears for the guests (BUG-0484).
 

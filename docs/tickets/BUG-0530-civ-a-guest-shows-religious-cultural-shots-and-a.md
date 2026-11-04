@@ -1,14 +1,14 @@
 ---
 id: BUG-0530
 title: civ: a guest shows religious (cultural) shots and AoE areas the host's game does not make (noun_only_guest after BUG-0477)
-status: fixed
+status: open
 kind: desync
 stage: Civ
 reported: 2026-11-04
 source: divergence detector, play_civ (fix/w41-civ-combat, out/lab/20261104-024331)
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in:
 branch: fix/w42-civ-left
 commits: b4a680fc 55e24cbc d8ea4474 b174d8f7 8c7a9834 dc00c3e4 fe6facb2
 tests: coop_civ_religious.py (civ_religious)
@@ -55,3 +55,10 @@ SPORE_FIX_OFF=civ.shot_fired did not fail (out/lab/20261104-095320: 126 / 126).
 ## History
 - 2026-11-04: opened.
 - 2026-11-04 (fix/w42-civ-left): analysed (late, not extra shots) and fixed (civ.shot_now, civ.shot_fired).
+- 2026-11-04 (fix/w42-civ-left): still open. After civ.shot_now the detector's rows remain in some play_civ runs:
+  out/lab/20261104-110843 cultural 6 % / AoE 3 %, but out/lab/20261104-113023 AoE areas 26 %, cultural 13 % (guest only,
+  no noun_only_host row). The delay part is fixed (civ_religious twin above); the rest is not explained. Inferred
+  next step: the AoE area (cDefaultAoETool, noun 0x4167186) and the cultural projectile live longer on the guest
+  (a guest copy that misses its target: the host's target found by noun + place within 4 m may be another object,
+  or the mirror stands elsewhere); measure each object's lifetime on both games in civ_religious with a
+  religious attack on a city (the test has no AoE area at all so far).
