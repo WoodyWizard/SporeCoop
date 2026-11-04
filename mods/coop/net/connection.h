@@ -93,7 +93,7 @@ public:
     // messages it sends: [before, after) of one send
     uint16_t next_rel_id() const { return next_rel_id_; }
     // every reliable message with a rel_id in [lo, hi) was acknowledged by the peer (its transport
-    // has it and delivers it in order), BUG-0196
+    // has it and delivers it in order), BUG-0542
     bool rel_acked(uint16_t lo, uint16_t hi) const
     {
         for (auto& m : rel_out_)

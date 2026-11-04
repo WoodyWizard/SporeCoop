@@ -71,7 +71,7 @@ struct PlanetSnap {
     uint32_t tech, flags;
     size_t civ_before;            // cCivData vector size before the mirror
     std::vector<void*> civ;       // the cCivData the mirror added (kept for the next apply)
-    bool own = false;             // BUG-0197: a colony in my own star system: cities of my empire
+    bool own = false;             // BUG-0543: a colony in my own star system: cities of my empire
 };
 
 struct Mirror {
@@ -107,13 +107,13 @@ static std::set<void*> g_aborted; // my raids I aborted (pointers only compared)
 static bool g_aborted_fix = true;  // coop.space allies abortedfix 0: the set is never pruned (BUG-0136, tests)
 COOP_FIX("allies.aborted", "BUG-0136", g_aborted_fix, "space: a won raid on a partner's colony does not count as aborted");
 static bool g_end_pending;        // the session ended while I was on a mirror planet
-// BUG-0197: a partner's colony in a star system that is mine here (we start as one empire: the home
+// BUG-0543: a partner's colony in a star system that is mine here (we start as one empire: the home
 // system and every colony both had at the join are shared) was not shown at all ("your own star
 // system"): in my game the planet stayed free, and I could found a colony of my own on it. Now it is
 // a record-level colony of my empire (the star has one owner), undone before every save like the
 // mirror. Off: skipped (before).
 static bool g_own_star_fix = true;
-COOP_FIX("allies.own_star", "BUG-0197", g_own_star_fix, "space: a partner's colony in a star system of mine is a colony here too");
+COOP_FIX("allies.own_star", "BUG-0543", g_own_star_fix, "space: a partner's colony in a star system of mine is a colony here too");
 static void end_all();
 static std::map<uint32_t, double> g_raid_quiet; // PlanetID -> no new raid of mine there before
 
@@ -400,7 +400,7 @@ static void erase_from_vec(void* vec, void* p)
         }
 }
 
-// BUG-0197: SpacePlayerData +0x20 is the player's colony list (vector<cPlanet*>, a reference each:
+// BUG-0543: SpacePlayerData +0x20 is the player's colony list (vector<cPlanet*>, a reference each:
 // vt+0xBC AddRef, vt+0xC0 Release), filled by cEmpire_AddPlanet (0x1022040): take rec's planet out
 static void remove_colony(void* rec)
 {

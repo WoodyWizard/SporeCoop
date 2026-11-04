@@ -381,10 +381,11 @@ add('space_contracts', P + 'coop_space_contracts.py', minutes=9)  # co-op contra
 add('space_rivalry', P + 'coop_space_rivalry.py', minutes=8)  # rivals mode: own budgets, war and peace by real clicks, PvP
 add('space_diplomacy', P + 'coop_space_diplomacy.py', minutes=5)  # shared relations with NPC empires
 add('space_diplo_mirror', P + 'coop_space_diplo_mirror.py', warm=True, minutes=3, fixture='space')  # the allies mirror's record is never shared by pol (BUG-0071)
+add('space_diplo_away', P + 'coop_space_diplo_away.py', minutes=4)  # a guest's diplomacy while the host is out of Space is kept (BUG-0544; SPORE_FIX_OFF=diplomacy.keep_away fails)
 add('space_trade', P + 'coop_space_trade.py', minutes=4)  # tool gifts and spice sales by real clicks (space_trade.cpp)
 add('space_trade_refund', P + 'coop_space_trade_refund.py', warm=True, minutes=3, fixture='space')  # gifts that come back outside Space are owed, not lost (BUG-0058)
-add('space_trade_end', P + 'coop_space_trade_end.py', warm=True, minutes=3, fixture='space')  # a gift the partner has is not given back when the session ends (BUG-0196; SPORE_FIX_OFF=trade.delivered fails)
-add('space_allies_own', P + 'coop_space_allies_own.py', warm=True, minutes=3, fixture='space')  # a partner's colony in a shared star system is a colony here too (BUG-0197; SPORE_FIX_OFF=allies.own_star fails)
+add('space_trade_end', P + 'coop_space_trade_end.py', warm=True, minutes=3, fixture='space')  # a gift the partner has is not given back when the session ends (BUG-0542; SPORE_FIX_OFF=trade.delivered fails)
+add('space_allies_own', P + 'coop_space_allies_own.py', warm=True, minutes=3, fixture='space')  # a partner's colony in a shared star system is a colony here too (BUG-0543; SPORE_FIX_OFF=allies.own_star fails)
 add('space_down_away', P + 'coop_space_down_away.py', minutes=5, fixture='space')  # a disabled ship and trips out of Space: paused in the same world, no death after a load, no invincibility left (BUG-0229, BUG-0228; SPORE_FIX_OFF=space.down_world / space.down_clear fail)
 add('space_gift_refund', P + 'coop_space_gift_refund.py', warm=True, minutes=3, fixture='space')  # spice of a gift that comes back outside Space is put back once in Space (BUG-0226; SPORE_FIX_OFF=space.gift_refund fails)
 # a partner's colonies as an allied empire in the guest's galaxy, its raid fought there, a clean save

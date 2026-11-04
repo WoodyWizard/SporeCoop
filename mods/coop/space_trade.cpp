@@ -101,7 +101,7 @@ struct Out {               // something of ours on its way to a partner
     void* emp = nullptr;   // BUG-0058: the player's cEmpire it was taken from (a load makes a new one)
     uint32_t saves = 0;    // spaceext::saves() when it was taken
     spacelogic::WorldTag tag; // BUG-0225: the Space world and save file it was taken from
-    // BUG-0196: the reliable message that carried it ([rel_lo, rel_hi) on the connection it went
+    // BUG-0542: the reliable message that carried it ([rel_lo, rel_hi) on the connection it went
     // out on) and whether the partner's side acknowledged it (then it arrived: the receiver adds a
     // gift or a sale at once, only an offer waits for a click)
     bool rel_marked = false, delivered = false;
@@ -121,12 +121,12 @@ static bool g_refund_fix = true;
 COOP_FIX("trade.refund", "BUG-0058", g_refund_fix, "space: gifts that come back outside Space wait until Space");
 static bool g_away;        // tests: the feature acts as outside Space (no inventory), BUG-0058
 static int g_hold;         // tests: 1 do not answer gifts (the answer is still on its way); 2 add
-                           // gifts and sales but do not answer (the answer is lost, BUG-0196)
-// BUG-0196: the own session ends with a gift or a sale on its way: what the partner's side had
+                           // gifts and sales but do not answer (the answer is lost, BUG-0542)
+// BUG-0542: the own session ends with a gift or a sale on its way: what the partner's side had
 // acknowledged arrived (the receiver keeps it) and does not come back, which doubled it. Off: all
 // of it comes back (before).
 static bool g_delivered_fix = true;
-COOP_FIX("trade.delivered", "BUG-0196", g_delivered_fix, "space: a gift the partner had received does not come back when the session ends");
+COOP_FIX("trade.delivered", "BUG-0542", g_delivered_fix, "space: a gift the partner had received does not come back when the session ends");
 static uint32_t g_kept_at_end;
 static uint32_t g_owed_paid, g_owed_dropped;
 static uint32_t g_owed_kept;        // BUG-0225: owed items kept for another game (as last decided)
@@ -575,7 +575,7 @@ static net::Connection* conn_for(uint8_t to)
     return spaceext::ctx().sess->conn_to(spaceext::is_host() ? to : 0);
 }
 
-// send `o`'s message and mark it (BUG-0196), then keep it until the answer
+// send `o`'s message and mark it (BUG-0542), then keep it until the answer
 static void send_out(Out& o, const net::Writer& w)
 {
     net::Connection* c = conn_for(o.to);
@@ -952,7 +952,7 @@ static void tick(double now)
         pay_owed(); // also after the session ended
     if (!spaceext::connected())
         return;
-    for (auto& o : g_out) // BUG-0196: did the partner's side get it?
+    for (auto& o : g_out) // BUG-0542: did the partner's side get it?
         if (o.rel_marked && !o.delivered) {
             net::Connection* c = conn_for(o.to);
             o.delivered = c && c->rel_acked(o.rel_lo, o.rel_hi);
@@ -987,7 +987,7 @@ static void on_session_end()
     auto out = g_out;
     g_out.clear();
     for (auto& o : out) {
-        // BUG-0196: the partner's side had it: a gift or a sale was kept there at once (what did not
+        // BUG-0542: the partner's side had it: a gift or a sale was kept there at once (what did not
         // fit would have come back with the answer that is now lost); only an offer waits for a click
         if (g_delivered_fix && o.delivered && o.kind != K_OFFER) {
             g_kept_at_end++;
@@ -1247,7 +1247,7 @@ static std::string debug(const std::vector<std::string>& a)
         // refundfix 0: refunds at once, wherever we are (before BUG-0058); away 1: act as outside
         // Space (no inventory); hold 1: leave gifts unanswered (tests)
         bool on = a[1] != "0";
-        if (a[0] == "hold") { // 2: add, but do not answer (BUG-0196)
+        if (a[0] == "hold") { // 2: add, but do not answer (BUG-0542)
             g_hold = std::clamp(atoi(a[1].c_str()), 0, 2);
             return "hold " + std::to_string(g_hold) + "\n";
         }

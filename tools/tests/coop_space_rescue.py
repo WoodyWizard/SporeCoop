@@ -28,6 +28,12 @@ def sp(con, *a):
     return con.call('coop.space ' + ' '.join(str(x) for x in a))['out'].strip()
 
 
+def repair_dist(con):
+    """the distance the repair measures to the partner (along the ground on a planet)"""
+    m = re.search(r'repair ([\d.]+) m;', sp(con, 'dist'))
+    return float(m.group(1)) if m else 0.0
+
+
 def field(text, key):
     m = re.search(r'\b' + key + (r' ' if key == 'hp' else r'=') + r'([\d.]+)', text)
     return float(m.group(1)) if m else -1
@@ -61,7 +67,12 @@ def main():
             pg.zoom(-6)
             time.sleep(2)
             print('   guest zoomed out:', sp(guest, 'dist'), pg.ctx())
-        ph.key_hold(['0x57'], 2.5)  # the host flies off a bit: it has to come back to repair
+        # the host flies off a bit: it has to come back to repair. Out of the 60 m repair range by a
+        # margin, in short pulses: 2.5 s of W took the faster ship of the `space` fixture ~550 m off,
+        # too far to come back within the 20 s (BUG-0193)
+        t1 = time.time()
+        while time.time() - t1 < 2.5 and repair_dist(guest) < 120:
+            ph.key_hold(['0x57'], 0.3)
         print('  ', sp(guest, 'dist'))
         r0 = field(sp(guest), 'rescues')
         # a pirate of the host shoots the guest's ship: its hit on the guest's puppet is relayed to the

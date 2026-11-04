@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""BUG-0197: a partner's new colony in a star system both players own is a colony in my game too.
+"""BUG-0543: a partner's new colony in a star system both players own is a colony in my game too.
 
 The players start as one empire (the guest plays a copy of the host's save), so the home system is the
 host's star in both games. The guest founds a colony on a free planet of that system after the join

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""BUG-0196: a gift on its way when the own session ends is not doubled.
+"""BUG-0542: a gift on its way when the own session ends is not doubled.
 
 The guest gives 5 of its 12 Antimatter Bomb charges to the host. The host's game keeps them but its
 answer is lost (`trade hold 2`: added, no answer; in play: the guest leaves right after "Give", or the

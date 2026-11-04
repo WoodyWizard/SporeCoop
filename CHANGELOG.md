@@ -7,6 +7,14 @@
   every player's game; a guest's game no longer shows tools there the host's game does not have (BUG-0523).
 - Tribe: a tool a guest buys and places now appears in the host's game too, at the same spot, and the guest's
   members can take the weapon or instrument from it (BUG-0524).
+- Space: a tool gift or a spice sale to a partner that is still waiting for the answer when you leave the session
+  no longer comes back to you while your partner keeps it too (BUG-0542).
+- Space: a colony your partner founds in a star system you both own (another planet of your home system, for
+  example) now appears in your game too, as a colony of your empire; it stayed a free planet there (BUG-0543).
+- Space: a gift, mission, war or alliance your partner makes with an alien empire while the host is in an editor
+  is no longer lost when the host comes back to Space (BUG-0544).
+- Space: right after the session restarts (a rejoin, a new load) a lethal hit next to your partner disables your
+  ship again instead of destroying it (BUG-0257).
 
 ## [0.7.5] - 2026-11-04
 
