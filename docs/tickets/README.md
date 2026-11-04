@@ -553,3 +553,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0541](BUG-0541-space-9-ornaments-by-one-colony-city-exist-in-on.md) | open | desync | Space | 2026-11-04 |  | Space: 9 ornaments by one colony city exist in one game only (Space:guest_only:ornament / host_only:ornament) |
 | [BUG-0546](BUG-0546-space-the-host-faults-at-0xe98dd0-ufogfx-setvisi.md) | open | bug | Space | 2026-11-04 |  | Space: the host faults at 0xE98DD0 (UfoGfx_SetVisible, null model) after a jump to an NPC empire's system in space_diplomacy, lane 5 only |
 | [BUG-0548](BUG-0548-civ-dropped-bundles-game-bundle-of-fights-and-ca.md) | open | desync | Civ | 2026-11-04 |  | Civ: dropped bundles (game_bundle) of fights and captures differ by one or two between the games |
+| [BUG-0549](BUG-0549-civ-a-guest-s-mirror-vehicle-drawn-at-scale-10-t.md) | open | desync | Civ | 2026-11-04 |  | Civ: a guest's mirror vehicle drawn at scale 10 (the host's 0.81) in play_civ |
