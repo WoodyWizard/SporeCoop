@@ -429,6 +429,10 @@ static void* member_mirror(uint16_t id)
 }
 
 static bool save_filter(void* o, uint32_t noun); // BUG-0495 (below)
+static void* SK_THISCALL h_Form(void* self, int arg); // BUG-0483 (below)
+using Form_t = void*(SK_THISCALL*)(void*, int);
+static Form_t o_Form;
+static uintptr_t a_Form, a_NpcCtrl;
 static void save_start();
 static void save_end();
 
@@ -461,6 +465,10 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     H->hook_create(M, (void*)a_SetSelected, (void*)h_SetSelected, (void**)&o_SetSelected);
     H->hook_create(M, (void*)a_DoActionForObjects, (void*)h_DoActionForObjects, (void**)&o_DoActionForObjects);
     H->hook_create(M, (void*)a_WalkSelected, (void*)h_WalkSelected, (void**)&o_WalkSelected);
+    a_Form = H->sym("SporeCoop::NpcTribeController_FormTribe"); // BUG-0483 (optional)
+    a_NpcCtrl = H->sym("Simulator::cNpcTribeController::Get");
+    if (a_Form)
+        H->hook_create(M, (void*)a_Form, (void*)h_Form, (void**)&o_Form);
     coop_init();
     savestrip::add_filter(save_filter); // BUG-0495
     savestrip::add_save_hooks(save_start, save_end);
@@ -979,6 +987,60 @@ static void make_npc_tribes(const uint8_t* p, size_t len, const std::vector<std:
         g_npc_tribe_made.clear();
 }
 
+// BUG-0483: a whole village (tribe, hut, tools, food mat, members) stood in a guest's game only (the
+// detector's Tribe:guest_only:tribe and the rest, after the live Creature -> Tribe change of campaign_ct).
+// Two ways a guest's game keeps a tribe the host's has not:
+// * the guest's own cNpcTribeController forms one (its vt 0x24, 0xCC6440: the nearest spawn marker, the
+//   next species of its list, SpawnNpcTribe; docs/re/tribe.md#tribe-npc-forming): the host forms its own at
+//   its own time and place and the guests make each of the host's (tribe.npc_tribes), so a guest's own
+//   forming only adds a village nobody else has. On a guest in a session it does not run.
+// * the host's game no longer has the tribe the guest's was mapped to (a tribe gone on the host, or one the
+//   guest's game had in its world and the host's not): its members were never touched (the end of a cycle
+//   removes only the unknown members of mapped tribes). After 5 s unmapped in complete cycles they go too.
+// `coop.fix tribe.guest_tribes off`: the guest's game forms and keeps its own tribes (0.7.4).
+static bool g_guest_tribes_fix = true;
+COOP_FIX("tribe.guest_tribes", "BUG-0483", g_guest_tribes_fix,
+         "tribe: a guest's game forms no NPC tribe of its own, and empties tribes the host no longer has");
+static uint32_t g_forms_blocked, g_forms_run, g_unmapped_removed;
+static std::unordered_map<void*, double> g_unmapped_since;
+static void* SK_THISCALL h_Form(void* self, int arg)
+{
+    if (g_guest_tribes_fix && g_npc_tribes_fix && is_guest() && game::mode_id() == modes::kTribe) {
+        if (g_forms_blocked++ < 5)
+            H->log(M, SK_INFO, "tribe: this game's NPC tribe controller would form a tribe: not on a guest (tribe.guest_tribes)");
+        return nullptr;
+    }
+    g_forms_run++;
+    return o_Form(self, arg);
+}
+static void unmapped_tick(const std::vector<void*>& locals, void* pt, double now)
+{
+    if (!g_guest_tribes_fix)
+        return;
+    std::unordered_map<void*, double> keep;
+    for (void* t : locals) {
+        if (t == pt || std::find(g_local_tribe_of.begin(), g_local_tribe_of.end(), t) != g_local_tribe_of.end())
+            continue;
+        auto it = g_unmapped_since.find(t);
+        double since = it == g_unmapped_since.end() ? now : it->second;
+        keep[t] = since;
+        if (now - since < 5.0)
+            continue;
+        auto ms = members(t);
+        if (!ms.empty()) {
+            net::Vec3 p = tribe_pos(t);
+            H->log(M, SK_INFO, "tribe: a tribe of this game at (%.0f %.0f %.0f) the host has not: its %u members go (tribe.guest_tribes)",
+                   p.x, p.y, p.z, (unsigned)ms.size());
+        }
+        for (void* c : ms) {
+            g_gid_of.erase(c);
+            remove_member(c);
+            g_unmapped_removed++;
+        }
+    }
+    g_unmapped_since.swap(keep);
+}
+
 static void guest_state(net::Reader& r)
 {
     uint16_t cycle = r.u16();
@@ -1129,6 +1191,7 @@ static void guest_state(net::Reader& r)
                     remove_member(lc);
                     g_removed++;
                 }
+    unmapped_tick(locals, pt, now); // BUG-0483
 }
 
 // BUG-0173: a member knocked out on the host (health 0, the game's dead flag +0xB5E, behaviour
@@ -2114,11 +2177,11 @@ std::string status()
         snprintf(b, sizeof b,
                  "tribe(guest): mirrors=%u spawned=%u removed=%u cmds_sent=%u rx=%u skipped=%u resets=%u "
                  "local_tribes=%u player_tribe=%p unselected=%u incomplete=%u ai_skipped=%u/%u away_orders=%u local=%d mirror_walks=%u timed=%u "
-                 "npc_tribes_made=%u failed=%u mirror_grounded=%u ours=%u/%u save_stripped=%u/%u\n",
+                 "npc_tribes_made=%u failed=%u mirror_grounded=%u ours=%u/%u save_stripped=%u/%u forms_blocked=%u forms_run=%u unmapped_removed=%u\n",
                  (unsigned)g_gm.size(), g_spawned, g_removed, g_cmds_sent, g_rx, g_rx_skipped, g_resets,
                  (unsigned)all_tribes().size(), player_tribe(), g_unselected, g_incomplete, g_bt_skipped, g_bt_calls, g_away_orders, (int)local_play(),
                  g_mirror_walks, g_mirror_timed, g_npc_tribes_made, g_npc_tribes_failed, g_mirror_grounded, (unsigned)g_ours_c.size(),
-                 (unsigned)g_ours_t.size(), g_save_stripped, g_save_saves);
+                 (unsigned)g_ours_t.size(), g_save_stripped, g_save_saves, g_forms_blocked, g_forms_run, g_unmapped_removed);
     std::string out = b;
     if (!g_last_cmd.empty())
         out += "tribe last order: " + g_last_cmd + "\n";
@@ -2433,6 +2496,15 @@ std::string debug(const std::vector<std::string>& a)
         snprintf(b, sizeof b, "npc tribe %p at (%.1f %.1f %.1f): %u members, %.0f m from the village", t, tp.x, tp.y, tp.z,
                  (unsigned)members(t).size(), net::dist(tp, c));
         return b;
+    }
+    // form: tests (BUG-0483), this game's NPC tribe controller forms its next tribe now (what it does during play)
+    if (!a.empty() && a[0] == "form" && o_Form && a_NpcCtrl) {
+        void* ctrl = skg::cdecl_call<void*>(a_NpcCtrl);
+        if (!ctrl)
+            return "no NPC tribe controller";
+        size_t before = all_tribes().size();
+        h_Form(ctrl, 0);
+        return "tribes " + std::to_string(before) + " -> " + std::to_string(all_tribes().size());
     }
     if (!a.empty() && a[0] == "trees") { // trees near the village with their raw fields (RE)
         net::Vec3 at;

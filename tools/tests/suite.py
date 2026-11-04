@@ -257,6 +257,7 @@ add('civ_planner', P + 'coop_civ_planner.py', warm=True, minutes=3, fixture='civ
 add('civ_discovery', P + 'coop_civ_discovery.py', warm=True, minutes=3, fixture='civ_npc')  # meeting a civilization the guest's game lacks shows no card and does not crash (BUG-0492; SPORE_FIX_OFF=civ.discovery_card crashes)
 add('civ_save_strip', P + 'coop_civ_save_strip.py', minutes=10, uses_free_lane=True)  # a Civ guest's save holds no mirror vehicle and reloads alone without a fault or a null in the civ lists (BUG-0470; SPORE_FIX_OFF=civ.save_strip fails)
 add('tribe_save_strip', P + 'coop_tribe_save_strip.py', minutes=10, uses_free_lane=True)  # a Tribe guest's save holds none of the mirrors / tribes the mod made and reloads alone without a fault (BUG-0495; SPORE_FIX_OFF=tribe.save_strip fails)
+add('tribe_guest_tribes', P + 'coop_tribe_guest_tribes.py', minutes=3, fixture='tribe')  # BUG-0483: a guest's game forms no NPC tribe of its own and empties tribes the host has not (SPORE_FIX_OFF=tribe.guest_tribes fails)
 add('civ_mirror_remove', P + 'coop_civ_mirror_remove.py', warm=True, minutes=3, fixture='civ_npc')  # a vehicle the host's game removed leaves no dead vehicle on the guest (BUG-0478; SPORE_FIX_OFF=civ.mirror_remove fails)
 add('civ_pause_city', P + 'coop_civ_pause_city.py', warm=True, minutes=3, fixture='civ_npc')  # a city founded while a guest is paused reaches it after the pause (BUG-0331)
 add('civ_leave', P + 'coop_civ_leave.py', warm=True, minutes=4, fixture='civ')  # the vehicles of a guest who left go to a present player (BUG-0031; --nofix fails)
