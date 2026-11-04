@@ -37,6 +37,8 @@ def main():
         res[who] = (a, b, fa, fb)
         con.call('coop.npc gopos %.2f %.2f %.2f' % p)
         time.sleep(2)
+    for c in (host, guest):  # warm runs reuse these games: the team mechanics on again for the next test
+        c.call('coop.team on')
     for who, (a, b, fa, fb) in res.items():
         ck(a is not None and b is not None and b > a + 1, f'{who}: the home nest heals it ({a} -> {b})')
         ck(fa is not None and fb is not None and fb <= fa + 1, f'{who}: no heal 100 m from the nest ({fa} -> {fb}): the heal is the nest\'s')
