@@ -2345,3 +2345,96 @@ BUG-0462 follow-up. GOG 2024, Ghidra.
 * What the mod does now: the hook gives the party species the "player species" answer only when its return
   address lies inside GetRelationship or CreatureSocialMode; the cursor / click (0xD2FFD0) and the faces reach the
   relation through those two. Other callers get the game's own answer (`coop.hp`: `other_callers=` counts them).
+
+## The social meter and the win message on a guest (2026-11-03, fix/w41-creature-left)
+<a id="creature-guest-meter"></a>
+
+BUG-0179 (meter and message), BUG-0525 (prompts, open). GOG 2024, Ghidra and lane 9.
+
+* ✔ (Ghidra) The BT node "SocialPropose" start `SporeCoop::SocialPropose_Start` 0xDA4360 builds the session (pool
+  0xBCB220, session +0x1AC rounds = tuning +0x424, one less for a baby, +1 for an alpha), picks the NPC's prompt
+  abilities (npc +0x1020 vector, random from its species profile +0x7A4, their points at species +0x6D4 [i] +0x3C)
+  and opens the meter: meter = `[[cCreatureModeStrategy +0x68] +0x60]` (0xD2BA50; the Scenario mode has its own),
+  stored at session +0x1DC, then `SocialMeter_Reset` 0xE33CA0, `SocialMeter_SetVisible` 0xE319D0(0),
+  `SocialMeter_SetRounds` 0xE31AE0(rounds: meter +0x44), `SocialMeter_SetRelation` 0xE31C70(relation: the face),
+  SetVisible(1), hint 0x1EA83595 the first time. The tick 0xDA4950 moves the bars (0xD9B9C0 -> `SocialMeter_SetBar`
+  0xE31990(bar 0|1, frac)) from the ability animations' progress, and calls `CreatureSocialSuccess` 0xD9BBD0 when the
+  meter is full (`SocialMeter_IsFull` 0xE31A50: +0x26). The win: `SocialMeter_Finish` 0xE31C50, SetRelation, the
+  message 0x60B4123 `{avatar, npc, 0}`. The session end 0xD9F7A0 hides the meter (SetVisible 0).
+* ✔ SetVisible is `UILayout::SetVisible(meter + 0xC)`; the layout's visible byte is `[meter +0xC +0x14] +0x8C`
+  (0x8103B0). Runtime (lane 9): 0 before, 1 while the guest's meter is open, 0 after the close.
+* ✔ (Ghidra) What 0x60B4123 does: CreatureStageEventHandler 0xD47FC0 rolls a part reward for the impressed creature
+  (adult, another species, its `+0xB58 & 2` clear; chance 0x1582F7C, 0x1582F78 for an alpha) through 0xC0BD60 /
+  0xD47E50 / 0xD3D4A0 (the same path as 0x5371F11 and an attack's 0xD335362C) and sets `+0xB58 |= 2` once a part was
+  given. So a guest's friends never gave it a part before.
+* ✔ (runtime) The meter's bar fields (+0x134..+0x13C for bar 0, range +0x3C / +0x40) stayed 0.0 on the guest while it
+  was open for a Kook (one round): the geometry is not laid out within that second, so the bar is not a usable check.
+  The meter shows (screenshot of lab 20261103-234410: the arc with the relation face at the top).
+* `social.guest_meter` (social.cpp): the guest opens the meter as SocialPropose does when it engages a mirror (rounds
+  from the mirror's tuning, the relation face), moves bar 0 to done / needed at each K_PROGRESS of the host, at its
+  own win sets it full, Finish, the face and posts 0x60B4123 `{avatar, proxy, 0}` (coop.cpp h_StageMsg gives the
+  proxy a blank +0xE84), and hides it when the engagement ends. `coop.social meter` prints the meter's fields.
+* ? Not done (BUG-0525): the NPC's prompts. The host has no native session for a guest's game either (it counts the
+  guest's rounds, social.cpp host_act), so no prompt list exists anywhere; a fix would let the host pick the prompts
+  as 0xDA4360 does (species +0x7A4), play them on the NPC (relayed by npc.anims) and count only the matching answer.
+
+## The roar, second look (2026-11-03, fix/w41-creature-left)
+<a id="creature-roar-2"></a>
+
+BUG-0501 (still open, time box of about 20 minutes, Ghidra only). Follows #creature-roar.
+
+* ✔ The end callback of HeardRagingRoar / HeardSirenSong 0xD85400 clears stimulus 0x400000 (lo). Every `PUSH
+  0x400000` next to a BT_PostStimulus call was listed (`bytes 68 00 00 40 00`): the two in 0xC23A10 are a creature's
+  perception scan (its seen list +0x338..+0x33C, called only by the BT node 0xDAA000): stimulus 0x400000 "sees a
+  creature" to adult creatures (+0xB5E == 1) and to citizens in reach; not the roar. The others (0xD69740, 0xD7B620,
+  0xD7B690, 0xD8E840, 0xDAA100, 0xDAE910, 0xDBAAF0, 0xDBB7D0, 0xDBC730) are BT nodes, not looked at.
+* ✔ The avatar's ability use 0xC1E8B0 posts its stimulus by the ability's kind (`GetAbility(i) +0x7C`): 0 one target
+  (hit 0x2000 for a creature), 2 / 3 every creature in range (0xC42230 list, 0xD99A20 distance), 1 / 3 also 0xC155D0;
+  kind 0x2B with model 0x2C39370 launches a projectile. ~ Inferred: the Raging Roar is a kind 2 / 3 ability whose
+  stimulus the NPCs' BT turns into HeardRagingRoar; on a guest it reaches only AI-less mirrors.
+* Not done: a fix (the host replaying a guest's area ability from the puppet) cannot be checked without a creature
+  that has the roar (neither fixture creature has it; a carnivore Cell's consequence ability).
+
+## The chat line under a modal box of the game (2026-11-03, fix/w41-creature-left)
+<a id="creature-chat-under-modal"></a>
+
+BUG-0482 follow-up. Lane 9, `tools/tests/coop_chat_modal.py`.
+
+* ✔ (runtime) The "game saved" box (control id 0x06318E78, world.cpp) is the UTFWin window manager's modal window
+  (`[IWindowManager::Get()] +0x82C` non-null while it is up, null after OK) and holds no input lock
+  (cGameInputManager +0x110 = 0). Under it a click on the co-op window's chat line is dropped like under a caption:
+  the line stays empty (out/lab/20261103-235548, switch off).
+* `core.ui_modal_edit` (coop_ui.cpp `clicks_locked`): the locked paths of BUG-0273 (buttons) and BUG-0482 (text
+  lines) take "a modal window of the game is up" (+0x82C, not our own window) like the input lock. `coop.uistate`
+  prints `modal=` / `modal_seen=`; `coop.save hold` keeps our save's box up for a test, `coop.save confirm` lets the
+  mod confirm it again, `coop.save box` says whether it is up.
+
+## The home nest heals a guest (2026-11-03, fix/w41-creature-left)
+<a id="creature-nest-heal"></a>
+
+BUG-0496 (not reproduced). Lane 9, `tools/tests/coop_nest_heal.py`.
+
+* ✔ (runtime, lab 20261103-235806) In the creature fixture both players at the home nest, health set to 3 and the
+  co-op pack regeneration off (`coop.team off`): the host's own game healed it 3.2 -> 10.0 (full) and the guest's
+  3.6 -> 16.0 (full, its own species Kirgle) in 12 s; 100 m from the nest neither healed (3.0 -> 3.0). So a guest's
+  game runs the nest heal for its avatar at the save's player nest by itself.
+* ? Not checked: a guest after the host's migration to a new nest (the guest's game may still have the old nest
+  as its home: docs/re/creature.md 6.23 / coop_migration.py), a guest whose home nest the host's game made extinct
+  (the player's mark said "for me nest is not extinct"), a guest whose own game has another nest object than the
+  host's (BUG-0434 / BUG-0435 mound).
+
+## Own creatures under the ground in the brain caption: not reproduced (2026-11-03, fix/w41-creature-left)
+<a id="creature-brain-caption-ground"></a>
+
+BUG-0504. Lane 9, probes (no test kept).
+
+* ✔ (runtime) Both own creatures put at the report's spot (-86.1 -465.6 -177.1) with `coop.npc gopos`, then 100 DNA
+  (`coop.dna add 100`): the brain caption F6A4B1E1 came (`busy=cinematic,input_lock`, then `paused`), and the height
+  over the ground stayed 0.00 on both games before and for 18 s during it (coop.avatar `above=`, trace `agl=`).
+* ✔ (runtime) `coop.npc gonpc <id> 3` (0.7.4: 2 m over the ground, then it falls) next to 10 NPCs: the host's
+  creature rested 0.00-0.54 m OVER the terrain height (standing on something: the nest's sticks, a rock) until it
+  walked, never under it.
+* ~ Inferred: the -0.63 / -0.71 m of play_creature (lab 20261103-124913, creatures that walked there) is the game's:
+  the mod does not move its own creature, and the caption does not lower it at that spot or at the nest. What the
+  creatures stood on there is not known (the GetHeightAt terrain only sample against a collision surface; a walk
+  path on the slope). The pack_target allow of 0.7.4 stays.

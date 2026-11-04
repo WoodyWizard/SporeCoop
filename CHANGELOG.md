@@ -16,6 +16,12 @@
   screen, instead of walking somewhere else (BUG-0476, BUG-0475).
 - Civilization: roads between cities (trade routes) that appear in the host's game appear in the guest's game too
   (BUG-0494).
+- Creature: a guest's social game now shows the game's social meter, like the host's, and a win tells the
+  guest's game that the creature became a friend (BUG-0179).
+- A chat line typed in the co-op window while the game's "game saved" box (or another box of the game) is up
+  is no longer lost; the window's buttons work then too (BUG-0482).
+- Creature: after evolving in the editor your creature is the new species at once, also when you play alone;
+  the host no longer saves the game after every evolution in co-op (BUG-0517).
 
 ## [0.7.4] - 2026-11-03
 

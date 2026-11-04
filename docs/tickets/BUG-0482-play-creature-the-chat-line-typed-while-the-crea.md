@@ -8,12 +8,12 @@ reported: 2026-11-03
 source: nightly detector run 2026-11-03
 role: both
 versions: 
-fixed_in: 0.7.4
-branch: fix/w40-play
-commits: fbe3916a
-tests: chat_caption, play_creature
+fixed_in: 0.7.4 (caption), unreleased (modal boxes)
+branch: fix/w40-play, fix/w41-creature-left
+commits: fbe3916a, 1c880451
+tests: chat_caption, chat_modal, play_creature
 signature:
-docs: docs/re/creature.md#creature-chat-under-caption
+docs: docs/re/creature.md#creature-chat-under-caption, docs/re/creature.md#creature-chat-under-modal
 related: BUG-0273, BUG-0500
 ---
 
@@ -40,6 +40,9 @@ a visible text line of the co-op window makes the mod take the typing: the game 
 (seen by the WH_GETMESSAGE hook, real keys and the tests' input alike) go into that line (Backspace erases,
 Enter sends the chat line), outside the frame. It stops at the next click, when the window closes, or as soon
 as the game changes the line's text itself (never typed twice). Switch `coop.fix core.ui_locked_edit off`.
+Follow-up (fix/w41-creature-left): a modal box of the game (the window manager's modal window +0x82C, the
+"game saved" box) counts as locked too, for the buttons (BUG-0273's path) and the text lines (coop_ui.cpp
+`clicks_locked`). Switch `coop.fix core.ui_modal_edit off`.
 
 ## Verification
 chat_caption (tools/tests/coop_chat_caption.py), both players, during CRG_ClaimNest and without a caption:
@@ -47,6 +50,9 @@ chat_caption (tools/tests/coop_chat_caption.py), both players, during CRG_ClaimN
   for the guest and the host during the caption; without a caption OK);
 - PASS with the fix: out/lab/20261103-152037 (the line in both chats, typed once, `the mod takes the typing`
   in both logs).
+chat_modal (tools/tests/coop_chat_modal.py), the host under its "game saved" box (coop.save hold) and without it:
+- FAIL with SPORE_FIX_OFF=core.ui_modal_edit: out/lab/20261103-235548 (the chat line stays empty under the box);
+- PASS: out/lab/20261103-235444.
 
 ## History
 - 2026-11-03: opened.
@@ -55,3 +61,4 @@ chat_caption (tools/tests/coop_chat_caption.py), both players, during CRG_ClaimN
   box was up (the host saved the world for a guest coming back from the main menu); the same class as the caption
   (a modal box of the game takes the click), not covered by core.ui_locked_edit. Next: 0.7.5.
 - 2026-11-03: released in 0.7.4.
+- 2026-11-03: the modal-box half fixed on fix/w41-creature-left: the "game saved" box is the window manager's modal window (+0x82C, no input lock); core.ui_modal_edit takes it like the input lock (buttons and text lines).

@@ -94,3 +94,9 @@ SporeCoop::SaveAreas_Init ; BUG-0506: on GOG 2016 the missing save area guard is
 SporeCoop::cTribeTool_PlacementReset ; BUG-0514: host tools are not copied to guests on GOG 2016 (tribe_tool world objects off)
 SporeCoop::cTribe_SetToolPurchased ; BUG-0514: as above
 SporeCoop::NpcTribeController_FormTribe ; BUG-0483: on GOG 2016 a guest's own game may still form NPC tribes of its own (tribe.guest_tribes keeps only the emptying of tribes the host has not)
+SporeCoop::SocialMeter_Reset ; BUG-0179: on GOG 2016 a guest's social game shows no social meter and no win message 0x60B4123 (social.guest_meter has no effect there)
+SporeCoop::SocialMeter_SetVisible ; BUG-0179: on GOG 2016 a guest's social game shows no social meter and no win message 0x60B4123 (social.guest_meter has no effect there)
+SporeCoop::SocialMeter_SetRounds ; BUG-0179: on GOG 2016 a guest's social game shows no social meter and no win message 0x60B4123 (social.guest_meter has no effect there)
+SporeCoop::SocialMeter_SetRelation ; BUG-0179: on GOG 2016 a guest's social game shows no social meter and no win message 0x60B4123 (social.guest_meter has no effect there)
+SporeCoop::SocialMeter_SetBar ; BUG-0179: on GOG 2016 a guest's social game shows no social meter and no win message 0x60B4123 (social.guest_meter has no effect there)
+SporeCoop::SocialMeter_Finish ; BUG-0179: on GOG 2016 a guest's social game shows no social meter and no win message 0x60B4123 (social.guest_meter has no effect there)

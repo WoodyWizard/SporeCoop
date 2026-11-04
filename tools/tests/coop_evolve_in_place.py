@@ -217,6 +217,8 @@ def main():
     host, guest = start('cell' if stage == 'cell' else 'creature', guest_creations=False)
     ck = Checks()
     time.sleep(3)
+    if '--nosave' in sys.argv:  # BUG-0517: no save of the host after its editor (as a host alone or without a share)
+        print('  host:', host.call('coop.evokey nosave')['out'].strip(), flush=True)
     m_stage = 'Cell' if stage == 'cell' else 'Creature'
     h0 = host_own(host, stage)
     g0 = own_model(guest, stage)
@@ -255,6 +257,8 @@ def main():
 
     h1 = host_own(host, stage)
     print(f'  host {kind} {h0} -> {h1}', flush=True)
+    if stage != 'cell':
+        print('  host:', host.call('coop.evokey')['out'].strip(), flush=True)
     ck(h1 and h1 != h0, f"the host's editor gave it a new {kind}")
 
     def seen():

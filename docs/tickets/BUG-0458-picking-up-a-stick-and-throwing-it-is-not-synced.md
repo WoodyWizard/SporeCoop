@@ -40,3 +40,4 @@ fix/w40-misc (2026-11-03, Ghidra only, not fixed: the time box went to BUG-0506 
 - 2026-11-02: opened.
 - 2026-11-03: analysed on fix/w40-creature-acts, not fixed (findings in the docs).
 - 2026-11-03: hold slots and the hook points found on fix/w40-misc (Ghidra), not fixed.
+- 2026-11-03: not started on fix/w41-creature-left (K1 batch): the time box went to BUG-0179, BUG-0482, BUG-0517 and the probes of BUG-0496 / BUG-0504. The plan of docs/re/creature.md#creature-hold-slots stands; it needs a command that makes the avatar pick up a save object (no test path carries yet).

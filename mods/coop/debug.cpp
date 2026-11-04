@@ -23,8 +23,18 @@ static const SkHost* H;
 #define SAY(...) H->out_printf(out, __VA_ARGS__)
 
 namespace {
-int c_save(void*, int, const char* const*, SkOut* out)
+int c_save(void*, int argc, const char* const* argv, SkOut* out)
 {
+    if (argc > 1 && !strcmp(argv[1], "confirm")) { // tests: the held box is confirmed as usual again
+        world::g_box_hold = false;
+        SAY("box released");
+        return 0;
+    }
+    if (argc > 1 && !strcmp(argv[1], "box")) {
+        SAY("saved_box=%d hold=%d", world::saved_box_up() ? 1 : 0, world::g_box_hold ? 1 : 0);
+        return 0;
+    }
+    world::g_box_hold = argc > 1 && !strcmp(argv[1], "hold"); // tests (BUG-0482): the box stays up
     std::string err;
     if (!world::save_game(err)) {
         SAY("%s", err.c_str());

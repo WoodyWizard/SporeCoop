@@ -994,3 +994,24 @@ GitHub issue #190 (BUG-0506), a follow-up of #creations-save-areas.
   checks once more when the hook did not run (hot reload), and the settings builder keeps its check. Pictures,
   Movies and Animations are the only areas of dir 0xA0214B (the folder AnimatedAvatars on disk is made elsewhere,
   not looked at).
+
+## The own creature's species key after an evolution editor (2026-11-03, fix/w41-creature-left)
+<a id="creations-evolve-key"></a>
+
+BUG-0517. GOG 2024, Ghidra and lane 9 (`coop_evolve_in_place.py --case creature --nosave`, suite `evolve_key`).
+
+* ✔ (Ghidra) The stage's return 0xD43DE0, back from the editor modes 0x1654C06 / 0xDBDBA1 with a stored result
+  (this+0x60, set by the result message 0x30C11C7 for the tag 0x64AA168), calls `0x4DFBC0(cSpeciesManager, avatar
+  +0xB20 profile, result +0x18 new key)`: the avatar's species profile object is reloaded IN PLACE with the new
+  species (0x4D4F70), both keys map to it, and the world's player species +0xA4 becomes the new key when it was the
+  old one (0x4DF380). Then avatar vt 0xAC, the normalizing scale, SetEvolutionPoints(result +0x34), and vt 0xAC on
+  every creature of the avatar's profile (its family). Nothing writes the creatures' own key +0xB28.
+* ✔ (runtime, lab 20261104-000929, switch off, no save) After the editor the host's avatar had the new profile
+  but +0xB28 = 065CBE70 (the pre-editor species) and kept it: every reader of +0xB28 (the mod's state, trace,
+  evolve_inplace's check: the guest got the world after 30 s after all) saw the old species. A save writes the
+  key (0.6-1.7 s, #creations-evolve-in-place); a host alone never saves then.
+* `creature.evolve_key` (coop.cpp evo_key_tick): within 60 s after an evolution editor, when the avatar's profile
+  key (+0xB20 -> +0x504) differs from its +0xB28 and +0xB28 is the pre-editor species, every creature with the
+  avatar's profile and that key gets the profile's key (6 creatures in the lab: the avatar and its family); the
+  host's in-place save of BUG-0508 is then skipped. Any role, also without a session (~ not run alone in the lab).
+  `coop.evokey [nosave|save]` prints `keys_set=` and turns the host's in-place save off for a test.
