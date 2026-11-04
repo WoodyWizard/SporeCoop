@@ -102,6 +102,11 @@ struct Remote {
     bool joined_phase = false; // host: the guest played the host's mode after the last world send
     bool needs_world = false;  // host: joined while the host was not playing; send the world later
     double cine_wait_since = 0; // host: since when this guest's share waits for a cinematic (BUG-0232)
+    // host, BUG-0508 (world.evolve_in_place): after the host's editor this guest was in the same world and
+    // stage, so it may take the new body without the whole world; evo_check_until: until then its avatar
+    // must have left the host's pre-editor species (Creature), or it gets the world after all
+    bool evo_inplace = false;
+    double evo_check_until = 0;
     // host, BUG-0231 (core.share_retry): a failed share is retried; dropped with the entry at the
     // session end (g_remotes.clear())
     uint32_t join_serial = 0; // this guest's join (the share's tag: an id reused by a newcomer is not it)
@@ -1727,13 +1732,78 @@ double g_share_cine_since = 0, g_share_due_at = 0;
 bool g_share_cine_each_fix = true;
 COOP_FIX("npc.sharecine_each", "BUG-0232", g_share_cine_each_fix, "world: the wait for the evolution cinematic counts per guest");
 
+// BUG-0508: after every host editor (Cell and Creature) every guest got the whole world again (a 3 MB
+// save) and went Cell / Creature -> galaxy menu -> load, although the host's new creation (its bundle,
+// creations.cpp) had already rebuilt its puppet. A guest of this version in the same world and stage
+// now keeps playing: the bundle rebuilds the host's puppet and a guest that plays the world's species
+// takes the host's new one in place (creations.cpp `follow`); in Creature the host still saves its own
+// game once (its avatar takes the evolved species only with a save) but sends nothing. The world still
+// goes when the evolution needs it (docs/re/creations.md#creations-evolve-in-place): a migration started
+// (the brain grew, BUG-0019), the guest in another world or stage, an older guest, or (Creature) a guest
+// whose avatar still plays the pre-editor species 30 s later.
+// Off: every guest gets the world after every editor (0.7.3.6).
+static bool g_evolve_inplace_fix = true;
+COOP_FIX("world.evolve_in_place", "BUG-0508", g_evolve_inplace_fix,
+         "world: after the host's editor a guest in the same world and stage takes the new body without loading the world again");
+static uint32_t g_evo_key_before = 0; // host: its avatar's species when its editor opened (Creature)
+static int g_evo_age_before = -1;     // host: its avatar's age (+0xB34) then
+static bool g_evo_cine = false;       // host: a cinematic held a share since the last evolution
+static unsigned g_evo_inplace = 0, g_evo_fallback = 0; // tests: guests kept in place, worlds sent after all
+// the migration state of this game's player (cPlayer +0x69C property 0x514A219, docs/re/creature.md:
+// CreatureGame_AfterEditor): 1 = a migration started by this evolution (CRG_SpeciesMigrate), 2 = its goal
+static int host_migration()
+{
+    static uintptr_t a_GetProperty = H->sym("SporeCoop::Player_GetProperty");
+    uint8_t* nm = (uint8_t*)game::noun_manager();
+    void* pl = nm && skg::readable(nm + 0x74, 4) ? *(void**)(nm + 0x74) : nullptr;
+    return a_GetProperty && pl ? skg::thiscall<int>(a_GetProperty, pl, 0x514A219u) : -1;
+}
+static int g_evo_migration_before = -1;
+static uint32_t g_evo_seen_key = 0; // host: the avatar's species, age and migration in the Creature stage
+static int g_evo_seen_age = -1, g_evo_seen_mig = -1;
+static double g_evo_seen_at = 0;
+static unsigned g_evo_saves = 0; // host: saves made for an evolution in place (tests)
+static bool g_evo_save_due = false;
+static int host_avatar_age()
+{
+    void* av = game::mode_id() == modes::kCreature ? game::avatar() : nullptr;
+    return av && skg::readable((uint8_t*)av + 0xB34, 4) ? *(int*)((uint8_t*)av + 0xB34) : -1;
+}
+static const std::string* peer_version(uint8_t id)
+{
+    for (auto& p : g_sess.players())
+        if (p.id == id)
+            return &p.version;
+    return nullptr;
+}
+// host: may guest r take the host's evolution in place (same world, the host's stage or an editor)?
+static bool evolve_inplace_ok(uint8_t id, const Remote& r, uint32_t stage)
+{
+    // (called from on_mode_change too, before g_adapter / g_world follow the new mode)
+    const modes::Adapter* ad = modes::for_mode(stage);
+    uint32_t world = ad ? modes::current_place(ad) : 0;
+    if (!g_evolve_inplace_fix || r.echo || r.buf.empty() || !ad || ad->own_worlds)
+        return false;
+    const std::string* v = peer_version(id);
+    if (!v || v->empty())
+        return false; // an older SporeCoop: it does not follow the host's species in place
+    const auto& ls = r.buf.latest();
+    bool editor = ls.mode == modes::kEdit || ls.mode == modes::kEditor;
+    return (ls.mode == stage || editor) && world && ls.world == world;
+}
+
 void on_mode_change(uint32_t from, uint32_t to)
 {
     if (to == modes::kMenu && stage_mode(from) && g_sess.role() == net::Role::Host && !g_remotes.empty())
         feed("the others play on alone until you load a game again (they get its world)");
     bool editor = to == modes::kEdit || to == modes::kEditor;
-    if (editor && stage_mode(from))
+    if (editor && stage_mode(from)) {
         g_was_in_editor = true;
+        // BUG-0508: what the evolution changes, as last seen in the stage (the avatar is gone by now)
+        g_evo_key_before = from == modes::kCreature ? g_evo_seen_key : 0;
+        g_evo_age_before = from == modes::kCreature ? g_evo_seen_age : -1;
+        g_evo_migration_before = from == modes::kCreature ? g_evo_seen_mig : -1;
+    }
     if (!editor && (from == modes::kEdit || from == modes::kEditor)) {
         g_own_editor = false;
         g_editor_left_at = H->time_seconds(); // BUG-0404: the evolution's cinematic starts now
@@ -1749,10 +1819,14 @@ void on_mode_change(uint32_t from, uint32_t to)
         return;
     if (!new_stage && !evolved)
         return;
+    g_evo_cine = false;
+    g_evo_save_due = evolved;
     for (auto& [id, r] : g_remotes)
         if (!r.echo) {
             r.needs_world = true; // sent by follow_phase as soon as the host controls something
             r.cine_wait_since = 0; // a new wait (BUG-0232)
+            r.evo_inplace = evolved && evolve_inplace_ok(id, r, to); // BUG-0508: decided after the wait
+            r.evo_check_until = 0;
         }
     g_share_due_at = H->time_seconds() + (evolved ? 3.0 : 0.0); // BUG-0019: its cinematic starts first
     notice(new_stage            ? g_name + " entered the " + modes::mode_name(to) + " stage: everybody follows"
@@ -1839,6 +1913,12 @@ void follow_phase(double now)
         !stage_mode(g_mode))
         return;
     uint64_t key = ((uint64_t)g_mode << 32) | modes::current_world();
+    if (g_mode == modes::kCreature && g_local && now - g_evo_seen_at > 0.5) { // BUG-0508
+        g_evo_seen_at = now;
+        g_evo_seen_key = game::species_instance(g_local);
+        g_evo_seen_age = host_avatar_age();
+        g_evo_seen_mig = host_migration();
+    }
     for (auto& [id, r] : g_remotes) {
         if (r.echo)
             continue;
@@ -1852,8 +1932,10 @@ void follow_phase(double now)
                 bool cine = gate != 0;
                 bool waited = since != 0 && cine;
                 if (share_wait::hold(since, cine, now, g_share_due_at)) {
-                    if (cine)
+                    if (cine) {
                         g_share_cine_held_at = now; // BUG-0382: trace share_wait=cinematic
+                        g_evo_cine = true; // BUG-0508: this evolution plays a cinematic: the world goes
+                    }
                     continue;
                 }
                 if (waited)
@@ -1861,6 +1943,46 @@ void follow_phase(double now)
             } else
                 g_share_cine_since = 0;
             r.cine_wait_since = 0;
+            if (r.evo_inplace) { // BUG-0508: the evolution in place, unless it needs the world after all
+                r.evo_inplace = false;
+                // (every Creature evolution plays a cinematic after the editor, ~10 s, and the host's avatar
+                // takes the new species only after it: lab 20261103-173315; the migration is what the
+                // guest's game cannot get without the world, BUG-0019)
+                int age = host_avatar_age(), mig = g_mode == modes::kCreature ? host_migration() : -1;
+                const char* why = !evolve_inplace_ok(id, r, g_mode)                      ? "left the world or stage"
+                                  : g_mode == modes::kCreature && mig < 0                  ? "the migration state is unknown"
+                                  : mig > 0 && mig != g_evo_migration_before              ? "a migration started"
+                                                                                         : nullptr;
+                // (the age is no sign: the evolved avatar is a hatchling, age 0, for a few seconds after the
+                // cinematic of every evolution, lab 20261103-173652)
+                if (!why) {
+                    // The host's own avatar takes the evolved species only with a save of the game: without
+                    // the share's save it stayed the pre-editor species for minutes while the world's player
+                    // species (cSpeciesManager +0xA4) was the new one (lab 20261103-173652). The save is made,
+                    // only not sent (once per evolution, docs/re/creations.md#creations-evolve-in-place).
+                    if (g_mode == modes::kCreature && g_evo_save_due) {
+                        g_evo_save_due = false;
+                        std::string err;
+                        if (world::save_game(err))
+                            g_evo_saves++;
+                        else
+                            LOG("evolved in place: the save for the host's new body failed: %s", err.c_str());
+                    }
+                    r.needs_world = false;
+                    r.world_sent = key;
+                    r.joined_phase = true;
+                    r.evo_check_until = g_mode == modes::kCreature && g_evo_key_before ? now + 30.0 : 0;
+                    g_evo_inplace++;
+                    LOG("evolved in place: %s keeps its world (host species %08X -> %08X, age %d -> %d, migration %d -> %d, cinematic %d)",
+                        r.name.c_str(), g_evo_key_before,
+                        g_mode == modes::kCreature && game::avatar() ? game::species_instance(game::avatar()) : 0,
+                        g_evo_age_before, age, g_evo_migration_before, mig, (int)g_evo_cine);
+                    feed(r.name + " gets your new body in place (no reload)");
+                    continue;
+                }
+                LOG("evolved: %s gets the world (%s)", r.name.c_str(), why);
+            }
+            r.evo_check_until = 0;
             r.needs_world = false;
             r.world_sent = key;
             r.joined_phase = false;
@@ -1877,6 +1999,20 @@ void follow_phase(double now)
         if (r.buf.empty())
             continue;
         const auto& ls = r.buf.latest();
+        // BUG-0508: a guest kept in place whose avatar still plays the host's pre-editor species: the
+        // apply failed there (or its switch is off): it gets the world after all
+        if (r.evo_check_until) {
+            if (ls.mode == modes::kCreature && ls.species && ls.species != g_evo_key_before)
+                r.evo_check_until = 0; // it follows (or plays a creature of its own)
+            else if (now > r.evo_check_until && ls.mode == modes::kCreature) {
+                r.evo_check_until = 0;
+                g_evo_fallback++;
+                LOG("evolved in place: %s still plays %08X after 30 s: sending the world", r.name.c_str(), ls.species);
+                r.needs_world = true;
+                r.cine_wait_since = 0;
+                continue;
+            }
+        }
         // a guest in an editor is left alone (it may be evolving inside the same stage); a guest
         // that plays another stage than the host is pulled back into the host's stage
         bool behind = ls.mode != g_mode && stage_mode(ls.mode);
@@ -3758,6 +3894,7 @@ int c_status(void*, int, const char* const*, SkOut* out)
     SAY("host elsewhere=%d, its world's messages dropped %u, dna pending %.1f, own-world dna gains %u, welcome world %08X, share retries %u\n",
         (int)(g_world_gate_fix ? guest_elsewhere() : host_elsewhere()), g_place_dropped, g_dna_pending, g_dna_own,
         g_sess.welcome_world(), g_share_retries); // BUG-0130, BUG-0231
+    SAY("evolve in place: kept %u, sent after all %u, saves %u\n", g_evo_inplace, g_evo_fallback, g_evo_saves); // BUG-0508
     SAY("away dna: solo_mode=%08X solo_dropped=%u owed_world=%08X owed_dropped=%u\n", g_solo_mode, g_solo_dropped,
         g_dna_owed_world, g_owed_dropped); // BUG-0233
     SAY("strays: pending=%u removed=%u\n", (unsigned)g_strays.size(), g_strays_removed);

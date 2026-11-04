@@ -147,7 +147,7 @@ Shared contracts between the features:
 
 | Phase | Done | Module | Test |
 |---|---|---|---|
-| All | Evolution vote: the host's request to enter an editor (new phase or evolution within a phase) waits until everyone presses "I'm ready", 60 s, or "Start now"; once the host returns from the editor or enters the new phase, the world is immediately sent to everyone ("evolving together"); a guest's editor session is not interrupted | `coop.cpp` (`h_Submit`, `on_mode_change`) | `coop_vote.py` |
+| All | Evolution vote: the host's request to enter an editor (new phase or evolution within a phase) waits until everyone presses "I'm ready", 60 s, or "Start now"; once the host enters the new phase the world is sent to everyone ("evolving together"); after an editor inside a stage a guest in the same world gets only the new creation (BUG-0508; a migration still sends the world); a guest's editor session is not interrupted | `coop.cpp` (`h_Submit`, `on_mode_change`) | `coop_vote.py` |
 | Cell | One pool: the host's NPCs and food appear on the guest as passive mirrors, the guest has none of its own; guest bites are applied by the host (DamageCell, the lethal BreakOrSwallow and mouth chunks); kills, their death and their meat happen on the host and are seen by both, the guest's game drops no loot of its own, food from a chunk counts once (docs/re/cell.md 11); the host's NPCs face on the guest as on the host (the soft body is turned, docs/re/cell.md 10); bites by the host's NPCs on the guest's cell are sent to the guest; shared food counter; "Symbiosis" - a 10 s knockout (visible to all: translucent cell, "KO n", revive bar, off-screen arrow to the partner, game effects), revive by a partner right next to you, otherwise respawn next to them as a small cell (grows by eating); healing near a partner; the partner's cell is exactly in place and faces the same way (pose is set right after the simulation step) | `cellsync.cpp` | `coop_cell.py`, `coop_cell_spin.py`, `coop_cell_meat.py` |
 | Creature | Joint hunting +25 %, "The pack protects" (40 % health instead of death, once a minute), regeneration near a partner; NPCs, fights, DNA shared (existing); kills die on every screen and count for the hunt on both; NPCs near a partner treat it as the player (the game's AI knows only one) | `teamplay.cpp`, `npc.cpp` | `coop_team.py`, `coop_two_instances.py`, `coop_creature_kills.py` |
 | Tribe | All members of all tribes are host mirrors; the player tribe's members are split between players; you can select and command only your own; guest orders (move, attack, hunt, gather…) are executed by the host; animals around the tribe are shared; owner labels | `tribe.cpp` | `coop_tribe.py` |
@@ -189,7 +189,8 @@ analysis - [docs/re/creations.md](re/creations.md)):
   records (a new creation is sent once it is in the My Creations file: [re/creations.md](re/creations.md) 8);
 * Cell stage: a guest calls its own mate (the mating-call button) and evolves its own cell in its
   own editor without a vote; the host's mating call goes through the vote (one vote per call), and
-  after the host's editor everybody gets the world and the host's new cell
+  after the host's editor everybody gets the host's new cell in place (no world reload since BUG-0508,
+  [re/creations.md](re/creations.md#creations-evolve-in-place))
   ([re/cell.md](re/cell.md) 10, `coop_editor_desync.py`).
 
 In the own editor the parts of the player's own creature are allowed even when the stage editor's

@@ -3778,3 +3778,18 @@ the other player's game, both ways where the kind has two:
   toasts (`coop.status` `toast ... '<text>'`) must say it is not responding, then responding again.
   `SPORE_FIX_OFF=core.partner_silent` fails. The test allows the hitch gate and the monitor's "hidden" rule (made on
   purpose).
+
+## The host's editor without a reload (2026-11-03, fix/w40-no-reload)
+<a id="testing-evolve-in-place"></a>
+
+* `coop_evolve_in_place.py --case cell` (suite `evolve_in_place_cell`, cell fixture, ~2.5 min) and `--case creature`
+  (`evolve_in_place_creature`, creature fixture, ~2.5 min), BUG-0508: the guest has no own creations. Cell: the
+  host's mating call, the vote, an eye moved, done. Creature: +40 DNA, `coop.vote evolve`, the unlocked mouth at
+  y 780 (#testing-world-lod's note), the guest's red cross. Then every guest mode 0.5 s apart for 60 s after the host
+  is back: no GalaxyGameEntry / LoadGame, the host's `world saves ... for shares` unchanged, the guest's puppet =
+  the host's newest bundle with its name, the guest's own cell model / avatar key = the host's new key, Creature:
+  `world player species` (coop.creations, cSpeciesManager +0xA4) the same on both. `SPORE_FIX_OFF=world.evolve_in_place`
+  fails (the reload: menu 3-4 s). `coop.status` "evolve in place: kept / sent after all / saves", `coop.creations`
+  "follow" and "world player species" lines.
+* Pitfall met: `on_mode_change` runs before `g_adapter` / `g_world` follow the new mode: code there that needs the
+  stage's adapter takes `modes::for_mode(to)`.

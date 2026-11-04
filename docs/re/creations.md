@@ -852,6 +852,73 @@ BUG-0466, BUG-0457. GOG 2024, objdump of `SporeApp.exe` (dc04aee5) and lanes 6 /
   older editor tests) is the "edit a creation" editor for the host too: its result never changes the
   host's species (BUG-0457 not reproduced through it).
 
+## The host's editor without a world reload: what the guest's game needs (2026-11-03, fix/w40-no-reload)
+<a id="creations-evolve-in-place"></a>
+
+BUG-0508. GOG 2024, lane 6, `tools/tests/coop_evolve_in_place.py --case cell|creature` (a guest without own
+creations: it plays the host world's species, the case where the reload gave the guest's own avatar its body).
+
+Until 0.7.3.6 every host editor inside a stage (`on_mode_change` "evolved") marked every guest `needs_world`:
+`follow_phase` saved the host's game (MessagePost 0x1CD20F0) and sent it, the guest went stage -> galaxy menu
+(GalaxyGameEntry 0x02CCD1D2) -> LoadGame -> stage (lab 20261103-173049 Cell: 3 s in the menu;
+20261103-173315 Creature: menu + LoadGame, 4 s). What that reload carried, checked one by one:
+
+* ✔ (runtime) **The host's puppet**: not the reload. The host's creation bundle (share_own, every 2 s) reaches the
+  guest before the world, is registered under a content key (0x7C......) and under the host's key at priority 2000,
+  and rebuilds the puppet (Cell 7C76F89F 'Inplacecell', Creature 7C530FCB 'Burpee') with or without the reload.
+* ✔ (runtime) **The guest's own avatar** (a guest that plays the world's species): the reload gave it the host's
+  new species (the save's avatar). Without it the guest kept the pre-editor body (Cell 4DA56CA5, Creature 065CBE70).
+  Now `creations.follow_evolution`: when the host's bundle changes from the key the guest plays (or played before
+  the vote's editor) to a new one, the guest's `mine()` follows it in this stage world (Cell: player model and
+  the level rebuild of apply_own_cell, 4DA56CA5 -> 291431B5; Creature: SetSpecies, 065CBE70 -> 29143508, the
+  ability bar rebuilt by bar_tick). A guest with own creations plays its own and is not touched.
+* ✔ (runtime) **The world's player species** (cSpeciesManager +0xA4, a 12-byte ResourceKey read by
+  `cSpeciesManager_PlayerSpecies` 0x4DF490 -> GetSpeciesProfile 0x4DF5C0 on every call, the key used when the
+  asked key's instance is 0): the host's game has the new species there right after the editor (291433C0 while its
+  avatar was still 065CBE70); a reloaded guest had it from the save; in place it stayed 065CBE70. It is read by
+  BaseMaxHitPoints (the brain level's HP), IsPlayerSpecies (relations) and the ability bar's slots past the
+  avatar's own (docs/re/creature.md). The guest now writes the host's new key there when it still holds the
+  host's previous one (in a Creature frame, the key resolvable): 29143508 on both (lab 20261103-174221).
+* ✔ (runtime) **The host's own avatar** takes the evolved species only with a save of the game: without the
+  share's save the host played 065CBE70 for 2+ minutes after its editor although +0xA4 was 291433C0 and the
+  new creation was in its My Creations (lab 20261103-173652); with the share's save (0.7.3.6) or the save the host
+  now makes in place (`world::save_game`, not sent) the avatar became the new species 0.6-1.7 s after it
+  (20261103-173315, 20261103-174221). ? Why the save applies it (the stage's return 0xD43DE0 applying the stored
+  result, a mode round trip inside the save, the game's own autosave after the editor) was not looked up.
+  ~ Inferred: a host whose share save failed or was skipped would play its old creature (BUG-0457's report?).
+* ✔ (runtime) **A cinematic after every Creature evolution**: ~10 s (`busy=cinematic,input_lock,paused`, share
+  wait `cinematic`), the evolved avatar is a hatchling (age 0, half HP: 5/5) for a few seconds after it, then
+  age 1 (10/10). So neither "a cinematic played" nor "the age changed" marks a migration.
+* ✔ (BUG-0019) **The migration** (player property 0x514A219 = 1 set by CreatureGame_AfterEditor 0xD40FA0 when the
+  stage's DNA crossed a brain threshold, CRG_SpeciesMigrate, age 0 until its caption): the guest's game only gets
+  it from the host's save made after the caption. Kept: the host reads the property after the BUG-0019 wait; a
+  value above 0 that was not there before the editor sends the world as before ("evolved: X gets the world (a
+  migration started)"). Not run in place.
+* ✔ (BUG-0232) The per-guest cinematic wait is unchanged: the in-place decision is taken where the share would go
+  out (after `share_wait::hold`), so it waits as long as the share did.
+* ✔ (runtime, detector) NPC proxies, nests, eggs: the host's NPCs do not change species with its evolution;
+  the detector (SPORE_DETECTOR=20, 4 comparisons in 20261103-174221) found only the known `gameplay_marker`,
+  `game_plant`, `fruit` signatures, no `model:creature`; Cell (5 comparisons, 20261103-172813): one known
+  `guest_only:cell` (BUG-0480).
+* Cell: the host's own cell follows its editor without a save (its player model 4DA56CA5 -> 291431B5 in place).
+* Kept as before (world sent): a guest in another world or stage (its latest state), a guest of an older
+  SporeCoop (no CAP_VERSION), a Creature guest whose reported avatar species is still the host's pre-editor one
+  30 s after the decision (the apply failed or `creations.follow_evolution` is off there), a migration.
+  The decision is taken with the stage's adapter: `on_mode_change` runs before `g_adapter` / `g_world` follow the
+  new mode (the first version read the editor's null adapter and kept every guest on the reload).
+
+### Why the guest must be ready for the host's editor (the vote)
+
+`h_Submit` holds the host's editor request until every player pressed "I'm ready", 60 s, or "Start now"
+(docs/09-coop-design.md). It does three things: (1) every guest's own editor opens with the host's ("evolving
+together": the guest's only editor turn in the stage, its DNA spent there, BUG-0466); (2) the host's game, which
+simulates every NPC, stops while it is in its editor: guests in the stage then play on alone (BUG-0205 away
+state) and a guest in combat would lose its NPCs' state; (3) before this change the reload after the editor
+would have thrown a guest out of whatever it did, so it had to be at a safe point. With the reload gone only (1)
+and (2) remain. Not changed here: dropping the wait would open the host's editor while a guest fights, and the
+guest's own editor would open alone later (BUG-0318 timing, BUG-0205 away, the same vote); "Start now" and the
+60 s limit already let the host go without a slow guest. A possible relaxation (the host's editor at once, the
+guest's own editor offered as a button while the host is away) is a design change, not clearly safe: BUG-0516.
 ## The host's evolution in the Creature stage reaches the guest (2026-11-03, fix/w40-cell-evo)
 <a id="creations-host-evolution"></a>
 

@@ -87,3 +87,4 @@ SporeCoop::cCreatureBase_IsPlayerSpecies ; BUG-0462: on GOG 2016 a guest's own s
 SporeCoop::cSpeciesManager_GetTuning ; BUG-0462: on GOG 2016 a guest's NPC keeps its own archetype tuning (npc.tuning off there)
 SporeCoop::cCreatureBase_SetTuning ; BUG-0462: on GOG 2016 a guest's NPC keeps its own archetype tuning (npc.tuning off there)
 SporeCoop::Creature_IdleRefresh ; BUG-0464: on GOG 2016 the host's NPC animations are not relayed (npc.anims has no effect there: the hooks are not made without the idle refresh)
+SporeCoop::Player_GetProperty ; BUG-0508: on GOG 2016 the migration state is unknown, so a guest still gets the world after the host's Creature editor (world.evolve_in_place keeps the reload there)
