@@ -10,7 +10,7 @@ role: both
 versions: 0.7.3.3
 fixed_in: unreleased
 branch: fix/w41-puppet-look
-commits: af6fe121
+commits: af6fe121, see the branch log
 tests: puppet_air
 signature:
 docs: docs/re/creature.md#creature-puppet-look, docs/re/creature.md#creature-puppet-ground, docs/known-issues.md#issue-puppet-jumps
@@ -40,6 +40,11 @@ puppet_air (`coop_puppet_walk.py --dir guest --jumps 0.9 --air --secs 30`): fram
 walker's target over 0.4 m above the host's ground, the next frame draws the puppet at least half as high in >= 80 %.
 - FAIL with SPORE_FIX_OFF=creature.puppet_air: out/lab/20261104-025342 (24 of 485 frames, 5 %; 1 of 15 hops shown).
 - PASS with the fix: out/lab/20261104-030351 (cold, 2 runs: 632 of 641 and 646 of 654 frames, 99 %).
+- Regression on the merged branch (rel/0.7.5 merged): out/lab/20261104-041216 FAILED `no jump of the puppet` (7 frame
+  steps: after 0.3-0.5 s of a fall the game took the puppet 1-1.6 m down in one update, its own fall speed had grown
+  while the placing held it up). The puppet's velocity is now the partner's every frame in the air (variant 4 of
+  `coop.track air` keeps the old): out/lab/20261104-042712 (cold, 3 runs: 99 / 98 / 100 % of the frames up; run #1
+  still FAILED `no jump` on 2 one-to-three-frame drops when the game started another animation: BUG-0532).
 - Not checked: a creature that really jumps (the fixture's cannot; hops are `coop.abilities lift 1.5`).
 
 ## History

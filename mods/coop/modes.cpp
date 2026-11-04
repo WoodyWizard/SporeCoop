@@ -42,7 +42,7 @@ COOP_FIX("creature.puppet_air", "BUG-0376", g_puppet_air_fix, "creature: the par
 constexpr float kAirOver = 0.15f; // m over GetHeightAt: a grounded creature walks 0-3 cm over it
 constexpr float kAirGap = 0.3f;   // m: variant 3, farther from the target in the air it is placed there
 int g_puppet_air_variant = 0;     // tests (coop.track air <v>): 1 placed without the not-grounded mark, 2 teleported,
-                                  // 3 walked on in the air
+                                  // 3 walked on in the air, 4 its own fall speed kept
 
 static bool own_airborne(void* av)
 {
@@ -288,6 +288,10 @@ static void creature_drive(void* p, const net::PlayerState& s_in, drive::State& 
         }
         if (g_puppet_air_variant != 1)
             game::set_grounded(p, false);
+        // its fall speed is the partner's: left to the game it grew frame by frame while the placing held it up, and
+        // after 0.3-0.5 s one update took it 1-1.6 m down onto its terrain (landed) while the partner was still up
+        if (g_puppet_air_variant != 4)
+            *(net::Vec3*)((uint8_t*)p + game::kVelOff) = s.vel;
         ds.airs++;
     } else if (walk) {
         drive::walk_place(p, s.pos, s.rot, s.vel, ds, now); // (the shared driver, driver.h)

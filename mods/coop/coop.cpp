@@ -731,7 +731,7 @@ int c_track(void*, int argc, const char* const* argv, SkOut* out)
             g_track_lift = (float)atof(argv[2]);
         SAY("lift %.2f\n", g_track_lift);
         return 0;
-    } else if (!strcmp(a, "air")) { // tests (BUG-0376): the puppet in the air 0 placed + not grounded, 1 placed, 2 teleported, 3 walked
+    } else if (!strcmp(a, "air")) { // tests (BUG-0376): the puppet in the air 0 placed + not grounded, 1 placed, 2 teleported, 3 walked, 4 own fall speed
         if (argc > 2)
             modes::g_puppet_air_variant = atoi(argv[2]);
         SAY("air %d\n", modes::g_puppet_air_variant);

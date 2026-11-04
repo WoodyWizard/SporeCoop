@@ -2493,6 +2493,12 @@ BUG-0376, BUG-0435, BUG-0408, BUG-0436, BUG-0434. GOG 2024, lane 2, `coop.track`
   3`) the puppet was put back onto its terrain in 15-20 frames of a 0.4 s fall (drawn 0.00 m under a target 1.4 m
   up), so the puppet is not walked in the air (walk_end, placed; its walk starts again after the landing). Both
   placing (no mark) and the teleport keep it up; the not-grounded mark is what keeps the game from grounding it.
+* ✔ The puppet's own fall speed must be the partner's: left to the game it grew every frame while the placing held
+  the puppet up, and after 0.3-0.5 s one update took it 1-1.6 m down onto its terrain (`coop.track air 4`); with the
+  velocity (cLocomotiveObject +0x1C8) written to the partner's each frame 98-100 % of the frames stay up.
+* ~ What is left (BUG-0532): 1-3 frames on the terrain in the middle of a fall, 0-3 times in 30 s, each time in the
+  frame the puppet's main animation changes (fall -> idle 02481DE5 or the walk start 04866D8E). Inferred: starting an
+  animation grounds the creature in that update.
 * ~ A teleport up (the simulated hop) is sent as a grounded state for one or two states (the partner's game sets
   +0x137 = 0 one update later): the target rises 0.3-0.5 m per frame before the flag comes and is sunk / grounded in
   those 3-5 frames. A real jump starts from the ground in the game's own update (inferred: the flag comes with its
