@@ -343,6 +343,12 @@ def diff(host, guest, area=None):
         # are there are compared (worldobj `space_citizen`)
         if stage == 'Space' and name == 'citizen' and not [x for x in a if _near(x['pos'], c, inner)]:
             continue
+        # Civilization: the same pool (150 per planet, 19 at the city near each game's own camera; BUG-0526,
+        # coop_civ_citizen_lod.py, lab 20261104-130500): a city with citizens in one game only is a city only that
+        # game's camera is at (level of detail); cities with citizens in both games are compared
+        if stage == 'Civilization' and name == 'citizen' and (not [x for x in a if _near(x['pos'], c, inner)] or
+                                                             not [x for x in b if _near(x['pos'], c, inner)]):
+            continue
         tol = TOL_MOVING if name in MOVING or stage == 'Space' else TOL_STATIC  # Space: ships and planets' objects move
         pairs, ua, ub = _match(a, b, tol)
         ua = [x for x in ua if _near(x['pos'], c, inner)]

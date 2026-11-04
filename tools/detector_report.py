@@ -41,7 +41,7 @@ KNOWN = {  # <stage>:<what>:<kind> (or <stage>:*:<kind>, <*>:*:<kind>) -> the ti
     'Creature:*:egg': 'BUG-0421 class (eggs, BUG-0384)',
     'Tribe:scale:citizen': 'BUG-0475',
     'Civilization:scale:citizen': 'BUG-0475',
-    'Civilization:*:citizen': 'BUG-0476',
+    'Civilization:*:citizen': 'BUG-0476', 'Civilization:guest_only:citizen': 'BUG-0526', 'Civilization:host_only:citizen': 'BUG-0526',
     '*:*:default_tool_projectile': 'BUG-0477',
     '*:*:resource_projectile': 'BUG-0477',
     '*:*:cultural_projectile': 'BUG-0477',
