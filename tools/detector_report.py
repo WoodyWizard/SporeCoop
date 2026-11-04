@@ -49,7 +49,7 @@ KNOWN = {  # <stage>:<what>:<kind> (or <stage>:*:<kind>, <*>:*:<kind>) -> the ti
     '*:*:default_ao_e_area': 'BUG-0477',
     'Civilization:*:vehicle': 'BUG-0478',
     'Civilization:*:inter_city_road': 'BUG-0478',
-    'Space:*:ufo': 'BUG-0479',
+    'Space:*:ufo': 'BUG-0479', 'Space:unmatched:ufo': 'BUG-0388',
     'Space:*:planetary_artifact': 'BUG-0537',
     'Cell:*:cell': 'BUG-0480',
     'Creature:guest_local:creature': 'BUG-0421 class (guest-local objects)',
@@ -65,6 +65,7 @@ KNOWN = {  # <stage>:<what>:<kind> (or <stage>:*:<kind>, <*>:*:<kind>) -> the ti
     'Tribe:*:ornament': 'BUG-0528',
     '*:*:gameplay_marker': 'BUG-0489',
     'Space:*:citizen': 'BUG-0490', 'Space:*:vehicle': 'BUG-0490',
+    'Space:*:ornament': 'BUG-0541',
 }
 
 

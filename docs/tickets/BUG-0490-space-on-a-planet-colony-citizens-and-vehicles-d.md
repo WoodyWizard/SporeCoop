@@ -1,16 +1,16 @@
 ---
 id: BUG-0490
 title: Space: on a planet, colony citizens and vehicles differ between the games
-status: open
+status: fixed
 kind: desync
 stage: Space
 reported: 2026-11-03
 source: divergence detector, nightly run 2026-11-03 (out/lab/20261103-012624, out/detector/20261103-final.md)
 role: 
 versions: 
-fixed_in:
+fixed_in: unreleased
 branch: fix/w42-space-planets
-commits:
+commits: 6117b9d3 44483073 edcad39c
 tests: space_planet_citizens, space_planet_vehicles (tools/tests/coop_space_planet.py)
 signature:
 docs: docs/re/space.md#space-planet-life, docs/06-testing.md#testing-space-planet
@@ -57,5 +57,12 @@ host has none); the detector skips those. Switches `coop.fix space.citizens off`
 <!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
      or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
 
+Detector after the fix (SPORE_DETECTOR=20, out/lab/20261104-104326, report out/detector/20261104-1105.md):
+space_play and detect_space no citizen / vehicle row; play_space `Space:unmatched:citizen` in 1 of 62 comparisons
+(46 host / 48 guest citizens in the area, 3 guest citizens without a host partner within 15 m: own copies at the edge
+of the host's 400 m snapshot, not dropped), not fixed. Detector rule: citizens near the guest are compared only when the
+host's game has some there (level of detail).
+
 ## History
 - 2026-11-03: opened.
+- 2026-11-04 (fix/w42-space-planets): fixed (docs/re/space.md#space-planet-life).

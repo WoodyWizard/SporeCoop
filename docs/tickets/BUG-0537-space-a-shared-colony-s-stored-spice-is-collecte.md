@@ -1,16 +1,16 @@
 ---
 id: BUG-0537
 title: Space: a shared colony's stored spice is collected by each game on its own (spice twice; the spice pickups by the cities stay in the other game)
-status: open
+status: fixed
 kind: desync
 stage: Space
 reported: 2026-11-04
 source: divergence detector (space_play, out/detector/20261104-0803.md of rel/0.7.5; Space:noun_only_host:planetary_artifact / Space:host_only:planetary_artifact)
 role: 
 versions: 
-fixed_in:
+fixed_in: unreleased
 branch: fix/w42-space-planets
-commits:
+commits: 6117b9d3 44483073 edcad39c 09db7d24
 tests: space_colony_spice (tools/tests/coop_space_planet.py --case spice)
 signature:
 docs: docs/re/space.md#space-planet-life, docs/06-testing.md#testing-space-planet
@@ -52,5 +52,10 @@ of its city. The game's own pickup update puts or removes the pickups. Not in ri
 <!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
      or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
 
+Detector after the fix (out/lab/20261104-104326): no planetary_artifact row in space_play, detect_space, play_space.
+Regression: space_trade, space_allies, space_death, space_map out/lab/20261104-104712; space_jump out/lab/20261104-105657
+(it failed in 104712 because the feature was first named `planets`, the name of an existing `coop.space` command).
+
 ## History
 - 2026-11-04: opened.
+- 2026-11-04 (fix/w42-space-planets): fixed (docs/re/space.md#space-planet-life).
