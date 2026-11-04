@@ -5,6 +5,8 @@
 ### Fixed
 - Space: a guest's save no longer keeps the partners' ships and the host's ships its game showed; after loading it
   alone they came back as extra Defenders of your own empire (BUG-0522).
+- Space: a guest's own colonies are no longer lost when it leaves and joins again: the host keeps them and gives
+  them back (with one city; a host that restarts its game does not keep them yet) (BUG-0195).
 
 ## [0.7.5] - 2026-11-04
 

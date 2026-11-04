@@ -487,6 +487,10 @@ anchor so other docs can link to it:
 * The map is overlay text (a ring of dots, a name tag), not the game's own star marks; tags are not
   hidden behind the game's own galaxy panels (the star info card), only under the pause menu, the
   co-op window, comm screens and cinematics.
+* 2026-11-04 (fix/w42-space-life): the rejoin is fixed (BUG-0195, `space.keep_colonies`, test
+  space_colony_rejoin): the host keeps a guest's own colonies and gives them back when it rejoins. Still open: a
+  host that restarts its game keeps nothing (memory only), the colony comes back with one city and no stored
+  spice, the list is keyed by the player's name.
 * Ticket: BUG-0195.
 
 ## Space trade: open ends (space_trade.cpp, 2026-10-23)

@@ -4011,3 +4011,15 @@ its game's `world_scale=` from coop.pool, read before and after the dump). Fails
   world's species it announces first. Verified in both orders, --cold: creations, creations_cell, creations_rejoin,
   old_species, npc_swap, creation_leave OK (lab 20261104-053801 .. 20261104-060316); legless_guest fails either way
   (BUG-0533, not the rule).
+
+## Space lifecycle tests: saves and rejoins (2026-11-04, fix/w42-space-life)
+<a id="testing-space-lifecycle"></a>
+
+* `coop_space_save_strip.py` (~2 min, needs the free lane): Carol (lane B) saves in the host's star system
+  with two puppets and a mirror, is restarted alone and loads the save; our ships are told apart in
+  `coop.fleet list` by `puppet` / the mirror id, `inv=` and `model=`, and in the reloaded world by type, model
+  and the spot they stood on (5 m). The game does not keep the invincible byte: a reloaded puppet is a plain
+  Defender (`inv=0`), so "no invincible Defender" alone does not catch it.
+* `coop_space_colony_rejoin.py` (~1 min): pitfall: right after `coop.leave` and a join the guest still answers
+  `coop.avatar` in its own old world, so `twoinst.wait_guest_in` can return before the host's world is loaded;
+  wait for `coop.space world` (`world=N open=1`) to move on first.

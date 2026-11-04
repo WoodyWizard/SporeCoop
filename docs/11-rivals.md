@@ -311,3 +311,7 @@ What Rivals 0.8 needs (fits the Ownership row of 11.8):
 
 Test: `coop_space_map.py` already founds a guest colony and checks that it is gone after the rejoin
 (the line to turn around).
+
+2026-11-04 (fix/w42-space-life, BUG-0195): steps 1 (memory only, no side file), 2 and 5 are done
+(`space.keep_colonies`, space_map.cpp; test `coop_space_colony_rejoin.py`, and `coop_space_map.py`'s last
+check now expects the colony back). Step 4 (cities, spice) is not: the colony comes back with one city.

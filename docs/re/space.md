@@ -2079,3 +2079,16 @@ BUG-0469, GOG 2024, lanes 4/5 (`tools/tests/coop_content_space.py`).
 * The host's share save (written for a joining guest) holds the other guests' puppets the same way:
   the strip runs on both roles (`space: N ships of ours leave this save`, `save_stripped=` in
   `coop.fleet list`).
+
+## A guest's colonies across a rejoin (2026-11-04, fix/w42-space-life)
+<a id="space-kept-colonies"></a>
+
+* ✔ A guest's record-level colony (tech 5, a cCivData of its empire) is gone after it leaves and joins again:
+  the rejoin loads the host's share save, which never has it (the allies mirror is undone before every save,
+  15.4). Seen: P01460035 tech 5 -> tech 1, no civilization (lab 20261104-095758).
+* ✔ The guest's first roster after a join is read in its own world, before the host's world arrives and loads
+  (lab 20261104-100007): anything applied from the host's answer to it is lost with the load. BUG-0195's
+  restore waits until the guest's Space world epoch moved on since the join.
+* ✔ The record-level colony path (`spaceext::colonize_own`, the `allies colonize` test command) applied in
+  the freshly loaded host world shows the planet as the guest's colony at once (tech 5, its pol); the host's
+  roster of the guest has it as the guest's own within one roster period.
