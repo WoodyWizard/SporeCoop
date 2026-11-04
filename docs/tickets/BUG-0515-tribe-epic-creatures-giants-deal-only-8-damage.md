@@ -10,7 +10,7 @@ role: host
 versions: 0.7.3.6
 fixed_in: unreleased
 branch: fix/w41-tribe-actions
-commits:
+commits: 521d849b
 tests: tribe_epic_damage (coop_tribe_epic_damage.py)
 signature:
 docs: docs/re/tribe.md#tribe-epic-damage
