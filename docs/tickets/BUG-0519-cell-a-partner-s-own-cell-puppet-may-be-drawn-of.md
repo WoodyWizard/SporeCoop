@@ -1,19 +1,19 @@
 ---
 id: BUG-0519
 title: Cell: a partner's own cell (puppet) may be drawn off while a level change rescales the worlds
-status: open
+status: fixed
 kind: desync
 stage: Cell
 reported: 2026-11-03
 source: 
 role: guest
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w41-cell-left
+commits: c3e4f926
+tests: cell_puppet_scale (tools/tests/coop_cell_puppet_scale.py)
 signature:
-docs:
+docs: docs/re/cell.md#cell-puppet-scale
 related: BUG-0511
 ---
 
@@ -22,14 +22,22 @@ Found while fixing BUG-0511 (fix/w40-misc), not measured: the players' own cells
 <!-- what the player (or the test) saw, in our words; no player names, no paths from their PC -->
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+Observed (lane 4, coop_cell_puppet_scale.py): during each level change the partner's puppet was drawn up to 10 m from
+where the partner's cell is (p90 8.0 m host draws the guest, 4.2 m guest draws the host; lab 20261104-021951): the
+players' own cells travel in MSG_PLAYER_STATE in the sender's world scale and were drawn unchanged while the two
+scales differ (host 2.34 / guest 1.90 at one sample).
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+`cell.puppet_scale`: PlayerState carries an appended `scale` (the sender's G+0x514C in Cell; older readers stop
+before it, an older sender reads as 0 = no conversion); the snapshot buffer blends two states of different scales
+in the newer one's (net/interp.h); cell_drive (modes.cpp) draws pos, velocity and size times sender / own scale.
+Off: 0.7.4 (also the old blend). `coop.pool scalepos` prints scale, own cell and puppets of one frame.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+FAIL: SPORE_FIX_OFF=cell.puppet_scale cell_puppet_scale, lab 20261104-021951 (p90 8.0 / 4.2 m).
+PASS: cell_puppet_scale, lab 20261104-021835 (p90 0.5 / 0.3 m). Unit: net_tests (the appended field, an old
+sender's state, the blend across two scales), fuzz_decoders (base prefix of 67 bytes).
 
 ## History
 - 2026-11-03: opened.
+- 2026-11-04: fix/w41-cell-left: the puppet drawn in the receiver's scale (cell.puppet_scale); fixed (unreleased).

@@ -6,6 +6,11 @@
 - Creature: when your partner's creature jumps or falls, it now leaves the ground on your screen too instead of
   staying on the ground (BUG-0376).
 - Creature: a partner standing on a nest mound is drawn on the mound, not half sunk into it (BUG-0435).
+- Cell: after a knockout and the respawn next to your partner, and after your cell is put next to the host after a
+  load or an editor, your view is centred on your cell again; it stayed off to the side until you swam a while
+  (BUG-0343).
+- Cell: while a level-up rescales the world, your partner's cell is drawn where it is; it was drawn several
+  metres off for a few seconds (BUG-0519).
 - Tribe: a weapon rack (or any tool building) the host builds now appears in the guests' games too, a guest's
   members can take the weapon from it, and a guest sees its members hold the weapons and tools they took
   (BUG-0514).
@@ -19,6 +24,8 @@
   screen, instead of walking somewhere else (BUG-0476, BUG-0475).
 - Civilization: roads between cities (trade routes) that appear in the host's game appear in the guest's game too
   (BUG-0494).
+- Civilization: a guest sees the host's fights: vehicles and turrets fire their shots in the guest's game too,
+  and those shots do no damage of their own there (BUG-0477).
 - Creature: a guest's social game now shows the game's social meter, like the host's, and a win tells the
   guest's game that the creature became a friend (BUG-0179).
 - A chat line typed in the co-op window while the game's "game saved" box (or another box of the game) is up

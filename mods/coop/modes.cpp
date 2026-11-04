@@ -16,6 +16,7 @@
 #include "sporekit_game.hpp"
 #include "fixes.h"
 #include "world_name.h"
+#include "net/interp.h"
 
 extern const SkHost* g_host_for_modes;
 extern SkMod* g_mod_for_modes;
@@ -891,6 +892,8 @@ static void cell_fill(void* cp, net::PlayerState& st)
     }
     auto* pos = (float*)(c + 0x4C);
     st.flags |= net::PF_IN_WORLD;
+    if (uint8_t* g0 = cell_game()) // BUG-0519: the world scale this pose is in
+        st.scale = *(float*)(g0 + 0x514C);
     st.pos = {pos[0], pos[1], pos[2]};
     mat_to_quat((float*)(c + 0x5C), st.rot);
     auto* tgt = (float*)(c + 0x08);
@@ -1095,9 +1098,33 @@ static void* cell_spawn(const net::PlayerState& s, void* local)
     return c;
 }
 
-static void cell_drive(void* cp, const net::PlayerState& s, drive::State&, double)
+COOP_FIX("cell.puppet_scale", "BUG-0519", net::SnapshotBuffer::scale_lerp, "cell: the partner's cell is drawn in this game's world scale while a level change rescales either world");
+static void cell_drive(void* cp, const net::PlayerState& s_in, drive::State&, double)
 {
     uint8_t* c = (uint8_t*)cp;
+    // BUG-0519: the partner's pose is in its own world scale; a level change rescales each world over
+    // ~3.5 s at its own moment (docs/re/cell.md#cell-world-scale): draw it in ours (as the mirrors,
+    // cell.world_scale)
+    float k = 1.f;
+    if (net::SnapshotBuffer::scale_lerp && s_in.scale > 0)
+        if (uint8_t* g0 = cell_game()) {
+            float own = *(float*)(g0 + 0x514C);
+            if (own > 0 && std::isfinite(own))
+                k = s_in.scale / own;
+        }
+    net::PlayerState sc;
+    if (k != 1.f) {
+        sc = s_in;
+        sc.pos = {s_in.pos.x * k, s_in.pos.y * k, s_in.pos.z * k};
+        sc.vel = {s_in.vel.x * k, s_in.vel.y * k, s_in.vel.z * k};
+        float sz;
+        memcpy(&sz, &s_in.species, 4);
+        if (sz > 0.01f && sz < 1000.f) {
+            sz *= k;
+            memcpy(&sc.species, &sz, 4);
+        }
+    }
+    const net::PlayerState& s = k != 1.f ? sc : s_in;
     // exactly where the remote cell is (interpolated), every frame; the target ahead along its
     // velocity keeps the swimming animation going between our writes
     cell_move(c, s.pos);

@@ -3893,6 +3893,21 @@ its game's `world_scale=` from coop.pool, read before and after the dump). Fails
   Twins: `SPORE_FIX_OFF=civ.citizens` (about half unpaired), `civ.citizen_scale` (sizes differ).
 * Pitfall met: a lab run with `SPORE_FIX_OFF` leaves the switch off in the warm games; the next run without it on
   the same lane reused them (`fix=0` in `coop.wobj`). Run the PASS after a twin with `--cold`.
+
+## Civ shots between the games (2026-11-04, fix/w41-civ-combat)
+<a id="testing-civ-shots"></a>
+
+* `coop_civ_shots.py` (suite `civ_shots`, warm, about 110 s): the host's military vehicles attack the nearest NPC
+  city (`coop.civ attack <id> <city> 2`: the game's SetOrder); 60 samples 1 s apart of the projectile objects in
+  each game's noun list (`coop.civ nouns 24270C5` and the other projectile nouns). PASS: the host fired, the
+  guest had projectiles in at least half the host's samples, at most about twice as many, and the city's
+  building hit points on the guest did not fall (its copies of the shots hurt nothing). Twins:
+  `SPORE_FIX_OFF=civ.shots` (no projectile on the guest), `civ.shot_damage` (the guest's city loses hit points).
+  The status line `shots:` (`coop.civ`) counts the host's FireTool calls seen, the guest's calls, the targets
+  found and the hits dropped.
+* `sync_civ_loss` (coop_sync.py civ under SPORE_NET=burst, cold, about 1 min): the sync_burst variant for Civ
+  alone, for BUG-0438. With one vehicle sampled 16 times its p90 is the second worst sample: one burst decides
+  a run (see the ticket).
 ## Creature leftovers of 0.7.5 (2026-11-03, fix/w41-creature-left)
 <a id="testing-k1-creature"></a>
 
@@ -3931,3 +3946,20 @@ its game's `world_scale=` from coop.pool, read before and after the dump). Fails
   away) and prints `NOT MEASURED ... the observer's camera is far away` when most frames are farther.
 * `coop.track air <v>` (tests): the puppet in the air 0 placed and marked not grounded (the fix), 1 placed only, 2
   teleported, 3 walked on (walk_place).
+## Cell leftovers of 0.7.5: the camera, the partner in a level change, Cell twins (2026-11-04, fix/w41-cell-left)
+<a id="testing-l1-cell"></a>
+
+* `cell_camera` (coop_cell_camera.py, cell fixture, ~1 min warm): waits for the hatch to end (`coop.uistate`
+  `input_lock=0` and `cine=0`: during the hatch the game puts the cell back at its start, a jump made then is
+  undone); the guest `coop.pool tp 40 0`, then the host `coop.pool selfhit 250` with the guest 40 m away (it
+  respawns next to the guest after 10 s). `coop.pool cam` prints the camera (`off=` the drawn point to the own
+  cell). Fails when `off` is 1.5 m or more 3 s after each jump. BUG-0343: SPORE_FIX_OFF=cell.camera_snap 7.0 m
+  (FAILS, lab 20261104-020658), the fix 0.1-0.2 m (lab 20261104-020550).
+* `cell_puppet_scale` (coop_cell_puppet_scale.py, ~70 s): both cells idle 7 m apart, the host's food up until two
+  level changes; every 0.25 s `coop.pool scalepos` on both (scale, own cell, puppets in one frame); the error is
+  the puppet against the partner's own cell, both times their game's scale, in the drawing game's metres.
+  BUG-0519: SPORE_FIX_OFF=cell.puppet_scale p90 8.0 / 4.2 m (FAILS, lab 20261104-021951), the fix 0.5 / 0.3 m.
+* `parts_cell_twin` (coop_parts_shared.py --from-cell --guest-cell-part, ~2.5 min cold): the guest collects a Cell
+  part with a creature twin that neither game has (`coop.parts cell collect <i>`), then Cell -> Creature the
+  players' way; the twin must be IsUnlocked (`coop.parts states`, the `u`) on both games, then the test stops.
+  BUG-0446: SPORE_FIX_OFF=parts.shared_cell FAILS (lab 20261104-022323), on PASS (lab 20261104-022114).

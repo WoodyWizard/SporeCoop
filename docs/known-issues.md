@@ -1194,6 +1194,9 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   the cell.
 * Reproduce: not tried; knock the host out with a partner, wait for the 10 s respawn.
 * Ticket: BUG-0343
+* CORRECTION (2026-11-04, fix/w41-cell-left): fixed (BUG-0343, `cell.camera_snap`): the cell camera's target
+  follows a stopped cell only while it swims; every jump of the own cell by the mod now resets the camera as the
+  game's own jumps do (docs/re/cell.md#cell-camera).
 
 ## All: the watchdog dumps stacks while the game is minimized (2026-10-31, player report)
 <a id="issue-watchdog-minimized"></a>

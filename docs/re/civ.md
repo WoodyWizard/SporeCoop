@@ -1011,3 +1011,62 @@ GOG 2024 addresses (dc04aee5).
 * Cost: host one walk of the noun list per 0.5 s for the snapshot and one for the fields; the net 19 + 20 bytes
   per citizen per guest every 0.5 s (19 citizens: 0.8 KB/s, at most 56: 2.3 KB/s), the fields about 6 bytes per
   citizen of the planet every 4 s.
+
+## Shots, turrets and cultural targets between the games (2026-11-04, fix/w41-civ-combat)
+<a id="civ-combat-shots"></a>
+
+GOG 2024 addresses (dc04aee5).
+
+**How Civ weapons fire (BUG-0477).**
+* ✔ Every Civ weapon goes through `cToolManager::FireTool` 0x01050080 (thiscall(mgr, tool, owner spatial, const
+  Vector3* aim, int dmgPoint, int, target spatial, bool) ret 0x1C). Callers: `cCombatSimulator::Update` 0xAE7360
+  (every combatant of the noun list with a target in range: weapon = combatant vt 0x14, owner / target = the
+  objects' spatials, i.e. object + 0x34; it calls FireTool **every update**, the tool's refire time decides
+  whether a projectile leaves: lab 20261104-014831, 5120 calls in ~70 s for 3 vehicles, about 100 projectiles),
+  the city functions 0xBDC2F0 / 0xBE4300 / 0xBE4550 (from 0xBE5D30: city-wide strikes), 0xD56BE0, 0xDC1360.
+* ✔ Runtime: FireTool's target argument is a spatial (vtable 0x1474BE8 = a vehicle's +0x34, 0x14673F0 = a
+  building's), never the owner. `cDefaultProjectileWeapon::WhileFiring` 0x01056F10 makes noun 0x24270C5 and
+  calls `LaunchDefaultToolProjectile` 0x01054390 (homing on the tool's +0x118 target when there is one, else
+  straight at the aim). Projectile nouns: 0x24270C5 default tool (vtable 0x1476110), 0x5776A2C resource (made by
+  0xBFE8E0), 0x4F76F0D cultural (0xCB7030), 0x4167186 AoE area (cDefaultAoETool). A projectile keeps its tool at
+  +0x518 (+0x504 the cProjectile part); 0xBE4700 walks the default projectiles of a civilization's vehicles.
+* ✔ A guest's mirrors (no behaviour tree) never get a target: no FireTool, no projectile ever in a guest's
+  game (the detector's `noun_only_host:*_projectile`, 81 % of the play_civ comparisons in lab 20261104-013631).
+* ✔ Fix `civ.shots`: the host notes each FireTool of a listed vehicle or a turret (shooter, aim, target: a
+  vehicle id or noun + position) and sends the shooters of the last 0.25 s every 0.2 s; the guest calls FireTool
+  for its mirror (or its turret at that place) with the mirror's own weapon and the target of its own game, at
+  most every 0.1 s (turret shooters and building targets are found in one walk of the noun list per 0.1 s for all
+  shots due). Without the target (aim only) the guest's projectiles flew straight, hit nothing and
+  lived longer: 186 guest / 99 host projectiles in the samples (lab 20261104-014352); with it 93 / 95
+  (lab 20261104-015048), and they hit.
+* ✔ The guest's copies hit and would do the host's damage a second time (with `civ.shot_damage` off the guest's
+  city lost 5200 -> 4452 hit points, the host's 4452: lab 20261104-015254). `cosmetic_hit` drops a hit whose
+  attacker is a mirror's combatant (vt 0x5C cast to 0x137E8E0, attacker vtable 0x1474CE8) or a turret the guest
+  fired from, in the vehicle (`Simulator::cVehicle::TakeDamage` 0xCAB6F0), building, city hall and citizen
+  TakeDamage hooks. Before the fix no hit of the guest's own reached those hooks in a fight (0 calls).
+* Cost: host, one map write per FireTool call (every update of every combatant in range) and, while something
+  fires, 5 + 46 bytes per shooter every 0.2 s to each guest (10 shooters: about 2.3 KB/s); nothing when quiet.
+  Guest: one FireTool per shooter per 0.1 s and at most one noun-list walk per 0.1 s.
+* ~ A guest's buildings keep their own hit points: only the host's ruins reach it (`reconcile_buildings`), so a
+  city the host hit stands at full hit points on the guest (5200 / 4452 above). Not fixed here (BUG-0529).
+
+**Turrets (BUG-0484, not fixed).**
+* ✔ `cCity` +0x354 / +0x358 / +0x35C: the vector of the city's turrets (noun 0x436F342, cast 0x436F315), their
+  layout at city+0x4B4 (0xBD80B0). 0xBE2100 (`CreateTurret`, fastcall city): CreateInstance(0x436F342), push on
+  +0x354, put at the city. 0xBE39A0 (fastcall city): the next free turret slot (0xBD9A10), CreateTurret,
+  cLayoutSlot::SetObject, position and orientation (callers 0xBE5890 x2, 0xBE5F20, 0xBE87D0, 0xFF55D0,
+  0x1025200); 0xBE3AE0 (thiscall city, slot) the same in a given slot (caller 0xFF6900); the planner calls
+  CreateTurret itself (0xD13CC7). 0xBE5F20 rebuilds a city's turrets (removes them with 0xBE21C0 and adds
+  as many with 0xBE39A0).
+* ✔ The detector's turret rows (play_civ, lab 20261104-013631): `noun_only_guest:turret` in 23 % of the
+  comparisons (the host's game had no turret at all, the guest's one): the guest's game added a turret the
+  host's did not. Which caller (its own AI for an NPC city, a rebuild 0xBE5F20, the planner) is not traced.
+  Turrets are not in MSG_CIV_BUILD (`h_AddBuilding` sees buildings only).
+
+**Cultural targets and bundles (BUG-0484, not fixed).**
+* ✔ The city setup 0xBE7D40 makes 4 cultural targets (noun 0x3D5C325) per city (a loop of 4, stored in the city
+  record +0x618 table at +0x78 + 0x80 * i). The detector saw them unmatched in campaign_space only (3 / 3, 2 of
+  3 without a partner within 3 m): their places are the game's own per city.
+* ✔ The Civ `game_bundle` rows of play_civ are at the old tribe's village place (-234 -34 482), next to the
+  guest-only `tribe`, `tribe_hut`, `tribe_food_mat` rows (BUG-0483): leftovers of the Tribe stage in the guest's
+  world, not bundles of a Civ fight.

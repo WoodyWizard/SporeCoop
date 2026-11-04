@@ -13,7 +13,7 @@ branch:
 commits:
 tests:
 signature:
-docs:
+docs: docs/re/civ.md#civ-combat-shots
 related:
 ---
 
@@ -23,6 +23,18 @@ Found by the lab (no player report). Target: 0.7.4.
 <!-- what the player (or the test) saw, in our words; no player names, no paths from their PC -->
 
 ## Root cause
+Analysed, not fixed (fix/w41-civ-combat, time box; docs/re/civ.md#civ-combat-shots):
+- Turrets (observed, play_civ lab 20261104-013631: `noun_only_guest:turret` in 23 % of the comparisons, the
+  host's game had none): a city's turrets are cCity +0x354 (made by 0xBE2100, placed in a slot by 0xBE39A0 /
+  0xBE3AE0, the planner calls 0xBE2100 itself); they are not part of MSG_CIV_BUILD. Which call added the guest's
+  own turret (its AI for an NPC city, the rebuild 0xBE5F20, the planner) is not traced. Next step: hook 0xBE39A0
+  on the guest and log the caller, then block the AI caller like CreateBuilding's growth and send the host's
+  turret list like the roads.
+- Cultural targets (observed: 4 per city made by the city setup 0xBE7D40; unmatched only in campaign_space): their
+  places are the game's own on each machine. A worldobj kind (the host's places, the guest's targets put there)
+  would fit; not done.
+- Bundles (observed: the Civ `game_bundle` rows lie at the old tribe village, next to the guest-only tribe rows of
+  BUG-0483): leftovers of the Tribe stage in the guest's world, not bundles of a Civ fight; they go with BUG-0483.
 <!-- observed (runtime, logs, disassembly) vs inferred -->
 
 ## Fix
@@ -34,3 +46,4 @@ Found by the lab (no player report). Target: 0.7.4.
 
 ## History
 - 2026-11-03: opened.
+- 2026-11-04 (fix/w41-civ-combat): analysed (above), not fixed (time box).

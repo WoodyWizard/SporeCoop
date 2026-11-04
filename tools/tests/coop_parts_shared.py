@@ -123,10 +123,51 @@ def editor_offers(out):
     return (int(m.group(1)), m.group(2)) if m else (None, None)
 
 
-def from_cell(ck):
+# BUG-0446: Cell part index -> its creature twin's instance (tables 0x1483DD8 {part, cell item} and
+# 0x1485FE8 {cell item, creature twin}, docs/re/creations.md#creations-cell-twins; part 11 has three)
+CELL_TWINS = {2: ['FE534766'], 3: ['3A3C49A5'], 4: ['32AC9620'], 5: ['B70894B6'], 6: ['4908E576'],
+              7: ['C5744537'], 8: ['1610AD94'], 9: ['DEF1C7FF'], 10: ['30E66572'],
+              11: ['02B3EDDB', '7E262CF0', 'BE830BDE']}
+
+
+def cell_parts(con):
+    m = re.search(r'cell parts=(\d+)', con.call('coop.parts cell')['out'])
+    return [int(c) for c in m.group(1)] if m else None
+
+
+def twin_unlocked(con, inst):
+    """the creature twin is unlocked in the game's own item states (IsUnlocked: the 'u')"""
+    return re.search(r'[0-9A-F]{8}:' + inst + r'=[0-9A-F]+u', con.call('coop.parts states')['out']) is not None or \
+        re.search(inst + r':[0-9A-F]{8}=[0-9A-F]+u', con.call('coop.parts states')['out']) is not None
+
+
+def guest_cell_part(ck, host, guest):
+    """BUG-0446: the guest collects a Cell part (with a creature twin) the host's cell has not; the
+    host's game gets it (parts.shared_cell). Returns the part index."""
+    t0 = time.time()
+    hp = gp = None
+    while time.time() - t0 < 30 and not (hp and gp):
+        hp, gp = cell_parts(host), cell_parts(guest)
+        time.sleep(1)
+    print(f'  Cell parts: host {hp}, guest {gp}', flush=True)
+    free = [i for i in sorted(CELL_TWINS) if hp and gp and hp[i] == 0 and gp[i] == 0]
+    ck(free, 'a Cell part with a creature twin neither game has')
+    if not free:
+        return None
+    i = free[0]
+    print(f'  guest: {guest.call(f"coop.parts cell collect {i}")["out"].strip()}', flush=True)
+    t0 = time.time()
+    while time.time() - t0 < 20 and not (cell_parts(host) or [0] * 13)[i]:
+        time.sleep(1)
+    print(f'  Cell parts after the guest\'s collect ({time.time() - t0:.0f} s): host {cell_parts(host)}, guest {cell_parts(guest)}', flush=True)
+    return i
+
+
+def from_cell(ck, cell_part=False):
     """BUG-0441: Cell -> Creature the players' way (as transition_net), then the parts of both games"""
     from coop_campaign import Campaign, Player
     host, guest = start('cell')
+    part = guest_cell_part(ck, host, guest) if cell_part else None
     players = [Player('Alice', lane.HOST), Player('Bob', lane.GUEST, lane.JOIN)]
     seed = random.randrange(1 << 30)
     ca = SimpleNamespace(start='cell', end='creature', minutes=0, advance_minutes=None, players=2, noise=0.0,
@@ -145,16 +186,27 @@ def from_cell(ck):
         if it['kind'] != 'info':
             print(f'    finding [{it["kind"]}] {it["stage"]}: {it["text"]}', flush=True)
     ck(not [it for it in camp.F.items if it['kind'] != 'info'], 'no campaign finding (dead game, crash, freeze, fault)')
+    if part is not None:  # BUG-0446: the guest's Cell part gave its creature twin, in both games
+        for inst in CELL_TWINS[part]:
+            th, tg = twin_unlocked(host, inst), twin_unlocked(guest, inst)
+            print(f'  twin {inst} of the guest\'s Cell part {part}: host {th}, guest {tg}', flush=True)
+            ck(th, f"the host's Creature game unlocked the twin {inst} of the Cell part the guest collected")
+            ck(tg, f"the guest's Creature game unlocked the twin {inst} of the Cell part it collected")
     return host, guest
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--from-cell', action='store_true', help='start in Cell, change to Creature the players\' way (BUG-0441)')
+    ap.add_argument('--guest-cell-part', action='store_true',
+                    help='with --from-cell: the guest collects a Cell part first, its twin is checked, then stop (BUG-0446)')
     a = ap.parse_args()
     ck = Checks()
     if a.from_cell:
-        host, guest = from_cell(ck)
+        host, guest = from_cell(ck, a.guest_cell_part)
+        if a.guest_cell_part:
+            ck.faults(host=host, guest=guest)
+            return ck.result()
     else:
         host, guest = start('creature')
     ck(guest.call('coop.avatar')['ok'], 'the guest is in the host world')
