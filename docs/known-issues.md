@@ -1821,3 +1821,17 @@ Found by fix/w40-play (2026-11-03), not fixed:
   own spot (the detector's `Tribe:unmatched:tribe_tool`). A guest's tribe the host no longer has loses its members
   (tribe.guest_tribes) but its hut, tools and food mat stay: no game function to remove a whole tribe is known.
 * Ticket: BUG-0523, BUG-0483
+## Civ: the old tribe village stands in the guest's Civ world only (2026-11-04, fix/w42-civ-left)
+<a id="issue-civ-tribe-leftovers"></a>
+
+* What happens: in play_civ on civ_npc the guest's game has the Tribe stage's tribes, huts, tools, food mats and
+  bundles at the old village (-234 -34 482) that the host's game does not have (the detector's
+  `Civilization:noun_only_guest:tribe*`, `game_bundle`, 7-10 % of the comparisons). How to reproduce:
+  `SPORE_DETECTOR=20 tools/lab.py run play_civ`.
+* Not fixed, not analysed. Ticket: BUG-0539
+## Space: a city's cultural targets stand at other places in each game (2026-11-04, fix/w42-civ-left)
+<a id="issue-space-cultural-targets"></a>
+
+* What happens: the 4 cultural targets per city (city setup 0xBE7D40) are placed by each game on its own; the
+  detector's `unmatched:cultural_target` in campaign_space. Not seen in play_civ.
+* Not fixed. Ticket: BUG-0540
