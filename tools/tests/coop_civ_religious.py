@@ -15,9 +15,9 @@ PASS: the host's religious vehicles fired (religious shots in at least 4 samples
 (religious shots in at least a third of the host's samples with any); the guest's game made no religious shot of
 its own: at most 25 % more religious shots over the samples than the host's (+4) and at most 15 % of the samples
 with religious shots on the guest only.
-and the guest's count series follows the host's by at most 0.3 s (the best shift of the two series, sampled
+and the guest's count series follows the host's by less than 0.25 s (the best shift of the two series, sampled
 every ~0.15 s).
-SPORE_FIX_OFF=civ.shot_now: the shots wait for the next 0.2 s list, the guest follows by about 0.4 s (FAIL).
+SPORE_FIX_OFF=civ.shot_now: the shots wait for the next 0.2 s list, the guest follows by 0.3-0.4 s (FAIL; on: 0.10-0.20 s).
 SPORE_FIX_OFF=civ.shot_fired: not seen to fail (the guest's weapon refused the extra calls on its own refire time:
 126 / 126 shots, lab 20261104-095320); the check guards the count.
 
@@ -124,7 +124,7 @@ def main():
     ck(gn <= 1.25 * hn + 4, f'the guest\'s game makes no religious shots of its own ({gn} / {hn} over the samples)')
     ck(gonly <= 0.15 * max(any_, 1),
        f'religious shots on the guest only in at most 15 % of the samples with any ({gonly} of {any_})')
-    ck(lag <= 0.3, f'the guest\'s game shows the host\'s religious shots within 0.3 s ({lag:.2f} s; BUG-0530 civ.shot_now)')
+    ck(lag < 0.249, f'the guest\'s game shows the host\'s religious shots within 0.25 s ({lag:.2f} s; BUG-0530 civ.shot_now)')
     ck.faults(host=host, guest=guest)
     return ck.result()
 
