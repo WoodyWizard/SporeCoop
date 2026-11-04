@@ -590,6 +590,62 @@ static bool patch_slot(uintptr_t* slot, uintptr_t value)
     return true;
 }
 
+// BUG-0506: the game's Pictures / Movies / Animations save areas (0x11AC196..0x11AC198) are
+// directory databases in Documents\My Spore Creations (dir id 0xA0214B), made once by the app's init
+// (0x6B3760). When that folder cannot be made (Documents missing, redirected, blocked by Windows'
+// controlled folder access, or a file of that name) the areas are never registered, and the game
+// settings window (its builder 0x602070, from GameSettings::Show) calls
+// Resource::GetDatabaseByID(0x11AC197)->vt 0x28 without a null check: a read of 0 at 0x6025A9.
+// Before the builder runs, a missing area gets a fallback directory database in the game's AppData
+// folder (dir id 0xA02151, as Games\Game0 and Preferences), the way the app's init makes them.
+using SettingsBuildFn = void(__thiscall*)(void*, void*, void*, void*);
+using CreateSaveAreaFn = bool(__cdecl*)(uint32_t dir, const wchar_t* name, void** out, uint32_t id);
+using RegisterSaveAreaFn = void(__cdecl*)(uint32_t id, void* db, void* extra);
+using GetDatabaseFn = void*(__cdecl*)(uint32_t id);
+static SettingsBuildFn g_settings_orig;
+static CreateSaveAreaFn g_create_area;
+static RegisterSaveAreaFn g_register_area;
+static GetDatabaseFn g_get_db;
+static std::atomic<unsigned> g_areas_made{0}, g_areas_failed{0};
+static bool g_save_areas_fix = true;
+COOP_FIX("game.save_areas", "BUG-0506", g_save_areas_fix,
+         "gamefixes: missing Pictures / Movies / Animations save areas get a fallback folder before the settings window uses them");
+
+static void ensure_save_areas()
+{
+    static const struct {
+        uint32_t id;
+        const wchar_t* name;
+    } kAreas[] = {{0x011AC196, L"Pictures"}, {0x011AC197, L"Movies"}, {0x011AC198, L"Animations"}};
+    if (!g_get_db || !g_create_area || !g_register_area)
+        return;
+    for (const auto& a : kAreas) {
+        if (g_get_db(a.id))
+            continue;
+        void* db = nullptr;
+        bool ok = g_create_area(0x00A02151, a.name, &db, a.id) && db;
+        if (ok) {
+            g_register_area(a.id, db, nullptr);
+            // the creator's reference, released as the app's init does (secondary interface at +4, slot 1)
+            void* ref = (uint8_t*)db + 4;
+            ((void(__thiscall*)(void*))(*(uintptr_t**)ref)[1])(ref);
+        }
+        ok = ok && g_get_db(a.id);
+        unsigned n = ok ? ++g_areas_made : ++g_areas_failed;
+        if (n <= 4)
+            H->log(M, ok ? SK_WARN : SK_ERROR, "game fixes: save area 0x%08X (%s) was missing (My Spore Creations "
+                   "could not be made?): %s", a.id, std::string(a.name, a.name + wcslen(a.name)).c_str(),
+                   ok ? "made in the game's AppData folder" : "the fallback failed too");
+    }
+}
+
+static void __fastcall settings_build_guard(void* self, void*, void* a, void* b, void* c)
+{
+    if (g_save_areas_fix)
+        ensure_save_areas();
+    g_settings_orig(self, a, b, c);
+}
+
 void init(const SkHost* host, SkMod* mod)
 {
     H = host;
@@ -650,6 +706,15 @@ void init(const SkHost* host, SkMod* mod)
     if (!dest)
         g_destroy_orig = nullptr;
     H->log(M, SK_INFO, "game fixes: stale stimulus sender guard %s", dest ? "on" : "off");
+    uintptr_t sb = H->sym("SporeCoop::GameSettings_Build");
+    g_get_db = (GetDatabaseFn)H->sym("Resource::GetDatabaseByID");
+    g_create_area = (CreateSaveAreaFn)H->sym("Resource::Paths::CreateSaveAreaDirectoryDatabase");
+    g_register_area = (RegisterSaveAreaFn)H->sym("Resource::Paths::RegisterSaveArea");
+    bool areas = sb && g_get_db && g_create_area && g_register_area &&
+                 H->hook_create(M, (void*)sb, (void*)&settings_build_guard, (void**)&g_settings_orig) == 0;
+    if (!areas)
+        g_settings_orig = nullptr;
+    H->log(M, SK_INFO, "game fixes: missing save area guard %s", areas ? "on" : "off");
 }
 
 void shutdown()
@@ -673,7 +738,8 @@ std::string status()
            " (test cuts " + std::to_string(g_attack_cuts) + (g_attack_cut_test ? ", armed" : "") + ")" +
            ", null raster fills skipped " + std::to_string(g_null_fills.load()) +
            ", stale stimulus senders cleared " + std::to_string(g_senders_cleared.load()) + " (destroys " +
-           std::to_string(g_destroys_scanned.load()) + ")\n";
+           std::to_string(g_destroys_scanned.load()) + "), missing save areas made " +
+           std::to_string(g_areas_made.load()) + " (failed " + std::to_string(g_areas_failed.load()) + ")\n";
 }
 
 } // namespace gamefixes

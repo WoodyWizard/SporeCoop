@@ -1732,8 +1732,8 @@ What mods/coop/worldobj.cpp does not cover yet (docs/re/creature.md#creature-wor
 
 ## Player reports of 2026-11-04 still open after rel/0.7.4 (2026-11-03, fix/w40-reports)
 
-- Galaxy menu (Steam build, no session): opening the game settings can crash the game (null resource database
-  0x011AC197 at 0x6025A9) (BUG-0506).
+- ~~Galaxy menu (Steam build, no session): opening the game settings can crash the game (null resource database
+  0x011AC197 at 0x6025A9) (BUG-0506).~~ Fixed on fix/w40-misc (game.save_areas).
 - Creature: a guest's game can crash right after a long freeze (minimized / alt-tab) when the partner's creature
   it draws was freed (BUG-0507).
 - Cell and Creature: every host evolution sends the whole world again; the guest goes to the galaxy menu and

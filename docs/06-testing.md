@@ -3810,3 +3810,22 @@ the other player's game, both ways where the kind has two:
   input and clicks the social ability's button (550,1020 on the 1440x1080 window, the first green slot),
   never a key; the host's Kook impressed, the guest's proxy impressed, the species table +1 on both.
   `SPORE_FIX_OFF=social.bar_click` fails. ~65 s cold (warm in the suite).
+
+## The settings window without My Spore Creations: save_areas (2026-11-03, fix/w40-misc)
+<a id="testing-save-areas"></a>
+
+`coop_save_areas.py` (suite `save_areas`, ~1 min, one game: the lane's guest instance) replaces the guest
+profile's `Documents\My Spore Creations` with a plain file, starts the game, waits for the galaxy menu and its
+intro cinematic (`(menu intro)` in coop.status, the buttons are hidden until it ends; 900 frames were not
+enough), then clicks the Spore button (16,1062) and Settings (660,560) in the 1440x1080 window. It checks `exc`,
+the three save areas (`call Resource::GetDatabaseByID cdecl 0x11AC197`) and the window manager's modal window;
+the folder is put back at the end. BUG-0506: SPORE_FIX_OFF=game.save_areas FAILS (fault at 0x6025A9).
+
+## Cell level changes on two games: cell_grow (2026-11-03, fix/w40-misc)
+<a id="testing-cell-grow"></a>
+
+`coop_cell_grow.py` (suite `cell_grow`, cell fixture, ~70 s cold): the host's food goes up (`coop.pool food 30`
+until `level=` changes) twice; during each level change the test compares, every 0.3 s, the host's cells with their
+mirrors on the guest (coop.census, matched by the host's cell index) in the guest's metres (each position times
+its game's `world_scale=` from coop.pool, read before and after the dump). Fails when the p90 error of a sample is
+2 m or more. BUG-0511: SPORE_FIX_OFF=cell.world_scale gives 14-18 m (FAILS), the fix 0.1 m.

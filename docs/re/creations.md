@@ -946,3 +946,25 @@ BUG-0457. GOG 2024, lane 4 (`tools/tests/coop_editor_sync.py --case host|host2`)
 * ? Not reproduced: the report's "previous version". The same-key path (a key-only bundle of a stage species
   edited in place, the guest's species manager keeping its cached profile of that key, §2.1) did not happen
   here: the evolution never kept the key.
+
+## Save areas of My Spore Creations and the settings window (2026-11-03, fix/w40-misc)
+<a id="creations-save-areas"></a>
+
+* ✔ The app's init (`App::cAppSystem::Init` -> 0x6B3760, GOG 2024) makes the save areas with
+  `Resource::Paths::CreateSaveAreaDirectoryDatabase(dirID, name, &db, areaID)` + `RegisterSaveArea(areaID, db, 0)`:
+  dir id 0xA0214B = Documents\My Spore Creations: Pictures 0x11AC196, Movies 0x11AC197, Animations 0x11AC198
+  (names localized, LocalizedString 0x19F76D11 / 0x5CA8D99, 0x5CA8D98, 0x5CA8D9A); dir id 0xA02151 = AppData\Spore:
+  Games\Game0 0x4729A47, Preferences 0x11AC192, EditorSaves (packed) 0x11AC199..0x11AC19B, 0x90368EA0/A2/A3,
+  0x86CA01C9, CityMusic 0x500EFC6, Cache / Server (Pollination.package) 0x11AC19C / 0x11AC19D, Planets 0x31389B5,
+  RigblockInfo 0x49A3D83, GraphicsCache 0x11AC1AC. A failed create leaves the area unregistered:
+  `Resource::GetDatabaseByID(id)` (= Paths::GetSaveArea) returns 0.
+* ✔ The game settings window's builder (`SporeCoop::GameSettings_Build` 0x602070) calls
+  `GetDatabaseByID(0x11AC197)->vt 0x28` (the folder path shown in the window) without a null check unless App
+  property 0x61B67B6 is true; other users of 0x11AC197 (0x63B940, 0x61B730 the video upload) check for null.
+* ✔ Runtime (lab, 2026-11-03): with the profile's `Documents\My Spore Creations` replaced by a plain file, the
+  three areas are 0 and Options -> Settings in the galaxy menu faults at 0x6025A9 reading 0, the players' BUG-0506
+  signature. Vanilla behaviour: without a `-sporekit-profile` SporeKit does not touch the Documents path (the players
+  ran with "profile own"), so the cause is the players' Documents folder (missing, redirected or blocked by
+  Windows' controlled folder access: inferred, not seen on their PCs).
+* Fix (gamefixes.cpp, `game.save_areas`): before the builder runs, a missing area of the three gets a fallback
+  directory database in AppData\Spore\<name> (dir id 0xA02151), made and registered as the init does.
