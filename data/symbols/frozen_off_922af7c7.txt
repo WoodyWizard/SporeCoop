@@ -104,3 +104,7 @@ SporeCoop::SocialMeter_Finish ; BUG-0179: on GOG 2016 a guest's social game show
 SporeCoop::DramaManager_Get ; Creature: a guest's game still starts its own UFO visit (BUG-0486)
 SporeCoop::DramaManager_StartEvent ; Creature: a guest's game still starts its own UFO visit (BUG-0486)
 SporeCoop::DramaManager_StartKind ; Creature: a guest's game still starts its own UFO visit (BUG-0486)
+SporeCoop::City_AddTurret ; BUG-0484: on GOG 2016 a city's turrets are each game's own (civ.turrets has no effect there)
+SporeCoop::City_RemoveTurret ; BUG-0484: on GOG 2016 a city's turrets are each game's own (civ.turrets has no effect there)
+SporeCoop::CivGrowth_Turret_Ret1 ; BUG-0484: on GOG 2016 a city's turrets are each game's own (civ.turrets has no effect there)
+SporeCoop::CivGrowth_Turret_Ret2 ; BUG-0484: on GOG 2016 a city's turrets are each game's own (civ.turrets has no effect there)

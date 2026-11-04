@@ -12,6 +12,12 @@
 - Space: the spice stored in a shared colony's cities is collected once: when one player's ship collects it (by
   arriving in the colony's system), it is gone from the colony and from the spice pickups by its cities on every
   player's planet; before, the other player could collect the same spice again (BUG-0537).
+- Civilization: a city the host's vehicles hit now shows its damage on every guest's screen too, not full health
+  until a building falls (BUG-0529).
+- Civilization: the host's shots (religious ones too) appear on a guest's screen about 0.2 s sooner, nearly at the
+  same time as on the host's; a guest's game fires exactly the shots that left on the host (BUG-0530, BUG-0538).
+- Civilization: a city's defence turrets are the same in every game: a guest's game no longer builds its own, and
+  a turret the host's city builds appears for the guests (BUG-0484).
 
 ## [0.7.5] - 2026-11-04
 
