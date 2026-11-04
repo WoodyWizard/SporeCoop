@@ -11,7 +11,7 @@ versions:
 fixed_in: unreleased
 branch: fix/w42-infra
 commits: 7b452d83
-tests: effects_party_tribe, effects_party_civ
+tests: tools/tests/coop_effects_party.py (suite effects_party, effects_party_tribe, effects_party_civ)
 signature:
 docs: docs/06-testing.md#testing-effects-cost
 related: BUG-0451, BUG-0471
