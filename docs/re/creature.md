@@ -2329,3 +2329,19 @@ Ghidra, GOG 2024 (BUG-0520, GitHub #194):
   prints it for one NPC 58 s into every Creature run with no UFO at all.
 * ? Not known: whether the ship can take a partner's puppet (the players' report says a host crashed every time
   it took a creature, with the BUG-0507 signature: inferred, yes) and what the game does with the taken creature.
+
+## Who asks "player species": the scope of creature.relations (2026-11-03, fix/w40-relations-scope)
+<a id="creature-relations-scope"></a>
+
+BUG-0462 follow-up. GOG 2024, Ghidra.
+
+* ✔ `cCreatureBase_IsPlayerSpecies` 0xC0C430 has one direct caller (0xC228B0, a thunk) and is otherwise reached as
+  creature vt 0xD0 (vtables 0x146A080 +0xD0 = 0x146A150 and 0x146A590 +0xD0 = 0x146A660): every caller is an
+  indirect `call [reg+0xD0]`, so Ghidra lists none of them. Known readers: GetRelationship 0xBA40E0 (736 bytes),
+  CreatureSocialMode 0xC0E800 (522 bytes), vt 0xD4 0xC0C3B0 ("friendly", via GetRelationship), and the family /
+  hatchling / pack / nest code (seen at runtime: with the hook answering true everywhere, a guest's hatchling did not
+  step out of its egg after a death, puppet_jump, BUG-0499 test, rel/0.7.4 runs 20261103-202813 fail /
+  20261103-204331 pass with creature.relations off).
+* What the mod does now: the hook gives the party species the "player species" answer only when its return
+  address lies inside GetRelationship or CreatureSocialMode; the cursor / click (0xD2FFD0) and the faces reach the
+  relation through those two. Other callers get the game's own answer (`coop.hp`: `other_callers=` counts them).
