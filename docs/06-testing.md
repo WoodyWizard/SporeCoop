@@ -3909,3 +3909,18 @@ its game's `world_scale=` from coop.pool, read before and after the dump). Fails
   reproduced).
 * `evolve_key` (coop_evolve_in_place.py --case creature --nosave, ~2.5 min): `coop.evokey nosave` turns the host's
   in-place save off (a host alone does not save either); `coop.evokey` prints `keys_set=`.
+## Tribe: orders and the grab spots (2026-11-04, fix/w41-tribe-orders)
+<a id="testing-tribe-orders"></a>
+
+* `coop.tribe ai <member id>` (any game; the host's is the one that counts): the member's order record (`rec=`
+  action, `target=`, `has=`), behaviour node (`node=`, `depth=`), the leaf node's memory (`mem=` state, the tool,
+  the tool's position at the enter, flags, claimed spot, wait counter for the grab node 0x0462854D), the walk
+  (`mode=`, `flags=`, `goal=`, `r=`) and `sel=`. `coop.tribe layout <tool type>` (host): the tribe's grab spots of
+  that type (place, `used=`, the member on it). `coop.tribe put <id> <x> <y> <z>` (host): test setup, a member onto
+  the ground there. docs/re/tribe.md#tribe-orders.
+* `coop_tribe_tools.py` now puts the guest's member 4 m behind the fire pit (seen from the rack) before the order
+  (`--start firepit`, the default; `--start own` = where it stood): its nearest grab spot is the one by the pit,
+  which a member of the fixture's size cannot stand on. Twin: `SPORE_FIX_OFF=tribe.grab_spot` (the member stands
+  ~1.5 m short of the spot for the whole 90 s). `--own`: the host orders one of its own members (not the chief:
+  tool 11 does not grab) the same way, a control that the guest's order is not treated differently.
+* play_tribe logs `host ai #<id>: ...` for every member of an order nobody acted on.
