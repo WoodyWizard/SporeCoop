@@ -9,15 +9,38 @@
 
 namespace sk {
 
-static void outf(SkOut* o, const char* fmt, ...)
+// BUG-0388: a command's printf output (SkHost::out_printf, outf) went through an 8 KB buffer and was cut there
+// without a word: a test reading 300 track rows got the first 97 (coop.fleet track dump), and every other long
+// dump (coop.track, coop.npctrack) lost rows the same way. Now one printf may give up to kMaxOutPiece bytes; a
+// longer one is cut with a line that says so. `kit.fix longout 0`: the 8 KB cut (SporeKit 0.3.8).
+constexpr int kMaxOutPiece = 1 << 20;
+void out_vappend(Out* o, const char* fmt, va_list ap)
 {
     char buf[8192];
+    va_list ap2;
+    va_copy(ap2, ap);
+    int n = vsnprintf(buf, sizeof buf, fmt, ap);
+    if (n > 0 && n < (int)sizeof buf)
+        o->text.append(buf, n);
+    else if (n > 0 && !g_fix_longout.on)
+        o->text.append(buf, sizeof buf - 1);
+    else if (n > 0) {
+        size_t want = (size_t)std::min(n, kMaxOutPiece);
+        std::string big(want + 1, '\0');
+        vsnprintf(big.data(), big.size(), fmt, ap2);
+        o->text.append(big.data(), want);
+        if (n > kMaxOutPiece)
+            o->text += "\n[output cut at 1 MB]\n";
+    }
+    va_end(ap2);
+}
+
+static void outf(SkOut* o, const char* fmt, ...)
+{
     va_list ap;
     va_start(ap, fmt);
-    int n = vsnprintf(buf, sizeof buf, fmt, ap);
+    out_vappend(reinterpret_cast<Out*>(o), fmt, ap);
     va_end(ap);
-    if (n > 0)
-        reinterpret_cast<Out*>(o)->text.append(buf, n < (int)sizeof buf ? n : (int)sizeof buf - 1);
 }
 
 // "0x1234", "1234" (hex), "Sym::Name", "Sym::Name+0x10"

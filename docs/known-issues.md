@@ -1401,6 +1401,9 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   inferred: the partner interpolation (extrapolation up to 0.25 s with the last velocity) or late
   snapshots during the host's cinematic.
 * Not checked: a frame-by-frame look at the received states around the moment.
+* 2026-11-04 (fix/w42-space-life): not a drawing error (BUG-0388): the console cut the track dumps at 8 KB, the
+  guest's path had gaps and the check measured against the chord across them; with complete rows the ship is
+  drawn within 0.17 m (docs/re/space.md#space-fast-ship-track). SporeKit `kit.fix longout`.
 * Ticket: BUG-0388.
 ## Tests: the creature test's hit lands on the host's family and is dropped (2026-11-01, fix/w30-tribe-walk)
 <a id="issue-creature-test-party-hit"></a>

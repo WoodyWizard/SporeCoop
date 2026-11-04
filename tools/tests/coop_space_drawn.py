@@ -22,6 +22,7 @@ the `now` error is printed with the owner's speed (how much is lag) and checked 
 LAG_S x speed + PATH_LIMIT.
 """
 import math
+import os
 import re
 import sys
 import time
@@ -36,6 +37,8 @@ FLY_KEYS = [['0x57'], ['0x44'], ['0x53'], ['0x41'], ['0x57', '0x44'], ['0x53', '
 
 ZOOM = {}  # (console, kind, id) -> the ship's mZoomAltitude per row (diagnostics)
 DETAIL = {}  # (t, kind, id) -> (offset, zoom) of a row (diagnostics: printed for the worst rows)
+COUNTS = {}  # id(console) -> (rows read, rows the game had) of the last dump (BUG-0388)
+RAW = {}  # id(console) -> the dump lines as read (save_raw writes them for a later look)
 EXTRA = {}  # (t, kind, id) -> (the pose the mod set last, its extrapolation s, pinned) of a puppet row (BUG-0388)
 
 
@@ -48,8 +51,11 @@ def dump(con):
     m = re.search(r'samples=(\d+)', track(con, 'count'))
     n = int(m.group(1)) if m else 0
     rows = {}
+    got = 0
     for start_i in range(0, n, 300):
         for line in con.call(f'coop.fleet track dump {start_i} 300')['out'].splitlines():
+            RAW.setdefault(id(con), []).append(line)
+            got += 1
             f = line.split()
             if len(f) < 10:  # (BUG-0388: puppet rows carry 5 more columns, see EXTRA)
                 continue
@@ -67,7 +73,19 @@ def dump(con):
                 EXTRA[(t, kind, i)] = ((float(f[10]), float(f[11]), float(f[12])), float(f[13]), int(f[14]))
     for v in rows.values():
         v.sort()
+    COUNTS[id(con)] = (got, n)
+    if got < n:  # BUG-0388: the console cut each answer at 8 KB (kit.fix longout 0): gaps in every path
+        print(f'  track dump: {got} of {n} rows read (the rest was cut from the answers)', flush=True)
     return rows
+
+
+def save_raw(con, name):
+    """the console's track dump lines into out/<lane>/tracks/<name> (BUG-0388: a frame-by-frame look)"""
+    import lane
+    path = os.path.join(lane.out_dir('tracks'), name)
+    with open(path, 'w') as f:
+        f.write('\n'.join(RAW.get(id(con), [])) + '\n')
+    return path
 
 
 def at(path, t):
@@ -145,6 +163,19 @@ def compare(view, truth, view_key, truth_key, skip_s=1.0):
 
 
 BAD = []  # the first rows drawn off their path (printed by report)
+
+
+def fast_check(ck, label, path_e, sp, fast=100.0, limit=PATH_LIMIT, need=10, share=0.02):
+    """BUG-0388: while the owner's ship is fast (core orbit ~200 m/s) the drawn ship stays on its path in
+    (1 - share) of those rows; fewer than `need` fast rows: printed only"""
+    rows = [d for d, v in zip(path_e, sp) if v >= fast]
+    bad = [d for d in rows if d > limit]
+    print(f'  {label}: {len(rows)} rows at >= {fast:.0f} m/s, {len(bad)} beyond {limit} m (max '
+          f'{max(rows) if rows else 0:.1f} m)', flush=True)
+    if len(rows) < need:
+        return
+    ck(len(bad) <= len(rows) * share, f'{label}: drawn on its own path while it flies at >= {fast:.0f} m/s '
+                                     f'({len(bad)} of {len(rows)} rows beyond {limit} m)')
 
 
 def report(ck, label, now_e, path_e, sp, limit=PATH_LIMIT, need=30, check=True):

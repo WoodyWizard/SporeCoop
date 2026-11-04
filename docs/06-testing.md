@@ -4023,3 +4023,8 @@ its game's `world_scale=` from coop.pool, read before and after the dump). Fails
 * `coop_space_colony_rejoin.py` (~1 min): pitfall: right after `coop.leave` and a join the guest still answers
   `coop.avatar` in its own old world, so `twoinst.wait_guest_in` can return before the host's world is loaded;
   wait for `coop.space world` (`world=N open=1`) to move on first.
+* Console answers were cut at 8 KB until 2026-11-04 (SporeKit `out_printf`, BUG-0388): a dump read in pages of
+  300 rows got ~97 of each page, silently. Now up to 1 MB per printf (`kit.fix longout`); `coop_space_drawn.dump`
+  prints `track dump: N of M rows read` when rows are missing. A test that reads a long answer should still count
+  what it got against what the game says it has.
+* `SPORE_FIX_OFF=kit.<name>` switches a SporeKit fix (`kit.fix <name> 0`) off on both games (twoinst.start).

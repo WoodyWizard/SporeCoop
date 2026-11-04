@@ -2092,3 +2092,18 @@ BUG-0469, GOG 2024, lanes 4/5 (`tools/tests/coop_content_space.py`).
 * ✔ The record-level colony path (`spaceext::colonize_own`, the `allies colonize` test command) applied in
   the freshly loaded host world shows the planet as the guest's colony at once (tech 5, its pol); the host's
   roster of the guest has it as the guest's own within one roster period.
+
+## The fast partner ship in the core: a measuring gap, not a drawing error (2026-11-04, fix/w42-space-life)
+<a id="space-fast-ship-track"></a>
+
+* ✔ BUG-0388's "guest ship drawn 20-30 m off its path for 0.2 s" (space_finale_wait, the guest orbiting the
+  core's gate at ~200 m/s) is not what the host drew. With the puppet rows carrying the pose the mod set (the
+  partner's interpolated state, `extrap`, `pin`): every off row was pinned, interpolated (extrap 0.000 s) and
+  drawn exactly where it was set (lab 20261104-100758 #1 and #2, 20261104-101851).
+* ✔ The track dumps had gaps: SporeKit cut every command answer at 8 KB (`out_printf`, an 8192-byte buffer):
+  of 300 rows asked per call the test got 97, so the guest's own path had a 1.5 s hole every ~0.7 s, and the
+  check measured the drawn ship against the straight chord across a hole of an orbit of radius 276 m. Where the
+  guest's path was recorded without a gap (98 rows of the same run, up to ~300 m/s by the rows) the drawn ship
+  was within 0.17 m of it (out/lane4/tracks of 20261104-101851, offline check).
+* Fixed in SporeKit (`kit.fix longout`): one printf may give up to 1 MB. Every other dump read in pages
+  (`coop.track`, `coop.npctrack`) lost rows the same way before.

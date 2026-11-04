@@ -108,6 +108,8 @@ void set_main_thread();
 struct Out {
     std::string text;
 };
+// append printf output to a command's output (BUG-0388: up to 1 MB per call, kit.fix longout)
+void out_vappend(Out* o, const char* fmt, va_list ap);
 bool console_start(int port);
 int command_add(SkMod* mod, const char* name, const char* help, SkCommandFn fn, void* user,
                 int flags);
@@ -258,6 +260,7 @@ struct KitFix {
     const char* what;
     volatile LONG on;
 };
+extern KitFix g_fix_longout;   // BUG-0388: a command's printf output is not cut at 8 KB
 extern KitFix g_fix_stackdump; // BUG-0050: copy a suspended thread's stack, resume, then format
 extern KitFix g_fix_cheatwait; // BUG-0065: commands that wait for the main thread refuse to run on it
 extern KitFix g_fix_reentry;   // BUG-0115: the fault logger and the log are not re-entered by a fault

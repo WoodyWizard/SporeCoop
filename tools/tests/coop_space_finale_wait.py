@@ -15,12 +15,14 @@ host: entries_with stays 0 (FAIL).
 
 Then, both in the core's system (the host in the core's cinematic, the guest at the gate), each game's
 drawn partner ship against the partner's own ship (coop.fleet track, BUG-0378): SPORE_FIX_OFF=
-space.puppet_pin draws the host's ship 20.7 m above where it is (FAIL).
+space.puppet_pin draws the host's ship 20.7 m above where it is (FAIL). The guest's fast ship (~200 m/s)
+on the host is checked too (BUG-0388): SPORE_FIX_OFF=kit.longout cuts the track dumps at 8 KB and the
+path has gaps (FAIL).
 """
 import sys
 import time
 
-from coop_space_drawn import compare, dump, report
+from coop_space_drawn import COUNTS, compare, dump, fast_check, report, save_raw
 from coop_space_finale import fin, fixture_planet, get_drive, press_through, settle, sp, to_galaxy, wait
 from twoinst import Checks, start
 
@@ -63,10 +65,17 @@ def main():
     hv, gv = dump(host), dump(guest)
     for c in (host, guest):
         c.call('coop.fleet track off')
+    print('  tracks:', save_raw(host, 'finale_wait_host.txt'), save_raw(guest, 'finale_wait_guest.txt'), flush=True)
+    for who, c in (('host', host), ('guest', guest)):  # BUG-0388: a path with holes measures a chord
+        got, n = COUNTS.get(id(c), (0, 0))
+        ck(n > 0 and got >= n, f'{who}: the track dump has every row the game recorded ({got} of {n})')
     report(ck, 'core: the host ship on the guest', *compare(gv, hv, ('p', 0), ('m', 0)), need=20)
-    # printed only: the guest's ship orbits at the gate (up to ~210 m/s in the core) and a short
-    # interpolation overshoot when it turns or stops is not this test's subject (BUG-0388)
-    report(ck, 'core: the guest ship on the host', *compare(hv, gv, ('p', 1), ('m', 1)), check=False)
+    # BUG-0388: the guest's ship orbits at the gate (up to ~210 m/s in the core). It looked drawn 20-30 m off its
+    # path for ~0.2 s: the console cut every dump answer at 8 KB, the guest's path had 1.5 s gaps and the
+    # check measured against the straight chord across them (SPORE_FIX_OFF=kit.longout: FAIL)
+    gn, gp, gs = compare(hv, gv, ('p', 1), ('m', 1))
+    report(ck, 'core: the guest ship on the host', gn, gp, gs, need=20)
+    fast_check(ck, 'core: the guest ship on the host', gp, gs)
     press_through([host], lambda: fin(host).get('busy') == '0' and fin(host).get('ctx') == '2', 200)
     settle(guest, 'guest')
     ck.faults(host=host, guest=guest)

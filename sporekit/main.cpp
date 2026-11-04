@@ -71,13 +71,10 @@ static void h_out_printf(SkOut* out, const char* fmt, ...)
 {
     if (!out)
         return;
-    char buf[8192];
     va_list ap;
     va_start(ap, fmt);
-    int n = vsnprintf(buf, sizeof buf, fmt, ap);
+    out_vappend(reinterpret_cast<Out*>(out), fmt, ap); // BUG-0388: not cut at 8 KB
     va_end(ap);
-    if (n > 0)
-        reinterpret_cast<Out*>(out)->text.append(buf, n < (int)sizeof buf ? n : (int)sizeof buf - 1);
 }
 static int h_command_exec(const char* line, SkOut* out)
 {
