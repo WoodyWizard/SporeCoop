@@ -3918,9 +3918,9 @@ its game's `world_scale=` from coop.pool, read before and after the dump). Fails
   (`mode=`, `flags=`, `goal=`, `r=`) and `sel=`. `coop.tribe layout <tool type>` (host): the tribe's grab spots of
   that type (place, `used=`, the member on it). `coop.tribe put <id> <x> <y> <z>` (host): test setup, a member onto
   the ground there. docs/re/tribe.md#tribe-orders.
-* `coop_tribe_tools.py` now puts the guest's member 4 m behind the fire pit (seen from the rack) before the order
-  (`--start firepit`, the default; `--start own` = where it stood): its nearest grab spot is the one by the pit,
-  which a member of the fixture's size cannot stand on. Twin: `SPORE_FIX_OFF=tribe.grab_spot` (the member stands
-  ~1.5 m short of the spot for the whole 90 s). `--own`: the host orders one of its own members (not the chief:
-  tool 11 does not grab) the same way, a control that the guest's order is not treated differently.
+* `coop_tribe_tools.py`: the guest's member walks to one of the rack's grab spots (a ring ~7 m round it) and,
+  in some runs, stops 1.5 m short of it for good (3 of 8 runs before the fix). Twin: `SPORE_FIX_OFF=tribe.grab_spot`
+  over `--repeat` (the failure is not deterministic: putting the member next to the fire pit spot, or another
+  member onto the spot, with `coop.tribe put` did not make it stop: it reached the spot or took another one).
+  `--own`: the host orders one of its own members (not the chief: tool 11 does not grab) the same way, a control.
 * play_tribe logs `host ai #<id>: ...` for every member of an order nobody acted on.

@@ -9,12 +9,13 @@ source: fix/w40-play final check, lab 20261103-160342
 role: 
 versions: 
 fixed_in:
-branch:
+branch: fix/w41-tribe-orders
 commits:
-tests:
+tests: tribe_tools (coop_tribe_tools.py), play_tribe
 signature:
-docs:
+docs: docs/re/tribe.md#tribe-orders, docs/06-testing.md#testing-tribe-orders
 related: BUG-0481
+switch: tribe.grab_spot
 ---
 
 ## Report
@@ -26,12 +27,36 @@ walk after a gift). The host's bot: look_far=24 (its minimap look did not land w
 84 actions in 10 min. Replay: `--seed 655950227`.
 
 ## Root cause
-Not analysed. Inferred: the idle orders cluster in the second half (gather / epic) after member gifts
+fix/w41-tribe-orders (GOG 2024, Ghidra + runtime on lane 9; docs/re/tribe.md#tribe-orders):
+* Observed (disassembly): the game's own order (a click: DoActionForAllSelected -> 0xCCFE70 -> DoActionForObjects ->
+  cCreatureCitizen::DoAction(action, target, prop), then the selected members' voice and a sound) and host_command's
+  DoAction(c, action, target, 0) are the same call with the same queue handling (0xBCB0E0 clears the queue and adds
+  one record), stimulus and re-plan; the UI sets no flag or priority. The ticket's premise "the record is replaced by
+  the game's own behaviour" is not what happens: the members were IN the ordered behaviour.
+* Observed (runtime, `coop.tribe ai`, tribe_tools lab 20261104-014156 #2): the guest's member in the GrabTool node
+  0x0462854D, node state 1 (waiting for the walk to the claimed grab spot), spot 0 of the rack's 6 (a ring ~6.8 m
+  round the rack, `coop.tribe layout 1`), walk goal (406.1 -7.1 302.7) = that spot, 2.2 m from the fire pit's
+  centre; the member (radius 2.87) stood 1.5 m short of it for 90 s. State 1 has no time limit: it stays forever.
+  The re-order at 40 s made an identical record, and DoAction posts the re-plan stimulus only for a changed record.
+  This is the game's own behaviour, the same for any order of that member (a host click too): the rack built 9 m
+  off the centre has a spot the member cannot stand on.
+* The play_tribe idles of the earlier runs (hunt: node 0x05F79546, a reaction to an area blow that plays
+  anim 0x5F73E48, entered on stimulus (0, 0x4000000) from 0xC20390; gather: node 0x0569236E, the gather behaviour)
+  were not reproduced in 2 runs here (lab 20261104-014832: guest 11 ok / 0 idle, 14 ok / 1 idle; host 0 idle):
+  inferred, members hurt and knocked by the epic's blows, and gathers on trees out of the behaviour's range
+  (its table entry has 100.0 next to the node id), the same for host orders (the host's own orders had idle
+  ones too: ok 9 of 14 in out/lab/20261104-010027).
+* Earlier inference (superseded): the idle orders cluster in the second half (gather / epic) after member gifts
 (`gave=1/2`): the ordered member may be the one just given; the host's look_far suggests its view calibration
 went off after the epic arrived.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+`tribe.grab_spot` (host, mods/coop/tribe.cpp grab_spot_tick): a player tribe member in the grab node's state 1
+that stands still (moves < 0.3 m, speed < 0.3) for 4 s within 3 m of its walk's goal is set onto the goal facing
+the tool; the game's behaviour then goes on (arrival, the grab animation, SetSpecializedTool). For every member
+(the host's own too: the bug is the game's, not the guest path). `coop.fix tribe.grab_spot off`: it stands there.
+host_command is unchanged (it already is the game's own order). Test: tribe_tools over --repeat (the stop is not
+deterministic; `coop.tribe put` of the member or of a blocker next to the spot by the fire pit did not make it).
 
 ## Verification
 <!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
