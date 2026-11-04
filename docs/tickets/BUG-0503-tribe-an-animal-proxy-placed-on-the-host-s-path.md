@@ -33,6 +33,19 @@ Not analysed. Inferred: a proxy the mod places on the host's path every frame (n
 pushing it), or the host's NPC position used by the audit is not the one the placing aims at (the audit takes
 the host's state at this proxy's radius, Tribe drives at its own height, BUG-0329). Next: `coop.npctrack` on
 the guest around the report (how 1/3, place_lost, the drawn vs target rows).
+Analysis 2026-11-03 (fix/w41-tribe-world, from the logs of out/lab/20261103-012624, no new run):
+* Observed: in campaign_tribe#3 proxy 54 was reported off on all three guests within 0.7 s of each other at the
+  same place ((-172 -466 -89), 3.5-7.4 m, then again 10 s later), 5 m from the first extra player's own view
+  position (its trace `pos=`); so not a proxy far from the guest's camera, and not one guest's game alone.
+* Observed: play_tribe#3's proxy 5 was 121 m from the guest's view position while the host's own drawn position
+  jumped from beside the guest to 190 m away (the epic's arrival 20 s before).
+* Inferred, not checked: the same off on every guest at once points at the host's states (the NPC pushed or
+  thrown on the host: a hit, the epic, a herd mate) or at something all guests have at that place and the host has
+  not (the guests' mirrors stand where the host's members are, so not those). The walk placing only runs while the
+  proxy is within 8 m of the host's state (npc.cpp, `net::dist(...) < 8.f`), and closes at (speed + catch_up) per
+  frame; a host NPC that changes direction often at 2.5 m/s keeps a placed proxy behind.
+* Next: `coop.npctrack` on a guest and the host around such a line (play_tribe, 10 min) to see the host's path and
+  the drawn proxy frame by frame.
 
 ## Fix
 <!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
@@ -43,3 +56,4 @@ the guest around the report (how 1/3, place_lost, the drawn vs target rows).
 
 ## History
 - 2026-11-03: opened.
+- 2026-11-03: analysed from the logs on fix/w41-tribe-world (time box), not fixed.

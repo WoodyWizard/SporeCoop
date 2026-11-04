@@ -30,6 +30,9 @@ guests load the host's save of it ("Alice entered the Tribe stage: everybody fol
 loaded world than in the live one. Not seen on flat ground (creature_cadian fixture: 503.68 m on
 both). Next: `coop.ground` on the host before and after it reloads its own Tribe save in such a
 world; find the game's village terrain code.
+2026-11-03 (fix/w41-tribe-world): not analysed further (time box). The effect on members and animals stays
+handled by drive.own_height / tribe.mirror_ground (each game's own ground at the host's place). The detector does not
+compare heights along the radius as a finding (worlddiff matches within 3 / 15 m), so its Tribe rows do not show it.
 
 ## Fix
 Not fixed. Its effect on members and animals is handled by drive.own_height (BUG-0329): they stand
@@ -41,3 +44,4 @@ on each game's own ground at the host's place.
 
 ## History
 - 2026-10-30: opened.
+- 2026-11-03: looked at on fix/w41-tribe-world, no new finding.
