@@ -115,7 +115,7 @@ def case_vehicles(host, guest, ck):
 
 
 def colony_spice(con):
-    m = re.search(r'colony 00460035 cities \d+:([\d. ]+)', sp(con, 'planets'))
+    m = re.search(r'colony 00460035 cities \d+:([\d. ]+)', sp(con, 'colonyspice'))
     return [float(v) for v in m.group(1).split()] if m else []
 
 

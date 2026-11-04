@@ -37,7 +37,7 @@ the record kept its 9 items until the next update, and the host's game lost them
 <!-- observed (runtime, logs, disassembly) vs inferred -->
 
 ## Fix
-`mods/coop/space_planets.cpp` (Space feature `planets`, MSG_SPACE kinds 80..84): the host sends the stored spice of
+`mods/coop/space_planets.cpp` (Space feature `colonyspice`, MSG_SPACE kinds 80..84): the host sends the stored spice of
 each city of the player's colonies (on a change, else every 10 s); a guest writes it into its cities; a guest's
 game that takes spice out of a city (the arrival's collection, a pickup) tells the host, which takes the same out
 of its city. The game's own pickup update puts or removes the pickups. Not in rivals mode. Switch

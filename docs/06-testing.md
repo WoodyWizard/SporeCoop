@@ -4028,7 +4028,7 @@ docs/re/space.md#space-planet-life). Each asserts the game's own objects in the 
   game collects the home colony's stored spice into its hold on arrival, as every arrival does); 10 s later the
   host's colony cities keep no more than the guest's, the host's planet shows at most 1 pickup, the host's hold
   is unchanged, and after the guest lands both planets show the same pickups. Twin `space.colony_spice`.
-* `coop.space planets`: the feature's counters and this game's colonies with the stored spice of each city;
+* `coop.space colonyspice`: the feature's counters and this game's colonies with the stored spice of each city;
   `coop.wobj` lines `space_citizen` / `space_vehicle` and `space vehicles drives=`.
 * The divergence detector in Space (worlddiff.py): citizens near the guest are compared only when the host's
   game has citizens there (each game puts its pool of 150 at the cities near its own camera); a ship's size is

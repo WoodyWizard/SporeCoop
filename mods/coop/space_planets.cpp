@@ -1,4 +1,4 @@
-// Space feature "planets" (MSG_SPACE kinds 80..84): a shared colony's stored spice is the host's
+// Space feature "colonyspice" (MSG_SPACE kinds 80..84): a shared colony's stored spice is the host's
 // (BUG-0537, docs/re/space.md#space-planet-life).
 //
 // Each city of a colony stores the spice it makes (cCityData +0x1C). The game shows it as a pickup next to
@@ -277,14 +277,14 @@ static void on_session_end()
 static std::string status()
 {
     char b[200];
-    snprintf(b, sizeof b, "planets: colony spice fix=%d tx=%u taken_rx=%u taken=%u rx=%u written=%u taken_tx=%u", (int)g_fix, g_tx,
+    snprintf(b, sizeof b, "colonyspice: fix=%d tx=%u taken_rx=%u taken=%u rx=%u written=%u taken_tx=%u", (int)g_fix, g_tx,
              g_taken_rx, g_taken_applied, g_rx, g_written, g_taken_tx);
     return b;
 }
 
 static std::string debug(const std::vector<std::string>& a)
 {
-    // coop.space planets [spice]: this game's colonies and the stored spice of each city
+    // coop.space colonyspice: this game's colonies and the stored spice of each city
     std::string s = status() + "\n";
     char b[96];
     for (auto& c : colonies(player_pol())) {
@@ -309,7 +309,7 @@ static bool init(const SkHost* h, SkMod* m)
     return a_Spd && a_PlayerEmpire;
 }
 
-static bool reg = spaceext::add({.name = "planets",
+static bool reg = spaceext::add({.name = "colonyspice",
                                  .kind_lo = 80,
                                  .kind_hi = 84,
                                  .init = init,
