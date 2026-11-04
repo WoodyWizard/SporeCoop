@@ -10,7 +10,7 @@ role: guest
 versions: 
 fixed_in: unreleased
 branch: fix/w42-infra
-commits:
+commits: 46a858a3
 tests: legless_guest
 signature:
 docs:
