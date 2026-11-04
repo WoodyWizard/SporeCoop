@@ -4011,3 +4011,20 @@ its game's `world_scale=` from coop.pool, read before and after the dump). Fails
   world's species it announces first. Verified in both orders, --cold: creations, creations_cell, creations_rejoin,
   old_species, npc_swap, creation_leave OK (lab 20261104-053801 .. 20261104-060316); legless_guest fails either way
   (BUG-0533, not the rule).
+## Tribe tools of every tribe, a guest's purchase, orders during a gather (2026-11-04, fix/w42-tribe-left)
+<a id="testing-tribe-tools-all"></a>
+
+* `coop_tribe_tools_all.py` (suite `tribe_tools_all`, BUG-0523): the host forms an NPC tribe (`coop.tribe npc_tribe 3
+  70`) and places a rack for it (`coop.tribe place <host tribe index> <type> <m> [deg]`, any role: the index is the
+  host's MSG_TRIBE_STATE order, a guest maps it); the guest places an own tool of that tribe. The guest's tribes' own
+  tool lists (`coop.tribe tools all`) must match the host's within 3 m near the village. The new tribe's index is
+  looked up by its fire pit: an added tribe can shift the indexes of the object list. ~60 s warm.
+* `coop_tribe_tool_buy.py` (suite `tribe_tool_buy`, BUG-0524): `coop.tribe buy <type> <m> [deg]` on the guest runs
+  the palette's placement calls (the old tool of the type goes, CreateTool, dragged: spatial +0x72) until `coop.tribe
+  buy_end`; the host's tool list must have it within 2 m after the drag only, and a guest's member takes the weapon.
+  ~65-90 s.
+* `coop_tribe_gather_stall.py` (suite `tribe_gather_stall`, BUG-0531 regression check): `coop.tribe order <id>
+  <action> <x y z>` (host) sends a guest's member to gather a tree 90-130 m off; the guest's walk order (select +
+  walk) is given while it carries the food home (gather state 19). Pitfall: the game's walk ends some metres short
+  of goals near the hut: the test checks the member leaves the gather node and walks 5 m of 15 toward the goal.
+
