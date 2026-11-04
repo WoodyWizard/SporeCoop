@@ -125,11 +125,25 @@ static void* g_party_species[8];
 static int g_party_n = 0;
 static uint32_t g_party_answers = 0;
 
+// BUG-0462 follow-up: the hook answered "player species" for the partners' species in every caller of vt 0xD0;
+// the family / hatchling / pack / nest code reads the same predicate, and a guest's hatchling no longer stepped
+// out of its egg after a death (puppet_jump). Now only the two relation paths get the party answer: calls from
+// inside GetRelationship 0xBA40E0 (736 bytes) and CreatureSocialMode 0xC0E800 (522 bytes), which the click, the
+// cursor (0xD2FFD0) and the face reach through GetRelationship / CreatureSocialMode. Every other caller gets the
+// game's own answer (docs/re/creature.md#creature-relations-scope).
+static uintptr_t g_rel_lo, g_rel_hi, g_mode_lo, g_mode_hi;
+static uint32_t g_party_other_callers = 0;
+
 static bool SK_THISCALL h_IsPlayerSpecies(void* c)
 {
+    uintptr_t ret = (uintptr_t)__builtin_return_address(0);
     bool r = o_IsPlayerSpecies(c);
     if (r || !g_relations_fix || !g_party_n || !c)
         return r;
+    if (!((ret >= g_rel_lo && ret < g_rel_hi) || (ret >= g_mode_lo && ret < g_mode_hi))) {
+        g_party_other_callers++;
+        return r;
+    }
     void* sp = *(void**)((uint8_t*)c + game::kSpeciesOff);
     for (int i = 0; i < g_party_n; i++)
         if (sp == g_party_species[i]) {
@@ -248,7 +262,8 @@ std::string status()
                      it != g_puppets.end() ? it->second.hp : -1.f, it != g_puppets.end() ? it->second.max : -1.f);
             out += b;
         }
-    snprintf(b, sizeof b, "relations: fix=%d party_species=%d answers=%u\n", (int)g_relations_fix, g_party_n, g_party_answers);
+    snprintf(b, sizeof b, "relations: fix=%d party_species=%d answers=%u other_callers=%u\n", (int)g_relations_fix, g_party_n,
+             g_party_answers, g_party_other_callers);
     out += b;
     snprintf(b, sizeof b, "fixes: partner_hp=%d party_peace=%d own_brain_hp=%d sets=%u partner_hits_dropped=%u party_hits_dropped=%u\n",
              (int)g_partner_hp, (int)g_party_peace, (int)g_own_brain_hp, g_puppet_sets, g_partner_hits_dropped, g_party_hits_dropped);
@@ -388,6 +403,10 @@ void init(const SkHost* host, SkMod* mod, Ctx ctx)
     a_LevelHealth = H->sym("SporeCoop::CreatureLevelHealth");
     if (uintptr_t a = H->sym("SporeCoop::cCreatureAnimal_BaseMaxHitPoints"))
         H->hook_create(M, (void*)a, (void*)h_BaseMaxHp, (void**)&o_BaseMaxHp);
+    g_rel_lo = H->sym("Simulator::cSpeciesRelationshipManager::GetRelationship");
+    g_rel_hi = g_rel_lo ? g_rel_lo + 736 : 0;
+    g_mode_lo = H->sym("SporeCoop::CreatureSocialMode");
+    g_mode_hi = g_mode_lo ? g_mode_lo + 522 : 0;
     if (uintptr_t a = H->sym("SporeCoop::cCreatureBase_IsPlayerSpecies"))
         H->hook_create(M, (void*)a, (void*)h_IsPlayerSpecies, (void**)&o_IsPlayerSpecies);
     if (uintptr_t a = H->sym("SporeCoop::cCreatureAnimal_GetMaxHitPoints"))
