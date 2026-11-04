@@ -14,7 +14,7 @@ commits:
 tests: tribe_rejoin_npcs (coop_tribe_rejoin_npcs.py, a scenario)
 signature:
 docs:
-related: BUG-0288, BUG-0291, BUG-0125
+related: BUG-0288, BUG-0291, BUG-0125, BUG-0487
 ---
 
 ## Report
@@ -38,6 +38,12 @@ Not reproduced: the replay with the candidate fix off 3 times (lane 7, 2026-10-3
 Tribe twice, once in Creature only; RESULT OK each time), and `coop_tribe_rejoin_npcs.py` (2 rounds,
 fix off): coverage 100% (lab 20261030-195516-fix-w16-tribe).
 
+2026-11-03 (fix/w41-tribe-world): the class is what npc.resync (BUG-0487, 0.7.4) handles: a guest that gets states
+of an NPC it has no proxy of asks the host for its spawn again; the guest's receive path (npc.cpp, MSG_NPC_STATE)
+does that in every stage, Tribe included (npc_stage covers mode 0x1654C02). Not verified in Tribe: a Tribe variant
+of coop_npc_resync.py found no proxy rows in the census on the tribe fixture (`coop.census all 1200`: 76 / 75 rows,
+all of kind `g`, while `coop.npc` listed 29 proxies; out/lab/20261103-235641), so it had nothing to forget; the
+variant was dropped. Next: pick the ids from `coop.npc` instead of the census.
 ## Fix
 None. The scenario test `coop_tribe_rejoin_npcs.py` (suite `tribe_rejoin_npcs`) stays: a guest
 rejoins twice in Tribe and must have the host's NPCs again (it passes on main).
@@ -48,3 +54,4 @@ worktree (not in git).
 
 ## History
 - 2026-10-30: opened.
+- 2026-11-03: looked at on fix/w41-tribe-world: covered by npc.resync in principle, not verified in Tribe.
