@@ -1,16 +1,16 @@
 ---
 id: BUG-0521
 title: the game does not start with the mod installed: the game's own App::cSporeApp::Init returns 0 and the game exits without a report or a message (Windows build 26300)
-status: open
+status: fixed
 kind: bug
 stage: Menu
 reported: 2026-11-03
 source: GitHub issue #193 (2026-11-03)
 role: single
 versions: 0.7.3.6
-fixed_in:
+fixed_in: unreleased
 branch: fix/w40-gh-issues
-commits:
+commits: 23a436a5
 tests:
 signature: sporekit.log: 'App::cSporeApp::Init -> 0' then 'the game exits (ExitProcess 0) ... frame 1'
 docs:
