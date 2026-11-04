@@ -45,6 +45,8 @@ walker's target over 0.4 m above the host's ground, the next frame draws the pup
   while the placing held it up). The puppet's velocity is now the partner's every frame in the air (variant 4 of
   `coop.track air` keeps the old): out/lab/20261104-042712 (cold, 3 runs: 99 / 98 / 100 % of the frames up; run #1
   still FAILED `no jump` on 2 one-to-three-frame drops when the game started another animation: BUG-0532).
+- Final code (f5301458), cold: FAIL with SPORE_FIX_OFF=creature.puppet_air out/lab/20261104-043624 (238 of 589 frames,
+  40 %); PASS out/lab/20261104-043742 (723 of 735, 98 %, no frame step), with puppet_walk, puppet_jump, puppet_mound.
 - Not checked: a creature that really jumps (the fixture's cannot; hops are `coop.abilities lift 1.5`).
 
 ## History
