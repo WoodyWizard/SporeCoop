@@ -34,12 +34,13 @@ def main():
     ap.add_argument('--fixture', default='creature')
     a = ap.parse_args()
     stage = 'Tribe' if a.fixture == 'tribe' else 'Creature'
-    near = 120 if a.fixture == 'tribe' else 60
+    # (Tribe: the animals' nests lie farther than the census' 250 m from the village pointer)
+    near, r = (1200, 1200) if a.fixture == 'tribe' else (60, 250)
     host, guest = start(a.fixture)
     ck = Checks()
     # (Tribe: a cold guest's game time stays paused for 15-30 s after the join, docs/re/tribe.md; the proxies come then)
     time.sleep(40 if a.fixture == 'tribe' else 15)
-    hw, gw = worlddiff.pair_dump(host, guest)
+    hw, gw = worlddiff.pair_dump(host, guest, r)
     h = {x['id']: x for x in hw.rows if x['kind'] == 'c' and x['own'] == 'npc'}
     g = {x['id']: x for x in gw.rows if x['kind'] == 'c' and x['own'] == 'proxy'}
     me = gw.me if gw.me and any(abs(v) > 1 for v in gw.me) else hw.me  # (an RTS pointer at (0 0 0): the host's centre)
@@ -54,7 +55,7 @@ def main():
     # (with the fix the spawn is back within about a second: the answer of the forget is the evidence)
     ck(took == ids, f'the guest destroyed the proxies of {took} without telling the host')
     time.sleep(a.wait)
-    hw, gw = worlddiff.pair_dump(host, guest)
+    hw, gw = worlddiff.pair_dump(host, guest, r)
     h = {x['id']: x for x in hw.rows if x['kind'] == 'c' and x['own'] == 'npc'}
     g = {x['id']: x for x in gw.rows if x['kind'] == 'c' and x['own'] == 'proxy'}
     back, missing = [], []
