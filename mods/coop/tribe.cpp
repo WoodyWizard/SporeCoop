@@ -2160,18 +2160,6 @@ COOP_FIX("tribe.spread_chiefs", "BUG-0340", g_spread_fix, "tribe: two players' c
 constexpr float kChiefApart = 1.5f, kChiefRing = 12.f;
 static std::map<std::pair<uint8_t, uint8_t>, double> g_stack_since;
 static uint32_t g_spread_moves;
-// BUG-0340 (0.7.6): the game's own avoidance parts two chiefs put in one spot only to 1.8-5 m, its idle behaviour
-// gathers a tribe's idle members round the centre: with 4 players the chiefs' bodies (5-6 m for the sum of the
-// bounding radii) stood in each other at 4.3-5.2 m. `tribe.chiefs_overlap`: two chiefs whose bodies overlap
-// (closer than kChiefOverlap of the sum of their bounding radii) standing still for 2 s are parted too: the later
-// owner's chief walks to its ring spot (a walk, no jump, at most every kChiefOverlapEvery s per pair).
-// `coop.fix tribe.chiefs_overlap off`: only chiefs inside each other (kChiefApart) are parted.
-static bool g_overlap_fix = true;
-COOP_FIX("tribe.chiefs_overlap", "BUG-0340", g_overlap_fix, "tribe: two players' chiefs whose bodies overlap walk apart, each to its own spot round the village");
-constexpr float kChiefOverlap = 0.9f;
-constexpr double kChiefOverlapEvery = 8.0;
-static std::map<std::pair<uint8_t, uint8_t>, double> g_overlap_since, g_overlap_last;
-static uint32_t g_overlap_walks;
 
 static net::Vec3 ring_spot(const net::Vec3& centre, uint8_t owner)
 {
@@ -2221,31 +2209,6 @@ static void spread_chiefs(double now)
                            drive::speed(game::velocity(a)) < 0.3f && drive::speed(game::velocity(b)) < 0.3f;
             if (!stacked) {
                 g_stack_since.erase(key);
-                bool still = game::object_alive(a) && game::object_alive(b) && drive::speed(game::velocity(a)) < 0.3f &&
-                             drive::speed(game::velocity(b)) < 0.3f;
-                bool overlap = g_overlap_fix && still &&
-                               net::dist(game::position(a), game::position(b)) <
-                                   kChiefOverlap * (game::bounding_radius(a) + game::bounding_radius(b));
-                if (!overlap) {
-                    g_overlap_since.erase(key);
-                    continue;
-                }
-                auto ot = g_overlap_since.emplace(key, now).first;
-                auto lt = g_overlap_last.find(key);
-                if (now - ot->second < 2.0 || (lt != g_overlap_last.end() && now - lt->second < kChiefOverlapEvery))
-                    continue;
-                net::Vec3 spot = ring_spot(centre, ch[j].first);
-                if (net::dist(game::position(b), spot) < 2.f) // it stands on its spot: the other one goes
-                    spot = ring_spot(centre, ch[i].first), b = a;
-                void* rec = thiscall<void*>(a_DoAction, b, 4, (void*)nullptr, (void*)nullptr);
-                float p[3] = {spot.x, spot.y, spot.z};
-                if (rec)
-                    thiscall<void>(a_SetValueVector3, (uint8_t*)rec + 0x39, (const float*)p);
-                g_overlap_walks++;
-                g_overlap_last[key] = now;
-                g_overlap_since.erase(key);
-                H->log(M, SK_INFO, "tribe: the chiefs of %s and %s stood in each other's body: one walks to its own spot",
-                       C.sess->name_of(ch[i].first).c_str(), C.sess->name_of(ch[j].first).c_str());
                 continue;
             }
             auto it = g_stack_since.emplace(key, now).first;
@@ -2688,9 +2651,9 @@ std::string status()
         chiefs += " " + std::to_string(o) + ":#" + std::to_string(member_id(c));
     snprintf(b, sizeof b,
              "tribe co-op: pincer=%u aura=%u chief_rescues=%u duet=%u heals=%u epics=%u epic_kills=%u epic=%p "
-             "chiefs=%s spread=%u placed=%u overlap=%u\n",
+             "chiefs=%s spread=%u placed=%u\n",
              g_pincer_hits, g_aura_hits, g_chief_rescues, g_duet_ticks, g_heals, g_epics, g_epic_kills, g_epic,
-             chiefs.c_str(), g_spread_moves, g_placed, g_overlap_walks);
+             chiefs.c_str(), g_spread_moves, g_placed);
     out += b;
     // the chiefs' size in the game (spatial GetScale / their own scale) and the lifetime checks
     std::string scales;
@@ -3187,6 +3150,32 @@ std::string debug(const std::vector<std::string>& a)
         void* vec[3] = {sel.data(), sel.data() + sel.size(), sel.data() + sel.size()};
         int r = thiscall<int>(a_DoActionForObjects, (void*)nullptr, (void*)vec, action, t, (void*)nullptr);
         return "action ordered (" + std::to_string(sel.size()) + " selected, ret " + std::to_string(r) + ")";
+    }
+    if (a.size() >= 2 && a[0] == "near" && is_host()) { // near <ratio>: tests (BUG-0340), the later chief put that
+        // part of the sum of the two chiefs' bounding radii from the first one, standing (no order)
+        if (g_chief.size() < 2)
+            return "no two chiefs";
+        std::vector<std::pair<uint8_t, void*>> ch(g_chief.begin(), g_chief.end());
+        std::sort(ch.begin(), ch.end());
+        void *c0 = ch[0].second, *c1 = ch[1].second;
+        float d = (float)atof(a[1].c_str()) * (game::bounding_radius(c0) + game::bounding_radius(c1));
+        net::Vec3 p0 = game::position(c0);
+        float l = std::sqrt(p0.x * p0.x + p0.y * p0.y + p0.z * p0.z);
+        if (l < 1.f)
+            return "no position";
+        net::Vec3 n{p0.x / l, p0.y / l, p0.z / l};
+        net::Vec3 ax = std::fabs(n.z) < 0.9f ? net::Vec3{0, 0, 1} : net::Vec3{1, 0, 0};
+        net::Vec3 u{n.y * ax.z - n.z * ax.y, n.z * ax.x - n.x * ax.z, n.x * ax.y - n.y * ax.x};
+        float ul = std::sqrt(u.x * u.x + u.y * u.y + u.z * u.z);
+        net::Vec3 p{p0.x + u.x / ul * d, p0.y + u.y / ul * d, p0.z + u.z / ul * d};
+        float g = game::ground_radius(p), pl = std::sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
+        if (g > 1.f && pl > 1.f)
+            p = {p.x / pl * g, p.y / pl * g, p.z / pl * g};
+        game::teleport(c1, p, game::orientation(c1));
+        char b[128];
+        snprintf(b, sizeof b, "put player %u's chief %.1f m from player %u's (radii %.1f + %.1f)", ch[1].first, d, ch[0].first,
+                 game::bounding_radius(c0), game::bounding_radius(c1));
+        return b;
     }
     if (!a.empty() && a[0] == "stack" && is_host()) { // tests (BUG-0340): every chief onto the first one
         if (g_chief.empty())

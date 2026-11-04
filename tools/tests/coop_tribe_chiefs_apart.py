@@ -12,7 +12,11 @@ split of new members, a rejoin) appear at one spot.
    chiefs within 1.5 m.
 4. They can move: each player orders its own chief (select + walk, the guest's order goes to the
    host) 8 m away; after 8 s each chief has moved at least 3 m on both games.
-PASS: 3 and 4. --nofix (`coop.fix tribe.spread_chiefs off` on the host): must FAIL at 3.
+5. (0.7.6) Bodies in each other: 70 s after the start (the arrival's placement window is over) the host puts the
+   later chief 0.45 x the sum of the two bounding radii from the first (`coop.tribe near 0.45`, > 1.5 m, so
+   tribe.spread_chiefs does not part them). 14 s later on each game the distance is at least 0.6 x that sum (the
+   game's own avoidance parts them: 0.46 -> 0.92 in lab 20261104-102641; a regression check, no switch).
+PASS: 3, 4 and 5. --nofix (`coop.fix tribe.spread_chiefs off` on the host): must FAIL at 3.
 
   SPORE_LANE=8 python3 tools/tests/coop_tribe_chiefs_apart.py [--nofix]
 """
@@ -34,6 +38,18 @@ def chiefs(con):
     return {o: (i, pos.get(i)) for o, i in ids.items() if pos.get(i)}
 
 
+def radii(con):
+    """member id -> bounding radius on this game"""
+    return {int(x.group(1)): float(x.group(2)) for x in re.finditer(r'#(\d+) \S+ owner=.*?radius=([\d.]+)', con.call('coop.tribe')['out'])}
+
+
+def overlap(con):
+    """the smallest distance / (sum of the bounding radii) of two chiefs on this game"""
+    ch, r = chiefs(con), radii(con)
+    v = list(ch.values())
+    return min((math.dist(a[1], b[1]) / max(0.1, r.get(a[0], 1) + r.get(b[0], 1)) for i, a in enumerate(v) for b in v[i + 1:]), default=9.0)
+
+
 def closest(ch):
     ps = [p for _, p in ch.values()]
     return min((math.dist(a, b) for i, a in enumerate(ps) for b in ps[i + 1:]), default=99.0)
@@ -44,6 +60,7 @@ def main():
     ap.add_argument('--nofix', action='store_true')
     a = ap.parse_args()
     host, guest = start('tribe')
+    t_start = time.time()
     ck = Checks()
     if a.nofix:
         print(' ', host.call('coop.fix tribe.spread_chiefs off')['out'].strip(), flush=True)
@@ -80,6 +97,18 @@ def main():
             if o in (0, 1) and o in after:
                 moved = math.dist(p, after[o][1])
                 ck(moved >= 3, f'{name}: player {o}\'s chief walked ({moved:.1f} m)')
+    # 5: bodies in each other, after the arrival's placement window (60 s from the split): the later chief is put
+    # 0.45 x the sum of the radii from the first one (more than 1.5 m), both standing
+    wait = 70 - (time.time() - t_start)
+    if wait > 0:
+        time.sleep(wait)
+    print('  host:', host.call('coop.tribe near 0.45')['out'].strip(), flush=True)
+    time.sleep(1)
+    print(f'  right after: host distance / radii {overlap(host):.2f}', flush=True)
+    time.sleep(13)
+    for name, con in (('host', host), ('guest', guest)):
+        q = overlap(con)
+        ck(q >= 0.6, f'{name}: the chiefs\' bodies are not in each other 14 s later (distance / radii {q:.2f})')
     print('  host:', re.search(r'tribe co-op: .*', host.call('coop.tribe')['out']).group(0)[-60:], flush=True)
     ck.faults(host=host, guest=guest)
     return ck.result()

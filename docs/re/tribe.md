@@ -1377,3 +1377,15 @@ BUG-0531 (a member in the gather node does not act on a new order). GOG 2024, Gh
 * ✔ A test pitfall: a walk goal 12 m from the village toward some trees ended at the hut's edge (the game's walk
   stopped at (413.8 -22.6 291.4) in three runs, the member 8 m short): check that a member walks, not that it
   reaches a point near the village.
+## Chiefs put in each other after the arrival (2026-11-04, fix/w42-tribe-left)
+<a id="tribe-chiefs-overlap"></a>
+
+BUG-0340, 2 players, 'tribe' fixture, lane 6 (`coop.tribe near <ratio>`: the later chief put that part of the sum
+of the two chiefs' bounding radii from the first, standing):
+* ✔ The chiefs' bounding radii (spatial vt 0x70) are ~8 m in this fixture: 15 m apart is 0.92 of the sum. The
+  bounding sphere is much larger than the body: "closer than the sum" is not a visible overlap.
+* ✔ Put at 0.46 of the sum (~7 m, more than spread_chiefs' 1.5 m) with no mod parting: 0.92 within 14 s on both
+  games (the game's avoidance; lab 20261104-102641).
+* ✔ At the fixture's arrival (session s 5) the two chiefs stood closer than 0.6 of the sum for 2 s before
+  place_chiefs or the game parted them (a watchdog's log in lab 20261104-102249 and -102641; the watchdog,
+  `tribe.chiefs_overlap`, was removed again for want of a failing run).
