@@ -1257,8 +1257,8 @@ std::string abilities_dump(int id)
         uint8_t* a = (uint8_t*)ability(c, i);
         if (!a || IsBadReadPtr(a, 0x108))
             continue;
-        snprintf(b, sizeof b, "ab %d type=0x%X key=%u points=%.2f energy=%.2f\n", i, *(uint32_t*)(a + 8),
-                 *(uint32_t*)(a + 0x10), *(float*)(a + 0x3C), *(float*)(a + 0x104));
+        snprintf(b, sizeof b, "ab %d type=0x%X key=%u points=%.2f energy=%.2f kind=%d range=%.1f\n", i, *(uint32_t*)(a + 8),
+                 *(uint32_t*)(a + 0x10), *(float*)(a + 0x3C), *(float*)(a + 0x104), *(int*)(a + 0x7C), *(float*)(a + 0xA8));
         out += b;
     }
     uint8_t* sp = (uint8_t*)game::species_profile(c);

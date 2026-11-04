@@ -86,6 +86,19 @@ std::string herd_nulls_status()
 }
 
 static std::vector<void*> g_puppets;
+
+// BUG-0532: a partner's puppet in the air (creature.puppet_air) was drawn on its terrain for 1-3 frames when the
+// game started another animation on it (fall -> idle, the walk start): something in that update grounds it. The
+// puppets held in the air (air_hold, set by modes.cpp each frame) are put back where the partner is and marked not
+// grounded right after the game's animation starts and its update when the game grounded them.
+struct AirHold {
+    void* c;
+    net::Vec3 pos, vel;
+    net::Quat rot;
+};
+static std::vector<AirHold> g_air;
+static uint32_t g_air_regrounded[4]; // by the call after which it was grounded: 0 update, 1 anim, 2 idle, 3 BT anim
+static void air_reassert(void* c, int where);
 static std::vector<void*> g_our_herds; // made by create_herd (puppets, proxies); diagnostics only
 
 // ---- registry via cCreatureAnimal::Update (thiscall, int deltaTime) ----
@@ -100,6 +113,8 @@ static void SK_THISCALL h_Update(void* self, int dt)
     if (g_update_filter && !g_update_filter(self))
         return;
     o_Update(self, dt);
+    if (!g_air.empty())
+        air_reassert(self, 0);
 }
 
 const std::vector<void*>& creatures_updated()
@@ -304,6 +319,8 @@ static int SK_THISCALL h_PlayAnim(void* self, uint32_t id, int block, int disabl
     if (g_anim_listener && !g_in_puppet_anim)
         g_anim_listener(self, id, block, (disable & 0xFF) != 0, false);
     int r = o_PlayAnim(self, id, block, disable);
+    if (!g_air.empty())
+        air_reassert(self, 1);
     if (r)
         bhv_report(self, id, 1, disable & 0xFF, block);
     return r;
@@ -314,6 +331,8 @@ static int SK_THISCALL h_PlayAnimTo(void* self, uint32_t id, void* other, int a,
     if (g_anim_listener && !g_in_puppet_anim)
         g_anim_listener(self, id, block, false, true);
     int r = o_PlayAnimTo(self, id, other, a, block);
+    if (!g_air.empty())
+        air_reassert(self, 1);
     if (r)
         bhv_report(self, id, 2, 0, block);
     return r;
@@ -355,6 +374,8 @@ static void bhv_report(void* self, uint32_t id, int how, int a, int b)
 static int SK_THISCALL h_CreaturePlayAnim(void* self, uint32_t id, int a, int b)
 {
     int r = o_CreaturePlayAnim(self, id, a, b);
+    if (!g_air.empty())
+        air_reassert(self, 3);
     if (r)
         bhv_report(self, id, 0, a, b);
     return r;
@@ -365,6 +386,8 @@ static void SK_THISCALL h_IdleRefresh(void* self, int force)
     g_idle_depth++;
     o_IdleRefresh(self, force);
     g_idle_depth--;
+    if (!g_air.empty())
+        air_reassert(self, 2);
 }
 
 void set_behaviour_anim_listener(BehaviourAnimListener fn) { g_bhv_listener = fn; }
@@ -1427,6 +1450,44 @@ void place(void* c, const net::Vec3& pos, const net::Quat& rot)
 {
     teleport(c, pos, rot);
     field<uint8_t>(c, 0xB5D) = 0;
+}
+
+void air_hold(void* c, bool on, const net::Vec3& pos, const net::Quat& rot, const net::Vec3& vel)
+{
+    for (size_t i = 0; i < g_air.size(); i++)
+        if (g_air[i].c == c) {
+            if (on)
+                g_air[i] = {c, pos, vel, rot};
+            else
+                g_air.erase(g_air.begin() + i);
+            return;
+        }
+    if (on && g_air.size() < 16)
+        g_air.push_back({c, pos, vel, rot});
+}
+
+void air_release_all() { g_air.clear(); }
+
+static void air_reassert(void* c, int where)
+{
+    for (auto& h : g_air)
+        if (h.c == c) {
+            if (!grounded(c))
+                return;
+            place(c, h.pos, h.rot);
+            set_grounded(c, false);
+            *(net::Vec3*)((uint8_t*)c + kVelOff) = h.vel;
+            g_air_regrounded[where]++;
+            return;
+        }
+}
+
+std::string air_status()
+{
+    char b[160];
+    snprintf(b, sizeof b, "air hold: held=%u regrounded update=%u anim=%u idle=%u bt=%u\n", (unsigned)g_air.size(),
+             g_air_regrounded[0], g_air_regrounded[1], g_air_regrounded[2], g_air_regrounded[3]);
+    return b;
 }
 
 void set_position(void* c, const net::Vec3& pos)

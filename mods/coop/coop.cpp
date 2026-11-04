@@ -735,7 +735,7 @@ int c_track(void*, int argc, const char* const* argv, SkOut* out)
     } else if (!strcmp(a, "air")) { // tests (BUG-0376): the puppet in the air 0 placed + not grounded, 1 placed, 2 teleported, 3 walked, 4 own fall speed
         if (argc > 2)
             modes::g_puppet_air_variant = atoi(argv[2]);
-        SAY("air %d\n", modes::g_puppet_air_variant);
+        SAY("air %d\n%s", modes::g_puppet_air_variant, game::air_status().c_str());
         return 0;
     } else if (!strcmp(a, "novel")) {
         if (argc > 2)

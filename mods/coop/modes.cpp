@@ -41,6 +41,11 @@ static bool g_puppet_air_fix = true;
 COOP_FIX("creature.puppet_air", "BUG-0376", g_puppet_air_fix, "creature: the partner's jumps are shown (its creature leaves the ground on this screen too)");
 constexpr float kAirOver = 0.15f; // m over GetHeightAt: a grounded creature walks 0-3 cm over it
 constexpr float kAirGap = 0.3f;   // m: variant 3, farther from the target in the air it is placed there
+// BUG-0532: in the middle of a fall the game put the puppet onto its terrain for 1-3 frames whenever it started
+// another animation on it (fall -> idle 02481DE5, the walk start 04866D8E; lab 20261104-042712): the puppet is held
+// where the partner is through the game's animation starts and updates (game::air_hold). Off: 0.7.5.
+static bool g_puppet_air_anim_fix = true;
+COOP_FIX("creature.puppet_air_anim", "BUG-0532", g_puppet_air_anim_fix, "creature: the partner's creature in the air does not drop to the ground for a frame when it starts another animation");
 int g_puppet_air_variant = 0;     // tests (coop.track air <v>): 1 placed without the not-grounded mark, 2 teleported,
                                   // 3 walked on in the air, 4 its own fall speed kept
 
@@ -253,6 +258,7 @@ static void creature_drive(void* p, const net::PlayerState& s_in, drive::State& 
     ds.jump_from = s.pos;
     ds.jump_have = true;
     if (jumped && net::dist(game::position(p), s.pos) > kJumpM) {
+        game::air_hold(p, false);
         drive::walk_end(p, s.pos, ds, now);
         game::teleport(p, s.pos, s.rot);
         ds.teleports++;
@@ -292,12 +298,15 @@ static void creature_drive(void* p, const net::PlayerState& s_in, drive::State& 
         // after 0.3-0.5 s one update took it 1-1.6 m down onto its terrain (landed) while the partner was still up
         if (g_puppet_air_variant != 4)
             *(net::Vec3*)((uint8_t*)p + game::kVelOff) = s.vel;
+        game::air_hold(p, g_puppet_air_anim_fix && g_puppet_air_variant != 1, s.pos, s.rot, s.vel);
         ds.airs++;
     } else if (walk) {
+        game::air_hold(p, false);
         drive::walk_place(p, s.pos, s.rot, s.vel, ds, now); // (the shared driver, driver.h)
     } else {
         // it stands again: no walk to the goal ahead (a MoveTo to where it stands, not StopMovement: with
         // the placing by SetPosition, tried first, the stop put it back up to 3 m), the driving takes over
+        game::air_hold(p, false);
         drive::walk_end(p, s.pos, ds, now);
         // a partner's creature: lunges and charges move it faster than a puppet can walk, and attack
         // animations undo the nudges (~10-20 % of them in fights): it trailed by 5-8 m after a fight
@@ -318,6 +327,7 @@ static void creature_drive(void* p, const net::PlayerState& s_in, drive::State& 
 
 static void creature_despawn(void* p)
 {
+    game::air_hold(p, false);
     g_puppet_serials.erase(p);
     creature_hp::forget_puppet(p);
     game::destroy_creature(p);

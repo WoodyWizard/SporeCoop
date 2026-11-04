@@ -110,6 +110,11 @@ bool gait_state(void* c, int* gait, int* gait2, int* moving, int* speed_state);
 // BUG-0376: +0x137, 1 while the creature is grounded on the terrain, 0 while it falls or stands on an object
 bool grounded(void* c);
 void set_grounded(void* c, bool on);
+// BUG-0532: puppet c is held in the air at pos (modes.cpp, every frame while the partner is airborne): put back there
+// and marked not grounded right after an animation start or an update of the game that grounded it
+void air_hold(void* c, bool on, const net::Vec3& pos = {}, const net::Quat& rot = {}, const net::Vec3& vel = {});
+void air_release_all();
+std::string air_status();
 
 // Animation events: called for every PlayAnimation/PlayAnimationTo on any creature.
 using AnimListener = void (*)(void* creature, uint32_t anim_id, int block, bool disable_blend, bool to_target);
