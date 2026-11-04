@@ -27,6 +27,7 @@ Not fixed (fix/w40-creature-acts, 2026-11-03): observed in Ghidra only, see docs
 (Picking up and throwing): the carry node 0xD84120 takes fruit, cRock (noun 0x2A8FB3F) and sort-3 interactive
 ornaments (~ the stick); the carried / thrown object moves in each game separately. Inferred cause: carried objects are
 not host-owned world objects (worldobj.cpp has no kind for them). Not reproduced at runtime (no test command carries).
+fix/w40-misc (2026-11-03, Ghidra only, not fixed: the time box went to BUG-0506 and BUG-0511): the hold slots creature+0xE40 and HoldObject 0xC15B20 / ReleaseObject 0xC15EB0, the hook points for a relay, and a plan: docs/re/creature.md#creature-hold-slots.
 
 ## Fix
 <!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
@@ -38,3 +39,4 @@ not host-owned world objects (worldobj.cpp has no kind for them). Not reproduced
 ## History
 - 2026-11-02: opened.
 - 2026-11-03: analysed on fix/w40-creature-acts, not fixed (findings in the docs).
+- 2026-11-03: hold slots and the hook points found on fix/w40-misc (Ghidra), not fixed.

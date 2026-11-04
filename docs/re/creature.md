@@ -2163,3 +2163,27 @@ BUG-0501 (open). GOG 2024, Ghidra strings and decompiles only, not seen at runti
   guest's roar sent to the host, the host sets the same variable on its NPCs around the guest's puppet. Neither
   fixture creature has the ability (types 0xD 0xE 0x10 0x11 0x1D 0x1E 0x25 0x28 0x31 0x32 0x33): a test needs a
   creature from a carnivore Cell.
+
+## Hold slots: how a creature carries an object (2026-11-03, fix/w40-misc)
+<a id="creature-hold-slots"></a>
+
+BUG-0458 (open). GOG 2024, Ghidra only (no runtime: the lane was busy with the regression).
+
+* ✔ A creature's carried objects are in a vector of hold slots at `creature+0xE40..+0xE44`, 0x24 bytes each:
+  `+0x00` a model socket index (-1: none), `+0x20` the held object.
+* ✔ `SporeCoop::Creature_HoldObject` 0xC15B20 (thiscall `(obj, slot, replace)`, ret 0xC) puts an object into a slot:
+  attaches it to the socket (0xC120B0, the socket transform of `creature+0xB54 -> +0x17C -> +0x2E4 + idx*700`), aligns
+  it by the object's properties 0x670F1AF / 0x7E9994D (degrees), then 0xD7D1A0(obj): `obj+0x50 |= 0x100`,
+  `obj+0x77 = 0`, the object's physics component (0x116DD1B) `+0x268 = 0`, `+0x1F0 = 3`; finally `obj+0x71 = 1`
+  (held). `SporeCoop::Creature_ReleaseObject` 0xC15EB0 (thiscall `(obj, a, b)`, ret 0xC) finds the slot and
+  releases it through 0xC15D30(slot, a, b).
+* ✔ The NPC carry node 0xD84120 (state block: `[0]` phase 0 walk / 1 pick-up animation / 2 done / 3 give up,
+  `[6]` the creature, `[7]` the object, `[9]` the animation) calls ReleaseObject(obj, 0, 0) and HoldObject(obj, 0, 1)
+  in phase 1; the stimulus of phase 2 is only for NPCs (`+0xB58 & 0x200` clear). The player's own pickup goes
+  through other callers of HoldObject (0xC23460, 0xD7EE10, 0xD87590, 0xF1D4B0: not looked at which is the avatar's).
+* Plan for BUG-0458 (not done): hook HoldObject / ReleaseObject on every game; when the own avatar (or a host NPC)
+  holds or lets go of a cRock (noun 0x2A8FB3F) or a sort-3 ornament, send it with the object's identity (a worldobj
+  kind for rocks and sort-3 ornaments, matched by position on the shared save objects) and let the partner's game
+  call HoldObject on the carrier's puppet / proxy with its copy; after a release the host owns the object's pose
+  (worldobj snapshot at 10+ Hz while it moves) until it rests. Rocks made around a game's own camera (#creature-plants-rocks-lod)
+  are not shared and cannot be matched: only the save's objects can.
