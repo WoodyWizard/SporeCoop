@@ -21,6 +21,7 @@ COOP_FIX("net.time_wrap", "BUG-0053", net::g_fix.time_wrap, "net: snapshot order
 COOP_FIX("net.lan_prune", "BUG-0039", net::g_fix.lan_prune, "net: the LAN game list forgets silent hosts and has a cap");
 COOP_FIX("net.addr_check", "BUG-0138", net::g_fix.addr_check, "net: host addresses trimmed, the port checked");
 COOP_FIX("net.peer_caps", "BUG-0219", net::g_fix.peer_caps, "net: reliable messages are split only for a peer that joins pieces (HELLO caps)");
+COOP_FIX("net.bulk_acks", "BUG-0405", net::g_fix.bulk_acks, "net: a busy receiver acks every 48 packets; a sender resends only after a later packet was acked or a long silence");
 COOP_FIX("net.rejoin_token", "BUG-0235", net::g_fix.rejoin_token, "net: a crash rejoin is recognised by its token, not by name and silence");
 COOP_FIX("net.addr_label", "BUG-0236", net::g_fix.addr_label, "net: a pasted \"Friends connect to: ...\" line joins its first address");
 COOP_FIX("net.lan_dedup", "BUG-0210", net::g_fix.lan_dedup, "net: a host answering on two addresses is one LAN game");

@@ -11,6 +11,12 @@
   (BUG-0343).
 - Cell: while a level-up rescales the world, your partner's cell is drawn where it is; it was drawn several
   metres off for a few seconds (BUG-0519).
+- Minimizing the game or switching away from it no longer writes a "WATCHDOG" stack dump into the log as if the
+  game had frozen; a real freeze is still reported (BUG-0347).
+- Joining a host whose world is sent while your game is still loading no longer sends most of the world twice:
+  the transfer resends almost nothing on a good connection and is about twice as fast then (BUG-0405).
+- Creature: a guest's game no longer starts its own UFO visit that the host's world does not have, so no UFO
+  takes the host's creatures in the guest's game only (BUG-0486).
 - Tribe: a weapon rack (or any tool building) the host builds now appears in the guests' games too, a guest's
   members can take the weapon from it, and a guest sees its members hold the weapons and tools they took
   (BUG-0514).

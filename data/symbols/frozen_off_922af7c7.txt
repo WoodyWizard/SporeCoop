@@ -101,3 +101,6 @@ SporeCoop::SocialMeter_SetRounds ; BUG-0179: on GOG 2016 a guest's social game s
 SporeCoop::SocialMeter_SetRelation ; BUG-0179: on GOG 2016 a guest's social game shows no social meter and no win message 0x60B4123 (social.guest_meter has no effect there)
 SporeCoop::SocialMeter_SetBar ; BUG-0179: on GOG 2016 a guest's social game shows no social meter and no win message 0x60B4123 (social.guest_meter has no effect there)
 SporeCoop::SocialMeter_Finish ; BUG-0179: on GOG 2016 a guest's social game shows no social meter and no win message 0x60B4123 (social.guest_meter has no effect there)
+SporeCoop::DramaManager_Get ; Creature: a guest's game still starts its own UFO visit (BUG-0486)
+SporeCoop::DramaManager_StartEvent ; Creature: a guest's game still starts its own UFO visit (BUG-0486)
+SporeCoop::DramaManager_StartKind ; Creature: a guest's game still starts its own UFO visit (BUG-0486)

@@ -39,7 +39,18 @@ struct Out {
     bool header_sent = false;
     bool done = false;
     uint64_t t0 = GetTickCount64(); // support log: how long the transfer took
+    net::Session::Link l0;          // the link's counters at the offer (BUG-0405: resends of the transfer)
 };
+
+// BUG-0405: a queued transfer is watched until the guest has acknowledged all of it, then one log
+// line says how many packets it took and how many of them were resends
+struct Drain {
+    uint8_t peer;
+    uint64_t t0;
+    size_t kb;
+    net::Session::Link l0;
+};
+static std::vector<Drain> g_drain;
 
 struct In {
     bool active = false;
@@ -555,6 +566,7 @@ void reset_shares()
                (unsigned)g_pending.size(), (unsigned)g_out.size());
     g_pending.clear();
     g_out.clear();
+    g_drain.clear();
 }
 
 // BUG-0074: a guest's received world that waits for its editor to close (g_deferred), a load
@@ -1128,6 +1140,7 @@ void tick(net::Session& s)
                 continue;
             }
             o.header_sent = true;
+            s.link_of(o.peer, o.l0);
         }
         // flow control: keep a bounded number of reliable messages in flight
         // a LAN / local peer (short round trip) gets a much bigger window
@@ -1146,6 +1159,7 @@ void tick(net::Session& s)
                     bytes += f.data.size();
                 H->log(M, SK_INFO, "world: transfer to %u queued completely (%u KB in %.1f s, %.0f KB/s, rtt %d ms)", o.peer,
                        (unsigned)(bytes >> 10), ms / 1000.0, ms ? (bytes / 1024.0) / (ms / 1000.0) : 0.0, s.rtt_of(o.peer));
+                g_drain.push_back({o.peer, o.t0, bytes >> 10, o.l0});
                 break;
             }
             File& f = o.files[o.fi];
@@ -1175,6 +1189,24 @@ void tick(net::Session& s)
     }
     while (!g_out.empty() && g_out.front().done)
         g_out.pop_front();
+    for (size_t i = 0; i < g_drain.size();) {
+        Drain& d = g_drain[i];
+        net::Session::Link l;
+        uint64_t ms = GetTickCount64() - d.t0;
+        if (!s.link_of(d.peer, l) || ms > 600000) {
+            g_drain.erase(g_drain.begin() + i); // peer gone
+            continue;
+        }
+        if (l.pending > 0) {
+            i++;
+            continue;
+        }
+        uint32_t sent = l.sent - d.l0.sent, re = l.resends - d.l0.resends;
+        H->log(M, SK_INFO, "world: transfer to %u acknowledged (%u KB in %.1f s, %.0f KB/s; packets %u, resends %u = %.0f %%, rtt %d ms)",
+               d.peer, (unsigned)d.kb, ms / 1000.0, ms ? d.kb / (ms / 1000.0) : 0.0, sent, re,
+               sent ? 100.0 * re / sent : 0.0, l.rtt_ms);
+        g_drain.erase(g_drain.begin() + i);
+    }
 }
 
 // the planet file to load from a received slot: the one the host plays (a slot holds every planet

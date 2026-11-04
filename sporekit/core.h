@@ -221,6 +221,7 @@ void diag_crash_test(const char* where); // tests: "thread" (unhandled) | "main"
 // watchdog.cpp
 void watchdog_start();
 void watchdog_mark(const char* stage);
+void watchdog_loop_tick();           // after every App::Canvas::Tick: the game loop is alive (BUG-0347)
 std::string watchdog_dump_now();
 
 // cheats.cpp
@@ -271,6 +272,7 @@ extern KitFix g_fix_inilock;   // BUG-0245: a named mutex per settings file; no 
 extern KitFix g_fix_exitwait;  // BUG-0243: the exit waits for an update's file swaps
 extern KitFix g_fix_crashtid;  // BUG-0248: a crash report names the faulting thread
 extern KitFix g_fix_initfail;  // BUG-0521: a failed start of the game is reported and explained
+extern KitFix g_fix_hangloop;  // BUG-0347: no frames while the game loop runs (minimized) is not a hang
 extern KitFix g_fix_logprune;  // BUG-0137: old crash reports, dumps, reports and archives are removed
 inline bool fixed(const KitFix& f) { return f.on != 0; }
 KitFix* kit_fix_find(const char* name);
