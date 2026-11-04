@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.3.4, 0.7.3.6
 fixed_in: unreleased
 branch: fix/w40-misc
-commits:
+commits: 0c898b87
 tests: cell_grow (tools/tests/coop_cell_grow.py)
 signature:
 docs: docs/re/cell.md#cell-world-scale, docs/06-testing.md#testing-cell-grow
