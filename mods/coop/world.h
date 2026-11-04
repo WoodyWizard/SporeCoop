@@ -21,6 +21,8 @@ void set_share_failed(void (*f)(uint8_t peer, uint32_t tag, bool planet_missing)
 bool share_now(uint8_t peer, std::string& err);
 // the game's own save (pause menu "Save"); also works on planets in space
 bool save_game(std::string& err);
+extern bool g_box_hold; // tests (BUG-0482): our save's "game saved" box is not confirmed while set
+bool saved_box_up();     // the "game saved" box of our last save is up (seen, watched)
 // coop.cpp: why the game must not save now (an editor opens or is open, a mode switch is pending),
 // nullptr when it may
 void set_save_blocker(const char* (*probe)());
