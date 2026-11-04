@@ -15,7 +15,10 @@ session (the detector's `Creature:host_only:creature`), its death and health nev
 
 SPORE_FIX_OFF=npc.resync fails: the forgotten NPCs stay missing on the guest.
 
-  coop_npc_resync.py [--n 3] [--wait 10]"""
+--fixture tribe (suite npc_resync_tribe, BUG-0328): the same in Tribe, the animals near the village (a guest
+that rejoined in Tribe kept missing NPCs the host counted as sent).
+
+  coop_npc_resync.py [--n 3] [--wait 10] [--fixture creature|tribe]"""
 import argparse
 import math
 import time
@@ -28,15 +31,18 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--n', type=int, default=3)
     ap.add_argument('--wait', type=float, default=10.0)
+    ap.add_argument('--fixture', default='creature')
     a = ap.parse_args()
-    host, guest = start('creature')
+    stage = 'Tribe' if a.fixture == 'tribe' else 'Creature'
+    near = 120 if a.fixture == 'tribe' else 60
+    host, guest = start(a.fixture)
     ck = Checks()
     time.sleep(15)
     hw, gw = worlddiff.pair_dump(host, guest)
     h = {x['id']: x for x in hw.rows if x['kind'] == 'c' and x['own'] == 'npc'}
     g = {x['id']: x for x in gw.rows if x['kind'] == 'c' and x['own'] == 'proxy'}
     me = gw.me
-    ids = sorted((i for i in set(h) & set(g) if me and math.dist(g[i]['pos'], me) < 60 and h[i]['alive']),
+    ids = sorted((i for i in set(h) & set(g) if me and math.dist(g[i]['pos'], me) < near and h[i]['alive']),
                  key=lambda i: math.dist(g[i]['pos'], me))[:a.n]
     ck(len(ids) >= min(a.n, 2), f'proxies near the guest to forget: {ids} (of {len(g)} proxies)')
     took = []
@@ -60,8 +66,8 @@ def main():
         print(f'  npc {i}: host alive={h[i]["alive"]} at {worlddiff._fmt(h[i]["pos"])}; guest '
               + (f'proxy alive={g[i]["alive"]} at {worlddiff._fmt(g[i]["pos"])}' if i in g else 'no creature'), flush=True)
     print('  guest ' + guest.call('coop.npc resync')['out'].strip(), flush=True)
-    found = [f for f in worlddiff.diff(hw, gw) if f['sig'] == 'Creature:host_only:creature']
-    print('  detector: ' + (found[0]['text'] if found else 'no Creature:host_only:creature'), flush=True)
+    found = [f for f in worlddiff.diff(hw, gw) if f['sig'] == f'{stage}:host_only:creature']
+    print('  detector: ' + (found[0]['text'] if found else f'no {stage}:host_only:creature'), flush=True)
     ck(back and not missing, f'the guest shows the forgotten NPCs again: back {back}, missing {missing}')
     ck(not any(str(i) in f['text'].split(' key=')[0] for f in found for i in missing),
        'the detector finds none of them without a proxy')

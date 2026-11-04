@@ -14,6 +14,7 @@
 #include "game.h"
 #include "modes.h"
 #include "npc.h"
+#include "savestrip.h"
 #include "space_ext.h"
 #include "stage_epoch.h"
 #include "net/ids.h"
@@ -427,6 +428,10 @@ static void* member_mirror(uint16_t id)
     return it != g_gm.end() && it->second.c && game::object_alive(it->second.c) ? it->second.c : nullptr;
 }
 
+static bool save_filter(void* o, uint32_t noun); // BUG-0495 (below)
+static void save_start();
+static void save_end();
+
 bool init(const SkHost* host, SkMod* mod, Ctx ctx)
 {
     H = host;
@@ -457,6 +462,8 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     H->hook_create(M, (void*)a_DoActionForObjects, (void*)h_DoActionForObjects, (void**)&o_DoActionForObjects);
     H->hook_create(M, (void*)a_WalkSelected, (void*)h_WalkSelected, (void**)&o_WalkSelected);
     coop_init();
+    savestrip::add_filter(save_filter); // BUG-0495
+    savestrip::add_save_hooks(save_start, save_end);
     return true;
 }
 
@@ -774,6 +781,134 @@ static void remove_member(void* c)
         vcall<void>(t, 0x9C / 4, c, 1); // RemoveMember(c, destroy)
 }
 
+// BUG-0495: the objects the mod makes on a guest (the members it spawns as mirrors of the host's, and the
+// NPC tribes it makes for the host's with SpawnNpcTribe, BUG-0381) are the host's world, not the guest's:
+// they never go into the guest's saves (CLAUDE.md 2). A savestrip filter writes a null reference for them,
+// and while the save is written they leave the lists that hold them (a tribe's member vector +0x340 and
+// selectable vector +0x354, citizen+0xC0) so no null is read back there on load (BUG-0470's rule). A made
+// tribe goes out with its hut (+0x368), its tools (+0x36C, +0x380) and its food mat. Members of the guest's
+// own game bound as mirrors stay (they came with the loaded world). `coop.fix tribe.save_strip off`: saved
+// like the game's own (0.7.4).
+static bool g_fix_save_strip = true;
+COOP_FIX("tribe.save_strip", "BUG-0495", g_fix_save_strip, "saves: a Tribe guest's mirrors of the host's members and tribes are kept out of its saves");
+constexpr uint32_t kCitizenNoun = 0x18EB4B7, kHutNoun = 0x1E4DAAE, kToolNoun = 0x18C8F0C, kFoodMatNoun = 0x629BAFE;
+static std::unordered_map<void*, uint32_t> g_ours_c, g_ours_t; // spawned mirrors / made tribes -> serial
+static std::unordered_set<void*> g_strip_now;                  // this save's objects of ours
+static uint32_t g_save_stripped, g_save_saves;
+static void note_ours(std::unordered_map<void*, uint32_t>& m, void* o)
+{
+    if (m.size() > 512) // (old worlds' pointers)
+        for (auto it = m.begin(); it != m.end();)
+            it = game::object_alive(it->first) && game::object_serial(it->first) == it->second ? std::next(it) : m.erase(it);
+    m[o] = game::object_serial(o);
+}
+static bool ours_in(const std::unordered_map<void*, uint32_t>& m, void* o)
+{
+    auto it = m.find(o);
+    return it != m.end() && game::object_alive(o) && game::object_serial(o) == it->second;
+}
+struct TookT {
+    void* t;
+    uintptr_t off;
+    void* p;
+};
+static std::vector<TookT> g_took_t;
+// the food mat of a tribe: the noun 0x629BAFE object that holds the tribe's pointer (offset found at runtime)
+static uintptr_t g_mat_off;
+static bool mat_of(void* o, void* t)
+{
+    if (IsBadReadPtr(o, 0x400))
+        return false;
+    if (g_mat_off)
+        return F<void*>(o, g_mat_off) == t;
+    for (uintptr_t off = 0x24; off < 0x400; off += 4)
+        if (F<void*>(o, off) == t) {
+            g_mat_off = off;
+            H->log(M, SK_INFO, "tribe: a food mat holds its tribe at +0x%X (BUG-0495)", (unsigned)off);
+            return true;
+        }
+    return false;
+}
+static void save_start()
+{
+    g_strip_now.clear();
+    if (!g_fix_save_strip || !is_guest() || game::mode_id() != modes::kTribe)
+        return;
+    std::vector<void*> made;
+    for (void* t : all_tribes()) {
+        bool whole = t != player_tribe() && ours_in(g_ours_t, t);
+        if (whole) {
+            made.push_back(t);
+            g_strip_now.insert(t);
+            if (void* hut = F<void*>(t, 0x368))
+                g_strip_now.insert(hut);
+            for (uintptr_t off : {(uintptr_t)0x36C, (uintptr_t)0x380}) {
+                void** b = F<void**>(t, off);
+                void** e = F<void**>(t, off + 4);
+                for (void** it = b; it && it < e && e - b < 64; ++it)
+                    if (*it)
+                        g_strip_now.insert(*it);
+            }
+        }
+        for (uintptr_t off : {kMembersOff, (uintptr_t)0x354}) {
+            void**& b = F<void**>(t, off);
+            void**& e = F<void**>(t, off + 4);
+            if (!b || e < b || e - b > 256)
+                continue;
+            void** w = b;
+            for (void** it = b; it != e; ++it) {
+                void* c = *it ? (off == kMembersOff ? *it : (uint8_t*)*it - 0xC0) : nullptr;
+                if (c && (whole || ours_in(g_ours_c, c))) {
+                    g_took_t.push_back({t, off, *it});
+                    g_strip_now.insert(c);
+                } else
+                    *w++ = *it;
+            }
+            for (void** it = w; it != e; ++it)
+                *it = nullptr;
+            e = w;
+        }
+    }
+    if (!made.empty()) {
+        struct U {
+            std::vector<void*>* made;
+        } u{&made};
+        game::for_each_object(
+            [](void* o, uint32_t noun, void* p) {
+                if (noun == kFoodMatNoun)
+                    for (void* t : *((U*)p)->made)
+                        if (mat_of(o, t))
+                            g_strip_now.insert(o);
+                return true;
+            },
+            &u);
+    }
+    if (!g_strip_now.empty()) {
+        g_save_saves++;
+        H->log(M, SK_INFO, "tribe: %u objects of ours (%u made tribes) leave this save (tribe.save_strip)",
+               (unsigned)g_strip_now.size(), (unsigned)made.size());
+    }
+}
+static void save_end()
+{
+    for (auto& t : g_took_t) { // back at the end of the list (the capacity is the one they left)
+        void**& e = F<void**>(t.t, t.off + 4);
+        if (game::object_alive(t.t) && e < F<void**>(t.t, t.off + 8))
+            *e++ = t.p;
+    }
+    g_took_t.clear();
+    g_strip_now.clear();
+}
+static bool save_filter(void* o, uint32_t noun)
+{
+    if (!g_fix_save_strip || g_strip_now.empty() ||
+        (noun != kCitizenNoun && noun != kTribeNoun && noun != kHutNoun && noun != kToolNoun && noun != kFoodMatNoun) ||
+        !g_strip_now.count(o))
+        return false;
+    g_save_stripped++;
+    return true;
+}
+
 // BUG-0381 (tribe.npc_tribes): a guest makes each host NPC tribe that has no tribe of this game
 // within the mapping's 40 m (guest_state). `p`: the tribe table after the trailer (tag, count,
 // count x kTribeInfo). One try per host tribe every 5 s (an unknown species is asked for first).
@@ -830,6 +965,7 @@ static void make_npc_tribes(const uint8_t* p, size_t len, const std::vector<std:
         }
         g_npc_tribes_made++;
         g_local_tribe_of[i] = t;
+        note_ours(g_ours_t, t); // BUG-0495
         g_npc_tribe_made[cell] = t;
         net::Vec3 lp = tribe_pos(t);
         H->log(M, SK_INFO,
@@ -955,6 +1091,7 @@ static void guest_state(net::Reader& r)
             c = spawn_member(t, m.age);
             if (!c)
                 continue;
+            note_ours(g_ours_c, c); // BUG-0495
             // BUG-0444: the host's position (g.pos: with the tests' lift), onto this game's ground where that lies
             // higher (BUG-0329)
             game::teleport(c, g_mirror_ground_fix ? drive::out_of_ground(g.pos, true) : g.pos, m.rot);
@@ -1969,7 +2106,7 @@ void for_each_tracked(void (*fn)(const TrackMember& m, void* user), void* user)
 
 std::string status()
 {
-    char b[448];
+    char b[640];
     if (C.sess && C.sess->role() == net::Role::Host)
         snprintf(b, sizeof b, "tribe(host): members=%u cmds_done=%u rejected=%u gifts=%u unselected=%u\n",
                  (unsigned)g_hm.size(), g_cmds_done, g_cmds_rejected, g_gifts, g_unselected);
@@ -1977,10 +2114,11 @@ std::string status()
         snprintf(b, sizeof b,
                  "tribe(guest): mirrors=%u spawned=%u removed=%u cmds_sent=%u rx=%u skipped=%u resets=%u "
                  "local_tribes=%u player_tribe=%p unselected=%u incomplete=%u ai_skipped=%u/%u away_orders=%u local=%d mirror_walks=%u timed=%u "
-                 "npc_tribes_made=%u failed=%u mirror_grounded=%u\n",
+                 "npc_tribes_made=%u failed=%u mirror_grounded=%u ours=%u/%u save_stripped=%u/%u\n",
                  (unsigned)g_gm.size(), g_spawned, g_removed, g_cmds_sent, g_rx, g_rx_skipped, g_resets,
                  (unsigned)all_tribes().size(), player_tribe(), g_unselected, g_incomplete, g_bt_skipped, g_bt_calls, g_away_orders, (int)local_play(),
-                 g_mirror_walks, g_mirror_timed, g_npc_tribes_made, g_npc_tribes_failed, g_mirror_grounded);
+                 g_mirror_walks, g_mirror_timed, g_npc_tribes_made, g_npc_tribes_failed, g_mirror_grounded, (unsigned)g_ours_c.size(),
+                 (unsigned)g_ours_t.size(), g_save_stripped, g_save_saves);
     std::string out = b;
     if (!g_last_cmd.empty())
         out += "tribe last order: " + g_last_cmd + "\n";
@@ -2362,9 +2500,9 @@ std::string list()
         net::Vec3 p = tribe_pos(tribes[ti]);
         auto ms = members(tribes[ti]);
         TribeInfo ti_info = tribe_info(tribes[ti]); // the members' species (BUG-0381 tests)
-        snprintf(b, sizeof b, "tribe %u%s at (%.0f %.0f %.0f): %u members species=%08X archetype=%d\n", (unsigned)ti,
+        snprintf(b, sizeof b, "tribe %u%s at (%.0f %.0f %.0f): %u members species=%08X archetype=%d made=%d\n", (unsigned)ti,
                  tribes[ti] == pt ? " (player)" : "", p.x, p.y, p.z, (unsigned)ms.size(), ti_info.key.instance,
-                 ti_info.arch == 0xFF ? -1 : (int)ti_info.arch);
+                 ti_info.arch == 0xFF ? -1 : (int)ti_info.arch, (int)ours_in(g_ours_t, tribes[ti]));
         out += b;
         for (void* c : ms) {
             net::Vec3 cp = game::position(c);
@@ -2387,10 +2525,10 @@ std::string list()
                 }
             }
             snprintf(b, sizeof b,
-                     "  #%u %p owner=%d age=%u sel=%u hp=%.1f pos=(%.1f %.1f %.1f) speed=%.1f host_speed=%.1f dead=%d bt=%08X radius=%.2f\n",
+                     "  #%u %p owner=%d age=%u sel=%u hp=%.1f pos=(%.1f %.1f %.1f) speed=%.1f host_speed=%.1f dead=%d bt=%08X radius=%.2f ours=%d\n",
                      id, c, ow == 0xFF ? -1 : (int)ow, F<uint8_t>(c, kAgeOff), F<uint8_t>(c, kSelectedOff),
                      game::health(c), cp.x, cp.y, cp.z, drive::speed(v), drive::speed(sv), (int)game::is_dead(c),
-                     bt_node(c), game::bounding_radius(c));
+                     bt_node(c), game::bounding_radius(c), (int)ours_in(g_ours_c, c));
             out += b;
             if (ds) { // guests: how the mirror is driven (drive::step)
                 snprintf(b, sizeof b, "     drive err=%.2f nudges=%u kept=%u teleports=%u\n", ds->last_err, ds->nudges,
