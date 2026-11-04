@@ -3850,3 +3850,20 @@ its game's `world_scale=` from coop.pool, read before and after the dump). Fails
   start (the twin run; `SPORE_FIX_OFF=initfail` in the test writes it). ~25 s on one lane.
 * Pitfall: returning 0 **after** the game's full Init does not work for this: the game's teardown then faults
   (0xC0000005 in MSVCR90 / steam_api frames), a crash report instead of the clean exit.
+
+## Creature leftovers of 0.7.5 (2026-11-03, fix/w41-creature-left)
+<a id="testing-k1-creature"></a>
+
+* `creature_social_meter` (coop_creature_social_meter.py, ~1.2 min warm): the guest's social game with a Kook by
+  real input; `coop.social meter` prints the game's meter object (`visible=` the layout's own byte,
+  `visible_at_win=`, `rounds=`, `stage_win_msgs=` the 0x60B4123 the creature-stage handler got). The Kook needs one
+  round: the win usually comes within the engagement's first second, so the test reads `visible_at_win`, not a
+  live sample. The meter's bar fields stay 0.0 on the guest (not laid out in that time): no bar check.
+* `chat_modal` (coop_chat_modal.py, ~1 min warm): the host's "game saved" box held up with `coop.save hold`
+  (`coop.save box` says whether it is up, `coop.save confirm` lets the mod confirm it); `coop.uistate` has
+  `modal=` (the window manager's modal window) next to `input_lock=`.
+* `nest_heal` (coop_nest_heal.py, ~1.7 min): each player at the nest with `coop.team off` (the pack regeneration
+  would heal too) and `coop.team hp 3`, 12 s; then 100 m away. Both heal at the fixture's nest (BUG-0496 not
+  reproduced).
+* `evolve_key` (coop_evolve_in_place.py --case creature --nosave, ~2.5 min): `coop.evokey nosave` turns the host's
+  in-place save off (a host alone does not save either); `coop.evokey` prints `keys_set=`.
