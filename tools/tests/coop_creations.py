@@ -118,7 +118,12 @@ def main():
     print(f'  after >: mine {new}, guest avatar {avatar(guest)}, host shows {puppet(host, 1)}', flush=True)
     ck(new, 'the co-op window\'s next creation is an own creature, the guest plays it and the host shows it')
     guest.call('coop.uistate 0')
-    guest.call('coop.creations unchoose creature')  # the profile as it was (no choice)
+    # the profile as other tests expect it: no choice, its newest own creature played (recorded) in
+    # this world, so a later game here plays it by default as before
+    guest.call(f'coop.creations choose creature {newest}')
+    wait(lambda: avatar(guest) == newest, 30)
+    guest.call('coop.creations unchoose creature')
+    print('  left:', guest.call('coop.creations worlds')['out'].strip(), flush=True)
     time.sleep(6)
     shot(host, 'creations_host.png')
     shot(guest, 'creations_guest.png')
