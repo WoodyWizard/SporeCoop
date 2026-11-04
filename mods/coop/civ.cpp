@@ -694,8 +694,14 @@ static void guest_tribes(net::Reader& r)
     g_tribes_rx++;
     if (!g_fix_tribe_ruins || !a_DestroyInst || local_play() || game::mode_id() != modes::kCiv)
         return;
+    auto here = tribes_here();
+    // a list without any tribe while this game has several: the host's world is not there yet (a load, a
+    // stage change), not a raid of all of them; and never more than two per list (a raid takes one at a time)
+    if (hp.empty() && here.size() > 2)
+        return;
+    int removed = 0;
     std::unordered_map<void*, int> seen;
-    for (auto& [t, p] : tribes_here()) {
+    for (auto& [t, p] : here) {
         bool host_has = false;
         for (auto& q : hp)
             if (net::dist(p, q) < 10.f) {
@@ -705,10 +711,11 @@ static void guest_tribes(net::Reader& r)
         if (host_has)
             continue;
         int n = g_tribe_extra_seen.count(t) ? g_tribe_extra_seen[t] + 1 : 1;
-        if (n < 2) {
+        if (n < 2 || removed >= 2) {
             seen[t] = n;
             continue;
         }
+        removed++;
         g_applying = true;
         thiscall<void>(a_DestroyInst, nm(), t);
         g_applying = false;
