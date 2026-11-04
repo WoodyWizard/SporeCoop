@@ -128,6 +128,7 @@ struct Mirror {
     float size = 1;
     int hp = 6;
     double seen = 0;
+    float scale = 0; // the host's world scale G+0x514C of the sample (0: an older host without it)
 };
 static std::unordered_map<uint32_t, Mirror> g_mirrors;   // host index -> mirror
 static std::unordered_map<uint32_t, uint32_t> g_host_of; // local index -> host index
@@ -174,6 +175,20 @@ COOP_FIX("pool.guestbite", "BUG-0078", g_fix_guestbite, "cell: a guest's bite pa
 // wave 5 (review of 0.7.3.0)
 static bool g_fix_ko_grace = true; // BUG-0238: a remote knockout lasts to its own deadline through late refreshes
 COOP_FIX("pool.ko_grace", "BUG-0238", g_fix_ko_grace, "cell: a late knockout refresh does not end it, replay its effect; KO_UP when ours ends on a stage leave");
+// BUG-0511: a level change rescales the world over ~3 s (WorldScaleStep 0xE73E50: positions, velocities
+// and sizes times old/new scale G+0x514C, about the origin), on each game at its own moment (the guest's
+// follows the host's shared food total). The host's cell poses were applied in the guest's scale: up to
+// 10 m off and gliding fast for seconds after every level-up. The host sends its scale at the end of each
+// state chunk (older guests ignore it); the guest converts the pose by host scale / own scale.
+static bool g_fix_world_scale = true;
+COOP_FIX("cell.world_scale", "BUG-0511", g_fix_world_scale, "cell: the host's cell poses are converted to the guest's world scale while a level change rescales either world");
+static uint32_t g_scale_conv; // samples converted (host and guest scale differed)
+static float world_scale()
+{
+    uint8_t* g = G();
+    float s = g ? F<float>(g, 0x514C) : 0.f;
+    return std::isfinite(s) && s > 1e-6f && s < 1e9f ? s : 0.f;
+}
 static bool g_fix_ko_no_eat = true; // BUG-0364: a knocked-out cell eats nothing (food, chunks) until it is up again
 COOP_FIX("cell.ko_no_eat", "BUG-0364", g_fix_ko_no_eat, "cell: a knocked-out cell does not eat what touches it (EatFood, chunk bites), so it does not respawn bigger");
 static uint32_t g_ko_eats_blocked; // BUG-0364: meals and chunk bites of our knocked-out cell left out
@@ -2507,6 +2522,7 @@ static void send_state(int dest, const std::vector<SendCell>& cells)
             w.u8(cell_logic::hp_byte(F<int>(c, kHp))); // a negative hp is 0, not 255 (BUG-0160)
             w.u8((uint8_t)((F<uint8_t>(c, kDying) ? 1 : 0) | (F<uint8_t>(c, kDead) ? 2 : 0)));
         }
+        w.f32(world_scale()); // BUG-0511: the scale these poses are in (a guest without the field stops before it)
         C.sess->send_unreliable_to(dest, net::MSG_CELL_STATE, w);
     }
 }
@@ -2541,6 +2557,17 @@ static void guest_state(net::Reader& r)
         break;
     }
     double now = H->time_seconds();
+    // BUG-0511: the host's world scale after the n cells (63 bytes each), when this host sends it
+    constexpr size_t kRec = 4 + 4 + 12 + 1 + 4 + 12 + 8 + 16 + 1 + 1;
+    float host_scale = 0.f, own_scale = world_scale();
+    if (r.left() >= n * kRec + 4) {
+        memcpy(&host_scale, r.cur() + n * kRec, 4);
+        if (!std::isfinite(host_scale) || host_scale <= 1e-6f || host_scale > 1e9f)
+            host_scale = 0.f;
+    }
+    float k = g_fix_world_scale && host_scale > 0 && own_scale > 0 ? host_scale / own_scale : 1.f;
+    if (k != 1.f)
+        g_scale_conv++;
     for (int i = 0; i < n && r.ok(); i++) {
         uint32_t hidx = r.u32(), inst = r.u32(), key[3];
         key[0] = r.u32(); key[1] = r.u32(); key[2] = r.u32();
@@ -2564,13 +2591,15 @@ static void guest_state(net::Reader& r)
         g_cycle_seen.insert(hidx);
         auto& m = g_mirrors[hidx];
         m.pos = p; m.vel = v; m.rot = q; m.size = size; m.hp = hp; m.seen = now;
+        m.scale = g_fix_world_scale ? host_scale : 0.f; // the pose stays in the host's scale; drawn in ours
+        size *= k;
         uint8_t* c = m.local ? modes::cell_at(m.local) : nullptr;
         if (!c && g_fix_budget && cells_live() >= kMirrorCap) {
             g_mirror_capped++; // BUG-0295: the pool is full enough (an older host sends more)
             continue;
         }
         if (!c) { // dead ones too: the host shows a creature it killed until it is gone
-            uint32_t idx = modes::cell_create(p, ref_for(inst), level, key, &q);
+            uint32_t idx = modes::cell_create({p.x * k, p.y * k, p.z * k}, ref_for(inst), level, key, &q);
             c = modes::cell_at(idx);
             if (c) {
                 if (m.local && g_fix_hostof) // the old local cell is gone (BUG-0088)
@@ -2793,6 +2822,12 @@ static void guest_tick(double now)
             continue;
         double age = std::min(now - m.seen, 0.5);
         net::Vec3 want{m.pos.x + m.vel.x * (float)age, m.pos.y + m.vel.y * (float)age, m.pos.z};
+        // BUG-0511: in our world scale now (it moves for ~3 s after a level change, at another moment
+        // than the host's)
+        float own = m.scale > 0 ? world_scale() : 0.f, k = own > 0 ? m.scale / own : 1.f;
+        want.x *= k;
+        want.y *= k;
+        want.z *= k;
         net::Vec3 cur = pos_of(c);
         int n = F<int>(c, 0x250);
         if (F<uint32_t>(c, 0x248) && n > 1) {
@@ -2815,8 +2850,8 @@ static void guest_tick(double now)
             if (net::dist(cur, want) > 3.f)
                 set_pos(c, want);
             auto* v = (float*)(c + kVel);
-            v[0] = m.vel.x + (want.x - cur.x) * 2.f;
-            v[1] = m.vel.y + (want.y - cur.y) * 2.f;
+            v[0] = m.vel.x * k + (want.x - cur.x) * 2.f;
+            v[1] = m.vel.y * k + (want.y - cur.y) * 2.f;
         }
         modes::quat_to_mat(m.rot, (float*)(c + kRot));
         F<uint16_t>(c, kFlags) |= 2;
@@ -4735,9 +4770,11 @@ std::string debug(const std::vector<std::string>& a)
     if (uint8_t* s = S())
         for (int i = 0; i < 13; i++)
             parts += F<int>(s, 0x34 + 4 * i) ? '1' : '0';
-    char ob[160];
-    snprintf(ob, sizeof ob, "avatar_opacity=%.2f cine=%d parts=%s chasing_me=%d chasing_partner=%d\n",
-             F<float>(av, kOpacity), cm && F<uint32_t>(cm, 0x2C) ? 1 : 0, parts.c_str(), chase_me, chase_partner);
+    char ob[224];
+    snprintf(ob, sizeof ob, "avatar_opacity=%.2f cine=%d parts=%s chasing_me=%d chasing_partner=%d\n"
+             "world_scale=%.4f target=%.4f scale_converted=%u\n",
+             F<float>(av, kOpacity), cm && F<uint32_t>(cm, 0x2C) ? 1 : 0, parts.c_str(), chase_me, chase_partner,
+             world_scale(), G() ? F<float>(G(), 0x5150) : 0.f, g_scale_conv);
     return b + std::string(ob) + ko + status() + away_status(); // the away line last: tests read the first food=
 }
 

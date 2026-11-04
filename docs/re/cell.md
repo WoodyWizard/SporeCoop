@@ -1442,3 +1442,24 @@ BUG-0480. Lane 4, `tools/tests/coop_cell_gone.py` (docs/06-testing.md#testing-wo
   refreshed 0.1-0.2 s before; the host never sent an index cell_at did not find at the send. Inferred: cells that
   exist in the host's pool during part of its frame only (the partner tiles populated for the guest's view);
   not verified.
+
+## The world scale of a level change on two games (2026-11-03, fix/w40-misc)
+<a id="cell-world-scale"></a>
+
+* ✔ `WorldScaleStep` 0xE73E50: while the world scale `G+0x514C` differs from its target `G+0x5150` it moves
+  it (log-space smoothing 0xE509F0, dt * 0.75) and calls 0xE6DB70 with ratio = new / old. 0xE6DB70 divides by
+  the ratio, about a centre `C`: every soft-body particle, every cell's `+0x4C` pos, `+0x08` target, `+0x58`
+  size, `+0x90` velocity, `+0xB4` target size (and mass), `+0x1C4`, the camera points (0x16B3C0C +0x48/+0x54/
+  +0x60) and `G+4`. `C` is 0x16B3C28 (read (0 0 0) at runtime) while the camera point is within 1000 m of the
+  origin, else 0xE4F900 picks one (not looked at). So in the usual case `pos * G+0x514C` is invariant.
+* ✔ Runtime (lab, cell fixture, lanes 9): world scale 0.5 at level 1, 1.5 at level 2, 5.0 at level 3; one change
+  takes ~3.5 s. The guest's change starts 1-4 frames after the host's (its level follows the shared food total,
+  MSG_CELL_FOOD), so for ~3 s the two scales differ (host 0.964 / guest 0.702 at one sample).
+* ✔ BUG-0511: the guest applied the host's cell poses (MSG_CELL_STATE, in the host's scale) unchanged: the
+  mirrors were 14-18 m (p90, guest metres) from where the host's cells were during each level change and glided
+  back over seconds ("cells float around very fast"). Fix `cell.world_scale` (cellsync.cpp): the host appends its
+  world scale to each state chunk (after the cells: older guests stop reading before it); the guest keeps each
+  mirror's pose in the host's scale and draws it times host scale / own scale every frame (size at receive).
+  p90 0.1 m during the change with it (`cell_grow`, docs/06-testing.md#testing-cell-grow).
+* ? Not done: the players' own cells (puppets, MSG_STATE through `modes::cell_drive`) carry no scale; a partner's
+  puppet may be off in the same way for those ~3 s (BUG-0519).
