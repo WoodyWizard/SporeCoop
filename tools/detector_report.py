@@ -50,7 +50,7 @@ KNOWN = {  # <stage>:<what>:<kind> (or <stage>:*:<kind>, <*>:*:<kind>) -> the ti
     'Civilization:*:vehicle': 'BUG-0478',
     'Civilization:*:inter_city_road': 'BUG-0478',
     'Space:*:ufo': 'BUG-0479',
-    'Space:*:planetary_artifact': 'BUG-0479',
+    'Space:*:planetary_artifact': 'BUG-0537',
     'Cell:*:cell': 'BUG-0480',
     'Creature:guest_local:creature': 'BUG-0421 class (guest-local objects)',
     '*:*:tribe': 'BUG-0483', '*:*:tribe_hut': 'BUG-0483', '*:*:tribe_food_mat': 'BUG-0483',

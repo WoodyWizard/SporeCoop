@@ -9,12 +9,13 @@ source: divergence detector, nightly run 2026-11-03 (out/lab/20261103-012624, ou
 role: 
 versions: 
 fixed_in:
-branch:
+branch: fix/w42-space-planets
 commits:
-tests:
+tests: space_planet_citizens, space_planet_vehicles (tools/tests/coop_space_planet.py)
 signature:
-docs:
-related:
+docs: docs/re/space.md#space-planet-life, docs/06-testing.md#testing-space-planet
+related: BUG-0476, BUG-0537
+switch: space.citizens, space.vehicles
 ---
 
 ## Report
@@ -23,9 +24,26 @@ Found by the lab (no player report). Target: 0.7.4.
 <!-- what the player (or the test) saw, in our words; no player names, no paths from their PC -->
 
 ## Root cause
+Observed (lane 3, GOG 2024, the `space` fixture's home planet; docs/re/space.md#space-planet-life):
+* Citizens: a pool of 150 per planet in every game, put at the cities near the game's own camera (moving the guest's
+  ship over another city moved 42 of the guest's citizens there; the host's stayed). Most stand, some run about (~5 m/s). Where both
+  games populate a city, 123-145 of 150 stand within 3 m of a partner, the others elsewhere, each of its own size.
+  The detector's `guest_only:citizen` of space_play (19 citizens near the guest, none on the host) was the guest
+  respawned at a city the host's camera never came near: the host's game had no citizens there at all (level of
+  detail).
+* Vehicles: 40 on both games (land, sea, air of the player's empire), ~20 m/s, each driven by its own game's planner:
+  25 of 40 more than 15 m from any partner.
 <!-- observed (runtime, logs, disassembly) vs inferred -->
 
 ## Fix
+World-object kinds of the host on a planet (worldobj.cpp, stage bit kStSpace = 8): `space_citizen` (the host's citizens
+within 400 m of a guest's ship's ground point; the guest binds its own by position (30 m) and puts each where the
+host's is every frame, moved on with its velocity: a MoveTo hardly moved them) and `space_vehicle` (every host vehicle of the planet with its orientation every 0.4 s; the
+guest binds its own of the same class (pol, locomotion, purpose) and draws each where the host's is every frame:
+StopMovement + Teleport, as civ.cpp's mirrors). Their size: fields kinds `space_citizen` / `space_vehicle`
+(K_SPACE_CITIZEN 6, K_SPACE_VEHICLE 7). Citizens at a city only the guest's camera reached stay the guest's own (the
+host has none); the detector skips those. Switches `coop.fix space.citizens off`, `space.vehicles off`,
+`space.planet_scale off`.
 <!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
 
 ## Verification

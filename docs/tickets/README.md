@@ -546,3 +546,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0534](BUG-0534-civ-a-guest-s-copy-of-a-host-s-shot-without-a-ta.md) | fixed | crash | civ | 2026-11-04 | 0.7.5 | Civ: a guest's copy of a host's shot without a target faults in the weapon update |
 | [BUG-0535](BUG-0535-civ-the-host-s-shot-observer-probes-a-target-s-n.md) | fixed | bug | civ | 2026-11-04 | 0.7.5 | Civ: the host's shot observer probes a target's non-vtable and logs a fault per shot |
 | [BUG-0536](BUG-0536-creature-puppet-jump-sees-no-hatch-jump-when-the.md) | open | test | creature | 2026-11-04 |  | Creature: puppet_jump sees no hatch jump when the guest plays the world's species (BUG-0345 default) |
+| [BUG-0537](BUG-0537-space-a-shared-colony-s-stored-spice-is-collecte.md) | open | desync | Space | 2026-11-04 |  | Space: a shared colony's stored spice is collected by each game on its own (spice twice; the spice pickups by the cities stay in the other game) |

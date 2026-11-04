@@ -4011,3 +4011,25 @@ its game's `world_scale=` from coop.pool, read before and after the dump). Fails
   world's species it announces first. Verified in both orders, --cold: creations, creations_cell, creations_rejoin,
   old_species, npc_swap, creation_leave OK (lab 20261104-053801 .. 20261104-060316); legless_guest fails either way
   (BUG-0533, not the rule).
+## Life on a colony planet in Space: space_planet_citizens, space_planet_vehicles, space_colony_spice (2026-11-04, fix/w42-space-planets)
+<a id="testing-space-planet"></a>
+
+`tools/tests/coop_space_planet.py --case citizens|vehicles|spice` (space fixture, 3-5 min each;
+docs/re/space.md#space-planet-life). Each asserts the game's own objects in the other player's game:
+
+* `citizens` (BUG-0490): both ships land on the home planet, the host's ship is put over the guest's
+  (`coop.space over x y z`: on a planet, the own ship over a point at its height), 12 s for the host's game to
+  move its citizens there; 3 rounds of `coop.census all` within 400 m of the guest's ground point: every host
+  citizen needs a guest citizen within 3 m and of the same size (12 %); FAIL over 5 %. Twin
+  `SPORE_FIX_OFF=space.citizens`.
+* `vehicles` (BUG-0490): the colony's 40 vehicles, 4 rounds: a host vehicle without a guest vehicle within 15 m
+  counts; FAIL over 10 % (the two dumps are a fraction of a second apart at ~20 m/s). Twin `space.vehicles`.
+* `spice` (BUG-0537): the host lands (9 pickups by its cities), the guest jumps to the next star and back (its
+  game collects the home colony's stored spice into its hold on arrival, as every arrival does); 10 s later the
+  host's colony cities keep no more than the guest's, the host's planet shows at most 1 pickup, the host's hold
+  is unchanged, and after the guest lands both planets show the same pickups. Twin `space.colony_spice`.
+* `coop.space planets`: the feature's counters and this game's colonies with the stored spice of each city;
+  `coop.wobj` lines `space_citizen` / `space_vehicle` and `space vehicles drives=`.
+* The divergence detector in Space (worlddiff.py): citizens near the guest are compared only when the host's
+  game has citizens there (each game puts its pool of 150 at the cities near its own camera); a ship's size is
+  compared relative to the own ship of the game that draws it (each game sizes every ship by its camera zoom).

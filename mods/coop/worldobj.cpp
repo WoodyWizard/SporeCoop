@@ -372,9 +372,9 @@ static void citizen_follow(const Item& l, const net::Vec3& hp, const net::Vec3& 
 // ---------------------------------------------------------------- kinds on a planet in Space (BUG-0490)
 // docs/re/space.md#space-planet-life. A colony planet's citizens (the same cCreatureCitizen noun) are a pool
 // of 150 that each game puts at the cities near its own camera (measured: city 4's citizens moved to city 0
-// when only the guest's ship went there); they stand (0 m/s), at the same spots on both games for most of
-// them (123 of 150 within 3 m), the rest elsewhere, each of its own size. Citizens near a guest the host's
-// game also has: bound and put where the host's are (the walk of `citizen` above), their size by the
+// when only the guest's ship went there); most stand, some run about (~5 m/s); 123 of 150 were within 3 m of
+// a partner, the rest elsewhere, each of its own size. Citizens near a guest the host's
+// game also has: bound and put where the host's are every frame (space_citizen_drive), their size by the
 // fields kind `space_citizen`. Citizens at a city the host's camera never came near exist in the guest's
 // game only: the host has none to bind (level of detail, not compared by the detector).
 // The colony's vehicles (cVehicle, noun 0x18C6DE8, 40 on the fixture's planet on both games, ~20 m/s)
@@ -383,6 +383,20 @@ static void citizen_follow(const Item& l, const net::Vec3& hp, const net::Vec3& 
 // (political id, locomotion, purpose) and draws each where the host's is every frame (StopMovement +
 // Teleport, as civ.cpp moves its vehicle mirrors). `coop.fix space.citizens off` / `space.vehicles off`:
 // each game keeps its own (0.7.5).
+// Space citizens: most stand, some run about (~5 m/s): a MoveTo hardly moved them (500 walks in 25 s, 4-10 of 19
+// still 3+ m off), a put every 0.25 s lagged 4 m behind the runners. So, like the vehicles, every frame a bound one
+// is put where the host's is now (its last place moved on with its velocity)
+static uint32_t g_space_cit_puts;
+static void space_citizen_drive(const Item& l, const net::Vec3& hp, const net::Vec3& v, double age, uint32_t)
+{
+    float t = (float)std::min(age, 1.0);
+    net::Vec3 want{hp.x + v.x * t, hp.y + v.y * t, hp.z + v.z * t};
+    if (net::dist(l.pos, want) <= 0.3f)
+        return;
+    game::stop(l.p);
+    game::place(l.p, want, game::orientation(l.p));
+    g_space_cit_puts++;
+}
 static bool g_space_cit_fix = true;
 COOP_FIX("space.citizens", "BUG-0490", g_space_cit_fix, "space: a colony's citizens stand where the host's stand (the host's citizens near a guest on its planet)");
 static bool g_space_veh_fix = true;
@@ -461,7 +475,7 @@ static Kind g_kinds[] = {
     {"tribe_tool", &g_tool_fix, kStTribe, 2.0f, 150.f, 24, tool_collect, tool_behind, tool_apply, tool_acted, tool_act, false, false, nullptr, 0, tool_make},
     // BUG-0490 (new kinds at the end: an older guest drops a kind index it does not know)
     {"space_citizen", &g_space_cit_fix, kStSpace, 30.f, 400.f, 56, citizen_collect, citizen_behind, citizen_apply, citizen_acted, citizen_act, false,
-     false, citizen_follow, 0.5},
+     false, nullptr, 0.5, nullptr, false, 15.f, space_citizen_drive},
     // the whole planet (the fixture's is ~510 m in radius): every vehicle binds to the nearest host vehicle of its class
     // (sea vehicles were 400+ m from their partner: the bind radius is the planet's size)
     {"space_vehicle", &g_space_veh_fix, kStSpace, 1500.f, 2500.f, 44, space_vehicle_collect, none_behind, none_apply, none_acted, none_act, false,
@@ -881,7 +895,8 @@ std::string status()
                  t.tx, t.rx, t.bound, t.applied, t.dropped, t.missing, t.made, t.req_tx, t.req_rx, t.acted);
         s += b;
     }
-    snprintf(b, sizeof b, "citizens walks=%u puts=%u; space vehicles drives=%u\n", g_cit_walks, g_cit_puts, g_veh_drives);
+    snprintf(b, sizeof b, "citizens walks=%u puts=%u; space citizens puts=%u; space vehicles drives=%u\n", g_cit_walks, g_cit_puts,
+             g_space_cit_puts, g_veh_drives);
     s += b;
     return s;
 }

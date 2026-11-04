@@ -2061,3 +2061,52 @@ BUG-0469, GOG 2024, lanes 4/5 (`tools/tests/coop_content_space.py`).
 * The same hook logs once per caller who sets the scale 10 on any object (`scale 10 set on an object
   with vtable ... from ...`): diagnostics for BUG-0485 (the commodity nodes, noun 0x0403DF5C, whose loco
   vtable 0x1469A28 uses the same setter).
+
+## Life on a colony planet: citizens, vehicles, the cities' spice pickups (2026-11-04, fix/w42-space-planets)
+<a id="space-planet-life"></a>
+
+Measured on the `space` fixture's home planet (00460035, 9 cities, radius ~507 m at the cities; a landed ship
+flies ~270 m higher), lane 3, GOG 2024, both games on the planet (`coop.census all 3000 0 0 0`).
+
+* ✔ **Citizens** (cCreatureCitizen, noun 0x18EB4B7): a pool of **150** per planet on every game, put at the
+  cities **near the own camera** (two cities held 116 / 34; when only the guest's ship was put over city 0 with
+  `coop.space over`, the guest's game moved 42 of them there, the host's kept its own two cities). Most stand (0.0 m in
+  1 s for all 150 right after the landing); a few minutes later some run about at ~5 m/s (15 m in 3 s). Where both games populate the same city, 123-145 of 150 are within 3 m of a
+  partner, the rest elsewhere, each of its own random size (2.06 / 2.12 ...). So a city only the guest's camera
+  went to has citizens in the guest's game only: level of detail, not a desync (the detector skips citizens
+  there: worlddiff.py).
+* ✔ **Vehicles** (cVehicle, noun 0x18C6DE8, the same class as Civ's): 40 on both games (land 15 / sea 10 / air
+  15, all of the player's pol 0x800021CA, purpose 2), ~20 m/s, driven by each game's planner: 25 of 40 were more
+  than 15 m from any partner. Moving them as civ.cpp moves its mirrors (spatial +0x34 StopMovement vt 0xEC,
+  Teleport vt 0x44 (pos, quat)) every frame keeps 37-40 of 40 within 3 m; sea vehicles were 400+ m from the
+  nearest partner of their class.
+* ✔ **planetary_artifact** (cPlanetaryArtifact, noun 0x2DD8C42, vtable 0x1472B70, size > 0x660): an item of the
+  planet record's list (record **+0x134 / +0x138**, 0x2C bytes each: +0x00 key (u32 instance), +0x04 position,
+  +0x10 u16 count, +0x12 u8 item type, +0x14 u32 time (s), +0x18..+0x24, +0x28 u8 flags) made into an object
+  when the planet loads (cSimPlanetHighLOD load 0xFF96B0: every item without flag 1/4/0x40/0x80 goes through
+  `SporeCoop::Planet_SpawnArtifact` 0xFF5BD0, which calls `cPlanetaryArtifact::LoadFromItem` 0xC74ED0; items of
+  type 7 with flag 8, the loot of a destroyed ship or city 0x102BA40, expire after 300 s). On a colony the items
+  are of **type 4: the spice each city stores** (key = the planet's spice, e.g. 0x1CA01562 Red; one per city,
+  ~30 m from it). `SporeCoop::Colony_UpdateSpicePickups` 0xC82B70 (thiscall-compatible, `ret 4`, the planet
+  record on the stack; from 0xC82EE0, which the Space mode's update runs for the active planet when more than
+  6 s passed, also in the star system view): for every live city a type-4 pickup when the city's stored spice
+  (cCityData +0x1C, FUN_00fd9420) rounds above 0 (made by 0x103AD60), the pickup destroyed when it is 0, the
+  count (+0x638) set otherwise; then the record's type-4 items are rebuilt from the live pickups.
+* ✔ **Entering a star system collects the stored spice of the player's colonies there** into the hold (the
+  guest that jumped away and back had 10 Red spice in its hold and 0.0 in 8 of the 9 cities; the host that never
+  left kept 1.2 per city). The next pickup update in that game destroyed the pickups, so its planet showed none
+  while the host's showed 9: the detector's `Space:noun_only_host:planetary_artifact`. With the shared empire of
+  co-op every game could collect the same spice once (BUG-0537).
+* Citizens and vehicles fix (BUG-0490, worldobj.cpp kinds `space_citizen` / `space_vehicle`): a bound copy is put
+  where the host's is every frame (its last snapshot moved on with its velocity); a MoveTo hardly moved a Space
+  citizen (500 walks in 25 s, 4-10 of 19 still 3+ m off) and a put every 0.25 s lagged 4 m behind the runners.
+* Fix (`space_planets.cpp`, MSG_SPACE kinds 80..84): the host's colony cities' stored spice on every game (on a
+  change, else every 10 s); a guest's game that takes spice out of a city tells the host, which takes it out of
+  its city too; the game's own pickup update does the rest (the host's 9 pickups were gone 10 s after the
+  guest's arrival). Not in rivals mode (own empires).
+* Earlier guesses superseded: BUG-0479's ticket and the detector's KNOWN table had `planetary_artifact` as a
+  ship-scale finding; it is the colony spice.
+* The ship size remainder (`Space:scale:ufo` 4.95 host / 3.74 guest after BUG-0479's fix): each game sizes
+  every ship by its own camera (both ships 0.922 at zoom 200, 0.664 when the guest's zoom went to 135.8 with
+  one wheel notch, the host still 0.922); the partner's ship is always the own ship's size on that screen. Not a
+  desync: the detector compares a ship's size relative to the own ship of the game drawing it.
