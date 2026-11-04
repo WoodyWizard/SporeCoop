@@ -2422,3 +2422,19 @@ BUG-0496 (not reproduced). Lane 9, `tools/tests/coop_nest_heal.py`.
   as its home: docs/re/creature.md 6.23 / coop_migration.py), a guest whose home nest the host's game made extinct
   (the player's mark said "for me nest is not extinct"), a guest whose own game has another nest object than the
   host's (BUG-0434 / BUG-0435 mound).
+
+## Own creatures under the ground in the brain caption: not reproduced (2026-11-03, fix/w41-creature-left)
+<a id="creature-brain-caption-ground"></a>
+
+BUG-0504. Lane 9, probes (no test kept).
+
+* ✔ (runtime) Both own creatures put at the report's spot (-86.1 -465.6 -177.1) with `coop.npc gopos`, then 100 DNA
+  (`coop.dna add 100`): the brain caption F6A4B1E1 came (`busy=cinematic,input_lock`, then `paused`), and the height
+  over the ground stayed 0.00 on both games before and for 18 s during it (coop.avatar `above=`, trace `agl=`).
+* ✔ (runtime) `coop.npc gonpc <id> 3` (0.7.4: 2 m over the ground, then it falls) next to 10 NPCs: the host's
+  creature rested 0.00-0.54 m OVER the terrain height (standing on something: the nest's sticks, a rock) until it
+  walked, never under it.
+* ~ Inferred: the -0.63 / -0.71 m of play_creature (lab 20261103-124913, creatures that walked there) is the game's:
+  the mod does not move its own creature, and the caption does not lower it at that spot or at the nest. What the
+  creatures stood on there is not known (the GetHeightAt terrain only sample against a collision surface; a walk
+  path on the slope). The pack_target allow of 0.7.4 stays.
