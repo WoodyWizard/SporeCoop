@@ -2110,3 +2110,29 @@ flies ~270 m higher), lane 3, GOG 2024, both games on the planet (`coop.census a
   every ship by its own camera (both ships 0.922 at zoom 200, 0.664 when the guest's zoom went to 135.8 with
   one wheel notch, the host still 0.922); the partner's ship is always the own ship's size on that screen. Not a
   desync: the detector compares a ship's size relative to the own ship of the game drawing it.
+
+## Lane 5's Sporepedia cache and the host fault at 0xE98DD0 in space_diplomacy (2026-11-04, fix/w42-infra)
+<a id="space-lane5-pollination"></a>
+
+BUG-0546 (host fault `UfoGfx_SetVisible+0x40`, data 0x4, about 2 s after the jump to star 004A0014 of the NPC
+empire 8000216E "Plushio The 3rd Empire"; lane 5 only).
+
+* ✔ The lanes' game copies are the same: every file of `SPORE-lab/lane4` and `lane5` outside `mods/` and the
+  crash / exception reports has the same size (only the deployed sporekit.dll / coop.dll differ). What differs is
+  the host's test profile (`SporeKit-test/Spore`): `Pollination.package` (the Sporepedia cache: 2.1 MB on lane 5,
+  6.5 MB on lane 4), GraphicsCache, Planets.
+* ✔ A/B/A/B on lane 5, the same build (fix/w42-infra): lane 5's own Pollination.package FAILs (host fault 1,
+  out/lab/20261104-121214 and -121818, as the three runs of the ticket), lane 4's copy PASSes (-121357,
+  -122038). Nothing else changed. The two files are kept in the fix/w42-infra worktree's `out/bug0546/` (not in
+  git); lane 5 now has lane 4's copy.
+* ✔ Contents (DBBF index, group 0x40656200 = UFOs): both caches hold ~90 UFO records that are only a summary
+  (type 0x02D5C9AF); lane 4's also holds 32 complete UFOs 0x29132043-0x29132062 (types 0x02D5C9AF, 0x2F7D0004,
+  0x030BDEE3 and the model 0x476A98C7), lane 5's has no UFO with a model (no 0x476A98C7 entry at all).
+  (Index layout of the cache: `DBBF`, entry count at +0x24, index size u64 +0x28, index offset u64 +0x38;
+  index flags 4 = the third key word constant; an entry is type, group, instance, offset u64, sizes, flags:
+  32 bytes.)
+* ~ Inferred, not checked in the game: the NPC empire's ships take a UFO from the host's own Sporepedia cache;
+  with no complete UFO there the ship gets a null model and UfoGfx_SetVisible reads it (the same fault as
+  BUG-0323, there a guest mirror). Whether the game without the mod does the same with such a cache is not
+  checked; a player whose cache holds no complete UFO might hit it. A guard (BUG-0323's model check for the
+  host's own NPC ships) belongs to the Space packages.
