@@ -45,6 +45,10 @@ of its city. The game's own pickup update puts or removes the pickups. Not in ri
 <!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
 
 ## Verification
+* FAIL with SPORE_FIX_OFF=space.colony_spice: out/lab/20261104-103213 (after the guest's arrival collected the spice,
+  the host's colony still stored 10.8 and its planet showed 9 pickups, the guest's 0).
+* PASS: out/lab/20261104-102216 and out/lab/20261104-103824 (the host's colony 0.9 like the guest's, 0 pickups on both
+  planets, the host's hold unchanged).
 <!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
      or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
 

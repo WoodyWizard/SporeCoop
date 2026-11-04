@@ -474,12 +474,14 @@ static Kind g_kinds[] = {
      citizen_follow, 0.5},
     {"tribe_tool", &g_tool_fix, kStTribe, 2.0f, 150.f, 24, tool_collect, tool_behind, tool_apply, tool_acted, tool_act, false, false, nullptr, 0, tool_make},
     // BUG-0490 (new kinds at the end: an older guest drops a kind index it does not know)
-    {"space_citizen", &g_space_cit_fix, kStSpace, 30.f, 400.f, 56, citizen_collect, citizen_behind, citizen_apply, citizen_acted, citizen_act, false,
-     false, nullptr, 0.5, nullptr, false, 15.f, space_citizen_drive},
+    {.name = "space_citizen", .fix = &g_space_cit_fix, .stages = kStSpace, .tol = 30.f, .range = 400.f, .max = 56,
+     .collect = citizen_collect, .behind = none_behind, .apply = none_apply, .acted = none_acted, .act = none_act,
+     .gone_acted = false, .drop_own = false, .every = 0.5, .drive = space_citizen_drive},
     // the whole planet (the fixture's is ~510 m in radius): every vehicle binds to the nearest host vehicle of its class
     // (sea vehicles were 400+ m from their partner: the bind radius is the planet's size)
-    {"space_vehicle", &g_space_veh_fix, kStSpace, 1500.f, 2500.f, 44, space_vehicle_collect, none_behind, none_apply, none_acted, none_act, false,
-     false, nullptr, 0.4, nullptr, true, 60.f, space_vehicle_drive},
+    {.name = "space_vehicle", .fix = &g_space_veh_fix, .stages = kStSpace, .tol = 1500.f, .range = 2500.f, .max = 44,
+     .collect = space_vehicle_collect, .behind = none_behind, .apply = none_apply, .acted = none_acted, .act = none_act,
+     .gone_acted = false, .drop_own = false, .every = 0.4, .classes = true, .vmax = 60.f, .drive = space_vehicle_drive},
 };
 constexpr int kKinds = (int)(sizeof g_kinds / sizeof g_kinds[0]);
 // a snapshot is one unreliable message: 19 bytes + 20 per object within net::Connection::kMaxSingle (1163)

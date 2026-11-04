@@ -47,6 +47,13 @@ host has none); the detector skips those. Switches `coop.fix space.citizens off`
 <!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
 
 ## Verification
+* FAIL with SPORE_FIX_OFF=space.citizens: out/lab/20261104-103904 (34 of 57 host citizens near the guest without a guest
+  citizen within 3 m; 4 of 57 of another size); earlier code: out/lab/20261104-102245 (40 of 57).
+* FAIL with SPORE_FIX_OFF=space.vehicles: out/lab/20261104-102424 (74 of 160 host vehicles more than 15 m from any guest
+  vehicle).
+* PASS: out/lab/20261104-103824 (space_planet_citizens, space_planet_vehicles, space_colony_spice: 3 of 3); vehicles
+  also out/lab/20261104-102216 (0 of 160 off). A put-only follow failed its own test (out/lab/20261104-103143: 6 of 57
+  off: some citizens run): replaced by the per-frame drive.
 <!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
      or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
 
