@@ -11,7 +11,7 @@ versions: 0.7.3.6
 fixed_in: unreleased
 branch: fix/w40-gh-issues
 commits: 23a436a5
-tests:
+tests: kit_initfail (tools/tests/kit_initfail.py)
 signature: sporekit.log: 'App::cSporeApp::Init -> 0' then 'the game exits (ExitProcess 0) ... frame 1'
 docs:
 related: BUG-0127
@@ -32,9 +32,10 @@ SporeKit (gamehooks.cpp, diag.cpp `diag_init_failed`): when App::cSporeApp::Init
 <!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
 
 ## Verification
-no-fail-run: App::cSporeApp::Init does not fail on the lab's game copies, and there is no switch in the game to make it fail; the change only acts on a 0 result (boot regression: smoke and the other tests boot with it).
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+kit_initfail.py (suite kit_initfail): a test marker (mods\test-initfail-<instance>) makes SporeKit's Init hook return 0 without calling the game's Init, as on the player's PC (the game then ends with ExitProcess(0) at frame 1, cleanly). A 0 after a full Init is not usable: the game's teardown then faults (tried: out/lab/20261103-194736).
+* FAIL with SPORE_FIX_OFF=initfail (kit.fix initfail off from the start, 0.7.3.6): out/lab/20261103-194829 (the game ends, no log line, no report, no mark, nothing at the next start).
+* PASS: out/lab/20261103-194901 (log line, SporeCoop-report zip, last-problem "could not start", the next start names it; the coop feed then says "the last game could not start").
+Not verified: the message box (lab instances are > 1, so it is not shown there); what fails on the player's PC.
 
 ## History
 - 2026-11-03: opened from GitHub issue #193.

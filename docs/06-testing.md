@@ -3829,3 +3829,13 @@ until `level=` changes) twice; during each level change the test compares, every
 mirrors on the guest (coop.census, matched by the host's cell index) in the guest's metres (each position times
 its game's `world_scale=` from coop.pool, read before and after the dump). Fails when the p90 error of a sample is
 2 m or more. BUG-0511: SPORE_FIX_OFF=cell.world_scale gives 14-18 m (FAILS), the fix 0.1 m.
+
+## A failed game start on purpose (2026-11-03, fix/w40-gh-issues)
+<a id="testing-initfail"></a>
+
+* `kit_initfail.py` (BUG-0521): a file `SporebinEP1\mods\test-initfail-<instance>` is read and removed by
+  SporeKit's App::cSporeApp::Init hook, which then returns 0 without calling the game's Init: the game ends with
+  ExitProcess(0) at frame 1, as on the player's PC. `off` in the file switches `kit.fix initfail` off from the
+  start (the twin run; `SPORE_FIX_OFF=initfail` in the test writes it). ~25 s on one lane.
+* Pitfall: returning 0 **after** the game's full Init does not work for this: the game's teardown then faults
+  (0xC0000005 in MSVCR90 / steam_api frames), a crash report instead of the clean exit.
