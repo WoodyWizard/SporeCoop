@@ -2477,3 +2477,43 @@ BUG-0451, the other stages (docs/known-issues.md#issue-effects-civ-space). GOG 2
   world (`not played=`). `effects foreign world: created= queued= near=` counts them; `near` is how many a
   player's real play would have sent without the fix. With it, `effects.other_stages` (Tribe and Civilization)
   is on by default; Space stays behind `effects.space` (off: not verified, no UFO effect can be made in a test).
+
+## The Drama Manager's world events in a session (2026-11-04, fix/w41-infra)
+<a id="creature-drama-events"></a>
+
+BUG-0486 (UFO), BUG-0465 (sea monster). GOG 2024, Ghidra (tools/ghidra/q.sh). Follows #creature-ufo-abduction-event
+and #creature-sea-monster.
+
+* ✔ `cDramaManager` is a singleton: `SporeCoop::DramaManager_Get` 0xD51610 (cdecl, the pointer at 0x169E43C, made
+  on first use, 0x70 bytes). Vtable 0x147B520: +0x2C 0xD52270 the update (thiscall(mgr, uint64 ms) ret 8; Creature
+  and Tribe only, both end in the event tick 0xD4E450 thiscall(mgr, float dt s) ret 4, which returns at once
+  while the game time is paused), +0x38 0xD4E020 builds the events from prop group 0x0EBCFBC7 (Creature) /
+  0xE7CA1F54 (Tribe), +0x3C 0xD4E300 ends them all.
+* ✔ The nine event kinds (event +0x14), from the factory table 0x147AF4C (16-byte rows: class id getter,
+  factory, name): 0 class 0x5599D0C (factory 0xD4D390), 1 cNightPredatorEvent 0x5599E3B, **2 cUFOAbductionEvent
+  0x5599EC7**, 3 cMeteorStrikeEvent 0x5599F00, 4 cBabyGameEvent 0x5599F34, 5 cRainStormEvent 0x5599F5A,
+  **6 cSeaMonsterEvent 0x5599F83**, 7 cCreatureAttackEvent 0x5ED29D9, 8 (0x609EEDF, cSummonCreatureEvent by the
+  factory order). The class name string cTribeFoodRaidEvent has no reference.
+* ✔ Event fields: +0xC active byte, +0x10 a mask of kinds it excludes while active, +0x18 uses left (-1 = any),
+  +0x1C condition kind (1 avatar vs a value, 2 a distance (0xD2E360) vs a value, 3 the time of day between
+  +0x20 and +0x24 hours, 4 never by the tick), +0x28 the wait left (s; reset from prop 0x920A2318 when it runs
+  out), +0x2C the duration, +0x30 "not while the avatar is ..." (avatar +0xB5E), +0x40 its prop list.
+* ✔ The tick 0xD4E450, for every idle event: no start during a cinematic (cCinematicManager +0x2C 1 / 2), vt+0x44
+  pre-check, uses left, no excluded kind active, the wait run out, the condition, then vt+0x38 "can start" and
+  `SporeCoop::DramaManager_StartEvent` 0xD4D4E0 (thiscall(mgr, event, 0) ret 8: +0xC = 1, uses - 1, the duration,
+  event vt+0x30 start). An active event: vt+0x3C "done?" or its duration / condition over -> vt+0x34 end, else
+  vt+0x40 update(dt). `SporeCoop::DramaManager_StartKind` 0xD4D740 (thiscall(mgr, kind, 0) ret 8) starts every
+  idle event of a kind (a multimap by kind at mgr +0x50): the stage start 0xD40FA0 calls it with 4 (baby game), a
+  message handler 0xD8E840 with 8.
+* ✔ Runtime (lane 6, coop_drama_guest.py): `coop.drama start 2` (StartKind 2) makes a UFO in the game's object
+  list within 4 s where the event may start; the UFO starts at the own avatar (#creature-ufo-abduction-event).
+* Decision (what the partner should see): every event is made by each game for its own avatar (start positions
+  are the avatar's / the player tribe's), so the partner's game never has it. The host owns the world: a guest's
+  own game starts no UFO visit (`creature.guest_events`, mods/coop/drama.cpp; the kinds are a mask, `coop.drama
+  mask <hex>`, default 0x4 = kind 2 only), so no UFO takes the guest's mirrors of the host's creatures in the
+  guest's game only. ~ Not done: the host's UFO shown on a guest (a mirror of the type 7 ship at the host's
+  position: the ship's own BT moves it, so it would need the host's position each frame and its BT off).
+* Decision for the sea monster (kind 6): kept on a guest. ~ Inferred (not seen at runtime): it is the avatar's
+  deep-water death (death cause 9, CRG_AvatarDied_SeaMonster), the game's way of keeping a swimmer near the
+  island; refusing it on a guest would let the guest swim off the map. The partner does not see it (the partner's
+  game has no event for a puppet): a relay of the death to a cinematic at the puppet is not done.

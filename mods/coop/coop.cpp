@@ -33,6 +33,7 @@
 #include "sui.h"
 #include "teamplay.h"
 #include "tribe.h"
+#include "drama.h"
 #include "cellsync.h"
 #include "census.h"
 #include "civ.h"
@@ -5847,6 +5848,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     trc.notice = [](const std::string& t) { notice(t, -1); };
     trc.host_away = [] { return host_absent_for(Absent::Tribe); }; // BUG-0151, BUG-0231
     tribe::init(H, M, std::move(trc));
+    drama::init(H, M, &g_sess); // BUG-0486
     notify::init(H, M, [] { return coop_ui::text_font(); });
     creations::Ctx crc;
     crc.sess = &g_sess;
@@ -6054,6 +6056,12 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                            return 0;
                        }
                        SAY("%s%s", civ::status().c_str(), civ::list().c_str());
+                       return 0;
+                   },
+                   nullptr, MT);
+    H->command_add(M, "coop.drama", "coop.drama [start <kind> | mask <hex>] - the game's world events (BUG-0486)",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       SAY("%s", drama::debug(std::vector<std::string>(argv + 1, argv + argc)).c_str());
                        return 0;
                    },
                    nullptr, MT);

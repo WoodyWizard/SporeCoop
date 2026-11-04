@@ -78,7 +78,13 @@ The cheat is implemented as a fake `ArgScript::ICommand` with a hand-built MSVC 
 * **Watchdog thread**: if the main thread makes no progress for 15–30 s or the loader lock
   is held for >10 s, the culprit's stack is written to the log. While the thread is suspended only
   its registers and stack are copied (no allocation, no lock: a thread suspended inside `malloc`
-  holds the heap); names and text come after the resume (BUG-0050).
+  holds the heap); names and text come after the resume (BUG-0050). No frames while the game loop runs
+  (`App::Canvas::Tick` returns, counted by `watchdog_loop_tick`) is a pause, not a hang: the game window
+  minimized (Canvas::Tick sleeps 200 ms per pass), unfocused without background mode, or a lost device after an
+  alt-tab out of full screen. Then one INFO line "watchdog: no frames for N s, the game loop runs (window minimized
+  1, ...)" and no dump, no hang report; a stall is counted from the later of the last frame and the last loop pass,
+  so a real hang (no frames, no loop) still dumps after 30 s (BUG-0347, `kit.fix hangloop`; test commands
+  `kit.test.window minimize|restore|hide|show`, `kit.test.hang [ms]`, test kit_watchdog).
 * **Hook removal** (unload, hot reload): the trampolines of removed hooks are kept (a game worker
   thread may still be inside a detour and call the original; RandomInt runs on worker threads), and
   a mod with hooks gets 50 ms before `FreeLibrary` (BUG-0132). Not a guarantee for a detour that
