@@ -601,7 +601,10 @@ static int SK_THISCALL h_WorldCreateFx(void* world, uint32_t id, uint32_t a3, vo
         // its paint effects in an effect world of its own, on the main thread. Such an effect created in
         // the game's effect world (the relay's receiver, the perf load) has no painter and faults in
         // cSkinnerTexturePainter::StartRender every frame. Mark them: effects.cpp never sends them.
-        bool foreign = world != main_effect_world();
+        static void* s_main_world; // the game's world changes only with a stage: ask the manager on a mismatch
+        if (world != s_main_world)
+            s_main_world = main_effect_world();
+        bool foreign = world != s_main_world;
         if (foreign) {
             g_fx_foreign++;
             g_fx_last_foreign_id = id;
