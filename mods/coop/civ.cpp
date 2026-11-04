@@ -347,7 +347,7 @@ static void SK_THISCALL h_KeepGround(void* v)
 // update by cCombatSimulator::Update 0xAE7360 for a combatant whose target is in range; the tool's own
 // refire time decides whether a projectile leaves). A guest's mirrors run no behaviour tree, so they never
 // had a target and the guest saw the host's fights only as falling hit points. Now the host notes who
-// fires where (squadron.cpp's FireTool hook calls fire_observed) and sends the shooters of the last 0.35 s
+// fires where (squadron.cpp's FireTool hook calls fire_observed) and sends the shooters of the last 0.25 s
 // every 0.2 s (MSG_CIV_STATE with chunk 0xFE / chunks 0: an older guest drops it at cycle_chunk_ok); the
 // guest fires its mirror's own weapon at the same point with the same FireTool, so the game makes the
 // projectile, its flight and its explosion. Its hits do nothing on the guest (cosmetic_hit: the damage
@@ -358,7 +358,7 @@ COOP_FIX("civ.shots", "BUG-0477", g_fix_shots, "civ: a guest sees the host's veh
 constexpr uint8_t kShotChunk = 0xFE;     // MSG_CIV_STATE chunk index of a shot list (chunks 0)
 constexpr uint32_t kTurretNoun = 0x0436F342;
 constexpr uintptr_t kVCombatant = 0x508, kBCombatant = 0x120;
-constexpr double kShotSend = 0.2, kShotKeep = 0.35, kShotFireEvery = 0.1;
+constexpr double kShotSend = 0.2, kShotKeep = 0.25, kShotFireEvery = 0.1;
 static uintptr_t a_FireTool, a_ToolMgrGet;
 struct Shot {
     uint8_t kind = 0;   // 1 vehicle (host net id), 3 turret (its position)
@@ -472,7 +472,7 @@ static void guest_shots(net::Reader& r)
         double tried = e.tried;
         e = s;
         e.tried = tried;
-        e.seen = now + kShotKeep + 0.1; // fires on until then (the next list keeps it going)
+        e.seen = now + kShotKeep + 0.05; // fires on until then (the next list keeps it going; not much past the host's last shot)
         g_shots_rx++;
     }
 }
@@ -486,12 +486,47 @@ static void* weapon_of(void* comb)
     return t && !IsBadReadPtr(t, 0x120) ? t : nullptr;
 }
 
+// guest: objects by noun near a place, all found in one walk of the noun list (turret shooters, building targets)
+struct Want {
+    uint32_t noun;
+    net::Vec3 pos;
+    float best;
+    void* found;
+};
+static void find_wanted(std::vector<Want>& w)
+{
+    if (w.empty())
+        return;
+    game::for_each_object(
+        [](void* o, uint32_t n, void* u) {
+            auto& w = *(std::vector<Want>*)u;
+            net::Vec3 p;
+            bool have = false;
+            for (auto& x : w) {
+                if (x.noun != n)
+                    continue;
+                if (!have && !(game::object_alive(o) && game::object_position(o, p)))
+                    return true;
+                have = true;
+                float d = net::dist(p, x.pos);
+                if (d < x.best) {
+                    x.best = d;
+                    x.found = o;
+                }
+            }
+            return true;
+        },
+        &w);
+}
+
 static void guest_fire(double now)
 {
     if (!g_fix_shots || !a_FireTool || !a_ToolMgrGet || local_play()) {
         g_shots_in.clear();
         return;
     }
+    std::vector<Shot*> due;
+    std::vector<Want> want; // per due shot: [2i] its turret (kind 3), [2i + 1] its target (tkind 3)
     for (auto it = g_shots_in.begin(); it != g_shots_in.end();) {
         Shot& s = it->second;
         if (now > s.seen) {
@@ -502,6 +537,17 @@ static void guest_fire(double now)
         if (now - s.tried < kShotFireEvery)
             continue;
         s.tried = now;
+        due.push_back(&s);
+        want.push_back({s.kind == 3 ? kTurretNoun : 0u, s.at, 6.f, nullptr});
+        want.push_back({s.tkind == 3 ? s.tnoun : 0u, s.tpos, 4.f, nullptr});
+    }
+    bool any = false;
+    for (auto& w : want)
+        any |= w.noun != 0;
+    if (any)
+        find_wanted(want);
+    for (size_t i = 0; i < due.size(); i++) {
+        Shot& s = *due[i];
         void* o = nullptr;
         void* comb = nullptr;
         if (s.kind == 1) {
@@ -511,7 +557,7 @@ static void guest_fire(double now)
                 o = nullptr;
             comb = o ? (uint8_t*)o + kVCombatant : nullptr;
         } else {
-            o = game::find_object(kTurretNoun, s.at, 6.f);
+            o = want[2 * i].found;
             comb = o ? (uint8_t*)o + kBCombatant : nullptr;
         }
         if (!o) {
@@ -533,8 +579,8 @@ static void guest_fire(double now)
             t = g == g_gv.end() ? nullptr : g->second.v;
             if (t && (!exists(t) || F<uint8_t>(t, kVDead)))
                 t = nullptr;
-        } else if (s.tkind == 3 && s.tnoun)
-            t = game::find_object(s.tnoun, s.tpos, 4.f);
+        } else if (s.tkind == 3)
+            t = want[2 * i + 1].found;
         net::Vec3 ap = s.aim;
         if (s.tkind)
             g_shots_tgt_wanted++;

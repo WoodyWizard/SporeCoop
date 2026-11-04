@@ -1033,7 +1033,7 @@ GOG 2024 addresses (dc04aee5).
 * ✔ A guest's mirrors (no behaviour tree) never get a target: no FireTool, no projectile ever in a guest's
   game (the detector's `noun_only_host:*_projectile`, 81 % of the play_civ comparisons in lab 20261104-013631).
 * ✔ Fix `civ.shots`: the host notes each FireTool of a listed vehicle or a turret (shooter, aim, target: a
-  vehicle id or noun + position) and sends the shooters of the last 0.35 s every 0.2 s; the guest calls FireTool
+  vehicle id or noun + position) and sends the shooters of the last 0.25 s every 0.2 s; the guest calls FireTool
   for its mirror (or its turret at that place) with the mirror's own weapon and the target of its own game, at
   most every 0.1 s (turret shooters and building targets are found in one walk of the noun list per 0.1 s for all
   shots due). Without the target (aim only) the guest's projectiles flew straight, hit nothing and
