@@ -112,6 +112,7 @@ add('cell_respawn', P + 'coop_cell_respawn.py', warm=True, minutes=3, fixture='c
 add('diag_cell', P + 'coop_diag.py --fixture cell', warm=True, minutes=3, fixture='cell')  # session clock, /bug marks on both games, merge_logs, sync-check OK and a forced mismatch, its cost
 add('diag_creature', P + 'coop_diag.py --fixture creature', warm=True, minutes=3, fixture='creature')  # the same in Creature
 add('report_shot', P + 'coop_report_shot.py', warm=True, minutes=3, fixture='creature', reports=True)  # a /bug mark and "Report a problem" put a screenshot of the game (JPEG, <= 1280 wide, not black, no hitch) into the report archive (BUG-0442; --off or SPORE_REPORT_SHOT=0, [report] screenshot=0 in coop.ini, fails)
+add('cell_camera', P + 'coop_cell_camera.py', warm=True, minutes=3, fixture='cell')  # the view is centred on the own cell after the co-op respawn and the join move (BUG-0343; SPORE_FIX_OFF=cell.camera_snap fails)
 add('cell_respawn_swap', P + 'coop_cell_respawn.py --swap', warm=True, minutes=3, fixture='cell')  # the same with the guest's pool rebuilt (BUG-0221)
 add('cell_editor_timed', P + 'coop_cell_editor_timed.py', minutes=5)  # the own cell editor entered within the 3 s after a real respawn, vulnerable after it (BUG-0237)
 add('cell_editor_timed_revive', P + 'coop_cell_editor_timed.py --revive', minutes=5)  # the same within the 2 s after a revive (BUG-0237)
