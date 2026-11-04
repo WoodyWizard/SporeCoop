@@ -39,3 +39,4 @@ coop_npc_lost_target.py (suite npc_lost_target): FAIL with SPORE_FIX_OFF=npc.att
 ## History
 - 2026-11-02: opened.
 - 2026-11-03: root cause (attack node with a target cleared by a destroy), fixed on fix/w40-crashes (npc.attack_lost_target).
+- 2026-11-03 (fix/w40-gh-issues): GitHub issue #195, 0.7.3.6 GOG 2024, **single player** (no session), Creature: crash 50 ms after the player's own creature came back from a death (`ko: own avatar alive again`, then the fault). Same fault as above, observed in the crash text: 0xC0000005 at 0xD65D23 read 0, eax = ebx = ecx = 0, calls 0xD680B2 0xD8B88A 0xD7D942 0xBC8B44 (the attack node chain, NPCTickAI in the stack). Inferred: an NPC attacking the player kept its attack animation while the game replaced the dead avatar and cleared the NPC's target; so the bug is the game's own and also hits without co-op (the hook in gamefixes.cpp runs in single player too, no session check). Covered by npc.attack_lost_target (0.7.4).
