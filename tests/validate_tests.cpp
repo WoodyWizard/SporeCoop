@@ -11,6 +11,7 @@
 #include "net/validate.h"
 #include "dna_route.h"
 #include "dna_ledger.h"
+#include "dna_pace.h"
 #include "host_world.h"
 #include "net/shared_ledger.h"
 #include <string>
@@ -235,6 +236,28 @@ static void test_dna_ledger()
     CHECK(m.due(10.0).empty() && m.due(kGatherMeals).size() == 1);
 }
 
+static void test_dna_pace()
+{
+    printf("the party's DNA grows at the single-player pace (dna_pace.h, BUG-0510)\n");
+    using namespace dna_pace;
+    CHECK(divisor(true, 2) == 2 && divisor(true, 0) == 1 && divisor(false, 4) == 1 && divisor(true, 999) == 255);
+    CHECK(share(20, 2) == 10 && share(20, 1) == 20 && share(-25, 2) == -25 && share(0, 3) == 0);
+    // two players, each earns 20: the shared total grows by 20 (one player's), not 40
+    CHECK(share(20, 2) + share(20, 2) == 20);
+    // integer meals keep the remainder: four meals of 3 points at N=2 give 1+2+1+2 = 6
+    Carry c;
+    int sum = 0;
+    for (int i = 0; i < 4; i++)
+        sum += c.take(3, 2);
+    CHECK(sum == 6);
+    Carry c3; // N=3, ten meals of 1: 3 points (and the rest kept, never lost)
+    sum = 0;
+    for (int i = 0; i < 10; i++)
+        sum += c3.take(1, 3);
+    CHECK(sum == 3 && c3.rest > 0.3f && c3.rest < 0.34f);
+    CHECK(c.take(-5, 2) == -5 && c.take(7, 1) == 7); // a spend / the full sum: whole
+}
+
 static void test_dna_route()
 {
     printf("DNA kept while the host was away stays in its stage and world (BUG-0233)\n");
@@ -318,6 +341,7 @@ int main(int argc, char** argv)
     g_nofix = argc > 1 && std::string(argv[1]) == "--nofix";
     test_give_pick_leave();
     test_dna_route();
+    test_dna_pace();
     test_dna_ledger();
     test_host_world();
     test_chunks();

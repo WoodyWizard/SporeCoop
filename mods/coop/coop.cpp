@@ -70,6 +70,7 @@
 #include "share_wait.h"
 #include "dna_route.h"
 #include "dna_ledger.h"
+#include "dna_pace.h"
 #include "host_world.h"
 #include "diag_coop.h"
 #include "trace.h"
@@ -208,7 +209,76 @@ static void dna_notices_tick(double now)
 }
 
 bool guest_elsewhere();
-bool on_dna(float delta)
+// BUG-0510 (dna_pace.h): every gain entering the party's shared DNA / food is scaled by 1/N, N = the
+// players playing the host's world now, so a party evolves at the single-player pace. The host
+// decides (coop.ini [coop] dna_pace, 0 = the full sum) and announces the divisor with its totals
+// (MSG_DNA's and MSG_CELL_FOOD's optional tail); each gain is scaled once, where its game made it.
+// Off (`coop.fix core.dna_pace off`): every gain whole, the sum of all players (0.7.3.6).
+bool g_dna_pace_fix = true;
+COOP_FIX("core.dna_pace", "BUG-0510", g_dna_pace_fix, "core: the party's DNA grows at the single-player pace (each gain / N players)");
+static int g_pace_heard = 1;          // guest: the host's divisor (1 until a total with one, or from an older host)
+static uint32_t g_paced = 0;          // tests: gains scaled here
+static float g_paced_in = 0, g_paced_out = 0; // tests: their sum before / after
+extern uint32_t g_world;
+// host: the players playing its world now (itself and the guests in its stage and world)
+static int pace_playing()
+{
+    int n = 1;
+    if (!g_world)
+        return n;
+    for (auto& [id, r] : g_remotes) {
+        if (r.echo || r.buf.empty())
+            continue;
+        const auto& ls = r.buf.latest();
+        if (ls.mode == g_mode && ls.world == g_world)
+            n++;
+    }
+    return n;
+}
+// the divisor the host announces
+int dna_pace_announce()
+{
+    return dna_pace::divisor(g_dna_pace_fix && dna_pace::g_ini != 0, pace_playing());
+}
+// the divisor for a gain of this machine's game now (1: whole)
+static int pace_div()
+{
+    if (!g_dna_pace_fix || dna_pace::g_bypass || !g_sess.connected())
+        return 1;
+    if (g_sess.role() == net::Role::Host)
+        return dna_pace_announce();
+    if (guest_elsewhere() || g_host_away)
+        return 1; // its own world / playing alone meanwhile: not the party's total
+    return std::max(1, g_pace_heard);
+}
+float dna_pace_gain(float amount)
+{
+    int div = pace_div();
+    float out = dna_pace::share(amount, div);
+    if (out != amount) {
+        g_paced++;
+        g_paced_in += amount;
+        g_paced_out += out;
+        trace::line("dna", "pace 1/%d: +%.1f -> +%.1f", div, amount, out);
+    }
+    return out;
+}
+static dna_pace::Carry g_pace_carry;
+int dna_pace_meal(int amount) // Cell: an own meal's food points
+{
+    int div = pace_div();
+    int out = g_pace_carry.take(amount, div);
+    if (out != amount) {
+        g_paced++;
+        g_paced_in += (float)amount;
+        g_paced_out += (float)out;
+        trace::line("dna", "pace 1/%d: meal +%d -> +%d", div, amount, out);
+    }
+    return out;
+}
+void dna_pace_heard(int div) { g_pace_heard = std::clamp(div, 1, 255); }
+
+bool on_dna(float& delta)
 {
     bool guest = g_sess.role() == net::Role::Client && g_sess.connected();
     auto g = dna_route::guest_gain(guest, delta > 0, g_world_dna_fix && guest_elsewhere(), g_away_dna_fix && g_host_away);
@@ -227,6 +297,8 @@ bool on_dna(float delta)
     if (social::goal_dna(delta))
         return false; // a goal card's reward: the host pays it into the shared pool once
     if (g == dna_route::Gain::Local) {
+        if (g_sess.role() == net::Role::Host && delta > 0 && g_mode == modes::kCreature)
+            delta = dna_pace_gain(delta); // BUG-0510: the host's own gain (after the goal card: those stay whole)
         if (g_sess.role() == net::Role::Host && delta != 0 && g_mode == modes::kCreature)
             dna_host_gain(dna_ledger::g_credit.gain(delta, H->time_seconds()), game::dna());
         return true;
@@ -236,7 +308,7 @@ bool on_dna(float delta)
         return true;
     }
     net::Writer w;
-    w.f32(delta);
+    w.f32(dna_pace_gain(delta)); // BUG-0510: its share, with the host's divisor (the host adds it whole)
     g_sess.send_reliable_to(0, net::MSG_DNA_ADD, w);
     g_dna_fwd++;
     return false; // applied when the host's total comes back
@@ -2783,6 +2855,7 @@ void on_frame(void*, int, void*)
                 w.u8(c.player);
                 w.f32(c.amount);
             }
+            w.u8((uint8_t)dna_pace_announce()); // BUG-0510 (after the causes: older guests stop there)
             g_dna_out.clear();
             for (auto& p : g_sess.players())
                 if (p.id != 0)
@@ -3291,6 +3364,8 @@ void end_session(EndPath path, bool cell)
     }
     g_dna_owed = 0;
     g_dna_owed_world = 0;
+    g_pace_heard = 1; // BUG-0510
+    g_pace_carry.reset();
     g_dna_spend_owed = 0; // BUG-0466
     g_dna_out.clear();
     g_dna_notices.clear();
@@ -3468,7 +3543,10 @@ void setup_callbacks()
                     if (c >= 1 && c <= 4 && std::isfinite(a) && std::fabs(a) < 100000)
                         parts.push_back({(dna_ledger::Cause)c, pl, a});
                 }
-            }
+                // BUG-0510: the host's pace divisor (an older host sends none: the full sum)
+                dna_pace_heard(r.ok() && r.left() >= 1 ? r.u8() : 1);
+            } else
+                dna_pace_heard(1);
             if (r.ok() && dna_route::host_total(false, g_host_away, game::avatar() != nullptr) == dna_route::Total::Apply) {
                 dna_spend_sample(); // BUG-0466: a spend since the last tick is ours, not undone by this total
                 if (g_dna_spend_fix)
@@ -3886,6 +3964,8 @@ int c_status(void*, int, const char* const*, SkOut* out)
         g_dna_fwd, g_solo_dna, g_dna_owed, g_dna_owed_paid, (int)g_host_away);
     SAY("dna spend: unsent=%.1f sent=%u got=%u owed=%.1f seen=%.1f/%d\n", g_dna_spend, g_dna_spends_sent, g_dna_spends_got,
         g_dna_spend_owed, g_dna_seen, (int)g_dna_seen_ok); // BUG-0466
+    SAY("dna pace: div=%d fix=%d ini=%d heard=%d paced=%u in=%.1f out=%.1f\n", pace_div(), (int)g_dna_pace_fix, dna_pace::g_ini,
+        g_pace_heard, g_paced, g_paced_in, g_paced_out); // BUG-0510
     for (size_t i = g_chat.size() > 6 ? g_chat.size() - 6 : 0; i < g_chat.size(); i++)
         SAY("chat: %s\n", g_chat[i].c_str());
     void* av = g_local;
@@ -4877,6 +4957,7 @@ void support_init()
     g_ini_teamplay = H->config_int(M, "coop", "teamplay", 1);
     g_ini_update = H->config_int(M, "update", "check", 1);
     g_ini_sync = H->config_int(M, "coop", "sync_check", 30);
+    dna_pace::g_ini = H->config_int(M, "coop", "dna_pace", 1); // BUG-0510
     support::Probe p;
     p.sess = &g_sess;
     p.feed = feed;
@@ -4966,6 +5047,8 @@ void support_init()
             add("update.check", g_ini_update);
         if (g_ini_sync != 30)
             add("sync_check", g_ini_sync);
+        if (dna_pace::g_ini != 1)
+            add("dna_pace", dna_pace::g_ini);
         return s;
     };
     p.describe = [](const std::string& key) { // BUG-0381: the object's line of coop.npc list / coop.tribe
@@ -5253,6 +5336,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         return it == g_remotes.end() ? nullptr : it->second.puppet;
     };
     sc.blocked = [] { return g_menu_up.load() || coop_ui::is_open() || g_text_up.load(); };
+    sc.pace = dna_pace_gain; // BUG-0510
     social::init(H, M, sc);
     game::set_damage_filter(npc::damage_filter);
     support_init();
@@ -5737,6 +5821,9 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         dna_note({dna_ledger::Cause::Meal, (uint8_t)from, (float)amount}, g_sess.connected() ? g_sess.my_id() : 0);
     };
     cc.my_name = [] { return g_name; };
+    cc.pace_meal = dna_pace_meal; // BUG-0510
+    cc.pace_announce = dna_pace_announce;
+    cc.pace_heard = dna_pace_heard;
     cc.puppet_owner = [](void* cell) -> int {
         for (auto& [id, r] : g_remotes)
             if (r.puppet == cell && !r.echo)

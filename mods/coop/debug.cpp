@@ -11,6 +11,7 @@
 
 #include "cell_logic.h"
 #include "cellsync.h"
+#include "dna_pace.h"
 #include "game.h"
 #include "gamefixes.h"
 #include "modes.h"
@@ -414,9 +415,16 @@ namespace {
 int c_dna(void*, int argc, const char* const* argv, SkOut* out)
 {
     if (argc > 2 && !strcmp(argv[1], "add")) {
-        // simulate a gain as the game would report it (goes through the coop hook)
+        // simulate a gain as the game would report it (goes through the coop hook), exactly N: test
+        // setups (not scaled by the party's pace, BUG-0510)
+        dna_pace::g_bypass = true;
         skg::cdecl_call<void>(H->sym("Simulator::cCreatureGameData::AddEvolutionPoints"), (float)atof(argv[2]));
+        dna_pace::g_bypass = false;
     }
+    if (argc > 2 && !strcmp(argv[1], "gain")) // a reward of the game (a kill, a friend): the party's pace applies (BUG-0510)
+        skg::cdecl_call<void>(H->sym("Simulator::cCreatureGameData::AddEvolutionPoints"), (float)atof(argv[2]));
+    if (argc > 2 && !strcmp(argv[1], "pace")) // as coop.ini [coop] dna_pace (tests)
+        dna_pace::g_ini = atoi(argv[2]);
     if (argc > 2 && !strcmp(argv[1], "local")) // tests: our total only, as a host total we missed (BUG-0128)
         game::dna_add_raw((float)atof(argv[2]));
     SAY("dna=%.1f", game::dna());
@@ -555,7 +563,7 @@ void coop_register_debug_commands2(const SkHost* host, SkMod* self)
                       c_attackcut, nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.save", "save the game (like the pause menu Save)", c_save, nullptr,
                       SK_CMD_MAIN_THREAD);
-    host->command_add(self, "coop.dna", "coop.dna [add|local <n>] - shared DNA debug", c_dna, nullptr, SK_CMD_MAIN_THREAD);
+    host->command_add(self, "coop.dna", "coop.dna [add|gain|local <n> | pace 0|1] - shared DNA debug", c_dna, nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.memfind", "coop.memfind <hex dword> [max] - addresses holding the value (RE)",
                       c_memfind, nullptr, 0);
     host->command_add(self, "coop.w2s", "check world_to_screen against the game's screen ray", c_w2s, nullptr,

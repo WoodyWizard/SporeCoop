@@ -15,6 +15,7 @@
 #include <unordered_set>
 
 #include "cell_logic.h"
+#include "dna_pace.h"
 #include "view_centres.h"
 #include "game.h"
 #include "modes.h"
@@ -900,6 +901,14 @@ using AddFood_t = void(SK_CDECL*)(int, bool);
 static AddFood_t o_AddFood;
 static void SK_CDECL h_AddFood(int amount, bool plant)
 {
+    // BUG-0510: an own meal (AvatarEat 0xE7D070 -> AddFoodPoints) enters the shared food at the
+    // party's pace (amount / N, the remainder kept; coop.cpp dna_pace_meal). The guest's game applies
+    // and sends its share, the host adds a guest's meal whole: scaled once, where it was eaten
+    if (!g_food_guard && amount > 0 && in_cell() && !dna_pace::g_bypass && C.pace_meal) {
+        amount = C.pace_meal(amount);
+        if (amount <= 0)
+            return; // its share is still below one point (kept for the next meal)
+    }
     uint8_t* a0 = in_cell() ? avatar() : nullptr;
     float before = a0 ? F<float>(a0, kTargetSize) : 0.f;
     o_AddFood(amount, plant);
@@ -2423,6 +2432,7 @@ static void host_tick(double now)
             w.u32((uint32_t)food);
             w.u32((uint32_t)plant);
             w.u32(ack); // older guests read the two totals only
+            w.u8((uint8_t)(C.pace_announce ? C.pace_announce() : 1)); // BUG-0510: the party's pace divisor
             C.sess->send_reliable_to(pl.id, net::MSG_CELL_FOOD, w);
         }
         g_food_sent = food;
@@ -3401,6 +3411,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
                 return;
             uint32_t ack = r.u32(); // a host before 0.8 does not send it
             int diff = g_meals.diff(food, r.ok(), ack, g_pend_food, F<int32_t>(s, 0x1C), g_fix_foodseq);
+            if (C.pace_heard) // BUG-0510: the host's pace divisor (an older host sends none: the full sum)
+                C.pace_heard(r.ok() && r.left() >= 1 ? r.u8() : 1);
             if (diff != 0) {
                 trace::ev("eat", "total", "host total food=%d (ack meal %u) -> %+d here (pending %d)", food, ack, diff,
                           g_pend_food);
@@ -4209,9 +4221,15 @@ std::string debug(const std::vector<std::string>& a)
         g_mirror_fixes = atoi(a[1].c_str()) != 0;
         return g_mirror_fixes ? "mirror fixes on" : "mirror fixes off (as in 0.7.2)";
     }
-    if (a.size() >= 2 && a[0] == "food") { // the game's AddFoodPoints (hooked: shared)
+    if (a.size() >= 2 && a[0] == "food") { // the game's AddFoodPoints (hooked: shared), exactly N (test setups)
+        dna_pace::g_bypass = true;
         h_AddFood(atoi(a[1].c_str()), false);
+        dna_pace::g_bypass = false;
         return "food added";
+    }
+    if (a.size() >= 2 && a[0] == "meal") { // an own meal as AvatarEat makes it: the party's pace applies (BUG-0510)
+        h_AddFood(atoi(a[1].c_str()), a.size() >= 3 && a[2] == "plant");
+        return "meal eaten";
     }
     if (!a.empty() && a[0] == "mate") { // tests: the mating-call button (S+0x69), the mate, where it is
         uint8_t* s = S();

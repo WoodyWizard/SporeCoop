@@ -267,8 +267,8 @@ anchor so other docs can link to it:
 * Since 2026-10-23 a guest befriends a mirrored NPC (click in the social stance, a social ability
   key; the host applies the native win, docs/re/creature.md 8.3), but the guest does not see the
   native social meter and the NPC's ability prompts (they belong to the NPC's behaviour tree, which
-  runs only on the host): any social ability counts as the answer, one press per round. A click on
-  the ability bar instead of a key is not counted (the mod polls the keys 1-4). The host's own
+  runs only on the host): any social ability counts as the answer, one press per round (a key or,
+  since BUG-0518, a click on the ability's button of the bar). The host's own
   game is native. The success message 0x60B4123 (CreatureStageEventHandler) is not posted for a
   guest's win. Reproduce: `tools/tests/coop_creature_social.py`.
 * Ticket: BUG-0179.

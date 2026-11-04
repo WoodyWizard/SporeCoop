@@ -16,6 +16,12 @@
 - Cell and Creature: after the host's editor a guest in the same world keeps playing: it no longer drops
   to the galaxy menu and loads the whole world again; the host's new creature and (when you play the host's
   species) your own new body arrive in place. A migration to a new nest still sends the world (BUG-0508).
+- Creature: a guest can befriend creatures with the mouse too: a click on the social ability's button
+  of the ability bar (sing, dance, ...) next to the creature now counts, not only the keys 1-4 (BUG-0518).
+- Cell and Creature: a party no longer evolves two to four times faster than a single player: every
+  player's DNA (and Cell food) now counts 1/N with N players in the world, so the shared total grows at
+  the single-player pace; spending is not affected. Hosts who prefer the old sum set `dna_pace=0` in
+  `mods\coop.ini` [coop] (BUG-0510).
 - Creature: animals are neutral, hostile or allied to a guest as they are to the host; a guest playing its own
   creature no longer sees neutral species as hostile (BUG-0462).
 - Creature: a partner who sneaks is shown sneaking (see-through) on your screen too, and the host's animals

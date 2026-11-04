@@ -42,3 +42,4 @@ Not fixed yet.
 - 2026-10-23: first recorded in docs/known-issues.md.
 - 2026-10-27: ticket backfilled from docs/known-issues.md (every entry carries its ticket id, CLAUDE.md 1).
 - 2026-11-03: reported again (0.7.3.4 forum post and a 0.7.3.6 direct message): the guest cannot befriend / socialize in the Creature stage (animals do not want to be friends). Still open; a top Creature complaint.
+- 2026-11-03: fix/w40-dna-social measured it with the relations fix (BUG-0462) merged: the social path works for every socializable species of the fixture by key, but a CLICK on the social ability's button did nothing for a guest: BUG-0518 (fixed, social.bar_click). Still open here: the meter and the NPC's prompts on the guest, any social ability counts as the answer, 0x60B4123 not posted.

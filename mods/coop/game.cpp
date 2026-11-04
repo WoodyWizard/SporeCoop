@@ -29,7 +29,7 @@ static AddEvo_t o_AddEvo;
 static DnaListener g_dna_listener;
 
 static void SK_CDECL h_AddEvo(float delta)
-{
+{ // (the listener may scale the gain: BUG-0510, dna_pace.h)
     if (g_dna_listener && !g_dna_listener(delta))
         return;
     o_AddEvo(delta);

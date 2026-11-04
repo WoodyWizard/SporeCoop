@@ -334,20 +334,55 @@ static void send_act(uint16_t id, uint32_t type)
     g_acts_sent++;
 }
 
-// a social ability key (1-4) next to the engaged mirror: the avatar performs it (the game does
-// nothing without an NPC session) and the host counts it as a round of the NPC's social game
-static bool act(int slot)
+// a social ability next to the engaged mirror: the avatar performs it (the game does nothing
+// without an NPC session) and the host counts it as a round of the NPC's social game
+static double g_last_act = -100; // when an action was last sent (the key poll and the bar's hook)
+static bool act_index(int idx)
 {
     void* av = game::avatar();
     void* px = g_engaged >= 0 ? npc::proxy((uint16_t)g_engaged) : nullptr;
     if (!av || !px || net::dist(game::position(av), game::position(px)) > kActRange)
         return false;
-    int idx = social_ability(av, slot);
     if (idx < 0 || !play_ability(av, idx))
         return false; // no such ability, cooling down or no energy
     send_act((uint16_t)g_engaged, field<uint32_t>(ability(av, idx), 8));
-    g_engaged_at = H->time_seconds();
+    g_engaged_at = g_last_act = H->time_seconds();
     return true;
+}
+static bool act(int slot) // a social ability key (1-4)
+{
+    void* av = game::avatar();
+    return av && act_index(social_ability(av, slot));
+}
+
+// BUG-0179 (players, two groups: "the creatures do not want to be friends" with the guest): the guest's
+// game uses an ability of the HUD's bar, by a key or a CLICK on the bar's button, through
+// AbilityBar_Use 0xD49560(ability index) (docs/re/creature.md#creature-guest-social-bar). Only the keys
+// 1-4 were polled: a click on the social ability's button next to an engaged mirror did nothing
+// (no animation, nothing sent), a player who uses the mouse could never befriend anything. The hook
+// takes a social ability used next to the engaged mirror in the social stance like the key (the
+// avatar plays it, the host counts the round); anything else goes on to the game. Off: keys only.
+static bool g_bar_fix = true;
+COOP_FIX("social.bar_click", "BUG-0179", g_bar_fix, "creature: a guest's click on a social ability of the ability bar plays the social game with the engaged creature (not only the keys 1-4)");
+static uint32_t g_bar_acts = 0, g_bar_passed = 0;
+typedef void(SK_CDECL* BarUse_t)(int);
+static BarUse_t o_BarUse;
+static void SK_CDECL h_BarUse(int idx)
+{
+    void* av = is_guest() && g_bar_fix && g_engaged >= 0 && game::in_creature_stage() && !(C.blocked && C.blocked())
+                   ? game::avatar()
+                   : nullptr;
+    if (av && a_AbilityMode && cdecl_call<int>(a_AbilityMode) == 0 && idx >= 0 && idx < ability_count(av)) {
+        void* a = ability(av, idx);
+        if (a && field<uint32_t>(a, 0x10) == 1) { // a social ability (sing, dance, ...)
+            if (H->time_seconds() - g_last_act < 0.5 || act_index(idx)) {
+                g_bar_acts++; // (a key press also reaches here: the poll sent it a moment ago)
+                return;
+            }
+        }
+    }
+    g_bar_passed++;
+    o_BarUse(idx);
 }
 
 // BUG-0021: in the social stance (GetAbilityMode 0) a guest's key 1 next to the Kook it was impressing (and the click
@@ -390,7 +425,7 @@ static void guest_tick(double now)
     for (int k = 0; k < 4; k++) {
         SHORT st = GetAsyncKeyState('1' + k); // bit 0: pressed since the last call (a short tap)
         bool down = (st & mask) != 0;
-        if (down && !g_keys[k] && on)
+        if (down && !g_keys[k] && on && now - g_last_act >= 0.5) // (the bar's hook may have sent it)
             act(k);
         g_keys[k] = down;
     }
@@ -476,6 +511,8 @@ static void apply_success(uint8_t player, uint16_t id)
     float dna = 0;
     if (mode != 4 && a_DnaWorth) {
         dna = thiscall<float>(a_DnaWorth, c, 1);
+        if (dna > 0 && dna < 10000 && C.pace)
+            dna = C.pace(dna); // BUG-0510: the party's pace (a guest's friend, as the host's own are in on_dna)
         if (dna > 0 && dna < 10000)
             game::dna_add_raw(dna); // the host's pool, shared with everybody (MSG_DNA)
     }
@@ -542,6 +579,8 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
     a_GoalUI = H->sym("SporeCoop::CreatureGoalUI_Get");
     a_GoalRefresh = H->sym("SporeCoop::SpeciesGoal_Refresh");
     a_AbilityMode = H->sym("Simulator::cCreatureGameData::GetAbilityMode");
+    if (uintptr_t a = H->sym("SporeCoop::AbilityBar_Use")) // BUG-0179
+        H->hook_create(M, (void*)a, (void*)h_BarUse, (void**)&o_BarUse);
     if (uintptr_t a = H->sym("SporeCoop::BT_PostStimulus"))
         H->hook_create(M, (void*)a, (void*)h_Post, (void**)&o_Post);
     if (a_RelEvent)
@@ -709,9 +748,9 @@ std::string status()
     else
         snprintf(b, sizeof b,
                  "social(guest): engaged=%d engages=%u acts_sent=%u results_in=%u species_rx=%u species_fixed=%u "
-                 "events_dropped=%u cards_refreshed=%u goal_dna_sent=%u social_hits_dropped=%u\n",
+                 "events_dropped=%u cards_refreshed=%u goal_dna_sent=%u social_hits_dropped=%u bar_acts=%u bar_passed=%u\n",
                  g_engaged, g_engages, g_acts_sent, g_results_in, g_table_rx, g_table_fixed, g_events_dropped,
-                 g_cards_refreshed, g_goal_dna_dropped, g_social_hits_dropped);
+                 g_cards_refreshed, g_goal_dna_dropped, g_social_hits_dropped, g_bar_acts, g_bar_passed);
     return b;
 }
 

@@ -40,7 +40,7 @@ def main():
     print(f'  before: host {h0}, guest {g0}', flush=True)
     ck(h0 and g0 and h0['level'] == 0 and g0['level'] == 0, 'both at brain level 0')
     ck(g0 and not g0['same'], 'the guest plays its own creature (not the world\'s player species)')
-    host.call('call Simulator::cCreatureGameData::AddEvolutionPoints cdecl f:250')
+    host.call('coop.dna add 250')
     h1 = g1 = None
     t0 = time.time()
     while time.time() - t0 < 40:  # the brain upgrade captions wait for Enter
