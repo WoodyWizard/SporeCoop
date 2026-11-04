@@ -8,13 +8,13 @@ from the civilization's budget) and the snapshot carried none.
 1. Two games on civ_npc; the turrets of every city in both games (`coop.civ turrets <city>`).
 2. The guest's game gets a large growth budget for an NPC city's civilization (`coop.civ budget <city> 100000`
    on the guest only) and the city counts as attacked there (`coop.civ budget <city> attacked`, every 4 s): its
-   own city growth would buy turrets with it.
+   own city growth may buy turrets with it (not seen within the test in the lab: the budget is spent, the growth
+   bought no turret with the switch off either, lab 20261104-100015; the guest-growth half stays a guard).
 3. The host's game adds one turret to another NPC city (`coop.civ addturret <city>`: the game's City_AddTurret).
 4. 25 s later, the turrets of both cities in both games.
 PASS: the guest's city of step 2 has the host's turrets (no turret of its own growth), the host's new turret of
 step 3 stands in the guest's game too (each host turret has a guest turret within 6 m and the counts match).
-SPORE_FIX_OFF=civ.turrets: the guest's growth adds turrets the host does not have and the host's new turret is
-missing on the guest (FAIL).
+SPORE_FIX_OFF=civ.turrets: the host's new turret is missing on the guest (FAIL).
 
   SPORE_LANE=9 python3 tools/tests/coop_civ_turrets.py
 """
