@@ -476,6 +476,8 @@ static void apply_success(uint8_t player, uint16_t id)
     float dna = 0;
     if (mode != 4 && a_DnaWorth) {
         dna = thiscall<float>(a_DnaWorth, c, 1);
+        if (dna > 0 && dna < 10000 && C.pace)
+            dna = C.pace(dna); // BUG-0510: the party's pace (a guest's friend, as the host's own are in on_dna)
         if (dna > 0 && dna < 10000)
             game::dna_add_raw(dna); // the host's pool, shared with everybody (MSG_DNA)
     }

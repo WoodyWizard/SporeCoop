@@ -144,6 +144,8 @@ add('update_leak', P + 'coop_update_leak.py', minutes=4)  # 5 refused update att
 add('guest_editor', P + 'coop_guest_editor.py', minutes=4)
 add('cell_parts', P + 'coop_cell_parts.py', minutes=3, fixture='cell')  # BUG-0467: a Cell part the guest collects is unlocked in the host's game (its part state, its mating-call button) and the other way (SPORE_FIX_OFF=parts.shared_cell fails)
 add('dna_spend', P + 'coop_editor_sync.py --case spend', minutes=3, fixture='creature')  # BUG-0466 class G6: a guest's own DNA spend (AddEvolutionPoints < 0 in its game) leaves the host's total and is not given back by the host's next total (SPORE_FIX_OFF=core.dna_spend fails)
+add('dna_pace', P + 'coop_dna_pace.py', minutes=3, fixture='creature')  # BUG-0510: two players earn 20 each, the shared DNA grows by 20 on both games (single-player pace), a spend is whole, dna_pace=0 gives the sum (SPORE_FIX_OFF=core.dna_pace fails)
+add('dna_pace_cell', P + 'coop_dna_pace.py --cell', minutes=3, fixture='cell')  # BUG-0510 in Cell: two meals of 20, the shared food grows by 20 on both games (SPORE_FIX_OFF=core.dna_pace fails)
 add('editor_sync_guest', P + 'coop_editor_sync.py --case guest', minutes=5, fixture='creature')  # BUG-0466: the DNA a guest spends in its own editor leaves the party's total and is not given back (SPORE_FIX_OFF=creations.own_editor_dna fails)
 add('editor_sync_host', P + 'coop_editor_sync.py --case host', minutes=5, fixture='creature')  # BUG-0457: the host evolves its creature in its editor: the guest's game draws the host with the new species
 add('editor_sync_host2', P + 'coop_editor_sync.py --case host2', minutes=8, fixture='creature')  # BUG-0457: two evolutions of the host in a row: the guest's game draws the host with the second one

@@ -37,6 +37,11 @@ struct Ctx {
     };
     std::function<std::vector<Puppet>()> puppets; // remote players' cells in our pool
     std::function<bool()> host_away; // guest: the host is away (coop.cpp g_host_away): we play our own pool (BUG-0205)
+    // BUG-0510 (dna_pace.h): an own meal's share of the shared food; the host's divisor to send; a
+    // guest heard the host's divisor
+    std::function<int(int)> pace_meal;
+    std::function<int()> pace_announce;
+    std::function<void(int)> pace_heard;
 };
 
 bool init(const SkHost* host, SkMod* mod, Ctx ctx);

@@ -228,7 +228,7 @@ void set_time_of_day(const net::Quat& q);
 // ---- DNA (cCreatureGameData evolution points, a global) ----
 float dna();
 void dna_add_raw(float delta);              // original AddEvolutionPoints, not reported
-using DnaListener = bool (*)(float delta);  // return false to swallow a gain
+using DnaListener = bool (*)(float& delta); // return false to swallow a gain; may change it (BUG-0510 pace)
 void set_dna_listener(DnaListener fn);
 
 // ---- any game object (cGameData) ----
