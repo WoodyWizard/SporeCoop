@@ -2299,3 +2299,33 @@ BUG-0458 (open). GOG 2024, Ghidra only (no runtime: the lane was busy with the r
   call HoldObject on the carrier's puppet / proxy with its copy; after a release the host owns the object's pose
   (worldobj snapshot at 10+ Hz while it moves) until it rests. Rocks made around a game's own camera (#creature-plants-rocks-lod)
   are not shared and cannot be matched: only the save's objects can.
+
+## The UFO abduction event of the Creature stage (2026-11-03, fix/w40-gh-issues)
+<a id="creature-ufo-abduction-event"></a>
+
+Ghidra, GOG 2024 (BUG-0520, GitHub #194):
+* ✔ The visiting UFO is a **Drama Manager event**: class `cUFOAbductionEvent` (factory 0xD4D3F0, 0x74 bytes, ctor
+  0xD4C000, vtables 0x147B1D8 / 0x147B058, class id 0x5599EC7, its data class 0x5599EB8). cDramaManager
+  (0xD4E020) builds its events from the prop group 0x0EBCFBC7 in Creature (0xE7CA1F54 in Tribe); one of nine event
+  kinds (0..8, ids 0x5599D0C .. 0x609EEDF), kind 2 is the UFO.
+* ✔ Start (vt+0x30, 0xD4F8A0): in Creature at the avatar's position (Tribe: the player tribe's), height prop
+  0x9B0EF346 (default 20 m), "empire ship" chance prop 0x51BE5FAE; `SporeCoop::UFOAbductionEvent_SpawnUFO`
+  0xD4C150 = stdcall(const Vector3* pos, float height, bool) ret 0xC: SpawnUFO(**type 7**, ...) placed above pos, in
+  Creature `[ufo+0x6C8]+0x5FC |= 1`; the ship goes into the event's map (+0x5C..+0x60, 8-byte nodes, ship at +4).
+* ✔ Update (vt+0x40, 0xD4FBA0, thiscall(event, float dt) ret 4): `SporeCoop::UFO_TickBehavior` 0xC388A0 =
+  thiscall(ufo, float dt, double now s) ret 0xC runs the ship's behaviour tree (BehaviorTreeTickGeneric); when
+  the AI's flag `+0x5FC & 2` is set and no BT state is left, 0x102C350 destroys the ship (it first clears +0x68C of
+  every UFO that names it, then cGameNounManager::DestroyInstance). End (vt+0x2C, 0xD4DA90): DestroyInstance on
+  every ship of the map.
+* ✔ The beam: an abduct strategy's hit (0x10323E0) on a creature (cast 0xCE9F6639) plays the animations
+  0x3CC7EAB / 0x3CC7EB4 and gives it a `cAbductionBeamLocomotion` (0x24 bytes, 0x1030E90); other targets
+  (0xAEB336B4, 0x283D961) get the same locomotion. `cSpaceGameBehaviorAbducted` (0xA0 bytes, factory 0x1032790)
+  is the abducted object's behaviour.
+* ✔ Negative (lab, lane 4, 3 runs): a type 7 ship made with UFOAbductionEvent_SpawnUFO over the partner's puppet,
+  also ticked with UFO_TickBehavior every frame (60 s each, twice per run), never got a target (+0x550, +0x7A8,
+  +0x7AC stayed 0) and took nothing: outside the event its BT does not select a creature (the event's other
+  state, or a stimulus it posts, is needed). How the event's ship picks its creature is not found.
+* ✔ Negative: `npc ... updated at the planet's centre ... dead=1` (npc.cpp) is not a sign of an abduction: the lab
+  prints it for one NPC 58 s into every Creature run with no UFO at all.
+* ? Not known: whether the ship can take a partner's puppet (the players' report says a host crashed every time
+  it took a creature, with the BUG-0507 signature: inferred, yes) and what the game does with the taken creature.

@@ -215,7 +215,8 @@ std::string diag_headline_text();
 const std::string& diag_files_text();
 void diag_install();          // the crash filter, ExitProcess log
 void diag_after_device();     // GPU and other hooks into the log (once)
-void diag_hang_report(const char* why); // the watchdog: no frames while focused (once per run)
+void diag_hang_report(const char* why);
+void diag_init_failed(int result);      // BUG-0521: App::cSporeApp::Init returned 0 (the game ends) // the watchdog: no frames while focused (once per run)
 void diag_crash_test(const char* where); // tests: "thread" (unhandled) | "main"
 // watchdog.cpp
 void watchdog_start();
@@ -269,6 +270,7 @@ extern KitFix g_fix_iniencode; // BUG-0245: UTF-16 BE converted, unknown encodin
 extern KitFix g_fix_inilock;   // BUG-0245: a named mutex per settings file; no "????" writes
 extern KitFix g_fix_exitwait;  // BUG-0243: the exit waits for an update's file swaps
 extern KitFix g_fix_crashtid;  // BUG-0248: a crash report names the faulting thread
+extern KitFix g_fix_initfail;  // BUG-0521: a failed start of the game is reported and explained
 extern KitFix g_fix_logprune;  // BUG-0137: old crash reports, dumps, reports and archives are removed
 inline bool fixed(const KitFix& f) { return f.on != 0; }
 KitFix* kit_fix_find(const char* name);

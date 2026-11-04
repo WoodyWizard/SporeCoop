@@ -964,6 +964,41 @@ void diag_hang_report(const char* why)
     report_step("the archive", [&] { mark_problem(bundle_for_problem(why, p), "stopped responding"); });
 }
 
+// BUG-0521: the game's own start (App::cSporeApp::Init) failed and the game is about to end with
+// ExitProcess(0): no fault, no error code, so neither the crash filter nor exit_report says anything
+// and the player saw the game close. A report and a mark (the next start names it), a log line, and a
+// message that says it is the game's own start that failed and what to check.
+void diag_init_failed(int result)
+{
+    if (!fixed(g_fix_initfail))
+        return;
+    char why[200];
+    snprintf(why, sizeof why, "the game's own start failed (App::cSporeApp::Init returned %d), the game ends", result);
+    std::string p;
+    report_step("the report", [&] { p = diag_write_report(why, nullptr); });
+    report_step("the mark", [&] { mark_problem(p, "could not start"); });
+    report_step("the archive", [&] { mark_problem(bundle_for_problem(why, p), "could not start"); });
+    report_step("the log line", [&] {
+        logf(&g_kit_mod, SK_ERROR,
+             "%s. This is not a crash of a mod: the game stopped its own start (missing or damaged game files, a "
+             "data package it cannot read, a message of the game before this line). Check: start the game once "
+             "without mods (rename SporebinEP1\\mods), verify the game files in GOG Galaxy / Steam. Report: %s",
+             why, p.c_str());
+    });
+    if (instance_id() <= 1 && !GetEnvironmentVariableW(L"SPOREKIT_NO_DIALOGS", nullptr, 0)) // (lab instances)
+        MessageBoxW(nullptr,
+                    L"Spore could not finish starting (the game's own start, App::cSporeApp::Init, failed).\n\n"
+                    L"This is reported by SporeKit, the framework of SporeCoop; it is not a crash of the mod.\n"
+                    L"Please check:\n"
+                    L"  1. Start the game once without mods: rename the folder SporebinEP1\\mods and start it.\n"
+                    L"     If it still does not start, the game itself needs a repair.\n"
+                    L"  2. Verify / repair the game files in GOG Galaxy or Steam.\n"
+                    L"  3. A message of the game or of Windows before this one names the cause.\n\n"
+                    L"A report was saved in SporebinEP1\\mods\\logs (SporeCoop-report-*.zip):\n"
+                    L"attach it to an issue at github.com/WoodyWizard/SporeCoop/issues.",
+                    L"SporeKit: the game could not start", MB_OK | MB_ICONERROR | MB_TOPMOST);
+}
+
 static DWORD WINAPI crash_thread(void*)
 {
     volatile int* p = (int*)0x10;

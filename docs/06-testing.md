@@ -3841,3 +3841,12 @@ its game's `world_scale=` from coop.pool, read before and after the dump). Fails
   when coop.dll loads (log: `fix <name> switched off at startup`). `save_areas` and `save_areas_editor` write it for
   SPORE_FIX_OFF=game.save_areas and remove it at the end. `save_areas` now also reads the game's log line
   `save areas after the game's startup` to show that the game's own startup left the areas out.
+## A failed game start on purpose (2026-11-03, fix/w40-gh-issues)
+<a id="testing-initfail"></a>
+
+* `kit_initfail.py` (BUG-0521): a file `SporebinEP1\mods\test-initfail-<instance>` is read and removed by
+  SporeKit's App::cSporeApp::Init hook, which then returns 0 without calling the game's Init: the game ends with
+  ExitProcess(0) at frame 1, as on the player's PC. `off` in the file switches `kit.fix initfail` off from the
+  start (the twin run; `SPORE_FIX_OFF=initfail` in the test writes it). ~25 s on one lane.
+* Pitfall: returning 0 **after** the game's full Init does not work for this: the game's teardown then faults
+  (0xC0000005 in MSVCR90 / steam_api frames), a crash report instead of the clean exit.

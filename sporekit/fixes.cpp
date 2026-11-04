@@ -20,12 +20,13 @@ KitFix g_fix_iniencode{"iniencode", "a UTF-16 BE settings file is converted loss
 KitFix g_fix_inilock{"inilock", "a named mutex per settings file around conversion and writes; no \"????\" writes (BUG-0245)", 1};
 KitFix g_fix_exitwait{"exitwait", "the game's exit waits (5 s at most) for an update that swaps files (BUG-0243)", 1};
 KitFix g_fix_crashtid{"crashtid", "a crash report names the thread that crashed, not the one writing the report (BUG-0248)", 1};
+KitFix g_fix_initfail{"initfail", "a failed start of the game (cSporeApp::Init returns 0) writes a report and tells the player (BUG-0521)", 1};
 KitFix g_fix_logprune{"logprune", "only the newest crash reports, dumps, reports and archives stay in mods\\logs (BUG-0137)", 1};
 
 std::vector<KitFix*> kit_fixes() { return {&g_fix_stackdump, &g_fix_cheatwait, &g_fix_reentry, &g_fix_hookkeep,
                                        &g_fix_stackov,   &g_fix_crashsafe, &g_fix_logprune, &g_fix_iniutf, &g_fix_hookpark,
                                        &g_fix_crashtid, &g_fix_iniencode, &g_fix_inilock,
-                                       &g_fix_exitwait, &g_fix_hookorig}; }
+                                       &g_fix_exitwait, &g_fix_hookorig, &g_fix_initfail}; }
 
 KitFix* kit_fix_find(const char* name)
 {

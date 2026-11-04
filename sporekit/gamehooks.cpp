@@ -37,10 +37,29 @@ static int SK_THISCALL h_AppSysInit(void* self, int a)
 
 static int SK_THISCALL h_SporeAppInit(void* self, int a)
 {
+    // tests (BUG-0521): mods\test-initfail-<instance> (read and removed here) makes the game's start fail
+    // as it did on a player's PC: Init returns 0 before doing anything (a 0 after a full Init makes the
+    // game's teardown fault, not the clean ExitProcess(0) of that PC). "off" in it: kit.fix initfail off
+    bool fail_test = false;
+    std::wstring marker = mods_dirw() + L"\\test-initfail-" + std::to_wstring(instance_id());
+    if (GetFileAttributesW(marker.c_str()) != INVALID_FILE_ATTRIBUTES) {
+        char b[16] = {};
+        if (FILE* f = _wfopen(marker.c_str(), L"rb")) {
+            fread(b, 1, sizeof b - 1, f);
+            fclose(f);
+        }
+        DeleteFileW(marker.c_str());
+        if (!strncmp(b, "off", 3))
+            g_fix_initfail.on = 0;
+        fail_test = true;
+        SKLOG(SK_WARN, "tests: this start is made to fail (BUG-0521, initfail %s)", g_fix_initfail.on ? "on" : "off");
+    }
     watchdog_mark("SporeApp::Init");
-    int r = o_SporeAppInit(self, a);
+    int r = fail_test ? 0 : o_SporeAppInit(self, a);
     watchdog_mark("SporeApp::Init done");
     SKLOG(SK_INFO, "App::cSporeApp::Init -> %d", r);
+    if (!r)
+        diag_init_failed(r); // BUG-0521
     fire(SK_EV_POST_INIT, nullptr);
     return r;
 }
