@@ -3942,3 +3942,10 @@ its game's `world_scale=` from coop.pool, read before and after the dump). Fails
   part with a creature twin that neither game has (`coop.parts cell collect <i>`), then Cell -> Creature the
   players' way; the twin must be IsUnlocked (`coop.parts states`, the `u`) on both games, then the test stops.
   BUG-0446: SPORE_FIX_OFF=parts.shared_cell FAILS (lab 20261104-022323), on PASS (lab 20261104-022114).
+* `creations` (coop_creations.py, ~1 min, BUG-0345 since 2026-11-04): the guest's own creature by the per-world
+  rule: `coop.creations unchoose creature` + `worlds forget` (a world it never played its creature in) -> the
+  world's species; `choose` -> own, the notice "plays its own creature" in both game logs, `worlds` records it;
+  unchoose (same world) -> still own; forget -> the world's species; the window's next. The host knows the
+  guest's creature under its shared remapped key (7C...), not the guest's id: compare the host's puppet with
+  "not the world's species". It leaves the fixture world recorded. SPORE_FIX_OFF=creations.guest_world_species
+  FAILS (lab 20261104-033933).

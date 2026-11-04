@@ -3,6 +3,9 @@
 ## [Unreleased]
 
 ### Fixed
+- A guest in a new world now plays that world's species, not its cell or creature from another game; it plays its
+  own creation when it picks it in the co-op window or already played it in this world, and everybody gets a
+  notice "<name> plays its own creature" (BUG-0345).
 - Cell: after a knockout and the respawn next to your partner, and after your cell is put next to the host after a
   load or an editor, your view is centred on your cell again; it stayed off to the side until you swam a while
   (BUG-0343).

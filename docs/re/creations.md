@@ -1035,7 +1035,7 @@ BUG-0345 ("the guest spawns in the Cell stage with its previous cell creature"),
   jump on joining (`dna: food 24 -> 170 cause=meal:255+146`) is the host's shared total applied to the guest;
   the host's "+68 / 100 DNA" were the guest's meals (BUG-0510, fixed in 0.7.4 by the 1/N pace). Not seen: any
   DNA from the parts of an own creation.
-* Not changed (a design decision for the owner, BUG-0345 stays open): (a) a notice on both sides that a guest
+* ~ superseded (2026-11-04): see the decision below. Not changed (a design decision for the owner, BUG-0345 stays open): (a) a notice on both sides that a guest
   plays its own creation from My Creations; (b) a guest's default is the world's species and its own creation
   only by choice (as the host since BUG-0344): this flips `coop_creations.py`'s feature; (c) a host setting.
 * ✔ (runtime, BUG-0446, `coop_parts_shared.py --from-cell --guest-cell-part`, lane 4) A Cell part the guest
@@ -1045,3 +1045,14 @@ BUG-0345 ("the guest spawns in the Cell stage with its previous cell creature"),
   20261104-022323). Part index -> twin: table 0x1483DD8 `{part, cell item}` then 0x1485FE8 (#creations-cell-twins):
   2 FE534766, 3 3A3C49A5, 4 32AC9620, 5 B70894B6, 6 4908E576, 7 C5744537, 8 1610AD94, 9 DEF1C7FF, 10 30E66572,
   11 02B3EDDB 7E262CF0 BE830BDE; parts 0, 1 and 12 have none.
+* Decision (orchestrator for the owner, 2026-11-04) and fix `creations.guest_world_species` (BUG-0345): a guest plays
+  its own creation by default only when it chose it (the co-op window, choices.ini: holds in every world) or
+  already played it in THIS world; else the world's species, as the host. "Played in this world": our folder's
+  `SporeCoop\worlds.ini`, `[creature]` / `[cell]` `<world crc> = <creation>` (the world crc is modes::current_world,
+  the crc32 of the planet file name), written when the guest's avatar has its own creation in that world, and by
+  the guest's own editor (its result is recorded for the world instead of becoming a choice for every world).
+  The first time per session and world a guest plays its own creation, every game gets the notice "<name> plays
+  its own creature" (or cell). Off: the newest own creation in any world (0.7.4). Test commands: `coop.creations
+  unchoose <kind>` (no choice), `coop.creations worlds [forget]` (the record of this world).
+  Lab pitfall: worlds.ini lives in each lane's guest profile; `coop_creations.py` leaves the fixture world recorded,
+  so later tests there play the guest's own creature by default as before.
