@@ -8,7 +8,8 @@ main thread's stack as if the game hung.
 
   minimize  `kit.test.window minimize` for 40 s: the frames stop, the loop goes on: the log has the
             INFO line "... the game loop runs ... not a hang" and no WATCHDOG 'no frames' dump
-  hide      the same with the window hidden (occluded / not drawn)
+  hide      (only with --case) the window hidden: under Wine the game goes on presenting (without
+            the frame cap, ~80 000 frames/s), so there is no stall to tell apart; not in the default
   hang      `kit.test.hang 40000` blocks the main thread: a real hang still writes the dump and
             the hang report
 
@@ -26,7 +27,7 @@ from sporectl import Console  # (after twoinst: it puts tools/ on the path)
 
 GAME = lane.game_dir()
 LOGDIR = os.path.join(GAME, 'SporebinEP1', 'mods', 'logs')
-CASES = ['minimize', 'hide', 'hang']
+CASES = ['minimize', 'hang']
 
 
 def logname():
