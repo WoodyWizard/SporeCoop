@@ -2096,10 +2096,128 @@ static void place_chiefs(double now)
     }
 }
 
+// BUG-0505: the grab behaviour (node 0x0462854D, tick 0xDAB4A0) claims one of the tribe's grab spots of the
+// tool's type (SporeCoop::cTribe_ToolLayout: a ring ~7 m round the tool for the fixture's creature) and walks
+// to it (node state 1: wait for the walk's arrival, no time limit). A spot next to another object (seen: 2.2 m
+// from the fire pit, the member's radius 2.87) is never reached: the walk stops 1.5 m short and the member
+// stands there for good, for the host's own orders as for a guest's (a second order with the same tool makes
+// the same record and does not restart the node). Here a player tribe member standing still for 4 s in that
+// state within 3 m of its walk's goal is set onto the goal facing the tool, and the game's behaviour goes on
+// (arrival, the grab animation, SetSpecializedTool). `coop.fix tribe.grab_spot off`: it stands there.
+static uint32_t bt_node(void* c);
+static bool g_grab_spot_fix = true;
+COOP_FIX("tribe.grab_spot", "BUG-0505", g_grab_spot_fix,
+         "tribe: a member that cannot reach its spot at a tool rack is set onto it and takes the tool");
+constexpr uint32_t kGrabNode = 0x0462854D;
+static uint32_t g_grab_spot_moves;
+struct GrabWatch {
+    net::Vec3 pos;
+    double since;
+};
+static std::unordered_map<void*, GrabWatch> g_grab_watch;
+static double g_grab_next;
+
+// the leaf behaviour node's memory (the 6th argument of its enter / tick; docs/re/tribe.md#tribe-orders)
+static uint32_t* leaf_mem(void* c)
+{
+    uint8_t* ai = F<uint8_t*>(c, 0xB4C);
+    if (!ai || !skg::readable(ai + 0x1D0, 0x20))
+        return nullptr;
+    int depth = *(int*)(ai + 0x1DC);
+    if (depth < 1 || depth > 15)
+        return nullptr;
+    uint32_t* m = (uint32_t*)(ai + 0x1D0 + 4 * (0xF + 0x2B * (depth - 1)));
+    return skg::readable(m, 0x20) ? m : nullptr;
+}
+
+// the walk's goal of a citizen (spatial c+0xC0: list +0x1F4..+0x1F8 of 0x3C-byte goals, else +0x208)
+static bool walk_goal(void* c, net::Vec3& g)
+{
+    uint8_t* sp = (uint8_t*)c + 0xC0;
+    if (!skg::readable(sp + 0x1F4, 0x80))
+        return false;
+    uint8_t *lb = *(uint8_t**)(sp + 0x1F4), *le = *(uint8_t**)(sp + 0x1F8);
+    float* p = (float*)(lb == le ? sp + 0x208 : le - 0x3C);
+    if (!skg::readable(p, 12))
+        return false;
+    g = {p[0], p[1], p[2]};
+    return true;
+}
+
+// a rotation whose forward (+Y) points from `at` toward `to` and whose up (+Z) is the planet's up at `at`
+static net::Quat facing(const net::Vec3& at, const net::Vec3& to)
+{
+    float l = std::sqrt(at.x * at.x + at.y * at.y + at.z * at.z);
+    if (l < 1.f)
+        return {0, 0, 0, 1};
+    net::Vec3 u{at.x / l, at.y / l, at.z / l}, d{to.x - at.x, to.y - at.y, to.z - at.z};
+    float k = d.x * u.x + d.y * u.y + d.z * u.z;
+    net::Vec3 f{d.x - k * u.x, d.y - k * u.y, d.z - k * u.z};
+    float fl = std::sqrt(f.x * f.x + f.y * f.y + f.z * f.z);
+    if (fl < 1e-3f)
+        return upright(at);
+    f = {f.x / fl, f.y / fl, f.z / fl};
+    net::Vec3 r{f.y * u.z - f.z * u.y, f.z * u.x - f.x * u.z, f.x * u.y - f.y * u.x}; // right = forward x up
+    // the matrix with the columns r, f, u to a quaternion
+    float m00 = r.x, m01 = f.x, m02 = u.x, m10 = r.y, m11 = f.y, m12 = u.y, m20 = r.z, m21 = f.z, m22 = u.z;
+    float tr = m00 + m11 + m22;
+    net::Quat q;
+    if (tr > 0) {
+        float s = std::sqrt(tr + 1.f) * 2;
+        q = {(m21 - m12) / s, (m02 - m20) / s, (m10 - m01) / s, 0.25f * s};
+    } else if (m00 > m11 && m00 > m22) {
+        float s = std::sqrt(1.f + m00 - m11 - m22) * 2;
+        q = {0.25f * s, (m01 + m10) / s, (m02 + m20) / s, (m21 - m12) / s};
+    } else if (m11 > m22) {
+        float s = std::sqrt(1.f + m11 - m00 - m22) * 2;
+        q = {(m01 + m10) / s, 0.25f * s, (m12 + m21) / s, (m02 - m20) / s};
+    } else {
+        float s = std::sqrt(1.f + m22 - m00 - m11) * 2;
+        q = {(m02 + m20) / s, (m12 + m21) / s, 0.25f * s, (m10 - m01) / s};
+    }
+    return q;
+}
+
+static void grab_spot_tick(double now)
+{
+    if (!g_grab_spot_fix || now < g_grab_next)
+        return;
+    g_grab_next = now + 0.5;
+    void* pt = player_tribe();
+    std::unordered_set<void*> seen;
+    for (void* c : pt ? members(pt) : std::vector<void*>{}) {
+        if (!game::object_alive(c) || game::is_dead(c) || bt_node(c) != kGrabNode)
+            continue;
+        uint32_t* m = leaf_mem(c);
+        net::Vec3 goal;
+        if (!m || m[0] != 1 || (int)m[6] < 0 || !m[1] || !walk_goal(c, goal))
+            continue; // state 1: walking to the claimed spot m[6] of the tool m[1]
+        seen.insert(c);
+        net::Vec3 p = game::position(c);
+        auto it = g_grab_watch.find(c);
+        if (it == g_grab_watch.end() || net::dist(it->second.pos, p) > 0.3f || drive::speed(game::velocity(c)) > 0.3f) {
+            g_grab_watch[c] = {p, now};
+            continue;
+        }
+        float d = net::dist(p, goal);
+        if (now - it->second.since < 4.0 || d > 3.f || d < 0.05f)
+            continue;
+        net::Vec3 tp = goal;
+        game::object_position((void*)(uintptr_t)m[1], tp);
+        game::teleport(c, goal, facing(goal, tp));
+        g_grab_spot_moves++;
+        g_grab_watch.erase(c);
+        H->log(M, SK_INFO, "tribe: member #%u stood %.1f m short of its spot at a tool for 4 s: set onto it", member_id(c), d);
+    }
+    for (auto it = g_grab_watch.begin(); it != g_grab_watch.end();)
+        it = seen.count(it->first) ? std::next(it) : g_grab_watch.erase(it);
+}
+
 static void coop_tick(double now)
 {
     chiefs_tick();
     if (is_host()) {
+        grab_spot_tick(now);
         spread_chiefs(now);
         place_chiefs(now);
         duet_tick(now);
@@ -2656,7 +2774,8 @@ std::string debug(const std::vector<std::string>& a)
             s += b;
         }
         char b[96];
-        snprintf(b, sizeof b, "tools n=%d tool_sets=%u hold_fix=%d\n", u.i, g_tool_sets, (int)g_tool_hold_fix);
+        snprintf(b, sizeof b, "tools n=%d tool_sets=%u hold_fix=%d grab_spot=%d moves=%u\n", u.i, g_tool_sets, (int)g_tool_hold_fix,
+                 (int)g_grab_spot_fix, g_grab_spot_moves);
         return s + b;
     }
     if (a.size() >= 2 && a[0] == "build" && is_host()) { // build <type> [metres]: test setup, a tool as if bought
@@ -2702,6 +2821,19 @@ std::string debug(const std::vector<std::string>& a)
             s += b;
         }
         return s;
+    }
+    if (a.size() >= 5 && a[0] == "put" && is_host()) { // put <member id> <x> <y> <z>: test setup (BUG-0505), on the ground
+        void* c = local_of((uint16_t)atoi(a[1].c_str()));
+        if (!c)
+            return "no such member";
+        net::Vec3 p{(float)atof(a[2].c_str()), (float)atof(a[3].c_str()), (float)atof(a[4].c_str())};
+        float g = game::ground_radius(p), pl = std::sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
+        if (g > 1.f && pl > 1.f)
+            p = {p.x / pl * g, p.y / pl * g, p.z / pl * g};
+        game::teleport(c, p, game::orientation(c));
+        char b[96];
+        snprintf(b, sizeof b, "put #%s at (%.1f %.1f %.1f)", a[1].c_str(), p.x, p.y, p.z);
+        return b;
     }
     if (a.size() >= 2 && a[0] == "ai") { // ai <member id>: BUG-0505, the member's order record, node and walk
         void* c = local_of((uint16_t)atoi(a[1].c_str()));
