@@ -3850,3 +3850,16 @@ its game's `world_scale=` from coop.pool, read before and after the dump). Fails
   start (the twin run; `SPORE_FIX_OFF=initfail` in the test writes it). ~25 s on one lane.
 * Pitfall: returning 0 **after** the game's full Init does not work for this: the game's teardown then faults
   (0xC0000005 in MSVCR90 / steam_api frames), a crash report instead of the clean exit.
+## Tribe: a guest's saves and own tribes (2026-11-03, fix/w41-tribe-world)
+<a id="testing-tribe-guest-world"></a>
+
+* `coop_tribe_save_strip.py` (suite `tribe_save_strip`, ~2 min, the free lane for Carol): Carol joins the
+  host's tribe world, the host adds 4 adults (`coop.tribe spawn 4`) and forms an NPC tribe 70 m away
+  (`coop.tribe npc_tribe 3 70`); Carol saves (`coop.save`), restarts alone and loads: her player tribe holds her
+  own members only and no tribe stands where the made one did (`coop.tribe` marks `made=1` tribes and `ours=1`
+  members on a guest). `SPORE_FIX_OFF=tribe.save_strip` fails. The host's game forms more NPC tribes of its own
+  while the test runs (2 more in 2 min on the tribe fixture): compare tribes by place, not by count.
+* `coop_tribe_guest_tribes.py` (suite `tribe_guest_tribes`, cold, ~2 min): `coop.tribe form` on the guest runs
+  its game's NPC tribe controller's forming (NpcTribeController_FormTribe, what the game does during play); then
+  with the fix off for a moment a tribe the host has not is made and must lose its members once the fix is on.
+  `SPORE_FIX_OFF=tribe.guest_tribes` fails.

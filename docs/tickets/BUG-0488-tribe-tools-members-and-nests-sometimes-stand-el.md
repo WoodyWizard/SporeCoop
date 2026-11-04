@@ -14,7 +14,7 @@ commits:
 tests:
 signature:
 docs:
-related:
+related: BUG-0523, BUG-0481, BUG-0514
 ---
 
 ## Report
@@ -23,7 +23,13 @@ Found by the lab (no player report). Target: 0.7.4.
 <!-- what the player (or the test) saw, in our words; no player names, no paths from their PC -->
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+Analysis 2026-11-03 (fix/w41-tribe-world):
+* Tools (`unmatched:tribe_tool`, the biggest share, 4%): observed in the code, nothing in the mod syncs tribe tools
+  (no CreateTool on a guest, no tool table): each game makes the tools its tribes buy after the world was shared
+  at its own spot. Split into BUG-0523 (to be done with BUG-0514's tool mapping on fix/w41-tribe-actions).
+* Members (`unmatched:citizen`, "8 on the host, 6 on the guest, 2 host / 0 guest without a partner"): mirrors the
+  guest had not spawned yet (BUG-0481's late mirrors), not members elsewhere.
+* Nests (`unmatched:nest`, campaign_tribe#2 only): not analysed.
 
 ## Fix
 <!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
@@ -34,3 +40,4 @@ Found by the lab (no player report). Target: 0.7.4.
 
 ## History
 - 2026-11-03: opened.
+- 2026-11-03: analysed on fix/w41-tribe-world; tools split into BUG-0523, not fixed.

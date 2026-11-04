@@ -1183,3 +1183,31 @@ lab 20261103-150636, 298 samples:
   send interval) and prints the raw p90 next to it. `coop.tribe delay <s>` (guest, tests) sets the mirrors'
   interpolation delay: `PLAY_TRIBE_GUEST_CMDS="coop.tribe delay 0.6"` is a planted late mirror the check
   must fail.
+
+## A guest's own tribes and saves (2026-11-03, fix/w41-tribe-world)
+<a id="tribe-guest-world"></a>
+
+* ✔ The objects the mod makes in a Tribe guest's game: the members `guest_state` spawns as mirrors
+  (`spawn_member`: cTribe vt 0x98 SpawnMember, else CreateCitizen + AddMember) and the NPC tribes it makes
+  for the host's (SpawnNpcTribe, tribe.npc_tribes, BUG-0381) with their hut (+0x368), tools (+0x36C, +0x380)
+  and food mat (noun 0x629BAFE; ~ it holds its tribe's pointer at +0x2C: found by a scan at the first save,
+  lane 5 2026-11-03, "a food mat holds its tribe at +0x2C"). Members of the guest's own game bound as
+  mirrors (the loaded world's) are the player's.
+* ✔ (BUG-0495, tribe.save_strip, lab 20261103-234419) A save on the guest writes none of them: the savestrip
+  filter nulls their references, and while the save is written the members leave the tribes' member vector
+  +0x340 and selectable vector +0x354 (citizen+0xC0). The reloaded world (alone, no session) had the player
+  tribe with the guest's own 2 members (7 before the save: 5 spawned mirrors), no tribe where the made ones
+  stood, no fault; the mirrors were back in the session after the save.
+* ✔ `SporeCoop::NpcTribeController_FormTribe` (GOG 2024 0xCC6440): thiscall(controller, int) ret 4, slot 0x24
+  of the controller's vtable 0x1476878 (no direct caller), the singleton from `cNpcTribeController::Get`
+  0xCC8C90 (global 0x169B054, ctor 0xCC5BF0). Each call forms the next tribe when the planet has fewer than its
+  property list allows (the spawn marker nearest the player tribe, docs above).
+* ~ (BUG-0483) The detector's guest-only villages came after the live Creature -> Tribe change (campaign_ct)
+  only. Inferred: the guest's own controller formed a tribe at another time or marker than the host's (the
+  guests' games form tribes, the host's tribe there came later or elsewhere), or a host tribe the guest's was
+  mapped to was gone. tribe.guest_tribes: on a guest in a session the controller's forming does not run (the
+  host's tribes come through tribe.npc_tribes), and a local NPC tribe no host tribe maps to (40 m, or the one
+  made for it) for 5 s of complete cycles loses its members (RemoveMember with destroy). Its hut, tools and
+  food mat stay: no game function to remove a whole tribe is known (? which one the game uses when a tribe is
+  conquered).
+* ? Tools (BUG-0523): the mod syncs no tool; each game makes the tools its tribes buy at its own spots.
