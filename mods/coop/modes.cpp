@@ -29,6 +29,27 @@ bool (*g_model_for_player)(uint8_t player, int kind, uint32_t key[3]);
 // ---------------------------------------------------------------- creature / captain
 static void* creature_local() { return game::avatar(); }
 
+// BUG-0376: the partner's jumps (its creature off the ground) were mostly not shown: its game sent no airborne
+// state (PF_JUMPING was never set), creature.puppet_ground put a target up to kOverGround over this game's ground
+// into it and the game put a grounded puppet (+0x137 = 1) placed higher back onto its terrain in the same frame
+// (21-22 of 24 hops stayed on the ground). With creature.puppet_air the partner's game sends PF_JUMPING while its
+// creature is off the terrain (+0x137 = 0, more than kAirOver over GetHeightAt; on a rock too, where nothing
+// changes: a creature on a rock is not grounded either) and the puppet of such a state is placed at the target
+// (not onto the ground) and marked not grounded, so the game lets it fall as the partner's own creature does.
+// Off: 0.7.4 (no flag sent, the flag ignored).
+static bool g_puppet_air_fix = true;
+COOP_FIX("creature.puppet_air", "BUG-0376", g_puppet_air_fix, "creature: the partner's jumps are shown (its creature leaves the ground on this screen too)");
+constexpr float kAirOver = 0.15f; // m over GetHeightAt: a grounded creature walks 0-3 cm over it
+constexpr float kAirGap = 0.3f;   // m: variant 3, farther from the target in the air it is placed there
+int g_puppet_air_variant = 0;     // tests (coop.track air <v>): 1 placed without the not-grounded mark, 2 teleported,
+                                  // 3 walked on in the air, 4 its own fall speed kept
+
+static bool own_airborne(void* av)
+{
+    return g_puppet_air_fix && game::in_creature_stage() && !game::grounded(av) && !game::is_dead(av) &&
+           drive::over_ground(game::position(av)) > kAirOver;
+}
+
 static void creature_fill(void* av, net::PlayerState& st)
 {
     st.flags |= net::PF_IN_WORLD;
@@ -44,6 +65,8 @@ static void creature_fill(void* av, net::PlayerState& st)
         st.flags |= net::PF_DEAD;
     if (game::sneaking(av))
         st.flags |= net::PF_SNEAKING;
+    if (own_airborne(av))
+        st.flags |= net::PF_JUMPING; // BUG-0376
     st.health = game::health(av);
     st.max_health = game::max_health(av);
     st.species = game::species_instance(av);
@@ -197,13 +220,33 @@ constexpr float kJumpM = 3.f;          // m in one frame: no creature walks that
 constexpr float kJumpSpeed = 40.f;     // m/s between two states: a jump (sprints and charges stay under ~15)
 float puppet_jump_speed() { return g_puppet_jump_fix ? kJumpSpeed : 0.f; }
 
+// BUG-0435: creature.puppet_ground put a target 0-kOverGround over GetHeightAt kSink into it, but GetHeightAt is the plain
+// terrain: on the lower part of a nest mound (a grounded partner 0.4 m over it) the puppet was put under the mound's
+// surface and stayed there (drawn 0.44 m in the ground; the game does not lift a creature put that far under), and a
+// partner crossing 0.5 m made it step 0.4-0.5 m. With creature.puppet_mound a grounded partner (no PF_JUMPING) more
+// than kMoundMin over GetHeightAt is put kSink under its own height instead (on the mound, as on the terrain: the game
+// sets a creature 5 cm in its ground onto it). Lower down (the plain terrain, 0-3 cm) as before. Off: 0.7.4.
+static bool g_puppet_mound_fix = true;
+COOP_FIX("creature.puppet_mound", "BUG-0435", g_puppet_mound_fix, "creature: the partner's creature on a nest mound stands on the mound, not in it");
+constexpr float kMoundMin = 0.1f; // m over GetHeightAt
+
 static void creature_drive(void* p, const net::PlayerState& s_in, drive::State& ds, double now)
 {
     puppet_sneak(p, s_in);
     ds.drawn = game::position(p);
     net::PlayerState s = s_in;
-    if (g_puppet_ground_fix && game::in_creature_stage())
-        s.pos = drive::on_own_ground(s.pos);
+    // BUG-0376: the partner is off the ground: never onto this game's ground
+    const bool air = g_puppet_air_fix && game::in_creature_stage() && (s.flags & net::PF_JUMPING) &&
+                     !(s.flags & net::PF_DEAD);
+    if (g_puppet_ground_fix && game::in_creature_stage() && !air) {
+        const float over = drive::over_ground(s.pos);
+        if (g_puppet_mound_fix && over > kMoundMin && over <= drive::kOverGround) {
+            // BUG-0435: a grounded partner this high stands on raised ground (a nest mound): kSink under its own height
+            float r = std::sqrt(s.pos.x * s.pos.x + s.pos.y * s.pos.y + s.pos.z * s.pos.z), k = (r - drive::kSink) / r;
+            s.pos = {s.pos.x * k, s.pos.y * k, s.pos.z * k};
+        } else
+            s.pos = drive::on_own_ground(s.pos);
+    }
     if (g_puppet_deep_fix && game::in_creature_stage())
         s.pos = drive::out_of_ground(s.pos, true); // BUG-0513: 3-15 m under this game's ground
     const bool jumped = g_puppet_jump_fix && ds.jump_have && net::dist(s.pos, ds.jump_from) > kJumpM;
@@ -225,7 +268,32 @@ static void creature_drive(void* p, const net::PlayerState& s_in, drive::State& 
         s.vel = drive::path_velocity(ds);
     float sp = drive::speed(s.vel);
     bool walk = g_puppet_walk_fix && game::in_creature_stage() && sp > 0.3f && net::dist(game::position(p), s.pos) < 8.f;
-    if (walk) {
+    if (air) {
+        // BUG-0376: in the air the puppet is where the partner is (walked on: its walk goes on after the landing),
+        // not grounded, so the game's update lets it fall instead of putting it onto its terrain
+        // Not walked in the air: walked (walk_place) it was put onto its terrain in 15-20 frames of a 0.4 s fall
+        // (lab, coop.track air 3 = this, 0 the walk)
+        if (walk && g_puppet_air_variant == 3) {
+            drive::walk_place(p, s.pos, s.rot, s.vel, ds, now);
+            if (net::dist(game::position(p), s.pos) > kAirGap) // (a jump's start: the walk's catch-up is too slow)
+                game::place(p, s.pos, s.rot);
+        } else {
+            drive::walk_end(p, s.pos, ds, now); // (it walks again after the landing)
+            if (g_puppet_air_variant == 2)
+                game::teleport(p, s.pos, s.rot);
+            else
+                game::place(p, s.pos, s.rot);
+            ds.last_step = now;
+            ds.track = drive::Track{};
+        }
+        if (g_puppet_air_variant != 1)
+            game::set_grounded(p, false);
+        // its fall speed is the partner's: left to the game it grew frame by frame while the placing held it up, and
+        // after 0.3-0.5 s one update took it 1-1.6 m down onto its terrain (landed) while the partner was still up
+        if (g_puppet_air_variant != 4)
+            *(net::Vec3*)((uint8_t*)p + game::kVelOff) = s.vel;
+        ds.airs++;
+    } else if (walk) {
         drive::walk_place(p, s.pos, s.rot, s.vel, ds, now); // (the shared driver, driver.h)
     } else {
         // it stands again: no walk to the goal ahead (a MoveTo to where it stands, not StopMovement: with

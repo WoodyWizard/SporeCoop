@@ -136,6 +136,13 @@ int c_abilities(void*, int argc, const char* const* argv, SkOut* out)
         SAY("at ground %.2f\n", g);
         return 0;
     }
+    if (argc > 1 && !strcmp(argv[1], "halt")) { // tests (BUG-0408): it stops at once (a stop without slowing down)
+        game::stop(av);
+        game::teleport(av, game::position(av), game::orientation(av));
+        *(net::Vec3*)((uint8_t*)av + game::kVelOff) = net::Vec3{};
+        SAY("halted\n");
+        return 0;
+    }
     if (argc > 2 && !strcmp(argv[1], "lift")) { // put it <m> higher (its fall is the second half of a jump)
         net::Vec3 p = game::position(av);
         float r = std::sqrt(p.x * p.x + p.y * p.y + p.z * p.z), k = (r + (float)atof(argv[2])) / r;
@@ -557,7 +564,7 @@ void coop_register_debug_commands2(const SkHost* host, SkMod* self)
                       c_load, nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.ground", "coop.ground <x> <y> <z> - terrain radius under a point (tests, BUG-0329)", c_ground,
                       nullptr, SK_CMD_MAIN_THREAD);
-    host->command_add(self, "coop.abilities", "coop.abilities [play <i> | lift <m> | goto <x> <y> <z> | ground <x> <y> <z>] - the own avatar's abilities (tests, BUG-0366)", c_abilities,
+    host->command_add(self, "coop.abilities", "coop.abilities [play <i> | lift <m> | halt | goto <x> <y> <z> | ground <x> <y> <z>] - the own avatar's abilities (tests, BUG-0366)", c_abilities,
                       nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.menu", "coop.menu - save and leave the stage for the galaxy menu (tests)", c_menu,
                       nullptr, SK_CMD_MAIN_THREAD);

@@ -604,6 +604,9 @@ struct TrackSample {
     uint16_t id = 0;      // Tribe (BUG-0365): the member id (who = its owner), 0 in Creature
     // BUG-0414: the partner's animations played on the puppet so far (MSG_ANIM) and the last one's id
     uint32_t ranims = 0, ranim = 0;
+    // BUG-0436: its size on the observer's screen, pixels per metre (a point 1 m over it projected), 0 when not known:
+    // the game animates a creature far from its camera without its walk gait
+    float ppm = 0;
 };
 static std::deque<TrackSample> g_track;
 // tests (BUG-0367): `coop.track lift <m>`: this game takes the partners' Creature states <m> further from
@@ -650,6 +653,12 @@ static TrackSample& track_one(uint8_t who, void* c, const net::PlayerState* s, u
     x.vis = H->world_to_screen(w, sc) ? 1 : 0;
     x.sx = sc[0];
     x.sy = sc[1];
+    {
+        float r = std::sqrt(x.p.x * x.p.x + x.p.y * x.p.y + x.p.z * x.p.z), sc2[2] = {0, 0};
+        float w2[3] = {x.p.x + x.p.x / r, x.p.y + x.p.y / r, x.p.z + x.p.z / r};
+        if (x.vis && r > 1.f && H->world_to_screen(w2, sc2))
+            x.ppm = std::sqrt((sc2[0] - sc[0]) * (sc2[0] - sc[0]) + (sc2[1] - sc[1]) * (sc2[1] - sc[1]));
+    }
     if (s) {
         x.tgt = s->pos;
         x.rv = drive::speed(s->vel);
@@ -723,6 +732,11 @@ int c_track(void*, int argc, const char* const* argv, SkOut* out)
             g_track_lift = (float)atof(argv[2]);
         SAY("lift %.2f\n", g_track_lift);
         return 0;
+    } else if (!strcmp(a, "air")) { // tests (BUG-0376): the puppet in the air 0 placed + not grounded, 1 placed, 2 teleported, 3 walked, 4 own fall speed
+        if (argc > 2)
+            modes::g_puppet_air_variant = atoi(argv[2]);
+        SAY("air %d\n", modes::g_puppet_air_variant);
+        return 0;
     } else if (!strcmp(a, "novel")) {
         if (argc > 2)
             g_track_novel = atoi(argv[2]) != 0;
@@ -732,14 +746,15 @@ int c_track(void*, int argc, const char* const* argv, SkOut* out)
     else if (!strcmp(a, "dump")) {
         // dump [from] [n]: t who flags tp px py pz dx dy dz tx ty tz gv rv anim gait gait2 moving speed_state vis sx sy
         // hd ht (BUG-0366: heights over the ground) id (BUG-0365: the Tribe member id, 0 in Creature) ranims ranim
-        // (BUG-0414: the partner's animations played on the puppet so far, the last one); new columns go at the
+        // (BUG-0414: the partner's animations played on the puppet so far, the last one) ppm (BUG-0436: pixels per metre on
+        // the screen); new columns go at the
         // end (parsers take >= the columns they know)
         size_t from = argc > 2 ? (size_t)atol(argv[2]) : 0, n = argc > 3 ? (size_t)atol(argv[3]) : 2000;
         for (size_t i = from; i < g_track.size() && i < from + n; i++) {
             const auto& x = g_track[i];
-            SAY("%.4f %u %u %u %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.2f %.2f %08X %d %d %d %d %d %.0f %.0f %.3f %.3f %u %u %08X\n", x.t,
+            SAY("%.4f %u %u %u %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.2f %.2f %08X %d %d %d %d %d %.0f %.0f %.3f %.3f %u %u %08X %.1f\n", x.t,
                 x.who, x.flags, x.tp, x.p.x, x.p.y, x.p.z, x.d.x, x.d.y, x.d.z, x.tgt.x, x.tgt.y, x.tgt.z, x.gv, x.rv,
-                x.anim, x.gait, x.gait2, x.moving, x.speed_state, x.vis, x.sx, x.sy, x.hd, x.ht, (unsigned)x.id, x.ranims, x.ranim);
+                x.anim, x.gait, x.gait2, x.moving, x.speed_state, x.vis, x.sx, x.sy, x.hd, x.ht, (unsigned)x.id, x.ranims, x.ranim, x.ppm);
         }
         return 0;
     }
@@ -4105,8 +4120,8 @@ int c_status(void*, int, const char* const*, SkOut* out)
                 : g_mode == modes::kCell   ? *(uint32_t*)((uint8_t*)r.puppet + 0xFC) // cell model
                                            : 0u);
             if (g_mode == modes::kCreature)
-                SAY("   drive err=%.2f speed=%.2f nudges=%u kept=%u teleports=%u walk_goals=%u jumps=%u\n", r.drv.last_err,
-                    r.drv.last_speed, r.drv.nudges, r.drv.nudges_kept, r.drv.teleports, r.drv.goals, r.drv.jumps);
+                SAY("   drive err=%.2f speed=%.2f nudges=%u kept=%u teleports=%u walk_goals=%u jumps=%u airs=%u\n", r.drv.last_err,
+                    r.drv.last_speed, r.drv.nudges, r.drv.nudges_kept, r.drv.teleports, r.drv.goals, r.drv.jumps, r.drv.airs);
         }
         // tests (BUG-0507): the puppet the mod holds is a live creature in the game's own object list
         if (r.puppet && creature_puppet(r.puppet_adapter))

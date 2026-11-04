@@ -3925,6 +3925,27 @@ its game's `world_scale=` from coop.pool, read before and after the dump). Fails
 * `evolve_key` (coop_evolve_in_place.py --case creature --nosave, ~2.5 min): `coop.evokey nosave` turns the host's
   in-place save off (a host alone does not save either); `coop.evokey` prints `keys_set=`.
 
+## Puppet look: jumps, nest mound, stops, the gait near the camera (2026-11-04, fix/w41-puppet-look)
+<a id="testing-puppet-look"></a>
+
+* `coop_puppet_walk.py --air` (suite `puppet_air`, warm, ~1.5 min: `--dir guest --jumps 0.9 --secs 30`, hops by
+  `coop.abilities lift 1.5`): of the frames with the walker's target more than 0.4 m over the observer's ground, the
+  next frame draws the puppet at least half as high in >= 80 % (at least 5 hops). With `--air` a drawn frame step that
+  follows a step of the target itself (the hop is a teleport of the walker's own creature) is no jump of the driving.
+  `SPORE_FIX_OFF=creature.puppet_air` fails (5 %; with the fix 99 %).
+* `--mound x,y,z` (suite `puppet_mound`, cold: `--goto`): the walker stands 10 s 0.5 m over that point (it lands on
+  the fixture's nest mound, lower part at -128.4,-487.5,-67.4), then walks; checks that of the frames with the target
+  over 0.15 m above GetHeightAt and the puppet on the screen at most 10 % are drawn 0.15 m under the walker's height.
+  `SPORE_FIX_OFF=creature.puppet_mound` fails (179 of 303 frames).
+* `--stop-walk`: walks of 1-2.5 s by W, each followed by a 1.4 s stop, 60 % of them abrupt (`coop.abilities halt`:
+  StopMovement, a teleport in place, velocity 0); prints per stop the drawn way after the stop less the target's
+  (`slid on ...`) and checks at most 10 % over 0.15 m. Not in the suite: no stop slid with the 0.7.4 driving (BUG-0408).
+* `--zoom N`: both cameras zoomed out by N wheel turns (`wheel x y -5`); the wheel stops at 25-60 px/m.
+* `coop.track` column 29 `ppm`: pixels per metre of the creature on this game's screen (0 off screen). puppet_walk
+  judges the walk gait only where it is >= 10 (BUG-0436: three gait-0 runs had ~1 px/m, the camera hundreds of m
+  away) and prints `NOT MEASURED ... the observer's camera is far away` when most frames are farther.
+* `coop.track air <v>` (tests): the puppet in the air 0 placed and marked not grounded (the fix), 1 placed only, 2
+  teleported, 3 walked on (walk_place).
 ## Cell leftovers of 0.7.5: the camera, the partner in a level change, Cell twins (2026-11-04, fix/w41-cell-left)
 <a id="testing-l1-cell"></a>
 

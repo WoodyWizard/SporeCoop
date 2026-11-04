@@ -1247,6 +1247,13 @@ bool gait_state(void* c, int* gait, int* gait2, int* moving, int* speed_state)
     return true;
 }
 
+bool grounded(void* c) { return c && skg::readable(c, 0x138) && field<uint8_t>(c, 0x137) != 0; }
+void set_grounded(void* c, bool on)
+{
+    if (c && skg::readable(c, 0x138))
+        field<uint8_t>(c, 0x137) = on ? 1 : 0;
+}
+
 bool drawn_state(void* c, net::Vec3* drawn, uint32_t* anim)
 {
     if (!c || !skg::readable((uint8_t*)c + 0xB54, 4))
