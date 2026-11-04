@@ -271,7 +271,10 @@ anchor so other docs can link to it:
   since BUG-0518, a click on the ability's button of the bar). The host's own
   game is native. The success message 0x60B4123 (CreatureStageEventHandler) is not posted for a
   guest's win. Reproduce: `tools/tests/coop_creature_social.py`.
-* Ticket: BUG-0179.
+* 2026-11-03 (fix/w41-creature-left): the meter and the win message are shown / posted on the guest now
+  (BUG-0179, social.guest_meter); still open: the NPC's prompts and any social ability counting as the
+  answer (BUG-0525, docs/re/creature.md#creature-guest-meter).
+* Ticket: BUG-0179 (meter, message: fixed), BUG-0525 (prompts: open).
 
 ## Creature: while the host is in the main menu the guest's planet fills up slowly
 
@@ -1783,6 +1786,11 @@ Found by fix/w40-play (2026-11-03), not fixed:
   reproduce: `coop.fix effects.other_stages on` on every game, then tools/tests/coop_effects_party.py --fixture civ.
   To check for 0.7.5 (Civ) and 0.7.6 (Space): which effect ids need the painter, and whether a per-id allow list
   or the painter's context check is the right fix.
+* 2026-11-04 (fix/w41-effects-stages): Tribe and Civilization fixed for 0.7.5. The relayed id was the skin
+  painter's own paint effect `D723B947` (made in the painter's effect world, sent by the test's workload), not a
+  game effect; such effects are never sent or played now (`coop.fix effects.main_world`) and
+  `effects.other_stages` is on (docs/re/creature.md#creature-effects-painter). Space stays off
+  (`coop.fix effects.space`, not verified). The fault itself did not come back on lane 4 even with the 0.7.4 build.
 ## Space: the partners' UFO puppets may go into a guest's save (2026-11-03, fix/w41-tribe-world)
 <a id="issue-space-objects-in-save"></a>
 

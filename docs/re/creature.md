@@ -2345,3 +2345,135 @@ BUG-0462 follow-up. GOG 2024, Ghidra.
 * What the mod does now: the hook gives the party species the "player species" answer only when its return
   address lies inside GetRelationship or CreatureSocialMode; the cursor / click (0xD2FFD0) and the faces reach the
   relation through those two. Other callers get the game's own answer (`coop.hp`: `other_callers=` counts them).
+
+## The social meter and the win message on a guest (2026-11-03, fix/w41-creature-left)
+<a id="creature-guest-meter"></a>
+
+BUG-0179 (meter and message), BUG-0525 (prompts, open). GOG 2024, Ghidra and lane 9.
+
+* ✔ (Ghidra) The BT node "SocialPropose" start `SporeCoop::SocialPropose_Start` 0xDA4360 builds the session (pool
+  0xBCB220, session +0x1AC rounds = tuning +0x424, one less for a baby, +1 for an alpha), picks the NPC's prompt
+  abilities (npc +0x1020 vector, random from its species profile +0x7A4, their points at species +0x6D4 [i] +0x3C)
+  and opens the meter: meter = `[[cCreatureModeStrategy +0x68] +0x60]` (0xD2BA50; the Scenario mode has its own),
+  stored at session +0x1DC, then `SocialMeter_Reset` 0xE33CA0, `SocialMeter_SetVisible` 0xE319D0(0),
+  `SocialMeter_SetRounds` 0xE31AE0(rounds: meter +0x44), `SocialMeter_SetRelation` 0xE31C70(relation: the face),
+  SetVisible(1), hint 0x1EA83595 the first time. The tick 0xDA4950 moves the bars (0xD9B9C0 -> `SocialMeter_SetBar`
+  0xE31990(bar 0|1, frac)) from the ability animations' progress, and calls `CreatureSocialSuccess` 0xD9BBD0 when the
+  meter is full (`SocialMeter_IsFull` 0xE31A50: +0x26). The win: `SocialMeter_Finish` 0xE31C50, SetRelation, the
+  message 0x60B4123 `{avatar, npc, 0}`. The session end 0xD9F7A0 hides the meter (SetVisible 0).
+* ✔ SetVisible is `UILayout::SetVisible(meter + 0xC)`; the layout's visible byte is `[meter +0xC +0x14] +0x8C`
+  (0x8103B0). Runtime (lane 9): 0 before, 1 while the guest's meter is open, 0 after the close.
+* ✔ (Ghidra) What 0x60B4123 does: CreatureStageEventHandler 0xD47FC0 rolls a part reward for the impressed creature
+  (adult, another species, its `+0xB58 & 2` clear; chance 0x1582F7C, 0x1582F78 for an alpha) through 0xC0BD60 /
+  0xD47E50 / 0xD3D4A0 (the same path as 0x5371F11 and an attack's 0xD335362C) and sets `+0xB58 |= 2` once a part was
+  given. So a guest's friends never gave it a part before.
+* ✔ (runtime) The meter's bar fields (+0x134..+0x13C for bar 0, range +0x3C / +0x40) stayed 0.0 on the guest while it
+  was open for a Kook (one round): the geometry is not laid out within that second, so the bar is not a usable check.
+  The meter shows (screenshot of lab 20261103-234410: the arc with the relation face at the top).
+* `social.guest_meter` (social.cpp): the guest opens the meter as SocialPropose does when it engages a mirror (rounds
+  from the mirror's tuning, the relation face), moves bar 0 to done / needed at each K_PROGRESS of the host, at its
+  own win sets it full, Finish, the face and posts 0x60B4123 `{avatar, proxy, 0}` (coop.cpp h_StageMsg gives the
+  proxy a blank +0xE84), and hides it when the engagement ends. `coop.social meter` prints the meter's fields.
+* ? Not done (BUG-0525): the NPC's prompts. The host has no native session for a guest's game either (it counts the
+  guest's rounds, social.cpp host_act), so no prompt list exists anywhere; a fix would let the host pick the prompts
+  as 0xDA4360 does (species +0x7A4), play them on the NPC (relayed by npc.anims) and count only the matching answer.
+
+## The roar, second look (2026-11-03, fix/w41-creature-left)
+<a id="creature-roar-2"></a>
+
+BUG-0501 (still open, time box of about 20 minutes, Ghidra only). Follows #creature-roar.
+
+* ✔ The end callback of HeardRagingRoar / HeardSirenSong 0xD85400 clears stimulus 0x400000 (lo). Every `PUSH
+  0x400000` next to a BT_PostStimulus call was listed (`bytes 68 00 00 40 00`): the two in 0xC23A10 are a creature's
+  perception scan (its seen list +0x338..+0x33C, called only by the BT node 0xDAA000): stimulus 0x400000 "sees a
+  creature" to adult creatures (+0xB5E == 1) and to citizens in reach; not the roar. The others (0xD69740, 0xD7B620,
+  0xD7B690, 0xD8E840, 0xDAA100, 0xDAE910, 0xDBAAF0, 0xDBB7D0, 0xDBC730) are BT nodes, not looked at.
+* ✔ The avatar's ability use 0xC1E8B0 posts its stimulus by the ability's kind (`GetAbility(i) +0x7C`): 0 one target
+  (hit 0x2000 for a creature), 2 / 3 every creature in range (0xC42230 list, 0xD99A20 distance), 1 / 3 also 0xC155D0;
+  kind 0x2B with model 0x2C39370 launches a projectile. ~ Inferred: the Raging Roar is a kind 2 / 3 ability whose
+  stimulus the NPCs' BT turns into HeardRagingRoar; on a guest it reaches only AI-less mirrors.
+* Not done: a fix (the host replaying a guest's area ability from the puppet) cannot be checked without a creature
+  that has the roar (neither fixture creature has it; a carnivore Cell's consequence ability).
+
+## The chat line under a modal box of the game (2026-11-03, fix/w41-creature-left)
+<a id="creature-chat-under-modal"></a>
+
+BUG-0482 follow-up. Lane 9, `tools/tests/coop_chat_modal.py`.
+
+* ✔ (runtime) The "game saved" box (control id 0x06318E78, world.cpp) is the UTFWin window manager's modal window
+  (`[IWindowManager::Get()] +0x82C` non-null while it is up, null after OK) and holds no input lock
+  (cGameInputManager +0x110 = 0). Under it a click on the co-op window's chat line is dropped like under a caption:
+  the line stays empty (out/lab/20261103-235548, switch off).
+* `core.ui_modal_edit` (coop_ui.cpp `clicks_locked`): the locked paths of BUG-0273 (buttons) and BUG-0482 (text
+  lines) take "a modal window of the game is up" (+0x82C, not our own window) like the input lock. `coop.uistate`
+  prints `modal=` / `modal_seen=`; `coop.save hold` keeps our save's box up for a test, `coop.save confirm` lets the
+  mod confirm it again, `coop.save box` says whether it is up.
+
+## The home nest heals a guest (2026-11-03, fix/w41-creature-left)
+<a id="creature-nest-heal"></a>
+
+BUG-0496 (not reproduced). Lane 9, `tools/tests/coop_nest_heal.py`.
+
+* ✔ (runtime, lab 20261103-235806) In the creature fixture both players at the home nest, health set to 3 and the
+  co-op pack regeneration off (`coop.team off`): the host's own game healed it 3.2 -> 10.0 (full) and the guest's
+  3.6 -> 16.0 (full, its own species Kirgle) in 12 s; 100 m from the nest neither healed (3.0 -> 3.0). So a guest's
+  game runs the nest heal for its avatar at the save's player nest by itself.
+* ? Not checked: a guest after the host's migration to a new nest (the guest's game may still have the old nest
+  as its home: docs/re/creature.md 6.23 / coop_migration.py), a guest whose home nest the host's game made extinct
+  (the player's mark said "for me nest is not extinct"), a guest whose own game has another nest object than the
+  host's (BUG-0434 / BUG-0435 mound).
+
+## Own creatures under the ground in the brain caption: not reproduced (2026-11-03, fix/w41-creature-left)
+<a id="creature-brain-caption-ground"></a>
+
+BUG-0504. Lane 9, probes (no test kept).
+
+* ✔ (runtime) Both own creatures put at the report's spot (-86.1 -465.6 -177.1) with `coop.npc gopos`, then 100 DNA
+  (`coop.dna add 100`): the brain caption F6A4B1E1 came (`busy=cinematic,input_lock`, then `paused`), and the height
+  over the ground stayed 0.00 on both games before and for 18 s during it (coop.avatar `above=`, trace `agl=`).
+* ✔ (runtime) `coop.npc gonpc <id> 3` (0.7.4: 2 m over the ground, then it falls) next to 10 NPCs: the host's
+  creature rested 0.00-0.54 m OVER the terrain height (standing on something: the nest's sticks, a rock) until it
+  walked, never under it.
+* ~ Inferred: the -0.63 / -0.71 m of play_creature (lab 20261103-124913, creatures that walked there) is the game's:
+  the mod does not move its own creature, and the caption does not lower it at that spot or at the nest. What the
+  creatures stood on there is not known (the GetHeightAt terrain only sample against a collision surface; a walk
+  path on the slope). The pack_target allow of 0.7.4 stays.
+## The skin painter's own effects and the effects relay in Tribe / Civ (2026-11-04, fix/w41-effects-stages)
+<a id="creature-effects-painter"></a>
+
+BUG-0451, the other stages (docs/known-issues.md#issue-effects-civ-space). GOG 2024, lane 4, runtime counters
+(`coop.effects`: `effects foreign world:`), the 0.7.4 fault logs (rel/0.7.4 out/lab/20261103-215559 and -223036).
+
+* ✔ The skin painter (`Skinner::cSkinPainterPipeline::ExecutePipeline`, it paints a creature model's skin when the
+  model is built: a partner's puppet, a tribe member, a citizen) creates its paint effects with
+  `Swarm::EffectWorld::CreateEffect` 0xA71300 on **an effect world of its own**, not the game's (the one
+  `cEffectsManager::CreateEffect` 0xA6CAD0 forwards to, manager +0x244), and on the **main thread** (the 0.7.4 faults
+  are tid = main). Measured: in a 3-player Civ party the first guest's game made 32 such effects (20 ids, among
+  them `D723B947`) while it built the partners' models; the host and the second guest 0 in that window.
+* ✔ The world-effect hook (`h_WorldCreateFx`) took them like any effect: they were the "last effect id the game
+  created" (`coop.effects load ... 0`, the test workload) and, when one stood within 1.8 m of the local player,
+  a world effect to send. 0.7.4's effects_party_civ: guest 1's id was `D723B947` (a painter effect) in both
+  repeats; its own load and the host (which plays and relays a guest's effect) faulted 680-936 times each at
+  `Skinner::cSkinnerTexturePainter::StartRender+0x28` (read 0) within 2 s, while guest 2 (which also received
+  it) did not fault: ~ inferred, StartRender reads the painter's current render target state, which only a game
+  whose painter has run lately has. So such an effect created in the game's effect world faults every frame
+  while it lives on a game whose painter is idle.
+* ✔ The Tribe repeat fits too: there the **second** guest's last id was `D723B947` (lane 4 probe: the painter
+  effect, its last any-world id for the whole session), sent in the test's cost phase where all three load; the
+  host and guest 1 faulted (538 / 528), guest 2 (the sender) did not. `050B305A` and `85A02492` (Tribe) and
+  `4C4BA0A9` (Civ) are effects of the game's own world.
+* ✔ A player's real play would not have sent them: `near=0` in every run (Tribe, Civ, with the fix off: the painter
+  effects stand nowhere near the player's own objects), so only the test workload (`coop.effects load ... 0`, the
+  last id of any world) relayed one. The rule is still needed: nothing else keeps a painter effect out.
+* ? Not reproduced on lane 4 on 2026-11-04: the 0.7.4 release build itself (e396d1cb, its own test with
+  `effects.other_stages on`) ran effects_party_civ twice without a fault, and rel/0.7.5 with
+  `SPORE_FIX_OFF=effects.main_world` relayed `D723B947` to both partners without a fault
+  (out/lab/20261104-004532; also -003023, -003205). The 0.7.4 faults were on lane 2. So the fault needs a state
+  of the receiving game that these runs did not have (~ inferred: StartRender reads the painter's render target
+  state, set only while a paint is under way).
+* Fix (`coop.fix effects.main_world`, on): the hook marks an effect made in another world than manager +0x244
+  (`game::effect_foreign`); effects.cpp never sends it, the perf load uses the last id of the game's own world
+  (`game::last_effect_id(true)`), and a receiver does not play a world start of an id it saw only in a painter
+  world (`not played=`). `effects foreign world: created= queued= near=` counts them; `near` is how many a
+  player's real play would have sent without the fix. With it, `effects.other_stages` (Tribe and Civilization)
+  is on by default; Space stays behind `effects.space` (off: not verified, no UFO effect can be made in a test).

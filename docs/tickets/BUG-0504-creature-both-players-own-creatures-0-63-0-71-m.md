@@ -9,11 +9,11 @@ source: BUG-0500 analysis, lab 20261103-124913
 role: 
 versions: 
 fixed_in:
-branch:
+branch: fix/w41-creature-left
 commits:
 tests:
 signature:
-docs:
+docs: docs/re/creature.md#creature-brain-caption-ground
 related: BUG-0500
 ---
 
@@ -25,19 +25,14 @@ guest's own creature 0.63 m too. Both players stood at (-86.1 -465.6 -177.1) in 
 BUG-0500); the host's agl stayed -0.71 on every trace line for 5 minutes while the creature did not move.
 
 ## Root cause
-Not analysed. Observed (lane 6 probe, fix/w40-play): at the fixture's nest the own creatures' height over the
-ground did not change under the same caption (0.32 / 0.39 m before and during). Inferred: either the game
-poses the creature for the caption's camera on that slope, or the terrain height (GetHeightAt, terrain only)
-under a creature standing on something there; the mod does not drive the own avatar. With play_creature's
-bots answering the caption now (BUG-0500) the rule may no longer see it; to reproduce, AddEvolutionPoints
-f:250 with both creatures at (-86 -466 -177) and read `agl=` on the trace lines.
+Not reproduced (fix/w41-creature-left, 2026-11-03, docs/re/creature.md#creature-brain-caption-ground). Observed: at the report's spot (-86.1 -465.6 -177.1) both own creatures stayed 0.00 m over the ground before and during the brain caption F6A4B1E1 (placed there by coop.npc gopos); after coop.npc gonpc the host's creature rested 0.00-0.54 m over the terrain, never under it. Inferred: the game's (the mod does not move the own creature, the caption itself does not lower it); the walked creatures of play_creature stood on a surface lower than the terrain sample, not known which.
 
 ## Fix
 <!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+no-fail-run: not reproduced at the report's spot (probes on lane 9, see the docs section).
 
 ## History
 - 2026-11-03: opened.
+- 2026-11-03: not reproduced on fix/w41-creature-left (gopos to the spot + brain caption, gonpc next to 10 NPCs).

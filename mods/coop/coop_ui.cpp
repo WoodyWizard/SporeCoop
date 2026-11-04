@@ -291,6 +291,41 @@ static int input_lock()
     return im && !IsBadReadPtr(im + 0x110, 4) ? *(int*)(im + 0x110) : 0;
 }
 
+// BUG-0482 follow-up: a modal box of the game (the "game saved" box, the window manager's modal window
+// cWindowManager +0x82C, PushModal; gamefixes.cpp BUG-0270) takes the clicks like the input lock does: a
+// chat line clicked while the host's "game saved" box was up never took the typing (play_creature, rel/0.7.4
+// out/lab/20261103-224540). The locked paths (buttons, text lines) take any such box too. Off: only the
+// input lock (0.7.4).
+static bool g_modal_fix = true;
+COOP_FIX("core.ui_modal_edit", "BUG-0482", g_modal_fix, "ui: the co-op window's buttons and chat line work while a modal box of the game (\"game saved\") is up");
+static unsigned g_modal_seen; // tests: frames with a modal box of the game seen under a click
+
+static void* game_modal()
+{
+    uintptr_t get = H ? H->sym("UTFWin::IWindowManager::Get") : 0;
+    using Get_t = uint8_t*(__cdecl*)();
+    uint8_t* wm = get ? ((Get_t)get)() : nullptr;
+    void* m = wm && !IsBadReadPtr(wm + 0x82C, 4) ? *(void**)(wm + 0x82C) : nullptr;
+    if (!m)
+        return nullptr;
+    for (Win w = (Win)m; w; w = sui::parent(w)) // our own window is no box of the game
+        if (w == D.root)
+            return nullptr;
+    return m;
+}
+
+// clicks on our window are dropped now: the input lock (a caption) or a modal box of the game
+static bool clicks_locked()
+{
+    if (input_lock() > 0)
+        return true;
+    if (g_modal_fix && game_modal()) {
+        g_modal_seen++;
+        return true;
+    }
+    return false;
+}
+
 static Win add_button(std::vector<Win>& page, const char* name, const Rect& r, const std::string& t,
                       std::function<void()> fn)
 {
@@ -341,7 +376,7 @@ static void locked_click_tick(bool clicked)
         }
     }
     if (!clicked || !g_locked_clicks_fix || !mouse::g_fix || !g_want_open || !D.root || !sui::visible(D.root) ||
-        g_locked_btn || input_lock() <= 0)
+        g_locked_btn || !clicks_locked())
         return;
     int cx = 0, cy = 0;
     mouse::last_click(cx, cy);
@@ -432,7 +467,7 @@ static void locked_edit_tick(bool clicked)
     std::u16string chars = mouse::take_chars();
     if (clicked) {
         g_locked_edit = nullptr;
-        if (g_locked_edit_fix && mouse::g_fix && g_want_open && D.root && sui::visible(D.root) && input_lock() > 0) {
+        if (g_locked_edit_fix && mouse::g_fix && g_want_open && D.root && sui::visible(D.root) && clicks_locked()) {
             int cx = 0, cy = 0;
             mouse::last_click(cx, cy);
             for (auto& [w, n] : g_edit_max) {
@@ -1182,7 +1217,8 @@ std::string debug_state()
     std::string s = "open=" + std::to_string(g_want_open) + " page=" +
                     (A.role() ? (g_space_page ? "space" : "lobby") : "connect") +
                     " menu_button=" + (g_menu_btn ? "yes" : "no") + " in_menu=" + (in_menu() ? "1" : "0") +
-                    " input_lock=" + std::to_string(input_lock()) + " locked_clicks=" + std::to_string(g_locked_clicks) +
+                    " input_lock=" + std::to_string(input_lock()) + " modal=" + (game_modal() ? "1" : "0") +
+                    " modal_seen=" + std::to_string(g_modal_seen) + " locked_clicks=" + std::to_string(g_locked_clicks) +
                     " locked_native=" + std::to_string(g_locked_native) +
                     " locked_typed=" + std::to_string(g_locked_typed) + "\n";
     char b[256];

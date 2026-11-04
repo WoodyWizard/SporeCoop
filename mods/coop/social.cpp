@@ -17,6 +17,8 @@ using namespace skg;
 
 namespace social {
 
+unsigned g_stage_msg_win = 0; // coop.cpp h_StageMsg: 0x60B4123 seen by the creature-stage handler (tests)
+
 static const SkHost* H;
 static SkMod* M;
 static Ctx C;
@@ -168,6 +170,7 @@ static uint32_t g_engages = 0, g_acts_sent = 0, g_results_in = 0;
 typedef void*(SK_THISCALL* Post_t)(void*, uint32_t, uint32_t, float, void*);
 static Post_t o_Post;
 static bool g_log_posts = false;
+static int social_mode(void* npc_c) { return a_SocialMode ? thiscall<int>(a_SocialMode, npc_c) : 0; }
 static uint32_t g_posts_logged = 0;
 
 // BT_PostStimulus 0xBC9940: the avatar posts the social stimulus 0x10000 to the NPC it engages in
@@ -385,6 +388,159 @@ static void SK_CDECL h_BarUse(int idx)
     o_BarUse(idx);
 }
 
+// BUG-0179: the guest's social game looked simplified: no social meter on its screen, and the game's
+// success message 0x60B4123 never posted for its win (the creature-stage handler 0xD47FC0 rolls the
+// species' part reward on it, docs/re/creature.md#creature-guest-meter). The native meter is one UI
+// object of the creature mode, [[cCreatureModeStrategy +0x68] +0x60]; SocialPropose 0xDA4360 shows it
+// (Reset, SetVisible 0, rounds, relation face, SetVisible 1), the session tick moves its bar (SetBar),
+// the win closes it (Finish, relation face), the session end hides it (SetVisible 0). The guest does
+// the same around its game with a mirror: open at the engagement, the bar at each round the host
+// counts (K_PROGRESS), closed at the result, and the win's message posted on its own game.
+// Off: no meter, no message (0.7.4).
+static bool g_meter_fix = true;
+COOP_FIX("social.guest_meter", "BUG-0179", g_meter_fix, "creature: a guest's social game shows the game's social meter and posts the game's success message (part rewards) like the host's");
+static uintptr_t a_StrategyGet, a_ExecuteAction, a_MeterReset, a_MeterVisible, a_MeterRounds, a_MeterFace, a_MeterBar,
+    a_MeterFinish;
+static int g_meter_npc = -1;   // proxy id the meter is open for
+static int g_meter_rounds = 1; // rounds shown on it
+static uint32_t g_meter_opened = 0, g_meter_bars = 0, g_meter_closed = 0, g_win_msgs = 0;
+static float g_meter_frac = 0;
+static int g_meter_vis_at_win = -1; // the meter layout's own visible byte when the win arrived (tests)
+
+// the layout's visible byte: SetVisible 0xE319D0 is UILayout::SetVisible(meter + 0xC), which writes
+// [layout +0x14] +0x8C (0x8103B0); -1 when there is no window
+static int meter_visible(void* m)
+{
+    uint8_t* lay = (uint8_t*)m + 0xC;
+    uint8_t* w = *(uint8_t**)(lay + 0x14);
+    return w && !IsBadReadPtr(w + 0x8C, 1) ? w[0x8C] : -1;
+}
+
+static void* meter_ui()
+{
+    if (!a_StrategyGet || !game::in_creature_stage())
+        return nullptr;
+    uint8_t* st = cdecl_call<uint8_t*>(a_StrategyGet);
+    if (!st || IsBadReadPtr(st + 0x68, 4))
+        return nullptr;
+    uint8_t* p = *(uint8_t**)(st + 0x68);
+    if (!p || IsBadReadPtr(p + 0x60, 4))
+        return nullptr;
+    void* m = *(void**)(p + 0x60);
+    return m && !IsBadReadPtr(m, 0x200) ? m : nullptr;
+}
+
+static int relation_to(void* c)
+{
+    void* mgr = rel_mgr();
+    void* av = game::avatar();
+    return mgr && a_RelGet && c && av ? thiscall<int>(a_RelGet, mgr, (uint8_t*)c + game::kSpeciesKeyOff, c, av) : 0;
+}
+
+static int rounds_needed(void* npc_c);
+
+struct MeterTask {
+    int op; // 0 open, 1 bar, 2 win, 3 close
+    int npc;
+    float frac;
+    int rounds;
+};
+static std::vector<MeterTask> g_meter_tasks;
+
+static void meter_run(void*) // outside the frame: the meter is UI
+{
+    auto v = std::move(g_meter_tasks);
+    g_meter_tasks.clear();
+    void* m = meter_ui();
+    for (auto& t : v) {
+        void* px = t.npc >= 0 ? npc::proxy((uint16_t)t.npc) : nullptr;
+        if (!m || !a_MeterVisible)
+            break;
+        if (t.op == 0 && px && a_MeterReset && a_MeterRounds && a_MeterFace) {
+            thiscall<void>(a_MeterReset, m);
+            thiscall<void>(a_MeterVisible, m, 0);
+            thiscall<void>(a_MeterRounds, m, t.rounds);
+            thiscall<void>(a_MeterFace, m, relation_to(px));
+            thiscall<void>(a_MeterVisible, m, 1);
+            g_meter_npc = t.npc;
+            g_meter_rounds = t.rounds;
+            g_meter_frac = 0;
+            g_meter_opened++;
+        } else if (t.op == 1 && t.npc == g_meter_npc && a_MeterBar) {
+            thiscall<void>(a_MeterBar, m, 0, t.frac);
+            g_meter_frac = t.frac;
+            g_meter_bars++;
+        } else if (t.op == 2 && t.npc == g_meter_npc) {
+            g_meter_vis_at_win = meter_visible(m);
+            if (a_MeterBar)
+                thiscall<void>(a_MeterBar, m, 0, 1.0f);
+            g_meter_frac = 1;
+            if (a_MeterFinish)
+                thiscall<void>(a_MeterFinish, m);
+            if (px && a_MeterFace)
+                thiscall<void>(a_MeterFace, m, relation_to(px));
+            // the win's message, as CreatureSocialSuccess posts it ({avatar, the creature, 0}): the
+            // handler rolls the species' part reward (coop.cpp h_StageMsg gives a proxy a blank +0xE84)
+            void* av = game::avatar();
+            if (px && av && a_StrategyGet && a_ExecuteAction)
+                if (void* st = cdecl_call<void*>(a_StrategyGet)) {
+                    void* msg[3] = {av, px, nullptr};
+                    thiscall<void>(a_ExecuteAction, st, 0x60B4123u, (void*)msg);
+                    g_win_msgs++;
+                }
+        } else if (t.op == 3) {
+            thiscall<void>(a_MeterVisible, m, 0);
+            if (g_meter_npc == t.npc)
+                g_meter_npc = -1;
+            g_meter_closed++;
+        }
+    }
+}
+
+static void meter_task(int op, int npc_id, float frac = 0, int rounds = 1)
+{
+    if (!g_meter_fix)
+        return;
+    if (g_meter_tasks.empty())
+        H->run_outside_frame(meter_run, nullptr);
+    g_meter_tasks.push_back({op, npc_id, frac, rounds});
+}
+
+// guest, every frame: the meter follows the engagement
+static void meter_tick()
+{
+    if (!g_meter_fix)
+        return;
+    if (g_engaged >= 0 && g_engaged != g_meter_npc && g_meter_tasks.empty()) {
+        void* px = npc::proxy((uint16_t)g_engaged);
+        if (px && !game::impressed(px) && social_mode(px) != 0)
+            meter_task(0, g_engaged, 0, rounds_needed(px));
+        else
+            return;
+        g_meter_npc = g_engaged; // (set again by the task; no second open meanwhile)
+    } else if (g_engaged < 0 && g_meter_npc >= 0 && g_meter_tasks.empty()) {
+        meter_task(3, g_meter_npc);
+    }
+}
+
+std::string meter_dump() // tests: the game's meter object as the guest's screen has it
+{
+    void* m = meter_ui();
+    char b[300];
+    if (!m)
+        return "meter: none\n";
+    uint8_t* u = (uint8_t*)m;
+    // bar i: lo +0x90+(i+1)*0xA4, pos +0x94+.., hi +0x98+.. (SetBar 0xE31990)
+    float lo = *(float*)(u + 0x134), pos = *(float*)(u + 0x138), hi = *(float*)(u + 0x13C);
+    float frac = hi != lo ? (pos - lo) / (hi - lo) : 0;
+    snprintf(b, sizeof b,
+             "meter: ui=%p visible=%d visible_at_win=%d raw=%.3f/%.3f/%.3f full=%d rounds=%d bar0=%.2f open_for=%d opened=%u bars=%u closed=%u win_msgs=%u stage_win_msgs=%u "
+             "frac_set=%.2f\n",
+             m, meter_visible(m), g_meter_vis_at_win, lo, pos, hi, (int)u[0x26], *(int*)(u + 0x44), frac, g_meter_npc, g_meter_opened, g_meter_bars, g_meter_closed, g_win_msgs,
+             g_stage_msg_win, g_meter_frac);
+    return b;
+}
+
 // BUG-0021: in the social stance (GetAbilityMode 0) a guest's key 1 next to the Kook it was impressing (and the click
 // that engages one) sent a hit now and then (coop_creature_social_ally.py: `hits_sent` +1 with the stance 0 before and after the key; the host
 // applied it, the Kook died and the species lost its impressions: (4, 2) -> (1, 0, killed 1), no ally). A player in
@@ -410,6 +566,7 @@ static void guest_tick(double now)
 {
     if (g_engaged >= 0 && (now - g_engaged_at > kEngageTime || !npc::proxy((uint16_t)g_engaged)))
         g_engaged = -1;
+    meter_tick();
     // the stance: GetAbilityMode 0 social, 1 combat
     bool social_stance = a_AbilityMode && cdecl_call<int>(a_AbilityMode) == 0;
     bool on = g_engaged >= 0 && social_stance && !(C.blocked && C.blocked());
@@ -467,7 +624,6 @@ static void send_result(uint16_t id, uint8_t player, bool ok, uint32_t anim, flo
     C.sess->broadcast_reliable(net::MSG_SOCIAL, w);
 }
 
-static int social_mode(void* npc_c) { return a_SocialMode ? thiscall<int>(a_SocialMode, npc_c) : 0; }
 
 static int rounds_needed(void* npc_c)
 {
@@ -579,6 +735,14 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
     a_GoalUI = H->sym("SporeCoop::CreatureGoalUI_Get");
     a_GoalRefresh = H->sym("SporeCoop::SpeciesGoal_Refresh");
     a_AbilityMode = H->sym("Simulator::cCreatureGameData::GetAbilityMode");
+    a_StrategyGet = H->sym("App::cCreatureModeStrategy::Get");
+    a_ExecuteAction = H->sym("App::cCreatureModeStrategy::ExecuteAction");
+    a_MeterReset = H->sym("SporeCoop::SocialMeter_Reset"); // BUG-0179
+    a_MeterVisible = H->sym("SporeCoop::SocialMeter_SetVisible");
+    a_MeterRounds = H->sym("SporeCoop::SocialMeter_SetRounds");
+    a_MeterFace = H->sym("SporeCoop::SocialMeter_SetRelation");
+    a_MeterBar = H->sym("SporeCoop::SocialMeter_SetBar");
+    a_MeterFinish = H->sym("SporeCoop::SocialMeter_Finish");
     if (uintptr_t a = H->sym("SporeCoop::AbilityBar_Use")) // BUG-0179
         H->hook_create(M, (void*)a, (void*)h_BarUse, (void**)&o_BarUse);
     if (uintptr_t a = H->sym("SporeCoop::BT_PostStimulus"))
@@ -698,6 +862,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
     }
     if (kind == K_PROGRESS && is_guest()) {
         int done = r.u8(), needed = r.u8();
+        if (r.ok() && needed > 0 && id == g_engaged)
+            meter_task(1, id, std::min(1.f, (float)done / needed));
         if (r.ok() && done < needed && C.feed)
             C.feed("Impressing: " + std::to_string(done) + "/" + std::to_string(needed));
         return;
@@ -720,6 +886,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         if (mine && C.feed)
             C.feed(ok ? "Impressed! +" + std::to_string((int)(dna + 0.5f)) + " DNA for the pack"
                       : "It does not want to socialize now");
+        if (mine && ok && id == g_meter_npc)
+            meter_task(2, id);
         if (mine && g_engaged == id)
             g_engaged = -1;
     }
@@ -728,6 +896,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
 void on_session_end()
 {
     g_engaged = -1;
+    g_meter_npc = -1;
     g_goal_paid.clear();
     g_goal_owed.clear();
     g_games.clear();

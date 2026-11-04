@@ -284,6 +284,7 @@ static std::wstring current_slot(std::string& planet, bool& missing)
 constexpr uint32_t kSavedBoxId = 0x06318E78;
 static uint64_t g_saved_at, g_box_watch_until, g_box_seen_at, g_box_next_check, g_box_last_enter;
 static bool g_box_task;
+bool g_box_hold = false; // tests (BUG-0482): the saved box stays up until `coop.save confirm`
 
 static sui::Win first_visible(sui::Win w, uint32_t id, int depth = 0)
 {
@@ -314,6 +315,10 @@ static void box_task(void*)
         H->log(M, SK_INFO, "world: the game saved box is up %llu ms after the save: confirming it",
                (unsigned long long)(now - g_saved_at));
     g_box_seen_at = now;
+    if (g_box_hold) {
+        g_box_watch_until = now + 30000;
+        return;
+    }
     if (now - g_box_last_enter < 1000)
         return;
     g_box_last_enter = now;
@@ -333,6 +338,8 @@ static void box_task(void*)
         PostMessageW(w, WM_KEYUP, VK_RETURN, 0xC01C0001);
     }
 }
+
+bool saved_box_up() { return g_box_seen_at && g_box_watch_until > GetTickCount64(); }
 
 static void box_tick()
 {

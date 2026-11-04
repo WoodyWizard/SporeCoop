@@ -429,6 +429,91 @@ static void* member_mirror(uint16_t id)
     return it != g_gm.end() && it->second.c && game::object_alive(it->second.c) ? it->second.c : nullptr;
 }
 
+// ---- tools (BUG-0514, docs/re/tribe.md#tribe-tools-guest) ----
+// A member's tool (+0x102C mSpecializedTool: 1..9 the racks' weapons and instruments, 9 heal, 0xB the chief's
+// staff) is its own game's: the host's game runs the guest's members (a GrabTool order of a guest is done
+// there), the guest's mirror never took the tool, so the guest saw its members walk to the rack and come
+// back empty-handed (no weapon in hand, no heal order: InputAction 0x28 takes only members with tool 9).
+// The held tool is a replicated field of the members (its own kind: its own switch); the guest sets it on
+// its mirror with the game's SetSpecializedTool. `coop.fix tribe.tool_hold off`: mirrors keep their own.
+constexpr uintptr_t kToolsOff = 0x36C;    // cTribe: vector<cTribeTool*> mTools
+constexpr uintptr_t kHeldToolOff = 0x102C; // cCreatureCitizen: mSpecializedTool
+static uintptr_t a_SetSpecializedTool, a_ToolModelReset, a_SetToolPurchased;
+static bool g_tool_hold_fix = true;
+COOP_FIX("tribe.tool_hold", "BUG-0514", g_tool_hold_fix, "tribe: a guest's mirror of a member holds the tool the host's member took (weapon, instrument, heal)");
+static uint32_t g_tool_sets;
+static float read_held_tool(void* c) { return is_citizen(c) ? (float)F<int>(c, kHeldToolOff) : 0.f; }
+static void apply_held_tool(void* c, float v)
+{
+    int t = (int)std::lround(v);
+    if (!is_citizen(c) || !a_SetSpecializedTool || t < 0 || t > 0x20)
+        return;
+    int cur = F<int>(c, kHeldToolOff);
+    // SetSpecializedTool(0) on the tribe's leader makes it 0xB (the staff): leave the leader's staff
+    if (cur == t || (t == 0 && cur == 0xB))
+        return;
+    thiscall<void>(a_SetSpecializedTool, c, t);
+    g_tool_sets++;
+}
+static const fields::Field kHeldTool{fields::F_TOOL, "tool", read_held_tool, apply_held_tool, 0.01f};
+static const fields::Field kToolFields[] = {kHeldTool};
+
+static int tool_type(void* tool) { return vcall<int>(tool, 0x58 / 4); }
+
+void for_each_player_tool(void (*fn)(void* tool, int type, const net::Vec3& pos, void* user), void* user)
+{
+    void* t = g_ok ? player_tribe() : nullptr;
+    if (!t || IsBadReadPtr((uint8_t*)t + kToolsOff, 8))
+        return;
+    void** b = F<void**>(t, kToolsOff);
+    void** e = F<void**>(t, kToolsOff + 4);
+    if (!b || e < b || e - b > 64 || IsBadReadPtr(b, (e - b) * 4))
+        return;
+    std::vector<void*> v(b, e); // a copy: fn may make a tool (the vector grows)
+    for (void* tool : v) {
+        net::Vec3 p;
+        if (tool && game::object_alive(tool) && game::object_position(tool, p))
+            fn(tool, tool_type(tool), p, user);
+    }
+}
+
+// the rotation of the model's up (+Z) onto the planet's up at p (the planet's centre is the origin)
+static net::Quat upright(const net::Vec3& p)
+{
+    float l = std::sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
+    if (l < 1.f)
+        return {0, 0, 0, 1};
+    float nx = p.x / l, ny = p.y / l, nz = p.z / l;
+    net::Quat q{-ny, nx, 0.f, 1.f + nz};
+    float ql = std::sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
+    if (ql < 1e-4f)
+        return {1, 0, 0, 0};
+    return {q.x / ql, q.y / ql, q.z / ql, q.w / ql};
+}
+
+void* make_player_tool(int type, const net::Vec3& pos)
+{
+    void* t = g_ok ? player_tribe() : nullptr;
+    if (!t || type < 1 || type > 10 || !a_ToolModelReset || !a_SetToolPurchased)
+        return nullptr;
+    // the palette's placement (0xD13C05): CreateTool (vt 0xB4), SetTribe (tool vt 0x64), 0xC9D2D0; the
+    // finish (0xD10F90) puts it into a layout slot of the village and sets the purchased bit
+    void* tool = vcall<void*>(t, 0xB4 / 4, type);
+    if (!tool)
+        return nullptr;
+    vcall<void>(tool, 0x64 / 4, t);
+    thiscall<void>(a_ToolModelReset, tool);
+    void* sp = game::cast(tool, 0x1186577);
+    if (sp) {
+        float p[3] = {pos.x, pos.y, pos.z};
+        net::Quat r = upright(pos);
+        float q[4] = {r.x, r.y, r.z, r.w};
+        vcall<void>(sp, 0x38 / 4, (const float*)p);
+        vcall<void>(sp, 0x3C / 4, (const float*)q);
+    }
+    thiscall<void>(a_SetToolPurchased, t, type);
+    return tool;
+}
 static bool save_filter(void* o, uint32_t noun); // BUG-0495 (below)
 static void* SK_THISCALL h_Form(void* self, int arg); // BUG-0483 (below)
 using Form_t = void*(SK_THISCALL*)(void*, int);
@@ -444,6 +529,11 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     C = std::move(ctx);
     fields::add_kind({fields::K_TRIBE_MEMBER, "tribe_member", &g_scale_fix, kMemberFields, 1, member_each, member_mirror,
                       [] { return active(); }});
+    fields::add_kind({fields::K_TRIBE_TOOL, "tribe_member_tool", &g_tool_hold_fix, kToolFields, 1, member_each, member_mirror,
+                      [] { return active(); }});
+    a_SetSpecializedTool = H->sym("Simulator::cCreatureCitizen::SetSpecializedTool");
+    a_ToolModelReset = H->sym("SporeCoop::cTribeTool_PlacementReset");
+    a_SetToolPurchased = H->sym("SporeCoop::cTribe_SetToolPurchased");
     a_GetPlayerTribe = H->sym("Simulator::cGameNounManager::GetPlayerTribe");
     a_DoAction = H->sym("Simulator::cCreatureCitizen::DoAction");
     a_SetValueVector3 = H->sym("App::Property::SetValueVector3");
@@ -1501,6 +1591,16 @@ static bool near_own_chief(void* c, uint8_t owner)
 // cCreatureCitizen TakeDamage 0xC26920 (this = citizen+0x5A8): every hit on a citizen
 using CTD_t = int(SK_THISCALL*)(void*, float, uint32_t, int, const void*, void*);
 static CTD_t o_CitizenTD;
+struct EpicBlows {
+    uint32_t n = 0;
+    float last = 0, max = 0;
+};
+static std::unordered_map<void*, EpicBlows> g_epic_blows; // BUG-0515 (diagnostics): an epic -> its blows on members
+static bool is_epic_animal(void* a)
+{
+    static uintptr_t is_epic = H->sym("SporeCoop::cCreatureAnimal_IsEpic");
+    return a && is_epic && !IsBadReadPtr(a, 8) && game::noun_id(a) == 0x18EB45E && thiscall<bool>(is_epic, a);
+}
 static int SK_THISCALL h_CitizenTD(void* comb, float dmg, uint32_t pol, int type, const void* pos, void* att)
 {
     if (civ::hit_is_cosmetic(att)) // BUG-0477: a Civ guest's copy of a host's shot hurts nobody
@@ -1510,6 +1610,12 @@ static int SK_THISCALL h_CitizenTD(void* comb, float dmg, uint32_t pol, int type
         void* pt = player_tribe();
         void* vt = F<void*>(victim, kOwnerTribeOff);
         void* ac = att && !IsBadReadPtr(att, 4) ? vcall<void*>(att, 0xC / 4) : nullptr;
+        if (ac && !g_hm.count(ac) && is_epic_animal(ac)) {
+            auto& b = g_epic_blows[ac];
+            b.n++;
+            b.last = dmg;
+            b.max = std::max(b.max, dmg);
+        }
         uint8_t ao = ac && g_hm.count(ac) ? g_hm[ac].owner : 0xFF;
         double now = H->time_seconds();
         if (ao < 0xFE && vt && vt != pt) { // our member hits another tribe
@@ -1692,6 +1798,35 @@ static void epic_herd_release()
 }
 
 // epic: a giant of a species on the planet comes to the village (host)
+// BUG-0515 (players: "giants only deal 8 damage"): the co-op epic's herd was made by CreateHerd with the
+// epic archetype and nothing else: its mDamageMultiplier (+0x158) stayed 1.0, while the game's own epic herd
+// of the planet has 15.0 (lab, the 'tribe' fixture's epic, archetype 0xEC4C89F8): the co-op epic hit members
+// for 1.5-8 (a normal animal's blows). The herd gets the game's epic herd's multiplier (15 when the planet has
+// no epic of its own). `coop.fix tribe.epic_tuning off`: x1 as before.
+static bool g_fix_epic_tuning = true;
+COOP_FIX("tribe.epic_tuning", "BUG-0515", g_fix_epic_tuning, "tribe: the co-op epic hits as hard as the game's own epics (its herd's damage multiplier)");
+constexpr float kEpicDamageMult = 15.f;
+static float game_epic_damage_mult()
+{
+    struct U {
+        float m = 0;
+    } u;
+    game::for_each_object(
+        [](void* o, uint32_t noun, void* up) {
+            auto* u = (U*)up;
+            if (noun != 0x18EB45E || o == g_epic || !game::object_alive(o) || !is_epic_animal(o))
+                return true;
+            void* h = game::herd_of(o);
+            if (h && skg::readable(h, 0x21C) && !is_epic_herd_of_ours(h) && F<float>(h, 0x158) > 1.f && F<float>(h, 0x158) < 100.f) {
+                u->m = F<float>(h, 0x158);
+                return false;
+            }
+            return true;
+        },
+        &u);
+    return u.m > 1.f ? u.m : kEpicDamageMult;
+}
+
 static bool spawn_epic()
 {
     void* pt = player_tribe();
@@ -1740,6 +1875,10 @@ static bool spawn_epic()
         return false;
     F<uint32_t>(herd, 0x88) = kEpicArchetype; // an archetype with isEpic = 1
     F<uint32_t>(herd, 0xF0) = 0;
+    if (g_fix_epic_tuning)
+        F<float>(herd, 0x158) = game_epic_damage_mult(); // mDamageMultiplier, BUG-0515
+    else if (F<float>(herd, 0x158) > 1.f && is_epic_herd_of_ours(herd))
+        F<float>(herd, 0x158) = 1.f; // a reused herd of ours: the old x1 (tests)
     if (g_fix_epic_herd)
         F<float>(herd, 0x34) = pp[0], F<float>(herd, 0x38) = pp[1], F<float>(herd, 0x3C) = pp[2]; // its home
     thiscall<void>(a_HerdEnable, herd, true);
@@ -2008,6 +2147,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
 // (tribe.epic_herd) and runs whatever tribe.chiefs says (BUG-0214: one bug per switch)
 static void forget_world_tables()
 {
+    g_epic_blows.clear(); // BUG-0515 diagnostics: keys are animals of the world left
     if (g_fix_chiefs) {
         g_chief_scale.clear();
         g_chief.clear();
@@ -2366,6 +2506,41 @@ std::string debug(const std::vector<std::string>& a)
                  n.herds, n.ours, n.enabled, n.epics, g_epic, g_resets, g_world_checks_fired, game::stage_epoch(modes::kTribe));
         return b;
     }
+    if (a.size() >= 2 && a[0] == "epic" && a[1] == "stats") { // BUG-0515: every live epic, its herd's tuning, its blows
+        struct U {
+            uintptr_t is_epic;
+            std::string s;
+        } u{H->sym("SporeCoop::cCreatureAnimal_IsEpic"), {}};
+        game::for_each_object(
+            [](void* o, uint32_t noun, void* up) {
+                auto* u = (U*)up;
+                if (noun != 0x18EB45E || !game::object_alive(o) || game::is_dead(o) || !u->is_epic || !thiscall<bool>(u->is_epic, o))
+                    return true;
+                void* h = game::herd_of(o);
+                bool hr = h && skg::readable(h, 0x21C);
+                auto& d = g_epic_blows[o];
+                char b[360];
+                snprintf(b, sizeof b,
+                         "epic %p ours=%d hp=%.0f/%.0f scale=%.2f herd=%p arch=%08X gen=%d scale_mult=%.2f hp_override=%.0f dmg_mult=%.2f "
+                         "blows=%u last=%.1f max=%.1f\n",
+                         o, (int)(o == g_epic), game::health(o), game::max_health(o), game::scale(o), h, hr ? F<uint32_t>(h, 0x88) : 0,
+                         hr ? F<int>(h, 0xF0) : -1, hr ? F<float>(h, 0x150) : 0.f, hr ? F<float>(h, 0x154) : 0.f, hr ? F<float>(h, 0x158) : 0.f,
+                         d.n, d.last, d.max);
+                u->s += b;
+                return true;
+            },
+            &u);
+        return u.s + "end";
+    }
+    if (a.size() >= 3 && a[0] == "epic" && a[1] == "near" && is_host()) { // epic near <member id>: the co-op epic next to it
+        void* c = local_of((uint16_t)atoi(a[2].c_str()));
+        if (!g_epic || !c || !epic_listed())
+            return "no epic / member";
+        net::Vec3 p = game::position(c);
+        p.x += 6.f;
+        game::teleport(g_epic, p, game::orientation(g_epic));
+        return "epic moved next to #" + a[2];
+    }
     if (a.size() >= 2 && a[0] == "epic" && a[1] == "quiet") { // RE: quiet every epic herd of ours now
         std::string out;
         game::for_each_object(
@@ -2421,6 +2596,79 @@ std::string debug(const std::vector<std::string>& a)
         float p[3] = {(float)atof(a[1].c_str()), (float)atof(a[2].c_str()), (float)atof(a[3].c_str())};
         thiscall<int>(a_WalkSelected, (void*)nullptr, (const float*)p);
         return "walk ordered";
+    }
+    if (!a.empty() && a[0] == "tools") { // BUG-0514: the player tribe's tools, and what the own members hold
+        std::string s;
+        struct U {
+            std::string* s;
+            int i;
+            net::Vec3 c;
+        } u{&s, 0, {}};
+        center(u.c);
+        for_each_player_tool(
+            [](void* t, int type, const net::Vec3& p, void* up) {
+                auto* u = (U*)up;
+                char b[160];
+                snprintf(b, sizeof b, "tool %d %p serial=%u type=%d pos=(%.2f %.2f %.2f) dist=%.1f\n", u->i++, t, game::object_serial(t), type,
+                         p.x, p.y, p.z, net::dist(p, u->c));
+                *u->s += b;
+            },
+            &u);
+        void* pt = player_tribe();
+        for (void* c : pt ? members(pt) : std::vector<void*>{}) {
+            uint16_t id = member_id(c);
+            char b[96];
+            snprintf(b, sizeof b, "held %u owner=%u tool=%d\n", id, owner_of(c), F<int>(c, kHeldToolOff));
+            s += b;
+        }
+        char b[96];
+        snprintf(b, sizeof b, "tools n=%d tool_sets=%u hold_fix=%d\n", u.i, g_tool_sets, (int)g_tool_hold_fix);
+        return s + b;
+    }
+    if (a.size() >= 2 && a[0] == "build" && is_host()) { // build <type> [metres]: test setup, a tool as if bought
+        void* pt = player_tribe();
+        net::Vec3 c;
+        if (!pt || !center(c))
+            return "no player tribe";
+        float d = a.size() >= 3 ? (float)atof(a[2].c_str()) : 10.f;
+        float l = std::sqrt(c.x * c.x + c.y * c.y + c.z * c.z);
+        if (l < 1.f)
+            return "no player tribe";
+        net::Vec3 n{c.x / l, c.y / l, c.z / l};
+        // a tangent: up x (an axis away from up)
+        net::Vec3 ax = std::fabs(n.z) < 0.9f ? net::Vec3{0, 0, 1} : net::Vec3{1, 0, 0};
+        net::Vec3 t{n.y * ax.z - n.z * ax.y, n.z * ax.x - n.x * ax.z, n.x * ax.y - n.y * ax.x};
+        float tl = std::sqrt(t.x * t.x + t.y * t.y + t.z * t.z);
+        net::Vec3 p{c.x + t.x / tl * d, c.y + t.y / tl * d, c.z + t.z / tl * d};
+        float g = game::ground_radius(p), pl = std::sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
+        if (g > 1.f && pl > 1.f)
+            p = {p.x / pl * g, p.y / pl * g, p.z / pl * g};
+        void* tool = make_player_tool(atoi(a[1].c_str()), p);
+        char b[128];
+        snprintf(b, sizeof b, "built %p type=%s at (%.2f %.2f %.2f)", tool, a[1].c_str(), p.x, p.y, p.z);
+        return tool ? std::string(b) : std::string("build failed");
+    }
+    if (a.size() >= 3 && a[0] == "grab") { // grab <member id> <tool index>: the member's GrabTool (3) order as a
+        // click on the tool gives it (DoToolActionForAllSelected -> DoActionForObjects): a guest sends it to the host
+        void* c = local_of((uint16_t)atoi(a[1].c_str()));
+        int want = atoi(a[2].c_str());
+        struct U {
+            int i, want;
+            void* tool;
+        } u{0, want, nullptr};
+        for_each_player_tool(
+            [](void* t, int, const net::Vec3&, void* up) {
+                auto* u = (U*)up;
+                if (u->i++ == u->want)
+                    u->tool = t;
+            },
+            &u);
+        if (!c || !u.tool)
+            return "no such member or tool";
+        void* sel[1] = {(uint8_t*)c + 0xC0};
+        void* vec[3] = {sel, sel + 1, sel + 1};
+        int r = thiscall<int>(a_DoActionForObjects, (void*)nullptr, (void*)vec, 3, u.tool, (void*)nullptr);
+        return "grab ordered (ret " + std::to_string(r) + ") " + g_last_cmd;
     }
     if (a.size() >= 3 && (a[0] == "act" || a[0] == "act_npc")) { // act <action> <member id | npc id>
         void* t = a[0] == "act" ? local_of((uint16_t)atoi(a[2].c_str())) : npc::proxy((uint16_t)atoi(a[2].c_str()));

@@ -3,6 +3,11 @@
 ## [Unreleased]
 
 ### Fixed
+- Tribe: a weapon rack (or any tool building) the host builds now appears in the guests' games too, a guest's
+  members can take the weapon from it, and a guest sees its members hold the weapons and tools they took
+  (BUG-0514).
+- Tribe: the epic creature that comes to the players' village now hits as hard as the game's own epics; it
+  dealt only about 8 damage, like an ordinary animal (BUG-0515).
 - Tribe: when you save as a guest and later load that save alone, your tribe no longer holds copies of the
   host's members, and the host's villages your game showed are not in it (BUG-0495).
 - Tribe: a guest's game no longer makes new villages of its own that the host's world does not have, and the
@@ -13,6 +18,14 @@
   (BUG-0494).
 - Civilization: a guest sees the host's fights: vehicles and turrets fire their shots in the guest's game too,
   and those shots do no damage of their own there (BUG-0477).
+- Creature: a guest's social game now shows the game's social meter, like the host's, and a win tells the
+  guest's game that the creature became a friend (BUG-0179).
+- A chat line typed in the co-op window while the game's "game saved" box (or another box of the game) is up
+  is no longer lost; the window's buttons work then too (BUG-0482).
+- Creature: after evolving in the editor your creature is the new species at once, also when you play alone;
+  the host no longer saves the game after every evolution in co-op (BUG-0517).
+- Tribe and Civilization: the effects of your tribe members and vehicles (a hit, a death, ...) now show on the
+  other players' screens too, as in Cell and Creature (BUG-0451).
 
 ## [0.7.4] - 2026-11-03
 

@@ -3850,6 +3850,24 @@ its game's `world_scale=` from coop.pool, read before and after the dump). Fails
   start (the twin run; `SPORE_FIX_OFF=initfail` in the test writes it). ~25 s on one lane.
 * Pitfall: returning 0 **after** the game's full Init does not work for this: the game's teardown then faults
   (0xC0000005 in MSVCR90 / steam_api frames), a crash report instead of the clean exit.
+
+## Tribe actions of 0.7.5: tools (2026-11-03, fix/w41-tribe-actions)
+<a id="testing-tribe-tools"></a>
+
+* `coop_tribe_tools.py [--nofix] [--type 1] [--dist 9]` (suite `tribe_tools`, ~1.5 min cold): `coop.tribe build
+  <type> [m]` (host, test setup: the 'tribe' fixture's palette is locked) makes a tool of the player tribe as
+  the palette's placement does, `m` metres from the village centre; `coop.tribe tools` lists the player tribe's
+  tools (`tool <i> <ptr> serial= type= pos=`) and what each member holds (`held <id> owner= tool=`, the game's
+  +0x102C); `coop.tribe grab <member id> <tool index>` gives the member the GrabTool order a click on the tool
+  gives (DoActionForObjects: a guest sends it to the host). `coop.wobj` prints `made=` for the kind
+  `tribe_tool` (copies of host tools a guest made). `--nofix` = `SPORE_FIX_OFF=wobj.tribe_tool,tribe.tool_hold`.
+* The fixture's player tribe has one tool, the fire pit (type 10), on both games; the rack (type 1) comes
+  out on the village's edge 9 m off the centre. The host's member took the weapon 3-37 s after the order.
+* `coop_tribe_epic_damage.py [--nofix] [--min-blow 30]` (suite `tribe_epic_damage`, ~1.5 min cold): `coop.tribe epic`
+  (host) spawns the co-op epic 60 m off, `coop.tribe epic near <member id>` puts it 6 m from a member (repeated: it
+  walks off), `coop.tribe epic stats` lists every live epic (`ours=`, hp, size, its herd's archetype and
+  multipliers, `blows= last= max=`: its blows on members, counted in the host's citizen TakeDamage hook). The
+  fixture's own epic does not hit anybody in the test (it is far off). Two blows come within 10-40 s.
 ## Tribe: a guest's saves and own tribes (2026-11-03, fix/w41-tribe-world)
 <a id="testing-tribe-guest-world"></a>
 
@@ -3890,3 +3908,19 @@ its game's `world_scale=` from coop.pool, read before and after the dump). Fails
 * `sync_civ_loss` (coop_sync.py civ under SPORE_NET=burst, cold, about 1 min): the sync_burst variant for Civ
   alone, for BUG-0438. With one vehicle sampled 16 times its p90 is the second worst sample: one burst decides
   a run (see the ticket).
+## Creature leftovers of 0.7.5 (2026-11-03, fix/w41-creature-left)
+<a id="testing-k1-creature"></a>
+
+* `creature_social_meter` (coop_creature_social_meter.py, ~1.2 min warm): the guest's social game with a Kook by
+  real input; `coop.social meter` prints the game's meter object (`visible=` the layout's own byte,
+  `visible_at_win=`, `rounds=`, `stage_win_msgs=` the 0x60B4123 the creature-stage handler got). The Kook needs one
+  round: the win usually comes within the engagement's first second, so the test reads `visible_at_win`, not a
+  live sample. The meter's bar fields stay 0.0 on the guest (not laid out in that time): no bar check.
+* `chat_modal` (coop_chat_modal.py, ~1 min warm): the host's "game saved" box held up with `coop.save hold`
+  (`coop.save box` says whether it is up, `coop.save confirm` lets the mod confirm it); `coop.uistate` has
+  `modal=` (the window manager's modal window) next to `input_lock=`.
+* `nest_heal` (coop_nest_heal.py, ~1.7 min): each player at the nest with `coop.team off` (the pack regeneration
+  would heal too) and `coop.team hp 3`, 12 s; then 100 m away. Both heal at the fixture's nest (BUG-0496 not
+  reproduced).
+* `evolve_key` (coop_evolve_in_place.py --case creature --nosave, ~2.5 min): `coop.evokey nosave` turns the host's
+  in-place save off (a host alone does not save either); `coop.evokey` prints `keys_set=`.
