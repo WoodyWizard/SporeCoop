@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in: unreleased
 branch: fix/w42-infra
-commits:
+commits: 7b452d83
 tests: effects_party_tribe, effects_party_civ
 signature:
 docs: docs/06-testing.md#testing-effects-cost
