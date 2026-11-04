@@ -638,7 +638,8 @@ static uint32_t g_tools_bought;
 bool buy_player_tool(int type, const net::Vec3& pos)
 {
     void* pt = g_ok ? player_tribe() : nullptr;
-    if (!pt || type < 1 || type > 10 || net::dist(tribe_pos(pt), pos) > 150.f)
+    if (!pt || type < 1 || type > 10 || !std::isfinite(pos.x) || !std::isfinite(pos.y) || !std::isfinite(pos.z) ||
+        !(net::dist(tribe_pos(pt), pos) <= 150.f)) // a guest's request: a place near the player tribe only
         return false;
     for (void* tool : tribe_tools(pt)) {
         net::Vec3 p;
