@@ -1777,6 +1777,11 @@ Found by fix/w40-play (2026-11-03), not fixed:
   reproduce: `coop.fix effects.other_stages on` on every game, then tools/tests/coop_effects_party.py --fixture civ.
   To check for 0.7.5 (Civ) and 0.7.6 (Space): which effect ids need the painter, and whether a per-id allow list
   or the painter's context check is the right fix.
+* 2026-11-04 (fix/w41-effects-stages): Tribe and Civilization fixed for 0.7.5. The relayed id was the skin
+  painter's own paint effect `D723B947` (made in the painter's effect world, sent by the test's workload), not a
+  game effect; such effects are never sent or played now (`coop.fix effects.main_world`) and
+  `effects.other_stages` is on (docs/re/creature.md#creature-effects-painter). Space stays off
+  (`coop.fix effects.space`, not verified). The fault itself did not come back on lane 4 even with the 0.7.4 build.
 ## Space: the partners' UFO puppets may go into a guest's save (2026-11-03, fix/w41-tribe-world)
 <a id="issue-space-objects-in-save"></a>
 

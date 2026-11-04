@@ -7,6 +7,8 @@
   host's members, and the host's villages your game showed are not in it (BUG-0495).
 - Tribe: a guest's game no longer makes new villages of its own that the host's world does not have, and the
   members of a village the host no longer has leave the guest's game too (BUG-0483).
+- Tribe and Civilization: the effects of your tribe members and vehicles (a hit, a death, ...) now show on the
+  other players' screens too, as in Cell and Creature (BUG-0451).
 
 ## [0.7.4] - 2026-11-03
 
