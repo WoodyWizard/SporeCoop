@@ -3942,3 +3942,18 @@ its game's `world_scale=` from coop.pool, read before and after the dump). Fails
   part with a creature twin that neither game has (`coop.parts cell collect <i>`), then Cell -> Creature the
   players' way; the twin must be IsUnlocked (`coop.parts states`, the `u`) on both games, then the test stops.
   BUG-0446: SPORE_FIX_OFF=parts.shared_cell FAILS (lab 20261104-022323), on PASS (lab 20261104-022114).
+## Tribe: orders and the grab spots (2026-11-04, fix/w41-tribe-orders)
+<a id="testing-tribe-orders"></a>
+
+* `coop.tribe ai <member id>` (any game; the host's is the one that counts): the member's order record (`rec=`
+  action, `target=`, `has=`), behaviour node (`node=`, `depth=`), the leaf node's memory (`mem=` state, the tool,
+  the tool's position at the enter, flags, claimed spot, wait counter for the grab node 0x0462854D), the walk
+  (`mode=`, `flags=`, `goal=`, `r=`) and `sel=`. `coop.tribe layout <tool type>` (host): the tribe's grab spots of
+  that type (place, `used=`, the member on it). `coop.tribe put <id> <x> <y> <z>` (host): test setup, a member onto
+  the ground there. docs/re/tribe.md#tribe-orders.
+* `coop_tribe_tools.py`: the guest's member walks to one of the rack's grab spots (a ring ~7 m round it) and,
+  in some runs, stops 1.5 m short of it for good (3 of 8 runs before the fix). Twin: `SPORE_FIX_OFF=tribe.grab_spot`
+  over `--repeat` (the failure is not deterministic: putting the member next to the fire pit spot, or another
+  member onto the spot, with `coop.tribe put` did not make it stop: it reached the spot or took another one).
+  `--own`: the host orders one of its own members (not the chief: tool 11 does not grab) the same way, a control.
+* play_tribe logs `host ai #<id>: ...` for every member of an order nobody acted on.

@@ -510,6 +510,8 @@ class Game:
                     m = re.match(r'\s+#(\d+) ', line)
                     if m and int(m.group(1)) in o['sel']:
                         self.log.append(f'      host: {line.strip()[:150]}')
+                for i in o['sel']:  # its order record, node, node state and walk (docs/re/tribe.md#tribe-orders)
+                    self.log.append(f'      host ai #{i}: {self.host.call(f"coop.tribe ai {i}")["out"].strip()[:260]}')
 
     # ---------------- measuring ----------------
     def measure(self):

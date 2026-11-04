@@ -16,6 +16,8 @@ mirror's own +0x102C).
    mirror's +0x102C, which the game draws as the handheld tool).
 
 --nofix (or SPORE_FIX_OFF=wobj.tribe_tool,tribe.tool_hold): must FAIL (no rack on the guest).
+SPORE_FIX_OFF=tribe.grab_spot: fails in some runs (BUG-0505: the member walks to a grab spot ~7 m round the rack,
+stops short of it and never takes the weapon; seen in 3 of 8 runs before the fix).
 
   SPORE_LANE=2 python3 tools/tests/coop_tribe_tools.py [--nofix] [--type 1] [--dist 9]
 """
@@ -63,6 +65,7 @@ def main():
     ap.add_argument('--nofix', action='store_true')
     ap.add_argument('--type', type=int, default=1)
     ap.add_argument('--dist', type=float, default=9.0)
+    ap.add_argument('--own', action='store_true', help='the host orders one of its own members (a control, BUG-0505)')
     a = ap.parse_args()
     host, guest = start('tribe')
     ck = Checks()
@@ -98,15 +101,20 @@ def main():
         print('  guest tools:', tools(guest)[0])
         ck.faults(host=host, guest=guest)
         return ck.result()
+    print('  host', host.call(f'coop.tribe layout {a.type}')['out'].strip().replace(chr(10), chr(10) + '    '))
     mem = members(guest)
     own = sorted(i for i, o in mem.items() if o != 0)
+    if a.own:
+        own = sorted(i for i, o in members(host).items() if o == 0)
     ck(bool(own), f'the guest has members of its own ({len(own)} of {len(mem)})')
     if not own:
         return ck.result()
     _, hh = tools(host)
-    pick = next((i for i in own if hh.get(i, 0) != a.type), own[0])
-    out = guest.call(f'coop.tribe grab {pick} {rack[0]}')['out'].strip()
-    print('  guest:', out)
+    pick = next((i for i in own if hh.get(i, 0) not in (a.type, 11)), own[0])  # 11: a chief's own (no grab)
+    who = host if a.own else guest
+    hidx = next((i for i, t, p in tools(host)[0] if t == a.type and dist(p, at) < 1), rack[0])
+    out = who.call(f'coop.tribe grab {pick} {hidx if a.own else rack[0]}')['out'].strip()
+    print('  host (own member):' if a.own else '  guest:', out)
     held_h = held_g = None
     t0 = time.time()
     again = False
@@ -115,8 +123,12 @@ def main():
         _, hh = tools(host)
         _, gh = tools(guest)
         held_h, held_g = hh.get(pick), gh.get(pick)
+        if a.own and held_h == a.type:
+            held_g = held_h
         if held_h == a.type and held_g == a.type:
             break
+        if int(time.time() - t0) % 9 < 3:  # BUG-0505: the host member's order record, node and walk
+            print(f'  host ai {time.time() - t0:.0f} s: {host.call(f"coop.tribe ai {pick}")["out"].strip()}')
         if not again and time.time() - t0 > 40 and held_h != a.type:
             # the host's member did not go for it (seen once in 5 runs: the order done, the member busy
             # with something of its own game): a player clicks the rack again
@@ -126,6 +138,7 @@ def main():
             print('  guest (again):', guest.call(f'coop.tribe grab {pick} {rack[0]}')['out'].strip())
     m = re.search(r'tribe last order: (.*)', host.call('coop.status')['out'])
     print('  host order:', m.group(1) if m else '')
+    print('  host', host.call('coop.tribe tools')['out'].strip().splitlines()[-1])  # grab_spot moves (BUG-0505)
     ck(held_h == a.type, f'the guest\'s member #{pick} took the weapon in the host\'s game (tool {held_h})')
     print('  shots:', shot(host, 'tribe_tools_host.png'), shot(guest, 'tribe_tools_guest.png'))
     ck(held_g == a.type, f'the guest sees member #{pick} hold the weapon (its game\'s tool {held_g}, '

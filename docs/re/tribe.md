@@ -1257,3 +1257,54 @@ in the host's citizen TakeDamage hook):
   food mat stay: no game function to remove a whole tribe is known (? which one the game uses when a tribe is
   conquered).
 * ? Tools (BUG-0523): the mod syncs no tool; each game makes the tools its tribes buy at its own spots.
+## A guest's orders on the host and the game's own: the grab spots (2026-11-04, fix/w41-tribe-orders)
+<a id="tribe-orders"></a>
+
+BUG-0505 (a guest's orders taken by the host, its members standing still). GOG 2024, Ghidra + runtime, lane 9
+(`coop.tribe ai <id>`: the order record, the behaviour node with its memory, the walk; `coop.tribe layout <type>`:
+the tribe's grab spots of a tool type).
+* ✔ The game's own order and host_command run the same code: a click goes DoActionGeneric ->
+  DoActionForAllSelected 0xCD0940 (the terrain cursor's selected objects, vt 0x5C) -> 0xCCFE70 ->
+  DoActionForObjects 0xCCEB30 (per object: cast to citizen, `DoAction(action, target, prop)`), then 0xCCFDA0 (the
+  selected members' voice, vt 0xF0) and a feedback sound per action. host_command calls the same DoAction with
+  prop 0. Nothing else (no flag, no queue, no priority) is set by the UI path: the only difference is that the
+  host's members of a guest are not selected on the host (+0x12C); the BT flags do not carry it (? the
+  behaviour code was not searched for other reads of IsSelected, spatial vt 0x50 = 0xAD26E0) (the BT flags built in citizen Update 0xC24A30: `ai[+0x5FC] | 4 if the list at c+0x38 is not empty | 8
+  unless c+0x110 & 0x100 | 0x40 if an order record exists | 0x400/0x800/0x1000 by c+0xEAC`).
+* ✔ DoAction 0xC27710: copies the current record, `0xBCB0E0(ai, action, target, 1)` clears the queue at
+  ai+0x60C and appends one record, copies prop and the target's position, 0xC265B0 posts the action's stimulus
+  (the switch action -> mask: 0 -> 8, 2 -> 0x20, 3 -> 0x40, 10 -> 0x8000, ...), and **only when the new record
+  differs from the old one** (0xBCA2F0 compares action, target and the four properties) posts stimulus 0x4000
+  (re-plan). So a second identical order (the same tool again) does not restart a member stuck in its node.
+* ✔ Behaviour nodes (the action table at 0x1593A80, entries `{id, enter, tick, exit}`): **0x0462854D = GrabTool**
+  (enter 0xDAFC10, tick 0xDAB4A0, exit 0xDAFD20), 0x0462854E next to it, 0x0562C0FB heal, 0x04611FF4 sleep,
+  0x0461300F eat, 0x04623E0C gift food, **0x05F79546** (enter 0xDA7850: needs stimulus (0, 0x4000000), plays
+  anim 0x5F73E48 and the tick 0xD7C730 waits for its end: a reaction to an area blow, posted by 0xC20390 to every
+  creature within its radius; ~ name), 0x05CA7FA7 knocked out. **0x0569236E** is in another table (0x158426C,
+  enter 0xD75A80, tick 0xD75F70: the gather behaviour, a 20-state machine with the tree, walk, pick and bundle
+  steps). 0xCCA550 maps a member's node to the card's activity icon.
+* ✔ The grab node's memory (the leaf's, ai+0x1D0 + 4 * (0xF + 0x2B * (depth - 1)), depth ai+0x1DC):
+  `+0 state, +4 the tool, +8 the tool's position at the enter (moved more than 1 m: the node fails), +0x14
+  took-it flag, +0x18 claimed spot, +0x1C wait counter`. States: 2 walk near the tool (chiefs: to the hut), 3 wait
+  until within reach, 4 claim a spot (0xC98860: cTribe, the free cLayoutSlot of the type's layout
+  (SporeCoop::cTribe_ToolLayout) nearest to the member; none: walk 1-2 m, wait 45 ticks, again), then WalkTo the
+  point on the line tool -> spot at the radii + 0.1 from the tool facing it, 1 wait for the walk's arrival
+  (0xC42F80 on c+0xC0: goal mode +0x250 1-4, radius check, modes 3/4 also the facing; **no time limit**), 6 / 7
+  the grab animation and its event 0x7D7502FC -> SetSpecializedTool(type), 8 done.
+* ✔ The grab spots of the 'tribe' fixture's rack built 9 m off the centre (`coop.tribe build 1 9`): 6 spots on a
+  ring ~6.8 m round the rack; the one toward the village is at (406.1 -7.1 302.7), 2.2 m from the fire pit's
+  centre, the member's radius 2.87. Observed in a failing tribe_tools run (lab 20261104-014156 #2): the guest's
+  member in node 0x0462854D, state 1, spot 0, walk mode 3, goal that spot, standing 1.5 m short of it for 90 s
+  (speed 0, the 40 s re-order changed nothing). The order was the guest's and taken by the host as its own; the
+  member stopped because the spot cannot be stood on. Three of the six spots were used (`used=1`) before the order.
+* ~ Why the walk stops short is not pinned down: a member put 5 m from the rack toward the fire pit, also with
+  another member put onto that spot, reached it (or took another spot) in 6 s with the fix off; the stop in the
+  failing runs was 1.5 m short with walk flags 01 (+0x270) and mode 3 (the arrival also checks the facing).
+* Fix (`tribe.grab_spot`, host): a player tribe member in the grab node's state 1 standing still 4 s within 3 m of
+  its walk goal is set onto the goal facing the tool (game::teleport); the node then arrives and grabs.
+* ~ The play_tribe idle orders of the earlier runs were not reproduced in 2 runs on lane 9 (lab 20261104-014832):
+  the host's own idle orders there (ok 9 of 14 in 20261104-010027) show the same game behaviour for host orders.
+* ✔ (play_tribe, out/lab/20261104-030728 #3) A member stuck in the gather node 0x0569236E (state 1, walk mode 1,
+  its goal the old tree 100 m off, not moving) keeps that node when a new order comes (rec=4 walk, rec=10 hunt with
+  its target set): the record is replaced, the node is not left. ? what ends the gather node's state 1 (tick
+  0xD75F70 case 1 runs while the list at c+0x38 is empty or +0xFC8 != +0xFC4, unless 0xC26DF0(0x30000)); BUG-0505.
