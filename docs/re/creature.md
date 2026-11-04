@@ -2505,7 +2505,7 @@ and #creature-sea-monster.
   vt+0x40 update(dt). `SporeCoop::DramaManager_StartKind` 0xD4D740 (thiscall(mgr, kind, 0) ret 8) starts every
   idle event of a kind (a multimap by kind at mgr +0x50): the stage start 0xD40FA0 calls it with 4 (baby game), a
   message handler 0xD8E840 with 8.
-* ✔ Runtime (lane 6, coop_drama_guest.py): `coop.drama start 2` (StartKind 2) makes a UFO in the game's object
+* ✔ Runtime (lane 6, coop_drama_guest.py, out/lab/20261104-033630 / -033725): `coop.drama start 2` (StartKind 2) makes a UFO in the game's object
   list within 4 s where the event may start; the UFO starts at the own avatar (#creature-ufo-abduction-event).
 * Decision (what the partner should see): every event is made by each game for its own avatar (start positions
   are the avatar's / the player tribe's), so the partner's game never has it. The host owns the world: a guest's

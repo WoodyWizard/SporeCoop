@@ -3924,3 +3924,23 @@ its game's `world_scale=` from coop.pool, read before and after the dump). Fails
   reproduced).
 * `evolve_key` (coop_evolve_in_place.py --case creature --nosave, ~2.5 min): `coop.evokey nosave` turns the host's
   in-place save off (a host alone does not save either); `coop.evokey` prints `keys_set=`.
+
+## Watchdog, world transfer, world events (2026-11-04, fix/w41-infra)
+<a id="testing-g1-infra"></a>
+
+* `kit_watchdog.py` (BUG-0347, one game, ~2 min): `kit.test.window minimize` for 40 s, then `kit.test.hang 40000`.
+  Minimized under Wine the frames stop (IsIconic 1, 66 -> 66) while App::Canvas::Tick goes on. `SPORE_FIX_OFF=hangloop`
+  (or `--old`) fails the minimize case (the WATCHDOG dump). Pitfall: a hidden window (`kit.test.window hide`,
+  SW_HIDE) is no pause under Wine: the game goes on presenting without the frame cap (~80 000 frames/s, 440 ->
+  84 282 in 4 s), so that case is only run with `--case hide`.
+* World transfer statistics: the host logs one line per transfer when the guest has acknowledged all of it,
+  `world: transfer to N acknowledged (KB in s, KB/s; packets P, resends R = x %, rtt ms)`. The fix's switch
+  `net.bulk_acks` (BUG-0405); measure with `rejoin_race_long` (clean loopback, the guest loads while the world
+  comes) and `rejoin_mobile` (SPORE_NET=mobile), each twice (`SPORE_FIX_OFF=net.bulk_acks` and on). On the clean
+  link: 27 transfers 63 % resends (160 228 of 255 858 packets), median 2.2 s / 1571 KB/s (off,
+  out/lab/20261104-032411) against 33 transfers 0 resends of 117 813 packets, median 1.2 s / 2939 KB/s (on,
+  out/lab/20261104-033012). net_tests `bulk_busy_receiver` simulates the same (a guest that reads once per 200-950
+  ms frame, 256 packets per update) on clean, 40 ms / 3 % and 150 ms / 10 % links.
+* `coop_drama_guest.py` (BUG-0486, suite drama_guest, ~1 min warm start): `coop.drama start 2` (the Drama Manager's
+  own StartKind for the UFO visit) on the guest and then on the host; the UFOs are counted in each game's object
+  list (`coop.census` nouns, worlddiff.NOUNS 'ufo'). `SPORE_FIX_OFF=creature.guest_events` fails (the guest's UFO).

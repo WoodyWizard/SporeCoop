@@ -29,7 +29,12 @@ Inferred, not seen at runtime: it is made by the drowning player's own game for 
 never has it. See docs/re/creature.md#creature-sea-monster.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+Not fixed (decision, fix/w41-infra 2026-11-04). Observed (Ghidra): the sea monster is cSeaMonsterEvent, kind 6 of
+the Drama Manager (docs/re/creature.md#creature-drama-events), started by each game for its own avatar. Decision:
+it stays on a guest (the `creature.guest_events` mask leaves kind 6 out): inferred, it is the deep-water death
+that keeps a swimmer near the island, and refusing it would let the guest swim off the map. Showing a partner's
+sea monster needs a relay of the event (or death cause 9) to a cinematic / effect at the puppet: not analysed
+(how the monster is drawn is unknown).
 
 ## Verification
 <!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
@@ -38,3 +43,4 @@ never has it. See docs/re/creature.md#creature-sea-monster.
 ## History
 - 2026-11-02: opened.
 - 2026-11-03: analysed on fix/w40-creature-acts (strings only), not fixed.
+- 2026-11-04: fix/w41-infra: the event mapped (Drama Manager kind 6); kept per game by decision, not fixed.
