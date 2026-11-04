@@ -112,6 +112,7 @@ add('cell_respawn', P + 'coop_cell_respawn.py', warm=True, minutes=3, fixture='c
 add('diag_cell', P + 'coop_diag.py --fixture cell', warm=True, minutes=3, fixture='cell')  # session clock, /bug marks on both games, merge_logs, sync-check OK and a forced mismatch, its cost
 add('diag_creature', P + 'coop_diag.py --fixture creature', warm=True, minutes=3, fixture='creature')  # the same in Creature
 add('report_shot', P + 'coop_report_shot.py', warm=True, minutes=3, fixture='creature', reports=True)  # a /bug mark and "Report a problem" put a screenshot of the game (JPEG, <= 1280 wide, not black, no hitch) into the report archive (BUG-0442; --off or SPORE_REPORT_SHOT=0, [report] screenshot=0 in coop.ini, fails)
+add('cell_camera', P + 'coop_cell_camera.py', warm=True, minutes=3, fixture='cell')  # the view is centred on the own cell after the co-op respawn and the join move (BUG-0343; SPORE_FIX_OFF=cell.camera_snap fails)
 add('cell_respawn_swap', P + 'coop_cell_respawn.py --swap', warm=True, minutes=3, fixture='cell')  # the same with the guest's pool rebuilt (BUG-0221)
 add('cell_editor_timed', P + 'coop_cell_editor_timed.py', minutes=5)  # the own cell editor entered within the 3 s after a real respawn, vulnerable after it (BUG-0237)
 add('cell_editor_timed_revive', P + 'coop_cell_editor_timed.py --revive', minutes=5)  # the same within the 2 s after a revive (BUG-0237)
@@ -172,6 +173,7 @@ add('host_old_choice', P + 'coop_host_old_choice.py', minutes=3)  # BUG-0344
 # BUG-0341: Carol (no Creepy & Cute pack) on a lane outside the run (SPORE_FREE_LANE), host and Bob on the run's lane
 add('guest_missing_pack', P + 'coop_guest_missing_pack.py', minutes=6, uses_free_lane=True)
 add('guest_pack_paints', P + 'coop_guest_pack_paints.py', minutes=4)  # a guest without Creepy & Cute sees the host's pack paints as base game paints (BUG-0369; SPORE_FIX_OFF=creations.paint_substitute fails)
+add('parts_cell_twin', P + 'coop_parts_shared.py --from-cell --guest-cell-part', minutes=6, fixture='cell')  # BUG-0446: a Cell part the guest collected gives its creature twin at Cell -> Creature in both games (SPORE_FIX_OFF=parts.shared_cell fails)
 add('unknown_parts', P + 'coop_unknown_parts.py', minutes=6, uses_free_lane=True)  # a guest without a parts pack (Spore_Pack_03) does not crash on a part it lacks and logs the id (BUG-0452; SPORE_FIX_OFF=creations.unknown_parts fails)
 add('content_civ', P + 'coop_content_civ.py', minutes=10, uses_free_lane=True)  # a civ mirror vehicle whose design model names a part the guest's game lacks does not fault and is shown, and the save it gets into reloads without the mod's key (BUG-0469; SPORE_FIX_OFF=content.all_kinds / content.model_key fail)
 add('content_space', P + 'coop_content_space.py', minutes=6, uses_free_lane=True)  # a host ship whose model names a part the guest's game lacks does not fault and is mirrored (BUG-0469; SPORE_FIX_OFF=content.all_kinds fails)
@@ -457,6 +459,7 @@ add('cell_churn', P + 'coop_cell_churn.py', minutes=4)  # the guest's mirrors re
 add('cell_sap', P + 'coop_cell_sap.py', ('multi', 'extended'), minutes=6)  # four players, over 1024 host cells in one column: the broadphase sweep holds them, no fault per frame (BUG-0337; SPORE_FIX_OFF=cell.sap_sweep fails)
 add('cell_pause', P + 'coop_cell_pause.py', minutes=4)  # a guest in its pause menu while its mirrors churn: the cell broadphase's pending list stays in bounds, its order intact, leaving Cell does not fault (BUG-0348; SPORE_FIX_OFF=cell.sap_pending fails)
 add('cell_sync_check', P + 'coop_cell_sync_check.py', minutes=4)  # the sync-check finds no difference while food comes in and in a crowded pool with the guest swimming (BUG-0379; SPORE_FIX_OFF=diag.total_lag fails phase A)
+add('cell_puppet_scale', P + 'coop_cell_puppet_scale.py', minutes=4, fixture='cell')  # the partner's own cell is drawn where it is while a level change rescales the worlds (BUG-0519; SPORE_FIX_OFF=cell.puppet_scale fails)
 add('cell_grow', P + 'coop_cell_grow.py', minutes=4, fixture='cell')  # the host's cells stay where they are on the guest while a level change rescales the worlds (BUG-0511; SPORE_FIX_OFF=cell.world_scale fails)
 add('cell_ko_food', P + 'coop_cell_ko_food.py', minutes=4)  # a knocked-out cell (guest, then host) eats nothing it touches: no food on either game (BUG-0364; SPORE_FIX_OFF=cell.ko_no_eat fails)
 add('cell_ko_bite', P + 'coop_cell_ko_bite.py', minutes=4)  # a knocked-out cell (guest, then host) bites nobody: the bitten creature's health in the host's game holds (BUG-0509; SPORE_FIX_OFF=cell.ko_no_bite fails)

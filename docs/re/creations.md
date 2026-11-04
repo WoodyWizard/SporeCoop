@@ -1015,3 +1015,33 @@ BUG-0517. GOG 2024, Ghidra and lane 9 (`coop_evolve_in_place.py --case creature 
   avatar's profile and that key gets the profile's key (6 creatures in the lab: the avatar and its family); the
   host's in-place save of BUG-0508 is then skipped. Any role, also without a session (~ not run alone in the lab).
   `coop.evokey [nosave|save]` prints `keys_set=` and turns the host's in-place save off for a test.
+
+## A guest's own creation in a new world; a guest's Cell parts and their twins (2026-11-04, fix/w41-cell-left)
+<a id="creations-guest-other-world"></a>
+
+BUG-0345 ("the guest spawns in the Cell stage with its previous cell creature"), BUG-0446.
+
+* ✔ (code) Where it is chosen: `creations::mine(kind)` (creations.cpp). An explicit choice (choices.ini, the co-op
+  window) wins; without one **a guest plays `g_opts[kind].front()`, the newest own creation of its My Creations
+  (EditorSaves.package)**, in any world, also one it never played; only a guest without own creations plays the
+  world's species (and follows the host's evolution, BUG-0508). `apply_own_cell` then swaps the guest's avatar
+  5 s after each Cell load (RebuildLevel, "own cell is now ... (level rebuilt)"), `apply_own_avatar` the
+  creature. The host has had the opposite rule since BUG-0344 (`creations.host_world_species`: the world's
+  species unless chosen in this stage world). So "the old one comes back" is the design (every player keeps its
+  own creature, coop_creations.py), not a lost choice: the previous game's cell is the newest Cell creation in
+  the player's My Creations.
+* ✔ (code, logs) The DNA: the Cell parts states are the world's (`S+0x34`, docs/re/cell.md#cell-parts-shared),
+  not the creation's: a guest's own cell does not bring its parts, and CollectPart adds no food. The guest's
+  jump on joining (`dna: food 24 -> 170 cause=meal:255+146`) is the host's shared total applied to the guest;
+  the host's "+68 / 100 DNA" were the guest's meals (BUG-0510, fixed in 0.7.4 by the 1/N pace). Not seen: any
+  DNA from the parts of an own creation.
+* Not changed (a design decision for the owner, BUG-0345 stays open): (a) a notice on both sides that a guest
+  plays its own creation from My Creations; (b) a guest's default is the world's species and its own creation
+  only by choice (as the host since BUG-0344): this flips `coop_creations.py`'s feature; (c) a host setting.
+* ✔ (runtime, BUG-0446, `coop_parts_shared.py --from-cell --guest-cell-part`, lane 4) A Cell part the guest
+  collects reaches the host's game (`parts.shared_cell`, BUG-0467) and so the host's live Cell -> Creature start
+  unlocks its creature twin; the guest that loads the host's world has it too (part 4, twin 32AC9620, both
+  IsUnlocked: lab 20261104-022114). With `parts.shared_cell` off neither game has the twin (lab
+  20261104-022323). Part index -> twin: table 0x1483DD8 `{part, cell item}` then 0x1485FE8 (#creations-cell-twins):
+  2 FE534766, 3 3A3C49A5, 4 32AC9620, 5 B70894B6, 6 4908E576, 7 C5744537, 8 1610AD94, 9 DEF1C7FF, 10 30E66572,
+  11 02B3EDDB 7E262CF0 BE830BDE; parts 0, 1 and 12 have none.

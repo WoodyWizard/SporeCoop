@@ -1,19 +1,19 @@
 ---
 id: BUG-0446
 title: cell: a guest's own Cell parts do not give their creature twins at Cell -> Creature (the guest loads the host's world)
-status: open
+status: fixed
 kind: desync
 stage: Cell
 reported: 2026-11-01
 source: fix/w36-parts-transition (BUG-0441 analysis)
 role: guest
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: 0.7.4
+branch: fix/w41-cell-left
+commits: 69bdd173
+tests: parts_cell_twin (tools/tests/coop_parts_shared.py --from-cell --guest-cell-part)
 signature:
-docs: docs/re/creations.md#creations-cell-twins
+docs: docs/re/creations.md#creations-guest-other-world
 related: BUG-0441, BUG-0401, BUG-0316
 ---
 
@@ -30,14 +30,19 @@ To check: `cell` fixture, the guest collects a part token the host has not (`coo
 on both games before the share, on the guest in Cell (are its cell keys of type 0x40616000 unlocked?).
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+Observed (lane 4): a guest's own Cell part collect (CollectPart in its game) did not reach the host's game before
+0.7.4, so the host's live Cell -> Creature start (the only one in co-op) never unlocked its creature twin, and the
+guest, loading the host's world, did not have it either (SPORE_FIX_OFF=parts.shared_cell: neither game has the
+twin, lab 20261104-022323). Since 0.7.4 parts.shared_cell (BUG-0467) gives the host the guest's part within 2 s,
+and the twin is unlocked on both games (lab 20261104-022114).
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+No new code: covered by `parts.shared_cell` (BUG-0467, 0.7.4). New test parts_cell_twin.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+FAIL: SPORE_FIX_OFF=parts.shared_cell parts_cell_twin, lab 20261104-022323.
+PASS: parts_cell_twin, lab 20261104-022114 (part 4, twin 32AC9620 IsUnlocked on host and guest).
 
 ## History
 - 2026-11-01: opened.
+- 2026-11-04: fix/w41-cell-left: checked: fixed by parts.shared_cell (0.7.4); test parts_cell_twin.

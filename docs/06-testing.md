@@ -3924,3 +3924,21 @@ its game's `world_scale=` from coop.pool, read before and after the dump). Fails
   reproduced).
 * `evolve_key` (coop_evolve_in_place.py --case creature --nosave, ~2.5 min): `coop.evokey nosave` turns the host's
   in-place save off (a host alone does not save either); `coop.evokey` prints `keys_set=`.
+
+## Cell leftovers of 0.7.5: the camera, the partner in a level change, Cell twins (2026-11-04, fix/w41-cell-left)
+<a id="testing-l1-cell"></a>
+
+* `cell_camera` (coop_cell_camera.py, cell fixture, ~1 min warm): waits for the hatch to end (`coop.uistate`
+  `input_lock=0` and `cine=0`: during the hatch the game puts the cell back at its start, a jump made then is
+  undone); the guest `coop.pool tp 40 0`, then the host `coop.pool selfhit 250` with the guest 40 m away (it
+  respawns next to the guest after 10 s). `coop.pool cam` prints the camera (`off=` the drawn point to the own
+  cell). Fails when `off` is 1.5 m or more 3 s after each jump. BUG-0343: SPORE_FIX_OFF=cell.camera_snap 7.0 m
+  (FAILS, lab 20261104-020658), the fix 0.1-0.2 m (lab 20261104-020550).
+* `cell_puppet_scale` (coop_cell_puppet_scale.py, ~70 s): both cells idle 7 m apart, the host's food up until two
+  level changes; every 0.25 s `coop.pool scalepos` on both (scale, own cell, puppets in one frame); the error is
+  the puppet against the partner's own cell, both times their game's scale, in the drawing game's metres.
+  BUG-0519: SPORE_FIX_OFF=cell.puppet_scale p90 8.0 / 4.2 m (FAILS, lab 20261104-021951), the fix 0.5 / 0.3 m.
+* `parts_cell_twin` (coop_parts_shared.py --from-cell --guest-cell-part, ~2.5 min cold): the guest collects a Cell
+  part with a creature twin that neither game has (`coop.parts cell collect <i>`), then Cell -> Creature the
+  players' way; the twin must be IsUnlocked (`coop.parts states`, the `u`) on both games, then the test stops.
+  BUG-0446: SPORE_FIX_OFF=parts.shared_cell FAILS (lab 20261104-022323), on PASS (lab 20261104-022114).

@@ -64,6 +64,16 @@ static void test_buffer()
     Reader r2(w2.data.data(), w2.size());
     PlayerState t2;
     CHECK(t2.read(r2) && t2.mode == 0x1654C05 && t2.world == 0x80B16021);
+    // BUG-0519: the Cell world scale is appended; an older sender's state (without it) reads as 0
+    s.scale = 1.5f;
+    Writer w4;
+    s.write(w4);
+    Reader r4(w4.data.data(), w4.size());
+    PlayerState t4;
+    CHECK(t4.read(r4) && t4.scale == 1.5f && r4.left() == 0);
+    Reader r5(w4.data.data(), w4.size() - 4);
+    PlayerState t5;
+    CHECK(t5.read(r5) && t5.scale == 0.f && t5.world == 0x80B16021);
     // shared resource message payload (u8 id, f64)
     Writer w3;
     w3.u8(3);
@@ -546,6 +556,24 @@ static void test_interp()
     PlayerState o;
     CHECK(b.sample(5.0 + 0.5, o)); // newest local recv time -> render 0.1 s behind -> x=8
     CHECK(std::fabs(o.pos.x - 8.0f) < 0.01f);
+    {   // BUG-0519: a Cell level change: the same point at x=10 (scale 1) and x=5 (scale 2) blends
+        // in the newer state's scale (5), not half-way between two scales (7.5)
+        SnapshotBuffer c;
+        c.delay = 0.1;
+        for (int i = 0; i <= 10; i++) {
+            PlayerState s;
+            s.time_ms = 1000 + i * 50;
+            s.scale = i < 5 ? 1.f : 2.f;
+            s.pos = {i < 5 ? 10.f : 5.f, 0, 0};
+            c.push(s, 5.0 + i * 0.05);
+        }
+        PlayerState q;
+        CHECK(c.sample(5.0 + 0.325, q)); // between the states 4 (scale 1) and 5 (scale 2)
+        CHECK(std::fabs(q.pos.x - 5.0f) < 0.01f && q.scale == 2.f);
+        SnapshotBuffer::scale_lerp = false;
+        CHECK(c.sample(5.0 + 0.325, q) && q.pos.x > 6.f); // the old blend (cell.puppet_scale off)
+        SnapshotBuffer::scale_lerp = true;
+    }
     CHECK(b.sample(5.0 + 0.6, o)); // extrapolate 0 s past newest: x=10
     CHECK(std::fabs(o.pos.x - 10.0f) < 0.01f);
     CHECK(b.sample(5.0 + 2.0, o)); // capped at 0.25 s -> x = 10 + 5

@@ -268,8 +268,31 @@ static float revive_dist(uint8_t* a)
 // A cell with a soft body (the avatar) takes its position and velocity from its particles
 // (modes::cell_move moves their positions and, for a stop, clears their velocities);
 // +0x1C4 is the steering acceleration the cell step adds to the particle velocities.
+// BUG-0343: the cell camera (cCellUI, update 0xE600A0, docs/re/cell.md#cell-camera) chases a target
+// point +0x54 that moves towards the avatar only at 1.5 x the avatar's speed, and keeps the drawn
+// point +0x48 within a box around the avatar: after a jump of a stopped cell (our respawn next to the
+// partner, a guest put next to the host after a load or an editor) the view stayed off centre until
+// the player swam a while. The game's own jumps (0xE611B0, 0xE794F0) set +0x48, +0x54 and +0x60 to
+// the new place; we do the same for every jump of our own cell. Off: 0.7.4 (the view lags behind).
+static bool g_fix_camera_snap = true;
+COOP_FIX("cell.camera_snap", "BUG-0343", g_fix_camera_snap, "cell: the view is centred on our own cell after the mod moves it (respawn, join)");
+static uint32_t g_camera_snaps;
+static void camera_snap(const net::Vec3& p)
+{
+    uint8_t* ui = a_CellUI ? *(uint8_t**)a_CellUI : nullptr;
+    if (!ui || !skg::readable(ui + 0x48, 0x24))
+        return;
+    for (int off : {0x48, 0x54, 0x60}) {
+        auto* q = (float*)(ui + off);
+        q[0] = p.x; q[1] = p.y; q[2] = p.z;
+    }
+    g_camera_snaps++;
+}
+
 static void stop_at(uint8_t* c, const net::Vec3& p)
 {
+    if (g_fix_camera_snap && c && c == avatar() && net::dist(pos_of(c), p) > 2.f)
+        camera_snap(p);
     modes::cell_move(c, p, true);
     auto* bv = (float*)(c + 0x1C4);
     bv[0] = bv[1] = bv[2] = 0;
@@ -2328,7 +2351,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     a_AddFood = H->sym("Simulator::Cell::AddFoodPoints");
     a_Populate = H->sym("Simulator::Cell::PopulateMarker");
     a_Rollover = H->sym("Simulator::Cell::ShowHealthRollover");
-    a_CellUI = H->sym("Simulator::Cell::cCellUI::_ptr"); // tests only (rollover_of)
+    a_CellUI = H->sym("Simulator::Cell::cCellUI::_ptr"); // rollover_of (tests), camera_snap (BUG-0343)
     a_DnaFor = H->sym("Simulator::Cell::DNAForFood"); // BUG-0351 diagnostics (dna_note)
     a_GetDamage = H->sym("Simulator::Cell::GetDamageAmount");
     a_TargetParams = H->sym("Simulator::Cell::GetTargetSearchParams");
@@ -4374,6 +4397,34 @@ std::string debug(const std::vector<std::string>& a)
         t[2] = p.z;
         F<uint8_t>(av, 0x04) = 0;
         return "swimming";
+    }
+    if (!a.empty() && a[0] == "scalepos") { // tests (BUG-0519): world scale, own cell and every partner's puppet, one frame
+        std::string o;
+        char b[96];
+        net::Vec3 me = pos_of(av);
+        snprintf(b, sizeof b, "scale=%.4f me=(%.2f %.2f)", world_scale(), me.x, me.y);
+        o = b;
+        for (int id = 0; id < 8; id++)
+            if (uint8_t* pc = puppet_cell(id)) {
+                net::Vec3 q = pos_of(pc);
+                snprintf(b, sizeof b, " p%d=(%.2f %.2f)", id, q.x, q.y);
+                o += b;
+            }
+        return o;
+    }
+    if (!a.empty() && a[0] == "cam") { // tests (BUG-0343): the cell camera (cCellUI +0x48 drawn, +0x54 target, +0x60 lag)
+        uint8_t* ui = a_CellUI ? *(uint8_t**)a_CellUI : nullptr;
+        if (!ui || !skg::readable(ui + 0x48, 0xB0))
+            return "no camera";
+        auto* d = (float*)(ui + 0x48);
+        auto* t = (float*)(ui + 0x54);
+        auto* l = (float*)(ui + 0x60);
+        net::Vec3 me = pos_of(av);
+        char b[320];
+        snprintf(b, sizeof b, "cam=(%.2f %.2f) target=(%.2f %.2f) lag=(%.2f %.2f) avatar=(%.2f %.2f) off=%.2f follow=%u bc=%.2f snaps=%u scale=%.3f",
+                 d[0], d[1], t[0], t[1], l[0], l[1], me.x, me.y, std::hypot(d[0] - me.x, d[1] - me.y),
+                 F<uint32_t>(ui, 0xE0), F<float>(ui, 0xBC), g_camera_snaps, G() ? F<float>(G(), 0x514C) : 0.f);
+        return b;
     }
     if (a.size() >= 3 && a[0] == "tp") { // move our cell to <dx dy> from the nearest partner [or player <id>]
         net::Vec3 at;
