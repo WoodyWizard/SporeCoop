@@ -40,8 +40,9 @@ after one was destroyed); a guest destroys a tribe of its own with no host tribe
 coop_civ_tribe_left.py (a capture, then the host's game destroys two tribes as its raid does: `coop.civ razetribe`):
 FAIL with SPORE_FIX_OFF=civ.tribe_ruins (host 14 tribes, guest 17): out/lab/20261104-130804;
 PASS (14 / 14, the guest removed the two and one its host's vehicle raided meanwhile): out/lab/20261104-130500
-(two checks of that run were the test's own and were corrected after it: bundles of a capture, a third raid);
-the corrected test: see the history.
+(two checks of that run were the test's own and were corrected after it: bundles of a capture, a third raid).
+Corrected test (the village's own objects; bundles: BUG-0548): FAIL with the switch off out/lab/20261104-135051
+(also 20261104-131051), PASS out/lab/20261104-134924.
 
 ## History
 - 2026-11-04: opened.
