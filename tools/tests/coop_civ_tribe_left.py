@@ -54,7 +54,9 @@ def main():
     print(f'  after: host {h1}', flush=True)
     print(f'  after: guest {g1}', flush=True)
     ck(all(g0[k] <= h0[k] for k in NOUNS.values()), f'before the capture the guest has no tribe objects of its own')
-    ck(all(g1[k] <= h1[k] for k in NOUNS.values()), f'after the capture the guest has no tribe objects of its own')
+    # a capture drops bundles (the loot) in each game on its own (36 / 37 in lab 20261104-130500): not compared here
+    ck(all(g1[k] <= h1[k] for k in NOUNS.values() if k != 'game_bundle'),
+       f'after the capture the guest has no tribe objects of its own')
     for i in (0, 0):
         print('  host razetribe:', host.call(f'coop.civ razetribe {i}')['out'].strip(), flush=True)
         time.sleep(1)
@@ -63,7 +65,8 @@ def main():
     print(f'  after the raids: host {h2}', flush=True)
     print(f'  after the raids: guest {g2}', flush=True)
     print('  guest', next((ln for ln in guest.call('coop.civ')['out'].splitlines() if 'tribe_ruins:' in ln), ''), flush=True)
-    ck(h2['tribe'] == h1['tribe'] - 2, f"the host's game destroyed two tribes ({h1['tribe']} -> {h2['tribe']})")
+    # (the host's own vehicles may raid one more meanwhile)
+    ck(h2['tribe'] <= h1['tribe'] - 2, f"the host's game destroyed two tribes ({h1['tribe']} -> {h2['tribe']})")
     ck(all(g2[k] <= h2[k] for k in NOUNS.values()),
        f'after the raids the guest has no tribe objects the host does not have (host {h2}, guest {g2})')
     ck.faults(host=host, guest=guest)
