@@ -261,6 +261,7 @@ add('civ_planner', P + 'coop_civ_planner.py', warm=True, minutes=3, fixture='civ
 add('civ_discovery', P + 'coop_civ_discovery.py', warm=True, minutes=3, fixture='civ_npc')  # meeting a civilization the guest's game lacks shows no card and does not crash (BUG-0492; SPORE_FIX_OFF=civ.discovery_card crashes)
 add('civ_save_strip', P + 'coop_civ_save_strip.py', minutes=10, uses_free_lane=True)  # a Civ guest's save holds no mirror vehicle and reloads alone without a fault or a null in the civ lists (BUG-0470; SPORE_FIX_OFF=civ.save_strip fails)
 add('tribe_save_strip', P + 'coop_tribe_save_strip.py', minutes=10, uses_free_lane=True)  # a Tribe guest's save holds none of the mirrors / tribes the mod made and reloads alone without a fault (BUG-0495; SPORE_FIX_OFF=tribe.save_strip fails)
+add('space_save_strip', P + 'coop_space_save_strip.py', minutes=10, uses_free_lane=True)  # a Space guest's save holds none of the partners' puppets or the host's mirrors and reloads alone without a fault (BUG-0522; SPORE_FIX_OFF=space.save_strip fails)
 add('tribe_guest_tribes', P + 'coop_tribe_guest_tribes.py', minutes=3, fixture='tribe')  # BUG-0483: a guest's game forms no NPC tribe of its own and empties tribes the host has not (SPORE_FIX_OFF=tribe.guest_tribes fails)
 add('civ_mirror_remove', P + 'coop_civ_mirror_remove.py', warm=True, minutes=3, fixture='civ_npc')  # a vehicle the host's game removed leaves no dead vehicle on the guest (BUG-0478; SPORE_FIX_OFF=civ.mirror_remove fails)
 add('civ_roads', P + 'coop_civ_roads.py', warm=True, minutes=3, fixture='civ_npc')  # a road (trade route) the host's game makes is on the guest too (BUG-0494; SPORE_FIX_OFF=civ.roads fails)
@@ -360,6 +361,7 @@ add('play_civ', P + 'play_civ.py --minutes 10', ('nightly', 'detector'), minutes
 add('space_play', P + 'coop_space_play.py', ('smoke',), minutes=6)
 add('space_page', P + 'coop_space_page.py', ('smoke',), minutes=4)  # the F9 Space page (space_ext.h), jump by a real click
 add('space_map', P + 'coop_space_map.py', minutes=6)  # partners and their colonies on the galaxy map, the roster (space_map.h)
+add('space_colony_rejoin', P + 'coop_space_colony_rejoin.py', minutes=5, fixture='space')  # a guest's own colony is a colony of its empire again after it rejoins (BUG-0195; SPORE_FIX_OFF=space.keep_colonies fails)
 add('space_jump', P + 'coop_space_jump.py', minutes=7)  # jumps into unvisited systems: planets, first contact
 add('space_share_takeoff', P + 'coop_space_share_takeoff.py', minutes=5)  # a guest's share saved as the host leaves a planet: the guest stays in the system (BUG-0301; SPORE_FIX_OFF=world.share_settle_context fails)
 add('space_share_wait', P + 'coop_space_share_wait.py', minutes=5)  # a guest waiting for the world while the host is on a planet is told why; the host's trace says share_wait=planet (BUG-0382; SPORE_FIX_OFF=world.share_wait_notice fails)

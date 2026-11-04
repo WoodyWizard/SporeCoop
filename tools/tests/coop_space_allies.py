@@ -206,7 +206,11 @@ def main():
     st = ui.wait(lambda s: s['page'] == 'space' and s[f'sbtn{idx}']['vis'], 10, 'Space page')
     ck(st is not None and st[f'sbtn{idx}']['text'] == 'Fly there', 'the Space page shows the button')
     shot(guest, 'allies_page.png')
-    ui.click(f'sbtn{idx}')
+    rows2 = sp(guest, 'rows')  # the page may have changed since (a row more shifts every button)
+    if rows2 != rows:
+        print('  guest rows now:', rows2.replace('\n', ' | '), flush=True)
+    idx2 = next((int(r.split(':')[0]) for r in rows2.splitlines() if "Alice's empire: colonies in your galaxy: 1" in r), idx)
+    ui.click(f'sbtn{idx2}')
     guest.call(f'key {VK_F9}')
     ck(wait(lambda: place(guest)[1] == star and context(guest) == 'system', 40), f'the button took the guest to star {star}')
     no_movie(guest)

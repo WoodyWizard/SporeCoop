@@ -18,6 +18,10 @@
   same time as on the host's; a guest's game fires exactly the shots that left on the host (BUG-0530, BUG-0538).
 - Civilization: a city's defence turrets are the same in every game: a guest's game no longer builds its own, and
   a turret the host's city builds appears for the guests (BUG-0484).
+- Space: a guest's save no longer keeps the partners' ships and the host's ships its game showed; after loading it
+  alone they came back as extra Defenders of your own empire (BUG-0522).
+- Space: a guest's own colonies are no longer lost when it leaves and joins again: the host keeps them and gives
+  them back (with one city; a host that restarts its game does not keep them yet) (BUG-0195).
 
 ## [0.7.5] - 2026-11-04
 

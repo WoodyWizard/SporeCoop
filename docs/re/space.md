@@ -2110,3 +2110,48 @@ flies ~270 m higher), lane 3, GOG 2024, both games on the planet (`coop.census a
   every ship by its own camera (both ships 0.922 at zoom 200, 0.664 when the guest's zoom went to 135.8 with
   one wheel notch, the host still 0.922); the partner's ship is always the own ship's size on that screen. Not a
   desync: the detector compares a ship's size relative to the own ship of the game drawing it.
+## The mod's ships in a Space save (2026-11-04, fix/w42-space-life)
+<a id="space-save-strip"></a>
+
+* ✔ A Space save writes every UFO of the noun list, the mod's too: a guest (Carol, lane 5, GOG 2024) saved
+  in the `space` fixture's star system with the host's and Bob's puppets (Defenders of its empire,
+  `modes.cpp space_spawn`) and one mirror of a host Defender (`squadron.cpp guest_state`) next to it;
+  restarted alone, it loaded the save and had 3 type 6 ships of its own empire, two exactly where the
+  puppets stood (lab 20261104-094503). The invincible byte (+0x588) is not kept: they came back as
+  ordinary, vulnerable Defenders, each with the AI of a colony defender.
+* ✔ Null rule (BUG-0470): with the strip filter writing null references for the 3 ships (6 references:
+  base and the ISPSerializable cast), the reload ran 10 s without a fault and with no ship of ours
+  (lab 20261104-094827). ModAPI's `cSimulatorSpaceGame::mNPC_UFOs` (+0x78) read as an empty vector
+  {begin == end} in that system (3 NPC ships listed): not a list of the system's NPC ships here, so nothing
+  is taken out of a list while the save is written (~: not checked on a planet).
+* The host's share save (written for a joining guest) holds the other guests' puppets the same way:
+  the strip runs on both roles (`space: N ships of ours leave this save`, `save_stripped=` in
+  `coop.fleet list`).
+
+## A guest's colonies across a rejoin (2026-11-04, fix/w42-space-life)
+<a id="space-kept-colonies"></a>
+
+* ✔ A guest's record-level colony (tech 5, a cCivData of its empire) is gone after it leaves and joins again:
+  the rejoin loads the host's share save, which never has it (the allies mirror is undone before every save,
+  15.4). Seen: P01460035 tech 5 -> tech 1, no civilization (lab 20261104-095758).
+* ✔ The guest's first roster after a join is read in its own world, before the host's world arrives and loads
+  (lab 20261104-100007): anything applied from the host's answer to it is lost with the load. BUG-0195's
+  restore waits until the guest's Space world epoch moved on since the join.
+* ✔ The record-level colony path (`spaceext::colonize_own`, the `allies colonize` test command) applied in
+  the freshly loaded host world shows the planet as the guest's colony at once (tech 5, its pol); the host's
+  roster of the guest has it as the guest's own within one roster period.
+
+## The fast partner ship in the core: a measuring gap, not a drawing error (2026-11-04, fix/w42-space-life)
+<a id="space-fast-ship-track"></a>
+
+* ✔ BUG-0388's "guest ship drawn 20-30 m off its path for 0.2 s" (space_finale_wait, the guest orbiting the
+  core's gate at ~200 m/s) is not what the host drew. With the puppet rows carrying the pose the mod set (the
+  partner's interpolated state, `extrap`, `pin`): every off row was pinned, interpolated (extrap 0.000 s) and
+  drawn exactly where it was set (lab 20261104-100758 #1 and #2, 20261104-101851).
+* ✔ The track dumps had gaps: SporeKit cut every command answer at 8 KB (`out_printf`, an 8192-byte buffer):
+  of 300 rows asked per call the test got 97, so the guest's own path had a 1.5 s hole every ~0.7 s, and the
+  check measured the drawn ship against the straight chord across a hole of an orbit of radius 276 m. Where the
+  guest's path was recorded without a gap (98 rows of the same run, up to ~300 m/s by the rows) the drawn ship
+  was within 0.17 m of it (out/lane4/tracks of 20261104-101851, offline check).
+* Fixed in SporeKit (`kit.fix longout`): one printf may give up to 1 MB. Every other dump read in pages
+  (`coop.track`, `coop.npctrack`) lost rows the same way before.

@@ -834,6 +834,7 @@ void drive_puppet(Remote& r, double now)
                         trace::hex(creations::player_key(r.id, creations::kCell).instance).c_str());
     }
     track_lift(s);
+    modes::g_drive_extrap = r.buf.last_extrap; // BUG-0388 diagnostics (coop.fleet track)
     if (!g_puppet_hold)
         g_adapter->drive(r.puppet, s, r.drv, now);
 }

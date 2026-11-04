@@ -108,6 +108,9 @@ public:
     float jump_speed = 0;
     // BUG-0519 (cell.puppet_scale): blend two states of different Cell world scales in one scale
     static inline bool scale_lerp = true;
+    // diagnostics (BUG-0388): how far past its newest snapshot the last sample() ran (s, before the
+    // max_extrap cap), 0 = it interpolated
+    mutable double last_extrap = 0;
 
     void clear()
     {
@@ -168,6 +171,7 @@ public:
         if (snaps_.empty())
             return false;
         double t = local_now - offset_ - delay;
+        last_extrap = 0;
         if (t <= snaps_.front().t) {
             out = snaps_.front().s;
             return true;
@@ -204,6 +208,7 @@ public:
         // extrapolate from the newest snapshot
         const auto& n = snaps_.back();
         double dt = t - n.t;
+        last_extrap = dt;
         if (dt > max_extrap)
             dt = max_extrap;
         out = n.s;

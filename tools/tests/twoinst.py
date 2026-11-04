@@ -356,7 +356,8 @@ def start(*a, **kw):
         lane_state(**{**lane_state(), 'fix_off': ','.join(names)})
     for name in names:
         for con in (host, guest):
-            out = con.call(f'coop.fix {name} off')['out'].strip()
+            # a SporeKit switch (kit.fix, sporekit/fixes.cpp) is named `kit.<name>` (BUG-0388)
+            out = con.call(f'kit.fix {name[4:]} 0' if name.startswith('kit.') else f'coop.fix {name} off')['out'].strip()
             print('  SPORE_FIX_OFF: ' + out, flush=True)
             if not fix_off_ok(name, out):
                 print(f'RESULT: FAIL (SPORE_FIX_OFF: unknown fix {name}: {out.splitlines()[0] if out else "no answer"})',
@@ -404,7 +405,9 @@ def apply_fps(con, who):
 
 
 def fix_off_ok(name, answer):
-    """the coop.fix answer to `<name> off` says that switch is off now"""
+    """the coop.fix answer to `<name> off` (kit.fix: `kit.<name>` -> `<name> 0`) says that switch is off now"""
+    if name.startswith('kit.'):
+        return answer == f'{name[4:]} 0'
     return answer.startswith(f'{name} off ')
 
 

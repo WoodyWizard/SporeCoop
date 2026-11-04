@@ -487,6 +487,10 @@ anchor so other docs can link to it:
 * The map is overlay text (a ring of dots, a name tag), not the game's own star marks; tags are not
   hidden behind the game's own galaxy panels (the star info card), only under the pause menu, the
   co-op window, comm screens and cinematics.
+* 2026-11-04 (fix/w42-space-life): the rejoin is fixed (BUG-0195, `space.keep_colonies`, test
+  space_colony_rejoin): the host keeps a guest's own colonies and gives them back when it rejoins. Still open: a
+  host that restarts its game keeps nothing (memory only), the colony comes back with one city and no stored
+  spice, the list is keyed by the player's name.
 * Ticket: BUG-0195.
 
 ## Space trade: open ends (space_trade.cpp, 2026-10-23)
@@ -1397,6 +1401,9 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   inferred: the partner interpolation (extrapolation up to 0.25 s with the last velocity) or late
   snapshots during the host's cinematic.
 * Not checked: a frame-by-frame look at the received states around the moment.
+* 2026-11-04 (fix/w42-space-life): not a drawing error (BUG-0388): the console cut the track dumps at 8 KB, the
+  guest's path had gaps and the check measured against the chord across them; with complete rows the ship is
+  drawn within 0.17 m (docs/re/space.md#space-fast-ship-track). SporeKit `kit.fix longout`.
 * Ticket: BUG-0388.
 ## Tests: the creature test's hit lands on the host's family and is dropped (2026-11-01, fix/w30-tribe-walk)
 <a id="issue-creature-test-party-hit"></a>
@@ -1813,6 +1820,9 @@ Found by fix/w40-play (2026-11-03), not fixed:
   and made tribes (tribe.save_strip), not the Space objects the mod makes (the partners' UFO puppets). Not
   checked whether a Space save writes them at all.
 * Not fixed: needs a Space save + reload test as tribe_save_strip.
+* 2026-11-04 (fix/w42-space-life): fixed (BUG-0522, `space.save_strip`, test space_save_strip): a Space save
+  did write them (they came back as plain Defenders of the guest's empire); now null references
+  (docs/re/space.md#space-save-strip). Still open: the Creature-stage fallback puppet in the avatar's herd.
 * Ticket: BUG-0522
 ## Tribe: tools stand elsewhere on each game; an emptied village keeps its hut (2026-11-03, fix/w41-tribe-world)
 <a id="issue-tribe-tools"></a>

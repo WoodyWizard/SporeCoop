@@ -483,8 +483,27 @@ void space_pin(void* u, const float pp[3], bool fix)
     skg::field<skg::Vector3>(u, 0x750) = n; // mDestination
 }
 
+double g_drive_extrap;
+struct DriveNote {
+    float p[3];
+    float extrap;
+};
+static std::unordered_map<void*, DriveNote> g_drive_notes;
+bool space_drive_note(void* u, float p[3], float& extrap)
+{
+    auto it = g_drive_notes.find(u);
+    if (it == g_drive_notes.end())
+        return false;
+    memcpy(p, it->second.p, sizeof it->second.p);
+    extrap = it->second.extrap;
+    return true;
+}
+
 static void space_drive(void* u, const net::PlayerState& s, drive::State&, double)
 {
+    if (g_drive_notes.size() > 64)
+        g_drive_notes.clear();
+    g_drive_notes[u] = {{s.pos.x, s.pos.y, s.pos.z}, (float)g_drive_extrap};
     // UFOs fly freely: place the puppet exactly where the remote ship is, every frame
     skg::Vector3 p{s.pos.x, s.pos.y, s.pos.z};
     skg::Quaternion q{s.rot.x, s.rot.y, s.rot.z, s.rot.w};

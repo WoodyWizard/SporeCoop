@@ -1105,6 +1105,35 @@ static std::string str16(void* s)
     return o;
 }
 
+// a record-level colony of my own empire on `planet` (docs/re/space.md 15.2: the star claimed, tech 5,
+// the cCivData of my empire, AddPlanet). "" = done; else why not: "wait" (restore only: the ship is at that
+// planet, its live planet is not changed from under it) or a lasting reason. `restore` (BUG-0195, a guest's colony the host
+// kept for it): a planet that is a colony already counts as done when it is mine, as a conflict when not.
+static std::string colonize(uint32_t id, bool restore)
+{
+    void* me = player_empire();
+    void* rec = planet_record(id);
+    void* star = rec ? spacecoop::star_record(id & 0xFFFFFFu) : nullptr;
+    if (!me || !rec || !star)
+        return "no such planet";
+    uint32_t pol = F<uint32_t>(me, 0x84);
+    if (restore && active_planet_record() == rec) // (the test command colonizes the active planet on purpose)
+        return "wait";
+    if (F<uint32_t>(star, 0x54) != 0xFFFFFFFFu && F<uint32_t>(star, 0x54) != pol)
+        return "the star belongs to another empire";
+    if (restore && F<uint32_t>(rec, 0x194) == 5)
+        return F<uint32_t>(star, 0x54) == pol ? "" : "a colony of another empire";
+    if (F<uint32_t>(rec, 0x194) >= 4 && restore)
+        return "a civilization lives there";
+    F<uint32_t>(star, 0x54) = pol;
+    thiscall<void>(a_AddStar, me, star);
+    cdecl_call<void>(a_PlanetTech, rec, 5);
+    cdecl_call<void>(a_FillPlanet, rec, 5);
+    thiscall<void>(a_AddPlanet, me, rec);
+    planet_set_pol(rec, pol);
+    return "";
+}
+
 static std::string describe_star(uint32_t id)
 {
     void* s = spacecoop::star_record(id);
@@ -1341,18 +1370,9 @@ static std::string debug(const std::vector<std::string>& a)
         if (!rec || !me)
             return "no planet to colonize\n";
         uint32_t id = F<uint32_t>(rec, 0x184);
-        void* star = spacecoop::star_record(id & 0xFFFFFFu);
-        if (!star)
-            return "no star\n";
-        uint32_t pol = F<uint32_t>(me, 0x84);
-        if (F<uint32_t>(star, 0x54) != 0xFFFFFFFFu && F<uint32_t>(star, 0x54) != pol)
-            return "the star belongs to another empire\n";
-        F<uint32_t>(star, 0x54) = pol;
-        thiscall<void>(a_AddStar, me, star);
-        cdecl_call<void>(a_PlanetTech, rec, 5);
-        cdecl_call<void>(a_FillPlanet, rec, 5);
-        thiscall<void>(a_AddPlanet, me, rec);
-        planet_set_pol(rec, pol);
+        std::string why = colonize(id, false);
+        if (!why.empty())
+            return why + "\n";
         return "colonized " + hex(id) + "\n" + describe_star(id & 0xFFFFFFu);
     }
     return "usage: coop.space allies [list | star <StarID> | planet <PlanetID> | empire <pol> | raids | raid <PlanetID> [n] |"
@@ -1443,3 +1463,4 @@ static bool reg = spaceext::add({.name = "allies",
                                  .debug = debug});
 
 } // namespace spaceallies
+std::string spaceext::colonize_own(uint32_t planet) { return spaceallies::colonize(planet, true); }

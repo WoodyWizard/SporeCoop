@@ -12,11 +12,12 @@
   and pays the game's own price for the trip;
 * both in the galaxy view: the tag is on the guest's ship, a click on it teleports the host there
   (SpaceTeleportTo: free, instant);
-* the guest leaves and joins again: both have each other's roster again (the guest reloaded the
-  host's world, so its own colony is gone from its roster).
+* the guest leaves and joins again: both have each other's roster again, and the guest's own colony
+  is back in its empire (the host kept it, BUG-0195; SPORE_FIX_OFF=space.keep_colonies: gone).
 
   SPORE_LANE=2 python3 tools/tests/coop_space_map.py
 """
+import os
 import re
 import time
 
@@ -313,8 +314,12 @@ def main():
     r = wait(lambda: (lambda h, g: (h, g) if 1 in h and 0 in g else None)(rosters(host), rosters(guest)), 20)
     ck(r is not None, 'after the rejoin both games have the partner\'s roster again')
     if r:
-        ck(not [c for c in r[0][1]['colonies'] if c[2]],
-           'the rejoined guest plays the host\'s world again: its own colony is gone from its roster')
+        own = [c for c in r[0][1]['colonies'] if c[2]]
+        if 'space.keep_colonies' in os.environ.get('SPORE_FIX_OFF', ''):  # 0.7.5: the host kept nothing
+            ck(not own, 'the rejoined guest plays the host\'s world again: its own colony is gone from its roster')
+        else:  # BUG-0195: the host gave it back
+            ok = wait(lambda: [c for c in rosters(host).get(1, {}).get('colonies', []) if c[2] and col and c[0] == col[0][0]], 30)
+            ck(ok is not None, f'the rejoined guest has its own colony again (the host\'s roster of it: {ok or own})')
     ck.faults(host=host, guest=guest)
     return ck.result()
 

@@ -4050,3 +4050,20 @@ docs/re/space.md#space-planet-life). Each asserts the game's own objects in the 
 * The divergence detector in Space (worlddiff.py): citizens near the guest are compared only when the host's
   game has citizens there (each game puts its pool of 150 at the cities near its own camera); a ship's size is
   compared relative to the own ship of the game that draws it (each game sizes every ship by its camera zoom).
+
+## Space lifecycle tests: saves and rejoins (2026-11-04, fix/w42-space-life)
+<a id="testing-space-lifecycle"></a>
+
+* `coop_space_save_strip.py` (~2 min, needs the free lane): Carol (lane B) saves in the host's star system
+  with two puppets and a mirror, is restarted alone and loads the save; our ships are told apart in
+  `coop.fleet list` by `puppet` / the mirror id, `inv=` and `model=`, and in the reloaded world by type, model
+  and the spot they stood on (5 m). The game does not keep the invincible byte: a reloaded puppet is a plain
+  Defender (`inv=0`), so "no invincible Defender" alone does not catch it.
+* `coop_space_colony_rejoin.py` (~1 min): pitfall: right after `coop.leave` and a join the guest still answers
+  `coop.avatar` in its own old world, so `twoinst.wait_guest_in` can return before the host's world is loaded;
+  wait for `coop.space world` (`world=N open=1`) to move on first.
+* Console answers were cut at 8 KB until 2026-11-04 (SporeKit `out_printf`, BUG-0388): a dump read in pages of
+  300 rows got ~97 of each page, silently. Now up to 1 MB per printf (`kit.fix longout`); `coop_space_drawn.dump`
+  prints `track dump: N of M rows read` when rows are missing. A test that reads a long answer should still count
+  what it got against what the game says it has.
+* `SPORE_FIX_OFF=kit.<name>` switches a SporeKit fix (`kit.fix <name> 0`) off on both games (twoinst.start).
