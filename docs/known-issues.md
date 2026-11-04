@@ -1878,3 +1878,5 @@ other has not (both landed, `coop.census all 3000 0 0 0`); not the camera's leve
 * What happens: the 4 cultural targets per city (city setup 0xBE7D40) are placed by each game on its own; the
   detector's `unmatched:cultural_target` in campaign_space. Not seen in play_civ.
 * Not fixed. Ticket: BUG-0540
+- BUG-0550: Creature: an NPC 9 m over the ground on the host is drawn on the ground on the guest (seen once in play_creature, sync-check `n: 1 apart`).
+- BUG-0551: Creature: a chat line typed while the host pauses to save the world for a returning guest can be lost (seen once in play_creature).

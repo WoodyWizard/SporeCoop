@@ -60,11 +60,12 @@ def main():
     h0, g0, hp0, gp0 = counts(host, guest, cities, 'both at the capital')
     seen = gp.look_at(cities[far]['pos'])
     print(f'  the guest\'s camera at city {far}: {seen}', flush=True)
+    want = max(1, gp0[home] // 2)  # most of the guest's city citizens (BUG-0553: 1 of 19 when the mod put them back)
     # the game moves its pool to the city near the camera within 10 to 30 s (once 0 after 10 s on a loaded machine)
     for _ in range(7):
         time.sleep(10 if _ == 0 else 3)
         h1, g1, hp1, gp1 = counts(host, guest, cities, f'the guest\'s camera at city {far}')
-        if gp1[far] > 0:
+        if gp1[far] >= want:
             break
     gp.look_at(cities[home]['pos'])
     time.sleep(10)
@@ -72,7 +73,8 @@ def main():
     ck(seen is not None, f'the guest\'s camera reached city {far}')
     ck(abs(g1 - g0) <= max(2, 0.1 * g0) and abs(h1 - h0) <= max(2, 0.1 * h0),
        f'each game keeps its number of citizens (host {h0} -> {h1}, guest {g0} -> {g1}): a pool')
-    ck(gp1[far] > 0 and hp1[far] == 0, f'at city {far} the guest\'s game has citizens ({gp1[far]}), the host\'s none ({hp1[far]})')
+    ck(gp1[far] >= want and hp1[far] == 0,
+       f'at city {far} the guest\'s game has its citizens ({gp1[far]}, at least {want}), the host\'s none ({hp1[far]})')
     ck(gp2[home] > 0 and hp2[home] > 0, f'back at the capital both games have citizens there ({hp2[home]} / {gp2[home]})')
     ck.faults(host=host, guest=guest)
     return ck.result()

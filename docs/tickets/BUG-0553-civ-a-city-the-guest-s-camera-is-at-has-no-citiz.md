@@ -1,16 +1,16 @@
 ---
 id: BUG-0553
 title: Civ: a city the guest's camera is at has no citizens on the guest (its game moved them there, the mod puts them back at the host's city)
-status: open
+status: fixed
 kind: desync
 stage: Civ
 reported: 2026-11-04
 source: final check out/lab/20261104-135838 civ_citizen_lod
 role: guest
 versions: 
-fixed_in:
+fixed_in: unreleased
 branch: rel/0.7.6
-commits:
+commits: 7566bc8e
 tests: civ_citizen_lod (tools/tests/coop_civ_citizen_lod.py)
 signature:
 docs:
@@ -35,8 +35,10 @@ worldobj.cpp citizen_follow: a bound copy farther than 60 m (kCitizenFar) from t
 put it (no walk lags that much: it is the game's level of detail). Switch `coop.fix civ.citizen_far off`.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+civ_citizen_lod (the guest's game has at least half its city citizens at the city its camera is at):
+- FAIL with SPORE_FIX_OFF=civ.citizen_far: out/lab/20261104-154612 (2 of 2: 0 of 19 there);
+- PASS: out/lab/20261104-155021 (2 of 2); civ_citizens, play_civ, detect_civ PASS out/lab/20261104-153531.
 
 ## History
 - 2026-11-04: opened.
+- 2026-11-04 (rel/0.7.6): fixed (civ.citizen_far).

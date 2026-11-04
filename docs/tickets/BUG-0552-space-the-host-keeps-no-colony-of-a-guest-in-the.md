@@ -10,7 +10,7 @@ role: host
 versions: 
 fixed_in: unreleased
 branch: rel/0.7.6
-commits:
+commits: 7566bc8e
 tests: space_colony_rejoin, space_allies_own
 signature:
 docs:
@@ -33,3 +33,4 @@ it out/lab/20261104-153307 (with space_allies_own, both OK).
 
 ## History
 - 2026-11-04: opened.
+- 2026-11-04 (rel/0.7.6): fixed (own_mirror out of the roster).
