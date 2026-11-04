@@ -367,6 +367,7 @@ add('space_guest_ui', P + 'coop_space_guest_ui.py', minutes=4)  # a guest joinin
 add('space_puppet', P + 'coop_space_puppet.py', minutes=5)  # the game frees partner puppets
 add('space_rescue', P + 'coop_space_rescue.py', minutes=6)  # disabled by real (relayed) NPC hits
 add('space_helper', P + 'coop_space_helper.py', warm=True, minutes=3, fixture='space')  # a disabled partner rescues nobody (BUG-0131; SPORE_SPACE_FIX=0 fails)
+add('space_down_reload', P + 'coop_space_down_reload.py', warm=True, minutes=4, fixture='space')  # a load starts the disable rule anew (BUG-0257; SPORE_FIX_OFF=space.down_epoch fails)
 add('space_stale', P + 'coop_space_stale.py', warm=True, minutes=5, fixture='space')  # hits about freed mirrors / puppets, star ids past the table, the second repair's first step (BUG-0054, BUG-0092, BUG-0147)
 add('space_fleet', P + 'coop_space_fleet.py', warm=True, minutes=4, fixture='space')  # a lost ship-state chunk changes no mirror, the guest keeps its posse, a destroyed ship goes with 2 chunks and lost chunks (BUG-0037, BUG-0084, BUG-0230)
 add('space_map_input', P + 'coop_space_map_input.py', minutes=7, fixture='space')  # x87 stack after contacts, jump notice, galaxy teleport guards, tag clicks from the window (BUG-0126, BUG-0072, BUG-0063, BUG-0090, BUG-0145; --without-fix fails)
