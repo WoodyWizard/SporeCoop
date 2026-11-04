@@ -5,8 +5,9 @@
 ### Fixed
 - Cell: when the cells grow to the next size, the other cells no longer fly around on the guest's screen for a
   few seconds; they stay where the host's game has them (BUG-0511).
-- The game no longer crashes when you open Settings in the galaxy menu on a PC where Spore cannot make its
-  Documents\My Spore Creations folder; videos and pictures then go to the Spore folder in AppData (BUG-0506).
+- The game no longer crashes when you open Settings in the galaxy menu or a Cell editor opens (for example from a
+  mate) on a PC where Spore cannot make its Documents\My Spore Creations folders, as with the Russian Steam version;
+  pictures and videos then go to the Spore folder in AppData (BUG-0506).
 - Creature: a guest now sees the host's animals look around, eat, answer and fight as they do on the host,
   instead of standing still or only walking (BUG-0464).
 - Creature: a partner whose game froze or was minimized is no longer shown sunk into the ground; you

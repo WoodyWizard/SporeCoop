@@ -67,6 +67,7 @@
 #include "sporekit.h"
 #include "sporekit_game.hpp"
 #include "fixes.h"
+#include <shlobj.h>
 #include "share_wait.h"
 #include "dna_route.h"
 #include "dna_ledger.h"
@@ -2789,6 +2790,30 @@ void trace_tick(double now)
     }
 }
 
+// Tests: fix switches that act while the game starts (before a console can switch them, e.g. game.save_areas,
+// BUG-0506) are switched off by a file <AppData>\Spore\SporeCoop\fixes_off.txt of the profile, one name per
+// line, read once when the mod loads. The file is the test's (coop_save_areas.py writes and removes it).
+static void apply_startup_off()
+{
+    wchar_t p[MAX_PATH];
+    if (FAILED(SHGetFolderPathW(nullptr, CSIDL_APPDATA, nullptr, 0, p))) // profile-aware (hooked)
+        return;
+    FILE* f = _wfopen((std::wstring(p) + L"\\Spore\\SporeCoop\\fixes_off.txt").c_str(), L"r");
+    if (!f)
+        return;
+    char line[128];
+    while (fgets(line, sizeof line, f)) {
+        std::string n(line);
+        while (!n.empty() && (n.back() == '\n' || n.back() == '\r' || n.back() == ' '))
+            n.pop_back();
+        if (n.empty() || n[0] == '#')
+            continue;
+        bool ok = fix::set(n, false);
+        H->log(M, SK_WARN, "coop: fix %s switched off at startup (fixes_off.txt)%s", n.c_str(), ok ? "" : ": unknown name");
+    }
+    fclose(f);
+}
+
 void on_frame(void*, int, void*)
 {
     modes::CellScope cell_scope; // BUG-0271: no game code runs in here, the pool check holds for it
@@ -2802,6 +2827,7 @@ void on_frame(void*, int, void*)
     }
     diag_tick(now);
     notify::tick(now);
+    gamefixes::frame(); // BUG-0506: once
     game::world_epoch(); // BUG-0119: sees every frame outside the creature stage
     game::stage_epoch_tick(); // BUG-0217: before any message or module tick of this frame
     modes::world_name_tick(); // BUG-0258: the planet stays known through snapshot.spo
@@ -5910,6 +5936,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     };
     spc.beacon = add_beacon;
     spacecoop::init(H, M, std::move(spc));
+    apply_startup_off(); // tests: switches that must be off before the game starts (fixes_off.txt)
     gamefixes::init(H, M);
     autoupdate::set_feed(feed);
     autoupdate::init(H, M, COOP_VERSION);

@@ -10,12 +10,13 @@ redirected or blocked, or a file of that name) the areas are not there.
 
 One game (the lane's guest instance, its own test profile): before it starts, the profile's
 Documents\\My Spore Creations becomes a plain file, so the game cannot make the folders. In the
-galaxy menu the test asks the game for the three save areas (all missing), then opens Options ->
-Settings with real clicks. The game must not fault (`exc`), the Movies save area must exist in the
-game afterwards and the settings window must be on screen (the window manager's modal window).
+galaxy menu the test asks the game for the three save areas (the fix makes them right after the game's
+startup), then opens Options -> Settings with real clicks. The game must not fault (`exc`), the three
+save areas must exist and the settings window must be on screen (the window manager's modal window).
 The profile folder is put back at the end.
 
-  coop_save_areas.py   (SPORE_FIX_OFF=game.save_areas: the read of 0 at 0x6025A9 comes back, it FAILS)"""
+  coop_save_areas.py   (SPORE_FIX_OFF=game.save_areas: also written to the profile's SporeCoop\fixes_off.txt,
+  as the fix acts while the game starts; the read of 0 at 0x6025A9 comes back, it FAILS)"""
 import os
 import re
 import shutil
@@ -60,6 +61,11 @@ def main():
     if not os.path.isfile(msc):
         with open(msc, 'w') as f:
             f.write('not a folder (coop_save_areas.py)\n')
+    offfile = os.path.join(lane.GUEST_DIR, 'SporeCoop', 'fixes_off.txt')
+    os.makedirs(os.path.dirname(offfile), exist_ok=True)
+    if 'game.save_areas' in os.environ.get('SPORE_FIX_OFF', ''):
+        with open(offfile, 'w') as f:
+            f.write('game.save_areas\n')
     try:
         lane.run_guest()
         con = Console(lane.GUEST, timeout=60)
@@ -84,7 +90,15 @@ def main():
                 return 1
         before = {n: area(con, a) for a, n in AREAS.items()}
         print('  save areas before:', before)
-        ck(before['Movies'] == 0, 'the game has no Movies save area (My Spore Creations could not be made)')
+        log = os.path.join(lane.game_dir(), 'SporebinEP1', 'mods', 'logs', f'sporekit.{lane.GUEST}.log')
+        try:
+            with open(log, errors='replace') as f:
+                seen = [l.strip() for l in f if 'save areas after the game' in l]
+        except OSError:
+            seen = []
+        print('  the game\'s startup:', seen[-1] if seen else 'no line')
+        ck(bool(seen) and 'Movies=00000000' in seen[-1],
+           'the game\'s own startup left the Movies save area out (My Spore Creations could not be made)')
         con.call('click %d %d' % SPORE_BUTTON)
         con.call('wait.frames 90 20000')
         time.sleep(2)  # the Options window slides in
@@ -112,6 +126,8 @@ def main():
     finally:
         lane.sh('kill')
         time.sleep(2)
+        if os.path.exists(offfile):
+            os.remove(offfile)
         if os.path.isfile(msc):
             os.remove(msc)
         if os.path.isdir(keep) and not os.path.exists(msc):

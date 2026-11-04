@@ -3829,3 +3829,15 @@ until `level=` changes) twice; during each level change the test compares, every
 mirrors on the guest (coop.census, matched by the host's cell index) in the guest's metres (each position times
 its game's `world_scale=` from coop.pool, read before and after the dump). Fails when the p90 error of a sample is
 2 m or more. BUG-0511: SPORE_FIX_OFF=cell.world_scale gives 14-18 m (FAILS), the fix 0.1 m.
+
+## Save areas at startup and in the editor: save_areas_editor, fixes_off.txt (2026-11-03, fix/w40-misc)
+<a id="testing-save-areas-editor"></a>
+
+* `coop_save_areas_editor.py` (suite `save_areas_editor`, cell fixture, ~70 s): the guest profile's
+  `Documents\My Spore Creations` becomes a plain file before the games start; the guest's game must have the three
+  save areas, its own mating call opens its Cell editor and it must not fault there (0x633765, GitHub #190).
+* `game.save_areas` acts while the game starts, before a console can switch it: a profile file
+  `<AppData>\Spore\SporeCoop\fixes_off.txt` (one fix name per line, `lane.GUEST_DIR + '/SporeCoop'`) switches fixes off
+  when coop.dll loads (log: `fix <name> switched off at startup`). `save_areas` and `save_areas_editor` write it for
+  SPORE_FIX_OFF=game.save_areas and remove it at the end. `save_areas` now also reads the game's log line
+  `save areas after the game's startup` to show that the game's own startup left the areas out.
