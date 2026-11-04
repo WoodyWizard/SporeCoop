@@ -958,6 +958,7 @@ Civ and Space planners (update callers 0xCDFA5D, 0xCFE56B, 0xFE126E).
 * ? Roads (`inter_city_road`, noun 0x02B8A4E7, vtable 0x146CE08) are not mirrored: where the host's game
   makes them (the input commands "CityBuildRoad" 4000 and "CityCreateTradeRoute" 0x37E95BC are
   registered in 0xCF47C0) is not traced. Open in BUG-0478.
+  ~ superseded (2026-11-04): the road is the trade route's object (cCity::AddTradeRoute), see [civ-roads-citizens](#civ-roads-citizens).
 
 **Saves (BUG-0470).**
 * ✔ A guest's mirror vehicle stripped from a save (a null reference) is read back as a null entry in the
@@ -966,3 +967,47 @@ Civ and Space planners (update callers 0xCDFA5D, 0xCFE56B, 0xFE126E).
   while the save is written (savestrip's save hooks, the save is written within one frame) and are put
   back on the next frame: the reloaded world has no mirror, no null and no fault. A world loaded with no
   vehicle at all gets the game's free first vehicle at its city.
+
+## Roads and city citizens between the games (2026-11-04, fix/w41-civ-citizens)
+<a id="civ-roads-citizens"></a>
+
+GOG 2024 addresses (dc04aee5).
+
+**Roads (BUG-0494).**
+* ✔ The road between two cities (`inter_city_road`, noun 0x02B8A4E7, vtable 0x146CE08) is the ground object of a
+  trade route: `cCity::AddTradeRoute` 0xBE1490 (GOG 2016 0xBE1470, same prologue +0x20, `ret 8`) thiscall(city,
+  cCity* other, int type) pushes `{partner, route object, type}` (stride 0xC) on +0x55C of **both** cities and,
+  for type 0, makes the road. Runtime (lab 20261103-234403): after `AddTradeRoute(c0, c1, 0)` both cities list
+  the route with the same object (`route 0 1 type=0 obj=1F275758 noun=02B8A4E7`, `route 1 0 ... obj=1F275758`).
+  The object's own position (`coop.civ nouns 2B8A4E7`) is (0 0 0): roads are counted, not placed.
+* ✔ The host's game makes routes in its own AI (economic vehicles' "create route", 0xBE1950 AddTradeRouteWithCiv);
+  a guest's mirrors run none of it, so the host's roads never appeared there. Now the host sends its route list
+  (MSG_CIV_BUILD, city index 0xFE: u8 n, n x {u8 host city a, u8 b, u8 type}) when it changes and every 10 s;
+  a guest adds the routes it lacks with AddTradeRoute (`civ.roads`, `coop.civ roads` lists them).
+* ? Removal is left to the game: `RemoveTradeRoute` 0xBDFA70 (GOG 2016 0xBDFA50, `ret 4`) works on one side and
+  destroys the route object, which the other city's entry shares: calling it for both ends would free the object
+  twice (not tried). A capture removes routes on both games itself (ChangeOwner -> RemoveTradeRoutesWithCiv).
+
+**City citizens (BUG-0476, BUG-0475's Civ half).**
+* ✔ Both games spawn the same number of citizens (noun 0x18EB4B7, cCreatureCitizen) per city (19 / 19 around
+  the host's capital in every comparison of lab 20261103-233836) and walk them on their own: 9 of 19 had no
+  partner within 15 m (100 % of the comparisons), 88 % of the comparisons had a pair of another size.
+* ✔ `Citizen_OffStageCheck` 0xACA2A0 is not what walks Civ citizens: a filter that skipped it for the guest's
+  bound citizens skipped 0 calls in a 90 s Civ session (lab 20261104-000150). Where the Civ citizens' walks
+  come from (their behaviour tree?) is not traced.
+* ✔ The fix is a moving kind of the world-object table (worldobj.cpp, `citizen`, stage Civ): the host sends the
+  56 citizens nearest each guest's pointer (its capital when the guest has none: a background game's pointer
+  is (0 0 0)) every 0.5 s; the guest binds its own citizens to them by position (30 m) and walks each bound one
+  with the game's MoveTo to where the host's is now (its last place moved on with its velocity from the last two
+  snapshots, 1.5 s ahead), a MoveTo again only when that goal moved 2 m or after 1.5 s, and puts it there (place,
+  no teleport mark) when it is 12 m off. 1 s snapshots left a median 2-5 m lag and 4-19 % unpaired; 0.5 s:
+  0 of 95 unpaired, median pair distance 0.5-4.9 m (lab 20261104-000358).
+* ✔ Their size is the fields kind `civ_citizen` (field `scale`): the host sends every citizen (id = the low 16
+  bits of its object serial, a duplicate left out), the guest applies it to the bound copy (applied 17-18, differ
+  0 at the end of each run).
+* ~ The detector's `Civilization:scale:citizen` stays in part: its greedy nearest pairs cross in a crowd (pairs
+  0.3 m apart of two different citizens, one bound elsewhere). `coop_civ_citizens.py` compares sizes on
+  unambiguous pairs only (each the other's nearest within 3 m, the next one 2 m farther).
+* Cost: host one walk of the noun list per 0.5 s for the snapshot and one for the fields; the net 19 + 20 bytes
+  per citizen per guest every 0.5 s (19 citizens: 0.8 KB/s, at most 56: 2.3 KB/s), the fields about 6 bytes per
+  citizen of the planet every 4 s.

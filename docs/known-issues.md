@@ -1654,6 +1654,9 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   own random size (GetDesiredScale vt 0x80), not a mirror. The replicated-field engine
   (docs/sync-architecture-plan.md#sync-fields) needs a mirror to apply a size to.
 * Not fixed: comes with mirrored citizens (BUG-0476): then they are one more field kind.
+* Fixed (2026-11-04, fix/w41-civ-citizens): citizens near a guest follow the host's (`civ.citizens`) and get their
+  size (`civ.citizen_scale`). Left: the detector's greedy pairs cross in a crowd of citizens, so a few
+  `scale:citizen` rows remain without a real difference (docs/re/civ.md#civ-roads-citizens).
 * Ticket: BUG-0475 (its Tribe half is fixed), BUG-0476
 ## Commodity nodes at scale 10 on the host only (2026-11-03, fix/w40-scale)
 <a id="issue-node-scale"></a>
@@ -1680,6 +1683,9 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Not fixed: the code that makes a road in the host's game is not traced (docs/re/civ.md#civ-planner-lifetime);
   a fix needs that function (and its arguments: the two cities) to replay it on the guest from the
   host's snapshot.
+* Fixed (2026-11-04, fix/w41-civ-citizens): the road is a trade route's object (cCity::AddTradeRoute); the guests
+  add the host's routes (`civ.roads`, test `civ_roads`, docs/re/civ.md#civ-roads-citizens). Left: a route the host
+  removes without a capture stays on the guest (removal not replayed).
 * Ticket: BUG-0494 (split from BUG-0478, whose vehicle half is fixed: `civ.mirror_remove`).
 
 ## play_creature: a puppet once far off, no joint hunt (2026-11-03, fix/w40-effects)

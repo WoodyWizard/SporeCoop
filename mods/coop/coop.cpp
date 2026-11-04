@@ -5342,6 +5342,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         wc.in_place = ctx.in_place;
         wc.host_away = ctx.host_away;
         wc.stage_center = ctx.stage_center;
+        wc.civ_center = [](net::Vec3& p) { return civ::center(p); };
         wobj::init(H, M, wc);
     }
     { // BUG-0401: the party's collected creature parts

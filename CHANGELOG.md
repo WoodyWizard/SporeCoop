@@ -7,6 +7,10 @@
   host's members, and the host's villages your game showed are not in it (BUG-0495).
 - Tribe: a guest's game no longer makes new villages of its own that the host's world does not have, and the
   members of a village the host no longer has leave the guest's game too (BUG-0483).
+- Civilization: the people walking in the cities are where the host's are and have their size on a guest's
+  screen, instead of walking somewhere else (BUG-0476, BUG-0475).
+- Civilization: roads between cities (trade routes) that appear in the host's game appear in the guest's game too
+  (BUG-0494).
 
 ## [0.7.4] - 2026-11-03
 

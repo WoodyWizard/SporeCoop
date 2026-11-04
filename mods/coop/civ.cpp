@@ -698,6 +698,125 @@ static bool SK_THISCALL h_SpawnNextCity(void* ex, int instant, void* who)
     return r;
 }
 
+// BUG-0494: roads between cities (noun 0x2B8A4E7 "inter_city_road") are the ground objects of trade
+// routes: cCity::AddTradeRoute (thiscall(city, other, type) ret 8) pushes {partner, route object, type}
+// (stride 0xC) on the vector +0x55C of both cities and, for type 0, makes the road. The host's game makes
+// routes in its own AI (an economic vehicle's "create route", diplomacy); the guest's mirrors run none of
+// it, so the host's roads never appeared there. Now the host sends its route list (MSG_CIV_BUILD with the
+// city index kRoadList) on every change and every 10 s, and a guest adds the routes it lacks with the
+// game's own AddTradeRoute. Routes are only added: the game removes them itself in ChangeOwner (a capture,
+// mirrored), and RemoveTradeRoute (one side) of a shared route object is not proven safe.
+// `coop.fix civ.roads off`: no list, the guest keeps its own routes (0.7.4).
+constexpr uint8_t kRoadList = 0xFE; // MSG_CIV_BUILD city index: the host's trade routes follow
+constexpr uintptr_t kCityRoutes = 0x55C; // vector<{cCity* partner, route object*, int type}>, stride 0xC
+static bool g_fix_roads = true;
+COOP_FIX("civ.roads", "BUG-0494", g_fix_roads, "civ: roads (trade routes) between cities on the host appear on the guests");
+static uintptr_t a_AddTradeRoute;
+static uint32_t g_roads_sent, g_roads_in, g_roads_added, g_roads_failed;
+static double g_roads_sent_at = -100;
+static std::vector<std::array<uint8_t, 3>> g_roads_last; // host: the list sent last
+
+struct Route {
+    void* partner;
+    void* obj;
+    int type;
+};
+static std::vector<Route> routes_of(void* city)
+{
+    std::vector<Route> r;
+    auto* b = F<uint8_t*>(city, kCityRoutes);
+    auto* e = F<uint8_t*>(city, kCityRoutes + 4);
+    if (!b || e < b || (e - b) % 0xC || (e - b) > 0xC * 64)
+        return r;
+    for (uint8_t* p = b; p < e; p += 0xC)
+        r.push_back({*(void**)p, *(void**)(p + 4), *(int*)(p + 8)});
+    return r;
+}
+
+// host: (index a < index b, type) of every route between two cities of the snapshot's list
+static std::vector<std::array<uint8_t, 3>> host_routes()
+{
+    std::vector<std::array<uint8_t, 3>> out;
+    size_t n = std::min<size_t>(g_host_cities.size(), 250);
+    for (size_t i = 0; i < n; i++)
+        for (const Route& r : routes_of(g_host_cities[i])) {
+            auto it = std::find(g_host_cities.begin(), g_host_cities.begin() + n, r.partner);
+            size_t j = (size_t)(it - g_host_cities.begin());
+            if (j < n && i < j && r.type >= 0 && r.type < 256)
+                out.push_back({(uint8_t)i, (uint8_t)j, (uint8_t)r.type});
+        }
+    std::sort(out.begin(), out.end());
+    out.erase(std::unique(out.begin(), out.end()), out.end());
+    if (out.size() > 200)
+        out.resize(200);
+    return out;
+}
+
+static void host_send_roads(double now)
+{
+    if (!g_fix_roads || !a_AddTradeRoute)
+        return;
+    auto r = host_routes();
+    if (r == g_roads_last && now - g_roads_sent_at < 10.0)
+        return;
+    g_roads_last = r;
+    g_roads_sent_at = now;
+    net::Writer w;
+    w.u8(kRoadList);
+    w.u8((uint8_t)r.size());
+    for (auto& x : r) {
+        w.u8(x[0]);
+        w.u8(x[1]);
+        w.u8(x[2]);
+    }
+    C.sess->broadcast_reliable(net::MSG_CIV_BUILD, w);
+    g_roads_sent++;
+}
+
+static bool city_listed(void* c)
+{
+    auto all = all_cities();
+    return c && std::find(all.begin(), all.end(), c) != all.end();
+}
+
+static bool has_route(void* a, void* b)
+{
+    for (const Route& r : routes_of(a))
+        if (r.partner == b)
+            return true;
+    return false;
+}
+
+static bool planner_holds(void* city);
+static void guest_roads(net::Reader& r)
+{
+    uint8_t n = r.u8();
+    std::vector<std::array<uint8_t, 3>> list;
+    for (int i = 0; i < n && r.ok(); i++) {
+        std::array<uint8_t, 3> x{r.u8(), r.u8(), r.u8()};
+        list.push_back(x);
+    }
+    if (!r.ok())
+        return;
+    g_roads_in++;
+    if (!g_fix_roads || !a_AddTradeRoute || game::mode_id() != modes::kCiv)
+        return;
+    for (auto& x : list) {
+        void* a = x[0] < g_host_cities.size() ? g_host_cities[x[0]] : nullptr;
+        void* b = x[1] < g_host_cities.size() ? g_host_cities[x[1]] : nullptr;
+        if (!a || !b || a == b || !city_listed(a) || !city_listed(b) || planner_holds(a) || planner_holds(b) || has_route(a, b))
+            continue;
+        g_applying = true;
+        thiscall<void>(a_AddTradeRoute, a, b, (int)x[2]);
+        g_applying = false;
+        if (has_route(a, b)) {
+            g_roads_added++;
+            H->log(M, SK_INFO, "civ: the host's trade route %u-%u (type %u) added here (BUG-0494)", x[0], x[1], x[2]);
+        } else if (g_roads_failed++ < 5)
+            H->log(M, SK_WARN, "civ: the host's trade route %u-%u (type %u) did not take here", x[0], x[1], x[2]);
+    }
+}
+
 // Money is the host's: the guest's local economy (its own copy of the claimed spice derricks, city
 // income) ran too and every local gain went to the host as a shared-money delta (+80..+100 every few
 // seconds: the treasury grew about twice as fast with a guest). Guests ignore AddMoney for the player
@@ -1158,6 +1277,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     // the city planner (BUG-0491, BUG-0493; GOG 2024 symbols, optional)
     a_DestroyInstance = H->sym("Simulator::cGameNounManager::DestroyInstance");
     a_VehicleRemove = H->sym("SporeCoop::Vehicle_Remove");
+    a_AddTradeRoute = H->sym("Simulator::cCity::AddTradeRoute"); // BUG-0494 (optional)
     if ((a_EditorUpdate = H->sym("SporeCoop::CommunityEditor_Update")))
         H->hook_create(M, (void*)a_EditorUpdate, (void*)h_EditorUpdate, (void**)&o_EditorUpdate);
     if (uintptr_t dc = H->sym("SporeCoop::AssetDiscovery_AddCard"))
@@ -1496,6 +1616,7 @@ static void host_tick(double now)
         g_hv_by_id[id] = v;
     }
     g_cycle++;
+    host_send_roads(now); // BUG-0494
     // Chunks that fit one packet (kMaxPacket): a larger message is dropped by the connection for
     // good. Until 2026-10-23 chunk 0 carried every city and 24 vehicles (and later the spice nodes and
     // a city's buildings): ~1200 bytes with 9 cities and 24 vehicles, so with a grown planet the
@@ -1681,18 +1802,29 @@ static void* resolve_target(const Target& t)
 static void host_command(uint8_t from, net::Reader& r)
 {
     uint8_t kind = r.u8();
+
+    // BUG-0325 diagnostics: why a vehicle of a command is not the sender's (gone from the host's game, dead,
+    // or another owner: a gift or a capture in between), logged with the rejection
+    char why[80] = "";
+    auto own_vehicle = [&](uint16_t id) -> void* {
+        auto it = g_hv_by_id.find(id);
+        if (it == g_hv_by_id.end()) {
+            snprintf(why, sizeof why, " (vehicle %u: not in the host's game)", (unsigned)id);
+            return nullptr;
+        }
+        if (g_hv[it->second].owner != from) {
+            snprintf(why, sizeof why, " (vehicle %u: owner %u%s)", (unsigned)id, (unsigned)g_hv[it->second].owner,
+                     F<uint8_t>(it->second, kVDead) ? ", dead" : "");
+            return nullptr;
+        }
+        return it->second;
+    };
     auto reject = [&] {
         if (from != C.sess->my_id()) {
             g_cmds_rejected++;
-            if (g_cmds_rejected <= 20) // BUG-0325 diagnostics: which command, from whom
-                H->log(M, SK_INFO, "civ: rejected command kind %u from player %u", (unsigned)kind, (unsigned)from);
+            if (g_cmds_rejected <= 20) // BUG-0325 diagnostics: which command, from whom, why
+                H->log(M, SK_INFO, "civ: rejected command kind %u from player %u%s", (unsigned)kind, (unsigned)from, why);
         }
-    };
-    auto own_vehicle = [&](uint16_t id) -> void* {
-        auto it = g_hv_by_id.find(id);
-        if (it == g_hv_by_id.end() || g_hv[it->second].owner != from)
-            return nullptr;
-        return it->second;
     };
     if (kind == 5) { // a guest wants to fire a superweapon: everybody votes
         host_superweapon_request(from, r);
@@ -2386,6 +2518,10 @@ static void guest_tick(double now)
 static void guest_build(net::Reader& r)
 {
     uint8_t ci = r.u8();
+    if (r.ok() && ci == kRoadList) { // BUG-0494: the host's trade routes
+        guest_roads(r);
+        return;
+    }
     uint32_t noun = r.u32();
     net::Vec3 p;
     p.x = r.f32(); p.y = r.f32(); p.z = r.f32();
@@ -2762,6 +2898,18 @@ bool near_vehicle(const net::Vec3& p, float radius)
     return ctx.hit;
 }
 
+bool center(net::Vec3& p)
+{
+    if (!g_ok || game::mode_id() != modes::kCiv)
+        return false;
+    void* pc = player_civ();
+    auto cs = pc ? vec_of((uint8_t*)pc + kCivCities) : std::vector<void*>{};
+    if (cs.empty())
+        return false;
+    p = city_pos(cs[0]);
+    return true;
+}
+
 std::vector<net::Vec3> local_positions()
 {
     std::vector<net::Vec3> v;
@@ -2986,6 +3134,33 @@ std::string debug(const std::vector<std::string>& a)
             return b ? "built locally, sent to the host" : "no free slot";
         }
         return build_in_city(city, noun, p, true) ? "built" : "no free slot";
+    }
+    if (!a.empty() && a[0] == "roads") { // roads [a b [type]]: every city's trade routes; host (tests): AddTradeRoute a b
+        std::string out;
+        char b[160];
+        if (a.size() >= 3 && is_host() && a_AddTradeRoute) {
+            size_t i = (size_t)atoi(a[1].c_str()), j = (size_t)atoi(a[2].c_str());
+            if (i >= g_host_cities.size() || j >= g_host_cities.size() || i == j)
+                return "no such cities";
+            thiscall<void>(a_AddTradeRoute, g_host_cities[i], g_host_cities[j], a.size() > 3 ? atoi(a[3].c_str()) : 0);
+            snprintf(b, sizeof b, "route %zu-%zu added: %s\n", i, j, has_route(g_host_cities[i], g_host_cities[j]) ? "yes" : "no");
+            out += b;
+        }
+        for (size_t i = 0; i < g_host_cities.size(); i++) {
+            void* c = g_host_cities[i];
+            if (!c || !city_listed(c))
+                continue;
+            for (const Route& r : routes_of(c)) {
+                auto it = std::find(g_host_cities.begin(), g_host_cities.end(), r.partner);
+                snprintf(b, sizeof b, "route %zu %d type=%d obj=%p noun=%08X\n", i,
+                         it == g_host_cities.end() ? -1 : (int)(it - g_host_cities.begin()), r.type, r.obj,
+                         r.obj ? game::noun_id(r.obj) : 0);
+                out += b;
+            }
+        }
+        snprintf(b, sizeof b, "roads sent=%u in=%u added=%u failed=%u fix=%d\n", g_roads_sent, g_roads_in, g_roads_added,
+                 g_roads_failed, (int)g_fix_roads);
+        return out + b;
     }
     if (a.size() >= 1 && a[0] == "nouns") { // nouns [hex noun [TYPE]]: objects per noun, or that noun's objects on screen
         struct Q {

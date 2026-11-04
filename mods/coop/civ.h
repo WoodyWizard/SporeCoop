@@ -60,5 +60,8 @@ void for_each_target(void (*fn)(const char* kind, int id, int owner, const net::
 std::vector<net::Vec3> local_positions();
 // allocation-free test for the effect relay: is p on one of the local player's vehicles?
 bool near_vehicle(const net::Vec3& p, float radius);
+// BUG-0476: the host's capital (the player civilization's first city), the centre of what a guest without a
+// pointer is sent; false outside Civ
+bool center(net::Vec3& p);
 
 } // namespace civ

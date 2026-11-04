@@ -187,3 +187,7 @@ object: `mods/coop/fields.{h,cpp}` (wire codec `fields_wire.h`, unit test in tes
   the NPC kind.
 * Not covered yet: Civ city citizens (BUG-0475's Civ half): each game simulates its own citizens
   (BUG-0476), there is no mirror to apply a size to; the size follows once citizens are mirrored.
+  Done (2026-11-04, fix/w41-civ-citizens): Civ citizens are a moving kind of the world-object table (`citizen`,
+  bound by position and walked to the host's, BUG-0476) and their size the fields kind `civ_citizen` (K = 4).
+  A world-object kind can move now (`follow`: the host's place, its velocity, the follower's last goal; its own
+  snapshot interval), docs/re/civ.md#civ-roads-citizens.

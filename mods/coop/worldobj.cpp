@@ -13,6 +13,7 @@
 #include <set>
 #include <vector>
 
+#include "fields.h"
 #include "fixes.h"
 #include "game.h"
 #include "modes.h"
@@ -40,8 +41,14 @@ struct Item {
 };
 using Items = std::vector<Item>;
 
-enum : uint8_t { kStCreature = 1, kStTribe = 2 };
+enum : uint8_t { kStCreature = 1, kStTribe = 2, kStCiv = 4 };
 
+// BUG-0476: a moving kind's guest copy follows the host's object: where the host's was (the last snapshot),
+// its velocity (from the last two snapshots), and the follower's own memory (the last walk goal given)
+struct Follow {
+    net::Vec3 goal{};
+    double at = -100;
+};
 struct Kind {
     const char* name;  // as the divergence detector names the noun (tools/tests/worlddiff.py)
     bool* fix;         // its coop.fix switch (off: each game keeps its own, the old behaviour)
@@ -61,6 +68,11 @@ struct Kind {
     void (*act)(const Item& obj, uint32_t guest_now);
     bool gone_acted;  // a bound copy that vanished from the guest's game was taken there (eaten fruit)
     bool drop_own;    // guest: its own copies the host does not have are removed (apply(local, kGone))
+    // BUG-0476: a kind that moves (city citizens): guest, on each snapshot, every bound copy is brought to the
+    // host's object (nullptr: the kind does not move); a bind is kept while both exist, however far apart
+    void (*follow)(const Item& local, const net::Vec3& host_pos, const net::Vec3& host_vel, double age, Follow& st,
+                   double now) = nullptr;
+    double every = 0; // s between snapshots (0: kSnapInterval)
 };
 constexpr uint32_t kGone = 0xFFFFFFFFu; // the state of an object the host's game no longer has
 
@@ -265,11 +277,61 @@ static bool herd_acted(uint32_t, uint32_t, uint32_t) { return false; }
 static void herd_act(const Item&, uint32_t) {}
 
 // ---------------------------------------------------------------- the table
+// ---------------------------------------------------------------- kind: citizen (Civ city citizens, BUG-0476)
+// cCreatureCitizen (noun 0x18EB4B7) of the cities: each game spawns and walks its own (an idle walk 0xD57680
+// picked by Citizen_OffStageCheck outside Tribe, docs/re/civ.md#civ-roads-citizens), so a fifth to a half of
+// them were elsewhere on the guest. The host's citizens near a guest (its pointer, else the host's capital)
+// are sent like the other kinds; a guest binds its own citizens to them by position (both games spawn the
+// same number per city) and walks each bound one to the host's (the game's own MoveTo, so it animates), or
+// puts it there when it is far. Their size is the fields kind `civ_citizen` (below, BUG-0475's Civ half).
+// `coop.fix civ.citizens off`: each game walks its own (0.7.4).
+constexpr uint32_t kCitizenNoun = 0x018EB4B7;
+static bool g_citizen_fix = true;
+COOP_FIX("civ.citizens", "BUG-0476", g_citizen_fix, "civ: city citizens walk where the host's walk (the host's citizens near a guest)");
+static uint32_t citizen_state(void*) { return 0; }
+static void citizen_collect(Items& out) { collect_noun(kCitizenNoun, out, citizen_state); }
+static bool citizen_behind(uint32_t, uint32_t) { return false; }
+static void citizen_apply(const Item&, uint32_t) {}
+static bool citizen_acted(uint32_t, uint32_t, uint32_t) { return false; }
+static void citizen_act(const Item&, uint32_t) {}
+// m: walked when farther than kCitizenWalk from where the host's is now (its last place moved on with its
+// velocity), put there over kCitizenPut (the detector's 15 m). A walk goes kCitizenLead s ahead of the host's
+// and is given again only when that goal moved 2 m or after 1.5 s (a MoveTo every tick hardly walks: BUG-0281)
+constexpr float kCitizenWalk = 1.5f, kCitizenPut = 12.f, kCitizenLead = 1.5f;
+static uint32_t g_cit_walks, g_cit_puts;
+
+static void citizen_follow(const Item& l, const net::Vec3& hp, const net::Vec3& v, double age, Follow& st, double now)
+{
+    float t = (float)std::min(age, 1.5);
+    net::Vec3 at{hp.x + v.x * t, hp.y + v.y * t, hp.z + v.z * t};
+    float d = net::dist(l.pos, at);
+    if (d > kCitizenPut) {
+        game::stop(l.p);
+        game::place(l.p, at, game::orientation(l.p));
+        st.at = -100;
+        g_cit_puts++;
+        return;
+    }
+    float sp = std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+    if (d <= kCitizenWalk && sp < 0.3f)
+        return; // there, and the host's stands: the game's own idle
+    net::Vec3 goal = sp >= 0.3f ? net::Vec3{at.x + v.x * kCitizenLead, at.y + v.y * kCitizenLead, at.z + v.z * kCitizenLead} : at;
+    if (net::dist(goal, st.goal) < 2.f && now - st.at < 1.5)
+        return;
+    game::move_to(l.p, goal, 0.5f);
+    st.goal = goal;
+    st.at = now;
+    g_cit_walks++;
+}
+
 static Kind g_kinds[] = {
     {"fruit", &g_fruit_fix, kStCreature | kStTribe, 3.0f, 70.f, 48, fruit_collect, fruit_behind, fruit_apply, fruit_acted, fruit_act, true, true},
     {"tree", &g_tree_fix, kStCreature | kStTribe, 0.5f, 70.f, 48, tree_collect, tree_behind, tree_apply, tree_acted, tree_act, false, false},
     {"herd", &g_herd_fix, kStCreature, 1.0f, 3000.f, 48, herd_collect, herd_behind, herd_apply, herd_acted, herd_act, false, false},
     {"interactive_ornament", &g_orn_fix, kStCreature, 1.5f, 90.f, 40, orn_collect, orn_behind, orn_apply, orn_acted, orn_act, false, false},
+    // the bind radius 30 m: 15 of 19 citizens were within 15 m of a partner without the fix (out/detector/20261103-final.md)
+    {"citizen", &g_citizen_fix, kStCiv, 30.f, 200.f, 56, citizen_collect, citizen_behind, citizen_apply, citizen_acted, citizen_act, false, false,
+     citizen_follow, 0.5},
 };
 constexpr int kKinds = (int)(sizeof g_kinds / sizeof g_kinds[0]);
 // a snapshot is one unreliable message: 19 bytes + 20 per object within net::Connection::kMaxSingle (1163)
@@ -280,13 +342,21 @@ constexpr uint8_t kMsgSnap = 0, kMsgAct = 1;
 constexpr double kSnapInterval = 1.0, kGuestInterval = 0.25, kStale = 3.5, kReqRetry = 2.0;
 constexpr int kOwnGrace = 3; // snapshots a guest's own copy is seen without a host partner before it goes
 
+static int kind_of_name(const char* n)
+{
+    for (int k = 0; k < kKinds; k++)
+        if (!strcmp(g_kinds[k].name, n))
+            return k;
+    return -1;
+}
+
 static bool is_host() { return C.sess && C.sess->role() == net::Role::Host; }
 static bool is_guest() { return C.sess && C.sess->role() == net::Role::Client && C.sess->connected(); }
 
 static uint8_t stage_bit()
 {
     uint32_t m = game::mode_id();
-    return m == modes::kCreature ? kStCreature : m == modes::kTribe ? kStTribe : 0;
+    return m == modes::kCreature ? kStCreature : m == modes::kTribe ? kStTribe : m == modes::kCiv ? kStCiv : 0;
 }
 
 struct Bind {               // guest: a host object and this game's copy of it
@@ -296,6 +366,9 @@ struct Bind {               // guest: a host object and this game's copy of it
     uint32_t local_st = 0;  // the copy's state when last looked at
     net::Vec3 host_pos{};
     double req_at = -100;   // the last request sent for it
+    double host_at = -100;  // BUG-0476: when host_pos came, the host object's velocity, the follower's state
+    net::Vec3 host_vel{};
+    Follow fol;
 };
 struct Snap {
     net::Vec3 c{};
@@ -310,7 +383,7 @@ struct GuestKind {
 };
 static GuestKind g_g[kKinds];
 static uint32_t g_epoch = 0;
-static double g_last_tx = 0, g_last_guest = 0;
+static double g_last_tx[16], g_last_guest = 0;
 struct Stat {
     uint32_t tx = 0, rx = 0, bound = 0, applied = 0, dropped = 0, req_tx = 0, req_rx = 0, acted = 0, missing = 0;
 };
@@ -327,14 +400,12 @@ static void guest_reset()
 
 static void host_tick(double now)
 {
-    if (now - g_last_tx < kSnapInterval)
-        return;
-    g_last_tx = now;
     uint8_t sb = stage_bit();
-    for (int k = 0; k < kKinds; k++) {
+    for (int k = 0; k < kKinds && k < 16; k++) {
         Kind& K = g_kinds[k];
-        if (!*K.fix || !(K.stages & sb) || K.max > kMaxPerSnap)
+        if (!*K.fix || !(K.stages & sb) || K.max > kMaxPerSnap || now - g_last_tx[k] < (K.every > 0 ? K.every : kSnapInterval))
             continue;
+        g_last_tx[k] = now;
         Items all;
         K.collect(all);
         for (auto& p : C.sess->players()) {
@@ -342,7 +413,7 @@ static void host_tick(double now)
                 continue;
             net::Vec3 c;
             if (!C.player_pos || !C.player_pos(p.id, c) || (c.x == 0 && c.y == 0 && c.z == 0)) {
-                if (!(sb == kStTribe && C.stage_center && C.stage_center(c)))
+                if (!(sb == kStTribe && C.stage_center && C.stage_center(c)) && !(sb == kStCiv && C.civ_center && C.civ_center(c)))
                     continue;
             }
             std::vector<std::pair<float, const Item*>> close;
@@ -420,6 +491,8 @@ static void reconcile(int k, double now, bool fresh)
         }
         Item& l = *f->second;
         used.insert(f->first);
+        if (K.follow && b.host_at > 0)
+            K.follow(l, b.host_pos, b.host_vel, now - b.host_at, b.fol, now);
         if (K.acted(b.local_st, l.st, b.host_st) && now - b.req_at > kReqRetry) {
             send_act(k, bi->first, b.host_pos, l.st);
             b.req_at = now;
@@ -456,7 +529,16 @@ static void reconcile(int k, double now, bool fresh)
         }
         Bind& b = bi->second;
         b.host_st = ps.second;
+        double dt = now - b.host_at;
+        if (b.host_at > 0 && dt > 0.3 && dt < 3.0) {
+            net::Vec3 v{(ps.first.x - b.host_pos.x) / (float)dt, (ps.first.y - b.host_pos.y) / (float)dt,
+                        (ps.first.z - b.host_pos.z) / (float)dt};
+            float sp = std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+            b.host_vel = sp < 15.f ? v : net::Vec3{}; // (a jump: no velocity)
+        } else
+            b.host_vel = {};
         b.host_pos = ps.first;
+        b.host_at = now;
         auto f = by_key.find({b.p, b.serial});
         if (f != by_key.end() && K.behind(f->second->st, ps.second)) {
             K.apply(*f->second, ps.second);
@@ -615,6 +697,8 @@ std::string status()
                  t.tx, t.rx, t.bound, t.applied, t.dropped, t.missing, t.req_tx, t.req_rx, t.acted);
         s += b;
     }
+    snprintf(b, sizeof b, "citizens walks=%u puts=%u\n", g_cit_walks, g_cit_puts);
+    s += b;
     return s;
 }
 
@@ -704,6 +788,46 @@ static int c_wobj(void*, int argc, const char* const* argv, SkOut* out)
     return 0;
 }
 
+// ---------------------------------------------------------------- fields kind civ_citizen (BUG-0475's Civ half)
+// The fields engine's ids are u16: a citizen's id is the low half of the host's object serial (a second
+// citizen with the same low half is left out on the host: rare, 1 in ~65000 per pair)
+static int citizen_kind() { return kind_of_name("citizen"); }
+static bool g_cit_scale_fix = true;
+COOP_FIX("civ.citizen_scale", "BUG-0475", g_cit_scale_fix, "civ: a guest's bound city citizen gets the host citizen's size");
+static const fields::Field kCitizenFields[] = {fields::kScale};
+static void citizen_each(void (*cb)(uint16_t, void*, void*), void* u)
+{
+    Items all;
+    citizen_collect(all);
+    std::set<uint16_t> seen;
+    for (auto& it : all)
+        if (seen.insert((uint16_t)(it.id & 0xFFFF)).second)
+            cb((uint16_t)(it.id & 0xFFFF), it.p, u);
+}
+// guest: the bound copy of the host's citizen `id`, only when it is still a live citizen of this frame's list
+static uint64_t g_cit_live_frame = ~0ull;
+static std::set<void*> g_cit_live;
+static void* citizen_mirror(uint16_t id)
+{
+    int k = citizen_kind();
+    if (k < 0 || !*g_kinds[k].fix)
+        return nullptr;
+    for (auto& [hid, b] : g_g[k].binds) {
+        if ((uint16_t)(hid & 0xFFFF) != id)
+            continue;
+        if (H->frame_index() != g_cit_live_frame) {
+            g_cit_live_frame = H->frame_index();
+            g_cit_live.clear();
+            Items all;
+            citizen_collect(all);
+            for (auto& it : all)
+                g_cit_live.insert(it.p);
+        }
+        return g_cit_live.count(b.p) && game::object_serial(b.p) == b.serial ? b.p : nullptr;
+    }
+    return nullptr;
+}
+
 void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
 {
     H = host;
@@ -723,6 +847,8 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
     if (!a_FruitSetState || !a_FloraGet || !a_DropFruit || !a_TreeVt || !a_OrnUsed || !a_RewardFind || !a_RewardHandlerVt || !a_HerdSetExtinct || !a_HerdSetExtinctFlag)
         for (auto& k : g_kinds)
             k.stages = 0; // a symbol missing on this build: every game keeps its own (logged below)
+    fields::add_kind({fields::K_CIV_CITIZEN, "civ_citizen", &g_cit_scale_fix, kCitizenFields, 1, citizen_each, citizen_mirror,
+                      [] { return game::mode_id() == modes::kCiv; }});
     if (!a_FruitSetState || !a_DropFruit || !a_OrnUsed)
         H->log(M, SK_WARN, "wobj: symbols missing, world objects stay per game");
     H->command_add(M, "coop.wobj",

@@ -3863,3 +3863,15 @@ its game's `world_scale=` from coop.pool, read before and after the dump). Fails
   its game's NPC tribe controller's forming (NpcTribeController_FormTribe, what the game does during play); then
   with the fix off for a moment a tribe the host has not is made and must lose its members once the fix is on.
   `SPORE_FIX_OFF=tribe.guest_tribes` fails.
+## Civ roads and citizens (2026-11-04, fix/w41-civ-citizens)
+<a id="testing-civ-roads-citizens"></a>
+
+* `coop_civ_roads.py` (suite `civ_roads`, warm, about 50 s): the host's game adds a trade route (`coop.civ roads 0 1`,
+  the game's AddTradeRoute); 8 s later the guest has as many road objects (`coop.civ nouns 2B8A4E7`) and both cities
+  list the route. Twin: `SPORE_FIX_OFF=civ.roads` (guest: no road).
+* `coop_civ_citizens.py` (suite `civ_citizens`, warm, about 100 s): 8 rounds 6 s apart, the citizens of both games
+  around the same centre (`coop.census all`): at most 10 % of the host's without a partner within 15 m and at most
+  10 % of the unambiguous pairs (each the other's nearest within 3 m, the next 2 m farther) of another size.
+  Twins: `SPORE_FIX_OFF=civ.citizens` (about half unpaired), `civ.citizen_scale` (sizes differ).
+* Pitfall met: a lab run with `SPORE_FIX_OFF` leaves the switch off in the warm games; the next run without it on
+  the same lane reused them (`fix=0` in `coop.wobj`). Run the PASS after a twin with `--cold`.
