@@ -106,6 +106,8 @@ public:
     // walk; nor across the death flag (the dead state at the place of the death, the next one at the nest).
     // Blended, the puppet's target slid the whole way in 0.1 s and the puppet walked after it (0 = off)
     float jump_speed = 0;
+    // BUG-0519 (cell.puppet_scale): blend two states of different Cell world scales in one scale
+    static inline bool scale_lerp = true;
 
     void clear()
     {
@@ -182,11 +184,19 @@ public:
                 // home (crash 0xB88BEA in the herd's land search, docs/re/creature.md 10)
                 if (a.s.mode != b.s.mode || a.s.world != b.s.world || ((a.s.flags ^ b.s.flags) & PF_IN_WORLD))
                     return true;
+                // BUG-0519: two Cell states of a level change are in different world scales (every
+                // position of the sender's world is rescaled about the origin): compare and blend them
+                // in one scale, b's
+                Vec3 ap = a.s.pos;
+                if (scale_lerp && a.s.scale > 0 && b.s.scale > 0 && a.s.scale != b.s.scale) {
+                    float k = a.s.scale / b.s.scale;
+                    ap = {ap.x * k, ap.y * k, ap.z * k};
+                }
                 if (jump_speed > 0 && (((a.s.flags ^ b.s.flags) & PF_DEAD) ||
-                                       dist(a.s.pos, b.s.pos) > jump_speed * (float)std::max(b.t - a.t, 0.01)))
+                                       dist(ap, b.s.pos) > jump_speed * (float)std::max(b.t - a.t, 0.01)))
                     return true;
                 float f = (float)((t - a.t) / (b.t - a.t));
-                out.pos = lerp(a.s.pos, b.s.pos, f);
+                out.pos = lerp(ap, b.s.pos, f);
                 out.rot = nlerp(a.s.rot, b.s.rot, f);
                 return true;
             }

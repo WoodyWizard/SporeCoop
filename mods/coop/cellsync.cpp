@@ -4398,6 +4398,20 @@ std::string debug(const std::vector<std::string>& a)
         F<uint8_t>(av, 0x04) = 0;
         return "swimming";
     }
+    if (!a.empty() && a[0] == "scalepos") { // tests (BUG-0519): world scale, own cell and every partner's puppet, one frame
+        std::string o;
+        char b[96];
+        net::Vec3 me = pos_of(av);
+        snprintf(b, sizeof b, "scale=%.4f me=(%.2f %.2f)", world_scale(), me.x, me.y);
+        o = b;
+        for (int id = 0; id < 8; id++)
+            if (uint8_t* pc = puppet_cell(id)) {
+                net::Vec3 q = pos_of(pc);
+                snprintf(b, sizeof b, " p%d=(%.2f %.2f)", id, q.x, q.y);
+                o += b;
+            }
+        return o;
+    }
     if (!a.empty() && a[0] == "cam") { // tests (BUG-0343): the cell camera (cCellUI +0x48 drawn, +0x54 target, +0x60 lag)
         uint8_t* ui = a_CellUI ? *(uint8_t**)a_CellUI : nullptr;
         if (!ui || !skg::readable(ui + 0x48, 0xB0))

@@ -344,6 +344,9 @@ struct PlayerState {
     uint32_t species = 0; // instance id of species key (appearance hint)
     uint32_t mode = 0;    // game mode id (Creature 0x1654C01, Space 0x1654C05, ...)
     uint32_t world = 0;   // crc32 of the current save name (same world <=> same value)
+    // BUG-0519: the sender's Cell world scale (G+0x514C) the pos / vel / size are in; 0 = not in Cell
+    // or an older sender (the field is appended: older readers stop before it)
+    float scale = 0;
 
     void write(Writer& w) const
     {
@@ -355,6 +358,7 @@ struct PlayerState {
         w.f32(health); w.f32(max_health);
         w.u32(species);
         w.u32(mode); w.u32(world);
+        w.f32(scale);
     }
     bool read(Reader& r)
     {
@@ -366,6 +370,7 @@ struct PlayerState {
         health = r.f32(); max_health = r.f32();
         species = r.u32();
         mode = r.u32(); world = r.u32();
+        scale = r.ok() && r.left() >= 4 ? r.f32() : 0.f;
         return r.ok();
     }
 };
