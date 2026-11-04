@@ -3983,7 +3983,7 @@ its game's `world_scale=` from coop.pool, read before and after the dump). Fails
   world's species; `choose` -> own, the notice "plays its own creature" in both game logs, `worlds` records it;
   unchoose (same world) -> still own; forget -> the world's species; the window's next. The host knows the
   guest's creature under its shared remapped key (7C...), not the guest's id: compare the host's puppet with
-  "not the world's species". It leaves the fixture world recorded. SPORE_FIX_OFF=creations.guest_world_species
+  "not the world's species". SPORE_FIX_OFF=creations.guest_world_species
   FAILS (lab 20261104-033933).
 ## Watchdog, world transfer, world events (2026-11-04, fix/w41-infra)
 <a id="testing-g1-infra"></a>
@@ -4004,3 +4004,10 @@ its game's `world_scale=` from coop.pool, read before and after the dump). Fails
 * `coop_drama_guest.py` (BUG-0486, suite drama_guest, ~1 min warm start): `coop.drama start 2` (the Drama Manager's
   own StartKind for the UFO visit) on the guest and then on the host; the UFOs are counted in each game's object
   list (`coop.census` nouns, worlddiff.NOUNS 'ufo'). `SPORE_FIX_OFF=creature.guest_events` fails (the guest's UFO).
+* CORRECTION (2026-11-04, fix/w41-cell-left): coop_creations.py no longer leaves the fixture world recorded (that made
+  later tests depend on the order and on the lane). Tests that need the guest's own creature choose it and put the
+  guest's choice and this world's record back (`tools/tests/creations_state.py`: save / choose_own / restore; used by
+  creations, creations_rejoin, old_species), and wait until the host has the guest's own creature rather than the
+  world's species it announces first. Verified in both orders, --cold: creations, creations_cell, creations_rejoin,
+  old_species, npc_swap, creation_leave OK (lab 20261104-053801 .. 20261104-060316); legless_guest fails either way
+  (BUG-0533, not the rule).
