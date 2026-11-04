@@ -33,3 +33,4 @@ no-fail-run: not reproduced in the fixture; coop_nest_heal.py stays as a regress
 ## History
 - 2026-11-03: opened.
 - 2026-11-03: not reproduced on fix/w41-creature-left (both players heal at the fixture's nest); test nest_heal added.
+- 2026-11-04: third look on fix/w42-creature-left: an allied species' nest (record ally 6) heals neither player (host 3.0 -> 3.0, guest 3.0 -> 3.0), the home nest heals both also with the world's species (0.7.5 final lab 20261104-061516). Still not reproduced; not fixed. docs/re/creature.md#creature-leftovers-3.

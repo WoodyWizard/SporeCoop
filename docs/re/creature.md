@@ -2615,3 +2615,42 @@ world cleared first: the lane's profile had 290225CD recorded, so the guest play
 * ~ Inferred: a creature of the nest's species respawns in its egg at the nest where it died here, and its hatch is
   not a step; one of another species is hatched off its egg's place. Our track and puppet are not involved. The test
   keeps choosing the guest's own creature (a jump is needed to check the catch).
+
+## Roar, nest heal, carried objects: what the third look found (2026-11-04, fix/w42-creature-left)
+<a id="creature-leftovers-3"></a>
+
+BUG-0501, BUG-0496, BUG-0458 (still open). GOG 2024, Ghidra and lane 6 (creature fixture).
+
+* ✔ (runtime, `coop.social abil -1`) The host's avatar (world species 065CBE70) has 11 abilities: types 0xE 0x1D 0x28
+  0x10 0x25 0x1E 0x11 0xD 0x31 0x32 0x33, ability kind +0x7C 0 for all but 0x1D (kind 1, range +0xA8 100 m); the
+  ranges: 0x31 30 m, 0x32 25 m, 0xD 16 m, the bites 10 m, the sing 5 m. No ability of kind 2 / 3 (the area kinds of
+  0xC1E8B0, #creature-roar-2), so neither fixture creature has an area ability like the Raging Roar: BUG-0501 still
+  has no test creature.
+* ✔ (Ghidra) 0xC155D0 (called by 0xC1E8B0 for kinds 1 / 3) is the ability's effect spawner (a slot of 4 at creature
+  +0xEB0, Swarm::IEffectsManager), not a stimulus: the area kinds' stimuli are the loop over 0xC42230 in 0xC1E8B0.
+* ✔ (runtime, `coop.social log`) The avatar posts stimulus 0x4000000 (value 5) to the creatures around it all the time
+  (400 lines in a minute, the log's cap): a log of the avatar's stimuli needs a filter on that one.
+* ✔ (runtime) An allied species' nest (the host's record of the Kooks set to ally 6, impressed 3, the guest's table
+  following it) healed neither player in 12 s (host 3.0 -> 3.0, guest 3.0 -> 3.0, the pack regeneration off): a
+  record alone does not make a nest heal (the game's "you can heal at their nest" needs more than relation 6; not
+  looked at). BUG-0496 still not reproduced: the home nest heals both (0.7.5 final lab 20261104-061516 with the world's
+  species: host and guest 3.3 -> 10.0).
+* Not done (BUG-0458): the plan of #creature-hold-slots stands; a carried / thrown rock needs a host-owned world
+  object kind with a follow (worldobj.cpp), which collides with the Space branch's new worldobj kinds in this batch.
+
+## The puppet in the air through an animation start (2026-11-04, fix/w42-creature-left)
+<a id="creature-puppet-air-anim"></a>
+
+BUG-0532 (fixed). Follows #creature-puppet-look. Lane 6, puppet_air (`coop_puppet_walk.py --dir guest --jumps 0.9 --air`).
+
+* ✔ (runtime, `coop.track air` counters) The game sets a held puppet's +0x137 (grounded) back to 1 inside an animation
+  start: right after Anim::AnimatedCreature::PlayAnimation 0xA0C5D0 (the animation system's own start, a vtable slot
+  every start goes through: 1-4 times in a 30 s run), after the idle refresh 0xC148B0 (2) and after
+  SporeCoop::CreaturePlayAnim (1-2, the BT / relay starts); once after cCreatureAnimal::Update. With +0x137 = 1 the
+  same update puts the creature onto its terrain: the 1-3 frame drops of BUG-0532.
+* Fix `creature.puppet_air_anim` (game.cpp air_hold, modes.cpp): while a puppet is held in the air (creature.puppet_air,
+  PF_JUMPING) the mod remembers where the partner is; after each of those calls on it, when the game marked it
+  grounded, it is put back there, marked not grounded and given the partner's velocity. `coop.track air` prints
+  `regrounded update= anim= idle= bt= low=` (the call after which it was found grounded).
+* ~ The hooks on PlayAnimation / CreaturePlayAnim / the idle refresh alone (without 0xA0C5D0) left 1 step in 3 runs
+  (lab 20261104-115008 #3): the locomotion starts its walk start / fall -> idle through the low start only.

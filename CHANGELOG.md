@@ -5,6 +5,8 @@
 ### Fixed
 - Creature: in a guest's social game the creature now shows what to do (it sings, dances ... first) and only an answer
   to its prompt counts, as in the host's own game; before, any social ability at any time counted (BUG-0525).
+- Creature: your partner's creature in the middle of a jump or fall no longer drops to the ground for a frame and
+  back up (BUG-0532).
 
 ## [0.7.5] - 2026-11-04
 
