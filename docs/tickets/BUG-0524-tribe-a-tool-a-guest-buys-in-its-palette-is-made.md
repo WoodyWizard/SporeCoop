@@ -8,7 +8,7 @@ reported: 2026-11-03
 source: fix/w41-tribe-actions (found while fixing BUG-0514)
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.6
 branch: fix/w42-tribe-left
 commits: 97b06246 748cf8ed
 tests: tribe_tool_buy (coop_tribe_tool_buy.py)
@@ -55,3 +55,4 @@ a guest selling a tool (not sent: the host keeps it and the guest gets its copy 
 ## History
 - 2026-11-03: opened.
 - 2026-11-04 (fix/w42-tribe-left): a guest's purchase is placed by the host; fixed.
+- 2026-11-04: released in 0.7.6.

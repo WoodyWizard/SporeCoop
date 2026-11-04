@@ -8,7 +8,7 @@ reported: 2026-11-04
 source: lab, fix/w41-puppet-look puppet_air
 role: both
 versions: unreleased (fix/w41-puppet-look)
-fixed_in: unreleased
+fixed_in: 0.7.6
 branch: fix/w42-creature-left
 commits: 985a9bd6 dbcb172b
 tests: puppet_air
@@ -48,3 +48,4 @@ puppet_air (`no jump of the puppet while it walks`; the drops happen in about 1 
 ## History
 - 2026-11-04: opened.
 - 2026-11-04: fixed on fix/w42-creature-left (creature.puppet_air_anim).
+- 2026-11-04: released in 0.7.6.

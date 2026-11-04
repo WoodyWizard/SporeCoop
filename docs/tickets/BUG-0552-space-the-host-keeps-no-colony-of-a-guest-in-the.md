@@ -8,7 +8,7 @@ reported: 2026-11-04
 source: final check out/lab/20261104-135838 space_colony_rejoin
 role: host
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.6
 branch: rel/0.7.6
 commits: 7566bc8e
 tests: space_colony_rejoin, space_allies_own
@@ -34,3 +34,4 @@ it out/lab/20261104-153307 (with space_allies_own, both OK).
 ## History
 - 2026-11-04: opened.
 - 2026-11-04 (rel/0.7.6): fixed (own_mirror out of the roster).
+- 2026-11-04: released in 0.7.6.

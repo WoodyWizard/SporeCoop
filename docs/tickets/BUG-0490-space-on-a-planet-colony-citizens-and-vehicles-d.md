@@ -8,7 +8,7 @@ reported: 2026-11-03
 source: divergence detector, nightly run 2026-11-03 (out/lab/20261103-012624, out/detector/20261103-final.md)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.6
 branch: fix/w42-space-planets
 commits: 6117b9d3 44483073 edcad39c
 tests: space_planet_citizens, space_planet_vehicles (tools/tests/coop_space_planet.py)
@@ -66,3 +66,4 @@ host's game has some there (level of detail).
 ## History
 - 2026-11-03: opened.
 - 2026-11-04 (fix/w42-space-planets): fixed (docs/re/space.md#space-planet-life).
+- 2026-11-04: released in 0.7.6.

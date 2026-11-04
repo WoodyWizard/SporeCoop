@@ -8,7 +8,7 @@ reported: 2026-11-04
 source: divergence detector, play_civ (fix/w41-civ-combat, out/lab/20261104-024331)
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.6
 branch: fix/w42-civ-left
 commits: b4a680fc d8ea4474 b174d8f7 8c7a9834 dc00c3e4 fe6facb2 4bd2a742 cfd1283f 4ffaa3a7 5e1be237
 tests: coop_civ_religious.py (civ_religious), coop_civ_aoe.py (civ_aoe)
@@ -74,3 +74,4 @@ SPORE_FIX_OFF=civ.shot_fired did not fail (out/lab/20261104-095320: 126 / 126).
   or the mirror stands elsewhere); measure each object's lifetime on both games in civ_religious with a
   religious attack on a city (the test has no AoE area at all so far).
 - 2026-11-04 (fix/w42-civ-left, round 2): the guest-only areas are copies of AoE weapons never stopped on the guest; fixed (civ.shot_release).
+- 2026-11-04: released in 0.7.6.

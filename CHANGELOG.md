@@ -2,7 +2,14 @@
 
 ## [Unreleased]
 
+## [0.7.6] - 2026-11-04
+
 ### Fixed
+- Space: a colony a guest founds in the host's home system is kept for it too when it leaves and joins again
+  (BUG-0552).
+- Civilization: when a guest looks at another city than the host, the people walking there are shown in the
+  guest's game; they were all put back at the host's city and the guest's city stayed empty (BUG-0553).
+
 - Space: the game no longer crashes when an NPC empire's ship uses a creation whose model is missing from your
   Sporepedia cache; the ship is shown with a known ship model instead (BUG-0546).
 - Civilization: an old tribe village the host's vehicles raided is gone on every guest's screen too (BUG-0539).

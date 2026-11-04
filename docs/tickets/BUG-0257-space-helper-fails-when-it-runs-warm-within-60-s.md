@@ -8,7 +8,7 @@ reported: 2026-10-28
 source: 
 role: 
 versions: 0.7.5 and earlier
-fixed_in: unreleased
+fixed_in: 0.7.6
 branch: fix/w42-space-play
 commits: 16d9960c, f8e809cb
 tests: space_down_reload, space_helper
@@ -38,3 +38,4 @@ spacecoop.cpp: the 60 s count only within the Space world of the last disable (`
 
 ## History
 - 2026-10-28: opened.
+- 2026-11-04: released in 0.7.6.

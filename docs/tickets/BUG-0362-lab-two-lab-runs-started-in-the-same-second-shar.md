@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: found on fix/w29-puppet-move
 role: both
 versions: 0.7.3.2
-fixed_in: unreleased
+fixed_in: 0.7.6
 branch: fix/w42-infra
 commits: a04e284f
 tests: tools/tests/lab_selftest.py same_second (make test)
@@ -38,3 +38,4 @@ tools/tests/lab_selftest.py `same_second` (make test): two stubbed lab processes
 ## History
 - 2026-11-01: opened.
 - 2026-11-04: fixed on fix/w42-infra (a04e284f): exclusive run directory with a suffix, flaky.json under a lock.
+- 2026-11-04: released in 0.7.6.

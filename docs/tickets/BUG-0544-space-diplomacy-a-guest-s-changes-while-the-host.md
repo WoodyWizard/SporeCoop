@@ -8,7 +8,7 @@ reported: 2026-11-04
 source: BUG-0194 (open end of space_diplomacy.cpp)
 role: both
 versions: 0.7.5 and earlier
-fixed_in: unreleased
+fixed_in: 0.7.6
 branch: fix/w42-space-play
 commits: f8e809cb
 tests: space_diplo_away
@@ -39,3 +39,4 @@ the game is back in Space; the host sends no periodic table while such messages 
 
 ## History
 - 2026-11-04: opened and fixed on fix/w42-space-play.
+- 2026-11-04: released in 0.7.6.

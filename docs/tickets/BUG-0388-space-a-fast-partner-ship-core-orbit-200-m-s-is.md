@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: coop_space_finale_wait.py coop.fleet track, fix/w31-space-gate
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.6
 branch: fix/w42-space-life
 commits: 003267c3
 tests: space_finale_wait
@@ -67,3 +67,4 @@ its extrapolation and the pin (diagnostics).
 ## History
 - 2026-11-01: opened.
 - 2026-11-04: root cause found on fix/w42-space-life (the console cut answers at 8 KB, a measuring gap, not a drawing error); SporeKit kit.fix longout; space_finale_wait checks the fast ship.
+- 2026-11-04: released in 0.7.6.

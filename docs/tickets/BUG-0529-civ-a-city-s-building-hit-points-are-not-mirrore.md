@@ -8,7 +8,7 @@ reported: 2026-11-04
 source: lab (fix/w41-civ-combat, coop_civ_shots.py)
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.6
 branch: fix/w42-civ-left
 commits: d8ea4474
 tests: coop_civ_shots.py (civ_shots)
@@ -45,3 +45,4 @@ PASS (host 4972 / guest 4976 at 30 s, 4462 / 4470 at the end): out/lab/20261104-
 ## History
 - 2026-11-04: opened.
 - 2026-11-04 (fix/w42-civ-left): fixed (civ.building_hp).
+- 2026-11-04: released in 0.7.6.

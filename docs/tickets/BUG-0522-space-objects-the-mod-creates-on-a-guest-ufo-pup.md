@@ -8,7 +8,7 @@ reported: 2026-11-03
 source: split from BUG-0495 (fix/w41-tribe-world)
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.6
 branch: fix/w42-space-life
 commits: 1d839bae
 tests: space_save_strip
@@ -56,3 +56,4 @@ made in a save hook (savestrip::add_save_hooks) when the save starts writing. Bo
 ## History
 - 2026-11-03: opened.
 - 2026-11-04: fixed on fix/w42-space-life (space.save_strip), test space_save_strip.
+- 2026-11-04: released in 0.7.6.

@@ -8,7 +8,7 @@ reported: 2026-11-04
 source: space_diplomacy on lane 5, fix/w42-space-life regression runs
 role: host
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.6
 branch: fix/w42-infra
 commits: bfeeed18, 51558c36
 tests: tools/tests/coop_space_npc_model.py (suite space_npc_model, space_npc_model_coop), space_diplomacy
@@ -44,3 +44,4 @@ Test tools/tests/coop_space_npc_model.py (one game, `--solo`; suite space_npc_mo
 ## History
 - 2026-11-04: opened.
 - 2026-11-04: fixed on fix/w42-infra: a game fix (game.ufo_model) and its twin test; BUG-0545 closed as a duplicate.
+- 2026-11-04: released in 0.7.6.

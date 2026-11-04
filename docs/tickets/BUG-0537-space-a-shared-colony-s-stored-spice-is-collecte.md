@@ -8,7 +8,7 @@ reported: 2026-11-04
 source: divergence detector (space_play, out/detector/20261104-0803.md of rel/0.7.5; Space:noun_only_host:planetary_artifact / Space:host_only:planetary_artifact)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.6
 branch: fix/w42-space-planets
 commits: 6117b9d3 44483073 edcad39c 09db7d24
 tests: space_colony_spice (tools/tests/coop_space_planet.py --case spice)
@@ -59,3 +59,4 @@ Regression: space_trade, space_allies, space_death, space_map out/lab/20261104-1
 ## History
 - 2026-11-04: opened.
 - 2026-11-04 (fix/w42-space-planets): fixed (docs/re/space.md#space-planet-life).
+- 2026-11-04: released in 0.7.6.

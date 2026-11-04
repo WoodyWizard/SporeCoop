@@ -8,7 +8,7 @@ reported: 2026-10-27
 source: docs/known-issues.md (ticket backfilled 2026-10-27)
 role: guest
 versions: 0.7.2.4 (main) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.6
 branch: fix/w42-space-life
 commits: a8504fa0
 tests: space_colony_rejoin, space_map
@@ -74,3 +74,4 @@ player).
 - 2026-10-27: ticket backfilled from docs/known-issues.md (every entry carries its ticket id, CLAUDE.md 1).
 - 2026-10-30 (fix/w13-space): left open, not a contained change for the 0.7.3.2 patch: adopting the guest's colony in the host's world collides with the allies mirror (undone before every save), needs the planet records (BUG-0185) and loses the colony's state. Design for Rivals 0.8 written: docs/11-rivals.md#rivals-guest-colonies.
 - 2026-11-04: fixed on fix/w42-space-life (space.keep_colonies, memory-only version of docs/11-rivals.md#rivals-guest-colonies), test space_colony_rejoin.
+- 2026-11-04: released in 0.7.6.

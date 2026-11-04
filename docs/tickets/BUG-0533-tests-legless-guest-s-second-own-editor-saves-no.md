@@ -8,7 +8,7 @@ reported: 2026-11-04
 source: fix/w41-cell-left (BUG-0345 follow-up)
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.6
 branch: fix/w42-infra
 commits: 46a858a3
 tests: legless_guest
@@ -46,3 +46,4 @@ FAIL (harness reason, without the gain): `SPORE_LANE=4 coop_legless_guest.py --g
 ## History
 - 2026-11-04: opened.
 - 2026-11-04: fixed on fix/w42-infra (the test gives the guest DNA before its second editor).
+- 2026-11-04: released in 0.7.6.

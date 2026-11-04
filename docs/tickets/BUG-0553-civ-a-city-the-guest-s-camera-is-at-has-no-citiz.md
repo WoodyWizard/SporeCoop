@@ -8,7 +8,7 @@ reported: 2026-11-04
 source: final check out/lab/20261104-135838 civ_citizen_lod
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.6
 branch: rel/0.7.6
 commits: 7566bc8e
 tests: civ_citizen_lod (tools/tests/coop_civ_citizen_lod.py)
@@ -42,3 +42,4 @@ civ_citizen_lod (the guest's game has at least half its city citizens at the cit
 ## History
 - 2026-11-04: opened.
 - 2026-11-04 (rel/0.7.6): fixed (civ.citizen_far).
+- 2026-11-04: released in 0.7.6.

@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: lab 20261101-173721 busy_gate#3 (fix/w34-vote-cinematic)
 role: host
 versions: main 279e364 + fix/w34-vote-cinematic
-fixed_in: unreleased
+fixed_in: 0.7.6
 branch: fix/w42-infra
 commits: e64551ba, 37990984
 tests: tools/tests/gates_selftest.py two_shares (make test), busy_gate
@@ -41,3 +41,4 @@ gates_selftest `two_shares`: two shares 18 s apart with resends/sent 0.6, 0.9, 0
 ## History
 - 2026-11-01: opened.
 - 2026-11-04: closed on fix/w42-infra: covered by the BUG-0415 rule since e64551ba (replay shows it); regression case, busy_gate wait removed.
+- 2026-11-04: released in 0.7.6.

@@ -8,7 +8,7 @@ reported: 2026-11-04
 source: BUG-0196 (open end of space_trade.cpp)
 role: both
 versions: 0.7.5 and earlier
-fixed_in: unreleased
+fixed_in: 0.7.6
 branch: fix/w42-space-play
 commits: ad8eaead
 tests: space_trade_end
@@ -41,3 +41,4 @@ right after receiving (its BYE may overtake its answer) is still refunded by the
 
 ## History
 - 2026-11-04: opened and fixed on fix/w42-space-play.
+- 2026-11-04: released in 0.7.6.

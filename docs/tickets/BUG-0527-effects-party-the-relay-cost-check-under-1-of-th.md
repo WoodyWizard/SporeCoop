@@ -8,7 +8,7 @@ reported: 2026-11-04
 source: lab, fix/w41-effects-stages, lane 4, 2026-11-04
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.6
 branch: fix/w42-infra
 commits: 7b452d83
 tests: tools/tests/coop_effects_party.py (suite effects_party, effects_party_tribe, effects_party_civ)
@@ -43,3 +43,4 @@ FAIL (old check, harness reason): SPORE_LANE=4 coop_effects_party.py --fixture t
 ## History
 - 2026-11-04: opened.
 - 2026-11-04: fixed on fix/w42-infra: the check measures the relay (parts line), not the workload and preemption.
+- 2026-11-04: released in 0.7.6.

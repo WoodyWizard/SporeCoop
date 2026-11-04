@@ -8,7 +8,7 @@ reported: 2026-11-04
 source: play_civ --repeat 2 with SPORE_DETECTOR=20 (out/lab/20261104-005314), fix/w41-civ-citizens
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.6
 branch: fix/w42-civ-left
 commits: 38bc7b3f 7fdfa287
 tests: coop_civ_citizen_lod.py (civ_citizen_lod)
@@ -39,3 +39,4 @@ no-fail-run: level of detail, not a desync; coop_civ_citizen_lod.py shows the po
 ## History
 - 2026-11-04: opened.
 - 2026-11-04 (fix/w42-civ-left): level of detail (the citizen pool follows each camera); the detector skips those rows.
+- 2026-11-04: released in 0.7.6.

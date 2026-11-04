@@ -8,7 +8,7 @@ reported: 2026-11-04
 source: code reading, fix/w42-civ-left
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.6
 branch: fix/w42-civ-left
 commits: d8ea4474
 tests: coop_civ_shots.py (civ_shots), coop_civ_religious.py (civ_religious)
@@ -36,3 +36,4 @@ the split lists (out/lab/20261104-094742).
 ## History
 - 2026-11-04: opened.
 - 2026-11-04 (fix/w42-civ-left): found and fixed.
+- 2026-11-04: released in 0.7.6.

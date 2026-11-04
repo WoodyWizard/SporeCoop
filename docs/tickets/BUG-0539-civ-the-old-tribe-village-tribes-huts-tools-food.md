@@ -8,7 +8,7 @@ reported: 2026-11-04
 source: divergence detector, play_civ (fix/w42-civ-left, out/lab/20261104-100146)
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.6
 branch: fix/w42-civ-left
 commits: f1163897 4bd2a742 cfd1283f 19d9d7e9 7fdfa287 f7f5ca46
 tests: coop_civ_tribe_left.py (civ_tribe_left)
@@ -48,3 +48,4 @@ Corrected test (the village's own objects; bundles: BUG-0548): FAIL with the swi
 - 2026-11-04: opened.
 - 2026-11-04 (fix/w42-civ-left): opened (split from BUG-0484's bundles).
 - 2026-11-04 (fix/w42-civ-left, round 2): analysed and fixed (civ.tribe_ruins).
+- 2026-11-04: released in 0.7.6.

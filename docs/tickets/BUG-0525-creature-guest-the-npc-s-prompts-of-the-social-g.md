@@ -8,7 +8,7 @@ reported: 2026-11-03
 source: split from BUG-0179 on fix/w41-creature-left
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.6
 branch: fix/w42-creature-left
 commits: caded79f
 tests: creature_social_prompts (coop_creature_social_prompts.py)
@@ -49,3 +49,4 @@ the prompt does not impress (host and guest), the guest's mirror plays the promp
 - 2026-11-03: opened.
 - 2026-11-03: opened (split from BUG-0179).
 - 2026-11-04: fixed on fix/w42-creature-left (social.prompts).
+- 2026-11-04: released in 0.7.6.

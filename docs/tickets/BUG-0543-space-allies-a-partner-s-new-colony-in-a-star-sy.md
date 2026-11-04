@@ -8,7 +8,7 @@ reported: 2026-11-04
 source: BUG-0197 (open end of space_allies.cpp)
 role: both
 versions: 0.7.5 and earlier
-fixed_in: unreleased
+fixed_in: 0.7.6
 branch: fix/w42-space-play
 commits: a4a27f04
 tests: space_allies_own
@@ -42,3 +42,4 @@ Two pitfalls found on the way (docs/re/space.md#space-play-w42): without AddPlan
 
 ## History
 - 2026-11-04: opened and fixed on fix/w42-space-play.
+- 2026-11-04: released in 0.7.6.

@@ -8,7 +8,7 @@ reported: 2026-11-03
 source: divergence detector, nightly run 2026-11-03 (out/lab/20261103-012624, out/detector/20261103-final.md)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.6
 branch: fix/w42-civ-left
 commits: f2e26935 8b86a709 8ab37445 830797cd 894f4743
 tests: coop_civ_turrets.py (civ_turrets)
@@ -57,3 +57,4 @@ the test with the switch off (the half that blocks it stays unverified at runtim
 - 2026-11-03: opened.
 - 2026-11-04 (fix/w41-civ-combat): analysed (above), not fixed (time box).
 - 2026-11-04 (fix/w42-civ-left): turrets fixed (civ.turrets); bundles / tribe leftovers -> BUG-0539, cultural targets -> BUG-0540.
+- 2026-11-04: released in 0.7.6.
