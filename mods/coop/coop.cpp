@@ -5851,6 +5851,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     creations::Ctx crc;
     crc.sess = &g_sess;
     crc.feed = feed;
+    crc.notice = [](const std::string& t) { notice(t, -1); };
     crc.name_of = [](uint8_t id) { return g_sess.name_of(id); };
     crc.cell_rebuilt = [] { cellsync::join_partner(); };
     crc.appearance_changed = [](uint8_t id) { // rebuild that player's puppet with its own look
