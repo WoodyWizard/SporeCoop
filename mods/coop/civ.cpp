@@ -1636,6 +1636,15 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     for (auto& o : opts)
         if (uintptr_t a = H->sym(o.name))
             H->hook_create(M, (void*)a, o.hook, o.orig);
+    // BUG-0484 (optional): the turret growth of a guest's cities, the host's turrets
+    a_AddTurret = H->sym("SporeCoop::City_AddTurret");
+    a_RemoveTurret = H->sym("SporeCoop::City_RemoveTurret");
+    a_TurretRet1 = H->sym("SporeCoop::CivGrowth_Turret_Ret1");
+    a_TurretRet2 = H->sym("SporeCoop::CivGrowth_Turret_Ret2");
+    if (a_AddTurret && a_RemoveTurret && a_TurretRet1 && a_TurretRet2)
+        H->hook_create(M, (void*)a_AddTurret, (void*)h_AddTurret, (void**)&o_AddTurret);
+    else
+        a_AddTurret = 0;
     a_FireTool = H->sym("Simulator::cToolManager::FireTool"); // BUG-0477 (optional)
     a_ToolMgrGet = H->sym("Simulator::cToolManager::Get");
     savestrip::add_filter(save_filter); // BUG-0470
@@ -1959,6 +1968,115 @@ static void host_send_building_hp(size_t ci, void* city, double now)
     g_hp_tx++;
 }
 
+// ---- BUG-0484: city turrets ----
+// A city's turrets (cCity +0x354, noun 0x436F342) are made by City_AddTurret 0xBE39A0 (the next free turret slot):
+// the city growth 0xBE5890 buys them from the city's budget (two calls), so a guest's game, whose growth runs
+// on its own copy of an NPC city, put turrets there that the host's never had (and the other way round), and
+// the snapshot carried none. Now the guest's growth makes none (like its buildings, CivGrowth_*_Ret) and the
+// host sends the places of one city's turrets per snapshot cycle (chunk 0xFB, when they changed and every 3 s);
+// a guest adds the ones it lacks with City_AddTurret and removes the ones the host does not have (two looks in
+// a row, as reconcile_buildings).
+static bool g_fix_turrets = true;
+COOP_FIX("civ.turrets", "BUG-0484", g_fix_turrets,
+         "civ: a city's defence turrets are the host's on every guest (a guest's own city growth makes none)");
+constexpr uint8_t kTurretChunk = 0xFB;
+constexpr uintptr_t kCityTurrets = 0x354;
+static uintptr_t a_AddTurret, a_RemoveTurret, a_TurretRet1, a_TurretRet2;
+using AddTurret_t = int(__fastcall*)(void*);
+static AddTurret_t o_AddTurret;
+static uint32_t g_turrets_blocked, g_turrets_added, g_turrets_removed, g_turret_tx, g_turret_rx;
+static std::unordered_map<void*, std::pair<uint32_t, double>> g_turret_sent; // host: city -> hash, when
+static std::unordered_map<void*, int> g_turret_seen;                          // guest: city -> mismatches in a row
+static int __fastcall h_AddTurret(void* city)
+{
+    uintptr_t ret = (uintptr_t)__builtin_return_address(0);
+    if (g_fix_turrets && !g_applying && is_guest() && game::mode_id() == modes::kCiv && !local_play() &&
+        (ret == a_TurretRet1 || ret == a_TurretRet2)) {
+        g_turrets_blocked++;
+        return 0; // both growth calls ignore the result (the host's turrets come with the snapshot)
+    }
+    return o_AddTurret(city);
+}
+static std::vector<std::pair<void*, net::Vec3>> turrets_of(void* city)
+{
+    std::vector<std::pair<void*, net::Vec3>> out;
+    for (void* t : vec_of((uint8_t*)city + kCityTurrets)) {
+        net::Vec3 p;
+        if (t && game::object_position(t, p) && out.size() < 40)
+            out.push_back({t, p});
+    }
+    return out;
+}
+static void host_send_turrets(size_t ci, void* city, double now)
+{
+    if (!g_fix_turrets || !a_AddTurret)
+        return;
+    auto ts = turrets_of(city);
+    uint32_t h = 2166136261u + (uint32_t)ts.size();
+    for (auto& [t, p] : ts)
+        h = (h ^ pos_key(p)) * 16777619u;
+    auto& last = g_turret_sent[city];
+    if (last.first == h && now - last.second < 3.0)
+        return;
+    last = {h, now};
+    net::Writer w;
+    w.u16(0); w.u8(kTurretChunk); w.u8(0);
+    w.u8((uint8_t)ci);
+    w.u8((uint8_t)ts.size());
+    for (auto& [t, p] : ts) {
+        w.f32(p.x); w.f32(p.y); w.f32(p.z);
+    }
+    for (auto& pl : C.sess->players())
+        if (pl.id != 0)
+            C.sess->send_unreliable_to(pl.id, net::MSG_CIV_STATE, w);
+    g_turret_tx++;
+}
+static void guest_turrets(net::Reader& r)
+{
+    uint8_t ci = r.u8(), n = r.u8();
+    std::vector<net::Vec3> hp(n);
+    for (auto& p : hp) {
+        p.x = r.f32(); p.y = r.f32(); p.z = r.f32();
+    }
+    if (!r.ok())
+        return;
+    g_turret_rx++;
+    void* city = ci < g_host_cities.size() ? g_host_cities[ci] : nullptr;
+    if (!g_fix_turrets || !a_AddTurret || !city || local_play() || planner_holds(city) || game::mode_id() != modes::kCiv)
+        return;
+    auto local = turrets_of(city);
+    std::vector<bool> used(local.size(), false);
+    size_t missing = 0;
+    for (auto& p : hp) {
+        bool found = false;
+        for (size_t k = 0; k < local.size() && !found; k++)
+            if (!used[k] && net::dist(local[k].second, p) < 6.f)
+                used[k] = found = true;
+        missing += !found;
+    }
+    std::vector<void*> extra;
+    for (size_t k = 0; k < local.size(); k++)
+        if (!used[k])
+            extra.push_back(local[k].first);
+    int& seen = g_turret_seen[city];
+    if (!missing && extra.empty()) {
+        seen = 0;
+        return;
+    }
+    if (++seen < 2)
+        return;
+    seen = 0;
+    g_applying = true;
+    for (void* t : extra) { // the host has no turret there
+        thiscall<void>(a_RemoveTurret, city, t, 0);
+        g_turrets_removed++;
+    }
+    for (size_t i = 0; i < missing; i++) // the next free slot: the order the host's game fills them in
+        if (o_AddTurret(city))
+            g_turrets_added++;
+    g_applying = false;
+}
+
 static void host_tick(double now)
 {
     if (!g_held_builds.empty() && !planner_city()) {
@@ -2140,8 +2258,10 @@ static void host_tick(double now)
             if (pl.id != 0)
                 C.sess->send_unreliable_to(pl.id, net::MSG_CIV_STATE, w);
     }
-    if (bci != 0xFF)
+    if (bci != 0xFF) {
         host_send_building_hp(bci, g_host_cities[bci], now); // BUG-0529
+        host_send_turrets(bci, g_host_cities[bci], now);     // BUG-0484
+    }
 }
 
 static const char* g_buy_fail = "";
@@ -3090,6 +3210,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
                 guest_shots(peek, chunk == kShotChunkFired);
         } else if (peek.ok() && chunk == kHpChunk && chunks == 0) // BUG-0529: buildings' hit points
             guest_building_hp(peek);
+        else if (peek.ok() && chunk == kTurretChunk && chunks == 0) // BUG-0484: turrets
+            guest_turrets(peek);
         else
             guest_state(r);
     }
@@ -3125,6 +3247,8 @@ static void clear_coop_tables(bool restore_speed)
     g_shots_in.clear();
     g_turret_shooters.clear();
     g_hp_sent.clear();
+    g_turret_sent.clear();
+    g_turret_seen.clear();
 }
 
 void on_session_end()
@@ -3136,6 +3260,8 @@ void on_session_end()
     g_shots_in.clear();
     g_turret_shooters.clear();
     g_hp_sent.clear();
+    g_turret_sent.clear();
+    g_turret_seen.clear();
     g_hv.clear();
     g_hv_by_id.clear();
     g_gv.clear();
@@ -3272,7 +3398,10 @@ std::string status()
     char bh[160];
     snprintf(bh, sizeof bh, "building_hp: fix=%d tx=%u rx=%u lowered=%u raised=%u no_match=%u\n", (int)g_fix_building_hp,
              g_hp_tx, g_hp_rx, g_hp_lowered, g_hp_raised, g_hp_nomatch);
-    return std::string(b) + pl + sh + bh;
+    char tu[160];
+    snprintf(tu, sizeof tu, "turrets: fix=%d tx=%u rx=%u blocked=%u added=%u removed=%u\n", (int)g_fix_turrets, g_turret_tx,
+             g_turret_rx, g_turrets_blocked, g_turrets_added, g_turrets_removed);
+    return std::string(b) + pl + sh + bh + tu;
 }
 
 void for_each_target(void (*fn)(const char* kind, int id, int owner, const net::Vec3& pos, void* user), void* user)
@@ -3623,6 +3752,35 @@ std::string debug(const std::vector<std::string>& a)
         thiscall<int>(a_SetOrder, v, t, type, 1);
         thiscall<void>(a_OrderStamp, v, 0);
         return "attack ordered";
+    }
+    if (a.size() >= 2 && (a[0] == "turrets" || a[0] == "addturret" || a[0] == "budget")) {
+        // turrets <host city index>: the city's turrets; addturret <ci>: one more in the next free slot (the game's
+        // City_AddTurret, tests BUG-0484); budget <ci> <value>: the city's civilization's growth budget (+0x4AC,
+        // what the city growth 0xBE5890 buys turrets and buildings with; tests BUG-0484)
+        int ci = atoi(a[1].c_str());
+        void* city = ci >= 0 && ci < (int)g_host_cities.size() ? g_host_cities[ci] : nullptr;
+        if (!city)
+            return "no such city";
+        if (a[0] == "addturret") {
+            if (!a_AddTurret)
+                return "no turret hook";
+            return o_AddTurret(city) ? "turret added" : "no free turret slot";
+        }
+        if (a[0] == "budget") {
+            void* civ = F<void*>(city, kCityCiv);
+            if (!civ)
+                return "no civilization";
+            if (a.size() >= 3)
+                F<float>(civ, 0x4AC) = (float)atof(a[2].c_str());
+            return "budget " + std::to_string(F<float>(civ, 0x4AC));
+        }
+        std::string out;
+        for (auto& [t, p] : turrets_of(city)) {
+            char line[96];
+            snprintf(line, sizeof line, "turret %p pos=(%.1f %.1f %.1f)\n", t, p.x, p.y, p.z);
+            out += line;
+        }
+        return out + "turrets " + std::to_string(turrets_of(city).size());
     }
     if (a.size() >= 4 && a[0] == "spawnveh" && is_host()) {
         // spawnveh <host city index> <purpose 0 military | 1 religious | 2 economic> <loco>: a vehicle of the
