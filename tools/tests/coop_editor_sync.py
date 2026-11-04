@@ -121,7 +121,7 @@ def main():
     print(f'  before: host species {hk0}, guest draws the host as {puppet_species(guest, 0)}; '
           f'DNA host {d_h0} guest {d_g0}', flush=True)
     if (d_h0 or 0) < 40:  # a mouth costs 25 DNA: enough for one
-        host.call('call Simulator::cCreatureGameData::AddEvolutionPoints cdecl f:40')
+        host.call('coop.dna add 40')
         time.sleep(3)
         # (more DNA can grow the brain: its cinematic waits for the caption's OK, and the editor with it)
         confirm_captions((host, guest), 12)
@@ -148,7 +148,7 @@ def main():
             hk0 = avatar_key(host)
             print(f'  second evolution: the host plays {hk0}, the guest draws it as {puppet_species(guest, 0)}', flush=True)
             shot(guest, 'editor_sync_host2_first_on_guest.png')
-            host.call('call Simulator::cCreatureGameData::AddEvolutionPoints cdecl f:40')
+            host.call('coop.dna add 40')
             time.sleep(3)
             confirm_captions((host, guest), 12)
         print(' ', host.call('coop.vote evolve')['out'].strip(), flush=True)  # the game's own evolution request

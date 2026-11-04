@@ -103,7 +103,7 @@ def main():
             print('  ', out(con, 'coop.fix world.snapshot_name off').strip())
     players = [Player(host, 'host'), Player(guest, 'guest')]
     t0 = time.time()
-    host.call('call Simulator::cCreatureGameData::AddEvolutionPoints cdecl f:3000')
+    host.call('coop.dna add 3000')
     last_kick = time.time()
     snapshot_seen = False
     tribe_at = None

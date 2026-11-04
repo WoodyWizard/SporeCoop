@@ -39,7 +39,7 @@ def main():
     if without:
         print('  ', host.call('coop.npc sharecine off')['out'].strip())
     d0 = total_dna(guest)
-    host.call(f'call Simulator::cCreatureGameData::AddEvolutionPoints cdecl f:{DNA}')
+    host.call(f'coop.dna add {DNA}')
     ck(wait(lambda: total_dna(guest) >= d0 + DNA, 15), 'the guest has the host\'s DNA total')
     time.sleep(3)
     for con in (host, guest):

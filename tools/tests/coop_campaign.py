@@ -976,7 +976,7 @@ class Campaign:
         h = self.host
         if state['n'] == 0:
             self.note('shortcut: AddEvolutionPoints 3000 on the host (brain upgrade 4, the bar full)')
-            h.call('call Simulator::cCreatureGameData::AddEvolutionPoints cdecl f:3000')
+            h.call('coop.dna add 3000')
             return
         self.history()
 

@@ -144,7 +144,7 @@ def main():
 
     # 1. DNA for a bigger brain, the shared total, the evolution
     d0 = total_dna(guest)
-    host.call(f'call Simulator::cCreatureGameData::AddEvolutionPoints cdecl f:{DNA}')
+    host.call(f'coop.dna add {DNA}')
     ok = wait(lambda: total_dna(guest) >= d0 + DNA, 15)
     ck(ok, f'the guest has the host\'s DNA total too ({d0:.0f} -> {total_dna(guest):.0f}, host {total_dna(host):.0f})')
     # a bigger brain: CRG_BrainUpgradeN with a caption on both
