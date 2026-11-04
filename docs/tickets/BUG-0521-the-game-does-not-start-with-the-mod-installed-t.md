@@ -10,7 +10,7 @@ role: single
 versions: 0.7.3.6
 fixed_in: unreleased
 branch: fix/w40-gh-issues
-commits: 23a436a5
+commits: 23a436a5, 2331426b, 3dc95658
 tests: kit_initfail (tools/tests/kit_initfail.py)
 signature: sporekit.log: 'App::cSporeApp::Init -> 0' then 'the game exits (ExitProcess 0) ... frame 1'
 docs:
