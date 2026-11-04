@@ -1308,3 +1308,37 @@ the tribe's grab spots of a tool type).
   its goal the old tree 100 m off, not moving) keeps that node when a new order comes (rec=4 walk, rec=10 hunt with
   its target set): the record is replaced, the node is not left. ? what ends the gather node's state 1 (tick
   0xD75F70 case 1 runs while the list at c+0x38 is empty or +0xFC8 != +0xFC4, unless 0xC26DF0(0x30000)); BUG-0505.
+## Every tribe's tools, the palette's drag and a guest's purchase (2026-11-04, fix/w42-tribe-left)
+<a id="tribe-tools-all"></a>
+
+BUG-0523 (each game places the tools its tribes buy at its own spots), BUG-0524 (a guest's purchase only in its
+game). GOG 2024, Ghidra (`tools/ghidra/q.sh --build 2024`):
+* ✔ One tool per type and tribe: the palette's placement start (0xD130D0, the tool branch at 0xD13C05, message
+  property 0x4294750 = the tool type) calls `GetToolByType(type)`, makes the new tool (CreateTool vt 0xB4), sets
+  `tool+0x84 |= 8`, SetTribe (vt 0x64), 0xC9D2D0, starts the drag 0xD09FA0(tool+0x34), sets `tool+0xA2 = 1`, and
+  when the tribe had a tool of the type: `cLayoutSlot::RemoveObject` and **RemoveTool (vt 0xB8) of the old one at
+  once** (a move of a tool is a new tool, the old one destroyed).
+* ✔ The drag: 0xD09FA0 thiscall(placement, spatial) ret 4 keeps the dragged spatial at placement+0xC0, clears
+  `+0x72` of the last one and sets **`spatial+0x72 = 1`** on the new one (a tool's spatial is tool+0x34: the byte
+  tool+0xA6 is 1 while the cursor drags it). The finish 0xD10F90 (thiscall(placement), ret 8, only caller
+  0xD12910) puts the tool into the village's layout slot nearest (0xD0B750, `cLayoutSlot::SetObject`), sets the
+  purchased bit for a new type (0xC8ED90 test, 0xC8ED70 set) and posts message 0x53850BAF {type, tribe +0x504};
+  0xD09FA0(0) ends the drag. A cancel / sell is 0xD09D70: message 0x53850BAF, RemoveTool, then 0xC8F600(0,
+  0x800000, FLT_MAX, 0) = SporeCoop::BT_PostStimulus 0x800000 on every member (vt 0x90).
+* ✔ cTribe::RemoveTool GOG 2024 0xC97020, thiscall(tool) ret 4: the village's layout slots holding it
+  (tribe+0x404..+0x408, 0x18 each) `RemoveObject`, out of +0x380 and +0x36C, tool vt 0x44, DestroyInstance,
+  0xC96B90(&type).
+* So a tool the host was dragging was in its tool list (and in BUG-0514's snapshots) at the cursor's places: a
+  guest could copy it mid-drag. Tools with spatial+0x72 set are not world objects now.
+* Fix (worldobj kind `tribe_tool`, state = type | host tribe index << 8 | 1 << 16 for the player tribe):
+  `wobj.tribe_tools_all` every tribe's tools (host index = the MSG_TRIBE_STATE table order, a guest's local tribe
+  by tribe.cpp's mapping g_local_tribe_of), a guest's own tool the host has not goes (RemoveTool, kind drop_own),
+  the host's is made in the mapped tribe only when that tribe has no tool of the type (one per type: a dragged
+  purchase or an own one about to go waits); `wobj.tribe_tool_buy` a guest's own player-tribe tool without a host
+  partner is a request (MSG_WOBJ kind 1 with id 0, state as above, every 2 s for 20 s): the host removes its tool
+  of the type elsewhere and makes the same at the guest's place (tribe.cpp buy_player_tool); the next snapshot
+  binds the guest's copy. The food: the guest's palette paid in its game, the shared food ledger (shared.cpp
+  MSG_RES_ADD) takes the change to the host; the host pays nothing more.
+* ? Not done: a tool made by the mod (a guest's copy, the host's copy of a guest's purchase) is not put into a
+  village layout slot (the finish's 0xD0B750 / SetObject): the slot looks free to that game's palette. A guest
+  selling a tool (0xD09D70) is not sent: the host keeps it and the guest gets its copy back.

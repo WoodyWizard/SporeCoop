@@ -75,7 +75,11 @@ struct Kind {
                    double now) = nullptr;
     double every = 0; // s between snapshots (0: kSnapInterval)
     // guest: the host has an object this game has no copy of: make one (nullptr: the kind only binds)
-    bool (*make)(const net::Vec3& pos, uint32_t host) = nullptr;
+    int (*make)(const net::Vec3& pos, uint32_t host) = nullptr; // 1 made, 0 failed, -1 not now (no try counted)
+    // guest: an own copy the host has no partner of (each snapshot); true: keep it (not dropped)
+    bool (*own)(const Item& local, double now) = nullptr;
+    // host: a guest's request for an object this game has not (id 0): make it
+    void (*buy)(uint8_t from, const net::Vec3& pos, uint32_t st) = nullptr;
 };
 constexpr uint32_t kGone = 0xFFFFFFFFu; // the state of an object the host's game no longer has
 
@@ -279,36 +283,123 @@ static void herd_apply(const Item& l, uint32_t host)
 static bool herd_acted(uint32_t, uint32_t, uint32_t) { return false; }
 static void herd_act(const Item&, uint32_t) {}
 
-// ---------------------------------------------------------------- kind: tribe tool (BUG-0514)
-// cTribeTool (noun 0x18C8F0C) of the player tribe (tribe +0x36C): the weapon racks, instrument stands, the
-// healer's hut, the fire pit. The palette's placement makes one in the game of the player who bought it
-// (docs/re/tribe.md 5): a rack the host bought was in the host's game only, so a guest could not click it
-// and its members never got the weapon (the guest's orders run on the host, on the host's rack, found by
-// position). The tools are the host's: a guest gets a copy of every host tool it has none of (the same type
-// at the host's place, upright), so its click on the rack becomes the host's GrabTool there.
-// State: the tool type (vt 0x58). Nothing is removed (a raided rack stays, damaged, in every game).
-static bool g_tool_fix = true;
+// ---------------------------------------------------------------- kind: tribe tool (BUG-0514, BUG-0523, BUG-0524)
+// cTribeTool (noun 0x18C8F0C) of the tribes (tribe +0x36C): the weapon racks, instrument stands, the healer's
+// hut, the fire pit. The palette's placement makes one in the game of the player who bought it, an NPC tribe's
+// in each game on its own (docs/re/tribe.md 5, #tribe-tools-all): a rack the host bought was in the host's game
+// only, so a guest could not click it and its members never got the weapon (the guest's orders run on the
+// host, on the host's rack, found by position). The tools are the host's: a guest gets a copy of every host tool
+// it has none of (the same type at the host's place, upright), so its click on the rack becomes the host's
+// GrabTool there.
+// State: the tool type (vt 0x58) | the host's index of its tribe << 8 | 1 << 16 for the player tribe.
+// BUG-0523 (`wobj.tribe_tools_all`): every tribe's tools, not the player tribe's only; a tool the palette drags
+// is not sent (it is not placed yet); a guest's own tool the host has not (another spot, a tribe the host has
+// not) goes with the game's RemoveTool, the host's is made in the mapped tribe.
+// BUG-0524 (`wobj.tribe_tool_buy`): a tool a guest bought for the player tribe (its own copy without a host
+// partner) is a request to the host, which places the same there (the old one of the type goes, as the
+// palette does); the guest's copy is bound to it at the next snapshot. The food was paid in the guest's game
+// (the shared food ledger takes its change to the host).
+static bool g_tool_fix = true, g_tool_all_fix = true, g_tool_buy_fix = true;
 COOP_FIX("wobj.tribe_tool", "BUG-0514", g_tool_fix, "tribe: a tool building (weapon rack, ...) the host built is in every player's game");
+COOP_FIX("wobj.tribe_tools_all", "BUG-0523", g_tool_all_fix,
+         "tribe: every tribe's tools stand where the host's stand (NPC tribes too); a guest's own copy elsewhere goes");
+COOP_FIX("wobj.tribe_tool_buy", "BUG-0524", g_tool_buy_fix, "tribe: a tool a guest buys and places is placed in the host's game too");
+constexpr uint32_t kToolPlayer = 1u << 16;
+static uint32_t tool_state(int type, int tribe, bool player)
+{
+    return (uint32_t)(type & 0xFF) | (uint32_t)(tribe & 0xFF) << 8 | (player ? kToolPlayer : 0);
+}
+static bool is_guest();
+// guest: the player tribe's tools this game had when the host's first snapshot came, and the copies it made: never a
+// purchase (a copy left from an earlier session or world is not bought again on the host)
+static std::set<std::pair<void*, uint32_t>> g_tool_base;
+static bool g_tool_base_done;
 static void tool_collect(Items& out)
 {
-    tribe::for_each_player_tool(
-        [](void* t, int type, const net::Vec3& pos, void* u) {
-            ((Items*)u)->push_back(Item{t, game::object_serial(t), pos, (uint32_t)type});
+    if (!g_tool_base_done && is_guest()) { // the first look after a reset (the first snapshot's reconcile)
+        g_tool_base_done = true;
+        tribe::for_each_tool(
+            false, [](void* t, int, int, bool, const net::Vec3&, void*) { g_tool_base.insert({t, game::object_serial(t)}); }, nullptr);
+    }
+    tribe::for_each_tool(
+        g_tool_all_fix,
+        [](void* t, int type, int ix, bool player, const net::Vec3& pos, void* u) {
+            ((Items*)u)->push_back(Item{t, game::object_serial(t), pos, tool_state(type, ix, player)});
         },
         &out);
 }
-static bool tool_behind(uint32_t, uint32_t) { return false; }
-static void tool_apply(const Item&, uint32_t) {}
+static uint32_t g_tools_removed, g_tool_buys_tx, g_tool_buys_rx, g_tool_buys_done;
+static bool tool_behind(uint32_t local, uint32_t host) { return g_tool_all_fix && host == kGone && local != kGone; }
+static void tool_apply(const Item& l, uint32_t host)
+{
+    if (host != kGone || !tribe::remove_tool(l.p))
+        return;
+    g_tools_removed++;
+    H->log(M, SK_INFO, "wobj: removed a tribe tool type %u the host has not at (%.1f %.1f %.1f)", l.st & 0xFF, l.pos.x, l.pos.y, l.pos.z);
+}
 static bool tool_acted(uint32_t, uint32_t, uint32_t) { return false; }
 static void tool_act(const Item&, uint32_t) {}
-static bool tool_make(const net::Vec3& pos, uint32_t host)
+// 1 made, 0 failed (a try), -1 not now (no try counted)
+static int tool_make(const net::Vec3& pos, uint32_t host)
 {
-    if (host == kGone || host < 1 || host > 10)
-        return false;
-    void* t = tribe::make_player_tool((int)host, pos);
+    int type = (int)(host & 0xFF), ix = (int)(host >> 8 & 0xFF);
+    if (host == kGone || type < 1 || type > 10)
+        return 0;
+    void* t = nullptr;
+    if (!g_tool_all_fix) // BUG-0514 alone: the player tribe's
+        t = (host & kToolPlayer) || host <= 10 ? tribe::make_player_tool(type, pos) : nullptr;
+    else {
+        // this game's tribe has one of the type elsewhere (its own, to be removed, or one the palette drags:
+        // a guest's purchase on its way to the host): one per type, as the palette keeps it
+        int has = tribe::has_tool_type(ix, type);
+        if (has != 0)
+            return -1; // (-1: no such tribe here yet)
+        t = tribe::make_tool(ix, type, pos);
+    }
     if (t)
-        H->log(M, SK_INFO, "wobj: made the host's tribe tool type %u at (%.1f %.1f %.1f)", host, pos.x, pos.y, pos.z);
-    return t != nullptr;
+        g_tool_base.insert({t, game::object_serial(t)});
+    if (t)
+        H->log(M, SK_INFO, "wobj: made the host's tribe tool type %d (tribe %d) at (%.1f %.1f %.1f)", type, ix, pos.x, pos.y, pos.z);
+    return t ? 1 : 0;
+}
+static void send_act(int k, uint32_t id, const net::Vec3& pos, uint32_t now);
+static int tool_kind();
+// guest: its own tool without a host partner; true: keep it (a purchase on its way to the host)
+struct ToolBuy {
+    double first = 0, sent = -100;
+};
+static std::map<std::pair<void*, uint32_t>, ToolBuy> g_tool_buys;
+static bool tool_own(const Item& l, double now)
+{
+    if (!(l.st & kToolPlayer))
+        return false;
+    if (!g_tool_buy_fix)
+        return true; // the old behaviour: it stays in this game only
+    if (g_tool_base.count({l.p, l.id}))
+        return false; // not bought in this session: an own copy as any other
+    ToolBuy& b = g_tool_buys[{l.p, l.id}];
+    if (b.first == 0)
+        b.first = now;
+    if (now - b.first > 20.0)
+        return false; // the host never placed it (refused): this game drops it as any own copy
+    if (now - b.sent >= 2.0) {
+        b.sent = now;
+        send_act(tool_kind(), 0, l.pos, l.st);
+        g_tool_buys_tx++;
+        H->log(M, SK_INFO, "wobj: bought a tribe tool type %u at (%.1f %.1f %.1f): asking the host", l.st & 0xFF, l.pos.x, l.pos.y, l.pos.z);
+    }
+    return true;
+}
+// host: a guest's purchase
+static void tool_buy(uint8_t from, const net::Vec3& pos, uint32_t st)
+{
+    g_tool_buys_rx++;
+    if (!g_tool_buy_fix || !(st & kToolPlayer))
+        return;
+    if (tribe::buy_player_tool((int)(st & 0xFF), pos)) {
+        g_tool_buys_done++;
+        H->log(M, SK_INFO, "wobj: player %u bought a tribe tool type %u at (%.1f %.1f %.1f): placed here too", from, st & 0xFF, pos.x, pos.y, pos.z);
+    }
 }
 
 // ---------------------------------------------------------------- the table
@@ -367,7 +458,8 @@ static Kind g_kinds[] = {
     // the bind radius 30 m: 15 of 19 citizens were within 15 m of a partner without the fix (out/detector/20261103-final.md)
     {"citizen", &g_citizen_fix, kStCiv, 30.f, 200.f, 56, citizen_collect, citizen_behind, citizen_apply, citizen_acted, citizen_act, false, false,
      citizen_follow, 0.5},
-    {"tribe_tool", &g_tool_fix, kStTribe, 2.0f, 150.f, 24, tool_collect, tool_behind, tool_apply, tool_acted, tool_act, false, false, nullptr, 0, tool_make},
+    {"tribe_tool", &g_tool_fix, kStTribe, 2.0f, 150.f, 48, tool_collect, tool_behind, tool_apply, tool_acted, tool_act, false, true, nullptr, 0, tool_make,
+     tool_own, tool_buy},
 };
 constexpr int kKinds = (int)(sizeof g_kinds / sizeof g_kinds[0]);
 // a snapshot is one unreliable message: 19 bytes + 20 per object within net::Connection::kMaxSingle (1163)
@@ -385,6 +477,7 @@ static int kind_of_name(const char* n)
             return k;
     return -1;
 }
+static int tool_kind() { return kind_of_name("tribe_tool"); }
 
 static bool is_host() { return C.sess && C.sess->role() == net::Role::Host; }
 static bool is_guest() { return C.sess && C.sess->role() == net::Role::Client && C.sess->connected(); }
@@ -428,6 +521,9 @@ static Stat g_st[kKinds];
 
 static void guest_reset()
 {
+    g_tool_buys.clear();
+    g_tool_base.clear();
+    g_tool_base_done = false;
     for (auto& g : g_g) {
         g.binds.clear();
         g.own.clear();
@@ -557,9 +653,12 @@ static void reconcile(int k, double now, bool fresh)
                 g_st[k].missing++;
                 auto& m = G.made[id];
                 if (K.make && m.second < 3 && now - m.first > 3.0) {
-                    m.first = now;
-                    m.second++;
-                    if (K.make(ps.first, ps.second))
+                    int r = K.make(ps.first, ps.second);
+                    if (r >= 0) {
+                        m.first = now;
+                        m.second++;
+                    }
+                    if (r > 0)
                         g_st[k].made++; // bound at the next snapshot (this frame's list is older)
                 }
                 continue;
@@ -613,6 +712,10 @@ static void reconcile(int k, double now, bool fresh)
         auto o = G.own.find(key);
         if (o != G.own.end())
             n = o->second + 1;
+        if (K.own && K.own(l, now)) {
+            own[key] = n;
+            continue;
+        }
         if (K.drop_own && n >= kOwnGrace && K.behind(l.st, kGone)) {
             K.apply(l, kGone);
             g_st[k].dropped++;
@@ -693,8 +796,11 @@ static void on_act(uint8_t from, net::Reader& r)
     for (auto& it : all)
         if (it.id == id && net::dist(it.pos, p) < K.tol * 4 + 5.f)
             hit = &it;
-    if (!hit)
+    if (!hit) {
+        if (id == 0 && K.buy && (!C.in_place || C.in_place(from)))
+            K.buy(from, p, now); // a guest made one this game has not (BUG-0524)
         return; // gone already (eaten here too, or out of the game)
+    }
     if (K.acted(hit->st, now, hit->st) || K.behind(hit->st, now)) {
         K.act(*hit, now);
         g_st[k].acted++;
@@ -743,6 +849,9 @@ std::string status()
         s += b;
     }
     snprintf(b, sizeof b, "citizens walks=%u puts=%u\n", g_cit_walks, g_cit_puts);
+    s += b;
+    snprintf(b, sizeof b, "tools all=%d buy=%d removed=%u buys_tx=%u buys_rx=%u buys_done=%u\n", (int)g_tool_all_fix, (int)g_tool_buy_fix,
+             g_tools_removed, g_tool_buys_tx, g_tool_buys_rx, g_tool_buys_done);
     s += b;
     return s;
 }
