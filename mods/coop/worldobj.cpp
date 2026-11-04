@@ -434,13 +434,24 @@ static void citizen_act(const Item&, uint32_t) {}
 // velocity), put there over kCitizenPut (the detector's 15 m). A walk goes kCitizenLead s ahead of the host's
 // and is given again only when that goal moved 2 m or after 1.5 s (a MoveTo every tick hardly walks: BUG-0281)
 constexpr float kCitizenWalk = 1.5f, kCitizenPut = 12.f, kCitizenLead = 1.5f;
-static uint32_t g_cit_walks, g_cit_puts;
+static uint32_t g_cit_walks, g_cit_puts, g_cit_far;
+// BUG-0553: each game keeps a pool of citizens per planet and moves it to the city near its own camera
+// (BUG-0526). A bound copy far from the host's (kCitizenFar, no walk lags that much) was moved by the guest's
+// game to the city the guest looks at: left there (it was put back at the host's city, the guest's city empty).
+// `coop.fix civ.citizen_far off`: put back however far (0.7.5).
+constexpr float kCitizenFar = 60.f;
+static bool g_cit_far_fix = true;
+COOP_FIX("civ.citizen_far", "BUG-0553", g_cit_far_fix, "civ: a guest's citizens the game moved to the city its camera is at stay there");
 
 static void citizen_follow(const Item& l, const net::Vec3& hp, const net::Vec3& v, double age, Follow& st, double now)
 {
     float t = (float)std::min(age, 1.5);
     net::Vec3 at{hp.x + v.x * t, hp.y + v.y * t, hp.z + v.z * t};
     float d = net::dist(l.pos, at);
+    if (g_cit_far_fix && d > kCitizenFar) {
+        g_cit_far++;
+        return;
+    }
     if (d > kCitizenPut) {
         game::stop(l.p);
         game::place(l.p, at, game::orientation(l.p));
@@ -1003,7 +1014,7 @@ std::string status()
                  t.tx, t.rx, t.bound, t.applied, t.dropped, t.missing, t.made, t.req_tx, t.req_rx, t.acted);
         s += b;
     }
-    snprintf(b, sizeof b, "citizens walks=%u puts=%u; space citizens puts=%u; space vehicles drives=%u\n", g_cit_walks, g_cit_puts,
+    snprintf(b, sizeof b, "citizens walks=%u puts=%u far=%u; space citizens puts=%u; space vehicles drives=%u\n", g_cit_walks, g_cit_puts, g_cit_far,
              g_space_cit_puts, g_veh_drives);
     s += b;
     snprintf(b, sizeof b, "tools all=%d buy=%d removed=%u buys_tx=%u buys_rx=%u buys_done=%u\n", (int)g_tool_all_fix, (int)g_tool_buy_fix,

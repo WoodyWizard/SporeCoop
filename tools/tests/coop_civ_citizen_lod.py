@@ -60,8 +60,12 @@ def main():
     h0, g0, hp0, gp0 = counts(host, guest, cities, 'both at the capital')
     seen = gp.look_at(cities[far]['pos'])
     print(f'  the guest\'s camera at city {far}: {seen}', flush=True)
-    time.sleep(10)
-    h1, g1, hp1, gp1 = counts(host, guest, cities, f'the guest\'s camera at city {far}')
+    # the game moves its pool to the city near the camera within 10 to 30 s (once 0 after 10 s on a loaded machine)
+    for _ in range(7):
+        time.sleep(10 if _ == 0 else 3)
+        h1, g1, hp1, gp1 = counts(host, guest, cities, f'the guest\'s camera at city {far}')
+        if gp1[far] > 0:
+            break
     gp.look_at(cities[home]['pos'])
     time.sleep(10)
     h2, g2, hp2, gp2 = counts(host, guest, cities, 'the guest\'s camera back at the capital')

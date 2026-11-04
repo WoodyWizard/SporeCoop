@@ -192,6 +192,8 @@ static bool read_local(Roster& r)
             Colony col;
             col.planet = F<uint32_t>(p, 0x184);
             col.star = col.planet & 0xFFFFFFu;
+            if (spaceext::allies_own_mirror(col.planet))
+                continue; // the partner's colony, shown as one of mine (BUG-0197)
             bool mine = F<uint32_t>(s, 0x54) == r.political_id;
             for (void* cd : ptr_vec((uint8_t*)p + 0x15C, 32))
                 if (readable(cd, 0x48) && F<uint32_t>(cd, 0x14) == r.political_id) {

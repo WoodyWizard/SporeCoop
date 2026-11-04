@@ -109,6 +109,8 @@ void send(uint8_t kind, const net::Writer& body);
 // a political id of a mirror empire of this copy (a partner's colonies): local to each copy, never
 // shared by pol (BUG-0071)
 bool allies_mirror_pol(uint32_t pol);
+// a partner's colony this copy shows as a colony of my own empire (allies.own_star, BUG-0197): not mine
+bool allies_own_mirror(uint32_t planet);
 // BUG-0195: make `planet` a colony of my own empire at record level (a guest's colony the host kept for
 // it). "" = done (or mine already), "wait" = not now (the ship is at that planet), else why it can not be mine.
 std::string colonize_own(uint32_t planet);

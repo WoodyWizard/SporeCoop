@@ -797,8 +797,21 @@ static bool mirror_pol(uint32_t pol)
     return false;
 }
 
+// BUG-0197 x BUG-0195: a partner's colony I show as one of my empire (allies.own_star) is the
+// partner's, not mine: my roster leaves it out (else the host's kept list lost the guest's colony)
+static bool own_mirror(uint32_t planet)
+{
+    for (auto& [n, m] : g_m) {
+        auto it = m.planets.find(planet);
+        if (it != m.planets.end() && it->second.on && it->second.own)
+            return true;
+    }
+    return false;
+}
+
 } // namespace spaceallies
 bool spaceext::allies_mirror_pol(uint32_t pol) { return spaceallies::mirror_pol(pol); }
+bool spaceext::allies_own_mirror(uint32_t planet) { return spaceallies::own_mirror(planet); }
 std::vector<void*> spaceext::game_missions() { return spaceallies::missions(); }
 namespace spaceallies {
 
