@@ -10,7 +10,7 @@ role: guest
 versions: 
 fixed_in: unreleased
 branch: fix/w42-civ-left
-commits:
+commits: d8ea4474
 tests: coop_civ_shots.py (civ_shots)
 signature:
 docs: docs/re/civ.md#civ-hp-shots-turrets
