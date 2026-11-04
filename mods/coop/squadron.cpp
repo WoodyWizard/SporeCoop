@@ -189,8 +189,10 @@ static int SK_THISCALL h_FireTool(void* mgr, void* tool, void* owner, const floa
         g_puppet_shots++;
         return 0;
     }
-    civ::fire_observed(tool, owner, aim, target); // BUG-0477: the host's Civ shots go to the guests
-    return o_FireTool(mgr, tool, owner, aim, dp, a5, target, show);
+    int r = o_FireTool(mgr, tool, owner, aim, dp, a5, target, show);
+    // BUG-0477: the host's Civ shots go to the guests; BUG-0530: FireTool's al tells whether a shot left
+    civ::fire_observed(tool, owner, aim, target, (r & 0xFF) != 0);
+    return r;
 }
 
 // BUG-0378, BUG-0190: the UFO controller update (SporeCoop::UFOController_Update, a virtual

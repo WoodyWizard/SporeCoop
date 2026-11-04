@@ -65,7 +65,7 @@ bool near_vehicle(const net::Vec3& p, float radius);
 bool center(net::Vec3& p);
 // BUG-0477: the FireTool hook (squadron.cpp) tells the host who fires where; a guest drops the hits of the
 // host's shots it shows (attacker: the combatant of a mirror, or of a turret it fired from)
-void fire_observed(void* tool, void* owner, const float* aim, void* target);
+void fire_observed(void* tool, void* owner, const float* aim, void* target, bool fired);
 bool hit_is_cosmetic(void* attacker);
 
 } // namespace civ
