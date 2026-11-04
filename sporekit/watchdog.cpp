@@ -13,12 +13,18 @@ namespace sk {
 
 static std::atomic<uint32_t> g_progress{0};
 static std::atomic<const char*> g_stage{"boot"};
+static std::atomic<uint32_t> g_loop_ticks{0};
 
 void watchdog_mark(const char* stage)
 {
     g_stage = stage;
     g_progress++;
 }
+
+// BUG-0347: App::Canvas::Tick returned. Minimized (it sleeps 200 ms per tick), unfocused without
+// background mode, or behind a device that is lost (alt-tab out of full screen) the game draws
+// nothing and SporeKit sees no frame, while the loop goes on: a pause, not a hang.
+void watchdog_loop_tick() { g_loop_ticks.fetch_add(1, std::memory_order_relaxed); }
 
 // module name from an address without the loader lock: AllocationBase -> PE export name
 static std::string module_of(uintptr_t a, uintptr_t* base_out)
@@ -149,6 +155,9 @@ static DWORD WINAPI watchdog_thread(void*)
     bool dumped = false;
     DWORD ll_owner = 0, ll_since = 0;
     bool ll_dumped = false;
+    uint32_t last_loop = g_loop_ticks;
+    DWORD loop_seen = since;
+    bool paused_logged = false;
     for (;;) {
         Sleep(1000);
         DWORD o = loader_lock_owner();
@@ -162,16 +171,45 @@ static DWORD WINAPI watchdog_thread(void*)
         }
         uint32_t p = g_progress;
         uint64_t f = frame_index();
+        uint32_t lt = g_loop_ticks.load(std::memory_order_relaxed);
+        DWORD now = GetTickCount();
+        if (lt != last_loop) {
+            last_loop = lt;
+            loop_seen = now;
+        }
         if (p != last || f != last_frame) {
+            if (paused_logged)
+                logf(&g_kit_mod, SK_INFO, "watchdog: frames again after %lu s without frames (the game loop ran)",
+                     (now - since) / 1000);
             last = p;
             last_frame = f;
-            since = GetTickCount();
+            since = now;
             dumped = false;
+            paused_logged = false;
             continue;
         }
         // frames legitimately stop in menus only when minimized; boot must progress
         DWORD limit = frame_index() == 0 ? 15000 : 30000;
-        if (!dumped && GetTickCount() - since > limit) {
+        DWORD stall_from = since;
+        if (fixed(g_fix_hangloop) && frame_index() > 0) {
+            // the game loop ran in the last few seconds: no frames, but no hang either (BUG-0347);
+            // a real stall is counted from the later of the last frame and the last loop pass
+            if ((int)(loop_seen - since) > 0)
+                stall_from = loop_seen;
+            if (now - loop_seen < 5000) {
+                if (!paused_logged && now - since > limit) {
+                    HWND w = (HWND)game_window();
+                    logf(&g_kit_mod, SK_INFO,
+                         "watchdog: no frames for %lu s, the game loop runs (window minimized %d, visible %d, "
+                         "foreground %d): the game is paused or not drawing, not a hang",
+                         (now - since) / 1000, w ? (int)IsIconic(w) : -1, w ? (int)IsWindowVisible(w) : -1,
+                         w ? (int)(GetForegroundWindow() == w) : -1);
+                    paused_logged = true;
+                }
+                continue;
+            }
+        }
+        if (!dumped && now - stall_from > limit) {
             dump_main_stack(frame_index() == 0 ? "no boot progress" : "no frames");
             dumped = true;
             if (frame_index() > 0)

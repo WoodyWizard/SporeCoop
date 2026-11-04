@@ -699,6 +699,36 @@ static int c_test_hooknew(void*, int argc, const char* const* argv, SkOut* o)
     return 0;
 }
 
+// BUG-0347 tests: the window minimized / restored / hidden / shown (the game loop goes on, no
+// frames), or the main thread blocked for a while (a real hang: no frames, no loop)
+static int c_test_window(void*, int argc, const char* const* argv, SkOut* o)
+{
+    HWND w = (HWND)game_window();
+    if (!w || argc < 2) {
+        outf(o, "%s", w ? "kit.test.window minimize|restore|hide|show" : "no window");
+        return 1;
+    }
+    struct { const char* n; int cmd; } m[] = {{"minimize", SW_MINIMIZE}, {"restore", SW_RESTORE},
+                                              {"hide", SW_HIDE}, {"show", SW_SHOWNA}};
+    for (auto& e : m)
+        if (!strcmp(argv[1], e.n)) {
+            ShowWindowAsync(w, e.cmd); // any thread: the game's thread carries it out in its message pump
+            Sleep(300);
+            outf(o, "window %s: minimized %d visible %d", e.n, (int)IsIconic(w), (int)IsWindowVisible(w));
+            return 0;
+        }
+    outf(o, "unknown: %s", argv[1]);
+    return 1;
+}
+
+static int c_test_hang(void*, int argc, const char* const* argv, SkOut* o)
+{
+    int ms = argc > 1 ? atoi(argv[1]) : 40000;
+    run_on_main([ms] { Sleep(ms); });
+    outf(o, "the main thread sleeps %d ms on its next frame", ms);
+    return 0;
+}
+
 void register_builtin_commands()
 {
     SkMod* k = &g_kit_mod;
@@ -788,6 +818,10 @@ void register_builtin_commands()
                 c_test_hookchurn, nullptr, M);
     command_add(k, "kit.test.hooknew", "kit.test.hooknew [rounds] [threads] - make new hooks while threads call the functions; counts detours that ran before their original was set (BUG-0398)",
                 c_test_hooknew, nullptr, M);
+    command_add(k, "kit.test.window", "kit.test.window minimize|restore|hide|show - the game window (BUG-0347: no frames, the loop runs)",
+                c_test_window, nullptr, A);
+    command_add(k, "kit.test.hang", "kit.test.hang [ms] - block the main thread on its next frame (a real hang, BUG-0347)",
+                c_test_hang, nullptr, A);
     command_add(k, "bg", "bg [on|off] - keep running when the window is unfocused", c_bg, nullptr, A);
     command_add(k, "frames.source", "frames.source [auto|loop] - where frames come from (loop: ignore Present, tests)",
                 c_frames_source, nullptr, A);

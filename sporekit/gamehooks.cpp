@@ -71,6 +71,7 @@ static CanvasTick_t o_CanvasTick;
 static int SK_THISCALL h_CanvasTick(void* self)
 {
     int r = o_CanvasTick(self);
+    watchdog_loop_tick();
     frame_from_game_loop();
     return r;
 }
