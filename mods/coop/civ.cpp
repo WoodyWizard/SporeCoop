@@ -378,12 +378,32 @@ static double g_shots_sent_at = -100;
 static uint32_t g_shots_seen, g_shots_tx, g_shots_rx, g_shots_fired, g_shots_nomirror, g_shots_notool,
     g_hits_dropped;
 static uint32_t g_shots_tgt_wanted, g_shots_tgt_found;
+static uint32_t g_shots_notarget; // guest: shots not fired, their target is not in this game (BUG-0534)
+static bool g_fix_shot_target = true;
+COOP_FIX("civ.shot_target", "BUG-0534", g_fix_shot_target,
+         "civ: a guest fires a host's shot only at a target it has (the game faults on a shot without one)");
 static std::unordered_set<void*> g_turret_shooters; // guest: turrets fired from (their hits are dropped too)
 
 static uint32_t pos_key(const net::Vec3& p)
 {
     return (uint32_t)(int)std::lround(p.x) * 73856093u ^ (uint32_t)(int)std::lround(p.y) * 19349663u ^
            (uint32_t)(int)std::lround(p.z) * 83492791u;
+}
+
+// an object whose vtable lies in the game's image (no read through a vtable that is not one: a target of FireTool
+// can be an object without a spatial at -kVSpatial, and IsBadReadPtr on its "vtable", a float, wrote a fault
+// per shot to the host's log, BUG-0535)
+static bool vtable_in_game(const void* obj)
+{
+    static uintptr_t lo, hi;
+    if (!hi)
+        if (HMODULE exe = GetModuleHandleW(nullptr)) {
+            auto* nt = (IMAGE_NT_HEADERS*)((uint8_t*)exe + ((IMAGE_DOS_HEADER*)exe)->e_lfanew);
+            lo = (uintptr_t)exe;
+            hi = lo + nt->OptionalHeader.SizeOfImage;
+        }
+    uintptr_t vt = *(const uintptr_t*)obj;
+    return vt >= lo && vt + 0x24 <= hi;
 }
 
 void fire_observed(void* tool, void* owner, const float* aim, void* target)
@@ -396,7 +416,7 @@ void fire_observed(void* tool, void* owner, const float* aim, void* target)
     if (it != g_hv.end()) {
         s.kind = 1;
         s.id = it->second.id;
-    } else if (!IsBadReadPtr(o, 0x40) && game::noun_id(o) == kTurretNoun && game::object_position(o, s.at)) {
+    } else if (!IsBadReadPtr(o, 0x40) && vtable_in_game(o) && game::noun_id(o) == kTurretNoun && game::object_position(o, s.at)) {
         s.kind = 3;
     } else
         return;
@@ -409,10 +429,11 @@ void fire_observed(void* tool, void* owner, const float* aim, void* target)
         if (tv != g_hv.end()) {
             s.tkind = 1;
             s.tid = tv->second.id;
-        } else if (!IsBadReadPtr(*(void**)t, 0x24) && game::object_alive(t) && game::object_position(t, s.tpos)) {
+        } else if (vtable_in_game(t) && game::object_alive(t) && game::object_position(t, s.tpos)) {
             s.tkind = 3;
             s.tnoun = game::noun_id(t);
-        }
+        } else
+            s.tkind = 2; // a target the guest cannot find: it does not fire this one (BUG-0534)
     }
     s.seen = H->time_seconds();
     g_shots[{s.id, s.kind == 3 ? pos_key(s.at) : 0u}] = s;
@@ -581,6 +602,13 @@ static void guest_fire(double now)
                 t = nullptr;
         } else if (s.tkind == 3)
             t = want[2 * i + 1].found;
+        // BUG-0534: the host's shot had a target and this game has none for it: no FireTool. The game's
+        // weapon update (0xCB5FA0, GOG 2024) reads the target of a tool's shot without a null check
+        // (`mov eax,[edi+0x50]` with edi = 0) and faulted every frame for a beam with no target.
+        if (s.tkind && !t && g_fix_shot_target) {
+            g_shots_notarget++;
+            continue;
+        }
         net::Vec3 ap = s.aim;
         if (s.tkind)
             g_shots_tgt_wanted++;
@@ -3073,10 +3101,10 @@ std::string status()
     snprintf(pl, sizeof pl, "planner: open=%d held=%u kills_held=%u kills_waiting=%u picks_refused=%u builds_held=%u build_orphans=%u save_stripped=%u cards_skipped=%u owner_unknown=%u met=%d\n",
              planner_city() ? 1 : 0, g_planner_held, g_planner_kills_held, (unsigned)g_kill_later.size(),
              g_planner_picks_refused, (unsigned)g_held_builds.size(), g_build_orphans, g_save_stripped, g_cards_skipped, g_owner_unknown, g_met);
-    char sh[200];
-    snprintf(sh, sizeof sh, "shots: fix=%d seen=%u tx=%u rx=%u active=%u fired=%u no_mirror=%u no_tool=%u hits_dropped=%u hits=%u no_attacker=%u att_vt=%08X targets=%u/%u\n",
+    char sh[240];
+    snprintf(sh, sizeof sh, "shots: fix=%d seen=%u tx=%u rx=%u active=%u fired=%u no_mirror=%u no_tool=%u hits_dropped=%u hits=%u no_attacker=%u att_vt=%08X targets=%u/%u no_target=%u\n",
              (int)g_fix_shots, g_shots_seen, g_shots_tx, g_shots_rx, (unsigned)g_shots_in.size(), g_shots_fired,
-             g_shots_nomirror, g_shots_notool, g_hits_dropped, g_hits_guest, g_hits_noatt, (unsigned)g_hit_att_vt, g_shots_tgt_found, g_shots_tgt_wanted);
+             g_shots_nomirror, g_shots_notool, g_hits_dropped, g_hits_guest, g_hits_noatt, (unsigned)g_hit_att_vt, g_shots_tgt_found, g_shots_tgt_wanted, g_shots_notarget);
     return std::string(b) + pl + sh;
 }
 

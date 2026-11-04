@@ -19,6 +19,7 @@ import math
 import re
 import time
 
+import creations_state
 import uifind
 from coop_puppet_walk import dump
 from twoinst import Checks, start
@@ -70,6 +71,17 @@ def jumps(rows):
 def main():
     host, guest = start('creature')
     ck = Checks()
+    # BUG-0345: the guest plays its own creature (as this test was made for) only when chosen in a world it
+    # never played it in; the profile is put back as it was at the end
+    st0 = creations_state.save(guest)
+    print('  guest profile before:', st0, '| chose', creations_state.choose_own(guest), flush=True)
+    try:
+        return run(host, guest, ck)
+    finally:
+        creations_state.restore(guest, st0)
+
+
+def run(host, guest, ck):
     time.sleep(3)
     all_jumps = []
     for name, me, viewer, pid in (('guest', guest, host, 1), ('host', host, guest, 0)):
