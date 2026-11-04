@@ -45,6 +45,7 @@ WALK_ANIMS = {0x04866D8E, 0x0452B634, 0x05CB2176, 0x04866DB9, 0x04866DC3, 0x0486
               0x05CB2177, 0x044828E9, 0x04482906}
 STAND_MAX, MATCHED_MIN = 0.05, 0.85
 GAIT_MIN = 0.80
+GAIT_PPM = 10.0  # BUG-0436: pixels per metre on the observer's screen (a walking puppet near its camera: 25-90)
 
 
 # BUG-0394: a window spans at least WIN_FRAMES frames: at 21-29 fps a 0.1 s window held 1-3 frames and its speed
@@ -75,7 +76,8 @@ def dump(con):
                          'p': tuple(map(float, f[4:7])), 'd': tuple(map(float, f[7:10])),
                          'tgt': tuple(map(float, f[10:13])), 'gv': float(f[13]), 'rv': float(f[14]),
                          'anim': f[15], 'gait': int(f[16]), 'gait2': int(f[17]), 'moving': int(f[18]),
-                         'ss': int(f[19]), 'vis': int(f[20]), 'sx': float(f[21]), 'sy': float(f[22])})
+                         'ss': int(f[19]), 'vis': int(f[20]), 'sx': float(f[21]), 'sy': float(f[22]),
+                         'ppm': float(f[28]) if len(f) > 28 else None})
     return rows
 
 
@@ -390,7 +392,9 @@ def analyse(obs_rows, walker_rows, label, air_exempt=False):
         if r['who'] == 255:
             obs_av = r
         elif r['rv'] > 0.5 and (r['flags'] & 1) and obs_av:
-            if r['vis'] and 0 < r['sx'] < 1440 and 0 < r['sy'] < 1080:
+            # BUG-0436: and not tiny there: in the three runs of that ticket the observer's camera was hundreds of m away
+            # (a 30 m walk spanned 20-30 pixels) and the game animated the puppet (and its NPC proxies) without a gait
+            if r['vis'] and 0 < r['sx'] < 1440 and 0 < r['sy'] < 1080 and (r.get('ppm') is None or r['ppm'] >= GAIT_PPM):
                 near += 1
                 near_gait += r['gait'] > 0
     win, win_hitch, win_tj, win_legacy = windows(pup, top)
@@ -548,6 +552,14 @@ def direction(walker, observer, wname, oname, rng, secs, ck, stand=0, jumps=0.0,
     print(f'    walk gait (animation gait state > 0) in {r["gait"]:.0%} of the frames, in {r["near_gait"]:.0%} of the '
           f'{r["near"]} on the observer\'s screen; the walker\'s own avatar while it moves: '
           f'{r["own_gait"]:.0%}', flush=True)
+    def by_size(rows):  # BUG-0436: the walk gait by the creature's size on its game's screen (pixels per metre)
+        out = []
+        for lo, hi in ((0, 10), (10, 25), (25, 60), (60, 1e9)):
+            m = [x for x in rows if x.get('ppm') is not None and x['vis'] and lo <= x['ppm'] < hi and x['gv'] > 0.5]
+            out.append(f'{lo}-{hi if hi < 1e9 else "inf"} px/m: {sum(1 for x in m if x["gait"] > 0)}/{len(m)}')
+        return ', '.join(out)
+    print(f'    walk gait by size on the screen: the puppet {by_size([x for x in obs if x["who"] != 255 and x["rv"] > 0.5])}; '
+          f'the walker\'s own {by_size([x for x in wal if x["who"] == 255])}', flush=True)
     print(f'    walk animation (IsIdleWalk) in {r["walk_anim"]:.0%} of the frames; the walker\'s own avatar while it moves: '
           f'{r["own_walk"]:.0%}', flush=True)
     print(f'    puppet animations while it walks {r["anims_moving"]}; the walker\'s own {r["own_anims"]}', flush=True)
@@ -592,9 +604,14 @@ def direction(walker, observer, wname, oname, rng, secs, ck, stand=0, jumps=0.0,
         ck(len(ar) >= AIR_EPISODES and an and aok >= AIR_OK * an,
            f'{r["label"]}: the walker\'s jumps leave the ground on the observer\'s screen too (drawn up in {aok} of {an} '
            f'frames >= {AIR_OK:.0%}, {len(ar)} jumps >= {AIR_EPISODES})')
-    ck(r['near'] >= 150 * fps_k and r['near_gait'] >= GAIT_MIN,
-       f'{r["label"]}: the puppet walks where the observer sees it (walk gait in {r["near_gait"]:.0%} >= {GAIT_MIN:.0%} '
-       f'of {r["near"]} frames on its screen)')
+    far = [x for x in pup_rows(obs) if x['rv'] > 0.5 and x['vis'] and x.get('ppm') is not None and 0 < x['ppm'] < GAIT_PPM]
+    if len(far) > r['near']:  # BUG-0436
+        print(f'  NOT MEASURED {r["label"]}: the walk gait: the observer\'s camera is far away ({len(far)} frames under '
+              f'{GAIT_PPM:.0f} px/m, {r["near"]} near): its game animates a creature that far without a gait', flush=True)
+    else:
+        ck(r['near'] >= 150 * fps_k and r['near_gait'] >= GAIT_MIN,
+           f'{r["label"]}: the puppet walks where the observer sees it (walk gait in {r["near_gait"]:.0%} >= {GAIT_MIN:.0%} '
+           f'of {r["near"]} frames on its screen)')
 
 
 def settle(cons, secs=40, need=20, runs=3):
@@ -629,6 +646,7 @@ def main():
     ap.add_argument('--goto', default='', help='x,y,z: both players go there first (hilly ground, BUG-0366)')
     ap.add_argument('--stand', type=float, default=0, help='the walker stands this long after its walk (s)')
     ap.add_argument('--guest-fps', type=float, default=0, help='the guest at ~N fps (frame.limit 1000/N): a weak PC (BUG-0366)')
+    ap.add_argument('--zoom', type=int, default=0, help='both cameras zoomed out by N wheel turns of 5 first (BUG-0436)')
     ap.add_argument('--stop-walk', action='store_true', help='short walks, each followed by a stop, and check the stops (BUG-0408)')
     ap.add_argument('--mound', default='', help='x,y,z: the walker stands there (lifted, it lands on a nest mound) before its walk (BUG-0435)')
     a = ap.parse_args()
@@ -657,6 +675,13 @@ def main():
         print('  guest: ' + guest.call(f'frame.limit {round(1000 / a.guest_fps)}')['out'].strip(), flush=True)
     if os.environ.get('SPORE_NET'):
         print('  network: ' + os.environ['SPORE_NET'], flush=True)
+    if a.zoom:  # BUG-0436: both cameras far out (mouse wheel), as a player zoomed out
+        for c in (host, guest):
+            W, H = screen(c)
+            for _ in range(a.zoom):
+                c.call(f'wheel {W // 2} {H // 2} -5')
+                time.sleep(0.15)
+        time.sleep(1.5)
     for cmd in filter(None, os.environ.get('PUPPET_WALK_CMDS', '').split(';')):
         for c in (host, guest):
             print('  ' + cmd + ': ' + c.call(cmd)['out'].strip(), flush=True)
