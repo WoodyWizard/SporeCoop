@@ -1054,5 +1054,5 @@ BUG-0345 ("the guest spawns in the Cell stage with its previous cell creature"),
   The first time per session and world a guest plays its own creation, every game gets the notice "<name> plays
   its own creature" (or cell). Off: the newest own creation in any world (0.7.4). Test commands: `coop.creations
   unchoose <kind>` (no choice), `coop.creations worlds [forget]` (the record of this world).
-  Lab pitfall: worlds.ini lives in each lane's guest profile; `coop_creations.py` leaves the fixture world recorded,
-  so later tests there play the guest's own creature by default as before.
+  Lab pitfall: worlds.ini lives in each lane's guest profile; a test that needs the guest's own creature
+  chooses it and restores the profile (tools/tests/creations_state.py), so no test depends on another's order.

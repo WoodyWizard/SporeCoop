@@ -2436,9 +2436,24 @@ std::string debug(const std::vector<std::string>& a)
             g_own_told.clear();
             g_last_check = 0;
         }
-        char b[160];
-        snprintf(b, sizeof b, "world %08X creature=%08X cell=%08X records=%u switch=%d\n", w, world_record(kCreature, w),
-                 world_record(kCell, w), g_world_records, g_guest_world_fix ? 1 : 0);
+        if (a.size() >= 4 && a[1] == "set") { // worlds set <kind> <hex|0>: restore a record (tests leave the profile as it was)
+            int k = a[2] == "cell" ? kCell : kCreature;
+            world_record_set(k, w, (uint32_t)strtoul(a[3].c_str(), nullptr, 16));
+            g_last_check = 0;
+        }
+        auto ch = [](int k) {
+            char c[16];
+            if (!g_chosen[k])
+                return std::string("-");
+            if (!g_choice[k].instance)
+                return std::string("none");
+            snprintf(c, sizeof c, "%08X", g_choice[k].instance);
+            return std::string(c);
+        };
+        char b[200];
+        snprintf(b, sizeof b, "world %08X creature=%08X cell=%08X records=%u switch=%d choice_creature=%s choice_cell=%s\n", w,
+                 world_record(kCreature, w), world_record(kCell, w), g_world_records, g_guest_world_fix ? 1 : 0,
+                 ch(kCreature).c_str(), ch(kCell).c_str());
         return b;
     }
     if (!a.empty() && a[0] == "sameaddr") { // tests (BUG-0119): the next new avatar looks like the old one
@@ -2559,6 +2574,7 @@ std::string trace_line(Kind k)
     Option o = mine(k);
     const char* origin = g_chosen[k] && k != kUfo ? (g_choice[k].instance ? "choices.ini" : "choices.ini: the world's own")
                          : k == kUfo                ? "own empire"
+                         : guest && !g_opts[k].empty() && g_guest_world_fix ? (world_record(k, modes::current_world()) ? "this world's record (worlds.ini)" : "the world's species (no own one played in this world)")
                          : guest && !g_opts[k].empty() ? "newest own creation"
                                                        : "the world's (host's) own";
     Key here = C.sess && C.sess->connected() ? own_key_here(k) : o.key;
