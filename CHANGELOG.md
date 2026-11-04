@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### Fixed
+- Creature: a guest can befriend creatures with the mouse too: a click on the social ability's button
+  of the ability bar (sing, dance, ...) next to the creature now counts, not only the keys 1-4 (BUG-0518).
 - Cell and Creature: a party no longer evolves two to four times faster than a single player: every
   player's DNA (and Cell food) now counts 1/N with N players in the world, so the shared total grows at
   the single-player pace; spending is not affected. Hosts who prefer the old sum set `dna_pace=0` in

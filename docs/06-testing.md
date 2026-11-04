@@ -3757,3 +3757,7 @@ the other player's game, both ways where the kind has two:
   makes it. Real kills / social wins / meals in other tests are scaled (N = 2 in a two-player test):
   a test that expects a kill's full DNA reward on the shared total must read the divisor
   (`coop.status` line `dna pace: div=...`).
+* `coop_creature_social_bar.py` (suite `creature_social_bar`, BUG-0518): the guest engages a Kook by real
+  input and clicks the social ability's button (550,1020 on the 1440x1080 window, the first green slot),
+  never a key; the host's Kook impressed, the guest's proxy impressed, the species table +1 on both.
+  `SPORE_FIX_OFF=social.bar_click` fails. ~65 s cold (warm in the suite).

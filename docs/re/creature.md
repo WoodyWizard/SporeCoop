@@ -2142,3 +2142,25 @@ coop.cpp `dna_pace_gain` / `dna_pace_meal`, cellsync.cpp `h_AddFood`; test `coop
   the food total and count at the next editor, now at 1/N. ~ inferred, not checked at runtime: the
   85 DNA on the screenshot is the budget of the next request (or a negative "spent",
   cell.md#cell-editor-negative-spent).
+
+## The guest's social game by the ability bar's buttons (2026-11-03, fix/w40-dna-social)
+<a id="creature-guest-social-bar"></a>
+
+BUG-0518 (from BUG-0179's reports). GOG 2024, Ghidra (`tools/ghidra/q.sh --build 2024`) and lane 4.
+
+* ✔ (Ghidra) every ability use of the HUD goes through `SporeCoop::AbilityBar_Use` 0xD49560
+  (cdecl(int ability index of the avatar)): the keys (OnKeyDown 0xD3AFF0 -> AbilityBar_OnKey 0xD4A450 ->
+  AbilityBar_FindByKey 0xD4A320 -> 0xD49560) and a click on a bar button (`AbilityBar_OnButton` 0xD497D0
+  (window id): 0x4C61B50 the social stance, 0x4C61DD9 the combat stance, else the button's slot via
+  0xD48B70 -> 0xD49560). Inside: 0xD49220(index) is a status (0 = usable -> 0xD48AB0(index) uses it, else
+  a hint: 2, 3/4, 6, 8, 10-15 with UI::cHintManager); it also remembers the last social (+0xE74) and
+  combat (+0xE70) ability index of the avatar.
+* ✔ (runtime, lab 20261103-181651) a guest's click on the sing button (1440x1080: 550,1020, the first
+  button of the green social row) next to an engaged mirror reaches 0xD49560 and the game does nothing
+  (no NPC session on the guest): no animation, nothing sent. The mod polled only the keys 1-4.
+* ✔ (runtime, social probe on lane 4 with BUG-0462 merged) the mirrors near the fixture's nest have the
+  host's relation 3 / social mode 2 on the guest; with an engaged mirror the social path impresses
+  065CB8BD, 065CBF12 and 065CB8AB in one round each on the host; the own species 065CBE70 (relation 6,
+  mode 0) is refused like in the game.
+* Fix `social.bar_click`: the hook of 0xD49560 takes a social ability (+0x10 == 1) used in the social
+  stance next to the engaged mirror like the key (plays it on the avatar, K_ACT to the host).
