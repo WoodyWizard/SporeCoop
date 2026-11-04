@@ -31,6 +31,8 @@ Cases (ticket):
                 log), a forced mismatch inside LAB-MARK sync-force lines, an allow(...) of suite.py,
                 SPORE_GATES=report, a game that started again (its whole new log is the test's) and
                 a hitch of a load or of the frame source switch are handled
+  same_second   two lab processes started in the same second: a run directory each, flaky.json counts
+                both (BUG-0353, BUG-0362); the old shared directory (SPORE_LAB_SHARED_RUNDIR=1) fails it
   kill_args     lab.py kill: --lanes 3 is refused as ambiguous, --lane / --upto / --lanes 2,3, lane 1 only
                 with --include-lane-1, an empty selection exits 1 (BUG-0253)
 """
@@ -118,7 +120,7 @@ def lab_cases(tree, tmp):
     inner = out.getvalue().strip().replace('RESULT:', 'RESULT=').replace(' faults: ', ' faults= ')
     print('    ' + inner.replace('\n', '\n    '))
     run = sorted(os.listdir(os.path.join(tmp, 'out', 'lab')))
-    run = [d for d in run if d != 'flaky.json'][-1]
+    run = [d for d in run if os.path.isdir(os.path.join(tmp, 'out', 'lab', d))][-1]
     res = {r['name']: r for r in json.load(open(os.path.join(tmp, 'out', 'lab', run, 'results.json')))['results']}
     summary = open(os.path.join(tmp, 'out', 'lab', run, 'summary.md')).read()
     check(res['clean']['ok'] and not res['clean'].get('skipped'), 'clean: ok')
@@ -442,7 +444,7 @@ def interrupt_cases(tree, tmp):
                 pass
         kills = open(rec).read().split('\n') if os.path.exists(rec) else []
         ldir = os.path.join(tmp, 'i_' + mode, 'out', 'lab')
-        runs = [os.path.join(ldir, d) for d in os.listdir(ldir) if d != 'flaky.json'] if os.path.isdir(ldir) else []
+        runs = [os.path.join(ldir, d) for d in os.listdir(ldir) if os.path.isdir(os.path.join(ldir, d))] if os.path.isdir(ldir) else []
         out = out.decode(errors='replace')
         if os.environ.get('LABSELFTEST_DEBUG'):
             print(out)
@@ -475,6 +477,85 @@ def interrupt_cases(tree, tmp):
     for pid in leftovers(mark):
         os.kill(pid, 9)
     check(alive, 'nohup: a lab started with SIGHUP ignored survives a hangup')
+
+
+SAME_SECOND = r"""
+import datetime, os, subprocess, sys, time, types
+tree, root, who, go = sys.argv[1:5]
+sys.path.insert(0, os.path.join(tree, 'tools'))
+import lab, suite, argparse
+class _D(datetime.datetime):
+    @classmethod
+    def now(cls, tz=None):
+        return datetime.datetime(2026, 1, 2, 3, 4, 5)  # both runs start in this second
+lab.datetime = types.SimpleNamespace(datetime=_D)
+lab.ROOT = root
+lab.preflight = lambda: True
+lab.ensure_lanes = lambda n: None
+lab.lane_game = lambda lane: os.path.join(root, 'nogame')
+lab.lane_alive = lambda lane: {}
+lab.spore = lambda *a, **k: subprocess.CompletedProcess(a, 0, '', '')
+lab.AFTER = 0.5
+suite.T[:] = []
+suite.add('same_' + who, f'{sys.executable} -c "print(\'run {who}\'); print(\'RESULT: OK\')"', ('smoke',))
+while not os.path.exists(go):  # start together
+    time.sleep(0.005)
+a = argparse.Namespace(branch=None, tests='smoke', repeat=1, skip='1,2,3,4,5,6,7,8,9', lanes=1, no_build=True,
+                       cold=False, retry=1)
+sys.exit(lab.cmd_run(a))
+"""
+
+
+def same_second_case(tree, tmp):
+    """BUG-0353 / BUG-0362: two lab processes started in the same second get a run directory each
+    (summary.md, results.json and the test logs of one run only) and flaky.json counts both runs.
+    SPORE_LAB_SHARED_RUNDIR=1 (the old behaviour) must fail it: shown once as the FAIL half."""
+    script = os.path.join(tmp, 'same_second_child.py')
+    open(script, 'w').write(SAME_SECOND)
+
+    def two(shared):
+        root = os.path.join(tmp, 'ss_shared' if shared else 'ss')
+        os.makedirs(os.path.join(root, 'nogame', 'SporebinEP1', 'mods', 'logs'), exist_ok=True)
+        subprocess.run(['git', 'init', '-q', '-b', 'main', root], capture_output=True)
+        git(root, 'commit', '-q', '--allow-empty', '-m', 'selftest')
+        go = os.path.join(root, 'go')
+        env = dict(os.environ)
+        env.pop('SPORE_LAB_SHARED_RUNDIR', None)
+        if shared:
+            env['SPORE_LAB_SHARED_RUNDIR'] = '1'
+        kids = [subprocess.Popen([sys.executable, script, tree, root, w, go], env=env, stdout=subprocess.PIPE,
+                                 stderr=subprocess.STDOUT) for w in ('a', 'b')]
+        time.sleep(1.0)
+        open(go, 'w').close()
+        for k in kids:
+            try:
+                k.communicate(timeout=60)
+            except subprocess.TimeoutExpired:
+                k.kill()
+        ldir = os.path.join(root, 'out', 'lab')
+        runs = sorted(d for d in os.listdir(ldir) if os.path.isdir(os.path.join(ldir, d)))
+        mine = {}
+        for d in runs:
+            try:
+                res = json.load(open(os.path.join(ldir, d, 'results.json')))
+                summ = open(os.path.join(ldir, d, 'summary.md')).read()
+            except (OSError, ValueError):
+                continue
+            mine[d] = ([r['name'] for r in res['results']], res['run'] == d and f'# lab run {d}' in summ)
+        try:
+            hist = json.load(open(os.path.join(ldir, 'flaky.json')))
+        except (OSError, ValueError):
+            hist = {}
+        ok = (len(runs) == 2 and sorted(n for names, _ in mine.values() for n in names) == ['same_a', 'same_b']
+              and all(len(names) == 1 and own for names, own in mine.values())
+              and all(hist.get(n, {}).get('runs') == 1 for n in ('same_a', 'same_b')))
+        return ok, runs, mine, sorted(hist)
+    ok, runs, mine, hist = two(False)
+    check(ok, f'same_second: two runs started in one second have a directory each ({runs}; {mine}; flaky {hist}) '
+              '(BUG-0353, BUG-0362)')
+    ok, runs, mine, hist = two(True)
+    check(not ok, f'same_second (old behaviour, SPORE_LAB_SHARED_RUNDIR=1): the case catches the shared directory '
+                  f'({runs})')
 
 
 def kill_case(tree, tmp):
@@ -526,6 +607,7 @@ def main():
         worktree_case(tree, tmp)
         game_log_case(tree, tmp)
         kill_case(tree, tmp)
+        same_second_case(tree, tmp)
         gate_cases(tree, tmp)
         watch_cases(tree, tmp)
         interrupt_cases(tree, tmp)

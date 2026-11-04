@@ -1659,6 +1659,9 @@ wrong. Suite `campaign` (in no other suite): `tools/lab.py run campaign --lanes 
   reached it (`local_refused`, `puppet_refused`, `pool_gone`).
 * Pitfall: two `lab.py run` started in the same second from one worktree get the same run id and
   write into the same `out/lab/<id>/` (logs mixed); start them a few seconds apart.
+  CORRECTION (2026-11-04, fix/w42-infra): fixed by BUG-0353 / BUG-0362: `lab.new_run_dir` takes the
+  directory with os.mkdir and gives a run of the same second the next suffix (`<id>-2`, `-3`; with a branch
+  `<time>-2-<branch>`), flaky.json is written under a file lock; lab_selftest `same_second` checks it.
 
 ## Votes during a caption: coop_vote_caption.py (2026-10-29, fix/w7-vote)
 <a id="testing-vote-caption"></a>
