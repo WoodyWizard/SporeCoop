@@ -42,7 +42,7 @@ fix off): coverage 100% (lab 20261030-195516-fix-w16-tribe).
 of an NPC it has no proxy of asks the host for its spawn again; the guest's receive path (npc.cpp, MSG_NPC_STATE)
 does that in every stage, Tribe included (npc_stage covers mode 0x1654C02). Not verified in Tribe: a Tribe variant
 of coop_npc_resync.py found no proxy rows in the census on the tribe fixture (`coop.census all 1200`: 76 / 75 rows,
-all of kind `g`, while `coop.npc` listed 29 proxies; out/lab/20261103-235641), so it had nothing to forget; the
+all of kind `g`, while `coop.npc` listed 29 proxies; out/lab/20261103-235641), so it had nothing to forget (census.cpp lists `c` rows with net ids in Creature only: Tribe animals are plain `g` rows); the
 variant was dropped. Next: pick the ids from `coop.npc` instead of the census.
 ## Fix
 None. The scenario test `coop_tribe_rejoin_npcs.py` (suite `tribe_rejoin_npcs`) stays: a guest
