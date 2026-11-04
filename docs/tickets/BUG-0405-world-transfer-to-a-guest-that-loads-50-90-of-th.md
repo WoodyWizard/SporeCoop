@@ -60,6 +60,9 @@ Both sides need the fix for the first part; with an old guest the second part al
 still say the packets are missing). No wire change.
 
 ## Verification
+- FAIL (the measurement: 63 % resends with the switch off, clean link): out/lab/20261104-032411
+- PASS (0 resends, the transfer twice as fast, switch on): out/lab/20261104-033012
+
 Measurements (the tests pass either way: the transfer completed before too; the numbers are the check):
 | run | link | switch | transfers | resends / packets | median time | median rate |
 |---|---|---|---|---|---|---|
