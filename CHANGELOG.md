@@ -6,6 +6,8 @@
 - Tribe: a weapon rack (or any tool building) the host builds now appears in the guests' games too, a guest's
   members can take the weapon from it, and a guest sees its members hold the weapons and tools they took
   (BUG-0514).
+- Tribe: the epic creature that comes to the players' village now hits as hard as the game's own epics; it
+  dealt only about 8 damage, like an ordinary animal (BUG-0515).
 
 ## [0.7.4] - 2026-11-03
 

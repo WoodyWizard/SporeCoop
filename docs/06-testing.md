@@ -3863,3 +3863,8 @@ its game's `world_scale=` from coop.pool, read before and after the dump). Fails
   `tribe_tool` (copies of host tools a guest made). `--nofix` = `SPORE_FIX_OFF=wobj.tribe_tool,tribe.tool_hold`.
 * The fixture's player tribe has one tool, the fire pit (type 10), on both games; the rack (type 1) comes
   out on the village's edge 9 m off the centre. The host's member took the weapon 3-37 s after the order.
+* `coop_tribe_epic_damage.py [--nofix] [--min-blow 30]` (suite `tribe_epic_damage`, ~1.5 min cold): `coop.tribe epic`
+  (host) spawns the co-op epic 60 m off, `coop.tribe epic near <member id>` puts it 6 m from a member (repeated: it
+  walks off), `coop.tribe epic stats` lists every live epic (`ours=`, hp, size, its herd's archetype and
+  multipliers, `blows= last= max=`: its blows on members, counted in the host's citizen TakeDamage hook). The
+  fixture's own epic does not hit anybody in the test (it is far off). Two blows come within 10-40 s.

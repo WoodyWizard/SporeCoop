@@ -1214,3 +1214,19 @@ BUG-0514 (players: a guest's members cannot take weapons from the racks the host
   `tool`, switch `tribe.tool_hold`), applied with SetSpecializedTool (the leader's 0 -> 0xB left alone).
 * ? Not done: a tool a GUEST buys is still made in its own game only (the host has no rack there, the guest's
   grab order is rejected "no such target here"): BUG-0524. A raided (damaged) rack's state is not replicated.
+
+## The co-op epic's blows (2026-11-03, fix/w41-tribe-actions)
+<a id="tribe-epic-damage"></a>
+
+BUG-0515 (players: "in Tribe giants only deal 8 damage"). Runtime, GOG 2024, 'tribe' fixture, lane 2
+(`coop_tribe_epic_damage.py`, `coop.tribe epic stats`: every live epic with its herd and its blows on members, read
+in the host's citizen TakeDamage hook):
+* ✔ The fixture planet's own epic: herd archetype 0xEC4C89F8, generation 0, mScaleMultiplier (+0x150) 1.0,
+  mHitpointOverride (+0x154) 0, **mDamageMultiplier (+0x158) 15.0**, size 11.4, 1000 HP.
+* ✔ The co-op epic (spawn_epic: CreateHerd + archetype 0xFC811218, isEpic): +0x158 = **1.0**, size 7.7-9.6,
+  1000/1250 HP. Its blows on members: 1.5 and **8.0** (lab 20261104-000238): an ordinary animal's, exactly the
+  players' "8". With +0x158 = 15 set on the herd before cCreatureAnimal::Create: 120 per blow (lab 20261104-000059).
+  So the multiplier is read at the blow (or at Create) from the herd; the archetype's isEpic does not set it.
+* The blows are the host's (it simulates every tribe); the guests see the members' health of the host.
+* ? The co-op epic is smaller than the game's (7.7-9.6 vs 11.4, the same scale multiplier): its size comes from
+  elsewhere (the archetype 0xEC4C89F8's tuning?), not changed.

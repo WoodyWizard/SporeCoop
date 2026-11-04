@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.3.6
 fixed_in: unreleased
 branch: fix/w41-tribe-actions
-commits:
+commits: e2ac6e3b
 tests: tribe_tools (coop_tribe_tools.py)
 signature:
 docs: docs/re/tribe.md#tribe-tools-guest

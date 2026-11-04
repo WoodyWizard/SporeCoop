@@ -1596,6 +1596,35 @@ static void epic_herd_release()
 }
 
 // epic: a giant of a species on the planet comes to the village (host)
+// BUG-0515 (players: "giants only deal 8 damage"): the co-op epic's herd was made by CreateHerd with the
+// epic archetype and nothing else: its mDamageMultiplier (+0x158) stayed 1.0, while the game's own epic herd
+// of the planet has 15.0 (lab, the 'tribe' fixture's epic, archetype 0xEC4C89F8): the co-op epic hit members
+// for 1.5-8 (a normal animal's blows). The herd gets the game's epic herd's multiplier (15 when the planet has
+// no epic of its own). `coop.fix tribe.epic_tuning off`: x1 as before.
+static bool g_fix_epic_tuning = true;
+COOP_FIX("tribe.epic_tuning", "BUG-0515", g_fix_epic_tuning, "tribe: the co-op epic hits as hard as the game's own epics (its herd's damage multiplier)");
+constexpr float kEpicDamageMult = 15.f;
+static float game_epic_damage_mult()
+{
+    struct U {
+        float m = 0;
+    } u;
+    game::for_each_object(
+        [](void* o, uint32_t noun, void* up) {
+            auto* u = (U*)up;
+            if (noun != 0x18EB45E || o == g_epic || !game::object_alive(o) || !is_epic_animal(o))
+                return true;
+            void* h = game::herd_of(o);
+            if (h && skg::readable(h, 0x21C) && !is_epic_herd_of_ours(h) && F<float>(h, 0x158) > 1.f && F<float>(h, 0x158) < 100.f) {
+                u->m = F<float>(h, 0x158);
+                return false;
+            }
+            return true;
+        },
+        &u);
+    return u.m > 1.f ? u.m : kEpicDamageMult;
+}
+
 static bool spawn_epic()
 {
     void* pt = player_tribe();
@@ -1644,6 +1673,10 @@ static bool spawn_epic()
         return false;
     F<uint32_t>(herd, 0x88) = kEpicArchetype; // an archetype with isEpic = 1
     F<uint32_t>(herd, 0xF0) = 0;
+    if (g_fix_epic_tuning)
+        F<float>(herd, 0x158) = game_epic_damage_mult(); // mDamageMultiplier, BUG-0515
+    else if (F<float>(herd, 0x158) > 1.f && is_epic_herd_of_ours(herd))
+        F<float>(herd, 0x158) = 1.f; // a reused herd of ours: the old x1 (tests)
     if (g_fix_epic_herd)
         F<float>(herd, 0x34) = pp[0], F<float>(herd, 0x38) = pp[1], F<float>(herd, 0x3C) = pp[2]; // its home
     thiscall<void>(a_HerdEnable, herd, true);
