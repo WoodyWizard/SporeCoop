@@ -1,16 +1,16 @@
 ---
 id: BUG-0505
 title: play_tribe: guest orders the host takes but its members do not act on (12 idle of 28), the host's bot gives too few orders (minimap look_far 24)
-status: open
+status: fixed
 kind: test
 stage: Tribe
 reported: 2026-11-03
 source: fix/w40-play final check, lab 20261103-160342
 role: 
 versions: 
-fixed_in:
+fixed_in: unreleased
 branch: fix/w41-tribe-orders
-commits:
+commits: 19fa95a7 8e0fac53 37254c57
 tests: tribe_tools (coop_tribe_tools.py), play_tribe
 signature:
 docs: docs/re/tribe.md#tribe-orders, docs/06-testing.md#testing-tribe-orders
@@ -59,8 +59,15 @@ host_command is unchanged (it already is the game's own order). Test: tribe_tool
 deterministic; `coop.tribe put` of the member or of a blocker next to the spot by the fire pit did not make it).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+* FAIL without the fix (code before 8e0fac53, the diagnostics only): out/lab/20261104-014156 tribe_tools#2 (the
+  member 1.5 m short of its grab spot for 90 s, no weapon). Twin `SPORE_FIX_OFF=tribe.grab_spot` over 6 runs:
+  out/lab/20261104-021539 6/6 OK within the 90 s, #4 stood 0.85 m short ~30 s after the re-order (135 s): the
+  stop is not deterministic, so the twin does not fail every time.
+* PASS with it: out/lab/20261104-022327 tribe_tools --repeat 8 --cold, SPORE_DETECTOR=20: 8/8; in #3 the fix set
+  the member onto its spot ("stood 2.5 m short of its spot at a tool for 4 s: set onto it") and it took the weapon.
+  Before: 3 of 8 runs failed (T1, out/lab/20261104-012256, 20261104-005643).
+* play_tribe (lab 20261104-014832, 2 runs, the diagnostics build): `members act on the orders` passed both
+  (guest 11/0 idle, 14/1 idle); #1 failed the lab gate on an NPC proxy 3 m off (BUG-0503 area, not this ticket).
 
 ## History
 - 2026-11-03: opened.
