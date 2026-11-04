@@ -11,6 +11,8 @@
   screen, instead of walking somewhere else (BUG-0476, BUG-0475).
 - Civilization: roads between cities (trade routes) that appear in the host's game appear in the guest's game too
   (BUG-0494).
+- Civilization: a guest sees the host's fights: vehicles and turrets fire their shots in the guest's game too,
+  and those shots do no damage of their own there (BUG-0477).
 
 ## [0.7.4] - 2026-11-03
 

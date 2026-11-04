@@ -3875,3 +3875,18 @@ its game's `world_scale=` from coop.pool, read before and after the dump). Fails
   Twins: `SPORE_FIX_OFF=civ.citizens` (about half unpaired), `civ.citizen_scale` (sizes differ).
 * Pitfall met: a lab run with `SPORE_FIX_OFF` leaves the switch off in the warm games; the next run without it on
   the same lane reused them (`fix=0` in `coop.wobj`). Run the PASS after a twin with `--cold`.
+
+## Civ shots between the games (2026-11-04, fix/w41-civ-combat)
+<a id="testing-civ-shots"></a>
+
+* `coop_civ_shots.py` (suite `civ_shots`, warm, about 110 s): the host's military vehicles attack the nearest NPC
+  city (`coop.civ attack <id> <city> 2`: the game's SetOrder); 60 samples 1 s apart of the projectile objects in
+  each game's noun list (`coop.civ nouns 24270C5` and the other projectile nouns). PASS: the host fired, the
+  guest had projectiles in at least half the host's samples, at most about twice as many, and the city's
+  building hit points on the guest did not fall (its copies of the shots hurt nothing). Twins:
+  `SPORE_FIX_OFF=civ.shots` (no projectile on the guest), `civ.shot_damage` (the guest's city loses hit points).
+  The status line `shots:` (`coop.civ`) counts the host's FireTool calls seen, the guest's calls, the targets
+  found and the hits dropped.
+* `sync_civ_loss` (coop_sync.py civ under SPORE_NET=burst, cold, about 1 min): the sync_burst variant for Civ
+  alone, for BUG-0438. With one vehicle sampled 16 times its p90 is the second worst sample: one burst decides
+  a run (see the ticket).
