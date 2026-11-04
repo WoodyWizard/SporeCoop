@@ -19,7 +19,9 @@ related:
 
 ## Report
 The guest: it does not see the enemy village's hub hit points going down.
-Reports: SporeCoop-report-2026-11-04 190729 (out/reports/2026-11-04, not in git). Not analysed yet.
+Reports: SporeCoop-report-2026-11-04 190729 (out/reports/2026-11-04, not in git).
+Screenshots (the reports' shots/, guest and host at the same session second): s5771: the host's screen has the village's hut with its health bar (6/6, 375) and the fight; the guest's screen at that spot has no hut and no fight.
+Not analysed yet.
 
 ## Root cause
 <!-- observed (runtime, logs, disassembly) vs inferred -->

@@ -569,7 +569,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0557](BUG-0557-creature-the-guest-cannot-eat-some-bodies-of-cre.md) | open | desync | Creature | 2026-11-04 |  | Creature: the guest cannot eat some bodies of creatures the players killed |
 | [BUG-0558](BUG-0558-creature-the-ufo-that-picks-up-the-players-at-th.md) | open | bug | Creature | 2026-11-04 |  | Creature: the UFO that picks up the players at the end of Creature cannot pick up the guest (the guest does not see the ship) |
 | [BUG-0559](BUG-0559-creature-parts-of-a-pack-the-guest-lacks-creepy.md) | open | bug | Creature | 2026-11-04 |  | Creature: parts of a pack the guest lacks (Creepy & Cute) are drawn as big blocks, and the host's colours are another shade on the guest |
-| [BUG-0560](BUG-0560-creature-the-host-gets-a-lot-of-dna-again-after.md) | open | bug | Creature | 2026-11-04 |  | Creature: the host gets a lot of DNA again after going into the editor |
+| [BUG-0560](BUG-0560-creature-the-host-gets-a-lot-of-dna-again-after.md) | open | bug | Cell | 2026-11-04 |  | Cell: the host gets a lot of DNA again after going into the cell editor |
 | [BUG-0561](BUG-0561-creature-an-allied-nest-has-no-ally-green-icon-o.md) | open | bug | Creature | 2026-11-04 |  | Creature: an allied nest has no ally (green) icon on the guest's minimap, only the grey discovered mark |
 | [BUG-0562](BUG-0562-creature-an-npc-creature-backing-away-from-the-g.md) | open | bug | Creature | 2026-11-04 |  | Creature: an NPC creature backing away from the guest gets stuck inside its nest (video) |
 | [BUG-0563](BUG-0563-tribe-the-guest-s-creature-from-creature-stage-a.md) | open | desync | Tribe | 2026-11-04 |  | Tribe: the guest's creature from Creature stage appears as an enemy monster at the start of Tribe; killed, it leaves meat that never runs out |
@@ -581,10 +581,11 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0569](BUG-0569-tribe-the-guest-sees-no-animations.md) | open | bug | Tribe | 2026-11-04 |  | Tribe: the guest sees no animations |
 | [BUG-0570](BUG-0570-tribe-no-red-target-circle-under-an-enemy-the-gu.md) | open | bug | Tribe | 2026-11-04 |  | Tribe: no red target circle under an enemy the guest targets |
 | [BUG-0571](BUG-0571-tribe-villages-are-founded-spawn-much-faster-tha.md) | open | bug | Tribe | 2026-11-04 |  | Tribe: villages are founded (spawn) much faster than in the single-player game |
-| [BUG-0572](BUG-0572-tribe-after-the-third-restart-the-guest-does-not.md) | open | desync | Tribe | 2026-11-04 |  | Tribe: after the third restart the guest does not see the tribe's food |
+| [BUG-0572](BUG-0572-tribe-after-the-third-restart-the-guest-does-not.md) | open | desync | Tribe | 2026-11-04 |  | Tribe: the guest's food counter is 0 while the host's tribe has food (from about an hour into the session) |
 | [BUG-0573](BUG-0573-tribe-the-guest-s-tribe-members-do-not-eat-on-th.md) | open | bug | Tribe | 2026-11-04 |  | Tribe: the guest's tribe members do not eat on their own, they must be ordered to eat |
 | [BUG-0574](BUG-0574-tribe-two-buildings-stand-right-next-to-each-oth.md) | open | desync | Tribe | 2026-11-04 |  | Tribe: two buildings stand right next to each other on the guest |
 | [BUG-0575](BUG-0575-tribe-the-guest-crashed-after-double-clicking-th.md) | open | crash | Tribe | 2026-11-04 |  | Tribe: the guest crashed after double-clicking the home icon (3010a413:SporeApp.exe+0x6826F3) |
 | [BUG-0576](BUG-0576-tribe-civ-black-screen-after-evolving-from-tribe.md) | open | bug | Tribe | 2026-11-04 |  | Tribe -> Civ: black screen after evolving from Tribe into the city stage |
 | [BUG-0577](BUG-0577-after-a-rejoin-the-game-shows-the-cell-and-creat.md) | open | bug | Tribe | 2026-11-04 |  | After a rejoin the game shows the Cell and Creature stages as not done yet (stage progress lost) |
 | [BUG-0578](BUG-0578-crash-at-graphics-cmodelworld-finishbackgroundlo.md) | open | crash | none | 2026-11-04 |  | Crash at Graphics::cModelWorld::FinishBackgroundLoad+0x2735 on 0.7.3.6 (3010a413, mode none) |
+| [BUG-0579](BUG-0579-tribe-day-and-night-differ-the-guest-s-world-is.md) | open | desync | Tribe | 2026-11-04 |  | Tribe: day and night differ: the guest's world is at night while the host's is in daylight |

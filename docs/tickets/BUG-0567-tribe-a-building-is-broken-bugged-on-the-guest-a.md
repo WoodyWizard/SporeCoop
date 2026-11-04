@@ -19,7 +19,9 @@ related:
 
 ## Report
 The guest: a bugged building after dying (2 reports, screenshots in the report).
-Reports: SporeCoop-report-2026-11-04 190900 (out/reports/2026-11-04, not in git). Not analysed yet.
+Reports: SporeCoop-report-2026-11-04 190900 (out/reports/2026-11-04, not in git).
+Screenshots (the reports' shots/, guest and host at the same session second): s6037 / s6054: after the guest's death its screen is dark and covered with grey smoke puffs over the village, a forge smoking; the host's screen of the same village is clear.
+Not analysed yet.
 
 ## Root cause
 <!-- observed (runtime, logs, disassembly) vs inferred -->

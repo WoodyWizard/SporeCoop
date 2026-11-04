@@ -19,7 +19,9 @@ related: BUG-0488
 
 ## Report
 The guest: literally two buildings next to each other in Tribe (a picture sent to the developer).
-Reports: SporeCoop-report-2026-11-04 200959 (out/reports/2026-11-04, not in git). Not analysed yet.
+Reports: SporeCoop-report-2026-11-04 200959 (out/reports/2026-11-04, not in git).
+Screenshots (the reports' shots/, guest and host at the same session second): s9694: the guest's village has its tool buildings at other places than the host's (two red-roofed huts close together, a totem missing); the host's has a totem, two huts at the bottom. Compare BUG-0523 (each game places the tools on its own, fixed in 0.7.6).
+Not analysed yet.
 
 ## Root cause
 <!-- observed (runtime, logs, disassembly) vs inferred -->

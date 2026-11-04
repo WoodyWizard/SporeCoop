@@ -1,6 +1,6 @@
 ---
 id: BUG-0572
-title: Tribe: after the third restart the guest does not see the tribe's food
+title: Tribe: the guest's food counter is 0 while the host's tribe has food (from about an hour into the session)
 status: open
 kind: desync
 stage: Tribe
@@ -19,7 +19,9 @@ related:
 
 ## Report
 The guest: after about the 3rd restart it does not see their food in Tribe.
-Reports: SporeCoop-report-2026-11-04 192403 (out/reports/2026-11-04, not in git). Not analysed yet.
+Reports: SporeCoop-report-2026-11-04 192403 (out/reports/2026-11-04, not in git).
+Screenshots (the reports' shots/, guest and host at the same session second): The guest's food counter (bottom left) is 0 while the host's is 19, 22, 56 and 29 (s6519, s6939, s9174, s9694); earlier both showed the same (15/15 s5911, 78/78 s6037, 82/82 s6244, 5/5 s6403). So the food differs from about 19:17, before the restarts.
+Not analysed yet.
 
 ## Root cause
 <!-- observed (runtime, logs, disassembly) vs inferred -->

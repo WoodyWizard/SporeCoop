@@ -19,7 +19,9 @@ related: BUG-0486
 
 ## Report
 Both players: the spaceship tries to pick up the guest but cannot; the guest does not see the ship.
-Reports: SporeCoop-report-2026-11-04 182712, 182720 (out/reports/2026-11-04, not in git). Not analysed yet.
+Reports: SporeCoop-report-2026-11-04 182712, 182720 (out/reports/2026-11-04, not in git).
+Screenshots (the reports' shots/, guest and host at the same session second): s3524 / s3528: the guest stands on grass under the moon; the host's screen at the same second shows another place (blue, plants like the sea floor): the two games are not at the same spot when the ship comes.
+Not analysed yet.
 
 ## Root cause
 <!-- observed (runtime, logs, disassembly) vs inferred -->

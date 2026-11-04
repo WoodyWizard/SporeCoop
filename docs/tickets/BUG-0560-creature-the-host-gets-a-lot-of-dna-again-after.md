@@ -1,9 +1,9 @@
 ---
 id: BUG-0560
-title: Creature: the host gets a lot of DNA again after going into the editor
+title: Cell: the host gets a lot of DNA again after going into the cell editor
 status: open
 kind: bug
-stage: Creature
+stage: Cell
 reported: 2026-11-04
 source: player report 2026-11-04 (Discord bug-reports, 0.7.5, Steam build)
 role: host
@@ -19,7 +19,9 @@ related:
 
 ## Report
 The host: after going into the editor it got a lot of DNA once again (game mode Editor in the report).
-Reports: SporeCoop-report-2026-11-04 173319 (out/reports/2026-11-04, not in git). Not analysed yet.
+Reports: SporeCoop-report-2026-11-04 173319 (out/reports/2026-11-04, not in git).
+Screenshots (the reports' shots/, guest and host at the same session second): s283: the host is in the Cell editor (cell parts, "Name Your Species"), not the Creature one; the guest swims in Cell with 26 DNA, the host's editor shows 45.
+Not analysed yet.
 
 ## Root cause
 <!-- observed (runtime, logs, disassembly) vs inferred -->

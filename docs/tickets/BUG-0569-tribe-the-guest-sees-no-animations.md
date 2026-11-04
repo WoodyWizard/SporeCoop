@@ -19,7 +19,9 @@ related:
 
 ## Report
 The guest (3 reports): it does not see any animations in Tribe.
-Reports: SporeCoop-report-2026-11-04 191438 (out/reports/2026-11-04, not in git). Not analysed yet.
+Reports: SporeCoop-report-2026-11-04 191438 (out/reports/2026-11-04, not in git).
+Screenshots (the reports' shots/, guest and host at the same session second): s6375 / s6403: the host sees its members and chiefs fighting in the village; the guest's screen of the same village shows no members (s6403) or creatures standing still (s6375).
+Not analysed yet.
 
 ## Root cause
 <!-- observed (runtime, logs, disassembly) vs inferred -->

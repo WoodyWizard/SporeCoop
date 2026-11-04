@@ -19,7 +19,9 @@ related:
 
 ## Report
 Both players: the flock the host calls is not allied with the guest; the guest does not see them as friendly.
-Reports: SporeCoop-report-2026-11-04 180352, 180419 (out/reports/2026-11-04, not in git). Not analysed yet.
+Reports: SporeCoop-report-2026-11-04 180352, 180419 (out/reports/2026-11-04, not in git).
+Screenshots (the reports' shots/, guest and host at the same session second): s2129 / s2144: the host's screen shows its flock with hearts (allied); at s2144 the guest's world is black (only the HUD) while the host gets "<guest> is responding again" (a guest hitch).
+Not analysed yet.
 
 ## Root cause
 <!-- observed (runtime, logs, disassembly) vs inferred -->

@@ -19,7 +19,9 @@ related: BUG-0424, BUG-0452
 
 ## Report
 The host: the guest sees some parts of the host's creature as big blocks (different from part to part); the guest does not have the Creepy & Cute pack. On Discord: the host's colour is a completely different shade on the guest's screen. Before 0.7.4 this crashed; now a fallback part is drawn, it should be a similar part.
-Reports: SporeCoop-report-2026-11-04 184642 (out/reports/2026-11-04, not in git). Not analysed yet.
+Reports: SporeCoop-report-2026-11-04 184642 (out/reports/2026-11-04, not in git).
+Screenshots (the reports' shots/, guest and host at the same session second): s4687: only the host's screen (its creature looks right there); no guest screenshot of the blocks.
+Not analysed yet.
 
 ## Root cause
 <!-- observed (runtime, logs, disassembly) vs inferred -->

@@ -19,7 +19,9 @@ related: BUG-0313
 
 ## Report
 The host: black screen after evolving into the city stage from Tribe.
-Reports: SporeCoop-report-2026-11-04 201550 (out/reports/2026-11-04, not in git). Not analysed yet.
+Reports: SporeCoop-report-2026-11-04 201550 (out/reports/2026-11-04, not in git).
+Screenshots (the reports' shots/, guest and host at the same session second): s10034: the host's screen is black except the co-op window.
+Not analysed yet.
 
 ## Root cause
 <!-- observed (runtime, logs, disassembly) vs inferred -->

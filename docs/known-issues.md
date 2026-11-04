@@ -1888,7 +1888,7 @@ Player reports 2026-11-04 (0.7.5, Discord bug-reports; not analysed yet):
 - BUG-0557: Creature: the guest cannot eat some bodies of creatures the players killed
 - BUG-0558: Creature: the UFO that picks up the players at the end of Creature cannot pick up the guest (the guest does not see the ship)
 - BUG-0559: Creature: parts of a pack the guest lacks (Creepy & Cute) are drawn as big blocks, and the host's colours are another shade on the guest
-- BUG-0560: Creature: the host gets a lot of DNA again after going into the editor
+- BUG-0560: Cell: the host gets a lot of DNA again after going into the cell editor
 - BUG-0561: Creature: an allied nest has no ally (green) icon on the guest's minimap, only the grey discovered mark
 - BUG-0562: Creature: an NPC creature backing away from the guest gets stuck inside its nest (video)
 - BUG-0563: Tribe: the guest's creature from Creature stage appears as an enemy monster at the start of Tribe; killed, it leaves meat that never runs out
@@ -1900,10 +1900,11 @@ Player reports 2026-11-04 (0.7.5, Discord bug-reports; not analysed yet):
 - BUG-0569: Tribe: the guest sees no animations
 - BUG-0570: Tribe: no red target circle under an enemy the guest targets
 - BUG-0571: Tribe: villages are founded (spawn) much faster than in the single-player game
-- BUG-0572: Tribe: after the third restart the guest does not see the tribe's food
+- BUG-0572: Tribe: the guest's food counter is 0 while the host's tribe has food (from about an hour into the session)
 - BUG-0573: Tribe: the guest's tribe members do not eat on their own, they must be ordered to eat
 - BUG-0574: Tribe: two buildings stand right next to each other on the guest
 - BUG-0575: Tribe: the guest crashed after double-clicking the home icon (3010a413:SporeApp.exe+0x6826F3)
 - BUG-0576: Tribe -> Civ: black screen after evolving from Tribe into the city stage
 - BUG-0577: After a rejoin the game shows the Cell and Creature stages as not done yet (stage progress lost)
 - BUG-0578: Crash at Graphics::cModelWorld::FinishBackgroundLoad+0x2735 on 0.7.3.6 (3010a413, mode none)
+- BUG-0579: Tribe: day and night differ: the guest's world is at night while the host's is in daylight

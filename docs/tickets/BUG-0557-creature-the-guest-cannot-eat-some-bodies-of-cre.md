@@ -19,7 +19,9 @@ related: BUG-0383
 
 ## Report
 Both players: the guest cannot eat some of the bodies of creatures they killed together.
-Reports: SporeCoop-report-2026-11-04 181848, 181852 (out/reports/2026-11-04, not in git). Not analysed yet.
+Reports: SporeCoop-report-2026-11-04 181848, 181852 (out/reports/2026-11-04, not in git).
+Screenshots (the reports' shots/, guest and host at the same session second): s3016 / s3024: the host sees two bodies of killed creatures by a nest; the guest's screen at the same time shows that ground without them (a darker view).
+Not analysed yet.
 
 ## Root cause
 <!-- observed (runtime, logs, disassembly) vs inferred -->
