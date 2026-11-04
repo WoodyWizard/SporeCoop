@@ -4109,8 +4109,8 @@ int c_status(void*, int, const char* const*, SkOut* out)
                 : g_mode == modes::kCell   ? *(uint32_t*)((uint8_t*)r.puppet + 0xFC) // cell model
                                            : 0u);
             if (g_mode == modes::kCreature)
-                SAY("   drive err=%.2f speed=%.2f nudges=%u kept=%u teleports=%u walk_goals=%u jumps=%u airs=%u stop_holds=%u\n", r.drv.last_err,
-                    r.drv.last_speed, r.drv.nudges, r.drv.nudges_kept, r.drv.teleports, r.drv.goals, r.drv.jumps, r.drv.airs, r.drv.stop_holds);
+                SAY("   drive err=%.2f speed=%.2f nudges=%u kept=%u teleports=%u walk_goals=%u jumps=%u airs=%u\n", r.drv.last_err,
+                    r.drv.last_speed, r.drv.nudges, r.drv.nudges_kept, r.drv.teleports, r.drv.goals, r.drv.jumps, r.drv.airs);
         }
         // tests (BUG-0507): the puppet the mod holds is a live creature in the game's own object list
         if (r.puppet && creature_puppet(r.puppet_adapter))

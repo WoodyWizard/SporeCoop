@@ -229,16 +229,6 @@ static bool g_puppet_mound_fix = true;
 COOP_FIX("creature.puppet_mound", "BUG-0435", g_puppet_mound_fix, "creature: the partner's creature on a nest mound stands on the mound, not in it");
 constexpr float kMoundMin = 0.1f; // m over GetHeightAt
 
-// BUG-0408: when the partner stopped, walk_end gave the puppet a MoveTo to where the partner stands and drive::step
-// took over without placing it: the game's walk (2.6 m/s at that moment) slowed down over ~0.4 s and slid 0.4-0.6 m
-// past the stop (in ~2 % of the stops; on a slope it rose 0.1 m over the ground and played the fall animation).
-// With creature.puppet_stop the puppet is placed where the partner stands for kStopHold s after a walk (while it is
-// within kStopNear of it and the partner stands), as it was placed on the path while it walked. Off: 0.7.4.
-static bool g_puppet_stop_fix = true;
-COOP_FIX("creature.puppet_stop", "BUG-0408", g_puppet_stop_fix, "creature: the partner's creature stops where the partner stopped instead of sliding on");
-constexpr double kStopHold = 0.5; // s
-constexpr float kStopNear = 1.5f; // m
-
 static void creature_drive(void* p, const net::PlayerState& s_in, drive::State& ds, double now)
 {
     puppet_sneak(p, s_in);
@@ -303,23 +293,12 @@ static void creature_drive(void* p, const net::PlayerState& s_in, drive::State& 
     } else {
         // it stands again: no walk to the goal ahead (a MoveTo to where it stands, not StopMovement: with
         // the placing by SetPosition, tried first, the stop put it back up to 3 m), the driving takes over
-        if (ds.kinematic && g_puppet_stop_fix)
-            ds.stop_until = now + kStopHold; // BUG-0408: the walk ends here
         drive::walk_end(p, s.pos, ds, now);
-        if (now < ds.stop_until && net::dist(game::position(p), s.pos) < kStopNear) {
-            game::place(p, s.pos, s.rot); // BUG-0408: where the partner stopped, not where the game's walk slides
-            ds.stop_holds++;
-            ds.last_step = now;
-            ds.track = drive::Track{};
-        } else {
         // a partner's creature: lunges and charges move it faster than a puppet can walk, and attack
         // animations undo the nudges (~10-20 % of them in fights): it trailed by 5-8 m after a fight
         // move (play_creature.py 2026-10-23); snap at 4 m instead of 8
         drive::step(p, s.pos, s.rot, s.vel, ds, now, 0, true, 4.f);
-        }
     }
-    if (walk || air)
-        ds.stop_until = 0;
     if (game::herd_of(p) != game::avatar_herd()) {
         game::herd_quiet(game::herd_of(p)); // (the game may enable a herd again)
         game::herd_home(game::herd_of(p), game::position(p));

@@ -45,8 +45,6 @@ struct State {
     bool jump_have = false;
     uint32_t jumps = 0;     // BUG-0499: puppets put at a target that jumped
     uint32_t airs = 0;      // BUG-0376: frames placed in the air (the partner off the ground)
-    double stop_until = 0;  // BUG-0408: held where the partner stopped until then
-    uint32_t stop_holds = 0; // BUG-0408: frames held so
     net::Vec3 drawn;        // BUG-0360 (coop.track): its position before this frame's driving, i.e. where the
                             // game's update put it and drew it (the mod's frame runs at Present)
 };
