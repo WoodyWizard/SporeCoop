@@ -1754,3 +1754,14 @@ Found by fix/w40-play (2026-11-03), not fixed:
   rule `ground`, 20261103-124913 play_creature#2); not reproduced at the fixture's nest. Ticket: BUG-0504.
 * play_tribe: in 2 of 3 runs the guest's members stayed idle on 7-12 orders the host took, and the host's bot
   gave only 8-9 orders (its minimap look missed 24 times once). Ticket: BUG-0505.
+
+## The game closes at start with the mod installed: the game's own start fails (2026-11-03, fix/w40-gh-issues)
+<a id="issue-game-start-fails"></a>
+
+* BUG-0521 (GitHub #193, 0.7.3.6, GOG 2024, Windows build 26300): SporeKit and the mod boot, then the game's own
+  App::cSporeApp::Init returns 0 and the game ends with ExitProcess(0) at the first frame. Before it, the main
+  thread sat 31 s in a modal window during App::cAppSystem::Init (a message of the game or of Windows). Cause not
+  known (inferred: a damaged or partial game install or a data package the game cannot read; not checked
+  whether the game starts there without the mod). From 0.7.4 SporeKit writes a report ("could not start") and
+  shows a message with the checks: start once without mods (rename SporebinEP1\mods), repair the game files in
+  GOG Galaxy / Steam, attach the report. To reproduce: not reproducible in the lab.

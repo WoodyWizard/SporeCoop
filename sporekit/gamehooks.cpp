@@ -41,6 +41,8 @@ static int SK_THISCALL h_SporeAppInit(void* self, int a)
     int r = o_SporeAppInit(self, a);
     watchdog_mark("SporeApp::Init done");
     SKLOG(SK_INFO, "App::cSporeApp::Init -> %d", r);
+    if (!r)
+        diag_init_failed(r); // BUG-0521
     fire(SK_EV_POST_INIT, nullptr);
     return r;
 }
