@@ -3850,3 +3850,16 @@ its game's `world_scale=` from coop.pool, read before and after the dump). Fails
   start (the twin run; `SPORE_FIX_OFF=initfail` in the test writes it). ~25 s on one lane.
 * Pitfall: returning 0 **after** the game's full Init does not work for this: the game's teardown then faults
   (0xC0000005 in MSVCR90 / steam_api frames), a crash report instead of the clean exit.
+
+## Tribe actions of 0.7.5: tools (2026-11-03, fix/w41-tribe-actions)
+<a id="testing-tribe-tools"></a>
+
+* `coop_tribe_tools.py [--nofix] [--type 1] [--dist 9]` (suite `tribe_tools`, ~1.5 min cold): `coop.tribe build
+  <type> [m]` (host, test setup: the 'tribe' fixture's palette is locked) makes a tool of the player tribe as
+  the palette's placement does, `m` metres from the village centre; `coop.tribe tools` lists the player tribe's
+  tools (`tool <i> <ptr> serial= type= pos=`) and what each member holds (`held <id> owner= tool=`, the game's
+  +0x102C); `coop.tribe grab <member id> <tool index>` gives the member the GrabTool order a click on the tool
+  gives (DoActionForObjects: a guest sends it to the host). `coop.wobj` prints `made=` for the kind
+  `tribe_tool` (copies of host tools a guest made). `--nofix` = `SPORE_FIX_OFF=wobj.tribe_tool,tribe.tool_hold`.
+* The fixture's player tribe has one tool, the fire pit (type 10), on both games; the rack (type 1) comes
+  out on the village's edge 9 m off the centre. The host's member took the weapon 3-37 s after the order.

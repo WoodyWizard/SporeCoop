@@ -1183,3 +1183,34 @@ lab 20261103-150636, 298 samples:
   send interval) and prints the raw p90 next to it. `coop.tribe delay <s>` (guest, tests) sets the mirrors'
   interpolation delay: `PLAY_TRIBE_GUEST_CMDS="coop.tribe delay 0.6"` is a planted late mirror the check
   must fail.
+
+## Tools of the player tribe and the guests (2026-11-03, fix/w41-tribe-actions)
+<a id="tribe-tools-guest"></a>
+
+BUG-0514 (players: a guest's members cannot take weapons from the racks the host built). GOG 2024 (Ghidra
+`--build 2024`, runtime lane 2, `coop_tribe_tools.py`):
+* ✔ A bought tool is made only in the buyer's game: the palette's placement (0xD13C05, the same address in
+  both builds) does `GetToolByType`, `tribe->CreateTool(type)` (vt 0xB4 = 0xC96170), `tool+0x84 |= 8`,
+  `tool->vt[0x64](tribe)` (SetTribe), 0xC9D2D0(tool) (a clock reset, 0xBC32A0), then the drag; the finish
+  0xD10F90 puts it into a cLayoutSlot of the village and, for a type not bought before, sets the purchased bit
+  (0xC8ED70 `tribe+0x19D8 |= 1 << type`, the test 0xC8ED90). Nothing of it reached a guest: the fixture's
+  village has one tool (type 10, the fire pit) on both games; a rack the host built (`coop.tribe build 1`) was
+  in the host's tool list only (lab 20261103-234416).
+* ✔ The tool's spatial object is at tool+0x34 (the placement reads its position with vt 0x2C there);
+  `game::cast(tool, 0x1186577)` gives it; SetPosition vt 0x38 / SetOrientation vt 0x3C place a tool made by
+  CreateTool + SetTribe where wanted; it is drawn upright with the rotation of +Z onto the planet's up.
+* ✔ DoToolActionForAllSelected (GOG 2024 0xCD09B0, ret 4): a damaged tool (+0x158 < combatant +0x120 vt 0x58)
+  -> DoActionForAllSelected(0x18 Repair); type (tool vt 0x58) 1..9 -> (3 GrabTool); 10 (fire pit) -> (0xC Party).
+  The order goes through DoActionForObjects (hooked): a guest sends it with the tool as target kind 2 (noun
+  0x18C8F0C + position); the host's `game::find_object` finds its own tool within 8 m and its member takes it
+  (+0x102C = 1 in 3-37 s).
+* ✔ cCreatureCitizen::SetSpecializedTool GOG 2024 **0xC27B00** (2016 0xC27AE0), thiscall(int) ret 4: callers
+  0xDABA9A (in 0xDAB4A0, the grab behaviour), 0xC8FF67 (0xC8FEE0: making a chief, 0xB), 0xDA75D9 (0xDA7590:
+  `SetSpecializedTool(0)`, a drop), 0xD576EC. The guest's mirror never runs these (its AI ticks are skipped):
+  it showed no weapon while the host's member had one (lab 20261103-234532, `tribe.tool_hold` off).
+* Fix: the player tribe's tools are host-owned world objects (worldobj.cpp kind `tribe_tool`, switch
+  `wobj.tribe_tool`): a guest makes a copy of a host tool it has none of within 2 m (the same type, upright,
+  purchased bit); the held tool is a replicated field of the members (fields.h kind `tribe_member_tool`, field
+  `tool`, switch `tribe.tool_hold`), applied with SetSpecializedTool (the leader's 0 -> 0xB left alone).
+* ? Not done: a tool a GUEST buys is still made in its own game only (the host has no rack there, the guest's
+  grab order is rejected "no such target here"): BUG-0524. A raided (damaged) rack's state is not replicated.

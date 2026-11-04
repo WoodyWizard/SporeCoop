@@ -91,3 +91,5 @@ SporeCoop::Player_GetProperty ; BUG-0508: on GOG 2016 the migration state is unk
 SporeCoop::AbilityBar_Use ; BUG-0518: a guest's click on the social ability button plays no social game (keys 1-4 only, as before)
 SporeCoop::GameSettings_Build ; BUG-0506: on GOG 2016 the missing save area guard is off (game.save_areas has no effect there)
 SporeCoop::SaveAreas_Init ; BUG-0506: on GOG 2016 the missing save area guard is off (game.save_areas has no effect there)
+SporeCoop::cTribeTool_PlacementReset ; BUG-0514: host tools are not copied to guests on GOG 2016 (tribe_tool world objects off)
+SporeCoop::cTribe_SetToolPurchased ; BUG-0514: as above

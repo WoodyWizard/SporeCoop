@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+- Tribe: a weapon rack (or any tool building) the host builds now appears in the guests' games too, a guest's
+  members can take the weapon from it, and a guest sees its members hold the weapons and tools they took
+  (BUG-0514).
+
 ## [0.7.4] - 2026-11-03
 
 ### Fixed

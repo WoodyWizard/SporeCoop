@@ -81,4 +81,11 @@ struct TrackMember {
 };
 void for_each_tracked(void (*fn)(const TrackMember& m, void* user), void* user);
 
+// BUG-0514: the player tribe's tools (cTribeTool, tribe +0x36C: weapon racks, the fire pit, ...) with their
+// type (tool vt 0x58) and position, for the host-owned world objects (worldobj.cpp kind "tribe_tool")
+void for_each_player_tool(void (*fn)(void* tool, int type, const net::Vec3& pos, void* user), void* user);
+// a tool of `type` for this game's player tribe at `pos` (upright on the planet), as the palette's placement
+// makes it (cTribe::CreateTool, SetTribe, the model, the purchased bit); nullptr: failed
+void* make_player_tool(int type, const net::Vec3& pos);
+
 } // namespace tribe
