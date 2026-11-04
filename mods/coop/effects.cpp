@@ -576,25 +576,64 @@ static uint32_t g_perf_creates, g_perf_probes, g_perf_evicted, g_perf_sent, g_pe
 static double g_perf_hook_sum;
 static uint64_t g_perf_hook_calls;
 
+// BUG-0527: the parts of the tick, so a test can tell the relay's own cost from the test workload's game calls
+// (load_tick: `coop.effects load`, the game's CreateEffect at the player) and from the machine's load. Wall ms per
+// part; the relay part (the tick without load_tick) split into frames under SLOW_S and slow frames. Measured
+// 2026-11-04 (lane 4, load average 8-12): 29-35 slow frames in 20 s (5-822 ms each) held 2.6-5.3 % of the main
+// thread's wall time but no more than 0-5 jiffies of the thread's CPU time (GetThreadTimes, 10 ms steps under
+// Wine): the OS preempted those ticks, the relay did not spend them. Under a lighter load (5.8) 0-1 slow frames.
+// The thread's CPU time itself is no measure here: its 10 ms step is a whole frame, and the call costs ~50 us.
+struct Part {
+    double sum = 0, max = 0;
+    uint64_t n = 0;
+    void add(double dt, uint64_t k = 1)
+    {
+        sum += dt;
+        max = dt > max ? dt : max;
+        n += k;
+    }
+};
+static const double SLOW_S = 0.005;
+static Part g_p_load, g_p_rx, g_p_live, g_p_rest, g_p_relay, g_p_fast, g_p_slow;
+
 void tick(double)
 {
     double t0 = H ? H->time_seconds() : 0;
     game::set_effect_relay_enabled(g_fix); // also notes the game's main thread id
-    if (g_fix)
+    double load_wall = 0;
+    if (g_fix && H && g_load_n) {
+        double a = H->time_seconds();
         load_tick(t0);
+        load_wall = H->time_seconds() - a;
+        g_p_load.add(load_wall);
+    } else if (g_fix) {
+        load_tick(t0);
+    }
+    double t1 = H ? H->time_seconds() : 0;
     Pending p;
+    uint64_t rx = 0;
     while (q_pop(p)) {
+        rx++;
         if (p.world)
             process_world(p.fx, p.id);
         else
             process_local(p.creature, p.ev);
     }
+    double t2 = H ? H->time_seconds() : 0;
     live_tick(t0, game::mode_id(), C.world ? C.world() : 0);
+    double t3 = H ? H->time_seconds() : 0;
     world_sent_clear();
     game::clear_effect_table();
     if (!H)
         return;
     double dt = H->time_seconds() - t0;
+    if (rx)
+        g_p_rx.add(t2 - t1, rx);
+    g_p_live.add(t3 - t2);
+    g_p_rest.add(dt - (t3 - t0));
+    double relay = dt - load_wall;
+    g_p_relay.add(relay);
+    (relay < SLOW_S ? g_p_fast : g_p_slow).add(relay);
     g_tick_sum += dt;
     g_tick_max = dt > g_tick_max ? dt : g_tick_max;
     g_tick_frames++;
@@ -925,7 +964,7 @@ std::string probe(uint32_t key)
 std::string status()
 {
     std::string s;
-    char b[320];
+    char b[480];
     snprintf(b, sizeof b,
              "effects: fix=%d sent=%u received=%u played=%u stopped=%u skipped=%u failed=%u dropped_rate=%u world=%u\n",
              (int)g_fix, g_sent, g_rx, g_played, g_stopped, g_skipped, g_failed, g_dropped, g_world);
@@ -939,6 +978,14 @@ std::string status()
              g_tick_frames ? g_tick_sum / g_tick_frames * 1000 : 0.0, g_tick_max * 1000,
              (unsigned long long)g_tick_frames, creates, mgr, world, anim, probes, evicted, game::last_effect_id(g_main_world_fix),
              g_load_n, g_load_ms, g_load_ok, g_load_failed);
+    s += b;
+    snprintf(b, sizeof b,
+             "effects cost parts: load %.3f ms (%llu, max %.3f) rx %.3f ms (%llu msgs, max %.3f) live %.3f ms (max %.3f) "
+             "rest %.3f ms; relay %.3f ms (max %.3f) in %llu frames: under 5 ms %.3f ms, slow %llu frames %.3f ms\n",
+             g_p_load.sum * 1000, (unsigned long long)g_p_load.n, g_p_load.max * 1000, g_p_rx.sum * 1000,
+             (unsigned long long)g_p_rx.n, g_p_rx.max * 1000, g_p_live.sum * 1000, g_p_live.max * 1000,
+             g_p_rest.sum * 1000, g_p_relay.sum * 1000, g_p_relay.max * 1000, (unsigned long long)g_p_relay.n,
+             g_p_fast.sum * 1000, (unsigned long long)g_p_slow.n, g_p_slow.sum * 1000);
     s += b;
     snprintf(b, sizeof b, "effects world drops: no_pos=%u relayed=%u far=%u seen=%u rate=%u sent_probes=%u\n",
              g_w_no_pos, g_w_relayed, g_w_far, g_w_seen, g_w_rate, g_world_sent_probes);

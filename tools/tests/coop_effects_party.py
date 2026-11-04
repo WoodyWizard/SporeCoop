@@ -8,13 +8,16 @@ each machine creates a steady world effect at its own creature (`coop.effects lo
 effect manager), and the other guest's game must create the game's effect object (active, at the
 actor's world position) from the relayed message.
 
-  coop_effects_party.py [--fixture cell|creature|tribe|civ|space]   (SPORE_FIX_OFF=creature.effects_relay must FAIL;
+  coop_effects_party.py [--fixture cell|creature|tribe|civ|space] [--old-cost]   (SPORE_FIX_OFF=creature.effects_relay must FAIL;
                          in Tribe / Civ SPORE_FIX_OFF=effects.main_world faults the games: the skin painter's effect)
 
 Every stage (BUG-0471): the same three cases in the stage's fixture, the effect id is the last one the
 stage's game created (`coop.effects load ... 0`; Creature keeps the mating call E1B24DDB), the actor's
 position is where its own game has its player (coop.sync), and each game's relay costs under 1 % of
-its frame time while the load runs (hook work + effects::tick, from coop.effects).
+its main thread while the load runs (BUG-0527: the hooks' work + effects::tick without the test workload's own
+CreateEffect calls, over the frames where that took under 5 ms; ticks over 5 ms are the OS's preemption on a
+loaded machine and must stay under 5 % of the frames; from `coop.effects`' cost parts line. `--old-cost`: the
+check before, the whole tick's wall time, which the preemption and the workload made fail).
 """
 import argparse
 import math
@@ -86,10 +89,47 @@ def cost_raw(con):
 
 
 def cost(a, b):
-    """the relay's share of the main thread between two cost_raw reads, in percent"""
+    """the relay's share of the main thread between two cost_raw reads, in percent (the check before BUG-0527:
+    the whole tick's wall time, with the test workload's game calls and the machine's preemption in it)"""
     if not a or not b or b[2] <= a[2]:
         return None
     return ((b[0] - a[0]) + (b[1] - a[1])) / ((b[2] - a[2]) * 1000) * 100
+
+
+PARTS = re.compile(r'effects cost parts: load ([\d.]+) ms \((\d+), max ([\d.]+)\) rx ([\d.]+) ms \((\d+) msgs, max ([\d.]+)\) '
+                   r'live ([\d.]+) ms \(max ([\d.]+)\) rest ([\d.]+) ms; relay ([\d.]+) ms \(max ([\d.]+)\) in (\d+) frames: '
+                   r'under 5 ms ([\d.]+) ms, slow (\d+) frames ([\d.]+) ms')
+PART_NAMES = ('load', 'load_n', 'load_max', 'rx', 'rx_n', 'rx_max', 'live', 'live_max', 'rest', 'relay', 'relay_max',
+              'frames', 'fast', 'slow_n', 'slow')
+SLOW_SHARE = 0.05  # a relay slow (5 ms+) in more frames than this is the relay's own cost, not preemption
+
+
+def parts_raw(con):
+    """BUG-0527: the tick's parts since the session start (cumulative ms; *_max: the largest single frame)"""
+    out = con.call('coop.effects')['out']
+    m = PARTS.search(out)
+    h = re.search(r'effects hook work: ([\d.]+) ms over ([\d.]+) s', out)
+    if not m or not h:
+        return None
+    d = dict(zip(PART_NAMES, (float(x) for x in m.groups())))
+    d['hooks'], d['wall'] = float(h.group(1)), float(h.group(2))
+    return d
+
+
+def relay_cost(a, b):
+    """BUG-0527: the relay's cost in percent of the main thread: the hooks' work plus the tick without the test
+    workload (load_tick: the game's CreateEffect at the player, what a player's own game does anyway), over the
+    frames whose relay part took under 5 ms. A tick over 5 ms on a loaded machine is the OS's preemption (measured:
+    2.6-5.3 % of the wall time in 29-35 such frames, 0-5 jiffies of CPU time, docs/06-testing.md#testing-effects-cost);
+    such frames are counted and must stay under SLOW_SHARE of the frames. Returns (percent, slow share, parts)."""
+    if not a or not b or b['wall'] <= a['wall']:
+        return None, None, {}
+    d = {k: b[k] - a[k] for k in a if not k.endswith('_max')}
+    ms = d['wall'] * 1000
+    pct = {k: round(d[k] / ms * 100, 4) for k in ('hooks', 'load', 'rx', 'live', 'rest', 'relay', 'fast', 'slow')}
+    share = d['slow_n'] / d['frames'] if d['frames'] > 0 else None
+    return (d['hooks'] + d['fast']) / ms * 100, share, dict(pct, rx_msgs=int(d['rx_n']), frames=int(d['frames']),
+                                                              slow_frames=int(d['slow_n']))
 
 
 def dist(a, b):
@@ -139,6 +179,7 @@ def main():
     global FX_ID, OWN_POS
     ap = argparse.ArgumentParser()
     ap.add_argument('--fixture', default='creature', choices=('cell', 'creature', 'tribe', 'civ', 'space'))
+    ap.add_argument('--old-cost', action='store_true', help='the cost check before BUG-0527 (whole tick, wall time)')
     a = ap.parse_args()
     p = Party.start(a.fixture, players=3, join_together=True)
     ck = Checks()
@@ -163,14 +204,24 @@ def main():
     case(ck, bob, carol, bob.pid, 'guest 1 world effect on guest 2')
     # the frame-time cost of the relay with every machine sending at once (each at 2.5 effects/s)
     before = {x.name: cost_raw(x.con) for x in p.all}
+    before_p = {x.name: parts_raw(x.con) for x in p.all}
     for x in p.all:
         x.call(f'coop.effects load 1 400 {FX_ID}')
     time.sleep(20)
     for x in p.all:
         c = cost(before[x.name], cost_raw(x.con))
+        r, share, parts = relay_cost(before_p[x.name], parts_raw(x.con))
         x.call('coop.effects load 0')
-        print(f'  {x.name}: relay cost {c if c is None else round(c, 4)} % of the frame time', flush=True)
-        ck(c is not None and c < 1.0, f'{x.name}: the relay costs under 1 % of the frame time ({c and round(c, 4)} %)')
+        print(f'  {x.name}: whole tick (wall, with the workload) {c if c is None else round(c, 4)} %; relay (hooks + '
+              f'tick without the workload, frames under 5 ms) {r if r is None else round(r, 4)} % of the main thread, '
+              f'slow frames {share if share is None else round(share * 100, 2)} %; parts in % {parts}', flush=True)
+        if a.old_cost:  # the check before BUG-0527 (fails on a loaded machine with the 0.7.4 build too)
+            ck(c is not None and c < 1.0, f'{x.name}: the relay costs under 1 % of the frame time ({c and round(c, 4)} %)')
+        else:
+            ck(r is not None and r < 1.0, f'{x.name}: the relay costs under 1 % of the main thread ({r and round(r, 4)} %)')
+            ck(share is not None and share < SLOW_SHARE,
+               f'{x.name}: the relay takes 5 ms or more in under {SLOW_SHARE * 100:.0f} % of the frames '
+               f'({share and round(share * 100, 2)} %)')
     for x in p.all:  # the skin painter's own effects each game saw (never relayed with effects.main_world)
         m = re.search(r'effects foreign world: .*', x.call('coop.effects'))
         print(f'  {x.name}: {m.group(0) if m else "?"}', flush=True)

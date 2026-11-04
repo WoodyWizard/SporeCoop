@@ -4053,3 +4053,27 @@ docs/re/space.md#space-planet-life). Each asserts the game's own objects in the 
 * The divergence detector in Space (worlddiff.py): citizens near the guest are compared only when the host's
   game has citizens there (each game puts its pool of 150 at the cities near its own camera); a ship's size is
   compared relative to the own ship of the game that draws it (each game sizes every ship by its camera zoom).
+
+## The effects relay's cost check: effects_party (2026-11-04, fix/w42-infra)
+<a id="testing-effects-cost"></a>
+
+BUG-0527. `coop_effects_party.py` checks that each of the three games spends under 1 % of its main thread in the
+relay while all three create 2.5 effects a second (`coop.effects load 1 400 <id>`). The check before measured the
+whole `effects::tick` in wall time (`effects cost: tick avg ... over N frames`) and failed on a loaded machine (lane 4,
+load average 8-12: 1.0-5.4 %, also with the 0.7.4 build). `coop.effects` now prints the tick's parts
+(`effects cost parts: load / rx / live / rest; relay ... in N frames: under 5 ms ..., slow N frames ...`), measured:
+
+* the workload itself (`load`: the game's CreateEffect at the player, what a player's own game does anyway) is
+  0.2-3.2 % of the main thread under load: it is no relay cost and is left out;
+* ticks over 5 ms (29-35 frames in 20 s at load average 10-12, 0-10 at 8-11, 0 at 6) held 2.6-5.3 % of the wall
+  time but 0-5 jiffies of the thread's CPU time (GetThreadTimes, a build of 20261104-122037): the OS preempted them;
+* the relay's own cost over the frames under 5 ms is 0.42-0.58 % (lab 20261104-123812; most of it `live_tick`,
+  0.25-0.56 %, the release bookkeeping of relayed effects; the hooks 0.0002 %).
+
+The check is now: hooks + the relay part over frames under 5 ms < 1 %, and frames with a relay part of 5 ms or more
+< 5 % of the frames (a relay that is slow every frame still fails). `--old-cost` runs the old check (FAIL on lane 4:
+the worktree's out/effects_party_tribe_oldcost_20261104.log, 2.3-3.0 %; in the passing run 20261104-123812 the old
+numbers were 1.27 % (Alice, Tribe), 1.21 % (Carol, Tribe) and 1.00 % (Alice, Civ)).
+* Pitfalls: the thread's CPU time is no measure under Wine (GetThreadTimes moves in 10 ms steps and costs ~50 us
+  a call: called every frame it was itself 0.4 % of the main thread). The old number (`tick avg` x frames) also
+  restarts every 60 s with the `perf:` line, so a window over that moment was wrong.
