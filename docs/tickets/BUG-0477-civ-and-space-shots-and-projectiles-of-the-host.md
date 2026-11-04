@@ -10,7 +10,7 @@ role: guest
 versions: 
 fixed_in: unreleased
 branch: fix/w41-civ-combat
-commits: df2c4fcb
+commits: df2c4fcb 724d9dad
 tests: coop_civ_shots.py (civ_shots)
 signature:
 docs: docs/re/civ.md#civ-combat-shots
@@ -47,3 +47,6 @@ PASS (cold, 45 of 45 samples, 102 / 104 projectiles, city 5200 -> 5200): out/lab
 ## History
 - 2026-11-03: opened.
 - 2026-11-04 (fix/w41-civ-combat): fixed for Civ vehicles (turret shots relayed the same way, not seen in a test).
+- 2026-11-04 (fix/w41-civ-combat): detector, play_civ: `noun_only_host:default_tool_projectile` 81 % before
+  (out/lab/20261104-013631), 3 % after (out/lab/20261104-024331); the guest now shows religious shots / AoE areas
+  the host does not have (BUG-0530).
