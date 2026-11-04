@@ -182,7 +182,7 @@ def host_creature_editor(host, guest, ck):
     """coop_editor_sync.py --case host (fix/w40-cell-evo): a real evolution of the host's species"""
     dna = lambda c: float(field(c.call('coop.dna')['out'], r'dna=(-?[\d.]+)') or 0)
     if dna(host) < 40:
-        host.call('call Simulator::cCreatureGameData::AddEvolutionPoints cdecl f:40')
+        host.call('coop.dna add 40')  # (not divided by the party's DNA pace, BUG-0510)
         time.sleep(3)
         for _ in range(6):
             for c in (host, guest):
