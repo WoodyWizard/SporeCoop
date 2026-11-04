@@ -565,7 +565,8 @@ for verification and its limits.
 - Effects of `+0x110` beyond kill credit; meaning of `G+0x5169`, state `G+0x5158`.
 - Whether RandomCreature models must be preloaded on the guest (cCellGFX::PreloadCreature 0xE64990)
   before CreateCellObject with a forced model key.
-- Camera behaviour after an avatar teleport; whether 0xE6ECB0/0xE6EB60 is the egg/hatch intro.
+- Camera behaviour after an avatar teleport (answered 2026-11-04: docs/re/cell.md#cell-camera); whether
+  0xE6ECB0/0xE6EB60 is the egg/hatch intro.
 - Existing `cell_despawn` in mods/coop/modes.cpp sets hp=0 and opacity 0: that only hides the puppet
   (cells are removed by DestroyCell or size→0), so puppets may leak - use DestroyCell 0xE780A0.
 
@@ -1475,3 +1476,49 @@ BUG-0480. Lane 4, `tools/tests/coop_cell_gone.py` (docs/06-testing.md#testing-wo
   p90 0.1 m during the change with it (`cell_grow`, docs/06-testing.md#testing-cell-grow).
 * ? Not done: the players' own cells (puppets, MSG_STATE through `modes::cell_drive`) carry no scale; a partner's
   puppet may be off in the same way for those ~3 s (BUG-0519).
+
+## The cell camera and the mod's jumps of the own cell (2026-11-04, fix/w41-cell-left)
+<a id="cell-camera"></a>
+
+BUG-0343 ("my screen is off centre" after the co-op respawn; "my cell appears in the lower left of my screen"
+after an editor). GOG 2024, Ghidra (`out/ghidra-2024`) and objdump of `SporeApp.exe`, lane 4.
+
+* ✔ (Ghidra) The camera state lives in cCellUI (`*0x16B3C0C`): `+0x48` the drawn point (SimUpdate passes it in
+  ESI to 0xE507F0, which builds the view boxes 0x16B3C88 around it), `+0x54` the target, `+0x60` a lagging point,
+  `+0x6C..+0x84` the zoom (+0x78 its goal, +0x80 the height), `+0xBC` a 0..1 ramp, `+0xE0` the pool index of a
+  cell the camera follows instead of the avatar (0 = the avatar; cinematics), `+0xE4` / `+0xE8` a fixed point,
+  `+0xF4` the follow speed, `+0x908` a zoom factor.
+* ✔ (Ghidra) **0xE600A0 `Simulator::Cell::CameraUpdate`** cdecl `(float dt, bool)` from 0xE806B0, returns at once
+  during a cinematic (cCinematicManager +0x2A). With no followed cell: the target `+0x54` moves towards a point
+  0.5 m from the avatar (0xE5BA90, a move at a speed) at **1.5 x the avatar's speed** (`|+0x90| * 1.5`) and only
+  while it is more than 0.5 m away; `+0x60` follows `+0x54`; the drawn point eases towards `+0x54 + (+0x54 -
+  +0x60) * lead`; then it is **clamped into a box around the avatar** of 7 x 5 m times 0xE50EB0(+0xBC, speed).
+  So a cell that stands still after a jump keeps its target where it was: the drawn point sits on the box's edge,
+  7 m (x) / 5 m (y) from the cell, until the player swims long enough for the target to catch up.
+* ✔ (Ghidra) The game's own jumps set all three points to the new place: 0xE611B0 (a jump to a random point near
+  the avatar, "clg-notenoughnanites" when it cannot pay) writes `+0x48 = +0x54 = +0x60`, the mating / hatch
+  sequence 0xE794F0 (its bool argument) the same from the avatar's `+0x4C`, cCellUI::Load 0xE54270 and
+  RebuildLevel 0xE7FD00 from 0x15A7D3C.
+* ✔ (runtime, `coop_cell_camera.py`) The mod's jumps (cellsync `stop_at`: the respawn next to the partner after a
+  knockout, the guest's move next to the host after a load / an own editor / an own-cell rebuild
+  (`join_after_load`, `join_partner`), test commands) left the drawn point exactly 7.0 m from the cell, 3 s later
+  still 7.0 m (lab 20261104-020658, both games). Fix `cell.camera_snap` (cellsync.cpp `camera_snap`): a stop_at
+  of the own cell more than 2 m away sets `+0x48`, `+0x54`, `+0x60` to the new place as the game does: 0.06-0.2 m.
+  `coop.pool cam` prints the camera (`off=` the drawn point to the cell).
+* ~ inferred: the players' "after the editor" case is the same jump (a guest's new avatar after a load or its own
+  editor goes next to the host 2 s later, `cell.join_after_load`); not reproduced with an editor.
+
+## A partner's own cell in a level change (2026-11-04, fix/w41-cell-left)
+<a id="cell-puppet-scale"></a>
+
+BUG-0519, the players' half of docs/re/cell.md#cell-world-scale.
+
+* ✔ (runtime, `coop_cell_puppet_scale.py`, lane 4) Each game's own cell travels in MSG_PLAYER_STATE in the
+  sender's world scale. While a level change rescales the two worlds a few frames apart (host 2.34 / guest 1.90 at
+  one sample), the receiver drew the partner's cell up to 10 m from where it is (p90 8.0 m host draws the guest,
+  4.2 m guest draws the host; lab 20261104-021951).
+* Fix `cell.puppet_scale`: PlayerState has an appended field `scale` (the sender's G+0x514C in Cell, 0 elsewhere;
+  older readers stop before it, an older sender's state reads 0 = no conversion); the snapshot buffer blends two
+  states of different scales in the newer one's (net/interp.h), and modes.cpp `cell_drive` draws pos, velocity and
+  size times sender / own scale. p90 0.5 / 0.3 m (the interpolation delay while the scale moves), 0.0-0.1 m after.
+  `coop.pool scalepos` prints the scale, the own cell and every puppet of one frame.

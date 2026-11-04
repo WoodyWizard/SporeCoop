@@ -3,6 +3,11 @@
 ## [Unreleased]
 
 ### Fixed
+- Cell: after a knockout and the respawn next to your partner, and after your cell is put next to the host after a
+  load or an editor, your view is centred on your cell again; it stayed off to the side until you swam a while
+  (BUG-0343).
+- Cell: while a level-up rescales the world, your partner's cell is drawn where it is; it was drawn several
+  metres off for a few seconds (BUG-0519).
 - Tribe: a weapon rack (or any tool building) the host builds now appears in the guests' games too, a guest's
   members can take the weapon from it, and a guest sees its members hold the weapons and tools they took
   (BUG-0514).
