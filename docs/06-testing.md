@@ -3863,4 +3863,3 @@ its game's `world_scale=` from coop.pool, read before and after the dump). Fails
   its game's NPC tribe controller's forming (NpcTribeController_FormTribe, what the game does during play); then
   with the fix off for a moment a tribe the host has not is made and must lose its members once the fix is on.
   `SPORE_FIX_OFF=tribe.guest_tribes` fails.
-* `coop_npc_resync.py --fixture tribe` (suite `npc_resync_tribe`, BUG-0328): npc.resync (BUG-0487) in Tribe.
