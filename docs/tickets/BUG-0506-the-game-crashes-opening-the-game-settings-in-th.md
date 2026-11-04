@@ -10,7 +10,7 @@ role: none
 versions: 0.7.3.3, 0.7.3.4
 fixed_in: unreleased
 branch: fix/w40-misc
-commits:
+commits: 0a02f72a
 tests: save_areas (tools/tests/coop_save_areas.py)
 signature: 3010a413:SporeApp.exe+0x2025A9 read 0 (UI::GameSettings::Show+0x44 chain, GalaxyGameEntry)
 docs: docs/re/creations.md#creations-save-areas, docs/06-testing.md#testing-save-areas
