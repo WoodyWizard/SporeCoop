@@ -4316,6 +4316,11 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
         net::Vec3 side = std::fabs(up.x) < 0.9f ? net::Vec3{0, -up.z, up.y} : net::Vec3{-up.z, 0, up.x};
         float sl = std::sqrt(side.x * side.x + side.y * side.y + side.z * side.z);
         net::Vec3 q{p.x + side.x / sl * d + up.x * 2, p.y + side.y / sl * d + up.y * 2, p.z + side.z / sl * d + up.z * 2};
+        // BUG-0400 as for gopos: on a slope the point d m aside can be under the terrain (pack_target: the host's
+        // own creature 0.6-0.7 m under it for 10 s+, the monitor's ground rule), so it goes onto the ground
+        float qr = drive::speed(q), qg = game::ground_radius(q);
+        if (g_gopos_ground_fix && qg > 1 && qr > 1 && qr < qg + 0.3f)
+            q = {q.x * (qg + 0.3f) / qr, q.y * (qg + 0.3f) / qr, q.z * (qg + 0.3f) / qr};
         game::teleport(av, q, game::orientation(av));
         SAY("avatar at (%.1f %.1f %.1f)", q.x, q.y, q.z);
         return 0;

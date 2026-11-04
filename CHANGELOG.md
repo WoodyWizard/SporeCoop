@@ -52,9 +52,9 @@
 - Civ: a guest's saves no longer keep the host's vehicles it was showing; the save loads cleanly on its
   own (BUG-0470).
 - Civ: a vehicle that is gone on the host no longer stays behind as a wreck on the guest (BUG-0478).
-- The effects of your creature, cell or tribe (mating-call hearts, being hit, death, a part found,
-  the brain upgrade, ...) now show on the other players' screens too, while they play in the same
-  place as you (BUG-0451, BUG-0471).
+- Cell and Creature: the effects of your cell or creature (mating-call hearts, being hit, death, a part
+  found, the brain upgrade, ...) now show on the other players' screens too, while they play in the same
+  place as you. Tribe, Civilization and Space follow in their own versions (BUG-0451, BUG-0471).
 - Creature: a bone or skeleton one player takes is taken for everybody: the party gets one new part, not
   two (BUG-0459).
 - Creature and Tribe: fruit one player eats is gone for the other players too, and fruit that falls from

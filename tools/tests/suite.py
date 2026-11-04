@@ -75,13 +75,13 @@ add('ui', P + 'coop_ui.py', ('smoke',), exclusive=True, minutes=5)
 add('team', P + 'coop_team.py', ('smoke',), warm=True, minutes=3, fixture='creature')
 add('creature_effects', P + 'coop_creature_effects.py', warm=True, minutes=3, fixture='creature', monitor={'proxy_n': 1000})  # BUG-0451: a player's creature effects (mating call, hit, part, brain, death) on the partner's puppet; SPORE_FIX_OFF=creature.effects_relay fails; proxy_n: the known NPC proxies under the ground, not this test
 add('cell_effects', P + 'coop_cell_effects.py', warm=True, minutes=3, fixture='cell', monitor={'proxy_n': 1000})  # BUG-0451: a cell's world effects on the partner's cell; SPORE_FIX_OFF=creature.effects_relay fails
-add('tribe_effects', P + 'coop_tribe_effects.py', warm=True, minutes=4, fixture='tribe', monitor={'proxy_n': 1000})  # BUG-0451: a tribe member's effect on the partner's mirror; SPORE_FIX_OFF=creature.effects_relay fails
+add('tribe_effects', P + 'coop_tribe_effects.py', ('extended',), warm=True, minutes=4, fixture='tribe', monitor={'proxy_n': 1000})  # BUG-0451: a tribe member's effect on the partner's mirror; SPORE_FIX_OFF=creature.effects_relay fails
 add('effects_party', P + 'coop_effects_party.py', minutes=6, monitor={'proxy_n': 1000})  # BUG-0451 review: a guest's world effect reaches the second guest through the host relay (3 players); SPORE_FIX_OFF=creature.effects_relay fails
-for st in ('cell', 'tribe'):  # BUG-0471: the same 3-player relay in every stage, cost under 1 % of the frame time
+for st in ('cell',):  # BUG-0471: the same 3-player relay in every stage, cost under 1 % of the frame time
     add(f'effects_party_{st}', P + f'coop_effects_party.py --fixture {st}', minutes=6, monitor={'proxy_n': 1000})
-# Civilization and Space: the relay is off there in 0.7.4 (coop.fix effects.civ_space, the skin painter faulted on a
-# relayed world effect, out/lab/20261103-215559); these two only make sense with that switch on (0.7.5 / 0.7.6)
-for st in ('civ', 'space'):
+# Tribe, Civilization and Space: the relay is off there in 0.7.4 (coop.fix effects.other_stages, the skin painter
+# faulted on a relayed world effect, out/lab/20261103-215559 / -223036); these only make sense with it on (0.7.5+)
+for st in ('tribe', 'civ', 'space'):
     add(f'effects_party_{st}', P + f'coop_effects_party.py --fixture {st}', ('extended',), minutes=6, monitor={'proxy_n': 1000})
 add('effects_here', P + 'coop_effects_here.py', minutes=5, fixture='creature', monitor={'proxy_n': 1000})  # BUG-0471: no effect relayed into a guest's main menu, back in the world it is; SPORE_FIX_OFF=effects.here fails
 add('effects_validate', P + 'coop_effects_validate.py', warm=True, minutes=3, fixture='creature', monitor={'proxy_n': 1000})  # BUG-0451 review: spoofed and malformed effect messages are dropped before a game call, counted in coop.effects
@@ -196,7 +196,10 @@ add('creature_death', P + 'coop_creature_death.py', minutes=4)  # alone: die, sk
 add('creature_respawn', P + 'coop_creature_respawn.py', minutes=5)  # both players die (also after a pack rescue): the hatchling grows up and walks
 add('npc_lost_target', P + 'coop_npc_lost_target.py', minutes=5, allow=[allow('monitor', 'BUG-0453', 'the test takes the partner\'s puppet away for 3 s on purpose (coop.puppet respawn 3)', kind='puppet', match='hidden: not spawned')])  # NPCs fight the partner's puppet when it goes: no fault at 0xD65D23 in the attack node, no stimulus names the destroyed puppet (BUG-0453/0456; SPORE_FIX_OFF=npc.attack_lost_target,npc.stale_sender fails)
 add('puppet_freed', P + 'coop_puppet_freed.py', minutes=4)  # the game frees the partner's Creature puppet behind the mod's back (and two device Resets): a new live puppet at the partner (BUG-0507; SPORE_FIX_OFF=creature.puppet_alive fails)
-add('pack_target', P + 'coop_creature_pack_target.py', minutes=3)  # the host targets the guest, the pack in a fight with the guest's creature: no pack member keeps a partner as its target (BUG-0512; SPORE_FIX_OFF=npc.pack_spares_partners fails)
+add('pack_target', P + 'coop_creature_pack_target.py', minutes=3,
+    allow=[allow('monitor', 'BUG-0504', 'coop.npc gonpc puts the host next to the picked NPC; on some spots of the fixture '
+                 'its own creature then stands 0.6-0.7 m under the monitor\'s ground (no player path places it there)',
+                 kind='ground', who='host', match='its own creature')])  # the host targets the guest, the pack in a fight with the guest's creature: no pack member keeps a partner as its target (BUG-0512; SPORE_FIX_OFF=npc.pack_spares_partners fails)
 add('partner_silent', P + 'coop_partner_silent.py', minutes=3, allow=[allow('hitch', 'BUG-0513', 'the test stalls the guest on purpose (frame.limit 9000)', who='guest'), allow('monitor', 'BUG-0513', 'the stalled guest is hidden on the host after 5 s on purpose', kind='puppet', match='hidden: state older than 5 s')])  # a stalled guest is announced on the host, and when it is back (BUG-0513; SPORE_FIX_OFF=core.partner_silent fails)
 add('diag', P + 'diag_check.py --crash', minutes=5, reports=True)  # kept logs, environment, version in the menu, report button, hang / crash reports
 add('kit_freeze', P + 'kit_freeze.py', minutes=4, reports=True)  # stack / hangdump under a held heap, cheat-console waits, faults inside the log / fault logger, hook churn, hooks made while threads run the function, new hooks' originals (BUG-0050/0065/0115/0132/0202/0398; --old: every case fails)

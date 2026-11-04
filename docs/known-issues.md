@@ -1766,14 +1766,14 @@ Found by fix/w40-play (2026-11-03), not fixed:
   shows a message with the checks: start once without mods (rename SporebinEP1\mods), repair the game files in
   GOG Galaxy / Steam, attach the report. To reproduce: not reproducible in the lab.
 
-## Effects are not relayed in Civilization and Space in 0.7.4 (2026-11-03, rel/0.7.4)
+## Effects are not relayed in Tribe, Civilization and Space in 0.7.4 (2026-11-03, rel/0.7.4)
 <a id="issue-effects-civ-space"></a>
 
 * BUG-0451: in the final 0.7.4 check, effects_party_civ (3 players, Civilization) made the receiving games fault
   hundreds of times at Skinner::cSkinnerTexturePainter::StartRender+0x28 (read 0) and IO::ReadCString+0x3BA1, the
   chain EffectWorld_CreateEffect -> cSkinPainterPipeline::ExecutePipeline (out/lab/20261103-215559, both repeats).
   A relayed world effect starts the game's skin painter without its context there. So 0.7.4 relays effect starts
-  only in Cell, Creature and Tribe (`coop.fix effects.civ_space`, off by default; stops always pass). To
-  reproduce: `coop.fix effects.civ_space on` on every game, then tools/tests/coop_effects_party.py --fixture civ.
+  only in Cell and Creature (`coop.fix effects.other_stages`, off by default; stops always pass); effects_party_tribe faulted the same way (out/lab/20261103-223036). To
+  reproduce: `coop.fix effects.other_stages on` on every game, then tools/tests/coop_effects_party.py --fixture civ.
   To check for 0.7.5 (Civ) and 0.7.6 (Space): which effect ids need the painter, and whether a per-id allow list
   or the painter's context check is the right fix.

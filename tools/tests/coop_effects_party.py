@@ -142,9 +142,9 @@ def main():
     p = Party.start(a.fixture, players=3, join_together=True)
     ck = Checks()
     print(f'  fixture {a.fixture}', flush=True)
-    if a.fixture in ('civ', 'space'):  # the relay is off there in 0.7.4 (coop.fix effects.civ_space)
+    if a.fixture in ('tribe', 'civ', 'space'):  # the relay is off there in 0.7.4 (coop.fix effects.other_stages)
         for x in p.all:
-            x.con.call('coop.fix effects.civ_space on')
+            x.con.call('coop.fix effects.other_stages on')
     if a.fixture != 'creature':
         FX_ID = '0'  # the last effect id this stage's game created
         OWN_POS = p.own_pos
