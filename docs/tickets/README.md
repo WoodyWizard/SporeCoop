@@ -546,3 +546,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0534](BUG-0534-civ-a-guest-s-copy-of-a-host-s-shot-without-a-ta.md) | fixed | crash | civ | 2026-11-04 | 0.7.5 | Civ: a guest's copy of a host's shot without a target faults in the weapon update |
 | [BUG-0535](BUG-0535-civ-the-host-s-shot-observer-probes-a-target-s-n.md) | fixed | bug | civ | 2026-11-04 | 0.7.5 | Civ: the host's shot observer probes a target's non-vtable and logs a fault per shot |
 | [BUG-0536](BUG-0536-creature-puppet-jump-sees-no-hatch-jump-when-the.md) | open | test | creature | 2026-11-04 |  | Creature: puppet_jump sees no hatch jump when the guest plays the world's species (BUG-0345 default) |
+| [BUG-0546](BUG-0546-space-the-host-faults-at-0xe98dd0-ufogfx-setvisi.md) | open | bug | Space | 2026-11-04 |  | Space: the host faults at 0xE98DD0 (UfoGfx_SetVisible, null model) after a jump to an NPC empire's system in space_diplomacy, lane 5 only |
