@@ -1813,6 +1813,9 @@ Found by fix/w40-play (2026-11-03), not fixed:
   and made tribes (tribe.save_strip), not the Space objects the mod makes (the partners' UFO puppets). Not
   checked whether a Space save writes them at all.
 * Not fixed: needs a Space save + reload test as tribe_save_strip.
+* 2026-11-04 (fix/w42-space-life): fixed (BUG-0522, `space.save_strip`, test space_save_strip): a Space save
+  did write them (they came back as plain Defenders of the guest's empire); now null references
+  (docs/re/space.md#space-save-strip). Still open: the Creature-stage fallback puppet in the avatar's herd.
 * Ticket: BUG-0522
 ## Tribe: tools stand elsewhere on each game; an emptied village keeps its hut (2026-11-03, fix/w41-tribe-world)
 <a id="issue-tribe-tools"></a>

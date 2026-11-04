@@ -2061,3 +2061,21 @@ BUG-0469, GOG 2024, lanes 4/5 (`tools/tests/coop_content_space.py`).
 * The same hook logs once per caller who sets the scale 10 on any object (`scale 10 set on an object
   with vtable ... from ...`): diagnostics for BUG-0485 (the commodity nodes, noun 0x0403DF5C, whose loco
   vtable 0x1469A28 uses the same setter).
+
+## The mod's ships in a Space save (2026-11-04, fix/w42-space-life)
+<a id="space-save-strip"></a>
+
+* ✔ A Space save writes every UFO of the noun list, the mod's too: a guest (Carol, lane 5, GOG 2024) saved
+  in the `space` fixture's star system with the host's and Bob's puppets (Defenders of its empire,
+  `modes.cpp space_spawn`) and one mirror of a host Defender (`squadron.cpp guest_state`) next to it;
+  restarted alone, it loaded the save and had 3 type 6 ships of its own empire, two exactly where the
+  puppets stood (lab 20261104-094503). The invincible byte (+0x588) is not kept: they came back as
+  ordinary, vulnerable Defenders, each with the AI of a colony defender.
+* ✔ Null rule (BUG-0470): with the strip filter writing null references for the 3 ships (6 references:
+  base and the ISPSerializable cast), the reload ran 10 s without a fault and with no ship of ours
+  (lab 20261104-094827). ModAPI's `cSimulatorSpaceGame::mNPC_UFOs` (+0x78) read as an empty vector
+  {begin == end} in that system (3 NPC ships listed): not a list of the system's NPC ships here, so nothing
+  is taken out of a list while the save is written (~: not checked on a planet).
+* The host's share save (written for a joining guest) holds the other guests' puppets the same way:
+  the strip runs on both roles (`space: N ships of ours leave this save`, `save_stripped=` in
+  `coop.fleet list`).

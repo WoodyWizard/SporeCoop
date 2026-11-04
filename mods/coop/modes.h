@@ -107,7 +107,11 @@ bool space_puppet_ok(void* u); // listed, alive and still our puppet
 void space_pin(void* u, const float p[3], bool fix);
 extern bool puppet_pin_fix; // coop.fix space.puppet_pin (BUG-0378)
 void space_pin_frame();       // every Present, before the drives: nothing pinned yet
-bool space_pinned(void* u);   // pinned (fix on) since the last Present: its controller update is skipped
+bool space_pinned(void* u);
+// diagnostics (BUG-0388, coop.fleet track): the pose space_drive gave puppet u last, and how far past the
+// partner's newest snapshot that state was extrapolated (s, 0 = interpolated); false = never driven
+extern double g_drive_extrap; // set by coop.cpp drive_puppet before the adapter's drive
+bool space_drive_note(void* u, float p[3], float& extrap);   // pinned (fix on) since the last Present: its controller update is skipped
 // BUG-0218: the identity is the object serial; our puppet taken by a game mission (owner mission
 // +0x800) is retired: held still, not sent to the guests, its shots dropped, destroyed (deferred)
 // once the mission lets go, left to the game at session end (a log line). fleet.puppet_id

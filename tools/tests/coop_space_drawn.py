@@ -36,6 +36,7 @@ FLY_KEYS = [['0x57'], ['0x44'], ['0x53'], ['0x41'], ['0x57', '0x44'], ['0x53', '
 
 ZOOM = {}  # (console, kind, id) -> the ship's mZoomAltitude per row (diagnostics)
 DETAIL = {}  # (t, kind, id) -> (offset, zoom) of a row (diagnostics: printed for the worst rows)
+EXTRA = {}  # (t, kind, id) -> (the pose the mod set last, its extrapolation s, pinned) of a puppet row (BUG-0388)
 
 
 def track(con, what):
@@ -47,10 +48,10 @@ def dump(con):
     m = re.search(r'samples=(\d+)', track(con, 'count'))
     n = int(m.group(1)) if m else 0
     rows = {}
-    for start_i in range(0, n, 400):
-        for line in con.call(f'coop.fleet track dump {start_i} 400')['out'].splitlines():
+    for start_i in range(0, n, 300):
+        for line in con.call(f'coop.fleet track dump {start_i} 300')['out'].splitlines():
             f = line.split()
-            if len(f) != 10:
+            if len(f) < 10:  # (BUG-0388: puppet rows carry 5 more columns, see EXTRA)
                 continue
             try:
                 t, kind, i = float(f[0]), f[1], int(f[2])
@@ -62,6 +63,8 @@ def dump(con):
             rows.setdefault((kind, i), []).append((t, p))
             ZOOM.setdefault((id(con), kind, i), []).append(zoom)
             DETAIL[(t, kind, i)] = (o, zoom)
+            if len(f) >= 15:
+                EXTRA[(t, kind, i)] = ((float(f[10]), float(f[11]), float(f[12])), float(f[13]), int(f[14]))
     for v in rows.values():
         v.sort()
     return rows
@@ -133,9 +136,11 @@ def compare(view, truth, view_key, truth_key, skip_s=1.0):
         sp.append(speed(own, t))
         if d > PATH_LIMIT and len(BAD) < 12:
             off, zoom = DETAIL.get((t, view_key[0], view_key[1]), ((0, 0, 0), 0))
+            ex = EXTRA.get((t, view_key[0], view_key[1]))
+            more = f' | set ({ex[0][0]:.1f} {ex[0][1]:.1f} {ex[0][2]:.1f}) extrap {ex[1]:.3f} s pinned {ex[2]}' if ex else ''
             BAD.append(f'    {view_key[0]}{view_key[1]} at s {t:.3f}: drawn ({p[0]:.1f} {p[1]:.1f} {p[2]:.1f}) own '
                        f'({o[0]:.1f} {o[1]:.1f} {o[2]:.1f}) path {d:.1f} m, its offset ({off[0]:.1f} {off[1]:.1f} '
-                       f'{off[2]:.1f}) zoom {zoom:.0f}')
+                       f'{off[2]:.1f}) zoom {zoom:.0f}{more}')
     return now_e, path_e, sp
 
 
