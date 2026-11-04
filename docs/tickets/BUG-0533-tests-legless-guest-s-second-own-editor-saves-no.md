@@ -1,17 +1,17 @@
 ---
 id: BUG-0533
 title: tests: legless_guest's second own editor saves no new creature (the guest has 15 DNA after the first editor's charge)
-status: open
+status: fixed
 kind: test
 stage: Creature
 reported: 2026-11-04
 source: fix/w41-cell-left (BUG-0345 follow-up)
 role: guest
 versions: 
-fixed_in:
-branch:
+fixed_in: unreleased
+branch: fix/w42-infra
 commits:
-tests:
+tests: legless_guest
 signature:
 docs:
 related: BUG-0278, BUG-0466, BUG-0345
@@ -38,11 +38,11 @@ edit" failed too; out/lab/20261104-054104, out/lab/20261104-055343). To do: give
 (wait until `coop.dna` on the guest shows it) before the editor, or a free part.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+Test fix (coop_legless_guest.py): before the guest's second own editor the host's game gains 40 DNA (`coop.dna add 40`, the party's total), the test waits until the guest's OWN game shows it (`coop.dna` on the guest: its editor reads its own total), Enters any brain-upgrade caption, then opens the editor. 40, not 200: the earlier try with +200 grew the brain and its cinematic's caption held the editor (out/lab/20261104-054104). Root cause confirmed (observed 2026-11-04): with the DNA the same mouth is placed and saved, so it was the BUG-0466 charge (15 DNA left, a mouth costs 25), not the mod. `--no-dna` keeps the old run. Not BUG-0345: the guest's new creature is the one it made in this world, creations_state is not needed here.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+FAIL (harness reason, without the gain): `SPORE_LANE=4 coop_legless_guest.py --guest new --no-dna` on fix/w42-infra, 2026-11-04 12:14: 'FAIL the guest changed its creature and the host shows the new one' (log kept in the worktree's out/legless_guest_nodna_20261104.log); also the lab runs of the report (fix/w41-cell-left out/lab/20261104-052627, -053218). PASS: lab legless_guest lane 4, out/lab/20261104-121027 (fix/w42-infra): 'DNA before the next editor: host 55.0, guest 55.0', 'next editor: guest 291538BF -> 291538C4, host shows 7C7F94A5 -> 7C86FA9A', RESULT OK, no gate. The sync-check gate 'n: 1 missing on the guest' of the report's runs did not show.
 
 ## History
 - 2026-11-04: opened.
+- 2026-11-04: fixed on fix/w42-infra (the test gives the guest DNA before its second editor).
