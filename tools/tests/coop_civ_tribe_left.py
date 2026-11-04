@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
 """Civilization: no Tribe stage village appears in a guest's Civ world (BUG-0539).
 
-The detector saw a whole tribe village (tribes, huts, tools, food mats, bundles; 11 tribes) in the guest's Civ
-world only, from the moment a city was captured (play_civ, out/lab/20261104-110843: after "Bob captured a city").
+The detector saw whole tribe villages (tribes, huts, tools, food mats, bundles; up to 11 tribes) in the guest's Civ
+world only. The host's NPC vehicles raid the old villages (a behaviour tree action: money, then DestroyInstance of
+the tribe, 0xDCB2B2); the guest's mirrors run no behaviour tree, so its villages stood for good.
 
 1. Two games on civ_npc: the Tribe stage objects in each game's noun list.
-2. The host's civilization captures an NPC city (`coop.civ capture <city>`, the game's capture).
-3. 25 s later (the capture caption closes after 8 s), the same counts.
-PASS: the guest's game has no more tribe objects than the host's, before and after.
+2. The host's civilization captures an NPC city (`coop.civ capture <city>`; a capture alone removes nothing).
+3. The host's game destroys two tribes as its raid does (`coop.civ razetribe <i>`: DestroyInstance of the tribe).
+4. 15 s later, the counts and places of both games.
+PASS: the guest's game has no more tribe objects than the host's after each step, and none where the host's two
+are gone.
+SPORE_FIX_OFF=civ.tribe_ruins: the guest keeps the two villages (FAIL).
 
   SPORE_LANE=6 python3 tools/tests/coop_civ_tribe_left.py
 """
@@ -51,6 +55,17 @@ def main():
     print(f'  after: guest {g1}', flush=True)
     ck(all(g0[k] <= h0[k] for k in NOUNS.values()), f'before the capture the guest has no tribe objects of its own')
     ck(all(g1[k] <= h1[k] for k in NOUNS.values()), f'after the capture the guest has no tribe objects of its own')
+    for i in (0, 0):
+        print('  host razetribe:', host.call(f'coop.civ razetribe {i}')['out'].strip(), flush=True)
+        time.sleep(1)
+    time.sleep(15)
+    h2, g2 = tribe_objs(host), tribe_objs(guest)
+    print(f'  after the raids: host {h2}', flush=True)
+    print(f'  after the raids: guest {g2}', flush=True)
+    print('  guest', next((ln for ln in guest.call('coop.civ')['out'].splitlines() if 'tribe_ruins:' in ln), ''), flush=True)
+    ck(h2['tribe'] == h1['tribe'] - 2, f"the host's game destroyed two tribes ({h1['tribe']} -> {h2['tribe']})")
+    ck(all(g2[k] <= h2[k] for k in NOUNS.values()),
+       f'after the raids the guest has no tribe objects the host does not have (host {h2}, guest {g2})')
     ck.faults(host=host, guest=guest)
     return ck.result()
 

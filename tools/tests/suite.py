@@ -271,6 +271,7 @@ add('civ_religious', P + 'coop_civ_religious.py', warm=True, minutes=4, fixture=
 add('civ_turrets', P + 'coop_civ_turrets.py', warm=True, minutes=3, fixture='civ_npc')  # a city's turrets are the host's on the guest: none of the guest's own growth, the host's new one there too (BUG-0484; SPORE_FIX_OFF=civ.turrets fails)
 add('civ_aoe', P + 'coop_civ_aoe.py', warm=True, minutes=4, fixture='civ_npc')  # a religious AoE area ends on the guest when it ends on the host (BUG-0530; SPORE_FIX_OFF=civ.shot_release fails)
 add('civ_tribe_left', P + 'coop_civ_tribe_left.py', warm=True, minutes=3, fixture='civ_npc')  # no Tribe stage village appears in a guest's Civ world after a capture (BUG-0539)
+add('civ_citizen_lod', P + 'coop_civ_citizen_lod.py', warm=True, minutes=3, fixture='civ_npc')  # each game puts the city citizens at the cities near its own camera (BUG-0526: level of detail)
 add('sync_civ_loss', 'SPORE_NET=burst ' + P + 'coop_sync.py civ', minutes=4)  # loss bursts (sync_burst, Civ only): the guest's vehicles within the sync limits of the host's (BUG-0438, open: fails about 1 run in 4, out/lab/20261104-020316)
 add('civ_pause_city', P + 'coop_civ_pause_city.py', warm=True, minutes=3, fixture='civ_npc')  # a city founded while a guest is paused reaches it after the pause (BUG-0331)
 add('civ_leave', P + 'coop_civ_leave.py', warm=True, minutes=4, fixture='civ')  # the vehicles of a guest who left go to a present player (BUG-0031; --nofix fails)

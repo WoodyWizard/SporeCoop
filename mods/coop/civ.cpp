@@ -622,6 +622,7 @@ static void guest_shots(net::Reader& r, bool counted)
 
 // BUG-0539 (diagnostics): who destroys a Tribe stage tribe in Civ, and when the count of tribes changes
 constexpr uint32_t kTribeNoun = 0x018C6D19;
+static bool g_tribe_gone; // BUG-0539, host: a tribe was destroyed since the last list
 using DestroyInstance_t = void(SK_THISCALL*)(void*, void*);
 static DestroyInstance_t o_DestroyInstance;
 static std::map<uintptr_t, uint32_t> g_tribe_destroys;
@@ -630,12 +631,94 @@ static void SK_THISCALL h_DestroyInstance(void* mgr, void* obj)
     if (obj && game::mode_id() == modes::kCiv && !IsBadReadPtr(obj, 4) && vtable_in_game(obj) &&
         game::noun_id(obj) == kTribeNoun) {
         uintptr_t ra = (uintptr_t)__builtin_return_address(0);
+        if (is_host())
+            g_tribe_gone = true; // BUG-0539: the guests hear of it with the next tribe list
         if (g_tribe_destroys[ra]++ == 0 && g_tribe_destroys.size() <= 8)
             H->log(M, SK_INFO, "civ: a tribe of the Tribe stage is destroyed here (%s), DestroyInstance from 0x%08X",
                    is_host() ? "host" : is_guest() ? "guest" : "alone", (unsigned)ra);
     }
     o_DestroyInstance(mgr, obj);
 }
+// BUG-0539: the host's NPC vehicles raid the old Tribe stage villages (a behaviour tree action, 0xDCAAB0 "HR":
+// money and an event, then DestroyInstance of the tribe at 0xDCB2B2, its huts, tools, food mat and bundles go with
+// it); a guest's mirrors run no behaviour tree, so the guest's villages stood for good. The host sends the places of
+// its tribes in Civ (MSG_CIV_STATE chunk 0xFA, every 5 s and when one is destroyed); a guest destroys a tribe of its
+// own with no host tribe within 10 m (two looks in a row), the same DestroyInstance.
+static bool g_fix_tribe_ruins = true;
+COOP_FIX("civ.tribe_ruins", "BUG-0539", g_fix_tribe_ruins,
+         "civ: an old tribe village the host's vehicles raided is gone on the guests too");
+constexpr uint8_t kTribeChunk = 0xFA;
+static uintptr_t a_DestroyInst;
+static double g_tribes_sent_at = -100;
+static uint32_t g_tribes_tx, g_tribes_rx, g_tribes_removed;
+static std::unordered_map<void*, int> g_tribe_extra_seen; // guest: tribe -> looks without a host tribe
+static std::vector<std::pair<void*, net::Vec3>> tribes_here()
+{
+    std::vector<std::pair<void*, net::Vec3>> out;
+    game::for_each_object([](void* o, uint32_t noun, void* u) {
+        net::Vec3 p;
+        if (noun == kTribeNoun && game::object_alive(o) && game::object_position(o, p))
+            ((std::vector<std::pair<void*, net::Vec3>>*)u)->push_back({o, p});
+        return true;
+    }, &out);
+    return out;
+}
+static void host_send_tribes(double now)
+{
+    if (!g_fix_tribe_ruins || !(now - g_tribes_sent_at >= 5.0 || (g_tribe_gone && now - g_tribes_sent_at >= 0.5)))
+        return;
+    g_tribes_sent_at = now;
+    g_tribe_gone = false;
+    auto ts = tribes_here();
+    if (ts.size() > 80)
+        ts.resize(80); // 80 x 12 bytes: one packet
+    net::Writer w;
+    w.u16(0); w.u8(kTribeChunk); w.u8(0);
+    w.u8((uint8_t)ts.size());
+    for (auto& [t, p] : ts) {
+        w.f32(p.x); w.f32(p.y); w.f32(p.z);
+    }
+    for (auto& pl : C.sess->players())
+        if (pl.id != 0)
+            C.sess->send_unreliable_to(pl.id, net::MSG_CIV_STATE, w);
+    g_tribes_tx++;
+}
+static void guest_tribes(net::Reader& r)
+{
+    std::vector<net::Vec3> hp(r.u8());
+    for (auto& p : hp) {
+        p.x = r.f32(); p.y = r.f32(); p.z = r.f32();
+    }
+    if (!r.ok())
+        return;
+    g_tribes_rx++;
+    if (!g_fix_tribe_ruins || !a_DestroyInst || local_play() || game::mode_id() != modes::kCiv)
+        return;
+    std::unordered_map<void*, int> seen;
+    for (auto& [t, p] : tribes_here()) {
+        bool host_has = false;
+        for (auto& q : hp)
+            if (net::dist(p, q) < 10.f) {
+                host_has = true;
+                break;
+            }
+        if (host_has)
+            continue;
+        int n = g_tribe_extra_seen.count(t) ? g_tribe_extra_seen[t] + 1 : 1;
+        if (n < 2) {
+            seen[t] = n;
+            continue;
+        }
+        g_applying = true;
+        thiscall<void>(a_DestroyInst, nm(), t);
+        g_applying = false;
+        g_tribes_removed++;
+        H->log(M, SK_INFO, "civ: the old tribe village at (%.0f %.0f %.0f) is gone on the host: removed here (BUG-0539)", p.x,
+               p.y, p.z);
+    }
+    g_tribe_extra_seen = std::move(seen);
+}
+
 static void tribe_count_log(double now)
 {
     static double last = -100;
@@ -1940,8 +2023,10 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
         H->hook_create(M, (void*)a_AddTurret, (void*)h_AddTurret, (void**)&o_AddTurret);
     else
         a_AddTurret = 0;
-    if (uintptr_t di = H->sym("Simulator::cGameNounManager::DestroyInstance")) // BUG-0539 diagnostics
+    if (uintptr_t di = H->sym("Simulator::cGameNounManager::DestroyInstance")) { // BUG-0539
         H->hook_create(M, (void*)di, (void*)h_DestroyInstance, (void**)&o_DestroyInstance);
+        a_DestroyInst = di;
+    }
     a_ToolMouseUp = H->sym("Simulator::cToolManager::OnMouseUp"); // BUG-0530 (optional)
     if (a_ToolMouseUp)
         H->hook_create(M, (void*)a_ToolMouseUp, (void*)h_ToolMouseUp, (void**)&o_ToolMouseUp);
@@ -2285,6 +2370,7 @@ static void host_tick(double now)
     boost_tick(now);
     movie_tick();
     host_send_shots(now); // BUG-0477
+    host_send_tribes(now); // BUG-0539
     if (now - g_last_send < 0.1)
         return;
     g_last_send = now;
@@ -3403,6 +3489,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             guest_building_hp(peek);
         else if (peek.ok() && chunk == kTurretChunk && chunks == 0) // BUG-0484: turrets
             guest_turrets(peek);
+        else if (peek.ok() && chunk == kTribeChunk && chunks == 0) // BUG-0539: old tribe villages
+            guest_tribes(peek);
         else
             guest_state(r);
     }
@@ -3440,6 +3528,7 @@ static void clear_coop_tables(bool restore_speed)
     g_hp_sent.clear();
     g_turret_sent.clear();
     g_turret_seen.clear();
+    g_tribe_extra_seen.clear();
 }
 
 void on_session_end()
@@ -3453,6 +3542,7 @@ void on_session_end()
     g_hp_sent.clear();
     g_turret_sent.clear();
     g_turret_seen.clear();
+    g_tribe_extra_seen.clear();
     g_hv.clear();
     g_hv_by_id.clear();
     g_gv.clear();
@@ -3602,6 +3692,10 @@ std::string status()
         lf += x;
     }
     lf += "\n";
+    char tr[120];
+    snprintf(tr, sizeof tr, "tribe_ruins: fix=%d tx=%u rx=%u removed=%u\n", (int)g_fix_tribe_ruins, g_tribes_tx, g_tribes_rx,
+             g_tribes_removed);
+    lf += tr;
     char tu[160];
     snprintf(tu, sizeof tu, "turrets: fix=%d tx=%u rx=%u blocked=%u added=%u removed=%u\n", (int)g_fix_turrets, g_turret_tx,
              g_turret_rx, g_turrets_blocked, g_turrets_added, g_turrets_removed);
@@ -3956,6 +4050,25 @@ std::string debug(const std::vector<std::string>& a)
         thiscall<int>(a_SetOrder, v, t, type, 1);
         thiscall<void>(a_OrderStamp, v, 0);
         return "attack ordered";
+    }
+    if (!a.empty() && (a[0] == "tribes" || a[0] == "razetribe")) {
+        // tribes: the old Tribe stage tribes in this game; razetribe <i>: the host's game destroys tribe i of that
+        // list (DestroyInstance, the last step of its vehicles' raid 0xDCAAB0; tests BUG-0539)
+        auto ts = tribes_here();
+        if (a[0] == "razetribe") {
+            size_t i = a.size() >= 2 ? (size_t)atoi(a[1].c_str()) : 0;
+            if (!is_host() || i >= ts.size() || !a_DestroyInst)
+                return "no such tribe (host only)";
+            thiscall<void>(a_DestroyInst, nm(), ts[i].first);
+            return "tribe destroyed";
+        }
+        std::string out;
+        for (auto& [t, p] : ts) {
+            char line[96];
+            snprintf(line, sizeof line, "tribe %p pos=(%.1f %.1f %.1f)\n", t, p.x, p.y, p.z);
+            out += line;
+        }
+        return out + "tribes " + std::to_string(ts.size());
     }
     if (a.size() >= 2 && (a[0] == "turrets" || a[0] == "addturret" || a[0] == "budget")) {
         // turrets <host city index>: the city's turrets; addturret <ci>: one more in the next free slot (the game's
