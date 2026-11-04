@@ -8,6 +8,7 @@
 #include <deque>
 #include <map>
 #include <set>
+#include <tuple>
 
 #include "game.h"
 #include "modes.h"
@@ -86,6 +87,49 @@ static uint32_t choice_epoch_now(int k)
     return game::stage_epoch(k == 1 ? modes::kCell : modes::kCreature);
 }
 static bool g_chosen[kKinds]; // the player chose (even "none")
+// BUG-0345: a guest without an explicit choice played the newest creation of its My Creations in any
+// world, also in a new world of the host's ("the guest spawns with its previous cell creature"). Now a
+// guest's default is its own creation only in a world it already played it in (SporeCoop\worlds.ini:
+// [creature] / [cell] <world crc> = <creation>; an own editor's result is recorded there, not as a
+// choice); else the world's species, as the host since BUG-0344. A choice in the co-op window holds
+// everywhere. Off: the newest own creation in any world (0.7.4).
+static bool g_guest_world_fix = true;
+COOP_FIX("creations.guest_world_species", "BUG-0345", g_guest_world_fix,
+         "creations: a guest plays its own creation by default only in a world it played it in (or chose it); else the world's species");
+static std::map<std::pair<int, uint32_t>, uint32_t> g_world_rec; // (kind, world) -> creation instance (cache)
+static std::set<std::pair<int, uint32_t>> g_world_read;           // read from the file already
+static std::set<std::tuple<int, uint32_t, uint32_t>> g_own_told;  // notices given (kind, world, creation)
+static unsigned g_world_records;
+static bool find_paths();
+static std::wstring wide(const char* s) { return std::wstring(s, s + strlen(s)); }
+static uint32_t world_record(int k, uint32_t world)
+{
+    if (!world || !find_paths())
+        return 0;
+    auto id = std::make_pair(k, world);
+    if (!g_world_read.count(id)) {
+        g_world_read.insert(id);
+        wchar_t key[16], buf[32] = {};
+        swprintf(key, 16, L"%08X", world);
+        GetPrivateProfileStringW(wide(kInfo[k].name).c_str(), key, L"", buf, 32, (g_dir + L"\\worlds.ini").c_str());
+        if (buf[0])
+            g_world_rec[id] = (uint32_t)wcstoul(buf, nullptr, 16);
+    }
+    auto it = g_world_rec.find(id);
+    return it == g_world_rec.end() ? 0 : it->second;
+}
+static void world_record_set(int k, uint32_t world, uint32_t inst)
+{
+    if (!world || !find_paths() || world_record(k, world) == inst)
+        return;
+    g_world_rec[{k, world}] = inst;
+    wchar_t key[16], val[16];
+    swprintf(key, 16, L"%08X", world);
+    swprintf(val, 16, L"%08X", inst);
+    WritePrivateProfileStringW(wide(kInfo[k].name).c_str(), key, inst ? val : nullptr, (g_dir + L"\\worlds.ini").c_str());
+    g_world_records++;
+    H->log(M, SK_INFO, "creations: own %s %08X recorded for world %08X (BUG-0345)", kInfo[k].name, inst, world);
+}
 // BUG-0508 (world.evolve_in_place): a guest that plays the host world's species (no creation of its
 // own, no choice) takes the host's new creature in place after the host's editor, as the reloaded
 // world gave it before: `g_follow` is the host's new creation, valid in the stage world it came in
@@ -905,6 +949,22 @@ Option mine(Kind k)
     if (k == kUfo) {
         Key u = ufo_key();
         return u.instance ? named(u) : Option{};
+    }
+    // BUG-0345: a guest's default is its own creation only in a world it played it in
+    if (guest && g_guest_world_fix && !g_opts[k].empty()) {
+        if (uint32_t rec = world_record(k, modes::current_world()))
+            for (auto& o : g_opts[k])
+                if (o.key.instance == rec)
+                    return o;
+        if (g_follow_fix && g_follow[k].instance && g_follow_epoch[k] == choice_epoch_now(k))
+            return named(g_follow[k]); // BUG-0508: the host's evolved species, in place
+        auto h = g_applied.find({0, (uint8_t)k});
+        if (h != g_applied.end() && h->second.orig.instance)
+            return named(h->second.orig); // the host's creation: the world's species
+        Key a = k == kCreature ? avatar_species_key() : cell_key();
+        if (a.instance && !own_option(k, a))
+            return named(a);
+        return {};
     }
     // default: a guest plays its newest creation; the host keeps the one of its world
     if (guest && !g_opts[k].empty())
@@ -2045,6 +2105,16 @@ static bool adopt_after_editor(double now)
             return false;
         }
         g_adopt_until = 0;
+        if (g_guest_world_fix && !(g_chosen[g_adopt_kind] && g_choice[g_adopt_kind].instance)) {
+            // BUG-0345: the editor's result is the own one in this world (not a choice for every world)
+            uint32_t world = modes::current_world();
+            if (world && !g_chosen[g_adopt_kind]) {
+                world_record_set(g_adopt_kind, world, pick.instance);
+                g_last_check = 0; // share now
+                H->log(M, SK_INFO, "creations: back from the editor, own %s %08X in this world", kInfo[g_adopt_kind].name, pick.instance);
+                return false;
+            }
+        }
         if (!(pick == mine(g_adopt_kind).key) || !g_chosen[g_adopt_kind]) {
             choose(g_adopt_kind, pick);
             H->log(M, SK_INFO, "creations: back from the editor, own %s %08X", kInfo[g_adopt_kind].name, pick.instance);
@@ -2065,12 +2135,36 @@ static bool adopt_after_editor(double now)
     return false;
 }
 
+// BUG-0345: a guest playing its own creation records the world it plays it in and says so, once
+static void own_world_tick()
+{
+    if (!g_guest_world_fix || !C.sess || C.sess->role() != net::Role::Client)
+        return;
+    int m = game::mode_id();
+    Kind k = m == modes::kCell ? kCell : m == modes::kCreature ? kCreature : kKinds;
+    if (k == kKinds || (k == kCreature && !game::avatar()) || (k == kCell && !modes::cell_game()))
+        return;
+    Option o = mine(k);
+    uint32_t world = modes::current_world();
+    if (!o.key.instance || !world || !own_option(k, o.key))
+        return;
+    Key here = own_key_here(k), now = k == kCreature ? avatar_species_key() : cell_key();
+    if (!here.instance || !(here == now))
+        return; // not (yet) applied
+    world_record_set(k, world, o.key.instance);
+    if (g_own_told.insert({(int)k, world, o.key.instance}).second && C.notice) {
+        std::string who = C.name_of ? C.name_of(C.sess->my_id()) : std::string("A guest");
+        C.notice(who + " plays its own " + kInfo[k].name + (o.name.empty() ? "" : " '" + o.name + "'"));
+    }
+}
+
 void tick(double now)
 {
     if (!C.sess || !C.sess->connected())
         return;
     if (adopt_after_editor(now))
         return;
+    own_world_tick();
     if (now - g_last_check > 2.0) {
         g_last_check = now;
         share_own(now);
@@ -2162,6 +2256,7 @@ void on_player_leave(uint8_t id)
 
 void on_session_end()
 {
+    g_own_told.clear(); // BUG-0345: the notice again in the next session
     // the host's creations registered under their original keys (priority 2000, above the guest's
     // own My Creations): after the session a guest's own creation of the same id (ids are per
     // profile and sequential) resolved to the host's records in its own games (BUG-0055). They go;
@@ -2323,6 +2418,28 @@ std::string debug(const std::vector<std::string>& a)
         uint32_t inst = a.size() > 2 && a[2] != "none" ? (uint32_t)strtoul(a[2].c_str(), nullptr, 16) : 0;
         choose((Kind)k, inst ? Key{inst, kInfo[k].type, kInfo[k].group} : Key{});
         return "chosen";
+    }
+    if (a.size() >= 2 && a[0] == "unchoose") { // tests (BUG-0345): no explicit choice of <kind> (choices.ini entry removed)
+        int k = a[1] == "cell" ? kCell : a[1] == "ufo" ? kUfo : kCreature;
+        g_chosen[k] = false;
+        g_choice[k] = {};
+        if (find_paths())
+            WritePrivateProfileStringW(L"creations", wide(kInfo[k].name).c_str(), nullptr, (g_dir + L"\\choices.ini").c_str());
+        g_last_check = 0;
+        return "no choice";
+    }
+    if (!a.empty() && a[0] == "worlds") { // tests (BUG-0345): worlds [forget]: the own creation recorded for this world
+        uint32_t w = modes::current_world();
+        if (a.size() >= 2 && a[1] == "forget") {
+            for (int k = 0; k < kKinds; k++)
+                world_record_set(k, w, 0);
+            g_own_told.clear();
+            g_last_check = 0;
+        }
+        char b[160];
+        snprintf(b, sizeof b, "world %08X creature=%08X cell=%08X records=%u switch=%d\n", w, world_record(kCreature, w),
+                 world_record(kCell, w), g_world_records, g_guest_world_fix ? 1 : 0);
+        return b;
     }
     if (!a.empty() && a[0] == "sameaddr") { // tests (BUG-0119): the next new avatar looks like the old one
         g_sim_same_addr = true;

@@ -3957,3 +3957,10 @@ its game's `world_scale=` from coop.pool, read before and after the dump). Fails
   member onto the spot, with `coop.tribe put` did not make it stop: it reached the spot or took another one).
   `--own`: the host orders one of its own members (not the chief: tool 11 does not grab) the same way, a control.
 * play_tribe logs `host ai #<id>: ...` for every member of an order nobody acted on.
+* `creations` (coop_creations.py, ~1 min, BUG-0345 since 2026-11-04): the guest's own creature by the per-world
+  rule: `coop.creations unchoose creature` + `worlds forget` (a world it never played its creature in) -> the
+  world's species; `choose` -> own, the notice "plays its own creature" in both game logs, `worlds` records it;
+  unchoose (same world) -> still own; forget -> the world's species; the window's next. The host knows the
+  guest's creature under its shared remapped key (7C...), not the guest's id: compare the host's puppet with
+  "not the world's species". It leaves the fixture world recorded. SPORE_FIX_OFF=creations.guest_world_species
+  FAILS (lab 20261104-033933).

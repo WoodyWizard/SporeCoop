@@ -164,7 +164,7 @@ add('window_layout', P + 'coop_window_layout.py', minutes=3)  # the co-op window
 add('sync', P + 'coop_sync.py', warm=True, minutes=6)
 add('lan_dedup', P + 'coop_lan_dedup.py', warm=True, minutes=3, fixture='creature')  # a host on two network addresses is one row in the guest's LAN list (BUG-0210; SPORE_FIX_OFF=net.lan_dedup fails)
 add('sync_lowfps', P + 'coop_sync.py --fps 15 civ tribe', warm=True, minutes=5)  # the guest at 15 fps: vehicles, citizens and animals within the sync limits (BUG-0175 regression; the fix's FAIL/PASS is npc_tests)
-add('creations', P + 'coop_creations.py', minutes=4)
+add('creations', P + 'coop_creations.py', minutes=4)  # BUG-0345: a guest plays its own creature when chosen or already played in this world, else the world's species; the notice on both games (SPORE_FIX_OFF=creations.guest_world_species fails)
 add('net_robust', P + 'coop_net_robust.py', minutes=4)  # malformed messages from a joined player (BUG-0201)
 add('chat_long', P + 'coop_chat_long.py', warm=True, minutes=2, fixture='creature')  # a reliable message bigger than a packet is split, nothing behind it stalls (BUG-0034)
 add('creations_cell', P + 'coop_creations_cell.py', minutes=4)

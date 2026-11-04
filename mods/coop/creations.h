@@ -34,6 +34,7 @@ struct Option {
 struct Ctx {
     net::Session* sess = nullptr;
     std::function<void(const std::string&)> feed;
+    std::function<void(const std::string&)> notice; // shown to every player (BUG-0345)
     std::function<std::string(uint8_t)> name_of;
     std::function<void(uint8_t player)> appearance_changed; // rebuild that player's puppet
     std::function<void()> cell_rebuilt; // the own cell hatched again: move it next to a partner
