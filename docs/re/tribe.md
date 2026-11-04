@@ -1342,3 +1342,38 @@ game). GOG 2024, Ghidra (`tools/ghidra/q.sh --build 2024`):
 * ? Not done: a tool made by the mod (a guest's copy, the host's copy of a guest's purchase) is not put into a
   village layout slot (the finish's 0xD0B750 / SetObject): the slot looks free to that game's palette. A guest
   selling a tool (0xD09D70) is not sent: the host keeps it and the guest gets its copy back.
+## The gather behaviour and a new order (2026-11-04, fix/w42-tribe-left)
+<a id="tribe-gather-orders"></a>
+
+BUG-0531 (a member in the gather node does not act on a new order). GOG 2024, Ghidra + runtime lane 6
+(`coop_tribe_gather_stall.py`, `coop.tribe ai` now also prints `carry=` the food the member carries and `tool=`):
+* ✔ The gather node's table entry 0x1584260: `{0x42464100, 0x2B8CBCCC, 100.0, 0x0569236E, enter 0xD75A80, tick
+  0xD75F70, exit 0xD75520, 6, 0, 1.0, 0, FLT_MAX, 4.3125, ...}` (100.0: the range the ticket saw next to the id).
+* ✔ Its memory (the leaf's): `+0 state, +4 an object (refcounted, its +0x108 released at state 0), +8 the tree,
+  +0xC, +0x10 a timer, +0x18 a counter (state 0 fails when it passes a tuning value 0x78F4963A), +0x1C byte, +0x1D
+  byte "ordered" (from the enter's argument +0x18), +0x20 a claimed food-mat slot (0xDBA5C0(c, 0xD)), +0x24 an
+  object`. The enter zeroes it, state 1 when it starts with a walk.
+* ✔ 0xCEE490 / 0xCEE4E0 on the member's own cGameBundleContainer (c+0x38: bundle vector +4..+8): the first bundle /
+  the sum of the bundles' +0x134 (the food it carries). 0xC26DF0 thiscall(c, mask, x) ret 8: the handheld item of
+  the member's tool (+0x102C; 0 on the tribe's leader = item 0x11) tested against `mask` (0x30000 in the gather).
+* ✔ The tick's state 1 returns "running" while (it carries nothing, or c+0xFC8 != c+0xFC4) and 0xC26DF0(0x30000)
+  is false; then the walk's arrival (0xC42F80) -> state 0; otherwise, unless +0x1D, "running" again: **no time
+  limit**. State 0xF with +4 = 0 returns 0 ("done") at once; the failure path (LAB 0xD76512) is 0xDA61D0(c, 2) then
+  0. States 0x12 -> 0x13 (claim a food-mat slot, 0xDBA5C0(c, 0xD)) -> 0x14 (walk there; arrived and 0xAF0B50 ->
+  state 0, else the failure path).
+* ✔ The exit 0xD75520 releases +0x24 and +4, drops or keeps the carried bundles (0xC23460 / cBundleManager), frees
+  the food-mat slot (0xC988E0 / 0xC97ED0 with 0xD) and 0xD753C0. It does not touch the order queue.
+* ✔ Runtime (lab 20261104-095422, -100046, -100245, -100604; 'tribe' fixture, a guest's member sent by
+  `coop.tribe order <id> 2 <tree>` to a fruit tree 90-130 m off): the member walks there in state 1 (walk mode 1,
+  goal the tree, carry 0), then states 5, 2 (at the tree), 19 = 0x13 (back home to a food-mat slot, goal near the
+  village), then the delivery node 0x04623E0C and 0x05524115. A walk order (the guest's own: select + walk, run
+  by host_command's DoAction(4) + SetValueVector3) in state 1 at the tree or in state 19 carrying the food home
+  took the member out of the gather node every time (7 runs): rec=-1 and node 0x04626360 (an idle / walk-end
+  node) within 3 s, the member at the goal on both games. After a walk that ends, the game's own behaviour goes on
+  (a member carrying food delivers it).
+* ~ So the play_tribe stall of BUG-0531 (state 1, walk mode 1, goal the old tree, standing) was not reproduced:
+  inferred, it needs the state-1 wait with the walk itself stopped (the member standing short of the tree, as the
+  grab spots of BUG-0505), which the gather's state 1 never leaves without arriving. Not fixed.
+* ✔ A test pitfall: a walk goal 12 m from the village toward some trees ended at the hut's edge (the game's walk
+  stopped at (413.8 -22.6 291.4) in three runs, the member 8 m short): check that a member walks, not that it
+  reaches a point near the village.

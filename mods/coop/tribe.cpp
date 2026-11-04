@@ -317,7 +317,6 @@ static Target read_target(net::Reader& r)
 }
 
 enum : uint8_t { CMD_ACTION = 0, CMD_WALK = 1, CMD_GIVE = 2 };
-static void note_order(void* c, int action, const Target& tgt, const net::Vec3& pos); // BUG-0531 (below)
 
 static void send_cmd(uint8_t kind, const std::vector<uint16_t>& ids, int action, const Target& tgt, const net::Vec3& pos)
 {
@@ -356,14 +355,6 @@ static int SK_THISCALL h_DoActionForObjects(void* self, void* vec, int action, v
                      vec ? (int)(F<void**>(vec, 4) - F<void**>(vec, 0)) : -1, target, target ? game::noun_id(target) : 0);
             g_last_local = lb;
             g_local_orders++;
-            int r = o_DoActionForObjects(self, vec, action, target, prop);
-            Target tg = encode_target(target);
-            void** b = vec ? F<void**>(vec, 0) : nullptr;
-            void** e = vec ? F<void**>(vec, 4) : nullptr;
-            for (void** it = b; it && it < e && it - b < 64; ++it)
-                if (*it && is_citizen((uint8_t*)*it - 0xC0))
-                    note_order((uint8_t*)*it - 0xC0, action, tg, {});
-            return r;
         }
         return o_DoActionForObjects(self, vec, action, target, prop);
     }
@@ -397,12 +388,6 @@ static int SK_THISCALL h_WalkSelected(void* self, const float* pos)
             snprintf(lb, sizeof lb, "walk to (%.1f %.1f %.1f)", pos[0], pos[1], pos[2]);
             g_last_local = lb;
             g_local_orders++;
-            int r = o_WalkSelected(self, pos);
-            void* pt = player_tribe();
-            for (void* c : pt ? members(pt) : std::vector<void*>{})
-                if (F<uint8_t>(c, kSelectedOff))
-                    note_order(c, 4, {}, {pos[0], pos[1], pos[2]});
-            return r;
         }
         return o_WalkSelected(self, pos);
     }
@@ -1027,7 +1012,6 @@ static void host_command(uint8_t from, net::Reader& r)
                 thiscall<void>(a_SetValueVector3, (uint8_t*)rec + 0x39, (const float*)p);
         } else
             thiscall<void*>(a_DoAction, c, action, target, (void*)nullptr);
-        note_order(c, kind == CMD_WALK ? 4 : action, tgt, pos);
         g_cmds_done++;
     }
 }
@@ -2429,102 +2413,11 @@ static void grab_spot_tick(double now)
         it = seen.count(it->first) ? std::next(it) : g_grab_watch.erase(it);
 }
 
-// BUG-0531 (docs/re/tribe.md#tribe-gather-orders): a player's order on a member in the gather behaviour (node
-// 0x0569236E, the action table 0x158426C) was lost: the order record replaced the gather's, but the member stayed in
-// the gather node (its state 1 waits for the walk and a carried bundle with no time limit) or the node handed it on
-// to the food delivery (0x04623E0C) and the order's record was gone. The host watches a player's order for 6 s:
-// a member still in the gather node with the order's record 1.5 s after it ends the node the game's way (its
-// state 0xF with no object returns "done", 0xD75F70; the behaviour tree then runs the order); a member whose
-// record is gone in the gather / delivery node before a walk reached its goal gets the order again (once).
-// For every member of the player tribe (the host's own orders too). `coop.fix tribe.order_keep off`: the old way.
-static bool g_order_keep_fix = true;
-COOP_FIX("tribe.order_keep", "BUG-0531", g_order_keep_fix,
-         "tribe: a member busy gathering food acts on a new order instead of going on gathering or carrying the food home");
-constexpr uint32_t kGatherNode = 0x0569236E, kDeliverNode = 0x04623E0C;
-struct KeptOrder {
-    int action;
-    Target tgt;
-    net::Vec3 pos;
-    double at;
-    bool ended = false, again = false;
-};
-static std::unordered_map<void*, KeptOrder> g_kept;
-static uint32_t g_order_ends, g_order_agains;
-static double g_kept_next;
-
-static void note_order(void* c, int action, const Target& tgt, const net::Vec3& pos)
-{
-    if (!g_order_keep_fix || !c)
-        return;
-    g_kept[c] = KeptOrder{action, tgt, pos, H->time_seconds()};
-}
-
-// the member's current order record's action (-1: none)
-static int order_action(void* c)
-{
-    uint8_t* ai = F<uint8_t*>(c, 0xB4C);
-    if (!ai || !skg::readable(ai + 0x60C, 8))
-        return -1;
-    uint8_t* head = ai + 0x60C;
-    uint8_t* first = *(uint8_t**)head;
-    return first != head && skg::readable(first, 0x50) ? *(int*)(first + 8) : -1;
-}
-
-static void order_keep_tick(double now)
-{
-    if (now < g_kept_next)
-        return;
-    g_kept_next = now + 0.25;
-    if (!g_order_keep_fix) {
-        g_kept.clear();
-        return;
-    }
-    void* pt = player_tribe();
-    auto ms = pt ? members(pt) : std::vector<void*>{};
-    for (auto it = g_kept.begin(); it != g_kept.end();) {
-        void* c = it->first;
-        KeptOrder& o = it->second;
-        if (now - o.at > 6.0 || std::find(ms.begin(), ms.end(), c) == ms.end() || game::is_dead(c)) {
-            it = g_kept.erase(it);
-            continue;
-        }
-        ++it;
-        uint32_t node = bt_node(c);
-        int rec = order_action(c);
-        if (node == kGatherNode && rec == o.action && o.action != 2 && !o.ended && now - o.at > 1.5) {
-            uint32_t* m = leaf_mem(c);
-            if (m && !m[1]) { // state 0xF with no object: "done" (0)
-                m[0] = 0xF;
-                o.ended = true;
-                g_order_ends++;
-                H->log(M, SK_INFO, "tribe: member #%u kept gathering after an order (%d): its gather ended", member_id(c), o.action);
-            }
-            continue;
-        }
-        bool done = o.action == 4 && net::dist(game::position(c), o.pos) < 4.f;
-        if (rec != o.action && !o.again && !done && (node == kGatherNode || node == kDeliverNode) && now - o.at > 0.5) {
-            void* target = o.tgt.kind ? resolve_target(o.tgt) : nullptr;
-            if (o.tgt.kind && !target)
-                continue;
-            void* r = thiscall<void*>(a_DoAction, c, o.action, target, (void*)nullptr);
-            if (o.action == 4 && r) {
-                float p[3] = {o.pos.x, o.pos.y, o.pos.z};
-                thiscall<void>(a_SetValueVector3, (uint8_t*)r + 0x39, (const float*)p);
-            }
-            o.again = true;
-            o.at = now;
-            g_order_agains++;
-            H->log(M, SK_INFO, "tribe: member #%u lost its order (%d) to the food gathering (node %08X): ordered again", member_id(c), o.action, node);
-        }
-    }
-}
-
 static void coop_tick(double now)
 {
     chiefs_tick();
     if (is_host()) {
         grab_spot_tick(now);
-        order_keep_tick(now);
         spread_chiefs(now);
         place_chiefs(now);
         duet_tick(now);
@@ -3081,8 +2974,8 @@ std::string debug(const std::vector<std::string>& a)
             s += b;
         }
         char b[192];
-        snprintf(b, sizeof b, "tools n=%d tool_sets=%u hold_fix=%d grab_spot=%d moves=%u order_keep=%d ends=%u agains=%u\n", u.i, g_tool_sets,
-                 (int)g_tool_hold_fix, (int)g_grab_spot_fix, g_grab_spot_moves, (int)g_order_keep_fix, g_order_ends, g_order_agains);
+        snprintf(b, sizeof b, "tools n=%d tool_sets=%u hold_fix=%d grab_spot=%d moves=%u\n", u.i, g_tool_sets,
+                 (int)g_tool_hold_fix, (int)g_grab_spot_fix, g_grab_spot_moves);
         return s + b;
     }
     if (a.size() >= 2 && a[0] == "build" && is_host()) { // build <type> [metres]: test setup, a tool as if bought
