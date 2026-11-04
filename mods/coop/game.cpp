@@ -93,12 +93,16 @@ static std::vector<void*> g_puppets;
 // grounded right after the game's animation starts and its update when the game grounded them.
 struct AirHold {
     void* c;
+    void* ac; // its AnimatedCreature (+0xB54), the low animation start's this
     net::Vec3 pos, vel;
     net::Quat rot;
 };
 static std::vector<AirHold> g_air;
-static uint32_t g_air_regrounded[4]; // by the call after which it was grounded: 0 update, 1 anim, 2 idle, 3 BT anim
+static uint32_t g_air_regrounded[5]; // by the call after which it was grounded: 0 update, 1 anim, 2 idle, 3 BT anim, 4 low anim
 static void air_reassert(void* c, int where);
+typedef int(SK_THISCALL* AcPlay_t)(void*, uint32_t, int);
+static AcPlay_t o_AcPlay;
+static int SK_THISCALL h_AcPlay(void* ac, uint32_t id, int a);
 static std::vector<void*> g_our_herds; // made by create_herd (puppets, proxies); diagnostics only
 
 // ---- registry via cCreatureAnimal::Update (thiscall, int deltaTime) ----
@@ -1003,6 +1007,8 @@ bool init(const SkHost* host, SkMod* mod)
     a_PlayAnimTo = H->sym("Simulator::cCreatureBase::PlayAnimationTo");
     if (a_PlayAnim)
         H->hook_create(M, (void*)a_PlayAnim, (void*)h_PlayAnim, (void**)&o_PlayAnim);
+    if (uintptr_t a = H->sym("Anim::AnimatedCreature::PlayAnimation")) // BUG-0532
+        H->hook_create(M, (void*)a, (void*)h_AcPlay, (void**)&o_AcPlay);
     if (a_PlayAnimTo)
         H->hook_create(M, (void*)a_PlayAnimTo, (void*)h_PlayAnimTo, (void**)&o_PlayAnimTo);
     // BUG-0464: the behaviour tree's animation starter and the idle refresh
@@ -1457,13 +1463,13 @@ void air_hold(void* c, bool on, const net::Vec3& pos, const net::Quat& rot, cons
     for (size_t i = 0; i < g_air.size(); i++)
         if (g_air[i].c == c) {
             if (on)
-                g_air[i] = {c, pos, vel, rot};
+                g_air[i] = {c, field<void*>(c, 0xB54), pos, vel, rot};
             else
                 g_air.erase(g_air.begin() + i);
             return;
         }
     if (on && g_air.size() < 16)
-        g_air.push_back({c, pos, vel, rot});
+        g_air.push_back({c, field<void*>(c, 0xB54), pos, vel, rot});
 }
 
 void air_release_all() { g_air.clear(); }
@@ -1482,11 +1488,25 @@ static void air_reassert(void* c, int where)
         }
 }
 
+// the animation system's own start (Anim::AnimatedCreature::PlayAnimation 0xA0C5D0, a vtable slot every start
+// goes through, also the locomotion's: the walk start, fall -> idle)
+static int SK_THISCALL h_AcPlay(void* ac, uint32_t id, int a)
+{
+    int r = o_AcPlay(ac, id, a);
+    if (!g_air.empty())
+        for (auto& h : g_air)
+            if (h.ac == ac) {
+                air_reassert(h.c, 4);
+                break;
+            }
+    return r;
+}
+
 std::string air_status()
 {
-    char b[160];
-    snprintf(b, sizeof b, "air hold: held=%u regrounded update=%u anim=%u idle=%u bt=%u\n", (unsigned)g_air.size(),
-             g_air_regrounded[0], g_air_regrounded[1], g_air_regrounded[2], g_air_regrounded[3]);
+    char b[180];
+    snprintf(b, sizeof b, "air hold: held=%u regrounded update=%u anim=%u idle=%u bt=%u low=%u\n", (unsigned)g_air.size(),
+             g_air_regrounded[0], g_air_regrounded[1], g_air_regrounded[2], g_air_regrounded[3], g_air_regrounded[4]);
     return b;
 }
 
