@@ -372,6 +372,7 @@ add('space_guest_ui', P + 'coop_space_guest_ui.py', minutes=4)  # a guest joinin
 add('space_puppet', P + 'coop_space_puppet.py', minutes=5)  # the game frees partner puppets
 add('space_rescue', P + 'coop_space_rescue.py', minutes=6)  # disabled by real (relayed) NPC hits
 add('space_helper', P + 'coop_space_helper.py', warm=True, minutes=3, fixture='space')  # a disabled partner rescues nobody (BUG-0131; SPORE_SPACE_FIX=0 fails)
+add('space_down_reload', P + 'coop_space_down_reload.py', warm=True, minutes=4, fixture='space')  # a load starts the disable rule anew (BUG-0257; SPORE_FIX_OFF=space.down_epoch fails)
 add('space_stale', P + 'coop_space_stale.py', warm=True, minutes=5, fixture='space')  # hits about freed mirrors / puppets, star ids past the table, the second repair's first step (BUG-0054, BUG-0092, BUG-0147)
 add('space_fleet', P + 'coop_space_fleet.py', warm=True, minutes=4, fixture='space')  # a lost ship-state chunk changes no mirror, the guest keeps its posse, a destroyed ship goes with 2 chunks and lost chunks (BUG-0037, BUG-0084, BUG-0230)
 add('space_map_input', P + 'coop_space_map_input.py', minutes=7, fixture='space')  # x87 stack after contacts, jump notice, galaxy teleport guards, tag clicks from the window (BUG-0126, BUG-0072, BUG-0063, BUG-0090, BUG-0145; --without-fix fails)
@@ -387,8 +388,11 @@ add('space_diplomacy', P + 'coop_space_diplomacy.py', minutes=5)  # shared relat
 add('space_npc_model', P + 'coop_space_npc_model.py --solo', minutes=4)  # BUG-0546: one game with a Sporepedia cache without a complete UFO (lane 5's of 2026-11-04) flies to an NPC empire's star: no fault at 0xE98DD0 (SPORE_FIX_OFF=game.ufo_model fails)
 add('space_npc_model_coop', P + 'coop_space_npc_model.py', ('extended',), minutes=5)  # BUG-0546: the same host in a co-op session with a guest
 add('space_diplo_mirror', P + 'coop_space_diplo_mirror.py', warm=True, minutes=3, fixture='space')  # the allies mirror's record is never shared by pol (BUG-0071)
+add('space_diplo_away', P + 'coop_space_diplo_away.py', minutes=4)  # a guest's diplomacy while the host is out of Space is kept (BUG-0544; SPORE_FIX_OFF=diplomacy.keep_away fails)
 add('space_trade', P + 'coop_space_trade.py', minutes=4)  # tool gifts and spice sales by real clicks (space_trade.cpp)
 add('space_trade_refund', P + 'coop_space_trade_refund.py', warm=True, minutes=3, fixture='space')  # gifts that come back outside Space are owed, not lost (BUG-0058)
+add('space_trade_end', P + 'coop_space_trade_end.py', warm=True, minutes=3, fixture='space')  # a gift the partner has is not given back when the session ends (BUG-0542; SPORE_FIX_OFF=trade.delivered fails)
+add('space_allies_own', P + 'coop_space_allies_own.py', warm=True, minutes=3, fixture='space')  # a partner's colony in a shared star system is a colony here too (BUG-0543; SPORE_FIX_OFF=allies.own_star fails)
 add('space_down_away', P + 'coop_space_down_away.py', minutes=5, fixture='space')  # a disabled ship and trips out of Space: paused in the same world, no death after a load, no invincibility left (BUG-0229, BUG-0228; SPORE_FIX_OFF=space.down_world / space.down_clear fail)
 add('space_gift_refund', P + 'coop_space_gift_refund.py', warm=True, minutes=3, fixture='space')  # spice of a gift that comes back outside Space is put back once in Space (BUG-0226; SPORE_FIX_OFF=space.gift_refund fails)
 # a partner's colonies as an allied empire in the guest's galaxy, its raid fought there, a clean save

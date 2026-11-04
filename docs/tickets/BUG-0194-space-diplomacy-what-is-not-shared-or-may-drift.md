@@ -14,7 +14,7 @@ commits:
 tests:
 signature:
 docs:
-related:
+related: BUG-0544
 ---
 
 ## Report
@@ -52,3 +52,13 @@ Not fixed yet.
 ## History
 - 2026-10-27: first recorded in docs/known-issues.md.
 - 2026-10-27: ticket backfilled from docs/known-issues.md (every entry carries its ticket id, CLAUDE.md 1).
+- 2026-11-04 (fix/w42-space-play): found and fixed a drift players meet: a guest's diplomacy while the host is
+  in an editor from Space was lost on both copies (BUG-0544, diplomacy.keep_away, test space_diplo_away). Checked
+  without a change: play_space.py on the `space` fixture makes no diplomacy at all (host table "0 empires" all run
+  long, lab 20261103-012624), so the "both copies' AI raise the same event" double count was not seen; a guest's hit
+  on a mirror of a host NPC ship is not applied locally (squadron.cpp returns 0), and the mirror's death goes
+  through TakeDamage with pol -1 and no attacker, so that path does not count twice. Still open from this list:
+  names and species per copy; the possible double count of AI events on the host (not seen); empires born after
+  the join; the comm screen is not clicked; rivals mode not tested here. Also noted: with 3+ players the host
+  relays a guest's change before applying it, so a host table sent in between could undo it on the third player
+  for up to 20 s (the host now sends no table while partners' changes wait; not tested with 3 players).

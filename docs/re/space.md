@@ -2207,3 +2207,37 @@ BUG-0546, follow-up of [lane 5's cache](#space-lane5-pollination).
   with the model type) gets the default UFO when this game has it, else the last ship model key SetModel had that
   was known (the player's own ship, set up first: 0675F7B2 in the test); SetVisible on a gfx whose GetModel is null
   returns (backstop). Not covered: a ship set up before any known ship in a session (the key is kept, as before).
+## Space play: gifts at the session end, partner colonies in own systems, diplomacy while away (2026-11-04, fix/w42-space-play)
+<a id="space-play-w42"></a>
+
+* ✔ **A trade gift without its answer when the own session ends** (space_trade.cpp, BUG-0542 of BUG-0196): the receiver adds a
+  tool gift or a spice sale in the frame it arrives and answers at once; only a rival offer waits for a click. The
+  sender's net::Connection knows whether the partner's side acknowledged the reliable message that carried it
+  (`Connection::next_rel_id` before and after the send, `rel_acked(lo, hi)`: no message of that range is left in
+  `rel_out_`); checked every frame while connected (the session end frees the peers first). A guest's message goes
+  to the host (id 0), which relays it in order, so "acknowledged" there means "on its way to the target".
+  Seen (lab 20261104-112227): `hold 2` on the host (added, no answer), the guest leaves: the host has the 5 charges,
+  the guest keeps 7 of 12; with `trade.delivered` off the guest had 12 again (20261104-112321): doubled.
+* ✔ **Our empire's star systems hold the partner's new colonies too** (space_allies.cpp, BUG-0543 of BUG-0197): in the usual
+  session both players start as one empire, so the home system (the `space` fixture's star 4587573 'Fibucius',
+  planets 00460035 Madas tech 5 and four free ones) is "mine" in both games; a colony the guest founds on
+  01460035 after the join was skipped by the host ("your own star system"). Every loaded cPlanet of that star
+  carries the star's pol in its cGameData (vt+0x4C GetPoliticalID: 800021CA on all five, also on the free ones).
+* ✔ A record-level colony there without `cEmpire_AddPlanet` (tech 5 + FillPlanetDataForTechLevel only) made the HUD
+  update 0x10743D0 (GOG 2024) fault 4 times at 0x107453A (`cPlanet_GetEmpire(active planet)` returned null and
+  +0x84 was read; lab 20261104-112528, -112743); with AddPlanet (as the game's own colony and the `allies
+  colonize` test command do) no fault (20261104-113000). ~ inferred: the empire lookup for the active planet goes
+  through the player's colony list. `cEmpire_AddPlanet` 0xC34FD0 (GOG 2024) is `if player: 0x1022040(rec)` (the
+  SpacePlayerData colony list: `+0x20..+0x28` vector<cPlanet*>, found through `RecordToPlanet`, a reference each by
+  vt+0xBC / released by vt+0xC0; then `FUN_00fd9c50()+0x188 +0x48 = 0`), `AddStarOwnership(star)`, and message
+  0x43F2585 when the player is an ally. The undo before a save takes the planet out of that list again.
+* ✔ Restoring such a planet's pol to -1 (as the mirror's undo does for a free star) left the star itself
+  ownerless: after `allies remove` the host's home star read emp=FFFFFFFF ("a home star") and the next apply
+  skipped every planet (lab 20261104-112743). ~ inferred: SetPoliticalID on a planet of a star sets the star's
+  owner. The own-star undo gives the planet the star's pol back.
+* ✔ **Diplomacy while a game is out of Space** (space_diplomacy.cpp, BUG-0544 of BUG-0194): partners' events and state changes
+  arriving while `in_space()` is false (an editor or an adventure entered from Space: the Space world lives on)
+  were dropped by the inbox task. A guest asks for the host's table on its way back, so only the host lost them,
+  and the host's next periodic table then removed the change from the guest that made it too (its 8 s guard had
+  run out). They now wait in the Space world they arrived in (`spaceext::world_epoch`) and are replayed when the
+  game is back in Space; the host sends no periodic table while such changes wait.

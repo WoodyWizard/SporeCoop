@@ -448,6 +448,8 @@ anchor so other docs can link to it:
 * `coop_space_death.py` failed once in the forced-jump step: after the OK the ship stayed dead for 47 s
   and the guard "respawn caption without a planet" did not fire (0), so the respawn caption had ended
   some other way; passed in the next run and on the base branch.
+* 2026-11-04 (fix/w42-space-play): coop_space_rescue.py flies off in 0.3 s pulses until the repair distance is
+  120 m (at most 2.5 s), not 2.5 s of W at once.
 * Ticket: BUG-0193.
 
 ## Space diplomacy: what is not shared or may drift (space_diplomacy.cpp)
@@ -470,6 +472,9 @@ anchor so other docs can link to it:
   empire's ships, missions and trade use the same hook but are not played in the test.
 * Rivals mode (feature 10) turns sharing off; it is not tested here (the switch belongs to
   space_rivalry.cpp).
+* 2026-11-04 (fix/w42-space-play): partners' changes arriving while a game is out of Space (an editor) are kept
+  and replayed (BUG-0544, `diplomacy.keep_away`); before, the host lost them and its next table took them from
+  the guest too.
 * Ticket: BUG-0194.
 
 ## Space map: a guest's colonies last only until it rejoins
@@ -523,6 +528,9 @@ anchor so other docs can link to it:
 * Spice values are the game's own (`spacetrading~` 0x34F1A4A x the difficulty multiplier, about
   5 600 to 24 000 per unit on normal), so one sale of 10 is worth 110 000 to 490 000 at 2x: big
   next to the fixture's $100 000. NPC stores pay similar money for the spices they want.
+* 2026-11-04 (fix/w42-space-play): "a gift or sale on its way when the own session ends comes back" is fixed
+  (BUG-0542, `trade.delivered`): what the partner's side acknowledged stays there. The leftover that did not fit
+  is lost when its answer is lost.
 * Ticket: BUG-0196.
 
 ## Space allies: what the mirror of a partner's colonies does not do (space_allies.cpp)
@@ -548,6 +556,9 @@ anchor so other docs can link to it:
   bit, enemies vectors); not tested here (feat/space-rivalry not merged).
   ~ superseded (2026-10-27): space_rivalry.cpp is on main now; whether this path is tested was not
   re-checked, BUG-0153.
+* 2026-11-04 (fix/w42-space-play): a partner's colony in a star system that is mine here (both own it since the
+  join) is now a record-level colony of my empire, undone before saves (BUG-0543, `allies.own_star`). Systems of an
+  NPC empire in my copy are still skipped.
 * Ticket: BUG-0197.
 
 ## Space: the galactic core finale, open ends (space_finale.cpp)

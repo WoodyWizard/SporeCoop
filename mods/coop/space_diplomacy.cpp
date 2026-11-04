@@ -83,6 +83,16 @@ static bool g_was_space, g_ask_pending;
 static uint32_t g_sent_contact, g_got_contact;
 static uint32_t g_sent_ev, g_sent_state, g_got_ev, g_got_state, g_snaps_sent, g_snaps_got, g_fixed, g_unknown,
     g_skipped_rivals;
+// BUG-0544: a partner's changes that arrive while this game is out of Space (an editor, an adventure
+// entered from Space: the same Space world lives on) were dropped. On a guest the next table brings
+// them back; on the host they were lost for good, and the host's next table took them away from the
+// partner who made them too (a gift paid, its relation gone). Now they wait (in the Space world they
+// came in) and are replayed once the game is back in Space. Off: dropped (before).
+static bool g_keep_fix = true;
+COOP_FIX("diplomacy.keep_away", "BUG-0544", g_keep_fix, "space: a partner's diplomacy changes made while I am out of Space are kept for me");
+static uint32_t g_in_epoch;              // spaceext::world_epoch() the messages of g_in came in
+static uint32_t g_kept_away, g_dropped_away;
+constexpr size_t kKeepMax = 512;
 static std::string g_last_notice;
 static std::vector<std::string> g_log; // last messages (coop.space diplomacy log)
 
@@ -587,11 +597,25 @@ static void inbox_task(void*)
 {
     g_in_task = false;
     if (!active() || !sharing()) { // not in Space (loading, another stage): entering Space asks again
+        if (g_keep_fix && sharing() && !g_in.empty() && g_in_epoch == spaceext::world_epoch()) {
+            g_kept_away = (uint32_t)g_in.size(); // the same Space world: replayed when we are back (tick)
+            g_snap_in.clear();
+            g_snap_ready = false;
+            return;
+        }
+        g_dropped_away += (uint32_t)g_in.size();
         g_in.clear();
         g_snap_in.clear();
         g_snap_ready = false;
         return;
     }
+    if (g_in_epoch != spaceext::world_epoch()) { // kept for a world that is gone
+        g_dropped_away += (uint32_t)g_in.size();
+        g_in.clear();
+    }
+    if (g_kept_away && !g_in.empty())
+        log_line(std::to_string(g_in.size()) + " partner changes made while out of Space replayed");
+    g_kept_away = 0;
     auto in = std::move(g_in);
     g_in.clear();
     g_applying = true;
@@ -615,6 +639,23 @@ static void inbox_task(void*)
     }
     g_applying = false;
 }
+static void schedule();
+// a partner's message to replay (outside the frame)
+static void queue_in(uint8_t origin, const Out& m)
+{
+    if (g_in.empty() || g_in_epoch != spaceext::world_epoch()) {
+        g_dropped_away += (uint32_t)g_in.size(); // (another Space world: they meant the old one)
+        g_in.clear();
+        g_in_epoch = spaceext::world_epoch();
+    }
+    if (g_in.size() >= kKeepMax) {
+        g_in.erase(g_in.begin());
+        g_dropped_away++;
+    }
+    g_in.push_back({origin, m});
+    schedule();
+}
+
 static void schedule()
 {
     if (!g_in_task) {
@@ -675,10 +716,8 @@ static void on_message(uint8_t kind, uint8_t origin, net::Reader& r)
         Out m{kind, r.u32(), 0, 0, 0, {}};
         m.ev = r.u8() == 2 ? kContacted : kMet;
         m.name = r.str8();
-        if (r.ok()) {
-            g_in.push_back({origin, m});
-            schedule();
-        }
+        if (r.ok())
+            queue_in(origin, m);
     } else if (kind == K_EVENT || kind == K_STATE) {
         Out m{kind, r.u32(), 0, 0, 0, {}};
         m.first = r.u8();
@@ -690,8 +729,7 @@ static void on_message(uint8_t kind, uint8_t origin, net::Reader& r)
         m.name = r.str8();
         if (!r.ok())
             return;
-        g_in.push_back({origin, m});
-        schedule();
+        queue_in(origin, m);
     } else if (kind == K_SNAP) {
         if (spaceext::is_host())
             return;
@@ -724,8 +762,7 @@ static void on_message(uint8_t kind, uint8_t origin, net::Reader& r)
         }
     } else if (kind == K_ASK) {
         if (spaceext::is_host()) { // after the messages that came before it (same queue)
-            g_in.push_back({origin, Out{K_ASK, 0, origin, 0, 0, {}}});
-            schedule();
+            queue_in(origin, Out{K_ASK, 0, origin, 0, 0, {}});
         }
     }
 }
@@ -745,6 +782,8 @@ static void tick(double now)
         g_out.clear();
         return;
     }
+    if (g_kept_away && !g_in.empty() && !g_in_task)
+        schedule(); // back in Space: the partners' changes kept meanwhile (BUG-0544)
     if (spaceext::rivals()) {
         g_out.clear();
         return;
@@ -780,7 +819,8 @@ static void tick(double now)
         log_line(buf);
     }
     g_out.clear();
-    if (spaceext::is_host() && active() && now - g_last_snap > 20)
+    // (not while partners' changes wait to be replayed: the table would not have them yet)
+    if (spaceext::is_host() && active() && now - g_last_snap > 20 && (g_in.empty() || !g_keep_fix))
         send_snapshot(0xFF);
 }
 
@@ -838,13 +878,13 @@ static std::vector<spaceext::Row> rows()
 
 static std::string status()
 {
-    char b[300];
+    char b[360];
     snprintf(b, sizeof b,
              "diplomacy: %s sent ev=%u state=%u contact=%u got ev=%u state=%u contact=%u snaps sent=%u got=%u fixed=%u"
-             " unknown=%u rivals_skipped=%u",
+             " unknown=%u rivals_skipped=%u kept_away=%u dropped_away=%u",
              a_ApplyEv && o_ApplyEv ? "on" : "no hooks", g_sent_ev, g_sent_state, g_sent_contact, g_got_ev, g_got_state,
              g_got_contact, g_snaps_sent,
-             g_snaps_got, g_fixed, g_unknown, g_skipped_rivals);
+             g_snaps_got, g_fixed, g_unknown, g_skipped_rivals, (unsigned)(g_kept_away ? g_in.size() : 0), g_dropped_away);
     return b;
 }
 

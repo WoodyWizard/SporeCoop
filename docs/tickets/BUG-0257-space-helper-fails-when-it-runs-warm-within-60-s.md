@@ -1,19 +1,19 @@
 ---
 id: BUG-0257
 title: space_helper fails when it runs warm within 60 s after a test that disabled the guest (space_stale)
-status: open
+status: fixed
 kind: test
 stage: Space
 reported: 2026-10-28
 source: 
 role: 
-versions: 
-fixed_in:
-branch:
-commits:
-tests:
+versions: 0.7.5 and earlier
+fixed_in: unreleased
+branch: fix/w42-space-play
+commits: 16d9960c, f8e809cb
+tests: space_down_reload, space_helper
 signature:
-docs:
+docs: docs/06-testing.md#testing-space-play-w42
 related:
 ---
 
@@ -22,14 +22,19 @@ Seen in lab run 20261028-232331 (lane 3, fix/w5-space): `space_helper` ran warm 
 
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+Observed (lab 20261104-111801, the fix off): the guest disabled, then within 60 s the warm reset (leave, the host
+loads a fresh copy of the save, the guest joins and loads the host's world): the guest's first lethal hit next to
+the host destroyed its ship (state 2). `filter_own_damage` refused a new disable while `now - g_last_down < 60`,
+and that time survived the session end and the load. Not only a test problem: a player who was disabled and
+rejoins (or the host loads) within a minute loses the ship to the first lethal hit.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+spacecoop.cpp: the 60 s count only within the Space world of the last disable (`spaceext::world_epoch`). Switch
+`coop.fix space.down_epoch off`.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+- FAIL (space.down_epoch off): out/lab/20261104-111801.
+- PASS: out/lab/20261104-111653; space_stale then space_helper warm on the same lane: out/lab/20261104-111920.
 
 ## History
 - 2026-10-28: opened.
