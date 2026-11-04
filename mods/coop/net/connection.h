@@ -89,6 +89,18 @@ public:
     // first: ahead of what is queued (the player state must not wait behind a big snapshot)
     void send_unreliable(uint8_t type, const Writer& w, bool first = false);
     size_t pending_reliable() const { return rel_out_.size(); }
+    // the rel_id the next reliable message (or its first piece) gets; with it a caller marks the
+    // messages it sends: [before, after) of one send
+    uint16_t next_rel_id() const { return next_rel_id_; }
+    // every reliable message with a rel_id in [lo, hi) was acknowledged by the peer (its transport
+    // has it and delivers it in order), BUG-0196
+    bool rel_acked(uint16_t lo, uint16_t hi) const
+    {
+        for (auto& m : rel_out_)
+            if ((uint16_t)(m.rel_id - lo) < (uint16_t)(hi - lo))
+                return false;
+        return true;
+    }
 
     // Builds the next datagram if anything is due (messages, acks, keepalive).
     bool build_packet(uint32_t now, std::vector<uint8_t>& out);
