@@ -67,5 +67,6 @@ bool center(net::Vec3& p);
 // host's shots it shows (attacker: the combatant of a mirror, or of a turret it fired from)
 void fire_observed(void* tool, void* owner, const float* aim, void* target, bool fired);
 bool hit_is_cosmetic(void* attacker);
+void fire_local(void* owner, uintptr_t ret, bool fired); // BUG-0530 diagnostics (guest)
 
 } // namespace civ

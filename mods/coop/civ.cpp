@@ -420,6 +420,28 @@ static bool vtable_in_game(const void* obj)
     return vt >= lo && vt + 0x24 <= hi;
 }
 
+// BUG-0530 (diagnostics): FireTool calls a guest's game makes itself in Civ (not guest_fire's copies), by caller
+static bool g_in_guest_fire;
+struct LocalFire {
+    uint32_t calls = 0, fired = 0;
+    uintptr_t owner_vt = 0;
+};
+static std::map<uintptr_t, LocalFire> g_local_fire;
+void fire_local(void* owner, uintptr_t ret, bool fired)
+{
+    if (g_in_guest_fire || !is_guest() || game::mode_id() != modes::kCiv || !owner)
+        return;
+    auto& e = g_local_fire[ret];
+    e.calls++;
+    e.fired += fired;
+    void* o = (uint8_t*)owner - kVSpatial;
+    if (!e.owner_vt && !IsBadReadPtr(o, 4))
+        e.owner_vt = *(uintptr_t*)o;
+    if (fired && e.fired == 1 && g_local_fire.size() <= 16)
+        H->log(M, SK_INFO, "civ: this guest's game fired a tool itself: FireTool from 0x%08X (owner vtable %08X, noun %08X)",
+               (unsigned)ret, (unsigned)e.owner_vt, e.owner_vt && vtable_in_game(o) ? game::noun_id(o) : 0u);
+}
+
 void fire_observed(void* tool, void* owner, const float* aim, void* target, bool fired)
 {
     if (!g_fix_shots || !owner || !aim || !tool || !is_host() || !active())
@@ -658,8 +680,10 @@ static void guest_fire(double now)
                       s.aim.z + tp.z - (s.tkind == 3 ? s.tpos.z : tp.z)};
         }
         float aim[3] = {ap.x, ap.y, ap.z};
+        g_in_guest_fire = true;
         int fired = thiscall<int>(a_FireTool, mgr, tool, (uint8_t*)o + kVSpatial, (const float*)aim, -1, 0,
                                   t ? (void*)((uint8_t*)t + kVSpatial) : nullptr, 0);
+        g_in_guest_fire = false;
         if (fired & 0xFF) { // FireTool returns a bool in al (BUG-0530)
             s.done++;
             g_shots_fired++;
@@ -3398,10 +3422,17 @@ std::string status()
     char bh[160];
     snprintf(bh, sizeof bh, "building_hp: fix=%d tx=%u rx=%u lowered=%u raised=%u no_match=%u\n", (int)g_fix_building_hp,
              g_hp_tx, g_hp_rx, g_hp_lowered, g_hp_raised, g_hp_nomatch);
+    std::string lf = "local_fire:";
+    for (auto& [ra, e] : g_local_fire) {
+        char x[64];
+        snprintf(x, sizeof x, " %08X=%u/%u(vt %08X)", (unsigned)ra, e.fired, e.calls, (unsigned)e.owner_vt);
+        lf += x;
+    }
+    lf += "\n";
     char tu[160];
     snprintf(tu, sizeof tu, "turrets: fix=%d tx=%u rx=%u blocked=%u added=%u removed=%u\n", (int)g_fix_turrets, g_turret_tx,
              g_turret_rx, g_turrets_blocked, g_turrets_added, g_turrets_removed);
-    return std::string(b) + pl + sh + bh + tu;
+    return std::string(b) + pl + sh + bh + tu + lf;
 }
 
 void for_each_target(void (*fn)(const char* kind, int id, int owner, const net::Vec3& pos, void* user), void* user)
