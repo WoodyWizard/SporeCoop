@@ -1880,3 +1880,30 @@ other has not (both landed, `coop.census all 3000 0 0 0`); not the camera's leve
 * Not fixed. Ticket: BUG-0540
 - BUG-0550: Creature: an NPC 9 m over the ground on the host is drawn on the ground on the guest (seen once in play_creature, sync-check `n: 1 apart`).
 - BUG-0551: Creature: a chat line typed while the host pauses to save the world for a returning guest can be lost (seen once in play_creature).
+
+Player reports 2026-11-04 (0.7.5, Discord bug-reports; not analysed yet):
+- BUG-0554: Creature: the guest's creature is not stunned by an NPC's charge
+- BUG-0555: Creature: NPCs bite and charge the guest's creature while it flies (glides)
+- BUG-0556: Creature: creatures the host summons with Summon Flock are not friendly (green) to the guest
+- BUG-0557: Creature: the guest cannot eat some bodies of creatures the players killed
+- BUG-0558: Creature: the UFO that picks up the players at the end of Creature cannot pick up the guest (the guest does not see the ship)
+- BUG-0559: Creature: parts of a pack the guest lacks (Creepy & Cute) are drawn as big blocks, and the host's colours are another shade on the guest
+- BUG-0560: Creature: the host gets a lot of DNA again after going into the editor
+- BUG-0561: Creature: an allied nest has no ally (green) icon on the guest's minimap, only the grey discovered mark
+- BUG-0562: Creature: an NPC creature backing away from the guest gets stuck inside its nest (video)
+- BUG-0563: Tribe: the guest's creature from Creature stage appears as an enemy monster at the start of Tribe; killed, it leaves meat that never runs out
+- BUG-0564: Tribe: after the guest dies, its map still shows villages that do not exist any more
+- BUG-0565: Tribe: every village's relation is neutral on the guest, while the host sees them aggressive and slightly aggressive
+- BUG-0566: Tribe: the guest does not see an enemy village's hut (hub) health go down when the players attack it
+- BUG-0567: Tribe: a building is broken (bugged) on the guest after the guest dies
+- BUG-0568: Tribe: no music in the guest's Tribe game
+- BUG-0569: Tribe: the guest sees no animations
+- BUG-0570: Tribe: no red target circle under an enemy the guest targets
+- BUG-0571: Tribe: villages are founded (spawn) much faster than in the single-player game
+- BUG-0572: Tribe: after the third restart the guest does not see the tribe's food
+- BUG-0573: Tribe: the guest's tribe members do not eat on their own, they must be ordered to eat
+- BUG-0574: Tribe: two buildings stand right next to each other on the guest
+- BUG-0575: Tribe: the guest crashed after double-clicking the home icon (3010a413:SporeApp.exe+0x6826F3)
+- BUG-0576: Tribe -> Civ: black screen after evolving from Tribe into the city stage
+- BUG-0577: After a rejoin the game shows the Cell and Creature stages as not done yet (stage progress lost)
+- BUG-0578: Crash at Graphics::cModelWorld::FinishBackgroundLoad+0x2735 on 0.7.3.6 (3010a413, mode none)
