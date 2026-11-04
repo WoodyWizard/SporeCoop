@@ -283,7 +283,42 @@ def stops(pup):
     return ev
 
 
-def analyse(obs_rows, walker_rows, label):
+AIR_MIN, AIR_PEAK, AIR_SHOWN = 0.4, 0.6, 0.5  # m, m, share of the peak
+
+
+def airs(pup):
+    """BUG-0376: the walker's jumps as the observer's game sees them: episodes in which the walker's target (its own
+    position) is more than AIR_MIN over the observer's ground (peak at least AIR_PEAK), and whether the drawn puppet rose
+    to AIR_SHOWN of that peak in the episode or the 0.2 s after it (the puppet that stays on the ground: 0 m)"""
+    ev, i, n = [], 0, len(pup)
+    while i < n:
+        if pup[i].get('ht') is None or pup[i]['ht'] <= AIR_MIN:
+            i += 1
+            continue
+        j = i
+        while j + 1 < n and pup[j + 1].get('ht') is not None and pup[j + 1]['ht'] > AIR_MIN:
+            j += 1
+        peak = max(r['ht'] for r in pup[i:j + 1])
+        drawn = max(r['hd'] for r in pup[i:n] if r['t'] <= pup[j]['t'] + 0.2)
+        if peak >= AIR_PEAK and j - i >= 2:
+            ev.append((round(pup[i]['t'], 1), round(peak, 2), round(drawn, 2), drawn >= AIR_SHOWN * peak))
+        i = j + 1
+    return ev
+
+
+def air_frames(pup):
+    """BUG-0376, frame by frame: the frames in which the walker's target is more than AIR_MIN over the observer's ground,
+    and those of them in which the next frame draws the puppet at least AIR_SHOWN as high (what a frame draws was placed
+    in the frame before)"""
+    n = ok = 0
+    for a, b in zip(pup, pup[1:]):
+        if a.get('ht') is not None and a['ht'] > AIR_MIN:
+            n += 1
+            ok += b['hd'] >= AIR_SHOWN * a['ht']
+    return n, ok
+
+
+def analyse(obs_rows, walker_rows, label, air_exempt=False):
     """per-frame motion of the walker's puppet in the observer's game"""
     own = [r for r in walker_rows if r['who'] == 255]
     top = pct([r['gv'] for r in own if r['gv'] > 0.3], 0.95) or 5.0  # the walker's own top speed
@@ -305,7 +340,13 @@ def analyse(obs_rows, walker_rows, label):
         step = math.dist(a['d'], b['d'])
         steps.append(step / dt)
         if step > max(TP_MIN, TP_FACTOR * top * allow_dt):
-            tps.append((round(b['t'], 2), round(step, 2), round(dt * 1000)))
+            # BUG-0376: the walker's own creature put 1.5 m up (coop.abilities lift: the hops) is a step of its
+            # target too; the puppet that follows it to its target is no jump of the driving
+            k = pup.index(b)
+            tj = [math.dist(pup[m]['tgt'], pup[m + 1]['tgt']) for m in range(max(0, k - 12), k)
+                  if math.dist(pup[m]['tgt'], pup[m + 1]['tgt']) > max(0.3, 2.5 * top * max(0.001, pup[m + 1]['t'] - pup[m]['t']))]
+            if not (air_exempt and tj and (step <= sum(tj) + 0.3 or math.dist(b['d'], b['tgt']) < 0.3)):
+                tps.append((round(b['t'], 2), round(step, 2), round(dt * 1000)))
         if step >= 0.2 * b['rv'] * dt:
             moving += 1
         if b['gv'] > 0.5:
@@ -357,6 +398,7 @@ def analyse(obs_rows, walker_rows, label):
         'falls': falls(pup), 'own_falls': falls(own),
         'under': [round(r['hd'], 2) for r in pup if r.get('hd') is not None and r['hd'] < UNDER],
         'hd_min': min((r['hd'] for r in pup if r.get('hd') is not None), default=0.0),
+        'airs': airs(pup), 'air_frames': air_frames(pup),
     }
     return res
 
@@ -403,7 +445,10 @@ def beside(walker, observer, d=4.0):
     time.sleep(3.0)
 
 
-def direction(walker, observer, wname, oname, rng, secs, ck, stand=0, jumps=0.0, ground=False):
+AIR_EPISODES, AIR_OK = 5, 0.8  # (0.7.4: 21-22 of 24 hops on the ground)
+
+
+def direction(walker, observer, wname, oname, rng, secs, ck, stand=0, jumps=0.0, ground=False, air=False):
     beside(walker, observer)
     watch = Watch(observer)
     watch.start()
@@ -440,7 +485,7 @@ def direction(walker, observer, wname, oname, rng, secs, ck, stand=0, jumps=0.0,
     with open(path, 'w') as f:
         json.dump({'observer': obs, 'walker': wal}, f)
     print(f'  per-frame samples: {path}', flush=True)
-    r = analyse(obs, wal, f'{oname} watches {wname}')
+    r = analyse(obs, wal, f'{oname} watches {wname}', air_exempt=air)
     print(f'  {wname} walked: {"; ".join(log)}', flush=True)
     print(f'  {r["label"]}: {r["frames"]} frames while it walks of {r["samples"]} puppet samples at '
           f'{r["fps"]:.0f} fps; walker top speed {r["top"]:.2f} m/s', flush=True)
@@ -482,6 +527,17 @@ def direction(walker, observer, wname, oname, rng, secs, ck, stand=0, jumps=0.0,
         ck(r['falls'] <= r['own_falls'] + 1, f'{r["label"]}: the puppet does not start falling ("jumping") more '
            f'than the walker\'s own creature ({r["falls"]} <= {r["own_falls"]} + 1)')
         ck(not r['under'], f'{r["label"]}: the puppet is never under the observer\'s ground ({len(r["under"])} frames)')
+    ar = r['airs']
+    shown = sum(1 for x in ar if x[3])
+    print(f'    jumps of the walker (its target over {AIR_MIN} m, peak >= {AIR_PEAK} m): {len(ar)}, drawn up to at least '
+          f'{AIR_SHOWN:.0%} of the peak in {shown}; (t, peak, drawn, shown) {ar[:10]}', flush=True)
+    an, aok = r['air_frames']
+    print(f'    frames with the walker\'s target over {AIR_MIN} m: {an}, the puppet drawn at least {AIR_SHOWN:.0%} as high '
+          f'in the next frame in {aok} ({aok / an if an else 0:.0%})', flush=True)
+    if air:  # BUG-0376
+        ck(len(ar) >= AIR_EPISODES and an and aok >= AIR_OK * an,
+           f'{r["label"]}: the walker\'s jumps leave the ground on the observer\'s screen too (drawn up in {aok} of {an} '
+           f'frames >= {AIR_OK:.0%}, {len(ar)} jumps >= {AIR_EPISODES})')
     ck(r['near'] >= 150 * fps_k and r['near_gait'] >= GAIT_MIN,
        f'{r["label"]}: the puppet walks where the observer sees it (walk gait in {r["near_gait"]:.0%} >= {GAIT_MIN:.0%} '
        f'of {r["near"]} frames on its screen)')
@@ -514,6 +570,7 @@ def main():
     ap.add_argument('--seed', type=int, default=None)
     ap.add_argument('--secs', type=float, default=25)
     ap.add_argument('--jumps', type=float, default=0, help='the walker jumps (Space) in this share of its walks and on the spot')
+    ap.add_argument('--air', action='store_true', help='also check that the walker\'s jumps are shown (BUG-0376)')
     ap.add_argument('--ground', action='store_true', help='also check falls and the height over the ground (BUG-0366/0367)')
     ap.add_argument('--goto', default='', help='x,y,z: both players go there first (hilly ground, BUG-0366)')
     ap.add_argument('--stand', type=float, default=0, help='the walker stands this long after its walk (s)')
@@ -545,9 +602,9 @@ def main():
         for c in (host, guest):
             print('  ' + cmd + ': ' + c.call(cmd)['out'].strip(), flush=True)
     if a.dir in ('host', 'both'):
-        direction(host, guest, 'host', 'guest', rng, a.secs, ck, a.stand, a.jumps, a.ground)
+        direction(host, guest, 'host', 'guest', rng, a.secs, ck, a.stand, a.jumps, a.ground, a.air)
     if a.dir in ('guest', 'both'):
-        direction(guest, host, 'guest', 'host', rng, a.secs, ck, a.stand, a.jumps, a.ground)
+        direction(guest, host, 'guest', 'host', rng, a.secs, ck, a.stand, a.jumps, a.ground, a.air)
     ck.faults(host=host, guest=guest)
     return ck.result()
 

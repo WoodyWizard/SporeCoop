@@ -107,6 +107,9 @@ bool drawn_state(void* c, net::Vec3* drawn, uint32_t* anim);
 // gait state (AnimatedCreature +0x17C -> +0x15B8, two ints: 0 = no gait), the creature's +0x137 and
 // its speed state +0xF98. False when it has no animation.
 bool gait_state(void* c, int* gait, int* gait2, int* moving, int* speed_state);
+// BUG-0376: +0x137, 1 while the creature is grounded on the terrain, 0 while it falls or stands on an object
+bool grounded(void* c);
+void set_grounded(void* c, bool on);
 
 // Animation events: called for every PlayAnimation/PlayAnimationTo on any creature.
 using AnimListener = void (*)(void* creature, uint32_t anim_id, int block, bool disable_blend, bool to_target);

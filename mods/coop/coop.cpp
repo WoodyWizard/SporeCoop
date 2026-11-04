@@ -722,6 +722,11 @@ int c_track(void*, int argc, const char* const* argv, SkOut* out)
             g_track_lift = (float)atof(argv[2]);
         SAY("lift %.2f\n", g_track_lift);
         return 0;
+    } else if (!strcmp(a, "air")) { // tests (BUG-0376): the puppet in the air 0 placed + not grounded, 1 placed, 2 teleported, 3 walked
+        if (argc > 2)
+            modes::g_puppet_air_variant = atoi(argv[2]);
+        SAY("air %d\n", modes::g_puppet_air_variant);
+        return 0;
     } else if (!strcmp(a, "novel")) {
         if (argc > 2)
             g_track_novel = atoi(argv[2]) != 0;
@@ -4104,8 +4109,8 @@ int c_status(void*, int, const char* const*, SkOut* out)
                 : g_mode == modes::kCell   ? *(uint32_t*)((uint8_t*)r.puppet + 0xFC) // cell model
                                            : 0u);
             if (g_mode == modes::kCreature)
-                SAY("   drive err=%.2f speed=%.2f nudges=%u kept=%u teleports=%u walk_goals=%u jumps=%u\n", r.drv.last_err,
-                    r.drv.last_speed, r.drv.nudges, r.drv.nudges_kept, r.drv.teleports, r.drv.goals, r.drv.jumps);
+                SAY("   drive err=%.2f speed=%.2f nudges=%u kept=%u teleports=%u walk_goals=%u jumps=%u airs=%u\n", r.drv.last_err,
+                    r.drv.last_speed, r.drv.nudges, r.drv.nudges_kept, r.drv.teleports, r.drv.goals, r.drv.jumps, r.drv.airs);
         }
         // tests (BUG-0507): the puppet the mod holds is a live creature in the game's own object list
         if (r.puppet && creature_puppet(r.puppet_adapter))
