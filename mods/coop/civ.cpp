@@ -427,6 +427,29 @@ struct LocalFire {
     uintptr_t owner_vt = 0;
 };
 static std::map<uintptr_t, LocalFire> g_local_fire;
+// BUG-0530 (diagnostics): shots by the tool's strategy key (tool +0x178: which weapon made it), host and guest
+static std::map<uint32_t, uint32_t> g_shot_tools;
+static void note_tool(void* tool)
+{
+    if (tool && !IsBadReadPtr(tool, 0x17C) && g_shot_tools.size() < 32)
+        g_shot_tools[F<uint32_t>(tool, 0x178)]++;
+}
+static void shots_log(double now) // BUG-0530 (diagnostics): the shots by weapon every 120 s in the game log
+{
+    static double last = -1;
+    if (last >= 0 && now - last < 120)
+        return;
+    last = now;
+    if (g_shot_tools.empty())
+        return;
+    std::string t;
+    for (auto& [k, n] : g_shot_tools) {
+        char x[32];
+        snprintf(x, sizeof x, " %08X=%u", k, n);
+        t += x;
+    }
+    H->log(M, SK_INFO, "civ: shots by weapon (%s):%s", is_host() ? "host, fired" : "guest, copies fired", t.c_str());
+}
 void fire_local(void* owner, uintptr_t ret, bool fired)
 {
     if (g_in_guest_fire || !is_guest() || game::mode_id() != modes::kCiv || !owner)
@@ -450,6 +473,8 @@ void fire_observed(void* tool, void* owner, const float* aim, void* target, bool
         g_shots_tried++;
         return;
     }
+    if (fired)
+        note_tool(tool);
     void* o = (uint8_t*)owner - kVSpatial;
     Shot s;
     auto it = g_hv.find(o);
@@ -484,6 +509,7 @@ void fire_observed(void* tool, void* owner, const float* aim, void* target, bool
 
 static void host_send_shots(double now)
 {
+    shots_log(now);
     if (!g_fix_shots || now - g_shots_sent_at < kShotSend)
         return;
     g_shots_sent_at = now;
@@ -602,6 +628,7 @@ static void find_wanted(std::vector<Want>& w)
 
 static void guest_fire(double now)
 {
+    shots_log(now);
     if (!g_fix_shots || !a_FireTool || !a_ToolMgrGet || local_play()) {
         g_shots_in.clear();
         return;
@@ -685,6 +712,7 @@ static void guest_fire(double now)
                                   t ? (void*)((uint8_t*)t + kVSpatial) : nullptr, 0);
         g_in_guest_fire = false;
         if (fired & 0xFF) { // FireTool returns a bool in al (BUG-0530)
+            note_tool(tool);
             s.done++;
             g_shots_fired++;
         } else
@@ -3426,6 +3454,12 @@ std::string status()
     for (auto& [ra, e] : g_local_fire) {
         char x[64];
         snprintf(x, sizeof x, " %08X=%u/%u(vt %08X)", (unsigned)ra, e.fired, e.calls, (unsigned)e.owner_vt);
+        lf += x;
+    }
+    lf += " tools:";
+    for (auto& [k, n] : g_shot_tools) {
+        char x[32];
+        snprintf(x, sizeof x, " %08X=%u", k, n);
         lf += x;
     }
     lf += "\n";
