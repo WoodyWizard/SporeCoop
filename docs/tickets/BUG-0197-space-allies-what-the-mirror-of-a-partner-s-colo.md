@@ -14,7 +14,7 @@ commits:
 tests:
 signature:
 docs:
-related:
+related: BUG-0543
 ---
 
 ## Report
@@ -55,3 +55,9 @@ Not fixed yet.
 ## History
 - 2026-10-27: first recorded in docs/known-issues.md.
 - 2026-10-27: ticket backfilled from docs/known-issues.md (every entry carries its ticket id, CLAUDE.md 1).
+- 2026-11-04 (fix/w42-space-play): the case players meet most (a partner's new colony in a star system both
+  own since the join, "your own star system") fixed as BUG-0543 (allies.own_star, test space_allies_own): a
+  record-level colony of my empire, undone before saves. Still open from this list: a colony in an NPC empire's
+  system in my copy; the mirror's species is mine; a mirror (or own-system) colony has the game's one city, not the
+  partner's cities, buildings or stored spice; raids on an own-system copy are not mirrored (untested); the frozen
+  ally after a leave; rivals mode with the mirror as an enemy (not re-checked).

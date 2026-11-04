@@ -1,16 +1,16 @@
 ---
 id: BUG-0543
 title: Space allies: a partner's new colony in a star system both players own is not shown (the planet stays free)
-status: open
+status: fixed
 kind: desync
 stage: Space
 reported: 2026-11-04
 source: BUG-0197 (open end of space_allies.cpp)
 role: both
-versions: 
-fixed_in:
+versions: 0.7.5 and earlier
+fixed_in: unreleased
 branch: fix/w42-space-play
-commits:
+commits: a4a27f04
 tests: space_allies_own
 signature:
 docs: docs/re/space.md#space-play-w42

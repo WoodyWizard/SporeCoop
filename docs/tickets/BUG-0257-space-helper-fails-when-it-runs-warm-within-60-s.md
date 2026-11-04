@@ -10,7 +10,7 @@ role:
 versions: 0.7.5 and earlier
 fixed_in: unreleased
 branch: fix/w42-space-play
-commits: 16d9960c
+commits: 16d9960c, f8e809cb
 tests: space_down_reload, space_helper
 signature:
 docs: docs/06-testing.md#testing-space-play-w42

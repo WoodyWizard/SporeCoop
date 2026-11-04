@@ -1,16 +1,16 @@
 ---
 id: BUG-0544
 title: Space diplomacy: a guest's changes while the host is out of Space are lost on both copies
-status: open
+status: fixed
 kind: desync
 stage: Space
 reported: 2026-11-04
 source: BUG-0194 (open end of space_diplomacy.cpp)
 role: both
-versions: 
-fixed_in:
+versions: 0.7.5 and earlier
+fixed_in: unreleased
 branch: fix/w42-space-play
-commits:
+commits: f8e809cb
 tests: space_diplo_away
 signature:
 docs: docs/re/space.md#space-play-w42
@@ -33,7 +33,9 @@ the game is back in Space; the host sends no periodic table while such messages 
 `coop.fix diplomacy.keep_away off`.
 
 ## Verification
-(filled in below)
+- FAIL (diplomacy.keep_away off): out/lab/20261104-114312 (the host never got the gift, the guest lost it
+  with the host's next table).
+- PASS: out/lab/20261104-114153; space_diplomacy on the same build: out/lab/20261104-114437.
 
 ## History
 - 2026-11-04: opened and fixed on fix/w42-space-play.

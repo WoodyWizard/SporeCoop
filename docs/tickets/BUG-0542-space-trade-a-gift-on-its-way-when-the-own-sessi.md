@@ -1,16 +1,16 @@
 ---
 id: BUG-0542
 title: Space trade: a gift on its way when the own session ends comes back although the partner has it (doubled)
-status: open
+status: fixed
 kind: bug
 stage: Space
 reported: 2026-11-04
 source: BUG-0196 (open end of space_trade.cpp)
 role: both
-versions: 
-fixed_in:
+versions: 0.7.5 and earlier
+fixed_in: unreleased
 branch: fix/w42-space-play
-commits:
+commits: ad8eaead
 tests: space_trade_end
 signature:
 docs: docs/re/space.md#space-play-w42
