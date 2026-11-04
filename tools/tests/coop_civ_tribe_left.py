@@ -53,9 +53,12 @@ def main():
     h1, g1 = tribe_objs(host), tribe_objs(guest)
     print(f'  after: host {h1}', flush=True)
     print(f'  after: guest {g1}', flush=True)
-    ck(all(g0[k] <= h0[k] for k in NOUNS.values()), f'before the capture the guest has no tribe objects of its own')
+    # bundles are dropped by fights and captures in each game on its own too (34 / 35 in a warm game, lab
+    # 20261104-131223): the village's own objects are compared, bundles printed (BUG-0548)
+    VILLAGE = [k for k in NOUNS.values() if k != 'game_bundle']
+    ck(all(g0[k] <= h0[k] for k in VILLAGE), f'before the capture the guest has no tribe objects of its own')
     # a capture drops bundles (the loot) in each game on its own (36 / 37 in lab 20261104-130500): not compared here
-    ck(all(g1[k] <= h1[k] for k in NOUNS.values() if k != 'game_bundle'),
+    ck(all(g1[k] <= h1[k] for k in VILLAGE),
        f'after the capture the guest has no tribe objects of its own')
     for i in (0, 0):
         print('  host razetribe:', host.call(f'coop.civ razetribe {i}')['out'].strip(), flush=True)
@@ -67,7 +70,7 @@ def main():
     print('  guest', next((ln for ln in guest.call('coop.civ')['out'].splitlines() if 'tribe_ruins:' in ln), ''), flush=True)
     # (the host's own vehicles may raid one more meanwhile)
     ck(h2['tribe'] <= h1['tribe'] - 2, f"the host's game destroyed two tribes ({h1['tribe']} -> {h2['tribe']})")
-    ck(all(g2[k] <= h2[k] for k in NOUNS.values()),
+    ck(all(g2[k] <= h2[k] for k in VILLAGE),
        f'after the raids the guest has no tribe objects the host does not have (host {h2}, guest {g2})')
     ck.faults(host=host, guest=guest)
     return ck.result()

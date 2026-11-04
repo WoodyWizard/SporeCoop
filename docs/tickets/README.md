@@ -552,3 +552,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0540](BUG-0540-space-a-city-s-cultural-targets-stand-at-other-p.md) | open | desync | Space | 2026-11-04 |  | Space: a city's cultural targets stand at other places in each game (campaign_space) |
 | [BUG-0541](BUG-0541-space-9-ornaments-by-one-colony-city-exist-in-on.md) | open | desync | Space | 2026-11-04 |  | Space: 9 ornaments by one colony city exist in one game only (Space:guest_only:ornament / host_only:ornament) |
 | [BUG-0546](BUG-0546-space-the-host-faults-at-0xe98dd0-ufogfx-setvisi.md) | open | bug | Space | 2026-11-04 |  | Space: the host faults at 0xE98DD0 (UfoGfx_SetVisible, null model) after a jump to an NPC empire's system in space_diplomacy, lane 5 only |
+| [BUG-0548](BUG-0548-civ-dropped-bundles-game-bundle-of-fights-and-ca.md) | open | desync | Civ | 2026-11-04 |  | Civ: dropped bundles (game_bundle) of fights and captures differ by one or two between the games |
