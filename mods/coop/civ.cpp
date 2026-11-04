@@ -374,6 +374,8 @@ struct Shot {
     uint8_t count = 0;   // BUG-0530: host: the shots that left (FireTool true); guest: the host's count
     uint8_t done = 0;    // guest: the host's shots this game fired (FireTool true)
     bool counted = false; // guest: a list of the host's fired shots (chunk kShotChunkFired)
+    bool stopped = false; // BUG-0530: the host's game stopped this weapon (cToolManager::OnMouseUp)
+    bool released = false; // guest: this game's copy of the weapon was stopped too
 };
 static std::map<std::pair<uint16_t, uint32_t>, Shot> g_shots;   // host: shooter -> last shot
 static std::map<std::pair<uint16_t, uint32_t>, Shot> g_shots_in; // guest: shooter -> its shots
@@ -400,6 +402,17 @@ static uint32_t g_shots_tried, g_shots_refused; // host: FireTool calls that mad
 // BUG-0530: a shot that left goes out at once (at most every 0.05 s), not with the next 0.2 s list: religious
 // projectiles and AoE areas live about a second, and 0.2-0.4 s of relay delay showed them in one game only
 static bool g_shot_new;
+// BUG-0530: an AoE weapon (cDefaultAoETool) makes its area once when it starts firing (tool +0x120) and keeps it
+// until cToolManager::OnMouseUp (0x0104FAA0, thiscall(mgr, tool) ret 4) stops the tool; cCombatSimulator::Update
+// stops a combatant's tool when its target is gone. The area sends cultural projectiles at what is inside. A guest's
+// copy of the weapon was never stopped: its area (and the area's cultural projectiles) stayed in the guest's game.
+// Now the host notes the stop of a listed shooter's tool, the guest stops its copy (and at the latest when the
+// shooter's list entry ends).
+static bool g_fix_shot_release = true;
+COOP_FIX("civ.shot_release", "BUG-0530", g_fix_shot_release,
+         "civ: a guest stops its copy of a host's weapon when the host's stops (no AoE area left behind)");
+static uintptr_t a_ToolMouseUp;
+static uint32_t g_shot_stops_seen, g_shot_released;
 static bool g_fix_shot_now = true;
 COOP_FIX("civ.shot_now", "BUG-0530", g_fix_shot_now,
          "civ: the host's new shots go to the guests at once (no 0.2 s wait for the next shot list)");
@@ -514,9 +527,11 @@ void fire_observed(void* tool, void* owner, const float* aim, void* target, bool
     g_shots_seen++;
 }
 
+static void tribe_count_log(double now); // BUG-0539 diagnostics (below)
 static void host_send_shots(double now)
 {
     shots_log(now);
+    tribe_count_log(now);
     bool soon = g_fix_shot_now && g_fix_shot_fired && g_shot_new && now - g_shots_sent_at >= 0.05;
     if (!g_fix_shots || (now - g_shots_sent_at < kShotSend && !soon))
         return;
@@ -549,8 +564,10 @@ static void host_send_shots(double now)
             w.f32(s->aim.x); w.f32(s->aim.y); w.f32(s->aim.z);
             w.u8(s->tkind); w.u16(s->tid); w.u32(s->tnoun);
             w.f32(s->tpos.x); w.f32(s->tpos.y); w.f32(s->tpos.z);
-            if (counted)
+            if (counted) {
                 w.u8(s->count);
+                w.u8(s->stopped ? 1 : 0);
+            }
         }
         for (auto& pl : C.sess->players())
             if (pl.id != 0)
@@ -570,8 +587,12 @@ static void guest_shots(net::Reader& r, bool counted)
         s.aim.x = r.f32(); s.aim.y = r.f32(); s.aim.z = r.f32();
         s.tkind = r.u8(); s.tid = r.u16(); s.tnoun = r.u32();
         s.tpos.x = r.f32(); s.tpos.y = r.f32(); s.tpos.z = r.f32();
-        if (counted)
+        uint8_t flags = 0;
+        if (counted) {
             s.count = r.u8();
+            flags = r.u8();
+        }
+        s.stopped = (flags & 1) != 0;
         if (!r.ok() || (s.kind != 1 && s.kind != 3) || !std::isfinite(s.aim.x) || !std::isfinite(s.aim.y) ||
             !std::isfinite(s.aim.z) || !std::isfinite(s.at.x))
             return;
@@ -583,16 +604,178 @@ static void guest_shots(net::Reader& r, bool counted)
         if (counted && g_fix_shot_now && !fresh && e.count != s.count)
             tried = -100; // a new shot of the host's: fired on this frame (the weapon's refire time still decides)
         uint8_t done = fresh ? (uint8_t)(s.count - 1) : e.done; // a shooter first heard of: its last shot
+        bool released = !fresh && e.released && s.stopped;
         e = s;
         e.tried = tried;
         e.counted = counted;
         e.done = done;
+        e.released = released;
+        if (s.stopped)
+            e.done = e.count; // fires no more
         if ((uint8_t)(e.count - e.done) > 3) // far behind (a hitch, lost lists): the last few only
             e.done = (uint8_t)(e.count - 3);
         // fires on until then (the next list keeps it going; not much past the host's last shot)
         e.seen = now + (counted ? kShotKeepFired + 0.2 : kShotKeep + 0.05);
         g_shots_rx++;
     }
+}
+
+// BUG-0539 (diagnostics): who destroys a Tribe stage tribe in Civ, and when the count of tribes changes
+constexpr uint32_t kTribeNoun = 0x018C6D19;
+static bool g_tribe_gone; // BUG-0539, host: a tribe was destroyed since the last list
+using DestroyInstance_t = void(SK_THISCALL*)(void*, void*);
+static DestroyInstance_t o_DestroyInstance;
+static std::map<uintptr_t, uint32_t> g_tribe_destroys;
+static void SK_THISCALL h_DestroyInstance(void* mgr, void* obj)
+{
+    if (obj && game::mode_id() == modes::kCiv && !IsBadReadPtr(obj, 4) && vtable_in_game(obj) &&
+        game::noun_id(obj) == kTribeNoun) {
+        uintptr_t ra = (uintptr_t)__builtin_return_address(0);
+        if (is_host())
+            g_tribe_gone = true; // BUG-0539: the guests hear of it with the next tribe list
+        if (g_tribe_destroys[ra]++ == 0 && g_tribe_destroys.size() <= 8)
+            H->log(M, SK_INFO, "civ: a tribe of the Tribe stage is destroyed here (%s), DestroyInstance from 0x%08X",
+                   is_host() ? "host" : is_guest() ? "guest" : "alone", (unsigned)ra);
+    }
+    o_DestroyInstance(mgr, obj);
+}
+// BUG-0539: the host's NPC vehicles raid the old Tribe stage villages (a behaviour tree action, 0xDCAAB0 "HR":
+// money and an event, then DestroyInstance of the tribe at 0xDCB2B2, its huts, tools, food mat and bundles go with
+// it); a guest's mirrors run no behaviour tree, so the guest's villages stood for good. The host sends the places of
+// its tribes in Civ (MSG_CIV_STATE chunk 0xFA, every 5 s and when one is destroyed); a guest destroys a tribe of its
+// own with no host tribe within 10 m (two looks in a row), the same DestroyInstance.
+static bool g_fix_tribe_ruins = true;
+COOP_FIX("civ.tribe_ruins", "BUG-0539", g_fix_tribe_ruins,
+         "civ: an old tribe village the host's vehicles raided is gone on the guests too");
+constexpr uint8_t kTribeChunk = 0xFA;
+static uintptr_t a_DestroyInst;
+static double g_tribes_sent_at = -100;
+static uint32_t g_tribes_tx, g_tribes_rx, g_tribes_removed;
+static std::unordered_map<void*, int> g_tribe_extra_seen; // guest: tribe -> looks without a host tribe
+static std::vector<std::pair<void*, net::Vec3>> tribes_here()
+{
+    std::vector<std::pair<void*, net::Vec3>> out;
+    game::for_each_object([](void* o, uint32_t noun, void* u) {
+        net::Vec3 p;
+        if (noun == kTribeNoun && game::object_alive(o) && game::object_position(o, p))
+            ((std::vector<std::pair<void*, net::Vec3>>*)u)->push_back({o, p});
+        return true;
+    }, &out);
+    return out;
+}
+static void host_send_tribes(double now)
+{
+    if (!g_fix_tribe_ruins || !(now - g_tribes_sent_at >= 5.0 || (g_tribe_gone && now - g_tribes_sent_at >= 0.5)))
+        return;
+    g_tribes_sent_at = now;
+    g_tribe_gone = false;
+    auto ts = tribes_here();
+    if (ts.size() > 80)
+        ts.resize(80); // 80 x 12 bytes: one packet
+    net::Writer w;
+    w.u16(0); w.u8(kTribeChunk); w.u8(0);
+    w.u8((uint8_t)ts.size());
+    for (auto& [t, p] : ts) {
+        w.f32(p.x); w.f32(p.y); w.f32(p.z);
+    }
+    for (auto& pl : C.sess->players())
+        if (pl.id != 0)
+            C.sess->send_unreliable_to(pl.id, net::MSG_CIV_STATE, w);
+    g_tribes_tx++;
+}
+static void guest_tribes(net::Reader& r)
+{
+    std::vector<net::Vec3> hp(r.u8());
+    for (auto& p : hp) {
+        p.x = r.f32(); p.y = r.f32(); p.z = r.f32();
+    }
+    if (!r.ok())
+        return;
+    g_tribes_rx++;
+    if (!g_fix_tribe_ruins || !a_DestroyInst || local_play() || game::mode_id() != modes::kCiv)
+        return;
+    auto here = tribes_here();
+    // a list without any tribe while this game has several: the host's world is not there yet (a load, a
+    // stage change), not a raid of all of them; and never more than two per list (a raid takes one at a time)
+    if (hp.empty() && here.size() > 2)
+        return;
+    int removed = 0;
+    std::unordered_map<void*, int> seen;
+    for (auto& [t, p] : here) {
+        bool host_has = false;
+        for (auto& q : hp)
+            if (net::dist(p, q) < 10.f) {
+                host_has = true;
+                break;
+            }
+        if (host_has)
+            continue;
+        int n = g_tribe_extra_seen.count(t) ? g_tribe_extra_seen[t] + 1 : 1;
+        if (n < 2 || removed >= 2) {
+            seen[t] = n;
+            continue;
+        }
+        removed++;
+        g_applying = true;
+        thiscall<void>(a_DestroyInst, nm(), t);
+        g_applying = false;
+        g_tribes_removed++;
+        H->log(M, SK_INFO, "civ: the old tribe village at (%.0f %.0f %.0f) is gone on the host: removed here (BUG-0539)", p.x,
+               p.y, p.z);
+    }
+    g_tribe_extra_seen = std::move(seen);
+}
+
+static void tribe_count_log(double now)
+{
+    static double last = -100;
+    static int known = -1;
+    if (now - last < 5)
+        return;
+    last = now;
+    int n = 0;
+    game::for_each_object([](void*, uint32_t noun, void* u) {
+        if (noun == kTribeNoun)
+            ++*(int*)u;
+        return true;
+    }, &n);
+    if (n != known)
+        H->log(M, SK_INFO, "civ: tribes of the Tribe stage in this game: %d (was %d, cities %u)", n, known,
+               (unsigned)all_cities().size());
+    known = n;
+}
+
+// host: a tool stops (cToolManager::OnMouseUp): a listed shooter's entry says so (BUG-0530)
+using ToolMouseUp_t = int(SK_THISCALL*)(void*, void*);
+static ToolMouseUp_t o_ToolMouseUp;
+static int SK_THISCALL h_ToolMouseUp(void* mgr, void* tool)
+{
+    if (g_fix_shot_release && g_fix_shot_fired && g_fix_shots && tool && is_host() && active() &&
+        !IsBadReadPtr(tool, 0x118)) {
+        void* owner = *(void**)((uint8_t*)tool + 0x114);
+        void* o = owner ? (uint8_t*)owner - kVSpatial : nullptr;
+        auto it = o ? g_hv.find(o) : g_hv.end();
+        std::pair<uint16_t, uint32_t> key{0, 0};
+        bool known = false;
+        if (it != g_hv.end()) {
+            key = {it->second.id, 0u};
+            known = true;
+        } else if (o && !IsBadReadPtr(o, 0x40) && vtable_in_game(o) && game::noun_id(o) == kTurretNoun) {
+            net::Vec3 at;
+            if (game::object_position(o, at)) {
+                key = {0, pos_key(at)};
+                known = true;
+            }
+        }
+        auto e = known ? g_shots.find(key) : g_shots.end();
+        if (e != g_shots.end() && !e->second.stopped) {
+            e->second.stopped = true;
+            e->second.seen = H->time_seconds(); // in the lists a while longer, so the guests hear of it
+            g_shot_new = true;
+            g_shot_stops_seen++;
+        }
+    }
+    return o_ToolMouseUp(mgr, tool);
 }
 
 // guest: the weapon of a local shooter (combatant vt 0x14, as cCombatSimulator::Update gets it)
@@ -637,9 +820,33 @@ static void find_wanted(std::vector<Want>& w)
         &w);
 }
 
+// BUG-0530: this game's copy of a host's weapon stops (vehicles; a turret's copy stops when its entry ends only
+// if found again, which needs the noun walk: turrets are military, no AoE)
+static void release_copy(Shot& s)
+{
+    s.released = true;
+    if (!g_fix_shot_release || !a_ToolMouseUp || s.kind != 1)
+        return;
+    auto g = g_gv.find(s.id);
+    void* o = g == g_gv.end() ? nullptr : g->second.v;
+    if (!o || !exists(o) || F<uint8_t>(o, kVDead))
+        return;
+    void* tool = weapon_of((uint8_t*)o + kVCombatant);
+    if (!tool || !F<uint8_t>(tool, 0x80)) // +0x80: firing (FireTool sets it, OnMouseUp clears it)
+        return;
+    void* mgr = skg::cdecl_call<void*>(a_ToolMgrGet);
+    if (!mgr)
+        return;
+    g_in_guest_fire = true;
+    thiscall<int>(a_ToolMouseUp, mgr, tool);
+    g_in_guest_fire = false;
+    g_shot_released++;
+}
+
 static void guest_fire(double now)
 {
     shots_log(now);
+    tribe_count_log(now);
     if (!g_fix_shots || !a_FireTool || !a_ToolMgrGet || local_play()) {
         g_shots_in.clear();
         return;
@@ -649,10 +856,16 @@ static void guest_fire(double now)
     for (auto it = g_shots_in.begin(); it != g_shots_in.end();) {
         Shot& s = it->second;
         if (now > s.seen) {
+            if (!s.released)
+                release_copy(s); // the host's list no longer has it: its weapon stopped there
             it = g_shots_in.erase(it);
             continue;
         }
         ++it;
+        if (s.stopped && !s.released) {
+            g_shot_stops_seen++;
+            release_copy(s);
+        }
         if (now - s.tried < kShotFireEvery || (s.counted && s.done == s.count))
             continue;
         s.tried = now;
@@ -1817,6 +2030,13 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
         H->hook_create(M, (void*)a_AddTurret, (void*)h_AddTurret, (void**)&o_AddTurret);
     else
         a_AddTurret = 0;
+    if (uintptr_t di = H->sym("Simulator::cGameNounManager::DestroyInstance")) { // BUG-0539
+        H->hook_create(M, (void*)di, (void*)h_DestroyInstance, (void**)&o_DestroyInstance);
+        a_DestroyInst = di;
+    }
+    a_ToolMouseUp = H->sym("Simulator::cToolManager::OnMouseUp"); // BUG-0530 (optional)
+    if (a_ToolMouseUp)
+        H->hook_create(M, (void*)a_ToolMouseUp, (void*)h_ToolMouseUp, (void**)&o_ToolMouseUp);
     a_FireTool = H->sym("Simulator::cToolManager::FireTool"); // BUG-0477 (optional)
     a_ToolMgrGet = H->sym("Simulator::cToolManager::Get");
     savestrip::add_filter(save_filter); // BUG-0470
@@ -2157,6 +2377,7 @@ static void host_tick(double now)
     boost_tick(now);
     movie_tick();
     host_send_shots(now); // BUG-0477
+    host_send_tribes(now); // BUG-0539
     if (now - g_last_send < 0.1)
         return;
     g_last_send = now;
@@ -3275,6 +3496,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             guest_building_hp(peek);
         else if (peek.ok() && chunk == kTurretChunk && chunks == 0) // BUG-0484: turrets
             guest_turrets(peek);
+        else if (peek.ok() && chunk == kTribeChunk && chunks == 0) // BUG-0539: old tribe villages
+            guest_tribes(peek);
         else
             guest_state(r);
     }
@@ -3312,6 +3535,7 @@ static void clear_coop_tables(bool restore_speed)
     g_hp_sent.clear();
     g_turret_sent.clear();
     g_turret_seen.clear();
+    g_tribe_extra_seen.clear();
 }
 
 void on_session_end()
@@ -3325,6 +3549,7 @@ void on_session_end()
     g_hp_sent.clear();
     g_turret_sent.clear();
     g_turret_seen.clear();
+    g_tribe_extra_seen.clear();
     g_hv.clear();
     g_hv_by_id.clear();
     g_gv.clear();
@@ -3455,9 +3680,9 @@ std::string status()
              planner_city() ? 1 : 0, g_planner_held, g_planner_kills_held, (unsigned)g_kill_later.size(),
              g_planner_picks_refused, (unsigned)g_held_builds.size(), g_build_orphans, g_save_stripped, g_cards_skipped, g_owner_unknown, g_met);
     char sh[320];
-    snprintf(sh, sizeof sh, "shots: fix=%d seen=%u tx=%u rx=%u active=%u fired=%u no_mirror=%u no_tool=%u hits_dropped=%u hits=%u no_attacker=%u att_vt=%08X targets=%u/%u no_target=%u counted=%d tried=%u refused=%u\n",
+    snprintf(sh, sizeof sh, "shots: fix=%d seen=%u tx=%u rx=%u active=%u fired=%u no_mirror=%u no_tool=%u hits_dropped=%u hits=%u no_attacker=%u att_vt=%08X targets=%u/%u no_target=%u counted=%d tried=%u refused=%u stops=%u released=%u\n",
              (int)g_fix_shots, g_shots_seen, g_shots_tx, g_shots_rx, (unsigned)g_shots_in.size(), g_shots_fired,
-             g_shots_nomirror, g_shots_notool, g_hits_dropped, g_hits_guest, g_hits_noatt, (unsigned)g_hit_att_vt, g_shots_tgt_found, g_shots_tgt_wanted, g_shots_notarget, (int)g_fix_shot_fired, g_shots_tried, g_shots_refused);
+             g_shots_nomirror, g_shots_notool, g_hits_dropped, g_hits_guest, g_hits_noatt, (unsigned)g_hit_att_vt, g_shots_tgt_found, g_shots_tgt_wanted, g_shots_notarget, (int)g_fix_shot_fired, g_shots_tried, g_shots_refused, g_shot_stops_seen, g_shot_released);
     char bh[160];
     snprintf(bh, sizeof bh, "building_hp: fix=%d tx=%u rx=%u lowered=%u raised=%u no_match=%u\n", (int)g_fix_building_hp,
              g_hp_tx, g_hp_rx, g_hp_lowered, g_hp_raised, g_hp_nomatch);
@@ -3474,6 +3699,10 @@ std::string status()
         lf += x;
     }
     lf += "\n";
+    char tr[120];
+    snprintf(tr, sizeof tr, "tribe_ruins: fix=%d tx=%u rx=%u removed=%u\n", (int)g_fix_tribe_ruins, g_tribes_tx, g_tribes_rx,
+             g_tribes_removed);
+    lf += tr;
     char tu[160];
     snprintf(tu, sizeof tu, "turrets: fix=%d tx=%u rx=%u blocked=%u added=%u removed=%u\n", (int)g_fix_turrets, g_turret_tx,
              g_turret_rx, g_turrets_blocked, g_turrets_added, g_turrets_removed);
@@ -3828,6 +4057,25 @@ std::string debug(const std::vector<std::string>& a)
         thiscall<int>(a_SetOrder, v, t, type, 1);
         thiscall<void>(a_OrderStamp, v, 0);
         return "attack ordered";
+    }
+    if (!a.empty() && (a[0] == "tribes" || a[0] == "razetribe")) {
+        // tribes: the old Tribe stage tribes in this game; razetribe <i>: the host's game destroys tribe i of that
+        // list (DestroyInstance, the last step of its vehicles' raid 0xDCAAB0; tests BUG-0539)
+        auto ts = tribes_here();
+        if (a[0] == "razetribe") {
+            size_t i = a.size() >= 2 ? (size_t)atoi(a[1].c_str()) : 0;
+            if (!is_host() || i >= ts.size() || !a_DestroyInst)
+                return "no such tribe (host only)";
+            thiscall<void>(a_DestroyInst, nm(), ts[i].first);
+            return "tribe destroyed";
+        }
+        std::string out;
+        for (auto& [t, p] : ts) {
+            char line[96];
+            snprintf(line, sizeof line, "tribe %p pos=(%.1f %.1f %.1f)\n", t, p.x, p.y, p.z);
+            out += line;
+        }
+        return out + "tribes " + std::to_string(ts.size());
     }
     if (a.size() >= 2 && (a[0] == "turrets" || a[0] == "addturret" || a[0] == "budget")) {
         // turrets <host city index>: the city's turrets; addturret <ci>: one more in the next free slot (the game's

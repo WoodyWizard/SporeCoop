@@ -1870,7 +1870,8 @@ other has not (both landed, `coop.census all 3000 0 0 0`); not the camera's leve
   bundles at the old village (-234 -34 482) that the host's game does not have (the detector's
   `Civilization:noun_only_guest:tribe*`, `game_bundle`, 7-10 % of the comparisons). How to reproduce:
   `SPORE_DETECTOR=20 tools/lab.py run play_civ`.
-* Not fixed, not analysed. Ticket: BUG-0539
+* Fixed on fix/w42-civ-left (civ.tribe_ruins): the host's vehicles raid the villages, the guest now removes them too.
+  Ticket: BUG-0539
 ## Space: a city's cultural targets stand at other places in each game (2026-11-04, fix/w42-civ-left)
 <a id="issue-space-cultural-targets"></a>
 
