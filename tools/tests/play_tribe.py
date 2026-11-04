@@ -505,6 +505,11 @@ class Game:
             else:  # the order arrived but nobody moved (the target right there, gone, or dead)
                 pl.orders['idle'] += 1
                 self.log.append(f'   {pl.name} {o["kind"]} {o["tgt"]} {o["sel"]}: no movement ({o["last"][:110]})')
+                # BUG-0505: what the host's game has the members do (behaviour node, place, health)
+                for line in self.host.call('coop.tribe')['out'].splitlines():
+                    m = re.match(r'\s+#(\d+) ', line)
+                    if m and int(m.group(1)) in o['sel']:
+                        self.log.append(f'      host: {line.strip()[:150]}')
 
     # ---------------- measuring ----------------
     def measure(self):
@@ -672,6 +677,9 @@ def main():
     ap.add_argument('--seed', type=int, default=None)
     ap.add_argument('--rate', type=float, default=1.0, help='mean pauses per second between actions')
     a = ap.parse_args()
+    import os
+    if a.seed is None and os.environ.get('PLAY_TRIBE_SEED'):  # a replay through the lab (BUG-0505)
+        a.seed = int(os.environ['PLAY_TRIBE_SEED'])
     seed = a.seed if a.seed is not None else random.randrange(1 << 30)
     print(f'  play_tribe: {a.minutes} min, seed {seed}', flush=True)
     host, guest = start('tribe')

@@ -19,6 +19,7 @@
 #include "modes.h"
 #include "net/protocol.h"
 #include "sporekit_game.hpp"
+#include "tribe.h"
 
 namespace wobj {
 
@@ -73,6 +74,8 @@ struct Kind {
     void (*follow)(const Item& local, const net::Vec3& host_pos, const net::Vec3& host_vel, double age, Follow& st,
                    double now) = nullptr;
     double every = 0; // s between snapshots (0: kSnapInterval)
+    // guest: the host has an object this game has no copy of: make one (nullptr: the kind only binds)
+    bool (*make)(const net::Vec3& pos, uint32_t host) = nullptr;
 };
 constexpr uint32_t kGone = 0xFFFFFFFFu; // the state of an object the host's game no longer has
 
@@ -276,6 +279,38 @@ static void herd_apply(const Item& l, uint32_t host)
 static bool herd_acted(uint32_t, uint32_t, uint32_t) { return false; }
 static void herd_act(const Item&, uint32_t) {}
 
+// ---------------------------------------------------------------- kind: tribe tool (BUG-0514)
+// cTribeTool (noun 0x18C8F0C) of the player tribe (tribe +0x36C): the weapon racks, instrument stands, the
+// healer's hut, the fire pit. The palette's placement makes one in the game of the player who bought it
+// (docs/re/tribe.md 5): a rack the host bought was in the host's game only, so a guest could not click it
+// and its members never got the weapon (the guest's orders run on the host, on the host's rack, found by
+// position). The tools are the host's: a guest gets a copy of every host tool it has none of (the same type
+// at the host's place, upright), so its click on the rack becomes the host's GrabTool there.
+// State: the tool type (vt 0x58). Nothing is removed (a raided rack stays, damaged, in every game).
+static bool g_tool_fix = true;
+COOP_FIX("wobj.tribe_tool", "BUG-0514", g_tool_fix, "tribe: a tool building (weapon rack, ...) the host built is in every player's game");
+static void tool_collect(Items& out)
+{
+    tribe::for_each_player_tool(
+        [](void* t, int type, const net::Vec3& pos, void* u) {
+            ((Items*)u)->push_back(Item{t, game::object_serial(t), pos, (uint32_t)type});
+        },
+        &out);
+}
+static bool tool_behind(uint32_t, uint32_t) { return false; }
+static void tool_apply(const Item&, uint32_t) {}
+static bool tool_acted(uint32_t, uint32_t, uint32_t) { return false; }
+static void tool_act(const Item&, uint32_t) {}
+static bool tool_make(const net::Vec3& pos, uint32_t host)
+{
+    if (host == kGone || host < 1 || host > 10)
+        return false;
+    void* t = tribe::make_player_tool((int)host, pos);
+    if (t)
+        H->log(M, SK_INFO, "wobj: made the host's tribe tool type %u at (%.1f %.1f %.1f)", host, pos.x, pos.y, pos.z);
+    return t != nullptr;
+}
+
 // ---------------------------------------------------------------- the table
 // ---------------------------------------------------------------- kind: citizen (Civ city citizens, BUG-0476)
 // cCreatureCitizen (noun 0x18EB4B7) of the cities: each game spawns and walks its own (an idle walk 0xD57680
@@ -332,6 +367,7 @@ static Kind g_kinds[] = {
     // the bind radius 30 m: 15 of 19 citizens were within 15 m of a partner without the fix (out/detector/20261103-final.md)
     {"citizen", &g_citizen_fix, kStCiv, 30.f, 200.f, 56, citizen_collect, citizen_behind, citizen_apply, citizen_acted, citizen_act, false, false,
      citizen_follow, 0.5},
+    {"tribe_tool", &g_tool_fix, kStTribe, 2.0f, 150.f, 24, tool_collect, tool_behind, tool_apply, tool_acted, tool_act, false, false, nullptr, 0, tool_make},
 };
 constexpr int kKinds = (int)(sizeof g_kinds / sizeof g_kinds[0]);
 // a snapshot is one unreliable message: 19 bytes + 20 per object within net::Connection::kMaxSingle (1163)
@@ -378,6 +414,7 @@ struct Snap {
 };
 struct GuestKind {
     std::map<uint32_t, Bind> binds;                   // host id -> copy
+    std::map<uint32_t, std::pair<double, int>> made;  // host id -> (last make, tries): K.make at most every 3 s, 3 times
     std::map<std::pair<void*, uint32_t>, int> own;    // copies without a host partner -> snapshots seen so
     Snap snap;
 };
@@ -385,7 +422,7 @@ static GuestKind g_g[kKinds];
 static uint32_t g_epoch = 0;
 static double g_last_tx[16], g_last_guest = 0;
 struct Stat {
-    uint32_t tx = 0, rx = 0, bound = 0, applied = 0, dropped = 0, req_tx = 0, req_rx = 0, acted = 0, missing = 0;
+    uint32_t tx = 0, rx = 0, bound = 0, applied = 0, dropped = 0, req_tx = 0, req_rx = 0, acted = 0, missing = 0, made = 0;
 };
 static Stat g_st[kKinds];
 
@@ -394,6 +431,7 @@ static void guest_reset()
     for (auto& g : g_g) {
         g.binds.clear();
         g.own.clear();
+        g.made.clear();
         g.snap = Snap{};
     }
 }
@@ -517,6 +555,13 @@ static void reconcile(int k, double now, bool fresh)
             }
             if (!best) {
                 g_st[k].missing++;
+                auto& m = G.made[id];
+                if (K.make && m.second < 3 && now - m.first > 3.0) {
+                    m.first = now;
+                    m.second++;
+                    if (K.make(ps.first, ps.second))
+                        g_st[k].made++; // bound at the next snapshot (this frame's list is older)
+                }
                 continue;
             }
             used.insert({best->p, best->id});
@@ -692,9 +737,9 @@ std::string status()
     char b[320];
     for (int k = 0; k < kKinds; k++) {
         const Stat& t = g_st[k];
-        snprintf(b, sizeof b, "kind %s fix=%d binds=%zu own=%zu snap_n=%zu snap_r=%.0f tx=%u rx=%u bound=%u applied=%u dropped=%u missing=%u req_tx=%u req_rx=%u acted=%u\n",
+        snprintf(b, sizeof b, "kind %s fix=%d binds=%zu own=%zu snap_n=%zu snap_r=%.0f tx=%u rx=%u bound=%u applied=%u dropped=%u missing=%u made=%u req_tx=%u req_rx=%u acted=%u\n",
                  g_kinds[k].name, (int)*g_kinds[k].fix, g_g[k].binds.size(), g_g[k].own.size(), g_g[k].snap.objs.size(), g_g[k].snap.r,
-                 t.tx, t.rx, t.bound, t.applied, t.dropped, t.missing, t.req_tx, t.req_rx, t.acted);
+                 t.tx, t.rx, t.bound, t.applied, t.dropped, t.missing, t.made, t.req_tx, t.req_rx, t.acted);
         s += b;
     }
     snprintf(b, sizeof b, "citizens walks=%u puts=%u\n", g_cit_walks, g_cit_puts);

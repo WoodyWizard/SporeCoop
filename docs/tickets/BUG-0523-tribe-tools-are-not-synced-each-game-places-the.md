@@ -44,3 +44,4 @@ night: "tribe_tool: 3 on the host, 3 on the guest, 1 host / 1 guest without a pa
 
 ## History
 - 2026-11-03: opened.
+- 2026-11-03 (fix/w41-tribe-actions, BUG-0514): the PLAYER tribe's tools are host-owned world objects now (worldobj kind `tribe_tool`, `wobj.tribe_tool`): a guest makes a copy (same type, the host's position, upright) of every host tool it has none of within 2 m. Left for this ticket: NPC tribes' tools (needs the host tribe -> guest tribe mapping, tribe.cpp g_local_tribe_of); a guest's own copy at another spot is neither moved to the host's place nor removed (the kind has no apply / drop_own); tools a guest buys (BUG-0524).

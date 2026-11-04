@@ -25,6 +25,7 @@ namespace fields {
 
 enum FieldId : uint8_t {
     F_SCALE = 1, // cSpatialObject GetScale (vt 0x34) / SetScale (vt 0x40)
+    F_TOOL = 2,  // cCreatureCitizen +0x102C mSpecializedTool / SetSpecializedTool (tribe.cpp, BUG-0514)
 };
 
 struct Field {
@@ -53,6 +54,7 @@ enum KindId : uint8_t {
     K_TRIBE_MEMBER = 2, // tribe members of every tribe (tribe.cpp)
     K_UFO = 3,          // NPC ships of the host's place (spacecoop.cpp)
     K_CIV_CITIZEN = 4,  // Civ city citizens bound by the world-object kind `citizen` (worldobj.cpp, BUG-0475 / BUG-0476)
+    K_TRIBE_TOOL = 5,   // tribe members' held tools (tribe.cpp, BUG-0514: its own switch tribe.tool_hold)
 };
 
 struct Ctx {
