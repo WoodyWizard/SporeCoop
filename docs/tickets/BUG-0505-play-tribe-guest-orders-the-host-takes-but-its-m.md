@@ -1,14 +1,14 @@
 ---
 id: BUG-0505
 title: play_tribe: guest orders the host takes but its members do not act on (12 idle of 28), the host's bot gives too few orders (minimap look_far 24)
-status: fixed
+status: open
 kind: test
 stage: Tribe
 reported: 2026-11-03
 source: fix/w40-play final check, lab 20261103-160342
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in:
 branch: fix/w41-tribe-orders
 commits: 19fa95a7 8e0fac53 37254c57
 tests: tribe_tools (coop_tribe_tools.py), play_tribe
@@ -84,3 +84,12 @@ deterministic; `coop.tribe put` of the member or of a blocker next to the spot b
   node 0x051C71AF, table entry 0x1593AC0, enter 0xDAFAF0 / tick 0xDAB180, also a slot user); the re-order at 40 s
   then runs the grab. ? why it ends. The one `--own` control run picked the host's chief (tool 11, no grab: the
   test now skips chiefs); a control with a host's ordinary member was not run.
+- 2026-11-04 (fix/w41-tribe-orders, regression out/lab/20261104-030728 play_tribe#3, guest idle 4 of 17; the
+  run failed on the host bot's `gave orders through real clicks (7)`, the title's second half): **observed** the
+  play_tribe idle case: member #29 has the guest's new order record (rec=4 walk, then rec=10 hunt the epic, target
+  set) but its behaviour node is still the gather node 0x0569236E, state 1, its walk goal the old tree (424.6 -78.8
+  264.9) 100 m off, walk mode 1, not moving; #36 the same node, state 0. So the new record does not take the member
+  out of the gather node: the node's state 1 keeps returning "running" (tick 0xD75F70 case 1: waits while
+  `c+0x38 list empty or +0xFC8 != +0xFC4` and 0xC26DF0(0x30000) is false) and the re-plan stimulus 0x4000 of DoAction
+  does not end it. Inferred: the same for the host's own orders on a member stuck in a gather (the host had 2 idle
+  orders in #2). Not fixed: the grab half is (tribe.grab_spot); status stays open for the gather half.

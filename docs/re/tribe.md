@@ -1304,3 +1304,7 @@ the tribe's grab spots of a tool type).
   its walk goal is set onto the goal facing the tool (game::teleport); the node then arrives and grabs.
 * ~ The play_tribe idle orders of the earlier runs were not reproduced in 2 runs on lane 9 (lab 20261104-014832):
   the host's own idle orders there (ok 9 of 14 in 20261104-010027) show the same game behaviour for host orders.
+* ✔ (play_tribe, out/lab/20261104-030728 #3) A member stuck in the gather node 0x0569236E (state 1, walk mode 1,
+  its goal the old tree 100 m off, not moving) keeps that node when a new order comes (rec=4 walk, rec=10 hunt with
+  its target set): the record is replaced, the node is not left. ? what ends the gather node's state 1 (tick
+  0xD75F70 case 1 runs while the list at c+0x38 is empty or +0xFC8 != +0xFC4, unless 0xC26DF0(0x30000)); BUG-0505.
