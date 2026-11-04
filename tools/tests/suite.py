@@ -180,6 +180,7 @@ add('content_space', P + 'coop_content_space.py', minutes=6, uses_free_lane=True
 add('creations_rejoin', P + 'coop_creations_rejoin.py', minutes=5)  # a newcomer under a reused id is not shown with the previous player's creature (BUG-0076)
 add('evolve_in_place_cell', P + 'coop_evolve_in_place.py --case cell', minutes=5, fixture='cell')  # BUG-0508: the host's cell editor does not reload the guest (SPORE_FIX_OFF=world.evolve_in_place fails)
 add('evolve_in_place_creature', P + 'coop_evolve_in_place.py --case creature', minutes=6, fixture='creature')  # BUG-0508: the host's evolution in Creature does not reload the guest; its avatar and player species follow (SPORE_FIX_OFF=world.evolve_in_place fails)
+add('evolve_key', P + 'coop_evolve_in_place.py --case creature --nosave', minutes=6, fixture='creature')  # BUG-0517: without a save after its editor the host's own creature takes the new species (SPORE_FIX_OFF=creature.evolve_key fails)
 add('editor_desync', P + 'coop_editor_desync.py', minutes=7)  # mating call and editors in Cell and Creature, real input (BUG-0411: --old-wait fails about 1 run in 2)
 add('cell_unknown_model', P + 'coop_cell_unknown_model.py', minutes=3, fixture='cell')  # the host sends a cell of a creation the guest does not have: no fault at 0xE83EC8, the mirror comes once the model is known (BUG-0455; SPORE_FIX_OFF=cell.unknown_model fails)
 add('creature_desync', P + 'coop_creature_desync.py', minutes=4)  # editors, a crash and a reload: companion of a host-only species, no NPC copies, kills, the guest's look

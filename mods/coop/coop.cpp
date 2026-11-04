@@ -1839,6 +1839,21 @@ static int g_evo_seen_age = -1, g_evo_seen_mig = -1;
 static double g_evo_seen_at = 0;
 static unsigned g_evo_saves = 0; // host: saves made for an evolution in place (tests)
 static bool g_evo_save_due = false;
+// BUG-0517: after an evolution editor the stage's return (0xD43DE0) reloads the avatar's species profile
+// in place with the new species (0x4DFBC0: the same profile object, its key +0x504 the new one, the world's
+// player species +0xA4 too) and calls vt 0xAC on the avatar and its own-species creatures, but their own
+// species key (+0xB28) stays the pre-editor one until the game is saved: every reader of +0xB28 (the
+// mod's trace and state, the relations of GetRelationship) saw the old species for minutes on a host that
+// did not save (docs/re/creations.md#creations-evolve-key). The key of every creature whose profile is
+// the avatar's and whose key is the pre-editor one is set to the profile's, once, within 60 s after the
+// editor; then the host's save of BUG-0508 is not needed. Any role, also alone. Off: the save (0.7.4).
+static bool g_evo_key_fix = true;
+COOP_FIX("creature.evolve_key", "BUG-0517", g_evo_key_fix, "creature: after an evolution editor the own creature takes the new species at once (no save needed)");
+static double g_evo_key_until = 0;   // watch after an editor (Creature)
+static uint32_t g_evo_keys_set = 0;  // tests: creatures given the new key
+static bool g_evo_key_done = false;  // this evolution's keys were set (the host's save is skipped)
+static void evo_key_tick(double now);
+static bool g_evo_save_test_off = false; // tests (BUG-0517): the host's in-place save is not made
 static int host_avatar_age()
 {
     void* av = game::mode_id() == modes::kCreature ? game::avatar() : nullptr;
@@ -1888,6 +1903,10 @@ void on_mode_change(uint32_t from, uint32_t to)
     bool new_stage = g_last_stage && to != g_last_stage;
     bool evolved = g_was_in_editor && !new_stage;
     g_was_in_editor = false;
+    if (evolved && to == modes::kCreature) { // BUG-0517: any role, also without a session
+        g_evo_key_until = H->time_seconds() + 60.0;
+        g_evo_key_done = false;
+    }
     uint32_t last = g_last_stage;
     g_last_stage = to;
     if (g_sess.role() != net::Role::Host || !g_share_world || g_remotes.empty() || !last)
@@ -1908,6 +1927,52 @@ void on_mode_change(uint32_t from, uint32_t to)
            : design_stage(to) ? g_name + " changed a design: everybody gets the new designs"
                               : g_name + " evolved the species: everybody gets the new body",
            -1);
+}
+
+static void evo_key_tick(double now)
+{
+    if (!g_evo_key_fix || g_evo_key_until <= 0)
+        return;
+    if (now > g_evo_key_until) {
+        g_evo_key_until = 0;
+        return;
+    }
+    void* av = g_mode == modes::kCreature ? game::avatar() : nullptr;
+    if (!av)
+        return;
+    uint8_t* prof = *(uint8_t**)((uint8_t*)av + 0xB20);
+    if (!prof || IsBadReadPtr(prof + 0x504, 12))
+        return;
+    skg::ResourceKey nk = *(skg::ResourceKey*)(prof + 0x504);
+    skg::ResourceKey ok = *(skg::ResourceKey*)((uint8_t*)av + game::kSpeciesKeyOff);
+    if (!nk.instance || !memcmp(&nk, &ok, sizeof nk))
+        return; // not applied yet (the stage's return), or nothing to do
+    if (g_evo_key_before && ok.instance != g_evo_key_before)
+        return; // the avatar is not the pre-editor species (a swap of the mod's): not ours to touch
+    struct U {
+        uint8_t* prof;
+        skg::ResourceKey ok, nk;
+        uint32_t n;
+    } u{prof, ok, nk, 0};
+    game::for_each_object(
+        [](void* o, uint32_t noun, void* p) {
+            auto* u = (U*)p;
+            uint8_t* c = (uint8_t*)o;
+            if (noun != 0x18EB45Eu || !game::object_alive(o) || IsBadReadPtr(c, 0xB34))
+                return true;
+            skg::ResourceKey* k = (skg::ResourceKey*)(c + game::kSpeciesKeyOff);
+            if (*(uint8_t**)(c + 0xB20) == u->prof && !memcmp(k, &u->ok, sizeof u->ok)) {
+                *k = u->nk;
+                u->n++;
+            }
+            return true;
+        },
+        &u);
+    g_evo_keys_set += u.n;
+    g_evo_key_done = true;
+    g_evo_key_until = 0;
+    LOG("evolved: the avatar's species key %08X -> %08X (its profile's, %u creature(s), BUG-0517)", ok.instance, nk.instance,
+        u.n);
 }
 
 // BUG-0231: a share that failed in world::tick ("cannot share the world: ...", after the save) was
@@ -2035,6 +2100,14 @@ void follow_phase(double now)
                     // the share's save it stayed the pre-editor species for minutes while the world's player
                     // species (cSpeciesManager +0xA4) was the new one (lab 20261103-173652). The save is made,
                     // only not sent (once per evolution, docs/re/creations.md#creations-evolve-in-place).
+                    if (g_mode == modes::kCreature && g_evo_save_due && g_evo_key_fix && g_evo_key_done) {
+                        g_evo_save_due = false; // BUG-0517: the avatar has its new species already
+                        LOG("evolved in place: no save needed (the avatar's species key was set, BUG-0517)");
+                    }
+                    if (g_mode == modes::kCreature && g_evo_save_due && g_evo_save_test_off) {
+                        g_evo_save_due = false;
+                        LOG("evolved in place: the save is off for a test (coop.evokey nosave)");
+                    }
                     if (g_mode == modes::kCreature && g_evo_save_due) {
                         g_evo_save_due = false;
                         std::string err;
@@ -2866,6 +2939,7 @@ void on_frame(void*, int, void*)
     parts::tick(now); // BUG-0401
     effects::tick(now); // BUG-0451: sends the queued effects on the main thread
     social::tick(now);
+    evo_key_tick(now);
     creature_hp::tick();
     shared::tick(g_sess, game::mode_id(), now, guest_elsewhere()); // BUG-0231: held while elsewhere
     if (g_sess.role() == net::Role::Host && game::avatar()) {
@@ -5993,6 +6067,16 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                        return 0;
                    },
                    nullptr, MT);
+    H->command_add(
+        M, "coop.evokey", "coop.evokey [nosave|save] - BUG-0517 tests: keys set after an editor; the host's in-place save off/on",
+        [](void*, int argc, const char* const* argv, SkOut* out) -> int {
+            if (argc > 1)
+                g_evo_save_test_off = !strcmp(argv[1], "nosave");
+            SAY("evokey: keys_set=%u done=%d watching=%d save_off=%d", g_evo_keys_set, (int)g_evo_key_done,
+                (int)(g_evo_key_until > 0), (int)g_evo_save_test_off);
+            return 0;
+        },
+        nullptr, SK_CMD_MAIN_THREAD);
     H->command_add(M, "coop.team", "coop.team [on|off] - co-op mechanics (joint hunt, rescue, pack regen)", c_team,
                    nullptr, MT);
     init_ui();
