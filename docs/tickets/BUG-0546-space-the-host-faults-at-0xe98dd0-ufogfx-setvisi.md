@@ -10,7 +10,7 @@ role: host
 versions: 
 fixed_in: unreleased
 branch: fix/w42-infra
-commits:
+commits: bfeeed18, 51558c36
 tests: tools/tests/coop_space_npc_model.py (suite space_npc_model, space_npc_model_coop), space_diplomacy
 signature: 0xC0000005 at 0x00E98DD0 SporeCoop::UfoGfx_SetVisible+0x40 data 0x4 (host, main thread)
 docs: docs/re/space.md#space-lane5-pollination, docs/re/space.md#space-ufo-null-model
