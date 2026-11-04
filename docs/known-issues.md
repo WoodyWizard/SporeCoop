@@ -1836,3 +1836,9 @@ Found by fix/w40-play (2026-11-03), not fixed:
   (tribe_chiefs_apart check 5). Both tests are regression checks; next step a 4-player campaign
   (`coop_campaign.py --from creature --to tribe --players 4`) and play_tribe's idle order lines (`coop.tribe ai`).
 * Ticket: BUG-0531, BUG-0340
+
+## Space: ornaments by a colony city in one game only (2026-11-04, fix/w42-space-planets)
+<a id="issue-space-ornaments"></a>
+
+BUG-0541: on the `space` fixture's home planet one game can have 9 ornaments (noun 0x18C88E4) next to city 0 that the
+other has not (both landed, `coop.census all 3000 0 0 0`); not the camera's level of detail. Cosmetic; not traced.

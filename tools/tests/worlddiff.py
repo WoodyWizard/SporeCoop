@@ -247,6 +247,15 @@ def _rel(x, y):
     return abs(x - y) / m
 
 
+def _own_ship_scale(w, ufos):
+    """the size of the ship at the game's own position (its own ship), None without one"""
+    if not w.me or not ufos:
+        return None
+    x = min(ufos, key=lambda u: math.dist(u['pos'], w.me))
+    s = x['scale']
+    return s if math.dist(x['pos'], w.me) < 5.0 and math.isfinite(s) and s > 1e-3 else None
+
+
 def diff(host, guest, area=None):
     out = []
     stage = host.mode or '?'
@@ -328,6 +337,12 @@ def diff(host, guest, area=None):
         vt = host.vts.get(noun) or guest.vts.get(noun)
         vts = f' [vtable 0x{vt:X}]' if vt and noun not in NOUNS else ''
         a, b = hg.get(noun, []), gg.get(noun, [])
+        # Space: a colony planet's citizens are a pool each game puts at the cities near its own camera
+        # (docs/re/space.md#space-planet-life, BUG-0490): none of them in the host's game near the guest means
+        # the host's camera never came to that city (level of detail), not a desync; the host's citizens that
+        # are there are compared (worldobj `space_citizen`)
+        if stage == 'Space' and name == 'citizen' and not [x for x in a if _near(x['pos'], c, inner)]:
+            continue
         tol = TOL_MOVING if name in MOVING or stage == 'Space' else TOL_STATIC  # Space: ships and planets' objects move
         pairs, ua, ub = _match(a, b, tol)
         ua = [x for x in ua if _near(x['pos'], c, inner)]
@@ -340,7 +355,14 @@ def diff(host, guest, area=None):
         elif ua or ub:
             add('unmatched', name, len(ua) + len(ub), f'{name}: {len(a)} on the host, {len(b)} on the guest, '
                                                        f'{len(ua)} host / {len(ub)} guest without a partner within {tol:.0f} m{vts}')
-        sc = [(x, y) for x, y in pairs if _rel(x['scale'], y['scale']) > 0.12]
+        if stage == 'Space' and name == 'ufo':
+            # BUG-0479 follow-up: every game sizes every ship by its own camera's zoom (docs/re/space.md#space-ufo-scale:
+            # 0.922 at zoom 200, 0.664 at 135.8, the partner's ship always the own ship's size): a ship's size is
+            # compared relative to the size of the own ship of the game that draws it
+            fh, fg = _own_ship_scale(host, a), _own_ship_scale(guest, b)
+            sc = [(x, y) for x, y in pairs if fh and fg and _rel(x['scale'] / fh, y['scale'] / fg) > 0.12]
+        else:
+            sc = [(x, y) for x, y in pairs if _rel(x['scale'], y['scale']) > 0.12]
         if sc:
             x, y = sc[0]
             add('scale', name, len(sc), f'{len(sc)} {name} with another scale (e.g. {x["scale"]:.2f} host, {y["scale"]:.2f} guest)')

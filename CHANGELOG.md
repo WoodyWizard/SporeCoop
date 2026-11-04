@@ -7,6 +7,11 @@
   every player's game; a guest's game no longer shows tools there the host's game does not have (BUG-0523).
 - Tribe: a tool a guest buys and places now appears in the host's game too, at the same spot, and the guest's
   members can take the weapon or instrument from it (BUG-0524).
+- Space: on a colony planet you and your partner now see the colony's citizens standing at the same spots and at
+  the same size, and its vehicles driving at the same places (BUG-0490).
+- Space: the spice stored in a shared colony's cities is collected once: when one player's ship collects it (by
+  arriving in the colony's system), it is gone from the colony and from the spice pickups by its cities on every
+  player's planet; before, the other player could collect the same spice again (BUG-0537).
 
 ## [0.7.5] - 2026-11-04
 

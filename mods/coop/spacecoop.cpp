@@ -1968,6 +1968,20 @@ std::string debug(const std::vector<std::string>& a)
             }
         return "no partner here";
     }
+    if (a[0] == "over" && u && a.size() > 3) { // tests (BUG-0490): on a planet, put the own ship over the point x y z at its height
+        float t[3] = {(float)atof(a[1].c_str()), (float)atof(a[2].c_str()), (float)atof(a[3].c_str())};
+        const float* p = (const float*)((uint8_t*)u + kPos);
+        float r = std::sqrt(p[0] * p[0] + p[1] * p[1] + p[2] * p[2]);
+        float rt = std::sqrt(t[0] * t[0] + t[1] * t[1] + t[2] * t[2]);
+        if (!((C.my_place ? C.my_place() : 0) & 0x40000000u) || !(rt > 1.f) || !(r > 1.f))
+            return "not on a planet";
+        float q[3] = {t[0] * r / rt, t[1] * r / rt, t[2] * r / rt};
+        memcpy((uint8_t*)u + kPos, q, 12);
+        memcpy((uint8_t*)u + 0x718, q, 12); // next position
+        memcpy((uint8_t*)u + 0x750, q, 12); // destination
+        snprintf(b, sizeof b, "moved over (%.0f %.0f %.0f)", q[0], q[1], q[2]);
+        return b;
+    }
     if (a[0] == "repairdist" && a.size() > 1) { // tests: the repair range (0: a disabled ship is never repaired)
         g_repair_dist = (float)atof(a[1].c_str());
         snprintf(b, sizeof b, "repair range %.0f m", g_repair_dist);

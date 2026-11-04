@@ -17,7 +17,8 @@
 //   50..59  space_rivalry  rivals mode (own budgets, PvP)
 //   60..69  space_allies   partner colonies as an allied empire
 //   70..79  space_trade    tool gifts and trade between players
-//   80..99  free
+//   80..84  space_planets  a shared colony's stored spice (BUG-0537)
+//   85..99  free
 #pragma once
 
 #include <cstdint>

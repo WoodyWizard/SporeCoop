@@ -40,3 +40,9 @@ FAIL with SPORE_FIX_OFF=space.puppet_scale: out/lab/20261103-124246 (8 of 8 pair
 - 2026-11-03: opened.
 - 2026-11-03: fixed on fix/w40-scale (replicated fields, docs/sync-architecture-plan.md#sync-fields).
 - 2026-11-03: released in 0.7.4.
+- 2026-11-04 (fix/w42-space-planets): the `Space:scale:ufo` remainder of space_play (4.95 host, 3.74 guest, 1 of
+  ~30 comparisons) is not a desync: each game sizes every ship by its own camera's zoom (lane 3: both ships 0.922
+  at zoom 200 on both games; one wheel notch on the guest, zoom 135.8: its own ship and the host's ship 0.664
+  there, the host's game still 0.922), and the partner's ship is the own ship's size on each screen (this fix).
+  The detector (worlddiff.py) now compares a ship's size relative to the own ship of the game that draws it. The
+  `planetary_artifact` rows of the report are not ship sizes: the colony spice pickups (BUG-0537).

@@ -39,10 +39,11 @@ struct Item {
     uint32_t id;
     net::Vec3 pos;
     uint32_t st;
+    uint32_t cls = 0; // BUG-0490: a kind with `classes`: a copy is bound only to a host object of its class
 };
 using Items = std::vector<Item>;
 
-enum : uint8_t { kStCreature = 1, kStTribe = 2, kStCiv = 4 };
+enum : uint8_t { kStCreature = 1, kStTribe = 2, kStCiv = 4, kStSpace = 8 }; // kStSpace: on a planet (BUG-0490)
 
 // BUG-0476: a moving kind's guest copy follows the host's object: where the host's was (the last snapshot),
 // its velocity (from the last two snapshots), and the follower's own memory (the last walk goal given)
@@ -80,17 +81,24 @@ struct Kind {
     bool (*own)(const Item& local, double now) = nullptr;
     // host: a guest's request for an object this game has not (id 0): make it
     void (*buy)(uint8_t from, const net::Vec3& pos, uint32_t st) = nullptr;
+    // BUG-0490: the objects carry a class (Item::cls, one more u32 on the wire): a copy binds only to its class
+    bool classes = false;
+    float vmax = 15.f; // m/s: a faster step between two snapshots is a jump (no velocity)
+    // BUG-0490: guest, every frame, every bound copy is drawn where the host's is (nullptr: only `follow`)
+    void (*drive)(const Item& local, const net::Vec3& host_pos, const net::Vec3& host_vel, double age, uint32_t host_st) = nullptr;
 };
 constexpr uint32_t kGone = 0xFFFFFFFFu; // the state of an object the host's game no longer has
 
-static void collect_noun(uint32_t noun, Items& out, uint32_t (*read)(void*), bool (*take)(void*) = nullptr)
+static void collect_noun(uint32_t noun, Items& out, uint32_t (*read)(void*), bool (*take)(void*) = nullptr,
+                         uint32_t (*cls)(void*) = nullptr)
 {
     struct U {
         uint32_t noun;
         Items* out;
         uint32_t (*read)(void*);
         bool (*take)(void*);
-    } u{noun, &out, read, take};
+        uint32_t (*cls)(void*);
+    } u{noun, &out, read, take, cls};
     game::for_each_object(
         [](void* o, uint32_t noun, void* p) {
             auto* u = (U*)p;
@@ -100,6 +108,8 @@ static void collect_noun(uint32_t noun, Items& out, uint32_t (*read)(void*), boo
             if (!game::object_position(o, it.pos))
                 return true;
             it.st = u->read(o);
+            if (u->cls)
+                it.cls = u->cls(o);
             u->out->push_back(it);
             return true;
         },
@@ -450,6 +460,101 @@ static void citizen_follow(const Item& l, const net::Vec3& hp, const net::Vec3& 
     g_cit_walks++;
 }
 
+// ---------------------------------------------------------------- kinds on a planet in Space (BUG-0490)
+// docs/re/space.md#space-planet-life. A colony planet's citizens (the same cCreatureCitizen noun) are a pool
+// of 150 that each game puts at the cities near its own camera (measured: city 4's citizens moved to city 0
+// when only the guest's ship went there); most stand, some run about (~5 m/s); 123 of 150 were within 3 m of
+// a partner, the rest elsewhere, each of its own size. Citizens near a guest the host's
+// game also has: bound and put where the host's are every frame (space_citizen_drive), their size by the
+// fields kind `space_citizen`. Citizens at a city the host's camera never came near exist in the guest's
+// game only: the host has none to bind (level of detail, not compared by the detector).
+// The colony's vehicles (cVehicle, noun 0x18C6DE8, 40 on the fixture's planet on both games, ~20 m/s)
+// are driven by each game's own planner: 25 of 40 were more than 15 m from any partner. The host's are
+// sent (the whole planet, every 0.4 s) with their orientation; a guest binds its own of the same class
+// (political id, locomotion, purpose) and draws each where the host's is every frame (StopMovement +
+// Teleport, as civ.cpp moves its vehicle mirrors). `coop.fix space.citizens off` / `space.vehicles off`:
+// each game keeps its own (0.7.5).
+// Space citizens: most stand, some run about (~5 m/s): a MoveTo hardly moved them (500 walks in 25 s, 4-10 of 19
+// still 3+ m off), a put every 0.25 s lagged 4 m behind the runners. So, like the vehicles, every frame a bound one
+// is put where the host's is now (its last place moved on with its velocity)
+static uint32_t g_space_cit_puts;
+static void space_citizen_drive(const Item& l, const net::Vec3& hp, const net::Vec3& v, double age, uint32_t)
+{
+    float t = (float)std::min(age, 1.0);
+    net::Vec3 want{hp.x + v.x * t, hp.y + v.y * t, hp.z + v.z * t};
+    if (net::dist(l.pos, want) <= 0.3f)
+        return;
+    game::stop(l.p);
+    game::place(l.p, want, game::orientation(l.p));
+    g_space_cit_puts++;
+}
+static bool g_space_cit_fix = true;
+COOP_FIX("space.citizens", "BUG-0490", g_space_cit_fix, "space: a colony's citizens stand where the host's stand (the host's citizens near a guest on its planet)");
+static bool g_space_veh_fix = true;
+COOP_FIX("space.vehicles", "BUG-0490", g_space_veh_fix, "space: a colony's vehicles drive where the host's drive (on the planet both players are on)");
+constexpr uint32_t kVehicleNoun = 0x018C6DE8;
+constexpr uintptr_t kVehSpatial = 0x34, kVehRot = 0x44, kVehLoco = 0xB1C, kVehPurpose = 0xB20, kVehPol = 0x30; // civ.cpp
+static uint32_t g_veh_drives;
+
+// a unit quaternion in 32 bits: the index of the largest component (2 bits), the other three (10 bits each)
+static uint32_t quat_pack(const float q[4])
+{
+    int big = 0;
+    for (int i = 1; i < 4; i++)
+        if (std::fabs(q[i]) > std::fabs(q[big]))
+            big = i;
+    float sg = q[big] < 0 ? -1.f : 1.f;
+    uint32_t v = (uint32_t)big;
+    for (int i = 0, k = 0; i < 4; i++) {
+        if (i == big)
+            continue;
+        float c = std::clamp(q[i] * sg * 1.41421356f, -1.f, 1.f); // |c| <= 1/sqrt(2) before the scale
+        v |= (uint32_t)std::lround((c + 1.f) * 511.5f) << (2 + 10 * k++);
+    }
+    return v;
+}
+static void quat_unpack(uint32_t v, float q[4])
+{
+    int big = (int)(v & 3);
+    float sum = 0;
+    for (int i = 0, k = 0; i < 4; i++) {
+        if (i == big)
+            continue;
+        float c = (float)((v >> (2 + 10 * k++)) & 1023) / 511.5f - 1.f;
+        q[i] = c / 1.41421356f;
+        sum += q[i] * q[i];
+    }
+    q[big] = std::sqrt(std::max(0.f, 1.f - sum));
+}
+static bool veh_take(void* v) { return !IsBadReadPtr(v, kVehPurpose + 4); }
+static uint32_t veh_state(void* v) { return quat_pack(&field<float>(v, kVehRot)); }
+static uint32_t veh_class(void* v)
+{
+    return field<uint32_t>(v, kVehPol) * 2654435761u ^ (uint32_t)field<int>(v, kVehLoco) * 40503u ^ (uint32_t)field<int>(v, kVehPurpose);
+}
+static void space_vehicle_collect(Items& out) { collect_noun(kVehicleNoun, out, veh_state, veh_take, veh_class); }
+static bool none_behind(uint32_t, uint32_t) { return false; }
+static void none_apply(const Item&, uint32_t) {}
+static bool none_acted(uint32_t, uint32_t, uint32_t) { return false; }
+static void none_act(const Item&, uint32_t) {}
+static void space_vehicle_drive(const Item& l, const net::Vec3& hp, const net::Vec3& v, double age, uint32_t host_st)
+{
+    if (host_st == kGone)
+        return;
+    float t = (float)std::min(age, 0.5);
+    net::Vec3 want{hp.x + v.x * t, hp.y + v.y * t, hp.z + v.z * t};
+    float d = net::dist(l.pos, want);
+    net::Vec3 p = want;
+    if (d < 30.f && d > 0.01f) // glide small corrections out (civ.cpp's mirrors)
+        p = {l.pos.x + (want.x - l.pos.x) * 0.5f, l.pos.y + (want.y - l.pos.y) * 0.5f, l.pos.z + (want.z - l.pos.z) * 0.5f};
+    float pp[3] = {p.x, p.y, p.z}, q[4];
+    quat_unpack(host_st, q);
+    void* sp = (uint8_t*)l.p + kVehSpatial;
+    vcall<void>(sp, 0xEC / 4);                                   // StopMovement: its planner does not pull it back
+    vcall<void>(sp, 0x44 / 4, (const float*)pp, (const float*)q); // Teleport
+    g_veh_drives++;
+}
+
 static Kind g_kinds[] = {
     {"fruit", &g_fruit_fix, kStCreature | kStTribe, 3.0f, 70.f, 48, fruit_collect, fruit_behind, fruit_apply, fruit_acted, fruit_act, true, true},
     {"tree", &g_tree_fix, kStCreature | kStTribe, 0.5f, 70.f, 48, tree_collect, tree_behind, tree_apply, tree_acted, tree_act, false, false},
@@ -460,6 +565,15 @@ static Kind g_kinds[] = {
      citizen_follow, 0.5},
     {"tribe_tool", &g_tool_fix, kStTribe, 2.0f, 150.f, 48, tool_collect, tool_behind, tool_apply, tool_acted, tool_act, false, true, nullptr, 0, tool_make,
      tool_own, tool_buy},
+    // BUG-0490 (new kinds at the end: an older guest drops a kind index it does not know)
+    {.name = "space_citizen", .fix = &g_space_cit_fix, .stages = kStSpace, .tol = 30.f, .range = 400.f, .max = 56,
+     .collect = citizen_collect, .behind = none_behind, .apply = none_apply, .acted = none_acted, .act = none_act,
+     .gone_acted = false, .drop_own = false, .every = 0.5, .drive = space_citizen_drive},
+    // the whole planet (the fixture's is ~510 m in radius): every vehicle binds to the nearest host vehicle of its class
+    // (sea vehicles were 400+ m from their partner: the bind radius is the planet's size)
+    {.name = "space_vehicle", .fix = &g_space_veh_fix, .stages = kStSpace, .tol = 1500.f, .range = 2500.f, .max = 44,
+     .collect = space_vehicle_collect, .behind = none_behind, .apply = none_apply, .acted = none_acted, .act = none_act,
+     .gone_acted = false, .drop_own = false, .every = 0.4, .classes = true, .vmax = 60.f, .drive = space_vehicle_drive},
 };
 constexpr int kKinds = (int)(sizeof g_kinds / sizeof g_kinds[0]);
 // a snapshot is one unreliable message: 19 bytes + 20 per object within net::Connection::kMaxSingle (1163)
@@ -485,6 +599,8 @@ static bool is_guest() { return C.sess && C.sess->role() == net::Role::Client &&
 static uint8_t stage_bit()
 {
     uint32_t m = game::mode_id();
+    if (m == modes::kSpace)
+        return C.space_on_planet && C.space_on_planet() ? kStSpace : 0;
     return m == modes::kCreature ? kStCreature : m == modes::kTribe ? kStTribe : m == modes::kCiv ? kStCiv : 0;
 }
 
@@ -503,7 +619,12 @@ struct Snap {
     net::Vec3 c{};
     float r = 0;
     double at = -100;
-    std::map<uint32_t, std::pair<net::Vec3, uint32_t>> objs; // host id -> (pos, state)
+    struct Obj {
+        net::Vec3 first; // position
+        uint32_t second; // state
+        uint32_t cls;    // class (kinds with `classes`)
+    };
+    std::map<uint32_t, Obj> objs; // host id -> object
 };
 struct GuestKind {
     std::map<uint32_t, Bind> binds;                   // host id -> copy
@@ -546,7 +667,15 @@ static void host_tick(double now)
             if (p.id == 0 || (C.in_place && !C.in_place(p.id)))
                 continue;
             net::Vec3 c;
-            if (!C.player_pos || !C.player_pos(p.id, c) || (c.x == 0 && c.y == 0 && c.z == 0)) {
+            if (sb == kStSpace) { // BUG-0490: a guest's ship on our planet, over the ground the objects stand on
+                if (!C.space_partner || !C.space_partner(p.id, c) || all.empty())
+                    continue;
+                float rc = std::sqrt(c.x * c.x + c.y * c.y + c.z * c.z);
+                const net::Vec3& o = all[0].pos;
+                float ro = std::sqrt(o.x * o.x + o.y * o.y + o.z * o.z);
+                if (rc > 1.f && ro > 1.f && ro < rc)
+                    c = {c.x * ro / rc, c.y * ro / rc, c.z * ro / rc};
+            } else if (!C.player_pos || !C.player_pos(p.id, c) || (c.x == 0 && c.y == 0 && c.z == 0)) {
                 if (!(sb == kStTribe && C.stage_center && C.stage_center(c)) && !(sb == kStCiv && C.civ_center && C.civ_center(c)))
                     continue;
             }
@@ -576,6 +705,8 @@ static void host_tick(double now)
                 w.f32(it->pos.y);
                 w.f32(it->pos.z);
                 w.u32(it->st);
+                if (K.classes)
+                    w.u32(it->cls);
             }
             C.sess->send_unreliable_to(p.id, net::MSG_WOBJ, w);
             g_st[k].tx++;
@@ -644,7 +775,7 @@ static void reconcile(int k, double now, bool fresh)
             float bd = K.tol;
             for (auto& l : local) {
                 float d = net::dist(l.pos, ps.first);
-                if (d < bd && !used.count({l.p, l.id})) {
+                if (d < bd && !used.count({l.p, l.id}) && (!K.classes || l.cls == ps.cls)) {
                     bd = d;
                     best = &l;
                 }
@@ -678,7 +809,7 @@ static void reconcile(int k, double now, bool fresh)
             net::Vec3 v{(ps.first.x - b.host_pos.x) / (float)dt, (ps.first.y - b.host_pos.y) / (float)dt,
                         (ps.first.z - b.host_pos.z) / (float)dt};
             float sp = std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
-            b.host_vel = sp < 15.f ? v : net::Vec3{}; // (a jump: no velocity)
+            b.host_vel = sp < K.vmax ? v : net::Vec3{}; // (a jump: no velocity)
         } else
             b.host_vel = {};
         b.host_pos = ps.first;
@@ -726,12 +857,35 @@ static void reconcile(int k, double now, bool fresh)
     G.own.swap(own);
 }
 
+// BUG-0490: guest, every frame: the bound copies of a kind with `drive` are drawn where the host's objects are
+// (this frame's list only: a copy the game freed is not in it)
+static void drive_frame(double now, uint8_t sb, bool away)
+{
+    for (int k = 0; k < kKinds; k++) {
+        Kind& K = g_kinds[k];
+        GuestKind& G = g_g[k];
+        if (!K.drive || !*K.fix || !(K.stages & sb) || away || G.binds.empty() || now - G.snap.at > kStale)
+            continue;
+        Items local;
+        K.collect(local);
+        std::map<std::pair<void*, uint32_t>, const Item*> by_key;
+        for (auto& it : local)
+            by_key[{it.p, it.id}] = &it;
+        for (auto& [id, b] : G.binds) {
+            auto f = by_key.find({b.p, b.serial});
+            if (f != by_key.end() && b.host_at > 0)
+                K.drive(*f->second, b.host_pos, b.host_vel, now - b.host_at, b.host_st);
+        }
+    }
+}
+
 static void guest_tick(double now)
 {
     if (g_epoch != game::world_epoch()) {
         guest_reset();
         g_epoch = game::world_epoch();
     }
+    drive_frame(now, stage_bit(), C.host_away && C.host_away());
     if (now - g_last_guest < kGuestInterval)
         return;
     g_last_guest = now;
@@ -754,7 +908,7 @@ static void on_snap(net::Reader& r, double now)
     net::Vec3 c{r.f32(), r.f32(), r.f32()};
     float rad = r.f32();
     uint8_t n = r.u8();
-    if (!r.ok() || k >= kKinds || n > g_kinds[k].max || !std::isfinite(rad) || rad < 0 || rad > 1000.f)
+    if (!r.ok() || k >= kKinds || n > g_kinds[k].max || !std::isfinite(rad) || rad < 0 || rad > 5000.f) // (Space vehicles: the whole planet, 2500 m)
         return;
     Snap s;
     s.c = c;
@@ -764,11 +918,12 @@ static void on_snap(net::Reader& r, double now)
         uint32_t id = r.u32();
         net::Vec3 p{r.f32(), r.f32(), r.f32()};
         uint32_t st = r.u32();
+        uint32_t cls = k < kKinds && g_kinds[k].classes ? r.u32() : 0;
         if (!r.ok())
             return;
         if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z) || p.x * p.x + p.y * p.y + p.z * p.z > 1e8f)
             continue;
-        s.objs[id] = {p, st};
+        s.objs[id] = {p, st, cls};
     }
     Kind& K = g_kinds[k];
     if (!*K.fix || !(K.stages & stage_bit()) || (C.host_away && C.host_away()) || g_epoch != game::world_epoch())
@@ -848,7 +1003,8 @@ std::string status()
                  t.tx, t.rx, t.bound, t.applied, t.dropped, t.missing, t.made, t.req_tx, t.req_rx, t.acted);
         s += b;
     }
-    snprintf(b, sizeof b, "citizens walks=%u puts=%u\n", g_cit_walks, g_cit_puts);
+    snprintf(b, sizeof b, "citizens walks=%u puts=%u; space citizens puts=%u; space vehicles drives=%u\n", g_cit_walks, g_cit_puts,
+             g_space_cit_puts, g_veh_drives);
     s += b;
     snprintf(b, sizeof b, "tools all=%d buy=%d removed=%u buys_tx=%u buys_rx=%u buys_done=%u\n", (int)g_tool_all_fix, (int)g_tool_buy_fix,
              g_tools_removed, g_tool_buys_tx, g_tool_buys_rx, g_tool_buys_done);
@@ -982,6 +1138,50 @@ static void* citizen_mirror(uint16_t id)
     return nullptr;
 }
 
+// ---------------------------------------------------------------- fields kinds space_citizen / space_vehicle (BUG-0490)
+// The same shape as civ_citizen: ids are the low half of the host's serial, the guest's mirror is its bound copy.
+static bool g_space_scale_fix = true;
+COOP_FIX("space.planet_scale", "BUG-0490", g_space_scale_fix, "space: a guest's bound colony citizen or vehicle gets the host's size");
+struct LiveSet {
+    uint64_t frame = ~0ull;
+    std::set<void*> live;
+};
+static void* bound_mirror(const char* kind, uint16_t id, LiveSet& ls)
+{
+    int k = kind_of_name(kind);
+    if (k < 0 || !*g_kinds[k].fix)
+        return nullptr;
+    for (auto& [hid, b] : g_g[k].binds) {
+        if ((uint16_t)(hid & 0xFFFF) != id)
+            continue;
+        if (H->frame_index() != ls.frame) {
+            ls.frame = H->frame_index();
+            ls.live.clear();
+            Items all;
+            g_kinds[k].collect(all);
+            for (auto& it : all)
+                ls.live.insert(it.p);
+        }
+        return ls.live.count(b.p) && game::object_serial(b.p) == b.serial ? b.p : nullptr;
+    }
+    return nullptr;
+}
+static void each_of(void (*collect)(Items&), void (*cb)(uint16_t, void*, void*), void* u)
+{
+    Items all;
+    collect(all);
+    std::set<uint16_t> seen;
+    for (auto& it : all)
+        if (seen.insert((uint16_t)(it.id & 0xFFFF)).second)
+            cb((uint16_t)(it.id & 0xFFFF), it.p, u);
+}
+static LiveSet g_sc_live, g_sv_live;
+static void space_citizen_each(void (*cb)(uint16_t, void*, void*), void* u) { each_of(citizen_collect, cb, u); }
+static void space_vehicle_each(void (*cb)(uint16_t, void*, void*), void* u) { each_of(space_vehicle_collect, cb, u); }
+static void* space_citizen_mirror(uint16_t id) { return bound_mirror("space_citizen", id, g_sc_live); }
+static void* space_vehicle_mirror(uint16_t id) { return bound_mirror("space_vehicle", id, g_sv_live); }
+static bool space_planet_active() { return stage_bit() == kStSpace; }
+
 void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
 {
     H = host;
@@ -1003,6 +1203,10 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
             k.stages = 0; // a symbol missing on this build: every game keeps its own (logged below)
     fields::add_kind({fields::K_CIV_CITIZEN, "civ_citizen", &g_cit_scale_fix, kCitizenFields, 1, citizen_each, citizen_mirror,
                       [] { return game::mode_id() == modes::kCiv; }});
+    fields::add_kind({fields::K_SPACE_CITIZEN, "space_citizen", &g_space_scale_fix, kCitizenFields, 1, space_citizen_each,
+                      space_citizen_mirror, space_planet_active});
+    fields::add_kind({fields::K_SPACE_VEHICLE, "space_vehicle", &g_space_scale_fix, kCitizenFields, 1, space_vehicle_each,
+                      space_vehicle_mirror, space_planet_active});
     if (!a_FruitSetState || !a_DropFruit || !a_OrnUsed)
         H->log(M, SK_WARN, "wobj: symbols missing, world objects stay per game");
     H->command_add(M, "coop.wobj",
