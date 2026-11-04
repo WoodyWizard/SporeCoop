@@ -4573,6 +4573,15 @@ int c_social(void*, int argc, const char* const* argv, SkOut* out)
         SAY("%s", social::species_dump().c_str());
         return 0;
     }
+    if (argc > 3 && !strcmp(argv[1], "answer")) { // tests (BUG-0525): answer mirror <id> with the ability of type <hex>
+        bool ok = social::debug_answer((uint16_t)atoi(argv[2]), strtoul(argv[3], nullptr, 16));
+        SAY(ok ? "answer sent" : "no answer (not a guest, no such proxy or ability)");
+        return ok ? 0 : 1;
+    }
+    if (argc > 2 && !strcmp(argv[1], "abil")) { // tests (BUG-0525): abilities of NPC <id> (host) / proxy (guest), -1 the avatar
+        SAY("%s", social::abilities_dump(atoi(argv[2])).c_str());
+        return 0;
+    }
     if (argc > 1 && !strcmp(argv[1], "meter")) { // tests (BUG-0179): the game's social meter on this screen
         SAY("%s", social::meter_dump().c_str());
         return 0;

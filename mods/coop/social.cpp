@@ -31,7 +31,30 @@ static constexpr uint32_t kSocialStimulus = 0x10000; // the avatar engages an NP
 static constexpr float kActRange = 12.f;             // m between the guest and the NPC for an action
 static constexpr double kEngageTime = 60.0;          // an engagement without actions ends after this
 
-enum Kind : uint8_t { K_ACT = 0, K_PROGRESS = 1, K_RESULT = 2, K_GOAL = 3 };
+enum Kind : uint8_t { K_ACT = 0, K_PROGRESS = 1, K_RESULT = 2, K_GOAL = 3, K_ENGAGE = 4, K_PROMPT = 5 };
+
+// BUG-0525: the NPC's prompts of a guest's social game (docs/re/creature.md#creature-social-prompts). The native
+// session (SocialPropose 0xDA4360, its tick 0xDA4950) has the NPC perform the abilities of a prompt list (npc
+// +0x1020, random from its species profile +0x7A4, one per round) and counts the player's answer to each prompt
+// (stimulus 0x10000000 kind 1 from the answer node 0xD9C100, checked in 0xD9B070): its ability's +0x10 equal to
+// the prompt's gives the ability's points (+0x3C), another 0.1 of them (0x1582F1C); the meter is full at the sum
+// of the prompts' points, a prompt waits 10 s (0x1582F20) after the NPC's performance, at the end of the list an
+// unfilled meter is a failure (animation 0x53685D8F). A guest's game with a mirror had no session anywhere: the
+// host counted any social ability as a round. Now the host runs that list for the guest's game: it picks the
+// prompts when the guest engages its NPC (K_ENGAGE), plays each prompt on its NPC (relayed by npc.anims) and sends
+// it (K_PROMPT: the guest plays it on its mirror), and counts only an answer to an open prompt, by its points.
+// Off: any social ability is a round, no prompts (0.7.5).
+static bool g_prompt_fix = true;
+COOP_FIX("social.prompts", "BUG-0525", g_prompt_fix, "creature: in a guest's social game the creature shows what to do (its prompts) and only an answer to a prompt counts");
+static constexpr double kPromptGreet = 2.0;   // s from the engagement to the first prompt (the NPC's greeting)
+static constexpr double kPromptWait = 13.0;   // s a prompt stays open: its performance (~3 s) + 10 s (0x1582F20)
+static constexpr double kPromptNext = 1.5;    // s from an answer to the next prompt
+static constexpr uint32_t kFailAnim = 0x53685D8Fu; // the NPC's animation of a failed social game (0xDA4C7A)
+static uint32_t g_prompts_sent = 0, g_prompts_in = 0, g_answers = 0, g_answers_wrong = 0, g_answers_early = 0,
+                g_prompt_fails = 0;
+static uint32_t g_prompt_anim = 0;  // guest: the animation of the last prompt it got
+static int g_prompt_npc = -1;       // guest: the proxy it was for
+static double g_prompt_at = -100;   // guest: when
 
 static bool is_host() { return C.sess && C.sess->role() == net::Role::Host; }
 static bool is_guest() { return C.sess && C.sess->role() == net::Role::Client && C.sess->connected(); }
@@ -173,6 +196,16 @@ static bool g_log_posts = false;
 static int social_mode(void* npc_c) { return a_SocialMode ? thiscall<int>(a_SocialMode, npc_c) : 0; }
 static uint32_t g_posts_logged = 0;
 
+static void send_engage(uint16_t id) // BUG-0525: the host starts the NPC's prompts
+{
+    if (!g_prompt_fix)
+        return;
+    net::Writer w;
+    w.u8(K_ENGAGE);
+    w.u16(id);
+    C.sess->send_reliable_to(0, net::MSG_SOCIAL, w);
+}
+
 // BT_PostStimulus 0xBC9940: the avatar posts the social stimulus 0x10000 to the NPC it engages in
 // the social stance (a click on it). A mirror has no AI to answer: remember it for the actions.
 static void* SK_THISCALL h_Post(void* stimuli, uint32_t lo, uint32_t hi, float value, void* sender)
@@ -187,8 +220,10 @@ static void* SK_THISCALL h_Post(void* stimuli, uint32_t lo, uint32_t hi, float v
         if ((lo & kSocialStimulus) && is_guest()) {
             int id = npc::proxy_id_of_ai(ai);
             if (id >= 0) {
-                if (id != g_engaged)
+                if (id != g_engaged) {
                     g_engages++;
+                    send_engage((uint16_t)id);
+                }
                 g_engaged = id;
                 g_engaged_at = H->time_seconds();
             }
@@ -589,9 +624,20 @@ static void guest_tick(double now)
 }
 
 // ------------------------------------------------------------------ host: the guests' games
+struct Prompt {
+    uint32_t type, key; // the ability's +8 and +0x10 (what an answer must match)
+    float points;       // +0x3C, rounded as SocialPropose sums them
+    uint32_t anim;      // the ability's first animation (cCreatureAbility::GetAnimationID(0))
+};
 struct Game {
     int rounds = 0;
     double last = 0;
+    // BUG-0525: the prompt list of this game
+    std::vector<Prompt> prompts;
+    int idx = -1;          // the prompt open now (-1: before the first)
+    bool answered = true;  // the open prompt got its answer (or none is open)
+    double prompt_at = 0, next_at = 0;
+    float score = 0, needed = 0;
 };
 static std::map<std::pair<uint8_t, uint16_t>, Game> g_games;
 static uint32_t g_acts_in = 0, g_impressed = 0, g_refused = 0;
@@ -689,6 +735,120 @@ static void pending_task(void*)
         apply_success(p.player, p.npc);
 }
 
+static uint32_t ability_anim(void* a) // cCreatureAbility::GetAnimationID(0) 0x4D3D30: +0x48 vector, default 0x4330667
+{
+    uint32_t* b = field<uint32_t*>(a, 0x48);
+    uint32_t* e = field<uint32_t*>(a, 0x4C);
+    return b && e > b && !IsBadReadPtr(b, 4) ? *b : 0x4330667u;
+}
+
+// the prompts as SocialPropose picks them: rounds (rounds_needed) abilities of the NPC drawn from its species
+// profile's candidates (+0x7A4, ability indices); empty when the species has none
+static std::vector<Prompt> pick_prompts(void* c)
+{
+    std::vector<Prompt> v;
+    uint8_t* sp = (uint8_t*)game::species_profile(c);
+    if (!sp || IsBadReadPtr(sp + 0x7A4, 8))
+        return v;
+    int* p0 = *(int**)(sp + 0x7A4);
+    int* p1 = *(int**)(sp + 0x7A8);
+    int nc = p0 && p1 > p0 ? (int)(p1 - p0) : 0;
+    if (nc <= 0 || nc > 64 || IsBadReadPtr(p0, nc * 4))
+        return v;
+    int n = rounds_needed(c);
+    for (int i = 0; i < n; i++) {
+        int ai = p0[rand() % nc];
+        uint8_t* a = ai >= 0 && ai < ability_count(c) ? (uint8_t*)ability(c, ai) : nullptr;
+        if (!a || IsBadReadPtr(a, 0x50))
+            continue;
+        v.push_back({field<uint32_t>(a, 8), field<uint32_t>(a, 0x10), std::max(1.f, std::round(field<float>(a, 0x3C))),
+                     ability_anim(a)});
+    }
+    return v;
+}
+
+static void send_prompt(uint8_t to, uint16_t id, int i, int n, const Prompt& p)
+{
+    net::Writer w;
+    w.u8(K_PROMPT);
+    w.u16(id);
+    w.u8((uint8_t)i);
+    w.u8((uint8_t)n);
+    w.u32(p.type);
+    w.u32(p.key);
+    w.u32(p.anim);
+    C.sess->send_reliable_to(to, net::MSG_SOCIAL, w);
+    g_prompts_sent++;
+}
+
+static void fail_game(uint8_t player, uint16_t id)
+{
+    if (void* c = npc::host_npc(id); c && a_PlayReaction && !game::is_dead(c))
+        thiscall<int>(a_PlayReaction, c, kFailAnim, 1, -1);
+    g_prompt_fails++;
+    send_result(id, player, false, kFailAnim, 0);
+}
+
+// host: the guest engaged NPC #id (K_ENGAGE): a new game with its prompt list
+static void host_engage(uint8_t from, uint16_t id)
+{
+    void* c = npc::host_npc(id);
+    if (!g_prompt_fix || !c || game::is_dead(c) || game::impressed(c) || social_mode(c) == 0)
+        return;
+    double now = H->time_seconds();
+    Game& g = g_games[{from, id}];
+    if (!g.prompts.empty() && now - g.last < kEngageTime && g.idx < (int)g.prompts.size())
+        return; // a game with it is on
+    g = Game{};
+    g.prompts = pick_prompts(c);
+    g.last = now;
+    g.next_at = now + kPromptGreet;
+    for (auto& p : g.prompts)
+        g.needed += p.points;
+    if (g.prompts.empty())
+        g_games.erase({from, id}); // no candidates: the old way (any social ability is a round)
+}
+
+// host, every frame: the guests' games with prompts go on (next prompt, a prompt that waited too long, the end)
+static void host_prompt_tick(double now)
+{
+    for (auto it = g_games.begin(); it != g_games.end();) {
+        Game& g = it->second;
+        uint8_t from = it->first.first;
+        uint16_t id = it->first.second;
+        void* c = npc::host_npc(id);
+        if (g.prompts.empty()) {
+            ++it;
+            continue;
+        }
+        if (!c || game::is_dead(c) || game::impressed(c) || now - g.last > kEngageTime) {
+            it = g_games.erase(it);
+            continue;
+        }
+        bool open = g.idx >= 0 && !g.answered;
+        if (open && now - g.prompt_at > kPromptWait) { // not answered in time: the prompt is lost
+            g.answered = true;
+            g.next_at = now;
+            open = false;
+        }
+        if (!open && now >= g.next_at) {
+            if (g.idx + 1 >= (int)g.prompts.size()) { // the list is through and the meter not full
+                fail_game(from, id);
+                it = g_games.erase(it);
+                continue;
+            }
+            g.idx++;
+            g.answered = false;
+            g.prompt_at = now;
+            const Prompt& p = g.prompts[g.idx];
+            if (a_PlayReaction) // the NPC performs it (npc.anims shows it on the guest's mirror)
+                thiscall<int>(a_PlayReaction, c, p.anim, 1, -1);
+            send_prompt(from, id, g.idx, (int)g.prompts.size(), p);
+        }
+        ++it;
+    }
+}
+
 static void host_act(uint8_t from, uint16_t id, uint32_t type)
 {
     g_acts_in++;
@@ -700,9 +860,40 @@ static void host_act(uint8_t from, uint16_t id, uint32_t type)
         send_result(id, from, false, 0, 0);
         return;
     }
+    int pi = pup ? ability_by_type(pup, type) : -1;
     if (pup) // the host sees the guest perform it
-        play_ability(pup, ability_by_type(pup, type));
+        play_ability(pup, pi);
     double now = H->time_seconds();
+    auto gi = g_games.find({from, id});
+    if (g_prompt_fix && gi != g_games.end() && !gi->second.prompts.empty()) { // BUG-0525: an answer to a prompt
+        Game& g = gi->second;
+        g.last = now;
+        if (g.idx < 0 || g.answered) {
+            g_answers_early++; // no prompt open: the native session takes no answer then
+            return;
+        }
+        const Prompt& p = g.prompts[g.idx];
+        uint8_t* a = pi >= 0 ? (uint8_t*)ability(pup, pi) : nullptr;
+        uint32_t key = a ? field<uint32_t>(a, 0x10) : (type == p.type ? p.key : 0xFFFFFFFFu);
+        float pts = a ? std::max(1.f, field<float>(a, 0x3C)) : 1.f;
+        bool match = key == p.key;
+        g.score += match ? pts : 0.1f * pts; // 0xD9B070: another ability gives 0.1 (0x1582F1C) of its points
+        g.answered = true;
+        g.next_at = now + kPromptNext;
+        g_answers++;
+        if (!match)
+            g_answers_wrong++;
+        int needed = std::max(1, (int)std::lround(g.needed * 10));
+        int done = std::min(needed, (int)std::lround(g.score * 10));
+        send_progress(from, id, std::min(done, 255), std::min(needed, 255));
+        if (g.score + 1e-3f < g.needed)
+            return;
+        g_games.erase(gi);
+        if (g_pending.empty())
+            H->run_outside_frame(pending_task, nullptr);
+        g_pending.push_back({from, id});
+        return;
+    }
     Game& g = g_games[{from, id}];
     if (now - g.last > kEngageTime)
         g.rounds = 0;
@@ -769,6 +960,8 @@ void tick(double now)
                            ": +" + std::to_string((int)(o.dna + 0.5f)) + " DNA");
             }
     }
+    if (is_host())
+        host_prompt_tick(now);
     if (is_host()) {
         static double last = 0;
         if (now - last < 1.0)
@@ -839,6 +1032,30 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             host_act(from, id, ability_type);
         return;
     }
+    if (kind == K_ENGAGE && is_host()) {
+        if (r.ok())
+            host_engage(from, id);
+        return;
+    }
+    if (kind == K_PROMPT && is_guest()) { // BUG-0525: the NPC's prompt: its mirror performs it
+        int i = r.u8(), n = r.u8();
+        uint32_t type = r.u32(), key = r.u32(), anim = r.u32();
+        (void)type; (void)key;
+        if (!r.ok())
+            return;
+        g_prompts_in++;
+        void* px = npc::proxy(id);
+        if (px && a_PlayReaction && !game::is_dead(px))
+            thiscall<int>(a_PlayReaction, px, anim, 1, -1);
+        g_prompt_anim = anim;
+        g_prompt_npc = id;
+        g_prompt_at = H->time_seconds();
+        if (id == g_engaged)
+            g_engaged_at = g_prompt_at;
+        if (C.feed && id == g_engaged && n > 1)
+            C.feed("Answer it: " + std::to_string(i + 1) + "/" + std::to_string(n));
+        return;
+    }
     if (kind == K_GOAL && is_host()) {
         ResourceKey k;
         k.instance = r.u32(); k.type = r.u32(); k.group = r.u32();
@@ -865,7 +1082,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         if (r.ok() && needed > 0 && id == g_engaged)
             meter_task(1, id, std::min(1.f, (float)done / needed));
         if (r.ok() && done < needed && C.feed)
-            C.feed("Impressing: " + std::to_string(done) + "/" + std::to_string(needed));
+            C.feed("Impressing: " + std::to_string(100 * done / needed) + "%");
         return;
     }
     if (kind == K_RESULT && is_guest()) {
@@ -882,7 +1099,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             game::set_impressed(px, true);
             if (a_PlayReaction)
                 thiscall<int>(a_PlayReaction, px, anim, 1, -1);
-        }
+        } else if (px && anim && a_PlayReaction && !game::is_dead(px)) // BUG-0525: a failed game's animation
+            thiscall<int>(a_PlayReaction, px, anim, 1, -1);
         if (mine && C.feed)
             C.feed(ok ? "Impressed! +" + std::to_string((int)(dna + 0.5f)) + " DNA for the pack"
                       : "It does not want to socialize now");
@@ -907,19 +1125,23 @@ void on_session_end()
 
 std::string status()
 {
-    char b[300];
+    char b[640];
     if (is_host())
         snprintf(b, sizeof b,
                  "social(host): acts_in=%u impressed=%u refused=%u games=%u species_tx=%u goal_dna_paid=%u "
-                 "goal_dna_dropped=%u goal_owed=%u goal_owed_paid=%u\n",
+                 "goal_dna_dropped=%u goal_owed=%u goal_owed_paid=%u prompts_sent=%u answers=%u answers_wrong=%u "
+                 "answers_early=%u prompt_fails=%u\n",
                  g_acts_in, g_impressed, g_refused, (unsigned)g_games.size(), g_table_tx, g_goal_dna_paid,
-                 g_goal_dna_dropped, (unsigned)g_goal_owed.size(), g_goal_owed_paid);
+                 g_goal_dna_dropped, (unsigned)g_goal_owed.size(), g_goal_owed_paid, g_prompts_sent, g_answers,
+                 g_answers_wrong, g_answers_early, g_prompt_fails);
     else
         snprintf(b, sizeof b,
                  "social(guest): engaged=%d engages=%u acts_sent=%u results_in=%u species_rx=%u species_fixed=%u "
-                 "events_dropped=%u cards_refreshed=%u goal_dna_sent=%u social_hits_dropped=%u bar_acts=%u bar_passed=%u\n",
+                 "events_dropped=%u cards_refreshed=%u goal_dna_sent=%u social_hits_dropped=%u bar_acts=%u bar_passed=%u "
+                 "prompts_in=%u prompt_npc=%d prompt_anim=%08X prompt_age=%.1f\n",
                  g_engaged, g_engages, g_acts_sent, g_results_in, g_table_rx, g_table_fixed, g_events_dropped,
-                 g_cards_refreshed, g_goal_dna_dropped, g_social_hits_dropped, g_bar_acts, g_bar_passed);
+                 g_cards_refreshed, g_goal_dna_dropped, g_social_hits_dropped, g_bar_acts, g_bar_passed, g_prompts_in,
+                 g_prompt_npc, g_prompt_anim, H->time_seconds() - g_prompt_at);
     return b;
 }
 
@@ -1021,6 +1243,38 @@ std::string debug_objects(uint32_t lo, uint32_t hi)
     return u.out;
 }
 
+// tests (BUG-0525): a creature's abilities as the social game reads them (+8 type, +0x10 the key the native
+// session compares, +0x3C points) and its species' prompt candidates (profile +0x7A4: ability indices)
+std::string abilities_dump(int id)
+{
+    void* c = id < 0 ? game::avatar() : is_host() ? npc::host_npc((uint16_t)id) : npc::proxy((uint16_t)id);
+    if (!c)
+        return "no such creature\n";
+    std::string out;
+    char b[200];
+    int n = ability_count(c);
+    for (int i = 0; i < n && i < 64; i++) {
+        uint8_t* a = (uint8_t*)ability(c, i);
+        if (!a || IsBadReadPtr(a, 0x108))
+            continue;
+        snprintf(b, sizeof b, "ab %d type=0x%X key=%u points=%.2f energy=%.2f\n", i, *(uint32_t*)(a + 8),
+                 *(uint32_t*)(a + 0x10), *(float*)(a + 0x3C), *(float*)(a + 0x104));
+        out += b;
+    }
+    uint8_t* sp = (uint8_t*)game::species_profile(c);
+    if (sp && !IsBadReadPtr(sp + 0x7A4, 8)) {
+        int* p0 = *(int**)(sp + 0x7A4);
+        int* p1 = *(int**)(sp + 0x7A8);
+        out += "prompts";
+        for (int* q = p0; q && q < p1 && q - p0 < 32 && !IsBadReadPtr(q, 4); q++) {
+            snprintf(b, sizeof b, " %d", *q);
+            out += b;
+        }
+        out += "\n";
+    }
+    return out;
+}
+
 bool debug_goto(uint16_t id) // tests: the guest's avatar steps next to proxy #id (2.5 m)
 {
     void* av = game::avatar();
@@ -1037,6 +1291,22 @@ bool debug_goto(uint16_t id) // tests: the guest's avatar steps next to proxy #i
     return true;
 }
 
+// tests (BUG-0525): the guest answers the engaged mirror #id with its ability of type <type> (any kind: a
+// combat ability is an answer of another kind than the prompt's), as the key / bar path sends it
+bool debug_answer(uint16_t id, uint32_t type)
+{
+    void* av = game::avatar();
+    if (!is_guest() || !av || !npc::proxy(id))
+        return false;
+    int idx = ability_by_type(av, type);
+    if (idx < 0)
+        return false;
+    play_ability(av, idx);
+    send_act(id, type);
+    g_engaged_at = g_last_act = H->time_seconds();
+    return true;
+}
+
 bool debug_social(uint16_t id, int slot)
 {
     if (slot < 0) { // toggle the stimulus log
@@ -1045,7 +1315,9 @@ bool debug_social(uint16_t id, int slot)
     }
     if (!is_guest() || !npc::proxy(id))
         return false;
-    g_engaged = id; // as if the avatar had engaged it
+    if (id != g_engaged) // as if the avatar had engaged it (a click on it)
+        send_engage(id);
+    g_engaged = id;
     g_engaged_at = H->time_seconds();
     return act(slot);
 }
