@@ -109,7 +109,7 @@ void send(uint8_t kind, const net::Writer& body);
 // shared by pol (BUG-0071)
 bool allies_mirror_pol(uint32_t pol);
 // BUG-0195: make `planet` a colony of my own empire at record level (a guest's colony the host kept for
-// it). "" = done (or mine already), "wait" = not now (I am on that planet), else why it can not be mine.
+// it). "" = done (or mine already), "wait" = not now (the ship is at that planet), else why it can not be mine.
 std::string colonize_own(uint32_t planet);
 // the game's missions (cMission*, every state; space_allies.cpp reads the noun list)
 std::vector<void*> game_missions();

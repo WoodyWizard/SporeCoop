@@ -1106,8 +1106,8 @@ static std::string str16(void* s)
 }
 
 // a record-level colony of my own empire on `planet` (docs/re/space.md 15.2: the star claimed, tech 5,
-// the cCivData of my empire, AddPlanet). "" = done; else why not: "wait" (I am on that planet: SetTechLevel
-// would change the live planet too) or a lasting reason. `restore` (BUG-0195, a guest's colony the host
+// the cCivData of my empire, AddPlanet). "" = done; else why not: "wait" (restore only: the ship is at that
+// planet, its live planet is not changed from under it) or a lasting reason. `restore` (BUG-0195, a guest's colony the host
 // kept for it): a planet that is a colony already counts as done when it is mine, as a conflict when not.
 static std::string colonize(uint32_t id, bool restore)
 {
@@ -1117,7 +1117,7 @@ static std::string colonize(uint32_t id, bool restore)
     if (!me || !rec || !star)
         return "no such planet";
     uint32_t pol = F<uint32_t>(me, 0x84);
-    if (active_planet_record() == rec)
+    if (restore && active_planet_record() == rec) // (the test command colonizes the active planet on purpose)
         return "wait";
     if (F<uint32_t>(star, 0x54) != 0xFFFFFFFFu && F<uint32_t>(star, 0x54) != pol)
         return "the star belongs to another empire";
