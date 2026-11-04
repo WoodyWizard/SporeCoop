@@ -37,11 +37,12 @@ def main():
     near = 120 if a.fixture == 'tribe' else 60
     host, guest = start(a.fixture)
     ck = Checks()
-    time.sleep(15)
+    # (Tribe: a cold guest's game time stays paused for 15-30 s after the join, docs/re/tribe.md; the proxies come then)
+    time.sleep(40 if a.fixture == 'tribe' else 15)
     hw, gw = worlddiff.pair_dump(host, guest)
     h = {x['id']: x for x in hw.rows if x['kind'] == 'c' and x['own'] == 'npc'}
     g = {x['id']: x for x in gw.rows if x['kind'] == 'c' and x['own'] == 'proxy'}
-    me = gw.me
+    me = gw.me if gw.me and any(abs(v) > 1 for v in gw.me) else hw.me  # (an RTS pointer at (0 0 0): the host's centre)
     ids = sorted((i for i in set(h) & set(g) if me and math.dist(g[i]['pos'], me) < near and h[i]['alive']),
                  key=lambda i: math.dist(g[i]['pos'], me))[:a.n]
     ck(len(ids) >= min(a.n, 2), f'proxies near the guest to forget: {ids} (of {len(g)} proxies)')
