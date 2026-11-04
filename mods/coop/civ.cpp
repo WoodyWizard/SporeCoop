@@ -527,9 +527,11 @@ void fire_observed(void* tool, void* owner, const float* aim, void* target, bool
     g_shots_seen++;
 }
 
+static void tribe_count_log(double now); // BUG-0539 diagnostics (below)
 static void host_send_shots(double now)
 {
     shots_log(now);
+    tribe_count_log(now);
     bool soon = g_fix_shot_now && g_fix_shot_fired && g_shot_new && now - g_shots_sent_at >= 0.05;
     if (!g_fix_shots || (now - g_shots_sent_at < kShotSend && !soon))
         return;
@@ -616,6 +618,41 @@ static void guest_shots(net::Reader& r, bool counted)
         e.seen = now + (counted ? kShotKeepFired + 0.2 : kShotKeep + 0.05);
         g_shots_rx++;
     }
+}
+
+// BUG-0539 (diagnostics): who destroys a Tribe stage tribe in Civ, and when the count of tribes changes
+constexpr uint32_t kTribeNoun = 0x018C6D19;
+using DestroyInstance_t = void(SK_THISCALL*)(void*, void*);
+static DestroyInstance_t o_DestroyInstance;
+static std::map<uintptr_t, uint32_t> g_tribe_destroys;
+static void SK_THISCALL h_DestroyInstance(void* mgr, void* obj)
+{
+    if (obj && game::mode_id() == modes::kCiv && !IsBadReadPtr(obj, 4) && vtable_in_game(obj) &&
+        game::noun_id(obj) == kTribeNoun) {
+        uintptr_t ra = (uintptr_t)__builtin_return_address(0);
+        if (g_tribe_destroys[ra]++ == 0 && g_tribe_destroys.size() <= 8)
+            H->log(M, SK_INFO, "civ: a tribe of the Tribe stage is destroyed here (%s), DestroyInstance from 0x%08X",
+                   is_host() ? "host" : is_guest() ? "guest" : "alone", (unsigned)ra);
+    }
+    o_DestroyInstance(mgr, obj);
+}
+static void tribe_count_log(double now)
+{
+    static double last = -100;
+    static int known = -1;
+    if (now - last < 5)
+        return;
+    last = now;
+    int n = 0;
+    game::for_each_object([](void*, uint32_t noun, void* u) {
+        if (noun == kTribeNoun)
+            ++*(int*)u;
+        return true;
+    }, &n);
+    if (n != known)
+        H->log(M, SK_INFO, "civ: tribes of the Tribe stage in this game: %d (was %d, cities %u)", n, known,
+               (unsigned)all_cities().size());
+    known = n;
 }
 
 // host: a tool stops (cToolManager::OnMouseUp): a listed shooter's entry says so (BUG-0530)
@@ -719,6 +756,7 @@ static void release_copy(Shot& s)
 static void guest_fire(double now)
 {
     shots_log(now);
+    tribe_count_log(now);
     if (!g_fix_shots || !a_FireTool || !a_ToolMgrGet || local_play()) {
         g_shots_in.clear();
         return;
@@ -1902,6 +1940,8 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
         H->hook_create(M, (void*)a_AddTurret, (void*)h_AddTurret, (void**)&o_AddTurret);
     else
         a_AddTurret = 0;
+    if (uintptr_t di = H->sym("Simulator::cGameNounManager::DestroyInstance")) // BUG-0539 diagnostics
+        H->hook_create(M, (void*)di, (void*)h_DestroyInstance, (void**)&o_DestroyInstance);
     a_ToolMouseUp = H->sym("Simulator::cToolManager::OnMouseUp"); // BUG-0530 (optional)
     if (a_ToolMouseUp)
         H->hook_create(M, (void*)a_ToolMouseUp, (void*)h_ToolMouseUp, (void**)&o_ToolMouseUp);
