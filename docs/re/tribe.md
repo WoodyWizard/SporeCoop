@@ -1190,9 +1190,9 @@ lab 20261103-150636, 298 samples:
 * ✔ The objects the mod makes in a Tribe guest's game: the members `guest_state` spawns as mirrors
   (`spawn_member`: cTribe vt 0x98 SpawnMember, else CreateCitizen + AddMember) and the NPC tribes it makes
   for the host's (SpawnNpcTribe, tribe.npc_tribes, BUG-0381) with their hut (+0x368), tools (+0x36C, +0x380)
-  and food mat (noun 0x629BAFE, it holds its tribe's pointer: the offset is logged at the first save,
-  "a food mat holds its tribe at +0x..."). Members of the guest's own game bound as mirrors (the loaded
-  world's) are the player's.
+  and food mat (noun 0x629BAFE; ~ it holds its tribe's pointer at +0x2C: found by a scan at the first save,
+  lane 5 2026-11-03, "a food mat holds its tribe at +0x2C"). Members of the guest's own game bound as
+  mirrors (the loaded world's) are the player's.
 * ✔ (BUG-0495, tribe.save_strip, lab 20261103-234419) A save on the guest writes none of them: the savestrip
   filter nulls their references, and while the save is written the members leave the tribes' member vector
   +0x340 and selectable vector +0x354 (citizen+0xC0). The reloaded world (alone, no session) had the player
