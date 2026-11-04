@@ -368,7 +368,8 @@ def main():
         for nm, pz in (('share_cinematic', False), ('share_paused', True)):
             share_case(host, guest, ck, cm_h, nm, pz)
             wait_quiet(host, guest)
-            time.sleep(35)  # two world transfers close together trip the monitor's link rule (BUG-0439)
+            # BUG-0439: no wait between the two shares: the monitor leaves out the trace lines of a world transfer
+            # (and 15 s after it, BUG-0415), two transfers 18 s apart are no unhealthy link
         if a.part == 'gate':
             ck.faults(host=host, guest=guest)
             return ck.result()

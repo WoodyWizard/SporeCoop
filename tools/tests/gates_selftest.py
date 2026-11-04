@@ -141,6 +141,23 @@ def monitor_cases(tmp):
     check('link' in got, f'monitor: link: a resend storm that goes on 15 s after the transfer ({got})')
     got = scenario(tmp, 'resend_other', [x.replace('with player 1', 'with player 2') for x in share] + h, g)
     check('link' in got, f'monitor: link: a transfer to another player does not cover this one ({got})')
+    # BUG-0439: two world shares 18 s apart (busy_gate's share_cinematic + share_paused, 3.3 MB each): the resend
+    # ratio over 0.5 on the three trace lines that span both transfers is the transfers', not the link's (the
+    # BUG-0415 rule covers it); share_after=-1 (no share rule) shows that the case is the failing one
+    h, g = clean_pair(n=8)
+    hi = iter([0, 600, 1500, 2200, 2205, 2210, 2215, 2220])  # resends: +600, +900, +700 per 1000 sent at s 11-31
+    h = [x.replace(f'resends={5 * k}/', f'resends={next(hi)}/') if 'partner' in x else x
+         for k, x in zip([i // 2 for i in range(len(h))], h)]
+    two = (["12:00:00.000 [s 0.500] [INF] coop: world: sharing X\\Games\\Game0, planet Zorispe (10 files, 3523661 "
+            "bytes, id 23E07504) with player 1",
+            "12:00:00.000 [s 3.0] [INF] coop: world: transfer to 1 queued completely (3441 KB in 2.6 s, 1300 KB/s, rtt 25 ms)",
+            "12:00:00.000 [s 18.5] [INF] coop: world: sharing X\\Games\\Game0, planet Zorispe (10 files, 3523661 "
+            "bytes, id 23E07505) with player 1",
+            "12:00:00.000 [s 21.2] [INF] coop: world: transfer to 1 queued completely (3441 KB in 2.6 s, 1300 KB/s, rtt 25 ms)"])
+    got = scenario(tmp, 'two_shares', two + h, g)
+    check(not got, f'monitor: link: two world shares 18 s apart are no unhealthy link (BUG-0439) ({got})')
+    got = scenario(tmp, 'two_shares_norule', two + h, g, dict(share_after=-1))
+    check('link' in got, f'monitor: link: the same lines without the share rule are a violation (the case bites) ({got})')
     got = scenario(tmp, 'totals', *clean_pair(host_own=dict(res='food=40'), guest_own=dict(res='food=12')))
     check(got == {'totals'}, f'monitor: totals: food 40 on the host, 12 on the guest for a minute ({got})')
     got = scenario(tmp, 'dna', *clean_pair(host_own=dict(dna=120), guest_own=dict(dna=95)))
