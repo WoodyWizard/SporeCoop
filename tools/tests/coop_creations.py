@@ -19,6 +19,7 @@ import re
 import time
 
 import lane
+import creations_state
 from coop_ui import Ui
 from twoinst import Checks, shot, start
 
@@ -69,6 +70,8 @@ def main():
     ck = Checks()
     ck(wait(lambda: avatar(guest) and avatar(host) and puppet(host, 1), 30), 'both games play, the host shows the guest')
     h_av = avatar(host)
+    st0 = creations_state.save(guest)  # put back at the end: later tests see the profile as it was
+    print(f'  guest profile before: {st0}', flush=True)
     own = [l.split()[1] for l in guest.call('coop.creations list')['out'].splitlines() if l.startswith('creature ')]
     ck(own, f'the guest profile has own creatures ({len(own)})')
     newest = own[0] if own else None
@@ -118,11 +121,7 @@ def main():
     print(f'  after >: mine {new}, guest avatar {avatar(guest)}, host shows {puppet(host, 1)}', flush=True)
     ck(new, 'the co-op window\'s next creation is an own creature, the guest plays it and the host shows it')
     guest.call('coop.uistate 0')
-    # the profile as other tests expect it: no choice, its newest own creature played (recorded) in
-    # this world, so a later game here plays it by default as before
-    guest.call(f'coop.creations choose creature {newest}')
-    wait(lambda: avatar(guest) == newest, 30)
-    guest.call('coop.creations unchoose creature')
+    creations_state.restore(guest, st0)
     print('  left:', guest.call('coop.creations worlds')['out'].strip(), flush=True)
     time.sleep(6)
     shot(host, 'creations_host.png')

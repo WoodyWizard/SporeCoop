@@ -17,6 +17,7 @@ import re
 import time
 
 import census
+import creations_state
 from twoinst import Checks, start, lane_state
 
 
@@ -28,9 +29,14 @@ def player1_creature(host):
 def main():
     host, guest = start()
     ck = Checks()
+    # BUG-0345: the guest's creature A is one of its own (chosen: no default in a world it never played it in)
+    st0 = creations_state.save(guest)
+    print('  guest profile before:', st0, '| chose', creations_state.choose_own(guest), flush=True)
+    w_av = re.search(r'key=0x([0-9A-F]{8})', host.call('coop.avatar')['out'])
+    w_av = w_av.group(1) if w_av else None
     t0 = time.time()
     a = None
-    while time.time() - t0 < 30 and not a:
+    while time.time() - t0 < 30 and (not a or a == w_av):
         a = player1_creature(host)
         time.sleep(1)
     print(f'  the guest\'s creature on the host: {a}', flush=True)
@@ -65,6 +71,7 @@ def main():
     ck(found is not None, f'the guest\'s game has that NPC (species {a}) in its world')
     host.call('coop.fix npc.strays on')
     print('  guest:', guest.call('coop.creations prev creature')['out'].strip()[:200], flush=True)
+    creations_state.restore(guest, st0)  # the profile as it was (BUG-0345)
     ck.faults(host=host, guest=guest)
     return ck.result()
 
