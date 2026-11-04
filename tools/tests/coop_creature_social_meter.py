@@ -6,8 +6,8 @@ The native meter is one UI object of the creature mode (docs/re/creature.md#crea
 social game with a mirror never opened it (the NPC's behaviour tree, which opens it, runs on the host) and
 the win's message 0x60B4123 (the creature-stage handler rolls the species' part reward on it) was never posted
 on the guest. Real input on the guest: the social stance, a click on a Kook, clicks on the sing button.
-Checked on the guest's game: the meter object is opened with the Kook's rounds when the Kook is engaged, its
-bar stands full after the host's win, and the creature-stage handler of the guest's game got 0x60B4123.
+Checked on the guest's game: the meter object is opened with the Kook's rounds when the Kook is engaged, the
+meter's layout is visible when the host's win arrives, hidden after it, and the creature-stage handler of the guest's game got 0x60B4123.
 SPORE_FIX_OFF=social.guest_meter must FAIL."""
 import re
 import time
@@ -20,7 +20,7 @@ SING = (550, 1020)  # the social row's first button (1440x1080 test window)
 
 
 def meter(con):
-    return con.call('coop.social meter')
+    return con.call('coop.social meter')['out']
 
 
 def main():
@@ -43,6 +43,7 @@ def main():
     m0 = meter(guest)
     print(f'  guest before: {m0.strip()}', flush=True)
     w0 = num(r'stage_win_msgs=(\d+)', m0, 0)
+    o0 = num(r'opened=(\d+)', m0, 0)
     done = opened = None
     for nid in kooks[:3]:
         if not engage(guest, nid, 40):
@@ -51,7 +52,7 @@ def main():
         time.sleep(1)
         m1 = meter(guest)
         print(f'  #{nid} engaged: {m1.strip()}', flush=True)
-        if num(r'open_for=(-?\d+)', m1, -1) == nid:
+        if num(r'opened=(\d+)', m1, 0) > o0:
             opened = m1
             shot(guest, 'social_meter_guest_open.png')
         for _ in range(4):
@@ -74,10 +75,10 @@ def main():
         m2 = meter(guest)
         print(f'  guest after: {m2.strip()}', flush=True)
         shot(guest, 'social_meter_guest_won.png')
-        ck(num(r'bar0=([\d.-]+)', m2, 0) > 0.95, f"the meter's bar stands full on the guest's screen after the win ({m2.strip()})")
+        ck(num(r'visible_at_win=(-?\d+)', m2, 0) == 1, f"the game's meter was up on the guest's screen when the win came ({m2.strip()})")
         ck(num(r'stage_win_msgs=(\d+)', m2, 0) > w0,
            "the guest's creature-stage handler got the game's social win message 0x60B4123")
-        ck(num(r'open_for=(-?\d+)', m2, 0) < 0, 'the meter is closed after the result')
+        ck(num(r'open_for=(-?\d+)', m2, 0) < 0 and num(r' visible=(-?\d+)', m2, 1) == 0, "the game's meter is hidden after the result")
         ck(guest_list(guest).get(done, (False, False))[1], f"the guest's game shows Kook #{done} impressed")
     ck.faults(host=host, guest=guest)
     return ck.result()

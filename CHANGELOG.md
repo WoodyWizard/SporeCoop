@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+- Creature: a guest's social game now shows the game's social meter, like the host's, and a creature the
+  guest befriends can give it a new part as in a single-player game (BUG-0179).
+
 ## [0.7.4] - 2026-11-03
 
 ### Fixed

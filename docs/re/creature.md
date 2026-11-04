@@ -2345,3 +2345,35 @@ BUG-0462 follow-up. GOG 2024, Ghidra.
 * What the mod does now: the hook gives the party species the "player species" answer only when its return
   address lies inside GetRelationship or CreatureSocialMode; the cursor / click (0xD2FFD0) and the faces reach the
   relation through those two. Other callers get the game's own answer (`coop.hp`: `other_callers=` counts them).
+
+## The social meter and the win message on a guest (2026-11-03, fix/w41-creature-left)
+<a id="creature-guest-meter"></a>
+
+BUG-0179 (meter and message), BUG-0525 (prompts, open). GOG 2024, Ghidra and lane 9.
+
+* ✔ (Ghidra) The BT node "SocialPropose" start `SporeCoop::SocialPropose_Start` 0xDA4360 builds the session (pool
+  0xBCB220, session +0x1AC rounds = tuning +0x424, one less for a baby, +1 for an alpha), picks the NPC's prompt
+  abilities (npc +0x1020 vector, random from its species profile +0x7A4, their points at species +0x6D4 [i] +0x3C)
+  and opens the meter: meter = `[[cCreatureModeStrategy +0x68] +0x60]` (0xD2BA50; the Scenario mode has its own),
+  stored at session +0x1DC, then `SocialMeter_Reset` 0xE33CA0, `SocialMeter_SetVisible` 0xE319D0(0),
+  `SocialMeter_SetRounds` 0xE31AE0(rounds: meter +0x44), `SocialMeter_SetRelation` 0xE31C70(relation: the face),
+  SetVisible(1), hint 0x1EA83595 the first time. The tick 0xDA4950 moves the bars (0xD9B9C0 -> `SocialMeter_SetBar`
+  0xE31990(bar 0|1, frac)) from the ability animations' progress, and calls `CreatureSocialSuccess` 0xD9BBD0 when the
+  meter is full (`SocialMeter_IsFull` 0xE31A50: +0x26). The win: `SocialMeter_Finish` 0xE31C50, SetRelation, the
+  message 0x60B4123 `{avatar, npc, 0}`. The session end 0xD9F7A0 hides the meter (SetVisible 0).
+* ✔ SetVisible is `UILayout::SetVisible(meter + 0xC)`; the layout's visible byte is `[meter +0xC +0x14] +0x8C`
+  (0x8103B0). Runtime (lane 9): 0 before, 1 while the guest's meter is open, 0 after the close.
+* ✔ (Ghidra) What 0x60B4123 does: CreatureStageEventHandler 0xD47FC0 rolls a part reward for the impressed creature
+  (adult, another species, its `+0xB58 & 2` clear; chance 0x1582F7C, 0x1582F78 for an alpha) through 0xC0BD60 /
+  0xD47E50 / 0xD3D4A0 (the same path as 0x5371F11 and an attack's 0xD335362C) and sets `+0xB58 |= 2` once a part was
+  given. So a guest's friends never gave it a part before.
+* ✔ (runtime) The meter's bar fields (+0x134..+0x13C for bar 0, range +0x3C / +0x40) stayed 0.0 on the guest while it
+  was open for a Kook (one round): the geometry is not laid out within that second, so the bar is not a usable check.
+  The meter shows (screenshot of lab 20261103-234410: the arc with the relation face at the top).
+* `social.guest_meter` (social.cpp): the guest opens the meter as SocialPropose does when it engages a mirror (rounds
+  from the mirror's tuning, the relation face), moves bar 0 to done / needed at each K_PROGRESS of the host, at its
+  own win sets it full, Finish, the face and posts 0x60B4123 `{avatar, proxy, 0}` (coop.cpp h_StageMsg gives the
+  proxy a blank +0xE84), and hides it when the engagement ends. `coop.social meter` prints the meter's fields.
+* ? Not done (BUG-0525): the NPC's prompts. The host has no native session for a guest's game either (it counts the
+  guest's rounds, social.cpp host_act), so no prompt list exists anywhere; a fix would let the host pick the prompts
+  as 0xDA4360 does (species +0x7A4), play them on the NPC (relayed by npc.anims) and count only the matching answer.

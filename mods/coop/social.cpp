@@ -405,6 +405,16 @@ static int g_meter_npc = -1;   // proxy id the meter is open for
 static int g_meter_rounds = 1; // rounds shown on it
 static uint32_t g_meter_opened = 0, g_meter_bars = 0, g_meter_closed = 0, g_win_msgs = 0;
 static float g_meter_frac = 0;
+static int g_meter_vis_at_win = -1; // the meter layout's own visible byte when the win arrived (tests)
+
+// the layout's visible byte: SetVisible 0xE319D0 is UILayout::SetVisible(meter + 0xC), which writes
+// [layout +0x14] +0x8C (0x8103B0); -1 when there is no window
+static int meter_visible(void* m)
+{
+    uint8_t* lay = (uint8_t*)m + 0xC;
+    uint8_t* w = *(uint8_t**)(lay + 0x14);
+    return w && !IsBadReadPtr(w + 0x8C, 1) ? w[0x8C] : -1;
+}
 
 static void* meter_ui()
 {
@@ -461,6 +471,7 @@ static void meter_run(void*) // outside the frame: the meter is UI
             g_meter_frac = t.frac;
             g_meter_bars++;
         } else if (t.op == 2 && t.npc == g_meter_npc) {
+            g_meter_vis_at_win = meter_visible(m);
             if (a_MeterBar)
                 thiscall<void>(a_MeterBar, m, 0, 1.0f);
             g_meter_frac = 1;
@@ -477,9 +488,10 @@ static void meter_run(void*) // outside the frame: the meter is UI
                     thiscall<void>(a_ExecuteAction, st, 0x60B4123u, (void*)msg);
                     g_win_msgs++;
                 }
-        } else if (t.op == 3 && (t.npc == g_meter_npc || t.npc < 0) && g_meter_npc >= 0) {
+        } else if (t.op == 3) {
             thiscall<void>(a_MeterVisible, m, 0);
-            g_meter_npc = -1;
+            if (g_meter_npc == t.npc)
+                g_meter_npc = -1;
             g_meter_closed++;
         }
     }
@@ -508,7 +520,6 @@ static void meter_tick()
         g_meter_npc = g_engaged; // (set again by the task; no second open meanwhile)
     } else if (g_engaged < 0 && g_meter_npc >= 0 && g_meter_tasks.empty()) {
         meter_task(3, g_meter_npc);
-        g_meter_npc = -2; // closing
     }
 }
 
@@ -523,9 +534,9 @@ std::string meter_dump() // tests: the game's meter object as the guest's screen
     float lo = *(float*)(u + 0x134), pos = *(float*)(u + 0x138), hi = *(float*)(u + 0x13C);
     float frac = hi != lo ? (pos - lo) / (hi - lo) : 0;
     snprintf(b, sizeof b,
-             "meter: ui=%p rounds=%d bar0=%.2f open_for=%d opened=%u bars=%u closed=%u win_msgs=%u stage_win_msgs=%u "
+             "meter: ui=%p visible=%d visible_at_win=%d raw=%.3f/%.3f/%.3f full=%d rounds=%d bar0=%.2f open_for=%d opened=%u bars=%u closed=%u win_msgs=%u stage_win_msgs=%u "
              "frac_set=%.2f\n",
-             m, *(int*)(u + 0x44), frac, g_meter_npc, g_meter_opened, g_meter_bars, g_meter_closed, g_win_msgs,
+             m, meter_visible(m), g_meter_vis_at_win, lo, pos, hi, (int)u[0x26], *(int*)(u + 0x44), frac, g_meter_npc, g_meter_opened, g_meter_bars, g_meter_closed, g_win_msgs,
              g_stage_msg_win, g_meter_frac);
     return b;
 }
