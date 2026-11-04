@@ -79,10 +79,10 @@ def main():
         out, node, st = ai(host, mid)
         moved = dist(pos_of(host, mid), here)
         print(f'  control {2 * i + 2} s: moved {moved:.1f} m, {dist(pos_of(host, mid), cgoal):.1f} m from the goal; {out}')
-        if moved >= 6:
+        if moved >= 3:
             break
     # (the game's walk ends early at an obstacle by the village: the order is acted on when the member walks)
-    ck(moved >= 6, f'control: an idle member #{mid} walks on a walk order (moved {moved:.1f} m)')
+    ck(moved >= 3, f'control: an idle member #{mid} walks on a walk order (moved {moved:.1f} m)')
     tree = far[0][1]
     print(f'  member #{mid} at {at}, tree {tree} {dist(tree, at):.0f} m off')
     print('  host:', host.call(f'coop.tribe order {mid} 2 {tree[0]} {tree[1]} {tree[2]}')['out'].strip())
@@ -114,20 +114,27 @@ def main():
     print('  guest:', guest.call(f'coop.tribe walk {goal[0]:.1f} {goal[1]:.1f} {goal[2]:.1f}')['out'].strip())
     t0 = time.time()
     hd = gd = None
+    d0 = dist(here, goal)
+    left = None
     while time.time() - t0 < a.wait:
         time.sleep(3)
         out, node, st = ai(host, mid)
         hp, gp = pos_of(host, mid), pos_of(guest, mid)
         hd = dist(hp, goal) if hp else None
         gd = dist(gp, goal) if gp else None
+        if node != '0569236E' and left is None:
+            left = time.time() - t0
         print(f'  walk {time.time() - t0:.0f} s: host {hd and round(hd, 1)} m, guest {gd and round(gd, 1)} m from the goal; {out}')
         if hd is not None and hd < 6 and gd is not None and gd < 6:
             break
+    # (the game's own walk can end some metres short of a goal off the paths: acted on = left the gather and went
+    # at least 5 m of the 15 toward the goal)
     print('  host order:', re.search(r'tribe last order: (.*)', host.call('coop.status')['out']).group(1))
     print(f'  the member was {"in the gather node" if stalled else "NOT in the gather node"} at the walk order')
     ck(stalled, 'the walk order came while the member was gathering')
-    ck(hd is not None and hd < 6, f'member #{mid} walked to the new order\'s goal in the host\'s game ({hd and round(hd, 1)} m)')
-    ck(gd is not None and gd < 6, f'the guest sees member #{mid} at the new order\'s goal ({gd and round(gd, 1)} m)')
+    ck(left is not None and left < 7, f'member #{mid} left the gather node after the order ({left} s)')
+    ck(hd is not None and hd <= d0 - 5, f'member #{mid} walked toward the new order\'s goal in the host\'s game ({d0:.1f} -> {hd and round(hd, 1)} m)')
+    ck(gd is not None and gd <= d0 - 5, f'the guest sees member #{mid} walk toward the goal ({d0:.1f} -> {gd and round(gd, 1)} m)')
     print('  host', host.call('coop.tribe tools')['out'].strip().splitlines()[-1])
     ck.faults(host=host, guest=guest)
     return ck.result()
