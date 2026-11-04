@@ -1035,7 +1035,8 @@ GOG 2024 addresses (dc04aee5).
 * ✔ Fix `civ.shots`: the host notes each FireTool of a listed vehicle or a turret (shooter, aim, target: a
   vehicle id or noun + position) and sends the shooters of the last 0.35 s every 0.2 s; the guest calls FireTool
   for its mirror (or its turret at that place) with the mirror's own weapon and the target of its own game, at
-  most every 0.1 s. Without the target (aim only) the guest's projectiles flew straight, hit nothing and
+  most every 0.1 s (turret shooters and building targets are found in one walk of the noun list per 0.1 s for all
+  shots due). Without the target (aim only) the guest's projectiles flew straight, hit nothing and
   lived longer: 186 guest / 99 host projectiles in the samples (lab 20261104-014352); with it 93 / 95
   (lab 20261104-015048), and they hit.
 * ✔ The guest's copies hit and would do the host's damage a second time (with `civ.shot_damage` off the guest's
@@ -1043,6 +1044,9 @@ GOG 2024 addresses (dc04aee5).
   attacker is a mirror's combatant (vt 0x5C cast to 0x137E8E0, attacker vtable 0x1474CE8) or a turret the guest
   fired from, in the vehicle (`Simulator::cVehicle::TakeDamage` 0xCAB6F0), building, city hall and citizen
   TakeDamage hooks. Before the fix no hit of the guest's own reached those hooks in a fight (0 calls).
+* Cost: host, one map write per FireTool call (every update of every combatant in range) and, while something
+  fires, 5 + 46 bytes per shooter every 0.2 s to each guest (10 shooters: about 2.3 KB/s); nothing when quiet.
+  Guest: one FireTool per shooter per 0.1 s and at most one noun-list walk per 0.1 s.
 * ~ A guest's buildings keep their own hit points: only the host's ruins reach it (`reconcile_buildings`), so a
   city the host hit stands at full hit points on the guest (5200 / 4452 above). Not fixed here (BUG-0529).
 
