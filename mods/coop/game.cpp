@@ -420,12 +420,14 @@ void set_effect_relay_enabled(bool on)
 // addressing keyed by the effect pointer: one probe for nearly every effect, fixed size, no
 // allocation, no linear scan (the old scan over 4096 entries ran for every transform set of every
 // effect in every stage). Cleared once per frame after effects::tick read what it needed.
-struct FxCreated { void* fx; uint32_t id; bool relayed; };
+struct FxCreated { void* fx; uint32_t id; bool relayed; bool foreign; };
 static constexpr size_t kFxSlots = 1024; // power of two; far more than a frame creates
 static FxCreated g_fx_ids[kFxSlots];
 static uint32_t g_fx_creates, g_fx_probes, g_fx_evicted;
 static uint32_t g_fx_mgr, g_fx_world, g_fx_anim; // creates seen per hook, animation effects skipped
 static uint32_t g_fx_last_id; // the last effect id the game created (the perf workload uses it in every stage)
+static uint32_t g_fx_last_main_id, g_fx_last_foreign_id; // ... in the game's own effect world / in another one
+static uint32_t g_fx_foreign; // effects created in another effect world than the game's own (the skin painter's)
 // the cost of our own work in the create hooks (the original call is not counted): the frame-time
 // number in out/REPORT.md. Two QPC reads per created effect, on the main thread only.
 static double g_fx_hook_sum, g_fx_hook_max;
@@ -447,18 +449,20 @@ static FxCreated* fx_find(void* fx)
     }
     return nullptr;
 }
-static void fx_add(void* fx, uint32_t id)
+static void fx_add(void* fx, uint32_t id, bool foreign = false)
 {
     g_fx_creates++;
     size_t i = fx_slot(fx);
     for (unsigned n = 0; n < 6; n++, i = (i + 1) & (kFxSlots - 1)) {
         if (!g_fx_ids[i].fx || g_fx_ids[i].fx == fx) {
-            g_fx_ids[i] = FxCreated{fx, id, false};
+            // the manager's hook runs after the world's for the same object: keep a foreign mark
+            bool was = g_fx_ids[i].fx == fx && g_fx_ids[i].foreign;
+            g_fx_ids[i] = FxCreated{fx, id, false, foreign || was};
             return;
         }
     }
     g_fx_evicted++; // 6 probes over: take the home slot (does not happen with 1024 slots)
-    g_fx_ids[fx_slot(fx)] = FxCreated{fx, id, false};
+    g_fx_ids[fx_slot(fx)] = FxCreated{fx, id, false, foreign};
 }
 void clear_effect_table()
 {
@@ -518,7 +522,14 @@ bool effect_relayed(void* fx)
     FxCreated* e = fx_find(fx);
     return e && e->relayed;
 }
-uint32_t last_effect_id() { return g_fx_last_id; }
+bool effect_foreign(void* fx)
+{
+    FxCreated* e = fx_find(fx);
+    return e && e->foreign;
+}
+uint32_t last_effect_id(bool main_world_only) { return main_world_only ? g_fx_last_main_id : g_fx_last_id; }
+uint32_t last_foreign_effect_id() { return g_fx_last_foreign_id; }
+uint32_t foreign_effects() { return g_fx_foreign; }
 static bool g_in_relay;        // a relayed effect played by us: never put it in the table again
 static thread_local bool t_in_anim_fx; // inside the animation system's effect wrapper (main thread)
 static WorldEffectListener g_world_listener;
@@ -543,6 +554,7 @@ static int SK_THISCALL h_MgrCreateFx(void* mgr, uint32_t id, uint32_t a3, void**
         double t0 = H->time_seconds();
         g_fx_mgr++;
         g_fx_last_id = id;
+        g_fx_last_main_id = id; // the manager creates in the game's own effect world (manager +0x244)
         fx_add(*out, id);
         if (g_world_listener)
             g_world_listener(*out, id);
@@ -556,6 +568,16 @@ static int SK_THISCALL h_MgrCreateFx(void* mgr, uint32_t id, uint32_t a3, void**
 typedef int(SK_THISCALL* WorldCreateFx_t)(void*, uint32_t, uint32_t, void**);
 static WorldCreateFx_t o_WorldCreateFx;
 static uintptr_t a_WorldCreateFx;
+// the game's own effect world: the one cEffectsManager::CreateEffect forwards to (manager +0x244)
+static void* main_effect_world()
+{
+    if (!a_EffectsGet)
+        return nullptr;
+    uint8_t* mgr = cdecl_call<uint8_t*>(a_EffectsGet);
+    if (!mgr || !skg::readable(mgr + 0x244, 4))
+        return nullptr;
+    return *(void**)(mgr + 0x244);
+}
 static std::atomic<bool> g_world_on{false}; // the stage logic's gate (set_world_relay): no work outside a played stage
 static int SK_THISCALL h_WorldCreateFx(void* world, uint32_t id, uint32_t a3, void** out)
 {
@@ -569,11 +591,25 @@ static int SK_THISCALL h_WorldCreateFx(void* world, uint32_t id, uint32_t a3, vo
     }
     if (g_in_relay)
         return r;
+    if (g_fx_log)
+        H->log(M, SK_INFO, "fxw: world %p main %p id %08X ok %d ret %08X", world, main_effect_world(), id, r & 0xFF,
+               (unsigned)((uintptr_t)__builtin_return_address(0) - H->rebase(0)));
     if ((r & 0xFF) && out && *out) {
         double t0 = H->time_seconds();
         g_fx_world++;
+        // BUG-0451 (Tribe / Civ): the skin painter (Skinner::cSkinPainterPipeline::ExecutePipeline) makes
+        // its paint effects in an effect world of its own, on the main thread. Such an effect created in
+        // the game's effect world (the relay's receiver, the perf load) has no painter and faults in
+        // cSkinnerTexturePainter::StartRender every frame. Mark them: effects.cpp never sends them.
+        bool foreign = world != main_effect_world();
+        if (foreign) {
+            g_fx_foreign++;
+            g_fx_last_foreign_id = id;
+        } else {
+            g_fx_last_main_id = id;
+        }
         g_fx_last_id = id;
-        fx_add(*out, id);
+        fx_add(*out, id, foreign);
         if (g_world_listener)
             g_world_listener(*out, id);
         double dt = H->time_seconds() - t0;

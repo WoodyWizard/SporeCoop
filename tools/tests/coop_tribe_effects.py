@@ -71,8 +71,6 @@ def dist(a, b):
 
 def main():
     host, guest = start('tribe')
-    for c in (host, guest):  # the relay is off in Tribe in 0.7.4 (coop.fix effects.other_stages)
-        c.call('coop.fix effects.other_stages on')
     ck = Checks()
     ck(guest.call('coop.avatar')['ok'], 'the guest is in the host\'s Tribe stage')
     ck(free_games(host, guest), f'both games take input (busy: {busy(host)} / {busy(guest)})')

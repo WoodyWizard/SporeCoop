@@ -151,7 +151,13 @@ void* create_local_effect(uint32_t id, const void* xform);
 // what effects::tick reads about the effects the hooks recorded this frame
 bool effect_position(void* effect, net::Vec3& out);
 bool effect_relayed(void* effect); // a creature hook already sent it
-uint32_t last_effect_id();          // the last effect id the game created (a valid id in this stage)
+// created in another effect world than the game's own (cEffectsManager +0x244): the skin painter's
+bool effect_foreign(void* effect);
+// the last effect id the game created (a valid id in this stage); main_world_only: in the game's own
+// effect world (not the skin painter's, whose effects fault anywhere else)
+uint32_t last_effect_id(bool main_world_only);
+uint32_t last_foreign_effect_id();
+uint32_t foreign_effects();
 // a bone index inside the creature model's bone array (the range cCreatureBase::CreateEffect indexes)
 bool creature_bone_ok(void* creature, int bone);
 void clear_effect_table();         // after effects::tick (once a frame, main thread)
