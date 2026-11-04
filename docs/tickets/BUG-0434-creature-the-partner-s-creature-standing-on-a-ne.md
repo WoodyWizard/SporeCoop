@@ -30,6 +30,7 @@ mound one update after it is in view again, so the first frame in view is drawn 
 the mod's frame (teleport with or without the mark, +0x137 = 0, bit 0x800 of +0xB58) are undone by the next
 update. Not checked: whether the game's own NPCs on a mound do the same (inferred: yes, nothing of ours runs
 between the game's update and its drawing).
+2026-11-04, fix/w41-puppet-look: not looked at again (time box); BUG-0435's fix does not change the out-of-view grounding.
 
 ## Fix
 Not fixed. Needs the function that grounds a culled creature (a hook after it, or keeping the puppet "in view").
@@ -41,3 +42,4 @@ and hd 0.0 followed by hd 1.03. coop_puppet_fight.py lists these steps as `entry
 
 ## History
 - 2026-11-01: opened (fix/w34-ability-pop).
+- 2026-11-04: fix/w41-puppet-look: still open.

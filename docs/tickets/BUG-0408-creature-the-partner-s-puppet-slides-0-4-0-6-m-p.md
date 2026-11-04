@@ -9,9 +9,9 @@ source: lab
 role: host
 versions: 0.7.3.3
 fixed_in:
-branch: fix/w34-walk-stable
+branch: fix/w34-walk-stable, fix/w41-puppet-look
 commits:
-tests: puppet_slope, puppet_walk
+tests: puppet_slope, puppet_walk, coop_puppet_walk.py --stop-walk
 signature: the puppet plays the fall animation 0x0692E6A9 for ~0.2 s right after the partner stops (its state speed 0), 0.1 m over the ground
 docs:
 related: BUG-0366, BUG-0360, BUG-0407
@@ -39,6 +39,12 @@ Tried on fix/w34-walk-stable (not committed): holding the puppet where the partn
 (drive::stop_hold, switch creature.puppet_stop). Not kept: no test fails without it often enough to show that it
 works (the patch is described here so it can be picked up: walk_end sets a stop deadline, creature_drive places the
 puppet on the stopped target while within 1.5 m).
+Not reproduced (2026-11-04, fix/w41-puppet-look, lane 2): `coop_puppet_walk.py --dir guest --guest-fps 30
+--goto=-195,-465,-45 --stop-walk` (walks of 1-2.5 s, each followed by a stop; 60 % of them abrupt by `coop.abilities halt`:
+the state speed 4.75 -> 0 in one state with the puppet at 2.0-2.2 m/s) over SPORE_NET=player with the 0.7.4 driving:
+11 stops (lab 20261104-025629) and 10 stops (20261104-030133), the drawn way after the stop less the target's 0.00-0.05 m,
+never more than 0.33 m off. The stop hold (creature.puppet_stop: placed where the partner stopped for 0.5 s within
+1.5 m) was written and dropped again (commit 53c27d70): nothing fails without it.
 
 ## Fix
 not fixed yet.
@@ -48,3 +54,4 @@ no-fail-run: open
 
 ## History
 - 2026-11-01: opened.
+- 2026-11-04: fix/w41-puppet-look: not reproduced with 21 stops (10 abrupt); the hold not kept.

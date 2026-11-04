@@ -2477,3 +2477,45 @@ BUG-0451, the other stages (docs/known-issues.md#issue-effects-civ-space). GOG 2
   world (`not played=`). `effects foreign world: created= queued= near=` counts them; `near` is how many a
   player's real play would have sent without the fix. With it, `effects.other_stages` (Tribe and Civilization)
   is on by default; Space stays behind `effects.space` (off: not verified, no UFO effect can be made in a test).
+
+## The partner's puppet: jumps, nest mounds, stops, the walk gait far from the camera (2026-11-04, fix/w41-puppet-look)
+<a id="creature-puppet-look"></a>
+
+BUG-0376, BUG-0435, BUG-0408, BUG-0436, BUG-0434. GOG 2024, lane 2, `coop.track` (host watches guest).
+* ✔ Jumps (BUG-0376): a puppet placed (game::place, no teleport mark) at a target in the air and then marked not
+  grounded (+0x137 = 0) is left in the air by the game's next update, which lets it fall from there (the fall
+  animation 0x0692E6A9 plays, as on the partner's own creature); placed every frame it follows the partner's fall.
+  `creature.puppet_air`: the partner's game sends PF_JUMPING (8) while its own creature is not grounded and more than
+  0.15 m over `GetHeightAt`; the observer then skips creature.puppet_ground and places the puppet at the target with
+  +0x137 = 0. Hops by `coop.abilities lift 1.5`: drawn at least half as high as the target in the next frame in 99 %
+  of the frames with the target over 0.4 m (2 cold runs, 641 / 654 frames), 5 % without (1 of 15 hops shown).
+* ✔ Walked in the air (walk_place with its MoveTo / SetDesiredSpeed while the target is in the air, `coop.track air
+  3`) the puppet was put back onto its terrain in 15-20 frames of a 0.4 s fall (drawn 0.00 m under a target 1.4 m
+  up), so the puppet is not walked in the air (walk_end, placed; its walk starts again after the landing). Both
+  placing (no mark) and the teleport keep it up; the not-grounded mark is what keeps the game from grounding it.
+* ~ A teleport up (the simulated hop) is sent as a grounded state for one or two states (the partner's game sets
+  +0x137 = 0 one update later): the target rises 0.3-0.5 m per frame before the flag comes and is sunk / grounded in
+  those 3-5 frames. A real jump starts from the ground in the game's own update (inferred: the flag comes with its
+  first state; not checked, the fixture's creatures cannot jump).
+* ✔ On a rock +0x137 is 0 and the height over `GetHeightAt` 1-16 m, so PF_JUMPING is set there too; nothing changes
+  for the observer (a puppet on a rock is not grounded either and creature.puppet_ground left such targets alone).
+* ✔ Nest mound (BUG-0435): a grounded partner 0.4 m over `GetHeightAt` on the mound's lower part, put 5 cm under its
+  own height instead of 5 cm under the plain terrain (`creature.puppet_mound`, from 0.1 m over GetHeightAt up to
+  kOverGround), is drawn on the mound: 0 of 1120 frames on raised ground more than 0.15 m under the partner's height
+  (0.7.4: 179 of 303, drawn 0.45 m under). The game lifts a creature put 5 cm under a mound's surface as it does on the
+  terrain.
+* ✔ Stops (BUG-0408): no slide reproduced. 21 stops on the slope (guest 30 fps, `player` network), 10 of them made
+  abrupt by `coop.abilities halt` (StopMovement, a teleport to where it is and velocity 0: the walker's state speed
+  drops from 4.75 to 0 in one state while the puppet's game speed is 2.0-2.2 m/s): the puppet's drawn way after the
+  stop less its target's was 0.00-0.05 m, never past the stop by more than 0.33 m. The game's walk to the MoveTo point
+  of walk_end ends at that point also from 2 m/s. The rare slides of the ticket need something else (inferred: a
+  target that moved back after an extrapolation).
+* ✔ The walk gait far from the camera (BUG-0436): in the three recorded runs with gait 0 for a whole walk the observer
+  drew a 30 m walk within 20-30 pixels (~1 px/m; passing runs 25-90 px/m and their screen ranges 700-1700 px): the
+  observer's camera was hundreds of m away and its game animated the puppet (and in the npc_walk_slope run its NPC
+  proxies) without a walk gait, as it does with creatures far from its camera. ? Why the camera was that far after a
+  cold start (not read then). `coop.track` column 29 `ppm`: pixels per metre at the creature (a point 1 m over it
+  projected), 0 when not on the screen. The mouse wheel (`wheel x y -5` x 12) zooms out only to 25-60 px/m, where the
+  gait stays on (puppet 969 / 969 frames, the walker's own 1250 / 1296).
+* ? BUG-0434 (the first frame back in view drawn on the plain terrain) not looked at again: the update that grounds a
+  culled creature is still not found.

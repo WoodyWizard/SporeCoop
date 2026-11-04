@@ -33,6 +33,9 @@ model's position, AnimatedCreature +0x04, and the object's) on both games 3 s af
 apart in 6 of 6 kills, the same death animation F14FAA46 on both (no lab runs, by hand). Not tried: a corpse
 eaten on one machine (eating is local; the other machine keeps the body), NPCs killed by other NPCs, kills
 far from the guest that come into its view later, a guest at a low frame rate.
+2026-11-04, fix/w41-puppet-look: no new cause found; corpse_positions run again in the regression with the divergence
+detector (see the branch report). Still not tried: an NPC body eaten for real on one game (the test's guest clicks did
+not eat: its health 1000), a corpse decaying on one game first.
 
 ## Fix
 feat/w33-tests-creature: a guest skipped every NPC whose first state it received was dead
@@ -60,3 +63,4 @@ puts a killed proxy where the host's body is every frame).
 - 2026-11-01: opened.
 - 2026-11-01: feat/w33-tests-creature: corpse_positions in the suite; it found the bodies a guest never shows (NPCs
   dead before its proxy was made); fixed behind `npc.dead_proxy`. Positions themselves matched (0.00 m) in every kind.
+- 2026-11-04: fix/w41-puppet-look: checked again, no new cause.

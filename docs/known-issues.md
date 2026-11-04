@@ -1375,6 +1375,9 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Known: the game keeps a grounded creature (+0x137 = 1) on the terrain; the partner sends no
   airborne flag (PF_JUMPING is never set).
 * Next steps: send the airborne state and put the puppet into the game's fall (or play the jump)
+* FIXED (2026-11-04, fix/w41-puppet-look, unreleased): the partner's game sends PF_JUMPING while its creature is off
+  the terrain; the puppet is placed in the air and marked not grounded (`creature.puppet_air`, suite `puppet_air`).
+  Not checked with a creature that can really jump (the fixture's cannot).
   on the observer; check with a creature that can jump.
 * Ticket: BUG-0376
 
@@ -1539,6 +1542,10 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * What happens: on the host, the guest's creature moves on its path but keeps its standing animation (02481DE5,
   walk gait 0) for a whole 25-40 s walk.
 * Reproduce: about 1 run in 10 of the cold tests puppet_walk / puppet_slope / puppet_under (host watches guest).
+* Resolved (2026-11-04, fix/w41-puppet-look): in all three recorded runs the observer's camera was far away (a 30 m
+  walk spanned 20-30 pixels, ~1 px/m; 25-90 px/m in the passing runs): its game animates a creature that far without a
+  walk gait, its NPC proxies alike. A test artifact of a cold start, not the driving (inferred: the camera's state at
+  that moment was not read). puppet_walk now judges the gait near the camera only (`coop.track` column ppm).
 * Ticket: BUG-0436
 
 ## Creature: a hit animal is held off its path on the guest for a second (2026-11-01, fix/w34-walk-stable)
@@ -1555,6 +1562,9 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * What happens: when the partner stops, its creature on the other screen slides 0.3-0.7 m past the spot in ~2 % of
   the stops; on a slope it may play the fall animation for 0.2 s there.
 * Reproduce: puppet_walk prints the stops (`stops: N, drawn past the stop by more than 0.3 m in M`).
+* Not reproduced again (2026-11-04, fix/w41-puppet-look): 21 stops of `coop_puppet_walk.py --stop-walk` on the slope
+  (guest 30 fps, `player` network), 10 of them abrupt (`coop.abilities halt`): none slid on more than 0.05 m with the
+  0.7.4 driving, so the hold after a stop (creature.puppet_stop, tried) was not kept.
 * Ticket: BUG-0408
 * Fixed (2026-11-01, fix/w33-unlocks): the party shares its collected parts (`parts.shared`, test
   `parts_shared`).
@@ -1616,6 +1626,8 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * What happens: a partner standing 0-0.5 m over the plain terrain on a mound is drawn 5 cm into the plain terrain,
   i.e. up to 0.45 m under the mound's surface; crossing 0.5 m it steps 0.4-0.5 m up or down.
 * Cause: `creature.puppet_ground` takes the plain terrain (`GetHeightAt`, without the mound) as the ground.
+* FIXED (2026-11-04, fix/w41-puppet-look, unreleased): a grounded partner 0.1-0.5 m over `GetHeightAt` is put 5 cm
+  under its own height (`creature.puppet_mound`, suite `puppet_mound`).
 * Ticket: BUG-0435
 ## Creature: parts not shared after Cell -> Creature the players' way (2026-11-01, feat/w33-tests-session)
 <a id="known-parts-after-cell"></a>
