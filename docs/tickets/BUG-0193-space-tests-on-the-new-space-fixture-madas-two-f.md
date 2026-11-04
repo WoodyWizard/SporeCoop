@@ -40,3 +40,10 @@ Not fixed yet.
 - 2026-10-23: first recorded in docs/known-issues.md.
 - 2026-10-27: ticket backfilled from docs/known-issues.md (every entry carries its ticket id, CLAUDE.md 1).
 - 2026-10-28: fix/w4-tests (wave 4): not reached (budget went to the creature tests and BUG-0149). Not measured with --repeat. Left open.
+- 2026-11-04 (fix/w42-space-play): coop_space_rescue.py: the host flies off in 0.3 s pulses until the repair
+  distance is 120 m (at most 2.5 s) instead of 2.5 s of W (the ~550 m flight of the report). --repeat 3 (lab
+  20261104-114611): the test's checks passed 3 of 3 (rounds start 24-319 m apart, the rescue in time each time);
+  run #3 failed the lab's sync-check gate instead (p0 46 m during the rescue flight: new ticket BUG-0547).
+  coop_space_death.py: 3 of 3 (lab 20261104-114611 #1-#3); the 47 s dead ship of the report was not seen again,
+  cause not found. Left open for BUG-0547 and the death case.
+- 2026-11-04 (fix/w42-space-play): space_rescue --repeat 3 again: 3/3 (lab 20261104-123228).

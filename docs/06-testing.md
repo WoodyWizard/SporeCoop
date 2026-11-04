@@ -4108,3 +4108,20 @@ numbers were 1.27 % (Alice, Tribe), 1.21 % (Carol, Tribe) and 1.00 % (Alice, Civ
 * Pitfalls: the thread's CPU time is no measure under Wine (GetThreadTimes moves in 10 ms steps and costs ~50 us
   a call: called every frame it was itself 0.4 % of the main thread). The old number (`tick avg` x frames) also
   restarts every 60 s with the `perf:` line, so a window over that moment was wrong.
+
+## Space play tests: session ends, own systems, diplomacy away, the disable rule after a load (2026-11-04, fix/w42-space-play)
+<a id="testing-space-play-w42"></a>
+
+* `coop_space_trade_end.py` (~1 min warm): `coop.space trade hold 2` makes the receiver keep a gift or a sale without
+  answering (its answer "lost"); `trade` shows `delivered=N` (gifts the partner's side acknowledged at the transport)
+  and `kept_at_end=N`. `hold 1` (no add, no answer) is the old switch for the "still on its way" case.
+* `coop_space_allies_own.py` (~1 min warm): the guest founds a record-level colony in the fixture's home system
+  (`coop.space allies colonize <PlanetID>`); the host's `allies planet <PlanetID>` must show tech 5 and a cCivData of
+  the host's pol. `allies star` lists `loaded(pol=...)`: the political id of the loaded cPlanet. A run of this kind
+  must show 0 faults: a record-level colony the game's HUD does not expect faults at 0x107453A (handled, counted).
+* `coop_space_diplo_away.py` (~2 min, fixture `space_empire`): `coop.space away 1` on the host stands for an editor
+  entered from Space; the check waits 25 s after the host is back so the host's periodic table (every 20 s) has run.
+* `coop_space_down_reload.py` (~1 min warm): calls `twoinst.warm_reset` itself inside one test, so a state the
+  lab's warm reset carries over (BUG-0257) shows in a single run; it skips when the reset takes over 58 s.
+* BUG-0257 pitfall: tests that leave a ship disabled change the next warm test on the same games for 60 s; since
+  `space.down_epoch` a load ends that, but other per-world state may still carry over a warm reset.

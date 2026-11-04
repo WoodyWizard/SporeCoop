@@ -14,7 +14,7 @@ commits:
 tests:
 signature:
 docs:
-related:
+related: BUG-0542
 ---
 
 ## Report
@@ -62,3 +62,9 @@ Not fixed yet.
 ## History
 - 2026-10-23: first recorded in docs/known-issues.md.
 - 2026-10-27: ticket backfilled from docs/known-issues.md (every entry carries its ticket id, CLAUDE.md 1).
+- 2026-11-04 (fix/w42-space-play): "a gift or sale on its way when the own session ends comes back" fixed as
+  BUG-0542 (trade.delivered, test space_trade_end): a gift or sale the partner's side acknowledged stays with the
+  partner. Still open from this list: the leftover that did not fit is lost when its answer is lost; a partner who
+  leaves right after receiving is still refunded by the "partner left" path (its BYE may overtake its answer, not
+  seen); the demand cap per seller game (two sellers get 30 each, forgotten on a restart); NPC spice prices are big
+  next to the fixture's money (by design, the game's values).
