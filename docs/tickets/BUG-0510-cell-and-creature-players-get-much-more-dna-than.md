@@ -10,7 +10,7 @@ role: both
 versions: 0.7.3.4, 0.7.3.6
 fixed_in: unreleased
 branch: fix/w40-dna-social
-commits: f384cc0f 9d90117e
+commits: f384cc0f 9d90117e 0b0f811c
 tests: dna_pace (tools/tests/coop_dna_pace.py), dna_pace_cell (--cell)
 signature:
 docs: docs/re/creature.md#creature-dna-pace
