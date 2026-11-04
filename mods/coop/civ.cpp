@@ -3766,6 +3766,18 @@ std::string debug(const std::vector<std::string>& a)
                 return "no turret hook";
             return o_AddTurret(city) ? "turret added" : "no free turret slot";
         }
+        if (a[0] == "budget" && a.size() >= 3 && a[2] == "attacked") {
+            // budget <ci> attacked: the city counts as attacked now (city +0x98 / +0x9C, the time 0xC00600 compares
+            // with the game time: under attack in the last 20 s, the growth buys turrets first; tests BUG-0484)
+            uintptr_t tg = H->sym("Simulator::cGameTimeManager::Get"), tf = H->sym("cGameTimeManager_TimeAtStartOfFrame");
+            void* mgr = tg ? skg::cdecl_call<void*>(tg) : nullptr;
+            if (!mgr || !tf)
+                return "no game time";
+            uint64_t t = thiscall<uint64_t>(tf, mgr);
+            F<uint32_t>(city, 0x98) = (uint32_t)t;
+            F<uint32_t>(city, 0x9C) = (uint32_t)(t >> 32);
+            return "attacked at " + std::to_string(t);
+        }
         if (a[0] == "budget") {
             void* civ = F<void*>(city, kCityCiv);
             if (!civ)

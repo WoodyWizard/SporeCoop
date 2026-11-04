@@ -7,7 +7,8 @@ from the civilization's budget) and the snapshot carried none.
 
 1. Two games on civ_npc; the turrets of every city in both games (`coop.civ turrets <city>`).
 2. The guest's game gets a large growth budget for an NPC city's civilization (`coop.civ budget <city> 100000`
-   on the guest only): its own city growth would buy turrets with it.
+   on the guest only) and the city counts as attacked there (`coop.civ budget <city> attacked`, every 4 s): its
+   own city growth would buy turrets with it.
 3. The host's game adds one turret to another NPC city (`coop.civ addturret <city>`: the game's City_AddTurret).
 4. 25 s later, the turrets of both cities in both games.
 PASS: the guest's city of step 2 has the host's turrets (no turret of its own growth), the host's new turret of
@@ -57,7 +58,10 @@ def main():
     print('  guest budget:', guest.call(f'coop.civ budget {grow} 100000')['out'].strip(), flush=True)
     h_add0 = turrets(host, add)
     print('  host addturret:', host.call(f'coop.civ addturret {add}')['out'].strip(), flush=True)
-    time.sleep(25)
+    for _ in range(6):  # the growth buys turrets first for a city attacked in the last 20 s (0xC00600)
+        print('  guest:', guest.call(f'coop.civ budget {grow} attacked')['out'].strip(), flush=True)
+        time.sleep(4)
+    time.sleep(3)
     for c in (grow, add):
         h, g = turrets(host, c), turrets(guest, c)
         print(f'  city {c}: host {len(h)} {h}', flush=True)
