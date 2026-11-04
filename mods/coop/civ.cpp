@@ -397,6 +397,12 @@ COOP_FIX("civ.shot_fired", "BUG-0530", g_fix_shot_fired,
 constexpr uint8_t kShotChunkFired = 0xFC;  // MSG_CIV_STATE chunk index of a counted shot list (chunks 0)
 constexpr double kShotKeepFired = 1.0;     // host: a shooter stays in the lists (its count) for so long
 static uint32_t g_shots_tried, g_shots_refused; // host: FireTool calls that made no shot; guest: FireTool false
+// BUG-0530: a shot that left goes out at once (at most every 0.05 s), not with the next 0.2 s list: religious
+// projectiles and AoE areas live about a second, and 0.2-0.4 s of relay delay showed them in one game only
+static bool g_shot_new;
+static bool g_fix_shot_now = true;
+COOP_FIX("civ.shot_now", "BUG-0530", g_fix_shot_now,
+         "civ: the host's new shots go to the guests at once (no 0.2 s wait for the next shot list)");
 
 static uint32_t pos_key(const net::Vec3& p)
 {
@@ -503,6 +509,7 @@ void fire_observed(void* tool, void* owner, const float* aim, void* target, bool
     s.seen = H->time_seconds();
     auto& e = g_shots[{s.id, s.kind == 3 ? pos_key(s.at) : 0u}];
     s.count = (uint8_t)(e.count + 1);
+    g_shot_new = true;
     e = s;
     g_shots_seen++;
 }
@@ -510,9 +517,11 @@ void fire_observed(void* tool, void* owner, const float* aim, void* target, bool
 static void host_send_shots(double now)
 {
     shots_log(now);
-    if (!g_fix_shots || now - g_shots_sent_at < kShotSend)
+    bool soon = g_fix_shot_now && g_fix_shot_fired && g_shot_new && now - g_shots_sent_at >= 0.05;
+    if (!g_fix_shots || (now - g_shots_sent_at < kShotSend && !soon))
         return;
     g_shots_sent_at = now;
+    g_shot_new = false;
     const bool counted = g_fix_shot_fired;
     const double keep = counted ? kShotKeepFired : kShotKeep;
     std::vector<const Shot*> list;
@@ -571,6 +580,8 @@ static void guest_shots(net::Reader& r, bool counted)
         bool fresh = found == g_shots_in.end() || found->second.counted != counted;
         auto& e = g_shots_in[key];
         double tried = e.tried;
+        if (counted && g_fix_shot_now && !fresh && e.count != s.count)
+            tried = -100; // a new shot of the host's: fired on this frame (the weapon's refire time still decides)
         uint8_t done = fresh ? (uint8_t)(s.count - 1) : e.done; // a shooter first heard of: its last shot
         e = s;
         e.tried = tried;

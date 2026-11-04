@@ -34,6 +34,27 @@ def count(con, nouns):
                for n in nouns)
 
 
+def best_lag(hser, gser):
+    """the shift (s) of the guest's count series that matches the host's best (mean absolute difference)"""
+    if len(hser) < 10:
+        return 0.0
+
+    def at(ser, t):
+        v = ser[0][1]
+        for ts, c in ser:
+            if ts > t:
+                break
+            v = c
+        return v
+    best, best_err = 0.0, None
+    for k in range(0, 21):
+        lag = k * 0.05
+        err = sum(abs(at(gser, t + lag) - h) for t, h in hser if t + lag <= gser[-1][0]) / len(hser)
+        if best_err is None or err < best_err - 1e-9:
+            best, best_err = lag, err
+    return best
+
+
 def shots_line(con):
     return next((ln for ln in con.call('coop.civ')['out'].splitlines() if ln.startswith('shots:')), '')
 
@@ -67,10 +88,15 @@ def main():
     _, gv, _ = civ_state(guest)
     ck(all(i in gv for i in rel), f'the guest mirrors the religious vehicles ({sorted(gv)})')
     hs = gs = both = gonly = hn = gn = 0
-    seq = []
+    seq, hser, gser = [], [], []
     t0 = time.time()
     while time.time() - t0 < 70:
-        h, g = count(host, RELIGIOUS), count(guest, RELIGIOUS)
+        th = time.time()
+        h = count(host, RELIGIOUS)
+        tg = time.time()
+        g = count(guest, RELIGIOUS)
+        hser.append((th, h))
+        gser.append((tg, g))
         hs += h > 0
         gs += g > 0
         both += h > 0 and g > 0
@@ -78,8 +104,11 @@ def main():
         hn += h
         gn += g
         seq.append(f'{h}/{g}')
-        time.sleep(0.5)
+        time.sleep(0.1)
     any_ = hs + gonly
+    lag = best_lag(hser, gser)
+    print(f'  the guest\'s religious shots follow the host\'s by {lag:.2f} s (best match of the two count series)',
+          flush=True)
     print(f'  religious samples: host {hs}, guest {gs}, both {both}, guest only {gonly}; shots host {hn} guest {gn}',
           flush=True)
     print('  host/guest per sample:', ' '.join(seq), flush=True)
