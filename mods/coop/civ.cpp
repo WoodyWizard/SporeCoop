@@ -374,6 +374,8 @@ struct Shot {
     uint8_t count = 0;   // BUG-0530: host: the shots that left (FireTool true); guest: the host's count
     uint8_t done = 0;    // guest: the host's shots this game fired (FireTool true)
     bool counted = false; // guest: a list of the host's fired shots (chunk kShotChunkFired)
+    bool stopped = false; // BUG-0530: the host's game stopped this weapon (cToolManager::OnMouseUp)
+    bool released = false; // guest: this game's copy of the weapon was stopped too
 };
 static std::map<std::pair<uint16_t, uint32_t>, Shot> g_shots;   // host: shooter -> last shot
 static std::map<std::pair<uint16_t, uint32_t>, Shot> g_shots_in; // guest: shooter -> its shots
@@ -400,6 +402,17 @@ static uint32_t g_shots_tried, g_shots_refused; // host: FireTool calls that mad
 // BUG-0530: a shot that left goes out at once (at most every 0.05 s), not with the next 0.2 s list: religious
 // projectiles and AoE areas live about a second, and 0.2-0.4 s of relay delay showed them in one game only
 static bool g_shot_new;
+// BUG-0530: an AoE weapon (cDefaultAoETool) makes its area once when it starts firing (tool +0x120) and keeps it
+// until cToolManager::OnMouseUp (0x0104FAA0, thiscall(mgr, tool) ret 4) stops the tool; cCombatSimulator::Update
+// stops a combatant's tool when its target is gone. The area sends cultural projectiles at what is inside. A guest's
+// copy of the weapon was never stopped: its area (and the area's cultural projectiles) stayed in the guest's game.
+// Now the host notes the stop of a listed shooter's tool, the guest stops its copy (and at the latest when the
+// shooter's list entry ends).
+static bool g_fix_shot_release = true;
+COOP_FIX("civ.shot_release", "BUG-0530", g_fix_shot_release,
+         "civ: a guest stops its copy of a host's weapon when the host's stops (no AoE area left behind)");
+static uintptr_t a_ToolMouseUp;
+static uint32_t g_shot_stops_seen, g_shot_released;
 static bool g_fix_shot_now = true;
 COOP_FIX("civ.shot_now", "BUG-0530", g_fix_shot_now,
          "civ: the host's new shots go to the guests at once (no 0.2 s wait for the next shot list)");
@@ -549,8 +562,10 @@ static void host_send_shots(double now)
             w.f32(s->aim.x); w.f32(s->aim.y); w.f32(s->aim.z);
             w.u8(s->tkind); w.u16(s->tid); w.u32(s->tnoun);
             w.f32(s->tpos.x); w.f32(s->tpos.y); w.f32(s->tpos.z);
-            if (counted)
+            if (counted) {
                 w.u8(s->count);
+                w.u8(s->stopped ? 1 : 0);
+            }
         }
         for (auto& pl : C.sess->players())
             if (pl.id != 0)
@@ -570,8 +585,12 @@ static void guest_shots(net::Reader& r, bool counted)
         s.aim.x = r.f32(); s.aim.y = r.f32(); s.aim.z = r.f32();
         s.tkind = r.u8(); s.tid = r.u16(); s.tnoun = r.u32();
         s.tpos.x = r.f32(); s.tpos.y = r.f32(); s.tpos.z = r.f32();
-        if (counted)
+        uint8_t flags = 0;
+        if (counted) {
             s.count = r.u8();
+            flags = r.u8();
+        }
+        s.stopped = (flags & 1) != 0;
         if (!r.ok() || (s.kind != 1 && s.kind != 3) || !std::isfinite(s.aim.x) || !std::isfinite(s.aim.y) ||
             !std::isfinite(s.aim.z) || !std::isfinite(s.at.x))
             return;
@@ -583,16 +602,53 @@ static void guest_shots(net::Reader& r, bool counted)
         if (counted && g_fix_shot_now && !fresh && e.count != s.count)
             tried = -100; // a new shot of the host's: fired on this frame (the weapon's refire time still decides)
         uint8_t done = fresh ? (uint8_t)(s.count - 1) : e.done; // a shooter first heard of: its last shot
+        bool released = !fresh && e.released && s.stopped;
         e = s;
         e.tried = tried;
         e.counted = counted;
         e.done = done;
+        e.released = released;
+        if (s.stopped)
+            e.done = e.count; // fires no more
         if ((uint8_t)(e.count - e.done) > 3) // far behind (a hitch, lost lists): the last few only
             e.done = (uint8_t)(e.count - 3);
         // fires on until then (the next list keeps it going; not much past the host's last shot)
         e.seen = now + (counted ? kShotKeepFired + 0.2 : kShotKeep + 0.05);
         g_shots_rx++;
     }
+}
+
+// host: a tool stops (cToolManager::OnMouseUp): a listed shooter's entry says so (BUG-0530)
+using ToolMouseUp_t = int(SK_THISCALL*)(void*, void*);
+static ToolMouseUp_t o_ToolMouseUp;
+static int SK_THISCALL h_ToolMouseUp(void* mgr, void* tool)
+{
+    if (g_fix_shot_release && g_fix_shot_fired && g_fix_shots && tool && is_host() && active() &&
+        !IsBadReadPtr(tool, 0x118)) {
+        void* owner = *(void**)((uint8_t*)tool + 0x114);
+        void* o = owner ? (uint8_t*)owner - kVSpatial : nullptr;
+        auto it = o ? g_hv.find(o) : g_hv.end();
+        std::pair<uint16_t, uint32_t> key{0, 0};
+        bool known = false;
+        if (it != g_hv.end()) {
+            key = {it->second.id, 0u};
+            known = true;
+        } else if (o && !IsBadReadPtr(o, 0x40) && vtable_in_game(o) && game::noun_id(o) == kTurretNoun) {
+            net::Vec3 at;
+            if (game::object_position(o, at)) {
+                key = {0, pos_key(at)};
+                known = true;
+            }
+        }
+        auto e = known ? g_shots.find(key) : g_shots.end();
+        if (e != g_shots.end() && !e->second.stopped) {
+            e->second.stopped = true;
+            e->second.seen = H->time_seconds(); // in the lists a while longer, so the guests hear of it
+            g_shot_new = true;
+            g_shot_stops_seen++;
+        }
+    }
+    return o_ToolMouseUp(mgr, tool);
 }
 
 // guest: the weapon of a local shooter (combatant vt 0x14, as cCombatSimulator::Update gets it)
@@ -637,6 +693,29 @@ static void find_wanted(std::vector<Want>& w)
         &w);
 }
 
+// BUG-0530: this game's copy of a host's weapon stops (vehicles; a turret's copy stops when its entry ends only
+// if found again, which needs the noun walk: turrets are military, no AoE)
+static void release_copy(Shot& s)
+{
+    s.released = true;
+    if (!g_fix_shot_release || !a_ToolMouseUp || s.kind != 1)
+        return;
+    auto g = g_gv.find(s.id);
+    void* o = g == g_gv.end() ? nullptr : g->second.v;
+    if (!o || !exists(o) || F<uint8_t>(o, kVDead))
+        return;
+    void* tool = weapon_of((uint8_t*)o + kVCombatant);
+    if (!tool || !F<uint8_t>(tool, 0x80)) // +0x80: firing (FireTool sets it, OnMouseUp clears it)
+        return;
+    void* mgr = skg::cdecl_call<void*>(a_ToolMgrGet);
+    if (!mgr)
+        return;
+    g_in_guest_fire = true;
+    thiscall<int>(a_ToolMouseUp, mgr, tool);
+    g_in_guest_fire = false;
+    g_shot_released++;
+}
+
 static void guest_fire(double now)
 {
     shots_log(now);
@@ -649,10 +728,16 @@ static void guest_fire(double now)
     for (auto it = g_shots_in.begin(); it != g_shots_in.end();) {
         Shot& s = it->second;
         if (now > s.seen) {
+            if (!s.released)
+                release_copy(s); // the host's list no longer has it: its weapon stopped there
             it = g_shots_in.erase(it);
             continue;
         }
         ++it;
+        if (s.stopped && !s.released) {
+            g_shot_stops_seen++;
+            release_copy(s);
+        }
         if (now - s.tried < kShotFireEvery || (s.counted && s.done == s.count))
             continue;
         s.tried = now;
@@ -1817,6 +1902,9 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
         H->hook_create(M, (void*)a_AddTurret, (void*)h_AddTurret, (void**)&o_AddTurret);
     else
         a_AddTurret = 0;
+    a_ToolMouseUp = H->sym("Simulator::cToolManager::OnMouseUp"); // BUG-0530 (optional)
+    if (a_ToolMouseUp)
+        H->hook_create(M, (void*)a_ToolMouseUp, (void*)h_ToolMouseUp, (void**)&o_ToolMouseUp);
     a_FireTool = H->sym("Simulator::cToolManager::FireTool"); // BUG-0477 (optional)
     a_ToolMgrGet = H->sym("Simulator::cToolManager::Get");
     savestrip::add_filter(save_filter); // BUG-0470
@@ -3455,9 +3543,9 @@ std::string status()
              planner_city() ? 1 : 0, g_planner_held, g_planner_kills_held, (unsigned)g_kill_later.size(),
              g_planner_picks_refused, (unsigned)g_held_builds.size(), g_build_orphans, g_save_stripped, g_cards_skipped, g_owner_unknown, g_met);
     char sh[320];
-    snprintf(sh, sizeof sh, "shots: fix=%d seen=%u tx=%u rx=%u active=%u fired=%u no_mirror=%u no_tool=%u hits_dropped=%u hits=%u no_attacker=%u att_vt=%08X targets=%u/%u no_target=%u counted=%d tried=%u refused=%u\n",
+    snprintf(sh, sizeof sh, "shots: fix=%d seen=%u tx=%u rx=%u active=%u fired=%u no_mirror=%u no_tool=%u hits_dropped=%u hits=%u no_attacker=%u att_vt=%08X targets=%u/%u no_target=%u counted=%d tried=%u refused=%u stops=%u released=%u\n",
              (int)g_fix_shots, g_shots_seen, g_shots_tx, g_shots_rx, (unsigned)g_shots_in.size(), g_shots_fired,
-             g_shots_nomirror, g_shots_notool, g_hits_dropped, g_hits_guest, g_hits_noatt, (unsigned)g_hit_att_vt, g_shots_tgt_found, g_shots_tgt_wanted, g_shots_notarget, (int)g_fix_shot_fired, g_shots_tried, g_shots_refused);
+             g_shots_nomirror, g_shots_notool, g_hits_dropped, g_hits_guest, g_hits_noatt, (unsigned)g_hit_att_vt, g_shots_tgt_found, g_shots_tgt_wanted, g_shots_notarget, (int)g_fix_shot_fired, g_shots_tried, g_shots_refused, g_shot_stops_seen, g_shot_released);
     char bh[160];
     snprintf(bh, sizeof bh, "building_hp: fix=%d tx=%u rx=%u lowered=%u raised=%u no_match=%u\n", (int)g_fix_building_hp,
              g_hp_tx, g_hp_rx, g_hp_lowered, g_hp_raised, g_hp_nomatch);
