@@ -1306,6 +1306,8 @@ bool SK_THISCALL h_StageMsg(void* self, uint32_t id, void* msg)
             g_stage_msg_other++;
         }
     }
+    if (id == 0x60B4123u)
+        social::g_stage_msg_win++; // BUG-0179 (tests)
     if (n)
         g_stage_msg_guards++;
     size_t mark = game::swap_depth(); // BUG-0110: a fault in the handler leaves no blank +0xE84 behind
@@ -4479,6 +4481,10 @@ int c_social(void*, int argc, const char* const* argv, SkOut* out)
     }
     if (argc > 1 && !strcmp(argv[1], "species")) {
         SAY("%s", social::species_dump().c_str());
+        return 0;
+    }
+    if (argc > 1 && !strcmp(argv[1], "meter")) { // tests (BUG-0179): the game's social meter on this screen
+        SAY("%s", social::meter_dump().c_str());
         return 0;
     }
     if (argc > 1 && !strcmp(argv[1], "rel")) {
