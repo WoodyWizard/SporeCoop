@@ -968,3 +968,29 @@ BUG-0457. GOG 2024, lane 4 (`tools/tests/coop_editor_sync.py --case host|host2`)
   Windows' controlled folder access: inferred, not seen on their PCs).
 * Fix (gamefixes.cpp, `game.save_areas`): before the builder runs, a missing area of the three gets a fallback
   directory database in AppData\Spore\<name> (dir id 0xA02151), made and registered as the init does.
+
+## Save areas of a ru-ru install, the editor's backgrounds (2026-11-03, fix/w40-misc)
+<a id="creations-save-areas-locale"></a>
+
+GitHub issue #190 (BUG-0506), a follow-up of #creations-save-areas.
+
+* ✔ Static: `App::cSporeApp::Init` reads `HKLM\Software\Electronic Arts\SPORE\PlayerDir` (default
+  "My Spore Creations") and `AppDir` (default "Spore") and gives them to cAppSystem vt 0xC; dir id 0xA0214B (the
+  Pictures / Movies / Animations save areas) is Documents\<PlayerDir>. The ru-ru Steam install writes PlayerDir
+  "??? ????????" (the issue's InstallScript.vdf: the Russian name lost in a code page).
+* ✔ Runtime (lane 9, 2026-11-03): with the bottle's `playerdir` set to "??? ????????" the game made none of the three
+  areas (GetDatabaseByID 0x11AC196 / 0x11AC197 / 0x11AC198 all 0 in the galaxy menu) and no folder of that name.
+  So the localized subfolder names are not the cause; the PlayerDir that cannot be a folder name is. Inferred: the
+  ru-ru folders under My Spore Creations (localized names) that the reporter saw were made by other code (creation
+  PNGs), not by these areas; switching the game to English fixed it because the installer then writes a valid
+  PlayerDir. Not checked: which code makes those localized folders.
+* ✔ The editor's play-mode backgrounds (`SporeCoop::PlayModeBackgrounds_LoadPictures` 0x633750, caller 0x633890)
+  call GetDatabaseByID(0x11AC196 Pictures)->vt 0x5C without a null check: a read of 0 at 0x633765 when a Cell editor
+  opens (the issue's 0x513765 is the same instruction in an image loaded 0x120000 lower; GOG 2024 0x633765 here).
+  Reproduced in the lab with the save areas missing (coop_save_areas_editor.py, fix off).
+* Fix: the fallback (`game.save_areas`) now runs right after the app's init made the areas (hook on
+  `SporeCoop::SaveAreas_Init` 0x6B3760, called once by cAppSystem::Init, after coop.dll is loaded), with a log line of
+  the three areas (`save areas after the game's startup: Pictures=... Movies=... Animations=...`); the first frame
+  checks once more when the hook did not run (hot reload), and the settings builder keeps its check. Pictures,
+  Movies and Animations are the only areas of dir 0xA0214B (the folder AnimatedAvatars on disk is made elsewhere,
+  not looked at).

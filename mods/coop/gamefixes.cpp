@@ -590,26 +590,33 @@ static bool patch_slot(uintptr_t* slot, uintptr_t value)
     return true;
 }
 
-// BUG-0506: the game's Pictures / Movies / Animations save areas (0x11AC196..0x11AC198) are
+// BUG-0506 (and GitHub issue #190): the game's Pictures / Movies / Animations save areas (0x11AC196..0x11AC198) are
 // directory databases in Documents\My Spore Creations (dir id 0xA0214B), made once by the app's init
 // (0x6B3760). When that folder cannot be made (Documents missing, redirected, blocked by Windows'
 // controlled folder access, or a file of that name) the areas are never registered, and the game
 // settings window (its builder 0x602070, from GameSettings::Show) calls
 // Resource::GetDatabaseByID(0x11AC197)->vt 0x28 without a null check: a read of 0 at 0x6025A9.
-// Before the builder runs, a missing area gets a fallback directory database in the game's AppData
-// folder (dir id 0xA02151, as Games\Game0 and Preferences), the way the app's init makes them.
+// The editors read Pictures the same way (PlayModeBackgrounds 0x633750: GetDatabaseByID(0x11AC196)->vt 0x5C).
+// Seen with the ru-ru Steam install, whose installer writes PlayerDir "??? ????????" (the Russian name lost
+// in a code page): a folder name with '?' cannot be made. Right after the app's init has made them
+// (SporeCoop::SaveAreas_Init 0x6B3760), a missing area gets a fallback directory database in the game's
+// AppData folder (dir id 0xA02151, as Games\Game0 and Preferences), the way that init makes them; the
+// first frame and the settings builder check again (a hot reload, an init that ran before the hook).
 using SettingsBuildFn = void(__thiscall*)(void*, void*, void*, void*);
 using CreateSaveAreaFn = bool(__cdecl*)(uint32_t dir, const wchar_t* name, void** out, uint32_t id);
 using RegisterSaveAreaFn = void(__cdecl*)(uint32_t id, void* db, void* extra);
 using GetDatabaseFn = void*(__cdecl*)(uint32_t id);
 static SettingsBuildFn g_settings_orig;
+using AreasInitFn = void(__cdecl*)();
+static AreasInitFn g_areas_init_orig;
+static bool g_areas_checked; // the startup check ran (after the app's init or in the first frame)
 static CreateSaveAreaFn g_create_area;
 static RegisterSaveAreaFn g_register_area;
 static GetDatabaseFn g_get_db;
 static std::atomic<unsigned> g_areas_made{0}, g_areas_failed{0};
 static bool g_save_areas_fix = true;
 COOP_FIX("game.save_areas", "BUG-0506", g_save_areas_fix,
-         "gamefixes: missing Pictures / Movies / Animations save areas get a fallback folder before the settings window uses them");
+         "gamefixes: missing Pictures / Movies / Animations save areas get a fallback folder right after the game's startup (settings, editors, screenshots)");
 
 static void ensure_save_areas()
 {
@@ -633,10 +640,39 @@ static void ensure_save_areas()
         ok = ok && g_get_db(a.id);
         unsigned n = ok ? ++g_areas_made : ++g_areas_failed;
         if (n <= 4)
-            H->log(M, ok ? SK_WARN : SK_ERROR, "game fixes: save area 0x%08X (%s) was missing (My Spore Creations "
-                   "could not be made?): %s", a.id, std::string(a.name, a.name + wcslen(a.name)).c_str(),
+            H->log(M, ok ? SK_WARN : SK_ERROR, "game fixes: save area 0x%08X (%s) was missing (Documents\\<PlayerDir> "
+                   "could not be made: a PlayerDir with '?' as the ru-ru Steam install writes, or a blocked Documents): %s", a.id, std::string(a.name, a.name + wcslen(a.name)).c_str(),
                    ok ? "made in the game's AppData folder" : "the fallback failed too");
     }
+}
+
+static void log_areas(const char* when)
+{
+    if (!g_get_db)
+        return;
+    H->log(M, SK_INFO, "game fixes: save areas %s: Pictures=%p Movies=%p Animations=%p (fix %s)", when, g_get_db(0x011AC196),
+           g_get_db(0x011AC197), g_get_db(0x011AC198), g_save_areas_fix ? "on" : "off");
+}
+
+static void __cdecl areas_init_guard()
+{
+    g_areas_init_orig();
+    g_areas_checked = true;
+    log_areas("after the game's startup");
+    if (g_save_areas_fix)
+        ensure_save_areas();
+}
+
+void frame()
+{
+    if (g_areas_checked || !g_get_db)
+        return;
+    g_areas_checked = true; // the init ran before our hook (hot reload, a late load): check once now
+    H->run_outside_frame([](void*) {
+        log_areas("at the first frame");
+        if (g_save_areas_fix)
+            ensure_save_areas();
+    }, nullptr);
 }
 
 static void __fastcall settings_build_guard(void* self, void*, void* a, void* b, void* c)
@@ -714,7 +750,12 @@ void init(const SkHost* host, SkMod* mod)
                  H->hook_create(M, (void*)sb, (void*)&settings_build_guard, (void**)&g_settings_orig) == 0;
     if (!areas)
         g_settings_orig = nullptr;
-    H->log(M, SK_INFO, "game fixes: missing save area guard %s", areas ? "on" : "off");
+    uintptr_t ai = H->sym("SporeCoop::SaveAreas_Init");
+    if (!(ai && g_get_db && g_create_area && g_register_area &&
+          H->hook_create(M, (void*)ai, (void*)&areas_init_guard, (void**)&g_areas_init_orig) == 0))
+        g_areas_init_orig = nullptr;
+    H->log(M, SK_INFO, "game fixes: missing save area guard %s (startup hook %s)", areas ? "on" : "off",
+           g_areas_init_orig ? "on" : "off");
 }
 
 void shutdown()
