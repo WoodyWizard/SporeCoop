@@ -1,20 +1,20 @@
 ---
 id: BUG-0484
 title: Civ: cultural targets, dropped bundles and city turrets differ between the games
-status: open
+status: fixed
 kind: desync
 stage: Civ
 reported: 2026-11-03
 source: divergence detector, nightly run 2026-11-03 (out/lab/20261103-012624, out/detector/20261103-final.md)
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w42-civ-left
+commits: f2e26935 8b86a709 8ab37445 830797cd 894f4743
+tests: coop_civ_turrets.py (civ_turrets)
 signature:
 docs: docs/re/civ.md#civ-combat-shots
-related:
+related: BUG-0539, BUG-0540
 ---
 
 ## Report
@@ -38,12 +38,22 @@ Analysed, not fixed (fix/w41-civ-combat, time box; docs/re/civ.md#civ-combat-sho
 <!-- observed (runtime, logs, disassembly) vs inferred -->
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+Turrets: `civ.turrets` (fix/w42-civ-left): a guest's city growth makes no turret (City_AddTurret 0xBE39A0 from
+the growth's two call sites, return addresses SporeCoop::CivGrowth_Turret_Ret1 / Ret2); the host sends the places of
+one city's turrets per snapshot cycle (MSG_CIV_STATE chunk 0xFB, when changed and every 3 s) and the guest adds the
+ones it lacks (City_AddTurret) and removes the ones the host does not have (City_RemoveTurret 0xBE21C0, two looks in
+a row). The bundles and tribe objects went to BUG-0539, the cultural targets to BUG-0540.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+coop_civ_turrets.py (the host's game adds a turret to an NPC city; the guest's own growth gets a budget and an attack):
+FAIL with SPORE_FIX_OFF=civ.turrets (the host's turret missing on the guest): out/lab/20261104-100015
+(and out/lab/20261104-095739);
+PASS: out/lab/20261104-095903 (and out/lab/20261104-095616).
+Detector: play_civ before (lab 20261104-013631) `noun_only_guest:turret` 23 %; after, 0 % in 3 runs
+(out/lab/20261104-100146, 20261104-101322, 20261104-102449). The guest's own growth buying a turret was not seen in
+the test with the switch off (the half that blocks it stays unverified at runtime).
 
 ## History
 - 2026-11-03: opened.
 - 2026-11-04 (fix/w41-civ-combat): analysed (above), not fixed (time box).
+- 2026-11-04 (fix/w42-civ-left): turrets fixed (civ.turrets); bundles / tribe leftovers -> BUG-0539, cultural targets -> BUG-0540.

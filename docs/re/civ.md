@@ -1104,7 +1104,14 @@ GOG 2024 addresses (dc04aee5).
 * ~ A single religious vehicle against an NPC city gave the same religious shots on both games with the switch on
   and off (126 / 126, lab 20261104-095320): the guest's weapon refused 1099 of the relayed calls on its own refire
   time. The extra religious shots and AoE areas of the detector (play_civ) are therefore not explained by the
-  every-call relay alone; see BUG-0530's history.
+  every-call relay alone.
+* ✔ What the rows are (play_civ x3, lab 20261104-100146 / 101322 / 102449): a guest's game fires no tool of its own
+  in Civ (a FireTool hook for calls outside the relay logged none), and the guest's copies made as many shots of the
+  same weapon as the host's (`civ: shots by weapon`: 397 host, 397 guest at 600 s). Religious projectiles and AoE
+  areas live about a second; the relay showed them 0.3-0.4 s later on the guest (civ_religious, the best shift of
+  the two count series), so a detector sample often saw them in one game only (both ways: `noun_only_host` rows
+  too once the counts matched). Fix `civ.shot_now`: a shot that left goes out at once (at most every 0.05 s) and
+  the guest fires a new count on the frame it arrives: 0.10-0.20 s (lab 20261104-104140).
 
 **Turrets (BUG-0484).**
 * ✔ `City_AddTurret` 0xBE39A0 fastcall(city) -> 1 / 0: the next free turret slot, CreateTurret 0xBE2100,

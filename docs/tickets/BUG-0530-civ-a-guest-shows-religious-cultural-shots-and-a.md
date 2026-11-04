@@ -1,20 +1,20 @@
 ---
 id: BUG-0530
 title: civ: a guest shows religious (cultural) shots and AoE areas the host's game does not make (noun_only_guest after BUG-0477)
-status: open
+status: fixed
 kind: desync
 stage: Civ
 reported: 2026-11-04
 source: divergence detector, play_civ (fix/w41-civ-combat, out/lab/20261104-024331)
 role: guest
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w42-civ-left
+commits: b4a680fc 55e24cbc d8ea4474 b174d8f7 8c7a9834 dc00c3e4 fe6facb2
+tests: coop_civ_religious.py (civ_religious)
 signature:
-docs:
-related: BUG-0477
+docs: docs/re/civ.md#civ-hp-shots-turrets
+related: BUG-0477, BUG-0538
 ---
 
 ## Report
@@ -25,19 +25,33 @@ change 16 % (out/lab/20261104-020931). The military shots match (civ_shots: 98 g
 <!-- what the player (or the test) saw, in our words; no player names, no paths from their PC -->
 
 ## Root cause
-Not analysed. Inferred: the host's game calls FireTool for a religious vehicle (and an AoE tool) every update while
-its target is in range but its weapon makes a projectile / area only now and then (or the area lives on the
-host's side shorter); the guest calls FireTool for the mirror every 0.1 s and its weapon's own refire time lets
-more through. Next: relay only the FireTool calls that made a projectile on the host (WhileFiring's return, or the
-new projectile in the noun list), or skip cultural / AoE tools (tool +0x178 strategy key) until then.
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+Observed (lab, fix/w42-civ-left): not extra shots, but late ones.
+* `cToolManager::FireTool` returns a bool (al): true only when the refire time passed and WhileFiring made the shot
+  (0x0105030B). The host relayed every call (35 of 3474 made a shot in civ_shots), yet the guest's weapon refused
+  the extra ones on its own refire time: a religious attack gave 126 / 126 shots with the every-call relay
+  (out/lab/20261104-095320).
+* A guest's game fires no tool of its own in Civ (a hook on FireTool calls outside the relay logged none in play_civ),
+  and the copies made as many shots of the same weapon as the host's (play_civ: 397 / 397 by weapon at 600 s,
+  out/lab/20261104-102449).
+* Religious projectiles and AoE areas live about a second; the relay showed them 0.3-0.4 s late on the guest (the
+  host sent its shot list every 0.2 s, the guest fired at most every 0.1 s): a detector sample saw them in one game
+  only. After the count relay the rows came both ways (noun_only_host too, out/lab/20261104-101322).
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+* `civ.shot_now`: a shot that left goes to the guests at once (at most every 0.05 s, not with the next 0.2 s list),
+  and the guest fires a new count on the frame it arrives (delay 0.10-0.20 s instead of 0.30-0.40 s).
+* `civ.shot_fired`: the host counts the FireTool calls that made a shot and the guest fires that many (no more, at
+  most 3 behind); MSG_CIV_STATE chunk 0xFC (the 0.7.5 list 0xFE is still read). A guard: the old relay was not seen
+  to over-fire.
+* The shot lists are split by packet size (BUG-0538).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+coop_civ_religious.py (a religious attack on an NPC city; the guest's religious-shot count series against the host's):
+FAIL with SPORE_FIX_OFF=civ.shot_now (delay 0.30 s): out/lab/20261104-105005 (and 0.30 s in out/lab/20261104-104530,
+0.40 s in out/lab/20261104-103929 before the check);
+PASS (0.20 / 0.10 / 0.15 s): out/lab/20261104-103723, out/lab/20261104-104140 (x2), out/lab/20261104-104800.
+SPORE_FIX_OFF=civ.shot_fired did not fail (out/lab/20261104-095320: 126 / 126).
 
 ## History
 - 2026-11-04: opened.
+- 2026-11-04 (fix/w42-civ-left): analysed (late, not extra shots) and fixed (civ.shot_now, civ.shot_fired).
