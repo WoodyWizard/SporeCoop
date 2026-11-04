@@ -1297,3 +1297,10 @@ the tribe's grab spots of a tool type).
   member in node 0x0462854D, state 1, spot 0, walk mode 3, goal that spot, standing 1.5 m short of it for 90 s
   (speed 0, the 40 s re-order changed nothing). The order was the guest's and taken by the host as its own; the
   member stopped because the spot cannot be stood on. Three of the six spots were used (`used=1`) before the order.
+* ~ Why the walk stops short is not pinned down: a member put 5 m from the rack toward the fire pit, also with
+  another member put onto that spot, reached it (or took another spot) in 6 s with the fix off; the stop in the
+  failing runs was 1.5 m short with walk flags 01 (+0x270) and mode 3 (the arrival also checks the facing).
+* Fix (`tribe.grab_spot`, host): a player tribe member in the grab node's state 1 standing still 4 s within 3 m of
+  its walk goal is set onto the goal facing the tool (game::teleport); the node then arrives and grabs.
+* ~ The play_tribe idle orders of the earlier runs were not reproduced in 2 runs on lane 9 (lab 20261104-014832):
+  the host's own idle orders there (ok 9 of 14 in 20261104-010027) show the same game behaviour for host orders.
