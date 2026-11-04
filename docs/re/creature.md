@@ -2377,3 +2377,20 @@ BUG-0179 (meter and message), BUG-0525 (prompts, open). GOG 2024, Ghidra and lan
 * ? Not done (BUG-0525): the NPC's prompts. The host has no native session for a guest's game either (it counts the
   guest's rounds, social.cpp host_act), so no prompt list exists anywhere; a fix would let the host pick the prompts
   as 0xDA4360 does (species +0x7A4), play them on the NPC (relayed by npc.anims) and count only the matching answer.
+
+## The roar, second look (2026-11-03, fix/w41-creature-left)
+<a id="creature-roar-2"></a>
+
+BUG-0501 (still open, time box of about 20 minutes, Ghidra only). Follows #creature-roar.
+
+* ✔ The end callback of HeardRagingRoar / HeardSirenSong 0xD85400 clears stimulus 0x400000 (lo). Every `PUSH
+  0x400000` next to a BT_PostStimulus call was listed (`bytes 68 00 00 40 00`): the two in 0xC23A10 are a creature's
+  perception scan (its seen list +0x338..+0x33C, called only by the BT node 0xDAA000): stimulus 0x400000 "sees a
+  creature" to adult creatures (+0xB5E == 1) and to citizens in reach; not the roar. The others (0xD69740, 0xD7B620,
+  0xD7B690, 0xD8E840, 0xDAA100, 0xDAE910, 0xDBAAF0, 0xDBB7D0, 0xDBC730) are BT nodes, not looked at.
+* ✔ The avatar's ability use 0xC1E8B0 posts its stimulus by the ability's kind (`GetAbility(i) +0x7C`): 0 one target
+  (hit 0x2000 for a creature), 2 / 3 every creature in range (0xC42230 list, 0xD99A20 distance), 1 / 3 also 0xC155D0;
+  kind 0x2B with model 0x2C39370 launches a projectile. ~ Inferred: the Raging Roar is a kind 2 / 3 ability whose
+  stimulus the NPCs' BT turns into HeardRagingRoar; on a guest it reaches only AI-less mirrors.
+* Not done: a fix (the host replaying a guest's area ability from the puppet) cannot be checked without a creature
+  that has the roar (neither fixture creature has it; a carnivore Cell's consequence ability).

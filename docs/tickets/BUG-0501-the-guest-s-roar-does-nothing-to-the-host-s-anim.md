@@ -13,7 +13,7 @@ branch:
 commits:
 tests:
 signature:
-docs: docs/re/creature.md#creature-roar
+docs: docs/re/creature.md#creature-roar, docs/re/creature.md#creature-roar-2
 related: BUG-0462, BUG-0418
 ---
 
@@ -46,3 +46,4 @@ creature with the Raging Roar (a carnivore Cell's consequence ability); the fixt
 - 2026-11-03: opened.
 - 2026-11-03: likely reported again (0.7.3.6, guest's report 20261104-012758, text 'ability doesn't work', Creature; the mark itself has no text). Not confirmed which ability.
 - 2026-11-03: analysed on fix/w40-npc-anims (static only), not fixed.
+- 2026-11-03: second look on fix/w41-creature-left (Ghidra, ~20 min): the 0x400000 posters checked (0xC23A10 is the perception scan, not the roar), the ability kinds of 0xC1E8B0 written down; not fixed: a test needs a creature with the Raging Roar (no fixture has one). Next: a fixture from a carnivore Cell, then the host replays the guest's area ability (kind 2 / 3) from its puppet.
