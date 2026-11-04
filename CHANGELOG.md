@@ -7,6 +7,8 @@
   guest befriends can give it a new part as in a single-player game (BUG-0179).
 - A chat line typed in the co-op window while the game's "game saved" box (or another box of the game) is up
   is no longer lost; the window's buttons work then too (BUG-0482).
+- Creature: after evolving in the editor your creature is the new species at once, also when you play alone;
+  the host no longer saves the game after every evolution in co-op (BUG-0517).
 
 ## [0.7.4] - 2026-11-03
 
