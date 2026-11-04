@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.3.4, 0.7.3.6
 fixed_in: unreleased
 branch: fix/w40-no-reload
-commits: b3bf9bd2, ae5fdf86, fc5ba8bc, fcb93d69, 299c8461
+commits: b3bf9bd2, ae5fdf86, fc5ba8bc, fcb93d69, 299c8461, 01cc5fa6
 tests: evolve_in_place_cell, evolve_in_place_creature (coop_evolve_in_place.py --case cell|creature)
 signature:
 docs: docs/re/creations.md#creations-evolve-in-place, docs/06-testing.md#testing-evolve-in-place
@@ -56,6 +56,9 @@ docs/re/creations.md#creations-evolve-in-place:
 * PASS: Cell out/lab/20261103-172813 (no menu, no share, puppet 7C76F89F 'Inplacecell', own cell 4DA56CA5 -> 291431B5);
   Creature out/lab/20261103-174221 (no menu, no share, puppet 7C530FCB 'Burpee', own avatar 065CBE70 -> 29143508,
   world player species 29143508 on both, host saved once). SPORE_DETECTOR=20: only known signatures.
+* Regression (lane 6, SPORE_DETECTOR=20): out/lab/20261103-175935, 23/24 passed (smoke + cell_coop, creature,
+  guest_editor, editor_sync_guest, editor_sync_host, editor_desync, stage_switch, campaign_short, play_creature, unit,
+  evolve_world: the migration still sends the world, both evolve_in_place tests); ui skipped (exclusive, lanes 1-5).
 * On the way: out/lab/20261103-173652 (no save on the host: its avatar stayed 065CBE70, BUG-0517).
 
 ## History
