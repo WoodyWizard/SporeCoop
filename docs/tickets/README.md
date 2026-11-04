@@ -200,7 +200,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0187](BUG-0187-civilization-the-host-s-capture-caption-stops-ev.md) | fixed | bug | Civ | 2026-10-27 | 0.7.3.0 | Civilization: the host's capture caption stops everybody's game |
 | [BUG-0188](BUG-0188-civilization-the-npc-ai-still-spawns-vehicles-on.md) | fixed | desync | Civ | 2026-10-27 | 0.7.3.0 | Civilization: the NPC AI still spawns vehicles on guests |
 | [BUG-0189](BUG-0189-civilization-no-building-placement-through-the-c.md) | open | test | Civ | 2026-10-27 |  | Civilization: no building placement through the city planner in tests |
-| [BUG-0190](BUG-0190-coop-sync-py-space-the-ships-p90-sits-near-its-1.md) | open | test | Space | 2026-10-23 |  | coop_sync.py space: the ships' p90 sits near its 10 m limit |
+| [BUG-0190](BUG-0190-coop-sync-py-space-the-ships-p90-sits-near-its-1.md) | not-reproduced | test | Space | 2026-10-23 |  | coop_sync.py space: the ships' p90 sits near its 10 m limit |
 | [BUG-0191](BUG-0191-space-contracts-what-is-not-done-space-contracts.md) | open | feature | Space | 2026-10-23 |  | Space contracts: what is not done (space_contracts.cpp, 2026-10-23) |
 | [BUG-0192](BUG-0192-space-rivals-mode-limits-space-rivalry-cpp-2026.md) | open | feature | Space | 2026-10-23 |  | Space rivals mode: limits (space_rivalry.cpp, 2026-10-23) |
 | [BUG-0193](BUG-0193-space-tests-on-the-new-space-fixture-madas-two-f.md) | open | test | Space | 2026-10-23 |  | Space tests on the new `space` fixture (Madas): two flaky runs seen (lane 6, 2026-10-23) |
@@ -550,3 +550,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0543](BUG-0543-space-allies-a-partner-s-new-colony-in-a-star-sy.md) | fixed | desync | Space | 2026-11-04 | unreleased | Space allies: a partner's new colony in a star system both players own is not shown (the planet stays free) |
 | [BUG-0544](BUG-0544-space-diplomacy-a-guest-s-changes-while-the-host.md) | fixed | desync | Space | 2026-11-04 | unreleased | Space diplomacy: a guest's changes while the host is out of Space are lost on both copies |
 | [BUG-0545](BUG-0545-space-the-host-faults-once-at-0xe98dd0-ufogfx-se.md) | open | crash | Space | 2026-11-04 |  | Space: the host faults once at 0xE98DD0 (UfoGfx SetVisible, model null) in coop_space_diplomacy.py |
+| [BUG-0547](BUG-0547-space-sync-check-mismatch-p0-46-m-while-the-host.md) | open | test | Space | 2026-11-04 |  | Space: sync-check MISMATCH p0 46 m while the host flies a rescue on the home planet (space_rescue gate) |
