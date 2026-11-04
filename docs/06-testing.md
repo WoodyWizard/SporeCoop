@@ -3868,3 +3868,16 @@ its game's `world_scale=` from coop.pool, read before and after the dump). Fails
   walks off), `coop.tribe epic stats` lists every live epic (`ours=`, hp, size, its herd's archetype and
   multipliers, `blows= last= max=`: its blows on members, counted in the host's citizen TakeDamage hook). The
   fixture's own epic does not hit anybody in the test (it is far off). Two blows come within 10-40 s.
+## Tribe: a guest's saves and own tribes (2026-11-03, fix/w41-tribe-world)
+<a id="testing-tribe-guest-world"></a>
+
+* `coop_tribe_save_strip.py` (suite `tribe_save_strip`, ~2 min, the free lane for Carol): Carol joins the
+  host's tribe world, the host adds 4 adults (`coop.tribe spawn 4`) and forms an NPC tribe 70 m away
+  (`coop.tribe npc_tribe 3 70`); Carol saves (`coop.save`), restarts alone and loads: her player tribe holds her
+  own members only and no tribe stands where the made one did (`coop.tribe` marks `made=1` tribes and `ours=1`
+  members on a guest). `SPORE_FIX_OFF=tribe.save_strip` fails. The host's game forms more NPC tribes of its own
+  while the test runs (2 more in 2 min on the tribe fixture): compare tribes by place, not by count.
+* `coop_tribe_guest_tribes.py` (suite `tribe_guest_tribes`, cold, ~2 min): `coop.tribe form` on the guest runs
+  its game's NPC tribe controller's forming (NpcTribeController_FormTribe, what the game does during play); then
+  with the fix off for a moment a tribe the host has not is made and must lose its members once the fix is on.
+  `SPORE_FIX_OFF=tribe.guest_tribes` fails.

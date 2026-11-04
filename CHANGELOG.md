@@ -8,6 +8,10 @@
   (BUG-0514).
 - Tribe: the epic creature that comes to the players' village now hits as hard as the game's own epics; it
   dealt only about 8 damage, like an ordinary animal (BUG-0515).
+- Tribe: when you save as a guest and later load that save alone, your tribe no longer holds copies of the
+  host's members, and the host's villages your game showed are not in it (BUG-0495).
+- Tribe: a guest's game no longer makes new villages of its own that the host's world does not have, and the
+  members of a village the host no longer has leave the guest's game too (BUG-0483).
 
 ## [0.7.4] - 2026-11-03
 

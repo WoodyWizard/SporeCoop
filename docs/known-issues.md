@@ -1777,3 +1777,18 @@ Found by fix/w40-play (2026-11-03), not fixed:
   reproduce: `coop.fix effects.other_stages on` on every game, then tools/tests/coop_effects_party.py --fixture civ.
   To check for 0.7.5 (Civ) and 0.7.6 (Space): which effect ids need the painter, and whether a per-id allow list
   or the painter's context check is the right fix.
+## Space: the partners' UFO puppets may go into a guest's save (2026-11-03, fix/w41-tribe-world)
+<a id="issue-space-objects-in-save"></a>
+
+* What happens: the save filter knows creatures, herds, Civ mirror vehicles (civ.save_strip) and Tribe mirrors
+  and made tribes (tribe.save_strip), not the Space objects the mod makes (the partners' UFO puppets). Not
+  checked whether a Space save writes them at all.
+* Not fixed: needs a Space save + reload test as tribe_save_strip.
+* Ticket: BUG-0522
+## Tribe: tools stand elsewhere on each game; an emptied village keeps its hut (2026-11-03, fix/w41-tribe-world)
+<a id="issue-tribe-tools"></a>
+
+* What happens: the mod syncs no tribe tool: a tool bought after the world was shared is made by each game at its
+  own spot (the detector's `Tribe:unmatched:tribe_tool`). A guest's tribe the host no longer has loses its members
+  (tribe.guest_tribes) but its hut, tools and food mat stay: no game function to remove a whole tribe is known.
+* Ticket: BUG-0523, BUG-0483
