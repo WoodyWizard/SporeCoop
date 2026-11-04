@@ -39,3 +39,4 @@ went off after the epic arrived.
 
 ## History
 - 2026-11-03: opened.
+- 2026-11-03 (fix/w41-tribe-actions): replayed with `PLAY_TRIBE_SEED=655950227` (new: the lab passes the seed this way) on lane 2, SPORE_DETECTOR=20: not reproduced, PASS (out/lab/20261104-000550: host 19 orders all acted on, guest 15 ok / 2 idle / 0 lost of 17; the seed fixes the bots' choices, not the game). play_tribe now logs, for an order nobody acted on, the host's line of each ordered member (behaviour node `bt=`, place, health) to tell the next failure apart. Suspect (inferred, not shown): gathers on trees the host's game has picked empty while the guest's copy still shows fruit (worldobj tree snapshots cover at most 48 trees within 70 m of the village; the bot picks trees within 90 m).
