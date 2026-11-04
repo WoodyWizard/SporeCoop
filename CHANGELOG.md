@@ -22,6 +22,8 @@
   is no longer lost; the window's buttons work then too (BUG-0482).
 - Creature: after evolving in the editor your creature is the new species at once, also when you play alone;
   the host no longer saves the game after every evolution in co-op (BUG-0517).
+- Tribe and Civilization: the effects of your tribe members and vehicles (a hit, a death, ...) now show on the
+  other players' screens too, as in Cell and Creature (BUG-0451).
 
 ## [0.7.4] - 2026-11-03
 

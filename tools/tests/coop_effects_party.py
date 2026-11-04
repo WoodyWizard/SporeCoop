@@ -8,7 +8,8 @@ each machine creates a steady world effect at its own creature (`coop.effects lo
 effect manager), and the other guest's game must create the game's effect object (active, at the
 actor's world position) from the relayed message.
 
-  coop_effects_party.py [--fixture cell|creature|tribe|civ|space]   (SPORE_FIX_OFF=creature.effects_relay must FAIL)
+  coop_effects_party.py [--fixture cell|creature|tribe|civ|space]   (SPORE_FIX_OFF=creature.effects_relay must FAIL;
+                         in Tribe / Civ SPORE_FIX_OFF=effects.main_world faults the games: the skin painter's effect)
 
 Every stage (BUG-0471): the same three cases in the stage's fixture, the effect id is the last one the
 stage's game created (`coop.effects load ... 0`; Creature keeps the mating call E1B24DDB), the actor's
@@ -142,11 +143,13 @@ def main():
     p = Party.start(a.fixture, players=3, join_together=True)
     ck = Checks()
     print(f'  fixture {a.fixture}', flush=True)
-    if a.fixture in ('tribe', 'civ', 'space'):  # the relay is off there in 0.7.4 (coop.fix effects.other_stages)
+    if a.fixture == 'space':  # Space is not verified: the relay is off there unless asked for (coop.fix effects.space)
         for x in p.all:
-            x.con.call('coop.fix effects.other_stages on')
+            x.con.call('coop.fix effects.space on')
     if a.fixture != 'creature':
-        FX_ID = '0'  # the last effect id this stage's game created
+        # the last effect id this stage's game created in its own effect world (with effects.main_world off:
+        # in any world, so also a skin painter's paint effect, which faulted the games in Tribe / Civ, BUG-0451)
+        FX_ID = '0'
         OWN_POS = p.own_pos
     ids = p.ids()
     host, bob, carol = p.byname('Alice'), p.byname('Bob'), p.byname('Carol')
@@ -168,6 +171,9 @@ def main():
         x.call('coop.effects load 0')
         print(f'  {x.name}: relay cost {c if c is None else round(c, 4)} % of the frame time', flush=True)
         ck(c is not None and c < 1.0, f'{x.name}: the relay costs under 1 % of the frame time ({c and round(c, 4)} %)')
+    for x in p.all:  # the skin painter's own effects each game saw (never relayed with effects.main_world)
+        m = re.search(r'effects foreign world: .*', x.call('coop.effects'))
+        print(f'  {x.name}: {m.group(0) if m else "?"}', flush=True)
     ck.faults(host=host.con, guest=bob.con, extra=carol.con)
     raise SystemExit(ck.result())
 

@@ -203,3 +203,20 @@ with SPORE_FIX_OFF=creature.effects_relay in out/lab/20261102-202617.
   painter (effects_party_civ, out/lab/20261103-215559); 0.7.4 relays starts only in Cell and Creature
   (`coop.fix effects.other_stages`, off; Tribe faulted the same way, out/lab/20261103-223036), docs/known-issues.md#issue-effects-civ-space.
 - 2026-11-03: released in 0.7.4.
+
+## Other stages: Tribe and Civilization (2026-11-04, fix/w41-effects-stages, 0.7.5 package E1)
+
+* Observed: the effect id that the faulting 0.7.4 runs relayed, `D723B947`, is a paint effect the skin painter
+  (`Skinner::cSkinPainterPipeline::ExecutePipeline`) creates in an effect world of its own on the main thread
+  (`coop.effects`: `effects foreign world: created=32 last=D723B947` on the guest that built the partners'
+  models). Civ: guest 1's case id in both 0.7.4 repeats; Tribe: guest 2's last id (sent in the cost phase).
+  The faulting games were exactly those that created it in their game effect world (the sender's own load and
+  the host / guest that played it). None of these effects stood near the player (`near=0`): only the test's
+  workload (`coop.effects load ... 0`, the last id of any world) sent one.
+* Inferred: StartRender+0x28 reads the painter's render state, present only while a paint runs; the fault did not
+  come back on lane 4 on 2026-11-04 even with the 0.7.4 release build (two runs), so no FAIL run of the fault.
+* Fix (bbbb6540): `coop.fix effects.main_world` (on) marks effects made in another world than the manager's
+  (+0x244) and never sends them, the perf load uses the last id of the game's own world, a receiver does not play
+  a world start of an id it saw only in a painter world. `effects.other_stages` is on by default (Tribe, Civ);
+  Space is behind `effects.space` (off). Test: effects_party_tribe / _civ, tribe_effects back in the full suite.
+  docs/re/creature.md#creature-effects-painter.

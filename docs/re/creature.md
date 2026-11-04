@@ -2438,3 +2438,42 @@ BUG-0504. Lane 9, probes (no test kept).
   the mod does not move its own creature, and the caption does not lower it at that spot or at the nest. What the
   creatures stood on there is not known (the GetHeightAt terrain only sample against a collision surface; a walk
   path on the slope). The pack_target allow of 0.7.4 stays.
+## The skin painter's own effects and the effects relay in Tribe / Civ (2026-11-04, fix/w41-effects-stages)
+<a id="creature-effects-painter"></a>
+
+BUG-0451, the other stages (docs/known-issues.md#issue-effects-civ-space). GOG 2024, lane 4, runtime counters
+(`coop.effects`: `effects foreign world:`), the 0.7.4 fault logs (rel/0.7.4 out/lab/20261103-215559 and -223036).
+
+* ✔ The skin painter (`Skinner::cSkinPainterPipeline::ExecutePipeline`, it paints a creature model's skin when the
+  model is built: a partner's puppet, a tribe member, a citizen) creates its paint effects with
+  `Swarm::EffectWorld::CreateEffect` 0xA71300 on **an effect world of its own**, not the game's (the one
+  `cEffectsManager::CreateEffect` 0xA6CAD0 forwards to, manager +0x244), and on the **main thread** (the 0.7.4 faults
+  are tid = main). Measured: in a 3-player Civ party the first guest's game made 32 such effects (20 ids, among
+  them `D723B947`) while it built the partners' models; the host and the second guest 0 in that window.
+* ✔ The world-effect hook (`h_WorldCreateFx`) took them like any effect: they were the "last effect id the game
+  created" (`coop.effects load ... 0`, the test workload) and, when one stood within 1.8 m of the local player,
+  a world effect to send. 0.7.4's effects_party_civ: guest 1's id was `D723B947` (a painter effect) in both
+  repeats; its own load and the host (which plays and relays a guest's effect) faulted 680-936 times each at
+  `Skinner::cSkinnerTexturePainter::StartRender+0x28` (read 0) within 2 s, while guest 2 (which also received
+  it) did not fault: ~ inferred, StartRender reads the painter's current render target state, which only a game
+  whose painter has run lately has. So such an effect created in the game's effect world faults every frame
+  while it lives on a game whose painter is idle.
+* ✔ The Tribe repeat fits too: there the **second** guest's last id was `D723B947` (lane 4 probe: the painter
+  effect, its last any-world id for the whole session), sent in the test's cost phase where all three load; the
+  host and guest 1 faulted (538 / 528), guest 2 (the sender) did not. `050B305A` and `85A02492` (Tribe) and
+  `4C4BA0A9` (Civ) are effects of the game's own world.
+* ✔ A player's real play would not have sent them: `near=0` in every run (Tribe, Civ, with the fix off: the painter
+  effects stand nowhere near the player's own objects), so only the test workload (`coop.effects load ... 0`, the
+  last id of any world) relayed one. The rule is still needed: nothing else keeps a painter effect out.
+* ? Not reproduced on lane 4 on 2026-11-04: the 0.7.4 release build itself (e396d1cb, its own test with
+  `effects.other_stages on`) ran effects_party_civ twice without a fault, and rel/0.7.5 with
+  `SPORE_FIX_OFF=effects.main_world` relayed `D723B947` to both partners without a fault
+  (out/lab/20261104-004532; also -003023, -003205). The 0.7.4 faults were on lane 2. So the fault needs a state
+  of the receiving game that these runs did not have (~ inferred: StartRender reads the painter's render target
+  state, set only while a paint is under way).
+* Fix (`coop.fix effects.main_world`, on): the hook marks an effect made in another world than manager +0x244
+  (`game::effect_foreign`); effects.cpp never sends it, the perf load uses the last id of the game's own world
+  (`game::last_effect_id(true)`), and a receiver does not play a world start of an id it saw only in a painter
+  world (`not played=`). `effects foreign world: created= queued= near=` counts them; `near` is how many a
+  player's real play would have sent without the fix. With it, `effects.other_stages` (Tribe and Civilization)
+  is on by default; Space stays behind `effects.space` (off: not verified, no UFO effect can be made in a test).
