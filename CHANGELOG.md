@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### Fixed
+- When Spore itself fails to start (the game closes at once after the mod was installed), you now get a
+  message that says what to check and a report to attach, instead of the game just closing (BUG-0521).
 - Cell: when the cells grow to the next size, the other cells no longer fly around on the guest's screen for a
   few seconds; they stay where the host's game has them (BUG-0511).
 - The game no longer crashes when you open Settings in the galaxy menu on a PC where Spore cannot make its
