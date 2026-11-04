@@ -8,7 +8,7 @@ reported: 2026-10-31
 source: player report 2026-10-31 (host mark)
 role: host
 versions: 0.7.3.1
-fixed_in: unreleased
+fixed_in: 0.7.5
 branch: fix/w41-cell-left
 commits: 9b03a8ce
 tests: cell_camera (tools/tests/coop_cell_camera.py)
@@ -44,3 +44,4 @@ PASS: cell_camera, lab 20261104-020550 (0.08 m / 0.22 m).
 - 2026-11-02: reported again on Discord ('Decentered screen': when the host evolves the cell in the Cell stage, the other player's screen is off centre when it reappears), 0.7.3.4. Target 0.7.4.
 - 2026-11-03: reported again (0.7.3.4 forum post): 'decentered screen in the Cell stage (after the editor)'; the trigger the player names is the editor, not a death: maybe a second path. No log evidence in the reports.
 - 2026-11-04: fix/w41-cell-left: the camera reset after every jump of the own cell (cell.camera_snap); fixed (unreleased).
+- 2026-11-04: released in 0.7.5.

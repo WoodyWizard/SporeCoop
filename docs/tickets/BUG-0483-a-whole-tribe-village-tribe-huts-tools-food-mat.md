@@ -8,7 +8,7 @@ reported: 2026-11-03
 source: divergence detector, nightly run 2026-11-03 (out/lab/20261103-012624, out/detector/20261103-final.md)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.5
 branch: fix/w41-tribe-world
 commits: 7b92a15b
 tests: tribe_guest_tribes
@@ -53,3 +53,4 @@ Its hut, tools and food mat stay (no game function to remove a whole tribe is kn
 ## History
 - 2026-11-03: opened.
 - 2026-11-03: fixed on fix/w41-tribe-world (tribe.guest_tribes): the guest's own forming; the Civ rows not looked at.
+- 2026-11-04: released in 0.7.5.

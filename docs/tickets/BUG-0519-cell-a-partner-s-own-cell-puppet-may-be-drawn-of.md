@@ -8,7 +8,7 @@ reported: 2026-11-03
 source: 
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.5
 branch: fix/w41-cell-left
 commits: c3e4f926
 tests: cell_puppet_scale (tools/tests/coop_cell_puppet_scale.py)
@@ -41,3 +41,4 @@ sender's state, the blend across two scales), fuzz_decoders (base prefix of 67 b
 ## History
 - 2026-11-03: opened.
 - 2026-11-04: fix/w41-cell-left: the puppet drawn in the receiver's scale (cell.puppet_scale); fixed (unreleased).
+- 2026-11-04: released in 0.7.5.

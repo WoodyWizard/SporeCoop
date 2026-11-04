@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: fix/w34-ability-pop (BUG-0414 analysis)
 role: guest
 versions: 0.7.3.3+
-fixed_in: unreleased
+fixed_in: 0.7.5
 branch: fix/w41-puppet-look
 commits: f7616a06
 tests: puppet_mound
@@ -44,3 +44,4 @@ GetHeightAt and the puppet on the screen, at most 10 % drawn more than 0.15 m un
 ## History
 - 2026-11-01: opened (fix/w34-ability-pop).
 - 2026-11-04: fixed on fix/w41-puppet-look (creature.puppet_mound).
+- 2026-11-04: released in 0.7.5.

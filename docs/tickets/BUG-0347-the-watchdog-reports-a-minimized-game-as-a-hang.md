@@ -8,7 +8,7 @@ reported: 2026-10-31
 source: player reports 2026-10-31 (host and guest logs)
 role: 
 versions: 0.7.3.1
-fixed_in: unreleased
+fixed_in: 0.7.5
 branch: fix/w41-infra
 commits: 57aa4198, d7168d32
 tests: kit_watchdog
@@ -58,3 +58,4 @@ report, frames again afterwards.
 - 2026-10-31: opened from the host's and the guest's report zips.
 - 2026-11-03: seen in a player report (0.7.3.6 guest, report 20261104-012758): WATCHDOG 'no frames' during 17-38 s gaps with a device Reset after each (minimized / alt-tab). The host meanwhile showed the guest sunk into the ground: BUG-0513; a crash right after such a gap: BUG-0507.
 - 2026-11-04: fixed on fix/w41-infra (kit.fix hangloop); SporeKit changed, no version bump (the orchestrator).
+- 2026-11-04: released in 0.7.5.

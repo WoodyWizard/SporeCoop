@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: rejoin_race_long, lab 20261101-134020 (feat/w33-tests-session)
 role: host
 versions: main a05d1f6
-fixed_in: unreleased
+fixed_in: 0.7.5
 branch: fix/w41-infra
 commits: deae3502
 tests: rejoin_race_long, rejoin_mobile, unit (net_tests bulk_busy_receiver)
@@ -78,3 +78,4 @@ Unit test net_tests `bulk_busy_receiver` (make test) runs each case with the swi
 ## History
 - 2026-11-01: opened.
 - 2026-11-04: fixed on fix/w41-infra (net.bulk_acks), measured before / after.
+- 2026-11-04: released in 0.7.5.

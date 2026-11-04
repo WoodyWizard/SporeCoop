@@ -8,7 +8,7 @@ reported: 2026-11-03
 source: divergence detector, nightly run 2026-11-03 (out/lab/20261103-012624, out/detector/20261103-final.md)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.5
 branch: fix/w41-infra
 commits: 9befc502
 tests: drama_guest
@@ -47,3 +47,4 @@ list and the event stays inactive; the host's makes one (control).
 ## History
 - 2026-11-03: opened.
 - 2026-11-04: the guest's own UFO held back on fix/w41-infra (creature.guest_events); the host's UFO on the guest not done.
+- 2026-11-04: released in 0.7.5.

@@ -8,7 +8,7 @@ reported: 2026-11-03
 source: fix/w40-play final check, lab 20261103-160342
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.5
 branch: fix/w41-tribe-orders
 commits: 19fa95a7 8e0fac53 37254c57
 tests: tribe_tools (coop_tribe_tools.py), play_tribe
@@ -94,3 +94,4 @@ deterministic; `coop.tribe put` of the member or of a blocker next to the spot b
   does not end it. Inferred: the same for the host's own orders on a member stuck in a gather (the host had 2 idle
   orders in #2). Not fixed: the grab half is (tribe.grab_spot); status stays open for the gather half.
 - 2026-11-04: the grab half (a member that stops short of its grab spot) fixed by tribe.grab_spot on fix/w41-tribe-orders (tribe_tools 5/8 -> 8/8); the gather-node stall split into BUG-0531.
+- 2026-11-04: released in 0.7.5.

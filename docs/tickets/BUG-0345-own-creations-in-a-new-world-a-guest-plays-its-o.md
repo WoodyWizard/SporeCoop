@@ -8,7 +8,7 @@ reported: 2026-10-31
 source: player reports 2026-10-31 (host marks)
 role: host
 versions: 0.7.3.1
-fixed_in: unreleased
+fixed_in: 0.7.5
 branch: fix/w41-cell-left
 commits: 4b9a0875 dd8537e9 dc920646 28ec9f25
 tests: creations (tools/tests/coop_creations.py)
@@ -56,3 +56,4 @@ both games, recorded; unchosen in the same world -> still own; record forgotten 
 - 2026-11-03: reported again (0.7.3.6 direct message: the guest spawns in Cell with its previous cell creature; older message: the guest gets a monster from a different playthrough). Guest log (report 20261104-005925): `own=29122D00 from newest own creation ... the game has E219E5D3 (DIFFERENT)` then swapped to its own; in Creature `own=29149794 from choices.ini`. Players read it as a bug; the DNA half is BUG-0510.
 - 2026-11-04: fix/w41-cell-left: where the choice is made and the DNA question answered (no DNA from parts); the design decision (a/b/c) left to the owner.
 - 2026-11-04: fix/w41-cell-left: the per-world default and the notice (creations.guest_world_species); fixed (unreleased).
+- 2026-11-04: released in 0.7.5.

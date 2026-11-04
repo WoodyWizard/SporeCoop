@@ -8,7 +8,7 @@ reported: 2026-11-03
 source: player reports 2026-11-04 (Discord, w40 triage)
 role: guest
 versions: 0.7.3.6
-fixed_in: unreleased
+fixed_in: 0.7.5
 branch: fix/w41-tribe-actions
 commits: e2ac6e3b
 tests: tribe_tools (coop_tribe_tools.py)
@@ -59,3 +59,4 @@ the hooked step under it); a player's own palette purchase (the fixture's palett
 - 2026-11-03: opened.
 - 2026-11-03: opened (w40 triage).
 - 2026-11-03 (fix/w41-tribe-actions): host tools on the guests, held tools replicated; fixed.
+- 2026-11-04: released in 0.7.5.

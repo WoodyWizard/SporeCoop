@@ -8,7 +8,7 @@ reported: 2026-11-03
 source: divergence detector, nightly run 2026-11-03 (out/lab/20261103-012624, report out/detector/20261103-0236.md)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.5
 branch: fix/w41-civ-citizens
 commits: f10322da
 tests: civ_citizens (tools/tests/coop_civ_citizens.py)
@@ -39,3 +39,4 @@ FAIL with SPORE_FIX_OFF=civ.citizens: out/lab/20261104-001329 (99 of 152 host ci
 ## History
 - 2026-11-03: opened.
 - 2026-11-04 (fix/w41-civ-citizens): fixed (world-object kind `citizen`, docs/re/civ.md#civ-roads-citizens).
+- 2026-11-04: released in 0.7.5.

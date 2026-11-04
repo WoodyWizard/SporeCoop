@@ -8,7 +8,7 @@ reported: 2026-11-03
 source: split from BUG-0470 (its Civ half fixed on fix/w40-civ-crashes)
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.5
 branch: fix/w41-tribe-world
 commits: 629fbd74
 tests: tribe_save_strip
@@ -52,3 +52,4 @@ The Space half (UFO puppets) moved to BUG-0522: not done here (needs its own sav
 ## History
 - 2026-11-03: opened.
 - 2026-11-03: Tribe half fixed on fix/w41-tribe-world (tribe.save_strip); Space half split into BUG-0522.
+- 2026-11-04: released in 0.7.5.

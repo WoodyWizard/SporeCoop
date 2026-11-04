@@ -8,7 +8,7 @@ reported: 2026-11-03
 source: test (coop_evolve_in_place.py, fix/w40-no-reload)
 role: host
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.5
 branch: fix/w41-creature-left
 commits: 49d287f4
 tests: evolve_key (coop_evolve_in_place.py --case creature --nosave), evolve_in_place_creature
@@ -38,3 +38,4 @@ evolve_key (coop_evolve_in_place.py --case creature --nosave: the host's in-plac
 ## History
 - 2026-11-03: opened.
 - 2026-11-03: fixed on fix/w41-creature-left (creature.evolve_key).
+- 2026-11-04: released in 0.7.5.

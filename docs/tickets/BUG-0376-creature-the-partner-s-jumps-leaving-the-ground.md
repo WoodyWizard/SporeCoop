@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: lab, fix/w30-puppet-jump (hops simulated with coop.abilities lift)
 role: both
 versions: 0.7.3.3
-fixed_in: unreleased
+fixed_in: 0.7.5
 branch: fix/w41-puppet-look
 commits: af6fe121, see the branch log
 tests: puppet_air
@@ -52,3 +52,4 @@ walker's target over 0.4 m above the host's ground, the next frame draws the pup
 ## History
 - 2026-11-01: opened.
 - 2026-11-04: fixed on fix/w41-puppet-look (creature.puppet_air).
+- 2026-11-04: released in 0.7.5.

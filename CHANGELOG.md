@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.7.5] - 2026-11-04
+
 ### Fixed
 - A guest in a new world now plays that world's species, not its cell or creature from another game; it plays its
   own creation when it picks it in the co-op window or already played it in this world, and everybody gets a

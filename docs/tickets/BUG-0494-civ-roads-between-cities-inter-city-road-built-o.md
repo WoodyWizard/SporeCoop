@@ -8,7 +8,7 @@ reported: 2026-11-03
 source: split from BUG-0478 (detector 2026-11-03)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.5
 branch: fix/w41-civ-citizens
 commits: 58e10578
 tests: civ_roads (tools/tests/coop_civ_roads.py)
@@ -43,3 +43,4 @@ FAIL with SPORE_FIX_OFF=civ.roads: out/lab/20261103-235005 (host 1 road, guest 0
 ## History
 - 2026-11-03: opened.
 - 2026-11-04 (fix/w41-civ-citizens): fixed (the host's trade routes are added on the guests).
+- 2026-11-04: released in 0.7.5.

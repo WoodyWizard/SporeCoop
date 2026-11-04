@@ -1,17 +1,17 @@
 ---
 id: BUG-0534
 title: Civ: a guest's copy of a host's shot without a target faults in the weapon update
-status: open
+status: fixed
 kind: crash
 stage: civ
 reported: 2026-11-04
 source: lab final 0.7.5
 role: guest
 versions: 0.7.5-dev
-fixed_in:
+fixed_in: 0.7.5
 branch: rel/0.7.5
-commits:
-tests: play_civ
+commits: e201eb30
+tests: play_civ, civ_shots
 signature: 0xC0000005 at SporeApp.exe+0x8B609C (GOG 2024) data 0x50; then cResourceProjectile::LaunchProjectile+0x5B5 data 0
 docs:
 related: BUG-0477
@@ -34,8 +34,11 @@ The host marks a shot whose target it cannot name (tkind 2); the guest fires a s
 finds that target in its own game (counter `no_target` in `coop.civ status` shots line). `coop.fix civ.shot_target off`: 0.7.5-dev behaviour.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+FAIL: out/lab/20261104-061516 (play_civ: 7981 guest faults at SporeApp.exe+0x8B609C).
+PASS: out/lab/20261104-075207 (play_civ x1, civ_shots: 0 faults on both games).
+(A play run, not a twin: the fault needs a fight's random target; civ_shots guards the shots themselves.)
 
 ## History
 - 2026-11-04: opened.
+- 2026-11-04: fixed in e201eb30 on rel/0.7.5.
+- 2026-11-04: released in 0.7.5.

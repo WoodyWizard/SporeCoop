@@ -8,7 +8,7 @@ reported: 2026-11-03
 source: player reports 2026-11-04 (Discord, w40 triage)
 role: host
 versions: 0.7.3.6
-fixed_in: unreleased
+fixed_in: 0.7.5
 branch: fix/w41-tribe-actions
 commits: 521d849b
 tests: tribe_epic_damage (coop_tribe_epic_damage.py)
@@ -47,3 +47,4 @@ its herd and its blows (host TakeDamage).
 - 2026-11-03: opened.
 - 2026-11-03: opened (w40 triage), needs the player's details.
 - 2026-11-03 (fix/w41-tribe-actions): the co-op epic's damage multiplier was 1 (game's epic 15); fixed.
+- 2026-11-04: released in 0.7.5.

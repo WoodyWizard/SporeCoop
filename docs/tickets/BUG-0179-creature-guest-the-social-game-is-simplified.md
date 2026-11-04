@@ -8,7 +8,7 @@ reported: 2026-10-23
 source: docs/known-issues.md (ticket backfilled 2026-10-27)
 role: guest
 versions: 0.7.2.4 (main) and earlier
-fixed_in: unreleased
+fixed_in: 0.7.5
 branch: fix/w41-creature-left
 commits: 50030f4a 47779e7b 
 tests: creature_social_meter (coop_creature_social_meter.py), creature_social_bar
@@ -47,3 +47,4 @@ creature_social_meter (tools/tests/coop_creature_social_meter.py), real input on
 - 2026-11-03: reported again (0.7.3.4 forum post and a 0.7.3.6 direct message): the guest cannot befriend / socialize in the Creature stage (animals do not want to be friends). Still open; a top Creature complaint.
 - 2026-11-03: fix/w40-dna-social measured it with the relations fix (BUG-0462) merged: the social path works for every socializable species of the fixture by key, but a CLICK on the social ability's button did nothing for a guest: BUG-0518 (fixed, social.bar_click). Still open here: the meter and the NPC's prompts on the guest, any social ability counts as the answer, 0x60B4123 not posted.
 - 2026-11-03: meter and win message fixed on fix/w41-creature-left (social.guest_meter); prompts split into BUG-0525.
+- 2026-11-04: released in 0.7.5.

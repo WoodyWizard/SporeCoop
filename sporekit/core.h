@@ -12,7 +12,7 @@
 
 #include "../sdk/include/sporekit.h"
 
-#define SK_VERSION "0.3.7"
+#define SK_VERSION "0.3.8"
 
 // ---- SkMod (opaque for mods) ----
 struct SkMod {
