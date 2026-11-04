@@ -2408,3 +2408,17 @@ BUG-0482 follow-up. Lane 9, `tools/tests/coop_chat_modal.py`.
   lines) take "a modal window of the game is up" (+0x82C, not our own window) like the input lock. `coop.uistate`
   prints `modal=` / `modal_seen=`; `coop.save hold` keeps our save's box up for a test, `coop.save confirm` lets the
   mod confirm it again, `coop.save box` says whether it is up.
+
+## The home nest heals a guest (2026-11-03, fix/w41-creature-left)
+<a id="creature-nest-heal"></a>
+
+BUG-0496 (not reproduced). Lane 9, `tools/tests/coop_nest_heal.py`.
+
+* ✔ (runtime, lab 20261103-235806) In the creature fixture both players at the home nest, health set to 3 and the
+  co-op pack regeneration off (`coop.team off`): the host's own game healed it 3.2 -> 10.0 (full) and the guest's
+  3.6 -> 16.0 (full, its own species Kirgle) in 12 s; 100 m from the nest neither healed (3.0 -> 3.0). So a guest's
+  game runs the nest heal for its avatar at the save's player nest by itself.
+* ? Not checked: a guest after the host's migration to a new nest (the guest's game may still have the old nest
+  as its home: docs/re/creature.md 6.23 / coop_migration.py), a guest whose home nest the host's game made extinct
+  (the player's mark said "for me nest is not extinct"), a guest whose own game has another nest object than the
+  host's (BUG-0434 / BUG-0435 mound).
