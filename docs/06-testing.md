@@ -4359,3 +4359,53 @@ address is TribeTheme_Play's (0xBC2414). docs/re/tribe.md#tribe-guest-a1 lists t
 * Creature: a guest's species table is read twice, 1.5 s apart (`SPORE_DETECTOR_BRACKET=0`: once); a record in one
   game only must be so in both reads (the host's table reaches a guest within ~1 s, BUG-0596).
 * The Tribe state rows name both games' political ids (`pol <host> / <guest>`).
+## Tests that failed for the bot, not the game: NPC picks, the order pace (2026-11-05, fix/w44-tests)
+<a id="testing-harness-g2"></a>
+
+G2 of 0.7.8 (BUG-0430 class). For each: which kind of fault it was and the evidence; no check was loosened.
+
+* **A test that takes "the first NPC of `coop.npc list`" takes whatever the mod numbered first.** Cold games list the
+  same animals (#17-#21), warm games go on numbering (#40-#63) and which NPC comes first depends on the test before.
+  team (BUG-0437) hunted #40 of the host's own species after puppet_fight (lab 20261101-171437): the joint hunt made
+  the host bite its own family and the family bit back (the posse_damage gate). A test that needs a wild animal
+  filters the host's species and the `family` mark (coop_team.py, coop_creature_air.py). Not checked yet for this:
+  other tests that take the first listed NPC (e.g. coop_npc_run_hp.py, coop_team_real_damage.py).
+* **creature_air** (BUG-0601): an animal that bites the guest on the ground often does not stay in reach once the
+  guest is in the air (the game allows no melee at an airborne target 1 m or more away): it stood 12-14 m off or
+  walked 30-120 m away in every species of the creature fixture, and the precondition "the NPC struck at the airborne
+  guest" failed (warm after nest_heal in every run kept: rel/0.7.8 20261105-121717, fix/w44-guest-player2
+  20261105-113638, -114336, -121010, here 20261105-124455, -124913; also cold here with another NPC first,
+  20261105-130042). The guest is put beside its NPC every 5 s of a round when it is 3-15 m off,
+  and an NPC farther off or without a strike in 3 rounds gives way to the next (up to 8). The twin
+  `SPORE_FIX_OFF=creature.air_immune` still fails (3 bites in the air, lab 20261105-131430). nest_heal leaves nothing
+  behind that the warm reset keeps: it only changes the numbering.
+* **play_tribe "gave orders through real clicks"** (BUG-0397): the bot's own rate, not the game (12 of 37 kept runs had
+  8-9 orders for one player in 10 min; the host's bot too, 0-9 in 5 runs). The random mix of camera moves, partner
+  clicks, waits and gifts, heals with no food mat on screen and gathers with no tree in the open (that one was not
+  even counted) left too few orders. Each bot now keeps a pace of one order per 30 s of play (`ORDER_EVERY`): behind
+  it, it plays an order kind (the plan's, else a gather; a hunt when the last try found nothing). The floor (10) and
+  the checks on the orders (acted on, lost, rejected) are unchanged; the summary line says how many steps the pace
+  chose (`kinds chosen by the order pace`).
+* **play_tribe "the members act on the orders"** (BUG-0505 class): the one failure of 0.7.8 (fix/w44-tribe-guest
+  20261105-115848, 13 ok / 11 idle) was the game: members standing in the gather node with their walk stopped short,
+  new orders not taking them out (BUG-0531, still open). This check measures the game; it stays.
+* **cell_new_game's meat probe** (BUG-0589): meat is kill loot. A run where neither player found meat on its screen in
+  any of 12 tries of 20 s (lab 20261105-132739 #2) measured the pool, not eating: the probe now bites the nearest
+  creature on its screen (the game's bite, `coop.pool kill <key>`) when no meat floated by in half of its wait, then
+  waits for the meat. Near food (under 8 m) is swum to from where the cell is, mouth first: the teleport of
+  `swimto <key> tp` puts the cell beside the food without turning it (a guest sat 0.33 m from a meat's centre and did
+  not eat it, 20261105-132739 #1). A try that ate nothing logs what the cell is in the eater's game (`coop.pool cell`:
+  layer, level, size) and the avatar's size, hp and place.
+* **tribe_guest_tribes** (BUG-0587): closed. No failure since G1's controller retry (0.7.7): 8 runs, 3 of them here on
+  a loaded lane (lab 20261105-134354).
+* **long_session transitions** (BUG-0430, long_creature_short rel/0.7.8 20261105-123757): a console call into a guest
+  that loads the shared world can time out (a 52 s load); restart, rejoin, menu and wait_together take a timeout as
+  "not yet" (`busy_ok`) and wait on until their deadline. A guest that never comes back still fails.
+* The lab orders the tests of one call by their suite minutes (longest first, `lab.py` parallel sort; equal minutes
+  keep the given order): with 6 min creature_air ran before nest_heal in `nest_heal,creature_air`. Separate lab calls
+  start the games cold, so a warm pair must be one call with the first test not shorter than the second.
+* **The proxies gate** (BUG-0440 / BUG-0445; chaos_tribe, play_tribe): its trace line `proxy N ... m off the host's
+  NPC` now ends with the error when it went off, how far the proxy moved since and the host NPC's largest step between
+  two audits (0.25 s) in the last 3 s. A host snap shows as a large step (several m) just before; the lines of G2
+  (lab 20261105-135000 play_tribe#2) had none (0.6-1.5 m per 0.25 s at 2.5-5.5 m/s): proxies falling behind a moving
+  host NPC, a real desync. The gate and its window stay.

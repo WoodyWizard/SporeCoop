@@ -1,20 +1,21 @@
 ---
 id: BUG-0587
 title: "Tests: tribe_guest_tribes formed no tribe with the fix off (tribes 2 -> 2) on loaded lanes, and its twin run passed step 1 under W2"
-status: open
+status: fixed
 kind: test
 stage: Tribe
 reported: 2026-11-04
 source: lab fix/w43-world-state 20261104-213300 and 11 more, fix/w43-realign 20261104-214542
 role: guest
 versions: 
-fixed_in:
+fixed_in: 0.7.7
 branch: fix/w43-tests
-commits:
+commits: 74fef091 d26982ff e5680e8e 840eb95a 517e05c2
 tests: tribe_guest_tribes
 signature:
 docs: docs/06-testing.md#testing-harness-g1
 related: BUG-0483, BUG-0444
+switch: none
 ---
 
 ## Report
@@ -57,3 +58,10 @@ realign.villages is off from the start until step 3 (it was off for step 2 only)
 ## History
 - 2026-11-04: opened.
 - 2026-11-04 (fix/w43-tests): the bake found in 0xCC6440, the W2 masking of the twin fixed; left open (cause on lanes 4/5 not confirmed).
+- 2026-11-05 (fix/w44-tests, G2): kind: **test** (the test's single call of the controller met the game's own
+  bake-before-forming step; G1's retry, 74fef091, in 0.7.7). Since that change no run failed: G1's 3 + 3 (lab
+  20261104-230733, -231514), fix/w44-tribe-guest 20261105-115848, rel/0.7.7 20261105-015320, and here 3 of 3 on lane 9
+  while 4 other agents ran their lanes (out/lab/20261105-134354: `tribes 2 -> 2 ... (blocked: tribe.guest_tribes)`,
+  fix off `tribes 2 -> 3`, `baked`, 2 nouns, 4 markers each). Not confirmed: which condition stopped the forming on
+  fix/w43-world-state's lanes 4/5 (those runs had the single call; their branch is in 0.7.7, which passes). Closed as
+  fixed by the retry; reopen with the reply line (`next species ... baked|not baked yet`, nouns, markers) if it comes back.

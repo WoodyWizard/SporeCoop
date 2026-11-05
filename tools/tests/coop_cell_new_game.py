@@ -44,6 +44,23 @@ def alive(con, key):
 FOOD_WAIT = 20.0  # s
 
 
+def make_meat(me):
+    """BUG-0589: meat is kill loot; with no kill near (lab 20261105-132739 #2: 'none on screen in 20 s' in all 12 tries
+    of both players) a carnivore player makes some: it bites the nearest creature on its screen (the game's bite, `coop.pool kill <key>`;
+    a guest's goes to the host) until it dies"""
+    seen = [l.split() for l in me.call('coop.pool see 80')['out'].splitlines() if l.startswith('see ')]
+    prey = [f[1] for f in seen if f[2] == 'creature' and float(f[3]) <= 1.5]  # on screen, not much bigger than it
+    if not prey:
+        return 'no creature on screen to hunt'
+    out = ''
+    for _ in range(16):
+        out = me.call(f'coop.pool kill {prey[0]}')['out'].strip()
+        if 'dying' in out or out in ('no creature', 'gone'):
+            break
+        time.sleep(0.6)
+    return f'bit {prey[0]}: {out[:70]}'
+
+
 def probe(name, me, other, kind, tries):
     """`me` swims to the nearest cell of `kind` on its screen (`coop.pool swimto`, like a click on it)
     until it touches it: did its own game eat it (AvatarEat: own points up), the same cell left on both?"""
@@ -54,12 +71,15 @@ def probe(name, me, other, kind, tries):
         # outside the host's box): a try that found none on screen at once was spent after 60 frames, and 4 of 10
         # runs failed on "none on screen". Wait up to FOOD_WAIT s for food of the kind to float onto the screen, as
         # a player looks around; a try with none in that time still counts as not eaten
-        food, t_wait = [], time.time()
-        while time.time() - t_wait < FOOD_WAIT:
+        food, t_wait, made = [], time.time(), ''
+        while time.time() - t_wait < FOOD_WAIT + (10 if made else 0):
             seen = [l.split() for l in me.call('coop.pool see 80')['out'].splitlines() if l.startswith('see ')]
             food = [f for f in seen if f[2] == kind]
             if food:
                 break
+            if kind == 'meat' and not made and time.time() - t_wait > FOOD_WAIT / 2:
+                made = make_meat(me)
+                log.append(f'(no meat on screen in {FOOD_WAIT / 2:.0f} s: {made})')
             me.call('wait.frames 30 10000')
         if not food:
             log.append(f'none on screen in {FOOD_WAIT:.0f} s')
@@ -68,8 +88,13 @@ def probe(name, me, other, kind, tries):
             log.append(f'(waited {time.time() - t_wait:.0f} s for one)')
         key = food[0][1]
         p0 = pool(me)['own_points'] or 0
-        me.call(f'coop.pool swimto {key} tp')
-        for _ in range(12):
+        # BUG-0589: the teleport puts the cell beside the food without turning it (its mouth may face away) and the
+        # swim goal then lies inside its own body: in lab 20261105-132739 #1 the guest sat 0.33 m from a meat's centre
+        # (its size 0.48) and did not eat it. Near food is swum to from where the cell is, mouth first, as a click
+        # does; the teleport only brings it near far food (over 8 m)
+        if float(food[0][5]) > 8:
+            me.call(f'coop.pool swimto {key} tp')
+        for _ in range(24):
             time.sleep(0.25)
             me.call(f'coop.pool swimto {key}')
             if not alive(me, key):
@@ -78,6 +103,10 @@ def probe(name, me, other, kind, tries):
         p1 = pool(me)['own_points'] or 0
         here, there = alive(me, key), alive(other, key)
         log.append(f'{key}: points {p0}->{p1} here {"alive" if here else "gone"} there {"alive" if there else "gone"}')
+        if not p1 > p0:  # BUG-0589: what the cell is in this game (layer, level, size) and how far the avatar is from it
+            pl = pool(me)
+            cell = ' | '.join(me.call(f'coop.pool cell {key}')['out'].strip().splitlines())[:300]
+            log.append(f'   (seen as {" ".join(food[0][2:])}; it now: {cell}; avatar size {pl.get("size")} hp {pl.get("hp")} pos {pl.get("pos")})')
         ok += p1 > p0 and here == there  # eaten: gone, or shrunk one level (EatFood), the same on both
     print(f'  probe {name} {kind}: {ok}/{tries} eaten: ' + '; '.join(log), flush=True)
     return ok

@@ -45,3 +45,6 @@ or bunched state of the host (the test also counts "windows left out because the
 ## History
 - 2026-11-01: opened (fix/w35-monitor-gates, seen in its regression runs).
 - 2026-11-05 (fix/w44-height): not a height problem (steps along the path); not looked at.
+- 2026-11-05 (fix/w44-tests, G2): the proxies gate lines of BUG-0440 seen in G2 (out/lab/20261105-135000 play_tribe#2)
+  were proxies falling behind a host NPC that walked or ran at its speed, with no jump of the host's NPC (the audit
+  line's largest host step 0.6-1.5 m per 0.25 s); this ticket's one-frame steps of 2.6-3.1 m were not looked at.

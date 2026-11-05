@@ -2005,3 +2005,4 @@ Player reports 2026-11-04 (0.7.5, Discord bug-reports; not analysed yet):
 - BUG-0603: Tribe: a guest's game plays none of the hit impact effects of the members' attack animations (the
   animation event's per-target effects 0x682E8D4B / 0xF0D5A994 / 0xCFECC623, sound 0xD05B58ED; `coop_tribe_fight_sounds.py`
   prints the host's plays). docs/re/tribe.md#tribe-mirror-fx.
+- BUG-0604: Cell: after the guest's level-up its screen showed only water (no cell drawn, nothing on screen for 7 min) in one cell_new_game run (`tools/lab.py run cell_new_game`; not analysed)
