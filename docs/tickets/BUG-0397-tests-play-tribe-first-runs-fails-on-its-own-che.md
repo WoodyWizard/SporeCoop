@@ -1,20 +1,21 @@
 ---
 id: BUG-0397
 title: Tests: play_tribe (first runs) fails on its own checks: the host bot's box select misses, the guest's orders leave members idle, citizens p90 1.9 m
-status: open
+status: fixed
 kind: test
 stage: Tribe
 reported: 2026-11-01
 source: lab runs on fix/w32-tribe-sync (out/lab/20261101-115510)
 role: both
 versions: 
-fixed_in:
+fixed_in: unreleased
 branch: fix/w44-tests
-commits:
+commits: 27c23222 2e1860c0
 tests: play_tribe
 signature:
 docs: docs/06-testing.md#testing-harness-g2
-related:
+related: BUG-0505, BUG-0531
+switch: none
 ---
 
 ## Report
@@ -58,8 +59,10 @@ did, not what the game did).
   (fixed there).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+* FAIL (the floor, the old bots): rel/0.7.8 out/lab/20261105-111032 (guest 9), rel/0.7.7 20261104-220200 (guest 8),
+  fix/w40-world-objects 20261103-143918 (guest 9), fix/w41-tribe-orders 20261104-030728 #3 (host 7).
+* PASS: out/lab/20261105-135000 play_tribe x3 on lane 9 (host 20 / 13 / 22 orders, guest 21 / 17 / 16; the pace chose
+  11 / 47 / 40 steps; members acted on 20/20, 12/13, 22/22 and 21/21, 15/17, 16/16 orders; no order lost or rejected).
 
 ## History
 - 2026-11-01: opened.
