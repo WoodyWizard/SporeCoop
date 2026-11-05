@@ -2782,3 +2782,16 @@ BUG-0584. GOG 2024, asm and Ghidra. Extends #creature-fruit-pool.
   not `SporeCoop::cFruit_vftable` 0x145C568, and free fruit with one reference (the take would free them), are taken
   out without a Release (kept alive, a few hundred bytes lost); `coop.fruitpool` lists the pool, `coop.fruitcut`
   plants a freed fruit as the last free one (tests).
+
+## Species relations in one game only: detector reads (2026-11-05, fix/w44-world-state2)
+<a id="creature-species-only"></a>
+
+BUG-0596. From the 0.7.7 final check logs (rel/0.7.7 out/lab 20261105-015320 / 015350, 20261105-002042 / 002102).
+
+* ✔ (observed, campaign_ct 20261105-015350) The guest was rejoining: its census listed 0 objects (`guest_rows: 0`)
+  while the host's listed 150, its species table was not the host's yet: "2 species with a relation in one game
+  only (host)". The detector now skips a sample where one game lists no object while the other lists >= 10.
+* ~ (inferred) The other samples were single ones (never two samples in a row): a record the host's game had just
+  made (sent once a second by social.cpp, applied by the guest at once) or the guest's own new record (undone within
+  0.5 s by enforce_table) between the two games' dumps. The detector reads a guest's Creature state again 1.5 s
+  later; a species counts as in one game only when it is so in both reads. Not reproduced in a lab run since.

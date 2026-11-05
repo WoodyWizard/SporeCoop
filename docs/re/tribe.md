@@ -1719,3 +1719,25 @@ BUG-0591. Lab lane 6 (tribe fixture, coop_wsync_tribe.py villages).
   check's `Tribe:state:relation` / `tribe_food` rows from the host's forming at 418 s on (play_tribe, lab
   20261105-015320). Fixed by `wsync.tribe_pos`: the closest village within 40 m first, the id only without one
   (also the goal card's village).
+
+## The end of Tribe on a guest: the taken-down village and animals (2026-11-05, fix/w44-world-state2)
+<a id="tribe-stage-end"></a>
+
+BUG-0588, BUG-0594. Lab lanes 6 / 7 (tribe fixture, coop_tribe_civ.py).
+
+* ✔ (observed, the 0.7.7 final tribe_civ 20261105-015320 and lab 20261105-123325) Back from the City Hall editor
+  the host's game has no totem pole (none in its noun list) and no food mat of the player tribe (+0x260 = 0,
+  BUG-0585); a guest's game keeps both at the village (404 8 305) until the Civ world comes. ✔ (observed, lab
+  20261104-224338) The host's animals then read at (0, 0, 0) (46 NPC rows "here" at (0 0 0) with their health)
+  while the guests' proxies stay: the sync-check's "n: 46 apart" MISMATCH 18 s after the City Hall.
+* ✔ `cTribeUI +0x28` / `+0x29` (what the listener 0xCD1D60 sets when it submits the City Hall / vehicle editor, see
+  [tribe-civ-transition](#tribe-civ-transition)) read 0 on the object cTribeUI_Get 0xCD4230 returns, back in Tribe
+  after the City Hall (lab 20261105-123325): ~ the listener's object is another one, or the flags are cleared. The
+  mod's sign of the phase is the player tribe without its food mat (`tribe::stage_end`).
+* Decision: a guest runs no such phase (its game never opens these editors); neither player sees the other's
+  world then (the host is in the cinematic and the editors), and the Civ world replaces both. So it is not
+  re-aligned: the sync-check compares nothing while the host's game ends the stage (`diag.stage_end`), the
+  detector skips the sample as `apart` (`st phase stage_end=1` of coop.wstate).
+* ✔ The vote / notice path after these editors took them for an evolution ("Alice evolved the species: everybody
+  gets the new body", the Creature evolve-in-place path): the notice now says a design for the Civilization stage
+  was made. The in-place path itself (no world sent between the two editors) stays: the Civ stage sends the world.
