@@ -1376,6 +1376,8 @@ static bool cinematic_running()
     return cm && field<uint32_t>(cm, 0x2C) != 0; // cCinematicManager state: 0 none, 2 playing
 }
 
+bool cinematic_playing() { return g_ready && cinematic_running(); }
+
 void destroy_creature(void* c)
 {
     if (!g_ready || !c)

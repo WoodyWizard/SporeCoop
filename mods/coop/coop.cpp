@@ -47,6 +47,7 @@
 #include "nest.h"
 #include "fields.h"
 #include "worldobj.h"
+#include "realign.h"
 #include "parts.h"
 #include "rejoin.h"
 #include "savestrip.h"
@@ -2953,6 +2954,7 @@ void on_frame(void*, int, void*)
     nest::tick(now); // BUG-0384
     fields::tick(now); // BUG-0419 G2 (after the modules that make the mirrors)
     wobj::tick(now); // BUG-0472, BUG-0459
+    realign::tick(now); // W2: the whole planet after transitions (BUG-0564)
     parts::tick(now); // BUG-0401
     effects::tick(now); // BUG-0451: sends the queued effects on the main thread
     social::tick(now);
@@ -3430,6 +3432,7 @@ void end_session(EndPath path, bool cell)
         nest::on_session_end(); // BUG-0384: our egg mirrors
         fields::on_session_end();
         wobj::on_session_end();
+        realign::on_session_end();
         parts::on_session_end(); // BUG-0401
         effects::on_session_end(); // BUG-0451
         social::on_session_end();
@@ -3445,6 +3448,7 @@ void end_session(EndPath path, bool cell)
         nest::on_session_end(); // BUG-0384: our egg mirrors
         fields::on_session_end();
         wobj::on_session_end();
+        realign::on_session_end();
         parts::on_session_end(); // BUG-0401
         effects::on_session_end(); // BUG-0451
         social::on_session_end();
@@ -3456,6 +3460,7 @@ void end_session(EndPath path, bool cell)
         nest::on_session_end(); // BUG-0384: our egg mirrors
         fields::on_session_end();
         wobj::on_session_end();
+        realign::on_session_end();
         parts::on_session_end(); // BUG-0401
         effects::on_session_end(); // BUG-0451
         social::on_session_end();
@@ -5463,6 +5468,13 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
             return true;
         };
         wobj::init(H, M, wc);
+    }
+    { // W2 (BUG-0564, BUG-0567): the whole planet re-aligned with the host's after transitions
+        realign::Ctx rc;
+        rc.sess = &g_sess;
+        rc.in_place = ctx.in_place;
+        rc.host_away = ctx.host_away;
+        realign::init(H, M, rc);
     }
     { // BUG-0401: the party's collected creature parts
         parts::Ctx pc;

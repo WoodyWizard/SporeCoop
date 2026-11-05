@@ -17,6 +17,7 @@
 #include "fixes.h"
 #include "game.h"
 #include "modes.h"
+#include "realign.h"
 #include "net/protocol.h"
 #include "sporekit_game.hpp"
 #include "tribe.h"
@@ -996,6 +997,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         on_snap(r, H->time_seconds());
     else if (kind == kMsgAct && is_host())
         on_act(from, r);
+    else if (kind == 2) // the whole planet's list after transitions (realign.cpp, W2: BUG-0564)
+        realign::on_planet(from, r);
 }
 
 void on_session_end() { guest_reset(); }
