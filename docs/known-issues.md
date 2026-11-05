@@ -1882,14 +1882,14 @@ other has not (both landed, `coop.census all 3000 0 0 0`); not the camera's leve
 - BUG-0551: Creature: a chat line typed while the host pauses to save the world for a returning guest can be lost (seen once in play_creature).
 
 Player reports 2026-11-04 (0.7.5, Discord bug-reports; not analysed yet):
-- BUG-0554: Creature: the guest's creature is not stunned by an NPC's charge
-- BUG-0555: Creature: NPCs bite and charge the guest's creature while it flies (glides)
-- BUG-0556: Creature: creatures the host summons with Summon Flock are not friendly (green) to the guest
+- BUG-0554: Creature: the guest's creature is not stunned by an NPC's charge (fixed on fix/w43-guest-player, unreleased)
+- BUG-0555: Creature: NPCs bite and charge the guest's creature while it flies (glides) (fixed on fix/w43-guest-player, unreleased)
+- BUG-0556: Creature: creatures the host summons with Summon Flock are not friendly (green) to the guest (fixed on fix/w43-guest-player, unreleased)
 - BUG-0557: Creature: the guest cannot eat some bodies of creatures the players killed
 - BUG-0558: Creature: the UFO that picks up the players at the end of Creature cannot pick up the guest (the guest does not see the ship)
 - BUG-0559: Creature: parts of a pack the guest lacks (Creepy & Cute) are drawn as big blocks, and the host's colours are another shade on the guest
 - BUG-0560: Cell: the host gets a lot of DNA again after going into the cell editor
-- BUG-0561: Creature: an allied nest has no ally (green) icon on the guest's minimap, only the grey discovered mark
+- BUG-0561: Creature: an allied nest has no ally (green) icon on the guest's minimap, only the grey discovered mark (fixed on fix/w43-guest-player, unreleased)
 - BUG-0562: Creature: an NPC creature backing away from the guest gets stuck inside its nest (video)
 - BUG-0563: Tribe: the guest's creature from Creature stage appears as an enemy monster at the start of Tribe; killed, it leaves meat that never runs out
 - BUG-0564: Tribe: after the guest dies, its map still shows villages that do not exist any more (reproduce: tribe_bounce_world, the host's game over and reload; BUG-0566, 0567, 0569 the same class)
@@ -1898,7 +1898,7 @@ Player reports 2026-11-04 (0.7.5, Discord bug-reports; not analysed yet):
 - BUG-0567: Tribe: a building is broken (bugged) on the guest after the guest dies
 - BUG-0568: Tribe: no music in the guest's Tribe game
 - BUG-0569: Tribe: the guest sees no animations
-- BUG-0570: Tribe: no red target circle under an enemy the guest targets
+- BUG-0570: Tribe: no red target circle under an enemy the guest targets (fixed on fix/w43-guest-player, unreleased)
 - BUG-0571: Tribe: villages are founded (spawn) much faster than in the single-player game
 - BUG-0572: Tribe: the guest's food counter is 0 while the host's tribe has food (reproduce: tribe_food_zero; the guest's game spends its last food, shared.cpp cannot write into an empty bundle list) (from about an hour into the session)
 - BUG-0573: Tribe: the guest's tribe members do not eat on their own, they must be ordered to eat
