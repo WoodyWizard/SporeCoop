@@ -1,16 +1,16 @@
 ---
 id: BUG-0601
 title: Tests: creature_air fails warm right after nest_heal (the NPC never strikes at the guest in the air)
-status: open
+status: fixed
 kind: test
 stage: Creature
 reported: 2026-11-05
 source: rel/0.7.8 lab 20261105-121717, fix/w44-guest-player2 20261105-121010
 role: guest
 versions: 0.7.8-dev
-fixed_in:
+fixed_in: unreleased
 branch: fix/w44-tests
-commits:
+commits: 598d85a7 2e1860c0 aefb8de5
 tests: creature_air (coop_creature_air.py)
 signature:
 docs: docs/06-testing.md#testing-harness-g2
@@ -50,8 +50,14 @@ game, no bite may reach the guest in the air). The suite's 4 minutes stay (6 mad
 one call: it orders tests by their minutes).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+* FAIL of the old test (warm after nest_heal): out/lab/20261105-124455, 20261105-124913 (lane 9), and the report's
+  rel/0.7.8 20261105-121717, fix/w44-guest-player2 20261105-121010.
+* PASS (nest_heal then creature_air warm in one lab call, lane 9): out/lab/20261105-145929 (#54 walked off 115 m, #52
+  struck 8 times), 20261105-150235 (the guest put beside #54 twice, 1 strike), 20261105-150510 (5 strikes); earlier
+  versions of the change: 20261105-130326, -131124 OK, -130745 FAIL (with 5 candidates: two walked off, three never
+  bit on the ground; now 8). Cold: 20261105-131943, -132225, -132502 OK.
+* The twin still catches BUG-0555: `SPORE_FIX_OFF=creature.air_immune` out/lab/20261105-131430 FAIL (3 bites in the air).
 
 ## History
 - 2026-11-05: opened.
+- 2026-11-05 (fix/w44-tests, G2): the NPC walks out of reach of the airborne guest; the test keeps it in reach or takes the next one.

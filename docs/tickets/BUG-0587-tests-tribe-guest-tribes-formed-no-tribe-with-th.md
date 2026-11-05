@@ -10,7 +10,7 @@ role: guest
 versions: 
 fixed_in: 0.7.7
 branch: fix/w43-tests
-commits: 74fef091 d26982ff e5680e8e 840eb95a
+commits: 74fef091 d26982ff e5680e8e 840eb95a 517e05c2
 tests: tribe_guest_tribes
 signature:
 docs: docs/06-testing.md#testing-harness-g1

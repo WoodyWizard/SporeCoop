@@ -10,7 +10,7 @@ role: guest
 versions: 
 fixed_in: unreleased
 branch: fix/w44-tests
-commits: 5181bc99 9fb49030 250e2ef3
+commits: ef4a921e 5181bc99 9fb49030 250e2ef3
 tests: cell_new_game
 signature:
 docs: docs/06-testing.md#testing-harness-g2
