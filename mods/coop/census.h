@@ -59,12 +59,16 @@ struct Ctx {
     std::function<bool(net::Vec3& pos)> self_pos;               // the own player (false: none)
 };
 
-void init(const SkHost* host, SkMod* mod, Ctx ctx); // registers coop.census
+void init(const SkHost* host, SkMod* mod, Ctx ctx); // registers coop.census and coop.wstate
+void wstate_init(const SkHost* host, SkMod* mod, const Ctx* ctx); // coop.wstate (wstate.cpp)
 
 } // namespace census
 
 namespace civ {
 void census_rows(std::vector<census::Row>& out); // the vehicles (civ.cpp)
+}
+namespace diplo {
+std::string wstate(); // Space: `emp <pol> rel= flags=` per NPC empire with a relation record (space_diplomacy.cpp)
 }
 namespace cellsync {
 void census_rows(std::vector<census::Row>& out); // the foreground cells (cellsync.cpp)

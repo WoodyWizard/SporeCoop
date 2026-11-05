@@ -646,9 +646,51 @@ def test_mergelogs():
           'a log with two sessions: the last one by default, both listed')
 
 
+def test_worldstate():
+    """worlddiff.diff_state / diff_planet: the detector's world-state and whole-planet rows (coop.wstate)"""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import worlddiff
+
+    def st(food=15, rel=0.0, q='0.1 0.2 0.9 0.3', traits='1,2,0,0,0', village2=True, goal='1', huts='', pol2='000021CB'):
+        t = ['wstate v1 role=host mode=Tribe modeid=01654C02 world=A3930F03 t=1.0',
+             f'st tod q=({q}) day=960.0', f'st player traits={traits} progress=0.0 total=5.0 social=0.00 combat=0.00',
+             f'st res food={food}', 'st rel lv=-7.00,-3.00,3.00,7.00',
+             f'tribe i=0 player=1 pol=800021CA pos=(406.3 -4.9 302.6) members=3 food={food}.0 rel=nan',
+             f'tribe i=1 player=0 pol={pol2} pos=(327.5 -156.9 352.3) members=4 food=70.0 rel={rel}',
+             f'goal tribe={goal} state=1 pos=(327.5 -156.9 352.3)' if goal == '1' else 'goal tribe=-1 state=-1 pos=(0 0 0)',
+             'pl 018C6D19 pos=(406.3 -4.9 302.6) pol=800021CA', 'pl 52AA6122 pos=(448.7 38.6 241.9) pol=FFFFFFFF']
+        if village2:
+            t.append(f'pl 018C6D19 pos=(327.5 -156.9 352.3) pol={pol2}')
+        t += [ln for ln in huts.split(';') if ln]
+        t.append('end wstate rows=9')
+        return worlddiff.State('\n'.join(t))
+
+    def sigs(h, g):
+        return {f'{w}:{k}' for w, k, _, _ in worlddiff.diff_state(h, g, 'Tribe')}
+    a = st()
+    check(worlddiff.State('nothing').mode is None, 'no wstate answer: no state')
+    check(sigs(a, st()) == set(), 'two equal states: no row')
+    check(sigs(a, st(food=0)) == {'Tribe:state:food'}, f'the guest\'s food 0: Tribe:state:food ({sigs(a, st(food=0))})')
+    check(sigs(a, st(food=16)) == set(), 'a food tick between the two reads is within the tolerance')
+    check('Tribe:state:relation' in sigs(a, st(rel=-5.0)), 'a village aggressive on one game only: Tribe:state:relation')
+    check('All:state:time_of_day' in sigs(a, st(q='0.9 0.1 0.1 0.3')), 'night on one, day on the other: All:state:time_of_day')
+    check(sigs(a, st(traits='0,0,0,0,0')) == {'All:state:stage_done'}, 'stages done lost: All:state:stage_done')
+    check(sigs(a, st(village2=False)) == {'Tribe:planet:village'}, 'a village on one planet only: Tribe:planet:village')
+    check('Tribe:state:goal' in sigs(a, st(goal='-1')), 'the goal on one game only: Tribe:state:goal')
+    check('Tribe:planet_owner:village' in sigs(a, st(pol2='800021CA')),
+          'a village the player\'s on one game only: Tribe:planet_owner:village')
+    # through diff(): the state rows come with the area compare, also when there is no centre
+    h, g = worlddiff.World('census v1 role=host me=0 mode=Tribe modeid=01654C02 world=A3930F03 t=1.0'), \
+        worlddiff.World('census v1 role=guest me=1 mode=Tribe modeid=01654C02 world=A3930F03 t=1.0')
+    h.state, g.state = a, st(food=0)
+    out = [f['sig'] for f in worlddiff.diff(h, g)]
+    check(out == ['Tribe:state:food'], f'diff() without a centre gives the state rows ({out})')
+
+
 CHECKS = {'noenv': test_noenv, 'docslint': test_docslint, 'kill': test_kill, 'fixture': test_fixture, 'headless': test_headless, 'tickets': test_tickets,
           'tickets_check': test_tickets_check, 'relint': test_relint,
-          'release': test_release, 'triage': test_triage, 'campaign': test_campaign, 'mergelogs': test_mergelogs}
+          'release': test_release, 'triage': test_triage, 'campaign': test_campaign, 'mergelogs': test_mergelogs,
+          'worldstate': test_worldstate}
 
 if __name__ == '__main__':
     if sys.argv[1:2] == ['--kill-inside']:

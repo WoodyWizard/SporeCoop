@@ -799,7 +799,7 @@ class Watch(threading.Thread):
             if who == 'host':
                 continue
             try:
-                hw, gw = worlddiff.pair_dump(self.console(host[0]), self.console(inst), 250)
+                hw, gw = worlddiff.pair_dump(self.console(host[0]), self.console(inst), 250, state=True)
                 hw.who, gw.who = 'host', who
             except (OSError, ValueError) as e:
                 self.out(f'  (detector: {who} dump failed: {e!r})')

@@ -11,6 +11,12 @@ with a stable signature, so many runs can be counted together (tools/detector_re
   diff(host, guest)             -> [Finding] (empty: the two games agree in the area)
   SPORE_LANE=N python3 tools/tests/worlddiff.py [r]   diff of the lane's host and guest now
 
+`coop.wstate` (mods/coop/wstate.cpp) adds each game's world state (time of day, stages done, DNA, food,
+relations per species / tribe / civilization / empire, the current goal, member counts) and the planet's
+whole lists of villages, huts, tools, nests, cities and buildings: `diff_state` compares them with
+stage-specific tolerances (`<stage>:state:<kind>`, `All:state:<kind>`, `<stage>:planet:<kind>`,
+`<stage>:planet_owner:<kind>`; pair_dump(..., state=True)).
+
 Findings are data for triage, not a gate (yet): a kind on one machine only, a count far apart, a field
 that differs on matched objects (alive, scale, hp, model). Matching: by net id where the mod has one
 (creature npc/proxy, Cell cell index), else by noun and the nearest position.
@@ -181,11 +187,18 @@ def dump(con, r=250, at=None):
     return World(con.call(cmd)['out'])
 
 
-def pair_dump(host, guest, r=250):
+def pair_dump(host, guest, r=250, state=False):
     """(host World, guest World) over the same area: around the guest's player, or around the host's
     when the guest has no position (an RTS pointer at (0 0 0)). Each game lists only the objects near
     the centre it is given, so both dumps must use the same centre (a player far from the other one
     showed the other's objects as missing)."""
+    hw, gw = _pair_dump(host, guest, r)
+    if state:  # the world state and the planet's lists (docs/06-testing.md#testing-detector-state)
+        hw.state, gw.state = state_dump(host), state_dump(guest)
+    return hw, gw
+
+
+def _pair_dump(host, guest, r):
     gw = dump(guest, r)
     if gw.me and not _origin(gw.me):
         if gw.mode == 'Cell' and CELL_BRACKET:
@@ -205,6 +218,291 @@ def pair_dump(host, guest, r=250):
     if hw.me and not _origin(hw.me):
         gw = dump(guest, r, hw.me)
     return hw, gw
+
+
+# ---- world state and whole-planet lists (`coop.wstate`, mods/coop/wstate.cpp; docs/06-testing.md#testing-detector-state)
+WS_HEAD = re.compile(r'wstate v1 role=(\S+) mode=(.*?) modeid=([0-9A-F]+) world=([0-9A-F]+) t=([\d.]+)')
+_KV = re.compile(r'(\w+)=(\([^)]*\)|\S+)')
+# the planet's lists compared whole (presence, position, owner): noun -> (label, position tolerance m)
+PLANET = {0x018C6D19: ('village', 25.0), 0x01E4DAAE: ('tribe_hut', 8.0), 0x018C8F0C: ('tribe_tool', 8.0),
+          0x055CF865: ('totem_pole', 8.0), 0x0629BAFE: ('tribe_food_mat', 8.0), 0x52AA6122: ('nest', 8.0),
+          0x018C43E8: ('city', 25.0), 0x018EA1EB: ('building_city_hall', 8.0), 0x018EB106: ('building_house', 8.0),
+          0x018EA2CC: ('building_industry', 8.0), 0x01A56ABA: ('building_entertainment', 8.0), 0x0436F342: ('turret', 8.0)}
+STAGE_NAMES = ('Cell', 'Creature', 'Tribe', 'Civilization', 'Space')
+TOD_DEG = 20.0      # the host sends its sky once a second; a guest applies it within a frame or two
+TRIBE_MATCH = 30.0  # a tribe's centre on the two games (the same save: the same place)
+
+
+def _vec(v):
+    v = v.strip('()').split()
+    return tuple(_f(x) for x in v)
+
+
+def _kv(line):
+    return {k: (_vec(v) if v.startswith('(') else v) for k, v in _KV.findall(line)}
+
+
+def _num(d, k, default=float('nan')):
+    try:
+        return float(d[k])
+    except (KeyError, ValueError, TypeError):
+        return default
+
+
+class State:
+    """one game's `coop.wstate` answer (None fields: not in this mode / not readable)"""
+
+    def __init__(self, text, who=''):
+        self.who, self.role, self.mode, self.modeid, self.world = who, None, None, None, None
+        self.tod = self.day = self.player = self.cell = self.dna = self.rel_lv = self.goal = None
+        self.res, self.species, self.tribes, self.civs, self.emps, self.planet = {}, {}, [], [], {}, []
+        self.complete = False
+        for line in text.splitlines():
+            line = line.strip()
+            m = WS_HEAD.match(line)
+            if m:
+                self.role, self.mode, self.modeid, self.world = m.group(1), m.group(2), m.group(3), m.group(4)
+                continue
+            if line.startswith('end wstate'):
+                self.complete = True
+                continue
+            head, _, rest = line.partition(' ')
+            d = _kv(rest)
+            if head == 'st':
+                what = rest.split(' ', 1)[0]
+                if what == 'tod':
+                    self.tod, self.day = d.get('q'), _num(d, 'day')
+                elif what == 'player':
+                    self.player = dict(traits=[int(x) for x in d.get('traits', '').split(',') if x.isdigit()],
+                                       progress=_num(d, 'progress'), total=_num(d, 'total'))
+                elif what == 'res':
+                    self.res = {k: _num(d, k) for k in d}
+                elif what == 'cell':
+                    self.cell = {k: _num(d, k) for k in ('food', 'plant', 'spent')}
+                elif what == 'dna':
+                    self.dna = _num(d, 'v')
+                elif what == 'rel':
+                    self.rel_lv = [_f(x) for x in d.get('lv', '').split(',')]
+            elif head == 'species':
+                key = rest.split(' ', 1)[0]
+                self.species[key] = dict(relation=int(_num(d, 'relation', 0)), impressed=int(_num(d, 'impressed', 0)),
+                                         killed=int(_num(d, 'killed', 0)))
+            elif head == 'tribe':
+                self.tribes.append(dict(i=int(_num(d, 'i', -1)), player=d.get('player') == '1', pol=d.get('pol'),
+                                        pos=d.get('pos'), members=_num(d, 'members'), food=_num(d, 'food'),
+                                        rel=_num(d, 'rel')))
+            elif head == 'goal':
+                self.goal = dict(tribe=int(_num(d, 'tribe', -1)), state=int(_num(d, 'state', -1)), pos=d.get('pos'))
+            elif head == 'civ':
+                self.civs.append(dict(pol=d.get('pol'), player=d.get('player') == '1', money=_num(d, 'money'),
+                                      rel=_num(d, 'rel'), cities=_num(d, 'cities')))
+            elif head == 'emp':
+                self.emps[d.get('pol')] = dict(rel=_num(d, 'rel'), flags=int(_num(d, 'flags', 0)))
+            elif head == 'pl':
+                try:
+                    noun = int(rest.split(' ', 1)[0], 16)
+                except ValueError:
+                    continue
+                self.planet.append(dict(noun=noun, pos=d.get('pos'), pol=d.get('pol')))
+
+
+def state_dump(con):
+    """the game's world state (None when the dll has no coop.wstate: an older build)"""
+    r = con.call('coop.wstate')
+    out = r.get('out', '') if r.get('ok', True) else ''
+    st = State(out)
+    return st if st.mode is not None else None
+
+
+def _quat_deg(a, b):
+    if not a or not b or len(a) != 4 or len(b) != 4 or not all(map(math.isfinite, a + b)):
+        return 0.0
+    d = abs(sum(x * y for x, y in zip(a, b))) / max(1e-9, math.sqrt(sum(x * x for x in a) * sum(y * y for y in b)))
+    return math.degrees(2 * math.acos(min(1.0, d)))
+
+
+def _differs(a, b, absolute, rel):
+    if not (math.isfinite(a) and math.isfinite(b)):
+        return math.isfinite(a) != math.isfinite(b)
+    return abs(a - b) > max(absolute, rel * max(abs(a), abs(b)))
+
+
+def _level(v, lv):
+    """the relationship level the UI shows (how many of the manager's thresholds the value reaches, ~)"""
+    if not lv or not math.isfinite(v):
+        return None
+    return sum(1 for t in lv if math.isfinite(t) and v >= t)
+
+
+def diff_state(hs, gs, stage):
+    """[(what, kind, n, text)] of the world state of two games of one place (stage-specific tolerances)"""
+    out = []
+
+    def add(what, kind, n, text):
+        out.append((what, kind, n, text))
+    if hs is None or gs is None:
+        return out
+    if hs.tod and gs.tod:
+        d = _quat_deg(hs.tod, gs.tod)
+        if d > TOD_DEG:
+            add('All:state', 'time_of_day', 1, f'the sky {d:.0f} deg apart (host q={_fmtq(hs.tod)}, guest q={_fmtq(gs.tod)})')
+        if _differs(hs.day or 0, gs.day or 0, 1.0, 0.02):
+            add('All:state', 'day_length', 1, f'a day lasts {hs.day:.0f} s on the host, {gs.day:.0f} s on the guest')
+    elif bool(hs.tod) != bool(gs.tod) and stage != 'Cell':
+        add('All:state', 'time_of_day', 1, f'time of day on the {"host" if hs.tod else "guest"} only')
+    if hs.player and gs.player:
+        ht, gt = hs.player['traits'], gs.player['traits']
+        names = ('Cell', 'Creature', 'Tribe', 'Civ', 'Space')
+        dd = [names[i] for i in range(min(len(ht), len(gt), 5)) if (ht[i] != 0) != (gt[i] != 0)]
+        if dd:
+            add('All:state', 'stage_done', len(dd), 'stages done differ: ' + ', '.join(
+                f'{n} {"done" if ht[names.index(n)] else "not done"} on the host, '
+                f'{"done" if gt[names.index(n)] else "not done"} on the guest' for n in dd))
+        hp, gp = hs.player['progress'], gs.player['progress']
+        if _differs(hp, gp, 5.0, 0.1) or _differs(hs.player['total'], gs.player['total'], 0.5, 0.01):
+            add(f'{stage}:state', 'goal_progress', 1, f'the stage progress bar {hp:.0f}/{hs.player["total"]:.0f} on the host, '
+                                                    f'{gp:.0f}/{gs.player["total"]:.0f} on the guest')
+    for k in sorted(set(hs.res) & set(gs.res)):
+        if k == 'food' and stage == 'Tribe':
+            continue  # the player tribe's food: its tribe row below
+        tol = (20.0, 0.05) if k == 'money' else (3.0, 0.1)
+        if _differs(hs.res[k], gs.res[k], *tol):
+            add(f'{stage}:state', k, 1, f'{k} {hs.res[k]:.0f} on the host, {gs.res[k]:.0f} on the guest')
+    if stage == 'Cell' and hs.cell and gs.cell:
+        for k, tol in (('food', (3.0, 0.1)), ('spent', (1.0, 0.0))):
+            if _differs(hs.cell[k], gs.cell[k], *tol):
+                add('Cell:state', 'dna' if k == 'food' else 'dna_spent', 1,
+                    f'cell {k} {hs.cell[k]:.0f} on the host, {gs.cell[k]:.0f} on the guest (the DNA shown comes from them)')
+    if stage == 'Creature':
+        if hs.dna is not None and gs.dna is not None and _differs(hs.dna, gs.dna, 5.0, 0.1):
+            add('Creature:state', 'dna', 1, f'DNA {hs.dna:.0f} on the host, {gs.dna:.0f} on the guest')
+        common = set(hs.species) & set(gs.species)
+        for kind in ('relation', 'impressed', 'killed'):
+            bad = [k for k in sorted(common) if hs.species[k][kind] != gs.species[k][kind]]
+            if bad:
+                k = bad[0]
+                add('Creature:state', f'species_{kind}', len(bad), f'{len(bad)} species with another {kind} (e.g. {k}: '
+                    f'{hs.species[k][kind]} on the host, {gs.species[k][kind]} on the guest)')
+        # a guest keys a received creation 0x7C / 0x7D......: such keys have no partner by design
+        only = [k for k in set(hs.species) ^ set(gs.species) if k[18:20] not in ('7C', '7D') and k[:2] not in ('7C', '7D')
+                and (hs.species.get(k) or gs.species.get(k))['relation'] != 0]
+        if only:
+            add('Creature:state', 'species_only', len(only), f'{len(only)} species with a relation in one game only '
+                f'(e.g. {only[0]} {"host" if only[0] in hs.species else "guest"})')
+    if stage == 'Tribe' and hs.tribes and gs.tribes:
+        hp = next((t for t in hs.tribes if t['player']), None)
+        gp = next((t for t in gs.tribes if t['player']), None)
+        if hp and gp:
+            if _differs(hp['food'], gp['food'], 3.0, 0.1):
+                add('Tribe:state', 'food', 1, f'the player tribe\'s food {hp["food"]:.0f} on the host, {gp["food"]:.0f} on the guest')
+            if _differs(hp['members'], gp['members'], 1.0, 0.0):
+                add('Tribe:state', 'player_members', 1, f'the player tribe has {hp["members"]:.0f} members on the host, '
+                                                        f'{gp["members"]:.0f} on the guest')
+        hn = [t for t in hs.tribes if not t['player'] and t['pos']]
+        gn = [t for t in gs.tribes if not t['player'] and t['pos']]
+        pairs, _, _ = _match(hn, gn, TRIBE_MATCH)
+        rel, mem, food = [], [], []
+        for x, y in pairs:
+            lx, ly = _level(x['rel'], hs.rel_lv), _level(y['rel'], gs.rel_lv)
+            if (lx is not None and ly is not None and lx != ly) or _differs(x['rel'], y['rel'], 1.0, 0.0):
+                rel.append((x, y))
+            if _differs(x['members'], y['members'], 1.0, 0.0) or (x['members'] == 0) != (y['members'] == 0):
+                mem.append((x, y))
+            if _differs(x['food'], y['food'], 5.0, 0.2):
+                food.append((x, y))
+        for kind, lst, f in (('relation', rel, 'rel'), ('members', mem, 'members'), ('tribe_food', food, 'food')):
+            if lst:
+                x, y = lst[0]
+                add('Tribe:state', kind, len(lst), f'{len(lst)} of {len(pairs)} tribes differ in {f} (e.g. the tribe at '
+                    f'{_fmt(x["pos"])}: {x[f]:.2f} on the host, {y[f]:.2f} on the guest)')
+        hg, gg = hs.goal, gs.goal
+        if hg and gg:
+            ht = hg['tribe'] >= 0 and hg['pos']
+            gt = gg['tribe'] >= 0 and gg['pos']
+            if bool(ht) != bool(gt) or (ht and gt and math.dist(hg['pos'], gg['pos']) > TRIBE_MATCH) or \
+                    (ht and gt and hg['state'] != gg['state']):
+                add('Tribe:state', 'goal', 1, f'the current goal: the tribe at {_fmt(hg["pos"]) if ht else "none"} '
+                    f'(state {hg["state"]}) on the host, at {_fmt(gg["pos"]) if gt else "none"} (state {gg["state"]}) on the guest')
+    if stage == 'Civilization' and hs.civs and gs.civs:
+        hp = next((c for c in hs.civs if c['player']), None)
+        gp = next((c for c in gs.civs if c['player']), None)
+        if hp and gp and _differs(hp['cities'], gp['cities'], 0.0, 0.0):
+            add('Civilization:state', 'player_cities', 1, f'the player owns {hp["cities"]:.0f} cities on the host, '
+                                                         f'{gp["cities"]:.0f} on the guest')
+        hc = {c['pol']: c for c in hs.civs if not c['player']}
+        gc = {c['pol']: c for c in gs.civs if not c['player']}
+        both = sorted(set(hc) & set(gc))
+        for kind, f, tol in (('relation', 'rel', (1.0, 0.0)), ('civ_money', 'money', (50.0, 0.2)), ('cities', 'cities', (0.0, 0.0))):
+            bad = [p for p in both if _differs(hc[p][f], gc[p][f], *tol)]
+            if bad:
+                p = bad[0]
+                add('Civilization:state', kind, len(bad), f'{len(bad)} of {len(both)} civilizations differ in {f} (e.g. {p}: '
+                    f'{hc[p][f]:.2f} on the host, {gc[p][f]:.2f} on the guest)')
+        only = set(hc) ^ set(gc)
+        if only:
+            add('Civilization:state', 'civ_only', len(only), f'{len(only)} civilizations in one game only (by political id)')
+    if stage == 'Space' and (hs.emps or gs.emps):
+        both = sorted(set(hs.emps) & set(gs.emps))
+        bad = [p for p in both if _differs(hs.emps[p]['rel'], gs.emps[p]['rel'], 0.5, 0.0)]
+        if bad:
+            p = bad[0]
+            add('Space:state', 'relation', len(bad), f'{len(bad)} of {len(both)} empires differ in relation (e.g. {p}: '
+                f'{hs.emps[p]["rel"]:.2f} on the host, {gs.emps[p]["rel"]:.2f} on the guest)')
+        bad = [p for p in both if (hs.emps[p]['flags'] & 3) != (gs.emps[p]['flags'] & 3)]
+        if bad:
+            p = bad[0]
+            add('Space:state', 'war_alliance', len(bad), f'{len(bad)} empires at war / allied on one game only (e.g. {p}: '
+                f'flags {hs.emps[p]["flags"]} host, {gs.emps[p]["flags"]} guest)')
+        only = set(hs.emps) ^ set(gs.emps)
+        if only:
+            add('Space:state', 'empire_only', len(only), f'{len(only)} empires with a relation record in one game only '
+                f'(e.g. {sorted(only)[0]} {"host" if sorted(only)[0] in hs.emps else "guest"})')
+    out += diff_planet(hs, gs, stage)
+    return out
+
+
+def _player_pol(st, stage):
+    if stage == 'Tribe':
+        return next((t['pol'] for t in st.tribes if t['player']), None)
+    if stage == 'Civilization':
+        return next((c['pol'] for c in st.civs if c['player']), None)
+    return None
+
+
+def diff_planet(hs, gs, stage):
+    """the planet's whole lists (villages, huts, tools, nests, cities, buildings): presence + position + owner"""
+    out = []
+    hpp, gpp = _player_pol(hs, stage), _player_pol(gs, stage)
+    for noun, (label, tol) in PLANET.items():
+        a = [x for x in hs.planet if x['noun'] == noun and x['pos'] and not _origin(x['pos'])]
+        b = [x for x in gs.planet if x['noun'] == noun and x['pos'] and not _origin(x['pos'])]
+        if not a and not b:
+            continue
+        pairs, ua, ub = _match(a, b, tol)
+        if ua or ub:
+            ex = (f'; e.g. host only at {_fmt(ua[0]["pos"])}' if ua else '') + (f'; e.g. guest only at {_fmt(ub[0]["pos"])}' if ub else '')
+            out.append((f'{stage}:planet', label, len(ua) + len(ub),
+                        f'{label}: {len(a)} on the host\'s planet, {len(b)} on the guest\'s; {len(ua)} only on the host, '
+                        f'{len(ub)} only on the guest{ex}'))
+        # owners: the player's on one game only, or one host owner that is two owners on the guest
+        bad, seen = [], {}
+        for x, y in pairs:
+            if hpp and gpp and (x['pol'] == hpp) != (y['pol'] == gpp):
+                bad.append((x, y))
+                continue
+            g = seen.setdefault(x['pol'], y['pol'])
+            if g != y['pol']:
+                bad.append((x, y))
+        if bad:
+            x, y = bad[0]
+            out.append((f'{stage}:planet_owner', label, len(bad), f'{len(bad)} of {len(pairs)} {label} with another owner '
+                        f'(e.g. at {_fmt(x["pos"])}: {x["pol"]}{" (player)" if x["pol"] == hpp else ""} on the host, '
+                        f'{y["pol"]}{" (player)" if y["pol"] == gpp else ""} on the guest)'))
+    return out
+
+
+def _fmtq(q):
+    return '(' + ' '.join(f'{v:.2f}' for v in q) + ')'
 
 
 class Finding(dict):
@@ -268,8 +566,13 @@ def diff(host, guest, area=None):
                                                             f'guest {guest.mode} {guest.world}')]
     # Tribe / Civ: a player's position is its mouse pointer, (0 0 0) when it has none (a game in the
     # background): the host's centre then (the planet's centre is no place to compare)
+    # the world state and the whole planet (no centre needed): `<stage>:state:*`, `All:state:*`, `<stage>:planet:*`
+    for what, kind, n, text in diff_state(getattr(host, 'state', None), getattr(guest, 'state', None), stage):
+        out.append(Finding(sig=f'{what}:{kind}', stage=what.split(':')[0], n=n, text=text))
     c = guest.me if guest.me and not _origin(guest.me) else host.me if host.me and not _origin(host.me) else None
     if c is None:
+        if getattr(host, 'state', None) is not None and getattr(guest, 'state', None) is not None:
+            return out  # the state was compared: the sample counts, the area compare had no centre
         return [Finding(sig='nocentre', stage=stage, n=0, text='no player position to compare around')]
     r = area or AREA.get(stage, 70.0)
     inner = r * 0.8  # a host object near the edge may be just outside on the guest (dumps are not simultaneous)
@@ -410,7 +713,7 @@ def main():
     import lane  # noqa: E402
     r = float(sys.argv[1]) if len(sys.argv) > 1 else 250
     h, g = Console(lane.HOST, timeout=20), Console(lane.GUEST, timeout=20)
-    hw, gw = dump(h, r), dump(g, r)
+    hw, gw = pair_dump(h, g, r, state=True)
     print(f'host {hw.mode} rows={len(hw.rows)} nouns={len(hw.nouns)}; guest {gw.mode} rows={len(gw.rows)} nouns={len(gw.nouns)}')
     for f in diff(hw, gw):
         print(f)

@@ -1066,6 +1066,23 @@ static bool init(const SkHost* h, SkMod* m)
     return ok && o_ApplyEv && o_War && o_Ally && o_Peace && o_Break;
 }
 
+// coop.wstate (census.h, the divergence detector): every NPC empire with a relation record, as the game
+// computes the relation (CalculateRelationship) and its war / alliance / contact flags
+std::string wstate()
+{
+    std::string out;
+    char b[96];
+    if (!rel_mgr() || !is_empire(my_pol()))
+        return out;
+    for (auto& r : my_table()) {
+        snprintf(b, sizeof b, "emp pol=%08X rel=%.2f flags=%u\n", r.npc, relation(r.npc), r.flags);
+        out += b;
+        if (out.size() > 6000)
+            break;
+    }
+    return out;
+}
+
 static bool reg = spaceext::add({.name = "diplomacy",
                                  .kind_lo = 30,
                                  .kind_hi = 39,

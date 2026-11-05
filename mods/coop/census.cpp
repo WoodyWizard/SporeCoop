@@ -190,6 +190,7 @@ void init(const SkHost* host, SkMod* mod, Ctx ctx)
                    "coop.census [all [r [x y z]]] - the shared objects of this mode as the game has them, with net ids (tests: "
                    "tools/tests/census.py); all: every placed game object within r m and the noun counts (worlddiff.py)",
                    c_census, nullptr, SK_CMD_MAIN_THREAD);
+    wstate_init(H, M, &C);
 }
 
 } // namespace census
