@@ -4378,8 +4378,9 @@ G2 of 0.7.8 (BUG-0430 class). For each: which kind of fault it was and the evide
 * **long_session transitions** (BUG-0430, long_creature_short rel/0.7.8 20261105-123757): a console call into a guest
   that loads the shared world can time out (a 52 s load); restart, rejoin, menu and wait_together take a timeout as
   "not yet" (`busy_ok`) and wait on until their deadline. A guest that never comes back still fails.
-* The lab orders the tests of one call by their minutes (longest first, `lab.py` parallel sort): `nest_heal,creature_air`
-  now runs creature_air (6 min) first. To run a test after another one warm, call the lab once per test.
+* The lab orders the tests of one call by their suite minutes (longest first, `lab.py` parallel sort; equal minutes
+  keep the given order): with 6 min creature_air ran before nest_heal in `nest_heal,creature_air`. Separate lab calls
+  start the games cold, so a warm pair must be one call with the first test not shorter than the second.
 * **The proxies gate** (BUG-0440 / BUG-0445; chaos_tribe, play_tribe): its trace line `proxy N ... m off the host's
   NPC` now ends with the error when it went off, how far the proxy moved since and the host NPC's largest step between
   two audits (0.25 s) in the last 3 s. A host snap shows as a large step (several m) just before; the lines of G2

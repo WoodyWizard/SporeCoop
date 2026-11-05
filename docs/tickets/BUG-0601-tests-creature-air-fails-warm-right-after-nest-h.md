@@ -46,8 +46,8 @@ Kind: **test setup** (the NPC the test relies on to strike at the airborne guest
 tools/tests/coop_creature_air.py (no mod change): every 5 s of an air round the guest is put beside its NPC when it is
 3-15 m off; an NPC farther than 15 m after a round, or without a strike in 3 rounds, gives way to the next candidate
 (up to 8; the reasons are printed). The checks are unchanged (an NPC must strike at the airborne guest in the host's
-game, no bite may reach the guest in the air). Suite time 4 -> 6 min (the lab now runs it before nest_heal in one
-call: it orders tests by their minutes).
+game, no bite may reach the guest in the air). The suite's 4 minutes stay (6 made the lab run it before nest_heal in
+one call: it orders tests by their minutes).
 
 ## Verification
 <!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
