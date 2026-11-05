@@ -55,6 +55,14 @@ static T& F(void* p, uintptr_t off) { return *(T*)((uint8_t*)p + off); }
 static bool is_host() { return C.sess && C.sess->role() == net::Role::Host && C.sess->connected(); }
 static bool is_guest() { return C.sess && C.sess->role() == net::Role::Client && C.sess->connected(); }
 bool active() { return g_ok && C.sess && C.sess->connected() && game::mode_id() == modes::kTribe; }
+bool stage_end()
+{
+    if (game::mode_id() != modes::kTribe || !H)
+        return false;
+    uintptr_t get = H->sym("SporeCoop::cTribeUI_Get");
+    void* ui = get ? skg::cdecl_call<void*>(get) : nullptr;
+    return ui && !IsBadReadPtr((uint8_t*)ui + 0x28, 2) && (F<uint8_t>(ui, 0x28) || F<uint8_t>(ui, 0x29));
+}
 // BUG-0151: while the host is away (main menu) nothing simulates or orders the guest's members (the
 // host sends no states and drops orders outside Tribe): the guest's own game runs their AI and its
 // orders until the host is back. `coop.tribe fix away 0`: the old frozen tribe (tests).

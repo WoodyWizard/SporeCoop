@@ -257,6 +257,7 @@ class State:
         self.tod = self.day = self.player = self.cell = self.dna = self.rel_lv = self.goal = None
         self.res, self.species, self.tribes, self.civs, self.emps, self.planet = {}, {}, [], [], {}, []
         self.res_unsynced = set()
+        self.stage_end = False  # BUG-0588 / BUG-0594: the host's game is in the end of its stage
         self.complete = False
         for line in text.splitlines():
             line = line.strip()
@@ -285,6 +286,8 @@ class State:
                     self.cell = {k: _num(d, k) for k in ('food', 'plant', 'spent')}
                 elif what == 'dna':
                     self.dna = _num(d, 'v')
+                elif what == 'phase':
+                    self.stage_end = d.get('stage_end') == '1'
                 elif what == 'rel':
                     self.rel_lv = [_f(x) for x in d.get('lv', '').split(',')]
             elif head == 'species':
@@ -568,6 +571,12 @@ def diff(host, guest, area=None):
     if host.modeid != guest.modeid or host.world != guest.world:
         return [Finding(sig='apart', stage=stage, n=0, text=f'not in the same place: host {host.mode} {host.world}, '
                                                             f'guest {guest.mode} {guest.world}')]
+    # BUG-0588, BUG-0594: from the City Hall editor on the host's game takes its village and animals out of the world
+    # for the Civ stage (totem pole and food mat destroyed, animals at (0 0 0)); the guest's game has no such phase and
+    # shows its Tribe world until the Civ world comes: not the same place (SPORE_DETECTOR_STAGE_END=1 compares anyway)
+    hst = getattr(host, 'state', None)
+    if hst is not None and hst.stage_end and os.environ.get('SPORE_DETECTOR_STAGE_END') != '1':
+        return [Finding(sig='apart', stage=stage, n=0, text='the host\'s game is in the end of its stage (Tribe -> Civ)')]
     # Tribe / Civ: a player's position is its mouse pointer, (0 0 0) when it has none (a game in the
     # background): the host's centre then (the planet's centre is no place to compare)
     # the world state and the whole planet (no centre needed): `<stage>:state:*`, `All:state:*`, `<stage>:planet:*`

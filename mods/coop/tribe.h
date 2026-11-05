@@ -46,6 +46,11 @@ std::string debug(const std::vector<std::string>& args);
 // owner of a player tribe member (player id), 0xFF if unknown
 uint8_t owner_of(void* citizen);
 bool active(); // tribe sync running (tribe stage, connected)
+// BUG-0588, BUG-0594: this game is in the end of Tribe (docs/re/tribe.md#tribe-civ-transition): the City Hall editor was
+// requested (cTribeUI +0x28) or the vehicle editor (+0x29). From the City Hall on the game takes the player village and
+// the animals out of the world (totem pole and food mat destroyed, every animal at (0, 0, 0)) for the Civ stage; a
+// guest's game, which runs no such phase, keeps them until the Civ world comes
+bool stage_end();
 bool center(net::Vec3& pos); // position of the player tribe
 // members of the player tribe with their owner (for name tags)
 // the epic creature was hit by a creature (host; from the creature damage filter)
