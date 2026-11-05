@@ -36,6 +36,7 @@
 #include <vector>
 
 #include "census.h"
+#include "fixes.h"
 #include "game.h"
 #include "modes.h"
 #include "shared.h"
@@ -119,6 +120,9 @@ static int tribe_members(void* t)
     return n;
 }
 
+static bool g_wstate_live_fix = true;
+COOP_FIX("census.wstate_live", "BUG-0605", g_wstate_live_fix, "detector: coop.wstate reads nothing while the game changes stage (freed civilizations and vehicles)");
+
 static int c_wstate(void*, int, const char* const*, SkOut* out)
 {
     uint32_t mode = 0, world = 0;
@@ -142,6 +146,13 @@ static int c_wstate(void*, int, const char* const*, SkOut* out)
     o += b;
     bool planet = mode == modes::kCell || mode == modes::kCreature || mode == modes::kTribe || mode == modes::kCiv ||
                   mode == modes::kSpace;
+    // BUG-0605: the frame's mode lags the game's during a stage change (Civ -> Space in campaign_space, lab
+    // 20261105-134715): the lists then hold freed civilizations and vehicles. Nothing is read until the game's mode
+    // is the frame's again and the stage is not being left (as local_now). `coop.fix census.wstate_live off`: 0.7.7.
+    if (planet && g_wstate_live_fix && (game::mode_id() != mode || game::leaving_stage())) {
+        H->out_printf(out, "%sst phase changing=1\nend wstate rows=0\n", o.c_str());
+        return 0;
+    }
     if (!planet) {
         H->out_printf(out, "%send wstate rows=0\n", o.c_str());
         return 0;
