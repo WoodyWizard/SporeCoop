@@ -1490,3 +1490,15 @@ W2 of 0.7.7 (BUG-0564, BUG-0566, BUG-0567, BUG-0563; classes BUG-0421, BUG-0427)
   Player logs: the guest's puppet of the Creature stage (species of the guest's creation) stood next to the host
   until the stage change; the epic came 8 min after it (its timer), the host fought "the guest's creature" as a
   monster. tribe.epic_species: puppets, proxies and the players' creatures' species are never the epic's.
+## What the NPC tribe controller needs before it forms a tribe (2026-11-04, fix/w43-tests)
+<a id="tribe-form-needs"></a>
+
+* ✔ (Ghidra, GOG 2024 0xCC6440, NpcTribeController_FormTribe) Before forming, besides "fewer tribe nouns (0x18C6D19,
+  counted from the noun list) x 2 than the property list (controller +0xFC) holds" and a spawn marker (noun
+  0x36BE27E with +0x108 == 0x57F09E5E): the next species (list +0xD0, index min(tribes - 1, size - 1)) must have its
+  model baked: `Editors::IBakeManager::Get()` vt 0x1C(species + 0x504, 0); when 0 it asks for the bake (vt 0x3C,
+  else vt 0x4C with key 0x609B763 / 0x40000) and returns without forming. The game calls it again later.
+* ✔ (runtime, lane 2) The tribe fixture has 4 spawn markers; each formed tribe uses one (4 -> 1 after three).
+* ✔ The pause bit (cGameTimeManager +0x48 = 3, held with mem.write) does not stop the forming (`tribes 2 -> 3`).
+* ✔ With tribe.guest_tribes on, a guest's controller never reaches the bake request (the hook blocks the call), so the
+  first call with the fix off may only start the bake (BUG-0587).
