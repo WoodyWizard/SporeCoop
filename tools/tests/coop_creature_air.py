@@ -77,9 +77,9 @@ def main():
             airborne += 'above=' in (a := guest.call('coop.abilities')['out']) and \
                 float(re.search(r'above=([-\d.]+)', a).group(1)) > 0.5
         air, low = air + host_hits(guest, 1), low + host_hits(guest, 0)
-        # the NPC's melee hits on the puppet in the host's game while it was held in the air there (the game's own
-        # hits, never applied to the puppet: `filtered`)
-        tried += len([r for r in re.findall(r'victim=([0-9A-F]+) \S+ amount=\S+ type=2 ret=\S+ filtered air=1',
+        # the NPC's melee hits on the puppet in the host's game during the air phase (the game's own hits, never
+        # applied to the puppet: `filtered`; not by its grounded byte, which the game sets back at animation starts)
+        tried += len([r for r in re.findall(r'victim=([0-9A-F]+) \S+ amount=\S+ type=2 ret=\S+ filtered air=\d',
                                             host.call('coop.hp dmglog')['out']) if pup and r.upper().endswith(pup.upper()[-8:])])
         print(f'  round {rnd + 1}: {tried} melee hits on the airborne puppet in the host\'s game so far', flush=True)
         if tried:
