@@ -9,7 +9,7 @@ source: lab rel/0.7.7 20261104-220200, fix/w43-realign 20261104-213145, fix/w43-
 role: guest
 versions: 
 fixed_in:
-branch:
+branch: fix/w43-tests
 commits:
 tests: play_tribe
 signature:

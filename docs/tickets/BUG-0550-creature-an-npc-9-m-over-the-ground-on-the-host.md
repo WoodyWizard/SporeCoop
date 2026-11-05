@@ -32,3 +32,4 @@ Not analysed yet. Inferred: an NPC in a jump or a flight (agl 9 m) on the host; 
 
 ## History
 - 2026-11-04: opened.
+- 2026-11-04 (fix/w43-tests): G1: not reached (no run, no change).

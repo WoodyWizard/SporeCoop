@@ -14,7 +14,7 @@ commits:
 tests: chaos_tribe
 signature:
 docs:
-related: BUG-0402
+related: BUG-0402, BUG-0503
 ---
 
 ## Report
@@ -23,13 +23,15 @@ test, nothing in Tribe): chaos_tribe failed on the log gate `monitor: 1 on guest
 proxies over 3 m off the host's NPC (Tribe) on 2 lines from s 60`; the test's own checks passed.
 
 ## Root cause
-Not analysed. Possibly the BUG-0402 class (one animal apart on a guest).
+Same line as BUG-0503 (the monitor's proxies rule on a Tribe animal proxy, "placed on the host's path"): see
+BUG-0503 (a slow guest's placing capped at 0.1 s frames).
 
 ## Fix
-Not fixed.
+See BUG-0503 (npc.proxy_slow_frames).
 
 ## Verification
-no-fail-run: not fixed (seen once in another branch's smoke run).
+no-fail-run: covered by BUG-0503 (npc_walk_slow FAIL 20261104-232034 / PASS 20261104-232210); chaos_tribe itself not rerun.
 
 ## History
 - 2026-11-01: opened (fix/w34-ability-pop).
+- 2026-11-04 (fix/w43-tests): the same proxies line as BUG-0503; fixed there (not marked fixed here until chaos_tribe runs clean).

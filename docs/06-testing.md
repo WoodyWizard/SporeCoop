@@ -4169,14 +4169,17 @@ current world, so relations, the goal, the stages and the food are the host's af
 G1 of 0.7.7 (BUG-0430 class: tests and harness that hide failures). Each change names the run where the old test was
 wrong and the run where the new one is right; no threshold was loosened.
 
-* **tribe_guest_tribes** (BUG-0587): the game's NPC tribe controller (0xCC6440) forms nothing while the model of the
-  next species of its list is not baked: it asks IBakeManager for the bake and returns. With tribe.guest_tribes on,
-  a guest's controller never ran that far, so the test's single `coop.tribe form` with the fix off was often the
-  first call after the load and only started the bake ("tribes 2 -> 2", 12 of 13 runs of fix/w43-world-state, lab
-  20261104-212104 .. -214344, and fix/w43-realign 20261104-214542). `coop.tribe form` now ends with `(next species
-  <p> baked|not baked yet)` and `(blocked: tribe.guest_tribes)`; the test calls it again once a second while it only
-  baked (at most 40 s), as the game does during play. Disproved on the way: the cold join's pause bit does not stop
-  the forming (held by hand, lab 20261104-225835: `tribes 2 -> 3`).
+* **tribe_guest_tribes** (BUG-0587): (1) since W2 (realign.villages) its twin run `SPORE_FIX_OFF=tribe.guest_tribes`
+  passed step 1 although the guest's controller formed three tribes: W2 removed them within 4 s (wrong run lab
+  20261104-231126). realign.villages is now off until step 3 (right run 20261104-231338: step 1 and 3 FAIL as
+  BUG-0483's FAIL). (2) Its step 2 ("tribes 2 -> 2", 12 of 13 runs of fix/w43-world-state, lab 20261104-212104 ..
+  -214344, and fix/w43-realign 20261104-214542): the controller (0xCC6440) forms nothing while the next species'
+  model is not baked (it asks for the bake and returns), without a spawn marker (noun 0x36BE27E, +0x108 ==
+  0x57F09E5E; 4 on the fixture) or when the tribe nouns reach its property list. `coop.tribe form` now ends with
+  `(next species <p> baked|not baked yet) (tribe nouns N, tribe spawn markers M)` and `(blocked: tribe.guest_tribes)`;
+  the test calls it again while it only baked (at most 40 s). Which condition stopped it on lanes 4/5 is not
+  confirmed (lane 2 always `baked`, 2 nouns, 4 markers). Disproved: the cold join's pause bit does not stop the
+  forming (held by hand, lab 20261104-225835: `tribes 2 -> 3`).
 * **play_tribe** (BUG-0586): "guest: the minimap takes the view where it points" failed when the calibration ran
   inside the guest's cold join pause (BUG-0444; `busy=1` at the failure in lab 20261104-220200 and fix/w43-realign
   20261104-213145): its minimap clicks did not move the view. The test waits for both games' clock to run
@@ -4189,3 +4192,13 @@ wrong and the run where the new one is right; no threshold was loosened.
 * **cell_new_game** (BUG-0293): a probe try that found no meat on screen at once was spent after 60 frames ("none on
   screen" in 4 of 10 runs of 2026-10-30). A try now waits up to 20 s for food of its kind on the screen; a try with
   none in that time still counts as not eaten, and the 3-of-6 rule is unchanged.
+* **The proxies gate** (BUG-0503, BUG-0440; play_tribe, long_tribe, chaos_tribe): the gate was right. A guest at 3-5
+  fps under lab load placed a walking animal's proxy with walk_place's catch-up capped at 0.1 s frames and fell
+  behind the host's animal (placed position 0.1 -> 7.3 m in 6 s, coop.npctrack on both games). Fixed in the mod
+  (`npc.proxy_slow_frames`, max_dt 0.4 as the Tribe mirrors). `coop_npc_walk_slow.py` (suite `npc_walk_slow`, tribe
+  fixture, ~1.5 min): the guest at 4 fps (`frame.limit 250`), the host's game walks 4 animals at 4-5 m/s for 40 s;
+  per walker >= 40 walked rows, never 3 m off for 2 s (the monitor's rule), placed p90 <= 1 m. FAIL with the fix off
+  (20261104-232034: placed p90 1.42-2.41 m), PASS (20261104-232210 x2: 0.00 m).
+* Pitfall: at 4 fps the off rule alone (3 m for 2 s) passed the twin run (1.5 s at most): the placed-position check
+  is what catches the fall-behind; look at the FAIL run's rows, not only its verdict.
+

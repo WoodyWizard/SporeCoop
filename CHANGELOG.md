@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### Fixed
+- Tribe: on a guest whose game runs slowly the animals no longer trail several metres behind where the host's game
+  has them while they walk (BUG-0503).
 - Tribe: a guest's food no longer stays at 0 for good after its tribe spent the last of it; it shows the host's food
   again, so its members can eat on their own (BUG-0572, BUG-0573).
 - Tribe: the villages feel about a guest's tribe as they do in the host's game (hostile after the host's raids,

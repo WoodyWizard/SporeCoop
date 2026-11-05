@@ -35,3 +35,4 @@ Source: docs/generalisation-plan.md G14.
 
 ## History
 - 2026-11-01: opened.
+- 2026-11-04 (fix/w43-tests): G1 (fix/w43-tests): tribe_guest_tribes' twin run passed step 1 on the bug since W2 (BUG-0587); play_tribe calibrated during the cold join pause (BUG-0586); cell_coop's meal (BUG-0356); cell_new_game's empty screen (BUG-0293); the proxies gate was right (BUG-0503, a real desync fixed). Section docs/06-testing.md#testing-harness-g1.
