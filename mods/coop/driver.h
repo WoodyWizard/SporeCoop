@@ -133,6 +133,35 @@ inline float over_ground(const net::Vec3& pos)
     return g > 0 ? r - g : 0.f;
 }
 
+// BUG-0425 (the height rule for every remote body): the sender's body is either on its ground (the game's own
+// grounded byte +0x137 set, or within kAirOver of GetHeightAt) and the receiver puts it on ITS ground (the
+// terrains of two games can differ by metres in Tribe, BUG-0329), or it is off the ground for a reason the
+// sender's game knows (a jump, a fall, thrown by a hit, flying: +0x137 = 0 and more than kAirOver off
+// GetHeightAt) and the receiver keeps its height over the sender's terrain (agl) over its own terrain, marked
+// not grounded so that its game does not put it back onto the terrain (air_place).
+constexpr float kAirOver = 0.15f; // m off GetHeightAt: a grounded creature walks 0-3 cm over it
+inline float g_agl_max = 30.f;
+// `coop.fix drive.sender_agl off`: a body off the ground at the sender's absolute position (0.7.7)
+inline bool g_sender_agl_fix = true;    // m: farther from this game's ground + agl than this the sender's pos is kept
+inline bool body_airborne(void* c)
+{
+    if (!c || game::grounded(c))
+        return false;
+    return std::fabs(over_ground(game::position(c))) > kAirOver;
+}
+// the sender's position at its height over the sender's terrain, over this game's terrain (unknown agl: as given)
+inline net::Vec3 at_sender_agl(const net::Vec3& pos, float agl)
+{
+    float r = std::sqrt(pos.x * pos.x + pos.y * pos.y + pos.z * pos.z);
+    if (!g_sender_agl_fix || !net::agl_known(agl) || r < 1.f)
+        return pos;
+    float g = game::ground_radius(pos);
+    if (g <= 0 || std::fabs(g + agl - r) > g_agl_max)
+        return pos;
+    float k = (g + agl) / r;
+    return {pos.x * k, pos.y * k, pos.z * k};
+}
+
 // age: how old `pos` is (a snapshot received `age` seconds ago): the target moves on with the
 // remote velocity, so the puppet does not trail a walking creature by its latency
 // nudge: also pull the puppet a part of the way every frame (it cannot walk faster than the
@@ -351,6 +380,24 @@ inline void walk_end(void* p, const net::Vec3& pos, State& ds, double now)
     ds.kinematic = false;
     game::move_to(p, pos, 0.3f);
     ds.last_cmd = now;
+}
+
+// BUG-0376 (the partner's puppet), BUG-0550 / BUG-0425 (NPC proxies): a remote body off its ground is placed where
+// the sender has it (at_sender_agl), not walked (walked, the game put it onto its terrain in 15-20 frames of a fall),
+// marked not grounded (+0x137 = 0) with the sender's velocity (its fall speed: left to the game it grew frame by
+// frame while the placing held it up and one update took it 1-1.6 m down), and held there through the game's
+// animation starts and updates (game::air_hold, BUG-0532). walk_end first: it walks again after the landing.
+inline void air_place(void* p, const net::Vec3& pos, const net::Quat& rot, const net::Vec3& vel, State& ds, double now,
+                      bool hold = true)
+{
+    walk_end(p, pos, ds, now);
+    game::place(p, pos, rot);
+    game::set_grounded(p, false);
+    *(net::Vec3*)((uint8_t*)p + game::kVelOff) = vel;
+    game::air_hold(p, hold, pos, rot, vel);
+    ds.last_step = now;
+    ds.track = Track{};
+    ds.airs++;
 }
 
 } // namespace drive

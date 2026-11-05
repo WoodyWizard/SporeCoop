@@ -4450,6 +4450,10 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
         SAY("%s", npc::debug_pool((uint16_t)atoi(argv[2])).c_str());
         return 0;
     }
+    if (argc > 4 && !strcmp(argv[1], "lift")) { // host (tests, BUG-0550): lift <id> <m> <s>
+        SAY("%s", npc::debug_lift((uint16_t)atoi(argv[2]), (float)atof(argv[3]), (float)atof(argv[4])).c_str());
+        return 0;
+    }
     if (argc > 3 && !strcmp(argv[1], "sink")) { // guest (tests, BUG-0399): sink <id> <m> [mark]
         SAY("%s", npc::debug_sink((uint16_t)atoi(argv[2]), (float)atof(argv[3]), argc > 4 && atoi(argv[4]) != 0).c_str());
         return 0;

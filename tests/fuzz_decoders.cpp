@@ -319,8 +319,8 @@ static void fuzz_protocol(uint64_t seed, int iters)
     fuzz_struct<PlayerState>("PlayerState", R, iters, [](Rng& R) {
         PlayerState s; s.id = R.u8(); s.time_ms = R.u32(); s.pos = v3(R); s.rot = q4(R); s.vel = v3(R);
         s.flags = R.u8(); s.anim = R.u8(); s.health = R.f32(); s.max_health = R.f32(); s.species = R.u32();
-        s.mode = R.u32(); s.world = R.u32(); s.scale = R.f32(); return s;
-    }, [](const PlayerState&) { return (size_t)67; }); // BUG-0519: the scale is appended
+        s.mode = R.u32(); s.world = R.u32(); s.scale = R.f32(); s.agl = R.f32(); return s;
+    }, [](const PlayerState&) { return (size_t)67; }); // BUG-0519: the scale is appended, BUG-0425: the agl after it
     fuzz_struct<Chat>("Chat", R, iters, [](Rng& R) { Chat c; c.id = R.u8(); c.text = R.str(4000); return c; });
     fuzz_struct<NpcSpawn>("NpcSpawn", R, iters, [](Rng& R) {
         NpcSpawn s; s.net_id = R.u16(); s.key[0] = R.u32(); s.key[1] = R.u32(); s.key[2] = R.u32(); s.scale = R.f32();

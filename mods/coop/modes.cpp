@@ -39,7 +39,7 @@ static void* creature_local() { return game::avatar(); }
 // Off: 0.7.4 (no flag sent, the flag ignored).
 static bool g_puppet_air_fix = true;
 COOP_FIX("creature.puppet_air", "BUG-0376", g_puppet_air_fix, "creature: the partner's jumps are shown (its creature leaves the ground on this screen too)");
-constexpr float kAirOver = 0.15f; // m over GetHeightAt: a grounded creature walks 0-3 cm over it
+constexpr float kAirOver = drive::kAirOver; // m over GetHeightAt: a grounded creature walks 0-3 cm over it
 constexpr float kAirGap = 0.3f;   // m: variant 3, farther from the target in the air it is placed there
 // BUG-0532: in the middle of a fall the game put the puppet onto its terrain for 1-3 frames whenever it started
 // another animation on it (fall -> idle 02481DE5, the walk start 04866D8E; lab 20261104-042712): the puppet is held
@@ -70,8 +70,10 @@ static void creature_fill(void* av, net::PlayerState& st)
         st.flags |= net::PF_DEAD;
     if (game::sneaking(av))
         st.flags |= net::PF_SNEAKING;
-    if (own_airborne(av))
+    if (own_airborne(av)) {
         st.flags |= net::PF_JUMPING; // BUG-0376
+        st.agl = drive::over_ground(st.pos); // BUG-0425: its height over this game's terrain
+    }
     st.health = game::health(av);
     st.max_health = game::max_health(av);
     st.species = game::species_instance(av);
@@ -279,6 +281,9 @@ static void creature_drive(void* p, const net::PlayerState& s_in, drive::State& 
         // not grounded, so the game's update lets it fall instead of putting it onto its terrain
         // Not walked in the air: walked (walk_place) it was put onto its terrain in 15-20 frames of a 0.4 s fall
         // (lab, coop.track air 3 = this, 0 the walk)
+        // BUG-0425 (drive.sender_agl): at the partner's height over its terrain, over this game's terrain
+        if (drive::g_sender_agl_fix)
+            s.pos = drive::at_sender_agl(s.pos, s.agl);
         if (walk && g_puppet_air_variant == 3) {
             drive::walk_place(p, s.pos, s.rot, s.vel, ds, now);
             if (net::dist(game::position(p), s.pos) > kAirGap) // (a jump's start: the walk's catch-up is too slow)
@@ -408,6 +413,7 @@ static void space_fill(void* u, net::PlayerState& st)
 
 bool ufo_ident_fix = true;
 COOP_FIX("drive.nudge_dt", "BUG-0175", drive::g_nudge_dt_fix, "creature, tribe: a mirror's pull to its place is per second, not per frame (low frame rates trailed more)");
+COOP_FIX("drive.sender_agl", "BUG-0425", drive::g_sender_agl_fix, "creature, tribe: a partner or animal off the ground is drawn at its height over the sender's ground, over this game's ground");
 COOP_FIX("drive.own_height", "BUG-0329", drive::g_own_height_fix, "tribe: a member's or animal's mirror is driven at its own ground height, not the host's absolute one");
 COOP_FIX("fleet.type", "BUG-0111", ufo_ident_fix, "space: only our own puppets count as puppets, not any UfoType 6 ship (coop.fleet typefix)");
 // our puppets: the model key they got and (BUG-0218) their object serial (cGameData mID)
