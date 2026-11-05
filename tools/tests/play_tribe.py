@@ -317,6 +317,7 @@ class Game:
             group = kind in ('raid', 'epic') or (kind == 'hunt' and rng.random() < 0.5)
             sel = self.select_idle(pl, st, idle, group)
             if not self.check_sel(pl, sel, st):
+                pl.last_nothing = kind  # (a heal of a member its box misses: another kind when behind the pace)
                 return self.pause(pl)
             if kind == 'walk':
                 tgt = ('ground', rng.randint(300, self.w - 300), rng.randint(400, self.h - 300))
