@@ -10,7 +10,7 @@ look again. On the host the guest's puppet stands in for the guest; the hits on 
 1. Two games on the creature fixture; the guest stands next to a wild NPC away from the host and hits it
    (`coop.npc hit`, its hit applied by the host with the guest's puppet as the attacker): the NPC fights back.
 2. On the ground for 8 s: the NPC's bites reach the guest's own game (its health drops, hits from the host).
-3. In the air for 10 s (the guest's creature put 1.5 m up every 0.25 s, so its game says airborne: PF_JUMPING):
+3. In the air for 20 s (the guest's creature put 1.5 m up every 0.25 s, so its game says airborne: PF_JUMPING):
    no melee hit from the host lands on the guest's own creature while its own game has it off the ground (its
    damage log: the hits applied from the host with the avatar's grounded byte +0x137 at that moment; a hit in a
    moment it touched the ground between two lifts is the game's rule and not counted).
@@ -67,7 +67,7 @@ def main():
     t0 = time.time()
     airborne = 0
     samples = 0
-    while time.time() - t0 < 10:
+    while time.time() - t0 < 20:
         guest.call('coop.abilities lift 1.5')
         guest.call(f'coop.npc hit {nid} 0.1')  # it keeps fighting the guest
         time.sleep(0.25)
