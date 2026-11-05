@@ -8,7 +8,7 @@ reported: 2026-11-04
 source: long_creature (D0), lab 20261104-214938
 role: host
 versions: 0.7.6
-fixed_in:
+fixed_in: unreleased
 branch: fix/w44-crashes
 commits: b37ea975, f3b238dc, 0570e27d, 09461e63
 tests: crash_fruit_eat (tools/tests/coop_crash_guards.py --case fruit_pool)

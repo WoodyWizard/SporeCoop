@@ -8,7 +8,7 @@ reported: 2026-11-04
 source: player report 2026-11-04 (Discord bug-reports, 0.7.5, Steam build)
 role: guest
 versions: 0.7.5
-fixed_in:
+fixed_in: unreleased
 branch: fix/w44-crashes
 commits: b37ea975, f3b238dc, 0570e27d
 tests: crash_model_fx (tools/tests/coop_crash_guards.py --case model_fx)
