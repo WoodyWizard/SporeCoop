@@ -819,6 +819,7 @@ static void* SK_THISCALL h_Form(void* self, int arg); // BUG-0483 (below)
 using Form_t = void*(SK_THISCALL*)(void*, int);
 static Form_t o_Form;
 static uintptr_t a_Form, a_NpcCtrl;
+static void theme_hooks_install(); // BUG-0568 (the Tribe theme music relay, below)
 static void save_start();
 static void save_end();
 
@@ -866,6 +867,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     a_NpcCtrl = H->sym("Simulator::cNpcTribeController::Get");
     if (a_Form)
         H->hook_create(M, (void*)a_Form, (void*)h_Form, (void**)&o_Form);
+    theme_hooks_install(); // BUG-0568 (optional)
     coop_init();
     savestrip::add_filter(save_filter); // BUG-0495
     savestrip::add_save_hooks(save_start, save_end);
@@ -1007,11 +1009,131 @@ static void send_member_anims(double now)
     }
 }
 
+// BUG-0568: "no music in the guest's Tribe game". The Tribe stage's music of the action (the hunt / fight theme,
+// procedural sound 0xAD1A17D, and the other themes of the behaviours 0xDB1060 / 0xDB7120 / 0xDBAAF0 / 0xDBB7D0) is
+// started by the player tribe's members' behaviour trees through the stage's theme music manager (TribeStage +0x1C8,
+// 24 slots of {track, distance}: SporeCoop::TribeTheme_Play / _Move / _Stop). A guest's members are mirrors without a
+// behaviour tree (h_BTTick): its game never started one (lab: the host's game 7 plays of 0xAD1A17D in a 40 s fight, the
+// guest's none, out/lab/20261105-115203). The stage's own sounds (ambience, the mode's group) were the same on both.
+// The host relays its theme plays, their moves (at most every 0.3 s a slot) and stops to the guests (MSG_NPC_ANIM kind 4
+// {u8 host slot, u32 sound, vec3}, kind 6 {u8 slot} reliable, kind 5 {u8 slot, vec3} unreliable); a guest plays them on its
+// own theme manager (the game's call: the guest's own volume, position and music settings). Older guests ignore the
+// kinds. `coop.fix tribe.theme_music off`: nothing sent or played (0.7.7).
+static bool g_theme_fix = true;
+COOP_FIX("tribe.theme_music", "BUG-0568", g_theme_fix, "tribe: a guest hears the stage's hunt and fight music of its tribe as the host does");
+using ThemePlay_t = int(SK_THISCALL*)(void*, uint32_t, float, float, float);
+using ThemeMove_t = void(SK_THISCALL*)(void*, int, float, float, float);
+using ThemeStop_t = void(SK_THISCALL*)(void*, int);
+static ThemePlay_t o_ThemePlay;
+static ThemeMove_t o_ThemeMove;
+static ThemeStop_t o_ThemeStop;
+static bool g_theme_relaying; // guest: our own call of the game's functions
+static double g_theme_moved_at[24];
+static int g_theme_local[24]; // guest: host slot -> this game's slot (0 none)
+static uint32_t g_theme_sent, g_theme_rx, g_theme_played;
+
+static void theme_send(uint8_t kind, const net::Writer& w)
+{
+    for (auto& p : C.sess->players())
+        if (p.id != 0) {
+            if (kind == 5)
+                C.sess->send_unreliable_to(p.id, net::MSG_NPC_ANIM, w);
+            else
+                C.sess->send_reliable_to(p.id, net::MSG_NPC_ANIM, w);
+        }
+    g_theme_sent++;
+}
+static bool theme_host() { return g_ok && g_theme_fix && C.sess && is_host() && game::mode_id() == modes::kTribe; }
+static int SK_THISCALL h_ThemePlay(void* mgr, uint32_t sound, float x, float y, float z)
+{
+    int slot = o_ThemePlay(mgr, sound, x, y, z);
+    if (slot > 0 && slot < 24 && !g_theme_relaying && theme_host()) {
+        net::Writer w;
+        w.u8(4); w.u8((uint8_t)slot); w.u32(sound); w.f32(x); w.f32(y); w.f32(z);
+        theme_send(4, w);
+        g_theme_moved_at[slot] = H->time_seconds();
+    }
+    return slot;
+}
+static void SK_THISCALL h_ThemeMove(void* mgr, int slot, float x, float y, float z)
+{
+    o_ThemeMove(mgr, slot, x, y, z);
+    if (slot > 0 && slot < 24 && !g_theme_relaying && theme_host()) {
+        double now = H->time_seconds();
+        if (now - g_theme_moved_at[slot] < 0.3)
+            return;
+        g_theme_moved_at[slot] = now;
+        net::Writer w;
+        w.u8(5); w.u8((uint8_t)slot); w.f32(x); w.f32(y); w.f32(z);
+        theme_send(5, w);
+    }
+}
+static void SK_THISCALL h_ThemeStop(void* mgr, int slot)
+{
+    o_ThemeStop(mgr, slot);
+    if (slot > 0 && slot < 24 && !g_theme_relaying && theme_host()) {
+        net::Writer w;
+        w.u8(6); w.u8((uint8_t)slot);
+        theme_send(6, w);
+    }
+}
+static void theme_hooks_install()
+{
+    uintptr_t p = H->sym("SporeCoop::TribeTheme_Play"), m = H->sym("SporeCoop::TribeTheme_Move"),
+              st = H->sym("SporeCoop::TribeTheme_Stop");
+    if (!p || !m || !st)
+        return;
+    H->hook_create(M, (void*)p, (void*)h_ThemePlay, (void**)&o_ThemePlay);
+    H->hook_create(M, (void*)m, (void*)h_ThemeMove, (void**)&o_ThemeMove);
+    H->hook_create(M, (void*)st, (void*)h_ThemeStop, (void**)&o_ThemeStop);
+}
+static void* theme_mgr()
+{
+    static uintptr_t a_Stage = H->sym("SporeCoop::cTribeUI_Get");
+    void* stage = a_Stage ? skg::cdecl_call<void*>(a_Stage) : nullptr;
+    return stage && skg::readable((uint8_t*)stage + 0x1C8, 4) ? F<void*>(stage, 0x1C8) : nullptr;
+}
+static void theme_forget() { memset(g_theme_local, 0, sizeof g_theme_local); }
+static void on_theme(uint8_t kind, net::Reader& r)
+{
+    uint8_t slot = r.u8();
+    float x = 0, y = 0, z = 0;
+    uint32_t sound = kind == 4 ? r.u32() : 0;
+    if (kind != 6) {
+        x = r.f32(); y = r.f32(); z = r.f32();
+    }
+    if (!r.ok() || slot == 0 || slot >= 24)
+        return;
+    g_theme_rx++;
+    void* mgr = theme_mgr();
+    if (!g_theme_fix || !mgr || !o_ThemePlay)
+        return;
+    g_theme_relaying = true;
+    int& local = g_theme_local[slot];
+    if (kind == 4) {
+        if (local)
+            o_ThemeStop(mgr, local);
+        local = o_ThemePlay(mgr, sound, x, y, z);
+        if (local)
+            g_theme_played++;
+    } else if (kind == 5 && local) {
+        o_ThemeMove(mgr, local, x, y, z);
+    } else if (kind == 6 && local) {
+        o_ThemeStop(mgr, local);
+        local = 0;
+    }
+    g_theme_relaying = false;
+}
+
 // guest: MSG_NPC_ANIM kinds 2 / 3 (npc.cpp passes them on after the kind byte)
 void on_member_anims(uint8_t kind, net::Reader& r)
 {
     if (!g_ok || !is_guest() || game::mode_id() != modes::kTribe)
         return;
+    if (kind >= 4 && kind <= 6) { // BUG-0568: the theme music
+        on_theme(kind, r);
+        return;
+    }
     double now = H->time_seconds();
     uint8_t n = r.u8();
     for (int i = 0; i < n && r.ok(); i++) {
@@ -2862,6 +2984,7 @@ void before_save()
 
 void on_session_end()
 {
+    theme_forget(); // BUG-0568
     clear_coop_tables(true);
     g_split_for.clear();
     g_hm.clear();
@@ -2878,6 +3001,7 @@ void on_session_end()
 // on_session_end, whose restoring clear would touch the old world if the order ever changed)
 void on_world_change()
 {
+    theme_forget(); // BUG-0568
     g_resets++;
     forget_world_tables(); // every citizen of the old world is freed: nothing to restore
     g_split_for.clear();
@@ -3657,7 +3781,8 @@ std::string debug(const std::vector<std::string>& a)
                 line(id, g.c, 0);
         return o + "anims fix=" + std::to_string((int)g_mirror_anims_fix) + " sent=" + std::to_string(g_anim_relay_sent) +
                " rx=" + std::to_string(g_anim_relay_rx) + " played=" + std::to_string(g_anim_relay_played) + " failed=" +
-               std::to_string(g_anim_relay_failed) + " snap_played=" + std::to_string(g_anim_snap_played);
+               std::to_string(g_anim_relay_failed) + " snap_played=" + std::to_string(g_anim_snap_played) + "\ntheme fix=" + std::to_string((int)g_theme_fix) +
+               " sent=" + std::to_string(g_theme_sent) + " rx=" + std::to_string(g_theme_rx) + " played=" + std::to_string(g_theme_played);
     }
     if (!a.empty() && a[0] == "form_pace") // tests (BUG-0571): the last decision of tribe.form_pace
         return "form_pace fix=" + std::to_string((int)g_form_pace_fix) + " held=" + std::to_string(g_forms_paced) + " last: " +
