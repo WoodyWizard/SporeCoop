@@ -42,3 +42,4 @@ fix/w40-misc (2026-11-03, Ghidra only, not fixed: the time box went to BUG-0506 
 - 2026-11-03: hold slots and the hook points found on fix/w40-misc (Ghidra), not fixed.
 - 2026-11-03: not started on fix/w41-creature-left (K1 batch): the time box went to BUG-0179, BUG-0482, BUG-0517 and the probes of BUG-0496 / BUG-0504. The plan of docs/re/creature.md#creature-hold-slots stands; it needs a command that makes the avatar pick up a save object (no test path carries yet).
 - 2026-11-04: not started on fix/w42-creature-left (R3): the time went to BUG-0525 and BUG-0532; a rock / stick needs a moving host-owned worldobj kind, and the Space branch of this batch adds worldobj kinds (merge risk). Plan unchanged: docs/re/creature.md#creature-hold-slots.
+- 2026-11-05 (fix/w44-guest-player2, P2 of 0.7.8): not started (the time went to BUG-0501, BUG-0558, BUG-0496, BUG-0557).

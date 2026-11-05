@@ -1948,6 +1948,9 @@ Player reports 2026-11-04 (0.7.5, Discord bug-reports; not analysed yet):
   purpose (BUG-0486).
 * Not checked: how the ship picks its creature; what the game does with an abducted avatar.
 * Next steps: find the target pick of cAbductToolStrategy, keep puppets out of it on the host, or relay the visit.
+* 2026-11-05 (fix/w44-guest-player2): the pick is the ship's BT node 0x0519E372 (docs/re/creature.md#creature-ufo-pick);
+  `creature.ufo_puppet` keeps puppets out of it (not verified: in the lab the ship's BT stops after ~7 s and never
+  picks). Still open: the guest does not see the host's ship.
 * Ticket: BUG-0558
 
 ## Tribe: a guest's game crashes in a model's effect list after a camera jump (2026-11-04, player report 0.7.5)

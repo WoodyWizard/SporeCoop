@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### Fixed
+- Creature: the guest's Raging Roar now scares the host's animals: creatures of other species around the guest
+  run away in both games, as they do from the host's roar (BUG-0501).
 - Co-op window: *Send my world* is greyed out while no game is loaded or nobody has joined, instead of saying
   "Sending the world to everyone..." and doing nothing; the lobby of a host alone says that you can start or load a
   game now and friends can join any time (BUG-0597).
