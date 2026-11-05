@@ -1079,3 +1079,14 @@ BUG-0345 ("the guest spawns in the Cell stage with its previous cell creature"),
   SetDayDuration 0xBC29A0; 960 s on the tribe fixture at runtime). The sky the mod shares (MSG_WORLD_TIME) is the planet
   context's orientation (`TimeOfDay_GetObject` +0x10, docs/re/space.md): the detector compares both (`All:state:time_of_day`,
   `All:state:day_length`, BUG-0579).
+## The Creature evolution editor's DNA budget after a held request (2026-11-05, fix/w43-crashes)
+<a id="creations-creature-editor-budget"></a>
+
+BUG-0581 (not a bug). The `?` of docs/re/cell.md#cell-editor-budget (a held Creature request may lose its budget
+message 0x90A03FDF the way BUG-0560 lost the Cell one): ✔ checked with recorded runs of `coop_editor_sync.py --case
+host|host2`, where the host's evolution request waits for the vote (`vote active: ... wants to evolve`) before its
+editor opens: a mouth (25 DNA) took the host's DNA from 40 to 15 and, in the second evolution, from 55 to 30 (lab
+fix/w40-cell-evo 20261103-161211, rel/0.7.4 20261103-204638), so the editor started from the stage's DNA, not from
+a config start budget, whatever the held post did. GetEvolutionPoints reads the same value inside the editor (40 -> 40
+while the part is bought: the editor keeps its own count until done, the result's +0x34 then sets it).
+? Not looked at: where the Creature editor takes its start budget (OnEnter or the stage's DNA); no re-post needed.

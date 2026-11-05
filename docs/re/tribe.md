@@ -1542,3 +1542,24 @@ What `coop.wstate` (mods/coop/wstate.cpp, docs/06-testing.md#testing-detector-st
   (the owner object of that table not found yet).
 * ✗ `cRelationshipManager::IsAllied` 0xD02030 / `IsAtWar` 0xD01F90 take two **cEmpire** pointers (their pol at +0x84,
   stack purge 8), not political ids: not usable for tribes.
+## The creature attack's spots round a village (2026-11-05, fix/w43-crashes)
+<a id="tribe-attack-spot"></a>
+
+BUG-0582. GOG 2024, Ghidra and lab lane 2 (`tools/tests/coop_tribe_attack_spot.py`).
+
+* ✔ (Ghidra) The creature attack (Drama Manager kind 7) runs its animals through a behaviour whose start 0xD73930
+  stores the attacked place's position (+0xB0) and its planet cell id (+0xC0, `SporeCoop::SpotRecord_CellId` 0xC9B140
+  with make = 0) and whose update 0xD73FD0 walks them through states; in state 3 it looks the cell's spot record up
+  (`SporeCoop::SpotRecord_Find` 0xC945C0: a global sorted fixed vector 0x157ABB0, 0x60-byte entries, null when the
+  cell has none) and takes the nearest free spot with `SporeCoop::TribeAttack_TakeSpot` 0xD72720, which reads the
+  record's spots (+0x40 / +0x44, 0x1C bytes: used flag, position) **without a check** (null + 0x44 at 0xD72745). Its
+  sibling 0xD72690 (a spot given back) checks for null; a false answer of 0xD72720 is the game's own "no free spot"
+  branch (0xDA61D0 + the behaviour's vt 0x44: the attack ends).
+* ✔ Records are made for every cTribe (0xC9B8D0 over the noun list, 0xC9B860 from a tribe's creation 0xCD4F10, make
+  = 1); the table is emptied by 0xC9A210 on the stage modes' enter / exit (0xCDEE00, 0xCFA770, 0xFFA170).
+* ✔ (lab) The host's own creature attack (`coop.drama start 7`) after a tribe formed during play (`coop.tribe form`,
+  the controller's own forming): the attackers reached state 3 with no record within ~55 s in 3 of 3 runs (431 and
+  357 caught faults with the guard off, lab 20261105-000150, 20261104-235754; 2 attackers ended by the guard, lab
+  20261104-235955); without the formed tribe none in 1 run. ~ Inferred: the formed tribe's cell has no record (a
+  game bug that co-op tests hit because they form tribes; the NPC controller forms them in long sessions too).
+* Fix `tribe.attack_spot` (gamefixes.cpp): with no record 0xD72720 answers "no free spot" (out = -1, false).
