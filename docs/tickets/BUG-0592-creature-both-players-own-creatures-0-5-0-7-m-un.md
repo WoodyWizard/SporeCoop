@@ -43,8 +43,11 @@ Fix analysis (2026-11-05, fix/w44-height):
   own creature 0.35 m under the ground (lab 20261105-113544, fix off); a standing creature moved 0.7 m beside its
   spot and 0.69 m under the terrain there stays there with its grounded byte +0x137 still 1 (9 of 9 sample pairs
   under 0.25 m, 4 s); 0.32 m under, or moved by SetPosition, the game puts it back at once.
-* Inferred: the push in the report was the game's separation of the two creatures (the guest's puppet held where its
-  own game has it); not seen frame by frame.
+* Observed with the fix (regression long_creature_short, lab 20261105-113902, host): 0.9 s after "Bob appeared in the
+  world" (the share after the guest's transition) `the own creature stood 0.56 m under this game's ground for 0.5 s
+  (grounded byte 1, nearest puppet 0.8 m): put onto it`; twice more at the start (0.27-0.30 m, the puppet 0.9-1.0 m
+  away). So the partner's creature arriving at the host's spot pushes the host's into the ground, the report's case.
+* Inferred: the push is the game's separation of the two creatures; not seen frame by frame.
 
 ## Fix
 creature.own_ground (modes.cpp own_ground_tick, `coop.fix creature.own_ground off`: 0.7.7): the own creature that stands
