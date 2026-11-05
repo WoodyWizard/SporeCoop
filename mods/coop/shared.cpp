@@ -34,11 +34,22 @@ static void* player_tribe()
     return t && skg::readable(t, 0x230) ? t : nullptr;
 }
 
+// BUG-0572: the game's own spending (cTribe::AddFood -n -> cBundleManager::RemoveBundles) removes the emptied
+// bundles: the vector at tribe+0x210 is then empty (begin == end), and s_food only edited the amounts of the bundles
+// there, so a guest whose game spent its last food kept 0 for good while the host's total went up. On: a positive
+// change the bundles cannot hold is made by the game's own AddFood (it creates the bundles, as for an NPC tribe's
+// gathering), and a never-filled container (both pointers null) reads as 0 food. Off: the code before.
+static bool g_food_add_fix = true;
+COOP_FIX("res.food_add", "BUG-0572", g_food_add_fix,
+         "shared: a guest's tribe that has no food bundles left takes the host's food through the game's AddFood");
+
 static bool food_bundles(void* tribe, float**& b, float**& e)
 {
     uint8_t* cont = (uint8_t*)tribe + 0x20C;
     b = *(float***)(cont + 4);
     e = *(float***)(cont + 8);
+    if (g_food_add_fix && !b && !e)
+        return true; // an empty container that never held a bundle
     return b && e >= b && e - b < 64 && skg::readable(b, (e - b) * 4 + 1);
 }
 
@@ -55,15 +66,29 @@ static bool g_food(double& v)
     return true;
 }
 
+static uint32_t g_food_created; // tests: totals the game's AddFood made bundles for (BUG-0572)
+
 static void s_food(double v)
 {
     void* t = player_tribe();
     float **b, **e;
     double cur;
-    if (!t || !food_bundles(t, b, e) || b == e || !g_food(cur))
+    if (!t || !food_bundles(t, b, e) || (b == e && !g_food_add_fix) || !g_food(cur))
         return;
     double d = v - cur;
     const float shown = (float)d; // UpdateFoodVisuals shows "+N/-N": it takes the change, not the total
+    if (g_food_add_fix && d >= 0.5 && (b == e || !*b)) {
+        // BUG-0572: no bundle to edit: the game's own AddFood makes them (whole food; the rest below)
+        uintptr_t add = S("SporeCoop::cTribe_AddFood");
+        if (!add)
+            return;
+        int n = (int)std::floor(d);
+        skg::thiscall<void>(add, t, n);
+        g_food_created++;
+        d -= n;
+        if (!food_bundles(t, b, e))
+            return;
+    }
     for (float** it = b; it < e && std::fabs(d) > 1e-4; it++) { // spend from the bundles in order
         if (!*it || !skg::readable(*it, 0x138))
             continue;
@@ -363,8 +388,8 @@ std::string status()
         double fl = 0;
         for (auto& e : r.led.in_flight)
             fl += e.v;
-        snprintf(b, sizeof b, "shared %s=%.1f synced=%d pending=%.1f in_flight=%.1f from_guests=+%.0f/%.0f held=%d/%u\n",
-                 r.name, v, r.have, r.led.pending, fl, r.gained, r.spent, (int)r.led.held, g_held_totals);
+        snprintf(b, sizeof b, "shared %s=%.1f synced=%d pending=%.1f in_flight=%.1f from_guests=+%.0f/%.0f held=%d/%u created=%u\n",
+                 r.name, v, r.have, r.led.pending, fl, r.gained, r.spent, (int)r.led.held, g_held_totals, g_food_created);
         out += b;
     }
     return out.empty() ? "no shared resources in this mode\n" : out;
