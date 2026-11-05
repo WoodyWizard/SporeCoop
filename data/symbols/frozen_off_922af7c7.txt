@@ -129,3 +129,5 @@ SporeCoop::Citizen_IsLeader ; BUG-0583: the leader's staff guard (tribe.leader_t
 SporeCoop::AudioSystem_BeginCommand ; coop.audio (the tests' list of the game's audio commands) is off (BUG-0568)
 SporeCoop::AudioSystem_SetInt ; coop.audio (the tests' list of the game's audio commands) is off (BUG-0568)
 SporeCoop::AudioSystem_Submit ; coop.audio (the tests' list of the game's audio commands) is off (BUG-0568)
+SporeCoop::App_GetPropInt ; Tribe: new villages appear at the party's food pace like one player's tribe (BUG-0571)
+SporeCoop::TribeProps_ptr ; Tribe: new villages appear at the party's food pace like one player's tribe (BUG-0571)

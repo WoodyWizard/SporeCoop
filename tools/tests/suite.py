@@ -619,3 +619,4 @@ def _variants():
 
 T += _variants()
 add('tribe_mirror_anims', P + 'coop_tribe_mirror_anims.py', minutes=3, fixture='tribe')  # BUG-0569: the guest's mirrors play the members' behaviour animations as on the host (SPORE_FIX_OFF=tribe.mirror_anims fails)
+add('tribe_form_pace', P + 'coop_tribe_form_pace.py', minutes=3, fixture='tribe')  # BUG-0571: new villages at one player's food pace (party food over 100 x players), on the guest too (SPORE_FIX_OFF=tribe.form_pace fails)

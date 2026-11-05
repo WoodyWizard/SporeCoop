@@ -1527,11 +1527,76 @@ COOP_FIX("tribe.guest_tribes", "BUG-0483", g_guest_tribes_fix,
          "tribe: a guest's game forms no NPC tribe of its own, and empties tribes the host no longer has");
 static uint32_t g_forms_blocked, g_forms_run, g_unmapped_removed;
 static std::unordered_map<void*, double> g_unmapped_since;
+
+// BUG-0571: "villages are founded much faster than in the single-player game". The host's NPC tribe controller
+// (0xCC6A90, the update of cNpcTribeController) forms the planet's third tribe when its goal history is empty
+// (TribeStage +0x40, mGoalProgressHistory: no village allied or conquered yet) as soon as the player tribe's food
+// (its vt 0xA4) is over the property 0x4C87E711 (default 100), and then the fourth and the fifth at once (with 3 or 4
+// tribes it forms every second until its list is used up): measured the same alone and in a session (2 s after the
+// food passed 100, lab 20261105-113252 / 20261105-113623). In a session that food is the whole party's: every player's
+// members gather into the one player tribe, and the co-op's own rewards add to it (an epic killed together 80, a
+// partner's heal 5), so the threshold came after a fraction of a single player's time (3.8 min in the player's
+// session, food under 100 for most of it was the party's). The host's game alone decides (a guest's controller
+// forms none, tribe.guest_tribes): it now forms the third tribe on food only when the food is over the threshold
+// times the players in the session, the pace of one player's tribe. A goal done still forms it at once, as alone.
+// `coop.fix tribe.form_pace off`: the game's own threshold for the party (0.7.7).
+static bool g_form_pace_fix = true;
+COOP_FIX("tribe.form_pace", "BUG-0571", g_form_pace_fix,
+         "tribe: new villages appear when the party's food reaches what one player's tribe needs alone, times the players");
+static uint32_t g_forms_paced;
+static double g_pace_checked = -10;
+static bool g_pace_hold;
+static std::string g_pace_last; // tests: the last decision
+static bool pace_holds(double now)
+{
+    if (!g_form_pace_fix || !is_host() || game::mode_id() != modes::kTribe || !C.sess)
+        return false;
+    if (now - g_pace_checked < 1.0) // (the controller calls again every frame while it is held: decided once a second)
+        return g_pace_hold;
+    g_pace_checked = now;
+    g_pace_hold = false;
+    size_t players = C.sess->players().size();
+    static uintptr_t a_Stage = H->sym("SporeCoop::cTribeUI_Get"), a_PropInt = H->sym("SporeCoop::App_GetPropInt"),
+                     a_Props = H->sym("SporeCoop::TribeProps_ptr");
+    void* pt = player_tribe();
+    void* stage = a_Stage ? skg::cdecl_call<void*>(a_Stage) : nullptr;
+    if (players < 2 || !pt || !stage || !skg::readable((uint8_t*)stage + 0x40, 8))
+        return false;
+    if (F<void*>(stage, 0x40) != F<void*>(stage, 0x44)) // a goal done: the game's own rule
+        return false;
+    size_t tribes = 0;
+    game::for_each_object(
+        [](void* o, uint32_t noun, void* u) {
+            if (noun == kTribeNoun)
+                ++*(size_t*)u;
+            return true;
+        },
+        &tribes);
+    if (tribes != 2) // (1: the first neighbour after 25 s; 3 / 4 / 5: the game's rule, the threshold is passed)
+        return false;
+    int threshold = 100;
+    void* props = a_Props ? *(void**)a_Props : nullptr;
+    if (a_PropInt && props)
+        threshold = skg::cdecl_call<int>(a_PropInt, props, 0x4C87E711u, 100);
+    int food = vcall<int>(pt, 0xA4 / 4);
+    g_pace_hold = food <= threshold * (int)players;
+    char b[128];
+    snprintf(b, sizeof b, "food %d, threshold %d x %u players: %s", food, threshold, (unsigned)players,
+             g_pace_hold ? "held" : "forms");
+    g_pace_last = b;
+    return g_pace_hold;
+}
+
 static void* SK_THISCALL h_Form(void* self, int arg)
 {
     if (g_guest_tribes_fix && g_npc_tribes_fix && is_guest() && game::mode_id() == modes::kTribe) {
         if (g_forms_blocked++ < 5)
             H->log(M, SK_INFO, "tribe: this game's NPC tribe controller would form a tribe: not on a guest (tribe.guest_tribes)");
+        return nullptr;
+    }
+    if (pace_holds(H->time_seconds())) {
+        if (g_forms_paced++ % 600 == 0)
+            H->log(M, SK_INFO, "tribe: the NPC tribe controller would form the third tribe: %s (tribe.form_pace)", g_pace_last.c_str());
         return nullptr;
     }
     g_forms_run++;
@@ -3594,6 +3659,9 @@ std::string debug(const std::vector<std::string>& a)
                " rx=" + std::to_string(g_anim_relay_rx) + " played=" + std::to_string(g_anim_relay_played) + " failed=" +
                std::to_string(g_anim_relay_failed) + " snap_played=" + std::to_string(g_anim_snap_played);
     }
+    if (!a.empty() && a[0] == "form_pace") // tests (BUG-0571): the last decision of tribe.form_pace
+        return "form_pace fix=" + std::to_string((int)g_form_pace_fix) + " held=" + std::to_string(g_forms_paced) + " last: " +
+               (g_pace_last.empty() ? "-" : g_pace_last);
     // form: tests (BUG-0483), this game's NPC tribe controller forms its next tribe now (what it does during play)
     if (!a.empty() && a[0] == "form" && o_Form && a_NpcCtrl) {
         void* ctrl = skg::cdecl_call<void*>(a_NpcCtrl);
@@ -3637,7 +3705,8 @@ std::string debug(const std::vector<std::string>& a)
         uint32_t blocked0 = g_forms_blocked;
         h_Form(ctrl, 0);
         return "tribes " + std::to_string(before) + " -> " + std::to_string(all_tribes().size()) + why +
-               (g_forms_blocked != blocked0 ? " (blocked: tribe.guest_tribes)" : "");
+               (g_forms_blocked != blocked0 ? " (blocked: tribe.guest_tribes)" : "") +
+               (g_pace_last.empty() ? "" : " (pace: " + g_pace_last + ")");
     }
     if (!a.empty() && a[0] == "trees") { // trees near the village with their raw fields (RE)
         net::Vec3 at;
