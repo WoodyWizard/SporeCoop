@@ -36,5 +36,22 @@ clearly safe without its own tests.
 <!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
      or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
 
+## Decision (2026-11-05, fix/w44-coop-window, U1 of 0.7.8)
+Read again (coop.cpp start_vote / finish_vote / submit_tick / own_editor_tick, docs/re/creations.md#creations-evolve-in-place):
+not implemented in 0.7.8, it is not small. What it would take:
+1. A switch (`core.editor_now`) in start_vote: with it the host's editor request is not held (`hold_submit` at once,
+   no Vote), and each guest gets a notice plus a lobby button "Evolve now" instead of the ready vote.
+2. The guest's own editor offered while the host is away in its editor: own_editor_tick today opens it only from
+   the vote's end (`editor_pending`); it would need its own trigger and its own busy gate (BUG-0404), and the
+   guest's NPC simulation while the host stands in the editor (BUG-0205: the host's simulator is the world's; a guest
+   in its own editor at another time sees a world that moves on without it, then the host's share after the editor).
+3. The guest's editor after a body swap (BUG-0318, `avatar_swap_settling`) and the guest editor's DNA (BUG-0466)
+   are tied to the vote's moment today; both need a check that they hold at any time.
+4. Tests: a two-instance test of "host evolves alone, the guest evolves later" (both bodies on both games, no
+   reload, the DNA of each), plus the existing vote tests (vote, vote_caption, vote_during_cinematic,
+   vote_end_editor, vote_drop_editor) with the switch on and off.
+Until then "Start now" (the host's button during a vote; BUG-0597 keeps it enabled) and the 60 s limit let the host go.
+
 ## History
 - 2026-11-03: opened.
+- 2026-11-05 (fix/w44-coop-window): read again; not small and safe: what it takes written under Decision.
