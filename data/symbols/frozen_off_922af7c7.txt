@@ -126,3 +126,9 @@ SporeCoop::TribeMission_SetTargetTribe ; BUG-0564: the wsync Tribe goal row (wsy
 SporeCoop::TribeMissionManager_ptr ; BUG-0430: the detector's Tribe goal row (coop.wstate `goal`) is empty on GOG 2016
 SporeCoop::TribeAttack_TakeSpot ; BUG-0582: the creature attack spot guard (tribe.attack_spot) is off on GOG 2016
 SporeCoop::Citizen_IsLeader ; BUG-0583: the leader's staff guard (tribe.leader_tool) is off on GOG 2016 (mirrors take every tool as before)
+SporeCoop::SpatialEffects_UpdateByDistance ; BUG-0575: the model attached effect guard (game.model_fx) is off on GOG 2016
+SporeCoop::SpatialEffects_SetTransform ; BUG-0575: the model attached effect guard (game.model_fx) is off on GOG 2016
+SporeCoop::VisualEffect_Start ; BUG-0575: the model attached effect guard (game.model_fx) is off on GOG 2016
+SporeCoop::VisualEffect_vftable ; BUG-0575: the model attached effect guard (game.model_fx) is off on GOG 2016
+SporeCoop::Flora_TakeFruitForDrop ; BUG-0584: the fruit pool guard (game.fruit_pool) is off on GOG 2016 (wobj.fruit_saved still works)
+SporeCoop::cFruit_vftable ; BUG-0584: the fruit pool guard (game.fruit_pool) is off on GOG 2016
