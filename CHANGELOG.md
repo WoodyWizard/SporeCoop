@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Fixed
+- Creature: an animal's charge now stuns the guest's creature as it stuns the host's (the stars, the stagger), and the
+  guest's charge stuns the host's animals too (BUG-0554).
+- Creature: animals can no longer bite or charge a guest's creature while it is in the air (BUG-0555).
+- Creature: the creatures the host calls with Summon Flock are friendly to the guest too and show their hearts on the
+  guest's screen; so are the members of the host's pack (BUG-0556).
+- Creature: a nest of a species you allied with shows the ally face on the guest's minimap too (BUG-0561).
+- Tribe: the guest sees the red circle under the enemy its selected members attack (BUG-0570).
+
 ## [0.7.6] - 2026-11-04
 
 ### Fixed

@@ -438,22 +438,17 @@ static void SK_THISCALL h_RingsUpdate(void* owner)
     g_rings_drawn++;
 }
 
-// tests: the HUD's ring map (owner +0x2C4 buckets, +0x2C8 count; node {key, effect id, IVisualEffect*, touched,
-// next +0x10}) holds a live ring under creature t
+// tests: the HUD's ring map (the hash map at owner +0x2C0) holds a live ring (an effect) under creature t:
+// TribeTargetRing_Find 0xCCBD80 (the draw's own lookup; it inserts an empty entry the next pass erases)
 static bool ring_shown(void* t)
 {
+    uintptr_t find = H->sym("SporeCoop::TribeTargetRing_Find");
     void* ui = a_TribeUI ? *(void**)a_TribeUI : nullptr;
-    uint8_t* owner = ui ? (uint8_t*)ui + 0x240 : nullptr;
-    if (!owner || !t || IsBadReadPtr(owner + 0x2C4, 8))
+    if (!find || !ui || !t || game::mode_id() != modes::kTribe)
         return false;
     uint32_t key = F<uint32_t>(t, 0x24);
-    uint8_t** buckets = *(uint8_t***)(owner + 0x2C4);
-    uint32_t n = *(uint32_t*)(owner + 0x2C8);
-    for (uint32_t i = 0; buckets && i < n && i < 4096; i++)
-        for (uint8_t* node = buckets[i]; node && !IsBadReadPtr(node, 0x14); node = *(uint8_t**)(node + 0x10))
-            if (*(uint32_t*)node == key && *(void**)(node + 8))
-                return true;
-    return false;
+    uint32_t* v = thiscall<uint32_t*>(find, (uint8_t*)ui + 0x240 + 0x2C0, &key); // {effect id, IVisualEffect*, touched}
+    return v && v[1] != 0;
 }
 
 // cTribeInputStrategy::WalkSelectedTo(const Vector3*)
