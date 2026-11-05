@@ -407,9 +407,14 @@ static void ring_order(int action, void* target, const std::vector<uint16_t>& id
         g_ring.target = nullptr; // another order ends the attack
 }
 
+static void* g_ring_owner = nullptr; // the HUD's ring owner, as the game passes it (tests: ring_shown)
+static uint32_t g_ring_owner_frame = 0;
+
 static void SK_THISCALL h_RingsUpdate(void* owner)
 {
     o_RingsUpdate(owner);
+    g_ring_owner = owner;
+    g_ring_owner_frame = H->frame_index ? (uint32_t)H->frame_index() : 0;
     void* t = g_ring.target;
     if (!t || !g_ring_fix || !a_RingDraw || !is_guest() || game::mode_id() != modes::kTribe)
         return;
@@ -443,11 +448,12 @@ static void SK_THISCALL h_RingsUpdate(void* owner)
 static bool ring_shown(void* t)
 {
     uintptr_t find = H->sym("SporeCoop::TribeTargetRing_Find");
-    void* ui = a_TribeUI ? *(void**)a_TribeUI : nullptr;
-    if (!find || !ui || !t || game::mode_id() != modes::kTribe)
+    // the owner the HUD's update ran on this or the last frame (the HUD of an older stage is gone)
+    uint32_t now = H->frame_index ? (uint32_t)H->frame_index() : 0;
+    if (!find || !g_ring_owner || !t || game::mode_id() != modes::kTribe || now - g_ring_owner_frame > 2)
         return false;
     uint32_t key = F<uint32_t>(t, 0x24);
-    uint32_t* v = thiscall<uint32_t*>(find, (uint8_t*)ui + 0x240 + 0x2C0, &key); // {effect id, IVisualEffect*, touched}
+    uint32_t* v = thiscall<uint32_t*>(find, (uint8_t*)g_ring_owner + 0x2C0, &key); // {effect id, IVisualEffect*, touched}
     return v && v[1] != 0;
 }
 
