@@ -1936,3 +1936,13 @@ Player reports 2026-11-04 (0.7.5, Discord bug-reports; not analysed yet):
 * Not checked: which object's model (a mirror given to the host, an effect the relay attached).
 * Next steps: a test that gives members and jumps the camera with the minimap's house icon (55, 918) double-click.
 * Ticket: BUG-0575
+
+## Tribe -> Civ: the evolve-in-place path and a sync-check MISMATCH between the two Civ editors (2026-11-04, test tribe_civ)
+<a id="issue-tribe-civ-between-editors"></a>
+
+* What happens: between the City Hall and the vehicle editor the host logs the Creature evolve-in-place lines for
+  the Tribe editors, and its sync check reports its own NPCs at (0, 0, 0) (MISMATCH, 46 apart).
+* Reproduce: `tools/lab.py run tribe_civ --lane N`; the host's log between the editors.
+* Known: docs/re/tribe.md#tribe-civ-transition (last item). Both games still reach Civ.
+* Not checked: whether a guest sees anything wrong then; whether the sync-check gate of a lab test trips on it.
+* Ticket: BUG-0588

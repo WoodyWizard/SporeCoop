@@ -1501,7 +1501,7 @@ BUG-0576, BUG-0585. GOG 2024, Ghidra (tools/ghidra/q.sh) and lab runs on lane 4 
   (the log line "shared food ... from player 1" comes after the call, so it never printed). Alone the change to Civ
   ran without a fault (lab, guest left). Fix `tribe.food_fx_mat` (game::tribe_food_visuals): no visual without the
   food mat; the food itself still changes.
-* ~ Seen in the same runs, not analysed: at the vote for the vehicle editor the host logs "evolved in place: Bob keeps
+* ~ (BUG-0588) Seen in the same runs, not analysed: at the vote for the vehicle editor the host logs "evolved in place: Bob keeps
   its world (host species 00000000 -> 00000000 ...)" (the Creature evolve-in-place path runs for a Tribe editor; no
   harm seen), and a sync-check MISMATCH right after the City Hall: the host's own NPCs read at (0, 0, 0) for 2 checks.
 
