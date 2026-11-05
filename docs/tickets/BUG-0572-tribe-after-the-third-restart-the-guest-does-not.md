@@ -1,17 +1,17 @@
 ---
 id: BUG-0572
 title: Tribe: the guest's food counter is 0 while the host's tribe has food (from about an hour into the session)
-status: open
+status: fixed
 kind: desync
 stage: Tribe
 reported: 2026-11-04
 source: player report 2026-11-04 (Discord bug-reports, 0.7.5, Steam build)
 role: guest
 versions: 0.7.5
-fixed_in:
-branch:
-commits:
-tests: tribe_food_zero (coop_tribe_food_zero.py)
+fixed_in: unreleased
+branch: fix/w43-world-state
+commits: bd97e36a
+tests: tribe_food_zero (coop_tribe_food_zero.py), wsync_transitions (coop_wsync_transitions.py)
 signature:
 docs: docs/re/tribe.md#tribe-food-zero
 related:
@@ -35,12 +35,24 @@ Logs: the reports' sporekit.log of both players (host 17:26-20:15, guest 17:27-1
   (docs/re/tribe.md F already notes AddFood "works on an empty container, unlike editing +0x134".)
   Not the restarts: it started after the second one by chance.
 
+* Answer to "should the guest's game spend food at all": yes for what only the guest's game does (a purchase in its
+  palette, BUG-0524), and those changes go to the host as the ledger's changes (shared.cpp MSG_RES_ADD); the host's
+  total then comes back. The fix keeps that and makes the host's total reach a guest whose game has no bundle left.
+
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+shared.cpp s_food: a positive change the bundles cannot hold (the container's vector empty, or never filled: both
+pointers null, now read as 0 food) is made by the game's own `cTribe::AddFood` (it creates the bundles, as for an NPC
+tribe's gathering); the fraction left goes into the new bundle as before. Switch `res.food_add` (off: the old code).
 
 ## Verification
 Lab: tribe_food_zero (coop_tribe_food_zero.py) FAIL on 0.7.6 code: out/lab/20261104-201453 (host 30, guest 0 for 30 s). Package W1.
 
+Lab: tribe_food_zero FAIL with `SPORE_FIX_OFF=res.food_add` out/lab/20261104-204248 (host 30, guest 0 for 30 s),
+PASS out/lab/20261104-204124 (guest 30 within 1 s, still 30 20 s later). Class test wsync_transitions (the guest
+spends all its food after a game over and a rejoin): FAIL out/lab/20261104-205648 (host 10, guest 0), PASS
+out/lab/20261104-205651.
+
 ## History
 - 2026-11-04: opened.
 - 2026-11-04 (fix/w43-replay, step 0 of 0.7.7): replayed on 0.7.6 code; still open (W1), reproduced in the lab (tribe_food_zero out/lab/20261104-201453 FAIL).
+- 2026-11-04 (fix/w43-world-state, W1): fixed; see Fix and Verification.

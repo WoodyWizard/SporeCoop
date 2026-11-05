@@ -4136,3 +4136,13 @@ comes back at the end. The cache copy is not in git: `out/fixtures/bug0546-Polli
 checkout (else `out/bug0546/lane5-Pollination.package` of the fix/w42-infra worktree); without it the test SKIPs.
 It also SKIPs when the guard had no ship to fix (lane 4: its other caches have the models). About 1.5 minutes.
 `SPORE_FIX_OFF=game.ufo_model` must FAIL (lane 5: out/lab/20261104-130233).
+
+## Host-owned world state tests (2026-11-04, fix/w43-world-state)
+<a id="testing-wsync"></a>
+
+`coop.wsync dump [row]` prints the game's own values of the world state rows (docs/sync-architecture-plan.md#sync-wsync);
+tools/tests/wsync_util.py parses them and `differences(host, guest)` lists every row a guest's game has other than
+the host's. Tests: tribe_rel / tribe_goal / wsync_stages (coop_wsync_tribe.py rel|goal|stages, 1-5 min),
+wsync_transitions (the class test on Tribe: the host's game over and reload, a rejoin, the guest's own changes;
+8 min), cell_editor_budget (the host's Cell editor through the vote, 3 min). Pitfall: a rejoin loads the host's
+current world, so relations, the goal, the stages and the food are the host's after a rejoin even without the rows.
