@@ -1,20 +1,20 @@
 ---
 id: BUG-0592
 title: Creature: both players' own creatures 0.5-0.7 m under the ground right after the guest's return from the main menu
-status: open
+status: fixed
 kind: bug
 stage: Creature
 reported: 2026-11-05
 source: lab long_creature_short 20261105-002102
 role: both
 versions: 0.7.7-dev
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w44-height
+commits: 9ce58786
+tests: own_ground
 signature:
-docs:
-related:
+docs: docs/re/creature.md#creature-height-rule
+related: BUG-0504, BUG-0425
 ---
 
 ## Report
@@ -35,12 +35,26 @@ walked and was back on the ground (agl 0.00). So something moves the standing av
 guest's join (a push by the partner's puppet when it is shown again is the first suspect), and the game puts it on
 its ground only once it walks. Visual, 20 s, recovers by itself; not a release blocker for 0.7.7.
 
+Fix analysis (2026-11-05, fix/w44-height):
+* Observed (report's trace, lab 20261105-015350): the guest comes back from the menu where the host's save has the host's
+  creature (its puppet appears 0.2 m from the host's, `d=0`); the host's standing creature is then 0.7 m to the side at
+  the same radius, agl -0.69, until it walks.
+* Observed (coop_own_ground.py): two own creatures put 0.3 m apart on a slope: the game's separation left the guest's
+  own creature 0.35 m under the ground (lab 20261105-113544, fix off); a standing creature moved 0.7 m beside its
+  spot and 0.69 m under the terrain there stays there with its grounded byte +0x137 still 1 (9 of 9 sample pairs
+  under 0.25 m, 4 s); 0.32 m under, or moved by SetPosition, the game puts it back at once.
+* Inferred: the push in the report was the game's separation of the two creatures (the guest's puppet held where its
+  own game has it); not seen frame by frame.
+
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+creature.own_ground (modes.cpp own_ground_tick, `coop.fix creature.own_ground off`: 0.7.7): the own creature that stands
+(under 0.3 m/s), is alive and more than 0.25 m under GetHeightAt for 0.5 s is placed onto it (game::place), on each
+game; logged (`creature: the own creature stood X m under ...`, the grounded byte, the nearest puppet).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+own_ground (coop_own_ground.py): FAIL with SPORE_FIX_OFF=creature.own_ground out/lab/20261105-113544 (host and guest
+0.69 m under for 4 s, the overlap phase 0.35 m); PASS out/lab/20261105-113703 (put back within 0.5 s, min 0.00 m).
 
 ## History
 - 2026-11-05: opened.
+- 2026-11-05 (fix/w44-height): fixed (creature.own_ground); own_ground FAIL/PASS.

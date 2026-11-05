@@ -2782,3 +2782,34 @@ BUG-0584. GOG 2024, asm and Ghidra. Extends #creature-fruit-pool.
   not `SporeCoop::cFruit_vftable` 0x145C568, and free fruit with one reference (the take would free them), are taken
   out without a Release (kept alive, a few hundred bytes lost); `coop.fruitpool` lists the pool, `coop.fruitcut`
   plants a freed fruit as the last free one (tests).
+
+## Remote bodies over the ground: the height rule (2026-11-05, fix/w44-height)
+<a id="creature-height-rule"></a>
+
+One rule for every remote body (BUG-0425): the sender's body is on its ground or off it for a reason its game
+knows; the receiver puts it on its own ground in the first case and at the sender's height over the sender's terrain
+(agl) over its own terrain in the second (`drive::at_sender_agl`, `drive::air_place`, driver.h).
+* ✔ "Off the ground" is the game's grounded byte `cCreatureBase +0x137 == 0` and more than `drive::kAirOver`
+  (0.15 m) off `cPlanetModel::GetHeightAt` (`drive::body_airborne`). The same test the partner's PF_JUMPING uses
+  (BUG-0376). A creature on a rock is not grounded either (it is drawn at its height, which the rock has on both).
+* ✔ Creature NPCs: the host sends `NF_AIR` (NPC state flag 32) and, after the entries of each MSG_NPC_STATE batch, a
+  trailer of n x i16: each NPC's height over the host's terrain in cm (older guests ignore it, an older host sends
+  none). Player states append `f32 agl` after the Cell scale (kNoAgl unless PF_JUMPING).
+* ✔ A host NPC held 4 m over its ground every frame (`coop.npc lift <id> <m> <s>`, after the host's npctrack row, so
+  the row is where the game drew it): the host's game kept it at 4.00 m (median over 584 frames). Without npc.air
+  the guest's proxy was drawn at a median 1.05 m (only 50 % of its frames over 1 m: walked, the guest's game put it
+  down onto its terrain again and again); with npc.air at 4.00 m in every frame, on its ground before and after
+  (lab 20261105-112120 FAIL, 20261105-112004 PASS; coop_npc_air.py). `coop.npctrack dump` rows end with `ag mag`
+  (the drawn and the model position's height over this game's terrain), `how` 5 = placed in the air.
+* ✔ (BUG-0592) A standing own creature moved by a teleport to 0.7 m beside its spot and 0.69 m under the terrain there
+  stays there (grounded byte still 1) until it walks; 0.32 m under, or moved by SetPosition (vt 0x38), the game
+  puts it back onto its terrain at once (lab 20261105-113116, 113250, 113544). Two own creatures put 0.3 m apart on
+  a slope (the guest's own creature with the host's puppet over it, a partner arriving at your spot): the game's
+  separation left the guest's own creature 0.35 m under the ground (lab 20261105-113544, off). In the report (lab
+  20261105-015350 long_creature, host) the guest came back from the main menu at the host's saved spot (its puppet
+  0.2 m from the host's creature) and the host's creature stood 0.7 m to the side at the same radius, agl -0.69,
+  for 20 s. `creature.own_ground` (modes.cpp own_ground_tick) puts a standing (< 0.3 m/s), living own creature that
+  is more than 0.25 m under GetHeightAt for 0.5 s onto it (game::place); `coop.abilities put <x y z> [1]` teleports
+  the avatar as given (1: SetPosition).
+* ? Why a creature under the brain-upgrade caption was 0.7 m under (BUG-0504) is still not known; the same fix puts it
+  back (the caption pauses the game time; not run under a caption).

@@ -43,3 +43,4 @@ and hd 0.0 followed by hd 1.03. coop_puppet_fight.py lists these steps as `entry
 ## History
 - 2026-11-01: opened (fix/w34-ability-pop).
 - 2026-11-04: fix/w41-puppet-look: still open.
+- 2026-11-05 (fix/w44-height): not part of the height fix: the culled puppet on a mound is grounded by the game's update outside the view; not looked at again.

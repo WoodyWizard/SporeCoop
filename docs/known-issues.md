@@ -1794,7 +1794,8 @@ Found by fix/w40-play (2026-11-03), not fixed:
   Ticket: BUG-0503. Fixed on fix/w43-tests (2026-11-04): on a guest at a low frame rate the placing was capped at
   0.1 s frames and fell behind (npc.proxy_slow_frames); not yet confirmed with a long session.
 * Creature: under the brain upgrade caption both own creatures read 0.63-0.71 m under the ground once (monitor
-  rule `ground`, 20261103-124913 play_creature#2); not reproduced at the fixture's nest. Ticket: BUG-0504.
+  rule `ground`, 20261103-124913 play_creature#2); not reproduced at the fixture's nest. Ticket: BUG-0504. Fixed on fix/w44-height (2026-11-05) through
+  creature.own_ground (BUG-0592); the caption itself not rerun.
 * play_tribe: in 2 of 3 runs the guest's members stayed idle on 7-12 orders the host took, and the host's bot
   gave only 8-9 orders (its minimap look missed 24 times once). Ticket: BUG-0505.
 
@@ -1879,7 +1880,7 @@ other has not (both landed, `coop.census all 3000 0 0 0`); not the camera's leve
 * What happens: the 4 cultural targets per city (city setup 0xBE7D40) are placed by each game on its own; the
   detector's `unmatched:cultural_target` in campaign_space. Not seen in play_civ.
 * Not fixed. Ticket: BUG-0540
-- BUG-0550: Creature: an NPC 9 m over the ground on the host is drawn on the ground on the guest (seen once in play_creature, sync-check `n: 1 apart`).
+- BUG-0550: Creature: an NPC 9 m over the ground on the host is drawn on the ground on the guest (seen once in play_creature, sync-check `n: 1 apart`). Fixed on fix/w44-height (2026-11-05, npc.air).
 - BUG-0551: Creature: a chat line typed while the host pauses to save the world for a returning guest can be lost (seen once in play_creature).
 
 Player reports 2026-11-04 (0.7.5, Discord bug-reports; not analysed yet):
@@ -1978,7 +1979,7 @@ Player reports 2026-11-04 (0.7.5, Discord bug-reports; not analysed yet):
 - BUG-0580: Tribe: the NPC tribes' food differs between the host and the guest (detector `Tribe:state:tribe_food`; `SPORE_DETECTOR=20 tools/lab.py run play_tribe`) (fixed on fix/w43-crashes, unreleased: wsync.tribe_food)
 - BUG-0584: Creature: a caught fault on the host, a call through null from 0xB097C4 (once in a 44 min `long_creature`, lab 20261104-214938; analysed, not reproduced: docs/re/creature.md#creature-fruit-pool)
 - BUG-0591: Tribe: in play_tribe the wsync rows tribe_rel and tribe_food stop reaching some villages on the guest from about 400 s on (detector rows; `SPORE_DETECTOR=20 tools/lab.py run play_tribe`)
-- BUG-0592: Creature: after the guest returns from the main menu, the host's standing creature can stand 0.7 m under the ground for about 20 s, until it walks (`SPORE_DETECTOR=20 tools/lab.py run long_creature_short`)
+- BUG-0592: Creature: after the guest returns from the main menu, the host's standing creature can stand 0.7 m under the ground for about 20 s, until it walks (`SPORE_DETECTOR=20 tools/lab.py run long_creature_short`). Fixed on fix/w44-height (2026-11-05, creature.own_ground)
 - BUG-0593: Civilization: a city the player took can stay the NPC's on the guest, with that civilization's relations and money (detector rows; `SPORE_DETECTOR=20 tools/lab.py run campaign_space`)
 - BUG-0594: Tribe: a totem pole on the guest only before the move to Civ (`SPORE_DETECTOR=20 tools/lab.py run tribe_civ`)
 - BUG-0595: Space: the guest's money reads nan in the detector's state row (`SPORE_DETECTOR=20 tools/lab.py run campaign_space`)
