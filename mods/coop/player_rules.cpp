@@ -539,6 +539,46 @@ static int c_rules(void*, int argc, const char* const* argv, SkOut* out)
         H->out_printf(out, "%s", q.out.empty() ? "no herds\n" : q.out.c_str());
         return 0;
     }
+    // tests (BUG-0496): what the avatar's nest heal (0xC084B0 avatar branch -> +0xFB8, applied by vt 0x88 0xC02E10) reads
+    if (argc > 1 && !strcmp(argv[1], "heal")) {
+        uint8_t* av = (uint8_t*)game::avatar();
+        if (!av || !skg::readable(av, 0x1000)) {
+            H->out_printf(out, "no avatar\n");
+            return 1;
+        }
+        uint8_t* ai = *(uint8_t**)(av + 0xB4C);
+        uint32_t node = ai && skg::readable(ai, 0x1DC) ? *(uint32_t*)(ai + 0x1D8) : 0;
+        // the behaviour tree's events (a list: node +0 next, +0x10 type, +0x24 ended, +0x8.. data): "Fight" 0x60995FC
+        int fights = 0, mine = 0;
+        uint32_t target = *(uint32_t*)(av + 0xE7C), comb = *(uint32_t*)(av + 0x5A8);
+        uintptr_t lp = H->sym("SporeCoop::BT_EventList_ptr");
+        uint8_t* list = lp && skg::readable((void*)lp, 4) ? *(uint8_t**)lp : nullptr;
+        std::string fx;
+        if (list && skg::readable(list, 4))
+            for (uint8_t* n = *(uint8_t**)list; n && n != list && skg::readable(n, 0x28) && fights < 64; n = *(uint8_t**)n)
+                if (*(uint32_t*)(n + 0x10) == 0x60995FC && !n[0x24]) {
+                    fights++;
+                    uint32_t d0 = *(uint32_t*)(n + 8);
+                    mine += d0 == target || d0 == comb;
+                    char b[48];
+                    snprintf(b, sizeof b, " %08X", d0);
+                    fx += b;
+                }
+        H->out_printf(out, "heal flag=%d hp=%.1f food=%.2f cine=%d node=%08X target=%08X comb=%08X fights=%d mine=%d data=%s\n",
+                      (int)av[0xFB8], *(float*)(av + 0x5E0), *(float*)(av + 0xBBC), (int)game::cinematic_playing(), node,
+                      target, comb, fights, mine, fx.c_str());
+        return 0;
+    }
+    if (argc > 2 && !strcmp(argv[1], "meat")) { // tests (BUG-0557): NPC / proxy <id>: the body's meat (+0xB84) and dead flag
+        uint8_t* c = (uint8_t*)(is_host() ? npc::host_npc((uint16_t)atoi(argv[2])) : npc::proxy((uint16_t)atoi(argv[2])));
+        if (!c || !skg::readable(c, 0xBC0)) {
+            H->out_printf(out, "no creature\n");
+            return 1;
+        }
+        H->out_printf(out, "creature %p meat=%.2f dead=%d hp=%.2f\n", c, *(float*)(c + 0xB84), (int)c[0xB5E],
+                      *(float*)(c + 0x5E0));
+        return 0;
+    }
     if (argc > 1 && !strcmp(argv[1], "ufo")) { // tests (BUG-0558): the UFOs of this game, the puppets, the pick's answers
         H->out_printf(out, "%s", ufo_dump().c_str());
         return 0;

@@ -132,3 +132,5 @@ SporeCoop::BT_GoalSlotFind ; BUG-0501: the guest roar relay (creature.roar_relay
 SporeCoop::BT_GoalSlotEnd ; BUG-0501: the guest roar relay (creature.roar_relay) is off on GOG 2016
 SporeCoop::BT_ClearStimulus ; BUG-0501: the guest roar relay (creature.roar_relay) is off on GOG 2016
 SporeCoop::UFOPick_IsEpicReturn ; BUG-0558: the UFO pick guard (creature.ufo_puppet) is off on GOG 2016
+SporeCoop::BT_EventList_ptr ; BUG-0496: coop.rules heal (tests only) is off on GOG 2016
+SporeCoop::UFO_TickBehavior ; BUG-0558: coop.rules ufo's tick counter (diagnostics) is off on GOG 2016
