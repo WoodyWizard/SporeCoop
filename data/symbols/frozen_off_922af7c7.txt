@@ -132,3 +132,4 @@ SporeCoop::VisualEffect_Start ; BUG-0575: the model attached effect guard (game.
 SporeCoop::VisualEffect_vftable ; BUG-0575: the model attached effect guard (game.model_fx) is off on GOG 2016
 SporeCoop::Flora_TakeFruitForDrop ; BUG-0584: the fruit pool guard (game.fruit_pool) is off on GOG 2016 (wobj.fruit_saved still works)
 SporeCoop::cFruit_vftable ; BUG-0584: the fruit pool guard (game.fruit_pool) is off on GOG 2016
+SporeCoop::City_SetPartsOwner ; BUG-0593: the owner of a captured city's buildings (wsync.city_owner) is not re-aligned on GOG 2016

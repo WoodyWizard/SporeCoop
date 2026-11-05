@@ -293,6 +293,7 @@ add('sync_civ_loss', 'SPORE_NET=burst ' + P + 'coop_sync.py civ', minutes=4)  # 
 add('civ_pause_city', P + 'coop_civ_pause_city.py', warm=True, minutes=3, fixture='civ_npc')  # a city founded while a guest is paused reaches it after the pause (BUG-0331)
 add('civ_leave', P + 'coop_civ_leave.py', warm=True, minutes=4, fixture='civ')  # the vehicles of a guest who left go to a present player (BUG-0031; --nofix fails)
 add('civ_sw_vote', P + 'coop_civ_sw_vote.py', warm=True, minutes=3, fixture='civ')  # a second superweapon request does not change the running vote (BUG-0117; --nofix fails)
+add('wsync_civ', P + 'coop_wsync_civ.py', warm=True, minutes=3, fixture='civ_npc')  # BUG-0593: a captured city's buildings, the nations' relations and money are the host's in the guest's game (SPORE_FIX_OFF=wsync.city_owner,wsync.civ_rel,wsync.civ_money fails)
 add('civ_caption', P + 'coop_civ_caption.py', warm=True, minutes=3, fixture='civ_npc')  # the host's capture caption closes by itself with guests (BUG-0187; --nofix fails)
 add('civ_away', P + 'coop_civ_away.py', warm=True, minutes=5, fixture='civ')  # the guest's vehicles drive while the host is in the menu (BUG-0151; --nofix fails)
 add('tribe_away', P + 'coop_tribe_away.py', warm=True, minutes=5, fixture='tribe')  # the guest's members walk while the host is in the menu (BUG-0151; --nofix fails)
