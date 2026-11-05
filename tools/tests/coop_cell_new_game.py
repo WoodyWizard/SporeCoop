@@ -88,8 +88,13 @@ def probe(name, me, other, kind, tries):
             log.append(f'(waited {time.time() - t_wait:.0f} s for one)')
         key = food[0][1]
         p0 = pool(me)['own_points'] or 0
-        me.call(f'coop.pool swimto {key} tp')
-        for _ in range(12):
+        # BUG-0589: the teleport puts the cell beside the food without turning it (its mouth may face away) and the
+        # swim goal then lies inside its own body: in lab 20261105-132739 #1 the guest sat 0.33 m from a meat's centre
+        # (its size 0.48) and did not eat it. Near food is swum to from where the cell is, mouth first, as a click
+        # does; the teleport only brings it near far food (over 8 m)
+        if float(food[0][5]) > 8:
+            me.call(f'coop.pool swimto {key} tp')
+        for _ in range(24):
             time.sleep(0.25)
             me.call(f'coop.pool swimto {key}')
             if not alive(me, key):
