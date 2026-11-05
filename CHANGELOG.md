@@ -5,8 +5,8 @@
 ### Fixed
 - Tribe: a guest's game should no longer crash when the camera jumps (the home button) to creatures whose effect
   was broken; the broken effect is left out instead (BUG-0575, a guard: the cause is not known).
-- Creature: a host's game should no longer fault when a fruit falls from a plant after a long session; a broken fruit
-  in the plants' fruit pool is left out instead (BUG-0584, a guard: the cause is not known).
+- Creature / Tribe: the game no longer crashes when a fruit falls from a plant after the other player ate a fruit
+  that was on the ground since the save was loaded (BUG-0584).
 
 ## [0.7.7] - 2026-11-05
 

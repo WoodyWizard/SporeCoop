@@ -80,10 +80,16 @@ def fruit_pool(host, guest, ck):
     print('  host fruit of the save on the ground:', [(o['id'], o['p'], o['pos']) for o in fr][:6], flush=True)
     if not ck(fr, 'the host has a fruit of the save on the ground (+0x148 bit 0)'):
         return
-    # the guest's "took fruit" request does this on the host (worldobj on_act -> cFruit_SetState 5)
+    # the guest's "took fruit" request does this on the host (worldobj on_act -> fruit_eat)
     print('  host:', host.call(f'coop.wobj eat {fr[0]["p"]}')['out'].strip(), f'(fruit {fr[0]["p"]})', flush=True)
     time.sleep(2)
-    pool(host)
+    out = pool(host)
+    free = out.split('loose', 1)[0]
+    m = re.search(fr[0]['p'].upper().zfill(8) + r'/r(\d+)/f[13579BDF]/s6', free)
+    # the take's pop frees a free fruit with one reference left; the eaten fruit's other references vary (1 or 3 in
+    # the lab), so the state is checked, not only the fault
+    ck(not m, 'the eaten fruit of the save is not in the plants\' free fruit (where the next falling fruit is taken'
+              + (f'; it is, with {m.group(1)} reference(s))' if m else ')'))
     trees = [o for o in objs(host, 'tree', 120) if o['st']]
     print('  host trees with fruit (mask):', [(o['p'], hex(o['st'])) for o in trees][:6], flush=True)
     if not ck(trees, 'the host has a tree with fruit near its avatar'):
