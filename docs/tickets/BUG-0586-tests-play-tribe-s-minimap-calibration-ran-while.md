@@ -1,6 +1,6 @@
 ---
 id: BUG-0586
-title: Tests: play_tribe's minimap calibration ran while the guest's game time was still paused after the cold join (the view did not move)
+title: "Tests: play_tribe's minimap calibration ran during the guest's cold join pause (the view did not move)"
 status: open
 kind: test
 stage: Tribe
@@ -11,24 +11,30 @@ versions:
 fixed_in:
 branch:
 commits:
-tests:
+tests: play_tribe
 signature:
-docs:
-related:
+docs: docs/06-testing.md#testing-harness-g1
+related: BUG-0444, BUG-0481
 ---
 
 ## Report
-<!-- what the player (or the test) saw, in our words; no player names, no paths from their PC -->
+play_tribe failed its first check "guest: the minimap takes the view where it points" in lab 20261104-220200
+(rel/0.7.7), fix/w43-realign 20261104-213145 and fix/w43-world-state 20261104-210354: the three calibration clicks
+on the guest's minimap read the same view centre (406.26 -4.88 302.62, the start view over the player tribe) for o
+and a (and b in two of them); `coop.status` had busy=1 (the game time stands) in the first two.
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+* Observed: in those runs the guest's trace lines had `busy=paused` until s 30-50 after its join (the cold join's
+  pause, BUG-0444), and the calibration runs right after the setup's split of the player tribe, inside that pause.
+* Observed (lane 3, 2026-11-04, scratch run): holding only the pause bit by hand (cGameTimeManager +0x48 = 3) does
+  not stop the view: the calibration passed 3 of 3 with the bit held or not. So the bit is a marker of the join's
+  pause (the loading game), not what stops the view.
+* Inferred: during the cold join's pause the game takes no camera input from the minimap yet.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+Test only: play_tribe waits for both games' own clock to run (coop_sync.wait_running, at most 90 s) before it
+calibrates, and the failure line prints the pause state. No threshold changed.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
-
 ## History
 - 2026-11-04: opened.
