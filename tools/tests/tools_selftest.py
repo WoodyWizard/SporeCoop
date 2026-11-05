@@ -704,6 +704,17 @@ def test_worldstate():
     g = worlddiff.World('census v1 role=guest me=1 mode=Creature modeid=01654C01 world=A3930F03 t=1.0\nend objects=0')
     out = [f['sig'] for f in worlddiff.diff(h, g)]
     check(out == ['apart'], f'a guest that lists no object (loading): not compared ({out})')
+    # BUG-0596: a species record the host's game just made: the guest's first dump lacks it, its second (1.5 s after
+    # the host's dump) has it: no row; a record still missing in the second dump: species_only
+    cr = 'wstate v1 role={} mode=Creature modeid=01654C01 world=A3930F03 t=1.0\nst dna v=10.0\n{}end wstate rows=2'
+    rec = 'species 065CBF12/2B978C46/40626200 relation=3 x=0 impressed=1 killed=0\n'
+    hs, gs = worlddiff.State(cr.format('host', rec)), worlddiff.State(cr.format('guest', ''))
+    gs.after = worlddiff.State(cr.format('guest', rec))
+    out = {f'{w}:{k}' for w, k, _, _ in worlddiff.diff_state(hs, gs, 'Creature')}
+    check(out == set(), f'a record on its way to the guest: no species_only row ({out})')
+    gs.after = worlddiff.State(cr.format('guest', ''))
+    out = {f'{w}:{k}' for w, k, _, _ in worlddiff.diff_state(hs, gs, 'Creature')}
+    check(out == {'Creature:state:species_only'}, f'a record the guest still lacks 1.5 s later: species_only ({out})')
     # through diff(): the state rows come with the area compare, also when there is no centre
     h, g = worlddiff.World('census v1 role=host me=0 mode=Tribe modeid=01654C02 world=A3930F03 t=1.0'), \
         worlddiff.World('census v1 role=guest me=1 mode=Tribe modeid=01654C02 world=A3930F03 t=1.0')
