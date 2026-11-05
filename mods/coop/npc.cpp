@@ -138,6 +138,14 @@ static bool g_walk_ground_fix = true;
 COOP_FIX("npc.walk_ground", "BUG-0406", g_walk_ground_fix, "creature: a walking NPC's proxy is placed onto the ground, so it does not keep starting to fall downhill");
 static bool g_walk_tribe_fix = true;
 COOP_FIX("npc.walk_tribe", "BUG-0361", g_walk_tribe_fix, "tribe: a walking or running animal's proxy walks on its path instead of moving in steps");
+// BUG-0503: walk_place closes a proxy's error at (speed + catch_up) x the frame time, the frame time capped at
+// WalkPlace::max_dt (0.1 s). A guest at 3-5 fps (0.2-0.5 s frames under load, or a weak PC) closed 0.7 m per frame
+// of a host NPC that walked 1-2 m: the placed proxy fell 0.2-0.4 m further behind every frame, 3-8 m off for 2-11 s
+// until the NPC stood (the monitor's `proxies` rule in play_tribe / long_tribe). The Tribe mirrors take 0.4
+// (BUG-0365); `coop.fix npc.proxy_slow_frames off`: 0.1 as before.
+static bool g_proxy_slow_frames_fix = true;
+COOP_FIX("npc.proxy_slow_frames", "BUG-0503", g_proxy_slow_frames_fix,
+         "tribe: an animal's proxy keeps up with the host's animal on a guest at a low frame rate");
 // tests (coop.npctrack variant, drive::walk_place): 0 the fix; 1 place only (no walk goal); 2 walk goal +
 // teleport with the mark
 static int g_walk_variant = 0;
@@ -1479,6 +1487,8 @@ static void guest_tick(double now)
                 // BUG-0399: onto this game's ground, not only at its own height (proxies 1.3-1.7 m under after joins)
                 o.ground = rts ? drive::g_out_of_ground_fix : g_walk_ground_fix; // BUG-0406 (Creature)
                 o.walk_speed = walk_speed;
+                if (rts && g_proxy_slow_frames_fix)
+                    o.max_dt = 0.4; // BUG-0503 (as the Tribe mirrors, BUG-0365)
                 o.snap = 2.5f;
                 o.keep_lost = true;
                 o.variant = g_walk_variant;
