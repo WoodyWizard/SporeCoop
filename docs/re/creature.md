@@ -2663,7 +2663,7 @@ Ghidra (tools/ghidra/q.sh) and lane 9 at runtime. In co-op one game decides what
 creature: the host's game runs the NPCs and hits the guest's **puppet**; the guest's game runs its **avatar** and
 hits **proxies** (AI-less mirrors). A rule of the game that lands on the puppet / proxy, or a check that asks "is
 this the player" and gets "no" for the partner, never reaches the player whose creature it is. The mod's one place
-for such rules is `mods/coop/player_rules.cpp` (actions carried over the net, MSG_PLAYER_RULE 62) next to the
+for such rules is `mods/coop/player_rules.cpp` (actions carried over the net, MSG_PLAYER_RULE 63) next to the
 predicate answers in `creature_hp.cpp` (IsPlayerSpecies) and the table follower in `social.cpp`.
 
 The checks found, what they read, and how the mod answers them now:

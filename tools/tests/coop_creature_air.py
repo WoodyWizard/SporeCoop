@@ -63,7 +63,9 @@ def main():
     if not ground:
         return ck.result()
     guest.call('coop.hp dmglog clear')
-    host.call('coop.rules')
+    host.call('coop.hp dmglog clear')
+    m = re.search(r"remote \d+ '[^']*' puppet=([0-9A-F]+)", host.call('coop.status')['out'])
+    pup = m.group(1) if m else ''
     t0 = time.time()
     airborne = 0
     samples = 0
@@ -75,9 +77,15 @@ def main():
         airborne += 'above=' in (a := guest.call('coop.abilities')['out']) and \
             float(re.search(r'above=([-\d.]+)', a).group(1)) > 0.5
     air, low = host_hits(guest, 1), host_hits(guest, 0)
+    # the NPC's melee hits on the puppet in the host's game while it was held in the air there (the game's own hits,
+    # never applied to the puppet: `filtered`)
+    tried = len([r for r in re.findall(r'victim=([0-9A-F]+) \S+ amount=\S+ type=2 ret=\S+ filtered air=1',
+                                       host.call('coop.hp dmglog')['out']) if pup and r.upper().endswith(pup.upper()[-8:])])
     print(f'  in the air ({airborne} of {samples} samples > 0.5 m): {air} bites from the host in the air, {low} while it touched the ground', flush=True)
     print('  host ' + ' | '.join(host.call('coop.rules')['out'].strip().splitlines()), flush=True)
     ck(airborne >= samples // 2, f'the guest\'s creature was in the air ({airborne} of {samples} samples)')
+    print(f'  the NPC\'s melee hits on the airborne puppet in the host\'s game: {tried}', flush=True)
+    ck(tried > 0, f'the NPC kept hitting at the guest\'s creature in the air in the host\'s game ({tried})')
     ck(air == 0, f'no NPC bite reaches the guest while it is in the air ({air} hits)')
     for c in (host, guest):
         c.call('coop.team on')
