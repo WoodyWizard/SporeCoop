@@ -175,4 +175,9 @@ def main():
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except (TimeoutError, OSError) as e:  # a game froze (BUG-0585): its console stops answering
+        print(f'  FAIL a game stopped answering its console ({e!r})', flush=True)
+        print('RESULT: FAIL', flush=True)
+        sys.exit(1)

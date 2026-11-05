@@ -53,7 +53,8 @@ way: advance button, stage card, captions, the guest's "I'm ready" on both votes
 reach Civ.
 * FAIL (SPORE_FIX_OFF=core.editor_own_pause): out/lab/20261104-224338 (lane 5): editors 60.7 s and 61.3 s after
   the votes.
-* PASS: out/lab/20261104-224318 (lane 4): 0.0 s and 0.7 s, both games in Civ, 0 faults.
+* PASS: out/lab/20261104-224318 (lane 4): 0.0 s and 0.7 s, both games in Civ, 0 faults; out/lab/20261104-224930
+  (lane 4) and out/lab/20261104-224915 (lane 5, the BUG-0585 FAIL run): 0.0 s and 0.4 s.
 
 ## History
 - 2026-11-04: opened.
