@@ -53,7 +53,15 @@ def main():
     print(' ', host.call(f'coop.civ capture {city}')['out'].strip(), flush=True)
     print(' ', host.call(f'coop.wsync rel {other["pol"]} -4')['out'].strip(), flush=True)
     print(' ', host.call(f'coop.wsync civmoney {other["pol"]} 1500')['out'].strip(), flush=True)
-    time.sleep(25)
+    # the money first: the nation's own AI spends it within seconds (lab 20261105-122514: 1500 -> 0 in 25 s)
+    time.sleep(3)
+    hm, gm = states(host, guest)
+    h0 = next((c for c in hm.civs if c['pol'] == other['pol']), None)
+    g0 = next((c for c in gm.civs if c['pol'] == other['pol']), None)
+    print(f'  3 s later: nation {other["pol"]} money host {h0 and h0["money"]}, guest {g0 and g0["money"]}', flush=True)
+    ck(h0 and abs(h0['money'] - other['money']) >= 1000, 'the host\'s game: the nation\'s money changed')
+    ck(g0 and h0 and abs(g0['money'] - h0['money']) < 50, 'the guest\'s game: the nation has the host\'s money (3 s)')
+    time.sleep(22)
     hc, _ = civ(host)
     gc, _ = civ(guest)
     ck(hc.get(city, {}).get('pol') == ppol and gc.get(city, {}).get('pol') == ppol,
@@ -68,10 +76,9 @@ def main():
     g1 = next((c for c in gs.civs if c['pol'] == other['pol']), None)
     print(f'  after: nation {other["pol"]} host rel {h1 and h1["rel"]:.2f} money {h1 and h1["money"]:.0f}, '
           f'guest rel {g1 and g1["rel"]:.2f} money {g1 and g1["money"]:.0f}', flush=True)
-    ck(h1 and abs(h1['rel'] - other['rel']) >= 3 and abs(h1['money'] - other['money']) >= 1000,
-       'the host\'s game: the nation\'s relation and money changed')
+    ck(h1 and abs(h1['rel'] - other['rel']) >= 3, 'the host\'s game: the nation\'s relation changed')
     ck(g1 and abs(g1['rel'] - h1['rel']) < 0.5, 'the guest\'s game: the nation feels about the player as the host\'s')
-    ck(g1 and abs(g1['money'] - h1['money']) < 50, 'the guest\'s game: the nation has the host\'s money')
+    ck(g1 and h1 and abs(g1['money'] - h1['money']) < 50, 'the guest\'s game: the nation has the host\'s money (25 s)')
     rows = [(w, k, t) for w, k, _, t in worlddiff.diff_state(hs, gs, 'Civilization')
             if 'planet_owner' in w or k in ('relation', 'civ_money')]
     for r in rows:
