@@ -1892,7 +1892,7 @@ Player reports 2026-11-04 (0.7.5, Discord bug-reports; not analysed yet):
 - BUG-0561: Creature: an allied nest has no ally (green) icon on the guest's minimap, only the grey discovered mark
 - BUG-0562: Creature: an NPC creature backing away from the guest gets stuck inside its nest (video)
 - BUG-0563: Tribe: the guest's creature from Creature stage appears as an enemy monster at the start of Tribe; killed, it leaves meat that never runs out
-- BUG-0564: Tribe: after the guest dies, its map still shows villages that do not exist any more
+- BUG-0564: Tribe: after the guest dies, its map still shows villages that do not exist any more (reproduce: tribe_bounce_world, the host's game over and reload; BUG-0566, 0567, 0569 the same class)
 - BUG-0565: Tribe: every village's relation is neutral on the guest, while the host sees them aggressive and slightly aggressive
 - BUG-0566: Tribe: the guest does not see an enemy village's hut (hub) health go down when the players attack it
 - BUG-0567: Tribe: a building is broken (bugged) on the guest after the guest dies
@@ -1900,9 +1900,9 @@ Player reports 2026-11-04 (0.7.5, Discord bug-reports; not analysed yet):
 - BUG-0569: Tribe: the guest sees no animations
 - BUG-0570: Tribe: no red target circle under an enemy the guest targets
 - BUG-0571: Tribe: villages are founded (spawn) much faster than in the single-player game
-- BUG-0572: Tribe: the guest's food counter is 0 while the host's tribe has food (from about an hour into the session)
+- BUG-0572: Tribe: the guest's food counter is 0 while the host's tribe has food (reproduce: tribe_food_zero; the guest's game spends its last food, shared.cpp cannot write into an empty bundle list) (from about an hour into the session)
 - BUG-0573: Tribe: the guest's tribe members do not eat on their own, they must be ordered to eat
-- BUG-0574: Tribe: two buildings stand right next to each other on the guest
+- BUG-0574: Tribe: two buildings stand right next to each other on the guest (fixed in 0.7.6 by BUG-0523: tribe_tools_all, 2026-11-04 replay)
 - BUG-0575: Tribe: the guest crashed after double-clicking the home icon (3010a413:SporeApp.exe+0x6826F3)
 - BUG-0576: Tribe -> Civ: black screen after evolving from Tribe into the city stage
 - BUG-0577: After a rejoin the game shows the Cell and Creature stages as not done yet (stage progress lost)

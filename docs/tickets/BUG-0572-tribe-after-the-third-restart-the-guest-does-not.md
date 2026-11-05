@@ -11,9 +11,9 @@ versions: 0.7.5
 fixed_in:
 branch:
 commits:
-tests:
+tests: tribe_food_zero (coop_tribe_food_zero.py)
 signature:
-docs:
+docs: docs/re/tribe.md#tribe-food-zero
 related:
 ---
 
@@ -24,14 +24,23 @@ Screenshots (the reports' shots/, guest and host at the same session second): Th
 Not analysed yet.
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+Logs: the reports' sporekit.log of both players (host 17:26-20:15, guest 17:27-19:45 and 19:47-20:09, lined up by the session clock `[s N]`).
+* Observed (logs): the guest's food equals the host's (trace food=, every 10 s) until 19:15:48, when the guest's
+  game spent its last 10 food ("shared food -10.0 from player 1" on the host); from 19:16 the guest shows 0 for
+  good while the host has 15 .. 91. After the guest's rejoin the same: equal until its members ate the last food
+  (-1, -1, -1, -0.6 at 19:56:12-17), then 0 for good. A drop to 0 that came from the host (19:53:45) did not stick.
+* Observed (lab, tribe_food_zero): the game's own spending (cTribe::AddFood -n -> RemoveBundles) leaves the
+  tribe's bundle vector empty (tribe+0x210 begin == end), and shared.cpp s_food only edits the amounts of
+  existing bundles: `b == e` returns without a change, so no host total reaches the guest again.
+  (docs/re/tribe.md F already notes AddFood "works on an empty container, unlike editing +0x134".)
+  Not the restarts: it started after the second one by chance.
 
 ## Fix
 <!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+Lab: tribe_food_zero (coop_tribe_food_zero.py) FAIL on 0.7.6 code: out/lab/20261104-201453 (host 30, guest 0 for 30 s). Package W1.
 
 ## History
 - 2026-11-04: opened.
+- 2026-11-04 (fix/w43-replay, step 0 of 0.7.7): replayed on 0.7.6 code; still open (W1), reproduced in the lab (tribe_food_zero out/lab/20261104-201453 FAIL).

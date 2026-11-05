@@ -583,7 +583,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0571](BUG-0571-tribe-villages-are-founded-spawn-much-faster-tha.md) | open | bug | Tribe | 2026-11-04 |  | Tribe: villages are founded (spawn) much faster than in the single-player game |
 | [BUG-0572](BUG-0572-tribe-after-the-third-restart-the-guest-does-not.md) | open | desync | Tribe | 2026-11-04 |  | Tribe: the guest's food counter is 0 while the host's tribe has food (from about an hour into the session) |
 | [BUG-0573](BUG-0573-tribe-the-guest-s-tribe-members-do-not-eat-on-th.md) | open | bug | Tribe | 2026-11-04 |  | Tribe: the guest's tribe members do not eat on their own, they must be ordered to eat |
-| [BUG-0574](BUG-0574-tribe-two-buildings-stand-right-next-to-each-oth.md) | open | desync | Tribe | 2026-11-04 |  | Tribe: two buildings stand right next to each other on the guest |
+| [BUG-0574](BUG-0574-tribe-two-buildings-stand-right-next-to-each-oth.md) | fixed | desync | Tribe | 2026-11-04 | 0.7.6 | Tribe: two buildings stand right next to each other on the guest |
 | [BUG-0575](BUG-0575-tribe-the-guest-crashed-after-double-clicking-th.md) | open | crash | Tribe | 2026-11-04 |  | Tribe: the guest crashed after double-clicking the home icon (3010a413:SporeApp.exe+0x6826F3) |
 | [BUG-0576](BUG-0576-tribe-civ-black-screen-after-evolving-from-tribe.md) | open | bug | Tribe | 2026-11-04 |  | Tribe -> Civ: black screen after evolving from Tribe into the city stage |
 | [BUG-0577](BUG-0577-after-a-rejoin-the-game-shows-the-cell-and-creat.md) | open | bug | Tribe | 2026-11-04 |  | After a rejoin the game shows the Cell and Creature stages as not done yet (stage progress lost) |

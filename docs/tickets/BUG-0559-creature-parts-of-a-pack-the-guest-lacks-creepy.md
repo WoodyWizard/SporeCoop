@@ -24,14 +24,17 @@ Screenshots (the reports' shots/, guest and host at the same session second): s4
 Not analysed yet.
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+Logs: the reports' sporekit.log of both players (host 17:26-20:15, guest 17:27-19:45 and 19:47-20:09, lined up by the session clock `[s N]`).
+* Observed (guest log 17:28:33): "Creepy & Cute parts pack NOT present", then "the host's own creation
+  29116124: part A115CFC8 unknown here" (and 82A9416E): the guest draws the fallback part of BUG-0452
+  (creations.unknown_parts) instead of a similar part. Colours: not in the logs.
 
 ## Fix
 <!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+Not run again: unknown_parts (BUG-0452) covers the no-crash part only. Package C1.
 
 ## History
 - 2026-11-04: opened.
+- 2026-11-04 (fix/w43-replay, step 0 of 0.7.7): replayed on 0.7.6 code; still open (C1), observed in the guest log.

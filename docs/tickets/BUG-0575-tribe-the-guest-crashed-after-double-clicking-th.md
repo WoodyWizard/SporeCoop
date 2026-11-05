@@ -13,7 +13,7 @@ branch:
 commits:
 tests:
 signature:
-docs:
+docs: docs/re/tribe.md#tribe-model-effects-crash
 related:
 ---
 
@@ -22,14 +22,28 @@ The guest crashed after double-clicking the home icon in Tribe. Crash 0xC0000005
 Reports: SporeCoop-report-2026-11-04 200118 (crash-20261104-194521) (out/reports/2026-11-04, not in git). Not analysed yet.
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+Logs: the reports' sporekit.log of both players (host 17:26-20:15, guest 17:27-19:45 and 19:47-20:09, lined up by the session clock `[s N]`).
+* Observed (dump, tools/crash_triage.py): 0xC0000005 at 0x00B626F3 = GOG 2024 0xA826F3 (the Steam .text is the
+  GOG 2024 code), read of 0x94, in the function 0xA82660 (thiscall, a Swarm visual effect's vt+8 with arg 0: it
+  walks its component vector +0x144..+0x148, 0x5C bytes each, and calls each component's +0x38 object vt+8).
+  The dump's context has edi = 0x5C, esi = 1: the first component's call returned with the callee-saved registers
+  broken (a freed component whose vtable is garbage), then the loop read [0x5C + 0x38].
+* Observed (disassembly): the caller is 0xC8AC40.. (return 0xC8ACC4): a model's attached-effect list (vector at
+  +0xC0/+0xC4, 0x3C bytes per entry, effect at +0x38, a distance threshold at -0x30) started or stopped by the
+  camera distance (vt+8 / vt+0xC with 0). The home double-click jumps the camera: effects of the models there are
+  started; one of them was freed (inferred: an effect of a member given to the host, i.e. a mirror whose effect
+  the relay of BUG-0451 attached, freed with the member's old creature).
+* The mod's log has no line before the crash (19:45:21).
 
 ## Fix
 <!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+Not reproduced: lab tribe fixture, the guest gave 8 members to the host one by one (`coop.give`), panned and
+double-clicked the HUD's home button after each (out/shots575/ of this worktree, not in git); no fault, no crash.
+The click on the home icon did not move the lab camera (the collapsed minimap holder takes the click there), so
+the camera jump of the report was not made. Package T1.
 
 ## History
 - 2026-11-04: opened.
+- 2026-11-04 (fix/w43-replay, step 0 of 0.7.7): replayed on 0.7.6 code; still open (T1), crash site analysed from the dump, not reproduced.

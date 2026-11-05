@@ -24,14 +24,21 @@ Screenshots (the reports' shots/, guest and host at the same session second): s3
 Not analysed yet.
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+Logs: the reports' sporekit.log of both players (host 17:26-20:15, guest 17:27-19:45 and 19:47-20:09, lined up by the session clock `[s N]`).
+* Observed (logs, s 3016 / 3024): no "eat:" line from the guest for those bodies; at s 3016 the guest's
+  screen shows the ground by the nest without the two bodies the host sees.
+* Lab: corpse_positions (BUG-0383, bodies of NPCs killed standing, running, thrown, on a slope, by an NPC, while
+  the guest was away, eaten) on 0.7.6: see Verification. Inferred: the bodies the guest misses are kills whose
+  proxies were gone on the guest (out of its 110 m, or removed with their herd) or kills by the host's pack (P1).
 
 ## Fix
 <!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+corpse_positions PASS on 0.7.6 code (out/lab/20261104-202315): every kind of body (standing, running, thrown, slope,
+by an NPC, while the guest was away, eaten) where the host has it; the reported case (bodies by a nest after a
+pack fight) is not among them. no-fail-run: not reproduced. Package P1.
 
 ## History
 - 2026-11-04: opened.
+- 2026-11-04 (fix/w43-replay, step 0 of 0.7.7): replayed on 0.7.6 code; still open (P1), not reproduced: corpse_positions PASS out/lab/20261104-202315.
