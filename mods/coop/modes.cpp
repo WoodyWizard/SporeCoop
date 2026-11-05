@@ -338,6 +338,58 @@ static void creature_despawn(void* p)
     game::destroy_creature(p);
 }
 
+// BUG-0592 / BUG-0504: right after a guest's world load (the share after its "menu" or editor return) both players'
+// own standing creatures stood 0.5-0.7 m under the ground for ~20 s (the monitor's ground rule). Observed in the
+// host's trace (lab 20261105-015350 long_creature): the guest's avatar comes back where the host's save had the
+// host's (the partner's puppet appears 0.2 m from the host's creature, d=0), and the host's standing creature is
+// then 0.7 m to the side at the same distance from the planet's centre (agl -0.69 on a slope) until it walks.
+// The game separates two overlapping creatures sideways and does not put a standing one back onto its terrain
+// (it does once the creature walks). With creature.own_ground the own creature that stands (under 0.3 m/s), is
+// alive and has been more than kOwnUnder under this game's terrain (GetHeightAt, the terrain only) for
+// kOwnUnderFor s is placed onto it (game::place: no teleport mark). `coop.fix creature.own_ground off`: 0.7.7.
+static bool g_own_ground_fix = true;
+COOP_FIX("creature.own_ground", "BUG-0592", g_own_ground_fix, "creature: your own creature is never left standing in the ground (after a partner joins or comes back at your spot)");
+constexpr float kOwnUnder = 0.25f;     // m under GetHeightAt
+constexpr double kOwnUnderFor = 0.5;   // s
+static double g_own_under_since = -1;
+uint32_t g_own_grounded = 0;           // tests (coop.status): times the own creature was put onto its ground
+
+void own_ground_tick(double now)
+{
+    void* av = game::in_creature_stage() ? game::avatar() : nullptr;
+    if (!av || game::is_dead(av)) {
+        g_own_under_since = -1;
+        return;
+    }
+    const net::Vec3 p = game::position(av);
+    const float r = std::sqrt(p.x * p.x + p.y * p.y + p.z * p.z), g = r > 1.f ? game::ground_radius(p) : 0.f;
+    const bool under = g > 0 && r - g < -kOwnUnder && r - g > -drive::kOutMax && drive::speed(game::velocity(av)) < 0.3f;
+    if (!under) {
+        g_own_under_since = -1;
+        return;
+    }
+    if (g_own_under_since < 0)
+        g_own_under_since = now;
+    if (now - g_own_under_since < kOwnUnderFor)
+        return;
+    float nearest = 1e9f;
+    for (void* q : game::puppets())
+        if (q != av && game::creature_listed(q))
+            nearest = std::min(nearest, net::dist(game::position(q), p));
+    static uint32_t said = 0;
+    if (said++ < 5 && g_host_for_modes)
+        g_host_for_modes->log(g_mod_for_modes, SK_INFO,
+                              "creature: the own creature stood %.2f m under this game's ground for %.1f s (grounded byte %d, "
+                              "nearest puppet %.1f m)%s", g - r, now - g_own_under_since, (int)game::grounded(av), nearest,
+                              g_own_ground_fix ? ": put onto it (creature.own_ground)" : "");
+    g_own_under_since = -1;
+    if (!g_own_ground_fix)
+        return;
+    const float k = g / r;
+    game::place(av, {p.x * k, p.y * k, p.z * k}, game::orientation(av));
+    g_own_grounded++;
+}
+
 static float creature_tag(void* p) { return game::bounding_radius(p) * 1.3f + 0.3f; }
 
 // adventure identity: cScenarioMode (*ptr) -> mpData (+0x74) -> mpResource (+0x10) -> resource key (+8)

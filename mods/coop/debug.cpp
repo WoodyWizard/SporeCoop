@@ -177,6 +177,16 @@ int c_abilities(void*, int argc, const char* const* argv, SkOut* out)
         SAY("at ground %.2f\n", g);
         return 0;
     }
+    if (argc > 4 && !strcmp(argv[1], "put")) { // tests (BUG-0592): to x y z as given, no grounding [1: SetPosition]
+        net::Vec3 p{(float)atof(argv[2]), (float)atof(argv[3]), (float)atof(argv[4])};
+        if (argc > 5 && atoi(argv[5]) == 1)
+            game::set_position(av, p); // (the game puts a standing creature moved so back onto its ground)
+        else
+            game::teleport(av, p, game::orientation(av));
+        p = game::position(av);
+        SAY("at (%.2f %.2f %.2f)\n", p.x, p.y, p.z);
+        return 0;
+    }
     if (argc > 1 && !strcmp(argv[1], "halt")) { // tests (BUG-0408): it stops at once (a stop without slowing down)
         game::stop(av);
         game::teleport(av, game::position(av), game::orientation(av));
@@ -605,7 +615,7 @@ void coop_register_debug_commands2(const SkHost* host, SkMod* self)
                       c_load, nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.ground", "coop.ground <x> <y> <z> - terrain radius under a point (tests, BUG-0329)", c_ground,
                       nullptr, SK_CMD_MAIN_THREAD);
-    host->command_add(self, "coop.abilities", "coop.abilities [play <i> | lift <m> | halt | goto <x> <y> <z> | ground <x> <y> <z>] - the own avatar's abilities (tests, BUG-0366)", c_abilities,
+    host->command_add(self, "coop.abilities", "coop.abilities [play <i> | lift <m> | halt | put <x> <y> <z> | goto <x> <y> <z> | ground <x> <y> <z>] - the own avatar's abilities (tests, BUG-0366)", c_abilities,
                       nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.pauses", "coop.pauses - the game's pause reasons counted now (tests, BUG-0313)", c_pauses,
                       nullptr, SK_CMD_MAIN_THREAD);

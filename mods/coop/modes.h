@@ -78,6 +78,8 @@ extern bool cell_at_fix;           // coop.pool fix cellat 0: the old bound (slo
 bool cell_is_puppet(void* cell);  // a remote player's cell
 // BUG-0271 (core.stale_local): no cell is read from a pool block the game already freed
 extern bool stale_fix;
+void own_ground_tick(double now); // BUG-0592 (creature.own_ground): once per frame, before the drives
+extern uint32_t g_own_grounded;       // BUG-0592: times the own creature was put onto its ground
 extern uint32_t g_puppets_gone_alive; // BUG-0507: Creature puppets found freed by the game (creature.puppet_alive)
 bool cell_usable(void* cell);     // the local cell or a puppet, still live in a mapped pool
 // our frame scope (on_frame, on_overlay): no game code runs inside, so the pool check is cached

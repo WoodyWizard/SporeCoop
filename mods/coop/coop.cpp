@@ -3013,6 +3013,7 @@ void on_frame(void*, int, void*)
         avatar_change_check();
     monitor_frame_start(now); // the puppets as drawn, before any driving (docs/06-testing.md#testing-monitor)
     npc::monitor_tick(now);   // the proxies as drawn
+    modes::own_ground_tick(now); // BUG-0592: the own creature not left in the ground
     // BUG-0231: the world a joining guest hears in WELCOME (before the host's first state); the
     // values of the last frame, as every message of this update sees them. Not switched: 0.7.3.0
     // guests never read it
