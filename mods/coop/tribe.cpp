@@ -1981,7 +1981,7 @@ static void bonus_food(int n)
         return;
     thiscall<void>(a_AddFood, pt, n);
     if (a_FoodFx)
-        thiscall<void>(a_FoodFx, pt, (float)n);
+        game::tribe_food_visuals(pt, (float)n); // BUG-0585: not without the tribe's food mat
 }
 
 // heal tick 0xDB9B20 (cdecl: arg1 healer, *arg6 patient): a full heal of a partner's member
@@ -2886,6 +2886,26 @@ std::string debug(const std::vector<std::string>& a)
         char b[96];
         snprintf(b, sizeof b, "ring=%d drawn=%u order=%p", (int)ring_shown(c), g_rings_drawn, g_ring.target);
         return c ? std::string(b) : std::string("no such member");
+    }
+    if (!a.empty() && a[0] == "advance") {
+        // tests (BUG-0576): the goal bar full (cPlayer +0x10F0 = +0x10F4), then the message 0x5CC2589 the stage's
+        // listener 0xCD81F0 takes after a goal: with the bar full it shows the HUD's advance button (window 0x6454B47);
+        // the test clicks it as a player (TRG2CVG_PreEditor, then the City Hall editor, docs/re/tribe.md#tribe-civ-transition)
+        uintptr_t nmg = H->sym("Simulator::cGameNounManager::Get"), get = H->sym("App::IMessageManager::Get");
+        void* nm = nmg ? skg::cdecl_call<void*>(nmg) : nullptr;
+        void* p = nm && skg::readable((uint8_t*)nm + 0x74, 4) ? F<void*>(nm, 0x74) : nullptr;
+        void* mm = get ? skg::cdecl_call<void*>(get) : nullptr;
+        if (game::mode_id() != modes::kTribe || !p || !skg::readable((uint8_t*)p + 0x10F0, 8) || !mm)
+            return "not possible here";
+        float& done = *(float*)((uint8_t*)p + 0x10F0);
+        float need = F<float>(p, 0x10F4);
+        if (need < 1)
+            need = 1, *(float*)((uint8_t*)p + 0x10F4) = need;
+        done = need;
+        skg::vcall<void>(mm, 0x18 / 4, 0x5CC2589u, (void*)nullptr, (void*)nullptr, 0); // MessagePost
+        char b[96];
+        snprintf(b, sizeof b, "goal %.0f / %.0f, goal message posted", done, need);
+        return b;
     }
     if (a.size() >= 2 && a[0] == "drop_chief") { // drop_chief <owner>: the chief leaves the tribe at once
         // (RemoveMember(c, destroy) as guest_state does for a mirror the host no longer sends):

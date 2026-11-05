@@ -1503,6 +1503,38 @@ bool submit_now(void* req)
 bool g_editor_cine_fix = true;
 COOP_FIX("core.editor_cinematic", "BUG-0404", g_editor_cine_fix, "core: a vote's editor waits at the busy gate (cinematic, input lock, pause)");
 constexpr double kEditorCineWait = 60.0;
+
+// BUG-0576: the game opens some editors from a paused game: at the end of Tribe the stage's listener 0xCD1D60 takes
+// the end of TRG2CVG_PreEditor (and of TRG2CVG_ShowCityHall), pauses the game time (reason 0x4BF38A6), raises the
+// input lock (cGameInputManager +0x110) and submits the City Hall editor 99E92F05; cGameModeManager's 0xB1DF60
+// submits a request under the same pause and resumes after Submit. The pause and the lock are the request's own:
+// the game lifts them in the editor. The busy gate held such a request until they ended, so the host's Tribe -> Civ
+// change stood on a black screen for 60 s (input lock) or 300 s (pause only). On: the pause and the input lock the
+// game had when it submitted the request do not hold it (the pause only while the game's editor pause reason
+// 0x4BF38A6 is counted); a cinematic and any later pause or lock still do. Off: they held it (0.7.6).
+bool g_editor_own_pause_fix = true;
+COOP_FIX("core.editor_own_pause", "BUG-0576", g_editor_own_pause_fix,
+         "core: a vote's editor the game requested from a paused game (end of Tribe) does not wait for that pause");
+constexpr uint32_t kEditorPauseReason = 0x4BF38A6u;
+unsigned g_req_own_busy = 0;     // busy::kPaused / kInputLock the game had when it submitted the held request
+unsigned g_submits_own_pause;    // tests: held editor requests that went on under the game's own pause
+bool g_own_told = false;         // the held request's own pause was logged
+int editor_pause_count()
+{
+    uintptr_t get = H->sym("Simulator::cGameTimeManager::Get"), cnt = H->sym("Simulator::cGameTimeManager::GetPauseCount");
+    void* tm = get ? skg::cdecl_call<void*>(get) : nullptr;
+    return tm && cnt ? skg::thiscall<int>(cnt, tm, kEditorPauseReason) : -1;
+}
+// the busy bits that are the held request's own (masked out at the gate)
+unsigned req_own_bits()
+{
+    if (!g_editor_own_pause_fix)
+        return 0;
+    unsigned own = g_req_own_busy & busy::kInputLock;
+    if ((g_req_own_busy & busy::kPaused) && editor_pause_count() != 0) // -1: no symbol, trust the snapshot
+        own |= busy::kPaused;
+    return own;
+}
 double g_editor_left_at = -100;  // the game came back from an editor into a stage
 busy::Wait g_submit_wait;        // the held request's wait at the busy gate
 bool g_submit_busy_told = false; // the held request's wait was logged
@@ -1519,6 +1551,7 @@ void hold_submit(void* req)
     g_submit_held_at = H->time_seconds();
     g_submit_wait = {};
     g_submit_busy_told = false;
+    g_own_told = false;
     if (share_save_due()) {
         g_submits_held++;
         LOG("the editor waits until the world save is written");
@@ -1536,7 +1569,15 @@ void submit_tick(double now)
         return;
     bool end_cine = false;
     if (g_editor_cine_fix && stage_mode(game::mode_id())) { // BUG-0404: the busy gate
-        unsigned b = game_busy() & busy::kEditorGate;
+        unsigned all = game_busy() & busy::kEditorGate;
+        unsigned b = all & ~req_own_bits();
+        if (b != all && !g_own_told) {
+            g_own_told = true;
+            {
+                LOG("the editor does not wait for the game's own %s (it requested the editor from it, BUG-0576; editor "
+                    "pause count %d)", busy::names(all & ~b).c_str(), editor_pause_count());
+            }
+        }
         bool expired = false;
         bool settling = now - g_editor_left_at < 3.0; // (the evolution's cinematic is about to start)
         bool was = g_submit_busy_told;
@@ -1555,6 +1596,8 @@ void submit_tick(double now)
         g_submit_busy_told = false;
     }
     void* req = g_submit_later;
+    if (g_editor_cine_fix && req_own_bits() & (game_busy() & busy::kEditorGate))
+        g_submits_own_pause++;
     g_submit_later = nullptr;
     g_submit_wait = {};
     g_submit_busy_told = false;
@@ -1678,6 +1721,8 @@ bool SK_CDECL h_Submit(void* req)
         g_submits_repeated++;
         return false;
     }
+    if (!g_vote_bypass && req) // BUG-0576: what the game itself had paused or locked when it asked for the editor
+        g_req_own_busy = game_busy() & (busy::kPaused | busy::kInputLock);
     if (req && mode == modes::kCell && g_sess.connected())
         cellsync::dna_note(g_vote_bypass ? "at the editor request (after the vote)" : "at the editor request");
     if (!g_vote_bypass && req && stage_mode(mode) && g_sess.connected() && g_sess.players().size() > 1) {
@@ -5948,12 +5993,14 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                        SAY("vote %s: %s (%d s)\nown editor %d, part list waived %u, editor held for a save %u, "
                            "quit held for a save %u, repeated requests dropped %u, own editor due %d (waited %u frames)\n"
                            "actions run %u, votes dropped %u\neditor held for a cinematic %u, cinematics ended %u, "
-                           "editor held now %d, actions waited %u, action due %d",
+                           "editor held now %d, actions waited %u, action due %d\n"
+                           "editor under the game's own pause %u (own busy %s, editor pause count %d)",
                            g_vote.active ? "active" : "none", g_vote.text.c_str(), g_vote.left, (int)g_own_editor,
                            g_part_list_waivers, g_submits_held, g_quits_delayed, g_submits_repeated,
                            g_own_editor_due ? 1 : 0, g_own_editor_waits, g_vote_actions_run, g_votes_dropped,
                            g_submits_after_cine, g_submit_cines_ended, g_submit_later ? 1 : 0, g_vote_actions_waited,
-                           g_vote_action_due ? 1 : 0);
+                           g_vote_action_due ? 1 : 0, g_submits_own_pause, busy::names(g_req_own_busy).c_str(),
+                           editor_pause_count());
                        return 0;
                    },
                    // outside the frame: `editor` submits an editor request, which the game does

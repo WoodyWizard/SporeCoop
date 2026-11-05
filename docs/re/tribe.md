@@ -1554,3 +1554,69 @@ What `coop.wstate` (mods/coop/wstate.cpp, docs/06-testing.md#testing-detector-st
 * ✔ The pause bit (cGameTimeManager +0x48 = 3, held with mem.write) does not stop the forming (`tribes 2 -> 3`).
 * ✔ With tribe.guest_tribes on, a guest's controller never reaches the bake request (the hook blocks the call), so the
   first call with the fix off may only start the bake (BUG-0587).
+
+## The end of Tribe: from the goal bar to the Civ stage (2026-11-04, fix/w43-transitions)
+<a id="tribe-civ-transition"></a>
+
+BUG-0576, BUG-0585. GOG 2024, Ghidra (tools/ghidra/q.sh) and lab runs on lane 4 (tribe fixture, coop_tribe_civ.py).
+
+* ✔ The goal bar full (cPlayer +0x10F0 >= +0x10F4) shows the HUD's **advance button** (window id 0x6454B47) in place of
+  the History button (0x44827B8): 0xCC8C20 thiscall(display strategy, bool full) toggles the three windows (0x6454B47,
+  0x652A628 shown, 0x44827B8 hidden). Called at the stage's entry (0xCD78F0) and by the stage's message listener
+  0xCD81F0 on message **0x5CC2589** (sent after a goal; with the bar full it also posts hint 0x566CDF0 and, with
+  tutorials on, pauses with reason 0x4BF38A7). `coop.tribe advance` (tests) fills the bar and posts 0x5CC2589: the
+  button appears within 3 s (lab, lane 4).
+* ✔ The button's click is handled by the stage's window proc 0xCDBEA0 (vtable 0x14775C0 +0x10, control id
+  0x6454B47): achievements, the stage card (History screen with the consequence trait; its check at (1415, 1055)),
+  then `PlayCinematic("TRG2CVG_PreEditor")` (id 11E9E5AF; its caption "Your tribe now dominates this continent ..."
+  waits for the check (1410, 1048) with the game paused).
+* ✔ **The game opens the City Hall editor from a paused game**: the listener 0xCD1D60 takes the cinematic's end
+  (message 0x44F1189 with the cinematic's id), `cGameTimeManager::Pause(0x4BF38A6)`, cGameInputManager +0x110 += 1
+  (the input lock), cTribeUI +0x28 = 1, a new EditorRequest (0x9C bytes) with editor **0x99E92F05** (the building
+  editor, City Hall), +0x90 = 0x116DD1B, flags +0x34..+0x3D, +0x64 = 1, then `Editors::EditorRequest::Submit`.
+  After the City Hall (back in Tribe) TRG2CVG_ShowCityHall (id 10792A72) plays, its caption waits, and its end
+  submits the same way the **vehicle editor F670AA43** (or 9AD7D4AA / 7CB21BAD by cPlayer +0x1104: the consequence
+  archetype), +0x29 = 1. After the vehicle editor the game goes to Civ (0x1654C04) by itself.
+* ✔ `cGameModeManager::SubmitEditorRequest` 0xB1DE20 (thiscall(mgr, req) ret 4) keeps the request at +0x2C; when
+  the mode object +0x30 vt+8(0x4CF52822) says so it pauses with the same reason 0x4BF38A6, listens for 0x462C656
+  and its handler 0xB1DF60 submits the request and only then resumes 0x4BF38A6. The pause reason 0x4BF38A6 is "an
+  editor is coming": the editor (and the stage after it) lifts it.
+* ✔ The editors save only with **at least 3 parts** ("You need at least 3 parts to Save") and a name ("You must give
+  your creation a name before you can save"; the name panel's dice at (614, 826)); done at (1416, 1058). The building
+  editor's palette first row (88 / 220 / 350, 130), the plot around (900, 850); the vehicle editor the same.
+* ✔ **BUG-0576** (observed, lab 20261104-2213xx on 0.7.6 code): the vote's busy gate (BUG-0404, busy::kEditorGate)
+  held the held request while the game time stood or the input lock was up: both were the game's own for this
+  editor, so the editor opened only when the gate's limit ran out: 60 s with the input lock, 300 s with the pause
+  only (the players' log: `busy=paused` for 50 s, then they gave up on a black screen). Fix `core.editor_own_pause`:
+  the busy bits the game had when it submitted the request (kPaused while `GetPauseCount(0x4BF38A6)` > 0,
+  kInputLock) are not waited for; a cinematic or a later pause still are.
+* ✔ **BUG-0585** (observed, lab, twice): after the City Hall editor the player tribe's food mat pointer +0x260 is 0.
+  `Simulator::cTribe::UpdateFoodVisuals` 0xC94CE0 (thiscall(tribe, float change) ret 4) reads `[+0x260]+0x34` and
+  calls its vt+0x2C without a check: a guest's food change relayed to the host then (shared.cpp `s_food`) faulted
+  at UpdateFoodVisuals+0x28 (data 0x34) inside the message pump and the host's game froze in the vehicle editor
+  (the log line "shared food ... from player 1" comes after the call, so it never printed). Alone the change to Civ
+  ran without a fault (lab, guest left). Fix `tribe.food_fx_mat` (game::tribe_food_visuals): no visual without the
+  food mat; the food itself still changes.
+* ~ (BUG-0588) Seen in the same runs, not analysed: at the vote for the vehicle editor the host logs "evolved in place: Bob keeps
+  its world (host species 00000000 -> 00000000 ...)" (the Creature evolve-in-place path runs for a Tribe editor; no
+  harm seen), and a sync-check MISMATCH right after the City Hall: the host's own NPCs read at (0, 0, 0) for 2 checks.
+
+## The game's pause reasons (2026-11-04, fix/w43-transitions)
+<a id="tribe-game-time-pauses"></a>
+
+* ✔ `cGameTimeManager` (0xB3D480 Get): +0x48 flags (bit 0 = paused), +0x4C a map reason -> index (EASTL rbtree,
+  anchor +0x50; node: right +0, left +4, parent +8, key +0x10, index +0x14), +0x68 an array of 8-byte rows whose
+  first int is the count. Pause 0xB32330 / Resume 0xB32360 (thiscall(tm, reason) ret 4) add / remove one;
+  `GetPauseCount` 0xB321E0 (thiscall(tm, reason) ret 4) reads one. `coop.pauses` lists every reason counted now
+  (runtime, lane 4/5: the stage card 0x4BF38A4, a stage entry / hints 0x4BF38A7, the editor 0x4BF38A6).
+* ✔ Reasons seen: **0x4BF38A6** an editor is coming (above); **0x4BF38A7** a UI modal / tutorial hint / the stage
+  entry (90 call sites); **0x4BF38A4** the stage card (History screen) of the end of Tribe.
+* ✔ **BUG-0313** (observed, lane 5, GOG 2024, 2 runs): a guest's game after its world load in Tribe stands on a
+  black screen with the single pause reason **0x4BF38A7** for 7.6 / 8.7 s, the host none. It is the Tribe stage's
+  own entry: the mode-change handler 0xCDEE00 (vtable 0x1477578) pauses 0x4BF38A7 on entering Tribe and the entry
+  state machine 0xCDE7E0 (cTribeGame +0x22C: 2 planet / flora, 3 0xCD78F0 stage UI, 4 planet model ready, 5 the
+  simulator, 6 the renderer's layer 0x16 off until `IBakeManager` has nothing queued (vt+0x28 < 1) and the model
+  world nothing pending (vt+0x10 < 1), 7 Resume(0x4BF38A7)) resumes only when every creature model is baked. A
+  guest that just received the host's world bakes the host's creations then (the host's own game had them baked).
+  Inferred: GOG 2024 bakes slower on the lanes than GOG 2016 (the 2016 guest was running when start() returned).
+  Not a mod bug: the guest's mirrors are kept on the ground meanwhile by `tribe.mirror_ground` (BUG-0444).

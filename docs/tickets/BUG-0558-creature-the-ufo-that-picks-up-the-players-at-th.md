@@ -13,7 +13,7 @@ branch:
 commits:
 tests:
 signature:
-docs:
+docs: docs/re/creature.md#creature-ufo-puppet, docs/known-issues.md#issue-ufo-puppet
 related: BUG-0486
 ---
 
@@ -30,8 +30,16 @@ Logs: the reports' sporekit.log of both players (host 17:26-20:15, guest 17:27-1
   the host's UFO to the guest (drama.cpp only blocks; no message). The host's UFO tries to take the guest's puppet
   in the host's game; the guest's game has no ship. (Not the end of Creature: the drama UFO abduction mid-stage.)
 
+* Observed (Ghidra, GOG 2024, fix/w43-transitions): the event's start 0xD4F8A0 spawns the ship over the own avatar
+  and posts BT stimulus 2 (`SporeCoop::BT_PostStimulus`); the ship takes a creature with the abduct tool
+  (cAbductToolStrategy, hit 0x10323E0: animations 0x3CC7EAB / 0x3CC7EB4 and a cAbductionBeamLocomotion).
+* Inferred: the guest's puppet is a creature next to the host's avatar in the host's game, so the host's ship takes
+  it; the mod places the puppet at the guest's position every frame, so the beam never lifts it ("trying but
+  cannot"); the guest's game has no ship (its own visit is refused by creature.guest_events, the host's not sent).
+
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+Not done in T1 (0.7.7): the ship's target pick is not found; see docs/re/creature.md#creature-ufo-puppet for the two
+ways (keep puppets out of the host ship's pick, or relay the visit and play a partner's abduction on its own avatar).
 
 ## Verification
 Not reproduced in the lab. Package T1 (plan table); the mechanism is a host event the guest lacks (W1/W2 style relay).
@@ -39,3 +47,4 @@ Not reproduced in the lab. Package T1 (plan table); the mechanism is a host even
 ## History
 - 2026-11-04: opened.
 - 2026-11-04 (fix/w43-replay, step 0 of 0.7.7): replayed on 0.7.6 code; still open (T1), root cause observed in logs and code.
+- 2026-11-04 (fix/w43-transitions, T1): the ship's start and beam found (docs), not fixed; known issue.

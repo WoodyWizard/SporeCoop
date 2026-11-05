@@ -32,6 +32,10 @@
 - Tribe: a guest sees an enemy village's hut lose health when the host's tribe attacks it, and a hut or tool damaged
   in the guest's old world is mended to the host's (BUG-0566, BUG-0567).
 - Tribe: the co-op epic creature is never one of the players' own creatures from the Creature stage (BUG-0563).
+- Tribe -> Civilization: after the evolution vote at the end of Tribe the host's City Hall editor (and then the
+  vehicle editor) opens at once instead of after a minute or more on a black screen (BUG-0576).
+- Tribe -> Civilization: the host's game no longer freezes in the vehicle editor when a guest's tribe gathers or
+  eats food meanwhile (BUG-0585).
 
 ## [0.7.6] - 2026-11-04
 

@@ -878,6 +878,31 @@ bool stop_world_effect(void* effect)
 // 0xA71300 writes the effect into *out and calls its AddRef, vtable slot 0x0 at 0x923720; the
 // game lets go of such a pointer with the Release slot 0x4 at 0xA81CE0, e.g. the pool map erase
 // 0xD2C9F0). Without this the relay keeps every received world effect alive for the session.
+// BUG-0585: Simulator::cTribe::UpdateFoodVisuals (0xC94CE0, thiscall(tribe, float change) ret 4) reads the tribe's
+// food mat at +0x260 and calls [+0x260]+0x34 vt+0x2C (its position) without a null check. After the City Hall editor
+// at the end of Tribe the player tribe has no food mat any more (+0x260 = 0) while the stage still runs for the
+// vehicle editor's vote and captions; a guest's food change relayed then (shared.cpp) faulted the host's game at
+// UpdateFoodVisuals+0x28 (data 0x34) inside the message pump and froze it. On: no visual without the food mat (the
+// food itself is changed). `coop.fix tribe.food_fx_mat off`: called anyway (0.7.6).
+static bool g_food_fx_fix = true;
+COOP_FIX("tribe.food_fx_mat", "BUG-0585", g_food_fx_fix,
+         "tribe: no +N/-N food visual on a tribe without its food mat (the end of Tribe: the City Hall stands)");
+unsigned g_food_fx_skipped; // tests
+bool tribe_food_visuals(void* tribe, float change)
+{
+    uintptr_t f = H->sym("Simulator::cTribe::UpdateFoodVisuals");
+    if (!f || !tribe || !skg::readable((uint8_t*)tribe + 0x260, 4))
+        return false;
+    uint8_t* mat = *(uint8_t**)((uint8_t*)tribe + 0x260);
+    if (g_food_fx_fix && (!mat || !skg::readable(mat + 0x34, 4) || !skg::readable(*(void**)(mat + 0x34), 0x30))) {
+        if (g_food_fx_skipped++ < 3)
+            H->log(M, SK_INFO, "tribe: no food visual: the tribe has no food mat (the City Hall stands, BUG-0585)");
+        return false;
+    }
+    skg::thiscall<void>(f, tribe, change);
+    return true;
+}
+
 bool release_world_effect(void* effect)
 {
     if (!effect_callable(effect))

@@ -187,6 +187,9 @@ bool effect_active(void* effect);
 bool stop_world_effect(void* effect);
 // drop the reference the relay holds on a created world effect (IVisualEffect vt 0x4, Release)
 bool release_world_effect(void* effect);
+// the tribe's "+N / -N food" over its food mat (Simulator::cTribe::UpdateFoodVisuals); false when the game would
+// fault: the tribe's food mat (+0x260) is gone once the City Hall stands at the end of Tribe (BUG-0585)
+bool tribe_food_visuals(void* tribe, float change);
 
 // ---- creature registry: every cCreatureAnimal that ran Update since the last call ----
 const std::vector<void*>& creatures_updated();   // swap per frame (call once per frame)

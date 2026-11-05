@@ -4316,3 +4316,22 @@ wrong and the run where the new one is right; no threshold was loosened.
 * Pitfall: at 4 fps the off rule alone (3 m for 2 s) passed the twin run (1.5 s at most): the placed-position check
   is what catches the fall-behind; look at the FAIL run's rows, not only its verdict.
 
+
+## The live Tribe -> Civ change and pause reasons (2026-11-04, fix/w43-transitions)
+<a id="testing-tribe-civ"></a>
+
+* `tribe_civ` (coop_tribe_civ.py, tribe fixture, ~3.5 min): the first lab test of the live Tribe -> Civ change (the
+  campaign jumps to the civ_npc fixture instead). `coop.tribe advance` fills the goal bar (cPlayer +0x10F0 = +0x10F4)
+  and posts the stage's goal message 0x5CC2589: the HUD's advance button (window 0x6454B47, `coop.ui where
+  6454B47`) appears; from there everything is the players' way: the button, the stage card's check (1415, 1055),
+  the captions' check (1410, 1048) while `busy` shows cinematic + paused, the guest's "I'm ready", the City Hall
+  and vehicle editors (3 parts dragged from the palette's first row, done, the name panel's dice (614, 826), done
+  twice). BUG-0576 (SPORE_FIX_OFF=core.editor_own_pause: the editors 60 s after the votes) and BUG-0585
+  (SPORE_FIX_OFF=tribe.food_fx_mat: the host freezes when the guest adds food in the vehicle editor).
+  Runs: FAIL 20261104-224338 / 20261104-224915, PASS 20261104-224318 / 20261104-224930.
+* A frozen game shows as a console timeout: the test prints a FAIL line and RESULT: FAIL for it.
+* `coop.pauses` lists the pause reasons the game counts now (docs/re/tribe.md#tribe-game-time-pauses): a guest that
+  just loaded a Tribe world shows `04BF38A7=1` for 7-9 s on GOG 2024 (the stage entry waiting for its bakes,
+  BUG-0313); the end-of-Tribe stage card `04BF38A4`, an editor coming `04BF38A6`.
+* A hot reload (`lab.py reload`) of a lane whose games are in a session left the host `offline` (seen once on lane 4):
+  start the games again for tests that need the session.
