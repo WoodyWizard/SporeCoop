@@ -3,6 +3,11 @@
 ## [Unreleased]
 
 ### Fixed
+- Tribe: the host's game no longer faults every frame when the animals of a creature attack go for a village that
+  was founded during play (BUG-0582).
+- Tribe: the other villages have the same food in the guest's game as in the host's (BUG-0580).
+- Tribe: a guest's game no longer faults every frame when its tribe's leader would take a weapon or instrument a
+  member took in the host's game (BUG-0583).
 - Creature: an animal's charge now stuns the guest's creature as it stuns the host's (the stars, the stagger), and the
   guest's charge stuns the host's animals too (BUG-0554).
 - Creature: animals can no longer bite or charge a guest's creature while it is in the air (BUG-0555).

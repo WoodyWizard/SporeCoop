@@ -1,19 +1,19 @@
 ---
 id: BUG-0580
 title: Tribe: the NPC tribes' food differs between the host and the guest (detector Tribe:state:tribe_food)
-status: open
+status: fixed
 kind: desync
 stage: Tribe
 reported: 2026-11-04
 source: detector D0 (lab 20261104-203017)
 role: guest
 versions: 0.7.6
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w43-crashes
+commits: 97006ffa
+tests: tribe_npc_food (coop_wsync_tribe.py food)
 signature:
-docs:
+docs: docs/sync-architecture-plan.md#sync-wsync
 related: BUG-0572, BUG-0483, BUG-0421
 ---
 
@@ -28,14 +28,20 @@ Reproduce: `SPORE_DETECTOR=20 tools/lab.py run play_tribe --lane N`, then `tools
 (food not shared / applied) for the NPC tribes; what a player sees of it (raids, gifts, the NPC tribe's growth) is not known.
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+* Observed (lab 20261105-000612, fix off): the host's AddFood of +37 and -20 on an NPC village (107, then 87 food)
+  left the guest's copy at 80 (its own count from the save and its own gathering); nothing in the mod sent an NPC
+  tribe's food (only the player tribe's, res.*).
+* Inferred: a guest's NPC villages are mirrors of the host's members, so its own game's gathering and spending for
+  them never matches the host's.
 
 ## Fix
 <!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+Lab: tribe_npc_food FAIL with `SPORE_FIX_OFF=wsync.tribe_food` out/lab/20261105-000612 (the guest stayed at 80
+while the host had 107, then 87), PASS out/lab/20261105-000745 (107 / 107 and 87 / 87 within 10 s, the same 10 s
+later).
 
 ## History
 - 2026-11-04: opened.
+- 2026-11-05: fixed by the W1 row tribe_food (fix/w43-crashes).

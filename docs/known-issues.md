@@ -1908,7 +1908,7 @@ Player reports 2026-11-04 (0.7.5, Discord bug-reports; not analysed yet):
 - BUG-0577: After a rejoin the game shows the Cell and Creature stages as not done yet (stage progress lost)
 - BUG-0578: Crash at Graphics::cModelWorld::FinishBackgroundLoad+0x2735 on 0.7.3.6 (3010a413, mode none)
 - BUG-0579: Tribe: day and night differ: the guest's world is at night while the host's is in daylight
-- BUG-0582: Tribe: the host's game faults at 0xD72745 every frame during its own creature attack event (lab, ~1 run in 3 of tribe_bounce_world; its game-over caption may not come then)
-- BUG-0583: Tribe: a guest faulted in a citizen's Update (GetAbilityIndexByType) after leaving and joining again (lab, once in realign_tribe_rejoin)
-- BUG-0580: Tribe: the NPC tribes' food differs between the host and the guest (detector `Tribe:state:tribe_food`; `SPORE_DETECTOR=20 tools/lab.py run play_tribe`)
-- BUG-0584: Creature: a caught fault on the host, a call through null from 0xB097C4 (once in a 44 min `long_creature`, lab 20261104-214938)
+- BUG-0582: Tribe: the host's game faults at 0xD72745 every frame during its own creature attack event (lab, ~1 run in 3 of tribe_bounce_world; its game-over caption may not come then) (fixed on fix/w43-crashes, unreleased: tribe.attack_spot)
+- BUG-0583: Tribe: a guest faulted in a citizen's Update (GetAbilityIndexByType) after leaving and joining again (lab, once in realign_tribe_rejoin) (guard on fix/w43-crashes, unreleased: tribe.leader_tool; not reproduced)
+- BUG-0580: Tribe: the NPC tribes' food differs between the host and the guest (detector `Tribe:state:tribe_food`; `SPORE_DETECTOR=20 tools/lab.py run play_tribe`) (fixed on fix/w43-crashes, unreleased: wsync.tribe_food)
+- BUG-0584: Creature: a caught fault on the host, a call through null from 0xB097C4 (once in a 44 min `long_creature`, lab 20261104-214938; analysed, not reproduced: docs/re/creature.md#creature-fruit-pool)

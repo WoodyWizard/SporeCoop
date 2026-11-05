@@ -1,7 +1,7 @@
 ---
 id: BUG-0581
 title: Creature: a held evolution editor request may lose its DNA budget message like the Cell one (BUG-0560)
-status: open
+status: not-reproduced
 kind: bug
 stage: Creature
 reported: 2026-11-04
@@ -9,11 +9,11 @@ source: found by W1 (fix/w43-world-state, RE of BUG-0560)
 role: host
 versions: 0.7.6
 fixed_in:
-branch:
+branch: fix/w43-crashes
 commits:
 tests:
 signature:
-docs: docs/re/cell.md#cell-editor-budget
+docs: docs/re/creations.md#creations-creature-editor-budget
 related: BUG-0560
 ---
 
@@ -31,8 +31,8 @@ waits for the evolution vote (coop.cpp h_Submit), so the game's post would reach
 <!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+no-fail-run: not a bug; the recorded held-request runs named in Root cause show the stage's budget.
 
 ## History
 - 2026-11-04: opened.
+- 2026-11-05: checked against recorded runs: the held Creature request keeps the stage's DNA (fix/w43-crashes).

@@ -1563,3 +1563,25 @@ BUG-0582. GOG 2024, Ghidra and lab lane 2 (`tools/tests/coop_tribe_attack_spot.p
   20261104-235955); without the formed tribe none in 1 run. ~ Inferred: the formed tribe's cell has no record (a
   game bug that co-op tests hit because they form tribes; the NPC controller forms them in long sessions too).
 * Fix `tribe.attack_spot` (gamefixes.cpp): with no record 0xD72720 answers "no free spot" (out = -1, false).
+## A tribe leader's abilities and a tool (2026-11-05, fix/w43-crashes)
+<a id="tribe-leader-tool"></a>
+
+BUG-0583. GOG 2024, Ghidra and the lab's fault record.
+
+* ✔ (Ghidra) A citizen's abilities: count vt 0xB0 = `SporeCoop::Citizen_AbilityCount` 0xC24DB0: its species' (+0xB20
+  profile, vector +0x6D4 / +0x6D8) + 2 for a tool (+0x102C) of type 1..6, 1 for 9 or 0xB, + 6 when it leads its
+  tribe (`SporeCoop::Citizen_IsLeader` 0xC23430: owner +0x1010 city, else +0x1014 tribe, owner +0x11C == it). The
+  getter vt 0xB4 = 0xC24E40 serves n (the species' count) entries, then index n = GetTribeToolData(tool) +0x24, then
+  for a leader n+1..n+6 the table 0x169DE30 +0x1C.., for others n+1 = the table's +0x34..+0x48 by tool 1..6; null
+  past that. **A leader with a tool of type 1..6 counts n + 8 and the getter serves n + 7**: the last is null and
+  `GetAbilityIndexByType` 0xC0C1E0 (from every citizen's Update through 0xC1CF30 when +0xB54 is set) reads null + 8.
+* ✔ (lab 20261104-212803, fix/w43-realign) the guest's fault: EBX = 21 (count), ESI = 20 (the last index), EAX = 0,
+  **ECX = 1**: 0xC23430 returns with ECX = its result, only the leader branch keeps it (the others leave 0): a leader
+  holding a tool of type 1..6.
+* The game never makes that state: `SetSpecializedTool(0)` on a leader gives 0xB (the staff) and the leader takes
+  no rack's tool. The mirrors' tool field (tribe.tool_hold, BUG-0514) copies the host's member's tool to the guest's
+  mirror, which can be its own tribe's leader there (? how the leaders came to differ after the rejoin: not seen
+  again; in 3 lab runs the guest's leaders were a subset of the host's, lab 20261105-002001, -002140, -002402).
+* Fix `tribe.leader_tool` (tribe.cpp apply_held_tool): no tool of type 1..6 on this game's leader.
+* ✔ (lab 20261105-002402, fix off) a leader mirror set to 1 by the field's apply did not fault before the host's next
+  field gave it 11 again (seconds): the state must last for the fault (+0xB54 updates).
