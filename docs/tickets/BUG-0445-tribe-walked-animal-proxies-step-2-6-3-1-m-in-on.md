@@ -44,3 +44,4 @@ or bunched state of the host (the test also counts "windows left out because the
 
 ## History
 - 2026-11-01: opened (fix/w35-monitor-gates, seen in its regression runs).
+- 2026-11-05 (fix/w44-height): not a height problem (steps along the path); not looked at.

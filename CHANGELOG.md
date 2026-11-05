@@ -18,6 +18,11 @@
 - Creature / Tribe: the game no longer crashes when a fruit falls from a plant after the other player ate a fruit
   that was on the ground since the save was loaded (BUG-0584).
 
+- Creature: an animal in the air in the host's game (a flier, a jump, thrown by a hit) is in the air at the same
+  height in the guest's game too, instead of walking on the ground under it (BUG-0550).
+- Creature: your own creature no longer stays half in the ground after the other player comes back at your spot
+  (after a return from the main menu or an editor) or bumps into it on a slope (BUG-0592, BUG-0504).
+
 ## [0.7.7] - 2026-11-05
 
 ### Fixed

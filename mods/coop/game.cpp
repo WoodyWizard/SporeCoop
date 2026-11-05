@@ -1544,7 +1544,7 @@ void air_hold(void* c, bool on, const net::Vec3& pos, const net::Quat& rot, cons
                 g_air.erase(g_air.begin() + i);
             return;
         }
-    if (on && g_air.size() < 16)
+    if (on && g_air.size() < 64) // (BUG-0550: NPC proxies in the air too)
         g_air.push_back({c, field<void*>(c, 0xB54), pos, vel, rot});
 }
 
@@ -1791,6 +1791,7 @@ void puppet_register(void* c)
 
 void puppet_unregister(void* c)
 {
+    air_hold(c, false); // BUG-0550: a proxy or puppet held in the air is released with it (no hold on a freed creature)
     g_puppets.erase(std::remove(g_puppets.begin(), g_puppets.end(), c), g_puppets.end());
 }
 

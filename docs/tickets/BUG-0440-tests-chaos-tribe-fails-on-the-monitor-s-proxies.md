@@ -43,3 +43,4 @@ no-fail-run: covered by BUG-0503 (npc_walk_slow FAIL 20261104-232034 / PASS 2026
 ## History
 - 2026-11-01: opened (fix/w34-ability-pop).
 - 2026-11-04 (fix/w43-tests): the same proxies line as BUG-0503; fixed there (not marked fixed here until chaos_tribe runs clean).
+- 2026-11-05 (fix/w44-height): the update's 7.1 m was measured at the proxy's distance from the centre (monitor_tick), so it is no height difference; not changed.

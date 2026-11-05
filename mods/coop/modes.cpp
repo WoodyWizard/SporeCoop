@@ -39,7 +39,7 @@ static void* creature_local() { return game::avatar(); }
 // Off: 0.7.4 (no flag sent, the flag ignored).
 static bool g_puppet_air_fix = true;
 COOP_FIX("creature.puppet_air", "BUG-0376", g_puppet_air_fix, "creature: the partner's jumps are shown (its creature leaves the ground on this screen too)");
-constexpr float kAirOver = 0.15f; // m over GetHeightAt: a grounded creature walks 0-3 cm over it
+constexpr float kAirOver = drive::kAirOver; // m over GetHeightAt: a grounded creature walks 0-3 cm over it
 constexpr float kAirGap = 0.3f;   // m: variant 3, farther from the target in the air it is placed there
 // BUG-0532: in the middle of a fall the game put the puppet onto its terrain for 1-3 frames whenever it started
 // another animation on it (fall -> idle 02481DE5, the walk start 04866D8E; lab 20261104-042712): the puppet is held
@@ -70,8 +70,10 @@ static void creature_fill(void* av, net::PlayerState& st)
         st.flags |= net::PF_DEAD;
     if (game::sneaking(av))
         st.flags |= net::PF_SNEAKING;
-    if (own_airborne(av))
+    if (own_airborne(av)) {
         st.flags |= net::PF_JUMPING; // BUG-0376
+        st.agl = drive::over_ground(st.pos); // BUG-0425: its height over this game's terrain
+    }
     st.health = game::health(av);
     st.max_health = game::max_health(av);
     st.species = game::species_instance(av);
@@ -279,6 +281,9 @@ static void creature_drive(void* p, const net::PlayerState& s_in, drive::State& 
         // not grounded, so the game's update lets it fall instead of putting it onto its terrain
         // Not walked in the air: walked (walk_place) it was put onto its terrain in 15-20 frames of a 0.4 s fall
         // (lab, coop.track air 3 = this, 0 the walk)
+        // BUG-0425 (drive.sender_agl): at the partner's height over its terrain, over this game's terrain
+        if (drive::g_sender_agl_fix)
+            s.pos = drive::at_sender_agl(s.pos, s.agl);
         if (walk && g_puppet_air_variant == 3) {
             drive::walk_place(p, s.pos, s.rot, s.vel, ds, now);
             if (net::dist(game::position(p), s.pos) > kAirGap) // (a jump's start: the walk's catch-up is too slow)
@@ -331,6 +336,58 @@ static void creature_despawn(void* p)
     g_puppet_serials.erase(p);
     creature_hp::forget_puppet(p);
     game::destroy_creature(p);
+}
+
+// BUG-0592 / BUG-0504: right after a guest's world load (the share after its "menu" or editor return) both players'
+// own standing creatures stood 0.5-0.7 m under the ground for ~20 s (the monitor's ground rule). Observed in the
+// host's trace (lab 20261105-015350 long_creature): the guest's avatar comes back where the host's save had the
+// host's (the partner's puppet appears 0.2 m from the host's creature, d=0), and the host's standing creature is
+// then 0.7 m to the side at the same distance from the planet's centre (agl -0.69 on a slope) until it walks.
+// The game separates two overlapping creatures sideways and does not put a standing one back onto its terrain
+// (it does once the creature walks). With creature.own_ground the own creature that stands (under 0.3 m/s), is
+// alive and has been more than kOwnUnder under this game's terrain (GetHeightAt, the terrain only) for
+// kOwnUnderFor s is placed onto it (game::place: no teleport mark). `coop.fix creature.own_ground off`: 0.7.7.
+static bool g_own_ground_fix = true;
+COOP_FIX("creature.own_ground", "BUG-0592", g_own_ground_fix, "creature: your own creature is never left standing in the ground (after a partner joins or comes back at your spot)");
+constexpr float kOwnUnder = 0.25f;     // m under GetHeightAt
+constexpr double kOwnUnderFor = 0.5;   // s
+static double g_own_under_since = -1;
+uint32_t g_own_grounded = 0;           // tests (coop.status): times the own creature was put onto its ground
+
+void own_ground_tick(double now)
+{
+    void* av = game::in_creature_stage() ? game::avatar() : nullptr;
+    if (!av || game::is_dead(av)) {
+        g_own_under_since = -1;
+        return;
+    }
+    const net::Vec3 p = game::position(av);
+    const float r = std::sqrt(p.x * p.x + p.y * p.y + p.z * p.z), g = r > 1.f ? game::ground_radius(p) : 0.f;
+    const bool under = g > 0 && r - g < -kOwnUnder && r - g > -drive::kOutMax && drive::speed(game::velocity(av)) < 0.3f;
+    if (!under) {
+        g_own_under_since = -1;
+        return;
+    }
+    if (g_own_under_since < 0)
+        g_own_under_since = now;
+    if (now - g_own_under_since < kOwnUnderFor)
+        return;
+    float nearest = 1e9f;
+    for (void* q : game::puppets())
+        if (q != av && game::creature_listed(q))
+            nearest = std::min(nearest, net::dist(game::position(q), p));
+    static uint32_t said = 0;
+    if (said++ < 5 && g_host_for_modes)
+        g_host_for_modes->log(g_mod_for_modes, SK_INFO,
+                              "creature: the own creature stood %.2f m under this game's ground for %.1f s (grounded byte %d, "
+                              "nearest puppet %.1f m)%s", g - r, now - g_own_under_since, (int)game::grounded(av), nearest,
+                              g_own_ground_fix ? ": put onto it (creature.own_ground)" : "");
+    g_own_under_since = -1;
+    if (!g_own_ground_fix)
+        return;
+    const float k = g / r;
+    game::place(av, {p.x * k, p.y * k, p.z * k}, game::orientation(av));
+    g_own_grounded++;
 }
 
 static float creature_tag(void* p) { return game::bounding_radius(p) * 1.3f + 0.3f; }
@@ -408,6 +465,7 @@ static void space_fill(void* u, net::PlayerState& st)
 
 bool ufo_ident_fix = true;
 COOP_FIX("drive.nudge_dt", "BUG-0175", drive::g_nudge_dt_fix, "creature, tribe: a mirror's pull to its place is per second, not per frame (low frame rates trailed more)");
+COOP_FIX("drive.sender_agl", "BUG-0425", drive::g_sender_agl_fix, "creature, tribe: a partner or animal off the ground is drawn at its height over the sender's ground, over this game's ground");
 COOP_FIX("drive.own_height", "BUG-0329", drive::g_own_height_fix, "tribe: a member's or animal's mirror is driven at its own ground height, not the host's absolute one");
 COOP_FIX("fleet.type", "BUG-0111", ufo_ident_fix, "space: only our own puppets count as puppets, not any UfoType 6 ship (coop.fleet typefix)");
 // our puppets: the model key they got and (BUG-0218) their object serial (cGameData mID)

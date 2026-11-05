@@ -9,11 +9,11 @@ source: generalisation audits 2026-11-01 (docs/generalisation-plan.md)
 role: 
 versions: 
 fixed_in:
-branch:
-commits:
-tests:
+branch: fix/w44-height
+commits: 4b54c7a7, df579966, 9ce58786
+tests: npc_air, own_ground
 signature:
-docs:
+docs: docs/re/creature.md#creature-height-rule, docs/re/tribe.md#tribe-animal-height
 related:
 ---
 
@@ -25,14 +25,21 @@ Source: docs/generalisation-plan.md G8.
 <!-- what the player (or the test) saw, in our words; no player names, no paths from their PC -->
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+Height part (2026-11-05, fix/w44-height): see BUG-0550 (NPCs in the air drawn on the ground), BUG-0592 (own creatures
+left in the ground by a push), BUG-0402 (a terrain difference between the games, the proxy placed right).
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+Height rule (fix/w44-height): a remote body on the sender's ground goes onto this game's ground (as before: on_own_ground,
+own_height, out_of_ground); a body off the sender's ground for a reason the game knows (+0x137 = 0, off GetHeightAt)
+keeps the sender's height over the sender's terrain over this game's terrain, not grounded (drive::body_airborne,
+at_sender_agl, air_place in driver.h; switches npc.air, drive.sender_agl, the puppet's creature.puppet_air). Own
+creatures: creature.own_ground. The other parts of this umbrella (trail/stall, speed caps, cycles, NaN guards) are
+not touched.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+Height part: npc_air FAIL 20261105-112120 / PASS 20261105-112004; own_ground FAIL 20261105-113544 / PASS
+20261105-113703. The umbrella stays open (its other parts).
 
 ## History
 - 2026-11-01: opened.
+- 2026-11-05 (fix/w44-height): the height part done (BUG-0550, BUG-0592, BUG-0504); left open for the other parts.

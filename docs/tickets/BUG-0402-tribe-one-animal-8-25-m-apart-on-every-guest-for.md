@@ -14,7 +14,7 @@ commits:
 tests: campaign_tribe, play_tribe, tribe_epic (sync-check gate)
 signature:
 docs: docs/re/tribe.md#tribe-npc-apart
-related: BUG-0381, BUG-0305, BUG-0281, BUG-0361, BUG-0339, BUG-0329
+related: BUG-0329, BUG-0425
 ---
 
 ## Report
@@ -63,6 +63,13 @@ Update (fix/w33-proxy-ground, lane 7, current code with npc.walk_tribe / walk_pl
   if it comes back, compare Tribe NPCs at the guest's distance from the centre (as the monitor's proxies rule does)
   and give running ones a speed slack (BUG-0378's players).
 
+2026-11-05 (fix/w44-height), the fourth kind: observed in the host's own line of the same run, `n146 ... agl=0.00`: the
+host's NPC stood on the host's terrain; the guest's terrain at that point lies 8.39 m higher (`want_agl=-8.39`) and
+the proxy stood on the guest's ground (`agl=0.00`). That is the height rule's answer (on the sender's ground: on this
+game's ground), so the proxy was placed right; the `n apart 8.4` is the terrain difference between the two games
+(BUG-0329's kind, 8.4 m here) in a check of absolute positions (docs/re/tribe.md#tribe-animal-height). Not changed:
+the sync-check stays as strict as it is.
+
 ## Fix
 None: not reproduced on the current code (see the update above). The diagnostics stay: the `sync-check:   nNNN
 here:` lines, and `coop.npc list` lines now end with the heights over the ground (`agl=`; guest `want_agl=`), so a
@@ -81,3 +88,4 @@ Update (2026-11-05, rel/0.7.7 final check, out/lab/20261105-015350 campaign_ct):
 under the terrain (dist 522.2 from the centre, the guest's `want_agl=-8.39`), the guest's proxy stands on the
 ground (`agl=0.00`, dist 530.6). So the gap is radial: the guest grounds a proxy whose host NPC is below the
 ground (in water or sunk). Not a walking proxy trailing. Not a release blocker; left open.
+- 2026-11-05 (fix/w44-height): fourth kind analysed (a terrain difference; the proxy is where the rule puts it); left open.

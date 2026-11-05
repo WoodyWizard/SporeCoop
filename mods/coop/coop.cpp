@@ -3013,6 +3013,7 @@ void on_frame(void*, int, void*)
         avatar_change_check();
     monitor_frame_start(now); // the puppets as drawn, before any driving (docs/06-testing.md#testing-monitor)
     npc::monitor_tick(now);   // the proxies as drawn
+    modes::own_ground_tick(now); // BUG-0592: the own creature not left in the ground
     // BUG-0231: the world a joining guest hears in WELCOME (before the host's first state); the
     // values of the last frame, as every message of this update sees them. Not switched: 0.7.3.0
     // guests never read it
@@ -4448,6 +4449,10 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
     }
     if (argc > 2 && !strcmp(argv[1], "pool")) { // host (tests, BUG-0339): pool <id>
         SAY("%s", npc::debug_pool((uint16_t)atoi(argv[2])).c_str());
+        return 0;
+    }
+    if (argc > 4 && !strcmp(argv[1], "lift")) { // host (tests, BUG-0550): lift <id> <m> <s>
+        SAY("%s", npc::debug_lift((uint16_t)atoi(argv[2]), (float)atof(argv[3]), (float)atof(argv[4])).c_str());
         return 0;
     }
     if (argc > 3 && !strcmp(argv[1], "sink")) { // guest (tests, BUG-0399): sink <id> <m> [mark]

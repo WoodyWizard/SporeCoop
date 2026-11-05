@@ -49,3 +49,4 @@ no-fail-run: open
 
 ## History
 - 2026-11-01: opened.
+- 2026-11-05 (fix/w44-height): not a height problem (the guest game's knockback on a proxy); not looked at.

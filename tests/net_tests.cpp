@@ -73,9 +73,19 @@ static void test_buffer()
     Reader r4(w4.data.data(), w4.size());
     PlayerState t4;
     CHECK(t4.read(r4) && t4.scale == 1.5f && r4.left() == 0);
-    Reader r5(w4.data.data(), w4.size() - 4);
+    Reader r5(w4.data.data(), w4.size() - 8);
     PlayerState t5;
-    CHECK(t5.read(r5) && t5.scale == 0.f && t5.world == 0x80B16021);
+    CHECK(t5.read(r5) && t5.scale == 0.f && t5.world == 0x80B16021 && !agl_known(t5.agl));
+    // BUG-0425: the sender's agl after the scale; a 0.7.7 sender's state (scale, no agl) reads as kNoAgl
+    s.agl = 2.5f;
+    Writer w6;
+    s.write(w6);
+    Reader r6(w6.data.data(), w6.size());
+    PlayerState t6;
+    CHECK(t6.read(r6) && t6.agl == 2.5f && t6.scale == 1.5f && r6.left() == 0);
+    Reader r7(w6.data.data(), w6.size() - 4);
+    PlayerState t7;
+    CHECK(t7.read(r7) && t7.scale == 1.5f && !agl_known(t7.agl));
     // shared resource message payload (u8 id, f64)
     Writer w3;
     w3.u8(3);

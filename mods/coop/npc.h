@@ -79,6 +79,7 @@ bool proxy_in_host_pack(void* c); // guest: proxy c mirrors a member of the host
 uint16_t id_of(void* c);         // host: the net id of NPC c, guest: of proxy c (0xFFFF: none)
 void* host_npc(uint16_t id);     // host: NPC #id if it is alive this frame
 std::string debug_pool(uint16_t id); // host (tests, BUG-0339): NPC #id to the game's creature pool
+std::string debug_lift(uint16_t id, float m, float secs); // host (tests, BUG-0550): NPC #id held m over its ground for secs s
 std::string debug_sink(uint16_t id, float m, bool mark = false); // guest (tests, BUG-0399): the proxy m under this game's ground once
 std::string debug_pwalk(uint16_t id, const net::Vec3& p, float speed, float secs, int mode = 0); // guest (tests, BUG-0281)
 std::string debug_dash(uint16_t id, float len, float speed, float secs, float width, uint16_t mate = 0, float off = 0); // host (tests, BUG-0305): NPC #id dashes back and forth

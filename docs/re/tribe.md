@@ -1703,3 +1703,18 @@ BUG-0575. GOG 2024 (= the Steam 3010a413 code), Ghidra and asm. Extends #tribe-m
   object's vtable and slots 2, 3); a broken one leaves its entry (+0x38 = 0, no Release, the reference is lost) and the
   game makes it again when it wants it. Arithmetic checks only (no VirtualQuery): the loops run for every view every
   frame. `coop.fxlist [creature|all]` lists attached effects; `coop.fxcut` makes the crash state (tests).
+
+## Animals over the ground in Tribe (2026-11-05, fix/w44-height)
+<a id="tribe-animal-height"></a>
+
+* ✔ The host's Tribe game puts an animal lifted 4 m over its ground (teleported there at every mod frame, +0x137 = 0,
+  `coop.npc lift`) back onto its terrain in its own update: the host's npctrack rows say 0.00 m in every frame (lab
+  20261105-112236, 112346). So the game itself keeps Tribe animals on the ground (inferred: the animal's AI walk
+  grounds it; a guest's proxy, which has no AI, stayed at 4 m when placed there). The height rule's air side
+  (docs/re/creature.md#creature-height-rule) has no Tribe case found; its ground side was already in place
+  (own_height, out_of_ground).
+* ✔ BUG-0402's fourth kind (campaign_ct, lab 20261105-015350 in the rel/0.7.7 worktree) is a terrain difference, not a
+  placement: the host's NPC n146 stood at agl 0.00 on the host's terrain (its own `sync-check: n146 here:` line), the
+  guest's terrain at that point is 8.39 m higher (`want_agl=-8.39`), and the proxy stood on the guest's ground
+  (`agl=0.00`): what the rule asks. The sync-check compares absolute positions, so the terrain difference showed as
+  `n apart 8.4` (BUG-0329's kind, larger than the 5 m seen there).

@@ -55,3 +55,4 @@ no-fail-run: open
 ## History
 - 2026-11-01: opened.
 - 2026-11-04: fix/w41-puppet-look: not reproduced with 21 stops (10 abrupt); the hold not kept.
+- 2026-11-05 (fix/w44-height): not part of the height fix (a stop slide on the walk driving); not looked at again.

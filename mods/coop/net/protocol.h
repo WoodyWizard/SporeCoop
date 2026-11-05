@@ -157,6 +157,10 @@ enum PlayerFlags : uint8_t {
     PF_SNEAKING = 64, // BUG-0463: the creature sneaks (+0xBB1); older SporeCoop ignores the bit
 };
 
+// BUG-0425: a height over the sender's terrain (m) that is not known (an older sender, no terrain)
+constexpr float kNoAgl = -1e9f;
+inline bool agl_known(float agl) { return agl > -1e6f; }
+
 struct Vec3 {
     float x = 0, y = 0, z = 0;
 };
@@ -355,6 +359,10 @@ struct PlayerState {
     // BUG-0519: the sender's Cell world scale (G+0x514C) the pos / vel / size are in; 0 = not in Cell
     // or an older sender (the field is appended: older readers stop before it)
     float scale = 0;
+    // BUG-0425: the sender's height over its own terrain (cPlanetModel::GetHeightAt) when its body is off the
+    // ground (PF_JUMPING); kNoAgl otherwise or from an older sender (appended after scale: older readers stop
+    // before it). NPC states carry it in the MSG_NPC_STATE batch's trailer (npc.cpp), not here
+    float agl = kNoAgl;
 
     void write(Writer& w) const
     {
@@ -367,6 +375,7 @@ struct PlayerState {
         w.u32(species);
         w.u32(mode); w.u32(world);
         w.f32(scale);
+        w.f32(agl);
     }
     bool read(Reader& r)
     {
@@ -379,6 +388,7 @@ struct PlayerState {
         species = r.u32();
         mode = r.u32(); world = r.u32();
         scale = r.ok() && r.left() >= 4 ? r.f32() : 0.f;
+        agl = r.ok() && r.left() >= 4 ? r.f32() : kNoAgl;
         return r.ok();
     }
 };
@@ -396,6 +406,8 @@ enum NpcFlags : uint8_t {
     NF_IMPRESSED = 4, // impressed by a player (cCreatureAnimal +0xB58 bit 0x80, set by a social success)
     NF_PACK = 8,      // in the host's pack (+0xB58 bit 0x100: recruited, a Summon Flock member; BUG-0556). Older guests ignore it
     NF_SUMMONED = 16, // its herd is a summoned flock (herd +0x192, cSummonCreatureEvent: the hearts effect 0x6A17B05A; BUG-0556)
+    NF_AIR = 32,      // BUG-0550 / BUG-0425: off its ground in the host's game (+0x137 = 0 and off GetHeightAt: a jump, a fall,
+                      // thrown, flying); its height over the host's terrain is in the batch's agl trailer. Older guests ignore it
 };
 
 struct NpcSpawn {
