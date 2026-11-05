@@ -2751,6 +2751,14 @@ static void log_hit(uint8_t victim, void* a, float amount, const char* how, bool
 struct ProxyAudit {
     double under_since = -1, off_since = -1;
     double seen = 0;
+    // BUG-0440 (diagnostics): the host's NPC between two audits (0.25 s): its largest step in the last 3 s and when,
+    // and where the proxy and its error were when it went off (a host snap or a proxy that falls behind)
+    net::Vec3 last_t{};
+    bool have_t = false;
+    float jump = 0;
+    double jump_at = -1;
+    net::Vec3 off_p0{};
+    float off_e0 = 0;
 };
 static std::unordered_map<uint16_t, ProxyAudit> g_audit;
 static std::set<uint16_t> g_audit_under, g_audit_stuck; // since the last trace line
@@ -2777,6 +2785,19 @@ void monitor_tick(double now)
         // ground: Tribe drives at its own height, BUG-0329)
         net::Vec3 t = rt > 1 && r > 1 ? net::Vec3{s.pos.x * r / rt, s.pos.y * r / rt, s.pos.z * r / rt} : s.pos;
         bool off = net::dist(p, t) > 3.f;
+        if (a.have_t) {
+            float st = net::dist(a.last_t, t);
+            if (st >= a.jump || now - a.jump_at > 3.0) {
+                a.jump = st;
+                a.jump_at = now;
+            }
+        }
+        a.last_t = t;
+        a.have_t = true;
+        if (off && a.off_since < 0) {
+            a.off_p0 = p;
+            a.off_e0 = net::dist(p, t);
+        }
         a.under_since = under ? (a.under_since < 0 ? now : a.under_since) : -1;
         a.off_since = off ? (a.off_since < 0 ? now : a.off_since) : -1;
         // which one and where (players' reports too): the first of each kind per line
@@ -2788,9 +2809,11 @@ void monitor_tick(double now)
                         now - px.made_at, px.made_agl);
         if (off && now - a.off_since >= 2.0 && g_audit_stuck.insert(id).second && g_audit_stuck.size() == 1)
             trace::line("npc", "proxy %u (species %08X) %.1f m off the host's NPC for %.1f s at (%.1f %.1f %.1f), host's speed "
-                        "%.1f m/s (%s%s)", id, px.key.instance, net::dist(p, t), now - a.off_since, p.x, p.y, p.z,
-                        drive::speed(s.vel), px.kinematic ? "placed on the host's path" : "driven",
-                        now < px.manual_until ? ", test walk" : "");
+                        "%.1f m/s (%s%s); went off at %.1f m, the proxy moved %.1f m since; the host's NPC's largest step "
+                        "between two audits (0.25 s) %.1f m, %.1f s ago (BUG-0440)", id, px.key.instance, net::dist(p, t),
+                        now - a.off_since, p.x, p.y, p.z, drive::speed(s.vel),
+                        px.kinematic ? "placed on the host's path" : px.air ? "in the air" : "driven",
+                        now < px.manual_until ? ", test walk" : "", a.off_e0, net::dist(p, a.off_p0), a.jump, now - a.jump_at);
     }
     for (auto it = g_audit.begin(); it != g_audit.end();)
         it = now - it->second.seen > 5.0 ? g_audit.erase(it) : std::next(it);
