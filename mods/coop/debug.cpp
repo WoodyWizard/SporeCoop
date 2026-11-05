@@ -44,6 +44,40 @@ int c_save(void*, int argc, const char* const* argv, SkOut* out)
     return 0;
 }
 
+// tests (BUG-0313, BUG-0576): every pause reason the game counts now. cGameTimeManager: +0x48 flags (bit 0 paused),
+// +0x4C a map reason -> index (EASTL rbtree, anchor +0x50: right +0, left +4, parent +8; node key +0x10, index
+// +0x14), +0x68 an array of 8-byte rows, the count first (Pause 0xB32330 / Resume 0xB32360 add / remove one;
+// docs/re/creature.md#creature-game-time-pauses)
+static void pause_walk(const uint8_t* n, const uint8_t* anchor, const uint8_t* arr, std::string& out, int depth)
+{
+    if (!n || n == anchor || depth > 64 || !skg::readable(n, 0x18))
+        return;
+    pause_walk(*(const uint8_t* const*)(n + 4), anchor, arr, out, depth + 1);
+    uint32_t key = *(const uint32_t*)(n + 0x10);
+    int idx = *(const int*)(n + 0x14);
+    int cnt = idx >= 0 && idx < 256 && skg::readable(arr + idx * 8, 4) ? *(const int*)(arr + idx * 8) : -999;
+    char b[64];
+    snprintf(b, sizeof b, " %08X=%d", key, cnt);
+    if (cnt)
+        out += b;
+    pause_walk(*(const uint8_t* const*)n, anchor, arr, out, depth + 1);
+}
+int c_pauses(void*, int, const char* const*, SkOut* out)
+{
+    uintptr_t get = H->sym("Simulator::cGameTimeManager::Get");
+    const uint8_t* tm = get ? skg::cdecl_call<const uint8_t*>(get) : nullptr;
+    if (!tm || !skg::readable(tm, 0x6C)) {
+        SAY("no time manager");
+        return 1;
+    }
+    const uint8_t* anchor = tm + 0x50;
+    const uint8_t* arr = *(const uint8_t* const*)(tm + 0x68);
+    std::string r;
+    pause_walk(*(const uint8_t* const*)(anchor + 8), anchor, arr, r, 0);
+    SAY("pauses: flags=%X paused=%d reasons:%s", *(const uint32_t*)(tm + 0x48), (int)(tm[0x48] & 1), r.empty() ? " none" : r.c_str());
+    return 0;
+}
+
 // the game's quit message (world.cpp load_slot): saves and leaves the stage for the galaxy menu
 int c_menu(void*, int, const char* const*, SkOut* out)
 {
@@ -565,6 +599,8 @@ void coop_register_debug_commands2(const SkHost* host, SkMod* self)
     host->command_add(self, "coop.ground", "coop.ground <x> <y> <z> - terrain radius under a point (tests, BUG-0329)", c_ground,
                       nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.abilities", "coop.abilities [play <i> | lift <m> | halt | goto <x> <y> <z> | ground <x> <y> <z>] - the own avatar's abilities (tests, BUG-0366)", c_abilities,
+                      nullptr, SK_CMD_MAIN_THREAD);
+    host->command_add(self, "coop.pauses", "coop.pauses - the game's pause reasons counted now (tests, BUG-0313)", c_pauses,
                       nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.menu", "coop.menu - save and leave the stage for the galaxy menu (tests)", c_menu,
                       nullptr, SK_CMD_MAIN_THREAD);

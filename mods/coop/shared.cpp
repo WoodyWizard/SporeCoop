@@ -1,4 +1,5 @@
 #include "shared.h"
+#include "game.h"
 
 #include <cmath>
 #include <cstdio>
@@ -102,9 +103,8 @@ static void s_food(double v)
             d = 0;
         }
     }
-    if (uintptr_t f = S("Simulator::cTribe::UpdateFoodVisuals"))
-        if (std::fabs(shown) >= 1.f)
-            skg::thiscall<void>(f, t, shown);
+    if (std::fabs(shown) >= 1.f)
+        game::tribe_food_visuals(t, shown); // BUG-0585: not without the tribe's food mat
 }
 
 // civilization: GetPlayerCivilization() -> cCivilization::mWealth (+0x98)
