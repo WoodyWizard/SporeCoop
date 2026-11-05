@@ -56,3 +56,4 @@ out/lab/20261104-205651.
 - 2026-11-04: opened.
 - 2026-11-04 (fix/w43-replay, step 0 of 0.7.7): replayed on 0.7.6 code; still open (W1), reproduced in the lab (tribe_food_zero out/lab/20261104-201453 FAIL).
 - 2026-11-04 (fix/w43-world-state, W1): fixed; see Fix and Verification.
+- 2026-11-04 (fix/w43-detector2, D0 detector): `Tribe:state:food` once (the player tribe's food 109 on the host, 124 on the guest) in 293 Tribe comparisons, labs 20261104-203017 / 20261104-210208: the 0-vs-19..56 of the report was not reproduced in these sessions.

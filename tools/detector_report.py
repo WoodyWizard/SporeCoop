@@ -69,6 +69,17 @@ KNOWN = {  # <stage>:<what>:<kind> (or <stage>:*:<kind>, <*>:*:<kind>) -> the ti
     '*:*:gameplay_marker': 'BUG-0489',
     'Space:*:citizen': 'BUG-0490', 'Space:*:vehicle': 'BUG-0490',
     'Space:*:ornament': 'BUG-0541',
+    # world state and whole-planet lists (coop.wstate, docs/06-testing.md#testing-detector-state)
+    'All:state:time_of_day': 'BUG-0579', 'All:state:day_length': 'BUG-0579',
+    'All:state:stage_done': 'BUG-0577',
+    'Cell:state:dna': 'BUG-0560', 'Cell:state:dna_spent': 'BUG-0560',
+    'Tribe:state:food': 'BUG-0572', 'Tribe:state:relation': 'BUG-0565', 'Tribe:state:goal': 'BUG-0564',
+    'Tribe:planet:village': 'BUG-0564', 'Tribe:planet:tribe_hut': 'BUG-0566',
+    'Tribe:planet:tribe_tool': 'BUG-0574', 'Tribe:planet:totem_pole': 'BUG-0574',
+    'Tribe:state:members': 'BUG-0564', 'Tribe:planet_owner:village': 'BUG-0565', 'Tribe:state:tribe_food': 'BUG-0580',
+    '*:state:species_relation': 'BUG-0419 class (species table)', '*:state:species_impressed': 'BUG-0419 class (species table)',
+    '*:state:species_killed': 'BUG-0419 class (species table)',
+    '*:*:spear': 'BUG-0477',  # a thrown spear: a projectile, as the other *_projectile kinds
 }
 
 
@@ -147,12 +158,15 @@ def main():
            'A signature is `<stage>:<what>:<kind>`: host_only / guest_only (objects near the guest on one game only), '
            'unmatched (both have the kind, some without a partner), guest_local / host_local (objects the mod does not '
            'track), alive / scale / model / hp / pos (matched objects that differ), noun_only_* (a noun type in one '
-           'game\'s whole list only). `seen` = comparisons with the finding, `share` = of that stage\'s comparisons.', '']
+           'game\'s whole list only); <stage>:state:* / All:state:* (the world state: food, DNA, relations, goal, time of day, '
+           'stages done) and <stage>:planet:* / planet_owner:* (the whole planet\'s villages, huts, nests, cities, buildings). '
+           '`seen` = comparisons with the finding, `share` = of that stage\'s comparisons.', '']
     by_stage = collections.defaultdict(list)
     for s in seen:
         by_stage[s.split(':')[0]].append(s)
     for stage in sorted(by_stage):
-        n = samples.get(stage, 0) or 1
+        # `All:state:*` (time of day, stages done) is compared on every stage: its share is of all comparisons
+        n = (sum(samples.values()) if stage == 'All' else samples.get(stage, 0)) or 1
         out += [f'## {stage}', '', '| signature | seen | share | objects | tests | ticket | example |', '|---|---|---|---|---|---|---|']
         for s in sorted(by_stage[stage], key=lambda s: -seen[s]):
             ex = examples[s][0].replace('|', '/') if examples[s] else ''

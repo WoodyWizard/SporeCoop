@@ -4163,3 +4163,73 @@ current world, so relations, the goal, the stages and the food are the host's af
 * Pitfall: the host's game-over caption in the tribe fixture comes ~20 s after the last member is out, later under
   load; while the host's own creature_attack event runs it may not come at all (BUG-0582). The bounce tests wait
   75 s for it and press its OK again when the game has not left the stage 10 s later.
+## The detector's world state and whole-planet rows (2026-11-04, fix/w43-detector2)
+<a id="testing-detector-state"></a>
+
+The detector of [#testing-detector](#testing-detector) compared only objects within ~250 m of the guest. The 2026-11-04
+player reports (BUG-0554..BUG-0579) were mostly world state it could not see. Now every sample also compares:
+
+* `coop.wstate` (mods/coop/wstate.cpp, one command per game, read-only, all from the game; offsets in
+  docs/re/tribe.md#tribe-detector-state and docs/re/creations.md#creations-cplayer-fields): the sky (time of day) and the
+  day's length, cPlayer's consequence trait per stage (stages done) and the stage progress bar, the mode's shared resource
+  (food / money), Cell food / spent DNA, Creature DNA and the species table (relation, impressed, killed per species), every
+  tribe's food, members and relation to the player tribe, the tribe mission manager's current mission (the goal), every
+  civilization's money, relation and cities, every NPC empire's relation and war / alliance flags, and the planet's whole
+  lists of villages, huts, tools, totems, food mats, nests, cities, buildings and turrets with position and owner.
+* `worlddiff.diff_state` / `diff_planet` (`pair_dump(..., state=True)`; the monitor's `SPORE_DETECTOR` samples use it,
+  other callers of pair_dump do not), signatures and tolerances:
+
+| signature | compared | tolerance | ticket |
+|---|---|---|---|
+| `All:state:time_of_day` | the planet context's orientation (what MSG_WORLD_TIME sends) | 20 deg | BUG-0579 |
+| `All:state:day_length` | cTimeOfDay +0x24 | 2 % | BUG-0579 |
+| `All:state:stage_done` | a stage done (trait != 0) on one game only | exact | BUG-0577 |
+| `<stage>:state:goal_progress` | the stage progress bar (cPlayer +0x10F0 / +0x10F4) | 5 or 10 % | |
+| `<stage>:state:money` / `food` | `coop.res`'s game value (Tribe: the player tribe row) | 20 or 5 % / 3 or 10 % | BUG-0572 (Tribe food) |
+| `Cell:state:dna`, `dna_spent` | cCellSerializableData food, spent DNA | 3 or 10 %, 1 | BUG-0560 |
+| `Creature:state:dna` | GetEvolutionPoints | 5 or 10 % | |
+| `Creature:state:species_relation` / `_impressed` / `_killed` / `species_only` | the species table, common keys (a guest's 7C / 7D keys have no partner) | exact | BUG-0419 class |
+| `Tribe:state:food`, `player_members` | the player tribe's bundles, members | 3 or 10 %, 1 | BUG-0572 |
+| `Tribe:state:relation`, `members`, `tribe_food` | NPC tribes matched by centre (30 m): level by the manager's thresholds or 1.0 apart, members 1, food 5 or 20 % | | BUG-0565, BUG-0564 |
+| `Tribe:state:goal` | the current mission's tribe (30 m) and state, or a goal on one game only | | BUG-0564 |
+| `Civilization:state:relation`, `civ_money`, `cities`, `player_cities`, `civ_only` | civilizations by political id | 1.0, 50 or 20 %, exact | |
+| `Space:state:relation`, `war_alliance`, `empire_only` | NPC empires by political id | 0.5, flags & 3 | |
+| `<stage>:planet:<kind>` | the planet's whole list of a kind (village 25 m, city 25 m, others 8 m) | presence + position | BUG-0564 (village), BUG-0566 (tribe_hut), BUG-0574 (tools, totem) |
+| `<stage>:planet_owner:<kind>` | matched objects: the player's on one game only, or one host owner that is two owners on the guest | | BUG-0565 (village) |
+
+* No player position (an RTS game in the background): the state rows still count; the sample is no longer `nocentre`.
+* `tools/detector_report.py` maps the new signatures in `KNOWN`; an `All` row's share is of all comparisons.
+* `tools/tests/tools_selftest.py worldstate` (in `make test`) checks the rows on made-up dumps.
+* First long runs on rel/0.7.7 = 0.7.6 code (labs 20261104-203017, 20261104-210208; out/detector of the report in the D0
+  report): Tribe `state:tribe_food` 57 % (BUG-0580, new), `planet:tribe_tool` 41 % (BUG-0574), `state:relation` 34 %
+  (-7 aggressive on the host, 0 neutral on the guest: BUG-0565), `state:goal` 28 % (BUG-0564), `planet:village` /
+  `tribe_hut` 7 % (BUG-0564 / 0566), `All:state:time_of_day` 16 % (the host's sky stood still: BUG-0579); Creature
+  `state:species_killed` / `species_relation` 1-2 %. The mission's +0x84 held pointer-like values: it is printed, not
+  compared.
+* First runtime check (lane 2, tribe fixture, quiet): both games equal (food 15 / 15, the NPC tribe 4 members, the same
+  political ids, the sky 0.7 deg apart), 0 rows in 14 samples of `detect_tribe` (lab 20261104-201322). The tribe fixture
+  has no stage done (it starts at Tribe) and no tribe-to-tribe mission (`goal tribe=-1`): those rows are not shown to fire
+  on a real game yet.
+
+## The long-session bot (2026-11-04, fix/w43-detector2)
+<a id="testing-long-session"></a>
+
+`tools/tests/coop_long_session.py --stage creature|tribe [--minutes 40] [--events death,editor,menu,restart,rejoin]`
+(suite `detector`: `long_creature`, `long_tribe`, 40 min of play, about 55-65 min with the transitions, lab timeout
+80 min; `long_<stage>_short`: 6 min of play, about 12 min). The play is the stage's play bot (play_creature.Player threads,
+play_tribe.Game) in segments; between them one transition of the guest: `death` (Creature: `coop.team die`; Tribe: the
+guest's chief leaves the tribe through `coop.tribe drop_chief 1`, an approximation: no real Tribe death of a player),
+`editor` (the host's evolution vote, the guest's "I'm ready", the red X on the host and, in Creature, on the guest's own
+editor too), `menu` (the guest's pause menu, Exit to Main Menu, Don't Save x2), `restart` (the guest leaves the session,
+its game is SIGKILLed, started again and joins: a player closing the game; a crash without the leave made the host's
+puppet rule fire, lab 20261104-210208), `rejoin` (`coop.leave` and join). 20 s after each one it prints a detector sample with
+`"after": "<event>"` (DETECTOR-SAMPLE / DETECTOR lines like the monitor's); with `SPORE_DETECTOR=<s>` the monitor samples
+during the play as well. It fails only on faults, crashes, freezes and a guest that is not back in the host's world
+within 4 min of a transition (the session cannot go on); the divergences are rows for `tools/detector_report.py`.
+
+* After every play segment an editor the play opened is left with the red X on both games (the creature bots' own
+  evolution vote ends in the host's editor when its time is up: lab 20261104-210208, the rejoin then waited on it).
+* Pitfalls met: in Creature the vote opens the guest's editor too (lab 20261104-203017: the guest stayed in its editor
+  after the host's red X); a 40 min session exceeds the lab's default 30 min timeout (`timeout=4800` in suite.py).
+* Timings (lab 20261104-203017, lane 2/3): death back in 5-8 s, editor 13-170 s (Tribe: the host's editor opened
+  61 s after the vote once), menu 16-21 s, restart 17 s, rejoin 14 s.

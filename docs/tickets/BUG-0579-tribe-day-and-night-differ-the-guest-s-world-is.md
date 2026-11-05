@@ -51,3 +51,4 @@ every step).
 - 2026-11-04: opened.
 - 2026-11-04 (fix/w43-replay, step 0 of 0.7.7): replayed on 0.7.6 code; not reproduced in a plain session; open (W1) for the reload case.
 - 2026-11-04 (fix/w43-world-state, W1): fixed; see Fix and Verification.
+- 2026-11-04 (fix/w43-detector2, D0 detector): `All:state:time_of_day` in 16 % of all comparisons, long_tribe only (lab 20261104-203017): from about 10 min into the session the host's sky stood still (q (-0.08 -0.08 -0.06 0.99) in consecutive samples) while the guest's moved, 25 deg apart growing to 145 deg.

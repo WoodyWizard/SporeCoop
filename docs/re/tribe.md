@@ -1490,3 +1490,36 @@ W2 of 0.7.7 (BUG-0564, BUG-0566, BUG-0567, BUG-0563; classes BUG-0421, BUG-0427)
   Player logs: the guest's puppet of the Creature stage (species of the guest's creation) stood next to the host
   until the stage change; the epic came 8 min after it (its timer), the host fought "the guest's creature" as a
   monster. tribe.epic_species: puppets, proxies and the players' creatures' species are never the epic's.
+## Tribe state the detector reads (2026-11-04, fix/w43-detector2)
+<a id="tribe-detector-state"></a>
+
+What `coop.wstate` (mods/coop/wstate.cpp, docs/06-testing.md#testing-detector-state) reads in Tribe, all from the game:
+
+* ✔ (Ghidra, GOG 2024) cTribe serializer table (0x13551E0 -> 0x157ABB0), field offsets: +0x260 mpFoodMat, +0x264
+  mbMotiveCheatOn, +0x268 mRSquareSize, +0x270 mVignetteTimer, +0x2C0 mEggPenFoodValue, +0x2C4 mInitialRelationship,
+  +0x2C8 mChieftainRespawnTimer, +0x2CC mGiftRelationshipDecayTimer, +0x300 / +0x301 mbCheckedForWater / Forests, +0x304
+  mClosestWater, +0x314 mClosestForests, +0x32C mUpgradeLevel, +0x330 mZoningRadius, +0x334 mbRoboTribe, +0x338
+  mRoboPopulationCount, +0x33C mbVisualized, **+0x340 mTribeMembers**, +0x354 mSelectableMembers, +0x368 mpHut, +0x36C
+  mTools, +0x380 mSocialTools, +0x510 mPopulationTimer, +0x530 mTimer, +0x550 mTribeArchetype, +0x557 mGoodyPopped,
+  +0x1904 mSpeciesKeys, +0x19C4 mpDomesticatedAnimalsPen, +0x19C8 mpEggPen, +0x19CC mpDomesticatedAnimalsHerd, +0x19D0
+  mpTotemPole, +0x19D4 mhFootprint, +0x19D8 mPurchasedTools.
+* ✔ (runtime, lane 2, tribe fixture) every tribe's food = the sum of its bundles (+0x20C, as for the player tribe): the
+  NPC tribe had 70 on the host and 80 on the guest at the same time (each game's own NPC tribe gathers on its own);
+  its relation to the player tribe `CalculateRelationship(mgr, tribe pol, player tribe pol, 0)` 0.00 on both; the player
+  tribe's political id 0x800021CA, the NPC tribe's 0x000021CB, the same on both games (the guest loads the host's save).
+* ✔ (runtime) cRelationshipManager +0x10..+0x1C in Tribe: -7, -3, 3, 7 (~ the level thresholds GetRelationshipLevel
+  uses: the UI's aggressive / slightly aggressive / neutral / friendly / allied, not checked against the UI).
+* ✔ (Ghidra) **the Tribe Mission Manager** (UTF-16 name "Tribe Mission Manager Simulator" before its vtables): instance
+  global `SporeCoop::TribeMissionManager_ptr` 0x169B27C (ctor 0xCD3CE0, dtor 0xCD3C30, vtables 0x14772CC / 0x14772A8 /
+  0x1477298). Serializer table 0x157EE90 (0x135D720): **+0x74 mpTribeToTribeMission** (an intrusive pointer; 0xCD3600
+  checks its vt 0x60 == 5 before a save), +0x78 mTribeToTribeMissionMap (hash map: buckets +0x7C, bucket count +0x80,
+  count +0x84). cTribeToTribeMission (noun 0x5436411A, table 0x1572A18 by 0x1336CD0): **+0x80 mpAssociatedTribe**; the
+  cMission state is +0x84 (cMission::SetState 0xC47E20; state 3 posts 0x38CF2FD).
+* ~ (runtime, tribe fixture) +0x74 was null and the map empty on both games: the fixture's tribe has no tribe-to-tribe
+  mission. ? Whether this mission is the goal card players see ("attack the X village's centre", BUG-0564) is not
+  shown: `goal tribe=-1` in every sample so far. Another tribe-stage table (0x135DB90): +0x40 mGoalProgressHistory
+  (a vector of tTribeGoalData), +0x78 mTotalTimeInTribe, +0x7C mFullHealsPerPerTribeMember, +0x94 mEnchantedAnimals,
+  +0xA8 mUnlockedTools, +0x19C mpAccessories, +0x258 / +0x2A8 player / NPC spear ornaments, +0x3A3 mbMatingAllowed
+  (the owner object of that table not found yet).
+* ✗ `cRelationshipManager::IsAllied` 0xD02030 / `IsAtWar` 0xD01F90 take two **cEmpire** pointers (their pol at +0x84,
+  stack purge 8), not political ids: not usable for tribes.

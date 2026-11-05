@@ -1056,3 +1056,26 @@ BUG-0345 ("the guest spawns in the Cell stage with its previous cell creature"),
   unchoose <kind>` (no choice), `coop.creations worlds [forget]` (the record of this world).
   Lab pitfall: worlds.ini lives in each lane's guest profile; a test that needs the guest's own creature
   chooses it and restores the profile (tools/tests/creations_state.py), so no test depends on another's order.
+
+## cPlayer fields by name, the stages done, the time of day (2026-11-04, fix/w43-detector2)
+<a id="creations-cplayer-fields"></a>
+
+* ✔ (Ghidra, GOG 2024) the cPlayer serializer table (0x1350CA0; cPlayer = cGameNounManager +0x74) names its fields:
+  +0x38 mOneTimeEventFlags, +0x698 mFlags, +0x10E8 mpCRGItems, **+0x10F0 mCurrentGoalProgress, +0x10F4
+  mGoalProgressTotal** (the stage's progress bar), +0x10F8 mUniqueGameID, **+0x10FC mCellConsequenceTrait, +0x1100
+  mCreatureConsequenceTrait, +0x1104 mTribeConsequenceTrait, +0x1108 mCivConsequenceTrait, +0x110C
+  mSpaceConsequenceTrait** (the card each finished stage gave: 0 = the stage not done), +0x111C mGameEventRecord,
+  +0x113C mSelectionGroups, +0x1150 mSelectedCityHallKey, +0x115C mSelectedVehicleKey, +0x1168 mSelectedUFOKey, +0x1178
+  mCapitalCityPos, +0x1184 mStarsVisited, +0x1198 mStarsKnown, +0x11AC mWormholesUsed, +0x11C0 mPlanetData, +0x11D8
+  mPlayerSpecificEmpireData, +0x11F0 mHasCheated, +0x11F8 mSpacePlayerWarData, +0x1214 mPlayerCaptureProgressStars,
+  +0x1228 mEmbassies, +0x1244 mThemeID, +0x1248 mDifficultyLevel, +0x124C mMaxPosseSize, +0x1250 mTempPosseCount, +0x1258
+  mSoothingSongTimer, +0x1278 mSocialTraitProgress, +0x127C mCombatTraitProgress, +0x1280 mPirateUFOModelKey, +0x128C
+  mTotalTimeInCVG, +0x1290 mInitCaptainKey, +0x129C mAdventuresCompleted. (The four dwords +0x10FC..+0x1108 the editor
+  request copies, #creations section 1.2 area, are these traits.)
+* ~ (runtime, lane 2, tribe fixture, both games) traits 0,0,0,0,0, progress 0 of 5: the fixture was started at the Tribe
+  stage (no earlier stage played); ? the trait ids of played stages are not read yet. The detector's `All:state:stage_done`
+  (BUG-0577) compares done / not done per stage.
+* ✔ (Ghidra) `Simulator::cTimeOfDay::Get` 0xBC3220: the singleton [0x168AA6C]; +0x24 the day's length (s,
+  SetDayDuration 0xBC29A0; 960 s on the tribe fixture at runtime). The sky the mod shares (MSG_WORLD_TIME) is the planet
+  context's orientation (`TimeOfDay_GetObject` +0x10, docs/re/space.md): the detector compares both (`All:state:time_of_day`,
+  `All:state:day_length`, BUG-0579).

@@ -115,3 +115,4 @@ SporeCoop::MissionCardPanel_Get ; BUG-0564: the wsync goal dump shows no card st
 SporeCoop::MissionCardPanel_HasCard ; BUG-0564: the wsync goal dump shows no card state on GOG 2016
 SporeCoop::TribeMissionManager_Get ; BUG-0564: the wsync Tribe goal row (wsync.tribe_goal) is off on GOG 2016
 SporeCoop::TribeMission_SetTargetTribe ; BUG-0564: the wsync Tribe goal row (wsync.tribe_goal) is off on GOG 2016
+SporeCoop::TribeMissionManager_ptr ; BUG-0430: the detector's Tribe goal row (coop.wstate `goal`) is empty on GOG 2016

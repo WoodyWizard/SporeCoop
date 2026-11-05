@@ -51,3 +51,4 @@ host's spent 0 -> -100 after a free edit), PASS out/lab/20261104-210201 (spent s
 - 2026-11-04: opened.
 - 2026-11-04 (fix/w43-replay, step 0 of 0.7.7): replayed on 0.7.6 code; still open (W1), not reproduced.
 - 2026-11-04 (fix/w43-world-state, W1): fixed; see Fix and Verification.
+- 2026-11-04 (fix/w43-detector2, D0 detector): the detector compares the Cell food / spent DNA (`Cell:state:dna`, `dna_spent`); not run on Cell in D0.

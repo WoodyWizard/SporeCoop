@@ -46,3 +46,4 @@ Not verified: the player tribe's tools after the host's reload (tribe_bounce_wor
 ## History
 - 2026-11-04: opened.
 - 2026-11-04 (fix/w43-replay, step 0 of 0.7.7): replayed on 0.7.6 code; fixed by BUG-0523 (0.7.6): tribe_tools_all PASS out/lab/20261104-200546, FAIL with the switch off out/lab/20261104-201624.
+- 2026-11-04 (fix/w43-detector2, D0 detector): `Tribe:planet:tribe_tool` in 41 % of the Tribe comparisons: an NPC tribe's tools at other spots on the two planets (e.g. host only at (335 -136 353), guest only at (330 -175 341)), from the first sample of a fresh session on, labs 20261104-201842 / 20261104-203017 / 20261104-210208.
