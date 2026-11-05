@@ -9,9 +9,9 @@ source: lab rel/0.7.8 20261105-134715 campaign_space (detector run)
 role: guest
 versions: 0.7.8-dev
 fixed_in: unreleased
-branch:
-commits:
-tests:
+branch: fix/w44-wstate-transition
+commits: 63598921
+tests: campaign_space
 signature:
 docs:
 related:
