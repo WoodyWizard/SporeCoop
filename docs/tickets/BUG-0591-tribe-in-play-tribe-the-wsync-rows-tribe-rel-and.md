@@ -47,8 +47,12 @@ tribe_goal. Switch `wsync.tribe_pos` (off: the political id first, 0.7.7).
 tribe_new_villages (the host forms 4 villages, gives each its own relation and food change; the guest's game read
 with coop.wsync dump at the same place): FAIL with `SPORE_FIX_OFF=wsync.tribe_pos` out/lab/20261105-123323 (8 of 10
 values differ, e.g. relation -4.5 / 0.0, food 205 / 0), PASS out/lab/20261105-123225 (0 differ). Detector before:
-the rel/0.7.7 final play_tribe 20261105-015320 (Tribe:state:relation / tribe_food from 418 s); after: see the branch
-report (play_tribe with SPORE_DETECTOR=20).
+the rel/0.7.7 final play_tribe 20261105-015320 (Tribe:state:relation / tribe_food from 418 s). The same test with
+SPORE_DETECTOR=8: with the fix off out/lab/20261105-132359 gives the final check's rows (Tribe:state:relation "the
+tribe at (446 -150 185): -7.00 on the host, 0.00 on the guest", Tribe:state:tribe_food, 2 of 2 samples), with it
+out/lab/20261105-132259 none. play_tribe with SPORE_DETECTOR=20 (out/lab/20261105-121916 before the fix,
+20261105-124754 after): no state rows in either, but the host formed no village in these two runs (the condition was
+not met: play_tribe is no check of this fix).
 
 ## History
 - 2026-11-05: opened.
