@@ -152,7 +152,8 @@ with `mods\logs\sporekit.log`.
 **Host**
 
 1. Galaxy menu → **Co-op** → type your name → **Host**.
-2. Load a save or start a new game. The window shows the addresses your friends can use.
+2. Load a save or start a new game. The window shows the addresses your friends can use. You can play
+   alone right away: friends can join any time and get your world by themselves.
 
 **Guest**
 
@@ -166,6 +167,8 @@ with `mods\logs\sporekit.log`.
 | Key / command | What it does |
 |---|---|
 | **F9** | the co-op window: players, stage, ping, readiness, chat, *Send my world*, *Leave* |
+| *My creature: … < >* | the F9 window: pick your own creature or cell from *My Creations*; without one of that kind you play the host's species (make one in an editor to get a choice) |
+| *Send my world* | the host sends the world again to everybody (greyed out until a game is loaded and somebody has joined) |
 | *I'm ready* | agree to evolve (editor, next stage) |
 | `Ctrl+Shift+C` → `coop status` | session details in the cheat console |
 | `coop say <text>` | chat |

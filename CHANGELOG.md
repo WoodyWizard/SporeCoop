@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Fixed
+- Co-op window: *Send my world* is greyed out while no game is loaded or nobody has joined, instead of saying
+  "Sending the world to everyone..." and doing nothing; the lobby of a host alone says that you can start or load a
+  game now and friends can join any time (BUG-0597).
+- Co-op window: the "My creature" / "My cell" row says whose creature you play ("the host's species") and, when you
+  have none of your own, that making one in an editor gives you the choice (BUG-0598).
+- Co-op window: a chat line typed while the host's game was saving the world for a joining player is no longer lost
+  (BUG-0551).
+- The host's game no longer stays paused on the "game saved" box while the co-op window is open (BUG-0599).
+
 ## [0.7.7] - 2026-11-05
 
 ### Fixed

@@ -23,7 +23,13 @@ void shutdown();
 uint32_t clicks();
 // BUG-0482: the characters (WM_CHAR) the game window took from its queue since the last call, and
 // forget them; main thread (the hook runs on the thread that pumps the game's messages)
-std::u16string take_chars();
+// BUG-0551: *after_click (if given) gets those that came after the last primary click, when there was one
+// since the last call (a stalled frame takes the click and the typing after it at once)
+std::u16string take_chars(std::u16string* after_click = nullptr);
+// BUG-0551: the mod's own click (the "game saved" box's OK, world.cpp) is announced: the next primary click
+// at (x, y) within 5 s is the mod's, and last_click_own() says so
+void own_click(int x, int y);
+bool last_click_own();
 // where the last one was, in the game window's client pixels
 void last_click(int& x, int& y);
 

@@ -39,6 +39,17 @@ static uint32_t g_status_color = 0xFFFFD866;
 static double g_status_until; // the status goes away then (0 = stays until the next session event)
 bool g_status_fix = true;     // BUG-0104 (`coop.corefix ui_status 0`: the status of the last button stays)
 COOP_FIX("core.ui_status", "BUG-0104", g_status_fix, "ui: the co-op window shows the session's status, not the last button's");
+// BUG-0597: "Send my world" pressed in the main menu (no world loaded) or with nobody joined did nothing while
+// the window said "Sending the world to everyone...": players read it as "solo does not start". The button is
+// greyed out then and the lobby says why (a host can start or load a game alone, friends join any time and get
+// the world by themselves). Off: the button always sends and says so (0.7.7).
+static bool g_share_explain_fix = true;
+COOP_FIX("core.ui_share_explain", "BUG-0597", g_share_explain_fix, "ui: Send my world is greyed out with no world or nobody joined, and the lobby says why");
+// BUG-0598: a guest without own creations of the stage's kind saw "My cell: the world's own" with no arrows and
+// no hint, and could not tell that a choice exists (a player asked where to pick the own creation). The row says
+// whose it is ("the host's species") and how to get a choice (make one in an editor). Off: "the world's own" (0.7.7).
+static bool g_creation_hint_fix = true;
+COOP_FIX("core.ui_creation_hint", "BUG-0598", g_creation_hint_fix, "ui: the creation row says whose creation it is and how to get a choice");
 static bool g_f9_down;
 static bool g_lb_down;      // the left mouse button in the last frame (the Co-op item during the menu intro)
 static uint32_t g_lb_seen;  // mouse::clicks() handled (BUG-0145)
@@ -69,6 +80,7 @@ struct Cache {
     int vis = -1;
     bool left = false; // left aligned label: the box is sized to the text (labels center their text)
     Rect box;
+    int enabled = -1;
 };
 static std::map<Win, Cache> g_cache;
 static int g_chat_scroll;            // chat lines scrolled up from the newest (BUG-0129)
@@ -110,6 +122,16 @@ static void color(Win w, uint32_t argb)
     if (c.color != argb) {
         c.color = argb;
         sui::set_label_color(w, argb);
+    }
+}
+static void enable(Win w, bool on)
+{
+    if (!w)
+        return;
+    auto& c = g_cache[w];
+    if (c.enabled != (int)on) {
+        c.enabled = on;
+        sui::set_enabled(w, on);
     }
 }
 static void show(Win w, bool on)
@@ -314,6 +336,10 @@ static void* game_modal()
     return m;
 }
 
+// BUG-0599: the window steps aside (hidden for a moment) while the mod clicks the game's "game saved" box under it
+static double g_aside_until;
+static bool root_up() { return D.root && (sui::visible(D.root) || (H && H->time_seconds() < g_aside_until)); }
+
 // clicks on our window are dropped now: the input lock (a caption) or a modal box of the game
 static bool clicks_locked()
 {
@@ -424,7 +450,7 @@ static void locked_edit_apply(void*)
     Win w = g_locked_edit;
     std::u16string q;
     q.swap(g_typed_queue);
-    if (!w || !D.root || !sui::visible(D.root) || !sui::visible(w))
+    if (!w || !root_up() || !sui::visible(w))
         return;
     std::string t = sui::edit_text(w);
     if (t != g_locked_text) { // the game typed into it itself
@@ -462,9 +488,21 @@ static void locked_edit_apply(void*)
 }
 
 // every frame (main thread): a click under the lock on a line starts the mod's typing, any other click ends it
+// BUG-0551: a chat line typed while the host was paused saving the world for a returning guest was lost
+// (play_creature, out/lab/20261104-135838): the mod took the typing (the "game saved" box is a modal window)
+// and two things ended it: the mod's own click on the box's OK button (world.cpp box_task) counted as "a click
+// anywhere else", and a frame held by the save took the click and the keys after it at once, and the keys of
+// the frame of a click were dropped. The mod's own click no longer ends the typing, and the keys that came
+// after the click in its frame go into the line. Off: both lost (0.7.7).
+static bool g_locked_keep_fix = true;
+COOP_FIX("core.ui_locked_edit_keep", "BUG-0551", g_locked_keep_fix, "ui: the chat line typed under the game saved box keeps its typing over the mod's own click on the box and a held frame");
+
 static void locked_edit_tick(bool clicked)
 {
-    std::u16string chars = mouse::take_chars();
+    std::u16string after;
+    std::u16string chars = mouse::take_chars(&after);
+    if (clicked && g_locked_keep_fix && g_locked_edit && mouse::last_click_own())
+        clicked = false; // the mod confirmed the game's box: the player goes on typing
     if (clicked) {
         g_locked_edit = nullptr;
         if (g_locked_edit_fix && mouse::g_fix && g_want_open && D.root && sui::visible(D.root) && clicks_locked()) {
@@ -483,11 +521,13 @@ static void locked_edit_tick(bool clicked)
                 }
             }
         }
-        return; // (characters of the frame of the click went to whatever had the focus before)
+        if (!g_locked_keep_fix || !g_locked_edit || after.empty())
+            return; // (characters of the frame of the click before it went to whatever had the focus before)
+        chars = after; // the keys after the click in the same frame (a frame held by the save)
     }
     if (!g_locked_edit || chars.empty())
         return;
-    if (!g_want_open || !D.root || !sui::visible(D.root)) {
+    if (!g_want_open || !root_up()) {
         g_locked_edit = nullptr;
         return;
     }
@@ -640,6 +680,14 @@ static void report_tick(double now)
     g_report_wait_until = 0;
     g_report_queued = true;
     H->run_outside_frame(finish_report, nullptr);
+}
+
+// BUG-0597: why "Send my world" sends nothing now (0: it sends; 1 no world loaded; 2 nobody joined)
+static int share_blocked()
+{
+    if (!g_share_explain_fix || A.role() != 1 || (A.vote_active && A.vote_active()) || !A.share_state)
+        return 0; // (during a vote the button is "Start now")
+    return A.share_state();
 }
 
 static void do_send_chat()
@@ -804,6 +852,15 @@ static void build_dialog()
         g_dirty = true;
     });
     D.share_btn = add_button(L, "share", {260, 488, 480, 528}, T("Send my world", "Отправить мир"), [] {
+        int why = share_blocked();
+        if (why) { // BUG-0597: say why nothing is sent (the button is greyed out, a locked click still comes here)
+            set_status(why == 1 ? T("Start or load a game first: friends who join get it by themselves",
+                                    "Сначала начните игру: вошедшие друзья получат её сами")
+                                : T("Nobody has joined yet: friends who join get your world by themselves",
+                                    "Пока никто не вошёл: друзья получат ваш мир сами"),
+                       kYellow, 8);
+            return;
+        }
         A.share_world();
         set_status(T("Sending the world to everyone...", "Мир отправляется всем..."), kYellow, g_status_fix ? 5 : 0);
     });
@@ -948,6 +1005,14 @@ static void refresh_lobby()
         color(D.row_ready[i], p.ready ? kGreen : kDim);
     }
     std::string wl = A.world_line ? A.world_line() : "";
+    int share_why = share_blocked();
+    if (wl.empty() && g_status.empty() && share_why) // BUG-0597: a host alone can play now
+        wl = share_why == 1 && rows.size() <= 1
+                 ? T("Start or load a game now: friends can join any time",
+                     "Начните или загрузите игру: друзья войдут когда угодно")
+             : share_why == 2 ? T("Nobody has joined yet: friends who join get your world by themselves",
+                                  "Пока никто не вошёл: друзья получат ваш мир сами")
+                              : "";
     text(D.world, wl.empty() ? g_status : wl);
     // the chat history (50 lines kept): long lines wrapped, scrolled with the arrows (BUG-0129)
     std::vector<std::string> chat;
@@ -961,12 +1026,24 @@ static void refresh_lobby()
     show(D.chat_up, first > 0);
     show(D.chat_down, g_chat_scroll > 0);
     int ck = 0, cown = 0;
+    bool hint = false; // the creation row says how to get a choice: it may take the arrows' room
     std::string cname, cl;
     if (A.creation && A.creation(ck, cname, cown)) {
         cl = ck == 1 ? T("My cell: ", "Моя клетка: ") : ck == 2 ? T("My ship: ", "Мой корабль: ") : T("My creature: ", "Моё существо: ");
-        cl += cname.empty() ? T("the world's own", "из мира хоста") : cname;
+        bool me_host = A.role() == 1;
+        if (!cname.empty())
+            cl += cname;
+        else if (!g_creation_hint_fix)
+            cl += T("the world's own", "из мира хоста");
+        else // BUG-0598: say whose it is
+            cl += ck == 2 ? T("your empire's ship", "корабль вашей империи")
+                  : me_host ? T("your world's species", "вид вашего мира") : T("the host's species", "вид хоста");
         if (ck != 2 && cown > 0)
             cl += std::string(T("  (in My Creations: ", "  (своих: ")) + std::to_string(cown) + ")";
+        else if (g_creation_hint_fix && ck != 2 && !me_host) { // no arrows: how to get a choice
+            cl += T(" (make one in an editor to pick it)", " (создайте своё в редакторе)");
+            hint = true;
+        }
     }
     std::string gwhat, gto;
     int gn = A.give ? A.give(gwhat, gto) : 0;
@@ -990,6 +1067,14 @@ static void refresh_lobby()
                              T("religious (faster conversion)", "религиозная (быстрее обращение)")};
         cl = std::string(T("My role: ", "Моя роль: ")) + rn[r & 3];
     }
+    if (g_creation_hint_fix && D.creation) { // the row is wider while it has no arrows and no buttons
+        auto& c = g_cache[D.creation];
+        float x2 = hint && !giving && !roles ? 720.f : 560.f;
+        if (c.box.x2 != x2 && c.left) {
+            c.box.x2 = x2;
+            fit(D.creation, c);
+        }
+    }
     text(D.creation, cl);
     show(D.give_btn, giving && gn > 0);
     show(D.give_next, giving && gn > 0 && !space && A.give_choices && A.give_choices() > 1);
@@ -1004,6 +1089,7 @@ static void refresh_lobby()
     bool host = A.role() == 1;
     text(D.ready_btn, A.ready() ? T("Not ready", "Не готов") : T("I'm ready", "Я готов"));
     show(D.share_btn, host);
+    enable(D.share_btn, !share_why || !g_share_explain_fix);
     text(D.share_btn, A.vote_active && A.vote_active() ? T("Start now", "Начать сейчас") : T("Send my world", "Отправить мир"));
     text(D.leave_btn, host ? T("Stop hosting", "Закрыть игру") : T("Leave", "Выйти"));
 }
@@ -1060,7 +1146,7 @@ static void refresh()
     }
     if (g_want_open && g_recenter_fix)
         place_window(D.root);
-    show(D.root, g_want_open);
+    show(D.root, g_want_open && H->time_seconds() >= g_aside_until);
     if (!g_want_open) {
         if (A.lan_scan)
             A.lan_scan(false);
@@ -1123,6 +1209,20 @@ void open(bool on)
 }
 
 bool is_open() { return g_want_open; }
+
+bool step_aside(int x, int y, double secs)
+{
+    if (!g_want_open || !D.root || !sui::visible(D.root))
+        return false;
+    Rect r = sui::screen_rect(D.root);
+    if (x < r.x1 || x >= r.x2 || y < r.y1 || y >= r.y2)
+        return false;
+    sui::set_visible(D.root, false);
+    g_cache[D.root].vis = 0;
+    g_aside_until = H->time_seconds() + secs;
+    g_dirty = true;
+    return true;
+}
 int input_lock_now() { return input_lock(); }
 
 void tick()
@@ -1220,7 +1320,8 @@ std::string debug_state()
                     " input_lock=" + std::to_string(input_lock()) + " modal=" + (game_modal() ? "1" : "0") +
                     " modal_seen=" + std::to_string(g_modal_seen) + " locked_clicks=" + std::to_string(g_locked_clicks) +
                     " locked_native=" + std::to_string(g_locked_native) +
-                    " locked_typed=" + std::to_string(g_locked_typed) + "\n";
+                    " locked_typed=" + std::to_string(g_locked_typed) +
+                    " share_enabled=" + (D.share_btn && (sui::flags(D.share_btn) & sui::kFlagEnabled) ? "1" : "0") + "\n";
     char b[256];
     int sw = 0, sh = 0;
     H->screen_size(&sw, &sh);
@@ -1264,5 +1365,11 @@ std::string debug_state()
 uint32_t text_font() { return g_text_font; }
 
 bool russian() { return g_ru; }
+
+void set_russian(bool ru)
+{
+    g_ru = ru;
+    g_dirty = true;
+}
 
 } // namespace coop_ui
