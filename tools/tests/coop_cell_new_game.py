@@ -78,6 +78,10 @@ def probe(name, me, other, kind, tries):
         p1 = pool(me)['own_points'] or 0
         here, there = alive(me, key), alive(other, key)
         log.append(f'{key}: points {p0}->{p1} here {"alive" if here else "gone"} there {"alive" if there else "gone"}')
+        if not p1 > p0:  # BUG-0589: what the cell is in this game (layer, level, size) and how far the avatar is from it
+            pl = pool(me)
+            cell = ' | '.join(me.call(f'coop.pool cell {key}')['out'].strip().splitlines())[:300]
+            log.append(f'   (seen as {" ".join(food[0][2:])}; it now: {cell}; avatar size {pl.get("size")} hp {pl.get("hp")} pos {pl.get("pos")})')
         ok += p1 > p0 and here == there  # eaten: gone, or shrunk one level (EatFood), the same on both
     print(f'  probe {name} {kind}: {ok}/{tries} eaten: ' + '; '.join(log), flush=True)
     return ok
