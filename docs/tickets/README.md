@@ -594,4 +594,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0582](BUG-0582-tribe-host-faults-at-0xd72745-every-frame-during.md) | fixed | crash | Tribe | 2026-11-04 | unreleased | Tribe: host faults at 0xD72745 every frame during its own creature attack event |
 | [BUG-0583](BUG-0583-tribe-a-guest-faults-in-a-citizen-s-update-getab.md) | fixed | crash | Tribe | 2026-11-04 | unreleased | Tribe: a guest faults in a citizen's Update (GetAbilityIndexByType) after leaving and joining again |
 | [BUG-0584](BUG-0584-creature-a-caught-fault-on-the-host-a-call-throu.md) | open | crash | Creature | 2026-11-04 |  | Creature: a caught fault on the host, a call through null from 0xB097C4 (after 44 min of a long session) |
-| [BUG-0590](BUG-0590-creature-an-animal-s-proxy-lags-3-6-m-behind-the.md) | open | desync | Creature | 2026-11-05 |  | Creature: an animal's proxy lags 3-6 m behind the host's walking animal on a slow guest (4 fps) |
+| [BUG-0590](BUG-0590-creature-an-animal-s-proxy-lags-3-6-m-behind-the.md) | fixed | desync | Creature | 2026-11-05 | unreleased | Creature: an animal's proxy lags 3-6 m behind the host's walking animal on a slow guest (4 fps) |

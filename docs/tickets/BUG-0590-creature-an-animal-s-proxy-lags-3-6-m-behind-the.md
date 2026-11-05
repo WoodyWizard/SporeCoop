@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.6
 fixed_in: unreleased
 branch: fix/w43-crashes
-commits:
+commits: 5c07b2a6
 tests: npc_walk_slow_creature (coop_npc_walk_slow.py --fixture creature)
 signature:
 docs:
