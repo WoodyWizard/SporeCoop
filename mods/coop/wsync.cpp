@@ -125,13 +125,16 @@ static std::vector<TribeRef> npc_tribes()
         it = it->t == pt ? out.erase(it) : std::next(it);
     return out;
 }
-// the guest's tribe for a host entry: the same political id (the guest loads the host's save), else the closest
-// within 40 m (a village formed during play has its own id in each game)
+// the guest's tribe for a host entry. BUG-0591: a village the host's game formed during play is made on the guest
+// (tribe.npc_tribes, SpawnNpcTribe at the host's centre, 0.0 m) with the guest's own next political id: the host's
+// new villages 2, 3, 4 and the guest's copies got ids in another order, so the host's id of one village was the
+// guest's id of another and its relation and food went to that one (play_tribe lab 20261105-015320, from the host's
+// forming at 418 s on). Villages do not move: the closest within 40 m first, the same political id only when no
+// village is that close. Off (wsync.tribe_pos off): the political id first (0.7.7).
+static bool g_tribe_pos_fix = true;
+COOP_FIX("wsync.tribe_pos", "BUG-0591", g_tribe_pos_fix, "wsync: a village's relation, food and goal card reach the guest's village at the same place (not the same id)");
 static const TribeRef* match(const std::vector<TribeRef>& mine, uint32_t hpol, float x, float y, float z)
 {
-    for (auto& t : mine)
-        if (t.pol == hpol)
-            return &t;
     const TribeRef* best = nullptr;
     float bd = 40.f * 40.f;
     for (auto& t : mine) {
@@ -139,6 +142,11 @@ static const TribeRef* match(const std::vector<TribeRef>& mine, uint32_t hpol, f
         if (d < bd)
             bd = d, best = &t;
     }
+    if (g_tribe_pos_fix && best)
+        return best;
+    for (auto& t : mine)
+        if (t.pol == hpol)
+            return &t;
     return best;
 }
 

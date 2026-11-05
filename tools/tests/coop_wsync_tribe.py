@@ -18,6 +18,7 @@ Every check reads the guest's own game (`coop.wsync dump`), not the mod's table.
 
   SPORE_LANE=4 python3 tools/tests/coop_wsync_tribe.py rel
 """
+import math
 import sys
 import time
 
@@ -149,12 +150,60 @@ def t_stages(host, guest, ck):
     ck(bool(got), 'after its rejoin the guest\'s game has the host\'s stages done again')
 
 
+def t_villages(host, guest, ck):
+    """BUG-0591: villages the host's game forms during play (its NPC tribe controller, `coop.tribe form`) are made on
+    the guest with the guest's own political ids; the host's relation and food of each such village must reach the
+    guest's village at the same place (the game's own CalculateRelationship and bundles, read on both games)"""
+    from coop_tribe_guest_tribes import form
+    h0 = dump(host, 'tribe_rel').get('tribe_rel', [])
+    for i in range(3):
+        form(host, f' form {i}')
+        time.sleep(3)
+    h1 = wait(lambda: (lambda h: h if len(h) > len(h0) else None)(dump(host, 'tribe_rel').get('tribe_rel', [])), 30)
+    ck(bool(h1), f'the host\'s game formed new villages ({len(h0)} -> {len(h1 or [])})')
+    if not h1:
+        return
+    new = [e for e in h1 if all(math.dist(e['pos'], x['pos']) > 40 for x in h0)]
+    g1 = wait(lambda: (lambda g: g if all(any(math.dist(e['pos'], x['pos']) < 40 for x in g) for e in new) else None)(
+        dump(guest, 'tribe_rel').get('tribe_rel', [])), 40)
+    ck(bool(g1), 'the guest\'s game made every new village of the host\'s')
+    if not g1:
+        return
+    ids = [(e['key'], next((x['key'] for x in g1 if math.dist(e['pos'], x['pos']) < 40), None)) for e in h1]
+    print(f'  villages host id -> guest id at the same place: {ids}', flush=True)
+    other = sum(1 for a, b in ids if a != b)
+    print(f'  {other} of {len(ids)} villages have another id on the guest; ids of the host that are another '
+          f'village on the guest: {sum(1 for a, b in ids if a != b and any(x["key"] == a for x in g1))}', flush=True)
+    # a different relation and food for every village of the host's game (the game's ApplyRelationship / AddFood)
+    for i, e in enumerate(h1):
+        host.call(f'coop.wsync rel {e["key"]} {-1.5 - i}')
+        host.call(f'coop.wsync food {e["key"]} {20 + 15 * i}')
+    time.sleep(1)
+
+    def same():
+        h, g = dump(host), dump(guest)
+        bad = []
+        for row, f, tol in (('tribe_rel', 'rel', 0.5), ('tribe_food', 'food', 5.0)):
+            for e in h.get(row, []):
+                m = [x for x in g.get(row, []) if math.dist(x['pos'], e['pos']) < 40]
+                if not m or not abs(m[0][f] - e[f]) <= tol:
+                    bad.append((row, e['key'], e[f], m[0][f] if m else None))
+        return bad
+    bad = same()
+    t0 = time.time()
+    while bad and time.time() - t0 < 10:
+        time.sleep(1)
+        bad = same()
+    print(f'  differences after 10 s (row, host id, host, guest at the same place): {bad}', flush=True)
+    ck(not bad, f'every village of the guest\'s game has the host\'s relation and food at its place ({len(bad)} differ)')
+
+
 def main():
     what = sys.argv[1] if len(sys.argv) > 1 else 'rel'
     host, guest = start('tribe')
     ck = Checks()
     time.sleep(6)
-    {'rel': t_rel, 'goal': t_goal, 'stages': t_stages, 'food': t_food}[what](host, guest, ck)
+    {'rel': t_rel, 'goal': t_goal, 'stages': t_stages, 'food': t_food, 'villages': t_villages}[what](host, guest, ck)
     print('  guest wsync: ' + guest.call('coop.wsync')['out'].strip().replace('\n', ' | '), flush=True)
     ck.faults(host=host, guest=guest)
     return ck.result()
