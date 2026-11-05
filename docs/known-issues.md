@@ -1991,3 +1991,7 @@ Player reports 2026-11-04 (0.7.5, Discord bug-reports; not analysed yet):
 - BUG-0584: Creature: a fault on the host, a call through null from 0xB097C4 (fixed on fix/w44-crashes, unreleased: wobj.fruit_saved + game.fruit_pool; reproduced by `crash_fruit_eat`: docs/re/creature.md#creature-fruit-pool-guard)
 - BUG-0600: Tribe: a guest's game plays none of the hit and fight sounds of the members' fights (the host's 40+ in a
   40 s fight, the guest's 0; `coop.audio list` on both after `coop.tribe act 7`).
+  Fixed on fix/w44-guest-player3 (unreleased, `mirror.fx`) except the attack animations' hit impacts: BUG-0603.
+- BUG-0603: Tribe: a guest's game plays none of the hit impact effects of the members' attack animations (the
+  animation event's per-target effects 0x682E8D4B / 0xF0D5A994 / 0xCFECC623, sound 0xD05B58ED; `coop_tribe_fight_sounds.py`
+  prints the host's plays). docs/re/tribe.md#tribe-mirror-fx.
