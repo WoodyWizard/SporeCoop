@@ -155,6 +155,25 @@ class Session:
         print(f'  {n} actions; food {g.food[-1][1] if g.food else "?"}; orders '
               + ', '.join(f'{p.name} {p.orders}' for p in g.p), flush=True)
 
+    def leave_editors(self):
+        """an editor the play opened (the creature bots' own evolution vote ends in the host's editor when its time is
+        up, lab 20261104-210208: the host stayed there and the next transition waited on it): the red X, both games"""
+        left = False
+        for _ in range(3):
+            busy = [c for c in (self.host, self.guest) if 'Editor' in mode(c)]
+            if not busy:
+                break
+            for c in busy:
+                c.call('wait.frames 200 60000')
+                c.call('move %d %d' % CANCEL)
+                time.sleep(0.5)
+                c.call('click %d %d' % CANCEL)
+            left = True
+            time.sleep(10)
+        if left:
+            print('  an editor of the play left with the red X', flush=True)
+            self.wait_together(240, 'after the play\'s editor')
+
     # ---------------- transitions of the guest ----------------
     def death(self):
         if self.stage == 'creature':
@@ -246,6 +265,10 @@ class Session:
         return self.wait_together(240, 'menu')
 
     def restart(self):
+        # a player closing its game: the session left first (a crash, the guest gone without a word, is
+        # coop_creature_desync's; here the host's puppet rule would count the seconds until the timeout)
+        self.guest.call('coop.leave')
+        time.sleep(2)
         for m in twoinst._monitors:
             m.stop = True
         kill_game(lane.GUEST)
@@ -295,6 +318,7 @@ def main():
     ok = True
     for ev in events + [None]:
         s.play(seg)
+        s.leave_editors()
         if Monitor.events:
             ok = False
             break

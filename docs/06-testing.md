@@ -4178,3 +4178,26 @@ player reports (BUG-0554..BUG-0579) were mostly world state it could not see. No
   political ids, the sky 0.7 deg apart), 0 rows in 14 samples of `detect_tribe` (lab 20261104-201322). The tribe fixture
   has no stage done (it starts at Tribe) and no tribe-to-tribe mission (`goal tribe=-1`): those rows are not shown to fire
   on a real game yet.
+
+## The long-session bot (2026-11-04, fix/w43-detector2)
+<a id="testing-long-session"></a>
+
+`tools/tests/coop_long_session.py --stage creature|tribe [--minutes 40] [--events death,editor,menu,restart,rejoin]`
+(suite `detector`: `long_creature`, `long_tribe`, 40 min of play, about 55-65 min with the transitions, lab timeout
+80 min; `long_<stage>_short`: 6 min of play, about 12 min). The play is the stage's play bot (play_creature.Player threads,
+play_tribe.Game) in segments; between them one transition of the guest: `death` (Creature: `coop.team die`; Tribe: the
+guest's chief leaves the tribe through `coop.tribe drop_chief 1`, an approximation: no real Tribe death of a player),
+`editor` (the host's evolution vote, the guest's "I'm ready", the red X on the host and, in Creature, on the guest's own
+editor too), `menu` (the guest's pause menu, Exit to Main Menu, Don't Save x2), `restart` (the guest leaves the session,
+its game is SIGKILLed, started again and joins: a player closing the game; a crash without the leave made the host's
+puppet rule fire, lab 20261104-210208), `rejoin` (`coop.leave` and join). 20 s after each one it prints a detector sample with
+`"after": "<event>"` (DETECTOR-SAMPLE / DETECTOR lines like the monitor's); with `SPORE_DETECTOR=<s>` the monitor samples
+during the play as well. It fails only on faults, crashes, freezes and a guest that is not back in the host's world
+within 4 min of a transition (the session cannot go on); the divergences are rows for `tools/detector_report.py`.
+
+* After every play segment an editor the play opened is left with the red X on both games (the creature bots' own
+  evolution vote ends in the host's editor when its time is up: lab 20261104-210208, the rejoin then waited on it).
+* Pitfalls met: in Creature the vote opens the guest's editor too (lab 20261104-203017: the guest stayed in its editor
+  after the host's red X); a 40 min session exceeds the lab's default 30 min timeout (`timeout=4800` in suite.py).
+* Timings (lab 20261104-203017, lane 2/3): death back in 5-8 s, editor 13-170 s (Tribe: the host's editor opened
+  61 s after the vote once), menu 16-21 s, restart 17 s, rejoin 14 s.
