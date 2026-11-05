@@ -24,6 +24,8 @@ import re
 import sys
 import time
 
+import worlddiff
+
 from coop_ui import Ui
 from twoinst import Checks, shot, start
 
@@ -95,6 +97,36 @@ def busy(con):
     return m.group(1) if m else '?'
 
 
+def mismatches(con):
+    m = re.search(r'mismatch (\d+)', con.call('coop.diag sync')['out'])
+    return int(m.group(1)) if m else -1
+
+
+def end_of_tribe(host, guest, ck):
+    """BUG-0588 / BUG-0594: back from the City Hall editor the host's game takes its Tribe world down for Civ (every
+    animal at (0 0 0), the village's totem pole gone); the guest's game keeps its world until the Civ world comes. The
+    host's game says it is in the end of the stage (cTribeUI +0x28, coop.wstate `st phase stage_end=1`) and the
+    sync-check compares nothing then (SPORE_FIX_OFF=diag.stage_end: a MISMATCH "n: apart")."""
+    time.sleep(4)
+    hs = worlddiff.state_dump(host)
+    hw = worlddiff.dump(host, 3000)
+    npcs = [x['pos'] for x in hw.rows if x['kind'] == 'c' and x['own'] == 'npc']
+    at0 = sum(1 for p in npcs if all(abs(v) < 0.01 for v in p))
+    print(f'  end of Tribe: host stage_end={hs and hs.stage_end}, the host\'s NPCs at (0 0 0): {at0} of {len(npcs)}, '
+          f'totem poles host {sum(1 for x in (hs.planet if hs else []) if x["noun"] == 0x055CF865)}', flush=True)
+    ck(hs and hs.stage_end, 'the host\'s game is in the end of Tribe after the City Hall editor (stage_end)')
+    m0 = mismatches(host)
+    host.call('coop.diag sync 600')  # only the checks asked here
+    for _ in range(3):
+        host.call('coop.diag sync now')
+        time.sleep(5)
+    m1 = mismatches(host)
+    print(f'  host sync-check mismatches {m0} -> {m1}: ' + host.call('coop.diag sync')['out'].strip().splitlines()[-1][:200],
+          flush=True)
+    ck(m1 == m0, f'no sync-check MISMATCH while the host\'s game ends the Tribe stage ({m0} -> {m1})')
+    host.call('coop.diag sync on')
+
+
 def main():
     ck = Checks()
     host, guest = start(fixture='tribe')
@@ -152,6 +184,8 @@ def main():
                    "the host's game takes the guest's food changes in the vehicle editor without a fault")
             finish_editor(host)
             wait(lambda: 'Editor' not in mode(host), 20)
+            if editors == 1 and 'Tribe' in mode(host):
+                end_of_tribe(host, guest, ck)
             continue
         b = busy(host)
         if 'paused' in b and 'cinematic' in b:
