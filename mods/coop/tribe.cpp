@@ -55,14 +55,6 @@ static T& F(void* p, uintptr_t off) { return *(T*)((uint8_t*)p + off); }
 static bool is_host() { return C.sess && C.sess->role() == net::Role::Host && C.sess->connected(); }
 static bool is_guest() { return C.sess && C.sess->role() == net::Role::Client && C.sess->connected(); }
 bool active() { return g_ok && C.sess && C.sess->connected() && game::mode_id() == modes::kTribe; }
-bool stage_end()
-{
-    if (game::mode_id() != modes::kTribe || !H)
-        return false;
-    uintptr_t get = H->sym("SporeCoop::cTribeUI_Get");
-    void* ui = get ? skg::cdecl_call<void*>(get) : nullptr;
-    return ui && !IsBadReadPtr((uint8_t*)ui + 0x28, 2) && (F<uint8_t>(ui, 0x28) || F<uint8_t>(ui, 0x29));
-}
 // BUG-0151: while the host is away (main menu) nothing simulates or orders the guest's members (the
 // host sends no states and drops orders outside Tribe): the guest's own game runs their AI and its
 // orders until the host is back. `coop.tribe fix away 0`: the old frozen tribe (tests).
@@ -88,6 +80,17 @@ static std::vector<void*> members(void* t)
         if (*it && game::object_alive(*it))
             v.push_back(*it);
     return v;
+}
+
+bool stage_end()
+{
+    // cTribeUI +0x28 / +0x29 (the listener's flags) read 0 back in Tribe after the City Hall (lab 20261105-123325):
+    // the game's own sign is the player tribe without its food mat (+0x260 = 0, BUG-0585), which a tribe has from its
+    // founding to the City Hall
+    if (!g_ok || game::mode_id() != modes::kTribe)
+        return false;
+    void* t = player_tribe();
+    return t && !IsBadReadPtr((uint8_t*)t + 0x260, 4) && F<void*>(t, 0x260) == nullptr && !members(t).empty();
 }
 
 static std::vector<void*> all_tribes()
