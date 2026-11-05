@@ -589,3 +589,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0577](BUG-0577-after-a-rejoin-the-game-shows-the-cell-and-creat.md) | open | bug | Tribe | 2026-11-04 |  | After a rejoin the game shows the Cell and Creature stages as not done yet (stage progress lost) |
 | [BUG-0578](BUG-0578-crash-at-graphics-cmodelworld-finishbackgroundlo.md) | open | crash | none | 2026-11-04 |  | Crash at Graphics::cModelWorld::FinishBackgroundLoad+0x2735 on 0.7.3.6 (3010a413, mode none) |
 | [BUG-0579](BUG-0579-tribe-day-and-night-differ-the-guest-s-world-is.md) | open | desync | Tribe | 2026-11-04 |  | Tribe: day and night differ: the guest's world is at night while the host's is in daylight |
+| [BUG-0581](BUG-0581-creature-a-held-evolution-editor-request-may-los.md) | open | bug | Creature | 2026-11-04 |  | Creature: a held evolution editor request may lose its DNA budget message like the Cell one (BUG-0560) |

@@ -117,6 +117,7 @@ add('cell_respawn_swap', P + 'coop_cell_respawn.py --swap', warm=True, minutes=3
 add('cell_editor_timed', P + 'coop_cell_editor_timed.py', minutes=5)  # the own cell editor entered within the 3 s after a real respawn, vulnerable after it (BUG-0237)
 add('cell_editor_timed_revive', P + 'coop_cell_editor_timed.py --revive', minutes=5)  # the same within the 2 s after a revive (BUG-0237)
 add('cell_editor_invuln', P + 'coop_cell_editor_invuln.py', minutes=5)  # invulnerable into the own cell editor, vulnerable after it (BUG-0237)
+add('cell_editor_budget', P + 'coop_cell_editor_budget.py', minutes=5)  # BUG-0560: the host's Cell editor after the vote gets the stage's DNA budget, the guest has the host's spent DNA (SPORE_FIX_OFF=cell.editor_budget,wsync.cell_spent fails)
 add('cell_spawn_guard', P + 'coop_cell_spawn_guard.py', warm=True, minutes=3, fixture='cell')  # coop.cell spawn with a slot that is not a live cell: "no such cell", no fault (BUG-0093)
 add('dna_resend', P + 'coop_dna_resend.py', warm=True, minutes=3, fixture='creature')  # the DNA total reaches a guest that missed it (BUG-0128)
 add('leave_cleanup', P + 'coop_leave_cleanup.py', minutes=4, fixture='space')  # every session end cleans every stage module (BUG-0033): Space mirrors after Leave, host while connected
