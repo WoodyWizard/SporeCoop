@@ -618,3 +618,4 @@ def _variants():
 
 
 T += _variants()
+add('tribe_mirror_anims', P + 'coop_tribe_mirror_anims.py', minutes=3, fixture='tribe')  # BUG-0569: the guest's mirrors play the members' behaviour animations as on the host (SPORE_FIX_OFF=tribe.mirror_anims fails)

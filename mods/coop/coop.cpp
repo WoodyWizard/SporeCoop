@@ -35,6 +35,7 @@
 #include "tribe.h"
 #include "drama.h"
 #include "cellsync.h"
+#include "audio.h"
 #include "census.h"
 #include "civ.h"
 #include "autoupdate.h"
@@ -5594,6 +5595,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         rc.host_away = ctx.host_away;
         realign::init(H, M, rc);
     }
+    audio::init(H, M); // BUG-0568: the game's audio commands for tests (coop.audio)
     { // BUG-0401: the party's collected creature parts
         parts::Ctx pc;
         pc.sess = &g_sess;

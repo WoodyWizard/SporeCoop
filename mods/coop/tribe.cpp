@@ -166,6 +166,7 @@ void for_each_tree_pos(void (*fn)(const net::Vec3& pos, bool fruit, void* user),
 struct HMember {
     uint16_t id;
     uint8_t owner;
+    uint32_t bhv_anim = 0; // BUG-0569: the last animation its behaviour tree started
 };
 static std::unordered_map<void*, HMember> g_hm;
 static std::unordered_map<uint16_t, void*> g_hm_by_id;
@@ -194,6 +195,7 @@ struct GMember {
     net::SnapshotBuffer buf; // BUG-0365 (tribe.mirror_time): the host's states by its clock
     net::Vec3 aim;           // coop.track: where the driving aimed this frame
     float aim_speed = 0;     // and the host's speed of that state
+    double anim_rx_at = 0, anim_fix_at = 0; // BUG-0569: the last relayed start, the last snapshot play
 };
 static std::unordered_map<uint16_t, GMember> g_gm;
 // BUG-0365 (see mirror_drive)
@@ -923,6 +925,132 @@ static TribeInfo tribe_info(void* t)
     }
     return i;
 }
+// BUG-0569: a guest saw its village's members stand still while the host's fought, gathered, danced and built.
+// The behaviour tree of a guest's mirror does not run (h_BTTick: the host's member decides), and the animations of
+// the members' actions are started by those trees (SporeCoop::CreaturePlayAnim: fights, gathering, the grab, the
+// social dances; game.cpp's behaviour animation listener). The mirrors played only what their locomotion picks
+// (idle, walk). As for the animals (npc.anims, BUG-0464): the host reports every behaviour animation of a member
+// it tracks and sends them once a cycle to the guests (MSG_NPC_ANIM kind 2: u8 n, n x {u16 member id, u32 anim, u8 how,
+// u8 a, u32 b}); once a second the animation each member plays now when its tree started it (kind 3: u8 n, n x
+// {u16 id, u32 anim}) for a mirror made later or a lost message. A guest plays the same call on the mirror.
+// Older guests ignore both kinds (npc.cpp reads kinds 0 and 1 only). `coop.fix tribe.mirror_anims off`: nothing
+// sent, nothing played (0.7.7).
+static bool g_mirror_anims_fix = true;
+COOP_FIX("tribe.mirror_anims", "BUG-0569", g_mirror_anims_fix,
+         "tribe: a guest sees the members of every village fight, gather, dance and build as on the host");
+struct MemberAnim {
+    uint16_t id;
+    uint32_t anim;
+    uint8_t how, a;
+    int32_t b;
+};
+static std::vector<MemberAnim> g_member_anim_out;
+static uint32_t g_anim_relay_sent, g_anim_relay_played, g_anim_relay_failed, g_anim_relay_rx, g_anim_snap_played;
+static double g_member_snap_at;
+
+void on_behaviour_anim(void* c, uint32_t anim, int how, int a, int b)
+{
+    if (!g_ok || !is_host() || game::mode_id() != modes::kTribe)
+        return;
+    auto it = g_hm.find(c);
+    if (it == g_hm.end())
+        return;
+    it->second.bhv_anim = anim; // (also with the fix off: `coop.tribe anims` shows it to the tests)
+    if (g_mirror_anims_fix && g_member_anim_out.size() < 256)
+        g_member_anim_out.push_back({it->second.id, anim, (uint8_t)how, (uint8_t)(a & 0xFF), (int32_t)b});
+}
+
+static void send_member_anims(double now)
+{
+    if (!g_mirror_anims_fix) {
+        g_member_anim_out.clear();
+        return;
+    }
+    const size_t per = (net::kMaxPacket - 64) / 12;
+    for (size_t i = 0; i < g_member_anim_out.size(); i += per) {
+        size_t n = std::min(per, g_member_anim_out.size() - i);
+        net::Writer w;
+        w.u8(2); // started now
+        w.u8((uint8_t)n);
+        for (size_t j = 0; j < n; j++) {
+            const MemberAnim& e = g_member_anim_out[i + j];
+            w.u16(e.id); w.u32(e.anim); w.u8(e.how); w.u8(e.a); w.u32((uint32_t)e.b);
+        }
+        for (auto& p : C.sess->players())
+            if (p.id != 0)
+                C.sess->send_unreliable_to(p.id, net::MSG_NPC_ANIM, w);
+        g_anim_relay_sent += (uint32_t)n;
+    }
+    g_member_anim_out.clear();
+    if (now - g_member_snap_at < 1.0)
+        return;
+    g_member_snap_at = now;
+    std::vector<std::pair<uint16_t, uint32_t>> v;
+    for (auto& [c, m] : g_hm) {
+        uint32_t cur = 0;
+        if (m.bhv_anim && game::object_alive(c) && game::drawn_state(c, nullptr, &cur) && cur && cur == m.bhv_anim)
+            v.push_back({m.id, cur});
+    }
+    const size_t per2 = (net::kMaxPacket - 64) / 6;
+    for (size_t i = 0; i < v.size(); i += per2) {
+        size_t n = std::min(per2, v.size() - i);
+        net::Writer w;
+        w.u8(3); // what plays now
+        w.u8((uint8_t)n);
+        for (size_t j = 0; j < n; j++) {
+            w.u16(v[i + j].first);
+            w.u32(v[i + j].second);
+        }
+        for (auto& p : C.sess->players())
+            if (p.id != 0)
+                C.sess->send_unreliable_to(p.id, net::MSG_NPC_ANIM, w);
+    }
+}
+
+// guest: MSG_NPC_ANIM kinds 2 / 3 (npc.cpp passes them on after the kind byte)
+void on_member_anims(uint8_t kind, net::Reader& r)
+{
+    if (!g_ok || !is_guest() || game::mode_id() != modes::kTribe)
+        return;
+    double now = H->time_seconds();
+    uint8_t n = r.u8();
+    for (int i = 0; i < n && r.ok(); i++) {
+        uint16_t id = r.u16();
+        uint32_t anim = r.u32();
+        uint8_t how = 0, a = 1;
+        int32_t b = -1;
+        if (kind == 2) {
+            how = r.u8();
+            a = r.u8();
+            b = (int32_t)r.u32();
+        }
+        if (!r.ok())
+            break;
+        g_anim_relay_rx++;
+        if (!g_mirror_anims_fix)
+            continue;
+        auto it = g_gm.find(id);
+        void* c = it == g_gm.end() ? nullptr : it->second.c;
+        if (!c || !game::object_alive(c) || game::is_dead(c))
+            continue;
+        GMember& g = it->second;
+        if (kind == 3) { // only when the mirror plays another one, at most every 2 s, not right after a start
+            uint32_t cur = 0;
+            if (now - g.anim_fix_at < 2.0 || now - g.anim_rx_at < 1.5 || !game::drawn_state(c, nullptr, &cur) || cur == anim)
+                continue;
+            g.anim_fix_at = now;
+            if (game::play_behaviour_anim(c, anim, 0, 1, -1))
+                g_anim_snap_played++;
+            continue;
+        }
+        g.anim_rx_at = now;
+        if (game::play_behaviour_anim(c, anim, how, a, b))
+            g_anim_relay_played++;
+        else
+            g_anim_relay_failed++;
+    }
+}
+
 static void host_tick(double now)
 {
     if (now - g_last_send < 0.12)
@@ -1028,6 +1156,7 @@ static void host_tick(double now)
                 C.sess->send_unreliable_to(p.id, net::MSG_TRIBE_STATE, w);
             }
     }
+    send_member_anims(now); // BUG-0569
 }
 
 static void* resolve_target(const Target& t)
@@ -3441,6 +3570,29 @@ std::string debug(const std::vector<std::string>& a)
         snprintf(b, sizeof b, "npc tribe %p at (%.1f %.1f %.1f): %u members, %.0f m from the village", t, tp.x, tp.y, tp.z,
                  (unsigned)members(t).size(), net::dist(tp, c));
         return b;
+    }
+    // anims: tests (BUG-0569), the animation each member plays now as the game holds it (Anim::AnimatedCreature
+    // vt 0x58 GetCurrentAnimation): host, its members by id (with the tribe index), guest, its mirrors by the host's id
+    if (!a.empty() && a[0] == "anims") {
+        std::string o;
+        char b[96];
+        auto line = [&](uint16_t id, void* c, uint32_t bhv) {
+            uint32_t an = 0;
+            if (c && game::object_alive(c) && game::drawn_state(c, nullptr, &an)) {
+                net::Vec3 p = game::position(c);
+                snprintf(b, sizeof b, "cur %u anim=%08X bhv=%08X pos=(%.1f %.1f %.1f)\n", id, an, bhv, p.x, p.y, p.z);
+                o += b;
+            }
+        };
+        if (is_host()) // bhv: the last animation its behaviour tree started (the game's call, game.cpp's listener)
+            for (auto& [c, m] : g_hm)
+                line(m.id, c, m.bhv_anim);
+        else
+            for (auto& [id, g] : g_gm)
+                line(id, g.c, 0);
+        return o + "anims fix=" + std::to_string((int)g_mirror_anims_fix) + " sent=" + std::to_string(g_anim_relay_sent) +
+               " rx=" + std::to_string(g_anim_relay_rx) + " played=" + std::to_string(g_anim_relay_played) + " failed=" +
+               std::to_string(g_anim_relay_failed) + " snap_played=" + std::to_string(g_anim_snap_played);
     }
     // form: tests (BUG-0483), this game's NPC tribe controller forms its next tribe now (what it does during play)
     if (!a.empty() && a[0] == "form" && o_Form && a_NpcCtrl) {
