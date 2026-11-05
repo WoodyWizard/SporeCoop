@@ -132,13 +132,13 @@ double distance(const Part& a, const Part& b)
     size_t i = 0, j = 0;
     while (i < a.abil.size() || j < b.abil.size()) { // ability levels: each level apart 1, missing / extra 3
         if (j >= b.abil.size() || (i < a.abil.size() && a.abil[i].first < b.abil[j].first)) {
-            s += std::abs(a.abil[i].second) + 3;
+            s += std::fabs((double)a.abil[i].second) + 3;
             i++;
         } else if (i >= a.abil.size() || b.abil[j].first < a.abil[i].first) {
-            s += std::abs(b.abil[j].second) + 3;
+            s += std::fabs((double)b.abil[j].second) + 3;
             j++;
         } else {
-            s += std::abs(a.abil[i].second - b.abil[j].second);
+            s += std::fabs((double)a.abil[i].second - (double)b.abil[j].second);
             i++;
             j++;
         }
@@ -148,10 +148,10 @@ double distance(const Part& a, const Part& b)
         int x = a.rank[k], y = b.rank[k];
         if (x == y)
             continue;
-        s += w[k] * (x != kNone && y != kNone ? std::min(std::abs((double)x - y), 1e3) : 3.0);
+        s += w[k] * (x != kNone && y != kNone ? std::min(std::fabs((double)x - (double)y), 1e3) : 3.0);
     }
     if (a.cost != kNone && b.cost != kNone)
-        s += std::min(std::abs((double)a.cost - b.cost), 1e5) / 100.0;
+        s += std::min(std::fabs((double)a.cost - (double)b.cost), 1e5) / 100.0;
     size_t common = 0;
     for (i = 0, j = 0; i < a.props.size() && j < b.props.size();) {
         if (a.props[i] == b.props[j]) {
