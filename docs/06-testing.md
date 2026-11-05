@@ -4174,6 +4174,12 @@ player reports (BUG-0554..BUG-0579) were mostly world state it could not see. No
 * No player position (an RTS game in the background): the state rows still count; the sample is no longer `nocentre`.
 * `tools/detector_report.py` maps the new signatures in `KNOWN`; an `All` row's share is of all comparisons.
 * `tools/tests/tools_selftest.py worldstate` (in `make test`) checks the rows on made-up dumps.
+* First long runs on rel/0.7.7 = 0.7.6 code (labs 20261104-203017, 20261104-210208; out/detector of the report in the D0
+  report): Tribe `state:tribe_food` 57 % (BUG-0580, new), `planet:tribe_tool` 41 % (BUG-0574), `state:relation` 34 %
+  (-7 aggressive on the host, 0 neutral on the guest: BUG-0565), `state:goal` 28 % (BUG-0564), `planet:village` /
+  `tribe_hut` 7 % (BUG-0564 / 0566), `All:state:time_of_day` 16 % (the host's sky stood still: BUG-0579); Creature
+  `state:species_killed` / `species_relation` 1-2 %. The mission's +0x84 held pointer-like values: it is printed, not
+  compared.
 * First runtime check (lane 2, tribe fixture, quiet): both games equal (food 15 / 15, the NPC tribe 4 members, the same
   political ids, the sky 0.7 deg apart), 0 rows in 14 samples of `detect_tribe` (lab 20261104-201322). The tribe fixture
   has no stage done (it starts at Tribe) and no tribe-to-tribe mission (`goal tribe=-1`): those rows are not shown to fire

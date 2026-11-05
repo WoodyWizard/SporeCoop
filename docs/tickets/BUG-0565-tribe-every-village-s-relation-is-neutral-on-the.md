@@ -33,3 +33,4 @@ Reports: SporeCoop-report-2026-11-04 190729 (out/reports/2026-11-04, not in git)
 
 ## History
 - 2026-11-04: opened.
+- 2026-11-04 (fix/w43-detector2, D0 detector): `Tribe:state:relation` in 34 % of the Tribe comparisons of long_tribe / play_tribe on rel/0.7.7 (0.7.6 code), labs 20261104-203017 and 20261104-210208: e.g. the tribe at (446 -150 185) -7.00 (aggressive) on the host, 0.00 (neutral) on the guest, the report's picture.

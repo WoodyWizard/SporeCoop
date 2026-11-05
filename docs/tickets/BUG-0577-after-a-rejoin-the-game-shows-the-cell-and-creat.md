@@ -33,3 +33,4 @@ Reports: SporeCoop-report-2026-11-04 (Discord text) (out/reports/2026-11-04, not
 
 ## History
 - 2026-11-04: opened.
+- 2026-11-04 (fix/w43-detector2, D0 detector): the detector compares the stages done (`All:state:stage_done`, cPlayer +0x10FC..+0x110C); not seen in the D0 runs: the creature and tribe fixtures start at their stage (no trait set on either game).

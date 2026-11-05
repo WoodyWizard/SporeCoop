@@ -35,3 +35,4 @@ Not analysed yet.
 
 ## History
 - 2026-11-04: opened.
+- 2026-11-04 (fix/w43-detector2, D0 detector): `Tribe:state:food` once (the player tribe's food 109 on the host, 124 on the guest) in 293 Tribe comparisons, labs 20261104-203017 / 20261104-210208: the 0-vs-19..56 of the report was not reproduced in these sessions.

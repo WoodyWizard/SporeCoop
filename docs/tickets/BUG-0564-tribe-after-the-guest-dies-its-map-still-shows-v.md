@@ -35,3 +35,4 @@ Not analysed yet.
 
 ## History
 - 2026-11-04: opened.
+- 2026-11-04 (fix/w43-detector2, D0 detector): `Tribe:state:goal` in 28 % (the host's tribe mission manager has a current mission for a tribe, the guest's none) and `Tribe:planet:village` in 7 % (the guest's planet has 3 villages more than the host's: e.g. at (446 -150 185), where the host's tribe object keeps a centre but no placed position) of the Tribe comparisons, labs 20261104-203017 / 20261104-210208.

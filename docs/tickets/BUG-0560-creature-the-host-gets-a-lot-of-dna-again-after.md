@@ -35,3 +35,4 @@ Not analysed yet.
 
 ## History
 - 2026-11-04: opened.
+- 2026-11-04 (fix/w43-detector2, D0 detector): the detector compares the Cell food / spent DNA (`Cell:state:dna`, `dna_spent`); not run on Cell in D0.

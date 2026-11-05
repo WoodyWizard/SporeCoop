@@ -35,3 +35,4 @@ Not analysed yet.
 
 ## History
 - 2026-11-04: opened.
+- 2026-11-04 (fix/w43-detector2, D0 detector): `Tribe:planet:tribe_tool` in 41 % of the Tribe comparisons: an NPC tribe's tools at other spots on the two planets (e.g. host only at (335 -136 353), guest only at (330 -175 341)), from the first sample of a fresh session on, labs 20261104-201842 / 20261104-203017 / 20261104-210208.

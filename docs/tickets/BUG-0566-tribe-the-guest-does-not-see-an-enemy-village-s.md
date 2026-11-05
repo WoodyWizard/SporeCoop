@@ -35,3 +35,4 @@ Not analysed yet.
 
 ## History
 - 2026-11-04: opened.
+- 2026-11-04 (fix/w43-detector2, D0 detector): `Tribe:planet:tribe_hut` in 7 % of the Tribe comparisons (huts on the guest's planet only), labs 20261104-203017 / 20261104-210208.
