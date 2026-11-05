@@ -653,6 +653,50 @@ std::string arm_attack_cut()
     return "armed: the next NPC in its attack animation loses its target (" + std::to_string(g_attack_cuts) + " so far)\n";
 }
 
+// BUG-0582: the Tribe creature attack's attackers (behaviour update 0xD73FD0, its state 3: walk to a spot round
+// the attacked place) take a free spot with 0xD72720 cdecl(bool, const Vector3* a, const Vector3* b, rec*, u32* out):
+// rec is the spot record of the place's planet cell from a global sorted table (0xC945C0 by the cell id the
+// behaviour's start 0xD73930 stored at +0xC0, null when the cell has no record) and is read without a check
+// (rec+0x40 / +0x44 the spots, 0x1C bytes each). Its sibling 0xD72690 (giving a spot back) checks the null. A host
+// faulted there every frame after its own creature attack (lab, tribe_bounce_world). With no record the guard
+// answers "no free spot" (out = -1, false), the game's own branch that ends the attacker's behaviour.
+// `coop.fix tribe.attack_spot off`: the game's read as before.
+using TakeSpotFn = uint32_t(__cdecl*)(const float*, const float*, void*, uint32_t*);
+static TakeSpotFn g_spot_orig;
+static bool g_attack_spot_fix = true;
+COOP_FIX("tribe.attack_spot", "BUG-0582", g_attack_spot_fix,
+         "tribe: an animal of a creature attack whose village spot is gone ends its attack (the game read the missing spot)");
+static std::atomic<unsigned> g_spots_missing{0};
+static std::atomic<int> g_spot_cut_test{0}; // tests: coop.spotcut (the next lookup finds no record)
+static unsigned g_spot_cuts = 0;
+
+static uint32_t __cdecl take_spot_guard(const float* a, const float* b, void* rec, uint32_t* out)
+{
+    if (g_spot_cut_test && rec) {
+        g_spot_cut_test = 0;
+        g_spot_cuts++;
+        H->log(M, SK_WARN, "game fixes: tests: an attacker's spot record %p is left out (BUG-0582)", rec);
+        rec = nullptr;
+    }
+    if (!rec && g_attack_spot_fix) {
+        unsigned n = ++g_spots_missing;
+        if (n <= 8 || n % 100 == 0)
+            H->log(M, SK_INFO, "game fixes: a creature attack's attacker has no spot record: its attack ends (BUG-0582, %u)", n);
+        if (out)
+            *out = 0xFFFFFFFFu;
+        return 0xFFFFFF00u; // AL = 0, as the game's own "no free spot"
+    }
+    return g_spot_orig(a, b, rec, out);
+}
+
+std::string arm_spot_cut()
+{
+    if (!g_spot_orig)
+        return "no attack spot guard\n";
+    g_spot_cut_test = 1;
+    return "armed: the next attacker's spot lookup finds no record (" + std::to_string(g_spot_cuts) + " so far)\n";
+}
+
 static bool patch_slot(uintptr_t* slot, uintptr_t value)
 {
     DWORD old;
@@ -815,6 +859,11 @@ void init(const SkHost* host, SkMod* mod)
     if (!dest)
         g_destroy_orig = nullptr;
     H->log(M, SK_INFO, "game fixes: stale stimulus sender guard %s", dest ? "on" : "off");
+    uintptr_t ts = H->sym("SporeCoop::TribeAttack_TakeSpot");
+    bool spot = ts && H->hook_create(M, (void*)ts, (void*)&take_spot_guard, (void**)&g_spot_orig) == 0;
+    if (!spot)
+        g_spot_orig = nullptr;
+    H->log(M, SK_INFO, "game fixes: creature attack spot guard %s", spot ? "on" : "off");
     uintptr_t sb = H->sym("SporeCoop::GameSettings_Build");
     g_get_db = (GetDatabaseFn)H->sym("Resource::GetDatabaseByID");
     g_create_area = (CreateSaveAreaFn)H->sym("Resource::Paths::CreateSaveAreaDirectoryDatabase");
@@ -858,6 +907,8 @@ std::string status()
            ", stale stimulus senders cleared " + std::to_string(g_senders_cleared.load()) + " (destroys " +
            std::to_string(g_destroys_scanned.load()) + "), missing save areas made " +
            std::to_string(g_areas_made.load()) + " (failed " + std::to_string(g_areas_failed.load()) + ")" +
+           ", attack spots missing " + std::to_string(g_spots_missing.load()) + " (test cuts " +
+           std::to_string(g_spot_cuts) + (g_spot_cut_test ? ", armed" : "") + ")" +
            ", ship models defaulted " + std::to_string(g_ufo_defaulted.load()) + " (SetVisible without a model skipped " +
            std::to_string(g_ufo_invisible_skipped.load()) + ")\n";
 }

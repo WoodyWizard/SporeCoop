@@ -1620,3 +1620,46 @@ BUG-0576, BUG-0585. GOG 2024, Ghidra (tools/ghidra/q.sh) and lab runs on lane 4 
   guest that just received the host's world bakes the host's creations then (the host's own game had them baked).
   Inferred: GOG 2024 bakes slower on the lanes than GOG 2016 (the 2016 guest was running when start() returned).
   Not a mod bug: the guest's mirrors are kept on the ground meanwhile by `tribe.mirror_ground` (BUG-0444).
+## The creature attack's spots round a village (2026-11-05, fix/w43-crashes)
+<a id="tribe-attack-spot"></a>
+
+BUG-0582. GOG 2024, Ghidra and lab lane 2 (`tools/tests/coop_tribe_attack_spot.py`).
+
+* ✔ (Ghidra) The creature attack (Drama Manager kind 7) runs its animals through a behaviour whose start 0xD73930
+  stores the attacked place's position (+0xB0) and its planet cell id (+0xC0, `SporeCoop::SpotRecord_CellId` 0xC9B140
+  with make = 0) and whose update 0xD73FD0 walks them through states; in state 3 it looks the cell's spot record up
+  (`SporeCoop::SpotRecord_Find` 0xC945C0: a global sorted fixed vector 0x157ABB0, 0x60-byte entries, null when the
+  cell has none) and takes the nearest free spot with `SporeCoop::TribeAttack_TakeSpot` 0xD72720, which reads the
+  record's spots (+0x40 / +0x44, 0x1C bytes: used flag, position) **without a check** (null + 0x44 at 0xD72745). Its
+  sibling 0xD72690 (a spot given back) checks for null; a false answer of 0xD72720 is the game's own "no free spot"
+  branch (0xDA61D0 + the behaviour's vt 0x44: the attack ends).
+* ✔ Records are made for every cTribe (0xC9B8D0 over the noun list, 0xC9B860 from a tribe's creation 0xCD4F10, make
+  = 1); the table is emptied by 0xC9A210 on the stage modes' enter / exit (0xCDEE00, 0xCFA770, 0xFFA170).
+* ✔ (lab) The host's own creature attack (`coop.drama start 7`) after a tribe formed during play (`coop.tribe form`,
+  the controller's own forming): the attackers reached state 3 with no record within ~55 s in 3 of 3 runs (431 and
+  357 caught faults with the guard off, lab 20261105-000150, 20261104-235754; 2 attackers ended by the guard, lab
+  20261104-235955); without the formed tribe none in 1 run. ~ Inferred: the formed tribe's cell has no record (a
+  game bug that co-op tests hit because they form tribes; the NPC controller forms them in long sessions too).
+* Fix `tribe.attack_spot` (gamefixes.cpp): with no record 0xD72720 answers "no free spot" (out = -1, false).
+## A tribe leader's abilities and a tool (2026-11-05, fix/w43-crashes)
+<a id="tribe-leader-tool"></a>
+
+BUG-0583. GOG 2024, Ghidra and the lab's fault record.
+
+* ✔ (Ghidra) A citizen's abilities: count vt 0xB0 = `SporeCoop::Citizen_AbilityCount` 0xC24DB0: its species' (+0xB20
+  profile, vector +0x6D4 / +0x6D8) + 2 for a tool (+0x102C) of type 1..6, 1 for 9 or 0xB, + 6 when it leads its
+  tribe (`SporeCoop::Citizen_IsLeader` 0xC23430: owner +0x1010 city, else +0x1014 tribe, owner +0x11C == it). The
+  getter vt 0xB4 = 0xC24E40 serves n (the species' count) entries, then index n = GetTribeToolData(tool) +0x24, then
+  for a leader n+1..n+6 the table 0x169DE30 +0x1C.., for others n+1 = the table's +0x34..+0x48 by tool 1..6; null
+  past that. **A leader with a tool of type 1..6 counts n + 8 and the getter serves n + 7**: the last is null and
+  `GetAbilityIndexByType` 0xC0C1E0 (from every citizen's Update through 0xC1CF30 when +0xB54 is set) reads null + 8.
+* ✔ (lab 20261104-212803, fix/w43-realign) the guest's fault: EBX = 21 (count), ESI = 20 (the last index), EAX = 0,
+  **ECX = 1**: 0xC23430 returns with ECX = its result, only the leader branch keeps it (the others leave 0): a leader
+  holding a tool of type 1..6.
+* The game never makes that state: `SetSpecializedTool(0)` on a leader gives 0xB (the staff) and the leader takes
+  no rack's tool. The mirrors' tool field (tribe.tool_hold, BUG-0514) copies the host's member's tool to the guest's
+  mirror, which can be its own tribe's leader there (? how the leaders came to differ after the rejoin: not seen
+  again; in 3 lab runs the guest's leaders were a subset of the host's, lab 20261105-002001, -002140, -002402).
+* Fix `tribe.leader_tool` (tribe.cpp apply_held_tool): no tool of type 1..6 on this game's leader.
+* ✔ (lab 20261105-002402, fix off) a leader mirror set to 1 by the field's apply did not fault before the host's next
+  field gave it 11 again (seconds): the state must last for the fault (+0xB54 updates).

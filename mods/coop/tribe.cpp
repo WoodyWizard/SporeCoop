@@ -523,10 +523,21 @@ static void* member_mirror(uint16_t id)
 // its mirror with the game's SetSpecializedTool. `coop.fix tribe.tool_hold off`: mirrors keep their own.
 constexpr uintptr_t kToolsOff = 0x36C;    // cTribe: vector<cTribeTool*> mTools
 constexpr uintptr_t kHeldToolOff = 0x102C; // cCreatureCitizen: mSpecializedTool
-static uintptr_t a_SetSpecializedTool, a_ToolModelReset, a_SetToolPurchased, a_ToolLayout;
+static uintptr_t a_SetSpecializedTool, a_ToolModelReset, a_SetToolPurchased, a_ToolLayout, a_IsLeader;
 static bool g_tool_hold_fix = true;
 COOP_FIX("tribe.tool_hold", "BUG-0514", g_tool_hold_fix, "tribe: a guest's mirror of a member holds the tool the host's member took (weapon, instrument, heal)");
-static uint32_t g_tool_sets;
+// BUG-0583: a citizen's abilities (vt 0xB0 count, vt 0xB4 get, 0xC24DB0 / 0xC24E40) are its species' plus 2 for a
+// tool of type 1..6 or 1 for 9 / 0xB, plus 6 for its tribe's leader (0xC23430: owner +0x11C == it); the getter
+// serves the leader 1 tool slot + 6, so a leader holding a tool of type 1..6 counts one ability more than it has:
+// the last one is null and GetAbilityIndexByType (every citizen Update) faults on it every frame. The game never
+// gives its leader such a tool (SetSpecializedTool(0) on it makes 0xB, the staff), the mirrors' tool field did: a
+// guest whose tribe's leader is the mirror of a host member that took a weapon (after a rejoin: lab, guest faulted
+// 1151 times, ECX = 1 at the fault = the leader branch). On: no tool of type 1..6 on this game's leader (it keeps
+// its staff). Off: the host's tool as before.
+static bool g_leader_tool_fix = true;
+COOP_FIX("tribe.leader_tool", "BUG-0583", g_leader_tool_fix, "tribe: a guest's tribe leader never holds a weapon or instrument from the host's member (the game faulted every frame)");
+static uint32_t g_tool_sets, g_leader_tools_kept;
+static bool is_leader(void* c) { return a_IsLeader && is_citizen(c) && thiscall<bool>(a_IsLeader, c); }
 static float read_held_tool(void* c) { return is_citizen(c) ? (float)F<int>(c, kHeldToolOff) : 0.f; }
 static void apply_held_tool(void* c, float v)
 {
@@ -537,6 +548,11 @@ static void apply_held_tool(void* c, float v)
     // SetSpecializedTool(0) on the tribe's leader makes it 0xB (the staff): leave the leader's staff
     if (cur == t || (t == 0 && cur == 0xB))
         return;
+    if (g_leader_tool_fix && t >= 1 && t <= 6 && is_leader(c)) {
+        if (g_leader_tools_kept++ < 5)
+            H->log(M, SK_INFO, "tribe: this game's tribe leader keeps its staff (the host's member holds tool %d, BUG-0583)", t);
+        return;
+    }
     thiscall<void>(a_SetSpecializedTool, c, t);
     g_tool_sets++;
 }
@@ -814,6 +830,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     fields::add_kind({fields::K_TRIBE_TOOL, "tribe_member_tool", &g_tool_hold_fix, kToolFields, 1, member_each, member_mirror,
                       [] { return active(); }});
     a_SetSpecializedTool = H->sym("Simulator::cCreatureCitizen::SetSpecializedTool");
+    a_IsLeader = H->sym("SporeCoop::Citizen_IsLeader");
     a_ToolModelReset = H->sym("SporeCoop::cTribeTool_PlacementReset");
     a_SetToolPurchased = H->sym("SporeCoop::cTribe_SetToolPurchased");
     a_ToolLayout = H->sym("SporeCoop::cTribe_ToolLayout");
@@ -3102,12 +3119,13 @@ std::string debug(const std::vector<std::string>& a)
         for (void* c : pt ? members(pt) : std::vector<void*>{}) {
             uint16_t id = member_id(c);
             char b[96];
-            snprintf(b, sizeof b, "held %u owner=%u tool=%d\n", id, owner_of(c), F<int>(c, kHeldToolOff));
+            snprintf(b, sizeof b, "held %u owner=%u tool=%d leader=%d\n", id, owner_of(c), F<int>(c, kHeldToolOff),
+                     (int)is_leader(c));
             s += b;
         }
         char b[192];
-        snprintf(b, sizeof b, "tools n=%d tool_sets=%u hold_fix=%d grab_spot=%d moves=%u\n", u.i, g_tool_sets,
-                 (int)g_tool_hold_fix, (int)g_grab_spot_fix, g_grab_spot_moves);
+        snprintf(b, sizeof b, "tools n=%d tool_sets=%u hold_fix=%d grab_spot=%d moves=%u leader_kept=%u\n", u.i, g_tool_sets,
+                 (int)g_tool_hold_fix, (int)g_grab_spot_fix, g_grab_spot_moves, g_leader_tools_kept);
         return s + b;
     }
     if (a.size() >= 2 && a[0] == "build" && is_host()) { // build <type> [metres]: test setup, a tool as if bought
@@ -3278,6 +3296,25 @@ std::string debug(const std::vector<std::string>& a)
     if (a.size() >= 2 && a[0] == "ai") { // ai <member id>: BUG-0505, the member's order record, node and walk
         void* c = local_of((uint16_t)atoi(a[1].c_str()));
         return c ? ai_line(c) : "no such member";
+    }
+    if (a.size() >= 3 && a[0] == "applytool" && is_guest()) { // applytool <member id> <type>: tests (BUG-0583), the
+        // mirror's tool field applied as if the host's member held that tool (tribe.tool_hold's own apply)
+        void* c = member_mirror((uint16_t)atoi(a[1].c_str()));
+        if (!c)
+            return "no such mirror";
+        apply_held_tool(c, (float)atoi(a[2].c_str()));
+        return "tool " + std::to_string(F<int>(c, kHeldToolOff)) + " leader=" + std::to_string((int)is_leader(c));
+    }
+    if (a.size() >= 3 && a[0] == "settool" && is_host()) { // settool <member id> <type>: tests (BUG-0583), the game's
+        // SetSpecializedTool on the host's member (any tribe's), as when it takes a rack's weapon
+        void* c = nullptr;
+        for (auto& kv : g_hm)
+            if (kv.second.id == (uint16_t)atoi(a[1].c_str()) && game::object_alive(kv.first))
+                c = kv.first;
+        if (!c || !is_citizen(c) || !a_SetSpecializedTool)
+            return "no such member";
+        thiscall<void>(a_SetSpecializedTool, c, atoi(a[2].c_str()));
+        return "tool " + std::to_string(F<int>(c, kHeldToolOff)) + " leader=" + std::to_string((int)is_leader(c));
     }
     if (a.size() >= 3 && a[0] == "grab") { // grab <member id> <tool index>: the member's GrabTool (3) order as a
         // click on the tool gives it (DoToolActionForAllSelected -> DoActionForObjects): a guest sends it to the host
@@ -3509,7 +3546,7 @@ static uint32_t bt_node(void* c)
 std::string list()
 {
     std::string out;
-    char b[240];
+    char b[320];
     void* pt = player_tribe();
     auto tribes = all_tribes();
     for (size_t ti = 0; ti < tribes.size(); ti++) {
@@ -3541,10 +3578,10 @@ std::string list()
                 }
             }
             snprintf(b, sizeof b,
-                     "  #%u %p owner=%d age=%u sel=%u hp=%.1f pos=(%.1f %.1f %.1f) speed=%.1f host_speed=%.1f dead=%d bt=%08X radius=%.2f ours=%d\n",
+                     "  #%u %p owner=%d age=%u sel=%u hp=%.1f pos=(%.1f %.1f %.1f) speed=%.1f host_speed=%.1f dead=%d bt=%08X radius=%.2f ours=%d tool=%d leader=%d\n",
                      id, c, ow == 0xFF ? -1 : (int)ow, F<uint8_t>(c, kAgeOff), F<uint8_t>(c, kSelectedOff),
                      game::health(c), cp.x, cp.y, cp.z, drive::speed(v), drive::speed(sv), (int)game::is_dead(c),
-                     bt_node(c), game::bounding_radius(c), (int)ours_in(g_ours_c, c));
+                     bt_node(c), game::bounding_radius(c), (int)ours_in(g_ours_c, c), F<int>(c, kHeldToolOff), (int)is_leader(c));
             out += b;
             if (ds) { // guests: how the mirror is driven (drive::step)
                 snprintf(b, sizeof b, "     drive err=%.2f nudges=%u kept=%u teleports=%u\n", ds->last_err, ds->nudges,

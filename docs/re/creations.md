@@ -1137,3 +1137,14 @@ BUG-0559 (class BUG-0424). GOG 2024, lanes 9 / 10 (`tools/tests/coop_content_loo
   and `species_data=<parts> species_data_unknown=<lacking>` of the creaturedata the game finds for that key.
 * ? Not verified: the lookalike choice for cell and UFO parts (the same code, no test); vehicles and buildings
   (`ensure_model`, no bundle and so no description: the 0.7.6 tables); an animation only the missing part has.
+## The Creature evolution editor's DNA budget after a held request (2026-11-05, fix/w43-crashes)
+<a id="creations-creature-editor-budget"></a>
+
+BUG-0581 (not a bug). The `?` of docs/re/cell.md#cell-editor-budget (a held Creature request may lose its budget
+message 0x90A03FDF the way BUG-0560 lost the Cell one): ✔ checked with recorded runs of `coop_editor_sync.py --case
+host|host2`, where the host's evolution request waits for the vote (`vote active: ... wants to evolve`) before its
+editor opens: a mouth (25 DNA) took the host's DNA from 40 to 15 and, in the second evolution, from 55 to 30 (lab
+fix/w40-cell-evo 20261103-161211, rel/0.7.4 20261103-204638), so the editor started from the stage's DNA, not from
+a config start budget, whatever the held post did. GetEvolutionPoints reads the same value inside the editor (40 -> 40
+while the part is bought: the editor keeps its own count until done, the result's +0x34 then sets it).
+? Not looked at: where the Creature editor takes its start budget (OnEnter or the stage's DNA); no re-post needed.

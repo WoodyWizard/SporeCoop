@@ -2722,3 +2722,28 @@ BUG-0558. GOG 2024, Ghidra; the players' logs (0.7.5). Follows #creature-drama-e
   visit is relayed: the guest's game starts its own event when the host's starts (its ship then picks in the guest's
   world: its mirrors, the BUG-0486 problem) and an abduction of a partner is played on the partner's own avatar.
   Both need the ship's target choice found first.
+## The flora's fruit pool (2026-11-05, fix/w43-crashes)
+<a id="creature-fruit-pool"></a>
+
+BUG-0584 (not reproduced). GOG 2024, Ghidra.
+
+* ✔ The flora (`SporeCoop::Flora_Get`) keeps two refcounted vectors of cFruit: **loose fruit** +0x1B905C..+0x1B9064
+  (fallen, on the ground, held, hidden) and **free fruit** +0x1B8F44..+0x1B8F4C (eaten, kept for reuse). Its update
+  0xB085D0 walks the loose ones by state (+0x16C): 1 falling (to the ground: 2), 2 on the ground (+0x168 time; hidden:
+  4), 4 hidden (state 5 after a while, the holder +0x108 released), **5: 0xB069A0 moves it to the free vector**
+  (state 6, holder released, model off). So a fruit in state 5 is not taken out of the noun list.
+  CORRECTION (2026-11-05, fix/w43-crashes): the cFruit_SetState .sym note and the fruit kind's comment in
+  worldobj.cpp say "the game takes a fruit in state 5 out of the list within a frame or two": it leaves the loose
+  vector for the free one (state 6) and stays in the noun list (Ghidra, 0xB085D0 case 5).
+* ✔ 0xB08DF0 (fastcall flora) gives a fruit for a drop: the last free one, else the loose fruit farthest from the
+  camera that is not held (state 3), not flagged (+0x148 bit 0) and has no holder (it is retired with 0xB069A0(it, 0)).
+  `Flora_DropFruit` 0xB09AE0 -> 0xB09790 calls its AddRef (vt 0) first: the BUG-0584 fault (a call through null at
+  0xB097C2, `[esi]` = 0x15B40) is a free or loose entry whose memory was freed and reused. 0xB09B50 is the flora's
+  timed fall of fruit near the camera (the caller in that fault).
+* ✔ 0xB066A0 (a cFruit vtable slot at 0x145C58C, after cGameData's read): a fruit read from a save lies on the
+  ground (state 2), gets +0x148 bit 0 and joins the loose vector. The eat node 0xD87590 (state 3, its meal's end)
+  calls `cGameNounManager::DestroyInstance` on such a fruit before `cFruit_SetState(5)` and posts 0xD335362B;
+  DestroyInstance (0xB22560) marks +0x20, keeps a reference in the manager's pending list (+0x84) and runs the
+  object's teardown (0xB20CC0) at once.
+* ? Not found: where a reference is released once too often. The mod's fruit kind (wobj.fruit) sets state 5 through
+  the game's SetState only (no release); the log of the fault has two `took fruit ...: done here too` 5 s before it.

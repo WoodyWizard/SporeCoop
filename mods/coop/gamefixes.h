@@ -23,6 +23,8 @@ std::string arm_physics_orphan();
 // tests (BUG-0453): the next NPC whose attack animation plays has its target cleared (SetTarget(null), as the
 // game does to every NPC aimed at a creature it destroys) right before its attack node ticks
 std::string arm_attack_cut();
+// tests (BUG-0582): the next spot lookup of a creature attack's attacker gets no record (as for a cell without one)
+std::string arm_spot_cut();
 // BUG-0512: clears the stimuli of creature c whose sender is `sender` (or a sub-object of it), as the game's
 // clear 0xBC9A60 does (masks, value, the sender released); returns how many
 unsigned clear_stimuli_from(void* c, void* sender);
