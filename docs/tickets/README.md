@@ -577,10 +577,10 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0565](BUG-0565-tribe-every-village-s-relation-is-neutral-on-the.md) | fixed | desync | Tribe | 2026-11-04 | 0.7.7 | Tribe: every village's relation is neutral on the guest, while the host sees them aggressive and slightly aggressive |
 | [BUG-0566](BUG-0566-tribe-the-guest-does-not-see-an-enemy-village-s.md) | fixed | desync | Tribe | 2026-11-04 | 0.7.7 | Tribe: the guest does not see an enemy village's hut (hub) health go down when the players attack it |
 | [BUG-0567](BUG-0567-tribe-a-building-is-broken-bugged-on-the-guest-a.md) | fixed | bug | Tribe | 2026-11-04 | 0.7.7 | Tribe: a building is broken (bugged) on the guest after the guest dies |
-| [BUG-0568](BUG-0568-tribe-no-music-in-the-guest-s-tribe-game.md) | open | bug | Tribe | 2026-11-04 |  | Tribe: no music in the guest's Tribe game |
+| [BUG-0568](BUG-0568-tribe-no-music-in-the-guest-s-tribe-game.md) | fixed | bug | Tribe | 2026-11-04 | unreleased | Tribe: no music in the guest's Tribe game |
 | [BUG-0569](BUG-0569-tribe-the-guest-sees-no-animations.md) | fixed | bug | Tribe | 2026-11-04 | unreleased | Tribe: the guest sees no animations |
 | [BUG-0570](BUG-0570-tribe-no-red-target-circle-under-an-enemy-the-gu.md) | fixed | bug | Tribe | 2026-11-04 | 0.7.7 | Tribe: no red target circle under an enemy the guest targets |
-| [BUG-0571](BUG-0571-tribe-villages-are-founded-spawn-much-faster-tha.md) | open | bug | Tribe | 2026-11-04 |  | Tribe: villages are founded (spawn) much faster than in the single-player game |
+| [BUG-0571](BUG-0571-tribe-villages-are-founded-spawn-much-faster-tha.md) | fixed | bug | Tribe | 2026-11-04 | unreleased | Tribe: villages are founded (spawn) much faster than in the single-player game |
 | [BUG-0572](BUG-0572-tribe-after-the-third-restart-the-guest-does-not.md) | fixed | desync | Tribe | 2026-11-04 | 0.7.7 | Tribe: the guest's food counter is 0 while the host's tribe has food (from about an hour into the session) |
 | [BUG-0573](BUG-0573-tribe-the-guest-s-tribe-members-do-not-eat-on-th.md) | fixed | bug | Tribe | 2026-11-04 | 0.7.7 | Tribe: the guest's tribe members do not eat on their own, they must be ordered to eat |
 | [BUG-0574](BUG-0574-tribe-two-buildings-stand-right-next-to-each-oth.md) | fixed | desync | Tribe | 2026-11-04 | 0.7.6 | Tribe: two buildings stand right next to each other on the guest |
@@ -609,3 +609,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0597](BUG-0597-co-op-window-send-my-world-with-no-players-or-no.md) | fixed | bug | Menu | 2026-11-05 | unreleased | Co-op window: 'Send my world' with no players or no world loaded does nothing but says 'Sending the world to everyone' |
 | [BUG-0598](BUG-0598-co-op-window-the-creation-row-my-cell-the-world.md) | fixed | bug | Creature | 2026-11-05 | unreleased | Co-op window: the creation row 'My cell: the world's own' has no arrows and no hint how to get a choice |
 | [BUG-0599](BUG-0599-the-mod-cannot-confirm-the-game-saved-box-while.md) | fixed | bug | Creature | 2026-11-05 | unreleased | The mod cannot confirm the 'game saved' box while the co-op window is open: its click on OK hits the window, the host stays paused |
+| [BUG-0600](BUG-0600-tribe-a-guest-s-game-plays-none-of-the-hit-and-f.md) | open | bug | Tribe | 2026-11-05 |  | Tribe: a guest's game plays none of the hit and fight sounds of the members' fights |

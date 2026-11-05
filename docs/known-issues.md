@@ -1897,10 +1897,10 @@ Player reports 2026-11-04 (0.7.5, Discord bug-reports; not analysed yet):
 - BUG-0565: Tribe: every village's relation is neutral on the guest, while the host sees them aggressive and slightly aggressive
 - BUG-0566: Tribe: the guest does not see an enemy village's hut (hub) health go down when the players attack it
 - BUG-0567: Tribe: a building is broken (bugged) on the guest after the guest dies
-- BUG-0568: Tribe: no music in the guest's Tribe game
-- BUG-0569: Tribe: the guest sees no animations
+- BUG-0568: Tribe: no music in the guest's Tribe game (fixed on fix/w44-tribe-guest, unreleased: tribe.theme_music, the hunt / fight theme)
+- BUG-0569: Tribe: the guest sees no animations (fixed on fix/w44-tribe-guest, unreleased: tribe.mirror_anims)
 - BUG-0570: Tribe: no red target circle under an enemy the guest targets (fixed on fix/w43-guest-player, unreleased)
-- BUG-0571: Tribe: villages are founded (spawn) much faster than in the single-player game
+- BUG-0571: Tribe: villages are founded (spawn) much faster than in the single-player game (fixed on fix/w44-tribe-guest, unreleased: tribe.form_pace)
 - BUG-0572: Tribe: the guest's food counter is 0 while the host's tribe has food (reproduce: tribe_food_zero; the guest's game spends its last food, shared.cpp cannot write into an empty bundle list) (from about an hour into the session)
 - BUG-0573: Tribe: the guest's tribe members do not eat on their own, they must be ordered to eat
 - BUG-0574: Tribe: two buildings stand right next to each other on the guest (fixed in 0.7.6 by BUG-0523: tribe_tools_all, 2026-11-04 replay)
@@ -1983,3 +1983,5 @@ Player reports 2026-11-04 (0.7.5, Discord bug-reports; not analysed yet):
 - BUG-0594: Tribe: a totem pole on the guest only before the move to Civ (`SPORE_DETECTOR=20 tools/lab.py run tribe_civ`)
 - BUG-0595: Space: the guest's money reads nan in the detector's state row (`SPORE_DETECTOR=20 tools/lab.py run campaign_space`)
 - BUG-0596: Creature: a species has a relation in one game only (`SPORE_DETECTOR=20 tools/lab.py run long_creature_short`)
+- BUG-0600: Tribe: a guest's game plays none of the hit and fight sounds of the members' fights (the host's 40+ in a
+  40 s fight, the guest's 0; `coop.audio list` on both after `coop.tribe act 7`).

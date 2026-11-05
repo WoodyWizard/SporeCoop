@@ -13,6 +13,9 @@
 - The host's game no longer stays paused on the "game saved" box while the co-op window is open (BUG-0599).
 - Tribe: a guest sees the members of every village fight, gather, dance and build, instead of standing still
   (BUG-0569).
+- Tribe: a guest hears the stage's hunting and fighting music of its tribe, as the host does (BUG-0568).
+- Tribe: in co-op new villages no longer appear as soon as the whole party has gathered the food one player's tribe
+  needs alone: they come at one player's pace (BUG-0571).
 
 ## [0.7.7] - 2026-11-05
 
