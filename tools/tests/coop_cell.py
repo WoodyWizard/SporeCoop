@@ -12,7 +12,7 @@ def pool(con):
     out = con.call('coop.pool')['out']  # avatar line + the cell(...) status line only
     d = {}
     for k in ('hp', 'local_gameplay_cells', 'food', 'mirrors', 'hits_in', 'hits_sent', 'revives', 'respawns',
-              'purged', 'downed', 'own_points'):
+              'purged', 'downed', 'own_points', 'own_eats'):
         m = re.search(k + r'=(-?\d+)', out)
         d[k] = int(m.group(1)) if m else None
     for k in ('size', 'target', 'body', 'partner_dist', 'revive_dist'):
@@ -120,8 +120,14 @@ def main():
     time.sleep(1)
     g5, go5 = pool(guest)
     print(' ', go5.splitlines()[0])
-    ck(g5['downed'] == 0 and (g5['revives'] or 0) - rv0 == 1 and 3 <= (g5['hp'] or 0) <= 5,  # 3, +1 regen every 3 s near the partner
-       f'the partner right next to it revives it (revives +{(g5["revives"] or 0) - rv0}, hp {g5["hp"]})')
+    # 3, +1 regen every 3 s near the partner; a meal adds the food's hpValue up to 6 (docs/re/cell.md, AvatarEat):
+    # BUG-0356's cold run had hp 6 after a plant eaten right after the revive (own_eats 1 -> 2), so a meal since the
+    # knockout allows the full 6, and nothing else does
+    ate = (g5['own_eats'] or 0) - (g4['own_eats'] or 0)
+    hp_max = 6 if ate > 0 else 5
+    ck(g5['downed'] == 0 and (g5['revives'] or 0) - rv0 == 1 and 3 <= (g5['hp'] or 0) <= hp_max,
+       f'the partner right next to it revives it (revives +{(g5["revives"] or 0) - rv0}, hp {g5["hp"]}, meals since the '
+       f'knockout {ate})')
     ck(g5['body'] == 1.0, 'a revived cell keeps its size')
     ck('revived' in host.call('coop.status')['out'], 'everybody sees the revive')
 

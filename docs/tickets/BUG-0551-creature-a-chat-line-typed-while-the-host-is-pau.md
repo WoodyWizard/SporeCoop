@@ -32,3 +32,4 @@ Not analysed yet. Inferred: the share save's pause and its "game saved" box (con
 
 ## History
 - 2026-11-04: opened.
+- 2026-11-04 (fix/w43-tests): G1: read coop_ui.cpp's locked-edit path (locked_edit_tick / locked_edit_apply); not reproduced, not changed.

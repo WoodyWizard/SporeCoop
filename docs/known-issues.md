@@ -1791,7 +1791,8 @@ What mods/coop/worldobj.cpp does not cover yet (docs/re/creature.md#creature-wor
 Found by fix/w40-play (2026-11-03), not fixed:
 * Tribe: an animal proxy that the guest places on the host's path can stay 3.5-8 m off the host's NPC for
   2-11 s (the lab's monitor rule `proxies`; play_tribe 1 of 3, campaign_tribe 1 of 3 in 20261103-012624).
-  Ticket: BUG-0503.
+  Ticket: BUG-0503. Fixed on fix/w43-tests (2026-11-04): on a guest at a low frame rate the placing was capped at
+  0.1 s frames and fell behind (npc.proxy_slow_frames); not yet confirmed with a long session.
 * Creature: under the brain upgrade caption both own creatures read 0.63-0.71 m under the ground once (monitor
   rule `ground`, 20261103-124913 play_creature#2); not reproduced at the fixture's nest. Ticket: BUG-0504.
 * play_tribe: in 2 of 3 runs the guest's members stayed idle on 7-12 orders the host took, and the host's bot
@@ -1924,3 +1925,13 @@ Player reports 2026-11-04 (0.7.5, Discord bug-reports; not analysed yet):
   same code but have no test; an animation that only the missing part has is not played.
 * Reproduce: `content_lookalike` with the host's creature changed to use a vehicle part of `Spore_Pack_03` in a civ
   mirror (not written yet).
+
+## Tests: what G1 of 0.7.7 left open (2026-11-04, fix/w43-tests)
+<a id="issue-g1-open"></a>
+
+* Space: sync-check MISMATCH p0 46 m while the host flies a rescue with key pulses (BUG-0547); the speed slack uses
+  the speed at the read. Not reproduced or changed here.
+* Space: coop_space_death once kept the ship dead 47 s after the forced jump (BUG-0193); not seen since.
+* Tribe: tribe_guest_tribes' fix-off forming failed 12 of 13 times on fix/w43-world-state's lanes 4/5; the test now
+  says why the controller formed nothing (bake, tribe nouns, spawn markers) and retries only while it bakes; the
+  cause on those lanes is not confirmed (BUG-0587).

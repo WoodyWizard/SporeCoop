@@ -3391,8 +3391,44 @@ std::string debug(const std::vector<std::string>& a)
         if (!ctrl)
             return "no NPC tribe controller";
         size_t before = all_tribes().size();
+        // BUG-0587: the controller forms nothing while the next tribe's species model is not baked yet: it asks
+        // IBakeManager to bake it and returns (0xCC6440: species = list +0xD0 [min(tribes - 1, size - 1)],
+        // IBakeManager vt 0x1C(species + 0x504, 0) false). Said here, so a test sees why nothing was formed.
+        std::string why;
+        static uintptr_t a_Bake = H->sym("Editors::IBakeManager::Get");
+        auto* lb = F<void**>(ctrl, 0xD0);
+        auto* le = F<void**>(ctrl, 0xD4);
+        if (a_Bake && lb && le > lb && before > 0) {
+            size_t i = std::min(before - 1, (size_t)(le - lb) - 1);
+            void* species = lb[i];
+            void* bm = species ? skg::cdecl_call<void*>(a_Bake) : nullptr;
+            if (bm) {
+                bool baked = vcall<char>(bm, 0x1C / 4, (uint8_t*)species + 0x504, 0) != 0;
+                char b[96];
+                snprintf(b, sizeof b, " (next species %p %s)", species, baked ? "baked" : "not baked yet");
+                why = b;
+            }
+        }
+        // and what else it needs: fewer tribe nouns (alive or not) than its property list allows, a spawn marker
+        // (noun 0x36BE27E with +0x108 == 0x57F09E5E) left
+        struct Cnt {
+            int nouns = 0, markers = 0;
+        } cnt;
+        game::for_each_object(
+            [](void* o, uint32_t noun, void* u) {
+                auto* c = (Cnt*)u;
+                if (noun == kTribeNoun)
+                    c->nouns++;
+                else if (noun == 0x36BE27E && F<uint32_t>(o, 0x108) == 0x57F09E5E)
+                    c->markers++;
+                return true;
+            },
+            &cnt);
+        why += " (tribe nouns " + std::to_string(cnt.nouns) + ", tribe spawn markers " + std::to_string(cnt.markers) + ")";
+        uint32_t blocked0 = g_forms_blocked;
         h_Form(ctrl, 0);
-        return "tribes " + std::to_string(before) + " -> " + std::to_string(all_tribes().size());
+        return "tribes " + std::to_string(before) + " -> " + std::to_string(all_tribes().size()) + why +
+               (g_forms_blocked != blocked0 ? " (blocked: tribe.guest_tribes)" : "");
     }
     if (!a.empty() && a[0] == "trees") { // trees near the village with their raw fields (RE)
         net::Vec3 at;

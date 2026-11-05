@@ -38,3 +38,4 @@ really lags on a planet at rescue speed. Not analysed (not this branch's change:
 
 ## History
 - 2026-11-04: opened.
+- 2026-11-04 (fix/w43-tests): G1: from the host's log the host flew ~330 m in ~8 s with key pulses; the slack uses the speed at the read (drive::speed of the newest state), so a ship between two pulses may be read slower than the path the drawn copy trails. Not reproduced, no gate change (a change needs a run where the gate is wrong and one where it is right).

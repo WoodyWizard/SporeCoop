@@ -32,7 +32,7 @@ import sys
 import time
 
 import lane
-from coop_sync import LIMITS, angle, pct, sample
+from coop_sync import LIMITS, angle, game_paused, pct, sample, wait_running
 from twoinst import Checks, Monitor, shot, start
 
 SOCIAL_BTN, ATTACK_BTN = (725, 1030), (795, 1030)  # tribe UI interaction mode (1440x1080)
@@ -150,8 +150,9 @@ class Player:
         else:  # BUG-0481: why (no point under the mouse, or the view did not move)
             st = self.con.call('coop.status')['out']
             busy = re.search(r'busy=\S+|input_lock=\d+', st)
-            self.log.append(f'   {self.name}: minimap calibration: o {o} a {a} b {b} ({busy.group(0) if busy else "-"})')
-            print(f'  {self.name}: minimap calibration: o {o} a {a} b {b} ({busy.group(0) if busy else "-"})', flush=True)
+            why = f'{busy.group(0) if busy else "-"}, game time paused={game_paused(self.con)}'
+            self.log.append(f'   {self.name}: minimap calibration: o {o} a {a} b {b} ({why})')
+            print(f'  {self.name}: minimap calibration: o {o} a {a} b {b} ({why})', flush=True)
         return self.J is not None
 
     def solve(self, w, x, y, c):
@@ -698,6 +699,13 @@ def main():
         time.sleep(2)
     g = Game(host, guest, seed, a.rate)
     food0 = food(host)
+    # BUG-0586: the guest's calibration failed (the view did not move on its minimap clicks, o == a) only while its
+    # game was still in the pause that follows a cold join (BUG-0444: busy=1 at the failure in lab 20261104-220200
+    # and fix/w43-realign 20261104-213145). Holding the pause bit by hand does not stop the view (lab lane 3,
+    # 2026-11-04): the bit marks the join's pause, it is not its cause. Wait for the game's own clock to run on
+    # both machines, as a player waits for the game to respond.
+    w = wait_running(host, guest, 90)
+    print(f'  both games\' time runs: {"after %.0f s" % w if w is not None else "NOT within 90 s"}', flush=True)
     for p in g.p:
         ck(p.calibrate(), f'{p.name}: the minimap takes the view where it points')
     print(f'  start: food {food0}, {len(tribe_state(host))} citizens, screen {g.w}x{g.h}', flush=True)

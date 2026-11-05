@@ -41,18 +41,31 @@ def alive(con, key):
     return con.call(f'coop.pool cell {key}')['out'].startswith('cell ')
 
 
+FOOD_WAIT = 20.0  # s
+
+
 def probe(name, me, other, kind, tries):
     """`me` swims to the nearest cell of `kind` on its screen (`coop.pool swimto`, like a click on it)
     until it touches it: did its own game eat it (AvatarEat: own points up), the same cell left on both?"""
     ok = 0
     log = []
     for _ in range(tries):
-        seen = [l.split() for l in me.call('coop.pool see 80')['out'].splitlines() if l.startswith('see ')]
-        food = [f for f in seen if f[2] == kind]
+        # BUG-0293: meat (kill loot) is rare right after a level change (RemoveCellsOfOldScale empties the pool
+        # outside the host's box): a try that found none on screen at once was spent after 60 frames, and 4 of 10
+        # runs failed on "none on screen". Wait up to FOOD_WAIT s for food of the kind to float onto the screen, as
+        # a player looks around; a try with none in that time still counts as not eaten
+        food, t_wait = [], time.time()
+        while time.time() - t_wait < FOOD_WAIT:
+            seen = [l.split() for l in me.call('coop.pool see 80')['out'].splitlines() if l.startswith('see ')]
+            food = [f for f in seen if f[2] == kind]
+            if food:
+                break
+            me.call('wait.frames 30 10000')
         if not food:
-            me.call('wait.frames 60 10000')
-            log.append('none on screen')
+            log.append(f'none on screen in {FOOD_WAIT:.0f} s')
             continue
+        if time.time() - t_wait > 1:
+            log.append(f'(waited {time.time() - t_wait:.0f} s for one)')
         key = food[0][1]
         p0 = pool(me)['own_points'] or 0
         me.call(f'coop.pool swimto {key} tp')

@@ -11,9 +11,9 @@ versions:
 fixed_in:
 branch:
 commits:
-tests:
+tests: cell_new_game
 signature:
-docs:
+docs: docs/06-testing.md#testing-harness-g1
 related:
 ---
 
@@ -31,15 +31,18 @@ Reproduce: `tools/lab.py run cell_new_game --lane N --repeat 5`.
 
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+* Observed (the report's runs): the failing probes were "none on screen" tries (a try spent after 60 frames when no
+  meat was on the guest's screen at once) or 2/6. Meat is kill loot, rare right after a level change.
+* Inferred: a try needs food on screen to measure eating at all.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+Test only (fix/w43-tests): a probe try waits up to 20 s for food of its diet on the screen; a try with none still
+counts as not eaten; the 3-of-6 rule is unchanged. The 2/6 tries (meat there, not eaten) are not addressed.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+After the change: out/lab/20261104-232622 FAIL (host 1/6: four tries with no meat on screen in 20 s; guest 0/6: the
+same meat six times, never eaten: new ticket BUG-0589). The wait did not make the probe pass; left open.
 
 ## History
 - 2026-10-30: opened.
-
+- 2026-11-04 (fix/w43-tests): probe tries wait for food on screen (left open: the 2/6 case).

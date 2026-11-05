@@ -47,3 +47,4 @@ Not fixed yet.
   coop_space_death.py: 3 of 3 (lab 20261104-114611 #1-#3); the 47 s dead ship of the report was not seen again,
   cause not found. Left open for BUG-0547 and the death case.
 - 2026-11-04 (fix/w42-space-play): space_rescue --repeat 3 again: 3/3 (lab 20261104-123228).
+- 2026-11-04 (fix/w43-tests): G1 looked at the labs since 2026-11-03: space_death 4 of 4 and space_rescue 6 of 7 ok (the one failure is BUG-0547's gate); the 47 s dead ship not seen again. Left open, not changed.
