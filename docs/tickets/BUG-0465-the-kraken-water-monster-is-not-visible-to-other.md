@@ -44,3 +44,4 @@ sea monster needs a relay of the event (or death cause 9) to a cinematic / effec
 - 2026-11-02: opened.
 - 2026-11-03: analysed on fix/w40-creature-acts (strings only), not fixed.
 - 2026-11-04: fix/w41-infra: the event mapped (Drama Manager kind 6); kept per game by decision, not fixed.
+- 2026-11-05 (fix/w44-guest-player2, P2 of 0.7.8): not started (the time went to BUG-0501, BUG-0558, BUG-0496, BUG-0557).

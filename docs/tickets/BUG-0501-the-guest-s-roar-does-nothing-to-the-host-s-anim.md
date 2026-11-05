@@ -1,20 +1,21 @@
 ---
 id: BUG-0501
 title: the guest's roar does nothing to the host's animals (split from BUG-0462)
-status: open
+status: fixed
 kind: bug
 stage: Creature
 reported: 2026-11-03
 source: split from BUG-0462 (player report 2026-11-02)
 role: guest
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w44-guest-player2
+commits: 891eeac1
+tests: creature_roar (coop_creature_roar.py)
 signature:
-docs: docs/re/creature.md#creature-roar, docs/re/creature.md#creature-roar-2
+docs: docs/re/creature.md#creature-roar, docs/re/creature.md#creature-roar-2, docs/re/creature.md#creature-roar-relay
 related: BUG-0462, BUG-0418
+switch: creature.roar_relay
 ---
 
 ## Report
@@ -35,12 +36,33 @@ setter, the ability that roars, was not found (the global is referenced only by 
 roar affects the NPCs of the roaring player's own game only. docs/re/creature.md#creature-roar. A test needs a
 creature with the Raging Roar (a carnivore Cell's consequence ability); the fixtures have none.
 
+* Observed (Ghidra, fix/w44-guest-player2): the roar is the BT action node 0x06005DAF, tick 0xD8E840
+  (`SporeCoop::BT_SpecialAbilityTick`): on its first tick it gives every creature within the ability's range that is
+  not the avatar, alive, of another species and not epic the stimulus (0, 0x4000000, FLT_MAX, roarer) and the goal
+  slot (template 1, group 1) for the ability's 25 s (docs/re/creature.md#creature-roar-relay).
+* Observed (runtime, lane 6): the guest's roar reached only its proxies; the host's 4 NPCs within 20 m of the
+  guest's puppet got no slot and did not move (out/lab/20261105-110044). The roar is the player's consequence ability:
+  the guest's avatar has it (index 6 of 9), its puppet in the host's game does not (6 abilities), so the host could
+  not simply replay the ability on the puppet.
+
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+`player_rules.cpp` (`creature.roar_relay`): a hook on the node's tick 0xD8E840. A guest's first tick of its own roar
+sends MSG_PLAYER_RULE kind 2 {type 0x31, range, seconds} to the host; the host's game makes the node's four calls
+(BT_PostStimulus, BT_GoalSlotStart, BT_ClearStimulus, BT_GoalSlotEnd of the siren's slot) on its creatures within the
+range of the guest's puppet with the node's filter, the puppet as the roarer. The NPCs' flight reaches the guest as
+their states. `coop.fix creature.roar_relay off`: the roar stays in the guest's game. Not covered: the siren song
+(0x32), the guest's own Summon Flock (0x33).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+coop_creature_roar.py (suite creature_roar): the guest stands 6 m from a group of the host's wild NPCs and roars
+(`coop.rules roar 31`: the node's first tick through the hook, as the ability starts it); in the host's game every NPC
+of another species within 20 m of the puppet must hold the roar's goal slot (the game's slot table) and half of them
+must run the game's answer node 0x02D852E0 within 3 s, and their mean distance from the puppet must grow by 1.5 m or
+more in 10 s.
+* FAIL with `SPORE_FIX_OFF=creature.roar_relay`: out/lab/20261105-115528 (0 of 4 slots, 0 of 4 in the node, +0.0 m),
+  out/lab/20261105-110044 (an earlier version of the test).
+* PASS: out/lab/20261105-115630 (cold), out/lab/20261105-115727 (warm, after creature_nest_ally); earlier versions
+  out/lab/20261105-110141, out/lab/20261105-105935. In warm games the NPCs back away 2-4 m (8-17 m cold).
 
 ## History
 - 2026-11-03: opened.
@@ -49,3 +71,4 @@ creature with the Raging Roar (a carnivore Cell's consequence ability); the fixt
 - 2026-11-03: second look on fix/w41-creature-left (Ghidra, ~20 min): the 0x400000 posters checked (0xC23A10 is the perception scan, not the roar), the ability kinds of 0xC1E8B0 written down; not fixed: a test needs a creature with the Raging Roar (no fixture has one). Next: a fixture from a carnivore Cell, then the host replays the guest's area ability (kind 2 / 3) from its puppet.
 - 2026-11-04: third look on fix/w42-creature-left (runtime, `coop.social abil`): no fixture creature has an ability of the area kinds 2 / 3 (all kind 0, one kind 1 type 0x1D); 0xC155D0 is the ability's effect spawner, not a stimulus. Still no test creature; not fixed. docs/re/creature.md#creature-leftovers-3.
 - 2026-11-04 (fix/w43-guest-player, P1 of 0.7.7): not fixed. New (Ghidra, from the BUG-0556 analysis): the ability handler 0xD8E840 runs kind 0x31 (roar: stimuli to the enemies around the roaring creature), 0x32 (siren song), 0x33 (summon flock -> drama kind 8). A guest's roar posts its stimuli to the AI-less proxies in its own game only; a fix is a guest -> host MSG_PLAYER_RULE kind that runs the same kind on the puppet in the host's game.
+- 2026-11-05 (fix/w44-guest-player2, P2 of 0.7.8): fixed (creature.roar_relay), test creature_roar.

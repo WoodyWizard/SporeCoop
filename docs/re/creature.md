@@ -2782,3 +2782,100 @@ BUG-0584. GOG 2024, asm and Ghidra. Extends #creature-fruit-pool.
   not `SporeCoop::cFruit_vftable` 0x145C568, and free fruit with one reference (the take would free them), are taken
   out without a Release (kept alive, a few hundred bytes lost); `coop.fruitpool` lists the pool, `coop.fruitcut`
   plants a freed fruit as the last free one (tests).
+
+## The guest as a player, part 2: the roar, the UFO pick, the nest heal, eating (2026-11-05, fix/w44-guest-player2)
+<a id="creature-player-rules-2"></a>
+
+P2 of docs/plan-0.7.8.md, BUG-0418 (umbrella), BUG-0501 / 0558 / 0496 / 0557. GOG 2024, Ghidra (tools/ghidra/q.sh)
+and lane 6. Follows #creature-player-rules; the code is in `mods/coop/player_rules.cpp` (MSG_PLAYER_RULE kind 2,
+`coop.rules roar | ufo | heal | meat`).
+
+### The roar (BUG-0501, fixed)
+<a id="creature-roar-relay"></a>
+
+* ✔ The player's roar / siren song / summon flock is the behaviour tree's action node **0x06005DAF** (node table
+  row 0x158B1F8: enter 0xD7B5B0, tick `SporeCoop::BT_SpecialAbilityTick` 0xD8E840, exit 0xD7B600; rows are 16 bytes
+  {id, enter, tick, exit}). The tick is cdecl(creature, 4 unused, u32* state): state[0] ability index, [1] phase.
+  Phase 0: GetAbility vt 0xB4, 0xC19800 (recharge / energy), PlayAnimation, then by type +8: **0x31 roar** walks
+  the creatures within +0xA8 + +0xF4 m (30 m) that are not the avatar (spatial +0xC0 vt 0x58), +0xB5E == 0, of
+  another species (+0xB20) and not epic, and calls on each, in order: `BT_PostStimulus(ai+8, 0, 0x4000000,
+  FLT_MAX, roarer)`, `BT_GoalSlotStart(+0xB48, 1, 1, 0, ability +0xA0 s (25 s), 0, target)` (0xBCA980), `BT_ClearStimulus(ai+8,
+  0x400, 0)`, `BT_GoalSlotEnd(BT_GoalSlotFind(2, 1))` (the siren's slot). 0x32 siren song: other stimuli and goal
+  slot 2 / 1 for the other species, calms its own species (0xD79FF0). 0x33: `DramaManager_StartKind(8)`.
+* ✔ Goal slots (creature +0xB48): 8 slots of 0x44 bytes, +0x20 serial, +0x24 template id (-1 free), +0x28 group,
+  +0x2C seconds, +0x34 end callback, mask of running slots +0x22C; handles are serial | slot << 16.
+* ✔ (runtime, lane 6) The roar is the **player's** consequence ability, not the species': the guest's avatar (its
+  own creature Kirgle) has 9 abilities with 0x31 at index 6, its puppet in the host's game 6 (0xE 0x1D 0x28 0x10
+  0x25 0x1E, no 0x31). So the host cannot run the node on the puppet.
+* ✔ (runtime) Before: the guest's roar reached only its proxies (no AI); the host's 4 NPCs within 20 m kept no slot
+  and stayed (out/lab/20261105-110044). Fix `creature.roar_relay`: the guest's first tick of its own roar sends
+  {type, range, seconds} (kind 2); the host's game makes the same four calls on its creatures around the guest's
+  puppet with the puppet as the roarer: 4 of 4 got slot (1, 1), and 3 ran (8.5 -> 17.4, 6.0 -> 12.7, 8.5 -> 25.6 m in
+  10 s; one at 12 m held the slot and did not move), out/lab/20261105-110141. Without the fix every NPC stayed within
+  0.1 m.
+* ✔ (runtime) The host's NPCs that got the slot run BT node **0x02D852E0** within 3 s (all 4, every run; none
+  without the fix) and back away 2-4 m in warm games, 8-17 m in cold ones (out/lab/20261105-115630, -115727).
+* ~ Not covered: the siren song (0x32) of a guest (its 8-dword slot data at 0xBCA980's 5th argument is not known);
+  the guest's own Summon Flock (0x33) still makes its flock in its own game.
+
+### The drama UFO's pick (BUG-0558, guard in place, not verified at runtime)
+<a id="creature-ufo-pick"></a>
+
+* CORRECTION (2026-11-05, fix/w44-guest-player2): #creature-ufo-puppet says the event's start posts BT stimulus 2 to
+  the creatures; it posts it to the **ship's own** behaviour tree (0xD4FA40: ECX = [ship +0x6C8] + 8).
+* ✔ (Ghidra) The ship's BT nodes are in the table 0x159D640. The **pick node 0x0519E372** (start 0xDBF1A0, tick
+  0xDC26B0, cdecl(ship, ..., state at [esp+0x18])) runs a timed state machine (state[2] 0..3, timer prop 0x34E39082,
+  7 s) and searches in state 3 only, and only while the event's counter (0xD51650, prop 0x60BE63B8) is above 0
+  (else the ship climbs to 10 x its height and the node ends). The search: cGameViewManager vt 0x48 within prop
+  0x9650F75F (50 m) of the avatar, filter 0xD9A920; each candidate must be +0xB5E == 0, spatial vt 0x48 true, spatial
+  vt 0x58 false, not epic (**the call at 0xDC2B5A**, return 0xDC2B5F), +0x5A8 != the avatar's +0xE7C, another species
+  profile than the avatar's, noun 0x18EB45E, [+0xB4C]+0x1D8 != 0x3704748, 5 m (prop 0x829DF2E1) or more away; the
+  **last** qualifying one wins and gets stimulus 1 (sender its handle) on the ship's BT. The follow node 0x0519ABF8
+  (start 0xDC1430, tick 0xDC1500) hovers 20 m (prop 0xA58ACB11) over it and aims ship +0x508 vt 0x50 at it while it
+  is valid; no timeout. The abduct hit `cAbductToolStrategy::OnHit` 0x105A0D0 refuses epics, +0xB58 & 0x200 or
+  0x100 and a creature with behaviour 0x3CDBBE9; else +0x2B0 = 4 and the Abducted behaviour (start 0x10323E0;
+  update 0x1032BD0 at the beam point calls vt 0xC8(0): +0xB63 = 1, not destroyed).
+* ~ Inferred: no check excludes a partner's puppet (it is not the avatar and of another species), so the host's
+  ship can pick it and then hovers over a creature the mod keeps on the ground.
+* ✔ (runtime) cCreatureAnimal_IsEpic 0xC0C240 touches EAX only and its callers keep **ECX / EDX** across the call:
+  a C detour cleared ECX under CreatureStun's caller 0xC0C09E and BT_ClearStimulus faulted at 0xBC9A6D (lab
+  20261105-113638, creature_stun). The detour is an asm stub (`p2_h_IsEpic`) that jumps to the game's code unless the
+  return address is the pick's, and saves ECX / EDX around the decision there.
+* Fix `creature.ufo_puppet`: cCreatureAnimal_IsEpic is hooked and answers "epic" for a partner's puppet only when
+  called from 0xDC2B5F (`SporeCoop::UFOPick_IsEpicReturn`), so the pick skips it as it skips epics.
+* ✔ Negative (runtime, lane 6, out/lab/20261105-110417 / -110601 / -110850): in the lab `coop.drama start 2` makes
+  the ship 20 m over the host's avatar, its BT (`UFO_TickBehavior`) runs 206 ticks (~7 s) and then no more, the
+  ship's position (the spatial object's) never changes and the pick never reaches a candidate (`coop.rules ufo`:
+  seen=0), with the players 70 m from any other creature and next to the nest alike. So no FAIL run: the guard is
+  not verified. ? Why the ship's BT stops after 7 s in the lab (the counter prop 0x60BE63B8 is a guess) is not known.
+* Not done: showing the host's ship on the guest (a mirror ship placed at the host's ship every frame).
+
+### The nest heal (BUG-0496, not reproduced)
+<a id="creature-nest-heal-fight"></a>
+
+* ✔ (Ghidra; the decompiler drops this block, see `fasm 0xC084B0`) The avatar branch (+0xB58 & 0x200, 0xC09210) of
+  the perception update 0xC084B0 clears creature **+0xFB8** ("healing") every pass and sets it when, for a sensed
+  object of the list +0x338 of type 0x52AA6122 (a nest): health +0x5E0 below max, the food meter +0xBBC >= 1, the
+  friendly-nest test 0xC6ABF0, the surface distance below [0x1582FA8], the brain's node [+0xB4C]+0x1D8 !=
+  0x2E5E38D, and no running "Fight" event 0x60995FC (made by 0xD676A0; list `SporeCoop::BT_EventList_ptr`
+  0x168B56C, 0xBCA790) of the avatar. **0xC02E10** (creature vt 0x88, from cCreatureAnimal::Update while alive)
+  adds max * [0x1687A24] * dt while +0xFB8 is set (not in a cinematic 1 / 2 or mode 0x1654C05); BT node 0x2D852E1
+  (tick 0xD7B9A0) is the rest that heals the same way. The avatar's herd, its "home" nest and NestHerdFor 0xD40AF0
+  are not read: any friendly nest heals. Event 0x60995FC is the Fight, not a heal event. The ~ of #creature-player-rules ("0xC084B0 ... ~ the heal at
+  an allied nest") holds: 0xC6ABF0 gates the heal. The pack branch (+0xB58 & 0x100) sets the same flag.
+* ✔ (runtime, lane 6, out/lab/20261105-111330; a probe test, not kept: it passed on the code it was to catch) Both players heal at the home
+  nest before and after 30 s of combat key presses near a wild NPC (guest 3.5 -> 16.0, host 3.4 -> 10.0 in 12 s);
+  the clicks did not damage the NPC and no Fight event was made, so the Fight case is not tested. Still not
+  reproduced. `coop.rules heal` prints the inputs (flag, health, food, cinematic, node, Fight events).
+
+### Eating a body (BUG-0557, not reproduced)
+<a id="creature-eat-body"></a>
+
+* ✔ (Ghidra) The cursor 0xD2FFD0 offers "eat" (8) on a creature with +0xB5E (dead) of another species than the
+  avatar's whose **+0xB84** (its meat, 0xC0BC70) is above 0, outside mode 0x1654C10 (and 0x16 while the avatar holds
+  something the check 0xD2EC30 refuses). Other readers of +0xB84: 0xD70E40, 0xD70FD0, 0xDBDABA / 0xDBDB63 (eat nodes).
+* ✔ (runtime, out/lab/20261105-112339) A dead proxy on the guest has the host body's meat (100.00 / 100.00) and dead
+  flag 1: the guest's game may eat it. Eating by clicks in the lab (`coop.nest look` + a click on the body, health
+  before / after; a probe test, not kept) worked for the host once in 4 tries and never for the guest
+  (0 of 3); the click harness is too unreliable to judge (the host's own control failed too). Inferred, as before:
+  the player's case is a body missing from the guest's game (the screenshot shows none), not a refused eat.

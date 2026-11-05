@@ -132,3 +132,11 @@ SporeCoop::VisualEffect_Start ; BUG-0575: the model attached effect guard (game.
 SporeCoop::VisualEffect_vftable ; BUG-0575: the model attached effect guard (game.model_fx) is off on GOG 2016
 SporeCoop::Flora_TakeFruitForDrop ; BUG-0584: the fruit pool guard (game.fruit_pool) is off on GOG 2016 (wobj.fruit_saved still works)
 SporeCoop::cFruit_vftable ; BUG-0584: the fruit pool guard (game.fruit_pool) is off on GOG 2016
+SporeCoop::BT_SpecialAbilityTick ; BUG-0501: the guest roar relay (creature.roar_relay) is off on GOG 2016
+SporeCoop::BT_GoalSlotStart ; BUG-0501: the guest roar relay (creature.roar_relay) is off on GOG 2016
+SporeCoop::BT_GoalSlotFind ; BUG-0501: the guest roar relay (creature.roar_relay) is off on GOG 2016
+SporeCoop::BT_GoalSlotEnd ; BUG-0501: the guest roar relay (creature.roar_relay) is off on GOG 2016
+SporeCoop::BT_ClearStimulus ; BUG-0501: the guest roar relay (creature.roar_relay) is off on GOG 2016
+SporeCoop::UFOPick_IsEpicReturn ; BUG-0558: the UFO pick guard (creature.ufo_puppet) is off on GOG 2016
+SporeCoop::BT_EventList_ptr ; BUG-0496: coop.rules heal (tests only) is off on GOG 2016
+SporeCoop::UFO_TickBehavior ; BUG-0558: coop.rules ufo's tick counter (diagnostics) is off on GOG 2016
