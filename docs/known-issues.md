@@ -1979,3 +1979,7 @@ Player reports 2026-11-04 (0.7.5, Discord bug-reports; not analysed yet):
 - BUG-0584: Creature: a caught fault on the host, a call through null from 0xB097C4 (once in a 44 min `long_creature`, lab 20261104-214938; analysed, not reproduced: docs/re/creature.md#creature-fruit-pool)
 - BUG-0591: Tribe: in play_tribe the wsync rows tribe_rel and tribe_food stop reaching some villages on the guest from about 400 s on (detector rows; `SPORE_DETECTOR=20 tools/lab.py run play_tribe`)
 - BUG-0592: Creature: after the guest returns from the main menu, the host's standing creature can stand 0.7 m under the ground for about 20 s, until it walks (`SPORE_DETECTOR=20 tools/lab.py run long_creature_short`)
+- BUG-0593: Civilization: a city the player took can stay the NPC's on the guest, with that civilization's relations and money (detector rows; `SPORE_DETECTOR=20 tools/lab.py run campaign_space`)
+- BUG-0594: Tribe: a totem pole on the guest only before the move to Civ (`SPORE_DETECTOR=20 tools/lab.py run tribe_civ`)
+- BUG-0595: Space: the guest's money reads nan in the detector's state row (`SPORE_DETECTOR=20 tools/lab.py run campaign_space`)
+- BUG-0596: Creature: a species has a relation in one game only (`SPORE_DETECTOR=20 tools/lab.py run long_creature_short`)
