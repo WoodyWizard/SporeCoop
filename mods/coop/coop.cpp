@@ -5116,6 +5116,7 @@ void init_ui()
             share_all();
     };
     a.vote_active = [] { return g_vote.active; };
+    a.share_state = [] { return !(g_adapter && g_local) ? 1 : g_sess.players().size() > 1 ? 0 : 2; };
     a.say = [](const std::string& t) {
         if (support::chat_command(t)) // "/bug <text>" (docs/REPORTING.md#reporting-support)
             return;
@@ -5146,6 +5147,11 @@ int c_uistate(void*, int argc, const char* const* argv, SkOut* out)
     if (argc > 1 && !strcmp(argv[1], "log")) {
         coop_ui::g_log_msgs = !coop_ui::g_log_msgs;
         SAY("ui message log %s", coop_ui::g_log_msgs ? "on" : "off");
+        return 0;
+    }
+    if (argc > 2 && !strcmp(argv[1], "lang")) { // tests: the layout of the texts that change in Russian
+        coop_ui::set_russian(!strcmp(argv[2], "ru"));
+        SAY("ui lang %s (the texts set from now on)", coop_ui::russian() ? "ru" : "en");
         return 0;
     }
     if (argc > 1)
@@ -6258,7 +6264,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     H->command_add(M, "coop.adapters", "coop.adapters [stress N|fault] - local address lookup (BUG-0286)",
                    [](void*, int argc, const char* const* argv, SkOut* out) { return adapters::command(argc, argv, out); },
                    nullptr, SK_CMD_OUTSIDE_FRAME);
-    H->command_add(M, "coop.uistate", "coop.uistate [0|1] - co-op window state (open/close it)", c_uistate, nullptr,
+    H->command_add(M, "coop.uistate", "coop.uistate [0|1|log|lang en|ru] - co-op window state (open/close it; lang: tests)", c_uistate, nullptr,
                    SK_CMD_OUTSIDE_FRAME);
     H->cheat_register("coop", "coop.",
                       "coop host [port] | join <ip[:port]> | leave | status | name <nick> | say <text>");
