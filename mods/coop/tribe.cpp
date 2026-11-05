@@ -166,6 +166,7 @@ void for_each_tree_pos(void (*fn)(const net::Vec3& pos, bool fruit, void* user),
 struct HMember {
     uint16_t id;
     uint8_t owner;
+    uint32_t bhv_anim = 0; // BUG-0569: the last animation its behaviour tree started
 };
 static std::unordered_map<void*, HMember> g_hm;
 static std::unordered_map<uint16_t, void*> g_hm_by_id;
@@ -194,6 +195,7 @@ struct GMember {
     net::SnapshotBuffer buf; // BUG-0365 (tribe.mirror_time): the host's states by its clock
     net::Vec3 aim;           // coop.track: where the driving aimed this frame
     float aim_speed = 0;     // and the host's speed of that state
+    double anim_rx_at = 0, anim_fix_at = 0; // BUG-0569: the last relayed start, the last snapshot play
 };
 static std::unordered_map<uint16_t, GMember> g_gm;
 // BUG-0365 (see mirror_drive)
@@ -817,6 +819,7 @@ static void* SK_THISCALL h_Form(void* self, int arg); // BUG-0483 (below)
 using Form_t = void*(SK_THISCALL*)(void*, int);
 static Form_t o_Form;
 static uintptr_t a_Form, a_NpcCtrl;
+static void theme_hooks_install(); // BUG-0568 (the Tribe theme music relay, below)
 static void save_start();
 static void save_end();
 
@@ -864,6 +867,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     a_NpcCtrl = H->sym("Simulator::cNpcTribeController::Get");
     if (a_Form)
         H->hook_create(M, (void*)a_Form, (void*)h_Form, (void**)&o_Form);
+    theme_hooks_install(); // BUG-0568 (optional)
     coop_init();
     savestrip::add_filter(save_filter); // BUG-0495
     savestrip::add_save_hooks(save_start, save_end);
@@ -923,6 +927,252 @@ static TribeInfo tribe_info(void* t)
     }
     return i;
 }
+// BUG-0569: a guest saw its village's members stand still while the host's fought, gathered, danced and built.
+// The behaviour tree of a guest's mirror does not run (h_BTTick: the host's member decides), and the animations of
+// the members' actions are started by those trees (SporeCoop::CreaturePlayAnim: fights, gathering, the grab, the
+// social dances; game.cpp's behaviour animation listener). The mirrors played only what their locomotion picks
+// (idle, walk). As for the animals (npc.anims, BUG-0464): the host reports every behaviour animation of a member
+// it tracks and sends them once a cycle to the guests (MSG_NPC_ANIM kind 2: u8 n, n x {u16 member id, u32 anim, u8 how,
+// u8 a, u32 b}); once a second the animation each member plays now when its tree started it (kind 3: u8 n, n x
+// {u16 id, u32 anim}) for a mirror made later or a lost message. A guest plays the same call on the mirror.
+// Older guests ignore both kinds (npc.cpp reads kinds 0 and 1 only). `coop.fix tribe.mirror_anims off`: nothing
+// sent, nothing played (0.7.7).
+static bool g_mirror_anims_fix = true;
+COOP_FIX("tribe.mirror_anims", "BUG-0569", g_mirror_anims_fix,
+         "tribe: a guest sees the members of every village fight, gather, dance and build as on the host");
+struct MemberAnim {
+    uint16_t id;
+    uint32_t anim;
+    uint8_t how, a;
+    int32_t b;
+};
+static std::vector<MemberAnim> g_member_anim_out;
+static uint32_t g_anim_relay_sent, g_anim_relay_played, g_anim_relay_failed, g_anim_relay_rx, g_anim_snap_played;
+static double g_member_snap_at;
+
+void on_behaviour_anim(void* c, uint32_t anim, int how, int a, int b)
+{
+    if (!g_ok || !is_host() || game::mode_id() != modes::kTribe)
+        return;
+    auto it = g_hm.find(c);
+    if (it == g_hm.end())
+        return;
+    it->second.bhv_anim = anim; // (also with the fix off: `coop.tribe anims` shows it to the tests)
+    if (g_mirror_anims_fix && g_member_anim_out.size() < 256)
+        g_member_anim_out.push_back({it->second.id, anim, (uint8_t)how, (uint8_t)(a & 0xFF), (int32_t)b});
+}
+
+static void send_member_anims(double now)
+{
+    if (!g_mirror_anims_fix) {
+        g_member_anim_out.clear();
+        return;
+    }
+    const size_t per = (net::kMaxPacket - 64) / 12;
+    for (size_t i = 0; i < g_member_anim_out.size(); i += per) {
+        size_t n = std::min(per, g_member_anim_out.size() - i);
+        net::Writer w;
+        w.u8(2); // started now
+        w.u8((uint8_t)n);
+        for (size_t j = 0; j < n; j++) {
+            const MemberAnim& e = g_member_anim_out[i + j];
+            w.u16(e.id); w.u32(e.anim); w.u8(e.how); w.u8(e.a); w.u32((uint32_t)e.b);
+        }
+        for (auto& p : C.sess->players())
+            if (p.id != 0)
+                C.sess->send_unreliable_to(p.id, net::MSG_NPC_ANIM, w);
+        g_anim_relay_sent += (uint32_t)n;
+    }
+    g_member_anim_out.clear();
+    if (now - g_member_snap_at < 1.0)
+        return;
+    g_member_snap_at = now;
+    std::vector<std::pair<uint16_t, uint32_t>> v;
+    for (auto& [c, m] : g_hm) {
+        uint32_t cur = 0;
+        if (m.bhv_anim && game::object_alive(c) && game::drawn_state(c, nullptr, &cur) && cur && cur == m.bhv_anim)
+            v.push_back({m.id, cur});
+    }
+    const size_t per2 = (net::kMaxPacket - 64) / 6;
+    for (size_t i = 0; i < v.size(); i += per2) {
+        size_t n = std::min(per2, v.size() - i);
+        net::Writer w;
+        w.u8(3); // what plays now
+        w.u8((uint8_t)n);
+        for (size_t j = 0; j < n; j++) {
+            w.u16(v[i + j].first);
+            w.u32(v[i + j].second);
+        }
+        for (auto& p : C.sess->players())
+            if (p.id != 0)
+                C.sess->send_unreliable_to(p.id, net::MSG_NPC_ANIM, w);
+    }
+}
+
+// BUG-0568: "no music in the guest's Tribe game". The Tribe stage's music of the action (the hunt / fight theme,
+// procedural sound 0xAD1A17D, and the other themes of the behaviours 0xDB1060 / 0xDB7120 / 0xDBAAF0 / 0xDBB7D0) is
+// started by the player tribe's members' behaviour trees through the stage's theme music manager (TribeStage +0x1C8,
+// 24 slots of {track, distance}: SporeCoop::TribeTheme_Play / _Move / _Stop). A guest's members are mirrors without a
+// behaviour tree (h_BTTick): its game never started one (lab: the host's game 7 plays of 0xAD1A17D in a 40 s fight, the
+// guest's none, out/lab/20261105-115203). The stage's own sounds (ambience, the mode's group) were the same on both.
+// The host relays its theme plays, their moves (at most every 0.3 s a slot) and stops to the guests (MSG_NPC_ANIM kind 4
+// {u8 host slot, u32 sound, vec3}, kind 6 {u8 slot} reliable, kind 5 {u8 slot, vec3} unreliable); a guest plays them on its
+// own theme manager (the game's call: the guest's own volume, position and music settings). Older guests ignore the
+// kinds. `coop.fix tribe.theme_music off`: nothing sent or played (0.7.7).
+static bool g_theme_fix = true;
+COOP_FIX("tribe.theme_music", "BUG-0568", g_theme_fix, "tribe: a guest hears the stage's hunt and fight music of its tribe as the host does");
+using ThemePlay_t = int(SK_THISCALL*)(void*, uint32_t, float, float, float);
+using ThemeMove_t = void(SK_THISCALL*)(void*, int, float, float, float);
+using ThemeStop_t = void(SK_THISCALL*)(void*, int);
+static ThemePlay_t o_ThemePlay;
+static ThemeMove_t o_ThemeMove;
+static ThemeStop_t o_ThemeStop;
+static bool g_theme_relaying; // guest: our own call of the game's functions
+static double g_theme_moved_at[24];
+static int g_theme_local[24]; // guest: host slot -> this game's slot (0 none)
+static uint32_t g_theme_sent, g_theme_rx, g_theme_played;
+
+static void theme_send(uint8_t kind, const net::Writer& w)
+{
+    for (auto& p : C.sess->players())
+        if (p.id != 0) {
+            if (kind == 5)
+                C.sess->send_unreliable_to(p.id, net::MSG_NPC_ANIM, w);
+            else
+                C.sess->send_reliable_to(p.id, net::MSG_NPC_ANIM, w);
+        }
+    g_theme_sent++;
+}
+static bool theme_host() { return g_ok && g_theme_fix && C.sess && is_host() && game::mode_id() == modes::kTribe; }
+static int SK_THISCALL h_ThemePlay(void* mgr, uint32_t sound, float x, float y, float z)
+{
+    int slot = o_ThemePlay(mgr, sound, x, y, z);
+    if (slot > 0 && slot < 24 && !g_theme_relaying && theme_host()) {
+        net::Writer w;
+        w.u8(4); w.u8((uint8_t)slot); w.u32(sound); w.f32(x); w.f32(y); w.f32(z);
+        theme_send(4, w);
+        g_theme_moved_at[slot] = H->time_seconds();
+    }
+    return slot;
+}
+static void SK_THISCALL h_ThemeMove(void* mgr, int slot, float x, float y, float z)
+{
+    o_ThemeMove(mgr, slot, x, y, z);
+    if (slot > 0 && slot < 24 && !g_theme_relaying && theme_host()) {
+        double now = H->time_seconds();
+        if (now - g_theme_moved_at[slot] < 0.3)
+            return;
+        g_theme_moved_at[slot] = now;
+        net::Writer w;
+        w.u8(5); w.u8((uint8_t)slot); w.f32(x); w.f32(y); w.f32(z);
+        theme_send(5, w);
+    }
+}
+static void SK_THISCALL h_ThemeStop(void* mgr, int slot)
+{
+    o_ThemeStop(mgr, slot);
+    if (slot > 0 && slot < 24 && !g_theme_relaying && theme_host()) {
+        net::Writer w;
+        w.u8(6); w.u8((uint8_t)slot);
+        theme_send(6, w);
+    }
+}
+static void theme_hooks_install()
+{
+    uintptr_t p = H->sym("SporeCoop::TribeTheme_Play"), m = H->sym("SporeCoop::TribeTheme_Move"),
+              st = H->sym("SporeCoop::TribeTheme_Stop");
+    if (!p || !m || !st)
+        return;
+    H->hook_create(M, (void*)p, (void*)h_ThemePlay, (void**)&o_ThemePlay);
+    H->hook_create(M, (void*)m, (void*)h_ThemeMove, (void**)&o_ThemeMove);
+    H->hook_create(M, (void*)st, (void*)h_ThemeStop, (void**)&o_ThemeStop);
+}
+static void* theme_mgr()
+{
+    static uintptr_t a_Stage = H->sym("SporeCoop::cTribeUI_Get");
+    void* stage = a_Stage ? skg::cdecl_call<void*>(a_Stage) : nullptr;
+    return stage && skg::readable((uint8_t*)stage + 0x1C8, 4) ? F<void*>(stage, 0x1C8) : nullptr;
+}
+static void theme_forget() { memset(g_theme_local, 0, sizeof g_theme_local); }
+static void on_theme(uint8_t kind, net::Reader& r)
+{
+    uint8_t slot = r.u8();
+    float x = 0, y = 0, z = 0;
+    uint32_t sound = kind == 4 ? r.u32() : 0;
+    if (kind != 6) {
+        x = r.f32(); y = r.f32(); z = r.f32();
+    }
+    if (!r.ok() || slot == 0 || slot >= 24)
+        return;
+    g_theme_rx++;
+    void* mgr = theme_mgr();
+    if (!g_theme_fix || !mgr || !o_ThemePlay)
+        return;
+    g_theme_relaying = true;
+    int& local = g_theme_local[slot];
+    if (kind == 4) {
+        if (local)
+            o_ThemeStop(mgr, local);
+        local = o_ThemePlay(mgr, sound, x, y, z);
+        if (local)
+            g_theme_played++;
+    } else if (kind == 5 && local) {
+        o_ThemeMove(mgr, local, x, y, z);
+    } else if (kind == 6 && local) {
+        o_ThemeStop(mgr, local);
+        local = 0;
+    }
+    g_theme_relaying = false;
+}
+
+// guest: MSG_NPC_ANIM kinds 2 / 3 (npc.cpp passes them on after the kind byte)
+void on_member_anims(uint8_t kind, net::Reader& r)
+{
+    if (!g_ok || !is_guest() || game::mode_id() != modes::kTribe)
+        return;
+    if (kind >= 4 && kind <= 6) { // BUG-0568: the theme music
+        on_theme(kind, r);
+        return;
+    }
+    double now = H->time_seconds();
+    uint8_t n = r.u8();
+    for (int i = 0; i < n && r.ok(); i++) {
+        uint16_t id = r.u16();
+        uint32_t anim = r.u32();
+        uint8_t how = 0, a = 1;
+        int32_t b = -1;
+        if (kind == 2) {
+            how = r.u8();
+            a = r.u8();
+            b = (int32_t)r.u32();
+        }
+        if (!r.ok())
+            break;
+        g_anim_relay_rx++;
+        if (!g_mirror_anims_fix)
+            continue;
+        auto it = g_gm.find(id);
+        void* c = it == g_gm.end() ? nullptr : it->second.c;
+        if (!c || !game::object_alive(c) || game::is_dead(c))
+            continue;
+        GMember& g = it->second;
+        if (kind == 3) { // only when the mirror plays another one, at most every 2 s, not right after a start
+            uint32_t cur = 0;
+            if (now - g.anim_fix_at < 2.0 || now - g.anim_rx_at < 1.5 || !game::drawn_state(c, nullptr, &cur) || cur == anim)
+                continue;
+            g.anim_fix_at = now;
+            if (game::play_behaviour_anim(c, anim, 0, 1, -1))
+                g_anim_snap_played++;
+            continue;
+        }
+        g.anim_rx_at = now;
+        if (game::play_behaviour_anim(c, anim, how, a, b))
+            g_anim_relay_played++;
+        else
+            g_anim_relay_failed++;
+    }
+}
+
 static void host_tick(double now)
 {
     if (now - g_last_send < 0.12)
@@ -1028,6 +1278,7 @@ static void host_tick(double now)
                 C.sess->send_unreliable_to(p.id, net::MSG_TRIBE_STATE, w);
             }
     }
+    send_member_anims(now); // BUG-0569
 }
 
 static void* resolve_target(const Target& t)
@@ -1398,11 +1649,76 @@ COOP_FIX("tribe.guest_tribes", "BUG-0483", g_guest_tribes_fix,
          "tribe: a guest's game forms no NPC tribe of its own, and empties tribes the host no longer has");
 static uint32_t g_forms_blocked, g_forms_run, g_unmapped_removed;
 static std::unordered_map<void*, double> g_unmapped_since;
+
+// BUG-0571: "villages are founded much faster than in the single-player game". The host's NPC tribe controller
+// (0xCC6A90, the update of cNpcTribeController) forms the planet's third tribe when its goal history is empty
+// (TribeStage +0x40, mGoalProgressHistory: no village allied or conquered yet) as soon as the player tribe's food
+// (its vt 0xA4) is over the property 0x4C87E711 (default 100), and then the fourth and the fifth at once (with 3 or 4
+// tribes it forms every second until its list is used up): measured the same alone and in a session (2 s after the
+// food passed 100, lab 20261105-113252 / 20261105-113623). In a session that food is the whole party's: every player's
+// members gather into the one player tribe, and the co-op's own rewards add to it (an epic killed together 80, a
+// partner's heal 5), so the threshold came after a fraction of a single player's time (3.8 min in the player's
+// session, food under 100 for most of it was the party's). The host's game alone decides (a guest's controller
+// forms none, tribe.guest_tribes): it now forms the third tribe on food only when the food is over the threshold
+// times the players in the session, the pace of one player's tribe. A goal done still forms it at once, as alone.
+// `coop.fix tribe.form_pace off`: the game's own threshold for the party (0.7.7).
+static bool g_form_pace_fix = true;
+COOP_FIX("tribe.form_pace", "BUG-0571", g_form_pace_fix,
+         "tribe: new villages appear when the party's food reaches what one player's tribe needs alone, times the players");
+static uint32_t g_forms_paced;
+static double g_pace_checked = -10;
+static bool g_pace_hold;
+static std::string g_pace_last; // tests: the last decision
+static bool pace_holds(double now)
+{
+    if (!g_form_pace_fix || !is_host() || game::mode_id() != modes::kTribe || !C.sess)
+        return false;
+    if (now - g_pace_checked < 1.0) // (the controller calls again every frame while it is held: decided once a second)
+        return g_pace_hold;
+    g_pace_checked = now;
+    g_pace_hold = false;
+    size_t players = C.sess->players().size();
+    static uintptr_t a_Stage = H->sym("SporeCoop::cTribeUI_Get"), a_PropInt = H->sym("SporeCoop::App_GetPropInt"),
+                     a_Props = H->sym("SporeCoop::TribeProps_ptr");
+    void* pt = player_tribe();
+    void* stage = a_Stage ? skg::cdecl_call<void*>(a_Stage) : nullptr;
+    if (players < 2 || !pt || !stage || !skg::readable((uint8_t*)stage + 0x40, 8))
+        return false;
+    if (F<void*>(stage, 0x40) != F<void*>(stage, 0x44)) // a goal done: the game's own rule
+        return false;
+    size_t tribes = 0;
+    game::for_each_object(
+        [](void* o, uint32_t noun, void* u) {
+            if (noun == kTribeNoun)
+                ++*(size_t*)u;
+            return true;
+        },
+        &tribes);
+    if (tribes != 2) // (1: the first neighbour after 25 s; 3 / 4 / 5: the game's rule, the threshold is passed)
+        return false;
+    int threshold = 100;
+    void* props = a_Props ? *(void**)a_Props : nullptr;
+    if (a_PropInt && props)
+        threshold = skg::cdecl_call<int>(a_PropInt, props, 0x4C87E711u, 100);
+    int food = vcall<int>(pt, 0xA4 / 4);
+    g_pace_hold = food <= threshold * (int)players;
+    char b[128];
+    snprintf(b, sizeof b, "food %d, threshold %d x %u players: %s", food, threshold, (unsigned)players,
+             g_pace_hold ? "held" : "forms");
+    g_pace_last = b;
+    return g_pace_hold;
+}
+
 static void* SK_THISCALL h_Form(void* self, int arg)
 {
     if (g_guest_tribes_fix && g_npc_tribes_fix && is_guest() && game::mode_id() == modes::kTribe) {
         if (g_forms_blocked++ < 5)
             H->log(M, SK_INFO, "tribe: this game's NPC tribe controller would form a tribe: not on a guest (tribe.guest_tribes)");
+        return nullptr;
+    }
+    if (pace_holds(H->time_seconds())) {
+        if (g_forms_paced++ % 600 == 0)
+            H->log(M, SK_INFO, "tribe: the NPC tribe controller would form the third tribe: %s (tribe.form_pace)", g_pace_last.c_str());
         return nullptr;
     }
     g_forms_run++;
@@ -2668,6 +2984,7 @@ void before_save()
 
 void on_session_end()
 {
+    theme_forget(); // BUG-0568
     clear_coop_tables(true);
     g_split_for.clear();
     g_hm.clear();
@@ -2684,6 +3001,7 @@ void on_session_end()
 // on_session_end, whose restoring clear would touch the old world if the order ever changed)
 void on_world_change()
 {
+    theme_forget(); // BUG-0568
     g_resets++;
     forget_world_tables(); // every citizen of the old world is freed: nothing to restore
     g_split_for.clear();
@@ -3442,6 +3760,33 @@ std::string debug(const std::vector<std::string>& a)
                  (unsigned)members(t).size(), net::dist(tp, c));
         return b;
     }
+    // anims: tests (BUG-0569), the animation each member plays now as the game holds it (Anim::AnimatedCreature
+    // vt 0x58 GetCurrentAnimation): host, its members by id (with the tribe index), guest, its mirrors by the host's id
+    if (!a.empty() && a[0] == "anims") {
+        std::string o;
+        char b[96];
+        auto line = [&](uint16_t id, void* c, uint32_t bhv) {
+            uint32_t an = 0;
+            if (c && game::object_alive(c) && game::drawn_state(c, nullptr, &an)) {
+                net::Vec3 p = game::position(c);
+                snprintf(b, sizeof b, "cur %u anim=%08X bhv=%08X pos=(%.1f %.1f %.1f)\n", id, an, bhv, p.x, p.y, p.z);
+                o += b;
+            }
+        };
+        if (is_host()) // bhv: the last animation its behaviour tree started (the game's call, game.cpp's listener)
+            for (auto& [c, m] : g_hm)
+                line(m.id, c, m.bhv_anim);
+        else
+            for (auto& [id, g] : g_gm)
+                line(id, g.c, 0);
+        return o + "anims fix=" + std::to_string((int)g_mirror_anims_fix) + " sent=" + std::to_string(g_anim_relay_sent) +
+               " rx=" + std::to_string(g_anim_relay_rx) + " played=" + std::to_string(g_anim_relay_played) + " failed=" +
+               std::to_string(g_anim_relay_failed) + " snap_played=" + std::to_string(g_anim_snap_played) + "\ntheme fix=" + std::to_string((int)g_theme_fix) +
+               " sent=" + std::to_string(g_theme_sent) + " rx=" + std::to_string(g_theme_rx) + " played=" + std::to_string(g_theme_played);
+    }
+    if (!a.empty() && a[0] == "form_pace") // tests (BUG-0571): the last decision of tribe.form_pace
+        return "form_pace fix=" + std::to_string((int)g_form_pace_fix) + " held=" + std::to_string(g_forms_paced) + " last: " +
+               (g_pace_last.empty() ? "-" : g_pace_last);
     // form: tests (BUG-0483), this game's NPC tribe controller forms its next tribe now (what it does during play)
     if (!a.empty() && a[0] == "form" && o_Form && a_NpcCtrl) {
         void* ctrl = skg::cdecl_call<void*>(a_NpcCtrl);
@@ -3485,7 +3830,8 @@ std::string debug(const std::vector<std::string>& a)
         uint32_t blocked0 = g_forms_blocked;
         h_Form(ctrl, 0);
         return "tribes " + std::to_string(before) + " -> " + std::to_string(all_tribes().size()) + why +
-               (g_forms_blocked != blocked0 ? " (blocked: tribe.guest_tribes)" : "");
+               (g_forms_blocked != blocked0 ? " (blocked: tribe.guest_tribes)" : "") +
+               (g_pace_last.empty() ? "" : " (pace: " + g_pace_last + ")");
     }
     if (!a.empty() && a[0] == "trees") { // trees near the village with their raw fields (RE)
         net::Vec3 at;

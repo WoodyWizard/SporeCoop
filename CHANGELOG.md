@@ -22,6 +22,11 @@
   height in the guest's game too, instead of walking on the ground under it (BUG-0550).
 - Creature: your own creature no longer stays half in the ground after the other player comes back at your spot
   (after a return from the main menu or an editor) or bumps into it on a slope (BUG-0592, BUG-0504).
+- Tribe: a guest sees the members of every village fight, gather, dance and build, instead of standing still
+  (BUG-0569).
+- Tribe: a guest hears the stage's hunting and fighting music of its tribe, as the host does (BUG-0568).
+- Tribe: in co-op new villages no longer appear as soon as the whole party has gathered the food one player's tribe
+  needs alone: they come at one player's pace (BUG-0571).
 
 ## [0.7.7] - 2026-11-05
 

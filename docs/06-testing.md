@@ -4335,3 +4335,13 @@ wrong and the run where the new one is right; no threshold was loosened.
   BUG-0313); the end-of-Tribe stage card `04BF38A4`, an editor coming `04BF38A6`.
 * A hot reload (`lab.py reload`) of a lane whose games are in a session left the host `offline` (seen once on lane 4):
   start the games again for tests that need the session.
+
+## The game's audio commands in tests (2026-11-05, fix/w44-tribe-guest)
+<a id="testing-audio"></a>
+
+The lab games run muted, but the game still submits every sound to its audio system. `coop.audio mark` empties the
+list; `coop.audio list [n]` prints the commands since (play 0x3475365, stop 0x347536B, ...; the listener's moves are only
+counted) with the sound id, the track, the first parameters and `from=` the first four return addresses on the stack,
+then `playing track= sound= since=` (played and not stopped). tribe_theme_music counts the plays whose second return
+address is TribeTheme_Play's (0xBC2414). docs/re/tribe.md#tribe-guest-a1 lists the sound ids seen in Tribe.
+

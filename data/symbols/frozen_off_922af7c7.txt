@@ -140,3 +140,11 @@ SporeCoop::BT_ClearStimulus ; BUG-0501: the guest roar relay (creature.roar_rela
 SporeCoop::UFOPick_IsEpicReturn ; BUG-0558: the UFO pick guard (creature.ufo_puppet) is off on GOG 2016
 SporeCoop::BT_EventList_ptr ; BUG-0496: coop.rules heal (tests only) is off on GOG 2016
 SporeCoop::UFO_TickBehavior ; BUG-0558: coop.rules ufo's tick counter (diagnostics) is off on GOG 2016
+SporeCoop::AudioSystem_BeginCommand ; coop.audio (the tests' list of the game's audio commands) is off (BUG-0568)
+SporeCoop::AudioSystem_SetInt ; coop.audio (the tests' list of the game's audio commands) is off (BUG-0568)
+SporeCoop::AudioSystem_Submit ; coop.audio (the tests' list of the game's audio commands) is off (BUG-0568)
+SporeCoop::App_GetPropInt ; Tribe: new villages appear at the party's food pace like one player's tribe (BUG-0571)
+SporeCoop::TribeProps_ptr ; Tribe: new villages appear at the party's food pace like one player's tribe (BUG-0571)
+SporeCoop::TribeTheme_Play ; Tribe: a guest hears the hunt and fight music of its tribe (BUG-0568)
+SporeCoop::TribeTheme_Move ; Tribe: a guest hears the hunt and fight music of its tribe (BUG-0568)
+SporeCoop::TribeTheme_Stop ; Tribe: a guest hears the hunt and fight music of its tribe (BUG-0568)

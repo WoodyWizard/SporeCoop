@@ -526,6 +526,7 @@ static float g_anim_snap_quiet = 1.5f; // guest: no snapshot play this soon afte
 
 static void on_behaviour_anim(void* c, uint32_t anim, int how, int a, int b)
 {
+    tribe::on_behaviour_anim(c, anim, how, a, b); // BUG-0569: a member's (its own checks)
     if (!g_anims_fix || !is_host() || !npc_stage())
         return;
     auto it = g_host_npcs.find(c);
@@ -2021,6 +2022,10 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         if (!is_guest())
             return;
         uint8_t kind = r.u8();
+        if (kind >= 2 && kind <= 6) { // BUG-0569 / BUG-0568: the tribe members' animations, the theme music (tribe.cpp)
+            tribe::on_member_anims(kind, r);
+            return;
+        }
         uint8_t n = r.u8();
         if (kind == 1) { // what the host's NPCs play now: the proxy plays it too when it plays another
             for (int i = 0; i < n && r.ok(); i++) {

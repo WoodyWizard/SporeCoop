@@ -1718,3 +1718,55 @@ BUG-0575. GOG 2024 (= the Steam 3010a413 code), Ghidra and asm. Extends #tribe-m
   guest's terrain at that point is 8.39 m higher (`want_agl=-8.39`), and the proxy stood on the guest's ground
   (`agl=0.00`): what the rule asks. The sync-check compares absolute positions, so the terrain difference showed as
   `n apart 8.4` (BUG-0329's kind, larger than the 5 m seen there).
+## Music, member animations and the village pace on a guest (2026-11-05, fix/w44-tribe-guest)
+<a id="tribe-guest-a1"></a>
+
+A1 of 0.7.8 (BUG-0568, BUG-0569, BUG-0571). GOG 2024, lab lane 9 / 10.
+
+**Audio (BUG-0568).**
+* ✔ (Ghidra) Audio::AudioSystem (singleton 0x166D9F4; vtables 0x1452CE8 base / 0x1453FC8 derived, slot 0 Init 0xA25200) is
+  a command builder: vt 0x38 begin(cmd) `SporeCoop::AudioSystem_BeginCommand` 0xA20A80 ret 4, vt 0x3C float parameter
+  0xA20A90 ret 8, vt 0x40 int parameter `_SetInt` 0xA20AB0 ret 8, vt 0x58 submit `_Submit` 0xA20B10; all write the buffer at
+  +0x214. Commands: 0x3475365 play (0x3475381 sound, 0x3475385 track), 0x347536B stop (track, 0x34753A0), 0x3475376 set
+  property, 0x3CDD1A9 (key 0x34753A7: a state hash), 0x3991984 the listener (every frame). vt 0x20 / 0x24 hand out tracks
+  (two pools: 1.. and 1001..).
+* ✔ `coop.audio [mark | list [n]]` (mods/coop/audio.cpp) records them with the first 4 return addresses on the stack:
+  the lab games are muted, the commands are still submitted.
+* ✔ (runtime + Ghidra) the stage's sounds come in groups: 0xEA9DA0 is a message listener that activates / deactivates
+  groups (0xEA9A10 / 0xEA9250; 0x22D1ADC = the mode changed: the group of the new mode by a map). The Tribe mode's group
+  (0x34D61238, 0x931E43A7, 0x014B6A97, 0xE02B7355, 0x7B470F0F, 0x55AA10F0, 0x03AF053F, 0x9A3C482A, 0x4421F8E8, 0xD6C4FC3B)
+  plays on the host and the guest alike after a load from the galaxy menu and after a guest's own editor visit. The
+  editor's group (0x02A8D194, 0xF8EFEA3C, 0x38EB66F8 x12) stays playing after the red X on both (the game's own).
+  The galaxy menu: 0xF390C020 / 0xCCF3D9C6 / 0xCD785B24 and the music 0xBD7F5BC9; after the menu intro GGE_Intro ends
+  0x54AB9C8A / 0x896ED613 (on a lab host they play into Tribe when world.cpp ends the intro there).
+* ✔ (Ghidra + runtime) **the Tribe stage's theme music manager** TribeStage (= [0x169B2C8], `cTribeUI_Get`) **+0x1C8**
+  (made by the stage UI setup 0xCD78F0, stopped at the stage's exit 0xCD5FC0 by 0xBC2330): 23 slots {track, squared
+  distance}. `SporeCoop::TribeTheme_Play` 0xBC23B0 (sound, pos) -> slot, `_Move` 0xBC2540, `_Stop` 0xBC22F0. Callers are
+  behaviours of citizens only: 0xD69740 (hunt / fight: **0xAD1A17D**, while its member is the player tribe's and
+  0xC238B0), 0xDB1060, 0xDB7120, 0xDBAAF0, 0xDBB7D0. A 40 s fight: host 7-11 plays, guest 0 (mirrors have no tree).
+  Fix `tribe.theme_music` relays them (BUG-0568).
+* ? The hit and weapon sounds of a fight (0xA7E3E1FB, 0xD05B58ED, 0xD967193C, 0xCE5F2ED0; callers 0xA3749B / 0xA83B18) and
+  the creature voices 0xC881120E / 0x529FEC69 are host-only too: BUG-0600, not analysed.
+
+**Member animations (BUG-0569).**
+* ✔ (runtime) The host's members play 24 kinds of behaviour animations in 45 s of a fight and the villages' own work
+  (0x591B056, 0x2C39003, 0x67378DD, 0x2C39001, 0x62FF867, ...), all started by their trees through
+  SporeCoop::CreaturePlayAnim (game.cpp's listener); a guest's mirror plays none of them (0 of 646 samples): only its
+  locomotion's idle / walk. Fix `tribe.mirror_anims`: the npc.anims relay (BUG-0464) for the members (MSG_NPC_ANIM kinds
+  2 / 3, member ids), 94 % of the samples the same on the guest. `coop.tribe anims` lists `cur <id> anim= bhv=`.
+
+**The NPC tribe controller's pace (BUG-0571).**
+* ✔ (Ghidra) `cNpcTribeController` update 0xCC6A90 (vt 0x10, thiscall(ctrl, u64 dt ms) ret 8): returns while a cinematic
+  plays or the game is paused; a 1 s timer 0x157E940 (FormTribe sets it to 1); then by the tribe nouns: **1**: FormTribe
+  after 25 s (properties 0x3D346A77 / 0x1A09D79E, or a tutorial flag); **2**: when TribeStage +0x40 (mGoalProgressHistory)
+  is not empty, or the player tribe's vt 0xA4 (food) > property 0x4C87E711 (default 100, `SporeCoop::App_GetPropInt` 0x4E1CA0
+  on `SporeCoop::TribeProps_ptr` 0x1581288); **3, 4**: every second; **5**: with 3 goals done; more: never. FormTribe
+  0xCC6440 then needs tribes x 2 <= its property list's length (the list +0xFC is picked by the player tribe's diet and
+  the difficulty, 0xCC6160) and a spawn marker.
+* ~ the controller's vt 0xA4 on the player tribe behaves as the food (food 15: no tribe in 5 min, 135: 3 tribes in 2 s):
+  GetTotalFood as in the cTribe table above (that table's addresses are GOG 2016; 0xC8E850 on GOG 2024 is another
+  function, `add ecx,0x510; jmp 0xBC3260`). The GOG 2024 address of the slot was not read.
+* ✔ (runtime) food 135 with 2 tribes: villages 3, 4, 5 within 2 s, alone (no session) and in a session alike; the guest
+  makes the host's within 2-4 s, its own controller forms none (tribe.guest_tribes). Fix `tribe.form_pace`: in a session
+  the food path waits for the threshold x the players (BUG-0571).
+
