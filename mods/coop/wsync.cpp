@@ -1,0 +1,679 @@
+// Host-owned world state (wsync.h, docs/sync-architecture-plan.md#sync-wsync).
+#include "wsync.h"
+
+#include <windows.h>
+
+#include <cmath>
+#include <cstdio>
+#include <cstring>
+#include <map>
+#include <vector>
+
+#include "fixes.h"
+#include "game.h"
+#include "modes.h"
+#include "net/protocol.h"
+#include "sporekit_game.hpp"
+
+namespace wsync {
+
+static const SkHost* H;
+static SkMod* M;
+static Ctx C;
+
+static uintptr_t S(const char* n) { return H ? H->sym(n) : 0; }
+template <typename T>
+static T F(void* p, uintptr_t off) { return *(T*)((uint8_t*)p + off); }
+static bool R(void* p, size_t n) { return p && skg::readable(p, n); }
+static uint32_t fbits(float f) { uint32_t u; memcpy(&u, &f, 4); return u; }
+static float bitsf(uint32_t u) { float f; memcpy(&f, &u, 4); return f; }
+
+constexpr int kMaxV = 6, kMaxN = 48;
+struct Entry {
+    uint32_t key = 0;
+    uint32_t v[kMaxV] = {};
+};
+using Table = std::vector<Entry>;
+
+struct Row {
+    uint8_t id;
+    const char* name;
+    uint8_t nv;
+    const bool* on;          // the row's fix switch (off: the guest applies nothing of this row)
+    bool (*active)(uint32_t mode);
+    bool (*read)(Table& out); // this game's own values (false: not available now)
+    // guest: bring this game to `want`; apply false: only count the differences. Returns the differences seen.
+    int (*sync)(const Table& want, bool apply);
+    bool continuous;         // changes every frame (the sky): sent once a second, a change does not trigger a send
+    std::string (*fmt)(const Entry& e);
+};
+
+// ---- the switches (COOP_FIX; off = the code before the fix)
+// BUG-0579: the sky (planet context orientation) and the day's length as a row, re-applied whenever the guest's
+// differs; off: MSG_WORLD_TIME as before (the sky only, applied once a second while the guest has an avatar)
+static bool g_tod_fix = true;
+COOP_FIX("wsync.tod", "BUG-0579", g_tod_fix, "wsync: a guest's time of day and day length follow the host's after every transition");
+// BUG-0565: how every village feels about the player tribe follows the host's (ApplyRelationship)
+static bool g_rel_fix = true;
+COOP_FIX("wsync.tribe_rel", "BUG-0565", g_rel_fix, "wsync: a guest's villages feel about the player tribe as the host's do");
+// BUG-0564 (goal): the Tribe goal card's village and the stage's goal progress follow the host's
+static bool g_goal_fix = true;
+COOP_FIX("wsync.tribe_goal", "BUG-0564", g_goal_fix, "wsync: a guest's Tribe goal card and goal progress are the host's");
+// BUG-0577: the stages done (cPlayer consequence traits) follow the host's
+static bool g_stages_fix = true;
+COOP_FIX("wsync.stages", "BUG-0577", g_stages_fix, "wsync: a guest's stages done are the host's (also after a rejoin)");
+
+// ---- game access
+static void* noun_mgr()
+{
+    uintptr_t f = S("Simulator::cGameNounManager::Get");
+    return f ? skg::cdecl_call<void*>(f) : nullptr;
+}
+static void* player_tribe()
+{
+    void* nm = noun_mgr();
+    void* t = R(nm, 0x78) ? F<void*>(nm, 0x70) : nullptr;
+    return R(t, 0x350) ? t : nullptr;
+}
+static void* cplayer()
+{
+    void* nm = noun_mgr();
+    void* p = R(nm, 0x78) ? F<void*>(nm, 0x74) : nullptr;
+    return R(p, 0x1280) ? p : nullptr;
+}
+static void* rel_mgr()
+{
+    uintptr_t f = S("Simulator::cRelationshipManager::Get");
+    return f ? skg::cdecl_call<void*>(f) : nullptr;
+}
+static uint32_t pol(void* o) { return o ? skg::vcall<uint32_t>(o, 0x4C / 4) : 0xFFFFFFFFu; }
+static float rel_abs(void* mgr, uint32_t a, uint32_t b)
+{
+    uintptr_t f = S("Simulator::cRelationshipManager::CalculateRelationshipAbsolute");
+    return mgr && f ? skg::thiscall<float>(f, mgr, a, b, 0) : NAN;
+}
+static float rel(void* mgr, uint32_t a, uint32_t b)
+{
+    uintptr_t f = S("Simulator::cRelationshipManager::CalculateRelationship");
+    return mgr && f ? skg::thiscall<float>(f, mgr, a, b, 0) : NAN;
+}
+
+constexpr uint32_t kTribeNoun = 0x018C6D19;
+struct TribeRef {
+    void* t;
+    uint32_t pol;
+    float x, y, z;
+};
+static std::vector<TribeRef> npc_tribes()
+{
+    std::vector<TribeRef> out;
+    void* pt = player_tribe();
+    game::for_each_object(
+        [](void* o, uint32_t noun, void* u) {
+            auto* v = (std::vector<TribeRef>*)u;
+            if (noun == kTribeNoun && game::object_alive(o) && R(o, 0x350) && v->size() < kMaxN) {
+                float* p = (float*)((uint8_t*)o + 0x124);
+                v->push_back({o, pol(o), p[0], p[1], p[2]});
+            }
+            return true;
+        },
+        &out);
+    for (auto it = out.begin(); it != out.end();)
+        it = it->t == pt ? out.erase(it) : std::next(it);
+    return out;
+}
+// the guest's tribe for a host entry: the same political id (the guest loads the host's save), else the closest
+// within 40 m (a village formed during play has its own id in each game)
+static const TribeRef* match(const std::vector<TribeRef>& mine, uint32_t hpol, float x, float y, float z)
+{
+    for (auto& t : mine)
+        if (t.pol == hpol)
+            return &t;
+    const TribeRef* best = nullptr;
+    float bd = 40.f * 40.f;
+    for (auto& t : mine) {
+        float d = (t.x - x) * (t.x - x) + (t.y - y) * (t.y - y) + (t.z - z) * (t.z - z);
+        if (d < bd)
+            bd = d, best = &t;
+    }
+    return best;
+}
+
+static bool planet(uint32_t m)
+{
+    return m == modes::kCell || m == modes::kCreature || m == modes::kTribe || m == modes::kCiv || m == modes::kSpace;
+}
+static bool sky(uint32_t m) { return m == modes::kCreature || m == modes::kTribe || m == modes::kCiv; }
+static bool tribe_mode(uint32_t m) { return m == modes::kTribe; }
+
+static char g_fmt[160];
+static std::string fmt_f(const Entry& e, int n)
+{
+    std::string s;
+    snprintf(g_fmt, sizeof g_fmt, "key=%08X", e.key);
+    s = g_fmt;
+    for (int i = 0; i < n; i++) {
+        snprintf(g_fmt, sizeof g_fmt, " %.4f", bitsf(e.v[i]));
+        s += g_fmt;
+    }
+    return s;
+}
+
+// ---- row: the sky (the planet context's orientation, as MSG_WORLD_TIME sends it)
+static bool r_tod(Table& out)
+{
+    net::Quat q;
+    if (!game::time_of_day(q))
+        return false;
+    Entry e;
+    e.v[0] = fbits(q.x), e.v[1] = fbits(q.y), e.v[2] = fbits(q.z), e.v[3] = fbits(q.w);
+    out.push_back(e);
+    return true;
+}
+static int s_tod(const Table& want, bool apply)
+{
+    net::Quat q;
+    if (want.empty() || !game::time_of_day(q))
+        return 0;
+    const Entry& w = want[0];
+    float wx = bitsf(w.v[0]), wy = bitsf(w.v[1]), wz = bitsf(w.v[2]), ww = bitsf(w.v[3]);
+    float dot = std::fabs(q.x * wx + q.y * wy + q.z * wz + q.w * ww);
+    // 1e-4: about 0.03 rad of the day (30 s of a 16 min day); the host's sends are 1 s apart
+    if (1.f - dot <= 1e-4f)
+        return 0;
+    if (apply)
+        game::set_time_of_day(net::Quat{wx, wy, wz, ww});
+    return 1;
+}
+static std::string f_tod(const Entry& e) { return fmt_f(e, 4); }
+
+// ---- row: the day's length (cTimeOfDay +0x24, SetDayDuration)
+static void* tod_obj()
+{
+    uintptr_t f = S("Simulator::cTimeOfDay::Get");
+    void* t = f ? skg::cdecl_call<void*>(f) : nullptr;
+    return R(t, 0x28) ? t : nullptr;
+}
+static bool r_day(Table& out)
+{
+    void* t = tod_obj();
+    if (!t)
+        return false;
+    Entry e;
+    e.v[0] = fbits(F<float>(t, 0x24));
+    out.push_back(e);
+    return true;
+}
+static int s_day(const Table& want, bool apply)
+{
+    void* t = tod_obj();
+    uintptr_t set = S("Simulator::cTimeOfDay::SetDayDuration");
+    if (want.empty() || !t)
+        return 0;
+    float w = bitsf(want[0].v[0]);
+    if (!(w > 1.f) || std::fabs(F<float>(t, 0x24) - w) < 0.01f)
+        return 0;
+    if (apply && set)
+        skg::thiscall<void>(set, t, w);
+    return 1;
+}
+static std::string f_day(const Entry& e) { return fmt_f(e, 1); }
+
+// ---- row: the stages done (cPlayer +0x10FC..+0x110C, docs/re/creations.md#creations-cplayer-fields)
+static bool r_stages(Table& out)
+{
+    void* p = cplayer();
+    if (!p)
+        return false;
+    Entry e;
+    for (int i = 0; i < 5; i++)
+        e.v[i] = F<uint32_t>(p, 0x10FC + 4 * i);
+    out.push_back(e);
+    return true;
+}
+static int s_stages(const Table& want, bool apply)
+{
+    void* p = cplayer();
+    if (want.empty() || !p)
+        return 0;
+    int n = 0;
+    for (int i = 0; i < 5; i++) {
+        uint32_t& mine = *(uint32_t*)((uint8_t*)p + 0x10FC + 4 * i);
+        if (mine == want[0].v[i])
+            continue;
+        n++;
+        if (apply)
+            mine = want[0].v[i]; // no setter: the History bar and the stage cards read the field
+    }
+    return n;
+}
+static std::string f_stages(const Entry& e)
+{
+    snprintf(g_fmt, sizeof g_fmt, "traits=%08X,%08X,%08X,%08X,%08X", e.v[0], e.v[1], e.v[2], e.v[3], e.v[4]);
+    return g_fmt;
+}
+
+// ---- row: how every NPC tribe feels about the player tribe (docs/re/tribe.md B)
+constexpr uint32_t kRelDelta = 0x530CF07; // the social success's event: its scale is a raw delta
+static bool r_rel(Table& out)
+{
+    void* pt = player_tribe();
+    void* mgr = rel_mgr();
+    if (!pt || !mgr)
+        return false;
+    uint32_t pp = pol(pt);
+    for (auto& t : npc_tribes()) {
+        Entry e;
+        e.key = t.pol;
+        e.v[0] = fbits(rel(mgr, t.pol, pp));
+        e.v[1] = fbits(t.x), e.v[2] = fbits(t.y), e.v[3] = fbits(t.z);
+        out.push_back(e);
+    }
+    return true;
+}
+static uint32_t g_rel_stuck; // tests: applies the game did not take
+static int s_rel(const Table& want, bool apply)
+{
+    void* pt = player_tribe();
+    void* mgr = rel_mgr();
+    uintptr_t ap = S("Simulator::cRelationshipManager::ApplyRelationship");
+    if (!pt || !mgr || !ap)
+        return 0;
+    uint32_t pp = pol(pt);
+    auto mine = npc_tribes();
+    int n = 0;
+    for (auto& w : want) {
+        const TribeRef* t = match(mine, w.key, bitsf(w.v[1]), bitsf(w.v[2]), bitsf(w.v[3]));
+        if (!t)
+            continue;
+        float hv = bitsf(w.v[0]);
+        float cur = rel(mgr, t->pol, pp);
+        if (!std::isfinite(hv) || !std::isfinite(cur) || std::fabs(cur - hv) < 0.05f)
+            continue;
+        n++;
+        if (!apply)
+            continue;
+        // the delta to the unclamped value (CalculateRelationship clamps to -10..10): the result is the host's
+        float a = rel_abs(mgr, t->pol, pp);
+        float d = hv - (std::isfinite(a) ? a : cur);
+        skg::thiscall<float>(ap, mgr, t->pol, pp, kRelDelta, d);
+        if (std::fabs(rel(mgr, t->pol, pp) - hv) >= 0.05f)
+            g_rel_stuck++;
+    }
+    return n;
+}
+static std::string f_rel(const Entry& e)
+{
+    snprintf(g_fmt, sizeof g_fmt, "key=%08X rel=%.2f pos=(%.1f %.1f %.1f)", e.key, bitsf(e.v[0]), bitsf(e.v[1]),
+             bitsf(e.v[2]), bitsf(e.v[3]));
+    return g_fmt;
+}
+
+// ---- row: the Tribe goal card (the Tribe Mission Manager's current mission, docs/re/tribe.md#tribe-wsync) and the
+// stage's goal progress (cPlayer +0x10F0 / +0x10F4)
+static void* mission_mgr()
+{
+    uintptr_t g = S("SporeCoop::TribeMissionManager_Get");
+    void* m = g ? skg::cdecl_call<void*>(g) : nullptr;
+    return R(m, 0x88) ? m : nullptr;
+}
+static void* current_target(void* mgr, uint32_t* state)
+{
+    void* m = mgr ? F<void*>(mgr, 0x74) : nullptr;
+    if (!R(m, 0x94))
+        return nullptr;
+    if (state)
+        *state = F<uint32_t>(m, 0x7C);
+    void* t = F<void*>(m, 0x80);
+    return R(t, 0x350) ? t : nullptr;
+}
+static int g_goal_card = -1;
+static bool r_goal(Table& out)
+{
+    void* p = cplayer();
+    void* mgr = mission_mgr();
+    if (!p || !mgr)
+        return false;
+    uint32_t st = 0;
+    void* t = current_target(mgr, &st);
+    Entry e;
+    e.key = t ? pol(t) : 0xFFFFFFFFu;
+    float* pos = t ? (float*)((uint8_t*)t + 0x124) : nullptr;
+    e.v[0] = fbits(pos ? pos[0] : 0), e.v[1] = fbits(pos ? pos[1] : 0), e.v[2] = fbits(pos ? pos[2] : 0);
+    e.v[3] = st;
+    e.v[4] = fbits(F<float>(p, 0x10F0)), e.v[5] = fbits(F<float>(p, 0x10F4));
+    out.push_back(e);
+    g_goal_card = -1; // tests: the HUD shows a card of the current mission (read only for the dump)
+    uintptr_t pg = S("SporeCoop::MissionCardPanel_Get"), has = S("SporeCoop::MissionCardPanel_HasCard");
+    void* panel = pg ? skg::cdecl_call<void*>(pg) : nullptr;
+    void* m = F<void*>(mgr, 0x74);
+    if (panel && has && m)
+        g_goal_card = skg::thiscall<bool>(has, panel, m) ? 1 : 0;
+    return true;
+}
+static void* g_goal_target; // the tribe SetTargetTribe is called with outside the frame (UI: the goal card)
+static void goal_task(void*)
+{
+    void* mgr = mission_mgr();
+    uintptr_t set = S("SporeCoop::TribeMission_SetTargetTribe");
+    void* t = g_goal_target;
+    g_goal_target = nullptr;
+    if (!mgr || !set || !t || !game::object_alive(t) || game::mode_id() != modes::kTribe)
+        return;
+    bool still = false; // the tribe is still in the game's list (not freed since the frame)
+    for (auto& x : npc_tribes())
+        still |= x.t == t;
+    if (still)
+        skg::thiscall<void>(set, mgr, t);
+}
+static int s_goal(const Table& want, bool apply)
+{
+    void* p = cplayer();
+    void* mgr = mission_mgr();
+    if (want.empty() || !p || !mgr)
+        return 0;
+    const Entry& w = want[0];
+    int n = 0;
+    float hp = bitsf(w.v[4]), ht = bitsf(w.v[5]);
+    float& gp = *(float*)((uint8_t*)p + 0x10F0);
+    float& gt = *(float*)((uint8_t*)p + 0x10F4);
+    if (std::isfinite(hp) && std::isfinite(ht) && ht > 0 && (std::fabs(gp - hp) > 1e-3f || std::fabs(gt - ht) > 1e-3f)) {
+        n++;
+        if (apply)
+            gp = hp, gt = ht; // the HUD's bar reads them every frame (0xCCDDB0)
+    }
+    if (w.key != 0xFFFFFFFFu) {
+        auto mine = npc_tribes();
+        const TribeRef* want_t = match(mine, w.key, bitsf(w.v[0]), bitsf(w.v[1]), bitsf(w.v[2]));
+        void* cur = current_target(mgr, nullptr);
+        if (want_t && cur != want_t->t) {
+            n++;
+            if (apply && !g_goal_target) {
+                g_goal_target = want_t->t;
+                H->run_outside_frame(goal_task, nullptr);
+            }
+        }
+    }
+    return n;
+}
+static std::string f_goal(const Entry& e)
+{
+    snprintf(g_fmt, sizeof g_fmt, "target=%08X pos=(%.1f %.1f %.1f) state=%u progress=%.1f/%.1f card=%d", e.key,
+             bitsf(e.v[0]), bitsf(e.v[1]), bitsf(e.v[2]), e.v[3], bitsf(e.v[4]), bitsf(e.v[5]), g_goal_card);
+    return g_fmt;
+}
+
+static const Row kRows[] = {
+    {1, "tod", 4, &g_tod_fix, sky, r_tod, s_tod, true, f_tod},
+    {2, "day", 1, &g_tod_fix, sky, r_day, s_day, false, f_day},
+    {3, "stages", 5, &g_stages_fix, planet, r_stages, s_stages, false, f_stages},
+    {4, "tribe_rel", 4, &g_rel_fix, tribe_mode, r_rel, s_rel, false, f_rel},
+    {5, "tribe_goal", 6, &g_goal_fix, tribe_mode, r_goal, s_goal, false, f_goal},
+};
+constexpr int kNRows = sizeof kRows / sizeof kRows[0];
+
+// ---- engine state
+struct HostRow {
+    Table sent;
+};
+struct GuestRow {
+    Table want;
+    uint32_t mode = 0;
+    double t = -1; // received
+    uint32_t received = 0, applied = 0, reapplied = 0, checks = 0;
+    int differ = 0;         // at the last check
+    bool matched = false;   // the last check found no difference (an apply after it is a re-alignment)
+};
+static HostRow g_host[kNRows];
+static GuestRow g_guest[kNRows];
+static double g_send_at = 0, g_check_at = 0, g_read_at = 0;
+static bool g_force = true;
+constexpr double kRefresh = 1.0, kRead = 0.25, kCheck = 0.5, kForget = 6.0;
+
+void init(const SkHost* host, SkMod* mod, const Ctx& ctx);
+
+void on_session_end()
+{
+    for (auto& g : g_guest)
+        g = GuestRow{};
+    for (auto& h : g_host)
+        h = HostRow{};
+    g_force = true;
+}
+
+void on_player_join() { g_force = true; }
+
+bool owns_time_of_day()
+{
+    return g_tod_fix && C.sess && C.sess->role() == net::Role::Client;
+}
+
+static bool same(const Table& a, const Table& b, int nv)
+{
+    if (a.size() != b.size())
+        return false;
+    for (size_t i = 0; i < a.size(); i++) {
+        if (a[i].key != b[i].key)
+            return false;
+        for (int j = 0; j < nv; j++)
+            if (a[i].v[j] != b[i].v[j])
+                return false;
+    }
+    return true;
+}
+
+static void host_tick(double now)
+{
+    uint32_t mode = game::mode_id();
+    if (now - g_read_at < kRead && !g_force)
+        return;
+    g_read_at = now;
+    bool due = g_force || now - g_send_at >= kRefresh;
+    Table cur[kNRows];
+    bool have[kNRows] = {};
+    for (int i = 0; i < kNRows; i++) {
+        const Row& r = kRows[i];
+        if (!r.active(mode) || !r.read(cur[i]))
+            continue;
+        have[i] = true;
+        if (!r.continuous && !same(cur[i], g_host[i].sent, r.nv))
+            due = true;
+    }
+    if (!due)
+        return;
+    net::Writer w;
+    w.u8(0);
+    w.u32(mode);
+    int n = 0;
+    for (int i = 0; i < kNRows; i++)
+        n += have[i];
+    w.u8((uint8_t)n);
+    for (int i = 0; i < kNRows; i++) {
+        if (!have[i])
+            continue;
+        const Row& r = kRows[i];
+        w.u8(r.id);
+        w.u8(r.nv);
+        w.u8((uint8_t)cur[i].size());
+        for (auto& e : cur[i]) {
+            w.u32(e.key);
+            for (int j = 0; j < r.nv; j++)
+                w.u32(e.v[j]);
+        }
+        g_host[i].sent = cur[i];
+    }
+    for (auto& p : C.sess->players())
+        if (p.id != 0)
+            C.sess->send_unreliable_to(p.id, net::MSG_WSTATE, w);
+    g_send_at = now;
+    g_force = false;
+}
+
+static void guest_tick(double now)
+{
+    if (now - g_check_at < kCheck)
+        return;
+    g_check_at = now;
+    uint32_t mode = game::mode_id();
+    bool playing = !C.playing || C.playing();
+    for (int i = 0; i < kNRows; i++) {
+        const Row& r = kRows[i];
+        GuestRow& g = g_guest[i];
+        if (g.t < 0 || now - g.t > kForget || g.mode != mode || !r.active(mode) || !playing) {
+            g.matched = false;
+            continue;
+        }
+        bool on = *r.on;
+        int d = r.sync(g.want, on);
+        g.checks++;
+        g.differ = d;
+        if (d > 0 && on) {
+            g.applied++;
+            if (g.matched)
+                g.reapplied++; // the game drifted away after a match: a transition, re-aligned
+        }
+        g.matched = d == 0;
+    }
+}
+
+void tick(double now)
+{
+    if (!C.sess || !C.sess->connected())
+        return;
+    if (C.sess->role() == net::Role::Host)
+        host_tick(now);
+    else if (C.sess->role() == net::Role::Client)
+        guest_tick(now);
+}
+
+void on_message(uint8_t type, uint8_t from, net::Reader& rd)
+{
+    if (type != net::MSG_WSTATE || from != 0 || !C.sess || C.sess->role() != net::Role::Client)
+        return;
+    if (rd.u8() != 0)
+        return;
+    uint32_t mode = rd.u32();
+    int n = rd.u8();
+    double now = H->time_seconds();
+    for (int k = 0; k < n && rd.ok(); k++) {
+        uint8_t id = rd.u8();
+        int nv = rd.u8();
+        int ne = rd.u8();
+        if (!rd.ok() || nv > kMaxV || ne > kMaxN)
+            return;
+        Table t;
+        for (int e = 0; e < ne; e++) {
+            Entry x;
+            x.key = rd.u32();
+            for (int j = 0; j < nv; j++)
+                x.v[j] = rd.u32();
+            t.push_back(x);
+        }
+        if (!rd.ok())
+            return;
+        for (int i = 0; i < kNRows; i++)
+            if (kRows[i].id == id && kRows[i].nv == nv) {
+                g_guest[i].want = std::move(t);
+                g_guest[i].mode = mode;
+                g_guest[i].t = now;
+                g_guest[i].received++;
+                break;
+            }
+    }
+}
+
+std::string status()
+{
+    std::string out;
+    char b[200];
+    double now = H->time_seconds();
+    bool host = C.sess && C.sess->role() == net::Role::Host;
+    for (int i = 0; i < kNRows; i++) {
+        const Row& r = kRows[i];
+        const GuestRow& g = g_guest[i];
+        snprintf(b, sizeof b, "row %s on=%d active=%d %s want=%d age=%.1f received=%u checks=%u differ=%d applied=%u reapplied=%u\n",
+                 r.name, (int)*r.on, (int)r.active(game::mode_id()), host ? "host" : "guest", (int)g.want.size(),
+                 g.t < 0 ? -1.0 : now - g.t, g.received, g.checks, g.differ, g.applied, g.reapplied);
+        out += b;
+    }
+    snprintf(b, sizeof b, "rel_stuck=%u\n", g_rel_stuck);
+    out += b;
+    return out;
+}
+
+// `coop.wsync` the rows' sync state; `coop.wsync dump [row]` this game's own values (tests compare the host's and
+// the guest's); `coop.wsync want <row>` the host's values a guest holds; `coop.wsync rel <pol hex> <delta>` the
+// game's ApplyRelationship on this game (tests: a village's feelings change in the host's game)
+static int c_wsync(void*, int argc, const char* const* argv, SkOut* out)
+{
+    std::string o;
+    if (argc >= 2 && (!strcmp(argv[1], "dump") || !strcmp(argv[1], "want"))) {
+        bool want = !strcmp(argv[1], "want");
+        for (int i = 0; i < kNRows; i++) {
+            const Row& r = kRows[i];
+            if (argc >= 3 && strcmp(argv[2], r.name))
+                continue;
+            Table t;
+            if (want)
+                t = g_guest[i].want;
+            else if (!r.active(game::mode_id()) || !r.read(t))
+                continue;
+            for (auto& e : t)
+                o += std::string(r.name) + " " + r.fmt(e) + "\n";
+        }
+        H->out_printf(out, "%send wsync\n", o.c_str());
+        return 0;
+    }
+    if (argc >= 4 && !strcmp(argv[1], "rel")) {
+        void* pt = player_tribe();
+        void* mgr = rel_mgr();
+        uintptr_t ap = S("Simulator::cRelationshipManager::ApplyRelationship");
+        uint32_t np = (uint32_t)strtoul(argv[2], nullptr, 16);
+        if (!pt || !mgr || !ap) {
+            H->out_printf(out, "no player tribe here\n");
+            return 0;
+        }
+        float before = rel(mgr, np, pol(pt));
+        skg::thiscall<float>(ap, mgr, np, pol(pt), kRelDelta, (float)atof(argv[3]));
+        H->out_printf(out, "rel %08X -> %08X: %.2f -> %.2f\n", np, pol(pt), before, rel(mgr, np, pol(pt)));
+        return 0;
+    }
+    if (argc >= 4 && !strcmp(argv[1], "stage")) { // tests: `stage <0..4> <hex>` writes a consequence trait here
+        void* p = cplayer();
+        int i = atoi(argv[2]);
+        if (!p || i < 0 || i > 4) {
+            H->out_printf(out, "no cPlayer here\n");
+            return 0;
+        }
+        *(uint32_t*)((uint8_t*)p + 0x10FC + 4 * i) = (uint32_t)strtoul(argv[3], nullptr, 16);
+        H->out_printf(out, "stage %d trait %08X\n", i, F<uint32_t>(p, 0x10FC + 4 * i));
+        return 0;
+    }
+    if (argc >= 3 && !strcmp(argv[1], "goal")) { // tests: the host's goal card on the village of this pol
+        uint32_t np = (uint32_t)strtoul(argv[2], nullptr, 16);
+        for (auto& t : npc_tribes())
+            if (t.pol == np) {
+                g_goal_target = t.t;
+                H->run_outside_frame(goal_task, nullptr);
+                H->out_printf(out, "goal %08X set\n", np);
+                return 0;
+            }
+        H->out_printf(out, "no tribe %08X\n", np);
+        return 0;
+    }
+    H->out_printf(out, "%s", status().c_str());
+    return 0;
+}
+
+void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
+{
+    H = host;
+    M = mod;
+    C = ctx;
+    H->command_add(mod, "coop.wsync",
+                   "coop.wsync [dump [row]|want <row>|rel <pol> <delta>|goal <pol>] - host-owned world state (time of day, "
+                   "stages done, village relations, the Tribe goal): rows, this game's values",
+                   c_wsync, nullptr, SK_CMD_MAIN_THREAD);
+}
+
+} // namespace wsync

@@ -100,6 +100,9 @@ enum MsgType : uint8_t {
                           // The host relays a guest's message to the other guests; the receiver
                           // plays it on that player's puppet with the game's own effect pools.
                           // Older SporeCoop ignores it (an unknown type).
+    MSG_WSTATE = 62,      // host -> guests: host-owned world state rows (wsync.h, BUG-0419 / BUG-0565 / BUG-0577 /
+                          // BUG-0579 / BUG-0564): u8 kind 0, u32 host mode, u8 rows, {u8 id, u8 nv, u8 n, n x {u32 key,
+                          // nv x u32}}. Older SporeCoop ignores it (an unknown type).
 };
 
 // LAN discovery: plain datagrams outside any connection, answered by hosts on their game port
