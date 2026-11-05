@@ -105,6 +105,10 @@ enum MsgType : uint8_t {
                           // {u8 player, f32 seconds} (an NPC's charge stunned its puppet: CreatureStun vt 0x94),
                           // kind 1 guest -> host {u16 NPC id, f32 seconds} (the guest's charge stunned a proxy).
                           // Older SporeCoop ignores it (an unknown type).
+    MSG_MIRROR_FX = 64,   // host -> guests: what the host's game did to a creature a guest mirrors (mirror_fx.h, BUG-0600):
+                          // u8 kind; 0 effect {u8 space (0 NPC, 1 tribe member), u16 id, u8 stop, u8 pool, u32 effect,
+                          // u32 key}, 1 combat voice {space, id, u8 enter}, 2 sprint {space, id, u8 on}.
+                          // Older SporeCoop ignores it (an unknown type).
     MSG_WSTATE = 62,      // host -> guests: host-owned world state rows (wsync.h, BUG-0419 / BUG-0565 / BUG-0577 /
                           // BUG-0579 / BUG-0564): u8 kind 0, u32 host mode, u8 rows, {u8 id, u8 nv, u8 n, n x {u32 key,
                           // nv x u32}}. Older SporeCoop ignores it (an unknown type).

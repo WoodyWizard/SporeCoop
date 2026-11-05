@@ -2001,3 +2001,7 @@ Player reports 2026-11-04 (0.7.5, Discord bug-reports; not analysed yet):
 - BUG-0575: Tribe: the guest crashed after double-clicking the home icon (0xA826F3) (guard on fix/w44-crashes, unreleased: game.model_fx; not reproduced, the freeing of the effect's part not found: docs/re/tribe.md#tribe-model-fx-guard)
 - BUG-0584: Creature: a fault on the host, a call through null from 0xB097C4 (fixed on fix/w44-crashes, unreleased: wobj.fruit_saved + game.fruit_pool; reproduced by `crash_fruit_eat`: docs/re/creature.md#creature-fruit-pool-guard)
 - BUG-0602: Civilization: one building of a city stands at another place in the guest's game (detector `Civilization:planet:building_*`; `SPORE_DETECTOR=20 tools/lab.py run campaign_space`)
+  Fixed on fix/w44-guest-player3 (unreleased, `mirror.fx`) except the attack animations' hit impacts: BUG-0603.
+- BUG-0603: Tribe: a guest's game plays none of the hit impact effects of the members' attack animations (the
+  animation event's per-target effects 0x682E8D4B / 0xF0D5A994 / 0xCFECC623, sound 0xD05B58ED; `coop_tribe_fight_sounds.py`
+  prints the host's plays). docs/re/tribe.md#tribe-mirror-fx.

@@ -2126,6 +2126,11 @@ static uint16_t member_id(void* c)
 }
 
 uint16_t id_of(void* c) { return member_id(c); }
+void* mirror_of(uint16_t id)
+{
+    auto it = g_gm.find(id);
+    return it == g_gm.end() ? nullptr : it->second.c;
+}
 
 // tests (game bots): a readable key for tribe buildings on screen: hut<tribe index>, "p" for the player's
 std::string object_key(void* obj)

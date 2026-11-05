@@ -10,6 +10,7 @@
 
 #include "fixes.h"
 #include "game.h"
+#include "mirror_fx.h"
 #include "modes.h"
 #include "net/protocol.h"
 #include "sporekit_game.hpp"
@@ -349,6 +350,10 @@ static void process_local(void* creature, const game::EffectEvent& ev)
 {
     if (!g_fix || !creature)
         return;
+    if (creature != game::avatar() && !game::is_puppet(creature)) { // BUG-0600: a host's NPC / member: its mirrors
+        mirror_fx::on_creature_effect(creature, ev);
+        return;
+    }
     if (creature != game::avatar() || game::is_puppet(creature))
         return;
     if (!C.sess || !C.sess->connected())

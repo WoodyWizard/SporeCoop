@@ -45,6 +45,7 @@
 #include "npc.h"
 #include "creature_hp.h"
 #include "player_rules.h"
+#include "mirror_fx.h"
 #include "effects.h"
 #include "nest.h"
 #include "fields.h"
@@ -998,7 +999,7 @@ static bool world_state_msg(uint8_t type)
            (type >= net::MSG_CELL_STATE && type <= net::MSG_CELL_FOOD) || type == net::MSG_CELL_KO ||
            type == net::MSG_CELL_BITTEN || type == net::MSG_TRIBE_STATE || type == net::MSG_TRIBE_CMD ||
            type == net::MSG_SPECIES || type == net::MSG_SOCIAL || type == net::MSG_NEST || type == net::MSG_PARTS ||
-           type == net::MSG_FIELDS || type == net::MSG_WSTATE || type == net::MSG_PLAYER_RULE;
+           type == net::MSG_FIELDS || type == net::MSG_WSTATE || type == net::MSG_PLAYER_RULE || type == net::MSG_MIRROR_FX;
 }
 
 // the gate: does this machine drop the host's message? (0.7.3.0 with core.world_gate off: the old
@@ -3973,6 +3974,9 @@ void setup_callbacks()
         case net::MSG_PLAYER_RULE: // P1 of 0.7.7: stun (BUG-0554)
             player_rules::on_message(type, from, r);
             return;
+        case net::MSG_MIRROR_FX: // BUG-0600: the host's creature effects, sprints and voices on the mirrors
+            mirror_fx::on_message(type, from, r);
+            return;
         }
         if (g_sess.role() == net::Role::Client && from == 0)
             world::on_message(type, r, g_sess.name_of(0));
@@ -5493,6 +5497,11 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
             return it != g_remotes.end() && !it->second.buf.empty() && (it->second.buf.latest().flags & net::PF_JUMPING);
         };
         player_rules::init(H, M, pc);
+    }
+    { // BUG-0600: the fight's effects, sprints and voices of the host's members / NPCs on a guest's mirrors
+        mirror_fx::Ctx mc;
+        mc.sess = &g_sess;
+        mirror_fx::init(H, M, mc);
     }
     { // BUG-0451: the creatures' visual effects on the partner's puppet
         effects::Ctx ec;
