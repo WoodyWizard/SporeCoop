@@ -244,6 +244,11 @@ struct GuestCheck {
 // within kTotalLag s before it asked is no difference.
 static bool g_fix_total_lag = true;
 COOP_FIX("diag.total_lag", "BUG-0379", g_fix_total_lag, "sync-check: a guest's total the host had within 3 s before asking is no difference (food sent late)");
+// BUG-0588: after the City Hall editor of the end of Tribe the host's game has every animal at (0 0 0) (it takes the
+// Tribe world down for Civ) while the guests' proxies stay: "n: 46 apart" MISMATCH (lab 20261104-224338). The check
+// does not compare while the host's stage ends. Off: compared (0.7.7).
+static bool g_stage_end_fix = true;
+COOP_FIX("diag.stage_end", "BUG-0588", g_stage_end_fix, "sync-check: nothing is compared while the host's game ends its stage (Tribe -> Civ editors)");
 constexpr double kTotalLag = 3.0;
 struct TotalAt {
     double t;
@@ -409,6 +414,8 @@ static void on_digest(uint8_t from, const dg::Digest& gd, size_t bytes)
             if (r.t >= g.asked - kTotalLag)
                 recent.push_back({r.id, r.v});
     dg::Compared c = dg::compare(hd, gd, lim, g_fix_total_lag ? &recent : nullptr);
+    if (g_stage_end_fix && g_P.stage_end && g_P.stage_end())
+        c.other_place = true; // BUG-0588
     double ms = (g_H->time_seconds() - t0) * 1000;
     g_c.sync_checks++;
     g_c.sync_ms_sum += ms;

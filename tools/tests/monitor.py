@@ -812,6 +812,18 @@ class Watch(threading.Thread):
                                                           skipped=skip[0]['sig'] if skip else '')))
             for f in real:
                 self.out('DETECTOR ' + json.dumps(dict(guest=who, stage=f['stage'], sig=f['sig'], n=f['n'], text=f['text'])))
+            # SPORE_DETECTOR_DIAG=<cmd>[;<cmd>]: with any state finding, both games' answers to these console
+            # commands (e.g. `coop.wsync;coop.wsync dump tribe_rel;coop.wsync want tribe_rel`), for triage
+            diag = os.environ.get('SPORE_DETECTOR_DIAG', '')
+            if diag and any(':state:' in f['sig'] or ':planet_owner:' in f['sig'] for f in real):
+                for cmd in [c.strip() for c in diag.split(';') if c.strip()]:
+                    for side, i in (('host', host[0]), (who, inst)):
+                        try:
+                            txt = self.console(i).call(cmd).get('out', '')
+                        except (OSError, ValueError) as e:
+                            txt = repr(e)
+                        for ln in txt.splitlines():
+                            self.out(f'DETECTOR-DIAG {side} {cmd}: {ln}')
 
     def step(self):
         with self.lock:

@@ -1709,9 +1709,17 @@ bool SK_THISCALL h_CreatureGameMsg(void* self, uint32_t id, void* data)
     return o_CreatureGameMsg(self, id, data);
 }
 
+// BUG-0588: the editor of the last request (EditorRequest +0xC): the end of Tribe's City Hall and vehicle editors
+static uint32_t g_last_editor_req = 0;
+static bool tribe_civ_editor(uint32_t id)
+{
+    return id == 0x99E92F05u || id == 0xF670AA43u || id == 0x9AD7D4AAu || id == 0x7CB21BADu;
+}
 bool SK_CDECL h_Submit(void* req)
 {
     uint32_t mode = game::mode_id();
+    if (req && skg::readable(req, 0x10))
+        g_last_editor_req = skg::field<uint32_t>(req, 0xC);
     // The cell stage asks for its editor again while the mate is still next to the avatar
     // (0xE78D10 -> mating -> event 0x1E -> 0xE59800 -> Submit): one more request came 13 ms after
     // the vote had ended, before the held one reached the game, and started a second vote that
@@ -2025,6 +2033,8 @@ void on_mode_change(uint32_t from, uint32_t to)
     g_share_due_at = H->time_seconds() + (evolved ? 3.0 : 0.0); // BUG-0019: its cinematic starts first
     notice(new_stage            ? g_name + " entered the " + modes::mode_name(to) + " stage: everybody follows"
            : design_stage(to) ? g_name + " changed a design: everybody gets the new designs"
+           // BUG-0588: the City Hall and vehicle editors of the end of Tribe are no evolution
+           : to == modes::kTribe && (tribe::stage_end() || tribe_civ_editor(g_last_editor_req)) ? g_name + " made a design for the Civilization stage: it comes next"
                               : g_name + " evolved the species: everybody gets the new body",
            -1);
 }
@@ -5242,6 +5252,7 @@ void support_init()
     p.mode = [] { return g_mode; };
     p.place = [] { return g_world; };
     p.playing = [] { return g_local != nullptr; };
+    p.stage_end = [] { return tribe::stage_end(); };
     p.dna = [](float& v) {
         if (!game::avatar() || g_mode != modes::kCreature)
             return false;

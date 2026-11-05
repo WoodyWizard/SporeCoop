@@ -82,6 +82,17 @@ static std::vector<void*> members(void* t)
     return v;
 }
 
+bool stage_end()
+{
+    // cTribeUI +0x28 / +0x29 (the listener's flags) read 0 back in Tribe after the City Hall (lab 20261105-123325):
+    // the game's own sign is the player tribe without its food mat (+0x260 = 0, BUG-0585), which a tribe has from its
+    // founding to the City Hall
+    if (!g_ok || game::mode_id() != modes::kTribe)
+        return false;
+    void* t = player_tribe();
+    return t && !IsBadReadPtr((uint8_t*)t + 0x260, 4) && F<void*>(t, 0x260) == nullptr && !members(t).empty();
+}
+
 static std::vector<void*> all_tribes()
 {
     std::vector<void*> v;

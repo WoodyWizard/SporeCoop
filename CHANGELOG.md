@@ -17,6 +17,13 @@
   was broken; the broken effect is left out instead (BUG-0575, a guard: the cause is not known).
 - Creature / Tribe: the game no longer crashes when a fruit falls from a plant after the other player ate a fruit
   that was on the ground since the save was loaded (BUG-0584).
+- Tribe: villages founded during play now show the host's mood and food in the guest's game too, instead of the
+  values of another village (BUG-0591).
+- Civilization: a city the host's player captured, bought or converted now has the player's buildings in the
+  guest's game too, and the other nations' moods and money are the host's (BUG-0593).
+- Tribe -> Civilization: the City Hall and vehicle editors of the end of Tribe no longer say "evolved the species",
+  and the co-op sync check no longer reports a mismatch while the host's game prepares the Civilization stage
+  (BUG-0588).
 
 - Creature: an animal in the air in the host's game (a flier, a jump, thrown by a hit) is in the air at the same
   height in the guest's game too, instead of walking on the ground under it (BUG-0550).

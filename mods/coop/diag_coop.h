@@ -36,6 +36,9 @@ struct Probe {
     std::function<uint32_t()> mode;  // game mode id
     std::function<uint32_t()> place; // the place (world) id of the stage, 0 = none
     std::function<bool()> playing;   // the player controls something (an avatar, a tribe, ...)
+    // BUG-0588: the host's game is in the end of its stage (Tribe: from the City Hall editor on its animals are at
+    // (0 0 0), its village is taken down): its world is no longer the one a guest plays, the sync-check waits
+    std::function<bool()> stage_end;
     std::function<bool(float&)> dna; // the DNA total when there is one
     std::function<bool(int&)> cell_food;
     std::function<bool(uint32_t&)> vote; // an evolution vote is on (its editor id)

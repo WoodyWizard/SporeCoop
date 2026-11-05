@@ -272,6 +272,7 @@ add('tribe_food_zero', P + 'coop_tribe_food_zero.py', warm=True, minutes=3, fixt
 add('tribe_rel', P + 'coop_wsync_tribe.py rel', warm=True, minutes=3, fixture='tribe')  # BUG-0565: a village's feelings about the player tribe in the guest's game are the host's (SPORE_FIX_OFF=wsync.tribe_rel fails)
 add('tribe_npc_food', P + 'coop_wsync_tribe.py food', warm=True, minutes=3, fixture='tribe')  # BUG-0580: an NPC village's food in the guest's game is the host's after a gathering and a spending (SPORE_FIX_OFF=wsync.tribe_food fails)
 add('tribe_goal', P + 'coop_wsync_tribe.py goal', warm=True, minutes=3, fixture='tribe')  # BUG-0564 (goal): the guest's Tribe goal card is on the host's village (SPORE_FIX_OFF=wsync.tribe_goal fails)
+add('tribe_new_villages', P + 'coop_wsync_tribe.py villages', minutes=4, fixture='tribe')  # BUG-0591: villages the host forms during play have the host's relation and food in the guest's game (SPORE_FIX_OFF=wsync.tribe_pos fails)
 add('wsync_stages', P + 'coop_wsync_tribe.py stages', minutes=5, fixture='tribe')  # BUG-0577: the guest's game has the host's stages done, also after a rejoin (SPORE_FIX_OFF=wsync.stages fails)
 add('wsync_transitions', P + 'coop_wsync_transitions.py', minutes=8, fixture='tribe')  # W1 class (BUG-0419): every host-owned world state row (sky, day, stages, relations, goal, food) is the host's in the guest's game after the host's game over + reload, a rejoin and the guest's own changes (SPORE_FIX_OFF=wsync.tod,wsync.stages,wsync.tribe_rel,wsync.tribe_goal,res.food_add fails)
 add('tribe_bounce_world', P + 'coop_tribe_bounce_world.py', minutes=5, fixture='tribe')  # BUG-0564 class (W2): after the host's game over and reload the guest's game has the host's tribes and food; SPORE_FIX_OFF=realign.villages fails
@@ -293,6 +294,7 @@ add('sync_civ_loss', 'SPORE_NET=burst ' + P + 'coop_sync.py civ', minutes=4)  # 
 add('civ_pause_city', P + 'coop_civ_pause_city.py', warm=True, minutes=3, fixture='civ_npc')  # a city founded while a guest is paused reaches it after the pause (BUG-0331)
 add('civ_leave', P + 'coop_civ_leave.py', warm=True, minutes=4, fixture='civ')  # the vehicles of a guest who left go to a present player (BUG-0031; --nofix fails)
 add('civ_sw_vote', P + 'coop_civ_sw_vote.py', warm=True, minutes=3, fixture='civ')  # a second superweapon request does not change the running vote (BUG-0117; --nofix fails)
+add('wsync_civ', P + 'coop_wsync_civ.py', warm=True, minutes=3, fixture='civ_npc')  # BUG-0593: a captured city's buildings, the nations' relations and money are the host's in the guest's game (SPORE_FIX_OFF=wsync.city_owner,wsync.civ_rel,wsync.civ_money fails)
 add('civ_caption', P + 'coop_civ_caption.py', warm=True, minutes=3, fixture='civ_npc')  # the host's capture caption closes by itself with guests (BUG-0187; --nofix fails)
 add('civ_away', P + 'coop_civ_away.py', warm=True, minutes=5, fixture='civ')  # the guest's vehicles drive while the host is in the menu (BUG-0151; --nofix fails)
 add('tribe_away', P + 'coop_tribe_away.py', warm=True, minutes=5, fixture='tribe')  # the guest's members walk while the host is in the menu (BUG-0151; --nofix fails)

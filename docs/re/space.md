@@ -2244,3 +2244,12 @@ BUG-0546, follow-up of [lane 5's cache](#space-lane5-pollination).
 * ~ Inferred (2026-11-04): the trigger needs the profile's caches together. Lane 4 with lane 5's
   Pollination.package copied over did not hit the case (no ship needed the guard, out/lab/20261104-130333);
   probably its GraphicsCache.package holds those ships' baked models. Lane 5 hits it every run.
+
+## The guest's Space money in the detector (2026-11-05, fix/w44-world-state2)
+<a id="space-money-unsynced"></a>
+
+BUG-0595. ✔ (observed, rel/0.7.7 lab 20261105-015350 campaign_space) The detector's "money 100000 on the host, nan on
+the guest" was a parse: a guest's `coop.wstate` prints `st res money=100000(unsynced)` until the host's first total
+after its arrival in Space (shared::brief); the guest's game had 100000, the host's too (the guests' trace lines of
+the same second). worlddiff.State reads the number before the suffix (and keeps the unsynced names in
+`res_unsynced`). Not a desync of the game.

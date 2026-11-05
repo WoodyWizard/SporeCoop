@@ -24,6 +24,8 @@ import re
 import sys
 import time
 
+import worlddiff
+
 from coop_ui import Ui
 from twoinst import Checks, shot, start
 
@@ -95,6 +97,33 @@ def busy(con):
     return m.group(1) if m else '?'
 
 
+def mismatches(con):
+    m = re.search(r'mismatch (\d+)', con.call('coop.diag sync')['out'])
+    return int(m.group(1)) if m else -1
+
+
+def end_of_tribe(host, guest, ck):
+    """BUG-0588 / BUG-0594: back from the City Hall editor the host's game takes its Tribe world down for Civ (every
+    animal at (0 0 0), the village's totem pole gone); the guest's game keeps its world until the Civ world comes. The
+    host's game says it is in the end of the stage (the player tribe without its food mat, coop.wstate `st phase stage_end=1`) and the
+    sync-check compares nothing then (SPORE_FIX_OFF=diag.stage_end: a MISMATCH "n: apart")."""
+    time.sleep(4)
+    hs = worlddiff.state_dump(host)
+    print(f'  end of Tribe: host stage_end={hs and hs.stage_end}, totem poles host '
+          f'{sum(1 for x in (hs.planet if hs else []) if x["noun"] == 0x055CF865)}', flush=True)
+    ck(hs and hs.stage_end, 'the host\'s game is in the end of Tribe after the City Hall editor (stage_end)')
+    m0 = mismatches(host)
+    host.call('coop.diag sync 600')  # only the checks asked here
+    for _ in range(6):  # the animals go to (0 0 0) during the City Hall cinematic (18 s after, lab 20261104-224338)
+        host.call('coop.diag sync now')
+        time.sleep(5)
+    m1 = mismatches(host)
+    print(f'  host sync-check mismatches {m0} -> {m1}: ' + host.call('coop.diag sync')['out'].strip().splitlines()[-1][:200],
+          flush=True)
+    ck(m1 == m0, f'no sync-check MISMATCH while the host\'s game ends the Tribe stage ({m0} -> {m1})')
+    host.call('coop.diag sync on')
+
+
 def main():
     ck = Checks()
     host, guest = start(fixture='tribe')
@@ -137,6 +166,7 @@ def main():
     # the City Hall editor, then (TRG2CVG_ShowCityHall) a second vote and the vehicle editor, then the Civ stage
     t0 = time.time()
     editors = 0
+    checked_end = False
     while time.time() - t0 < 300 and 'Civ' not in mode(host):
         m = mode(host)
         if 'Editor' in m:
@@ -152,6 +182,9 @@ def main():
                    "the host's game takes the guest's food changes in the vehicle editor without a fault")
             finish_editor(host)
             wait(lambda: 'Editor' not in mode(host), 20)
+            if editors == 1 and not checked_end and 'Tribe' in mode(host):
+                checked_end = True
+                end_of_tribe(host, guest, ck)
             continue
         b = busy(host)
         if 'paused' in b and 'cinematic' in b:

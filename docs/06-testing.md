@@ -4345,3 +4345,17 @@ counted) with the sound id, the track, the first parameters and `from=` the firs
 then `playing track= sound= since=` (played and not stopped). tribe_theme_music counts the plays whose second return
 address is TribeTheme_Play's (0xBC2414). docs/re/tribe.md#tribe-guest-a1 lists the sound ids seen in Tribe.
 
+## Detector reads that were no desync (2026-11-05, fix/w44-world-state2)
+<a id="testing-detector-reads"></a>
+
+* `SPORE_DETECTOR_DIAG="<cmd>;<cmd>"`: with any `:state:` or `:planet_owner:` finding the monitor prints both
+  games' answers to these console commands as `DETECTOR-DIAG <side> <cmd>: <line>` (e.g.
+  `coop.wsync;coop.wsync dump tribe_rel;coop.wsync want tribe_rel`); not counted by detector_report.py.
+* A total a guest has not synced yet prints `money=100000(unsynced)`: read as its number (BUG-0595).
+* Skipped as `apart` (not counted as findings): a game that lists no object while the other lists its world (it
+  loads: a rejoin, BUG-0596), and the host's game in the end of Tribe (`st phase stage_end=1`: from the City Hall
+  editor on it takes its village and animals out of the world for Civ, BUG-0588 / BUG-0594;
+  `SPORE_DETECTOR_STAGE_END=1` compares anyway).
+* Creature: a guest's species table is read twice, 1.5 s apart (`SPORE_DETECTOR_BRACKET=0`: once); a record in one
+  game only must be so in both reads (the host's table reaches a guest within ~1 s, BUG-0596).
+* The Tribe state rows name both games' political ids (`pol <host> / <guest>`).

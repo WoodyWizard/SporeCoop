@@ -134,6 +134,7 @@ static void* planner_city()
     return o ? game::cast(o, kCityType) : nullptr;
 }
 static bool planner_holds(void* city) { return g_fix_planner_hold && city && city == planner_city(); }
+bool planner_holds_city(void* city) { return planner_holds(city); }
 // the spatial objects in the planner's moved-objects map (an eastl rbtree: anchor right +0, left +4,
 // root +8; node value at +0x10 = the object's spatial interface, then its target position)
 static void planner_moved(std::vector<void*>& out)

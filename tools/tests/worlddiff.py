@@ -119,6 +119,8 @@ TOL_STATIC, TOL_MOVING = 3.0, 15.0
 # BUG-0480: Cell: the host dumped before and after the guest, CELL_GAP s apart (SPORE_DETECTOR_BRACKET=0: one host dump)
 CELL_BRACKET = os.environ.get('SPORE_DETECTOR_BRACKET', '1') != '0'
 CELL_GAP = 1.5
+# BUG-0596: a guest's Creature state is read twice, CELL_GAP s apart (SPORE_DETECTOR_BRACKET=0: once)
+STATE_BRACKET = CELL_BRACKET
 # objects that belong to one game by design (per-player logic, invisible helpers): never compared
 IGNORE = {'hit_sphere', 'solar_hit_sphere', 'game_terrain_cursor', 'species_goal', 'creature_tutorial_mission',
           'tribe_to_tribe_mission', 'find_mission', 'military_attack_city_order', 'cultural_convert_city_order',
@@ -195,6 +197,12 @@ def pair_dump(host, guest, r=250, state=False):
     hw, gw = _pair_dump(host, guest, r)
     if state:  # the world state and the planet's lists (docs/06-testing.md#testing-detector-state)
         hw.state, gw.state = state_dump(host), state_dump(guest)
+        if gw.state is not None and gw.state.mode == 'Creature' and STATE_BRACKET:
+            # BUG-0596: the guest's species table again CELL_GAP s after the host's dump: the host sends its table
+            # within ~1 s of a change and a guest's own new record is undone within 0.5 s (social.cpp); a record in
+            # one game only in both guest dumps is a difference, one in the first only was on its way
+            time.sleep(CELL_GAP)
+            gw.state.after = state_dump(guest)
     return hw, gw
 
 
@@ -256,6 +264,9 @@ class State:
         self.who, self.role, self.mode, self.modeid, self.world = who, None, None, None, None
         self.tod = self.day = self.player = self.cell = self.dna = self.rel_lv = self.goal = None
         self.res, self.species, self.tribes, self.civs, self.emps, self.planet = {}, {}, [], [], {}, []
+        self.res_unsynced = set()
+        self.after = None  # BUG-0596: the guest's state read again CELL_GAP s after the host's (pair_dump)
+        self.stage_end = False  # BUG-0588 / BUG-0594: the host's game is in the end of its stage
         self.complete = False
         for line in text.splitlines():
             line = line.strip()
@@ -276,11 +287,16 @@ class State:
                     self.player = dict(traits=[int(x) for x in d.get('traits', '').split(',') if x.isdigit()],
                                        progress=_num(d, 'progress'), total=_num(d, 'total'))
                 elif what == 'res':
-                    self.res = {k: _num(d, k) for k in d}
+                    # BUG-0595: a guest's total before the host's first one prints `money=100000(unsynced)`
+                    # (shared::brief): the number is the game's own value, the suffix is the mod's sync state
+                    self.res = {k: _num({k: str(v).split('(', 1)[0]}, k) for k, v in d.items()}
+                    self.res_unsynced = {k for k, v in d.items() if str(v).endswith('(unsynced)')}
                 elif what == 'cell':
                     self.cell = {k: _num(d, k) for k in ('food', 'plant', 'spent')}
                 elif what == 'dna':
                     self.dna = _num(d, 'v')
+                elif what == 'phase':
+                    self.stage_end = d.get('stage_end') == '1'
                 elif what == 'rel':
                     self.rel_lv = [_f(x) for x in d.get('lv', '').split(',')]
             elif head == 'species':
@@ -386,6 +402,9 @@ def diff_state(hs, gs, stage):
         # a guest keys a received creation 0x7C / 0x7D......: such keys have no partner by design
         only = [k for k in set(hs.species) ^ set(gs.species) if k[18:20] not in ('7C', '7D') and k[:2] not in ('7C', '7D')
                 and (hs.species.get(k) or gs.species.get(k))['relation'] != 0]
+        ga = getattr(gs, 'after', None)
+        if ga is not None:  # BUG-0596: in one game only also in the guest's second dump (CELL_GAP s after the host's)
+            only = [k for k in only if (k in hs.species) != (k in ga.species and ga.species[k]['relation'] != 0)]
         if only:
             add('Creature:state', 'species_only', len(only), f'{len(only)} species with a relation in one game only '
                 f'(e.g. {only[0]} {"host" if only[0] in hs.species else "guest"})')
@@ -414,7 +433,7 @@ def diff_state(hs, gs, stage):
             if lst:
                 x, y = lst[0]
                 add('Tribe:state', kind, len(lst), f'{len(lst)} of {len(pairs)} tribes differ in {f} (e.g. the tribe at '
-                    f'{_fmt(x["pos"])}: {x[f]:.2f} on the host, {y[f]:.2f} on the guest)')
+                    f'{_fmt(x["pos"])}: {x[f]:.2f} on the host, {y[f]:.2f} on the guest; pol {x["pol"]} / {y["pol"]})')
         hg, gg = hs.goal, gs.goal
         if hg and gg:
             ht = hg['tribe'] >= 0 and hg['pos']
@@ -564,6 +583,17 @@ def diff(host, guest, area=None):
     if host.modeid != guest.modeid or host.world != guest.world:
         return [Finding(sig='apart', stage=stage, n=0, text=f'not in the same place: host {host.mode} {host.world}, '
                                                             f'guest {guest.mode} {guest.world}')]
+    # BUG-0596: a game that lists no object at all while the other lists its world is loading it (a rejoin, a load:
+    # campaign_ct 20261105-015350 compared a rejoining guest with 0 rows, its species table not received yet)
+    for w, other in ((guest, host), (host, guest)):
+        if w.complete and not w.rows and len(other.rows) >= 10:
+            return [Finding(sig='apart', stage=stage, n=0, text=f'the {w.who or w.role}\'s game lists no object (loading)')]
+    # BUG-0588, BUG-0594: from the City Hall editor on the host's game takes its village and animals out of the world
+    # for the Civ stage (totem pole and food mat destroyed, animals at (0 0 0)); the guest's game has no such phase and
+    # shows its Tribe world until the Civ world comes: not the same place (SPORE_DETECTOR_STAGE_END=1 compares anyway)
+    hst = getattr(host, 'state', None)
+    if hst is not None and hst.stage_end and os.environ.get('SPORE_DETECTOR_STAGE_END') != '1':
+        return [Finding(sig='apart', stage=stage, n=0, text='the host\'s game is in the end of its stage (Tribe -> Civ)')]
     # Tribe / Civ: a player's position is its mouse pointer, (0 0 0) when it has none (a game in the
     # background): the host's centre then (the planet's centre is no place to compare)
     # the world state and the whole planet (no centre needed): `<stage>:state:*`, `All:state:*`, `<stage>:planet:*`

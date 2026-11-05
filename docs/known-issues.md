@@ -1976,6 +1976,7 @@ Player reports 2026-11-04 (0.7.5, Discord bug-reports; not analysed yet):
 * Reproduce: `tools/lab.py run tribe_civ --lane N`; the host's log between the editors.
 * Known: docs/re/tribe.md#tribe-civ-transition (last item). Both games still reach Civ.
 * Not checked: whether a guest sees anything wrong then; whether the sync-check gate of a lab test trips on it.
+* Fixed on fix/w44-world-state2 (unreleased): diag.stage_end and the notice, docs/re/tribe.md#tribe-stage-end.
 * Ticket: BUG-0588
 - BUG-0582: Tribe: the host's game faults at 0xD72745 every frame during its own creature attack event (lab, ~1 run in 3 of tribe_bounce_world; its game-over caption may not come then) (fixed on fix/w43-crashes, unreleased: tribe.attack_spot)
 - BUG-0583: Tribe: a guest faulted in a citizen's Update (GetAbilityIndexByType) after leaving and joining again (lab, once in realign_tribe_rejoin) (guard on fix/w43-crashes, unreleased: tribe.leader_tool; not reproduced)
@@ -1991,3 +1992,12 @@ Player reports 2026-11-04 (0.7.5, Discord bug-reports; not analysed yet):
 - BUG-0584: Creature: a fault on the host, a call through null from 0xB097C4 (fixed on fix/w44-crashes, unreleased: wobj.fruit_saved + game.fruit_pool; reproduced by `crash_fruit_eat`: docs/re/creature.md#creature-fruit-pool-guard)
 - BUG-0600: Tribe: a guest's game plays none of the hit and fight sounds of the members' fights (the host's 40+ in a
   40 s fight, the guest's 0; `coop.audio list` on both after `coop.tribe act 7`).
+- BUG-0591: Tribe: in play_tribe the wsync rows tribe_rel and tribe_food stop reaching some villages on the guest from about 400 s on (detector rows; `SPORE_DETECTOR=20 tools/lab.py run play_tribe`) (fixed on fix/w44-world-state2, unreleased: wsync.tribe_pos)
+- BUG-0592: Creature: after the guest returns from the main menu, the host's standing creature can stand 0.7 m under the ground for about 20 s, until it walks (`SPORE_DETECTOR=20 tools/lab.py run long_creature_short`)
+- BUG-0593: Civilization: a city the player took can stay the NPC's on the guest, with that civilization's relations and money (detector rows; `SPORE_DETECTOR=20 tools/lab.py run campaign_space`) (fixed on fix/w44-world-state2, unreleased: wsync.city_owner, wsync.civ_rel, wsync.civ_money)
+- BUG-0594: Tribe: a totem pole on the guest only before the move to Civ (`SPORE_DETECTOR=20 tools/lab.py run tribe_civ`) (fixed on fix/w44-world-state2, unreleased: a detector read of the host's end of Tribe, docs/re/tribe.md#tribe-stage-end)
+- BUG-0595: Space: the guest's money reads nan in the detector's state row (`SPORE_DETECTOR=20 tools/lab.py run campaign_space`) (fixed on fix/w44-world-state2, unreleased: a detector parse)
+- BUG-0596: Creature: a species has a relation in one game only (`SPORE_DETECTOR=20 tools/lab.py run long_creature_short`) (fixed on fix/w44-world-state2, unreleased: detector reads, docs/re/creature.md#creature-species-only)
+- BUG-0575: Tribe: the guest crashed after double-clicking the home icon (0xA826F3) (guard on fix/w44-crashes, unreleased: game.model_fx; not reproduced, the freeing of the effect's part not found: docs/re/tribe.md#tribe-model-fx-guard)
+- BUG-0584: Creature: a fault on the host, a call through null from 0xB097C4 (fixed on fix/w44-crashes, unreleased: wobj.fruit_saved + game.fruit_pool; reproduced by `crash_fruit_eat`: docs/re/creature.md#creature-fruit-pool-guard)
+- BUG-0602: Civilization: one building of a city stands at another place in the guest's game (detector `Civilization:planet:building_*`; `SPORE_DETECTOR=20 tools/lab.py run campaign_space`)

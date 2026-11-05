@@ -68,5 +68,7 @@ bool center(net::Vec3& p);
 void fire_observed(void* tool, void* owner, const float* aim, void* target, bool fired);
 bool hit_is_cosmetic(void* attacker);
 void fire_local(void* owner, uintptr_t ret, bool fired); // BUG-0530 diagnostics (guest)
+// BUG-0493: the open city planner of this game holds this city (the mod changes none of its buildings then)
+bool planner_holds_city(void* city);
 
 } // namespace civ

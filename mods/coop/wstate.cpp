@@ -15,6 +15,7 @@
 //                                          DNAForFood(food) - spent, docs/re/cell.md#cell-editor-dna)
 //   st dna v=<f>                           Creature: cCreatureGameData::GetEvolutionPoints
 //   species <key>/<key>/<key> relation= x= impressed= killed=   Creature: the species relationship table
+//   st phase stage_end=<0|1>              Tribe: the end of the stage (after the City Hall, tribe::stage_end)
 //   st rel lv=<f>,<f>,<f>,<f>              cRelationshipManager +0x10..+0x1C (the level thresholds, ~)
 //   tribe i=<n> player=<0|1> pol=<hex> pos=(x y z) members=<n> food=<f> rel=<f>
 //                                          Tribe: every cTribe (food = its bundles +0x20C, rel = how the tribe feels
@@ -40,6 +41,7 @@
 #include "shared.h"
 #include "social.h"
 #include "space_ext.h"
+#include "tribe.h"
 #include "sporekit_game.hpp"
 
 namespace census {
@@ -220,6 +222,10 @@ static int c_wstate(void*, int, const char* const*, SkOut* out)
         },
         &qq);
     if (mode == modes::kTribe) {
+        // BUG-0588, BUG-0594: the end of Tribe (back from the City Hall editor): the game takes the
+        // village and the animals out of the world for the Civ stage
+        snprintf(b, sizeof b, "st phase stage_end=%d\n", tribe::stage_end() ? 1 : 0);
+        add(b);
         void* pt = nm && R(nm, 0x74) ? F<void*>(nm, 0x70) : nullptr; // cGameNounManager::mpPlayerTribe
         uint32_t ppol = pt ? pol(pt) : 0xFFFFFFFFu;
         for (size_t i = 0; i < qq.tribes.size(); i++) {

@@ -5,11 +5,13 @@
 
 #include <cmath>
 #include <cstdio>
+#include <algorithm>
 #include <cstring>
 #include <map>
 #include <vector>
 
 #include "cellsync.h"
+#include "civ.h"
 #include "fixes.h"
 #include "game.h"
 #include "modes.h"
@@ -123,13 +125,16 @@ static std::vector<TribeRef> npc_tribes()
         it = it->t == pt ? out.erase(it) : std::next(it);
     return out;
 }
-// the guest's tribe for a host entry: the same political id (the guest loads the host's save), else the closest
-// within 40 m (a village formed during play has its own id in each game)
+// the guest's tribe for a host entry. BUG-0591: a village the host's game formed during play is made on the guest
+// (tribe.npc_tribes, SpawnNpcTribe at the host's centre, 0.0 m) with the guest's own next political id: the host's
+// new villages 2, 3, 4 and the guest's copies got ids in another order, so the host's id of one village was the
+// guest's id of another and its relation and food went to that one (play_tribe lab 20261105-015320, from the host's
+// forming at 418 s on). Villages do not move: the closest within 40 m first, the same political id only when no
+// village is that close. Off (wsync.tribe_pos off): the political id first (0.7.7).
+static bool g_tribe_pos_fix = true;
+COOP_FIX("wsync.tribe_pos", "BUG-0591", g_tribe_pos_fix, "wsync: a village's relation, food and goal card reach the guest's village at the same place (not the same id)");
 static const TribeRef* match(const std::vector<TribeRef>& mine, uint32_t hpol, float x, float y, float z)
 {
-    for (auto& t : mine)
-        if (t.pol == hpol)
-            return &t;
     const TribeRef* best = nullptr;
     float bd = 40.f * 40.f;
     for (auto& t : mine) {
@@ -137,6 +142,11 @@ static const TribeRef* match(const std::vector<TribeRef>& mine, uint32_t hpol, f
         if (d < bd)
             bd = d, best = &t;
     }
+    if (g_tribe_pos_fix && best)
+        return best;
+    for (auto& t : mine)
+        if (t.pol == hpol)
+            return &t;
     return best;
 }
 
@@ -508,6 +518,221 @@ static std::string f_tfood(const Entry& e)
     return g_fmt;
 }
 
+// ---- Civ (BUG-0593): the NPC civilizations' feelings about the player civilization and their money, and the
+// owners of every city's buildings and turrets. A guest's Civ AI is the host's mirror (it captures, buys and converts
+// nothing itself), so what the host's game changes there stayed the save's on the guest: the relation a capture
+// costs (000021CB -3.21 on the host, 3.00 on the guest), an NPC's money, and the buildings of a captured city (the
+// city's owner comes with MSG_CIV_STATE, civ.cpp guest_cities, through the game's cCity::ChangeOwner, which gives
+// the buildings the new owner only when Capture set the city's +0x2E2 flag first: 0xBE4C80 City_SetPartsOwner).
+constexpr uint32_t kCivNoun = 0x018C816A, kCityNoun = 0x018C43E8;
+static bool civ_mode(uint32_t m) { return m == modes::kCiv; }
+static void* player_civ()
+{
+    void* nm = noun_mgr();
+    uintptr_t f = S("Simulator::cGameNounManager::GetPlayerCivilization");
+    return nm && f ? skg::thiscall<void*>(f, nm) : nullptr;
+}
+static std::vector<void*> objects_of(uint32_t want)
+{
+    struct Q {
+        uint32_t noun;
+        std::vector<void*> v;
+    } q{want, {}};
+    game::for_each_object(
+        [](void* o, uint32_t noun, void* u) {
+            auto* q = (Q*)u;
+            if (noun == q->noun && game::object_alive(o) && q->v.size() < kMaxN)
+                q->v.push_back(o);
+            return true;
+        },
+        &q);
+    return q.v;
+}
+static std::vector<void*> npc_civs()
+{
+    void* pc = player_civ();
+    std::vector<void*> out;
+    for (void* c : objects_of(kCivNoun))
+        if (c != pc && R(c, 0x9C))
+            out.push_back(c);
+    return out;
+}
+
+static bool g_civ_rel_fix = true;
+COOP_FIX("wsync.civ_rel", "BUG-0593", g_civ_rel_fix, "wsync: a guest's other nations feel about the player civilization as the host's do");
+static bool r_civ_rel(Table& out)
+{
+    void* pc = player_civ();
+    void* mgr = rel_mgr();
+    if (!pc || !mgr)
+        return false;
+    uint32_t pp = pol(pc);
+    for (void* c : npc_civs()) {
+        Entry e;
+        e.key = pol(c);
+        e.v[0] = fbits(rel(mgr, e.key, pp));
+        out.push_back(e);
+    }
+    return true;
+}
+static int s_civ_rel(const Table& want, bool apply)
+{
+    void* pc = player_civ();
+    void* mgr = rel_mgr();
+    uintptr_t ap = S("Simulator::cRelationshipManager::ApplyRelationship");
+    if (!pc || !mgr || !ap)
+        return 0;
+    uint32_t pp = pol(pc);
+    std::vector<uint32_t> mine;
+    for (void* c : npc_civs())
+        mine.push_back(pol(c));
+    int n = 0;
+    for (auto& w : want) {
+        if (std::find(mine.begin(), mine.end(), w.key) == mine.end())
+            continue; // the civilizations come from the save: the same political ids in both games
+        float hv = bitsf(w.v[0]), cur = rel(mgr, w.key, pp);
+        if (!std::isfinite(hv) || !std::isfinite(cur) || std::fabs(cur - hv) < 0.05f)
+            continue;
+        n++;
+        if (!apply)
+            continue;
+        float a = rel_abs(mgr, w.key, pp);
+        skg::thiscall<float>(ap, mgr, w.key, pp, kRelDelta, hv - (std::isfinite(a) ? a : cur));
+        if (std::fabs(rel(mgr, w.key, pp) - hv) >= 0.05f)
+            g_rel_stuck++;
+    }
+    return n;
+}
+static std::string f_civ_rel(const Entry& e)
+{
+    snprintf(g_fmt, sizeof g_fmt, "key=%08X rel=%.2f", e.key, bitsf(e.v[0]));
+    return g_fmt;
+}
+
+static bool g_civ_money_fix = true;
+COOP_FIX("wsync.civ_money", "BUG-0593", g_civ_money_fix, "wsync: a guest's other nations have the host's money");
+static bool r_civ_money(Table& out)
+{
+    if (!player_civ())
+        return false;
+    for (void* c : npc_civs()) {
+        Entry e;
+        e.key = pol(c);
+        e.v[0] = fbits(std::floor(F<float>(c, 0x98))); // cCivilization mWealth (GetMoney adds the NPC budgets +0x4AC / +0x4B0)
+        out.push_back(e);
+    }
+    return true;
+}
+static int s_civ_money(const Table& want, bool apply)
+{
+    if (!player_civ())
+        return 0;
+    int n = 0;
+    for (void* c : npc_civs()) {
+        uint32_t cp = pol(c);
+        for (auto& w : want) {
+            if (w.key != cp)
+                continue;
+            float hv = bitsf(w.v[0]);
+            float& cur = *(float*)((uint8_t*)c + 0x98);
+            if (!std::isfinite(hv) || std::fabs(cur - hv) < 1.f)
+                break;
+            n++;
+            if (apply)
+                cur = hv; // no setter: AddMoney applies the difficulty, SpendMoney refills an NPC's budget
+            break;
+        }
+    }
+    return n;
+}
+static std::string f_civ_money(const Entry& e)
+{
+    snprintf(g_fmt, sizeof g_fmt, "key=%08X money=%.0f", e.key, bitsf(e.v[0]));
+    return g_fmt;
+}
+
+// city_owner: key = the city's owner, v0..2 its position; a guest's city near it whose buildings or turrets have
+// another owner than the city gets them through the game's own City_SetPartsOwner (ChangeOwner's +0x2E2 step:
+// SetPoliticalID of every building, turret and +0x308 part, then the new owner's building models)
+static bool g_city_owner_fix = true;
+COOP_FIX("wsync.city_owner", "BUG-0593", g_city_owner_fix, "wsync: the buildings of a city the host's player took are the player's on a guest");
+static uint32_t g_parts_fixed; // tests: City_SetPartsOwner calls
+static int parts_off(void* city, uint32_t cp)
+{
+    int n = 0;
+    for (uintptr_t off : {0x340u, 0x354u}) { // mBuildings, mTurrets
+        void** b = F<void**>(city, off);
+        void** e = F<void**>(city, off + 4);
+        if (!b || e < b || e - b > 64 || !R(b, (e - b) * 4))
+            continue;
+        for (void** it = b; it < e; it++)
+            if (*it && R(*it, 0x40) && pol(*it) != cp)
+                n++;
+    }
+    return n;
+}
+static bool r_city(Table& out)
+{
+    if (!player_civ())
+        return false;
+    for (void* c : objects_of(kCityNoun)) {
+        if (!R(c, 0x7F0))
+            continue;
+        float* p = (float*)((uint8_t*)c + 0x124);
+        Entry e;
+        e.key = pol(c);
+        e.v[0] = fbits(p[0]), e.v[1] = fbits(p[1]), e.v[2] = fbits(p[2]);
+        e.v[3] = (uint32_t)parts_off(c, e.key); // the host's own (0 when the game is right)
+        out.push_back(e);
+    }
+    return true;
+}
+static int s_city(const Table& want, bool apply)
+{
+    void* nm = noun_mgr();
+    uintptr_t byPol = S("Simulator::cGameNounManager::GetCivilizationByPoliticalID");
+    uintptr_t setParts = S("SporeCoop::City_SetPartsOwner");
+    if (!nm || !byPol || !setParts || !player_civ())
+        return 0;
+    auto mine = objects_of(kCityNoun);
+    int n = 0;
+    for (auto& w : want) {
+        float x = bitsf(w.v[0]), y = bitsf(w.v[1]), z = bitsf(w.v[2]);
+        void* best = nullptr;
+        float bd = 30.f * 30.f;
+        for (void* c : mine) {
+            if (!R(c, 0x7F0))
+                continue;
+            float* p = (float*)((uint8_t*)c + 0x124);
+            float d = (p[0] - x) * (p[0] - x) + (p[1] - y) * (p[1] - y) + (p[2] - z) * (p[2] - z);
+            if (d < bd)
+                bd = d, best = c;
+        }
+        if (!best)
+            continue;
+        uint32_t cp = pol(best);
+        bool city_differs = cp != w.key; // MSG_CIV_STATE changes the city's owner (civ.cpp), counted here
+        int off = parts_off(best, cp);
+        if (!city_differs && off == 0)
+            continue;
+        n++;
+        if (!apply || city_differs || civ::planner_holds_city(best))
+            continue;
+        void* civ = skg::thiscall<void*>(byPol, nm, cp);
+        if (!civ)
+            continue;
+        skg::thiscall<void>(setParts, best, civ);
+        g_parts_fixed++;
+    }
+    return n;
+}
+static std::string f_city(const Entry& e)
+{
+    snprintf(g_fmt, sizeof g_fmt, "owner=%08X pos=(%.1f %.1f %.1f) parts_other=%u", e.key, bitsf(e.v[0]), bitsf(e.v[1]),
+             bitsf(e.v[2]), e.v[3]);
+    return g_fmt;
+}
+
 static const Row kRows[] = {
     {1, "tod", 4, &g_tod_fix, sky, r_tod, s_tod, true, f_tod},
     {2, "day", 1, &g_tod_fix, sky, r_day, s_day, false, f_day},
@@ -516,6 +741,9 @@ static const Row kRows[] = {
     {5, "tribe_goal", 6, &g_goal_fix, tribe_mode, r_goal, s_goal, false, f_goal},
     {6, "cell_spent", 2, &g_cell_spent_fix, cell_mode, r_spent, s_spent, false, f_spent},
     {7, "tribe_food", 4, &g_tribe_food_fix, tribe_mode, r_tfood, s_tfood, false, f_tfood},
+    {8, "civ_rel", 1, &g_civ_rel_fix, civ_mode, r_civ_rel, s_civ_rel, false, f_civ_rel},
+    {9, "civ_money", 1, &g_civ_money_fix, civ_mode, r_civ_money, s_civ_money, false, f_civ_money},
+    {10, "city_owner", 4, &g_city_owner_fix, civ_mode, r_city, s_city, false, f_city},
 };
 constexpr int kNRows = sizeof kRows / sizeof kRows[0];
 
@@ -708,7 +936,7 @@ std::string status()
                  g.t < 0 ? -1.0 : now - g.t, g.received, g.checks, g.differ, g.applied, g.reapplied);
         out += b;
     }
-    snprintf(b, sizeof b, "rel_stuck=%u tribe_food_adds=%u\n", g_rel_stuck, g_tfood_adds);
+    snprintf(b, sizeof b, "rel_stuck=%u tribe_food_adds=%u city_parts_fixed=%u\n", g_rel_stuck, g_tfood_adds, g_parts_fixed);
     out += b;
     return out;
 }
@@ -749,8 +977,21 @@ static int c_wsync(void*, int argc, const char* const* argv, SkOut* out)
         H->out_printf(out, "no such NPC tribe here\n");
         return 0;
     }
+    if (argc >= 4 && !strcmp(argv[1], "civmoney")) { // civmoney <pol hex> <n>: an NPC civilization's wealth += n here
+        uint32_t np = (uint32_t)strtoul(argv[2], nullptr, 16);
+        for (void* c : npc_civs())
+            if (pol(c) == np) {
+                float& w = *(float*)((uint8_t*)c + 0x98);
+                float before = w;
+                w += (float)atof(argv[3]);
+                H->out_printf(out, "civmoney %08X: %.0f -> %.0f\n", np, before, w);
+                return 0;
+            }
+        H->out_printf(out, "no such NPC civilization here\n");
+        return 0;
+    }
     if (argc >= 4 && !strcmp(argv[1], "rel")) {
-        void* pt = player_tribe();
+        void* pt = game::mode_id() == modes::kCiv ? player_civ() : player_tribe(); // Civ: the player civilization
         void* mgr = rel_mgr();
         uintptr_t ap = S("Simulator::cRelationshipManager::ApplyRelationship");
         uint32_t np = (uint32_t)strtoul(argv[2], nullptr, 16);
