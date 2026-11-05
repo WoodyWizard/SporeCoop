@@ -50,6 +50,11 @@ Not reproduced: lab tribe fixture, the guest gave 8 members to the host one by o
 double-clicked the HUD's home button after each (out/shots575/ of this worktree, not in git); no fault, no crash.
 The click on the home icon did not move the lab camera (the collapsed minimap holder takes the click there), so
 the camera jump of the report was not made. Package T1.
+Not reproduced again (fix/w43-transitions, lane 5, a scratch run 2026-11-04 23:2x): the guest gave its only member
+of the fixture's split, then 8 rounds of a minimap click away (150, 1000) and a double-click on the minimap's house
+icon (55, 918): no fault; the house icon did not move the guest's view either (the view stayed where the minimap
+click put it). A repro needs the players' camera jump: a guest with many members given one by one and the jump done
+by the game's own "home" (? which control: not found).
 
 ## History
 - 2026-11-04: opened.
