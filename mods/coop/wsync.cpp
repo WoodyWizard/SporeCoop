@@ -557,7 +557,12 @@ static void guest_tick(double now)
             continue;
         }
         bool on = *r.on;
-        int d = r.sync(g.want, on);
+        if (!on) { // the switch off: this game is not touched or read (the code before the row)
+            g.differ = -1;
+            g.matched = false;
+            continue;
+        }
+        int d = r.sync(g.want, true);
         g.checks++;
         g.differ = d;
         if (d > 0 && on) {
