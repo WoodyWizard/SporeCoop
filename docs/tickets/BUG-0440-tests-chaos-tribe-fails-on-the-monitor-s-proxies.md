@@ -44,3 +44,15 @@ no-fail-run: covered by BUG-0503 (npc_walk_slow FAIL 20261104-232034 / PASS 2026
 - 2026-11-01: opened (fix/w34-ability-pop).
 - 2026-11-04 (fix/w43-tests): the same proxies line as BUG-0503; fixed there (not marked fixed here until chaos_tribe runs clean).
 - 2026-11-05 (fix/w44-height): the update's 7.1 m was measured at the proxy's distance from the centre (monitor_tick), so it is no height difference; not changed.
+- 2026-11-05 (fix/w44-tests, G2): is the gate's line a host snap (the proxy late by a moment) or a proxy falling
+  behind? The audit line now says how far the proxy was off when it went off, how far it moved since, and the largest
+  step of the host's NPC between two audits (0.25 s) in the last 3 s (commit 69a9065a). Observed in play_tribe#2 of
+  out/lab/20261105-135000 (lane 9, 2 lines, not in a row, so the gate did not fire): proxy 663 (species 0680AA69) 3.4 m
+  off for 2.1 s, host's NPC running 5.5 m/s, off at 3.3 m, the proxy moved 11.2 m in those 2 s, the host's largest step
+  1.5 m per 0.25 s (its running speed); proxy 624 (species 06808ACA) 6.5 m off for 2.0 s, the host's NPC at 2.5 m/s,
+  off at 3.5 m, the proxy moved only 2.4 m in 2 s, the host's largest step 0.6 m per 0.25 s. No host snap in either:
+  the host's NPC moved at its walking / running speed and its proxy fell behind it (624: at half its speed). So the
+  gate measures a real desync, not a brief lag after a jump: the gate and its window stay; no proxy-snap change (it
+  would not touch these cases). Kind: desync (the game's walk of a proxy placed on the host's path not keeping up),
+  not a test fault. Not analysed further: why proxy 624 moved at half the host's speed while placed (an obstacle on
+  the guest's ground, the placing not kept: `coop.npctrack` rows of such a proxy are the next step). Open.

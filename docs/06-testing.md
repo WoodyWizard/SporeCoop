@@ -4366,3 +4366,22 @@ G2 of 0.7.8 (BUG-0430 class). For each: which kind of fault it was and the evide
 * **play_tribe "the members act on the orders"** (BUG-0505 class): the one failure of 0.7.8 (fix/w44-tribe-guest
   20261105-115848, 13 ok / 11 idle) was the game: members standing in the gather node with their walk stopped short,
   new orders not taking them out (BUG-0531, still open). This check measures the game; it stays.
+* **cell_new_game's meat probe** (BUG-0589): meat is kill loot. A run where neither player found meat on its screen in
+  any of 12 tries of 20 s (lab 20261105-132739 #2) measured the pool, not eating: the probe now bites the nearest
+  creature on its screen (the game's bite, `coop.pool kill <key>`) when no meat floated by in half of its wait, then
+  waits for the meat. Near food (under 8 m) is swum to from where the cell is, mouth first: the teleport of
+  `swimto <key> tp` puts the cell beside the food without turning it (a guest sat 0.33 m from a meat's centre and did
+  not eat it, 20261105-132739 #1). A try that ate nothing logs what the cell is in the eater's game (`coop.pool cell`:
+  layer, level, size) and the avatar's size, hp and place.
+* **tribe_guest_tribes** (BUG-0587): closed. No failure since G1's controller retry (0.7.7): 8 runs, 3 of them here on
+  a loaded lane (lab 20261105-134354).
+* **long_session transitions** (BUG-0430, long_creature_short rel/0.7.8 20261105-123757): a console call into a guest
+  that loads the shared world can time out (a 52 s load); restart, rejoin, menu and wait_together take a timeout as
+  "not yet" (`busy_ok`) and wait on until their deadline. A guest that never comes back still fails.
+* The lab orders the tests of one call by their minutes (longest first, `lab.py` parallel sort): `nest_heal,creature_air`
+  now runs creature_air (6 min) first. To run a test after another one warm, call the lab once per test.
+* **The proxies gate** (BUG-0440 / BUG-0445; chaos_tribe, play_tribe): its trace line `proxy N ... m off the host's
+  NPC` now ends with the error when it went off, how far the proxy moved since and the host NPC's largest step between
+  two audits (0.25 s) in the last 3 s. A host snap shows as a large step (several m) just before; the lines of G2
+  (lab 20261105-135000 play_tribe#2) had none (0.6-1.5 m per 0.25 s at 2.5-5.5 m/s): proxies falling behind a moving
+  host NPC, a real desync. The gate and its window stay.
