@@ -1414,3 +1414,23 @@ of the two chiefs' bounding radii from the first, standing):
 * ~ 0xA82660 (thiscall, the effect's vt+8 with one int): checks +0x28, flags +0x2C, then calls vt+8(arg) of each
   component (vector +0x144..+0x148, 0x5C bytes each, object at +0x38). BUG-0575 crashed in that loop with
   edi = 0x5C, esi = 1 (a component's call returned with the callee-saved registers broken: a freed component).
+
+## The red ring under an attack order's target (2026-11-04, fix/w43-guest-player)
+<a id="tribe-target-ring"></a>
+
+BUG-0570. GOG 2024, Ghidra. See also docs/re/creature.md#creature-player-rules.
+
+* ✔ The attack order (DoActionGeneric 0xCD0C20 input action 0xA -> DoActionForAllSelected 0xCD0940(7, target)) draws
+  nothing. The ring is the Tribe HUD's: `TribeTargetRings_Update` 0xCCC7C0 (thiscall(owner), owner =
+  [`TribeUI_ptr` 0x169B2C8] + 0x240, from 0xCCDDB0 <- TribeUI vt 0x34) draws, every frame while owner +0x78, a ring
+  with `TribeTargetRing_Draw` 0xCCBE90 for every **selected** citizen with a live combat target +0xE7C (kind =
+  citizen +0xB74, flag = target spatial +0x77), plus the eat target and social members, then stops every ring not
+  touched in that pass. The rings are a map keyed by the target's +0x24 at owner +0x2C0 (buckets +0x2C4, count +0x2C8,
+  node {key, effect id, IVisualEffect*, touched +0xC, next +0x10}).
+* ✔ +0xE7C is set by SetTarget vt 0x84 0xC0EEC0 (thiscall(c, combatant, bool, int kind) ret 0xC) from the AI attack
+  node's enter 0xD67980 only; a guest's mirrors run no AI, so its game never had a ring.
+* `tribe.target_ring` (tribe.cpp): the guest remembers its own attack order (target, members) and, after the HUD's
+  pass, draws the ring under that target while one of those members is selected, the target lives and no other
+  order came (120 s at most). `coop.tribe ring <id>` says whether the HUD's map holds a live ring under creature
+  <id>. ~ Alternative not done: the host sends each member's +0xE7C and the guest sets it on the mirrors
+  (SetTarget on a mirror makes a cTribeToTribeMission, side effects not audited).

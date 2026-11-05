@@ -147,13 +147,15 @@ struct DamageRec {
     int type;
     uintptr_t ret;
     int how; // 0 filtered, 1 applied, 2 the mod's own apply_damage
+    bool air; // the victim was not grounded (+0x137 == 0) at the hit
 };
 static DamageRec g_dmglog[48];
 static unsigned g_dmglog_n = 0;
 
 static void dmglog_add(void* victim, void* attacker, float dmg, int type, uintptr_t ret, int how)
 {
-    g_dmglog[g_dmglog_n++ % 48] = {H ? H->time_seconds() : 0, victim, attacker, dmg, type, ret, how};
+    bool air = victim && readable(victim, 0x138) && field<uint8_t>(victim, 0x137) == 0;
+    g_dmglog[g_dmglog_n++ % 48] = {H ? H->time_seconds() : 0, victim, attacker, dmg, type, ret, how, air};
 }
 
 std::string damage_log(bool clear)
@@ -163,8 +165,9 @@ std::string damage_log(bool clear)
     unsigned first = g_dmglog_n > 48 ? g_dmglog_n - 48 : 0;
     for (unsigned i = first; i < g_dmglog_n; i++) {
         const DamageRec& r = g_dmglog[i % 48];
-        snprintf(b, sizeof b, "dmg t=%.2f victim=%p attacker=%p amount=%.2f type=%d ret=0x%08X %s\n", r.t, r.victim,
-                 r.attacker, r.dmg, r.type, (unsigned)r.ret, r.how == 0 ? "filtered" : r.how == 1 ? "applied" : "direct");
+        snprintf(b, sizeof b, "dmg t=%.2f victim=%p attacker=%p amount=%.2f type=%d ret=0x%08X %s air=%d\n", r.t, r.victim,
+                 r.attacker, r.dmg, r.type, (unsigned)r.ret, r.how == 0 ? "filtered" : r.how == 1 ? "applied" : "direct",
+                 (int)r.air);
         s += b;
     }
     if (clear)

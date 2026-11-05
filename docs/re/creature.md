@@ -2654,3 +2654,48 @@ BUG-0532 (fixed). Follows #creature-puppet-look. Lane 6, puppet_air (`coop_puppe
   `regrounded update= anim= idle= bt= low=` (the call after which it was found grounded).
 * ~ The hooks on PlayAnimation / CreaturePlayAnim / the idle refresh alone (without 0xA0C5D0) left 1 step in 3 runs
   (lab 20261104-115008 #3): the locomotion starts its walk start / fall -> idle through the low start only.
+
+## The guest as a player: the game's player checks and where the mod answers them (2026-11-04, fix/w43-guest-player)
+<a id="creature-player-rules"></a>
+
+P1 of docs/plan-0.7.7.md, BUG-0418 / BUG-0420 (umbrellas), BUG-0554 / 0555 / 0556 / 0557 / 0561 / 0570. GOG 2024,
+Ghidra (tools/ghidra/q.sh) and lane 9 at runtime. In co-op one game decides what happens to the other player's
+creature: the host's game runs the NPCs and hits the guest's **puppet**; the guest's game runs its **avatar** and
+hits **proxies** (AI-less mirrors). A rule of the game that lands on the puppet / proxy, or a check that asks "is
+this the player" and gets "no" for the partner, never reaches the player whose creature it is. The mod's one place
+for such rules is `mods/coop/player_rules.cpp` (actions carried over the net, MSG_PLAYER_RULE 62) next to the
+predicate answers in `creature_hp.cpp` (IsPlayerSpecies) and the table follower in `social.cpp`.
+
+The checks found, what they read, and how the mod answers them now:
+
+| Address | What it checks / does | Callers | The partner before | The mod now |
+|---|---|---|---|---|
+| vt 0xD0 0xC0C430 IsPlayerSpecies | +0xB20 == PlayerSpecies 0x4DF490 | GetRelationship 0xBA40E0, CreatureSocialMode 0xC0E800, vt 0xD4, family / hatchling / nest code | another species: the diet rule | `creature.relations` (BUG-0462): the party's species, only for the two relation callers |
+| vt 0xD4 0xC0C3B0 CreatureFriendly | relation 6 to the avatar, impressed +0xB58 & 0x80, or IsPlayerSpecies; **not** the pack bit 0x100 | rollover 0xB6D4C0 -> CreatureSelectionUI 0xB6C970 (+0x78 window), cursor 0xD2FFD0 (kind 0x10), CreatureSocialMode | the host's pack / summoned flock: strangers on the guest | `creature.party_allies` (BUG-0556): true for the proxies whose host NPC is in the host's pack (NF_PACK) |
+| vt 0x94 0xC02C70 CreatureStun | (the action) avatar seconds scaled / clamped (2 s -> 3.0), stimulus lo 0x1000 = seconds | the ability hit 0xC20390 (effect kind 1: the charge 0x1F, 1.5 s) and its counter-charge case 0x20 | on the puppet (no AI) / on a proxy | `creature.stun_relay` (BUG-0554): host -> guest kind 0 (its avatar), guest -> host kind 1 (the NPC) |
+| 0xD666B0 (attack node's ability choice, BT_AttackTick 0xD67CD0) | target noun 0x18EB45E, +0x137 == 0, +0x110 & 0x1000 clear, distance >= 1 m -> only types 0x20 / 0x3D / 0x42 / 0x48 | BT_AttackTick at 0xD67E7D / 0xD68474 | the puppet grounded at an animation start (BUG-0532) or an attack chosen before the take-off: melee hits in the air | `creature.air_immune` (BUG-0555): CreatureAttackTarget vt 0xB8 0xC02B40 on a puppet whose player is airborne (PF_JUMPING) drops melee hits > 1 m |
+| minimap 0xD425A0 / 0xE10560 | nest icon ally flag 0x200000 = herd(nest +0x128) +0x191 mbBestFriends or herd species == PlayerSpecies | the minimap update every 2.5 s | +0x191 set only by ApplyEvent 0xBA4A00 -> 0xBA4840 -> cHerd_SetBestFriends 0xC6A210: never on a guest | `social.nest_ally` (BUG-0561): the guest's herds follow the host's table, +0x191 = (relation == 6) |
+| friendly nest 0xC6ABF0 | own species, +0x191, +0x190 or relation 4 | 0xC084B0, 0xD401E0, 0xD41A20 (nest sound / music, ~ the heal at an allied nest) | as the minimap | the same +0x191 (BUG-0561); ~ inferred: also what an allied nest's heal needs (BUG-0496) |
+| TakeDamage 0xC075E0 kill credit | attacker spatial vt 0x58 (avatar) or relation 6 | every hit | a guest's kill paid nothing | npc.cpp: the lethal guest hit lands as the host avatar's (docs section 2) |
+| NPCTickAI 0xC09570 | notices cGameNounManager +0x54 only | every NPC | the puppet unseen | `npc.partners` (BUG-0016): the AI swap |
+| Tribe rings 0xCCC7C0 | selected citizens' combat target +0xE7C (set by the AI attack node) | TribeUI vt 0x34 | a guest's mirrors run no AI: no ring | `tribe.target_ring` (BUG-0570), docs/re/tribe.md#tribe-target-ring |
+
+* ✔ (runtime, lane 9) The NPC melee is `CreatureAbilityHit` 0xC20390 <- CreatureAttackTarget 0xC02B40 <- PlayAbility
+  0xC1E5C0 +0x10C1 <- the BT: a bite of 065CB8BD is TakeDamage type 2, 0.5 hp, return address 0xC20A78 (`coop.hp
+  dmglog`, a ring of the last 48 hits through the hook: victim, attacker, type, caller, filtered / applied /
+  direct). Damage type 3 in TakeDamage is the **charm** (mCharmDamage +0x1694 / mCharmTime +0x169C / mpCharmer
+  +0x1698, reflection 0x1334790: 20 to charm, 50 for an epic, 60 s), not a charge's stun.
+* ✔ (runtime) The charge stun: `coop.rules charge <npc> 1` (SetTarget + PlayAbility of type 0x1F) on the host hit the
+  puppet (type 2 0.5 hp) and sent kind 0; the guest's avatar then held stimulus 0x1000 for 3.0 s, counting down,
+  and showed the stars (screenshot). CreatureStun called on the guest's avatar by hand does the same.
+* ✔ (runtime) Summon Flock: `coop.drama start 8` (the event kind 8 the ability's handler starts) put 4 creatures of
+  0672579F into the host's pack (+0xB58 & 0x100); the host shows hearts over them (effect 0x6A17B05A of the event's
+  update 0xD512A0). Their vt 0xD4 is **false on the host** too (the pack bit is not read), so the host's "allied"
+  look is the pack and the hearts; the guest gets both now (vt 0xD4 for NF_PACK proxies, the hearts by
+  `npc.flock_hearts` for NF_SUMMONED proxies: herd +0x192).
+* Ability types seen (`coop.social abil`, now with the effect list): 0x1E melee (bite, range 1), 0x1F charge (effect
+  kind 1, chance 1.0, stun 1.5 s), 0x20 ranged (range 30, effect kind 2 fear, 6 s), 0x31 / 0x32 / 0x33 roar / siren
+  song / summon flock (0xD8E840 kinds; the host's fixture avatar has 0x33 with 0 points: PlayAbility did not start it).
+* ? Not covered: a guest's own Summon Flock (its game makes the flock locally: AI-less? not looked at), the roar
+  (BUG-0501: kind 0x31 posts stimuli to enemies in the roaring player's game; the guest's roar reaches proxies only),
+  the music (BUG-0568), the eating of pack kills (BUG-0557).
