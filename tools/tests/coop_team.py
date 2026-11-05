@@ -56,11 +56,17 @@ def main():
     ck(guest.call('coop.avatar')['ok'], 'guest is in the host world')
     # an NPC the host simulates and the guest mirrors
     nid = None
+    # BUG-0437: a wild NPC, not one of the host's own family (its species): the first listed NPC is the first one
+    # the mod numbered, which after a warm reset (puppet_fight before, lab 20261101-171437) was #40 of the host's
+    # species 065CBE70: the hunt made the host bite its own family, the game's family bit the host back
+    hsp = re.search(r'key=0x([0-9A-F]+)', host.call('coop.avatar')['out'])
+    hsp = hsp.group(1).zfill(8) if hsp else ''
     for _ in range(20):
         mirrored = set(re.findall(r'#(\d+) .*spawned', guest.call('coop.npc list')['out']))
         for line in host.call('coop.npc list')['out'].splitlines():
-            m = re.match(r'\s*#(\d+) .*hp=([\d.]+) dist=([\d.]+)', line)
-            if m and m.group(1) in mirrored and float(m.group(2)) > 5 and 'DEAD' not in line:
+            m = re.match(r'\s*#(\d+) \S+ species=(\S+) hp=([\d.]+) dist=([\d.]+)', line)
+            if m and m.group(1) in mirrored and float(m.group(3)) > 5 and 'DEAD' not in line \
+                    and m.group(2) != hsp and 'family' not in line:
                 nid = m.group(1)
                 break
         if nid:
