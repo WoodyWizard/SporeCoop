@@ -577,6 +577,11 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0565](BUG-0565-tribe-every-village-s-relation-is-neutral-on-the.md) | fixed | desync | Tribe | 2026-11-04 | unreleased | Tribe: every village's relation is neutral on the guest, while the host sees them aggressive and slightly aggressive |
 | [BUG-0566](BUG-0566-tribe-the-guest-does-not-see-an-enemy-village-s.md) | open | desync | Tribe | 2026-11-04 |  | Tribe: the guest does not see an enemy village's hut (hub) health go down when the players attack it |
 | [BUG-0567](BUG-0567-tribe-a-building-is-broken-bugged-on-the-guest-a.md) | open | bug | Tribe | 2026-11-04 |  | Tribe: a building is broken (bugged) on the guest after the guest dies |
+| [BUG-0563](BUG-0563-tribe-the-guest-s-creature-from-creature-stage-a.md) | fixed | desync | Tribe | 2026-11-04 | unreleased | Tribe: the guest's creature from Creature stage appears as an enemy monster at the start of Tribe; killed, it leaves meat that never runs out |
+| [BUG-0564](BUG-0564-tribe-after-the-guest-dies-its-map-still-shows-v.md) | fixed | desync | Tribe | 2026-11-04 | unreleased | Tribe: after the guest dies, its map still shows villages that do not exist any more |
+| [BUG-0565](BUG-0565-tribe-every-village-s-relation-is-neutral-on-the.md) | open | desync | Tribe | 2026-11-04 |  | Tribe: every village's relation is neutral on the guest, while the host sees them aggressive and slightly aggressive |
+| [BUG-0566](BUG-0566-tribe-the-guest-does-not-see-an-enemy-village-s.md) | fixed | desync | Tribe | 2026-11-04 | unreleased | Tribe: the guest does not see an enemy village's hut (hub) health go down when the players attack it |
+| [BUG-0567](BUG-0567-tribe-a-building-is-broken-bugged-on-the-guest-a.md) | fixed | bug | Tribe | 2026-11-04 | unreleased | Tribe: a building is broken (bugged) on the guest after the guest dies |
 | [BUG-0568](BUG-0568-tribe-no-music-in-the-guest-s-tribe-game.md) | open | bug | Tribe | 2026-11-04 |  | Tribe: no music in the guest's Tribe game |
 | [BUG-0569](BUG-0569-tribe-the-guest-sees-no-animations.md) | open | bug | Tribe | 2026-11-04 |  | Tribe: the guest sees no animations |
 | [BUG-0570](BUG-0570-tribe-no-red-target-circle-under-an-enemy-the-gu.md) | open | bug | Tribe | 2026-11-04 |  | Tribe: no red target circle under an enemy the guest targets |
@@ -590,3 +595,6 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0578](BUG-0578-crash-at-graphics-cmodelworld-finishbackgroundlo.md) | open | crash | none | 2026-11-04 |  | Crash at Graphics::cModelWorld::FinishBackgroundLoad+0x2735 on 0.7.3.6 (3010a413, mode none) |
 | [BUG-0579](BUG-0579-tribe-day-and-night-differ-the-guest-s-world-is.md) | fixed | desync | Tribe | 2026-11-04 | unreleased | Tribe: day and night differ: the guest's world is at night while the host's is in daylight |
 | [BUG-0581](BUG-0581-creature-a-held-evolution-editor-request-may-los.md) | open | bug | Creature | 2026-11-04 |  | Creature: a held evolution editor request may lose its DNA budget message like the Cell one (BUG-0560) |
+| [BUG-0579](BUG-0579-tribe-day-and-night-differ-the-guest-s-world-is.md) | open | desync | Tribe | 2026-11-04 |  | Tribe: day and night differ: the guest's world is at night while the host's is in daylight |
+| [BUG-0582](BUG-0582-tribe-host-faults-at-0xd72745-every-frame-during.md) | open | crash | Tribe | 2026-11-04 |  | Tribe: host faults at 0xD72745 every frame during its own creature attack event |
+| [BUG-0583](BUG-0583-tribe-a-guest-faults-in-a-citizen-s-update-getab.md) | open | crash | Tribe | 2026-11-04 |  | Tribe: a guest faults in a citizen's Update (GetAbilityIndexByType) after leaving and joining again |

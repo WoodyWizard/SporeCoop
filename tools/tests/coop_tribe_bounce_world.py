@@ -35,6 +35,19 @@ def diff(h, g):
     return lack, extra
 
 
+def bounce_ok(host):
+    """the caption's OK (Enter), again when the game has not left Tribe for its reload 10 s later (a key the
+    caption took before its button was live)"""
+    for _ in range(3):
+        host.call('key enter')
+        t0 = time.time()
+        while time.time() - t0 < 10:
+            if 'no window' in host.call('coop.ui find "Alas"')['out']:
+                return True
+            time.sleep(1)
+    return False
+
+
 def main():
     host, guest = start('tribe')
     ck = Checks()
@@ -61,11 +74,11 @@ def main():
             host.call(f'coop.tribe pincer {i} {enemy[0]} 300')
         time.sleep(1)
     t2, alas = time.time(), False
-    while time.time() - t2 < 40 and not alas:
+    while time.time() - t2 < 75 and not alas:  # ~20 s in a quiet lab, more under load
         time.sleep(3)
         alas = 'no window' not in host.call('coop.ui find "Alas"')['out']
     ck(alas, 'the game-over caption is up on the host')
-    host.call('key enter')  # OK: the game reloads the last save
+    bounce_ok(host)  # OK: the game reloads the last save
     ck(frames_go_on(host, 15), 'the host bounces back and keeps drawing')
     t1 = time.time()
     while True:

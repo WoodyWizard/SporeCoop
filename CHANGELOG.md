@@ -13,6 +13,11 @@
 - Cell: the host's editor after the evolution vote shows the DNA the stage earned instead of 100, and no longer gives
   DNA again on every visit; a guest's Cell DNA counts what the host's editor spent (BUG-0560).
 - A guest's game shows the stages the host's game has done (BUG-0577).
+- Tribe: after the host's game over and the reload of its last save (or a rejoin) a guest's game no longer keeps the
+  villages the host's world does not have: their huts, tools, food mats and map marks are gone too (BUG-0564).
+- Tribe: a guest sees an enemy village's hut lose health when the host's tribe attacks it, and a hut or tool damaged
+  in the guest's old world is mended to the host's (BUG-0566, BUG-0567).
+- Tribe: the co-op epic creature is never one of the players' own creatures from the Creature stage (BUG-0563).
 
 ## [0.7.6] - 2026-11-04
 

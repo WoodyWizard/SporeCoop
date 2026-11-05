@@ -58,6 +58,7 @@ def main():
     # 2. a village the host has not: the fix off for the forming only
     if not off:
         guest.call('coop.fix tribe.guest_tribes off')
+    guest.call('coop.fix realign.villages off')  # W2 would remove the whole village within 4 s: looked at below
     print('  guest (fix off): ' + guest.call('coop.tribe form')['out'].strip(), flush=True)
     time.sleep(8)
     own = guest_only(tribes(host), tribes(guest))
@@ -65,6 +66,7 @@ def main():
     ck(own and own[0][2] > 0, f'with the fix off the guest\'s game formed a tribe with members ({show(own)})')
     if not off:
         guest.call('coop.fix tribe.guest_tribes on')
+        guest.call('coop.fix realign.villages on')  # (emptied by BUG-0483, or gone with the village: BUG-0564)
     t0 = time.time()
     while time.time() - t0 < 12:
         left = [t for t in guest_only(tribes(host), tribes(guest)) if t[2] > 0]

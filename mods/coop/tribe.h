@@ -61,6 +61,9 @@ void for_each_tribe_center(void (*fn)(const std::string& key, const net::Vec3& p
 // (fruit: the tree has fruit slots, ~ docs/re/tribe.md Trees)
 void for_each_tree_pos(void (*fn)(const net::Vec3& pos, bool fruit, void* user), void* user);
 bool is_chief(void* citizen);
+// W2 (BUG-0564): a guest removes a village of its own the host has not (realign.cpp): 1 removed, 0 not this
+// one (the player tribe, mapped to a host tribe, not a guest in Tribe), -1 not now (a cinematic plays)
+int remove_village(void* tribe);
 void for_each_owned(void (*fn)(void* citizen, uint8_t owner, void* user), void* user);
 // the local player's own tribe members (positions), for the effect relay
 std::vector<net::Vec3> local_member_positions();

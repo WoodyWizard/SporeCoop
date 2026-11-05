@@ -1330,6 +1330,33 @@ static void unmapped_tick(const std::vector<void*>& locals, void* pt, double now
     g_unmapped_since.swap(keep);
 }
 
+// W2 (BUG-0564, realign.villages): a village of this guest's game the host's whole-planet list has not on two
+// lists in a row (realign.cpp) goes with the game's own removal, cGameNounManager::DestroyInstance of the tribe
+// (the Civ raid's last step, docs/re/civ.md#civ-tribe-raids: its hut, tools, food mat and bundles go with it).
+// BUG-0483 emptied such a tribe of its members only: the tribe, its hut and its map mark stayed. Never the
+// player tribe, never a tribe the member sync maps to a host tribe now, never while a cinematic
+// plays (an actor of it); the members go first through RemoveMember as unmapped_tick does.
+int remove_village(void* t)
+{
+    if (!t || !is_guest() || game::mode_id() != modes::kTribe || t == player_tribe())
+        return 0;
+    if (std::find(g_local_tribe_of.begin(), g_local_tribe_of.end(), t) != g_local_tribe_of.end())
+        return 0;
+    if (game::cinematic_playing())
+        return -1;
+    for (auto it = g_npc_tribe_made.begin(); it != g_npc_tribe_made.end();) // made for a host tribe gone since
+        it = it->second == t ? g_npc_tribe_made.erase(it) : std::next(it);
+    for (void* c : members(t)) {
+        g_gid_of.erase(c);
+        remove_member(c);
+        g_unmapped_removed++;
+    }
+    g_unmapped_since.erase(t);
+    g_ours_t.erase(t);
+    game::destroy_creature(t); // (not an animal: DestroyInstance at once)
+    return 1;
+}
+
 static void guest_state(net::Reader& r)
 {
     uint16_t cycle = r.u16();
@@ -2001,6 +2028,14 @@ static void epic_herd_release()
 // of the planet has 15.0 (lab, the 'tribe' fixture's epic, archetype 0xEC4C89F8): the co-op epic hit members
 // for 1.5-8 (a normal animal's blows). The herd gets the game's epic herd's multiplier (15 when the planet has
 // no epic of its own). `coop.fix tribe.epic_tuning off`: x1 as before.
+// BUG-0563: the co-op epic took the species of the animal nearest the village: after the live Creature -> Tribe
+// change that was the guest's own creature (its puppet of the Creature stage, species of the guest's creation, near
+// the host's village where the guest stood): the host fought the guest's creature as an epic monster. The epic's
+// species is never a puppet's, a proxy's or a player's creature. `coop.fix tribe.epic_species off`: the nearest
+// animal (0.7.6).
+static bool g_fix_epic_species = true;
+COOP_FIX("tribe.epic_species", "BUG-0563", g_fix_epic_species, "tribe: the co-op epic is never a player's creature (nor a puppet of one)");
+static uint32_t g_epic_skipped;
 static bool g_fix_epic_tuning = true;
 COOP_FIX("tribe.epic_tuning", "BUG-0515", g_fix_epic_tuning, "tribe: the co-op epic hits as hard as the game's own epics (its herd's damage multiplier)");
 constexpr float kEpicDamageMult = 15.f;
@@ -2037,12 +2072,23 @@ static bool spawn_epic()
         net::Vec3 tp;
         void* prof = nullptr;
         float bd = 1e9f;
+        std::vector<void*> players; // BUG-0563: the players' own species (their creatures of the Creature stage)
+        uint32_t skipped = 0;
     } pick{tp};
+    if (g_fix_epic_species)
+        for (auto& pl : C.sess->players())
+            if (void* sp = creations::player_species(pl.id))
+                pick.players.push_back(sp);
     game::for_each_object(
         [](void* a, uint32_t noun, void* u) {
             auto* pk = (Pick*)u;
             if (noun != 0x18EB45E || !game::object_alive(a))
                 return true;
+            if (g_fix_epic_species && (game::is_puppet(a) || npc::is_proxy(a) ||
+                                       std::find(pk->players.begin(), pk->players.end(), game::species_profile(a)) != pk->players.end())) {
+                pk->skipped++; // a puppet / proxy of ours, or a player's species: never the epic (BUG-0563)
+                return true;
+            }
             float d = net::dist(game::position(a), pk->tp);
             if (d < pk->bd && game::species_profile(a)) {
                 pk->bd = d;
@@ -2054,6 +2100,7 @@ static bool spawn_epic()
     prof = pick.prof;
     if (!prof)
         return false;
+    g_epic_skipped += pick.skipped;
     float len = std::sqrt(tp.x * tp.x + tp.y * tp.y + tp.z * tp.z);
     // 60 m from the village, along a tangent of the planet
     net::Vec3 up = len > 1 ? net::Vec3{tp.x / len, tp.y / len, tp.z / len} : net::Vec3{0, 0, 1};
@@ -2886,9 +2933,15 @@ std::string debug(const std::vector<std::string>& a)
         }
         bool ok = spawn_epic();
         uintptr_t is_epic = H->sym("SporeCoop::cCreatureAnimal_IsEpic");
-        char b[96];
-        snprintf(b, sizeof b, "epic %s %p is_epic=%d hp=%.0f", ok ? "spawned" : "not spawned", g_epic,
-                 g_epic && is_epic ? (int)thiscall<bool>(is_epic, g_epic) : -1, g_epic ? F<float>(g_epic, 0x5E0) : 0.f);
+        char b[200];
+        // BUG-0563 (tests): the epic's species, and whether it is a player's creature (any player of the session)
+        void* sp = g_epic ? game::species_profile(g_epic) : nullptr;
+        int players = 0;
+        for (auto& pl : C.sess->players())
+            players += sp && creations::player_species(pl.id) == sp;
+        snprintf(b, sizeof b, "epic %s %p is_epic=%d hp=%.0f species=%08X player_species=%d skipped=%u", ok ? "spawned" : "not spawned", g_epic,
+                 g_epic && is_epic ? (int)thiscall<bool>(is_epic, g_epic) : -1, g_epic ? F<float>(g_epic, 0x5E0) : 0.f,
+                 g_epic ? game::species_key(g_epic).instance : 0u, players, g_epic_skipped);
         return b;
     }
     if (a.size() >= 3 && a[0] == "select") { // select <id> <0|1>
