@@ -24,14 +24,18 @@ Screenshots (the reports' shots/, guest and host at the same session second): s2
 Not analysed yet.
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+Logs: the reports' sporekit.log of both players (host 17:26-20:15, guest 17:27-19:45 and 19:47-20:09, lined up by the session clock `[s N]`).
+* Observed (host log 17:32:33, s 238): "cell: DNA at the editor request: food=353 plant=74 spent=0
+  dna_for_food=25 budget=25"; the host's editor showed 45 at s 283 (screenshot), the guest's Cell 26.
+  Inferred: the 20 more come from a second budget path (the guest's DNA / the party's shared DNA added to the
+  editor's on top of DNAForFood), not found in the logs.
 
 ## Fix
 <!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+Not reproduced in the lab (coop_cell_editor_* passed on 0.7.6 code before; not rerun). Package W1 (DNA).
 
 ## History
 - 2026-11-04: opened.
+- 2026-11-04 (fix/w43-replay, step 0 of 0.7.7): replayed on 0.7.6 code; still open (W1), not reproduced.

@@ -22,14 +22,17 @@ The guest: all villages are neutral to it; for the host they are aggressive and 
 Reports: SporeCoop-report-2026-11-04 190729 (out/reports/2026-11-04, not in git). Not analysed yet.
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+Logs: the reports' sporekit.log of both players (host 17:26-20:15, guest 17:27-19:45 and 19:47-20:09, lined up by the session clock `[s N]`).
+* Observed (code): nothing in the mod sends or compares tribe relations (cRelationshipManager values by
+  political id; docs/re/tribe.md B): each game keeps its own; the host's raids and gifts change the host's only.
+* Inferred: the guest's game never gets the host's raids' relation events, so its villages stay neutral (W1).
 
 ## Fix
 <!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+Not reproduced in the lab (the `call` console command returns eax only, CalculateRelationship returns a float in ST0: a relation read needs a command). Package W1.
 
 ## History
 - 2026-11-04: opened.
+- 2026-11-04 (fix/w43-replay, step 0 of 0.7.7): replayed on 0.7.6 code; still open (W1), observed in code, not reproduced at runtime.

@@ -1392,3 +1392,25 @@ of the two chiefs' bounding radii from the first, standing):
 * ✔ 4 players (campaign_tribe, out/lab/20261104-102948): the three chiefs place_chiefs put on ring spots at the
   arrival were back within 14-28 s at 5.0-5.3 m from the host's chief (bounding radii sum 5.8-6.2 m) on all four
   machines: the idle behaviour gathers idle members round the host's chief / the centre. ? which node and target.
+
+## The player tribe's food after the game spends the last of it (2026-11-04, fix/w43-replay)
+<a id="tribe-food-zero"></a>
+
+* ✔ (lab, tribe fixture, GOG 2024): `cTribe::AddFood(tribe, -n)` (`SporeCoop::cTribe_AddFood`, the game's own
+  spending path -> `cBundleManager::RemoveBundles`) that spends the whole food removes the emptied bundle: the
+  container's vector at tribe+0x210 is empty afterwards (begin == end). Editing the amounts at bundle+0x134 down
+  to 0 (shared.cpp s_food, `coop.res add food -n`) keeps the bundles.
+* ✔ consequence (BUG-0572): shared.cpp s_food returns without a change on an empty vector, so a guest whose game
+  spent its last food (a purchase, its members eating) keeps 0 food for good while the host's total goes up
+  (tribe_food_zero, out/lab/20261104-201453). A total written there needs AddFood (creates bundles) for the
+  positive part.
+
+## A model's attached-effect list and the BUG-0575 crash site (2026-11-04, fix/w43-replay)
+<a id="tribe-model-effects-crash"></a>
+
+* ~ (disassembly, GOG 2024 = Steam 3010a413 code): 0xC8AC40.. walks a model's attached effects (vector at
+  +0xC0 / +0xC4, 0x3C bytes per entry, the effect at entry+0x38, a distance threshold at entry-0x30 compared with
+  the camera's): an effect that comes into range gets vt+8(0), one that leaves vt+0xC(0).
+* ~ 0xA82660 (thiscall, the effect's vt+8 with one int): checks +0x28, flags +0x2C, then calls vt+8(arg) of each
+  component (vector +0x144..+0x148, 0x5C bytes each, object at +0x38). BUG-0575 crashed in that loop with
+  edi = 0x5C, esi = 1 (a component's call returned with the callee-saved registers broken: a freed component).
