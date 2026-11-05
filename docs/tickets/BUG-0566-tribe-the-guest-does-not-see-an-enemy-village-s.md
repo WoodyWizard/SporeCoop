@@ -8,7 +8,7 @@ reported: 2026-11-04
 source: player report 2026-11-04 (Discord bug-reports, 0.7.5, Steam build)
 role: guest
 versions: 0.7.5
-fixed_in: unreleased
+fixed_in: 0.7.7
 branch: fix/w43-realign
 commits: 736eaef5
 tests: realign_tribe (coop_realign_planet.py --fixture tribe --case gameover)
@@ -40,3 +40,4 @@ realign_tribe step 2: the host's NPC hut at 40 %: the guest's hut at 400/1000 wi
 - 2026-11-04 (fix/w43-replay, step 0 of 0.7.7): replayed on 0.7.6 code; still open (W2): the world divergence after the host's reload reproduced (tribe_bounce_world).
 - 2026-11-04 (fix/w43-realign): fixed (realign.buildings); runs above.
 - 2026-11-04 (fix/w43-detector2, D0 detector): `Tribe:planet:tribe_hut` in 7 % of the Tribe comparisons (huts on the guest's planet only), labs 20261104-203017 / 20261104-210208.
+- 2026-11-05: released in 0.7.7.

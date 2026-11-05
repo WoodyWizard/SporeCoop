@@ -8,7 +8,7 @@ reported: 2026-11-04
 source: player report 2026-11-04 (Discord bug-reports, 0.7.5, Steam build)
 role: guest
 versions: 0.7.5
-fixed_in: unreleased
+fixed_in: 0.7.7
 branch: fix/w43-guest-player
 commits: 7a97b869, c88909f7, 31bac8b7, 998985ba, 303a1745, aeaa53b2
 tests: coop_creature_air.py
@@ -56,3 +56,4 @@ the host's melee hits applied while its own avatar was not grounded (+0x137 == 0
 - 2026-11-04: opened.
 - 2026-11-04 (fix/w43-replay, step 0 of 0.7.7): replayed on 0.7.6 code; still open (P1), inferred, not reproduced in the lab.
 - 2026-11-04 (fix/w43-guest-player, P1 of 0.7.7): fixed: melee hits on an airborne partner dropped by the host (creature.air_immune).
+- 2026-11-05: released in 0.7.7.

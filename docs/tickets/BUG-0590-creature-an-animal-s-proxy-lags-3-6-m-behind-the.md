@@ -8,7 +8,7 @@ reported: 2026-11-05
 source: lab (fix/w43-crashes), coop_npc_walk_slow.py --fixture creature
 role: guest
 versions: 0.7.6
-fixed_in: unreleased
+fixed_in: 0.7.7
 branch: fix/w43-crashes
 commits: 5c07b2a6
 tests: npc_walk_slow_creature (coop_npc_walk_slow.py --fixture creature)
@@ -37,3 +37,4 @@ over 3 m, placed p90 2.0-3.5 m), PASS out/lab/20261105-003137 (drawn error max 1
 ## History
 - 2026-11-05: opened.
 - 2026-11-05: fixed on fix/w43-crashes (the BUG-0503 switch on every stage).
+- 2026-11-05: released in 0.7.7.

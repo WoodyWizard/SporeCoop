@@ -8,7 +8,7 @@ reported: 2026-11-04
 source: player report 2026-11-04 (Discord bug-reports, 0.7.5, Steam build)
 role: guest
 versions: 0.7.5
-fixed_in: unreleased
+fixed_in: 0.7.7
 branch: fix/w43-world-state
 commits: bd97e36a
 tests: tribe_food_zero (coop_tribe_food_zero.py)
@@ -43,3 +43,4 @@ the members' eating on their own after it was not checked in the lab.
 - 2026-11-04: opened.
 - 2026-11-04 (fix/w43-replay, step 0 of 0.7.7): replayed on 0.7.6 code; still open (W1), a consequence of BUG-0572.
 - 2026-11-04 (fix/w43-world-state, W1): fixed; see Fix and Verification.
+- 2026-11-05: released in 0.7.7.

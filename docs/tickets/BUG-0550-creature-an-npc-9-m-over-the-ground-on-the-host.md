@@ -23,6 +23,10 @@ play_creature in the 0.7.6 final check (out/lab/20261104-135838): `sync-check: M
 ## Root cause
 Not analysed yet. Inferred: an NPC in a jump or a flight (agl 9 m) on the host; the guest's NPC puppet keeps the ground height. Compare BUG-0532 (the player's puppet in the air).
 
+Update (2026-11-05, rel/0.7.7 final check, out/lab/20261105-034103 long_creature): once more in the 40-min session at
+s 1312: n216 (species 065CB956, spd 2.0, hp 31) 13.9 m apart, the host's NPC at agl 14.01 m. Also the same radial
+kind in Tribe (BUG-0402's update of this date: a host NPC 8.4 m under the ground). Left open.
+
 ## Fix
 <!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
 

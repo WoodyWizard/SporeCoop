@@ -8,7 +8,7 @@ reported: 2026-11-04
 source: lab (fix/w43-realign), realign_tribe_rejoin
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.7
 branch: fix/w43-crashes
 commits: def4c4f0
 tests: realign_tribe_rejoin (coop_realign_planet.py --case rejoin)
@@ -48,3 +48,4 @@ registers.
 ## History
 - 2026-11-04: opened.
 - 2026-11-05: cause from the fault's registers and the getter's code, guard tribe.leader_tool, not reproduced (fix/w43-crashes).
+- 2026-11-05: released in 0.7.7.

@@ -8,7 +8,7 @@ reported: 2026-11-04
 source: lab (fix/w43-realign), tribe_bounce_world
 role: host
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.7
 branch: fix/w43-crashes
 commits: 97571768
 tests: tribe_attack_spot (coop_tribe_attack_spot.py), tribe_bounce_world
@@ -42,3 +42,4 @@ the guard, 0 faults).
 ## History
 - 2026-11-04: opened.
 - 2026-11-05: cause found (null spot record), fix tribe.attack_spot, test tribe_attack_spot (fix/w43-crashes).
+- 2026-11-05: released in 0.7.7.

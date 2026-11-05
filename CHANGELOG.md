@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.7.7] - 2026-11-05
+
 ### Fixed
 - Creature: on a guest with a low frame rate the animals no longer trail metres behind where they walk in the
   host's game (BUG-0590).

@@ -8,7 +8,7 @@ reported: 2026-11-04
 source: lab (fix/w43-transitions, coop_tribe_civ.py)
 role: host
 versions: 0.7.6
-fixed_in: unreleased
+fixed_in: 0.7.7
 branch: fix/w43-transitions
 commits: dc4084f5
 tests: tribe_civ (tools/tests/coop_tribe_civ.py)
@@ -46,3 +46,4 @@ take it without a fault and go on to Civ.
 
 ## History
 - 2026-11-04: opened (fix/w43-transitions, found by the BUG-0576 test); fixed the same day.
+- 2026-11-05: released in 0.7.7.

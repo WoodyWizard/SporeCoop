@@ -8,7 +8,7 @@ reported: 2026-11-03
 source: BUG-0481 analysis, lab 20261103-012624
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.7
 branch: fix/w43-tests
 commits: 83e7dafc
 tests: npc_walk_slow, play_tribe
@@ -58,3 +58,4 @@ than both caps).
 - 2026-11-03: opened.
 - 2026-11-03: analysed from the logs on fix/w41-tribe-world (time box), not fixed.
 - 2026-11-04 (fix/w43-tests): cause found (the placing's 0.1 s frame cap on slow guests), fixed behind npc.proxy_slow_frames, test npc_walk_slow.
+- 2026-11-05: released in 0.7.7.

@@ -8,7 +8,7 @@ reported: 2026-11-04
 source: player report 2026-11-04 (Discord bug-reports, 0.7.5, Steam build)
 role: guest
 versions: 0.7.5
-fixed_in: unreleased
+fixed_in: 0.7.7
 branch: fix/w43-world-state
 commits: a69ee62e
 tests: wsync_stages (coop_wsync_tribe.py stages), wsync_transitions
@@ -48,3 +48,4 @@ off (not reproduced).
 - 2026-11-04 (fix/w43-replay, step 0 of 0.7.7): replayed on 0.7.6 code; still open (W1), no evidence beyond the text.
 - 2026-11-04 (fix/w43-world-state, W1): fixed; see Fix and Verification.
 - 2026-11-04 (fix/w43-detector2, D0 detector): the detector compares the stages done (`All:state:stage_done`, cPlayer +0x10FC..+0x110C); not seen in the D0 runs: the creature and tribe fixtures start at their stage (no trait set on either game).
+- 2026-11-05: released in 0.7.7.

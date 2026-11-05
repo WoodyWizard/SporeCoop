@@ -8,7 +8,7 @@ reported: 2026-11-04
 source: player report 2026-11-04 (Discord bug-reports, 0.7.5, Steam build)
 role: host
 versions: 0.7.5
-fixed_in: unreleased
+fixed_in: 0.7.7
 branch: fix/w43-world-state
 commits: 82b49a38, 2dd52449
 tests: cell_editor_budget (coop_cell_editor_budget.py)
@@ -52,3 +52,4 @@ host's spent 0 -> -100 after a free edit), PASS out/lab/20261104-210201 (spent s
 - 2026-11-04 (fix/w43-replay, step 0 of 0.7.7): replayed on 0.7.6 code; still open (W1), not reproduced.
 - 2026-11-04 (fix/w43-world-state, W1): fixed; see Fix and Verification.
 - 2026-11-04 (fix/w43-detector2, D0 detector): the detector compares the Cell food / spent DNA (`Cell:state:dna`, `dna_spent`); not run on Cell in D0.
+- 2026-11-05: released in 0.7.7.

@@ -8,7 +8,7 @@ reported: 2026-11-04
 source: player report 2026-11-04 (Discord bug-reports, 0.7.5, Steam build)
 role: guest
 versions: 0.7.5
-fixed_in: unreleased
+fixed_in: 0.7.7
 branch: fix/w43-world-state, fix/w43-realign
 commits: a69ee62e, 736eaef5, cc62df1a
 tests: tribe_goal (coop_wsync_tribe.py goal), tribe_bounce_world (coop_tribe_bounce_world.py), realign_tribe (coop_realign_planet.py --fixture tribe --case gameover)
@@ -53,3 +53,4 @@ Class wsync_transitions FAIL out/lab/20261104-205648, PASS out/lab/20261104-2056
 - 2026-11-04 (fix/w43-world-state, W1): goal part fixed (wsync row tribe_goal); the villages stay W2's.
 - 2026-11-04 (fix/w43-realign): fixed by the whole-planet re-alignment (realign.villages); FAIL / PASS runs above.
 - 2026-11-04 (fix/w43-detector2, D0 detector): `Tribe:state:goal` in 28 % (the host's tribe mission manager has a current mission for a tribe, the guest's none) and `Tribe:planet:village` in 7 % (the guest's planet has 3 villages more than the host's: e.g. at (446 -150 185), where the host's tribe object keeps a centre but no placed position) of the Tribe comparisons, labs 20261104-203017 / 20261104-210208.
+- 2026-11-05: released in 0.7.7.

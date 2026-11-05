@@ -8,7 +8,7 @@ reported: 2026-11-04
 source: detector D0 (lab 20261104-203017)
 role: guest
 versions: 0.7.6
-fixed_in: unreleased
+fixed_in: 0.7.7
 branch: fix/w43-crashes
 commits: 97006ffa
 tests: tribe_npc_food (coop_wsync_tribe.py food)
@@ -45,3 +45,4 @@ later).
 ## History
 - 2026-11-04: opened.
 - 2026-11-05: fixed by the W1 row tribe_food (fix/w43-crashes).
+- 2026-11-05: released in 0.7.7.

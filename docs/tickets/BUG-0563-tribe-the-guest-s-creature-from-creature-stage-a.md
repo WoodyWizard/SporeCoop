@@ -8,7 +8,7 @@ reported: 2026-11-04
 source: player report 2026-11-04 (Discord bug-reports, 0.7.5, Steam build)
 role: guest
 versions: 0.7.5
-fixed_in: unreleased
+fixed_in: 0.7.7
 branch: fix/w43-realign
 commits: 736eaef5
 tests: tribe_epic_species (coop_tribe_epic_species.py)
@@ -41,3 +41,4 @@ tribe_epic_species (the live Creature -> Tribe change from the creature fixture,
 - 2026-11-04: opened.
 - 2026-11-04 (fix/w43-replay, step 0 of 0.7.7): replayed on 0.7.6 code; still open (W2), cause inferred from the logs.
 - 2026-11-04 (fix/w43-realign): fixed (tribe.epic_species); runs above.
+- 2026-11-05: released in 0.7.7.

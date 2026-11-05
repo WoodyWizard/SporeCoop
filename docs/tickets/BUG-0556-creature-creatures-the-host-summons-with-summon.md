@@ -8,7 +8,7 @@ reported: 2026-11-04
 source: player report 2026-11-04 (Discord bug-reports, 0.7.5, Steam build)
 role: both
 versions: 0.7.5
-fixed_in: unreleased
+fixed_in: 0.7.7
 branch: fix/w43-guest-player
 commits: a8845587, ca09f017
 tests: coop_creature_flock.py
@@ -49,3 +49,4 @@ the guest's game must answer vt 0xD4 true and hold the hearts effect for every p
 - 2026-11-04: opened.
 - 2026-11-04 (fix/w43-replay, step 0 of 0.7.7): replayed on 0.7.6 code; still open (P1), not reproduced.
 - 2026-11-04 (fix/w43-guest-player, P1 of 0.7.7): fixed: the host's pack / flock is friendly on the guest and shows its hearts.
+- 2026-11-05: released in 0.7.7.

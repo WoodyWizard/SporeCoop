@@ -8,7 +8,7 @@ reported: 2026-11-04
 source: lab rel/0.7.7 20261104-220200, fix/w43-realign 20261104-213145, fix/w43-world-state 20261104-210354
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.7
 branch: fix/w43-tests
 commits: 74fef091
 tests: play_tribe
@@ -44,3 +44,4 @@ calibrates, and the failure line prints the pause state. No threshold changed.
 ## History
 - 2026-11-04: opened.
 - 2026-11-04 (fix/w43-tests): the calibration waits for both games' clock.
+- 2026-11-05: released in 0.7.7.
