@@ -2745,5 +2745,40 @@ BUG-0584 (not reproduced). GOG 2024, Ghidra.
   calls `cGameNounManager::DestroyInstance` on such a fruit before `cFruit_SetState(5)` and posts 0xD335362B;
   DestroyInstance (0xB22560) marks +0x20, keeps a reference in the manager's pending list (+0x84) and runs the
   object's teardown (0xB20CC0) at once.
-* ? Not found: where a reference is released once too often. The mod's fruit kind (wobj.fruit) sets state 5 through
+* ~ superseded (2026-11-05): see #creature-fruit-pool-guard. Not found: where a reference is released once too often. The mod's fruit kind (wobj.fruit) sets state 5 through
   the game's SetState only (no release); the log of the fault has two `took fruit ...: done here too` 5 s before it.
+  CORRECTION (2026-11-05, fix/w44-crashes): no reference is released once too often; the mod's SetState(5) on a fruit
+  of the save (without the eat node's DestroyInstance) leaves it in the free fruit with one reference, and the take's
+  pop frees it (lab 20261105-100942, #creature-fruit-pool-guard).
+
+## The fruit pool guard (2026-11-05, fix/w44-crashes)
+<a id="creature-fruit-pool-guard"></a>
+
+BUG-0584. GOG 2024, asm and Ghidra. Extends #creature-fruit-pool.
+
+* ✔ `SporeCoop::Flora_TakeFruitForDrop` 0xB08DF0 is thiscall(flora) (ecx = Flora_Get, plain ret), its only caller is
+  the drop maker 0xB09790, which skips the drop on null (je 0xB0998E) and otherwise calls the fruit's AddRef (vt 0)
+  at 0xB097C2 at once: the fault's site.
+* ✔ 0xB069A0(entry, to_free) retires a loose fruit with balanced references (AddRef local, push to free + AddRef,
+  erase from loose + Release, Release local); it clears +0x148 bit 1 only, so a saved fruit (bit 0) keeps its bit
+  when the pool reuses it.
+* ✔ cFruit_SetState(5) releases the holder +0x108 whatever the state was, also on a fruit in state 3 (held by a
+  creature that eats it): an eat node that still runs has its fruit retired to the free vector under it.
+* ✔ (Ghidra) the take's free path pops the last free fruit: AddRef, the vector's slot released, and its own reference
+  released again before it returns: it returns a pointer whose pool reference is gone and that only other holders
+  keep alive; the caller's AddRef comes after. A free fruit with one reference (+0x8, cFruit AddRef 0xC6AB00) is
+  freed inside the take and the caller calls into freed memory (the Wine heap wrote its links over the vtable:
+  [fruit] = a heap address, [that] = 0). The loose path skips fruit with +0x148 bit 0; the free path does not.
+* ✔ (runtime, lab 20261105-100942, no plant) **the root cause of BUG-0584**: `coop.wobj eat` (the mod's fruit_eat, the
+  path of a guest's "took fruit" on the host and of the host's eaten fruit on a guest) on a fruit of the save
+  (+0x148 bit 0) set state 5 only: the flora retired it to the free fruit with **1 reference** (19 before, `coop.fruitpool`:
+  `10F6CB20/r19/f1/s2` -> `r1/f1/s6`; the game's own free fruit had 7), and the next fruit that fell (`coop.wobj drop`,
+  the flora's DropFruit) faulted at 0xB097C2 with the long session's chain (0xB097C4 <- 0xB023CC <- 0xB04B24 <-
+  0xB0586D <- 0xB05893 <- 0xB09B3D). The game's eat node destroys such a fruit (DestroyInstance) before its
+  SetState(5); the mod did not. The long session's two `took fruit ...: done here too` 5 s before its fault fit.
+* Fix `wobj.fruit_saved` (worldobj.cpp fruit_eat): a fruit with +0x148 bit 0 is destroyed (DestroyInstance) before
+  SetState(5), as the eat node does.
+* Guard `game.fruit_pool` (gamefixes.cpp): before each take, entries of the free and loose vectors whose vtable is
+  not `SporeCoop::cFruit_vftable` 0x145C568, and free fruit with one reference (the take would free them), are taken
+  out without a Release (kept alive, a few hundred bytes lost); `coop.fruitpool` lists the pool, `coop.fruitcut`
+  plants a freed fruit as the last free one (tests).

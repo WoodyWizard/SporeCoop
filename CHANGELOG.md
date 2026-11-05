@@ -11,6 +11,10 @@
 - Co-op window: a chat line typed while the host's game was saving the world for a joining player is no longer lost
   (BUG-0551).
 - The host's game no longer stays paused on the "game saved" box while the co-op window is open (BUG-0599).
+- Tribe: a guest's game should no longer crash when the camera jumps (the home button) to creatures whose effect
+  was broken; the broken effect is left out instead (BUG-0575, a guard: the cause is not known).
+- Creature / Tribe: the game no longer crashes when a fruit falls from a plant after the other player ate a fruit
+  that was on the ground since the save was loaded (BUG-0584).
 
 ## [0.7.7] - 2026-11-05
 
