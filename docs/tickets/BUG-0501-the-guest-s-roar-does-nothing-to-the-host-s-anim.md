@@ -57,9 +57,12 @@ their states. `coop.fix creature.roar_relay off`: the roar stays in the guest's 
 coop_creature_roar.py (suite creature_roar): the guest stands 6 m from a group of the host's wild NPCs and roars
 (`coop.rules roar 31`: the node's first tick through the hook, as the ability starts it); in the host's game every NPC
 of another species within 20 m of the puppet must hold the roar's goal slot (the game's slot table) and half of them
-must be 4 m or more farther away 10 s later.
-* FAIL with `SPORE_FIX_OFF=creature.roar_relay`: out/lab/20261105-110044 (0 of 4 slots, 0 of 4 ran).
-* PASS: out/lab/20261105-110141 (4 of 4 slots, 3 of 4 ran 4-17 m), out/lab/20261105-105935.
+must run the game's answer node 0x02D852E0 within 3 s, and their mean distance from the puppet must grow by 1.5 m or
+more in 10 s.
+* FAIL with `SPORE_FIX_OFF=creature.roar_relay`: out/lab/20261105-115528 (0 of 4 slots, 0 of 4 in the node, +0.0 m),
+  out/lab/20261105-110044 (an earlier version of the test).
+* PASS: out/lab/20261105-115630 (cold), out/lab/20261105-115727 (warm, after creature_nest_ally); earlier versions
+  out/lab/20261105-110141, out/lab/20261105-105935. In warm games the NPCs back away 2-4 m (8-17 m cold).
 
 ## History
 - 2026-11-03: opened.

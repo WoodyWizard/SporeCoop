@@ -340,23 +340,55 @@ static void roar_on_host(uint8_t from, float range, float secs)
 static bool g_ufo_fix = true;
 COOP_FIX("creature.ufo_puppet", "BUG-0558", g_ufo_fix, "creature: the host's UFO never tries to take the guest's creature");
 typedef bool(SK_THISCALL* IsEpic_t)(void*);
-static IsEpic_t o_IsEpic;
-static uintptr_t g_ufo_pick_ret;
 static uint32_t g_ufo_skipped, g_ufo_seen;
+} // namespace player_rules
 
-static bool SK_THISCALL h_IsEpic(void* c)
-{
-    bool r = o_IsEpic(c);
-    if (!r && g_ufo_pick_ret && (uintptr_t)__builtin_return_address(0) == g_ufo_pick_ret) {
-        g_ufo_seen++;
-        if (g_ufo_fix && is_host() && puppet_player(c) != 0xFF) {
-            g_ufo_skipped++;
-            return true;
-        }
-    }
-    return r;
+// cCreatureAnimal_IsEpic touches EAX only, and its ~90 callers (one optimised build) keep ECX / EDX across the call
+// (the first hook here, a C function, cleared ECX under CreatureStun's caller: 0xBC9A6D faulted on [0 + ...], lab
+// 20261105-113638). So the detour is a stub that jumps straight to the game's code unless it is called from the UFO
+// pick, and saves ECX / EDX around the decision there.
+extern "C" {
+uintptr_t p2_ufo_pick_ret = 0;
+void* p2_o_IsEpic = nullptr;
+bool __cdecl p2_ufo_pick_epic(void* c);
+void p2_h_IsEpic();
 }
+__asm__(".text\n"
+        ".globl _p2_h_IsEpic\n"
+        "_p2_h_IsEpic:\n"
+        "  movl (%esp), %eax\n"
+        "  cmpl _p2_ufo_pick_ret, %eax\n"
+        "  jne 1f\n"
+        "  pushl %ecx\n"
+        "  pushl %edx\n"
+        "  pushl %ecx\n"
+        "  call _p2_ufo_pick_epic\n"
+        "  addl $4, %esp\n"
+        "  popl %edx\n"
+        "  popl %ecx\n"
+        "  movzbl %al, %eax\n"
+        "  ret\n"
+        "1:\n"
+        "  jmp *_p2_o_IsEpic\n");
 
+namespace player_rules {
+static bool pick_epic(void* c)
+{
+    bool r = skg::thiscall<bool>((uintptr_t)p2_o_IsEpic, c);
+    if (r)
+        return r;
+    g_ufo_seen++;
+    if (g_ufo_fix && is_host() && puppet_player(c) != 0xFF) {
+        g_ufo_skipped++;
+        return true;
+    }
+    return false;
+}
+} // namespace player_rules
+
+extern "C" bool __cdecl p2_ufo_pick_epic(void* c) { return player_rules::pick_epic(c); }
+
+namespace player_rules {
 static constexpr uint32_t kUfoNoun = 0x018EBADCu;
 typedef bool(SK_THISCALL* UfoTick_t)(void*, float, double);
 static UfoTick_t o_UfoTick;
@@ -393,7 +425,7 @@ static std::string ufo_dump()
         }
     char b[96];
     snprintf(b, sizeof b, "pick fix=%d seen=%u skipped=%u ticks=%u hook=%d\n", (int)g_ufo_fix, g_ufo_seen, g_ufo_skipped,
-             g_ufo_ticks, (int)(o_IsEpic != nullptr && g_ufo_pick_ret != 0));
+             g_ufo_ticks, (int)(p2_o_IsEpic != nullptr && p2_ufo_pick_ret != 0));
     return u.out + b;
 }
 
@@ -631,9 +663,9 @@ void init(const SkHost* host, SkMod* mod, Ctx ctx)
     a_GoalFind = H->sym("SporeCoop::BT_GoalSlotFind");
     a_GoalEnd = H->sym("SporeCoop::BT_GoalSlotEnd");
     a_IsEpic = H->sym("SporeCoop::cCreatureAnimal_IsEpic");
-    g_ufo_pick_ret = H->sym("SporeCoop::UFOPick_IsEpicReturn");
-    if (g_ufo_pick_ret && a_IsEpic)
-        H->hook_create(M, (void*)a_IsEpic, (void*)h_IsEpic, (void**)&o_IsEpic);
+    p2_ufo_pick_ret = H->sym("SporeCoop::UFOPick_IsEpicReturn");
+    if (p2_ufo_pick_ret && a_IsEpic)
+        H->hook_create(M, (void*)a_IsEpic, (void*)p2_h_IsEpic, (void**)&p2_o_IsEpic);
     if (uintptr_t a = H->sym("SporeCoop::UFO_TickBehavior"))
         H->hook_create(M, (void*)a, (void*)h_UfoTick, (void**)&o_UfoTick);
     if (uintptr_t a = H->sym("SporeCoop::BT_SpecialAbilityTick"))

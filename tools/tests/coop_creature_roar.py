@@ -14,7 +14,8 @@ ability's +0xA0 seconds: the creature runs away) and the stimulus (0, 0x4000000)
 3. The host's game: every one of its NPCs of another species within 20 m of the guest's puppet (the roar's range is
    30 m) holds the roar's goal slot within 2 s (the game's own state: the slot's template and group), and none did
    before the roar.
-4. The host's game: those NPCs run away: half of them or more are 4 m or more farther from the puppet 10 s later.
+4. The host's game: the behaviour tree of each of them is in node 0x02D852E0 (its answer to the roar) within 3 s,
+   and they back away: their mean distance from the puppet grows by 1.5 m or more in 10 s.
 
   coop_creature_roar.py   (SPORE_FIX_OFF=creature.roar_relay: no host NPC gets the slot or runs, FAILS)"""
 import math
@@ -26,7 +27,9 @@ from coop_creature_kills import read
 from twoinst import Checks, start
 
 NEAR = 20.0     # m from the puppet: inside the roar's 30 m on the host
-FLEE = 4.0      # m a running NPC's distance grows by (an NPC that heard nothing moves < 1.5 m: lab 20261105-105734)
+ANSWER = '02D852E0'  # the node the host's NPCs run after a roar (every one of them, lab 20261105-115422; none without)
+FLEE = 1.5      # m the mean distance grows by (none moved without the fix: 0.0 m, lab 20261105-110044; 2.6 m in warm games
+                # late in the day, 8 m in cold ones)
 FLT_MAX = 3.4028234663852886e38
 
 
@@ -54,6 +57,11 @@ def roar_stimulus(con, c):
         if hi & 0x4000000 and v > 1e37:
             return True
     return False
+
+
+def node(con, c):
+    ai = struct.unpack('<I', read(con, c + 0xB4C, 4))[0]
+    return '%08X' % struct.unpack('<I', read(con, ai + 0x1D8, 4))[0] if ai else '-'
 
 
 def npcs(con):
@@ -101,6 +109,8 @@ def main():
     if not near:
         return ck.result()
     before = {n['id']: roar_slot(host, n['ptr']) for n in near}
+    n0 = {n['id']: node(host, n['ptr']) for n in near}
+    print('  host NPC nodes before: ' + ', '.join(f"#{i} {v}" for i, v in n0.items()), flush=True)
     d0 = {n['id']: math.dist(n['pos'], pp) for n in near}
     print('  ' + guest.call('coop.rules roar 31')['out'].strip(), flush=True)
     got = {}
@@ -110,19 +120,25 @@ def main():
             if n['id'] not in got and roar_slot(host, n['ptr']):
                 got[n['id']] = roar_stimulus(host, n['ptr'])
         time.sleep(0.2)
-    time.sleep(10)
+    time.sleep(2)
+    n1 = {n['id']: node(host, n['ptr']) for n in near}
+    print('  host NPC nodes 3 s after: ' + ', '.join(f"#{i} {v}" for i, v in n1.items()), flush=True)
+    time.sleep(8)
     pp2 = puppet_pos(host) or pp
     now = {n['id']: n for n in npcs(host)}
     d1 = {i: math.dist(now[i]['pos'], pp2) for i in d0 if i in now}
     grow = [d1[i] - d0[i] for i in d1]
-    ran = sum(g >= FLEE for g in grow)
+    mean = sum(grow) / len(grow) if grow else 0.0
+    answered = sum(n1[i] == ANSWER for i in n1)
     for c in (host, guest):
         print('  ' + c.call('coop.rules')['out'].splitlines()[-1], flush=True)
     print(f'  near {sorted(d0)}: slot before {before}, roar slot (stimulus) after {got}', flush=True)
     print('  distance from the puppet: ' + ', '.join(f'#{i} {d0[i]:.1f} -> {d1[i]:.1f}' for i in d1), flush=True)
     ck(not any(before.values()), 'no host NPC held the roar\'s goal slot before the roar')
     ck(len(got) == len(near), f'every host NPC within {NEAR:.0f} m holds the roar\'s goal slot ({len(got)} of {len(near)})')
-    ck(grow and 2 * ran >= len(near), f'the host\'s NPCs run from the guest\'s puppet ({ran} of {len(near)} {FLEE:.0f} m or more farther in 10 s)')
+    ck(not any(v == ANSWER for v in n0.values()), f'none of them was in node {ANSWER} before the roar')
+    ck(answered == len(near), f'the behaviour tree of every one of them answers within 3 s (node {ANSWER}: {answered} of {len(near)})')
+    ck(mean >= FLEE, f'the host\'s NPCs back away from the guest\'s puppet (mean distance +{mean:.1f} m in 10 s, >= {FLEE:.1f})')
     for c in (host, guest):
         c.call('coop.team on')
     ck.faults(host=host, guest=guest)

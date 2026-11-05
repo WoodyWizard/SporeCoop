@@ -2778,6 +2778,8 @@ and lane 6. Follows #creature-player-rules; the code is in `mods/coop/player_rul
   puppet with the puppet as the roarer: 4 of 4 got slot (1, 1), and 3 ran (8.5 -> 17.4, 6.0 -> 12.7, 8.5 -> 25.6 m in
   10 s; one at 12 m held the slot and did not move), out/lab/20261105-110141. Without the fix every NPC stayed within
   0.1 m.
+* ✔ (runtime) The host's NPCs that got the slot run BT node **0x02D852E0** within 3 s (all 4, every run; none
+  without the fix) and back away 2-4 m in warm games, 8-17 m in cold ones (out/lab/20261105-115630, -115727).
 * ~ Not covered: the siren song (0x32) of a guest (its 8-dword slot data at 0xBCA980's 5th argument is not known);
   the guest's own Summon Flock (0x33) still makes its flock in its own game.
 
@@ -2800,6 +2802,10 @@ and lane 6. Follows #creature-player-rules; the code is in `mods/coop/player_rul
   update 0x1032BD0 at the beam point calls vt 0xC8(0): +0xB63 = 1, not destroyed).
 * ~ Inferred: no check excludes a partner's puppet (it is not the avatar and of another species), so the host's
   ship can pick it and then hovers over a creature the mod keeps on the ground.
+* ✔ (runtime) cCreatureAnimal_IsEpic 0xC0C240 touches EAX only and its callers keep **ECX / EDX** across the call:
+  a C detour cleared ECX under CreatureStun's caller 0xC0C09E and BT_ClearStimulus faulted at 0xBC9A6D (lab
+  20261105-113638, creature_stun). The detour is an asm stub (`p2_h_IsEpic`) that jumps to the game's code unless the
+  return address is the pick's, and saves ECX / EDX around the decision there.
 * Fix `creature.ufo_puppet`: cCreatureAnimal_IsEpic is hooked and answers "epic" for a partner's puppet only when
   called from 0xDC2B5F (`SporeCoop::UFOPick_IsEpicReturn`), so the pick skips it as it skips epics.
 * ✔ Negative (runtime, lane 6, out/lab/20261105-110417 / -110601 / -110850): in the lab `coop.drama start 2` makes
