@@ -648,7 +648,8 @@ def test_mergelogs():
 
 def test_worldstate():
     """worlddiff.diff_state / diff_planet: the detector's world-state and whole-planet rows (coop.wstate)"""
-    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    # SELFTEST_WORLDDIFF=<dir>: the worlddiff.py of another copy (an old version: the BUG-0595 check fails there)
+    sys.path.insert(0, os.environ.get('SELFTEST_WORLDDIFF') or os.path.dirname(os.path.abspath(__file__)))
     import worlddiff
 
     def st(food=15, rel=0.0, q='0.1 0.2 0.9 0.3', traits='1,2,0,0,0', village2=True, goal='1', huts='', pol2='000021CB'):
@@ -679,6 +680,16 @@ def test_worldstate():
     check('Tribe:state:goal' in sigs(a, st(goal='-1')), 'the goal on one game only: Tribe:state:goal')
     check('Tribe:planet_owner:village' in sigs(a, st(pol2='800021CA')),
           'a village the player\'s on one game only: Tribe:planet_owner:village')
+    # BUG-0595: a guest's Space money before the host's first total reads `money=100000(unsynced)`: the game's
+    # value is 100000 (the same as the host's), not nan
+    sp = 'wstate v1 role={} mode=Space modeid=01654C05 world=80AE3044 t=1.0\nst res money={}\nend wstate rows=1'
+    hs, gs = worlddiff.State(sp.format('host', '100000')), worlddiff.State(sp.format('guest', '100000(unsynced)'))
+    check(gs.res.get('money') == 100000.0, f'an unsynced total is read as its number ({gs.res})')
+    out = {f'{w}:{k}' for w, k, _, _ in worlddiff.diff_state(hs, gs, 'Space')}
+    check(out == set(), f'the same money, one of them unsynced: no Space:state:money row ({out})')
+    gs2 = worlddiff.State(sp.format('guest', '90000(unsynced)'))
+    out = {f'{w}:{k}' for w, k, _, _ in worlddiff.diff_state(hs, gs2, 'Space')}
+    check(out == {'Space:state:money'}, f'other money, unsynced: still a Space:state:money row ({out})')
     # through diff(): the state rows come with the area compare, also when there is no centre
     h, g = worlddiff.World('census v1 role=host me=0 mode=Tribe modeid=01654C02 world=A3930F03 t=1.0'), \
         worlddiff.World('census v1 role=guest me=1 mode=Tribe modeid=01654C02 world=A3930F03 t=1.0')

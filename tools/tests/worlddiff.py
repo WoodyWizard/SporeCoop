@@ -256,6 +256,7 @@ class State:
         self.who, self.role, self.mode, self.modeid, self.world = who, None, None, None, None
         self.tod = self.day = self.player = self.cell = self.dna = self.rel_lv = self.goal = None
         self.res, self.species, self.tribes, self.civs, self.emps, self.planet = {}, {}, [], [], {}, []
+        self.res_unsynced = set()
         self.complete = False
         for line in text.splitlines():
             line = line.strip()
@@ -276,7 +277,10 @@ class State:
                     self.player = dict(traits=[int(x) for x in d.get('traits', '').split(',') if x.isdigit()],
                                        progress=_num(d, 'progress'), total=_num(d, 'total'))
                 elif what == 'res':
-                    self.res = {k: _num(d, k) for k in d}
+                    # BUG-0595: a guest's total before the host's first one prints `money=100000(unsynced)`
+                    # (shared::brief): the number is the game's own value, the suffix is the mod's sync state
+                    self.res = {k: _num({k: str(v).split('(', 1)[0]}, k) for k, v in d.items()}
+                    self.res_unsynced = {k for k, v in d.items() if str(v).endswith('(unsynced)')}
                 elif what == 'cell':
                     self.cell = {k: _num(d, k) for k in ('food', 'plant', 'spent')}
                 elif what == 'dna':
@@ -414,7 +418,7 @@ def diff_state(hs, gs, stage):
             if lst:
                 x, y = lst[0]
                 add('Tribe:state', kind, len(lst), f'{len(lst)} of {len(pairs)} tribes differ in {f} (e.g. the tribe at '
-                    f'{_fmt(x["pos"])}: {x[f]:.2f} on the host, {y[f]:.2f} on the guest)')
+                    f'{_fmt(x["pos"])}: {x[f]:.2f} on the host, {y[f]:.2f} on the guest; pol {x["pol"]} / {y["pol"]})')
         hg, gg = hs.goal, gs.goal
         if hg and gg:
             ht = hg['tribe'] >= 0 and hg['pos']
