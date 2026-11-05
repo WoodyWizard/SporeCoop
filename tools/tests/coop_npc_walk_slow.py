@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tribe: an animal's proxy keeps up with the host's walking animal on a guest at a low frame rate (BUG-0503).
+"""Tribe and Creature (--fixture creature, BUG-0590): an animal's proxy keeps up with the host's walking animal on a guest at a low frame rate (BUG-0503).
 
 The monitor's `proxies` rule failed play_tribe / long_tribe (D0's long sessions never passed): a guest's proxy of a
 host animal 3-8 m off the host's animal for 2-11 s, "placed on the host's path". coop.npctrack on a loaded lane
@@ -24,7 +24,7 @@ import random
 import re
 import time
 
-from coop_npc_walk import host_npcs
+from coop_npc_walk import family, host_npcs
 from coop_sync import wait_running
 from twoinst import Checks, start
 
@@ -54,14 +54,18 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--secs', type=float, default=40)
     ap.add_argument('--fps-ms', type=int, default=250)
+    ap.add_argument('--fixture', default='tribe')  # creature: the walkers are not the host's family or pack
     a = ap.parse_args()
-    host, guest = start('tribe')
+    host, guest = start(a.fixture)
     ck = Checks()
     w = wait_running(host, guest, 120)
     ck(w is not None, f'both games\' time runs ({w})')
     m = re.search(r'centre=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\)', host.call('coop.npctrack count')['out'])
     centre = tuple(float(m.group(i)) for i in (1, 2, 3)) if m else (0, 0, 0)
     hn = host_npcs(host)
+    if a.fixture == 'creature':
+        fam = family(host)
+        hn = {k: v for k, v in hn.items() if k not in fam}
     walkers = sorted(hn, key=lambda i: math.dist(hn[i][0], centre))[:WALKERS]
     print(f'  walkers {[(i, round(math.dist(hn[i][0], centre))) for i in walkers]}', flush=True)
     print('  guest: ' + guest.call(f'frame.limit {a.fps_ms}')['out'].strip(), flush=True)

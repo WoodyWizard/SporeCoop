@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### Fixed
+- Creature: on a guest with a low frame rate the animals no longer trail metres behind where they walk in the
+  host's game (BUG-0590).
 - Tribe: the host's game no longer faults every frame when the animals of a creature attack go for a village that
   was founded during play (BUG-0582).
 - Tribe: the other villages have the same food in the guest's game as in the host's (BUG-0580).
