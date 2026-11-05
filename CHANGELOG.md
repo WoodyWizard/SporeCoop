@@ -25,6 +25,9 @@
 - Tribe: a guest sees the members of every village fight, gather, dance and build, instead of standing still
   (BUG-0569).
 - Tribe: a guest hears the stage's hunting and fighting music of its tribe, as the host does (BUG-0568).
+- Tribe: a guest hears the fight's sounds of the host's villagers: their war cries going into a fight, their sighs
+  coming out of it, the sprint and the effects of their attacks (BUG-0600; the hit impacts of the attack animations
+  are still missing: BUG-0603).
 - Tribe: in co-op new villages no longer appear as soon as the whole party has gathered the food one player's tribe
   needs alone: they come at one player's pace (BUG-0571).
 

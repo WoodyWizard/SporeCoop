@@ -57,6 +57,8 @@ void on_member_anims(uint8_t kind, net::Reader& r);
 // a chief of a player (bigger, "★" tag)
 // the member id (as in coop.tribe and coop.sync t<id>), 0 when not a tracked member
 uint16_t id_of(void* citizen);
+// guest: the mirror of the host's member #id (null: none)
+void* mirror_of(uint16_t id);
 // tests: "hut<tribe index>[p]" for a tribe's hut, "" for anything else
 std::string object_key(void* obj);
 // tests: the position of every planet tree (cTreeData, fruit trees to gather from)

@@ -1770,3 +1770,38 @@ A1 of 0.7.8 (BUG-0568, BUG-0569, BUG-0571). GOG 2024, lab lane 9 / 10.
   makes the host's within 2-4 s, its own controller forms none (tribe.guest_tribes). Fix `tribe.form_pace`: in a session
   the food path waits for the threshold x the players (BUG-0571).
 
+
+## The fight's effects, sprints and voices on a guest's mirrors (2026-11-05, fix/w44-guest-player3)
+<a id="tribe-mirror-fx"></a>
+
+P2b of 0.7.8 (BUG-0600). GOG 2024, lab lanes 4 / 5, `coop.audio` and `coop.effects log on` (the log lines now carry
+the first four return addresses into the game's code: the creator of every effect).
+* ✔ (runtime, out/lab/20261105-134329) In a 30 s fight of the host's members the host's game played, besides the
+  theme (#tribe-guest-a1), sounds from an effect's sound component (FUN_00a37430, return address 0xA3749B) and the
+  creature voices; the guest's game none of them. Matched by the intervals between the plays and the effect creations
+  of the same log:
+  * 0xD967193C = the sound of pool-1 effect **0xE55DC391 key 0x35052B7 (the sprint)**: `cCreatureBase::Update`
+    0xC21530 calls StartOrStopEffectFromPool1(bit 0x20 of +0xFA4, 0xE55DC391, 0x35052B7) every frame when the
+    creature's +0xC0 vt 0x58 is true (the player tribe's members: the enemy's had none). The bit is the sprint:
+    `SporeCoop::Creature_SetSprint` 0xC1AE70, called by ~30 behaviour nodes (run to the target).
+  * 0xC881120E (into a fight) / 0x529FEC69 (out of it) = `SporeCoop::Creature_CombatVoice` 0xC1B030 (+0xBB1 the
+    in-combat byte), called by the fight node 0xD69540 and the TakeDamage of animals and citizens.
+  * 0xCE5F2ED0 = effect 0xA231DA2F of 0xCCBE90 (~ the tribe UI's order marker at the target: the effect id is picked by
+    the order kind and the camera distance band): the ordering player's own feedback, not a member's.
+  * other pool effects of the members (no sound in these runs): 0x8ADA6617 (pool 1 on the NPC chief, from 0xC2103D),
+    0xF8122731 / 0x759B0E13 (one-shots at bone 20 / 22, cCreatureBase::CreateEffect from 0xC25419 / 0xCCAA2F: the
+    tools), 0x21C934A7 / 0x85A02492 (pool 2 key 0x55559EF from the behaviour 0xDAB4A0).
+* ✔ The animation-event effects (0x9FBF00: 0x2D4ADB36 footsteps, 0xE6D770B8..BD) play on the guest's mirrors too
+  (the relayed animations, BUG-0569); 0xDCAE75D5 (the foot step's second effect, made by 0x9A6910 only while the foot
+  event's +0x2D5 is set) plays on the host only: not followed further.
+* ? The A1 run (out/lab/20261105-115203) also had 0xA7E3E1FB (18) and 0xD05B58ED (17) through the same sound
+  component path; none of the three runs of this branch had them, their effect is not known.
+* ✔ Fix `mirror.fx` (mods/coop/mirror_fx.cpp, MSG_MIRROR_FX 64): the host sends, for a tribe member or an npc.cpp NPC,
+  the pool effect starts / stops and one-shots the game's pool hooks report (effects.cpp passes every creature but the
+  own avatar and the puppets on), and the changes of CombatVoice and SetSprint; a guest makes the same call on its
+  mirror (start_effect / create_creature_effect with the bone check / stop_effect, the original CombatVoice with
+  force, the original SetSprint: its Update then starts the sprint effect itself). Lab (coop_tribe_fight_sounds.py,
+  the order marker and the per-target impacts left out): the guest's game 9 of the host's 9 such sounds, the voices
+  4 of 4 (out/lab/20261105-135946, 2 runs); off 4 of 15 (only the animation effects' C656EAF8) and 0 of 4
+  (out/lab/20261105-140001).
+* ~ NPCs of the Creature stage go through the same path (npc::id_of / npc::proxy); not tested there.

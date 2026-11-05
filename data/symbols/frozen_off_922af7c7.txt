@@ -148,3 +148,5 @@ SporeCoop::TribeProps_ptr ; Tribe: new villages appear at the party's food pace 
 SporeCoop::TribeTheme_Play ; Tribe: a guest hears the hunt and fight music of its tribe (BUG-0568)
 SporeCoop::TribeTheme_Move ; Tribe: a guest hears the hunt and fight music of its tribe (BUG-0568)
 SporeCoop::TribeTheme_Stop ; Tribe: a guest hears the hunt and fight music of its tribe (BUG-0568)
+SporeCoop::Creature_CombatVoice ; Tribe / Creature: a guest hears the combat voices of the host's members and animals (BUG-0600)
+SporeCoop::Creature_SetSprint ; Tribe / Creature: a guest sees and hears the sprint of the host's members and animals (BUG-0600)
