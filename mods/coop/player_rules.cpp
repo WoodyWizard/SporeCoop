@@ -326,6 +326,77 @@ static void roar_on_host(uint8_t from, float range, float secs)
            secs, q.hit);
 }
 
+// ---------------------------------------------------------------- BUG-0558
+// The drama UFO (cUFOAbductionEvent) takes a creature by its ship's behaviour tree: the pick node 0x0519E372 (tick
+// 0xDC26B0) walks the creatures within 50 m of the avatar and keeps the last one that is adult (+0xB5E == 0), not the
+// avatar (spatial vt 0x58, the avatar's species profile, 5 m or more away), not epic (cCreatureAnimal_IsEpic called at
+// 0xDC2B5A) and not in BT node 0x3704748; the follow node then hovers over it and fires the abduct beam. In the host's
+// game the guest's puppet is a creature of another species near the host's avatar: the ship picked it and tried to
+// lift a creature the mod places at the guest's position every frame ("the ship tries to pick up the guest but
+// cannot"), while the guest's game had no ship at all. The player is never the ship's target in the game's rules:
+// now the pick sees a partner's puppet as it sees an epic (the IsEpic answer at that one call site, by its return
+// address), so the host's ship takes the host's animals only, as in a game of one.
+// `coop.fix creature.ufo_puppet off`: the host's ship may pick the guest's puppet (0.7.7).
+static bool g_ufo_fix = true;
+COOP_FIX("creature.ufo_puppet", "BUG-0558", g_ufo_fix, "creature: the host's UFO never tries to take the guest's creature");
+typedef bool(SK_THISCALL* IsEpic_t)(void*);
+static IsEpic_t o_IsEpic;
+static uintptr_t g_ufo_pick_ret;
+static uint32_t g_ufo_skipped, g_ufo_seen;
+
+static bool SK_THISCALL h_IsEpic(void* c)
+{
+    bool r = o_IsEpic(c);
+    if (!r && g_ufo_pick_ret && (uintptr_t)__builtin_return_address(0) == g_ufo_pick_ret) {
+        g_ufo_seen++;
+        if (g_ufo_fix && is_host() && puppet_player(c) != 0xFF) {
+            g_ufo_skipped++;
+            return true;
+        }
+    }
+    return r;
+}
+
+static constexpr uint32_t kUfoNoun = 0x018EBADCu;
+typedef bool(SK_THISCALL* UfoTick_t)(void*, float, double);
+static UfoTick_t o_UfoTick;
+static uint32_t g_ufo_ticks;
+static bool SK_THISCALL h_UfoTick(void* u, float dt, double now) // diagnostics: the ship's behaviour tree runs
+{
+    g_ufo_ticks++;
+    return o_UfoTick(u, dt, now);
+}
+
+static std::string ufo_dump()
+{
+    struct U {
+        std::string out;
+    } u;
+    game::for_each_object(
+        [](void* o, uint32_t noun, void* p) {
+            net::Vec3 v;
+            if (noun == kUfoNoun && game::object_alive(o) && game::object_position(o, v)) {
+                char b[96];
+                snprintf(b, sizeof b, "ufo %p pos=(%.1f %.1f %.1f)\n", o, v.x, v.y, v.z);
+                ((U*)p)->out += b;
+            }
+            return true;
+        },
+        &u);
+    for (uint8_t id = 1; id < 8 && C.puppet_of; id++)
+        if (void* pp = C.puppet_of(id)) {
+            net::Vec3 v = game::position(pp);
+            char b[128];
+            snprintf(b, sizeof b, "puppet %u %p pos=(%.1f %.1f %.1f) b2b0=%d\n", id, pp, v.x, v.y, v.z,
+                     skg::readable((uint8_t*)pp + 0x2B0, 4) ? *(int*)((uint8_t*)pp + 0x2B0) : -1);
+            u.out += b;
+        }
+    char b[96];
+    snprintf(b, sizeof b, "pick fix=%d seen=%u skipped=%u ticks=%u hook=%d\n", (int)g_ufo_fix, g_ufo_seen, g_ufo_skipped,
+             g_ufo_ticks, (int)(o_IsEpic != nullptr && g_ufo_pick_ret != 0));
+    return u.out + b;
+}
+
 void on_message(uint8_t type, uint8_t from, net::Reader& r)
 {
     if (type != net::MSG_PLAYER_RULE || !C.sess)
@@ -395,6 +466,8 @@ std::string status()
     out += b;
     snprintf(b, sizeof b, "player_rules: roar fix=%d sent=%u got=%u played=%u heard=%u bad=%u last=0x%X hook=%d\n", (int)g_roar_fix,
              g_roar_sent, g_roar_got, g_roar_played, g_roar_hit, g_roar_bad, g_roar_last_type, (int)(o_AbilityTick != nullptr));
+    out += b;
+    snprintf(b, sizeof b, "player_rules: ufo fix=%d seen=%u skipped=%u\n", (int)g_ufo_fix, g_ufo_seen, g_ufo_skipped);
     return out + b;
 }
 
@@ -466,6 +539,10 @@ static int c_rules(void*, int argc, const char* const* argv, SkOut* out)
         H->out_printf(out, "%s", q.out.empty() ? "no herds\n" : q.out.c_str());
         return 0;
     }
+    if (argc > 1 && !strcmp(argv[1], "ufo")) { // tests (BUG-0558): the UFOs of this game, the puppets, the pick's answers
+        H->out_printf(out, "%s", ufo_dump().c_str());
+        return 0;
+    }
     // tests (BUG-0501): roar <hex ability type>: our avatar uses that ability as the behaviour tree's action node does
     // (its first tick 0xD8E840 through the hook: the game's animation and the walk over the creatures in range)
     if (argc > 2 && !strcmp(argv[1], "roar")) {
@@ -514,6 +591,11 @@ void init(const SkHost* host, SkMod* mod, Ctx ctx)
     a_GoalFind = H->sym("SporeCoop::BT_GoalSlotFind");
     a_GoalEnd = H->sym("SporeCoop::BT_GoalSlotEnd");
     a_IsEpic = H->sym("SporeCoop::cCreatureAnimal_IsEpic");
+    g_ufo_pick_ret = H->sym("SporeCoop::UFOPick_IsEpicReturn");
+    if (g_ufo_pick_ret && a_IsEpic)
+        H->hook_create(M, (void*)a_IsEpic, (void*)h_IsEpic, (void**)&o_IsEpic);
+    if (uintptr_t a = H->sym("SporeCoop::UFO_TickBehavior"))
+        H->hook_create(M, (void*)a, (void*)h_UfoTick, (void**)&o_UfoTick);
     if (uintptr_t a = H->sym("SporeCoop::BT_SpecialAbilityTick"))
         H->hook_create(M, (void*)a, (void*)h_AbilityTick, (void**)&o_AbilityTick);
     H->command_add(M, "coop.rules", "coop.rules [stun <s> [npc id]] - the game's player rules carried between the games (P1, BUG-0554)",
