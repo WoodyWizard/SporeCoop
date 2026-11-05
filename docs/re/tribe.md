@@ -1703,3 +1703,19 @@ BUG-0575. GOG 2024 (= the Steam 3010a413 code), Ghidra and asm. Extends #tribe-m
   object's vtable and slots 2, 3); a broken one leaves its entry (+0x38 = 0, no Release, the reference is lost) and the
   game makes it again when it wants it. Arithmetic checks only (no VirtualQuery): the loops run for every view every
   frame. `coop.fxlist [creature|all]` lists attached effects; `coop.fxcut` makes the crash state (tests).
+
+## Villages formed during play: other political ids on a guest (2026-11-05, fix/w44-world-state2)
+<a id="tribe-new-village-ids"></a>
+
+BUG-0591. Lab lane 6 (tribe fixture, coop_wsync_tribe.py villages).
+
+* ✔ (observed, lab 20261105-123323 / 123225) Three `coop.tribe form` on the host made its NPC tribe controller form
+  4 villages (1 -> 5 NPC tribes); the guest made each of them (tribe.npc_tribes, SpawnNpcTribe at the host's centre)
+  with its own next political ids: host 000021CE / CF / D0 / D1 -> guest 000021D0 / D1 / D2 / D3 at the same places.
+  The host's ids 000021D0 and 000021D1 were other villages on the guest. The save's village keeps its id (000021CB on
+  both). So political ids of villages formed during play are not shared; positions are (0.0 m).
+* ✔ wsync's match() took the same political id first: the host's relation and food of village 000021D0 went to the
+  guest's 000021D0 (another village), the two right villages got none (relation 0, food 0): the 0.7.7 final
+  check's `Tribe:state:relation` / `tribe_food` rows from the host's forming at 418 s on (play_tribe, lab
+  20261105-015320). Fixed by `wsync.tribe_pos`: the closest village within 40 m first, the id only without one
+  (also the goal card's village).
