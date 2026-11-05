@@ -7,8 +7,8 @@ it is, only a paint it lacks is replaced.
 
 Host and Bob: lane A (SPORE_LANE, all packs). Carol: lane B (SPORE_LANE_B / SPORE_FREE_LANE) with
 `bp1content/BoosterPack_01.package` moved aside for the test (put back at the end).
-The host's My Creations: the fixture's Tiger Horse (290229B9) with an eye, a mouth, both feet and
-seven details of the pack, its base paint the base game's cell stripes and its detail paint the
+The host's My Creations: the fixture's Tiger Horse (290229B9) with an eye, a mouth and eight details of
+Creepy & Cute, both feet of Spore_Pack_03 (also moved aside on Carol's lane), its base paint the base game's cell stripes and its detail paint the
 pack's "BP1 Skinned Beast Detail".
 
 Checked on Carol (the game's view: `coop.creations partlist`, the part ids and kinds of the model her
@@ -19,7 +19,9 @@ no fault. Screenshots of Carol's view of the host (shots/).
   SPORE_LANE=9 SPORE_LANE_B=10 python3 tools/tests/coop_content_lookalike.py
 
 Runs that must FAIL: SPORE_FIX_OFF=content.lookalike (the 0.7.6 choice: the fixed tables and the
-paint lists of the mod, the base game's cell paint replaced)."""
+paint lists of the mod: the Spore_Pack_03 foot becomes a detail, the base game's cell paint is replaced)
+and SPORE_FIX_OFF=content.species_data (the species data of the host's creature still names the pack's
+parts: Carol's game draws them as blocks)."""
 import os
 import re
 import shutil
@@ -34,12 +36,12 @@ from twoinst import Checks, shot, start
 
 TIGER = 0x290229B9
 BEM = 0x1A99B06B
-PACK_FILE = os.path.join('bp1content', 'BoosterPack_01.package')
+PACK_FILES = (os.path.join('bp1content', 'BoosterPack_01.package'), os.path.join('Data', 'Spore_Pack_03.package'))
 # Tiger Horse's own part -> a Creepy & Cute part of the same kind (each replaced everywhere in the model)
 SWAPS = {
     0x4B1AE65C: (0x7728945C, 'eye'),      # eye -> ce_sense_eye_horror_02
     0xC9F34440: (0xF6DE5C63, 'mouth'),    # mouth -> ce_mouth_horror_carnivore_02
-    0x08504962: (0xFD674A61, 'foot'),     # both feet -> ce_movement_horror_04
+    0x08504962: (0xF54F0B90, 'foot'),     # both feet -> a foot of Data/Spore_Pack_03.package (not on any table)
     0x34265C0D: (0xB4BD7DA7, 'detail'),   # six details -> ce_detail_cute_01
     0xEEAB640C: (0xA115CFC8, 'detail'),   # two details -> ce_detail_horror_01
     0xA0DE03CF: (0xC61D94A9, 'detail'),   # a detail -> a pack detail
@@ -58,7 +60,11 @@ def lane_b():
 
 def swaps():
     """CONTENT_SWAPS=<hex,hex>: only these of Tiger Horse's parts are swapped (looking for one that is drawn badly)"""
-    only = [int(x, 16) for x in os.environ.get('CONTENT_SWAPS', '').split(',') if x]
+    items = [x for x in os.environ.get('CONTENT_SWAPS', '').split(',') if x]
+    pairs = dict((int(a, 16), (int(b, 16), 'given')) for a, b in (x.split('=') for x in items if '=' in x))
+    if pairs:  # old=new: any part in place of Tiger Horse's (e.g. a base game part, to see how it is drawn)
+        return pairs
+    only = [int(x, 16) for x in items]
     return {k: v for k, v in SWAPS.items() if not only or k in only}
 
 
@@ -126,10 +132,10 @@ def main():
     b = lane_b()
     os.environ['SPORE_LANE_B'] = str(b)
     assert b > 1 and b != lane.LANE, 'Carol needs a lane of its own (never lane 1: its pack is the real install)'
-    pk = os.path.join(lane.game_dir(b), PACK_FILE)
-    off = pk + '.bug0559-off'
-    if os.path.exists(off) and not os.path.exists(pk):
-        os.rename(off, pk)
+    packs = [os.path.join(lane.game_dir(b), f) for f in PACK_FILES]
+    for pk in packs:
+        if os.path.exists(pk + '.bug0559-off') and not os.path.exists(pk):
+            os.rename(pk + '.bug0559-off', pk)  # an earlier run that died
     orig = twoinst.restore_creations
 
     def restore(guest=True):
@@ -149,7 +155,8 @@ def main():
     hl, hparts = partlist(host, TIGER)
     print('  host:', hl)
     print(f'LAB-WATCH lane={b} since={time.time():.1f}', flush=True)
-    os.rename(pk, off)
+    for pk in packs:
+        os.rename(pk, pk + '.bug0559-off')
     try:
         appdata = lane.APPDATA.replace(f'/{lane.BOTTLE}/', f'/SporeLab{b}/' if b > 1 else '/Games/')
         clean_caches(os.path.join(appdata, 'SporeKit-mp1', 'Spore'))
@@ -190,6 +197,14 @@ def main():
                     print(f'  bob goto ({name}):', bob.call(f'coop.abilities goto {q[0]} {q[1]} {q[2]}')['out'].strip())
                 time.sleep(4)
                 shot(con, f'{name}_sees_host.png')
+        # BUG-0559, the blocks: the species data Carol's game builds the host's species from (the host's
+        # own creation of its world, under Carol's key for it) names no part her game lacks
+        m = re.search(r'host species %08X = ([0-9A-F]{8}) here' % TIGER, carol.call('coop.creations')['out'])
+        local = int(m.group(1), 16) if m else 0
+        sl, _ = partlist(carol, local) if local else ('none', {})
+        print('  carol (the host\'s species):', sl)
+        ck(local and re.search(r'species_data=[1-9]', sl) and re.search(r'species_data_unknown=0\b', sl),
+           f"the species data of the host's species on Carol names only parts her game has ({sl[-50:]})")
         # the game's view on Carol: no part her game lacks, each replaced part of the host's kind
         ck(re.search(r'\bunknown=0\b', species) and re.search(r'\bspecies=1\b', species),
            f"Carol's game builds the host's creature with parts it has ({species})")
@@ -202,7 +217,7 @@ def main():
         for pid, kind in hparts.items():
             hk[kind] = hk.get(kind, 0) + 1
         for kind in ('eye', 'mouth', 'foot'):
-            ck(kinds.get(kind, 0) >= 1 and hk.get(kind, 0) >= 1,
+            ck(hk.get(kind, 0) >= 1 and kinds.get(kind, 0) == hk.get(kind, 0),
                f"the host's {kind} is a {kind} on Carol (host {hk.get(kind, 0)} kinds, Carol {kinds.get(kind, 0)})")
         ck(f' {CELL_STRIPES:08X} ' in ' ' + paints + ' ',
            f"Carol's game paints the host's creature with the host's own base paint, a base game paint ({paints})")
@@ -215,8 +230,9 @@ def main():
     finally:
         subprocess.run([lane.SPORE, 'kill'], env=dict(os.environ, SPORE_LANE=str(b)), capture_output=True)
         time.sleep(2)
-        if os.path.exists(off):
-            os.rename(off, pk)
+        for pk in packs:
+            if os.path.exists(pk + '.bug0559-off'):
+                os.rename(pk + '.bug0559-off', pk)
     ck(bob.call('coop.avatar')['ok'], 'Bob (with the pack) still plays in the world')
     ck.faults(host=host, guest=bob)
     return ck.result()

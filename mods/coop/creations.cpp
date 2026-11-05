@@ -3,6 +3,7 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <array>
 #include <cstdio>
 #include <cstring>
 #include <deque>
@@ -1114,6 +1115,91 @@ static void told_substituted(unsigned n, unsigned fallbacks, const std::string& 
 
 // BUG-0452: checks and fixes every part and paint id of these model records; returns how many ids
 // remain unknown (the creation must not be built then, the game's fallback shows instead)
+// BUG-0559, the blocks: a species' creaturedata (0x0F43029A, the game's cache of what it derived from
+// the model; the host sends its own with the host's own species, BUG-0017 / 0xD2C361) is a second copy of
+// the model's part list (each part as `00 60 62 40` + its id, not byte-run packed, with the part's box)
+// and of its three paint effects. A guest's game that lacks a part builds the species from it and draws
+// that part as its box: the "big blocks, different from part to part" of the player report, while the bem
+// had the substitutes. The ids substituted in the bem are now substituted in it as well; one this game
+// still lacks drops the record (the game computes a new one when it is missing, docs/re/creations.md 1.1).
+// Off (`coop.fix content.species_data off`): 0.7.6, the creaturedata as it came.
+static bool g_species_data_fix = true;
+COOP_FIX("content.species_data", "BUG-0559", g_species_data_fix, "creations: the species data the host sends with a creature names the same substitute parts and paints as its model (a part this game lacks was drawn as a block)");
+static unsigned g_species_data_fixed, g_species_data_dropped;
+
+static void align_species_data(std::vector<dbpf::Record>& recs, ModelKind k, const std::vector<dbpf::Record>& before,
+                               const std::vector<uint32_t>& unknown, const std::string& whose)
+{
+    if (!g_species_data_fix || k != kMkCreature)
+        return;
+    std::map<uint32_t, uint32_t> parts;       // the bem's part ids: before -> after
+    std::vector<std::pair<std::array<uint8_t, 12>, std::array<uint8_t, 12>>> paints; // the three effects
+    for (size_t i = 0; i < recs.size() && i < before.size(); i++) {
+        if (recs[i].key.type != kBem || before[i].key.type != kBem || recs[i].data.size() != before[i].data.size())
+            continue;
+        auto a = model_part_refs(before[i].data, kPartGroup), b = model_part_refs(recs[i].data, kPartGroup);
+        for (size_t j = 0; j < a.size() && j < b.size(); j++)
+            if (a[j].at == b[j].at && a[j].id != b[j].id)
+                parts[a[j].id] = b[j].id;
+        uint32_t e0[3], e1[3];
+        size_t at[3], len[3];
+        if (model_effects(before[i].data, e0, at, len) && model_effects(recs[i].data, e1, at, len) &&
+            memcmp(e0, e1, sizeof e0)) {
+            std::array<uint8_t, 12> x, y;
+            memcpy(x.data(), e0, 12);
+            memcpy(y.data(), e1, 12);
+            paints.push_back({x, y});
+        }
+    }
+    for (auto it = recs.begin(); it != recs.end();) {
+        if (it->key.type != kCreatureData) {
+            ++it;
+            continue;
+        }
+        auto& d = it->data;
+        unsigned n = 0;
+        for (size_t i = 0; i + 7 <= d.size(); i++) {
+            if (d[i] != 0x60 || d[i + 1] != 0x62 || d[i + 2] != 0x40)
+                continue;
+            uint32_t id = d[i + 3] | d[i + 4] << 8 | d[i + 5] << 16 | (uint32_t)d[i + 6] << 24;
+            auto p = parts.find(id);
+            if (p != parts.end()) {
+                for (int b = 0; b < 4; b++)
+                    d[i + 3 + b] = (uint8_t)(p->second >> (8 * b));
+                n++;
+            }
+        }
+        for (auto& [x, y] : paints) {
+            auto f = std::search(d.begin(), d.end(), x.begin(), x.end());
+            if (f != d.end()) {
+                std::copy(y.begin(), y.end(), f);
+                n++;
+            }
+        }
+        // a part id it names that this game still lacks: the record goes (the game makes its own)
+        uint32_t missing = 0;
+        for (size_t i = 0; i + 8 <= d.size() && !missing; i++)
+            if (d[i] == 0x00 && d[i + 1] == 0x60 && d[i + 2] == 0x62 && d[i + 3] == 0x40) {
+                uint32_t id = d[i + 4] | d[i + 5] << 8 | d[i + 6] << 16 | (uint32_t)d[i + 7] << 24;
+                if (id && std::find(unknown.begin(), unknown.end(), id) != unknown.end() && !part_known(id, kPartGroup))
+                    missing = id;
+            }
+        if (missing) {
+            g_species_data_dropped++;
+            H->log(M, SK_INFO, "creations: %s: its species data names part %08X this game does not have: left out "
+                   "(the game computes its own, BUG-0559)", whose.c_str(), missing);
+            it = recs.erase(it);
+            continue;
+        }
+        if (n) {
+            g_species_data_fixed++;
+            H->log(M, SK_INFO, "creations: %s: its species data names the same substitutes as its model (%u ids, BUG-0559)",
+                   whose.c_str(), n);
+        }
+        ++it;
+    }
+}
+
 static unsigned ensure_content(std::vector<dbpf::Record>& recs, ModelKind k, const std::string& whose)
 {
     // BUG-0559: the sender's part descriptions are never registered (with every switch)
@@ -1131,10 +1217,12 @@ static unsigned ensure_content(std::vector<dbpf::Record>& recs, ModelKind k, con
         unknown.insert(unknown.end(), paints.begin(), paints.end());
     }
     // substitute what this game can
+    std::vector<dbpf::Record> before = recs;
     unsigned fb0 = g_parts_fallback;
     unsigned n = substitute_parts(recs, k, whose, &descs);
     if (kind_paints(k))
         n += substitute_paints(recs, whose);
+    align_species_data(recs, k, before, unknown, whose); // BUG-0559: its creaturedata the same
     if (n)
         told_substituted(n, g_parts_fallback - fb0, whose);
     // what is still unknown after substitution is refused
@@ -2803,7 +2891,22 @@ std::string debug(const std::vector<std::string>& a)
                     }
                     out += " " + hex(ref.id) + "=" + kind;
                 }
-        return out + "\n";
+        // BUG-0559: the species data the game finds for it (creaturedata): the part ids it names, and how
+        // many of them this game lacks (each one is drawn as a block)
+        std::vector<dbpf::Record> cd;
+        unsigned cn = 0, cu = 0;
+        if (records_from_game({k.instance, kCreatureData, k.group}, cd))
+            for (auto& r : cd)
+                if (r.key.type == kCreatureData)
+                    for (size_t i = 0; i + 8 <= r.data.size(); i++)
+                        if (!r.data[i] && r.data[i + 1] == 0x60 && r.data[i + 2] == 0x62 && r.data[i + 3] == 0x40) {
+                            uint32_t id = r.data[i + 4] | r.data[i + 5] << 8 | r.data[i + 6] << 16 | (uint32_t)r.data[i + 7] << 24;
+                            cn++;
+                            cu += id && !part_known(id, kPartGroup);
+                        }
+        char b[80];
+        snprintf(b, sizeof b, " species_data=%u species_data_unknown=%u", cn, cu);
+        return out + b + "\n";
     }
     if (a.size() >= 2 && a[0] == "paints") { // paints <hex crt instance>: the paint layers of the model the game reads (tests, BUG-0452)
         Key k{(uint32_t)strtoul(a[1].c_str(), nullptr, 16), kInfo[kCreature].type, kInfo[kCreature].group};
