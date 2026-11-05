@@ -7,7 +7,8 @@ forms its own and the guests make each of the host's: tribe.npc_tribes), and a g
 longer had was never emptied.
 
 1. Two games on the tribe fixture. The guest's game's NPC tribe controller forms its next tribe
-   (`coop.tribe form`: the controller's own function, what it does during play). PASS: the guest's game has
+   (`coop.tribe form`: the controller's own function, what it does during play; called again while it only
+   asks for the next species' model to be baked, BUG-0587). PASS: the guest's game has
    no tribe more than the host's 10 s later, and none farther than 40 m from every tribe of the host's.
 2. With the fix off for a moment the guest's game forms the tribe (a village the host has not, with members);
    with the fix on again its members are gone within 10 s (the game's own member vector).
@@ -42,6 +43,23 @@ def show(ts):
     return [(tuple(round(v) for v in t[1]), t[2]) for t in ts]
 
 
+def form(guest, label, secs=40):
+    """`coop.tribe form` as the game's controller calls it during play: the first call after a load often only asks
+    for the next species' model to be baked and forms nothing (0xCC6440, BUG-0587: "tribes 2 -> 2" in 13 runs of
+    lab 20261104-21xxxx); the controller is called again until it forms. So call it again while the reply says
+    the model is not baked yet (and the fix did not block it), for at most secs"""
+    t0, n = time.time(), 0
+    while True:
+        out = guest.call('coop.tribe form')['out'].strip()
+        n += 1
+        print(f'  guest{label}: {out}', flush=True)
+        m = re.match(r'tribes (\d+) -> (\d+)', out)
+        if 'blocked' in out or 'not baked yet' not in out or (m and m.group(1) != m.group(2)) or \
+                time.time() - t0 > secs:
+            return n
+        time.sleep(1)
+
+
 def main():
     off = 'tribe.guest_tribes' in os.environ.get('SPORE_FIX_OFF', '')
     host, guest = start('tribe')
@@ -49,7 +67,7 @@ def main():
     time.sleep(8)
     h0, g0 = tribes(host), tribes(guest)
     print(f'  host tribes {show(h0)}; guest tribes {show(g0)}', flush=True)
-    print('  guest: ' + guest.call('coop.tribe form')['out'].strip(), flush=True)
+    form(guest, '')
     time.sleep(10)
     h1, g1 = tribes(host), tribes(guest)
     own = guest_only(h1, g1)
@@ -59,7 +77,7 @@ def main():
     if not off:
         guest.call('coop.fix tribe.guest_tribes off')
     guest.call('coop.fix realign.villages off')  # W2 would remove the whole village within 4 s: looked at below
-    print('  guest (fix off): ' + guest.call('coop.tribe form')['out'].strip(), flush=True)
+    form(guest, ' (fix off)')
     time.sleep(8)
     own = guest_only(tribes(host), tribes(guest))
     print(f'  the guest\'s own tribes {show(own)}', flush=True)
