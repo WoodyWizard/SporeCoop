@@ -3314,6 +3314,22 @@ std::string debug(const std::vector<std::string>& a)
                 why = b;
             }
         }
+        // and what else it needs: fewer tribe nouns (alive or not) than its property list allows, a spawn marker
+        // (noun 0x36BE27E with +0x108 == 0x57F09E5E) left
+        struct Cnt {
+            int nouns = 0, markers = 0;
+        } cnt;
+        game::for_each_object(
+            [](void* o, uint32_t noun, void* u) {
+                auto* c = (Cnt*)u;
+                if (noun == kTribeNoun)
+                    c->nouns++;
+                else if (noun == 0x36BE27E && F<uint32_t>(o, 0x108) == 0x57F09E5E)
+                    c->markers++;
+                return true;
+            },
+            &cnt);
+        why += " (tribe nouns " + std::to_string(cnt.nouns) + ", tribe spawn markers " + std::to_string(cnt.markers) + ")";
         uint32_t blocked0 = g_forms_blocked;
         h_Form(ctrl, 0);
         return "tribes " + std::to_string(before) + " -> " + std::to_string(all_tribes().size()) + why +

@@ -65,6 +65,11 @@ def main():
     host, guest = start('tribe')
     ck = Checks()
     time.sleep(8)
+    # W2's re-alignment (realign.villages, BUG-0564) removes a village the host has not within ~4 s: with it on, the
+    # twin run (SPORE_FIX_OFF=tribe.guest_tribes) passed step 1 although the guest's controller had formed three
+    # tribes (lab 20261104-231126). This test is about the guest's controller: realign.villages stays off until
+    # step 3
+    guest.call('coop.fix realign.villages off')
     h0, g0 = tribes(host), tribes(guest)
     print(f'  host tribes {show(h0)}; guest tribes {show(g0)}', flush=True)
     form(guest, '')
@@ -76,7 +81,6 @@ def main():
     # 2. a village the host has not: the fix off for the forming only
     if not off:
         guest.call('coop.fix tribe.guest_tribes off')
-    guest.call('coop.fix realign.villages off')  # W2 would remove the whole village within 4 s: looked at below
     form(guest, ' (fix off)')
     time.sleep(8)
     own = guest_only(tribes(host), tribes(guest))

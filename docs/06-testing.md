@@ -4163,3 +4163,29 @@ current world, so relations, the goal, the stages and the food are the host's af
 * Pitfall: the host's game-over caption in the tribe fixture comes ~20 s after the last member is out, later under
   load; while the host's own creature_attack event runs it may not come at all (BUG-0582). The bounce tests wait
   75 s for it and press its OK again when the game has not left the stage 10 s later.
+## Tests that waited for the wrong thing: the controller's bake, the cold join pause, meals, food on screen (2026-11-04, fix/w43-tests)
+<a id="testing-harness-g1"></a>
+
+G1 of 0.7.7 (BUG-0430 class: tests and harness that hide failures). Each change names the run where the old test was
+wrong and the run where the new one is right; no threshold was loosened.
+
+* **tribe_guest_tribes** (BUG-0587): the game's NPC tribe controller (0xCC6440) forms nothing while the model of the
+  next species of its list is not baked: it asks IBakeManager for the bake and returns. With tribe.guest_tribes on,
+  a guest's controller never ran that far, so the test's single `coop.tribe form` with the fix off was often the
+  first call after the load and only started the bake ("tribes 2 -> 2", 12 of 13 runs of fix/w43-world-state, lab
+  20261104-212104 .. -214344, and fix/w43-realign 20261104-214542). `coop.tribe form` now ends with `(next species
+  <p> baked|not baked yet)` and `(blocked: tribe.guest_tribes)`; the test calls it again once a second while it only
+  baked (at most 40 s), as the game does during play. Disproved on the way: the cold join's pause bit does not stop
+  the forming (held by hand, lab 20261104-225835: `tribes 2 -> 3`).
+* **play_tribe** (BUG-0586): "guest: the minimap takes the view where it points" failed when the calibration ran
+  inside the guest's cold join pause (BUG-0444; `busy=1` at the failure in lab 20261104-220200 and fix/w43-realign
+  20261104-213145): its minimap clicks did not move the view. The test waits for both games' clock to run
+  (coop_sync.wait_running) first. Holding only the pause bit does not stop the view, so the bit is a marker of the
+  loading game, not the cause.
+* **cell_coop** (BUG-0356): its warm-rerun failures were the revive / respawn counters of the previous run (fixed by
+  BUG-0396, ba7bb495, 40 of 40 runs ok since 2026-11-03); the cold one (lab fix/w31-civ-gate 20261101-100204,
+  "revives 1, hp 6") was a meal right after the revive (own_eats 1 -> 2; AvatarEat adds the food's hpValue up to 6).
+  The revive check allows hp 6 only when the guest ate since the knockout (`meals since the knockout` in the line).
+* **cell_new_game** (BUG-0293): a probe try that found no meat on screen at once was spent after 60 frames ("none on
+  screen" in 4 of 10 runs of 2026-10-30). A try now waits up to 20 s for food of its kind on the screen; a try with
+  none in that time still counts as not eaten, and the 3-of-6 rule is unchanged.
