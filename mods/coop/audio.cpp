@@ -48,6 +48,8 @@ static std::map<uint32_t, Event> g_playing;     // track -> its last play (remov
 static uint32_t g_submits, g_plays, g_stops, g_dropped;
 static constexpr size_t kMax = 20000;
 static bool g_on;
+// players' games: the hooks only pass through until a test asks (coop.audio), no stack scan or lock per command
+static volatile bool g_rec;
 
 static double now_s()
 {
@@ -66,6 +68,8 @@ static Submit_t o_Submit;
 
 static void SK_THISCALL h_Begin(void* self, uint32_t cmd)
 {
+    if (!g_rec)
+        return o_Begin(self, cmd);
     t_cur = Cmd{};
     t_cur.cmd = cmd;
     // who asked: the first return addresses into the game's code on the stack (RE of the callers; no frame pointers)
@@ -79,6 +83,8 @@ static void SK_THISCALL h_Begin(void* self, uint32_t cmd)
 }
 static void SK_THISCALL h_SetInt(void* self, uint32_t key, uint32_t v)
 {
+    if (!g_rec)
+        return o_SetInt(self, key, v);
     if (key == kSound)
         t_cur.sound = v;
     else if (key == kTrack)
@@ -90,6 +96,8 @@ static void SK_THISCALL h_SetInt(void* self, uint32_t key, uint32_t v)
 }
 static void SK_THISCALL h_Submit(void* self)
 {
+    if (!g_rec)
+        return o_Submit(self);
     Cmd c = t_cur;
     t_cur = Cmd{};
     if (c.cmd && c.cmd != kListener) { // (the listener's moves, every frame: counted only)
@@ -138,6 +146,7 @@ static bool install()
 // coop.audio [mark | list [n] | playing]
 static int c_audio(void*, int argc, const char* const* argv, SkOut* out)
 {
+    g_rec = true; // from the first command on (the test's mark)
     const char* a = argc > 1 ? argv[1] : "";
     if (!g_on) {
         H->out_printf(out, "audio: no hooks on this build\n");
