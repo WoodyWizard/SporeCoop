@@ -2364,6 +2364,17 @@ void* proxy(uint16_t id)
     return it == g_proxies.end() ? nullptr : it->second.c;
 }
 
+uint16_t id_of(void* c)
+{
+    if (!c)
+        return 0xFFFF;
+    auto h = g_host_npcs.find(c);
+    if (h != g_host_npcs.end())
+        return h->second.id;
+    auto g = g_proxy_of.find(c);
+    return g != g_proxy_of.end() ? g->second : 0xFFFF;
+}
+
 void* host_npc(uint16_t id)
 {
     auto it = g_host_by_id.find(id);

@@ -336,6 +336,10 @@ static int c_hp(void*, int argc, const char* const* argv, SkOut* out)
             say("no puppet or no pack member\n");
         return n ? 0 : 1;
     }
+    if (argc > 1 && !strcmp(argv[1], "dmglog")) { // RE / tests: the last hits through the game's TakeDamage
+        say(game::damage_log(argc > 2 && !strcmp(argv[2], "clear")));
+        return 0;
+    }
     if (argc > 3 && !strcmp(argv[1], "packhit")) { // host (tests, the monitor's posse_damage): a pack member hits a puppet
         void* p = C.puppet_of ? C.puppet_of((uint8_t)atoi(argv[2])) : nullptr;
         void* nm = game::noun_manager();

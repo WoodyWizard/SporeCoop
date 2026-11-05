@@ -100,6 +100,11 @@ enum MsgType : uint8_t {
                           // The host relays a guest's message to the other guests; the receiver
                           // plays it on that player's puppet with the game's own effect pools.
                           // Older SporeCoop ignores it (an unknown type).
+    MSG_PLAYER_RULE = 62, // the game's rules for a player that one game decides on the other player's creature
+                          // (player_rules.cpp, BUG-0418 / P1 of 0.7.7): u8 kind; kind 0 host -> guest "stunned"
+                          // {u8 player, f32 seconds} (an NPC's charge stunned its puppet: CreatureStun vt 0x94),
+                          // kind 1 guest -> host {u16 NPC id, f32 seconds} (the guest's charge stunned a proxy).
+                          // Older SporeCoop ignores it (an unknown type).
 };
 
 // LAN discovery: plain datagrams outside any connection, answered by hosts on their game port
