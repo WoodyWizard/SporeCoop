@@ -4335,3 +4335,34 @@ wrong and the run where the new one is right; no threshold was loosened.
   BUG-0313); the end-of-Tribe stage card `04BF38A4`, an editor coming `04BF38A6`.
 * A hot reload (`lab.py reload`) of a lane whose games are in a session left the host `offline` (seen once on lane 4):
   start the games again for tests that need the session.
+
+## Tests that failed for the bot, not the game: NPC picks, the order pace (2026-11-05, fix/w44-tests)
+<a id="testing-harness-g2"></a>
+
+G2 of 0.7.8 (BUG-0430 class). For each: which kind of fault it was and the evidence; no check was loosened.
+
+* **A test that takes "the first NPC of `coop.npc list`" takes whatever the mod numbered first.** Cold games list the
+  same animals (#17-#21), warm games go on numbering (#40-#63) and which NPC comes first depends on the test before.
+  team (BUG-0437) hunted #40 of the host's own species after puppet_fight (lab 20261101-171437): the joint hunt made
+  the host bite its own family and the family bit back (the posse_damage gate). A test that needs a wild animal
+  filters the host's species and the `family` mark (coop_team.py, coop_creature_air.py). Not checked yet for this:
+  other tests that take the first listed NPC (e.g. coop_npc_run_hp.py, coop_team_real_damage.py).
+* **creature_air** (BUG-0601): an animal that bites the guest on the ground often does not stay in reach once the
+  guest is in the air (the game allows no melee at an airborne target 1 m or more away): it stood 12-14 m off or
+  walked 30-120 m away in every species of the creature fixture, and the precondition "the NPC struck at the airborne
+  guest" failed (warm after nest_heal in every run kept: rel/0.7.8 20261105-121717, fix/w44-guest-player2
+  20261105-113638, -114336, -121010, here 20261105-124455, -124913; also cold here with another NPC first,
+  20261105-130042). The guest is put beside its NPC every 5 s of a round when it is 3-15 m off,
+  and an NPC farther off or without a strike in 3 rounds gives way to the next (up to 8). The twin
+  `SPORE_FIX_OFF=creature.air_immune` still fails (3 bites in the air, lab 20261105-131430). nest_heal leaves nothing
+  behind that the warm reset keeps: it only changes the numbering.
+* **play_tribe "gave orders through real clicks"** (BUG-0397): the bot's own rate, not the game (12 of 37 kept runs had
+  8-9 orders for one player in 10 min; the host's bot too, 0-9 in 5 runs). The random mix of camera moves, partner
+  clicks, waits and gifts, heals with no food mat on screen and gathers with no tree in the open (that one was not
+  even counted) left too few orders. Each bot now keeps a pace of one order per 30 s of play (`ORDER_EVERY`): behind
+  it, it plays an order kind (the plan's, else a gather; a hunt when the last try found nothing). The floor (10) and
+  the checks on the orders (acted on, lost, rejected) are unchanged; the summary line says how many steps the pace
+  chose (`kinds chosen by the order pace`).
+* **play_tribe "the members act on the orders"** (BUG-0505 class): the one failure of 0.7.8 (fix/w44-tribe-guest
+  20261105-115848, 13 ok / 11 idle) was the game: members standing in the gather node with their walk stopped short,
+  new orders not taking them out (BUG-0531, still open). This check measures the game; it stays.

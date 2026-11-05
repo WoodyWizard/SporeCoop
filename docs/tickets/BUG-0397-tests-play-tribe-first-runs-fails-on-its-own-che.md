@@ -9,11 +9,11 @@ source: lab runs on fix/w32-tribe-sync (out/lab/20261101-115510)
 role: both
 versions: 
 fixed_in:
-branch:
+branch: fix/w44-tests
 commits:
-tests:
+tests: play_tribe
 signature:
-docs:
+docs: docs/06-testing.md#testing-harness-g2
 related:
 ---
 
@@ -38,7 +38,24 @@ left its members idle there (in #2 the same kinds of orders worked); the citizen
 walking (BUG-0365, fix/w30-tribe-walk, reworked on another branch now), not looked at here.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+G2 (fix/w44-tests, 2026-11-05). Kind: **the bot's own activity** ("gave orders through real clicks" counts what the bot
+did, not what the game did).
+* Observed (the 37 play_tribe runs kept in the worktrees' out/lab, 0.7.3-0.7.8): the floor of 10 orders failed for
+  the guest in 4 runs (feat/w33-tests-session 20261101-134020: 9, fix/w40-world-objects 20261103-143918: 9, rel/0.7.7
+  20261104-220200: 8, rel/0.7.8 20261105-111032: 9) and for the host in 5 (3, 9, 8, 7, 0), every time with no order
+  lost or rejected. In those runs the steps went to camera moves, partner clicks, waits (wait=26 of ~80 guest steps in
+  20261105-111032), gifts (give=7, gave=1), heals with no food mat on screen (heal_nothing=18 in 20261104-220200), box
+  drags that selected nothing (host no_selection=44 in 20261105-115848) and gathers with no tree in the open, which
+  ended the step without a note (gather=10, 4 gather orders, 20261105-111032).
+* Fix (test only, no switch): each bot keeps a pace of one order per 30 s of play (`ORDER_EVERY`). Behind it, the step
+  plays an order kind (the plan's kind, else a gather; a hunt when the kind's last try found nothing to click or its
+  box missed), and when every own member is busy it orders one of them again. The random draws stay as they were, so
+  a seed replays the rest of the play. A gather with no tree in the open is counted (`gather_nothing`). The floor of
+  10 and the checks on the orders (acted on, lost, rejected) are unchanged.
+* "the members act on the orders" (once in 0.7.8, fix/w44-tribe-guest 20261105-115848, 13 ok / 11 idle): the game
+  (members stalled in the gather node, BUG-0531, updated there), not changed.
+* The ticket's first-runs items: the chiefs compare was fixed in 2026-11-01; the citizens' p90 is BUG-0365 / BUG-0481
+  (fixed there).
 
 ## Verification
 <!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
@@ -51,3 +68,4 @@ Update (2026-11-05, rel/0.7.8 integration, out/lab/20261105-111032): play_tribe 
 through real clicks (9)" (the check wants 10 in 10 min). The same check failed in 12 of 37 play_tribe runs kept in
 the worktrees' out/lab (0.7.4-0.7.8, e.g. rel/0.7.7 20261104-220200 with 8): the bot's own order rate, not a game
 fault. For G2 (0.7.8 plan): make the guest bot give a fixed minimum of orders, or scale the floor with its actions.
+- 2026-11-05 (fix/w44-tests, G2): the order floor failures were the bots' pace; the bots keep one order per 30 s.

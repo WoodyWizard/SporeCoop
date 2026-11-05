@@ -46,3 +46,12 @@ stays as a regression check (suite tribe_gather_stall).
 ## History
 - 2026-11-04: opened.
 - 2026-11-04 (fix/w42-tribe-left): gather node RE, not reproduced in 7 runs, no fix; regression test tribe_gather_stall.
+- 2026-11-05 (fix/w44-tests, G2): seen again in play_tribe, fix/w44-tribe-guest out/lab/20261105-115848 (guest ok 13 /
+  idle 11, the BUG-0505 class line of the G2 task; the idles came after s ~280, 2 -> 4 -> 8 -> 11). Observed (the host
+  lines of the last 4 idle orders, the only ones the log keeps): two members stood still on the host (speed 0): #2 in the gather node 0x0569236E with
+  the new order's record (rec=2, target set), walk mode 1, its walk goal (391.9 -93.1 314.6) 2.8 m from it, the tree
+  (401.6 -64.9 303.9) 34 m off, ordered to that tree twice; #9 in node 0x05F79546 (rec=4 walk, then rec=2 gather)
+  ordered twice. So the stall this ticket infers (the gather node with the walk stopped short, a new order not taking
+  the member out) happened; inferred: most of the 11 idles are repeated orders of the same stuck members. The check "the members act on the
+  orders" measured the game here, not the bot: left as it is (G2 changed only the bots' order pace, BUG-0397).
+  Not reproduced on purpose; still open.

@@ -70,6 +70,17 @@ def sample(host, guest, after):
     return real
 
 
+def busy_ok(fn, *a):
+    """BUG-0430 (long_creature_short, rel/0.7.8 lab 20261105-123757): a console call into a game that loads a world
+    can time out (the restarted guest took 52 s to load the shared world and played on; the first TimeoutError ended
+    the transition). A timeout or a closed console counts as "not yet" here; the caller's deadline decides."""
+    try:
+        return fn(*a)
+    except (OSError, ValueError) as e:
+        print(f'  (console busy: {e!r}; waiting on)', flush=True)
+        return None
+
+
 class Session:
     def __init__(self, stage, seed):
         self.stage, self.seed = stage, seed
@@ -97,13 +108,13 @@ class Session:
     def wait_together(self, timeout, what):
         t0 = time.time()
         while time.time() - t0 < timeout:
-            if self.together():
+            if busy_ok(self.together):
                 print(f'  {what}: together again after {time.time() - t0:.0f} s', flush=True)
                 return True
-            f1 = twoinst.host_frame(self.host)
+            f1 = busy_ok(twoinst.host_frame, self.host)
             time.sleep(1.5)
-            if twoinst.host_frame(self.host) == f1:
-                self.host.call('key enter')  # the host's "game saved" box after a share
+            if f1 is not None and busy_ok(twoinst.host_frame, self.host) == f1:
+                busy_ok(self.host.call, 'key enter')  # the host's "game saved" box after a share
         print(f'  {what}: NOT together after {timeout} s (host {mode(self.host).strip()}, guest {mode(self.guest).strip()})',
               flush=True)
         return False
@@ -265,7 +276,7 @@ class Session:
                 time.sleep(1)
             return True
         t0, seen = time.time(), False
-        while time.time() - t0 < 60 and not seen:
+        while time.time() - t0 < 60 and not seen:  # (mode() is '' on a console timeout: waits on)
             seen = 'GalaxyGameEntry' in mode(g)
             time.sleep(1)
         print(f'  menu: the guest in the main menu: {seen}', flush=True)
@@ -290,16 +301,20 @@ class Session:
         t0 = time.time()
         while time.time() - t0 < 120 and 'GalaxyGameEntry' not in mode(self.guest):
             time.sleep(2)
-        self.guest.call('wait.frames 200 60000')
-        self.guest.call(lane.JOIN)
-        ok = wait_guest_in(self.host, self.guest)
+        busy_ok(self.guest.call, 'wait.frames 200 60000')
+        if busy_ok(self.guest.call, lane.JOIN) is None:  # (a join the console did not answer: once more)
+            busy_ok(self.guest.call, lane.JOIN)
+        ok, t0 = False, time.time()
+        while not ok and time.time() - t0 < 240:  # through console timeouts while the guest loads the world
+            ok = busy_ok(wait_guest_in, self.host, self.guest, max(10, 240 - (time.time() - t0)))
         watch(lane.HOST, lane.GUEST)
-        return ok and self.wait_together(120, 'restart')
+        return bool(ok) and self.wait_together(120, 'restart')
 
     def rejoin(self):
         self.guest.call('coop.leave')
         time.sleep(4)
-        print('  rejoin:', self.guest.call(lane.JOIN)['out'].strip()[:60], flush=True)
+        r = busy_ok(self.guest.call, lane.JOIN)
+        print('  rejoin:', (r or {}).get('out', '(no answer)').strip()[:60], flush=True)
         time.sleep(10)
         return self.wait_together(240, 'rejoin')
 
