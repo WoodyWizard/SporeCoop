@@ -1,19 +1,21 @@
 #!/usr/bin/env python3
-"""Two crash guards of 0.7.8, each with the state of its crash made on purpose (the crashes themselves were not
-reproduced: who freed the object is not known).
+"""Two crashes of 0.7.6 / 0.7.7 and their guards.
 
-  --case model_fx  (BUG-0575, Tribe, the guest) a guest crashed at 0xA826F3 after the home camera jump: the camera
-                   range check of a creature's attached effects (SpatialEffects_UpdateByDistance 0xC8ABF0) started
-                   an effect whose component was freed. `coop.fxcut` stops a running attached effect of one of the
-                   guest's creatures (its threshold 0 for a moment), points its component vector at one freed
-                   component (a vtable of nulls) and puts the threshold back: the next range check starts it, as
-                   the camera jump did. PASS: the guard dropped the broken effect (coop.status), no fault, the
-                   guest keeps drawing. SPORE_FIX_OFF=game.model_fx fails (a call through null in VisualEffect_Start).
-  --case fruit_pool (BUG-0584, Creature, the host) a host faulted at 0xB097C2 (a call through null): a fruit that
-                   falls took a freed fruit from the plants' fruit pool. The host eats a fruit (it goes to the free
-                   vector), `coop.fruitcut` makes the last free fruit freed memory, a fruit falls from a tree
-                   (`coop.wobj drop`, the flora's DropFruit). PASS: the guard took the freed fruit out, no fault,
-                   the fruit still fell (the tree's mask). SPORE_FIX_OFF=game.fruit_pool fails.
+  --case model_fx  (BUG-0575, Tribe, the guest; the crash was not reproduced: what freed the part is not known) a
+                   guest crashed at 0xA826F3 after the home camera jump: the camera range check of a model's attached
+                   effects (SpatialEffects_UpdateByDistance 0xC8ABF0) started an effect whose component was freed.
+                   `coop.fxcut` makes that state on the next model with a running attached effect (its threshold 0 for
+                   a moment: the game stops it; then its component vector points at one freed component, a vtable of
+                   nulls, and the threshold is back: the range check starts it, as the camera jump did).
+                   PASS: the guard dropped it, no fault, the guest keeps drawing.
+                   SPORE_FIX_OFF=game.model_fx fails (a call through null in VisualEffect_Start).
+  --case fruit_pool (BUG-0584, Creature, the host; reproduced) the host eats a fruit of the save the way a guest's
+                   "took fruit" request does (`coop.wobj eat`, worldobj's fruit_eat), then a fruit falls from a tree
+                   (`coop.wobj drop`, the flora's DropFruit). Without the fixes the eaten fruit lies in the plants'
+                   free fruit with one reference and the fall's take frees it: a call through null at 0xB097C2.
+                   PASS: no fault, the fruit fell. SPORE_FIX_OFF=wobj.fruit_saved,game.fruit_pool fails; either
+                   switch alone passes (wobj.fruit_saved: the fruit is destroyed as the game's eating does;
+                   game.fruit_pool: the take does not get it).
 
   coop_crash_guards.py --case model_fx|fruit_pool
 """
@@ -71,11 +73,12 @@ def pool(con):
     return out
 
 
-def fruit_pool(host, guest, ck, plant):
-    fr = [o for o in objs(host, 'fruit', 80) if o['st'] == 2]
-    print('  host fruit on the ground:', [(o['id'], o['pos']) for o in fr][:6], flush=True)
-    pool(host)
-    if not ck(fr, 'the host has a fruit on the ground'):
+def fruit_pool(host, guest, ck):
+    out = pool(host)
+    saved = set(re.findall(r'([0-9A-F]{8})/r\d+/f[13579BDF]/s2', out.split('loose', 1)[-1]))
+    fr = [o for o in objs(host, 'fruit', 80) if o['st'] == 2 and o['p'].upper().zfill(8) in saved]
+    print('  host fruit of the save on the ground:', [(o['id'], o['p'], o['pos']) for o in fr][:6], flush=True)
+    if not ck(fr, 'the host has a fruit of the save on the ground (+0x148 bit 0)'):
         return
     # the guest's "took fruit" request does this on the host (worldobj on_act -> cFruit_SetState 5)
     print('  host:', host.call(f'coop.wobj eat {fr[0]["p"]}')['out'].strip(), f'(fruit {fr[0]["p"]})', flush=True)
@@ -85,11 +88,6 @@ def fruit_pool(host, guest, ck, plant):
     print('  host trees with fruit (mask):', [(o['p'], hex(o['st'])) for o in trees][:6], flush=True)
     if not ck(trees, 'the host has a tree with fruit near its avatar'):
         return
-    if plant:
-        r = host.call('coop.fruitcut')['out'].strip()
-        print('  host:', r, flush=True)
-        if not ck(r.startswith('armed'), 'the host\'s fruit pool has a freed fruit now (the test state is made)'):
-            return
     t = trees[0]
     slot = next(s for s in range(64) if t['st'] >> s & 1)
     print('  host:', host.call(f'coop.wobj drop {t["p"]} {slot}')['out'].strip(), f'(slot {slot})', flush=True)
@@ -97,8 +95,6 @@ def fruit_pool(host, guest, ck, plant):
     pool(host)
     taken = status_num(host, r'freed fruit taken out of the pool (\d+)')
     print(f'  host: fruit taken out of the pool by the guard {taken}, faults {faults(host)}', flush=True)
-    if plant:
-        ck(taken > 0, f'the guard took the freed fruit out of the pool before the fall took it ({taken})')
     after = [o for o in objs(host, 'tree', 120) if o['p'] == t['p']]
     ck(after and not (after[0]['st'] >> slot & 1), 'the fruit fell from the tree (its slot is empty)')
     ck(frames_go_on(host), 'the host keeps drawing')
@@ -107,7 +103,6 @@ def fruit_pool(host, guest, ck, plant):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--case', choices=('model_fx', 'fruit_pool'), required=True)
-    ap.add_argument('--plant', action='store_true', help='fruit_pool: a freed fruit is planted as the last free one')
     a = ap.parse_args()
     host, guest = start('tribe' if a.case == 'model_fx' else 'creature')
     ck = Checks()
@@ -115,7 +110,7 @@ def main():
     if a.case == 'model_fx':
         model_fx(host, guest, ck)
     else:
-        fruit_pool(host, guest, ck, a.plant)
+        fruit_pool(host, guest, ck)
     ck.faults(host=host, guest=guest)
     return ck.result()
 

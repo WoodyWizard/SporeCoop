@@ -940,15 +940,16 @@ static int c_fxlist(void*, int argc, const char* const* argv, SkOut* out)
     return 0;
 }
 
-// ---- BUG-0584: a freed fruit in the flora's fruit pool ----
-// The flora (Flora_Get) keeps two counted vectors of cFruit (docs/re/creature.md#creature-fruit-pool): free fruit
+// ---- BUG-0584: a free fruit the plants' fruit take would free ----
+// The flora (Flora_Get) keeps two counted vectors of cFruit (docs/re/creature.md#creature-fruit-pool-guard): free fruit
 // +0x1B8F44..+0x1B8F4C (eaten, kept for reuse) and loose fruit +0x1B905C..+0x1B9064. Its drop maker 0xB09790 takes
 // one with Flora_TakeFruitForDrop 0xB08DF0 (thiscall(flora) -> cFruit*: the last free one, else the loose one
-// farthest from the camera) and calls its AddRef (vt 0) at once: a host faulted there with a call through null
-// ([fruit] = 0x15B40, the memory of a freed fruit reused). Before the take the guard takes every entry of the two
-// vectors that is not a cFruit any more (its vtable is not cFruit's) out of its vector, without a Release (the
-// reference was already gone); a null take is the game's own "no fruit" (nothing falls this time).
-// Not verified against the long session's fault: who released the fruit once too often is not known.
+// farthest from the camera) and calls its AddRef (vt 0) at once. The free path's pop drops the pool's reference and
+// its own before it returns: a free fruit whose only reference was the pool's (+0x8 == 1: a fruit of the save eaten
+// without the eat node's DestroyInstance, worldobj's wobj.fruit_saved) is freed there and the caller called through
+// the freed memory (a host at 0xB097C2, lab 20261105-100942). Before the take the guard takes such free fruit, and any
+// entry of the two vectors that is not a cFruit (its vtable), out of its vector without a Release (kept alive: a few
+// hundred bytes lost); a null take is the game's own "no fruit" (nothing falls this time).
 // `coop.fix game.fruit_pool off`: the take reads whatever is listed (0.7.7).
 using TakeFruitFn = void*(__thiscall*)(void*);
 static TakeFruitFn g_take_fruit_orig;
@@ -957,9 +958,6 @@ COOP_FIX("game.fruit_pool", "BUG-0584", g_fruit_pool_fix,
          "gamefixes: a freed fruit, or a free one the take would free, leaves the plants' fruit pool before a fruit falls (a host faulted at 0xB097C2)");
 static std::atomic<unsigned> g_fruit_dropped{0};
 static uintptr_t g_fruit_vt;
-static uintptr_t g_fake_fruit_vt[16];        // tests (coop.fruitcut): a freed fruit's memory: a vtable of nulls
-static uintptr_t g_fake_fruit[0x170 / 4];
-static double g_fruitcut_at;
 constexpr size_t kFreeFruit = 0x1B8F44, kLooseFruit = 0x1B905C;
 
 static unsigned fruit_vec_scrub(uint8_t* flora, size_t off)
@@ -997,33 +995,6 @@ static void* __fastcall take_fruit_guard(void* flora, void*)
     return g_take_fruit_orig(flora);
 }
 
-// tests (coop.fruitcut): the state of the host's fault, made on purpose: the last free fruit of the pool is freed
-// memory (a vtable of nulls); the next fruit that falls takes it
-static std::string fruitcut_arm()
-{
-    static uintptr_t flora_get = H->sym("SporeCoop::Flora_Get");
-    uint8_t* fl = flora_get && g_take_fruit_orig ? ((uint8_t*(__cdecl*)())flora_get)() : nullptr;
-    if (!fl || !g_fruit_vt)
-        return "no flora or no fruit pool guard\n";
-    uintptr_t* b = at<uintptr_t*>(fl, kFreeFruit);
-    uintptr_t* e = at<uintptr_t*>(fl, kFreeFruit + 4);
-    uintptr_t* cap = at<uintptr_t*>(fl, kFreeFruit + 8);
-    g_fake_fruit[0] = (uintptr_t)g_fake_fruit_vt;
-    char buf[160];
-    if (b && e < cap) {
-        *e = (uintptr_t)g_fake_fruit;
-        *(uintptr_t**)(fl + kFreeFruit + 4) = e + 1;
-        snprintf(buf, sizeof buf, "armed: a freed fruit %p is the last of %d free fruit\n", (void*)g_fake_fruit, (int)(e + 1 - b));
-    } else if (b && e > b) { // no room: it takes the last one's place (that fruit's reference is lost: a test)
-        e[-1] = (uintptr_t)g_fake_fruit;
-        snprintf(buf, sizeof buf, "armed: a freed fruit %p replaces the last of %d free fruit\n", (void*)g_fake_fruit, (int)(e - b));
-    } else {
-        return "no room in the free fruit vector (eat a fruit first)\n";
-    }
-    g_fruitcut_at = H->time_seconds();
-    return buf;
-}
-
 // coop.fruitpool: the plants' free and loose fruit (pointer, vtable ok, references +0x8, flags +0x148, state +0x16C)
 static int c_fruitpool(void*, int, const char* const*, SkOut* out)
 {
@@ -1047,12 +1018,6 @@ static int c_fruitpool(void*, int, const char* const*, SkOut* out)
         }
         H->out_printf(out, "\n");
     }
-    return 0;
-}
-
-static int c_fruitcut(void*, int, const char* const*, SkOut* out)
-{
-    H->out_printf(out, "%s", fruitcut_arm().c_str());
     return 0;
 }
 
@@ -1139,28 +1104,9 @@ static void __cdecl areas_init_guard()
         ensure_save_areas();
 }
 
-static void fruitcut_frame()
-{
-    if (g_fruitcut_at <= 0 || H->time_seconds() - g_fruitcut_at < 30)
-        return;
-    g_fruitcut_at = 0; // tests: a planted fruit no drop took goes before the flora releases its pool
-    static uintptr_t flora_get = H->sym("SporeCoop::Flora_Get");
-    uint8_t* fl = flora_get ? ((uint8_t*(__cdecl*)())flora_get)() : nullptr;
-    uintptr_t* b = fl ? at<uintptr_t*>(fl, kFreeFruit) : nullptr;
-    uintptr_t* e = fl ? at<uintptr_t*>(fl, kFreeFruit + 4) : nullptr;
-    for (uintptr_t* p = b; p && p < e; p++)
-        if (*p == (uintptr_t)g_fake_fruit) {
-            memmove(p, p + 1, (e - p - 1) * sizeof *p);
-            *(uintptr_t**)(fl + kFreeFruit + 4) = e - 1;
-            H->log(M, SK_INFO, "game fixes: tests: the planted freed fruit was not taken in 30 s: removed (BUG-0584)");
-            break;
-        }
-}
-
 void frame()
 {
     fxcut_frame();
-    fruitcut_frame();
     if (g_areas_checked || !g_get_db)
         return;
     g_areas_checked = true; // the init ran before our hook (hot reload, a late load): check once now
@@ -1290,8 +1236,6 @@ void init(const SkHost* host, SkMod* mod)
                    c_fxcut, nullptr, SK_CMD_MAIN_THREAD);
     H->command_add(M, "coop.fruitpool", "coop.fruitpool - the plants' free and loose fruit: references, flags, state (BUG-0584)",
                    c_fruitpool, nullptr, SK_CMD_MAIN_THREAD);
-    H->command_add(M, "coop.fruitcut", "coop.fruitcut - tests (BUG-0584): the last free fruit of the plants' pool is freed memory",
-                   c_fruitcut, nullptr, SK_CMD_MAIN_THREAD);
 }
 
 void shutdown()

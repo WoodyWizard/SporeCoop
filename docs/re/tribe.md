@@ -1663,3 +1663,43 @@ BUG-0583. GOG 2024, Ghidra and the lab's fault record.
 * Fix `tribe.leader_tool` (tribe.cpp apply_held_tool): no tool of type 1..6 on this game's leader.
 * ✔ (lab 20261105-002402, fix off) a leader mirror set to 1 by the field's apply did not fault before the host's next
   field gave it 11 again (seconds): the state must last for the fault (+0xB54 updates).
+
+## A model's attached effects and the guard for a broken one (2026-11-05, fix/w44-crashes)
+<a id="tribe-model-fx-guard"></a>
+
+BUG-0575. GOG 2024 (= the Steam 3010a413 code), Ghidra and asm. Extends #tribe-model-effects-crash.
+
+* CORRECTION (2026-11-05, fix/w44-crashes): the crash report's names (cSpatialObject::SetModelKey <- QuaternionToMatrix
+  <- cModelObject <- cPlanetaryArtifact::SetLocomotion) are the nearest .sym names of stale return addresses found by
+  the stack scan, not the calls: nothing set a model key or a locomotion. The real chain (the Steam exe at 0x4E0000,
+  GOG 2024 = Steam - 0xE0000): VisualEffect_Start 0xA82660 (fault 0xA826F3) <- SpatialEffects_UpdateByDistance
+  0xC8ABF0 (return 0xC8ACC4) <- CreatureView_Update 0xE8C100 (return 0xE8C96E) <- the view list walk 0xB3CB6F
+  (return 0xB3CB71, a linked list of views, vt 4(a, b) each). 0xC69BC6, 0xE8E5D3 / 0xE8EA45, 0xE8CD3B are stale.
+* ✔ The creature view (vtable 0x1486328, 0x1C bytes, made by 0xE8BCF0 from an object cast to 0xCE9F6639): +0xC the
+  creature (a counted reference), +0x10 its AnimatedCreature (creature +0xB54, counted with 0xA02B70 / 0xA051B0),
+  +0x14 a flag. Its update (vt 1, `SporeCoop::CreatureView_Update`) returns at once when creature +0x135 is clear or
+  +0xB54 is null; else camera distance (creature +0x128), LOD (0xC0C460), the creature's pool-2 effects by key
+  (0xC20300 / 0xC14FD0: 0x73E4CDF, 0x77492D8, 0x7E2FEDF, 0x7A16140, 0x6452CA4), then when +0x134 is set
+  SpatialEffects_SetTransform 0xC89EF0 and always SpatialEffects_UpdateByDistance 0xC8ABF0 on the creature's spatial
+  (creature +0xC0): its attached-effect vector is at creature +0x180 / +0x184.
+* ✔ Attached effects (`SporeCoop::SpatialEffects_Add` 0xC8AFB0 thiscall(owner, id, group, key, bool restart) ret
+  0x10): entry 0x3C bytes, +0 key, +4 effect id, +8 enabled, +9 restart (the bool), +0xA a second restart flag,
+  +0xC threshold (256 m when made), +0x14 1.0, +0x38 the effect (a counted reference). The range check stops (vt
+  0xC(0)) a running effect at or past the threshold and starts (vt 8(0)) a stopped one inside it when +8 and +9 or
+  +0xA are set; a stopped entry with neither is erased with its Release. Removal by key 0xC8AEC0. Views add theirs
+  through the wrappers 0xC8B1D0 / 0xC8B1F0 / 0xC8B210 / 0xC8B2C0 / 0xC8B340 (cDefaultBeamProjectileView 0xCC2EF0,
+  0xE87xxx, 0xE96xxx).
+* ✔ VisualEffect (`SporeCoop::VisualEffect_vftable` 0x1457DE8, the only vtable with Start 0xA82660 in slot 2): Start
+  calls vt 8(arg) of each component (+0x144..+0x148, 0x5C bytes, object +0x38) without a check. The crash's
+  registers (edi = 0x5C, esi = 1, ebp = 0, ebx = the vector's end) mean the first component's call went into a
+  function through a vtable that is not one (a freed component whose memory was reused) and came back with
+  esi / edi destroyed.
+* ? Not found: what freed the component while the effect stayed in a creature's attached list. Not the relay of
+  effects.cpp: it keeps and releases only the world effects it made itself (pool 5, g_live), the creature pools
+  +0xCC8 / +0xD68 are other lists, and its references balance (read 2026-11-05). Not reproduced (two runs of
+  fix/w43-*, see the ticket).
+* Guard `game.model_fx` (gamefixes.cpp): hooks on 0xC8ABF0 and 0xC89EF0 check every listed effect first (its vtable
+  in the game's image with slots 2, 3, 4, 6 in its code; for a VisualEffect the component vector and each component
+  object's vtable and slots 2, 3); a broken one leaves its entry (+0x38 = 0, no Release, the reference is lost) and the
+  game makes it again when it wants it. Arithmetic checks only (no VirtualQuery): the loops run for every view every
+  frame. `coop.fxlist [creature|all]` lists attached effects; `coop.fxcut` makes the crash state (tests).
