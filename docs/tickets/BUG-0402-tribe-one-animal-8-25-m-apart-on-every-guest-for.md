@@ -75,3 +75,9 @@ out/lab/20261101-153010; the epic experiment above).
 ## History
 - 2026-11-01: opened.
 - 2026-11-01: fix/w33-proxy-ground: not reproduced on current code; the epic inference tested (no 8 m with either driving).
+
+Update (2026-11-05, rel/0.7.7 final check, out/lab/20261105-015350 campaign_ct): a fourth kind. One standing NPC
+(`n146`, species 06725707, spd 0) 8.4 m apart on two guests for one check pair at s 662: the host's NPC is 8.39 m
+under the terrain (dist 522.2 from the centre, the guest's `want_agl=-8.39`), the guest's proxy stands on the
+ground (`agl=0.00`, dist 530.6). So the gap is radial: the guest grounds a proxy whose host NPC is below the
+ground (in water or sunk). Not a walking proxy trailing. Not a release blocker; left open.

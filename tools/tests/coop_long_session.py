@@ -158,6 +158,13 @@ class Session:
     def leave_editors(self):
         """an editor the play opened (the creature bots' own evolution vote ends in the host's editor when its time is
         up, lab 20261104-210208: the host stayed there and the next transition waited on it): the red X, both games"""
+        # a vote the bots started in the last seconds of the play still ends in the host's editor (lab
+        # 20261105-015350: it passed 1/1 when the guest left for the restart and the host stayed in the editor)
+        t0 = time.time()
+        while time.time() - t0 < 90 and 'vote active' in self.host.call('coop.vote')['out']:
+            time.sleep(2)
+        if time.time() - t0 > 1:
+            time.sleep(5)
         left = False
         for _ in range(3):
             busy = [c for c in (self.host, self.guest) if 'Editor' in mode(c)]
