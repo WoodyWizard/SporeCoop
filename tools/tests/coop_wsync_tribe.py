@@ -156,6 +156,9 @@ def t_villages(host, guest, ck):
     guest's village at the same place (the game's own CalculateRelationship and bundles, read on both games)"""
     from coop_tribe_guest_tribes import form
     h0 = dump(host, 'tribe_rel').get('tribe_rel', [])
+    # tribe.form_pace (BUG-0571) holds the third village of a party until its food passes the threshold times the
+    # players: this test is about the rows of new villages, not their pace (rel/0.7.8 lab 20261105-134715: 1 -> 0)
+    print('  host: ' + host.call('coop.fix tribe.form_pace off')['out'].strip(), flush=True)
     for i in range(3):
         form(host, f' form {i}')
         time.sleep(3)
