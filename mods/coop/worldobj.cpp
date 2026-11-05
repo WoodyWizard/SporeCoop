@@ -131,10 +131,22 @@ static uint32_t fruit_state(void* o) { return IsBadReadPtr(o, 0x170) ? 6 : field
 static bool fruit_loose(void* o) { uint32_t s = fruit_state(o); return s >= 1 && s <= 4; }
 static bool fruit_done(uint32_t s) { return s == kGone || s >= 5; }
 static void fruit_collect(Items& out) { collect_noun(kFruitNoun, out, fruit_state, fruit_loose); }
+// BUG-0584: a fruit of the save (+0x148 bit 0, cFruit vt 0xB066A0) eaten with SetState(5) alone went to the
+// plants' free fruit with one reference left (lab 20261105-100942: 19 -> 1), and the next fruit that fell took
+// it from the free fruit and freed it (Flora_TakeFruitForDrop's pop releases the pool's reference and its own):
+// the host faulted at 0xB097C2 with a call through null. The eat node 0xD87590 destroys such a fruit
+// (cGameNounManager::DestroyInstance) before its SetState(5); so does this now.
+// `coop.fix wobj.fruit_saved off`: SetState(5) alone (0.7.7).
+static bool g_fruit_saved_fix = true;
+COOP_FIX("wobj.fruit_saved", "BUG-0584", g_fruit_saved_fix,
+         "creature / tribe: a fruit of the save eaten in another player's game is destroyed as the game's eating does (a host faulted when the next fruit fell)");
 static void fruit_eat(void* o)
 {
-    if (!fruit_done(fruit_state(o)))
-        thiscall<void>(a_FruitSetState, o, 5, 0); // what the eat node 0xD87590 does when the meal ends
+    if (fruit_done(fruit_state(o)))
+        return;
+    if (g_fruit_saved_fix && game::noun_id(o) == kFruitNoun && (field<uint32_t>(o, 0x148) & 1))
+        game::destroy_instance(o); // as the eat node 0xD87590 at the meal's end (state 3)
+    thiscall<void>(a_FruitSetState, o, 5, 0); // what the eat node 0xD87590 does when the meal ends
 }
 static bool fruit_behind(uint32_t local, uint32_t host) { return fruit_done(host) && !fruit_done(local); }
 static void fruit_apply(const Item& l, uint32_t) { fruit_eat(l.p); }

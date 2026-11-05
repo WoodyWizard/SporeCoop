@@ -725,10 +725,11 @@ static int g_fxcut_entry = -1, g_fxcut_stage;
 static uint8_t* g_fxcut_fx;
 static uint32_t g_fxcut_thr, g_fxcut_saved[2];
 static double g_fxcut_at;
+
 static uintptr_t g_fxcut_vt[16];              // the freed component's "vtable": nulls (vt 8 = a call through null)
 static uintptr_t g_fxcut_obj[0x60 / 4];       // the freed component
 static uintptr_t g_fxcut_comp[0x5C / 4];      // one component record of 0x5C bytes, +0x38 = the object
-static unsigned g_fxcut_done;
+static unsigned g_fxcut_done, g_fxcut_planted;
 
 static bool heap_ptr(uintptr_t p) { return p >= 0x10000 && p < 0xFFFE0000u && !(p & 3); }
 static bool in_image(uintptr_t p) { return p >= g_code_lo && p < g_code_hi; }
@@ -785,89 +786,51 @@ static void model_fx_scrub(void* owner, const char* where)
     }
 }
 
-static void __fastcall fx_dist_guard(void* owner, void*)
+// tests (coop.fxcut): the state of the guest's crash, made on purpose, on the next list owner the range check sees
+// with a running VisualEffect that may restart (+8 and +9 or +0xA). Its threshold is set to 0 for a moment (the
+// game's own loop stops it); once stopped, its component vector is pointed at one component whose object has a
+// vtable of nulls (a freed component) and the threshold is put back: the same range check starts it (as after the
+// home camera jump) and calls through null in VisualEffect_Start, unless the guard drops it first.
+static uint8_t* fxcut_entry(void* owner, int i)
 {
-    model_fx_scrub(owner, "the camera range check");
-    g_fx_dist_orig(owner);
-}
-
-static void __fastcall fx_xf_guard(void* owner, void*, void* xf)
-{
-    model_fx_scrub(owner, "its move");
-    g_fx_xf_orig(owner, xf);
-}
-
-// tests (coop.fxcut [creature]): the state of the guest's crash, made on purpose. A creature's attached effect that
-// runs is stopped by its own loop (its distance threshold set to 0 for a moment); once stopped, its component
-// vector is pointed at one component whose object has a vtable of nulls (a freed component), and the threshold is
-// put back: the next range check starts it (as after the home camera jump) and calls through null.
-struct FxPick { void* c; uint8_t* owner; int entry; };
-static bool fxcut_pick_in(void* c, FxPick* p)
-{
-    uint8_t* owner = (uint8_t*)c + 0xC0;
     uintptr_t b = at<uintptr_t>(owner, 0xC0), e = at<uintptr_t>(owner, 0xC4);
-    if (b == e || !heap_ptr(b) || e < b || (e - b) % 0x3C)
-        return false;
-    int i = 0;
-    for (uintptr_t ent = b; ent < e; ent += 0x3C, i++) {
-        uintptr_t fx = at<uintptr_t>((void*)ent, 0x38);
-        if (!fx || *(const uintptr_t*)fx != g_fx_vt || !at<uint8_t>((void*)ent, 8) ||
-            !(at<uint8_t>((void*)ent, 9) | at<uint8_t>((void*)ent, 0xA)) || !model_fx_ok(fx))
-            continue;
-        if (!skg::vcall<bool>((void*)fx, 0x10 / 4)) // running (in the camera's range)
-            continue;
-        *p = {c, owner, i};
-        return true;
-    }
-    return false;
+    if (!heap_ptr(b) || e < b || (e - b) % 0x3C || i < 0 || b + (i + 1) * 0x3C > e)
+        return nullptr;
+    return (uint8_t*)b + i * 0x3C;
 }
 
-static std::string fxcut_arm(void* want)
+static void fxcut_step(void* owner)
 {
-    if (!g_fx_dist_orig || !g_fx_vt)
-        return "no model effect guard\n";
-    FxPick p{nullptr, nullptr, -1};
-    if (want) {
-        if (!readable(want, 0x200) || !fxcut_pick_in(want, &p))
-            return "that creature has no running attached effect\n";
-    } else {
-        game::for_each_object(
-            [](void* o, uint32_t noun, void* u) {
-                if ((noun != kCitizenNoun && noun != kAnimalNoun) || !game::object_alive(o))
-                    return true;
-                return !fxcut_pick_in(o, (FxPick*)u);
-            },
-            &p);
-    }
-    if (!p.owner)
-        return "no creature with a running attached effect\n";
-    uint8_t* ent = (uint8_t*)at<uintptr_t>(p.owner, 0xC0) + p.entry * 0x3C;
-    g_fxcut_owner = p.owner;
-    g_fxcut_entry = p.entry;
-    g_fxcut_thr = at<uint32_t>(ent, 0xC);
-    g_fxcut_stage = 1;
-    g_fxcut_at = H->time_seconds();
-    *(float*)(ent + 0xC) = 0.0f; // out of range: the creature's own loop stops it
-    char b[200];
-    snprintf(b, sizeof b, "armed: creature %p effect %08X (entry %d, threshold %.0f) is stopped, then gets a freed part\n",
-             p.c, at<uint32_t>(ent, 4), p.entry, *(float*)&g_fxcut_thr);
-    return b;
-}
-
-static void fxcut_frame()
-{
-    if (!g_fxcut_stage)
+    if (g_fxcut_stage == 1) { // find an owner and an entry
+        uintptr_t b = at<uintptr_t>(owner, 0xC0), e = at<uintptr_t>(owner, 0xC4);
+        if (b == e || !heap_ptr(b) || e < b || (e - b) % 0x3C || (e - b) / 0x3C > 256)
+            return;
+        int i = 0;
+        for (uintptr_t ent = b; ent < e; ent += 0x3C, i++) {
+            uintptr_t fx = at<uintptr_t>((void*)ent, 0x38);
+            if (!fx || *(const uintptr_t*)fx != g_fx_vt || !at<uint8_t>((void*)ent, 8) ||
+                !(at<uint8_t>((void*)ent, 9) | at<uint8_t>((void*)ent, 0xA)) || !model_fx_ok(fx) ||
+                !skg::vcall<bool>((void*)fx, 0x10 / 4))
+                continue;
+            g_fxcut_owner = (uint8_t*)owner;
+            g_fxcut_entry = i;
+            g_fxcut_thr = at<uint32_t>((void*)ent, 0xC);
+            *(float*)(ent + 0xC) = 0.0f; // out of range: this loop stops it
+            g_fxcut_stage = 2;
+            H->log(M, SK_WARN, "game fixes: tests: model %p effect %08X (%p, entry %d, threshold %.0f) is stopped for the test (BUG-0575)",
+                   owner, at<uint32_t>((void*)ent, 4), (void*)fx, i, *(float*)&g_fxcut_thr);
+            return;
+        }
         return;
-    uintptr_t b = at<uintptr_t>(g_fxcut_owner, 0xC0), e = at<uintptr_t>(g_fxcut_owner, 0xC4);
-    uint8_t* ent = (uint8_t*)b + g_fxcut_entry * 0x3C;
-    if (H->time_seconds() - g_fxcut_at > 10 || (uintptr_t)ent + 0x3C > e) {
-        H->log(M, SK_WARN, "game fixes: tests: the planted model effect went away (BUG-0575)");
+    }
+    if (g_fxcut_stage != 2 || owner != g_fxcut_owner)
+        return;
+    uint8_t* ent = fxcut_entry(owner, g_fxcut_entry);
+    uint8_t* fx = ent ? (uint8_t*)at<uintptr_t>(ent, 0x38) : nullptr;
+    if (!fx || *(const uintptr_t*)fx != g_fx_vt) {
         g_fxcut_stage = 0;
         return;
     }
-    uint8_t* fx = (uint8_t*)at<uintptr_t>(ent, 0x38);
-    if (!fx || *(const uintptr_t*)fx != g_fx_vt)
-        return;
     if (skg::vcall<bool>(fx, 0x10 / 4)) // still fading out
         return;
     g_fxcut_vt[0] = 0; // all nulls
@@ -879,15 +842,51 @@ static void fxcut_frame()
     *(uint32_t*)(fx + 0x144) = (uint32_t)(uintptr_t)g_fxcut_comp;
     *(uint32_t*)(fx + 0x148) = (uint32_t)(uintptr_t)g_fxcut_comp + 0x5C;
     g_fxcut_fx = fx;
-    *(uint32_t*)(ent + 0xC) = g_fxcut_thr; // back in range: the next check starts it
+    *(uint32_t*)(ent + 0xC) = g_fxcut_thr; // back in range: this check starts it
     g_fxcut_stage = 0;
-    H->log(M, SK_WARN, "game fixes: tests: model %p effect %p is stopped and has a freed part now (BUG-0575)", g_fxcut_owner, fx);
+    g_fxcut_planted++;
+    H->log(M, SK_WARN, "game fixes: tests: model %p effect %p is stopped and has a freed part now: the range check starts it (BUG-0575)",
+           owner, fx);
 }
 
-static int c_fxcut(void*, int argc, const char* const* argv, SkOut* out)
+static void __fastcall fx_dist_guard(void* owner, void*)
 {
-    void* want = argc > 1 ? (void*)strtoul(argv[1], nullptr, 16) : nullptr;
-    H->out_printf(out, "%s", fxcut_arm(want).c_str());
+    if (g_fxcut_stage)
+        fxcut_step(owner);
+    model_fx_scrub(owner, "the camera range check");
+    g_fx_dist_orig(owner);
+}
+
+static void __fastcall fx_xf_guard(void* owner, void*, void* xf)
+{
+    model_fx_scrub(owner, "its move");
+    g_fx_xf_orig(owner, xf);
+}
+
+static void fxcut_frame()
+{
+    if (g_fxcut_stage && H->time_seconds() - g_fxcut_at > 20) {
+        if (g_fxcut_stage == 2)
+            if (uint8_t* ent = fxcut_entry(g_fxcut_owner, g_fxcut_entry))
+                *(uint32_t*)(ent + 0xC) = g_fxcut_thr;
+        H->log(M, SK_WARN, "game fixes: tests: no model effect was planted in 20 s (stage %d, BUG-0575)", g_fxcut_stage);
+        g_fxcut_stage = 0;
+    }
+}
+
+static std::string fxcut_arm()
+{
+    if (!g_fx_dist_orig || !g_fx_vt)
+        return "no model effect guard\n";
+    g_fxcut_stage = 1;
+    g_fxcut_at = H->time_seconds();
+    return "armed: the next model with a running attached effect gets a freed part (" + std::to_string(g_fxcut_planted) +
+           " planted so far)\n";
+}
+
+static int c_fxcut(void*, int, const char* const*, SkOut* out)
+{
+    H->out_printf(out, "%s", fxcut_arm().c_str());
     return 0;
 }
 
@@ -955,7 +954,7 @@ using TakeFruitFn = void*(__thiscall*)(void*);
 static TakeFruitFn g_take_fruit_orig;
 static bool g_fruit_pool_fix = true;
 COOP_FIX("game.fruit_pool", "BUG-0584", g_fruit_pool_fix,
-         "gamefixes: a freed fruit left in the plants' fruit pool is taken out before a fruit falls (a host faulted at 0xB097C2)");
+         "gamefixes: a freed fruit, or a free one the take would free, leaves the plants' fruit pool before a fruit falls (a host faulted at 0xB097C2)");
 static std::atomic<unsigned> g_fruit_dropped{0};
 static uintptr_t g_fruit_vt;
 static uintptr_t g_fake_fruit_vt[16];        // tests (coop.fruitcut): a freed fruit's memory: a vtable of nulls
@@ -971,7 +970,9 @@ static unsigned fruit_vec_scrub(uint8_t* flora, size_t off)
         return 0;
     unsigned n = 0;
     for (uintptr_t* p = b; p < e;) {
-        if (heap_ptr(*p) && *(const uintptr_t*)*p == g_fruit_vt) {
+        // a free fruit whose only reference is the pool's is freed by the take's pop (it releases the pool's
+        // reference and its own): it leaves the pool without a Release (kept alive, a few hundred bytes lost)
+        if (heap_ptr(*p) && *(const uintptr_t*)*p == g_fruit_vt && (off != kFreeFruit || at<uint32_t>((void*)*p, 8) > 1)) {
             p++;
             continue;
         }
@@ -1021,6 +1022,32 @@ static std::string fruitcut_arm()
     }
     g_fruitcut_at = H->time_seconds();
     return buf;
+}
+
+// coop.fruitpool: the plants' free and loose fruit (pointer, vtable ok, references +0x8, flags +0x148, state +0x16C)
+static int c_fruitpool(void*, int, const char* const*, SkOut* out)
+{
+    static uintptr_t flora_get = H->sym("SporeCoop::Flora_Get");
+    uint8_t* fl = flora_get ? ((uint8_t*(__cdecl*)())flora_get)() : nullptr;
+    if (!fl) {
+        H->out_printf(out, "no flora\n");
+        return 1;
+    }
+    for (size_t off : {kFreeFruit, kLooseFruit}) {
+        uintptr_t* b = at<uintptr_t*>(fl, off);
+        uintptr_t* e = at<uintptr_t*>(fl, off + 4);
+        H->out_printf(out, "%s %d:", off == kFreeFruit ? "free" : "loose", b && e >= b ? (int)(e - b) : -1);
+        for (uintptr_t* p = b; p && p < e && p - b < 64; p++) {
+            bool ok = heap_ptr(*p) && *(const uintptr_t*)*p == g_fruit_vt;
+            if (ok)
+                H->out_printf(out, " %08X/r%u/f%X/s%u", (unsigned)*p, at<uint32_t>((void*)*p, 8), at<uint32_t>((void*)*p, 0x148),
+                              at<uint32_t>((void*)*p, 0x16C));
+            else
+                H->out_printf(out, " %08X/bad", (unsigned)*p);
+        }
+        H->out_printf(out, "\n");
+    }
+    return 0;
 }
 
 static int c_fruitcut(void*, int, const char* const*, SkOut* out)
@@ -1259,8 +1286,10 @@ void init(const SkHost* host, SkMod* mod)
     H->log(M, SK_INFO, "game fixes: fruit pool guard %s", fruit ? "on" : "off");
     H->command_add(M, "coop.fxlist", "coop.fxlist [creature] - a creature's attached effects (BUG-0575)", c_fxlist, nullptr,
                    SK_CMD_MAIN_THREAD);
-    H->command_add(M, "coop.fxcut", "coop.fxcut [creature] - tests (BUG-0575): a running attached effect of a creature is stopped and gets a freed part",
+    H->command_add(M, "coop.fxcut", "coop.fxcut - tests (BUG-0575): the next model with a running attached effect has it stopped and given a freed part",
                    c_fxcut, nullptr, SK_CMD_MAIN_THREAD);
+    H->command_add(M, "coop.fruitpool", "coop.fruitpool - the plants' free and loose fruit: references, flags, state (BUG-0584)",
+                   c_fruitpool, nullptr, SK_CMD_MAIN_THREAD);
     H->command_add(M, "coop.fruitcut", "coop.fruitcut - tests (BUG-0584): the last free fruit of the plants' pool is freed memory",
                    c_fruitcut, nullptr, SK_CMD_MAIN_THREAD);
 }
@@ -1292,7 +1321,7 @@ std::string status()
            std::to_string(g_spot_cuts) + (g_spot_cut_test ? ", armed" : "") + ")" +
            ", ship models defaulted " + std::to_string(g_ufo_defaulted.load()) + " (SetVisible without a model skipped " +
            std::to_string(g_ufo_invisible_skipped.load()) + ")" + ", broken model effects dropped " +
-           std::to_string(g_model_fx_dropped.load()) + " (tests " + std::to_string(g_fxcut_done) + ")" +
+           std::to_string(g_model_fx_dropped.load()) + " (tests: planted " + std::to_string(g_fxcut_planted) + ", dropped " + std::to_string(g_fxcut_done) + ")" +
            ", freed fruit taken out of the pool " + std::to_string(g_fruit_dropped.load()) + "\n";
 }
 

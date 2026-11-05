@@ -42,65 +42,80 @@ def frames_go_on(con, secs=3):
     return twoinst.host_frame(con) > f0 + 10
 
 
+def fx_tests(con):
+    m = re.search(r'broken model effects dropped (\d+) \(tests: planted (\d+), dropped (\d+)\)', con.call('coop.status')['out'])
+    return tuple(map(int, m.groups())) if m else None
+
+
 def model_fx(host, guest, ck):
-    out = guest.call('coop.fxlist all')['out'].strip()
-    print('  guest creatures with attached effects:', out.replace('\n', ' | ')[:900], flush=True)
-    r = ''
-    for _ in range(20):  # a creature's effects run once the camera sees it
-        r = guest.call('coop.fxcut')['out'].strip()
-        if r.startswith('armed'):
-            break
-        time.sleep(1.5)
-    print('  guest:', r, flush=True)
-    if not ck(r.startswith('armed'), 'one of the guest\'s creatures has a running attached effect (the test state is made)'):
-        return
-    c = re.search(r'creature (\S+)', r).group(1)
+    print('  guest:', guest.call('coop.fxcut')['out'].strip(), flush=True)
     t0 = time.time()
-    dropped = 0
-    while time.time() - t0 < 15:
-        dropped = status_num(guest, r'broken model effects dropped \d+ \(tests (\d+)\)')
-        if dropped > 0 or faults(guest) > 0:
+    st = None
+    while time.time() - t0 < 25:
+        st = fx_tests(guest)
+        if (st and st[1] > 0 and (st[2] > 0 or time.time() - t0 > 20)) or faults(guest) > 0:
             break
         time.sleep(1)
-    print('  guest:', guest.call(f'coop.fxlist {c}')['out'].strip().replace('\n', ' | ')[:600], flush=True)
-    ck(dropped > 0, f'the guard dropped the effect with the freed part before the game started it ({dropped})')
+    time.sleep(2)  # the game's next range checks of that model
+    st = fx_tests(guest)
+    print(f'  guest model effect guard (dropped, test planted, test dropped): {st}, faults {faults(guest)}', flush=True)
+    if not ck(st and st[1] > 0, 'a model of the guest\'s game had a running attached effect: it was stopped and got a freed part (the test state)'):
+        return
+    ck(st[2] > 0, f'the guard dropped the effect with the freed part before the game started it ({st})')
     ck(frames_go_on(guest), 'the guest keeps drawing')
 
 
-def fruit_pool(host, guest, ck):
+def pool(con):
+    out = con.call('coop.fruitpool')['out'].strip()
+    print('  ' + out.replace('\n', ' | ')[:700], flush=True)
+    return out
+
+
+def fruit_pool(host, guest, ck, plant):
     fr = [o for o in objs(host, 'fruit', 80) if o['st'] == 2]
     print('  host fruit on the ground:', [(o['id'], o['pos']) for o in fr][:6], flush=True)
-    if fr:  # an eaten fruit goes to the pool's free vector
-        print('  host:', host.call(f'coop.wobj eat {fr[0]["p"]}')['out'].strip(), flush=True)
-        time.sleep(2)
+    pool(host)
+    if not ck(fr, 'the host has a fruit on the ground'):
+        return
+    # the guest's "took fruit" request does this on the host (worldobj on_act -> cFruit_SetState 5)
+    print('  host:', host.call(f'coop.wobj eat {fr[0]["p"]}')['out'].strip(), f'(fruit {fr[0]["p"]})', flush=True)
+    time.sleep(2)
+    pool(host)
     trees = [o for o in objs(host, 'tree', 120) if o['st']]
     print('  host trees with fruit (mask):', [(o['p'], hex(o['st'])) for o in trees][:6], flush=True)
     if not ck(trees, 'the host has a tree with fruit near its avatar'):
         return
-    r = host.call('coop.fruitcut')['out'].strip()
-    print('  host:', r, flush=True)
-    if not ck(r.startswith('armed'), 'the host\'s fruit pool has a freed fruit now (the test state is made)'):
-        return
+    if plant:
+        r = host.call('coop.fruitcut')['out'].strip()
+        print('  host:', r, flush=True)
+        if not ck(r.startswith('armed'), 'the host\'s fruit pool has a freed fruit now (the test state is made)'):
+            return
     t = trees[0]
     slot = next(s for s in range(64) if t['st'] >> s & 1)
     print('  host:', host.call(f'coop.wobj drop {t["p"]} {slot}')['out'].strip(), f'(slot {slot})', flush=True)
     time.sleep(2)
-    dropped = status_num(host, r'freed fruit taken out of the pool (\d+)')
-    print(f'  host: freed fruit taken out {dropped}, faults {faults(host)}', flush=True)
-    ck(dropped > 0, f'the guard took the freed fruit out of the pool before the fall took it ({dropped})')
+    pool(host)
+    taken = status_num(host, r'freed fruit taken out of the pool (\d+)')
+    print(f'  host: fruit taken out of the pool by the guard {taken}, faults {faults(host)}', flush=True)
+    if plant:
+        ck(taken > 0, f'the guard took the freed fruit out of the pool before the fall took it ({taken})')
     after = [o for o in objs(host, 'tree', 120) if o['p'] == t['p']]
-    ck(after and not (after[0]['st'] >> slot & 1), 'the fruit fell from the tree all the same (its slot is empty)')
+    ck(after and not (after[0]['st'] >> slot & 1), 'the fruit fell from the tree (its slot is empty)')
     ck(frames_go_on(host), 'the host keeps drawing')
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--case', choices=('model_fx', 'fruit_pool'), required=True)
+    ap.add_argument('--plant', action='store_true', help='fruit_pool: a freed fruit is planted as the last free one')
     a = ap.parse_args()
     host, guest = start('tribe' if a.case == 'model_fx' else 'creature')
     ck = Checks()
     time.sleep(8)
-    {'model_fx': model_fx, 'fruit_pool': fruit_pool}[a.case](host, guest, ck)
+    if a.case == 'model_fx':
+        model_fx(host, guest, ck)
+    else:
+        fruit_pool(host, guest, ck, a.plant)
     ck.faults(host=host, guest=guest)
     return ck.result()
 
