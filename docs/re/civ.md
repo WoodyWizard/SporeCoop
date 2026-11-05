@@ -1170,3 +1170,33 @@ GOG 2024 addresses (dc04aee5).
   camera (coop_civ_citizen_lod, lab 20261104-130500): level of detail, as in Space; the detector skips a city whose
   citizens only one game has (BUG-0526).
 
+
+## A captured city's buildings, the nations' relations and money on a guest (2026-11-05, fix/w44-world-state2)
+<a id="civ-wsync-owners"></a>
+
+BUG-0593. GOG 2024, Ghidra (tools/ghidra/q.sh --build 2024) and lab lane 7 (civ_npc fixture, coop_wsync_civ.py).
+
+* ✔ `cCity::Capture` 0xBE9430 sets the city's flags **+0x2E0..+0x2E6 to 1** before it calls `ChangeOwner`
+  0xBE8A20 (directly when the captor is no player civ or `+0x762` / arg 4 is set; else after its caption cinematic
+  CVG_Capture). ChangeOwner acts on the flags: **+0x2E2** -> `City_SetPartsOwner` 0xBE4C80 (thiscall(city, newCiv)
+  ret 4: SetPoliticalID vt 0x48 of every building +0x340, turret +0x354 and +0x308 part, the new owner's building
+  models from its culture set (0xBE4B60: 0x99E92F05 City Hall, 0x4E3F7777, 0x47C10953, 0x72C49181), an update
+  request 0xBD1C00(1)); +0x2E3 -> 0xBD91B0 (the new owner's colour, a view effect); +0x2E1 the capture
+  cinematic; +0x2E6 -> 0xBDB200 (an effect at the City Hall). It also asks the relationship manager (0xD00BD0, a
+  level query) and, in Space, 0xBD9130.
+* ✔ (observed, lab 20261105-122815 with the fix off) A guest gets a capture from MSG_CIV_STATE and calls
+  `ChangeOwner(city, pol, 0, 0)` itself (civ.cpp guest_cities) with the flags 0: the city became the player's, its
+  three buildings kept the NPC's political id 000021CB (the detector's `planet_owner:building_*` rows of the 0.7.7
+  final check, campaign_space). Fixed by the wsync row `city_owner` (wsync.city_owner): a guest's city whose
+  buildings or turrets have another owner than the city gets them through City_SetPartsOwner (not while the open
+  city planner holds the city, BUG-0493).
+* ✔ The nations' feelings about the player civilization (`CalculateRelationship(civ, playerCiv)`, the same manager
+  as Tribe) change on the host by its game's events (a capture: -1.12 in the lab, the guest's own ChangeOwner gave
+  the same -1.12 but none of the host's other events); a guest's never followed (0.7.7 final: 000021CB -3.21 on the
+  host, 3.00 on the guest). Row `civ_rel` (wsync.civ_rel): ApplyRelationship by the difference, as tribe_rel.
+* ✔ An NPC civilization's money (+0x98; GetMoney adds the NPC budgets +0x4AC / +0x4B0) moves with its own AI: 1500
+  added on the host was 0 again 25 s later (lab 20261105-122514). Row `civ_money` (wsync.civ_money): +0x98 written
+  (AddMoney applies the difficulty, SpendMoney refills an NPC's budget: no setter fits).
+* ~ civ_coop's `Civilization:state:money` row ("-800 on the host, 0 on the guest"): the test's `coop.civ build`
+  on the host spends without the game's price check (the host's wealth went 400 -> -800); a guest's shared total
+  is floored at 0 (res.floor, BUG-0106). Not a player's case (the game refuses a building it cannot pay); not changed.
