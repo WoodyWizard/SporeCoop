@@ -2654,3 +2654,27 @@ BUG-0532 (fixed). Follows #creature-puppet-look. Lane 6, puppet_air (`coop_puppe
   `regrounded update= anim= idle= bt= low=` (the call after which it was found grounded).
 * ~ The hooks on PlayAnimation / CreaturePlayAnim / the idle refresh alone (without 0xA0C5D0) left 1 step in 3 runs
   (lab 20261104-115008 #3): the locomotion starts its walk start / fall -> idle through the low start only.
+
+## The drama UFO and the partner's puppet (2026-11-04, fix/w43-transitions)
+<a id="creature-ufo-puppet"></a>
+
+BUG-0558. GOG 2024, Ghidra; the players' logs (0.7.5). Follows #creature-drama-events.
+
+* ✔ (logs) The host's game started its UFO event ("drama: ufo event starts (host or alone)"); the guest's game
+  refused its own five times (`creature.guest_events`, BUG-0486); nothing is sent for it. The host's screenshot shows
+  the ship and its blue beam light; the guest's (same session second, same place on the minimap) no ship.
+* ✔ (Ghidra) The event's start 0xD4F8A0 places the ship over the own avatar (Creature) or the player tribe (Tribe)
+  with `UFOAbductionEvent_SpawnUFO` and posts **`SporeCoop::BT_PostStimulus(2, 0, duration, 0)`**: the creatures'
+  behaviour trees get stimulus 2 for the event's duration. The ship takes its target through the space tool
+  `cAbductToolStrategy` (0x1052920, the same tool as the player's abduct in Space); its hit 0x10323E0 (vtable
+  0x1499780 slot) on a creature (cast 0xCE9F6639) plays 0x3CC7EAB / 0x3CC7EB4 and gives it a
+  `cAbductionBeamLocomotion` (0x1030E90) that lifts it to the ship.
+* ✔ (inferred from the code and the report) the partner's puppet is a creature of the host's game near the host's
+  avatar, so the host's ship can take it: the beam's locomotion lifts it, but the mod places the puppet at the
+  partner's position every frame (game::place), so it never rises: "the ship tries to pick up my guest but cannot".
+  The guest's game has no ship (its own event is refused, the host's is not relayed).
+* ~ Fix not done (T1, 0.7.7): either the host's ship never takes a puppet (a check in the tool's target pick or its
+  hit 0x10323E0 scoped to puppets: the target pick is not found yet, the hit only gives the locomotion) or the
+  visit is relayed: the guest's game starts its own event when the host's starts (its ship then picks in the guest's
+  world: its mirrors, the BUG-0486 problem) and an abduction of a partner is played on the partner's own avatar.
+  Both need the ship's target choice found first.

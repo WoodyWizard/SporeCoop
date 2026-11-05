@@ -1908,3 +1908,31 @@ Player reports 2026-11-04 (0.7.5, Discord bug-reports; not analysed yet):
 - BUG-0577: After a rejoin the game shows the Cell and Creature stages as not done yet (stage progress lost)
 - BUG-0578: Crash at Graphics::cModelWorld::FinishBackgroundLoad+0x2735 on 0.7.3.6 (3010a413, mode none)
 - BUG-0579: Tribe: day and night differ: the guest's world is at night while the host's is in daylight
+
+## Creature: the host's drama UFO tries to take the guest's creature, the guest sees no ship (2026-11-04, player report 0.7.5)
+<a id="issue-ufo-puppet"></a>
+
+* What happens: in Creature the host's game starts its UFO visit (Drama Manager event kind 2); its ship beams at the
+  guest's creature in the host's game, which does not rise; the guest's game shows no ship.
+* Reproduce: creature fixture, `coop.drama start 2` on the host next to the guest's creature (lab: not run with a
+  partner nearby yet).
+* Known: docs/re/creature.md#creature-ufo-puppet (the start posts BT stimulus 2, the abduct tool's hit 0x10323E0
+  gives a beam locomotion; the puppet is placed every frame by the mod). The guest's own event is held back on
+  purpose (BUG-0486).
+* Not checked: how the ship picks its creature; what the game does with an abducted avatar.
+* Next steps: find the target pick of cAbductToolStrategy, keep puppets out of it on the host, or relay the visit.
+* Ticket: BUG-0558
+
+## Tribe: a guest's game crashes in a model's effect list after a camera jump (2026-11-04, player report 0.7.5)
+<a id="issue-tribe-effect-list-crash"></a>
+
+* What happens: the guest's game crashed (0xC0000005 at GOG 2024 0xA826F3) right after a double-click on the home
+  icon in Tribe, after it had given members to the host.
+* Reproduce: not reproduced (step 0: 8 gifts and the HUD's home button, which did not move the lab camera).
+* Known: docs/re/tribe.md#tribe-model-effects-crash; the crash's own frames (GOG 2024): 0xC88F20+0x14,
+  QuaternionToMatrix, 0xC8ABF0+0xD4 (the model's attached-effect loop), 0xE8C100 and the view update 0xE8E5B0
+  (+0x23, +0x495), 0xC69BA0, 0xE8CD10: an object view brought into the camera's range starts its model's effects,
+  one of which has a freed component.
+* Not checked: which object's model (a mirror given to the host, an effect the relay attached).
+* Next steps: a test that gives members and jumps the camera with the minimap's house icon (55, 918) double-click.
+* Ticket: BUG-0575

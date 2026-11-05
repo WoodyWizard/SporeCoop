@@ -47,7 +47,7 @@ int c_save(void*, int argc, const char* const* argv, SkOut* out)
 // tests (BUG-0313, BUG-0576): every pause reason the game counts now. cGameTimeManager: +0x48 flags (bit 0 paused),
 // +0x4C a map reason -> index (EASTL rbtree, anchor +0x50: right +0, left +4, parent +8; node key +0x10, index
 // +0x14), +0x68 an array of 8-byte rows, the count first (Pause 0xB32330 / Resume 0xB32360 add / remove one;
-// docs/re/creature.md#creature-game-time-pauses)
+// docs/re/tribe.md#tribe-game-time-pauses)
 static void pause_walk(const uint8_t* n, const uint8_t* anchor, const uint8_t* arr, std::string& out, int depth)
 {
     if (!n || n == anchor || depth > 64 || !skg::readable(n, 0x18))

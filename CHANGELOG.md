@@ -13,6 +13,10 @@
 - Cell: the host's editor after the evolution vote shows the DNA the stage earned instead of 100, and no longer gives
   DNA again on every visit; a guest's Cell DNA counts what the host's editor spent (BUG-0560).
 - A guest's game shows the stages the host's game has done (BUG-0577).
+- Tribe -> Civilization: after the evolution vote at the end of Tribe the host's City Hall editor (and then the
+  vehicle editor) opens at once instead of after a minute or more on a black screen (BUG-0576).
+- Tribe -> Civilization: the host's game no longer freezes in the vehicle editor when a guest's tribe gathers or
+  eats food meanwhile (BUG-0585).
 
 ## [0.7.6] - 2026-11-04
 

@@ -393,3 +393,4 @@ Pollinator::cAchievementsManager::AddProgress=0x00676E50 ; verified thiscall(mgr
 Simulator::Cell::GetCellModelData=0x00E679E0 ; likely cdecl u8*(ResourceKey modelKey by value, 3 dwords; only the instance [esp+4] is used) plain ret: the cell model data of a model key from the map at *(0x16B3C04)+0x70, built on first use (0xE67940 / 0xE83E30); +0x1250 carnivore, +0x1251 herbivore (CanEat 0xE68470 reads both; disassembly 2026-10-29, fix/w7-eat). Same address in GOG 2016 and GOG 2024
 Simulator::cToolManager::Get=0x00B3D460 ; likely cdecl () -> cToolManager* (gog2016 sym, high); BUG-0477
 Simulator::cVehicle::TakeDamage=0x00CAB6D0 ; likely thiscall(vehicle+0x508, float, uint32, int, const Vector3*, cCombatant*) ret 0x14: combatant vt[6] (docs/re/civ.md section 3); BUG-0477
+Simulator::cGameTimeManager::GetPauseCount=0x00B321B0 ; likely port of GOG 2024 0xB321E0 (gog2016 ModAPI name, high): thiscall int(tm, uint32 reason) ret 4 (BUG-0576, not checked on GOG 2016)
