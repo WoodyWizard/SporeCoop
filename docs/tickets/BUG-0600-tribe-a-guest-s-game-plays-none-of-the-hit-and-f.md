@@ -10,7 +10,7 @@ role: guest
 versions: 
 fixed_in: unreleased
 branch: fix/w44-guest-player3
-commits:
+commits: 625e1260
 tests: tribe_fight_sounds
 signature:
 docs: docs/re/tribe.md#tribe-mirror-fx

@@ -2909,3 +2909,27 @@ knows; the receiver puts it on its own ground in the first case and at the sende
   the avatar as given (1: SetPosition).
 * ? Why a creature under the brain-upgrade caption was 0.7 m under (BUG-0504) is still not known; the same fix puts it
   back (the caption pauses the game time; not run under a caption).
+
+## The sea monster at runtime: a death cinematic of the drowning player's game (2026-11-05, fix/w44-guest-player3)
+<a id="creature-sea-monster-runtime"></a>
+
+BUG-0465 (not fixed). GOG 2024, lab lane 5, creature fixture; follows #creature-sea-monster and #creature-drama-events.
+* ✔ (Ghidra) cSeaMonsterEvent (kind 6; factory 0xD4D450, 0x74 bytes, ctor 0xD4C430, vtables 0x147B2B0 / 0x147B058):
+  vt+0x38 "can start" 0xD4C5F0 = the avatar is over water deeper than its property 0x9388B444 (default 100) or,
+  on the planet's water map, its depth value > property 0x58D4CF9A; vt+0x30 start 0xD4C580 = avatar vt 0xEC, then
+  cCreatureModeStrategy action 0xD3353639 {avatar, 0, 9} and 0xD3CD70(0xD3353639): the caption cinematic 5E205931
+  ("Dangerous creatures lurk in the deep") first; vt+0x40 update is a no-op (0x1082A20).
+* ✔ (runtime, out/lab/20261105-140627, probe: the host's avatar put at the water surface 499.4 m where the floor is
+  under 488 m) `drama: sea_monster event starts` 4 s after the put; the host's game then plays the death cinematic
+  with the monster (a green crocodile-like head with yellow spikes rising out of the water, mouth open, the camera
+  on it: shot kraken_host_2.png), and 8-10 s later the avatar hatches at its nest (hp 10 -> 5, the death's
+  penalty). `coop.drama start 6` without deep water shows only the caption (out/lab/20261105-140146).
+* ✔ The guest's game at the same time: its own camera at its own nest, no event, no new object, no effect
+  (`coop.effects log`); the host's puppet just dies there (PF_DEAD). The monster exists in the cinematic of the dying
+  player's game only.
+* ✔ Negative: the six world effects the host's game made during the cinematic (0x2F49E706, 0xAECAF472, 0x8B61750F
+  from 0x6A254B; 0x8A71529C, 0xB3965D1D from 0x932EBE; 0x7484A8E4), each played alone at the avatar
+  (`coop.effects load 1 60000 <id>`, out/lab/20261105-140852), are splashes, light and hearts, not the monster:
+  ~ inferred, the monster is a cinematic actor (a model of CRG_AvatarDied_SeaMonster's data), not an effect.
+* Not done: showing it on the partner's game needs that actor (the cinematic's model and animation) at the puppet
+  without the cinematic's camera; the cinematic's data (its actors) was not read.
