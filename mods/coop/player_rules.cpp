@@ -39,6 +39,8 @@ static bool is_guest() { return C.sess && C.sess->role() == net::Role::Client &&
 static bool g_stun_fix = true;
 COOP_FIX("creature.stun_relay", "BUG-0554", g_stun_fix, "creature: a charge's stun reaches the stunned player's own creature and the host's NPC");
 
+static bool g_air_hit_fwd(); // BUG-0555 (below)
+static void* g_hit_attacker_fwd(); // the attacker of the ability hit running now (CreatureAttackTarget), or null
 typedef void(SK_THISCALL* Stun_t)(void*, float);
 static Stun_t o_Stun;
 static uint32_t g_stun_sent_player, g_stun_sent_npc, g_stun_got_player, g_stun_got_npc, g_stun_bad;
@@ -59,6 +61,8 @@ static void SK_THISCALL h_Stun(void* c, float secs)
     if (g_stun_fix && game::in_creature_stage() && std::isfinite(secs) && secs > 0) {
         if (is_host()) {
             uint8_t p = puppet_player(c);
+            if (p != 0xFF && g_air_hit_fwd())
+                return; // BUG-0555: no stun from a hit the partner's creature in the air does not take
             if (p != 0xFF) { // the partner's creature: its own game stuns it (its puppet mirrors it, no AI here)
                 net::Writer w;
                 w.u8(K_STUN_PLAYER);
@@ -71,6 +75,11 @@ static void SK_THISCALL h_Stun(void* c, float secs)
             }
         } else if (is_guest()) {
             uint16_t id = npc::is_proxy(c) ? npc::id_of(c) : 0xFFFF;
+            // only the own creature's hit is the guest's to send: a partner's puppet plays its abilities in this game
+            // too (the animation relay), its stun of a proxy is the partner's game's (lab 20261104-212957: got_npc=1 on
+            // the host with no charge of the guest)
+            if (id != 0xFFFF && g_hit_attacker_fwd() != game::avatar())
+                return; // a proxy has no AI: nothing here to stun
             if (id != 0xFFFF) { // a host NPC's mirror: the host's game stuns the NPC
                 net::Writer w;
                 w.u8(K_STUN_NPC);
@@ -94,17 +103,33 @@ static void SK_THISCALL h_Stun(void* c, float secs)
 // it is airborne (PF_JUMPING) and the game sets +0x137 back to 1 at every animation start (BUG-0532): an attack
 // chosen in such a frame, or before the take-off, landed on a guest that glides in its own game. Now the host
 // answers the rule at the hit for a puppet: while its player is airborne, a hit of a melee ability (bite, charge,
-// strike) from an NPC more than 1 m away is dropped, as the attack node would not have chosen it.
+// strike) from an NPC more than 1 m away carries no damage and no stun to the partner, as the attack node would not
+// have chosen it.
 // `coop.fix creature.air_immune off`: every hit on the puppet lands (0.7.6).
 static bool g_air_fix = true;
 COOP_FIX("creature.air_immune", "BUG-0555", g_air_fix, "creature: NPCs cannot bite or charge a player whose creature is in the air");
 typedef bool(SK_THISCALL* AttackTarget_t)(void*, void*, uint32_t, uint32_t);
 static AttackTarget_t o_AttackTarget;
 static uint32_t g_air_dropped, g_air_passed;
+static bool g_air_hit = false; // inside a melee hit on an airborne partner's puppet (its damage and stun stay here)
 
 static bool ranged_type(uint32_t t) { return t == 0x20 || t == 0x3D || t == 0x42 || t == 0x48; }
 
+static void* g_hit_attacker = nullptr;
+static void* g_hit_attacker_fwd() { return g_hit_attacker; }
+
+static bool hit_body(void* attacker, void* target, uint32_t idx, uint32_t a4);
+
 static bool SK_THISCALL h_AttackTarget(void* attacker, void* target, uint32_t idx, uint32_t a4)
+{
+    void* was = g_hit_attacker;
+    g_hit_attacker = attacker;
+    bool r = hit_body(attacker, target, idx, a4);
+    g_hit_attacker = was;
+    return r;
+}
+
+static bool hit_body(void* attacker, void* target, uint32_t idx, uint32_t a4)
 {
     if (g_air_fix && target && attacker && is_host() && C.airborne && game::in_creature_stage()) {
         void* victim = (uint8_t*)target - game::kCombatOff;
@@ -115,14 +140,23 @@ static bool SK_THISCALL h_AttackTarget(void* attacker, void* target, uint32_t id
             uint32_t type = ab && skg::readable(ab, 0xC) ? *(uint32_t*)(ab + 8) : 0;
             float d = net::dist(game::position(attacker), game::position(victim));
             if (!ranged_type(type) && d >= 1.f) {
+                // the game's hit runs (it ends a charge: dropping the call left a charging NPC flying on towards the
+                // puppet in the air, 82 m up, lab 20261104-212957), only its damage and stun are not carried to the
+                // partner (npc.cpp damage_filter, h_Stun): the attack node would not have picked it
                 g_air_dropped++;
-                return false; // no hit, no effect (stun, push): the attack node would not have picked it
+                g_air_hit = true;
+                bool r = o_AttackTarget(attacker, target, idx, a4);
+                g_air_hit = false;
+                return r;
             }
             g_air_passed++;
         }
     }
     return o_AttackTarget(attacker, target, idx, a4);
 }
+
+bool air_hit_now() { return g_air_hit; }
+static bool g_air_hit_fwd() { return g_air_hit; }
 
 // ---------------------------------------------------------------- BUG-0556
 // The host's Summon Flock (ability 0x33 -> the drama event cSummonCreatureEvent, start 0xD50EA0) makes a herd and
@@ -217,7 +251,11 @@ static int c_rules(void*, int argc, const char* const* argv, SkOut* out)
             H->out_printf(out, "no creature\n");
             return 1;
         }
+        // as the own creature's ability hit calls it (the hit's attacker is the avatar)
+        void* was = g_hit_attacker;
+        g_hit_attacker = game::avatar();
         skg::thiscall<void>(a, c, (float)atof(argv[2]));
+        g_hit_attacker = was;
         H->out_printf(out, "stun called on %p\n", c);
         return 0;
     }

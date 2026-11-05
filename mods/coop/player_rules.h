@@ -9,7 +9,8 @@
 //     counter of a charge): host: on a partner's puppet -> MSG_PLAYER_RULE kind 0 to that partner, its game
 //     stuns its own avatar (BUG-0554); guest: on a proxy -> kind 1 to the host, the host stuns its NPC.
 //   * flight (the attack node 0xD666B0 picks no melee ability against a creature in the air): host: a melee hit
-//     (CreatureAttackTarget vt 0xB8 = 0xC02B40) on a puppet whose player is airborne is dropped (BUG-0555).
+//     (CreatureAttackTarget vt 0xB8 = 0xC02B40) on a puppet whose player is airborne carries no damage / stun to
+//     the partner (BUG-0555).
 //
 // The predicates "is the player / the player's species" are answered for the partners in creature_hp.cpp
 // (IsPlayerSpecies vt 0xD0, scoped to GetRelationship / CreatureSocialMode, BUG-0462); the list of the game's
@@ -35,5 +36,6 @@ struct Ctx {
 void init(const SkHost* host, SkMod* mod, Ctx ctx);
 void on_message(uint8_t type, uint8_t from, net::Reader& r); // MSG_PLAYER_RULE
 std::string status();
+bool air_hit_now(); // host: inside a melee hit on an airborne partner's puppet: carry no damage to the partner (BUG-0555)
 
 } // namespace player_rules

@@ -1,4 +1,5 @@
 #include "npc.h"
+#include "player_rules.h"
 #include "view_centres.h"
 #include "modes.h"
 #include "tribe.h"
@@ -2091,6 +2092,12 @@ bool damage_filter(void* c, float& damage, int type, void* attacker)
             return true;
         }
         // a guest's puppet was hit: forward real NPC hits to that guest
+        if (player_rules::air_hit_now()) { // BUG-0555: a melee hit the partner's creature in the air does not take
+            for (auto& p : C.sess->players())
+                if (p.id != 0 && C.puppet_of(p.id) == c)
+                    log_hit(p.id, attacker, 0, "dropped (creature.air_immune)");
+            return false;
+        }
         if (creature_hp::drop_party_hit(attacker)) { // BUG-0374: never from the host's pack / family
             for (auto& p : C.sess->players())
                 if (p.id != 0 && C.puppet_of(p.id) == c)
