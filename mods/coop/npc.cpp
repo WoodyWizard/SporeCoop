@@ -163,6 +163,7 @@ struct Proxy {
     float health = 0, max_health = 0;
     bool killed = false;
     bool host_pack = false; // BUG-0556: the host's NPC is in the host's pack (NF_PACK of its latest state)
+    bool flock_fx = false;  // BUG-0556: the summoned flock's hearts effect started on the proxy
     int fail = 0; // 1 species, 2 herd, 3 create
     bool nospecies_said = false; // BUG-0300 diagnostics: logged once
     bool kinematic = false;      // BUG-0281: placed on the host's path this frame
@@ -233,6 +234,13 @@ void set_enabled(bool on) { g_enabled = on; }
 bool enabled() { return g_enabled; }
 
 // called from inside the game's creature update loop: keep it cheap
+// BUG-0556: the guest's proxies of a host's summoned flock show the event's hearts as the host's do
+// (`coop.fix npc.flock_hearts off`: no hearts on the guest, 0.7.6)
+static bool g_flock_fx_fix = true;
+COOP_FIX("npc.flock_hearts", "BUG-0556", g_flock_fx_fix, "creature: the host's summoned flock shows its hearts on the guest's screen too");
+static constexpr uint32_t kFlockFx = 0x6A17B05A;
+static uintptr_t a_StartFx2, a_StopFx;
+
 static bool update_filter(void* c)
 {
     if (!g_enabled || !is_guest() || !npc_stage())
@@ -396,6 +404,8 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
     C = ctx;
     game::set_update_filter(update_filter);
     game::set_ai_target_picker(ai_target);
+    a_StartFx2 = H->sym("Simulator::cCreatureBase::StartOrStopEffectFromPool2");
+    a_StopFx = H->sym("Simulator::cCreatureBase::StopEffectFromPools");
     game::set_behaviour_anim_listener(on_behaviour_anim); // BUG-0464
     fields::add_kind({fields::K_NPC, "npc", &g_scale_fix, kNpcFields, 1, npc_each, npc_mirror, nullptr}); // BUG-0461
     H->command_add(M, "coop.npctrack", "coop.npctrack start [radius m]|stop|count|dump [from] [n]|walk <id> x y z <m/s> - every frame: the guest's NPC proxies (tests, BUG-0361)",
@@ -607,7 +617,10 @@ static net::NpcState host_state(uint16_t id, void* c)
     s.vel = game::velocity(c);
     s.health = game::health(c);
     s.flags = (game::is_dead(c) ? net::NF_DEAD : 0) | (game::impressed(c) ? net::NF_IMPRESSED : 0) |
-              (game::pack_member(c) ? net::NF_PACK : 0); // BUG-0556: the host's pack (a Summon Flock) is the party's
+              (game::pack_member(c) ? net::NF_PACK : 0) | // BUG-0556: the host's pack (a Summon Flock) is the party's
+              (game::herd_of(c) && skg::readable(game::herd_of(c), 0x194) && skg::field<uint8_t>(game::herd_of(c), 0x192)
+                   ? net::NF_SUMMONED
+                   : 0);
     return s;
 }
 
@@ -1545,6 +1558,15 @@ static void guest_tick(double now)
         if (!px.killed) // the host's NPC was impressed (by anybody): the proxy shows it too
             game::set_impressed(px.c, (s.flags & net::NF_IMPRESSED) != 0);
         px.host_pack = (s.flags & net::NF_PACK) != 0;
+        // BUG-0556: a summoned flock's member wears the event's hearts (cSummonCreatureEvent update 0xD512A0)
+        bool summoned = g_flock_fx_fix && !px.killed && (s.flags & net::NF_SUMMONED);
+        if (summoned != px.flock_fx && a_StartFx2 && a_StopFx) {
+            if (summoned)
+                skg::thiscall<void*>(a_StartFx2, px.c, 1, kFlockFx, kFlockFx);
+            else
+                skg::thiscall<void>(a_StopFx, px.c, kFlockFx, 0);
+            px.flock_fx = summoned;
+        }
         ntrack_row(id, px, s, drawn, px.killed ? 2 : walked ? 3 : placed ? 1 : 0, now, rv_rep);
     }
 }

@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <string>
 
 #include "fixes.h"
 #include "game.h"
@@ -246,13 +247,39 @@ static int c_rules(void*, int argc, const char* const* argv, SkOut* out)
         H->out_printf(out, "charge ability %d played: %d\n", idx, r);
         return 0;
     }
+    if (argc > 4 && !strcmp(argv[1], "nests")) { // tests (BUG-0561): herds of species <inst> <type> <group>: mbBestFriends
+        void* sp = game::species_by_key({(uint32_t)strtoul(argv[2], nullptr, 16), (uint32_t)strtoul(argv[3], nullptr, 16),
+                                         (uint32_t)strtoul(argv[4], nullptr, 16)});
+        struct Q {
+            void* sp;
+            std::string out;
+        } q{sp, ""};
+        if (sp)
+            game::for_each_object(
+                [](void* o, uint32_t noun, void* u) {
+                    auto* q = (Q*)u;
+                    if (noun == game::kHerdNoun && skg::readable(o, 0x194) && game::herd_species(o) == q->sp) {
+                        char b[96];
+                        snprintf(b, sizeof b, "herd %p nest=%p best_friends=%d\n", o, game::herd_nest(o),
+                                 (int)skg::field<uint8_t>(o, 0x191));
+                        q->out += b;
+                    }
+                    return true;
+                },
+                &q);
+        H->out_printf(out, "%s", q.out.empty() ? "no herds\n" : q.out.c_str());
+        return 0;
+    }
     if (argc > 2 && !strcmp(argv[1], "friendly")) { // tests: the game's vt 0xD4 of NPC / proxy <id> here
         void* c = is_host() ? npc::host_npc((uint16_t)atoi(argv[2])) : npc::proxy((uint16_t)atoi(argv[2]));
         if (!c) {
             H->out_printf(out, "no creature\n");
             return 1;
         }
-        H->out_printf(out, "friendly=%d pack=%d\n", (int)skg::vcall<bool>(c, 0xD4 / 4), (int)game::pack_member(c));
+        uintptr_t gfx = H->sym("Simulator::cCreatureBase::GetEffectFromPools");
+        void* hearts = gfx ? skg::thiscall<void*>(gfx, c, 0x6A17B05Au) : nullptr; // the summoned flock's hearts
+        H->out_printf(out, "friendly=%d pack=%d hearts=%d\n", (int)skg::vcall<bool>(c, 0xD4 / 4), (int)game::pack_member(c),
+                      (int)(hearts != nullptr));
         return 0;
     }
     H->out_printf(out, "%s", status().c_str());
