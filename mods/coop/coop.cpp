@@ -46,6 +46,7 @@
 #include "effects.h"
 #include "nest.h"
 #include "fields.h"
+#include "wsync.h"
 #include "worldobj.h"
 #include "parts.h"
 #include "rejoin.h"
@@ -994,7 +995,7 @@ static bool world_state_msg(uint8_t type)
            (type >= net::MSG_CELL_STATE && type <= net::MSG_CELL_FOOD) || type == net::MSG_CELL_KO ||
            type == net::MSG_CELL_BITTEN || type == net::MSG_TRIBE_STATE || type == net::MSG_TRIBE_CMD ||
            type == net::MSG_SPECIES || type == net::MSG_SOCIAL || type == net::MSG_NEST || type == net::MSG_PARTS ||
-           type == net::MSG_FIELDS;
+           type == net::MSG_FIELDS || type == net::MSG_WSTATE;
 }
 
 // the gate: does this machine drop the host's message? (0.7.3.0 with core.world_gate off: the old
@@ -1444,13 +1445,47 @@ unsigned g_submits_repeated; // tests: editor requests dropped as repeats of one
 // it save first; a share that cannot save now holds the editor at most 15 s, submit_tick)
 bool share_save_due() { return world::save_busy() || world::save_pending(); }
 
+// BUG-0560: the Cell stage's request (0xE84600) submits and then posts the editor's DNA budget (message 0x90A03FDF,
+// +8 = DNAForFood(food) - spent); the editor's listener takes it only after it entered (cEditor::OnEnter registers
+// it). A held request (the vote, a save, the avatar's new body) let the game post it at once with no editor
+// listening: the editor opened with the config's start budget (100) and the game booked spent = budget - remaining
+// on the way out, a negative spent that paid again on every visit. On: the budget is posted again after the held
+// request's Submit, queued behind it as the game does. Off: as before.
+bool g_editor_budget_fix = true;
+COOP_FIX("cell.editor_budget", "BUG-0560", g_editor_budget_fix,
+         "cell: an editor opened after the vote gets the stage's DNA budget, not the editor's start budget");
+unsigned g_budgets_posted; // tests
+void post_editor_budget(int budget)
+{
+    uintptr_t get = H->sym("App::IMessageManager::Get"), nw = H->sym("GeneralAllocator::new_");
+    uintptr_t vt = H->sym("SporeCoop::EditorBudgetMsg_vtable");
+    void* mm = get ? skg::cdecl_call<void*>(get) : nullptr;
+    if (!mm || !nw || !vt)
+        return;
+    static const char kName[] = "SporeCoop";
+    uint32_t* m = skg::cdecl_call<uint32_t*>(nw, 0x40u, kName, 0, 0, 0, 0);
+    if (!m)
+        return;
+    memset(m, 0, 0x40);
+    m[0] = (uint32_t)vt; // the game's refcounted message (0xE84600: base vtable, then this one; +4 refcount 0)
+    m[0xC] = 0x90A03FDFu;
+    m[2] = (uint32_t)budget;
+    m[6] = 1;
+    skg::vcall<void>(mm, 0x18 / 4, 0x90A03FDFu, (void*)m, (void*)nullptr, 0); // MessagePost (queued)
+    g_budgets_posted++;
+    LOG("cell: DNA budget %d posted again to the held editor (BUG-0560)", budget);
+}
+
 bool submit_now(void* req)
 {
+    int budget = g_editor_budget_fix && game::mode_id() == modes::kCell ? cellsync::editor_budget() : -1;
     g_vote_bypass = true;
     bool r = o_Submit(req);
     g_vote_bypass = false;
     if (r)
         g_editor_submitted_at = H->time_seconds();
+    if (r && budget >= 0)
+        post_editor_budget(budget);
     return r;
 }
 
@@ -2952,6 +2987,7 @@ void on_frame(void*, int, void*)
     npc::tick(now);
     nest::tick(now); // BUG-0384
     fields::tick(now); // BUG-0419 G2 (after the modules that make the mirrors)
+    wsync::tick(now);  // W1: host-owned world state (time of day, relations, stages done, the Tribe goal)
     wobj::tick(now); // BUG-0472, BUG-0459
     parts::tick(now); // BUG-0401
     effects::tick(now); // BUG-0451: sends the queued effects on the main thread
@@ -3473,6 +3509,7 @@ void end_session(EndPath path, bool cell)
     g_puppet_hide_until = 0; // tests (coop.puppet respawn <s>, BUG-0453)
     world::reset_shares();
     shared::on_session_end();
+    wsync::on_session_end();
     world::on_session_end(); // the guest's queued loads of the host's world (BUG-0074)
     g_dna_pending = -1;
     if (g_host_away_fix) { // BUG-0085
@@ -3569,6 +3606,7 @@ void setup_callbacks()
     g_sess.cb.player_join = [](const net::PlayerInfo& p) {
         support::on_player_join(p);
         shared::on_player_join(g_sess.role());
+        wsync::on_player_join();
         creations::on_player_join(p.id);
         npc::on_player_leave(p.id); // a newcomer under a reused id knows no NPCs yet (BUG-0125)
         g_dna_sent = -1; // resend the DNA total to the newcomer
@@ -3708,7 +3746,7 @@ void setup_callbacks()
         if (type == net::MSG_WORLD_TIME && g_sess.role() == net::Role::Client) {
             net::Quat q;
             q.x = r.f32(); q.y = r.f32(); q.z = r.f32(); q.w = r.f32();
-            if (r.ok() && game::avatar())
+            if (r.ok() && game::avatar() && !wsync::owns_time_of_day()) // BUG-0579: else the wsync row
                 game::set_time_of_day(q);
             return;
         }
@@ -3859,6 +3897,9 @@ void setup_callbacks()
             return;
         case net::MSG_FIELDS: // BUG-0419 G2: replicated fields of mirrored objects
             fields::on_message(type, from, r);
+            return;
+        case net::MSG_WSTATE: // W1: host-owned world state
+            wsync::on_message(type, from, r);
             return;
         case net::MSG_PARTS: // BUG-0401
             parts::on_message(type, from, r);
@@ -5440,6 +5481,15 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         fc.sess = &g_sess;
         fc.in_place = ctx.in_place;
         fields::init(H, M, fc);
+    }
+    { // W1: host-owned world state
+        wsync::Ctx wc;
+        wc.sess = &g_sess;
+        wc.playing = [] {
+            const modes::Adapter* a = modes::for_mode(game::mode_id());
+            return a && a->local() != nullptr;
+        };
+        wsync::init(H, M, wc);
     }
     { // BUG-0472, BUG-0459: world objects owned by the host
         wobj::Ctx wc;

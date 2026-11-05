@@ -110,3 +110,8 @@ SporeCoop::CivGrowth_Turret_Ret1 ; BUG-0484: on GOG 2016 a city's turrets are ea
 SporeCoop::CivGrowth_Turret_Ret2 ; BUG-0484: on GOG 2016 a city's turrets are each game's own (civ.turrets has no effect there)
 SporeCoop::UfoGfx_SetModel ; BUG-0546: the ship model guard (game.ufo_model) is off on GOG 2016
 SporeCoop::UfoGfx_SetVisible ; BUG-0546: the ship model guard (game.ufo_model) is off on GOG 2016
+SporeCoop::EditorBudgetMsg_vtable ; BUG-0560: the held Cell editor's budget re-post (cell.editor_budget) is off on GOG 2016
+SporeCoop::MissionCardPanel_Get ; BUG-0564: the wsync goal dump shows no card state on GOG 2016
+SporeCoop::MissionCardPanel_HasCard ; BUG-0564: the wsync goal dump shows no card state on GOG 2016
+SporeCoop::TribeMissionManager_Get ; BUG-0564: the wsync Tribe goal row (wsync.tribe_goal) is off on GOG 2016
+SporeCoop::TribeMission_SetTargetTribe ; BUG-0564: the wsync Tribe goal row (wsync.tribe_goal) is off on GOG 2016

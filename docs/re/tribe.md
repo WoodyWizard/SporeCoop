@@ -1414,3 +1414,47 @@ of the two chiefs' bounding radii from the first, standing):
 * ~ 0xA82660 (thiscall, the effect's vt+8 with one int): checks +0x28, flags +0x2C, then calls vt+8(arg) of each
   component (vector +0x144..+0x148, 0x5C bytes each, object at +0x38). BUG-0575 crashed in that loop with
   edi = 0x5C, esi = 1 (a component's call returned with the callee-saved registers broken: a freed component).
+
+## The goal card, village relations and the sky on a guest (2026-11-04, fix/w43-world-state)
+<a id="tribe-wsync"></a>
+
+What the host-owned world state rows (docs/sync-architecture-plan.md#sync-wsync) use in Tribe:
+
+* ✔ (Ghidra, GOG 2024) the Tribe goal card ("attack / befriend the <colour> village") is the **current
+  cTribeToTribeMission** of the Tribe Mission Manager: `SporeCoop::TribeMissionManager_Get` 0xCD35C0 (cdecl, `mov
+  eax,[0x169B27C]`) +0x74. Manager: +0x14..+0x1C every mission (the generic goal manager base 0xB6F5xx, shared with
+  the Creature goal manager 0xD38150), +0x70 dirty byte, +0x74 current mission, +0x78..+0x84 map pol -> mission.
+  cTribeToTribeMission (noun 0x5436411A, ctor 0xC2F5D0): **+0x7C state** (the ctor sets 3, 5 = done; vt 0x60
+  0xA02C70 reads it), **+0x80 the village** (cTribe, intrusive), +0x84 / +0x88 the card's property lists, +0x8C /
+  +0x90 cached from the two tribes' +0x230.
+* CORRECTION (2026-11-04, fix/w43-world-state): #tribe-detector-state says the cMission state is +0x84 (cMission::SetState
+  0xC47E20); for cTribeToTribeMission the state is +0x7C (vt 0x60 reads it), +0x84 is a property list pointer written
+  by 0xC30000. Evidence: decompiles of 0xA02C70, 0xC30000, 0xC2F7F0.
+* ✔ `SporeCoop::TribeMission_SetTargetTribe` 0xCD3D70 thiscall(mgr, cTribe or citizen) ret 4: the mission of its
+  political id (made when new), mgr+0x74 = it, the old card removed from the HUD panel and the new one added and
+  focused unless its state is 5, then mgr->vt 0x28(0). Callers: the input actions 0xC / 0xE / 0x10 (0xCD0C20: attack,
+  gift on another tribe's object), SetTarget 0xC0EEC0, tribe messages 0xCD1D60, BT 0xDBB7D0. **The card follows the
+  last village the player acted on**; no "next village" pick was found. ✔ (runtime, lab 20261104-205242) called on
+  the guest outside the frame it moved the guest's card (`MissionCardPanel_HasCard` true for the new mission).
+* ~ (Ghidra) card text 0xC30000 (fastcall(mission), vt 0x80 via 0xC301E0): relation level > 1 -> prop 0x3D61DF6C
+  (befriend), else 0x57E2F080 (attack). Completion 0xC2F7F0 (vt 0x78): +0x7C = 5, 0xCDB520(kind 1 conquered / 2
+  allied, tribe), TRG_TotemPole_Conquer; ? its caller.
+* ✔ the goal progress bar: `SporeCoop::TribeStage_AddGoalProgress` 0xCDB520 thiscall([0x169B2C8] = cTribeUI_Get,
+  kind, tribe) ret 8 adds a tTribeGoalData to +0x40 (mGoalProgressHistory: the owner of table 0x135DB90 is that object)
+  and cPlayer +0x10F0 += 1; 0xCDE470 sets +0x10F0 = 0, +0x10F4 = min(5, villages - 1 + ...) at a new game; the HUD
+  (0xCCDDB0) reads the two floats every frame. 0xB3D500 on GOG 2024 returns [0x167EB60], the mission card panel
+  (`SporeCoop::MissionCardPanel_Get`), not cTerraformingManager (a GOG 2016 name).
+* ✔ (runtime, lab 20261104-204941) `ApplyRelationship(mgr, npc pol, player tribe pol, 0x530CF07, d)` moves
+  `CalculateRelationship` by d at once and it stays (0.00 -> -7.00, 20 s later -7.00); with d from
+  `CalculateRelationshipAbsolute` 0xD05A60 (ret 0xC, unclamped) the result is the host's value. Nothing in a guest's
+  game moved its villages' relations before (BUG-0565): the host's raids and gifts are events in the host's game.
+* ✔ (code + lab 20261104-205648) **BUG-0579**: MSG_WORLD_TIME was applied only when `game::avatar()` is set, and
+  game::avatar() is null outside Creature and adventures: a Tribe or Civ guest never took the host's sky; both start
+  from the save's time at their own load, so they look the same until a load or a reload of one of them (0.097 rad,
+  about 15 s of a 960 s day, apart in a plain session of the FAIL run; the host's game over and reload moved its sky
+  0.2 rad). The tod row applies while the guest has its own entity in any of the three stages.
+* ✔ (lab 20261104-205648, every fix off) a guest's rejoin loads the host's current world: relations, the goal, the
+  stages done and the food were the host's after the rejoin without any row (the world transfer carries them).
+* ~ (lab 20261104-205651) the host's game over and reload kept the village's relation, the goal card and a
+  consequence trait written before it (the reload does not restore cPlayer or the relationship manager from the save,
+  or the game saved them before the reload: ? which).
