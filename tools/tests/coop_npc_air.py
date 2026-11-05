@@ -19,6 +19,10 @@ proxy back onto its terrain.
    * on the ground before and after (the landing): the proxy on the guest's ground (median under 0.3 m).
 SPORE_FIX_OFF=npc.air must FAIL (the proxy drawn on the guest's ground).
 
+Tribe (--fixture tribe) is not a test of this: the host's Tribe game puts a lifted animal back onto its terrain in
+its own update (the host's rows 0.00 m with the animal lifted 4 m at every mod frame, lab 20261105-112236), so the
+check "the host's NPC was in the air" fails there (docs/re/tribe.md#tribe-animal-height).
+
   SPORE_LANE=4 python3 tools/tests/coop_npc_air.py [--fixture creature|tribe] [--lift 4] [--secs 15]
 """
 import argparse
@@ -66,10 +70,10 @@ def main():
     mirrored = {int(x) for x in re.findall(r'^\s*#(\d+) species=\S+ spawned', guest.call('coop.npc list')['out'], re.M)}
     hn = host_npcs(host)
     fam = family(host)
-    cands = sorted((i for i in hn if i in mirrored and i not in fam and math.dist(hn[i][0], centre) < 35),
+    cands = sorted((i for i in hn if i in mirrored and i not in fam and math.dist(hn[i][0], centre) < 100),
                    key=lambda i: math.dist(hn[i][0], centre))
     print(f'  candidates {[(i, round(math.dist(hn[i][0], centre))) for i in cands[:6]]}', flush=True)
-    ck(bool(cands), 'a host NPC the guest mirrors within 35 m of its view')
+    ck(bool(cands), f'a host NPC the guest mirrors within 100 m of its view ({len(hn)} host NPCs, {len(mirrored)} proxies, centre {centre})')
     if not cands:
         return ck.result()
     nid = cands[0]
