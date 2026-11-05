@@ -117,6 +117,7 @@ add('cell_respawn_swap', P + 'coop_cell_respawn.py --swap', warm=True, minutes=3
 add('cell_editor_timed', P + 'coop_cell_editor_timed.py', minutes=5)  # the own cell editor entered within the 3 s after a real respawn, vulnerable after it (BUG-0237)
 add('cell_editor_timed_revive', P + 'coop_cell_editor_timed.py --revive', minutes=5)  # the same within the 2 s after a revive (BUG-0237)
 add('cell_editor_invuln', P + 'coop_cell_editor_invuln.py', minutes=5)  # invulnerable into the own cell editor, vulnerable after it (BUG-0237)
+add('cell_editor_budget', P + 'coop_cell_editor_budget.py', minutes=5)  # BUG-0560: the host's Cell editor after the vote gets the stage's DNA budget, the guest has the host's spent DNA (SPORE_FIX_OFF=cell.editor_budget,wsync.cell_spent fails)
 add('cell_spawn_guard', P + 'coop_cell_spawn_guard.py', warm=True, minutes=3, fixture='cell')  # coop.cell spawn with a slot that is not a live cell: "no such cell", no fault (BUG-0093)
 add('dna_resend', P + 'coop_dna_resend.py', warm=True, minutes=3, fixture='creature')  # the DNA total reaches a guest that missed it (BUG-0128)
 add('leave_cleanup', P + 'coop_leave_cleanup.py', minutes=4, fixture='space')  # every session end cleans every stage module (BUG-0033): Space mirrors after Leave, host while connected
@@ -265,6 +266,10 @@ add('space_save_strip', P + 'coop_space_save_strip.py', minutes=10, uses_free_la
 add('tribe_guest_tribes', P + 'coop_tribe_guest_tribes.py', minutes=3, fixture='tribe')  # BUG-0483: a guest's game forms no NPC tribe of its own and empties tribes the host has not (SPORE_FIX_OFF=tribe.guest_tribes fails)
 add('tribe_food_zero', P + 'coop_tribe_food_zero.py', warm=True, minutes=3, fixture='tribe')  # BUG-0572: the guest's game spent its last food (the game's RemoveBundles empties the container): the host's food reaches it again (open: FAILs on 0.7.6)
 add('tribe_bounce_world', P + 'coop_tribe_bounce_world.py', minutes=5, fixture='tribe')  # BUG-0564 class (W2): after the host's game over and reload the guest's game has the host's tribes and food (open: a replay of the 2026-11-04 reports)
+add('tribe_rel', P + 'coop_wsync_tribe.py rel', warm=True, minutes=3, fixture='tribe')  # BUG-0565: a village's feelings about the player tribe in the guest's game are the host's (SPORE_FIX_OFF=wsync.tribe_rel fails)
+add('tribe_goal', P + 'coop_wsync_tribe.py goal', warm=True, minutes=3, fixture='tribe')  # BUG-0564 (goal): the guest's Tribe goal card is on the host's village (SPORE_FIX_OFF=wsync.tribe_goal fails)
+add('wsync_stages', P + 'coop_wsync_tribe.py stages', minutes=5, fixture='tribe')  # BUG-0577: the guest's game has the host's stages done, also after a rejoin (SPORE_FIX_OFF=wsync.stages fails)
+add('wsync_transitions', P + 'coop_wsync_transitions.py', minutes=8, fixture='tribe')  # W1 class (BUG-0419): every host-owned world state row (sky, day, stages, relations, goal, food) is the host's in the guest's game after the host's game over + reload, a rejoin and the guest's own changes (SPORE_FIX_OFF=wsync.tod,wsync.stages,wsync.tribe_rel,wsync.tribe_goal,res.food_add fails)
 add('civ_mirror_remove', P + 'coop_civ_mirror_remove.py', warm=True, minutes=3, fixture='civ_npc')  # a vehicle the host's game removed leaves no dead vehicle on the guest (BUG-0478; SPORE_FIX_OFF=civ.mirror_remove fails)
 add('civ_roads', P + 'coop_civ_roads.py', warm=True, minutes=3, fixture='civ_npc')  # a road (trade route) the host's game makes is on the guest too (BUG-0494; SPORE_FIX_OFF=civ.roads fails)
 add('civ_citizens', P + 'coop_civ_citizens.py', warm=True, minutes=4, fixture='civ_npc')  # the city citizens near the guest walk where the host's walk, at the host's size (BUG-0476, BUG-0475; SPORE_FIX_OFF=civ.citizens / civ.citizen_scale fail)

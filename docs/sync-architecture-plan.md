@@ -191,3 +191,36 @@ object: `mods/coop/fields.{h,cpp}` (wire codec `fields_wire.h`, unit test in tes
   bound by position and walked to the host's, BUG-0476) and their size the fields kind `civ_citizen` (K = 4).
   A world-object kind can move now (`follow`: the host's place, its velocity, the follower's last goal; its own
   snapshot interval), docs/re/civ.md#civ-roads-citizens.
+
+## Host-owned world state: one table of rows (2026-11-04, fix/w43-world-state)
+<a id="sync-wsync"></a>
+
+0.7.7 W1 (class BUG-0419 for what is not an object). `mods/coop/wsync.cpp` keeps one table of rows; a row says in
+which stages it is in play, how the host's game is read (a small table of `{u32 key, up to 6 u32}`) and how a
+guest's game is brought to the host's values through the game's own setters. The engine is stage-free:
+
+* the host reads every active row every 0.25 s and sends the whole table (MSG_WSTATE 62, unreliable) once a second
+  and at once when a row other than the sky changed; a newcomer gets it at once;
+* a guest keeps the newest table per row (dropped after 6 s without one, and at the session's end) and every 0.5 s,
+  while it plays the host's stage and world (the message gate drops MSG_WSTATE while it is elsewhere) and has its
+  entity (not loading, not in an editor), compares its own game's values with the host's and applies the rows that
+  differ. That is the re-alignment after every transition: the next check after a load, a rejoin, a death, an editor
+  or the host's game over and reload applies the host's values again. `reapplied` counts applies after a match.
+* `coop.wsync` the rows' state; `coop.wsync dump [row]` this game's own values (what tests compare: the guest's game,
+  not the mod's table); `want <row>`, and test helpers `rel <pol> <delta>`, `goal <pol>`, `stage <i> <hex>`.
+
+| Row | Stages | Read (host) | Apply (guest) | Switch |
+|---|---|---|---|---|
+| tod | Creature, Tribe, Civ | planet context orientation (`TimeOfDay_GetObject` +0x10) | SetOrientation + `TimeOfDay_Apply` (as MSG_WORLD_TIME did; that message is kept for older guests and ignored with the row on) | wsync.tod (BUG-0579) |
+| day | Creature, Tribe, Civ | `cTimeOfDay::Get` +0x24 | `cTimeOfDay::SetDayDuration` | wsync.tod |
+| stages | every planet stage | cPlayer +0x10FC..+0x110C (consequence traits) | field write (no setter; the History bar reads it) | wsync.stages (BUG-0577) |
+| tribe_rel | Tribe | `CalculateRelationship(npc pol, player tribe pol)` per NPC village, with its position | `ApplyRelationship(npc, player, 0x530CF07, host - CalculateRelationshipAbsolute)` (the social success's raw-delta event: the tribe UI refreshes) | wsync.tribe_rel (BUG-0565) |
+| tribe_goal | Tribe | Tribe Mission Manager +0x74: its village (pol, position), state +0x7C; cPlayer +0x10F0 / +0x10F4 | `TribeMission_SetTargetTribe` outside the frame (swaps the HUD card); the two floats written (the HUD bar reads them each frame) | wsync.tribe_goal (BUG-0564) |
+| cell_spent | Cell | cCellSerializableData +0x2C | field write (the game's own writer is the editor result 0xE809A0) | wsync.cell_spent (BUG-0560) |
+
+A village is matched by its political id (the guest loads the host's save, docs/re/tribe.md#tribe-detector-state),
+else by the closest village within 40 m. Not moved onto it: the shared food and money (shared.cpp) are a ledger (the
+guests' own spending is counted on the host), not host-only state; the Creature species relations (social.cpp
+MSG_SPECIES, re-applied by enforce_table) and the Space empire relations (space_diplomacy.cpp) already re-apply
+the host's table. Class test: `wsync_transitions` (tools/tests/coop_wsync_transitions.py: the host's game over and
+reload, a rejoin, the guest's own changes; every row and the food compared from the guest's game).

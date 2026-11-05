@@ -54,6 +54,9 @@ bool away_enabled(); // BUG-0205 switch (pool.away): a host editor or load count
 void on_player_leave(int id); // a remote player left: its knockout and food bookkeeping go
 void draw_overlay();
 void dna_note(const char* when); // BUG-0351: food, spent DNA and the editor budget in the log
+int editor_budget();
+bool spent_dna(int& v);           // W1: cCellSerializableData +0x2C, the DNA the editors spent (false: not in Cell)
+void set_spent_dna(int v);              // BUG-0560: DNAForFood(food) - spent, what the game's request gives the editor (-1: none)
 void join_partner(); // our cell next to the nearest partner (after a level rebuild) // knockout countdown / revive progress / off-screen arrows (SK_EV_OVERLAY)
 std::string status();
 const views::Set& view_centres(); // host: itself + every partner in the Cell stage (BUG-0174)

@@ -1522,3 +1522,23 @@ BUG-0519, the players' half of docs/re/cell.md#cell-world-scale.
   states of different scales in the newer one's (net/interp.h), and modes.cpp `cell_drive` draws pos, velocity and
   size times sender / own scale. p90 0.5 / 0.3 m (the interpolation delay while the scale moves), 0.0-0.1 m after.
   `coop.pool scalepos` prints the scale, the own cell and every puppet of one frame.
+
+## The editor's DNA budget is lost when the request is held (2026-11-04, fix/w43-world-state)
+<a id="cell-editor-budget"></a>
+
+* ✔ (Ghidra, GOG 2024) the Cell request 0xE84600 builds the EditorRequest (no budget in it), calls
+  `EditorRequest::Submit` (deferred: it posts 0xB03BC30C and a callback) and then **posts** message 0x90A03FDF
+  (IMessageManager vt 0x18, a 0x40-byte refcounted message, vtable `SporeCoop::EditorBudgetMsg_vtable` 0x013EB844,
+  +8 the budget, +0x10 0, +0x18 1, +0x30 the id). `cEditor::OnEnter` 0x58E6D0 registers the editor's listeners
+  (0x90A03FDF among 0x1E ids at 0x013F5FD8) and sets its DNA to the config's start budget (prop 0xB1B76A19 = 100 via
+  the Cell editors' parent 0x3615A30B, ~ read by hand); `cEditor::HandleMessage` 0x592FC6 then sets the shown DNA
+  (`[cEditor+0x434]` vt 0x24(0, msg+8)). On leaving (0xE809A0, not cancelled) the game books
+  `S+0x2C = DNAForFood(S+0x1C) - remaining`.
+* ✔ (lab 20261104-210158, cell.editor_budget off) **BUG-0560**: with two players the request waits for the vote
+  (coop.cpp h_Submit returns false), the game's post goes out at once with no editor listening, and the editor opens
+  with 100: after a free edit the host's spent was -100 (budget 0). The negative spent pays again on every later
+  visit ("a lot of DNA again"). The same loss for every held request (a save, the avatar's new body, the busy gate).
+* Fix (cell.editor_budget): `submit_now` posts the budget again (DNAForFood(food) - spent, computed then) right
+  after the held request's Submit, queued behind its posts as the game does (lab 20261104-210201: spent stays 0).
+* ? the Creature request posts the same message after Submit (0xD455FD, +8 = GetEvolutionPoints): a held Creature
+  evolution may lose its budget the same way (not checked, BUG-0581).

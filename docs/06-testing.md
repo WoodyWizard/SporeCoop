@@ -4159,3 +4159,12 @@ P1 of 0.7.7 (docs/re/creature.md#creature-player-rules). Each test checks the gu
   [0x169B2C8] +0x240 was not the map's); the test asks the game's own lookup on the owner the HUD's update ran on.
 * Pitfall: dropping CreatureAttackTarget on an airborne puppet left a charging NPC flying on towards it (82 m up, a
   sync-check `n apart` in lab 20261104-212957): the hit runs, only its damage / stun are not carried.
+## Host-owned world state tests (2026-11-04, fix/w43-world-state)
+<a id="testing-wsync"></a>
+
+`coop.wsync dump [row]` prints the game's own values of the world state rows (docs/sync-architecture-plan.md#sync-wsync);
+tools/tests/wsync_util.py parses them and `differences(host, guest)` lists every row a guest's game has other than
+the host's. Tests: tribe_rel / tribe_goal / wsync_stages (coop_wsync_tribe.py rel|goal|stages, 1-5 min),
+wsync_transitions (the class test on Tribe: the host's game over and reload, a rejoin, the guest's own changes;
+8 min), cell_editor_budget (the host's Cell editor through the vote, 3 min). Pitfall: a rejoin loads the host's
+current world, so relations, the goal, the stages and the food are the host's after a rejoin even without the rows.

@@ -1,17 +1,17 @@
 ---
 id: BUG-0579
 title: Tribe: day and night differ: the guest's world is at night while the host's is in daylight
-status: open
+status: fixed
 kind: desync
 stage: Tribe
 reported: 2026-11-04
 source: player report 2026-11-04 (Discord bug-reports, 0.7.5, Steam build), screenshots
 role: guest
 versions: 0.7.5
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w43-world-state
+commits: a69ee62e
+tests: wsync_transitions (coop_wsync_transitions.py)
 signature:
 docs:
 related: BUG-0569
@@ -30,12 +30,24 @@ Logs: the reports' sporekit.log of both players (host 17:26-20:15, guest 17:27-1
   -0.945 0.021)). The night on the guest came after the host's reloads (s 5850, 6391): inferred, the host's load
   changes its time of day and its sky in a way the guest's quaternion does not (another object, or the preset).
 
+* Observed (code + lab 20261104-205648, every fix off): MSG_WORLD_TIME was applied only with `game::avatar()`, which
+  is null outside Creature and adventures, so a Tribe or Civ guest never took the host's sky; each game's sky ran
+  from the save's time of its own load: 0.097 rad apart in a plain session, 0.089 after the host's game over and
+  reload. Step 0's "equal within the 1 s send" was two games loaded close together.
+
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+wsync rows tod (the planet context's orientation, applied with SetOrientation + TimeOfDay_Apply while the guest has
+its own entity, in Creature, Tribe and Civ) and day (cTimeOfDay +0x24, SetDayDuration); a guest with the row on
+ignores MSG_WORLD_TIME (kept for older guests). Switch `wsync.tod`.
 
 ## Verification
 Not reproduced in a plain session (the lab tod follows). Not tried: the host's game over and reload (tribe_bounce_world does not compare the time of day). Package W1.
 
+Lab: wsync_transitions FAIL with `SPORE_FIX_OFF=wsync.tod,...` out/lab/20261104-205648 (0.097 rad before the
+transitions, 0.089 after the host's reload, 0.054 at the end), PASS out/lab/20261104-205651 (within 0.05 rad at
+every step).
+
 ## History
 - 2026-11-04: opened.
 - 2026-11-04 (fix/w43-replay, step 0 of 0.7.7): replayed on 0.7.6 code; not reproduced in a plain session; open (W1) for the reload case.
+- 2026-11-04 (fix/w43-world-state, W1): fixed; see Fix and Verification.

@@ -5059,6 +5059,31 @@ void dna_note(const char* when)
            F<int32_t>(s, 0x20), spent, dna, dna >= 0 ? dna - spent : -1);
 }
 
+bool spent_dna(int& v)
+{
+    uint8_t* s = in_cell() ? S() : nullptr;
+    if (!s)
+        return false;
+    v = F<int32_t>(s, 0x2C);
+    return true;
+}
+
+void set_spent_dna(int v)
+{
+    if (uint8_t* s = in_cell() ? S() : nullptr)
+        *(int32_t*)(s + 0x2C) = v; // the game's own writer is the editor's result (0xE809A0): no setter
+}
+
+int editor_budget()
+{
+    uint8_t* s = in_cell() ? S() : nullptr;
+    if (!s || !a_DnaFor)
+        return -1;
+    int food = F<int32_t>(s, 0x1C), spent = F<int32_t>(s, 0x2C);
+    using DnaFor_t = int(__fastcall*)(int);
+    return food >= 0 && food <= 1000 ? ((DnaFor_t)a_DnaFor)(food) - spent : -1;
+}
+
 void join_partner()
 {
     uint8_t* a = in_cell() ? avatar() : nullptr;
