@@ -138,12 +138,53 @@ typedef int(SK_THISCALL* TakeDamage_t)(void*, float, uint32_t, int, const void*,
 static TakeDamage_t o_TakeDamage;
 static DamageFilter g_damage_filter;
 
+// tests / RE (P1): the last hits that went through the game's TakeDamage of a creature, with the caller
+// (`coop.hp dmglog`): which code hits, with which damage type (3 = the charge's stun, docs/re/creature.md#creature-stun)
+struct DamageRec {
+    double t;
+    void *victim, *attacker;
+    float dmg;
+    int type;
+    uintptr_t ret;
+    int how; // 0 filtered, 1 applied, 2 the mod's own apply_damage
+    bool air; // the victim was not grounded (+0x137 == 0) at the hit
+};
+static DamageRec g_dmglog[48];
+static unsigned g_dmglog_n = 0;
+
+static void dmglog_add(void* victim, void* attacker, float dmg, int type, uintptr_t ret, int how)
+{
+    bool air = victim && readable(victim, 0x138) && field<uint8_t>(victim, 0x137) == 0;
+    g_dmglog[g_dmglog_n++ % 48] = {H ? H->time_seconds() : 0, victim, attacker, dmg, type, ret, how, air};
+}
+
+std::string damage_log(bool clear)
+{
+    std::string s;
+    char b[160];
+    unsigned first = g_dmglog_n > 48 ? g_dmglog_n - 48 : 0;
+    for (unsigned i = first; i < g_dmglog_n; i++) {
+        const DamageRec& r = g_dmglog[i % 48];
+        snprintf(b, sizeof b, "dmg t=%.2f victim=%p attacker=%p amount=%.2f type=%d ret=0x%08X %s air=%d\n", r.t, r.victim,
+                 r.attacker, r.dmg, r.type, (unsigned)r.ret, r.how == 0 ? "filtered" : r.how == 1 ? "applied" : "direct",
+                 (int)r.air);
+        s += b;
+    }
+    if (clear)
+        g_dmglog_n = 0;
+    return s.empty() ? "no hits\n" : s;
+}
+
 static int SK_THISCALL h_TakeDamage(void* combatant, float dmg, uint32_t pol, int type, const void* pos, void* attacker)
 {
     void* self = (uint8_t*)combatant - kCombatOff;
     void* att = attacker ? (uint8_t*)attacker - kCombatOff : nullptr;
-    if (g_damage_filter && !g_damage_filter(self, dmg, type, att))
+    uintptr_t ret = (uintptr_t)__builtin_return_address(0);
+    if (g_damage_filter && !g_damage_filter(self, dmg, type, att)) {
+        dmglog_add(self, att, dmg, type, ret, 0);
         return 0;
+    }
+    dmglog_add(self, att, dmg, type, ret, 1);
     return o_TakeDamage(combatant, dmg, pol, type, pos, attacker);
 }
 
@@ -157,6 +198,7 @@ void apply_damage(void* c, float dmg, int type, void* attacker)
     // It used to be the creature's position (|v| ~ 505): every forwarded hit threw the creature,
     // a kill ~80 m up (play_creature.py 2026-10-23, docs/re/creature.md 3)
     Vector3 push{};
+    dmglog_add(c, attacker, dmg, type, (uintptr_t)__builtin_return_address(0), 2);
     o_TakeDamage((uint8_t*)c + kCombatOff, dmg, attacker ? political_id(attacker) : 0xFFFFFFFFu, type, &push,
                  attacker ? (uint8_t*)attacker + kCombatOff : nullptr);
 }

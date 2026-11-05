@@ -35,3 +35,4 @@ Not reproduced (the lab games run muted). Not in the plan table: P1 (the guest a
 ## History
 - 2026-11-04: opened.
 - 2026-11-04 (fix/w43-replay, step 0 of 0.7.7): replayed on 0.7.6 code; still open, not analysed (lab games are muted).
+- 2026-11-04 (fix/w43-guest-player, P1 of 0.7.7): not analysed in P1 (lab games are muted).

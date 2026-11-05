@@ -221,6 +221,7 @@ void hit(void* c, float damage, int type, void* attacker_creature);          // 
 // the same with a push (knockback impulse, the 4th TakeDamage argument; tests: a charge's throw, BUG-0383)
 void hit_push(void* c, float damage, int type, void* attacker_creature, const net::Vec3& push);
 void set_health(void* c, float hp);
+std::string damage_log(bool clear); // the last creature hits through TakeDamage (coop.hp dmglog)
 // BUG-0463 sneak (docs/re/creature.md#creature-sneak): +0xBB1 is 1 while the creature sneaks, +0xB80 its
 // noise radius (0 while sneaking, what the NPCs' hearing check reads), +0xB7C the model's alpha the
 // creature's update eases to 0.2 while sneaking (written to the model +0x80)

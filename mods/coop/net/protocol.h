@@ -100,6 +100,11 @@ enum MsgType : uint8_t {
                           // The host relays a guest's message to the other guests; the receiver
                           // plays it on that player's puppet with the game's own effect pools.
                           // Older SporeCoop ignores it (an unknown type).
+    MSG_PLAYER_RULE = 63, // the game's rules for a player that one game decides on the other player's creature
+                          // (player_rules.cpp, BUG-0418 / P1 of 0.7.7): u8 kind; kind 0 host -> guest "stunned"
+                          // {u8 player, f32 seconds} (an NPC's charge stunned its puppet: CreatureStun vt 0x94),
+                          // kind 1 guest -> host {u16 NPC id, f32 seconds} (the guest's charge stunned a proxy).
+                          // Older SporeCoop ignores it (an unknown type).
     MSG_WSTATE = 62,      // host -> guests: host-owned world state rows (wsync.h, BUG-0419 / BUG-0565 / BUG-0577 /
                           // BUG-0579 / BUG-0564): u8 kind 0, u32 host mode, u8 rows, {u8 id, u8 nv, u8 n, n x {u32 key,
                           // nv x u32}}. Older SporeCoop ignores it (an unknown type).
@@ -389,6 +394,8 @@ enum NpcFlags : uint8_t {
     NF_DEAD = 1,
     NF_FAMILY = 2, // member of the host avatar's herd
     NF_IMPRESSED = 4, // impressed by a player (cCreatureAnimal +0xB58 bit 0x80, set by a social success)
+    NF_PACK = 8,      // in the host's pack (+0xB58 bit 0x100: recruited, a Summon Flock member; BUG-0556). Older guests ignore it
+    NF_SUMMONED = 16, // its herd is a summoned flock (herd +0x192, cSummonCreatureEvent: the hearts effect 0x6A17B05A; BUG-0556)
 };
 
 struct NpcSpawn {
@@ -451,8 +458,16 @@ struct Damage { // host -> guest: you were hit
     float damage = 0;
     int32_t type = 0;
     uint16_t attacker = 0xFFFF; // NPC net id or 0xFFFF
-    void write(Writer& w) const { w.u8(player); w.f32(damage); w.u32((uint32_t)type); w.u16(attacker); }
-    bool read(Reader& r) { player = r.u8(); damage = r.f32(); type = (int32_t)r.u32(); attacker = r.u16(); return r.ok(); }
+    // BUG-0555 (appended, older readers ignore it): the type of the attacker's ability whose hit it is (+8 of the
+    // ability, 0x1E bite, 0x1F charge, 0x20 spit; 0 = not an ability hit / unknown, also from an older host)
+    uint32_t ability = 0;
+    void write(Writer& w) const { w.u8(player); w.f32(damage); w.u32((uint32_t)type); w.u16(attacker); w.u32(ability); }
+    bool read(Reader& r)
+    {
+        player = r.u8(); damage = r.f32(); type = (int32_t)r.u32(); attacker = r.u16();
+        ability = r.ok() && r.left() >= 4 ? r.u32() : 0;
+        return r.ok();
+    }
 };
 
 struct AnimEvent {

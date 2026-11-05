@@ -335,8 +335,10 @@ static void fuzz_protocol(uint64_t seed, int iters)
         DamageReq d; d.net_id = R.u16(); d.damage = R.f32(); d.type = (int32_t)R.u32(); return d;
     });
     fuzz_struct<Damage>("Damage", R, iters, [](Rng& R) {
-        Damage d; d.player = R.u8(); d.damage = R.f32(); d.type = (int32_t)R.u32(); d.attacker = R.u16(); return d;
-    });
+        Damage d; d.player = R.u8(); d.damage = R.f32(); d.type = (int32_t)R.u32(); d.attacker = R.u16();
+        d.ability = R.u32(); // BUG-0555: appended, an older host's 11 bytes are read too
+        return d;
+    }, [](const Damage&) { return (size_t)11; });
     fuzz_struct<AnimEvent>("AnimEvent", R, iters, [](Rng& R) {
         AnimEvent a; a.id = R.u8(); a.anim = R.u32(); a.block = (int32_t)R.u32(); a.flags = R.u8(); return a;
     });

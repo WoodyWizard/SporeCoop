@@ -36,3 +36,4 @@ Source: docs/generalisation-plan.md G3.
 
 ## History
 - 2026-11-01: opened.
+- 2026-11-04 (fix/w43-guest-player, P1 of 0.7.7): stun / hit rules now follow the creature they belong to (MSG_PLAYER_RULE, creature.stun_relay, creature.air_immune); the rest of the umbrella (Space, Civ siege, vote gate) not touched.

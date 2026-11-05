@@ -141,6 +141,49 @@ static void refresh_cards(void*) // outside the frame: card texts are UI
             vcall<void>(ui, 0x28 / 4, 0);
 }
 
+// ---------------------------------------------------------------- BUG-0561
+// The Creature minimap shows a nest as allied (the green face, icon flag 0x200000 in 0xD425A0, picture 0xB3B6763E in
+// 0xE10560) only when the nest's herd has mbBestFriends (+0x191) set or is the world's player species; it never
+// reads the relationship table. The game sets +0x191 on every herd of a species in ApplyEvent 0xBA4A00 when the
+// relation changes (0xBA4840 -> cHerd_SetBestFriends 0xC6A210(new == 6)). A guest gets the host's table written
+// into its own (enforce_table), no ApplyEvent runs in its game: its herds of an allied species kept +0x191 = 0 and
+// the minimap the grey "discovered" mark. Now the guest's herds follow the table: +0x191 = (relation == 6).
+// `coop.fix social.nest_ally off`: the flag stays as the guest's own game set it (0.7.6).
+static bool g_nest_ally_fix = true;
+COOP_FIX("social.nest_ally", "BUG-0561", g_nest_ally_fix, "creature: an allied species' nests show the ally face on the guest's map too");
+static uint32_t g_nest_ally_set = 0;
+
+static void herds_follow_table()
+{
+    uintptr_t set = H->sym("SporeCoop::cHerd_SetBestFriends");
+    if (!g_nest_ally_fix || !set || !g_have_table || !is_guest() || !game::in_creature_stage())
+        return;
+    struct Q {
+        std::vector<std::pair<void*, bool>> sp; // species profile, allied
+        uintptr_t set;
+    } q{{}, set};
+    for (auto& r : g_host_table)
+        if (void* sp = game::species_by_key({r.key[0], r.key[1], r.key[2]}))
+            q.sp.push_back({sp, r.relation == 6});
+    game::for_each_object(
+        [](void* o, uint32_t noun, void* u) {
+            if (noun != game::kHerdNoun || !skg::readable(o, 0x194))
+                return true;
+            auto* q = (Q*)u;
+            void* sp = game::herd_species(o);
+            for (auto& [s, allied] : q->sp)
+                if (s == sp) {
+                    if ((field<uint8_t>(o, 0x191) != 0) != allied) {
+                        thiscall<void>(q->set, o, (int)allied);
+                        g_nest_ally_set++;
+                    }
+                    break;
+                }
+            return true;
+        },
+        &q);
+}
+
 static void enforce_table()
 {
     if (!g_have_table || !a_RelRecord)
@@ -985,6 +1028,7 @@ void tick(double now)
         if (now - last >= 0.5) {
             last = now;
             enforce_table();
+            herds_follow_table();
         }
     }
 }
@@ -1017,6 +1061,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         g_table_rx++;
         if (game::in_creature_stage() && game::avatar()) {
             enforce_table();
+            herds_follow_table();
             if (news) // the cards read the table only when told (also when ours had it already)
                 H->run_outside_frame(refresh_cards, nullptr);
         }
@@ -1260,6 +1305,21 @@ std::string abilities_dump(int id)
         snprintf(b, sizeof b, "ab %d type=0x%X key=%u points=%.2f energy=%.2f kind=%d range=%.1f\n", i, *(uint32_t*)(a + 8),
                  *(uint32_t*)(a + 0x10), *(float*)(a + 0x3C), *(float*)(a + 0x104), *(int*)(a + 0x7C), *(float*)(a + 0xA8));
         out += b;
+        // the hit's extra effects (0xC20390: kinds at +0xB8..+0xBC, chances at +0xCC; kind 1 = stun for +0x80 s through
+        // the victim's vt 0x94, docs/re/creature.md#creature-stun)
+        int* k0 = *(int**)(a + 0xB8);
+        int* k1 = *(int**)(a + 0xBC);
+        float* ch = *(float**)(a + 0xCC);
+        if (k0 && k1 > k0 && k1 - k0 < 16 && !IsBadReadPtr(k0, (k1 - k0) * 4)) {
+            out += "   fx";
+            for (int* q = k0; q < k1; q++) {
+                float cv = ch && !IsBadReadPtr(ch + (q - k0), 4) ? ch[q - k0] : -1.f;
+                snprintf(b, sizeof b, " %d:%.2f", *q, cv);
+                out += b;
+            }
+            snprintf(b, sizeof b, " stun=%.2f\n", *(float*)(a + 0x80));
+            out += b;
+        }
     }
     uint8_t* sp = (uint8_t*)game::species_profile(c);
     if (sp && !IsBadReadPtr(sp + 0x7A4, 8)) {

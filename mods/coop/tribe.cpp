@@ -338,6 +338,8 @@ static void send_cmd(uint8_t kind, const std::vector<uint16_t>& ids, int action,
     g_last_cmd = b;
 }
 
+static void ring_order(int action, void* target, const std::vector<uint16_t>& ids); // BUG-0570
+
 // cTribeInputStrategy::DoActionForObjects(vector<cSpatialObject*>*, action, target, prop) - every
 // order on an object goes through it; on guests the order goes to the host instead
 using DoActionForObjects_t = int(SK_THISCALL*)(void*, void*, int, void*, void*);
@@ -367,10 +369,92 @@ static int SK_THISCALL h_DoActionForObjects(void* self, void* vec, int action, v
             ids.push_back(f->second);
     }
     send_cmd(CMD_ACTION, ids, action, encode_target(target), {});
+    ring_order(action, target, ids); // BUG-0570
     char ob[48];
     snprintf(ob, sizeof ob, " obj=%p", target);
     g_last_cmd += ob;
     return ids.empty() ? 1 : 0;
+}
+
+// ---------------------------------------------------------------- BUG-0570
+// The red circle under the enemy of an attack order is not drawn by the order: the Tribe HUD's ring update
+// (TribeTargetRings_Update 0xCCC7C0, owner [TribeUI 0x169B2C8] +0x240) draws, every frame, a ring
+// (TribeTargetRing_Draw 0xCCBE90) under the combat target (+0xE7C) of every selected player citizen and sweeps the
+// rings nobody touched. +0xE7C is set by the citizen's AI attack node only, and a guest's mirrors run no AI: its
+// order went to the host, its own game showed no ring. Now the guest's game draws the ring of its own attack
+// order, as the HUD draws it, while one of the ordered members is selected and the target lives (120 s at most).
+// `coop.fix tribe.target_ring off`: no ring on the guest (0.7.6).
+static bool g_ring_fix = true;
+COOP_FIX("tribe.target_ring", "BUG-0570", g_ring_fix, "tribe: the guest sees the red circle under the enemy it ordered an attack on");
+static constexpr int kActionAttack = 7; // DoActionForAllSelected(7, target) of a right click on an enemy
+static struct {
+    void* target = nullptr;
+    std::vector<uint16_t> ids;
+    double since = 0;
+} g_ring;
+static uint32_t g_rings_drawn = 0;
+static uintptr_t a_RingDraw, a_TribeUI;
+using RingsUpdate_t = void(SK_THISCALL*)(void*);
+static RingsUpdate_t o_RingsUpdate;
+
+static void ring_order(int action, void* target, const std::vector<uint16_t>& ids)
+{
+    if (action == kActionAttack && target && !ids.empty() && (is_citizen(target) || game::noun_id(target) == 0x18EB45E)) {
+        g_ring.target = target;
+        g_ring.ids = ids;
+        g_ring.since = H->time_seconds();
+    } else
+        g_ring.target = nullptr; // another order ends the attack
+}
+
+static void* g_ring_owner = nullptr; // the HUD's ring owner, as the game passes it (tests: ring_shown)
+static uint32_t g_ring_owner_frame = 0;
+
+static void SK_THISCALL h_RingsUpdate(void* owner)
+{
+    o_RingsUpdate(owner);
+    g_ring_owner = owner;
+    g_ring_owner_frame = H->frame_index ? (uint32_t)H->frame_index() : 0;
+    void* t = g_ring.target;
+    if (!t || !g_ring_fix || !a_RingDraw || !is_guest() || game::mode_id() != modes::kTribe)
+        return;
+    if (H->time_seconds() - g_ring.since > 120 || !game::object_alive(t) || game::is_destroyed(t) || game::is_dead(t) ||
+        F<float>(t, 0x5E0) <= 0) {
+        g_ring.target = nullptr;
+        return;
+    }
+    void* by = nullptr;
+    for (uint16_t id : g_ring.ids) {
+        auto it = g_gm.find(id);
+        if (it != g_gm.end() && it->second.c && F<uint8_t>(it->second.c, kSelectedOff)) {
+            by = it->second.c;
+            break;
+        }
+    }
+    if (!by)
+        return; // the HUD rings the targets of selected members only
+    uint8_t* sp = (uint8_t*)t + 0xC0;
+    float* p = vcall<float*>(sp, 0x2C / 4);
+    if (!p)
+        return;
+    float pos[3] = {p[0], p[1], p[2]};
+    float radius = vcall<float>(sp, 0x74 / 4);
+    thiscall<void>(a_RingDraw, owner, by, F<uint32_t>(t, 0x24), pos, radius, 0, (int)F<uint8_t>(sp, 0x77));
+    g_rings_drawn++;
+}
+
+// tests: the HUD's ring map (the hash map at owner +0x2C0) holds a live ring (an effect) under creature t:
+// TribeTargetRing_Find 0xCCBD80 (the draw's own lookup; it inserts an empty entry the next pass erases)
+static bool ring_shown(void* t)
+{
+    uintptr_t find = H->sym("SporeCoop::TribeTargetRing_Find");
+    // the owner the HUD's update ran on this or the last frame (the HUD of an older stage is gone)
+    uint32_t now = H->frame_index ? (uint32_t)H->frame_index() : 0;
+    if (!find || !g_ring_owner || !t || game::mode_id() != modes::kTribe || now - g_ring_owner_frame > 2)
+        return false;
+    uint32_t key = F<uint32_t>(t, 0x24);
+    uint32_t* v = thiscall<uint32_t*>(find, (uint8_t*)g_ring_owner + 0x2C0, &key); // {effect id, IVisualEffect*, touched}
+    return v && v[1] != 0;
 }
 
 // cTribeInputStrategy::WalkSelectedTo(const Vector3*)
@@ -396,6 +480,7 @@ static int SK_THISCALL h_WalkSelected(void* self, const float* pos)
         if (m.c && F<uint8_t>(m.c, kSelectedOff) && m.owner == C.sess->my_id())
             ids.push_back(id);
     send_cmd(CMD_WALK, ids, 4, {}, {pos[0], pos[1], pos[2]});
+    g_ring.target = nullptr; // a walk ends the attack (BUG-0570)
     char b[64];
     snprintf(b, sizeof b, " to (%.1f %.1f %.1f)", pos[0], pos[1], pos[2]);
     g_last_cmd += b;
@@ -754,6 +839,10 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     H->hook_create(M, (void*)a_SetSelected, (void*)h_SetSelected, (void**)&o_SetSelected);
     H->hook_create(M, (void*)a_DoActionForObjects, (void*)h_DoActionForObjects, (void**)&o_DoActionForObjects);
     H->hook_create(M, (void*)a_WalkSelected, (void*)h_WalkSelected, (void**)&o_WalkSelected);
+    a_RingDraw = H->sym("SporeCoop::TribeTargetRing_Draw"); // BUG-0570 (optional)
+    a_TribeUI = H->sym("SporeCoop::TribeUI_ptr");
+    if (uintptr_t a = H->sym("SporeCoop::TribeTargetRings_Update"))
+        H->hook_create(M, (void*)a, (void*)h_RingsUpdate, (void**)&o_RingsUpdate);
     a_Form = H->sym("SporeCoop::NpcTribeController_FormTribe"); // BUG-0483 (optional)
     a_NpcCtrl = H->sym("Simulator::cNpcTribeController::Get");
     if (a_Form)
@@ -2791,6 +2880,12 @@ std::string debug(const std::vector<std::string>& a)
         else
             return "usage: coop.tribe fix chiefs|gameover|ko|epic_players|epic_herd|away 0|1";
         return "fix " + a[1] + " " + (on ? "on" : "off");
+    }
+    if (a.size() >= 2 && a[0] == "ring") { // ring <id>: the HUD shows the target ring under member / NPC creature <id>
+        void* c = local_of((uint16_t)atoi(a[1].c_str()));
+        char b[96];
+        snprintf(b, sizeof b, "ring=%d drawn=%u order=%p", (int)ring_shown(c), g_rings_drawn, g_ring.target);
+        return c ? std::string(b) : std::string("no such member");
     }
     if (a.size() >= 2 && a[0] == "drop_chief") { // drop_chief <owner>: the chief leaves the tribe at once
         // (RemoveMember(c, destroy) as guest_state does for a mirror the host no longer sends):

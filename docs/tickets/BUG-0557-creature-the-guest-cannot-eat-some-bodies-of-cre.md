@@ -42,3 +42,4 @@ pack fight) is not among them. no-fail-run: not reproduced. Package P1.
 ## History
 - 2026-11-04: opened.
 - 2026-11-04 (fix/w43-replay, step 0 of 0.7.7): replayed on 0.7.6 code; still open (P1), not reproduced: corpse_positions PASS out/lab/20261104-202315.
+- 2026-11-04 (fix/w43-guest-player, P1 of 0.7.7): not fixed, not reproduced: no time left in P1 for the pack-kill case; no eat predicate of the player was found on the way.

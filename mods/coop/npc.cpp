@@ -1,4 +1,5 @@
 #include "npc.h"
+#include "player_rules.h"
 #include "view_centres.h"
 #include "modes.h"
 #include "tribe.h"
@@ -162,6 +163,8 @@ struct Proxy {
     uint8_t flags = 0;
     float health = 0, max_health = 0;
     bool killed = false;
+    bool host_pack = false; // BUG-0556: the host's NPC is in the host's pack (NF_PACK of its latest state)
+    bool flock_fx = false;  // BUG-0556: the summoned flock's hearts effect started on the proxy
     int fail = 0; // 1 species, 2 herd, 3 create
     bool nospecies_said = false; // BUG-0300 diagnostics: logged once
     bool kinematic = false;      // BUG-0281: placed on the host's path this frame
@@ -232,6 +235,13 @@ void set_enabled(bool on) { g_enabled = on; }
 bool enabled() { return g_enabled; }
 
 // called from inside the game's creature update loop: keep it cheap
+// BUG-0556: the guest's proxies of a host's summoned flock show the event's hearts as the host's do
+// (`coop.fix npc.flock_hearts off`: no hearts on the guest, 0.7.6)
+static bool g_flock_fx_fix = true;
+COOP_FIX("npc.flock_hearts", "BUG-0556", g_flock_fx_fix, "creature: the host's summoned flock shows its hearts on the guest's screen too");
+static constexpr uint32_t kFlockFx = 0x6A17B05A;
+static uintptr_t a_StartFx2, a_StopFx;
+
 static bool update_filter(void* c)
 {
     if (!g_enabled || !is_guest() || !npc_stage())
@@ -395,6 +405,8 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
     C = ctx;
     game::set_update_filter(update_filter);
     game::set_ai_target_picker(ai_target);
+    a_StartFx2 = H->sym("Simulator::cCreatureBase::StartOrStopEffectFromPool2");
+    a_StopFx = H->sym("Simulator::cCreatureBase::StopEffectFromPools");
     game::set_behaviour_anim_listener(on_behaviour_anim); // BUG-0464
     fields::add_kind({fields::K_NPC, "npc", &g_scale_fix, kNpcFields, 1, npc_each, npc_mirror, nullptr}); // BUG-0461
     H->command_add(M, "coop.npctrack", "coop.npctrack start [radius m]|stop|count|dump [from] [n]|walk <id> x y z <m/s> - every frame: the guest's NPC proxies (tests, BUG-0361)",
@@ -605,7 +617,11 @@ static net::NpcState host_state(uint16_t id, void* c)
     s.rot = game::orientation(c);
     s.vel = game::velocity(c);
     s.health = game::health(c);
-    s.flags = (game::is_dead(c) ? net::NF_DEAD : 0) | (game::impressed(c) ? net::NF_IMPRESSED : 0);
+    s.flags = (game::is_dead(c) ? net::NF_DEAD : 0) | (game::impressed(c) ? net::NF_IMPRESSED : 0) |
+              (game::pack_member(c) ? net::NF_PACK : 0) | // BUG-0556: the host's pack (a Summon Flock) is the party's
+              (game::herd_of(c) && skg::readable(game::herd_of(c), 0x194) && skg::field<uint8_t>(game::herd_of(c), 0x192)
+                   ? net::NF_SUMMONED
+                   : 0);
     return s;
 }
 
@@ -1542,6 +1558,16 @@ static void guest_tick(double now)
             game::set_health(px.c, s.health);
         if (!px.killed) // the host's NPC was impressed (by anybody): the proxy shows it too
             game::set_impressed(px.c, (s.flags & net::NF_IMPRESSED) != 0);
+        px.host_pack = (s.flags & net::NF_PACK) != 0;
+        // BUG-0556: a summoned flock's member wears the event's hearts (cSummonCreatureEvent update 0xD512A0)
+        bool summoned = g_flock_fx_fix && !px.killed && (s.flags & net::NF_SUMMONED);
+        if (summoned != px.flock_fx && a_StartFx2 && a_StopFx) {
+            if (summoned)
+                skg::thiscall<void*>(a_StartFx2, px.c, 1, kFlockFx, kFlockFx);
+            else
+                skg::thiscall<void>(a_StopFx, px.c, kFlockFx, 0);
+            px.flock_fx = summoned;
+        }
         ntrack_row(id, px, s, drawn, px.killed ? 2 : walked ? 3 : placed ? 1 : 0, now, rv_rep);
     }
 }
@@ -2012,6 +2038,10 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         auto it = g_proxies.find(d.attacker);
         if (it != g_proxies.end())
             attacker = it->second.c;
+        if (player_rules::guest_drops_air_hit(av, attacker, d.ability)) { // BUG-0555: in the air in this game
+            log_hit(C.sess->my_id(), attacker, 0, "from the host, dropped (creature.air_immune)", true);
+            break;
+        }
         float dmg = teamplay::on_own_damage(av, d.damage);
         // (the host's family flag is all a guest knows of the host's party; the host's line has the pack)
         log_hit(C.sess->my_id(), attacker, dmg, "from the host", true);
@@ -2066,6 +2096,12 @@ bool damage_filter(void* c, float& damage, int type, void* attacker)
             return true;
         }
         // a guest's puppet was hit: forward real NPC hits to that guest
+        if (player_rules::air_hit_now()) { // BUG-0555: a melee hit the partner's creature in the air does not take
+            for (auto& p : C.sess->players())
+                if (p.id != 0 && C.puppet_of(p.id) == c)
+                    log_hit(p.id, attacker, 0, "dropped (creature.air_immune)");
+            return false;
+        }
         if (creature_hp::drop_party_hit(attacker)) { // BUG-0374: never from the host's pack / family
             for (auto& p : C.sess->players())
                 if (p.id != 0 && C.puppet_of(p.id) == c)
@@ -2082,6 +2118,7 @@ bool damage_filter(void* c, float& damage, int type, void* attacker)
                 d.type = type;
                 auto it = g_host_npcs.find(attacker);
                 d.attacker = it != g_host_npcs.end() ? it->second.id : 0xFFFF;
+                d.ability = player_rules::hit_ability_type(); // BUG-0555: the guest answers the air rule too
                 net::Writer w;
                 d.write(w);
                 C.sess->send_reliable_to(p.id, net::MSG_DAMAGE, w);
@@ -2362,6 +2399,26 @@ void* proxy(uint16_t id)
 {
     auto it = g_proxies.find(id);
     return it == g_proxies.end() ? nullptr : it->second.c;
+}
+
+bool proxy_in_host_pack(void* c)
+{
+    auto g = g_proxy_of.find(c);
+    if (g == g_proxy_of.end())
+        return false;
+    auto it = g_proxies.find(g->second);
+    return it != g_proxies.end() && it->second.host_pack;
+}
+
+uint16_t id_of(void* c)
+{
+    if (!c)
+        return 0xFFFF;
+    auto h = g_host_npcs.find(c);
+    if (h != g_host_npcs.end())
+        return h->second.id;
+    auto g = g_proxy_of.find(c);
+    return g != g_proxy_of.end() ? g->second : 0xFFFF;
 }
 
 void* host_npc(uint16_t id)
