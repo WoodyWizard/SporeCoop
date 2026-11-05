@@ -1,20 +1,21 @@
 ---
 id: BUG-0588
 title: Tribe -> Civ: after the City Hall editor the host's own NPCs read at (0, 0, 0) and the sync check reports MISMATCH; the Creature evolve-in-place path runs for the Tribe editors
-status: open
+status: fixed
 kind: desync
 stage: Tribe
 reported: 2026-11-04
 source: lab (fix/w43-transitions, coop_tribe_civ.py)
 role: host
 versions: 0.7.6
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w44-world-state2
+commits: 724c27f7 d21a18ff 040d4314 94022d49 cd2f986f 06f729dd 9f7a1a8e
+tests: tribe_civ (coop_tribe_civ.py)
 signature:
-docs:
+docs: docs/re/tribe.md#tribe-stage-end
 related:
+switch: diag.stage_end
 ---
 
 ## Report
@@ -29,15 +30,29 @@ No harm seen in the test (both games reached Civ); not analysed.
 Reproduce: `tools/lab.py run tribe_civ --lane N`, read the host's log between the two editors.
 
 ## Root cause
-Not analysed. Inferred: after the City Hall the game moves the Tribe's animals / NPCs for the Civ stage (or frees
-their positions) while the stage still counts as Tribe; the sync check and evolve-in-place do not know this phase.
+Observed: back from the City Hall editor the host's game takes its Tribe world down for the Civ stage: the player
+tribe's food mat (+0x260 = 0) and totem pole are gone (lab 20261105-123325, 20261105-123819) and, in lab
+20261104-224338, its 46 animals read at (0, 0, 0) while the guest's proxies stayed: the host's sync-check compared
+them and reported "n: 46 apart". A guest's game runs no such phase. The notice and the evolve-in-place path took the
+City Hall and vehicle editors for an evolution ("Alice evolved the species: everybody gets the new body", lab
+20261105-123819 before the last commit). Inferred: the animals' move to (0 0 0) belongs to the City Hall cinematic;
+it did not happen in the 3 runs of 2026-11-05 (no MISMATCH with the fix off either).
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+`tribe::stage_end()` (the player tribe without its food mat in Tribe: cTribeUI +0x28 / +0x29 read 0 by then): the
+host's sync-check compares nothing while it is true (switch `diag.stage_end`; off: compared, 0.7.7); coop.wstate
+prints `st phase stage_end=1` and the detector skips the sample as `apart`. The notice after the Tribe -> Civ
+editors (the last EditorRequest's editor 99E92F05 / F670AA43 / 9AD7D4AA / 7CB21BAD, or stage_end) says "made a
+design for the Civilization stage: it comes next". The in-place path itself stays (Civ sends the world).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+tribe_civ, new step after the City Hall editor: the host's game is in the end of Tribe (stage_end) and 6 sync-checks
+asked in 30 s give no MISMATCH. PASS out/lab/20261105-123819; with `SPORE_FIX_OFF=diag.stage_end`
+out/lab/20261105-124141 also passed: the animals did not go to (0 0 0) in these runs, so the MISMATCH itself has no
+FAIL run.
+no-fail-run: the animals at (0 0 0) after the City Hall were seen once (lab 20261104-224338) and not in the 3 runs of
+2026-11-05; the stage_end sign is verified (true in both runs, the detector twin of BUG-0594).
 
 ## History
 - 2026-11-04: opened.
+- 2026-11-05: the sync-check and the detector skip the host's end of Tribe, the notice fixed (fix/w44-world-state2).
