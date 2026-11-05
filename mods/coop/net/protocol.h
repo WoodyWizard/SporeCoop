@@ -458,8 +458,16 @@ struct Damage { // host -> guest: you were hit
     float damage = 0;
     int32_t type = 0;
     uint16_t attacker = 0xFFFF; // NPC net id or 0xFFFF
-    void write(Writer& w) const { w.u8(player); w.f32(damage); w.u32((uint32_t)type); w.u16(attacker); }
-    bool read(Reader& r) { player = r.u8(); damage = r.f32(); type = (int32_t)r.u32(); attacker = r.u16(); return r.ok(); }
+    // BUG-0555 (appended, older readers ignore it): the type of the attacker's ability whose hit it is (+8 of the
+    // ability, 0x1E bite, 0x1F charge, 0x20 spit; 0 = not an ability hit / unknown, also from an older host)
+    uint32_t ability = 0;
+    void write(Writer& w) const { w.u8(player); w.f32(damage); w.u32((uint32_t)type); w.u16(attacker); w.u32(ability); }
+    bool read(Reader& r)
+    {
+        player = r.u8(); damage = r.f32(); type = (int32_t)r.u32(); attacker = r.u16();
+        ability = r.ok() && r.left() >= 4 ? r.u32() : 0;
+        return r.ok();
+    }
 };
 
 struct AnimEvent {

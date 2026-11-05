@@ -2038,6 +2038,10 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         auto it = g_proxies.find(d.attacker);
         if (it != g_proxies.end())
             attacker = it->second.c;
+        if (player_rules::guest_drops_air_hit(av, attacker, d.ability)) { // BUG-0555: in the air in this game
+            log_hit(C.sess->my_id(), attacker, 0, "from the host, dropped (creature.air_immune)", true);
+            break;
+        }
         float dmg = teamplay::on_own_damage(av, d.damage);
         // (the host's family flag is all a guest knows of the host's party; the host's line has the pack)
         log_hit(C.sess->my_id(), attacker, dmg, "from the host", true);
@@ -2114,6 +2118,7 @@ bool damage_filter(void* c, float& damage, int type, void* attacker)
                 d.type = type;
                 auto it = g_host_npcs.find(attacker);
                 d.attacker = it != g_host_npcs.end() ? it->second.id : 0xFFFF;
+                d.ability = player_rules::hit_ability_type(); // BUG-0555: the guest answers the air rule too
                 net::Writer w;
                 d.write(w);
                 C.sess->send_reliable_to(p.id, net::MSG_DAMAGE, w);

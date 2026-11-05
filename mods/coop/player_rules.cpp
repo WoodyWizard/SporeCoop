@@ -116,6 +116,7 @@ static bool g_air_hit = false; // inside a melee hit on an airborne partner's pu
 static bool ranged_type(uint32_t t) { return t == 0x20 || t == 0x3D || t == 0x42 || t == 0x48; }
 
 static void* g_hit_attacker = nullptr;
+static uint32_t g_hit_idx = 0; // its ability index
 static void* g_hit_attacker_fwd() { return g_hit_attacker; }
 
 static bool hit_body(void* attacker, void* target, uint32_t idx, uint32_t a4);
@@ -123,9 +124,12 @@ static bool hit_body(void* attacker, void* target, uint32_t idx, uint32_t a4);
 static bool SK_THISCALL h_AttackTarget(void* attacker, void* target, uint32_t idx, uint32_t a4)
 {
     void* was = g_hit_attacker;
+    uint32_t was_idx = g_hit_idx;
     g_hit_attacker = attacker;
+    g_hit_idx = idx;
     bool r = hit_body(attacker, target, idx, a4);
     g_hit_attacker = was;
+    g_hit_idx = was_idx;
     return r;
 }
 
@@ -156,6 +160,30 @@ static bool hit_body(void* attacker, void* target, uint32_t idx, uint32_t a4)
 }
 
 bool air_hit_now() { return g_air_hit; }
+
+uint32_t hit_ability_type()
+{
+    if (!g_hit_attacker)
+        return 0;
+    int idx = (int)g_hit_idx;
+    if (idx < 0 || idx >= skg::vcall<int>(g_hit_attacker, 0xB0 / 4))
+        return 0;
+    uint8_t* ab = skg::vcall<uint8_t*>(g_hit_attacker, 0xB4 / 4, idx);
+    return ab && skg::readable(ab, 0xC) ? *(uint32_t*)(ab + 8) : 0;
+}
+
+// guest: the same rule in the guest's own game, for a hit the host decided while its last state of the guest was on
+// the ground (the network's delay: a jump or a glide starts in the guest's game first; lab 20261104-221242 #1: one
+// bite landed 1.5 m up)
+static uint32_t g_air_dropped_guest;
+bool guest_drops_air_hit(void* av, void* attacker, uint32_t ability)
+{
+    if (!g_air_fix || !av || !attacker || !ability || ranged_type(ability) || !game::in_creature_stage() ||
+        game::grounded(av) || net::dist(game::position(av), game::position(attacker)) < 1.f)
+        return false;
+    g_air_dropped_guest++;
+    return true;
+}
 static bool g_air_hit_fwd() { return g_air_hit; }
 
 // ---------------------------------------------------------------- BUG-0556
@@ -232,8 +260,8 @@ std::string status()
              (int)g_stun_fix, g_stun_sent_player, g_stun_sent_npc, g_stun_got_player, g_stun_got_npc, g_stun_bad,
              g_stun_last, (int)(o_Stun != nullptr));
     std::string out = b;
-    snprintf(b, sizeof b, "player_rules: air fix=%d dropped=%u passed=%u hook=%d\n", (int)g_air_fix, g_air_dropped,
-             g_air_passed, (int)(o_AttackTarget != nullptr));
+    snprintf(b, sizeof b, "player_rules: air fix=%d dropped=%u passed=%u guest_dropped=%u hook=%d\n", (int)g_air_fix,
+             g_air_dropped, g_air_passed, g_air_dropped_guest, (int)(o_AttackTarget != nullptr));
     out += b;
     snprintf(b, sizeof b, "player_rules: allies fix=%d answers=%u hook=%d\n", (int)g_allies_fix, g_allies_answers,
              (int)(o_Friendly != nullptr));
