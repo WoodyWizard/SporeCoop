@@ -82,6 +82,9 @@ void init(const SkHost* host, SkMod* mod, Api api);
 void tick();     // every frame (inside Present): only schedules UI work outside the frame
 void open(bool on);
 bool is_open();
+// BUG-0599: the window covers (x, y) (screen pixels of the game window): hide it for `secs` so that a click of the
+// mod there reaches the game's window under it (the "game saved" box's OK); false = not open or not there
+bool step_aside(int x, int y, double secs);
 int input_lock_now(); // the game's input lock count (cGameInputManager +0x110; > 0 = clicks are dropped)
 void shutdown(); // mod unload: hide our windows
 std::string debug_state();

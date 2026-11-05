@@ -336,6 +336,10 @@ static void* game_modal()
     return m;
 }
 
+// BUG-0599: the window steps aside (hidden for a moment) while the mod clicks the game's "game saved" box under it
+static double g_aside_until;
+static bool root_up() { return D.root && (sui::visible(D.root) || (H && H->time_seconds() < g_aside_until)); }
+
 // clicks on our window are dropped now: the input lock (a caption) or a modal box of the game
 static bool clicks_locked()
 {
@@ -446,7 +450,7 @@ static void locked_edit_apply(void*)
     Win w = g_locked_edit;
     std::u16string q;
     q.swap(g_typed_queue);
-    if (!w || !D.root || !sui::visible(D.root) || !sui::visible(w))
+    if (!w || !root_up() || !sui::visible(w))
         return;
     std::string t = sui::edit_text(w);
     if (t != g_locked_text) { // the game typed into it itself
@@ -484,9 +488,21 @@ static void locked_edit_apply(void*)
 }
 
 // every frame (main thread): a click under the lock on a line starts the mod's typing, any other click ends it
+// BUG-0551: a chat line typed while the host was paused saving the world for a returning guest was lost
+// (play_creature, out/lab/20261104-135838): the mod took the typing (the "game saved" box is a modal window)
+// and two things ended it: the mod's own click on the box's OK button (world.cpp box_task) counted as "a click
+// anywhere else", and a frame held by the save took the click and the keys after it at once, and the keys of
+// the frame of a click were dropped. The mod's own click no longer ends the typing, and the keys that came
+// after the click in its frame go into the line. Off: both lost (0.7.7).
+static bool g_locked_keep_fix = true;
+COOP_FIX("core.ui_locked_edit_keep", "BUG-0551", g_locked_keep_fix, "ui: the chat line typed under the game saved box keeps its typing over the mod's own click on the box and a held frame");
+
 static void locked_edit_tick(bool clicked)
 {
-    std::u16string chars = mouse::take_chars();
+    std::u16string after;
+    std::u16string chars = mouse::take_chars(&after);
+    if (clicked && g_locked_keep_fix && g_locked_edit && mouse::last_click_own())
+        clicked = false; // the mod confirmed the game's box: the player goes on typing
     if (clicked) {
         g_locked_edit = nullptr;
         if (g_locked_edit_fix && mouse::g_fix && g_want_open && D.root && sui::visible(D.root) && clicks_locked()) {
@@ -505,11 +521,13 @@ static void locked_edit_tick(bool clicked)
                 }
             }
         }
-        return; // (characters of the frame of the click went to whatever had the focus before)
+        if (!g_locked_keep_fix || !g_locked_edit || after.empty())
+            return; // (characters of the frame of the click before it went to whatever had the focus before)
+        chars = after; // the keys after the click in the same frame (a frame held by the save)
     }
     if (!g_locked_edit || chars.empty())
         return;
-    if (!g_want_open || !D.root || !sui::visible(D.root)) {
+    if (!g_want_open || !root_up()) {
         g_locked_edit = nullptr;
         return;
     }
@@ -1128,7 +1146,7 @@ static void refresh()
     }
     if (g_want_open && g_recenter_fix)
         place_window(D.root);
-    show(D.root, g_want_open);
+    show(D.root, g_want_open && H->time_seconds() >= g_aside_until);
     if (!g_want_open) {
         if (A.lan_scan)
             A.lan_scan(false);
@@ -1191,6 +1209,20 @@ void open(bool on)
 }
 
 bool is_open() { return g_want_open; }
+
+bool step_aside(int x, int y, double secs)
+{
+    if (!g_want_open || !D.root || !sui::visible(D.root))
+        return false;
+    Rect r = sui::screen_rect(D.root);
+    if (x < r.x1 || x >= r.x2 || y < r.y1 || y >= r.y2)
+        return false;
+    sui::set_visible(D.root, false);
+    g_cache[D.root].vis = 0;
+    g_aside_until = H->time_seconds() + secs;
+    g_dirty = true;
+    return true;
+}
 int input_lock_now() { return input_lock(); }
 
 void tick()

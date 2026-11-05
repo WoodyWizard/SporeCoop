@@ -15,6 +15,8 @@
 #include "game.h"
 #include "sporekit_game.hpp"
 #include "modes.h"
+#include "mouse.h"
+#include "coop_ui.h"
 #include "slotfs.h"
 #include "sui.h"
 #include "fixes.h"
@@ -309,6 +311,13 @@ static sui::Win first_visible(sui::Win w, uint32_t id, int depth = 0)
     return nullptr;
 }
 
+// BUG-0599: the co-op window (always in front for the mouse) over the box took the mod's click on the box's OK
+// although the box is drawn above it: the box stayed and the host's game stayed paused while the window was open
+// (coop_chat_pause.py, 2026-11-05). The window steps aside (hidden for 0.6 s) for the click. Off: the click hits
+// the window (0.7.7).
+static bool g_box_aside_fix = true;
+COOP_FIX("world.box_aside", "BUG-0599", g_box_aside_fix, "world: the co-op window steps aside while the mod confirms the game saved box under it");
+
 // the box's OK button (the check mark, control id 0xFFFFFFF1, 2026-10-23 tree dump)
 constexpr uint32_t kSavedBoxOk = 0xFFFFFFF1;
 
@@ -341,6 +350,9 @@ static void box_task(void*)
         sui::Rect r = sui::screen_rect(ok);
         char cmd[64];
         snprintf(cmd, sizeof cmd, "click %d %d", (int)((r.x1 + r.x2) / 2), (int)((r.y1 + r.y2) / 2));
+        mouse::own_click((int)((r.x1 + r.x2) / 2), (int)((r.y1 + r.y2) / 2)); // BUG-0551: not the player's click
+        if (g_box_aside_fix && coop_ui::step_aside((int)((r.x1 + r.x2) / 2), (int)((r.y1 + r.y2) / 2), 0.6))
+            H->log(M, SK_INFO, "world: the co-op window steps aside for the click on the game saved box");
         if (H->command_exec(cmd, nullptr) == 0)
             return;
     }
