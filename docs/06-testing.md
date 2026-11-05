@@ -4136,3 +4136,45 @@ comes back at the end. The cache copy is not in git: `out/fixtures/bug0546-Polli
 checkout (else `out/bug0546/lane5-Pollination.package` of the fix/w42-infra worktree); without it the test SKIPs.
 It also SKIPs when the guard had no ship to fix (lane 4: its other caches have the models). About 1.5 minutes.
 `SPORE_FIX_OFF=game.ufo_model` must FAIL (lane 5: out/lab/20261104-130233).
+
+## The detector's world state and whole-planet rows (2026-11-04, fix/w43-detector2)
+<a id="testing-detector-state"></a>
+
+The detector of [#testing-detector](#testing-detector) compared only objects within ~250 m of the guest. The 2026-11-04
+player reports (BUG-0554..BUG-0579) were mostly world state it could not see. Now every sample also compares:
+
+* `coop.wstate` (mods/coop/wstate.cpp, one command per game, read-only, all from the game; offsets in
+  docs/re/tribe.md#tribe-detector-state and docs/re/creations.md#creations-cplayer-fields): the sky (time of day) and the
+  day's length, cPlayer's consequence trait per stage (stages done) and the stage progress bar, the mode's shared resource
+  (food / money), Cell food / spent DNA, Creature DNA and the species table (relation, impressed, killed per species), every
+  tribe's food, members and relation to the player tribe, the tribe mission manager's current mission (the goal), every
+  civilization's money, relation and cities, every NPC empire's relation and war / alliance flags, and the planet's whole
+  lists of villages, huts, tools, totems, food mats, nests, cities, buildings and turrets with position and owner.
+* `worlddiff.diff_state` / `diff_planet` (`pair_dump(..., state=True)`; the monitor's `SPORE_DETECTOR` samples use it,
+  other callers of pair_dump do not), signatures and tolerances:
+
+| signature | compared | tolerance | ticket |
+|---|---|---|---|
+| `All:state:time_of_day` | the planet context's orientation (what MSG_WORLD_TIME sends) | 20 deg | BUG-0579 |
+| `All:state:day_length` | cTimeOfDay +0x24 | 2 % | BUG-0579 |
+| `All:state:stage_done` | a stage done (trait != 0) on one game only | exact | BUG-0577 |
+| `<stage>:state:goal_progress` | the stage progress bar (cPlayer +0x10F0 / +0x10F4) | 5 or 10 % | |
+| `<stage>:state:money` / `food` | `coop.res`'s game value (Tribe: the player tribe row) | 20 or 5 % / 3 or 10 % | BUG-0572 (Tribe food) |
+| `Cell:state:dna`, `dna_spent` | cCellSerializableData food, spent DNA | 3 or 10 %, 1 | BUG-0560 |
+| `Creature:state:dna` | GetEvolutionPoints | 5 or 10 % | |
+| `Creature:state:species_relation` / `_impressed` / `_killed` / `species_only` | the species table, common keys (a guest's 7C / 7D keys have no partner) | exact | BUG-0419 class |
+| `Tribe:state:food`, `player_members` | the player tribe's bundles, members | 3 or 10 %, 1 | BUG-0572 |
+| `Tribe:state:relation`, `members`, `tribe_food` | NPC tribes matched by centre (30 m): level by the manager's thresholds or 1.0 apart, members 1, food 5 or 20 % | | BUG-0565, BUG-0564 |
+| `Tribe:state:goal` | the current mission's tribe (30 m) and state, or a goal on one game only | | BUG-0564 |
+| `Civilization:state:relation`, `civ_money`, `cities`, `player_cities`, `civ_only` | civilizations by political id | 1.0, 50 or 20 %, exact | |
+| `Space:state:relation`, `war_alliance`, `empire_only` | NPC empires by political id | 0.5, flags & 3 | |
+| `<stage>:planet:<kind>` | the planet's whole list of a kind (village 25 m, city 25 m, others 8 m) | presence + position | BUG-0564 (village), BUG-0566 (tribe_hut), BUG-0574 (tools, totem) |
+| `<stage>:planet_owner:<kind>` | matched objects: the player's on one game only, or one host owner that is two owners on the guest | | BUG-0565 (village) |
+
+* No player position (an RTS game in the background): the state rows still count; the sample is no longer `nocentre`.
+* `tools/detector_report.py` maps the new signatures in `KNOWN`; an `All` row's share is of all comparisons.
+* `tools/tests/tools_selftest.py worldstate` (in `make test`) checks the rows on made-up dumps.
+* First runtime check (lane 2, tribe fixture, quiet): both games equal (food 15 / 15, the NPC tribe 4 members, the same
+  political ids, the sky 0.7 deg apart), 0 rows in 14 samples of `detect_tribe` (lab 20261104-201322). The tribe fixture
+  has no stage done (it starts at Tribe) and no tribe-to-tribe mission (`goal tribe=-1`): those rows are not shown to fire
+  on a real game yet.
