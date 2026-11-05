@@ -1445,13 +1445,47 @@ unsigned g_submits_repeated; // tests: editor requests dropped as repeats of one
 // it save first; a share that cannot save now holds the editor at most 15 s, submit_tick)
 bool share_save_due() { return world::save_busy() || world::save_pending(); }
 
+// BUG-0560: the Cell stage's request (0xE84600) submits and then posts the editor's DNA budget (message 0x90A03FDF,
+// +8 = DNAForFood(food) - spent); the editor's listener takes it only after it entered (cEditor::OnEnter registers
+// it). A held request (the vote, a save, the avatar's new body) let the game post it at once with no editor
+// listening: the editor opened with the config's start budget (100) and the game booked spent = budget - remaining
+// on the way out, a negative spent that paid again on every visit. On: the budget is posted again after the held
+// request's Submit, queued behind it as the game does. Off: as before.
+bool g_editor_budget_fix = true;
+COOP_FIX("cell.editor_budget", "BUG-0560", g_editor_budget_fix,
+         "cell: an editor opened after the vote gets the stage's DNA budget, not the editor's start budget");
+unsigned g_budgets_posted; // tests
+void post_editor_budget(int budget)
+{
+    uintptr_t get = H->sym("App::IMessageManager::Get"), nw = H->sym("GeneralAllocator::new_");
+    uintptr_t vt = H->sym("SporeCoop::EditorBudgetMsg_vtable");
+    void* mm = get ? skg::cdecl_call<void*>(get) : nullptr;
+    if (!mm || !nw || !vt)
+        return;
+    static const char kName[] = "SporeCoop";
+    uint32_t* m = skg::cdecl_call<uint32_t*>(nw, 0x40u, kName, 0, 0, 0, 0);
+    if (!m)
+        return;
+    memset(m, 0, 0x40);
+    m[0] = (uint32_t)vt; // the game's refcounted message (0xE84600: base vtable, then this one; +4 refcount 0)
+    m[0xC] = 0x90A03FDFu;
+    m[2] = (uint32_t)budget;
+    m[6] = 1;
+    skg::vcall<void>(mm, 0x18 / 4, 0x90A03FDFu, (void*)m, (void*)nullptr, 0); // MessagePost (queued)
+    g_budgets_posted++;
+    LOG("cell: DNA budget %d posted again to the held editor (BUG-0560)", budget);
+}
+
 bool submit_now(void* req)
 {
+    int budget = g_editor_budget_fix && game::mode_id() == modes::kCell ? cellsync::editor_budget() : -1;
     g_vote_bypass = true;
     bool r = o_Submit(req);
     g_vote_bypass = false;
     if (r)
         g_editor_submitted_at = H->time_seconds();
+    if (r && budget >= 0)
+        post_editor_budget(budget);
     return r;
 }
 

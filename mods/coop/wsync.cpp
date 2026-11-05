@@ -9,6 +9,7 @@
 #include <map>
 #include <vector>
 
+#include "cellsync.h"
 #include "fixes.h"
 #include "game.h"
 #include "modes.h"
@@ -403,12 +404,44 @@ static std::string f_goal(const Entry& e)
     return g_fmt;
 }
 
+// ---- row: Cell, the DNA the host's editors spent (cCellSerializableData +0x2C; the food +0x1C is MSG_CELL_FOOD's):
+// what the guest's Cell DNA shows is DNAForFood(food) - spent (docs/re/cell.md#cell-editor-dna)
+static bool g_cell_spent_fix = true;
+COOP_FIX("wsync.cell_spent", "BUG-0560", g_cell_spent_fix, "wsync: a guest's Cell DNA counts what the host's editor spent");
+static bool cell_mode(uint32_t m) { return m == modes::kCell; }
+static bool r_spent(Table& out)
+{
+    int v;
+    if (!cellsync::spent_dna(v))
+        return false;
+    Entry e;
+    e.v[0] = (uint32_t)v;
+    e.v[1] = (uint32_t)cellsync::editor_budget();
+    out.push_back(e);
+    return true;
+}
+static int s_spent(const Table& want, bool apply)
+{
+    int v;
+    if (want.empty() || !cellsync::spent_dna(v) || v == (int)want[0].v[0])
+        return 0;
+    if (apply)
+        cellsync::set_spent_dna((int)want[0].v[0]);
+    return 1;
+}
+static std::string f_spent(const Entry& e)
+{
+    snprintf(g_fmt, sizeof g_fmt, "spent=%d budget=%d", (int)e.v[0], (int)e.v[1]);
+    return g_fmt;
+}
+
 static const Row kRows[] = {
     {1, "tod", 4, &g_tod_fix, sky, r_tod, s_tod, true, f_tod},
     {2, "day", 1, &g_tod_fix, sky, r_day, s_day, false, f_day},
     {3, "stages", 5, &g_stages_fix, planet, r_stages, s_stages, false, f_stages},
     {4, "tribe_rel", 4, &g_rel_fix, tribe_mode, r_rel, s_rel, false, f_rel},
     {5, "tribe_goal", 6, &g_goal_fix, tribe_mode, r_goal, s_goal, false, f_goal},
+    {6, "cell_spent", 2, &g_cell_spent_fix, cell_mode, r_spent, s_spent, false, f_spent},
 };
 constexpr int kNRows = sizeof kRows / sizeof kRows[0];
 
