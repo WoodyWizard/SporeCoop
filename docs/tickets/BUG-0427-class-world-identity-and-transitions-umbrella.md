@@ -36,3 +36,4 @@ Source: docs/generalisation-plan.md G10.
 
 ## History
 - 2026-11-01: opened.
+- 2026-11-04 (fix/w43-realign, W2 of 0.7.7): one mechanism for a guest's planet after transitions: realign.cpp (the host's whole-planet list of villages, huts, tools, food mats, nests, cities every 2 s and at once after the host's load / game over reload and a guest's (re)arrival; a guest removes what the host has not through the game's own removal, fixes the buildings' health, counts what it lacks). Tribe villages and buildings done (BUG-0564, BUG-0566, BUG-0567), tools on the whole planet (BUG-0488, wobj.tools_planet); Creature nests compared (realign_creature_rejoin, the same on both after a rejoin); Civ cities compared only (no removal). Class test coop_realign_planet.py (docs/06-testing.md#testing-realign).

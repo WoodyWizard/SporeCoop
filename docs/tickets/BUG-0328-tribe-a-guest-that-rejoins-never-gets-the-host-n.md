@@ -44,6 +44,8 @@ does that in every stage, Tribe included (npc_stage covers mode 0x1654C02). Not 
 of coop_npc_resync.py found no proxy rows in the census on the tribe fixture (`coop.census all 1200`: 76 / 75 rows,
 all of kind `g`, while `coop.npc` listed 29 proxies; out/lab/20261103-235641), so it had nothing to forget (census.cpp lists `c` rows with net ids in Creature only: Tribe animals are plain `g` rows); the
 variant was dropped. Next: pick the ids from `coop.npc` instead of the census.
+2026-11-04 (fix/w43-realign): realign_tribe_rejoin (coop_realign_planet.py --fixture tribe --case rejoin) compares the whole planet after a guest's leave and rejoin in Tribe: villages, huts, food mats, nests the same (lab 20261104-212408, 20261104-212748); tools of far villages differed (8 missing) until wobj.tools_planet (BUG-0488). The NPC coverage of this ticket is not what that test measures.
+
 ## Fix
 None. The scenario test `coop_tribe_rejoin_npcs.py` (suite `tribe_rejoin_npcs`) stays: a guest
 rejoins twice in Tribe and must have the host's NPCs again (it passes on main).
@@ -55,3 +57,4 @@ worktree (not in git).
 ## History
 - 2026-10-30: opened.
 - 2026-11-03: looked at on fix/w41-tribe-world: covered by npc.resync in principle, not verified in Tribe.
+- 2026-11-04 (fix/w43-realign): the rejoin's whole-planet objects checked (realign_tribe_rejoin PASS out/lab/20261104-212748); the NPC coverage still not reproduced, stays open.
