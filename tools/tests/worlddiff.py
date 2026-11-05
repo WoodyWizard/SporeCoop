@@ -571,6 +571,11 @@ def diff(host, guest, area=None):
     if host.modeid != guest.modeid or host.world != guest.world:
         return [Finding(sig='apart', stage=stage, n=0, text=f'not in the same place: host {host.mode} {host.world}, '
                                                             f'guest {guest.mode} {guest.world}')]
+    # BUG-0596: a game that lists no object at all while the other lists its world is loading it (a rejoin, a load:
+    # campaign_ct 20261105-015350 compared a rejoining guest with 0 rows, its species table not received yet)
+    for w, other in ((guest, host), (host, guest)):
+        if w.complete and not w.rows and len(other.rows) >= 10:
+            return [Finding(sig='apart', stage=stage, n=0, text=f'the {w.who or w.role}\'s game lists no object (loading)')]
     # BUG-0588, BUG-0594: from the City Hall editor on the host's game takes its village and animals out of the world
     # for the Civ stage (totem pole and food mat destroyed, animals at (0 0 0)); the guest's game has no such phase and
     # shows its Tribe world until the Civ world comes: not the same place (SPORE_DETECTOR_STAGE_END=1 compares anyway)

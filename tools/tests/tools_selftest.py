@@ -690,6 +690,20 @@ def test_worldstate():
     gs2 = worlddiff.State(sp.format('guest', '90000(unsynced)'))
     out = {f'{w}:{k}' for w, k, _, _ in worlddiff.diff_state(hs, gs2, 'Space')}
     check(out == {'Space:state:money'}, f'other money, unsynced: still a Space:state:money row ({out})')
+    # BUG-0594: the host's game in the end of Tribe (stage_end): its village is taken down, not compared
+    h, g = worlddiff.World('census v1 role=host me=0 mode=Tribe modeid=01654C02 world=A3930F03 t=1.0'), \
+        worlddiff.World('census v1 role=guest me=1 mode=Tribe modeid=01654C02 world=A3930F03 t=1.0')
+    h.state, g.state = st(village2=False), st()
+    h.state.stage_end = True
+    out = [f['sig'] for f in worlddiff.diff(h, g)]
+    check(out == ['apart'], f'the host in the end of Tribe: not the same place ({out})')
+    # BUG-0596: a game that lists no object (it loads its world) is not compared
+    obj = 'obj c{} key=2915F01F alive=1 hp=10.0 ai=1 own=npc owner=0 pos=(1.0 2.0 3.0)'
+    h = worlddiff.World('\n'.join(['census v1 role=host me=0 mode=Creature modeid=01654C01 world=A3930F03 t=1.0',
+                                    'me pos=(1.0 2.0 3.0) ok=1'] + [obj.format(i) for i in range(12)] + ['end objects=12']))
+    g = worlddiff.World('census v1 role=guest me=1 mode=Creature modeid=01654C01 world=A3930F03 t=1.0\nend objects=0')
+    out = [f['sig'] for f in worlddiff.diff(h, g)]
+    check(out == ['apart'], f'a guest that lists no object (loading): not compared ({out})')
     # through diff(): the state rows come with the area compare, also when there is no centre
     h, g = worlddiff.World('census v1 role=host me=0 mode=Tribe modeid=01654C02 world=A3930F03 t=1.0'), \
         worlddiff.World('census v1 role=guest me=1 mode=Tribe modeid=01654C02 world=A3930F03 t=1.0')
