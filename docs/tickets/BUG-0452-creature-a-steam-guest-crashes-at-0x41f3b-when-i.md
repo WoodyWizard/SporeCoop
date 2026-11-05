@@ -89,3 +89,7 @@ Creepy & Cute list):
   parser now finds every key (the group's `0x00` is a byte run); test `coop_unknown_parts.py` (FAIL and
   PASS lab runs above).
 - 2026-11-02: released in 0.7.3.5.
+- 2026-11-04 (fix/w43-content, triage for 0.7.7): no 0x41F3B in any 0.7.5 log of the 2026-11-04 reports; the only
+  0x41F3B crash in them (crashes/crash-20261031-192709, coop 0.7.3.1, before the fix) is an old report the zips carry
+  along. The content_lookalike runs (a Spore_Pack_03 part and Creepy & Cute parts on a guest without both) fault 0
+  times. Stays fixed.

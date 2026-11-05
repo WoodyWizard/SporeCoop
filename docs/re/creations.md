@@ -1079,3 +1079,61 @@ BUG-0345 ("the guest spawns in the Cell stage with its previous cell creature"),
   SetDayDuration 0xBC29A0; 960 s on the tribe fixture at runtime). The sky the mod shares (MSG_WORLD_TIME) is the planet
   context's orientation (`TimeOfDay_GetObject` +0x10, docs/re/space.md): the detector compares both (`All:state:time_of_day`,
   `All:state:day_length`, BUG-0579).
+## A part or paint the other game lacks: the blocks, the shade, the lookalike part (2026-11-04, fix/w43-content)
+<a id="creations-lookalike"></a>
+
+BUG-0559 (class BUG-0424). GOG 2024, lanes 9 / 10 (`tools/tests/coop_content_lookalike.py`: Carol's lane without
+`bp1content/BoosterPack_01.package` and `Data/Spore_Pack_03.package`), Ghidra, the game files' index.
+
+* ✔ **The blocks are the species data, not the model.** A species' `creaturedata` record (0x0F43029A, the game's
+  cache of what it derived from the model, §1.1) is a second copy of the model: its header names the three paint
+  effects (the same 12 bytes as the bem header's byte 26, here at byte 36) and its body names each part as
+  `00 60 62 40` + the part id **without byte-run packing** (33 entries for the 33 parts of Tiger Horse) followed by
+  the part's data with float boxes. The host sends its own creaturedata with each species of its world that is one
+  of its own creations (`kOwnSpecies`, BUG-0017: the 0xD2C361 desync). The 0.7.6 guest rewrote the part ids of the
+  bem only: its game built the host's species from a creaturedata naming parts it lacks and **drew each such part as
+  a box** (runtime, lane 10: the host's family and pack members made of orange boxes of each part's size, the
+  model the game reads (`coop.creations partlist`) had no unknown part; the same substitute parts put into the
+  host's model directly (no pack part anywhere) are drawn normally: run `CONTENT_SWAPS=08504962=CE3E4186,...`).
+  No fault: the bake survives a part id it cannot find in creaturedata (the bem's unknown id faults at 0x41F3B).
+* ✔ **The shade is a paint check that did not know the base game's cell paints.** The host's creature kept its
+  Cell stage paint `skinpaint_cell_stripes` (0xE4C02CCE, paint prop 0xD0654338 group 0x406A0200 of
+  `Spore_Game` / `PatchData`). That effect is compiled into the base game's effect directory (type 0xEA5118B0
+  0xBAFC5CA1, groups 0x40450200..02) and has no 0x497767B9 record, and `kBasePaintEffects` (111 creature skin
+  paints) did not list it: every game, also one WITH all packs (Bob and the host itself, `paints_fb=1`), took it
+  for unknown and painted the base layer `skinpaint_base_blankShiny` (shiny plain orange in the test). Observed
+  in the player's guest log too (paint E4C02CCE "unknown here", "a base game paint" fallback).
+* ✔ `Swarm::cEffectsManager::GetDirectoryAndEffectIndex` 0xA6D750 (thiscall(manager, id, group) ret 8) is the
+  lookup the game's effect creator makes (EffectWorld::CreateEffect 0xA71300 gives up below 0): the effect
+  directories at manager+0x2C..+0x30, each with a hash map at +0x68 keyed (id, group), the answer
+  `(directory << 24) | index` or -1. With (id, 0) it finds 0xE4C02CCE on every game and the pack's 0xC78AAED4 only on
+  a game with the pack (runtime lane 10). `paint_known` asks it first (`content.lookalike`).
+* ✔ **The resource manager's database list**: `RM+0x2C` points to the head pointer of a singly linked list of
+  nodes `{next, Database*}`, highest priority first (GetDatabaseList 0x8E0380 and FindDatabase 0x8DE620 walk it,
+  probing `OpenRecord` vt 0x34(key, 0, 1, 6, 1, 0)). A `DatabasePackedFile`'s GetLocation (vt 0x28) is its file.
+  The mod reads the indexes of these files itself to list every part prop this game has (`catalogue`; the first
+  package with an id answers, as FindRecord does), once per session at the first part it lacks: runtime (lane 10,
+  without Creepy & Cute) `this game has 503 parts of group 40626000 (33 packages, 0 unreadable, 16 ms)`.
+* ✔ **A part prop's property list** (type 0x00B1B104): an array iff `flags & 0x10` (count, item size, items);
+  strings (type 0x12 / 0x13, flags 0x0D) are a length in characters and the characters; fixed types 0x01 1,
+  0x09/0x0A/0x0D 4, 0x20 16, 0x22 0x208, 0x30 8, 0x31..0x34 16, 0x38 56, 0x39 24 bytes. All 2839 part props of
+  the four part groups of the GOG 2024 install parse with this rule. CORRECTION (2026-11-04, fix/w43-content):
+  `tools/part_substitutes.py` treats `flags & 0x1C` as an array, so a string with flags 0x0D was read as an
+  array and the record dropped (6 of the 622 creature part props of the three packages it reads; the Creepy &
+  Cute table was generated without them). The bounding box is 0x1CBB2F62 (type 0x39, six little endian floats).
+* ✔ **The lookalike part** (`content.lookalike`, `mods/coop/net/partprops.*`): a sending game adds the property
+  list of each part its creation's models name to the bundle (records {id, 0x00B1B104, 0x7C0DE5C1}: a group no
+  game resource has, taken out before anything is registered; a 0.7.6 receiver would register them under that
+  group, which nothing asks for). The receiving game, for a part it lacks, picks among the parts it has the one
+  with the same role set (0xB00F0FXX) and as many 0xFE bytes (it is written in place), the nearest ability levels,
+  ranks and cost (the weights of the Creepy & Cute table) and the nearest size (3 per doubling of the box
+  diagonal); none of that role: the 0.7.6 chain (the Creepy & Cute table, then a base detail). Runtime: the
+  host's foot of Spore_Pack_03 (0xF54F0B90, on no table) became the base foot 0x7F815C91 on Carol; with the switch
+  off it became the fixed detail 0x0330D834 (the creature lost its feet on that game). The parts of Creepy & Cute
+  mostly get the table's choice; one detail differs (0xC61D94A9: 0xE788026D instead of 0x0330D834).
+* Fix `content.species_data`: the ids substituted in the bem (parts and the three paints) are substituted in the
+  creaturedata of the same bundle; a creaturedata that still names a part this game lacks is left out (the game
+  computes one). `coop.creations partlist <key>` prints each part of the model the game reads with its role here
+  and `species_data=<parts> species_data_unknown=<lacking>` of the creaturedata the game finds for that key.
+* ? Not verified: the lookalike choice for cell and UFO parts (the same code, no test); vehicles and buildings
+  (`ensure_model`, no bundle and so no description: the 0.7.6 tables); an animation only the missing part has.

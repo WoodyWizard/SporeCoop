@@ -3,6 +3,7 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <array>
 #include <cstdio>
 #include <cstring>
 #include <deque>
@@ -17,6 +18,7 @@
 #include "sporekit_game.hpp"
 #include "fixes.h"
 #include "content_packs.h"
+#include "net/partprops.h"
 #include "trace.h"
 
 namespace creations {
@@ -562,6 +564,225 @@ static uint32_t part_fallback(ModelKind k, int fe)
     return 0;
 }
 
+// ---- BUG-0559: a part this game lacks shown as the most similar part it has ----
+// The fixed tables above were made from one install (GOG 2024) for one pack, and a part of another pack
+// became one fixed detail whatever it was (a mouth, a foot). Now the sending game adds the description
+// of each part its creation uses (the part's own property list: role, abilities, cost, size; the group
+// kPartDescGroup, which no game resource has) and the receiving game picks, among the parts IT has
+// (every part prop of the packages registered with its resource manager), the one of the same role
+// with the nearest abilities and size (net/partprops). docs/re/creations.md#creations-lookalike.
+// Off (`coop.fix content.lookalike off`): 0.7.6, the tables and the fixed detail.
+static bool g_lookalike_fix = true;
+COOP_FIX("content.lookalike", "BUG-0559", g_lookalike_fix, "creations: a part or paint this game lacks is shown as the most similar one it has (the same role, abilities and size), chosen from the parts this game has installed; a paint this game has is never replaced");
+constexpr uint32_t kPartDescGroup = 0x7C0DE5C1; // a part's description in a bundle (never registered)
+constexpr size_t kMaxDescBytes = 256u << 10;      // per bundle
+
+// the part prop entries (type kPartProp, the 4 part groups) of one package file of this game, read once
+struct PartFile {
+    std::wstring path;
+    std::vector<dbpf::Entry> parts;
+    bool ok = false;
+};
+static std::map<std::wstring, PartFile> g_part_files;
+static std::map<uint32_t, std::vector<partprops::Part>> g_catalogue; // part group -> the parts this game has
+static std::map<std::pair<uint32_t, uint32_t>, uint32_t> g_lookalike; // (group, id) -> chosen (0: none)
+static unsigned g_lookalikes, g_desc_out, g_desc_in;
+static double g_catalogue_ms;
+
+static bool is_part_group(uint32_t g)
+{
+    return g == kPartGroup || g == kCellPartGroup || g == kUfoPartGroup || g == 0x40636000;
+}
+
+static bool read_file_at(HANDLE f, uint64_t off, uint32_t n, std::vector<uint8_t>& buf)
+{
+    buf.resize(n);
+    LARGE_INTEGER li;
+    li.QuadPart = (LONGLONG)off;
+    DWORD rd = 0;
+    return SetFilePointerEx(f, li, nullptr, FILE_BEGIN) && (n == 0 || (ReadFile(f, buf.data(), n, &rd, nullptr) && rd == n));
+}
+
+static const PartFile& part_file(const std::wstring& path)
+{
+    auto it = g_part_files.find(path);
+    if (it != g_part_files.end())
+        return it->second;
+    PartFile& pf = g_part_files[path];
+    pf.path = path;
+    HANDLE f = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
+    if (f == INVALID_HANDLE_VALUE)
+        return pf;
+    std::vector<uint8_t> hdr, idx;
+    dbpf::IndexInfo info;
+    std::vector<dbpf::Entry> all;
+    pf.ok = read_file_at(f, 0, 96, hdr) && dbpf::index_info(hdr.data(), hdr.size(), info) && info.size < (64u << 20) &&
+            read_file_at(f, info.offset, info.size, idx) && dbpf::parse_index(idx.data(), idx.size(), info, all);
+    CloseHandle(f);
+    for (auto& e : all)
+        if (e.key.type == kPartProp && is_part_group(e.key.group) && e.size <= (1u << 20))
+            pf.parts.push_back(e);
+    return pf;
+}
+
+static bool read_entry(const std::wstring& path, const dbpf::Entry& e, std::vector<uint8_t>& out)
+{
+    HANDLE f = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
+    if (f == INVALID_HANDLE_VALUE)
+        return false;
+    std::vector<uint8_t> raw;
+    bool ok = read_file_at(f, e.offset, e.size, raw) && dbpf::decode(e, raw.data(), out);
+    CloseHandle(f);
+    return ok;
+}
+
+static bool file_location(void* db, std::wstring& out)
+{
+    const wchar_t* loc = db ? vcall<const wchar_t*>(db, 0x28 / 4) : nullptr; // GetLocation
+    if (!loc || IsBadReadPtr(loc, 8) || !(loc[1] == L':' || loc[0] == L'\\'))
+        return false; // not a package file (a folder database)
+    out = loc;
+    return true;
+}
+
+// this game's property list of a part (the package that answers for it, as the game reads it)
+static bool part_prop_bytes(uint32_t id, uint32_t group, std::vector<uint8_t>& out)
+{
+    void* rm = a_RmPtr ? *(void**)a_RmPtr : nullptr;
+    uint32_t key[3] = {id, kPartProp, group}, real[3] = {};
+    void* db = rm ? vcall<void*>(rm, 0x30 / 4, (const uint32_t*)key, real, (void*)nullptr) : nullptr; // FindRecord
+    std::wstring path;
+    if (!file_location(db, path))
+        return false;
+    for (auto& e : part_file(path).parts)
+        if (e.key.instance == id && e.key.group == group)
+            return read_entry(path, e, out);
+    return false;
+}
+
+// every part of `group` this game has: the part props of the packages the resource manager searches
+// (its list RM+0x2C, highest priority first, as FindDatabase walks it: node {next, Database*}), the
+// first package with an id answers for it. Built once per session (the packages do not change).
+static const std::vector<partprops::Part>& catalogue(uint32_t group)
+{
+    auto it = g_catalogue.find(group);
+    if (it != g_catalogue.end())
+        return it->second;
+    std::vector<partprops::Part>& out = g_catalogue[group];
+    void* rm = a_RmPtr ? *(void**)a_RmPtr : nullptr;
+    if (!rm)
+        return out;
+    LARGE_INTEGER f0, f1, fq;
+    QueryPerformanceCounter(&f0);
+    std::set<uint32_t> seen;
+    unsigned files = 0, bad = 0;
+    void** head = *(void***)((uint8_t*)rm + 0x2C);
+    for (void** node = head ? (void**)*head : nullptr; node && files < 512; node = (void**)node[0]) {
+        if (IsBadReadPtr(node, 8))
+            break;
+        std::wstring path;
+        if (!file_location(node[1], path))
+            continue;
+        if (path.find(L"\\SporeCoop\\") != std::wstring::npos)
+            continue; // our own packages (received creations, model copies): no parts
+        files++;
+        const PartFile& pf = part_file(path);
+        std::vector<const dbpf::Entry*> want;
+        for (auto& e : pf.parts)
+            if (e.key.group == group && !seen.count(e.key.instance))
+                want.push_back(&e);
+        if (want.empty())
+            continue;
+        HANDLE f = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
+        if (f == INVALID_HANDLE_VALUE)
+            continue;
+        std::vector<uint8_t> raw, data;
+        for (auto* e : want) {
+            seen.insert(e->key.instance);
+            partprops::Part p;
+            if (read_file_at(f, e->offset, e->size, raw) && dbpf::decode(*e, raw.data(), data) &&
+                partprops::parse(data.data(), data.size(), e->key.instance, p))
+                out.push_back(std::move(p));
+            else
+                bad++;
+        }
+        CloseHandle(f);
+    }
+    QueryPerformanceCounter(&f1);
+    QueryPerformanceFrequency(&fq);
+    g_catalogue_ms += 1000.0 * (double)(f1.QuadPart - f0.QuadPart) / (double)fq.QuadPart;
+    H->log(M, SK_INFO, "creations: content: this game has %u parts of group %08X (%u packages, %u unreadable, %.0f ms)",
+           (unsigned)out.size(), group, files, bad, g_catalogue_ms);
+    return out;
+}
+
+// the descriptions of the parts the bundle's models use, from this game's part props (the sender has them)
+static void add_part_descs(const Key& key, std::vector<dbpf::Record>& recs)
+{
+    uint32_t group = key.type == kInfo[kCell].type ? kCellPartGroup : key.type == kInfo[kUfo].type ? kUfoPartGroup
+                     : key.type == kInfo[kCreature].type                                          ? kPartGroup
+                                                                                                  : 0;
+    if (!group)
+        return;
+    std::set<uint32_t> ids;
+    for (auto& r : recs)
+        if (r.key.type == kBem)
+            for (auto& ref : model_part_refs(r.data, group))
+                ids.insert(ref.id);
+    static std::map<std::pair<uint32_t, uint32_t>, std::vector<uint8_t>> cache; // (group, id) -> prop bytes
+    size_t total = 0;
+    for (uint32_t id : ids) {
+        auto k = std::make_pair(group, id);
+        auto it = cache.find(k);
+        if (it == cache.end()) {
+            std::vector<uint8_t> d;
+            if (!part_prop_bytes(id, group, d) || d.size() > 16384)
+                d.clear();
+            it = cache.emplace(k, std::move(d)).first;
+        }
+        if (it->second.empty() || total + it->second.size() > kMaxDescBytes)
+            continue;
+        total += it->second.size();
+        dbpf::Record r;
+        r.key = {id, kPartProp, kPartDescGroup};
+        r.data = it->second;
+        recs.push_back(std::move(r));
+        g_desc_out++;
+    }
+}
+
+// the part descriptions out of received records (never registered: the game must not take a part for one
+// it has when only its description came)
+static std::map<uint32_t, std::vector<uint8_t>> take_part_descs(std::vector<dbpf::Record>& recs)
+{
+    std::map<uint32_t, std::vector<uint8_t>> out;
+    for (auto it = recs.begin(); it != recs.end();) {
+        if (it->key.group == kPartDescGroup) {
+            if (it->key.type == kPartProp && out.size() < 512)
+                out[it->key.instance] = std::move(it->data);
+            g_desc_in++;
+            it = recs.erase(it);
+        } else
+            ++it;
+    }
+    return out;
+}
+
+// the most similar part this game has to the part `id` described by `desc` (0: none of its role)
+static uint32_t lookalike_of(uint32_t id, uint32_t group, const std::vector<uint8_t>& desc)
+{
+    auto k = std::make_pair(group, id);
+    auto it = g_lookalike.find(k);
+    if (it != g_lookalike.end())
+        return it->second;
+    partprops::Part want;
+    uint32_t sub = partprops::parse(desc.data(), desc.size(), id, want) ? partprops::nearest(want, catalogue(group)) : 0;
+    g_lookalike[k] = sub;
+    H->log(M, SK_INFO, "creations: content: part %08X (%s, %u abilities) is shown as %08X, the most similar part this game has",
+           id, want.detail() ? "detail" : "role part", (unsigned)want.abil.size(), sub);
+    return sub;
+}
+
 // the unbuildable part ids of these records, each once (with the generic check off only the Creepy &
 // Cute ids count, as 0.7.3.4); 0 with the fixes off
 static std::vector<uint32_t> unknown_part_ids(const std::vector<dbpf::Record>& recs, ModelKind k)
@@ -627,7 +848,8 @@ static void encode_id(uint32_t id, std::vector<uint8_t>& out)
 // place; returns how many were rewritten. The Creepy & Cute table first (the same kind), then a base
 // game detail of the same group and length (kBasePartFallbacks: the kind of another pack's part is not
 // known here). A part with neither is left in place: unknown_part_ids refuses the creation.
-static unsigned substitute_parts(std::vector<dbpf::Record>& recs, ModelKind k, const std::string& whose)
+static unsigned substitute_parts(std::vector<dbpf::Record>& recs, ModelKind k, const std::string& whose,
+                                 const std::map<uint32_t, std::vector<uint8_t>>* descs = nullptr)
 {
     if (!g_parts_fix || !g_subst_fix)
         return 0;
@@ -646,7 +868,17 @@ static unsigned substitute_parts(std::vector<dbpf::Record>& recs, ModelKind k, c
             if (!unknown)
                 continue;
             uint32_t sub = 0;
-            if (k == kMkCreature) { // the Creepy & Cute table first (creature parts)
+            if (g_lookalike_fix && g_unknown_fix && descs) { // BUG-0559: the sender's description of the part
+                auto d = descs->find(ref.id);
+                if (d != descs->end()) {
+                    uint32_t s = lookalike_of(ref.id, group, d->second);
+                    if (s && part_known(s, group)) {
+                        sub = s;
+                        g_lookalikes++;
+                    }
+                }
+            }
+            if (!sub && k == kMkCreature) { // the Creepy & Cute table first (creature parts)
                 uint32_t s = substitute_of(ref.id);
                 if (s && part_known(s, kPartGroup))
                     sub = s;
@@ -747,8 +979,35 @@ static int fe_count(uint32_t id)
 // BUG-0452: an effect this game has. key_exists finds the base game's effect records; 14 of the base
 // game's 111 skin paints have no record (the game defines them itself), so the generated list counts
 // too. Creepy & Cute's effects are only present with that pack (its table names them).
+// BUG-0559: whether this game's effect directories have the effect: the lookup the game's effect creator
+// makes (Swarm::cEffectsManager::GetDirectoryAndEffectIndex(id, 0) < 0: EffectWorld::CreateEffect gives up).
+// A skin paint is a compiled effect of an effect directory (type 0xEA5118B0), not always a record of its
+// own: the base game's cell paints (skinpaint_cell_stripes 0xE4C02CCE, from the Cell stage) have none, the
+// lists below did not know them and a creature that kept its cell paint was painted another colour on
+// every other machine. -1: no effect manager (the lists decide).
+static int effect_in_directories(uint32_t id)
+{
+    static uintptr_t get = H->sym("Swarm::IEffectsManager::Get"),
+                     find = H->sym("Swarm::cEffectsManager::GetDirectoryAndEffectIndex");
+    void* mgr = get && find ? cdecl_call<void*>(get) : nullptr;
+    if (!mgr)
+        return -1;
+    return (int)thiscall<uint32_t>(find, mgr, id, (uint32_t)0) >= 0 ? 1 : 0;
+}
+
+static std::map<uint32_t, bool> g_effect_cache_dir; // with content.lookalike: id -> this game has it
 static bool paint_known(uint32_t id)
 {
+    if (g_lookalike_fix) {
+        auto it = g_effect_cache_dir.find(id);
+        if (it != g_effect_cache_dir.end())
+            return it->second;
+        int dir = effect_in_directories(id);
+        if (dir >= 0) {
+            g_effect_cache_dir[id] = dir == 1;
+            return dir == 1;
+        }
+    }
     auto it = g_effect_cache.find(id);
     if (it != g_effect_cache.end())
         return it->second;
@@ -856,8 +1115,95 @@ static void told_substituted(unsigned n, unsigned fallbacks, const std::string& 
 
 // BUG-0452: checks and fixes every part and paint id of these model records; returns how many ids
 // remain unknown (the creation must not be built then, the game's fallback shows instead)
+// BUG-0559, the blocks: a species' creaturedata (0x0F43029A, the game's cache of what it derived from
+// the model; the host sends its own with the host's own species, BUG-0017 / 0xD2C361) is a second copy of
+// the model's part list (each part as `00 60 62 40` + its id, not byte-run packed, with the part's box)
+// and of its three paint effects. A guest's game that lacks a part builds the species from it and draws
+// that part as its box: the "big blocks, different from part to part" of the player report, while the bem
+// had the substitutes. The ids substituted in the bem are now substituted in it as well; one this game
+// still lacks drops the record (the game computes a new one when it is missing, docs/re/creations.md 1.1).
+// Off (`coop.fix content.species_data off`): 0.7.6, the creaturedata as it came.
+static bool g_species_data_fix = true;
+COOP_FIX("content.species_data", "BUG-0559", g_species_data_fix, "creations: the species data the host sends with a creature names the same substitute parts and paints as its model (a part this game lacks was drawn as a block)");
+static unsigned g_species_data_fixed, g_species_data_dropped;
+
+static void align_species_data(std::vector<dbpf::Record>& recs, ModelKind k, const std::vector<dbpf::Record>& before,
+                               const std::vector<uint32_t>& unknown, const std::string& whose)
+{
+    if (!g_species_data_fix || k != kMkCreature)
+        return;
+    std::map<uint32_t, uint32_t> parts;       // the bem's part ids: before -> after
+    std::vector<std::pair<std::array<uint8_t, 12>, std::array<uint8_t, 12>>> paints; // the three effects
+    for (size_t i = 0; i < recs.size() && i < before.size(); i++) {
+        if (recs[i].key.type != kBem || before[i].key.type != kBem || recs[i].data.size() != before[i].data.size())
+            continue;
+        auto a = model_part_refs(before[i].data, kPartGroup), b = model_part_refs(recs[i].data, kPartGroup);
+        for (size_t j = 0; j < a.size() && j < b.size(); j++)
+            if (a[j].at == b[j].at && a[j].id != b[j].id)
+                parts[a[j].id] = b[j].id;
+        uint32_t e0[3], e1[3];
+        size_t at[3], len[3];
+        if (model_effects(before[i].data, e0, at, len) && model_effects(recs[i].data, e1, at, len) &&
+            memcmp(e0, e1, sizeof e0)) {
+            std::array<uint8_t, 12> x, y;
+            memcpy(x.data(), e0, 12);
+            memcpy(y.data(), e1, 12);
+            paints.push_back({x, y});
+        }
+    }
+    for (auto it = recs.begin(); it != recs.end();) {
+        if (it->key.type != kCreatureData) {
+            ++it;
+            continue;
+        }
+        auto& d = it->data;
+        unsigned n = 0;
+        for (size_t i = 0; i + 7 <= d.size(); i++) {
+            if (d[i] != 0x60 || d[i + 1] != 0x62 || d[i + 2] != 0x40)
+                continue;
+            uint32_t id = d[i + 3] | d[i + 4] << 8 | d[i + 5] << 16 | (uint32_t)d[i + 6] << 24;
+            auto p = parts.find(id);
+            if (p != parts.end()) {
+                for (int b = 0; b < 4; b++)
+                    d[i + 3 + b] = (uint8_t)(p->second >> (8 * b));
+                n++;
+            }
+        }
+        for (auto& [x, y] : paints) {
+            auto f = std::search(d.begin(), d.end(), x.begin(), x.end());
+            if (f != d.end()) {
+                std::copy(y.begin(), y.end(), f);
+                n++;
+            }
+        }
+        // a part id it names that this game still lacks: the record goes (the game makes its own)
+        uint32_t missing = 0;
+        for (size_t i = 0; i + 8 <= d.size() && !missing; i++)
+            if (d[i] == 0x00 && d[i + 1] == 0x60 && d[i + 2] == 0x62 && d[i + 3] == 0x40) {
+                uint32_t id = d[i + 4] | d[i + 5] << 8 | d[i + 6] << 16 | (uint32_t)d[i + 7] << 24;
+                if (id && std::find(unknown.begin(), unknown.end(), id) != unknown.end() && !part_known(id, kPartGroup))
+                    missing = id;
+            }
+        if (missing) {
+            g_species_data_dropped++;
+            H->log(M, SK_INFO, "creations: %s: its species data names part %08X this game does not have: left out "
+                   "(the game computes its own, BUG-0559)", whose.c_str(), missing);
+            it = recs.erase(it);
+            continue;
+        }
+        if (n) {
+            g_species_data_fixed++;
+            H->log(M, SK_INFO, "creations: %s: its species data names the same substitutes as its model (%u ids, BUG-0559)",
+                   whose.c_str(), n);
+        }
+        ++it;
+    }
+}
+
 static unsigned ensure_content(std::vector<dbpf::Record>& recs, ModelKind k, const std::string& whose)
 {
+    // BUG-0559: the sender's part descriptions are never registered (with every switch)
+    std::map<uint32_t, std::vector<uint8_t>> descs = take_part_descs(recs);
     if (!g_parts_fix)
         return 0;
     // BUG-0452: log every id this game does not have, before substituting it
@@ -871,10 +1217,12 @@ static unsigned ensure_content(std::vector<dbpf::Record>& recs, ModelKind k, con
         unknown.insert(unknown.end(), paints.begin(), paints.end());
     }
     // substitute what this game can
+    std::vector<dbpf::Record> before = recs;
     unsigned fb0 = g_parts_fallback;
-    unsigned n = substitute_parts(recs, k, whose);
+    unsigned n = substitute_parts(recs, k, whose, &descs);
     if (kind_paints(k))
         n += substitute_paints(recs, whose);
+    align_species_data(recs, k, before, unknown, whose); // BUG-0559: its creaturedata the same
     if (n)
         told_substituted(n, g_parts_fallback - fb0, whose);
     // what is still unknown after substitution is refused
@@ -980,10 +1328,18 @@ Option mine(Kind k)
 // ---- bundle serialization ----
 static std::vector<uint8_t> pack(const Bundle& b)
 {
+    // BUG-0559: the description of each part the models use goes with them (the receiver picks a part
+    // like it when its game lacks one); a receiver of 0.7.6 registers them in a group nobody asks for
+    std::vector<dbpf::Record> recs = b.recs;
+    bool has_desc = false;
+    for (auto& r : recs)
+        has_desc |= r.key.group == kPartDescGroup;
+    if (!has_desc)
+        add_part_descs(b.key, recs);
     net::Writer w;
     w.u32(b.key.instance); w.u32(b.key.type); w.u32(b.key.group);
-    w.u16((uint16_t)b.recs.size());
-    for (auto& r : b.recs) {
+    w.u16((uint16_t)recs.size());
+    for (auto& r : recs) {
         w.u32(r.key.type); w.u32(r.key.group); w.u32(r.key.instance);
         w.u32((uint32_t)r.data.size());
         for (uint8_t c : r.data)
@@ -1309,9 +1665,12 @@ bool content_all_kinds() { return g_all_kinds_fix; }
 
 std::string content_status()
 {
-    char b[160];
-    snprintf(b, sizeof b, "content checks=%u same=%u substituted=%u refused=%u unreadable=%u fix=%d\n", g_models_checked,
-             g_models_same, g_models_substituted, g_models_refused, g_models_unreadable, (int)g_all_kinds_fix);
+    char b[360];
+    snprintf(b, sizeof b, "content checks=%u same=%u substituted=%u refused=%u unreadable=%u fix=%d\n"
+             "lookalike parts=%u descriptions out=%u in=%u catalogue=%.0f ms species_data fixed=%u dropped=%u\n",
+             g_models_checked, g_models_same, g_models_substituted, g_models_refused, g_models_unreadable,
+             (int)g_all_kinds_fix, g_lookalikes, g_desc_out, g_desc_in, g_catalogue_ms, g_species_data_fixed,
+             g_species_data_dropped);
     return b;
 }
 
@@ -2502,6 +2861,55 @@ std::string debug(const std::vector<std::string>& a)
             snprintf(b + strlen(b), sizeof b - strlen(b), " %08X", id);
         snprintf(b + strlen(b), sizeof b - strlen(b), "\n");
         return b;
+    }
+    if (a.size() >= 2 && a[0] == "partlist") { // partlist <hex crt instance>: each part of the model the game reads, its kind here (tests, BUG-0559)
+        Key k{(uint32_t)strtoul(a[1].c_str(), nullptr, 16), kInfo[kCreature].type, kInfo[kCreature].group};
+        std::vector<dbpf::Record> recs;
+        if (!records_from_game(k, recs))
+            return "partlist " + hex(k.instance) + " none\n";
+        std::string out = "partlist " + hex(k.instance);
+        void* rm = a_RmPtr ? *(void**)a_RmPtr : nullptr;
+        uint32_t key[3] = {k.instance, k.type, k.group}, real[3] = {};
+        void* db = rm ? vcall<void*>(rm, 0x30 / 4, (const uint32_t*)key, real, (void*)nullptr) : nullptr;
+        std::wstring loc;
+        if (file_location(db, loc)) {
+            size_t sl = loc.find_last_of(L"\\/");
+            std::wstring base = sl == std::wstring::npos ? loc : loc.substr(sl + 1);
+            out += " from=" + std::string(base.begin(), base.end());
+        }
+        std::set<uint32_t> seen;
+        for (auto& r : recs)
+            if (r.key.type == kBem)
+                for (auto& ref : model_part_refs(r.data, kPartGroup)) {
+                    if (!seen.insert(ref.id).second)
+                        continue;
+                    std::vector<uint8_t> d;
+                    partprops::Part p;
+                    const char* kind = "unknown";
+                    if (part_prop_bytes(ref.id, kPartGroup, d) && partprops::parse(d.data(), d.size(), ref.id, p)) {
+                        kind = p.detail() ? "detail" : "role";
+                        for (uint32_t role : p.roles)
+                            kind = role == 0xB00F0FE9 ? "eye" : role == 0xB00F0FEC ? "mouth" : role == 0xB00F0FE2 ? "grasper"
+                                   : role == 0xB00F0FEF ? "foot" : role == 0xB00F0FDF ? "limb" : kind;
+                    }
+                    out += " " + hex(ref.id) + "=" + kind;
+                }
+        // BUG-0559: the species data the game finds for it (creaturedata): the part ids it names, and how
+        // many of them this game lacks (each one is drawn as a block)
+        std::vector<dbpf::Record> cd;
+        unsigned cn = 0, cu = 0;
+        if (records_from_game({k.instance, kCreatureData, k.group}, cd))
+            for (auto& r : cd)
+                if (r.key.type == kCreatureData)
+                    for (size_t i = 0; i + 8 <= r.data.size(); i++)
+                        if (!r.data[i] && r.data[i + 1] == 0x60 && r.data[i + 2] == 0x62 && r.data[i + 3] == 0x40) {
+                            uint32_t id = r.data[i + 4] | r.data[i + 5] << 8 | r.data[i + 6] << 16 | (uint32_t)r.data[i + 7] << 24;
+                            cn++;
+                            cu += id && !part_known(id, kPartGroup);
+                        }
+        char b[80];
+        snprintf(b, sizeof b, " species_data=%u species_data_unknown=%u", cn, cu);
+        return out + b + "\n";
     }
     if (a.size() >= 2 && a[0] == "paints") { // paints <hex crt instance>: the paint layers of the model the game reads (tests, BUG-0452)
         Key k{(uint32_t)strtoul(a[1].c_str(), nullptr, 16), kInfo[kCreature].type, kInfo[kCreature].group};

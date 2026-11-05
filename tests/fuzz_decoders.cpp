@@ -28,6 +28,7 @@
 #include "net/diagmsg.h"
 #include "net/interp.h"
 #include "net/lobby.h"
+#include "net/partprops.h"
 #include "net/protocol.h"
 #include "net/session.h"
 #include "net/utf8.h"
@@ -673,6 +674,46 @@ static void fuzz_dbpf(uint64_t seed, int iters)
     printf("  %d packages (%d loaded, %d records read)\n", iters, loaded, records);
 }
 
+// ---------------------------------------------------------------- part descriptions (BUG-0559)
+// a part's property list comes from the other player (the part this game lacks): parse + nearest
+static void fuzz_partprops(uint64_t seed, int iters)
+{
+    printf("part descriptions (partprops::parse, nearest)\n");
+    Rng R(seed);
+    std::vector<std::vector<uint8_t>> corpus;
+    auto be = [](std::vector<uint8_t>& d, uint32_t v, int n) {
+        for (int i = n - 1; i >= 0; i--)
+            d.push_back((uint8_t)(v >> (8 * i)));
+    };
+    for (int c = 0; c < 8; c++) { // valid lists: a role, abilities, a cost, a string, a box
+        std::vector<uint8_t> d;
+        be(d, 5, 4);
+        be(d, 0xB00F0FE9 + c, 4), be(d, 0x01, 2), be(d, 0, 2), d.push_back(1);
+        be(d, 0xB1C3E5B5, 4), be(d, 0x09, 2), be(d, 0, 2), be(d, (uint32_t)c, 4);
+        be(d, 0x02166464, 4), be(d, 0x09, 2), be(d, 0, 2), be(d, 25u * c, 4);
+        be(d, 0x04EBB27E, 4), be(d, 0x13, 2), be(d, 0x0D, 2), be(d, 2, 4), be(d, 0x61006200, 4);
+        be(d, 0x1CBB2F62, 4), be(d, 0x39, 2), be(d, 0x1C, 2), be(d, 1, 4), be(d, 24, 4);
+        for (int k = 0; k < 6; k++)
+            be(d, 0x3DCCCCCD ^ (k < 3 ? 0x80000000u : 0), 4); // +-0.1 (bytes as they come)
+        corpus.push_back(d);
+    }
+    std::vector<partprops::Part> have;
+    int ok = 0;
+    for (int i = 0; i < iters; i++) {
+        auto m = R.below(4) ? mutate(R, corpus[R.below((uint32_t)corpus.size())]) : corpus[R.below((uint32_t)corpus.size())];
+        Exact e(m);
+        partprops::Part p;
+        if (partprops::parse(e.data(), e.n, R.next() & 0xFFFFFFFF, p)) {
+            ok++;
+            (void)p.size();
+            if (have.size() < 64)
+                have.push_back(p);
+            (void)partprops::nearest(p, have);
+        }
+    }
+    printf("  %d lists (%d parsed)\n", iters, ok);
+}
+
 // ---------------------------------------------------------------- update pack, release JSON
 static void fuzz_pack(uint64_t seed, int iters)
 {
@@ -960,6 +1001,7 @@ int main(int argc, char** argv)
     fuzz_misc(seed + 6, iters);
     fuzz_refpack(seed + 1, iters);
     fuzz_dbpf(seed + 2, iters);
+    fuzz_partprops(seed + 23, iters);
     fuzz_pack(seed + 3, iters / 2);
     fuzz_connection(seed + 4, iters * 5);
     fuzz_session(seed + 5, iters * 2);

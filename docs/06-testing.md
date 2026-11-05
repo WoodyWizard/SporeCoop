@@ -4255,3 +4255,23 @@ within 4 min of a transition (the session cannot go on); the divergences are row
   after the host's red X); a 40 min session exceeds the lab's default 30 min timeout (`timeout=4800` in suite.py).
 * Timings (lab 20261104-203017, lane 2/3): death back in 5-8 s, editor 13-170 s (Tribe: the host's editor opened
   61 s after the vote once), menu 16-21 s, restart 17 s, rejoin 14 s.
+
+## content_lookalike: a guest without two packs sees the host's creature (2026-11-04, fix/w43-content)
+<a id="testing-content-lookalike"></a>
+
+* `tools/lab.py run content_lookalike --lane 9 --skip 1,2,3,4,5,6,7,8` with `SPORE_FREE_LANE=10` (~2 min): host and
+  Bob on the run's lane, Carol on the free lane with `bp1content/BoosterPack_01.package` and
+  `Data/Spore_Pack_03.package` renamed `*.bug0559-off` for the test (put back in `finally`, and at the start of the
+  next run if one died). The host's Tiger Horse gets Creepy & Cute parts, a Spore_Pack_03 foot, the base game's
+  cell stripes paint and a pack detail paint. Checks on Carol's game: `coop.creations partlist` (roles of the
+  model's parts, the species data's parts she lacks), `paints`, `parts`, 0 faults. FAIL with
+  `SPORE_FIX_OFF=content.species_data` or `content.lookalike` (docs/re/creations.md#creations-lookalike).
+* Looking at it: `CONTENT_HOLD=<s>` keeps the games after the checks (raise the suite's minutes for a long hold);
+  `python3 tools/sporectl.py -i <inst> shot <path>` (a path inside the worktree: the game cannot write to /tmp),
+  `coop.cam <x> <y>` gives the screen ray, `coop.abilities goto <x> <y> <z>` puts a game's creature there.
+  `CONTENT_SWAPS=<old>=<new>,...` puts any parts into the host's model instead (the control run with base parts).
+* Pitfall: the host's family members look like the host's creature: find a puppet by moving it (`goto`) between
+  two screenshots. ? Seen once (not analysed): the partner names sat over a creature 10-15 m behind the creatures
+  that moved with `goto`.
+* Pitfall: `lab.py reload` of a guest that is in a session drops the packages co-op registered for it (the
+  received creations: `partlist` answers `none` afterwards); inspect before a reload.

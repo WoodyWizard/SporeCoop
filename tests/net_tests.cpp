@@ -8,12 +8,14 @@
 #include <map>
 #include <set>
 #include "net/dbpf.h"
+#include "net/partprops.h"
 #include <cmath>
 #include <cstring>
 #include <cstdio>
 #include <random>
 #include <chrono>
 #include <thread>
+#include <tuple>
 #include <type_traits>
 #include <arpa/inet.h>
 
@@ -2495,6 +2497,84 @@ static void test_diag_conn_stats()
     CHECK(c.stats.packets_sent > 1500 && c.stats.lost == 0);
 }
 
+
+// BUG-0559: a part's description and the most similar part (net/partprops)
+static std::vector<uint8_t> part_prop(const std::vector<std::tuple<uint32_t, uint16_t, std::vector<uint8_t>>>& props)
+{
+    std::vector<uint8_t> d;
+    auto be = [&](uint32_t v, int n) {
+        for (int i = n - 1; i >= 0; i--)
+            d.push_back((uint8_t)(v >> (8 * i)));
+    };
+    be((uint32_t)props.size(), 4);
+    for (auto& [id, t, val] : props) {
+        be(id, 4);
+        be(t, 2);
+        be(t == 0x39 ? 0x1C : t == 0x13 ? 0x0D : 0, 2);
+        if (t == 0x39) { // an array of one bounding box
+            be(1, 4);
+            be(24, 4);
+        } else if (t == 0x13) {
+            be((uint32_t)val.size() / 2, 4);
+        }
+        d.insert(d.end(), val.begin(), val.end());
+    }
+    return d;
+}
+
+static std::vector<uint8_t> be_int(int v)
+{
+    return {(uint8_t)(v >> 24), (uint8_t)(v >> 16), (uint8_t)(v >> 8), (uint8_t)v};
+}
+
+static std::vector<uint8_t> box(float s)
+{
+    std::vector<uint8_t> b(24);
+    float f[6] = {-s, -s, -s, s, s, s};
+    memcpy(b.data(), f, 24);
+    return b;
+}
+
+static void test_partprops()
+{
+    using namespace partprops;
+    std::vector<uint8_t> name = {'a', 0, 'b', 0};
+    // a carnivore mouth of the pack (bite 3), a small one; a string with flags 0x0D before the ints
+    auto want_d = part_prop({{0x04EBB27E, 0x13, name}, {0xB00F0FEC, 0x01, {1}}, {0xB1C3E5B6, 0x09, be_int(3)},
+                             {0x02166464, 0x09, be_int(75)}, {0x1CBB2F62, 0x39, box(0.1f)}});
+    Part want;
+    CHECK(parse(want_d.data(), want_d.size(), 0xF6DE5C63, want));
+    CHECK(want.roles.size() == 1 && want.roles[0] == 0xB00F0FEC && want.abil.size() == 1 && want.abil[0].second == 3);
+    CHECK(want.cost == 75 && want.has_box && std::fabs(want.size() - 0.3464f) < 0.01f);
+    std::vector<Part> have(5);
+    auto mk = [&](int i, uint32_t id, std::vector<std::tuple<uint32_t, uint16_t, std::vector<uint8_t>>> pr) {
+        auto d = part_prop(pr);
+        CHECK(parse(d.data(), d.size(), id, have[i]));
+    };
+    mk(0, 0x10000001, {{0x02166464, 0x09, be_int(75)}, {0x1CBB2F62, 0x39, box(0.1f)}});                    // a detail
+    mk(1, 0x10000002, {{0xB00F0FE9, 0x01, {1}}, {0xB1C3E5B6, 0x09, be_int(3)}, {0x1CBB2F62, 0x39, box(0.1f)}}); // an eye
+    mk(2, 0x10000003, {{0xB00F0FEC, 0x01, {1}}, {0xB1C3E5B6, 0x09, be_int(3)}, {0x02166464, 0x09, be_int(75)},
+                       {0x1CBB2F62, 0x39, box(1.0f)}});                                                           // a big mouth
+    mk(3, 0x10000004, {{0xB00F0FEC, 0x01, {1}}, {0xB1C3E5B6, 0x09, be_int(2)}, {0x02166464, 0x09, be_int(75)},
+                       {0x1CBB2F62, 0x39, box(0.12f)}});                                                          // a mouth like it
+    mk(4, 0x10FE0005, {{0xB00F0FEC, 0x01, {1}}, {0xB1C3E5B6, 0x09, be_int(3)}, {0x02166464, 0x09, be_int(75)},
+                       {0x1CBB2F62, 0x39, box(0.1f)}});                                                           // the same, but an 0xFE byte
+    CHECK(nearest(want, have) == 0x10000004); // a mouth stays a mouth, of a similar size, and fits in place
+    CHECK(std::isinf(distance(want, have[0])) && std::isinf(distance(want, have[1])));
+    have.resize(2);
+    CHECK(nearest(want, have) == 0); // no mouth here: none (the caller falls back)
+    // untrusted bytes: truncations and a count past the end are refused, never read past the end
+    for (size_t n = 0; n < want_d.size(); n++) {
+        Part p;
+        CHECK(!parse(want_d.data(), n, 1, p));
+    }
+    std::vector<uint8_t> bad = want_d;
+    bad[3] = 0xFF;
+    Part p;
+    CHECK(!parse(bad.data(), bad.size(), 1, p));
+    printf("partprops: ok\n");
+}
+
 int main(int argc, char** argv)
 {
     if (argc == 2 && std::string(argv[1]) == "--fakepeer-host")
@@ -2549,6 +2629,7 @@ int main(int argc, char** argv)
     test_buffer();
     test_unreliable_chunks();
     test_dbpf();
+    test_partprops();
     test_be_keys();
     test_dbbf();
     test_refpack_untrusted();

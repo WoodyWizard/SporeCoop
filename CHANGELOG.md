@@ -10,6 +10,11 @@
   guest's screen; so are the members of the host's pack (BUG-0556).
 - Creature: a nest of a species you allied with shows the ally face on the guest's minimap too (BUG-0561).
 - Tribe: the guest sees the red circle under the enemy its selected members attack (BUG-0570).
+- Creature: on a game without a parts pack (Creepy & Cute, or any other) the other player's creatures and their
+  family no longer show big blocks where the pack's parts are; each part the game lacks is shown as the most similar
+  part it has (an eye stays an eye, a foot a foot, of a similar size) (BUG-0559).
+- Creature: a creature that kept a paint of the Cell stage (such as the cell stripes) has the same colours on every
+  player's screen instead of another shade (BUG-0559).
 - Tribe: a guest's food no longer stays at 0 for good after its tribe spent the last of it; it shows the host's food
   again, so its members can eat on their own (BUG-0572, BUG-0573).
 - Tribe: the villages feel about a guest's tribe as they do in the host's game (hostile after the host's raids,
