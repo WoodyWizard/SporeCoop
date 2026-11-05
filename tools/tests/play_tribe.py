@@ -698,6 +698,11 @@ def main():
         time.sleep(2)
     g = Game(host, guest, seed, a.rate)
     food0 = food(host)
+    # BUG-0313: a GOG 2024 guest's Tribe entry keeps its game paused (reason 0x4BF38A7) for 7-9 s after its world
+    # load while it bakes the host's creations; the minimap does not move the view then
+    t0 = time.time()
+    while time.time() - t0 < 40 and any('paused=1' in c.call('coop.pauses')['out'] for c in (host, guest)):
+        time.sleep(1)
     for p in g.p:
         ck(p.calibrate(), f'{p.name}: the minimap takes the view where it points')
     print(f'  start: food {food0}, {len(tribe_state(host))} citizens, screen {g.w}x{g.h}', flush=True)
