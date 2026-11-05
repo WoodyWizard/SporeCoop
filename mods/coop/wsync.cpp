@@ -435,6 +435,79 @@ static std::string f_spent(const Entry& e)
     return g_fmt;
 }
 
+// ---- row: every NPC tribe's food (BUG-0580): the bundles of its cGameBundleContainer (+0x20C, vector +4/+8, amount
+// +0x134, as cTribe::GetTotalFood sums them). A guest's NPC tribes are the host's members' mirrors: they gather and
+// spend nothing of the host's (the detector's Tribe:state:tribe_food, 145 on the host, 0 on the guest). The guest
+// changes its copy by the difference through the game's own cTribe::AddFood (positive: the bundles a gathering
+// makes; negative: the game's spending, RemoveBundles), as res.food_add does for the player tribe.
+static bool g_tribe_food_fix = true;
+COOP_FIX("wsync.tribe_food", "BUG-0580", g_tribe_food_fix, "wsync: a guest's NPC tribes have the host's food");
+static float npc_food(void* t)
+{
+    uint8_t* cont = (uint8_t*)t + 0x20C;
+    if (!R(cont, 0xC))
+        return NAN;
+    void** b = F<void**>(cont, 4);
+    void** e = F<void**>(cont, 8);
+    if (b == e)
+        return 0.f; // never filled or emptied by the game's spending
+    if (!b || e < b || e - b > 256 || !R(b, (e - b) * 4))
+        return NAN;
+    float v = 0;
+    for (void** it = b; it < e; it++)
+        if (*it && R(*it, 0x138))
+            v += F<float>(*it, 0x134);
+    return v;
+}
+static bool r_tfood(Table& out)
+{
+    if (!player_tribe())
+        return false;
+    for (auto& t : npc_tribes()) {
+        float f = npc_food(t.t);
+        if (!std::isfinite(f))
+            continue;
+        Entry e;
+        e.key = t.pol;
+        e.v[0] = fbits(std::floor(f)); // whole food: the fraction a gathering adds a frame at a time is not sent
+        e.v[1] = fbits(t.x), e.v[2] = fbits(t.y), e.v[3] = fbits(t.z);
+        out.push_back(e);
+    }
+    return true;
+}
+static uint32_t g_tfood_adds; // tests: AddFood calls on NPC tribes
+static int s_tfood(const Table& want, bool apply)
+{
+    uintptr_t add = S("SporeCoop::cTribe_AddFood");
+    if (!add || !player_tribe())
+        return 0;
+    auto mine = npc_tribes();
+    int n = 0;
+    for (auto& w : want) {
+        const TribeRef* t = match(mine, w.key, bitsf(w.v[1]), bitsf(w.v[2]), bitsf(w.v[3]));
+        if (!t)
+            continue;
+        float hv = bitsf(w.v[0]), cur = npc_food(t->t);
+        if (!std::isfinite(hv) || !std::isfinite(cur))
+            continue;
+        int d = (int)std::lround(hv - std::floor(cur));
+        if (d == 0)
+            continue;
+        n++;
+        if (!apply)
+            continue;
+        skg::thiscall<void>(add, t->t, d);
+        g_tfood_adds++;
+    }
+    return n;
+}
+static std::string f_tfood(const Entry& e)
+{
+    snprintf(g_fmt, sizeof g_fmt, "key=%08X food=%.0f pos=(%.1f %.1f %.1f)", e.key, bitsf(e.v[0]), bitsf(e.v[1]),
+             bitsf(e.v[2]), bitsf(e.v[3]));
+    return g_fmt;
+}
+
 static const Row kRows[] = {
     {1, "tod", 4, &g_tod_fix, sky, r_tod, s_tod, true, f_tod},
     {2, "day", 1, &g_tod_fix, sky, r_day, s_day, false, f_day},
@@ -442,6 +515,7 @@ static const Row kRows[] = {
     {4, "tribe_rel", 4, &g_rel_fix, tribe_mode, r_rel, s_rel, false, f_rel},
     {5, "tribe_goal", 6, &g_goal_fix, tribe_mode, r_goal, s_goal, false, f_goal},
     {6, "cell_spent", 2, &g_cell_spent_fix, cell_mode, r_spent, s_spent, false, f_spent},
+    {7, "tribe_food", 4, &g_tribe_food_fix, tribe_mode, r_tfood, s_tfood, false, f_tfood},
 };
 constexpr int kNRows = sizeof kRows / sizeof kRows[0];
 
@@ -634,7 +708,7 @@ std::string status()
                  g.t < 0 ? -1.0 : now - g.t, g.received, g.checks, g.differ, g.applied, g.reapplied);
         out += b;
     }
-    snprintf(b, sizeof b, "rel_stuck=%u\n", g_rel_stuck);
+    snprintf(b, sizeof b, "rel_stuck=%u tribe_food_adds=%u\n", g_rel_stuck, g_tfood_adds);
     out += b;
     return out;
 }
@@ -660,6 +734,19 @@ static int c_wsync(void*, int argc, const char* const* argv, SkOut* out)
                 o += std::string(r.name) + " " + r.fmt(e) + "\n";
         }
         H->out_printf(out, "%send wsync\n", o.c_str());
+        return 0;
+    }
+    if (argc >= 4 && !strcmp(argv[1], "food")) { // food <pol hex> <n>: the game's AddFood on that NPC tribe here
+        uint32_t np = (uint32_t)strtoul(argv[2], nullptr, 16);
+        uintptr_t add = S("SporeCoop::cTribe_AddFood");
+        for (auto& t : npc_tribes())
+            if (t.pol == np && add) {
+                float before = npc_food(t.t);
+                skg::thiscall<void>(add, t.t, atoi(argv[3]));
+                H->out_printf(out, "food %08X: %.1f -> %.1f\n", np, before, npc_food(t.t));
+                return 0;
+            }
+        H->out_printf(out, "no such NPC tribe here\n");
         return 0;
     }
     if (argc >= 4 && !strcmp(argv[1], "rel")) {

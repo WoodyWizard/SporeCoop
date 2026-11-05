@@ -10,6 +10,9 @@
   python3 coop_wsync_tribe.py stages  BUG-0577: the host's game has a stage done the guest's has not (cPlayer
                                       consequence trait); PASS: the guest's game has it, and again after the guest
                                       rejoins.
+  python3 coop_wsync_tribe.py food    BUG-0580: an NPC village's food changes in the host's game (the game's
+                                      AddFood: a gathering, then a spending); PASS: the guest's game has the same food
+                                      for every village (its own bundles), within 10 s of each change.
 
 Every check reads the guest's own game (`coop.wsync dump`), not the mod's table.
 
@@ -61,6 +64,35 @@ def t_rel(host, guest, ck):
     time.sleep(10)
     gv = [b for a, b in rel_pairs(h, dump(guest, 'tribe_rel')) if a['key'] == e['key']]
     ck(gv and gv[0] and abs(gv[0]['rel'] - hv) < 0.1, f'and 10 s later ({gv[0] and gv[0]["rel"] if gv else None})')
+
+
+def t_food(host, guest, ck):
+    def pairs():
+        return rel_pairs(dump(host, 'tribe_food'), dump(guest, 'tribe_food'), 'tribe_food')
+
+    p = pairs()
+    ck(bool(p) and all(b for _, b in p), f'the host has NPC villages and the guest each of them ({p})')
+    if not p or not all(b for _, b in p):
+        return
+    print(f'  before: {[(a["key"], a["food"], b["food"]) for a, b in p]}', flush=True)
+    key = p[0][0]['key']
+    for n in (37, -20):
+        print('  host: ' + host.call(f'coop.wsync food {key} {n}')['out'].strip(), flush=True)
+        time.sleep(1)
+        hv = [a['food'] for a, _ in pairs() if a['key'] == key][0]
+
+        def same():
+            q = pairs()
+            return all(b and abs(a['food'] - b['food']) <= 1 for a, b in q) and q
+        got = wait(same, 10)
+        q = pairs()
+        print(f'  after {n:+d} on the host: {[(a["key"], a["food"], b and b["food"]) for a, b in q]}', flush=True)
+        ck(bool(got), f'within 10 s every village of the guest\'s game has the host\'s food (village {key}: host {hv}, '
+           f'guest {[b and b["food"] for a, b in q if a["key"] == key]})')
+    time.sleep(10)
+    q = pairs()
+    ck(all(b and abs(a['food'] - b['food']) <= 1.5 for a, b in q),
+       f'and 10 s later ({[(a["food"], b and b["food"]) for a, b in q]})')
 
 
 def t_goal(host, guest, ck):
@@ -122,7 +154,7 @@ def main():
     host, guest = start('tribe')
     ck = Checks()
     time.sleep(6)
-    {'rel': t_rel, 'goal': t_goal, 'stages': t_stages}[what](host, guest, ck)
+    {'rel': t_rel, 'goal': t_goal, 'stages': t_stages, 'food': t_food}[what](host, guest, ck)
     print('  guest wsync: ' + guest.call('coop.wsync')['out'].strip().replace('\n', ' | '), flush=True)
     ck.faults(host=host, guest=guest)
     return ck.result()

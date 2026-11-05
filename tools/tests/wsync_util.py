@@ -26,6 +26,9 @@ def dump(con, row=None):
         elif name == 'tribe_rel':
             e['rel'] = float(re.search(r'rel=(-?[\d.]+|nan|-nan)', rest).group(1).replace('-nan', 'nan'))
             e['pos'] = tuple(float(x) for x in re.search(r'pos=\(([^)]*)\)', rest).group(1).split())
+        elif name == 'tribe_food':
+            e['food'] = float(re.search(r'food=(-?[\d.]+)', rest).group(1))
+            e['pos'] = tuple(float(x) for x in re.search(r'pos=\(([^)]*)\)', rest).group(1).split())
         elif name == 'tribe_goal':
             e['pos'] = tuple(float(x) for x in re.search(r'pos=\(([^)]*)\)', rest).group(1).split())
             e['state'] = int(re.search(r'state=(\d+)', rest).group(1))
@@ -44,13 +47,13 @@ def tod_angle(h, g):
     return 2 * math.acos(d)
 
 
-def rel_pairs(h, g):
+def rel_pairs(h, g, row='tribe_rel'):
     """[(host entry, guest entry or None)] matched by political id, else position (40 m)"""
     out = []
-    for e in h.get('tribe_rel', []):
-        m = [x for x in g.get('tribe_rel', []) if x['key'] == e['key']]
+    for e in h.get(row, []):
+        m = [x for x in g.get(row, []) if x['key'] == e['key']]
         if not m:
-            m = [x for x in g.get('tribe_rel', []) if math.dist(x['pos'], e['pos']) < 40]
+            m = [x for x in g.get(row, []) if math.dist(x['pos'], e['pos']) < 40]
         out.append((e, m[0] if m else None))
     return out
 
@@ -74,6 +77,10 @@ def differences(h, g, rows=('tod', 'day', 'stages', 'tribe_rel', 'tribe_goal')):
                 continue  # a village the guest lacks is W2's (objects), not a world-state row
             if not (abs(x['rel'] - e['rel']) < 0.1):
                 bad.append(f'tribe_rel {e["key"]}: host {e["rel"]} guest {x["rel"]}')
+    if 'tribe_food' in rows:  # BUG-0580 (not in the default rows: the class tests ask for it)
+        for e, x in rel_pairs(h, g, 'tribe_food'):
+            if x is not None and abs(x['food'] - e['food']) > 1.5:
+                bad.append(f'tribe_food {e["key"]}: host {e["food"]} guest {x["food"]}')
     if 'tribe_goal' in rows and h.get('tribe_goal'):
         hg, gg = h['tribe_goal'][0], (g.get('tribe_goal') or [None])[0]
         if gg is None:
