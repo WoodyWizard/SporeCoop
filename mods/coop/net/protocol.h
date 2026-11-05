@@ -391,6 +391,7 @@ enum NpcFlags : uint8_t {
     NF_DEAD = 1,
     NF_FAMILY = 2, // member of the host avatar's herd
     NF_IMPRESSED = 4, // impressed by a player (cCreatureAnimal +0xB58 bit 0x80, set by a social success)
+    NF_PACK = 8,      // in the host's pack (+0xB58 bit 0x100: recruited, a Summon Flock member; BUG-0556). Older guests ignore it
 };
 
 struct NpcSpawn {

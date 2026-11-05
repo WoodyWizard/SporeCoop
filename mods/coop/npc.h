@@ -75,6 +75,7 @@ void set_partner_targets(bool on);
 bool debug_attack_msg(uint16_t id);                  // tests: the game's attack message on host NPC `id`
 bool debug_hit(uint16_t id, float damage);           // guest: avatar hits proxy `id`
 bool debug_hurt(uint8_t player, uint16_t id, float damage); // host: NPC `id` hits player's puppet
+bool proxy_in_host_pack(void* c); // guest: proxy c mirrors a member of the host's pack (BUG-0556)
 uint16_t id_of(void* c);         // host: the net id of NPC c, guest: of proxy c (0xFFFF: none)
 void* host_npc(uint16_t id);     // host: NPC #id if it is alive this frame
 std::string debug_pool(uint16_t id); // host (tests, BUG-0339): NPC #id to the game's creature pool

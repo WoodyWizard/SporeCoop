@@ -123,6 +123,32 @@ static bool SK_THISCALL h_AttackTarget(void* attacker, void* target, uint32_t id
     return o_AttackTarget(attacker, target, idx, a4);
 }
 
+// ---------------------------------------------------------------- BUG-0556
+// The host's Summon Flock (ability 0x33 -> the drama event cSummonCreatureEvent, start 0xD50EA0) makes a herd and
+// puts each creature into the host's pack (cPosseSimulator_AddMember 0xD542E0: +0xB58 |= 0x100, the pack list).
+// The game shows a creature as friendly (the rollover's ally mark through CreatureSelectionUI 0xB6C970, the social
+// cursor 0xD2FFD0) by creature vt 0xD4 (SporeCoop::CreatureFriendly 0xC0C3B0: relation 6 to the avatar, impressed
+// +0xB58 & 0x80, or the player species): the pack bit is not read there. On the host a pack member is friendly by
+// its relation to its leader's species; the guest's proxy is a stranger of another herd: the flock was not
+// allied with the guest. Now the host sends the pack bit (NF_PACK) and the guest's vt 0xD4 answers true for the
+// proxies of the host's pack, only for them (the party's allies are the guest's allies).
+// `coop.fix creature.party_allies off`: the guest's game decides by the species (0.7.6).
+static bool g_allies_fix = true;
+COOP_FIX("creature.party_allies", "BUG-0556", g_allies_fix, "creature: the host's pack and summoned flock are allies of the guest too");
+typedef bool(SK_THISCALL* Friendly_t)(void*);
+static Friendly_t o_Friendly;
+static uint32_t g_allies_answers;
+
+static bool SK_THISCALL h_Friendly(void* c)
+{
+    bool r = o_Friendly(c);
+    if (!r && g_allies_fix && c && is_guest() && npc::proxy_in_host_pack(c)) {
+        g_allies_answers++;
+        return true;
+    }
+    return r;
+}
+
 void on_message(uint8_t type, uint8_t from, net::Reader& r)
 {
     if (type != net::MSG_PLAYER_RULE || !C.sess)
@@ -173,6 +199,9 @@ std::string status()
     std::string out = b;
     snprintf(b, sizeof b, "player_rules: air fix=%d dropped=%u passed=%u hook=%d\n", (int)g_air_fix, g_air_dropped,
              g_air_passed, (int)(o_AttackTarget != nullptr));
+    out += b;
+    snprintf(b, sizeof b, "player_rules: allies fix=%d answers=%u hook=%d\n", (int)g_allies_fix, g_allies_answers,
+             (int)(o_Friendly != nullptr));
     return out + b;
 }
 
@@ -217,6 +246,15 @@ static int c_rules(void*, int argc, const char* const* argv, SkOut* out)
         H->out_printf(out, "charge ability %d played: %d\n", idx, r);
         return 0;
     }
+    if (argc > 2 && !strcmp(argv[1], "friendly")) { // tests: the game's vt 0xD4 of NPC / proxy <id> here
+        void* c = is_host() ? npc::host_npc((uint16_t)atoi(argv[2])) : npc::proxy((uint16_t)atoi(argv[2]));
+        if (!c) {
+            H->out_printf(out, "no creature\n");
+            return 1;
+        }
+        H->out_printf(out, "friendly=%d pack=%d\n", (int)skg::vcall<bool>(c, 0xD4 / 4), (int)game::pack_member(c));
+        return 0;
+    }
     H->out_printf(out, "%s", status().c_str());
     return 0;
 }
@@ -226,6 +264,8 @@ void init(const SkHost* host, SkMod* mod, Ctx ctx)
     H = host;
     M = mod;
     C = std::move(ctx);
+    if (uintptr_t a = H->sym("SporeCoop::CreatureFriendly"))
+        H->hook_create(M, (void*)a, (void*)h_Friendly, (void**)&o_Friendly);
     if (uintptr_t a = H->sym("SporeCoop::CreatureAttackTarget"))
         H->hook_create(M, (void*)a, (void*)h_AttackTarget, (void**)&o_AttackTarget);
     if (uintptr_t a = H->sym("SporeCoop::CreatureStun"))

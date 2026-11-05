@@ -162,6 +162,7 @@ struct Proxy {
     uint8_t flags = 0;
     float health = 0, max_health = 0;
     bool killed = false;
+    bool host_pack = false; // BUG-0556: the host's NPC is in the host's pack (NF_PACK of its latest state)
     int fail = 0; // 1 species, 2 herd, 3 create
     bool nospecies_said = false; // BUG-0300 diagnostics: logged once
     bool kinematic = false;      // BUG-0281: placed on the host's path this frame
@@ -605,7 +606,8 @@ static net::NpcState host_state(uint16_t id, void* c)
     s.rot = game::orientation(c);
     s.vel = game::velocity(c);
     s.health = game::health(c);
-    s.flags = (game::is_dead(c) ? net::NF_DEAD : 0) | (game::impressed(c) ? net::NF_IMPRESSED : 0);
+    s.flags = (game::is_dead(c) ? net::NF_DEAD : 0) | (game::impressed(c) ? net::NF_IMPRESSED : 0) |
+              (game::pack_member(c) ? net::NF_PACK : 0); // BUG-0556: the host's pack (a Summon Flock) is the party's
     return s;
 }
 
@@ -1542,6 +1544,7 @@ static void guest_tick(double now)
             game::set_health(px.c, s.health);
         if (!px.killed) // the host's NPC was impressed (by anybody): the proxy shows it too
             game::set_impressed(px.c, (s.flags & net::NF_IMPRESSED) != 0);
+        px.host_pack = (s.flags & net::NF_PACK) != 0;
         ntrack_row(id, px, s, drawn, px.killed ? 2 : walked ? 3 : placed ? 1 : 0, now, rv_rep);
     }
 }
@@ -2362,6 +2365,15 @@ void* proxy(uint16_t id)
 {
     auto it = g_proxies.find(id);
     return it == g_proxies.end() ? nullptr : it->second.c;
+}
+
+bool proxy_in_host_pack(void* c)
+{
+    auto g = g_proxy_of.find(c);
+    if (g == g_proxy_of.end())
+        return false;
+    auto it = g_proxies.find(g->second);
+    return it != g_proxies.end() && it->second.host_pack;
 }
 
 uint16_t id_of(void* c)
