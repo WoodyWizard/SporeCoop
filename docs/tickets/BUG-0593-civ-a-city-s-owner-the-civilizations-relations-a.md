@@ -55,6 +55,11 @@ wsync_civ (the host captures an NPC city, changes another nation's relation by -
 guest's own game is read with coop.wstate): FAIL with `SPORE_FIX_OFF=wsync.city_owner,wsync.civ_rel,wsync.civ_money`
 out/lab/20261105-122815 (buildings 000021CB x3 on the guest, relation -1.12 / -5.12, money 0 / 1500, 4 detector
 rows), PASS out/lab/20261105-122658 (buildings 800021CA on both, -5.12 / -5.12, 1500 / 1500, no detector row).
+Detector, campaign_space with SPORE_DETECTOR=20: before (rel/0.7.7 final 20261105-015350) planet_owner:building_*
+and state:relation in 42 of 127 Civ comparisons, state:civ_money 2; after out/lab/20261105-132636: no planet_owner
+and no relation row in 65 Civ comparisons, civ_money 1 sample (an NPC's AI income between the two dumps, not
+repeated); play_civ out/lab/20261105-124754: no relation / owner row, civ_money 1 of 30. The remaining
+planet:building_* rows (a building at another place, not its owner) are BUG-0602.
 
 ## History
 - 2026-11-05: opened.

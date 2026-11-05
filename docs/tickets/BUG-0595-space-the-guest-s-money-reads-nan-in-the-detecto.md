@@ -35,8 +35,9 @@ real difference of an unsynced total is still a row. No game change, no switch.
 ## Verification
 make test: tools_selftest.py worldstate (an unsynced total reads as its number, the same money gives no row, other
 money still does): FAIL against the rel/0.7.8 worlddiff.py (`SELFTEST_WORLDDIFF=<a copy of it>`: money nan, a
-Space:state:money row), PASS on this branch. Detector: no Space:state:money row in the final regression runs (see
-the branch report).
+Space:state:money row), PASS on this branch. Detector: campaign_space out/lab/20261105-132636 and play_space
+20261105-124754 / 20261105-131337 with SPORE_DETECTOR=20: no Space:state:money row (before: 3 samples in the rel/0.7.7
+final campaign_space 20261105-015350).
 
 ## History
 - 2026-11-05: opened.
