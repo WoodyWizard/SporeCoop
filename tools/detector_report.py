@@ -76,9 +76,10 @@ KNOWN = {  # <stage>:<what>:<kind> (or <stage>:*:<kind>, <*>:*:<kind>) -> the ti
     'Tribe:state:food': 'BUG-0572', 'Tribe:state:relation': 'BUG-0565', 'Tribe:state:goal': 'BUG-0564',
     'Tribe:planet:village': 'BUG-0564', 'Tribe:planet:tribe_hut': 'BUG-0566',
     'Tribe:planet:tribe_tool': 'BUG-0574', 'Tribe:planet:totem_pole': 'BUG-0574',
-    'Tribe:state:members': 'BUG-0564', 'Tribe:planet_owner:village': 'BUG-0565',
+    'Tribe:state:members': 'BUG-0564', 'Tribe:planet_owner:village': 'BUG-0565', 'Tribe:state:tribe_food': 'BUG-0580',
     '*:state:species_relation': 'BUG-0419 class (species table)', '*:state:species_impressed': 'BUG-0419 class (species table)',
     '*:state:species_killed': 'BUG-0419 class (species table)',
+    '*:*:spear': 'BUG-0477',  # a thrown spear: a projectile, as the other *_projectile kinds
 }
 
 

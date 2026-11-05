@@ -589,3 +589,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0577](BUG-0577-after-a-rejoin-the-game-shows-the-cell-and-creat.md) | open | bug | Tribe | 2026-11-04 |  | After a rejoin the game shows the Cell and Creature stages as not done yet (stage progress lost) |
 | [BUG-0578](BUG-0578-crash-at-graphics-cmodelworld-finishbackgroundlo.md) | open | crash | none | 2026-11-04 |  | Crash at Graphics::cModelWorld::FinishBackgroundLoad+0x2735 on 0.7.3.6 (3010a413, mode none) |
 | [BUG-0579](BUG-0579-tribe-day-and-night-differ-the-guest-s-world-is.md) | open | desync | Tribe | 2026-11-04 |  | Tribe: day and night differ: the guest's world is at night while the host's is in daylight |
+| [BUG-0580](BUG-0580-tribe-the-npc-tribes-food-differs-between-the-ho.md) | open | desync | Tribe | 2026-11-04 |  | Tribe: the NPC tribes' food differs between the host and the guest (detector Tribe:state:tribe_food) |

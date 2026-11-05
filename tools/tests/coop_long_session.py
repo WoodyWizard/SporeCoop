@@ -196,6 +196,17 @@ class Session:
         t0 = time.time()
         while time.time() - t0 < 90 and not self.in_stage(self.host):
             time.sleep(1)
+        # Creature: the vote opened the guest's own editor too (lab 20261104-203017: the guest stayed in it):
+        # the guest leaves it the same way
+        for _ in range(3):
+            if 'Editor' not in mode(self.guest):
+                break
+            print('  editor: the guest is in its editor: the red X there too', flush=True)
+            self.guest.call('wait.frames 200 60000')
+            self.guest.call('move %d %d' % CANCEL)
+            time.sleep(0.5)
+            self.guest.call('click %d %d' % CANCEL)
+            time.sleep(10)
         t0, loaded = time.time(), False
         while time.time() - t0 < 90 and not loaded:
             loaded = not self.in_stage(self.guest)

@@ -419,10 +419,10 @@ def diff_state(hs, gs, stage):
         if hg and gg:
             ht = hg['tribe'] >= 0 and hg['pos']
             gt = gg['tribe'] >= 0 and gg['pos']
-            if bool(ht) != bool(gt) or (ht and gt and math.dist(hg['pos'], gg['pos']) > TRIBE_MATCH) or \
-                    (ht and gt and hg['state'] != gg['state']):
+            # (the mission's +0x84 is no state: pointer-like values at runtime, lab 20261104-203017; not compared)
+            if bool(ht) != bool(gt) or (ht and gt and math.dist(hg['pos'], gg['pos']) > TRIBE_MATCH):
                 add('Tribe:state', 'goal', 1, f'the current goal: the tribe at {_fmt(hg["pos"]) if ht else "none"} '
-                    f'(state {hg["state"]}) on the host, at {_fmt(gg["pos"]) if gt else "none"} (state {gg["state"]}) on the guest')
+                    f'on the host, at {_fmt(gg["pos"]) if gt else "none"} on the guest')
     if stage == 'Civilization' and hs.civs and gs.civs:
         hp = next((c for c in hs.civs if c['player']), None)
         gp = next((c for c in gs.civs if c['player']), None)

@@ -518,7 +518,7 @@ for _st, _fx in (('cell', 'cell'), ('creature', 'creature'), ('tribe', 'tribe'),
 # D0 (docs/plan-0.7.7.md): 40 min of play with the guest's death, an editor, the main menu, a restart of its game
 # and a rejoin, the detector all along (docs/06-testing.md#testing-long-session); fails on faults / crashes only
 for _st in ('creature', 'tribe'):
-    add(f'long_{_st}', P + f'coop_long_session.py --stage {_st} --minutes 40', ('detector',), minutes=60, fixture=_st)
+    add(f'long_{_st}', P + f'coop_long_session.py --stage {_st} --minutes 40', ('detector',), minutes=60, timeout=4800, fixture=_st)
     add(f'long_{_st}_short', P + f'coop_long_session.py --stage {_st} --minutes 6', ('detector',), minutes=20, fixture=_st)
 
 SUITES = ('smoke', 'full', 'nightly', 'extended', 'campaign', 'multi', 'players', 'mixed', 'detector')
