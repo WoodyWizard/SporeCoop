@@ -606,3 +606,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0594](BUG-0594-tribe-a-totem-pole-on-the-guest-only-before-the.md) | open | desync | Tribe | 2026-11-05 |  | Tribe: a totem pole on the guest only before the move to Civ (tribe_civ, detector guest_only:totem_pole) |
 | [BUG-0595](BUG-0595-space-the-guest-s-money-reads-nan-in-the-detecto.md) | open | desync | Space | 2026-11-05 |  | Space: the guest's money reads nan in the detector's state row (campaign_space) |
 | [BUG-0596](BUG-0596-creature-a-species-has-a-relation-in-one-game-on.md) | open | desync | Creature | 2026-11-05 |  | Creature: a species has a relation in one game only (detector state:species_only, campaigns and long_creature) |
+| [BUG-0597](BUG-0597-co-op-window-send-my-world-with-no-players-or-no.md) | open | bug | Menu | 2026-11-05 |  | Co-op window: 'Send my world' with no players or no world loaded does nothing but says 'Sending the world to everyone' |
