@@ -110,3 +110,11 @@ SporeCoop::CivGrowth_Turret_Ret1 ; BUG-0484: on GOG 2016 a city's turrets are ea
 SporeCoop::CivGrowth_Turret_Ret2 ; BUG-0484: on GOG 2016 a city's turrets are each game's own (civ.turrets has no effect there)
 SporeCoop::UfoGfx_SetModel ; BUG-0546: the ship model guard (game.ufo_model) is off on GOG 2016
 SporeCoop::UfoGfx_SetVisible ; BUG-0546: the ship model guard (game.ufo_model) is off on GOG 2016
+SporeCoop::CreatureStun ; BUG-0554: no stun relay between the games on GOG 2016
+SporeCoop::CreatureAttackTarget ; BUG-0555: NPCs may bite a guest in the air on GOG 2016
+SporeCoop::CreatureFriendly ; BUG-0556: the host's pack is not shown friendly on a GOG 2016 guest
+SporeCoop::cHerd_SetBestFriends ; BUG-0561: no ally face on a GOG 2016 guest's minimap
+SporeCoop::TribeTargetRing_Draw ; BUG-0570: no target ring on a GOG 2016 guest
+SporeCoop::TribeTargetRing_Find ; BUG-0570: (test lookup)
+SporeCoop::TribeTargetRings_Update ; BUG-0570: no target ring on a GOG 2016 guest
+SporeCoop::TribeUI_ptr ; BUG-0570: no target ring on a GOG 2016 guest
