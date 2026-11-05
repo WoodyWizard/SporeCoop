@@ -1414,3 +1414,35 @@ of the two chiefs' bounding radii from the first, standing):
 * ~ 0xA82660 (thiscall, the effect's vt+8 with one int): checks +0x28, flags +0x2C, then calls vt+8(arg) of each
   component (vector +0x144..+0x148, 0x5C bytes each, object at +0x38). BUG-0575 crashed in that loop with
   edi = 0x5C, esi = 1 (a component's call returned with the callee-saved registers broken: a freed component).
+## Whole-planet re-alignment after transitions (2026-11-04, fix/w43-realign)
+<a id="tribe-realign"></a>
+
+W2 of 0.7.7 (BUG-0564, BUG-0566, BUG-0567, BUG-0563; classes BUG-0421, BUG-0427). GOG 2024, lab lanes 6 / 7.
+
+* ✔ The player reports' sessions: the host's game went Tribe -> Loading -> Tribe three times (the game over's
+  reload of its last save) while the guest's stayed in its world. Lab (tribe_bounce_world): after the host's reload
+  its world had 2 tribes (the player's and the save's NPC tribe), the guest's 5: BUG-0483 emptied the 3 extra
+  tribes to 0 members, their tribe objects, huts, tools, food mats (and map marks) stayed (out/lab/20261104-204705).
+* Decision: the guest re-aligns in place, it does not load the host's world again: a load costs a loading screen
+  at every host game over and the guest's own game's changes since, and does not cover a rejoin, an editor return
+  or a death (the same mechanism must).
+* ✔ `cGameNounManager::DestroyInstance` of a cTribe in the Tribe stage on a guest (realign.villages,
+  `tribe::remove_village`, members first with RemoveMember destroy): the tribe, its hut, its tools and its food
+  mat leave the noun list together (coop.realign planet: village 5 -> 2, hut 5 -> 2, food_mat 5 -> 2 in one
+  look, lab 20261104-211648), no fault in the 40 s after. ? The map mark: not read by a test (the planet map
+  lists tribes from the noun list, inferred).
+* ✔ A guest's own Drama Manager event kind 7 (creature attack) in Tribe faulted 15 s after such a removal, in its
+  start (0xD521BA, data 0x120, null + 0x120; lab 20261104-211318): the event had picked a village. On a guest in
+  Tribe the kind does not start any more (drama.cpp, tribe.guest_attacks).
+* ✔ Huts (noun 0x1E4DAAE) and tools (0x18C8F0C): cCombatant at +0x120, health +0x158 (combatant +0x38), maximum
+  +0x14C (+0x2C). The fixture's NPC huts read 1000/1000 on both games. Written on a guest
+  (`coop.realign hp hut x y z <permille>`) the guest's own value changes, nothing goes to the host. ? Whether the
+  hut's damage effects (smoke, the broken model of BUG-0567) follow the health field or only TakeDamage: not seen
+  (no screenshot compared).
+* ✔ The whole planet's lists in the tribe fixture (coop.realign planet): 5 villages, 5 huts, 5 food mats, 6-10
+  tools, 49 nests. Tools of far tribes differ between the games (the guest 6, the host 8-10: tools within 150 m of
+  the guest only are synced, wobj.tribe_tools_all): BUG-0488's tool rows on the whole planet, not changed here.
+* ✔ (BUG-0563) The co-op epic (tribe.cpp spawn_epic) took the species of the animal nearest the player village.
+  Player logs: the guest's puppet of the Creature stage (species of the guest's creation) stood next to the host
+  until the stage change; the epic came 8 min after it (its timer), the host fought "the guest's creature" as a
+  monster. tribe.epic_species: puppets, proxies and the players' creatures' species are never the epic's.

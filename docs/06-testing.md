@@ -4136,3 +4136,20 @@ comes back at the end. The cache copy is not in git: `out/fixtures/bug0546-Polli
 checkout (else `out/bug0546/lane5-Pollination.package` of the fix/w42-infra worktree); without it the test SKIPs.
 It also SKIPs when the guard had no ship to fix (lane 4: its other caches have the models). About 1.5 minutes.
 `SPORE_FIX_OFF=game.ufo_model` must FAIL (lane 5: out/lab/20261104-130233).
+## Whole-planet re-alignment tests (2026-11-04, fix/w43-realign)
+<a id="testing-realign"></a>
+
+* `coop.realign planet [kind]`: every village, hut, tool, food mat, nest and city of the game's noun list (the
+  whole planet, not 250 m) with its position, `fl=1` for the player's own and a hut's / tool's health in 1/1000;
+  `coop.realign`: the counters and the last compare per kind (here / host / lack / extra / state_off / removed /
+  state_fixed); `coop.realign hp <kind> x y z <permille>`: the health of the nearest hut / tool (tests).
+* `coop_realign_planet.py --fixture tribe|creature --case gameover|rejoin` (suite `realign_tribe`,
+  `realign_tribe_rejoin`, `realign_creature_rejoin`): a transition, then the two games' planets compared whole
+  (villages, huts with their health, food mats, nests, cities; tools are printed, not counted: BUG-0488).
+  `SPORE_FIX_OFF=realign.villages,realign.buildings` fails `realign_tribe` (the extra villages, huts, food mats
+  stay; the host's damaged hut is not shown).
+* `coop_tribe_epic_species.py` (`tribe_epic_species`, ~14 min): the live Creature -> Tribe change, then the co-op
+  epic is no player's species (BUG-0563).
+* Pitfall: the host's game-over caption in the tribe fixture comes ~20 s after the last member is out, later under
+  load; while the host's own creature_attack event runs it may not come at all (BUG-0582). The bounce tests wait
+  75 s for it and press its OK again when the game has not left the stage 10 s later.

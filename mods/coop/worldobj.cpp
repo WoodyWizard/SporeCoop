@@ -665,6 +665,14 @@ static void guest_reset()
     }
 }
 
+// W2 (BUG-0488): a tool of a far village was never the host's (the snapshot covered 150 m around a guest): after a
+// rejoin the guest's planet lacked 8 of the host's tools (coop_realign_planet.py, lab 20261104-212408) and each
+// game's far tribes kept the tools they bought themselves. The tools' snapshot covers the whole planet (the 48
+// nearest a guest; the tribe fixture's planet has 10-20). `coop.fix wobj.tools_planet off`: 150 m (0.7.6).
+static bool g_tools_planet_fix = true;
+COOP_FIX("wobj.tools_planet", "BUG-0488", g_tools_planet_fix, "tribe: every village's tools on the planet are the host's in a guest's game, not only those near it");
+static float kind_range(int k) { return k == tool_kind() && g_tools_planet_fix ? 3000.f : g_kinds[k].range; }
+
 static void host_tick(double now)
 {
     uint8_t sb = stage_bit();
@@ -692,13 +700,14 @@ static void host_tick(double now)
                     continue;
             }
             std::vector<std::pair<float, const Item*>> close;
+            float range = kind_range(k);
             for (auto& it : all) {
                 float d = net::dist(it.pos, c);
-                if (d < K.range)
+                if (d < range)
                     close.push_back({d, &it});
             }
             std::sort(close.begin(), close.end(), [](auto& a, auto& b) { return a.first < b.first; });
-            float r = K.range;
+            float r = range;
             if (close.size() > (size_t)K.max) { // the guest knows which area the snapshot covers
                 r = close[K.max].first;
                 close.resize(K.max);

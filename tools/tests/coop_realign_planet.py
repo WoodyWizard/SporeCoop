@@ -16,11 +16,12 @@ hut, tool, food mat, nest, city with its position, the player flag, a building's
 3. The transition (`--case`): `gameover` (Tribe: the host's player tribe knocked out, OK on the caption: the
    host's game reloads its last save while the guest's stays in its world) or `rejoin` (the guest leaves,
    joins again and loads the host's world).
-4. PASS: within 40 s the guest's planet has every host village / hut / food mat / nest / city (tolerances as
-   realign_rule.h), none the host has not, and each hut's health within 5 % of the host's; checked twice 6 s
-   apart. Tools are listed (the whole planet's are not all the host's yet: BUG-0488) but not counted.
+4. PASS: within 40 s the guest's planet has every host village / hut / tool / food mat / nest / city (tolerances
+   as realign_rule.h), none the host has not, and each hut's health within 5 % of the host's; checked twice 6 s
+   apart.
 
-SPORE_FIX_OFF=realign.villages,realign.buildings: step 2's village and hut stay (FAIL) on `gameover`.
+SPORE_FIX_OFF=realign.villages,realign.buildings: step 2's village and hut stay (FAIL) on `gameover`;
+SPORE_FIX_OFF=wobj.tools_planet: the far villages' tools differ (FAIL) on the tribe `rejoin` (BUG-0488).
 
   SPORE_LANE=6 python3 tools/tests/coop_realign_planet.py --fixture tribe --case gameover
 """
@@ -33,7 +34,7 @@ import lane
 from twoinst import Checks, start
 
 TOL = {'village': 40, 'hut': 10, 'tool': 3, 'food_mat': 10, 'nest': 10, 'city': 30}
-COUNTED = ('village', 'hut', 'food_mat', 'nest', 'city')
+COUNTED = ('village', 'hut', 'tool', 'food_mat', 'nest', 'city')
 
 
 def planet(con):
