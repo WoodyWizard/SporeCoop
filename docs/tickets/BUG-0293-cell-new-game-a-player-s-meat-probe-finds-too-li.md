@@ -40,7 +40,8 @@ Test only (fix/w43-tests): a probe try waits up to 20 s for food of its diet on 
 counts as not eaten; the 3-of-6 rule is unchanged. The 2/6 tries (meat there, not eaten) are not addressed.
 
 ## Verification
-See the branch report (cell_new_game after the change); no FAIL run of the old test on this branch.
+After the change: out/lab/20261104-232622 FAIL (host 1/6: four tries with no meat on screen in 20 s; guest 0/6: the
+same meat six times, never eaten: new ticket BUG-0589). The wait did not make the probe pass; left open.
 
 ## History
 - 2026-10-30: opened.

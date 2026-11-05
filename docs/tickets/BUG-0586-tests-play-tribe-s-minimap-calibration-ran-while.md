@@ -1,16 +1,16 @@
 ---
 id: BUG-0586
 title: "Tests: play_tribe's minimap calibration ran during the guest's cold join pause (the view did not move)"
-status: open
+status: fixed
 kind: test
 stage: Tribe
 reported: 2026-11-04
 source: lab rel/0.7.7 20261104-220200, fix/w43-realign 20261104-213145, fix/w43-world-state 20261104-210354
 role: guest
 versions: 
-fixed_in:
+fixed_in: unreleased
 branch: fix/w43-tests
-commits:
+commits: 74fef091
 tests: play_tribe
 signature:
 docs: docs/06-testing.md#testing-harness-g1
@@ -36,5 +36,11 @@ Test only: play_tribe waits for both games' own clock to run (coop_sync.wait_run
 calibrates, and the failure line prints the pause state. No threshold changed.
 
 ## Verification
+* FAIL (the old test): lab 20261104-220200 (rel/0.7.7), fix/w43-realign 20261104-213145, fix/w43-world-state
+  20261104-210354 (each run dir in that branch's worktree).
+* PASS: out/lab/20261104-232522 play_tribe (lane 2, cold; "both games' time runs", both calibrations ok), and a
+  scratch play_tribe on lane 3 (10 min, RESULT OK).
+* Not verified: the pause as the cause (inferred; holding the bit alone does not stop the view).
 ## History
 - 2026-11-04: opened.
+- 2026-11-04 (fix/w43-tests): the calibration waits for both games' clock.

@@ -4191,7 +4191,9 @@ wrong and the run where the new one is right; no threshold was loosened.
   The revive check allows hp 6 only when the guest ate since the knockout (`meals since the knockout` in the line).
 * **cell_new_game** (BUG-0293): a probe try that found no meat on screen at once was spent after 60 frames ("none on
   screen" in 4 of 10 runs of 2026-10-30). A try now waits up to 20 s for food of its kind on the screen; a try with
-  none in that time still counts as not eaten, and the 3-of-6 rule is unchanged.
+  none in that time still counts as not eaten, and the 3-of-6 rule is unchanged. The first run after it still
+  failed (lab 20261104-232622: the host found no meat in 20 s in 4 tries; the guest swam 6 times into one meat its
+  game never ate, BUG-0589): the probe's failures are not only an empty screen.
 * **The proxies gate** (BUG-0503, BUG-0440; play_tribe, long_tribe, chaos_tribe): the gate was right. A guest at 3-5
   fps under lab load placed a walking animal's proxy with walk_place's catch-up capped at 0.1 s frames and fell
   behind the host's animal (placed position 0.1 -> 7.3 m in 6 s, coop.npctrack on both games). Fixed in the mod
