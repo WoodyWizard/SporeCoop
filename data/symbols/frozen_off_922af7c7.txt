@@ -110,3 +110,4 @@ SporeCoop::CivGrowth_Turret_Ret1 ; BUG-0484: on GOG 2016 a city's turrets are ea
 SporeCoop::CivGrowth_Turret_Ret2 ; BUG-0484: on GOG 2016 a city's turrets are each game's own (civ.turrets has no effect there)
 SporeCoop::UfoGfx_SetModel ; BUG-0546: the ship model guard (game.ufo_model) is off on GOG 2016
 SporeCoop::UfoGfx_SetVisible ; BUG-0546: the ship model guard (game.ufo_model) is off on GOG 2016
+SporeCoop::TribeMissionManager_ptr ; BUG-0430: the detector's Tribe goal row (coop.wstate `goal`) is empty on GOG 2016

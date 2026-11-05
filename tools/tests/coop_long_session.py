@@ -147,6 +147,8 @@ class Session:
                 n += 1
                 if time.time() - last > 10:
                     last = time.time()
+                    for p in g.p:
+                        g.check_orders(p)
                     g.measure()
         except (OSError, ValueError) as e:
             self.notes.append(f'tribe bot: console error {e!r}')
@@ -173,7 +175,7 @@ class Session:
         m0 = mode(self.host)
         print(' ', self.host.call('coop.vote editor')['out'].strip().splitlines()[0], flush=True)
         time.sleep(2)
-        gu = Ui(self.guest)
+        gu = Ui(self.guest, 'guest')
         if gu.wait(lambda s: s['ready']['vis'], 10, 'ready button'):
             gu.click('ready')
         t0 = time.time()
@@ -190,6 +192,21 @@ class Session:
         self.host.call('move %d %d' % CANCEL)
         time.sleep(0.5)
         self.host.call('click %d %d' % CANCEL)
+        # the host back in the stage, then its world shared again: the guest loads it (BUG-0517 path)
+        t0 = time.time()
+        while time.time() - t0 < 90 and not self.in_stage(self.host):
+            time.sleep(1)
+        t0, loaded = time.time(), False
+        while time.time() - t0 < 90 and not loaded:
+            loaded = not self.in_stage(self.guest)
+            f1 = twoinst.host_frame(self.host)
+            time.sleep(1)
+            if twoinst.host_frame(self.host) == f1:
+                self.host.call('key enter')  # the "game saved" box of the share
+        print(f'  editor: the host is back; the guest loaded the shared world: {loaded} ({time.time() - t0:.0f} s)',
+              flush=True)
+        if not loaded:
+            self.notes.append('editor: no world load of the guest seen within 90 s after the editor')
         return self.wait_together(240, 'editor')
 
     def menu(self):
