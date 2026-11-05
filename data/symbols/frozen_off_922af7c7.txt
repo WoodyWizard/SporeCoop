@@ -124,3 +124,5 @@ SporeCoop::MissionCardPanel_HasCard ; BUG-0564: the wsync goal dump shows no car
 SporeCoop::TribeMissionManager_Get ; BUG-0564: the wsync Tribe goal row (wsync.tribe_goal) is off on GOG 2016
 SporeCoop::TribeMission_SetTargetTribe ; BUG-0564: the wsync Tribe goal row (wsync.tribe_goal) is off on GOG 2016
 SporeCoop::TribeMissionManager_ptr ; BUG-0430: the detector's Tribe goal row (coop.wstate `goal`) is empty on GOG 2016
+SporeCoop::TribeAttack_TakeSpot ; BUG-0582: the creature attack spot guard (tribe.attack_spot) is off on GOG 2016
+SporeCoop::Citizen_IsLeader ; BUG-0583: the leader's staff guard (tribe.leader_tool) is off on GOG 2016 (mirrors take every tool as before)
