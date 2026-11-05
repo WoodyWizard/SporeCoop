@@ -4163,3 +4163,23 @@ current world, so relations, the goal, the stages and the food are the host's af
 * Pitfall: the host's game-over caption in the tribe fixture comes ~20 s after the last member is out, later under
   load; while the host's own creature_attack event runs it may not come at all (BUG-0582). The bounce tests wait
   75 s for it and press its OK again when the game has not left the stage 10 s later.
+
+## content_lookalike: a guest without two packs sees the host's creature (2026-11-04, fix/w43-content)
+<a id="testing-content-lookalike"></a>
+
+* `tools/lab.py run content_lookalike --lane 9 --skip 1,2,3,4,5,6,7,8` with `SPORE_FREE_LANE=10` (~2 min): host and
+  Bob on the run's lane, Carol on the free lane with `bp1content/BoosterPack_01.package` and
+  `Data/Spore_Pack_03.package` renamed `*.bug0559-off` for the test (put back in `finally`, and at the start of the
+  next run if one died). The host's Tiger Horse gets Creepy & Cute parts, a Spore_Pack_03 foot, the base game's
+  cell stripes paint and a pack detail paint. Checks on Carol's game: `coop.creations partlist` (roles of the
+  model's parts, the species data's parts she lacks), `paints`, `parts`, 0 faults. FAIL with
+  `SPORE_FIX_OFF=content.species_data` or `content.lookalike` (docs/re/creations.md#creations-lookalike).
+* Looking at it: `CONTENT_HOLD=<s>` keeps the games after the checks (raise the suite's minutes for a long hold);
+  `python3 tools/sporectl.py -i <inst> shot <path>` (a path inside the worktree: the game cannot write to /tmp),
+  `coop.cam <x> <y>` gives the screen ray, `coop.abilities goto <x> <y> <z>` puts a game's creature there.
+  `CONTENT_SWAPS=<old>=<new>,...` puts any parts into the host's model instead (the control run with base parts).
+* Pitfall: the host's family members look like the host's creature: find a puppet by moving it (`goto`) between
+  two screenshots. ? Seen once (not analysed): the partner names sat over a creature 10-15 m behind the creatures
+  that moved with `goto`.
+* Pitfall: `lab.py reload` of a guest that is in a session drops the packages co-op registered for it (the
+  received creations: `partlist` answers `none` afterwards); inspect before a reload.

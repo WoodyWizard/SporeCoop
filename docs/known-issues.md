@@ -1910,3 +1910,15 @@ Player reports 2026-11-04 (0.7.5, Discord bug-reports; not analysed yet):
 - BUG-0579: Tribe: day and night differ: the guest's world is at night while the host's is in daylight
 - BUG-0582: Tribe: the host's game faults at 0xD72745 every frame during its own creature attack event (lab, ~1 run in 3 of tribe_bounce_world; its game-over caption may not come then)
 - BUG-0583: Tribe: a guest faulted in a citizen's Update (GetAbilityIndexByType) after leaving and joining again (lab, once in realign_tribe_rejoin)
+
+## Content one game lacks: what the lookalike parts do not cover yet (2026-11-04, fix/w43-content)
+<a id="issue-content-lookalike-gaps"></a>
+
+* [BUG-0424](tickets/BUG-0424-class-content-parts-paints-designs-the-other-gam.md) (open, class): since BUG-0559 a
+  part a guest's game lacks in a player's creature, cell or UFO, or in a species of the host's world, is shown as
+  the most similar part that game has (the sender's description of the part, docs/re/creations.md#creations-lookalike).
+  Not covered: civ mirror vehicles, buildings and host ships in Space (`ensure_model` builds them from a key, no
+  description comes with it: the 0.7.6 tables, a part of no table becomes a fixed detail); cell and UFO parts use the
+  same code but have no test; an animation that only the missing part has is not played.
+* Reproduce: `content_lookalike` with the host's creature changed to use a vehicle part of `Spore_Pack_03` in a civ
+  mirror (not written yet).

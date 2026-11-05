@@ -1665,9 +1665,12 @@ bool content_all_kinds() { return g_all_kinds_fix; }
 
 std::string content_status()
 {
-    char b[160];
-    snprintf(b, sizeof b, "content checks=%u same=%u substituted=%u refused=%u unreadable=%u fix=%d\n", g_models_checked,
-             g_models_same, g_models_substituted, g_models_refused, g_models_unreadable, (int)g_all_kinds_fix);
+    char b[360];
+    snprintf(b, sizeof b, "content checks=%u same=%u substituted=%u refused=%u unreadable=%u fix=%d\n"
+             "lookalike parts=%u descriptions out=%u in=%u catalogue=%.0f ms species_data fixed=%u dropped=%u\n",
+             g_models_checked, g_models_same, g_models_substituted, g_models_refused, g_models_unreadable,
+             (int)g_all_kinds_fix, g_lookalikes, g_desc_out, g_desc_in, g_catalogue_ms, g_species_data_fixed,
+             g_species_data_dropped);
     return b;
 }
 
