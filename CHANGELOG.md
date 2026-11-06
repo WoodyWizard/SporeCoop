@@ -27,6 +27,13 @@
   (BUG-0413).
 - Creature: a guest that leaves the session keeps the animals around it and plays on with them, and a guest that joins
   again while the host is in its editor no longer finds a planet without creatures (BUG-0412).
+- Creature / Tribe: a fruit lying on the ground in the host's game lies at the same place on the guest's screen too,
+  also when the guest's own game had rolled it elsewhere or had already lost it (BUG-0497).
+- Tribe / Civ: food dropped on the ground and food carried by the host's tribe members is in the guest's game too,
+  at the same place, and food a guest's member picks up is gone for the host as well (BUG-0548).
+- Civ: a city's cultural targets stand where the host's stand after a guest leaves and joins again (BUG-0540).
+- Space: the decorations around a planet's cities are the same in every player's game (the same cities have them, at
+  the same places), instead of a different set on each screen (BUG-0541).
 
 ## [0.7.8] - 2026-11-05
 

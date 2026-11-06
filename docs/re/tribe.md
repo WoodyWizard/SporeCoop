@@ -1921,3 +1921,38 @@ fixture to Tribe, as coop_tribe_snapshot.py).
 * ? Leads: the strings `mTerrainStampsToRemove` (0x14655A8, registered in 0x1322A30) and `mAppliedStamp`
   (0x1469174): terrain stamps that placed objects apply and a list of stamps to remove, saved with the planet; not
   followed (BUG-0332 stays open).
+
+## Food bundles of the host on every game (2026-11-06, fix/w45-world-objects)
+<a id="tribe-host-bundles"></a>
+
+GOG 2024 addresses (dc04aee5). Kind `game_bundle` of mods/coop/worldobj.cpp (BUG-0548), switch `wobj.bundle`.
+
+* ✔ cGameBundle (noun 0x18C431C): +0x128 its container's interface, +0x12C type, +0x134 amount (float). A container
+  (cGameBundleContainer interface): vector +4..+8, max count +0x1C, vt +0x3C one bundle's size.
+* ✔ cBundleManager::Get 0xB3D3B0 (cdecl, [0x167EADC]); +0x1C the one ground container (a
+  cGameBundleGroundContainer, noun 0x1906183, its interface at +0x34). CreateBundles 0xAC79F0 thiscall(mgr, float
+  amount, container, int type) ret 0xC -> the bundle; RemoveBundles 0xAC7C50 thiscall(mgr, amount, 0, bundle) ret 0xC
+  takes that bundle alone.
+* ✔ A carried bundle sits in the creature's own container at creature +0x34 (max 1): `coop.wobj bundle carry` gave
+  holder = member + 0x34 (lab 2026-11-06). A tribe's mat holds the whole food in one bundle (no per-bundle cap).
+* ✔ The holder of a mat's bundle is no creature: reading noun_id at holder - 0x34 faulted on a null vtable (the host,
+  at its first snapshot, lab 20261106-042445); the carrier is now looked up in the game's creature list.
+* ✔ A member given food walks to the mat at ~7 m/s and puts it down within ~8 s; the guest's copy of the member carries
+  the copy 1-3.5 m behind it (coop.wobj list on both every 0.7 s), and the copy is removed when the host's is.
+* ✔ host_bundle: the host's ground food lies at its place on the guest, the guest's copy of the member carries the
+  food, the food a guest's member takes from the ground is gone on the host (PASS lab 20261106-044500, FAIL with
+  `SPORE_FIX_OFF=wobj.bundle` lab 20261106-044559).
+
+## The host's extra ornament in Tribe: not reproduced (2026-11-06, fix/w45-world-objects)
+<a id="tribe-ornament-not-reproduced"></a>
+
+BUG-0528. GOG 2024 (dc04aee5).
+
+* ✔ The `tribe` fixture has 5 ornaments of noun 0x18C88E4 in both games, the same models (+0x228: 0x356EB8A x3,
+  0x5B9A06E, 0x5D97F762 the tribe's decoration of 0xC90080) at the same places; none changed in 80 s after the
+  guest's members were ordered to hunt (`coop.tribe act_npc 10`, lane 7). 0xCCEB90 releases a held object of model
+  0x356EB8A (the creature's +0xC0): these can be held.
+* ✔ No Tribe `ornament` detector row in play_tribe (lab 20261106-035845, 20261106-051335).
+* ? The makers of the noun (CreateInstance(0x18C88E4) call sites): 0xC90080, 0xCCEB90's caller 0xCD1D60, 0xD130D0,
+  0xD2FFD0, 0xD99F50, 0xC60440, 0xB41FE0, 0xBE6A50 (city decorations, docs/re/space.md#space-city-ornaments),
+  0xEC0F00, 0xF30B60, 0xF41A50, 0x1051860, 0xB25FC0. `coop.wobj raw 18C88E4 3000 576` prints the model of each.

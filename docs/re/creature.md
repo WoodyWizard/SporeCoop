@@ -3103,3 +3103,32 @@ BUG-0465 (fixed). GOG 2024, game data (read only), lab lanes 3/2.
   the last own / received effect of an id with its transform; `coop.nest look <target> 0 <from>` puts the own creature
   at a point facing a target (tests).
 * ? Not changed: the sound of the cinematic (music_crg_cin_waterdeath) and the freeze frame stay the dying player's.
+
+## World objects at the host's places: fruit made and moved (2026-11-06, fix/w45-world-objects)
+<a id="creature-host-places"></a>
+
+GOG 2024 addresses (dc04aee5). mods/coop/worldobj.cpp, kinds `fruit` (BUG-0497), `game_bundle` (BUG-0548,
+docs/re/tribe.md#tribe-host-bundles), `cultural_target` (BUG-0540, docs/re/civ.md#civ-host-cultural-targets),
+`city_ornament` (BUG-0541, docs/re/space.md#space-city-ornaments); test tools/tests/coop_world_host.py.
+
+**The mechanism (Kind `place`, `relocate`, `place_eps`, `make`).** A guest binds the host's objects to its own in two
+passes: within `tol` first; a host object still without a copy takes the guest's nearest unbound copy within
+`relocate` m and `place` puts it at the host's place; a bound copy farther than `place_eps` m from the host's object is
+put back; only then `make` makes the ones still missing. In Space the host sends an empty snapshot too (from the
+guest's ship), so a guest copy of an object the host has none of is seen as its own.
+
+**Fruit (BUG-0497).**
+* ✔ The same drop from the same tree came to rest 13 m apart in the two games (play_tribe, lane 7); the guest's
+  counters missing=62 dropped=59 in play_tribe (0.7.8 code). Each game's flora recycles the loose fruit farthest from
+  its own camera when its free fruit run out: Flora_TakeFruitForDrop 0xB08DF0, only caller 0xB09790.
+* ✔ Flora_DropFruit 0xB09AE0 thiscall(flora, tree, slot, make) ret 0xC: returns 0 when the slot's bit of tree
+  +0x48/+0x4C is clear, finds the tree instance 0xB03280(flora, tree +0x58, +0x50, +0x54), rejects slot >= 0xB05850()
+  (the instance's slot count, a popcount), then 0xB09790(slot, make) thiscall on the instance returns the cFruit.
+* ✔ Make (lab 20261106-042151, -042440): slot 0 of the nearest tree (within 60 m, 4 trees tried) gets its bit for the
+  drop and the tree's mask is put back exactly right after; the falling cFruit is put at the host's place
+  (game::set_object_position, the spatial vt 0x38). A free slot is not needed: L2's first version took the first clear
+  bit, which on a full tree is the slot past its count, and made nothing (missing=30 made=0, lab 20261106-041736).
+  Every tree near the players had the same mask on both games after three makes (the test checks it).
+* ✔ place: only fruit falling or on the ground (state 1 / 2) on both sides; a held or hidden fruit is not moved.
+* ~ A make takes a free fruit, or the loose fruit farthest from the guest's camera (TakeFruitForDrop): a far fruit
+  of the guest's may be recycled for it; not seen to loop in the test (3 makes in 64 s).

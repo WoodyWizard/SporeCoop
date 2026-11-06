@@ -157,3 +157,7 @@ SporeCoop::CreatureCursorKind ; tests only (coop.rules cursor, BUG-0557): no cur
 SporeCoop::UFOAbductionEvent_SpawnUFO ; Creature: a GOG 2016 guest does not see the host's UFO (creature.ufo_mirror, BUG-0558)
 SporeCoop::Creature_HoldObject ; Creature: on GOG 2016 a carried rock or stick is not shown on the partner's creature (creature.carry_relay, BUG-0458)
 SporeCoop::Creature_ReleaseObject ; Creature: on GOG 2016 a thrown rock or stick is not put where it landed in the partner's game (creature.carry_relay, BUG-0458)
+SporeCoop::cPlanetModel_SurfaceOrientation ; Space: on GOG 2016 the cities' decorations stay at each game's own places (wobj.city_ornament, BUG-0541)
+SporeCoop::City_MakeDecorations ; Space: on GOG 2016 the cities' decorations stay each game's own (wobj.city_ornament, BUG-0541)
+SporeCoop::Layout_ClearObject ; Space: on GOG 2016 the cities' decorations stay each game's own (wobj.city_ornament, BUG-0541)
+SporeCoop::VectorPtr_EraseValue ; Space: on GOG 2016 the cities' decorations stay each game's own (wobj.city_ornament, BUG-0541)

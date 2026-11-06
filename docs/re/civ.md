@@ -1200,3 +1200,19 @@ BUG-0593. GOG 2024, Ghidra (tools/ghidra/q.sh --build 2024) and lab lane 7 (civ_
 * ~ civ_coop's `Civilization:state:money` row ("-800 on the host, 0 on the guest"): the test's `coop.civ build`
   on the host spends without the game's price check (the host's wealth went 400 -> -800); a guest's shared total
   is floored at 0 (res.floor, BUG-0106). Not a player's case (the game refuses a building it cannot pay); not changed.
+
+## Cultural targets at the host's places (2026-11-06, fix/w45-world-objects)
+<a id="civ-host-cultural-targets"></a>
+
+GOG 2024 addresses (dc04aee5). Kind `cultural_target` of mods/coop/worldobj.cpp (BUG-0540), switch
+`wobj.cultural_target`.
+
+* ✔ The 4 cultural targets (noun 0x3D5C325) of a city stood at the same places on both games after a fresh load of
+  `civ_npc` (and `civ`), but 3.3-8.5 m apart after the guest left and joined again 60 s later (lab 20261106-043659):
+  the guest's game sets its cities up again from the host's world of then and puts them by its own city layout. This
+  is the campaign_space row: it came after Carol's rejoin (out/lab/20261103-012624, `extra1`).
+* ✔ Fix: a guest's target binds to the host's within 3 m, else its nearest unbound one within 120 m is moved there
+  (SetPosition of the spatial object); no make or removal (4 per city in both games). PASS lab 20261106-044559-2
+  (relocated=8 placed=8), FAIL with the switch off lab 20261106-043659.
+* ? Whether the city record's own copy of a target's place (+0x618, +0x78 + 0x80 * i) is used by the AI is not checked:
+  only the object is moved.

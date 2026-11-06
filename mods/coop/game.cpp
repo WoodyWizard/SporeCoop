@@ -311,6 +311,16 @@ void set_object_scale(void* obj, float s)
         vcall<void>(sp, 0x40 / 4, s); // cSpatialObject::SetScale
 }
 
+bool set_object_position(void* obj, const net::Vec3& pos)
+{
+    void* sp = cast(obj, 0x1186577);
+    if (!sp)
+        return false;
+    Vector3 p{pos.x, pos.y, pos.z};
+    vcall<void>(sp, 0x38 / 4, &p); // cSpatialObject::SetPosition (as game::set_position of a creature)
+    return true;
+}
+
 void* find_object(uint32_t noun, const net::Vec3& pos, float max_dist)
 {
     struct Q {
