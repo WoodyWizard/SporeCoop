@@ -208,6 +208,7 @@ struct GMember {
     float aim_speed = 0;     // and the host's speed of that state
     float walk_sp = 0;       // BUG-0619: the speed the smoothed target's mirror is walked at (eased in)
     double walk_t = 0;
+    bool jittery = false;    // BUG-0619 (diagnostics)
     float lead_sp = -1;      // BUG-0619: the raw lead's speed while the smoothed target drives it (-1: none)
     double held_since = 0, held_said = -1e9; // BUG-0386 (diagnostics)
     double anim_rx_at = 0, anim_fix_at = 0; // BUG-0569: the last relayed start, the last snapshot play
@@ -2003,6 +2004,13 @@ static void mirror_target(GMember& g, double now, net::Vec3& pos, net::Quat& rot
         // included): walked at the raw path's speed the mirror fell 0.5-1.4 m behind a closing target and surged
         // after it at 7-8 m/s when the closing ended (tribe_walk_mobile 20261106-140306 #3: uneven 16 %)
         g.lead_sp = -1;
+        if (g.buf.jittery() != g.jittery) { // (diagnostics: the lead switched off / on by the link's jitter)
+            g.jittery = g.buf.jittery();
+            static unsigned said = 0;
+            if (said++ < 12)
+                H->log(M, SK_INFO, "tribe: mirror #%u lead %s (arrival jitter %.0f ms, BUG-0619)", g.id,
+                       g.jittery ? "off" : "on", g.buf.jitter() * 1000.0);
+        }
         if (g.buf.smooth_velocity(vel)) {
             // the walk's speed rises at most kMirrorWalkAcc to the target's (it never goes under the lead's own):
             // set at once, the game's walk of the next frame grew by up to 0.4 m on top of the placing (1-1.3 m frames)

@@ -128,7 +128,9 @@ inline bool g_lead_smooth_fix = true;
 constexpr double kSmoothTau = 0.12; // s: e^-1 of a lead jump left after this
 constexpr float kSmoothRate = 3.f;  // m/s on top of kSmoothK x the body's speed
 constexpr float kSmoothK = 1.f;
-constexpr float kSmoothFast = 5.f; // m/s
+constexpr double kJitterAvg = 1.0;   // s
+constexpr double kJitterHigh = 0.04; // s: no lead over this arrival jitter
+constexpr double kJitterLow = 0.03;
 constexpr double kSmoothVelTau = 0.1; // s
 
 class SnapshotBuffer {
@@ -150,6 +152,8 @@ public:
 
     void clear()
     {
+        jitter_ = jit_t_ = 0;
+        jittery_ = false;
         snaps_.clear();
         clock_.clear();
         have_raw_ = false;
@@ -181,6 +185,15 @@ public:
         }
         clock_.add(local_now - st, local_now);
         offset_ = clock_.value();
+        // BUG-0619: the arrival jitter, how late states arrive past the earliest one (the clock offset is the minimum
+        // of local - sender time), averaged over ~1 s
+        {
+            double dev = std::max(0.0, (local_now - st) - offset_);
+            double k = jit_t_ > 0 ? std::min(1.0, std::max(0.0, local_now - jit_t_) / kJitterAvg) : 1.0;
+            jitter_ += (dev - jitter_) * k;
+            jit_t_ = local_now;
+            jittery_ = jitter_ > kJitterHigh || (jittery_ && jitter_ > kJitterLow);
+        }
         snaps_.push_back({st, s});
         while (snaps_.size() > 64)
             snaps_.pop_front();
@@ -258,16 +271,14 @@ private:
         if (lead && g_lead_fix) {
             const double tl = local_now - offset_ + g_one_way;
             const Snap& n = snaps_.back();
-            // BUG-0619: with the smoothing, a body under kSmoothFast (it starts, stops, speeds up or slows down) is
-            // shown interpolated as without the lead: the lead moves the newest state on by its velocity for 0.2-0.45 s
-            // over a mobile network, so every change of speed between two states moved the target by 1-4 m/s x that,
-            // and the mirror's stop-and-go at 1-5 m/s was 11-22 % of the frames (0.7.8: 0-5 %). Hysteresis 1 m/s
+            // BUG-0619: no lead over a jittery link (jitter_ over kJitterHigh until it is under kJitterLow again): the lead
+            // moves a state on by its age, and states 0-120 ms late (mobile: 60 ms jitter) made the lead target step
+            // 1-4 m at every start, speed change and stop; closing that at any speed the mirror can show was the
+            // stop-and-go the test sees (uneven 11-22 %; 0.7.8 2-5 %). There it is shown as 0.7.8 (interpolated,
+            // smooth, ~0.2 s late); the switch goes through the smoothing
             bool use = true;
-            if (g_lead_smooth_fix && smooth_max > 0) {
-                float vs = dist(Vec3{}, lead_velocity());
-                sm_fast_ = vs >= kSmoothFast || (sm_fast_ && vs >= kSmoothFast - 1.f);
-                use = sm_fast_ || vs < 0.3f; // (standing: the lead is the newest state itself)
-            }
+            if (g_lead_smooth_fix && smooth_max > 0)
+                use = !jittery_;
             if (use && tl >= n.t) {
                 double dt = tl - n.t;
                 last_extrap = dt;
@@ -333,6 +344,8 @@ private:
 
 public:
     // diagnostics (BUG-0619): the smoothing's offset now (m) and the raw lead target's jump at the last new state
+    double jitter() const { return jitter_; }
+    bool jittery() const { return jittery_; }
     float smooth_off() const { return sm_have_ ? dist(Vec3{}, sm_off_) : 0.f; }
     // BUG-0619: true when the last sample(now) was the smoothed lead; `v` then is the shown target's velocity (the
     // lead's plus the offset's decay): the speed the mirror must walk at to stay on it
@@ -374,8 +387,7 @@ private:
                     snap_vel = true;
                 } else if (d > 1e-4f) {
                     float sp = std::max(dist(Vec3{}, v), dist(Vec3{}, sm_vel_));
-                    // (while slow, interpolated: at most half its speed + 1 m/s, inside the stop-and-go band's tolerance)
-                    float rate = sm_fast_ ? kSmoothK * sp + kSmoothRate : 0.5f * sp + 1.f;
+                    float rate = kSmoothK * sp + kSmoothRate;
                     float nd = std::max(d * (float)std::exp(-dt / kSmoothTau), d - rate * (float)dt);
                     nd = std::max(nd, 0.f);
                     float k = nd / d;
@@ -403,7 +415,9 @@ private:
         out.pos.y += sm_off_.y;
         out.pos.z += sm_off_.z;
     }
-    mutable bool sm_have_ = false, sm_used_ = false, sm_fast_ = false;
+    mutable bool sm_have_ = false, sm_used_ = false;
+    double jitter_ = 0, jit_t_ = 0; // s (BUG-0619)
+    bool jittery_ = false;
     mutable double sm_t_ = 0;
     mutable Vec3 sm_off_{}, sm_offv_{}, sm_vel_{}, sm_shown_{};
 
