@@ -129,6 +129,7 @@ constexpr double kSmoothTau = 0.12; // s: e^-1 of a lead jump left after this
 constexpr float kSmoothRate = 3.f;  // m/s on top of kSmoothK x the body's speed
 constexpr float kSmoothK = 1.f;
 constexpr float kSmoothMinSp = 3.f; // m/s
+constexpr double kSmoothVelTau = 0.1; // s
 
 class SnapshotBuffer {
 public:
@@ -343,7 +344,8 @@ private:
         if (local_now > sm_t_) {
             double dt = local_now - sm_t_;
             sm_offv_ = {};
-            if (!sm_have_ || dt > 0.5) {
+            bool snap_vel = !sm_have_ || dt > 0.5;
+            if (snap_vel) {
                 sm_off_ = {};
             } else {
                 Vec3 cont{sm_shown_.x + sm_vel_.x * (float)dt, sm_shown_.y + sm_vel_.y * (float)dt,
@@ -359,6 +361,7 @@ private:
                 const bool stop = dist(Vec3{}, v) < 0.3f && dist(Vec3{}, sm_vel_) >= 0.3f;
                 if (d > smooth_max || stop) {
                     off = {};
+                    snap_vel = true;
                 } else if (d > 1e-4f) {
                     // (at least kSmoothMinSp: a start's first states report a speed under the walk's, lead_velocity
                     // caps it at their path, and the target crept at 3 m/s, in the stop-and-go band, for 0.2-0.5 s)
@@ -374,7 +377,16 @@ private:
             }
             sm_have_ = true;
             sm_t_ = local_now;
-            sm_vel_ = v;
+            // the shown velocity follows the lead's in kSmoothVelTau (not at once): every state changes the lead's
+            // velocity (its speed, capped by the path between two states) and the target's speed stepped 8 -> 1 -> 5 m/s
+            // in three frames, which the walked mirror followed a frame late (tribe_walk_mobile: uneven 11-12 %)
+            // (at once from a stand, a stop or a real jump)
+            if (snap_vel || dist(Vec3{}, sm_vel_) < 0.3f)
+                sm_vel_ = v;
+            else {
+                float b = (float)std::min(1.0, dt / kSmoothVelTau);
+                sm_vel_ = {sm_vel_.x + (v.x - sm_vel_.x) * b, sm_vel_.y + (v.y - sm_vel_.y) * b, sm_vel_.z + (v.z - sm_vel_.z) * b};
+            }
             sm_shown_ = {out.pos.x + sm_off_.x, out.pos.y + sm_off_.y, out.pos.z + sm_off_.z};
         }
         out.pos.x += sm_off_.x;
