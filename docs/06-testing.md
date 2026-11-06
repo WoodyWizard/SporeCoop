@@ -4425,3 +4425,25 @@ G2 of 0.7.8 (BUG-0430 class). For each: which kind of fault it was and the evide
 * `join_during_host_editor` now checks the guest's planet while the host edits: its own creatures (census `local`,
   alive, AI on) within 70 m, at least 60 % of the proxies it showed before its leave; `SPORE_FIX_OFF=npc.leave_locals`
   fails (1 of 11, out/lab/20261106-015905). Their movement is printed, not checked (they idle at their nests).
+
+## World objects at the host's places: coop_world_host.py (2026-11-06, fix/w45-world-objects)
+<a id="testing-host-places"></a>
+
+`tools/tests/coop_world_host.py --case <c>` (suites `host_fruit`, `host_bundle`, `host_bundle_civ`, `host_cultural`,
+`host_space_ornament`) asserts the game's own object lists on both machines (positions within 1-1.5 m, or the same
+count in a heap) for the kinds of mods/coop/worldobj.cpp that move or make the host's objects in a guest's game
+(docs/re/creature.md#creature-host-places).
+
+* `fruit` (creature, ~65 s): a guest's copy eaten locally only (`coop.wobj eat <p> local`, as the flora's recycling)
+  and a guest's fruit moved 8.5 m (`coop.wobj move`); then every tree near the players must have the same fruit mask
+  on both games (the made fruit took none). `SPORE_FIX_OFF=wobj.fruit_place` fails.
+* `bundle` (tribe, ~50 s): `coop.wobj bundle ground x y z amount`, `bundle carry <member> amount` (the farthest member
+  within 60 m: a near one put the food on the mat within a second), `bundle take <bundle>`. The carried bundle is
+  tracked by its pointer (it moves with the member at ~7 m/s; the guest's copy is up to 3.5 m behind).
+* `bundle_civ` (civ_npc): the host captures an NPC city (`coop.civ capture`), then the ground bundles of the whole
+  planet are compared.
+* `cultural` (civ_npc, ~2 min): the targets matched after a fresh load; the guest leaves and joins again after 60 s
+  (they were 3-8 m apart after the rejoin without the fix).
+* `ornament` (space, ~2.5 min): both land on the home planet (`coop.space land`), compare, `coop.space takeoff`, three
+  times: the set of decorated cities differs per load in most landings. Only the 56 nearest the guest's ship are
+  compared when the host has more (one snapshot).

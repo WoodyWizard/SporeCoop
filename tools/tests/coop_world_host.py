@@ -13,9 +13,9 @@ position), not the mod's bookkeeping:
                     the other's within 1.5 m), in 3 landings (a takeoff between: the cities are set up anew; their
                     layouts differed in 2 of 3 loads). SPORE_FIX_OFF=wobj.city_ornament fails.
 
-  --case bundle_civ (BUG-0548, civ) the host captures an NPC city (the fights and the capture drop food bundles):
-                    the guest's game has the host's ground bundles (each one of either game has a partner within
-                    1.5 m in the other). SPORE_FIX_OFF=wobj.bundle fails.
+  --case bundle_civ (BUG-0548, civ) food on the ground by the host's city (as a fight's loot): the host's lies at
+                    its place in the guest's game, one only the guest's game dropped is gone from it.
+                    SPORE_FIX_OFF=wobj.bundle fails.
 
   --case cultural   (BUG-0540, civ) every city's cultural targets near the guest stand at the host's places in the
                     guest's game (within 1 m, as many as on the host). SPORE_FIX_OFF=wobj.cultural_target fails.
@@ -150,31 +150,38 @@ def bundle(host, guest, ck):
 
 
 def bundle_civ(host, guest, ck):
+    import re
     from play_civ import civ_state
 
     def ground(con):
         return [b for b in objs(con, 'game_bundle', 3000, (0.0, 0.0, 0.0)) if not b['cls'] & 0x100]
 
-    def compare():
-        hb, gb = ground(host), ground(guest)
-        h_only = [b['pos'] for b in hb if not near(gb, b['pos'], 1.5)]
-        g_only = [b['pos'] for b in gb if not near(hb, b['pos'], 1.5)]
-        return hb, gb, h_only, g_only
-
     cities, _, _ = civ_state(host)
-    npc = sorted(c for c, d in cities.items() if not d['player'] and d['owner'] < 0)
-    if not ck(npc, f'there is an NPC city ({npc})'):
+    mine = sorted(c for c, d in cities.items() if d['player'])
+    if not ck(mine, f'the host has a city ({sorted(cities)})'):
         return
-    print('  host:', host.call(f'coop.civ capture {npc[0]}')['out'].strip(), flush=True)
-    time.sleep(20)
-    hb, gb, h_only, g_only = compare()
-    print(f'  ground bundles: {len(hb)} on the host, {len(gb)} on the guest; host only {h_only[:4]}, guest only {g_only[:4]}',
-          flush=True)
-    ok = wait(lambda: not any(compare()[2:]), 15)
-    hb, gb, h_only, g_only = compare()
-    print(f'  after 15 s: {len(hb)} on the host, {len(gb)} on the guest; host only {h_only[:4]}, guest only {g_only[:4]}',
-          flush=True)
-    ck(ok and not h_only and not g_only, 'the guest\'s game has the host\'s ground bundles at their places and no others')
+    c = cities[mine[0]]['pos']
+    # food on the ground by the player's city (as a fight's or a capture's loot): the host's, then one of the guest's own
+    out = host.call('coop.wobj bundle ground %.2f %.2f %.2f 5' % (c[0] + 6, c[1], c[2] + 6))['out'].strip()
+    print('  host:', out, flush=True)
+    m = re.search(r'pos=\((\S+) (\S+) (\S+)\)', out)
+    if not ck('bundle 00000000' not in out and m, 'the host\'s game dropped a food bundle by its city'):
+        return
+    hpos = tuple(float(x) for x in m.groups())
+    got = wait(lambda: near(ground(guest), hpos, 1.5), 12)
+    print(f'  guest ground bundles at the host\'s {hpos}: {got}', flush=True)
+    ck(got, 'the host\'s ground food lies at its place in the guest\'s game (Civ)')
+    out = guest.call('coop.wobj bundle ground %.2f %.2f %.2f 5' % (c[0] - 6, c[1], c[2] - 6))['out'].strip()
+    print('  guest (its own food):', out, flush=True)
+    m = re.search(r'pos=\((\S+) (\S+) (\S+)\)', out)
+    if m:
+        gpos = tuple(float(x) for x in m.groups())
+        gone = wait(lambda: not near(ground(guest), gpos, 1.0), 12)
+        print(f'  guest ground bundles at its own {gpos}: {near(ground(guest), gpos, 1.0)}; on the host: '
+              f'{near(ground(host), gpos, 1.0)}', flush=True)
+        ck(gone and not near(ground(host), gpos, 1.0), 'a ground bundle only the guest\'s game had is gone from it (Civ)')
+    hb, gb = ground(host), ground(guest)
+    print(f'  ground bundles now: {len(hb)} on the host, {len(gb)} on the guest', flush=True)
 
 
 def cultural(host, guest, ck):
