@@ -17,7 +17,7 @@ description: Turn a SporeCoop crash report (crash-*.txt, sporekit.log, a player'
      report to the ticket (History, signature) and hand it to fix-player-report.
 3. **New**: `tools/tickets.py new "<symptom> (<signature>)" --kind crash --stage <stage>`; fill in
    Report (what the player did, in our words), the signature and the chain. Then fix-player-report.
-4. **GOG 2016** (`922af7c7`): the build is frozen after 0.7 (CLAUDE.md); a crash only there gets a
+4. **GOG 2016** (`922af7c7`): not supported since 0.7.8 (CLAUDE.md); a crash only there gets a
    ticket and `wontfix` unless it is also on GOG 2024.
 5. A `coop.dll+0x...` place: the `coop.dll` line gives the llvm-symbolizer call; it is right only for
    a build of the report's coop version (`git checkout v<version>`, `make`).

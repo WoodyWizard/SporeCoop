@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+- The GOG 2016 build of Spore is no longer supported: please update the game through GOG (the current download
+  is the 2024 build). SporeCoop still starts on GOG 2016, but it is not tested there and its bugs are not fixed.
+
 ### Fixed
 - Creature: the guest's Raging Roar now scares the host's animals: creatures of other species around the guest
   run away in both games, as they do from the host's roar (BUG-0501).
