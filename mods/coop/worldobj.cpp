@@ -938,6 +938,40 @@ static void space_vehicle_drive(const Item& l, const net::Vec3& hp, const net::V
     g_veh_drives++;
 }
 
+// ---------------------------------------------------------------- kind: node (BUG-0485)
+// A commodity (spice) node (noun 0x0403DF5C) made live by the game (0xBC05F3: CreateInstance of the noun,
+// then loco vt 0x40 SetScale with the placement's scale, 10 seen; return address 0xBC0641, loco vtable
+// 0x14699E8) has that scale; the same node read from a planet save (a guest's shared world, any loaded
+// game) has 1.0: the scale is not saved. Each player saw the node at another size. The state is the
+// host's scale (float bits); a guest's node at another scale takes it (cSpatialObject::SetScale).
+// `coop.fix wobj.node_scale off`: each game keeps its own (0.7.8).
+constexpr uint32_t kNodeNoun = 0x0403DF5C;
+static bool g_node_fix = true;
+COOP_FIX("wobj.node_scale", "BUG-0485", g_node_fix, "a spice node has the host's size on every guest (live-made nodes were 10x bigger on the host)");
+static uint32_t node_state(void* o)
+{
+    float s = game::object_scale(o);
+    uint32_t u;
+    memcpy(&u, &s, 4);
+    return u;
+}
+static float node_scale(uint32_t st)
+{
+    float s;
+    memcpy(&s, &st, 4);
+    return s;
+}
+static bool node_ok(uint32_t st) { return st != kGone && std::isfinite(node_scale(st)) && node_scale(st) > 0.01f && node_scale(st) < 1000.f; }
+static void node_collect(Items& out) { collect_noun(kNodeNoun, out, node_state); }
+static bool node_behind(uint32_t local, uint32_t host)
+{
+    return node_ok(local) && node_ok(host) && std::fabs(node_scale(local) - node_scale(host)) > 0.01f * node_scale(host);
+}
+static void node_apply(const Item& l, uint32_t host)
+{
+    game::set_object_scale(l.p, node_scale(host));
+}
+
 static Kind g_kinds[] = {
     {.name = "fruit", .fix = &g_fruit_fix, .stages = kStCreature | kStTribe, .tol = 3.0f, .range = 70.f, .max = 48,
      .collect = fruit_collect, .behind = fruit_behind, .apply = fruit_apply, .acted = fruit_acted, .act = fruit_act,
@@ -974,6 +1008,10 @@ static Kind g_kinds[] = {
      .collect = corn_collect, .behind = corn_behind, .apply = corn_apply, .acted = none_acted, .act = none_act,
      .gone_acted = false, .drop_own = true, .make = corn_make, .place = corn_place, .relocate = 2500.f, .place_eps = 0.5f,
      .place_fix = &g_corn_fix},
+    // BUG-0485: the planet's spice nodes (static, the whole planet), the host's scale
+    {.name = "node", .fix = &g_node_fix, .stages = kStCreature | kStTribe | kStCiv, .tol = 3.f, .range = 3000.f, .max = 48,
+     .collect = node_collect, .behind = node_behind, .apply = node_apply, .acted = none_acted, .act = none_act,
+     .gone_acted = false, .drop_own = false, .every = 2.0},
 };
 constexpr int kKinds = (int)(sizeof g_kinds / sizeof g_kinds[0]);
 // a snapshot is one unreliable message: 19 bytes + 20 per object within net::Connection::kMaxSingle (1163)

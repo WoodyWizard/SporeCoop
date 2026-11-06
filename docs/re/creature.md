@@ -3132,3 +3132,19 @@ guest's ship), so a guest copy of an object the host has none of is seen as its 
 * ✔ place: only fruit falling or on the ground (state 1 / 2) on both sides; a held or hidden fruit is not moved.
 * ~ A make takes a free fruit, or the loose fruit farthest from the guest's camera (TakeFruitForDrop): a far fruit
   of the guest's may be recycled for it; not seen to loop in the test (3 makes in 64 s).
+## Spice node scale: live-made 10, loaded 1.0 (2026-11-06, fix/w45-placement)
+<a id="creature-node-scale"></a>
+
+BUG-0485. GOG 2024. ✔ = observed, ~ = read in the code, ? = inferred.
+* ✔ The BUG-0485 SetScale diagnostic (squadron.cpp h_SetScale, `scale 10 set on an object ...`) named the node's
+  setter: return address 0xBC0641 in 0xBC02F0 (`SporeCoop::Planet_PlaceCommodityNodes`, a .sym entry), loco vtable
+  0x14699E8 (the diagnostic logs the loco's vtable; the 0x1469A28 of the ticket's first note was not seen). It runs on
+  the host at the live Cell -> Creature change (campaign_ct, lab rel/0.7.8 20261105-155603: host log only) and in
+  space_play on both games.
+* ~ 0xBC02F0 makes each node from a placement record: CreateInstance of noun 0x0403DF5C, SetScale(record +0x6C, or
+  the prop 0x254CF89), SetPosition(record +0xC).
+* ✔ A node read from a save has 1.0 (every node of the creature / tribe fixtures on both games): the scale is not
+  saved, so the host's live-made node (10) and the guest's copy from the shared world (1.0) differ, and the host's own
+  game shows 1.0 after any load. Not a mod bug at its origin; in co-op each player saw the node at another size.
+* Fix `wobj.node_scale` (worldobj.cpp kind `node`, the whole planet, Creature / Tribe / Civ): the state is the host's
+  scale; a guest's node that differs by more than 1 % takes it (cSpatialObject vt 0x40 SetScale). Test node_scale.

@@ -1,20 +1,20 @@
 ---
 id: BUG-0488
 title: Tribe: tools, members and nests sometimes stand elsewhere on the guest (more than 15 m / 3 m)
-status: open
+status: fixed
 kind: desync
 stage: Tribe
 reported: 2026-11-03
 source: divergence detector, nightly run 2026-11-03 (out/lab/20261103-012624, out/detector/20261103-final.md)
 role: 
 versions: 
-fixed_in:
+fixed_in: 0.7.6
 branch: fix/w43-realign
 commits: cc62df1a
 tests: realign_tribe_rejoin (coop_realign_planet.py --fixture tribe --case rejoin)
 signature:
 docs:
-related: BUG-0523, BUG-0481, BUG-0514
+related: BUG-0523, BUG-0481, BUG-0514, BUG-0620
 ---
 
 ## Report
@@ -43,3 +43,10 @@ realign_tribe_rejoin: FAIL with `SPORE_FIX_OFF=wobj.tools_planet` out/lab/202611
 - 2026-11-03: analysed on fix/w41-tribe-world; tools split into BUG-0523, not fixed.
 - 2026-11-04 (fix/w42-tribe-left): with BUG-0523's fix, SPORE_DETECTOR=20 over play_tribe, campaign_tribe and the Tribe tests (out/lab/20261104-102948, out/detector/20261104-1056.md, 62 Tribe comparisons): no `Tribe:unmatched:tribe_tool` row (was 4%), no `nest` row, `Tribe:unmatched:citizen` once (2%, "8 on the host, 7 on the guest, 1 host without a partner": a late mirror, BUG-0481's kind). Tools part done by BUG-0523; left open for the members' row.
 - 2026-11-04 (fix/w43-realign): tools on the whole planet (wobj.tools_planet), runs above; open for the members' row.
+- 2026-11-06 (fix/w45-placement): closed. Tools: fixed (BUG-0523, wobj.tools_planet in 0.7.6): no `Tribe:unmatched:tribe_tool`
+  row in any lab log of 2026-11-05/06 (25 play_tribe runs and the campaigns of every worktree). Nests: no
+  `Tribe:unmatched:nest` row in those logs either (the planet list rows `planet:nest` are another signature). Members
+  "elsewhere": no tracked member stands elsewhere (tribe_member_place over play_tribe found every member the mod mirrors
+  within 15 m on the guest); the remaining row is a host citizen in no tribe's member list that the mod never mirrors,
+  split into BUG-0620 with its evidence. Probes added: tribe_member_place (quiet: lab 20261106-062912, PASS),
+  tribe_dead_member (lab 20261106-072628), tribe_dead_tribe (lab 20261106-072755).

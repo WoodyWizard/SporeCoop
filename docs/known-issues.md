@@ -1718,6 +1718,8 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   `scale 10 set on an object with vtable ... from ...` once per caller, so the next campaign run names it.
 * Reproduce: `tools/lab.py run campaign_short` with SPORE_DETECTOR=20 (detector line `scale:node`).
 * Ticket: BUG-0485
+* 2026-11-06 (fix/w45-placement): fixed (`wobj.node_scale`, test node_scale): the setter is the live node placement
+  0xBC02F0 (return address 0xBC0641); the scale is not saved, so loads give 1.0 (docs/re/creature.md#creature-node-scale).
 * 2026-11-03 (fix/w40-civ-crashes): the Civ half is fixed (`civ.save_strip`, test `civ_save_strip`):
   the guest's mirror vehicles stay out of its saves and leave no null in the civilizations' lists. Still
   open: the Tribe mirrors (SpawnNpcTribe tribes and their members) and the Space UFO mirrors / puppets
@@ -2029,3 +2031,11 @@ Player reports 2026-11-04 (0.7.5, Discord bug-reports; not analysed yet):
 - BUG-0617: Tribe / Civ: food a tribe member carries lies 1-3.5 m behind on the guest while the member walks, a guest
   member's own carried food is not in the host's game, and a few Civ bundles in other containers stay each game's own
   (the detector's `game_bundle` rows left after BUG-0548; `SPORE_DETECTOR=20 tools/lab.py run play_tribe`)
+
+<a id="issue-tribe-lone-citizen"></a>
+
+* What happens: in play_tribe the host's game sometimes has a citizen near the guest that stands still for 10-20 s and
+  belongs to no tribe's member list; the mod does not mirror it, so the guest's game has nothing there (detector
+  `Tribe:unmatched:citizen`, 1-3 of ~31 samples a run). What it is is not known yet.
+* Reproduce: play_tribe with `SPORE_DETECTOR=20` and `coop_tribe_member_place.py --attach` (prints the object).
+* Ticket: BUG-0620
