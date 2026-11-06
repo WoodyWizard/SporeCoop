@@ -13,6 +13,10 @@ position), not the mod's bookkeeping:
                     the other's within 1.5 m), in 3 landings (a takeoff between: the cities are set up anew; their
                     layouts differed in 2 of 3 loads). SPORE_FIX_OFF=wobj.city_ornament fails.
 
+  --case bundle_civ (BUG-0548, civ) the host captures an NPC city (the fights and the capture drop food bundles):
+                    the guest's game has the host's ground bundles (each one of either game has a partner within
+                    1.5 m in the other). SPORE_FIX_OFF=wobj.bundle fails.
+
   --case cultural   (BUG-0540, civ) every city's cultural targets near the guest stand at the host's places in the
                     guest's game (within 1 m, as many as on the host). SPORE_FIX_OFF=wobj.cultural_target fails.
 
@@ -145,6 +149,34 @@ def bundle(host, guest, ck):
         ck(gone, 'the food the guest\'s member took is gone from the host\'s ground')
 
 
+def bundle_civ(host, guest, ck):
+    from play_civ import civ_state
+
+    def ground(con):
+        return [b for b in objs(con, 'game_bundle', 3000, (0.0, 0.0, 0.0)) if not b['cls'] & 0x100]
+
+    def compare():
+        hb, gb = ground(host), ground(guest)
+        h_only = [b['pos'] for b in hb if not near(gb, b['pos'], 1.5)]
+        g_only = [b['pos'] for b in gb if not near(hb, b['pos'], 1.5)]
+        return hb, gb, h_only, g_only
+
+    cities, _, _ = civ_state(host)
+    npc = sorted(c for c, d in cities.items() if not d['player'] and d['owner'] < 0)
+    if not ck(npc, f'there is an NPC city ({npc})'):
+        return
+    print('  host:', host.call(f'coop.civ capture {npc[0]}')['out'].strip(), flush=True)
+    time.sleep(20)
+    hb, gb, h_only, g_only = compare()
+    print(f'  ground bundles: {len(hb)} on the host, {len(gb)} on the guest; host only {h_only[:4]}, guest only {g_only[:4]}',
+          flush=True)
+    ok = wait(lambda: not any(compare()[2:]), 15)
+    hb, gb, h_only, g_only = compare()
+    print(f'  after 15 s: {len(hb)} on the host, {len(gb)} on the guest; host only {h_only[:4]}, guest only {g_only[:4]}',
+          flush=True)
+    ck(ok and not h_only and not g_only, 'the guest\'s game has the host\'s ground bundles at their places and no others')
+
+
 def cultural(host, guest, ck):
     import worlddiff
     noun = 0x03D5C325
@@ -246,12 +278,12 @@ def ornament(host, guest, ck, rounds=3):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--case', choices=('fruit', 'bundle', 'cultural', 'ornament'), required=True)
+    ap.add_argument('--case', choices=('fruit', 'bundle', 'bundle_civ', 'cultural', 'ornament'), required=True)
     a = ap.parse_args()
-    host, guest = start({'fruit': 'creature', 'bundle': 'tribe', 'cultural': 'civ_npc', 'ornament': 'space'}[a.case])
+    host, guest = start({'fruit': 'creature', 'bundle': 'tribe', 'bundle_civ': 'civ_npc', 'cultural': 'civ_npc', 'ornament': 'space'}[a.case])
     ck = Checks()
     time.sleep(6)  # the first snapshots
-    {'fruit': fruit, 'bundle': bundle, 'cultural': cultural, 'ornament': ornament}[a.case](host, guest, ck)
+    {'fruit': fruit, 'bundle': bundle, 'bundle_civ': bundle_civ, 'cultural': cultural, 'ornament': ornament}[a.case](host, guest, ck)
     print('  guest:', guest.call('coop.wobj')['out'].strip().replace('\n', ' | '), flush=True)
     print('  host:', host.call('coop.wobj')['out'].strip().replace('\n', ' | '), flush=True)
     ck.faults(host=host, guest=guest)
