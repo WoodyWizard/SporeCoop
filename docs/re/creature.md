@@ -3148,3 +3148,28 @@ BUG-0485. GOG 2024. ✔ = observed, ~ = read in the code, ? = inferred.
   game shows 1.0 after any load. Not a mod bug at its origin; in co-op each player saw the node at another size.
 * Fix `wobj.node_scale` (worldobj.cpp kind `node`, the whole planet, Creature / Tribe / Civ): the state is the host's
   scale; a guest's node that differs by more than 1 % takes it (cSpatialObject vt 0x40 SetScale). Test node_scale.
+
+## The avatar's attack: target, reach, the walk-and-use goal (2026-11-06, fix/w45-last)
+<a id="creature-attack-reach"></a>
+
+BUG-0618. GOG 2024, Ghidra + runtime on lane 4 (`coop.abilities reach`, out/w45last/hunt_probe.py of the branch).
+* ✔ (Ghidra) A key of the HUD bar runs `AbilityBar_Use` 0xD49560: `AbilityBar_Status` 0xD49220 (0 usable) then
+  `Ability_Use` 0xD1E930(avatar, index). For the melee / ranged attack kinds (types 0x1E-0x21, 0x3D, 0x3E, 0x41, 0x42,
+  0x48-0x4B) the target is the avatar's combat target **+0xE7C** (the target's combatant, creature +0x5A8); the gap is
+  `Ability_TargetGap` 0xD99A20(avatar +0xC0, target spatial, row == 1) = centre distance minus both radii (spatial vt
+  0x74); in reach when ability +0x134/+0x138 (min) <= gap <= (ability +0xF4 + +0xA8) * `Ability_RangeScale` 0xD38A30(0)
+  (1.0 for the fixture): the avatar attacks at once (0xC03D80). **Out of reach the game itself posts the goal 0x20**
+  (0xC032F0(0x20, 0, FLT_MAX, index): walk to the target, then use the ability). Status 3 = no target, 8 = recharging.
+* ✔ (runtime) A left click on an NPC in the combat stance only sets +0xE7C: the creature does not move (gap 39.4 m
+  for 20 s, both games). One key press then walks it to the target (gap 45 -> 13 m, 10 -> 1.0 m in 3 s) and it
+  bites; in reach a key works when the status is 0 (8 between bites): the guest killed an NPC alone with 7 hits in
+  12 s, the host likewise (6 -> 0 hp).
+* ✔ (runtime) The creature fixture's combat row of the bar (AbilityBar_ptr row 1) has **one** filled slot: key 1 =
+  ability 5 (type 0x1E, reach 1.0 m). Keys 2-4 do nothing in the combat stance. Ability 1 (type 0x1D, reach 100) is in
+  row 1 but on no bar slot.
+* ✔ Why play_creature's guest landed few hits (BUG-0618): the old bot clicked the target before every key (each
+  click cancels the game's walk-and-use goal), pressed keys 2-4 half of the time, and pressed while recharging.
+  Pressing in the game's reach: guest sent 47 / applied 47 hits for 64 key presses (lab 20261106-125018) against
+  39 for 282 (fix/w45-int2 20261106-054817) and 16 for 196 (rel/0.7.9 20261106-040221).
+* ~ The game clears +0xE7C often during a hunt (play_creature: `retarget_none` 183 / 258 times per 10 min): the bot
+  clicks the target again then; not looked into (each bite? the target's flee?).

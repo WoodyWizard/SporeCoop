@@ -1766,10 +1766,7 @@ static void guest_tick(double now)
             // placed on the host's path this frame: no driving
         } else if (!px.killed) {
             const uint32_t gr = px.drv.grounded;
-            const net::Vec3 at = proxy_on_mound(s.pos); // BUG-0562
-            if (at.x != s.pos.x || at.y != s.pos.y || at.z != s.pos.z)
-                g_mound_lifts++;
-            drive::step(px.c, at, s.rot, s.vel, px.drv, now, 0, true, 8.f, g_stall_fix, g_trail_fix, rts_stage(), // own height in Tribe (BUG-0329)
+            drive::step(px.c, s.pos, s.rot, s.vel, px.drv, now, 0, true, 8.f, g_stall_fix, g_trail_fix, rts_stage(), // own height in Tribe (BUG-0329)
                         rts_stage() && drive::g_out_of_ground_fix); // and never under the ground (BUG-0399)
             if (px.drv.grounded != gr && px.drv.grounded <= 3) // (diagnostics: the fix at work, the first times)
                 H->log(M, SK_INFO, "npc: proxy %u (species %08X) was %.2f m under this game's ground, made %.1f s ago at %.2f m "
@@ -1780,6 +1777,13 @@ static void guest_tick(double now)
                // (~2.5 km/s away from the planet; driven, it stayed ~80 m up: play_tribe.py)
             *(net::Vec3*)((uint8_t*)px.c + game::kVelOff) = {0, 0, 0};
             game::teleport(px.c, s.pos, s.rot);
+        }
+        if (!px.killed && !px.air && px.c) { // BUG-0562: drawn inside this game's nest mound: onto it
+            const net::Vec3 now_at = game::position(px.c), up = proxy_on_mound(now_at);
+            if (up.x != now_at.x || up.y != now_at.y || up.z != now_at.z) {
+                game::teleport(px.c, up, game::orientation(px.c));
+                g_mound_lifts++;
+            }
         }
         if ((s.flags & net::NF_DEAD) && !px.killed) {
             px.killed = true;

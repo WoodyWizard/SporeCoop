@@ -165,3 +165,6 @@ SporeCoop::TerrainManager_ptr ; BUG-0332: the coop.terrain stamp probes (log-onl
 Terrain::cTerrainSphere::ApplyStamp ; BUG-0332: the coop.terrain stamp probes (log-only hooks, terrain_diag.cpp), GOG 2024 only
 Terrain::cTerrainSphere::ClearAllStamps ; BUG-0332: the coop.terrain stamp probes (log-only hooks, terrain_diag.cpp), GOG 2024 only
 Terrain::cTerrainSphere::RemoveStamp ; BUG-0332: the coop.terrain stamp probes (log-only hooks, terrain_diag.cpp), GOG 2024 only
+SporeCoop::AbilityBar_Status ; BUG-0618: coop.abilities reach (a test diagnostic of play_creature), GOG 2024 only
+SporeCoop::Ability_RangeScale ; BUG-0618: coop.abilities reach (a test diagnostic of play_creature), GOG 2024 only
+SporeCoop::Ability_TargetGap ; BUG-0618: coop.abilities reach (a test diagnostic of play_creature), GOG 2024 only

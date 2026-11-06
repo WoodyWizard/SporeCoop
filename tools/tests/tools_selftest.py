@@ -697,6 +697,21 @@ def test_worldstate():
     h.state.stage_end = True
     out = [f['sig'] for f in worlddiff.diff(h, g)]
     check(out == ['apart'], f'the host in the end of Tribe: not the same place ({out})')
+    # BUG-0617: a carried food bundle moves with its member: paired within worlddiff.TOL_CARRIED (the guest's copy of the
+    # member is drawn 1-3.5 m behind), a ground bundle at the static 3 m; food in another container is its own group
+    bun = 'obj g{} key=00000000 alive=1 hp=-1.0 ai=-1 own={} owner=-1 pos=({} 2.0 3.0) noun=018C431C ser={} scale=1.00'
+    head = 'census v1 role={} me={} mode=Tribe modeid=01654C02 world=A3930F03 t=1.0\nme pos=(1.0 2.0 3.0) ok=1'
+    h = worlddiff.World('\n'.join([head.format('host', 0), bun.format(1, 'carried', 10.0, 1), bun.format(2, 'ground', 20.0, 2),
+                                    'end objects=2']))
+    g = worlddiff.World('\n'.join([head.format('guest', 1), bun.format(1, 'carried', 13.0, 7), bun.format(2, 'ground', 20.5, 8),
+                                    'end objects=2']))
+    out = [f['sig'] for f in worlddiff.diff(h, g)]
+    check(not [x for x in out if 'game_bundle' in x], f'carried food 3 m behind its host copy, ground food 0.5 m: no row ({out})')
+    g = worlddiff.World('\n'.join([head.format('guest', 1), bun.format(1, 'ground', 13.0, 7), bun.format(2, 'ground', 24.5, 8),
+                                    bun.format(3, 'held', 30.0, 9), 'end objects=3']))
+    out = sorted(f['sig'] for f in worlddiff.diff(h, g))
+    check(out == ['Tribe:guest_only:game_bundle_held', 'Tribe:host_only:game_bundle_carried', 'Tribe:unmatched:game_bundle'],
+          f'carried on one game only, ground food 4.5 m off, food in another container: their own rows ({out})')
     # BUG-0596: a game that lists no object (it loads its world) is not compared
     obj = 'obj c{} key=2915F01F alive=1 hp=10.0 ai=1 own=npc owner=0 pos=(1.0 2.0 3.0)'
     h = worlddiff.World('\n'.join(['census v1 role=host me=0 mode=Creature modeid=01654C01 world=A3930F03 t=1.0',
