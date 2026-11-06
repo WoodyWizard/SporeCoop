@@ -252,21 +252,24 @@ static int fruit_make(const net::Vec3& pos, uint32_t host)
     tree_collect(trees);
     std::sort(trees.begin(), trees.end(), [&](const Item& a, const Item& b) { return net::dist(a.pos, pos) < net::dist(b.pos, pos); });
     int tried = 0;
+    float nearest = trees.empty() ? -1.f : net::dist(trees[0].pos, pos);
     for (auto& t : trees) {
         if (net::dist(t.pos, pos) > 60.f || tried++ >= 4)
             break;
+        // slot 0 (every tree with fruit slots has it: DropFruit rejects a slot beyond the tree's count, 0xB05850):
+        // its bit set for the drop (a full tree has no free slot), the mask put back exactly right after, so the
+        // tree keeps the fruit it had (the hanging ones are drawn from the mask)
         uint32_t lo = field<uint32_t>(t.p, 0x48), hi = field<uint32_t>(t.p, 0x4C);
-        for (int s = 0; s < 32; s++) {
-            if (lo >> s & 1)
-                continue; // a fruit hangs there
-            field<uint32_t>(t.p, 0x48) = lo | 1u << s;
-            void* f = thiscall<void*>(a_DropFruit, fl, t.p, s, 1); // 0: the tree has no slot s (DropFruit checks its count)
-            if (is_tree(t.p)) {
-                field<uint32_t>(t.p, 0x48) = lo;
-                field<uint32_t>(t.p, 0x4C) = hi;
-            }
-            if (!f)
-                break;
+        const int s = 0;
+        field<uint32_t>(t.p, 0x48) = lo | 1u;
+        void* f = thiscall<void*>(a_DropFruit, fl, t.p, s, 1);
+        if (is_tree(t.p)) {
+            field<uint32_t>(t.p, 0x48) = lo;
+            field<uint32_t>(t.p, 0x4C) = hi;
+        }
+        if (!f)
+            continue; // no slots, or no fruit to take (TakeFruitForDrop): the next tree
+        {
             g_fruit_made_drops++;
             if (IsBadReadPtr(f, 0x170) || game::noun_id(f) != kFruitNoun || !game::set_object_position(f, pos)) {
                 g_fruit_made_fail++;
@@ -276,6 +279,8 @@ static int fruit_make(const net::Vec3& pos, uint32_t host)
             return 1;
         }
     }
+    H->log(M, SK_INFO, "wobj: could not make the host's fruit at (%.1f %.1f %.1f): %zu trees, nearest %.1f m, %d tried", pos.x, pos.y,
+           pos.z, trees.size(), nearest, tried);
     return 0;
 }
 

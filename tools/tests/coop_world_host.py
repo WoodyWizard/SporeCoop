@@ -61,6 +61,12 @@ def fruit(host, guest, ck):
     print(f'  guest fruit at the host\'s place: {got}; at the rolled place: {extra}', flush=True)
     ck(got, 'the fruit lies at the host\'s place in the guest\'s game')
     ck(not extra, 'no fruit of the guest\'s own at the place it rolled to')
+    # the fruit the guest's game made came from a tree slot whose mask was put back: the trees keep their fruit
+    time.sleep(2)
+    tp = pairs(host, guest, 'tree', 0.5, 70)
+    diff = [(h['pos'], h['st'], g['st']) for h, g in tp if h['st'] != g['st']]
+    print(f'  trees within 70 m on both games: {len(tp)}, with different fruit: {diff[:4]}', flush=True)
+    ck(tp and not diff, 'every tree near the players has the same fruit on both games (the made fruit took none)')
 
 
 def bundles(con, r=200, at=None):
