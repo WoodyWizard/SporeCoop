@@ -3033,3 +3033,17 @@ BUG-0409. Both games' own positions (coop.bodyrec) and the locomotion mode colum
   so the code was removed. The rest is the host's throw (13-31 m/s) shown one state period (0.1 s, npc.cpp
   kStateInterval) plus the latency late: up to ~4 m for under 0.2 s, never held (the longest stretch over 2 m after
   a hit 0.58 s in 56 hits with the old code).
+
+## Creature collisions: the contact handler skips creature pairs (2026-11-06, fix/w45-remote-bodies-2)
+<a id="creature-contact-pairs"></a>
+
+BUG-0386, BUG-0440 (static, Ghidra, GOG 2024; not seen at runtime):
+* ✔ The creature stage's physics contact callback is 0xD3A450 (its only xref 0xD43A08, the stage setup; likely):
+  type 1 (one body): an egg (noun 0x2A034CD) hit with an impulse over 10 goes to SetState(4); type 2 (a pair):
+  creature vs non-creature -> 0xD3A0D0 (bumps cRocks and sort-6 ornaments), non-creature pairs -> 0xD38DD0;
+  creature vs creature (both noun 0x18EB45E) is skipped.
+* ? So what pushes a placed mirror or proxy back (a herd mate next to it: BUG-0440's audit line `place lost 281`,
+  nearest proxy 3.3 m) is Havok's own solving or the locomotion's avoidance (inferred). Not found: a per-creature
+  flag that takes one creature out of collision. Candidates: the loco force list (creature+0xC0, add 0xC44140,
+  clear 0xC441A0, its callers 0xC06660, 0xC26D70 citizen, 0xC3E210, 0xC44770, 0xCA3010 vehicle, 0xD5F730), the
+  "useGameplayPhantom" registration 0xB48870 (eggs; creatures likely have a similar phantom).
