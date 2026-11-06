@@ -429,6 +429,20 @@ class Campaign:
                     r'^tribe \d+(?: \(player\))? at \(([-\d.]+) ([-\d.]+) ([-\d.]+)\)', host.call('coop.tribe'), re.M)
                     if math.dist([float(m.group(i)) for i in (1, 2, 3)], (0, 0, 0)) > 50]
 
+            nv = len(pts) - 12
+            if hst == 'tribe':  # the NPC tribe spawn markers: where the host's controller forms the next villages
+                pts += [tuple(float(m.group(i)) for i in (1, 2, 3)) for m in re.finditer(
+                    r'pos=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\)', host.call('coop.tribe markers'))]
+            names = [key, '15m', '30m', '60m', '100m', '200m', '+x', '-x', '+y', '-y', '+z', '-z']
+            names += [f'village{i}' for i in range(nv)]
+            names += [f'marker{i}' for i in range(len(pts) - len(names))]
+            if hst == 'creature':  # re-probed in Tribe: did the Tribe change move the ground (on which game)?
+                self._creature_pts = list(zip(names, pts))
+            else:
+                ms = [k for k in sorted(hs) if k[0] == 't'][:40]  # every member: where the ground differs, not only one
+                names += ms + [f'cr-{n}' for n, _ in getattr(self, '_creature_pts', [])]
+                pts += [hs[k] for k in ms] + [q for _, q in getattr(self, '_creature_pts', [])]
+
             def gr(con, p):
                 m = re.search(r'ground (-?[\d.]+)', con.call('coop.ground %.2f %.2f %.2f' % tuple(p)))
                 return float(m.group(1)) if m else None
@@ -436,13 +450,15 @@ class Campaign:
             rows = []
             for g in self.guests:
                 gg = [gr(g, p) for p in pts]
-                d = [round(b - a, 2) for a, b in zip(hg, gg) if a is not None and b is not None]
-                if d and max(abs(x) for x in d) > 0.5:
-                    rows.append(f'{g.name} {d}')
+                d = [(n, q, round(y - x, 2)) for n, q, x, y in zip(names, pts, hg, gg) if x is not None and y is not None]
+                bad = [f'{n}@({q[0]:.0f} {q[1]:.0f} {q[2]:.0f}) {v:+.2f}' for n, q, v in d if abs(v) > 0.5]
+                if bad:
+                    rows.append(f'{g.name} {len(bad)} of {len(d)}: ' + ', '.join(bad))
             first = getattr(self, '_ground_seen', set())
             self._ground_seen = first | {hst}
             if rows or hst not in first:
-                self.note(f'ground ({hst}, at {key}, 15 / 30 / 60 / 100 / 200 m off, then +x -x +y -y +z -z, then the villages; host {[h and round(h, 2) for h in hg]}): guest - host ' + ('; '.join(rows) or 'all within 0.5 m'))
+                self.note(f'ground ({hst}; host ' + ', '.join(f'{n} {h:.2f}' for n, h in zip(names, hg) if h is not None)
+                          + '): guest - host ' + ('; '.join(rows) or 'all within 0.5 m'))
         except (OSError, ValueError, ZeroDivisionError) as e:
             self.note(f'ground probe: {e!r}')
 
@@ -790,6 +806,11 @@ class Campaign:
                 time.sleep(2)  # the player tribe exists once the intro is over
             print('  tribe setup:', self.host.call(f'coop.tribe spawn {3 * len(self.P)}'), flush=True)
             time.sleep(8)
+            if os.environ.get('CAMPAIGN_FORM') == '1':  # BUG-0332: the host's controller forms its next villages now
+                self.host.call('coop.res add food 400')
+                for _ in range(2):
+                    print('  tribe setup: form:', self.host.call('coop.tribe form')[:160], flush=True)
+                    time.sleep(3)
             g = play_tribe.Game(Console(self.host.inst, timeout=30), Console(self.guests[0].inst, timeout=30),
                                 seed, 1.0)
             for p in self.P[2:]:

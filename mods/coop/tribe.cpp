@@ -3849,6 +3849,23 @@ std::string debug(const std::vector<std::string>& a)
                (g_forms_blocked != blocked0 ? " (blocked: tribe.guest_tribes)" : "") +
                (g_pace_last.empty() ? "" : " (pace: " + g_pace_last + ")");
     }
+    // markers: tests (BUG-0332), the NPC tribe spawn markers of this game (noun 0x36BE27E, +0x108 == 0x57F09E5E: where the
+    // tribe controller forms the next tribes) with their positions
+    if (!a.empty() && a[0] == "markers") {
+        std::string out;
+        game::for_each_object(
+            [](void* o, uint32_t noun, void* u) {
+                if (noun == 0x36BE27E && F<uint32_t>(o, 0x108) == 0x57F09E5E) {
+                    net::Vec3 p = game::position(o);
+                    char b[96];
+                    snprintf(b, sizeof b, "marker %p pos=(%.2f %.2f %.2f)\n", o, p.x, p.y, p.z);
+                    *(std::string*)u += b;
+                }
+                return true;
+            },
+            &out);
+        return out.empty() ? "no markers" : out;
+    }
     if (!a.empty() && a[0] == "trees") { // trees near the village with their raw fields (RE)
         net::Vec3 at;
         center(at);
