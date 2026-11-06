@@ -274,6 +274,7 @@ static bool g_extrap_fix = true;
 COOP_FIX("civ.extrap", "BUG-0186", g_extrap_fix,
          "civ: a mirrored vehicle is moved on at most 0.15 s past its last state (a host hitch no longer throws it ahead)");
 constexpr double kVehAhead = 0.15;
+constexpr double kVehLead = 0.3; // BUG-0425
 static bool g_vel_cap_fix = true;
 COOP_FIX("civ.vel_cap", "BUG-0186", g_vel_cap_fix,
          "civ: a vehicle step faster than twice its top speed is taken as a jump, not a speed to extrapolate");
@@ -3270,6 +3271,12 @@ static void guest_state(net::Reader& r)
         bool alive_v = v && game::object_alive(v) && !F<uint8_t>(v, kVDead);
         g.est.max_speed = g_vel_cap_fix && alive_v ? 2.f * F<float>(v, 0x218) + 10.f : 0.f;
         g.est.max_ahead = g_extrap_fix ? kVehAhead : 0.4;
+        // BUG-0425 (drive.lead): moved on to the host's now as every remote body; at most kVehLead past its state:
+        // its age is the send interval (0.1-0.13 s at 30 fps) plus the latency and a frame, which 0.15 s cut short
+        // (the vehicle 0.1-0.24 s behind, p90 2.8-3.5 m at 15-25 m/s, body_trail_civ on a loaded lab). Longer is a
+        // host hitch, when its vehicles stand (BUG-0186: 0.4 s threw one 10 m ahead)
+        if (g_extrap_fix && net::g_lead_fix)
+            g.est.max_ahead = kVehLead;
         g.est.update(m.pos, now, sent);
         if (v && (!game::object_alive(v) || F<uint8_t>(v, kVDead))) {
             g_gv_of.erase(v);

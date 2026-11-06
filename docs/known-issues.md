@@ -1478,7 +1478,8 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Seen: play_tribe, citizens on the guest p90 1.89 / 1.98 m from the host's (limit 1.5 m) in both runs;
   animals 1.0 m.
 * Reproduce: `SPORE_LANE=N python3 tools/tests/play_tribe.py --minutes 10 --seed 789470738`.
-* Ticket: BUG-0410
+* Ticket: BUG-0410 (fixed on fix/w45-remote-bodies, unreleased: drive.lead, the 0.2 s mirror delay was the trail;
+  docs/re/tribe.md#tribe-remote-lead)
 
 ## Creature: a guest that left, or rejoins while the host edits, has no creatures (2026-11-01, feat/w33-tests-session)
 <a id="known-empty-planet-after-leave"></a>
@@ -2022,3 +2023,13 @@ Player reports 2026-11-04 (0.7.5, Discord bug-reports; not analysed yet):
   position: on a guest whose village ground is 5-6 m off the host's (BUG-0332, campaign planets only) it would be
   under or over the copies' feet (inferred, not seen; `CAMPAIGN_GROUND=1 tools/lab.py run campaign_ct` shows the
   ground difference when it happens)
+
+## A remote body's error at the start of a walk over a bad network (2026-11-06, fix/w45-remote-bodies)
+<a id="known-walk-start-latency"></a>
+
+* Seen: body_trail_tribe_player (SPORE_NET=player): with drive.lead the guest's copies are within 0.2-0.8 m of the
+  host's bodies once they walk, but 1.9-2.3 m (p90) in the first 0.75 s of a Tribe member's walk: the guest knows a
+  start one latency (and a spike) late. What is left is the latency itself.
+* Reproduce: `tools/lab.py run body_trail_tribe_player`; per-time analysis of the track JSON it writes
+  (docs/re/creature.md#creature-remote-lead).
+* Tickets: BUG-0425 (fixed part), BUG-0612 (the class's other parts)
