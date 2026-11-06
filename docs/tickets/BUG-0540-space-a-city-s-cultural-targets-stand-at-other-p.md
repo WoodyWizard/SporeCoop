@@ -38,6 +38,9 @@ or removal. Switch `coop.fix wobj.cultural_target off`.
 host_cultural (civ_npc, a rejoin after 60 s, the targets near the guest compared in both games' object lists):
 - FAIL with `SPORE_FIX_OFF=wobj.cultural_target`: lab 20261106-043659 (4 of 4 more than 1 m off).
 - PASS: lab 20261106-044559-2 (relocated=8).
+- The final test (census centred on the host's first city: around the planet's centre it listed none, lab
+  20261106-054127 / -055541 failed before any check of the fix): FAIL with the switch off lab 20261106-055716, PASS lab
+  20261106-055718.
 - Detector: play_civ had no cultural_target row before or after (lab 20261106-051337); campaign_space (35 min) not
   rerun. ? Whether the city record's copy of the places (+0x618) matters to the AI is not checked.
 

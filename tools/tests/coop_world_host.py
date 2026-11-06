@@ -186,20 +186,26 @@ def bundle_civ(host, guest, ck):
 
 def cultural(host, guest, ck):
     import worlddiff
+    from play_civ import civ_state
     noun = 0x03D5C325
-
-    def targets(con, at):
-        w = worlddiff.dump(con, 5000, at)
-        return w, [r for r in w.rows if r['noun'] == noun]
-
-    gw, _ = targets(guest, (0.0, 0.0, 0.0))
-    hw, _ = targets(host, (0.0, 0.0, 0.0))
-    at = gw.me or hw.me or (0.0, 0.0, 0.0)
     near_r = 300.0
 
+    def targets(con, at):
+        w = worlddiff.dump(con, near_r + 50, at)
+        return w, [r for r in w.rows if r['noun'] == noun]
+
+    # the census lists the objects nearest its centre: centre it on the host's first city (a census around the
+    # planet's centre listed no target at all, lab 20261106-055541)
+    cities, _, _ = civ_state(host)
+    mine = sorted(c for c, d in cities.items() if d['player'])
+    if not ck(mine, f'the host has a city ({sorted(cities)})'):
+        return
+    at = cities[mine[0]]['pos']
+    wait(lambda: targets(host, at)[1] and targets(guest, at)[1], 40)
+
     def compare():
-        _, ht = targets(host, (0.0, 0.0, 0.0))
-        _, gt = targets(guest, (0.0, 0.0, 0.0))
+        _, ht = targets(host, at)
+        _, gt = targets(guest, at)
         ht = [r for r in ht if math.dist(r['pos'], at) < near_r]
         gt = [r for r in gt if math.dist(r['pos'], at) < near_r + 20]
         far = []
