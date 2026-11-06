@@ -18,7 +18,7 @@ related: BUG-0425, BUG-0386, BUG-0365
 ---
 
 ## Report
-Found in M2's runs (fix/w45-remote-bodies-2 on rel/0.7.9 + M1's drive.lead). tribe_walk_mobile (both games at 30 fps, netem mobile: 120 ms, 60 ms jitter, 3 % loss) fails its check 'guest sees the host's members (mirrors): no jump of a member while it walks': out/lab/20261106-064239 #1 (5 jumps: (9, 18.76 s, 0.96 m, 32 ms), (9, 18.79, 0.90), (1, 30.65, 0.95), (1, 30.68, 0.92), (1, 33.27, 0.91); 58 target corrections) and #2 (2 jumps); out/lab/20261106-063850 (4 jumps 0.9-1.25 m and 'uneven 36 %', with a tried lead smoothing since removed). With SPORE_FIX_OFF=drive.lead it passed 2 of 2 (out/lab/20261106-062826); with the lead it passed once (out/lab/20261106-053105).
+Found in M2's runs (fix/w45-remote-bodies-2 on rel/0.7.9 + M1's drive.lead). tribe_walk_mobile (both games at 30 fps, netem mobile: 120 ms, 60 ms jitter, 3 % loss) fails its check 'guest sees the host's members (mirrors): no jump of a member while it walks': out/lab/20261106-064239 #1 (5 jumps: (9, 18.76 s, 0.96 m, 32 ms), (9, 18.79, 0.90), (1, 30.65, 0.95), (1, 30.68, 0.92), (1, 33.27, 0.91); 58 target corrections) and #2 (2 jumps); out/lab/20261106-081748 tribe_walk_mobile #1 and #2 (1-2 jumps each, 'uneven 18 %'); out/lab/20261106-063850 (4 jumps 0.9-1.25 m and 'uneven 36 %', with a tried lead smoothing since removed). With SPORE_FIX_OFF=drive.lead it passed 2 of 2 (out/lab/20261106-062826); with the lead it passed once (out/lab/20261106-053105).
 
 How to reproduce: tools/lab.py run tribe_walk_mobile --repeat 3 --retry 0 (and with SPORE_FIX_OFF=drive.lead).
 

@@ -1602,7 +1602,7 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   (guest 30 fps, `player` network), 10 of them abrupt (`coop.abilities halt`): none slid on more than 0.05 m with the
   0.7.4 driving, so the hold after a stop (creature.puppet_stop, tried) was not kept.
 * FIXED (2026-11-06, fix/w45-remote-bodies-2, unreleased): seen again on both games' own positions (puppet_stops,
-  0.50 / 0.88 m past the stop, lab 20261106-053105); `creature.puppet_stop` holds the puppet where the partner stopped
+  0.50 / 0.88 m past the stop, lab 20261106-053105; FAIL 20261106-083248 off, PASS 20261106-083011); `creature.puppet_stop` holds the puppet where the partner stopped
   from the moment its own speed falls (see BUG-0408).
 * Ticket: BUG-0408
 * Fixed (2026-11-01, fix/w33-unlocks): the party shares its collected parts (`parts.shared`, test
