@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in: unreleased
 branch: fix/w45-placement
-commits: 9b993da9
+commits: 9b993da9, a42f6e5f
 tests: node_scale (coop_node_scale.py)
 signature:
 docs: docs/re/creature.md#creature-node-scale
@@ -46,3 +46,4 @@ out/lab/20261106-061822 (guest 1.0 for 15 s), PASS out/lab/20261106-062301 (10 w
 - 2026-11-03: investigated on fix/w40-scale: on the creature / tribe fixtures all 16 nodes are 1.0 on both games (the 10 is set at runtime after the live Cell -> Creature start, not saved); the node loco vtable 0x1469A28 uses cModelObject_SetScale, hooked now, which logs `scale 10 set on an object with vtable ... from ...` once per caller: the next campaign_short run names the setter. Not fixed (what the player sees and who sets it unknown); docs/known-issues.md#issue-node-scale.
 - 2026-11-06 (fix/w45-one-game-objects, L1): the BUG-0485 diagnostic in lab logs of 2026-11-04..06 named only other objects: `scale 10 set on an object with vtable 014699E8 from 00BC0641` (space_play host and guest, 12 times) and `vtable 01474BE8 from 00CA41DA` (3 times); never the node vtable 0x1469A28. Not analysed further (time).
 - 2026-11-06 (fix/w45-placement): setter found (0xBC0641, the live node placement; the scale is not saved), fixed with wobj.node_scale; runs above.
+- 2026-11-06 (fix/w45-placement): regression with SPORE_DETECTOR=20: smoke out/lab/20261106-074134 (14/14), play_tribe out/lab/20261106-073013, play_civ / play_space and the touched tests out/lab/20261106-080336 (9/9; play_civ: no planet:building or scale:vehicle row, the guest's buildings_fixed=+0/-8 off_slot=0).

@@ -10,7 +10,7 @@ role: guest
 versions: 
 fixed_in: unreleased
 branch: fix/w45-placement
-commits: a42f6e5f, 03b802ec
+commits: a42f6e5f, 03b802ec, 76f7ab66
 tests: civ_city_layout (coop_civ_city_layout.py)
 signature:
 docs: docs/re/civ.md#civ-capture-layout
@@ -55,8 +55,9 @@ with `coop.civ bmove`, the state campaign_space showed, builds 12 more; the game
 on both games for 60 s): FAIL with `SPORE_FIX_OFF=civ.city_layout` out/lab/20261106-065338 (the building 8.7 m off for
 60 s, the guest replaced buildings 31 -> 44 times), PASS out/lab/20261106-065813 (matched within 3 s, off_slot=1
 moved=1, no more replacing). Detector before: campaign_space out/lab/20261106-064018 (building_industry 27 samples,
-+224/-224); after: see the History line of the regression.
++224/-224); after: play_civ out/lab/20261106-080336 (no planet:building row; campaign_space not rerun with the fix).
 
 ## History
 - 2026-11-05: opened.
 - 2026-11-06 (fix/w45-placement): root cause observed (the host's captured city got a new layout, the guest's rebuild loop), fixed with civ.city_layout; runs above.
+- 2026-11-06 (fix/w45-placement): regression with SPORE_DETECTOR=20: smoke out/lab/20261106-074134 (14/14), play_tribe out/lab/20261106-073013, play_civ / play_space and the touched tests out/lab/20261106-080336 (9/9; play_civ: no planet:building or scale:vehicle row, the guest's buildings_fixed=+0/-8 off_slot=0).

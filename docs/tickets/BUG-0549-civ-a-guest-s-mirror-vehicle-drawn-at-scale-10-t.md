@@ -10,7 +10,7 @@ role: guest
 versions: 
 fixed_in: unreleased
 branch: fix/w45-placement
-commits: 9b993da9
+commits: 9b993da9, a42f6e5f
 tests: civ_vehicle_scale (coop_civ_vehicle_scale.py)
 signature:
 docs: docs/re/civ.md#civ-vehicle-scale
@@ -44,3 +44,4 @@ Not seen again in the play_civ detector run of this branch's baseline (out/lab/2
 - 2026-11-04: opened.
 - 2026-11-04 (fix/w42-civ-left): opened.
 - 2026-11-06 (fix/w45-placement): the setter found (0xCA41DA, the vehicle's model-ready handler on guests), fixed with civ.vehicle_scale; runs above.
+- 2026-11-06 (fix/w45-placement): regression with SPORE_DETECTOR=20: smoke out/lab/20261106-074134 (14/14), play_tribe out/lab/20261106-073013, play_civ / play_space and the touched tests out/lab/20261106-080336 (9/9; play_civ: no planet:building or scale:vehicle row, the guest's buildings_fixed=+0/-8 off_slot=0).
