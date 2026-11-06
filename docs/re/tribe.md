@@ -2019,3 +2019,14 @@ BUG-0620. GOG 2024, lab lane 5 (play_tribe + `coop_tribe_member_place.py --attac
   members in a fight that the game keeps fighting; not the gather stall of BUG-0531.
 * ~ `coop.tribe ai`'s order target check (tgt_listed) reads 0 for trees: a fruit tree (cTreeData, noun 0x6ABEE7E) is
   no object of the game's object list.
+
+## The gather walk round an obstacle; play_tribe's idle orders (2026-11-06, fix/w45-last)
+<a id="tribe-gather-block"></a>
+
+BUG-0531. GOG 2024, lane 5, coop_tribe_gather_block.py and play_tribe (`coop.tribe ai`).
+* ✔ The gather node 0x0569236E's states as `coop.tribe ai` shows them on one gather (a guest's member put 6 m behind a
+  hut, the tree 21 m beyond it): 1 walking to the tree (walk mode 1, goal = the tree, r 6.7 m), 2 the last metres
+  (walk mode 3, a goal by the tree, r 0.1), 4 and 6 at the tree (walk mode 0), 2 again, 19 carrying home (walk mode 1,
+  goal the village, r 6.6; `carry=` read 0.0 there). The way round the hut was found by the game.
+* ✔ play_tribe's "no movement" orders (2 runs) were members in the fight node 0x05218BB3 (#tribe-member-body) or
+  already carrying food; none in 0x0569236E. The state 1 stall of 2026-11-05 was not seen again.

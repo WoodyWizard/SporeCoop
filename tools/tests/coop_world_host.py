@@ -150,13 +150,18 @@ def bundle(host, guest, ck):
 
 
 def bundle_carry(host, guest, ck):
-    """BUG-0617: food a host's member carries to the mat: when the host's member has delivered it (the host's carried
-    bundle is gone), the guest's copy of the member carries none either (its copy, 1-3.5 m behind, was left unbound
-    and kept for good)"""
+    """BUG-0617: food a host's member carries while it walks (its copy on the guest's screen is drawn 1-3.5 m behind):
+    when the host's member no longer carries it (put down / delivered: `coop.wobj bundle take` on the host), the guest's
+    copy of the member carries none either within 6 s (an unbound copy was kept for good)"""
     import re
+    ids = {}
+    for line in host.call('coop.tribe')['out'].splitlines():
+        m = re.match(r'\s+#(\d+) ([0-9A-Fa-f]{8}) owner=', line)
+        if m:
+            ids[m.group(2).upper()] = int(m.group(1))
     rows = re.findall(r'([0-9A-F]{8}) alive=1 pos=\((\S+) (\S+) (\S+)\) dist=(\S+)', host.call('coop.tribe objs 18EB4B7')['out'])
-    rows = sorted([r for r in rows if float(r[4]) < 60], key=lambda r: -float(r[4]))
-    tried, left = 0, []
+    rows = [r for r in rows if float(r[4]) < 60 and r[0] in ids]
+    tried, left, unbound = 0, [], 0
     for p, x, y, z, d in rows[:12]:
         if tried >= 3:
             break
@@ -165,27 +170,35 @@ def bundle_carry(host, guest, ck):
             continue
         tried += 1
         bp = re.search(r'bundle ([0-9A-F]{8})', out).group(1)
-        print(f'  host: member {p} ({float(d):.0f} m from the host) carries food: {out}', flush=True)
-
-        def host_has():
-            return [b for b in bundles(host, 300) if b['cls'] & 0x100 and b['p'] == bp]
-        t0, last = time.time(), None
-        while time.time() - t0 < 25 and host_has():
-            last = host_has()[0]['pos']
-            time.sleep(0.5)
-        gone = not host_has()
-        print(f'    the host\'s member delivered it: {gone} ({time.time() - t0:.0f} s)', flush=True)
-        if not gone or last is None:
+        mp = (float(x), float(y), float(z))
+        # away from the village: 40 m on the line from the host's player through the member
+        me = re.search(r'me pos=\((\S+) (\S+) (\S+)\)', host.call('coop.census all 1')['out'])
+        hp = tuple(float(v) for v in me.groups()) if me else (0.0, 0.0, 0.0)
+        v = [a_ - b_ for a_, b_ in zip(mp, hp)]
+        n = sum(q * q for q in v) ** 0.5 or 1.0
+        goal = tuple(a_ + q / n * 40 for a_, q in zip(mp, v))
+        print(f'  host: member #{ids[p]} carries food ({out}); '
+              + host.call('coop.tribe order %d 4 %.2f %.2f %.2f' % ((ids[p],) + goal))['out'].strip(), flush=True)
+        time.sleep(4)
+        hb = [b for b in bundles(host, 300) if b['cls'] & 0x100 and b['p'] == bp]
+        if not hb:
+            print('    (the host\'s member put it down already)', flush=True)
             continue
+        gb = [b for b in bundles(guest, 30, hb[0]['pos']) if b['cls'] & 0x100]
+        unbound += sum(1 for b in gb if not b['bound'])
+        print(f'    walking: host bundle at {hb[0]["pos"]}; guest carried copies {[(round(math.dist(b["pos"], hb[0]["pos"]), 1), b["bound"]) for b in gb]}', flush=True)
+        print('    host: ' + host.call(f'coop.wobj bundle take {bp}')['out'].strip() + ' (the host\'s member put it down)', flush=True)
+        at = hb[0]['pos']
         time.sleep(6)
-        hc = [b for b in bundles(host, 60, last) if b['cls'] & 0x100]
-        gc = [b for b in bundles(guest, 60, last) if b['cls'] & 0x100]
+        hc = [b for b in bundles(host, 60, at) if b['cls'] & 0x100]
+        gc = [b for b in bundles(guest, 60, at) if b['cls'] & 0x100]
         extra = [b for b in gc if not any(math.dist(b['pos'], h['pos']) < 8 for h in hc)]
         print(f'    6 s later within 60 m: host carried {len(hc)}, guest carried {len(gc)}, guest without a host one '
               f'within 8 m: {[(b["pos"], b["p"]) for b in extra]}', flush=True)
         left += extra
+    print(f'  guest copies unbound while walking: {unbound}', flush=True)
     ck(tried > 0, f'members of the host\'s tribe carried food ({tried})')
-    ck(not left, f'no member carries food on the guest\'s screen that the host\'s member delivered ({len(left)} left)')
+    ck(not left, f'no member carries food on the guest\'s screen that the host\'s member put down ({len(left)} left)')
 
 
 def bundle_civ(host, guest, ck):
