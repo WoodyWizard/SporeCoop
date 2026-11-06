@@ -302,6 +302,9 @@ struct WalkPlace {
     // latency late; its lead target is then 1-3 m ahead and was closed at catch_up (3 m/s): a Tribe member at
     // 9 m/s stayed 2-3 m behind for the first 0.75 s of every walk over the player network (p90 2.9-3.1 m)
     bool catch_prop = false;
+    // BUG-0619: under kEvenBelow m/s the catch-up is at most half the speed + 1 m/s (Tribe member mirrors: their walk's
+    // start and end are judged for stop-and-go; NPC proxies keep the full catch-up, body_trail_tribe's animals lagged)
+    bool even_start = false;
 };
 constexpr float kCatchTime = 0.25f;     // s
 // BUG-0619 (`coop.fix drive.catch_bound`): catch_prop's step was measured from where the game's own walk had taken the
@@ -380,7 +383,7 @@ inline void walk_place(void* p, const net::Vec3& pos_in, const net::Quat& rot, c
     // BUG-0619: while the remote speeds up or slows down (under kEvenBelow m/s) the lead target is a latency ahead of a
     // start, and catching up at catch_up on top of a 1-5 m/s walk drew a stop-and-go (tribe_walk_mobile: uneven steps
     // in 5-18 % of those frames with drive.lead, 1-3 % without): there the catch-up is at most half the speed + 1 m/s
-    if (g_catch_bound_fix && o.catch_prop && net::g_lead_fix && sp < kEvenBelow)
+    if (g_catch_bound_fix && o.catch_prop && o.even_start && net::g_lead_fix && sp < kEvenBelow)
         catch_up = std::min(catch_up, 0.5f * sp + 1.f);
     float max_step = (sp + catch_up) * (float)dt;
     net::Vec3 to = pos;
