@@ -3258,3 +3258,18 @@ with the collision objects: the terrain or a nest mound / rock).
 * Fix `npc.proxy_mound` (npc.cpp): a proxy (not in the air, not dead) whose target or drawn place is 0.1-2.5 m under
   this game's surface where that surface is over the plain terrain is put 5 cm under the surface (the game sets it
   onto it). Counters `mound_lifts` / `mound_targets` in `coop.npc`.
+
+## The evolution bar follows AddEvolutionPoints, also its negative deltas (2026-11-06, fix/w45-intake)
+<a id="creature-evolution-bar"></a>
+
+BUG-0630. GOG 2024 (dc04aee5), objdump of the exe.
+* ✔ `cCreatureGameData::AddEvolutionPoints` 0xD2E8A0, cdecl(float delta): delta == 0 returns; else the DNA
+  [0x169E398] = min(DNA + delta, [0x1582E54] = 9999.0) (no lower clamp), then **cPlayer +0x10F0 += delta** with no
+  sign check (cPlayer from 0xB3D400 -> 0xF67D40), then (game mode != 0x1654C10) the HUD message 0x45AB96E with the
+  delta. So a negative delta lowers the stage's evolution bar (mCurrentGoalProgress, #creations-cplayer-fields), which
+  the brain-level / migration thresholds read.
+* ✔ `SetEvolutionPoints` 0xD2E480 writes [0x169E398] only. The game's own spends (the editor's result 0xD445AA) use
+  it: in a game of one a spend never lowers the bar.
+* ✔ (player logs 2026-11-06, 0.7.8) the co-op DNA sync (`game::dna_add_raw` = the original AddEvolutionPoints) applies
+  the partner's spends as negative deltas: each editor spend lowered the other player's bar by the amount (guest -50
+  after the host's editor, guest -444 and host -309 after both editors). The brain level [0x169E370] does not go down.
