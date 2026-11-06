@@ -15,6 +15,7 @@ PASS: at every point within 50 m the two grounds differ by less than 0.5 m.
   SPORE_LANE=9 python3 tools/tests/coop_tribe_village_ground.py
 """
 import math
+import os
 import re
 import sys
 import time
@@ -176,6 +177,24 @@ def main():
         time.sleep(3)
     if not ck(good, 'the guest plays the Tribe stage together with the host'):
         return ck.result()
+    # BUG-0332 (tribe.host_reload): the host loads its own share save once it has gone out; measure after that load
+    if 'tribe.host_reload' not in os.environ.get('SPORE_FIX_OFF', '') and '--no-reload-wait' not in sys.argv:
+        tr = time.time()
+        while time.time() - tr < 150 and 'host_reloads=0' in out(host, 'coop.terrain').splitlines()[0]:
+            time.sleep(3)
+        print(f'  host: ' + out(host, 'coop.terrain').splitlines()[0], flush=True)
+        tg, good = time.time(), None
+        while time.time() - tg < 200:
+            for p in players:
+                p.service(host)
+            ok = 'Tribe' in out(host, 'game.mode') and re.search(r'^together 1 1$', out(host, 'coop.status'), re.M) \
+                and 'movie=1' not in out(host, 'coop.status')
+            good = (good or time.time()) if ok else None
+            if good and time.time() - good > 10:
+                break
+            time.sleep(3)
+        if not ck(good, f'after the host\'s own load ({time.time() - tr:.0f} s) both play the Tribe stage together'):
+            return ck.result()
     own, _ = player_members(host)
     ps = [p for p in (pos_of(host, i) for i in sorted(own)) if p]
     ck(bool(ps), f'the host has the player tribe\'s members ({len(ps)})')

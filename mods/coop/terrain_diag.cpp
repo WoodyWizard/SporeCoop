@@ -2,13 +2,10 @@
 // terrain holds, on each game. `coop.terrain` lists the stamp vectors of the active planet's terrain and the last
 // ApplyStamp / RemoveStamp / ClearAllStamps calls (caller, transform position, returned id).
 //
-// The fix terrain.rebuild_live_stamps: the game renders the stamps it applies live (the ~56 of the Tribe start: the
-// villages, the tribe spawn markers, ...) into its heights differently from the full rebuild a load of the same
-// stamp list makes: the host's own reload of its Tribe save gave the guests' ground, 0.5-14 m off its live ground
-// (lab 20261106-043244). So the host's live ground differed from every guest's (they load its save). With the fix a
-// game rebuilds its terrain the way a load does (the planet editor's reload 0xF37390: stamp lists written to the
-// sphere's prop list and read back, then the generator 0xF9B860) once a burst of live stamp calls is over, in the
-// Tribe stage, so the live ground is the ground every load of the world gives; the world share waits for it (busy()).
+// Finding (docs/re/tribe.md#tribe-terrain-stamps): the heights a game renders for stamps it applies live (the ~56 of
+// the Tribe start) differ from the ones any load of the same stamp list gives; a rebuild started by the mod
+// (`coop.terrain rebuild`, or the planet editor's reload sequence) gives a third result (lab 20261106-043944,
+// 20261106-045023), so the fix (tribe.host_reload, world.cpp) is the game's load itself.
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
@@ -23,20 +20,14 @@
 #include "sporekit.h"
 #include "sporekit_game.hpp"
 #include "terrain_diag.h"
+#include "world.h"
 
 namespace terrain_diag {
-bool g_rebuild_fix = true;
-COOP_FIX("terrain.rebuild_live_stamps", "BUG-0332", g_rebuild_fix,
-         "terrain: after stamps applied live (Tribe start, new villages) the terrain is rebuilt as a load of the world builds it, so every game has one ground");
 namespace {
 const SkHost* H;
 SkMod* M;
-double g_last_stamp;       // the time of the last live stamp call (apply, remove, clear)
-bool g_pending;            // a rebuild is due once the burst is over
-double g_asked_at;         // when the rebuild was asked (sphere+0xA48 = 1)
-uint32_t g_rebuilds, g_skipped_busy;
-constexpr double kQuiet = 1.0;   // s without a stamp call: the burst is over (the Tribe start: two bursts 0.35 s apart)
-constexpr double kBusyMax = 8.0; // s: busy() gives up (never holds a share longer)
+double g_last_stamp; // the time of the last live stamp call (apply, remove, clear)
+uint32_t g_live_calls;
 
 struct Call {
     double at;
@@ -80,7 +71,7 @@ uint32_t SK_THISCALL h_Apply(void* self, const uint8_t* xf, void* prop)
     }
     note(c);
     g_last_stamp = H->time_seconds();
-    g_pending = true;
+    g_live_calls++;
     return id;
 }
 
@@ -89,7 +80,7 @@ void SK_THISCALL h_Remove(void* self, uint32_t id, int flag)
     note(Call{H->time_seconds(), 2, caller_of(__builtin_return_address(0)), 0, 0, 0, 0, id, (void*)(intptr_t)flag});
     o_Remove(self, id, flag);
     g_last_stamp = H->time_seconds();
-    g_pending = true;
+    g_live_calls++;
 }
 
 void SK_THISCALL h_Clear(void* self)
@@ -97,7 +88,7 @@ void SK_THISCALL h_Clear(void* self)
     note(Call{H->time_seconds(), 3, caller_of(__builtin_return_address(0)), 0, 0, 0, 0, 0, nullptr});
     o_Clear(self);
     g_last_stamp = H->time_seconds();
-    g_pending = true;
+    g_live_calls++;
 }
 
 void* terrain()
@@ -323,63 +314,9 @@ int c_terrain(void*, int argc, const char* const* argv, SkOut* out)
 }
 } // namespace
 
-// the frame tick: a burst of live stamp calls in the Tribe stage is over -> ask the terrain for its full rebuild
-void tick(double now)
-{
-    if (!g_pending || !H)
-        return;
-    if (!g_rebuild_fix || game::mode_id() != modes::kTribe) {
-        g_pending = false;
-        return;
-    }
-    if (now - g_last_stamp < kQuiet)
-        return;
-    uint8_t* t = (uint8_t*)terrain();
-    if (!t || !skg::readable(t + 0xA48, 4) || !skg::readable(t + 0xFC, 4))
-        return;
-    if (*(uint32_t*)(t + 0xFC) || *(int32_t*)(t + 0xA48) > 0) { // a generator runs or a rebuild is counting down
-        g_skipped_busy++;
-        return;
-    }
-    // as a load / the planet editor (0xF37390) does: the stamp lists written into the sphere's prop list (vt 0x80
-    // 0xFAA570), read back from it (vt 0x114 0xFA9CD0: the entries and brushes rebuilt as at a load) and the height
-    // generator started (0xF9B860(sphere, 0, 0, false, 1, 5.0): the stamp-rendering generator +0x74)
-    uintptr_t gen = H->sym("SporeCoop::TerrainSphere_StartGenerator");
-    void* pl = skg::readable(t + 0x28, 4) ? *(void**)(t + 0x28) : nullptr;
-    if (!gen || !pl) {
-        g_pending = false;
-        return;
-    }
-    skg::vcall<void>(t, 0x80 / 4);
-    skg::vcall<void>(t, 0x114 / 4, pl);
-    skg::thiscall<void>(gen, t, (void*)nullptr, (void*)nullptr, false, (uint8_t)1, 5.0f);
-    g_pending = false;
-    g_asked_at = now;
-    g_rebuilds++;
-    H->log(M, SK_INFO, "terrain: live stamps rebuilt as a load builds them (rebuild %u, versions %u %u)", g_rebuilds,
-           *(uint32_t*)(t + 0x814), *(uint32_t*)(t + 0x818));
-}
-
-// a share save waits while live stamps are not rebuilt yet (bounded by kBusyMax after the last stamp call)
-bool busy()
-{
-    if (!g_rebuild_fix || !H || game::mode_id() != modes::kTribe)
-        return false;
-    double now = H->time_seconds();
-    if (now - g_last_stamp > kBusyMax)
-        return false;
-    if (g_pending)
-        return true;
-    uint8_t* t = (uint8_t*)terrain();
-    if (!t || !skg::readable(t + 0xA48, 4) || !skg::readable(t + 0xFC, 4))
-        return false;
-    return *(uint32_t*)(t + 0xFC) != 0 || now - g_asked_at < 0.5; // the generator runs (sphere+0xFC its object)
-}
-
 std::string stats()
 {
-    return "terrain rebuilds=" + std::to_string(g_rebuilds) + " waited=" + std::to_string(g_skipped_busy) +
-           " pending=" + std::to_string((int)g_pending);
+    return "live stamp calls=" + std::to_string(g_live_calls) + " host_reloads=" + std::to_string(world::host_reloads());
 }
 
 void init(const SkHost* host, SkMod* mod)

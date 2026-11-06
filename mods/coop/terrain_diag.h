@@ -6,7 +6,5 @@
 
 namespace terrain_diag {
 void init(const SkHost* host, SkMod* mod);
-void tick(double now);  // terrain.rebuild_live_stamps: the rebuild after a burst of live stamps
-bool busy();            // a share save waits: live stamps not rebuilt yet
 std::string stats();
 } // namespace terrain_diag

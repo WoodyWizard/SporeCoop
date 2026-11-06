@@ -59,7 +59,6 @@
 #include "busy.h"
 #include "social.h"
 #include "world.h"
-#include "terrain_diag.h"
 #include "net/discovery.h"
 #include "net/fixes.h"
 #include "net/give_target.h"
@@ -2033,6 +2032,8 @@ void on_mode_change(uint32_t from, uint32_t to)
             r.evo_check_until = 0;
         }
     g_share_due_at = H->time_seconds() + (evolved ? 3.0 : 0.0); // BUG-0019: its cinematic starts first
+    if (new_stage && last == modes::kCreature && to == modes::kTribe)
+        world::host_reload_after_share(); // BUG-0332: one ground for everybody (world.cpp tribe.host_reload)
     notice(new_stage            ? g_name + " entered the " + modes::mode_name(to) + " stage: everybody follows"
            : design_stage(to) ? g_name + " changed a design: everybody gets the new designs"
            // BUG-0588: the City Hall and vehicle editors of the end of Tribe are no evolution
@@ -3048,7 +3049,6 @@ void on_frame(void*, int, void*)
     npc::tick(now);
     player_rules::tick(now); // BUG-0558: the host's UFO on the guests
     nest::tick(now); // BUG-0384
-    terrain_diag::tick(now); // BUG-0332
     fields::tick(now); // BUG-0419 G2 (after the modules that make the mirrors)
     wsync::tick(now);  // W1: host-owned world state (time of day, relations, stages done, the Tribe goal)
     wobj::tick(now); // BUG-0472, BUG-0459
