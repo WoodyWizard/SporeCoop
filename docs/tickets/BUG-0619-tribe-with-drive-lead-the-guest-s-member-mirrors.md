@@ -9,7 +9,7 @@ source: fix/w45-remote-bodies-2 regression runs
 role: guest
 versions: unreleased (rel/0.7.9 + drive.lead)
 fixed_in:
-branch:
+branch: fix/w45-remote-bodies-2
 commits:
 tests: tribe_walk_mobile (tools/tests/coop_tribe_walk.py --fps 30, SPORE_NET=mobile)
 signature:
@@ -35,3 +35,10 @@ Inferred, not analysed: the steps come in pairs of 0.9-0.96 m per 32 ms frame (2
 ## History
 - 2026-11-06: opened.
 - 2026-11-06: opened by M2 (fix/w45-remote-bodies-2): a regression of drive.lead (M1, BUG-0425) over a jittery network; not fixed here (outside M2's tickets), for M1 / the orchestrator.
+- 2026-11-06 (fix/w45-remote-bodies-2, M2, after the merge of rel/0.7.9 1e155b53): tried, measured and removed (the code is back to M1's driver.h / interp.h):
+  1. `drive.catch_bound` v1: catch_prop's placing at most (speed + catch_up) x dt from last frame's placing. Observed cause of the ~1 m steps: catch_prop measured its step from where the game's own walk had taken the body, so a frame's drawn step was walk + (2 x speed + 3) x dt (0.9-1.25 m at 9 m/s, 32 ms). With it no member jumped in 4 of 6 runs, but it pulled bodies back behind the game's walk: 'at its speed in 82 % of windows' (out/lab/20261106-105608, 1/6 passed).
+  2. v2 (never behind the game's walk) + a slow catch-up cap: stop-and-go stayed (uneven 10-19 % of the 1-5 m/s frames; 20261106-113612, 1/6); the cap for NPC proxies lagged animals (body_trail_tribe).
+  3. v4 (cap 0.35 x speed + 0.5 m/s for member mirrors only) and v5 (a new state's step of the lead target spread over 0.25 s for member buffers): still failing (20261106-121922 and after); the new hold probe showed members held 2-5.6 m off their aim for 1-21.8 s with `place lost 0` and no object within 3 m: the cap itself held them.
+  Observed in the analysis of the failing frames (tribe_walk track JSON): the uneven frames are the mirror catching up 1.5-4 m at 6-10 m/s on a 2-5 m/s target after a lead correction at a walk's start or end; the target itself was steady in those frames (44 of 45 uneven frames).
+  A/B under the same load (lab load 11-16 on 6 cores from other lanes, 'both games ready' 40-60 s instead of 30 s): drive.lead off passed 2 of 2 (20261106-121046, -121649), on failed (-121343). Under that load body_trail_civ (code no change of mine touches) failed too (p90 3.8-6.2 m, lag 0.3-0.8 s): the lab could not judge body_trail_* or a 6/6 at that time.
+  What is needed: a quiet lab for the measurement, and a decision: the test judges a mirror's step against its (lead) target, which a start known a latency late must correct; either the mirror closes the start's error slowly (then it trails at every start, M1's BUG-0425 measure at 0.25-0.75 s gets worse) or quickly (then this test sees stop-and-go). Options: judge tribe_walk_mobile against the host's own members at the same moment (coop.bodyrec, as body_trail), or a jitter-aware lead for member mirrors (no lead while the link's jitter is high).

@@ -1889,7 +1889,6 @@ static void guest_state(net::Reader& r)
             ps.vel = g.vel;
             g.buf.delay = g_test_delay;
             g.buf.lead = true; // BUG-0425 (drive.lead)
-            g.buf.smooth_lead = drive::g_catch_bound_fix; // BUG-0619
             g.buf.push(ps, now);
         }
         if (c && !game::object_alive(c)) {
@@ -2062,7 +2061,6 @@ static void mirror_drive(GMember& g, double now)
         o.max_dt = 0.4; // a slow guest keeps up with its members (driver.h)
         o.ground = g_mirror_ground_fix; // BUG-0444
         o.catch_prop = true; // BUG-0425
-        o.even_start = true; // BUG-0619
         drive::walk_place(g.c, g.aim, rot, vel, g.ds, now, o);
         g_mirror_walks++;
         // BUG-0386 (diagnostics): a walked mirror held over 2 m off its aim for 1 s: what is around it, once per 10 s
