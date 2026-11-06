@@ -128,9 +128,9 @@ inline bool g_lead_smooth_fix = true;
 constexpr double kSmoothTau = 0.12; // s: e^-1 of a lead jump left after this
 constexpr float kSmoothRate = 3.f;  // m/s on top of kSmoothK x the body's speed
 constexpr float kSmoothK = 1.f;
-constexpr double kJitterAvg = 1.0;   // s
-constexpr double kJitterHigh = 0.04; // s: no lead over this arrival jitter
-constexpr double kJitterLow = 0.03;
+constexpr double kJitterAvg = 5.0;   // s (a latency spike of the player network, +250 ms for 0.7 s every 7 s, stays under)
+constexpr double kJitterHigh = 0.035; // s: no lead over this arrival jitter (mobile, 60 ms jitter: 40-60 ms)
+constexpr double kJitterLow = 0.025;
 constexpr double kSmoothVelTau = 0.1; // s
 
 class SnapshotBuffer {
@@ -186,7 +186,7 @@ public:
         clock_.add(local_now - st, local_now);
         offset_ = clock_.value();
         // BUG-0619: the arrival jitter, how late states arrive past the earliest one (the clock offset is the minimum
-        // of local - sender time), averaged over ~1 s
+        // of local - sender time), averaged over kJitterAvg
         {
             double dev = std::max(0.0, (local_now - st) - offset_);
             double k = jit_t_ > 0 ? std::min(1.0, std::max(0.0, local_now - jit_t_) / kJitterAvg) : 1.0;
