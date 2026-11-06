@@ -568,9 +568,13 @@ def direction(walker, observer, wname, oname, rng, secs, ck, stand=0, jumps=0.0,
           f'slid on after the stop (drawn way less the path\'s) p50 {pct(sl, 0.5):.2f} p90 {pct(sl, 0.9):.2f} max '
           f'{max(sl, default=0):.2f} m, over {STOP_MOVE} m in {sum(1 for x in sl if x > STOP_MOVE)}', flush=True)
     if STOP_WALK:  # BUG-0408
-        ck(len(st) >= 8 and sum(1 for x in sl if x > STOP_MOVE) <= STOP_MOVES * len(st),
-           f'{r["label"]}: the puppet stops where the walker stopped (slid on over {STOP_MOVE} m after '
-           f'{sum(1 for x in sl if x > STOP_MOVE)} of {len(st)} stops <= {STOP_MOVES:.0%})')
+        # (2026-11-06) the slide is judged on both games' own positions (coop.bodyrec, direction(): past where the
+        # walker's own creature stopped). This measure compares the drawn way with the TARGET's after the target stood:
+        # a puppet 0.16 s (0.6 m) behind that walks up to where the partner stopped counted as sliding (13 of 14 stops
+        # with creature.puppet_stop's 4 m/s approach, lab 20261106-081748, while bodyrec showed 0.09 m at most past the
+        # stop); it is printed, not judged
+        ck(len(st) >= 8, f'{r["label"]}: enough stops to judge ({len(st)} >= 8; slid on over {STOP_MOVE} m after the '
+           f'target stood: {sum(1 for x in sl if x > STOP_MOVE)}, not judged)')
     print(f'    walk gait (animation gait state > 0) in {r["gait"]:.0%} of the frames, in {r["near_gait"]:.0%} of the '
           f'{r["near"]} on the observer\'s screen; the walker\'s own avatar while it moves: '
           f'{r["own_gait"]:.0%}', flush=True)
