@@ -2981,3 +2981,26 @@ for every Wine game on one PC; tools/tests/body_trail.py, docs/06-testing.md#tes
   but whenever states come late (loss bursts, a loaded lab) the 0.15 s ran out: lag p90 0.22-0.49 s, p90 2.8-5.5 m
   (20261106-021152, 20261106-031151, BUG-0438). Under drive.lead the limit is kVehLead 0.3 s and the latency the
   measured one way: p90 1.8-1.9 m, lag p90 0.15-0.17 s (20261106-032341).
+
+## A culled creature on a mound: lifted after the physics update (2026-11-06, fix/w45-remote-bodies-2)
+<a id="creature-culled-ground-fix"></a>
+
+BUG-0434 (follows docs/re/creature.md#creature-out-of-view-ground).
+* ✔ (observed, out/lab/20261106-042950 puppet_fight_player, new coop.track columns) the puppet on the nest mound was
+  drawn at 0.0 m over GetHeightAt in every frame off the observer's screen (target 0.77-1.04 m) while creature+0xF90
+  (the view's drawn flag) was 1 and +0xEAC (LOD, Creature_GetLod 0xC0C450) 2 in every row: the physics manager's
+  simple path (PhysicsManager_Update 0xB4C370: simple = F90 == 0 || LOD == 0, then only 0xB4A820, which clamps to
+  the plain terrain) is NOT what grounds it in this case. ~ superseded hypothesis of the first RE pass.
+* Static (likely): PhysicsManager_Update switches on mgr+0x20 (0: only the Havok step 0xB57D10; 1: 0xB4A820 simple
+  for every body; else the per-body loop); 0xB4A820 switches on the owner's motion type +0x1F0 and compares the body's
+  bottom with GetHeightAt and the sea level (owner +0x77 = on the plain ground); nothing in it reads a view flag. The
+  +0xB58 bit 0x800 is a fade state machine of CreatureView_Update (0xE8CB55-0xE8CC50), tested only in an ability tick.
+  ? Which object's state follows the screen: inferred, the nest mound's collision is loaded only while it is drawn
+  (the mound and the puppet leave the screen together).
+* ✔ Fix `creature.culled_ground` (game.cpp after_physics, called from gamefixes' PhysicsManager_Update hook after the
+  game's update): a puppet whose target this frame (creature_drive, after puppet_ground / puppet_mound) stands
+  > 0.3 m over GetHeightAt and that the game put within 0.1 m of it is lifted back to its target's height over the
+  ground (2754 lifts in 60 s of camera turns). puppet_mound_view: the host on the mound, the guest turning its camera
+  (200 entries into the view): 0 frames drawn low on the screen (out/lab/20261106-045947, 2 runs), 200 with the switch
+  off (out/lab/20261106-050722). The lift after the physics update holds until the frame is drawn, which the writes
+  at the mod's frame (Present) never did: the grounding is in or before the physics update.

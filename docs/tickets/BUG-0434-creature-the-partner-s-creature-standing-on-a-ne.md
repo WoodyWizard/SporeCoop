@@ -1,19 +1,19 @@
 ---
 id: BUG-0434
 title: Creature: the partner's creature standing on a nest mound is drawn up to 1 m low for one frame when it comes into the observer's view
-status: open
+status: fixed
 kind: bug
 stage: Creature
 reported: 2026-11-01
 source: fix/w34-ability-pop (BUG-0414 analysis)
 role: guest
 versions: 0.7.3.3+
-fixed_in:
-branch: fix/w34-ability-pop
-commits:
-tests: tools/tests/coop_puppet_fight.py (listed as `entry`, not judged)
+fixed_in: unreleased
+branch: fix/w45-remote-bodies-2
+commits: 13376c7e, 37703e65
+tests: puppet_mound_view (tools/tests/coop_mound_view.py), puppet_fight_player
 signature:
-docs: docs/re/creature.md#creature-out-of-view-ground
+docs: docs/re/creature.md#creature-out-of-view-ground, docs/re/creature.md#creature-culled-ground-fix
 related: BUG-0414, BUG-0435
 ---
 
@@ -24,21 +24,15 @@ into the guest's view it is drawn on the plain terrain (1 m low) for one frame, 
 frames in 70 s of camera turns (`lod_exp` experiment, out/lane4/track/lod_exp_20261101-163454.json).
 
 ## Root cause
-Observed: the game puts a creature outside the view on the plain terrain (`GetHeightAt`) and lifts it onto the
-mound one update after it is in view again, so the first frame in view is drawn low
-(docs/re/creature.md#creature-out-of-view-ground). Not found: which update grounds a culled creature; writes at
-the mod's frame (teleport with or without the mark, +0x137 = 0, bit 0x800 of +0xB58) are undone by the next
-update. Not checked: whether the game's own NPCs on a mound do the same (inferred: yes, nothing of ours runs
-between the game's update and its drawing).
-2026-11-04, fix/w41-puppet-look: not looked at again (time box); BUG-0435's fix does not change the out-of-view grounding.
+Observed: the game puts a creature outside the view on the plain terrain (GetHeightAt) and lifts it onto the mound one update after it is in view again (docs/re/creature.md#creature-out-of-view-ground). New (2026-11-06): not the physics' simple path (+0xF90 = 1 and LOD +0xEAC = 2 in every off-screen low frame, out/lab/20261106-042950); static RE of PhysicsManager_Update / 0xB4A820 found no view flag; inferred: the mound's collision is only loaded while the nest is drawn. Observed: a lift right after the physics update holds until the frame is drawn (the grounding is in or before that update), where writes at the mod's frame did not.
 
 ## Fix
-Not fixed. Needs the function that grounds a culled creature (a hook after it, or keeping the puppet "in view").
+`creature.culled_ground` (game.cpp after_physics, called from gamefixes.cpp's PhysicsManager_Update hook after the game's update): a puppet whose target this frame stands > 0.3 m over GetHeightAt and that the game put within 0.1 m of it (within 2.5 m of the target) is lifted back to its target's height over the ground (`mound_lifts=` in `coop.track air`). Off: 0.7.8.
 
 ## Verification
-Reproduce: the host on the mound (`coop.npc gopos` to (-125.79, -489.25, -64.02) lifted 1.3 m: it lands 1.03 m over the
-terrain), the guest 7-40 m away turning its camera with right-drags; `coop.track` rows of the puppet with vis 1
-and hd 0.0 followed by hd 1.03. coop_puppet_fight.py lists these steps as `entry` (not judged).
+puppet_mound_view (the host on the fixture's nest mound, the guest 10 m away turning its camera; the guest's own drawn puppet height in every frame):
+- FAIL: out/lab/20261106-050722 (SPORE_FIX_OFF=creature.culled_ground: 200 frames on the screen drawn on the plain terrain, one per entry into the view).
+- PASS: out/lab/20261106-045947 (2 runs: 0 frames low on or off the screen, 200 entries, 2754 lifts).
 
 ## History
 - 2026-11-01: opened (fix/w34-ability-pop).
@@ -48,3 +42,4 @@ and hd 0.0 followed by hd 1.03. coop_puppet_fight.py lists these steps as `entry
   culled creature on the plain terrain outside the view (docs/re/creature.md#creature-out-of-view-ground), one frame low
   when it comes back into view; no placing or timing of ours runs between that update and the drawing, so the lead
   (drive.lead) cannot change it. Not touched, stays open.
+- 2026-11-06 (fix/w45-remote-bodies-2, M2): F90 / LOD probe disproved the simple-path theory; fixed by a lift after the physics update (creature.culled_ground); FAIL 20261106-050722, PASS 20261106-045947.

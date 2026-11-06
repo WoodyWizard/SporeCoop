@@ -650,28 +650,45 @@ std::string current_anims()
 static constexpr float kThrownSpeed = 9.f; // (a creature runs at up to 6-8 m/s; one faster is placed on its path too, no harm)
 static bool thrown_now(uint16_t id, void* c)
 {
+    // the speed over the last 0.1-0.2 s (an anchor moved on every 0.1 s): one frame's step is too noisy (a Tribe animal
+    // pushed by its herd made 9+ m/s for a frame: placed instead of walked, it jumped, npc_walk_tribe lab 20261106-052022)
     struct Last {
         net::Vec3 p;
         double t;
+        net::Vec3 p2;
+        double t2;
         bool fast;
+        double at;
     };
     static std::unordered_map<uint16_t, Last> last;
     double now = H->time_seconds();
     net::Vec3 p = game::position(c);
-    auto it = last.find(id);
-    bool fast = false;
-    if (it != last.end() && now - it->second.t <= 0.005)
-        fast = it->second.fast; // (the same frame: another guest's batch)
-    else {
-        if (it != last.end() && now - it->second.t < 0.5) {
-            float sp = net::dist(p, it->second.p) / (float)(now - it->second.t);
-            fast = sp > kThrownSpeed && sp < net::SnapshotBuffer::kThrownLead;
-        }
-        last[id] = {p, now, fast};
-    }
     if (last.size() > 4096)
         last.clear();
-    return fast || *(int32_t*)((uint8_t*)c + game::kLocoModeOff) == 3;
+    auto it = last.find(id);
+    if (it == last.end()) {
+        last[id] = {p, now, p, now, false, now};
+        return *(int32_t*)((uint8_t*)c + game::kLocoModeOff) == 3;
+    }
+    Last& l = it->second;
+    if (now - l.at > 0.005) { // (once a frame: another guest's batch asks again)
+        if (now - l.t > 0.5)
+            l = {p, now, p, now, false, now};
+        double dt = now - l.t;
+        l.fast = false;
+        if (dt >= 0.08) {
+            float sp = net::dist(p, l.p) / (float)dt;
+            l.fast = sp > kThrownSpeed && sp < net::SnapshotBuffer::kThrownLead;
+        }
+        if (now - l.t2 >= 0.1) { // the anchor: the position 0.1-0.2 s ago
+            l.p = l.p2;
+            l.t = l.t2;
+            l.p2 = p;
+            l.t2 = now;
+        }
+        l.at = now;
+    }
+    return l.fast || *(int32_t*)((uint8_t*)c + game::kLocoModeOff) == 3;
 }
 
 static net::NpcState host_state(uint16_t id, void* c)
@@ -1303,7 +1320,9 @@ static void host_tick(double now, const std::vector<void*>& creatures)
                 known.erase(id);
                 k = false;
             }
-            if (k && send_states)
+            // BUG-0409: a thrown NPC (13-27 m/s) is sent every frame, not every kStateInterval: the 0.1 s between two
+            // states was the guest's copy 2-3 m behind at the start of every throw
+            if (k && (send_states || (g_knock_fix && !game::is_dead(c) && thrown_now(id, c))))
                 batch.push_back(host_state(id, c));
         }
         // unreliable batches that fit in one packet
@@ -2884,6 +2903,23 @@ void monitor_tick(double now)
                         g - r, p.x, p.y, p.z, now - a.under_since, net::dist(p, t),
                         px.kinematic ? "placed on the host's path" : "driven", now < px.manual_until ? ", test walk" : "",
                         now - px.made_at, px.made_agl);
+        if (off && now - a.off_since >= 2.0 && g_audit_stuck.count(id) == 0 && g_audit_stuck.empty()) {
+            // BUG-0440 / BUG-0386 (diagnostics): the driving's own view (its error to the target it walks to, the place
+            // lost / held by the game, teleports) and the nearest other proxy (a herd mate holding it?)
+            float near_d = 1e9f;
+            uint16_t near_id = 0;
+            for (auto& [oid, ox] : g_proxies)
+                if (oid != id && ox.c && !ox.killed && game::object_alive(ox.c)) {
+                    float d = net::dist(game::position(ox.c), p);
+                    if (d < near_d) {
+                        near_d = d;
+                        near_id = oid;
+                    }
+                }
+            trace::line("npc", "proxy %u: walk err %.2f m, held %d, place lost %u, teleports %u, walked %d, nearest proxy %u at "
+                        "%.1f m (BUG-0440)", id, px.drv.last_err, (int)px.drv.held, (unsigned)px.drv.place_lost,
+                        (unsigned)px.drv.teleports, (int)px.drv.kinematic, near_id, near_d);
+        }
         if (off && now - a.off_since >= 2.0 && g_audit_stuck.insert(id).second && g_audit_stuck.size() == 1)
             trace::line("npc", "proxy %u (species %08X) %.1f m off the host's NPC for %.1f s at (%.1f %.1f %.1f), host's speed "
                         "%.1f m/s (%s%s); went off at %.1f m, the proxy moved %.1f m since; the host's NPC's largest step "

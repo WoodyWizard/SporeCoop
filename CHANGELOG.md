@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### Fixed
+- Creature: the partner standing on a nest mound no longer drops to the ground for a frame each time it comes into
+  your view when you turn the camera (BUG-0434).
 - Tribe: in the first minute after a player joins, a chief walking past (or stopping next to) another player's chief
   is no longer teleported to the other side of the village, on both screens (BUG-0610).
 - Tribe and Civilization: a late network packet no longer makes the guest's tribe members or vehicles jump back to an
