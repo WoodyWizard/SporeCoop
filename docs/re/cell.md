@@ -1737,4 +1737,6 @@ BUG-0480. GOG 2024, lane 7, `coop_cell_gone.py --case play` (cold starts), Ghidr
   unmapped while the mode reads Cell") follow from it.
 * ✔ No co-op session existed yet (it started 4 minutes later), no co-op or SporeKit hook is in the call chain
   (0xE81AFC < 0xE81CBF < 0x8856A0 < 0x75DB01 < 0xEF2250 ...), and the 0.7.9 changes of SporeKit (the int3 gate of
-  hooks made after boot) touch code bytes only, not resource data. Not reproduced: see BUG-0622 for the runs.
+  hooks made after boot) act only on a hook made after the first frame: none was made before the fault (the input
+  hooks come with the first injected key, the Cell model hooks of modes.cpp ensure_model_hook with the first mirror
+  or puppet cell, both in a session). Not reproduced in 10 cold loads: see BUG-0622.

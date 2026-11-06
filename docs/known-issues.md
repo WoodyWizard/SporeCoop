@@ -2052,3 +2052,7 @@ Player reports 2026-11-04 (0.7.5, Discord bug-reports; not analysed yet):
 * Ticket: BUG-0620
   ground difference when it happens) (fixed on fix/w45-village-ground, unreleased: one ground for everybody,
   tribe.host_reload of BUG-0332)
+- BUG-0622: Cell: once (lab 20261106-110218, a heavily loaded PC, the first load of a fresh game 4 s after the galaxy
+  menu) the host's game faulted in its own Cell mode entry (the effect preload list at 0xE67610 ran past its block)
+  and looped on faults; no co-op code was involved and 10 cold loads did not repeat it
+  (docs/re/cell.md#cell-preload-fault). Reproduce: `tools/lab.py run cell_gone_play --cold --repeat N` under load.
