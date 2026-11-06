@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in: unreleased
 branch: fix/w45-last
-commits: ef1058d0, 20236abd, 3c7dd711, 1a891434, 4d2df7df
+commits: ef1058d0, 20236abd, 3c7dd711, 1a891434, 4d2df7df, 564496c8
 tests: host_bundle_carry (coop_world_host.py --case bundle_carry), play_tribe / play_civ with SPORE_DETECTOR=20, tools_selftest.py (worlddiff bundle groups)
 signature:
 docs: docs/re/tribe.md#tribe-carried-bundles, docs/06-testing.md#testing-w45-last
@@ -43,7 +43,8 @@ leftover tribe mat's, BUG-0539).
 
 ## Fix
 `wobj.bundle_carried` (worldobj.cpp, BUG-0617): a carried bundle binds within 8 m (Kind::tol_for), and a guest's carried
-bundle without a host partner is not kept (dropped like any own copy after 3 snapshots). `coop.fix wobj.bundle_carried
+bundle without a host partner is not kept (dropped like any own copy after 3 snapshots), and the copy looks for the
+carrier's copy within 8 m (was 4 m; it lags). `coop.fix wobj.bundle_carried
 off`: 0.7.9 L2. Detector: worlddiff groups bundles by holder (TOL_CARRIED 6 m for carried) and names the unpaired
 carriers' players; census rows of bundles carry own= / owner=.
 Earlier note: Not done. Next: tell carried bundles apart in the census (their container) and compare them at the moving tolerance;
@@ -54,6 +55,10 @@ host_bundle_carry: FAIL with `SPORE_FIX_OFF=wobj.bundle_carried` out/lab/2026110
 guest after the host's member put its food down; #2 passed: its copies bound), PASS with the fix out/lab/20261106-141728
 (2 of 2, 0 left). The first version of the test (members standing near the host) passed both ways (lab 20261106-140459,
 -140844): the carrier must walk.
+Detector over play_tribe (SPORE_DETECTOR=20, ~31 comparisons each): before (lab 20261106-132448) carried rows
+unmatched 7 + guest_only 5; with the fix (lab 20261106-150329) unmatched 3 + guest_only 2, single samples. Not verified:
+inferred that the rest are the snapshots' timing (an unbound copy lives up to 3 snapshots before it is dropped; a missing
+copy is made 3 s after the host's bundle first comes). Civ (play_civ lab 20261106-142030): no bundle rows.
 
 ## History
 - 2026-11-06: opened.
