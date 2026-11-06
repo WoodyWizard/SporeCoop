@@ -130,8 +130,8 @@ constexpr double kSmoothTau = 0.12; // s: e^-1 of a lead jump left after this
 constexpr float kSmoothRate = 3.f;  // m/s on top of kSmoothK x the body's speed
 constexpr float kSmoothK = 1.f;
 constexpr size_t kJitterN = 64;      // states (3-6 s)
-constexpr double kJitterHigh = 0.12; // s: no lead over this one-way latency (netem mobile 120 ms, player 45 ms)
-constexpr double kJitterLow = 0.10;
+constexpr double kJitterHigh = 0.10; // s: no lead over this one-way latency (measured: netem mobile 123-149 ms, player and local under 0.1)
+constexpr double kJitterLow = 0.085;
 constexpr double kSmoothVelTau = 0.1; // s
 
 class SnapshotBuffer {
