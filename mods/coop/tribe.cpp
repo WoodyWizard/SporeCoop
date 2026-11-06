@@ -1994,6 +1994,13 @@ static void mirror_target(GMember& g, double now, net::Vec3& pos, net::Quat& rot
         // standing state to a walking one the path moves slower than the walking state says, and the
         // game walks the mirror at this speed between two placings (it showed as stop-and-go)
         vel = s.vel;
+        // BUG-0619 (drive.lead_smooth): the smoothed target's own velocity (its offset closing a late state's step
+        // included): walked at the raw path's speed the mirror fell 0.5-1.4 m behind a closing target and surged
+        // after it at 7-8 m/s when the closing ended (tribe_walk_mobile 20261106-140306 #3: uneven 16 %)
+        if (g.buf.smooth_velocity(vel)) {
+            age = 0;
+            return;
+        }
         if (g.buf.sample(now - kPathDt, back)) {
             float k = (float)(1.0 / kPathDt);
             vel = {(s.pos.x - back.pos.x) * k, (s.pos.y - back.pos.y) * k, (s.pos.z - back.pos.z) * k};
