@@ -42,3 +42,4 @@ Source: docs/generalisation-plan.md G1.
 ## History
 - 2026-11-01: opened.
 - 2026-11-04 (fix/w43-guest-player, P1 of 0.7.7): covered in one place for the guest (player_rules.cpp + creature_hp.cpp + social.cpp): stun (BUG-0554), flight (BUG-0555), friendly pack (BUG-0556), nest ally flag (BUG-0561), Tribe ring (BUG-0570); the list of the player checks and their answers: docs/re/creature.md#creature-player-rules. Still open: scale, brain AI flags, the roar, the guest's own flock, Tribe / Civ / Space callers of PlayerSpecies.
+- 2026-11-06: Discord report 2026-11-06 (0.7.8): children BUG-0641 (spit / charge interrupts), BUG-0642 (the own creature misses the player-species nest rules); related BUG-0639, BUG-0640.
