@@ -2996,6 +2996,9 @@ P3 of docs/plan-0.7.9.md. GOG 2024, Ghidra (tools/ghidra/q.sh) and lab lane 6, c
 * ~ "The guest is taken": the pick (#creature-ufo-pick) skips the avatar and the avatar's species profile, so in a
   game of one the player's creature is never the ship's target; not changed. The screenshot of the guest did not show
   the ship (it was 20 m over the creatures, above the camera's view); its existence and pose are the game's object list.
+* ✔ (runtime, out/lab/20261106-005607, warm games) The pick of #creature-ufo-pick ran on candidates for the first time
+  in the lab: `coop.rules ufo` on the host seen=15 skipped=3 (creature.ufo_puppet answered "epic" for the guest's
+  puppet 3 times). The cold runs before never reached a candidate (seen=0).
 * ? Seen twice in this branch's runs, with and without the mirror: the guest's camera in the planet view from space
   right after the join (the log: "cinematic 8915F9BB still playing in a stage: ended it"); not this fix (not looked at).
 

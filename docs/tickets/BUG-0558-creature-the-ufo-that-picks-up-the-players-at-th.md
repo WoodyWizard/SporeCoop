@@ -55,7 +55,10 @@ through the deferred path when the host's ship is gone, no pose came for 1.5 s, 
 "The guest is taken": not done, and inferred not to be the game's rule: the ship's pick (0x0519E372) never takes the
 avatar nor a creature of the avatar's species profile, so in a game of one the player's creature is never abducted; the
 host's ship takes the host's animals and, with creature.ufo_puppet, not the guest's puppet (that guard is still not
-seen acting: the pick counted no candidate in the lab, `coop.rules ufo` seen=0).
+seen acting before: the pick counted no candidate in the lab). Observed in the regression run out/lab/20261106-005607
+(creature_ufo_mirror, warm games after other tests): the host's pick asked 15 times about candidates and answered
+"epic" for the guest's puppet 3 times (`coop.rules ufo`: seen=15 skipped=3), so the guard acts at runtime; whether the
+ship would have taken the puppet without it is not run (no FAIL run of creature.ufo_puppet).
 Earlier (P2):
 Partial, not verified: `player_rules.cpp` (`creature.ufo_puppet`): cCreatureAnimal_IsEpic answers "epic" for a
 partner's puppet when called from the pick node (return address 0xDC2B5F, `SporeCoop::UFOPick_IsEpicReturn`), so the
