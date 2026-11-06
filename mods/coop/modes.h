@@ -26,7 +26,7 @@ struct Adapter {
     void* (*local)();
     // fill position/orientation/velocity/health/flags from the local entity
     void (*fill)(void* local, net::PlayerState& st);
-    // create the visible copy of a remote player; `local` helps to pick a model/herd
+    // create the visible copy of a remote player; null for a position label with no game object
     void* (*spawn)(const net::PlayerState& s, void* local);
     // move the puppet towards the remote state
     void (*drive)(void* puppet, const net::PlayerState& s, drive::State& ds, double now);
@@ -43,6 +43,8 @@ struct Adapter {
 net::Vec3 entity_pos(const Adapter* a, void* e);
 
 const Adapter* for_mode(uint32_t mode);
+bool adventure_progress(int& act, int& state, int& completed);
+uint8_t* adventure_play();
 // the species a remote player's creature puppet is built from (its own creation), nullptr = local
 extern void* (*g_species_for_player)(uint8_t player);
 // the model a remote player's cell (kind 1) / spaceship (kind 2) puppet uses; false = the local one
@@ -59,6 +61,8 @@ void test_pin_marker(bool pin, const net::Vec3& p);
 // Tribe / Civ: the pointer marker `e` of adapter `a` (own or a partner's) moved in the last `within` s
 // (false for every other adapter); the sync-check leaves a moving pointer out (BUG-0380)
 bool rts_marker_moving(const Adapter* a, void* e, double within);
+bool planet_at_pixel(int x, int y, net::Vec3& out);
+bool camera_ray_at_pixel(int x, int y, net::Vec3& origin, net::Vec3& direction);
 // Tribe / Civ: seconds since the pointer marker `e` of adapter `a` last moved (-1: not a pointer); the trace's
 // `ptr_still=` (BUG-0416: the monitor judges a partner's copy only of a pointer that stood still)
 double rts_marker_still(const Adapter* a, void* e);
@@ -117,7 +121,12 @@ void space_retired_clear(const char* why); // session end, unload
 // tests: impostor_id (the recorded serial changes), impostor_mission on|off, else the counters
 std::string space_ident_test(void* u, const std::string& what, bool on);
 void cell_forget();               // the Cell stage was left: forget the puppets' pool indices
-uint32_t cell_create(const net::Vec3& pos, void* res_ref, int level, const uint32_t key[3], const net::Quat* rot);
+struct CellSpawnSize {
+    float elevation = 0, factor = 1, size = 0;
+    int apply = 1;
+};
+uint32_t cell_create(const net::Vec3& pos, void* res_ref, int level, const uint32_t key[3], const net::Quat* rot,
+                     CellSpawnSize scale = {});
 void cell_destroy(uint32_t idx);
 // BUG-0308: the Cell stage is being left (quit posted for a world load or the menu) and coop.fix
 // cell.leave_guard is on: no mirror creation and no pool write of ours until the mode changes

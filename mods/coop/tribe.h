@@ -16,6 +16,7 @@
 #include "sporekit.h"
 
 namespace tribe {
+float reported_enemy_max(void* citizen);
 
 struct Ctx {
     net::Session* sess = nullptr;
@@ -46,6 +47,17 @@ std::string debug(const std::vector<std::string>& args);
 // owner of a player tribe member (player id), 0xFF if unknown
 uint8_t owner_of(void* citizen);
 bool active(); // tribe sync running (tribe stage, connected)
+bool village_orders(); // the host owns both native food stores in two-village mode
+void begin_outfit_vote(); // host: bind the native outfit vote to this founder and world
+void cancel_outfit_vote();
+void finish_own_outfit(bool saved); // guest: called after own editor adoption/cancel
+bool outfits_pending(); // defer campaign saves until a voted guest result is applied
+bool rescue_pending();
+float revive_seconds(void* citizen); // zero unless this last villager is waiting for its partner
+std::string village_food_line(); // cached for the HUD, no game pointers needed
+std::string village_birth_line(); // native configured food cost
+std::string village_tool_line(int kind); // native price and host campaign unlocks
+std::string performance_line(); // recent host performance state for guest controls/HUD
 bool center(net::Vec3& pos); // position of the player tribe
 // members of the player tribe with their owner (for name tags)
 // the epic creature was hit by a creature (host; from the creature damage filter)

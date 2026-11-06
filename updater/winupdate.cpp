@@ -189,6 +189,10 @@ bool http_location(const std::string& url, std::string& location, std::string& e
 
 bool latest_release(const std::string& api_url, Release& out, std::string& err)
 {
+    if (api_url.empty()) {
+        err = "This Duo build uses a local pack. Extract the full Duo release and reopen its setup.";
+        return false;
+    }
     std::vector<uint8_t> body;
     std::string api_err;
     if (http_get(api_url, body, api_err, {}, 4u << 20)) {
@@ -444,7 +448,9 @@ bool own_legacy_backup(const std::wstring& dir_rel, const std::wstring& name, bo
     if (dir_rel == L"\\SporebinEP1\\mods")
         return n == L"coop.dll.old" || n == L"sporecoop.version.old";
     if (dir_rel == L"\\SporebinEP1\\mods\\sporekit\\symbols")
-        return ends(L".sym.old");
+        for (const auto* symbol : kSymbolFiles)
+            if (n == std::wstring(symbol) + L".old")
+                return true;
     if (dir_rel == L"\\Data")
         return n == L"sporecoop.package.old";
     return false;
@@ -506,18 +512,28 @@ std::string installed_version(const std::wstring& root)
     return v;
 }
 
-bool is_loader(const std::wstring& dll)
+bool inspect_loader(const std::wstring& dll, bool& loader)
 {
+    loader = false;
     HANDLE f = CreateFileW(dll.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, 0,
                            nullptr);
     if (f == INVALID_HANDLE_VALUE)
         return false;
     std::vector<char> b(256 << 10);
     DWORD got = 0;
-    ReadFile(f, b.data(), (DWORD)b.size(), &got, nullptr);
+    bool ok = ReadFile(f, b.data(), (DWORD)b.size(), &got, nullptr) && got != 0;
     CloseHandle(f);
+    if (!ok)
+        return false;
     static const char tag[] = "sporekit-loader";
-    return std::search(b.begin(), b.begin() + got, tag, tag + sizeof tag - 1) != b.begin() + got;
+    loader = std::search(b.begin(), b.begin() + got, tag, tag + sizeof tag - 1) != b.begin() + got;
+    return true;
+}
+
+bool is_loader(const std::wstring& dll)
+{
+    bool loader;
+    return inspect_loader(dll, loader) && loader;
 }
 
 } // namespace upd

@@ -1558,3 +1558,200 @@ BUG-0443 (the host's screenshot of the "eggs flying mid air" report). GOG 2024, 
   (state 5 / 6) within 60 m of its avatar; one that did not move for two checks and lies more than 0.3 m
   over the surface is put onto it with cEgg_SnapToGround (what the game does to the avatar's eggs and to
   every egg at its hatch).
+
+## Timed duo rescue and shared DNA (2026-11-03, duo-species)
+<a id="creature-duo-respawn"></a>
+
+In the two-player Steam test on Brois, `coop.team hit 1000` entered the same damage
+filter as a game hit. A local victim stayed at 1 HP and advertised the downed flag.
+A healthy partner within 6 units for 1.5 seconds restored at least 40% of maximum
+HP. Pack regeneration can add health on its next tick. Each victim's timer belongs
+to the host. When it expires, the host removes 10% (rounded up, capped at the
+current balance) through the native DNA routine and broadcasts the normal total.
+The victim enters Spore's native death and nest hatch sequence. The native species
+keys stayed 29142C2C and 5D00C0C1 on respawn. A guest timeout cost 12 of 115 DNA
+on both processes. A host timeout then cost 11 of 103. Each successful revive
+preserved the prior balance. See `tools/tests/duo_creature_rescue.py`.
+
+## Cached herd lifetime in diagnostics (2026-11-03, duo-species)
+<a id="creature-cached-herd-diagnostic"></a>
+
+BUG-9008 occurred during the Tribal recovery test. After native host population
+loss, a guest sync result requested the wildlife description through npc::list.
+Its cached nest herd had a null vtable. Calling game::noun_id on it crashed at
+coop.i5.1.dll+CE6DA with read address 20. The frame chain includes the support
+describe callback and sync_on_message. Evidence is in the isolated lab's
+crash-20261103-194255-i5.txt and matching minidump.
+
+The allocation's destroyed byte can remain readable after the object is freed.
+The fixed diagnostic builds a set from the current native herd noun list and
+reads cached entries only through membership in that set. Proxy creation now
+resolves the preferred cached herd through the existing native object search,
+checking its species and nest before reuse. This preserves the cached choice
+when it is still valid. A missing match removes the stale cache entry.
+
+## Duo recovery after a guest leaves (2026-11-03, duo-species)
+<a id="creature-duo-recovery-departure"></a>
+
+BUG-9010 was reproduced on a native Vantiegan pair copied from the saved
+two-species landfall. The host was knocked down at 65 shared DNA. Leaving from
+the guest cancelled the host's timer within one second. Both the player-leave
+callback and the frame loop's exactly-two-player condition cleared the whole
+rescue module.
+
+The fix preserves an existing recovery while the host remains in that world.
+A departing guest's pending episode is detached from its reusable network seat.
+The original deadline and name remain until one host-side expiry debit. No
+result is sent to a new occupant of the departed seat. The leave callback only
+updates mod records. Native damage, DNA and notices still run from the frame.
+World and session teardown continue to clear the records. This is not durable
+recovery across a host crash or a host ending its session.
+
+The initial native checks retained the host timer and charged 65 to 58 once,
+then retained a departing guest's debt and charged 58 to 52 once. Saving through
+the mod remained blocked while those debits were pending. The switch
+creature.recovery_leave restores the prior reset behavior for regression tests.
+
+The stronger respawn test also observes the death caption, native age 0 then
+age 1, the same species and movement through normal W input. A health value or
+mbDead alone is insufficient at the nest, as documented above. Caption text can
+appear before its confirmation button is enabled. The native 0445C99D button
+must be located after it becomes ready. The fresh landfall fixture can also
+show migration and Minimap help after death. The Minimap green button sits in
+native container 05943B78 with an enabled child. Tests acknowledge these known
+screens through their current rectangles, then wait for normal gameplay.
+
+## Guest migration after a host respawn (2026-11-03, duo-species)
+<a id="creature-duo-guest-migration"></a>
+
+BUG-9011. Fresh copies of the distinct-species Vantiegan landfall reproduce an
+order-dependent stall. If the host completes its death, migration caption,
+Minimap tutorial and hatch first, the guest's later death enters age 0 and
+CRG_SpeciesMigrate (FBB3661D), with input locked and no visible caption. It
+remains there beyond the full recovery test's 65-second hatch limit. Native
+migration property 0514A219 is 2 on the host and 1 on the guest. Both new-nest
+positions agree. No native faults were reported. Evidence:
+build/local/m1-host-first-host.log (PASS), m1-host-first-guest.log (FAIL), and
+m1-host-first-stalled-state.log.
+
+The opposite order passes: guest first, then host, on separate fresh copies
+(m1-migration-guest-first.log and m1-full-rescue-host-after-guest.log). Reloading
+the host's completed migration world also allows the guest's next recovery to
+finish (m1-guest-after-migration-rejoin.log). These are controls, not proof of
+the precise native actor dependency that stalls the scene.
+
+Temporarily disabling NPC synchronization for 25 seconds did not end the
+stalled scene (m1-migration-npc-control.log). Calling the already verified
+SporeCoop::cCinematicManager_EndCinematic on that exact scene did release it:
+the native hatch completed, migration became 2, and the guest walked with
+species 291447DD and unchanged shared DNA 52 (m1-migration-end-control.log).
+That probe followed the NPC control, so it alone does not prove the production
+recovery without the NPC toggle. No forced growth or migration-property writes
+were used. The precise underlying native scene dependency remains unknown.
+
+The rejected experimental recovery was limited to a connected guest's expired rescue in the
+same native world and avatar. It watches that death through its native hatch,
+with no deadline on reading the death caption. Only FBB3661D at age 0, unpaused
+for 30 seconds and without a visible native caption, can be ended. The UI scan
+and native completion run outside the frame and recheck all conditions. Adult
+growth, scene completion or world/session teardown ends the watch. Host scenes,
+other cinematic IDs, editor hatches and visible captions are excluded. The
+experimental switch creature.respawn_migration restored the prior behavior.
+The experiment was removed from production source after the checks below.
+
+CORRECTION (2026-11-03, duo-species): native scene completion alone is
+insufficient. The first production run without the earlier NPC-toggle probe
+ended FBB3661D after 30 seconds and released input,
+but the guest remained age 0 with hatchling_waiting=0. BUG-0014's existing
+helper requires the waiting behavior tree, so it did not grow this avatar.
+The earlier manual completion success therefore depended on additional native
+state reached during the NPC control. Evidence: m1-guard-long-guest.log (FAIL
+at native growth), m1-guard-after-scene-state.log; no native faults in this run.
+
+The native migration property remained 1 in that failing run, not 2. Calling
+GrowTo(1) alone did not complete growth within 65 seconds. A single diagnostic
+Update(33) advanced the growth state from 1 to 2, but automatic growth still
+did not finish. Restarting CreatureGame_AfterEditor also exceeded 65 seconds;
+the dirty diagnostic pair eventually reached age 1 later. That late completion
+cannot establish a fix or a permanent stall on the original clean fixture.
+The next control observes a fresh native sequence for 180 seconds with no
+cinematic completion, forced growth, manual Update or NPC toggle.
+
+The behavior-manager Get return and its Read interface differ by 4 bytes:
+the live Read vtable 145CB68 is at Get()+4, so Read's documented vector
++20/+24 is Get()+24/+28. Both diagnostic avatars remained registered there
+through their +58 behavior interfaces. This membership alone does not prove
+that cCreatureAnimal::Update is being called.
+
+## Creature proxy validation before movement (2026-11-03, duo-species)
+<a id="creature-proxy-before-drive"></a>
+
+BUG-9012: holding the guest's native death caption for 125 seconds, then
+confirming it after the host migrated, crashed in the proxy driver. The
+matching DLL resolves D1A80 to the teleport vcall at spatial offset 44,
+DCE95 to drive::step and EC56B to npc::guest_tick. The spatial vtable was null.
+The native scene was F0428C29, before the experimental migration recovery.
+Evidence: m1-death-caption-crash.txt and m1-death-caption-guest-native.log.
+
+BUG-0300's noun-list validation previously ran once per second. The new
+npc.proxy_listed_frame guard runs one shared scan before each Creature proxy
+movement pass, including stale removals. It does not read a cached object
+until the live noun list confirms it. An empty live list also retires cached
+proxies. Tribe behavior is unchanged. The old one-second schedule is retained
+behind the new switch for regression checks.
+
+In the matching long-caption run, the guard retired and rebuilt proxies 9 and
+35 together when the death screen closed, with zero native faults. The run
+still failed the independent BUG-9011 growth check. This is evidence for the
+proxy lifetime guard, not for complete Creature recovery. A subsequent fresh
+run removes the rejected cinematic experiment entirely.
+
+## Final Creature recovery and persistence control (2026-11-03, duo-species)
+<a id="creature-duo-final-recovery-control"></a>
+
+CORRECTION to the pending controls above: the fresh pair with only BUG-9012's
+proxy guard passed host-first recovery and the guest's 125-second death screen
+(m1-long-baseline-host.log and m1-long-baseline-guest.log). Native migration
+finished, both species reached age 1 and normal W movement worked, without
+forced cinematic completion, manual Update/GrowTo or an NPC toggle. Although
+that run allowed 180 seconds, it finished inside the original 65-second hatch
+limit. A second fresh pair using the original DuoCellHost campaign identity
+also passed both recoveries at the default limit (m1-confirm-host.log and
+m1-confirm-guest.log). Both pairs exited cleanly with zero native faults.
+
+The guest native log retires unlisted proxies when the death screen closes.
+This supports BUG-9012's lifetime guard. It does not prove the earlier
+BUG-9011 cinematic symptom had the same cause; retain that regression.
+The cinematic workaround was removed from production code.
+
+The successful long-caption pair saved natively at shared DNA 52, passed a
+guest rejoin and passed a full process restart. Both walking native species
+remained 291447DA and 291447DD. Logs: m1-checkpoint-before-save.log,
+m1-checkpoint-rejoin.log and m1-checkpoint-cold.log, under build/local.
+The cold restart used DuoCellHost, the name in the original fixture's guest
+sporecoop.txt. Its FNV-1 campaign hash is 50D20839, matching choices.ini's
+landfall entry 50D20839-CFF4E336=291447DD. Earlier DuoLineHost runs used another
+campaign identity and cannot alone prove lookup of that original entry.
+
+## Earned DNA and hostile combat (2026-11-06, duo-species)
+<a id="creature-reserved-combat"></a>
+
+The native kill award returns to C07BF1. On QuartetHunt a seven-point kill
+was divided across four reserved seats. The social award returns to D9BD1B,
+and completed ally and extinction goals return to C2EFCE and C2F0D7. These
+three call sites still need individual gameplay qualification. A six-HP enemy
+had 10.5 HP on both peers, and a two-point attack dealt 2.6 (BUG-9072).
+
+## Reserved founder hunger drain (2026-11-06, duo-species)
+<a id="creature-reserved-hunger"></a>
+
+On Steam 3010a413, the creature vtable at 146A080 + 88 points to C02E10.
+It calls C0D5A0. That routine checks the native meal timer, multiplies the
+rate at +BB8 by the simulation delta, adds the result to +BBC and calls the
+clamping setter C0BB30 at C0D66C. Multiplying the whole tick would also change
+starvation damage at C0D692. The mod scales only the negative meter change in
+the local avatar's setter. The original handles clamping and all meal refills.
+
+With four seats, host and guest both measured 1.07491 times their requested
+native drop. An enemy's native 7.5 HP became 10.875 on both screens; the
+guest lost 2.3 HP to a two-point attack. See hunger-seats-a-reload.log.

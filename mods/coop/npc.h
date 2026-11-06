@@ -14,6 +14,7 @@
 #include "sporekit.h"
 
 namespace npc {
+float reported_enemy_max(void* creature); // zero unless this is a replicated scaled enemy
 
 struct Ctx {
     net::Session* sess = nullptr;

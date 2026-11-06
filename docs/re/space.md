@@ -2038,3 +2038,197 @@ BUG-0469, GOG 2024, lanes 4/5 (`tools/tests/coop_content_space.py`).
   (a base game UFO model with a part of `Spore_Pack_03`): with `SPORE_FIX_OFF=content.all_kinds` the guest
   faults (`out/lab/20261102-202807`), with the fix on it builds a substitute copy and shows the mirror
   (`substituted=1`, `content_checked=2`, `out/lab/20261102-202217`).
+
+## Two captains in Adventure Town (2026-11-03, duo-species)
+<a id="space-duo-adventure"></a>
+
+Two Steam 2024 games hosted and joined at the galaxy menu, opened the tutorial independently
+and chose different captains. Both reported scenario place 6666E0D1. On Duo 5 the host
+registered a Creature-stage animal for the guest. Its main thread then faulted at game
+RVA 80714E during cScenarioPlayMode::SetCurrentAct from Initialize (BUG-9003).
+Duo 6 draws the partner's name at their network position without adding an animal to
+the scenario cast. Both clients reached the playable tutorial and displayed the marker.
+
+The play controller at cScenarioMode+78 has the current act at +B8, play state at +90
+and the completed-goal count at +28. The active goal vector starts at +64 and its
+entries are 1AC bytes. Adventure Town began with one move-to goal (type 1, class 1210,
+required count 1). The next act has a talk goal (type 2, class 1147).
+These offsets agree with the [Spore ModAPI play controller](https://github.com/Spore-Community/Spore-ModAPI/blob/master/Spore%20ModAPI/Spore/Simulator/cScenarioPlayMode.h).
+
+Moving only the host to the gate initially changed its act/summary from 0/0 to 1/1
+while the guest remained at 0/0. Writing the goal's count alone did not advance the
+guest. The native caller in CheckGoalProgress passes the goal, target spatial and
+a second spatial to the thiscall at F1ACF0 (ret 0xC). The callee substitutes the
+captain if the first spatial is null, increments the count, and invokes the normal
+completion path. In the guest lab, calling it with the actual goal and two nulls
+advanced both the act and the summary without moving the captain.
+
+The network check uses a visit number for each player's eligible goal. Both must be
+playing the same mission and goal before either earns it. A credit for a past visit
+cannot complete a new goal. The source must advance one act with exactly one new
+goal in its native summary. This deliberately leaves final rewards to Spore.
+In fresh paired runs either captain could reach the first gate while the stationary
+captain received the same single credit. Both games reported zero first-chance faults.
+`tools/tests/duo_adventure.py --host 4 --guest 5 --gate host` and the guest-first
+variant check this with a position shortcut for the arriving captain.
+
+The campaign save-and-quit message 04715068 crashed each standalone scenario at
+cStarManager::GetPlanetRecord+2D from the home-planet save path (BUG-9004).
+The guarded `coop.menu` and `coop.save` refused that path on both games. The
+native Options > Exit to Main Menu > Quit sequence returned both to GalaxyGameEntry
+with zero first-chance faults.
+
+In an ordinary Space-stage session on Tanats the host orbited while the guest
+stayed on the surface. Both reported “no partner here”. The guest took off and
+both ships reported the same system. At about 59 units apart a lethal hit
+knocked the guest ship from 1500 HP to 1 with 20 seconds on its timer. The host's
+proximity repaired it to 751 HP with down=0 and no recorded game fault. This
+was a direct Space start. No Civ-to-Space merger or diplomacy portrait was tested.
+
+### Shared Civilization launch (Steam duo development branch)
+
+civ-warm-editor.log and civ-first-orbit.log qualify the native transition
+from ten team cities split five apiece. Both players voted, the host created
+the spacecraft and named its captain, then called Mission Control and left
+the home planet. Native context changed to 1 and the guest received the
+orbital save. Each peer read GetPlayerEmpireID = 800021CA, both founder
+records and a controllable 2250 HP ship. civ-space-orbit-save.log confirms
+the native save settled; both process exits were clean.
+
+The existing Space share path waits for a save off the planet (BUG-0357).
+The connected guest remained in Civilization throughout the host's first
+planet-side introduction. In the early-load run the startup layout 06776FE1
+overlapped Mission Control and blocked clicks. The clean run waited 600
+native startup frames and checked that layout was absent before testing.
+
+orbit-rejoin-play.log qualified a cold native Space load, a 317 Sporebuck
+guest credit and a 73 Sporebuck host debit while the guest was absent.
+Both peers had 100244 after rejoin, with the original empire and founders.
+The currency operations used the game's AddMoney method. No shop purchase,
+speaker portrait or species-specific adventure captain was inferred.
+
+### Personal first launch qualification
+
+After readying the host's launch vote, the guest can open Civilization
+History locally. Both then get a blank native spacecraft editor. Each can
+save and enter Space before either player reaches orbit. In the isolated
+duo test each named a captain and received the Mission Control tutorial.
+The selected empire models failed the independent-hull check. Compare the
+12-byte keys at cEmpire+0xB8 and the ship BEM part list from the game's own
+resource manager. At Mission Control the guest also had an empty captain
+resource at cEmpire+0xC4. See BUG-9071 for the reproduction and readbacks.
+
+The host's original-key world package could shadow an independently edited
+guest UFO in EditorSaves. Both processes can generate identical instance
+IDs for different designs. The collision-free multiplayer packages contained
+different BEM records before the fix. Protecting the guest's locally authored
+first ship restored distinct hulls in own-ships-c-play.log. An orbital share
+can be received on disk while the other founder is still in training. Hold
+the automatic load until that guest enters orbital context 1 or 2. The
+two contexts and actual hulls passed together in own-ships-d-exit.log.
+
+On Steam 3010a413, captain naming confirmation E1DC60 reads the current
+cSpeciesManager creation through 4DF470 at E1DCC9. The accessor returns
+this+A4 and plain ret. Only that caller copies the 12-byte source key on
+the stack for 6462E0, then submits the resulting resource to the player
+empire through C31100 at E1DD8C. The latter copies instance/type/group
+to +C4/+C8/+CC. A guest whose founder is known under a remapped key uses
+its owned EditorSaves source for the native clone. Other lookup callers
+retain the game's choice.
+
+E1DD8C assigns the generated first captain; FE2C7B assigns the editor's
+saved captain. The relevant cEmpire setters on Steam are C31100 for the
+captain (thiscall, one key pointer, ret4) and C358A0 for its spacecraft
+(thiscall, one key pointer, ret4). The ship setter iterates same-empire
+ships. Rebuild the partner puppets with their own network models after
+restoring a different ship key. Flush the writable EditorSaves DB before
+checking a newly created captain's BEM record. The guest's actual native
+outfitter is A56567F7. See BUG-9071 for the native error masks, real hat
+save and cold/rejoin model hash checks.
+
+## Missed Civilization launch vote (2026-11-06, duo-species)
+<a id="space-missed-launch"></a>
+
+With the host already in orbit and the guest in a saved Space-ready Civilization,
+late-space-b-joined.log verifies that holding the incoming orbital world permits
+a normal History launch, ship design, captain naming and native tutorial choice.
+The test checks the original founder's body parts, shared empire and both fault
+counters. This run starts with the guest's qualified Civilization save loaded.
+
+The host can preserve the native victory under its profile's
+Games-sporecoop-launch folder. A capture requires the game's SpaceReady
+predicate, a confirmed native save, a newer planet file and a quiet interval.
+The menu test reused the retained Vantiegan image (CRC 0F7F3341) beside an
+already orbital copy of that same campaign. menu-space-a-joined.log and
+menu-space-a-exit.log show the guest's native ship editor, founder-matched
+captain and tutorial offer, with zero faults on both peers. The host did
+not load the retained image. A host whose campaign predates this archive
+can still serve a guest who already has its Space-ready Civilization loaded.
+
+early-launch-b used an actual earlier Vantiegan with one city per nation.
+After loading the retained victory the two nations had five cities each.
+The guest created its native ship and captain, then reached Mission Control.
+The host offers recovery only to clients advertising CAP_PERSONAL_LAUNCH.
+The guest acknowledges the received slot, its checksum, native readiness
+and the campaign roster before the host sends the live orbital checkpoint.
+tutorial-link-a-rejoin.log verified that a network disconnect at the
+choice keeps the same open dialogue, captain digest and ship in context 0.
+
+## Restarting unfinished flight training (2026-11-06, duo-species)
+<a id="space-restart-flight-training"></a>
+
+The accepted ship result at CFD7AB matches context 0116D51D. It writes the
+ship key to the native player's +1168 using CF6F20, then requests the Space
+transition at CFD809. Replaying only those calls on a cold Civilization
+checkpoint displayed the Space loading screen, while the simulator stayed
+in Civilization (cold-lesson-b). The normal History request keeps the
+native editor and its result processing together. The editor accepts an
+existing named creation via its request model key at +10 and first-time
+flag at +20. See the [SDK EditorRequest fields](https://modapi-docs.sporecommunity.com/class_editors_1_1_editor_request.html).
+
+On first flight the game checks its empire captain at FE11FE. The getter
+C310F0 returns empire+C4; FE1203 checks its instance before FE1208 opens
+the native naming prompt. A restored founder can supply its saved captain
+at this specific check. game::avatar is limited to Creature and Adventures.
+Use the Space adapter when checking whether a player controls a spacecraft.
+
+cold-lesson-c confirmed the saved ship in History and reached Mission
+Control with the original captain. The guest flew through one real orb
+using the standard movement and altitude controls; the native counter
+changed to six. A clean process exit followed. cold-lesson-e-rejoin.log
+verified both creation identities from the original library and a fresh
+seven-city lesson on the subsequent launch. The next lesson has not yet
+been qualified.
+
+## Reserved seats at launch and in pirate raids (2026-11-06, duo-species)
+<a id="space-reserved-seats-pirates"></a>
+
+On Vantiegan the F9 seat control queued two to four in Civilization. The
+spacecraft editor kept two seats. Space entry raised the host's active
+capacity to four. In a separate Space test, rehosting the loaded world kept
+the request pending. A cold planet load consumed it once. Both games exited
+with zero faults (seat-grad-b-game.log and seat-orbit-b-game.log).
+
+On the Steam executable, the native fleet builder C5C4C0 returns to C5E5B5
+during the initial waiting-for-raid branch. It appends 32-byte records to the
+mission's +238 vector. The regular bomber count is +1F8, set by C5B530 on
+this build; +1FC holds the raider count. Adding a bomber also rolls escorts.
+Instead the host appends ordinary type-two raiders with native C5C3F0. The
+constructor supplies parent -1, which C5D3F6 accepts for independent ships.
+
+A two-seat planet generated six native enemies and one additional live ship.
+A four-seat rerun generated four native enemies and three additional live
+ships. The one native bomber remained one in both runs. See raid-seat-a-game.log
+and raid-seat-b-game.log. These checks cover initial pirate colony raids.
+
+## Pirate ship combat modifiers (2026-11-06, duo-species)
+<a id="space-reserved-pirate-combat"></a>
+
+A four-seat colony raid showed the same 362.5 maximum HP for a native 250-HP
+bomber on host and guest. A twenty-point native hit took 23 HP on the host.
+The same attacker hit the guest puppet on the host, and the guest lost 23
+through MSG_UFO_DAMAGE. The player's maximum stayed intact. After leaving
+the session the bomber had its original maximum. Both games exited with zero
+faults (raid-combat-d-game.log). Enemy empire membership uses the native
+enemy vector at cEmpire +5C. C34750 compares and AddRefs empire pointers.
+Empire war/peace changes still need a separate gameplay test.

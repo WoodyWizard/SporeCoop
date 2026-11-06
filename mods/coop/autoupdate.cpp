@@ -159,6 +159,7 @@ void init(const SkHost* host, SkMod* mod, const char* version)
     char b[512];
     H->config_str(M, "update", "url", upd::kLatestUrl, b, sizeof b);
     g_url = b;
+    g_enabled = g_enabled && !g_url.empty();
     upd::cleanup_old(game_root()); // the files an update replaced last time
     if (g_enabled && !g_busy.exchange(true))
         if (!start_thread(check_thread))

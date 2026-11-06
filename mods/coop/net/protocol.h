@@ -79,6 +79,18 @@ enum MsgType : uint8_t {
                           // u16 n, n x {u32 lo, u32 hi}. Older SporeCoop ignores it (an unknown type).
     MSG_CELL_KO = 44,     // any -> host -> all: u8 player, u8 state (0 up,1 out,2 revived,3 respawned),
                           // u8 tenths of a second left, u8 revive progress 0..255
+    MSG_CREATURE_RESCUE = 54, // u32 world, u32 knockout number, u8 event; only the host sends results
+    MSG_TRIBE_BUILDINGS = 55, // host -> guest: u32 world/sequence, u8 count, {id/noun/faction, pos, hp/maxhp}
+    MSG_TRIBE_EQUIPMENT = 56, // host -> guest: u32 world/sequence, u8 count, {u16 citizen, u8 tool/item}
+    MSG_TRIBE_TOOLS = 57, // host -> guest: complete per-village rack inventory, transforms and health
+    MSG_TRIBE_RELATIONSHIPS = 58, // host -> guest: world/sequence, ordered faction pair, flags, native event values
+    MSG_TRIBE_FOOD = 59, // host -> guest: NPC stores, bounded by world/faction/species/position
+    MSG_TRIBE_PERFORMANCE = 61, // host -> guest: world/sequence, up to64 {member, native token, phase/request/ready, progress, round/total}
+    MSG_TRIBE_OUTFIT = 62, // reliable: u8 begin/result/accepted, u32 world/token/previous/model; voted founders only
+    MSG_CELL_COMBAT = 66, // guest contact hit; host replies with any whole bonus for the same body
+    MSG_CAMPAIGN_RULES = 65, // reliable host snapshot scoped to campaign name hash and stage
+    MSG_TRIBE_COMBAT = 64, // reliable host snapshot: world, count, {member id, scaled native max HP}
+    MSG_SPACE_LAUNCH = 63, // reliable host offer and founder reply for a missed Civilization launch
     MSG_DIAG = 60,        // support diagnostics (net/diagmsg.h): u8 kind, payload; session clock, bug
                           // marks, sync self-check. Older SporeCoop ignores it (an unknown type).
 };
@@ -127,6 +139,7 @@ enum PlayerFlags : uint8_t {
     PF_JUMPING = 8,
     PF_DEAD = 16,
     PF_SWIMMING = 32,
+    PF_DOWNED = 64,
 };
 
 struct Vec3 {
@@ -147,6 +160,8 @@ enum Caps : uint32_t {
     // the versions of the game and the mod (support logs, 0.7.4): HELLO: str8 "coop X, SporeKit Y, <build>";
     // WELCOME: str8 of the host, u8 n, n x (u8 player id, str8 version) of the players the host knows
     CAP_VERSION = 4,
+    CAP_PERSONAL_LAUNCH = 16, // HELLO: this guest understands the optional Civilization launch offer
+    CAP_CAMPAIGN_PROFILE = 8, // str8: fork rules and required content
 };
 constexpr uint32_t kMyCaps = CAP_SPLIT | CAP_VERSION; // what this build supports (the token bit is per HELLO)
 
@@ -159,17 +174,22 @@ struct Hello {
     bool has_token = false;
     uint64_t token = 0;
     std::string version; // CAP_VERSION ("" read: an older peer)
+    std::string campaign_profile;
     void write(Writer& w) const
     {
         w.u16(proto); w.u32(build); w.str8(name);
         if (!ext)
             return;
         uint32_t c = (caps & ~(uint32_t)CAP_TOKEN) | (has_token ? CAP_TOKEN : 0);
+        if (!campaign_profile.empty())
+            c |= CAP_CAMPAIGN_PROFILE;
         w.u32(c);
         if (has_token)
             w.raw(&token, 8);
         if (c & CAP_VERSION)
             w.str8(version);
+        if (c & CAP_CAMPAIGN_PROFILE)
+            w.str8(campaign_profile);
     }
     bool read(Reader& r)
     {
@@ -187,6 +207,7 @@ struct Hello {
             has_token = true;
         }
         version.clear();
+        campaign_profile.clear();
         if ((caps & CAP_VERSION) && r.left() >= 1) {
             Reader v = r; // a bad payload leaves the HELLO readable
             std::string s = v.str8();
@@ -194,6 +215,10 @@ struct Hello {
                 version = s;
                 r = v;
             }
+        }
+        if (caps & CAP_CAMPAIGN_PROFILE) {
+            campaign_profile = r.str8();
+            return r.ok() && !campaign_profile.empty();
         }
         return true;
     }
@@ -212,6 +237,7 @@ struct Welcome {
     bool ext = true;         // write the extension (false: a 0.7.2-shaped WELCOME, tests)
     uint32_t caps = kMyCaps; // the host's (read: 0 = an older host)
     std::string host_version; // CAP_VERSION (read: "" = an older host); the players' in `players`
+    std::string campaign_profile;
     void write(Writer& w) const
     {
         w.u8(your_id);
@@ -220,7 +246,10 @@ struct Welcome {
         for (auto& p : players) { w.u8(p.id); w.str8(p.name); }
         if (!ext)
             return;
-        w.u32(caps & ~(uint32_t)CAP_TOKEN);
+        uint32_t c = caps & ~(uint32_t)CAP_TOKEN;
+        if (!campaign_profile.empty())
+            c |= CAP_CAMPAIGN_PROFILE;
+        w.u32(c);
         if (caps & CAP_VERSION) {
             w.str8(host_version);
             uint8_t n = 0;
@@ -233,6 +262,8 @@ struct Welcome {
                     w.str8(p.version);
                 }
         }
+        if (c & CAP_CAMPAIGN_PROFILE)
+            w.str8(campaign_profile);
     }
     bool read(Reader& r)
     {
@@ -251,6 +282,7 @@ struct Welcome {
         ext = r.left() >= 4;
         caps = ext ? r.u32() & ~(uint32_t)CAP_TOKEN : 0;
         host_version.clear();
+        campaign_profile.clear();
         if ((caps & CAP_VERSION) && r.left() >= 1) {
             Reader v = r; // a bad payload leaves the WELCOME readable
             std::string hv = v.str8();
@@ -272,6 +304,10 @@ struct Welcome {
                             p.version = s;
                 }
             }
+        }
+        if (caps & CAP_CAMPAIGN_PROFILE) {
+            campaign_profile = r.str8();
+            return r.ok() && !campaign_profile.empty();
         }
         return true;
     }
@@ -312,6 +348,10 @@ struct PlayerLeave {
     bool read(Reader& r) { id = r.u8(); reason = r.u8(); return r.ok(); }
 };
 
+struct AdventureGate {
+    uint32_t visit = 0, act = 0, target = 0, credit = 0;
+};
+
 struct PlayerState {
     uint8_t id = 0;
     uint32_t time_ms = 0; // sender clock
@@ -324,6 +364,7 @@ struct PlayerState {
     uint32_t species = 0; // instance id of species key (appearance hint)
     uint32_t mode = 0;    // game mode id (Creature 0x1654C01, Space 0x1654C05, ...)
     uint32_t world = 0;   // crc32 of the current save name (same world <=> same value)
+    AdventureGate gate;   // optional Duo extension for a single move-to objective
 
     void write(Writer& w) const
     {
@@ -335,6 +376,9 @@ struct PlayerState {
         w.f32(health); w.f32(max_health);
         w.u32(species);
         w.u32(mode); w.u32(world);
+        if (gate.visit || gate.credit) {
+            w.u32(gate.visit); w.u32(gate.act); w.u32(gate.target); w.u32(gate.credit);
+        }
     }
     bool read(Reader& r)
     {
@@ -346,6 +390,9 @@ struct PlayerState {
         health = r.f32(); max_health = r.f32();
         species = r.u32();
         mode = r.u32(); world = r.u32();
+        gate = {};
+        if (r.left() == 16)
+            gate = {r.u32(), r.u32(), r.u32(), r.u32()};
         return r.ok();
     }
 };
@@ -358,6 +405,7 @@ struct Chat {
 };
 
 enum NpcFlags : uint8_t {
+    NF_SCALED_HP = 8, // host campaign combat multiplier applies to this NPC
     NF_DEAD = 1,
     NF_FAMILY = 2, // member of the host avatar's herd
     NF_IMPRESSED = 4, // impressed by a player (cCreatureAnimal +0xB58 bit 0x80, set by a social success)

@@ -9,6 +9,14 @@
 
 namespace creations {
 
+// BUG-9042: tools/cell_paints.py over stock Spore_Content.package (44 Cell
+// models). Native landfall creatures may retain these base paint IDs.
+inline constexpr uint32_t kBaseCellPaints[] = {
+    0x04ED8115, 0x2F363540, 0x306B8DD8, 0x3B4A35B2, 0x5C36EE15, 0x6D854A7B,
+    0x70339DD1, 0x7039C4C3, 0x791C8201, 0x7D39D956, 0x8FB90228, 0xA3163E4A,
+    0xBE0CF563, 0xC231CA82, 0xCD215E47, 0xD4068CD8, 0xDCAD3E09, 0xE4C02CCE, 0xFCB09F85,
+};
+
 inline constexpr uint32_t kCreepyCuteParts[] = {
     0x056719FE, 0x05A9FD95, 0x05A9FD98, 0x05A9FD99, 0x05A9FD9A, 0x05A9FD9B, 0x05A9FD9C, 0x05A9FD9E,
     0x05A9FD9F, 0x06270A77, 0x0D153AE2, 0x17A60A7F, 0x1A8652B3, 0x1C143A80, 0x208111BB, 0x22B8BDBC,

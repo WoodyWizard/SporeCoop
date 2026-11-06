@@ -2,6 +2,8 @@
 
 #include <windows.h>
 
+#include "../updater/pending.h"
+
 #include <vector>
 
 namespace inst {
@@ -227,6 +229,10 @@ Result do_install(const std::wstring& root, const Options& opt, upd::ReleaseBox&
     std::string err;
     std::wstring lp = local_pack(opt);
     bool have_local = !lp.empty() && upd::read_pack_file(lp, pack, err);
+    if (opt.api.empty() && !have_local) {
+        msg = "Extract the full Duo release and keep its .pack next to SporeCoopSetup.exe.";
+        return Result::Failed;
+    }
     upd::ReleaseInfo ri = box.get(); // BUG-0077: a copy; the check thread may set the box meanwhile
     if (!have_local || (ri.ok && upd::compare_versions(ri.rel.version, pack.version) > 0)) {
         if (!ri.ok) {
@@ -265,33 +271,55 @@ Result do_install(const std::wstring& root, const Options& opt, upd::ReleaseBox&
 
 bool do_uninstall(const std::wstring& root, std::string& msg)
 {
+    if (!is_game(root)) {
+        msg = folder_problem(root);
+        return false;
+    }
+    struct UpdateLock {
+        HANDLE handle = nullptr;
+        ~UpdateLock() { sc_update_unlock(handle); }
+    } lock;
+    if (!sc_update_trylock(root.c_str(), &lock.handle) || !lock.handle) {
+        msg = "Another update is in progress or the game folder cannot be locked. Try again after closing Spore.";
+        return false;
+    }
     upd::apply_pending(root);
-    std::wstring bin = root + L"\\SporebinEP1";
-    std::wstring sa = bin + L"\\steam_api.dll", orig = bin + L"\\steam_api_orig.dll";
-    if (exists(orig) && upd::is_loader(sa)) {
-        std::wstring old = sa + SC_OLD_SUFFIX;
-        DeleteFileW(old.c_str());
-        bool moved = MoveFileExW(sa.c_str(), old.c_str(), MOVEFILE_REPLACE_EXISTING);
-        if (moved && upd::g_swap_delay_ms > 0) // tests (BUG-0139): a wide window between the two moves
-            Sleep((DWORD)upd::g_swap_delay_ms);
-        if (!moved || !MoveFileExW(orig.c_str(), sa.c_str(), MOVEFILE_REPLACE_EXISTING)) {
-            msg = "cannot restore steam_api.dll (run as administrator? is Spore closed?)";
+    const std::wstring bin = root + L"\\SporebinEP1";
+    if (exists(bin + L"\\mods\\sporecoop.pending")) {
+        msg = "An update still has locked files. Close Spore and retry uninstall.";
+        return false;
+    }
+    const std::wstring sa = bin + L"\\steam_api.dll", orig = bin + L"\\steam_api_orig.dll";
+    bool loader = false;
+    bool missing = !exists(sa);
+    if (!missing && !upd::inspect_loader(sa, loader)) {
+        msg = "Cannot read steam_api.dll. Close Spore and retry uninstall.";
+        return false;
+    }
+    if (loader || missing) {
+        bool backup_is_loader;
+        if (!upd::inspect_loader(orig, backup_is_loader) || backup_is_loader) {
+            msg = "Cannot verify the original steam_api.dll. Restore it from your game installation and retry uninstall.";
+            return false;
+        }
+        if (!MoveFileExW(orig.c_str(), sa.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+            msg = "Cannot restore steam_api.dll. Close Spore and retry (run as administrator if required).";
             return false;
         }
     }
-    for (const wchar_t* f : {L"\\sporekit.dll", L"\\mods\\coop.dll", L"\\mods\\sporecoop.version"})
-        if (exists(bin + f) && !DeleteFileW((bin + f).c_str()))
-            MoveFileExW((bin + f).c_str(), (bin + f + SC_OLD_SUFFIX).c_str(), MOVEFILE_REPLACE_EXISTING); // in use
-    WIN32_FIND_DATAW fd;
-    std::wstring sym = bin + L"\\mods\\sporekit\\symbols";
-    HANDLE h = FindFirstFileW((sym + L"\\*.sym").c_str(), &fd);
-    if (h != INVALID_HANDLE_VALUE) {
-        do
-            DeleteFileW((sym + L"\\" + fd.cFileName).c_str());
-        while (FindNextFileW(h, &fd));
-        FindClose(h);
-    }
-    DeleteFileW((root + L"\\Data\\SporeCoop.package").c_str());
+    auto remove_file = [&](const std::wstring& path) {
+        if (DeleteFileW(path.c_str())) return true;
+        DWORD error = GetLastError();
+        if (error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND) return true;
+        msg = "Cannot remove " + upd::narrow(path) + ". Close Spore and retry uninstall.";
+        return false;
+    };
+    for (auto* symbol : upd::kSymbolFiles)
+        if (!remove_file(bin + L"\\mods\\sporekit\\symbols\\" + symbol))
+            return false;
+    if (!remove_file(bin + L"\\sporekit.dll") || !remove_file(bin + L"\\mods\\coop.dll") ||
+        !remove_file(root + L"\\Data\\SporeCoop.package") || !remove_file(bin + L"\\mods\\sporecoop.version"))
+        return false;
     upd::cleanup_old(root);
     msg = "SporeCoop is removed (your settings and logs in SporebinEP1\\mods are kept).";
     return true;

@@ -1641,3 +1641,97 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Not fixed: a strip needs the civ / tribe / space object registry and a null-safe removal from
   `civ+0xB0` / `civ+0xD4` and the city's lists (BUG-0020's null rule), with a save + reload test per stage.
 * Ticket: BUG-0470
+
+## Duo Creature guest held in migration after death (2026-11-03, duo-species)
+<a id="issue-duo-guest-respawn-migration"></a>
+
+* A distinct-species guest on the saved Vantiegan landfall can enter native
+  CRG_SpeciesMigrate after its death screen. It remains a hatchling with input
+  locked and no caption to acknowledge. The full native recovery test fails.
+* Reproduce with tools/tests/duo_creature_rescue.py on the saved distinct-species
+  pair, using --victim guest after the host has completed its migration.
+* This blocks the first playable Duo milestone. The recovery accounting check
+  alone does not demonstrate a completed respawn.
+* Ticket: BUG-9011
+
+Update (2026-11-04): the migration stall did not recur in the subsequent fresh
+native recovery sequences, including a 125-second death caption. Duo 9 passed
+Cell-to-Creature acceptance locally. The original stall's root cause remains
+unproven; BUG-9011 is not-reproduced, and its regression is retained.
+
+## Duo Tribal rebuilding is a native prototype (2026-11-04, duo-species)
+<a id="issue-duo-tribal-rebuild-prototype"></a>
+
+Reusing a defeated tribe leaves a stale selectable citizen and later loses
+new citizens (BUG-9013, BUG-9014). Creating a fresh tribe while retaining the
+old tool-less tribe also crashed on cold load (BUG-9015). A fresh tribe with
+normal retirement of the old one passes the native population and cold-save
+controls. The capture trigger, partner rebuild action, campaign identity and
+control rebinding are not implemented. See
+docs/re/tribe.md#tribe-refounding-retirement. Packaged Duo 9 does not expose
+this experimental rebuilding path.
+
+CORRECTION (2026-11-04): duo10-dev now implements capture, F9 partner rebuilding,
+identity/control restoration and automatic checkpoint refresh, qualified by
+BUG-9017/9018. The packaged Duo 9 remains unchanged. Rebuilt-host totem/history
+preservation and complete stage progression are still unfinished.
+
+CORRECTION (2026-11-04): BUG-9030 now preserves rebuilt-host native totem/history,
+level and hut model. Cold restart and further conquest pass on both peers.
+Complete stage progression remains unfinished.
+
+## Intermittent Windows save-slot regression (2026-11-04, duo-species)
+<a id="issue-windows-second-slot"></a>
+
+BUG-9028: the full Windows test run failed its second save-slot write twice;
+the isolated rerun passes. Exact diagnostics were added. Root cause remains
+unproven; this is an open qualification issue, not a claimed fixed bug.
+
+BUG-9029: one Windows installer test run protected the active installation
+correctly but timed out closing afterward. Its file/version checks passed;
+the preceding run did not reproduce the close timeout.
+
+CORRECTION (2026-11-04): BUG-9029 was a completion race in the test. Waiting for
+the Close control to re-enable passes focused and full-suite installer checks.
+BUG-9028 remains open; the next full run failed test_slot_match instead.
+
+CORRECTION (2026-11-04): BUG-9028 now handles brief staged-folder rename locks
+with a bounded retry. A real Win32 lock fails before the fix and passes afterward;
+persistent-lock and occupied-destination checks preserve data. The focused save
+suite and full Windows suite pass (m2-win-staged-move-fixed.log). The process
+responsible for the original intermittent locks has not been identified.
+
+## Separate Civilization campaign integration (2026-11-05, duo-species)
+<a id="issue-civ-founder-campaign"></a>
+
+BUG-9056: native two-species capitals and mouse vehicle control are qualified.
+Shared capture credit, technology and unlock integration is under test.
+Native history event city counts, the progress bar, complete stage readiness
+and the one-empire Space handoff are not yet qualified. This work is confined
+to duo10-dev; it is not a finished multiplayer release.
+
+BUG-9057: native saved confirmation and captured-city specialty questions use
+the same window ID. The save watcher must distinguish their buttons and must
+not interpret a pending player choice as save completion. Regression work is
+in progress.
+
+## Tribe: walking villagers jump on both peers (2026-11-05, duo-species)
+<a id="issue-tribe-authoritative-relocations"></a>
+
+* What happens: two late Clyth walks failed the no-jump check. A villager
+  changed position on the host at zero speed, then the guest followed. One
+  run also showed additional guest movement after the host relocation.
+* Reproduce: run tools/tests/duo_tribe_walk_connected.py on the five-victory
+  Clyth pair with guest species 0680BF38 at 30 FPS.
+* Next: identify what moves the villager on the host and measure how the guest
+  recovers. Its tracking target and speed stayed stale during the correction.
+* Ticket: [BUG-9062](tickets/BUG-9062-tribal-walk-check-flags-host-relocations.md).
+
+## Tribe: repeat performance stalls (2026-11-05, duo-species)
+<a id="issue-tribe-fresh-repeat-performance"></a>
+
+In a fresh alliance-only Vantiegan campaign, the guest earns its first shared
+alliance and reaches friendly status with its next rival. Its repeat group
+order targets the correct NPC chief but does not start a performance within
+45 seconds. The cause is open; both games reported zero faults. See
+[BUG-9064](tickets/BUG-9064-fresh-tribal-repeat-performance-stalls.md).

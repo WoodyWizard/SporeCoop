@@ -11,6 +11,10 @@
 
 #include "fixes.h"
 #include "game.h"
+#include "modes.h"
+#include "npc.h"
+#include "tribe.h"
+#include "world.h"
 #include "sporekit_game.hpp"
 
 namespace creature_hp {
@@ -18,6 +22,28 @@ namespace creature_hp {
 static const SkHost* H;
 static SkMod* M;
 static Ctx C;
+
+// UpdateHunger also owns the native meal delay and starvation damage. Adjust
+// only its decreasing meter write. The native setter still clamps the result.
+using SetHunger = void(SK_THISCALL*)(void*,float);
+static SetHunger o_SetHunger;
+static uintptr_t a_HungerUpdateReturn;
+static struct { unsigned samples; float previous, requested, result; } g_hunger_probe;
+static void SK_THISCALL h_SetHunger(void* creature, float value)
+{
+    if ((uintptr_t)__builtin_return_address(0) == a_HungerUpdateReturn &&
+        (skg::field<uint32_t>(creature,0xB58) & 0x200) && C.in_session() &&
+        game::in_creature_stage() && creature == game::avatar()) {
+        const float previous = skg::field<float>(creature,0xBBC);
+        if (value < previous && previous > 0) {
+            const float factor = world::rules_for_current().hunger_factor();
+            o_SetHunger(creature,previous + (value - previous) * factor);
+            g_hunger_probe = {g_hunger_probe.samples + 1,previous,value,skg::field<float>(creature,0xBBC)};
+            return;
+        }
+    }
+    o_SetHunger(creature,value);
+}
 
 // ---------------------------------------------------------------- BUG-0373
 // The partner's puppet used to be pinned to its own full health every frame ("puppets mirror the
@@ -53,7 +79,7 @@ COOP_FIX("creature.own_brain_hp", "BUG-0375", g_own_brain_hp, "creature: an own 
 constexpr uint32_t kAvatarBit = 0x200, kPackBit = 0x100;
 
 typedef float(SK_THISCALL* MaxHp_t)(void*);
-static MaxHp_t o_BaseMaxHp, o_GetMaxHp;
+static MaxHp_t o_BaseMaxHp, o_GetMaxHp, o_CitizenMaxHp;
 static uintptr_t a_SpeciesMgrGet, a_PlayerSpecies, a_LevelHealth;
 
 struct PuppetHp {
@@ -94,6 +120,62 @@ static float SK_THISCALL h_BaseMaxHp(void* c)
     return o_BaseMaxHp(c);
 }
 
+struct EnemyHealth {
+    uint32_t serial;
+    float factor;
+};
+static std::unordered_map<void*,EnemyHealth> g_enemies;
+static unsigned g_save_depth;
+
+bool enemy_scaled(void* c)
+{
+    auto it = g_enemies.find(c);
+    return it != g_enemies.end() && it->second.serial == game::object_serial(c);
+}
+
+void set_enemy_health(void* c, unsigned percent)
+{
+    if (!o_GetMaxHp || !c || g_save_depth || (game::mode_id() == modes::kTribe && !o_CitizenMaxHp)) return;
+    auto it = g_enemies.find(c);
+    const auto serial = game::object_serial(c);
+    if (!serial) return;
+    float previous = it != g_enemies.end() && it->second.serial == serial ? it->second.factor : 1.f;
+    float factor = percent / 100.f;
+    if (factor == previous) return;
+    float hp = game::health(c);
+    if (!std::isfinite(hp)) return;
+    if (factor == 1.f) g_enemies.erase(c);
+    else g_enemies[c] = {serial,factor};
+    if (hp > 0) game::set_health(c,hp * (factor / previous));
+}
+
+static void convert_live_enemy_hp(bool to_native)
+{
+    if (g_enemies.empty()) return;
+    game::for_each_object([](void* c,uint32_t,void* context) {
+        if (!g_enemies.count(c) || !game::object_alive(c) || !enemy_scaled(c)) return true;
+        float hp = game::health(c);
+        if (hp > 0 && std::isfinite(hp)) {
+            const float factor = g_enemies.at(c).factor;
+            game::set_health(c,*static_cast<bool*>(context) ? hp / factor : hp * factor);
+        }
+        return true;
+    },&to_native);
+}
+void before_native_save()
+{
+    if (++g_save_depth == 1) convert_live_enemy_hp(true);
+}
+void after_native_save()
+{
+    if (g_save_depth && --g_save_depth == 0) convert_live_enemy_hp(false);
+}
+void clear_enemy_health()
+{
+    if (!g_save_depth) convert_live_enemy_hp(true);
+    g_enemies.clear();
+}
+
 static float SK_THISCALL h_GetMaxHp(void* combatant)
 {
     if (g_partner_hp && !g_puppets.empty()) {
@@ -102,7 +184,25 @@ static float SK_THISCALL h_GetMaxHp(void* combatant)
         if (it != g_puppets.end() && it->second.max > 0 && game::is_puppet(c))
             return it->second.max;
     }
-    return o_GetMaxHp(combatant);
+    void* creature = (uint8_t*)combatant - game::kCombatOff;
+    const float base = o_GetMaxHp(combatant);
+    if (!g_save_depth && enemy_scaled(creature)) return base * g_enemies.at(creature).factor;
+    const float mirror = npc::reported_enemy_max(creature);
+    return mirror > 0 ? mirror : base;
+}
+
+float native_citizen_max(void* citizen)
+{
+    return o_CitizenMaxHp ? o_CitizenMaxHp((uint8_t*)citizen + game::kCombatOff) : 0;
+}
+
+static float SK_THISCALL h_CitizenMaxHp(void* combatant)
+{
+    const float base = o_CitizenMaxHp(combatant);
+    void* c = (uint8_t*)combatant - game::kCombatOff;
+    if (!g_save_depth && enemy_scaled(c)) return base * g_enemies.at(c).factor;
+    const float remote = tribe::reported_enemy_max(c);
+    return remote > 0 ? remote : base;
 }
 
 bool drive_puppet(void* p, float health, float max_health)
@@ -225,6 +325,23 @@ static std::string pack()
 static int c_hp(void*, int argc, const char* const* argv, SkOut* out)
 {
     auto say = [&](const std::string& s) { H->out_printf(out, "%s", s.c_str()); };
+    if (argc == 2 && !strcmp(argv[1],"hunger")) {
+        H->out_printf(out,"drain samples=%u previous=%.8f requested=%.8f result=%.8f",
+                      g_hunger_probe.samples,g_hunger_probe.previous,g_hunger_probe.requested,g_hunger_probe.result);
+        return 0;
+    }
+    if (argc == 3 && !strcmp(argv[1],"enemy")) {
+        uint16_t id = uint16_t(strtoul(argv[2],nullptr,10));
+        void* c = C.is_host && C.is_host() ? npc::host_npc(id) : npc::proxy(id);
+        if (!c || !o_GetMaxHp) { say("No live creature for this ID."); return 1; }
+        const float native = o_GetMaxHp((uint8_t*)c + game::kCombatOff);
+        char line[160];
+        auto worth = H->sym("SporeCoop::CreatureDnaWorth");
+        float reward = worth ? skg::thiscall<float>(worth,c,0) : 0;
+        snprintf(line,sizeof line,"enemy %u hp=%.3f max=%.3f native=%.3f worth=%.3f",id,game::health(c),game::max_health(c),native,reward);
+        say(line);
+        return 0;
+    }
     if (argc > 1 && !strcmp(argv[1], "pack")) {
         say(pack());
         return 0;
@@ -268,14 +385,19 @@ void init(const SkHost* host, SkMod* mod, Ctx ctx)
     H = host;
     M = mod;
     C = std::move(ctx);
+    a_HungerUpdateReturn = H->sym("SporeCoop::CreatureHungerUpdateReturn");
+    if (uintptr_t setter = H->sym("SporeCoop::CreatureSetHunger"); setter && a_HungerUpdateReturn)
+        H->hook_create(M,(void*)setter,(void*)h_SetHunger,(void**)&o_SetHunger);
     a_SpeciesMgrGet = H->sym("Editors::cSpeciesManager::Get");
     a_PlayerSpecies = H->sym("SporeCoop::cSpeciesManager_PlayerSpecies");
     a_LevelHealth = H->sym("SporeCoop::CreatureLevelHealth");
+    if (uintptr_t a = H->sym("SporeCoop::Citizen_MaxHitPoints"))
+        H->hook_create(M,(void*)a,(void*)h_CitizenMaxHp,(void**)&o_CitizenMaxHp);
     if (uintptr_t a = H->sym("SporeCoop::cCreatureAnimal_BaseMaxHitPoints"))
         H->hook_create(M, (void*)a, (void*)h_BaseMaxHp, (void**)&o_BaseMaxHp);
     if (uintptr_t a = H->sym("SporeCoop::cCreatureAnimal_GetMaxHitPoints"))
         H->hook_create(M, (void*)a, (void*)h_GetMaxHp, (void**)&o_GetMaxHp);
-    H->command_add(M, "coop.hp", "coop.hp [pack|attack <player>|packhit <player> <hp>] - creature health of the own avatar, partners' puppets, the pack (tests)",
+    H->command_add(M, "coop.hp", "coop.hp [enemy <npc>|pack|attack <player>|packhit <player> <hp>] - creature health of the own avatar, partners' puppets, the pack (tests)",
                    c_hp, nullptr, SK_CMD_MAIN_THREAD);
 }
 

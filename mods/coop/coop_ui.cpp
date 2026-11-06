@@ -18,6 +18,8 @@
 #include "space_ext.h"
 #include "sui.h"
 #include "world.h"
+#include "tribe.h"
+#include "civ.h"
 #include "fixes.h"
 
 namespace coop_ui {
@@ -231,6 +233,8 @@ struct Dialog {
     // connect page
     std::vector<Win> page_connect;
     Win name_edit = nullptr, addr_edit = nullptr, port_edit = nullptr, join_btn = nullptr, host_btn = nullptr;
+    Win seats_edit = nullptr, scaling_edit = nullptr;
+    Win next_seats_edit = nullptr, queue_seats = nullptr;
     Win lan_hdr = nullptr, host_hint = nullptr, status = nullptr, update_btn = nullptr;
     Win lan_rows[3] = {};
     std::string lan_addr[3];
@@ -275,6 +279,8 @@ static Win add_label(std::vector<Win>& page, const Rect& r, const std::string& t
 // dropped while the lock is held (0.7.3.0).
 bool g_locked_clicks_fix = true;
 COOP_FIX("core.ui_locked_clicks", "BUG-0273", g_locked_clicks_fix, "ui: co-op window buttons take clicks while a caption holds the game's input lock");
+static bool g_tribal_clicks_fix = true;
+COOP_FIX("core.ui_tribal_clicks", "BUG-9018", g_tribal_clicks_fix, "ui: Tribal co-op buttons recover clicks swallowed without a native input lock");
 static std::map<Win, std::function<void()>> g_btn_fn; // every button of the window and its action
 static std::map<Win, double> g_btn_native;            // when the game last delivered a click to it
 static Win g_locked_btn;                              // a click under the lock waits for the game
@@ -339,8 +345,9 @@ static void locked_click_tick(bool clicked)
             H->run_outside_frame([](void*) { if (s_fn) s_fn(); }, nullptr);
         }
     }
+    const bool tribal_fallback = g_tribal_clicks_fix && A.mode && A.mode() == modes::kTribe && tribe::village_orders();
     if (!clicked || !g_locked_clicks_fix || !mouse::g_fix || !g_want_open || !D.root || !sui::visible(D.root) ||
-        g_locked_btn || input_lock() <= 0)
+        g_locked_btn || (input_lock() <= 0 && !tribal_fallback))
         return;
     int cx = 0, cy = 0;
     mouse::last_click(cx, cy);
@@ -440,10 +447,20 @@ static void do_host()
     if (port <= 0 || port > 65535)
         port = A.default_port;
     std::string err;
-    if (!A.host((uint16_t)port, err)) {
+    auto seats = sui::edit_text(D.seats_edit);
+    auto scaling = sui::edit_text(D.scaling_edit);
+    if (seats.size() != 1 || seats[0] < '1' || seats[0] > '4' ||
+        scaling.empty() || scaling.find_first_not_of("0123456789") != std::string::npos ||
+        scaling.size() > 5 || strtoul(scaling.c_str(),nullptr,10) > UINT16_MAX) {
+        set_status(T("Use 1-4 founders and a whole scaling percentage.", "Укажите 1–4 основателей и целый процент."),kRed);
+        return;
+    }
+    if (!A.host((uint16_t)port,seats[0]-'0',unsigned(strtoul(scaling.c_str(),nullptr,10)),err)) {
         set_status(std::string(T("Cannot host: ", "Не удалось создать игру: ")) + err, kRed);
         return;
     }
+    save_str("ui","new_founders",seats);
+    save_str("ui","new_scaling",scaling);
     save_str("ui", "host_port", std::to_string(port));
     set_status("", kYellow);
 }
@@ -595,7 +612,11 @@ static void build_dialog()
             }
         });
     }
-    add_label(P, {40, 390, 720, 418}, T("Host a game", "Создать игру"), kGold);
+    add_label(P, {40, 390, 240, 418}, T("Host a game", "Создать игру"), kGold);
+    add_label(P, {245, 390, 397, 418}, T("New game seats", "Мест в новой игре"), kWhite);
+    D.seats_edit = add_edit(P,"founderseats",{400,386,452,418},load_str("ui","new_founders","2"),1);
+    add_label(P, {478, 390, 631, 418}, T("Scaling (%)", "Сложность (%)"), kWhite);
+    D.scaling_edit = add_edit(P,"founderscaling",{632,386,720,418},load_str("ui","new_scaling","100"),5);
     add_label(P, {40, 430, 225, 458}, T("Port (UDP)", "Порт (UDP)"), kWhite);
     D.port_edit = add_edit(P, "port", {230, 426, 330, 458},
                            load_str("ui", "host_port", std::to_string(A.default_port).c_str()), 5);
@@ -610,6 +631,18 @@ static void build_dialog()
 
     // ---- lobby page ----
     auto& L = D.page_lobby;
+    D.next_seats_edit = add_edit(L,"nextseats",{40,66,82,98},"",1);
+    D.queue_seats = add_button(L,"queueseats",{88,66,262,98},T("Next stage seats","Места на этап"),[] {
+        auto value = sui::edit_text(D.next_seats_edit);
+        if (value.size() != 1 || value[0] < '1' || value[0] > '4') {
+            set_status(T("Enter 1 to 4 seats.","Укажите от 1 до 4 мест."),kRed,8);
+            return;
+        }
+        std::string message;
+        bool ok = A.queue_seats(value[0] - '0',message);
+        set_status(message,ok ? kGreen : kRed,10);
+        g_dirty = true;
+    });
     D.session = add_label(L, {40, 104, 720, 130}, "", kWhite);
     add_label(L, {40, 138, 300, 162}, T("Player", "Игрок"), kDim);
     add_label(L, {300, 138, 540, 162}, T("Stage", "Этап"), kDim);
@@ -877,7 +910,62 @@ static void refresh_lobby()
 
 static void refresh_space()
 {
-    auto rows = spaceext::rows_all();
+    const bool villages = A.mode && A.mode() == modes::kTribe;
+    const bool nations = A.mode && A.mode() == modes::kCiv && civ::offline_control_available();
+    std::vector<spaceext::Row> rows;
+    if (villages) {
+        auto action = [](const char* command) {
+            open(false);
+            notify::show(tribe::debug({command}), "info");
+        };
+        rows.push_back({"Select your villagers before choosing an action.", "", nullptr});
+        if (A.role() == 2) {
+            rows.push_back({"Choose a destination on the ground.", "Move", [action] { action("march"); }});
+            rows.push_back({"Gather fruit near your village.", "Gather", [action] { action("gather"); }});
+        }
+        rows.push_back({"Help your partner establish a new village.", "Rebuild", [action] { action("rebuild"); }});
+        if (A.role() == 2) {
+            rows.push_back({"Attack an enemy villager with your selection.", "Attack", [action] { action("attack"); }});
+            rows.push_back({"Select all living members of your village.", "Select", [action] { action("select_village"); }});
+            rows.push_back({"Attack an enemy hut or tool building.", "Raid", [action] { action("raid"); }});
+            rows.push_back({tribe::village_birth_line(), "Add baby", [action] { action("baby"); }});
+            rows.push_back({"Collect tools from a rack in your village.", "Equip", [action] { action("equip"); }});
+        }
+        if (A.role() == 2)
+            rows.push_back({"Heal an injured friendly villager with healing tools.", "Heal", [action] { action("heal"); }});
+        else rows.push_back({"Select a living helper at the new village site.", "", nullptr});
+        if (A.role() == 2)
+            rows.push_back({"Eat food stored at your village.", "Eat", [action] { action("eat"); }});
+        else rows.push_back({"Stay at least 60 metres from existing huts.", "", nullptr});
+        if (A.role() == 2)
+            rows.push_back({"Give food to another tribe to make peace.", "Gift food", [action] { action("gift_food"); }});
+        else rows.push_back({"Your partner keeps their original species.", "", nullptr});
+        rows.push_back({tribe::village_food_line(), "", nullptr});
+        if (A.role() == 2) for (int kind = 1; kind <= 9; ++kind)
+            rows.push_back({tribe::village_tool_line(kind), "Build", [kind] {
+                open(false);
+                notify::show(tribe::debug({"build", std::to_string(kind)}), "info");
+            }});
+        if (A.role() == 2) {
+            rows.push_back({"Perform for an NPC tribe with your chief and musicians.", "Perform", [action] { action("perform"); }});
+            rows.push_back({tribe::performance_line(), "", nullptr});
+            const char* instruments[] = {"Horns [1]", "Maracas [2]", "Didgeridoos [3]"};
+            std::string request = tribe::performance_line();
+            if (request.empty()) request = "Answer the audience with selected musicians.";
+            for (int tool = 4; tool <= 6; ++tool)
+                rows.push_back({request, instruments[tool - 4], [tool] {
+                    notify::show(tribe::debug({"instrument", std::to_string(tool)}), "info");
+                }});
+        }
+    } else if (nations) {
+        const bool enabled = civ::offline_control_enabled();
+        rows.push_back({"Command the partner's cities and vehicles while they are offline.",
+                        enabled ? "Enabled" : "Disabled", [enabled] {
+                            notify::show(civ::debug({"offline_control", enabled ? "off" : "on"}), "info");
+                            g_dirty = true;
+                        }});
+    } else rows = spaceext::rows_all();
+    text(D.space_title, nations ? "Civilization settings" : villages ? "Your two villages" : T("Your galaxy together", "Галактика вместе"));
     int n = (int)rows.size(), pages = std::max(1, (n + kSpaceRows - 1) / kSpaceRows);
     if (g_space_first >= n)
         g_space_first = (pages - 1) * kSpaceRows;
@@ -935,7 +1023,9 @@ static void refresh()
     }
     bool lobby = A.role() != 0;
     bool space = lobby && A.mode && A.mode() == modes::kSpace;
-    if (!space)
+    bool villages = lobby && A.mode && A.mode() == modes::kTribe && tribe::village_orders();
+    bool nations = lobby && civ::offline_control_available();
+    if (!space && !villages && !nations)
         g_space_page = false;
     for (Win w : D.page_connect)
         show(w, !lobby);
@@ -943,12 +1033,19 @@ static void refresh()
         show(w, lobby && !g_space_page);
     for (Win w : D.page_space)
         show(w, lobby && g_space_page);
-    show(D.space_btn, space && !g_space_page);
+    bool seat_controls = lobby && A.role() == 1 && !g_space_page && A.mode &&
+        (space || A.mode() == modes::kCell || A.mode() == modes::kCreature ||
+         A.mode() == modes::kTribe || A.mode() == modes::kCiv);
+    show(D.next_seats_edit,seat_controls);
+    show(D.queue_seats,seat_controls);
+    text(D.queue_seats,space ? T("Next load seats","Места на загрузку") : T("Next stage seats","Места на этап"));
+    show(D.space_btn, (space || villages || nations) && !g_space_page);
+    text(D.space_btn, nations ? "Nations >" : villages ? "Village >" : T("Space >", "Космос >"));
     if (!lobby || g_space_page) {
         show(D.chat_up, false);
         show(D.chat_down, false);
     }
-    text(D.subtitle, lobby && g_space_page ? T("CO-OP: SPACE", "КООПЕРАТИВ: КОСМОС")
+    text(D.subtitle, lobby && g_space_page ? (nations ? "CO-OP: NATIONS" : villages ? "CO-OP: VILLAGES" : T("CO-OP: SPACE", "КООПЕРАТИВ: КОСМОС"))
                      : lobby ? T("CO-OP LOBBY", "ЛОББИ КООПЕРАТИВА") : T("CO-OP", "КООПЕРАТИВ"));
     if (A.version_line)
         text(D.version, A.version_line());

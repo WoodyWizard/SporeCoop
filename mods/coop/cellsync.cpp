@@ -1,4 +1,6 @@
 #include "cellsync.h"
+#include "world.h"
+#include "slotfs.h"
 #include "coop_ui.h"
 
 #include <algorithm>
@@ -216,6 +218,7 @@ constexpr double kDownTime = 10.0, kReviveHold = 1.5;
 constexpr float kSmall = 0.5f;
 static double g_last_regen, g_invuln_until, g_last_tick;
 static uint32_t g_revives, g_respawns;
+static std::unordered_map<uint32_t,uint32_t> g_pending_bonus; // request -> local body index
 static bool g_downed;
 static double g_down_since, g_hold;
 static net::Vec3 g_down_pos;
@@ -497,6 +500,37 @@ static int ai_type(uint8_t* c)
     return res_types(c, &ct, &ai) ? ai : -1;
 }
 
+static std::string g_credit_key;
+static founders::CellCredit g_cell_credit;
+void clear_cell_credit() { g_pending_bonus.clear(); g_credit_key.clear(); g_cell_credit = {}; }
+
+uint64_t cell_save_stamp()
+{
+    if (g_credit_key.empty() || game::mode_id() != modes::kCell || g_credit_key != world::current_game_key())
+        return UINT64_MAX;
+    WIN32_FILE_ATTRIBUTE_DATA data{};
+    if (!GetFileAttributesExW(slotfs::widen(g_credit_key).c_str(),GetFileExInfoStandard,&data)) return 0;
+    return (uint64_t(data.ftLastWriteTime.dwHighDateTime) << 32) | data.ftLastWriteTime.dwLowDateTime;
+}
+void note_saved_cell_credit(uint64_t before)
+{
+    if (before == UINT64_MAX) return;
+    auto after = cell_save_stamp();
+    if (!after || after == UINT64_MAX || before == after) return;
+    if (!founders::save_cell_credit(g_credit_key,world::rules_for_current(),g_cell_credit))
+        H->log(M,SK_WARN,"cell: could not retain Cell progression and combat fractions for this save");
+}
+
+static void load_cell_credit(const founders::CampaignRules& rules)
+{
+    auto key = world::current_game_key();
+    if (key != g_credit_key) {
+        clear_cell_credit();
+        g_credit_key = key;
+        founders::read_cell_credit(key,rules,g_cell_credit);
+    }
+}
+
 // ---------------- guest -> host: what our avatar did to a cell of the host's pool ----------------
 // MSG_CELL_EAT: u32 host index, u8 kind, u8 arg, i32 food, u8 plant (older guests send the index only)
 enum : uint8_t { ACT_GONE = 0, ACT_KILL = 1, ACT_BREAK = 2 };
@@ -545,6 +579,88 @@ static uint32_t mirror_key(uint8_t* c)
 // ---------------- hooks ----------------
 using NoAttack_t = bool(SK_CDECL*)(uint8_t*, uint8_t*);
 static NoAttack_t& o_NoAttack_ptr();
+static bool wild_combatant(uint8_t* c)
+{
+    if (!c || c == avatar() || F<uint32_t>(c,0) == mate_idx() || modes::cell_is_puppet(c) ||
+        F<void*>(c,kQuery) != fg_query()) return false;
+    int type, ai;
+    return res_types(c,&type,&ai) && type == 2 && ai > 0;
+}
+
+// Only a native population marker creates these cells. Reloaded live actors,
+// partner puppets, player offspring and loot do not advance the HP remainder.
+static unsigned g_marker_depth, g_hp_assignments, g_hp_base, g_hp_extra;
+static uint32_t g_marker_predator;
+static modes::CellSpawnSize g_marker_size;
+static unsigned g_enemy_groups, g_group_added, g_group_limited;
+static std::array<uint32_t,3> g_last_group{};
+static void expand_marker(uint32_t seed);
+using CreateCell = uint32_t(SK_CDECL*)(void*,const void*,float,void*,int,float,float,int,const void*,int);
+static CreateCell o_CreateCell;
+static void add_cell_health(uint8_t* c, const founders::CampaignRules& rules)
+{
+    const int hp = F<int>(c,kHp);
+    if (rules.enemy_health_percent() == 100 || hp <= 0 || hp > 255) return;
+    load_cell_credit(rules);
+    const auto bonus = founders::CellCredit::bonus(unsigned(hp),rules.enemy_health_percent(),g_cell_credit.health_carry);
+    // Cell state uses an unsigned byte. Publish exactly the HP the native game uses.
+    const auto awarded = std::min<unsigned>(bonus,255-hp);
+    F<int>(c,kHp) = hp + int(awarded);
+    ++g_hp_assignments;
+    g_hp_base += unsigned(hp);
+    g_hp_extra += awarded;
+}
+
+static uint32_t SK_CDECL h_CreateCell(void* query,const void* pos,float elevation,void* res,int level,
+                                      float size_factor,float size,int apply,const void* rotation,int group)
+{
+    const uint32_t id = o_CreateCell(query,pos,elevation,res,level,size_factor,size,apply,rotation,group);
+    if (!g_marker_depth || !id || !is_host() || !in_cell() || query != fg_query()) return id;
+    uint8_t* c = modes::cell_at(id);
+    uint8_t* player = avatar();
+    if (!player || !wild_combatant(c) || !o_NoAttack_ptr() || o_NoAttack_ptr()(c,player)) return id;
+    g_marker_predator = id;
+    g_marker_size = {elevation,size_factor,size,apply};
+    add_cell_health(c,world::rules_for_current());
+    return id;
+}
+
+using CellDamageAmount = int(SK_CDECL*)(uint8_t*,uint8_t*);
+static CellDamageAmount o_CellDamageAmount;
+static std::array<uintptr_t,4> g_damage_returns{};
+static uint32_t g_hit_sequence;
+struct BonusReceipt { uint32_t seq, bonus; };
+static std::map<uint8_t,BonusReceipt> g_last_bonus;
+static unsigned g_base_damage, g_extra_damage, g_guest_bonus_loss;
+static unsigned hit_bonus(unsigned raw,const founders::CampaignRules& rules)
+{
+    load_cell_credit(rules);
+    const auto bonus = founders::CellCredit::bonus(raw,rules.enemy_damage_percent(),g_cell_credit.damage_carry);
+    g_base_damage += raw;
+    g_extra_damage += bonus;
+    return bonus;
+}
+
+static int SK_CDECL h_CellDamageAmount(uint8_t* attacker,uint8_t* victim)
+{
+    const int raw = o_CellDamageAmount(attacker,victim);
+    const auto caller = (uintptr_t)__builtin_return_address(0);
+    if (!C.sess || !C.sess->connected() || raw <= 0 || raw > 255 || std::find(g_damage_returns.begin(),g_damage_returns.end(),caller) == g_damage_returns.end() ||
+        !in_cell() || victim != avatar() || !wild_combatant(attacker) || g_downed) return raw;
+    const auto rules = world::rules_for_current();
+    if (rules.enemy_damage_percent() == 100) return raw;
+    if (is_host()) return int(raw + hit_bonus(unsigned(raw),rules));
+    if (is_guest() && !g_solo && g_pending_bonus.size() < 256) {
+        auto mirror = g_host_of.find(F<uint32_t>(attacker,0));
+        if (mirror == g_host_of.end()) return raw;
+        const auto seq = ++g_hit_sequence;
+        net::Writer w;
+        w.u32(modes::current_world()); w.u32(seq); w.u32(mirror->second); w.u8(uint8_t(raw));
+        if (C.sess->send_reliable_to(0,net::MSG_CELL_COMBAT,w)) g_pending_bonus[seq] = avatar_idx();
+    }
+    return raw;
+}
+
 using DamageCell_t = bool(SK_CDECL*)(uint8_t*, uint8_t*, const float*, int, int, float);
 static DamageCell_t o_DamageCell;
 static void hurt_avatar(int dmg, int type);
@@ -750,6 +866,7 @@ static bool SK_CDECL h_KillCell(uint8_t* c, uint32_t killer, void* res, bool by_
         }
         return false;
     }
+    if (is_guest() && in_cell() && c == avatar()) g_pending_bonus.clear();
     if (in_cell() && go_down(c))
         return false;
     bool npc = in_cell() && c && c != avatar() && !modes::cell_is_puppet(c) && !F<uint8_t>(c, kDying) && !F<uint8_t>(c, kDead);
@@ -873,11 +990,22 @@ static void SK_CDECL h_EatFood(uint32_t eater, uint32_t food, void* ref, float d
 
 using AddFood_t = void(SK_CDECL*)(int, bool);
 static AddFood_t o_AddFood;
+static int earned_food(int raw, bool plant)
+{
+    if (raw <= 0 || (!is_host() && !is_guest()) || !in_cell()) return raw;
+    auto rules = world::rules_for_current();
+    if (rules.workload_percent() == 100) return raw;
+    if (is_guest()) return 0; // report the raw meal; only the host awards it
+    load_cell_credit(rules);
+    return g_cell_credit.award(raw,plant,rules);
+}
+
 static void SK_CDECL h_AddFood(int amount, bool plant)
 {
     uint8_t* a0 = in_cell() ? avatar() : nullptr;
     float before = a0 ? F<float>(a0, kTargetSize) : 0.f;
-    o_AddFood(amount, plant);
+    const int awarded = g_food_guard ? amount : earned_food(amount,plant);
+    if (awarded || amount == 0) o_AddFood(awarded,plant);
     if (!g_food_guard && amount > 0 && in_cell()) { // our own avatar ate (AvatarEat 0xE7D070), not the network
         g_own_eats++;
         g_own_food += amount;
@@ -1123,7 +1251,15 @@ static int SK_CDECL h_Populate(float prob, int layer, int level, void* query, vo
             return 0;
         g_solo_spawns++; // BUG-0205: the host is away, our game fills its own pool
     }
-    return o_Populate(prob, layer, level, query, bbox, marker, x);
+    if (!g_marker_depth) g_marker_predator = 0;
+    ++g_marker_depth;
+    const int result = o_Populate(prob,layer,level,query,bbox,marker,x);
+    if (!--g_marker_depth && g_marker_predator) {
+        auto seed = g_marker_predator;
+        g_marker_predator = 0;
+        expand_marker(seed);
+    }
+    return result;
 }
 
 // ---- BUG-0174: the host keeps the world populated around every player, not only around itself ----
@@ -1175,6 +1311,61 @@ static int g_tile_level = -1; // the level base of the last PopulateTiles call (
 static uint32_t g_tiles_core, g_tiles_starved, g_tiles_fed, g_send_capped, g_mirror_capped, g_cells_peak;
 static std::unordered_map<uint32_t, uint8_t> g_starved; // tile objects of ours not populated for the budget -> the partner (0xFF: unknown)
 static uint32_t cells_live() { return G() ? F<uint32_t>(G(), 0x1C + 0xC) : 0; }
+// One native population marker may recursively create several actors. Expand
+// the completed encounter once, while reserving room for native population.
+static void expand_marker(uint32_t seed)
+{
+    const auto rules = world::rules_for_current();
+    auto* model = modes::cell_at(seed);
+    if (rules.seats <= 1 || !model || !avatar() || !is_host() || !in_cell()) return;
+    if (cells_live() >= kPopCap) {
+        ++g_enemy_groups;
+        g_group_limited += unsigned(rules.seats-1);
+        return;
+    }
+    const float size = F<float>(model,kSize);
+    if (!(size > 0) || !std::isfinite(size) || !F<void*>(model,kRes)) return;
+    auto centre = pos_of(model);
+    std::array<net::Vec3,8> sites{};
+    std::array<bool,8> free;
+    free.fill(true);
+    for (size_t i = 0; i < sites.size(); ++i) {
+        const float angle = float(i) * .785398163f;
+        const float gap = std::max(2.f,size*3.f);
+        sites[i] = {centre.x+gap*std::cos(angle),centre.y+gap*std::sin(angle),centre.z};
+    }
+    auto exclude = [&](uint8_t* c) {
+        const float margin = size + std::max(.5f,F<float>(c,kSize));
+        auto p = pos_of(c);
+        for (size_t i = 0; i < sites.size(); ++i) {
+            float x = p.x-sites[i].x, y = p.y-sites[i].y;
+            if (x*x+y*y < margin*margin) free[i] = false;
+        }
+    };
+    exclude(avatar());
+    for_each_cell([&](uint8_t* other,uint32_t) { exclude(other); });
+    uint32_t key[3];
+    memcpy(key,model+kModelKey,sizeof key);
+    const auto level = F<int>(model,kLevel);
+    unsigned made = 0;
+    std::array<uint32_t,3> ids{};
+    for (size_t i = 0; i < sites.size() && made < unsigned(rules.seats-1); ++i) {
+        if (!free[i]) continue;
+        model = modes::cell_at(seed);
+        if (!model || cells_live() >= kPopCap) break;
+        auto id = modes::cell_create(sites[i],F<void*>(model,kRes),level,key,nullptr,g_marker_size);
+        auto* cell = id ? modes::cell_at(id) : nullptr;
+        if (!cell) break;
+        add_cell_health(cell,rules);
+        exclude(cell);
+        ids[made++] = id;
+    }
+    ++g_enemy_groups;
+    g_group_added += made;
+    g_group_limited += unsigned(rules.seats-1)-made;
+    if (made) g_last_group = ids;
+}
+
 static bool over_budget() { return g_fix_budget && cells_live() >= kPopCap; }
 static uintptr_t a_PopTiles, a_PopTile, a_TileActive, a_ViewBoxes;
 constexpr size_t kTileCap = 2048; // entries of our own lists' fixed buffers (the active set is < 512 tiles)
@@ -2277,6 +2468,16 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     a_CellUI = H->sym("Simulator::Cell::cCellUI::_ptr"); // tests only (rollover_of)
     a_DnaFor = H->sym("Simulator::Cell::DNAForFood"); // BUG-0351 diagnostics (dna_note)
     a_GetDamage = H->sym("Simulator::Cell::GetDamageAmount");
+    // Calls that consume HP. The same getter also forecasts lethal bites;
+    // those callers must see base damage and must never spend a remainder.
+    g_damage_returns = {H->sym("SporeCoop::CellDamageCommit"),H->sym("SporeCoop::CellAreaDamageCommit"),
+                        H->sym("SporeCoop::CellChunkACommit"),H->sym("SporeCoop::CellChunkBCommit")};
+    if (a_GetDamage && std::all_of(g_damage_returns.begin(),g_damage_returns.end(),[](auto a){ return a != 0; })) {
+        H->hook_create(M,(void*)a_GetDamage,(void*)h_CellDamageAmount,(void**)&o_CellDamageAmount);
+        if (auto create = H->sym("Simulator::Cell::CreateCellObject"))
+            H->hook_create(M,(void*)create,(void*)h_CreateCell,(void**)&o_CreateCell);
+    }
+
     a_TargetParams = H->sym("Simulator::Cell::GetTargetSearchParams");
     a_IsPrey = H->sym("Simulator::Cell::IsPrey");
     a_ModelData = H->sym("Simulator::Cell::GetCellModelData");
@@ -2880,6 +3081,7 @@ static void hurt_avatar(int dmg, int type)
 // mirrors the Cell stage had left behind.
 static void forget_mirrors()
 {
+    g_pending_bonus.clear();
     g_mirrors.clear();
     g_host_of.clear();
     g_touched.clear();
@@ -2916,6 +3118,7 @@ static void reset_knockout()
 
 void on_player_leave(int id)
 {
+    g_last_bonus.erase(uint8_t(id));
     g_food_ack.erase(id);
     g_food_tx.erase(id);
     if (!g_fix_kostale)
@@ -3186,6 +3389,35 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
     }
     if (!cell && !(type == net::MSG_CELL_KO && g_fix_kostale))
         return;
+    if (type == net::MSG_CELL_COMBAT) {
+        const auto world = r.u32(), seq = r.u32();
+        if (!r.ok() || world != modes::current_world()) return;
+        if (is_host() && from) {
+            auto* source = modes::cell_at(r.u32());
+            const auto raw = r.u8();
+            if (!r.ok() || r.left()) return;
+            auto prior = g_last_bonus.find(from);
+            if (prior == g_last_bonus.end() || int32_t(seq-prior->second.seq) > 0) {
+                const auto bonus = raw && wild_combatant(source) ? hit_bonus(raw,world::rules_for_current()) : 0;
+                prior = g_last_bonus.insert_or_assign(from,BonusReceipt{seq,bonus}).first;
+            } else if (seq != prior->second.seq) return;
+            net::Writer reply;
+            reply.u32(world); reply.u32(seq); reply.u32(prior->second.bonus);
+            C.sess->send_reliable_to(from,net::MSG_CELL_COMBAT,reply);
+        } else if (is_guest() && !from) {
+            const auto bonus = r.u32();
+            auto pending = g_pending_bonus.find(seq);
+            if (!r.ok() || r.left() || pending == g_pending_bonus.end()) return;
+            const auto body = pending->second;
+            g_pending_bonus.erase(pending);
+            if (bonus && bonus <= INT_MAX && avatar_idx() == body && !g_downed) {
+                int old = F<int>(avatar(),kHp);
+                hurt_avatar(int(bonus),4);
+                if (avatar_idx() == body && avatar()) g_guest_bonus_loss += std::max(0,old-F<int>(avatar(),kHp));
+            }
+        }
+        return;
+    }
     if (type == net::MSG_CELL_HIT && is_guest()) {
         uint32_t idx = r.u32();
         int dmg = r.u8(), t = r.u8();
@@ -3311,8 +3543,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             if (c) {
                 g_eats_in++;
                 o_Destroy(idx, arg & 1, 0.f, 0); // with the loot the game asked for on the guest
-                if (food)
-                    o_AddFood(food, plant);
+                if (int awarded = earned_food(food,plant)) o_AddFood(awarded,plant);
+                if (food && e.has_meal) g_food_sent = -1; // acknowledge even a fractional meal
             } else if (food) {
                 // somebody ate it first: no points for it. The guest already counted them: our total
                 // goes out again and takes them back (MSG_CELL_FOOD -> its AddFoodPoints(diff))
@@ -3337,9 +3569,9 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             if (f.valid && f.amount > -1000 && f.amount < 1000) {
                 uint8_t* s0 = S();
                 int before = s0 ? F<int32_t>(s0, 0x1C) : 0;
-                o_AddFood(f.amount, f.plant);
-                if (C.food_cause && s0 && f.amount != 0)
-                    C.food_cause(from, before, f.amount);
+                int awarded = earned_food(f.amount,f.plant);
+                if (awarded) o_AddFood(awarded,f.plant);
+                if (C.food_cause && s0 && awarded) C.food_cause(from,before,awarded);
             }
             trace::ev("eat", "from food", "from %u food +%d %s meal=%u: %s", from, f.amount, f.plant ? "plant" : "meat", f.meal,
                       f.valid && f.amount > -1000 && f.amount < 1000 ? "applied" : "refused (bad message)");
@@ -3352,6 +3584,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
                 return;
             uint32_t ack = r.u32(); // a host before 0.8 does not send it
             int diff = g_meals.diff(food, r.ok(), ack, g_pend_food, F<int32_t>(s, 0x1C), g_fix_foodseq);
+            if (world::rules_for_current().workload_percent() > 100) diff = food - F<int32_t>(s,0x1C);
             if (diff != 0) {
                 trace::ev("eat", "total", "host total food=%d (ack meal %u) -> %+d here (pending %d)", food, ack, diff,
                           g_pend_food);
@@ -3369,6 +3602,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
 
 void on_session_end()
 {
+    g_last_bonus.clear();
+    g_pending_bonus.clear();
     g_kodrop_until = 0;
     g_test_away = false;
     if (g_fix_koreset)
@@ -3963,6 +4198,35 @@ std::string debug(const std::vector<std::string>& a)
                 line("partner", c);
         });
         return out.empty() ? std::string("diet: no avatar\n") : out;
+    }
+    if (!a.empty() && a[0] == "enemy_groups") {
+        char line[150];
+        snprintf(line,sizeof line,"groups=%u added=%u limited=%u latest=%u,%u,%u",
+                 g_enemy_groups,g_group_added,g_group_limited,g_last_group[0],g_last_group[1],g_last_group[2]);
+        return line;
+    }
+    if (!a.empty() && a[0] == "combat_credit") {
+        if (is_host()) load_cell_credit(world::rules_for_current());
+        char b[210];
+        snprintf(b,sizeof b,"assigned=%u baseHP=%u extraHP=%u hpCarry=%u baseHit=%u extraHit=%u damageCarry=%u pending=%u guestLoss=%u",
+                 g_hp_assignments,g_hp_base,g_hp_extra,g_cell_credit.health_carry,g_base_damage,g_extra_damage,
+                 g_cell_credit.damage_carry,unsigned(g_pending_bonus.size()),g_guest_bonus_loss);
+        return b;
+    }
+    if (!a.empty() && a[0] == "enemyhit") {
+        // A real incoming DamageCell call; leave native immunity and targeting intact.
+        int before = F<int>(av,kHp);
+        unsigned raw = 0;
+        for_each_cell([&](uint8_t* c,uint32_t idx) {
+            if (raw || !wild_combatant(c) || F<uint8_t>(c,kDead) || F<uint8_t>(c,kDying) ||
+                (is_guest() && !g_host_of.count(idx)) || !o_CellDamageAmount) return;
+            int amount = o_CellDamageAmount(c,av);
+            if (amount < 1 || amount > 6) return;
+            float dir[3] = {1,0,0};
+            h_DamageCell(av,c,dir,4,0,0.f);
+            if (F<int>(av,kHp) < before) raw = unsigned(amount);
+        });
+        return "raw=" + std::to_string(raw) + " loss=" + std::to_string(before-F<int>(av,kHp));
     }
     if (!a.empty() && a[0] == "see")
         return see(a.size() > 1 ? atoi(a[1].c_str()) : 60);

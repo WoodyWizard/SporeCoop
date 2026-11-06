@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <functional>
 #include <map>
+#include <tuple>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -20,6 +21,8 @@
 #include "sporekit_game.hpp"
 #include "fixes.h"
 #include "creations.h"
+#include "founders.h"
+#include "world.h"
 
 using skg::thiscall;
 using skg::vcall;
@@ -30,6 +33,17 @@ static const SkHost* H;
 static SkMod* M;
 static Ctx C;
 static bool g_ok;
+static founders::Roster g_founder_nations;
+static bool g_auto_founders = true;
+static bool g_founder_spawned;
+static bool g_founder_control = true;
+static bool g_offline_control, g_offline_selection_ready, g_command_refresh;
+static std::string g_offline_planet;
+static bool g_team_progress = true;
+COOP_FIX("civ.team_progress", "BUG-9056", g_team_progress,
+         "civ: founder captures and native unlocks advance one team campaign");
+COOP_FIX("civ.founder_control", "BUG-9054", g_founder_control,
+         "civ: separate founder nations use player control and the shared treasury");
 
 // ---- layout (docs/re/civ.md) ----
 // game addresses that are not functions (vtable, return addresses): resolved by name in init()
@@ -42,6 +56,7 @@ constexpr uintptr_t kCityPos = 0x124, kCitySpecialty = 0x540, kCitySlots = 0x43C
                     kCityBuildings = 0x340, kBuildingState = 0x120 + 0x34; // combatant state, 2 = destroyed
 constexpr uint8_t kShared = 0xFD; // a city everybody may use (the capital while cities < players)
 constexpr uintptr_t kCivCities = 0x9C;
+constexpr uintptr_t kNationSpecies = 0x268, kCitySpecies = 0x658;
 constexpr uint32_t kMsgActivated = 0x287259F6, kBtnLand = 0x62D6902, kBtnWater = 0x62D6908, kBtnAir = 0x62D690F,
                    kBtnPlanner = 0x62D5618, kBuildingType = 0x0E9CB8BA;
 
@@ -107,6 +122,28 @@ static bool exists(void* v)
 }
 static void* player_civ() { return thiscall<void*>(a_PlayerCiv, nm()); }
 static uint32_t pol_of(void* o) { return F<uint32_t>(o, kPol); }
+static bool founder_country(void* country)
+{
+    return g_founder_control && active() && country && g_founder_nations.contains_faction(pol_of(country));
+}
+static uint8_t founder_owner(uint32_t faction)
+{
+    if (!g_founder_control || !g_founder_nations.contains_faction(faction)) return 0xFF;
+    if (faction == g_founder_nations.home().faction) return 0;
+    for (const auto& player : C.sess->players()) if (player.id) return player.id;
+    return g_offline_control && g_offline_selection_ready ? 0 : 0xFE;
+}
+static std::vector<void*> team_cities(void* first)
+{
+    std::vector<void*> cities;
+    if (!g_team_progress || !founder_country(first) || !g_founder_nations.guest().faction) return cities;
+    // Keep this country's capital first for native specialty fallback.
+    cities = vec_of((uint8_t*)first + kCivCities);
+    for (void* city : all_cities())
+        if (F<void*>(city, kCityCiv) != first && g_founder_nations.contains_faction(pol_of(city)))
+            cities.push_back(city);
+    return cities;
+}
 static net::Vec3 city_pos(void* c)
 {
     auto& p = F<float[3]>(c, kCityPos);
@@ -135,6 +172,7 @@ struct HV {
     uint16_t id;
     uint8_t owner;
     uint32_t pol; // the vehicle's political id when it was listed (BUG-0059: a reused address)
+    bool gifted = false;
 };
 // test switches (`coop.civ fix boost|world 0|1`): 0 brings back the code before the fix
 static bool g_fix_boost = true; // BUG-0040: boosts only on listed vehicles, cleared with the session
@@ -232,6 +270,224 @@ static uint8_t owner_of_city(void* c)
 {
     auto it = g_city_owner.find(c);
     return it == g_city_owner.end() ? 0xFF : it->second;
+}
+
+using IsOwned_t = bool(SK_THISCALL*)(void*);
+static IsOwned_t o_CityOwned, o_VehicleOwned;
+static bool SK_THISCALL h_CityOwned(void* spatial)
+{
+    if (g_founder_control && active()) {
+        void* city = (uint8_t*)spatial - 0x120;
+        auto owner = founder_owner(pol_of(city));
+        if (owner != 0xFF) return owner == C.sess->my_id();
+    }
+    return o_CityOwned(spatial);
+}
+static bool SK_THISCALL h_VehicleOwned(void* spatial)
+{
+    if (g_founder_control && active()) {
+        void* vehicle = (uint8_t*)spatial - kVSpatial;
+        auto owner = founder_owner(pol_of(vehicle));
+        if (owner != 0xFF) {
+            if (owner == 0xFE) return false;
+            auto assigned = owner_of_vehicle(vehicle);
+            return (assigned < 0xFE ? assigned : owner) == C.sess->my_id();
+        }
+    }
+    return o_VehicleOwned(spatial);
+}
+
+using PlayerCiv_t = void*(SK_THISCALL*)(void*);
+using CivAI_t = void(SK_THISCALL*)(void*);
+static PlayerCiv_t o_PlayerCiv;
+static CivAI_t o_CivAI;
+static uintptr_t a_CivAIPlayerRet;
+static thread_local void* g_ai_founder;
+static thread_local void* g_capture_founder;
+static uintptr_t a_ChangeOwnerPlayerRet;
+using TerrainCursor_t = void*(SK_CDECL*)();
+static TerrainCursor_t o_TerrainCursor;
+static void* g_bound_cursor;
+static void* g_bound_candidates;
+// Box selection, applying selection and retrieving it all consume the same
+// native candidate list. Borrow a combined list only during those calls.
+// Nested calls see the outer view. No vehicle pointer survives the call.
+struct OfflineCandidates {
+    void* cursor;
+    void* previous = nullptr;
+    std::vector<void*> items;
+    size_t rollback = 0;
+    struct { void** begin; void** end; void** capacity; } view{};
+    explicit OfflineCandidates(void* c) : cursor(c) {
+        if (!g_offline_control || !g_offline_selection_ready || !g_founder_control ||
+            !active() || !is_host() || C.sess->players().size() != 1 || !g_founder_nations.guest().faction) return;
+        void* home = player_civ();
+        if (!home || F<void*>(cursor, 0x164) != (uint8_t*)home + 0xD4) return;
+        void* partner = thiscall<void*>(a_CivByPol, nm(), g_founder_nations.guest().faction);
+        if (!partner || partner == home) return;
+        auto extra = vec_of((uint8_t*)partner + 0xD4);
+        if (extra.empty()) return;
+        previous = (uint8_t*)home + 0xD4;
+        items = vec_of(previous);
+        items.insert(items.end(), extra.begin(), extra.end());
+        view = {items.data(), items.data() + items.size(), items.data() + items.size()};
+        rollback = game::swap_open(game::swap_undo_u32, &F<void*>(cursor, 0x164), (uintptr_t)previous,
+                                   "Civ offline selection candidates");
+        F<void*>(cursor, 0x164) = &view;
+    }
+    ~OfflineCandidates() {
+        if (!previous) return;
+        if (F<void*>(cursor, 0x164) == &view) F<void*>(cursor, 0x164) = previous;
+        game::swap_close(rollback);
+    }
+};
+using SelectedFn = uintptr_t(SK_THISCALL*)(void*, uintptr_t);
+using SelectFn = uintptr_t(SK_THISCALL*)(void*, uintptr_t, uintptr_t);
+static SelectedFn o_GetSelected;
+static SelectFn o_BoxSelect, o_ApplySelection;
+static uintptr_t SK_THISCALL h_GetSelected(void* cursor, uintptr_t out) {
+    OfflineCandidates list(cursor); return o_GetSelected(cursor, out);
+}
+static uintptr_t SK_THISCALL h_BoxSelect(void* cursor, uintptr_t first, uintptr_t second) {
+    OfflineCandidates list(cursor); return o_BoxSelect(cursor, first, second);
+}
+static uintptr_t SK_THISCALL h_ApplySelection(void* cursor, uintptr_t input, uintptr_t flags) {
+    OfflineCandidates list(cursor); return o_ApplySelection(cursor, input, flags);
+}
+static void* SK_CDECL h_TerrainCursor()
+{
+    void* cursor = o_TerrainCursor();
+    if (!cursor) return cursor;
+    void* country = nullptr;
+    if (g_founder_control && active() && is_guest() && g_founder_nations.guest().faction)
+        country = thiscall<void*>(a_CivByPol, nm(), g_founder_nations.guest().faction);
+    if (country) {
+        // Borrow the native country's live spatial vector. Native insert/remove
+        // operations maintain its lifetime; no vehicle pointers are cached here.
+        g_bound_cursor = cursor;
+        g_bound_candidates = (uint8_t*)country + 0xD4;
+        F<void*>(cursor, 0x164) = g_bound_candidates;
+    } else if (cursor == g_bound_cursor) {
+        // A switch-off/disconnect must return selection to the native country.
+        // Never overwrite a list another stage has already installed.
+        if (F<void*>(cursor, 0x164) == g_bound_candidates) {
+            void* home = g_ok && game::mode_id() == modes::kCiv && nm() ? player_civ() : nullptr;
+            F<void*>(cursor, 0x164) = home ? (uint8_t*)home + 0xD4 : nullptr;
+        }
+        g_bound_cursor = g_bound_candidates = nullptr;
+    }
+    return cursor;
+}
+static void* SK_THISCALL h_PlayerCiv(void* manager)
+{
+    // Only the AI's own player/NPC branch. All other native lookups, save
+    // ownership and the shared-money adapter retain the real player country.
+    // A separate scoped site lets either founder emit native capture history.
+    if (g_ai_founder && (uintptr_t)__builtin_return_address(0) == a_CivAIPlayerRet)
+        return g_ai_founder;
+    if (g_capture_founder && (uintptr_t)__builtin_return_address(0) == a_ChangeOwnerPlayerRet)
+        return g_capture_founder;
+    return o_PlayerCiv(manager);
+}
+static void SK_THISCALL h_CivAI(void* country)
+{
+    // Native appearance can run an AI tick before the outside-frame binding.
+    // A reserved new capital must not buy units or grow as an NPC in that gap.
+    if (g_founder_control && g_auto_founders && active() && is_host() && g_founder_spawned &&
+        !g_founder_nations.guest().faction && country != player_civ()) return;
+    void* previous = g_ai_founder;
+    if (founder_country(country)) g_ai_founder = country;
+    o_CivAI(country);
+    g_ai_founder = previous;
+}
+
+using GetMoney_t = float(SK_THISCALL*)(void*);
+using SpendMoney_t = void(SK_THISCALL*)(void*, float);
+static GetMoney_t o_GetMoney;
+static SpendMoney_t o_SpendMoney;
+static float SK_THISCALL h_GetMoney(void* country)
+{
+    return o_GetMoney(founder_country(country) ? player_civ() : country);
+}
+static void SK_THISCALL h_SpendMoney(void* country, float amount)
+{
+    o_SpendMoney(founder_country(country) ? player_civ() : country, amount);
+}
+
+using Unlocks_t = void(SK_THISCALL*)(void*);
+using Tech_t = void(SK_THISCALL*)(void*, int);
+using CityCount_t = int(SK_THISCALL*)(void*);
+static Unlocks_t o_Unlocks;
+static Tech_t o_Tech;
+static CityCount_t o_CityCount;
+static uintptr_t a_FinalCityCount, a_UnlockCountRet, a_TechCountRet;
+using ProgressFn = float(SK_THISCALL*)(void*);
+static ProgressFn o_HudProgress;
+static uintptr_t a_HudProgressRet;
+static unsigned g_hud_samples;
+static float g_hud_fraction, g_solo_fraction;
+
+static float SK_THISCALL h_HudProgress(void* strategy)
+{
+    const float original = o_HudProgress(strategy);
+    if ((uintptr_t)__builtin_return_address(0) != a_HudProgressRet || !active() ||
+        !g_founder_nations.guest().faction || !nm()) return original;
+    float value = original;
+    void* home = player_civ();
+    if (g_team_progress && g_founder_control && home &&
+        pol_of(home) == g_founder_nations.home().faction) {
+        void* partner = thiscall<void*>(a_CivByPol, nm(), g_founder_nations.guest().faction);
+        const int total = skg::cdecl_call<int>(a_FinalCityCount);
+        if (partner && partner != home && total > 0)
+            value = std::min(1.f, original + (float)o_CityCount(partner) / total);
+    }
+    ++g_hud_samples;
+    g_solo_fraction = original;
+    g_hud_fraction = value;
+    return value;
+}
+static double g_progress_poll, g_campaign_share_at;
+static bool g_progress_queued;
+
+static void SK_THISCALL h_Unlocks(void* country)
+{
+    auto cities = team_cities(country);
+    if (cities.empty()) { o_Unlocks(country); return; }
+    // BF2510 only reads the city vector (length and first city's specialty).
+    // Borrow a complete read-only view for this synchronous calculation, never
+    // forge a larger end pointer or insert cities into their partner's nation.
+    uintptr_t* view = &F<uintptr_t>(country, kCivCities);
+    std::array<uintptr_t, 3> previous{view[0], view[1], view[2]};
+    size_t mark = game::swap_open(game::swap_undo_u32, view, view[0], "Civ unlock city view");
+    game::swap_open(game::swap_undo_u32, view + 1, view[1], "Civ unlock city end");
+    game::swap_open(game::swap_undo_u32, view + 2, view[2], "Civ unlock city capacity");
+    view[0] = (uintptr_t)cities.data();
+    view[1] = view[2] = (uintptr_t)(cities.data() + cities.size());
+    o_Unlocks(country);
+    std::copy(previous.begin(), previous.end(), view);
+    game::swap_close(mark, 3);
+}
+static int team_tech(void* country, int requested)
+{
+    auto cities = team_cities(country);
+    if (cities.empty() || !a_FinalCityCount) return requested;
+    int final_count = skg::cdecl_call<int>(a_FinalCityCount);
+    int earned = final_count > 0 && cities.size() >= (size_t)final_count ? 4 : cities.size() >= 4 ? 3 : 2;
+    return std::max(requested, earned);
+}
+static void SK_THISCALL h_Tech(void* country, int level)
+{
+    o_Tech(country, team_tech(country, level));
+}
+static int SK_THISCALL h_CityCount(void* country)
+{
+    uintptr_t ret = (uintptr_t)__builtin_return_address(0);
+    // These two UI callers compare a threshold; neither indexes a city vector.
+    if (ret == a_UnlockCountRet || ret == a_TechCountRet) {
+        auto cities = team_cities(country);
+        if (!cities.empty()) return (int)cities.size();
+    }
+    return o_CityCount(country);
 }
 
 static int host_index_of_city(void* c)
@@ -580,6 +836,7 @@ static AddMoney_t o_AddMoney;
 static uint32_t g_income_blocked;
 static void SK_THISCALL h_AddMoney(void* civ, float amount, int difficulty)
 {
+    if (founder_country(civ)) civ = player_civ();
     if (!g_applying && is_guest() && game::mode_id() == modes::kCiv && civ == player_civ() && amount > 0) {
         g_income_blocked++;
         return;
@@ -617,6 +874,32 @@ static void* SK_THISCALL h_SpawnVehicle(void* city, int purpose, int loco, uint3
 }
 
 static void caption_arm(); // BUG-0224 (below)
+using ChangeOwner_t = int(SK_THISCALL*)(void*, uint32_t, int, int);
+static ChangeOwner_t o_ChangeOwner;
+static int SK_THISCALL h_ChangeOwner(void* city, uint32_t faction, int quiet, int specialty)
+{
+    uint32_t old_faction = pol_of(city);
+    bool team = g_team_progress && active() && g_founder_nations.contains_faction(faction);
+    void* country = team ? thiscall<void*>(a_CivByPol, nm(), faction) : nullptr;
+    void* previous = g_capture_founder;
+    size_t mark = game::swap_open(game::swap_undo_u32, &g_capture_founder, (uintptr_t)previous,
+                                 "Civ team capture branch");
+    g_capture_founder = country;
+    int result = o_ChangeOwner(city, faction, quiet, specialty);
+    g_capture_founder = previous;
+    game::swap_close(mark);
+    if (team && is_host() && old_faction != faction && pol_of(city) == faction &&
+        !g_founder_nations.contains_faction(old_faction)) {
+        // Native history/goals are emitted by ChangeOwner's player branch.
+        // The home nation's capture counters are the campaign totals used at
+        // spaceflight; the partner's raw counters remain its individual record.
+        int kind = F<int>(city, 0x29C);
+        if (country != player_civ() && kind >= 0 && kind < 3)
+            ++F<int>(player_civ(), 0x4C0 + 4 * kind);
+        g_campaign_share_at = H->time_seconds() + 2;
+    }
+    return result;
+}
 using Capture_t = int(SK_THISCALL*)(void*, uint32_t, int, int, int, int);
 static Capture_t o_Capture;
 static int SK_THISCALL h_Capture(void* city, uint32_t pol, int type, int a3, int a4, int a5)
@@ -1000,6 +1283,49 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     H->hook_create(M, (void*)a_SpawnNextCity, (void*)h_SpawnNextCity, (void**)&o_SpawnNextCity);
     H->hook_create(M, (void*)a_AddMoney, (void*)h_AddMoney, (void**)&o_AddMoney);
     {
+        auto city_owned = H->sym("SporeCoop::City_IsPlayerOwned");
+        auto vehicle_owned = H->sym("SporeCoop::Vehicle_IsPlayerOwned");
+        auto civ_ai = H->sym("SporeCoop::Civilization_AI");
+        auto terrain_cursor = H->sym("Simulator::cGameTerrainCursor::GetTerrainCursor");
+        a_CivAIPlayerRet = H->sym("SporeCoop::Civilization_AI_PlayerCiv_Ret");
+        if (city_owned && vehicle_owned && civ_ai && terrain_cursor && a_CivAIPlayerRet) {
+            H->hook_create(M, (void*)city_owned, (void*)h_CityOwned, (void**)&o_CityOwned);
+            H->hook_create(M, (void*)vehicle_owned, (void*)h_VehicleOwned, (void**)&o_VehicleOwned);
+            H->hook_create(M, (void*)a_PlayerCiv, (void*)h_PlayerCiv, (void**)&o_PlayerCiv);
+            H->hook_create(M, (void*)civ_ai, (void*)h_CivAI, (void**)&o_CivAI);
+            H->hook_create(M, (void*)a_GetMoney, (void*)h_GetMoney, (void**)&o_GetMoney);
+            H->hook_create(M, (void*)a_SpendMoney, (void*)h_SpendMoney, (void**)&o_SpendMoney);
+            H->hook_create(M, (void*)terrain_cursor, (void*)h_TerrainCursor, (void**)&o_TerrainCursor);
+            uintptr_t get = H->sym("SporeCoop::TerrainCursor_GetSelected");
+            uintptr_t box = H->sym("SporeCoop::TerrainCursor_BoxSelect");
+            uintptr_t apply = H->sym("SporeCoop::TerrainCursor_ApplySelection");
+            g_offline_selection_ready = get && box && apply &&
+                H->hook_create(M, (void*)get, (void*)h_GetSelected, (void**)&o_GetSelected) == 0 &&
+                H->hook_create(M, (void*)box, (void*)h_BoxSelect, (void**)&o_BoxSelect) == 0 &&
+                H->hook_create(M, (void*)apply, (void*)h_ApplySelection, (void**)&o_ApplySelection) == 0;
+        } else g_founder_control = false;
+    }
+    {
+        auto unlocks = H->sym("SporeCoop::Civilization_RefreshUnlocks");
+        auto tech = H->sym("SporeCoop::Civilization_SetVehicleTech");
+        auto count = H->sym("Simulator::cCivilization::GetCityCount");
+        a_FinalCityCount = H->sym("SporeCoop::Civilization_FinalCityCount");
+        a_ChangeOwnerPlayerRet = H->sym("SporeCoop::City_ChangeOwner_PlayerCiv_Ret");
+        a_UnlockCountRet = H->sym("SporeCoop::CivUI_UnlockCityCount_Ret");
+        a_TechCountRet = H->sym("SporeCoop::CivUI_TechCityCount_Ret");
+        if (g_founder_control && unlocks && tech && count && a_FinalCityCount &&
+            a_ChangeOwnerPlayerRet && a_UnlockCountRet && a_TechCountRet) {
+            H->hook_create(M, (void*)unlocks, (void*)h_Unlocks, (void**)&o_Unlocks);
+            H->hook_create(M, (void*)tech, (void*)h_Tech, (void**)&o_Tech);
+            H->hook_create(M, (void*)count, (void*)h_CityCount, (void**)&o_CityCount);
+            H->hook_create(M, (void*)a_ChangeOwner, (void*)h_ChangeOwner, (void**)&o_ChangeOwner);
+            auto progress = H->sym("SporeCoop::CivMode_Progress");
+            a_HudProgressRet = H->sym("SporeCoop::CivHUD_Progress_Ret");
+            if (progress && a_HudProgressRet && o_CityCount)
+                H->hook_create(M, (void*)progress, (void*)h_HudProgress, (void**)&o_HudProgress);
+        } else g_team_progress = false;
+    }
+    {
         static const char* rets[6] = {"SporeCoop::CivAI_CityTick_SpawnVehicle_Ret", "SporeCoop::CivAI_CityOrders_SpawnVehicle_Ret",
                                       "SporeCoop::CivAI_BF9960_SpawnVehicle_Ret", "SporeCoop::CivAI_BF9FB0_SpawnVehicle_Ret",
                                       "SporeCoop::CivAI_BFA7A0_SpawnVehicle_Ret", "SporeCoop::CivAI_BFB160_SpawnVehicle_Ret"};
@@ -1027,12 +1353,174 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
 }
 
 // ---------------- host ----------------
+COOP_FIX("civ.auto_founders", "BUG-9046", g_auto_founders,
+         "civ: found a separate capital for the saved Tribal partner");
+static uint64_t g_founder_epoch;
+static bool g_founder_queued;
+static double g_founder_poll;
+static std::string g_founder_planet, g_founder_notice;
+
+static void founder_tick(double now)
+{
+    if (!g_auto_founders || !is_host() || g_founder_queued || now < g_founder_poll ||
+        world::load_queued() || world::save_busy() || world::save_pending() ||
+        world::time_paused() || world::cinematic_playing()) return;
+    g_founder_poll = now + 2;
+    g_founder_queued = true;
+    H->run_outside_frame([](void* context) {
+        uint64_t epoch = *(uint64_t*)context; delete (uint64_t*)context;
+        if (epoch != g_founder_epoch) return;
+        g_founder_queued = false;
+        if (!g_auto_founders || !active() || !is_host() || world::load_queued() || world::save_busy() ||
+            world::save_pending() || world::time_paused() || world::cinematic_playing()) return;
+        auto planet = world::current_game_key();
+        void* home = player_civ();
+        if (planet.empty() || !home) return;
+        if (planet != g_founder_planet) {
+            g_founder_planet = planet; g_founder_spawned = false; g_founder_nations = {};
+        }
+        auto report = [](const std::string& text) {
+            if (text == g_founder_notice) return;
+            g_founder_notice = text;
+            H->log(M, SK_INFO, "civ automatic founders: %s", text.c_str());
+        };
+        founders::Roster tribal, saved;
+        founders::Outfits outfits;
+        std::string error;
+        if (founders::read(planet, saved, founders::Stage::Civilization)) {
+            if (pol_of(home) != saved.home().faction || F<creations::Key>(home, kNationSpecies).instance != saved.home().species) {
+                report("The native home civilization does not match the saved founders."); return;
+            }
+            void* partner = nullptr;
+            auto cities = all_cities();
+            for (void* city : cities) if (pol_of(city) == saved.guest().faction) partner = F<void*>(city, kCityCiv);
+            if (!partner) {
+                // The roster may have reached disk immediately before an
+                // interrupted native save. Recreate only an absent reserved
+                // capital, never replace a different existing nation's city.
+                if (!g_founder_spawned && cities.size() == 1) {
+                    if (void* ex = skg::cdecl_call<void*>(a_ExpansionGet))
+                        g_founder_spawned = h_SpawnNextCity(ex, 0, nullptr);
+                }
+                report("Waiting for the saved partner capital to finish founding."); return;
+            }
+            auto& key = F<creations::Key>(partner, kNationSpecies);
+            if (key.instance && key.instance != saved.guest().species) {
+                report("The reserved capital belongs to another species; its identity was retained."); return;
+            }
+            bool restored = !key.instance;
+            key = {saved.guest().species, 0x2B978C46, 0x40626200};
+            g_founder_nations = saved;
+            if (restored) {
+                if (C.sess->players().size() == 1) {
+                    if (!world::save_game(error)) report(error);
+                } else for (const auto& player : C.sess->players()) if (player.id)
+                    if (!world::share_with(player.id, error, true)) report(error);
+            }
+            return;
+        }
+        if (!founders::read(planet, tribal)) return; // legacy/stage-chooser game
+        if (!founders::read_outfits(planet, outfits, error)) { report(error); return; }
+        auto host_key = F<creations::Key>(home, kNationSpecies);
+        creations::Key guest_key{outfits.current(1), 0x2B978C46, 0x40626200};
+        if (!outfits.contains(0, host_key.instance) || !guest_key.instance ||
+            guest_key == host_key || !creations::key_known(guest_key)) {
+            report("Waiting for the saved founding species before establishing the partner capital."); return;
+        }
+        auto cities = all_cities();
+        if (!g_founder_spawned) {
+            // Only start from the native graduation's single capital. Never
+            // repurpose an established NPC city in an older Civilization save.
+            if (cities.size() != 1 || F<void*>(cities[0], kCityCiv) != home) {
+                report("The partner capital was not reserved before other nations appeared."); return;
+            }
+            void* expansion = skg::cdecl_call<void*>(a_ExpansionGet);
+            if (!expansion) return;
+            g_founder_spawned = h_SpawnNextCity(expansion, 0, nullptr);
+            report(g_founder_spawned ? "Native partner capital founding requested." : "No free native city site.");
+            return;
+        }
+        if (cities.size() != 2) return; // native appearance is asynchronous
+        void* nation = nullptr;
+        for (void* city : cities) {
+            void* country = F<void*>(city, kCityCiv);
+            if (!country || country == home) continue;
+            if (nation || pol_of(city) != pol_of(country) || F<creations::Key>(city, kCitySpecies).instance ||
+                F<creations::Key>(country, kNationSpecies).instance) {
+                report("The new capital already has a species; its identity was retained."); return;
+            }
+            nation = country;
+        }
+        if (!nation) return;
+        founders::Roster pair{host_key.instance, guest_key.instance, pol_of(home), pol_of(nation)};
+        if (!founders::record(planet, pair, error, founders::Stage::Civilization)) { report(error); return; }
+        F<creations::Key>(nation, kNationSpecies) = guest_key;
+        g_founder_nations = pair;
+        report("Both original species now have native Civilization capitals.");
+        if (C.sess->players().size() == 1 && !world::save_game(error)) report(error);
+        for (const auto& player : C.sess->players()) if (player.id)
+            if (!world::share_with(player.id, error, true)) report(error);
+    }, new uint64_t(g_founder_epoch));
+}
+
+static void campaign_tick(double now)
+{
+    if (!g_team_progress || !g_founder_nations.guest().faction || g_progress_queued || now < g_progress_poll ||
+        world::load_queued() || world::save_busy() || world::save_pending() || world::cinematic_playing()) return;
+    g_progress_poll = now + 0.5;
+    g_progress_queued = true;
+    H->run_outside_frame([](void* context) {
+        uint64_t epoch = *(uint64_t*)context; delete (uint64_t*)context;
+        if (epoch != g_founder_epoch) return;
+        g_progress_queued = false;
+        if (!g_team_progress || !active() || world::load_queued() || world::save_busy() ||
+            world::save_pending() || world::cinematic_playing()) return;
+        void* home = player_civ();
+        void* guest = thiscall<void*>(a_CivByPol, nm(), g_founder_nations.guest().faction);
+        if (!home || !guest) return;
+        auto cities = team_cities(home);
+        if (cities.empty()) return;
+        int tech = team_tech(home, std::max(F<int>(home, 0x298), F<int>(guest, 0x298)));
+        int highest = std::max({(int)cities.size(), F<int>(home, 0x4D0), F<int>(guest, 0x4D0)});
+        for (void* country : {guest, home}) {
+            o_Tech(country, tech);
+            F<int>(country, 0x4D0) = highest;
+            h_Unlocks(country);
+        }
+        for (unsigned i = 0; i < 12; ++i) {
+            uint8_t unlocked = F<uint8_t>(home, 0x484 + i) | F<uint8_t>(guest, 0x484 + i);
+            F<uint8_t>(home, 0x484 + i) = F<uint8_t>(guest, 0x484 + i) = unlocked;
+        }
+        // SetVehicleTech can start the native unlock caption. Check again
+        // after that call before posting an asynchronous campaign save.
+        if (world::cinematic_playing() || world::time_paused()) return;
+        if (is_host() && g_campaign_share_at && H->time_seconds() >= g_campaign_share_at) {
+            std::string error;
+            bool saved = true;
+            if (C.sess->players().size() == 1) saved = world::save_game(error);
+            else for (const auto& player : C.sess->players()) if (player.id)
+                saved &= world::share_with(player.id, error, true);
+            if (saved) g_campaign_share_at = 0;
+            else H->log(M, SK_WARN, "civ campaign checkpoint: %s", error.c_str());
+        }
+    }, new uint64_t(g_founder_epoch));
+}
+
 static void host_assign_cities(const std::vector<uint8_t>& players)
 {
     void* pc = player_civ();
     if (!pc || players.empty())
         return;
     auto cities = vec_of((uint8_t*)pc + kCivCities);
+    if (g_founder_control && g_founder_nations.guest().faction) {
+        g_city_owner.clear();
+        for (void* city : all_cities()) {
+            uint8_t owner = founder_owner(pol_of(city));
+            if (owner != 0xFF) g_city_owner[city] = owner;
+        }
+        g_split_for = players;
+        return;
+    }
     // drop cities the player lost
     for (auto it = g_city_owner.begin(); it != g_city_owner.end();) {
         if (std::find(cities.begin(), cities.end(), it->first) == cities.end())
@@ -1077,7 +1565,7 @@ static void trade_tick(double now)
     g_last_trade = now;
     std::vector<std::pair<void*, uint8_t>> owned;
     for (auto& [city, o] : g_city_owner)
-        if (o != kShared && o != 0xFF)
+        if (o < kShared)
             owned.push_back({city, o});
     int pairs = 0, gain = 0;
     auto economic = [](uint8_t p) { return C.role_of && C.role_of(p) == 2; };
@@ -1306,8 +1794,16 @@ static void host_tick(double now)
         } else
             ++it;
     }
-    if (roster_changed && g_fix_orphans)
+    if (roster_changed || g_command_refresh) {
+        g_command_refresh = false;
         for (auto& [v, hv] : g_hv) {
+            const auto founder = founder_owner(hv.pol);
+            if (founder != 0xFF && (!hv.gifted || !net::is_player(*C.sess, hv.owner))) {
+                hv.owner = founder;
+                hv.gifted = false;
+                continue;
+            }
+            if (!g_fix_orphans) continue;
             if (hv.owner >= 0xFE || std::binary_search(players.begin(), players.end(), hv.owner))
                 continue;
             uint8_t owner = 0;
@@ -1317,11 +1813,14 @@ static void host_tick(double now)
             hv.owner = owner;
             g_orphans_given++;
         }
+    }
     for (void* v : vehicles) {
         if (g_hv.count(v))
             continue;
         uint8_t owner = 0xFE;
-        if (pol_of(v) == ppol) {
+        auto founder = founder_owner(pol_of(v));
+        if (founder != 0xFF) owner = founder;
+        else if (pol_of(v) == ppol) {
             if (g_pending_owner >= 0)
                 owner = (uint8_t)g_pending_owner;
             else
@@ -1443,7 +1942,8 @@ static void host_tick(double now)
 static const char* g_buy_fail = "";
 static void* host_buy(void* city, int loco)
 {
-    void* civ = player_civ();
+    void* civ = city && g_founder_control && g_founder_nations.contains_faction(pol_of(city))
+                    ? F<void*>(city, kCityCiv) : player_civ();
     g_buy_fail = "no such city";
     if (!civ || !city)
         return nullptr;
@@ -1535,6 +2035,7 @@ static void host_command(uint8_t from, net::Reader& r)
             if (what == 0) {
                 if (void* v = own_vehicle(id)) {
                     g_hv[v].owner = to;
+                    g_hv[v].gifted = true;
                     given++;
                 }
             } else if (id < g_host_cities.size()) {
@@ -2139,6 +2640,17 @@ void tick(double now)
 {
     if (!active())
         return;
+    if (is_guest() && !g_founder_nations.guest().faction && now >= g_founder_poll) {
+        g_founder_poll = now + 2;
+        founders::read(world::current_game_key(), g_founder_nations, founders::Stage::Civilization);
+    }
+    founder_tick(now);
+    if (is_host() && g_founder_nations.guest().faction && g_offline_planet != g_founder_planet) {
+        g_offline_planet = g_founder_planet;
+        g_offline_control = founders::offline_control(g_offline_planet, g_founder_nations);
+        g_command_refresh = true;
+    }
+    campaign_tick(now);
     prune_gone();
     if (is_host())
         host_tick(now);
@@ -2195,6 +2707,19 @@ static void clear_coop_tables(bool restore_speed)
 
 void on_session_end()
 {
+    g_hud_samples = 0;
+    ++g_founder_epoch;
+    g_founder_queued = g_founder_spawned = false;
+    g_founder_poll = 0;
+    g_founder_planet.clear();
+    g_founder_notice.clear();
+    g_offline_planet.clear();
+    g_offline_control = false;
+    g_command_refresh = false;
+    g_founder_nations = {};
+    g_progress_queued = false;
+    g_progress_poll = g_campaign_share_at = 0;
+    if (o_TerrainCursor && game::mode_id() == modes::kCiv) h_TerrainCursor();
     caption_disarm(); // BUG-0224
     if (g_fix_boost)
         clear_coop_tables(true);
@@ -2220,6 +2745,17 @@ void on_world_change()
     uint32_t m = game::mode_id();
     if (m == modes::kEdit || m == modes::kEditor)
         return;
+    g_hud_samples = 0;
+    ++g_founder_epoch;
+    g_founder_queued = g_founder_spawned = false;
+    g_founder_poll = 0;
+    g_founder_planet.clear();
+    g_founder_nations = {};
+    g_offline_planet.clear();
+    g_offline_control = false;
+    g_command_refresh = false;
+    g_progress_queued = false;
+    g_progress_poll = g_campaign_share_at = 0;
     g_world_resets++;
     caption_disarm();
     clear_coop_tables(false); // nothing to restore: the vehicles are gone
@@ -2449,8 +2985,128 @@ static void* local_vehicle(uint16_t id)
     return it == g_gv.end() ? nullptr : it->second.v;
 }
 
+bool offline_control_available() { return active() && is_host() && g_founder_nations.guest().faction && g_offline_selection_ready; }
+bool offline_control_enabled() { return g_offline_control; }
+
+bool founder_space_ready()
+{
+    if (!active() || !g_founder_nations.guest().faction) return false;
+    static uintptr_t ready = H->sym("SporeCoop::CivMode_SpaceReady");
+    return ready && skg::cdecl_call<bool>(ready);
+}
+
 std::string debug(const std::vector<std::string>& a)
 {
+    if (!a.empty() && a[0] == "offline_control") {
+        if (!active() || !is_host() || !g_founder_nations.guest().faction)
+            return "Open the founder campaign on the host to change offline control.";
+        if (a.size() == 2 && (a[1] == "on" || a[1] == "off")) {
+            const bool enabled = a[1] == "on";
+            if (enabled && !g_offline_selection_ready) return "Offline selection is unavailable on this game build.";
+            if (!founders::set_offline_control(world::current_game_key(), g_founder_nations, enabled))
+                return "Could not save offline control for this campaign.";
+            g_offline_control = enabled;
+            g_command_refresh = true;
+        } else if (a.size() != 1) return "Use offline_control on or off.";
+        return g_offline_control ? "Offline partner control: on" : "Offline partner control: off";
+    }
+    if (a.size() == 2 && a[0] == "bind_guest") {
+        if (!active() || !is_host() || C.sess->players().size() != 2 || !player_civ())
+            return "Bind a nation on the Civilization host with one guest present.";
+        char* end = nullptr;
+        unsigned long long raw = strtoull(a[1].c_str(), &end, 16);
+        if (!raw || raw > UINT32_MAX || !end || *end || raw == pol_of(player_civ())) return "Choose a distinct non-player nation from coop civ nations.";
+        uint8_t guest = 0;
+        for (const auto& p : C.sess->players()) if (p.id) guest = p.id;
+        auto key = creations::player_key(guest, creations::kCreature);
+        auto home_key = F<creations::Key>(player_civ(), kNationSpecies);
+        if (!guest || !key.instance || !home_key.instance || key == home_key || !creations::player_species(guest))
+            return "Waiting for a distinct, loaded guest species.";
+        std::string planet = world::current_game_key(), err;
+        if (planet.empty()) return "Save and name the planet before binding a nation.";
+        void* nation = nullptr;
+        for (void* city : all_cities()) {
+            void* country = F<void*>(city, kCityCiv);
+            if (!country || country == player_civ() || pol_of(country) != raw) continue;
+            if (pol_of(city) != raw || (nation && nation != country)) return "City ownership is changing. Try again once it settles.";
+            nation = country;
+            auto city_key = F<creations::Key>(city, kCitySpecies);
+            if (city_key.instance && !(city_key == key)) return "This city already uses another species.";
+        }
+        if (!nation) return "No live capital or city belongs to that nation.";
+        auto& saved = F<creations::Key>(nation, kNationSpecies);
+        if (saved.instance && !(saved == key)) return "This nation already has a different species.";
+        founders::Roster pair{home_key.instance, key.instance, pol_of(player_civ()), pol_of(nation)};
+        auto stage = founders::Stage::Civilization;
+        if (!founders::can_record(planet, pair, err, stage) || !creations::archive_guest_model(guest, planet, err) ||
+            !founders::record(planet, pair, err, stage)) return err;
+        saved = key; // the native save owns this field. Spore derives live citizens from it as the city enters view.
+        if (!world::share_with(guest, err, true)) return "Nation assigned; could not queue the save transfer. Retry the binding. " + err;
+        return "Guest species assigned to the nation. Saving and sharing the planet.";
+    }
+    if (a.size() == 1 && a[0] == "citizens") {
+        if (!g_ok || game::mode_id() != modes::kCiv || !nm()) return "Open a Civilization planet first.";
+        struct Census {
+            std::vector<void*> cities;
+            std::map<std::tuple<uint32_t, uint32_t, uint32_t>, unsigned> groups;
+        } census{all_cities(), {}};
+        game::for_each_object([](void* obj, uint32_t noun, void* data) {
+            auto& census = *static_cast<Census*>(data);
+            if (noun != 0x018EB4B7 || !game::object_alive(obj)) return true;
+            void* city = F<void*>(obj, 0x1010); // cCreatureCitizen::mpOwnerCity
+            bool known = std::find(census.cities.begin(), census.cities.end(), city) != census.cities.end();
+            ++census.groups[{known ? pol_of(city) : 0, pol_of(obj), game::species_key(obj).instance}];
+            return true;
+        }, &census);
+        std::string result;
+        for (auto& [keys, count] : census.groups) {
+            char row[100];
+            auto [city_pol, citizen_pol, species] = keys;
+            snprintf(row, sizeof row, "citizens city_pol=%08X citizen_pol=%08X species=%08X count=%u\n",
+                     city_pol, citizen_pol, species, count);
+            result += row;
+        }
+        return result.empty() ? "No live citizen objects in this view." : result;
+    }
+    if (a.size() == 1 && a[0] == "campaign") {
+        if (!active()) return "Open a connected Civilization campaign first.";
+        std::string result;
+        for (void* country : vec_of(thiscall<void*>(a_GetAllCivs, nm()))) {
+            if (!g_founder_nations.contains_faction(pol_of(country))) continue;
+            char row[256];
+            snprintf(row, sizeof row, "campaign pol=%08X cities=%u team=%u tech=%d highest=%d captures=%d,%d,%d unlocks=",
+                     pol_of(country), (unsigned)vec_of((uint8_t*)country + kCivCities).size(),
+                     (unsigned)team_cities(country).size(), F<int>(country, 0x298), F<int>(country, 0x4D0),
+                     F<int>(country, 0x4C0), F<int>(country, 0x4C4), F<int>(country, 0x4C8));
+            result += row;
+            for (unsigned i = 0; i < 12; ++i) result += F<uint8_t>(country, 0x484 + i) ? '1' : '0';
+            result += '\n';
+        }
+        return result;
+    }
+    if (a.size() == 1 && a[0] == "hud_progress") {
+        if (!active() || !a_FinalCityCount || !o_HudProgress) return "No active Civilization HUD hook.";
+        char row[160];
+        snprintf(row, sizeof row, "samples=%u home=%.6f displayed=%.6f final_cities=%d",
+                 g_hud_samples, g_solo_fraction, g_hud_fraction, skg::cdecl_call<int>(a_FinalCityCount));
+        return row;
+    }
+    if (a.size() == 1 && a[0] == "nations") {
+        if (!g_ok || game::mode_id() != modes::kCiv || !nm()) return "Open a Civilization planet first.";
+        std::string result;
+        void* player = player_civ();
+        for (void* city : all_cities()) {
+            void* nation = F<void*>(city, kCityCiv);
+            if (!nation || !skg::readable(nation, 0x274) || !skg::readable(city, 0x664)) continue;
+            char row[210];
+            snprintf(row, sizeof row, "city_pol=%08X nation_pol=%08X player=%d nation_species=%08X city_species=%08X wealth=%.2f available=%.2f\n",
+                     pol_of(city), pol_of(nation), nation == player,
+                     F<uint32_t>(nation, kNationSpecies), F<uint32_t>(city, kCitySpecies), (double)F<float>(nation, 0x98),
+                     (double)thiscall<float>(a_GetMoney, nation));
+            result += row;
+        }
+        return result;
+    }
     if (a.size() >= 3 && a[0] == "fix") { // fix boost|world 0|1: the code before BUG-0040 / BUG-0059 (tests)
         bool on = atoi(a[2].c_str()) != 0;
         if (a[1] == "boost")

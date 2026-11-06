@@ -82,6 +82,10 @@ Test runs don't get in the way of whoever is at the computer:
 * **muted**: `prepare_profile` sets `AudioMuteAll true` and `AudioMasterVolume 0` in test
   profiles (the player's sound settings and PipeWire are left alone: PipeWire would remember
   the mute by application name and apply it to normal play too);
+  Windows lab profiles likewise use `AudioMasterVolume 0` (with `AudioMuteAll false`).
+  **Do not launch Tribal performance tests with `-nosound`:** native round/request
+  events come from the audio engine. BUG-9036 reproduced a permanently stalled
+  state4 without it and native progress with silent audio processing enabled.
 * **invisible**: `spore.sh run` starts the test games on a headless GNOME Shell
   (`tools/headless.sh up`: its own D-Bus session and runtime, config and state folders, a 5760x3240
   virtual monitor; its Xwayland display is passed to Bottles). Nothing appears on the user's
@@ -3546,3 +3550,175 @@ Three monitor findings of the w33 runs were the rule or the test, not the mod (e
   must stay at 0 and `coop.status` must count one body left out. `SPORE_FIX_OFF=game.physics_owner` faults at
   0xB4C5B4 in every frame and FAILS. The physics update runs only while the guest's game time runs (the test
   waits up to 60 s for the stand-in to be made).
+
+## Duo 9 Windows checkpoint (2026-11-03, duo-species)
+<a id="testing-duo9-checkpoint"></a>
+
+One isolated Steam Galactic Adventures installation, instances 4 and 5,
+console ports 47803/47804 and UDP 47810. The tests use copied profiles, never
+the user's profile. This is local two-process coverage, not two-PC VPN proof.
+
+- BUG-9010: duo_creature_disconnect.py passed a host victim and a departed
+  guest whose seat was reused. The disabled fix failed. Evidence:
+  build/local/m1-final-disconnect-host.log, m1-final-disconnect-rejoin.log and
+  m1-final-disconnect-nofix.log.
+- BUG-9012: duo_creature_rescue.py --hold-death 125 failed before the guard
+  with a native freed-proxy crash (m1-migration-fix-guest.log). It passed with
+  only the proxy guard (m1-long-baseline-guest.log). The host-first sequence
+  passed again on fresh profiles (m1-confirm-host.log, m1-confirm-guest.log).
+  Every pass requires the actual death caption, native hatch, adult species,
+  normal W movement, exact shared DNA debit and zero native faults.
+- duo_creature_checkpoint.py passed native save, rejoin and cold restart at
+  52 DNA, species 291447DA/291447DD (m1-checkpoint-*.log). Use the original
+  fixture's host name DuoCellHost to exercise its campaign-choice key.
+- A final-build Cell transition used fresh DuoQAM1FinalLand4/5 profiles.
+  Fixture preparation selected cell BAF1AD40 and supplied 1000 test food.
+  History, stage change, readiness, separate first editors, dragging legs,
+  Save New and native introductory captions used UI input. The guest model,
+  thumbnail and parent matched the solo native control through duo_landfall.py.
+  Native walking adults 291489FF/29148A01 retained 65 shared DNA
+  (m1-final-land-walk.log). m1-final-land-playable.log timed out before the
+  operator dismissed the host's introductory tutorial; it is not a game stall.
+- The installed stripped package cold-loaded that same campaign and passed
+  duo_creature_checkpoint.py (m1-duo9-packaged-cold.log). Both games quit with
+  zero faults. Setup /S /uninstall removed coop.dll and restored steam_api.dll
+  SHA256 7AC1090D725DCBD3580909D05258944AA98A6C13BA4FD3A17BD0E67E54252D06.
+  The native save and choices.ini remained. A subsequent clean install passed.
+
+The packaged setup SHA256 is
+E9672E72487F24151775F3E829FDF8C1AD70D80E4080FC9553BF64AA09957560;
+the Duo 9 .pack SHA256 is
+DE4AD78B812E63E02FF7C5F31FE7C34E6F295FE4ABE3D019076A4278F996C4B9.
+Later documentation-only repackaging must preserve these payload hashes.
+BUG-9011 remains not-reproduced after the guard, with no claimed causal proof.
+C&C native model/paint tests from the earlier checkpoint remain prior evidence;
+arbitrary gameplay mods and full campaign progression are not qualified.
+
+## Duo Tribal replacement checkpoint (2026-11-04, duo-species)
+<a id="testing-duo-tribal-replacement"></a>
+
+The disposable native prototype is retained in DuoQAM2Retired4/5, Clyth.spo.
+It transfers the old guest site to 21E0, retires 21CB and creates 21F2 with
+three 0680BF38 citizens. This is not a playable rebuilding action.
+
+- `duo_tribe_rebuild_checkpoint.py --host 4 --guest 5 --planet Clyth.spo
+  --record build/local/m2-retired-tribe.json --species 0680BF38
+  --retired-faction 21CB` checks actual native building owners, primary
+  references, species, life state, population, chief and absence of the old
+  tribe. Before the chief fix the host passed and the guest failed with a null
+  leader (m2-retired-native-checkpoint-detail.log). With the fix, both passed
+  (m2-retired-native-checkpoint-fixed.log and m2-chief-cold-checkpoint.log).
+- `duo_tribe_native_chiefs.py --host 4 --guest 5 --planet Clyth.spo
+  --species 0680BF38 --exercise` checks the host's actual chief identity and
+  guest's native leader/staff, then clears, changes and restores the host
+  chief. Disable `tribe.native_chiefs` on the guest before joining for the
+  negative control. FAIL m2-chief-nofix.log; PASS m2-chief-positive.log and
+  fresh-process m2-chief-cold-positive.log. The latter includes clearing.
+- `--species 06785BC2 --knockout` uses a disposable NPC chief to check that
+  replication preserves native zero health and the dead flag after a lethal
+  hit. PASS m2-chief-ko.log. It does not claim a completed native respawn.
+- Both lab processes exited after the checks with zero recorded native
+  faults and no new crash report. The unchanged Windows regression binary
+  reports ALL OK. Current-build source/symbol lint and normal ticket checks
+  pass. The optional historical `tickets.py check --all` reports 82 existing
+  metadata/evidence issues; it is not the current-change gate. The ticket
+  script still skips Git-history validation on this Windows environment.
+
+The unreleased chief fix uses a development DLL and updated modern symbol
+map in the isolated lab. The packaged Duo 9 ZIP is unchanged. Native capture
+and replacement findings and remaining integration are documented at
+docs/re/tribe.md#tribe-refounding-retirement.
+
+Original-faction follow-up: DuoQAM2Identity4/5 contains fresh native tribe
+3EF4 with the original 21CB political identity. The former native object A0C
+is retired. Use the same checkpoint test with --record
+build/local/m2-identity-tribe.json and omit --retired-faction, because the
+replacement deliberately retains that faction. The record instead asserts
+the retired and replacement native object IDs. PASS m2-identity-checkpoint.log
+and m2-identity-cold.log. The existing duo_orders.py passes on the replacement
+before and after restarting both games (m2-identity-orders.log and
+m2-identity-cold-orders.log). The guest's original founding roster is unchanged.
+The controlled refound_guest command requires prior native retirement; it
+does not automate capture or provide the surviving partner's final action.
+
+Host replacement follow-up: DuoQAM2HostDetach4/5 uses original host faction
+800021CA and species 067B3E4A, replacing native object 6F3 with 3CE0. Run the
+checkpoint with --record build/local/m2-host-detach-tribe.json and that species.
+PASS m2-host-detach-cold.log. Run duo_tribe_host_orders.py --host 4 --guest 5
+--planet Clyth.spo --species 067B3E4A to verify native selection and movement
+on both peers; PASS m2-host-detach-cold-orders.log. Both positives followed a
+native save and full restart. The earlier host sequence lost its captured
+buildings and failed walking (m2-host-identity-checkpoint.log,
+m2-host-identity-orders.log); BUG-9017 records the difference. The native
+probe's initial "playable" output described only stable population and has
+been corrected to "stable"; walking has its own independent assertion.
+Final development-build repeats also pass: m2-host-detach-final-checkpoint.log
+and m2-host-detach-final-orders.log. The queued probe rejects a living host;
+both games exit with zero native faults. This DLL remains unreleased.
+
+## Duo Tribal gameplay checkpoint (2026-11-05, duo-species)
+<a id="test-duo-tribal-gameplay-checkpoint"></a>
+
+Two isolated Steam/GA/Creepy & Cute Windows instances, consoles4/5 at1176x664.
+Disposable profiles only, audio volume0, normal native audio enabled, first-use
+tutorials disabled in the copied profiles. No user game/profile was modified.
+
+| Check | Retained evidence under build/local |
+|---|---|
+| First native rival fails before BUG-9059 | tribal-final-campaign-a.log |
+| Fresh auto-founded campaign earns all five NPC objectives | tribal-final-campaign-g.log and tribal-final-campaign-h.log |
+| Both founder huts/populations, matching native totem types/colors and unlocks | tribal-final-five-readback.log |
+| Actual host mouse selection/raid earns shared fifth victory | tribal-host-final-b.log |
+| Partner rebuild after real NPC capture; old site retained by conqueror | tribal-final-rebuild-c.log |
+| Native economic graduation,90-second editor hold, retired guest-local member | tribal-graduation-lifetime-final.log and tribal-graduation-capitals-final.log |
+| Military editor FAIL with BUG-9060 off, opens in0.62s when enabled | tribal-roles-offline-final.log |
+| Guest leaves during vehicle editing, rejoins host's Civilization | tribal-roles-offline-final.log |
+| Guest leaves before native History advancement, then catches up | tribal-absent-final-resume.log |
+| Actual stripped packaged DLL, cold host restores both capitals before guest joins | tribal-package-cold-final.log |
+| Actual ZIP install, uninstall, original DLL restoration, saved settings and clean reinstall | tribal-final-installer.log |
+
+The campaign raid fixture adds food, shortens travel and nonlethally damages
+huts. Native ordered citizens deliver every final blow; native controller
+appearance supplies all five rivals. The graduation lifetime fixture retires
+one guest-local member via native RemoveMember. Neither fixture is an
+unassisted soak. Native original founders291489FF/7CF26CCB and their current
+outfits2916C9C5/7CFFC56B remain distinct after military graduation/restart.
+Final processes exit with zero recorded faults; no new crash report follows.
+
+Run `tools/tests/duo_tribe_campaign.py --host 4 --guest 5 --founders 291489FF 7CF26CCB`.
+Use --resume only on an explicitly identified checkpoint. The --host-only
+and --guest-only options isolate command paths.
+duo_tribe_graduation_editor.py accepts --planet and --guest-offline.
+duo_tribe_graduation_cityhall.py accepts --vehicle-role, --species, and either
+--retire-guest-member, --guest-offline or --guest-already-offline. Its military
+--vehicle-control must fail the12-second native editor-entry gate; enabling
+the fix then permits --resume-vehicle without replaying City Hall.
+
+Harness corrections are retained: Game0.old alone lacks co-op sidecars and
+is not a complete campaign backup; tribal-host-final-a is not persistence
+evidence. The first offline driver omitted the native Continue caption;
+tribal-absent-final is a harness failure, and the resumed run dismisses that
+caption normally. Do not bypass native cinematics to make these tests pass.
+
+The installer smoke uses a new disposable folder with an identification-only
+SporeApp fixture, the actual ZIP/pack, an original loader copy, and save/settings
+sentinels. It does not launch that fixture or prove a second PC installation.
+The subsequent native cold run deploys its installed, stripped coop.dll into
+the isolated real game lab. Windows unit tests report ALL OK; the DLL build,
+RE/docs/ticket checks and Python syntax checks pass. A pre-existing unused
+g_submits_after_swap compiler warning remains. Two-PC/VPN play, a complete
+religious-editor replay, broad mod compatibility and inherited movement/rendering
+issues remain outside this checkpoint's verified claims; see docs/DUO.md.
+
+## Background resource budget (2026-11-05, duo-species)
+<a id="testing-duo-background-resources"></a>
+
+The user also plays another game during development. The isolated Windows lab
+now sets [sporekit] frame_ms=100 in its own sporekit.ini, verified at9.5-9.6 FPS
+on both processes. This is a lab setting, not a shipped player default. Close
+the lab during code-only work; use one process for single-instance probes.
+Normal-frame-rate movement qualification is bounded to its recording window.
+duo_tribe_walk_connected.py restores its --idle-fps value (default10) in finally,
+including on a recording failure. Do not leave two normal-rate games idle while
+analysing logs. Lower frame rate reduces frame work, but does not free their
+resident memory; closing the processes does.

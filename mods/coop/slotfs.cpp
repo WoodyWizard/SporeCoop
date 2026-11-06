@@ -4,12 +4,14 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
+#include <algorithm>
 #include <cstdio>
 
 namespace slotfs {
 
 bool g_busy_fix = true, g_match_fix = true, g_write_fix = true;
 bool g_fallback_fix = true, g_cleanup_fix = true;
+bool g_move_retry_fix = true;
 std::wstring g_test_held;
 int g_test_cleanup_age_s = 600;
 
@@ -309,6 +311,22 @@ static void cleanup_leftovers(const std::wstring& parent, const std::wstring& tm
 static bool write_locked(const std::wstring& slot, const std::vector<const File*>& files, const std::string& host,
                          const std::string& planet, uint32_t world_id, std::string& err, WriteFail* why);
 
+bool move_staged(const std::wstring& source, const std::wstring& destination)
+{
+    const ULONGLONG deadline = GetTickCount64() + 500;
+    for (;;) {
+        if (MoveFileW(source.c_str(), destination.c_str())) return true;
+        DWORD error = GetLastError();
+        ULONGLONG now = GetTickCount64();
+        if (!g_move_retry_fix || now >= deadline ||
+            (error != ERROR_ACCESS_DENIED && error != ERROR_SHARING_VIOLATION)) {
+            SetLastError(error);
+            return false;
+        }
+        Sleep((DWORD)std::min<ULONGLONG>(25, deadline - now));
+    }
+}
+
 bool write(const std::wstring& slot, const std::vector<const File*>& files, const std::string& host,
            const std::string& planet, uint32_t world_id, std::string& err, WriteFail* why)
 {
@@ -371,7 +389,7 @@ static bool write_locked(const std::wstring& slot, const std::vector<const File*
             *why = WriteFail::Replace;
         return false;
     }
-    if (!MoveFileW(tmp.c_str(), slot.c_str())) {
+    if (!move_staged(tmp, slot)) {
         if (why)
             *why = WriteFail::Move;
         err = "cannot move the world into " + narrow(slot) + " (error " + std::to_string(GetLastError()) + ")";

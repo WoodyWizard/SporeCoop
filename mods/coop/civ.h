@@ -51,6 +51,9 @@ std::vector<syncdbg::Entry> sync_entries(); // coop.sync (tests)
 std::string list();
 std::string debug(const std::vector<std::string>& args);
 bool active();
+bool offline_control_available();
+bool founder_space_ready();
+bool offline_control_enabled();
 // owners for overlay tags
 void for_each_owned(void (*fn)(void* obj, const net::Vec3& pos, uint8_t owner, bool city, void* user), void* user);
 // test bots (coop.targets): every city ("city", host index, owner: player id, 253 shared, -1 other nation)

@@ -818,3 +818,57 @@ the game files' index and Ghidra. The rest of BUG-0424 after BUG-0452.
   (no pack in this install has ship or vehicle paints: the Creepy & Cute pack has creature parts and
   paints only); a key whose records are not in a package the mod can read (a baked resource): the model is
   built as it is and a warning is logged once.
+## Distinct native landfall for the guest cell (2026-11-03, duo-species)
+<a id="creations-duo-cell-conversion"></a>
+
+On Steam 2024, a guest without a land creature played BAF1AD40 while the host
+played 2DDF0D92 on Vantiegan. Duo 6 put the host's Gaal into both FD4902BD early
+editors. In a control copy of the checkpoint Spore evolved BAF1AD40 locally and
+created Stabbella. Its BEM was 1541 bytes, with SHA256
+`51379fecd40e49ac96c3eef91c6ba355f0d46b5ce3977d69e0c20e8a0dd64816`.
+Rekeying the original cell BEM would be wrong. It was 1565 bytes and contained
+different part IDs and dimensions.
+
+The native stage start E83910 calls a narrower method at 4BA690. Thiscall on the
+cell model with an output reference returns AL and pops four bytes. It checks
+the source editor DFAD9F51 at +18, copies the model and sets the destination
+editor 9EA3031A. Calling this method alone, assigning a fresh CRT key from the
+ID generator and writing the BEM produced the same 1541 bytes as Spore's full
+transition. Publishing the disk index has to wait for the queued resource write.
+
+The editor also needs the creation catalog. A BEM-only version selected the
+expected key and produced the native avatar but opened a mouthless blank body
+in the early editor. The working path copies the source thumbnail, constructs
+new metadata with the guest cell as parent and uses the game's model registry.
+The metadata constructor takes D8 bytes from GeneralAllocator::new_ at F47240.
+A development build using the different named allocator at 9262B0 faulted in
+the metadata destructor. The corrected build opened the visibly spiked orange
+Stabbella with its mouth, name and ancestry, while the host opened yellow Gaal.
+
+The Vantiegan test on two processes matched the guest's model, thumbnail and parent
+to the control. Adding legs and choosing Save New produced guest key 29144608.
+The host's equivalent edit gave 29144605. Both returned to one planet, agreed
+on both network creations and reported zero native faults. The test never sets
+the guest's land species key. `tools/tests/duo_landfall.py` reads the two real
+editor requests and the respective local catalogs.
+
+## Archiving native landfall bodies (2026-11-05, duo-species)
+<a id="creations-landfall-archive"></a>
+
+BUG-9041: Stabbella29148A01 saved with legs has a1934-byte BEM. Its paint
+header includes FE07, repeating zero across coat/detail. model_effects was
+designed for in-place replacement and correctly refuses such runs, but using
+that restriction for archive validation rejected a valid native creation.
+Archive validation now uses decode_run to read exactly38 decoded header bytes,
+checks magic D37E6548, then reads base/coat/detail. The substitution parser is
+unchanged. m2-auto-found-a.log is the negative native archive case.
+
+BUG-9042: the decoded paints are2F363540/0/0. Native Cell-to-Creature conversion
+retains this Cell base paint; it is absent from the Creature paint props and
+effect-source records. tools/cell_paints.py over stock Spore_Content.package
+derives19 nonzero base IDs from44 Cell BEMs, including2F363540. The archive
+accepts only that finite set as base paints with zero coat/detail; other
+paint and part availability checks remain. m2-auto-found-b.log reproduces
+the former missing-paint refusal. PASS m2-auto-found-d.log and cold-a: both
+games build and walk the original archived guest species7CF26CCB after native
+founding, saved-world refresh and cold restart, with zero native faults.

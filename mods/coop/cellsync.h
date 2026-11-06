@@ -21,6 +21,10 @@
 
 namespace cellsync {
 
+void clear_cell_credit();
+uint64_t cell_save_stamp();
+void note_saved_cell_credit(uint64_t before);
+
 struct Ctx {
     net::Session* sess = nullptr;
     std::function<std::vector<std::pair<std::string, net::Vec3>>()> partners; // same place

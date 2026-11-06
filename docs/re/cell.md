@@ -1373,3 +1373,49 @@ BUG-0355. GOG 2024, Ghidra and `tools/tests/coop_cell_spare.py` (suite `cell_spa
 * ✔ runtime: after the host's cell editor the host shares its world again (saved 3 s after the
   stage settled); the guest leaves the Cell stage about 4-5 s after it got the host's new cell
   record and is back in Cell another ~5 s later. A mate the guest called before that load is gone.
+
+## Cell recovery and the first landfall on Steam (2026-11-03, duo-species)
+<a id="cell-duo-landfall"></a>
+
+Two actual Steam 2024 instances started in the same tide pool on Brois. The lab
+filled the host food bar with `coop.pool food 1000`, acknowledged the normal stage
+and History screens, and let Spore and the fork perform the handoff. Both games
+entered Creature on Brois (place F0075A78). The native host avatar reported species
+29142C2C and the guest avatar 5D00C0C1, its preselected custom Creepy & Cute
+creature. The host received the guest model as 7C93828D. Both players had cell
+model 4DA56CA5. This run establishes the preselected Creature path. Independent
+cell designs evolving from their own editor histories still need a separate test.
+
+On Vantiegan the guest received a lethal hit. Bringing the host back while the
+10-second window was open revived the guest at body factor 1.00. Leaving the host
+away for a second knockout respawned the guest at HP 6 and body factor 0.50.
+Both games reported zero faults.
+
+## Reserved-seat food progression (2026-11-06, duo-species)
+<a id="cell-reserved-food"></a>
+
+On QuartetSolo native EatFood sent 12 raw plant points through the guest pickup
+path and both peers received three. Loading the native planet after saving three
+quarters preserved the outstanding fraction for that food type (BUG-9072).
+
+## Whole-point enemy combat (2026-11-06, duo-species)
+<a id="cell-fractional-enemy-combat"></a>
+
+On Steam 3010a413, CreateCellObject initializes native HP at E74EFD. Only
+eligible foreground actors created by a native population marker enter the
+health carry. The game returned to E7A817, E71915, E7DE73 and E7DCCB when
+it actually debited GetDamageAmount. Two other callers only compare estimated
+damage against the victim's HP. Counting those queries would charge twice.
+
+The guest's native cell handles its base contact hit. It reports the hit to
+the host for the shared damage carry. The guest applies any extra points only
+while the original body and request still match. Host and guest contact tests
+in cell-round-b-reload.log totaled 40 base damage and two extras. The host
+assigned 35 extra HP to 234 base HP across 39 native enemy spawns.
+
+In cell-round-c-reload.log the guest rejoined and the host saved nonzero HP
+and damage remainders. A second process loaded both from the native-save-bound
+credit file. Four ordinary encounter groups each added one actual predator at
+two reserved seats (cell-round-d-verify.log). At four seats the four groups
+added twelve, and the last group had three distinct native pool IDs
+(cell-group-e-verify.log). Neither test exhausted the placement budget.

@@ -108,6 +108,7 @@ void send(uint8_t kind, const net::Writer& body);
 // a political id of a mirror empire of this copy (a partner's colonies): local to each copy, never
 // shared by pol (BUG-0071)
 bool allies_mirror_pol(uint32_t pol);
+bool enemy_empire(uint32_t political_id);
 // the game's missions (cMission*, every state; space_allies.cpp reads the noun list)
 std::vector<void*> game_missions();
 

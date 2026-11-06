@@ -16,6 +16,9 @@
 #include "net/dbpf.h"
 #include "net/session.h"
 #include "sporekit.h"
+#include "slotfs.h"
+
+namespace founders { struct Roster; }
 
 namespace creations {
 
@@ -54,6 +57,11 @@ extern bool g_leave_fix;
 Key player_key(uint8_t player, Kind k);
 // cSpeciesProfile* of a player's creature, nullptr if none
 void* player_species(uint8_t player);
+bool archive_guest_model(uint8_t guest, const std::string& planet, std::string& err);
+// Register only validated creature resources belonging to this planet before the native load.
+bool restore_guest_model(const std::string& planet, std::string& err);
+// Add custom Civ designs to the outgoing snapshot, without editing the loaded slot.
+bool archive_world_designs(std::vector<slotfs::File>& files, std::string& err);
 
 // Species of the host's world that a guest's game does not have (creatures of the host's own My
 // Creations or of its Sporepedia downloads live on its planet): the guest asks, the host sends the
@@ -62,6 +70,17 @@ void* player_species(uint8_t player);
 void want_species(const Key& k); // guest: this NPC species is unknown here
 bool species_pending(const Key& k); // guest: asked, no answer yet
 bool avatar_swap_settling(double now); // BUG-0318: the own avatar got a new body moments ago (editors wait)
+bool landfall_pending();
+void begin_tribal_outfit(); // snapshot only a guest's voted, own-species outfitter
+void begin_personal_launch(); // the guest's first spacecraft editor was accepted
+bool personal_captain_outfit(uint32_t instance);
+void begin_captain_outfit();
+bool needs_launch_checkpoint(const std::string& planet, const founders::Roster& pair);
+bool needs_local_space_intro(const std::string& received_planet, bool civilization);
+void finish_local_space_intro();
+bool schedule_training_restart();
+bool prepare_training_ship(void* request, bool& restoring);
+void confirm_tribal_outfit(); // host accepted the saved model and founder lineage
 
 // Species of the host's world that are the host's own creations (its My Creations). Creation ids
 // are per profile and sequential, so a guest often owns another creation under the same key, and its
@@ -96,6 +115,8 @@ bool content_all_kinds(); // the switch content.all_kinds (off: 0.7.3.5 for the 
 // at 0x441F3B building them): not built here; the host's world is not loaded while one of its own
 // creations needs such parts (the names, "" = none)
 bool have_creepy_cute();
+// Checks the game's live resource manager when a session is opened.
+bool campaign_content(const char* version, std::string& profile, std::string& error);
 std::string world_missing_parts();
 std::vector<uint32_t> model_parts(const std::vector<uint8_t>& bem); // part ids a creature model names
 

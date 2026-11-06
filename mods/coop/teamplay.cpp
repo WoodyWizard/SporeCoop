@@ -1,4 +1,5 @@
 #include "teamplay.h"
+#include "creature_rescue.h"
 
 #include <cmath>
 #include <cstdio>
@@ -88,6 +89,8 @@ float on_own_damage(void* avatar, float damage)
 {
     if (!g_on || !avatar || damage <= 0)
         return damage;
+    if (creature_rescue::protect(avatar, damage))
+        return damage;
     float hp = game::health(avatar);
     if (hp <= 0 || hp - damage > 0)
         return damage;
@@ -110,7 +113,7 @@ float on_own_damage(void* avatar, float damage)
 
 void tick(void* avatar, double now)
 {
-    if (!g_on || !avatar || now - g_last_regen < 1.0)
+    if (!g_on || !avatar || creature_rescue::down() || now - g_last_regen < 1.0)
         return;
     g_last_regen = now;
     float hp = game::health(avatar), mx = game::max_health(avatar);
@@ -123,6 +126,8 @@ std::string status()
 {
     if (!g_on)
         return "";
+    auto rescue = creature_rescue::status();
+    if (!rescue.empty()) return rescue;
     void* av = game::avatar();
     float d = 0;
     std::string p = av ? nearest_partner(av, kRescueDist, &d) : std::string();

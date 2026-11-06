@@ -1,6 +1,30 @@
 # Changelog
 
-## [Unreleased]
+## [0.7.3.6-duo9] - 2026-11-03
+
+- Guards a late Tribal layout callback after the
+  native species cache is cleared (BUG-9009). Its positive and negative native
+  regressions passed. Conquered-village refounding remains a lab prototype.
+- An active Creature recovery survives a guest leaving. A departed victim's
+  pending DNA penalty stays with the host world and cannot affect a reused
+  player slot as an old knockout (BUG-9010).
+- Creature guests validate wildlife proxy lifetime before each movement pass,
+  avoiding a freed-object crash after a long native death screen (BUG-9012).
+
+## [0.7.3.6-duo8] - 2026-11-03
+
+### Added
+- In experimental two-village mode, the last villager has ten seconds for a
+  partner's nearby member to revive it. Expiry at an intact village returns
+  the member to its food mat with a provisional 10% loss of its village's food.
+  Both players see the timer. The co-op checkpoint command waits for recovery.
+
+### Fixed
+- A living second founding village can keep the world running through native
+  host population loss (BUG-9007). Both founding populations lost still invoke
+  the native rewind.
+- Wildlife sync diagnostics and proxy creation resolve cached native herds
+  through the current object list before using them (BUG-9008).
 
 ## [0.7.3.6] - 2026-11-02
 

@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "../installer/install.h"
+#include "../mods/coop/founders.h"
 #include "../mods/coop/slotfs.h"
 #include "../sporekit/inifile.h"
 #include "../updater/pending.h"
@@ -87,6 +88,195 @@ static std::wstring fresh_dir(const wchar_t* name)
     rmtree(d);
     CreateDirectoryW(d.c_str(), nullptr);
     return d;
+}
+
+static void test_founders()
+{
+    auto planet = fresh_dir(L"founders") + L"\\planet.spo";
+    std::string key = slotfs::narrow(planet), err;
+    founders::Roster wanted{1, 2, 0x800021CA, 0x21CB}, got;
+    CHECK(!founders::record(key, wanted, err));
+    put(planet, "native planet");
+    founders::CampaignRules settings;
+    CHECK(founders::read_rules(key,settings) == founders::RulesFile::Missing);
+    const founders::CampaignRules quartet{4,100}, partial{4,50};
+    CHECK(quartet.rival_target(5) == 20 && quartet.workload_percent() == 400);
+    CHECK(quartet.hunger_factor() == 1.075f);
+    CHECK(quartet.enemy_health_percent() == 145 && quartet.enemy_damage_percent() == 115);
+    founders::CampaignRules pair{2,100};
+    CHECK(pair.hunger_factor() == 1.025f);
+    CHECK(pair.enemy_health_percent() == 115 && pair.enemy_damage_percent() == 105);
+    founders::CampaignRules one_seat{1,100};
+    CHECK(one_seat.enemy_health_percent() == 100 && one_seat.enemy_damage_percent() == 100);
+    CHECK(partial.rival_target(5) == 14 && partial.workload_percent() == 250);
+    CHECK(!founders::reserve(key,{0,100},err) && !founders::reserve(key,{5,100},err));
+    CHECK(founders::reserve(key,quartet,err) && founders::reserve(key,quartet,err));
+    CHECK(!founders::reserve(key,partial,err));
+    CHECK(founders::read_rules(key,settings) == founders::RulesFile::Saved && settings == quartet);
+    auto saved_rules = get(planet + L".duo-seats");
+    put(planet + L".duo-seats",saved_rules.substr(0,16));
+    CHECK(founders::read_rules(key,settings) == founders::RulesFile::Unreadable);
+    put(planet + L".duo-seats",saved_rules);
+    founders::SeatPlan plan;
+    // A host queues a shrink in Tribal, quits, and reopens the same stage.
+    CHECK(founders::queue_seats(key,2,3,err));
+    CHECK(founders::read_rules(key,settings,&plan) == founders::RulesFile::Saved);
+    CHECK(settings == quartet && plan.next_seats == 2 && plan.queued_stage == 3);
+    CHECK(founders::update_seats(key,2,3,false,settings,plan,err) && settings == quartet);
+    CHECK(founders::update_seats(key,1,4,false,settings,plan,err) && settings == pair && !plan.next_seats);
+    // The native executable may reopen the prior stage after an unsaved transition.
+    CHECK(founders::update_seats(key,1,3,false,settings,plan,err) && settings == quartet);
+    CHECK(founders::update_seats(key,1,4,false,settings,plan,err) && settings == pair);
+    CHECK(!founders::queue_seats(key,1,4,err)); // the offline founder still owns seat two
+    CHECK(founders::queue_seats(key,4,4,err));
+    CHECK(founders::update_seats(key,1,5,false,settings,plan,err) && settings == quartet);
+    CHECK(founders::queue_seats(key,2,5,err));
+    CHECK(founders::update_seats(key,1,5,false,settings,plan,err) && settings == quartet);
+    CHECK(founders::update_seats(key,1,5,true,settings,plan,err) && settings == pair);
+    CHECK(founders::update_seats(key,1,5,true,settings,plan,err) && settings == pair && !plan.next_seats);
+    CHECK(founders::queue_seats(key,4,5,err));
+    CHECK(founders::queue_seats(key,2,5,err)); // cancel using current count
+    CHECK(founders::update_seats(key,1,5,true,settings,plan,err) && settings == pair);
+    CHECK(founders::queue_seats(key,4,5,err));
+    CHECK(founders::update_seats(key,1,5,true,settings,plan,err) && settings == quartet);
+    CHECK(founders::queue_seats(key,2,5,err));
+    CHECK(founders::update_seats(key,3,5,true,settings,plan,err) && settings == quartet && !plan.next_seats);
+    founders::CellCredit carry, recovered;
+    CHECK(carry.award(3,true,quartet) == 0 && carry.award(1,false,quartet) == 0);
+    CHECK(carry.award(-4,true,quartet) == -4 && carry.remainder[1] == 300);
+    for (int i = 0; i < 19; ++i) CHECK(founders::CellCredit::bonus(1,105,carry.damage_carry) == 0);
+    for (int i = 0; i < 6; ++i) CHECK(founders::CellCredit::bonus(1,115,carry.health_carry) == 0);
+    CHECK(carry.damage_carry == 95 && carry.health_carry == 90);
+    CHECK(founders::save_cell_credit(key,quartet,carry));
+    CHECK(founders::read_cell_credit(key,quartet,recovered) && recovered.remainder == carry.remainder);
+    CHECK(founders::CellCredit::bonus(1,105,recovered.damage_carry) == 1 && recovered.damage_carry == 0);
+    CHECK(founders::CellCredit::bonus(1,115,recovered.health_carry) == 1 && recovered.health_carry == 5);
+    CHECK(recovered.award(1,true,quartet) == 1 && recovered.award(2,false,quartet) == 0);
+    CHECK(!founders::read_cell_credit(key,partial,recovered));
+    auto current_credit = get(planet + L".duo-food");
+    auto legacy_credit = current_credit.substr(0,16) + current_credit.substr(26);
+    legacy_credit.replace(0,4,"CFD1");
+    put(planet + L".duo-food",legacy_credit);
+    CHECK(founders::read_cell_credit(key,quartet,recovered) && recovered.remainder == carry.remainder);
+    CHECK(recovered.health_carry == 0 && recovered.damage_carry == 0);
+    put(planet + L".duo-food",current_credit);
+    put(planet,"different native checkpoint");
+    CHECK(!founders::read_cell_credit(key,quartet,recovered));
+    put(planet,"native planet");
+    put(planet + L".duo-seats",std::string("FST1\x04\x64\x00",7));
+    CHECK(founders::read_rules(key,settings) == founders::RulesFile::Saved);
+    CHECK(settings.hunger_factor() == 1.f);
+    CHECK(settings.enemy_health_percent() == 175 && settings.enemy_damage_percent() == 130);
+    put(planet + L".duo-seats","bad");
+    CHECK(founders::read_rules(key,settings) == founders::RulesFile::Unreadable);
+    CHECK(!founders::reserve(key,quartet,err) && get(planet + L".duo-seats") == "bad");
+    CHECK(!founders::record(key, {1, 1, 3, 4}, err));
+    CHECK(founders::record(key, wanted, err));
+    CHECK(founders::record(key, wanted, err));
+    CHECK(!founders::record(key, {1, 3, 4, 5}, err));
+    CHECK(founders::read(key, got) && got == wanted);
+    // Lock the legacy wire bytes, including their species-then-factions order.
+    const char legacy[] = {'D', 'U', 'O', '1', 1, 0, 0, 0, 2, 0, 0, 0,
+                           char(0xCA), 0x21, 0, char(0x80), char(0xCB), 0x21, 0, 0};
+    CHECK(get(planet + L".duofounders") == std::string(legacy, sizeof legacy));
+    CHECK(got.entries[0].species == 1 && got.entries[1].species == 2);
+    CHECK(got.by_faction(0x21CB) == &got.entries[1]);
+    CHECK(!got.by_faction(0) && !got.by_faction(123));
+    auto expanded = wanted;
+    expanded.entries[2] = {7, 9};
+    expanded.entries[3] = {8, 10};
+    CHECK(expanded.contains_faction(9) && expanded.contains_faction(10));
+    CHECK(!founders::record(key, expanded, err)); // never truncate future slots into DUO1
+    CHECK(founders::read(key, got) && got == wanted);
+    auto civ = founders::Stage::Civilization;
+    CHECK(!founders::record(key, {1, 7, 3, 4}, err, civ));
+    CHECK(founders::record(key, {1, 2, 3, 4}, err, civ));
+    CHECK(founders::read(key, got, civ) && got.guest().faction == 4);
+    auto expected_civ = std::string(legacy, sizeof legacy);
+    expected_civ.replace(0, 4, "CIV1");
+    expected_civ.replace(12, 8, std::string("\x03\0\0\0\x04\0\0\0", 8));
+    CHECK(get(planet + L".duonations") == expected_civ);
+    CHECK(founders::read(key, got) && got == wanted);
+    std::vector<uint32_t> ids;
+    std::vector<uint8_t> bytes;
+    constexpr uint32_t model = 0x7C123456;
+    CHECK(founders::model_ids(key, ids, err) && ids.empty());
+    CHECK(!founders::store_guest_model(key, 123, {1}, err));
+    CHECK(founders::store_guest_model(key, model, {7, 8, 9}, err));
+    CHECK(founders::store_guest_model(key, model, {7, 8, 9}, err));
+    CHECK(!founders::store_guest_model(key, model, {7, 8}, err));
+    CHECK(founders::model_ids(key, ids, err) && ids.size() == 1 && ids[0] == model);
+    CHECK(founders::load_guest_model(key, model, bytes, err) && bytes == std::vector<uint8_t>({7, 8, 9}));
+    founders::Outfits outfits;
+    CHECK(founders::read_outfits(key, outfits, err) && outfits.current(0) == 1 && outfits.current(1) == 2);
+    CHECK(founders::record_outfit(key, 0, 1, 11, err));
+    CHECK(founders::record_outfit(key, 1, 2, 22, err));
+    CHECK(founders::record_outfit(key, 1, 22, 22, err)); // idempotent retry
+    CHECK(!founders::record_outfit(key, 1, 2, 23, err)); // delayed result
+    CHECK(!founders::record_outfit(key, 1, 22, 11, err)); // partner's species
+    CHECK(!founders::record_outfit(key, 2, 22, 23, err)); // four-species gameplay stays disabled
+    CHECK(founders::read_outfits(key, outfits, err) && outfits.contains(0, 1) && outfits.contains(1, 2) &&
+          outfits.current(0) == 11 && outfits.current(1) == 22);
+    CHECK(founders::read(key, got) && got == wanted); // founding identity never rewritten
+    auto outfit_bytes = get(planet + L".duooutfits");
+    // A new Civilization roster accepts outfit descendants, not arbitrary models.
+    DeleteFileW((planet + L".duonations").c_str());
+    CHECK(founders::record(key, {11, 22, 3, 4}, err, civ));
+    CHECK(!founders::can_record(key, {11, 23, 3, 4}, err, civ));
+    HANDLE locked = CreateFileW((planet + L".duooutfits").c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
+    CHECK(locked != INVALID_HANDLE_VALUE);
+    CHECK(!founders::record_outfit(key, 1, 22, 23, err)); // atomic replacement fails, prior intact
+    CloseHandle(locked);
+    CHECK(get(planet + L".duooutfits") == outfit_bytes);
+    put(planet + L".duooutfits", outfit_bytes + "x");
+    CHECK(!founders::read_outfits(key, outfits, err));
+    CHECK(!founders::record_outfit(key, 1, 22, 23, err));
+    CHECK(founders::read(key, got) && got == wanted);
+    put(planet + L".duooutfits", outfit_bytes);
+    auto path = planet + L".duofounders";
+    put(path, get(path) + "x");
+    CHECK(!founders::read(key, got));
+    CHECK(!founders::record(key, wanted, err));
+    put(path, "DUO");
+    CHECK(!founders::read(key, got));
+    CHECK(get(planet) == "native planet");
+}
+
+static void test_uninstall()
+{
+    std::wstring root = fresh_dir(L"uninstall");
+    std::wstring bin = root + L"\\SporebinEP1";
+    std::wstring symbols = bin + L"\\mods\\sporekit\\symbols";
+    std::string msg;
+    put(bin + L"\\SporeApp.exe", "game");
+    put(bin + L"\\steam_api.dll", "sporekit-loader");
+    put(bin + L"\\mods\\coop.dll", "co-op");
+    put(bin + L"\\mods\\sporecoop.version", "test");
+    put(symbols + L"\\march2017_dc04aee5.sym", "co-op");
+    put(symbols + L"\\another-mod.sym", "other symbols");
+    put(symbols + L"\\another-mod.sym.old", "other backup");
+    put(bin + L"\\mods\\coop.ini", "player settings");
+    put(root + L"\\Data\\unrelated.package", "player data");
+    CHECK(!inst::do_uninstall(root, msg)); // no original DLL to restore
+    CHECK(get(bin + L"\\mods\\coop.dll") == "co-op");
+    put(bin + L"\\steam_api_orig.dll", "original game DLL");
+    HANDLE held = CreateFileW((bin + L"\\steam_api.dll").c_str(), GENERIC_READ, FILE_SHARE_READ,
+                              nullptr, OPEN_EXISTING, 0, nullptr);
+    CHECK(held != INVALID_HANDLE_VALUE);
+    CHECK(!inst::do_uninstall(root, msg)); // game has the proxy open
+    CloseHandle(held);
+    CHECK(get(bin + L"\\steam_api_orig.dll") == "original game DLL");
+    CHECK(get(bin + L"\\steam_api.dll") == "sporekit-loader");
+    CHECK(inst::do_uninstall(root, msg));
+    CHECK(inst::do_uninstall(root, msg)); // an interrupted cleanup is retryable
+    CHECK(get(bin + L"\\steam_api.dll") == "original game DLL");
+    CHECK(!exists(bin + L"\\steam_api_orig.dll"));
+    CHECK(!exists(bin + L"\\mods\\coop.dll"));
+    CHECK(!exists(symbols + L"\\march2017_dc04aee5.sym"));
+    CHECK(get(symbols + L"\\another-mod.sym") == "other symbols");
+    CHECK(get(symbols + L"\\another-mod.sym.old") == "other backup");
+    CHECK(get(bin + L"\\mods\\coop.ini") == "player settings");
+    CHECK(get(root + L"\\Data\\unrelated.package") == "player data");
 }
 
 // BUG-0114: only the updater's own backups are removed, never the player's *.old files
@@ -259,7 +449,9 @@ static bool wr(const std::wstring& slot, const std::vector<slotfs::File>& w, con
     std::vector<const slotfs::File*> v;
     for (auto& f : w)
         v.push_back(&f);
-    return slotfs::write(slot, v, host, planet, id, err);
+    bool ok = slotfs::write(slot, v, host, planet, id, err);
+    if (!ok) printf("  slot write: %s\n", err.c_str());
+    return ok;
 }
 
 static std::wstring lower(std::wstring s)
@@ -267,6 +459,67 @@ static std::wstring lower(std::wstring s)
     for (auto& c : s)
         c = towlower(c);
     return s;
+}
+
+static DWORD WINAPI release_slot_lock(void* handle)
+{
+    Sleep(150);
+    CloseHandle((HANDLE)handle);
+    return 0;
+}
+
+static void test_slot_move_retry()
+{
+    printf("world: staged folder rename tolerates a brief real file lock (BUG-9028)\n");
+    std::wstring dir = fresh_dir(L"move_retry"), source = dir + L"\\stage", destination = dir + L"\\Game0";
+    put(source + L"\\stars.db", "COMPLETE WORLD");
+    HANDLE hold = CreateFileW((source + L"\\stars.db").c_str(), GENERIC_READ,
+                             FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
+    CHECK(hold != INVALID_HANDLE_VALUE);
+    if (hold == INVALID_HANDLE_VALUE) return;
+    // Establish that this OS enforces the lock before testing a delayed release.
+    bool locked_move = MoveFileW(source.c_str(), destination.c_str());
+    DWORD blocked_error = GetLastError();
+    if (locked_move) {
+        CloseHandle(hold);
+        printf("  file-lock semantics unavailable on this OS; delayed-release case skipped\n");
+        return;
+    }
+    CHECK(blocked_error == ERROR_ACCESS_DENIED || blocked_error == ERROR_SHARING_VIOLATION);
+    HANDLE release = CreateThread(nullptr, 0, release_slot_lock, hold, 0, nullptr);
+    CHECK(release != nullptr);
+    if (!release) { CloseHandle(hold); return; }
+    bool moved = slotfs::move_staged(source, destination);
+    DWORD move_error = moved ? ERROR_SUCCESS : GetLastError();
+    WaitForSingleObject(release, INFINITE);
+    CloseHandle(release);
+    printf("  transient lock: moved=%d error=%lu\n", moved, move_error);
+    CHECK(moved);
+    CHECK(get(destination + L"\\stars.db") == "COMPLETE WORLD");
+    CHECK(!exists(source));
+
+    if (!moved) return; // keep the negative control's later checks independent
+
+    // A persistent lock stays an error; neither side may be destroyed.
+    source = dir + L"\\permanent";
+    std::wstring absent = dir + L"\\Game1";
+    put(source + L"\\stars.db", "KEEP SOURCE");
+    hold = CreateFileW((source + L"\\stars.db").c_str(), GENERIC_READ,
+                       FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
+    CHECK(hold != INVALID_HANDLE_VALUE);
+    ULONGLONG began = GetTickCount64();
+    bool permanent = slotfs::move_staged(source, absent);
+    DWORD permanent_error = GetLastError();
+    CHECK(!permanent);
+    CHECK(permanent_error == ERROR_ACCESS_DENIED || permanent_error == ERROR_SHARING_VIOLATION);
+    CHECK(GetTickCount64() - began < 2000);
+    CloseHandle(hold);
+    CHECK(get(source + L"\\stars.db") == "KEEP SOURCE");
+    CHECK(!exists(absent));
+    // Even after retrying, an occupied destination is never replaced.
+    CHECK(!slotfs::move_staged(source, destination));
+    CHECK(get(source + L"\\stars.db") == "KEEP SOURCE");
+    CHECK(get(destination + L"\\stars.db") == "COMPLETE WORLD");
 }
 
 static void test_slot_busy()
@@ -284,8 +537,11 @@ static void test_slot_busy()
     std::wstring s1 = slotfs::pick(games, lower(s0), "Alice", "Terra", "Terra.spo", true, note);
     CHECK(!s1.empty());
     CHECK(lower(s1) != lower(s0));
-    if (!s1.empty() && lower(s1) != lower(s0))
-        CHECK(wr(s1, w2, "Alice", "Terra", 0x22, err));
+    if (!s1.empty() && lower(s1) != lower(s0)) {
+        bool written = wr(s1, w2, "Alice", "Terra", 0x22, err);
+        if (!written) printf("  second slot write: %s\n", err.c_str());
+        CHECK(written);
+    }
     CHECK(get(s0 + L"\\Terra.spo") == "A1");
     CHECK(get(s0 + L"\\guest-progress.txt") == "the guest's game");
     CHECK(get(s1 + L"\\Terra.spo") == "A2");
@@ -799,9 +1055,15 @@ static void test_setup_close()
     }
     bool closed_early = WaitForSingleObject(pi.hProcess, 2000) == WAIT_OBJECT_0;
     printf("  closed during the job: %s\n", closed_early ? "yes" : "no (refused)");
-    // the job ends (5 files x 1.5 s), then the window closes
-    for (int i = 0; i < 200 && !closed_early && !all_of_version(g, "0.11.0", true); i++)
+    CHECK(!closed_early);
+    // BUG-9029: the last file can be visible before the worker's WM_DONE
+    // reaches the UI. Closing at that point is correctly refused. Wait for
+    // the actual UI completion signal (Close re-enabled), not file contents.
+    HWND close_button = w ? GetDlgItem(w, 13) : nullptr;
+    for (int i = 0; i < 300 && !closed_early && close_button && !IsWindowEnabled(close_button); i++)
         Sleep(100);
+    if (!closed_early)
+        CHECK(close_button && IsWindowEnabled(close_button));
     if (!closed_early && w)
         PostMessageW(w, WM_CLOSE, 0, 0);
     bool ended = WaitForSingleObject(pi.hProcess, 20000) == WAIT_OBJECT_0;
@@ -1374,8 +1636,14 @@ static void test_setup_api403()
     }
     gh_release("0.13.0", "0.13.0");
     std::wstring g = fake_game(L"web_setup");
+    // This case exercises the network fallback. A user's packaged setup has an offline pack next to it.
+    std::wstring exe = fresh_dir(L"web_setup_exe") + L"\\SporeCoopSetup.exe";
+    if (!CopyFileW(setup_exe().c_str(), exe.c_str(), TRUE)) {
+        CHECK(false);
+        return;
+    }
     std::wstring log = g + L"\\setup.log";
-    std::wstring cmd = L"\"" + setup_exe() + L"\" /S \"/dir:" + g + L"\" /api:" + upd::widen(gh_api()) + L" \"/log:" + log +
+    std::wstring cmd = L"\"" + exe + L"\" /S \"/dir:" + g + L"\" /api:" + upd::widen(gh_api()) + L" \"/log:" + log +
                        L"\"" + (upd::g_web_fallback_fix ? L"" : L" /oldweb");
     STARTUPINFOW si{sizeof si};
     PROCESS_INFORMATION pi{};
@@ -1396,8 +1664,13 @@ static void test_setup_api403()
 
 int main(int argc, char** argv)
 {
+    bool staged_move_only = false;
     for (int i = 1; i < argc; i++) {
-        if (!strcmp(argv[i], "--old"))
+        if (!strcmp(argv[i], "--staged-move-only"))
+            staged_move_only = true;
+        else if (!strcmp(argv[i], "--old-staged-move"))
+            slotfs::g_move_retry_fix = false;
+        else if (!strcmp(argv[i], "--old"))
             g_old = true;
         else if (!strcmp(argv[i], "--old-suffix")) // BUG-0114 alone (update.old_suffix)
             upd::g_old_suffix_fix = false;
@@ -1432,6 +1705,7 @@ int main(int argc, char** argv)
         upd::g_dup_fix = false;
         slotfs::g_busy_fix = slotfs::g_match_fix = slotfs::g_write_fix = false;
         slotfs::g_fallback_fix = slotfs::g_cleanup_fix = false;
+        slotfs::g_move_retry_fix = false;
         skini::g_unicode_fix = false;
         skini::g_encode_fix = skini::g_lock_fix = false;
         upd::g_path_fix = false;
@@ -1444,12 +1718,54 @@ int main(int argc, char** argv)
     g_tmp = std::wstring(t) + L"sporecoop-win-tests";
     rmtree(g_tmp);
     CreateDirectoryW(g_tmp.c_str(), nullptr);
+    if (argc == 2 && !strcmp(argv[1], "--founders-only")) {
+        test_founders();
+        rmtree(g_tmp);
+        printf(g_fail ? "FAILED (%d)\n" : "ALL OK\n", g_fail);
+        return g_fail ? 1 : 0;
+    }
+    if (staged_move_only) {
+        test_slot_move_retry();
+        rmtree(g_tmp);
+        printf(g_fail ? "FAILED (%d)\n" : "ALL OK\n", g_fail);
+        return g_fail ? 1 : 0;
+    }
+    if (argc == 2 && !strcmp(argv[1], "--slots-only")) {
+        test_slot_move_retry();
+        test_slot_busy();
+        test_slot_match();
+        test_slot_write_fails();
+        test_slot_fallback();
+        test_slot_leftovers();
+        rmtree(g_tmp);
+        printf(g_fail ? "FAILED (%d)\n" : "ALL OK\n", g_fail);
+        return g_fail ? 1 : 0;
+    }
+    if (argc == 2 && !strcmp(argv[1], "--setup-close-only")) {
+        test_setup_close();
+        rmtree(g_tmp);
+        printf(g_fail ? "FAILED (%d)\n" : "ALL OK\n", g_fail);
+        return g_fail ? 1 : 0;
+    }
+    test_uninstall();
+    test_founders();
+    if (argc == 2 && !strcmp(argv[1], "--uninstall-only")) {
+        rmtree(g_tmp);
+        printf(g_fail ? "FAILED (%d)\n" : "ALL OK\n", g_fail);
+        return g_fail ? 1 : 0;
+    }
     test_cleanup_old();
     test_apply_pack();
     test_apply_rollback();
     test_update_lock();
     test_pending();
+    test_slot_move_retry();
     test_slot_busy();
+    if (argc == 2 && !strcmp(argv[1], "--slot-busy-only")) {
+        rmtree(g_tmp);
+        printf(g_fail ? "FAILED (%d)\n" : "ALL OK\n", g_fail);
+        return g_fail ? 1 : 0;
+    }
     test_slot_match();
     test_slot_write_fails();
     test_slot_fallback();

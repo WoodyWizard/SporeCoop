@@ -13,6 +13,8 @@
 namespace shared {
 
 void init(const SkHost* host, SkMod* mod);
+bool tribe_food(void* tribe, double& total);
+void mirror_village_food(void* tribe, double total);
 // elsewhere: the guest plays another world of the host's stage (coop.cpp guest_elsewhere(),
 // BUG-0231): the totals are held (res.elsewhere), nothing is applied or sent
 void tick(net::Session& s, uint32_t mode, double now, bool elsewhere = false);

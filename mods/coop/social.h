@@ -18,6 +18,7 @@
 #include "sporekit.h"
 
 namespace social {
+int creature_relationship(void* creature);
 
 struct Ctx {
     net::Session* sess = nullptr;

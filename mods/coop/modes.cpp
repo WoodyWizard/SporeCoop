@@ -148,18 +148,44 @@ static float creature_tag(void* p) { return game::bounding_radius(p) * 1.3f + 0.
 
 // adventure identity: cScenarioMode (*ptr) -> mpData (+0x74) -> mpResource (+0x10) -> resource key (+8)
 static uint32_t S2(const char* n);
-static uint32_t adventure_place()
+static uint8_t* scenario_mode()
 {
     uintptr_t p = S2("App::cScenarioMode::ptr");
     uint8_t* sm = p ? *(uint8_t**)p : nullptr;
-    if (!sm || !skg::readable(sm, 0xD0))
+    return sm && skg::readable(sm, 0xD0) ? sm : nullptr;
+}
+
+static uint32_t adventure_place()
+{
+    uint8_t* sm = scenario_mode();
+    if (!sm)
         return 0;
     uint8_t* data = *(uint8_t**)(sm + 0x74);
     uint8_t* res = data && skg::readable(data, 0x14) ? *(uint8_t**)(data + 0x10) : nullptr;
     if (!res || !skg::readable(res, 0x14))
         return 0;
     uint32_t inst = *(uint32_t*)(res + 8), group = *(uint32_t*)(res + 16);
-    return (inst ^ (group * 0x9E3779B1u)) | 1u;
+    return inst ? (inst ^ (group * 0x9E3779B1u)) | 1u : 0;
+}
+
+uint8_t* adventure_play()
+{
+    uint8_t* sm = game::mode_id() == kScenario ? scenario_mode() : nullptr;
+    uint8_t* play = sm ? *(uint8_t**)(sm + 0x78) : nullptr;
+    return play && skg::readable(play, 0xBC) ? play : nullptr;
+}
+
+bool adventure_progress(int& act, int& state, int& completed)
+{
+    uint8_t* play = adventure_play();
+    if (!play)
+        return false;
+    state = *(int*)(play + 0x90);
+    if (state != 3 && state != 5 && state != 6) // the act and summary are initialized in play
+        return false;
+    act = *(int*)(play + 0xB8);
+    completed = *(int*)(play + 0x0C + 0x1C);
+    return true;
 }
 
 // ---------------------------------------------------------------- space: UFOs
@@ -829,7 +855,8 @@ bool cell_sap_room()
     return false;
 }
 
-uint32_t cell_create(const net::Vec3& pos, void* res_ref, int level, const uint32_t key[3], const net::Quat* rot)
+uint32_t cell_create(const net::Vec3& pos, void* res_ref, int level, const uint32_t key[3], const net::Quat* rot,
+                     CellSpawnSize scale)
 {
     ensure_model_hook();
     uint8_t* g = cell_game();
@@ -843,7 +870,8 @@ uint32_t cell_create(const net::Vec3& pos, void* res_ref, int level, const uint3
     g_key = {key[0], key[1], key[2]};
     g_force_key = o_GetModelKey && key[0] != 0;
     // (query, pos, elevation, ref, level, sizeFactor, cellSize 0 = auto, applySize, orientation, collision group -1)
-    uint32_t idx = skg::cdecl_call<uint32_t>(create, *(void**)(g + 0x40FC), &p, 0.f, res_ref, level, 1.f, 0.f, 1,
+    uint32_t idx = skg::cdecl_call<uint32_t>(create, *(void**)(g + 0x40FC), &p, scale.elevation, res_ref, level,
+                                             scale.factor, scale.size, scale.apply,
                                              (void*)&q, -1);
     g_force_key = false;
     return cell_at(idx) ? idx : 0;
@@ -1036,28 +1064,29 @@ static void* rts_local()
     return rts_anchor(a) ? &g_local_marker : nullptr;
 }
 
-// planet point under the mouse (ray from the game camera against the planet sphere)
-static bool mouse_on_planet(net::Vec3& out)
+bool camera_ray_at_pixel(int x, int y, net::Vec3& origin, net::Vec3& direction)
 {
-    net::Vec3 anchor;
-    if (!rts_anchor(anchor))
-        return false;
-    HWND w = (HWND)g_host_for_modes->game_window();
-    POINT pt;
-    if (!w || !GetCursorPos(&pt) || !ScreenToClient(w, &pt))
-        return false;
     uintptr_t mmget = S("App::IGameModeManager::Get"), ray = S("App::cViewer::GetCameraToPoint");
     void* mm = mmget ? skg::cdecl_call<void*>(mmget) : nullptr;
     void* viewer = mm ? skg::vcall<void*>(mm, 0x58 / 4) : nullptr;
     if (!viewer || !ray)
         return false;
     skg::Vector3 o{}, d{};
-    if (!skg::thiscall<bool>(ray, viewer, (float)pt.x, (float)pt.y, &o, &d))
+    if (!skg::thiscall<bool>(ray, viewer, (float)x, (float)y, &o, &d))
         return false;
     float dl = std::sqrt(d.x * d.x + d.y * d.y + d.z * d.z);
     if (dl < 1e-6f)
         return false;
     d.x /= dl; d.y /= dl; d.z /= dl;
+    origin = {o.x, o.y, o.z}; direction = {d.x, d.y, d.z};
+    return true;
+}
+
+// planet point under the mouse (ray from the game camera against the planet sphere)
+bool planet_at_pixel(int x, int y, net::Vec3& out)
+{
+    net::Vec3 anchor, o, d;
+    if (!rts_anchor(anchor) || !camera_ray_at_pixel(x, y, o, d)) return false;
     float R = drive::speed(anchor);
     float b = o.x * d.x + o.y * d.y + o.z * d.z;
     float c = o.x * o.x + o.y * o.y + o.z * o.z - R * R;
@@ -1077,7 +1106,10 @@ static void rts_fill(void* m, net::PlayerState& st)
 {
     Marker* mk = (Marker*)m;
     net::Vec3 p;
-    if (mk == &g_local_marker && !g_marker_pinned && mouse_on_planet(p))
+    HWND w = (HWND)g_host_for_modes->game_window();
+    POINT pt;
+    if (mk == &g_local_marker && !g_marker_pinned && w && GetCursorPos(&pt) && ScreenToClient(w, &pt) &&
+        planet_at_pixel(pt.x, pt.y, p))
         mk->pos = p;
     marker_moved(mk);
     st.flags |= net::PF_IN_WORLD;
@@ -1118,8 +1150,9 @@ static const Adapter kAdapters[] = {
     {"Civilization", kCiv, nullptr, false, rts_local, rts_fill, rts_spawn, rts_drive, rts_despawn, rts_tag},
     {"Cell", kCell, nullptr, false, cell_local, cell_fill, cell_spawn, cell_drive, cell_despawn, cell_tag, cell_alive, true},
     {"Creature", kCreature, nullptr, false, creature_local, creature_fill, creature_spawn, creature_drive, creature_despawn, creature_tag},
-    // adventures are not saves: every player starts the same adventure, puppets meet inside it
-    {"Adventure", kScenario, adventure_place, true, creature_local, creature_fill, creature_spawn, creature_drive, creature_despawn, creature_tag},
+    // BUG-9003: the scenario initializes its cast on act changes. A regular Creature-stage
+    // animal in that cast crashed SetCurrentAct. Keep the captain local and draw remote names.
+    {"Adventure", kScenario, adventure_place, true, creature_local, creature_fill, nullptr, nullptr, nullptr, nullptr},
     {"Space", kSpace, space_place, false, space_local, space_fill, space_spawn, space_drive, space_despawn, space_tag, space_alive},
 };
 

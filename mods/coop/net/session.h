@@ -48,6 +48,9 @@ public:
     } cb;
 
     uint32_t build = 0;      // exe build id; mismatch = reject
+    uint8_t seat_limit = kMaxPlayers; // host admission and discovery; includes the solo host
+    bool personal_launch = false; // the game handles retained Civilization checkpoints
+    std::string campaign_profile; // empty for stock-protocol clients and test peers
     std::string version;     // ours for HELLO / WELCOME (CAP_VERSION): "coop X, SporeKit Y, <game build> <exe hash>"
     // BUG-0141: names are unique in a session (the host appends " 2", " 3" to a taken name; the
     // guest takes its name from the roster). Space tables keyed by name mixed up two players with
@@ -95,6 +98,7 @@ public:
     uint16_t port() const { return tr_->local_port(); }
     // round trip time to a player in ms (host: any guest, guest: the host), -1 if unknown
     int rtt_of(uint8_t id) const;
+    uint32_t peer_caps(uint8_t id) const;
     // the link to a player (host: any guest, guest: the host) for the support trace: no address
     struct Link {
         int rtt_ms = -1;

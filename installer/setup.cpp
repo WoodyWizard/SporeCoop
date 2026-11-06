@@ -277,7 +277,8 @@ void refresh()
                                      (ri.rel.from_web ? " (from the release page)" : "")
                          : !ri.done ? "Newest release: checking GitHub..."
                                     : "Newest release: GitHub not reachable (" + ri.err + ")";
-    SetWindowTextW(g_latest, upd::widen(latest).c_str());
+    SetWindowTextW(g_latest, g_opt.inst.api.empty() ? L"Duo preview uses the release pack next to this setup." :
+                   upd::widen(latest).c_str());
     // BUG-0094: the version the button installs, as do_install chooses it: the pack next to the
     // setup, or GitHub's release when that is newer
     std::string next = upd::pack_version_of(upd::narrow(inst::local_pack(g_opt.inst)));
@@ -292,7 +293,9 @@ void refresh()
                                                : "Reinstall";
     SetWindowTextW(g_install, upd::widen(btn).c_str());
     EnableWindow(g_install, is_game(root) && !g_busy);
-    EnableWindow(g_remove, !v.empty() && !g_busy);
+    EnableWindow(g_remove, !g_busy && is_game(root) &&
+        (!v.empty() || upd::is_loader(root + L"\\SporebinEP1\\steam_api.dll") ||
+         GetFileAttributesW((root + L"\\SporebinEP1\\mods\\coop.dll").c_str()) != INVALID_FILE_ATTRIBUTES));
     if (g_close && inst::g_fix) // BUG-0139: no closing while files are swapped
         EnableWindow(g_close, !g_busy);
 }
@@ -404,10 +407,11 @@ LRESULT CALLBACK wndproc(HWND w, UINT m, WPARAM wp, LPARAM lp)
         g_remove = add(L"BUTTON", L"Uninstall", BS_PUSHBUTTON, 200, 252, 120, 32, ID_REMOVE);
         g_close = add(L"BUTTON", L"Close", BS_PUSHBUTTON, 440, 252, 100, 32, ID_CLOSE);
         g_status = add(L"STATIC", L"", 0, 20, 296, 520, 52);
-        add(L"STATIC", L"github.com/WoodyWizard/SporeCoop  -  every player needs the same SporeCoop version", 0, 20,
+        add(L"STATIC", L"Duo fork of WoodyWizard's SporeCoop. Both players need the same Duo build.", 0, 20,
             356, 520, 18);
         refresh();
-        CloseHandle(CreateThread(nullptr, 0, check_thread, nullptr, 0, nullptr));
+        if (!g_opt.inst.api.empty())
+            CloseHandle(CreateThread(nullptr, 0, check_thread, nullptr, 0, nullptr));
         return 0;
     }
     case WM_COMMAND:
@@ -546,13 +550,15 @@ void parse_args()
 int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, LPWSTR, int show)
 {
     parse_args();
-    g_libs = steam_libraries();
     g_opt.inst.pack_dir = self_dir();
     wchar_t delay[16] = {};
     if (GetEnvironmentVariableW(L"SPORECOOP_SETUP_TEST_DELAY", delay, 16)) { // tests (BUG-0139)
         upd::g_swap_delay_ms = _wtoi(delay);
         g_test_mode = true;
     }
+    // A fixture with base Spore only must never resolve to the computer's real Steam install.
+    if (!g_test_mode)
+        g_libs = steam_libraries();
     if (g_opt.silent) {
         std::wstring root = g_opt.dir.empty() ? find_game() : g_opt.dir;
         std::string note;

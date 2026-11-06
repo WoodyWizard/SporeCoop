@@ -1,3 +1,54 @@
+# SporeCoop Lineages
+
+Each player evolves their own species through a shared Spore campaign. Founders keep their creations, lead separate villages and nations, and eventually fly their own ships for one empire. The host reserves seats when starting a campaign, so difficulty can account for the whole party even when someone plays alone.
+
+Lineages builds on WoodyWizard's multiplayer mod. [Original SporeCoop project](https://github.com/WoodyWizard/SporeCoop)
+
+## Playable today
+
+**Development build** `0.7.3.6-duo12-dev` · **Checkpoint** `09f3fb18`. Both players need the same build. The results below come from individual scenarios tested across development builds using two Windows game instances on one PC.
+
+| Stage | What players have done together |
+| --- | --- |
+| Cell and Creature | Evolved distinct species, kept their own edits through landfall, revived a partner and recovered shared DNA after restarting. |
+| Tribe | Controlled separate villages, rebuilt a defeated partner's village and earned shared victories through raids and alliances. Both species reached Civilization. |
+| Civilization | Governed separate nations and pooled city captures toward launch. Five cities per founder met the ten-city Space requirement. |
+| Space | Designed different ships, named captains of their own species and shared an empire treasury. One founder flew into orbit while the other took flight training. Rejoining preserved both ships. |
+| Galactic Adventures | Either captain could reach the town gate in Adventure Town and advance both players to the next act. |
+
+## Defeat and recovery
+
+| Stage | What happens in co-op |
+| --- | --- |
+| Cell | A partner has 10 seconds to revive a downed cell. On timeout, it respawns at half normal size beside the nearest partner, if available. |
+| Creature | A partner has 10 seconds to revive the player at 40% health and preserve the pack's DNA. On timeout, the player respawns at the nest and the pack loses 10% of its shared spendable DNA, rounded up and capped at its available whole DNA. |
+| Tribe | A partner villager has 10 seconds to rescue the last villager. If an enemy captures the village, the surviving founder can help rebuild the defeated species elsewhere. If capture does not occur, the villager returns at 40% health and that village loses 10% of its food, rounded up and capped at its balance. |
+| Civilization | Destroyed vehicles and captured cities are losses to their nation. The fork adds no shared currency charge for losing a unit. |
+| Space | A partner has 20 seconds to repair an eligible disabled ship. If the timer expires, the ship is destroyed and the player respawns at the nearest owned colony. |
+| Galactic Adventures | Each player's adventure handles captain defeat locally. The fork adds no shared death penalty. |
+
+## Current work
+
+Difficulty scales with the seats reserved for the stage. The host can reserve one to four and start solo. Joining an open seat keeps that stage's difficulty steady. **Three- and four-player campaigns still need live testing.**
+
+Duo 12 carries fractions of Cell enemy health and damage across hits and saves, so small bonuses add up even though Cell uses whole points. It also synchronizes pirate combat in colony raids. With four seats reserved, both test instances saw the same pirate bomber rise from 250 to 362.5 HP. Upcoming checks cover Civilization vehicles and turrets, hostile empire ships, and Creature rewards for alliances and extinctions.
+
+## Known limits
+
+- Tribal movement can jump on the guest's screen when the host changes position unexpectedly.
+- A returning player can recover specific missed transitions. Catch-up across several stages and unfinished evolution choices is incomplete.
+- Adventure dialogue, combat, multi-goal acts, final results and captain XP still run separately for each player.
+
+## Roadmap
+
+1. **Finish the two-founder campaign.** Test an uninterrupted run through Space, then repeat stage transitions with disconnects, save reloads and a returning founder.
+2. **Test three founders, then four.** Verify that every player keeps their species and settlements, and that larger rival counts remain playable from founding through victory.
+3. **Complete shared Adventures and cross-PC testing.** Synchronize the remaining objectives and rewards, verify the return to the campaign, and run the supported setup on separate PCs.
+
+See [campaign development notes](docs/DUO.md) for setup and recorded test details.
+
+<details><summary>Original SporeCoop project README</summary>
+
 <p align="center">
   <img src="docs/media/banner.svg" alt="SporeCoop - play every stage of Spore together" width="100%">
 </p>
@@ -288,3 +339,5 @@ If this project is useful to you, you can support the author - it really helps t
 
 <a href="https://buymeacoffee.com/chamomilewoods"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee" height="50"></a>
 <!-- support:bottom:end -->
+
+</details>

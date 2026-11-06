@@ -1,10 +1,14 @@
 @echo off
-cd /d "%~dp0"
-if exist steam_api_orig.dll (
-  copy /y steam_api_orig.dll steam_api.dll >nul
-  del steam_api_orig.dll
-)
-del /q sporekit.dll 2>nul
-del /q ..\Data\SporeCoop.package 2>nul
-echo SporeCoop removed (the mods folder was kept).
+setlocal
+if not exist "%~dp0SporeApp.exe" goto :setup
+if not exist "%~dp0SporeCoopSetup.exe" goto :setup
+for %%I in ("%~dp0..") do set "GAME=%%~fI"
+start "" /wait "%~dp0SporeCoopSetup.exe" /S /uninstall "/dir:%GAME%"
+if errorlevel 1 goto :setup
+echo SporeCoop removed. Your saves and settings are kept.
 pause
+exit /b 0
+:setup
+echo Close Spore, open SporeCoopSetup.exe, select Galactic Adventures and click Uninstall.
+pause
+exit /b 1

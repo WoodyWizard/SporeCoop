@@ -27,10 +27,16 @@ extern bool g_busy_fix, g_match_fix, g_write_fix;
 // world.cpp) and world.tmp_cleanup (leftovers of interrupted writes in Games-sporecoop-tmp are
 // tidied, under a named mutex shared by the game instances of one machine)
 extern bool g_fallback_fix, g_cleanup_fix;
+extern bool g_move_retry_fix;
 extern std::wstring g_test_held; // tests: this slot (lower case) cannot be moved (as on Windows with a file in it in use)
 extern int g_test_cleanup_age_s; // tests: the age (s) from which a temp copy is deleted (default 600)
 
 enum class WriteFail { None, Files, Replace, Move, Busy };
+
+// Commit a staged folder to an absent destination. Retry sharing/access errors
+// for at most 500 ms; never replace/copy/delete the destination. Preserves the
+// final Win32 error on failure. Exposed for real file-lock regression tests.
+bool move_staged(const std::wstring& source, const std::wstring& destination);
 
 // games: ...\Spore\Games. busy_lower: the slot the game plays (lower case, no trailing '\'), may be
 // empty. backup_planet: move another slot holding planet_spo out of Games first (menu loading,

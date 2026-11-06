@@ -99,6 +99,33 @@ static void __fastcall camupd_guard(void* obj, void*)
         g_camupd_orig(obj);
 }
 
+// BUG-9049: graduation hides the domesticated animal pen even when the
+// native tribe has no pen. Keep the existing virtual call for present pens;
+// skip just that call for null. This is an instruction-site hook, not a
+// C++ function entry: preserve every register, flags and the existing stack.
+extern "C" {
+bool sporecoop_tribe_pen_guard_on = true;
+void* sporecoop_tribe_pen_original;
+void* sporecoop_tribe_pen_resume;
+unsigned sporecoop_tribe_pen_skipped;
+}
+COOP_FIX("tribe.graduation_pen", "BUG-9049", sporecoop_tribe_pen_guard_on,
+         "tribe: graduation skips hiding an absent animal pen");
+__attribute__((naked)) static void graduation_pen_guard()
+{
+    __asm__ volatile(
+        "pushfl\n\t"
+        "cmpb $0, _sporecoop_tribe_pen_guard_on\n\t"
+        "je 1f\n\t"
+        "testl %eax, %eax\n\t"
+        "jnz 1f\n\t"
+        "incl _sporecoop_tribe_pen_skipped\n\t"
+        "popfl\n\t"
+        "jmp *_sporecoop_tribe_pen_resume\n\t"
+        "1: popfl\n\t"
+        "jmp *_sporecoop_tribe_pen_original\n\t");
+}
+
 // The end of the respawn caption CVG2SPG(_short) (message 0x44F1189 in the cSimulatorSpaceGame
 // handler 0x100B730, at 0x100C513) calls 0xFF59D0 (thiscall, no arguments: clears the set at +0x1E4
 // that 0xFF5D90, which starts that caption, filled) on [cSimulatorSpaceGame+0x54], the high-LOD planet
@@ -429,6 +456,16 @@ void init(const SkHost* host, SkMod* mod)
     bool cam = la && cu && H->hook_create(M, (void*)la, (void*)&lookat_guard, (void**)&g_lookat_orig) == 0 &&
                H->hook_create(M, (void*)cu, (void*)&camupd_guard, (void**)&g_camupd_orig) == 0;
     H->log(M, SK_INFO, "game fixes: tribe camera guard %s", cam ? "on" : "off");
+    uintptr_t pen = H->sym("SporeCoop::TribeGraduation_HidePen");
+    // mov edx,[eax]; mov ecx,eax; mov eax,[edx+54]; push 0; call eax.
+    // Neither branch after this sequence consumes its flags or return value.
+    const uint8_t pen_code[] = {0x8B,0x10,0x8B,0xC8,0x8B,0x42,0x54,0x6A,0x00,0xFF,0xD0};
+    bool pen_known = pen && readable((void*)pen, sizeof pen_code) &&
+        memcmp((void*)pen, pen_code, sizeof pen_code) == 0;
+    sporecoop_tribe_pen_resume = pen_known ? (void*)(pen + sizeof pen_code) : nullptr;
+    bool pen_hook = pen_known && H->hook_create(M, (void*)pen, (void*)&graduation_pen_guard,
+                                               &sporecoop_tribe_pen_original) == 0;
+    H->log(M, SK_INFO, "game fixes: Tribal graduation pen guard %s", pen_hook ? "on" : "off (unknown code)");
     uintptr_t pc = H->sym("SporeCoop::cSimPlanetHighLOD_EndRespawnCaption");
     bool planet = pc && H->hook_create(M, (void*)pc, (void*)&planet_clear_guard, (void**)&g_planet_clear_orig) == 0;
     H->log(M, SK_INFO, "game fixes: respawn caption guard %s", planet ? "on" : "off");
@@ -469,7 +506,8 @@ std::string status()
 {
     return std::string("game fixes: planet texture job guard ") + (g_draw_slot ? "on" : "off") + ", skipped " +
            std::to_string(g_skipped.load()) + (g_last.empty() ? "" : " (last: " + g_last + ")") +
-           ", tribe camera skipped " + std::to_string(g_cam_skipped.load()) + ", respawn caption without a planet " +
+           ", tribe camera skipped " + std::to_string(g_cam_skipped.load()) +
+           ", absent graduation pens " + std::to_string(sporecoop_tribe_pen_skipped) + ", respawn caption without a planet " +
            std::to_string(g_planet_clear_skipped.load()) + ", Alt+Shift+Enter turned into Alt+Enter " +
            std::to_string(g_adapter_keys.load()) + ", dead modal windows dropped " + std::to_string(g_dead_modal.load()) +
            ", off-stage checks " + std::to_string(g_offstage_calls.load()) + " (citizens while the stage is left " +

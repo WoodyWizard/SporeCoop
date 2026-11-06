@@ -24,10 +24,13 @@ static uintptr_t a_SpeciesMgrGet, a_GetSpecies, a_CreateHerd, a_CinematicGet;
 typedef void(SK_CDECL* AddEvo_t)(float);
 static AddEvo_t o_AddEvo;
 static DnaListener g_dna_listener;
+static uintptr_t a_HuntReward, a_AllyGoalReward, a_ExtinctionGoalReward, a_SocialReward;
 
 static void SK_CDECL h_AddEvo(float delta)
 {
-    if (g_dna_listener && !g_dna_listener(delta))
+    const auto caller = (uintptr_t)__builtin_return_address(0);
+    bool reward = caller == a_HuntReward || caller == a_AllyGoalReward || caller == a_ExtinctionGoalReward || caller == a_SocialReward;
+    if (g_dna_listener && !g_dna_listener(delta,reward))
         return;
     o_AddEvo(delta);
 }
@@ -443,6 +446,10 @@ bool init(const SkHost* host, SkMod* mod)
         H->hook_create(M, (void*)a, (void*)h_Update, (void**)&o_Update);
     if (uintptr_t a = H->sym("Simulator::cCreatureAnimal::TakeDamage"))
         H->hook_create(M, (void*)a, (void*)h_TakeDamage, (void**)&o_TakeDamage);
+    a_SocialReward = H->sym("SporeCoop::CreatureSocialAwardReturn");
+    a_HuntReward = H->sym("SporeCoop::CreatureHuntAwardReturn");
+    a_AllyGoalReward = H->sym("SporeCoop::CreatureAllyGoalAwardReturn");
+    a_ExtinctionGoalReward = H->sym("SporeCoop::CreatureExtinctionGoalAwardReturn");
     if (uintptr_t a = H->sym("Simulator::cCreatureGameData::AddEvolutionPoints"))
         H->hook_create(M, (void*)a, (void*)h_AddEvo, (void**)&o_AddEvo);
     if (uintptr_t a = H->sym("SporeCoop::Herd_Update"))

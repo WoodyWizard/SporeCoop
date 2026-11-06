@@ -129,7 +129,9 @@ void Session::start_hello(const Endpoint& ep, uint32_t now)
     h.build = build;
     h.name = my_name_;
     h.ext = send_caps;
+    if (personal_launch) h.caps |= CAP_PERSONAL_LAUNCH;
     h.version = version;
+    h.campaign_profile = campaign_profile;
     h.has_token = rejoin_token != 0;
     h.token = rejoin_token;
     Writer w;
@@ -216,7 +218,7 @@ bool Session::retired(uint32_t conn) const
 
 uint8_t Session::alloc_id() const
 {
-    for (uint8_t id = 1; id < kMaxPlayers; id++) {
+    for (uint8_t id = 1; id < seat_limit && id < kMaxPlayers; id++) {
         bool used = false;
         for (auto& p : peers_)
             if (p->accepted && p->id == id)
@@ -263,6 +265,13 @@ std::vector<PlayerInfo> Session::players() const
     return v;
 }
 
+uint32_t Session::peer_caps(uint8_t id) const
+{
+    for (const auto& peer : peers_)
+        if (peer->id == id && peer->accepted) return peer->caps;
+    return 0;
+}
+
 int Session::rtt_of(uint8_t id) const
 {
     for (auto& p : peers_)
@@ -298,7 +307,7 @@ std::string Session::status() const
         return "offline\n";
     if (role_ == Role::Host)
         snprintf(b, sizeof b, "host port=%u players=%d/%d\n", tr_->local_port(),
-                 (int)players().size(), kMaxPlayers);
+                 (int)players().size(), seat_limit);
     else
         snprintf(b, sizeof b, "client id=%u %s\n", my_id_, welcomed_ ? "connected" : "connecting");
     s += b;
@@ -444,6 +453,15 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
             if (!h.read(r))
                 return;
             Reject rej;
+            if (!campaign_profile.empty() && campaign_profile != h.campaign_profile) {
+                rej.reason = REJ_VERSION;
+                rej.text = h.campaign_profile.empty() ? "This host needs the Duo fork." :
+                    "Campaign mismatch. Host: " + campaign_profile + ", guest: " + h.campaign_profile;
+                Writer w;
+                rej.write(w);
+                p.conn.send_reliable(MSG_REJECT, w);
+                return;
+            }
             // BUG-0235: the same game after a crash (its HELLO carries the token of the old entry,
             // which has been silent for 2 s) replaces that entry now, before the full check (a crash
             // rejoin into 4/4 was refused) and before WELCOME (its roster held its own old entry).
@@ -513,6 +531,7 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
             wl.players = players();
             wl.ext = send_caps;
             wl.host_version = version;
+            wl.campaign_profile = campaign_profile;
             Writer w;
             wl.write(w);
             p.conn.send_reliable(MSG_WELCOME, w);
@@ -591,11 +610,18 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
     }
 
     // ---- client ----
+    if (!campaign_profile.empty() && !welcomed_ && type != MSG_WELCOME && type != MSG_REJECT)
+        return;
     switch (type) {
     case MSG_WELCOME: {
         Welcome wl;
         if (!wl.read(r))
             return;
+        if (!campaign_profile.empty() && wl.campaign_profile != campaign_profile) {
+            pending_disc_ = "The host needs the same Duo build and Creepy & Cute configuration.";
+            leave("incompatible host");
+            return;
+        }
         my_id_ = wl.your_id;
         welcome_world_ = wl.world; // BUG-0231: the host's world before its first state
         welcomed_ = true;
@@ -742,7 +768,7 @@ void Session::update()
             rep.port = tr_->local_port();
             rep.name = my_name_;
             rep.players = (uint8_t)players().size();
-            rep.max_players = kMaxPlayers;
+            rep.max_players = seat_limit;
             rep.info = lobby_info;
             rep.has_id = g_fix.lan_dedup;
             rep.host_id = lan_id_;

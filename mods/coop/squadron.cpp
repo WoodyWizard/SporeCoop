@@ -17,6 +17,8 @@
 #include "net/validate.h"
 #include "space_rivalry.h"
 #include "spacecoop.h"
+#include "space_ext.h"
+#include "world.h"
 #include "sporekit_game.hpp"
 #include "fixes.h"
 #include "creations.h"
@@ -86,7 +88,7 @@ struct Mirror {
     void* u = nullptr;
     net::Vec3 pos;
     net::Quat rot;
-    float hp = 0;
+    float hp = 0, max_hp = 0;
     double seen = 0;
     net::VelocityEstimate est; // ship snapshots carry no velocity
 };
@@ -121,11 +123,106 @@ static uint32_t g_stale_chunks, g_partial_cycles, g_posse_kept, g_content_checke
 static bool g_applying;
 static uint32_t g_created, g_removed, g_hits_sent, g_damage_in, g_local_removed, g_mirror_hits;
 
+struct ShipScale {
+    uint32_t serial;
+    float factor, native_max, scaled_max;
+    float before_save_hp = 0, before_save_max = 0;
+    bool seen = true;
+};
+static std::unordered_map<void*,ShipScale> g_ship_scales;
+static unsigned g_save_depth;
+
+static bool enemy_ship(void* u, uint32_t own_pol)
+{
+    const auto type = F<int>(u,kType);
+    const auto pol = F<uint32_t>(u,kPol);
+    if (type == 0 || type == 3 || pol == own_pol || g_mirror_of.count(u) ||
+        (C.puppet_owner && C.puppet_owner(u) >= 0) || modes::space_retired(u) ||
+        spaceext::allies_mirror_pol(pol)) return false;
+    void* mission = F<void*>(u,0x800);
+    if ((type == 2 || type == 4 || type == 5) && mission && skg::readable(mission,0x7C) &&
+        F<uint32_t>(mission,0x78) == 0xA4B0A2DF) return true;
+    return spaceext::enemy_empire(pol);
+}
+
+static void normalize_ship(void* u, const ShipScale& scale)
+{
+    float& max_hp = F<float>(u,kMaxHp);
+    float& hp = F<float>(u,kHp);
+    bool full = hp == max_hp;
+    // Keep the exact base when possible. Another mod can legitimately alter
+    // max HP during combat, including the native Armada contract's bonus.
+    max_hp = max_hp == scale.scaled_max ? scale.native_max : max_hp / scale.factor;
+    hp = full ? max_hp : hp / scale.factor;
+}
+
+static void scale_local_ships(const std::vector<void*>& live)
+{
+    if (g_save_depth) return;
+    const auto rules = world::rules_for_current();
+    if (rules.enemy_health_percent() == 100 && g_ship_scales.empty()) return;
+    const auto own_pol = skg::cdecl_call<uint32_t>(a_PlayerEmpireID);
+    for (auto& item : g_ship_scales) item.second.seen = false;
+    for (auto* u : live) {
+        auto serial = game::object_serial(u);
+        if (!serial || !std::isfinite(F<float>(u,kMaxHp)) || !std::isfinite(F<float>(u,kHp))) continue;
+        auto previous = g_ship_scales.find(u);
+        float old = previous != g_ship_scales.end() && previous->second.serial == serial ? previous->second.factor : 1.f;
+        float factor = enemy_ship(u,own_pol) ? rules.enemy_health_percent() / 100.f : 1.f;
+        if (old == factor) {
+            if (factor != 1.f) previous->second.seen = true;
+            continue;
+        }
+        if (old != 1.f) normalize_ship(u,previous->second);
+        if (factor != 1.f) {
+            float native_max = F<float>(u,kMaxHp);
+            F<float>(u,kMaxHp) *= factor;
+            F<float>(u,kHp) *= factor;
+            g_ship_scales[u] = {serial,factor,native_max,F<float>(u,kMaxHp)};
+        }
+    }
+    std::erase_if(g_ship_scales,[](const auto& item) { return !item.second.seen; });
+}
+
+static void convert_live_ships(bool to_native)
+{
+    if (g_ship_scales.empty() || !g_ok) return;
+    for (auto* u : all_ufos()) {
+        auto i = g_ship_scales.find(u);
+        if (i == g_ship_scales.end() || i->second.serial != game::object_serial(u)) continue;
+        auto& scale = i->second;
+        if (to_native) {
+            scale.before_save_hp = F<float>(u,kHp);
+            scale.before_save_max = F<float>(u,kMaxHp);
+            normalize_ship(u,scale);
+        } else {
+            F<float>(u,kHp) = scale.before_save_hp;
+            F<float>(u,kMaxHp) = scale.before_save_max;
+        }
+    }
+}
+
+void before_native_save() { if (++g_save_depth == 1) convert_live_ships(true); }
+void after_native_save() { if (g_save_depth && --g_save_depth == 0) convert_live_ships(false); }
+void clear_enemy_stats()
+{
+    if (!g_save_depth) convert_live_ships(true);
+    g_ship_scales.clear();
+}
+
 // ---------------- hooks ----------------
 using TakeDamage_t = int(SK_THISCALL*)(void*, float, uint32_t, int, const float*, void*);
 static TakeDamage_t o_TakeDamage;
 static int SK_THISCALL h_TakeDamage(void* combat, float dmg, uint32_t pol, int type, const float* dir, void* attacker)
 {
+    if (in_space() && !g_applying && dmg > 0 && attacker && C.sess && C.sess->connected()) {
+        auto* source = static_cast<uint8_t*>(attacker) - kCombat;
+        // Hitting allied ships, buildings or the planet can pass a different combatant type.
+        // Verify membership before reading offsets specific to a UFO.
+        if ((is_host() || (C.with_host && !C.with_host())) && game::ufo_listed(source) &&
+            enemy_ship(source,skg::cdecl_call<uint32_t>(a_PlayerEmpireID)))
+            dmg *= world::rules_for_current().enemy_damage_percent() / 100.f;
+    }
     if (in_space() && (uint8_t*)combat - kCombat == player_ufo()) // rescue: a lethal hit may only disable us
         dmg = spacecoop::filter_own_damage((uint8_t*)combat - kCombat, dmg, type);
     if (!in_space() || g_applying || !C.sess || !C.sess->connected())
@@ -242,7 +339,9 @@ static void host_tick(double now)
     g_last_send = now;
     void* me = player_ufo();
     std::vector<void*> ships;
-    for (void* u : all_ufos())
+    auto live_ships = all_ufos();
+    scale_local_ships(live_ships);
+    for (void* u : live_ships)
         if (u != me && F<int>(u, kType) != 0 && (!C.puppet_owner || C.puppet_owner(u) < 0) &&
             !modes::space_retired(u)) // BUG-0218: a retired puppet is not one of our NPC ships
             ships.push_back(u);
@@ -422,12 +521,11 @@ static void guest_state(net::Reader& r)
         net::Quat q;
         q.x = r.f32(); q.y = r.f32(); q.z = r.f32(); q.w = r.f32();
         float hp = r.f32(), mx = r.f32();
-        (void)mx;
-        if (!r.ok())
+        if (!r.ok() || !std::isfinite(hp) || !std::isfinite(mx))
             return;
         g_cycle_ids.insert(id);
         auto& m = g_mirrors[id];
-        m.pos = p; m.rot = q; m.hp = hp; m.seen = now;
+        m.pos = p; m.rot = q; m.hp = hp; m.max_hp = mx; m.seen = now;
         m.est.update(p, now, sent);
         if (id == g_hold_mirror)
             continue; // tests: keep the freed pointer until the next MSG_UFO_DAMAGE
@@ -527,6 +625,13 @@ static void guest_state(net::Reader& r)
 static void guest_tick(double now)
 {
     bool here = C.with_host && C.with_host();
+    static double next_scale;
+    if (here) {
+        if (!g_ship_scales.empty()) clear_enemy_stats();
+    } else if (now >= next_scale) {
+        next_scale = now + .1;
+        scale_local_ships(all_ufos());
+    }
     for (auto& [id, m] : g_mirrors) {
         if (id == g_hold_mirror)
             continue; // tests: the one frame between the free and this tick, held open
@@ -551,6 +656,7 @@ static void guest_tick(double now)
         for (int i = 0; i < 4; i++)
             nr[i] = q[i];
         F<uint8_t>(m.u, kAtDest) = 1;
+        if (m.max_hp > 0) F<float>(m.u, kMaxHp) = m.max_hp;
         F<float>(m.u, kHp) = m.hp > 0 ? m.hp : 1;
     }
     if (!here && !g_mirrors.empty()) { // we left the host's place: drop the mirrors
@@ -621,6 +727,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
 
 void on_session_end()
 {
+    clear_enemy_stats();
     for (auto& [id, m] : g_mirrors)
         if (m.u)
             destroy_mirror(m.u, false);
@@ -784,7 +891,8 @@ std::string debug(const std::vector<std::string>& a)
     }
     if (a.size() >= 3 && a[0] == "hurt") { // host: ship #id hits player <p>'s puppet [with dmg]
         auto it = g_hid_rev.find((uint16_t)atoi(a[1].c_str()));
-        void* pup = C.puppet_of ? C.puppet_of((uint8_t)atoi(a[2].c_str())) : nullptr;
+        const auto target = uint8_t(atoi(a[2].c_str()));
+        void* pup = !target ? me : C.puppet_of ? C.puppet_of(target) : nullptr;
         if (it == g_hid_rev.end() || !pup || !live(it->second) || !live(pup))
             return "no such ship or puppet";
         float dir[3] = {0, 0, 1};

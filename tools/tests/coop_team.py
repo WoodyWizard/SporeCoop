@@ -144,7 +144,6 @@ def main():
 
     # the pack protects: the host forwards a lethal NPC hit to the guest standing next to it
     h0, mx = hp(guest)
-    _, r0 = team(guest)
     def damage_in():
         m = re.search(r'damage_in=(\d+)', guest.call('coop.npc')['out'])
         return int(m.group(1)) if m else 0
@@ -155,12 +154,12 @@ def main():
         time.sleep(1.5)
         if 'puppet hit' in out and damage_in() > d0:
             break
+    until = time.monotonic() + 7
+    while time.monotonic() < until and 'Bob was revived.' not in host.call('coop.status')['out']:
+        time.sleep(.25)
     h1, _ = hp(guest)
-    _, r1 = team(guest)
-    ck(h1 is not None and h1 > 0, f'guest survived a lethal hit: hp {h0} -> {h1} of {mx}')
-    ck(r1 == (r0 or 0) + 1, f'rescue counted ({r0} -> {r1})')
-    chat = host.call('coop.status')['out']
-    ck('saved Bob' in chat, 'everybody sees "Alice saved Bob from death"')
+    ck(h1 is not None and h1 > 1, f'guest revived after a lethal hit: hp {h0} -> {h1} of {mx}')
+    ck('Bob was revived.' in host.call('coop.status')['out'], 'the host announces the completed revive')
 
     # a guest's kill pays the pack's DNA (the game pays only kills by the host's own avatar:
     # until 2026-10-23 a guest could hunt all day for nothing; docs/re/creature.md 2)

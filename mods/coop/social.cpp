@@ -257,6 +257,12 @@ static int goal_outcome(const ResourceKey& k) // the species' relation now: 6 al
     return mgr && a_RelGet ? thiscall<int>(a_RelGet, mgr, &k, (void*)nullptr, (void*)nullptr) : 0;
 }
 
+int creature_relationship(void* c)
+{
+    auto key = game::species_key(c);
+    return goal_outcome({key.instance,key.type,key.group});
+}
+
 static uint64_t key64(const ResourceKey& k) { return ((uint64_t)k.group << 32) | k.instance; }
 
 // host: a card's reward, from its own card or reported by a guest; false = paid already

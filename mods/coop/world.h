@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "net/session.h"
+#include "founders.h"
 #include "sporekit.h"
 
 namespace world {
@@ -19,8 +20,21 @@ bool share_with(uint8_t peer, std::string& err, bool save_first = false, uint32_
 // planet had no file after 3 saves. Called from tick(); not for shares dropped with their player
 void set_share_failed(void (*f)(uint8_t peer, uint32_t tag, bool planet_missing));
 bool share_now(uint8_t peer, std::string& err);
+// On the galaxy menu the requested size applies to a new planet. An existing
+// named save keeps its own rules. Legacy saves keep the original defaults.
+founders::CampaignRules rules_for_current();
+void receive_campaign_rules(const net::Session& session, uint8_t from, net::Reader& packet);
+void native_campaign_loaded(const std::string& key);
+void campaign_guest_joined(net::Session& session);
+bool change_seats(net::Session& session, unsigned seats, std::string& message);
+void invalidate_campaign_rules(); // native load, including reloading the same slot
+bool setup_campaign(net::Session& session, const founders::CampaignRules& requested, std::string& error);
 // the game's own save (pause menu "Save"); also works on planets in space
 bool save_game(std::string& err);
+// Tribal reconstruction: confirm a new native save, transfer it to connected
+// peers, then reload the host through the existing menu/load path.
+bool checkpoint_reload(std::string& err);
+bool post_quit_to_menu(std::string& err);
 // coop.cpp: why the game must not save now (an editor opens or is open, a mode switch is pending),
 // nullptr when it may
 void set_save_blocker(const char* (*probe)());
@@ -40,7 +54,10 @@ bool load_queued();
 extern bool g_share_reset_fix; // tests: `coop.corefix share_reset 0` = the old behaviour
 // host: stream queued transfers (call every frame)
 void tick(net::Session& s);
-void guest_tick(); // guests: load a world that arrived while in an editor
+bool offer_launch(net::Session& session, uint8_t peer, uint32_t join);
+void on_launch_message(net::Session& session, uint8_t from, net::Reader& reader);
+void guest_tick(net::Session& session); // guests: load a world that arrived while in an editor
+void begin_local_space_intro(); // reserve the guest's first planet-side tutorial through orbital departure
 // guest: handle MSG_WORLD_* messages
 void on_message(uint8_t type, net::Reader& r, const std::string& host_name);
 std::string status();
@@ -55,6 +72,7 @@ void set_auto_load(bool on);
 void set_playing_probe(bool (*probe)());
 // where the local player is (the adapter's place, coop.cpp): a share save waits 2 s after a change
 void set_place_probe(uint32_t (*probe)());
+void set_host_stage_probe(uint32_t (*probe)());
 // share_host: a received world of that host (dropped when the session ends, BUG-0074); "" for the
 // player's own load (coop.load)
 bool load_slot(const std::wstring& slot, const std::string& planet_file, std::string& err,
@@ -81,6 +99,7 @@ bool time_paused();
 // planet, BUG-0035, and the guest's own copy can be beside them). "" = unknown (a menu: "SaveGame",
 // snapshot.spo, no save database). Not for every frame (it asks the resource database).
 std::string current_game_key();
+std::string game_key_for_planet(const std::string& name); // selected save DB, including immediately before LoadGameByName
 // BUG-0225: called after a received world was written into a slot (lower-case dir, UTF-8, no
 // trailing '\'): the game that was in that slot no longer exists as it was
 void set_slot_replaced_hook(void (*fn)(const std::string& dir));

@@ -7,6 +7,7 @@
 #include "modes.h"
 #include "net/shared_ledger.h"
 #include "space_ext.h"
+#include "tribe.h"
 #include "sporekit_game.hpp"
 #include "fixes.h"
 
@@ -42,12 +43,14 @@ static bool food_bundles(void* tribe, float**& b, float**& e)
     return b && e >= b && e - b < 64 && skg::readable(b, (e - b) * 4 + 1);
 }
 
-static bool g_food(double& v)
+bool tribe_food(void* t, double& v)
 {
-    void* t = player_tribe();
     float **b, **e;
-    if (!t || !food_bundles(t, b, e))
+    if (!t) return false;
+    if (!food_bundles(t, b, e)) {
+        if (!b && !e) { v = 0; return true; }
         return false;
+    }
     v = 0;
     for (float** it = b; it < e; it++)
         if (*it && skg::readable(*it, 0x138))
@@ -55,12 +58,13 @@ static bool g_food(double& v)
     return true;
 }
 
-static void s_food(double v)
+static bool g_food(double& v) { return tribe_food(player_tribe(), v); }
+
+static void set_food(void* t, double v)
 {
-    void* t = player_tribe();
     float **b, **e;
     double cur;
-    if (!t || !food_bundles(t, b, e) || b == e || !g_food(cur))
+    if (!t || !food_bundles(t, b, e) || b == e || !tribe_food(t, cur))
         return;
     double d = v - cur;
     const float shown = (float)d; // UpdateFoodVisuals shows "+N/-N": it takes the change, not the total
@@ -80,6 +84,21 @@ static void s_food(double v)
     if (uintptr_t f = S("Simulator::cTribe::UpdateFoodVisuals"))
         if (std::fabs(shown) >= 1.f)
             skg::thiscall<void>(f, t, shown);
+}
+
+static void s_food(double v) { set_food(player_tribe(), v); }
+
+void mirror_village_food(void* t, double total)
+{
+    float **b, **e;
+    double cur;
+    if (!t || !std::isfinite(total) || total < 0 || total > 1000000 || !tribe_food(t, cur) || std::fabs(cur - total) < 0.001)
+        return;
+    // A newly mirrored village starts with zero bundles. Let Spore create its first one.
+    if ((!food_bundles(t, b, e) || b == e) && total > 0) {
+        if (uintptr_t add = S("SporeCoop::cTribe_AddFood")) skg::thiscall<void>(add, t, 1);
+    }
+    set_food(t, total);
 }
 
 // civilization: GetPlayerCivilization() -> cCivilization::mWealth (+0x98)
@@ -156,7 +175,10 @@ static Res g_res[] = {
 static uint32_t g_mode; // the game mode of the last tick: status / debug_add use its resources
 
 // rivals mode (space_rivalry.cpp): every player has its own Space budget, nothing is shared
-static bool own_budget(const Res& r) { return r.mode == modes::kSpace && spaceext::rivals(); }
+static bool own_budget(const Res& r)
+{
+    return (r.mode == modes::kSpace && spaceext::rivals()) || (r.mode == modes::kTribe && tribe::village_orders());
+}
 
 void init(const SkHost* host, SkMod* mod)
 {
@@ -385,7 +407,10 @@ bool debug_add(const std::string& name, double v, std::string& err)
     for (auto& r : g_res) {
         double cur;
         if (name == r.name && r.mode == g_mode && r.get(cur)) {
-            r.set(cur + v);
+            if (r.mode == modes::kTribe && tribe::village_orders())
+                mirror_village_food(player_tribe(), cur + v);
+            else
+                r.set(cur + v);
             return true;
         }
     }

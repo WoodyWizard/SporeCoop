@@ -1,4 +1,7 @@
 #include "creations.h"
+#include "cellsync.h"
+#include "creature_hp.h"
+#include "squadron.h"
 
 #include <windows.h>
 
@@ -10,6 +13,10 @@
 #include <set>
 
 #include "game.h"
+#include "founders.h"
+#include "world.h"
+#include "tribe.h"
+#include "../../updater/sha256.h"
 #include "modes.h"
 #include "slotfs.h"
 #include "net/validate.h"
@@ -74,6 +81,10 @@ static dbpf::Package g_es;  // My Creations, read every few seconds
 static bool g_es_ok;
 static double g_opts_read = -100;
 static Key g_choice[kKinds];  // explicit choice ({} = default)
+static Key g_land_result;
+static Key g_campaign_creature;
+static uint32_t g_campaign_place;
+static std::wstring g_campaign_entry;
 // BUG-0344: on the host a creature or cell choice holds only in the stage world it was made in (a
 // choice from choices.ini of another world swapped the host's just evolved species for an old
 // creature, and the shared save then named it: BUG-0341), and an editor's result is the host's own
@@ -86,6 +97,40 @@ static uint32_t choice_epoch_now(int k)
     return game::stage_epoch(k == 1 ? modes::kCell : modes::kCreature);
 }
 static bool g_chosen[kKinds]; // the player chose (even "none")
+static bool g_outfit_ack = true;
+COOP_FIX("creations.outfit_ack", "BUG-9044", g_outfit_ack,
+         "creations: retain the previous Tribal choice until the host accepts an outfit");
+
+// One local editor can be pending. Journal its previous choice before changing
+// choices.ini, so a process exit has the same rollback as a clean disconnect.
+// C:hhhhhhhh-wwwwwwww:kkkkkkkk is a campaign choice; E is explicit, U unchosen.
+static bool restore_pending_outfit()
+{
+    if (g_dir.empty()) return true;
+    auto path = g_dir + L"\\choices.ini";
+    wchar_t raw[64] = {};
+    GetPrivateProfileStringW(L"outfit_pending", L"restore", L"", raw, 64, path.c_str());
+    std::wstring value(raw);
+    if (value.empty()) return true;
+    bool campaign = value.size() == 28 && value[0] == L'C' && value[1] == L':' &&
+                    value[10] == L'-' && value[19] == L':';
+    bool explicit_choice = value.size() == 10 && (value[0] == L'E' || value[0] == L'U') && value[1] == L':';
+    if (!campaign && !explicit_choice) return false;
+    for (size_t i = 2; i < value.size(); ++i) {
+        if (campaign && (i == 10 || i == 19)) continue;
+        if (!((value[i] >= L'0' && value[i] <= L'9') || (value[i] >= L'A' && value[i] <= L'F'))) return false;
+    }
+    auto entry = campaign ? value.substr(2, 17) : L"creature";
+    const wchar_t* key = raw + (campaign ? 20 : 2);
+    if (!WritePrivateProfileStringW(campaign ? L"landfall" : L"creations", entry.c_str(), value[0] == L'U' ? nullptr : key, path.c_str())) return false;
+    // The documented flush return is zero, including a successful cache flush.
+    WritePrivateProfileStringW(nullptr, nullptr, nullptr, path.c_str());
+    uint32_t id = (uint32_t)wcstoul(key, nullptr, 16);
+    Key previous{id, kInfo[kCreature].type, kInfo[kCreature].group};
+    if (campaign && entry == g_campaign_entry) g_campaign_creature = previous;
+    if (!campaign) { g_chosen[kCreature] = value[0] != L'U'; g_choice[kCreature] = previous; }
+    return WritePrivateProfileStringW(L"outfit_pending", L"restore", nullptr, path.c_str()) != FALSE;
+}
 
 // ---- bundles: a creation with its records ----
 struct Bundle {
@@ -135,7 +180,9 @@ static bool read_file(const std::wstring& path, std::vector<uint8_t>& out)
     if (f == INVALID_HANDLE_VALUE)
         return false;
     LARGE_INTEGER sz{};
-    GetFileSizeEx(f, &sz);
+    if (!GetFileSizeEx(f, &sz) || sz.QuadPart < 0 || sz.QuadPart >= (256 << 20)) {
+        CloseHandle(f); return false;
+    }
     out.resize((size_t)sz.QuadPart);
     DWORD rd = 0;
     bool ok = sz.QuadPart < (256 << 20) && ReadFile(f, out.data(), (DWORD)out.size(), &rd, nullptr) && rd == out.size();
@@ -178,6 +225,11 @@ static bool find_paths()
     g_es_path = p;
     g_dir = p.substr(0, p.find_last_of(L"\\/")) + L"\\SporeCoop";
     CreateDirectoryW(g_dir.c_str(), nullptr);
+    if (!restore_pending_outfit()) {
+        H->log(M, SK_ERROR, "creations: pending outfit choice could not be restored");
+        g_es_path.clear();
+        return false;
+    }
     // the choices belong to this profile (creation ids are per profile): SporeCoop\choices.ini
     for (int k = 0; k < kKinds; k++) {
         wchar_t buf[32] = {};
@@ -439,6 +491,25 @@ bool have_creepy_cute()
     return g_have_cc != 0;
 }
 
+bool campaign_content(const char* version, std::string& profile, std::string& error)
+{
+    if (!a_RmPtr || !*(void**)a_RmPtr) {
+        error = "Spore's resources are still loading. Try again from the galaxy menu.";
+        return false;
+    }
+    size_t present = 0;
+    for (uint32_t part : kCreepyCuteParts)
+        present += key_exists({part, kPartProp, kPartGroup});
+    if (present && present != std::size(kCreepyCuteParts)) {
+        error = "Only some Creepy & Cute parts loaded. Verify the parts pack and restart Spore.";
+        return false;
+    }
+    profile = std::string(version) + (present ? " / Creepy & Cute" : " / base parts");
+    g_have_cc = present ? 1 : 0;
+    H->log(M, SK_INFO, "campaign profile: %s (%u pack parts loaded)", profile.c_str(), (unsigned)present);
+    return true;
+}
+
 // the part ids a creature model (bem record) names, for the tests and the support trace
 std::vector<uint32_t> model_parts(const std::vector<uint8_t>& m)
 {
@@ -649,6 +720,31 @@ static bool model_effects(const std::vector<uint8_t>& m, uint32_t eff[3], size_t
 
 static bool is_cc_paint(uint32_t id) { return paint_substitute_of(id) != 0; }
 
+static bool g_archive_runs = true;
+static bool g_archive_cell_paints = true;
+COOP_FIX("creations.archive_cell_paints", "BUG-9042", g_archive_cell_paints,
+         "creations: archive native landfall creatures retaining a stock Cell base paint");
+COOP_FIX("creations.archive_runs", "BUG-9041", g_archive_runs,
+         "creations: validate saved founder paint IDs even when their header uses byte runs");
+static bool archive_model_effects(const std::vector<uint8_t>& model, uint32_t effects[3])
+{
+    if (!g_archive_runs) {
+        size_t at[3], lengths[3];
+        return model_effects(model, effects, at, lengths);
+    }
+    // Archive validation only reads paint IDs. The substitution parser must
+    // still refuse compressed IDs because its offsets are used for rewriting.
+    uint8_t header[kBemEffects + 12], last = 0;
+    size_t cursor = 0;
+    if (!decode_run(model, cursor, last, header, sizeof header) ||
+        header[0] != 0xD3 || header[1] != 0x7E || header[2] != 0x65 || header[3] != 0x48) return false;
+    for (int i = 0; i < 3; ++i) {
+        const auto* p = header + kBemEffects + 4*i;
+        effects[i] = uint32_t(p[0]) | uint32_t(p[1])<<8 | uint32_t(p[2])<<16 | uint32_t(p[3])<<24;
+    }
+    return true;
+}
+
 // the 0xFE bytes of an id as a model writes it (FE 00 each): the encoded length is 4 + this
 static int fe_count(uint32_t id)
 {
@@ -829,6 +925,40 @@ static bool own_option(Kind k, const Key& key)
     return false;
 }
 
+// Automatic founders belong to this host's planet. A player-picked F9 default
+// retains its usual meaning, including an explicit choice to use the world's body.
+static void refresh_campaign_creature()
+{
+    uint32_t mode = game::mode_id();
+    if (C.sess->role() != net::Role::Client ||
+        (mode != modes::kCell && mode != modes::kCreature && mode != modes::kTribe &&
+         mode != modes::kCiv && mode != modes::kSpace)) return;
+    uint32_t place = modes::current_world();
+    if (!place || place == g_campaign_place || !modes::current_world_name().ends_with(".spo") || !find_paths()) return;
+    g_campaign_place = place;
+    auto host = C.sess->name_of(0);
+    wchar_t entry[24];
+    swprintf(entry, 24, L"%08X-%08X", fnv(host.data(), host.size()), place);
+    g_campaign_entry = entry;
+    wchar_t value[16];
+    GetPrivateProfileStringW(L"landfall", entry, L"", value, 16, (g_dir + L"\\choices.ini").c_str());
+    uint32_t id = (uint32_t)wcstoul(value, nullptr, 16);
+    Key bem{id, kBem, kInfo[kCreature].group};
+    g_campaign_creature = id && key_exists(bem) ? Key{id, kInfo[kCreature].type, bem.group} : Key{};
+}
+
+static void choose_campaign_creature(const Key& key)
+{
+    g_campaign_creature = key;
+    wchar_t value[16];
+    swprintf(value, 16, L"%08X", key.instance);
+    if (g_campaign_entry.empty() || !WritePrivateProfileStringW(L"landfall", g_campaign_entry.c_str(), value,
+                                                               (g_dir + L"\\choices.ini").c_str())) {
+        if (C.feed) C.feed("Your land creature is active. Its campaign choice could not be saved.");
+    }
+    g_last_check = 0;
+}
+
 Option mine(Kind k)
 {
     bool guest = C.sess && C.sess->role() == net::Role::Client;
@@ -865,6 +995,8 @@ Option mine(Kind k)
         return u.instance ? named(u) : Option{};
     }
     // default: a guest plays its newest creation; the host keeps the one of its world
+    if (guest && k == kCreature && g_campaign_creature.instance)
+        return named(g_campaign_creature);
     if (guest && !g_opts[k].empty())
         return g_opts[k].front();
     Key a = k == kCreature ? avatar_species_key() : cell_key();
@@ -886,6 +1018,12 @@ static std::vector<uint8_t> pack(const Bundle& b)
             w.u8(c);
     }
     return w.data;
+}
+
+static uint32_t shared_instance(uint8_t owner, uint32_t id)
+{
+    uint8_t seed[5] = {owner, (uint8_t)id, (uint8_t)(id >> 8), (uint8_t)(id >> 16), (uint8_t)(id >> 24)};
+    return 0x7C000000u | (fnv(seed, sizeof seed) & 0x00FFFFFFu);
 }
 
 static bool unpack(const std::vector<uint8_t>& d, Bundle& b)
@@ -970,6 +1108,179 @@ struct WorldPkg {
 };
 static std::map<std::pair<uint8_t, uint32_t>, WorldPkg> g_world_pkgs; // (kind, original instance)
 
+static bool g_personal_ship = true;
+COOP_FIX("creations.personal_ship", "BUG-9071", g_personal_ship,
+         "Space: keep a founder's own launch design when local spacecraft IDs collide");
+static std::wstring g_launch_entry, g_pending_launch;
+static std::string g_launch_path;
+static uint32_t g_launch_model, g_launch_captain;
+static bool g_space_restore_due, g_space_restore_queued;
+static uint64_t g_space_restore_epoch;
+static bool g_editing_captain;
+static bool g_captain_outfit_fix = true;
+COOP_FIX("creations.captain_outfit", "BUG-9071", g_captain_outfit_fix,
+         "Space: accept the personal captain's inherited body in its native outfitter");
+static Key g_captain_source;
+static uintptr_t a_CaptainSourceReturn;
+static bool g_captain_flush_pending, g_captain_flush_queued;
+static double g_captain_flush_after;
+static unsigned g_captain_flush_tries;
+using SpeciesManagerKey = const Key*(SK_THISCALL*)(void*);
+static SpeciesManagerKey o_SpeciesManagerKey;
+static SpeciesManagerKey o_EmpireCaptainKey;
+static uintptr_t a_FirstFlightCaptainCheck;
+static std::string g_restart_path;
+static Key g_restart_captain;
+
+// Native first flight checks for an existing captain immediately before opening
+// its naming dialog. Restore the already owned captain at that call only.
+static const Key* SK_THISCALL h_EmpireCaptainKey(void* empire)
+{
+    if (g_restart_captain.instance && (uintptr_t)__builtin_return_address(0) == a_FirstFlightCaptainCheck &&
+        C.sess && C.sess->role() == net::Role::Client && game::mode_id() == modes::kSpace &&
+        world::current_game_key() == g_restart_path) {
+        auto set = H->sym("SporeCoop::Empire_SetCaptainKey");
+        if (set) {
+            thiscall<void>(set,empire,&g_restart_captain);
+            H->log(M,SK_INFO,"creations: restored captain %08X before first flight",g_restart_captain.instance);
+            g_restart_captain = {};
+            g_restart_path.clear();
+        }
+    }
+    return o_EmpireCaptainKey(empire);
+}
+
+static bool g_founder_captain = true;
+COOP_FIX("creations.founder_captain", "BUG-9071", g_founder_captain,
+         "Space: create the guest captain from its own founding species");
+
+static const Key* SK_THISCALL h_SpeciesManagerKey(void* manager)
+{
+    if (!g_founder_captain || (uintptr_t)__builtin_return_address(0) != a_CaptainSourceReturn ||
+        !C.sess || !C.sess->connected() || game::mode_id() != modes::kSpace)
+        return o_SpeciesManagerKey(manager);
+    g_captain_flush_pending = true;
+    g_captain_flush_tries = 0;
+    g_captain_flush_after = H->time_seconds() + .5;
+    if (g_captain_source.instance && !is_host() && world::current_game_key() == g_launch_path) {
+        H->log(M, SK_INFO, "creations: native first captain uses founder model %08X", g_captain_source.instance);
+        return &g_captain_source;
+    }
+    return o_SpeciesManagerKey(manager);
+}
+
+static std::wstring launch_entry(const std::string& planet, const founders::Roster& pair)
+{
+    wchar_t key[64];
+    swprintf(key,64,L"%08X-%08X-%08X-%08X-%08X",fnv(planet.data(),planet.size()),
+             pair.home().species,pair.guest().species,pair.home().faction,pair.guest().faction);
+    return key;
+}
+
+bool needs_launch_checkpoint(const std::string& planet, const founders::Roster& pair)
+{
+    if (!find_paths()) return true; // an unreadable preference cannot establish that training is finished
+    const auto key = launch_entry(planet, pair);
+    const auto ini = g_dir + L"\\choices.ini";
+    auto state = GetPrivateProfileIntW(L"space-training",key.c_str(),0,ini.c_str());
+    if (state == 2) return false;
+    if (!state) {
+        // A profile from before training was tracked can already own its ship.
+        wchar_t model[16]{};
+        GetPrivateProfileStringW(L"space-launch",key.c_str(),L"",model,16,ini.c_str());
+        if (wcstoul(model,nullptr,16)) return false;
+    }
+    return true;
+}
+
+// A campaign's saved founders identify it even when the received slot changes.
+// Re-read the binding when the slot changes, not on each resource lookup.
+static void load_launch_entry()
+{
+    auto path = world::current_game_key();
+    if (path == g_launch_path && !g_launch_entry.empty()) return;
+    g_launch_path = path;
+    g_launch_entry.clear();
+    g_launch_model = 0;
+    g_launch_captain = 0;
+    founders::Roster pair;
+    if (path.empty() || !find_paths() || !founders::read(path,pair,founders::Stage::Civilization)) return;
+    g_launch_entry = launch_entry(modes::current_world_name(), pair);
+    const auto* key = g_launch_entry.c_str();
+    g_space_restore_due = true;
+    wchar_t value[16]{};
+    GetPrivateProfileStringW(L"space-launch",key,L"",value,16,(g_dir+L"\\choices.ini").c_str());
+    g_launch_model = (uint32_t)wcstoul(value,nullptr,16);
+    GetPrivateProfileStringW(L"space-captain",key,L"",value,16,(g_dir+L"\\choices.ini").c_str());
+    g_launch_captain = (uint32_t)wcstoul(value,nullptr,16);
+}
+
+bool personal_captain_outfit(uint32_t instance)
+{
+    return g_captain_outfit_fix && instance && instance == g_launch_captain &&
+           C.sess && C.sess->connected() && !g_launch_entry.empty();
+}
+
+void begin_captain_outfit()
+{
+    g_editing_captain = true;
+}
+
+void begin_personal_launch()
+{
+    load_launch_entry();
+    g_captain_source = {};
+    if (g_launch_entry.empty()) return;
+    founders::Outfits outfits;
+    std::string error;
+    if (founders::read_outfits(g_launch_path,outfits,error)) {
+        const auto key = Key{outfits.current(1),kInfo[kCreature].type,kInfo[kCreature].group};
+        auto it = g_applied.find({C.sess->my_id(), kCreature});
+        // The host may know the founder by a remapped network key. The native
+        // captain creator needs the editable creation in this player's library.
+        if (it != g_applied.end() && (it->second.key == key || it->second.orig == key) &&
+            own_option(kCreature,it->second.orig)) g_captain_source = it->second.orig;
+        else if (own_option(kCreature,key)) g_captain_source = key;
+    }
+    g_pending_launch = g_launch_entry;
+    WritePrivateProfileStringW(L"space-training",g_launch_entry.c_str(),L"1",
+                               (g_dir+L"\\choices.ini").c_str());
+    world::begin_local_space_intro();
+}
+
+bool needs_local_space_intro(const std::string& received_planet, bool civilization)
+{
+    if (!C.sess || C.sess->role() != net::Role::Client) return false;
+    load_launch_entry();
+    if (g_launch_entry.empty()) return false;
+    founders::Roster local, incoming;
+    if (!founders::read(g_launch_path,local,founders::Stage::Civilization) ||
+        !founders::read(received_planet,incoming,founders::Stage::Civilization) || !(incoming == local)) return false;
+    const auto state = GetPrivateProfileIntW(L"space-training",g_launch_entry.c_str(),0,
+                                             (g_dir+L"\\choices.ini").c_str());
+    return state == 1 || (civilization && state == 0);
+}
+
+bool schedule_training_restart()
+{
+    if (!C.sess || C.sess->role() != net::Role::Client || game::mode_id() != modes::kCiv) return false;
+    load_launch_entry();
+    if (g_launch_entry.empty() || !g_launch_model || !g_launch_captain || !o_EmpireCaptainKey) return false;
+    if (GetPrivateProfileIntW(L"space-training",g_launch_entry.c_str(),0,(g_dir+L"\\choices.ini").c_str()) != 1)
+        return false;
+    g_restart_path = g_launch_path;
+    return true;
+}
+
+void finish_local_space_intro()
+{
+    if (!C.sess || C.sess->role() != net::Role::Client) return;
+    load_launch_entry();
+    if (!g_launch_entry.empty())
+        WritePrivateProfileStringW(L"space-training",g_launch_entry.c_str(),L"2",
+                                   (g_dir+L"\\choices.ini").c_str());
+}
+
 // guest: a key the host's world uses for a creation of the host (registered here above our own My
 // Creations, so the host's creation answers for it)
 static bool host_world_key(Kind k, uint32_t inst)
@@ -1047,6 +1358,28 @@ static void drop_package(void* db)
     unregister_package(db);
     for (auto it = g_pkgs.begin(); it != g_pkgs.end();)
         it = it->second == db ? g_pkgs.erase(it) : std::next(it);
+}
+
+static void protect_launch_model(const Bundle& local)
+{
+    if (!g_personal_ship || is_host() || game::mode_id() != modes::kSpace ||
+        !local.key.instance || local.recs.empty()) return;
+    load_launch_entry();
+    if (g_launch_entry.empty()) return;
+    if (g_pending_launch == g_launch_entry) {
+        g_launch_model = local.key.instance;
+        wchar_t value[12];
+        swprintf(value,12,L"%08X",g_launch_model);
+        if (WritePrivateProfileStringW(L"space-launch",g_launch_entry.c_str(),value,
+                                       (g_dir+L"\\choices.ini").c_str()))
+            g_pending_launch.clear();
+    }
+    if (g_launch_model != local.key.instance) return;
+    auto it = g_world_pkgs.find({kUfo,g_launch_model});
+    if (it != g_world_pkgs.end()) {
+        drop_package(it->second.db);
+        g_world_pkgs.erase(it);
+    }
 }
 
 // BUG-0469: every model the mod makes this game build from a key it did not create itself (a civ
@@ -1246,8 +1579,7 @@ static void apply(uint8_t owner, Kind k, uint32_t id, const std::vector<uint8_t>
                    "not have: shown as another " + noun + " here");
     } else if (!b.recs.empty() && find_paths()) {
         // the same id everywhere: owner + content hash (a new version after an editor = a new key)
-        uint8_t seed[5] = {owner, (uint8_t)id, (uint8_t)(id >> 8), (uint8_t)(id >> 16), (uint8_t)(id >> 24)};
-        uint32_t inst = 0x7C000000u | (fnv(seed, 5) & 0x00FFFFFFu);
+        uint32_t inst = shared_instance(owner, id);
         std::vector<dbpf::Record> recs = b.recs;
         for (auto& r : recs)
             if (r.key.instance == b.key.instance)
@@ -1257,7 +1589,12 @@ static void apply(uint8_t owner, Kind k, uint32_t id, const std::vector<uint8_t>
         // key too, above everybody's own My Creations (a guest may own another creation there).
         // A newer version under the same key replaces the older package (both at the same
         // priority, the older one could keep answering for the key).
-        if (owner == 0 && C.sess && C.sess->role() == net::Role::Client) {
+        const bool personal_key = (g_personal_ship && k == kUfo && g_launch_model == b.key.instance) ||
+                                  (g_founder_captain && k == kCreature && g_launch_captain == b.key.instance);
+        const bool personal = personal_key &&
+                              game::mode_id() == modes::kSpace && g_launch_path == world::current_game_key() &&
+                              own_option(k,b.key);
+        if (owner == 0 && C.sess && C.sess->role() == net::Role::Client && !personal) {
             WorldPkg& wp = g_world_pkgs[{(uint8_t)k, b.key.instance}];
             if (wp.id != id) {
                 std::wstring path = g_dir + L"\\world_" + std::to_wstring(k) + L"_" + std::to_wstring(id) + L".package";
@@ -1583,6 +1920,115 @@ static bool in_my_creations(const Key& k)
     return rm && es && vcall<void*>(rm, 0x30 / 4, (const uint32_t*)key, real, (void*)nullptr) == es;
 }
 
+static bool g_world_designs = true;
+COOP_FIX("creations.world_designs", "BUG-9053", g_world_designs,
+         "creations: preserve custom Civilization designs with a shared save");
+static constexpr size_t kDesignArchiveLimit = 32u << 20;
+static constexpr const char* kDesignSuffix = ".duo-designs";
+static std::map<std::pair<uint32_t, uint32_t>, Key> g_archived_designs;
+static std::set<void*> g_design_packages;
+
+static ModelKind design_kind(uint32_t group)
+{
+    return group == kModelInfo[kMkBuilding].group ? kMkBuilding :
+           group == kModelInfo[kMkVehicle].group ? kMkVehicle : kMkKinds;
+}
+
+// Only creation records are accepted, never arbitrary resource overrides from a save.
+static bool decode_designs(const std::vector<uint8_t>& data, std::vector<dbpf::Record>& records,
+                           std::string& err)
+{
+    dbpf::Package package;
+    if (data.size() > kDesignArchiveLimit || !package.load(data) || package.entries().empty() ||
+        package.entries().size() > 1024) {
+        err = "Invalid saved Civilization design archive."; return false;
+    }
+    std::set<std::pair<uint32_t, uint32_t>> models, designs;
+    std::set<std::pair<uint64_t, uint32_t>> seen;
+    size_t bytes = 0;
+    for (const auto& e : package.entries()) {
+        auto kind = design_kind(e.key.group);
+        if (kind == kMkKinds || !e.key.instance || !e.usize || e.usize > (4u << 20) ||
+            (e.key.type != kBem && e.key.type != kMeta && e.key.type != kModelInfo[kind].type) ||
+            !seen.insert({((uint64_t)e.key.group << 32) | e.key.instance, e.key.type}).second ||
+            (bytes += e.usize) > kDesignArchiveLimit) {
+            err = "Unexpected resource in saved Civilization designs."; return false;
+        }
+        dbpf::Record record{e.key, {}};
+        if (!package.read(e, record.data)) { err = "Unreadable saved Civilization design."; return false; }
+        designs.insert({e.key.group, e.key.instance});
+        if (e.key.type == kBem) models.insert({e.key.group, e.key.instance});
+        records.push_back(std::move(record));
+    }
+    if (models != designs) { err = "A saved Civilization design has no model."; return false; }
+    for (auto kind : {kMkBuilding, kMkVehicle}) {
+        std::vector<dbpf::Record> subset;
+        for (const auto& r : records) if (r.key.group == kModelInfo[kind].group) subset.push_back(r);
+        if (!unknown_part_ids(subset, kind).empty() || !unknown_paint_ids(subset).empty()) {
+            err = "Saved Civilization designs require parts or paints missing from this installation.";
+            return false;
+        }
+    }
+    return true;
+}
+
+bool archive_world_designs(std::vector<slotfs::File>& files, std::string& err)
+{
+    if (!g_world_designs) return true;
+    std::vector<slotfs::File> added;
+    for (const auto& file : files) {
+        if (file.rel.size() < 4 || file.rel.substr(file.rel.size() - 4) != ".spo") continue;
+        std::vector<dbpf::Record> records;
+        for (auto kind : {kMkBuilding, kMkVehicle}) {
+            const auto& info = kModelInfo[kind];
+            std::vector<uint32_t> keys;
+            dbpf::find_keys(file.data, info.type, info.group, keys);
+            for (uint32_t id : keys) {
+                Key key{id, info.type, info.group};
+                if (!in_my_creations(key) && !g_archived_designs.count({info.group, id})) continue;
+                if (!records_from_game(key, records)) {
+                    err = "Cannot archive custom Civilization design " + hex(id); return false;
+                }
+            }
+        }
+        if (records.empty()) continue;
+        auto archive = dbpf::write(records);
+        std::vector<dbpf::Record> checked;
+        if (!decode_designs(archive, checked, err)) return false;
+        added.push_back({file.rel + kDesignSuffix, std::move(archive)});
+    }
+    for (auto& file : added) {
+        auto it = std::find_if(files.begin(), files.end(), [&](const slotfs::File& f) { return f.rel == file.rel; });
+        if (it == files.end()) files.push_back(std::move(file)); else *it = std::move(file);
+    }
+    return true;
+}
+
+static bool restore_world_designs(const std::string& planet, std::string& err)
+{
+    if (!g_world_designs) return true;
+    auto source = slotfs::widen(planet + kDesignSuffix);
+    DWORD attributes = GetFileAttributesW(source.c_str());
+    if (attributes == INVALID_FILE_ATTRIBUTES && GetLastError() == ERROR_FILE_NOT_FOUND) return true;
+    std::vector<uint8_t> archive;
+    std::vector<dbpf::Record> records;
+    if (!read_file(source, archive)) { err = "Cannot read saved Civilization designs."; return false; }
+    if (!decode_designs(archive, records, err)) return false;
+    if (!find_paths()) { err = "Cannot locate the creation cache."; return false; }
+    auto path = g_dir + L"\\designs_" + slotfs::widen(upd::sha256_hex(archive)) + L".package";
+    void* db = package_for(path, records, kPrioWorld);
+    if (!db) { err = "Cannot register saved Civilization designs."; return false; }
+    g_design_packages.insert(db);
+    for (const auto& record : records) if (record.key.type == kBem) {
+        auto kind = design_kind(record.key.group);
+        g_archived_designs[{record.key.group, record.key.instance}] =
+            {record.key.instance, kModelInfo[kind].type, record.key.group};
+        g_model_use.erase({(uint8_t)kind, record.key.instance});
+    }
+    H->log(M, SK_INFO, "creations: restored %u Civilization design records before planet load", (unsigned)records.size());
+    return true;
+}
+
 static void share_own(double now)
 {
     if (!C.sess || !C.sess->connected())
@@ -1615,6 +2061,7 @@ static void share_own(double now)
                 continue; // not on disk yet: next round
             }
         }
+        if (k == kUfo) protect_launch_model(b);
         std::vector<uint8_t> data = pack(b);
         uint32_t id = fnv(data.data(), data.size());
         if (g_sent_id[k] == id)
@@ -1734,6 +2181,7 @@ static double g_new_avatar_at = -100;
 static uint64_t g_new_avatar_frame = 0;
 bool avatar_swap_settling(double now)
 {
+    if (g_land_result.instance) return true;
     if (!g_editor_after_swap_fix)
         return false;
     uint64_t f = H->frame_index();
@@ -1901,11 +2349,49 @@ static void bar_tick()
 }
 
 // ---- api ----
+using LoadPlanet = void(SK_THISCALL*)(void*, const char16_t*);
+static LoadPlanet o_LoadPlanet;
+static void SK_THISCALL h_LoadPlanet(void* manager, const char16_t* name)
+{
+    std::string campaign;
+    if (name) {
+        std::wstring planet;
+        for (size_t i = 0; i < MAX_PATH && name[i]; ++i) planet.push_back((wchar_t)name[i]);
+        std::string key = world::game_key_for_planet(slotfs::narrow(planet)), err;
+        campaign = key;
+        founders::CampaignRules rules;
+        if (!key.empty() && founders::read_rules(key,rules) == founders::RulesFile::Unreadable) {
+            if (C.feed) C.feed("Planet load stopped because the reserved founder settings are unreadable.");
+            return;
+        }
+        if (!key.empty() && !restore_guest_model(key, err)) {
+            H->log(M, SK_ERROR, "creations: stopped planet load: %s", err.c_str());
+            if (C.feed) C.feed("Planet load stopped. " + err);
+            return;
+        }
+    }
+    world::native_campaign_loaded(campaign);
+    cellsync::clear_cell_credit();
+    creature_hp::clear_enemy_health();
+    squadron::clear_enemy_stats();
+    o_LoadPlanet(manager, name);
+}
+
 bool init(const SkHost* host, SkMod* mod, Ctx ctx)
 {
     H = host;
     M = mod;
     C = std::move(ctx);
+    auto captain_key = H->sym("SporeCoop::Empire_GetCaptainKey");
+    a_FirstFlightCaptainCheck = H->sym("SporeCoop::FirstFlight_CaptainCheckReturn");
+    if (captain_key && a_FirstFlightCaptainCheck)
+        H->hook_create(M,(void*)captain_key,(void*)h_EmpireCaptainKey,(void**)&o_EmpireCaptainKey);
+    auto species_key = H->sym("SporeCoop::SpeciesManager_CurrentCreationKey");
+    a_CaptainSourceReturn = H->sym("SporeCoop::CaptainName_SourceKeyReturn");
+    if (species_key && a_CaptainSourceReturn)
+        H->hook_create(M,(void*)species_key,(void*)h_SpeciesManagerKey,(void**)&o_SpeciesManagerKey);
+    if (uintptr_t load = H->sym("Simulator::cGamePersistenceManager::LoadGameByName"))
+        H->hook_create(M, (void*)load, (void*)h_LoadPlanet, (void**)&o_LoadPlanet);
     a_GetDb = H->sym("Resource::GetDatabaseByID");
     a_OpNew = H->sym("Memory::operator_new_named");
     a_DbCtor = H->sym("Resource::DatabasePackedFile::ctor");
@@ -1927,6 +2413,46 @@ static double g_adopt_until, g_adopt_read;
 static Kind g_adopt_kind;
 static std::set<uint32_t> g_before_editor[kKinds]; // own creations when the editor opened (BUG-0278)
 static unsigned g_adopt_skipped; // tests: returns from an editor that took over nothing of the world's
+static uint32_t g_tribal_outfit_world;
+static Key g_tribal_outfit_previous;
+void begin_tribal_outfit()
+{
+    g_tribal_outfit_world = modes::current_world();
+    g_tribal_outfit_previous = mine(kCreature).key;
+    g_adopt_until = 0;
+    // The campaign's EditorSaves record may not have existed at the first load
+    // check. Pin the actual pre-editor body before newest-creation fallback changes.
+    if (!g_chosen[kCreature] && !g_campaign_entry.empty() && !g_campaign_creature.instance)
+        g_campaign_creature = g_tribal_outfit_previous;
+}
+static bool journal_tribal_choice()
+{
+    if (!g_outfit_ack) return true;
+    if (!find_paths()) return false;
+    auto path = g_dir + L"\\choices.ini";
+    wchar_t pending[64] = {};
+    GetPrivateProfileStringW(L"outfit_pending", L"restore", L"", pending, 64, path.c_str());
+    if (pending[0]) return false; // never overwrite an unacknowledged editor
+    bool campaign = g_campaign_creature.instance && !g_chosen[kCreature];
+    if (campaign && g_campaign_entry.size() != 17) return false;
+    wchar_t previous[16];
+    // An unselected newest-creation fallback must also return to the old body,
+    // not to the newly saved catalog entry after a crash.
+    swprintf(previous, 16, L"%08X", campaign ? g_campaign_creature.instance :
+             g_chosen[kCreature] ? g_choice[kCreature].instance : g_tribal_outfit_previous.instance);
+    std::wstring value = campaign ? L"C:" + g_campaign_entry + L":" + previous :
+                                   L"E:" + std::wstring(previous);
+    if (!WritePrivateProfileStringW(L"outfit_pending", L"restore", value.c_str(), path.c_str())) return false;
+    WritePrivateProfileStringW(nullptr, nullptr, nullptr, path.c_str());
+    return true;
+}
+
+void confirm_tribal_outfit()
+{
+    if (!g_dir.empty() && !WritePrivateProfileStringW(L"outfit_pending", L"restore", nullptr,
+                                                    (g_dir + L"\\choices.ini").c_str()) && C.feed)
+        C.feed("Outfit accepted. Its local confirmation could not be saved; reconnect may restore the previous outfit.");
+}
 static bool adopt_after_editor(double now)
 {
     uint32_t m = game::mode_id();
@@ -1940,15 +2466,18 @@ static bool adopt_after_editor(double now)
                 g_before_editor[k].insert(o.key.instance);
         }
     }
-    if ((g_prev_mode == modes::kEdit || g_prev_mode == modes::kEditor) && (m == modes::kCreature || m == modes::kCell)) {
+    bool tribal = g_tribal_outfit_world && g_tribal_outfit_world == modes::current_world() && m == modes::kTribe;
+    if ((g_prev_mode == modes::kEdit || g_prev_mode == modes::kEditor) && (m == modes::kCreature || m == modes::kCell || tribal)) {
         g_adopt_until = now + 30;
         g_adopt_kind = m == modes::kCell ? kCell : kCreature;
         g_adopt_read = 0;
     }
     g_prev_mode = m;
-    if (now > g_adopt_until)
+    if (now > g_adopt_until) {
+        if (tribal && g_adopt_until) { tribe::finish_own_outfit(false); g_tribal_outfit_world = 0; }
         return false;
-    Key a = g_adopt_kind == kCell ? cell_key() : avatar_species_key();
+    }
+    Key a = tribal ? mine(kCreature).key : g_adopt_kind == kCell ? cell_key() : avatar_species_key();
     if (!a.instance)
         return true; // not yet: do not apply the old one meanwhile
     if (g_pre_editor_fix && C.sess->role() == net::Role::Client) {
@@ -1977,10 +2506,20 @@ static bool adopt_after_editor(double now)
             return false;
         }
         g_adopt_until = 0;
+        if (tribal && !journal_tribal_choice()) {
+            tribe::finish_own_outfit(false);
+            g_tribal_outfit_world = 0;
+            if (C.feed) C.feed("Outfit kept in My Creations. The campaign choice could not be protected, so it was not changed.");
+            return false;
+        }
         if (!(pick == mine(g_adopt_kind).key) || !g_chosen[g_adopt_kind]) {
-            choose(g_adopt_kind, pick);
+            if (g_adopt_kind == kCreature && g_campaign_creature.instance && !g_chosen[kCreature])
+                choose_campaign_creature(pick);
+            else
+                choose(g_adopt_kind, pick);
             H->log(M, SK_INFO, "creations: back from the editor, own %s %08X", kInfo[g_adopt_kind].name, pick.instance);
         }
+        if (tribal) { tribe::finish_own_outfit(true); g_tribal_outfit_world = 0; }
         return false;
     }
     g_adopt_until = 0;
@@ -1997,14 +2536,300 @@ static bool adopt_after_editor(double now)
     return false;
 }
 
+// BUG-9006: retain the guest's actual cell while the host moves the group to land.
+// A direct Creature start, another planet or an explicit F9 land body has no conversion.
+static Key g_land_cell;
+static uint32_t g_land_world;
+static bool g_land_queued;
+static double g_land_started, g_land_retry;
+bool landfall_pending() { return g_land_cell.instance != 0; }
+
+// The early editor asks the asset catalog for this creation. A BEM alone works
+// on the live avatar, but the editor can start an empty body in its place.
+static bool landfall_catalog(void* rm, void* db, const Key& cell, const Key& land)
+{
+    constexpr uint32_t thumb = 0x2F7D0004;
+    uintptr_t raw_write = H->sym("SporeCoop::WriteRawCreationRecord");
+    uintptr_t alloc = H->sym("GeneralAllocator::new_");
+    uintptr_t ctor = H->sym("SporeCoop::AssetMetadataCtor");
+    uintptr_t name = H->sym("SporeCoop::AssetMetadataName");
+    uintptr_t description = H->sym("SporeCoop::AssetMetadataDescription");
+    uintptr_t set = H->sym("Pollinator::cAssetMetadata::Set");
+    if (!alloc || !raw_write || !ctor || !name || !description || !set) return false;
+    Key thumbnail{cell.instance, thumb, cell.group};
+    std::vector<dbpf::Record> records;
+    if (!records_from_game(thumbnail, records)) return false;
+    auto png = std::find_if(records.begin(), records.end(), [&](const auto& r) { return r.key == thumbnail; });
+    if (png == records.end() || png->data.empty()) return false;
+    Key new_thumb{land.instance, thumb, land.group};
+    if (!cdecl_call<bool>(raw_write, db, &new_thumb, png->data.data(), (uint32_t)png->data.size(), 1)) return false;
+
+    void* source = nullptr;
+    Key meta_key{cell.instance, kMeta, cell.group};
+    bool loaded = vcall<bool>(rm, 0x0C / 4, &meta_key, &source, nullptr, nullptr, nullptr, nullptr);
+    void* meta = loaded && source ? vcall<void*>(source, 3, kMeta) : nullptr;
+    bool ok = false;
+    if (meta) {
+        void* storage = cdecl_call<void*>(alloc, 0xD8, "Duo landfall metadata", 0, 0, 0, 0);
+        void* created = storage ? thiscall<void*>(ctor, storage) : nullptr;
+        if (created) {
+            vcall<int>(created, 0);
+            const char16_t* title = thiscall<const char16_t*>(name, meta);
+            const char16_t* desc = thiscall<const char16_t*>(description, meta);
+            ok = thiscall<bool>(set, created, &land, title ? title : u"", desc ? desc : u"", u"", &cell, false) &&
+                 vcall<bool>(rm, 0x20 / 4, created, nullptr, db, nullptr, nullptr);
+            vcall<int>(created, 1);
+        }
+    }
+    if (source) vcall<int>(source, 1);
+    return ok;
+}
+
+static bool make_land_creature(const Key& cell, Key& result)
+{
+    uintptr_t convert = H->sym("SporeCoop::CellModelToEarlyCreature");
+    uintptr_t write = H->sym("SporeCoop::WriteCreationResource");
+    uintptr_t publish = H->sym("SporeCoop::RegisterConvertedModel");
+    uintptr_t cache_get = H->sym("Resource::IResourceManager::Get");
+    uintptr_t generator = H->sym("App::cIDGenerator::Get");
+    void* ids = generator ? cdecl_call<void*>(generator) : nullptr;
+    void* db = a_GetDb ? cdecl_call<void*>(a_GetDb, kEditorSavesArea) : nullptr;
+    void* rm = a_RmPtr ? *(void**)a_RmPtr : nullptr;
+    void* cache = cache_get ? cdecl_call<void*>(cache_get) : nullptr;
+    if (!convert || !write || !publish || !cache || !ids || !db || !rm) return false;
+
+    void* source = nullptr;
+    void* model = nullptr;
+    bool ok = vcall<bool>(rm, 0x0C / 4, &cell, &source, nullptr, nullptr, nullptr, nullptr) && source &&
+              thiscall<bool>(convert, source, &model) && model;
+    if (ok) {
+        vcall<void>(ids, 1, &result, kInfo[kCreature].type, 0x62, 0, 0x62, 0);
+        Key bem{result.instance, kBem, result.group};
+        ok = result.instance && result.type == kInfo[kCreature].type && result.group == kInfo[kCreature].group &&
+             !key_exists(bem);
+        if (ok) {
+            *(Key*)((uint8_t*)model + 8) = result;
+            cdecl_call<void>(publish, model);
+            vcall<bool>(cache, 0x6C / 4, model, true);
+            ok = cdecl_call<bool>(write, model, db, nullptr, &bem) && landfall_catalog(rm, db, cell, result);
+        }
+    }
+    if (model) vcall<int>(model, 1);
+    if (source) vcall<int>(source, 1);
+    return ok;
+}
+
+static bool landfall_tick(double now)
+{
+    if (C.sess->role() != net::Role::Client || C.sess->players().size() != 2 || g_chosen[kCreature]) {
+        g_land_cell = {};
+        g_land_result = {};
+        return false;
+    }
+    uint32_t m = game::mode_id();
+    if (m == modes::kCell) {
+        Key cell = cell_key();
+        auto host = g_applied.find({0, (uint8_t)kCell});
+        if (cell.instance && host != g_applied.end()) {
+            g_land_cell = (cell == host->second.orig || cell == host->second.key) ? Key{} : cell;
+            g_land_world = modes::current_world();
+        }
+        return false;
+    }
+    if (m != modes::kCreature) {
+        if (m == modes::kTribe || m == modes::kCiv || m == modes::kSpace) {
+            g_land_cell = {};
+            g_land_result = {};
+        }
+        return false;
+    }
+    if (!g_land_cell.instance || !game::avatar()) return false;
+    if (!g_land_world || modes::current_world() != g_land_world) {
+        g_land_cell = {};
+        g_land_result = {};
+        return false;
+    }
+    if (g_land_queued || (g_land_result.instance && now < g_land_retry)) return true;
+    g_land_queued = true;
+    H->run_outside_frame([](void*) {
+        g_land_queued = false;
+        if (!g_land_cell.instance || !C.sess->connected() || C.sess->role() != net::Role::Client ||
+            C.sess->players().size() != 2 || g_chosen[kCreature] || game::mode_id() != modes::kCreature ||
+            modes::current_world() != g_land_world || !game::avatar()) return;
+        double t = H->time_seconds();
+        if (!g_land_result.instance) {
+            Key result{};
+            if (make_land_creature(g_land_cell, result)) {
+                g_land_result = result;
+                g_land_started = t;
+                g_land_retry = t + 1;
+                return; // the game completes its packed-file write asynchronously
+            }
+        } else {
+            void* db = cdecl_call<void*>(a_GetDb, kEditorSavesArea);
+            std::vector<dbpf::Record> records;
+            if (db && vcall<bool>(db, 0x24 / 4) && records_from_game(g_land_result, records) &&
+                std::any_of(records.begin(), records.end(), [](const auto& rec) { return rec.key.type == kBem && !rec.data.empty(); })) {
+                g_opts_read = -100;
+                refresh_options(t);
+                choose_campaign_creature(g_land_result);
+                H->log(M, SK_INFO, "landfall: guest cell %08X -> own Creature %08X", g_land_cell.instance, g_land_result.instance);
+                if (C.feed) C.feed("Your land creature grew from your own cell.");
+            } else if (t - g_land_started < 30) {
+                g_land_retry = t + 1;
+                return;
+            } else {
+                if (C.feed) C.feed("Your land creature could not be saved. Choose a creature in F9.");
+            }
+        }
+        if (!g_land_result.instance) {
+            if (C.feed) C.feed("Your cell could not be converted. Choose a land creature in F9.");
+        }
+        g_land_result = {};
+        g_land_cell = {};
+    }, nullptr);
+    return true;
+}
+
+// History handles the stage transition. Supply the ship already owned by
+// this founder when the player confirms their unfinished flight lesson.
+bool prepare_training_ship(void* request, bool& restoring)
+{
+    restoring = !g_restart_path.empty() && world::current_game_key() == g_restart_path;
+    if (!restoring) return true;
+    refresh_options(H->time_seconds());
+    const Key ship{g_launch_model,kInfo[kUfo].type,kInfo[kUfo].group};
+    const Key captain{g_launch_captain,kInfo[kCreature].type,kInfo[kCreature].group};
+    for (const auto& [kind,key] : {std::pair{kUfo,ship},std::pair{kCreature,captain}}) {
+        if (!own_option(kind,key)) {
+            C.feed("Your saved ship or captain is missing from My Creations. Restore it before restarting training.");
+            return false;
+        }
+        auto shadow = g_world_pkgs.find({kind,key.instance});
+        if (shadow != g_world_pkgs.end()) {
+            drop_package(shadow->second.db);
+            g_world_pkgs.erase(shadow);
+        }
+        Bundle model;
+        if (!make_bundle(kind,key,model) || model.recs.empty() ||
+            !unknown_part_ids(model.recs,mk_of(kind)).empty()) {
+            C.feed("Your saved ship or captain could not be loaded. Check the required creation parts.");
+            return false;
+        }
+    }
+    skg::field<Key>(request,0x10) = ship;
+    skg::field<uint8_t>(request,0x20) = 0; // load the named creation
+    g_restart_captain = captain;
+    H->log(M,SK_INFO,"creations: first flight reuses saved ship %08X and captain %08X",ship.instance,captain.instance);
+    return true;
+}
+
+// Restore only on entry to a received save. Later ordinary ship and outfit
+// edits belong to the player, and must not be undone on the next tick.
+static void restore_space_identity(double now)
+{
+    const auto* space = modes::for_mode(modes::kSpace);
+    if (is_host() || game::mode_id() != modes::kSpace || !g_personal_ship || !space ||
+        world::load_queued() || world::save_busy()) return;
+    load_launch_entry();
+    if (!g_space_restore_due || g_space_restore_queued || g_captain_flush_pending ||
+        !g_pending_launch.empty() || !space->local() || g_launch_entry.empty()) return;
+    if (!g_launch_model && !g_launch_captain) { g_space_restore_due = false; return; }
+    refresh_options(now);
+    if (!g_es_ok) return;
+    g_space_restore_queued = true;
+    H->run_outside_frame([](void* token) {
+        const auto* space = modes::for_mode(modes::kSpace);
+        const auto epoch = *static_cast<uint64_t*>(token);
+        delete static_cast<uint64_t*>(token);
+        if (epoch != g_space_restore_epoch) return;
+        g_space_restore_queued = false;
+        if (!C.sess || !C.sess->connected() || is_host() || game::mode_id() != modes::kSpace ||
+            g_captain_flush_pending || world::load_queued() || world::save_busy() ||
+            world::current_game_key() != g_launch_path || !space || !space->local()) return;
+        void* empire = a_GetEmpire ? cdecl_call<void*>(a_GetEmpire) : nullptr;
+        if (!empire) return;
+        g_space_restore_due = false;
+        for (Kind kind : {kUfo,kCreature}) {
+            const Key own{kind == kUfo ? g_launch_model : g_launch_captain,kInfo[kind].type,kInfo[kind].group};
+            if (!own.instance || !own_option(kind,own) || (kind == kCreature && !g_founder_captain)) continue;
+            auto shadow = g_world_pkgs.find({kind,own.instance});
+            if (shadow != g_world_pkgs.end()) {
+                drop_package(shadow->second.db);
+                g_world_pkgs.erase(shadow);
+            }
+            if (skg::field<Key>(empire,kind == kUfo ? 0xB8 : 0xC4) == own) continue;
+            Bundle local;
+            if (!make_bundle(kind,own,local) || local.recs.empty() ||
+                !unknown_part_ids(local.recs,mk_of(kind)).empty()) continue;
+            const auto set = kind == kUfo ? H->sym("SporeCoop::Empire_SetSpacecraftKey")
+                                          : H->sym("SporeCoop::Empire_SetCaptainKey");
+            if (!set) continue;
+            thiscall<void>(set,empire,&own);
+            // The native ship setter also updates other ships of this empire.
+            // Rebuild actual remote puppets with their separate network models.
+            if (kind == kUfo && C.appearance_changed)
+                for (const auto& player : C.sess->players())
+                    if (player.id != C.sess->my_id()) C.appearance_changed(player.id);
+        }
+        g_last_check = 0;
+    },new uint64_t(g_space_restore_epoch));
+}
+
+static void commit_native_captain(double now)
+{
+    if (!g_captain_flush_pending || g_captain_flush_queued || now < g_captain_flush_after ||
+        game::mode_id() != modes::kSpace) return;
+    g_captain_flush_queued = true;
+    H->run_outside_frame([](void*) {
+        g_captain_flush_queued = false;
+        if (!g_captain_flush_pending || !C.sess || !C.sess->connected() ||
+            game::mode_id() != modes::kSpace) return;
+        if (++g_captain_flush_tries > 5) {
+            g_captain_flush_pending = false;
+            H->log(M,SK_WARN,"creations: saved captain model could not be confirmed in the creation library");
+            return;
+        }
+        g_captain_flush_after = H->time_seconds() + 2;
+        void* empire = a_GetEmpire ? cdecl_call<void*>(a_GetEmpire) : nullptr;
+        if (!empire) return;
+        const Key key = skg::field<Key>(empire,0xC4);
+        if (!is_crt(key) || !key.instance) return;
+        void* editor_db = a_GetDb ? cdecl_call<void*>(a_GetDb,kEditorSavesArea) : nullptr;
+        std::vector<dbpf::Record> records;
+        if (!editor_db || !vcall<bool>(editor_db,0x24 / 4) ||
+            !records_from_game({key.instance,kBem,key.group},records)) return;
+        load_launch_entry();
+        if (g_launch_entry.empty()) { g_captain_flush_pending = false; return; }
+        wchar_t value[12];
+        swprintf(value,12,L"%08X",key.instance);
+        if (!WritePrivateProfileStringW(L"space-captain",g_launch_entry.c_str(),value,
+                                        (g_dir+L"\\choices.ini").c_str())) return;
+        g_launch_captain = key.instance;
+        H->log(M,SK_INFO,"creations: native captain %08X committed to the creation library",key.instance);
+        g_captain_flush_pending = false;
+    },nullptr);
+}
+
 void tick(double now)
 {
     if (!C.sess || !C.sess->connected())
         return;
+    if (g_editing_captain && (g_prev_mode == modes::kEdit || g_prev_mode == modes::kEditor) &&
+        game::mode_id() == modes::kSpace) {
+        g_editing_captain = false;
+        g_captain_flush_pending = true;
+        g_captain_flush_tries = 0;
+        g_captain_flush_after = now + .5;
+    }
+    commit_native_captain(now);
+    refresh_campaign_creature();
+    if (landfall_tick(now)) return;
     if (adopt_after_editor(now))
         return;
     if (now - g_last_check > 2.0) {
         g_last_check = now;
+        restore_space_identity(now);
         share_own(now);
     }
     apply_own_avatar();
@@ -2093,6 +2918,29 @@ void on_player_leave(uint8_t id)
 
 void on_session_end()
 {
+    g_launch_entry.clear();
+    g_launch_path.clear();
+    g_pending_launch.clear();
+    g_restart_path.clear();
+    g_restart_captain = {};
+    g_launch_model = 0;
+    g_captain_source = {};
+    g_launch_captain = 0;
+    g_editing_captain = false;
+    ++g_space_restore_epoch;
+    g_space_restore_due = g_space_restore_queued = false;
+    g_captain_flush_pending = false;
+    g_captain_flush_after = 0;
+    if (!restore_pending_outfit() && C.feed) C.feed("The previous outfit choice could not be restored. Rejoin after restarting Spore.");
+    g_last_check = 0;
+    g_tribal_outfit_world = 0;
+    g_tribal_outfit_previous = {};
+    g_land_cell = {};
+    g_land_world = 0;
+    g_land_result = {};
+    g_campaign_place = 0;
+    g_campaign_creature = {};
+    g_campaign_entry.clear();
     // the host's creations registered under their original keys (priority 2000, above the guest's
     // own My Creations): after the session a guest's own creation of the same id (ids are per
     // profile and sequential) resolved to the host's records in its own games (BUG-0055). They go;
@@ -2107,6 +2955,11 @@ void on_session_end()
         g_world_pkgs.clear();
     }
     g_asked.clear(); // (registered species packages stay: the same world may come back)
+    for (void* db : g_design_packages) drop_package(db);
+    g_design_packages.clear();
+    for (const auto& [id, key] : g_archived_designs)
+        g_model_use.erase({(uint8_t)design_kind(key.group), key.instance});
+    g_archived_designs.clear();
     g_world_missing.clear();
     g_own_sent.clear();
     g_remap.clear(); // (their packages stay registered: the same world may come back)
@@ -2132,6 +2985,112 @@ void* player_species(uint8_t player)
 {
     Key k = player_key(player, kCreature);
     return k.instance ? game::species_by_key({k.instance, k.type, k.group}) : nullptr;
+}
+
+// Preserve only the two creation record types used by make_bundle(). Never mount a
+// received save attachment as an unrestricted Spore package.
+static bool decode_founder(const std::vector<uint8_t>& archive, Bundle& b, std::string& err)
+{
+    net::Reader header(archive.data(), archive.size());
+    uint32_t magic = header.u32(), key = header.u32();
+    uint8_t owner = header.u8();
+    if (!header.ok() || magic != 0x31414744 || !owner || owner >= 0xFE || header.left() < 14) {
+        err = "Invalid guest creature archive header.";
+        return false;
+    }
+    std::vector<uint8_t> payload(header.cur(), header.cur() + header.left());
+    net::Reader record_header(payload.data(), payload.size());
+    record_header.u32(); record_header.u32(); record_header.u32();
+    uint16_t count = record_header.u16();
+    if (!count || count > 2 || !unpack(payload, b) || !b.key.instance || !is_crt(b.key) ||
+        key != shared_instance(owner, fnv(payload.data(), payload.size()))) {
+        err = "Invalid or mismatched guest creature data.";
+        return false;
+    }
+    bool model = false, meta = false;
+    size_t used = 14; // original key, record count
+    for (auto& rec : b.recs) {
+        if (rec.data.empty() || rec.key.instance != b.key.instance || rec.key.group != b.key.group ||
+            (rec.key.type != kBem && rec.key.type != kMeta) || (rec.key.type == kBem ? model : meta)) {
+            err = "Unexpected record in guest creature archive.";
+            return false;
+        }
+        if (rec.key.type == kBem) {
+            uint32_t effects[3];
+            if (!archive_model_effects(rec.data, effects)) { err = "Invalid creature model header."; return false; }
+            for (const auto& ref : model_part_refs(rec.data, kPartGroup)) {
+                if (!part_known(ref.id, kPartGroup)) { err = "Saved guest creature needs missing part " + hex(ref.id); return false; }
+            }
+            for (int layer = 0; layer < 3; ++layer) {
+                uint32_t fx = effects[layer];
+                bool inherited = g_archive_cell_paints && layer == 0 && effects[1] == 0 && effects[2] == 0 &&
+                    std::binary_search(std::begin(kBaseCellPaints), std::end(kBaseCellPaints), fx);
+                if (fx && !paint_known(fx) && !inherited) { err = "Saved guest creature needs missing paint " + hex(fx); return false; }
+            }
+            model = true;
+        } else meta = true;
+        used += 16 + rec.data.size();
+        rec.key.instance = key;
+    }
+    if (used != payload.size()) { err = "Unexpected data after the guest creature records."; return false; }
+    if (!model) {
+        err = "Missing saved guest creature model.";
+        return false;
+    }
+    b.key.instance = key;
+    return true;
+}
+
+bool archive_guest_model(uint8_t guest, const std::string& planet, std::string& err)
+{
+    auto id = std::make_pair(guest, (uint8_t)kCreature);
+    auto a = g_applied.find(id);
+    if (a == g_applied.end() || !a->second.key.instance || a->second.unusable) {
+        err = "Waiting for the guest creature to finish loading.";
+        return false;
+    }
+    if (a->second.key == a->second.orig) return true; // a premade uses the game's own records
+    if (!o_LoadPlanet) { err = "This game build cannot restore archived founder models."; return false; }
+    auto source = g_store.find(id);
+    if (source == g_store.end()) { err = "The guest creature's original records are unavailable."; return false; }
+    net::Writer w;
+    w.u32(0x31414744); w.u32(a->second.key.instance); w.u8(guest);
+    w.raw(source->second.data(), source->second.size());
+    Bundle b;
+    return decode_founder(w.data, b, err) && founders::store_guest_model(planet, b.key.instance, w.data, err);
+}
+
+static bool restore_model(const std::string& planet, uint32_t id, std::string& err)
+{
+    std::vector<uint8_t> archive;
+    if (!founders::load_guest_model(planet, id, archive, err)) return false;
+    Bundle b;
+    if (!decode_founder(archive, b, err)) return false;
+    if (id != b.key.instance) { err = "The archived creature does not match its filename."; return false; }
+    std::vector<dbpf::Record> current;
+    if (records_from_game(b.key, current)) {
+        for (auto& rec : b.recs) {
+            auto it = std::find_if(current.begin(), current.end(), [&](const dbpf::Record& r) { return r.key == rec.key; });
+            if (it == current.end() || it->data != rec.data) { err = "A different creature occupies the saved founder's key."; return false; }
+        }
+        return true;
+    }
+    if (!find_paths() || !package_for(g_dir + L"\\founder_" + slotfs::widen(upd::sha256_hex(archive)) + L".package", b.recs, kPrioModel)) {
+        err = "Could not register the saved guest creature.";
+        return false;
+    }
+    H->log(M, SK_INFO, "creations: restored saved founder %08X before planet load", b.key.instance);
+    return true;
+}
+
+bool restore_guest_model(const std::string& planet, std::string& err)
+{
+    if (!restore_world_designs(planet, err)) return false;
+    std::vector<uint32_t> ids;
+    if (!founders::model_ids(planet, ids, err)) return false;
+    for (uint32_t id : ids)
+        if (!restore_model(planet, id, err)) return false;
+    return true;
 }
 
 std::vector<Option> options(Kind k)
@@ -2222,6 +3181,23 @@ std::string status()
 
 std::string debug(const std::vector<std::string>& a)
 {
+    if ((!a.empty() && a.size() <= 2 && a[0] == "ship_parts") ||
+        (a.size() == 2 && (a[0] == "body_parts" || a[0] == "body_hash"))) {
+        const bool ship = a[0] == "ship_parts";
+        const auto& info = kInfo[ship ? kUfo : kCreature];
+        const Key key = a.size() == 1 ? ufo_key() : Key{(uint32_t)strtoul(a[1].c_str(),nullptr,16),
+                                                        info.type,info.group};
+        std::vector<dbpf::Record> records;
+        if (!key.instance || !records_from_game({key.instance,kBem,key.group}, records)) return "No readable creation.";
+        std::string parts;
+        for (const auto& record : records) {
+            if (record.key.type != kBem) continue;
+            if (a[0] == "body_hash") return upd::sha256_hex(record.data);
+            for (const auto& part : model_part_refs(record.data, ship ? kUfoPartGroup : kPartGroup))
+                parts += " " + hex(part.id);
+        }
+        return parts.empty() ? "No readable parts." : (ship ? "ship " : "body ") + hex(key.instance) + " parts:" + parts;
+    }
     if (a.size() >= 2 && (a[0] == "next" || a[0] == "prev")) {
         int k = a[1] == "cell" ? kCell : a[1] == "ufo" ? kUfo : kCreature;
         cycle((Kind)k, a[0] == "next" ? 1 : -1);

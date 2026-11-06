@@ -17,8 +17,13 @@
 
 namespace upd {
 
+inline constexpr const wchar_t* kSymbolFiles[] = {
+    L"gog2016_922af7c7.sym", L"march2017_dc04aee5.sym", L"overrides_922af7c7.sym",
+    L"overrides_dc04aee5.sym", L"gog2024_dc04aee5.sym" // also recognize the legacy filename
+};
+
 // the GitHub API answer for the newest release (override for tests: [update] url in coop.ini)
-constexpr const char* kLatestUrl = "https://api.github.com/repos/WoodyWizard/SporeCoop/releases/latest";
+constexpr const char* kLatestUrl = ""; // private Duo builds use the adjacent release pack
 
 using Progress = std::function<void(uint64_t got, uint64_t total)>;
 bool http_get(const std::string& url, std::vector<uint8_t>& out, std::string& err, const Progress& progress = {},
@@ -59,6 +64,7 @@ extern bool g_web_fallback_fix; // update.web_fallback, BUG-0392: false = the AP
 // the version installed in a game folder (SporebinEP1/mods/sporecoop.version), "" if none
 std::string installed_version(const std::wstring& game_root);
 bool is_loader(const std::wstring& dll); // SporeCoop's steam_api.dll, not the game's own
+bool inspect_loader(const std::wstring& dll, bool& loader); // false if unreadable or empty
 
 std::wstring widen(const std::string& s);
 std::string narrow(const std::wstring& s);

@@ -15,7 +15,12 @@
 #include <chrono>
 #include <thread>
 #include <type_traits>
+#ifdef _WIN32
+#include <winsock2.h>
+#undef small // rpcndr.h defines this as char
+#else
 #include <arpa/inet.h>
+#endif
 
 #include "net/connection.h"
 #include "net/diagmsg.h"
@@ -64,6 +69,14 @@ static void test_buffer()
     Reader r2(w2.data.data(), w2.size());
     PlayerState t2;
     CHECK(t2.read(r2) && t2.mode == 0x1654C05 && t2.world == 0x80B16021);
+    s.mode = 0x1654C10;
+    s.gate = {42, 1, 1210, 35};
+    Writer away;
+    s.write(away);
+    Reader ar(away.data.data(), away.size());
+    CHECK(t2.read(ar) && t2.gate.visit == 42 && t2.gate.act == 1 && t2.gate.target == 1210 && t2.gate.credit == 35);
+    Reader old_state(w2.data.data(), w2.size());
+    CHECK(t2.read(old_state) && !t2.gate.visit && !t2.gate.credit);
     // shared resource message payload (u8 id, f64)
     Writer w3;
     w3.u8(3);
@@ -1283,6 +1296,41 @@ static void tick(std::vector<Session*> v, int ms)
 
 // CAP_VERSION (0.7.4): every peer learns the mod / SporeKit / game versions of the others; an
 // older peer (no extension) reads as "" and still joins; the old message shapes still read
+static void test_campaign_profiles()
+{
+    auto connect_pair = [](const std::string& local, const std::string& remote, bool allowed, bool launch = false, uint8_t seats = kMaxPlayers) {
+        Session host, guest;
+        host.campaign_profile = local;
+        host.seat_limit = seats;
+        guest.campaign_profile = remote;
+        guest.personal_launch = launch;
+        std::string err, refusal;
+        bool welcomed = false;
+        guest.cb.connected = [&] { welcomed = true; };
+        guest.cb.disconnected = [&](const std::string& why) { refusal = why; };
+        CHECK(host.host(0, "host", err));
+        CHECK(guest.join("127.0.0.1:" + std::to_string(host.port()), "guest", err));
+        for (int i = 0; i < 200 && !welcomed && refusal.empty(); ++i) {
+            host.update();
+            guest.update();
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+        CHECK(welcomed == allowed);
+        if (welcomed) CHECK(bool(host.peer_caps(guest.my_id()) & CAP_PERSONAL_LAUNCH) == launch);
+        CHECK(allowed || !refusal.empty());
+        if (!allowed && !local.empty())
+            CHECK(host.players().size() == 1);
+    };
+    connect_pair("Duo 1 / Creepy & Cute", "Duo 1 / Creepy & Cute", true);
+    connect_pair("Duo 1 / base parts", "Duo 1 / base parts", true);
+    connect_pair("Duo 1 / Creepy & Cute", "Duo 1 / Creepy & Cute", true, true);
+    connect_pair("Duo 1 / Creepy & Cute", "Duo 1 / base parts", false);
+    connect_pair("Duo 1 / base parts", "Duo 1 / base parts", false,false,1);
+    connect_pair("Duo 1 / base parts", "Duo 1 / base parts", true,false,2);
+    connect_pair("Duo 1 / base parts", "", false);
+    connect_pair("", "Duo 1 / base parts", false);
+}
+
 static void test_peer_versions()
 {
     printf("peer versions in HELLO / WELCOME / PLAYER_JOIN, an old-shape peer reads as unknown\n");
@@ -2374,6 +2422,12 @@ static void test_diag_conn_stats()
 
 int main(int argc, char** argv)
 {
+    if (!net_init()) return 1;
+    if (argc == 2 && std::string(argv[1]) == "--campaign-profiles") {
+        test_campaign_profiles();
+        printf(g_fail ? "FAILED (%d)\n" : "ALL OK\n", g_fail);
+        return g_fail ? 1 : 0;
+    }
     if (argc == 2 && std::string(argv[1]) == "--fakepeer-host")
         return fakepeer_host();
     // `--off <name>[,<name>]`: one wave 5 switch off (its test must fail), the rest on
@@ -2466,6 +2520,7 @@ int main(int argc, char** argv)
     test_old_peer_session();
     test_rejoin_token();
     test_peer_versions();
+    test_campaign_profiles();
     test_ip_mask();
     test_join_by_name();
     test_pick_pack();

@@ -1,7 +1,7 @@
 // SporeCoop mod: creature-stage co-op ("pack" mode). See docs/03-gameplay.md.
 // the release version (tools/package.sh names the zip after it)
 #ifndef COOP_VERSION
-#define COOP_VERSION "0.7.3.6"
+#define COOP_VERSION "0.7.3.6-duo12-dev"
 #endif
 
 #include <winsock2.h>
@@ -23,7 +23,11 @@
 #include <string>
 
 #include "adapters.h"
+#include "adventure.h"
+#include "creature_rescue.h"
 #include "coop_ui.h"
+#include "founders.h"
+#include "slotfs.h"
 #include "driver.h"
 #include "game.h"
 #include "modes.h"
@@ -181,8 +185,16 @@ static void dna_notices_tick(double now)
 }
 
 bool guest_elsewhere();
-bool on_dna(float delta)
+bool on_dna(float& delta, bool activity_reward)
 {
+    if (activity_reward && delta > 0 && g_sess.connected() && game::in_creature_stage()) {
+        const auto work = world::rules_for_current().workload_percent();
+        if (work != 100) {
+            float raw = delta;
+            delta = float(double(delta) * 100.0 / work);
+            trace::ev("dna","scaled","Creature award %.3f at %u%% workload -> %.3f",raw,work,delta);
+        }
+    }
     bool guest = g_sess.role() == net::Role::Client && g_sess.connected();
     auto g = dna_route::guest_gain(guest, delta > 0, g_world_dna_fix && guest_elsewhere(), g_away_dna_fix && g_host_away);
     if (g == dna_route::Gain::Own) {
@@ -321,7 +333,7 @@ COOP_FIX_UNSAFE("core.frame", "BUG-0091", g_frame_fix, "core: animations and des
 uint32_t g_anims_dropped = 0, g_anims_unlisted = 0, g_despawns_dropped = 0, g_despawns_unlisted = 0;
 bool creature_puppet(const modes::Adapter* a)
 {
-    return a && (a == modes::for_mode(modes::kCreature) || a == modes::for_mode(modes::kScenario));
+    return a && a == modes::for_mode(modes::kCreature);
 }
 
 void despawn(Remote& r)
@@ -474,6 +486,10 @@ net::PlayerState local_state()
     st.world = g_world;
     if (void* local = local_now())
         g_adapter->fill(local, st);
+    if (st.mode == modes::kScenario && (st.flags & net::PF_IN_WORLD))
+        st.gate = adventure::outgoing();
+    if (st.mode == modes::kCreature && creature_rescue::down())
+        st.flags |= net::PF_DOWNED;
     return st;
 }
 
@@ -671,6 +687,8 @@ void drive_puppet(Remote& r, double now)
         if (!visible)
             return;
     }
+    if (!g_adapter->spawn) // Adventure draws the peer from its network position.
+        return;
     if (!r.puppet) {
         r.puppet = g_adapter->spawn(s, g_local);
         if (!r.puppet) {
@@ -849,7 +867,8 @@ static bool world_state_msg(uint8_t type)
         return true;
     return type == net::MSG_DNA || type == net::MSG_WORLD_TIME ||
            (type >= net::MSG_CELL_STATE && type <= net::MSG_CELL_FOOD) || type == net::MSG_CELL_KO ||
-           type == net::MSG_CELL_BITTEN || type == net::MSG_TRIBE_STATE || type == net::MSG_TRIBE_CMD ||
+           type == net::MSG_CELL_COMBAT || type == net::MSG_CELL_BITTEN || type == net::MSG_TRIBE_STATE || type == net::MSG_TRIBE_CMD || type == net::MSG_TRIBE_BUILDINGS ||
+           type == net::MSG_TRIBE_EQUIPMENT || type == net::MSG_TRIBE_TOOLS || type == net::MSG_TRIBE_RELATIONSHIPS || type == net::MSG_TRIBE_FOOD || type == net::MSG_TRIBE_PERFORMANCE ||
            type == net::MSG_SPECIES || type == net::MSG_SOCIAL || type == net::MSG_NEST || type == net::MSG_PARTS;
 }
 
@@ -1025,6 +1044,7 @@ void start_vote(void* req, const std::string& text)
         skg::vcall<int>(req, 1); // AddRef: kept until the vote ends
     g_vote = Vote{true, req, H->time_seconds(), text, 60, req ? skg::field<uint32_t>(req, 0xC) : 0u,
                   game::mode_id(), modes::current_world()};
+    if (g_vote.mode == modes::kTribe && g_vote.editor == 0x156276D1) tribe::begin_outfit_vote();
     trace::line("vote", "start '%s' editor=%s %s players=%d", text.c_str(), trace::hex(g_vote.editor).c_str(),
                 modes::mode_name(g_vote.mode), (int)g_sess.players().size());
     for (auto& p : g_sess.players())
@@ -1131,7 +1151,11 @@ unsigned g_part_list_waivers; // tests: how often the part-list error was waived
 uint32_t* SK_THISCALL h_BlockingErrors(void* ed, uint32_t* out, void* res, void* model, int flag)
 {
     uint32_t* r = o_BlockingErrors(ed, out, res, model, flag);
-    if (g_own_editor && out && (out[0] & 0x20u)) {
+    void* req = ed && out && (out[0] & 0x20u) ? skg::field<void*>(ed,0x1CC) : nullptr;
+    const bool own_captain = req && skg::readable(req,0x20) &&
+        skg::field<uint32_t>(req,0xC) == 0xA56567F7 &&
+        creations::personal_captain_outfit(skg::field<uint32_t>(req,0x10));
+    if ((g_own_editor || own_captain) && out && (out[0] & 0x20u)) {
         out[0] &= ~0x20u;
         g_part_list_waivers++;
     }
@@ -1145,6 +1169,16 @@ uint32_t* SK_THISCALL h_BlockingErrors(void* ed, uint32_t* out, void* res, void*
 bool g_own_editor_items_fix = true;
 COOP_FIX("creations.own_editor_items", "BUG-0368", g_own_editor_items_fix, "creations: a guest's own creature editor locks the parts the species has not collected");
 unsigned g_own_editor_items_set; // tests: own editor requests that got the collected parts
+bool g_tribal_outfitter_fix = true;
+COOP_FIX("tribe.own_outfitter", "BUG-9043", g_tribal_outfitter_fix,
+         "tribe: open the guest species outfitter with the shared native clothing unlocks");
+constexpr uint32_t kTribalOutfitter = 0x156276D1;
+
+bool own_tribal_outfitter(uint32_t editor)
+{
+    return g_tribal_outfitter_fix && editor == kTribalOutfitter &&
+           game::mode_id() == modes::kTribe && tribe::village_orders();
+}
 
 // the cPlayer's collected creature parts (cCollectableItems), or null
 void* collected_parts()
@@ -1162,16 +1196,48 @@ bool open_own_editor(uint32_t editor_id)
 {
     uintptr_t ctor = H->sym("EditorRequest_ctor"), submit = H->sym("Editors::EditorRequest::Submit");
     void* av = game::avatar();
-    if (!ctor || !submit || !av)
+    bool tribal = own_tribal_outfitter(editor_id);
+    game::Key k;
+    std::wstring outfit_name;
+    void* tribal_items = nullptr;
+    if (tribal) {
+        auto own = creations::mine(creations::kCreature);
+        k = {own.key.instance, own.key.type, own.key.group};
+        outfit_name = slotfs::widen(own.name);
+        uintptr_t get = H->sym("SporeCoop::TribalGame_Get");
+        void* tg = get ? skg::cdecl_call<void*>(get) : nullptr;
+        if (tg && skg::readable((char*)tg + 0x19C, 4)) tribal_items = skg::field<void*>(tg, 0x19C);
+        if (!k.instance || !tribal_items || !H->sym("SporeCoop::IntrusivePtr_Assign") ||
+            !H->sym("SporeCoop::UIntVector_PushBack") || !H->sym("wstring_copy") || outfit_name.empty()) return false;
+    } else if (av) k = game::species_key(av);
+    if (!ctor || !submit || !k.instance)
         return false;
     // the game's operator new (GeneralAllocator::new_: size, name, 0, 0, 0, 0), as at 0xD42F1E (GOG 2016)
     void* req = skg::cdecl_call<void*>(H->sym("GeneralAllocator::new_"), (size_t)0x9C, "EditorRequest", 0, 0, 0, 0);
+    if (!req) return false;
     skg::thiscall<void*>(ctor, req);
     skg::field<uint32_t>(req, 0xC) = editor_id ? editor_id : 0x465C50BAu; // CreatureEditorExtraLarge
-    game::Key k = game::species_key(av);
     skg::field<uint32_t>(req, 0x10) = k.instance;
     skg::field<uint32_t>(req, 0x14) = k.type;
     skg::field<uint32_t>(req, 0x18) = k.group;
+    if (tribal) {
+        // Native planner D13280: outfits keep their species and use TribalGame's
+        // clothing collection, not the Creature-stage body-part collection.
+        for (size_t off : {0x34u, 0x36u, 0x37u, 0x38u, 0x39u, 0x3Du, 0x64u})
+            skg::field<uint8_t>(req, off) = 0;
+        skg::field<uint8_t>(req, 0x35) = 1;
+        skg::field<uint8_t>(req, 0x3C) = 1;
+        skg::field<uint8_t>(req, 0x6D) = 1;
+        skg::thiscall<void>(H->sym("wstring_copy"), (char*)req + 0x40,
+                            outfit_name.data(), outfit_name.data() + outfit_name.size());
+        skg::thiscall<void*>(H->sym("SporeCoop::IntrusivePtr_Assign"), (char*)req + 0x94, tribal_items);
+        uintptr_t nouns = H->sym("Simulator::cGameNounManager::Get"), getp = H->sym("SporeCoop::cGameNounManager_GetPlayer");
+        void* nm = nouns ? skg::cdecl_call<void*>(nouns) : nullptr;
+        void* player = nm && getp ? skg::thiscall<void*>(getp, nm) : nullptr;
+        if (player && skg::readable((char*)player + 0x10FC, 20))
+            for (size_t off = 0x10FC; off <= 0x110C; off += 4)
+                skg::thiscall<void>(H->sym("SporeCoop::UIntVector_PushBack"), (char*)req + 0x70, (char*)player + off);
+    }
     if (g_own_editor_items_fix && game::mode_id() == modes::kCreature) {
         // the native request's intrusive pointer assignment (AddRef the new, Release the old)
         uintptr_t assign = H->sym("SporeCoop::IntrusivePtr_Assign");
@@ -1182,10 +1248,12 @@ bool open_own_editor(uint32_t editor_id)
     }
     g_vote_bypass = true;
     g_own_editor = true; // the editor loads the creature after Submit, on a later frame
+    if (tribal) creations::begin_tribal_outfit();
     bool r = skg::cdecl_call<bool>(submit, req);
     g_vote_bypass = false;
     if (!r)
         g_own_editor = false;
+    if (!r && tribal) tribe::finish_own_outfit(false);
     return r;
 }
 
@@ -1220,10 +1288,32 @@ unsigned g_submits_repeated; // tests: editor requests dropped as repeats of one
 // it save first; a share that cannot save now holds the editor at most 15 s, submit_tick)
 bool share_save_due() { return world::save_busy() || world::save_pending(); }
 
+static bool native_first_spacecraft(void* req)
+{
+    return req && game::mode_id() == modes::kCiv && skg::field<uint32_t>(req, 0xC) == 0x96B24187 &&
+        skg::field<uint32_t>(req, 0x10) == 0 && skg::field<uint32_t>(req, 0x1C) == modes::kCiv &&
+        skg::field<uint32_t>(req, 0x90) == 0x0116D51D;
+}
+
+static bool submit_native_editor(void* req)
+{
+    const bool personal_launch = g_sess.connected() && g_sess.role() == net::Role::Client &&
+                                 native_first_spacecraft(req);
+    const bool captain_outfit = req && game::mode_id() == modes::kSpace &&
+        skg::field<uint32_t>(req,0xC) == 0xA56567F7 &&
+        creations::personal_captain_outfit(skg::field<uint32_t>(req,0x10));
+    bool restoring = false;
+    if (personal_launch && !creations::prepare_training_ship(req,restoring)) return false;
+    bool r = o_Submit(req);
+    if (r && personal_launch && !restoring) creations::begin_personal_launch();
+    if (r && captain_outfit) creations::begin_captain_outfit();
+    return r;
+}
+
 bool submit_now(void* req)
 {
     g_vote_bypass = true;
-    bool r = o_Submit(req);
+    bool r = submit_native_editor(req);
     g_vote_bypass = false;
     if (r)
         g_editor_submitted_at = H->time_seconds();
@@ -1267,15 +1357,98 @@ void hold_submit(void* req)
 // the held request goes to the game once the save is written (at most 15 s later), outside the
 // frame: editors create D3D resources
 unsigned g_submits_after_swap; // tests (BUG-0318): editor requests that waited for the avatar's new body
+bool pause_ui_up(); // UI traversal, outside-frame only
+bool native_tribal_outfit(void* req)
+{
+    return req && own_tribal_outfitter(skg::field<uint32_t>(req, 0xC)) &&
+        skg::field<uint32_t>(req, 0x90) == 0x0116DD1B;
+}
+bool g_tribal_graduation_editor = true;
+COOP_FIX("tribe.graduation_editor", "BUG-9048", g_tribal_graduation_editor,
+         "tribe: let the native graduation open its city hall editor through its own pause");
+bool native_tribal_graduation(void* req)
+{
+    // Observed native History graduation request: blank city hall, return to
+    // Tribe, community editor context. The transition itself owns the pause.
+    return req && game::mode_id() == modes::kTribe &&
+        skg::field<uint32_t>(req, 0xC) == 0x99E92F05 &&
+        skg::field<uint32_t>(req, 0x10) == 0 &&
+        skg::field<uint32_t>(req, 0x1C) == modes::kTribe &&
+        skg::field<uint32_t>(req, 0x90) == 0x0116DD1B;
+}
+bool tribal_graduation_pending();
+bool g_tribal_graduation_vehicle_types = true;
+COOP_FIX("tribe.graduation_vehicle_types", "BUG-9060", g_tribal_graduation_vehicle_types,
+         "tribe: accept military and religious first vehicles through the native graduation pause");
+bool native_tribal_editor_pause(void* req)
+{
+    // The native construction movie then requests the first land vehicle.
+    uint32_t editor = req ? skg::field<uint32_t>(req, 0xC) : 0;
+    bool land_vehicle = editor == 0xF670AA43 || (g_tribal_graduation_vehicle_types &&
+        (editor == 0x7D433FAD || editor == 0x9AD7D4AA));
+    bool vehicle = req && game::mode_id() == modes::kTribe && tribal_graduation_pending() &&
+        land_vehicle &&
+        skg::field<uint32_t>(req, 0x10) == 0 &&
+        skg::field<uint32_t>(req, 0x1C) == modes::kTribe &&
+        skg::field<uint32_t>(req, 0x90) == 0x0116DD1B;
+    return native_tribal_outfit(req) || (g_tribal_graduation_editor && (native_tribal_graduation(req) || vehicle));
+}
+static bool g_civ_launch_editor = true;
+COOP_FIX("civ.launch_editor", "BUG-9070", g_civ_launch_editor,
+         "civ: allow the first spacecraft editor through its own launch pause");
+static bool native_editor_owns_pause(void* req)
+{
+    if (native_tribal_editor_pause(req)) return true;
+    // Vantiegan native History request after reaching ten team cities. Keep
+    // the actual pause menu, save and cinematic checks around submission.
+    return g_civ_launch_editor && native_first_spacecraft(req) && civ::founder_space_ready();
+}
+bool g_tribal_graduation_save = true;
+COOP_FIX("tribe.graduation_save", "BUG-9050", g_tribal_graduation_save,
+         "tribe: share the completed Civilization entry, not intermediate graduation designs");
+uint32_t g_tribal_graduation_world;
+double g_tribal_graduation_settled;
+bool tribal_graduation_pending()
+{
+    return g_tribal_graduation_save && g_tribal_graduation_world &&
+        g_tribal_graduation_world == modes::current_world();
+}
+void tribal_graduation_tick(double now)
+{
+    if (!g_tribal_graduation_world) return;
+    uint32_t mode = game::mode_id();
+    if (g_tribal_graduation_world != modes::current_world() ||
+        (mode != modes::kTribe && mode != modes::kEditor && mode != modes::kEdit)) {
+        g_tribal_graduation_world = 0;
+        g_tribal_graduation_settled = 0;
+        return;
+    }
+    // A native cancellation returns to playable Tribe. Graduation instead
+    // continues through the cinematic and vehicle editor. Do not mistake
+    // the brief gap before that cinematic starts for a cancellation.
+    if (mode != modes::kTribe || game_busy() || g_vote.active || g_submit_later || g_submit_queued) {
+        g_tribal_graduation_settled = 0;
+    } else if (!g_tribal_graduation_settled) {
+        g_tribal_graduation_settled = now;
+    } else if (now - g_tribal_graduation_settled > 5) {
+        g_tribal_graduation_world = 0;
+        g_tribal_graduation_settled = 0;
+    }
+}
 void submit_tick(double now)
 {
-    if (!g_submit_later || (share_save_due() && now - g_submit_held_at < 15.0))
+    if (!g_submit_later || ((world::save_busy() || (world::save_pending() && !tribal_graduation_pending())) &&
+                           now - g_submit_held_at < 15.0))
         return;
     if (creations::avatar_swap_settling(now) && now - g_submit_held_at < 90.0)
         return;
     bool end_cine = false;
     if (g_editor_cine_fix && stage_mode(game::mode_id())) { // BUG-0404: the busy gate
         unsigned b = game_busy() & busy::kEditorGate;
+        // The native planner intentionally pauses and locks the simulation.
+        // Its own outfit request may leave that planner. Real pause/dialog UI
+        // is checked again outside-frame before Submit, and cinematics still wait.
+        if (native_editor_owns_pause(g_submit_later)) b &= ~(busy::kPaused | busy::kInputLock);
         bool expired = false;
         bool settling = now - g_editor_left_at < 3.0; // (the evolution's cinematic is about to start)
         bool was = g_submit_busy_told;
@@ -1308,6 +1481,12 @@ void submit_tick(double now)
     g_submit_end_cine = end_cine;
     H->run_outside_frame(
         [](void* r) {
+            if (native_editor_owns_pause(r) && pause_ui_up()) {
+                hold_submit(r);
+                g_submit_queued = false;
+                skg::vcall<int>(r, 2);
+                return;
+            }
             if (g_submit_end_cine && world::end_cinematic("before the held editor opens (BUG-0404)"))
                 g_submit_cines_ended++;
             g_submit_end_cine = false;
@@ -1328,8 +1507,18 @@ const char* save_blocker()
         return "the game is loading";
     // a save in the galaxy menu (a share that waited there after the host left its stage) wrote a
     // slot that faulted the host's own next load (0xBA7F87, cStarManager) and stayed in LoadGame
-    if (!stage_mode(mode) && mode != modes::kScenario)
+    if (mode == modes::kScenario)
+        return "Finish or quit the adventure in its own menu before saving the campaign.";
+    if (!stage_mode(mode))
         return "the game is not in a stage";
+    if (mode == modes::kCreature && creature_rescue::pending())
+        return "Wait for the pack to revive or respawn before saving.";
+    if (mode == modes::kTribe && tribe::rescue_pending())
+        return "Wait for the last villager to revive or respawn before saving.";
+    if (mode == modes::kTribe && tribe::outfits_pending())
+        return "Wait for your partner's outfit to finish saving.";
+    if (mode == modes::kTribe && tribal_graduation_pending())
+        return "Finish Civilization graduation before sharing the campaign.";
     if (g_submit_queued || H->time_seconds() - g_editor_submitted_at < 5.0)
         return "an editor is opening";
     if (mode_switch_pending())
@@ -1370,6 +1559,10 @@ int SK_THISCALL h_SimMsg(void* self, uint32_t id, void* data)
 bool SK_CDECL h_Submit(void* req)
 {
     uint32_t mode = game::mode_id();
+    if (native_tribal_graduation(req)) {
+        g_tribal_graduation_world = modes::current_world();
+        g_tribal_graduation_settled = 0;
+    }
     // The cell stage asks for its editor again while the mate is still next to the avatar
     // (0xE78D10 -> mating -> event 0x1E -> 0xE59800 -> Submit): one more request came 13 ms after
     // the vote had ended, before the held one reached the game, and started a second vote that
@@ -1403,7 +1596,7 @@ bool SK_CDECL h_Submit(void* req)
         hold_submit(req); // the game's own request (alone in the session): after the save
         return false;
     }
-    bool r = o_Submit(req);
+    bool r = submit_native_editor(req);
     if (r)
         g_editor_submitted_at = H->time_seconds();
     return r;
@@ -1510,6 +1703,7 @@ void drop_vote(const char* why)
     g_votes_dropped++;
     void* req = g_vote.request;
     g_vote = Vote{};
+    tribe::cancel_outfit_vote();
     g_vote_action = nullptr;
     // on purpose with editor = 0 (g_vote was reset): the guests open no own editor for a cancelled
     // vote (BUG-0234); finish_vote broadcasts with the id. Do not keep the id here.
@@ -1565,6 +1759,8 @@ COOP_FIX("npc.sharecine_each", "BUG-0232", g_share_cine_each_fix, "world: the wa
 
 void on_mode_change(uint32_t from, uint32_t to)
 {
+    if (from == modes::kTribe || from == modes::kCreature) creature_hp::clear_enemy_health();
+    if (from == modes::kSpace) squadron::clear_enemy_stats();
     if (to == modes::kMenu && stage_mode(from) && g_sess.role() == net::Role::Host && !g_remotes.empty())
         feed("the others play on alone until you load a game again (they get its world)");
     bool editor = to == modes::kEdit || to == modes::kEditor;
@@ -1581,6 +1777,7 @@ void on_mode_change(uint32_t from, uint32_t to)
     g_was_in_editor = false;
     uint32_t last = g_last_stage;
     g_last_stage = to;
+    if (to == modes::kTribe && tribal_graduation_pending()) return;
     if (g_sess.role() != net::Role::Host || !g_share_world || g_remotes.empty() || !last)
         return;
     if (!new_stage && !evolved)
@@ -1680,6 +1877,7 @@ void follow_phase(double now)
             continue;
         if (r.retry_at && now < r.retry_at)
             continue; // BUG-0231: a failed share is retried 30 s later
+        if (r.needs_world && g_local && world::offer_launch(g_sess,id,r.join_serial)) continue;
         if (r.needs_world && g_local) { // joined while the host was in a menu
             if (g_share_cine_fix) { // BUG-0019: after the evolution cinematic, at most 120 s
                 double& since = g_share_cine_each_fix ? r.cine_wait_since : g_share_cine_since;
@@ -2009,14 +2207,16 @@ void own_editor_tick(double now)
     unsigned b = g_own_editor_busy_fix ? game_busy() & busy::kEditorGate : 0u;
     if ((b & busy::kPaused) && dt > 0 && dt < 5.0)
         g_own_editor_due_at += dt; // a pause does not count against the 90 s (all in all 300 s)
+    bool first_editor = g_own_editor_due == 0xFD4902BD && creations::landfall_pending();
+    bool tribal = own_tribal_outfitter(g_own_editor_due);
     if (now - g_own_editor_due_at > 90.0 || now - g_own_editor_due_first > 300.0 ||
-        (g_mode != modes::kCreature && stage_mode(g_mode))) {
+        (g_mode != modes::kCreature && stage_mode(g_mode) && !tribal && !(g_mode == modes::kCell && first_editor))) {
         LOG("own editor not opened: the stage did not settle (or was left)");
         feed("evolution: your editor did not open; evolve at your nest later");
         g_own_editor_due = 0;
         return;
     }
-    if (!av || !g_local || now - g_settle_since < 15.0 || now < g_own_editor_hold_until ||
+    if ((!tribal && (!av || !g_local || now - g_settle_since < 15.0)) || now < g_own_editor_hold_until ||
         creations::avatar_swap_settling(now) || // BUG-0318
         world::cinematic_playing() || b || mode_switch_pending() || world::load_queued()) { // a received world loads first (BUG-0157)
         g_own_editor_waits++;
@@ -2030,7 +2230,7 @@ void own_editor_tick(double now)
             if (!id)
                 return;
             // the player may have left the stage since (pause menu "Exit to Main Menu")
-            if (game::mode_id() != modes::kCreature || mode_switch_pending() || world::load_queued())
+            if ((game::mode_id() != modes::kCreature && !own_tribal_outfitter(id)) || mode_switch_pending() || world::load_queued())
                 return; // own_editor_tick decides again
             // an editor opened under the pause menu or its "save your game?" boxes: a click on
             // "Don't Save" right after left the guest in a black editor for good
@@ -2108,6 +2308,8 @@ const char* puppet_why(const Remote& r, double now)
         return "hidden: partner in another mode";
     if (s.world != g_world || !g_world)
         return "hidden: partner in another world";
+    if (g_mode == modes::kScenario)
+        return "captain marker";
     return r.puppet ? "shown" : "hidden: not spawned (yet)";
 }
 
@@ -2445,9 +2647,28 @@ void on_frame(void*, int, void*)
     if (g_sess.role() == net::Role::Host)
         g_sess.world = host_world::welcome_world(g_mode, g_world);
     g_sess.update();
+    const net::PlayerState* peer = nullptr;
+    bool duo = g_local && g_sess.connected() && g_sess.players().size() == 2;
+    if (duo && (g_mode == modes::kScenario || g_mode == modes::kCreature)) {
+        for (const auto& [id, r] : g_remotes) {
+            if (r.echo || id >= net::kMaxPlayers || r.buf.empty() || r.buf.age(now) > 2) continue;
+            const auto& s = r.buf.latest();
+            if (same_place(s) && (s.flags & net::PF_IN_WORLD))
+                peer = &s;
+        }
+    }
+    if (duo && g_mode == modes::kScenario)
+        adventure::tick(g_world, peer && !(peer->flags & net::PF_DEAD) ? peer : nullptr);
+    else
+        adventure::reset();
+    if (g_local && g_sess.connected() && g_mode == modes::kCreature && (duo || creature_rescue::continuing()))
+        creature_rescue::tick(g_world, g_local, peer, now);
+    else
+        creature_rescue::reset();
     lobby_tick(now);
     vote_tick(now);
     submit_tick(now);
+    tribal_graduation_tick(now);
     own_editor_tick(now);
     vote_action_tick(now);
     coop_ui::tick();
@@ -2455,7 +2676,7 @@ void on_frame(void*, int, void*)
     if (g_sess.role() == net::Role::Host)
         world::tick(g_sess);
     else
-        world::guest_tick(); // a received world waiting for the player to leave its editor
+        world::guest_tick(g_sess); // a received world waiting for the player to leave its editor
     savestrip::tick();
     npc::tick(now);
     nest::tick(now); // BUG-0384
@@ -2653,6 +2874,8 @@ void draw_owner_tags()
             std::string n = owner == g_sess.my_id() ? g_name : g_sess.name_of(owner);
             if (tribe::is_chief(c))
                 n = "\u2605 " + n + "'s chief";
+            if (float seconds = tribe::revive_seconds(c); seconds > 0)
+                n += " [REVIVE " + std::to_string((int)std::ceil(seconds)) + "s]";
             H->overlay_text((int)sc[0] - text_width(n) / 2, (int)sc[1] - 10,
                             owner == g_sess.my_id() ? 0xFFFFD040 : 0xFF80C8FF, n.c_str());
         },
@@ -2778,15 +3001,28 @@ void on_overlay(void*, int, void*)
             H->overlay_text((int)sc[0] - 4, (int)sc[1] - 10, 0xFFFF4040, "+");
     }
     for (auto& [id, r] : g_remotes) {
-        if (!r.puppet || !av)
+        if (!av)
             continue;
-        auto* ad = r.puppet_adapter;
-        net::Vec3 p = modes::entity_pos(ad, r.puppet);
+        net::Vec3 p;
+        float h = 3.f;
+        if (g_mode == modes::kScenario) {
+            net::PlayerState s;
+            double now = H->time_seconds();
+            if (!r.buf.sample(now, s) || r.buf.age(now) >= 5.0 || !same_place(s) ||
+                !(s.flags & net::PF_IN_WORLD) || (s.flags & net::PF_DEAD))
+                continue;
+            p = s.pos;
+        } else {
+            if (!r.puppet || !r.puppet_adapter)
+                continue;
+            p = modes::entity_pos(r.puppet_adapter, r.puppet);
+            if (r.puppet_adapter->tag_height)
+                h = r.puppet_adapter->tag_height(r.puppet);
+        }
         float len = std::sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
-        float h = ad->tag_height ? ad->tag_height(r.puppet) : 3.f;
         float up = len > 1 ? h / len : 0; // above the head, along the planet normal
         float w[3] = {p.x + p.x * up, p.y + p.y * up, p.z + p.z * up}, sc[2];
-        if (ad->flat) {
+        if (g_adapter->flat) {
             w[0] = p.x;
             w[1] = p.y + h; // cell world: screen up is +y on the plane
             w[2] = p.z;
@@ -2799,7 +3035,7 @@ void on_overlay(void*, int, void*)
     std::string head;
     if (g_sess.role() == net::Role::Host)
         head = "CO-OP host :" + std::to_string(g_sess.port()) + "  " + std::to_string(g_sess.players().size()) +
-               "/" + std::to_string(net::kMaxPlayers);
+               "/" + std::to_string(g_sess.seat_limit);
     else if (g_sess.role() == net::Role::Client)
         head = std::string("CO-OP guest  ") + (g_sess.connected() ? "connected" : "connecting...");
     else if (g_echo)
@@ -2816,6 +3052,20 @@ void on_overlay(void*, int, void*)
     int x = sw > 0 ? sw - 480 : 900, y = 70, wmax = utf8::overlay_width(head);
     H->overlay_text(x, y, 0xFFFFD040, head.c_str());
     y += 22;
+    if (g_mode == modes::kTribe && g_sess.connected()) {
+        std::string food = tribe::village_food_line();
+        if (!food.empty()) {
+            H->overlay_text(x, y, 0xFF8CF08C, food.c_str());
+            wmax = std::max(wmax, utf8::overlay_width(food));
+            y += 20;
+        }
+        std::string performance = tribe::performance_line();
+        if (!performance.empty()) {
+            H->overlay_text(x, y, 0xFFFFD040, performance.c_str());
+            wmax = std::max(wmax, utf8::overlay_width(performance));
+            y += 20;
+        }
+    }
     if (g_sess.connected() && g_mode == modes::kCreature) {
         std::string t = teamplay::status();
         if (!t.empty()) {
@@ -2959,6 +3209,8 @@ void end_session(EndPath path, bool cell)
     g_vote_action_due = nullptr; // BUG-0404: a result still waiting at the busy gate ends with its session
     g_puppet_hold = false; // tests (coop.puppet hold, BUG-0251)
     world::reset_shares();
+    adventure::reset();
+    creature_rescue::reset();
     shared::on_session_end();
     world::on_session_end(); // the guest's queued loads of the host's world (BUG-0074)
     g_dna_pending = -1;
@@ -3030,6 +3282,7 @@ void setup_callbacks()
 {
     net::g_spawn_thread = spawn_pinned;
     g_sess.build = build_id();
+    g_sess.personal_launch = true;
     // the versions every peer logs on a join (CAP_VERSION): mod, SporeKit, game build and exe hash
     g_sess.version = std::string("coop " COOP_VERSION ", SporeKit ") + H->kit_version() + ", " + H->build_name() + " " +
                      std::string(H->exe_sha256()).substr(0, 8);
@@ -3051,6 +3304,7 @@ void setup_callbacks()
         end_session(EndPath::Disconnect, true);
     };
     g_sess.cb.player_join = [](const net::PlayerInfo& p) {
+        world::campaign_guest_joined(g_sess);
         support::on_player_join(p);
         shared::on_player_join(g_sess.role());
         creations::on_player_join(p.id);
@@ -3101,6 +3355,10 @@ void setup_callbacks()
             r.world_sent = ((uint64_t)g_mode << 32) | modes::current_world();
             r.joined_phase = false;
             r.share_at_join = true;
+            if (world::offer_launch(g_sess,p.id,r.join_serial)) {
+                r.needs_world = true;
+                return;
+            }
             if (!world::share_with(p.id, err, save, r.join_serial)) {
                 feed("cannot share the world: " + err);
                 share_failed(p.id, r.join_serial, false);
@@ -3109,6 +3367,10 @@ void setup_callbacks()
         }
     };
     g_sess.cb.custom = [](uint8_t type, uint8_t from, net::Reader& r) {
+        if (type == net::MSG_CREATURE_RESCUE) {
+            creature_rescue::message(from, r);
+            return;
+        }
         if (type == net::MSG_DIAG) { // support diagnostics: clock, marks, sync-check (diag_coop.h)
             support::on_message(from, r);
             return;
@@ -3189,7 +3451,12 @@ void setup_callbacks()
             if (on || (g_vote_drop_editor_fix && ended && has_editor))
                 g_vote.editor = editor; // a cancelled vote ends with 0 (BUG-0234)
             // the evolution starts: everybody evolves its own creature in its own editor (own_editor_tick)
-            if (ended && g_vote.editor && g_mode == modes::kCreature && g_local) {
+            bool landfall = g_vote.editor == 0xFD4902BD && creations::landfall_pending();
+            if (ended && has_editor && editor == 0x96B24187 && civ::founder_space_ready()) {
+                world::begin_local_space_intro();
+                feed("Open Civilization History and click its checkmark to design your ship and start your flight tutorial.");
+            }
+            if (ended && g_vote.editor && ((g_mode == modes::kCreature && g_local) || landfall || own_tribal_outfitter(g_vote.editor))) {
                 g_own_editor_due = g_vote.editor;
                 g_own_editor_due_at = g_own_editor_due_first = H->time_seconds();
             }
@@ -3298,16 +3565,25 @@ void setup_callbacks()
             civ::on_message(type, from, r);
             return;
         }
+        if (type == net::MSG_CAMPAIGN_RULES) {
+            world::receive_campaign_rules(g_sess,from,r);
+            return;
+        }
+        if (type == net::MSG_SPACE_LAUNCH) {
+            world::on_launch_message(g_sess,from,r);
+            return;
+        }
         if (type == net::MSG_CREATION) {
             creations::on_message(type, from, r);
             return;
         }
         if ((type >= net::MSG_CELL_STATE && type <= net::MSG_CELL_FOOD) || type == net::MSG_CELL_KO ||
-            type == net::MSG_CELL_BITTEN) {
+            type == net::MSG_CELL_COMBAT || type == net::MSG_CELL_BITTEN) {
             cellsync::on_message(type, from, r);
             return;
         }
-        if (type == net::MSG_TRIBE_STATE || type == net::MSG_TRIBE_CMD) {
+        if (type == net::MSG_TRIBE_STATE || type == net::MSG_TRIBE_CMD || type == net::MSG_TRIBE_BUILDINGS ||
+            type == net::MSG_TRIBE_EQUIPMENT || type == net::MSG_TRIBE_TOOLS || type == net::MSG_TRIBE_RELATIONSHIPS || type == net::MSG_TRIBE_FOOD || type == net::MSG_TRIBE_PERFORMANCE || type == net::MSG_TRIBE_OUTFIT || type == net::MSG_TRIBE_COMBAT) {
             tribe::on_message(type, from, r);
             return;
         }
@@ -3334,6 +3610,7 @@ void setup_callbacks()
         feed_kind(name + " has an older SporeCoop: update both games to the latest", "info");
     };
     g_sess.cb.player_leave = [](uint8_t id, uint8_t reason) {
+        creature_rescue::on_player_leave(id); // old debt is detached from this reusable seat
         trace::line("session", "player %u '%s' left: %s", id, g_remotes.count(id) ? g_remotes[id].name.c_str() : "?",
                     reason == 1 ? "timed out (no packets)" : "left or replaced by its rejoin");
         support::on_player_leave(id, reason); // its link statistics (diag_stats.cpp)
@@ -3390,10 +3667,28 @@ void end_open_session()
     }
 }
 
-bool do_host(uint16_t port, std::string& err)
+bool do_host(uint16_t port, unsigned seats, unsigned scaling, std::string& err)
 {
+    if (!creations::campaign_content(COOP_VERSION, g_sess.campaign_profile, err))
+        return false;
     end_open_session();
     reset_lobby();
+    founders::CampaignRules requested{uint8_t(seats),uint16_t(scaling)};
+    int health = H->config_int(M,"campaign","enemy_health_per_extra_founder",requested.extra_health_percent);
+    int damage = H->config_int(M,"campaign","enemy_damage_per_extra_founder",requested.extra_damage_percent);
+    if (health < 0 || health > UINT16_MAX || damage < 0 || damage > UINT16_MAX) {
+        err = "Enemy health and damage bonuses must be nonnegative whole percentages up to 65535.";
+        return false;
+    }
+    int hunger = H->config_int(M,"campaign","hunger_basis_points_per_extra_founder",requested.extra_hunger_basis_points);
+    if (hunger < 0 || hunger > UINT16_MAX) {
+        err = "Hunger scaling must be between 0 and 65535 basis points per extra founder.";
+        return false;
+    }
+    requested.extra_hunger_basis_points = uint16_t(hunger);
+    requested.extra_health_percent = uint16_t(health);
+    requested.extra_damage_percent = uint16_t(damage);
+    if (!world::setup_campaign(g_sess,requested,err)) return false;
     if (!g_sess.host(port, g_name, err))
         return false;
     support::on_session_start();
@@ -3405,6 +3700,8 @@ bool do_host(uint16_t port, std::string& err)
 
 bool do_join(const std::string& addr, std::string& err)
 {
+    if (!creations::campaign_content(COOP_VERSION, g_sess.campaign_profile, err))
+        return false;
     end_open_session();
     reset_lobby();
     g_sess.rejoin_token = rejoin::token_for_join(H->instance_id()); // BUG-0235
@@ -3479,13 +3776,38 @@ int share_all()
 }
 
 // ---------------- commands ----------------
+int c_seats(void*, int argc, const char* const* argv, SkOut* out)
+{
+    if (argc != 2 || !argv[1][0] || argv[1][1] || argv[1][0] < '1' || argv[1][0] > '4') {
+        SAY("Usage: coop.seats <1-4>. Use the current size to cancel a queued change.");
+        return 1;
+    }
+    std::string result;
+    const bool ok = world::change_seats(g_sess,argv[1][0] - '0',result);
+    SAY("%s",result.c_str());
+    return ok ? 0 : 1;
+}
+
 int c_host(void*, int argc, const char* const* argv, SkOut* out)
 {
     uint16_t port = argc > 1 ? (uint16_t)atoi(argv[1]) : default_port();
     if (argc > 2)
         g_name = utf8::player_name(argv[2]);
     std::string err;
-    if (!do_host(port, err)) {
+    unsigned seats = 2, scaling = 100;
+    if (argc > 3) {
+        char* end = nullptr;
+        unsigned long n = strtoul(argv[3],&end,10);
+        if (!*argv[3] || *end || n < 1 || n > 4) { SAY("Reserve 1 to 4 founders."); return 1; }
+        seats = unsigned(n);
+    }
+    if (argc > 4) {
+        char* end = nullptr;
+        unsigned long n = strtoul(argv[4],&end,10);
+        if (!*argv[4] || *end || n > UINT16_MAX) { SAY("Use a nonnegative integer scaling percentage."); return 1; }
+        scaling = unsigned(n);
+    }
+    if (!do_host(port,seats,scaling,err)) {
         SAY("host failed: %s", err.c_str());
         // BUG-0302: in the game log too (a lab start whose host never hosted left no trace there)
         H->log(M, SK_WARN, "net: host failed on UDP port %u: %s", port, err.c_str());
@@ -3519,9 +3841,23 @@ int c_leave(void*, int, const char* const*, SkOut* out)
     return 0;
 }
 
+int c_founders(void*, int, const char* const*, SkOut* out)
+{
+    founders::Roster roster;
+    const auto planet = world::current_game_key();
+    if (founders::read(planet, roster) || founders::read(planet, roster, founders::Stage::Civilization)) {
+        SAY("%s", founders::describe(roster).c_str());
+        return 0;
+    }
+    SAY("No readable founding roster for this planet.");
+    return 1;
+}
+
 int c_status(void*, int, const char* const*, SkOut* out)
 {
     SAY("%s%sbusy: %s\n", g_sess.status().c_str(), world::status().c_str(), busy::names(game_busy()).c_str());
+    if (g_sess.role() != net::Role::None)
+        SAY("campaign profile: %s\n", g_sess.campaign_profile.c_str());
     for (auto& pl : g_sess.players()) // CAP_VERSION: each player's mod, SporeKit and game build
         SAY("version %u '%s': %s\n", pl.id, pl.name.c_str(), pl.version.empty() ? "unknown (pre-0.7.4)" : pl.version.c_str());
     SAY("remote animations: received %u, played %u\n", g_anims_rx, g_anims_played);
@@ -3642,6 +3978,13 @@ int c_avatar(void*, int, const char* const*, SkOut* out)
 
     if (g_adapter->mode == modes::kCreature) // age +0xB34 (0 hatchling, 1 adult), the hatchling waiting for its family
         SAY(" age=%d hatchling_waiting=%d", *(int*)((uint8_t*)av + 0xB34), (int)game::hatchling_waiting(av));
+    if (g_adapter->mode == modes::kScenario) {
+        int act, state, completed;
+        if (modes::adventure_progress(act, state, completed))
+            SAY("\nact_index=%d play_state=%d goals_completed=%d", act, state, completed);
+        for (const auto& [id, r] : g_remotes)
+            SAY("\npartner %u: %s", (unsigned)id, puppet_why(r, H->time_seconds()));
+    }
     SAY("\ngame_name '%s'", modes::raw_world_name().c_str()); // BUG-0258: CurrentGameName as is
     return 0;
 }
@@ -4087,7 +4430,7 @@ std::string ui_session_line()
     char b[256];
     if (g_sess.role() == net::Role::Host)
         snprintf(b, sizeof b, "Hosting on UDP port %u  -  %d/%d players", g_sess.port(), (int)g_sess.players().size(),
-                 net::kMaxPlayers);
+                 g_sess.seat_limit);
     else if (g_sess.connected())
         snprintf(b, sizeof b, "Connected to %s (%s)", g_sess.name_of(0).c_str(), g_sess.host_address().c_str());
     else
@@ -4342,6 +4685,7 @@ void init_ui()
     a.set_name = [](const std::string& n) { g_name = utf8::player_name(n); };
     a.join = do_join;
     a.host = do_host;
+    a.queue_seats = [](unsigned seats, std::string& result) { return world::change_seats(g_sess,seats,result); };
     a.leave = do_leave;
     a.role = [] { return g_sess.role() == net::Role::Host ? 1 : g_sess.role() == net::Role::Client ? 2 : 0; };
     a.connected = [] { return g_sess.connected(); };
@@ -4712,6 +5056,10 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     world::init(H, M, feed);
     world::set_playing_probe([] { return g_local != nullptr; });
     world::set_place_probe([] { return g_world; });
+    world::set_host_stage_probe([] {
+        auto host = g_remotes.find(0);
+        return host != g_remotes.end() && !host->second.buf.empty() ? host->second.buf.latest().mode : 0u;
+    });
     world::set_save_blocker(save_blocker);
     world::set_share_failed(share_failed); // BUG-0231
     // species of the host's own creations: sent ahead of its world (creations.h)
@@ -4760,6 +5108,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
             auto it = g_remotes.find(id);
             return it == g_remotes.end() ? nullptr : it->second.puppet;
         };
+        hc.in_session = [] { return g_sess.connected(); };
         hc.is_host = [] { return g_sess.role() == net::Role::Host; };
         creature_hp::init(H, M, hc);
     }
@@ -4806,7 +5155,8 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     keepalive_start();
     H->subscribe(M, SK_EV_OVERLAY, on_overlay, nullptr);
     const int MT = SK_CMD_MAIN_THREAD;
-    H->command_add(M, "coop.host", "coop.host [port] [name] - host a session", c_host, nullptr, MT);
+    H->command_add(M, "coop.seats", "coop.seats <1-4> - reserve seats for the next stage or next Space load", c_seats, nullptr, MT);
+    H->command_add(M, "coop.host", "coop.host [port] [name] [new-game seats 1-4] [scaling percent] - host a session", c_host, nullptr, MT);
     H->command_add(M, "coop.join", "coop.join <ip[:port]> [name] - join a host", c_join, nullptr, MT);
     H->command_add(M, "coop.leave", "leave the session", c_leave, nullptr, MT);
     H->command_add(M, "coop.framefix", "coop.framefix [0|1] - forget a torn-down world's puppets before the frame's messages (tests: 0 = the old order, BUG-0091)",
@@ -4859,6 +5209,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                    },
                    nullptr, MT);
     H->command_add(M, "coop.status", "session, players and puppets", c_status, nullptr, MT);
+    H->command_add(M, "coop.founders", "show the two species registered on this saved planet", c_founders, nullptr, MT);
     H->command_add(M, "coop.track", "coop.track start|stop|count|dump [from] [n]|lift <m>|novel 0|1 - every frame: the partners' puppets and the own avatar; in Tribe the player tribe's members (tests, BUG-0360, BUG-0365, BUG-0366)",
                    c_track, nullptr, MT);
     H->command_add(M, "coop.log", "coop.log detail [0|1|2] - support logging: 0 = the old lines only, 1 = state trace + events "
@@ -4909,6 +5260,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     tc.notice = [](const std::string& t) { notice(t, -1); };
     tc.my_name = [] { return g_name; };
     teamplay::init(H, M, std::move(tc));
+    creature_rescue::init(H, &g_sess, notice);
     if (uintptr_t a = H->sym("Simulator::CreatureSelectionUI"))
         H->hook_create(M, (void*)a, (void*)h_SelectUI, (void**)&o_SelectUI);
     *(int32_t*)(g_blank_e84 + 0x32C) = -1;
@@ -5042,6 +5394,11 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                            g_own_editor_due ? 1 : 0, g_own_editor_waits, g_vote_actions_run, g_votes_dropped,
                            g_submits_after_cine, g_submit_cines_ended, g_submit_later ? 1 : 0, g_vote_actions_waited,
                            g_vote_action_due ? 1 : 0);
+                       if (g_submit_later)
+                           SAY("\nheld native editor=%08X model=%08X return=%08X context=%08X busy=%s",
+                               skg::field<uint32_t>(g_submit_later, 0xC), skg::field<uint32_t>(g_submit_later, 0x10),
+                               skg::field<uint32_t>(g_submit_later, 0x1C), skg::field<uint32_t>(g_submit_later, 0x90),
+                               busy::names(game_busy()).c_str());
                        return 0;
                    },
                    // outside the frame: `editor` submits an editor request, which the game does
@@ -5260,7 +5617,11 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                            SAY("%s", tribe::debug(std::vector<std::string>(argv + 1, argv + argc)).c_str());
                            return 0;
                        }
-                       SAY("%s%s", tribe::status().c_str(), tribe::list().c_str());
+                       // BUG-9061: out_printf keeps only 8 KB per call. A full
+                       // campaign exceeds that, especially with guest drive rows.
+                       std::string report = tribe::status() + tribe::list();
+                       for (size_t at = 0; at < report.size(); at += 6000)
+                           SAY("%s", report.substr(at, 6000).c_str());
                        return 0;
                    },
                    nullptr, MT);

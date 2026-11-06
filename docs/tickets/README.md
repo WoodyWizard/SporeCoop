@@ -480,3 +480,75 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0468](BUG-0468-lab-the-free-lane-for-uses-free-lane-tests-can-b.md) | fixed | tooling | lab | 2026-11-02 | 0.7.3.6 | lab: the free lane for uses_free_lane tests can be a lane busy with other work or the owner's lane 8, and two such tests share it at once |
 | [BUG-0469](BUG-0469-content-check-for-every-model-kind-civ-vehicles.md) | fixed | crash | All | 2026-11-02 | 0.7.3.6 | content check for every model kind: Civ vehicles, buildings and city designs, Space NPC ship parts, cell and UFO paints (rest of BUG-0424 after BUG-0452) |
 | [BUG-0470](BUG-0470-civ-mirror-vehicles-and-other-civ-tribe-and-spac.md) | open | bug | Civ | 2026-11-02 |  | civ mirror vehicles (and other civ, tribe and space objects the mod creates on a guest) go into the guest's saves |
+| [BUG-9001](BUG-9001-duo-guest-village.md) | fixed | feature | Tribe | 2026-11-03 | 0.7.3.6-duo10-dev | Preserve each founder's species and give the guest independent tribal control |
+| [BUG-9002](BUG-9002-guest-only-npc-villages.md) | fixed | bug | Tribe | 2026-11-03 | 0.7.3.6-duo4 | Extra NPC villages appear on the guest during a longer Tribe session |
+| [BUG-9003](BUG-9003-adventure-captain.md) | fixed | bug | Space | 2026-11-03 | 0.7.3.6-duo6 | The tutorial adventure crashes when two captains enter together |
+| [BUG-9004](BUG-9004-adventure-quit.md) | fixed | bug | Space | 2026-11-03 | 0.7.3.6-duo6 | The campaign save-and-quit command crashes in a standalone adventure |
+| [BUG-9005](BUG-9005-creature-ko-at-nest.md) | fixed | bug | Creature | 2026-11-03 | 0.7.3.6-duo6 | A knocked-out guest can heal at the nest while waiting for a rescue |
+| [BUG-9006](BUG-9006-guest-landfall.md) | fixed | bug | Creature | 2026-11-03 | 0.7.3.6-duo7 | A guest with its own cell starts the first land editor on the host species |
+| [BUG-9007](BUG-9007-surviving-founder-game-over.md) | fixed | bug | Tribe | 2026-11-03 | 0.7.3.6-duo8 | The host rewinds a two-founder Tribal world while the guest village survives |
+| [BUG-9008](BUG-9008-diagnostic-stale-herd.md) | fixed | crash | Tribe | 2026-11-03 | 0.7.3.6-duo8 | A sync diagnostic dereferences a freed cached native herd |
+| [BUG-9009](BUG-9009-tribe-layout-after-unload.md) | fixed | crash | Tribe | 2026-11-03 | 0.7.3.6-duo9 | A guest refreshes a native tribe layout with a cleared species during unload |
+| [BUG-9010](BUG-9010-creature-recovery-partner-leave.md) | fixed | bug | Creature | 2026-11-03 | 0.7.3.6-duo9 | A departing guest cancels the host's Creature death timer |
+| [BUG-9011](BUG-9011-guest-respawn-migration-stall.md) | not-reproduced | bug | Creature | 2026-11-03 |  | The guest's post-death hatch is held by the native species migration cinematic |
+| [BUG-9012](BUG-9012-creature-proxy-freed-between-checks.md) | fixed | crash | Creature | 2026-11-03 | 0.7.3.6-duo9 | A guest drives a freed Creature proxy between its one-second liveness checks |
+| [BUG-9013](BUG-9013-refounding-short-population.md) | fixed | bug | Tribe | 2026-11-03 | 0.7.3.6-duo10-dev | The refounding prototype requests three villagers but creates two |
+| [BUG-9014](BUG-9014-refounded-members-disappear.md) | fixed | bug | Tribe | 2026-11-04 | 0.7.3.6-duo10-dev | Members of a rebuilt native tribe disappear during subsequent simulation |
+| [BUG-9015](BUG-9015-captured-village-cold-load.md) | fixed | crash | Tribe | 2026-11-04 | 0.7.3.6-duo10-dev | The fresh replacement-village prototype crashes when its saved world loads |
+| [BUG-9016](BUG-9016-native-tribal-chief-missing-on-guest.md) | fixed | bug | Tribe | 2026-11-04 | unreleased | A village loses its native chieftain when its citizens are mirrored on the guest |
+| [BUG-9017](BUG-9017-host-replacement-destroys-captured-site.md) | fixed | bug | Tribe | 2026-11-04 | unreleased | The native host replacement probe destroys the conqueror's captured buildings |
+| [BUG-9018](BUG-9018-tribal-dialog-ignores-host-clicks.md) | fixed | bug | Tribe | 2026-11-04 | unreleased | Tribal co-op dialog ignores clicks after a world reload |
+| [BUG-9019](BUG-9019-tribal-raids-miss-visible-raised-huts.md) | fixed | bug | Tribe | 2026-11-04 | duo10-dev | Tribal raid picker misses visible huts above the home village sphere |
+| [BUG-9020](BUG-9020-guest-villagers-ignore-native-raids.md) | fixed | bug | Tribe | 2026-11-04 | duo10-dev | Guest villagers receive native raid orders but do not damage the target |
+| [BUG-9021](BUG-9021-tribal-babies-do-not-grow-on-guests.md) | fixed | bug | Tribe | 2026-11-04 | duo10-dev | Existing Tribal baby mirrors do not become native adults |
+| [BUG-9022](BUG-9022-tribal-equipment-missing-on-guests.md) | fixed | bug | Tribe | 2026-11-04 | duo10-dev | Tribal equipment changes are absent from guest snapshots |
+| [BUG-9023](BUG-9023-tribal-tool-racks-missing-on-guests.md) | fixed | desync | Tribe | 2026-11-04 | duo10-dev | Newly built and removed Tribal tool racks do not reconcile on guests |
+| [BUG-9024](BUG-9024-guest-rack-placement-changes-on-load.md) | fixed | bug | Tribe | 2026-11-04 | duo10-dev | Purchased guest tool rack moves after native save reload |
+| [BUG-9025](BUG-9025-guest-conquest-progression.md) | fixed | bug | Tribe | 2026-11-04 | duo10-dev | Guest village conquest does not credit shared Tribal progression |
+| [BUG-9026](BUG-9026-native-service-dialog-blocks-tribal-test.md) | fixed | bug | Tribe | 2026-11-04 | duo10-dev | Delayed native online-service error blocks Tribal camera tests |
+| [BUG-9027](BUG-9027-raid-test-stale-cleanup-pointer.md) | fixed | crash | Tribe | 2026-11-04 | duo10-dev | Native raid test cleanup calls a retired citizen after timeout |
+| [BUG-9028](BUG-9028-windows-second-save-slot-write.md) | fixed | bug | All | 2026-11-04 | 0.7.3.6-duo10-dev | Windows staged save-folder moves fail on brief file locks |
+| [BUG-9029](BUG-9029-installer-test-close-timeout.md) | fixed | bug | All | 2026-11-04 | 0.7.3.6-duo10-dev | Windows installer test sometimes times out closing after its job |
+| [BUG-9030](BUG-9030-refounding-loses-totem-history.md) | fixed | bug | Tribe | 2026-11-04 | 0.7.3.6-duo10-dev | Refounding the host village loses its campaign totem and upgrade |
+| [BUG-9031](BUG-9031-guest-village-healing-rejected.md) | fixed | bug | Tribe | 2026-11-04 | 0.7.3.6-duo10-dev | Separate-village guest healing orders are rejected |
+| [BUG-9032](BUG-9032-guest-village-eating-rejected.md) | fixed | bug | Tribe | 2026-11-04 | 0.7.3.6-duo10-dev | Guest village has no accepted native eating order |
+| [BUG-9033](BUG-9033-guest-village-food-gifts-rejected.md) | fixed | bug | Tribe | 2026-11-04 | 0.7.3.6-duo10-dev | Guest village cannot issue native food gifts |
+| [BUG-9034](BUG-9034-npc-tribal-food-stores-diverge.md) | fixed | desync | Tribe | 2026-11-04 | 0.7.3.6-duo10-dev | NPC village food stores do not reflect native gifts on the guest |
+| [BUG-9035](BUG-9035-guest-tribal-performance-orders-rejected.md) | fixed | bug | Tribe | 2026-11-04 | 0.7.3.6-duo10-dev | Guest village cannot start native Tribal performances |
+| [BUG-9036](BUG-9036-nosound-stalls-native-tribal-performance.md) | fixed | test | Tribe | 2026-11-04 | 0.7.3.6-duo10-dev | Windows lab disables the audio events that advance Tribal performances |
+| [BUG-9037](BUG-9037-guest-second-tribal-performance-does-not-start.md) | fixed | bug | Tribe | 2026-11-04 | 0.7.3.6-duo10-dev | Guest second Tribal performance does not start after a friendly win |
+| [BUG-9038](BUG-9038-guest-tribal-alliance-missing-shared-campaign-credit.md) | fixed | bug | Tribe | 2026-11-04 | 0.7.3.6-duo10-dev | Guest Tribal alliance does not advance the shared campaign |
+| [BUG-9039](BUG-9039-guest-tribal-population-shared-progression.md) | fixed | bug | Tribe | 2026-11-04 | 0.7.3.6-duo10-dev | Guest Tribal population capacity must follow shared campaign progression |
+| [BUG-9040](BUG-9040-automatic-second-tribal-founding.md) | fixed | bug | Tribe | 2026-11-04 | 0.7.3.6-duo10-dev | Distinct guest species requires manual founding after entering Tribe |
+| [BUG-9041](BUG-9041-founder-archive-rejects-compressed-paint-header.md) | fixed | bug | Tribe | 2026-11-04 | 0.7.3.6-duo10-dev | Founder archive rejects valid run-compressed paint headers |
+| [BUG-9042](BUG-9042-founder-archive-rejects-inherited-cell-paint.md) | fixed | bug | Tribe | 2026-11-04 | 0.7.3.6-duo10-dev | Founder archive rejects native landfall creatures retaining Cell paint |
+| [BUG-9043](BUG-9043-tribal-outfitter-does-not-open-for-guest.md) | fixed | bug | Tribe | 2026-11-05 | unreleased | Tribal outfit vote never opens the guest species editor |
+| [BUG-9044](BUG-9044-interrupted-outfit-loses-village-control.md) | fixed | bug | Tribe | 2026-11-05 | unreleased | Leaving before an outfit is accepted can orphan the guest campaign choice |
+| [BUG-9045](BUG-9045-guest-hut-does-not-share-earned-upgrade.md) | fixed | bug | Tribe | 2026-11-05 | unreleased | Guest village retains its old native hut level after team progression |
+| [BUG-9046](BUG-9046-tribal-founders-civilization-handoff.md) | fixed | bug | Tribe Civilization | 2026-11-05 | 0.7.3.6-duo10-dev | Automatic Tribal founder handoff to separate Civilization nations is missing |
+| [BUG-9047](BUG-9047-founder-village-consumes-native-objective-slot.md) | fixed | bug | Tribe | 2026-11-05 | 0.7.3.6-duo10-dev | A founder village can consume a native NPC slot and prevent the fifth Tribal victory |
+| [BUG-9048](BUG-9048-native-tribal-graduation-editor-pause.md) | fixed | bug | Tribe Civilization | 2026-11-05 | 0.7.3.6-duo10-dev | Native Tribal graduation pauses while the co-op editor gate waits for it to resume |
+| [BUG-9049](BUG-9049-graduation-city-hall-camera-crash.md) | fixed | crash | Tribe Civilization | 2026-11-05 | 0.7.3.6-duo10-dev | Graduation dereferences an absent animal pen after saving City Hall |
+| [BUG-9050](BUG-9050-intermediate-graduation-save-crash.md) | fixed | crash | Tribe Civilization | 2026-11-05 | 0.7.3.6-duo10-dev | Intermediate Tribal graduation designs trigger an unsafe evolution save |
+| [BUG-9051](BUG-9051-stale-guest-member-on-host-return.md) | fixed | crash | Tribe Civilization | 2026-11-05 | 0.7.3.6-duo10-dev | Guest mirror retains a stale citizen while the host edits during graduation |
+| [BUG-9052](BUG-9052-native-camera-tutorial-console-input.md) | open | bug | Civilization | 2026-11-05 |  | Automated native Civilization camera tutorial does not acknowledge panning |
+| [BUG-9053](BUG-9053-graduation-custom-designs-differ-on-guest.md) | fixed | bug | Civilization | 2026-11-05 | 0.7.3.6-duo10-dev | Graduation city hall appears different on the guest |
+| [BUG-9054](BUG-9054-second-founder-nation-remains-npc-controlled.md) | open | bug | Civilization | 2026-11-05 |  | Second founder nation remains NPC controlled with a separate budget |
+| [BUG-9055](BUG-9055-civ-guest-rendering-artifacts-after-cold-load.md) | open | bug | Civilization | 2026-11-05 |  | Guest Civilization screenshot retains logo and trails after cold load |
+| [BUG-9056](BUG-9056-separate-civilizations-do-not-share-campaign-progress.md) | open | bug | Civilization | 2026-11-05 |  | Separate founder civilizations do not share native campaign progression |
+| [BUG-9057](BUG-9057-save-confirmation-can-outlive-its-watcher-and-mask-a-new-save.md) | open | bug | Civilization | 2026-11-05 |  | Save confirmation can outlive its watcher and mask a new save |
+| [BUG-9058](BUG-9058-campaign-checkpoint-omits-native-capture-history.md) | not-reproduced | bug | Civilization | 2026-11-05 |  | Campaign checkpoint omits native capture history on the guest |
+| [BUG-9059](BUG-9059-partner-village-blocks-first-tribal-rival.md) | fixed | bug | Tribe | 2026-11-05 | 0.7.3.6-duo10-dev | Partner village blocks the first native Tribal rival |
+| [BUG-9060](BUG-9060-non-economic-graduation-editor-waits-for-fallback.md) | fixed | bug | Tribe Civilization | 2026-11-05 | 0.7.3.6-duo10-dev | Military and religious Tribal graduation editors miss the native pause exception |
+| [BUG-9061](BUG-9061-tribal-diagnostics-truncate-large-populations.md) | fixed | bug | Tribe | 2026-11-05 | 0.7.3.6-duo10-dev | Tribal diagnostic output truncates large populations and invalidates checks |
+| [BUG-9062](BUG-9062-tribal-walk-check-flags-host-relocations.md) | open | bug | Tribe | 2026-11-05 |  | Late Tribal walk qualification flags large relocations also present on host |
+| [BUG-9063](BUG-9063-tribal-npc-factions-differ-between-peers.md) | fixed | bug | Tribe | 2026-11-05 | 0.7.3.6-duo10-dev (source build) | Freshly mirrored NPC villages have different native faction IDs |
+| [BUG-9064](BUG-9064-fresh-tribal-repeat-performance-stalls.md) | open | bug | Tribe | 2026-11-05 |  | Repeat performance stalls on second NPC in fresh alliance campaign |
+| [BUG-9065](BUG-9065-guest-performance-reports-unsent-order.md) | fixed | bug | Tribe | 2026-11-06 | 0.7.3.6-duo10-dev | Guest reports a performance request when no order was sent |
+| [BUG-9066](BUG-9066-guest-alliances-excluded-from-graduation-trait.md) | fixed | bug | Tribe | 2026-11-06 | 0.7.3.6-duo10-dev | Guest-earned Tribal allies are excluded from the native consequence score |
+| [BUG-9067](BUG-9067-absent-civilization-command-policy.md) | fixed | bug | Civilization | 2026-11-06 | 0.7.3.6-duo10-dev | Absent founder cities automatically transfer command to the host |
+| [BUG-9068](BUG-9068-test-rack-created-without-owner.md) | fixed | crash | Tribe | 2026-11-06 | 0.7.3.6-duo10-dev | Native rack probe crashed before completing ownership assignment |
+| [BUG-9069](BUG-9069-sixth-tribal-rival-qualification.md) | open | bug | Tribe | 2026-11-06 |  | Qualify a sixth rival against the five native Tribal milestones |
+| [BUG-9070](BUG-9070-civ-space-editor-remains-paused.md) | fixed | bug | Civilization | 2026-11-06 | 0.7.3.6-duo10-dev | Civilization launch vote leaves the spacecraft editor waiting on its own pause |
+| [BUG-9071](BUG-9071-personal-space-launch.md) | open | bug | Space | 2026-11-06 |  | Qualify each founder's own spacecraft, captain and Space tutorial |
+| [BUG-9072](BUG-9072-reserved-founder-balance.md) | open | bug | all | 2026-11-06 |  | Qualify hostile combat and shared rewards at reserved campaign capacity |
