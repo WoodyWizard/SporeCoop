@@ -341,7 +341,11 @@ private:
                 float jump = dist(sm_off_, off);
                 if (jump > 0.05f)
                     last_lead_jump = jump;
-                if (d > smooth_max) {
+                // a stop (the newest state stands, the one before walked): the target goes to the stop at once, as
+                // the raw lead (the mirror stops there by drive::step); smoothed, an overshoot of the lead slid back
+                // at kSmoothRate (3 m/s) and the mirror walked back to its stop
+                const bool stop = dist(Vec3{}, v) < 0.3f && dist(Vec3{}, sm_vel_) >= 0.3f;
+                if (d > smooth_max || stop) {
                     off = {};
                 } else if (d > 1e-4f) {
                     float sp = std::max(dist(Vec3{}, v), dist(Vec3{}, sm_vel_));
