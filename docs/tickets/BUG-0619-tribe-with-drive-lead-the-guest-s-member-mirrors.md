@@ -1,19 +1,19 @@
 ---
 id: BUG-0619
 title: Tribe: with drive.lead the guest's member mirrors catch up in 0.9 m steps per 32 ms frame over a jittery network (tribe_walk_mobile fails)
-status: open
+status: fixed
 kind: desync
 stage: Tribe
 reported: 2026-11-06
 source: fix/w45-remote-bodies-2 regression runs
 role: guest
 versions: unreleased (rel/0.7.9 + drive.lead)
-fixed_in:
+fixed_in: unreleased
 branch: fix/w45-remote-bodies-2
-commits:
+commits: fce3ec36..42951bdc (25 BUG-0619 commits of M3 on fix/w45-remote-bodies-2; final rule 911d7b86, 923a098e)
 tests: tribe_walk_mobile (tools/tests/coop_tribe_walk.py --fps 30, SPORE_NET=mobile)
 signature:
-docs:
+docs: docs/re/tribe.md#tribe-lead-smooth
 related: BUG-0425, BUG-0386, BUG-0365
 ---
 
@@ -23,14 +23,45 @@ Found in M2's runs (fix/w45-remote-bodies-2 on rel/0.7.9 + M1's drive.lead). tri
 How to reproduce: tools/lab.py run tribe_walk_mobile --repeat 3 --retry 0 (and with SPORE_FIX_OFF=drive.lead).
 
 ## Root cause
-Inferred, not analysed: the steps come in pairs of 0.9-0.96 m per 32 ms frame (28-30 m/s) right after the lead target was corrected by a late state (jitter: the lead's age and velocity change between states); walk_place's catch_prop (BUG-0425: the error closed in ~0.25 s at up to twice the remote's speed + 3 m/s) then moves a 9-12 m/s member (2 x 9 + 3) x 0.032 = 0.67 m up to ~0.9 m per frame, which the test counts as a jump. Without the lead the same corrections are smaller (the interpolated target does not extrapolate).
+Observed (M3, track JSON of tribe_walk_mobile, out/m3/jumps.py logic: per jump frame the drawn step, the target's steps of
+the frame and the 3 before, the error before and after): 12 of 12 decomposed jumps (0.88-0.97 m in 32 ms) come 1-3 frames
+after the lead target ITSELF jumped 2.7-4.8 m in one frame at the start of a walk (target steps 0.0, then 2.7-4.8 m, then
+0.29 m = 9 m/s): the first walking state arrives a latency + jitter late and the lead moves it on by v x (age + one-way),
+up to 0.45 s x 9 m/s over the mobile network. In the jump frames the target is steady; the drawn step is the game's walk
+plus catch_prop's catch-up measured from where the walk had put the body (lab out/lab/20261106-130123, -064239).
+Observed too: a frame's drawn step is the placing's step from the walked position plus the NEXT frame's walk (a bound
+from the last placing did not stop the jumps, 20261106-145657 / -145700); and with the jumps gone a smoothed lead still
+went stop-and-go over the mobile network (uneven 11-22 %) where 0.7.8 passed at the same time (20261106-154457 0 of 3
+vs SPORE_FIX_OFF=drive.lead -154500 3 of 3; lanes swapped -155349 3 of 3 / -155352), because the lead extrapolates
+0.2-0.3 s there and every change of speed between two states moves the target. Inferred: the same on any link with
+a one-way latency over ~0.1 s.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+`coop.fix drive.lead_smooth` (off = M1's drive.lead as merged; `coop.fix drive.lead off` stays 0.7.8), Tribe member
+mirrors only (SnapshotBuffer::smooth_max 6 m; NPC proxies unchanged):
+1. net/interp.h SnapshotBuffer::smooth: the lead target is continuous; a new state's jump stays as an offset that closes
+   at d / 0.12 s, at most the speed + 3 m/s; the target's velocity follows the lead's in 0.1 s; a stop takes the stop at
+   once; a jump over 6 m is taken at once; the path velocity's earlier sample gets the same offset.
+2. tribe.cpp mirror_target / mirror_drive: the mirror walks at the smoothed target's velocity, eased up at 40 m/s2 and
+   at most 3 m/s over the lead; catch_prop off. driver.h WalkPlace::lead_speed: the placing's step held to
+   (2 x lead speed + 3 - walk speed) x dt, so a frame never draws more than 0.7.8's 2 x speed + 3 m/s.
+3. No lead for member mirrors over a one-way latency over 100 ms (median of the last 64 states, back under 85 ms):
+   interpolated and driven as 0.7.8 (smooth, late); the switch goes through the offset. Measured: netem mobile 123-149
+   ms; player network and local under 100 ms. The arrival lateness (median, IQR) did not part the networks at lab load.
+Tried and dropped (in the history of the branch): eased closing (60 m/s2), 1.25x closing, walking at the full target
+speed, a bound from the last placing, closing only over 5 m/s, interpolation under 5 m/s, jitter by mean / median / IQR.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+FAIL (SPORE_FIX_OFF=drive.lead_smooth, i.e. M1's lead): tribe_walk_mobile out/lab/20261106-130123 (0 of 3: 1-4 jumps
+per view, 0.89-0.97 m), out/lab/20261106-172431 (0 of 2: 1-5 jumps), load 13-20 and 8-10.
+PASS (final code): tribe_walk_mobile out/lab/20261106-171543 (3 of 3), -171546 (1 of 1), and the same rule with the
+earlier thresholds -163609 (3 of 3), -164635 (3 of 3), -165644 (3 of 3); load 6-10 (6 cores).
+Not 0619: two later failures of tribe_walk_mobile with the fix (out/lab/20261106-170614 #1, -172428 #2) are one
+member mirror (the guest's own member 2) held by its game (gv 12 m/s, drawn 0.04 m per frame for 0.9 s) and teleported
+8.1 m: BUG-0386 (evidence added there), with drive.lead_smooth off too (20261106-130123 #1: 8.3 / 9.4 m, the same id).
+body_trail_tribe PASS 20261106-171546 (members p90 0.86 m); body_trail_tribe_player members p90 1.47 / 1.59 m (limit
+2.0) but one 1.09 s stretch over 2 m (limit 1.0 s) in -172428 #1, against 1.26 / 1.14 m with lead_smooth off at the same
+time (-172431): see the regression runs in the history.
 
 ## History
 - 2026-11-06: opened.
@@ -42,3 +73,6 @@ Inferred, not analysed: the steps come in pairs of 0.9-0.96 m per 32 ms frame (2
   Observed in the analysis of the failing frames (tribe_walk track JSON): the uneven frames are the mirror catching up 1.5-4 m at 6-10 m/s on a 2-5 m/s target after a lead correction at a walk's start or end; the target itself was steady in those frames (44 of 45 uneven frames).
   A/B under the same load (lab load 11-16 on 6 cores from other lanes, 'both games ready' 40-60 s instead of 30 s): drive.lead off passed 2 of 2 (20261106-121046, -121649), on failed (-121343). Under that load body_trail_civ (code no change of mine touches) failed too (p90 3.8-6.2 m, lag 0.3-0.8 s): the lab could not judge body_trail_* or a 6/6 at that time.
   What is needed: a quiet lab for the measurement, and a decision: the test judges a mirror's step against its (lead) target, which a start known a latency late must correct; either the mirror closes the start's error slowly (then it trails at every start, M1's BUG-0425 measure at 0.25-0.75 s gets worse) or quickly (then this test sees stop-and-go). Options: judge tribe_walk_mobile against the host's own members at the same moment (coop.bodyrec, as body_trail), or a jitter-aware lead for member mirrors (no lead while the link's jitter is high).
+- 2026-11-06 (fix/w45-remote-bodies-2, M3): cause observed (the lead target's own start jump + catch_prop's catch-up),
+  fixed with drive.lead_smooth (smoothed lead target, the placing bound counting the next walk, no member lead over a
+  one-way latency over 100 ms); docs/re/tribe.md#tribe-lead-smooth. Status fixed, fixed_in unreleased.
