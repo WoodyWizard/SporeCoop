@@ -206,6 +206,8 @@ struct GMember {
     net::SnapshotBuffer buf; // BUG-0365 (tribe.mirror_time): the host's states by its clock
     net::Vec3 aim;           // coop.track: where the driving aimed this frame
     float aim_speed = 0;     // and the host's speed of that state
+    float walk_sp = 0;       // BUG-0619: the speed the smoothed target's mirror is walked at (eased in)
+    double walk_t = 0;
     double held_since = 0, held_said = -1e9; // BUG-0386 (diagnostics)
     double anim_rx_at = 0, anim_fix_at = 0; // BUG-0569: the last relayed start, the last snapshot play
 };
@@ -234,6 +236,7 @@ constexpr float kMirrorWalkMax = 8.f; // farther off: drive::step (it teleports 
 // BUG-0619: a member's lead jump up to this is smoothed (a start known late over a mobile network: 2.9-4 m at 9 m/s;
 // the lead's cap kMaxLead x 9 m/s = 5.4 m)
 constexpr float kMirrorSmoothMax = 6.f; // m
+constexpr float kMirrorWalkAcc = 40.f; // m/s2 (BUG-0619)
 constexpr double kPathDt = 0.1;       // s: the interpolated path's velocity is taken over this
 static std::unordered_map<void*, uint16_t> g_gid_of;
 static std::unordered_set<uint16_t> g_cycle_ids;
@@ -1998,6 +2001,18 @@ static void mirror_target(GMember& g, double now, net::Vec3& pos, net::Quat& rot
         // included): walked at the raw path's speed the mirror fell 0.5-1.4 m behind a closing target and surged
         // after it at 7-8 m/s when the closing ended (tribe_walk_mobile 20261106-140306 #3: uneven 16 %)
         if (g.buf.smooth_velocity(vel)) {
+            // the walk's speed rises at most kMirrorWalkAcc to the target's (it never goes under the lead's own):
+            // set at once, the game's walk of the next frame grew by up to 0.4 m on top of the placing (1-1.3 m frames)
+            float want = drive::speed(vel), raw = drive::speed(s.vel);
+            double dt = now - g.walk_t;
+            float w = (g.walk_t <= 0 || dt > 0.5) ? raw : g.walk_sp + kMirrorWalkAcc * (float)std::min(std::max(dt, 0.0), 0.1);
+            w = want < raw ? want : std::min(std::max(w, raw), want);
+            g.walk_sp = w;
+            g.walk_t = now;
+            if (want > 0.01f) {
+                float k = w / want;
+                vel = {vel.x * k, vel.y * k, vel.z * k};
+            }
             age = 0;
             return;
         }
