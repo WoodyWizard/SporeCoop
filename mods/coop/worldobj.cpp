@@ -41,6 +41,7 @@ struct Item {
     net::Vec3 pos;
     uint32_t st;
     uint32_t cls = 0; // BUG-0490: a kind with `classes`: a copy is bound only to a host object of its class
+    net::Vec3 aux{};  // BUG-0548: a kind with `aux`: one more place on the wire (a bundle's holder)
 };
 using Items = std::vector<Item>;
 
@@ -96,6 +97,10 @@ struct Kind {
     float relocate = 0;
     float place_eps = 0;
     bool* place_fix = nullptr;
+    // BUG-0548: the objects carry one more position (Item::aux, 12 more bytes on the wire); `make_aux` is `make` with
+    // the host object's class and that position (used instead of `make` when set)
+    bool aux = false;
+    int (*make_aux)(const net::Vec3& pos, uint32_t host, uint32_t cls, const net::Vec3& aux) = nullptr;
 };
 constexpr uint32_t kGone = 0xFFFFFFFFu; // the state of an object the host's game no longer has
 
@@ -495,6 +500,144 @@ static void tool_buy(uint8_t from, const net::Vec3& pos, uint32_t st)
     }
 }
 
+// ---------------------------------------------------------------- kind: game bundle (BUG-0548, 0.7.9 L2)
+// cGameBundle (noun 0x18C431C): an amount of food (+0x134 float, +0x12C its type) in a container (+0x128: the
+// container interface, vector of bundles at +4..+8, max count at +0x1C). The food mats' bundles are the tribes'
+// food (tribe +0x20C; shared.cpp, the NPC tribes' own); the others lie on the ground in the bundle manager's one
+// ground container (cBundleManager +0x1C, a cGameBundleGroundContainer, noun 0x1906183, its interface at +0x34) or
+// are carried by a creature (a tribe member: the creature's own container interface at +0x34, max 1). Runtime (lab
+// lanes 6 / 7, play_tribe and play_civ): the host's game had 2-6 such bundles near the guest that the guest's had not
+// (the host's members carry food from the mat and from kills, its hunts drop food on the ground; a guest's copies of
+// those creatures run no behaviour). On: the host's ground bundles lie in every guest's game (made in its ground
+// container, CreateBundles, at the host's place), the bundles its creatures carry are carried by the guest's copy of
+// the creature (the nearest one within 4 m of the host's carrier), a guest's own ground bundle the host has not is
+// removed (RemoveBundles of the bundle) and one a guest's member took is taken on the host too.
+// `coop.fix wobj.bundle off`: each game keeps its own (0.7.8).
+constexpr uint32_t kBundleNoun = 0x018C431C;
+constexpr uint32_t kBundleCarried = 0x100; // class bit: carried by a creature (else on the ground)
+static bool g_bundle_fix = true;
+COOP_FIX("wobj.bundle", "BUG-0548", g_bundle_fix,
+         "tribe / civ: food dropped on the ground and carried by the tribes' members is the host's: the same in every game");
+static uintptr_t a_BundleMgrGet, a_CreateBundles, a_RemoveBundles;
+static uint8_t* bundle_mgr() { return a_BundleMgrGet ? cdecl_call<uint8_t*>(a_BundleMgrGet) : nullptr; }
+static void* ground_container()
+{
+    uint8_t* m = bundle_mgr();
+    uint8_t* g = m && !IsBadReadPtr(m, 0x20) ? field<uint8_t*>(m, 0x1C) : nullptr;
+    return g && !IsBadReadPtr(g, 0x60) ? g + 0x34 : nullptr;
+}
+static bool container_ok(void* c, int* count = nullptr)
+{
+    if (!c || IsBadReadPtr(c, 0x20))
+        return false;
+    void** b = field<void**>(c, 4);
+    void** e = field<void**>(c, 8);
+    void** cap = field<void**>(c, 0xC);
+    int mx = field<int>(c, 0x1C);
+    if ((b || e) && (!b || e < b || cap < e || e - b > 4096))
+        return false;
+    if (count)
+        *count = (int)(e - b);
+    return mx >= 0 && mx < 100000;
+}
+static bool is_creature_noun(uint32_t n) { return n == 0x018EB45E || n == 0x018EB4B7; } // creature, citizen
+// the creature that carries a bundle (nullptr: none)
+static void* bundle_carrier(void* holder)
+{
+    if (!holder || IsBadReadPtr((uint8_t*)holder - 0x34, 0x40))
+        return nullptr;
+    void* c = (uint8_t*)holder - 0x34;
+    return game::object_alive(c) && is_creature_noun(game::noun_id(c)) ? c : nullptr;
+}
+static void bundle_collect(Items& out)
+{
+    void* ground = ground_container();
+    Items all;
+    collect_noun(kBundleNoun, all, [](void* o) { return IsBadReadPtr(o, 0x138) ? 0u : field<uint32_t>(o, 0x134); });
+    for (auto& it : all) {
+        void* holder = field<void*>(it.p, 0x128);
+        uint32_t type = field<uint32_t>(it.p, 0x12C) & 0xFF;
+        if (ground && holder == ground) {
+            it.cls = type;
+            it.aux = it.pos;
+        } else if (void* c = bundle_carrier(holder)) {
+            it.cls = type | kBundleCarried;
+            if (!game::object_position(c, it.aux))
+                continue;
+        } else
+            continue; // a tribe's food (its mat): the tribe's food amount, not this kind
+        out.push_back(it);
+    }
+}
+static uint32_t g_bundles_made, g_bundles_carried, g_bundles_removed;
+static void bundle_remove(void* b)
+{
+    if (!a_RemoveBundles || IsBadReadPtr(b, 0x138) || game::noun_id(b) != kBundleNoun || !game::object_alive(b))
+        return;
+    float amt = field<float>(b, 0x134);
+    thiscall<float>(a_RemoveBundles, bundle_mgr(), amt > 0 ? amt : 1.f, (void*)nullptr, b); // the bundle alone: destroyed
+    g_bundles_removed++;
+}
+static bool bundle_behind(uint32_t, uint32_t host) { return host == kGone; }
+static void bundle_apply(const Item& l, uint32_t host)
+{
+    if (host == kGone)
+        bundle_remove(l.p);
+}
+static bool bundle_acted(uint32_t, uint32_t now, uint32_t host) { return now == kGone && host != kGone; }
+static void bundle_act(const Item& o, uint32_t now)
+{
+    if (now == kGone && !(o.cls & kBundleCarried))
+        bundle_remove(o.p); // a player of the guest's game took it from the ground
+}
+// guest: a bundle its own creature carries stays (its member's own load: the host gets the food through the shared food)
+static bool bundle_own(const Item& l, double) { return (l.cls & kBundleCarried) != 0; }
+static int bundle_make(const net::Vec3& pos, uint32_t host, uint32_t cls, const net::Vec3& aux)
+{
+    if (!g_bundle_fix || host == kGone || !a_CreateBundles || !bundle_mgr())
+        return 0;
+    float amt;
+    memcpy(&amt, &host, 4);
+    if (!std::isfinite(amt) || amt <= 0.f || amt > 1000.f)
+        return 0;
+    void* cont = nullptr;
+    if (cls & kBundleCarried) { // the guest's copy of the carrier: the nearest creature with an empty hand
+        struct Q {
+            net::Vec3 at;
+            float best;
+            void* c;
+        } q{aux, 4.f, nullptr};
+        game::for_each_object(
+            [](void* o, uint32_t n, void* u) {
+                auto* q = (Q*)u;
+                net::Vec3 p;
+                int cnt = 0;
+                if (is_creature_noun(n) && game::object_alive(o) && game::object_position(o, p) && net::dist(p, q->at) < q->best &&
+                    container_ok((uint8_t*)o + 0x34, &cnt) && cnt == 0 && field<int>((uint8_t*)o + 0x34, 0x1C) >= 1) {
+                    q->best = net::dist(p, q->at);
+                    q->c = o;
+                }
+                return true;
+            },
+            &q);
+        if (!q.c)
+            return -1; // (its copy is not here yet)
+        cont = (uint8_t*)q.c + 0x34;
+    } else {
+        cont = ground_container();
+        if (!container_ok(cont))
+            return -1;
+    }
+    void* b = thiscall<void*>(a_CreateBundles, bundle_mgr(), amt, cont, (int)(cls & 0xFF));
+    if (!b || IsBadReadPtr(b, 0x138) || game::noun_id(b) != kBundleNoun)
+        return 0;
+    game::set_object_position(b, pos);
+    (cls & kBundleCarried ? g_bundles_carried : g_bundles_made)++;
+    H->log(M, SK_INFO, "wobj: made the host's %s bundle (%.1f food, type %u) at (%.1f %.1f %.1f)", cls & kBundleCarried ? "carried" : "ground",
+           amt, cls & 0xFF, pos.x, pos.y, pos.z);
+    return 1;
+}
+
 // ---------------------------------------------------------------- the table
 // ---------------------------------------------------------------- kind: citizen (Civ city citizens, BUG-0476)
 // cCreatureCitizen (noun 0x18EB4B7) of the cities: each game spawns and walks its own (an idle walk 0xD57680
@@ -671,6 +814,10 @@ static Kind g_kinds[] = {
     {.name = "space_vehicle", .fix = &g_space_veh_fix, .stages = kStSpace, .tol = 1500.f, .range = 2500.f, .max = 44,
      .collect = space_vehicle_collect, .behind = none_behind, .apply = none_apply, .acted = none_acted, .act = none_act,
      .gone_acted = false, .drop_own = false, .every = 0.4, .classes = true, .vmax = 60.f, .drive = space_vehicle_drive},
+    // BUG-0548 (0.7.9 L2): every food bundle that is no tribe's food, on the ground or carried
+    {.name = "game_bundle", .fix = &g_bundle_fix, .stages = kStTribe | kStCiv, .tol = 3.f, .range = 160.f, .max = 30,
+     .collect = bundle_collect, .behind = bundle_behind, .apply = bundle_apply, .acted = bundle_acted, .act = bundle_act,
+     .gone_acted = true, .drop_own = true, .own = bundle_own, .classes = true, .aux = true, .make_aux = bundle_make},
 };
 constexpr int kKinds = (int)(sizeof g_kinds / sizeof g_kinds[0]);
 // a snapshot is one unreliable message: 19 bytes + 20 per object within net::Connection::kMaxSingle (1163)
@@ -720,6 +867,7 @@ struct Snap {
         net::Vec3 first; // position
         uint32_t second; // state
         uint32_t cls;    // class (kinds with `classes`)
+        net::Vec3 aux;   // (kinds with `aux`)
     };
     std::map<uint32_t, Obj> objs; // host id -> object
 };
@@ -813,6 +961,11 @@ static void host_tick(double now)
                 w.u32(it->st);
                 if (K.classes)
                     w.u32(it->cls);
+                if (K.aux) {
+                    w.f32(it->aux.x);
+                    w.f32(it->aux.y);
+                    w.f32(it->aux.z);
+                }
             }
             C.sess->send_unreliable_to(p.id, net::MSG_WOBJ, w);
             g_st[k].tx++;
@@ -948,8 +1101,8 @@ static void reconcile(int k, double now, bool fresh)
         }
         g_st[k].missing++;
         auto& m = G.made[id];
-        if (K.make && m.second < 3 && now - m.first > 3.0) {
-            int r = K.make(ps.first, ps.second);
+        if ((K.make || K.make_aux) && m.second < 3 && now - m.first > 3.0) {
+            int r = K.make_aux ? K.make_aux(ps.first, ps.second, ps.cls, ps.aux) : K.make(ps.first, ps.second);
             if (r >= 0) {
                 m.first = now;
                 m.second++;
@@ -1057,11 +1210,14 @@ static void on_snap(net::Reader& r, double now)
         net::Vec3 p{r.f32(), r.f32(), r.f32()};
         uint32_t st = r.u32();
         uint32_t cls = k < kKinds && g_kinds[k].classes ? r.u32() : 0;
+        net::Vec3 aux{};
+        if (k < kKinds && g_kinds[k].aux)
+            aux = {r.f32(), r.f32(), r.f32()};
         if (!r.ok())
             return;
         if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z) || p.x * p.x + p.y * p.y + p.z * p.z > 1e8f)
             continue;
-        s.objs[id] = {p, st, cls};
+        s.objs[id] = {p, st, cls, aux};
     }
     Kind& K = g_kinds[k];
     if (!*K.fix || !(K.stages & stage_bit()) || (C.host_away && C.host_away()) || g_epoch != game::world_epoch())
@@ -1191,8 +1347,8 @@ static int c_wobj(void*, int argc, const char* const* argv, SkOut* out)
             for (auto& [id, b] : g_g[k].binds)
                 if (b.p == it.p && b.serial == it.id)
                     host = id;
-            H->out_printf(out, "%s %p id=%u pos=(%.2f %.2f %.2f) st=%X dist=%.1f bound_to=%u\n", g_kinds[k].name, it.p, it.id, it.pos.x, it.pos.y,
-                          it.pos.z, it.st, d, host);
+            H->out_printf(out, "%s %p id=%u pos=(%.2f %.2f %.2f) st=%X dist=%.1f bound_to=%u cls=%X\n", g_kinds[k].name, it.p, it.id, it.pos.x,
+                          it.pos.y, it.pos.z, it.st, d, host, it.cls);
             n++;
         }
         H->out_printf(out, "end n=%d\n", n);
@@ -1237,6 +1393,29 @@ static int c_wobj(void*, int argc, const char* const* argv, SkOut* out)
         H->out_printf(out, "mask %X -> %X\n", before, field<uint32_t>(t, 0x48));
         return 0;
     }
+    if (!strcmp(a, "bundle") && argc > 2) { // tests (BUG-0548): ground x y z amt | carry <creature> amt | take <bundle>
+        void* b = nullptr;
+        if (!strcmp(argv[2], "ground") && argc > 6 && container_ok(ground_container()) && a_CreateBundles) {
+            b = thiscall<void*>(a_CreateBundles, bundle_mgr(), (float)atof(argv[6]), ground_container(), 1);
+            if (b)
+                game::set_object_position(b, {(float)atof(argv[3]), (float)atof(argv[4]), (float)atof(argv[5])});
+        } else if (!strcmp(argv[2], "carry") && argc > 4 && a_CreateBundles) {
+            void* c = (void*)strtoul(argv[3], nullptr, 16);
+            int cnt = 0;
+            if (!IsBadReadPtr(c, 0x60) && is_creature_noun(game::noun_id(c)) && container_ok((uint8_t*)c + 0x34, &cnt) && cnt == 0)
+                b = thiscall<void*>(a_CreateBundles, bundle_mgr(), (float)atof(argv[4]), (uint8_t*)c + 0x34, 1);
+        } else if (!strcmp(argv[2], "take") && argc > 3) {
+            b = (void*)strtoul(argv[3], nullptr, 16);
+            bundle_remove(b);
+            H->out_printf(out, "taken alive=%d\n", !IsBadReadPtr(b, 0x30) && game::object_alive(b));
+            return 0;
+        }
+        net::Vec3 p{};
+        if (b)
+            game::object_position(b, p);
+        H->out_printf(out, "bundle %p pos=(%.2f %.2f %.2f)\n", b, p.x, p.y, p.z);
+        return b ? 0 : 1;
+    }
     if (!strcmp(a, "use") && argc > 2) { // use <ornament>: the avatar uses it the game's way (OrnamentUsed + 0xD3353638)
         void* o = (void*)strtoul(argv[2], nullptr, 16);
         if (!av || IsBadReadPtr(o, 0x260) || game::noun_id(o) != kOrnNoun || !a_StrategyGet || !a_ExecuteAction || !a_OrnUsed) {
@@ -1258,6 +1437,10 @@ static int c_wobj(void*, int argc, const char* const* argv, SkOut* out)
             H->out_printf(out, "no such fruit\n");
             return 1;
         }
+        int k = kind_of_name("fruit");
+        if (argc > 3 && !strcmp(argv[3], "local") && k >= 0) // tests (BUG-0497): gone from this game only, as the flora's recycling does
+            for (auto bi = g_g[k].binds.begin(); bi != g_g[k].binds.end();)
+                bi = bi->second.p == o ? g_g[k].binds.erase(bi) : std::next(bi);
         fruit_eat(o);
         H->out_printf(out, "eaten state=%u\n", fruit_state(o));
         return 0;
@@ -1377,6 +1560,9 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
     a_RewardHandlerVt = H->sym("SporeCoop::CreatureStageRewardHandler_vftable");
     a_HerdSetExtinct = H->sym("SporeCoop::cHerd_SetExtinct");
     a_HerdSetExtinctFlag = H->sym("SporeCoop::cHerd_SetExtinction");
+    a_BundleMgrGet = H->sym("Simulator::cBundleManager::Get");
+    a_CreateBundles = H->sym("Simulator::cBundleManager::CreateBundles");
+    a_RemoveBundles = H->sym("Simulator::cBundleManager::RemoveBundles");
     if (!a_FruitSetState || !a_FloraGet || !a_DropFruit || !a_TreeVt || !a_OrnUsed || !a_RewardFind || !a_RewardHandlerVt || !a_HerdSetExtinct || !a_HerdSetExtinctFlag)
         for (auto& k : g_kinds)
             k.stages = 0; // a symbol missing on this build: every game keeps its own (logged below)
