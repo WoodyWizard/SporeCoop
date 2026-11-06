@@ -88,7 +88,13 @@ with 0 faults in 8 runs and 1 in ~25 before, they could not tell the two apart.
 no-fail-run: not reproducible (1 fault in 72 logged Creature -> Tribe changes; 0 in 8 stress runs).
 
 Attempt 2 (2026-11-05, fix/w45-crashes, rel/0.7.9 = 0.7.8 + this branch, lanes 4 and 5, all fixes on,
-SPORE_DETECTOR=20, lane 4 and lane 5 running 4 games each at the same time): RUNS_0359.
+SPORE_DETECTOR=20, lane 4 and lane 5 running 4 games each at the same time): 5 Creature -> Tribe changes with
+4 players, 0 faults in 20 game logs: campaign_tribe 2 of 2 out/lab/20261105-232742 (lane 4), campaign_ct
+out/lab/20261105-231922 (lane 5) and 2 more out/lab/20261105-233139 (#2 passed; #1 failed only the
+sync-check gate in Cell, BUG-0606, no fault). **None of the 5 hosts took the original path** (the game
+entering Tribe while a share save was being written: "went from Creature to Tribe during the save" 0 times,
+against nearly every campaign before 2026-10-31), so the reported circumstances were not reproduced
+either; not forced (no tool posts a share save into the evolution's last frames).
 Also searched every `*.game.log` of out/lab in the main checkout and all worktrees (since 2026-10-29) for
 `GeneralAllocator_FreeInternal`: 24 logs; this signature (0x702C44 < 0x702E88 < 0xB0818E) is in none
 but lab 20261031-185843 (the others: BUG-0308 / 0348's Cell pools, effect creation in Tribe / Civ,
@@ -104,4 +110,4 @@ no-fail-run: not reproducible (still 1 fault in all logged Creature -> Tribe cha
 - 2026-10-31 (fix/w27-heap): analysed (Ghidra: the flora's tree grid node, header overwritten by
   0.51f); not today's Cell switches (Cell-only callers, host left Cell 11 min before, no warnings);
   stress out/lab/20261031-204524-fix-w27-heap 8/8 ok. Stays open, no fix.
-- 2026-11-05 (fix/w45-crashes): not reproduced again (RUNS_SHORT); lab history searched (signature only in 20261031-185843); grid slot layout and the 0.51f literal recorded; stays open, no fix.
+- 2026-11-05 (fix/w45-crashes): not reproduced again (5 more Creature -> Tribe changes, 0 faults; the share-save-during-the-change path no longer happens in these campaigns); lab history searched (signature only in 20261031-185843); grid slot layout and the 0.51f literal recorded; stays open, no fix.
