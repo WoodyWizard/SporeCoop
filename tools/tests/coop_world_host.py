@@ -8,6 +8,10 @@ position), not the mod's bookkeeping:
                     at the host's places in the guest's game (within 1.5 m), the rolled one not where it rolled to.
                     SPORE_FIX_OFF=wobj.fruit_place fails.
 
+  --case ornament   (BUG-0541, space) both players land on the home planet: the ornaments (noun 0x18C88E4, the planet
+                    record's items with flag 0x80) are the same on both planets (every one of each game has one of
+                    the other's within 1.5 m). SPORE_FIX_OFF=wobj.space_ornament fails.
+
   --case cultural   (BUG-0540, civ) every city's cultural targets near the guest stand at the host's places in the
                     guest's game (within 1 m, as many as on the host). SPORE_FIX_OFF=wobj.cultural_target fails.
 
@@ -186,14 +190,51 @@ def cultural(host, guest, ck):
     ck(ok and not far, 'every cultural target of the host near the guest stands at its place in the guest\'s game (within 1 m)')
 
 
+def ornament(host, guest, ck):
+    import worlddiff
+    from coop_space_map import context, place, sp
+    noun = 0x018C88E4
+    for con, who in ((host, 'host'), (guest, 'guest')):
+        if context(con) != 'planet':
+            print(f'  {who} land:', sp(con, 'land'), flush=True)
+    landed = wait(lambda: context(host) == 'planet' and context(guest) == 'planet', 40)
+    if not ck(landed, 'both players are on a planet'):
+        return
+    print('  planets (host, guest):', place(host), place(guest), flush=True)
+    ck(place(host)[0] == place(guest)[0], 'both are on the same planet')
+    time.sleep(10)
+
+    def orns(con):
+        return [r for r in worlddiff.dump(con, 5000, (0.0, 0.0, 0.0)).rows if r['noun'] == noun]
+
+    def compare():
+        ho, go = orns(host), orns(guest)
+        h_only = [tuple(round(v) for v in h['pos']) for h in ho if not near_pos(go, h['pos'], 1.5)]
+        g_only = [tuple(round(v) for v in g['pos']) for g in go if not near_pos(ho, g['pos'], 1.5)]
+        return ho, go, h_only, g_only
+
+    def near_pos(lst, pos, d):
+        return any(math.dist(o['pos'], pos) < d for o in lst)
+
+    ho, go, h_only, g_only = compare()
+    print(f'  ornaments on the planet: {len(ho)} on the host, {len(go)} on the guest; host only {len(h_only)} {h_only[:5]}, '
+          f'guest only {len(g_only)} {g_only[:5]}', flush=True)
+    ok = wait(lambda: not any(compare()[2:]), 20)
+    ho, go, h_only, g_only = compare()
+    print(f'  after 20 s: {len(ho)} on the host, {len(go)} on the guest; host only {len(h_only)} {h_only[:5]}, '
+          f'guest only {len(g_only)} {g_only[:5]}', flush=True)
+    ck(ho, 'the host\'s planet has ornaments')
+    ck(ok and not h_only and not g_only, 'the guest\'s planet has the host\'s ornaments at their places and no others')
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--case', choices=('fruit', 'bundle', 'cultural'), required=True)
+    ap.add_argument('--case', choices=('fruit', 'bundle', 'cultural', 'ornament'), required=True)
     a = ap.parse_args()
-    host, guest = start({'fruit': 'creature', 'bundle': 'tribe', 'cultural': 'civ_npc'}[a.case])
+    host, guest = start({'fruit': 'creature', 'bundle': 'tribe', 'cultural': 'civ_npc', 'ornament': 'space'}[a.case])
     ck = Checks()
     time.sleep(6)  # the first snapshots
-    {'fruit': fruit, 'bundle': bundle, 'cultural': cultural}[a.case](host, guest, ck)
+    {'fruit': fruit, 'bundle': bundle, 'cultural': cultural, 'ornament': ornament}[a.case](host, guest, ck)
     print('  guest:', guest.call('coop.wobj')['out'].strip().replace('\n', ' | '), flush=True)
     print('  host:', host.call('coop.wobj')['out'].strip().replace('\n', ' | '), flush=True)
     ck.faults(host=host, guest=guest)
