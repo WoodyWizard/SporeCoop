@@ -10,9 +10,12 @@ view then stayed where it was for the whole session (o == a == b in the calibrat
 The race by hand, on the host in Tribe right after the load (no click has moved its view yet): the intro is started as the menu
 starts it (PlayCinematic "GGE_intro") right after a save (`coop.save hold`: its game saved box comes up over the
 intro and stays), the mod's stage tick ends the intro, the box is confirmed; then the minimap must move the view.
-With the fix the intro does not start outside the menu (and the cold start's own intro, which the lab's quick
-load from the menu lets start in the stage, does not either). SPORE_FIX_OFF=world.intro_at_once (applied after the
-start): the intro plays until the stage tick ends it under the box, and the view stays (the test fails).
+With the fix the intro does not start outside the menu, and the cold start's own intro (the lab's quick load from the
+menu lets it come in the stage during the share's save, as in play_tribe) does not either: the first calibration
+checks the view after it. Limits (lab 20261106-125051, 20261106-125505): with SPORE_FIX_OFF=world.intro_at_once
+(applied only after the start, so the start's own intro is still not started) the by-hand intro played and ended
+under the box without a stuck view: the by-hand path does not reproduce it; the stuck view came only from the
+menu's own intro after a cold start (play_tribe 3 of 12, lab 20261106-124414 with an earlier fix).
 """
 import re
 import random
@@ -49,7 +52,11 @@ def main():
     w = wait_running(host, guest, 90)
     print(f'  both games\' time runs: {"after %.0f s" % w if w is not None else "NOT within 90 s"}', flush=True)
     p = Player('host', host, 0, random.Random(1), log, 1440, 1080)
-    # no minimap click before: the stuck views of play_tribe were the stage's first camera (nothing moved it yet)
+    st = host.call('coop.status')['out']
+    told = re.search(r'menu intro ended (\d+)(?: \(not started (\d+)\))?', st)
+    print(f'  host after the start: {told.group(0) if told else "no menu intro in the stage"}', flush=True)
+    ck(p.calibrate(), "host: the minimap takes the view where it points (after the start's own intro, if it came)")
+    p.J = None
     m = re.search(r'eax=(0x[0-9A-Fa-f]+)', host.call('call Simulator::cCinematicManager::Get cdecl')['out'])
     ck(m, 'host: the cinematic manager')
     if not m:
