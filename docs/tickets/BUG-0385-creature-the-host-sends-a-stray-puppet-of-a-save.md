@@ -45,3 +45,12 @@ showed as one sync-check mismatch.
 ## History
 - 2026-11-01: opened.
 - 2026-11-06 (fix/w45-one-game-objects, L1): fixed (npc.stray_ids).
+- 2026-11-06 (fix/w45-int2): creature_e84 failed in the rel/0.7.9 integration run (out/lab/20261106-040221, lane 3) before
+  its BUG-0385 step: "the save brought the puppet back as a game creature without tuning (0)". Observed: the guest's
+  puppet was the world's species 065CBE70 (lane 6 runs: the guest's creation 7CB508F6): since BUG-0345 a guest plays
+  its own creature only in a world it played it in, so on lane 3 the save held a puppet of the host's species, which
+  the load gave its tuning back. No crash: the test printed "(the host crashed ...)" for any missing NPC, and the
+  `coop.fix npc.stray_ids off` at s 3.0 is the test's own step 3 (normal run). Fix (test): the guest chooses its own
+  creature (creations_state.choose_own, restored at the end), the save waits for the puppet as that creature, the
+  message says what is missing. PASS out/lab/20261106-054422, twin FAIL with SPORE_FIX_OFF=npc.stray_ids
+  out/lab/20261106-054618 (#5); FAIL before the change on lane 3 out/lab/20261106-051910.
