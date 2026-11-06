@@ -143,6 +143,17 @@ int c_ground(void*, int argc, const char* const* argv, SkOut* out)
     float g = game::ground_radius(p);
     float r = std::sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
     SAY("ground %.2f point %.2f above %.2f", g, r, r - g);
+    // BUG-0562: the surface on the point's radial line as the game's snap finds it (cPlanetModel_SurfacePoint: the terrain
+    // or a collision object over it, a nest mound or a rock, where the collision is loaded): the point's height over it
+    uintptr_t sf = H->sym("SporeCoop::cPlanetModel_SurfacePoint"), pg = H->sym("Simulator::cPlanetModel::Get");
+    void* pm = pg ? ((void*(__cdecl*)())pg)() : nullptr;
+    if (pm && sf && r > 1.f) {
+        float in[3] = {p.x, p.y, p.z}, o[3] = {0, 0, 0};
+        skg::thiscall<float*>(sf, pm, o, (const float*)in, 0);
+        float sr = std::sqrt(o[0] * o[0] + o[1] * o[1] + o[2] * o[2]);
+        if (sr > 1.f)
+            SAY(" surface %.2f over_surface %.2f", sr, r - sr);
+    }
     return 0;
 }
 

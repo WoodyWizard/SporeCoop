@@ -12,6 +12,8 @@
 #include "game.h"
 #include "modes.h"
 #include "npc.h"
+#include "tribe.h"
+#include "worldobj.h"
 
 namespace census {
 
@@ -107,6 +109,14 @@ static void all_rows(AllQ& q)
             r.serial = game::object_serial(o);
             r.scale = game::object_scale(o);
             r.own = "world";
+            if (noun == 0x018C431C) { // BUG-0617: a food bundle's holder (own=ground|carried|held, owner = the carrier's player)
+                void* carrier = nullptr;
+                r.own = wobj::bundle_holder(o, &carrier);
+                if (carrier) {
+                    uint8_t ow = tribe::owner_of(carrier);
+                    r.owner = ow == 0xFF ? -1 : ow;
+                }
+            }
             q->rows->push_back(r);
             return true;
         },

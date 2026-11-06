@@ -821,9 +821,31 @@ static std::string ai_line(void* c)
              rec ? *(int*)rec : -1, rec ? *(void**)(rec + 0x28) : nullptr, rec ? (int)rec[0x38] : 0, node, depth, (int)mem[0],
              mem[1], *(float*)&mem[2], *(float*)&mem[3], *(float*)&mem[4], mem[5], (int)mem[6], (int)mem[7], mode, lf,
              goal[0], goal[1], goal[2], goal[3], p.x, p.y, p.z, F<uint8_t>(c, kSelectedOff));
-    char e[64];
+    char e[200];
     snprintf(e, sizeof e, " carry=%.1f tool=%d", carried(c), F<int>(c, kHeldToolOff));
-    return std::string(b) + e;
+    std::string out = std::string(b) + e;
+    // BUG-0531: the order's target object: alive in the object list, its noun and place, its distance
+    if (void* t = rec ? *(void**)(rec + 0x28) : nullptr) {
+        struct Q {
+            void* t;
+            uint32_t noun;
+        } q{t, 0};
+        game::for_each_object(
+            [](void* o, uint32_t n, void* u) {
+                if (o == ((Q*)u)->t) {
+                    ((Q*)u)->noun = n;
+                    return false;
+                }
+                return true;
+            },
+            &q);
+        net::Vec3 tp{};
+        bool has_pos = q.noun && game::object_alive(t) && game::object_position(t, tp);
+        snprintf(e, sizeof e, " tgt_listed=%d tgt_noun=%08X tgt_alive=%d tgt_pos=(%.1f %.1f %.1f) tgt_d=%.1f", q.noun != 0, q.noun,
+                 q.noun ? (int)game::object_alive(t) : -1, tp.x, tp.y, tp.z, has_pos ? net::dist(tp, p) : -1.f);
+        out += e;
+    }
+    return out;
 }
 static bool save_filter(void* o, uint32_t noun); // BUG-0495 (below)
 static void* SK_THISCALL h_Form(void* self, int arg); // BUG-0483 (below)
@@ -3626,6 +3648,36 @@ std::string debug(const std::vector<std::string>& a)
             return "no target there";
         thiscall<void*>(a_DoAction, c, action, tgt, (void*)nullptr);
         return "ordered " + std::to_string(action);
+    }
+    if (a.size() >= 2 && a[0] == "who") { // who <citizen pointer>: BUG-0620, what a citizen of the object list is
+        void* c = (void*)(uintptr_t)strtoul(a[1].c_str(), nullptr, 16);
+        bool listed = false;
+        game::for_each_object(
+            [](void* o, uint32_t, void* u) {
+                if (o == *(void**)((void**)u)[0])
+                    *(bool*)((void**)u)[1] = true;
+                return true;
+            },
+            (void*)(void* []){&c, &listed});
+        if (!listed || !is_citizen(c))
+            return "not a citizen of the object list";
+        void* t = F<void*>(c, 0x1014);
+        char b[200];
+        int in_members = -1, n_tribes = 0, in_any = 0;
+        for (void* tt : all_tribes()) {
+            n_tribes++;
+            auto m = members(tt);
+            bool in = std::find(m.begin(), m.end(), c) != m.end();
+            in_any += in;
+            if (tt == t)
+                in_members = in;
+        }
+        uint8_t ow = owner_of(c);
+        snprintf(b, sizeof b, "tribe=%p (a tribe of the list: %s, in its members: %d) in any tribe's members: %d of %d tribes; "
+                 "player tribe=%p; mod owner=%d id=%u; age=%u dead=%u species=%08X city=%p; ",
+                 t, in_members >= 0 ? "yes" : "no", in_members, in_any, n_tribes, player_tribe(), ow == 0xFF ? -1 : ow, id_of(c),
+                 F<uint8_t>(c, 0xB34), F<uint8_t>(c, 0xB5E), F<uint32_t>(c, 0xB28), F<void*>(c, 0x1010));
+        return std::string(b) + ai_line(c);
     }
     if (a.size() >= 2 && a[0] == "ai") { // ai <member id>: BUG-0505, the member's order record, node and walk
         void* c = local_of((uint16_t)atoi(a[1].c_str()));

@@ -586,6 +586,38 @@ static void bundle_collect(Items& out)
         out.push_back(it);
     }
 }
+const char* bundle_holder(void* b, void** carrier)
+{
+    *carrier = nullptr;
+    if (!b || IsBadReadPtr(b, 0x138))
+        return "held";
+    void* holder = field<void*>(b, 0x128);
+    if (holder && holder == ground_container())
+        return "ground";
+    if (holder && !IsBadReadPtr((uint8_t*)holder - 0x34, 0x40)) {
+        void* c = (uint8_t*)holder - 0x34;
+        bool is_c = false;
+        struct Q {
+            void* c;
+            bool* found;
+        } q{c, &is_c};
+        game::for_each_object(
+            [](void* o, uint32_t n, void* u) {
+                auto* q = (Q*)u;
+                if (o == q->c && is_creature_noun(n)) {
+                    *q->found = true;
+                    return false;
+                }
+                return true;
+            },
+            &q);
+        if (is_c) {
+            *carrier = c;
+            return "carried";
+        }
+    }
+    return "held";
+}
 static uint32_t g_bundles_made, g_bundles_carried, g_bundles_removed;
 static void bundle_remove(void* b)
 {
