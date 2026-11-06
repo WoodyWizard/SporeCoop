@@ -154,3 +154,5 @@ SporeCoop::Creature_SetSprint ; Tribe / Creature: a guest sees and hears the spr
 SporeCoop::CreatureClickObject ; tests only (coop.rules click, BUG-0557): no click on a body by command on GOG 2016
 SporeCoop::CreatureCursorKind ; tests only (coop.rules cursor, BUG-0557): no cursor kind by command on GOG 2016
 SporeCoop::UFOAbductionEvent_SpawnUFO ; Creature: a GOG 2016 guest does not see the host's UFO (creature.ufo_mirror, BUG-0558)
+SporeCoop::Creature_HoldObject ; Creature: on GOG 2016 a carried rock or stick is not shown on the partner's creature (creature.carry_relay, BUG-0458)
+SporeCoop::Creature_ReleaseObject ; Creature: on GOG 2016 a thrown rock or stick is not put where it landed in the partner's game (creature.carry_relay, BUG-0458)

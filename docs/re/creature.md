@@ -2998,3 +2998,35 @@ P3 of docs/plan-0.7.9.md. GOG 2024, Ghidra (tools/ghidra/q.sh) and lab lane 6, c
   the ship (it was 20 m over the creatures, above the camera's view); its existence and pose are the game's object list.
 * ? Seen twice in this branch's runs, with and without the mirror: the guest's camera in the planet view from space
   right after the join (the log: "cinematic 8915F9BB still playing in a stage: ended it"); not this fix (not looked at).
+
+### Carried and thrown rocks and sticks (BUG-0458)
+<a id="creature-carry-relay"></a>
+
+Follows #creature-hold-slots.
+* ✔ (Ghidra) `Creature_HoldObject` 0xC15B20 and `Creature_ReleaseObject` 0xC15EB0 return a **bool** (AL) and take the
+  object's **cSpatialObject** (interface 0x1186577), not its cGameData: the spatial's vt **0xB8** casts it to the
+  cGameData (0x17F243B, as 0xAE6650 does), whose noun (vt 0x20) is cRock 0x2A8FB3F or an ornament 0x3A2511E; the hold
+  slot's +0x20 holds the spatial pointer too. HoldObject: slot index < (+0xE44 - +0xE40) / 0x24 else false; a full slot
+  is released first when `replace`; 0xC702B0, the socket attach 0xC120B0 (false when it fails), 0xD7D1A0 (physics
+  component 0x116DD1B +0x268 = 0, +0x1F0 = 3), +0x71 = 1. ReleaseObject finds the slot and calls 0xC15D30(slot, a, b):
+  vt 0xBC, the slot cleared, the physics added back (0xB3D410 / 0xB454A0 / 0xB542D0), 0xD7D240, vt 0xC0.
+* ✔ (runtime) Both species of the creature fixture have one hold slot (sockets 9 and 17) and the cursor over the rock
+  is 0x1C / 0 / 1 (walk / none): they cannot pick it up by a click; `HoldObject(avatar, rock, 0, true)` holds it (the
+  rock follows the creature, also through a teleport). Released, the game's physics throws it off the hand: 14-23 m in
+  the lab, and on the fixture's slope it rolled on for 25-30 s (lab 20261105-234535, 20261105-235138, 20261106-000521).
+* ✔ (runtime) A copy teleported along a flying object, or put back again and again where a creature stands, hits that
+  creature in its game: "hit by none" 91-348 damage, the guest's creature died (lab 20261105-235733, 20261106-001427,
+  20261106-002414). Teleports of physics objects near creatures must be avoided.
+* Fix `creature.carry_relay` (player_rules.cpp, MSG_PLAYER_RULE kinds 4 hold / 5 drop / 6 put): the own creature's hold
+  of a rock or ornament is sent with the object's noun and the position both games last agreed on (where it lay, or its
+  last sent rest point); the partner's game holds its nearest object of that noun within 6 m in the hold slot of the
+  player's puppet. The release keeps the copy in the puppet's hand; the thrower's game sends each point where its object
+  lies or creeps (slower than 1 m/s, 0.3 m from the last one sent) for up to 60 s; the partner releases its copy at the
+  first and teleports it there for 3 s, never within 4 m of its own creature, and gives it a held object's physics
+  state (component 0x116DD1B +0x268 = 0, +0x1F0 = 3, as 0xD7D1A0): teleported with its own physics on, the copy kept the
+  speed of its release and rolled 5-115 m off (lab 20261106-002616, -002757); with it the two rocks lay 0.05-0.6 m apart
+  (lab 20261106-003110, -003250, -003813, -003953). A creature picking the copy up and letting go of it gives it its
+  physics back (0xC15D30). `coop.rules carry | hold | drop | findobj | clickobj` for tests.
+* ~ Not covered: the flight itself (the partner sees the rock in the puppet's hand until it lands, then at the landing
+  point), a throw at a creature (its damage is the thrower's game's), sticks (ornaments of sort 3: the worldobj
+  `interactive_ornament` kind syncs their state, not checked together), fruit.
