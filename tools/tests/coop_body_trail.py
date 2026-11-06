@@ -36,10 +36,11 @@ from fixtures import planet_of  # noqa: E402
 from play_tribe import tribe_state  # noqa: E402
 from twoinst import Checks, start  # noqa: E402
 
-# per kind: (p90 limit m, longest stretch over body_trail.TRAIL_M s). A body walking 2-6 m/s that is shown 0.2 s
-# late (the 0.15 s interpolation delay plus the one-way latency, 0.7.8) is 0.4-1.2 m behind; Civ vehicles drive
-# 10-20 m/s.
-LIMITS = {'n': (0.7, 1.0), 't': (0.7, 1.0), 'v': (2.5, 1.5)}
+# per stage and kind: (p90 limit m, longest stretch over body_trail.TRAIL_M s). A body walking 2-6 m/s shown 0.2 s late
+# (the 0.15-0.2 s interpolation delay plus the one-way latency, 0.7.8) is 0.4-1.2 m behind: measured without the lead
+# (SPORE_FIX_OFF=drive.lead, lab 20261106-013022) p90 0.78 m (Creature NPCs), 1.17 m (Tribe animals), 2.04 m (Tribe
+# members); with it 0.12, 0.37, 0.64 m (lab 20261106-012156). Civ vehicles drive 10-20 m/s.
+LIMITS = {('creature', 'n'): (0.45, 1.0), ('tribe', 'n'): (0.7, 1.0), ('tribe', 't'): (1.0, 1.0), ('civ', 'v'): (2.5, 1.5)}
 
 
 def walk_npcs(host, guest, rng, secs, around):
@@ -127,7 +128,7 @@ def main():
         print('  ' + line, flush=True)
     for kind in {'creature': 'n', 'tribe': 'nt', 'civ': 'v'}[a.stage]:
         r = res.get(kind)
-        lim, tr = LIMITS[kind]
+        lim, tr = LIMITS[(a.stage, kind)]
         ck(r is not None and r['n'] >= 200, f'{kind}: the host\'s bodies moved where the guest has copies '
            f'({r["n"] if r else 0} moving samples >= 200)')
         if not r or not r['n']:
