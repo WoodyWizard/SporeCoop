@@ -36,3 +36,4 @@ Source: docs/generalisation-plan.md G15.
 
 ## History
 - 2026-11-01: opened.
+- 2026-11-06: Discord report 2026-11-06 (0.7.8): child BUG-0644 (NPC villages the guest makes get their own colours); related BUG-0648.

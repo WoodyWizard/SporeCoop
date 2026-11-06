@@ -59,3 +59,4 @@ Not reproduced (the lab games run muted). Not in the plan table: P1 (the guest a
 - 2026-11-04 (fix/w43-guest-player, P1 of 0.7.7): not analysed in P1 (lab games are muted).
 - 2026-11-05 (fix/w44-tribe-guest, A1 of 0.7.8): analysed with the game's audio commands; the fight theme observed missing on the guest, fixed by tribe.theme_music; the report's exact path (live change + menu bounce) not replayed.
 - 2026-11-05: released in 0.7.8.
+- 2026-11-06: Discord report 2026-11-06 (0.7.8, discord-2026-11-06/Sterben-08): the guest does not hear the dance-around-the-fire music: inferred another sound path than the theme manager, not a regression: BUG-0646.
