@@ -30,6 +30,11 @@ def record(con, on):
     con.call('coop.bodyrec start' if on else 'coop.bodyrec stop')
 
 
+def now(con):
+    """the game's absolute time (the clock of the rows)"""
+    return float(re.search(r'now=([\d.]+)', con.call('coop.bodyrec count')['out']).group(1))
+
+
 def dump(con):
     """t, key, (x, y, z) rows of one game"""
     rows = []
@@ -130,3 +135,79 @@ def summary(res, t0=0.0):
                      + (f' ({r["trail"][1]} at {r["trail"][2] - t0:.1f} s)' if r['trail'][1] else '') + '; worst '
                      + ', '.join(f'{k} {d:.1f} m at {t - t0:.1f} s ({s:.1f} m/s)' for d, k, t, s in r['worst'][:3]))
     return lines
+
+
+# ---- BUG-0609: the divergence detector's trail rows (monitor.Watch.detect)
+# The detector compared two dumps read one after the other with 15 m / 6 m tolerances: a copy that trails its host body
+# by 0.2 s (0.6-2 m at walking speed) never made a row. These rows come from both games' `coop.bodyrec` (one clock),
+# so they are the same moment on both machines; a kind is a finding when its copies are late (lag p50) AND far off
+# (dist p90), or one copy stayed far off for long. The median lag, not p90: the detector's own census dumps make
+# both games hitch, which spreads the lag's tail. Measured per 10 s (lab 20261106-041119 / -041542): without drive.lead
+# lag p50 0.15-0.23 s in every window (p90 0.72-0.90 m Creature NPCs, 1.1-1.3 m Tribe animals, 1.9-2.1 m members);
+# with it 0.013-0.106 s (p90 0.11-1.46 m on a loaded lab).
+DET_STEP = 0.05  # s: one frame per 50 ms is read (the host's body interpolated between frames up to GAP apart)
+DET_LAG, DET_DIST, DET_TRAIL = 0.12, 0.5, 1.5  # s (lag p50), m (dist p90), s
+DET_MIN = 60  # moving samples of a kind in a period before it is judged
+KIND_NAMES = {'n': 'npc', 't': 'member', 'v': 'vehicle', 'p': 'player', 's': 'ship', 'c': 'cell'}
+
+
+def ensure_on(con):
+    """start recording without clearing the rows of a test that records itself; True when it is on"""
+    out = con.call('coop.bodyrec count').get('out', '')
+    if 'bodyrec on' in out:
+        return True
+    con.call('coop.bodyrec on')
+    return 'bodyrec on' in con.call('coop.bodyrec count').get('out', '')
+
+
+def since(con, t0, step=DET_STEP, page=2000):
+    """rows after absolute time t0 (one frame per step s)"""
+    rows = []
+    while True:
+        got = []
+        for line in con.call(f'coop.bodyrec since {t0:.4f} {page} {step}').get('out', '').splitlines():
+            f = line.split()
+            if len(f) == 5:
+                try:
+                    got.append((float(f[0]), f[1], (float(f[2]), float(f[3]), float(f[4]))))
+                except ValueError:
+                    pass
+        if len(got) < page:
+            return rows + got
+        last = got[-1][0]
+        whole = [r for r in got if r[0] < last]  # the last frame may be cut: read it again from the frame before
+        if not whole:
+            return rows + got
+        rows += whole
+        t0 = whole[-1][0]
+
+
+def detect_findings(stage, host_rows, guest_rows):
+    """the detector's `<stage>:trail:<kind>` findings of one period (dicts as worlddiff.diff's)"""
+    out = []
+    res = analyse(host_rows, guest_rows, kinds='ntvps')
+    for kind, r in sorted(res.items()):
+        if r['n'] < DET_MIN:
+            continue
+        p90, lag = pct(r['dist'], 0.9), pct(r['lag'], 0.5)
+        if (lag > DET_LAG and p90 > DET_DIST) or r['trail'][0] > DET_TRAIL:
+            name = KIND_NAMES.get(kind, kind)
+            out.append(dict(stage=stage, sig=f'{stage}:trail:{name}', n=r['n'],
+                            text=f'{len(r["bodies"])} {name} copies off the host\'s bodies at the same moment: p90 '
+                                 f'{p90:.2f} m, lag p50 {lag:.3f} s, longest over {TRAIL_M:g} m {r["trail"][0]:.2f} s '
+                                 f'({r["trail"][1]}), {r["n"]} moving samples'))
+    return out
+
+
+def steps(rows, kinds='t', over=5.0, frame=0.1):
+    """BUG-0610: one-frame steps over `over` m of a body in one game's own rows (frames up to `frame` s apart):
+    [(m, key, t, dt)], largest first"""
+    out = []
+    for key, v in _by_key(rows).items():
+        if key[0] not in kinds:
+            continue
+        for (ta, a), (tb, b) in zip(v, v[1:]):
+            d = math.dist(a, b)
+            if 0 < tb - ta <= frame and d > over:
+                out.append((d, key, tb, tb - ta))
+    return sorted(out, reverse=True)

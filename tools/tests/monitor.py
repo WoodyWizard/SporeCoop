@@ -788,6 +788,25 @@ class Watch(threading.Thread):
                 self.tl.add(dict(kind='census', who=who, t=last[-1]['t'] if last else None, stage=m.group(1),
                                  counts=dict(counts)))
 
+    def detect_trail(self, host_inst, who, inst, stage):
+        """BUG-0609: `<stage>:trail:<kind>` rows from both games' coop.bodyrec (one clock): the guest's copies
+        against the host's bodies at the same moment over the last period (body_trail.detect_findings)"""
+        import body_trail
+        if os.environ.get('SPORE_DETECTOR_TRAIL', '1') == '0' or not stage:
+            return []
+        st = self.__dict__.setdefault('trail_state', {})
+        hc, gc = self.console(host_inst), self.console(inst)
+        if who not in st:  # the first period only starts the recording
+            if body_trail.ensure_on(hc) and body_trail.ensure_on(gc):
+                now = float(re.search(r'now=([\d.]+)', hc.call('coop.bodyrec count').get('out', '')).group(1))
+                st[who] = now
+            return []
+        t0 = st[who]
+        hr, gr = body_trail.since(hc, t0 - body_trail.GAP), body_trail.since(gc, t0)
+        if gr:
+            st[who] = max(r[0] for r in gr)
+        return body_trail.detect_findings(stage, hr, gr)
+
     def detect(self):
         """one detector sample: the host's world against every guest's (worlddiff.diff)"""
         import json
@@ -805,6 +824,7 @@ class Watch(threading.Thread):
                 self.out(f'  (detector: {who} dump failed: {e!r})')
                 continue
             found = worlddiff.diff(hw, gw)
+            found += self.detect_trail(host[0], who, inst, hw.mode)
             skip = [f for f in found if f['sig'] in ('apart', 'nocentre')]
             real = [f for f in found if f['sig'] not in ('apart', 'nocentre')]
             self.out('DETECTOR-SAMPLE ' + json.dumps(dict(guest=who, stage=hw.mode, gstage=gw.mode, host_rows=len(hw.rows),

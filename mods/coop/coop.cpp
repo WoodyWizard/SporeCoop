@@ -811,7 +811,32 @@ int c_bodyrec(void*, int argc, const char* const* argv, SkOut* out)
             SAY("%.4f %s %.3f %.3f %.3f\n", x.t, x.key, x.p.x, x.p.y, x.p.z);
         }
         return 0;
-    }
+    } else if (!strcmp(a, "since")) { // since <t> [n] [step]: rows after absolute time t, one frame per step s
+        // (BUG-0609: the divergence detector reads the rows of its last period, the ring index moves as it drops rows)
+        double t0 = argc > 2 ? atof(argv[2]) : 0.0, step = argc > 4 ? atof(argv[4]) : 0.0;
+        size_t n = argc > 3 ? (size_t)atol(argv[3]) : 2000, said = 0;
+        auto it = std::upper_bound(g_bodyrec.begin(), g_bodyrec.end(), t0,
+                                   [](double t, const BodyRow& r) { return t < r.t; });
+        double kept = -1e300, last = -1e300;
+        for (; it != g_bodyrec.end() && said < n; ++it) {
+            if (it->t != last) { // a new frame: keep it when step s passed since the last kept one
+                if (it->t < kept + step) {
+                    double ft = it->t;
+                    while (it != g_bodyrec.end() && it->t == ft)
+                        ++it;
+                    if (it == g_bodyrec.end())
+                        break;
+                    --it;
+                    continue;
+                }
+                kept = last = it->t;
+            }
+            SAY("%.4f %s %.3f %.3f %.3f\n", it->t, it->key, it->p.x, it->p.y, it->p.z);
+            said++;
+        }
+        return 0;
+    } else if (!strcmp(a, "on")) // on: record without clearing (the detector; a test's `start` clears)
+        g_bodyrec_on = true;
     SAY("bodyrec %s samples=%u now=%.4f\n", g_bodyrec_on ? "on" : "off", (unsigned)g_bodyrec.size(), H->time_seconds());
     return 0;
 }
