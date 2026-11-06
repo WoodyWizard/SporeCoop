@@ -257,7 +257,7 @@ public:
         // A slow body's interpolated state (see sample_raw) goes through the same smoothing: the switch between the
         // two is a jump of the raw target that the offset takes
         if (ok && !sm_used_ && lead && g_lead_fix && g_lead_smooth_fix && smooth_max > 0)
-            smooth(local_now, out, out.vel);
+            smooth(local_now, out, out.vel, false);
         return ok;
     }
 
@@ -290,7 +290,7 @@ private:
                 out.pos.z += v.z * (float)dt;
                 out.vel = v;
                 if (g_lead_smooth_fix && smooth_max > 0)
-                    smooth(local_now, out, last_extrap > kMaxLead ? Vec3{} : v);
+                    smooth(local_now, out, last_extrap > kMaxLead ? Vec3{} : v, true);
                 return true;
             }
             if (use)
@@ -361,9 +361,41 @@ public:
 private:
     // BUG-0619 (g_lead_smooth_fix): `out` (the raw lead at local_now) plus the decaying offset. Advanced once per
     // local time (a later call at the same or an earlier time, the path velocity's sample, adds the same offset)
-    void smooth(double local_now, PlayerState& out, const Vec3& v) const
+    // is_lead: `out` is the raw lead (its new states jump: absorbed); else the interpolated state (continuous: an
+    // offset left from a switch only closes, and the driving is 0.7.8's, smooth_velocity false)
+    void smooth(double local_now, PlayerState& out, const Vec3& v, bool is_lead) const
     {
-        sm_used_ = true;
+        sm_used_ = is_lead;
+        if (!is_lead) {
+            if (local_now > sm_t_ && sm_have_) {
+                double dt = local_now - sm_t_;
+                if (sm_last_lead_) { // the switch from the lead: its step back taken as an offset
+                    Vec3 cont{sm_shown_.x + sm_vel_.x * (float)dt, sm_shown_.y + sm_vel_.y * (float)dt,
+                              sm_shown_.z + sm_vel_.z * (float)dt};
+                    sm_off_ = {cont.x - out.pos.x, cont.y - out.pos.y, cont.z - out.pos.z};
+                    if (dist(Vec3{}, sm_off_) > smooth_max)
+                        sm_off_ = {};
+                    sm_last_lead_ = false;
+                }
+                float d = dist(Vec3{}, sm_off_);
+                float nd = dt > 0.5 ? 0.f : std::max(0.f, std::max(d * (float)std::exp(-dt / kSmoothTau), d - (kSmoothK * dist(Vec3{}, v) + kSmoothRate) * (float)dt));
+                float k = d > 1e-4f ? nd / d : 0.f;
+                sm_off_ = {sm_off_.x * k, sm_off_.y * k, sm_off_.z * k};
+                sm_t_ = local_now;
+                sm_vel_ = v;
+                sm_shown_ = {out.pos.x + sm_off_.x, out.pos.y + sm_off_.y, out.pos.z + sm_off_.z};
+            } else if (!sm_have_) {
+                sm_have_ = true;
+                sm_off_ = {};
+                sm_t_ = local_now;
+                sm_vel_ = v;
+                sm_shown_ = out.pos;
+            }
+            out.pos.x += sm_off_.x;
+            out.pos.y += sm_off_.y;
+            out.pos.z += sm_off_.z;
+            return;
+        }
         if (local_now > sm_t_) {
             double dt = local_now - sm_t_;
             sm_offv_ = {};
@@ -398,6 +430,7 @@ private:
                 sm_off_ = off;
             }
             sm_have_ = true;
+            sm_last_lead_ = true;
             sm_t_ = local_now;
             // the shown velocity follows the lead's in kSmoothVelTau (not at once): every state changes the lead's
             // velocity (its speed, capped by the path between two states) and the target's speed stepped 8 -> 1 -> 5 m/s
@@ -415,7 +448,7 @@ private:
         out.pos.y += sm_off_.y;
         out.pos.z += sm_off_.z;
     }
-    mutable bool sm_have_ = false, sm_used_ = false;
+    mutable bool sm_have_ = false, sm_used_ = false, sm_last_lead_ = false;
     double jitter_ = 0, jit_t_ = 0; // s (BUG-0619)
     bool jittery_ = false;
     mutable double sm_t_ = 0;
