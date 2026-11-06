@@ -269,6 +269,8 @@ add('civ_vehicle_scale', P + 'coop_civ_vehicle_scale.py', warm=True, minutes=3, 
 add('node_scale', P + 'coop_node_scale.py', warm=True, minutes=3, fixture='creature')  # a spice node has the host's size on the guest (BUG-0485; --nofix fails)
 add('civ_city_ground', P + 'coop_civ_city_ground.py', warm=True, minutes=5, fixture='civ_npc')  # the ground round the cities is the same on both games, loaded and after a live founding / capture (BUG-0332 class in Civ)
 add('tribe_member_place', P + 'coop_tribe_member_place.py', warm=True, minutes=5, fixture='tribe')  # every host member near the guest is a member at that place on the guest (BUG-0488)
+add('tribe_dead_member', P + 'coop_tribe_dead_member.py', warm=True, minutes=3, fixture='tribe')  # an NPC member killed on the host lies there on the guest too (BUG-0488; SPORE_FIX_OFF=tribe.dead_body fails)
+add('tribe_dead_tribe', P + 'coop_tribe_dead_member.py --all', warm=True, minutes=3, fixture='tribe')  # every member of an NPC tribe killed on the host: the bodies on the guest too (BUG-0488)
 add('tribe_civ_ground', P + 'coop_tribe_civ.py --ground', minutes=13, fixture='tribe', timeout=1800)  # the live Tribe -> Civ change, then the ground round every city on both games (BUG-0332 class in Civ)
 add('civ_planner', P + 'coop_civ_planner.py', warm=True, minutes=3, fixture='civ_npc')  # the guest's open city planner: the mod changes nothing it holds (BUG-0493, BUG-0491; SPORE_FIX_OFF=civ.planner_hold fails: out/lab/20261103-131021)
 add('civ_discovery', P + 'coop_civ_discovery.py', warm=True, minutes=3, fixture='civ_npc')  # meeting a civilization the guest's game lacks shows no card and does not crash (BUG-0492; SPORE_FIX_OFF=civ.discovery_card crashes)

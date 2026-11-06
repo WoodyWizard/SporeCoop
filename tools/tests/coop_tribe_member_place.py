@@ -65,6 +65,19 @@ def main():
             tid = min((k for k in hs if k.startswith('t')), key=lambda k: math.dist(hs[k][0], x['pos']), default=None)
             td = math.dist(hs[tid][0], x['pos']) if tid else -1
             gm = gs.get(tid)
+            anyk = min(hs, key=lambda k: math.dist(hs[k][0], x['pos']), default=None)
+            hme = hw.me if hw.me and not worlddiff._origin(hw.me) else None
+            print(f'           key={x["key"]} noun={x["noun"]:08X}; nearest host sync entry {anyk} '
+                  f'{math.dist(hs[anyk][0], x["pos"]) if anyk else -1:.1f} m; the host player at '
+                  f'{worlddiff._fmt(hme) if hme else "-"} ({math.dist(hme, x["pos"]) if hme else -1:.1f} m)', flush=True)
+            # what the object is: its pointer (coop.wobj list citizen), vtable, age (+0xB34: 0 baby), dead flag (+0xB5E)
+            wl = host.call('coop.wobj list citizen 3 ' + ' '.join(f'{v:.2f}' for v in x['pos']))['out'].split()
+            if len(wl) > 1 and wl[0] == 'citizen':
+                ptr = int(wl[1], 16)
+                vt = host.call(f'mem.read {ptr:#x} 4')['out'].strip()
+                age = host.call(f'mem.read {ptr + 0xB34:#x} 1')['out'].strip()
+                dead = host.call(f'mem.read {ptr + 0xB5E:#x} 1')['out'].strip()
+                print(f'           object {ptr:#x}: vtable {vt}; age byte {age}; dead flag {dead}', flush=True)
             lone.append((tuple(round(v) for v in x['pos']), x['ser']))
             print(f'  {time.time() - t0:5.0f} s: host citizen ser={x["ser"]} at {worlddiff._fmt(x["pos"])} '
                   f'({math.dist(x["pos"], c):.0f} m from the guest): nearest guest citizen {d:.0f} m; mod id {tid} '
@@ -75,7 +88,7 @@ def main():
         if cur & prev:
             twice.append(sorted(cur & prev))
         prev = cur
-        time.sleep(10)
+        time.sleep(5)
     print(f'  {samples} samples; host citizens without a partner in two samples in a row: {twice}', flush=True)
     ck(samples > 3, f'compared ({samples} samples)')
     ck(not twice, f'every host citizen near the guest has a partner on the guest within two samples ({len(twice)} times not)')
