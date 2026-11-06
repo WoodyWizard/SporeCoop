@@ -287,6 +287,19 @@ COOP_FIX("npc.flock_hearts", "BUG-0556", g_flock_fx_fix, "creature: the host's s
 static constexpr uint32_t kFlockFx = 0x6A17B05A;
 static uintptr_t a_StartFx2, a_StopFx;
 
+// BUG-0412: a guest that leaves the session plays on in its copy of the host's world, and a guest that
+// joins while the host is not in that world (its editor, a load) plays on alone too. Two holes left it
+// on a planet without creatures: (1) the leave destroyed every proxy and made none of them NPCs of the
+// guest's game (away_locals ran only when the host went away); (2) at a (re)join the update filter
+// removed the guest's own NPCs from the first frame, before host_here / host_away knew where the host
+// was (the away state needs 4 s of the host in its editor), and nothing brought them back. Now the
+// leave hands the proxies over to the guest's game like the host's going away (in the next frame, the
+// same world only), and a guest that mirrors nothing keeps its own NPCs until the host plays its world.
+// `coop.fix npc.leave_locals off`: 0.7.8.
+static bool g_leave_locals_fix = true;
+COOP_FIX("npc.leave_locals", "BUG-0412", g_leave_locals_fix,
+         "creature: a guest that leaves, or joins while the host edits, keeps the creatures of its planet");
+
 static bool update_filter(void* c)
 {
     if (!g_enabled || !is_guest() || !npc_stage())
@@ -294,6 +307,8 @@ static bool update_filter(void* c)
     if (game::is_puppet(c) || c == game::avatar())
         return true;
     if (g_host_away) // the host left the world: the guest plays on alone with its own NPCs
+        return true;
+    if (g_leave_locals_fix && g_proxies.empty() && C.host_here && !C.host_here()) // BUG-0412: the host is not here yet
         return true;
     if (void* h = game::herd_of(c))
         if (h != game::avatar_herd())
@@ -1129,6 +1144,80 @@ static void pack_spares_partners(const std::vector<void*>& creatures)
     }
 }
 
+// BUG-0413: while the host's game stands still (its death caption, a cinematic, the pause menu) no
+// creature is updated and host_tick used to send nothing at all: the guests kept the proxies they had,
+// but a guest that moved meanwhile (respawned at its nest while the host lay dead, walked off) never
+// got the host's NPCs at its new place (sync-check "n missing on the guest" for the whole freeze).
+// Every 0.5 s of a freeze the host now runs the guests' relevance on its tracked NPCs that are still
+// creatures of its world (in the noun list, alive, in a herd, not at the planet's centre): newly near
+// ones are spawned (their state does not change while frozen, the spawn carries it), far ones go.
+// `coop.fix npc.frozen_send off`: nothing sent while frozen (0.7.8).
+static bool g_frozen_send_fix = true;
+COOP_FIX("npc.frozen_send", "BUG-0413", g_frozen_send_fix,
+         "creature: while the host's game stands still (a caption) a guest that moves still gets the host's NPCs near it");
+static double g_frozen_send_at = 0;
+// BUG-0385: a creature of a save made while a partner's puppet existed (untuned, in a herd like ours) is
+// removed by remove_saved_strays once a second; host_tick gave it an NPC id and sent it in the frames
+// before, the guests could not spawn its species (the host's key of a partner's creation) and asked
+// for it when it was gone already: "n missing on the guest" once. Such a creature gets no id now.
+// `coop.fix npc.stray_ids off`: tracked like any creature (0.7.8).
+static bool g_stray_ids_fix = true;
+COOP_FIX("npc.stray_ids", "BUG-0385", g_stray_ids_fix,
+         "creature: a saved partner's puppet loaded with the world is never sent to the guests as an NPC");
+static bool own_kind_herd(void* h);
+static bool saved_stray(void* c)
+{
+    return c && !IsBadReadPtr(c, 0x1680) && !*(void**)((uint8_t*)c + 0xE84) && game::species_profile(c) &&
+           !game::destroy_pending(c) && own_kind_herd(game::herd_of(c));
+}
+static uint32_t g_frozen_spawns = 0, g_frozen_despawns = 0;
+static void frozen_send(double now)
+{
+    if (now - g_frozen_send_at < 0.5)
+        return;
+    g_frozen_send_at = now;
+    struct Acc {
+        std::vector<void*> live;
+    } a;
+    game::for_each_object(
+        [](void* o, uint32_t noun, void* u) {
+            if (noun == 0x18EB45Eu && g_host_npcs.count(o) && game::object_alive(o) && !game::is_puppet(o) &&
+                o != game::avatar() && !game::is_destroyed(o))
+                ((Acc*)u)->live.push_back(o);
+            return true;
+        },
+        &a);
+    std::vector<std::pair<void*, net::Vec3>> live;
+    for (void* c : a.live) {
+        net::Vec3 p = game::position(c);
+        if (!game::herd_of(c) || p.x * p.x + p.y * p.y + p.z * p.z < 2500.f) // pooled (BUG-0274, BUG-0339)
+            continue;
+        live.push_back({c, p});
+    }
+    for (auto& p : C.sess->players()) {
+        if (p.id == 0 || (C.in_place && !C.in_place(p.id)))
+            continue;
+        net::Vec3 gp;
+        if (!C.player_pos(p.id, gp))
+            continue;
+        auto& known = g_known[p.id];
+        for (auto& [c, cp] : live) {
+            uint16_t id = g_host_npcs[c].id;
+            float d = net::dist(cp, gp);
+            bool k = known.count(id) != 0;
+            if (!k && d < kRelevance) {
+                send_spawn(p.id, id, c);
+                known.insert(id);
+                g_frozen_spawns++;
+            } else if (k && d > kRelevance + kHysteresis) {
+                send_despawn(p.id, id);
+                known.erase(id);
+                g_frozen_despawns++;
+            }
+        }
+    }
+}
+
 static void host_tick(double now, const std::vector<void*>& creatures)
 {
     void* av = game::avatar();
@@ -1141,6 +1230,8 @@ static void host_tick(double now, const std::vector<void*>& creatures)
     // and got them again when the host went on (play_creature.py 2026-10-23)
     if (creatures.empty()) {
         g_frozen_since = g_frozen_since > 0 ? g_frozen_since : now;
+        if (g_frozen_send_fix && !rts && now - g_frozen_since > 0.5) // BUG-0413
+            frozen_send(now);
         return;
     }
     if (g_frozen_since > 0) { // the frozen time does not count as unseen
@@ -1167,6 +1258,8 @@ static void host_tick(double now, const std::vector<void*>& creatures)
             it = g_host_npcs.end();
             g_reused++;
         }
+        if (it == g_host_npcs.end() && g_stray_ids_fix && saved_stray(c)) // BUG-0385: never an NPC of the world
+            continue;
         if (it == g_host_npcs.end()) {
             uint16_t id = alloc_npc_id(
                 g_next_id, [](uint16_t i) { return g_host_by_id.count(i) != 0; }, g_id_fix);
@@ -1818,6 +1911,10 @@ struct AwaySnap {
 };
 static std::vector<AwaySnap> g_away_snap;
 static double g_away_snap_at = -100;
+static uint32_t g_away_snap_epoch = 0;
+static bool g_was_guest = false;      // BUG-0412: this game mirrored the host's NPCs in its last frame
+static bool g_leave_locals_due = false; // BUG-0412: the session ended: hand the proxies over next frame
+static uint32_t g_leave_locals = 0;
 static void away_snapshot(double now)
 {
     static double s_last = -100;
@@ -1837,6 +1934,7 @@ static void away_snapshot(double now)
         return;
     g_away_snap.swap(v);
     g_away_snap_at = now;
+    g_away_snap_epoch = game::world_epoch();
 }
 static void* nest_herd_of(void* species)
 {
@@ -1874,6 +1972,7 @@ static void away_locals(double now)
             made++;
         }
     g_away_snap.clear();
+    g_away_snap_at = -100;
     g_away_locals += made;
     H->log(M, SK_INFO, "creature: the host left: %u of its NPCs shown here go on as NPCs of this game (%u not)", made,
            skipped);
@@ -1887,6 +1986,15 @@ static void tick_frame(double now)
     if (game::in_creature_stage())
         remove_saved_strays(now);
     hatch_tick(now, !creatures.empty());
+    if (g_leave_locals_due && !is_guest()) { // BUG-0412: the guest left; its game plays the planet on alone
+        g_leave_locals_due = false;
+        if (game::in_creature_stage() && game::avatar() && game::world_epoch() == g_away_snap_epoch &&
+            !g_away_snap.empty()) {
+            unsigned before = g_away_locals;
+            away_locals(now);
+            g_leave_locals += g_away_locals - before;
+        }
+    }
     // creature stage only: adventure creatures are scripted by the adventure on every machine
     if (!g_enabled || !C.sess || !npc_stage()) {
         g_anim_out.clear();
@@ -1896,6 +2004,7 @@ static void tick_frame(double now)
         host_tick(now, creatures);
         g_anim_out.clear(); // (host_tick returns early in some frames: never send an old frame's)
     } else if (is_guest()) {
+        g_was_guest = true;
         uint32_t n = 0;
         for (void* c : creatures)
             n += !game::is_puppet(c) && c != game::avatar();
@@ -1950,10 +2059,16 @@ void on_world_change()
     // the host's NPCs of the old world are gone and the new ones get new ids: the guests drop the
     // old ones (they mirrored them for good before 2026-10-25: a living copy of every NPC next to
     // the new one after each editor or load of the host)
-    if (is_host() && g_world_despawn_fix)
+    if (is_host() && g_world_despawn_fix) {
+        size_t n = 0;
         for (auto& [g, ks] : g_known)
-            for (uint16_t id : ks)
+            for (uint16_t id : ks) {
                 send_despawn(g, id);
+                n++;
+            }
+        H->log(M, SK_INFO, "npc: world change (avatar %p): %zu NPC proxies despawned at the guests, %zu NPCs forgotten",
+               game::avatar(), n, g_host_npcs.size());
+    }
     for (auto& [id, px] : g_proxies) {
         if (px.c)
             game::puppet_unregister(px.c);
@@ -1988,6 +2103,13 @@ void on_player_leave(uint8_t id)
 
 void on_session_end()
 {
+    // BUG-0412: a guest that leaves plays on in this world: its game takes over the NPCs it showed
+    // (the snapshot of away_snapshot, at most 0.5 s old; away_locals runs next frame, outside the
+    // session's update)
+    if (g_leave_locals_fix && g_away_locals_fix && g_was_guest && !g_host_away && game::in_creature_stage() &&
+        H->time_seconds() - g_away_snap_at < 2.0)
+        g_leave_locals_due = true;
+    g_was_guest = false;
     std::vector<uint16_t> ids;
     for (auto& [id, px] : g_proxies)
         ids.push_back(id);
@@ -2372,9 +2494,10 @@ std::string status()
                  (unsigned)g_host_npcs.size(), (unsigned)g_seen_now.size(), (unsigned)known, g_hits_applied,
                  g_kills_credited, g_strays_removed, g_hatch_helped, (int)g_partner_targets, (unsigned)on_partner,
                  g_ai_partner_picks, game::ai_swaps(), game::swaps_restored(), game::swap_ledger_restored(), g_reused, (unsigned)teamplay::hit_targets(), g_pooled_retired);
-        char b2[128]; // BUG-0512
-        snprintf(b2, sizeof b2, "npc(host) pack: partner_targets_cleared=%u partner_stimuli_cleared=%u\n", g_pack_targets_cleared,
-                 g_pack_stimuli_cleared);
+        char b2[192]; // BUG-0512
+        snprintf(b2, sizeof b2, "npc(host) pack: partner_targets_cleared=%u partner_stimuli_cleared=%u frozen_s=%.1f frozen_spawns=%u frozen_despawns=%u\n",
+                 g_pack_targets_cleared, g_pack_stimuli_cleared, g_frozen_since > 0 ? H->time_seconds() - g_frozen_since : 0.0,
+                 g_frozen_spawns, g_frozen_despawns);
         return std::string(b) + b2 + meat_status() + game::destroy_deferred_status() + "\n";
     } else {
         unsigned spawned = 0;
@@ -2382,11 +2505,11 @@ std::string status()
             spawned += px.c != nullptr;
         snprintf(b, sizeof b, "npc(guest): proxies=%u spawned=%u local_removed=%u hits_sent=%u damage_in=%u lost=%u host_away=%d "
                  "away_dropped=%u local_alive=%u in_nest=%u nests=%u stale_dropped=%u strays_removed=%u hatch_helped=%u "
-                 "deaths_played=%u kill_held=%u away_locals=%u unlisted=%u nospecies=%u\n",
+                 "deaths_played=%u kill_held=%u away_locals=%u unlisted=%u nospecies=%u leave_locals=%u\n",
                  (unsigned)g_proxies.size(), spawned, g_removed_local, g_hits_sent, g_damage_in, g_proxy_lost, (int)g_host_away,
                  g_away_proxies, g_local_alive, g_proxies_in_nest, (unsigned)g_local_herds.size(), g_stale_dropped,
                  g_strays_removed, g_hatch_helped, g_deaths_played, (unsigned)g_kill.size(), g_away_locals, g_proxy_unlisted,
-                 g_proxy_nospecies);
+                 g_proxy_nospecies, g_leave_locals);
     }
     return b + meat_status() + game::destroy_deferred_status() + "\n";
 }
