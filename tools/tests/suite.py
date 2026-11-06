@@ -309,7 +309,7 @@ add('tribe_editor_world', P + 'coop_tribe_editor_world.py', warm=True, minutes=5
 add('tribe_snapshot', P + 'coop_tribe_snapshot.py', minutes=12)  # after the live Creature -> Tribe change the host's place is its planet, not snapshot.spo: the guest is together with it (BUG-0258; --nofix fails)
 add('tribe_village_ground', P + 'coop_tribe_village_ground.py', minutes=12)  # BUG-0332: after the live Creature -> Tribe change the ground round the new village is the host's in the guest's game (coop.ground on rings to 100 m)
 add('tribe_form_ground', P + 'coop_tribe_form_ground.py', minutes=4, fixture='tribe')  # BUG-0332: the ground of an NPC village the host's game forms during play is the host's in the guest's game (coop.ground on rings to 50 m)
-add('tribe_village_cadian', P + 'coop_tribe_village_ground.py --fixture=creature_cadian --map --terrain --watch', minutes=12)  # BUG-0332: the campaign's planet (Cadian): the live Tribe change, then NPC villages where the campaigns' guests had a 5-6 m higher ground
+add('tribe_village_cadian', P + 'coop_tribe_village_ground.py --fixture=creature_cadian --terrain --watch', minutes=12)  # BUG-0332: the campaign's planet (Cadian): the live Tribe change, then NPC villages where the campaigns' guests had a 5-6 m higher ground
 add('tribe_gameover', P + 'coop_tribe_gameover.py', minutes=4)  # a member added during the game-over caption (BUG-0172; --nofix fails)
 add('tribe_ko', P + 'coop_tribe_ko.py', warm=True, minutes=3, fixture='tribe')  # a knocked-out NPC member lies down on the guest (BUG-0173; --nofix fails)
 add('tribe_bounce_mirrors', P + 'coop_tribe_bounce_mirrors.py', warm=True, minutes=4, fixture='tribe')  # the guests mirror the host's tribe after its game over and bounce back (BUG-0288; --nofix fails)

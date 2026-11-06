@@ -101,6 +101,18 @@ int c_terrain(void*, int argc, const char* const* argv, SkOut* out)
         void* hm = skg::vcall<void*>(t, 0xC / 4);
         snprintf(b, sizeof b, " heights=%p ready=%d", hm, (int)skg::vcall<char>(t, 0x50 / 4));
         s += b;
+        if (hm && skg::readable((uint8_t*)hm, 0x60)) { // the planet's height parameters (ApplyStamp's fixed radius: +0x34 + +0x38 * +0x3C)
+            const float* f = (const float*)hm;
+            snprintf(b, sizeof b, " h+20..5C=%.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f", f[8], f[9],
+                     f[10], f[11], f[12], f[13], f[14], f[15], f[16], f[17], f[18], f[19], f[20], f[21], f[22], f[23]);
+            s += b;
+        }
+        void* ts = skg::readable((uint8_t*)t + 0x20C, 4) ? *(void**)((uint8_t*)t + 0x20C) : nullptr;
+        if (ts && skg::readable((uint8_t*)ts + 0x590, 0x20)) { // the terrain state 0xFA3BC0 scales brushes with (0x3ABC385)
+            const float* f = (const float*)((uint8_t*)ts + 0x590);
+            snprintf(b, sizeof b, " ts+590..5AC=%.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f", f[0], f[1], f[2], f[3], f[4], f[5], f[6], f[7]);
+            s += b;
+        }
         H->out_printf(out, "%s", s.c_str());
         return 0;
     }

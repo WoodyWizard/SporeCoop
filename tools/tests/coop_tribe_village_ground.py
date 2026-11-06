@@ -210,6 +210,9 @@ def main():
             print(f'    ({p[0]:.0f} {p[1]:.0f} {p[2]:.0f}): Creature host {cmap[1][i]} guest {cmap[2][i]}, Tribe host {h} guest {g}',
                   flush=True)
     if '--terrain' in sys.argv:  # the terrain's stamps on both games (terrain_diag.cpp)
+        for name, con in (('host', host), ('guest', guest)):
+            st = out(con, 'coop.terrain state')
+            print(f'  {name} terrain: ' + st[st.find('heights='):], flush=True)
         lists = {}
         for name, con in (('host', host), ('guest', guest)):
             lists[name] = {}
