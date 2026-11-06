@@ -6,7 +6,7 @@ they back away, behaviour node 0x02D852E0, docs/re/creature.md#creature-roar-rel
 mound, so they back away onto / into it. The host's own player stays far from that nest (the case of the report:
 the guest plays at a nest the host's camera is not at).
 
-Both games are sampled for 14 s, every NPC of that nest within 25 m of the guest: on the host the NPC's height over
+Both games are sampled for 10 s before the roar and 14 s after it, every NPC of that nest within 25 m of the guest: on the host the NPC's height over
 its game's surface (`coop.ground`: cPlanetModel_SurfacePoint, the terrain or the mound where the collision is loaded),
 on the guest the proxy's drawn height over the guest's surface and how far it is from the host's NPC.
 
@@ -30,6 +30,7 @@ NEST_NOUN = 0x52AA6122
 SUNK = 0.30     # m inside the surface: drawn in the mound (a standing creature is 0-0.05 m in it)
 FOLLOW = 4.0    # m from the host's NPC (a proxy follows 0.3-1.5 m behind, npc_walk)
 SECONDS = 14
+IDLE = 10       # s of sampling before the roar
 
 
 def over_surface(con, p):
@@ -88,21 +89,27 @@ def main():
     ids = [n['id'] for n in at_nest]
     print(f'  nest at {worlddiff._fmt(best)}; its NPCs {ids}; the host player {"near" if a.host_near else "120 m away"}',
           flush=True)
-    print('  ' + guest.call('coop.rules roar 31')['out'].strip(), flush=True)
-    t0 = time.time()
     rows = []   # (t, id, host over_surface, guest over_surface, guest-host distance, host dist to nest)
     start_pos = {n['id']: n['pos'] for n in at_nest}
-    while time.time() - t0 < SECONDS:
-        hn = {n['id']: n for n in npcs(host)}
-        gp_ = proxies(guest)
-        for i in ids:
-            if i not in hn or i not in gp_:
-                continue
-            hp_ = hn[i]['pos']
-            _, hs = over_surface(host, hp_)
-            _, gs = over_surface(guest, gp_[i]['at'])
-            rows.append((time.time() - t0, i, hs, gs, math.dist(hp_, gp_[i]['at']), math.dist(hp_, best)))
-        time.sleep(0.25)
+    t0 = time.time()
+
+    def sample(seconds):
+        t1 = time.time()
+        while time.time() - t1 < seconds:
+            hn = {n['id']: n for n in npcs(host)}
+            gp_ = proxies(guest)
+            for i in ids:
+                if i not in hn or i not in gp_:
+                    continue
+                hp_ = hn[i]['pos']
+                _, hs = over_surface(host, hp_)
+                _, gs = over_surface(guest, gp_[i]['at'])
+                rows.append((time.time() - t0, i, hs, gs, math.dist(hp_, gp_[i]['at']), math.dist(hp_, best)))
+            time.sleep(0.25)
+
+    sample(IDLE)  # the NPCs at their nest (the host far: its game has them without the mound)
+    print('  ' + guest.call('coop.rules roar 31')['out'].strip(), flush=True)
+    sample(SECONDS)
     moved = {i: math.dist(start_pos[i], npcs_pos) for i, npcs_pos in
              ((n['id'], n['pos']) for n in npcs(host)) if i in start_pos}
     for i in ids:
@@ -114,12 +121,68 @@ def main():
               f'guest from host max {max(x[4] for x in r):.1f} m; nearest the nest {min(x[5] for x in r):.1f} m', flush=True)
         for x in r[::6]:
             print(f'      {x[0]:5.1f} s host {x[2]} guest {x[3]} apart {x[4]:.2f} nest {x[5]:.1f}', flush=True)
-    dt = SECONDS / max(1, len(rows) / max(1, len(ids)))
+    dt = (IDLE + SECONDS) / max(1, len(rows) / max(1, len(ids)))
     sunk = {}
     for i in ids:
         r = [x for x in rows if x[1] == i]
         sunk[i] = sum(1 for x in r if x[3] is not None and x[3] < -SUNK) * dt
     far = {i: max((x[4] for x in rows if x[1] == i), default=0) for i in ids}
+    host_in = {i: sum(1 for x in rows if x[1] == i and x[2] is not None and x[2] < -SUNK) * dt for i in ids}
+    print(f'  host NPCs inside their game\'s surface over {SUNK} m: { {i: round(v, 1) for i, v in host_in.items()} } s', flush=True)
+    ml = re.search(r'mound_lifts=(\d+)', guest.call('coop.npc')['out'])
+    print(f'  guest: proxy targets put onto the mound (npc.proxy_mound) {ml.group(1) if ml else "?"}', flush=True)
+    if not a.host_near:  # the host's player (and camera) far from that nest
+        host.call('coop.npc gopos %.2f %.2f %.2f' % away(best, mid, 120.0))
+    print('  ' + guest.call('coop.npc gopos %.2f %.2f %.2f' % gp)['out'].strip(), flush=True)
+    time.sleep(4)
+    ids = [n['id'] for n in at_nest]
+    print(f'  nest at {worlddiff._fmt(best)}; its NPCs {ids}; the host player {"near" if a.host_near else "120 m away"}',
+          flush=True)
+    rows = []   # (t, id, host over_surface, guest over_surface, guest-host distance, host dist to nest)
+    start_pos = {n['id']: n['pos'] for n in at_nest}
+    t0 = time.time()
+
+    def sample(seconds):
+        t1 = time.time()
+        while time.time() - t1 < seconds:
+            hn = {n['id']: n for n in npcs(host)}
+            gp_ = proxies(guest)
+            for i in ids:
+                if i not in hn or i not in gp_:
+                    continue
+                hp_ = hn[i]['pos']
+                _, hs = over_surface(host, hp_)
+                _, gs = over_surface(guest, gp_[i]['at'])
+                rows.append((time.time() - t0, i, hs, gs, math.dist(hp_, gp_[i]['at']), math.dist(hp_, best)))
+            time.sleep(0.25)
+
+    sample(IDLE)  # the NPCs at their nest (the host far: its game has them without the mound)
+    print('  ' + guest.call('coop.rules roar 31')['out'].strip(), flush=True)
+    sample(SECONDS)
+    moved = {i: math.dist(start_pos[i], npcs_pos) for i, npcs_pos in
+             ((n['id'], n['pos']) for n in npcs(host)) if i in start_pos}
+    for i in ids:
+        r = [x for x in rows if x[1] == i]
+        if not r:
+            continue
+        print(f'  #{i}: moved {moved.get(i, -1):.1f} m; host over surface min {min((x[2] for x in r if x[2] is not None), default=0):.2f}; '
+              f'guest over surface min {min((x[3] for x in r if x[3] is not None), default=0):.2f}; '
+              f'guest from host max {max(x[4] for x in r):.1f} m; nearest the nest {min(x[5] for x in r):.1f} m', flush=True)
+        for x in r[::6]:
+            print(f'      {x[0]:5.1f} s host {x[2]} guest {x[3]} apart {x[4]:.2f} nest {x[5]:.1f}', flush=True)
+    dt = (IDLE + SECONDS) / max(1, len(rows) / max(1, len(ids)))
+    sunk = {}
+    for i in ids:
+        r = [x for x in rows if x[1] == i]
+        sunk[i] = sum(1 for x in r if x[3] is not None and x[3] < -SUNK) * dt
+    far = {i: max((x[4] for x in rows if x[1] == i), default=0) for i in ids}
+    host_in = {i: sum(1 for x in rows if x[1] == i and x[2] is not None and x[2] < -SUNK) * dt for i in ids}
+    print(f'  host NPCs inside their game\'s surface over {SUNK} m: { {i: round(v, 1) for i, v in host_in.items()} } s', flush=True)
+    print('  ' + guest.call('coop.npc')['out'].splitlines()[1][:60] + ' ... ' +
+          (re.search(r'mound_lifts=\d+', guest.call('coop.npc')['out']) or re.search('', '')).group(0), flush=True)
+    if not a.host_near:
+        ck(any(v > 1.0 for v in host_in.values()), 'the host\'s game has an NPC of that nest inside its mound (the case: '
+                                                   'the host far, its game without the mound there)')
     ck(any(v > 1.5 for v in moved.values()), f'the NPCs backed away from the guest ({ {i: round(v, 1) for i, v in moved.items()} } m)')
     ck(all(v <= 1.0 for v in sunk.values()), f'on the guest no proxy is drawn more than {SUNK} m inside the surface for over 1 s '
                                               f'({ {i: round(v, 1) for i, v in sunk.items()} } s)')

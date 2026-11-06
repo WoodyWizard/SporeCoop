@@ -224,6 +224,8 @@ class Player(threading.Thread):
             # combat row (the fixture creature has one combat ability, key 1, reach 1 m).
             r = self.reach()
             if r['target'] is None or r['dead'] or r['target'] != target:
+                self.add('retarget_' + ('none' if r['target'] is None else 'dead' if r['dead'] else
+                                        'first' if target is None else 'changed'))
                 if self.in_view(o[1], o[2]):
                     self.do(f'click {o[1]} {o[2]}')
                     self.add('target_click')
@@ -673,7 +675,7 @@ def main():
             print(f'    {p.name}:', n)
         print(f'  {p.name} key presses by the game\'s reach (BUG-0618):', ' '.join(
             f'{k.split(".", 1)[1]}={v}' for k, v in sorted(sh.c.items())
-            if k.startswith(p.name + '.') and ('press_' in k or k.endswith(('.target_click', '.wait_recharge')))))
+            if k.startswith(p.name + '.') and ('press_' in k or 'retarget_' in k or k.endswith(('.target_click', '.wait_recharge')))))
         for r in p.reach_raw[:2]:
             print(f'    {p.name} reach:', r[:400])
         if Monitor.events:

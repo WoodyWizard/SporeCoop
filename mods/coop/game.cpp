@@ -1726,6 +1726,18 @@ float ground_radius(const net::Vec3& pos)
     return thiscall<float>(height, pm, v);
 }
 
+float surface_radius(const net::Vec3& pos)
+{
+    static uintptr_t get = H->sym("Simulator::cPlanetModel::Get"), surf = H->sym("SporeCoop::cPlanetModel_SurfacePoint");
+    void* pm = get ? cdecl_call<void*>(get) : nullptr;
+    if (!pm || !surf || !(pos.x * pos.x + pos.y * pos.y + pos.z * pos.z > 1.f))
+        return 0.f;
+    float in[3] = {pos.x, pos.y, pos.z}, o[3] = {0, 0, 0};
+    thiscall<float*>(surf, pm, o, (const float*)in, 0);
+    float r2 = o[0] * o[0] + o[1] * o[1] + o[2] * o[2];
+    return r2 > 1.f ? std::sqrt(r2) : 0.f;
+}
+
 void set_scale(void* c, float s) { vcall<void>(spatial(c), 0x40 / 4, s); } // SetScale
 
 Key species_key(void* c)
