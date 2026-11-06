@@ -1,0 +1,74 @@
+#!/usr/bin/env python3
+"""Tribe: every member the host has near the guest is a member at that place in the guest's game (BUG-0488 probe).
+
+The detector's `Tribe:unmatched:citizen` row in play_tribe / campaign_tribe (3-6 of 31 samples a run, lab
+2026-11-05/06): "N on the host, N-1 on the guest, 1 host / 0 guest without a partner within 15 m".
+
+1. Two games on the tribe fixture; the session runs on its own (NPC tribes, members at work) for --minutes.
+2. Every 10 s: the detector's own compare (worlddiff.pair_dump, the game's object lists round the guest) and,
+   for each host citizen without a partner, what the mod knows of it: the host member id at that place
+   (`coop.sync` t<id>), the guest's mirror of that id and where it is, the nearest guest citizen.
+PASS: no host citizen without a partner in two samples in a row (a mirror on its way is seen once).
+
+  SPORE_LANE=4 python3 tools/tests/coop_tribe_member_place.py [--minutes 3]
+"""
+import argparse
+import math
+import time
+
+import worlddiff
+from coop_sync import sample
+from twoinst import Checks, start
+
+
+def citizens(w, c, r):
+    return [x for x in w.rows if x['kind'] == 'g' and worlddiff.noun_name(x['noun']) == 'citizen'
+            and not worlddiff._origin(x['pos']) and math.dist(x['pos'], c) <= r]
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--minutes', type=float, default=3)
+    ap.add_argument('--fixture', default='tribe')
+    a = ap.parse_args()
+    host, guest = start(a.fixture)
+    ck = Checks()
+    t0, prev, twice, samples = time.time(), set(), [], 0
+    while time.time() - t0 < a.minutes * 60:
+        hw, gw = worlddiff.pair_dump(host, guest)
+        c = gw.me if gw.me and not worlddiff._origin(gw.me) else hw.me
+        if not c:
+            time.sleep(10)
+            continue
+        samples += 1
+        r = worlddiff.AREA['Tribe'] * 0.8
+        hc, gc = citizens(hw, c, r), citizens(gw, c, worlddiff.AREA['Tribe'] * 1.5)
+        hs, gs = sample(host), sample(guest)
+        lone = []
+        for x in hc:
+            d = min((math.dist(x['pos'], y['pos']) for y in gc), default=1e9)
+            if d <= worlddiff.TOL_MOVING:
+                continue
+            tid = min((k for k in hs if k.startswith('t')), key=lambda k: math.dist(hs[k][0], x['pos']), default=None)
+            td = math.dist(hs[tid][0], x['pos']) if tid else -1
+            gm = gs.get(tid)
+            lone.append((tuple(round(v) for v in x['pos']), x['ser']))
+            print(f'  {time.time() - t0:5.0f} s: host citizen ser={x["ser"]} at {worlddiff._fmt(x["pos"])} '
+                  f'({math.dist(x["pos"], c):.0f} m from the guest): nearest guest citizen {d:.0f} m; mod id {tid} '
+                  f'({td:.1f} m from it on the host); guest mirror {tid}: '
+                  f'{"none" if gm is None else worlddiff._fmt(gm[0]) + f" {math.dist(gm[0], x['pos']):.1f} m off"}',
+                  flush=True)
+        cur = {s for _, s in lone}
+        if cur & prev:
+            twice.append(sorted(cur & prev))
+        prev = cur
+        time.sleep(10)
+    print(f'  {samples} samples; host citizens without a partner in two samples in a row: {twice}', flush=True)
+    ck(samples > 3, f'compared ({samples} samples)')
+    ck(not twice, f'every host citizen near the guest has a partner on the guest within two samples ({len(twice)} times not)')
+    ck.faults(host=host, guest=guest)
+    return ck.result()
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

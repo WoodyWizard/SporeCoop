@@ -19,6 +19,7 @@
 #include "net/validate.h"
 #include "sporekit_game.hpp"
 #include "fixes.h"
+#include "fields.h"
 #include "creations.h"
 #include "savestrip.h"
 
@@ -1926,6 +1927,41 @@ static void guest_turrets(net::Reader& r)
 static bool save_filter(void* o, uint32_t noun);
 static void save_start();
 static void save_end();
+// BUG-0549: a guest's mirror vehicle drawn at scale 10 where the host's vehicle has 0.81 (play_civ detector
+// `Civilization:scale:vehicle`). The guest's game itself gives the mirror the 10: the model-ready handler of the
+// vehicle (0xCA76B0, message 0x2B978C46) runs 0xCA40B0, which sets loco SetScale(10.0) (return address 0xCA41DA,
+// loco vtable 0x1474BE8) when it finds its ground object; the host's vehicle never took that path (the
+// BUG-0485 diagnostic logged the caller on guests only). The vehicle's scale is a replicated field now
+// (fields.h, the class of BUG-0461 / BUG-0475): the host sends its vehicles' scale, a guest's mirror that
+// differs gets it. `coop.fix civ.vehicle_scale off`: the guest's own scale (0.7.8).
+static bool g_veh_scale_fix = true;
+COOP_FIX("civ.vehicle_scale", "BUG-0549", g_veh_scale_fix, "civ: a guest's mirror vehicle has the host vehicle's size");
+static const fields::Field kVehFields[] = {fields::kScale};
+static void veh_each(void (*cb)(uint16_t, void*, void*), void* u)
+{
+    auto alive = all_vehicles();
+    for (void* v : alive) {
+        auto it = g_hv.find(v);
+        if (it != g_hv.end() && it->second.id)
+            cb(it->second.id, v, u);
+    }
+}
+static uint64_t g_veh_live_frame = ~0ull;
+static std::unordered_set<void*> g_veh_live;
+static void* veh_mirror(uint16_t id)
+{
+    auto it = g_gv.find(id);
+    if (it == g_gv.end() || !it->second.v)
+        return nullptr;
+    if (H->frame_index() != g_veh_live_frame) {
+        g_veh_live_frame = H->frame_index();
+        g_veh_live.clear();
+        for (void* v : all_vehicles())
+            g_veh_live.insert(v);
+    }
+    return g_veh_live.count(it->second.v) ? it->second.v : nullptr;
+}
+
 bool init(const SkHost* host, SkMod* mod, Ctx ctx)
 {
     H = host;
@@ -2052,6 +2088,8 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
         H->hook_create(M, (void*)dc, (void*)h_DiscoveryCard, (void**)&o_DiscoveryCard);
     if ((a_EditorPickUp = H->sym("SporeCoop::CommunityEditor_PickUp")))
         H->hook_create(M, (void*)a_EditorPickUp, (void*)h_EditorPickUp, (void**)&o_EditorPickUp);
+    fields::add_kind({fields::K_CIV_VEHICLE, "civ_vehicle", &g_veh_scale_fix, kVehFields, 1, veh_each, veh_mirror,
+                      [] { return g_ok && game::mode_id() == modes::kCiv; }}); // BUG-0549
     return true;
 }
 
@@ -3777,9 +3815,9 @@ std::string list()
               oz = otype >= 0 ? *(float*)(ob + 12) : 0;
         snprintf(b, sizeof b,
                  "  veh #%u %p pol=%08X owner=%d purpose=%d loco=%d sel=%u hp=%.0f pos=(%.1f %.1f %.1f) order=%d "
-                 "opos=(%.1f %.1f %.1f)\n",
+                 "opos=(%.1f %.1f %.1f) scale=%.2f\n",
                  id, v, pol_of(v), o == 0xFF ? -1 : (int)o, F<int>(v, kVPurpose), F<int>(v, kVLoco),
-                 F<uint8_t>(v, kVSelected), F<float>(v, kVHp), p.x, p.y, p.z, otype, ox, oy, oz);
+                 F<uint8_t>(v, kVSelected), F<float>(v, kVHp), p.x, p.y, p.z, otype, ox, oy, oz, game::object_scale(v));
         out += b;
         auto gi = id && !(C.sess && C.sess->role() == net::Role::Host) ? g_gv.find(id) : g_gv.end();
         if (gi != g_gv.end()) { // BUG-0186: the guest's view of the mirror (on the same line)
@@ -4183,7 +4221,7 @@ std::string debug(const std::vector<std::string>& a)
             g_applying = false;
             return b ? "built locally, sent to the host" : "no free slot";
         }
-        return build_in_city(city, noun, p, true) ? "built" : "no free slot";
+        return build_in_city(city, noun, p, a.size() < 4 || a[3] != "nopay") ? "built" : "no free slot"; // nopay: tests
     }
     if (!a.empty() && a[0] == "roads") { // roads [a b [type]]: every city's trade routes; host (tests): AddTradeRoute a b
         std::string out;
@@ -4429,6 +4467,43 @@ std::string debug(const std::vector<std::string>& a)
                 return l;
             }
         return "that building is in no slot";
+    }
+    if (a.size() >= 3 && a[0] == "vscale") { // vscale <net id> <scale> (tests, BUG-0549): this game's vehicle of that id
+        uint16_t id = (uint16_t)atoi(a[1].c_str());
+        void* v = nullptr;
+        if (is_host()) {
+            auto it = g_hv_by_id.find(id);
+            v = it == g_hv_by_id.end() ? nullptr : it->second;
+        } else
+            v = veh_mirror(id);
+        if (!v)
+            return "no such vehicle";
+        game::set_object_scale(v, (float)atof(a[2].c_str()));
+        char l[64];
+        snprintf(l, sizeof l, "vehicle %u scale %.2f", (unsigned)id, game::object_scale(v));
+        return l;
+    }
+    if (a.size() >= 2 && a[0] == "blist") { // blist <host city index>: the game's buildings of the city (BUG-0602)
+        int ci = atoi(a[1].c_str());
+        void* city = ci >= 0 && ci < (int)g_host_cities.size() ? g_host_cities[ci] : nullptr;
+        if (!city)
+            return "no such city";
+        std::string out;
+        uint8_t* sb = F<uint8_t*>(city, kCitySlots);
+        uint8_t* se = F<uint8_t*>(city, kCitySlots + 4);
+        for (void* b : vec_of((uint8_t*)city + kCityBuildings)) {
+            net::Vec3 p{};
+            game::object_position(b, p);
+            int slot = -1;
+            for (int k = 0; sb && sb + (k + 1) * 0x18 <= se && k < 64; k++)
+                if (F<void*>(sb + k * 0x18, 4) == b)
+                    slot = k;
+            char line[160];
+            snprintf(line, sizeof line, "b %08X pos=(%.1f %.1f %.1f) state=%d slot=%d\n", game::noun_id(b), p.x, p.y, p.z,
+                     F<int>(b, kBuildingState), slot);
+            out += line;
+        }
+        return out;
     }
     if (a.size() >= 2 && a[0] == "slots") { // slots <host city index>: building plots, where they are on screen
         int ci = atoi(a[1].c_str());
