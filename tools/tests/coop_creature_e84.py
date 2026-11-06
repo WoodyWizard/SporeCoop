@@ -25,6 +25,7 @@ import time
 
 import campaign_lib
 import census
+import creations_state
 import lane
 import twoinst
 from twoinst import Checks, Console, lane_state, sh, start, wait_guest_in, wait_up
@@ -48,11 +49,21 @@ def guest_species(host):
     return m.group(1) if m else None
 
 
-def wait_puppet(host, t=40):
+def own_species(host):
+    """the species of the host's own avatar (census key)"""
+    return next((r['key'] for r in census.dump(host).rows if r['own'] == 'avatar'), None)
+
+
+def wait_puppet(host, t=40, own_creation=False):
+    """the species of the guest's puppet once the host's world has it; own_creation: only once the puppet is the
+    guest's own creature, not the world's species it is drawn as for the first seconds of a join (the guest's
+    creation comes a few seconds later: a save made before that holds a puppet of the host's species, which the
+    load gives its tuning back, integration run 20261106-040221)"""
     t0 = time.time()
     while time.time() - t0 < t:
         sp = guest_species(host)
-        if sp and f'species={sp}' in host.call(f'coop.npc creatures {sp}')['out']:
+        if sp and f'species={sp}' in host.call(f'coop.npc creatures {sp}')['out'] and \
+                (not own_creation or sp != own_species(host)):
             return sp
         time.sleep(1)
     return None
@@ -105,12 +116,28 @@ def restart_and_load(slot, planet, before_load=()):
 
 def main():
     host, guest = start()
+    # the saved puppet must be the guest's own creature (a puppet of the world's species gets its tuning back on
+    # the load). BUG-0345: a guest plays its own creature only when chosen in a world it never played it in (lane 3
+    # of the integration run 20261106-040221 drew it as the world's species): chosen here, put back at the end
+    st0 = creations_state.save(guest)
+    print('  guest profile before:', st0, '| chose', creations_state.choose_own(guest), flush=True)
+    try:
+        return run(host, guest)
+    finally:
+        try:
+            creations_state.restore(Console(lane.GUEST), st0)
+        except OSError:
+            pass
+
+
+def run(host, guest):
     ck = Checks()
     st = lane_state()
     slot = 'Game0' if st.get('slot', 9) == 9 else f'Game{st["slot"]}'
     planet = (st.get('planet') or 'Game0/Scalinus').split('/')[1]
-    sp = wait_puppet(host)
-    ck(sp is not None, f'the host has the guest\'s puppet (species {sp})')
+    sp = wait_puppet(host, own_creation=True)
+    ck(sp is not None, f'the host has the guest\'s puppet as the guest\'s own creature (species {sp}, '
+       f'the host plays {own_species(host)})')
     # a save as before BUG-0020 (the puppet and its herd in it): what older saves hold
     host.call('coop.savestrip 0')
     out = host.call('coop.save')['out']
@@ -156,7 +183,8 @@ def main():
         survived = not out.startswith('no answer') and twoinst.alive(lane.HOST)
         ck(survived, f'the host survives an attack on it ({out.strip()})')
     if not nid or not survived:
-        print('  (the host crashed: see the crash report in its game log)', flush=True)
+        print('  (no NPC to attack' + ('' if nid else ': no untuned creature after the load') +
+              ('; the host crashed: see the crash report in its game log)' if nid and not survived else ')'), flush=True)
         return ck.result()
 
     # 4. normal play: such creatures are removed
