@@ -155,6 +155,16 @@ def main():
         time.sleep(2)
     if not ck(tribe_at, f'the host entered the Tribe stage ({time.time() - t0:.0f} s)'):
         return ck.result()
+    if '--watch' in sys.argv:  # BUG-0332: how the host's terrain takes the Tribe start's stamps, frame by frame
+        tw = time.time()
+        while time.time() - tw < 14:
+            calls = [tuple(float(x) for x in m.groups()) for m in re.finditer(
+                r'^call \d+ t=[\d.]+ apply from \S+ pos \(([-\d.]+) ([-\d.]+) ([-\d.]+)\)', out(host, 'coop.terrain'), re.M)]
+            dev = [abs((ground(host, q) or 0) - math.dist(q, (0, 0, 0))) for q in calls[-60:]]
+            st = out(host, 'coop.terrain state')
+            print(f'  +{time.time() - tribe_at:4.1f}s stamps applied {len(calls)}, mean |ground - stamp r| '
+                  f'{sum(dev) / len(dev) if dev else -1:.2f}, max {max(dev) if dev else -1:.2f}; {st[:400]}', flush=True)
+            time.sleep(0.5)
     t1, good = time.time(), None
     while time.time() - t1 < 300:
         for p in players:

@@ -88,6 +88,22 @@ int c_terrain(void*, int argc, const char* const* argv, SkOut* out)
     void* t = terrain();
     std::string s;
     char b[256];
+    if (argc > 1 && !strcmp(argv[1], "state")) { // RE: the terrain's counters round the stamp ones, IsReady (vt 0x50)
+        if (!t || !skg::readable((uint8_t*)t + 0x7E0, 0x80)) {
+            H->out_printf(out, "no terrain");
+            return 1;
+        }
+        s = "state";
+        for (int k = 0x7E0; k < 0x860; k += 4) {
+            snprintf(b, sizeof b, " %X=%X", k, *(uint32_t*)((uint8_t*)t + k));
+            s += b;
+        }
+        void* hm = skg::vcall<void*>(t, 0xC / 4);
+        snprintf(b, sizeof b, " heights=%p ready=%d", hm, (int)skg::vcall<char>(t, 0x50 / 4));
+        s += b;
+        H->out_printf(out, "%s", s.c_str());
+        return 0;
+    }
     if (argc > 1 && !strcmp(argv[1], "dirty")) { // RE: mark the stamp lists changed (+0x814, +0x818 ++) as ApplyStamp does
         if (!t || !skg::readable((uint8_t*)t + 0x814, 8)) {
             H->out_printf(out, "no terrain");
