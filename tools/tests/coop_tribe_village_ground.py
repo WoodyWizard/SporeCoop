@@ -240,6 +240,18 @@ def main():
             print(f'    stamp {k} raw, host | guest:', flush=True)
             for a, b in zip(out(host, f'coop.terrain raw {k}').splitlines(), out(guest, f'coop.terrain raw {k}').splitlines()):
                 print(f'      {a:28s} | {b}' + ('   <>' if a != b else ''), flush=True)
+        if '--regen' in sys.argv and diff:  # BUG-0332: the guest's fresh-load generator flag (docs/re/tribe.md)
+            for step in ('regen', 'regen clear'):
+                print('  guest: ' + out(guest, f'coop.terrain {step}').strip(), flush=True)
+                time.sleep(10)
+                st = out(guest, 'coop.terrain state')
+                print('  guest state: ' + st[st.find('flag1CD'):st.find('heights')], flush=True)
+                left = 0
+                for k in diff[:12]:
+                    a, b = ground(host, h[k][2]), ground(guest, h[k][2])
+                    left += a is not None and b is not None and abs(a - b) > 0.3
+                    print(f'    after guest {step}: stamp {k} at r {h[k][3]}: host {a} guest {b}', flush=True)
+                print(f'    still differing after {step}: {left} of {min(12, len(diff))}', flush=True)
         if '--dirty' in sys.argv and diff:  # does a rebuild of the host's terrain from its stamp list give the guest's?
             print('  host: ' + out(host, 'coop.terrain dirty').strip(), flush=True)
             time.sleep(8)

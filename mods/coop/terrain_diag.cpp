@@ -83,11 +83,31 @@ void* terrain()
     return *(void**)((uint8_t*)pm + 0x24);
 }
 
+// the terrain manager (SporeCoop::TerrainManager_ptr): +0x1CD set by a fresh planet load (0xB7D960), cleared at teardown
+uint8_t* tmgr()
+{
+    uintptr_t a = H->sym("SporeCoop::TerrainManager_ptr");
+    uint8_t* tm = a && skg::readable((void*)a, 4) ? *(uint8_t**)a : nullptr;
+    return tm && skg::readable(tm + 0x1C0, 0x10) ? tm : nullptr;
+}
+
 int c_terrain(void*, int argc, const char* const* argv, SkOut* out)
 {
     void* t = terrain();
     std::string s;
     char b[256];
+    // regen [clear]: RE (BUG-0332), [clear: the terrain manager's fresh-load flag +0x1CD to 0, as the planet teardown
+    // 0xB7DBDD does], then the stamp version +0x814 one up so the heights are generated again
+    if (argc > 1 && !strcmp(argv[1], "regen")) {
+        uint8_t* tm = tmgr();
+        if (argc > 2 && !strcmp(argv[2], "clear") && tm)
+            tm[0x1CD] = 0;
+        if (t && skg::readable((uint8_t*)t + 0x814, 8))
+            (*(uint32_t*)((uint8_t*)t + 0x814))++;
+        H->out_printf(out, "regen: flag 1CD=%d 1CE=%d, versions %u %u", tm ? tm[0x1CD] : -1, tm ? tm[0x1CE] : -1,
+                      t ? *(uint32_t*)((uint8_t*)t + 0x814) : 0, t ? *(uint32_t*)((uint8_t*)t + 0x818) : 0);
+        return 0;
+    }
     if (argc > 1 && !strcmp(argv[1], "state")) { // RE: the terrain's counters round the stamp ones, IsReady (vt 0x50)
         if (!t || !skg::readable((uint8_t*)t + 0x7E0, 0x80)) {
             H->out_printf(out, "no terrain");
@@ -99,7 +119,10 @@ int c_terrain(void*, int argc, const char* const* argv, SkOut* out)
             s += b;
         }
         void* hm = skg::vcall<void*>(t, 0xC / 4);
-        snprintf(b, sizeof b, " heights=%p ready=%d", hm, (int)skg::vcall<char>(t, 0x50 / 4));
+        uint8_t* tm = tmgr();
+        uintptr_t gen = skg::readable((uint8_t*)t + 0xFC, 4) ? *(uintptr_t*)((uint8_t*)t + 0xFC) : 0;
+        snprintf(b, sizeof b, " flag1CD=%d flag1CE=%d generator=+0x%X heights=%p ready=%d", tm ? tm[0x1CD] : -1, tm ? tm[0x1CE] : -1,
+                 gen ? (unsigned)(gen - (uintptr_t)t) : 0u, hm, (int)skg::vcall<char>(t, 0x50 / 4));
         s += b;
         if (hm && skg::readable((uint8_t*)hm, 0x60)) { // the planet's height parameters (ApplyStamp's fixed radius: +0x34 + +0x38 * +0x3C)
             const float* f = (const float*)hm;
@@ -122,8 +145,7 @@ int c_terrain(void*, int argc, const char* const* argv, SkOut* out)
             return 1;
         }
         uint32_t* d = (uint32_t*)((uint8_t*)t + 0x814);
-        d[0]++;
-        d[1]++;
+        d[0]++; // +0x814 the stamp version; +0x818 is the version the heights were generated for
         H->out_printf(out, "terrain %p dirty counters now %u %u", t, d[0], d[1]);
         return 0;
     }
