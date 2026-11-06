@@ -23,6 +23,7 @@ enum Kind : uint8_t {
     K_STUN_PLAYER = 0, // host -> guest {u8 player, f32 seconds}
     K_STUN_NPC = 1,    // guest -> host {u16 npc id, f32 seconds}
     K_ROAR = 2,        // guest -> host {u32 ability type}: the guest's roar / siren song, played by its puppet (BUG-0501)
+    K_UFO = 3,         // host -> guest {u8 n, n x {vec3 pos, quat rot}}: the host's drama UFOs now (BUG-0558), 10 Hz, unreliable
 };
 
 static bool is_host() { return C.sess && C.sess->role() == net::Role::Host && C.sess->connected(); }
@@ -399,6 +400,26 @@ static bool SK_THISCALL h_UfoTick(void* u, float dt, double now) // diagnostics:
     return o_UfoTick(u, dt, now);
 }
 
+// ---------------------------------------------------------------- BUG-0558, the host's UFO on the guest
+// The drama UFO is an event of the host's world (a guest's own game starts none: creature.guest_events, BUG-0486), so the
+// guest never saw the ship that came over the players (the report: the host saw the ship and its beam, the guest's game
+// at the same second nothing). Now the host sends its ships' poses 10 times a second while it has any, and the guest's
+// game shows a ship of its own at each: a type 7 ship made the way the event makes it (UFOAbductionEvent_SpawnUFO), not
+// ticked (no behaviour tree runs on it: it takes nothing in the guest's world) and placed at the host's ship every frame;
+// it goes (deferred destroy) when the host's ship is gone, when no pose came for 1.5 s and when the guest leaves Creature.
+// `coop.fix creature.ufo_mirror off`: the guest sees no ship (0.7.8).
+static bool g_ufo_mirror_fix = true;
+COOP_FIX("creature.ufo_mirror", "BUG-0558", g_ufo_mirror_fix, "creature: the guest sees the UFO that visits the host's world");
+struct UfoMirror {
+    void* u = nullptr;
+    net::Vec3 pos{};
+    net::Quat rot{0, 0, 0, 1};
+};
+static std::vector<UfoMirror> g_ufo_mirrors;
+static double g_ufo_rx_at = -1e9, g_ufo_tx_at = 0, g_ufo_had_at = -1e9;
+static uint32_t g_ufo_tx, g_ufo_rx, g_ufo_made, g_ufo_gone, g_ufo_freed;
+static uintptr_t a_SpawnEventUFO;
+
 static std::string ufo_dump()
 {
     struct U {
@@ -426,7 +447,113 @@ static std::string ufo_dump()
     char b[96];
     snprintf(b, sizeof b, "pick fix=%d seen=%u skipped=%u ticks=%u hook=%d\n", (int)g_ufo_fix, g_ufo_seen, g_ufo_skipped,
              g_ufo_ticks, (int)(p2_o_IsEpic != nullptr && p2_ufo_pick_ret != 0));
-    return u.out + b;
+    char b2[200];
+    snprintf(b2, sizeof b2, "mirror fix=%d mirrors=%u tx=%u rx=%u made=%u gone=%u freed=%u\n", (int)g_ufo_mirror_fix,
+             (unsigned)g_ufo_mirrors.size(), g_ufo_tx, g_ufo_rx, g_ufo_made, g_ufo_gone, g_ufo_freed);
+    return u.out + b + b2;
+}
+
+
+static void ufo_mirror_drop(size_t i)
+{
+    if (g_ufo_mirrors[i].u && game::ufo_listed(g_ufo_mirrors[i].u) && game::object_alive(g_ufo_mirrors[i].u)) {
+        game::destroy_creature(g_ufo_mirrors[i].u); // the deferred path (any cGameData)
+        g_ufo_gone++;
+    }
+    g_ufo_mirrors.erase(g_ufo_mirrors.begin() + (long)i);
+}
+
+static void ufo_mirror_rx(const std::vector<std::pair<net::Vec3, net::Quat>>& v)
+{
+    g_ufo_rx++;
+    g_ufo_rx_at = H->time_seconds();
+    if (!g_ufo_mirror_fix || !game::in_creature_stage())
+        return;
+    while (g_ufo_mirrors.size() > v.size())
+        ufo_mirror_drop(g_ufo_mirrors.size() - 1);
+    for (size_t i = 0; i < v.size(); i++) {
+        if (i >= g_ufo_mirrors.size())
+            g_ufo_mirrors.push_back({});
+        g_ufo_mirrors[i].pos = v[i].first;
+        g_ufo_mirrors[i].rot = v[i].second;
+    }
+}
+
+static void ufo_place(void* u, const net::Vec3& p, const net::Quat& q)
+{
+    void* sp = game::cast(u, 0x1186577); // cSpatialObject
+    if (!sp)
+        return;
+    struct { float x, y, z; } vp{p.x, p.y, p.z};
+    struct { float x, y, z, w; } vq{q.x, q.y, q.z, q.w};
+    skg::vcall<void>(sp, 0x44 / 4, &vp, &vq); // SetPositionAndOrientation (as game::teleport)
+    // the ship's own flight (cGameDataUFO next position +0x718, destination +0x750, docs/re/space.md) put it back to
+    // where it was made in every other frame (lab 20261105-232301): both are the host's pose too
+    memcpy((uint8_t*)u + 0x718, &vp, 12);
+    memcpy((uint8_t*)u + 0x750, &vp, 12);
+}
+
+static constexpr uint32_t kUfoNounM = 0x018EBADCu;
+void tick(double now)
+{
+    if (is_host() && game::in_creature_stage() && now - g_ufo_tx_at >= 0.1) {
+        g_ufo_tx_at = now;
+        struct Q {
+            std::vector<std::pair<net::Vec3, net::Quat>> v;
+        } q;
+        game::for_each_object(
+            [](void* o, uint32_t noun, void* p) {
+                net::Vec3 v;
+                auto* q = (Q*)p;
+                void* sp = noun == kUfoNounM && game::object_alive(o) ? game::cast(o, 0x1186577) : nullptr;
+                if (sp && game::object_position(o, v) && q->v.size() < 8) {
+                    const float* r = (const float*)((const uint8_t*)sp + 0x10); // cSpatialObject::mOrientation
+                    q->v.push_back({v, net::Quat{r[0], r[1], r[2], r[3]}});
+                }
+                return true;
+            },
+            &q);
+        if (!q.v.empty())
+            g_ufo_had_at = now;
+        if (g_ufo_mirror_fix && (!q.v.empty() || now - g_ufo_had_at < 1.0)) { // (a few empty ones after the last ship)
+            net::Writer w;
+            w.u8(K_UFO);
+            w.u8((uint8_t)q.v.size());
+            for (auto& [p, r] : q.v) {
+                w.f32(p.x), w.f32(p.y), w.f32(p.z);
+                w.f32(r.x), w.f32(r.y), w.f32(r.z), w.f32(r.w);
+            }
+            for (auto& pl : C.sess->players())
+                if (pl.id != 0)
+                    C.sess->send_unreliable_to(pl.id, net::MSG_PLAYER_RULE, w);
+            g_ufo_tx++;
+        }
+    }
+    if (g_ufo_mirrors.empty())
+        return;
+    if (!is_guest() || !g_ufo_mirror_fix || !game::in_creature_stage() || now - g_ufo_rx_at > 1.5) {
+        while (!g_ufo_mirrors.empty())
+            ufo_mirror_drop(g_ufo_mirrors.size() - 1);
+        return;
+    }
+    for (auto& m : g_ufo_mirrors) {
+        if (m.u && (!game::ufo_listed(m.u) || !game::object_alive(m.u))) { // freed by the game (a load, a cleanup)
+            m.u = nullptr;
+            g_ufo_freed++;
+        }
+        if (!m.u && a_SpawnEventUFO) {
+            struct { float x, y, z; } vp{m.pos.x, m.pos.y, m.pos.z};
+            using Spawn_t = void*(SK_STDCALL*)(const void*, float, bool);
+            m.u = ((Spawn_t)a_SpawnEventUFO)(&vp, 0.f, false);
+            if (m.u) {
+                g_ufo_made++;
+                H->log(M, SK_INFO, "rules: the host's UFO is shown here at (%.1f %.1f %.1f) (creature.ufo_mirror)", m.pos.x,
+                       m.pos.y, m.pos.z);
+            }
+        }
+        if (m.u)
+            ufo_place(m.u, m.pos, m.rot);
+    }
 }
 
 void on_message(uint8_t type, uint8_t from, net::Reader& r)
@@ -466,6 +593,16 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         o_Stun(c, secs);
         g_stun_got_npc++;
         g_stun_last = secs;
+    } else if (kind == K_UFO) {
+        uint8_t n = r.u8();
+        std::vector<std::pair<net::Vec3, net::Quat>> v;
+        for (uint8_t i = 0; i < n && i < 8 && r.ok(); i++) {
+            net::Vec3 p{r.f32(), r.f32(), r.f32()};
+            net::Quat q{r.f32(), r.f32(), r.f32(), r.f32()};
+            v.push_back({p, q});
+        }
+        if (r.ok() && from == 0 && is_guest())
+            ufo_mirror_rx(v);
     } else if (kind == K_ROAR) {
         uint32_t t = r.u32();
         float range = r.f32(), secs = r.f32();
@@ -711,6 +848,7 @@ void init(const SkHost* host, SkMod* mod, Ctx ctx)
     a_GoalFind = H->sym("SporeCoop::BT_GoalSlotFind");
     a_GoalEnd = H->sym("SporeCoop::BT_GoalSlotEnd");
     a_IsEpic = H->sym("SporeCoop::cCreatureAnimal_IsEpic");
+    a_SpawnEventUFO = H->sym("SporeCoop::UFOAbductionEvent_SpawnUFO");
     p2_ufo_pick_ret = H->sym("SporeCoop::UFOPick_IsEpicReturn");
     if (p2_ufo_pick_ret && a_IsEpic)
         H->hook_create(M, (void*)a_IsEpic, (void*)p2_h_IsEpic, (void**)&p2_o_IsEpic);

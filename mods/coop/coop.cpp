@@ -3045,6 +3045,7 @@ void on_frame(void*, int, void*)
         world::guest_tick(); // a received world waiting for the player to leave its editor
     savestrip::tick();
     npc::tick(now);
+    player_rules::tick(now); // BUG-0558: the host's UFO on the guests
     nest::tick(now); // BUG-0384
     fields::tick(now); // BUG-0419 G2 (after the modules that make the mirrors)
     wsync::tick(now);  // W1: host-owned world state (time of day, relations, stages done, the Tribe goal)
