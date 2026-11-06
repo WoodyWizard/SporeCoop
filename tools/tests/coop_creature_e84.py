@@ -19,6 +19,7 @@ and sent it to the guests in the frames before its removal (SPORE_FIX_OFF=npc.st
 
   SPORE_LANE=2 python3 tools/tests/coop_creature_e84.py
 """
+import os
 import re
 import time
 
@@ -116,7 +117,10 @@ def main():
     ck('saved' in out, f'the host saved with the puppet in the world ({slot}/{planet}: {out.strip()})')
 
     # 2. after a restart the host loads that save alone, the removal switched off
-    host, guest = restart_and_load(slot, planet, before_load=['coop.npc strays off'])
+    # the restart brings every switch back on: a twin run's SPORE_FIX_OFF goes off again (BUG-0385)
+    off = [f'coop.fix {n.strip()} off' for n in os.environ.get('SPORE_FIX_OFF', '').split(',')
+           if n.strip() and not n.strip().startswith('kit.')]
+    host, guest = restart_and_load(slot, planet, before_load=['coop.npc strays off'] + off)
     ours, other, lines = untuned(host)
     for l in lines:
         print('   ', l.strip())
