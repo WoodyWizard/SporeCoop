@@ -13,7 +13,7 @@ branch: fix/w27-heap
 commits:
 tests: campaign, campaign_ct, campaign_tribe
 signature: dc04aee5:GeneralAllocator_FreeInternal+0x64 < delete_ < 0x00702C44 (HierGrid unlink) < 0x00702E88 < 0x00B0818E (flora HandleMessage)
-docs: docs/re/tribe.md#tribe-flora-grid-free
+docs: docs/re/tribe.md#tribe-flora-grid-free, docs/re/tribe.md#tribe-flora-grid-slots
 related: BUG-0308, BUG-0348, BUG-0170, BUG-0276
 ---
 
@@ -87,8 +87,27 @@ exception in any of the 32 game logs. Runs with `SPORE_FIX_OFF=` the Cell switch
 with 0 faults in 8 runs and 1 in ~25 before, they could not tell the two apart.
 no-fail-run: not reproducible (1 fault in 72 logged Creature -> Tribe changes; 0 in 8 stress runs).
 
+Attempt 2 (2026-11-05, fix/w45-crashes, rel/0.7.9 = 0.7.8 + this branch, lanes 4 and 5, all fixes on,
+SPORE_DETECTOR=20, lane 4 and lane 5 running 4 games each at the same time): 5 Creature -> Tribe changes with
+4 players, 0 faults in 20 game logs: campaign_tribe 2 of 2 out/lab/20261105-232742 (lane 4), campaign_ct
+out/lab/20261105-231922 (lane 5) and 2 more out/lab/20261105-233139 (#2 passed; #1 failed only the
+sync-check gate in Cell, BUG-0606, no fault). **None of the 5 hosts took the original path** (the game
+entering Tribe while a share save was being written: "went from Creature to Tribe during the save" 0 times,
+against nearly every campaign before 2026-10-31), so the reported circumstances were not reproduced
+either; not forced (no tool posts a share save into the evolution's last frames).
+Also searched every `*.game.log` of out/lab in the main checkout and all worktrees (since 2026-10-29) for
+`GeneralAllocator_FreeInternal`: 24 logs; this signature (0x702C44 < 0x702E88 < 0xB0818E) is in none
+but lab 20261031-185843 (the others: BUG-0308 / 0348's Cell pools, effect creation in Tribe / Civ,
+the editor's play-mode pictures, BUG-0605). New static facts: docs/re/tribe.md#tribe-flora-grid-slots
+(the grid's handle slots lead to every list node, so a tripwire walking them is possible; 0.51f is a
+literal of the exe once, 0x13FE148, read only by FUN_00629E10). Not made: the tripwire itself (PPMalloc
+has no validator known to us, the grid's block count is not known yet); with 1 fault in 80+ logged
+Creature -> Tribe changes a tripwire would only pay off in many nightly campaigns.
+no-fail-run: not reproducible (still 1 fault in all logged Creature -> Tribe changes).
+
 ## History
 - 2026-10-31: opened.
 - 2026-10-31 (fix/w27-heap): analysed (Ghidra: the flora's tree grid node, header overwritten by
   0.51f); not today's Cell switches (Cell-only callers, host left Cell 11 min before, no warnings);
   stress out/lab/20261031-204524-fix-w27-heap 8/8 ok. Stays open, no fix.
+- 2026-11-05 (fix/w45-crashes): not reproduced again (5 more Creature -> Tribe changes, 0 faults; the share-save-during-the-change path no longer happens in these campaigns); lab history searched (signature only in 20261031-185843); grid slot layout and the 0.51f literal recorded; stays open, no fix.

@@ -1542,3 +1542,27 @@ BUG-0519, the players' half of docs/re/cell.md#cell-world-scale.
   after the held request's Submit, queued behind its posts as the game does (lab 20261104-210201: spent stays 0).
 * ? the Creature request posts the same message after Submit (0xD455FD, +8 = GetEvolutionPoints): a held Creature
   evolution may lose its budget the same way (not checked, BUG-0581).
+
+## BUG-0308 was the paused guest's broadphase overflow (2026-11-05, fix/w45-crashes)
+<a id="cell-rejoin-paused-heap"></a>
+
+Re-read of lab 20261030-104149 campaign_short#3 (the guest Dave, 0.7.3.1) against
+[the pending arrays of the cell broadphase](#cell-sap-pending) (BUG-0348).
+* ✔ Dave's pause menu was open: the campaign log says "sync: not compared (pause menu open): Dave"
+  (11:40:18 campaign clock = 12:40:18 game log) and his trace lines keep `pos=(33.6 47.8 0.0)` from
+  12:39:51 to 12:40:51 (a minute standing still, `input_lock=1` at 12:40:01) while his pool churned
+  900 -> 806 -> 900 -> 770 -> 900 mirrors: mirrors made from the host's states while SimUpdate did not
+  sweep, BUG-0348's condition.
+* ✔ Then he left (900 mirrors destroyed: RemoveObject does not shrink the pending count) and joined
+  again 5 s later with 900 mirrors in 0.1 s, still standing at the same place; 3 s later the world
+  arrived and the stage was left.
+* ✔ The fault matches BUG-0348's twin FAIL (fix/w22-cell 20261031-123620): the same instruction
+  (FreeInternal+0x64), the same return 0xE7FA8D from the pool dtor, the same `ebp=0212D3E7`, then
+  0x00DDA358 (data 0x18); the corrupt chunk header in both is a float (0x41FAECC0 = 31.37f here,
+  0x40AB9610 = 5.36f there), the kind of value the broadphase's endpoint arrays hold (cell
+  coordinates).
+* ~ So the heap was damaged by the pending arrays' overflow (inferred from the matching state and
+  signature; the overflow itself was not logged in 0.7.3.1, which had no counter of it).
+* Reproduced the player's path with the fix off: `coop_cell_pause.py --rounds 8 --rejoin` (suite
+  `cell_pause_rejoin`): pause menu, 8 churn rounds, still paused the guest leaves and joins, the
+  host's world arrives and the guest leaves Cell to load it. Runs: see BUG-0308.

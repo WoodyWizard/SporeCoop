@@ -267,6 +267,7 @@ For bug reports of players, who send a file, not a debugger session:
   frames, never the detour.
 * Still open (BUG-0403): the first write of the jmp itself can catch a thread inside the first 5
   bytes of a function hooked after boot (BUG-0202's crash, nanoseconds per call).
+  Fixed since (2026-11-05, fix/w45-crashes): see [the first jmp of a hook made at run time](#modkit-hook-first-write) (`kit.fix hookfirst`).
 
 ## Report screenshots (SporeKit 0.3.6, 2026-11-01, feat/w35-report-shot)
 <a id="modkit-report-shots"></a>
@@ -305,3 +306,46 @@ docs/REPORTING.md#reporting-shots):
 * Tests: `tests/jpeg_tests.cpp` + `tools/tests/jpeg_check.py` (`make test`: the encoder decoded by
   Pillow against its source, the shrink), `tools/tests/coop_report_shot.py` (lab `report_shot`).
 
+
+## The first jmp of a hook made at run time (2026-11-05, fix/w45-crashes)
+<a id="modkit-hook-first-write"></a>
+
+BUG-0403 (the rest of BUG-0202 / BUG-0398). MinHook writes a target's 5-byte jmp with plain stores; a
+hook made after boot (the devkit's input hooks at the first injected input, coop's Cell hooks at its
+first cell) can catch another thread between two of the function's first instructions, and that
+thread then runs the jmp's operand bytes as code.
+* ✔ Reproduced: `kit.test.hooknew 200 3 split` (functions whose first 5 bytes are five 1-byte
+  instructions, hooked for the first time while 3 threads call them) with `kit.fix hookfirst 0`
+  crashed the game within 1 s: an access violation at an address inside the test page (the jmp's
+  operand executed), thread of the test (out/lab/20261105-225321, crash report attached there).
+* Fix (`kit.fix hookfirst`, on): the vendored MinHook calls a SporeKit writer for the patch bytes
+  (`MH_SetPatchWriter`, a SporeKit patch of hook.c `EnableHookLL`). After boot (frame index > 0) the
+  writer
+  1. writes one byte, int3, at the entry; a vectored handler (registered before SporeKit's fault
+     logger, so no log line per trap) sends any thread that traps there to the trampoline (the
+     original first instructions, then a jmp back): the call goes on as before the hook, and no
+     thread can reach the other patched bytes any more;
+  2. waits 50 ms (`kGateWindowMs`): a thread that was between those bytes when the int3 landed runs on
+     out of them within a few instructions once it is scheduled;
+  3. writes the other bytes, then the entry byte last.
+  No thread is suspended. Left: a thread preempted inside the first 5 bytes and not scheduled again
+  for the whole 50 ms (strictly less likely than before, when the write itself had to hit it).
+  Cost: 50 ms per first write after boot (the two input hooks, coop's Cell hooks: once per process).
+* ✔ Rejected first version (2026-11-05): suspend every other thread alone and read its EIP with
+  GetThreadContext before writing. GetThreadContext of a suspended thread **waits forever under
+  Wine 10** in some states: when the main thread made the input hooks in Cell (coop clicks the "game
+  saved" box) the host froze every time (lab 20261105-225531; a direct run: the main thread and one
+  other thread blocked in a read of their wineserver wait pipe, no log line from any thread after it,
+  the suspended thread never resumed). GetThreadContext on a helper thread with a 250 ms timeout did
+  not help: in a Cell session 63 reads never came back (8 per write, then the writes were refused).
+  From the console thread in the galaxy menu it had worked. ~ This may be what really froze
+  MinHook's own thread freeze under Wine (it calls GetThreadContext on suspended threads too), rather
+  than VirtualProtect as its patch comment says.
+* Measured (lane 4): 1000 split hooks under 3 calling threads: 0 wrong results, 6.3-7.8 million
+  gate traps, 52 s (the 50 ms windows), 3 of 3 runs; with `kit.fix hookfirst 0` the game crashed in 3
+  of 3 (out/lab/20261105-232406 / 20261105-232220). `kit.test.hooknew` prints `live first writes /
+  gate traps / refused`.
+* Not covered: a thread whose return address lies inside the first 5 bytes (a 2-byte `call reg` in
+  the prologue) is not in them while it runs the callee and returns into the new jmp; MinHook's freeze
+  had the same limit. Boot hooks (frame 0) keep the plain stores (no other thread runs game code yet).
+* Test: `kit_hooksplit` (kit_freeze.py --case hooksplit; SPORE_FIX_OFF=hookfirst fails).
