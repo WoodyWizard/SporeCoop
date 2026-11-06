@@ -333,6 +333,10 @@ VOID WINAPI MH_SetFreezeThreads(BOOL enable) { g_freezeThreads = enable; }
 // SporeKit patch: removed hooks keep their trampolines (a thread of the game may still run one)
 static BOOL g_keepTrampolines = FALSE;
 VOID WINAPI MH_SetKeepTrampolines(BOOL enable) { g_keepTrampolines = enable; }
+// SporeKit patch (BUG-0403): the bytes of a hook's jmp (or of the restored original) go through a
+// writer of SporeKit when one is set, so it can write them while other threads run the function
+static MH_PATCH_WRITER g_patchWriter = NULL;
+VOID WINAPI MH_SetPatchWriter(MH_PATCH_WRITER writer) { g_patchWriter = writer; }
 
 static MH_STATUS Freeze(PFROZEN_THREADS pThreads, UINT pos, UINT action)
 {
@@ -417,7 +421,31 @@ static MH_STATUS EnableHookLL(UINT pos, BOOL enable)
     if (!VirtualProtect(pPatchTarget, patchSize, PAGE_EXECUTE_READWRITE, &oldProtect))
         return MH_ERROR_MEMORY_PROTECT;
 
-    if (enable)
+    if (g_patchWriter)
+    {
+        // the new bytes are built first, the writer stores them (SporeKit patch, BUG-0403)
+        UINT8 bytes[sizeof(JMP_REL) + sizeof(JMP_REL_SHORT)];
+        if (enable)
+        {
+            PJMP_REL pJmp = (PJMP_REL)bytes;
+            pJmp->opcode = 0xE9;
+            pJmp->operand = (INT32)((LPBYTE)pHook->pDetour - (pPatchTarget + sizeof(JMP_REL)));
+            if (pHook->patchAbove)
+            {
+                PJMP_REL_SHORT pShortJmp = (PJMP_REL_SHORT)(bytes + sizeof(JMP_REL));
+                pShortJmp->opcode = 0xEB;
+                pShortJmp->operand = (INT8)(0 - (sizeof(JMP_REL_SHORT) + sizeof(JMP_REL)));
+            }
+        }
+        else
+            memcpy(bytes, pHook->backup, patchSize);
+        if (!g_patchWriter(pPatchTarget, bytes, patchSize, pHook->pTarget, pHook->pTrampoline))
+        {
+            VirtualProtect(pPatchTarget, patchSize, oldProtect, &oldProtect);
+            return MH_ERROR_MEMORY_PROTECT;
+        }
+    }
+    else if (enable)
     {
         PJMP_REL pJmp = (PJMP_REL)pPatchTarget;
         pJmp->opcode = 0xE9;

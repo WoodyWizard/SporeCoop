@@ -14,6 +14,9 @@
   hooknew    BUG-0398: 200 functions never hooked before are hooked while 3 threads call them: no
              thread reaches the detour before the hook's original pointer is set (the guest's main
              thread called address 0 when the first injected input hooked GetAsyncKeyState)
+  hooksplit  BUG-0403: 200 functions whose first 5 bytes are five instructions are hooked for the
+             first time while 3 threads call them: no thread runs the jmp's bytes as code (no wrong
+             result, no fault, the game lives)
 
   --old      switch each case's fix off first (`kit.fix <name> 0`): every case must FAIL then
   SPORE_FIX_OFF=<kit fix>[,...]  the same for the cases of those fixes only (the lab's twin runs,
@@ -37,7 +40,7 @@ GAME = lane.game_dir()
 LOGDIR = os.path.join(GAME, 'SporebinEP1', 'mods', 'logs')
 FIX = {'stack': 'stackdump', 'hangdump': 'stackdump', 'cheat': 'cheatwait', 'logfault': 'reentry',
        'excfault': 'reentry', 'hookchurn': 'hookkeep', 'hookrace': 'hookpark',
-       'hooknew': 'hookorig'}
+       'hooknew': 'hookorig', 'hooksplit': 'hookfirst'}
 CASES = list(FIX)
 
 
@@ -117,6 +120,14 @@ def run_case(ck, case):
            'all 200 new hooks made')
         ck(m is not None and m.group(1) == '0',
            f'no detour ran before its original was set ({m.group(1) if m else "?"} times; the game calls address 0 then)')
+    elif case == 'hooksplit':
+        r, dt = timed('kit.test.hooknew 200 3 split', 90)
+        print(f'  hooksplit: {r["out"].strip() if r else "no answer"} ({dt:.1f} s)')
+        m = re.search(r'wrong results (\d+)', r['out']) if r else None
+        ck(m is not None and re.search(r'\((\d+) hooked\)', r['out']).group(1) == '200',
+           'all 200 new hooks made (the game answered)')
+        ck(m is not None and m.group(1) == '0',
+           f'no call ran the jmp\'s bytes as code ({m.group(1) if m else "no answer"} wrong results)')
     ok, how = frames_go_on()
     ck(ok, f'after {case}: frames go on ({how})')
     time.sleep(1)

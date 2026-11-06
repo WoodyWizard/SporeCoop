@@ -268,6 +268,7 @@ extern KitFix g_fix_hookkeep;  // BUG-0132: removed hooks keep their trampolines
 extern KitFix g_fix_stackov;   // BUG-0056: a stack overflow is reported by a thread that waits beforehand
 extern KitFix g_fix_crashsafe; // BUG-0127: a failed step of a crash report does not end the game
 extern KitFix g_fix_hookpark;  // BUG-0202: hooks switch a stub, the function's code is written once
+extern KitFix g_fix_hookfirst; // BUG-0403: a hook made after boot writes its jmp while no thread is in the bytes
 extern KitFix g_fix_hookorig;  // BUG-0398: a new hook's original is set before its jump goes live
 extern KitFix g_fix_iniutf;    // BUG-0142: settings with non-ASCII text are kept in UTF-16
 extern KitFix g_fix_iniencode; // BUG-0245: UTF-16 BE converted, unknown encodings left alone
@@ -314,7 +315,8 @@ template <class F> void call_lambda(void* f) { (*(F*)f)(); }
 void log_fault_test();
 void exceptions_fault_test();
 void hooks_churn_test(int rounds, int threads, std::string& out, bool nogate = false);
-void hooks_new_test(int rounds, int threads, std::string& out); // BUG-0398
+void hooks_new_test(int rounds, int threads, std::string& out, bool split = false); // BUG-0398 / 0403 (split)
+std::string hooks_live_stats(); // BUG-0403
 void* test_fault_page(); // a PAGE_NOACCESS page whose first access is repaired by a test handler
 
 } // namespace sk
