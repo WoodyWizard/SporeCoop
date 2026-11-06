@@ -801,34 +801,28 @@ static void menu_intro_tick()
 }
 
 // BUG-0626 (class of BUG-0607): the menu's intro starts ~16 s after the galaxy menu came up even when a load left
-// the menu before (docs/re/space.md 7.9): a host that loaded a Tribe save within 16 s had the galaxy flight take
-// its camera in the stage; menu_intro_tick ended it a second or more later. When that end fell while the game
-// saved box of a share was up (the box restores, on its OK, the camera it found when it opened), the host's
-// view stayed at the intro's camera: minimap clicks and real clicks did nothing for the whole session
-// (play_tribe "host: the minimap takes the view", 3 of 12 runs with that order, 0 of 48 with the other). Now an
-// intro started outside the galaxy menu is ended in the same call, before any frame or box sees its camera.
-// Off: ended by menu_intro_tick after 1 s (0.7.8).
+// the menu before (docs/re/space.md 7.9, docs/re/tribe.md#tribe-intro-camera): a host that loaded a Tribe save
+// within 16 s had it start in the stage, here while the share's save and its "game saved" box ran; ended there (a
+// second later by menu_intro_tick, or in the same call), the host's view stayed at the camera of that moment: the
+// minimap and real clicks did nothing for the whole session (play_tribe "host: the minimap takes the view", 3 of 12
+// runs whose intro came before the box, 0 of 48 with the other order; tribe_intro_camera 20261106-124414: ending it
+// in the same call was not enough). Now the intro does not start outside the galaxy menu: it belongs to the menu,
+// and nothing of a stage waits for it. Off: it plays and menu_intro_tick ends it after 1 s (0.7.8).
 static bool g_intro_at_once_fix = true;
 COOP_FIX("world.intro_at_once", "BUG-0626", g_intro_at_once_fix,
-         "world: the galaxy menu intro that starts after a load (in a stage) is ended at once, not a second later");
+         "world: the galaxy menu intro does not start after a load (outside the menu), so it never takes a stage's camera");
 using PlayCinematicFn = int(SK_THISCALL*)(void*, const char*, int, int, int, int, int);
 static PlayCinematicFn o_PlayCinematic;
 static uint32_t g_intros_at_once;
 static int SK_THISCALL h_PlayCinematic(void* mgr, const char* name, int a, int b, int c, int d, int e)
 {
-    int r = o_PlayCinematic(mgr, name, a, b, c, d, e);
     if (g_intro_at_once_fix && name && !_stricmp(name, "GGE_intro") && game::mode_id() != modes::kMenu) {
-        uint8_t* cm = (uint8_t*)mgr;
-        uintptr_t end = H->sym("SporeCoop::cCinematicManager_EndCinematic");
-        if (end && *(uint32_t*)(cm + kCineState) && *(uint32_t*)(cm + kCineId) == kMenuIntroId) {
-            skg::thiscall<void>(end, cm);
-            g_intros_ended++;
-            g_intros_at_once++;
-            H->log(M, SK_INFO, "world: the galaxy menu intro started outside the menu (mode %08X): ended at once (BUG-0626)",
-                   game::mode_id());
-        }
+        g_intros_at_once++;
+        H->log(M, SK_INFO, "world: the galaxy menu intro would start outside the menu (mode %08X): not started (BUG-0626)",
+               game::mode_id());
+        return 0; // as PlayCinematic without a cinematic (its caller, GalaxyGameEntry_IntroMessages, ignores it)
     }
-    return r;
+    return o_PlayCinematic(mgr, name, a, b, c, d, e);
 }
 static void install_intro_hook()
 {
@@ -1642,8 +1636,8 @@ std::string status()
                  *(uint32_t*)(cm + kCineId) == kMenuIntroId ? " (menu intro)" : "");
         s += b;
     }
-    if (g_intros_ended) {
-        snprintf(b, sizeof b, "menu intro ended %u (at once %u)\n", g_intros_ended, g_intros_at_once);
+    if (g_intros_ended || g_intros_at_once) {
+        snprintf(b, sizeof b, "menu intro ended %u (not started %u)\n", g_intros_ended, g_intros_at_once);
         s += b;
     }
     return s;

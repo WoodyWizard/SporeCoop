@@ -246,6 +246,7 @@ add('join_new_game', P + 'coop_join_new_game.py', minutes=5)  # the host starts 
 add('cell_new_game', P + 'coop_cell_new_game.py --diet carn --early --minutes 3', minutes=10)  # two new players (empty profiles), a new Cell game from the stage wizard, the guest joins in the intro: both eat (BUG-0279)
 add('cell_far_guest', P + 'coop_cell_new_game.py --diet carn --minutes 0 --probe 0 --apart 70 --far-probe 4', minutes=10)  # a guest far from the host finds food, eats it, the host counts it (BUG-0174, BUG-0279; SPORE_FIX_OFF=cell.partner_tiles fails)
 add('tribe_play', P + 'coop_tribe_play.py', ('smoke',), warm=True, minutes=3, fixture='tribe')
+add('tribe_intro_camera', P + 'coop_tribe_intro_camera.py', warm=True, minutes=3, fixture='tribe')  # the host's view follows its minimap after the menu intro started in the stage under a saved box (BUG-0626; SPORE_FIX_OFF=world.intro_at_once fails)
 add('civ_play', P + 'coop_civ_play.py', warm=True, minutes=3, fixture='civ_npc')
 add('civ_reload', P + 'coop_civ_reload.py', warm=True, minutes=5, fixture='civ_npc')  # tables after a load and a leave (BUG-0040, BUG-0059; --nofix fails)
 add('menu_stale_player', P + 'coop_menu_stale_player.py', minutes=12, fixture='tribe')  # a load from the galaxy menu with the old world's player empire left there (BUG-0284; --nofix fails)

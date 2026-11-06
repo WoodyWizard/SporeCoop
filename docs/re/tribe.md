@@ -2002,3 +2002,25 @@ in Ghidra / objdump. ✔ = observed, ~ = read in the code but not seen running, 
   measured, the fix is limited to the Tribe stage.
 * BUG-0608 (a relayed world effect at the sender's absolute position) came only from the two grounds differing; with
   one ground on every game the absolute position is on the receiver's ground too.
+
+## The galaxy menu intro in a stage leaves the host's view stuck (2026-11-06, fix/w45-int3)
+<a id="tribe-intro-camera"></a>
+
+* ✔ (lab logs, 72 play_tribe host logs of all worktrees) play_tribe failed "host: the minimap takes the view where it
+  points" (o == a == b in the calibration, busy=0, game time running; then "host: gave orders through real clicks
+  (0)") in 3 of the 12 runs whose host log has `world: cinematic 8915F9BB still playing in a stage: ended it` before
+  `the game saved box is up`, and in none of the 48 runs with the other order (fix/w43-transitions 20261104-225940,
+  fix/w45-village-ground 20261106-050921, rel/0.7.9 20261106-105201; the stuck pick was the same point
+  (0.0, -471.29, 185.84) in all three). Not caused by 0.7.9: the first sighting is from 2026-11-04.
+* ✔ The intro is the galaxy menu's "GGE_intro" (docs/re/space.md 7.9): it starts ~16 s after the menu came up even
+  when the lab's quick load left the menu after 4-5 s, so it starts in the Tribe stage, here during the share's save
+  for the joining guest and its "game saved" box.
+* ✔ Ending it in the same PlayCinematic call (a first fix) was not enough: lab 20261106-124414 (the intro started
+  0.05 s before the box was seen, ended at once) had the host's view stuck at the first calibration. ~ Inferred: the
+  box, open while the intro owns the camera, gives that camera back on its OK.
+* Fix `world.intro_at_once` (BUG-0626): a hook on `cCinematicManager::PlayCinematic` (0xAE08B0) does not start
+  "GGE_intro" outside the galaxy menu mode (its only caller, GalaxyGameEntry_IntroMessages 0xDEA870, ignores the
+  result; its state stays 5, "intro playing", until the menu comes up again). Lab 20261106-124712: the cold start's
+  own intro under the box was "not started", the view followed the minimap. `coop.status`: "menu intro ended N (not
+  started M)". Test tribe_intro_camera (starts the intro by hand under a held box).
+* Related: BUG-0607 (a Creature guest's view from space after the same intro ended in the stage).
