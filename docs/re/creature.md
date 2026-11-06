@@ -2976,5 +2976,8 @@ for every Wine game on one PC; tools/tests/body_trail.py, docs/06-testing.md#tes
   0.25-0.75 s. What is left is the latency itself (a start cannot be shown before it is known).
 * kMaxLead: 0.35 s and 0.6 s gave the same p90 over the player network (one run each); 0.6 s keeps a body moving
   through a 250 ms spike.
-* Civ vehicles (`net::VelocityEstimate::at`) were already moved on to the present (their age + 0.03 s, at most 0.15 s):
-  lag p50 0.04 s, p90 0.93 m at 19 m/s on a clean network (out/lab/20261106-012156 body_trail_civ).
+* Civ vehicles (`net::VelocityEstimate::at`) were already moved on to the present (their age + 0.03 s), but at most
+  0.15 s (civ.extrap, BUG-0186): lag p50 0.04 s, p90 0.93 m at 19 m/s on a clean idle lab (out/lab/20261106-012156),
+  but whenever states come late (loss bursts, a loaded lab) the 0.15 s ran out: lag p90 0.22-0.49 s, p90 2.8-5.5 m
+  (20261106-021152, 20261106-031151, BUG-0438). Under drive.lead the limit is kVehLead 0.3 s and the latency the
+  measured one way: p90 1.8-1.9 m, lag p90 0.15-0.17 s (20261106-032341).

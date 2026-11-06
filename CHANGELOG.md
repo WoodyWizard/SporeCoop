@@ -13,6 +13,8 @@
 - Creature and Tribe: the host's animals and tribe members no longer trail behind where the host sees them on the
   guest's screen (they were 0.2-0.3 s late, 1-2 m behind a running animal or member): the guest now shows them where
   the host has them at that moment (BUG-0425, BUG-0410).
+- Civilization: the host's vehicles no longer fall several metres behind on the guest's screen when the connection
+  drops packets for a moment (BUG-0438).
 
 ## [0.7.8] - 2026-11-05
 

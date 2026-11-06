@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in: unreleased
 branch: fix/w44-height, fix/w45-remote-bodies
-commits: 4b54c7a7, df579966, 9ce58786, de9c4d8d, 261e990c, a71e319b, 440a5c2c
+commits: 4b54c7a7, df579966, 9ce58786, de9c4d8d, 261e990c, a71e319b, 440a5c2c, 391562e1, 29330917, 391562e1, 29330917
 tests: npc_air, own_ground, body_trail_creature, body_trail_tribe, body_trail_player, body_trail_tribe_player, body_trail_civ, body_trail_civ_loss
 signature:
 docs: docs/re/creature.md#creature-height-rule, docs/re/tribe.md#tribe-animal-height, docs/re/creature.md#creature-remote-lead, docs/06-testing.md#testing-body-trail

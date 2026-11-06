@@ -14,7 +14,7 @@ commits:
 tests: chaos_tribe
 signature:
 docs:
-related: BUG-0402, BUG-0503
+related: BUG-0402, BUG-0503, BUG-0425, BUG-0610
 ---
 
 ## Report
@@ -56,3 +56,11 @@ no-fail-run: covered by BUG-0503 (npc_walk_slow FAIL 20261104-232034 / PASS 2026
   would not touch these cases). Kind: desync (the game's walk of a proxy placed on the host's path not keeping up),
   not a test fault. Not analysed further: why proxy 624 moved at half the host's speed while placed (an obstacle on
   the guest's ground, the placing not kept: `coop.npctrack` rows of such a proxy are the next step). Open.
+- 2026-11-06 (fix/w45-remote-bodies, M1): the monitor's audit compares a proxy with its OWN target (the host state
+  the guest received), so the common 0.2 s lag of the target (BUG-0425) is not what it measures: this ticket is a
+  proxy falling behind its target (the second case of the 2026-11-05 analysis, half the host's speed while placed),
+  i.e. the guest's game not keeping the placing (a different mechanism from the lag; inferred: a guest-only obstacle
+  or the proxies' collision, as BUG-0386). With drive.lead (walk_place's error closed in ~0.25 s, catch_prop) no
+  `proxy_stuck` line in play_tribe / play_creature / play_civ of out/lab/20261106-021152 (0.7.8's runs on
+  rel/0.7.8: 2 lines) and no stretch over 2 m longer than 0.46 s in 9 body_trail Tribe runs. A host jump (21 m, the
+  host's own game) is seen and is BUG-0610. Not marked fixed: chaos_tribe's gate not rerun often enough to say.

@@ -10,7 +10,7 @@ role: guest
 versions: main a05d1f6
 fixed_in: unreleased
 branch: fix/w45-remote-bodies
-commits: de9c4d8d, 261e990c, a71e319b, 440a5c2c
+commits: de9c4d8d, 261e990c, a71e319b, 440a5c2c, 391562e1, 29330917, 391562e1, 29330917
 tests: body_trail_tribe, body_trail_tribe_player, play_tribe
 signature:
 docs: docs/re/tribe.md#tribe-remote-lead

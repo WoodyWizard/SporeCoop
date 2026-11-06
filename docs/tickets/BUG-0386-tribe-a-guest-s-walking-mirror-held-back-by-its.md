@@ -42,3 +42,7 @@ mirrors out of the guest's collision.
 
 ## History
 - 2026-11-01: opened.
+- 2026-11-06 (fix/w45-remote-bodies, M1): a different mechanism from the class's lag (BUG-0425): the guest's own game
+  holds the placed mirror back (an obstacle or collision only there). With drive.lead a mirror's error is closed in
+  ~0.25 s, at most at twice its speed + 3 m/s (catch_prop): a release after a hold is a faster catch-up, not slower. Not
+  seen in 9 body_trail Tribe runs (longest stretch over 2 m 0.13-0.79 s); the blocker not found; open.

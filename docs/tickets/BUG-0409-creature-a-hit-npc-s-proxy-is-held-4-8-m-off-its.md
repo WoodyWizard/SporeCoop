@@ -50,3 +50,8 @@ no-fail-run: open
 ## History
 - 2026-11-01: opened.
 - 2026-11-05 (fix/w44-height): not a height problem (the guest game's knockback on a proxy); not looked at.
+- 2026-11-06 (fix/w45-remote-bodies, M1): a different mechanism from the class's lag (BUG-0425): the guest's game
+  reacts to the hit on the proxy (a knockback) and undoes the placing. body_trail_creature hits two NPCs per run
+  (`coop.npc hosthit`): in 6 runs with drive.lead no copy over 2 m off the host's body for more than 0.07 s; npc_walk
+  (flee phase) jumps of ~1 m in 14 ms frames after the hit were seen with and without the lead (out/lab/20261106-021152
+  with, the 0.7.8 baseline npc_walk_player 20261106-011339 without): the knockback stays; not touched, open.

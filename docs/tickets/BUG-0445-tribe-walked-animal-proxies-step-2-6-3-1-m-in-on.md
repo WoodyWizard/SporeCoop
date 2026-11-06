@@ -48,3 +48,6 @@ or bunched state of the host (the test also counts "windows left out because the
 - 2026-11-05 (fix/w44-tests, G2): the proxies gate lines of BUG-0440 seen in G2 (out/lab/20261105-135000 play_tribe#2)
   were proxies falling behind a host NPC that walked or ran at its speed, with no jump of the host's NPC (the audit
   line's largest host step 0.6-1.5 m per 0.25 s); this ticket's one-frame steps of 2.6-3.1 m were not looked at.
+- 2026-11-06 (fix/w45-remote-bodies, M1): npc_walk_tribe passed with drive.lead (out/lab/20261106-021152, one run).
+  The lead removes the 0.15 s delay of the target, not the guest's own collisions (this ticket's steps of several
+  proxies in the same frame: the herd pushing, inferred). Not reproduced, not marked fixed (one run).
