@@ -3,6 +3,13 @@
 ## [Unreleased]
 
 ### Fixed
+- Tribe: in the first minute after a player joins, a chief walking past (or stopping next to) another player's chief
+  is no longer teleported to the other side of the village, on both screens (BUG-0610).
+- Tribe and Civilization: a late network packet no longer makes the guest's tribe members or vehicles jump back to an
+  older place for a moment or skips the removal of ones that are gone (BUG-0616).
+- A broken position from another player's game (not a number) can no longer be written into a creature, vehicle or
+  ship; such a state is dropped (BUG-0614). Messages too big to send are now written to the log instead of being
+  dropped without a word (BUG-0615).
 - The game no longer risks a crash when SporeKit hooks a function while the game is already running (the first
   test input, the first cell of Cell): the hook is written only once no game thread is inside the bytes it changes
   (BUG-0403).

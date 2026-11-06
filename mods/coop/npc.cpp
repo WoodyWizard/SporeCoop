@@ -207,6 +207,7 @@ struct Proxy {
     double anim_fix_at = 0;  // BUG-0464: when the snapshot last played the host's animation on it
     double anim_rx_at = 0;   // BUG-0464: when the host's last start of an animation of it came
     bool air = false;        // BUG-0550: placed in the air (the host's NPC off its ground) last frame
+    bool thrown = false;     // BUG-0409: placed on the host's path while the host's NPC was thrown
     uint32_t airs = 0;       // BUG-0550 (coop.npc list): frames placed in the air
 };
 static std::map<uint16_t, Proxy> g_proxies;
@@ -644,6 +645,35 @@ std::string current_anims()
     return out;
 }
 
+// BUG-0409: the host's NPC is thrown (by a hit: locomotion mode 3; by a hit's push: 13-27 m/s without it): faster than
+// any walk or run (kThrownSpeed) and slower than a teleport (net::SnapshotBuffer::kThrownLead), between two states
+static constexpr float kThrownSpeed = 9.f; // (a creature runs at up to 6-8 m/s; one faster is placed on its path too, no harm)
+static bool thrown_now(uint16_t id, void* c)
+{
+    struct Last {
+        net::Vec3 p;
+        double t;
+        bool fast;
+    };
+    static std::unordered_map<uint16_t, Last> last;
+    double now = H->time_seconds();
+    net::Vec3 p = game::position(c);
+    auto it = last.find(id);
+    bool fast = false;
+    if (it != last.end() && now - it->second.t <= 0.005)
+        fast = it->second.fast; // (the same frame: another guest's batch)
+    else {
+        if (it != last.end() && now - it->second.t < 0.5) {
+            float sp = net::dist(p, it->second.p) / (float)(now - it->second.t);
+            fast = sp > kThrownSpeed && sp < net::SnapshotBuffer::kThrownLead;
+        }
+        last[id] = {p, now, fast};
+    }
+    if (last.size() > 4096)
+        last.clear();
+    return fast || *(int32_t*)((uint8_t*)c + game::kLocoModeOff) == 3;
+}
+
 static net::NpcState host_state(uint16_t id, void* c)
 {
     net::NpcState s;
@@ -653,7 +683,7 @@ static net::NpcState host_state(uint16_t id, void* c)
     s.vel = game::velocity(c);
     s.health = game::health(c);
     s.flags = (g_air_fix && !game::is_dead(c) && drive::body_airborne(c) ? net::NF_AIR : 0) | // BUG-0550
-              (g_knock_fix && !game::is_dead(c) && *(int32_t*)((uint8_t*)c + game::kLocoModeOff) == 3 ? net::NF_THROWN : 0) |
+              (g_knock_fix && !game::is_dead(c) && thrown_now(id, c) ? net::NF_THROWN : 0) |
               (game::is_dead(c) ? net::NF_DEAD : 0) | (game::impressed(c) ? net::NF_IMPRESSED : 0) |
               (game::pack_member(c) ? net::NF_PACK : 0) | // BUG-0556: the host's pack (a Summon Flock) is the party's
               (game::herd_of(c) && skg::readable(game::herd_of(c), 0x194) && skg::field<uint8_t>(game::herd_of(c), 0x192)
@@ -1569,14 +1599,21 @@ static void guest_tick(double now)
         }
         // BUG-0409: the host's NPC is thrown along its ground by a hit (12-15 m/s for ~0.3 s): placed on the host's path
         // (walked, it was held to its walk's speed and fell 3.6-3.9 m behind until the throw ended)
+        // Its velocity stays 0: the throw's speed written into the locomotion carried the proxy on 6-8 m past the host's
+        // NPC after the throw (seen: 20 m/s for 1.3 s, out/lab 20261106-045011)
         if (g_knock_fix && !air && !px.killed && (s.flags & net::NF_THROWN) && !(s.flags & net::NF_DEAD)) {
             drive::walk_end(px.c, s.pos, px.drv, now);
             px.kinematic = false;
             game::place(px.c, drive::out_of_ground(s.pos, rts), s.rot);
-            *(net::Vec3*)((uint8_t*)px.c + game::kVelOff) = s.vel;
+            *(net::Vec3*)((uint8_t*)px.c + game::kVelOff) = net::Vec3{};
             px.drv.last_step = now;
+            px.thrown = true;
             g_knock_placed++;
             placed = true;
+        } else if (px.thrown) {
+            px.thrown = false;
+            *(net::Vec3*)((uint8_t*)px.c + game::kVelOff) = net::Vec3{};
+            game::stop(px.c); // (and no walk of its own left from before the throw)
         }
         if (air) {
             px.kinematic = false;
