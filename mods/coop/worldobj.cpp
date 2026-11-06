@@ -646,7 +646,7 @@ static void bundle_act(const Item& o, uint32_t now)
 // the member, drawn 1-3.5 m behind the host's member: at the next snapshot it was often more than `tol` (3 m) from the
 // host's bundle, stayed unbound, and as an own carried bundle it stayed for good: the mirror kept carrying food the
 // host's member had delivered (`Tribe:guest_only:game_bundle_carried`), and with its hand full the next copy could not be
-// made (`host_only`). With wobj.bundle_carried a carried bundle binds within kCarriedTol and a guest's unbound carried
+// made (`host_only`). With wobj.bundle_carried a carried bundle binds (and its copy finds the carrier) within kCarriedTol and a guest's unbound carried
 // bundle is not kept (dropped as any own copy: the guest's members run no behaviour of their own while the host plays).
 // `coop.fix wobj.bundle_carried off`: as in 0.7.9 L2.
 static bool g_bundle_carried_fix = true;
@@ -669,7 +669,7 @@ static int bundle_make(const net::Vec3& pos, uint32_t host, uint32_t cls, const 
             net::Vec3 at;
             float best;
             void* c;
-        } q{aux, 4.f, nullptr};
+        } q{aux, g_bundle_carried_fix ? kCarriedTol : 4.f, nullptr}; // BUG-0617: the copy of the carrier lags
         game::for_each_object(
             [](void* o, uint32_t n, void* u) {
                 auto* q = (Q*)u;
