@@ -2056,3 +2056,36 @@ Player reports 2026-11-04 (0.7.5, Discord bug-reports; not analysed yet):
   menu) the host's game faulted in its own Cell mode entry (the effect preload list at 0xE67610 ran past its block)
   and looped on faults; no co-op code was involved and 13 cold loads did not repeat it
   (docs/re/cell.md#cell-preload-fault). Reproduce: `tools/lab.py run cell_gone_play --cold --repeat N` under load.
+
+## Player reports of 2026-11-06 (Discord, 0.7.8, Cell to Civ, two players) (2026-11-06, fix/w45-intake)
+<a id="issue-discord-2026-11-06"></a>
+
+Each line: what the players saw, what the logs show; reproduce and details in the ticket.
+- Creature: every editor spend lowers the other player's evolution bar by the amount: the mod moves the shared DNA
+  through AddEvolutionPoints, which also adds negative deltas to cPlayer +0x10F0 (the guest's bar fell to almost 0,
+  the host's halved; the bars differ by one tier) (BUG-0630, docs/re/creature.md#creature-evolution-bar).
+- Civ: the host's game crashed after ~2 h in one process with its 2 GB address space full (largest block 12 MB), in a
+  model's vertex blend writing through a null buffer at +0x3995F0; ~740 MB of the drain in Creature (BUG-0631, see
+  BUG-0621).
+- Cell: a guest's kill is applied twice on the host (a giant piece of meat) (BUG-0632).
+- Cell: the host cannot collect the part a kill dropped (BUG-0633).
+- Cell: the guest's cell swims through other cells (BUG-0634).
+- Cell: after the guest's level-up the bigger cells near it vanish and others appear (not BUG-0604) (BUG-0635).
+- Cell: the guest can eat the same plant or meat piece twice: no tombstone of an eaten mirror (BUG-0636).
+- Cell: after a guest's rejoin and the host's own-cell change at level 10, cells of another level (BUG-0637).
+- Creature: a guest still in its own Cell editor when the host enters Creature plays its creature from another world
+  (BUG-0345's rule, BUG-0638).
+- Creature: the guest can attack the creatures of a nest evolving on the host (BUG-0639).
+- Creature: the host's species migrates, the guest's game never claims the nest (respawn at the old nest, no DNA, no
+  cutscene); the in-place path logged "migration 0 -> 0" (BUG-0640).
+- Creature: spit does not interrupt charges between a guest and NPCs; some NPC strikes miss the guest (BUG-0641).
+- Creature: a creature chosen in the co-op window changes only the avatar, not the nest and family (BUG-0642).
+- Tribe: the guest's roster shows white squares instead of the member portraits (BUG-0643).
+- Tribe: the NPC villages the guest's game makes have other colours (no colour copied in make_npc_tribes) (BUG-0644).
+- Tribe: the guest cannot have more than 6 members, its village shows 12/6 (BUG-0645).
+- Tribe: the guest does not hear the music of the dance around the fire (BUG-0646).
+- Civ: the guest sees the host's ground vehicles as creature-like monsters (BUG-0647).
+- Civ: the guest's military vehicles cannot shoot an enemy city hall nor capture it (BUG-0648).
+- Civ: the guest does not see the host's name at the host's camera (BUG-0649).
+- Also seen on 0.7.8, fixed unreleased in 0.7.9: the guest does not see the drama UFO (BUG-0558), city buildings
+  rebuilt again and again after captures (BUG-0602).
