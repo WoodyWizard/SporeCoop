@@ -1,19 +1,19 @@
 ---
 id: BUG-0383
 title: Creature: bodies of killed NPCs reported out of sync between host and guest (one cause found: bodies of NPCs that died before the guest came near were never shown)
-status: open
+status: fixed
 kind: desync
 stage: Creature
 reported: 2026-11-01
 source: player report 2026-11-01 (host F9 note at s 1777)
 role: both
 versions: 0.7.3.3
-fixed_in:
-branch: fix/w30-npc-walk, feat/w33-tests-creature
-commits:
-tests: tools/tests/coop_npc_corpse.py (suite corpse_positions, corpse_positions_player)
+fixed_in: unreleased
+branch: fix/w30-npc-walk, feat/w33-tests-creature, fix/w45-creature-reports
+commits: 7f2c5dcd
+tests: tools/tests/coop_npc_corpse.py (suite corpse_positions, corpse_positions_player), creature_eat (coop_creature_eat.py)
 signature:
-docs:
+docs: docs/re/creature.md#creature-body-meat
 related: BUG-0015, BUG-0339, BUG-0361
 ---
 
@@ -36,6 +36,9 @@ far from the guest that come into its view later, a guest at a low frame rate.
 2026-11-04, fix/w41-puppet-look: no new cause found; corpse_positions run again in the regression with the divergence
 detector (see the branch report). Still not tried: an NPC body eaten for real on one game (the test's guest clicks did
 not eat: its health 1000), a corpse decaying on one game first.
+2026-11-05, fix/w45-creature-reports: **second cause observed**: a body eaten in one game (the eat node takes its meat
+in the eater's game only) stayed whole in the other (lab 20261105-225954, BUG-0557): an eaten-out body went from the
+host's game and stayed on the guest with its meat, and the other way round. The "not tried" case of above, now seen.
 
 ## Fix
 feat/w33-tests-creature: a guest skipped every NPC whose first state it received was dead
@@ -45,6 +48,8 @@ NPCs within 110 m of a guest), killed by another NPC before its proxy was made, 
 the host's player saw the body, the guest saw nothing. Now the proxy of such a body is made and plays the death
 where the host's body lies, unless the guest's game had made it once already (`Proxy::ever`: a body the guest's
 game removed stays gone). Switch: `coop.fix npc.dead_proxy off` (0.7.3.3 behaviour).
+fix/w45-creature-reports: `npc.body_meat` (BUG-0557): one meat value per body, held by the host's game; the guest's
+bites go to the host, the guest's proxy shows the host's meat.
 
 ## Verification
 `coop_npc_corpse.py` (suite `corpse_positions`) kills standing, guest-killed, running (6 m/s), thrown (a hit with a
@@ -58,9 +63,12 @@ within 1.5 m of the host's body and on the ground on both.
 - `SPORE_FIX_OFF=npc.play_death` fails too (the guest's proxies of the bodies are not dead in its game): 20261101-145148.
 Still not reproduced: a body in another place on the two games (every body of every kind was 0.00 m apart: the guest
 puts a killed proxy where the host's body is every frame).
+- 2026-11-05: creature_eat: FAIL with `SPORE_FIX_OFF=npc.body_meat` out/lab/20261105-230449, PASS out/lab/20261105-230313
+  (see BUG-0557). Regression: corpse_positions (see the history).
 
 ## History
 - 2026-11-01: opened.
 - 2026-11-01: feat/w33-tests-creature: corpse_positions in the suite; it found the bodies a guest never shows (NPCs
   dead before its proxy was made); fixed behind `npc.dead_proxy`. Positions themselves matched (0.00 m) in every kind.
 - 2026-11-04: fix/w41-puppet-look: checked again, no new cause.
+- 2026-11-05 (fix/w45-creature-reports, P3 of 0.7.9): the eaten-body cause reproduced and fixed with BUG-0557 (npc.body_meat); status fixed for the class.

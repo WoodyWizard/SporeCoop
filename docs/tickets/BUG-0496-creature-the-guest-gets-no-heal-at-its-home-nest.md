@@ -11,7 +11,7 @@ versions:
 fixed_in:
 branch: fix/w44-guest-player2
 commits: 2ce39e6a
-tests: nest_heal (coop_nest_heal.py)
+tests: nest_heal (coop_nest_heal.py), migration_heal (coop_migration.py --heal)
 signature:
 docs: docs/re/creature.md#creature-nest-heal, docs/re/creature.md#creature-nest-heal-fight
 related:
@@ -32,12 +32,19 @@ Not reproduced (fix/w41-creature-left, 2026-11-03). Observed (lab 20261103-23580
   (guest 3.5 -> 16.0, host 3.4 -> 10.0); the input made no Fight event, so a lingering Fight against a proxy (inferred
   candidate) was not tested.
 
+* fix/w45-creature-reports (P3 of 0.7.9): the candidate "a guest after the host's migration" tried at runtime: both
+  players claimed the new nest (coop_migration.py --heal, lab out/lab/20261105-233707) and both healed there (host
+  3.0 -> 13.7, guest 3.8 -> 21.0 in 12 s; the guest's own game set its heal flag +0xFB8). Still not reproduced; the
+  friendly-nest test 0xC6ABF0 (herd species == PlayerSpecies, +0x191, +0x190 or relation 4) holds for the guest at
+  the home nest and at a migrated nest. Inferred: the 0.7.3.4 report (same mark: "for me nest is not extinct") was a
+  nest the guest's game had in another state then (BUG-0460, fixed in 0.7.4 by wobj.herd), not the heal.
+
 ## Fix
 Not fixed: not reproduced. `coop.rules heal` (player_rules.cpp) prints the heal's inputs on any game (the flag, health,
 food, cinematic, BT node, running Fight events) for the next report or test.
 
 ## Verification
-no-fail-run: not reproduced (out/lab/20261105-111330); nest_heal stays the regression guard.
+no-fail-run: not reproduced (out/lab/20261105-111330; after a migration out/lab/20261105-233707, test migration_heal); nest_heal and migration_heal stay the regression guards.
 
 ## History
 - 2026-11-03: opened.
@@ -45,3 +52,4 @@ no-fail-run: not reproduced (out/lab/20261105-111330); nest_heal stays the regre
 - 2026-11-04: third look on fix/w42-creature-left: an allied species' nest (record ally 6) heals neither player (host 3.0 -> 3.0, guest 3.0 -> 3.0), the home nest heals both also with the world's species (0.7.5 final lab 20261104-061516). Still not reproduced; not fixed. docs/re/creature.md#creature-leftovers-3.
 - 2026-11-04 (fix/w43-guest-player, P1 of 0.7.7): not fixed. New: the friendly-nest test 0xC6ABF0 (own species, herd +0x191 mbBestFriends, +0x190, relation 4), read by 0xC084B0 / 0xD401E0 / 0xD41A20 (~ the nest heal and sound), needs +0x191 like the minimap: a record written by hand (the w42 test) sets no +0x191, which explains "an allied nest heals neither player" there; a guest's herds get +0x191 now (social.nest_ally, BUG-0561). The home nest heal itself still not reproduced.
 - 2026-11-05 (fix/w44-guest-player2, P2 of 0.7.8): the avatar's heal found (Ghidra: +0xFB8, 0xC02E10, the Fight event gate); not reproduced, not fixed.
+- 2026-11-05 (fix/w45-creature-reports, P3 of 0.7.9): the migrated nest heals both players too (migration_heal); not reproduced, not fixed, left open.

@@ -10,6 +10,11 @@
   crashes when the host's world is loaded (BUG-0308; the fix came with 0.7.3.2, now tested on this path).
 - Tribe: the guest now sees and hears the blows of the host's tribe members land on their victims (the hit flashes
   and their sounds), not only the swings (BUG-0603).
+- Creature: a body one player eats is eaten on the other player's screen too, so the guest can eat the bodies the
+  players killed and no longer finds bodies it already ate standing whole on the host's screen (BUG-0557, BUG-0383).
+- Creature: the guest now sees the UFO that visits the host's world, where the host sees it (BUG-0558).
+- Creature: a rock or stick one player picks up is carried by that player's creature on the other screen too, and lies
+  where it landed in both games after it is thrown or dropped (BUG-0458).
 
 ## [0.7.8] - 2026-11-05
 
