@@ -1,19 +1,19 @@
 ---
 id: BUG-0385
 title: Creature: the host sends a stray puppet of a saved world as an NPC for a moment; the guest cannot spawn its species (sync-check n missing)
-status: open
+status: fixed
 kind: desync
 stage: Creature
 reported: 2026-11-01
 source: player report 2026-11-01 (host log 13:35:01)
 role: guest
 versions: 0.7.3.3
-fixed_in:
-branch: fix/w30-npc-walk
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w45-one-game-objects
+commits: 3f8ec9a3 450f3ab1
+tests: creature_e84 (coop_creature_e84.py, step 2)
 signature:
-docs:
+docs: docs/re/creature.md#creature-npc-gaps
 related: BUG-0010, BUG-0020, BUG-0339
 ---
 
@@ -31,11 +31,17 @@ existed)") and answered "player 1 asks for species 7CA388E5: not found here". In
 tracking registers such strays for the frames before `remove_saved_strays` runs (once a second).
 
 ## Fix
-None (harmless: the stray is gone within a second; the mismatch is one sync-check). A fix would skip creatures
-of our own kind of herd (`own_kind_herd`) in host_tick.
+npc.cpp host_tick (`coop.fix npc.stray_ids`, off = 0.7.8): a creature not tracked yet that is such a stray (no tuning
++0xE84, a species profile, a herd like ours: own_kind_herd, the test remove_saved_strays uses) gets no NPC id, so it is
+never sent to a guest. Observed in the test (strays removal off to keep it in the world): with the fix off the host
+tracks it as NPC #2 at once.
 
 ## Verification
-no-fail-run: not fixed.
+creature_e84 step 2 ("[BUG-0385] the host does not track it as an NPC of its world"): FAIL with
+SPORE_FIX_OFF=npc.stray_ids out/lab/20261106-020611 (#2), PASS out/lab/20261106-020116. The oracle is the host's NPC
+list (what it sends to the guests), not the guest's game: the guest never had a copy (unknown species), the bug only
+showed as one sync-check mismatch.
 
 ## History
 - 2026-11-01: opened.
+- 2026-11-06 (fix/w45-one-game-objects, L1): fixed (npc.stray_ids).
