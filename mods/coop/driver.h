@@ -302,6 +302,11 @@ struct WalkPlace {
     // latency late; its lead target is then 1-3 m ahead and was closed at catch_up (3 m/s): a Tribe member at
     // 9 m/s stayed 2-3 m behind for the first 0.75 s of every walk over the player network (p90 2.9-3.1 m)
     bool catch_prop = false;
+    // BUG-0619: the placing at most (the remote's speed + catch_up) x dt from last frame's placing, i.e. what the
+    // player sees per frame: for a remote whose velocity is its smoothed lead target's own (the offset's closing
+    // included, up to 2x the speed + 3 m/s), so the bound never holds it behind its target's path. Without it a
+    // mirror the game had walked 0.5-0.8 m behind closed that in one frame on top of the target's step (1-1.3 m)
+    bool step_bound = false;
 };
 constexpr float kCatchTime = 0.25f;     // s
 constexpr float kWalkLostErr = 0.75f;   // m
@@ -375,6 +380,14 @@ inline void walk_place(void* p, const net::Vec3& pos_in, const net::Quat& rot, c
     if (err > max_step) {
         float k = max_step / err;
         to = {cur.x + (pos.x - cur.x) * k, cur.y + (pos.y - cur.y) * k, cur.z + (pos.z - cur.z) * k};
+    }
+    if (o.step_bound && was) {
+        float bound = (sp + o.catch_up) * (float)dt, moved = net::dist(ds.placed_to, to);
+        if (moved > bound) {
+            float k = bound / moved;
+            to = {ds.placed_to.x + (to.x - ds.placed_to.x) * k, ds.placed_to.y + (to.y - ds.placed_to.y) * k,
+                  ds.placed_to.z + (to.z - ds.placed_to.z) * k};
+        }
     }
     if (o.variant == 2 || ds.held) // held: closed at the same speed, but with the mark (the game keeps it)
         game::teleport(p, to, rot);
