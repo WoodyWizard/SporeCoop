@@ -546,26 +546,38 @@ static bool container_ok(void* c, int* count = nullptr)
     return mx >= 0 && mx < 100000;
 }
 static bool is_creature_noun(uint32_t n) { return n == 0x018EB45E || n == 0x018EB4B7; } // creature, citizen
-// the creature that carries a bundle (nullptr: none)
-static void* bundle_carrier(void* holder)
+// the creature that carries a bundle (nullptr: none): only a creature of the game's object list (a holder that is
+// another container, a food mat's, has no object 0x34 before it: noun_id of it faulted on a null vtable, lab
+// 20261106-042445, the host at its first snapshot)
+static void* bundle_carrier(void* holder, const std::set<void*>& creatures)
 {
-    if (!holder || IsBadReadPtr((uint8_t*)holder - 0x34, 0x40))
+    if (!holder)
         return nullptr;
     void* c = (uint8_t*)holder - 0x34;
-    return game::object_alive(c) && is_creature_noun(game::noun_id(c)) ? c : nullptr;
+    return creatures.count(c) ? c : nullptr;
 }
 static void bundle_collect(Items& out)
 {
     void* ground = ground_container();
     Items all;
     collect_noun(kBundleNoun, all, [](void* o) { return IsBadReadPtr(o, 0x138) ? 0u : field<uint32_t>(o, 0x134); });
+    if (all.empty())
+        return;
+    std::set<void*> creatures;
+    game::for_each_object(
+        [](void* o, uint32_t n, void* u) {
+            if (is_creature_noun(n) && game::object_alive(o))
+                ((std::set<void*>*)u)->insert(o);
+            return true;
+        },
+        &creatures);
     for (auto& it : all) {
         void* holder = field<void*>(it.p, 0x128);
         uint32_t type = field<uint32_t>(it.p, 0x12C) & 0xFF;
         if (ground && holder == ground) {
             it.cls = type;
             it.aux = it.pos;
-        } else if (void* c = bundle_carrier(holder)) {
+        } else if (void* c = bundle_carrier(holder, creatures)) {
             it.cls = type | kBundleCarried;
             if (!game::object_position(c, it.aux))
                 continue;
@@ -642,6 +654,22 @@ static int bundle_make(const net::Vec3& pos, uint32_t host, uint32_t cls, const 
            amt, cls & 0xFF, pos.x, pos.y, pos.z);
     return 1;
 }
+
+// ---------------------------------------------------------------- kind: cultural target (BUG-0540, 0.7.9 L2b)
+// cCulturalTarget (noun 0x3D5C325): the points of a city its religious attackers aim at. The city setup 0xBE7D40
+// makes 4 per city (stored in the city record +0x618, +0x78 + 0x80 * i, docs/re/civ.md#civ-host-cultural-targets);
+// each game puts them by its own city layout, so in the same city they stood metres apart (detector rows
+// `unmatched:cultural_target` in campaign_space, 2 of 3 without a partner within 3 m). On: a guest's target binds to
+// the host's within 3 m, else the nearest unbound one of its own within 120 m is put at the host's place (the
+// spatial object's SetPosition), and a bound one that drifts more than 0.5 m is put back. No make, no removal (both
+// games have 4 per city). `coop.fix wobj.cultural_target off`: each game's own places (0.7.8).
+constexpr uint32_t kCultTargetNoun = 0x03D5C325;
+static bool g_cult_fix = true;
+COOP_FIX("wobj.cultural_target", "BUG-0540", g_cult_fix,
+         "civ / space: a city's cultural targets stand where the host's stand in every game");
+static uint32_t cult_state(void*) { return 0; }
+static void cult_collect(Items& out) { collect_noun(kCultTargetNoun, out, cult_state); }
+static bool cult_place(const Item& l, const net::Vec3& hp, uint32_t) { return game::set_object_position(l.p, hp); }
 
 // ---------------------------------------------------------------- the table
 // ---------------------------------------------------------------- kind: citizen (Civ city citizens, BUG-0476)
@@ -823,6 +851,10 @@ static Kind g_kinds[] = {
     {.name = "game_bundle", .fix = &g_bundle_fix, .stages = kStTribe | kStCiv, .tol = 3.f, .range = 160.f, .max = 30,
      .collect = bundle_collect, .behind = bundle_behind, .apply = bundle_apply, .acted = bundle_acted, .act = bundle_act,
      .gone_acted = true, .drop_own = true, .own = bundle_own, .classes = true, .aux = true, .make_aux = bundle_make},
+    // BUG-0540 (0.7.9 L2b): the cities' cultural targets at the host's places
+    {.name = "cultural_target", .fix = &g_cult_fix, .stages = kStCiv | kStSpace, .tol = 3.f, .range = 400.f, .max = 48,
+     .collect = cult_collect, .behind = none_behind, .apply = none_apply, .acted = none_acted, .act = none_act,
+     .gone_acted = false, .drop_own = false, .place = cult_place, .relocate = 120.f, .place_eps = 0.5f, .place_fix = &g_cult_fix},
 };
 constexpr int kKinds = (int)(sizeof g_kinds / sizeof g_kinds[0]);
 // a snapshot is one unreliable message: 19 bytes + 20 per object within net::Connection::kMaxSingle (1163)
@@ -1418,7 +1450,8 @@ static int c_wobj(void*, int argc, const char* const* argv, SkOut* out)
         net::Vec3 p{};
         if (b)
             game::object_position(b, p);
-        H->out_printf(out, "bundle %p pos=(%.2f %.2f %.2f)\n", b, p.x, p.y, p.z);
+        H->out_printf(out, "bundle %p pos=(%.2f %.2f %.2f) holder=%p\n", b, p.x, p.y, p.z,
+                      b && !IsBadReadPtr(b, 0x138) ? field<void*>(b, 0x128) : nullptr);
         return b ? 0 : 1;
     }
     if (!strcmp(a, "use") && argc > 2) { // use <ornament>: the avatar uses it the game's way (OrnamentUsed + 0xD3353638)

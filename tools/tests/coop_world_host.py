@@ -8,6 +8,9 @@ position), not the mod's bookkeeping:
                     at the host's places in the guest's game (within 1.5 m), the rolled one not where it rolled to.
                     SPORE_FIX_OFF=wobj.fruit_place fails.
 
+  --case cultural   (BUG-0540, civ) every city's cultural targets near the guest stand at the host's places in the
+                    guest's game (within 1 m, as many as on the host). SPORE_FIX_OFF=wobj.cultural_target fails.
+
   coop_world_host.py --case fruit
 """
 import argparse
@@ -90,6 +93,9 @@ def bundle(host, guest, ck):
     # carried: a member of the host's tribe near the village with an empty hand
     rows = re.findall(r'([0-9A-F]{8}) alive=1 pos=\((\S+) (\S+) (\S+)\) dist=(\S+)', host.call('coop.tribe objs 18EB4B7')['out'])
     carried = None
+    # the farthest member within 60 m first: it carries the food longer on its way to the mat (a near one put it
+    # down within a second)
+    rows = sorted([r for r in rows if float(r[4]) < 60], key=lambda r: -float(r[4]))
     for p, x, y, z, d in rows[:12]:
         out = host.call(f'coop.wobj bundle carry {p} 5')['out'].strip()
         if not out.startswith('bundle 0') and 'bundle 00000000' not in out:
@@ -97,13 +103,35 @@ def bundle(host, guest, ck):
             break
     print('  host: a member carries food:', carried, flush=True)
     if ck(carried, 'a member of the host\'s tribe carries a food bundle (the host\'s game)'):
-        time.sleep(1)
-        hb = [b for b in bundles(host, 300) if b['cls'] & 0x100 and math.dist(b['pos'], tuple(float(v) for v in
-              re.search(r'pos=\((\S+) (\S+) (\S+)\)', carried[2]).groups())) < 0.5]
+        # the bundle sits in the member's hand (it moves with the animation): the host's carried bundle near the member
+        # (it walks ~7 m/s to the mat: the host's bundle by its pointer, the guest's copy lags it by up to ~3.5 m:
+        # lab 2026-11-06, coop.wobj list on both every 0.7 s)
+        bp = re.search(r'bundle ([0-9A-F]{8})', carried[2]).group(1)
+
+        def host_carried():
+            return [b for b in bundles(host, 300) if b['cls'] & 0x100 and b['p'] == bp]
+        hb = host_carried()
         if ck(hb, 'the host\'s carried bundle is listed'):
-            got = wait(lambda: [b for b in near(bundles(guest, 10, hb[0]['pos']), hb[0]['pos'], 1.5) if b['cls'] & 0x100], 12)
-            print(f'  guest carried bundles at {hb[0]["pos"]}: {got}', flush=True)
-            ck(got, 'the guest\'s copy of that member carries the food too (the guest\'s game: a bundle in a creature\'s container)')
+            seen = []
+
+            def guest_carried():
+                h = host_carried()
+                if not h:
+                    return []
+                gb = [b for b in bundles(guest, 40, h[0]['pos']) if b['cls'] & 0x100]
+                seen.append((round(time.time() % 100, 1), h[0]['pos'], [round(math.dist(b['pos'], h[0]['pos']), 1) for b in gb]))
+                return [b for b in gb if math.dist(b['pos'], h[0]['pos']) < 4.0]
+            got = wait(guest_carried, 12)
+            print(f'  guest carried bundles near the host\'s at {hb[0]["pos"]}: {got}', flush=True)
+            if not got:
+                print(f'  (polls: t, host carried, guest carried distances: {seen[:12]})', flush=True)
+                h = host_carried()
+                at = h[0]['pos'] if h else hb[0]['pos']
+                print(f'  (host carried now: {h[:1]}; guest carried within 30 m: '
+                      f'{[(b["pos"], round(math.dist(b["pos"], at), 1)) for b in bundles(guest, 30, at) if b["cls"] & 0x100]})',
+                      flush=True)
+            ck(got, 'the guest\'s copy of that member carries the food too (the guest\'s game: a bundle in a creature\'s '
+                    'container, within 4 m of the host\'s)')
     # the ground food taken in the guest's game
     g = near(bundles(guest, 10, hpos), hpos, 1.5)
     if g:
@@ -112,14 +140,60 @@ def bundle(host, guest, ck):
         ck(gone, 'the food the guest\'s member took is gone from the host\'s ground')
 
 
+def cultural(host, guest, ck):
+    import worlddiff
+    noun = 0x03D5C325
+
+    def targets(con, at):
+        w = worlddiff.dump(con, 5000, at)
+        return w, [r for r in w.rows if r['noun'] == noun]
+
+    gw, _ = targets(guest, (0.0, 0.0, 0.0))
+    hw, _ = targets(host, (0.0, 0.0, 0.0))
+    at = gw.me or hw.me or (0.0, 0.0, 0.0)
+    near_r = 300.0
+
+    def compare():
+        _, ht = targets(host, (0.0, 0.0, 0.0))
+        _, gt = targets(guest, (0.0, 0.0, 0.0))
+        ht = [r for r in ht if math.dist(r['pos'], at) < near_r]
+        gt = [r for r in gt if math.dist(r['pos'], at) < near_r + 20]
+        far = []
+        for h in ht:
+            d = min((math.dist(h['pos'], g['pos']) for g in gt), default=1e9)
+            if d > 1.0:
+                far.append((tuple(round(v, 1) for v in h['pos']), round(d, 1)))
+        return ht, gt, far
+
+    ht, gt, far = compare()
+    print(f'  around {tuple(round(v) for v in at)}: {len(ht)} cultural targets on the host, {len(gt)} on the guest; '
+          f'host targets without a guest one within 1 m (pos, nearest m): {far[:6]}', flush=True)
+    if not ck(ht, 'the host\'s game has cultural targets near the guest'):
+        return
+    # the rows came after a guest's rejoin in campaign_space (the guest's game sets its cities up again from the
+    # host's world of now): play a minute, the guest leaves and joins again
+    time.sleep(60)
+    from coop_realign_planet import rejoin
+    if not rejoin(guest, 'Civ', ck):
+        return
+    time.sleep(8)
+    ht, gt, far = compare()
+    print(f'  after the rejoin: {len(ht)} on the host, {len(gt)} on the guest, without a partner within 1 m: {far[:6]}',
+          flush=True)
+    ok = wait(lambda: not compare()[2], 20)
+    ht, gt, far = compare()
+    print(f'  after 20 s: {len(ht)} on the host, {len(gt)} on the guest, without a partner within 1 m: {far[:6]}', flush=True)
+    ck(ok and not far, 'every cultural target of the host near the guest stands at its place in the guest\'s game (within 1 m)')
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--case', choices=('fruit', 'bundle'), required=True)
+    ap.add_argument('--case', choices=('fruit', 'bundle', 'cultural'), required=True)
     a = ap.parse_args()
-    host, guest = start({'fruit': 'creature', 'bundle': 'tribe'}[a.case])
+    host, guest = start({'fruit': 'creature', 'bundle': 'tribe', 'cultural': 'civ_npc'}[a.case])
     ck = Checks()
     time.sleep(6)  # the first snapshots
-    {'fruit': fruit, 'bundle': bundle}[a.case](host, guest, ck)
+    {'fruit': fruit, 'bundle': bundle, 'cultural': cultural}[a.case](host, guest, ck)
     print('  guest:', guest.call('coop.wobj')['out'].strip().replace('\n', ' | '), flush=True)
     print('  host:', host.call('coop.wobj')['out'].strip().replace('\n', ' | '), flush=True)
     ck.faults(host=host, guest=guest)
