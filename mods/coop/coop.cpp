@@ -582,6 +582,8 @@ net::PlayerState local_state()
     st.world = g_world;
     if (void* local = local_now())
         g_adapter->fill(local, st);
+    if (g_sess.role() == net::Role::Host && world::host_reloading())
+        st.flags |= net::PF_RESYNC; // BUG-0332
     return st;
 }
 
@@ -1142,6 +1144,12 @@ void host_away_tick(double now)
     std::string host = g_sess.name_of(0);
     if (away) {
         g_host_away_count++;
+        auto hi = g_remotes.find(0);
+        if (hi != g_remotes.end() && !hi->second.buf.empty() && (hi->second.buf.latest().flags & net::PF_RESYNC)) {
+            // BUG-0332: the host's one reload of the new Tribe world (tribe.host_reload)
+            feed(host + " (host) is loading the new world once, so that everybody has the same ground (about 10 s)");
+            return;
+        }
         const char* where = why == 'e' ? "is in an editor" : why == 'l' ? "is loading" : "left for the main menu";
         feed(host + " (host) " + where + ": you play on alone until " + host + " is back");
         return;

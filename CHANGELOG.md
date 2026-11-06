@@ -41,7 +41,8 @@
   the same places), instead of a different set on each screen (BUG-0541).
 - Tribe: the ground round the villages is now the same for every player after the Creature -> Tribe change: the
   host's game had its plateaus up to 14 m higher or lower than the guests' (tribe members and hit flashes there stood
-  off the ground on the other screens) (BUG-0332, BUG-0608).
+  off the ground on the other screens). For this the host's game loads the new Tribe world once right after the
+  change (about 10 s); the guests see "the host is loading the new world once" meanwhile (BUG-0332, BUG-0608).
 
 ## [0.7.8] - 2026-11-05
 

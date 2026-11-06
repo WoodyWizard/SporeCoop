@@ -545,6 +545,21 @@ void host_reload_after_share()
         g_reload_due = true;
 }
 uint32_t host_reloads() { return g_host_reloads; }
+// BUG-0332: from the reload's start until the host plays Tribe again (at most 60 s): the guests are told why the
+// host left (PF_RESYNC), not "left for the main menu"
+static double g_reload_at = -1;
+static bool g_reload_left;
+bool host_reloading()
+{
+    if (g_reload_at < 0)
+        return false;
+    bool tribe = game::mode_id() == modes::kTribe;
+    if (!tribe)
+        g_reload_left = true;
+    if ((g_reload_left && tribe) || H->time_seconds() - g_reload_at > 60.0)
+        g_reload_at = -1;
+    return g_reload_at >= 0;
+}
 
 bool g_share_settle_fix = true;
 COOP_FIX("world.share_settle", "BUG-0276", g_share_settle_fix, "world: a share save waits for a settled stage and is not sent stale");
@@ -1159,6 +1174,8 @@ void tick(net::Session& s)
             std::wstring slot = game::mode_id() == modes::kTribe ? current_slot(planet, miss) : std::wstring();
             if (!slot.empty() && !planet.empty() && !miss && load_slot(slot, planet, lerr, std::string())) {
                 g_host_reloads++;
+                g_reload_at = H->time_seconds();
+                g_reload_left = false;
                 H->log(M, SK_INFO, "world: the host loads its own share save of the new Tribe stage (%s), as the guests do: "
                        "one ground for everybody (BUG-0332)", planet.c_str());
             } else {

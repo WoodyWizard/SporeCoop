@@ -163,6 +163,7 @@ enum PlayerFlags : uint8_t {
     PF_DEAD = 16,
     PF_SWIMMING = 32,
     PF_SNEAKING = 64, // BUG-0463: the creature sneaks (+0xBB1); older SporeCoop ignores the bit
+    PF_RESYNC = 128,  // BUG-0332: the host loads the shared world once for everybody (tribe.host_reload); older SporeCoop ignores it
 };
 
 // BUG-0425: a height over the sender's terrain (m) that is not known (an older sender, no terrain)
