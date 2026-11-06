@@ -1209,6 +1209,103 @@ static void SK_CDECL h_Pair(uint8_t* a, uint8_t* b, float dt)
         own_probe("collision", a == av ? b : a);
 }
 
+// ---- the contact solver (BUG-0307, docs/re/cell.md#cell-contact-nan) ----
+// The collision pairs (HandleCollisionPair 0xE7F140 -> executor 0xE7E7F0 -> AddContact 0xE66F30) leave
+// contacts in a pool; after the pair loop Collisions 0xE7F260 runs ContactSolvePass 0xE654D0: 10 rounds of
+// ContactSolve 0xE58C90 over every contact of this frame, each one a sequential impulse along the normal
+// (+0x18) with the effective mass +0x30 = 1 / (inverse mass A + B of the +0x36C roots), the target +0x38 and
+// the accumulated impulse +0x28, applied by ApplyImpulse 0xE560D0 to the root's velocity +0x90 and to every
+// soft-body particle's velocity: the only game code between the pairs and our guest tick that writes those
+// two fields and not the positions (the own cell's mask 0x104 of BUG-0307).
+struct Contact {
+    uint32_t handle, a, b;
+    float point[3], normal[3], depth, accum, unk2c, mass, mass2, target;
+    uint32_t frame;
+};
+using ContactPass_t = void(SK_CDECL*)();
+using ContactSolve_t = int(SK_CDECL*)(Contact*);
+static ContactPass_t o_ContactPass;
+static ContactSolve_t o_ContactSolve;
+static uintptr_t a_ContactPass, a_ContactSolve;
+// a non-finite contact is not solved (its impulse would make both cells' velocities non-finite: the own
+// cell's 17 frames of BUG-0307). Old (`coop.fix cell.contact_finite off`): the game's solve.
+static bool g_fix_contact_finite = true;
+COOP_FIX("cell.contact_finite", "BUG-0307", g_fix_contact_finite, "cell: a collision contact whose impulse is not finite is not applied (it made the cells' velocities NaN)");
+static uint32_t g_contacts_bad, g_contacts_bad_own, g_contact_logs, g_contact_solves;
+static uint8_t* contact_root(uint8_t* c) // 0xE58C50: the head of the +0x36C chain
+{
+    for (int i = 0; c && i < 64; i++) {
+        uint8_t* p = modes::cell_at(F<uint32_t>(c, 0x36C));
+        if (!p || p == c)
+            return c;
+        c = p;
+    }
+    return c;
+}
+// what ContactSolve would apply (its own arithmetic, in floats); false when any input or the impulse is not finite
+static bool contact_finite(const Contact* k, uint8_t* ra, uint8_t* rb, float* out)
+{
+    const float* va = (const float*)(ra + kVel);
+    const float* vb = (const float*)(rb + kVel);
+    float rel = (vb[2] - va[2]) * k->normal[2] + (vb[1] - va[1]) * k->normal[1] + (vb[0] - va[0]) * k->normal[0];
+    float x = (k->target - rel) * k->mass + k->accum;
+    float acc = 0.f <= x ? x : 0.f;
+    float imp = acc - k->accum;
+    *out = imp;
+    return fin(k->normal, 3) && std::isfinite(k->accum) && std::isfinite(k->mass) && std::isfinite(k->target) && fin(va, 3) &&
+           fin(vb, 3) && std::isfinite(imp) && std::isfinite(F<float>(ra, 0xBC)) && std::isfinite(F<float>(rb, 0xBC));
+}
+static void contact_log(const char* what, const Contact* k, uint8_t* a, uint8_t* b, uint8_t* ra, uint8_t* rb, float imp)
+{
+    if (++g_contact_logs > 30)
+        return;
+    auto one = [](uint8_t* c, char* o, size_t n) {
+        snprintf(o, n, "c%u %s size=%.3f mass=%g inv=%g vel=(%g %g) pos=(%.2f %.2f) parts=%d gfx=%d chain=%u nf=0x%X%s%s",
+                 F<uint32_t>(c, 0), kind_of(c), F<float>(c, kSize), F<float>(c, 0xB8), F<float>(c, 0xBC), F<float>(c, kVel),
+                 F<float>(c, kVel + 4), F<float>(c, 0x4C), F<float>(c, 0x50), F<int>(c, 0x250), F<uint32_t>(c, 0x248) ? 1 : 0,
+                 F<uint32_t>(c, 0x36C), cell_nonfinite(c), c == avatar() ? " OWN" : "", modes::cell_is_puppet(c) ? " puppet" : "");
+    };
+    char sa[300], sb[300], sra[300] = "", srb[300] = "";
+    one(a, sa, sizeof sa);
+    one(b, sb, sizeof sb);
+    if (ra != a)
+        one(ra, sra, sizeof sra);
+    if (rb != b)
+        one(rb, srb, sizeof srb);
+    H->log(M, SK_WARN,
+           "coop: cell: contact not finite (BUG-0307) %s: normal=(%g %g %g) depth=%g accum=%g mass=%g mass2=%g target=%g "
+           "impulse=%g frame=%u | A %s%s%s | B %s%s%s",
+           what, k->normal[0], k->normal[1], k->normal[2], k->depth, k->accum, k->mass, k->mass2, k->target, imp, k->frame, sa,
+           *sra ? " root " : "", sra, sb, *srb ? " root " : "", srb);
+}
+static int SK_CDECL h_ContactSolve(Contact* k)
+{
+    uint8_t* a = k && in_cell() ? modes::cell_at(k->a) : nullptr;
+    uint8_t* b = a ? modes::cell_at(k->b) : nullptr;
+    if (!a || !b)
+        return o_ContactSolve(k);
+    g_contact_solves++;
+    uint8_t *ra = contact_root(a), *rb = contact_root(b), *av = avatar();
+    float imp = 0;
+    if (contact_finite(k, ra, rb, &imp))
+        return o_ContactSolve(k);
+    bool own = av && (ra == av || rb == av);
+    g_contacts_bad++;
+    g_contacts_bad_own += own;
+    contact_log(g_fix_contact_finite ? "not applied" : "applied (fix off)", k, a, b, ra, rb, imp);
+    if (!g_fix_contact_finite)
+        return o_ContactSolve(k);
+    if (!std::isfinite(k->accum))
+        k->accum = 0.f; // the game's clamp keeps a contact's accumulated impulse; a NaN one stays out of the next round
+    return 1;
+}
+static void SK_CDECL h_ContactPass()
+{
+    own_probe("before the contact solver");
+    o_ContactPass();
+    own_probe("contact solver");
+}
+
 // A level change removes every cell of the old scale (RemoveCellsOfOldScale 0xE7CD10). On the
 // guest these are mirrors: the host removes its own cells at its own level change (they made the
 // guest send ~600 "eaten" reports per level change before h_Destroy kept untouched mirrors).
@@ -2418,6 +2515,8 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     a_React = H->sym("Simulator::Cell::ReactToAttacker");
     a_Rest = H->sym("Simulator::Cell::RestAfterBite");
     a_Soft = H->sym("Simulator::Cell::SoftBodyStep");
+    a_ContactPass = H->sym("Simulator::Cell::ContactSolvePass");
+    a_ContactSolve = H->sym("Simulator::Cell::ContactSolve");
     a_ChunkA = H->sym("Simulator::Cell::EatChunkA");
     a_ChunkB = H->sym("Simulator::Cell::EatChunkB");
     a_Bite = H->sym("Simulator::Cell::Bite");
@@ -2461,6 +2560,10 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
         H->hook_create(M, (void*)a_SpawnLoot, (void*)h_SpawnLoot, (void**)&o_SpawnLoot);
     if (a_Soft)
         H->hook_create(M, (void*)a_Soft, (void*)h_Soft, (void**)&o_Soft);
+    if (a_ContactPass && a_ContactSolve) { // GOG 2024 only (BUG-0307)
+        H->hook_create(M, (void*)a_ContactPass, (void*)h_ContactPass, (void**)&o_ContactPass);
+        H->hook_create(M, (void*)a_ContactSolve, (void*)h_ContactSolve, (void**)&o_ContactSolve);
+    }
     if (a_Bite)
         H->hook_create(M, (void*)a_Bite, (void*)h_Bite, (void**)&o_Bite);
     if (a_PickTargets) // BUG-0306
@@ -5040,7 +5143,7 @@ std::string status()
     vm.dwLength = sizeof vm;
     GlobalMemoryStatusEx(&vm);
     char d[320];
-    snprintf(d, sizeof d, "cell_contacts: creature_pairs=%u bite_events=%u nonfinite_skipped=%u nonfinite_dropped=%u stale_targets=%u own_nf=%u shared_parts=%u vm_free_mb=%llu created=%u destroyed=%u leave_writes=%u leave_dropped=%u unknown_models=%u\n", g_creature_pairs, g_bite_events, g_nonfinite_sent_skipped, g_nonfinite_dropped, g_stale_targets, g_own_nf_events, g_shared_parts, vm.ullAvailVirtual >> 20, g_created, g_destroyed, g_leave_writes, g_leave_dropped, modes::cell_unknown_models());
+    snprintf(d, sizeof d, "cell_contacts: creature_pairs=%u bite_events=%u nonfinite_skipped=%u nonfinite_dropped=%u stale_targets=%u own_nf=%u contacts_bad=%u contacts_bad_own=%u contact_solves=%u shared_parts=%u vm_free_mb=%llu created=%u destroyed=%u leave_writes=%u leave_dropped=%u unknown_models=%u\n", g_creature_pairs, g_bite_events, g_nonfinite_sent_skipped, g_nonfinite_dropped, g_stale_targets, g_own_nf_events, g_contacts_bad, g_contacts_bad_own, g_contact_solves, g_shared_parts, vm.ullAvailVirtual >> 20, g_created, g_destroyed, g_leave_writes, g_leave_dropped, modes::cell_unknown_models());
     char b[1100];
     uint8_t* s = S();
     int food = s ? F<int32_t>(s, 0x1C) : -1;
