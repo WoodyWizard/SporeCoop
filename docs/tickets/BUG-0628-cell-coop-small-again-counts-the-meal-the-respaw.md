@@ -33,7 +33,8 @@ per point, the game's rule the test checks itself in "eating grows it back"); me
 cell_ko_food's (BUG-0364).
 
 ## Verification
-FAIL: lab 20261106-130235 (#2). PASS: see History (cell_coop reruns after the change).
+FAIL: lab 20261106-130235 (#2). PASS: lab 20261106-131524 (3 of 3 cold, target 0.28 each; the allowance was not
+needed there: the case needs a meal inside the slow sample, seen once in 10 runs).
 
 ## History
 - 2026-11-06: opened.

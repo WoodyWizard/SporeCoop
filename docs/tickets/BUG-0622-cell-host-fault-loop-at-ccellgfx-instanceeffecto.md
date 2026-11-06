@@ -47,11 +47,11 @@ any co-op code of 0.7.9 had run. A guard on 0xE67610 (skip the preload when the 
 was not added: no evidence of the list's real size, and the data was already bad (heap faults followed).
 
 ## Verification
-no-fail-run: not reproducible: 10 cold first Cell loads from the galaxy menu on rel/0.7.9 + BUG-0307 (828055b8 and
+no-fail-run: not reproducible: 13 cold first Cell loads from the galaxy menu on rel/0.7.9 + BUG-0307 (828055b8 and
 fix/w45-int3) without a fault: cell_gone_play x4 cold (lab 20261106-123649, lane 3), cell_gone_play x3 + cell_coop x3
-cold (lab 20261106-130235, lane 2, games ready after 49-66 s while lane 3 ran play_civ), cell_coop x3 cold (INT3
-report). The only sighting: 20261106-110218 #1.
+cold (lab 20261106-130235, lane 2, games ready after 49-66 s while lane 3 ran play_civ), cell_coop x3 cold (lab
+20261106-131524, the same load). The only sighting: 20261106-110218 #1.
 
 ## History
 - 2026-11-06: opened.
-- 2026-11-06 (fix/w45-int3): analysed (game code, no 0.7.9 code on the path), not reproduced in 10 cold loads; not-reproduced.
+- 2026-11-06 (fix/w45-int3): analysed (game code, no 0.7.9 code on the path), not reproduced in 13 cold loads; not-reproduced.

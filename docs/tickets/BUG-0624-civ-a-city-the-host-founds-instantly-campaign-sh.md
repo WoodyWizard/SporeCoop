@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.9 1e155b53
 fixed_in: unreleased
 branch: fix/w45-int3
-commits: 56a7ee58
+commits: 56a7ee58, 30b2aa04
 tests: civ_city_layout, civ_city_burst
 signature:
 docs: docs/re/civ.md#civ-instant-found

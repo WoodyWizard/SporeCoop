@@ -10,7 +10,7 @@ role:
 versions: 0.7.9 1e155b53
 fixed_in: unreleased
 branch: fix/w45-int3
-commits: f66de16c
+commits: f66de16c, 5bb3f4b8
 tests: play_civ
 signature:
 docs:
@@ -44,8 +44,9 @@ Test only (tools/tests/play_civ.py, f66de16c): the vehicles of a nation whose ne
 (counter `final_buildings_rechecked`) and reports what still differs. No limit changed.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+FAIL (the old audit): lab rel/0.7.9 20261106-105201 play_civ (the three problems above). PASS: lab
+20261106-125914 play_civ #1 (10.5 min, no problem). The two rechecks are counted (`vehicles_of_new_city`,
+`final_buildings_rechecked`) so later runs show how often they apply.
 
 ## History
 - 2026-11-06: opened.
