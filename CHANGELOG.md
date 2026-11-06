@@ -3,6 +3,10 @@
 ## [Unreleased]
 
 ### Fixed
+- Creature: when the host's game stood still (its death or upgrade caption) and then went on, a guest could lose
+  almost every creature around it at once, and they stayed gone while the next caption was up (BUG-0611).
+- Creature: creatures the host's game puts away while it stands still (the host's respawn at its nest) no longer
+  stay on a guest's screen where they were, as creatures nobody else has (BUG-0339).
 - Civilization: after the host takes a city, its buildings stand at the same places on the guests' screens; before,
   a guest's game could tear one building down and put it up again every two seconds a few metres away (BUG-0602).
 - Spice geysers are now the same size on every player's screen (a geyser the host's game made during play was ten

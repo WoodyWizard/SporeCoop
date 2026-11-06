@@ -3148,3 +3148,42 @@ BUG-0485. GOG 2024. ✔ = observed, ~ = read in the code, ? = inferred.
   game shows 1.0 after any load. Not a mod bug at its origin; in co-op each player saw the node at another size.
 * Fix `wobj.node_scale` (worldobj.cpp kind `node`, the whole planet, Creature / Tribe / Civ): the state is the host's
   scale; a guest's node that differs by more than 1 % takes it (cSpatialObject vt 0x40 SetScale). Test node_scale.
+
+## NPCs pooled during the host's freeze, and the guest's stale rule after it (2026-11-06, fix/w45-leftovers)
+<a id="creature-freeze-edges"></a>
+
+BUG-0339, BUG-0611. GOG 2024, lab lanes 6/7. Follows [the host's NPC set while its game stands still](#creature-npc-gaps).
+* ✔ (runtime, `coop_npc_frozen.py --case pooled`) While the host's game updates no creature (its death caption)
+  the game's own pool call on host NPCs (`coop.npc pool <id>`, creature vt 0xC8(1)) puts them at (0 0 0) with herd 0;
+  npc.cpp did nothing about them: host_tick returns before `retire_pooled`, and `frozen_send` (BUG-0413) skipped
+  NPCs at the centre (so it sent no despawn either). The guest's game kept all three proxies where they had stood for
+  the whole freeze (lab 20261106-110717, `npc.frozen_pooled` off). A guest drops a proxy without states only while
+  the host sends states, so nothing else removes them. Fix `npc.frozen_pooled`: `frozen_send` retires (despawn
+  at every guest, id forgotten) a tracked NPC that is not in the noun list any more or is within 50 m of the
+  planet's centre; 0 kept (lab 20261106-111013). `coop.npc` (host) prints `frozen_retired=`.
+* ~ (re-read, lab 20261031-083425 campaign#2, 0.7.3.1) BUG-0339's campaign had exactly this state: the host had
+  died at 09:51:50 and respawned at its nest at 09:52:31 (85 m away); from 09:52:43 on its "npcs simulated" line and
+  the guest's "npcs mirrored" line did not change for a minute and the host's sync-check (it reads the last updated
+  frame's NPCs) showed the same four NPCs at the centre 33 s apart, while the guest's four proxies stood ~100 m from
+  its death point. Inferred, not observed in that log: the host's game stood still after its respawn and the herd
+  went to the pool at the respawn (the game keeps NPCs only around the avatar, BUG-0274). The normal path (host_tick
+  with creatures updated) is not affected: a centre NPC is ~500 m from every guest and is despawned by relevance.
+* ✔ (runtime, `--case thaw`) A guest drops a proxy the host sent no state for in 5 s while other states arrive
+  (`npc.stale_proxy`, BUG-0009). After a freeze every proxy's last state is that old, so the first batch after it
+  that lists only some NPCs dropped all the others: with `coop.npc rxkeep 1 3` (guest, tests: each state batch keeps
+  its first NPC only, as when the other packet of a batch is lost; a batch holds 23 NPCs a packet) after a 10 s
+  caption, 5 of 5 host NPCs near the guest were gone 1 s after the OK, 20 stale drops (lab 20261106-110717,
+  `npc.thaw_stale` off). The host still counts them as known and sends no spawn; BUG-0487's resync brought them back
+  2 s later because the host's game ran on.
+* ~ BUG-0611's sighting (transition_net, feat/w33-tests-session lab 20261101-145528, SPORE_NET=player, the guest
+  at 30 fps): the host's game stood still from about 14:59:00 (its counts unchanged, input_lock=1) to the caption's
+  OK at 14:59:34, the brain upgrade caption came at 14:59:37 and froze it again; the guest's proxies went 25 -> 1 by
+  14:59:39 with no despawn line (a stale drop logs none), loss spikes of 12-16 % on that link. Inferred: the first
+  state batches after the OK came in part (two packets for 25 NPCs, one lost or late) and the stale rule dropped the
+  rest; with the host frozen again, no resync answer came until its caption closed. Not reproduced without the
+  test command: the creature fixture has 5 NPCs near the players (one packet), and the live Cell -> Creature start
+  (`--case live`, lab 20261106-105614) kept 8 of 8; its host logged no `npc: world change` at the caption, so
+  the earlier guess (the host's on_world_change) was not seen.
+* Fix `npc.thaw_stale`: the 5 s count starts when the states flow again after more than 1 s without a whole batch
+  (`g_states_flow_since`); 0 stale drops, 5 of 5 kept (lab 20261106-111013). `coop.npc` (guest) prints
+  `thaw_kept=` and `rxkeep_cut=`.
