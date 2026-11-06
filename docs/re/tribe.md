@@ -2030,3 +2030,17 @@ BUG-0531. GOG 2024, lane 5, coop_tribe_gather_block.py and play_tribe (`coop.tri
   goal the village, r 6.6; `carry=` read 0.0 there). The way round the hut was found by the game.
 * ✔ play_tribe's "no movement" orders (2 runs) were members in the fight node 0x05218BB3 (#tribe-member-body) or
   already carrying food; none in 0x0569236E. The state 1 stall of 2026-11-05 was not seen again.
+
+## Carried food on a guest's screen: unbound copies (2026-11-06, fix/w45-last)
+<a id="tribe-carried-bundles"></a>
+
+BUG-0617 (after BUG-0548). GOG 2024, lane 5, coop_world_host.py --case bundle_carry, play_tribe with the detector.
+* ✔ A guest's copy of a carried bundle (wobj game_bundle, class bit 0x100) sits in the container of the guest's copy of
+  the carrier (creature +0x34) and moves with it; with the carrier walking it was 9.5-21.5 m from the host's bundle at
+  the next snapshot (the copy of the member lags, and the made copy starts at the host's place). Bound copies stay
+  bound by id however far; an unbound one stayed the guest's own for good (bundle_own) and kept being carried after
+  the host's member put its food down. Fix `wobj.bundle_carried` (bind within 8 m, no own carried copies).
+* ✔ The guest's tribe mirrors run no behaviour tree (`coop.tribe` ai_skipped = every tick), so a guest's game makes no
+  carried food of its own while the host plays.
+* ✔ The food mats' bundles (census own=held, `game_bundle_held`) are the tribes' food (tribe +0x20C), each game's own
+  container; compared through the state's food values, not as objects.

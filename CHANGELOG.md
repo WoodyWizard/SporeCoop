@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Fixed
+- Tribe: a guest no longer sees tribe members carrying food that the host's members already put down (BUG-0617).
 - Tribe: when a member of a player's tribe dies, its body now lies on every player's screen as long as it does on the
   host's; before, it vanished at once on the guests' screens (BUG-0620).
 - Creature: an animal resting at its nest no longer looks stuck inside the nest mound on a guest's screen when the
