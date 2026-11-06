@@ -1035,6 +1035,9 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * A rejoined guest leaving Cell for the host's world found a corrupt heap when the cell pool was
   freed (`GeneralAllocator_FreeInternal` under `cObjectPool::_dtor` < SimUpdate+0x6ED), lab
   20261030-104149 campaign_short#3. Ticket: BUG-0308.
+  Fixed (2026-11-05, fix/w45-crashes): the guest sat in its pause menu while its mirrors churned, BUG-0348's
+  broadphase overflow (fixed by `cell.sap_pending` in 0.7.3.2); the path is test `cell_pause_rejoin`
+  (docs/re/cell.md#cell-rejoin-paused-heap).
 * A guest 6 s into Cell jumped to address 0 in UI code right after its test window was moved and its
   main thread stopped, lab 20261030-104149 campaign#1. Ticket: BUG-0309.
   CORRECTION (2026-11-01, fix/w33-null-call): not UI code; SporeKit's GetAsyncKeyState detour
@@ -1265,6 +1268,9 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Not checked: who wrote the float; whether the heap was damaged in Creature or in the editors.
 * Next steps: a heap walk tripwire (PPMalloc chunk sizes) run once a second in a stress campaign
   would date the damage.
+* 2026-11-05 (fix/w45-crashes): not reproduced in 3 more stress campaigns (2 x campaign_tribe, 1 x
+  campaign_ct, SPORE_DETECTOR=20); the signature is in no other lab log; the grid's slot layout is
+  in docs/re/tribe.md#tribe-flora-grid-slots.
 * Ticket: BUG-0359
 
 ## Creature: running NPCs probably slide without a walk gait on guests (2026-11-01, fix/w29-puppet-move)
@@ -1555,6 +1561,8 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   eip 4 bytes into a target (lab 20261101-134603 / 134623-fix-w33-null-call).
 * Known: inferred from the code; the window is nanoseconds per call.
 * Next steps: make the input hooks at boot or on the main thread.
+* Fixed (2026-11-05, fix/w45-crashes): an int3 gate and a 50 ms window before the bytes are written
+  (`kit.fix hookfirst`, test `kit_hooksplit`, docs/02-modkit.md#modkit-hook-first-write).
 * Ticket: BUG-0403
 
 ## Creature: the partner's creature slides in its standing pose for a whole walk (2026-11-01, fix/w34-walk-stable)
@@ -2006,3 +2014,5 @@ Player reports 2026-11-04 (0.7.5, Discord bug-reports; not analysed yet):
   animation event's per-target effects 0x682E8D4B / 0xF0D5A994 / 0xCFECC623, sound 0xD05B58ED; `coop_tribe_fight_sounds.py`
   prints the host's plays). docs/re/tribe.md#tribe-mirror-fx.
 - BUG-0604: Cell: after the guest's level-up its screen showed only water (no cell drawn, nothing on screen for 7 min) in one cell_new_game run (`tools/lab.py run cell_new_game`; not analysed)
+- BUG-0606: Cell -> Creature, 4 players: every guest's sync-check found the host's cell 359-740 apart right after the
+  campaign's food 1000 shortcut in the Cell advance (lab 20261105-233139 campaign_ct#1, once; not analysed).
