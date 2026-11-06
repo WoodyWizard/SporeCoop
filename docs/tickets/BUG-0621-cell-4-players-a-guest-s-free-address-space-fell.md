@@ -39,3 +39,4 @@ no-fail-run: not reproduced (see Root cause).
 
 ## History
 - 2026-11-06 (fix/w45-cell-nan): opened, split from BUG-0307 (its NaN source fixed there).
+- 2026-11-06: Discord report 2026-11-06 (0.7.8): a sibling in normal play, BUG-0631: a host on the 2 GB space (large-address flag off) drained 1935 -> 133 MB free (largest block 12 MB) over ~2 h Cell > Civ, ~740 MB of it in 50 min of Creature (the guest ~384 MB in the same time), and crashed in Civ in a model's vertex blend (+0x3995F0). Same class (address space drained), other scenario; what grows on the host is not known yet.
