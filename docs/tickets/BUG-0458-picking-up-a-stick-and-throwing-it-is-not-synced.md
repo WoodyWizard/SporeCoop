@@ -10,7 +10,7 @@ role: host
 versions: 
 fixed_in:
 branch: fix/w45-creature-reports
-commits: COMMIT_PLACEHOLDER
+commits: b2522091
 tests: creature_carry (coop_creature_carry.py)
 signature:
 docs: docs/re/creature.md#creature-npc-anims, docs/re/creature.md#creature-carry-relay
