@@ -1876,6 +1876,7 @@ static void guest_state(net::Reader& r)
             ps.rot = g.rot;
             ps.vel = g.vel;
             g.buf.delay = g_test_delay;
+            g.buf.lead = true; // BUG-0425 (drive.lead)
             g.buf.push(ps, now);
         }
         if (c && !game::object_alive(c)) {

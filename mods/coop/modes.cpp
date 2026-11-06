@@ -465,6 +465,7 @@ static void space_fill(void* u, net::PlayerState& st)
 
 bool ufo_ident_fix = true;
 COOP_FIX("drive.nudge_dt", "BUG-0175", drive::g_nudge_dt_fix, "creature, tribe: a mirror's pull to its place is per second, not per frame (low frame rates trailed more)");
+COOP_FIX("drive.lead", "BUG-0425", net::g_lead_fix, "creature, tribe: the host's animals and tribe members are shown where the host has them now, not 0.2 s behind");
 COOP_FIX("drive.sender_agl", "BUG-0425", drive::g_sender_agl_fix, "creature, tribe: a partner or animal off the ground is drawn at its height over the sender's ground, over this game's ground");
 COOP_FIX("drive.own_height", "BUG-0329", drive::g_own_height_fix, "tribe: a member's or animal's mirror is driven at its own ground height, not the host's absolute one");
 COOP_FIX("fleet.type", "BUG-0111", ufo_ident_fix, "space: only our own puppets count as puppets, not any UfoType 6 ship (coop.fleet typefix)");

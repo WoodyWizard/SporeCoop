@@ -97,9 +97,25 @@ private:
     bool have_ = false;
 };
 
+// BUG-0425 (M1, `coop.fix drive.lead`): the one rule for where a remote body is shown. A guest showed every host
+// body interpolated at (now - delay) of the host's clock: the delay (0.10-0.15 s) plus the one-way latency behind
+// the host's body (measured with both games' own positions at the same moment, coop_body_trail.py: 0.17-0.21 s,
+// 0.8-1.2 m behind a walking or running NPC, the target as far behind as the drawn proxy). With the lead a body
+// is shown where the sender has it NOW: its newest state moved on by its velocity for the state's age on the
+// sender's clock plus the one-way latency (g_one_way: half the round trip, set by the session every frame),
+// at most kMaxLead s ahead of that state (a loss burst: it stands at the end of its lead until the next state).
+// The velocity is the state's own while it moves, never faster than its path between the two newest states
+// (a herd animal pushed by its mates, one against a rock: its game reports a walk it does not make), the path's
+// for a body that moves without a speed of its own (BUG-0394), none once it reported a stop.
+// Off: interpolated at now - delay (0.7.8).
+inline bool g_lead_fix = true;
+inline double g_one_way = 0.03; // s
+constexpr double kMaxLead = 0.35; // s ahead of the newest state
+
 class SnapshotBuffer {
 public:
     double delay = 0.10;       // interpolation delay (s)
+    bool lead = false;         // BUG-0425: shown where the sender has it now (g_lead_fix)
     double max_extrap = 0.25;  // extrapolation limit (s)
     // BUG-0499: > 0: no blend across a step between two snapshots faster than this (m/s): the sender's
     // creature was put somewhere else (the hatchling out of its egg 5-11 m, a respawn at the nest), not a
@@ -165,13 +181,62 @@ public:
         return n;
     }
 
-    // Interpolated state at (now - delay) in sender time.
+    // BUG-0425: the velocity the lead moves the newest state on with (see g_lead_fix)
+    Vec3 lead_velocity() const
+    {
+        const Snap& n = snaps_.back();
+        auto len = [](const Vec3& v) { return std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z); };
+        float sn = len(n.s.vel), ps = -1;
+        Vec3 pv{};
+        const Snap* pr = snaps_.size() >= 2 ? &snaps_[snaps_.size() - 2] : nullptr;
+        if (pr) {
+            double dt = n.t - pr->t;
+            if (dt > 0.02 && dt < 0.5 && pr->s.mode == n.s.mode && pr->s.world == n.s.world &&
+                !((pr->s.flags ^ n.s.flags) & (PF_IN_WORLD | PF_DEAD))) {
+                float k = (float)(1.0 / dt);
+                pv = {(n.s.pos.x - pr->s.pos.x) * k, (n.s.pos.y - pr->s.pos.y) * k, (n.s.pos.z - pr->s.pos.z) * k};
+                ps = len(pv);
+                if (ps > 15.f || (jump_speed > 0 && ps > jump_speed))
+                    return {}; // the sender's body was put somewhere: no walk to go on with
+            }
+        }
+        if (sn > 0.3f) {
+            float cap = ps >= 0 ? ps * 1.25f + 0.3f : sn;
+            if (sn > cap) {
+                float k = cap / sn;
+                return {n.s.vel.x * k, n.s.vel.y * k, n.s.vel.z * k};
+            }
+            return n.s.vel;
+        }
+        if (pr && len(pr->s.vel) <= 0.3f && ps > 0.5f)
+            return pv; // it moves without a speed of its own (BUG-0394)
+        return {};
+    }
+
+    // Interpolated state at (now - delay) in sender time; with `lead` (g_lead_fix) the sender's state now.
     bool sample(double local_now, PlayerState& out) const
     {
         if (snaps_.empty())
             return false;
         double t = local_now - offset_ - delay;
         last_extrap = 0;
+        if (lead && g_lead_fix) {
+            const double tl = local_now - offset_ + g_one_way;
+            const Snap& n = snaps_.back();
+            if (tl >= n.t) {
+                double dt = tl - n.t;
+                last_extrap = dt;
+                dt = std::min(dt, kMaxLead);
+                Vec3 v = lead_velocity();
+                out = n.s;
+                out.pos.x += v.x * (float)dt;
+                out.pos.y += v.y * (float)dt;
+                out.pos.z += v.z * (float)dt;
+                out.vel = v;
+                return true;
+            }
+            t = tl; // (a state from the future: the clock offset is late) interpolated there
+        }
         if (t <= snaps_.front().t) {
             out = snaps_.front().s;
             return true;

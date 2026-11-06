@@ -767,6 +767,55 @@ int c_track(void*, int argc, const char* const* argv, SkOut* out)
     return 0;
 }
 
+// ---- coop.bodyrec (BUG-0425, M1): every synchronized body (sync_all: players, NPCs, Tribe members, Civ vehicles,
+// ships, cells) as this game drew it (read at the start of the mod's frame, before any message or driving), with the
+// absolute time (H->time_seconds: QueryPerformanceCounter, one clock for every game on one PC). A test records on
+// the host and on a guest and compares the guest's copy with the host's body at the same moment
+// (tools/tests/body_trail.py), the game's own positions on both machines, not our bookkeeping.
+struct BodyRow {
+    double t;
+    char key[8];
+    net::Vec3 p;
+};
+static std::deque<BodyRow> g_bodyrec;
+static bool g_bodyrec_on = false;
+static constexpr size_t kBodyRecMax = 400000;
+
+static void bodyrec_tick(double now)
+{
+    if (!g_bodyrec_on || !g_sess.connected())
+        return;
+    for (auto& e : sync_all()) {
+        BodyRow r{};
+        r.t = now;
+        snprintf(r.key, sizeof r.key, "%s", e.key.c_str());
+        r.p = e.pos;
+        g_bodyrec.push_back(r);
+    }
+    while (g_bodyrec.size() > kBodyRecMax)
+        g_bodyrec.pop_front();
+}
+
+int c_bodyrec(void*, int argc, const char* const* argv, SkOut* out)
+{
+    const char* a = argc > 1 ? argv[1] : "count";
+    if (!strcmp(a, "start")) {
+        g_bodyrec.clear();
+        g_bodyrec_on = true;
+    } else if (!strcmp(a, "stop"))
+        g_bodyrec_on = false;
+    else if (!strcmp(a, "dump")) { // dump [from] [n]: t key x y z (t: absolute s)
+        size_t from = argc > 2 ? (size_t)atol(argv[2]) : 0, n = argc > 3 ? (size_t)atol(argv[3]) : 2000;
+        for (size_t i = from; i < g_bodyrec.size() && i < from + n; i++) {
+            const auto& x = g_bodyrec[i];
+            SAY("%.4f %s %.3f %.3f %.3f\n", x.t, x.key, x.p.x, x.p.y, x.p.z);
+        }
+        return 0;
+    }
+    SAY("bodyrec %s samples=%u now=%.4f\n", g_bodyrec_on ? "on" : "off", (unsigned)g_bodyrec.size(), H->time_seconds());
+    return 0;
+}
+
 // BUG-0513: a partner whose game stops sending (minimized, alt-tabbed full screen, a stall of 17-38 s) was hidden
 // after 5 s without a word ("the guest is bugged into the ground"). With core.partner_silent the others are told
 // once that the partner is not responding and when it plays again. Off: 0.7.3.6.
@@ -3025,6 +3074,7 @@ void on_frame(void*, int, void*)
         avatar_change_check();
     monitor_frame_start(now); // the puppets as drawn, before any driving (docs/06-testing.md#testing-monitor)
     npc::monitor_tick(now);   // the proxies as drawn
+    bodyrec_tick(now);        // coop.bodyrec (tests, BUG-0425): every body as drawn
     modes::own_ground_tick(now); // BUG-0592: the own creature not left in the ground
     // BUG-0231: the world a joining guest hears in WELCOME (before the host's first state); the
     // values of the last frame, as every message of this update sees them. Not switched: 0.7.3.0
@@ -3033,6 +3083,11 @@ void on_frame(void*, int, void*)
         g_sess.world = host_world::welcome_world(g_mode, g_world);
     g_sess.update();
     lobby_tick(now);
+    if (g_sess.role() == net::Role::Client) { // BUG-0425 (drive.lead): the one-way latency to the host, half its round trip
+        int rtt = g_sess.rtt_of(0);
+        if (rtt >= 0)
+            net::g_one_way = std::min(std::max(rtt / 2000.0, 0.0), 0.15);
+    }
     vote_tick(now);
     submit_tick(now);
     own_editor_tick(now);
@@ -6106,6 +6161,8 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                        return 0;
                    },
                    nullptr, MT);
+    H->command_add(M, "coop.bodyrec", "coop.bodyrec start|stop|count|dump [from] [n] - every frame: every synchronized body as drawn, absolute time (tests, BUG-0425)",
+                   c_bodyrec, nullptr, MT);
     H->command_add(M, "coop.sync", "coop.sync - pose of every synchronized object (key x y z qx qy qz qw), tests",
                    [](void*, int, const char* const*, SkOut* out) {
                        std::vector<syncdbg::Entry> v = sync_all();

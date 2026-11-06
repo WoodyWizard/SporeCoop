@@ -1963,6 +1963,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         s.flags = sp.flags;
         s.health = sp.health;
         px.buf.delay = 0.15;
+        px.buf.lead = true; // BUG-0425 (drive.lead): where the host has it now
         px.buf.push(s, now);
         px.last_rx = now;
         break;
