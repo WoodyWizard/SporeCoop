@@ -221,6 +221,23 @@ def main():
             gh, gg = ground(host, h[k][2]), ground(guest, h[k][2])
             if gh is not None and gg is not None and abs(gh - gg) > 0.3:
                 print(f'    ground differs at stamp {k} {h[k]}: host {gh} guest {gg}', flush=True)
+        diff = [k for k in sorted(h) if (lambda a, b: a is not None and b is not None and abs(a - b) > 0.3)(
+            ground(host, h[k][2]), ground(guest, h[k][2]))]
+        for k in diff[:3]:  # the whole entries of a few, on both games
+            print(f'    stamp {k} raw, host | guest:', flush=True)
+            for a, b in zip(out(host, f'coop.terrain raw {k}').splitlines(), out(guest, f'coop.terrain raw {k}').splitlines()):
+                print(f'      {a:28s} | {b}' + ('   <>' if a != b else ''), flush=True)
+        if '--dirty' in sys.argv and diff:  # does a rebuild of the host's terrain from its stamp list give the guest's?
+            print('  host: ' + out(host, 'coop.terrain dirty').strip(), flush=True)
+            time.sleep(8)
+            for k in diff[:12]:
+                print(f'    after the host\'s rebuild, stamp {k} at r {h[k][3]}: host {ground(host, h[k][2])} guest '
+                      f'{ground(guest, h[k][2])}', flush=True)
+            print('  guest: ' + out(guest, 'coop.terrain dirty').strip(), flush=True)
+            time.sleep(8)
+            for k in diff[:12]:
+                print(f'    after the guest\'s rebuild too, stamp {k}: host {ground(host, h[k][2])} guest '
+                      f'{ground(guest, h[k][2])}', flush=True)
         print('  host coop.terrain (calls):\n' + '\n'.join(l for l in out(host, 'coop.terrain').splitlines() if l.startswith('call'))[:5000], flush=True)
     result = {}
     for k in range(2):

@@ -3,6 +3,7 @@
 // ApplyStamp / RemoveStamp / ClearAllStamps calls (caller, transform position, returned id).
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 
@@ -85,6 +86,36 @@ int c_terrain(void*, int argc, const char* const* argv, SkOut* out)
     void* t = terrain();
     std::string s;
     char b[256];
+    if (argc > 1 && !strcmp(argv[1], "dirty")) { // RE: mark the stamp lists changed (+0x814, +0x818 ++) as ApplyStamp does
+        if (!t || !skg::readable((uint8_t*)t + 0x814, 8)) {
+            H->out_printf(out, "no terrain");
+            return 1;
+        }
+        uint32_t* d = (uint32_t*)((uint8_t*)t + 0x814);
+        d[0]++;
+        d[1]++;
+        H->out_printf(out, "terrain %p dirty counters now %u %u", t, d[0], d[1]);
+        return 0;
+    }
+    if (argc > 2 && !strcmp(argv[1], "raw")) { // RE: the whole 0xAC-byte entry of stamp <id>
+        uint32_t want = (uint32_t)strtoul(argv[2], nullptr, 10);
+        if (t && skg::readable((uint8_t*)t + 0x770, 0x20))
+            for (uint32_t off : {0x770u, 0x784u}) {
+                uint8_t* bg = *(uint8_t**)((uint8_t*)t + off);
+                uint8_t* en = *(uint8_t**)((uint8_t*)t + off + 4);
+                for (uint8_t* e = bg; bg && e + 0xAC <= en; e += 0xAC)
+                    if (skg::readable(e, 0xAC) && *(uint32_t*)(e + 0xA8) == want) {
+                        for (int k = 0; k < 0xAC; k += 4) {
+                            float fv;
+                            memcpy(&fv, e + k, 4);
+                            snprintf(b, sizeof b, "+%02X %08X %.4g\n", k, *(uint32_t*)(e + k), fv);
+                            s += b;
+                        }
+                    }
+            }
+        H->out_printf(out, "%s", s.empty() ? "no such stamp" : s.c_str());
+        return 0;
+    }
     if (argc > 1 && !strcmp(argv[1], "list")) { // one line per stamp: vector, id, transform position, |r|, prop key words
         if (t && skg::readable((uint8_t*)t + 0x770, 0x20))
             for (uint32_t off : {0x770u, 0x784u}) {
