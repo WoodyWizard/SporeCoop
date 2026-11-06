@@ -1273,3 +1273,23 @@ BUG-0602. GOG 2024. ✔ = observed, ~ = read in the code, ? = inferred.
   building stays its own (the planner's pick, BUG-0491) and the next snapshot matches it. `coop.civ` counts
   `off_slot=` (rebuilt more than 4 m from the host's spot) and `moved=`. `coop.civ blist <i>` lists a city's buildings
   with their slot, `coop.civ bmove <i> <k> <x y z>` (tests) moves one.
+
+## Instant city foundings reach the guests at once (2026-11-06, fix/w45-int3)
+<a id="civ-instant-found"></a>
+
+* ✔ (lab 20261106-122407, 20261106-123450) civ_city_layout founds three NPC cities with
+  `SpawnNextCity(ex, 1, 0)` and `wait.frames 30` between them. At ~25 fps (a loaded PC) the three host cities
+  appeared 2 s apart (host log: their terrain stamps 0x00F99E0E at 37.2, 39.3, 41.3 s), and the guest's catch-up
+  (city_catch_up: 2 s short, then SpawnNextCity with the appearance timer) had each of them 4-5 s after the host
+  (guest stamps at 42.3 and 44.5 s): the vehicle of the first new nation was missing on the guest in two sync-checks
+  3 s apart (`v: 1 missing on the guest (v5)`), 3 of 3 runs on this tree, 1 of 3 on 46b4e1d5 under the same load;
+  at 60-69 fps (fix/w45-placement runs) the three foundings fell in one snapshot and it passed.
+* Fix `civ.instant_found` (BUG-0624): the host's hook broadcasts an instant founding too (MSG_CIV_BUILD
+  kNextCitySite, noun 1 = instant; 0 = with the timer as before), a guest founds it with instant=1 at once (the city
+  object comes with the city simulator's next Update tick, at most 1 s of game time, docs/re/civ.md 8); the catch-up
+  founds instantly as well (the city is late already, the guest skips the new-city cinematic of a city it missed).
+  Off: no broadcast for instant foundings, the catch-up with the timer (0.7.8).
+* ~ A founding with the timer (the game's own AI, `instant` 0) still runs each game's own appearance timer: a guest
+  whose game time runs slower (hitches) has the city seconds after the host (play_civ 20261106-105201: founded on
+  both at 11:18:04-05, the host's city at 11:18:10, the guest's at 11:18:17). Not changed: the guest's new-city
+  cinematic belongs to that path.

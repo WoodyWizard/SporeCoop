@@ -710,6 +710,14 @@ def audit(game, hc, gc, final=False):
             if g2.get('pol') != c['pol'] or g2.get('owner') != c['owner']:
                 game.problem(f'city {i}: host pol {c["pol"]} owner {c["owner"]}, guest pol {g2.get("pol")} '
                              f'owner {g2.get("owner")}')
+        if final and (g.get('ruins') != c.get('ruins') or g['buildings'] != c['buildings']):
+            # BUG-0625: the guest takes a city's buildings from the host's snapshots (one city per cycle), and a
+            # capture's cinematic holds both worlds up to 8 s: the last audit (seconds after the last action) looks
+            # again once both games ran on for a few seconds, like every other check here; a lasting difference stays
+            game.bump('final_buildings_rechecked')
+            time.sleep(4)
+            c = civ_state(hc)[0].get(i, c)
+            g = civ_state(gc)[0].get(i, g)
         if g.get('ruins') != c.get('ruins'):
             game.bump('ruins_differ')
             if final:
@@ -718,12 +726,19 @@ def audit(game, hc, gc, final=False):
             game.bump('buildings_differ')
             if final:
                 game.problem(f'city {i}: {c["buildings"]} buildings on the host, {g["buildings"]} on the guest')
+    # BUG-0625: a new city appears on each machine a few seconds after the site was chosen (the game's appearance
+    # timer runs on each game's own time: a guest at a low frame rate is seconds later), and its nation's vehicles
+    # can exist only with it: they share the city's grace above (three audits, then "city N missing")
+    young = {c['pol'] for i, c in hcit.items() if i in game.missing and not final}
     if set(hv) != set(gv):
         time.sleep(1)
         _, hv, _ = civ_state(hc)
         _, gv, _ = civ_state(gc)
-        if set(hv) != set(gv):
-            game.problem(f'vehicles differ: host only {sorted(set(hv) - set(gv))}, guest only {sorted(set(gv) - set(hv))}')
+        host_only = {i for i in set(hv) - set(gv) if hv[i]['pol'] not in young}
+        if young and host_only != set(hv) - set(gv):
+            game.bump('vehicles_of_new_city')
+        if host_only or set(gv) - set(hv):
+            game.problem(f'vehicles differ: host only {sorted(host_only)}, guest only {sorted(set(gv) - set(hv))}')
     # BUG-0206: a gift changes the owner on the host at once and reaches the guest with the next
     # snapshot (0.1 s; while the guest's bot is in a city planner, only when it is back): an owner
     # that differs is looked at again 1.5 s later, like the cities, and is a problem only then

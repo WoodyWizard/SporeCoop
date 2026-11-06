@@ -1719,3 +1719,24 @@ BUG-0480. GOG 2024, lane 7, `coop_cell_gone.py --case play` (cold starts), Ghidr
   findings in 27 comparisons of play_cell (out/lab/20261106-114009-2).
 * ~ The detector's bracket (host dumps 1.5 s apart) can still count a cell living ~1 s between them as
   `guest_only:cell`; not seen in these runs.
+
+## The Cell mode entry's effect preload faulting in a fresh game (2026-11-06, fix/w45-int3)
+<a id="cell-preload-fault"></a>
+
+* ✔ (disassembly, GOG 2024) The fault of BUG-0622 (`0x00E67643`, named "InstanceEffectOnCell+0xE03" by the nearest
+  symbol) is in a small function at **0xE67610** cdecl(uint32 key): `Simulator::Cell::GetData(key, &handle)`
+  (0xE4CBF0, a jump to 0xE823A0) returns a list `{int count; T* items; items inline from +8}`, stride 0x1C; for each
+  item it calls `cCellGFX::AddPreloadedEffect(item.+0, 0)` (0xE66280); then the handle is released. The Cell mode's
+  init (the code before cCellModeStrategy::Initialize 0xE81CF0) calls it twice, with `GetGlobalsData()` (0xE4CE20)
+  `+0x3C` and `+0x40`; the fault came from the second (return 0xE81AFC).
+* ✔ The registers of the fault: esi (the list) 0x1198FEC8, edx (items) = esi + 8, edi (index) 11, ebx 11 x 0x1C,
+  the read at 0x11990004 = the first byte past a page: the count said more than 11 items, the block ended at the page
+  end. ~ Inferred: the list block was freed (or never filled) while the count still read high: a stale or torn
+  resource, in a process 12 s old, on its first Cell load, under a load that made the games need 512 s to start.
+  The following 38168 faults (the game's own handler went on, the Cell world never came: "pool block 00000000
+  unmapped while the mode reads Cell") follow from it.
+* ✔ No co-op session existed yet (it started 4 minutes later), no co-op or SporeKit hook is in the call chain
+  (0xE81AFC < 0xE81CBF < 0x8856A0 < 0x75DB01 < 0xEF2250 ...), and the 0.7.9 changes of SporeKit (the int3 gate of
+  hooks made after boot) act only on a hook made after the first frame: none was made before the fault (the input
+  hooks come with the first injected key, the Cell model hooks of modes.cpp ensure_model_hook with the first mirror
+  or puppet cell, both in a session). Not reproduced in 13 cold loads: see BUG-0622.
