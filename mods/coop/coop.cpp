@@ -3951,6 +3951,7 @@ void setup_callbacks()
         switch (type) {
         case net::MSG_NPC_SPAWN: case net::MSG_NPC_DESPAWN: case net::MSG_NPC_STATE:
         case net::MSG_DAMAGE_REQ: case net::MSG_DAMAGE: case net::MSG_NPC_RESYNC: case net::MSG_NPC_ANIM:
+        case net::MSG_NPC_MEAT:
             npc::on_message(type, from, r);
             return;
         case net::MSG_SPECIES: case net::MSG_SOCIAL:

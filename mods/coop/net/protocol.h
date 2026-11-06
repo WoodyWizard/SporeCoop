@@ -109,6 +109,10 @@ enum MsgType : uint8_t {
                           // u8 kind; 0 effect {u8 space (0 NPC, 1 tribe member), u16 id, u8 stop, u8 pool, u32 effect,
                           // u32 key}, 1 combat voice {space, id, u8 enter}, 2 sprint {space, id, u8 on}.
                           // Older SporeCoop ignores it (an unknown type).
+    MSG_NPC_MEAT = 65,    // the meat left on bodies of killed NPCs (BUG-0557 / BUG-0383, npc.cpp): u8 kind; 0 host -> guest
+                          // {u8 n, n x {u16 NPC id, f32 meat}} (unreliable, on a change and every 2 s), 1 guest -> host
+                          // {u8 n, n x {u16 NPC id, f32 eaten}} (reliable: what the guest's creature ate of its proxy).
+                          // Older SporeCoop ignores it (an unknown type).
     MSG_WSTATE = 62,      // host -> guests: host-owned world state rows (wsync.h, BUG-0419 / BUG-0565 / BUG-0577 /
                           // BUG-0579 / BUG-0564): u8 kind 0, u32 host mode, u8 rows, {u8 id, u8 nv, u8 n, n x {u32 key,
                           // nv x u32}}. Older SporeCoop ignores it (an unknown type).

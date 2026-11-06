@@ -208,6 +208,7 @@ struct Proxy {
     double anim_rx_at = 0;   // BUG-0464: when the host's last start of an animation of it came
     bool air = false;        // BUG-0550: placed in the air (the host's NPC off its ground) last frame
     uint32_t airs = 0;       // BUG-0550 (coop.npc list): frames placed in the air
+    float meat_seen = -1e9f; // BUG-0557: the body's meat (+0xB84) as last read or set here (-1e9: not a body yet)
 };
 static std::map<uint16_t, Proxy> g_proxies;
 // BUG-0383: a guest made no proxy for an NPC that was dead when it first came into the guest's range (killed
@@ -217,6 +218,26 @@ static std::map<uint16_t, Proxy> g_proxies;
 // it already (eaten, decayed). `coop.fix npc.dead_proxy off`: no proxy for a body (0.7.3.3).
 static bool g_dead_proxy_fix = true;
 COOP_FIX("npc.dead_proxy", "BUG-0383", g_dead_proxy_fix, "creature: a guest shows the bodies of NPCs that were dead before it came near");
+// BUG-0557 / BUG-0383: eating a body is each game's own act (the eat node 0xD70FD0 takes meat +0xB84 off the body in
+// the eater's game): a body the guest's creature ate stayed whole in the host's game and the host's body (eaten by the
+// host, its pack) stayed whole on the guest; a body eaten out in one game lay there in the other with all its meat
+// (lab 20261105-225954: 100 -> -31 in the eater's game, 100 in the other). The meat of a body is now one value of the
+// party: the host's game holds it (the guest's bites of its proxy go to the host and come off the host's body) and the
+// guest's proxy of a body shows the host's meat (the lower of the two: a body only loses meat).
+// `coop.fix npc.body_meat off`: each game eats its own bodies (0.7.8).
+static bool g_meat_fix = true;
+COOP_FIX("npc.body_meat", "BUG-0557", g_meat_fix, "creature: a body eaten by one player is eaten as far on the other's screen");
+static constexpr float kMeatStep = 0.5f; // meat units: a change smaller than this is not sent
+static std::map<uint8_t, std::map<uint16_t, std::pair<float, double>>> g_meat_sent; // host: guest -> id -> (meat, when)
+static std::map<uint16_t, float> g_meat_eaten; // guest: what its creature ate of each proxy, not sent yet
+static double g_meat_out_at = 0;
+static uint32_t g_meat_rx = 0, g_meat_set = 0, g_meat_bites_tx = 0, g_meat_bites_rx = 0;
+static float body_meat(void* c) { return c && skg::readable(c, 0xB88) ? *(float*)((uint8_t*)c + 0xB84) : 0.f; }
+static void set_body_meat(void* c, float m)
+{
+    if (c && skg::readable(c, 0xB88))
+        *(float*)((uint8_t*)c + 0xB84) = m;
+}
 // BUG-0300: a guest in a 4-player campaign had a proxy in its list (states arriving) whose creature
 // was no creature of its world (not in the census, sync-check "missing on the guest") for 30 s and
 // more, while the host's NPC stood 90 m from it. Cause not found. Once a second the guest now checks
@@ -1278,6 +1299,32 @@ static void host_tick(double now, const std::vector<void*>& creatures)
                 }
             C.sess->send_unreliable_to(p.id, net::MSG_NPC_STATE, w);
         }
+        if (g_meat_fix && send_states) { // BUG-0557: the meat left on the bodies this guest mirrors
+            auto& sent = g_meat_sent[p.id];
+            std::vector<std::pair<uint16_t, float>> v;
+            for (void* c : g_seen_now) {
+                uint16_t id = g_host_npcs[c].id;
+                if (!known.count(id) || !game::is_dead(c))
+                    continue;
+                float m = body_meat(c);
+                auto f = sent.find(id);
+                if (f == sent.end() || std::fabs(f->second.first - m) >= kMeatStep || now - f->second.second >= 2.0) {
+                    v.push_back({id, m});
+                    sent[id] = {m, now};
+                }
+            }
+            for (size_t i = 0; i < v.size(); i += 100) {
+                size_t n = std::min<size_t>(100, v.size() - i);
+                net::Writer w;
+                w.u8(0);
+                w.u8((uint8_t)n);
+                for (size_t j = 0; j < n; j++) {
+                    w.u16(v[i + j].first);
+                    w.f32(v[i + j].second);
+                }
+                C.sess->send_unreliable_to(p.id, net::MSG_NPC_MEAT, w);
+            }
+        }
         if (g_anims_fix && !g_anim_out.empty())
             send_anims(p.id, known); // BUG-0464
         if (g_anims_fix && send_snap)
@@ -1630,6 +1677,12 @@ static void guest_tick(double now)
             }
         } else if (!px.killed && s.health > 0)
             game::set_health(px.c, s.health);
+        if (g_meat_fix && px.killed) { // BUG-0557: what this game's creature ate of the body goes to the host
+            float m = body_meat(px.c);
+            if (px.meat_seen > -1e8f && m < px.meat_seen - 0.001f)
+                g_meat_eaten[id] += px.meat_seen - m;
+            px.meat_seen = m;
+        }
         if (!px.killed) // the host's NPC was impressed (by anybody): the proxy shows it too
             game::set_impressed(px.c, (s.flags & net::NF_IMPRESSED) != 0);
         px.host_pack = (s.flags & net::NF_PACK) != 0;
@@ -1643,6 +1696,20 @@ static void guest_tick(double now)
             px.flock_fx = summoned;
         }
         ntrack_row(id, px, s, drawn, px.killed ? 2 : px.air ? 5 : walked ? 3 : placed ? 1 : 0, now, rv_rep);
+    }
+    if (g_meat_fix && !g_meat_eaten.empty() && now - g_meat_out_at >= 0.2) { // BUG-0557: the bites, 5 times a second
+        g_meat_out_at = now;
+        net::Writer w;
+        w.u8(1);
+        uint8_t n = (uint8_t)std::min<size_t>(100, g_meat_eaten.size());
+        w.u8(n);
+        auto it = g_meat_eaten.begin();
+        for (uint8_t j = 0; j < n; j++, it = g_meat_eaten.erase(it)) {
+            w.u16(it->first);
+            w.f32(it->second);
+            g_meat_bites_tx++;
+        }
+        C.sess->send_reliable_to(0, net::MSG_NPC_MEAT, w);
     }
 }
 
@@ -1914,6 +1981,7 @@ COOP_FIX("npc.known", "BUG-0125", g_known_fix, "creature: a guest that left forg
 void set_known_fix(bool on) { g_known_fix = on; }
 void on_player_leave(uint8_t id)
 {
+    g_meat_sent.erase(id);
     if (g_known_fix)
         g_known.erase(id);
 }
@@ -2016,6 +2084,38 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         }
         if (whole) // the host sends states (an empty or cut batch says nothing about stale proxies)
             g_last_states_rx = now;
+        break;
+    }
+    case net::MSG_NPC_MEAT: { // BUG-0557: the meat of the bodies
+        if (!g_meat_fix)
+            return;
+        uint8_t kind = r.u8();
+        uint8_t n = r.u8();
+        for (uint8_t j = 0; j < n && r.ok(); j++) {
+            uint16_t id = r.u16();
+            float v = r.f32();
+            if (!r.ok())
+                break;
+            if (kind == 0 && is_guest()) { // the host's meat of the body: the proxy shows it when it is less
+                g_meat_rx++;
+                auto f = g_proxies.find(id);
+                if (f == g_proxies.end() || !f->second.c || !f->second.killed || !game::is_dead(f->second.c))
+                    continue;
+                Proxy& px = f->second;
+                auto e = g_meat_eaten.find(id); // (bites not sent yet are not in the host's value)
+                float want = v - (e != g_meat_eaten.end() ? e->second : 0.f);
+                if (want < body_meat(px.c) - 0.001f) {
+                    set_body_meat(px.c, want);
+                    px.meat_seen = want;
+                    g_meat_set++;
+                }
+            } else if (kind == 1 && is_host()) { // the guest's creature ate this much of its proxy of the body
+                g_meat_bites_rx++;
+                auto b = g_host_by_id.find(id);
+                if (b != g_host_by_id.end() && game::creature_listed(b->second) && game::is_dead(b->second))
+                    set_body_meat(b->second, body_meat(b->second) - v);
+            }
+        }
         break;
     }
     case net::MSG_NPC_ANIM: { // guest: the host's NPCs' behaviour animations (BUG-0464)
@@ -2249,6 +2349,14 @@ std::string trace_line(const net::Vec3& me, float radius)
     return b;
 }
 
+static std::string meat_status() // BUG-0557
+{
+    char b[160];
+    snprintf(b, sizeof b, "npc body meat: fix=%d rx=%u set=%u bites_tx=%u bites_rx=%u\n", (int)g_meat_fix, g_meat_rx,
+             g_meat_set, g_meat_bites_tx, g_meat_bites_rx);
+    return b;
+}
+
 std::string status()
 {
     char b[768];
@@ -2267,7 +2375,7 @@ std::string status()
         char b2[128]; // BUG-0512
         snprintf(b2, sizeof b2, "npc(host) pack: partner_targets_cleared=%u partner_stimuli_cleared=%u\n", g_pack_targets_cleared,
                  g_pack_stimuli_cleared);
-        return std::string(b) + b2 + game::destroy_deferred_status() + "\n";
+        return std::string(b) + b2 + game::destroy_deferred_status() + "\n" + meat_status();
     } else {
         unsigned spawned = 0;
         for (auto& [id, px] : g_proxies)
@@ -2280,7 +2388,7 @@ std::string status()
                  g_strays_removed, g_hatch_helped, g_deaths_played, (unsigned)g_kill.size(), g_away_locals, g_proxy_unlisted,
                  g_proxy_nospecies);
     }
-    return b + game::destroy_deferred_status() + "\n";
+    return b + game::destroy_deferred_status() + "\n" + meat_status();
 }
 
 } // namespace npc

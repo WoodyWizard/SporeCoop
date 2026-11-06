@@ -611,6 +611,54 @@ static int c_rules(void*, int argc, const char* const* argv, SkOut* out)
                       *(float*)(c + 0x5E0));
         return 0;
     }
+    // tests (BUG-0557): cursor <id>: the Creature stage's cursor kind over NPC / proxy <id> (0xD30830: 8 eat, 7 attack,
+    // 0xD socialize, 0x1C walk ...); click <id>: the player's click on it (0xD32FD0, the game's own action for the kind)
+    if (argc > 2 && (!strcmp(argv[1], "cursor") || !strcmp(argv[1], "click"))) {
+        void* c = is_host() ? npc::host_npc((uint16_t)atoi(argv[2])) : npc::proxy((uint16_t)atoi(argv[2]));
+        uintptr_t a_cur = H->sym("SporeCoop::CreatureCursorKind"), a_click = H->sym("SporeCoop::CreatureClickObject"),
+                  a_strat = H->sym("App::cCreatureModeStrategy::Get");
+        if (!c || !a_cur || !a_click || !a_strat) {
+            H->out_printf(out, "no creature / symbol\n");
+            return 1;
+        }
+        int kind = skg::cdecl_call<int>(a_cur, c);
+        if (!strcmp(argv[1], "click")) {
+            void* st = skg::cdecl_call<void*>(a_strat);
+            if (st)
+                skg::thiscall<void>(a_click, st, c);
+        }
+        uint8_t* b = (uint8_t*)c;
+        uint8_t* av = (uint8_t*)game::avatar();
+        uint8_t* ai = av ? *(uint8_t**)(av + 0xB4C) : nullptr;
+        net::Vec3 ap = av ? game::position(av) : net::Vec3{};
+        // the eat node (start 0xD70E40, tick 0xD70FD0) needs the avatar's target (+0xE7C) to be the body, the body
+        // dead (+0xB5E), +0x135 set and meat (+0xB84) above 0; +0xB50 is the creature eating it
+        H->out_printf(out, "cursor kind=%d meat=%.2f dead=%d b135=%d eater=%p av=%p av_food=%.2f av_node=%08X av_target=%08X "
+                           "av_pos=(%.1f %.1f %.1f) body_pos=(%.1f %.1f %.1f)\n",
+                      kind, *(float*)(b + 0xB84), (int)b[0xB5E], (int)b[0x135], *(void**)(b + 0xB50), av,
+                      av ? *(float*)(av + 0xBBC) : -1.f, ai && skg::readable(ai, 0x1DC) ? *(uint32_t*)(ai + 0x1D8) : 0,
+                      av ? *(uint32_t*)(av + 0xE7C) : 0, ap.x, ap.y, ap.z, game::position(c).x, game::position(c).y,
+                      game::position(c).z);
+        uint8_t* sp = av ? *(uint8_t**)(av + 0xB20) : nullptr; // the avatar's species: +0x608 "eats meat" (0xC0B8E0)
+        if (sp && skg::readable(sp, 0x618))
+            H->out_printf(out, "avatar species %p +600: %d %d %d %d %d %d\n", sp, *(int*)(sp + 0x600), *(int*)(sp + 0x604),
+                          *(int*)(sp + 0x608), *(int*)(sp + 0x60C), *(int*)(sp + 0x610), *(int*)(sp + 0x614));
+        return 0;
+    }
+    // tests (BUG-0557): diet <n>: the own avatar's species +0x608, read by 0xC0B8E0 (named IsHervibore in the March 2017
+    // symbols; the eat node 0xD70FD0 bites meat only when it is not 0): the creature fixture's species have 0
+    if (argc > 2 && !strcmp(argv[1], "diet")) {
+        uint8_t* av = (uint8_t*)game::avatar();
+        uint8_t* sp = av ? *(uint8_t**)(av + 0xB20) : nullptr;
+        if (!sp || !skg::readable(sp, 0x60C)) {
+            H->out_printf(out, "no avatar species\n");
+            return 1;
+        }
+        int old = *(int*)(sp + 0x608);
+        *(int*)(sp + 0x608) = atoi(argv[2]);
+        H->out_printf(out, "species %p +0x608 %d -> %d\n", sp, old, *(int*)(sp + 0x608));
+        return 0;
+    }
     if (argc > 1 && !strcmp(argv[1], "ufo")) { // tests (BUG-0558): the UFOs of this game, the puppets, the pick's answers
         H->out_printf(out, "%s", ufo_dump().c_str());
         return 0;
