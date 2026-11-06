@@ -8,7 +8,7 @@ random place nearby (`coop.pool goto`), so they keep touching cells. Each game's
 game's: `own_nf=` counts the times a probe of the own cell (cell step start, around its collision pairs,
 the contact solver, the soft-body step, our tick) saw a field of it not finite. `contacts_bad=` counts the
 collision contacts whose impulse was not finite (ContactSolve 0xE58C90, docs/re/cell.md#cell-contact-nan).
-Checks: 1. both games go through the level changes (the world scale moves); 2. neither own cell goes
+Checks: 1. both games go through the level changes (the own cell's size changes); 2. neither own cell goes
 non-finite (own_nf stays 0 on both).
 
   SPORE_LANE=N python3 tools/tests/coop_cell_levelups.py [--cycles 20] [--wait 4.5]
@@ -27,8 +27,11 @@ def stats(con):
     def num(key):
         m = re.search(r'\b' + key + r'=(-?[\d.]+)', out)
         return float(m.group(1)) if m else None
-    return {k: num(k) for k in ('own_nf', 'contacts_bad', 'contacts_bad_own', 'contact_solves', 'nan_heals',
-                                'world_scale', 'food', 'mirrors')}
+    r = {k: num(k) for k in ('own_nf', 'contacts_bad', 'contacts_bad_own', 'contacts_unit', 'contact_solves', 'nan_heals',
+                             'world_scale', 'mirrors')}
+    m = re.search(r'^avatar .*? size=([\d.]+)', out, re.MULTILINE)
+    r['size'] = float(m.group(1)) if m else None
+    return r
 
 
 def main():
@@ -52,17 +55,17 @@ def main():
                 time.sleep(0.75)
             for who, con in (('host', host), ('guest', guest)):
                 s = stats(con)
-                if s['world_scale'] is not None:
-                    scales[who].add(round(s['world_scale'], 2))
+                if s['size'] is not None:
+                    scales[who].add(round(s['size'], 2))
         sh, sg = stats(host), stats(guest)
         print(f'  cycle {i + 1}: host own_nf={sh["own_nf"]} bad={sh["contacts_bad"]}/{sh["contact_solves"]} '
-              f'scale={sh["world_scale"]} | guest own_nf={sg["own_nf"]} bad={sg["contacts_bad"]} '
-              f'own={sg["contacts_bad_own"]} heals={sg["nan_heals"]} scale={sg["world_scale"]} mirrors={sg["mirrors"]}',
+              f'unit={sh["contacts_unit"]} size={sh["size"]} | guest own_nf={sg["own_nf"]} bad={sg["contacts_bad"]} '
+              f'own={sg["contacts_bad_own"]} heals={sg["nan_heals"]} unit={sg["contacts_unit"]} size={sg["size"]} mirrors={sg["mirrors"]}',
               flush=True)
     end = {'host': stats(host), 'guest': stats(guest)}
     for who in ('host', 'guest'):
-        print(f'  {who}: {end[who]} scales seen {sorted(scales[who])}', flush=True)
-        ck(len(scales[who]) >= 2, f'{who}: its world went through the level changes (scales {sorted(scales[who])})')
+        print(f'  {who}: {end[who]} sizes seen {sorted(scales[who])}', flush=True)
+        ck(len(scales[who]) >= 2, f'{who}: its cell went through the level changes (sizes {sorted(scales[who])})')
         nf = (end[who]['own_nf'] or 0) - (s0[who]['own_nf'] or 0)
         bad = (end[who]['contacts_bad'] or 0) - (s0[who]['contacts_bad'] or 0)
         ck(nf == 0, f'{who}: its own cell stayed finite through {2 * a.cycles} level changes (own_nf +{nf:.0f}, '
