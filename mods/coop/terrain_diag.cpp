@@ -1,6 +1,15 @@
-// BUG-0332: the planet terrain's stamps (docs/re/tribe.md#tribe-village-plateaus): who applies them and what the
+// BUG-0332: the planet terrain's stamps (docs/re/tribe.md#tribe-terrain-stamps): who applies them and what the
 // terrain holds, on each game. `coop.terrain` lists the stamp vectors of the active planet's terrain and the last
 // ApplyStamp / RemoveStamp / ClearAllStamps calls (caller, transform position, returned id).
+//
+// The fix terrain.rebuild_live_stamps: the game renders the stamps it applies live (the ~56 of the Tribe start: the
+// villages, the tribe spawn markers, ...) into its heights differently from the full rebuild a load of the same
+// stamp list makes: the host's own reload of its Tribe save gave the guests' ground, 0.5-14 m off its live ground
+// (lab 20261106-043244). So the host's live ground differed from every guest's (they load its save). With the fix a
+// game asks its terrain for the full rebuild (the game's own path: sphere+0xA48 counted down by the sphere update
+// vt 0x9C 0xFAAD30, which writes the stamp lists and starts the generator 0xF9B860) once a burst of live stamp calls
+// is over, in the Tribe stage, so the live ground is the ground every load of the world gives; the world share
+// waits for it (busy()).
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
@@ -9,14 +18,26 @@
 #include <string>
 #include <vector>
 
+#include "fixes.h"
 #include "game.h"
+#include "modes.h"
 #include "sporekit.h"
 #include "sporekit_game.hpp"
+#include "terrain_diag.h"
 
 namespace terrain_diag {
+bool g_rebuild_fix = true;
+COOP_FIX("terrain.rebuild_live_stamps", "BUG-0332", g_rebuild_fix,
+         "terrain: after stamps applied live (Tribe start, new villages) the terrain is rebuilt as a load of the world builds it, so every game has one ground");
 namespace {
 const SkHost* H;
 SkMod* M;
+double g_last_stamp;       // the time of the last live stamp call (apply, remove, clear)
+bool g_pending;            // a rebuild is due once the burst is over
+double g_asked_at;         // when the rebuild was asked (sphere+0xA48 = 1)
+uint32_t g_rebuilds, g_skipped_busy;
+constexpr double kQuiet = 0.3;   // s without a stamp call: the burst is over
+constexpr double kBusyMax = 8.0; // s: busy() gives up (never holds a share longer)
 
 struct Call {
     double at;
@@ -59,6 +80,8 @@ uint32_t SK_THISCALL h_Apply(void* self, const uint8_t* xf, void* prop)
         c.scale = f[3];
     }
     note(c);
+    g_last_stamp = H->time_seconds();
+    g_pending = true;
     return id;
 }
 
@@ -66,12 +89,16 @@ void SK_THISCALL h_Remove(void* self, uint32_t id, int flag)
 {
     note(Call{H->time_seconds(), 2, caller_of(__builtin_return_address(0)), 0, 0, 0, 0, id, (void*)(intptr_t)flag});
     o_Remove(self, id, flag);
+    g_last_stamp = H->time_seconds();
+    g_pending = true;
 }
 
 void SK_THISCALL h_Clear(void* self)
 {
     note(Call{H->time_seconds(), 3, caller_of(__builtin_return_address(0)), 0, 0, 0, 0, 0, nullptr});
     o_Clear(self);
+    g_last_stamp = H->time_seconds();
+    g_pending = true;
 }
 
 void* terrain()
@@ -98,6 +125,23 @@ int c_terrain(void*, int argc, const char* const* argv, SkOut* out)
     char b[256];
     // regen [clear]: RE (BUG-0332), [clear: the terrain manager's fresh-load flag +0x1CD to 0, as the planet teardown
     // 0xB7DBDD does], then the stamp version +0x814 one up so the heights are generated again
+    // rebuild: RE (BUG-0332), ask the terrain for one height rebuild from its stamp lists the way the game does: its update
+    // (vt 0x9C 0xFAAD30) counts sphere+0xA48 down and at 0 writes the stamp lists (vt 0x80) and starts the generator
+    // (0xF9B860); only while no generator runs (sphere+0xFC == 0)
+    if (argc > 1 && !strcmp(argv[1], "rebuild")) {
+        if (!t || !skg::readable((uint8_t*)t + 0xA48, 4)) {
+            H->out_printf(out, "no terrain");
+            return 1;
+        }
+        uint32_t gen = *(uint32_t*)((uint8_t*)t + 0xFC);
+        if (gen) {
+            H->out_printf(out, "a generator runs (+0xFC %08X): not now", gen);
+            return 1;
+        }
+        *(int32_t*)((uint8_t*)t + 0xA48) = 1;
+        H->out_printf(out, "rebuild asked (versions %u %u)", *(uint32_t*)((uint8_t*)t + 0x814), *(uint32_t*)((uint8_t*)t + 0x818));
+        return 0;
+    }
     if (argc > 1 && !strcmp(argv[1], "regen")) {
         uint8_t* tm = tmgr();
         if (argc > 2 && !strcmp(argv[2], "clear") && tm)
@@ -240,7 +284,8 @@ int c_terrain(void*, int argc, const char* const* argv, SkOut* out)
         H->out_printf(out, "%s", s.c_str());
         return 0;
     }
-    snprintf(b, sizeof b, "terrain %p hooks %d%d%d\n", t, o_Apply != nullptr, o_Remove != nullptr, o_Clear != nullptr);
+    snprintf(b, sizeof b, "terrain %p hooks %d%d%d %s\n", t, o_Apply != nullptr, o_Remove != nullptr, o_Clear != nullptr,
+             stats().c_str());
     s += b;
     if (t && skg::readable((uint8_t*)t + 0x770, 0xB0)) {
         for (uint32_t off : {0x770u, 0x784u}) {
@@ -278,6 +323,54 @@ int c_terrain(void*, int argc, const char* const* argv, SkOut* out)
     return 0;
 }
 } // namespace
+
+// the frame tick: a burst of live stamp calls in the Tribe stage is over -> ask the terrain for its full rebuild
+void tick(double now)
+{
+    if (!g_pending || !H)
+        return;
+    if (!g_rebuild_fix || game::mode_id() != modes::kTribe) {
+        g_pending = false;
+        return;
+    }
+    if (now - g_last_stamp < kQuiet)
+        return;
+    uint8_t* t = (uint8_t*)terrain();
+    if (!t || !skg::readable(t + 0xA48, 4) || !skg::readable(t + 0xFC, 4))
+        return;
+    if (*(uint32_t*)(t + 0xFC) || *(int32_t*)(t + 0xA48) > 0) { // a generator runs or a rebuild is counting down
+        g_skipped_busy++;
+        return;
+    }
+    *(int32_t*)(t + 0xA48) = 1; // the sphere update (vt 0x9C) starts the rebuild in its next run
+    g_pending = false;
+    g_asked_at = now;
+    g_rebuilds++;
+    H->log(M, SK_INFO, "terrain: live stamps rebuilt as a load builds them (rebuild %u, versions %u %u)", g_rebuilds,
+           *(uint32_t*)(t + 0x814), *(uint32_t*)(t + 0x818));
+}
+
+// a share save waits while live stamps are not rebuilt yet (bounded by kBusyMax after the last stamp call)
+bool busy()
+{
+    if (!g_rebuild_fix || !H || game::mode_id() != modes::kTribe)
+        return false;
+    double now = H->time_seconds();
+    if (now - g_last_stamp > kBusyMax)
+        return false;
+    if (g_pending)
+        return true;
+    uint8_t* t = (uint8_t*)terrain();
+    if (!t || !skg::readable(t + 0xA48, 4) || !skg::readable(t + 0xFC, 4))
+        return false;
+    return *(int32_t*)(t + 0xA48) > 0 || *(uint32_t*)(t + 0xFC) != 0 || now - g_asked_at < 0.5;
+}
+
+std::string stats()
+{
+    return "terrain rebuilds=" + std::to_string(g_rebuilds) + " waited=" + std::to_string(g_skipped_busy) +
+           " pending=" + std::to_string((int)g_pending);
+}
 
 void init(const SkHost* host, SkMod* mod)
 {

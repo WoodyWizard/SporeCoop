@@ -24,7 +24,7 @@ from coop_tribe_gather_stall import pos_of
 from coop_tribe_snapshot import HISTORY_BTN, HISTORY_OK, Player, click, out
 from twoinst import Checks, start
 
-LIMIT = 0.5  # m: the two games' ground at the same direction (the fixture: within 0.2 m)
+LIMIT = 0.3  # m: the two games' ground at the same direction
 
 
 def ground(con, p):
@@ -202,6 +202,9 @@ def main():
         mpts = cmap[0]
         hm, gm = ground_map(host, mpts), ground_map(guest, mpts)
         bad = map_report('Tribe', mpts, hm, gm)
+        worst_map = max((abs(hh - gg) for _, hh, gg in bad), default=0.0)
+        ck(not bad, f'the guest\'s ground is the host\'s over the whole region ({len(mpts)} points within 45 deg of the '
+           f'village: {len(bad)} differ by more than 0.3 m, the largest by {worst_map:.2f} m)')
         moved_h = sum(1 for a, b in zip(cmap[1], hm) if a is not None and b is not None and abs(a - b) > 0.3)
         moved_g = sum(1 for a, b in zip(cmap[2], gm) if a is not None and b is not None and abs(a - b) > 0.3)
         print(f'  Creature -> Tribe: the host\'s ground changed at {moved_h} points, the guest\'s at {moved_g}', flush=True)
@@ -255,7 +258,7 @@ def main():
                 print(f'    stamp {k} at r {h[k][3]}: host live {before[k]}, host after its own load {ground(host, h[k][2])}, '
                       f'guest {gb[k]}', flush=True)
         if '--regen' in sys.argv and diff:  # BUG-0332: the guest's fresh-load generator flag (docs/re/tribe.md)
-            for step in ('regen', 'regen clear'):
+            for step in ('rebuild', 'rebuild'):
                 print('  guest: ' + out(guest, f'coop.terrain {step}').strip(), flush=True)
                 time.sleep(10)
                 st = out(guest, 'coop.terrain state')

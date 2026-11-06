@@ -23,6 +23,7 @@
 #include "creations.h"
 #include "savestrip.h"
 #include "spacecoop.h"
+#include "terrain_diag.h"
 
 namespace world {
 
@@ -1033,6 +1034,9 @@ void tick(net::Session& s)
                        (!since || ts - since < kShareSettle)) {
                 p.next_try = now + 250; // BUG-0276: the stage just began, the game drops a save now
                 g_settle_waits++;
+            } else if (now >= p.next_try && terrain_diag::busy()) {
+                p.next_try = now + 250; // BUG-0332: live stamps not rebuilt yet (the save would hold them anyway: the
+                g_settle_waits++;       // guests' ground is the rebuilt one; the host's is once the rebuild is done)
             } else if (now >= p.next_try) {
                 std::string why;
                 if (save_game(why)) {

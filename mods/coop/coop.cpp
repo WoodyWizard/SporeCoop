@@ -59,6 +59,7 @@
 #include "busy.h"
 #include "social.h"
 #include "world.h"
+#include "terrain_diag.h"
 #include "net/discovery.h"
 #include "net/fixes.h"
 #include "net/give_target.h"
@@ -3047,6 +3048,7 @@ void on_frame(void*, int, void*)
     npc::tick(now);
     player_rules::tick(now); // BUG-0558: the host's UFO on the guests
     nest::tick(now); // BUG-0384
+    terrain_diag::tick(now); // BUG-0332
     fields::tick(now); // BUG-0419 G2 (after the modules that make the mirrors)
     wsync::tick(now);  // W1: host-owned world state (time of day, relations, stages done, the Tribe goal)
     wobj::tick(now); // BUG-0472, BUG-0459

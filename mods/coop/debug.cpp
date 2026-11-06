@@ -16,6 +16,7 @@
 #include "gamefixes.h"
 #include "modes.h"
 #include "world.h"
+#include "terrain_diag.h"
 #include "sporekit.h"
 #include "sporekit_game.hpp"
 
@@ -601,10 +602,6 @@ int c_memfind(void*, int argc, const char* const* argv, SkOut* out)
     return 0;
 }
 } // namespace
-
-namespace terrain_diag {
-void init(const SkHost*, SkMod*);
-}
 
 void coop_register_debug_commands2(const SkHost* host, SkMod* self)
 {
