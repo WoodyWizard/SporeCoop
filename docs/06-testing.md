@@ -4484,3 +4484,26 @@ BUG-0332 (docs/re/tribe.md#tribe-terrain-stamps).
 * campaign_ct: `CAMPAIGN_GROUND=1` now probes every member, every village, the spawn markers, the six axis points and
   the Creature probe points again in Tribe (one line per stage, or when a guest differs by more than 0.5 m);
   `CAMPAIGN_FORM=1` makes the host form two villages right after the tribe setup.
+
+## The last 0.7.9 tickets: attack reach, nest mound, bundle groups (2026-11-06, fix/w45-last)
+<a id="testing-w45-last"></a>
+
+* `coop.abilities reach` (debug.cpp): the avatar's combat target (+0xE7C) and its gap (`Ability_TargetGap`), every
+  ability's type, row, reach and status (`AbilityBar_Status`), and the HUD bar's slots per row (the keys 1..5 use the
+  stance's row). play_creature's bot (BUG-0618) clicks the target once and presses a key of the combat row: out of reach
+  once (the game walks the creature there and uses it), in reach when the status is 0. `--old-attack`: the old loop (a
+  key 0.2-0.5 s after every click). The log ends with each player's key presses by the game's reach
+  (`press_in_reach`, `press_out_of_reach`, `retarget_*`, `wait_recharge`). The fixture creature has one combat key (1).
+* `coop_npc_nest_backoff.py` (suites npc_nest_backoff, npc_nest_backoff_near; ~1.5 min warm): the host's player 120 m
+  from the fixture's nest (-126 -488 -65), the guest at it, its camera turned (right-drags) onto the nest animal that is
+  deepest in the host's surface; 10 s, the guest's roar, 14 s; `coop.ground x y z` gives each game's height over its
+  surface (with the mound). Only samples on the guest's screen count (a game draws off-screen creatures on the plain
+  terrain). BUG-0562.
+* worlddiff (BUG-0617): food bundles are compared in three groups by the census's `own=` (ground, carried, held):
+  `game_bundle` (on the ground, 3 m), `game_bundle_carried` (worlddiff.TOL_CARRIED 6 m: carried food moves with its
+  member), `game_bundle_held` (another container, a food mat's). The census's `owner=` of a carried bundle is the
+  carrier's player (tribe::owner_of; -1 for an NPC tribe's member). Selftest in tools_selftest.py.
+* `coop.tribe who <citizen pointer>` (BUG-0620): its tribe (+0x1014), whether that tribe and any tribe list it, the
+  mod's owner and id, age, dead flag, species, and the ai line; `coop_tribe_member_place.py --attach` prints it for
+  every lone host citizen. `coop.tribe ai` ends with the order target's object (listed, noun, alive, place, distance);
+  play_tribe prints every order nobody moved on with the host's ai lines (BUG-0531).
