@@ -2,6 +2,7 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstring>
 #include <deque>
@@ -128,9 +129,9 @@ inline bool g_lead_smooth_fix = true;
 constexpr double kSmoothTau = 0.12; // s: e^-1 of a lead jump left after this
 constexpr float kSmoothRate = 3.f;  // m/s on top of kSmoothK x the body's speed
 constexpr float kSmoothK = 1.f;
-constexpr double kJitterAvg = 5.0;   // s (a latency spike of the player network, +250 ms for 0.7 s every 7 s, stays under)
-constexpr double kJitterHigh = 0.035; // s: no lead over this arrival jitter (mobile, 60 ms jitter: 40-60 ms)
-constexpr double kJitterLow = 0.025;
+constexpr size_t kJitterN = 64;      // states (3-6 s)
+constexpr double kJitterHigh = 0.05; // s: no lead over this arrival jitter (netem mobile +-60 ms; player +-15 ms)
+constexpr double kJitterLow = 0.04;
 constexpr double kSmoothVelTau = 0.1; // s
 
 class SnapshotBuffer {
@@ -152,7 +153,8 @@ public:
 
     void clear()
     {
-        jitter_ = jit_t_ = 0;
+        jitter_ = 0;
+        dev_n_ = 0;
         jittery_ = false;
         snaps_.clear();
         clock_.clear();
@@ -185,14 +187,18 @@ public:
         }
         clock_.add(local_now - st, local_now);
         offset_ = clock_.value();
-        // BUG-0619: the arrival jitter, how late states arrive past the earliest one (the clock offset is the minimum
-        // of local - sender time), averaged over kJitterAvg
+        // BUG-0619: the arrival jitter: the median of how late the last kJitterN states arrived past the earliest
+        // one (the clock offset is the minimum of local - sender time). The median, not the mean: the player
+        // network's latency spikes (+250 ms for 0.7 s every 7 s) put the mean as high as the mobile network's
         {
-            double dev = std::max(0.0, (local_now - st) - offset_);
-            double k = jit_t_ > 0 ? std::min(1.0, std::max(0.0, local_now - jit_t_) / kJitterAvg) : 1.0;
-            jitter_ += (dev - jitter_) * k;
-            jit_t_ = local_now;
-            jittery_ = jitter_ > kJitterHigh || (jittery_ && jitter_ > kJitterLow);
+            devs_[dev_n_++ % kJitterN] = (float)std::max(0.0, (local_now - st) - offset_);
+            if (dev_n_ >= 16) {
+                size_t n = std::min<size_t>(dev_n_, kJitterN);
+                std::array<float, kJitterN> d = devs_;
+                std::nth_element(d.begin(), d.begin() + n / 2, d.begin() + n);
+                jitter_ = d[n / 2];
+                jittery_ = jitter_ > kJitterHigh || (jittery_ && jitter_ > kJitterLow);
+            }
         }
         snaps_.push_back({st, s});
         while (snaps_.size() > 64)
@@ -449,7 +455,9 @@ private:
         out.pos.z += sm_off_.z;
     }
     mutable bool sm_have_ = false, sm_used_ = false, sm_last_lead_ = false;
-    double jitter_ = 0, jit_t_ = 0; // s (BUG-0619)
+    double jitter_ = 0; // s (BUG-0619)
+    std::array<float, kJitterN> devs_{};
+    size_t dev_n_ = 0;
     bool jittery_ = false;
     mutable double sm_t_ = 0;
     mutable Vec3 sm_off_{}, sm_offv_{}, sm_vel_{}, sm_shown_{};
