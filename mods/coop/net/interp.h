@@ -111,6 +111,18 @@ private:
 inline bool g_lead_fix = true;
 inline double g_one_way = 0.03; // s
 constexpr double kMaxLead = 0.6; // s ahead of the newest state
+// BUG-0619 (`coop.fix drive.lead_smooth`): the lead target does not jump. Every new state moves the lead
+// target at once (its age, velocity and the one-way latency change from state to state; over a jittery network,
+// 60 ms of jitter, 0.3-1.5 m at a walk's start and end) and the driving caught up the jump within ~0.25 s at up to
+// 3x the body's speed: Tribe member mirrors drew 0.9-1.25 m steps per 32 ms frame (tribe_walk_mobile). With the
+// fix the shown target is continuous: a new state's jump is kept as an offset to the raw lead (the target goes on
+// from where it was shown, with the velocity it had) and the offset decays exponentially (kSmoothTau) at most at
+// the body's speed + kSmoothRate (the target never moves faster than ~2x the body + 3 m/s). An offset over
+// kSmoothMax is a real jump (the sender's body was put somewhere): taken at once, as before. Off: the raw lead.
+inline bool g_lead_smooth_fix = true;
+constexpr double kSmoothTau = 0.12; // s: e^-1 of a lead jump left after this
+constexpr float kSmoothRate = 3.f;  // m/s on top of the body's speed
+constexpr float kSmoothMax = 4.f;   // m
 
 class SnapshotBuffer {
 public:
@@ -133,6 +145,7 @@ public:
         snaps_.clear();
         clock_.clear();
         have_raw_ = false;
+        sm_have_ = false;
     }
 
     void push(const PlayerState& s, double local_now)
@@ -233,10 +246,13 @@ public:
                 out.pos.y += v.y * (float)dt;
                 out.pos.z += v.z * (float)dt;
                 out.vel = v;
+                if (g_lead_smooth_fix)
+                    smooth(local_now, out, last_extrap > kMaxLead ? Vec3{} : v);
                 return true;
             }
             t = tl; // (a state from the future: the clock offset is late) interpolated there
         }
+        sm_have_ = false;
         if (t <= snaps_.front().t) {
             out = snaps_.front().s;
             return true;
@@ -283,7 +299,51 @@ public:
         return true;
     }
 
+    // diagnostics (BUG-0619): the smoothing's offset now (m) and the raw lead target's jump at the last new state
+    float smooth_off() const { return sm_have_ ? dist(Vec3{}, sm_off_) : 0.f; }
+    mutable float last_lead_jump = 0;
+
 private:
+    // BUG-0619 (g_lead_smooth_fix): `out` (the raw lead at local_now) plus the decaying offset. Advanced once per
+    // local time (a later call at the same or an earlier time, the path velocity's sample, adds the same offset)
+    void smooth(double local_now, PlayerState& out, const Vec3& v) const
+    {
+        if (local_now > sm_t_) {
+            double dt = local_now - sm_t_;
+            if (!sm_have_ || dt > 0.5) {
+                sm_off_ = {};
+            } else {
+                Vec3 cont{sm_shown_.x + sm_vel_.x * (float)dt, sm_shown_.y + sm_vel_.y * (float)dt,
+                          sm_shown_.z + sm_vel_.z * (float)dt};
+                Vec3 off{cont.x - out.pos.x, cont.y - out.pos.y, cont.z - out.pos.z};
+                float d = dist(Vec3{}, off);
+                float jump = dist(sm_off_, off);
+                if (jump > 0.05f)
+                    last_lead_jump = jump;
+                if (d > kSmoothMax) {
+                    off = {};
+                } else if (d > 1e-4f) {
+                    float sp = dist(Vec3{}, v);
+                    float nd = std::max(d * (float)std::exp(-dt / kSmoothTau), d - (sp + kSmoothRate) * (float)dt);
+                    nd = std::max(nd, 0.f);
+                    float k = nd / d;
+                    off = {off.x * k, off.y * k, off.z * k};
+                }
+                sm_off_ = off;
+            }
+            sm_have_ = true;
+            sm_t_ = local_now;
+            sm_vel_ = v;
+            sm_shown_ = {out.pos.x + sm_off_.x, out.pos.y + sm_off_.y, out.pos.z + sm_off_.z};
+        }
+        out.pos.x += sm_off_.x;
+        out.pos.y += sm_off_.y;
+        out.pos.z += sm_off_.z;
+    }
+    mutable bool sm_have_ = false;
+    mutable double sm_t_ = 0;
+    mutable Vec3 sm_off_{}, sm_vel_{}, sm_shown_{};
+
     struct Snap {
         double t;
         PlayerState s;
