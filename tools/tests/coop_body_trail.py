@@ -42,7 +42,9 @@ from twoinst import Checks, start  # noqa: E402
 # (the 0.15-0.2 s interpolation delay plus the one-way latency, 0.7.8) is 0.4-1.2 m behind: measured without the lead
 # (SPORE_FIX_OFF=drive.lead, lab 20261106-013022) p90 0.78 m (Creature NPCs), 1.17 m (Tribe animals), 2.04 m (Tribe
 # members); with it 0.12, 0.37, 0.64 m (lab 20261106-012156). Civ vehicles drive 10-20 m/s.
-LIMITS = {('creature', 'n'): (0.45, 1.0), ('tribe', 'n'): (0.7, 1.0), ('tribe', 't'): (1.0, 1.0), ('civ', 'v'): (2.5, 1.5)}
+# Both Tribe games at 18-20 fps (a loaded lab, load 10-12 on 6 cores): with the lead p90 0.68-0.77 m animals, 1.11-1.21 m
+# members (labs 20261106-021152, 20261106-032341); without it 1.20-1.22 / 2.07-2.08 m (20261106-020354, 20261106-031151).
+LIMITS = {('creature', 'n'): (0.45, 1.0), ('tribe', 'n'): (0.9, 1.0), ('tribe', 't'): (1.5, 1.0), ('civ', 'v'): (2.5, 1.5)}
 # over a network with latency spikes and loss bursts (SPORE_NET=player: 45 ms, spikes of +250 ms for 0.7 s every 7 s,
 # 30 % loss for 1.5 s every 10 s) a walk's start is known a spike late: off (lab 20261106-014253) Tribe p90 1.73 m
 # animals / 2.71 m members, stretches over 2 m of 1.75 / 3.55 s; on 0.83 / 1.28 m, 0.33 / 0.67 s (lab 20261106-014554)
