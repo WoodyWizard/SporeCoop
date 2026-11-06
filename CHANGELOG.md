@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### Fixed
+- A guard against a crash when an NPC reacted to a creature that had just been destroyed (BUG-0456) was switched off
+  by mistake since 0.7.5; it works again (BUG-0623).
 - Cell: two cells that end up exactly on top of each other no longer shoot off at hundreds of metres per second or
   break a player's own cell for a moment (the game's collision left their push direction unset) (BUG-0307).
 - Creature: when the host's game stood still (its death or upgrade caption) and then went on, a guest could lose
