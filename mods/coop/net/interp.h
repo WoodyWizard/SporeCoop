@@ -124,7 +124,10 @@ constexpr double kMaxLead = 0.6; // s ahead of the newest state
 // walk_place's catch_prop did (an error closed in ~0.25 s at most at the speed + 3 m/s on top), measured on the
 // target's own path instead of from where the game's walk had put the body (which drew walk + catch-up). An
 // offset over the buffer's smooth_max is a real jump (the sender's body was put somewhere): taken at once.
-// Only buffers with smooth_max > 0 (the Tribe member mirrors). Off: the raw lead.
+// And no lead at all over a link whose one-way latency (median of the last kJitterN states) is over kJitterHigh
+// (until under kJitterLow): there the lead extrapolates 0.2-0.3 s, every change of speed between two states moved the
+// target and the mirror went stop-and-go whatever the closing (docs/re/tribe.md#tribe-lead-smooth); shown
+// interpolated as 0.7.8 (smooth, late). Only buffers with smooth_max > 0 (the Tribe member mirrors). Off: M1's lead.
 inline bool g_lead_smooth_fix = true;
 constexpr double kSmoothTau = 0.12; // s: e^-1 of a lead jump left after this
 constexpr float kSmoothRate = 3.f;  // m/s on top of kSmoothK x the body's speed

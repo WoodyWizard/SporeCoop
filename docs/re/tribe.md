@@ -2026,3 +2026,49 @@ in Ghidra / objdump. ✔ = observed, ~ = read in the code but not seen running, 
   measured, the fix is limited to the Tribe stage.
 * BUG-0608 (a relayed world effect at the sender's absolute position) came only from the two grounds differing; with
   one ground on every game the absolute position is on the receiver's ground too.
+
+## A member mirror's lead target without jumps (2026-11-06, fix/w45-remote-bodies-2)
+<a id="tribe-lead-smooth"></a>
+
+BUG-0619, `coop.fix drive.lead_smooth` (net/interp.h SnapshotBuffer::smooth and the latency rule, tribe.cpp
+mirror_target / mirror_drive, driver.h WalkPlace::lead_speed). Measured on tribe_walk_mobile (both games at 30 fps,
+netem mobile: 120 ms one-way, +-60 ms jitter, 3 % loss) from the per-frame track JSON (out/laneN/track/tribe_walk_*.json:
+drawn position `d`, aim `tgt`, aim speed `rv`).
+
+* ✔ observed: with drive.lead (docs/re/tribe.md#tribe-remote-lead) every "jump" of a member mirror (0.88-0.97 m in
+  a 32 ms frame, over the test's 3 x 9 m/s x dt) comes 1-3 frames after the lead target itself jumped 2.7-4.8 m in one
+  frame at the start of a walk (target steps: 0.0, then 2.7-4.8 m, then 0.29 m = 9 m/s), 12 of 12 decomposed jumps
+  (lab 20261106-130123, -064239): the first walking state arrives a latency + jitter late and the lead moves it on by
+  its velocity x (its age + the one-way latency), up to 0.45 s x 9 m/s. The target is steady in the jump frames; the
+  jump is catch_prop's catch-up (from where the game's walk had put the body) on top of the walk.
+* ✔ observed: what the player sees in a frame is the placing's step from where the game's walk had the body plus
+  the game's walk of the NEXT frame. A bound on the placing from the last placing (M2's v1; here (speed + 3) x dt)
+  still drew 0.9-1.3 m frames when the walk's speed rose that frame (20261106-145657, -145700). Held instead to
+  (2 x lead speed + 3 - walk speed) x dt from the walked position: no jump in 24 of 24 views (20261106-151828,
+  -151831).
+* ✔ observed: a mirror walked at its target's closing speed (18-21 m/s) does not reach it (fell 0.5-3 m behind and
+  closed in ~1 m frames, 20261106-141403, -142519).
+* ✔ observed: with the jumps gone a smoothed lead still fails the stop-and-go check (1-5 m/s frames whose drawn step
+  is off the target's by more than half + 1 m/s: 11-22 %, limit 10 %) in about half the runs over the mobile network,
+  where 0.7.8 passes at the same time (20261106-154457 0 of 3 vs SPORE_FIX_OFF=drive.lead -154500 3 of 3, lanes
+  swapped -155349 / -155352 the same): the lead moves each state on by 0.2-0.3 s there, so every change of speed between
+  two states moves the target (speeding up: the target runs v + a x L), and whatever the closing (exponential 0.1-0.15
+  s, at most 1-1.25 x the speed + 3 m/s, eased 60 m/s2, the target's velocity blended over 0.1 s, closing only while
+  over 5 m/s, interpolated while under 5 m/s) the mirror lags and surges in those frames.
+* ✔ observed: the arrival lateness of the states does not tell a mobile link from a local one at the lab's load (6-15
+  on 6 cores): median 51-62 ms mobile vs 39-51 ms local, IQR 45-103 vs 34-106 ms (the guest's own frame times dominate
+  it; 20261106-164638, -165647, -170617). The one-way latency (the session's half round trip, median of 64 states) does:
+  mobile 123-149 ms, the player network and a local link under 100 ms (20261106-171543, -171546).
+* ✔ the fix, Tribe member mirrors only: (1) the lead target is continuous: a new state's jump of the raw lead stays as
+  an offset (the target goes on from where it was shown, with the velocity it had) that closes at d / 0.12 s, at most
+  at the speed + 3 m/s; its velocity follows the lead's in 0.1 s; a stop takes the target to
+  the stop at once; a jump over 6 m is taken at once; the path velocity's 0.1 s-back sample is shifted by the same
+  offset. The mirror walks at the target's velocity eased up at 40 m/s2 and at most 3 m/s over the lead, catch_prop
+  off, its placing held as above. (2) Over a one-way latency over 100 ms (until under 85 ms) a member mirror has no
+  lead: interpolated and driven as 0.7.8 (smooth, ~0.2 s + latency late); the switch goes through the offset. So over
+  a mobile network the members are late again but never jump or stop-and-go; over the player network and locally the
+  lead stays (body_trail_tribe members p90 0.86 m, body_trail_tribe_player 1.72 m, 20261106-171546).
+* ~ NPC proxies (npc.cpp, the other SnapshotBuffer::lead user) keep M1's lead and catch_prop (smooth_max 0): no test
+  showed jumps there; not measured over the mobile network.
+* ~ under the lab load of the day (6-20 on 6 cores) body_trail_* fail for NPC animals too, which no part of this
+  touches (p90 1.0-1.8 m against M1's quiet 0.37 m): judge those only A/B under one load.
