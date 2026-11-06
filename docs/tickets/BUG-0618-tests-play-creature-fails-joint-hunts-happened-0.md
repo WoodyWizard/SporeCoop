@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in:
 branch: fix/w45-int2
-commits:
+commits: df408715
 tests: play_creature
 signature:
 docs:
