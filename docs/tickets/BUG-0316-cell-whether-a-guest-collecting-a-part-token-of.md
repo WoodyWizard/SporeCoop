@@ -10,7 +10,7 @@ role: guest
 versions: 
 fixed_in:
 branch: fix/w45-cell
-commits:
+commits: 50e20f64
 tests: cell_part_token
 signature:
 docs: docs/re/cell.md#cell-part-token

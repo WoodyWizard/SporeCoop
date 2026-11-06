@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.8
 fixed_in: unreleased
 branch: fix/w45-cell
-commits: e6e8164b
+commits: e6e8164b, 0d9e7d10
 tests: campaign_ct, cell_end_sync
 signature: sync-check: MISMATCH with the host (Cell ...): p: 1 apart (p0 359-740) right after `coop.pool food 1000` in the Cell advance
 docs: docs/re/cell.md#cell-sync-scale
@@ -47,6 +47,7 @@ guest's Cell positions by guest scale / host scale before comparing. Off: raw po
 cell_end_sync: FAIL with SPORE_FIX_OFF=diag.cell_scale, lab 20261106-005031 (8 of 30 checks with positions
 apart: p0 / p1 10-29 m, cells 26-35 m); PASS lab 20261106-005151 (0 apart in 29 checks; the guest's drawing p90
 0.04 m in both runs). Not re-run: campaign_ct with 4 players.
+cell_end_sync PASS again in the regression run lab 20261106-015141 (23/23; play_cell with SPORE_DETECTOR=20: 37 Cell comparisons, no finding).
 
 ## History
 - 2026-11-05: opened.

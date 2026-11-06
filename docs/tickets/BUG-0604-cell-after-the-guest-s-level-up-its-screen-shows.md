@@ -10,7 +10,7 @@ role: guest
 versions: 
 fixed_in: unreleased
 branch: fix/w45-cell
-commits: 2aa5f9fc
+commits: 2aa5f9fc, 0d9e7d10
 tests: cell_new_game, cell_view_nan
 signature:
 docs: docs/re/cell.md#cell-view-nan
@@ -53,6 +53,7 @@ cell_view_nan (tools/tests/coop_cell_view_nan.py): FAIL with SPORE_FIX_OFF=cell.
 (guest camera nan, 0 cells on screen); PASS lab 20261106-003015 (17 heals, camera 0.3 m from the cell, 32 / 53
 cells on screen). cell_new_game again (lab 20261106-003243): two guest level-ups, no NaN this time; it failed on
 its meat probes (host 0/6, guest 2/6, BUG-0589's flaky probe, not this).
+cell_view_nan PASS again in the regression run lab 20261106-015141 (with play_cell SPORE_DETECTOR=20, smoke, cell_end_sync, cell_grow, cell_puppet_scale, cell_sync_check, cell_camera, cell_nan, cell_nan_all: 23/23).
 
 ## History
 - 2026-11-05: opened.
