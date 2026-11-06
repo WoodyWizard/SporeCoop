@@ -208,6 +208,7 @@ struct GMember {
     float aim_speed = 0;     // and the host's speed of that state
     float walk_sp = 0;       // BUG-0619: the speed the smoothed target's mirror is walked at (eased in)
     double walk_t = 0;
+    float lead_sp = -1;      // BUG-0619: the raw lead's speed while the smoothed target drives it (-1: none)
     double held_since = 0, held_said = -1e9; // BUG-0386 (diagnostics)
     double anim_rx_at = 0, anim_fix_at = 0; // BUG-0569: the last relayed start, the last snapshot play
 };
@@ -237,6 +238,7 @@ constexpr float kMirrorWalkMax = 8.f; // farther off: drive::step (it teleports 
 // the lead's cap kMaxLead x 9 m/s = 5.4 m)
 constexpr float kMirrorSmoothMax = 6.f; // m
 constexpr float kMirrorWalkAcc = 40.f; // m/s2 (BUG-0619)
+constexpr float kMirrorWalkOver = 3.f; // m/s: walked at most this faster than the lead itself (BUG-0619)
 constexpr double kPathDt = 0.1;       // s: the interpolated path's velocity is taken over this
 static std::unordered_map<void*, uint16_t> g_gid_of;
 static std::unordered_set<uint16_t> g_cycle_ids;
@@ -2000,14 +2002,16 @@ static void mirror_target(GMember& g, double now, net::Vec3& pos, net::Quat& rot
         // BUG-0619 (drive.lead_smooth): the smoothed target's own velocity (its offset closing a late state's step
         // included): walked at the raw path's speed the mirror fell 0.5-1.4 m behind a closing target and surged
         // after it at 7-8 m/s when the closing ended (tribe_walk_mobile 20261106-140306 #3: uneven 16 %)
+        g.lead_sp = -1;
         if (g.buf.smooth_velocity(vel)) {
             // the walk's speed rises at most kMirrorWalkAcc to the target's (it never goes under the lead's own):
             // set at once, the game's walk of the next frame grew by up to 0.4 m on top of the placing (1-1.3 m frames)
             float want = drive::speed(vel), raw = drive::speed(s.vel);
             double dt = now - g.walk_t;
             float w = (g.walk_t <= 0 || dt > 0.5) ? raw : g.walk_sp + kMirrorWalkAcc * (float)std::min(std::max(dt, 0.0), 0.1);
-            w = want < raw ? want : std::min(std::max(w, raw), want);
+            w = want < raw ? want : std::min({std::max(w, raw), want, raw + kMirrorWalkOver});
             g.walk_sp = w;
+            g.lead_sp = raw;
             g.walk_t = now;
             if (want > 0.01f) {
                 float k = w / want;
@@ -2035,6 +2039,7 @@ static void mirror_target(GMember& g, double now, net::Vec3& pos, net::Quat& rot
     rot = g.rot;
     vel = g.vel;
     age = now - g.seen;
+    g.lead_sp = -1;
 }
 
 // BUG-0444: this game's time is paused (cGameTimeManager +0x48 bit 0: after a cold join for 10-40 s, the pause
@@ -2089,7 +2094,8 @@ static void mirror_drive(GMember& g, double now)
         // BUG-0425; BUG-0619: with drive.lead_smooth the lead target closes the error itself (on its own path):
         // catch_prop on top measured the catch-up from the game's walk and drew walk + catch-up (0.9-1.25 m frames)
         o.catch_prop = !net::g_lead_smooth_fix;
-        o.step_bound = net::g_lead_smooth_fix; // BUG-0619
+        if (g.lead_sp >= 0)
+            o.lead_speed = std::max(g.lead_sp, 0.5f); // BUG-0619
         drive::walk_place(g.c, g.aim, rot, vel, g.ds, now, o);
         g_mirror_walks++;
         // BUG-0386 (diagnostics): a walked mirror held over 2 m off its aim for 1 s: what is around it, once per 10 s
