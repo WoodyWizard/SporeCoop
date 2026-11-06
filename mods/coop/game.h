@@ -88,6 +88,9 @@ bool cinematic_playing(); // cCinematicManager +0x2C != 0 (W2: no destroy of a v
 bool destroy_pending(void* c);     // queued by destroy_creature, still there
 std::string destroy_deferred_status();
 // BUG-0614 (game.finite_pose): a received pose with NaN / Inf; counted, false with the switch off
+// BUG-0434 (creature.culled_ground): this frame's target of a puppet, lifted to after the physics update when the game grounds it
+void mound_hold(void* c, const net::Vec3& tgt);
+void after_physics();
 bool pose_bad(const net::Vec3& pos, const net::Quat& rot, const net::Vec3& vel);
 void teleport(void* c, const net::Vec3& pos, const net::Quat& rot);
 // BUG-0360: teleport without the teleport mark (+0xB5D, set by vt 0x44 0xC0C040): the locomotion takes

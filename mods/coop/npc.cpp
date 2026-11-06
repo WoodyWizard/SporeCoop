@@ -273,7 +273,7 @@ static uintptr_t a_StartFx2, a_StopFx;
 static bool g_knock_fix = true;
 COOP_FIX("npc.host_knockback", "BUG-0409", g_knock_fix, "creature: the guest's game does not throw a host NPC's proxy by itself; the host's knockback is shown");
 static uintptr_t a_LocoReset;
-static uint32_t g_knock_resets = 0;
+static uint32_t g_knock_resets = 0, g_knock_placed = 0;
 
 static bool update_filter(void* c)
 {
@@ -653,6 +653,7 @@ static net::NpcState host_state(uint16_t id, void* c)
     s.vel = game::velocity(c);
     s.health = game::health(c);
     s.flags = (g_air_fix && !game::is_dead(c) && drive::body_airborne(c) ? net::NF_AIR : 0) | // BUG-0550
+              (g_knock_fix && !game::is_dead(c) && *(int32_t*)((uint8_t*)c + game::kLocoModeOff) == 3 ? net::NF_THROWN : 0) |
               (game::is_dead(c) ? net::NF_DEAD : 0) | (game::impressed(c) ? net::NF_IMPRESSED : 0) |
               (game::pack_member(c) ? net::NF_PACK : 0) | // BUG-0556: the host's pack (a Summon Flock) is the party's
               (game::herd_of(c) && skg::readable(game::herd_of(c), 0x194) && skg::field<uint8_t>(game::herd_of(c), 0x192)
@@ -1560,11 +1561,22 @@ static void guest_tick(double now)
         // BUG-0550: the host's NPC is off its ground: at its height over the host's terrain, over this game's, not
         // grounded (drive::air_place); not walked (the walk is ended, it walks again after the landing)
         const bool air = g_air_fix && !px.killed && (s.flags & net::NF_AIR) && !(s.flags & net::NF_DEAD);
-        if (g_knock_fix && a_LocoReset && !air && !px.killed &&
+        if (g_knock_fix && a_LocoReset && !air && !px.killed && !(s.flags & net::NF_THROWN) &&
             *(int32_t*)((uint8_t*)px.c + game::kLocoModeOff) == 3) { // BUG-0409: thrown by this game, not by the host
             skg::thiscall<void>(a_LocoReset, px.c);
             *(net::Vec3*)((uint8_t*)px.c + game::kVelOff) = s.vel;
             g_knock_resets++;
+        }
+        // BUG-0409: the host's NPC is thrown along its ground by a hit (12-15 m/s for ~0.3 s): placed on the host's path
+        // (walked, it was held to its walk's speed and fell 3.6-3.9 m behind until the throw ended)
+        if (g_knock_fix && !air && !px.killed && (s.flags & net::NF_THROWN) && !(s.flags & net::NF_DEAD)) {
+            drive::walk_end(px.c, s.pos, px.drv, now);
+            px.kinematic = false;
+            game::place(px.c, drive::out_of_ground(s.pos, rts), s.rot);
+            *(net::Vec3*)((uint8_t*)px.c + game::kVelOff) = s.vel;
+            px.drv.last_step = now;
+            g_knock_placed++;
+            placed = true;
         }
         if (air) {
             px.kinematic = false;
@@ -1985,6 +1997,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         s.health = sp.health;
         px.buf.delay = 0.15;
         px.buf.lead = true; // BUG-0425 (drive.lead): where the host has it now
+        px.buf.thrown_flags = g_knock_fix ? net::NF_THROWN : 0; // BUG-0409
         px.buf.push(s, now);
         px.last_rx = now;
         break;
@@ -2296,11 +2309,11 @@ std::string status()
             spawned += px.c != nullptr;
         snprintf(b, sizeof b, "npc(guest): proxies=%u spawned=%u local_removed=%u hits_sent=%u damage_in=%u lost=%u host_away=%d "
                  "away_dropped=%u local_alive=%u in_nest=%u nests=%u stale_dropped=%u strays_removed=%u hatch_helped=%u "
-                 "deaths_played=%u kill_held=%u away_locals=%u unlisted=%u nospecies=%u knock_resets=%u\n",
+                 "deaths_played=%u kill_held=%u away_locals=%u unlisted=%u nospecies=%u knock_resets=%u knock_placed=%u\n",
                  (unsigned)g_proxies.size(), spawned, g_removed_local, g_hits_sent, g_damage_in, g_proxy_lost, (int)g_host_away,
                  g_away_proxies, g_local_alive, g_proxies_in_nest, (unsigned)g_local_herds.size(), g_stale_dropped,
                  g_strays_removed, g_hatch_helped, g_deaths_played, (unsigned)g_kill.size(), g_away_locals, g_proxy_unlisted,
-                 g_proxy_nospecies, g_knock_resets);
+                 g_proxy_nospecies, g_knock_resets, g_knock_placed);
     }
     return b + game::destroy_deferred_status() + "\n";
 }

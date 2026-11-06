@@ -122,6 +122,11 @@ public:
     // walk; nor across the death flag (the dead state at the place of the death, the next one at the nest).
     // Blended, the puppet's target slid the whole way in 0.1 s and the puppet walked after it (0 = off)
     float jump_speed = 0;
+    // BUG-0409: a newest state with these flag bits (NPC proxies: NF_THROWN) is a body thrown by a hit (14-31 m/s for
+    // ~0.9 s): its path is a real move, led at up to kThrownLead m/s (the 15 m/s "put somewhere" rule left it 2-3.7 m
+    // behind, a saw tooth of one state period). 0: none.
+    uint8_t thrown_flags = 0;
+    static constexpr float kThrownLead = 45.f;
     // BUG-0519 (cell.puppet_scale): blend two states of different Cell world scales in one scale
     static inline bool scale_lerp = true;
     // diagnostics (BUG-0388): how far past its newest snapshot the last sample() ran (s, before the
@@ -196,6 +201,9 @@ public:
                 float k = (float)(1.0 / dt);
                 pv = {(n.s.pos.x - pr->s.pos.x) * k, (n.s.pos.y - pr->s.pos.y) * k, (n.s.pos.z - pr->s.pos.z) * k};
                 ps = len(pv);
+                const bool thrown = thrown_flags && (n.s.flags & thrown_flags) && ps <= kThrownLead;
+                if (thrown)
+                    return pv; // (its own speed is the walk's, not the throw's)
                 if (ps > 15.f || (jump_speed > 0 && ps > jump_speed))
                     return {}; // the sender's body was put somewhere: no walk to go on with
             }

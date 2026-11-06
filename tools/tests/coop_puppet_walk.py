@@ -25,6 +25,8 @@ The drawn position is the puppet's position before the mod's frame (the mod runs
   PUPPET_WALK_CMDS="cmd;cmd": console commands on both games before the walks (experiments)
   (SPORE_FIX_OFF=creature.puppet_walk must FAIL)"""
 import argparse
+
+import body_trail  # noqa: E402
 import math
 import random
 import re
@@ -286,6 +288,7 @@ def windows(pup, top):
     return win, hitch, tj, legacy
 
 
+BODY_STOPS = []  # (slide, key, t, e0) of every direction (bodyrec)
 STOP_MOVE, STOP_MOVES = 0.15, 0.1  # BUG-0408 (--stop-walk): m slid on after a stop, share of the stops
 STOP_SLIDE = 0.3  # m: a puppet drawn this far from where the walker stopped in the second after the stop slid past it
 
@@ -487,6 +490,7 @@ def direction(walker, observer, wname, oname, rng, secs, ck, stand=0, jumps=0.0,
     time.sleep(2.0)
     for c in (walker, observer):
         c.call('coop.track start')
+        body_trail.record(c, True)  # BUG-0408: both games' own positions on one clock
     time.sleep(0.5)
     log = []
     if MOUND:  # BUG-0435: the walker first stands on the lower part of the nest mound, then walks from there
@@ -521,7 +525,18 @@ def direction(walker, observer, wname, oname, rng, secs, ck, stand=0, jumps=0.0,
     shot(observer, f'puppet_walk_{oname}_sees_{wname}')
     for c in (walker, observer):
         c.call('coop.track stop')
+        body_trail.record(c, False)
     obs, wal = dump(observer), dump(walker)
+    # BUG-0408 / BUG-0425: the observer's puppet against the walker's own creature AT THE SAME MOMENT (coop.bodyrec)
+    bw, bo = body_trail.dump(walker), body_trail.dump(observer)
+    bres = body_trail.analyse(bw, bo, kinds='p')
+    for line in body_trail.summary(bres, min((x[0] for x in bw), default=0)):
+        print(f'  {oname} sees {wname} (bodyrec): ' + line, flush=True)
+    sl = body_trail.stop_slides(bw, bo)
+    print(f'  {oname} sees {wname} (bodyrec): {len(sl)} stops, past the stop p50 {body_trail.pct([x[0] for x in sl], .5):.2f} '
+          f'p90 {body_trail.pct([x[0] for x in sl], .9):.2f} max {max([x[0] for x in sl], default=0):.2f} m; '
+          + ', '.join(f'{d:.2f} m at {t - min(x[0] for x in bw):.1f} s' for d, _, t, _ in sl[:4]), flush=True)
+    BODY_STOPS.extend(sl)
     path = os.path.join(lane.out_dir('track'), f'puppet_walk_{oname}_sees_{wname}_{time.strftime("%Y%m%d-%H%M%S")}.json')
     with open(path, 'w') as f:
         json.dump({'observer': obs, 'walker': wal}, f)

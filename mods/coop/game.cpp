@@ -103,6 +103,7 @@ static void air_reassert(void* c, int where);
 typedef int(SK_THISCALL* AcPlay_t)(void*, uint32_t, int);
 static AcPlay_t o_AcPlay;
 static int SK_THISCALL h_AcPlay(void* ac, uint32_t id, int a);
+
 static std::vector<void*> g_our_herds; // made by create_herd (puppets, proxies); diagnostics only
 
 // ---- registry via cCreatureAnimal::Update (thiscall, int deltaTime) ----
@@ -1633,6 +1634,59 @@ static bool pose_refused(const net::Vec3* p, const net::Quat* q)
     return true;
 }
 
+// BUG-0434: the game puts a creature that is off the observer's screen on the plain terrain (GetHeightAt) while it
+// stands on raised ground (a nest mound): with the camera turned away the partner's puppet on a mound was drawn
+// 0.8-1 m low in every frame off the screen and in the first frame back in view (the update before that frame's
+// drawing still grounded it; writes at the mod's frame were undone by it). Not the physics' simple path
+// (+0xF90 = 1, LOD +0xEAC = 2 in every such frame, out/lab/20261106-042950). After the physics manager's update
+// (SporeCoop::PhysicsManager_Update, hooked by gamefixes.cpp for BUG-0449) a puppet whose target stands > 0.3 m over GetHeightAt and that was put within
+// 0.1 m of it is lifted back to its target's height over the ground. Off: 0.7.8.
+static bool g_culled_ground_fix = true;
+COOP_FIX("creature.culled_ground", "BUG-0434", g_culled_ground_fix, "creature: the partner's creature on a nest mound stays on it while off the screen (no low frame when it comes into view)");
+struct MoundHold {
+    void* c;
+    net::Vec3 tgt;
+    double t;
+};
+static std::vector<MoundHold> g_mound;
+uint32_t g_mound_lifts = 0;
+
+void mound_hold(void* c, const net::Vec3& tgt)
+{
+    double now = H->time_seconds();
+    for (auto& m : g_mound)
+        if (m.c == c) {
+            m.tgt = tgt;
+            m.t = now;
+            return;
+        }
+    if (g_mound.size() < 16)
+        g_mound.push_back({c, tgt, now});
+}
+
+void after_physics() // gamefixes.cpp's hook of the physics update (BUG-0449), after the game's update
+{
+    if (!g_culled_ground_fix || g_mound.empty())
+        return;
+    double now = H->time_seconds();
+    for (size_t i = 0; i < g_mound.size();) {
+        auto& m = g_mound[i];
+        if (now - m.t > 0.5 || !creature_listed(m.c)) {
+            g_mound.erase(g_mound.begin() + i);
+            continue;
+        }
+        i++;
+        net::Vec3 p = position(m.c);
+        float gp = ground_radius(p), gt = ground_radius(m.tgt);
+        float rp = std::sqrt(p.x * p.x + p.y * p.y + p.z * p.z), rt = std::sqrt(m.tgt.x * m.tgt.x + m.tgt.y * m.tgt.y + m.tgt.z * m.tgt.z);
+        if (gp <= 1.f || gt <= 1.f || rp <= 1.f || rt - gt < 0.3f || rp - gp > 0.1f || std::sqrt((p.x - m.tgt.x) * (p.x - m.tgt.x) + (p.y - m.tgt.y) * (p.y - m.tgt.y) + (p.z - m.tgt.z) * (p.z - m.tgt.z)) > 2.5f)
+            continue;
+        float k = (gp + (rt - gt)) / rp;
+        set_position(m.c, {p.x * k, p.y * k, p.z * k});
+        g_mound_lifts++;
+    }
+}
+
 bool pose_bad(const net::Vec3& pos, const net::Quat& rot, const net::Vec3& vel)
 {
     return pose_refused(&pos, &rot) || pose_refused(&vel, nullptr);
@@ -1702,8 +1756,8 @@ static int SK_THISCALL h_AcPlay(void* ac, uint32_t id, int a)
 std::string air_status()
 {
     char b[180];
-    snprintf(b, sizeof b, "air hold: held=%u regrounded update=%u anim=%u idle=%u bt=%u low=%u nonfinite_refused=%u\n", (unsigned)g_air.size(),
-             g_air_regrounded[0], g_air_regrounded[1], g_air_regrounded[2], g_air_regrounded[3], g_air_regrounded[4], g_nonfinite_drops);
+    snprintf(b, sizeof b, "air hold: held=%u regrounded update=%u anim=%u idle=%u bt=%u low=%u nonfinite_refused=%u mound_lifts=%u\n", (unsigned)g_air.size(),
+             g_air_regrounded[0], g_air_regrounded[1], g_air_regrounded[2], g_air_regrounded[3], g_air_regrounded[4], g_nonfinite_drops, g_mound_lifts);
     return b;
 }
 

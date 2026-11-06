@@ -253,6 +253,7 @@ static void creature_drive(void* p, const net::PlayerState& s_in, drive::State& 
             s.pos = {s.pos.x * k, s.pos.y * k, s.pos.z * k};
         } else
             s.pos = drive::on_own_ground(s.pos);
+        game::mound_hold(p, s.pos); // BUG-0434
     }
     if (g_puppet_deep_fix && game::in_creature_stage())
         s.pos = drive::out_of_ground(s.pos, true); // BUG-0513: 3-15 m under this game's ground

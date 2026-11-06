@@ -211,3 +211,35 @@ def steps(rows, kinds='t', over=5.0, frame=0.1):
             if 0 < tb - ta <= frame and d > over:
                 out.append((d, key, tb, tb - ta))
     return sorted(out, reverse=True)
+
+
+def stop_slides(ref_rows, copy_rows, kinds='p', win=1.5):
+    """BUG-0408: per stop of a reference body (moving > 1.5 m/s over 0.3 s, then within 0.15 m for the next second): how
+    far its copy went past where it stopped, on both games' own rows at the same moment: [(slide m, key, t, off at
+    the stop m)]; slide = the copy's largest distance from the stopped body in `win` s less the distance at the stop"""
+    out = []
+    rb, cb = _by_key(ref_rows), _by_key(copy_rows)
+    for key, rv in rb.items():
+        if key[0] not in kinds or key not in cb:
+            continue
+        cv = cb[key]
+        ct = [x[0] for x in cv]
+        k = 0
+        while k < len(rv) - 2:
+            t, p = rv[k]
+            prev = [x for x in rv[max(0, k - 60):k] if x[0] > t - 0.3]
+            post = [x for x in rv[k:k + 400] if x[0] < t + 1.0]
+            if (len(prev) >= 3 and math.dist(prev[0][1], p) / (t - prev[0][0]) > 1.5 and len(post) > 5 and
+                    post[-1][0] - t > 0.8 and math.dist(post[0][1], post[-1][1]) < 0.15):
+                i0, i1 = bisect.bisect_left(ct, t), bisect.bisect_right(ct, t + win)
+                seg = cv[i0:i1]
+                if len(seg) > 5:
+                    rg = _norm(p)
+                    def off(q):
+                        return math.dist(tuple(x * _norm(q) / rg for x in p), q)
+                    e0 = off(seg[0][1])
+                    out.append((max(off(q) for _, q in seg) - e0, key, t, e0))
+                k += len(post)
+                continue
+            k += 1
+    return sorted(out, reverse=True)
