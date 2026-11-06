@@ -178,7 +178,19 @@ struct HMember {
     uint16_t id;
     uint8_t owner;
     uint32_t bhv_anim = 0; // BUG-0569: the last animation its behaviour tree started
+    void* tribe = nullptr; // BUG-0620: the tribe whose member list held it last
+    double body_since = 0; // BUG-0620: when it left that list dead (its body), 0: in a list
 };
+// BUG-0620 (docs/re/tribe.md#tribe-member-body): a member that dies for good leaves its tribe's member list
+// (+0x1014 = 0) while the game keeps its body (the dead flag +0xB5E, in the object list) for 10-20 s more; the host's
+// snapshot dropped it at once and the guest removed its mirror: the body lay on the host only (the detector's
+// `Tribe:unmatched:citizen`). With tribe.member_body the host sends the body with its last tribe (health 0: the guest's
+// mirror plays the death, tribe.ko) while the game keeps it, at most kBodyMax s. Off: dropped at once (0.7.8).
+static bool g_member_body_fix = true;
+COOP_FIX("tribe.member_body", "BUG-0620", g_member_body_fix,
+         "tribe: the body of a member that died lies in every player's game as long as in the host's");
+constexpr double kBodyMax = 60.0;
+static uint32_t g_bodies_sent;
 static std::unordered_map<void*, HMember> g_hm;
 static std::unordered_map<uint16_t, void*> g_hm_by_id;
 static uint16_t g_next_id = 1;
@@ -1233,6 +1245,7 @@ static void host_tick(double now)
         uint16_t id;
         uint8_t tribe, owner, age;
         void* c;
+        bool body = false; // BUG-0620
     };
     std::vector<Entry> entries;
     for (size_t ti = 0; ti < tribes.size() && ti < 32; ti++) {
@@ -1247,8 +1260,24 @@ static void host_tick(double now)
                 it = g_hm.emplace(c, HMember{net::alloc_id(g_next_id, g_hm_by_id), owner}).first;
                 g_hm_by_id[it->second.id] = c;
             }
+            it->second.tribe = tribes[ti];
+            it->second.body_since = 0;
             entries.push_back({it->second.id, (uint8_t)ti, it->second.owner, F<uint8_t>(c, kAgeOff), c});
         }
+    }
+    for (auto& [c, hm] : g_hm) { // BUG-0620: the bodies of members that left their list dead
+        if (!g_member_body_fix || alive.count(c) || !game::object_alive(c) || !game::is_dead(c))
+            continue;
+        auto ti = std::find(tribes.begin(), tribes.end(), hm.tribe);
+        if (ti == tribes.end() || ti - tribes.begin() >= 32)
+            continue;
+        if (hm.body_since == 0)
+            hm.body_since = now;
+        if (now - hm.body_since > kBodyMax)
+            continue;
+        alive.insert(c);
+        g_bodies_sent++;
+        entries.push_back({hm.id, (uint8_t)(ti - tribes.begin()), hm.owner, F<uint8_t>(c, kAgeOff), c, true});
     }
     for (auto it = g_hm.begin(); it != g_hm.end();) {
         if (!alive.count(it->first)) {
@@ -1291,7 +1320,7 @@ static void host_tick(double now)
             w.f32(p.x); w.f32(p.y); w.f32(p.z);
             w.f32(v.x); w.f32(v.y); w.f32(v.z);
             w.f32(q.x); w.f32(q.y); w.f32(q.z); w.f32(q.w);
-            w.f32(game::health(e.c));
+            w.f32(e.body ? 0.f : game::health(e.c)); // (a body: dead, BUG-0620)
         }
         w.u32(kStateTrailer); // BUG-0365: the host's clock (guests before 0.7.3.4 stop reading before it)
         w.u32((uint32_t)(now * 1000.0));
@@ -3139,8 +3168,8 @@ std::string status()
 {
     char b[640];
     if (C.sess && C.sess->role() == net::Role::Host)
-        snprintf(b, sizeof b, "tribe(host): members=%u cmds_done=%u rejected=%u gifts=%u unselected=%u\n",
-                 (unsigned)g_hm.size(), g_cmds_done, g_cmds_rejected, g_gifts, g_unselected);
+        snprintf(b, sizeof b, "tribe(host): members=%u cmds_done=%u rejected=%u gifts=%u unselected=%u bodies_sent=%u\n",
+                 (unsigned)g_hm.size(), g_cmds_done, g_cmds_rejected, g_gifts, g_unselected, g_bodies_sent);
     else
         snprintf(b, sizeof b,
                  "tribe(guest): mirrors=%u spawned=%u removed=%u cmds_sent=%u rx=%u skipped=%u resets=%u "
