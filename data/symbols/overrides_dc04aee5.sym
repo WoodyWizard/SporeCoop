@@ -358,6 +358,7 @@ Simulator::GetPlayerEmpireID=0x01020F40 ; verified cdecl uint32() plain ret: [[0
 Simulator::SpawnUFO=0x0102ACC0 ; likely cdecl cSpaceship*(int type, uint32* political id, ResourceKey* model) plain ret: sub esp,0x28 + 2 pushes, reads [esp+0x34..] (BUG-0143)
 Simulator::cCreatureGameData::AddEvolutionPoints=0x00D2E8A0 ; verified cdecl void(float delta) plain ret: movss xmm1,[esp+4] first; hooked by game.cpp h_AddEvo (BUG-0143)
 Simulator::cCreatureGameData::GetEvolutionPoints=0x00D2E350 ; verified cdecl float() plain ret: fld [0x169E398]; ret (BUG-0143)
+Simulator::cCreatureGameData::SetEvolutionPoints=0x00D2E480 ; verified (objdump 2026-11-06, BUG-0630) cdecl void(float total) plain ret: movss xmm0,[esp+4]; movss [0x169E398],xmm0; ret: the DNA only, cPlayer +0x10F0 (the evolution bar) untouched; the game's editor result uses it (0xD445AA); called by game.cpp dna_add_raw for a spend
 Simulator::cGameNounManager::GetData=0x00B212D0 ; likely thiscall(cGameNounManager*, 5 dwords) ret 0x14: mov esi,ecx (BUG-0143)
 Simulator::cGamePersistenceManager::Get=0x00B3D440 ; verified cdecl() plain ret: mov eax,[0x167EAF4] (BUG-0143)
 Simulator::cGameTimeManager::Get=0x00B3D480 ; verified cdecl() plain ret: mov eax,[0x167EB04] (BUG-0143); +0x48 bit 0 = the game time stands (Creature, lane 5, 2026-11-01: pause menu 0x03, Sporepedia 0x01, My Collections 0x03, 0 again after Esc; mods/coop/busy.h kPaused, BUG-0404)

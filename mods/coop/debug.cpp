@@ -543,7 +543,9 @@ int c_dna(void*, int argc, const char* const* argv, SkOut* out)
         dna_pace::g_ini = atoi(argv[2]);
     if (argc > 2 && !strcmp(argv[1], "local")) // tests: our total only, as a host total we missed (BUG-0128)
         game::dna_add_raw((float)atof(argv[2]));
-    SAY("dna=%.1f", game::dna());
+    if (argc > 2 && !strcmp(argv[1], "spend")) // tests (BUG-0630): a spend the game's way (its editor's result:
+        game::dna_set_raw(game::dna() - (float)atof(argv[2])); // SetEvolutionPoints, the DNA only)
+    SAY("dna=%.1f bar=%.1f", game::dna(), game::evolution_bar()); // bar: cPlayer +0x10F0, the stage's total earned
     return 0;
 }
 } // namespace
@@ -684,7 +686,7 @@ void coop_register_debug_commands2(const SkHost* host, SkMod* self)
                       c_spotcut, nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.save", "save the game (like the pause menu Save)", c_save, nullptr,
                       SK_CMD_MAIN_THREAD);
-    host->command_add(self, "coop.dna", "coop.dna [add|gain|local <n> | pace 0|1] - shared DNA debug", c_dna, nullptr, SK_CMD_MAIN_THREAD);
+    host->command_add(self, "coop.dna", "coop.dna [add|gain|local|spend <n> | pace 0|1] - shared DNA debug (prints the DNA and the evolution bar cPlayer +0x10F0)", c_dna, nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.memfind", "coop.memfind <hex dword> [max] - addresses holding the value (RE)",
                       c_memfind, nullptr, 0);
     host->command_add(self, "coop.w2s", "check world_to_screen against the game's screen ray", c_w2s, nullptr,
