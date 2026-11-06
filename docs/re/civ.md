@@ -1231,3 +1231,30 @@ another ground than the same list after a load) checked in Civ, where cities sta
   223 points round the cities, 0.00 m (tribe_civ_ground = coop_tribe_civ.py --ground, lab 20261106-062912).
 * So no Civ ticket: the two grounds do not differ round cities in these paths. Not measured: a city the guest's game
   founded while the host's was away (local play), and a Space colony's city.
+
+## A captured city's new layout and the guest's rebuild loop (2026-11-06, fix/w45-placement)
+<a id="civ-capture-layout"></a>
+
+BUG-0602. GOG 2024. ✔ = observed, ~ = read in the code, ? = inferred.
+* ✔ campaign_space (lab 20261106-064018, `SPORE_DETECTOR=20`): the campaign founds 6 cities (SpawnNextCity
+  instant=1, the guests found theirs) and captures one per 30 s for the player's civ (cCity::Capture). Right after the
+  capture of city 4 (06:45:25) every guest logged every 2 s `the host's building 018EA2CC of city 4 at (-319.0 -310.6
+  -239.6) went to (-317.0 -316.8 -234.0) here, 8.6 m off` (buildings_fixed=+224/-224 at the end); the detector's
+  `Civilization:planet:building_industry` in 27 samples.
+* ✔ Live `coop.civ slots 4` / `blist 4` on both games in that run: the host's city 4 had a new layout (all 12 slots
+  elsewhere, the industry in slot 5 at (-319 -311 -240), the City Hall 3.9 m and the house 3.2 m from the guest's),
+  the guests kept the layout of the founding (the same 12 slots the host had before the capture, lab 20261106-062912).
+  The host's building stood in its slot (no `host building ... nearest slot` line): the layouts differ, not a building.
+* ✔ Not by the capture alone: `coop.civ capture` of a new city in a two-game test left the host's layout as it was
+  (civ_city_layout before its --move step was added, lab 20261106-062912). ? The relayout came with the captured city's new models
+  (City_SetPartsOwner 0xBE4C80 -> 0xBE4B60, the owner's City Hall, then an update request 0xBD1C00(1)), which a guest's
+  ChangeOwner without Capture's +0x2E2 flag does not run, and may wait for the city to be updated in view (the
+  campaign's capture caption shows it); not traced.
+* ✔ Why it looped: reconcile_buildings matches a host building with a local one of the same noun within 4 m; the
+  guest's was 8.6 m off, so it was destroyed (extra) and the host's built again (missing) with SnapBuildingToSlot,
+  which took the free slot nearest the host's spot: the guest's own slot of that building, 8.6 m off again.
+* Fix `civ.city_layout`: a building a guest makes for the host's (reconcile, MSG_CIV_BUILD), and one it matched 1-4 m
+  off, is put at the host's spot with its layout slot (cLayoutSlot +0xC) moved there too, so the slot nearest the
+  building stays its own (the planner's pick, BUG-0491) and the next snapshot matches it. `coop.civ` counts
+  `off_slot=` (rebuilt more than 4 m from the host's spot) and `moved=`. `coop.civ blist <i>` lists a city's buildings
+  with their slot, `coop.civ bmove <i> <k> <x y z>` (tests) moves one.

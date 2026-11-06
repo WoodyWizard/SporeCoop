@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### Fixed
+- Civilization: after the host takes a city, its buildings stand at the same places on the guests' screens; before,
+  a guest's game could tear one building down and put it up again every two seconds a few metres away (BUG-0602).
 - Spice geysers are now the same size on every player's screen (a geyser the host's game made during play was ten
   times bigger there than on the guests' screens) (BUG-0485).
 - Civilization: the host's vehicles no longer show up ten times too big on a guest's screen (BUG-0549).

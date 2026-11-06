@@ -41,7 +41,15 @@ def main():
     ck = Checks()
     t0, prev, twice, samples = time.time(), set(), [], 0
     while time.time() - t0 < a.minutes * 60:
-        hw, gw = worlddiff.pair_dump(host, guest)
+        try:
+            hw, gw = worlddiff.pair_dump(host, guest)
+            if 'Tribe' not in (hw.mode or '') or 'Tribe' not in (gw.mode or ''):
+                raise RuntimeError(f'not both in Tribe ({hw.mode}, {gw.mode})')
+            hs, gs = sample(host), sample(guest)
+        except Exception as e:  # --attach: the test's games start, load or stop
+            print(f'  {time.time() - t0:5.0f} s: no compare ({e})', flush=True)
+            time.sleep(10)
+            continue
         c = gw.me if gw.me and not worlddiff._origin(gw.me) else hw.me
         if not c:
             time.sleep(10)
@@ -49,7 +57,6 @@ def main():
         samples += 1
         r = worlddiff.AREA['Tribe'] * 0.8
         hc, gc = citizens(hw, c, r), citizens(gw, c, worlddiff.AREA['Tribe'] * 1.5)
-        hs, gs = sample(host), sample(guest)
         lone = []
         for x in hc:
             d = min((math.dist(x['pos'], y['pos']) for y in gc), default=1e9)
