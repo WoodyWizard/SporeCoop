@@ -42,10 +42,21 @@ def stale_sample(host, guest, gap):
     near = {i: x for i, x in ids(gw, own=('proxy',)).items()
             if gw.me and all(map(math.isfinite, x['pos'])) and math.dist(x['pos'], gw.me) <= 60.0}
     stale = {i: x for i, x in near.items() if i not in hid}
+    # the other half of BUG-0480: host cells near the guest (in both host dumps, so not a cell born or
+    # gone between them) that the guest's game has no mirror of
+    both = set(ids(h1, own=('npc',))) & set(ids(h2, own=('npc',)))
+    gall = set(ids(gw, own=('proxy',)))
+    lack = {i: x for i, x in ids(h2, own=('npc',)).items()
+            if i in both and i not in gall and gw.me and all(map(math.isfinite, x['pos']))
+            and math.dist(x['pos'][:2], gw.me[:2]) <= MISSING_R}
+    stale_sample.lack = lack
     if stale:
         print(f'    dumps: host {len(h1.rows)} rows complete={h1.complete}, {len(h2.rows)} complete={h2.complete}; guest {len(gw.rows)} complete={gw.complete}; '
               f'guest at {gw.me}, host centre {h2.me}')
     return stale, near, hid
+
+
+MISSING_R = 25.0
 
 
 def pool(con):
@@ -67,6 +78,7 @@ def main():
             time.sleep(1)
         print('  guest:', pool(guest).strip().splitlines()[-1][:300])
         total_stale, total_near, worst = 0, 0, []
+        lacks = []
         det = {False: {}, True: {}}  # detector findings per round: one host dump / host dumped around the guest
         moves = [(20, 0), (0, 20), (-20, 0), (0, -20), (15, 15), (-15, -15)]
         for i in range(a.rounds):
@@ -98,6 +110,13 @@ def main():
             print(f'  round {i + 1}: {len(near)} mirrors within 60 m of the guest, {len(stale)} stale '
                   f'(gone from the host >= {a.gap:.1f} s){": " + ex if ex else ""}', flush=True)
             worst.append(len(stale))
+            lack = stale_sample.lack
+            lacks.append(len(lack))
+            if lack:
+                ex = ', '.join(f'{k} at ({x["pos"][0]:.0f} {x["pos"][1]:.0f})' for k, x in list(lack.items())[:3])
+                print(f'    {len(lack)} host cells within {MISSING_R:g} m of the guest (in both host dumps) not mirrored: {ex}')
+                for k in list(lack)[:2]:
+                    print(f'    guest: {guest.call(f"coop.pool cell {k}")["out"].strip()} | host: {host.call(f"coop.pool cell {k}")["out"].strip()}')
             for k in list(stale)[:3]:  # what each game knows of it (the guest: its mirror entry; the host: the cell)
                 print(f'    guest: {guest.call(f"coop.pool cell {k}")["out"].strip()} | host: {host.call(f"coop.pool cell {k}")["out"].strip()}')
             if stale:
@@ -122,6 +141,7 @@ def main():
         else:
             ck(total_stale == 0, f'no mirror of a cell the host no longer has ({total_stale} stale in {len(worst)} rounds: {worst})')
         if a.case == 'play':
+            ck(sum(lacks) == 0, f'every host cell within {MISSING_R:g} m of the guest is mirrored ({sum(lacks)} missing in {len(lacks)} rounds: {lacks})')
             print(f'  detector over {len(worst)} rounds: one host dump {det[False]}, host dumped around the guest {det[True]}')
             ck(det[True].get('Cell:guest_only:cell', 0) <= det[False].get('Cell:guest_only:cell', 0),
                'the bracketed compare reports no more stale-looking mirrors than the old one')
