@@ -2759,16 +2759,6 @@ COOP_FIX("tribe.grab_spot", "BUG-0505", g_grab_spot_fix,
          "tribe: a member that cannot reach its spot at a tool rack is set onto it and takes the tool");
 constexpr uint32_t kGrabNode = 0x0462854D;
 static uint32_t g_grab_spot_moves;
-// BUG-0531: the same class in the gather behaviour (node 0x0569236E, tick 0xD75F70): its state 1 waits for the walk
-// to the tree to arrive (0xC42F80), with no time limit either; a walk stopped short (seen in play_tribe: the goal
-// 2.8 m off, the member standing) keeps the member there, and an order to the same tree makes the same record
-// (DoAction posts no re-plan) so it never leaves. The same watch sets it onto its walk's goal; the gather goes on.
-// `coop.fix tribe.gather_stall off`: it stands there (0.7.8).
-constexpr uint32_t kGatherNode = 0x0569236E;
-static bool g_gather_stall_fix = true;
-COOP_FIX("tribe.gather_stall", "BUG-0531", g_gather_stall_fix,
-         "tribe: a member whose walk to a tree it gathers stopped short is set onto the walk's goal and gathers");
-static uint32_t g_gather_stall_moves;
 struct GrabWatch {
     net::Vec3 pos;
     double since;
@@ -2839,25 +2829,18 @@ static net::Quat facing(const net::Vec3& at, const net::Vec3& to)
 
 static void grab_spot_tick(double now)
 {
-    if ((!g_grab_spot_fix && !g_gather_stall_fix) || now < g_grab_next)
+    if (!g_grab_spot_fix || now < g_grab_next)
         return;
     g_grab_next = now + 0.5;
     void* pt = player_tribe();
     std::unordered_set<void*> seen;
     for (void* c : pt ? members(pt) : std::vector<void*>{}) {
-        if (!game::object_alive(c) || game::is_dead(c))
-            continue;
-        uint32_t node = bt_node(c);
-        if (!(node == kGrabNode && g_grab_spot_fix) && !(node == kGatherNode && g_gather_stall_fix))
+        if (!game::object_alive(c) || game::is_dead(c) || bt_node(c) != kGrabNode)
             continue;
         uint32_t* m = leaf_mem(c);
         net::Vec3 goal;
-        if (!m || m[0] != 1 || !walk_goal(c, goal))
-            continue;
-        // grab, state 1: walking to the claimed spot m[6] of the tool m[1]; gather, state 1: walking to the tree m[2]
-        uint32_t look = node == kGrabNode ? m[1] : m[2];
-        if (!look || (node == kGrabNode && (int)m[6] < 0))
-            continue;
+        if (!m || m[0] != 1 || (int)m[6] < 0 || !m[1] || !walk_goal(c, goal))
+            continue; // state 1: walking to the claimed spot m[6] of the tool m[1]
         seen.insert(c);
         net::Vec3 p = game::position(c);
         auto it = g_grab_watch.find(c);
@@ -2869,12 +2852,11 @@ static void grab_spot_tick(double now)
         if (now - it->second.since < 4.0 || d > 3.f || d < 0.05f)
             continue;
         net::Vec3 tp = goal;
-        game::object_position((void*)(uintptr_t)look, tp);
+        game::object_position((void*)(uintptr_t)m[1], tp);
         game::teleport(c, goal, facing(goal, tp));
-        (node == kGrabNode ? g_grab_spot_moves : g_gather_stall_moves)++;
+        g_grab_spot_moves++;
         g_grab_watch.erase(c);
-        H->log(M, SK_INFO, "tribe: member #%u stood %.1f m short of its walk's goal for 4 s (%s, state 1): set onto it",
-               member_id(c), d, node == kGrabNode ? "a tool's spot" : "the way to a tree it gathers");
+        H->log(M, SK_INFO, "tribe: member #%u stood %.1f m short of its spot at a tool for 4 s: set onto it", member_id(c), d);
     }
     for (auto it = g_grab_watch.begin(); it != g_grab_watch.end();)
         it = seen.count(it->first) ? std::next(it) : g_grab_watch.erase(it);
@@ -3476,8 +3458,8 @@ std::string debug(const std::vector<std::string>& a)
             s += b;
         }
         char b[192];
-        snprintf(b, sizeof b, "tools n=%d tool_sets=%u hold_fix=%d grab_spot=%d moves=%u gather_stall=%d moves=%u leader_kept=%u\n", u.i, g_tool_sets,
-                 (int)g_tool_hold_fix, (int)g_grab_spot_fix, g_grab_spot_moves, (int)g_gather_stall_fix, g_gather_stall_moves, g_leader_tools_kept);
+        snprintf(b, sizeof b, "tools n=%d tool_sets=%u hold_fix=%d grab_spot=%d moves=%u leader_kept=%u\n", u.i, g_tool_sets,
+                 (int)g_tool_hold_fix, (int)g_grab_spot_fix, g_grab_spot_moves, g_leader_tools_kept);
         return s + b;
     }
     if (a.size() >= 2 && a[0] == "build" && is_host()) { // build <type> [metres]: test setup, a tool as if bought
