@@ -1928,3 +1928,21 @@ fixture to Tribe, as coop_tribe_snapshot.py).
 The guest's mirrors of the player tribe's members (tribe.mirror_time, 0.2 s delay) and the animals' proxies (0.15 s)
 were 0.17-0.32 s behind the host's bodies, p90 2.04 m (members) and 1.17 m (animals) while they walk; with
 `drive.lead` 0.64 m and 0.37 m. Details: docs/re/creature.md#creature-remote-lead (BUG-0410, BUG-0425).
+
+## The arrival's chief placing teleported walking chiefs (2026-11-06, fix/w45-remote-bodies-2)
+<a id="tribe-place-chiefs-walking"></a>
+
+BUG-0610. CORRECTION (2026-11-06, fix/w45-remote-bodies-2): the ticket said "the host's own game put its member 21 m
+away"; it was the mod's own `place_chiefs` (tribe.cpp, `tribe.place_chiefs`, BUG-0340), not the game.
+* ✔ (observed) Every one-frame jump of a walking member on the host in M1's 13 body_trail_tribe tracks (9-22 m, always
+  t2, the guest's chief) fell within ~1 s of the host's log line "tribe: Bob's chief stood next to another one at the
+  arrival: put on its own spot round the village"; one line and one jump per run. The guest's copy followed 0.25 s
+  later (the next state). No game-side teleport of a walking citizen was found (41 indirect vt+0x44 calls in
+  0xC00000-0xDB0000 do not resolve to the creature Teleport 0xC0C040).
+* ✔ `place_chiefs` looked at every chief for 60 s after an arrival (every 2 s) and teleported one closer to another chief
+  than their radii + 1 m, with no speed check (spread_chiefs has one): a chief walking past the host's chief on its
+  player's order, or one that walked there and stopped (13.8 m, lab 20261106-041542 with the first fix that only left
+  walking chiefs alone), was put on its ring spot.
+* Fix `tribe.place_still`: a chief is placed only while it stands AND has not moved more than 1.5 m since the first
+  look of this arrival's window (a chief stacked at the arrival stands where it came in). The log line carries the
+  game's time (`t <H->time_seconds()>`, the clock of `coop.bodyrec`).

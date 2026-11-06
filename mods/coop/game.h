@@ -87,6 +87,8 @@ void set_defer_keeps_puppet(bool on); // tests (off: a deferred puppet leaves th
 bool cinematic_playing(); // cCinematicManager +0x2C != 0 (W2: no destroy of a village meanwhile)
 bool destroy_pending(void* c);     // queued by destroy_creature, still there
 std::string destroy_deferred_status();
+// BUG-0614 (game.finite_pose): a received pose with NaN / Inf; counted, false with the switch off
+bool pose_bad(const net::Vec3& pos, const net::Quat& rot, const net::Vec3& vel);
 void teleport(void* c, const net::Vec3& pos, const net::Quat& rot);
 // BUG-0360: teleport without the teleport mark (+0xB5D, set by vt 0x44 0xC0C040): the locomotion takes
 // the position, the animation's walk gait goes on (with the mark it restarts every frame)

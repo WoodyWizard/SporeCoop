@@ -4427,3 +4427,23 @@ G2 of 0.7.8 (BUG-0430 class). For each: which kind of fault it was and the evide
   test checks the p90 distance and the longest stretch (BUG-0425; `SPORE_FIX_OFF=drive.lead` fails Creature and Tribe).
 * Measuring against the host's state that the guest received (npctrack's `tgt`, coop_sync's lag window) hides any
   lag of the target itself: a copy that follows a late target passes those checks.
+
+## The detector's trail rows and the body_trail additions (2026-11-06, fix/w45-remote-bodies-2)
+<a id="testing-detector-trail"></a>
+
+* BUG-0609: with `SPORE_DETECTOR=<s>` the monitor also starts `coop.bodyrec on` (records without clearing a test's own
+  rows) on the host and every guest and, every period, reads the rows since the last one (`coop.bodyrec since <t> [n]
+  [step]`: one frame per 50 ms) and runs `body_trail.detect_findings`: a `<stage>:trail:<kind>` row (npc, member,
+  vehicle, player, ship) when the guest's copies of a kind are late (lag p50 > 0.14 s) and off (dist p90 > 0.5 m) at
+  the same moment, or one copy stayed over 2 m off for 1.5 s. `SPORE_DETECTOR_TRAIL=0`: off. Measured per 10 s: without
+  drive.lead lag p50 0.15-0.23 s in every window, with it 0.013-0.132 s (labs 20261106-041119 / -041542 / -042100); the p90 lag
+  is spread by the detector's own census dumps (both games hitch), so the median is used.
+* `body_trail.steps(rows)`: one-frame steps over 5 m of a member in one game's own rows; body_trail_tribe fails on any
+  (BUG-0610: the arrival's chief placing teleported a walking chief; it was in 11 of M1's 13 tribe tracks).
+* `coop_body_trail.py --hits` (suite `body_trail_hits`, BUG-0409): the host hits a walking NPC every 5 s (every other
+  one with a push of 3), the 3 s after each hit are judged on both games' bodyrec rows (max 3 m, over 2 m at most
+  0.5 s); the npctrack rows of both games (with the locomotion mode `lm` = +0x2B0 and grounded `gr` columns) go to
+  out/laneN/track/body_trail_hits_npctrack_*.json.
+* `coop.track` rows end with the creature's +0xF90 (drawn flag) and +0xEAC (LOD) (BUG-0434).
+* `coop_net_nan.py` (suite `net_nan`, BUG-0614): a scripted guest (fakepeer protocol) sends NaN / Inf states; its
+  puppet must stay finite in both games' bodyrec rows.

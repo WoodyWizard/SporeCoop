@@ -65,6 +65,7 @@ def walk_npcs(host, guest, rng, secs, around):
     return ids, home
 
 
+NT0 = {}
 HIT_EVERY = 5.0  # s between two hits (--hits)
 HIT_WIN = 3.0  # s after a hit that are judged
 HIT_MAX, HIT_TRAIL = 3.0, 0.5  # m, s: the copy of a hit NPC within HIT_MAX of the host's body, over TRAIL_M m at most HIT_TRAIL s
@@ -77,6 +78,11 @@ def hit_checks(ck, host, guest, hr, gr, hits, t_first):
         con.call('coop.npctrack stop')
         return nw.dump(con)
     gt, ht = ntrack(guest), ntrack(host)
+    path = os.path.join(lane.out_dir('track'), f'body_trail_hits_npctrack_{time.strftime("%Y%m%d-%H%M%S")}.json')
+    with open(path, 'w') as f:
+        json.dump({'host': ht, 'guest': gt, 'hits': hits, 't_first': t_first, 'nt0_host': NT0.get(id(host)),
+                   'nt0_guest': NT0.get(id(guest))}, f)
+    print(f'  npctrack rows: {path}', flush=True)
     worst, longest, n = [], [], 0
     for key, th in hits:
         win = lambda t: th - body_trail.GAP <= t <= th + HIT_WIN + body_trail.GAP  # noqa: E731
@@ -142,6 +148,7 @@ def main():
         body_trail.record(c, True)
         if a.hits:
             c.call('coop.npctrack start 150')
+            NT0[id(c)] = body_trail.now(c)  # (npctrack's t counts from its start)
     tt0 = time.time()
     nxt = {}
     hit = False

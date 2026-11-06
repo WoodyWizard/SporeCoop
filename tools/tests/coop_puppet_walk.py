@@ -77,7 +77,8 @@ def dump(con):
                          'tgt': tuple(map(float, f[10:13])), 'gv': float(f[13]), 'rv': float(f[14]),
                          'anim': f[15], 'gait': int(f[16]), 'gait2': int(f[17]), 'moving': int(f[18]),
                          'ss': int(f[19]), 'vis': int(f[20]), 'sx': float(f[21]), 'sy': float(f[22]),
-                         'ppm': float(f[28]) if len(f) > 28 else None})
+                         'ppm': float(f[28]) if len(f) > 28 else None,
+                         'f90': int(f[29]) if len(f) > 30 else None, 'lod': int(f[30]) if len(f) > 30 else None})
     return rows
 
 

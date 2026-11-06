@@ -612,6 +612,8 @@ struct TrackSample {
     // BUG-0436: its size on the observer's screen, pixels per metre (a point 1 m over it projected), 0 when not known:
     // the game animates a creature far from its camera without its walk gait
     float ppm = 0;
+    // BUG-0434: the physics' simple-path inputs (PhysicsManager_Update 0xB4C5D5): the drawn flag +0xF90, the LOD +0xEAC
+    int8_t f90 = -1, lod = -1;
 };
 static std::deque<TrackSample> g_track;
 // tests (BUG-0367): `coop.track lift <m>`: this game takes the partners' Creature states <m> further from
@@ -675,6 +677,10 @@ static TrackSample& track_one(uint8_t who, void* c, const net::PlayerState* s, u
     };
     x.hd = over(x.d);
     x.ht = s ? over(x.tgt) : x.hd;
+    if (game::noun_id(c) == 0x18EB45Eu) { // a creature
+        x.f90 = (int8_t)*((uint8_t*)c + 0xF90);
+        x.lod = (int8_t)*(int32_t*)((uint8_t*)c + 0xEAC);
+    }
     while (g_track.size() >= kTrackMax)
         g_track.pop_front();
     g_track.push_back(x);
@@ -757,9 +763,9 @@ int c_track(void*, int argc, const char* const* argv, SkOut* out)
         size_t from = argc > 2 ? (size_t)atol(argv[2]) : 0, n = argc > 3 ? (size_t)atol(argv[3]) : 2000;
         for (size_t i = from; i < g_track.size() && i < from + n; i++) {
             const auto& x = g_track[i];
-            SAY("%.4f %u %u %u %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.2f %.2f %08X %d %d %d %d %d %.0f %.0f %.3f %.3f %u %u %08X %.1f\n", x.t,
+            SAY("%.4f %u %u %u %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.2f %.2f %08X %d %d %d %d %d %.0f %.0f %.3f %.3f %u %u %08X %.1f %d %d\n", x.t,
                 x.who, x.flags, x.tp, x.p.x, x.p.y, x.p.z, x.d.x, x.d.y, x.d.z, x.tgt.x, x.tgt.y, x.tgt.z, x.gv, x.rv,
-                x.anim, x.gait, x.gait2, x.moving, x.speed_state, x.vis, x.sx, x.sy, x.hd, x.ht, (unsigned)x.id, x.ranims, x.ranim, x.ppm);
+                x.anim, x.gait, x.gait2, x.moving, x.speed_state, x.vis, x.sx, x.sy, x.hd, x.ht, (unsigned)x.id, x.ranims, x.ranim, x.ppm, x.f90, x.lod);
         }
         return 0;
     }
@@ -4088,6 +4094,8 @@ void setup_callbacks()
         g_remotes.erase(it);
     };
     g_sess.cb.player_state = [](const net::PlayerState& s) {
+        if (game::pose_bad(s.pos, s.rot, s.vel)) // BUG-0614: never into the buffer (its velocity is written raw)
+            return;
         auto& r = g_remotes[s.id];
         r.id = s.id;
         if (r.name.empty())

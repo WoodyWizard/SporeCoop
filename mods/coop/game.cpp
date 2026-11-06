@@ -1616,8 +1616,32 @@ std::string destroy_deferred_status()
 
 static void* spatial(void* c) { return ptr_add<void>(c, kSpatialOff); }
 
+// BUG-0614: a pose that came from another player (a state, a snapshot) reached the game unchecked outside Cell: a NaN
+// or Inf position put the body nowhere (the game's physics and camera then work with NaN). Every write of a position
+// or orientation into a body is checked here, once for all stages. Off: 0.7.8 (written as received).
+static bool g_finite_fix = true;
+COOP_FIX("game.finite_pose", "BUG-0614", g_finite_fix, "all: a position or rotation with NaN / Inf is never written into a body");
+uint32_t g_nonfinite_drops = 0; // writes refused (coop.sync, tests)
+
+static bool finite_v(const net::Vec3& v) { return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z); }
+static bool finite_q(const net::Quat& q) { return std::isfinite(q.x) && std::isfinite(q.y) && std::isfinite(q.z) && std::isfinite(q.w); }
+static bool pose_refused(const net::Vec3* p, const net::Quat* q)
+{
+    if (!g_finite_fix || ((!p || finite_v(*p)) && (!q || finite_q(*q))))
+        return false;
+    g_nonfinite_drops++;
+    return true;
+}
+
+bool pose_bad(const net::Vec3& pos, const net::Quat& rot, const net::Vec3& vel)
+{
+    return pose_refused(&pos, &rot) || pose_refused(&vel, nullptr);
+}
+
 void teleport(void* c, const net::Vec3& pos, const net::Quat& rot)
 {
+    if (pose_refused(&pos, &rot))
+        return;
     Vector3 p{pos.x, pos.y, pos.z};
     Quaternion q{rot.x, rot.y, rot.z, rot.w};
     vcall<void>(spatial(c), 0x44 / 4, &p, &q);
@@ -1625,6 +1649,8 @@ void teleport(void* c, const net::Vec3& pos, const net::Quat& rot)
 
 void place(void* c, const net::Vec3& pos, const net::Quat& rot)
 {
+    if (pose_refused(&pos, &rot))
+        return;
     teleport(c, pos, rot);
     field<uint8_t>(c, 0xB5D) = 0;
 }
@@ -1676,25 +1702,31 @@ static int SK_THISCALL h_AcPlay(void* ac, uint32_t id, int a)
 std::string air_status()
 {
     char b[180];
-    snprintf(b, sizeof b, "air hold: held=%u regrounded update=%u anim=%u idle=%u bt=%u low=%u\n", (unsigned)g_air.size(),
-             g_air_regrounded[0], g_air_regrounded[1], g_air_regrounded[2], g_air_regrounded[3], g_air_regrounded[4]);
+    snprintf(b, sizeof b, "air hold: held=%u regrounded update=%u anim=%u idle=%u bt=%u low=%u nonfinite_refused=%u\n", (unsigned)g_air.size(),
+             g_air_regrounded[0], g_air_regrounded[1], g_air_regrounded[2], g_air_regrounded[3], g_air_regrounded[4], g_nonfinite_drops);
     return b;
 }
 
 void set_position(void* c, const net::Vec3& pos)
 {
+    if (pose_refused(&pos, nullptr))
+        return;
     Vector3 p{pos.x, pos.y, pos.z};
     vcall<void>(spatial(c), 0x38 / 4, &p);
 }
 
 void set_orientation(void* c, const net::Quat& rot)
 {
+    if (pose_refused(nullptr, &rot))
+        return;
     Quaternion q{rot.x, rot.y, rot.z, rot.w};
     vcall<void>(spatial(c), 0x3C / 4, &q);
 }
 
 void move_to(void* c, const net::Vec3& dst, float stop_dist)
 {
+    if (pose_refused(&dst, nullptr))
+        return;
     Vector3 p{dst.x, dst.y, dst.z};
     // cLocomotiveObject::MoveTo(const Vector3&, float goalStop, float acceptableStop, bool)
     vcall<void>(spatial(c), 0xE0 / 4, &p, stop_dist, stop_dist * 2.f, 0);

@@ -265,6 +265,15 @@ static bool g_flock_fx_fix = true;
 COOP_FIX("npc.flock_hearts", "BUG-0556", g_flock_fx_fix, "creature: the host's summoned flock shows its hearts on the guest's screen too");
 static constexpr uint32_t kFlockFx = 0x6A17B05A;
 static uintptr_t a_StartFx2, a_StopFx;
+// BUG-0409: a type-0 hit (cCreatureBase TakeDamage 0xC1A520) throws a creature: velocity 4 x (2 up + push), an
+// impulse, locomotion mode +0x2B0 = 3 until it lands. A proxy thrown by the guest's own game (the dying proxy's local
+// hit, anything else that hits it there) flew off its host NPC's path while every placing was undone. The host's
+// knockback rules: a proxy whose host NPC is not in the air leaves mode 3 at once (the game's own reset 0xC06660).
+// Off: 0.7.8 (the guest's game throws it).
+static bool g_knock_fix = true;
+COOP_FIX("npc.host_knockback", "BUG-0409", g_knock_fix, "creature: the guest's game does not throw a host NPC's proxy by itself; the host's knockback is shown");
+static uintptr_t a_LocoReset;
+static uint32_t g_knock_resets = 0;
 
 static bool update_filter(void* c)
 {
@@ -431,6 +440,7 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
     game::set_ai_target_picker(ai_target);
     a_StartFx2 = H->sym("Simulator::cCreatureBase::StartOrStopEffectFromPool2");
     a_StopFx = H->sym("Simulator::cCreatureBase::StopEffectFromPools");
+    a_LocoReset = H->sym("SporeCoop::Creature_LocoReset");
     game::set_behaviour_anim_listener(on_behaviour_anim); // BUG-0464
     fields::add_kind({fields::K_NPC, "npc", &g_scale_fix, kNpcFields, 1, npc_each, npc_mirror, nullptr}); // BUG-0461
     H->command_add(M, "coop.npctrack", "coop.npctrack start [radius m]|stop|count|dump [from] [n]|walk <id> x y z <m/s> - every frame: the guest's NPC proxies (tests, BUG-0361)",
@@ -1550,6 +1560,12 @@ static void guest_tick(double now)
         // BUG-0550: the host's NPC is off its ground: at its height over the host's terrain, over this game's, not
         // grounded (drive::air_place); not walked (the walk is ended, it walks again after the landing)
         const bool air = g_air_fix && !px.killed && (s.flags & net::NF_AIR) && !(s.flags & net::NF_DEAD);
+        if (g_knock_fix && a_LocoReset && !air && !px.killed &&
+            *(int32_t*)((uint8_t*)px.c + game::kLocoModeOff) == 3) { // BUG-0409: thrown by this game, not by the host
+            skg::thiscall<void>(a_LocoReset, px.c);
+            *(net::Vec3*)((uint8_t*)px.c + game::kVelOff) = s.vel;
+            g_knock_resets++;
+        }
         if (air) {
             px.kinematic = false;
             drive::air_place(px.c, drive::at_sender_agl(s.pos, s.agl), s.rot, s.vel, px.drv, now);
@@ -2280,11 +2296,11 @@ std::string status()
             spawned += px.c != nullptr;
         snprintf(b, sizeof b, "npc(guest): proxies=%u spawned=%u local_removed=%u hits_sent=%u damage_in=%u lost=%u host_away=%d "
                  "away_dropped=%u local_alive=%u in_nest=%u nests=%u stale_dropped=%u strays_removed=%u hatch_helped=%u "
-                 "deaths_played=%u kill_held=%u away_locals=%u unlisted=%u nospecies=%u\n",
+                 "deaths_played=%u kill_held=%u away_locals=%u unlisted=%u nospecies=%u knock_resets=%u\n",
                  (unsigned)g_proxies.size(), spawned, g_removed_local, g_hits_sent, g_damage_in, g_proxy_lost, (int)g_host_away,
                  g_away_proxies, g_local_alive, g_proxies_in_nest, (unsigned)g_local_herds.size(), g_stale_dropped,
                  g_strays_removed, g_hatch_helped, g_deaths_played, (unsigned)g_kill.size(), g_away_locals, g_proxy_unlisted,
-                 g_proxy_nospecies);
+                 g_proxy_nospecies, g_knock_resets);
     }
     return b + game::destroy_deferred_status() + "\n";
 }

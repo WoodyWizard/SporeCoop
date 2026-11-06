@@ -144,9 +144,9 @@ def summary(res, t0=0.0):
 # (dist p90), or one copy stayed far off for long. The median lag, not p90: the detector's own census dumps make
 # both games hitch, which spreads the lag's tail. Measured per 10 s (lab 20261106-041119 / -041542): without drive.lead
 # lag p50 0.15-0.23 s in every window (p90 0.72-0.90 m Creature NPCs, 1.1-1.3 m Tribe animals, 1.9-2.1 m members);
-# with it 0.013-0.106 s (p90 0.11-1.46 m on a loaded lab).
+# with it 0.013-0.132 s (p90 0.11-1.79 m on a loaded lab; 0.132 s in one 10 s window of lab 20261106-042100).
 DET_STEP = 0.05  # s: one frame per 50 ms is read (the host's body interpolated between frames up to GAP apart)
-DET_LAG, DET_DIST, DET_TRAIL = 0.12, 0.5, 1.5  # s (lag p50), m (dist p90), s
+DET_LAG, DET_DIST, DET_TRAIL = 0.14, 0.5, 1.5  # s (lag p50), m (dist p90), s
 DET_MIN = 60  # moving samples of a kind in a period before it is judged
 KIND_NAMES = {'n': 'npc', 't': 'member', 'v': 'vehicle', 'p': 'player', 's': 'ship', 'c': 'cell'}
 
