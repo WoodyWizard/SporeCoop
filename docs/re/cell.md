@@ -1635,3 +1635,9 @@ BUG-0604, BUG-0307, BUG-0606, BUG-0316. GOG 2024, Ghidra (`tools/ghidra/q.sh --b
   of the host's screen 16 times: no "part"); after 1-3 level changes (`coop.pool food 40`) the host's pool has one.
   `coop.pool tokens [to <id>]` lists the pool's tokens / moves the nearest 4 m from a player's cell;
   `coop.pool mate nobutton` hides the mating-call button for a test.
+* ✔ (runtime, `coop_cell_part_token.py`) a guest's touch of the host's token: in all 5 runs with a collectable
+  token the guest's game showed the mating-call button, had the part (0 -> 2), the token was gone in the host's
+  game and the host's game had the part (BUG-0316 is not a bug). ? About 15 other tokens were collected by
+  neither game (the host's own touch of the same token failed too); not the token's level (`coop.pool tokens`
+  prints it; the food-progress level and the one under both failed), not its graphics object. Candidates not
+  checked: the avatar's +0x178 / +0x17F or the token's +0x17B (0xE7B630's conditions).
