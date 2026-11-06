@@ -178,7 +178,48 @@ struct HMember {
     uint16_t id;
     uint8_t owner;
     uint32_t bhv_anim = 0; // BUG-0569: the last animation its behaviour tree started
+    void* tribe = nullptr; // BUG-0620: the tribe whose member list held it last
+    double body_since = 0; // BUG-0620: when it left that list dead (its body), 0: in a list
 };
+// BUG-0620 (docs/re/tribe.md#tribe-member-body): a member that dies for good leaves its tribe's member list
+// (+0x1014 = 0) while the game keeps its body (the dead flag +0xB5E, in the object list) for 10-20 s more; the host's
+// snapshot dropped it at once and the guest removed its mirror: the body lay on the host only (the detector's
+// `Tribe:unmatched:citizen`). With tribe.member_body the host sends the body with its last tribe (health 0: the guest's
+// mirror plays the death, tribe.ko) while the game keeps it, at most kBodyMax s. Off: dropped at once (0.7.8).
+static bool g_member_body_fix = true;
+COOP_FIX("tribe.member_body", "BUG-0620", g_member_body_fix,
+         "tribe: the body of a member that died lies in every player's game as long as in the host's");
+constexpr double kBodyMax = 60.0;
+constexpr uint8_t kBodyBit = 0x80; // in a snapshot entry's age byte: a body (the guest takes it out of its tribe too)
+static std::unordered_set<void*> g_detached; // guest: mirrors taken out of their tribe as bodies (destroyed on removal)
+static uint32_t g_bodies_detached;
+// guest: the mirror leaves its tribe's member and selectable lists as the host's body left its own (not selectable, not
+// counted as a member), the object stays until the host's body goes
+static void detach_body(void* c)
+{
+    void* t = F<void*>(c, 0x1014);
+    if (!t || g_detached.count(c))
+        return;
+    for (uintptr_t off : {(uintptr_t)0x340, (uintptr_t)0x354}) {
+        void**& b = F<void**>(t, off);
+        void**& e = F<void**>(t, off + 4);
+        if (!b || e < b || e - b > 256)
+            continue;
+        void* want = off == 0x340 ? c : (uint8_t*)c + 0xC0;
+        void** w = b;
+        for (void** it = b; it != e; ++it)
+            if (*it != want)
+                *w++ = *it;
+        for (void** it = w; it != e; ++it)
+            *it = nullptr;
+        e = w;
+    }
+    F<uint8_t>(c, 0x12C) = 0; // (not selected)
+    F<void*>(c, 0x1014) = nullptr;
+    g_detached.insert(c);
+    g_bodies_detached++;
+}
+static uint32_t g_bodies_sent;
 static std::unordered_map<void*, HMember> g_hm;
 static std::unordered_map<uint16_t, void*> g_hm_by_id;
 static uint16_t g_next_id = 1;
@@ -198,6 +239,7 @@ struct GMember {
     void* c = nullptr;
     uint16_t id = 0; // the host's member id
     uint8_t tribe = 0, owner = 0xFE, age = 1;
+    bool body = false; // BUG-0620: the host's member is a body out of its tribe's list
     net::Vec3 pos, vel;
     net::Quat rot;
     float hp = 0;
@@ -834,9 +876,31 @@ static std::string ai_line(void* c)
              rec ? *(int*)rec : -1, rec ? *(void**)(rec + 0x28) : nullptr, rec ? (int)rec[0x38] : 0, node, depth, (int)mem[0],
              mem[1], *(float*)&mem[2], *(float*)&mem[3], *(float*)&mem[4], mem[5], (int)mem[6], (int)mem[7], mode, lf,
              goal[0], goal[1], goal[2], goal[3], p.x, p.y, p.z, F<uint8_t>(c, kSelectedOff));
-    char e[64];
+    char e[200];
     snprintf(e, sizeof e, " carry=%.1f tool=%d", carried(c), F<int>(c, kHeldToolOff));
-    return std::string(b) + e;
+    std::string out = std::string(b) + e;
+    // BUG-0531: the order's target object: alive in the object list, its noun and place, its distance
+    if (void* t = rec ? *(void**)(rec + 0x28) : nullptr) {
+        struct Q {
+            void* t;
+            uint32_t noun;
+        } q{t, 0};
+        game::for_each_object(
+            [](void* o, uint32_t n, void* u) {
+                if (o == ((Q*)u)->t) {
+                    ((Q*)u)->noun = n;
+                    return false;
+                }
+                return true;
+            },
+            &q);
+        net::Vec3 tp{};
+        bool has_pos = q.noun && game::object_alive(t) && game::object_position(t, tp);
+        snprintf(e, sizeof e, " tgt_listed=%d tgt_noun=%08X tgt_alive=%d tgt_pos=(%.1f %.1f %.1f) tgt_d=%.1f", q.noun != 0, q.noun,
+                 q.noun ? (int)game::object_alive(t) : -1, tp.x, tp.y, tp.z, has_pos ? net::dist(tp, p) : -1.f);
+        out += e;
+    }
+    return out;
 }
 static bool save_filter(void* o, uint32_t noun); // BUG-0495 (below)
 static void* SK_THISCALL h_Form(void* self, int arg); // BUG-0483 (below)
@@ -1232,6 +1296,7 @@ static void host_tick(double now)
         uint16_t id;
         uint8_t tribe, owner, age;
         void* c;
+        bool body = false; // BUG-0620
     };
     std::vector<Entry> entries;
     for (size_t ti = 0; ti < tribes.size() && ti < 32; ti++) {
@@ -1246,8 +1311,24 @@ static void host_tick(double now)
                 it = g_hm.emplace(c, HMember{net::alloc_id(g_next_id, g_hm_by_id), owner}).first;
                 g_hm_by_id[it->second.id] = c;
             }
+            it->second.tribe = tribes[ti];
+            it->second.body_since = 0;
             entries.push_back({it->second.id, (uint8_t)ti, it->second.owner, F<uint8_t>(c, kAgeOff), c});
         }
+    }
+    for (auto& [c, hm] : g_hm) { // BUG-0620: the bodies of members that left their list dead
+        if (!g_member_body_fix || alive.count(c) || !game::object_alive(c) || !game::is_dead(c))
+            continue;
+        auto ti = std::find(tribes.begin(), tribes.end(), hm.tribe);
+        if (ti == tribes.end() || ti - tribes.begin() >= 32)
+            continue;
+        if (hm.body_since == 0)
+            hm.body_since = now;
+        if (now - hm.body_since > kBodyMax)
+            continue;
+        alive.insert(c);
+        g_bodies_sent++;
+        entries.push_back({hm.id, (uint8_t)(ti - tribes.begin()), hm.owner, F<uint8_t>(c, kAgeOff), c, true});
     }
     for (auto it = g_hm.begin(); it != g_hm.end();) {
         if (!alive.count(it->first)) {
@@ -1286,11 +1367,11 @@ static void host_tick(double now)
             const Entry& e = entries[i];
             net::Vec3 p = game::position(e.c), v = game::velocity(e.c);
             net::Quat q = game::orientation(e.c);
-            w.u16(e.id); w.u8(e.tribe); w.u8(e.owner); w.u8(e.age);
+            w.u16(e.id); w.u8(e.tribe); w.u8(e.owner); w.u8((uint8_t)(e.age | (e.body ? kBodyBit : 0)));
             w.f32(p.x); w.f32(p.y); w.f32(p.z);
             w.f32(v.x); w.f32(v.y); w.f32(v.z);
             w.f32(q.x); w.f32(q.y); w.f32(q.z); w.f32(q.w);
-            w.f32(game::health(e.c));
+            w.f32(e.body ? 0.f : game::health(e.c)); // (a body: dead, BUG-0620)
         }
         w.u32(kStateTrailer); // BUG-0365: the host's clock (guests before 0.7.3.4 stop reading before it)
         w.u32((uint32_t)(now * 1000.0));
@@ -1465,6 +1546,8 @@ static void remove_member(void* c)
     void* t = F<void*>(c, kOwnerTribeOff);
     if (t)
         vcall<void>(t, 0x9C / 4, c, 1); // RemoveMember(c, destroy)
+    else if (g_detached.erase(c)) // BUG-0620: a body out of its tribe: the object itself
+        game::destroy_instance(c);
 }
 
 // BUG-0495: the objects the mod makes on a guest (the members it spawns as mirrors of the host's, and the
@@ -1870,6 +1953,8 @@ static void guest_state(net::Reader& r)
         uint16_t id = r.u16();
         GMember m;
         m.tribe = r.u8(); m.owner = r.u8(); m.age = r.u8();
+        m.body = (m.age & kBodyBit) != 0; // BUG-0620
+        m.age &= (uint8_t)~kBodyBit;
         m.pos.x = r.f32(); m.pos.y = r.f32(); m.pos.z = r.f32();
         m.vel.x = r.f32(); m.vel.y = r.f32(); m.vel.z = r.f32();
         m.rot.x = r.f32(); m.rot.y = r.f32(); m.rot.z = r.f32(); m.rot.w = r.f32();
@@ -1880,7 +1965,7 @@ static void guest_state(net::Reader& r)
         auto& g = g_gm[id];
         g.id = id;
         void* c = g.c;
-        g.tribe = m.tribe; g.owner = m.owner; g.age = m.age;
+        g.tribe = m.tribe; g.owner = m.owner; g.age = m.age; g.body = m.body;
         g.pos = m.pos; g.vel = m.vel; g.rot = m.rot; g.hp = m.hp; g.seen = now;
         if (g_test_lift != 0.f) { // tests (BUG-0329): the host's member as if its ground were higher
             float r = std::sqrt(g.pos.x * g.pos.x + g.pos.y * g.pos.y + g.pos.z * g.pos.z);
@@ -1905,7 +1990,7 @@ static void guest_state(net::Reader& r)
             g_gid_of.erase(c);
             g.c = c = nullptr;
         }
-        if (c)
+        if (c || m.body) // (no new mirror for a body)
             continue;
         void* t = m.tribe < g_local_tribe_of.size() ? g_local_tribe_of[m.tribe] : nullptr;
         if (!t)
@@ -2138,6 +2223,8 @@ static void guest_tick(double now)
                 game::play_death(g.c);
                 g_ko_shown++;
             }
+            if (g.body && g_member_body_fix)
+                detach_body(g.c);
             mirror_step(g, g.pos, g.rot, g.vel, now, now - g.seen);
             continue;
         }
@@ -3197,17 +3284,17 @@ std::string status()
 {
     char b[640];
     if (C.sess && C.sess->role() == net::Role::Host)
-        snprintf(b, sizeof b, "tribe(host): members=%u cmds_done=%u rejected=%u gifts=%u unselected=%u\n",
-                 (unsigned)g_hm.size(), g_cmds_done, g_cmds_rejected, g_gifts, g_unselected);
+        snprintf(b, sizeof b, "tribe(host): members=%u cmds_done=%u rejected=%u gifts=%u unselected=%u bodies_sent=%u\n",
+                 (unsigned)g_hm.size(), g_cmds_done, g_cmds_rejected, g_gifts, g_unselected, g_bodies_sent);
     else
         snprintf(b, sizeof b,
                  "tribe(guest): mirrors=%u spawned=%u removed=%u cmds_sent=%u rx=%u skipped=%u resets=%u "
                  "local_tribes=%u player_tribe=%p unselected=%u incomplete=%u older_chunks=%u ai_skipped=%u/%u away_orders=%u local=%d mirror_walks=%u timed=%u "
-                 "npc_tribes_made=%u failed=%u mirror_grounded=%u ours=%u/%u save_stripped=%u/%u forms_blocked=%u forms_run=%u unmapped_removed=%u\n",
+                 "npc_tribes_made=%u failed=%u mirror_grounded=%u ours=%u/%u save_stripped=%u/%u forms_blocked=%u forms_run=%u unmapped_removed=%u bodies_detached=%u\n",
                  (unsigned)g_gm.size(), g_spawned, g_removed, g_cmds_sent, g_rx, g_rx_skipped, g_resets,
                  (unsigned)all_tribes().size(), player_tribe(), g_unselected, g_incomplete, g_cyc.older, g_bt_skipped, g_bt_calls, g_away_orders, (int)local_play(),
                  g_mirror_walks, g_mirror_timed, g_npc_tribes_made, g_npc_tribes_failed, g_mirror_grounded, (unsigned)g_ours_c.size(),
-                 (unsigned)g_ours_t.size(), g_save_stripped, g_save_saves, g_forms_blocked, g_forms_run, g_unmapped_removed);
+                 (unsigned)g_ours_t.size(), g_save_stripped, g_save_saves, g_forms_blocked, g_forms_run, g_unmapped_removed, g_bodies_detached);
     std::string out = b;
     if (!g_last_cmd.empty())
         out += "tribe last order: " + g_last_cmd + "\n";
@@ -3706,6 +3793,36 @@ std::string debug(const std::vector<std::string>& a)
             return "no target there";
         thiscall<void*>(a_DoAction, c, action, tgt, (void*)nullptr);
         return "ordered " + std::to_string(action);
+    }
+    if (a.size() >= 2 && a[0] == "who") { // who <citizen pointer>: BUG-0620, what a citizen of the object list is
+        void* c = (void*)(uintptr_t)strtoul(a[1].c_str(), nullptr, 16);
+        bool listed = false;
+        game::for_each_object(
+            [](void* o, uint32_t, void* u) {
+                if (o == *(void**)((void**)u)[0])
+                    *(bool*)((void**)u)[1] = true;
+                return true;
+            },
+            (void*)(void* []){&c, &listed});
+        if (!listed || !is_citizen(c))
+            return "not a citizen of the object list";
+        void* t = F<void*>(c, 0x1014);
+        char b[200];
+        int in_members = -1, n_tribes = 0, in_any = 0;
+        for (void* tt : all_tribes()) {
+            n_tribes++;
+            auto m = members(tt);
+            bool in = std::find(m.begin(), m.end(), c) != m.end();
+            in_any += in;
+            if (tt == t)
+                in_members = in;
+        }
+        uint8_t ow = owner_of(c);
+        snprintf(b, sizeof b, "tribe=%p (a tribe of the list: %s, in its members: %d) in any tribe's members: %d of %d tribes; "
+                 "player tribe=%p; mod owner=%d id=%u; age=%u dead=%u species=%08X city=%p; ",
+                 t, in_members >= 0 ? "yes" : "no", in_members, in_any, n_tribes, player_tribe(), ow == 0xFF ? -1 : ow, id_of(c),
+                 F<uint8_t>(c, 0xB34), F<uint8_t>(c, 0xB5E), F<uint32_t>(c, 0xB28), F<void*>(c, 0x1010));
+        return std::string(b) + ai_line(c);
     }
     if (a.size() >= 2 && a[0] == "ai") { // ai <member id>: BUG-0505, the member's order record, node and walk
         void* c = local_of((uint16_t)atoi(a[1].c_str()));

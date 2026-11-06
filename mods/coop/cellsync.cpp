@@ -891,8 +891,29 @@ static std::map<uintptr_t, uint32_t> g_dbg_destroy_by; // RE (BUG-0355): Destroy
 static std::unordered_map<uint32_t, double> g_touched;
 static uint32_t g_kept, g_puppet_saves, g_puppet_new, g_own_eats, g_own_food;
 static std::unordered_map<int, void*> g_puppet_seen;
+// tests (BUG-0480): when each host index was last sent, and where it was then (`coop.pool cell <key>` on the
+// host names it for a cell it does not have now); pruned after 20 s
+struct SentCell {
+    double first, at;
+    net::Vec3 pos;
+    int level;
+    uint32_t sends;
+};
+static std::unordered_map<uint32_t, SentCell> g_sent_at;
+static double g_sent_pruned;
+// BUG-0480: host cells destroyed less than 2 s after their first send, by the caller of DestroyCell
+static std::map<uintptr_t, uint32_t> g_quick_destroy;
+static uint32_t g_quick_destroys;
+
 static void SK_CDECL h_Destroy(uint32_t idx, bool loot, float f, int x)
 {
+    if (is_host() && in_cell()) {
+        auto st = g_sent_at.find(idx);
+        if (st != g_sent_at.end() && H->time_seconds() - st->second.first < 2.0) {
+            g_quick_destroys++;
+            g_quick_destroy[(uintptr_t)__builtin_return_address(0) - H->rebase(0)]++;
+        }
+    }
     if (in_cell()) {
         // A partner's cell is ours to remove (modes::cell_despawn forgets it before it destroys it).
         // The game removed it on a level change (RemoveCellsOfOldScale), when an NPC broke or swallowed
@@ -1152,6 +1173,14 @@ static void shared_parts_scan(double now)
     g_shared_parts = shared;
 }
 
+static uint32_t g_stack_idx, g_stack_logs, g_stack_pairs; // tests: `coop.pool stack`
+static uint32_t g_stack2_a, g_stack2_nf, g_stack2_pairs;
+static std::vector<uint32_t> g_stack2; // the cells (the first is g_stack2_a)
+static float g_stack2_vmax;
+static int g_stack2_frames;
+static int g_stack_frames;
+static void stack_pair(uint8_t* av, uint8_t* other);
+static net::Vec3 first_sphere(uint8_t* c);
 using Pair_t = void(SK_CDECL*)(uint8_t*, uint8_t*, float);
 static Pair_t o_Pair;
 static uint32_t g_pairs_skipped;
@@ -1202,11 +1231,143 @@ static void SK_CDECL h_Pair(uint8_t* a, uint8_t* b, float dt)
     bool mine = av && (a == av || b == av);
     if (mine)
         g_own_pairs++;
+    if (g_stack2_frames > 0 && (F<uint32_t>(a, 0) == g_stack2_a || F<uint32_t>(b, 0) == g_stack2_a))
+        g_stack2_pairs++;
+    if (mine)
+        stack_pair(av, a == av ? b : a);
     if (mine)
         own_probe("before a collision", a == av ? b : a);
     o_Pair(a, b, dt);
     if (mine)
         own_probe("collision", a == av ? b : a);
+}
+
+// ---- the contact solver (BUG-0307, docs/re/cell.md#cell-contact-nan) ----
+// The collision pairs (HandleCollisionPair 0xE7F140 -> executor 0xE7E7F0 -> AddContact 0xE66F30) leave
+// contacts in a pool; after the pair loop Collisions 0xE7F260 runs ContactSolvePass 0xE654D0: 10 rounds of
+// ContactSolve 0xE58C90 over every contact of this frame, each one a sequential impulse along the normal
+// (+0x18) with the effective mass +0x30 = 1 / (inverse mass A + B of the +0x36C roots), the target +0x38 and
+// the accumulated impulse +0x28, applied by ApplyImpulse 0xE560D0 to the root's velocity +0x90 and to every
+// soft-body particle's velocity: the only game code between the pairs and our guest tick that writes those
+// two fields and not the positions (the own cell's mask 0x104 of BUG-0307).
+struct Contact {
+    uint32_t handle, a, b;
+    float point[3], normal[3], depth, accum, unk2c, mass, mass2, target;
+    uint32_t frame;
+};
+using ContactPass_t = void(SK_CDECL*)();
+using ContactSolve_t = int(SK_CDECL*)(Contact*);
+static ContactPass_t o_ContactPass;
+static ContactSolve_t o_ContactSolve;
+static uintptr_t a_ContactPass, a_ContactSolve;
+// Two collision spheres closer than 0.004 (squared distance under 1.5e-5) leave the contact normal unset in
+// the game's sphere tests: 0xE73BB0 (no soft body on either cell) passes the first cell's centre as the
+// "normal" (|n| = its distance from the origin, ~100 m), 0xE6AD80 / 0xE73620 / 0xE738F0 whatever their stack
+// slot held. The solver assumes |n| = 1: every round changes the closing speed by |n|^2 times what it meant,
+// the 10 rounds overshoot by ~|n|^20, and the cells fly off at hundreds of m/s or their velocities overflow to
+// inf / NaN (runtime: 2 cells on one centre 884 m/s, 4 cells inf, lab 20261106-111709). The fix: a contact's
+// normal is made a unit vector before it is solved (the unset one keeps its direction, a zero or non-finite
+// one becomes +x), and a contact whose impulse is still not finite is not applied.
+// Old (`coop.fix cell.contact_finite off`): the game's solve.
+static bool g_fix_contact_finite = true;
+COOP_FIX("cell.contact_finite", "BUG-0307", g_fix_contact_finite, "cell: a collision contact between two cells on one centre gets a unit normal and a non-finite impulse is not applied (the game's unset normal made the cells' velocities huge or NaN)");
+static uint32_t g_contacts_bad, g_contacts_bad_own, g_contact_logs, g_contact_solves, g_contacts_unit;
+static void contact_unit(Contact* k)
+{
+    float* n = k->normal;
+    float n2 = n[0] * n[0] + n[1] * n[1] + n[2] * n[2];
+    if (std::isfinite(n2) && std::fabs(n2 - 1.f) < 0.02f)
+        return;
+    g_contacts_unit++;
+    if (std::isfinite(n2) && n2 > 1e-12f) {
+        float r = 1.f / std::sqrt(n2);
+        n[0] *= r, n[1] *= r, n[2] *= r;
+    } else
+        n[0] = 1.f, n[1] = n[2] = 0.f;
+}
+
+static uint8_t* contact_root(uint8_t* c) // 0xE58C50: the head of the +0x36C chain
+{
+    for (int i = 0; c && i < 64; i++) {
+        uint8_t* p = modes::cell_at(F<uint32_t>(c, 0x36C));
+        if (!p || p == c)
+            return c;
+        c = p;
+    }
+    return c;
+}
+// what ContactSolve would apply (its own arithmetic, in floats); false when any input or the impulse is not finite
+static bool contact_finite(const Contact* k, uint8_t* ra, uint8_t* rb, float* out)
+{
+    const float* va = (const float*)(ra + kVel);
+    const float* vb = (const float*)(rb + kVel);
+    float rel = (vb[2] - va[2]) * k->normal[2] + (vb[1] - va[1]) * k->normal[1] + (vb[0] - va[0]) * k->normal[0];
+    float x = (k->target - rel) * k->mass + k->accum;
+    float acc = 0.f <= x ? x : 0.f;
+    float imp = acc - k->accum;
+    *out = imp;
+    return fin(k->normal, 3) && std::isfinite(k->accum) && std::isfinite(k->mass) && std::isfinite(k->target) && fin(va, 3) &&
+           fin(vb, 3) && std::isfinite(imp) && std::isfinite(F<float>(ra, 0xBC)) && std::isfinite(F<float>(rb, 0xBC));
+}
+static void contact_log(const char* what, const Contact* k, uint8_t* a, uint8_t* b, uint8_t* ra, uint8_t* rb, float imp)
+{
+    if (++g_contact_logs > 30)
+        return;
+    auto one = [](uint8_t* c, char* o, size_t n) {
+        snprintf(o, n, "c%u %s size=%.3f mass=%g inv=%g vel=(%g %g) pos=(%.2f %.2f) parts=%d gfx=%d chain=%u nf=0x%X%s%s",
+                 F<uint32_t>(c, 0), kind_of(c), F<float>(c, kSize), F<float>(c, 0xB8), F<float>(c, 0xBC), F<float>(c, kVel),
+                 F<float>(c, kVel + 4), F<float>(c, 0x4C), F<float>(c, 0x50), F<int>(c, 0x250), F<uint32_t>(c, 0x248) ? 1 : 0,
+                 F<uint32_t>(c, 0x36C), cell_nonfinite(c), c == avatar() ? " OWN" : "", modes::cell_is_puppet(c) ? " puppet" : "");
+    };
+    char sa[300], sb[300], sra[300] = "", srb[300] = "";
+    one(a, sa, sizeof sa);
+    one(b, sb, sizeof sb);
+    if (ra != a)
+        one(ra, sra, sizeof sra);
+    if (rb != b)
+        one(rb, srb, sizeof srb);
+    H->log(M, SK_WARN,
+           "coop: cell: contact not finite (BUG-0307) %s: normal=(%g %g %g) depth=%g accum=%g mass=%g mass2=%g target=%g "
+           "impulse=%g frame=%u | A %s%s%s | B %s%s%s",
+           what, k->normal[0], k->normal[1], k->normal[2], k->depth, k->accum, k->mass, k->mass2, k->target, imp, k->frame, sa,
+           *sra ? " root " : "", sra, sb, *srb ? " root " : "", srb);
+}
+static int SK_CDECL h_ContactSolve(Contact* k)
+{
+    uint8_t* a = k && in_cell() ? modes::cell_at(k->a) : nullptr;
+    uint8_t* b = a ? modes::cell_at(k->b) : nullptr;
+    if (!a || !b)
+        return o_ContactSolve(k);
+    g_contact_solves++;
+    uint8_t *ra = contact_root(a), *rb = contact_root(b), *av = avatar();
+    float imp = 0;
+    if (g_fix_contact_finite)
+        contact_unit(k);
+    bool st2 = g_stack2_frames > 0 && (F<uint32_t>(a, 0) == g_stack2_a || F<uint32_t>(b, 0) == g_stack2_a);
+    if ((st2 || (g_stack_frames > 0 && (F<uint32_t>(a, 0) == g_stack_idx || F<uint32_t>(b, 0) == g_stack_idx))) && g_stack_logs++ < 12) {
+        contact_finite(k, ra, rb, &imp);
+        net::Vec3 fa = first_sphere(a), fb = first_sphere(b);
+        char w[96];
+        snprintf(w, sizeof w, "stacked (RE, first spheres %.5f apart, pairs %u)", std::hypot(fa.x - fb.x, fa.y - fb.y, fa.z - fb.z), g_stack_pairs);
+        contact_log(w, k, a, b, ra, rb, imp);
+    }
+    if (contact_finite(k, ra, rb, &imp))
+        return o_ContactSolve(k);
+    bool own = av && (ra == av || rb == av);
+    g_contacts_bad++;
+    g_contacts_bad_own += own;
+    contact_log(g_fix_contact_finite ? "not applied" : "applied (fix off)", k, a, b, ra, rb, imp);
+    if (!g_fix_contact_finite)
+        return o_ContactSolve(k);
+    if (!std::isfinite(k->accum))
+        k->accum = 0.f; // the game's clamp keeps a contact's accumulated impulse; a NaN one stays out of the next round
+    return 1;
+}
+static void SK_CDECL h_ContactPass()
+{
+    own_probe("before the contact solver");
+    o_ContactPass();
+    own_probe("contact solver");
 }
 
 // A level change removes every cell of the old scale (RemoveCellsOfOldScale 0xE7CD10). On the
@@ -1602,10 +1763,85 @@ static bool scale_moving()
     uint8_t* g = G();
     return g && F<float>(g, 0x514C) != F<float>(g, 0x5150);
 }
+// tests (BUG-0307): `coop.pool stack <frames>`: the nearest cell is put on our own cell's centre at the start
+// of <frames> cell steps (two cells less than 0.004 apart: the game's collision leaves the contact normal unset)
+
+// the world centre of a cell's first collision sphere (0xE6AD80: model data +4 + 0x48 i, offset turned by
+// +0x5C when +0x48 & 2, times the size +0x58, plus +0x4C); its own position without model data
+static net::Vec3 first_sphere(uint8_t* c)
+{
+    net::Vec3 p = pos_of(c);
+    auto* k = (uint32_t*)(c + kModelKey);
+    uint8_t* md = a_ModelData && k[0] && F<uint32_t>(c, 0x248) ? skg::cdecl_call<uint8_t*>(a_ModelData, k[0], k[1], k[2]) : nullptr;
+    if (!md)
+        return p;
+    int n = F<int>(md, 0);
+    for (int i = 0; i < n && i < 64; i++) {
+        auto* e = (float*)(md + 4 + 0x48 * (size_t)i);
+        if (((uint32_t*)e)[0] == 1)
+            continue;
+        float x = e[1], y = e[2], z = e[3];
+        if (F<uint8_t>(c, 0x48) & 2) {
+            auto* m = (float*)(c + 0x5C);
+            float rx = m[3] * y + m[6] * z + m[0] * x, ry = m[4] * y + m[7] * z + m[1] * x, rz = m[5] * y + m[8] * z + m[2] * x;
+            x = rx, y = ry, z = rz;
+        }
+        float sz = F<float>(c, kSize);
+        return {p.x + sz * x, p.y + sz * y, p.z + sz * z};
+    }
+    return p;
+}
+// right before the collision pair of our cell and the stacked one: the stacked one's first sphere onto ours
+static void stack_pair(uint8_t* av, uint8_t* other)
+{
+    if (g_stack_frames <= 0 || !other || F<uint32_t>(other, 0) != g_stack_idx)
+        return;
+    net::Vec3 w = first_sphere(av), o = first_sphere(other), p = pos_of(other);
+    modes::cell_move(other, {p.x + w.x - o.x, p.y + w.y - o.y, p.z + w.z - o.z}, true);
+    g_stack_pairs++;
+}
+// tests (BUG-0307): `coop.pool stack2 <frames>`: two cells without a soft body (outside the active area)
+// on one centre at the start of <frames> cell steps: the game's sphere-sphere collision 0xE73BB0 then
+// gives the contact the first cell's centre as its normal
+static void stack2_tick()
+{
+    if (g_stack2_frames <= 0)
+        return;
+    uint8_t* a = modes::cell_at(g_stack2_a);
+    if (!a) {
+        g_stack2_frames = 0;
+        return;
+    }
+    net::Vec3 p = pos_of(a);
+    bool last = --g_stack2_frames <= 0;
+    for (uint32_t idx : g_stack2)
+        if (uint8_t* c = modes::cell_at(idx)) {
+            g_stack2_nf |= cell_nonfinite(c);
+            float v = std::hypot(F<float>(c, kVel), F<float>(c, kVel + 4));
+            if (!std::isfinite(v) || v > g_stack2_vmax)
+                g_stack2_vmax = std::isfinite(v) ? v : INFINITY;
+            if (!last && views::finite_pos(p))
+                stop_at(c, p);
+        }
+}
+static void stack_tick()
+{
+    stack2_tick();
+    uint8_t* av = g_stack_frames > 0 ? avatar() : nullptr;
+    uint8_t* c = av ? modes::cell_at(g_stack_idx) : nullptr;
+    if (!c || c == av) {
+        g_stack_frames = 0;
+        return;
+    }
+    g_stack_frames--;
+    stop_at(av, pos_of(av));
+    stop_at(c, pos_of(av));
+}
 static void SK_CDECL h_WorldScale(float dt)
 {
     g_last_dt = dt;
     own_probe("step start");
+    stack_tick();
     if (!g_ptiles.empty() && in_cell() && scale_moving())
         for (auto& [id, pt] : g_ptiles)
             if (pt.list && pt.list->begin != pt.list->end) {
@@ -2418,6 +2654,8 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     a_React = H->sym("Simulator::Cell::ReactToAttacker");
     a_Rest = H->sym("Simulator::Cell::RestAfterBite");
     a_Soft = H->sym("Simulator::Cell::SoftBodyStep");
+    a_ContactPass = H->sym("Simulator::Cell::ContactSolvePass");
+    a_ContactSolve = H->sym("Simulator::Cell::ContactSolve");
     a_ChunkA = H->sym("Simulator::Cell::EatChunkA");
     a_ChunkB = H->sym("Simulator::Cell::EatChunkB");
     a_Bite = H->sym("Simulator::Cell::Bite");
@@ -2461,6 +2699,10 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
         H->hook_create(M, (void*)a_SpawnLoot, (void*)h_SpawnLoot, (void**)&o_SpawnLoot);
     if (a_Soft)
         H->hook_create(M, (void*)a_Soft, (void*)h_Soft, (void**)&o_Soft);
+    if (a_ContactPass && a_ContactSolve) { // GOG 2024 only (BUG-0307)
+        H->hook_create(M, (void*)a_ContactPass, (void*)h_ContactPass, (void**)&o_ContactPass);
+        H->hook_create(M, (void*)a_ContactSolve, (void*)h_ContactSolve, (void**)&o_ContactSolve);
+    }
     if (a_Bite)
         H->hook_create(M, (void*)a_Bite, (void*)h_Bite, (void**)&o_Bite);
     if (a_PickTargets) // BUG-0306
@@ -2600,8 +2842,25 @@ void set_fake_model(uint32_t idx, uint32_t inst)
     g_fake_inst = inst;
 }
 
+
 static void send_state(int dest, const std::vector<SendCell>& cells)
 {
+    double now_s = H->time_seconds();
+    if (now_s - g_sent_pruned > 5.0) {
+        g_sent_pruned = now_s;
+        for (auto it = g_sent_at.begin(); it != g_sent_at.end();)
+            it = now_s - it->second.at > 20.0 ? g_sent_at.erase(it) : std::next(it);
+    }
+    for (auto& e : cells) {
+        auto f = g_sent_at.find(e.idx);
+        if (f == g_sent_at.end())
+            g_sent_at[e.idx] = {now_s, now_s, pos_of(e.c), F<int>(e.c, kLevel), 1};
+        else {
+            f->second.at = now_s;
+            f->second.pos = pos_of(e.c);
+            f->second.sends++;
+        }
+    }
     size_t per = 14, chunks = std::max<size_t>(1, (cells.size() + per - 1) / per);
     for (size_t k = 0; k < chunks; k++) {
         net::Writer w;
@@ -4126,6 +4385,29 @@ std::string debug(const std::vector<std::string>& a)
             }
         } else
             c = modes::cell_at(key);
+        if (!c && !is_guest()) {
+            auto st = g_sent_at.find(key);
+            if (st != g_sent_at.end()) { // BUG-0480: sent, not here now
+                char b[200];
+                uint8_t* slot = nullptr;
+                uint8_t* g = G();
+                if (g && F<uint8_t*>(g, 0x1C) && (key & 0xFFFF) < F<uint32_t>(g, 0x1C + 0x10))
+                    slot = F<uint8_t*>(g, 0x1C) + (size_t)(key & 0xFFFF) * 0x398;
+                snprintf(b, sizeof b, "no such cell (last sent %.2f s ago at (%.1f %.1f) level %d, first %.2f s ago, %u sends; its slot holds %08X now)\n",
+                         H->time_seconds() - st->second.at, st->second.pos.x, st->second.pos.y, st->second.level,
+                         H->time_seconds() - st->second.first, st->second.sends, slot ? F<uint32_t>(slot, 0) : 0u);
+                std::string out(b);
+                char q[64];
+                snprintf(q, sizeof q, "  host cells destroyed < 2 s after their first send: %u;", g_quick_destroys);
+                out.pop_back();
+                out += q;
+                for (auto& [ra, n] : g_quick_destroy) {
+                    snprintf(q, sizeof q, " ra 0x%08X x%u", (unsigned)ra, n);
+                    out += q;
+                }
+                return out + "\n";
+            }
+        }
         if (!c)
             return "no such cell";
         std::string pre;
@@ -4222,6 +4504,29 @@ std::string debug(const std::vector<std::string>& a)
             c = it != g_mirrors.end() && it->second.local ? modes::cell_at(it->second.local) : nullptr;
         } else
             c = modes::cell_at(key);
+        if (!c && !is_guest()) {
+            auto st = g_sent_at.find(key);
+            if (st != g_sent_at.end()) { // BUG-0480: sent, not here now
+                char b[260];
+                uint8_t* slot = nullptr;
+                uint8_t* g = G();
+                if (g && F<uint8_t*>(g, 0x1C) && (key & 0xFFFF) < F<uint32_t>(g, 0x1C + 0x10))
+                    slot = F<uint8_t*>(g, 0x1C) + (size_t)(key & 0xFFFF) * 0x398;
+                snprintf(b, sizeof b, "no such cell (last sent %.2f s ago at (%.1f %.1f) level %d, first %.2f s ago, %u sends; its slot holds %08X now)\n",
+                         H->time_seconds() - st->second.at, st->second.pos.x, st->second.pos.y, st->second.level,
+                         H->time_seconds() - st->second.first, st->second.sends, slot ? F<uint32_t>(slot, 0) : 0u);
+                std::string out(b);
+                char q[64];
+                snprintf(q, sizeof q, "  host cells destroyed < 2 s after their first send: %u;", g_quick_destroys);
+                out.pop_back();
+                out += q;
+                for (auto& [ra, n] : g_quick_destroy) {
+                    snprintf(q, sizeof q, " ra 0x%08X x%u", (unsigned)ra, n);
+                    out += q;
+                }
+                return out + "\n";
+            }
+        }
         if (!c)
             return "no such cell";
         net::Vec3 p = pos_of(c);
@@ -4506,6 +4811,62 @@ std::string debug(const std::vector<std::string>& a)
                 o += b;
             }
         return o;
+    }
+    if (a.size() >= 2 && a[0] == "stack2") { // tests (BUG-0307): two cells without a soft body onto one centre for <frames> steps
+        if (a[1] == "?") {
+            char b[200];
+            snprintf(b, sizeof b, "stack2 frames=%d pairs=%u nf=0x%X vmax=%g", g_stack2_frames, g_stack2_pairs, g_stack2_nf, g_stack2_vmax);
+            return b;
+        }
+        net::Vec3 me = pos_of(av);
+        std::vector<std::pair<float, uint8_t*>> v;
+        for_each_cell([&](uint8_t* c, uint32_t) {
+            if (c == av || modes::cell_is_puppet(c) || F<uint8_t>(c, kDying) || F<uint8_t>(c, kDead) || F<uint32_t>(c, 0x248) ||
+                cell_nonfinite(c))
+                return;
+            net::Vec3 q = pos_of(c);
+            float d = std::hypot(q.x - me.x, q.y - me.y);
+            if (d > 30.f && std::hypot(q.x, q.y) > 50.f)
+                v.push_back({d, c});
+        });
+        size_t want = a.size() >= 3 ? (size_t)std::max(2, std::min(8, atoi(a[2].c_str()))) : 2;
+        if (v.size() < want)
+            return "no cells";
+        std::sort(v.begin(), v.end(), [](auto& x, auto& y) { return x.first < y.first; });
+        g_stack2.clear();
+        for (size_t i = 0; i < want; i++)
+            g_stack2.push_back(F<uint32_t>(v[i].second, 0));
+        g_stack2_a = g_stack2[0];
+        g_stack2_nf = 0;
+        g_stack2_vmax = 0;
+        g_stack2_pairs = 0;
+        g_stack2_frames = atoi(a[1].c_str());
+        net::Vec3 q = pos_of(v[0].second);
+        char b[200];
+        snprintf(b, sizeof b, "stack2 %zu cells (c%u %s first) at (%.1f %.1f), %.0f m from ours, for %d steps", want, g_stack2_a,
+                 kind_of(v[0].second), q.x, q.y, v[0].first, g_stack2_frames);
+        return b;
+    }
+    if (a.size() >= 2 && a[0] == "stack") { // tests (BUG-0307): the nearest cell onto our own cell's centre for <frames> steps
+        net::Vec3 me = pos_of(av);
+        uint8_t* best = nullptr;
+        float bd = 1e30f;
+        for_each_cell([&](uint8_t* c, uint32_t) {
+            if (c == av || modes::cell_is_puppet(c) || F<uint8_t>(c, kDying))
+                return;
+            net::Vec3 q = pos_of(c);
+            float d = std::hypot(q.x - me.x, q.y - me.y);
+            if (std::isfinite(d) && d < bd)
+                bd = d, best = c;
+        });
+        if (!best)
+            return "no cell";
+        g_stack_idx = F<uint32_t>(best, 0);
+        g_stack_frames = atoi(a[1].c_str());
+        char b[200];
+        snprintf(b, sizeof b, "stack c%u %s %.1f m away onto (%.2f %.2f) for %d steps (pairs before: %u)", g_stack_idx, kind_of(best), bd, me.x,
+                 me.y, g_stack_frames, g_stack_pairs);
+        return b;
     }
     if (!a.empty() && a[0] == "cam") { // tests (BUG-0343): the cell camera (cCellUI +0x48 drawn, +0x54 target, +0x60 lag)
         uint8_t* ui = a_CellUI ? *(uint8_t**)a_CellUI : nullptr;
@@ -5040,7 +5401,7 @@ std::string status()
     vm.dwLength = sizeof vm;
     GlobalMemoryStatusEx(&vm);
     char d[320];
-    snprintf(d, sizeof d, "cell_contacts: creature_pairs=%u bite_events=%u nonfinite_skipped=%u nonfinite_dropped=%u stale_targets=%u own_nf=%u shared_parts=%u vm_free_mb=%llu created=%u destroyed=%u leave_writes=%u leave_dropped=%u unknown_models=%u\n", g_creature_pairs, g_bite_events, g_nonfinite_sent_skipped, g_nonfinite_dropped, g_stale_targets, g_own_nf_events, g_shared_parts, vm.ullAvailVirtual >> 20, g_created, g_destroyed, g_leave_writes, g_leave_dropped, modes::cell_unknown_models());
+    snprintf(d, sizeof d, "cell_contacts: creature_pairs=%u bite_events=%u nonfinite_skipped=%u nonfinite_dropped=%u stale_targets=%u own_nf=%u contacts_bad=%u contacts_bad_own=%u contacts_unit=%u contact_solves=%u shared_parts=%u vm_free_mb=%llu created=%u destroyed=%u leave_writes=%u leave_dropped=%u unknown_models=%u\n", g_creature_pairs, g_bite_events, g_nonfinite_sent_skipped, g_nonfinite_dropped, g_stale_targets, g_own_nf_events, g_contacts_bad, g_contacts_bad_own, g_contacts_unit, g_contact_solves, g_shared_parts, vm.ullAvailVirtual >> 20, g_created, g_destroyed, g_leave_writes, g_leave_dropped, modes::cell_unknown_models());
     char b[1100];
     uint8_t* s = S();
     int food = s ? F<int32_t>(s, 0x1C) : -1;

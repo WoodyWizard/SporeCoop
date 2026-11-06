@@ -542,7 +542,7 @@ class Game:
                     if m and int(m.group(1)) in o['sel']:
                         self.log.append(f'      host: {line.strip()[:150]}')
                 for i in o['sel']:  # its order record, node, node state and walk (docs/re/tribe.md#tribe-orders)
-                    self.log.append(f'      host ai #{i}: {self.host.call(f"coop.tribe ai {i}")["out"].strip()[:260]}')
+                    self.log.append(f'      host ai #{i}: {self.host.call(f"coop.tribe ai {i}")["out"].strip()[:520]}')
 
     # ---------------- measuring ----------------
     def measure(self):
@@ -806,6 +806,11 @@ def main():
         if g.sync_pos[kind]:
             ck(pct(g.sync_pos[kind], .9) <= LIMITS[kind][0],
                f'sync {kind}*: 90% within {LIMITS[kind][0]} m' + (f' of the host\'s path over {TRIBE_LAG} s' if kind == 't' else ''))
+    idle_lines = [x for x in g.log if 'no movement' in x or x.lstrip().startswith('host')]
+    if idle_lines:  # BUG-0531: every order nobody moved on, with the host's view of its members
+        print(f'  orders without movement ({sum("no movement" in x for x in idle_lines)}):')
+        for line in idle_lines[-60:]:
+            print('   ', line)
     if not ok or not ck.ok:
         print('  last actions:')
         for line in g.log[-40:]:

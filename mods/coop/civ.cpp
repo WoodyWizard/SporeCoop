@@ -11,6 +11,7 @@
 #include <unordered_set>
 
 #include "game.h"
+#include "gamefixes.h"
 #include "shared.h"
 #include "stage_epoch.h"
 #include "modes.h"
@@ -630,21 +631,19 @@ static void guest_shots(net::Reader& r, bool counted)
 // BUG-0539 (diagnostics): who destroys a Tribe stage tribe in Civ, and when the count of tribes changes
 constexpr uint32_t kTribeNoun = 0x018C6D19;
 static bool g_tribe_gone; // BUG-0539, host: a tribe was destroyed since the last list
-using DestroyInstance_t = void(SK_THISCALL*)(void*, void*);
-static DestroyInstance_t o_DestroyInstance;
 static std::map<uintptr_t, uint32_t> g_tribe_destroys;
-static void SK_THISCALL h_DestroyInstance(void* mgr, void* obj)
+// BUG-0623: a listener of gamefixes' DestroyInstance hook (a second hook of the function failed and switched off
+// the stale stimulus sender guard, BUG-0456)
+static void on_destroy_instance(void* obj, uintptr_t ra)
 {
     if (obj && game::mode_id() == modes::kCiv && !IsBadReadPtr(obj, 4) && vtable_in_game(obj) &&
         game::noun_id(obj) == kTribeNoun) {
-        uintptr_t ra = (uintptr_t)__builtin_return_address(0);
         if (is_host())
             g_tribe_gone = true; // BUG-0539: the guests hear of it with the next tribe list
         if (g_tribe_destroys[ra]++ == 0 && g_tribe_destroys.size() <= 8)
             H->log(M, SK_INFO, "civ: a tribe of the Tribe stage is destroyed here (%s), DestroyInstance from 0x%08X",
                    is_host() ? "host" : is_guest() ? "guest" : "alone", (unsigned)ra);
     }
-    o_DestroyInstance(mgr, obj);
 }
 // BUG-0539: the host's NPC vehicles raid the old Tribe stage villages (a behaviour tree action, 0xDCAAB0 "HR":
 // money and an event, then DestroyInstance of the tribe at 0xDCB2B2, its huts, tools, food mat and bundles go with
@@ -1324,6 +1323,16 @@ static uint32_t g_cities_founded, g_cities_in, g_cities_blocked, g_cities_caught
 static bool g_fix_cities = true;
 COOP_FIX("civ.cities", "BUG-0120", g_fix_cities, "civ: a guest founds an NPC city it missed from the host's count");
 static double g_city_short_since = -1, g_last_city_spawn = -1e9;
+// BUG-0624: an instant founding of the host (SpawnNextCity(ex, 1, 0): the campaign's shortcut, test tools) was not
+// broadcast: guests found it only through the catch-up (2 s short, then a founding with the appearance timer, ~3 s
+// at 25 fps), so the city and every vehicle of its nation were missing there 4-7 s and the sync-check reported
+// "v: 1 missing on the guest" whenever the host ran at low fps (civ_city_layout, 3 of 3 on a loaded PC). Now the
+// host broadcasts it too (noun 1 = instant) and a guest founds it instantly at once; the catch-up founds instantly
+// as well (the city is late already). Off: not broadcast, the catch-up with the timer (0.7.8).
+static bool g_instant_found_fix = true;
+COOP_FIX("civ.instant_found", "BUG-0624", g_instant_found_fix,
+         "civ: a city the host founds instantly is founded instantly on the guests at once, not by the catch-up seconds later");
+constexpr uint32_t kFoundInstant = 1; // MSG_CIV_BUILD kNextCitySite noun: the host founded it instantly
 static bool SK_THISCALL h_SpawnNextCity(void* ex, int instant, void* who)
 {
     if (!g_applying && is_guest() && game::mode_id() == modes::kCiv) {
@@ -1331,10 +1340,10 @@ static bool SK_THISCALL h_SpawnNextCity(void* ex, int instant, void* who)
         return false; // both callers ignore the result
     }
     bool r = o_SpawnNextCity(ex, instant, who);
-    if (r && is_host() && game::mode_id() == modes::kCiv && !who && !instant) {
+    if (r && is_host() && game::mode_id() == modes::kCiv && !who && (!instant || g_instant_found_fix)) {
         net::Writer w;
         w.u8(kNextCitySite);
-        w.u32(0);
+        w.u32(instant ? kFoundInstant : 0);
         w.f32(0); w.f32(0); w.f32(0);
         C.sess->broadcast_reliable(net::MSG_CIV_BUILD, w);
         g_cities_founded++;
@@ -2073,7 +2082,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     else
         a_AddTurret = 0;
     if (uintptr_t di = H->sym("Simulator::cGameNounManager::DestroyInstance")) { // BUG-0539
-        H->hook_create(M, (void*)di, (void*)h_DestroyInstance, (void**)&o_DestroyInstance);
+        gamefixes::set_destroy_listener(on_destroy_instance); // BUG-0623: gamefixes owns the hook
         a_DestroyInst = di;
     }
     a_ToolMouseUp = H->sym("Simulator::cToolManager::OnMouseUp"); // BUG-0530 (optional)
@@ -3195,7 +3204,7 @@ static void city_catch_up(size_t host_total)
             int n = (int)host_total - founded, made = 0;
             g_applying = true;
             for (int i = 0; i < n; i++)
-                if (o_SpawnNextCity(ex, 0, nullptr))
+                if (o_SpawnNextCity(ex, g_instant_found_fix ? 1 : 0, nullptr)) // BUG-0624: late already
                     made++;
                 else
                     break; // no free site left
@@ -3558,10 +3567,10 @@ static void guest_build(net::Reader& r)
     uint32_t noun = r.u32();
     net::Vec3 p;
     p.x = r.f32(); p.y = r.f32(); p.z = r.f32();
-    if (r.ok() && ci == kNextCitySite && noun == 0) { // the host's planet grew a new city: the same site here
+    if (r.ok() && ci == kNextCitySite && (noun == 0 || noun == kFoundInstant)) { // the host's planet grew a new city: the same site here
         if (void* ex = skg::cdecl_call<void*>(a_ExpansionGet)) {
             g_applying = true;
-            bool ok = o_SpawnNextCity(ex, 0, nullptr);
+            bool ok = o_SpawnNextCity(ex, noun == kFoundInstant ? 1 : 0, nullptr); // BUG-0624: as the host founded it
             g_applying = false;
             g_cities_in++;
             H->log(M, SK_INFO, "civ: the host founded a city: here %s (cities now %u)", ok ? "founded" : "NOT founded",
@@ -3621,7 +3630,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             net::Reader peek = r;
             uint8_t ci = peek.u8();
             uint32_t noun = peek.u32();
-            if (peek.ok() && ci == kNextCitySite && noun == 0) {
+            if (peek.ok() && ci == kNextCitySite && (noun == 0 || noun == kFoundInstant)) {
                 g_founds_outside++;
                 H->log(M, SK_INFO, "civ: the host founded a city while this game is outside the Civ mode (mode %08X)",
                        game::mode_id());

@@ -30,6 +30,8 @@ from coop_sync import LIMITS, angle, pct, sample
 from sporectl import Console
 from twoinst import Checks, Monitor, shot, start
 
+OLD_ATTACK = '--old-attack' in sys.argv  # BUG-0618: the old attack loop (to compare the landing rate)
+
 COMBAT_KEYS = ['1', '1', '1', '2', '3', '4']  # the first ability is the one every creature has
 DIALOGS = [('Do you want to save your game?', 'Cancel'), ('Are you sure?', 'Cancel'),
            ('Resume Game', 'Resume Game'),  # what a player closes when it is in the way
@@ -95,7 +97,7 @@ class Player(threading.Thread):
         self.deadline, self.exit_at = deadline, exit_at
         self.con = Console(inst)
         self.W, self.H = screen(self.con)
-        self.log, self.hunt_log, self.notes = [], [], []
+        self.log, self.hunt_log, self.notes, self.reach_raw = [], [], [], []
         self.error = None
 
     # ---- input and looking
@@ -184,6 +186,7 @@ class Player(threading.Thread):
         """walk to the animal (a click on it) and use the combat abilities until it is dead"""
         self.stance('combat')
         t0, last_hp, hits = time.time(), None, 0
+        target, walk_at, walk_gap = None, 0, 1e9  # BUG-0618: the game's target, the last walk-and-use start
         while time.time() - t0 < 35 and time.time() < self.deadline:
             info = self.world.npcs().get(key)
             if info is None:
@@ -204,13 +207,93 @@ class Player(threading.Thread):
             o = self.objs().get(key) or self.look_for(key, 2)
             if not o:
                 return 'lost', hits
-            if self.in_view(o[1], o[2]):
-                self.do(f'click {o[1]} {o[2]}')
-            self.sleep(0.2, 0.5)
-            self.do('key ' + self.rng.choice(COMBAT_KEYS))
-            self.add('attacks')
-            self.sleep(0.6, 1.3)
+            if OLD_ATTACK:  # BUG-0618: the old bot, a key 0.2-0.5 s after every click
+                if self.in_view(o[1], o[2]):
+                    self.do(f'click {o[1]} {o[2]}')
+                self.sleep(0.2, 0.5)
+                k = self.rng.choice(COMBAT_KEYS)
+                self.reach_note(k)
+                self.do('key ' + k)
+                self.add('attacks')
+                self.sleep(0.6, 1.3)
+                continue
+            # BUG-0618 (docs/re/creature.md#creature-attack-reach): a click on an animal only picks it as the target
+            # (the creature does not move); an ability key out of the ability's reach makes the game walk the
+            # creature to it and use it (goal 0x20 of the ability use 0xD1E930), a new click cancels that walk; in
+            # reach a key works when the ability is ready (status 0; 8 = recharging). Keys 1..5 use the bar's
+            # combat row (the fixture creature has one combat ability, key 1, reach 1 m).
+            r = self.reach()
+            if r['target'] is None or r['dead'] or r['target'] != target:
+                self.add('retarget_' + ('none' if r['target'] is None else 'dead' if r['dead'] else
+                                        'first' if target is None else 'changed'))
+                if self.in_view(o[1], o[2]):
+                    self.do(f'click {o[1]} {o[2]}')
+                    self.add('target_click')
+                    r = self.reach()
+                    target = r['target']
+                    walk_at, walk_gap = 0, 1e9
+                self.sleep(0.2, 0.4)
+                if r['target'] is None:
+                    continue
+            keys = [k for k, (reach, st) in r['keys'].items()]
+            if not keys:
+                self.add('no_combat_key')
+                self.sleep(1)
+                continue
+            k = self.rng.choice(keys)
+            reach, st = r['keys'][k]
+            if r['gap'] <= reach:
+                if st == 0:
+                    self.reach_note(k, r)
+                    self.do('key ' + k)
+                    self.add('attacks')
+                else:
+                    self.add('wait_recharge')
+                self.sleep(0.25, 0.45)
+            elif time.time() - walk_at > 2.5 and r['gap'] > walk_gap - 1.0:
+                # not walking to it (yet, or stopped): the key starts the game's walk-and-use
+                self.reach_note(k, r)
+                self.do('key ' + k)
+                self.add('attacks')
+                walk_at, walk_gap = time.time(), r['gap']
+                self.sleep(0.3, 0.5)
+            else:
+                if r['gap'] < walk_gap - 1.0:
+                    walk_at, walk_gap = time.time(), r['gap']
+                self.sleep(0.3, 0.5)
         return 'timeout', hits
+
+    def reach(self):
+        """the game's reach of the combat keys: {'target': ptr | None, 'dead', 'gap', 'keys': {key: (reach,
+        status)}} from coop.abilities reach: the key n uses the ability in column n-1 of the bar's combat row 1"""
+        out = self.do('coop.abilities reach')
+        m = re.search(r'target (\S+) dead=(\d) gap=([-\d.]+)', out)
+        res = {'target': m.group(1) if m else None, 'dead': bool(m and m.group(2) == '1'),
+               'gap': float(m.group(3)) if m else 1e9, 'keys': {}}
+        abs_ = {int(a.group(1)): (float(a.group(2)), int(a.group(3))) for a in
+                re.finditer(r'ab (\d+) type=\S+ row=\S+ key=\S+ reach=([-\d.]+) min=\S+ status=(-?\d+)', out)}
+        b = re.search(r'bar 1:((?: -?\d+)+)', out)
+        for col, i in enumerate(b.group(1).split() if b else []):
+            if int(i) in abs_:
+                res['keys'][str(col + 1)] = abs_[int(i)]
+        return res
+
+    def reach_note(self, k, r=None):
+        """counts of the key presses by the game's reach (BUG-0618 diagnostics)"""
+        r = r or self.reach()
+        ab = r['keys'].get(k)
+        if r['target'] is None:
+            self.add('press_no_target')
+        elif ab is None:
+            self.add('press_no_ability')
+        elif r['gap'] > ab[0]:
+            self.add('press_out_of_reach')
+        elif ab[1] != 0:
+            self.add('press_not_ready')
+        else:
+            self.add('press_in_reach')
+        if len(self.reach_raw) < 3:
+            self.reach_raw.append(self.do('coop.abilities reach').replace('\n', ' | '))
 
     def socialize(self, key):
         self.stance('social')
@@ -373,7 +456,8 @@ class Player(threading.Thread):
         objs, npcs = self.objs(), self.world.npcs()
         tgt = self.sh.target
         # the pack: join the partner's hunt
-        if tgt and tgt[1] != self.name and tgt[0] in npcs and not npcs[tgt[0]]['dead'] and rng.random() < 0.8:
+        partner_leads = tgt and tgt[1] != self.name and tgt[0] in npcs and not npcs[tgt[0]]['dead']
+        if partner_leads and (OLD_ATTACK and rng.random() < 0.8 or not OLD_ATTACK):
             if tgt[0] in objs or self.look_for(tgt[0], 3):
                 self.add('joined_hunt')
                 self.hunt(tgt[0], 'pack')
@@ -388,6 +472,11 @@ class Player(threading.Thread):
             key = self.prey(objs, npcs)
             if not key:
                 kind = 'look'
+            elif kind == 'hunt' and partner_leads and not OLD_ATTACK:
+                # BUG-0618: the pack hunts together: while the partner leads a hunt the other does not start its own
+                # (it did not see the prey: it goes to the partner)
+                self.follow()
+                return
             elif kind == 'hunt':
                 self.sh.target = (key, self.name)
                 self.hunt(key, 'lead')
@@ -467,6 +556,7 @@ def main():
     ap.add_argument('--minutes', type=float, default=10)
     ap.add_argument('--seed', type=int, default=None)
     ap.add_argument('--no-exit', action='store_true', help='the guest does not leave to the main menu')
+    ap.add_argument('--old-attack', action='store_true', help='BUG-0618: the old bot (a key 0.2-0.5 s after each click)')
     a = ap.parse_args()
     seed = a.seed if a.seed is not None else random.randrange(1 << 30)
     print(f'  play creature: {a.minutes} min, seed {seed}', flush=True)
@@ -589,6 +679,11 @@ def main():
         print(f'  {p.name} hunts:', '; '.join(p.hunt_log[-10:]))
         for n in p.notes[-5:]:
             print(f'    {p.name}:', n)
+        print(f'  {p.name} key presses by the game\'s reach (BUG-0618):', ' '.join(
+            f'{k.split(".", 1)[1]}={v}' for k, v in sorted(sh.c.items())
+            if k.startswith(p.name + '.') and ('press_' in k or 'retarget_' in k or k.endswith(('.target_click', '.wait_recharge')))))
+        for r in p.reach_raw[:2]:
+            print(f'    {p.name} reach:', r[:400])
         if Monitor.events:
             print(f'  last actions of {p.name}:')
             for line in p.log[-15:]:

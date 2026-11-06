@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+- A crash report (`crash-*.txt`) now says to send the one `SporeCoop-report-*.zip` from the same folder (it holds the
+  report and its `.dmp`); the `.txt` and `.dmp` alone are needed only when there is no such zip.
+
 ### Fixed
 - Creature: when the partner stops, its creature on your screen stops where the partner stopped instead of sliding
   on half a metre or more (BUG-0408).
@@ -14,6 +18,25 @@
 - A broken position from another player's game (not a number) can no longer be written into a creature, vehicle or
   ship; such a state is dropped (BUG-0614). Messages too big to send are now written to the log instead of being
   dropped without a word (BUG-0615).
+- A guard against a crash when an NPC reacted to a creature that had just been destroyed (BUG-0456) was switched off
+  by mistake since 0.7.5; it works again (BUG-0623).
+- Tribe and other stages: when a game was loaded within a few seconds of the galaxy menu coming up, the menu's
+  intro flight could take over the host's view for good (the minimap and clicks no longer moved it); the intro is
+  now stopped the moment it starts outside the menu (BUG-0626). The same intro could leave a Creature guest's view on
+  the planet seen from space after its join (BUG-0607).
+- Civilization: a city the host's game founds instantly (and its vehicles) now appears on the guests' screens at
+  once, not several seconds later (BUG-0624).
+- Cell: two cells that end up exactly on top of each other no longer shoot off at hundreds of metres per second or
+  break a player's own cell for a moment (the game's collision left their push direction unset) (BUG-0307).
+- Creature: when the host's game stood still (its death or upgrade caption) and then went on, a guest could lose
+  almost every creature around it at once, and they stayed gone while the next caption was up (BUG-0611).
+- Creature: creatures the host's game puts away while it stands still (the host's respawn at its nest) no longer
+  stay on a guest's screen where they were, as creatures nobody else has (BUG-0339).
+- Tribe: a guest no longer sees tribe members carrying food that the host's members already put down (BUG-0617).
+- Tribe: when a member of a player's tribe dies, its body now lies on every player's screen as long as it does on the
+  host's; before, it vanished at once on the guests' screens (BUG-0620).
+- Creature: an animal resting at its nest no longer looks stuck inside the nest mound on a guest's screen when the
+  host is somewhere else on the planet (BUG-0562).
 - Civilization: after the host takes a city, its buildings stand at the same places on the guests' screens; before,
   a guest's game could tear one building down and put it up again every two seconds a few metres away (BUG-0602).
 - Spice geysers are now the same size on every player's screen (a geyser the host's game made during play was ten

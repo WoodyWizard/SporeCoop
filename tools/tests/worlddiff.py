@@ -133,6 +133,22 @@ IGNORE = {'hit_sphere', 'solar_hit_sphere', 'game_terrain_cursor', 'species_goal
           # stood 1 m from it at the start; 1-2 plants 8-14 m from the own player only): not a desync
           'rock', 'game_plant'}
 MOVING = {'creature', 'citizen', 'herd', 'vehicle', 'ufo', 'tribe_tool'}
+# BUG-0617: a food bundle is compared by where it is (census own=ground|carried|held, mods/coop/census.cpp): carried
+# food moves with its member (~7 m/s; the guest's copy of the member is drawn 1-3.5 m behind the host's, coop_world_host.py
+# --case bundle), so carried bundles pair within TOL_CARRIED; the ground's stay static (3 m); food in another container
+# (a food mat's: the tribe's food, compared as a state value) is `game_bundle_held`
+TOL_CARRIED = 6.0
+
+
+def _nearest(x, others):
+    return min((math.dist(x['pos'], y['pos']) for y in others), default=-1.0)
+
+
+def _group(x):
+    """the compare group of a census object row: (noun, '') or, for a food bundle, (noun, '_carried' | '_held')"""
+    if x['noun'] == 0x018C431C and x.get('own') in ('carried', 'held'):
+        return (x['noun'], '_' + x['own'])
+    return (x['noun'], '')
 
 
 def noun_name(n):
@@ -659,17 +675,16 @@ def diff(host, guest, area=None):
     # every other placed object, per noun
     hg = collections.defaultdict(list)
     gg = collections.defaultdict(list)
-    for x in rows(host, 'g', lim=r):
-        hg[x['noun']].append(x)
-    for x in rows(guest, 'g', lim=r):
-        gg[x['noun']].append(x)
-    for noun in sorted(set(hg) | set(gg)):
-        name = noun_name(noun)
-        if name in IGNORE:
+    for w, grp in ((host, hg), (guest, gg)):
+        for x in rows(w, 'g', lim=r):
+            grp[_group(x)].append(x)
+    for noun, sub in sorted(set(hg) | set(gg)):
+        name = noun_name(noun) + sub
+        if name in IGNORE or noun_name(noun) in IGNORE:
             continue
+        a, b = hg.get((noun, sub), []), gg.get((noun, sub), [])
         vt = host.vts.get(noun) or guest.vts.get(noun)
         vts = f' [vtable 0x{vt:X}]' if vt and noun not in NOUNS else ''
-        a, b = hg.get(noun, []), gg.get(noun, [])
         # Space: a colony planet's citizens are a pool each game puts at the cities near its own camera
         # (docs/re/space.md#space-planet-life, BUG-0490): none of them in the host's game near the guest means
         # the host's camera never came to that city (level of detail), not a desync; the host's citizens that
@@ -683,9 +698,13 @@ def diff(host, guest, area=None):
                                                              not [x for x in b if _near(x['pos'], c, inner)]):
             continue
         tol = TOL_MOVING if name in MOVING or stage == 'Space' else TOL_STATIC  # Space: ships and planets' objects move
+        tol = TOL_CARRIED if name == 'game_bundle_carried' else tol
         pairs, ua, ub = _match(a, b, tol)
         ua = [x for x in ua if _near(x['pos'], c, inner)]
         ub = [x for x in ub if _near(x['pos'], c, inner)]
+        if name == 'game_bundle_carried' and (ua or ub):  # BUG-0617: whose members carry the unpaired ones
+            vts += (f' [carriers\' players: host {sorted(x["owner"] for x in ua)}, guest {sorted(x["owner"] for x in ub)}; '
+                    f'nearest partner {", ".join(f"{_nearest(x, b):.1f}" for x in ua)} / {", ".join(f"{_nearest(y, a):.1f}" for y in ub)} m]')
         if ua and not b:
             add('host_only', name, len(ua), f'{len(ua)} {name} near the guest on the host, none on the guest '
                                             f'(e.g. at {_fmt(ua[0]["pos"])}){vts}')

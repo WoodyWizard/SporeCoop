@@ -1,19 +1,19 @@
 ---
 id: BUG-0339
 title: Creature, 4 players: a guest keeps 4 proxies 511 m from the host's NPCs, which sit at the planet's centre (0 0 0) and are still tracked
-status: open
+status: fixed
 kind: desync
 stage: Creature
 reported: 2026-10-31
 source: lab 20261031-083425 campaign#2 08:53
 role: guest
 versions: main 39f4004
-fixed_in:
-branch: fix/w21-creature
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w45-leftovers
+commits: 34b41821 add442d0
+tests: npc_frozen_pooled (coop_npc_frozen.py --case pooled)
 signature:
-docs:
+docs: docs/re/creature.md#creature-freeze-edges
 related: BUG-0274, BUG-0280, BUG-0300
 ---
 
@@ -42,6 +42,17 @@ Partly observed, not reproduced (fix/w21-creature, lane 5, 2026-10-31):
   A host NPC pinned at the centre after each update (`coop.npc centre`) did not reproduce it either:
   the game puts it back each update, and the guest dropped the proxy (it was far from the guest).
   Neither probe matched the campaign.
+Second analysis (fix/w45-leftovers, 2026-11-06), observed in a test: the host's game can take NPCs back into its
+pool (the planet's centre, herd 0) while it updates no creature (a caption: the death caption, the respawn). host_tick
+returns at once in such frames (no retire_pooled), and frozen_send (BUG-0413, 0.7.9) skipped NPCs at the centre, so
+no despawn went out; a guest drops a proxy without states only while the host sends states, so it kept them where
+they had stood for the whole freeze (coop_npc_frozen.py --case pooled with `coop.npc pool` under the death caption:
+3 of 3 kept, out/lab/20261106-110717).
+Inferred for the campaign (re-read of lab 20261031-083425 campaign#2, 0.7.3.1): the host had died, respawned at its
+nest 85 m away at 09:52:31, and from 09:52:43 its and the guest's NPC lines stayed unchanged for a minute while the
+host's sync-check (the last updated frame) put n40-n43 at the centre: the host's game stood still after the respawn
+and the herd went to the pool there (the game keeps NPCs only around the avatar, BUG-0274). The normal path (frames
+with creatures updated) is fine: an NPC at the centre is ~500 m from any guest and is despawned by relevance.
 
 ## Fix
 No fix yet: the chain is not understood, and no probe reproduced it.
@@ -54,12 +65,19 @@ No fix yet: the chain is not understood, and no probe reproduced it.
   occurrence then names the NPC, its herd and the jump.
 * Test command `coop.npc pool <id>` (host) calls the game's own pool on an NPC
   (creature vt 0xC8(1)).
+`npc.frozen_pooled` (npc.cpp frozen_send, every 0.5 s of a freeze): a tracked NPC that is no longer in the noun
+list or is within 50 m of the planet's centre is retired (despawned at every guest, its id forgotten), as retire_pooled
+does in a running frame. `coop.fix npc.frozen_pooled off`: kept until the host's game goes on (0.7.8).
 
 ## Verification
 no-fail-run: not reproduced (see Root cause); diagnostics only.
+npc_frozen_pooled: FAIL with SPORE_FIX_OFF=npc.frozen_pooled out/lab/20261106-110717 (the guest showed
+[1, 2, 4] for 6 s of the freeze), PASS out/lab/20261106-111013 (none shown). Census of both games (the host's pool call
+returns the creature at (0 0 0), the guest's proxy objects by net id).
 
 ## History
 - 2026-10-31: opened.
 - 2026-10-31: fix/w21-creature: analysed (host NPCs at the planet's centre still updated, a guest keeping their proxies on the surface), not reproduced; diagnostics in; stays open.
 - 2026-10-31: fix/w21-creature: the new diagnostic fired in 3 of 3 creature_npc_dash runs (out/lab/20261031-105509 #1/#2, 20261031-105513): "npc 3 (species 06805133) is updated at the planet's centre: herd 00000000, 505 m from where it was a frame before, dead=1". So the game keeps updating a pooled **corpse** at (0 0 0) and the host keeps it as an NPC: the lead for a reproduction (the campaign's four were alive=1, not checked whether the same path). Next: a test that kills an NPC, waits for its pool and compares both censuses; then the host-side fix (an NPC updated at the centre is not mirrored).
 - 2026-10-31: fix/w21-creature (second time box, 45 min): no FAIL run. Tries on lane 5 with a test that waits for a host NPC the guest mirrors at the planet's centre (out/lab/20261031-110136, -110519, -110756, -110937, -111118, -111446): killing an NPC next to both players did not get its corpse pooled in 150 s; a guest 200 m from the host had no NPC of the host around it to mirror; the save's corpse (NPC 3/4, species 06805133, at (-180 -466 -72) next to the nest) goes to the centre ~58 s after the load in runs where nobody stands at it (3 of 3 creature_npc_dash runs, host log), but with the guest standing next to it it was not pooled. So the corpse case is real on the host but was never mirrored by a guest in a test. The host-side fix (an NPC updated at the centre is not mirrored, `npc.centre`) was written but not shipped: no FAIL run to prove it. Seen on the way: right after a (warm/cold) start a guest's `coop.npc gopos` was undone within 15 s ("guest 1 m from the host" twice; it held when repeated 8 s later), likely the same as BUG-0333 (an avatar placed near the host after the join).
+- 2026-11-06: fix/w45-leftovers: the freeze path found (pooled during a freeze: no despawn), fix npc.frozen_pooled, test npc_frozen_pooled; fixed.

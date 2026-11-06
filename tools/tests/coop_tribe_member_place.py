@@ -78,6 +78,8 @@ def main():
                 age = host.call(f'mem.read {ptr + 0xB34:#x} 1')['out'].strip()
                 dead = host.call(f'mem.read {ptr + 0xB5E:#x} 1')['out'].strip()
                 print(f'           object {ptr:#x}: vtable {vt}; age byte {age}; dead flag {dead}', flush=True)
+                # BUG-0620: its tribe (+0x1014), whether that tribe lists it, its behaviour node and order
+                print(f'           who: {host.call(f"coop.tribe who {ptr:x}")["out"].strip()}', flush=True)
             lone.append((tuple(round(v) for v in x['pos']), x['ser']))
             print(f'  {time.time() - t0:5.0f} s: host citizen ser={x["ser"]} at {worlddiff._fmt(x["pos"])} '
                   f'({math.dist(x["pos"], c):.0f} m from the guest): nearest guest citizen {d:.0f} m; mod id {tid} '

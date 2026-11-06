@@ -4562,6 +4562,10 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
                                   argc > 8 ? (float)atof(argv[8]) : 0.f).c_str());
         return 0;
     }
+    if (argc > 3 && !strcmp(argv[1], "rxkeep")) { // guest (tests, BUG-0611): rxkeep <n> <s>
+        SAY("%s", npc::debug_rxkeep(atoi(argv[2]), (float)atof(argv[3])).c_str());
+        return 0;
+    }
     if (argc > 2 && !strcmp(argv[1], "pool")) { // host (tests, BUG-0339): pool <id>
         SAY("%s", npc::debug_pool((uint16_t)atoi(argv[2])).c_str());
         return 0;

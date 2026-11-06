@@ -43,3 +43,4 @@ Source: docs/generalisation-plan.md G7.
   abilities, size); paints by the game's effect directories; the species data (creaturedata) of a bundle follows
   its model (`content.lookalike`, `content.species_data`; test content_lookalike). Still open: vehicles and buildings
   (`ensure_model` gets no description: the tables), cell and UFO parts not tested, an animation only the pack part has.
+- 2026-11-06: Discord report 2026-11-06 (0.7.8): children BUG-0647 (the host's vehicle designs shown as monsters on the guest), BUG-0643 (white roster portraits, or 0431).

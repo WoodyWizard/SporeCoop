@@ -1028,10 +1028,13 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   cell_new_game#1), velocity and particle velocities NaN (mask 0x104) for 17 frames, after the collisions and
   before our guest tick; its camera stayed NaN (BUG-0604, fixed by cell.camera_heal). The writer of the NaN
   velocity is still not known (docs/re/cell.md#cell-view-nan).
+* 2026-11-06 (fix/w45-cell-nan): the writer found and fixed: the collision contact solver after the pair loop, fed
+  an unset (non-unit) contact normal when two collision spheres share a centre (docs/re/cell.md#cell-contact-nan,
+  `cell.contact_finite`). The address space drain is BUG-0621 now.
 * 2026-10-30 (fix/w13-cell): the coverage loss was the jumps of the NaN heals leaving background
   cells behind until the guest's pool hit its mirror cap (BUG-0314, fixed by `cell.bg_cull`). The
   first NaN and the address space drain are still not reproduced (docs/re/cell.md#cell-bg-leftovers).
-* Ticket: BUG-0307
+* Ticket: BUG-0307 (the NaN, fixed), BUG-0621 (the address space drain, open)
 
 ## Cell, 4 players: two one-off faults of the 4th player (2026-10-30, fix/w12-cell-fault)
 <a id="issue-cell-4th-player-faults"></a>
@@ -1213,6 +1216,8 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   the host and respawned at the nest); not reproduced by the pool call or a pinned NPC.
 * Known: docs/re/creature.md#creature-npc-at-centre; the host logs such NPCs now.
 * Ticket: BUG-0339.
+* CORRECTION (2026-11-06, fix/w45-leftovers): fixed (`npc.frozen_pooled`): NPCs the host's game pools while it
+  stands still were never despawned; docs/re/creature.md#creature-freeze-edges.
 
 ## Cell: the view is off centre after a co-op small respawn (2026-10-31, player report)
 <a id="issue-cell-respawn-camera"></a>
@@ -1507,6 +1512,8 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   13 -> 1 -> 0 under the caption while the host kept 13; sync-check `n: 15 missing on the guest`.
 * Reproduce: two games on the creature fixture, `AddEvolutionPoints f:3000` on the host, `coop.npc` on the guest.
 * Ticket: BUG-0413
+* CORRECTION (2026-11-06, fix/w45-leftovers): the loss after a freeze is BUG-0611 (the guest's stale rule counted
+  the frozen time), fixed (`npc.thaw_stale`); docs/re/creature.md#creature-freeze-edges.
 
 ## Crash: hosting before the main menu (2026-11-01, feat/w33-tests-session)
 <a id="known-host-before-menu"></a>
@@ -2054,6 +2061,8 @@ Player reports 2026-11-04 (0.7.5, Discord bug-reports; not analysed yet):
 * Reproduce: `tools/lab.py run body_trail_tribe_player`; per-time analysis of the track JSON it writes
   (docs/re/creature.md#creature-remote-lead).
 * Tickets: BUG-0425 (fixed part), BUG-0612 (the class's other parts)
+  ground difference when it happens) (fixed on fix/w45-village-ground, unreleased: one ground for everybody,
+  tribe.host_reload of BUG-0332)
 - BUG-0617: Tribe / Civ: food a tribe member carries lies 1-3.5 m behind on the guest while the member walks, a guest
   member's own carried food is not in the host's game, and a few Civ bundles in other containers stay each game's own
   (the detector's `game_bundle` rows left after BUG-0548; `SPORE_DETECTOR=20 tools/lab.py run play_tribe`)
@@ -2065,5 +2074,41 @@ Player reports 2026-11-04 (0.7.5, Discord bug-reports; not analysed yet):
   `Tribe:unmatched:citizen`, 1-3 of ~31 samples a run). What it is is not known yet.
 * Reproduce: play_tribe with `SPORE_DETECTOR=20` and `coop_tribe_member_place.py --attach` (prints the object).
 * Ticket: BUG-0620
-  ground difference when it happens) (fixed on fix/w45-village-ground, unreleased: one ground for everybody,
-  tribe.host_reload of BUG-0332)
+
+- BUG-0622: Cell: once (lab 20261106-110218, a heavily loaded PC, the first load of a fresh game 4 s after the galaxy
+  menu) the host's game faulted in its own Cell mode entry (the effect preload list at 0xE67610 ran past its block)
+  and looped on faults; no co-op code was involved and 13 cold loads did not repeat it
+  (docs/re/cell.md#cell-preload-fault). Reproduce: `tools/lab.py run cell_gone_play --cold --repeat N` under load.
+
+## Player reports of 2026-11-06 (Discord, 0.7.8, Cell to Civ, two players) (2026-11-06, fix/w45-intake)
+<a id="issue-discord-2026-11-06"></a>
+
+Each line: what the players saw, what the logs show; reproduce and details in the ticket.
+- Creature: every editor spend lowers the other player's evolution bar by the amount: the mod moves the shared DNA
+  through AddEvolutionPoints, which also adds negative deltas to cPlayer +0x10F0 (the guest's bar fell to almost 0,
+  the host's halved; the bars differ by one tier) (BUG-0630, docs/re/creature.md#creature-evolution-bar).
+- Civ: the host's game crashed after ~2 h in one process with its 2 GB address space full (largest block 12 MB), in a
+  model's vertex blend writing through a null buffer at +0x3995F0; ~740 MB of the drain in Creature (BUG-0631, see
+  BUG-0621).
+- Cell: a guest's kill is applied twice on the host (a giant piece of meat) (BUG-0632).
+- Cell: the host cannot collect the part a kill dropped (BUG-0633).
+- Cell: the guest's cell swims through other cells (BUG-0634).
+- Cell: after the guest's level-up the bigger cells near it vanish and others appear (not BUG-0604) (BUG-0635).
+- Cell: the guest can eat the same plant or meat piece twice: no tombstone of an eaten mirror (BUG-0636).
+- Cell: after a guest's rejoin and the host's own-cell change at level 10, cells of another level (BUG-0637).
+- Creature: a guest still in its own Cell editor when the host enters Creature plays its creature from another world
+  (BUG-0345's rule, BUG-0638).
+- Creature: the guest can attack the creatures of a nest evolving on the host (BUG-0639).
+- Creature: the host's species migrates, the guest's game never claims the nest (respawn at the old nest, no DNA, no
+  cutscene); the in-place path logged "migration 0 -> 0" (BUG-0640).
+- Creature: spit does not interrupt charges between a guest and NPCs; some NPC strikes miss the guest (BUG-0641).
+- Creature: a creature chosen in the co-op window changes only the avatar, not the nest and family (BUG-0642).
+- Tribe: the guest's roster shows white squares instead of the member portraits (BUG-0643).
+- Tribe: the NPC villages the guest's game makes have other colours (no colour copied in make_npc_tribes) (BUG-0644).
+- Tribe: the guest cannot have more than 6 members, its village shows 12/6 (BUG-0645).
+- Tribe: the guest does not hear the music of the dance around the fire (BUG-0646).
+- Civ: the guest sees the host's ground vehicles as creature-like monsters (BUG-0647).
+- Civ: the guest's military vehicles cannot shoot an enemy city hall nor capture it (BUG-0648).
+- Civ: the guest does not see the host's name at the host's camera (BUG-0649).
+- Also seen on 0.7.8, fixed unreleased in 0.7.9: the guest does not see the drama UFO (BUG-0558), city buildings
+  rebuilt again and again after captures (BUG-0602).

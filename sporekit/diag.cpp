@@ -374,7 +374,9 @@ static std::string diag_write_report_as(const std::string& base, const char* rea
     std::wstring txt = logs_dir() + L"\\" + widen(base) + L".txt";
     std::string s;
     s += "SporeCoop " + kind + " " + stamp() + (reason && *reason ? std::string(" (") + reason + ")" : "") + "\n";
-    s += "Please attach this file (and the .dmp next to it, if there is one) to an issue:\n";
+    // one file for the player to send: the archive holds this report and its .dmp (docs/REPORTING.md)
+    s += "Please send the file SporeCoop-report-<date-time>.zip from this folder (it holds this report and the .dmp)\n";
+    s += "with an issue; send this file and the .dmp next to it only if there is no such .zip:\n";
     s += "https://github.com/WoodyWizard/SporeCoop/issues\n\n";
     if (std::string h = diag_headline_text(); !h.empty())
         s += "== Summary\n" + h + "\n";

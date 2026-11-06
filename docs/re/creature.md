@@ -3249,3 +3249,128 @@ BUG-0485. GOG 2024. ✔ = observed, ~ = read in the code, ? = inferred.
   game shows 1.0 after any load. Not a mod bug at its origin; in co-op each player saw the node at another size.
 * Fix `wobj.node_scale` (worldobj.cpp kind `node`, the whole planet, Creature / Tribe / Civ): the state is the host's
   scale; a guest's node that differs by more than 1 % takes it (cSpatialObject vt 0x40 SetScale). Test node_scale.
+
+## NPCs pooled during the host's freeze, and the guest's stale rule after it (2026-11-06, fix/w45-leftovers)
+<a id="creature-freeze-edges"></a>
+
+BUG-0339, BUG-0611. GOG 2024, lab lanes 6/7. Follows [the host's NPC set while its game stands still](#creature-npc-gaps).
+* ✔ (runtime, `coop_npc_frozen.py --case pooled`) While the host's game updates no creature (its death caption)
+  the game's own pool call on host NPCs (`coop.npc pool <id>`, creature vt 0xC8(1)) puts them at (0 0 0) with herd 0;
+  npc.cpp did nothing about them: host_tick returns before `retire_pooled`, and `frozen_send` (BUG-0413) skipped
+  NPCs at the centre (so it sent no despawn either). The guest's game kept all three proxies where they had stood for
+  the whole freeze (lab 20261106-110717, `npc.frozen_pooled` off). A guest drops a proxy without states only while
+  the host sends states, so nothing else removes them. Fix `npc.frozen_pooled`: `frozen_send` retires (despawn
+  at every guest, id forgotten) a tracked NPC that is not in the noun list any more or is within 50 m of the
+  planet's centre; 0 kept (lab 20261106-111013). `coop.npc` (host) prints `frozen_retired=`.
+* ~ (re-read, lab 20261031-083425 campaign#2, 0.7.3.1) BUG-0339's campaign had exactly this state: the host had
+  died at 09:51:50 and respawned at its nest at 09:52:31 (85 m away); from 09:52:43 on its "npcs simulated" line and
+  the guest's "npcs mirrored" line did not change for a minute and the host's sync-check (it reads the last updated
+  frame's NPCs) showed the same four NPCs at the centre 33 s apart, while the guest's four proxies stood ~100 m from
+  its death point. Inferred, not observed in that log: the host's game stood still after its respawn and the herd
+  went to the pool at the respawn (the game keeps NPCs only around the avatar, BUG-0274). The normal path (host_tick
+  with creatures updated) is not affected: a centre NPC is ~500 m from every guest and is despawned by relevance.
+* ✔ (runtime, `--case thaw`) A guest drops a proxy the host sent no state for in 5 s while other states arrive
+  (`npc.stale_proxy`, BUG-0009). After a freeze every proxy's last state is that old, so the first batch after it
+  that lists only some NPCs dropped all the others: with `coop.npc rxkeep 1 3` (guest, tests: each state batch keeps
+  its first NPC only, as when the other packet of a batch is lost; a batch holds 23 NPCs a packet) after a 10 s
+  caption, 5 of 5 host NPCs near the guest were gone 1 s after the OK, 20 stale drops (lab 20261106-110717,
+  `npc.thaw_stale` off). The host still counts them as known and sends no spawn; BUG-0487's resync brought them back
+  2 s later because the host's game ran on.
+* ~ BUG-0611's sighting (transition_net, feat/w33-tests-session lab 20261101-145528, SPORE_NET=player, the guest
+  at 30 fps): the host's game stood still from about 14:59:00 (its counts unchanged, input_lock=1) to the caption's
+  OK at 14:59:34, the brain upgrade caption came at 14:59:37 and froze it again; the guest's proxies went 25 -> 1 by
+  14:59:39 with no despawn line (a stale drop logs none), loss spikes of 12-16 % on that link. Inferred: the first
+  state batches after the OK came in part (two packets for 25 NPCs, one lost or late) and the stale rule dropped the
+  rest; with the host frozen again, no resync answer came until its caption closed. Not reproduced without the
+  test command: the creature fixture has 5 NPCs near the players (one packet), and the live Cell -> Creature start
+  (`--case live`, lab 20261106-105614) kept 8 of 8; its host logged no `npc: world change` at the caption, so
+  the earlier guess (the host's on_world_change) was not seen.
+* Fix `npc.thaw_stale`: the 5 s count starts when the states flow again after more than 1 s without a whole batch
+  (`g_states_flow_since`); 0 stale drops, 5 of 5 kept (lab 20261106-111013). `coop.npc` (guest) prints
+  `thaw_kept=` and `rxkeep_cut=`.
+
+## The galaxy menu intro during a guest's load leaves its camera in space (2026-11-06, fix/w45-intro-camera)
+<a id="creature-intro-camera"></a>
+
+* ✔ (BUG-0607, lab) The galaxy menu's intro "GGE_intro" (docs/re/tribe.md#tribe-intro-camera) starts 15.8-15.9 s
+  after the mod logs `stage: - -> Galaxy menu` (12 cold guests of lab 20261106-140508, -140930, -141402, -141833;
+  `world: the galaxy menu intro starts (mode ...)` logs every start now). After the menu it is started again every
+  ~4-8 s in Creature (mode 01654C01) and blocked there by `world.intro_at_once`.
+* ✔ A load requested from the menu holds that frame ~0.65 s (`perf: hitch`); an intro due in it starts in the next
+  frame, already in the Loading mode 01654C08 (lab 20261106-140930 #1, #3: requests 15.78 / 15.61 s after the menu,
+  intro tries 0.7 s later). Both BUG-0607 runs had this timing: 20261105-231804 request 15.8 s, 20261105-233051
+  15.77 s, the menu left 16.4 s after it came up. No intro was seen starting between the request and the mode change
+  in the menu mode (16 timed joins).
+* ✔ With `world.intro_at_once` off (0.7.8) the intro that starts in the Loading mode plays through the Creature
+  setup, `menu_intro_tick` ends it 1 s later, and the guest's camera (App::cViewer, the screen-centre ray's origin)
+  stays at (0, -1000, 500), ~800 m from its avatar, for the session: lab 20261106-141833 #5. Starting the intro by
+  hand afterwards does not repair it (after its end the camera is at (0, -1225.7, 1028.5)). ~ In #2 of the same run
+  the intro also started in 01654C08 (0.02 s before the mod saw the mode change) and the view was normal: the exact
+  frame decides; the intro starting after the Creature setup (mode 01654C01) never left it stuck (lab 20261106-135640:
+  by hand twice, 20261106-141402 #4: 0.19 s into Creature), the camera came back to its creature (10-26 m).
+* Fix: BUG-0626's `world.intro_at_once` (the intro does not start outside the menu mode) covers it: with it on the
+  Loading-mode start is "not started" (lab 20261106-140930 #1, #3) and the camera is 10.2 m from the avatar.
+  Test creature_intro_camera (`twoinst.start(join_at=12.5)`: the guest joins 12.5 s after its menu's log line, about
+  one start in three hits the Loading mode; SPORE_FIX_OFF goes to the guest before the join).
+## The avatar's attack: target, reach, the walk-and-use goal (2026-11-06, fix/w45-last)
+<a id="creature-attack-reach"></a>
+
+BUG-0618. GOG 2024, Ghidra + runtime on lane 4 (`coop.abilities reach`, out/w45last/hunt_probe.py of the branch).
+* ✔ (Ghidra) A key of the HUD bar runs `AbilityBar_Use` 0xD49560: `AbilityBar_Status` 0xD49220 (0 usable) then
+  `Ability_Use` 0xD1E930(avatar, index). For the melee / ranged attack kinds (types 0x1E-0x21, 0x3D, 0x3E, 0x41, 0x42,
+  0x48-0x4B) the target is the avatar's combat target **+0xE7C** (the target's combatant, creature +0x5A8); the gap is
+  `Ability_TargetGap` 0xD99A20(avatar +0xC0, target spatial, row == 1) = centre distance minus both radii (spatial vt
+  0x74); in reach when ability +0x134/+0x138 (min) <= gap <= (ability +0xF4 + +0xA8) * `Ability_RangeScale` 0xD38A30(0)
+  (1.0 for the fixture): the avatar attacks at once (0xC03D80). **Out of reach the game itself posts the goal 0x20**
+  (0xC032F0(0x20, 0, FLT_MAX, index): walk to the target, then use the ability). Status 3 = no target, 8 = recharging.
+* ✔ (runtime) A left click on an NPC in the combat stance only sets +0xE7C: the creature does not move (gap 39.4 m
+  for 20 s, both games). One key press then walks it to the target (gap 45 -> 13 m, 10 -> 1.0 m in 3 s) and it
+  bites; in reach a key works when the status is 0 (8 between bites): the guest killed an NPC alone with 7 hits in
+  12 s, the host likewise (6 -> 0 hp).
+* ✔ (runtime) The creature fixture's combat row of the bar (AbilityBar_ptr row 1) has **one** filled slot: key 1 =
+  ability 5 (type 0x1E, reach 1.0 m). Keys 2-4 do nothing in the combat stance. Ability 1 (type 0x1D, reach 100) is in
+  row 1 but on no bar slot.
+* ✔ Why play_creature's guest landed few hits (BUG-0618): the old bot clicked the target before every key (each
+  click cancels the game's walk-and-use goal), pressed keys 2-4 half of the time, and pressed while recharging.
+  Pressing in the game's reach: guest sent 47 / applied 47 hits for 64 key presses (lab 20261106-125018) against
+  39 for 282 (fix/w45-int2 20261106-054817) and 16 for 196 (rel/0.7.9 20261106-040221).
+* ~ The game clears +0xE7C often during a hunt (play_creature: `retarget_none` 183 / 258 times per 10 min): the bot
+  clicks the target again then; not looked into (each bite? the target's flee?).
+
+## A nest's animals inside the mound when the host is far (2026-11-06, fix/w45-last)
+<a id="creature-nest-mound-proxy"></a>
+
+BUG-0562 (player video: "a creature got stuck into the nest after backing away"). GOG 2024, lab lane 5,
+coop_npc_nest_backoff.py (`coop.ground x y z` prints the point's height over `cPlanetModel_SurfacePoint`, the surface
+with the collision objects: the terrain or a nest mound / rock).
+* ✔ (runtime, 9 cold runs) With the host's player 120 m from the fixture's nest at (-126 -488 -65) and the guest at the
+  nest, the host's game has the nest's NPC that stands nearest the mound's centre (#18, 0.2-2.9 m from it) 0.43-0.97 m
+  **inside** the mound, for the whole 10 s before the roar (every cold run); with the host's player at the nest
+  (npc_nest_backoff_near) every NPC stays within 0.05 m of the surface. Inferred from this and
+  #creature-out-of-view-ground: a game simulates creatures far from its own camera without the mound (on the plain
+  `GetHeightAt` terrain).
+* ✔ (runtime) The guest's proxy of it was drawn at the host's place, inside the guest's mound: on the guest's screen
+  11.2 and 13.3 s of 24 s, 0.47-0.76 m in it (`SPORE_FIX_OFF=npc.proxy_mound`, lab 20261106-131754; also
+  -130629). The guest's camera is at the nest, so its mound is solid there and the game does not lift a creature put
+  that far in it. Off the guest's screen the guest's game draws it on the plain terrain anyway (no matter the fix).
+* ✔ The roar's backing away (node 0x02D852E0) takes it out of the mound on the host within 3-5 s (moved 5-7 m); it
+  was the nest's resting place, not the back-off, that put it inside. The report's "after backing away" is consistent
+  with an NPC coming back to rest at its nest.
+* Fix `npc.proxy_mound` (npc.cpp): a proxy (not in the air, not dead) whose target or drawn place is 0.1-2.5 m under
+  this game's surface where that surface is over the plain terrain is put 5 cm under the surface (the game sets it
+  onto it). Counters `mound_lifts` / `mound_targets` in `coop.npc`.
+
+## The evolution bar follows AddEvolutionPoints, also its negative deltas (2026-11-06, fix/w45-intake)
+<a id="creature-evolution-bar"></a>
+
+BUG-0630. GOG 2024 (dc04aee5), objdump of the exe.
+* ✔ `cCreatureGameData::AddEvolutionPoints` 0xD2E8A0, cdecl(float delta): delta == 0 returns; else the DNA
+  [0x169E398] = min(DNA + delta, [0x1582E54] = 9999.0) (no lower clamp), then **cPlayer +0x10F0 += delta** with no
+  sign check (cPlayer from 0xB3D400 -> 0xF67D40), then (game mode != 0x1654C10) the HUD message 0x45AB96E with the
+  delta. So a negative delta lowers the stage's evolution bar (mCurrentGoalProgress, #creations-cplayer-fields), which
+  the brain-level / migration thresholds read.
+* ✔ `SetEvolutionPoints` 0xD2E480 writes [0x169E398] only. The game's own spends (the editor's result 0xD445AA) use
+  it: in a game of one a spend never lowers the bar.
+* ✔ (player logs 2026-11-06, 0.7.8) the co-op DNA sync (`game::dna_add_raw` = the original AddEvolutionPoints) applies
+  the partner's spends as negative deltas: each editor spend lowered the other player's bar by the amount (guest -50
+  after the host's editor, guest -444 and host -309 after both editors). The brain level [0x169E370] does not go down.

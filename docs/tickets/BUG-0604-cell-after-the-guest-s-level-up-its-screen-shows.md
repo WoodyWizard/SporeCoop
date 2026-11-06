@@ -58,3 +58,4 @@ cell_view_nan PASS again in the regression run lab 20261106-015141 (with play_ce
 ## History
 - 2026-11-05: opened.
 - 2026-11-06 (fix/w45-cell): root cause (the NaN camera after a NaN velocity), fix cell.camera_heal, test cell_view_nan.
+- 2026-11-06: Discord report 2026-11-06 (0.7.8, discord-2026-11-06/M0ng0r-02, -03): "after growing, bigger cells near the guest disappear and new ones spawn"; the logs show no NaN and cells on the guest's screen after its level-up (not this ticket's symptom): new ticket BUG-0635.

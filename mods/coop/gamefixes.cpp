@@ -539,8 +539,12 @@ static void forget_sender(void* dying)
     }
 }
 
+static DestroyListener g_destroy_listener; // BUG-0623 (civ.cpp, BUG-0539)
+void set_destroy_listener(DestroyListener fn) { g_destroy_listener = fn; }
 static void __fastcall destroy_guard(void* nm, void*, void* obj)
 {
+    if (g_destroy_listener && obj)
+        g_destroy_listener(obj, (uintptr_t)__builtin_return_address(0));
     if (g_stale_sender_fix && obj && readable(obj, 0x30)) {
         uint32_t noun = game::noun_id(obj);
         if (noun == kAnimalNoun || noun == kCitizenNoun)

@@ -21,10 +21,11 @@ their own agent from the start instead of the end of a package.
 
 | Package | Mechanism | Tickets |
 |---|---|---|
-| **P4 Creature** | A guest's avatar found ~14 m from where it joined, the guest's camera in space after the join, the host's creations on the guest, the previous creature version after the host's editor, the DNA budget message of a held editor request, the guest's editor showing the host's new parts | BUG-0333, 0607, 0200, 0457, 0581, 0283 |
+| **P0 Discord 2026-11-06** (first, wave 1) | The player reports of 2026-11-06 (0.7.8, two players Cell to Civ), by importance: the evolution bar lowered by a partner's editor spend (players: important), the guest's own creature from another world after the host's Cell -> Creature, the migration that never reaches the guest, the host's Civ crash with the address space full, then the Cell double events (a kill applied twice, a meal eaten twice), the Cell level-up churn, the part token, the attackable evolving nest, the Tribe roster portraits, village colours, member cap, dance music, the guest's Civ attacks, the host's name tag | BUG-0630, 0638, 0640, 0631, 0632, 0636, 0635, 0633, 0639, 0634, 0637, 0643, 0644, 0645, 0646, 0648, 0649 |
+| **P4 Creature** | A guest's avatar found ~14 m from where it joined, the host's creations on the guest, the previous creature version after the host's editor, the DNA budget message of a held editor request, the guest's editor showing the host's new parts, a chat line lost in play_creature | BUG-0333, 0629, 0200, 0457, 0581, 0283 |
 | **V2 Civ and Space** | A guest's vehicle gift lost, vehicles of owner 0 after the chunk budget drop, the Space sync mismatch during a rescue, the zoom after a load, the ships' p90 near its limit | BUG-0325, 0206, 0547, 0182, 0190 |
 | **K2a Classes: state** | State sent but not applied, hits and world state without a relation / world filter, per-player state under a reused id, credits and effects dropped or undone; a relayed effect at the sender's ground height | classes BUG-0419, 0420, 0422, 0423; BUG-0608 |
-| **K2b Classes: content and limits** | Content the other game lacks, game rules copied by hand, mod input read globally, requests the mod builds incompletely, fixed-size game pools overrun, avatar-only rules a guest misses | classes BUG-0424, 0428, 0429, 0431, 0432, 0418 |
+| **K2b Classes: content and limits** | Content the other game lacks, game rules copied by hand, mod input read globally, requests the mod builds incompletely, fixed-size game pools overrun, avatar-only rules a guest misses | classes BUG-0424, 0428, 0429, 0431, 0432, 0418; children BUG-0641, 0642 (of 0418), BUG-0647 (of 0424) |
 | **N1 Not reproduced, crashes and freezes** (dedicated) | One more serious attempt each on the current build (targeted tests, 4 players where the report had them, low fps / bad net): fix, or close with the runs as evidence | BUG-0026, 0118, 0167, 0170, 0171, 0172, 0184, 0578 |
 | **N2 Not reproduced, desyncs and bugs** | As N1 | BUG-0011, 0013, 0178, 0221, 0237, 0282, 0328, 0402, 0359 (if 0.7.9 leaves it) |
 | **E1 Features without Rivals** | The Cell -> Creature switch vote, the host's editor opening at once after the evolution vote | BUG-0315, 0516 |
@@ -35,7 +36,7 @@ what is left becomes a concrete ticket in the same package.
 
 ## Order
 
-1. Step 0, then wave 1 of 4 agents: P4, V2, K2a, N1 (lane pairs 4/5, 6/7, 9/10, 2/3 as they free up; lane 3 stays the
+1. Step 0, then wave 1 of 5 agents: P0 (BUG-0630 first; BUG-0631 may need its own agent for the address-space drain), P4, V2, K2a, N1 (lane pairs 4/5, 6/7, 9/10, 2/3 as they free up; lane 3 stays the
    orchestrator's integration lane when an agent does not need it).
 2. Wave 2: K2b, N2, E1, G4 as lanes free up; after each report, unreached tickets go to a dedicated agent at once.
 3. Integration run on rel/0.7.10 after every two merges.

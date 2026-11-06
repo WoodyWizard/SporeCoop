@@ -47,3 +47,4 @@ another species; the herd's extinct bits in the guest's game.
 - 2026-11-03: fix/w40-world-objects: fixed (worldobj.cpp / nest.cpp).
 - 2026-11-03: seen again in a player report 2026-11-03 (0.7.3.6, host mark 'map desynced on extinct nests (dead nests)', report 20261103-192547), fixed in 0.7.4 (unreleased).
 - 2026-11-03: released in 0.7.4.
+- 2026-11-06: Discord report 2026-11-06 (0.7.8, discord-2026-11-06/M0ng0r-05, Sterben-04): "for the host the nest is evolving, the guest can attack them" / "desynced nest": not this ticket's symptom in the logs: BUG-0639 (attack) and BUG-0640 (the migrated nest).

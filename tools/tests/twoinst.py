@@ -1,6 +1,7 @@
 """Shared setup for two-instance tests: host = instance 1 (profile test) with a fixture save,
 guest = instance 2 (empty profile) that joins from the menu and receives the host world."""
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -411,19 +412,41 @@ def fix_off_ok(name, answer):
     return answer.startswith(f'{name} off ')
 
 
-def _start(fixture='creature', planet=None, load_args=(), join_in_intro=False, guest_creations=True):
+def _menu_up_time(inst):
+    """time.time() of the last `stage: ... -> Galaxy menu` line in the game's log (the moment the mod saw the menu
+    come up; game.mode answers GalaxyGameEntry up to ~12 s later on a cold start), or None"""
+    import datetime
+    try:
+        with open(lane.game_log(inst), errors='replace') as f:
+            lines = [ln for ln in f if '-> Galaxy menu' in ln]
+    except OSError:
+        return None
+    m = re.match(r'(\d\d):(\d\d):(\d\d)\.(\d+)', lines[-1]) if lines else None
+    if not m:
+        return None
+    now = datetime.datetime.now()
+    t = now.replace(hour=int(m.group(1)), minute=int(m.group(2)), second=int(m.group(3)),
+                    microsecond=int(m.group(4).ljust(6, '0')[:6]))
+    if t > now + datetime.timedelta(minutes=1):
+        t -= datetime.timedelta(days=1)
+    return t.timestamp()
+
+
+def _start(fixture='creature', planet=None, load_args=(), join_in_intro=False, guest_creations=True, join_at=None):
     """kill, deploy, restore the fixture for the host, empty guest profile, start both,
     load the host game (tools/tests/load_game.py), host + join; returns (host, guest).
     With SPORE_WARM=1 (tools/lab.py) the running games of the lane are reused when they run the
     same build: warm_reset() instead of a restart (~10 s instead of ~40 s).
     join_in_intro: the guest joins while its galaxy menu plays the intro cinematic GGE_Intro (cold
-    start only; the race behind the stuck guest movie, docs/re/space.md 7.9)."""
+    start only; the race behind the stuck guest movie, docs/re/space.md 7.9).
+    join_at: the guest joins this many seconds after its galaxy menu came up (polled every 0.25 s; cold
+    start only), so that its load comes at a chosen moment of the menu's intro timer (BUG-0607)."""
     if planet is None and not load_args:
         planet = fixtures.planet_of(fixture)  # loaded by name (no menu clicks, warm-capable)
     st = lane_state()
     # warm only within the same save: a test starts from its fixture (stage switches in game work,
     # coop_stage_switch.py, but go through the galaxy menu and take longer)
-    if os.environ.get('SPORE_WARM') == '1' and planet and not join_in_intro and st.get('build') == build_id() \
+    if os.environ.get('SPORE_WARM') == '1' and planet and not join_in_intro and join_at is None and st.get('build') == build_id() \
             and st.get('fixture') == fixture and st.get('guest_creations', True) == guest_creations \
             and not st.get('fix_off') and not st.get('fps') and not PRESET_CHOICES \
             and alive(lane.HOST) and alive(lane.GUEST):
@@ -501,12 +524,25 @@ def _start(fixture='creature', planet=None, load_args=(), join_in_intro=False, g
             lane.run_guest()
             assert wait_up(lane.GUEST), f'instance {lane.GUEST} did not start'
         guest = Console(lane.GUEST)
-    for _ in range(120):
-        if 'GalaxyGameEntry' in guest.call('game.mode')['out']:
+    for _ in range(120 * (4 if join_at is not None else 1)):
+        if join_at is not None:  # the log's line comes when the menu does; game.mode answers up to ~12 s later
+            if (_menu_up_time(lane.GUEST) or 0) > t_start:  # this start's line, not an older session's
+                break
+        elif 'GalaxyGameEntry' in guest.call('game.mode')['out']:
             break
-        time.sleep(1)
+        time.sleep(1 if join_at is None else 0.25)
+    t_menu = time.time()
     phases.append(('guest menu', time.time() - t_start))
-    guest.call('wait.frames 200 60000')
+    if join_at is not None:
+        # SPORE_FIX_OFF before the join too: a fix of the join itself is off when it is needed
+        for name in (n.strip() for n in os.environ.get('SPORE_FIX_OFF', '').split(',')):
+            if name and not name.startswith('kit.'):
+                print('  SPORE_FIX_OFF (guest, before the join): ' + guest.call(f'coop.fix {name} off')['out'].strip(),
+                      flush=True)
+        t_menu = _menu_up_time(lane.GUEST) or t_menu
+        time.sleep(max(0.0, t_menu + join_at - time.time()))
+    else:
+        guest.call('wait.frames 200 60000')
     if join_in_intro:  # the intro starts ~16 s after the menu came up and runs ~10 s
         for _ in range(120):
             if '(menu intro)' in guest.call('coop.status')['out']:

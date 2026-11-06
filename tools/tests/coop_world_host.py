@@ -149,6 +149,58 @@ def bundle(host, guest, ck):
         ck(gone, 'the food the guest\'s member took is gone from the host\'s ground')
 
 
+def bundle_carry(host, guest, ck):
+    """BUG-0617: food a host's member carries while it walks (its copy on the guest's screen is drawn 1-3.5 m behind):
+    when the host's member no longer carries it (put down / delivered: `coop.wobj bundle take` on the host), the guest's
+    copy of the member carries none either within 6 s (an unbound copy was kept for good)"""
+    import re
+    ids = {}
+    for line in host.call('coop.tribe')['out'].splitlines():
+        m = re.match(r'\s+#(\d+) ([0-9A-Fa-f]{8}) owner=', line)
+        if m:
+            ids[m.group(2).upper()] = int(m.group(1))
+    rows = re.findall(r'([0-9A-F]{8}) alive=1 pos=\((\S+) (\S+) (\S+)\) dist=(\S+)', host.call('coop.tribe objs 18EB4B7')['out'])
+    rows = [r for r in rows if float(r[4]) < 60 and r[0] in ids]
+    tried, left, unbound = 0, [], 0
+    for p, x, y, z, d in rows[:12]:
+        if tried >= 3:
+            break
+        out = host.call(f'coop.wobj bundle carry {p} 5')['out'].strip()
+        if out.startswith('bundle 0') or 'bundle 00000000' in out:
+            continue
+        tried += 1
+        bp = re.search(r'bundle ([0-9A-F]{8})', out).group(1)
+        mp = (float(x), float(y), float(z))
+        # away from the village: 40 m on the line from the host's player through the member
+        me = re.search(r'me pos=\((\S+) (\S+) (\S+)\)', host.call('coop.census all 1')['out'])
+        hp = tuple(float(v) for v in me.groups()) if me else (0.0, 0.0, 0.0)
+        v = [a_ - b_ for a_, b_ in zip(mp, hp)]
+        n = sum(q * q for q in v) ** 0.5 or 1.0
+        goal = tuple(a_ + q / n * 40 for a_, q in zip(mp, v))
+        print(f'  host: member #{ids[p]} carries food ({out}); '
+              + host.call('coop.tribe order %d 4 %.2f %.2f %.2f' % ((ids[p],) + goal))['out'].strip(), flush=True)
+        time.sleep(4)
+        hb = [b for b in bundles(host, 300) if b['cls'] & 0x100 and b['p'] == bp]
+        if not hb:
+            print('    (the host\'s member put it down already)', flush=True)
+            continue
+        gb = [b for b in bundles(guest, 30, hb[0]['pos']) if b['cls'] & 0x100]
+        unbound += sum(1 for b in gb if not b['bound'])
+        print(f'    walking: host bundle at {hb[0]["pos"]}; guest carried copies {[(round(math.dist(b["pos"], hb[0]["pos"]), 1), b["bound"]) for b in gb]}', flush=True)
+        print('    host: ' + host.call(f'coop.wobj bundle take {bp}')['out'].strip() + ' (the host\'s member put it down)', flush=True)
+        at = hb[0]['pos']
+        time.sleep(6)
+        hc = [b for b in bundles(host, 60, at) if b['cls'] & 0x100]
+        gc = [b for b in bundles(guest, 60, at) if b['cls'] & 0x100]
+        extra = [b for b in gc if not any(math.dist(b['pos'], h['pos']) < 8 for h in hc)]
+        print(f'    6 s later within 60 m: host carried {len(hc)}, guest carried {len(gc)}, guest without a host one '
+              f'within 8 m: {[(b["pos"], b["p"]) for b in extra]}', flush=True)
+        left += extra
+    print(f'  guest copies unbound while walking: {unbound}', flush=True)
+    ck(tried > 0, f'members of the host\'s tribe carried food ({tried})')
+    ck(not left, f'no member carries food on the guest\'s screen that the host\'s member put down ({len(left)} left)')
+
+
 def bundle_civ(host, guest, ck):
     import re
     from play_civ import civ_state
@@ -291,12 +343,12 @@ def ornament(host, guest, ck, rounds=3):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--case', choices=('fruit', 'bundle', 'bundle_civ', 'cultural', 'ornament'), required=True)
+    ap.add_argument('--case', choices=('fruit', 'bundle', 'bundle_carry', 'bundle_civ', 'cultural', 'ornament'), required=True)
     a = ap.parse_args()
-    host, guest = start({'fruit': 'creature', 'bundle': 'tribe', 'bundle_civ': 'civ_npc', 'cultural': 'civ_npc', 'ornament': 'space'}[a.case])
+    host, guest = start({'fruit': 'creature', 'bundle': 'tribe', 'bundle_carry': 'tribe', 'bundle_civ': 'civ_npc', 'cultural': 'civ_npc', 'ornament': 'space'}[a.case])
     ck = Checks()
     time.sleep(6)  # the first snapshots
-    {'fruit': fruit, 'bundle': bundle, 'bundle_civ': bundle_civ, 'cultural': cultural, 'ornament': ornament}[a.case](host, guest, ck)
+    {'fruit': fruit, 'bundle': bundle, 'bundle_carry': bundle_carry, 'bundle_civ': bundle_civ, 'cultural': cultural, 'ornament': ornament}[a.case](host, guest, ck)
     print('  guest:', guest.call('coop.wobj')['out'].strip().replace('\n', ' | '), flush=True)
     print('  host:', host.call('coop.wobj')['out'].strip().replace('\n', ' | '), flush=True)
     ck.faults(host=host, guest=guest)

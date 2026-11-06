@@ -33,6 +33,7 @@ def named(sig):
 KNOWN = {  # <stage>:<what>:<kind> (or <stage>:*:<kind>, <*>:*:<kind>) -> the ticket that covers it
     'Creature:scale:creature': 'BUG-0461',
     '*:*:fruit': 'BUG-0497',  # (BUG-0472 fixed in 0.7.4: the rest were the host's places, BUG-0497)
+    '*:*:game_bundle_carried': 'BUG-0617', '*:*:game_bundle_held': 'BUG-0617',
     'Tribe:*:game_bundle': 'BUG-0548',  # (BUG-0472's Tribe bundles: the host's ground and carried food, BUG-0548)
     'Creature:*:game_plant': 'BUG-0473',
     'Creature:*:rock': 'BUG-0473',

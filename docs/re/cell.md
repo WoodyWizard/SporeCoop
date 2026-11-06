@@ -1641,3 +1641,102 @@ BUG-0604, BUG-0307, BUG-0606, BUG-0316. GOG 2024, Ghidra (`tools/ghidra/q.sh --b
   neither game (the host's own touch of the same token failed too); not the token's level (`coop.pool tokens`
   prints it; the food-progress level and the one under both failed), not its graphics object. Candidates not
   checked: the avatar's +0x178 / +0x17F or the token's +0x17B (0xE7B630's conditions).
+
+## The collision contact of two cells on one centre (2026-11-06, fix/w45-cell-nan)
+<a id="cell-contact-nan"></a>
+
+BUG-0307 (the first NaN of the own cell). GOG 2024, Ghidra (`tools/ghidra/q.sh --build 2024`) and
+`tools/tests/coop_cell_contact_nan.py` (suite `cell_contact_nan`), lane 4.
+
+* ✔ (Ghidra) Collisions 0xE7F260 does more after its pair loop: `Simulator::Cell::ContactSolvePass` 0xE654D0 runs 10
+  rounds of `Simulator::Cell::ContactSolve` 0xE58C90 over the contact pool (a contact of this frame, +0x3C ==
+  G+0x5160, is solved, an older one deleted). A contact: +4 / +8 the two cells' handles (the solver uses the heads
+  of their +0x36C chains, 0xE58C50), +0x0C point, +0x18 normal, +0x24 -depth, +0x28 accumulated impulse, +0x30 /
+  +0x34 effective mass `1 / (invA + invB)` (+0xBC), +0x38 target. One round: `x = (target - (vB - vA).n) * mass +
+  accum`, `accum' = max(x, 0)`, impulse `(accum' - accum) * n` through `Simulator::Cell::ApplyImpulse` 0xE560D0:
+  velocity +0x90 and, with a soft body, **every particle's velocity** += impulse * +0xBC; positions untouched. This is
+  the only game code between the own cell's last pair and our guest tick that writes +0x90 and the particle
+  velocities but not the positions: the mask 0x104, "at guest tick, finite at collision" of lab 20261105-142923
+  (the previous section's "after the collisions" was after the pair loop, before this solver).
+* ✔ (Ghidra) The contacts come from `Simulator::Cell::AddContact` 0xE66F30 (from 0xE67100, the executor 0xE7E7F0 of
+  HandleCollisionPair) with the normal, point and depth of the sphere tests that 0xE73DD0 picks by whether each cell
+  has a graphics object and a model (+0x248, +0xFC): 0xE6AD80 (both: their model spheres), 0xE73620 / 0xE738F0
+  (one), 0xE73BB0 (neither: one sphere each). All four skip the normal when two sphere centres are closer than
+  0.004 (squared distance under 1.5e-5; the depth becomes r1 + r2): 0xE73BB0 passes the first cell's centre
+  coordinates as the "normal", the other three pass whatever their stack slot held (the last normal of an earlier
+  call at the same depth, or other locals such as a contact point).
+* ✔ (runtime, host, `coop.pool stack2 12 <n>`: n cells without a soft body, 30 m from the own cell and 50+ m from
+  the origin, put on one centre at the start of 12 cell steps) the contact normal was (-70.16 -96.02 0), i.e. minus
+  the cell's centre; the solver's rounds overshoot by ~|n|^2 each: 2 cells flew off at 884 m/s, 4 cells reached
+  1e37 and inf (velocity mask 0x4) within one frame, positions finite (lab 20261106-111709, `cell.contact_finite`
+  off). With the fix: 1.0 and 2.4 m/s, finite (lab 20261106-111835).
+* ✔ (runtime) The own cell's first model sphere put exactly on another cell's (`coop.pool stack 20`, both with a
+  soft body, the soft-soft test 0xE6AD80) gave a unit normal (-0.93 0.37 0): the stack slot held the previous
+  call's normal, harmless; no NaN in that run.
+* ~ inferred, not reproduced on the own cell: the guest's 17 frames of mask 0x104 were such a contact of the own cell
+  with a sphere on one of its own, whose stack-slot normal held coordinates (~150 long at (74 141)). It repeated
+  while BUG-0307's heal put the own cell back on the same "last finite position" each frame, next to the same
+  cell. The graphics pool was full in that second (BUG-0355's line 12 ms later), so cells near the guest had no
+  graphics object: they take 0xE73620 / 0xE738F0 against the own cell, the paths with the stale slot.
+* ✔ 40 level changes on two games (`coop_cell_levelups.py`, food +-50 with both cells swimming, lab
+  20261106-110109, fix off): no non-finite contact and no own-cell probe line on either game. The level change
+  itself does not make the NaN.
+* CORRECTION (2026-11-06, fix/w45-cell-nan): the previous section and BUG-0307 placed the first NaN "at the
+  guest's level-up". ~ The log says otherwise: the NaN frames were at s 93.36-93.59 with food 96 and size 0.824;
+  the level change came with food 102 (s 95.06; the level table's step is 100) and the size 0.48 by s 100.
+* Fix `cell.contact_finite` (cellsync.cpp `h_ContactSolve`): before a contact is solved its normal is made a unit
+  vector (the unset one keeps its direction, a zero or non-finite one becomes +x), and a contact whose impulse is
+  still not finite is not applied. `coop.pool` prints `contacts_unit=` (normals made unit), `contacts_bad=` /
+  `contacts_bad_own=` (impulses not finite) and `contact_solves=`; the first 30 bad contacts are logged with both
+  cells. Probes `before the contact solver` / `contact solver` added to own_probe.
+## The "stale" mirrors were cells the host's game culls a second after making them (2026-11-06, fix/w45-leftovers)
+<a id="cell-short-lived"></a>
+
+BUG-0480. GOG 2024, lane 7, `coop_cell_gone.py --case play` (cold starts), Ghidra (`tools/ghidra/q.sh --build 2024`).
+* ✔ (runtime) Reproduced the old failure with the old oracle (a guest mirror of a host index in neither of two host
+  dumps 2.5 s apart): 29-141 at once in 3 of 8 runs, always one round (round 3 or 7: the same places, e.g. 30-45 m
+  north of both players at (93-124 129-152), level 1, or level 0 at (88-136 75-84)) (out/lab/20261106-111736 #2,
+  20261106-113202 #2 #4; the rel/0.7.9 code the same, its lab 20261106-110218 #2).
+* ✔ (runtime) The host names each sent index's history now (`coop.pool cell <key>` on the host: "last sent X s ago,
+  first Y s ago, N sends; its slot holds ..."): every such cell had been sent 0.12-0.28 s before the question, for
+  0.9-1.7 s in all (8 sends), and its pool slot was free again (a free-list link in the header). So the host's
+  game had them for about a second between its two dumps, and the guest's mirror was one or two rounds (0.1-0.2 s)
+  behind, as designed. Nothing stale.
+* ✔ (runtime) Who destroyed them: DestroyCell's caller for host cells destroyed < 2 s after their first send was
+  **0xE7C3E6 only** (470-471 per run), in CellPhysicsStep 0xE7C080 (Ghidra): after the step, `ShouldCullCell`
+  0xE5F8C0 and the keep-alive byte +0x354 == 0 -> DestroyCell(idx, 0, dt, 0). ShouldCullCell: never for level -1;
+  a cell more than one level under the food-progress level only fades; else true when its parent tile +0x36C is
+  deleted and IsTileActive 0xE5F810 (our h_TileActive, with every player's box) refuses the tile of its position.
+  So the tile they were made for went (the view moved: the test teleports both cells 20 m a round) and their own
+  tile was outside every box: the game's own streaming at the edge of the gameplay range (twice the visible box),
+  in single player too. Not changed.
+* ✔ (runtime) With the oracle on the host's last send (stale = it stopped sending the index >= 1 s before the
+  guest's dump) the same events read "143 / 28 mirrors in neither host dump: 0 stale, sent up to 0.06 / 0.16 s
+  before the guest's dump" (out/lab/20261106-115611 4 of 4 PASS; 20261106-114009 3 of 3, cell_gone and
+  cell_gone_probe 3 of 3: the probe still sees stale mirrors while the state is held).
+* ✔ (runtime) The other half of the ticket, host cells near the guest without a mirror: 0 within 25 m in 150
+  rounds (15 runs; a host cell counts only when it is in both host dumps). The detector's Cell compare had 0
+  findings in 27 comparisons of play_cell (out/lab/20261106-114009-2).
+* ~ The detector's bracket (host dumps 1.5 s apart) can still count a cell living ~1 s between them as
+  `guest_only:cell`; not seen in these runs.
+
+## The Cell mode entry's effect preload faulting in a fresh game (2026-11-06, fix/w45-int3)
+<a id="cell-preload-fault"></a>
+
+* ✔ (disassembly, GOG 2024) The fault of BUG-0622 (`0x00E67643`, named "InstanceEffectOnCell+0xE03" by the nearest
+  symbol) is in a small function at **0xE67610** cdecl(uint32 key): `Simulator::Cell::GetData(key, &handle)`
+  (0xE4CBF0, a jump to 0xE823A0) returns a list `{int count; T* items; items inline from +8}`, stride 0x1C; for each
+  item it calls `cCellGFX::AddPreloadedEffect(item.+0, 0)` (0xE66280); then the handle is released. The Cell mode's
+  init (the code before cCellModeStrategy::Initialize 0xE81CF0) calls it twice, with `GetGlobalsData()` (0xE4CE20)
+  `+0x3C` and `+0x40`; the fault came from the second (return 0xE81AFC).
+* ✔ The registers of the fault: esi (the list) 0x1198FEC8, edx (items) = esi + 8, edi (index) 11, ebx 11 x 0x1C,
+  the read at 0x11990004 = the first byte past a page: the count said more than 11 items, the block ended at the page
+  end. ~ Inferred: the list block was freed (or never filled) while the count still read high: a stale or torn
+  resource, in a process 12 s old, on its first Cell load, under a load that made the games need 512 s to start.
+  The following 38168 faults (the game's own handler went on, the Cell world never came: "pool block 00000000
+  unmapped while the mode reads Cell") follow from it.
+* ✔ No co-op session existed yet (it started 4 minutes later), no co-op or SporeKit hook is in the call chain
+  (0xE81AFC < 0xE81CBF < 0x8856A0 < 0x75DB01 < 0xEF2250 ...), and the 0.7.9 changes of SporeKit (the int3 gate of
+  hooks made after boot) act only on a hook made after the first frame: none was made before the fault (the input
+  hooks come with the first injected key, the Cell model hooks of modes.cpp ensure_model_hook with the first mirror
+  or puppet cell, both in a session). Not reproduced in 13 cold loads: see BUG-0622.
