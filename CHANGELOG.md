@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### Fixed
+- Creature: when the partner stops, its creature on your screen stops where the partner stopped instead of sliding
+  on half a metre or more (BUG-0408).
 - Creature: the partner standing on a nest mound no longer drops to the ground for a frame each time it comes into
   your view when you turn the camera (BUG-0434).
 - Tribe: in the first minute after a player joins, a chief walking past (or stopping next to) another player's chief
