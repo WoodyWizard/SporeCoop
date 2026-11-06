@@ -2008,7 +2008,7 @@ static void mirror_target(GMember& g, double now, net::Vec3& pos, net::Quat& rot
             g.jittery = g.buf.jittery();
             static unsigned said = 0;
             if (said++ < 12)
-                H->log(M, SK_INFO, "tribe: mirror #%u lead %s (arrival jitter %.0f ms, BUG-0619)", g.id,
+                H->log(M, SK_INFO, "tribe: mirror #%u lead %s (typical lead %.0f ms, BUG-0619)", g.id,
                        g.jittery ? "off" : "on", g.buf.jitter() * 1000.0);
         }
         if (g.buf.smooth_velocity(vel)) {

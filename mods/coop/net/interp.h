@@ -130,8 +130,8 @@ constexpr double kSmoothTau = 0.12; // s: e^-1 of a lead jump left after this
 constexpr float kSmoothRate = 3.f;  // m/s on top of kSmoothK x the body's speed
 constexpr float kSmoothK = 1.f;
 constexpr size_t kJitterN = 64;      // states (3-6 s)
-constexpr double kJitterHigh = 0.05; // s: no lead over this arrival jitter (netem mobile +-60 ms; player +-15 ms)
-constexpr double kJitterLow = 0.04;
+constexpr double kJitterHigh = 0.15; // s: no lead when it would extrapolate further than this (typically)
+constexpr double kJitterLow = 0.12;
 constexpr double kSmoothVelTau = 0.1; // s
 
 class SnapshotBuffer {
@@ -187,11 +187,13 @@ public:
         }
         clock_.add(local_now - st, local_now);
         offset_ = clock_.value();
-        // BUG-0619: the arrival jitter: the median of how late the last kJitterN states arrived past the earliest
-        // one (the clock offset is the minimum of local - sender time). The median, not the mean: the player
-        // network's latency spikes (+250 ms for 0.7 s every 7 s) put the mean as high as the mobile network's
+        // BUG-0619: how far the lead extrapolates: the median over the last kJitterN states of how late each arrived
+        // past the earliest one (the clock offset is the minimum of local - sender time) plus the one-way latency.
+        // The median: the player network's latency spikes (+250 ms for 0.7 s every 7 s) stay out of it. Observed
+        // (lab 20261106-164638 and before): mobile (120 ms, +-60 ms) 0.2-0.3 s, a local link at the lab's frame
+        // rates 0.04-0.06 s; the arrival lateness alone did not part them (local 39-51 ms, mobile 51-62 ms)
         {
-            devs_[dev_n_++ % kJitterN] = (float)std::max(0.0, (local_now - st) - offset_);
+            devs_[dev_n_++ % kJitterN] = (float)(std::max(0.0, (local_now - st) - offset_) + g_one_way);
             if (dev_n_ >= 16) {
                 size_t n = std::min<size_t>(dev_n_, kJitterN);
                 std::array<float, kJitterN> d = devs_;
