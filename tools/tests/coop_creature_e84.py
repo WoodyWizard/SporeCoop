@@ -14,12 +14,17 @@ killed them"; the host crashed 3 times at 0xD48634, CreatureStageEventHandler re
 4. The removal on again (as in normal play): the creature is gone within seconds.
 5. The guest joins: its puppet gets a herd of its species, reused after a rejoin (a new herd per
    spawn stayed in the world and in every save).
+BUG-0385 (step 2): such a creature is no NPC of the host's world (`coop.npc list`): the host gave it an id
+and sent it to the guests in the frames before its removal (SPORE_FIX_OFF=npc.stray_ids fails).
 
   SPORE_LANE=2 python3 tools/tests/coop_creature_e84.py
 """
+import os
 import re
 import time
 
+import campaign_lib
+import census
 import lane
 import twoinst
 from twoinst import Checks, Console, lane_state, sh, start, wait_guest_in, wait_up
@@ -114,7 +119,10 @@ def main():
     ck('saved' in out, f'the host saved with the puppet in the world ({slot}/{planet}: {out.strip()})')
 
     # 2. after a restart the host loads that save alone, the removal switched off
-    host, guest = restart_and_load(slot, planet, before_load=['coop.npc strays off'])
+    # the restart brings every switch back on: a twin run's SPORE_FIX_OFF goes off again (BUG-0385)
+    off = [f'coop.fix {n.strip()} off' for n in os.environ.get('SPORE_FIX_OFF', '').split(',')
+           if n.strip() and not n.strip().startswith('kit.')]
+    host, guest = restart_and_load(slot, planet, before_load=['coop.npc strays off'] + off)
     ours, other, lines = untuned(host)
     for l in lines:
         print('   ', l.strip())
@@ -122,12 +130,21 @@ def main():
     host.call(lane.HOST_CMD)
     time.sleep(3)
     ptr = lines[0].split()[1] if lines else None
-    nid, survived = None, False
-    for l in host.call('coop.npc list')['out'].splitlines():
-        m = re.match(r'\s*#(\d+) ([0-9A-F]+) ', l)
-        if m and ptr and m.group(2) == ptr:
-            nid = m.group(1)
-    ck(nid is not None, f'the host simulates it as an NPC (#{nid})')
+
+    def npc_id():
+        for l in host.call('coop.npc list')['out'].splitlines():
+            m = re.match(r'\s*#(\d+) ([0-9A-F]+) ', l)
+            if m and ptr and m.group(2) == ptr:
+                return m.group(1)
+        return None
+    # BUG-0385: the host never makes it an NPC it would send to the guests (they cannot spawn its species:
+    # "n missing on the guest"); SPORE_FIX_OFF=npc.stray_ids fails here
+    nid = npc_id()
+    ck(nid is None, f'[BUG-0385] the host does not track it as an NPC of its world (#{nid})')
+    host.call('coop.fix npc.stray_ids off')  # the attack below needs it as an NPC (0.7.8 tracked it)
+    time.sleep(2)
+    nid, survived = npc_id(), False
+    ck(nid is not None, f'the host simulates it as an NPC (#{nid}, npc.stray_ids off)')
 
     # 3. the host attacks it: the game's attack message reaches CreatureStageEventHandler
     if nid:
@@ -144,6 +161,7 @@ def main():
 
     # 4. normal play: such creatures are removed
     host.call('coop.npc strays on')
+    host.call('coop.fix npc.stray_ids on')
     time.sleep(3)
     ours, other, _ = untuned(host)
     rm = re.search(r'strays_removed=(\d+)', host.call('coop.npc')['out'])
@@ -161,6 +179,18 @@ def main():
     guest.call(lane.JOIN)
     wait_guest_in(host, guest, 120)
     wait_puppet(host)
+    # BUG-0412: the leave above handed the guest's proxies over to its own game; back in the session they go
+    # again and the host's NPCs come as proxies (census of both games, within 10 s)
+    t0, bad, own = time.time(), None, None
+    while time.time() - t0 < 10:
+        hc, gc = census.dump(host), census.dump(guest)
+        own = gc.count('c', ('local',))
+        bad = campaign_lib.census_problems(hc, gc)
+        if not own and not bad:
+            break
+        time.sleep(1)
+    ck(not own and not bad, f'after the rejoin the guest shows the host\'s NPCs, none of its own game '
+       f'({time.time() - t0:.0f} s: {own} own, {bad[:3] if bad else bad})')
     h2 = archless_herds(host)
     # the herd the save brought back is of the species the game gave the unknown creature after the
     # restart (the guest's creation is registered only when it joins): the first spawn may add one

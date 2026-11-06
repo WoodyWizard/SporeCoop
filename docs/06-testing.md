@@ -4409,3 +4409,19 @@ G2 of 0.7.8 (BUG-0430 class). For each: which kind of fault it was and the evide
   two audits (0.25 s) in the last 3 s. A host snap shows as a large step (several m) just before; the lines of G2
   (lab 20261105-135000 play_tribe#2) had none (0.6-1.5 m per 0.25 s at 2.5-5.5 m/s): proxies falling behind a moving
   host NPC, a real desync. The gate and its window stay.
+
+## NPCs while the host's game stands still, a guest's leave and rejoin (2026-11-06, fix/w45-one-game-objects)
+<a id="testing-npc-gaps"></a>
+
+* `coop_npc_frozen.py --case death` (`npc_frozen_death`, creature fixture, ~1 min warm): the guest goes to a nest
+  150-260 m from the host (`coop.census all 3000`, noun 0x52AA6122, then `coop.npc gopos`: a point in the sea brings
+  the sea monster, which killed the guest and respawned it next to the host in a first try), the host dies and keeps
+  its death caption open (`frozen_s` of `coop.npc` > 2 s, ~8 s after the hit), the guest comes back next to the host:
+  within 8 s every living host NPC within 50 m of the guest must be a proxy in its game (census of both).
+  `SPORE_FIX_OFF=npc.frozen_send` fails (out/lab/20261106-014526).
+* `coop_npc_frozen.py --case caption` (`npc_frozen_caption`): `coop.dna add 3000`, the brain upgrade caption up for
+  14 s, the guest keeps the host's NPCs near it. A regression check (it passes without the fix: the loss of BUG-0413's
+  transition_net run did not happen on the fixture).
+* `join_during_host_editor` now checks the guest's planet while the host edits: its own creatures (census `local`,
+  alive, AI on) within 70 m, at least 60 % of the proxies it showed before its leave; `SPORE_FIX_OFF=npc.leave_locals`
+  fails (1 of 11, out/lab/20261106-015905). Their movement is printed, not checked (they idle at their nests).

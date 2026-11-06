@@ -5478,6 +5478,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         return it != g_remotes.end() && !it->second.buf.empty() && same_place(it->second.buf.latest());
     };
     ctx.stage_center = [](net::Vec3& p) { return tribe::center(p); };
+    ctx.host_here = [] { return host_here(); }; // BUG-0412
     npc::init(H, M, ctx);
     { // BUG-0373 / BUG-0374 / BUG-0375: creature health between players
         creature_hp::Ctx hc;

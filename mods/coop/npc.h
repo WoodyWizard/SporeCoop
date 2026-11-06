@@ -31,6 +31,8 @@ struct Ctx {
     // host: player `id` plays our world (same stage and world); a guest in another world gets no
     // NPCs (BUG-0130). Unset = everybody.
     std::function<bool(uint8_t id)> in_place;
+    // guest: the host plays in this guest's world now (its latest state: same place, in the world). Unset = yes.
+    std::function<bool()> host_here;
 };
 
 void init(const SkHost* host, SkMod* mod, const Ctx& ctx);

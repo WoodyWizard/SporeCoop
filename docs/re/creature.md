@@ -3033,3 +3033,32 @@ Follows #creature-hold-slots.
 * ~ Not covered: the flight itself (the partner sees the rock in the puppet's hand until it lands, then at the landing
   point), a throw at a creature (its damage is the thrower's game's), sticks (ornaments of sort 3: the worldobj
   `interactive_ornament` kind syncs their state, not checked together), fruit.
+
+## The host's NPC set while its game stands still, and a guest's leave (2026-11-06, fix/w45-one-game-objects)
+<a id="creature-npc-gaps"></a>
+
+* ✔ Observed (lab 20261106-013312 / -014107, creature fixture): `coop.team die` on the host gives the death caption;
+  about 8 s later the host's game updates no creature at all (`creatures_updated()` empty, coop.status `busy:
+  cinematic,input_lock`, later `,paused`) and stays so until the caption's OK. npc.cpp host_tick returned at once in
+  such frames (by design, so the guests keep their proxies), so it never ran the guests' relevance: a guest that went
+  170 m away before the death and came back next to the host's body had 0 of the 4-5 host NPCs there for the whole
+  freeze (out/lab/20261106-014526, `npc.frozen_send` off). The host's objects stay valid meanwhile (listed in the noun
+  list, alive, in their herds); `npc.frozen_send` spawns the newly near ones from them every 0.5 s of a freeze.
+  `coop.npc` (host) prints `frozen_s=` (how long no creature was updated), `frozen_spawns=`, `frozen_despawns=`.
+* ✔ Observed: `coop.dna add 3000` on the creature fixture shows the brain upgrade caption after ~3 s (input_lock=1,
+  busy=cinematic) with the host's simulation frozen the same way; the guest kept 5 of 5 host NPCs within 50 m for 14 s
+  (lab 20261106-013649, -014107). The 13 -> 1 loss of BUG-0413's transition_net run (2026-11-01, after the live
+  Cell -> Creature start) did not happen on the fixture. ~ Inferred: there the host's npc::on_world_change ran (it
+  despawns every NPC at the guests and forgets them; the avatar object changed) and the frozen host sent no spawns
+  again; the host logs `npc: world change (avatar ...): N NPC proxies despawned at the guests` now, so the next
+  sighting says.
+* ✔ Observed (coop_join_during --case editor, lab 20261106-015905 with `npc.leave_locals` off): a guest's
+  `coop.leave` destroys its proxies (npc::on_session_end) and its game has no creature of its own then (the update
+  filter removed them while it mirrored the host): 1 own creature within 70 m 10 s after its rejoin, where it had shown
+  11. At a (re)join the update filter removed every local NPC from the first frame, although the host was in its
+  editor: the away state needs 4 s (`host_away=0` at 0-2 s of the join). With the fix the leave hands the proxies over
+  (away_locals, next frame, same world epoch) and a guest without proxies keeps its own NPCs until host_here():
+  12 own creatures with their AI on (lab 20261106-015417). ~ They idle at their nests (none moved > 1 m in 16 s, small
+  0.1-0.4 m moves): not checked whether creatures made by away_locals walk later.
+* ✔ (BUG-0385) A creature of a save made while a partner's puppet existed (untuned +0xE84 = 0, a herd like ours) got
+  an NPC id in host_tick until remove_saved_strays (once a second) removed it; now it gets none (`npc.stray_ids`).

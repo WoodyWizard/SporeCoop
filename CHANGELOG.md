@@ -19,6 +19,11 @@
   lost its place when the cell's movement glitched for a moment); the view comes back onto your cell (BUG-0604).
 - Cell: the end of the Cell stage no longer makes the co-op sync-check report the host's cell hundreds of metres
   off on every guest when nothing was wrong (BUG-0606).
+- Creature: while the host lies dead in its death caption (or its game stands still for another reason), a guest that
+  walks or respawns somewhere else now sees the host's animals there, instead of an empty spot until the host goes on
+  (BUG-0413).
+- Creature: a guest that leaves the session keeps the animals around it and plays on with them, and a guest that joins
+  again while the host is in its editor no longer finds a planet without creatures (BUG-0412).
 
 ## [0.7.8] - 2026-11-05
 

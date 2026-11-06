@@ -9,8 +9,9 @@ joining guest's game (not the mod's counters) every second until it agrees with 
                 the target, key 1 bites) and the guest joins 4 s into the fight.
 --case editor   the host opens its creature editor alone (`coop.vote editor` with nobody to wait for),
                 the guest joins while it edits, the host leaves the editor with "done" 25 s later. While the
-                host edits, the guest's own creatures must move in its game (BUG-0205: the host sends no NPC
-                states then; frozen proxies are the bug; SPORE_FIX_OFF=core.away_editor).
+                host edits, the guest's planet must have its creatures, run by its own game (BUG-0412: the guest's
+                leave and the rejoin left it without any; SPORE_FIX_OFF=npc.leave_locals fails), and no proxies
+                standing frozen (BUG-0205: the host sends no NPC states then; SPORE_FIX_OFF=core.away_editor).
 
 Consistent (all at once, read on the joining guest's game against the host's game):
   * the guest plays the host's stage with an avatar and the host has it in its world;
@@ -55,6 +56,18 @@ def mode(con):
 def own_pos(con):
     m = re.search(r'pos=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\)', con.call('coop.avatar')['out'])
     return tuple(map(float, m.groups())) if m else None
+
+
+NEAR_OWN = 70.0
+
+
+def near_rows(c, own):
+    """alive creatures of the given owners within NEAR_OWN m of the census' own avatar (local ones with their AI on)"""
+    me = next((r['pos'] for r in c.rows if r['own'] == 'avatar'), None)
+    if me is None:
+        return None
+    return [r for r in c.rows if r['kind'] == 'c' and r['own'] in own and r['alive'] and math.dist(r['pos'], me) < NEAR_OWN
+            and (r['own'] != 'local' or r['ai'] == 1)]
 
 
 def together(host):
@@ -233,16 +246,26 @@ def case_editor(host, guest, ck, a):
     seen = []
     first = None
     moving = None
+    locals_ = proxies = None
     while time.time() - t_join < a.edit:
         # BUG-0205: while the host edits, the joined guest's game plays its creatures itself (the host sends no
-        # NPC states): they move in the guest's game (not proxies standing frozen). Two census dumps 8 s apart
+        # NPC states): they move in the guest's game (not proxies standing frozen). Census dumps up to 16 s apart
         if moving is None and time.time() - t_join > 10 and guest.call('coop.avatar')['ok']:
+            # (census dumps 4 s apart, up to 16 s: creatures of the guest's own game idle at their nest a while)
             first = census.dump(guest)
-            time.sleep(8)
-            ds = [d for _, d in census.moved(first, census.dump(guest), own=('local', 'proxy'))]
-            moving = (len([d for d in ds if d > 1.0]), len(ds))
-            print(f'    the guest\'s creatures that moved > 1 m in 8 s of the host\'s editor: {moving[0]} of {moving[1]}',
-                  flush=True)
+            for _ in range(4):
+                time.sleep(4)
+                second = census.dump(guest)
+                ds = [d for _, d in census.moved(first, second, own=('local', 'proxy'))]
+                moving = (len([d for d in ds if d > 1.0]), len(ds))
+                if moving[0] >= 1 or time.time() - t_join > a.edit - 4:
+                    break
+            print(f'    the guest\'s creatures that moved > 1 m in {second.t - first.t:.0f} s of the host\'s editor: '
+                  f'{moving[0]} of {moving[1]} (largest moves {sorted(round(d, 1) for d in ds)[-4:]})', flush=True)
+            locals_ = near_rows(second, ('local',))
+            proxies = near_rows(second, ('proxy',))
+            print(f'    the guest\'s game within {NEAR_OWN:g} m: {len(locals_)} creatures of its own (AI on), '
+                  f'{len(proxies)} proxies; before its leave it showed {a.shown}', flush=True)
         st = guest.call('coop.status')['out']
         line = f'{time.time() - t_join:4.0f} s: guest {mode(guest).strip()}, avatar {guest.call("coop.avatar")["ok"]}, ' \
                f'host_away={re.search(r"host_away=(\d)", st).group(1) if re.search(r"host_away=(\d)", st) else "?"}'
@@ -253,8 +276,13 @@ def case_editor(host, guest, ck, a):
     if moving == (0, 0) and a.allow_empty:  # the known open bug: printed with its ticket, never silent
         print(f'  allowed [{a.allow_empty}]: while the host edits, the joined guest\'s planet has no creatures', flush=True)
     else:
-        ck(moving is not None and moving[0] >= 1, f'[editor] while the host edits, the joined guest\'s creatures move '
-           f'in its game ({moving})')
+        # BUG-0412: the creatures the guest showed before its leave are creatures of its own game now (census:
+        # `local`, alive, their AI on), at least 60 % of them (and 2); BUG-0205: no proxies standing frozen
+        need = max(2, int(0.6 * a.shown + 0.999))
+        ck(locals_ is not None and len(locals_) >= need, f'[editor] while the host edits, the joined guest\'s planet has '
+           f'its creatures, run by its own game ({len(locals_) if locals_ is not None else None}, need {need} of {a.shown})')
+        ck(proxies is not None and (not proxies or moving[0] >= 1),
+           f'[editor] no proxies stand frozen meanwhile ({len(proxies) if proxies is not None else None} proxies, moving {moving})')
     shot(guest, 'join_during_editor_guest')
     host.call(f'move {DONE[0]} {DONE[1]}')
     time.sleep(0.4)
@@ -282,6 +310,7 @@ def main():
     host, guest = start('creature')
     ck = Checks()
     time.sleep(3)
+    a.shown = len(near_rows(census.dump(guest), ('proxy',)) or [])
     guest.call('coop.leave')
     t0 = time.time()
     while time.time() - t0 < 20 and together(host):
