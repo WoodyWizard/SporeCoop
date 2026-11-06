@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### Fixed
+- Tribe: when a member of a player's tribe dies, its body now lies on every player's screen as long as it does on the
+  host's; before, it vanished at once on the guests' screens (BUG-0620).
 - Creature: an animal resting at its nest no longer looks stuck inside the nest mound on a guest's screen when the
   host is somewhere else on the planet (BUG-0562).
 - Civilization: after the host takes a city, its buildings stand at the same places on the guests' screens; before,
