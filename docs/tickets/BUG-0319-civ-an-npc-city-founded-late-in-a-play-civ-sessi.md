@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.3.1 + fix/w13-tribe-civ
 fixed_in: 0.7.3.4
 branch: fix/w45-placement
-commits:
+commits: fe88228 e052b04 cea77bf e2aba88 (BUG-0380's civ.city_burst)
 tests: civ_city_burst (coop_civ_city_burst.py), civ_pause_city
 signature:
 docs:
