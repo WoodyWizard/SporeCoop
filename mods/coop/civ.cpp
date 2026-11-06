@@ -2373,6 +2373,36 @@ static unsigned g_bfix_logged, g_host_offslot_logged;
 static uint32_t g_bfix_off_slot; // BUG-0602: rebuilt here more than 4 m from the host's spot
 static std::unordered_set<void*> g_host_offslot_seen;
 static void* build_in_city(void* city, uint32_t noun, const net::Vec3& pos, bool pay);
+// BUG-0602: a building the host's game has off the layout slot this game gives it (SnapBuildingToSlot takes the
+// free slot nearest the host's spot, 8-9 m away in campaign_space): the reconciliation found no building within
+// 4 m of the host's, destroyed this one and built it again, hundreds of times (buildings_fixed=+281/-281), and the
+// building stood elsewhere in the guest's game. A guest's building made for the host's stands where the host's
+// stands (its slot kept: the city's lists and the planner's slot stay the game's). Off: where the slot is (0.7.8).
+static bool g_fix_city_layout = true;
+COOP_FIX("civ.city_layout", "BUG-0602", g_fix_city_layout,
+         "civ: a city building the guest builds for the host's stands where the host's stands, not in the nearest free slot");
+static uint32_t g_bfix_moved;
+static void to_host_spot(void* b, const net::Vec3& p)
+{
+    net::Vec3 bp{};
+    if (!g_fix_city_layout || !b || !game::object_position(b, bp) || net::dist(bp, p) <= 1.f)
+        return;
+    float q[3] = {p.x, p.y, p.z};
+    vcall<void>((uint8_t*)b + 0x34, 0x38 / 4, (const float*)q); // spatial SetPosition, as build_in_city does
+    // its layout slot goes with it (cLayoutSlot +0xC), so the slot nearest the building stays its own (the
+    // planner picks a building by that, BUG-0491) and a later snap finds the host's spot
+    for (void* c : g_host_cities) {
+        uint8_t* sb = c ? F<uint8_t*>(c, kCitySlots) : nullptr;
+        uint8_t* se = c ? F<uint8_t*>(c, kCitySlots + 4) : nullptr;
+        for (int k = 0; sb && sb + (k + 1) * 0x18 <= se && k < 64; k++)
+            if (F<void*>(sb + k * 0x18, 4) == b) {
+                F<float>(sb + k * 0x18, 0xC) = p.x;
+                F<float>(sb + k * 0x18, 0x10) = p.y;
+                F<float>(sb + k * 0x18, 0x14) = p.z;
+            }
+    }
+    g_bfix_moved++;
+}
 
 // ---- BUG-0529: the hit points of a city's buildings ----
 // The snapshot's building rows (one city per cycle) carry noun, place and the ruined flag: a guest got the
@@ -2870,6 +2900,7 @@ static void reconcile_buildings(void* city, size_t n,
     std::vector<bool> used(local.size(), false);
     std::vector<size_t> missing;
     std::vector<void*> ruin_now;
+    std::vector<std::pair<void*, net::Vec3>> off_spot;
     int ruins = 0;
     for (size_t i = 0; i < n; i++) {
         uint32_t noun;
@@ -2887,6 +2918,8 @@ static void reconcile_buildings(void* city, size_t n,
             if (g_ruin_repair_fix && !ruin && F<int>(local[k], kBuildingState) == 2 && type_for_noun(noun))
                 continue;
             used[k] = found = true;
+            if (net::dist(lp, p) > 1.f)
+                off_spot.push_back({local[k], p}); // BUG-0602: matched, but not where the host's stands
             if (ruin && F<int>(local[k], kBuildingState) != 2)
                 ruin_now.push_back(local[k]);
             ruins += ruin != (F<int>(local[k], kBuildingState) == 2);
@@ -2909,6 +2942,8 @@ static void reconcile_buildings(void* city, size_t n,
         g_applying = false;
         g_ruins_in++;
     }
+    for (auto& [b, p] : off_spot)
+        to_host_spot(b, p);
     int& seen = g_bfix_seen[city];
     if (missing.empty() && extra.empty()) {
         seen = 0;
@@ -2943,6 +2978,7 @@ static void reconcile_buildings(void* city, size_t n,
                            noun, (int)(std::find(g_host_cities.begin(), g_host_cities.end(), city) - g_host_cities.begin()), p.x, p.y, p.z, bp.x, bp.y, bp.z, net::dist(bp, p), near_before,
                            occ ? game::noun_id(occ) : 0u);
             }
+            to_host_spot(b, p); // BUG-0602
         }
     }
     g_applying = false;
@@ -3529,8 +3565,10 @@ static void guest_build(net::Reader& r)
         return;
     }
     g_applying = true;
-    if (build_in_city(city, noun, p, false))
+    if (void* b = build_in_city(city, noun, p, false)) {
         g_builds_in++;
+        to_host_spot(b, p); // BUG-0602
+    }
     g_applying = false;
 }
 
@@ -3765,10 +3803,10 @@ std::string status()
         snprintf(b, sizeof b,
                  "civ(guest): mirrors=%u created=%u removed=%u cities=%u cmds_sent=%u builds_in=%u captures_in=%u "
                  "orders_dropped=%u growth_blocked=%u nodes_in=%u cities_in=%u cities_blocked=%u unselected=%u movie=%d "
-                 "buildings_fixed=+%u/-%u ruins_in=%u ruins_differ=%u incomplete=%u income_blocked=%u cities_caught_up=%u ai_spawns_blocked=%u away_orders=%u local=%d founds_outside=%u mirror_place_skipped=%u removed_local=%u\n",
+                 "buildings_fixed=+%u/-%u off_slot=%u moved=%u ruins_in=%u ruins_differ=%u incomplete=%u income_blocked=%u cities_caught_up=%u ai_spawns_blocked=%u away_orders=%u local=%d founds_outside=%u mirror_place_skipped=%u removed_local=%u\n",
                  (unsigned)g_gv.size(), g_created, g_removed, (unsigned)g_host_cities.size(), g_cmds_sent, g_builds_in,
                  g_captures_in, g_orders_dropped, g_growth_blocked, g_nodes_in, g_cities_in, g_cities_blocked, g_unselected, (int)movie_playing(), g_bfix_added,
-                 g_bfix_removed, g_ruins_in, g_ruins_differ, g_incomplete, g_income_blocked, g_cities_caught_up, g_ai_spawns_blocked, g_away_orders, (int)local_play(), g_founds_outside, g_mirror_place_skipped, g_removed_local);
+                 g_bfix_removed, g_bfix_off_slot, g_bfix_moved, g_ruins_in, g_ruins_differ, g_incomplete, g_income_blocked, g_cities_caught_up, g_ai_spawns_blocked, g_away_orders, (int)local_play(), g_founds_outside, g_mirror_place_skipped, g_removed_local);
     char pl[200];
     snprintf(pl, sizeof pl, "planner: open=%d held=%u kills_held=%u kills_waiting=%u picks_refused=%u builds_held=%u build_orphans=%u save_stripped=%u cards_skipped=%u owner_unknown=%u met=%d\n",
              planner_city() ? 1 : 0, g_planner_held, g_planner_kills_held, (unsigned)g_kill_later.size(),
@@ -4536,6 +4574,23 @@ std::string debug(const std::vector<std::string>& a)
         game::set_object_scale(v, (float)atof(a[2].c_str()));
         char l[64];
         snprintf(l, sizeof l, "vehicle %u scale %.2f", (unsigned)id, game::object_scale(v));
+        return l;
+    }
+    if (a.size() >= 6 && a[0] == "bmove") { // bmove <city> <k> <x> <y> <z> (tests, BUG-0602): building k of the city to a spot, its slot kept
+        int ci = atoi(a[1].c_str());
+        void* city = ci >= 0 && ci < (int)g_host_cities.size() ? g_host_cities[ci] : nullptr;
+        if (!city)
+            return "no such city";
+        auto bl = vec_of((uint8_t*)city + kCityBuildings);
+        size_t k = (size_t)atoi(a[2].c_str());
+        if (k >= bl.size())
+            return "no such building";
+        float q[3] = {(float)atof(a[3].c_str()), (float)atof(a[4].c_str()), (float)atof(a[5].c_str())};
+        vcall<void>((uint8_t*)bl[k] + 0x34, 0x38 / 4, (const float*)q);
+        net::Vec3 bp{};
+        game::object_position(bl[k], bp);
+        char l[128];
+        snprintf(l, sizeof l, "building %08X at (%.1f %.1f %.1f)", game::noun_id(bl[k]), bp.x, bp.y, bp.z);
         return l;
     }
     if (a.size() >= 2 && a[0] == "blist") { // blist <host city index>: the game's buildings of the city (BUG-0602)

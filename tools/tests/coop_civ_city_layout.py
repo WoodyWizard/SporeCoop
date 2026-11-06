@@ -9,7 +9,9 @@ the guest) and the guest's buildings_fixed counter climbing by hundreds after th
    game founds its own copies (the catch-up). The host's player civ captures the first new city (cCity::Capture,
    the campaign's shortcut; --no-capture: not).
 2. The layout slots of every city on both games (`coop.civ slots <i>`).
-3. The host's game builds buildings in each new city (`coop.civ build <i> factory|house|fun`, the game's
+3. The host's game moves one building of the first new city 8.7 m off its slot (`coop.civ bmove`, the state the
+   BUG-0602 diagnostics showed in campaign_space; --move 0: not).
+4. The host's game builds buildings in each new city (`coop.civ build <i> factory|house|fun`, the game's
    SnapBuildingToSlot as its growth). For 60 s: the game's own buildings of those cities on both games
    (`coop.civ blist <i>`: noun, position).
 PASS: in the last 20 s every building of a host city has one of the same noun within 4 m on the guest and the
@@ -69,6 +71,7 @@ def main():
     ap.add_argument('--cities', type=int, default=3)
     ap.add_argument('--seconds', type=int, default=60)
     ap.add_argument('--no-capture', action='store_true')
+    ap.add_argument('--move', type=float, default=8.7, help='m: one host building off its slot (0: not)')
     a = ap.parse_args()
     host, guest = start('civ_npc')
     ck = Checks()
@@ -109,6 +112,23 @@ def main():
               flush=True)
         for kind in ('factory', 'house', 'fun', 'factory'):
             print(f'  host build {ci} {kind}:', host.call(f'coop.civ build {ci} {kind} nopay')['out'].strip(), flush=True)
+    if a.move:
+        # the state campaign_space showed (BUG-0602 diagnostics): one building of the host's city stands 8-9 m from
+        # the layout slot the guest's game gives it; the host's game moves one building that far off its slot
+        time.sleep(8)
+        ci = new[0]
+        hb = blist(host, ci)
+        k = next((i for i, b in enumerate(hb) if b[0] != '018EA1EB'), None)
+        if k is not None:
+            p = hb[k][1]
+            r = math.dist(p, (0, 0, 0))
+            up = tuple(x / r for x in p)
+            t = (up[1], -up[0], 0.0)
+            tl = math.dist(t, (0, 0, 0)) or 1
+            q = tuple(p[i] + a.move * t[i] / tl for i in range(3))
+            print(f'  host: {host.call(f"coop.civ bmove {ci} {k} {q[0]:.2f} {q[1]:.2f} {q[2]:.2f}")["out"].strip()} '
+                  f'(was {tuple(round(x, 1) for x in p)})', flush=True)
+        ck(k is not None, f'a building of city {ci} moved off its slot on the host')
     t0, last_bad, hist = time.time(), None, []
     while time.time() - t0 < a.seconds:
         t = time.time() - t0

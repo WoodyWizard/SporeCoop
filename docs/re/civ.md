@@ -1217,3 +1217,17 @@ BUG-0549. GOG 2024. ✔ = observed, ~ = read in the code, ? = inferred.
   vehicles by net id, a guest's mirrors from g_gv): every mirror whose scale differs by more than the field's
   tolerance takes the host vehicle's, also when the game sets it again. `coop.civ` vehicle lines print `scale=`;
   `coop.civ vscale <id> <s>` (tests). Test civ_vehicle_scale.
+
+## City terrain stamps: the same ground on both games (2026-11-06, fix/w45-placement)
+<a id="civ-city-ground"></a>
+
+The BUG-0332 class (docs/re/tribe.md#tribe-terrain-stamps on fix/w45-village-ground: stamps applied live render
+another ground than the same list after a load) checked in Civ, where cities stamp the terrain too. ✔ = observed.
+* ✔ civ_npc (the save's cities, loaded on both games): `coop.ground` on a 10 m grid up to 80 m round every city,
+  892 points, the largest difference 0.00 m (civ_city_ground, lab 20261106-062301).
+* ✔ After a live founding on both games (the host's SpawnNextCity, the guest's replay) and a capture: 1115 points,
+  0.00 m (same run).
+* ✔ After the live Tribe -> Civ change (the host makes its first city live, the guest loads the host's Civ save):
+  223 points round the cities, 0.00 m (tribe_civ_ground = coop_tribe_civ.py --ground, lab 20261106-062912).
+* So no Civ ticket: the two grounds do not differ round cities in these paths. Not measured: a city the guest's game
+  founded while the host's was away (local play), and a Space colony's city.
