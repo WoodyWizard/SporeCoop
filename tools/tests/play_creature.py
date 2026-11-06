@@ -456,7 +456,8 @@ class Player(threading.Thread):
         objs, npcs = self.objs(), self.world.npcs()
         tgt = self.sh.target
         # the pack: join the partner's hunt
-        if tgt and tgt[1] != self.name and tgt[0] in npcs and not npcs[tgt[0]]['dead'] and rng.random() < 0.8:
+        partner_leads = tgt and tgt[1] != self.name and tgt[0] in npcs and not npcs[tgt[0]]['dead']
+        if partner_leads and (OLD_ATTACK and rng.random() < 0.8 or not OLD_ATTACK):
             if tgt[0] in objs or self.look_for(tgt[0], 3):
                 self.add('joined_hunt')
                 self.hunt(tgt[0], 'pack')
@@ -471,6 +472,11 @@ class Player(threading.Thread):
             key = self.prey(objs, npcs)
             if not key:
                 kind = 'look'
+            elif kind == 'hunt' and partner_leads and not OLD_ATTACK:
+                # BUG-0618: the pack hunts together: while the partner leads a hunt the other does not start its own
+                # (it did not see the prey: it goes to the partner)
+                self.follow()
+                return
             elif kind == 'hunt':
                 self.sh.target = (key, self.name)
                 self.hunt(key, 'lead')

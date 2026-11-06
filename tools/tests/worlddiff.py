@@ -140,6 +140,10 @@ MOVING = {'creature', 'citizen', 'herd', 'vehicle', 'ufo', 'tribe_tool'}
 TOL_CARRIED = 6.0
 
 
+def _nearest(x, others):
+    return min((math.dist(x['pos'], y['pos']) for y in others), default=-1.0)
+
+
 def _group(x):
     """the compare group of a census object row: (noun, '') or, for a food bundle, (noun, '_carried' | '_held')"""
     if x['noun'] == 0x018C431C and x.get('own') in ('carried', 'held'):
@@ -698,6 +702,9 @@ def diff(host, guest, area=None):
         pairs, ua, ub = _match(a, b, tol)
         ua = [x for x in ua if _near(x['pos'], c, inner)]
         ub = [x for x in ub if _near(x['pos'], c, inner)]
+        if name == 'game_bundle_carried' and (ua or ub):  # BUG-0617: whose members carry the unpaired ones
+            vts += (f' [carriers\' players: host {sorted(x["owner"] for x in ua)}, guest {sorted(x["owner"] for x in ub)}; '
+                    f'nearest partner {", ".join(f"{_nearest(x, b):.1f}" for x in ua)} / {", ".join(f"{_nearest(y, a):.1f}" for y in ub)} m]')
         if ua and not b:
             add('host_only', name, len(ua), f'{len(ua)} {name} near the guest on the host, none on the guest '
                                             f'(e.g. at {_fmt(ua[0]["pos"])}){vts}')
