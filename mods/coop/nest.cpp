@@ -652,6 +652,8 @@ static int c_nest(void*, int argc, const char* const* argv, SkOut* out)
         net::Vec3 side = std::fabs(up.x) < 0.9f ? net::Vec3{0, -up.z, up.y} : net::Vec3{-up.z, 0, up.x};
         float sl = std::sqrt(side.x * side.x + side.y * side.y + side.z * side.z);
         net::Vec3 p{t.x + side.x / sl * d + up.x * 1.5f, t.y + side.y / sl * d + up.y * 1.5f, t.z + side.z / sl * d + up.z * 1.5f};
+        if (argc > 8) // look <target x y z> <d> <from x y z>: from that point instead (tests, BUG-0465)
+            p = {(float)atof(argv[6]), (float)atof(argv[7]), (float)atof(argv[8])};
         float pv[3] = {p.x, p.y, p.z}, dv[3] = {t.x - p.x, t.y - p.y, t.z - p.z}, q[4] = {0, 0, 0, 1};
         thiscall<void*>(orient, pm, q, pv, dv);
         game::teleport(av, p, net::Quat{q[0], q[1], q[2], q[3]});

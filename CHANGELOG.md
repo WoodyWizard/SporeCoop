@@ -13,6 +13,9 @@
 - Creature: a body one player eats is eaten on the other player's screen too, so the guest can eat the bodies the
   players killed and no longer finds bodies it already ate standing whole on the host's screen (BUG-0557, BUG-0383).
 - Creature: the guest now sees the UFO that visits the host's world, where the host sees it (BUG-0558).
+- Creature: the sea monster that takes a player in deep water rises upright out of the water on the other player's
+  screen, as the taken player sees it, instead of tilted into the water; other effects in the world now show at their
+  game's orientation and size too (BUG-0465).
 - Creature: a rock or stick one player picks up is carried by that player's creature on the other screen too, and lies
   where it landed in both games after it is thrown or dropped (BUG-0458).
 - Cell: a player's screen no longer turns to plain water for the rest of the game after a level-up (the camera

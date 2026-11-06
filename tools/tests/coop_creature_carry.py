@@ -136,12 +136,14 @@ def main():
     time.sleep(2.0)
     C = Corpses(host, guest, ck)
     near = [i for _, i, _, _ in C.candidates(near=rp, maxd=40)] if rp else []
-    # the other player 15 m off while one carries (a copy is never put within 4 m of the own creature)
-    guest.call('coop.npc gopos %.2f %.2f %.2f' % (home[0] - 15, home[1], home[2]))
-    one(ck, 'the host', host, guest, 0, guest, near, (home[0] + 4, home[1], home[2]))
+    # the other player 22 m off while one carries (a copy is never put within 4 m of the own creature); the rock is
+    # dropped 10 m from the start (a creature put onto a rock by a teleport, the next test's warm reset, takes 60-90
+    # damage from it: "hit by none", out/lab/20261106-023016 #2-#4)
+    guest.call('coop.npc gopos %.2f %.2f %.2f' % (home[0] - 22, home[1], home[2]))
+    one(ck, 'the host', host, guest, 0, guest, near, (home[0] + 10, home[1], home[2]))
     time.sleep(2.0)
-    host.call('coop.npc gopos %.2f %.2f %.2f' % (home[0] + 15, home[1], home[2]))
-    one(ck, 'the guest', guest, host, 1, host, [i for i in near], (home[0] - 4, home[1], home[2]))
+    host.call('coop.npc gopos %.2f %.2f %.2f' % (home[0] + 22, home[1], home[2]))
+    one(ck, 'the guest', guest, host, 1, host, [i for i in near], (home[0] - 10, home[1], home[2]))
     ck.faults(host=host, guest=guest)
     return ck.result()
 

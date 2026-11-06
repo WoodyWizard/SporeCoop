@@ -255,6 +255,42 @@ static void make_transform(uint8_t* xf, const net::Vec3& p)
     f[12] = 1.0f;
 }
 
+// BUG-0465: a world effect was sent with its position only (identity rotation, scale 1, transform flags 0, which also
+// tell the game to ignore the rotation): the sea monster of a player who drowns (the death cinematic's startEffect
+// crg_seamonster_attack 0x8A71529C at the avatar, CRG_AvatarDied_SeaMonster of Spore_Game.package 0x024A0E52 /
+// 0x40890200 / 0x9EA3031A) was played in the partner's game at the right place but not upright on the planet: tilted
+// into the water / the ground, nobody saw it. Now the effect's own transform is sent, as the game's
+// VisualEffect_SetTransform 0xA827B0 keeps it at effect +0x9C ({u16 flags, u16 changes, pos, scale, 3x3 rotation}, the
+// same layout as the message's 0x44 bytes). `coop.fix effects.world_xform off`: position only (0.7.8).
+static bool g_xform_fix = true;
+COOP_FIX("effects.world_xform", "BUG-0465", g_xform_fix,
+         "effects: an effect in the world (the sea monster, splashes) shows upright and at its size in the partner's game");
+static uint32_t g_xform_sent, g_xform_bad;
+static bool copy_transform(uint8_t* xf, void* fx, const net::Vec3& p)
+{
+    const uint8_t* t = (const uint8_t*)fx + 0x9C;
+    if (!skg::readable(t, 0x38))
+        return false;
+    const float* f = (const float*)(t + 4);
+    float sc = f[3];
+    if (!std::isfinite(sc) || sc <= 0.f || sc > 1000.f)
+        return false;
+    for (int i = 0; i < 13; i++)
+        if (!std::isfinite(f[i]))
+            return false;
+    if (std::fabs(f[0] - p.x) > 0.01f || std::fabs(f[1] - p.y) > 0.01f || std::fabs(f[2] - p.z) > 0.01f)
+        return false;
+    memset(xf, 0, 0x44);
+    memcpy(xf, t, 0x38);
+    return true;
+}
+
+// tests (BUG-0465): the last effect of a watched id this game made (its own) or played (a partner's), with its transform
+static uint32_t g_watch_id;
+static void* g_watch_own;
+static void* g_watch_rx;
+static double g_watch_own_at, g_watch_rx_at;
+
 static bool take_token(double t)
 {
     if (g_tokens_at <= 0)
@@ -489,6 +525,10 @@ static void process_world(void* fx, uint32_t id)
             H->log(M, SK_INFO, "effect: world id %08X dropped, no position at %p", id, fx);
         return;
     }
+    if (g_watch_id && id == g_watch_id) {
+        g_watch_own = fx;
+        g_watch_own_at = now();
+    }
     if (!C.near_local || !C.near_local(p)) {
         g_w_far++;
         if (g_log)
@@ -522,7 +562,13 @@ static void process_world(void* fx, uint32_t id)
     if (g_log)
         H->log(M, SK_INFO, "effect: sent world id %08X at %.2f %.2f %.2f", id, p.x, p.y, p.z);
     uint8_t xf[0x44];
-    make_transform(xf, p);
+    if (g_xform_fix && copy_transform(xf, fx, p))
+        g_xform_sent++;
+    else {
+        if (g_xform_fix)
+            g_xform_bad++;
+        make_transform(xf, p);
+    }
     net::Writer w;
     w.u8(C.sess->my_id());
     w.u8(0);
@@ -823,6 +869,10 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             last.active = game::effect_active(fx);
             if (pool == 5) {
                 live_add(fx, now());
+                if (g_watch_id && id == g_watch_id) {
+                    g_watch_rx = fx;
+                    g_watch_rx_at = now();
+                }
                 const float* p = (const float*)(xf + 4);
                 last.has_pos = true;
                 last.x = p[0];
@@ -1019,6 +1069,32 @@ std::string probe(uint32_t key)
             s += b;
         }
     return s;
+}
+
+std::string watch(uint32_t id)
+{
+    if (id)
+        g_watch_id = id, g_watch_own = g_watch_rx = nullptr;
+    std::string out;
+    char b[300];
+    auto one = [&](const char* who, void* fx, double at) {
+        if (!fx || now() - at > 30.0 || !skg::readable((uint8_t*)fx + 0x9C, 0x38)) {
+            snprintf(b, sizeof b, "%s none\n", who);
+            out += b;
+            return;
+        }
+        const uint8_t* t = (const uint8_t*)fx + 0x9C;
+        const float* f = (const float*)(t + 4);
+        snprintf(b, sizeof b, "%s fx=%p age=%.1f active=%d flags=%04X pos=(%.2f %.2f %.2f) scale=%.3f rot=(%.3f %.3f %.3f | %.3f %.3f "
+                 "%.3f | %.3f %.3f %.3f)\n", who, fx, now() - at, (int)game::effect_active(fx), *(const uint16_t*)t, f[0], f[1],
+                 f[2], f[3], f[4], f[5], f[6], f[7], f[8], f[9], f[10], f[11], f[12]);
+        out += b;
+    };
+    snprintf(b, sizeof b, "watch %08X xform fix=%d sent=%u bad=%u\n", g_watch_id, (int)g_xform_fix, g_xform_sent, g_xform_bad);
+    out += b;
+    one("own", g_watch_own, g_watch_own_at);
+    one("rx", g_watch_rx, g_watch_rx_at);
+    return out;
 }
 
 std::string status()
