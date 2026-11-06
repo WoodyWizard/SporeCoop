@@ -8,9 +8,10 @@ position), not the mod's bookkeeping:
                     at the host's places in the guest's game (within 1.5 m), the rolled one not where it rolled to.
                     SPORE_FIX_OFF=wobj.fruit_place fails.
 
-  --case ornament   (BUG-0541, space) both players land on the home planet: the ornaments (noun 0x18C88E4, the planet
-                    record's items with flag 0x80) are the same on both planets (every one of each game has one of
-                    the other's within 1.5 m). SPORE_FIX_OFF=wobj.space_ornament fails.
+  --case ornament   (BUG-0541, space) both players land on the home planet: the ornaments (noun 0x18C88E4: the
+                    cities' decorations, 9 per city) are the same on both planets (every one of each game has one of
+                    the other's within 1.5 m), in 3 landings (a takeoff between: the cities are set up anew; their
+                    layouts differed in 2 of 3 loads). SPORE_FIX_OFF=wobj.city_ornament fails.
 
   --case cultural   (BUG-0540, civ) every city's cultural targets near the guest stand at the host's places in the
                     guest's game (within 1 m, as many as on the host). SPORE_FIX_OFF=wobj.cultural_target fails.
@@ -190,41 +191,57 @@ def cultural(host, guest, ck):
     ck(ok and not far, 'every cultural target of the host near the guest stands at its place in the guest\'s game (within 1 m)')
 
 
-def ornament(host, guest, ck):
+def ornament(host, guest, ck, rounds=3):
     import worlddiff
     from coop_space_map import context, place, sp
     noun = 0x018C88E4
-    for con, who in ((host, 'host'), (guest, 'guest')):
-        if context(con) != 'planet':
-            print(f'  {who} land:', sp(con, 'land'), flush=True)
-    landed = wait(lambda: context(host) == 'planet' and context(guest) == 'planet', 40)
-    if not ck(landed, 'both players are on a planet'):
-        return
-    print('  planets (host, guest):', place(host), place(guest), flush=True)
-    ck(place(host)[0] == place(guest)[0], 'both are on the same planet')
-    time.sleep(10)
 
     def orns(con):
         return [r for r in worlddiff.dump(con, 5000, (0.0, 0.0, 0.0)).rows if r['noun'] == noun]
 
+    def near_pos(lst, pos, d):
+        return any(math.dist(o['pos'], pos) < d for o in lst)
+
     def compare():
         ho, go = orns(host), orns(guest)
+        # the host sends the 56 nearest the guest's ship (one packet, kind city_ornament): compare that area
+        me = worlddiff.dump(guest, 1, (0.0, 0.0, 0.0)).me
+        if me and len(ho) > 56:
+            r = sorted(math.dist(h['pos'], me) for h in ho)[55]
+            ho = [h for h in ho if math.dist(h['pos'], me) <= r - 2]
+            go = [g for g in go if math.dist(g['pos'], me) <= r - 2]
         h_only = [tuple(round(v) for v in h['pos']) for h in ho if not near_pos(go, h['pos'], 1.5)]
         g_only = [tuple(round(v) for v in g['pos']) for g in go if not near_pos(ho, g['pos'], 1.5)]
         return ho, go, h_only, g_only
 
-    def near_pos(lst, pos, d):
-        return any(math.dist(o['pos'], pos) < d for o in lst)
-
-    ho, go, h_only, g_only = compare()
-    print(f'  ornaments on the planet: {len(ho)} on the host, {len(go)} on the guest; host only {len(h_only)} {h_only[:5]}, '
-          f'guest only {len(g_only)} {g_only[:5]}', flush=True)
-    ok = wait(lambda: not any(compare()[2:]), 20)
-    ho, go, h_only, g_only = compare()
-    print(f'  after 20 s: {len(ho)} on the host, {len(go)} on the guest; host only {len(h_only)} {h_only[:5]}, '
-          f'guest only {len(g_only)} {g_only[:5]}', flush=True)
-    ck(ho, 'the host\'s planet has ornaments')
-    ck(ok and not h_only and not g_only, 'the guest\'s planet has the host\'s ornaments at their places and no others')
+    bad = []
+    for rnd in range(rounds):
+        for con, who in ((host, 'host'), (guest, 'guest')):
+            if context(con) != 'planet':
+                print(f'  round {rnd + 1}: {who} land:', sp(con, 'land'), flush=True)
+        landed = wait(lambda: context(host) == 'planet' and context(guest) == 'planet', 60)
+        if not ck(landed, f'round {rnd + 1}: both players are on a planet'):
+            return
+        if not ck(place(host)[0] == place(guest)[0], f'round {rnd + 1}: both are on the same planet {place(host)} {place(guest)}'):
+            return
+        time.sleep(10)
+        ho, go, h_only, g_only = compare()
+        print(f'  round {rnd + 1}: {len(ho)} ornaments on the host, {len(go)} on the guest; host only {len(h_only)} '
+              f'{h_only[:4]}, guest only {len(g_only)} {g_only[:4]}', flush=True)
+        if h_only or g_only:
+            wait(lambda: not any(compare()[2:]), 15)
+            ho, go, h_only, g_only = compare()
+            print(f'  round {rnd + 1} after 15 s: host only {len(h_only)} {h_only[:4]}, guest only {len(g_only)} {g_only[:4]}',
+                  flush=True)
+        ck(ho, f'round {rnd + 1}: the host\'s planet has ornaments')
+        if h_only or g_only:
+            bad.append(rnd + 1)
+        if rnd < rounds - 1:  # up to the system and down again: the planet and its cities are set up anew
+            for con in (host, guest):
+                sp(con, 'takeoff')
+            wait(lambda: context(host) != 'planet' and context(guest) != 'planet', 60)
+            time.sleep(3)
+    ck(not bad, f'the guest\'s planet has the host\'s ornaments at their places and no others in every round (not in {bad})')
 
 
 def main():

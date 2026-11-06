@@ -671,6 +671,119 @@ static uint32_t cult_state(void*) { return 0; }
 static void cult_collect(Items& out) { collect_noun(kCultTargetNoun, out, cult_state); }
 static bool cult_place(const Item& l, const net::Vec3& hp, uint32_t) { return game::set_object_position(l.p, hp); }
 
+// ---------------------------------------------------------------- kind: city ornament (BUG-0541, 0.7.9 L2b)
+// A city's decorations (noun 0x18C88E4, the model instance 0x2AE5BA7 at obj +0x228, its group at +0x22C): the city
+// setup 0xBE7D40 (and 0xB90DA0) calls 0xBE6A50 thiscall(city, bool effect), which makes 3 groups (the 3 keys at city
+// +0x528, 0xC bytes each) x the count of property 0x6414D84 (3) = 9 per city: CreateInstance(0x18C88E4), its model
+// 0xC6F910 thiscall(obj, 0x2AE5BA7, city vt 0x4C(group), group), then 0xBD97B0 thiscall(city, obj) puts it in a free
+// slot of the city's layout (cLayoutSlot::SetObject, the slot +0xC, the planet's up there 0xB7F2E0) or at the city
+// hall when no slot is free (docs/re/space.md#space-city-ornaments). Each game takes its own free slots and its own
+// group variants: on the `space` fixture the 9 of one colony city stood elsewhere in each game in 2 of 3 runs (lab
+// 20261106-044822: 9 on the guest only, by another city; 20261106-045215: 9 on the host only at city 0 and 9 on the
+// guest only by another city). On: a guest's decoration binds to the host's within 1.5 m, else the nearest unbound
+// one of its own anywhere on the planet is put at the host's place (position and the planet's up there), a bound one
+// that drifts more than 0.5 m is put back. Which cities have their decorations at all differs too (5 to 86 per game
+// and load, the same cities' sets, stable for a minute, not by the camera: a ship over a bare city for 25 s made
+// none): a host city whose set the guest has not gets its set the game's way (0xBE6A50 on the guest's nearest city
+// without decorations, then moved to the host's places), and a guest's decoration left without a host partner is
+// removed the way City_RemoveTurret removes a turret: its layout slot cleared (0xAFADD0 on city +0x4B4),
+// DestroyInstance, erased from the city's decoration vector (+0x308..+0x30C, 0xD5AA90). The model variant (the
+constexpr uint32_t kOrnamentNoun = 0x018C88E4, kCityOrnModel = 0x02AE5BA7;
+static bool g_corn_fix = true;
+COOP_FIX("wobj.city_ornament", "BUG-0541", g_corn_fix,
+         "space: the decorations of a planet's cities are the host's: the same ones at the same places in every game");
+static uintptr_t a_PlanetModelGet, a_PlanetUpAt, a_CityDecorate, a_LayoutClear, a_VecErase;
+constexpr uint32_t kCityNounW = 0x018C43E8;
+constexpr uintptr_t kCityDecor = 0x308, kCityLayout = 0x4B4;
+static uint32_t g_corn_sets, g_corn_removed;
+static uint32_t corn_state(void*) { return 0; }
+static bool corn_take(void* o) { return !IsBadReadPtr(o, 0x230) && field<uint32_t>(o, 0x228) == kCityOrnModel; }
+static uint32_t corn_class(void* o) { return field<uint32_t>(o, 0x22C); }
+static void corn_collect(Items& out) { collect_noun(kOrnamentNoun, out, corn_state, corn_take, corn_class); }
+static bool corn_place(const Item& l, const net::Vec3& hp, uint32_t)
+{
+    if (!corn_take(l.p) || game::noun_id(l.p) != kOrnamentNoun)
+        return false;
+    void* sp = (uint8_t*)l.p + 0x70; // the spatial interface (0xBD97B0 / 0xFF96B0)
+    float p[3] = {hp.x, hp.y, hp.z};
+    vcall<void>(sp, 0x38 / 4, (void*)p);
+    void* pm = a_PlanetModelGet && a_PlanetUpAt ? cdecl_call<void*>(a_PlanetModelGet) : nullptr;
+    if (pm) {
+        float q[4] = {0, 0, 0, 1};
+        void* qr = thiscall<void*>(a_PlanetUpAt, pm, (void*)q, (void*)p);
+        vcall<void>(sp, 0x3C / 4, qr ? qr : (void*)q);
+    }
+    return true;
+}
+static std::vector<void*> cities()
+{
+    std::vector<void*> v;
+    game::for_each_object(
+        [](void* o, uint32_t n, void* u) {
+            if (n == kCityNounW && game::object_alive(o) && !IsBadReadPtr(o, 0x530))
+                ((std::vector<void*>*)u)->push_back(o);
+            return true;
+        },
+        &v);
+    return v;
+}
+static bool decor_ok(void* c, void*** b, void*** e)
+{
+    *b = field<void**>(c, kCityDecor);
+    *e = field<void**>(c, kCityDecor + 4);
+    return !(*b || *e) || (*b && *e >= *b && *e - *b < 256 && !IsBadReadPtr(*b, (*e - *b) * 4 + 1));
+}
+static void* decor_city(void* o)
+{
+    for (void* c : cities()) {
+        void **b, **e;
+        if (decor_ok(c, &b, &e))
+            for (void** it = b; it && it < e; ++it)
+                if (*it == o)
+                    return c;
+    }
+    return nullptr;
+}
+static bool corn_behind(uint32_t, uint32_t host) { return host == kGone; }
+static void corn_apply(const Item& l, uint32_t host)
+{
+    if (host != kGone || !a_LayoutClear || !a_VecErase || !corn_take(l.p) || game::noun_id(l.p) != kOrnamentNoun)
+        return;
+    void* c = decor_city(l.p);
+    if (!c)
+        return; // not a city's (left alone)
+    void* o = l.p;
+    thiscall<void>(a_LayoutClear, (uint8_t*)c + kCityLayout, o);
+    game::destroy_instance(o); // (the vector's reference keeps it until the erase)
+    cdecl_call<int>(a_VecErase, (uint8_t*)c + kCityDecor, (void*)&o);
+    g_corn_removed++;
+}
+static int corn_make(const net::Vec3& pos, uint32_t)
+{
+    if (!g_corn_fix || !a_CityDecorate)
+        return 0;
+    void* best = nullptr;
+    float bd = 120.f;
+    for (void* c : cities()) {
+        net::Vec3 cp;
+        if (game::object_position(c, cp) && net::dist(cp, pos) < bd) {
+            bd = net::dist(cp, pos);
+            best = c;
+        }
+    }
+    if (!best)
+        return 0;
+    void **b, **e;
+    if (!decor_ok(best, &b, &e))
+        return 0;
+    if (b != e)
+        return -1; // it has its set: moved to the host's places by the relocation
+    thiscall<void>(a_CityDecorate, best, 0);
+    g_corn_sets++;
+    H->log(M, SK_INFO, "wobj: the city at %.0f m from the host's decoration at (%.1f %.1f %.1f) got its decorations", bd, pos.x, pos.y, pos.z);
+    return 1;
+}
+
 // ---------------------------------------------------------------- the table
 // ---------------------------------------------------------------- kind: citizen (Civ city citizens, BUG-0476)
 // cCreatureCitizen (noun 0x18EB4B7) of the cities: each game spawns and walks its own (an idle walk 0xD57680
@@ -855,6 +968,12 @@ static Kind g_kinds[] = {
     {.name = "cultural_target", .fix = &g_cult_fix, .stages = kStCiv | kStSpace, .tol = 3.f, .range = 400.f, .max = 48,
      .collect = cult_collect, .behind = none_behind, .apply = none_apply, .acted = none_acted, .act = none_act,
      .gone_acted = false, .drop_own = false, .place = cult_place, .relocate = 120.f, .place_eps = 0.5f, .place_fix = &g_cult_fix},
+    // BUG-0541 (0.7.9 L2b): the cities' decorations at the host's places (the whole planet, as space_vehicle; one packet
+    // holds 56, 6 cities' sets: on a planet with more the farthest from the guest's ship stay its own)
+    {.name = "city_ornament", .fix = &g_corn_fix, .stages = kStSpace, .tol = 1.5f, .range = 2500.f, .max = 56,
+     .collect = corn_collect, .behind = corn_behind, .apply = corn_apply, .acted = none_acted, .act = none_act,
+     .gone_acted = false, .drop_own = true, .make = corn_make, .place = corn_place, .relocate = 2500.f, .place_eps = 0.5f,
+     .place_fix = &g_corn_fix},
 };
 constexpr int kKinds = (int)(sizeof g_kinds / sizeof g_kinds[0]);
 // a snapshot is one unreliable message: 19 bytes + 20 per object within net::Connection::kMaxSingle (1163)
@@ -958,10 +1077,12 @@ static void host_tick(double now)
                 continue;
             net::Vec3 c;
             if (sb == kStSpace) { // BUG-0490: a guest's ship on our planet, over the ground the objects stand on
-                if (!C.space_partner || !C.space_partner(p.id, c) || all.empty())
+                // (BUG-0541: an empty list is sent too, from the ship: a planet whose cities have no decorations in the
+                // host's game has none in a guest's)
+                if (!C.space_partner || !C.space_partner(p.id, c))
                     continue;
                 float rc = std::sqrt(c.x * c.x + c.y * c.y + c.z * c.z);
-                const net::Vec3& o = all[0].pos;
+                const net::Vec3& o = all.empty() ? c : all[0].pos;
                 float ro = std::sqrt(o.x * o.x + o.y * o.y + o.z * o.z);
                 if (rc > 1.f && ro > 1.f && ro < rc)
                     c = {c.x * ro / rc, c.y * ro / rc, c.z * ro / rc};
@@ -1336,6 +1457,9 @@ std::string status()
                  t.tx, t.rx, t.bound, t.applied, t.dropped, t.missing, t.made, t.req_tx, t.req_rx, t.acted, t.placed, t.relocated);
         s += b;
     }
+    snprintf(b, sizeof b, "fruit made drops=%u fail=%u; bundles made=%u carried=%u removed=%u; city decorations sets=%u removed=%u\n",
+             g_fruit_made_drops, g_fruit_made_fail, g_bundles_made, g_bundles_carried, g_bundles_removed, g_corn_sets, g_corn_removed);
+    s += b;
     snprintf(b, sizeof b, "citizens walks=%u puts=%u far=%u; space citizens puts=%u; space vehicles drives=%u\n", g_cit_walks, g_cit_puts, g_cit_far,
              g_space_cit_puts, g_veh_drives);
     s += b;
@@ -1601,6 +1725,11 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
     a_BundleMgrGet = H->sym("Simulator::cBundleManager::Get");
     a_CreateBundles = H->sym("Simulator::cBundleManager::CreateBundles");
     a_RemoveBundles = H->sym("Simulator::cBundleManager::RemoveBundles");
+    a_PlanetModelGet = H->sym("Simulator::cPlanetModel::Get");
+    a_PlanetUpAt = H->sym("SporeCoop::cPlanetModel_SurfaceOrientation");
+    a_CityDecorate = H->sym("SporeCoop::City_MakeDecorations");
+    a_LayoutClear = H->sym("SporeCoop::Layout_ClearObject");
+    a_VecErase = H->sym("SporeCoop::VectorPtr_EraseValue");
     if (!a_FruitSetState || !a_FloraGet || !a_DropFruit || !a_TreeVt || !a_OrnUsed || !a_RewardFind || !a_RewardHandlerVt || !a_HerdSetExtinct || !a_HerdSetExtinctFlag)
         for (auto& k : g_kinds)
             k.stages = 0; // a symbol missing on this build: every game keeps its own (logged below)
