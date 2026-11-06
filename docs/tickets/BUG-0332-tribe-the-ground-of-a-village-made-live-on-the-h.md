@@ -10,7 +10,7 @@ role: guest
 versions: main be725db
 fixed_in: unreleased
 branch: fix/w45-village-ground
-commits:
+commits: 5168d50e d8eec122 e44422c6 eba073b2 717e3f28 3b5c3171 a2be5bca 985190d5 59f73dd3 02a767e1 08307861 4ecf75cb bbe9fc59 f155bdde 05931ba3 bc30ba92 
 tests: tribe_village_cadian (coop_tribe_village_ground.py --fixture=creature_cadian --map --terrain), tribe_village_ground, tribe_form_ground (coop_tribe_form_ground.py), campaign_ct (CAMPAIGN_GROUND=1, CAMPAIGN_FORM=1)
 signature:
 docs: docs/re/tribe.md#tribe-ground-height, docs/re/tribe.md#tribe-village-ground, docs/re/tribe.md#tribe-terrain-stamps

@@ -10,7 +10,7 @@ role: guest
 versions: 
 fixed_in: unreleased
 branch: fix/w45-village-ground
-commits:
+commits: bbe9fc59 (the BUG-0332 fix)
 tests: tribe_village_cadian (the two grounds, BUG-0332)
 signature:
 docs: docs/re/tribe.md#tribe-hit-impacts, docs/re/tribe.md#tribe-village-ground, docs/re/tribe.md#tribe-terrain-stamps
