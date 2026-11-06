@@ -16,6 +16,7 @@ PASS: at every point within 50 m the two grounds differ by less than 0.5 m.
 """
 import math
 import re
+import sys
 import time
 
 from coop_tribe_gameover import player_members
@@ -60,6 +61,51 @@ def villages(con):
     return res
 
 
+def cap_points(c, cap_deg=45.0, step_deg=2.0):
+    """a grid on the sphere through c round c's direction (polar angle up to cap_deg)"""
+    r = math.dist(c, (0, 0, 0))
+    up = tuple(x / r for x in c)
+    a = (0.0, 0.0, 1.0) if abs(up[2]) < 0.9 else (1.0, 0.0, 0.0)
+    e1 = (a[1] * up[2] - a[2] * up[1], a[2] * up[0] - a[0] * up[2], a[0] * up[1] - a[1] * up[0])
+    l = math.dist(e1, (0, 0, 0))
+    e1 = tuple(x / l for x in e1)
+    e2 = (up[1] * e1[2] - up[2] * e1[1], up[2] * e1[0] - up[0] * e1[2], up[0] * e1[1] - up[1] * e1[0])
+    pts = [tuple(x * r for x in up)]
+    th = step_deg
+    while th <= cap_deg:
+        t = math.radians(th)
+        n = max(6, int(2 * math.pi * math.sin(t) / math.radians(step_deg)))
+        for k in range(n):
+            ph = 2 * math.pi * k / n
+            d = tuple(math.cos(t) * up[i] + math.sin(t) * (math.cos(ph) * e1[i] + math.sin(ph) * e2[i]) for i in range(3))
+            pts.append(tuple(x * r for x in d))
+        th += step_deg
+    return pts
+
+
+def ground_map(con, pts):
+    return [ground(con, p) for p in pts]
+
+
+def map_report(label, pts, hm, gm, lim=0.3):
+    """the points where the two games' grounds differ, grouped into patches (within 40 m of each other)"""
+    bad = [(p, h, g) for p, h, g in zip(pts, hm, gm) if h is not None and g is not None and abs(h - g) > lim]
+    patches = []
+    for p, h, g in bad:
+        for pa in patches:
+            if math.dist(pa[0][0], p) < 40:
+                pa.append((p, h, g))
+                break
+        else:
+            patches.append([(p, h, g)])
+    print(f'  map {label}: {len(pts)} points, {len(bad)} differ by more than {lim} m, {len(patches)} patches', flush=True)
+    for pa in patches[:20]:
+        w = max(pa, key=lambda x: abs(x[1] - x[2]))
+        print(f'    patch of {len(pa)} at ({w[0][0]:.0f} {w[0][1]:.0f} {w[0][2]:.0f}): host {w[1]:.2f} guest {w[2]:.2f} '
+              f'(guest - host {w[2] - w[1]:+.2f})', flush=True)
+    return bad
+
+
 def compare(host, guest, pts):
     worst = {}
     for d, p in pts:
@@ -71,10 +117,20 @@ def compare(host, guest, pts):
 
 
 def main():
-    host, guest = start('creature')
+    fx = next((a.split('=', 1)[1] for a in sys.argv[1:] if a.startswith('--fixture=')), 'creature')
+    host, guest = start(fx)
     ck = Checks()
     players = [Player(host, 'host'), Player(guest, 'guest')]
     t0 = time.time()
+    do_map = '--map' in sys.argv  # BUG-0332: the whole region's ground on both games, in Creature and in Tribe
+    cmap = None
+    if do_map:
+        a0 = re.search(r'pos=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\)', out(host, 'coop.status') + out(host, 'coop.avatar'))
+        c0 = tuple(float(a0.group(i)) for i in (1, 2, 3)) if a0 else None
+        if c0:
+            mpts = cap_points(c0)
+            cmap = (mpts, ground_map(host, mpts), ground_map(guest, mpts))
+            map_report('Creature (before the change)', *cmap)
     host.call('coop.dna add 3000')
     last_kick = time.time()
     tribe_at = None
@@ -119,7 +175,33 @@ def main():
     print(f'  the village (the members\' centre on the host): ({c[0]:.1f} {c[1]:.1f} {c[2]:.1f})', flush=True)
     # BUG-0332: every tribe's village, the NPC tribes' too (in the campaigns the guests' ground was 5-6 m higher at
     # NPC tribe members, not at the player's village)
+    # --npc-at=x,y,z;x,y,z: the host's game makes an NPC tribe of 2 there (SpawnNpcTribe, as its controller does
+    # during play); the guest makes its copy of it (tribe.npc_tribes) (BUG-0332: the campaigns' new villages)
+    for spec in next((a.split('=', 1)[1] for a in sys.argv[1:] if a.startswith('--npc-at=')), '').split(';'):
+        if spec.strip():
+            q = tuple(float(x) for x in spec.split(','))
+            print(f'  host ground at ({spec}) before: {ground(host, q)}; ' + out(host, 'coop.tribe npc_tribe_at 2 %.2f %.2f %.2f' % q).strip(), flush=True)
+            time.sleep(8)
+            print(f'  guest ground there: {ground(guest, q)}', flush=True)
     places = [('the player tribe\'s members', c)] + villages(host)
+    # and the NPC tribe spawn markers: where the host's controller forms the next villages during play (BUG-0332)
+    places += [(f'marker {k}', tuple(float(m.group(i)) for i in (1, 2, 3))) for k, m in enumerate(re.finditer(
+        r'pos=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\)', out(host, 'coop.tribe markers')))]
+    places = [(n, q) for n, q in places if math.dist(q, (0, 0, 0)) > 50]
+    if cmap:
+        mpts = cmap[0]
+        hm, gm = ground_map(host, mpts), ground_map(guest, mpts)
+        bad = map_report('Tribe', mpts, hm, gm)
+        moved_h = sum(1 for a, b in zip(cmap[1], hm) if a is not None and b is not None and abs(a - b) > 0.3)
+        moved_g = sum(1 for a, b in zip(cmap[2], gm) if a is not None and b is not None and abs(a - b) > 0.3)
+        print(f'  Creature -> Tribe: the host\'s ground changed at {moved_h} points, the guest\'s at {moved_g}', flush=True)
+        for p, h, g in bad[:40]:
+            i = mpts.index(p)
+            print(f'    ({p[0]:.0f} {p[1]:.0f} {p[2]:.0f}): Creature host {cmap[1][i]} guest {cmap[2][i]}, Tribe host {h} guest {g}',
+                  flush=True)
+    if '--terrain' in sys.argv:  # the terrain's stamps on both games (terrain_diag.cpp)
+        for name, con in (('host', host), ('guest', guest)):
+            print(f'  {name} coop.terrain:\n' + out(con, 'coop.terrain')[:6000], flush=True)
     result = {}
     for k in range(2):
         for name, at in places:
