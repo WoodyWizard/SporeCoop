@@ -1882,3 +1882,16 @@ BUG-0531 (not reproduced, no fix). GOG 2024, lab lane 9, 'tribe' fixture.
   own walk to stop with the member outside the goal's radius, which a test cannot make by moving the member.
 * ~ The play_tribe stall (goal 2.8 m off, standing) therefore had a goal with a radius under 2.8 m: not the tree goal
   of this path (inferred).
+
+## The ground of a village made live, compared on both games (2026-11-05, fix/w45-tribe)
+<a id="tribe-village-ground"></a>
+
+BUG-0332 (not reproduced). GOG 2024, lab lane 9, coop_tribe_village_ground.py (the players' way from the `creature`
+fixture to Tribe, as coop_tribe_snapshot.py).
+* ✔ (runtime, out/lab/20261105-232737) After the live Creature -> Tribe change the game's own ground
+  (`coop.ground`, Simulator::cPlanetModel::GetHeightAt) at the new village (-175.3 -465.8 -85.4) and on rings of 10, 25,
+  50 and 100 m round it is the same on the host and the guest within 0.20 m (0.11 m at 100 m), twice 20 s apart. So
+  on this planet the village the host's game makes live and the one the guest loads from its save stand on the same
+  ground.
+* ? The 3.9-5.3 m of the campaign (#tribe-ground-height) were on planets the campaign made itself (Cell -> Creature
+  -> Tribe); not measured with this probe there yet.

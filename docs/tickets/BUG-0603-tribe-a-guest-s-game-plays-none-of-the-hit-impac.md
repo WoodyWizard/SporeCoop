@@ -8,9 +8,9 @@ reported: 2026-11-05
 source: lab (fix/w44-guest-player3, BUG-0600 analysis)
 role: guest
 versions: 
-fixed_in:
+fixed_in: unreleased
 branch: fix/w45-tribe
-commits:
+commits: a0b44e09
 tests: tribe_hit_impacts (coop_tribe_hit_impacts.py)
 signature:
 docs: docs/re/tribe.md#tribe-mirror-fx, docs/re/tribe.md#tribe-hit-impacts

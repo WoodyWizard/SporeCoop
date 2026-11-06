@@ -11,9 +11,9 @@ versions: main be725db
 fixed_in:
 branch:
 commits:
-tests:
+tests: tribe_village_ground (coop_tribe_village_ground.py, a probe)
 signature:
-docs:
+docs: docs/re/tribe.md#tribe-ground-height, docs/re/tribe.md#tribe-village-ground
 related: BUG-0329
 ---
 
@@ -45,3 +45,11 @@ on each game's own ground at the host's place.
 ## History
 - 2026-10-30: opened.
 - 2026-11-03: looked at on fix/w41-tribe-world, no new finding.
+- 2026-11-05 (fix/w45-tribe, T2 of 0.7.9): not reproduced on the `creature` fixture. New probe test
+  tribe_village_ground (coop_tribe_village_ground.py): the players' live Creature -> Tribe change, then the game's own
+  ground (`coop.ground`, cPlanetModel::GetHeightAt) on both games at the new village's centre and on rings of 10, 25,
+  50 and 100 m (8 directions): host and guest within 0.20 m everywhere, twice 20 s apart (out/lab/20261105-232737,
+  PASS). Observed: the guest's ground is the host's there; the live village does not change the ground in a way the
+  save loses on this planet. Inferred: the campaign's 4-5 m came from its own planet (made in the campaign's Cell and
+  Creature stages, not a fixture), so the probe needs such a world to show it: a campaign run (`coop_campaign.py
+  --from cell --to tribe`) with this probe's sampling is the next step. Stays open (no failing run on a fixture).

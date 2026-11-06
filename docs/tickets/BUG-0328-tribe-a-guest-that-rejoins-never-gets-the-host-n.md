@@ -58,3 +58,11 @@ worktree (not in git).
 - 2026-10-30: opened.
 - 2026-11-03: looked at on fix/w41-tribe-world: covered by npc.resync in principle, not verified in Tribe.
 - 2026-11-04 (fix/w43-realign): the rejoin's whole-planet objects checked (realign_tribe_rejoin PASS out/lab/20261104-212748); the NPC coverage still not reproduced, stays open.
+- 2026-11-05 (fix/w45-tribe, T2 of 0.7.9): not reproduced on the fixture, also without npc.resync. Read in npc.cpp
+  host_tick: in Tribe (rts) a guest that is not in this place (C.in_place false: loading, another world) gets every
+  known NPC despawned and its known set cleared, so the NPCs are sent again when it is back; the window the ticket
+  suspects is only while the host still counts it in place (its last state). tribe_rejoin_npcs (2 rounds of leave and
+  join): coverage 100 % of 7 after each rejoin with `SPORE_FIX_OFF=npc.resync` (out/lab/20261105-233218) and with it
+  (out/lab/20261105-233526): the test does not catch the class either way, so npc.resync (BUG-0487) is not shown to be
+  its fix. A 4-player Cell -> Tribe campaign (campaign_ct, the original report's kind of run) is the remaining check:
+  see below.
