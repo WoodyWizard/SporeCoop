@@ -2038,7 +2038,8 @@ Player reports 2026-11-04 (0.7.5, Discord bug-reports; not analysed yet):
 - BUG-0608: Tribe / Creature: a relayed world effect (a hit impact of BUG-0603) is made at the sender's absolute
   position: on a guest whose village ground is 5-6 m off the host's (BUG-0332, campaign planets only) it would be
   under or over the copies' feet (inferred, not seen; `CAMPAIGN_GROUND=1 tools/lab.py run campaign_ct` shows the
-  ground difference when it happens)
+  ground difference when it happens) (fixed on fix/w45-village-ground, unreleased: one ground for everybody,
+  tribe.host_reload of BUG-0332)
 - BUG-0617: Tribe / Civ: food a tribe member carries lies 1-3.5 m behind on the guest while the member walks, a guest
   member's own carried food is not in the host's game, and a few Civ bundles in other containers stay each game's own
   (the detector's `game_bundle` rows left after BUG-0548; `SPORE_DETECTOR=20 tools/lab.py run play_tribe`)
@@ -2050,8 +2051,7 @@ Player reports 2026-11-04 (0.7.5, Discord bug-reports; not analysed yet):
   `Tribe:unmatched:citizen`, 1-3 of ~31 samples a run). What it is is not known yet.
 * Reproduce: play_tribe with `SPORE_DETECTOR=20` and `coop_tribe_member_place.py --attach` (prints the object).
 * Ticket: BUG-0620
-  ground difference when it happens) (fixed on fix/w45-village-ground, unreleased: one ground for everybody,
-  tribe.host_reload of BUG-0332)
+
 - BUG-0622: Cell: once (lab 20261106-110218, a heavily loaded PC, the first load of a fresh game 4 s after the galaxy
   menu) the host's game faulted in its own Cell mode entry (the effect preload list at 0xE67610 ran past its block)
   and looped on faults; no co-op code was involved and 13 cold loads did not repeat it
