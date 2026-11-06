@@ -5769,6 +5769,10 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                            SAY("%s", effects::status().c_str());
                            return 0;
                        }
+                       if (argc > 1 && !strcmp(argv[1], "watch")) { // tests (BUG-0465): watch <hex id> | watch
+                           SAY("%s", effects::watch(argc > 2 ? (uint32_t)strtoul(argv[2], nullptr, 16) : 0).c_str());
+                           return 0;
+                       }
                        if (argc > 2 && !strcmp(argv[1], "probe")) {
                            SAY("%s", effects::probe((uint32_t)strtoul(argv[2], nullptr, 16)).c_str());
                            return 0;
