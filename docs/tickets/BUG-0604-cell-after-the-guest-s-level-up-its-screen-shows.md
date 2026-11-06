@@ -1,20 +1,20 @@
 ---
 id: BUG-0604
 title: Cell: after the guest's level-up its screen shows only water: no cell of any kind on screen for 7 min (cells 1-10 m from its avatar)
-status: open
+status: fixed
 kind: bug
 stage: Cell
 reported: 2026-11-05
 source: lab fix/w44-tests 20261105-142923 cell_new_game#1 (lane 9)
 role: guest
 versions: 
-fixed_in:
-branch:
-commits:
-tests: cell_new_game
+fixed_in: unreleased
+branch: fix/w45-cell
+commits: 2aa5f9fc
+tests: cell_new_game, cell_view_nan
 signature:
-docs:
-related: BUG-0589, BUG-0174
+docs: docs/re/cell.md#cell-view-nan
+related: BUG-0589, BUG-0174, BUG-0307, BUG-0343
 ---
 
 ## Report
@@ -32,13 +32,28 @@ the camera stayed at the old level's place or scale, or the level-up cinematic d
 Reproduce: `tools/lab.py run cell_new_game --lane N` (a guest that levels up during the play).
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+Observed in the report's log (re-read 2026-11-06): at the level-up (s 93.36) the guest's own cell had a NaN velocity
+and NaN particle velocities (own_probe mask 0x104, 17 frames in 0.24 s, "at guest tick, finite at collision"),
+healed each frame. Observed in the game's code (Ghidra, 0xE600A0): the cell camera eases its drawn point
+cCellUI+0x48 with factors computed from the avatar's speed; one NaN speed makes +0x48 NaN and every later frame
+keeps it NaN (its box clamp compares a NaN distance and never runs), and the view boxes are built around it.
+Observed at runtime with the same fault injected (`coop.pool nanself vel 17`, cell.camera_heal off): the guest's
+`cam=(nan nan)` with a finite target, 0 cells on its screen 3 s later and after swimming 15 m (the report's plain
+water). Inferred: the report's guest had that NaN camera (0.7.8 did not log the camera). What made the velocity
+NaN at the level-up is BUG-0307's open first NaN (docs/re/cell.md#cell-view-nan).
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+`coop.fix cell.camera_heal` (cellsync.cpp `camera_heal`): every frame in Cell (in a session or solo) a camera
+point (+0x48 / +0x54 / +0x60) that is not finite goes back onto the own cell, as the game's own jumps set them.
+Off: 0.7.8 (the view stays lost until the next load). Test command `coop.pool nanself vel [n]`; `coop.pool cam`
+prints `heals=`.
 
 ## Verification
-no-fail-run: not fixed (found by G2, fix/w44-tests, in a regression run of cell_new_game).
+cell_view_nan (tools/tests/coop_cell_view_nan.py): FAIL with SPORE_FIX_OFF=cell.camera_heal, lab 20261106-002913
+(guest camera nan, 0 cells on screen); PASS lab 20261106-003015 (17 heals, camera 0.3 m from the cell, 32 / 53
+cells on screen). cell_new_game again (lab 20261106-003243): two guest level-ups, no NaN this time; it failed on
+its meat probes (host 0/6, guest 2/6, BUG-0589's flaky probe, not this).
 
 ## History
 - 2026-11-05: opened.
+- 2026-11-06 (fix/w45-cell): root cause (the NaN camera after a NaN velocity), fix cell.camera_heal, test cell_view_nan.

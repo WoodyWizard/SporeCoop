@@ -4345,7 +4345,7 @@ std::string debug(const std::vector<std::string>& a)
         h_AddFood(atoi(a[1].c_str()), a.size() >= 3 && a[2] == "plant");
         return "meal eaten";
     }
-    if (!a.empty() && a[0] == "tokens") { // tests (BUG-0316): the part tokens in the pool; `tokens to <id>`: the nearest one 4 m from that player's cell
+    if (!a.empty() && a[0] == "tokens") { // tests (BUG-0316): the part tokens in the pool; `tokens to <id> [c<key>]`: the nearest one (or that one) 4 m from that player's cell
         std::vector<std::pair<float, uint8_t*>> v;
         net::Vec3 me = pos_of(av);
         for_each_cell([&](uint8_t* c, uint32_t) {
@@ -4355,6 +4355,14 @@ std::string debug(const std::vector<std::string>& a)
         std::sort(v.begin(), v.end(), [](auto& x, auto& y) { return x.first < y.first; });
         std::string o;
         char b[160];
+        if (a.size() >= 4 && a[1] == "to") { // `tokens to <id> c<key>`: that token
+            uint32_t want = (uint32_t)strtoul(a[3].c_str() + (a[3][0] == 'c' ? 1 : 0), nullptr, 10);
+            for (size_t i = 0; i < v.size(); i++)
+                if (F<uint32_t>(v[i].second, 0) == want)
+                    std::swap(v[0], v[i]);
+            if (v.empty() || F<uint32_t>(v[0].second, 0) != want)
+                return "no such token\n";
+        }
         if (a.size() >= 3 && a[1] == "to" && !v.empty()) {
             uint8_t* pc = atoi(a[2].c_str()) == (C.sess ? C.sess->my_id() : 0) ? av : puppet_cell(atoi(a[2].c_str()));
             if (!pc)

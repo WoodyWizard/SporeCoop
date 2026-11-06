@@ -8,6 +8,10 @@
   (BUG-0403).
 - Cell: a guest whose pause menu was open while the others played, and who then left and joined again, no longer
   crashes when the host's world is loaded (BUG-0308; the fix came with 0.7.3.2, now tested on this path).
+- Cell: a player's screen no longer turns to plain water for the rest of the game after a level-up (the camera
+  lost its place when the cell's movement glitched for a moment); the view comes back onto your cell (BUG-0604).
+- Cell: the end of the Cell stage no longer makes the co-op sync-check report the host's cell hundreds of metres
+  off on every guest when nothing was wrong (BUG-0606).
 
 ## [0.7.8] - 2026-11-05
 

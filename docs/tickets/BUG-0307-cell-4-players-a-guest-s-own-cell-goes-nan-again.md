@@ -11,10 +11,10 @@ versions: 0.7.3.1
 fixed_in:
 branch: fix/w12-cell-fault
 commits:
-tests: cell_nan_all, cell_churn, campaign, cell_4p, cell_nan_drain, cell_jumps
+tests: cell_nan_all, cell_churn, campaign, cell_4p, cell_nan_drain, cell_jumps, cell_view_nan
 signature:
 docs: docs/known-issues.md#issue-cell-own-nan
-related: BUG-0299, BUG-0292, BUG-0306, BUG-0314
+related: BUG-0299, BUG-0292, BUG-0306, BUG-0314, BUG-0604
 ---
 
 ## Report
@@ -76,3 +76,15 @@ the 1-3 of the original run).
   address space drain. Negative: 3 minutes of a NaN own cell with the heal off, level-ups and
   swimming kept 3632 MB free (lab 20261030-133256, cell_nan_drain); 4 players with Carol jumping at
   3 fps (28 538 mirrors created) kept 3613-3620 MB. docs/re/cell.md#cell-bg-leftovers.
+- 2026-11-06 (fix/w45-cell, package C2): the first natural NaN of the own cell seen since: lab 20261105-142923
+  cell_new_game#1 (fix/w44-tests, 2 players, guest), at the guest's level-up (s 93, size 0.82 -> 0.48): mask 0x104
+  (the velocity +0x90 and the particles' velocities, positions finite), 17 frames in 0.24 s, each "at guest tick,
+  finite at collision", healed each frame by cell.nan_heal_all, then never again. Its visible damage was a NaN
+  camera for the rest of the session (BUG-0604, fixed: cell.camera_heal, test cell_view_nan with the same mask
+  injected inside the cell step, `coop.pool nanself vel`). Narrowed (Ghidra, SimUpdate's order,
+  docs/re/cell.md#cell-view-nan): the NaN came after the collisions 0xE7F260; 0xE5D5B0, 0xE78D10 and 0xE697E0 do
+  not write a cell's +0x90, 0xE73F60 only reads it; not read: RebuildLevel 0xE7FD00 (when G+0x51D8), 0xE53AE0,
+  0xE6C9F0 and our own code between the game's step and guest_tick. Candidate not shown: ReTierSoftBody 0xE51A20
+  reads old particles by index without a check (a -1 entry of a full pool). Not reproduced: cell_new_game again
+  with two guest level-ups (lab 20261106-003243), no own_probe line. Still open: the writer of the NaN velocity,
+  the address space drain. Status stays open.
