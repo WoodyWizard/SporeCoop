@@ -4507,3 +4507,9 @@ BUG-0332 (docs/re/tribe.md#tribe-terrain-stamps).
   mod's owner and id, age, dead flag, species, and the ai line; `coop_tribe_member_place.py --attach` prints it for
   every lone host citizen. `coop.tribe ai` ends with the order target's object (listed, noun, alive, place, distance);
   play_tribe prints every order nobody moved on with the host's ai lines (BUG-0531).
+* New suites of fix/w45-last: `tribe_dead_player` (coop_tribe_dead_member.py --player, ~1.5 min warm: a host member
+  killed with `coop.tribe pincer`, its body out of the member list needs a guest citizen within 3 m; BUG-0620),
+  `host_bundle_carry` (coop_world_host.py --case bundle_carry, ~1.5 min: the carrier must walk (`coop.tribe order <id>
+  4`), standing carriers bind both ways; BUG-0617), `tribe_gather_block` (a probe, BUG-0531: no stall seen),
+  `npc_nest_backoff` / `npc_nest_backoff_near` (BUG-0562). play_creature's bot: the pack hunts together (no own hunt
+  while the partner leads one).
