@@ -3724,6 +3724,11 @@ the other player's game, both ways where the kind has two:
   0 stale in 4 of 6 runs, 49 meat mirrors at once in 2 cold runs (round 5 both times; the guest's mirror entry
   was refreshed 0.2 s before, the host's `coop.pool cell` and its census did not have the index:
   out/lab/20261103-155103, 20261103-155433; cause not found, BUG-0480).
+  CORRECTION (2026-11-06, fix/w45-leftovers): those were host cells born after the first host dump and destroyed
+  by the game's cull just before the second (docs/re/cell.md#cell-short-lived); a candidate now counts as stale
+  only when the host's `coop.pool cell <key>` says it stopped sending it at least 1 s before the guest's dump
+  (`last sent ... s ago`). `--case play` also fails on a host cell within 25 m of the guest (in both host dumps)
+  that the guest has no mirror of.
 * The detector's Cell compare (tools/tests/worlddiff.py `pair_dump`, `CELL_BRACKET`): the host is dumped before
   and after the guest, 1.5 s apart; a guest's proxy counts as `guest_only:cell` only when the host had its
   index in neither dump, a host cell as `host_only:cell` only when it had it in both. Cell cells live for
