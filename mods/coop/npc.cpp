@@ -262,6 +262,31 @@ static uint64_t herd_key(const game::Key& k) { return ((uint64_t)k.group << 32) 
 static std::vector<void*> g_kill;          // local NPCs to remove (guest)
 static uint32_t g_proxy_lost = 0;
 static double g_last_states_rx = -100; // guest: the last NPC state batch from the host
+// BUG-0611: a proxy is stale after 5 s without its state only while the host sends states. After a time
+// without any (the host's game stood still under a caption, the death caption, the pause menu) every proxy's
+// last state was that old, and the first batch after it dropped every proxy it did not list: the guest lost
+// 24 of 25 host NPCs 2 s after the brain upgrade caption that followed another caption (transition_net, lab
+// 20261101-145528 of feat/w33-tests-session), and the host, standing still again, counted them as known and
+// sent nothing. Now the 5 s count from when the states flow again (g_states_flow_since).
+// `coop.fix npc.thaw_stale off`: counted from the proxy's last state (0.7.8).
+static bool g_thaw_stale_fix = true;
+COOP_FIX("npc.thaw_stale", "BUG-0611", g_thaw_stale_fix,
+         "creature: a guest keeps the host's NPCs when the host's game goes on after standing still (a caption)");
+static double g_states_flow_since = -100; // guest: the first batch after a time without any
+static uint32_t g_thaw_kept = 0;          // guest: stale drops the thaw rule held back (tests)
+// tests (BUG-0611): `coop.npc rxkeep <n> <s>` (guest): for s seconds each MSG_NPC_STATE batch keeps only its
+// first n NPCs, as when the other packet of a batch split in two (23 NPCs a packet) is lost
+static int g_rxkeep_n = 0;
+static double g_rxkeep_until = 0;
+static uint32_t g_rxkeep_cut = 0;
+std::string debug_rxkeep(int n, float secs)
+{
+    g_rxkeep_n = n < 0 ? 0 : n;
+    g_rxkeep_until = H->time_seconds() + secs;
+    char b[96];
+    snprintf(b, sizeof b, "rxkeep %d NPCs a state batch for %.1f s\n", g_rxkeep_n, secs);
+    return b;
+}
 static uint32_t g_stale_dropped = 0;   // guest: proxies the host stopped talking about (ghosts)
 static uint32_t g_deaths_played = 0; // guest: proxy deaths replayed (Die + animation)
 static uint32_t g_removed_local = 0, g_hits_sent = 0, g_hits_applied = 0, g_damage_in = 0, g_kills_credited = 0;
@@ -1170,7 +1195,10 @@ static bool saved_stray(void* c)
     return c && !IsBadReadPtr(c, 0x1680) && !*(void**)((uint8_t*)c + 0xE84) && game::species_profile(c) &&
            !game::destroy_pending(c) && own_kind_herd(game::herd_of(c));
 }
-static uint32_t g_frozen_spawns = 0, g_frozen_despawns = 0;
+static uint32_t g_frozen_spawns = 0, g_frozen_despawns = 0, g_frozen_retired = 0;
+static bool g_frozen_pooled_fix = true;
+COOP_FIX("npc.frozen_pooled", "BUG-0339", g_frozen_pooled_fix,
+         "creature: an NPC the host's game takes back into its pool while the game stands still is despawned at the guests");
 static void frozen_send(double now)
 {
     if (now - g_frozen_send_at < 0.5)
@@ -1188,12 +1216,34 @@ static void frozen_send(double now)
         },
         &a);
     std::vector<std::pair<void*, net::Vec3>> live;
+    std::vector<void*> gone; // BUG-0339: tracked, no creature of the world any more (freed, or pooled at the centre)
+    std::unordered_set<void*> listed(a.live.begin(), a.live.end());
+    for (auto& [c, hn] : g_host_npcs)
+        if (!listed.count(c))
+            gone.push_back(c);
     for (void* c : a.live) {
         net::Vec3 p = game::position(c);
-        if (!game::herd_of(c) || p.x * p.x + p.y * p.y + p.z * p.z < 2500.f) // pooled (BUG-0274, BUG-0339)
+        bool centre = p.x * p.x + p.y * p.y + p.z * p.z < 2500.f;
+        if (centre)
+            gone.push_back(c);
+        if (!game::herd_of(c) || centre) // pooled (BUG-0274, BUG-0339)
             continue;
         live.push_back({c, p});
     }
+    // BUG-0339: the game takes NPCs back into its pool (the planet's centre) also while it updates no
+    // creature (the host's respawn at its nest with a caption up, lab 20261031-083425 campaign#2): host_tick's
+    // retire_pooled does not run then, and they were skipped here, so a guest kept their proxies where
+    // they had stood for the whole freeze (no despawn, no states: no stale drop either). They go now.
+    // `coop.fix npc.frozen_pooled off`: kept until the host's game goes on (0.7.8).
+    if (g_frozen_pooled_fix)
+        for (void* c : gone) {
+            auto it = g_host_npcs.find(c);
+            if (it == g_host_npcs.end())
+                continue;
+            retire(it->second.id, c);
+            g_host_npcs.erase(it);
+            g_frozen_retired++;
+        }
     for (auto& p : C.sess->players()) {
         if (p.id == 0 || (C.in_place && !C.in_place(p.id)))
             continue;
@@ -1576,8 +1626,13 @@ static void guest_tick(double now)
     if (g_stale_fix && now - g_last_states_rx < 0.5) {
         std::vector<uint16_t> stale;
         for (auto& [id, px] : g_proxies)
-            if (now - px.last_rx > 5.0)
+            if (now - px.last_rx > 5.0) {
+                if (g_thaw_stale_fix && now - g_states_flow_since <= 5.0) {
+                    g_thaw_kept++;
+                    continue;
+                }
                 stale.push_back(id);
+            }
         for (uint16_t id : stale) {
             destroy_proxy(id);
             g_stale_dropped++;
@@ -2185,6 +2240,10 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         if (trailer && whole)
             for (size_t i = 0; i < sts.size() && r.ok(); i++)
                 agls[i] = (int16_t)r.u16() / 100.f;
+        if (now < g_rxkeep_until && sts.size() > (size_t)g_rxkeep_n) { // tests (BUG-0611): a lost packet of the batch
+            g_rxkeep_cut += (uint32_t)(sts.size() - g_rxkeep_n);
+            sts.resize(g_rxkeep_n);
+        }
         for (size_t i = 0; i < sts.size(); i++) {
             const net::NpcState& st = sts[i];
             auto it = g_proxies.find(st.net_id);
@@ -2204,8 +2263,11 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             it->second.buf.push(s, now);
             it->second.last_rx = now;
         }
-        if (whole) // the host sends states (an empty or cut batch says nothing about stale proxies)
+        if (whole) { // the host sends states (an empty or cut batch says nothing about stale proxies)
+            if (now - g_last_states_rx > 1.0) // BUG-0611: they flow again after a time without any
+                g_states_flow_since = now;
             g_last_states_rx = now;
+        }
         break;
     }
     case net::MSG_NPC_MEAT: { // BUG-0557: the meat of the bodies
@@ -2494,10 +2556,10 @@ std::string status()
                  (unsigned)g_host_npcs.size(), (unsigned)g_seen_now.size(), (unsigned)known, g_hits_applied,
                  g_kills_credited, g_strays_removed, g_hatch_helped, (int)g_partner_targets, (unsigned)on_partner,
                  g_ai_partner_picks, game::ai_swaps(), game::swaps_restored(), game::swap_ledger_restored(), g_reused, (unsigned)teamplay::hit_targets(), g_pooled_retired);
-        char b2[192]; // BUG-0512
-        snprintf(b2, sizeof b2, "npc(host) pack: partner_targets_cleared=%u partner_stimuli_cleared=%u frozen_s=%.1f frozen_spawns=%u frozen_despawns=%u\n",
+        char b2[256]; // BUG-0512
+        snprintf(b2, sizeof b2, "npc(host) pack: partner_targets_cleared=%u partner_stimuli_cleared=%u frozen_s=%.1f frozen_spawns=%u frozen_despawns=%u frozen_retired=%u\n",
                  g_pack_targets_cleared, g_pack_stimuli_cleared, g_frozen_since > 0 ? H->time_seconds() - g_frozen_since : 0.0,
-                 g_frozen_spawns, g_frozen_despawns);
+                 g_frozen_spawns, g_frozen_despawns, g_frozen_retired);
         return std::string(b) + b2 + meat_status() + game::destroy_deferred_status() + "\n";
     } else {
         unsigned spawned = 0;
@@ -2505,11 +2567,11 @@ std::string status()
             spawned += px.c != nullptr;
         snprintf(b, sizeof b, "npc(guest): proxies=%u spawned=%u local_removed=%u hits_sent=%u damage_in=%u lost=%u host_away=%d "
                  "away_dropped=%u local_alive=%u in_nest=%u nests=%u stale_dropped=%u strays_removed=%u hatch_helped=%u "
-                 "deaths_played=%u kill_held=%u away_locals=%u unlisted=%u nospecies=%u leave_locals=%u\n",
+                 "deaths_played=%u kill_held=%u away_locals=%u unlisted=%u nospecies=%u leave_locals=%u thaw_kept=%u rxkeep_cut=%u\n",
                  (unsigned)g_proxies.size(), spawned, g_removed_local, g_hits_sent, g_damage_in, g_proxy_lost, (int)g_host_away,
                  g_away_proxies, g_local_alive, g_proxies_in_nest, (unsigned)g_local_herds.size(), g_stale_dropped,
                  g_strays_removed, g_hatch_helped, g_deaths_played, (unsigned)g_kill.size(), g_away_locals, g_proxy_unlisted,
-                 g_proxy_nospecies, g_leave_locals);
+                 g_proxy_nospecies, g_leave_locals, g_thaw_kept, g_rxkeep_cut);
     }
     return b + meat_status() + game::destroy_deferred_status() + "\n";
 }

@@ -1689,3 +1689,33 @@ BUG-0307 (the first NaN of the own cell). GOG 2024, Ghidra (`tools/ghidra/q.sh -
   still not finite is not applied. `coop.pool` prints `contacts_unit=` (normals made unit), `contacts_bad=` /
   `contacts_bad_own=` (impulses not finite) and `contact_solves=`; the first 30 bad contacts are logged with both
   cells. Probes `before the contact solver` / `contact solver` added to own_probe.
+## The "stale" mirrors were cells the host's game culls a second after making them (2026-11-06, fix/w45-leftovers)
+<a id="cell-short-lived"></a>
+
+BUG-0480. GOG 2024, lane 7, `coop_cell_gone.py --case play` (cold starts), Ghidra (`tools/ghidra/q.sh --build 2024`).
+* ✔ (runtime) Reproduced the old failure with the old oracle (a guest mirror of a host index in neither of two host
+  dumps 2.5 s apart): 29-141 at once in 3 of 8 runs, always one round (round 3 or 7: the same places, e.g. 30-45 m
+  north of both players at (93-124 129-152), level 1, or level 0 at (88-136 75-84)) (out/lab/20261106-111736 #2,
+  20261106-113202 #2 #4; the rel/0.7.9 code the same, its lab 20261106-110218 #2).
+* ✔ (runtime) The host names each sent index's history now (`coop.pool cell <key>` on the host: "last sent X s ago,
+  first Y s ago, N sends; its slot holds ..."): every such cell had been sent 0.12-0.28 s before the question, for
+  0.9-1.7 s in all (8 sends), and its pool slot was free again (a free-list link in the header). So the host's
+  game had them for about a second between its two dumps, and the guest's mirror was one or two rounds (0.1-0.2 s)
+  behind, as designed. Nothing stale.
+* ✔ (runtime) Who destroyed them: DestroyCell's caller for host cells destroyed < 2 s after their first send was
+  **0xE7C3E6 only** (470-471 per run), in CellPhysicsStep 0xE7C080 (Ghidra): after the step, `ShouldCullCell`
+  0xE5F8C0 and the keep-alive byte +0x354 == 0 -> DestroyCell(idx, 0, dt, 0). ShouldCullCell: never for level -1;
+  a cell more than one level under the food-progress level only fades; else true when its parent tile +0x36C is
+  deleted and IsTileActive 0xE5F810 (our h_TileActive, with every player's box) refuses the tile of its position.
+  So the tile they were made for went (the view moved: the test teleports both cells 20 m a round) and their own
+  tile was outside every box: the game's own streaming at the edge of the gameplay range (twice the visible box),
+  in single player too. Not changed.
+* ✔ (runtime) With the oracle on the host's last send (stale = it stopped sending the index >= 1 s before the
+  guest's dump) the same events read "143 / 28 mirrors in neither host dump: 0 stale, sent up to 0.06 / 0.16 s
+  before the guest's dump" (out/lab/20261106-115611 4 of 4 PASS; 20261106-114009 3 of 3, cell_gone and
+  cell_gone_probe 3 of 3: the probe still sees stale mirrors while the state is held).
+* ✔ (runtime) The other half of the ticket, host cells near the guest without a mirror: 0 within 25 m in 150
+  rounds (15 runs; a host cell counts only when it is in both host dumps). The detector's Cell compare had 0
+  findings in 27 comparisons of play_cell (out/lab/20261106-114009-2).
+* ~ The detector's bracket (host dumps 1.5 s apart) can still count a cell living ~1 s between them as
+  `guest_only:cell`; not seen in these runs.

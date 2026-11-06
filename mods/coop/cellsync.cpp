@@ -891,8 +891,29 @@ static std::map<uintptr_t, uint32_t> g_dbg_destroy_by; // RE (BUG-0355): Destroy
 static std::unordered_map<uint32_t, double> g_touched;
 static uint32_t g_kept, g_puppet_saves, g_puppet_new, g_own_eats, g_own_food;
 static std::unordered_map<int, void*> g_puppet_seen;
+// tests (BUG-0480): when each host index was last sent, and where it was then (`coop.pool cell <key>` on the
+// host names it for a cell it does not have now); pruned after 20 s
+struct SentCell {
+    double first, at;
+    net::Vec3 pos;
+    int level;
+    uint32_t sends;
+};
+static std::unordered_map<uint32_t, SentCell> g_sent_at;
+static double g_sent_pruned;
+// BUG-0480: host cells destroyed less than 2 s after their first send, by the caller of DestroyCell
+static std::map<uintptr_t, uint32_t> g_quick_destroy;
+static uint32_t g_quick_destroys;
+
 static void SK_CDECL h_Destroy(uint32_t idx, bool loot, float f, int x)
 {
+    if (is_host() && in_cell()) {
+        auto st = g_sent_at.find(idx);
+        if (st != g_sent_at.end() && H->time_seconds() - st->second.first < 2.0) {
+            g_quick_destroys++;
+            g_quick_destroy[(uintptr_t)__builtin_return_address(0) - H->rebase(0)]++;
+        }
+    }
     if (in_cell()) {
         // A partner's cell is ours to remove (modes::cell_despawn forgets it before it destroys it).
         // The game removed it on a level change (RemoveCellsOfOldScale), when an NPC broke or swallowed
@@ -2821,8 +2842,25 @@ void set_fake_model(uint32_t idx, uint32_t inst)
     g_fake_inst = inst;
 }
 
+
 static void send_state(int dest, const std::vector<SendCell>& cells)
 {
+    double now_s = H->time_seconds();
+    if (now_s - g_sent_pruned > 5.0) {
+        g_sent_pruned = now_s;
+        for (auto it = g_sent_at.begin(); it != g_sent_at.end();)
+            it = now_s - it->second.at > 20.0 ? g_sent_at.erase(it) : std::next(it);
+    }
+    for (auto& e : cells) {
+        auto f = g_sent_at.find(e.idx);
+        if (f == g_sent_at.end())
+            g_sent_at[e.idx] = {now_s, now_s, pos_of(e.c), F<int>(e.c, kLevel), 1};
+        else {
+            f->second.at = now_s;
+            f->second.pos = pos_of(e.c);
+            f->second.sends++;
+        }
+    }
     size_t per = 14, chunks = std::max<size_t>(1, (cells.size() + per - 1) / per);
     for (size_t k = 0; k < chunks; k++) {
         net::Writer w;
@@ -4347,6 +4385,29 @@ std::string debug(const std::vector<std::string>& a)
             }
         } else
             c = modes::cell_at(key);
+        if (!c && !is_guest()) {
+            auto st = g_sent_at.find(key);
+            if (st != g_sent_at.end()) { // BUG-0480: sent, not here now
+                char b[200];
+                uint8_t* slot = nullptr;
+                uint8_t* g = G();
+                if (g && F<uint8_t*>(g, 0x1C) && (key & 0xFFFF) < F<uint32_t>(g, 0x1C + 0x10))
+                    slot = F<uint8_t*>(g, 0x1C) + (size_t)(key & 0xFFFF) * 0x398;
+                snprintf(b, sizeof b, "no such cell (last sent %.2f s ago at (%.1f %.1f) level %d, first %.2f s ago, %u sends; its slot holds %08X now)\n",
+                         H->time_seconds() - st->second.at, st->second.pos.x, st->second.pos.y, st->second.level,
+                         H->time_seconds() - st->second.first, st->second.sends, slot ? F<uint32_t>(slot, 0) : 0u);
+                std::string out(b);
+                char q[64];
+                snprintf(q, sizeof q, "  host cells destroyed < 2 s after their first send: %u;", g_quick_destroys);
+                out.pop_back();
+                out += q;
+                for (auto& [ra, n] : g_quick_destroy) {
+                    snprintf(q, sizeof q, " ra 0x%08X x%u", (unsigned)ra, n);
+                    out += q;
+                }
+                return out + "\n";
+            }
+        }
         if (!c)
             return "no such cell";
         std::string pre;
@@ -4443,6 +4504,29 @@ std::string debug(const std::vector<std::string>& a)
             c = it != g_mirrors.end() && it->second.local ? modes::cell_at(it->second.local) : nullptr;
         } else
             c = modes::cell_at(key);
+        if (!c && !is_guest()) {
+            auto st = g_sent_at.find(key);
+            if (st != g_sent_at.end()) { // BUG-0480: sent, not here now
+                char b[260];
+                uint8_t* slot = nullptr;
+                uint8_t* g = G();
+                if (g && F<uint8_t*>(g, 0x1C) && (key & 0xFFFF) < F<uint32_t>(g, 0x1C + 0x10))
+                    slot = F<uint8_t*>(g, 0x1C) + (size_t)(key & 0xFFFF) * 0x398;
+                snprintf(b, sizeof b, "no such cell (last sent %.2f s ago at (%.1f %.1f) level %d, first %.2f s ago, %u sends; its slot holds %08X now)\n",
+                         H->time_seconds() - st->second.at, st->second.pos.x, st->second.pos.y, st->second.level,
+                         H->time_seconds() - st->second.first, st->second.sends, slot ? F<uint32_t>(slot, 0) : 0u);
+                std::string out(b);
+                char q[64];
+                snprintf(q, sizeof q, "  host cells destroyed < 2 s after their first send: %u;", g_quick_destroys);
+                out.pop_back();
+                out += q;
+                for (auto& [ra, n] : g_quick_destroy) {
+                    snprintf(q, sizeof q, " ra 0x%08X x%u", (unsigned)ra, n);
+                    out += q;
+                }
+                return out + "\n";
+            }
+        }
         if (!c)
             return "no such cell";
         net::Vec3 p = pos_of(c);

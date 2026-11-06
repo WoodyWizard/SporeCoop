@@ -1216,6 +1216,8 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   the host and respawned at the nest); not reproduced by the pool call or a pinned NPC.
 * Known: docs/re/creature.md#creature-npc-at-centre; the host logs such NPCs now.
 * Ticket: BUG-0339.
+* CORRECTION (2026-11-06, fix/w45-leftovers): fixed (`npc.frozen_pooled`): NPCs the host's game pools while it
+  stands still were never despawned; docs/re/creature.md#creature-freeze-edges.
 
 ## Cell: the view is off centre after a co-op small respawn (2026-10-31, player report)
 <a id="issue-cell-respawn-camera"></a>
@@ -1507,6 +1509,8 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   13 -> 1 -> 0 under the caption while the host kept 13; sync-check `n: 15 missing on the guest`.
 * Reproduce: two games on the creature fixture, `AddEvolutionPoints f:3000` on the host, `coop.npc` on the guest.
 * Ticket: BUG-0413
+* CORRECTION (2026-11-06, fix/w45-leftovers): the loss after a freeze is BUG-0611 (the guest's stale rule counted
+  the frozen time), fixed (`npc.thaw_stale`); docs/re/creature.md#creature-freeze-edges.
 
 ## Crash: hosting before the main menu (2026-11-01, feat/w33-tests-session)
 <a id="known-host-before-menu"></a>
