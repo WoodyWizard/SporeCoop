@@ -240,6 +240,20 @@ def main():
             print(f'    stamp {k} raw, host | guest:', flush=True)
             for a, b in zip(out(host, f'coop.terrain raw {k}').splitlines(), out(guest, f'coop.terrain raw {k}').splitlines()):
                 print(f'      {a:28s} | {b}' + ('   <>' if a != b else ''), flush=True)
+        if '--host-reload' in sys.argv and diff:  # BUG-0332: is the host's own loaded terrain its live one or the guest's?
+            before = {k: ground(host, h[k][2]) for k in diff[:12]}
+            gb = {k: ground(guest, h[k][2]) for k in diff[:12]}
+            slot = next((a.split('=', 1)[1] for a in sys.argv[1:] if a.startswith('--slot=')), 'Game0 Cadian')
+            print('  host: ' + out(host, f'coop.load {slot}').strip(), flush=True)
+            tl = time.time()
+            time.sleep(10)
+            while time.time() - tl < 120 and not ('Tribe' in out(host, 'game.mode') and 'pos=' in out(host, 'coop.avatar')):
+                time.sleep(3)
+            time.sleep(8)
+            print(f'  host reloaded its own save ({time.time() - tl:.0f} s): ' + out(host, 'game.mode').strip(), flush=True)
+            for k in diff[:12]:
+                print(f'    stamp {k} at r {h[k][3]}: host live {before[k]}, host after its own load {ground(host, h[k][2])}, '
+                      f'guest {gb[k]}', flush=True)
         if '--regen' in sys.argv and diff:  # BUG-0332: the guest's fresh-load generator flag (docs/re/tribe.md)
             for step in ('regen', 'regen clear'):
                 print('  guest: ' + out(guest, f'coop.terrain {step}').strip(), flush=True)
