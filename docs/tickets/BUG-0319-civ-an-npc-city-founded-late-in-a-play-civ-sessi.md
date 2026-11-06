@@ -8,7 +8,7 @@ reported: 2026-10-30
 source: play_civ.py --seed 9, fix/w13-tribe-civ
 role: guest
 versions: 0.7.3.1 + fix/w13-tribe-civ
-fixed_in: unreleased
+fixed_in: 0.7.3.4
 branch: fix/w45-placement
 commits:
 tests: civ_city_burst (coop_civ_city_burst.py), civ_pause_city
@@ -51,4 +51,4 @@ not in 30 s: the report's symptom), PASS out/lab/20261106-065813.
 - 2026-11-01 (fix/w34-vote-cinematic, BUG-0404): the mod's busy gate reads the game time's pause flag (cGameTimeManager +0x48 bit 0: the pause menu, the Sporepedia, My Collections alike); `coop.status` prints `busy:` and the campaign's sync and census checks skip a guest whose game stands by it, not only by the "Resume Game" button. Not checked: whether the city planner sets the flag, and play_civ.py's own audit still has no pause check.
 - 2026-11-04 (fix/w41-civ-citizens): no sighting of `city N missing on the guest` in the 54 play_civ logs of November (main and worktrees, out/lab/202611*) nor in this branch's play_civ --repeat 2 (see the report). Still open as not reproduced; the diagnostics of 2026-10-30 stay.
 - 2026-11-04 (fix/w42-civ-left): not reproduced in 3 more play_civ runs with the detector on lane 9 (out/lab/20261104-100146, 20261104-101322, 20261104-102449): every founding of the host (6 per run) was founded on the guest at once ("here founded"), `cities_caught_up=0`, no "missing on the guest" line, and no Civ city or vehicle row of the detector for a new city. Still open as not reproduced; the only known delay is a guest's pause menu (BUG-0331, civ_pause_city), where the founding waits for the guest's game time by design.
-- 2026-11-06 (fix/w45-placement): closed as fixed by BUG-0380 (civ.city_burst, the catch-up delay of the report's log); FAIL / PASS runs above.
+- 2026-11-06 (fix/w45-placement): closed as fixed by BUG-0380 (civ.city_burst, the catch-up delay of the report's log); FAIL / PASS runs above. fixed_in is BUG-0380's release (0.7.3.4).
