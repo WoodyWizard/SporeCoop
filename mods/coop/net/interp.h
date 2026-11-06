@@ -324,15 +324,6 @@ private:
 public:
     // diagnostics (BUG-0619): the smoothing's offset now (m) and the raw lead target's jump at the last new state
     float smooth_off() const { return sm_have_ ? dist(Vec3{}, sm_off_) : 0.f; }
-    // BUG-0619: true when the last sample(now) was the smoothed lead; `v` then is the shown target's velocity (the
-    // lead's plus the offset's decay): the speed the mirror must walk at to stay on it
-    bool smooth_velocity(Vec3& v) const
-    {
-        if (!sm_used_)
-            return false;
-        v = {sm_vel_.x + sm_offv_.x, sm_vel_.y + sm_offv_.y, sm_vel_.z + sm_offv_.z};
-        return true;
-    }
     mutable float last_lead_jump = 0;
 
 private:
@@ -343,7 +334,6 @@ private:
         sm_used_ = true;
         if (local_now > sm_t_) {
             double dt = local_now - sm_t_;
-            sm_offv_ = {};
             if (!sm_have_ || dt > 0.5) {
                 sm_off_ = {};
                 sm_ds_ = 0;
@@ -373,8 +363,6 @@ private:
                     sm_ds_ = ds;
                     float nd = std::max(d - ds * (float)dt, 0.f);
                     float k = nd / d;
-                    float r = (k - 1.f) / (float)dt;
-                    sm_offv_ = {off.x * r, off.y * r, off.z * r};
                     off = {off.x * k, off.y * k, off.z * k};
                 }
                 sm_off_ = off;
@@ -391,7 +379,7 @@ private:
     mutable bool sm_have_ = false, sm_used_ = false;
     mutable double sm_t_ = 0;
     mutable float sm_ds_ = 0; // m/s: the offset's closing speed
-    mutable Vec3 sm_off_{}, sm_offv_{}, sm_vel_{}, sm_shown_{};
+    mutable Vec3 sm_off_{}, sm_vel_{}, sm_shown_{};
 
     struct Snap {
         double t;
