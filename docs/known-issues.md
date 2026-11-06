@@ -1024,6 +1024,10 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   NaN matrices / rest offsets that made the position NaN again (docs/re/cell.md#cell-nan-fields).
 * Still open: what makes the first NaN (the own_probe log lines name the step) and what drains the
   address space (not the mirror churn, not the NaN state: cell_churn and cell_nan_all measured 0 MB).
+* 2026-11-06 (fix/w45-cell): one natural case logged: a 2-player guest's level-up (lab 20261105-142923
+  cell_new_game#1), velocity and particle velocities NaN (mask 0x104) for 17 frames, after the collisions and
+  before our guest tick; its camera stayed NaN (BUG-0604, fixed by cell.camera_heal). The writer of the NaN
+  velocity is still not known (docs/re/cell.md#cell-view-nan).
 * 2026-10-30 (fix/w13-cell): the coverage loss was the jumps of the NaN heals leaving background
   cells behind until the guest's pool hit its mirror cap (BUG-0314, fixed by `cell.bg_cull`). The
   first NaN and the address space drain are still not reproduced (docs/re/cell.md#cell-bg-leftovers).

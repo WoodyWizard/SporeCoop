@@ -15,6 +15,10 @@
 - Creature: the guest now sees the UFO that visits the host's world, where the host sees it (BUG-0558).
 - Creature: a rock or stick one player picks up is carried by that player's creature on the other screen too, and lies
   where it landed in both games after it is thrown or dropped (BUG-0458).
+- Cell: a player's screen no longer turns to plain water for the rest of the game after a level-up (the camera
+  lost its place when the cell's movement glitched for a moment); the view comes back onto your cell (BUG-0604).
+- Cell: the end of the Cell stage no longer makes the co-op sync-check report the host's cell hundreds of metres
+  off on every guest when nothing was wrong (BUG-0606).
 
 ## [0.7.8] - 2026-11-05
 

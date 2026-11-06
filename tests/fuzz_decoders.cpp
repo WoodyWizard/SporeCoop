@@ -393,8 +393,9 @@ static void fuzz_diag(uint64_t seed, int iters)
         for (int n = (int)R.below(R.below(4) ? 20 : 400), i = 0; i < n; i++)
             d.x.entries.push_back({R.u32(), (float)R.below(5000) - 2500, (float)R.below(500), (float)R.below(5000) - 2500});
         for (int n = (int)R.below(4), i = 0; i < n; i++) d.x.out.push_back(R.u8());
+        d.x.scale = R.below(2) ? (float)R.below(20000) / 4 : 0.f;
         return d;
-    });
+    }, [](const NoKind<dg::Digest>& d) { return enc(d).size() - 4; }); // BUG-0606: the appended world scale
 }
 
 static void fuzz_misc(uint64_t seed, int iters)

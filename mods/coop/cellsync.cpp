@@ -289,6 +289,38 @@ static void camera_snap(const net::Vec3& p)
     g_camera_snaps++;
 }
 
+// BUG-0604: the camera update (0xE600A0) eases the drawn point +0x48 with factors computed from the
+// avatar's speed |+0x90|; one frame with the own cell's velocity NaN (the guest's level-up, mask 0x104,
+// BUG-0307) makes +0x48 NaN, and from then on every frame keeps it NaN (x + (y - NaN) * k): its box
+// clamp around the avatar compares a NaN distance and never runs. The view boxes are built around +0x48,
+// so the screen showed only the water for the rest of the session, while the cell kept swimming. Any
+// non-finite camera point goes back onto our own cell as the game's own jumps set them. Off: 0.7.8 (the
+// view stays lost until the next load).
+static bool g_fix_camera_heal = true;
+COOP_FIX("cell.camera_heal", "BUG-0604", g_fix_camera_heal, "cell: a camera made NaN by a NaN own-cell velocity is put back on our own cell");
+static uint32_t g_camera_heals;
+static bool camera_finite()
+{
+    uint8_t* ui = a_CellUI ? *(uint8_t**)a_CellUI : nullptr;
+    if (!ui || !skg::readable(ui + 0x48, 0x24))
+        return true;
+    for (int i = 0; i < 9; i++)
+        if (!std::isfinite(((float*)(ui + 0x48))[i]))
+            return false;
+    return true;
+}
+static void camera_heal(uint8_t* av)
+{
+    if (!g_fix_camera_heal || !av || camera_finite())
+        return;
+    net::Vec3 p = pos_of(av);
+    if (!views::finite_pos(p))
+        return; // the own cell's heal puts it back first; the camera follows next frame
+    camera_snap(p);
+    if (++g_camera_heals <= 10)
+        H->log(M, SK_WARN, "coop: cell: the camera was not finite, put back on our own cell (%.1f %.1f) (BUG-0604)", p.x, p.y);
+}
+
 static void stop_at(uint8_t* c, const net::Vec3& p)
 {
     if (g_fix_camera_snap && c && c == avatar() && net::dist(pos_of(c), p) > 2.f)
@@ -2202,6 +2234,24 @@ static void SK_CDECL h_PartFree(uint8_t* parts, int i)
     o_PartFree(parts, i);
 }
 
+// tests (BUG-0604, BUG-0307): the own cell's velocity and its particles' velocities NaN (mask 0x104, the
+// guest's level-up in lab 20261105-142923), written after its soft-body step for <n> frames
+static int g_nan_vel_frames;
+static void nan_velocity(uint8_t* c)
+{
+    float nan = std::nanf("");
+    auto* v = (float*)(c + kVel);
+    v[0] = v[1] = nan;
+    int n = F<int>(c, 0x250);
+    uint8_t* parts = G() ? F<uint8_t*>(G(), 0x4108) : nullptr;
+    if (F<uint32_t>(c, 0x248) && parts && n > 1 && n <= 64)
+        for (int i = 0; i < n; i++) {
+            uint32_t k = F<uint32_t>(c, 0x254 + 4 * i);
+            if (k < 1500)
+                for (int j = 0; j < 2; j++)
+                    ((float*)(parts + 0x4654 + 12 * (size_t)k))[j] = nan;
+        }
+}
 using Soft_t = void(SK_CDECL*)(uint8_t*, void*, float);
 static Soft_t o_Soft;
 static void SK_CDECL h_Soft(uint8_t* c, void* res, float dt)
@@ -2210,6 +2260,10 @@ static void SK_CDECL h_Soft(uint8_t* c, void* res, float dt)
     if (own)
         own_probe("before the soft body");
     o_Soft(c, res, dt);
+    if (own && g_nan_vel_frames > 0) { // tests (BUG-0604): the level-up's NaN velocity inside the cell step
+        g_nan_vel_frames--;
+        nan_velocity(c);
+    }
     if (own)
         own_probe("soft body");
     if (!c || !g_mirror_fixes || !is_guest() || !in_cell() || g_mirrors.empty())
@@ -3213,6 +3267,8 @@ void tick(double now)
         g_leave_writes++;
     }
     solo_tick();
+    if (cell)
+        camera_heal(avatar()); // BUG-0604: solo too (a session that ended keeps the lost view)
     if (!in_cell() || !C.sess || !C.sess->connected() || !avatar())
         return;
     bg_cull(now);
@@ -4289,10 +4345,49 @@ std::string debug(const std::vector<std::string>& a)
         h_AddFood(atoi(a[1].c_str()), a.size() >= 3 && a[2] == "plant");
         return "meal eaten";
     }
+    if (!a.empty() && a[0] == "tokens") { // tests (BUG-0316): the part tokens in the pool; `tokens to <id> [c<key>]`: the nearest one (or that one) 4 m from that player's cell
+        std::vector<std::pair<float, uint8_t*>> v;
+        net::Vec3 me = pos_of(av);
+        for_each_cell([&](uint8_t* c, uint32_t) {
+            if (!modes::cell_is_puppet(c) && c != av && !F<uint8_t>(c, kDead) && !F<uint8_t>(c, kDying) && !strcmp(kind_of(c), "part"))
+                v.push_back({net::dist(pos_of(c), me), c});
+        });
+        std::sort(v.begin(), v.end(), [](auto& x, auto& y) { return x.first < y.first; });
+        std::string o;
+        char b[160];
+        if (a.size() >= 4 && a[1] == "to") { // `tokens to <id> c<key>`: that token
+            uint32_t want = (uint32_t)strtoul(a[3].c_str() + (a[3][0] == 'c' ? 1 : 0), nullptr, 10);
+            for (size_t i = 0; i < v.size(); i++)
+                if (F<uint32_t>(v[i].second, 0) == want)
+                    std::swap(v[0], v[i]);
+            if (v.empty() || F<uint32_t>(v[0].second, 0) != want)
+                return "no such token\n";
+        }
+        if (a.size() >= 3 && a[1] == "to" && !v.empty()) {
+            uint8_t* pc = atoi(a[2].c_str()) == (C.sess ? C.sess->my_id() : 0) ? av : puppet_cell(atoi(a[2].c_str()));
+            if (!pc)
+                return "no such player cell\n";
+            net::Vec3 q = pos_of(pc);
+            set_pos(v[0].second, {q.x + 4.f, q.y, q.z});
+            snprintf(b, sizeof b, "moved c%u to (%.1f %.1f)\n", F<uint32_t>(v[0].second, 0), q.x + 4.f, q.y);
+            o = b;
+        }
+        for (size_t i = 0; i < v.size() && i < 20; i++) {
+            auto it = g_host_of.find(F<uint32_t>(v[i].second, 0));
+            uint32_t key = is_guest() && it != g_host_of.end() ? it->second : F<uint32_t>(v[i].second, 0);
+            snprintf(b, sizeof b, "token c%u pos=(%.1f %.1f) dist=%.1f size=%.2f level=%d\n", key, pos_of(v[i].second).x, pos_of(v[i].second).y,
+                     v[i].first, F<float>(v[i].second, kSize), F<int>(v[i].second, kLevel));
+            o += b;
+        }
+        snprintf(b, sizeof b, "tokens=%u own_level=%d\n", (unsigned)v.size(), F<int>(av, kLevel));
+        return o + b;
+    }
     if (!a.empty() && a[0] == "mate") { // tests: the mating-call button (S+0x69), the mate, where it is
         uint8_t* s = S();
         if (s && a.size() >= 2 && a[1] == "button")
             F<uint8_t>(s, 0x69) = 1; // as if a part had been collected (0xE5D7B0 sets it)
+        if (s && a.size() >= 2 && a[1] == "nobutton") // tests (BUG-0316): the button hidden, as before the first part
+            F<uint8_t>(s, 0x69) = 0;
         uint8_t* m = modes::cell_at(mate_idx());
         if (m && a.size() >= 2 && a[1] == "tp") // tests (BUG-0237): our cell right onto the mate (it touches it)
             stop_at(av, pos_of(m));
@@ -4402,7 +4497,7 @@ std::string debug(const std::vector<std::string>& a)
         std::string o;
         char b[96];
         net::Vec3 me = pos_of(av);
-        snprintf(b, sizeof b, "scale=%.4f me=(%.2f %.2f)", world_scale(), me.x, me.y);
+        snprintf(b, sizeof b, "scale=%.6g me=(%.2f %.2f)", world_scale(), me.x, me.y);
         o = b;
         for (int id = 0; id < 8; id++)
             if (uint8_t* pc = puppet_cell(id)) {
@@ -4421,9 +4516,9 @@ std::string debug(const std::vector<std::string>& a)
         auto* l = (float*)(ui + 0x60);
         net::Vec3 me = pos_of(av);
         char b[320];
-        snprintf(b, sizeof b, "cam=(%.2f %.2f) target=(%.2f %.2f) lag=(%.2f %.2f) avatar=(%.2f %.2f) off=%.2f follow=%u bc=%.2f snaps=%u scale=%.3f",
+        snprintf(b, sizeof b, "cam=(%.2f %.2f) target=(%.2f %.2f) lag=(%.2f %.2f) avatar=(%.2f %.2f) off=%.2f follow=%u bc=%.2f snaps=%u scale=%.3f heals=%u",
                  d[0], d[1], t[0], t[1], l[0], l[1], me.x, me.y, std::hypot(d[0] - me.x, d[1] - me.y),
-                 F<uint32_t>(ui, 0xE0), F<float>(ui, 0xBC), g_camera_snaps, G() ? F<float>(G(), 0x514C) : 0.f);
+                 F<uint32_t>(ui, 0xE0), F<float>(ui, 0xBC), g_camera_snaps, G() ? F<float>(G(), 0x514C) : 0.f, g_camera_heals);
         return b;
     }
     if (a.size() >= 3 && a[0] == "tp") { // move our cell to <dx dy> from the nearest partner [or player <id>]
@@ -4783,6 +4878,10 @@ std::string debug(const std::vector<std::string>& a)
         uint8_t* av = avatar();
         if (!av)
             return "no avatar\n";
+        if (a.size() >= 2 && a[1] == "vel") { // BUG-0604: velocity NaN inside the next <n> cell steps (default 17)
+            g_nan_vel_frames = a.size() >= 3 ? std::clamp(atoi(a[2].c_str()), 1, 600) : 17;
+            return "own cell velocity NaN for " + std::to_string(g_nan_vel_frames) + " steps\n";
+        }
         float nan = std::nanf("");
         int n = F<int>(av, 0x250);
         uint8_t* parts = G() ? F<uint8_t*>(G(), 0x4108) : nullptr;
@@ -5036,6 +5135,7 @@ void census_rows(std::vector<census::Row>& out)
     }
 }
 
+float scale_now() { return in_cell() ? world_scale() : 0.f; }
 bool food_total(int& food)
 {
     uint8_t* s = in_cell() ? S() : nullptr;

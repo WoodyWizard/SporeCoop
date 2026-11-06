@@ -41,6 +41,7 @@ struct Probe {
     std::function<bool()> stage_end;
     std::function<bool(float&)> dna; // the DNA total when there is one
     std::function<bool(int&)> cell_food;
+    std::function<float()> cell_scale; // BUG-0606: the own Cell world scale, 0 outside Cell
     std::function<bool(uint32_t&)> vote; // an evolution vote is on (its editor id)
     // what the mod is doing right now for a hitch line: "world share", "editor", "load", ...
     std::function<std::string()> activity;
