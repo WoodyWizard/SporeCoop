@@ -2963,10 +2963,18 @@ for every Wine game on one PC; tools/tests/body_trail.py, docs/06-testing.md#tes
   of this part; the copy followed its target, the target was late.
 * ✔ (observed) With `drive.lead` (net/interp.h `SnapshotBuffer::lead`, `g_lead_fix`): the newest state moved on by its
   velocity for its age on the sender's clock plus half the round trip (`net::g_one_way`, set each frame from the
-  session's rtt), at most 0.35 s; lag p50 0.013-0.019 s, distance p90 0.12 m (Creature), 0.37 m (Tribe animals),
+  session's rtt), at most 0.6 s; lag p50 0.013-0.019 s, distance p90 0.12 m (Creature), 0.37 m (Tribe animals),
   0.64 m (Tribe members) (out/lab/20261106-012156).
 * The velocity: the state's own while it moves, capped at 1.25x its path between the two newest states + 0.3 m/s
   (a herd animal pushed by its mates reports a walk it does not make, BUG-0361), the path's for a body that moves
   without a speed of its own (BUG-0394), none once it reported a stop or after a jump of the path (over 15 m/s).
+* ✔ (observed) Over the player network (netem `player`: 45 ms, +250 ms spikes, 30 % loss bursts) the rest of the
+  error is at the start of a walk: the host's body starts, the guest knows it a latency (and a spike) later and its
+  lead target is then 1-3 m ahead. Tribe members' error by time since the host's member started to walk: p90 1.9 m in
+  the first 0.25 s, 2.9-3.1 m at 0.25-0.75 s, 0.7 m after 2 s (closed at walk_place's catch_up 3 m/s). With
+  `WalkPlace::catch_prop` (the error closed in ~0.25 s, at most at twice the remote's speed + 3 m/s) 2.3 / 1.7 m at
+  0.25-0.75 s. What is left is the latency itself (a start cannot be shown before it is known).
+* kMaxLead: 0.35 s and 0.6 s gave the same p90 over the player network (one run each); 0.6 s keeps a body moving
+  through a 250 ms spike.
 * Civ vehicles (`net::VelocityEstimate::at`) were already moved on to the present (their age + 0.03 s, at most 0.15 s):
   lag p50 0.04 s, p90 0.93 m at 19 m/s on a clean network (out/lab/20261106-012156 body_trail_civ).

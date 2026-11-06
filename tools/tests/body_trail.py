@@ -21,6 +21,9 @@ import re
 MOVING = 0.5  # m/s: the host's body moves
 TRAIL_M = 2.0  # m: a copy this far off ...
 GAP = 0.25  # s: host rows farther apart than this are not interpolated (a hitch, the body not listed)
+# s: a guest frame this long is a hitch of the guest's own game (lab load; BUG-0407, coop_npc_walk.HITCH): a stretch
+# over TRAIL_M is counted from after it (a slow guest is BUG-0503's class, npc_walk_slow)
+HITCH = 0.1
 
 
 def record(con, on):
@@ -73,10 +76,14 @@ def analyse(host_rows, guest_rows, kinds='ntvp', skip_t=None):
         ht = [x[0] for x in hv]
         r = out.setdefault(kind, dict(n=0, bodies=set(), dist=[], lag=[], trail=(0.0, '', 0.0), worst=[]))
         run0 = None
+        last_t = None
         for t, gp in gv:
-            if skip_t and skip_t(t):
+            hitch = last_t is not None and t - last_t > HITCH
+            last_t = t
+            if (skip_t and skip_t(t)) or hitch:
                 run0 = None
-                continue
+                if not hitch:
+                    continue
             i = bisect.bisect_left(ht, t)
             if i <= 0 or i >= len(hv) or hv[i][0] - hv[i - 1][0] > GAP:
                 run0 = None
