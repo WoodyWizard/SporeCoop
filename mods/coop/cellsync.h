@@ -69,5 +69,6 @@ std::string debug(const std::vector<std::string>& args);
 void set_fake_model(uint32_t idx, uint32_t inst);
 
 bool food_total(int& food); // the own game's food total S+0x1C (support sync-check); false outside Cell
+float scale_now(); // BUG-0606: the own game's world scale G+0x514C in Cell (sync-check), 0 outside Cell or when not sane
 
 } // namespace cellsync

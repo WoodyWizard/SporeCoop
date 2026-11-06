@@ -5264,6 +5264,7 @@ void support_init()
         return true;
     };
     p.cell_food = [](int& v) { return g_mode == modes::kCell && cellsync::food_total(v); };
+    p.cell_scale = [] { return g_mode == modes::kCell ? cellsync::scale_now() : 0.f; };
     p.vote = [](uint32_t& editor) {
         editor = g_vote.editor;
         return g_vote.active;

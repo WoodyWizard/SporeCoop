@@ -4345,10 +4345,41 @@ std::string debug(const std::vector<std::string>& a)
         h_AddFood(atoi(a[1].c_str()), a.size() >= 3 && a[2] == "plant");
         return "meal eaten";
     }
+    if (!a.empty() && a[0] == "tokens") { // tests (BUG-0316): the part tokens in the pool; `tokens to <id>`: the nearest one 4 m from that player's cell
+        std::vector<std::pair<float, uint8_t*>> v;
+        net::Vec3 me = pos_of(av);
+        for_each_cell([&](uint8_t* c, uint32_t) {
+            if (!modes::cell_is_puppet(c) && c != av && !F<uint8_t>(c, kDead) && !F<uint8_t>(c, kDying) && !strcmp(kind_of(c), "part"))
+                v.push_back({net::dist(pos_of(c), me), c});
+        });
+        std::sort(v.begin(), v.end(), [](auto& x, auto& y) { return x.first < y.first; });
+        std::string o;
+        char b[160];
+        if (a.size() >= 3 && a[1] == "to" && !v.empty()) {
+            uint8_t* pc = atoi(a[2].c_str()) == (C.sess ? C.sess->my_id() : 0) ? av : puppet_cell(atoi(a[2].c_str()));
+            if (!pc)
+                return "no such player cell\n";
+            net::Vec3 q = pos_of(pc);
+            set_pos(v[0].second, {q.x + 4.f, q.y, q.z});
+            snprintf(b, sizeof b, "moved c%u to (%.1f %.1f)\n", F<uint32_t>(v[0].second, 0), q.x + 4.f, q.y);
+            o = b;
+        }
+        for (size_t i = 0; i < v.size() && i < 20; i++) {
+            auto it = g_host_of.find(F<uint32_t>(v[i].second, 0));
+            uint32_t key = is_guest() && it != g_host_of.end() ? it->second : F<uint32_t>(v[i].second, 0);
+            snprintf(b, sizeof b, "token c%u pos=(%.1f %.1f) dist=%.1f size=%.2f\n", key, pos_of(v[i].second).x, pos_of(v[i].second).y,
+                     v[i].first, F<float>(v[i].second, kSize));
+            o += b;
+        }
+        snprintf(b, sizeof b, "tokens=%u\n", (unsigned)v.size());
+        return o + b;
+    }
     if (!a.empty() && a[0] == "mate") { // tests: the mating-call button (S+0x69), the mate, where it is
         uint8_t* s = S();
         if (s && a.size() >= 2 && a[1] == "button")
             F<uint8_t>(s, 0x69) = 1; // as if a part had been collected (0xE5D7B0 sets it)
+        if (s && a.size() >= 2 && a[1] == "nobutton") // tests (BUG-0316): the button hidden, as before the first part
+            F<uint8_t>(s, 0x69) = 0;
         uint8_t* m = modes::cell_at(mate_idx());
         if (m && a.size() >= 2 && a[1] == "tp") // tests (BUG-0237): our cell right onto the mate (it touches it)
             stop_at(av, pos_of(m));
@@ -4458,7 +4489,7 @@ std::string debug(const std::vector<std::string>& a)
         std::string o;
         char b[96];
         net::Vec3 me = pos_of(av);
-        snprintf(b, sizeof b, "scale=%.4f me=(%.2f %.2f)", world_scale(), me.x, me.y);
+        snprintf(b, sizeof b, "scale=%.6g me=(%.2f %.2f)", world_scale(), me.x, me.y);
         o = b;
         for (int id = 0; id < 8; id++)
             if (uint8_t* pc = puppet_cell(id)) {
@@ -5096,6 +5127,7 @@ void census_rows(std::vector<census::Row>& out)
     }
 }
 
+float scale_now() { return in_cell() ? world_scale() : 0.f; }
 bool food_total(int& food)
 {
     uint8_t* s = in_cell() ? S() : nullptr;
