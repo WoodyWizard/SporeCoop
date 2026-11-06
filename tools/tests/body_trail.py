@@ -185,7 +185,10 @@ def since(con, t0, step=DET_STEP, page=2000):
 def detect_findings(stage, host_rows, guest_rows):
     """the detector's `<stage>:trail:<kind>` findings of one period (dicts as worlddiff.diff's)"""
     out = []
-    res = analyse(host_rows, guest_rows, kinds='ntvps')
+    # (in Tribe and Civ a player's row is its mouse marker on the planet, modes.cpp rts_fill, not a body: seen as
+    # Civilization:trail:player p90 8-9 m in every period of play_civ, lab 20261106-071756)
+    kinds = 'ntvs' if stage in ('Tribe', 'Civilization') else 'ntvps'
+    res = analyse(host_rows, guest_rows, kinds=kinds)
     for kind, r in sorted(res.items()):
         if r['n'] < DET_MIN:
             continue

@@ -1,7 +1,7 @@
 ---
 id: BUG-0386
 title: Tribe: a guest's walking mirror held back by its own game (an obstacle?) falls 3.6 m behind and lurches 1 m per frame to catch up
-status: not-reproduced
+status: open
 kind: desync
 stage: Tribe
 reported: 2026-11-01
@@ -42,3 +42,4 @@ no-fail-run: tribe_walk_mobile (30 fps, mobile network) passed with drive.lead o
   ~0.25 s, at most at twice its speed + 3 m/s (catch_prop): a release after a hold is a faster catch-up, not slower. Not
   seen in 9 body_trail Tribe runs (longest stretch over 2 m 0.13-0.79 s); the blocker not found; open.
 - 2026-11-06 (fix/w45-remote-bodies-2, M2): static RE of the contact handling (creature pairs skipped, the separating function not found); not reproduced in the runs; closed not-reproduced with the blocker named.
+- 2026-11-06 (fix/w45-remote-bodies-2, M2, later the same day): seen again by the new detector trail rows (BUG-0609) in play_tribe of the regression (out/lab/20261106-071756): `Tribe:trail:member`, member t13 over 2 m off the host's member for 2.34 s while the other members' copies were within p90 0.56 m (lag p50 0.012 s): a single mirror held back, this ticket's case, not the class's lag. Status back to open, blocked: what holds it is not found (see Root cause); the next step is a probe at that moment (`SPORE_DETECTOR=20 SPORE_DETECTOR_DIAG='coop.npctrack objects 5'` style dump of the objects within 3 m of the held mirror on both games, and the mirror's driver state), or the creature separation function.

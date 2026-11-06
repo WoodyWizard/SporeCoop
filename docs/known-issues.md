@@ -1343,6 +1343,8 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   pushed it back), then moved ~1 m per frame for three frames to catch up. Cause not found (an obstacle
   on the guest is the guess).
 * Reproduce: `tools/lab.py run tribe_walk_mobile --repeat 5 --retry 0`, look for "no jump" failures.
+* Seen again (2026-11-06, fix/w45-remote-bodies-2): the detector's trail rows (BUG-0609) caught one member mirror
+  over 2 m off for 2.34 s in play_tribe (out/lab/20261106-071756); what holds it is still not found.
 * Ticket: BUG-0386
 ## Creature: after an editor a guest asks the host for its own previous creature and gets nothing (2026-11-01, player report)
 <a id="issue-own-old-species"></a>
