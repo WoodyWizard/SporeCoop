@@ -2044,3 +2044,7 @@ BUG-0617 (after BUG-0548). GOG 2024, lane 5, coop_world_host.py --case bundle_ca
   carried food of its own while the host plays.
 * ✔ The food mats' bundles (census own=held, `game_bundle_held`) are the tribes' food (tribe +0x20C), each game's own
   container; compared through the state's food values, not as objects.
+* ✔ (2026-11-06, fix/w45-last, addition to #tribe-member-body) On the guest the body's mirror is taken out of its
+  tribe's member (+0x340) and selectable (+0x354, citizen +0xC0) vectors and its +0x1014 cleared, as the host's game
+  does: left in, play_tribe saw one member more on the guest and a guest's order to the body was rejected on the host
+  (lab 20261106-143257). The detached mirror is destroyed with DestroyInstance when the host's body goes.

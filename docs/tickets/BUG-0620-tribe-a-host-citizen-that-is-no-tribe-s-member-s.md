@@ -10,7 +10,7 @@ role: guest
 versions: 
 fixed_in: unreleased
 branch: fix/w45-last
-commits: ef1058d0, 1a891434
+commits: ef1058d0, 1a891434, e485cc7a, 6c567738
 tests: tribe_dead_player (coop_tribe_dead_member.py --player), tribe_member_place (coop_tribe_member_place.py; --attach over play_tribe)
 signature:
 docs: docs/re/tribe.md#tribe-member-body
@@ -47,12 +47,16 @@ samples (24 s) with no guest citizen within 3 m of it (lab 20261106-135809, 2 of
 ## Fix
 `tribe.member_body` (tribe.cpp, BUG-0620): the host keeps sending a member that left its tribe's list dead (its body:
 in the object list, dead flag) with its last tribe and health 0, while the game keeps it (at most 60 s); the guest's mirror
-plays the death (tribe.ko) and lies there until the host's body goes. `coop.fix tribe.member_body off`: dropped at once
+plays the death (tribe.ko) and lies there until the host's body goes. A body's entry carries the bit 0x80 in its age
+byte: the guest takes its mirror out of its tribe's member and selectable lists as the host's game did (a first version
+left it a member: play_tribe failed "the same members on both" and a guest's order to the body was rejected, lab
+20261106-143257), and destroys it (DestroyInstance) when the host's body goes; no new mirror is spawned for a body. `coop.fix tribe.member_body off`: dropped at once
 (0.7.8). `coop.tribe` (host) counts bodies_sent.
 
 ## Verification
 tribe_dead_player: FAIL with `SPORE_FIX_OFF=tribe.member_body` out/lab/20261106-135809 (2 of 2: 10 / 11 samples with the
-host's body and no guest citizen within 3 m), PASS with the fix out/lab/20261106-140050 (2 of 2; bodies_sent 340 / 164).
+host's body and no guest citizen within 3 m), PASS with the fix out/lab/20261106-140050 (2 of 2; bodies_sent 340 / 164), and with the guest's detach
+out/lab/20261106-144737 (2 of 2).
 
 ## History
 - 2026-11-06: opened.
