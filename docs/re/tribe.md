@@ -1952,11 +1952,18 @@ in Ghidra / objdump. ✔ = observed, ~ = read in the code but not seen running, 
 * ~ The rebuild: `0xF9B860` thiscall(sphere, a1, a2, bool a3, u8 a4, float a5) ret 0x14 picks a generator (+0xB8 while
   0x1CD is set: no stamp steps; +0x30 with a3; else +0x74), whose step functions 0xFC1250 / 0xFC1480 load (0xFA9B00),
   rebuild (0xFA60E0, 0xFA3BC0) and render (0xFA8670, 0xFA5E90) the stamps, then +0x818 = +0x814. The sphere update vt
-  0x9C 0xFAAD30 counts sphere+0xA48 down and at 0 calls vt 0x80 and 0xF9B860; nothing else starts one at runtime.
-* ✔ Fix `terrain.rebuild_live_stamps` (terrain_diag.cpp): in the Tribe stage, 0.3 s after the last live stamp call a
-  game sets sphere+0xA48 = 1 (only while +0xFC == 0, no generator running), so its terrain is rebuilt as a load builds
-  it; the world share save waits for it (bounded 8 s). The host's ground becomes the one its own save gives, which is
-  every guest's. `coop.terrain [list | raw <id> | state | rebuild | dirty | regen | reapply <from>]` are the probes.
+  0x9C 0xFAAD30 counts sphere+0xA48 down and at 0 calls vt 0x80 and 0xF9B860; the planet editor's reload 0xF37390 calls
+  vt 0x114 (0xFA9CD0, thiscall(sphere, cPropList*) ret 4: the lists read back) and then 0xF9B860(sphere, 0, 0, 0, 1, f).
+  ApplyStamp itself writes no height.
+* ✔ A rebuild started by the mod does not give the loaded ground either: sphere+0xA48 = 1 after the burst (lab
+  20261106-043944: 387 of 1499 points off, up to 4.25 m) or vt 0x80 + vt 0x114 + 0xF9B860 as 0xF37390 (lab
+  20261106-045023: 445 points, up to 20.8 m). ? The generator seems to render the stamps onto the heights it has, so
+  every rebuild moves the ground again; only a load starts from the planet's base.
+* ✔ Fix `tribe.host_reload` (world.cpp): after a live Creature -> Tribe change the host loads its own share save once
+  it has gone out to every guest (the game's own load through the galaxy menu, `load_slot`, as the guests do), so every
+  game has the ground any later load of that world gives. `coop.terrain [list | raw <id> | state | rebuild | dirty |
+  regen | reapply <from>]` (terrain_diag.cpp, log-only hooks on ApplyStamp / RemoveStamp / ClearAllStamps) are the
+  probes.
 * ? The same split may exist in Civ (cities stamp live through cCityData / cCity, 0xB99DFA ... 0xBECF7D): not
   measured, the fix is limited to the Tribe stage.
 * BUG-0608 (a relayed world effect at the sender's absolute position) came only from the two grounds differing; with
