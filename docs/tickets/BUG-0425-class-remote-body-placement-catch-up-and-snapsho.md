@@ -59,7 +59,7 @@ guards, oversize messages, ship caps) are BUG-0612.
 ## Verification
 Height part: npc_air FAIL 20261105-112120 / PASS 20261105-112004; own_ground FAIL 20261105-113544 / PASS
 20261105-113703. The umbrella stays open (its other parts).
-Trail part: FAIL (SPORE_FIX_OFF=drive.lead) out/lab/20261106-013022 (body_trail_creature p90 0.78 m, body_trail_tribe animals 1.17 m / members 2.04 m), out/lab/20261106-014253 (body_trail_tribe_player 1.73 / 2.71 m, stretches 1.75 / 3.55 s), out/lab/20261106-020354 (final code: all four FAIL: creature 0.71, tribe 1.20 / 2.07, tribe_player 1.69 / 2.76, player 1.13 m); PASS out/lab/20261106-012156 (creature 0.12 m, tribe 0.37 / 0.64 m, civ 0.93 m), out/lab/20261106-014554 (player 0.33 m, tribe 0.43 / 0.66 m), REGDIR (final code).
+Trail part: FAIL (SPORE_FIX_OFF=drive.lead) out/lab/20261106-013022 (body_trail_creature p90 0.78 m, body_trail_tribe animals 1.17 m / members 2.04 m), out/lab/20261106-014253 (body_trail_tribe_player 1.73 / 2.71 m, stretches 1.75 / 3.55 s), out/lab/20261106-020354 (final code: all four FAIL: creature 0.71, tribe 1.20 / 2.07, tribe_player 1.69 / 2.76, player 1.13 m); PASS out/lab/20261106-012156 (creature 0.12 m, tribe 0.37 / 0.64 m, civ 0.93 m), out/lab/20261106-014554 (player 0.33 m, tribe 0.43 / 0.66 m), out/lab/20261106-021152 (final lead code: creature 0.12-0.4, player, tribe_player), out/lab/20261106-035710 (body_trail_tribe, body_trail_creature on the final code).
 
 ## History
 - 2026-11-01: opened.
