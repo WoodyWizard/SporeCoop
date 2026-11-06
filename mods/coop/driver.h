@@ -302,7 +302,7 @@ struct WalkPlace {
     // latency late; its lead target is then 1-3 m ahead and was closed at catch_up (3 m/s): a Tribe member at
     // 9 m/s stayed 2-3 m behind for the first 0.75 s of every walk over the player network (p90 2.9-3.1 m)
     bool catch_prop = false;
-    // BUG-0619: under kEvenBelow m/s the catch-up is at most half the speed + 1 m/s (Tribe member mirrors: their walk's
+    // BUG-0619: the catch-up is at most kEvenK x the speed + kEvenAdd (Tribe member mirrors: their walk's
     // start and end are judged for stop-and-go; NPC proxies keep the full catch-up, body_trail_tribe's animals lagged)
     bool even_start = false;
 };
@@ -313,7 +313,7 @@ constexpr float kCatchTime = 0.25f;     // s
 // (tribe_walk_mobile failed 5 of 6 with drive.lead). The placing now moves at most (speed + catch_up) x dt from where
 // it placed the body last frame, the error closed at most at twice the remote's speed + 3 m/s in all, as meant.
 inline bool g_catch_bound_fix = true;
-constexpr float kEvenBelow = 5.f; // m/s
+constexpr float kEvenK = 0.35f, kEvenAdd = 0.5f; // BUG-0619: a mirror's catch-up, x its speed + m/s
 constexpr float kWalkLostErr = 0.75f;   // m
 constexpr double kWalkLostAfter = 0.15; // s
 
@@ -380,11 +380,13 @@ inline void walk_place(void* p, const net::Vec3& pos_in, const net::Quat& rot, c
     float catch_up = o.catch_up;
     if (o.catch_prop && net::g_lead_fix)
         catch_up = std::max(catch_up, std::min(err / kCatchTime, sp + o.catch_up));
-    // BUG-0619: while the remote speeds up or slows down (under kEvenBelow m/s) the lead target is a latency ahead of a
-    // start, and catching up at catch_up on top of a 1-5 m/s walk drew a stop-and-go (tribe_walk_mobile: uneven steps
-    // in 5-18 % of those frames with drive.lead, 1-3 % without): there the catch-up is at most half the speed + 1 m/s
-    if (g_catch_bound_fix && o.catch_prop && o.even_start && net::g_lead_fix && sp < kEvenBelow)
-        catch_up = std::min(catch_up, 0.5f * sp + 1.f);
+    // BUG-0619: the lead target is a latency ahead of a start; a Tribe member mirror that caught up at up to its speed
+    // + 3 m/s on top of its walk was drawn at 1.8-2x its member's speed for a few tenths of a second at every start and
+    // end (tribe_walk_mobile: uneven steps in 5-19 % of the 1-5 m/s frames and windows off its speed with drive.lead,
+    // 1-3 % without; seen 8.3 m/s drawn on a 4.5 m/s target closing 1.5 m). For them the catch-up is at most
+    // kEvenK x its speed + kEvenAdd (at 9 m/s about the old 3 m/s, at 2 m/s 1.2 m/s)
+    if (g_catch_bound_fix && o.catch_prop && o.even_start && net::g_lead_fix)
+        catch_up = std::min(catch_up, kEvenK * sp + kEvenAdd);
     float max_step = (sp + catch_up) * (float)dt;
     net::Vec3 to = pos;
     if (err > max_step) {
