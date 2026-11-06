@@ -15,6 +15,11 @@
 - Creature: the guest now sees the UFO that visits the host's world, where the host sees it (BUG-0558).
 - Creature: a rock or stick one player picks up is carried by that player's creature on the other screen too, and lies
   where it landed in both games after it is thrown or dropped (BUG-0458).
+- Creature: while the host lies dead in its death caption (or its game stands still for another reason), a guest that
+  walks or respawns somewhere else now sees the host's animals there, instead of an empty spot until the host goes on
+  (BUG-0413).
+- Creature: a guest that leaves the session keeps the animals around it and plays on with them, and a guest that joins
+  again while the host is in its editor no longer finds a planet without creatures (BUG-0412).
 
 ## [0.7.8] - 2026-11-05
 
