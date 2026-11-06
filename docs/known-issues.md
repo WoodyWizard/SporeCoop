@@ -1718,6 +1718,8 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   `scale 10 set on an object with vtable ... from ...` once per caller, so the next campaign run names it.
 * Reproduce: `tools/lab.py run campaign_short` with SPORE_DETECTOR=20 (detector line `scale:node`).
 * Ticket: BUG-0485
+* 2026-11-06 (fix/w45-placement): fixed (`wobj.node_scale`, test node_scale): the setter is the live node placement
+  0xBC02F0 (return address 0xBC0641); the scale is not saved, so loads give 1.0 (docs/re/creature.md#creature-node-scale).
 * 2026-11-03 (fix/w40-civ-crashes): the Civ half is fixed (`civ.save_strip`, test `civ_save_strip`):
   the guest's mirror vehicles stay out of its saves and leave no null in the civilizations' lists. Still
   open: the Tribe mirrors (SpawnNpcTribe tribes and their members) and the Space UFO mirrors / puppets

@@ -1200,3 +1200,20 @@ BUG-0593. GOG 2024, Ghidra (tools/ghidra/q.sh --build 2024) and lab lane 7 (civ_
 * ~ civ_coop's `Civilization:state:money` row ("-800 on the host, 0 on the guest"): the test's `coop.civ build`
   on the host spends without the game's price check (the host's wealth went 400 -> -800); a guest's shared total
   is floored at 0 (res.floor, BUG-0106). Not a player's case (the game refuses a building it cannot pay); not changed.
+
+## Mirror vehicle scale 10: the vehicle's model-ready handler (2026-11-06, fix/w45-placement)
+<a id="civ-vehicle-scale"></a>
+
+BUG-0549. GOG 2024. ✔ = observed, ~ = read in the code, ? = inferred.
+* ✔ The SetScale diagnostic logged `scale 10 set on an object with vtable 01474BE8 from 00CA41DA` in play_civ on the
+  guest only (lab fix/w42-civ-left 20261104-131223, the run of the detector's `Civilization:scale:vehicle` row, 0.81
+  host / 10.00 guest); never in a host log of the November labs.
+* ~ 0xCA41DA is in `SporeCoop::Vehicle_GroundSetup` 0xCA40B0, called only from the vehicle's model message handler
+  0xCA76B0 (this = vehicle +0x34) on message 0x2B978C46, which first sets vehicle +0xD04 from the message. With
+  +0xD04 set, it asks the manager 0xB34050 (vt 0x30) for an object at the vehicle (+0xD00) and, when there is one,
+  sets the loco's scale to 10.0, copies colours to that object and sets the bounding box (vt 0x64). ? Which object
+  that is and why only the guest's mirrors find it was not traced; the scale it leaves is what the player saw.
+* Fix `civ.vehicle_scale`: Civ vehicles are a replicated-fields kind (`fields::K_CIV_VEHICLE`, civ.cpp: the host's
+  vehicles by net id, a guest's mirrors from g_gv): every mirror whose scale differs by more than the field's
+  tolerance takes the host vehicle's, also when the game sets it again. `coop.civ` vehicle lines print `scale=`;
+  `coop.civ vscale <id> <s>` (tests). Test civ_vehicle_scale.

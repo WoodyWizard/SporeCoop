@@ -3,6 +3,9 @@
 ## [Unreleased]
 
 ### Fixed
+- Spice geysers are now the same size on every player's screen (a geyser the host's game made during play was ten
+  times bigger there than on the guests' screens) (BUG-0485).
+- Civilization: the host's vehicles no longer show up ten times too big on a guest's screen (BUG-0549).
 - The game no longer risks a crash when SporeKit hooks a function while the game is already running (the first
   test input, the first cell of Cell): the hook is written only once no game thread is inside the bytes it changes
   (BUG-0403).

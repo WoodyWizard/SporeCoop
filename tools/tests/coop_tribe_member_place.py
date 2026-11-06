@@ -10,7 +10,7 @@ The detector's `Tribe:unmatched:citizen` row in play_tribe / campaign_tribe (3-6
    (`coop.sync` t<id>), the guest's mirror of that id and where it is, the nearest guest citizen.
 PASS: no host citizen without a partner in two samples in a row (a mirror on its way is seen once).
 
-  SPORE_LANE=4 python3 tools/tests/coop_tribe_member_place.py [--minutes 3]
+  SPORE_LANE=4 python3 tools/tests/coop_tribe_member_place.py [--minutes 3] [--attach]
 """
 import argparse
 import math
@@ -30,8 +30,14 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--minutes', type=float, default=3)
     ap.add_argument('--fixture', default='tribe')
+    ap.add_argument('--attach', action='store_true', help='watch the games of a running test on SPORE_LANE (play_tribe)')
     a = ap.parse_args()
-    host, guest = start(a.fixture)
+    if a.attach:
+        import lane
+        from sporectl import Console
+        host, guest = Console(lane.HOST, timeout=20), Console(lane.GUEST, timeout=20)
+    else:
+        host, guest = start(a.fixture)
     ck = Checks()
     t0, prev, twice, samples = time.time(), set(), [], 0
     while time.time() - t0 < a.minutes * 60:
@@ -66,7 +72,8 @@ def main():
     print(f'  {samples} samples; host citizens without a partner in two samples in a row: {twice}', flush=True)
     ck(samples > 3, f'compared ({samples} samples)')
     ck(not twice, f'every host citizen near the guest has a partner on the guest within two samples ({len(twice)} times not)')
-    ck.faults(host=host, guest=guest)
+    if not a.attach:
+        ck.faults(host=host, guest=guest)
     return ck.result()
 
 

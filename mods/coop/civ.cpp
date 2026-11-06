@@ -2346,6 +2346,32 @@ struct HeldBuild {
     net::Vec3 pos;
 };
 static std::vector<HeldBuild> g_held_builds;
+// BUG-0602 diagnostics: the layout slot a building is in (-1: none) and the distance from p to the nearest slot
+static int slot_of(void* city, void* b, const net::Vec3& p, float* nearest, void** occ)
+{
+    uint8_t* sb = F<uint8_t*>(city, kCitySlots);
+    uint8_t* se = F<uint8_t*>(city, kCitySlots + 4);
+    int in = -1;
+    float best = 3.4e38f;
+    for (int k = 0; sb && sb + (k + 1) * 0x18 <= se && k < 64; k++) {
+        uint8_t* sl = sb + k * 0x18;
+        if (F<void*>(sl, 4) == b)
+            in = k;
+        net::Vec3 q{F<float>(sl, 0xC), F<float>(sl, 0x10), F<float>(sl, 0x14)};
+        float d = net::dist(p, q);
+        if (d < best) {
+            best = d;
+            if (occ)
+                *occ = F<void*>(sl, 4);
+        }
+    }
+    if (nearest)
+        *nearest = best;
+    return in;
+}
+static unsigned g_bfix_logged, g_host_offslot_logged;
+static uint32_t g_bfix_off_slot; // BUG-0602: rebuilt here more than 4 m from the host's spot
+static std::unordered_set<void*> g_host_offslot_seen;
 static void* build_in_city(void* city, uint32_t noun, const net::Vec3& pos, bool pay);
 
 // ---- BUG-0529: the hit points of a city's buildings ----
@@ -2493,8 +2519,21 @@ static void host_tick(double now)
     std::vector<void*> blds;
     if (bci != 0xFF)
         for (void* bl : vec_of((uint8_t*)g_host_cities[bci] + kCityBuildings))
-            if (type_for_noun(game::noun_id(bl)) && blds.size() < 32)
+            if (type_for_noun(game::noun_id(bl)) && blds.size() < 32) {
                 blds.push_back(bl);
+                // BUG-0602 diagnostics: a building of the host's city that stands off its layout slot
+                net::Vec3 bp{};
+                float nd = 0;
+                if (game::object_position(bl, bp) && g_host_offslot_logged < 12 && !g_host_offslot_seen.count(bl)) {
+                    int in = slot_of(g_host_cities[bci], bl, bp, &nd, nullptr);
+                    if (in < 0 || nd > 2.f) {
+                        g_host_offslot_seen.insert(bl);
+                        g_host_offslot_logged++;
+                        H->log(M, SK_INFO, "civ: BUG-0602: host building %08X of city %u at (%.1f %.1f %.1f): slot %d, nearest slot %.1f m",
+                               game::noun_id(bl), (unsigned)bci, bp.x, bp.y, bp.z, in, nd);
+                    }
+                }
+            }
     struct Chunk {
         size_t c0 = 0, c1 = 0, n0 = 0, n1 = 0, v0 = 0, v1 = 0, bytes = kHead;
         bool bld = false;
@@ -2818,6 +2857,7 @@ static bool g_ruin_repair_fix = true;
 COOP_FIX("civ.ruin_repair", "BUG-0324", g_ruin_repair_fix,
          "civ: a guest replaces a ruin the host has whole again with the host's building");
 static uint32_t g_bfix_added, g_bfix_removed, g_ruins_differ, g_ruins_in;
+
 static void reconcile_buildings(void* city, size_t n,
                                 const std::function<void(size_t, uint32_t&, net::Vec3&, bool&)>& host_b)
 {
@@ -2887,8 +2927,23 @@ static void reconcile_buildings(void* city, size_t n,
         net::Vec3 p;
         bool ruin;
         host_b(i, noun, p, ruin);
-        if (build_in_city(city, noun, p, false))
+        float near_before = 0;
+        void* occ = nullptr;
+        slot_of(city, nullptr, p, &near_before, &occ);
+        if (void* b = build_in_city(city, noun, p, false)) {
             g_bfix_added++;
+            net::Vec3 bp{};
+            game::object_position(b, bp);
+            if (net::dist(bp, p) > 4.f) {
+                g_bfix_off_slot++;
+                if (g_bfix_logged++ < 12)
+                    H->log(M, SK_INFO,
+                           "civ: BUG-0602: the host's building %08X of city %d at (%.1f %.1f %.1f) went to (%.1f %.1f %.1f) here, "
+                           "%.1f m off; the nearest slot here was %.1f m from the host's spot (occupant %08X)",
+                           noun, (int)(std::find(g_host_cities.begin(), g_host_cities.end(), city) - g_host_cities.begin()), p.x, p.y, p.z, bp.x, bp.y, bp.z, net::dist(bp, p), near_before,
+                           occ ? game::noun_id(occ) : 0u);
+            }
+        }
     }
     g_applying = false;
 }
