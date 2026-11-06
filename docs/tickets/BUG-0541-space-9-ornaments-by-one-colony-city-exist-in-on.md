@@ -1,20 +1,21 @@
 ---
 id: BUG-0541
 title: Space: 9 ornaments by one colony city exist in one game only (Space:guest_only:ornament / host_only:ornament)
-status: open
+status: fixed
 kind: desync
 stage: Space
 reported: 2026-11-04
 source: divergence detector (space_play, out/lab/20261104-104326 of fix/w42-space-planets; rel/0.7.5 out/lab/20261104-013517)
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w45-world-objects
+commits: 4ff16746, c73a0a14
+tests: host_space_ornament (tools/tests/coop_world_host.py --case ornament)
 signature:
-docs:
+docs: docs/re/space.md#space-city-ornaments
 related:
+switch: wobj.city_ornament
 ---
 
 ## Report
@@ -28,16 +29,28 @@ of detail. The whole-list counts differed in other sessions too (32 / 41).
 <!-- what the player (or the test) saw, in our words; no player names, no paths from their PC -->
 
 ## Root cause
-Not traced. Inferred: the planet load 0xFF96B0 makes a noun 0x18C88E4 object for every planet-record item with flag
-0x80 (docs/re/space.md#space-planet-life); which game has the items (or other makers of this noun) differs.
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+Observed: the ornaments are a city's decorations (noun 0x18C88E4, model 0x2AE5BA7 at +0x228), 9 per city from
+City_MakeDecorations 0xBE6A50 (the city setup 0xBE7D40 and the callback 0xB90DA0), placed in free slots of the city's
+layout. Which cities have their sets differs per game and per load (5 to 86 ornaments of the noun on the `space` home
+planet, stable for a minute, not by the camera: the host's ship over a bare city for 25 s made none), and a city's
+group variants differ too. Lab 20261106-044822, -045215, -045654, -050420. Not the planet record's flag-0x80 items
+(0xFF96B0, model 0x345BD5D): none on the planet in either game (the earlier inference).
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+Kind `city_ornament` (Space planets, whole planet, the 56 nearest the guest's ship): a guest's decoration binds to the
+host's within 1.5 m, else its nearest unbound one anywhere is moved there (position and the planet's up); a host city
+set the guest lacks is made on the guest's nearest bare city (City_MakeDecorations) and moved; a guest's decoration
+without a host partner is removed as City_RemoveTurret removes a turret (Layout_ClearObject 0xAFADD0,
+DestroyInstance, VectorPtr_EraseValue 0xD5AA90). The host also sends an empty Space snapshot now (a host planet with no
+decorations has none on the guest). Switch `coop.fix wobj.city_ornament off`. ~ The model variant stays the guest's.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+host_space_ornament (space fixture, both land 3 times with a takeoff between, every ornament of the noun compared in
+both games' lists):
+- FAIL with `SPORE_FIX_OFF=wobj.city_ornament`: lab 20261106-050420 (all 3 landings differ: 77 / 14, 59 / 41, 50 / 59).
+- PASS: lab 20261106-050848 (23 / 23, 50 / 50, 5 / 5; sets made 2, removed 45, no fault).
+- Detector: play_space had no ornament row before (L1: Space guest_only ornament 7 %) nor after (lab 20261106-051337).
 
 ## History
 - 2026-11-04: opened.
+- 2026-11-06 (fix/w45-world-objects): fixed (kind city_ornament), test host_space_ornament.

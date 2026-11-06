@@ -16,6 +16,7 @@
 #include "gamefixes.h"
 #include "modes.h"
 #include "world.h"
+#include "terrain_diag.h"
 #include "sporekit.h"
 #include "sporekit_game.hpp"
 
@@ -605,6 +606,7 @@ int c_memfind(void*, int argc, const char* const* argv, SkOut* out)
 void coop_register_debug_commands2(const SkHost* host, SkMod* self)
 {
     g_self = self;
+    terrain_diag::init(host, self); // BUG-0332
     host->command_add(self, "coop.loadworld", "debug: point the save DB to a slot dir and load a planet", c_loadworld,
                       nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.savedb", "debug: current save folder database", c_savedb, nullptr,

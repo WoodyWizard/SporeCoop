@@ -17,6 +17,7 @@ static Ctx C;
 static bool g_on = true;
 static double g_last_rescue = -1000, g_last_regen = 0;
 static uint32_t g_joint_hits = 0, g_rescues = 0;
+static uint32_t g_hits_host = 0, g_hits_partners = 0; // diagnostics: hits counted by on_player_hit (play_creature)
 
 static HitTable g_hits(kHuntWindow); // target -> recent hits by players (BUG-0099)
 COOP_FIX("team.hunt_hits", "BUG-0099", g_hits.fix, "creature: the joint-hunt hit table forgets old hits of every target");
@@ -59,6 +60,7 @@ float on_player_hit(void* target, uint8_t player, float damage)
     if (!g_on || !target)
         return damage;
     bool joint = g_hits.hit(target, player, H->time_seconds());
+    (player ? g_hits_partners : g_hits_host)++;
     if (!joint)
         return damage;
     g_joint_hits++;
@@ -129,9 +131,9 @@ std::string status()
     double now = H->time_seconds();
     char b[200];
     int cd = (int)(kRescueCooldown - (now - g_last_rescue));
-    snprintf(b, sizeof b, "Pack: %s  |  rescue %s  |  joint hits %u, rescues %u",
+    snprintf(b, sizeof b, "Pack: %s  |  rescue %s  |  joint hits %u, rescues %u  |  hits host %u, partners %u",
              p.empty() ? "alone" : (p + (d <= kRegenDist ? " close (regen)" : " near")).c_str(),
-             cd > 0 ? (std::to_string(cd) + "s").c_str() : "ready", g_joint_hits, g_rescues);
+             cd > 0 ? (std::to_string(cd) + "s").c_str() : "ready", g_joint_hits, g_rescues, g_hits_host, g_hits_partners);
     return b;
 }
 

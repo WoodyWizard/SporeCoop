@@ -2936,9 +2936,12 @@ BUG-0465 (not fixed). GOG 2024, lab lane 5, creature fixture; follows #creature-
   with the monster (a green crocodile-like head with yellow spikes rising out of the water, mouth open, the camera
   on it: shot kraken_host_2.png), and 8-10 s later the avatar hatches at its nest (hp 10 -> 5, the death's
   penalty). `coop.drama start 6` without deep water shows only the caption (out/lab/20261105-140146).
-* ✔ The guest's game at the same time: its own camera at its own nest, no event, no new object, no effect
+* ~ superseded (2026-11-06): see #creature-sea-monster-relay. ✔ The guest's game at the same time: its own camera at its own nest, no event, no new object, no effect
   (`coop.effects log`); the host's puppet just dies there (PF_DEAD). The monster exists in the cinematic of the dying
   player's game only.
+* CORRECTION (2026-11-06, fix/w45-creature-reports): that run's own guest log has the monster: "effect: from 0 played
+  on other id 8A71529C ... game 1 active 1" (fix/w44-guest-player3 out/lab/20261105-140627, guest game log 14:07:10):
+  the world effect relay played it; the guest's camera was at its nest, so the shots had none.
 * ✔ Negative: the six world effects the host's game made during the cinematic (0x2F49E706, 0xAECAF472, 0x8B61750F
   from 0x6A254B; 0x8A71529C, 0xB3965D1D from 0x932EBE; 0x7484A8E4), each played alone at the avatar
   (`coop.effects load 1 60000 <id>`, out/lab/20261105-140852), are splashes, light and hearts, not the monster:
@@ -3047,3 +3050,202 @@ BUG-0386, BUG-0440 (static, Ghidra, GOG 2024; not seen at runtime):
   flag that takes one creature out of collision. Candidates: the loco force list (creature+0xC0, add 0xC44140,
   clear 0xC441A0, its callers 0xC06660, 0xC26D70 citizen, 0xC3E210, 0xC44770, 0xCA3010 vehicle, 0xD5F730), the
   "useGameplayPhantom" registration 0xB48870 (eggs; creatures likely have a similar phantom).
+## Player reports of 0.7.9: bodies eaten in one game, the host's UFO on the guest (2026-11-05, fix/w45-creature-reports)
+<a id="creature-p3-reports"></a>
+
+P3 of docs/plan-0.7.9.md. GOG 2024, Ghidra (tools/ghidra/q.sh) and lab lane 6, creature fixture.
+
+### Eating a body: the click, the diet, one meat value per body (BUG-0557, BUG-0383)
+<a id="creature-body-meat"></a>
+
+* ✔ (Ghidra) The player's click on an object in Creature is **0xD32FD0** (`SporeCoop::CreatureClickObject`, thiscall
+  (strategy, obj) ret 4, called from 0xD35190 with ECX = this - 0x48; ECX is only read for kind 0x1C): it asks the
+  cursor kind **0xD30830** (`SporeCoop::CreatureCursorKind`, cdecl(obj)) and runs the avatar's command of that kind.
+  Kind 8 (eat): avatar vt 0x84(0xAE66C0(obj, 1, 0)), 0xC032F0(0x40000, 0, FLT_MAX, 0, 0, obj, 0) (a player command
+  through 0xC0C070) and the click marker 0xD2F940. Calling 0xD32FD0 with `App::cCreatureModeStrategy::Get()` and a
+  body works like a click (`coop.rules click <npc id>`; `coop.rules cursor <id>` prints the kind and the body's state).
+* ✔ (Ghidra) The eat node: start 0xD70E40 needs the avatar's target (+0xE7C, cast 0xCE9F6639) to be dead (+0xB5E) with
+  **+0x135** set and meat (+0xB84, 0xC0BC70) above 0; the tick 0xD70FD0 walks there (state 0), takes the body
+  (+0xB50 = the eater), plays the eat animation (state 1 / 2) and bites in 0xD70A80: meat -= [0x1687A40] x dt, the
+  eater's food meter through 0xD85A50, health too when state +9 is set; state 3 ends the meal when the food meter
+  (+0xBBC, 0xC0BB20) reaches [0x1687A00]. It bites **only when the eater's species +0x608 is not 0** (0xC0B8E0, named
+  `cCreatureBase::IsHervibore` in the March 2017 symbols, ~ a "eats meat" score of the mouths; the name looks wrong).
+* ✔ (runtime, out/lab/20261105-225528 / -225751) Both species of the creature fixture have +0x608 = 0: a click on a
+  body walks the creature there and holds the eat node (0x02D852E2) with +0xB50 = the avatar, the meat stays 100.
+  Earlier "eating by clicks is unreliable" (#creature-eat-body) was this, not the clicks. `coop.rules diet <n>` sets
+  the own species' +0x608 for tests; with 1 both players eat (100 -> below 0 in ~8 s).
+* ✔ (runtime, out/lab/20261105-225954) **Eating is each game's own act**: the guest ate its proxy of a body to -31,
+  the host's body kept 100; the host ate its body to 12, the guest's proxy kept 100. An eaten-out body (meat below 0)
+  stays where it is in the eater's game for a while but offers no "eat" any more; the host's game removes its own
+  eaten-out body soon (the guest's proxy is then despawned).
+* Fix `npc.body_meat` (npc.cpp, MSG_NPC_MEAT 65): the host sends the meat of the bodies a guest mirrors (a change of
+  0.5, every 2 s); the guest sends what its creature ate of a proxy (the drop of +0xB84, 5 times a second) and the
+  host takes it off its body; the guest's proxy takes the host's value when it is lower. With it the two games are
+  within 2 meat during a meal and an eaten-out body goes from both (out/lab/20261105-230313; off: -230449).
+* ? Not covered: a body eaten by a guest's own local creature (none: the guest's game has no AI creatures of its own
+  in Creature), the bone pile / skeleton an eaten body may leave (not looked at).
+
+### The host's UFO on the guest (BUG-0558)
+<a id="creature-ufo-mirror"></a>
+
+* ✔ (runtime, out/lab/20261105-232547) The drama UFO of `coop.drama start 2` lives ~80 s in the lab and flies off at
+  ~12 m/s after a few seconds (it climbs and leaves, the pick never reached a candidate: `coop.rules ufo` seen=0).
+* ✔ A type 7 ship made on the guest with `UFOAbductionEvent_SpawnUFO(pos, 0, false)` and placed only with the
+  spatial SetPositionAndOrientation (vt 0x44 of cast 0x1186577) is put back by its own flight to where it was made in
+  every other frame (out/lab/20261105-232301: up to 49 m off): the ship's next position **+0x718** and destination
+  **+0x750** (cGameDataUFO, docs/re/space.md; spacecoop's `goto` writes them too) must be the pose as well. With all
+  three it follows the host's ship within 0.2-1.9 m at 10 poses a second.
+* Fix `creature.ufo_mirror` (player_rules.cpp, MSG_PLAYER_RULE kind 3): the host's ships to the guests, a mirror ship
+  per ship on the guest (not ticked: no behaviour tree, no beam), destroyed through game::destroy_creature.
+* ~ "The guest is taken": the pick (#creature-ufo-pick) skips the avatar and the avatar's species profile, so in a
+  game of one the player's creature is never the ship's target; not changed. The screenshot of the guest did not show
+  the ship (it was 20 m over the creatures, above the camera's view); its existence and pose are the game's object list.
+* ✔ (runtime, out/lab/20261106-005607, warm games) The pick of #creature-ufo-pick ran on candidates for the first time
+  in the lab: `coop.rules ufo` on the host seen=15 skipped=3 (creature.ufo_puppet answered "epic" for the guest's
+  puppet 3 times). The cold runs before never reached a candidate (seen=0).
+* ? Seen twice in this branch's runs, with and without the mirror: the guest's camera in the planet view from space
+  right after the join (the log: "cinematic 8915F9BB still playing in a stage: ended it"); not this fix (not looked at).
+
+### Carried and thrown rocks and sticks (BUG-0458)
+<a id="creature-carry-relay"></a>
+
+Follows #creature-hold-slots.
+* ✔ (Ghidra) `Creature_HoldObject` 0xC15B20 and `Creature_ReleaseObject` 0xC15EB0 return a **bool** (AL) and take the
+  object's **cSpatialObject** (interface 0x1186577), not its cGameData: the spatial's vt **0xB8** casts it to the
+  cGameData (0x17F243B, as 0xAE6650 does), whose noun (vt 0x20) is cRock 0x2A8FB3F or an ornament 0x3A2511E; the hold
+  slot's +0x20 holds the spatial pointer too. HoldObject: slot index < (+0xE44 - +0xE40) / 0x24 else false; a full slot
+  is released first when `replace`; 0xC702B0, the socket attach 0xC120B0 (false when it fails), 0xD7D1A0 (physics
+  component 0x116DD1B +0x268 = 0, +0x1F0 = 3), +0x71 = 1. ReleaseObject finds the slot and calls 0xC15D30(slot, a, b):
+  vt 0xBC, the slot cleared, the physics added back (0xB3D410 / 0xB454A0 / 0xB542D0), 0xD7D240, vt 0xC0.
+* ✔ (runtime) Both species of the creature fixture have one hold slot (sockets 9 and 17) and the cursor over the rock
+  is 0x1C / 0 / 1 (walk / none): they cannot pick it up by a click; `HoldObject(avatar, rock, 0, true)` holds it (the
+  rock follows the creature, also through a teleport). Released, the game's physics throws it off the hand: 14-23 m in
+  the lab, and on the fixture's slope it rolled on for 25-30 s (lab 20261105-234535, 20261105-235138, 20261106-000521).
+* ✔ (runtime) A copy teleported along a flying object, or put back again and again where a creature stands, hits that
+  creature in its game: "hit by none" 91-348 damage, the guest's creature died (lab 20261105-235733, 20261106-001427,
+  20261106-002414). Teleports of physics objects near creatures must be avoided.
+* Fix `creature.carry_relay` (player_rules.cpp, MSG_PLAYER_RULE kinds 4 hold / 5 drop / 6 put): the own creature's hold
+  of a rock or ornament is sent with the object's noun and the position both games last agreed on (where it lay, or its
+  last sent rest point); the partner's game holds its nearest object of that noun within 6 m in the hold slot of the
+  player's puppet. The release keeps the copy in the puppet's hand; the thrower's game sends each point where its object
+  lies or creeps (slower than 1 m/s, 0.3 m from the last one sent) for up to 60 s; the partner releases its copy at the
+  first and teleports it there for 3 s, never within 4 m of its own creature, and gives it a held object's physics
+  state (component 0x116DD1B +0x268 = 0, +0x1F0 = 3, as 0xD7D1A0): teleported with its own physics on, the copy kept the
+  speed of its release and rolled 5-115 m off (lab 20261106-002616, -002757); with it the two rocks lay 0.05-0.6 m apart
+  (lab 20261106-003110, -003250, -003813, -003953). A creature picking the copy up and letting go of it gives it its
+  physics back (0xC15D30). `coop.rules carry | hold | drop | findobj | clickobj` for tests.
+* ~ Not covered: the flight itself (the partner sees the rock in the puppet's hand until it lands, then at the landing
+  point), a throw at a creature (its damage is the thrower's game's), sticks (ornaments of sort 3: the worldobj
+  `interactive_ornament` kind syncs their state, not checked together), fruit.
+
+## The host's NPC set while its game stands still, and a guest's leave (2026-11-06, fix/w45-one-game-objects)
+<a id="creature-npc-gaps"></a>
+
+* ✔ Observed (lab 20261106-013312 / -014107, creature fixture): `coop.team die` on the host gives the death caption;
+  about 8 s later the host's game updates no creature at all (`creatures_updated()` empty, coop.status `busy:
+  cinematic,input_lock`, later `,paused`) and stays so until the caption's OK. npc.cpp host_tick returned at once in
+  such frames (by design, so the guests keep their proxies), so it never ran the guests' relevance: a guest that went
+  170 m away before the death and came back next to the host's body had 0 of the 4-5 host NPCs there for the whole
+  freeze (out/lab/20261106-014526, `npc.frozen_send` off). The host's objects stay valid meanwhile (listed in the noun
+  list, alive, in their herds); `npc.frozen_send` spawns the newly near ones from them every 0.5 s of a freeze.
+  `coop.npc` (host) prints `frozen_s=` (how long no creature was updated), `frozen_spawns=`, `frozen_despawns=`.
+* ✔ Observed: `coop.dna add 3000` on the creature fixture shows the brain upgrade caption after ~3 s (input_lock=1,
+  busy=cinematic) with the host's simulation frozen the same way; the guest kept 5 of 5 host NPCs within 50 m for 14 s
+  (lab 20261106-013649, -014107). The 13 -> 1 loss of BUG-0413's transition_net run (2026-11-01, after the live
+  Cell -> Creature start) did not happen on the fixture. ~ Inferred: there the host's npc::on_world_change ran (it
+  despawns every NPC at the guests and forgets them; the avatar object changed) and the frozen host sent no spawns
+  again; the host logs `npc: world change (avatar ...): N NPC proxies despawned at the guests` now, so the next
+  sighting says.
+* ✔ Observed (coop_join_during --case editor, lab 20261106-015905 with `npc.leave_locals` off): a guest's
+  `coop.leave` destroys its proxies (npc::on_session_end) and its game has no creature of its own then (the update
+  filter removed them while it mirrored the host): 1 own creature within 70 m 10 s after its rejoin, where it had shown
+  11. At a (re)join the update filter removed every local NPC from the first frame, although the host was in its
+  editor: the away state needs 4 s (`host_away=0` at 0-2 s of the join). With the fix the leave hands the proxies over
+  (away_locals, next frame, same world epoch) and a guest without proxies keeps its own NPCs until host_here():
+  12 own creatures with their AI on (lab 20261106-015417). ~ They idle at their nests (none moved > 1 m in 16 s, small
+  0.1-0.4 m moves): not checked whether creatures made by away_locals walk later.
+* ✔ (BUG-0385) A creature of a save made while a partner's puppet existed (untuned +0xE84 = 0, a herd like ours) got
+  an NPC id in host_tick until remove_saved_strays (once a second) removed it; now it gets none (`npc.stray_ids`).
+### Carried rocks: the fast part of a roll (2026-11-06, fix/w45-creature-reports)
+<a id="creature-carry-fast"></a>
+
+* ✔ (runtime) A rock released by the nest mound of the creature fixture rolls on at over 1 m/s for up to 40 s: the
+  rel/0.7.9 integration run's copy lay 8.47 m off (rel/0.7.9 out/lab/20261106-013035) because only the points slower
+  than 1 m/s were sent; 100-143 samples a throw are faster (`coop.rules carry` fast=). The thrower now sends the
+  position 10 times a second whenever it moved 0.3 m (`creature.carry_relay`), at any speed; with the copy's held
+  physics and the 4 m guard no creature was hit: 16 of 16 PASS (out/lab/20261106-023016, -024443).
+* ✔ A creature teleported onto a rock (the lab's warm reset, gopos) takes 47-195 "hit by none" damage from it in its
+  game; seen with the relay off too (out/lab/20261106-025551): the test drops the rock 10 m from the start.
+
+## The sea monster on the partner's screen: an effect of the death cinematic (2026-11-06, fix/w45-creature-reports)
+<a id="creature-sea-monster-relay"></a>
+
+BUG-0465 (fixed). GOG 2024, game data (read only), lab lanes 3/2.
+* ✔ (game data) The cinematics are the script `Spore_Game.package` (and PatchData) type 0x024A0E52, group 0x40890200,
+  instance 0x9EA3031A (32 KB of text, `state <name>` blocks). `state CRG_AvatarDied_SeaMonster` (its FNV-1 id 5E205931 is
+  the "caption cinematic" of #creature-deep-water): letterbox, `addActor "TheAvatar" avatar`, camera; state
+  `...SeaMonster0`: `startEffect "crg_seamonster_attack" crg_seamonster_attack -target "TheAvatar"` and
+  `startEffect "splash1" monster_water_splash -target "TheAvatar"`; then the avatar is moved to its nest, a freeze frame,
+  the text "Sea monster coming to get-cha.", CRG_Death_Restart. **The monster is the effect crg_seamonster_attack
+  0x8A71529C** (FNV-1 of the name), the splash 0xB3965D1D; no model, no creature, no noun. The type 0xB1B104 props of
+  group 0xF5F6FDE8 named like the cinematics (CRG_ClaimNest 63B7060A) are only their caption boxes.
+* ✔ (runtime) The world effect relay (BUG-0451, since 0.7.4: an effect the game makes at the local player, sent with
+  its position) sends both and the partner's game plays them (`creature.effects_relay off`: nothing on the guest's
+  screen, out/lab/20261106-031408). The report was of 0.7.3.4, before that relay.
+* ✔ (runtime) It was sent with the position only: identity rotation, scale 1 and transform flags 0 (the game then
+  ignores the rotation). The game's own transform of an effect is at effect **+0x9C**: {u16 flags (6 here), u16 change
+  counter, vec3 pos, f32 scale, 3x3 rotation row-major} (VisualEffect_SetTransform 0xA827B0 -> 0x537E10), the same layout
+  as MSG_EFFECT's 0x44 bytes. The host's monster stands with its third row along the planet's up (cos 0.975-0.979); the
+  guest's copy was 32 degrees off (cos 0.851, the world y axis) and drawn tilted, in pieces sideways out of the water
+  (out/lab/20261106-031307, -030327).
+* Fix `effects.world_xform` (effects.cpp): the effect's own transform is sent when it is readable and its position is
+  the one read (else the position-only one). The guest's monster then has the host's rotation and scale exactly and
+  rises upright out of the water on its screen (out/lab/20261106-031141, -030230). `coop.effects watch <id>` prints
+  the last own / received effect of an id with its transform; `coop.nest look <target> 0 <from>` puts the own creature
+  at a point facing a target (tests).
+* ? Not changed: the sound of the cinematic (music_crg_cin_waterdeath) and the freeze frame stay the dying player's.
+
+## World objects at the host's places: fruit made and moved (2026-11-06, fix/w45-world-objects)
+<a id="creature-host-places"></a>
+
+GOG 2024 addresses (dc04aee5). mods/coop/worldobj.cpp, kinds `fruit` (BUG-0497), `game_bundle` (BUG-0548,
+docs/re/tribe.md#tribe-host-bundles), `cultural_target` (BUG-0540, docs/re/civ.md#civ-host-cultural-targets),
+`city_ornament` (BUG-0541, docs/re/space.md#space-city-ornaments); test tools/tests/coop_world_host.py.
+
+**The mechanism (Kind `place`, `relocate`, `place_eps`, `make`).** A guest binds the host's objects to its own in two
+passes: within `tol` first; a host object still without a copy takes the guest's nearest unbound copy within
+`relocate` m and `place` puts it at the host's place; a bound copy farther than `place_eps` m from the host's object is
+put back; only then `make` makes the ones still missing. In Space the host sends an empty snapshot too (from the
+guest's ship), so a guest copy of an object the host has none of is seen as its own.
+
+**Fruit (BUG-0497).**
+* ✔ The same drop from the same tree came to rest 13 m apart in the two games (play_tribe, lane 7); the guest's
+  counters missing=62 dropped=59 in play_tribe (0.7.8 code). Each game's flora recycles the loose fruit farthest from
+  its own camera when its free fruit run out: Flora_TakeFruitForDrop 0xB08DF0, only caller 0xB09790.
+* ✔ Flora_DropFruit 0xB09AE0 thiscall(flora, tree, slot, make) ret 0xC: returns 0 when the slot's bit of tree
+  +0x48/+0x4C is clear, finds the tree instance 0xB03280(flora, tree +0x58, +0x50, +0x54), rejects slot >= 0xB05850()
+  (the instance's slot count, a popcount), then 0xB09790(slot, make) thiscall on the instance returns the cFruit.
+* ✔ Make (lab 20261106-042151, -042440): slot 0 of the nearest tree (within 60 m, 4 trees tried) gets its bit for the
+  drop and the tree's mask is put back exactly right after; the falling cFruit is put at the host's place
+  (game::set_object_position, the spatial vt 0x38). A free slot is not needed: L2's first version took the first clear
+  bit, which on a full tree is the slot past its count, and made nothing (missing=30 made=0, lab 20261106-041736).
+  Every tree near the players had the same mask on both games after three makes (the test checks it).
+* ✔ place: only fruit falling or on the ground (state 1 / 2) on both sides; a held or hidden fruit is not moved.
+* ~ A make takes a free fruit, or the loose fruit farthest from the guest's camera (TakeFruitForDrop): a far fruit
+  of the guest's may be recycled for it; not seen to loop in the test (3 makes in 64 s).
+## Spice node scale: live-made 10, loaded 1.0 (2026-11-06, fix/w45-placement)
+<a id="creature-node-scale"></a>
+
+BUG-0485. GOG 2024. ✔ = observed, ~ = read in the code, ? = inferred.
+* ✔ The BUG-0485 SetScale diagnostic (squadron.cpp h_SetScale, `scale 10 set on an object ...`) named the node's
+  setter: return address 0xBC0641 in 0xBC02F0 (`SporeCoop::Planet_PlaceCommodityNodes`, a .sym entry), loco vtable
+  0x14699E8 (the diagnostic logs the loco's vtable; the 0x1469A28 of the ticket's first note was not seen). It runs on
+  the host at the live Cell -> Creature change (campaign_ct, lab rel/0.7.8 20261105-155603: host log only) and in
+  space_play on both games.
+* ~ 0xBC02F0 makes each node from a placement record: CreateInstance of noun 0x0403DF5C, SetScale(record +0x6C, or
+  the prop 0x254CF89), SetPosition(record +0xC).
+* ✔ A node read from a save has 1.0 (every node of the creature / tribe fixtures on both games): the scale is not
+  saved, so the host's live-made node (10) and the guest's copy from the shared world (1.0) differ, and the host's own
+  game shows 1.0 after any load. Not a mod bug at its origin; in co-op each player saw the node at another size.
+* Fix `wobj.node_scale` (worldobj.cpp kind `node`, the whole planet, Creature / Tribe / Civ): the state is the host's
+  scale; a guest's node that differs by more than 1 % takes it (cSpatialObject vt 0x40 SetScale). Test node_scale.

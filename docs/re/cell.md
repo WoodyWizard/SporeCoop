@@ -1566,3 +1566,78 @@ Re-read of lab 20261030-104149 campaign_short#3 (the guest Dave, 0.7.3.1) agains
 * Reproduced the player's path with the fix off: `coop_cell_pause.py --rounds 8 --rejoin` (suite
   `cell_pause_rejoin`): pause menu, 8 churn rounds, still paused the guest leaves and joins, the
   host's world arrives and the guest leaves Cell to load it. Runs: see BUG-0308.
+
+## A NaN own-cell velocity, the lost camera, the sync-check's world scale and the part tokens (2026-11-06, fix/w45-cell)
+<a id="cell-view-nan"></a>
+
+BUG-0604, BUG-0307, BUG-0606, BUG-0316. GOG 2024, Ghidra (`tools/ghidra/q.sh --build 2024`), lane 4.
+
+* ✔ (lab 20261105-142923 cell_new_game#1, re-read) The guest's level-up (size 0.82 -> 0.48 at s 93) is where its
+  own cell went non-finite: `own_probe` logged mask **0x104** (the cell's velocity +0x90 and its particles'
+  velocities, the positions finite) 17 frames in a row in 0.24 s, each time "at guest tick, finite at
+  collision", healed each frame (BUG-0299 / BUG-0307's heal), then never again. From that moment on the
+  guest's screen was empty water for 7 minutes (`screen: plants=0 meat=0 creatures=0`).
+* ✔ (Ghidra) `CameraUpdate` 0xE600A0 eases the drawn point `+0x48` towards the target with factors
+  `local_60` / `local_8c` from curves of the avatar's speed `|+0x90|` (0xE837C0) and `1 - exp(-k dt)`: a NaN speed
+  makes `+0x48` NaN; every later frame computes `+0x48 + (x - +0x48) * k`, NaN again; the clamp into the box
+  around the avatar is skipped because its NaN distance fails `1.5e-5 < d`. The target `+0x54` itself stays
+  finite (0xE5BA90 does nothing for a NaN speed: `1.5e-5 <= NaN` is false). Nothing in the game resets
+  `+0x48` except its own jumps (0xE611B0, 0xE794F0, Load, RebuildLevel). The view boxes 0x16B3C88 are built
+  around `+0x48` (0xE507F0).
+* ✔ (runtime, `coop_cell_view_nan.py`, `coop.pool nanself vel 17`: the same mask written after the own cell's
+  soft-body step for 17 steps) with `cell.camera_heal` off: `cam=(nan nan) target=(100.00 100.00)`, 0 cells on
+  the guest's screen 3 s later and after swimming 15 m (lab 20261106-002913), as in the report. Fix
+  `cell.camera_heal` (cellsync.cpp `camera_heal`, every frame in Cell, solo too): a non-finite camera point
+  goes back onto the own cell (`camera_snap`): 17 heals, the camera 0.3 m from the cell, 32 cells on screen
+  (lab 20261106-003015). `coop.pool cam` prints `heals=`.
+* ~ inferred: BUG-0604's guest had the same NaN camera (its camera was not logged in 0.7.8; same mask, same
+  frames, the same empty screen while its cell swam).
+* SimUpdate 0xE7F3A0 order (Ghidra): WorldScaleStep 0xE73E50 (the rescale 0xE6DB70, which re-tiers soft bodies
+  through 0xE5A1A0), view boxes 0xE507F0, ..., PopulateTiles, the broadphase, ..., UpdateCells 0xE7C8C0 (the
+  soft-body step), ..., collisions 0xE7F260, then 0xE5D5B0, 0xE78D10 (the mate meeting), 0xE697E0 (hints);
+  then in 0xE806B0: RebuildLevel 0xE7FD00 when `G+0x51D8` (and SimUpdate again), 0xE73F60 (graphics),
+  0xE53AE0, CameraUpdate 0xE600A0, 0xE6C9F0. The level-up NaN came after the collisions: none of 0xE5D5B0,
+  0xE78D10, 0xE697E0 writes a cell's `+0x90` (read); 0xE73F60 only reads it. Still not found what wrote it
+  (BUG-0307's first NaN). Negative: cell_new_game again with two guest level-ups (lab 20261106-003243): no
+  `own_probe` line.
+* ? (Ghidra, not seen at runtime) ReTierSoftBody 0xE51A20 reads the old particles' positions and velocities by
+  index without a check (a `-1` entry of a full pool reads 8 bytes before the particle arrays) and averages
+  them into the new tier's: a candidate for a NaN at a level-up's size change, not shown.
+
+### The sync-check in a Cell level change (BUG-0606)
+<a id="cell-sync-scale"></a>
+
+* ✔ (runtime, `coop_cell_end_sync.py`, cell fixture) `coop.pool food 1000` (the end of Cell): the world scale
+  goes 0.5 -> 15000 in ~11 s on the host and a few frames later on the guest (host 3.78 / guest 1.93 at one
+  sample) and every position shrinks towards the origin. The guest draws the host's cell 0.04-0.07 m (p90) from
+  where it is (BUG-0519's puppet_scale), but the sync-check compared the guest's raw positions (its scale) with
+  the host's (its own): `p: 2 apart (p0 27.6 p1 26.6)`, `c: 87 apart`, 8 of 30 checks (lab 20261106-005031).
+* ✔ (lab 20261105-233139 campaign_ct#1, re-read) the same check at the end of Cell with 4 players: the host's
+  position went 42 -> 3500 -> 42 000 at ~2800 m/s in the game's numbers while the guests drew it in place
+  (their own cells and the other puppets at ~0): p0 359-740 apart, a MISMATCH on every guest. ~ Why its
+  numbers grew there and shrank in the 2-player fixture (the rescale centre 0xE4F900, the 4 players, the
+  host's place) was not found; the fix covers both.
+* Fix `diag.cell_scale` (diag_sync.cpp): the digest carries the sender's Cell world scale (an appended float,
+  older readers stop before it, an older digest reads 0 = not converted); the host converts the guest's
+  positions by guest scale / host scale before comparing (`pos * scale` is the same for a cell at rest through
+  a change). Lab 20261106-005151: 0 positions apart; only cells the level change removes and adds differ for
+  one check (extra / missing, rechecked 3 s later).
+
+### A guest's touch of a part token (BUG-0316)
+<a id="cell-part-token"></a>
+
+* ✔ (Ghidra) **0xE7B630** (from 0xE7E7F0, ESI = the avatar, argument the token cell): unless the avatar is
+  dying / dead (+0x112 / +0x113), its +0x178 or +0x17F or the token's +0x17B is set, it plays animation 0x31,
+  CollectPart(GetData(token +0x108) + 0xB8) and DestroyCell(token, 1, 0, 0). It runs in the touching player's
+  game: on a guest the token is a mirror, the collect happens there, and h_Destroy sends the touched mirror's
+  removal to the host (ACT_GONE).
+* ✔ The Cell fixture has no part token at level 1 (10 kills of creatures gave only meat; `coop.pool see`
+  of the host's screen 16 times: no "part"); after 1-3 level changes (`coop.pool food 40`) the host's pool has one.
+  `coop.pool tokens [to <id>]` lists the pool's tokens / moves the nearest 4 m from a player's cell;
+  `coop.pool mate nobutton` hides the mating-call button for a test.
+* ✔ (runtime, `coop_cell_part_token.py`) a guest's touch of the host's token: in all 5 runs with a collectable
+  token the guest's game showed the mating-call button, had the part (0 -> 2), the token was gone in the host's
+  game and the host's game had the part (BUG-0316 is not a bug). ? About 15 other tokens were collected by
+  neither game (the host's own touch of the same token failed too); not the token's level (`coop.pool tokens`
+  prints it; the food-progress level and the one under both failed), not its graphics object. Candidates not
+  checked: the avatar's +0x178 / +0x17F or the token's +0x17B (0xE7B630's conditions).

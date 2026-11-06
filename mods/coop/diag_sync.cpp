@@ -303,6 +303,28 @@ static void add_speed_slack(dg::Limits& l, uint32_t mode, uint8_t guest)
 static bool g_fix_cell_margin = true;
 COOP_FIX("diag.cell_margin", "BUG-0379", g_fix_cell_margin, "sync-check: a guest must have only the nearest 80% of the 900 cells it is sent (the host picks them around a late position)");
 
+// BUG-0606: a Cell level change multiplies every position by old / new world scale about the origin, on each
+// game at its own moment, and the end of Cell shrinks the scale for ~40 s (a cell 74 m from the origin went to
+// 42 000 at ~2800 m/s in the game's numbers while it stood still on the screen). The guest's digest is in its
+// own scale at the moment it was built, the host's in its own at another: the host's own cell came out 359-740
+// "apart" on every guest (campaign_ct, lab 20261105-233139) with nothing to see. The host compares the guest's
+// Cell positions converted into its own scale (times guest scale / host scale; pos x scale stays the same for a
+// cell at rest through a change). Off: raw positions (0.7.8).
+static bool g_fix_cell_scale = true;
+COOP_FIX("diag.cell_scale", "BUG-0606", g_fix_cell_scale, "sync-check: in Cell a guest's positions are compared in the host's world scale (level changes, the end of Cell)");
+static void to_host_scale(const dg::Digest& hd, dg::Digest& gd)
+{
+    if (!g_fix_cell_scale || hd.mode != modes::kCell || gd.mode != modes::kCell || !(hd.scale > 0) || !(gd.scale > 0) ||
+        hd.scale == gd.scale)
+        return;
+    float k = gd.scale / hd.scale;
+    for (auto& e : gd.entries) {
+        e.x *= k;
+        e.y *= k;
+        e.z *= k;
+    }
+}
+
 static dg::Limits limits_for(uint32_t mode, uint32_t world)
 {
     dg::Limits l;
@@ -332,6 +354,8 @@ static dg::Digest build_digest(uint32_t seq)
         d.totals.push_back({dg::kTotalCellFood, (float)food});
     if (g_P.players_out)
         d.out = g_P.players_out();
+    if (g_P.cell_scale)
+        d.scale = g_P.cell_scale();
     if (g_P.entries)
         for (auto& e : g_P.entries())
             if (uint32_t k = dg::parse_key(e.key))
@@ -413,7 +437,9 @@ static void on_digest(uint8_t from, const dg::Digest& gd, size_t bytes)
         for (auto& r : g_host_totals)
             if (r.t >= g.asked - kTotalLag)
                 recent.push_back({r.id, r.v});
-    dg::Compared c = dg::compare(hd, gd, lim, g_fix_total_lag ? &recent : nullptr);
+    dg::Digest gconv = gd;
+    to_host_scale(hd, gconv); // BUG-0606
+    dg::Compared c = dg::compare(hd, gconv, lim, g_fix_total_lag ? &recent : nullptr);
     if (g_stage_end_fix && g_P.stage_end && g_P.stage_end())
         c.other_place = true; // BUG-0588
     double ms = (g_H->time_seconds() - t0) * 1000;

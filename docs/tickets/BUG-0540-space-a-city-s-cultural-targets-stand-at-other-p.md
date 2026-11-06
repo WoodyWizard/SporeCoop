@@ -1,20 +1,21 @@
 ---
 id: BUG-0540
 title: Space: a city's cultural targets stand at other places in each game (campaign_space)
-status: open
+status: fixed
 kind: desync
 stage: Space
 reported: 2026-11-04
 source: divergence detector (BUG-0484 split)
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w45-world-objects
+commits: c3097c62
+tests: host_cultural (tools/tests/coop_world_host.py --case cultural)
 signature:
-docs:
+docs: docs/re/civ.md#civ-host-cultural-targets
 related: BUG-0484
+switch: wobj.cultural_target
 ---
 
 ## Report
@@ -23,16 +24,27 @@ of 3 without a partner within 3 m, nightly 2026-11-03, out/lab/20261103-012624).
 fix/w42-civ-left (out/lab/20261104-100146: no cultural_target row).
 
 ## Root cause
-Observed (BUG-0484, fix/w41-civ-combat): the city setup 0xBE7D40 makes 4 cultural targets per city (city record
-+0x618, +0x78 + 0x80 * i); their places are each game's own. Inferred: a worldobj kind (the host's places) would fit.
+Observed: after a fresh load of `civ_npc` (and `civ`) the 4 cultural targets of a city stand at the same places in both
+games (lab 20261106-043449); after the guest leaves and joins again 60 s later they are 3.3-8.5 m apart (lab
+20261106-043659): the guest's game sets its cities up again from the host's world of then (0xBE7D40) and places them
+by its own layout. The campaign_space rows came after a rejoin of the extra guest (out/lab/20261103-012624).
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+Kind `cultural_target` (Civ and Space planets): a guest's target binds to the host's within 3 m, else its nearest
+unbound one within 120 m is put at the host's place (SetPosition); a bound one more than 0.5 m off is put back. No make
+or removal. Switch `coop.fix wobj.cultural_target off`.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+host_cultural (civ_npc, a rejoin after 60 s, the targets near the guest compared in both games' object lists):
+- FAIL with `SPORE_FIX_OFF=wobj.cultural_target`: lab 20261106-043659 (4 of 4 more than 1 m off).
+- PASS: lab 20261106-044559-2 (relocated=8).
+- The final test (census centred on the host's first city: around the planet's centre it listed none, lab
+  20261106-054127 / -055541 failed before any check of the fix): FAIL with the switch off lab 20261106-055716, PASS lab
+  20261106-055718.
+- Detector: play_civ had no cultural_target row before or after (lab 20261106-051337); campaign_space (35 min) not
+  rerun. ? Whether the city record's copy of the places (+0x618) matters to the AI is not checked.
 
 ## History
 - 2026-11-04: opened.
 - 2026-11-04 (fix/w42-civ-left): opened (split from BUG-0484).
+- 2026-11-06 (fix/w45-world-objects): fixed (kind cultural_target), test host_cultural.

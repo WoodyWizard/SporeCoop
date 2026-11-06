@@ -2246,6 +2246,20 @@ static void test_diag_messages()
     dg::Digest d2;
     CHECK(rd.u8() == dg::kDigest && d2.read(rd) && d2.seq == 5 && d2.self == 1 && d2.world == 0xABCD && d2.vote == 1);
     CHECK(d2.totals.size() == 1 && d2.totals[0].second == 42 && d2.entries.size() == 2 && d2.entries[1].z == 6 && d2.out.size() == 2 && d2.out[1] == 3);
+    CHECK(d2.scale == 0); // BUG-0606: not in Cell
+    d.scale = 1.5f;
+    Writer ws;
+    d.write(ws);
+    Reader rs(ws.data.data(), ws.size());
+    dg::Digest d4;
+    CHECK(rs.u8() == dg::kDigest && d4.read(rs) && d4.scale == 1.5f && d4.out.size() == 2);
+    Writer wo; // an older sender's digest (no scale at the end) reads scale 0
+    d.write(wo);
+    wo.data.resize(wo.data.size() - 4);
+    Reader ro(wo.data.data(), wo.size());
+    dg::Digest d5;
+    CHECK(ro.u8() == dg::kDigest && d5.read(ro) && d5.scale == 0 && d5.out.size() == 2);
+    d.scale = 0;
     CHECK(dg::parse_key("c77") == dg::make_key('c', 77) && dg::parse_key("p") == 0 && dg::parse_key("x1y") == 0);
     CHECK(dg::key_text(dg::make_key('n', 12)) == "n12");
     // a digest that claims more entries than it has

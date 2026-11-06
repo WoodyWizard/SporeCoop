@@ -1200,3 +1200,76 @@ BUG-0593. GOG 2024, Ghidra (tools/ghidra/q.sh --build 2024) and lab lane 7 (civ_
 * ~ civ_coop's `Civilization:state:money` row ("-800 on the host, 0 on the guest"): the test's `coop.civ build`
   on the host spends without the game's price check (the host's wealth went 400 -> -800); a guest's shared total
   is floored at 0 (res.floor, BUG-0106). Not a player's case (the game refuses a building it cannot pay); not changed.
+
+## Cultural targets at the host's places (2026-11-06, fix/w45-world-objects)
+<a id="civ-host-cultural-targets"></a>
+
+GOG 2024 addresses (dc04aee5). Kind `cultural_target` of mods/coop/worldobj.cpp (BUG-0540), switch
+`wobj.cultural_target`.
+
+* ✔ The 4 cultural targets (noun 0x3D5C325) of a city stood at the same places on both games after a fresh load of
+  `civ_npc` (and `civ`), but 3.3-8.5 m apart after the guest left and joined again 60 s later (lab 20261106-043659):
+  the guest's game sets its cities up again from the host's world of then and puts them by its own city layout. This
+  is the campaign_space row: it came after Carol's rejoin (out/lab/20261103-012624, `extra1`).
+* ✔ Fix: a guest's target binds to the host's within 3 m, else its nearest unbound one within 120 m is moved there
+  (SetPosition of the spatial object); no make or removal (4 per city in both games). PASS lab 20261106-044559-2
+  (relocated=8 placed=8), FAIL with the switch off lab 20261106-043659.
+* ? Whether the city record's own copy of a target's place (+0x618, +0x78 + 0x80 * i) is used by the AI is not checked:
+  only the object is moved.
+## Mirror vehicle scale 10: the vehicle's model-ready handler (2026-11-06, fix/w45-placement)
+<a id="civ-vehicle-scale"></a>
+
+BUG-0549. GOG 2024. ✔ = observed, ~ = read in the code, ? = inferred.
+* ✔ The SetScale diagnostic logged `scale 10 set on an object with vtable 01474BE8 from 00CA41DA` in play_civ on the
+  guest only (lab fix/w42-civ-left 20261104-131223, the run of the detector's `Civilization:scale:vehicle` row, 0.81
+  host / 10.00 guest); never in a host log of the November labs.
+* ~ 0xCA41DA is in `SporeCoop::Vehicle_GroundSetup` 0xCA40B0, called only from the vehicle's model message handler
+  0xCA76B0 (this = vehicle +0x34) on message 0x2B978C46, which first sets vehicle +0xD04 from the message. With
+  +0xD04 set, it asks the manager 0xB34050 (vt 0x30) for an object at the vehicle (+0xD00) and, when there is one,
+  sets the loco's scale to 10.0, copies colours to that object and sets the bounding box (vt 0x64). ? Which object
+  that is and why only the guest's mirrors find it was not traced; the scale it leaves is what the player saw.
+* Fix `civ.vehicle_scale`: Civ vehicles are a replicated-fields kind (`fields::K_CIV_VEHICLE`, civ.cpp: the host's
+  vehicles by net id, a guest's mirrors from g_gv): every mirror whose scale differs by more than the field's
+  tolerance takes the host vehicle's, also when the game sets it again. `coop.civ` vehicle lines print `scale=`;
+  `coop.civ vscale <id> <s>` (tests). Test civ_vehicle_scale.
+
+## City terrain stamps: the same ground on both games (2026-11-06, fix/w45-placement)
+<a id="civ-city-ground"></a>
+
+The BUG-0332 class (docs/re/tribe.md#tribe-terrain-stamps on fix/w45-village-ground: stamps applied live render
+another ground than the same list after a load) checked in Civ, where cities stamp the terrain too. ✔ = observed.
+* ✔ civ_npc (the save's cities, loaded on both games): `coop.ground` on a 10 m grid up to 80 m round every city,
+  892 points, the largest difference 0.00 m (civ_city_ground, lab 20261106-062301).
+* ✔ After a live founding on both games (the host's SpawnNextCity, the guest's replay) and a capture: 1115 points,
+  0.00 m (same run).
+* ✔ After the live Tribe -> Civ change (the host makes its first city live, the guest loads the host's Civ save):
+  223 points round the cities, 0.00 m (tribe_civ_ground = coop_tribe_civ.py --ground, lab 20261106-062912).
+* So no Civ ticket: the two grounds do not differ round cities in these paths. Not measured: a city the guest's game
+  founded while the host's was away (local play), and a Space colony's city.
+
+## A captured city's new layout and the guest's rebuild loop (2026-11-06, fix/w45-placement)
+<a id="civ-capture-layout"></a>
+
+BUG-0602. GOG 2024. ✔ = observed, ~ = read in the code, ? = inferred.
+* ✔ campaign_space (lab 20261106-064018, `SPORE_DETECTOR=20`): the campaign founds 6 cities (SpawnNextCity
+  instant=1, the guests found theirs) and captures one per 30 s for the player's civ (cCity::Capture). Right after the
+  capture of city 4 (06:45:25) every guest logged every 2 s `the host's building 018EA2CC of city 4 at (-319.0 -310.6
+  -239.6) went to (-317.0 -316.8 -234.0) here, 8.6 m off` (buildings_fixed=+224/-224 at the end); the detector's
+  `Civilization:planet:building_industry` in 27 samples.
+* ✔ Live `coop.civ slots 4` / `blist 4` on both games in that run: the host's city 4 had a new layout (all 12 slots
+  elsewhere, the industry in slot 5 at (-319 -311 -240), the City Hall 3.9 m and the house 3.2 m from the guest's),
+  the guests kept the layout of the founding (the same 12 slots the host had before the capture, lab 20261106-062912).
+  The host's building stood in its slot (no `host building ... nearest slot` line): the layouts differ, not a building.
+* ✔ Not by the capture alone: `coop.civ capture` of a new city in a two-game test left the host's layout as it was
+  (civ_city_layout before its --move step was added, lab 20261106-062912). ? The relayout came with the captured city's new models
+  (City_SetPartsOwner 0xBE4C80 -> 0xBE4B60, the owner's City Hall, then an update request 0xBD1C00(1)), which a guest's
+  ChangeOwner without Capture's +0x2E2 flag does not run, and may wait for the city to be updated in view (the
+  campaign's capture caption shows it); not traced.
+* ✔ Why it looped: reconcile_buildings matches a host building with a local one of the same noun within 4 m; the
+  guest's was 8.6 m off, so it was destroyed (extra) and the host's built again (missing) with SnapBuildingToSlot,
+  which took the free slot nearest the host's spot: the guest's own slot of that building, 8.6 m off again.
+* Fix `civ.city_layout`: a building a guest makes for the host's (reconcile, MSG_CIV_BUILD), and one it matched 1-4 m
+  off, is put at the host's spot with its layout slot (cLayoutSlot +0xC) moved there too, so the slot nearest the
+  building stays its own (the planner's pick, BUG-0491) and the next snapshot matches it. `coop.civ` counts
+  `off_slot=` (rebuilt more than 4 m from the host's spot) and `moved=`. `coop.civ blist <i>` lists a city's buildings
+  with their slot, `coop.civ bmove <i> <k> <x y z>` (tests) moves one.

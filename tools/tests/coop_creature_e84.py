@@ -14,12 +14,18 @@ killed them"; the host crashed 3 times at 0xD48634, CreatureStageEventHandler re
 4. The removal on again (as in normal play): the creature is gone within seconds.
 5. The guest joins: its puppet gets a herd of its species, reused after a rejoin (a new herd per
    spawn stayed in the world and in every save).
+BUG-0385 (step 2): such a creature is no NPC of the host's world (`coop.npc list`): the host gave it an id
+and sent it to the guests in the frames before its removal (SPORE_FIX_OFF=npc.stray_ids fails).
 
   SPORE_LANE=2 python3 tools/tests/coop_creature_e84.py
 """
+import os
 import re
 import time
 
+import campaign_lib
+import census
+import creations_state
 import lane
 import twoinst
 from twoinst import Checks, Console, lane_state, sh, start, wait_guest_in, wait_up
@@ -43,11 +49,21 @@ def guest_species(host):
     return m.group(1) if m else None
 
 
-def wait_puppet(host, t=40):
+def own_species(host):
+    """the species of the host's own avatar (census key)"""
+    return next((r['key'] for r in census.dump(host).rows if r['own'] == 'avatar'), None)
+
+
+def wait_puppet(host, t=40, own_creation=False):
+    """the species of the guest's puppet once the host's world has it; own_creation: only once the puppet is the
+    guest's own creature, not the world's species it is drawn as for the first seconds of a join (the guest's
+    creation comes a few seconds later: a save made before that holds a puppet of the host's species, which the
+    load gives its tuning back, integration run 20261106-040221)"""
     t0 = time.time()
     while time.time() - t0 < t:
         sp = guest_species(host)
-        if sp and f'species={sp}' in host.call(f'coop.npc creatures {sp}')['out']:
+        if sp and f'species={sp}' in host.call(f'coop.npc creatures {sp}')['out'] and \
+                (not own_creation or sp != own_species(host)):
             return sp
         time.sleep(1)
     return None
@@ -100,12 +116,28 @@ def restart_and_load(slot, planet, before_load=()):
 
 def main():
     host, guest = start()
+    # the saved puppet must be the guest's own creature (a puppet of the world's species gets its tuning back on
+    # the load). BUG-0345: a guest plays its own creature only when chosen in a world it never played it in (lane 3
+    # of the integration run 20261106-040221 drew it as the world's species): chosen here, put back at the end
+    st0 = creations_state.save(guest)
+    print('  guest profile before:', st0, '| chose', creations_state.choose_own(guest), flush=True)
+    try:
+        return run(host, guest)
+    finally:
+        try:
+            creations_state.restore(Console(lane.GUEST), st0)
+        except OSError:
+            pass
+
+
+def run(host, guest):
     ck = Checks()
     st = lane_state()
     slot = 'Game0' if st.get('slot', 9) == 9 else f'Game{st["slot"]}'
     planet = (st.get('planet') or 'Game0/Scalinus').split('/')[1]
-    sp = wait_puppet(host)
-    ck(sp is not None, f'the host has the guest\'s puppet (species {sp})')
+    sp = wait_puppet(host, own_creation=True)
+    ck(sp is not None, f'the host has the guest\'s puppet as the guest\'s own creature (species {sp}, '
+       f'the host plays {own_species(host)})')
     # a save as before BUG-0020 (the puppet and its herd in it): what older saves hold
     host.call('coop.savestrip 0')
     out = host.call('coop.save')['out']
@@ -114,7 +146,10 @@ def main():
     ck('saved' in out, f'the host saved with the puppet in the world ({slot}/{planet}: {out.strip()})')
 
     # 2. after a restart the host loads that save alone, the removal switched off
-    host, guest = restart_and_load(slot, planet, before_load=['coop.npc strays off'])
+    # the restart brings every switch back on: a twin run's SPORE_FIX_OFF goes off again (BUG-0385)
+    off = [f'coop.fix {n.strip()} off' for n in os.environ.get('SPORE_FIX_OFF', '').split(',')
+           if n.strip() and not n.strip().startswith('kit.')]
+    host, guest = restart_and_load(slot, planet, before_load=['coop.npc strays off'] + off)
     ours, other, lines = untuned(host)
     for l in lines:
         print('   ', l.strip())
@@ -122,12 +157,21 @@ def main():
     host.call(lane.HOST_CMD)
     time.sleep(3)
     ptr = lines[0].split()[1] if lines else None
-    nid, survived = None, False
-    for l in host.call('coop.npc list')['out'].splitlines():
-        m = re.match(r'\s*#(\d+) ([0-9A-F]+) ', l)
-        if m and ptr and m.group(2) == ptr:
-            nid = m.group(1)
-    ck(nid is not None, f'the host simulates it as an NPC (#{nid})')
+
+    def npc_id():
+        for l in host.call('coop.npc list')['out'].splitlines():
+            m = re.match(r'\s*#(\d+) ([0-9A-F]+) ', l)
+            if m and ptr and m.group(2) == ptr:
+                return m.group(1)
+        return None
+    # BUG-0385: the host never makes it an NPC it would send to the guests (they cannot spawn its species:
+    # "n missing on the guest"); SPORE_FIX_OFF=npc.stray_ids fails here
+    nid = npc_id()
+    ck(nid is None, f'[BUG-0385] the host does not track it as an NPC of its world (#{nid})')
+    host.call('coop.fix npc.stray_ids off')  # the attack below needs it as an NPC (0.7.8 tracked it)
+    time.sleep(2)
+    nid, survived = npc_id(), False
+    ck(nid is not None, f'the host simulates it as an NPC (#{nid}, npc.stray_ids off)')
 
     # 3. the host attacks it: the game's attack message reaches CreatureStageEventHandler
     if nid:
@@ -139,11 +183,13 @@ def main():
         survived = not out.startswith('no answer') and twoinst.alive(lane.HOST)
         ck(survived, f'the host survives an attack on it ({out.strip()})')
     if not nid or not survived:
-        print('  (the host crashed: see the crash report in its game log)', flush=True)
+        print('  (no NPC to attack' + ('' if nid else ': no untuned creature after the load') +
+              ('; the host crashed: see the crash report in its game log)' if nid and not survived else ')'), flush=True)
         return ck.result()
 
     # 4. normal play: such creatures are removed
     host.call('coop.npc strays on')
+    host.call('coop.fix npc.stray_ids on')
     time.sleep(3)
     ours, other, _ = untuned(host)
     rm = re.search(r'strays_removed=(\d+)', host.call('coop.npc')['out'])
@@ -161,6 +207,18 @@ def main():
     guest.call(lane.JOIN)
     wait_guest_in(host, guest, 120)
     wait_puppet(host)
+    # BUG-0412: the leave above handed the guest's proxies over to its own game; back in the session they go
+    # again and the host's NPCs come as proxies (census of both games, within 10 s)
+    t0, bad, own = time.time(), None, None
+    while time.time() - t0 < 10:
+        hc, gc = census.dump(host), census.dump(guest)
+        own = gc.count('c', ('local',))
+        bad = campaign_lib.census_problems(hc, gc)
+        if not own and not bad:
+            break
+        time.sleep(1)
+    ck(not own and not bad, f'after the rejoin the guest shows the host\'s NPCs, none of its own game '
+       f'({time.time() - t0:.0f} s: {own} own, {bad[:3] if bad else bad})')
     h2 = archless_herds(host)
     # the herd the save brought back is of the species the game gave the unknown creature after the
     # restart (the guest's creation is registered only when it joins): the first spawn may add one

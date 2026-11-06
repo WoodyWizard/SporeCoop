@@ -43,6 +43,7 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx);
 void tick(double now); // main thread: send the effects the hooks queued
 void on_message(uint8_t type, uint8_t from, net::Reader& r);
 void on_session_end();
+std::string watch(uint32_t id); // tests (BUG-0465): watch an effect id; its last own / received object and transform
 std::string status(); // counters and the last sent / received effect (coop.effects, coop.status)
 bool set_log(bool on);
 // the frame-time workload (`coop.effects load`): `n` effects every `period_ms` at the local player,

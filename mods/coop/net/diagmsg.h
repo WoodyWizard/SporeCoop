@@ -147,6 +147,9 @@ struct Digest {
     // players this game knows are out of the world (dead, respawning, no state for 5 s, not in a
     // world): their creatures are hidden on purpose and not compared
     std::vector<uint8_t> out;
+    // BUG-0606: the sender's Cell world scale (G+0x514C) when it built the digest, 0 elsewhere; appended
+    // (an older reader stops before it, an older sender's digest reads 0 = not converted)
+    float scale = 0;
     void write(Writer& w) const
     {
         w.u8(kDigest);
@@ -170,6 +173,7 @@ struct Digest {
         w.u8((uint8_t)std::min<size_t>(out.size(), 255));
         for (size_t i = 0; i < out.size() && i < 255; i++)
             w.u8(out[i]);
+        w.f32(scale);
     }
     bool read(Reader& r)
     {
@@ -197,6 +201,12 @@ struct Digest {
         out.resize(r.u8());
         for (auto& id : out)
             id = r.u8();
+        scale = 0;
+        if (r.ok() && r.left() >= 4) {
+            scale = r.f32();
+            if (!std::isfinite(scale) || scale < 0)
+                scale = 0;
+        }
         return r.ok() && std::all_of(entries.begin(), entries.end(), [](const Entry& e) {
                    return std::isfinite(e.x) && std::isfinite(e.y) && std::isfinite(e.z);
                });

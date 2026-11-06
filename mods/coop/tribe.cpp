@@ -3800,6 +3800,21 @@ std::string debug(const std::vector<std::string>& a)
                  (unsigned)members(t).size(), net::dist(tp, c));
         return b;
     }
+    // npc_tribe_at <members> <x> <y> <z>: tests (BUG-0332), SpawnNpcTribe at exactly that position (as a guest makes its
+    // copy of a host's new village, tribe.npc_tribes), with the game's ground there before and after
+    if (a.size() >= 5 && a[0] == "npc_tribe_at" && a_SpawnNpcTribe) {
+        net::Vec3 q{(float)atof(a[2].c_str()), (float)atof(a[3].c_str()), (float)atof(a[4].c_str())};
+        float g0 = game::ground_radius(q);
+        skg::Vector3 pos{q.x, q.y, q.z};
+        void* t = skg::cdecl_call<void*>(a_SpawnNpcTribe, &pos, 0, atoi(a[1].c_str()), 0, 0, (void*)nullptr);
+        if (!t)
+            return "SpawnNpcTribe returned null";
+        net::Vec3 tp = tribe_pos(t);
+        char b[200];
+        snprintf(b, sizeof b, "npc tribe %p at (%.2f %.2f %.2f) r %.2f: %u members; ground before %.2f after %.2f, %.2f m from the given point",
+                 t, tp.x, tp.y, tp.z, drive::speed(tp), (unsigned)members(t).size(), g0, game::ground_radius(q), net::dist(tp, q));
+        return b;
+    }
     // anims: tests (BUG-0569), the animation each member plays now as the game holds it (Anim::AnimatedCreature
     // vt 0x58 GetCurrentAnimation): host, its members by id (with the tribe index), guest, its mirrors by the host's id
     if (!a.empty() && a[0] == "anims") {
@@ -3872,6 +3887,24 @@ std::string debug(const std::vector<std::string>& a)
         return "tribes " + std::to_string(before) + " -> " + std::to_string(all_tribes().size()) + why +
                (g_forms_blocked != blocked0 ? " (blocked: tribe.guest_tribes)" : "") +
                (g_pace_last.empty() ? "" : " (pace: " + g_pace_last + ")");
+    }
+    // markers: tests (BUG-0332), the NPC tribe spawn markers of this game (noun 0x36BE27E, +0x108 == 0x57F09E5E: where the
+    // tribe controller forms the next tribes) with their positions
+    if (!a.empty() && a[0] == "markers") {
+        std::string out;
+        game::for_each_object(
+            [](void* o, uint32_t noun, void* u) {
+                if (noun == 0x36BE27E && F<uint32_t>(o, 0x108) == 0x57F09E5E) {
+                    // a placed planet object: its position at +0x1A8 (docs/re/host-centric.md, the activation pass)
+                    const float* q = (const float*)((uint8_t*)o + 0x1A8);
+                    char b[96];
+                    snprintf(b, sizeof b, "marker %p pos=(%.2f %.2f %.2f)\n", o, q[0], q[1], q[2]);
+                    *(std::string*)u += b;
+                }
+                return true;
+            },
+            &out);
+        return out.empty() ? "no markers" : out;
     }
     if (!a.empty() && a[0] == "trees") { // trees near the village with their raw fields (RE)
         net::Vec3 at;

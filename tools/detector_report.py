@@ -32,8 +32,8 @@ def named(sig):
 # signature (or its prefix up to a kind) -> the ticket that already covers it
 KNOWN = {  # <stage>:<what>:<kind> (or <stage>:*:<kind>, <*>:*:<kind>) -> the ticket that covers it
     'Creature:scale:creature': 'BUG-0461',
-    '*:*:fruit': 'BUG-0472',
-    'Tribe:*:game_bundle': 'BUG-0472',
+    '*:*:fruit': 'BUG-0497',  # (BUG-0472 fixed in 0.7.4: the rest were the host's places, BUG-0497)
+    'Tribe:*:game_bundle': 'BUG-0548',  # (BUG-0472's Tribe bundles: the host's ground and carried food, BUG-0548)
     'Creature:*:game_plant': 'BUG-0473',
     'Creature:*:rock': 'BUG-0473',
     'Creature:*:interactive_ornament': 'BUG-0473 / BUG-0459',

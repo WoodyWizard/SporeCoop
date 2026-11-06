@@ -17,6 +17,8 @@ check, the caption of TRG2CVG_PreEditor, the guest's "I'm ready". Checked:
   * BUG-0585: in the vehicle editor (the City Hall stands, the tribe has no food mat) the guest changes its food
     (`coop.res add food 2`, as its tribe eats and gathers): the host's game takes it without a fault.
 
+  --ground: then the ground round every city on both games (the BUG-0332 class in Civ, coop_civ_city_ground.py).
+
   SPORE_FIX_OFF=core.editor_own_pause: the old gate: FAIL (the editor opens 60 s or more after the vote).
   SPORE_FIX_OFF=tribe.food_fx_mat: FAIL (the host faults at cTribe::UpdateFoodVisuals+0x28 and freezes).
 """
@@ -203,6 +205,14 @@ def main():
     g = wait(lambda: 'Civ' in mode(guest), 300, 3)
     shot(guest, 'tribe_civ_guest')
     ck(g, "the guest's game follows into the Civ stage (%s)" % mode(guest).strip())
+    if g and '--ground' in sys.argv:
+        # the BUG-0332 class in Civ: the host made its first city live (its stamps), the guest loaded it; the ground
+        # round every city on both games (coop_civ_city_ground.py's grid)
+        from coop_civ_city_ground import survey
+        time.sleep(20)
+        bad, worst, n = survey(host, guest, 'after the live Tribe -> Civ change')
+        ck(n > 0 and not bad, f'the ground round the cities is the same on both games ({len(bad)} of {n} points off, '
+                              f'largest {worst:.2f} m)')
     ck.faults(host=host, guest=guest)
     return ck.result()
 

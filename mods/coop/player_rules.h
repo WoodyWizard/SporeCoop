@@ -36,6 +36,7 @@ struct Ctx {
 void init(const SkHost* host, SkMod* mod, Ctx ctx);
 void on_message(uint8_t type, uint8_t from, net::Reader& r); // MSG_PLAYER_RULE
 std::string status();
+void tick(double now); // once a frame: the host's drama UFOs to the guests, their mirrors on a guest (BUG-0558)
 bool air_hit_now(); // host: inside a melee hit on an airborne partner's puppet: carry no damage to the partner (BUG-0555)
 uint32_t hit_ability_type(); // the ability type (+8) of the creature ability hit running now, 0 none (BUG-0555)
 // guest, MSG_DAMAGE: the hit of a melee ability from an NPC 1 m or more away while the own creature is in the air (BUG-0555)

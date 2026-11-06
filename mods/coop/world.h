@@ -63,6 +63,10 @@ bool load_slot(const std::wstring& slot, const std::string& planet_file, std::st
                const std::string& share_host = "");
 // load Games\<slot_name>\<planet>.spo of the local profile (works from the galaxy menu)
 bool load_local(const std::string& slot_name, const std::string& planet, std::string& err);
+// BUG-0332: after a live Creature -> Tribe change the host loads its own share save once it has gone out
+void host_reload_after_share();
+uint32_t host_reloads();
+bool host_reloading(); // BUG-0332: the host's reload of the new Tribe world runs (PF_RESYNC)
 
 // the galaxy menu's intro cinematic GGE_Intro plays (docs/re/space.md 7.9; ~10 s starting ~16 s after
 // the menu came up, its input lock drops all clicks on the menu); callable in the frame

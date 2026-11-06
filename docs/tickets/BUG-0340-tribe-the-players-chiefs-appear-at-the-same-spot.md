@@ -1,7 +1,7 @@
 ---
 id: BUG-0340
 title: Tribe: the players' chiefs appear at the same spot, standing on each other, and sometimes get stuck
-status: open
+status: wontfix
 kind: bug
 stage: Tribe
 reported: 2026-10-31
@@ -82,3 +82,4 @@ stacked chiefs itself).
   the play). The reported stacking (on one spot, stuck) was not seen in any run since tribe.place_chiefs. Left
   open for the owner's decision whether chiefs side by side at the fire are acceptable (the game gathers idle
   members round the centre the same way); no code change.
+- 2026-11-06: closed by the owner's decision (0.7.9): with tribe.place_chiefs (0.7.3.2) chiefs are never stacked; standing side by side at the fire (0.93 of the sum of their bounding radii, T2 run 20261106-000530) is accepted.

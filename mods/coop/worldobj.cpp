@@ -41,6 +41,7 @@ struct Item {
     net::Vec3 pos;
     uint32_t st;
     uint32_t cls = 0; // BUG-0490: a kind with `classes`: a copy is bound only to a host object of its class
+    net::Vec3 aux{};  // BUG-0548: a kind with `aux`: one more place on the wire (a bundle's holder)
 };
 using Items = std::vector<Item>;
 
@@ -87,6 +88,19 @@ struct Kind {
     float vmax = 15.f; // m/s: a faster step between two snapshots is a jump (no velocity)
     // BUG-0490: guest, every frame, every bound copy is drawn where the host's is (nullptr: only `follow`)
     void (*drive)(const Item& local, const net::Vec3& host_pos, const net::Vec3& host_vel, double age, uint32_t host_st) = nullptr;
+    // 0.7.9 L2 (BUG-0497, BUG-0540): the host's places. Guest: a host object this game has no copy of within `tol`
+    // takes this game's nearest own copy without a partner within `relocate` m (of its class): `place` puts it at
+    // the host's place and it is bound, instead of the copy being removed and another made; a bound copy farther
+    // than `place_eps` m from the host's object is put there too (0: only when bound). `place_fix`: its switch
+    // (nullptr: always). Then `make` for the host objects still without a copy.
+    bool (*place)(const Item& local, const net::Vec3& host_pos, uint32_t host_st) = nullptr;
+    float relocate = 0;
+    float place_eps = 0;
+    bool* place_fix = nullptr;
+    // BUG-0548: the objects carry one more position (Item::aux, 12 more bytes on the wire); `make_aux` is `make` with
+    // the host object's class and that position (used instead of `make` when set)
+    bool aux = false;
+    int (*make_aux)(const net::Vec3& pos, uint32_t host, uint32_t cls, const net::Vec3& aux) = nullptr;
 };
 constexpr uint32_t kGone = 0xFFFFFFFFu; // the state of an object the host's game no longer has
 
@@ -203,6 +217,72 @@ static bool tree_behind(uint32_t local, uint32_t host) { return (tree_mask(local
 static void tree_apply(const Item& l, uint32_t host) { tree_drop(l.p, tree_mask(l.st) & ~tree_mask(host)); }
 static bool tree_acted(uint32_t was, uint32_t now, uint32_t host) { return (tree_mask(was) & ~tree_mask(now) & tree_mask(host)) != 0; }
 static void tree_act(const Item& o, uint32_t now) { tree_drop(o.p, tree_mask(o.st) & ~tree_mask(now)); }
+
+// BUG-0497 (0.7.9 L2): a fruit on the ground in the host's game lies at the same place in a guest's. Each game's
+// fruit roll their own way when they fall (the same drop from the same tree came to rest 13 m apart, lab lane 7,
+// play_tribe), each game's creatures knock their own down, and the flora recycles the loose fruit farthest from
+// its own camera when its free fruit run out (Flora_TakeFruitForDrop 0xB08DF0), so the host's fruit had no copy
+// in the guest's game (coop.wobj `missing`) and the guest's own were removed (`dropped`). On: an own fruit within
+// 25 m is put at the host's place and kept (engine `place`), a bound one that rolled off is put back, and a host
+// fruit still without a copy is made the game's way: a free slot of the nearest tree gets its bit for the drop
+// (Flora_DropFruit 0xB09AE0 checks it and 0xB09790 makes the falling cFruit from the free fruit) and the tree's
+// mask is put back as it was (no fruit lost from the tree), then the fruit is put at the host's place.
+// `coop.fix wobj.fruit_place off`: bound by position only, the host's fruit without a copy stay missing (0.7.8).
+static bool g_fruit_place_fix = true;
+COOP_FIX("wobj.fruit_place", "BUG-0497", g_fruit_place_fix,
+         "creature / tribe: a fruit on the ground in the host's game lies at the same place in every game (moved there, or made from the nearest tree)");
+static bool fruit_rest(uint32_t s) { return s == 1 || s == 2; } // falling or on the ground (not held, not hidden)
+static bool fruit_place(const Item& l, const net::Vec3& hp, uint32_t host_st)
+{
+    if (!fruit_rest(host_st) || !fruit_rest(fruit_state(l.p)))
+        return false;
+    return game::set_object_position(l.p, hp);
+}
+static void tree_collect(Items& out);
+static bool is_tree(void* t);
+static uint32_t g_fruit_made_drops, g_fruit_made_fail;
+static int fruit_make(const net::Vec3& pos, uint32_t host)
+{
+    if (!g_fruit_place_fix || !fruit_rest(host) || !a_FloraGet || !a_DropFruit)
+        return 0;
+    void* fl = cdecl_call<void*>(a_FloraGet);
+    if (!fl)
+        return -1;
+    Items trees;
+    tree_collect(trees);
+    std::sort(trees.begin(), trees.end(), [&](const Item& a, const Item& b) { return net::dist(a.pos, pos) < net::dist(b.pos, pos); });
+    int tried = 0;
+    float nearest = trees.empty() ? -1.f : net::dist(trees[0].pos, pos);
+    for (auto& t : trees) {
+        if (net::dist(t.pos, pos) > 60.f || tried++ >= 4)
+            break;
+        // slot 0 (every tree with fruit slots has it: DropFruit rejects a slot beyond the tree's count, 0xB05850):
+        // its bit set for the drop (a full tree has no free slot), the mask put back exactly right after, so the
+        // tree keeps the fruit it had (the hanging ones are drawn from the mask)
+        uint32_t lo = field<uint32_t>(t.p, 0x48), hi = field<uint32_t>(t.p, 0x4C);
+        const int s = 0;
+        field<uint32_t>(t.p, 0x48) = lo | 1u;
+        void* f = thiscall<void*>(a_DropFruit, fl, t.p, s, 1);
+        if (is_tree(t.p)) {
+            field<uint32_t>(t.p, 0x48) = lo;
+            field<uint32_t>(t.p, 0x4C) = hi;
+        }
+        if (!f)
+            continue; // no slots, or no fruit to take (TakeFruitForDrop): the next tree
+        {
+            g_fruit_made_drops++;
+            if (IsBadReadPtr(f, 0x170) || game::noun_id(f) != kFruitNoun || !game::set_object_position(f, pos)) {
+                g_fruit_made_fail++;
+                return 0;
+            }
+            H->log(M, SK_INFO, "wobj: made the host's fruit at (%.1f %.1f %.1f) from tree slot %d", pos.x, pos.y, pos.z, s);
+            return 1;
+        }
+    }
+    H->log(M, SK_INFO, "wobj: could not make the host's fruit at (%.1f %.1f %.1f): %zu trees, nearest %.1f m, %d tried", pos.x, pos.y,
+           pos.z, trees.size(), nearest, tried);
+    return 0;
+}
 
 // ---------------------------------------------------------------- kind: interactive ornament (BUG-0459 / BUG-0473)
 // cInteractiveOrnament (noun 0x3A2511E, size 0x260): bones, skeletons, carcasses, rocks the avatar can use. They
@@ -425,6 +505,285 @@ static void tool_buy(uint8_t from, const net::Vec3& pos, uint32_t st)
     }
 }
 
+// ---------------------------------------------------------------- kind: game bundle (BUG-0548, 0.7.9 L2)
+// cGameBundle (noun 0x18C431C): an amount of food (+0x134 float, +0x12C its type) in a container (+0x128: the
+// container interface, vector of bundles at +4..+8, max count at +0x1C). The food mats' bundles are the tribes'
+// food (tribe +0x20C; shared.cpp, the NPC tribes' own); the others lie on the ground in the bundle manager's one
+// ground container (cBundleManager +0x1C, a cGameBundleGroundContainer, noun 0x1906183, its interface at +0x34) or
+// are carried by a creature (a tribe member: the creature's own container interface at +0x34, max 1). Runtime (lab
+// lanes 6 / 7, play_tribe and play_civ): the host's game had 2-6 such bundles near the guest that the guest's had not
+// (the host's members carry food from the mat and from kills, its hunts drop food on the ground; a guest's copies of
+// those creatures run no behaviour). On: the host's ground bundles lie in every guest's game (made in its ground
+// container, CreateBundles, at the host's place), the bundles its creatures carry are carried by the guest's copy of
+// the creature (the nearest one within 4 m of the host's carrier), a guest's own ground bundle the host has not is
+// removed (RemoveBundles of the bundle) and one a guest's member took is taken on the host too.
+// `coop.fix wobj.bundle off`: each game keeps its own (0.7.8).
+constexpr uint32_t kBundleNoun = 0x018C431C;
+constexpr uint32_t kBundleCarried = 0x100; // class bit: carried by a creature (else on the ground)
+static bool g_bundle_fix = true;
+COOP_FIX("wobj.bundle", "BUG-0548", g_bundle_fix,
+         "tribe / civ: food dropped on the ground and carried by the tribes' members is the host's: the same in every game");
+static uintptr_t a_BundleMgrGet, a_CreateBundles, a_RemoveBundles;
+static uint8_t* bundle_mgr() { return a_BundleMgrGet ? cdecl_call<uint8_t*>(a_BundleMgrGet) : nullptr; }
+static void* ground_container()
+{
+    uint8_t* m = bundle_mgr();
+    uint8_t* g = m && !IsBadReadPtr(m, 0x20) ? field<uint8_t*>(m, 0x1C) : nullptr;
+    return g && !IsBadReadPtr(g, 0x60) ? g + 0x34 : nullptr;
+}
+static bool container_ok(void* c, int* count = nullptr)
+{
+    if (!c || IsBadReadPtr(c, 0x20))
+        return false;
+    void** b = field<void**>(c, 4);
+    void** e = field<void**>(c, 8);
+    void** cap = field<void**>(c, 0xC);
+    int mx = field<int>(c, 0x1C);
+    if ((b || e) && (!b || e < b || cap < e || e - b > 4096))
+        return false;
+    if (count)
+        *count = (int)(e - b);
+    return mx >= 0 && mx < 100000;
+}
+static bool is_creature_noun(uint32_t n) { return n == 0x018EB45E || n == 0x018EB4B7; } // creature, citizen
+// the creature that carries a bundle (nullptr: none): only a creature of the game's object list (a holder that is
+// another container, a food mat's, has no object 0x34 before it: noun_id of it faulted on a null vtable, lab
+// 20261106-042445, the host at its first snapshot)
+static void* bundle_carrier(void* holder, const std::set<void*>& creatures)
+{
+    if (!holder)
+        return nullptr;
+    void* c = (uint8_t*)holder - 0x34;
+    return creatures.count(c) ? c : nullptr;
+}
+static void bundle_collect(Items& out)
+{
+    void* ground = ground_container();
+    Items all;
+    collect_noun(kBundleNoun, all, [](void* o) { return IsBadReadPtr(o, 0x138) ? 0u : field<uint32_t>(o, 0x134); });
+    if (all.empty())
+        return;
+    std::set<void*> creatures;
+    game::for_each_object(
+        [](void* o, uint32_t n, void* u) {
+            if (is_creature_noun(n) && game::object_alive(o))
+                ((std::set<void*>*)u)->insert(o);
+            return true;
+        },
+        &creatures);
+    for (auto& it : all) {
+        void* holder = field<void*>(it.p, 0x128);
+        uint32_t type = field<uint32_t>(it.p, 0x12C) & 0xFF;
+        if (ground && holder == ground) {
+            it.cls = type;
+            it.aux = it.pos;
+        } else if (void* c = bundle_carrier(holder, creatures)) {
+            it.cls = type | kBundleCarried;
+            if (!game::object_position(c, it.aux))
+                continue;
+        } else
+            continue; // a tribe's food (its mat): the tribe's food amount, not this kind
+        out.push_back(it);
+    }
+}
+static uint32_t g_bundles_made, g_bundles_carried, g_bundles_removed;
+static void bundle_remove(void* b)
+{
+    if (!a_RemoveBundles || IsBadReadPtr(b, 0x138) || game::noun_id(b) != kBundleNoun || !game::object_alive(b))
+        return;
+    float amt = field<float>(b, 0x134);
+    thiscall<float>(a_RemoveBundles, bundle_mgr(), amt > 0 ? amt : 1.f, (void*)nullptr, b); // the bundle alone: destroyed
+    g_bundles_removed++;
+}
+static bool bundle_behind(uint32_t, uint32_t host) { return host == kGone; }
+static void bundle_apply(const Item& l, uint32_t host)
+{
+    if (host == kGone)
+        bundle_remove(l.p);
+}
+static bool bundle_acted(uint32_t, uint32_t now, uint32_t host) { return now == kGone && host != kGone; }
+static void bundle_act(const Item& o, uint32_t now)
+{
+    if (now == kGone && !(o.cls & kBundleCarried))
+        bundle_remove(o.p); // a player of the guest's game took it from the ground
+}
+// guest: a bundle its own creature carries stays (its member's own load: the host gets the food through the shared food)
+static bool bundle_own(const Item& l, double) { return (l.cls & kBundleCarried) != 0; }
+static int bundle_make(const net::Vec3& pos, uint32_t host, uint32_t cls, const net::Vec3& aux)
+{
+    if (!g_bundle_fix || host == kGone || !a_CreateBundles || !bundle_mgr())
+        return 0;
+    float amt;
+    memcpy(&amt, &host, 4);
+    if (!std::isfinite(amt) || amt <= 0.f || amt > 1000.f)
+        return 0;
+    void* cont = nullptr;
+    if (cls & kBundleCarried) { // the guest's copy of the carrier: the nearest creature with an empty hand
+        struct Q {
+            net::Vec3 at;
+            float best;
+            void* c;
+        } q{aux, 4.f, nullptr};
+        game::for_each_object(
+            [](void* o, uint32_t n, void* u) {
+                auto* q = (Q*)u;
+                net::Vec3 p;
+                int cnt = 0;
+                if (is_creature_noun(n) && game::object_alive(o) && game::object_position(o, p) && net::dist(p, q->at) < q->best &&
+                    container_ok((uint8_t*)o + 0x34, &cnt) && cnt == 0 && field<int>((uint8_t*)o + 0x34, 0x1C) >= 1) {
+                    q->best = net::dist(p, q->at);
+                    q->c = o;
+                }
+                return true;
+            },
+            &q);
+        if (!q.c)
+            return -1; // (its copy is not here yet)
+        cont = (uint8_t*)q.c + 0x34;
+    } else {
+        cont = ground_container();
+        if (!container_ok(cont))
+            return -1;
+    }
+    void* b = thiscall<void*>(a_CreateBundles, bundle_mgr(), amt, cont, (int)(cls & 0xFF));
+    if (!b || IsBadReadPtr(b, 0x138) || game::noun_id(b) != kBundleNoun)
+        return 0;
+    game::set_object_position(b, pos);
+    (cls & kBundleCarried ? g_bundles_carried : g_bundles_made)++;
+    H->log(M, SK_INFO, "wobj: made the host's %s bundle (%.1f food, type %u) at (%.1f %.1f %.1f)", cls & kBundleCarried ? "carried" : "ground",
+           amt, cls & 0xFF, pos.x, pos.y, pos.z);
+    return 1;
+}
+
+// ---------------------------------------------------------------- kind: cultural target (BUG-0540, 0.7.9 L2b)
+// cCulturalTarget (noun 0x3D5C325): the points of a city its religious attackers aim at. The city setup 0xBE7D40
+// makes 4 per city (stored in the city record +0x618, +0x78 + 0x80 * i, docs/re/civ.md#civ-host-cultural-targets);
+// each game puts them by its own city layout, so in the same city they stood metres apart (detector rows
+// `unmatched:cultural_target` in campaign_space, 2 of 3 without a partner within 3 m). On: a guest's target binds to
+// the host's within 3 m, else the nearest unbound one of its own within 120 m is put at the host's place (the
+// spatial object's SetPosition), and a bound one that drifts more than 0.5 m is put back. No make, no removal (both
+// games have 4 per city). `coop.fix wobj.cultural_target off`: each game's own places (0.7.8).
+constexpr uint32_t kCultTargetNoun = 0x03D5C325;
+static bool g_cult_fix = true;
+COOP_FIX("wobj.cultural_target", "BUG-0540", g_cult_fix,
+         "civ / space: a city's cultural targets stand where the host's stand in every game");
+static uint32_t cult_state(void*) { return 0; }
+static void cult_collect(Items& out) { collect_noun(kCultTargetNoun, out, cult_state); }
+static bool cult_place(const Item& l, const net::Vec3& hp, uint32_t) { return game::set_object_position(l.p, hp); }
+
+// ---------------------------------------------------------------- kind: city ornament (BUG-0541, 0.7.9 L2b)
+// A city's decorations (noun 0x18C88E4, the model instance 0x2AE5BA7 at obj +0x228, its group at +0x22C): the city
+// setup 0xBE7D40 (and 0xB90DA0) calls 0xBE6A50 thiscall(city, bool effect), which makes 3 groups (the 3 keys at city
+// +0x528, 0xC bytes each) x the count of property 0x6414D84 (3) = 9 per city: CreateInstance(0x18C88E4), its model
+// 0xC6F910 thiscall(obj, 0x2AE5BA7, city vt 0x4C(group), group), then 0xBD97B0 thiscall(city, obj) puts it in a free
+// slot of the city's layout (cLayoutSlot::SetObject, the slot +0xC, the planet's up there 0xB7F2E0) or at the city
+// hall when no slot is free (docs/re/space.md#space-city-ornaments). Each game takes its own free slots and its own
+// group variants: on the `space` fixture the 9 of one colony city stood elsewhere in each game in 2 of 3 runs (lab
+// 20261106-044822: 9 on the guest only, by another city; 20261106-045215: 9 on the host only at city 0 and 9 on the
+// guest only by another city). On: a guest's decoration binds to the host's within 1.5 m, else the nearest unbound
+// one of its own anywhere on the planet is put at the host's place (position and the planet's up there), a bound one
+// that drifts more than 0.5 m is put back. Which cities have their decorations at all differs too (5 to 86 per game
+// and load, the same cities' sets, stable for a minute, not by the camera: a ship over a bare city for 25 s made
+// none): a host city whose set the guest has not gets its set the game's way (0xBE6A50 on the guest's nearest city
+// without decorations, then moved to the host's places), and a guest's decoration left without a host partner is
+// removed the way City_RemoveTurret removes a turret: its layout slot cleared (0xAFADD0 on city +0x4B4),
+// DestroyInstance, erased from the city's decoration vector (+0x308..+0x30C, 0xD5AA90). The model variant (the
+constexpr uint32_t kOrnamentNoun = 0x018C88E4, kCityOrnModel = 0x02AE5BA7;
+static bool g_corn_fix = true;
+COOP_FIX("wobj.city_ornament", "BUG-0541", g_corn_fix,
+         "space: the decorations of a planet's cities are the host's: the same ones at the same places in every game");
+static uintptr_t a_PlanetModelGet, a_PlanetUpAt, a_CityDecorate, a_LayoutClear, a_VecErase;
+constexpr uint32_t kCityNounW = 0x018C43E8;
+constexpr uintptr_t kCityDecor = 0x308, kCityLayout = 0x4B4;
+static uint32_t g_corn_sets, g_corn_removed;
+static uint32_t corn_state(void*) { return 0; }
+static bool corn_take(void* o) { return !IsBadReadPtr(o, 0x230) && field<uint32_t>(o, 0x228) == kCityOrnModel; }
+static uint32_t corn_class(void* o) { return field<uint32_t>(o, 0x22C); }
+static void corn_collect(Items& out) { collect_noun(kOrnamentNoun, out, corn_state, corn_take, corn_class); }
+static bool corn_place(const Item& l, const net::Vec3& hp, uint32_t)
+{
+    if (!corn_take(l.p) || game::noun_id(l.p) != kOrnamentNoun)
+        return false;
+    void* sp = (uint8_t*)l.p + 0x70; // the spatial interface (0xBD97B0 / 0xFF96B0)
+    float p[3] = {hp.x, hp.y, hp.z};
+    vcall<void>(sp, 0x38 / 4, (void*)p);
+    void* pm = a_PlanetModelGet && a_PlanetUpAt ? cdecl_call<void*>(a_PlanetModelGet) : nullptr;
+    if (pm) {
+        float q[4] = {0, 0, 0, 1};
+        void* qr = thiscall<void*>(a_PlanetUpAt, pm, (void*)q, (void*)p);
+        vcall<void>(sp, 0x3C / 4, qr ? qr : (void*)q);
+    }
+    return true;
+}
+static std::vector<void*> cities()
+{
+    std::vector<void*> v;
+    game::for_each_object(
+        [](void* o, uint32_t n, void* u) {
+            if (n == kCityNounW && game::object_alive(o) && !IsBadReadPtr(o, 0x530))
+                ((std::vector<void*>*)u)->push_back(o);
+            return true;
+        },
+        &v);
+    return v;
+}
+static bool decor_ok(void* c, void*** b, void*** e)
+{
+    *b = field<void**>(c, kCityDecor);
+    *e = field<void**>(c, kCityDecor + 4);
+    return !(*b || *e) || (*b && *e >= *b && *e - *b < 256 && !IsBadReadPtr(*b, (*e - *b) * 4 + 1));
+}
+static void* decor_city(void* o)
+{
+    for (void* c : cities()) {
+        void **b, **e;
+        if (decor_ok(c, &b, &e))
+            for (void** it = b; it && it < e; ++it)
+                if (*it == o)
+                    return c;
+    }
+    return nullptr;
+}
+static bool corn_behind(uint32_t, uint32_t host) { return host == kGone; }
+static void corn_apply(const Item& l, uint32_t host)
+{
+    if (host != kGone || !a_LayoutClear || !a_VecErase || !corn_take(l.p) || game::noun_id(l.p) != kOrnamentNoun)
+        return;
+    void* c = decor_city(l.p);
+    if (!c)
+        return; // not a city's (left alone)
+    void* o = l.p;
+    thiscall<void>(a_LayoutClear, (uint8_t*)c + kCityLayout, o);
+    game::destroy_instance(o); // (the vector's reference keeps it until the erase)
+    cdecl_call<int>(a_VecErase, (uint8_t*)c + kCityDecor, (void*)&o);
+    g_corn_removed++;
+}
+static int corn_make(const net::Vec3& pos, uint32_t)
+{
+    if (!g_corn_fix || !a_CityDecorate)
+        return 0;
+    void* best = nullptr;
+    float bd = 120.f;
+    for (void* c : cities()) {
+        net::Vec3 cp;
+        if (game::object_position(c, cp) && net::dist(cp, pos) < bd) {
+            bd = net::dist(cp, pos);
+            best = c;
+        }
+    }
+    if (!best)
+        return 0;
+    void **b, **e;
+    if (!decor_ok(best, &b, &e))
+        return 0;
+    if (b != e)
+        return -1; // it has its set: moved to the host's places by the relocation
+    thiscall<void>(a_CityDecorate, best, 0);
+    g_corn_sets++;
+    H->log(M, SK_INFO, "wobj: the city at %.0f m from the host's decoration at (%.1f %.1f %.1f) got its decorations", bd, pos.x, pos.y, pos.z);
+    return 1;
+}
+
 // ---------------------------------------------------------------- the table
 // ---------------------------------------------------------------- kind: citizen (Civ city citizens, BUG-0476)
 // cCreatureCitizen (noun 0x18EB4B7) of the cities: each game spawns and walks its own (an idle walk 0xD57680
@@ -579,8 +938,45 @@ static void space_vehicle_drive(const Item& l, const net::Vec3& hp, const net::V
     g_veh_drives++;
 }
 
+// ---------------------------------------------------------------- kind: node (BUG-0485)
+// A commodity (spice) node (noun 0x0403DF5C) made live by the game (0xBC05F3: CreateInstance of the noun,
+// then loco vt 0x40 SetScale with the placement's scale, 10 seen; return address 0xBC0641, loco vtable
+// 0x14699E8) has that scale; the same node read from a planet save (a guest's shared world, any loaded
+// game) has 1.0: the scale is not saved. Each player saw the node at another size. The state is the
+// host's scale (float bits); a guest's node at another scale takes it (cSpatialObject::SetScale).
+// `coop.fix wobj.node_scale off`: each game keeps its own (0.7.8).
+constexpr uint32_t kNodeNoun = 0x0403DF5C;
+static bool g_node_fix = true;
+COOP_FIX("wobj.node_scale", "BUG-0485", g_node_fix, "a spice node has the host's size on every guest (live-made nodes were 10x bigger on the host)");
+static uint32_t node_state(void* o)
+{
+    float s = game::object_scale(o);
+    uint32_t u;
+    memcpy(&u, &s, 4);
+    return u;
+}
+static float node_scale(uint32_t st)
+{
+    float s;
+    memcpy(&s, &st, 4);
+    return s;
+}
+static bool node_ok(uint32_t st) { return st != kGone && std::isfinite(node_scale(st)) && node_scale(st) > 0.01f && node_scale(st) < 1000.f; }
+static void node_collect(Items& out) { collect_noun(kNodeNoun, out, node_state); }
+static bool node_behind(uint32_t local, uint32_t host)
+{
+    return node_ok(local) && node_ok(host) && std::fabs(node_scale(local) - node_scale(host)) > 0.01f * node_scale(host);
+}
+static void node_apply(const Item& l, uint32_t host)
+{
+    game::set_object_scale(l.p, node_scale(host));
+}
+
 static Kind g_kinds[] = {
-    {"fruit", &g_fruit_fix, kStCreature | kStTribe, 3.0f, 70.f, 48, fruit_collect, fruit_behind, fruit_apply, fruit_acted, fruit_act, true, true},
+    {.name = "fruit", .fix = &g_fruit_fix, .stages = kStCreature | kStTribe, .tol = 3.0f, .range = 70.f, .max = 48,
+     .collect = fruit_collect, .behind = fruit_behind, .apply = fruit_apply, .acted = fruit_acted, .act = fruit_act,
+     .gone_acted = true, .drop_own = true, .make = fruit_make, .place = fruit_place, .relocate = 25.f, .place_eps = 1.0f,
+     .place_fix = &g_fruit_place_fix},
     {"tree", &g_tree_fix, kStCreature | kStTribe, 0.5f, 70.f, 48, tree_collect, tree_behind, tree_apply, tree_acted, tree_act, false, false},
     {"herd", &g_herd_fix, kStCreature, 1.0f, 3000.f, 48, herd_collect, herd_behind, herd_apply, herd_acted, herd_act, false, false},
     {"interactive_ornament", &g_orn_fix, kStCreature, 1.5f, 90.f, 40, orn_collect, orn_behind, orn_apply, orn_acted, orn_act, false, false},
@@ -598,6 +994,24 @@ static Kind g_kinds[] = {
     {.name = "space_vehicle", .fix = &g_space_veh_fix, .stages = kStSpace, .tol = 1500.f, .range = 2500.f, .max = 44,
      .collect = space_vehicle_collect, .behind = none_behind, .apply = none_apply, .acted = none_acted, .act = none_act,
      .gone_acted = false, .drop_own = false, .every = 0.4, .classes = true, .vmax = 60.f, .drive = space_vehicle_drive},
+    // BUG-0548 (0.7.9 L2): every food bundle that is no tribe's food, on the ground or carried
+    {.name = "game_bundle", .fix = &g_bundle_fix, .stages = kStTribe | kStCiv, .tol = 3.f, .range = 160.f, .max = 30,
+     .collect = bundle_collect, .behind = bundle_behind, .apply = bundle_apply, .acted = bundle_acted, .act = bundle_act,
+     .gone_acted = true, .drop_own = true, .own = bundle_own, .classes = true, .aux = true, .make_aux = bundle_make},
+    // BUG-0540 (0.7.9 L2b): the cities' cultural targets at the host's places
+    {.name = "cultural_target", .fix = &g_cult_fix, .stages = kStCiv | kStSpace, .tol = 3.f, .range = 400.f, .max = 48,
+     .collect = cult_collect, .behind = none_behind, .apply = none_apply, .acted = none_acted, .act = none_act,
+     .gone_acted = false, .drop_own = false, .place = cult_place, .relocate = 120.f, .place_eps = 0.5f, .place_fix = &g_cult_fix},
+    // BUG-0541 (0.7.9 L2b): the cities' decorations at the host's places (the whole planet, as space_vehicle; one packet
+    // holds 56, 6 cities' sets: on a planet with more the farthest from the guest's ship stay its own)
+    {.name = "city_ornament", .fix = &g_corn_fix, .stages = kStSpace, .tol = 1.5f, .range = 2500.f, .max = 56,
+     .collect = corn_collect, .behind = corn_behind, .apply = corn_apply, .acted = none_acted, .act = none_act,
+     .gone_acted = false, .drop_own = true, .make = corn_make, .place = corn_place, .relocate = 2500.f, .place_eps = 0.5f,
+     .place_fix = &g_corn_fix},
+    // BUG-0485: the planet's spice nodes (static, the whole planet), the host's scale
+    {.name = "node", .fix = &g_node_fix, .stages = kStCreature | kStTribe | kStCiv, .tol = 3.f, .range = 3000.f, .max = 48,
+     .collect = node_collect, .behind = node_behind, .apply = node_apply, .acted = none_acted, .act = none_act,
+     .gone_acted = false, .drop_own = false, .every = 2.0},
 };
 constexpr int kKinds = (int)(sizeof g_kinds / sizeof g_kinds[0]);
 // a snapshot is one unreliable message: 19 bytes + 20 per object within net::Connection::kMaxSingle (1163)
@@ -647,6 +1061,7 @@ struct Snap {
         net::Vec3 first; // position
         uint32_t second; // state
         uint32_t cls;    // class (kinds with `classes`)
+        net::Vec3 aux;   // (kinds with `aux`)
     };
     std::map<uint32_t, Obj> objs; // host id -> object
 };
@@ -660,7 +1075,7 @@ static GuestKind g_g[kKinds];
 static uint32_t g_epoch = 0;
 static double g_last_tx[16], g_last_guest = 0;
 struct Stat {
-    uint32_t tx = 0, rx = 0, bound = 0, applied = 0, dropped = 0, req_tx = 0, req_rx = 0, acted = 0, missing = 0, made = 0;
+    uint32_t tx = 0, rx = 0, bound = 0, applied = 0, dropped = 0, req_tx = 0, req_rx = 0, acted = 0, missing = 0, made = 0, placed = 0, relocated = 0;
 };
 static Stat g_st[kKinds];
 
@@ -700,10 +1115,12 @@ static void host_tick(double now)
                 continue;
             net::Vec3 c;
             if (sb == kStSpace) { // BUG-0490: a guest's ship on our planet, over the ground the objects stand on
-                if (!C.space_partner || !C.space_partner(p.id, c) || all.empty())
+                // (BUG-0541: an empty list is sent too, from the ship: a planet whose cities have no decorations in the
+                // host's game has none in a guest's)
+                if (!C.space_partner || !C.space_partner(p.id, c))
                     continue;
                 float rc = std::sqrt(c.x * c.x + c.y * c.y + c.z * c.z);
-                const net::Vec3& o = all[0].pos;
+                const net::Vec3& o = all.empty() ? c : all[0].pos;
                 float ro = std::sqrt(o.x * o.x + o.y * o.y + o.z * o.z);
                 if (rc > 1.f && ro > 1.f && ro < rc)
                     c = {c.x * ro / rc, c.y * ro / rc, c.z * ro / rc};
@@ -740,6 +1157,11 @@ static void host_tick(double now)
                 w.u32(it->st);
                 if (K.classes)
                     w.u32(it->cls);
+                if (K.aux) {
+                    w.f32(it->aux.x);
+                    w.f32(it->aux.y);
+                    w.f32(it->aux.z);
+                }
             }
             C.sess->send_unreliable_to(p.id, net::MSG_WOBJ, w);
             g_st[k].tx++;
@@ -801,6 +1223,39 @@ static void reconcile(int k, double now, bool fresh)
     if (!fresh)
         return;
     // the snapshot: new binds, the host's state, the host's gone objects
+    bool placing = K.place && (!K.place_fix || *K.place_fix);
+    std::vector<uint32_t> unbound; // host objects without a copy within tol (bound in the second pass)
+    auto update = [&](uint32_t id, const Snap::Obj& ps, Bind& b) {
+        b.host_st = ps.second;
+        double dt = now - b.host_at;
+        if (b.host_at > 0 && dt > 0.3 && dt < 3.0) {
+            net::Vec3 v{(ps.first.x - b.host_pos.x) / (float)dt, (ps.first.y - b.host_pos.y) / (float)dt,
+                        (ps.first.z - b.host_pos.z) / (float)dt};
+            float sp = std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+            b.host_vel = sp < K.vmax ? v : net::Vec3{}; // (a jump: no velocity)
+        } else
+            b.host_vel = {};
+        b.host_pos = ps.first;
+        b.host_at = now;
+        auto f = by_key.find({b.p, b.serial});
+        if (f == by_key.end())
+            return;
+        if (K.behind(f->second->st, ps.second)) {
+            K.apply(*f->second, ps.second);
+            g_st[k].applied++;
+        }
+        if (placing && K.place_eps > 0 && net::dist(f->second->pos, ps.first) > K.place_eps && K.place(*f->second, ps.first, ps.second))
+            g_st[k].placed++;
+    };
+    auto bind = [&](uint32_t id, const Item& l) -> Bind& {
+        used.insert({l.p, l.id});
+        Bind b;
+        b.p = l.p;
+        b.serial = l.id;
+        b.local_st = l.st;
+        g_st[k].bound++;
+        return G.binds.emplace(id, b).first->second;
+    };
     for (auto& [id, ps] : S.objs) {
         auto bi = G.binds.find(id);
         if (bi == G.binds.end()) {
@@ -814,43 +1269,42 @@ static void reconcile(int k, double now, bool fresh)
                 }
             }
             if (!best) {
-                g_st[k].missing++;
-                auto& m = G.made[id];
-                if (K.make && m.second < 3 && now - m.first > 3.0) {
-                    int r = K.make(ps.first, ps.second);
-                    if (r >= 0) {
-                        m.first = now;
-                        m.second++;
-                    }
-                    if (r > 0)
-                        g_st[k].made++; // bound at the next snapshot (this frame's list is older)
-                }
+                unbound.push_back(id);
                 continue;
             }
-            used.insert({best->p, best->id});
-            Bind b;
-            b.p = best->p;
-            b.serial = best->id;
-            b.local_st = best->st;
-            bi = G.binds.emplace(id, b).first;
-            g_st[k].bound++;
+            update(id, ps, bind(id, *best));
+            continue;
         }
-        Bind& b = bi->second;
-        b.host_st = ps.second;
-        double dt = now - b.host_at;
-        if (b.host_at > 0 && dt > 0.3 && dt < 3.0) {
-            net::Vec3 v{(ps.first.x - b.host_pos.x) / (float)dt, (ps.first.y - b.host_pos.y) / (float)dt,
-                        (ps.first.z - b.host_pos.z) / (float)dt};
-            float sp = std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
-            b.host_vel = sp < K.vmax ? v : net::Vec3{}; // (a jump: no velocity)
-        } else
-            b.host_vel = {};
-        b.host_pos = ps.first;
-        b.host_at = now;
-        auto f = by_key.find({b.p, b.serial});
-        if (f != by_key.end() && K.behind(f->second->st, ps.second)) {
-            K.apply(*f->second, ps.second);
-            g_st[k].applied++;
+        update(id, ps, bi->second);
+    }
+    for (uint32_t id : unbound) {
+        const Snap::Obj& ps = S.objs.at(id);
+        if (placing && K.relocate > 0) { // this game's own copy elsewhere: put at the host's place
+            Item* best = nullptr;
+            float bd = K.relocate;
+            for (auto& l : local) {
+                float d = net::dist(l.pos, ps.first);
+                if (d < bd && !used.count({l.p, l.id}) && (!K.classes || l.cls == ps.cls)) {
+                    bd = d;
+                    best = &l;
+                }
+            }
+            if (best && K.place(*best, ps.first, ps.second)) {
+                g_st[k].relocated++;
+                update(id, ps, bind(id, *best));
+                continue;
+            }
+        }
+        g_st[k].missing++;
+        auto& m = G.made[id];
+        if ((K.make || K.make_aux) && m.second < 3 && now - m.first > 3.0) {
+            int r = K.make_aux ? K.make_aux(ps.first, ps.second, ps.cls, ps.aux) : K.make(ps.first, ps.second);
+            if (r >= 0) {
+                m.first = now;
+                m.second++;
+            }
+            if (r > 0)
+                g_st[k].made++; // bound at the next snapshot (this frame's list is older)
         }
     }
     for (auto bi = G.binds.begin(); bi != G.binds.end();) {
@@ -952,11 +1406,14 @@ static void on_snap(net::Reader& r, double now)
         net::Vec3 p{r.f32(), r.f32(), r.f32()};
         uint32_t st = r.u32();
         uint32_t cls = k < kKinds && g_kinds[k].classes ? r.u32() : 0;
+        net::Vec3 aux{};
+        if (k < kKinds && g_kinds[k].aux)
+            aux = {r.f32(), r.f32(), r.f32()};
         if (!r.ok())
             return;
         if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z) || p.x * p.x + p.y * p.y + p.z * p.z > 1e8f)
             continue;
-        s.objs[id] = {p, st, cls};
+        s.objs[id] = {p, st, cls, aux};
     }
     Kind& K = g_kinds[k];
     if (!*K.fix || !(K.stages & stage_bit()) || (C.host_away && C.host_away()) || g_epoch != game::world_epoch())
@@ -1030,14 +1487,17 @@ std::string status()
     std::string s = "wobj role=";
     s += is_host() ? "host" : is_guest() ? "guest" : "none";
     s += "\n";
-    char b[320];
+    char b[420];
     for (int k = 0; k < kKinds; k++) {
         const Stat& t = g_st[k];
-        snprintf(b, sizeof b, "kind %s fix=%d binds=%zu own=%zu snap_n=%zu snap_r=%.0f tx=%u rx=%u bound=%u applied=%u dropped=%u missing=%u made=%u req_tx=%u req_rx=%u acted=%u\n",
+        snprintf(b, sizeof b, "kind %s fix=%d binds=%zu own=%zu snap_n=%zu snap_r=%.0f tx=%u rx=%u bound=%u applied=%u dropped=%u missing=%u made=%u req_tx=%u req_rx=%u acted=%u placed=%u relocated=%u\n",
                  g_kinds[k].name, (int)*g_kinds[k].fix, g_g[k].binds.size(), g_g[k].own.size(), g_g[k].snap.objs.size(), g_g[k].snap.r,
-                 t.tx, t.rx, t.bound, t.applied, t.dropped, t.missing, t.made, t.req_tx, t.req_rx, t.acted);
+                 t.tx, t.rx, t.bound, t.applied, t.dropped, t.missing, t.made, t.req_tx, t.req_rx, t.acted, t.placed, t.relocated);
         s += b;
     }
+    snprintf(b, sizeof b, "fruit made drops=%u fail=%u; bundles made=%u carried=%u removed=%u; city decorations sets=%u removed=%u\n",
+             g_fruit_made_drops, g_fruit_made_fail, g_bundles_made, g_bundles_carried, g_bundles_removed, g_corn_sets, g_corn_removed);
+    s += b;
     snprintf(b, sizeof b, "citizens walks=%u puts=%u far=%u; space citizens puts=%u; space vehicles drives=%u\n", g_cit_walks, g_cit_puts, g_cit_far,
              g_space_cit_puts, g_veh_drives);
     s += b;
@@ -1086,12 +1546,75 @@ static int c_wobj(void*, int argc, const char* const* argv, SkOut* out)
             for (auto& [id, b] : g_g[k].binds)
                 if (b.p == it.p && b.serial == it.id)
                     host = id;
-            H->out_printf(out, "%s %p id=%u pos=(%.2f %.2f %.2f) st=%X dist=%.1f bound_to=%u\n", g_kinds[k].name, it.p, it.id, it.pos.x, it.pos.y,
-                          it.pos.z, it.st, d, host);
+            H->out_printf(out, "%s %p id=%u pos=(%.2f %.2f %.2f) st=%X dist=%.1f bound_to=%u cls=%X\n", g_kinds[k].name, it.p, it.id, it.pos.x,
+                          it.pos.y, it.pos.z, it.st, d, host, it.cls);
             n++;
         }
         H->out_printf(out, "end n=%d\n", n);
         return 0;
+    }
+    if (!strcmp(a, "raw") && argc > 2) { // raw <noun hex> [r] [n bytes]: every object of a noun near the player with its first bytes
+        uint32_t noun = strtoul(argv[2], nullptr, 16);
+        float r = argc > 3 ? (float)atof(argv[3]) : 100.f;
+        int nb = argc > 4 ? atoi(argv[4]) : 0x140;
+        Items all;
+        collect_noun(noun, all, [](void*) { return 0u; });
+        for (auto& it : all) {
+            float d = net::dist(it.pos, me);
+            if (d > r)
+                continue;
+            H->out_printf(out, "obj %p ser=%u pos=(%.2f %.2f %.2f) dist=%.1f\n", it.p, it.id, it.pos.x, it.pos.y, it.pos.z, d);
+            for (int o = 0; o + 16 <= nb && !IsBadReadPtr((uint8_t*)it.p + o, 16); o += 16) {
+                const uint32_t* w = (const uint32_t*)((uint8_t*)it.p + o);
+                H->out_printf(out, "  +%03X %08X %08X %08X %08X\n", o, w[0], w[1], w[2], w[3]);
+            }
+        }
+        H->out_printf(out, "end\n");
+        return 0;
+    }
+    if (!strcmp(a, "move") && argc > 5) { // move <obj> x y z: this game's object put elsewhere (tests: a fruit that rolled its own way)
+        void* o = (void*)strtoul(argv[2], nullptr, 16);
+        net::Vec3 p{(float)atof(argv[3]), (float)atof(argv[4]), (float)atof(argv[5])};
+        bool ok = !IsBadReadPtr(o, 0x40) && game::object_alive(o) && game::set_object_position(o, p);
+        net::Vec3 now{};
+        game::object_position(o, now);
+        H->out_printf(out, "%s pos=(%.2f %.2f %.2f)\n", ok ? "moved" : "not moved", now.x, now.y, now.z);
+        return ok ? 0 : 1;
+    }
+    if (!strcmp(a, "mask") && argc > 3) { // mask <tree> <hex>: this game's fruit left on a tree (tests: a slot that fell here before)
+        void* t = (void*)strtoul(argv[2], nullptr, 16);
+        if (!is_tree(t)) {
+            H->out_printf(out, "no such tree\n");
+            return 1;
+        }
+        uint32_t before = field<uint32_t>(t, 0x48);
+        field<uint32_t>(t, 0x48) = strtoul(argv[3], nullptr, 16);
+        H->out_printf(out, "mask %X -> %X\n", before, field<uint32_t>(t, 0x48));
+        return 0;
+    }
+    if (!strcmp(a, "bundle") && argc > 2) { // tests (BUG-0548): ground x y z amt | carry <creature> amt | take <bundle>
+        void* b = nullptr;
+        if (!strcmp(argv[2], "ground") && argc > 6 && container_ok(ground_container()) && a_CreateBundles) {
+            b = thiscall<void*>(a_CreateBundles, bundle_mgr(), (float)atof(argv[6]), ground_container(), 1);
+            if (b)
+                game::set_object_position(b, {(float)atof(argv[3]), (float)atof(argv[4]), (float)atof(argv[5])});
+        } else if (!strcmp(argv[2], "carry") && argc > 4 && a_CreateBundles) {
+            void* c = (void*)strtoul(argv[3], nullptr, 16);
+            int cnt = 0;
+            if (!IsBadReadPtr(c, 0x60) && is_creature_noun(game::noun_id(c)) && container_ok((uint8_t*)c + 0x34, &cnt) && cnt == 0)
+                b = thiscall<void*>(a_CreateBundles, bundle_mgr(), (float)atof(argv[4]), (uint8_t*)c + 0x34, 1);
+        } else if (!strcmp(argv[2], "take") && argc > 3) {
+            b = (void*)strtoul(argv[3], nullptr, 16);
+            bundle_remove(b);
+            H->out_printf(out, "taken alive=%d\n", !IsBadReadPtr(b, 0x30) && game::object_alive(b));
+            return 0;
+        }
+        net::Vec3 p{};
+        if (b)
+            game::object_position(b, p);
+        H->out_printf(out, "bundle %p pos=(%.2f %.2f %.2f) holder=%p\n", b, p.x, p.y, p.z,
+                      b && !IsBadReadPtr(b, 0x138) ? field<void*>(b, 0x128) : nullptr);
+        return b ? 0 : 1;
     }
     if (!strcmp(a, "use") && argc > 2) { // use <ornament>: the avatar uses it the game's way (OrnamentUsed + 0xD3353638)
         void* o = (void*)strtoul(argv[2], nullptr, 16);
@@ -1114,6 +1637,10 @@ static int c_wobj(void*, int argc, const char* const* argv, SkOut* out)
             H->out_printf(out, "no such fruit\n");
             return 1;
         }
+        int k = kind_of_name("fruit");
+        if (argc > 3 && !strcmp(argv[3], "local") && k >= 0) // tests (BUG-0497): gone from this game only, as the flora's recycling does
+            for (auto bi = g_g[k].binds.begin(); bi != g_g[k].binds.end();)
+                bi = bi->second.p == o ? g_g[k].binds.erase(bi) : std::next(bi);
         fruit_eat(o);
         H->out_printf(out, "eaten state=%u\n", fruit_state(o));
         return 0;
@@ -1233,6 +1760,14 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
     a_RewardHandlerVt = H->sym("SporeCoop::CreatureStageRewardHandler_vftable");
     a_HerdSetExtinct = H->sym("SporeCoop::cHerd_SetExtinct");
     a_HerdSetExtinctFlag = H->sym("SporeCoop::cHerd_SetExtinction");
+    a_BundleMgrGet = H->sym("Simulator::cBundleManager::Get");
+    a_CreateBundles = H->sym("Simulator::cBundleManager::CreateBundles");
+    a_RemoveBundles = H->sym("Simulator::cBundleManager::RemoveBundles");
+    a_PlanetModelGet = H->sym("Simulator::cPlanetModel::Get");
+    a_PlanetUpAt = H->sym("SporeCoop::cPlanetModel_SurfaceOrientation");
+    a_CityDecorate = H->sym("SporeCoop::City_MakeDecorations");
+    a_LayoutClear = H->sym("SporeCoop::Layout_ClearObject");
+    a_VecErase = H->sym("SporeCoop::VectorPtr_EraseValue");
     if (!a_FruitSetState || !a_FloraGet || !a_DropFruit || !a_TreeVt || !a_OrnUsed || !a_RewardFind || !a_RewardHandlerVt || !a_HerdSetExtinct || !a_HerdSetExtinctFlag)
         for (auto& k : g_kinds)
             k.stages = 0; // a symbol missing on this build: every game keeps its own (logged below)

@@ -14,6 +14,11 @@
 - A broken position from another player's game (not a number) can no longer be written into a creature, vehicle or
   ship; such a state is dropped (BUG-0614). Messages too big to send are now written to the log instead of being
   dropped without a word (BUG-0615).
+- Civilization: after the host takes a city, its buildings stand at the same places on the guests' screens; before,
+  a guest's game could tear one building down and put it up again every two seconds a few metres away (BUG-0602).
+- Spice geysers are now the same size on every player's screen (a geyser the host's game made during play was ten
+  times bigger there than on the guests' screens) (BUG-0485).
+- Civilization: the host's vehicles no longer show up ten times too big on a guest's screen (BUG-0549).
 - The game no longer risks a crash when SporeKit hooks a function while the game is already running (the first
   test input, the first cell of Cell): the hook is written only once no game thread is inside the bytes it changes
   (BUG-0403).
@@ -26,6 +31,34 @@
   the host has them at that moment (BUG-0425, BUG-0410).
 - Civilization: the host's vehicles no longer fall several metres behind on the guest's screen when the connection
   drops packets for a moment (BUG-0438).
+- Creature: a body one player eats is eaten on the other player's screen too, so the guest can eat the bodies the
+  players killed and no longer finds bodies it already ate standing whole on the host's screen (BUG-0557, BUG-0383).
+- Creature: the guest now sees the UFO that visits the host's world, where the host sees it (BUG-0558).
+- Creature: the sea monster that takes a player in deep water rises upright out of the water on the other player's
+  screen, as the taken player sees it, instead of tilted into the water; other effects in the world now show at their
+  game's orientation and size too (BUG-0465).
+- Creature: a rock or stick one player picks up is carried by that player's creature on the other screen too, and lies
+  where it landed in both games after it is thrown or dropped (BUG-0458).
+- Cell: a player's screen no longer turns to plain water for the rest of the game after a level-up (the camera
+  lost its place when the cell's movement glitched for a moment); the view comes back onto your cell (BUG-0604).
+- Cell: the end of the Cell stage no longer makes the co-op sync-check report the host's cell hundreds of metres
+  off on every guest when nothing was wrong (BUG-0606).
+- Creature: while the host lies dead in its death caption (or its game stands still for another reason), a guest that
+  walks or respawns somewhere else now sees the host's animals there, instead of an empty spot until the host goes on
+  (BUG-0413).
+- Creature: a guest that leaves the session keeps the animals around it and plays on with them, and a guest that joins
+  again while the host is in its editor no longer finds a planet without creatures (BUG-0412).
+- Creature / Tribe: a fruit lying on the ground in the host's game lies at the same place on the guest's screen too,
+  also when the guest's own game had rolled it elsewhere or had already lost it (BUG-0497).
+- Tribe / Civ: food dropped on the ground and food carried by the host's tribe members is in the guest's game too,
+  at the same place, and food a guest's member picks up is gone for the host as well (BUG-0548).
+- Civ: a city's cultural targets stand where the host's stand after a guest leaves and joins again (BUG-0540).
+- Space: the decorations around a planet's cities are the same in every player's game (the same cities have them, at
+  the same places), instead of a different set on each screen (BUG-0541).
+- Tribe: the ground round the villages is now the same for every player after the Creature -> Tribe change: the
+  host's game had its plateaus up to 14 m higher or lower than the guests' (tribe members and hit flashes there stood
+  off the ground on the other screens). For this the host's game loads the new Tribe world once right after the
+  change (about 10 s); the guests see "the host is loading the new world once" meanwhile (BUG-0332, BUG-0608).
 
 ## [0.7.8] - 2026-11-05
 

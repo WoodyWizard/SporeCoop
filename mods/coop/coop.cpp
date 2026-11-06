@@ -582,6 +582,8 @@ net::PlayerState local_state()
     st.world = g_world;
     if (void* local = local_now())
         g_adapter->fill(local, st);
+    if (g_sess.role() == net::Role::Host && world::host_reloading())
+        st.flags |= net::PF_RESYNC; // BUG-0332
     return st;
 }
 
@@ -1222,6 +1224,12 @@ void host_away_tick(double now)
     std::string host = g_sess.name_of(0);
     if (away) {
         g_host_away_count++;
+        auto hi = g_remotes.find(0);
+        if (hi != g_remotes.end() && !hi->second.buf.empty() && (hi->second.buf.latest().flags & net::PF_RESYNC)) {
+            // BUG-0332: the host's one reload of the new Tribe world (tribe.host_reload)
+            feed(host + " (host) is loading the new world once, so that everybody has the same ground (about 10 s)");
+            return;
+        }
         const char* where = why == 'e' ? "is in an editor" : why == 'l' ? "is loading" : "left for the main menu";
         feed(host + " (host) " + where + ": you play on alone until " + host + " is back");
         return;
@@ -2112,6 +2120,8 @@ void on_mode_change(uint32_t from, uint32_t to)
             r.evo_check_until = 0;
         }
     g_share_due_at = H->time_seconds() + (evolved ? 3.0 : 0.0); // BUG-0019: its cinematic starts first
+    if (new_stage && last == modes::kCreature && to == modes::kTribe)
+        world::host_reload_after_share(); // BUG-0332: one ground for everybody (world.cpp tribe.host_reload)
     notice(new_stage            ? g_name + " entered the " + modes::mode_name(to) + " stage: everybody follows"
            : design_stage(to) ? g_name + " changed a design: everybody gets the new designs"
            // BUG-0588: the City Hall and vehicle editors of the end of Tribe are no evolution
@@ -3131,6 +3141,7 @@ void on_frame(void*, int, void*)
         world::guest_tick(); // a received world waiting for the player to leave its editor
     savestrip::tick();
     npc::tick(now);
+    player_rules::tick(now); // BUG-0558: the host's UFO on the guests
     nest::tick(now); // BUG-0384
     fields::tick(now); // BUG-0419 G2 (after the modules that make the mirrors)
     wsync::tick(now);  // W1: host-owned world state (time of day, relations, stages done, the Tribe goal)
@@ -4037,6 +4048,7 @@ void setup_callbacks()
         switch (type) {
         case net::MSG_NPC_SPAWN: case net::MSG_NPC_DESPAWN: case net::MSG_NPC_STATE:
         case net::MSG_DAMAGE_REQ: case net::MSG_DAMAGE: case net::MSG_NPC_RESYNC: case net::MSG_NPC_ANIM:
+        case net::MSG_NPC_MEAT:
             npc::on_message(type, from, r);
             return;
         case net::MSG_SPECIES: case net::MSG_SOCIAL:
@@ -5352,6 +5364,7 @@ void support_init()
         return true;
     };
     p.cell_food = [](int& v) { return g_mode == modes::kCell && cellsync::food_total(v); };
+    p.cell_scale = [] { return g_mode == modes::kCell ? cellsync::scale_now() : 0.f; };
     p.vote = [](uint32_t& editor) {
         editor = g_vote.editor;
         return g_vote.active;
@@ -5563,6 +5576,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         return it != g_remotes.end() && !it->second.buf.empty() && same_place(it->second.buf.latest());
     };
     ctx.stage_center = [](net::Vec3& p) { return tribe::center(p); };
+    ctx.host_here = [] { return host_here(); }; // BUG-0412
     npc::init(H, M, ctx);
     { // BUG-0373 / BUG-0374 / BUG-0375: creature health between players
         creature_hp::Ctx hc;
@@ -5853,6 +5867,10 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                            uint32_t id = argc > 4 ? (uint32_t)strtoul(argv[4], nullptr, 16) : 0;
                            effects::set_load(n, ms, id);
                            SAY("%s", effects::status().c_str());
+                           return 0;
+                       }
+                       if (argc > 1 && !strcmp(argv[1], "watch")) { // tests (BUG-0465): watch <hex id> | watch
+                           SAY("%s", effects::watch(argc > 2 ? (uint32_t)strtoul(argv[2], nullptr, 16) : 0).c_str());
                            return 0;
                        }
                        if (argc > 2 && !strcmp(argv[1], "probe")) {

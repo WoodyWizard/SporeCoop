@@ -2253,3 +2253,33 @@ the guest" was a parse: a guest's `coop.wstate` prints `st res money=100000(unsy
 after its arrival in Space (shared::brief); the guest's game had 100000, the host's too (the guests' trace lines of
 the same second). worlddiff.State reads the number before the suffix (and keeps the unsynced names in
 `res_unsynced`). Not a desync of the game.
+
+## The cities' decorations differ per game (2026-11-06, fix/w45-world-objects)
+<a id="space-city-ornaments"></a>
+
+GOG 2024 addresses (dc04aee5). Kind `city_ornament` of mods/coop/worldobj.cpp (BUG-0541), switch `wobj.city_ornament`.
+
+* ✔ The "9 ornaments by one colony city" are a city's decorations: noun 0x18C88E4 with the model instance 0x2AE5BA7 at
+  obj +0x228 (its group at +0x22C). City_MakeDecorations 0xBE6A50 thiscall(city, bool effect) ret 4 makes 3 groups (the
+  keys at city +0x528, 0xC each) x property 0x6414D84 (3) = 9: CreateInstance(0x18C88E4), the model 0xC6F910
+  thiscall(obj, instance, type (city vt 0x4C(group)), group) ret 0xC (+0x228 / +0x22C, then obj vt 0x48(type)), pushed
+  to the city's vector +0x308..+0x310, placed by 0xBD97B0 thiscall(city, obj): a free layout slot (0xAFACF0,
+  cLayoutSlot::SetObject, slot +0xC, the planet's up there 0xB7F2E0) else the city hall. Callers: the city setup
+  0xBE7D40 and 0xB90DA0 (a callback whose address 0xB9D970 stores; it skips a city whose combatant vt 0x58 says so).
+* ✔ Which cities have their sets differs per game and per load: on the `space` home planet (9 cities) 5 to 86
+  ornaments of this noun per game (5 of model 0x65658D2 are other objects and always matched); stable for a minute;
+  the host's ship over a bare city for 25 s made none (not the camera's level of detail); the groups of one city
+  differ too (0x6F8212CA on the host, 0x6F8212C8 on the guest). Lab 20261106-044822 (9 on the guest only),
+  -045215 (9 at city 0 on the host only, 9 by another city on the guest only), -045654 / -050420 (3 landings, every one
+  different).
+* ✗ Not the planet record: the planet load 0xFF96B0 makes an ornament for record items with flag 0x80 (model
+  0x345BD5D, group 0x1A4F418E, CreateInstance then 0xC6F910, spatial +0x70 vt 0x38 / vt 0x3C with 0xB7F2E0), but no
+  ornament of that model was on the home planet in either game (lab 2026-11-06, `coop.wobj raw 18C88E4 3000 576`).
+* ✔ Remove like City_RemoveTurret 0xBE21C0: Layout_ClearObject 0xAFADD0 thiscall(city +0x4B4, obj), DestroyInstance,
+  VectorPtr_EraseValue 0xD5AA90 cdecl(&vector, &obj) (Release of the vector's reference).
+* ✔ Fix: the host sends its decorations (the 56 nearest the guest's ship, one packet); a guest's binds within 1.5 m,
+  else its nearest unbound one anywhere is moved there (position and the planet's up); a host city set the guest
+  lacks is made on the guest's nearest bare city (City_MakeDecorations, then moved); a guest's decoration left
+  without a partner is removed. PASS lab 20261106-050848 (3 landings: sets=2 removed=45 relocated=39, no fault), FAIL
+  with the switch off lab 20261106-050420. ~ The model variant (group) stays the guest's own.
+* ~ Civ cities run 0xBE6A50 too; the kind is Space only (no Civ detector row, not tested there).

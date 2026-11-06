@@ -4456,3 +4456,77 @@ G2 of 0.7.8 (BUG-0430 class). For each: which kind of fault it was and the evide
   SPORE_NET=player (its `stops` check: slid on over 0.15 m after at most 10 % of the stops).
 * The partner's puppet has no lead (M1, on purpose): its copy is 0.16-0.17 s (lag p50) behind the walker on a clean
   lab, p90 0.8-0.9 m at walking speed (puppet_stops bodyrec lines, lab 20261106-053105).
+## NPCs while the host's game stands still, a guest's leave and rejoin (2026-11-06, fix/w45-one-game-objects)
+<a id="testing-npc-gaps"></a>
+
+* `coop_npc_frozen.py --case death` (`npc_frozen_death`, creature fixture, ~1 min warm): the guest goes to a nest
+  150-260 m from the host (`coop.census all 3000`, noun 0x52AA6122, then `coop.npc gopos`: a point in the sea brings
+  the sea monster, which killed the guest and respawned it next to the host in a first try), the host dies and keeps
+  its death caption open (`frozen_s` of `coop.npc` > 2 s, ~8 s after the hit), the guest comes back next to the host:
+  within 8 s every living host NPC within 50 m of the guest must be a proxy in its game (census of both).
+  `SPORE_FIX_OFF=npc.frozen_send` fails (out/lab/20261106-014526).
+* `coop_npc_frozen.py --case caption` (`npc_frozen_caption`): `coop.dna add 3000`, the brain upgrade caption up for
+  14 s, the guest keeps the host's NPCs near it. A regression check (it passes without the fix: the loss of BUG-0413's
+  transition_net run did not happen on the fixture).
+* `join_during_host_editor` now checks the guest's planet while the host edits: its own creatures (census `local`,
+  alive, AI on) within 70 m, at least 60 % of the proxies it showed before its leave; `SPORE_FIX_OFF=npc.leave_locals`
+  fails (1 of 11, out/lab/20261106-015905). Their movement is printed, not checked (they idle at their nests).
+
+## World objects at the host's places: coop_world_host.py (2026-11-06, fix/w45-world-objects)
+<a id="testing-host-places"></a>
+
+`tools/tests/coop_world_host.py --case <c>` (suites `host_fruit`, `host_bundle`, `host_bundle_civ`, `host_cultural`,
+`host_space_ornament`) asserts the game's own object lists on both machines (positions within 1-1.5 m, or the same
+count in a heap) for the kinds of mods/coop/worldobj.cpp that move or make the host's objects in a guest's game
+(docs/re/creature.md#creature-host-places).
+
+* `fruit` (creature, ~65 s): a guest's copy eaten locally only (`coop.wobj eat <p> local`, as the flora's recycling)
+  and a guest's fruit moved 8.5 m (`coop.wobj move`); then every tree near the players must have the same fruit mask
+  on both games (the made fruit took none). `SPORE_FIX_OFF=wobj.fruit_place` fails.
+* `bundle` (tribe, ~50 s): `coop.wobj bundle ground x y z amount`, `bundle carry <member> amount` (the farthest member
+  within 60 m: a near one put the food on the mat within a second), `bundle take <bundle>`. The carried bundle is
+  tracked by its pointer (it moves with the member at ~7 m/s; the guest's copy is up to 3.5 m behind).
+* `bundle_civ` (civ_npc): the host captures an NPC city (`coop.civ capture`), then the ground bundles of the whole
+  planet are compared.
+* `cultural` (civ_npc, ~2 min): the targets matched after a fresh load; the guest leaves and joins again after 60 s
+  (they were 3-8 m apart after the rejoin without the fix).
+* `ornament` (space, ~2.5 min): both land on the home planet (`coop.space land`), compare, `coop.space takeoff`, three
+  times: the set of decorated cities differs per load in most landings. Only the 56 nearest the guest's ship are
+  compared when the host has more (one snapshot).
+## Placement and scale tests of fix/w45-placement (2026-11-06)
+<a id="testing-placement-w45"></a>
+
+* `civ_city_layout` (coop_civ_city_layout.py, civ_npc, ~2 min): the host founds 3 cities, captures one, moves one
+  building off the guest's slot (`coop.civ bmove`, the state campaign_space showed), builds more; compares the game's
+  building lists (`coop.civ blist <i>`) and the guest's buildings_fixed. SPORE_FIX_OFF=civ.city_layout fails (BUG-0602).
+* `civ_vehicle_scale` / `node_scale` (~1 min each): one game's object gets the scale 10 the game gives it
+  (`coop.civ vscale`, `coop.fields scale`), the other game's copy is read back. SPORE_FIX_OFF=civ.vehicle_scale /
+  wobj.node_scale fail (BUG-0549, BUG-0485).
+* `civ_city_ground` (~2 min) and `tribe_civ_ground` (coop_tribe_civ.py --ground, ~4 min): `coop.ground` on a 10 m grid
+  round every city on both games (the BUG-0332 class in Civ; 0.00 m in every run so far).
+* `tribe_member_place` (quiet tribe fixture) and `coop_tribe_member_place.py --attach` (SPORE_LANE=N, started ~75 s
+  after a play_tribe of that lane): every 5 s the detector's compare of citizens, and for a lone host citizen the mod's
+  nearest member, the guest's mirror, the object's pointer, vtable, age and dead flag (BUG-0620). The extra console
+  load may matter: play_tribe failed once on the NPC proxies monitor rule (BUG-0503) with the watcher attached.
+* `tribe_dead_member` / `tribe_dead_tribe` (coop_tribe_dead_member.py [--all]): an NPC member, or every member of an
+  NPC tribe, killed on the host; the citizens at that place on both games (no host-only body: lab 20261106-072628,
+  20261106-072755).
+## The two games' ground: maps, stamps, a host reload (2026-11-06, fix/w45-village-ground)
+<a id="testing-ground-maps"></a>
+
+BUG-0332 (docs/re/tribe.md#tribe-terrain-stamps).
+* `tribe_village_cadian` (coop_tribe_village_ground.py `--fixture=creature_cadian --map --terrain`, ~8 min): the
+  players' way from the campaign planet's Creature to Tribe, then `coop.ground` on both games at 1499 points within
+  45 degrees of the village (`--map`, also before the change) and on rings to 100 m round every village and tribe
+  spawn marker (`coop.tribe markers`); `--terrain` compares the two games' stamp lists (`coop.terrain list`) and the
+  ground at each stamp. PASS: everything within 0.3 m. Other flags (RE): `--watch` (the host's terrain 0-14 s into
+  Tribe), `--host-reload` (the host loads its own save and is measured again), `--reapply`, `--dirty`, `--regen`,
+  `--npc-at=x,y,z;...` (`coop.tribe npc_tribe_at`: SpawnNpcTribe at a point). The test waits for the host's
+  tribe.host_reload load (`host_reloads=` in `coop.terrain`) before it measures.
+* The `creature` fixture's planet shows the difference at most 0.2 m; the campaign's planet (creature_cadian) shows
+  it in every run (0.6-14 m) but at other places: the tribe spawn markers are placed at random.
+* `tribe_form_ground` (coop_tribe_form_ground.py, tribe fixture, ~1 min): the host's controller forms a village
+  (`coop.res add food 250` first: tribe.form_pace holds it otherwise), the ground round it on both games.
+* campaign_ct: `CAMPAIGN_GROUND=1` now probes every member, every village, the spawn markers, the six axis points and
+  the Creature probe points again in Tribe (one line per stage, or when a guest differs by more than 0.5 m);
+  `CAMPAIGN_FORM=1` makes the host form two villages right after the tribe setup.

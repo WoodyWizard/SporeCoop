@@ -1024,6 +1024,10 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   NaN matrices / rest offsets that made the position NaN again (docs/re/cell.md#cell-nan-fields).
 * Still open: what makes the first NaN (the own_probe log lines name the step) and what drains the
   address space (not the mirror churn, not the NaN state: cell_churn and cell_nan_all measured 0 MB).
+* 2026-11-06 (fix/w45-cell): one natural case logged: a 2-player guest's level-up (lab 20261105-142923
+  cell_new_game#1), velocity and particle velocities NaN (mask 0x104) for 17 frames, after the collisions and
+  before our guest tick; its camera stayed NaN (BUG-0604, fixed by cell.camera_heal). The writer of the NaN
+  velocity is still not known (docs/re/cell.md#cell-view-nan).
 * 2026-10-30 (fix/w13-cell): the coverage loss was the jumps of the NaN heals leaving background
   cells behind until the guest's pool hit its mirror cap (BUG-0314, fixed by `cell.bg_cull`). The
   first NaN and the address space drain are still not reproduced (docs/re/cell.md#cell-bg-leftovers).
@@ -1165,6 +1169,10 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   (drive.own_height, BUG-0329), so they look right, but the ground itself differs.
 * Reproduce: the full campaign (cell -> tribe); not on flat ground (creature_cadian fixture).
 * Ticket: BUG-0332
+* FIXED (2026-11-06, fix/w45-village-ground, unreleased): the host's live render of the Tribe start's terrain stamps
+  differs from the render every load gives; the host now loads its own share save after the live change
+  (tribe.host_reload). docs/re/tribe.md#tribe-terrain-stamps. Reproduced on creature_cadian with ground maps
+  (`tools/lab.py run tribe_village_cadian`).
 
 ## Cell: a guest's cell broadphase left ~1024 objects open (2026-10-31, fix/w20-cell)
 <a id="issue-cell-sap-broken-order"></a>
@@ -1726,6 +1734,8 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   `scale 10 set on an object with vtable ... from ...` once per caller, so the next campaign run names it.
 * Reproduce: `tools/lab.py run campaign_short` with SPORE_DETECTOR=20 (detector line `scale:node`).
 * Ticket: BUG-0485
+* 2026-11-06 (fix/w45-placement): fixed (`wobj.node_scale`, test node_scale): the setter is the live node placement
+  0xBC02F0 (return address 0xBC0641); the scale is not saved, so loads give 1.0 (docs/re/creature.md#creature-node-scale).
 * 2026-11-03 (fix/w40-civ-crashes): the Civ half is fixed (`civ.save_strip`, test `civ_save_strip`):
   the guest's mirror vehicles stay out of its saves and leave no null in the civilizations' lists. Still
   open: the Tribe mirrors (SpawnNpcTribe tribes and their members) and the Space UFO mirrors / puppets
@@ -2044,3 +2054,16 @@ Player reports 2026-11-04 (0.7.5, Discord bug-reports; not analysed yet):
 * Reproduce: `tools/lab.py run body_trail_tribe_player`; per-time analysis of the track JSON it writes
   (docs/re/creature.md#creature-remote-lead).
 * Tickets: BUG-0425 (fixed part), BUG-0612 (the class's other parts)
+- BUG-0617: Tribe / Civ: food a tribe member carries lies 1-3.5 m behind on the guest while the member walks, a guest
+  member's own carried food is not in the host's game, and a few Civ bundles in other containers stay each game's own
+  (the detector's `game_bundle` rows left after BUG-0548; `SPORE_DETECTOR=20 tools/lab.py run play_tribe`)
+
+<a id="issue-tribe-lone-citizen"></a>
+
+* What happens: in play_tribe the host's game sometimes has a citizen near the guest that stands still for 10-20 s and
+  belongs to no tribe's member list; the mod does not mirror it, so the guest's game has nothing there (detector
+  `Tribe:unmatched:citizen`, 1-3 of ~31 samples a run). What it is is not known yet.
+* Reproduce: play_tribe with `SPORE_DETECTOR=20` and `coop_tribe_member_place.py --attach` (prints the object).
+* Ticket: BUG-0620
+  ground difference when it happens) (fixed on fix/w45-village-ground, unreleased: one ground for everybody,
+  tribe.host_reload of BUG-0332)
