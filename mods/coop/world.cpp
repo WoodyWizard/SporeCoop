@@ -782,11 +782,8 @@ static bool end_menu_intro(bool any, const char* where)
 
 // in a stage: the menu intro left over from a load (a world received while it played); outside the
 // frame, after 1 s (it is never legitimately running there)
-static double g_menu_load_at; // H->time_seconds() of load_now in the galaxy menu, 0 = none pending (BUG-0607)
 static void menu_intro_tick()
 {
-    if (g_menu_load_at && game::mode_id() != modes::kMenu)
-        g_menu_load_at = 0; // the load left the menu: the mode check covers the rest
     uint8_t* cm = (uint8_t*)cinematic_mgr();
     bool stuck = cm && in_stage(game::mode_id()) && *(uint32_t*)(cm + kCineState) &&
                  *(uint32_t*)(cm + kCineId) == kMenuIntroId;
@@ -816,31 +813,19 @@ COOP_FIX("world.intro_at_once", "BUG-0626", g_intro_at_once_fix,
          "world: the galaxy menu intro does not start after a load (outside the menu), so it never takes a stage's camera");
 using PlayCinematicFn = int(SK_THISCALL*)(void*, const char*, int, int, int, int, int);
 static PlayCinematicFn o_PlayCinematic;
-static uint32_t g_intros_at_once, g_intros_in_load;
-// BUG-0607: a load from the galaxy menu (load_now: LoadGameByName) leaves the menu mode only ~0.5-1 s later (the
-// game loads in the next frames); an intro that the menu starts in that gap passed the mode check above, played into
-// the stage and was ended there by menu_intro_tick: a Creature guest that joined ~16 s after its menu came up kept
-// the intro's camera (the planet from space) for the session (docs/re/creature.md#creature-intro-camera). Now a
-// load requested from the menu counts as outside the menu until the mode changes (30 s at most, a failed load).
-// Off: only the mode is checked (BUG-0626's fix alone).
-static bool g_intro_menu_load_fix = true;
-COOP_FIX("world.intro_menu_load", "BUG-0607", g_intro_menu_load_fix,
-         "world: the galaxy menu intro does not start either while a load from the menu is on its way into the stage");
+static uint32_t g_intros_at_once;
 static int SK_THISCALL h_PlayCinematic(void* mgr, const char* name, int a, int b, int c, int d, int e)
 {
-    if (name && !_stricmp(name, "GGE_intro")) {
-        uint32_t mode = game::mode_id();
-        double since = g_menu_load_at ? H->time_seconds() - g_menu_load_at : -1;
-        bool loading = mode == modes::kMenu && since >= 0 && since < 30;
-        if (g_intro_at_once_fix && (mode != modes::kMenu || (g_intro_menu_load_fix && loading))) {
-            (loading ? g_intros_in_load : g_intros_at_once)++;
-            H->log(M, SK_INFO, "world: the galaxy menu intro would start outside the menu (mode %08X%s, %.2f s after a menu "
-                   "load): not started (%s)", mode, loading ? ", a load on its way" : "", since,
-                   loading ? "BUG-0607" : "BUG-0626");
-            return 0; // as PlayCinematic without a cinematic (its caller, GalaxyGameEntry_IntroMessages, ignores it)
-        }
-        H->log(M, SK_INFO, "world: the galaxy menu intro starts (mode %08X, %.2f s after a menu load)", mode, since);
+    if (g_intro_at_once_fix && name && !_stricmp(name, "GGE_intro") && game::mode_id() != modes::kMenu) {
+        g_intros_at_once++;
+        H->log(M, SK_INFO, "world: the galaxy menu intro would start outside the menu (mode %08X): not started (BUG-0626)",
+               game::mode_id());
+        return 0; // as PlayCinematic without a cinematic (its caller, GalaxyGameEntry_IntroMessages, ignores it)
     }
+    // BUG-0607: when and in which mode it starts (the timer fires ~15.85 s after the menu came up; after a load
+    // requested just before, in the next frame, already in the Loading mode 01654C08)
+    if (name && !_stricmp(name, "GGE_intro"))
+        H->log(M, SK_INFO, "world: the galaxy menu intro starts (mode %08X)", game::mode_id());
     return o_PlayCinematic(mgr, name, a, b, c, d, e);
 }
 static void install_intro_hook()
@@ -1464,7 +1449,6 @@ static bool load_now(const std::wstring& slot, const std::string& planet_file, s
             skg::thiscall<void>(readstars, sm);
     // the menu intro must not survive into the stage (see end_menu_intro); in the menu nothing else plays
     end_menu_intro(game::mode_id() == modes::kMenu, "at the load");
-    g_menu_load_at = game::mode_id() == modes::kMenu ? H->time_seconds() : 0;
     skg::thiscall<void>(loadby, mgr, name.c_str());
     H->log(M, SK_INFO, "world: loading %s from %s", planet_file.c_str(), narrow(slot).c_str());
     return true;
@@ -1656,8 +1640,8 @@ std::string status()
                  *(uint32_t*)(cm + kCineId) == kMenuIntroId ? " (menu intro)" : "");
         s += b;
     }
-    if (g_intros_ended || g_intros_at_once || g_intros_in_load) {
-        snprintf(b, sizeof b, "menu intro ended %u (not started %u, in a menu load %u)\n", g_intros_ended, g_intros_at_once, g_intros_in_load);
+    if (g_intros_ended || g_intros_at_once) {
+        snprintf(b, sizeof b, "menu intro ended %u (not started %u)\n", g_intros_ended, g_intros_at_once);
         s += b;
     }
     return s;

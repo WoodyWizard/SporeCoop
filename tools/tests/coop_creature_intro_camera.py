@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
-"""Creature: the guest's own camera stays at its creature after the galaxy menu intro would start in the stage (BUG-0607).
+"""Creature: the guest's own camera is at its creature after a join whose load met the galaxy menu intro (BUG-0607).
 
 Lab shots of creature_ufo_mirror (20261105-231804, 20261105-233051) showed the guest's planet from space after its
-join; their guest logs had `world: cinematic 8915F9BB still playing in a stage: ended it`: the galaxy menu's intro
-"GGE_intro" starts ~16 s after the menu came up, here after the guest's join had left the menu (all 106 such guest
-logs left the menu after 6.6-16.7 s), took the camera in Creature and was ended there by the mod a second later.
+join; their guest logs had `world: cinematic 8915F9BB still playing in a stage: ended it`. The galaxy menu's intro
+"GGE_intro" starts 15.8-15.9 s after the menu came up; a load requested 0.2-0.7 s before that holds the frame (~0.65 s)
+and the intro starts in the next one, already in the Loading mode 01654C08; it plays through the Creature setup, the
+mod ends it a second later, and the creature camera stays at a default point (0, -1000, 500), ~800 m from the avatar,
+for the session (lab 20261106-141833 #5 with world.intro_at_once off). BUG-0626's fix (world.intro_at_once) does not
+start it outside the menu mode, so it never plays there.
 
-The race by hand on the guest in Creature after its join: the intro is started as the menu starts it
-(PlayCinematic "GGE_intro", 1, 0, 0, 0, 0); the mod's stage tick ends it after 1 s. Then the guest's own camera
-(the screen-centre ray's origin, App::cViewer) must be near its avatar again and the game's cinematic manager idle.
-Twice: the race repeats on every join whose load comes before the intro.
+The race: the guest joins SPORE_JOIN_AT (12.5) s after its menu came up (twoinst.start(join_at=): its load request
+comes ~3.0-3.5 s after the join); about one start in three hits the Loading mode. SPORE_FIX_OFF=world.intro_at_once
+is applied on the guest before its join. Checks the game's own camera (App::cViewer, the screen-centre ray's origin)
+against the avatar after the join; then twice the intro by hand in Creature (as the menu starts it), which with a
+healthy camera comes back to the creature after the mod ends it (and with the stuck one does not).
 """
 import math
 import os
@@ -59,7 +63,7 @@ def show(name, c):
 
 
 def main():
-    join_at = float(os.environ.get('SPORE_JOIN_AT', '13.1'))
+    join_at = float(os.environ.get('SPORE_JOIN_AT', '12.5'))
     print(f'  the guest joins {join_at:.2f} s after its galaxy menu came up', flush=True)
     host, guest = start('creature', join_at=join_at)
     ck = Checks()

@@ -525,7 +525,10 @@ def _start(fixture='creature', planet=None, load_args=(), join_in_intro=False, g
             assert wait_up(lane.GUEST), f'instance {lane.GUEST} did not start'
         guest = Console(lane.GUEST)
     for _ in range(120 * (4 if join_at is not None else 1)):
-        if 'GalaxyGameEntry' in guest.call('game.mode')['out']:
+        if join_at is not None:  # the log's line comes when the menu does; game.mode answers up to ~12 s later
+            if (_menu_up_time(lane.GUEST) or 0) > t_start:  # this start's line, not an older session's
+                break
+        elif 'GalaxyGameEntry' in guest.call('game.mode')['out']:
             break
         time.sleep(1 if join_at is None else 0.25)
     t_menu = time.time()

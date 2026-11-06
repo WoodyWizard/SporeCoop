@@ -247,7 +247,7 @@ add('cell_new_game', P + 'coop_cell_new_game.py --diet carn --early --minutes 3'
 add('cell_far_guest', P + 'coop_cell_new_game.py --diet carn --minutes 0 --probe 0 --apart 70 --far-probe 4', minutes=10)  # a guest far from the host finds food, eats it, the host counts it (BUG-0174, BUG-0279; SPORE_FIX_OFF=cell.partner_tiles fails)
 add('tribe_play', P + 'coop_tribe_play.py', ('smoke',), warm=True, minutes=3, fixture='tribe')
 add('tribe_intro_camera', P + 'coop_tribe_intro_camera.py', warm=True, minutes=3, fixture='tribe')  # the host's view follows its minimap after the menu intro would start in the stage (BUG-0626; cold: the start's own intro under the share's box; the by-hand intro does not reproduce the stuck view, so no switch-off claim)
-add('creature_intro_camera', P + 'coop_creature_intro_camera.py', warm=True, minutes=3, fixture='creature')  # the guest's own camera is back at its creature after the menu intro would start in Creature (BUG-0607)
+add('creature_intro_camera', P + 'coop_creature_intro_camera.py', warm=False, minutes=3, fixture='creature')  # cold, the guest joins 12.5 s after its menu: its camera is at its creature although the menu intro came during its load (BUG-0607, ~1 in 3 starts hit the race; SPORE_FIX_OFF=world.intro_at_once goes to the guest before the join)
 add('civ_play', P + 'coop_civ_play.py', warm=True, minutes=3, fixture='civ_npc')
 add('civ_reload', P + 'coop_civ_reload.py', warm=True, minutes=5, fixture='civ_npc')  # tables after a load and a leave (BUG-0040, BUG-0059; --nofix fails)
 add('menu_stale_player', P + 'coop_menu_stale_player.py', minutes=12, fixture='tribe')  # a load from the galaxy menu with the old world's player empire left there (BUG-0284; --nofix fails)

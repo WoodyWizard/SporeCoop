@@ -3187,3 +3187,27 @@ BUG-0339, BUG-0611. GOG 2024, lab lanes 6/7. Follows [the host's NPC set while i
 * Fix `npc.thaw_stale`: the 5 s count starts when the states flow again after more than 1 s without a whole batch
   (`g_states_flow_since`); 0 stale drops, 5 of 5 kept (lab 20261106-111013). `coop.npc` (guest) prints
   `thaw_kept=` and `rxkeep_cut=`.
+
+## The galaxy menu intro during a guest's load leaves its camera in space (2026-11-06, fix/w45-intro-camera)
+<a id="creature-intro-camera"></a>
+
+* ✔ (BUG-0607, lab) The galaxy menu's intro "GGE_intro" (docs/re/tribe.md#tribe-intro-camera) starts 15.8-15.9 s
+  after the mod logs `stage: - -> Galaxy menu` (12 cold guests of lab 20261106-140508, -140930, -141402, -141833;
+  `world: the galaxy menu intro starts (mode ...)` logs every start now). After the menu it is started again every
+  ~4-8 s in Creature (mode 01654C01) and blocked there by `world.intro_at_once`.
+* ✔ A load requested from the menu holds that frame ~0.65 s (`perf: hitch`); an intro due in it starts in the next
+  frame, already in the Loading mode 01654C08 (lab 20261106-140930 #1, #3: requests 15.78 / 15.61 s after the menu,
+  intro tries 0.7 s later). Both BUG-0607 runs had this timing: 20261105-231804 request 15.8 s, 20261105-233051
+  15.77 s, the menu left 16.4 s after it came up. No intro was seen starting between the request and the mode change
+  in the menu mode (16 timed joins).
+* ✔ With `world.intro_at_once` off (0.7.8) the intro that starts in the Loading mode plays through the Creature
+  setup, `menu_intro_tick` ends it 1 s later, and the guest's camera (App::cViewer, the screen-centre ray's origin)
+  stays at (0, -1000, 500), ~800 m from its avatar, for the session: lab 20261106-141833 #5. Starting the intro by
+  hand afterwards does not repair it (after its end the camera is at (0, -1225.7, 1028.5)). ~ In #2 of the same run
+  the intro also started in 01654C08 (0.02 s before the mod saw the mode change) and the view was normal: the exact
+  frame decides; the intro starting after the Creature setup (mode 01654C01) never left it stuck (lab 20261106-135640:
+  by hand twice, 20261106-141402 #4: 0.19 s into Creature), the camera came back to its creature (10-26 m).
+* Fix: BUG-0626's `world.intro_at_once` (the intro does not start outside the menu mode) covers it: with it on the
+  Loading-mode start is "not started" (lab 20261106-140930 #1, #3) and the camera is 10.2 m from the avatar.
+  Test creature_intro_camera (`twoinst.start(join_at=12.5)`: the guest joins 12.5 s after its menu's log line, about
+  one start in three hits the Loading mode; SPORE_FIX_OFF goes to the guest before the join).
