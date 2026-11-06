@@ -1842,3 +1842,22 @@ the first four return addresses into the game's code: the creator of every effec
   4 of 4 (out/lab/20261105-135946, 2 runs); off 4 of 15 (only the animation effects' C656EAF8) and 0 of 4
   (out/lab/20261105-140001).
 * ~ NPCs of the Creature stage go through the same path (npc::id_of / npc::proxy); not tested there.
+
+## The flora grid's handle slots, and what BUG-0359's float was not (2026-11-05, fix/w45-crashes)
+<a id="tribe-flora-grid-slots"></a>
+
+Ghidra, GOG 2024 (BUG-0359, continuing [the flora grid free](#tribe-flora-grid-free)).
+* ✔ HierGrid handle slot (16 bytes at `*(grid+0x60)[h >> 7] + (h & 0x7F) * 0x10`, HierGrid_Unlink
+  0x702B80): +0 the free-list word (bit 31 set = free, low 30 bits the next free handle; HierGrid_Remove
+  0x702E30 writes it), +4 the level (index into the 0x44-byte levels at grid+0x24), +8 the cell key
+  (-1 = the overflow list), +0xC a pointer to the handle's record R: `*(R+0) + 4` is the 16-byte list
+  node that Unlink unhooks (node+0 next, node+4 prev) and frees with GeneralAllocator::delete_
+  (0xF47220), R+8 the user value Unlink returns. So a walker over the live slots (bit 31 clear) can
+  reach every list node of the grid; its block count was not found (not needed for the analysis).
+* ✔ 0.51f (0x3F028F5C, the value over the node's chunk header in BUG-0359) is a literal of the exe
+  only once, .rdata 0x13FE148, read by FUN_00629E10 (0x629F2D) alone; not followed (the float may as
+  well be a computed or data value).
+* Negative (lab history, 2026-11-05): the signature (FreeInternal+0x64 < 0x702C44 < 0x702E88 <
+  0xB0818E) is in no other game log of out/lab of the main checkout and every worktree (searched every
+  `*.game.log` with GeneralAllocator_FreeInternal: 24 files, the others are BUG-0308 / 0348 (Cell
+  pools), Tribe / Civ effect creation, the editor's play-mode pictures and BUG-0605).
