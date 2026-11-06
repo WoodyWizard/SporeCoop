@@ -5,7 +5,9 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <algorithm>
 #include <string>
+#include <vector>
 
 #include "game.h"
 #include "sporekit.h"
@@ -95,6 +97,57 @@ int c_terrain(void*, int argc, const char* const* argv, SkOut* out)
         d[0]++;
         d[1]++;
         H->out_printf(out, "terrain %p dirty counters now %u %u", t, d[0], d[1]);
+        return 0;
+    }
+    // reapply <from> [to]: RE (BUG-0332), the stamps of the +0x770 list from index <from> to <to> are taken off and put
+    // on again in the list's order with ApplyStamp (their own transform, the prop list of the key at entry+0x98), as a
+    // live game applies them; prints the ground at each stamp before and after
+    if (argc > 2 && !strcmp(argv[1], "reapply") && o_Apply && o_Remove) {
+        uintptr_t pmg = H->sym("App::IPropManager::Get");
+        void* pm = pmg ? skg::cdecl_call<void*>(pmg) : nullptr;
+        if (!t || !pm || !skg::readable((uint8_t*)t + 0x770, 8)) {
+            H->out_printf(out, "no terrain or prop manager");
+            return 1;
+        }
+        size_t from = (size_t)atoi(argv[2]);
+        uint8_t* bg = *(uint8_t**)((uint8_t*)t + 0x770);
+        uint8_t* en = *(uint8_t**)((uint8_t*)t + 0x774);
+        size_t n = (bg && en > bg) ? (size_t)(en - bg) / 0xAC : 0;
+        size_t to = argc > 3 ? std::min(n, (size_t)atoi(argv[3]) + 1) : n;
+        struct One {
+            uint8_t xf[0x38];
+            uint32_t key[3], id;
+        };
+        std::vector<One> v;
+        for (size_t i = from; i < to; i++) {
+            One o;
+            memcpy(o.xf, bg + i * 0xAC, 0x38);
+            memcpy(o.key, bg + i * 0xAC + 0x98, 12);
+            o.id = *(uint32_t*)(bg + i * 0xAC + 0xA8);
+            v.push_back(o);
+        }
+        for (auto& o : v)
+            o_Remove(t, o.id, 1);
+        int ok = 0;
+        for (auto& o : v) {
+            void* pl = nullptr;
+            if (!skg::vcall<bool>(pm, 0x2C / 4, o.key[0], o.key[2], &pl) || !pl) {
+                snprintf(b, sizeof b, "no prop list %08X/%08X for stamp %u\n", o.key[0], o.key[2], o.id);
+                s += b;
+                continue;
+            }
+            const float* f = (const float*)(o.xf + 4);
+            net::Vec3 q{f[0], f[1], f[2]};
+            uint32_t nid = o_Apply(t, o.xf, pl);
+            skg::vcall<int>(pl, 0x04 / 4); // Release
+            ok++;
+            snprintf(b, sizeof b, "stamp %u -> %u at |r| %.2f: ground %.2f\n", o.id, nid,
+                     std::sqrt(q.x * q.x + q.y * q.y + q.z * q.z), game::ground_radius(q));
+            s += b;
+        }
+        snprintf(b, sizeof b, "reapplied %d of %u (list %u..%u of %u)\n", ok, (unsigned)v.size(), (unsigned)from, (unsigned)to,
+                 (unsigned)n);
+        H->out_printf(out, "%s%s", b, s.c_str());
         return 0;
     }
     if (argc > 2 && !strcmp(argv[1], "raw")) { // RE: the whole 0xAC-byte entry of stamp <id>

@@ -238,6 +238,18 @@ def main():
             for k in diff[:12]:
                 print(f'    after the guest\'s rebuild too, stamp {k}: host {ground(host, h[k][2])} guest '
                       f'{ground(guest, h[k][2])}', flush=True)
+        if '--reapply' in sys.argv and diff:  # the guest takes off and puts on again its stamps, in the list's order
+            gi = sorted(g[k][1] for k in diff if k in g)
+            for frm in ([gi[0]] if gi else []) + [0]:
+                r = out(guest, f'coop.terrain reapply {frm}')
+                print('  guest: ' + r.splitlines()[0] if r else '  guest: -', flush=True)
+                time.sleep(8)
+                left = 0
+                for k in diff[:12]:
+                    a, b = ground(host, h[k][2]), ground(guest, h[k][2])
+                    left += a is not None and b is not None and abs(a - b) > 0.3
+                    print(f'    after reapply from {frm}: stamp {k} at r {h[k][3]}: host {a} guest {b}', flush=True)
+                print(f'    still differing: {left} of {min(12, len(diff))}', flush=True)
         print('  host coop.terrain (calls):\n' + '\n'.join(l for l in out(host, 'coop.terrain').splitlines() if l.startswith('call'))[:5000], flush=True)
     result = {}
     for k in range(2):
