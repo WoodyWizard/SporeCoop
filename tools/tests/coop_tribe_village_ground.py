@@ -200,8 +200,28 @@ def main():
             print(f'    ({p[0]:.0f} {p[1]:.0f} {p[2]:.0f}): Creature host {cmap[1][i]} guest {cmap[2][i]}, Tribe host {h} guest {g}',
                   flush=True)
     if '--terrain' in sys.argv:  # the terrain's stamps on both games (terrain_diag.cpp)
+        lists = {}
         for name, con in (('host', host), ('guest', guest)):
-            print(f'  {name} coop.terrain:\n' + out(con, 'coop.terrain')[:6000], flush=True)
+            lists[name] = {}
+            for line in out(con, 'coop.terrain list').splitlines():
+                f = line.split()
+                if len(f) >= 8 and f[0] == 's':
+                    lists[name][int(f[3])] = (f[1], int(f[2]), tuple(float(x) for x in f[4:7]), float(f[7]), ' '.join(f[9:]))
+        h, g = lists['host'], lists['guest']
+        print(f'  stamps: host {len(h)}, guest {len(g)}; only on the host {len(set(h) - set(g))}, only on the guest '
+              f'{len(set(g) - set(h))}', flush=True)
+        for k in sorted(set(h) - set(g)):
+            print(f'    host only: id {k} {h[k]}; ground host {ground(host, h[k][2])} guest {ground(guest, h[k][2])}', flush=True)
+        for k in sorted(set(g) - set(h)):
+            print(f'    guest only: id {k} {g[k]}; ground host {ground(host, g[k][2])} guest {ground(guest, g[k][2])}', flush=True)
+        for k in sorted(set(h) & set(g)):
+            if h[k][:2] != g[k][:2] or math.dist(h[k][2], g[k][2]) > 0.01 or h[k][4] != g[k][4]:
+                print(f'    differs: id {k} host {h[k]} guest {g[k]}', flush=True)
+        for k in sorted(h, key=lambda k: h[k][1]):  # every stamp where the two grounds differ
+            gh, gg = ground(host, h[k][2]), ground(guest, h[k][2])
+            if gh is not None and gg is not None and abs(gh - gg) > 0.3:
+                print(f'    ground differs at stamp {k} {h[k]}: host {gh} guest {gg}', flush=True)
+        print('  host coop.terrain (calls):\n' + '\n'.join(l for l in out(host, 'coop.terrain').splitlines() if l.startswith('call'))[:5000], flush=True)
     result = {}
     for k in range(2):
         for name, at in places:

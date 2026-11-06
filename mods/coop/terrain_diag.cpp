@@ -80,11 +80,32 @@ void* terrain()
     return *(void**)((uint8_t*)pm + 0x24);
 }
 
-int c_terrain(void*, int, const char* const*, SkOut* out)
+int c_terrain(void*, int argc, const char* const* argv, SkOut* out)
 {
     void* t = terrain();
     std::string s;
     char b[256];
+    if (argc > 1 && !strcmp(argv[1], "list")) { // one line per stamp: vector, id, transform position, |r|, prop key words
+        if (t && skg::readable((uint8_t*)t + 0x770, 0x20))
+            for (uint32_t off : {0x770u, 0x784u}) {
+                uint8_t* bg = *(uint8_t**)((uint8_t*)t + off);
+                uint8_t* en = *(uint8_t**)((uint8_t*)t + off + 4);
+                size_t n = (bg && en > bg) ? (size_t)(en - bg) / 0xAC : 0;
+                for (size_t i = 0; i < n; i++) {
+                    uint8_t* e = bg + i * 0xAC;
+                    if (!skg::readable(e, 0xAC))
+                        break;
+                    const float* f = (const float*)(e + 4);
+                    snprintf(b, sizeof b, "s %X %u %u %.2f %.2f %.2f %.2f w %08X %08X %08X %08X %08X %08X\n", off, (unsigned)i,
+                             *(uint32_t*)(e + 0xA8), f[0], f[1], f[2], std::sqrt(f[0] * f[0] + f[1] * f[1] + f[2] * f[2]),
+                             *(uint32_t*)(e + 0x44), *(uint32_t*)(e + 0x48), *(uint32_t*)(e + 0x4C), *(uint32_t*)(e + 0x50),
+                             *(uint32_t*)(e + 0x54), *(uint32_t*)(e + 0x58));
+                    s += b;
+                }
+            }
+        H->out_printf(out, "%s", s.c_str());
+        return 0;
+    }
     snprintf(b, sizeof b, "terrain %p hooks %d%d%d\n", t, o_Apply != nullptr, o_Remove != nullptr, o_Clear != nullptr);
     s += b;
     if (t && skg::readable((uint8_t*)t + 0x770, 0xB0)) {
