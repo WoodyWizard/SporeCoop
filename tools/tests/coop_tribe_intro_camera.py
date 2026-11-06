@@ -7,9 +7,9 @@ order): the menu's intro starts ~16 s after the galaxy menu came up even after a
 camera in the stage, and the mod ended it a second later, here while the share's "game saved" box was up. The
 view then stayed where it was for the whole session (o == a == b in the calibration).
 
-The race by hand, on the host in Tribe: the minimap moves the view (before); the intro is started as the menu
-starts it (PlayCinematic "GGE_intro") while a save's game saved box is up and held (`coop.save hold`), the mod's
-stage tick ends the intro while the box is up, the box is confirmed; then the minimap must move the view again.
+The race by hand, on the host in Tribe right after the load (no click has moved its view yet): the intro is started as the menu
+starts it (PlayCinematic "GGE_intro") right after a save (`coop.save hold`: its game saved box comes up over the
+intro and stays), the mod's stage tick ends the intro, the box is confirmed; then the minimap must move the view.
 With the fix the intro does not start outside the menu (and the cold start's own intro, which the lab's quick
 load from the menu lets start in the stage, does not either). SPORE_FIX_OFF=world.intro_at_once (applied after the
 start): the intro plays until the stage tick ends it under the box, and the view stays (the test fails).
@@ -49,21 +49,21 @@ def main():
     w = wait_running(host, guest, 90)
     print(f'  both games\' time runs: {"after %.0f s" % w if w is not None else "NOT within 90 s"}', flush=True)
     p = Player('host', host, 0, random.Random(1), log, 1440, 1080)
-    ck(p.calibrate(), 'host: the minimap takes the view where it points (before the intro)')
+    # no minimap click before: the stuck views of play_tribe were the stage's first camera (nothing moved it yet)
     m = re.search(r'eax=(0x[0-9A-Fa-f]+)', host.call('call Simulator::cCinematicManager::Get cdecl')['out'])
     ck(m, 'host: the cinematic manager')
     if not m:
         return ck.result()
-    # the natural race: the share's save put the box up and the intro came in under it (lab 20261106-124414: the
-    # intro ended in the same call under the box still left the view stuck)
+    # the natural race: the share's save was being written when the intro started, its box came up over the intro,
+    # and the intro was ended under the box (play_tribe 20261106-105201: ended at the moment the box was seen)
     print(' ', host.call('coop.save hold')['out'].strip(), flush=True)
-    ck(wait(lambda: box(host), 15), 'host: the game saved box is up')
     # as the galaxy menu's handler starts it (GalaxyGameEntry_IntroMessages: name, 1, 0, 0, 0, 0)
     print(' ', host.call(f'call Simulator::cCinematicManager::PlayCinematic thiscall {m.group(1)} s:GGE_intro 1 0 0 0 0')
           ['out'].strip(), flush=True)
     playing = cine(host)
     print(f'  host: cinematic right after the start: {playing}', flush=True)
-    ck(wait(lambda: cine(host) is None, 10), 'host: no cinematic plays any more (box still up)')
+    ck(wait(lambda: box(host), 15), 'host: the game saved box is up')
+    ck(wait(lambda: cine(host) is None, 10), 'host: no cinematic plays any more')
     time.sleep(1)
     shot(host, 'intro_camera_box.png')
     print(' ', host.call('coop.save confirm')['out'].strip(), flush=True)
