@@ -1697,6 +1697,38 @@ void after_physics() // gamefixes.cpp's hook of the physics update (BUG-0449), a
     }
 }
 
+std::string objects_near(const net::Vec3& pos, float r, void* self, int max_n)
+{
+    struct U {
+        net::Vec3 p;
+        float r;
+        void* self;
+        std::vector<std::pair<float, uint32_t>> v;
+    } u{pos, r, self, {}};
+    for_each_object(
+        [](void* o, uint32_t noun, void* up) {
+            auto* u = (U*)up;
+            if (o == u->self || u->v.size() > 256)
+                return true;
+            net::Vec3 q;
+            if (!object_position(o, q))
+                return true;
+            float d = std::sqrt((q.x - u->p.x) * (q.x - u->p.x) + (q.y - u->p.y) * (q.y - u->p.y) + (q.z - u->p.z) * (q.z - u->p.z));
+            if (d <= u->r)
+                u->v.push_back({d, noun});
+            return true;
+        },
+        &u);
+    std::sort(u.v.begin(), u.v.end());
+    std::string out;
+    char b[40];
+    for (int i = 0; i < (int)u.v.size() && i < max_n; i++) {
+        snprintf(b, sizeof b, "%s%08X@%.1f", out.empty() ? "" : " ", u.v[i].second, u.v[i].first);
+        out += b;
+    }
+    return out.empty() ? "none" : out;
+}
+
 bool pose_bad(const net::Vec3& pos, const net::Quat& rot, const net::Vec3& vel)
 {
     return pose_refused(&pos, &rot) || pose_refused(&vel, nullptr);

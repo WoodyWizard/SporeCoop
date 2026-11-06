@@ -206,6 +206,7 @@ struct GMember {
     net::SnapshotBuffer buf; // BUG-0365 (tribe.mirror_time): the host's states by its clock
     net::Vec3 aim;           // coop.track: where the driving aimed this frame
     float aim_speed = 0;     // and the host's speed of that state
+    double held_since = 0, held_said = -1e9; // BUG-0386 (diagnostics)
     double anim_rx_at = 0, anim_fix_at = 0; // BUG-0569: the last relayed start, the last snapshot play
 };
 static std::unordered_map<uint16_t, GMember> g_gm;
@@ -2062,6 +2063,18 @@ static void mirror_drive(GMember& g, double now)
         o.catch_prop = true; // BUG-0425
         drive::walk_place(g.c, g.aim, rot, vel, g.ds, now, o);
         g_mirror_walks++;
+        // BUG-0386 (diagnostics): a walked mirror held over 2 m off its aim for 1 s: what is around it, once per 10 s
+        if (g.ds.last_err > 2.f) {
+            if (g.held_since <= 0)
+                g.held_since = now;
+            if (now - g.held_since > 1.0 && now - g.held_said > 10.0) {
+                g.held_said = now;
+                H->log(M, SK_INFO, "tribe: mirror #%u held %.1f m off its aim for %.1f s (place lost %u, held %d, %.1f m/s); "
+                       "objects within 3 m: %s (BUG-0386)", g.id, g.ds.last_err, now - g.held_since, (unsigned)g.ds.place_lost,
+                       (int)g.ds.held, sp, game::objects_near(game::position(g.c), 3.f, g.c).c_str());
+            }
+        } else
+            g.held_since = 0;
         return;
     }
     drive::walk_end(g.c, g.aim, g.ds, now);

@@ -276,6 +276,8 @@ void set_dna_listener(DnaListener fn);
 // cGameNounManager::mNouns (+0x78) lists every cGameData (list node at object+0xC)
 void* noun_manager();
 void for_each_object(bool (*fn)(void* obj, uint32_t noun, void* user), void* user);
+// BUG-0386 / BUG-0440 (diagnostics): "noun@dist" of every placed object within r m of pos but `self`, nearest first
+std::string objects_near(const net::Vec3& pos, float r, void* self, int max_n = 8);
 uint32_t noun_id(void* obj);                    // ISimulatorSerializable::GetNounID (vt 0x20)
 void* cast(void* obj, uint32_t type);           // Object::Cast (vt 0x0C)
 bool object_position(void* obj, net::Vec3& out); // via cSpatialObject (TYPE 0x1186577), position +4

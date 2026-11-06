@@ -3063,8 +3063,9 @@ void monitor_tick(double now)
                     }
                 }
             trace::line("npc", "proxy %u: walk err %.2f m, held %d, place lost %u, teleports %u, walked %d, nearest proxy %u at "
-                        "%.1f m (BUG-0440)", id, px.drv.last_err, (int)px.drv.held, (unsigned)px.drv.place_lost,
-                        (unsigned)px.drv.teleports, (int)px.drv.kinematic, near_id, near_d);
+                        "%.1f m; objects within 3 m: %s (BUG-0440)", id, px.drv.last_err, (int)px.drv.held, (unsigned)px.drv.place_lost,
+                        (unsigned)px.drv.teleports, (int)px.drv.kinematic, near_id, near_d,
+                        game::objects_near(p, 3.f, px.c).c_str());
         }
         if (off && now - a.off_since >= 2.0 && g_audit_stuck.insert(id).second && g_audit_stuck.size() == 1)
             trace::line("npc", "proxy %u (species %08X) %.1f m off the host's NPC for %.1f s at (%.1f %.1f %.1f), host's speed "

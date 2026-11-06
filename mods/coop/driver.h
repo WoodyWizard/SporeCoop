@@ -310,6 +310,7 @@ constexpr float kCatchTime = 0.25f;     // s
 // (tribe_walk_mobile failed 5 of 6 with drive.lead). The placing now moves at most (speed + catch_up) x dt from where
 // it placed the body last frame, the error closed at most at twice the remote's speed + 3 m/s in all, as meant.
 inline bool g_catch_bound_fix = true;
+constexpr float kEvenBelow = 5.f; // m/s
 constexpr float kWalkLostErr = 0.75f;   // m
 constexpr double kWalkLostAfter = 0.15; // s
 
@@ -376,6 +377,11 @@ inline void walk_place(void* p, const net::Vec3& pos_in, const net::Quat& rot, c
     float catch_up = o.catch_up;
     if (o.catch_prop && net::g_lead_fix)
         catch_up = std::max(catch_up, std::min(err / kCatchTime, sp + o.catch_up));
+    // BUG-0619: while the remote speeds up or slows down (under kEvenBelow m/s) the lead target is a latency ahead of a
+    // start, and catching up at catch_up on top of a 1-5 m/s walk drew a stop-and-go (tribe_walk_mobile: uneven steps
+    // in 5-18 % of those frames with drive.lead, 1-3 % without): there the catch-up is at most half the speed + 1 m/s
+    if (g_catch_bound_fix && o.catch_prop && net::g_lead_fix && sp < kEvenBelow)
+        catch_up = std::min(catch_up, 0.5f * sp + 1.f);
     float max_step = (sp + catch_up) * (float)dt;
     net::Vec3 to = pos;
     if (err > max_step) {
@@ -383,9 +389,10 @@ inline void walk_place(void* p, const net::Vec3& pos_in, const net::Quat& rot, c
         to = {cur.x + (pos.x - cur.x) * k, cur.y + (pos.y - cur.y) * k, cur.z + (pos.z - cur.z) * k};
     }
     if (g_catch_bound_fix && o.catch_prop && net::g_lead_fix && was && !ds.held) { // BUG-0619
-        float d = net::dist(to, ds.placed_to);
-        if (d > max_step && net::dist(cur, ds.placed_to) < 2.f * max_step + 0.5f) {
-            float k = max_step / d;
+        // (never back behind where the game's own walk took it: pulled back, a slow start went stop-and-go)
+        float d = net::dist(to, ds.placed_to), walked = net::dist(cur, ds.placed_to), lim = std::max(max_step, walked);
+        if (d > lim && walked < 2.f * max_step + 0.5f) {
+            float k = lim / d;
             to = {ds.placed_to.x + (to.x - ds.placed_to.x) * k, ds.placed_to.y + (to.y - ds.placed_to.y) * k,
                   ds.placed_to.z + (to.z - ds.placed_to.z) * k};
         }
