@@ -8,7 +8,7 @@ reported: 2026-11-02
 source: player reports on Discord 2026-11-02 (bug-reports forum, 0.7.3.4, GOG host + Steam guest)
 role: host
 versions: 
-fixed_in:
+fixed_in: unreleased
 branch: fix/w45-creature-reports
 commits: b2522091
 tests: creature_carry (coop_creature_carry.py)

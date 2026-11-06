@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: player report 2026-11-01 (host F9 note at s 1777)
 role: both
 versions: 0.7.3.3
-fixed_in:
+fixed_in: unreleased
 branch: fix/w30-npc-walk, feat/w33-tests-creature, fix/w45-creature-reports
 commits: 7f2c5dcd
 tests: tools/tests/coop_npc_corpse.py (suite corpse_positions, corpse_positions_player), creature_eat (coop_creature_eat.py)

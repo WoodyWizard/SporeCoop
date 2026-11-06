@@ -8,7 +8,7 @@ reported: 2026-11-04
 source: player report 2026-11-04 (Discord bug-reports, 0.7.5, Steam build)
 role: both
 versions: 0.7.5
-fixed_in:
+fixed_in: unreleased
 branch: fix/w44-guest-player2, fix/w45-creature-reports
 commits: 2ce39e6a, 7f2c5dcd
 tests: creature_eat (coop_creature_eat.py)

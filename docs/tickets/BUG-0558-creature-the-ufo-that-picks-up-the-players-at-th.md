@@ -8,7 +8,7 @@ reported: 2026-11-04
 source: player report 2026-11-04 (Discord bug-reports, 0.7.5, Steam build)
 role: both
 versions: 0.7.5
-fixed_in:
+fixed_in: unreleased
 branch: fix/w44-guest-player2, fix/w45-creature-reports
 commits: 265ec57c, 946cc573
 tests: creature_ufo_mirror (coop_creature_ufo_mirror.py)
