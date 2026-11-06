@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in: unreleased
 branch: rel/0.7.9
-commits:
+commits: 64f66aea
 tests:
 signature:
 docs:
