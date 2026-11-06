@@ -128,6 +128,7 @@ inline bool g_lead_smooth_fix = true;
 constexpr double kSmoothTau = 0.12; // s: e^-1 of a lead jump left after this
 constexpr float kSmoothRate = 3.f;  // m/s on top of kSmoothK x the body's speed
 constexpr float kSmoothK = 1.f;
+constexpr float kSmoothMinSp = 3.f; // m/s
 
 class SnapshotBuffer {
 public:
@@ -349,7 +350,9 @@ private:
                 if (d > smooth_max || stop) {
                     off = {};
                 } else if (d > 1e-4f) {
-                    float sp = std::max(dist(Vec3{}, v), dist(Vec3{}, sm_vel_));
+                    // (at least kSmoothMinSp: a start's first states report a speed under the walk's, lead_velocity
+                    // caps it at their path, and the target crept at 3 m/s, in the stop-and-go band, for 0.2-0.5 s)
+                    float sp = std::max({dist(Vec3{}, v), dist(Vec3{}, sm_vel_), kSmoothMinSp});
                     float nd = std::max(d * (float)std::exp(-dt / kSmoothTau), d - (kSmoothK * sp + kSmoothRate) * (float)dt);
                     nd = std::max(nd, 0.f);
                     float k = nd / d;
