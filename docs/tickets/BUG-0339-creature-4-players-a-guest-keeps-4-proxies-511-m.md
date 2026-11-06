@@ -10,7 +10,7 @@ role: guest
 versions: main 39f4004
 fixed_in: unreleased
 branch: fix/w45-leftovers
-commits:
+commits: 34b41821 add442d0
 tests: npc_frozen_pooled (coop_npc_frozen.py --case pooled)
 signature:
 docs: docs/re/creature.md#creature-freeze-edges

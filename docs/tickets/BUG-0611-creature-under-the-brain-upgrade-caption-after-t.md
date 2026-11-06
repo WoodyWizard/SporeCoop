@@ -10,7 +10,7 @@ role: guest
 versions: 
 fixed_in: unreleased
 branch: fix/w45-leftovers
-commits:
+commits: 34b41821 add442d0
 tests: npc_frozen_thaw (coop_npc_frozen.py --case thaw), npc_frozen_live (--case live, extended)
 signature:
 docs: docs/re/creature.md#creature-freeze-edges, docs/re/creature.md#creature-npc-gaps

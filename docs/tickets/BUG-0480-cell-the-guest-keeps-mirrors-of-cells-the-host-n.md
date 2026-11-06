@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in: unreleased
 branch: fix/w40-cell-evo, fix/w45-leftovers
-commits:
+commits: 34b41821 f68e3316 2191c794
 tests: cell_gone, cell_gone_probe, cell_gone_play (extended), coop_cell_gone.py
 signature:
 docs: docs/06-testing.md#testing-world-lod, docs/re/cell.md#cell-stale-mirrors, docs/re/cell.md#cell-short-lived
