@@ -3273,3 +3273,21 @@ BUG-0630. GOG 2024 (dc04aee5), objdump of the exe.
 * ✔ (player logs 2026-11-06, 0.7.8) the co-op DNA sync (`game::dna_add_raw` = the original AddEvolutionPoints) applies
   the partner's spends as negative deltas: each editor spend lowered the other player's bar by the amount (guest -50
   after the host's editor, guest -444 and host -309 after both editors). The brain level [0x169E370] does not go down.
+
+## Shared DNA spends without the evolution bar (2026-11-06, fix/w45-evo-bar)
+<a id="creature-bar-spend"></a>
+
+BUG-0630, GOG 2024 (dc04aee5), lab lane 4.
+* ✔ (runtime, lab 20261106-174018, `coop.fix creature.bar_spend off` = 0.7.8) the mechanism of
+  #creature-evolution-bar seen in the game: a spend made the game's way (`coop.dna spend 30` = SetEvolutionPoints,
+  as the editor's result) left the spender's bar (cPlayer +0x10F0) at 130 and lowered the partner's to 100, in both
+  directions; two spends of 20 at once lowered both bars by 40; an overspend lowered them by the part above 0 only
+  (the guest clamps its delta to the DNA it has).
+* ✔ gains: a game reward on either player (`coop.dna gain`, AddEvolutionPoints through the hook) raised the DNA and
+  the bar together on both games (bar == DNA after a fresh fixture: the fixture starts with 0 and 0).
+* Fix `creature.bar_spend` (game.cpp `dna_add_raw`, the one path every shared change takes: the host's total on a
+  guest, a guest's spend on the host, the owed spend, the own editor's price): a negative change is written with
+  SetEvolutionPoints (the DNA only, never below 0), a gain still goes through the original AddEvolutionPoints.
+  `coop.dna` prints `bar=` (cPlayer +0x10F0).
+* ~ not covered: a host total that holds a gain and a spend at once (both in one tick of the host, or a total a guest
+  applies late: g_dna_pending) reaches a guest as one net change; when the spend is larger the gain does not reach the guest's bar (the host's does get it).

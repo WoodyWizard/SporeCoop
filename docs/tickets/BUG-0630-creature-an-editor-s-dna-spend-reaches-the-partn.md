@@ -1,19 +1,19 @@
 ---
 id: BUG-0630
 title: Creature: an editor's DNA spend reaches the partner as a negative AddEvolutionPoints and lowers its evolution bar (cPlayer +0x10F0): the guest's bar fell to almost 0, the host's was halved
-status: open
+status: fixed
 kind: desync
 stage: Creature
 reported: 2026-11-06
 source: player report 2026-11-06 (Discord, 0.7.8): discord-2026-11-06/M0ng0r-08, M0ng0r-09, Sterben-05
 role: both
 versions: 0.7.8
-fixed_in:
-branch:
+fixed_in: unreleased
+branch: fix/w45-evo-bar
 commits:
-tests:
+tests: evo_bar, evo_bar_editors
 signature:
-docs: docs/re/creature.md#creature-evolution-bar
+docs: docs/re/creature.md#creature-evolution-bar, docs/re/creature.md#creature-bar-spend
 related: BUG-0466, BUG-0510, BUG-0128, BUG-0419
 ---
 

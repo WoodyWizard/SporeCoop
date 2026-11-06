@@ -7,6 +7,9 @@
   report and its `.dmp`); the `.txt` and `.dmp` alone are needed only when there is no such zip.
 
 ### Fixed
+- Creature: spending DNA in an editor no longer lowers the other players' evolution bar (the bar could drop to almost
+  nothing after both players used their editors, or be halved); a spend now takes only the shared DNA, as in a game
+  of one, and the bar keeps everything the party earned (BUG-0630).
 - A guard against a crash when an NPC reacted to a creature that had just been destroyed (BUG-0456) was switched off
   by mistake since 0.7.5; it works again (BUG-0623).
 - Tribe and other stages: when a game was loaded within a few seconds of the galaxy menu coming up, the menu's
