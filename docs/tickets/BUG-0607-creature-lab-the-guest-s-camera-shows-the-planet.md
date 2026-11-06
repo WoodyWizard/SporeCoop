@@ -49,6 +49,8 @@ in Creature). FAIL (SPORE_FIX_OFF=world.intro_at_once on the guest before its jo
 mode 01654C08, camera 808.8 m from the avatar after the join and 1357 m after each by-hand intro; 5 of 6 starts missed
 the race). PASS: lab 20261106-140930 #1, #3 (the same race, the intro "not started" in mode 01654C08, camera 10.2 m),
 20261106-142441 (6 of 6, the final code; #1 blocked at the Creature entry), 20261106-140508 (4 of 4).
+Regression: smoke 20261106-143141 (14/14), play_creature (SPORE_DETECTOR=20) and tribe_intro_camera 20261106-150119
+(2/2; detector rows only of known classes: BUG-0487, BUG-0473, BUG-0421).
 
 ## History
 - 2026-11-06: opened.
