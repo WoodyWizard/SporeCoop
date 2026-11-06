@@ -289,6 +289,38 @@ static void camera_snap(const net::Vec3& p)
     g_camera_snaps++;
 }
 
+// BUG-0604: the camera update (0xE600A0) eases the drawn point +0x48 with factors computed from the
+// avatar's speed |+0x90|; one frame with the own cell's velocity NaN (the guest's level-up, mask 0x104,
+// BUG-0307) makes +0x48 NaN, and from then on every frame keeps it NaN (x + (y - NaN) * k): its box
+// clamp around the avatar compares a NaN distance and never runs. The view boxes are built around +0x48,
+// so the screen showed only the water for the rest of the session, while the cell kept swimming. Any
+// non-finite camera point goes back onto our own cell as the game's own jumps set them. Off: 0.7.8 (the
+// view stays lost until the next load).
+static bool g_fix_camera_heal = true;
+COOP_FIX("cell.camera_heal", "BUG-0604", g_fix_camera_heal, "cell: a camera made NaN by a NaN own-cell velocity is put back on our own cell");
+static uint32_t g_camera_heals;
+static bool camera_finite()
+{
+    uint8_t* ui = a_CellUI ? *(uint8_t**)a_CellUI : nullptr;
+    if (!ui || !skg::readable(ui + 0x48, 0x24))
+        return true;
+    for (int i = 0; i < 9; i++)
+        if (!std::isfinite(((float*)(ui + 0x48))[i]))
+            return false;
+    return true;
+}
+static void camera_heal(uint8_t* av)
+{
+    if (!g_fix_camera_heal || !av || camera_finite())
+        return;
+    net::Vec3 p = pos_of(av);
+    if (!views::finite_pos(p))
+        return; // the own cell's heal puts it back first; the camera follows next frame
+    camera_snap(p);
+    if (++g_camera_heals <= 10)
+        H->log(M, SK_WARN, "coop: cell: the camera was not finite, put back on our own cell (%.1f %.1f) (BUG-0604)", p.x, p.y);
+}
+
 static void stop_at(uint8_t* c, const net::Vec3& p)
 {
     if (g_fix_camera_snap && c && c == avatar() && net::dist(pos_of(c), p) > 2.f)
@@ -2202,6 +2234,24 @@ static void SK_CDECL h_PartFree(uint8_t* parts, int i)
     o_PartFree(parts, i);
 }
 
+// tests (BUG-0604, BUG-0307): the own cell's velocity and its particles' velocities NaN (mask 0x104, the
+// guest's level-up in lab 20261105-142923), written after its soft-body step for <n> frames
+static int g_nan_vel_frames;
+static void nan_velocity(uint8_t* c)
+{
+    float nan = std::nanf("");
+    auto* v = (float*)(c + kVel);
+    v[0] = v[1] = nan;
+    int n = F<int>(c, 0x250);
+    uint8_t* parts = G() ? F<uint8_t*>(G(), 0x4108) : nullptr;
+    if (F<uint32_t>(c, 0x248) && parts && n > 1 && n <= 64)
+        for (int i = 0; i < n; i++) {
+            uint32_t k = F<uint32_t>(c, 0x254 + 4 * i);
+            if (k < 1500)
+                for (int j = 0; j < 2; j++)
+                    ((float*)(parts + 0x4654 + 12 * (size_t)k))[j] = nan;
+        }
+}
 using Soft_t = void(SK_CDECL*)(uint8_t*, void*, float);
 static Soft_t o_Soft;
 static void SK_CDECL h_Soft(uint8_t* c, void* res, float dt)
@@ -2210,6 +2260,10 @@ static void SK_CDECL h_Soft(uint8_t* c, void* res, float dt)
     if (own)
         own_probe("before the soft body");
     o_Soft(c, res, dt);
+    if (own && g_nan_vel_frames > 0) { // tests (BUG-0604): the level-up's NaN velocity inside the cell step
+        g_nan_vel_frames--;
+        nan_velocity(c);
+    }
     if (own)
         own_probe("soft body");
     if (!c || !g_mirror_fixes || !is_guest() || !in_cell() || g_mirrors.empty())
@@ -3213,6 +3267,8 @@ void tick(double now)
         g_leave_writes++;
     }
     solo_tick();
+    if (cell)
+        camera_heal(avatar()); // BUG-0604: solo too (a session that ended keeps the lost view)
     if (!in_cell() || !C.sess || !C.sess->connected() || !avatar())
         return;
     bg_cull(now);
@@ -4421,9 +4477,9 @@ std::string debug(const std::vector<std::string>& a)
         auto* l = (float*)(ui + 0x60);
         net::Vec3 me = pos_of(av);
         char b[320];
-        snprintf(b, sizeof b, "cam=(%.2f %.2f) target=(%.2f %.2f) lag=(%.2f %.2f) avatar=(%.2f %.2f) off=%.2f follow=%u bc=%.2f snaps=%u scale=%.3f",
+        snprintf(b, sizeof b, "cam=(%.2f %.2f) target=(%.2f %.2f) lag=(%.2f %.2f) avatar=(%.2f %.2f) off=%.2f follow=%u bc=%.2f snaps=%u scale=%.3f heals=%u",
                  d[0], d[1], t[0], t[1], l[0], l[1], me.x, me.y, std::hypot(d[0] - me.x, d[1] - me.y),
-                 F<uint32_t>(ui, 0xE0), F<float>(ui, 0xBC), g_camera_snaps, G() ? F<float>(G(), 0x514C) : 0.f);
+                 F<uint32_t>(ui, 0xE0), F<float>(ui, 0xBC), g_camera_snaps, G() ? F<float>(G(), 0x514C) : 0.f, g_camera_heals);
         return b;
     }
     if (a.size() >= 3 && a[0] == "tp") { // move our cell to <dx dy> from the nearest partner [or player <id>]
@@ -4783,6 +4839,10 @@ std::string debug(const std::vector<std::string>& a)
         uint8_t* av = avatar();
         if (!av)
             return "no avatar\n";
+        if (a.size() >= 2 && a[1] == "vel") { // BUG-0604: velocity NaN inside the next <n> cell steps (default 17)
+            g_nan_vel_frames = a.size() >= 3 ? std::clamp(atoi(a[2].c_str()), 1, 600) : 17;
+            return "own cell velocity NaN for " + std::to_string(g_nan_vel_frames) + " steps\n";
+        }
         float nan = std::nanf("");
         int n = F<int>(av, 0x250);
         uint8_t* parts = G() ? F<uint8_t*>(G(), 0x4108) : nullptr;
