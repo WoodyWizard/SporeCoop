@@ -11,7 +11,7 @@ versions:
 fixed_in: unreleased
 branch: rel/0.7.9
 commits: 64f66aea
-tests:
+tests: civ_tribe_left, creature (lab gate "hook not made", tools/lab.py)
 signature:
 docs:
 related: BUG-0456, BUG-0539

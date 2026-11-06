@@ -31,6 +31,7 @@ summary.md).
 """
 import argparse
 import datetime
+import glob
 import json
 import os
 import re
@@ -297,6 +298,14 @@ def run_one(t, lane, tree, logdir, warm, suffix=''):
                       for i in died]
         lab_fails += [f'FAIL lab: new report {os.path.basename(p)}' for p in new_reports]
         lab_fails += [f'FAIL lab: faults in the log: {l}' for l in faults if fault_count(l) > 0]
+        # BUG-0623: a hook the mod could not make (two hooks of one function: the second fails and its fix is off)
+        for gl in sorted(glob.glob(os.path.join(logdir, f'{t["name"]}{suffix}.*game.log'))):
+            try:
+                with open(gl, errors='replace') as f:
+                    bad = sorted({m.group(1) for m in re.finditer(r'hook_create ([0-9A-Fa-f]+) failed: (MH_ERROR_\w+)', f.read())})
+            except OSError:
+                bad = []
+            lab_fails += [f'FAIL lab: hook not made in {os.path.basename(gl)}: {a}' for a in bad]
     gate_fails, gate_notes, _ = log_gates(t, lane, text, marks0, t0)
     lab_fails += gate_fails
     ok = rc == 0 and 'RESULT: FAIL' not in text and 'Traceback' not in text and has_result and not lab_fails
