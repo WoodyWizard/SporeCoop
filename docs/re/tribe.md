@@ -2002,3 +2002,20 @@ in Ghidra / objdump. ✔ = observed, ~ = read in the code but not seen running, 
   measured, the fix is limited to the Tribe stage.
 * BUG-0608 (a relayed world effect at the sender's absolute position) came only from the two grounds differing; with
   one ground on every game the absolute position is on the receiver's ground too.
+
+## A dead member's body: out of the member list, still in the world (2026-11-06, fix/w45-last)
+<a id="tribe-member-body"></a>
+
+BUG-0620. GOG 2024, lab lane 5 (play_tribe + `coop_tribe_member_place.py --attach`, tribe_dead_player).
+* ✔ (runtime) A **player** tribe's member that dies leaves its tribe's member list (cTribe +0x340): its +0x1014
+  (mpOwnerTribe) reads 0, it is in no tribe's list, and the game keeps the body (dead flag +0xB5E = 1, adult, its last
+  order record still there, `coop.tribe who`) for 10-24 s more. An NPC tribe's member killed the same way stays in its
+  tribe, knocked out (BUG-0488's tribe_dead_member).
+* ✔ The mod's member set (host_tick) comes from the member lists only: the body left the snapshot at once and the
+  guest removed its mirror, so the detector saw a lone host citizen (`Tribe:unmatched:citizen`). Fixed by
+  `tribe.member_body`: such a body is sent with its last tribe and health 0 while the game keeps it (60 s at most).
+* ✔ BT node **0x05218BB3** = the creature fight node (node table .data 0x1583F40: enter 0xD69540, tick 0xD69740, exit
+  0xD673B0): play_tribe's "no movement" orders of members in it (a gather order to the leader, a social order) are
+  members in a fight that the game keeps fighting; not the gather stall of BUG-0531.
+* ~ `coop.tribe ai`'s order target check (tgt_listed) reads 0 for trees: a fruit tree (cTreeData, noun 0x6ABEE7E) is
+  no object of the game's object list.
