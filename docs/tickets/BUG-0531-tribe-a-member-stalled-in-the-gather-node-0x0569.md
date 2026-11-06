@@ -1,7 +1,7 @@
 ---
 id: BUG-0531
 title: Tribe: a member stalled in the gather node (0x0569236E, state 1, walk goal an old tree 100 m off) does not act on a new order
-status: open
+status: not-reproduced
 kind: bug
 stage: Tribe
 reported: 2026-11-04
@@ -11,7 +11,7 @@ versions:
 fixed_in:
 branch: fix/w42-tribe-left
 commits:
-tests: tribe_gather_stall (coop_tribe_gather_stall.py)
+tests: tribe_gather_stall (coop_tribe_gather_stall.py), tribe_gather_block (coop_tribe_gather_block.py)
 signature:
 docs: docs/re/tribe.md#tribe-gather-orders
 related:
@@ -31,6 +31,24 @@ fix/w42-tribe-left (GOG 2024, Ghidra + runtime lane 6, docs/re/tribe.md#tribe-ga
 * Inferred, not shown: the play_tribe stall needs state 1 with the walk itself stopped short of the tree (standing,
   walk mode 1), the same kind of stop as the grab spots of BUG-0505. Not reproduced, so not fixed.
 
+* fix/w45-last (L5 of 0.7.9), a serious attempt with new diagnostics (`coop.tribe ai` ends with the order target's
+  object; play_tribe prints every order nobody moved on with the host's ai lines), observed:
+  - play_tribe x2 with the detector (lab 20261106-132448, 20261106-133817): 3 + 2 orders without movement, none in the
+    gather node 0x0569236E. Four were members in the BT node **0x05218BB3 = the creature fight node** (node table .data
+    0x1583F40: enter 0xD69540, tick 0xD69740, exit 0xD673B0): the leader (#1, tool 11) given a gather order, a member
+    carrying 10 food given a social order to a tribe 160 m off, three members raiding a hut 7 m from it; the game keeps a
+    member in a fight, as for the host's own clicks. One was a member already carrying 9.5 food (rec=2, node
+    0x04600D16). So play_tribe's "idle" orders on the current code are the game's fights, not a stall.
+  - tribe_gather_block (new probe, lab 20261106-141225): a guest's member put 6 m behind a hut and sent to gather a fruit
+    tree 21 m beyond it: the gather walk went round the hut (state 1, walk mode 1, goal r=6.7 m), reached the tree in
+    3.4 s (state 2, walk mode 3, r=0.1), picked (4, 6) and carried home (19): no stall.
+  - The order path: a guest's gather order on a tree the host's flora does not have within 1 m is rejected on the host
+    (`rejected: no such target here`, play_tribe counts it `lost`), so a "tree gone or replaced" order never reaches a
+    member; a gather order 90-120 m off walks (tribe_gather_stall, 7 runs of fix/w42-tribe-left, T2's teleports).
+  Not seen in 0.7.9 code: the 0569236E state 1 stall with the walk stopped short. Inferred: the 2026-11-05 stall
+  (walk mode 1, goal 2.8 m from a standing member) was a walk blocked by the ground or an obstacle the game's own
+  pathing did not get round; no mod object takes part in it (the host's member runs the game's own AI).
+
 ## Fix
 None (not reproduced). A watchdog that ended the gather node (state 0xF) / re-gave a lost order was written and
 removed again: without a failing run it could not be shown to help. Diagnostics added: `coop.tribe ai` prints the
@@ -38,6 +56,10 @@ food carried (`carry=`) and the held tool; `coop.tribe order <id> <action> <x y 
 as host_command does.
 
 ## Verification
+no-fail-run: not reproduced in 0.7.9 (play_tribe out/lab/20261106-132448, 20261106-133817: the idle orders were the fight
+node 0x05218BB3; tribe_gather_block out/lab/20261106-141225: no stall behind a hut). Closed not-reproduced; reopen with a
+play_tribe log whose `orders without movement` block shows node 0569236E state 1 (the ai line has the walk, goal r and
+the target).
 no-fail-run: not reproducible with tribe_gather_stall (coop_tribe_gather_stall.py), which passed its order checks in
 out/lab/20261104-100046 (2/2), 20261104-100604 (3 runs: 2 OK, #3 failed only its control walk, the walk ending at
 the hut's edge), 20261104-100245 (order checks: 1 of 2 runs had the walk stop 8.8 m short at an obstacle). The test
@@ -67,3 +89,4 @@ stays as a regression check (suite tribe_gather_stall).
   not a tree goal, ~ an intermediate goal of an obstacle walk), so a watch keyed on the distance alone would not have
   matched that state either. Next: catch it in play_tribe with `coop.tribe ai` of the stuck member (its r and walk
   flags) before choosing a fix. Stays open.
+- 2026-11-06 (fix/w45-last, L5 of 0.7.9): two play_tribe runs with the new diagnostics and a hut-obstacle probe: no stall; the idle orders are the game's fight node; closed not-reproduced.

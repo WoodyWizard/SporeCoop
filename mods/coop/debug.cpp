@@ -143,6 +143,17 @@ int c_ground(void*, int argc, const char* const* argv, SkOut* out)
     float g = game::ground_radius(p);
     float r = std::sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
     SAY("ground %.2f point %.2f above %.2f", g, r, r - g);
+    // BUG-0562: the surface on the point's radial line as the game's snap finds it (cPlanetModel_SurfacePoint: the terrain
+    // or a collision object over it, a nest mound or a rock, where the collision is loaded): the point's height over it
+    uintptr_t sf = H->sym("SporeCoop::cPlanetModel_SurfacePoint"), pg = H->sym("Simulator::cPlanetModel::Get");
+    void* pm = pg ? ((void*(__cdecl*)())pg)() : nullptr;
+    if (pm && sf && r > 1.f) {
+        float in[3] = {p.x, p.y, p.z}, o[3] = {0, 0, 0};
+        skg::thiscall<float*>(sf, pm, o, (const float*)in, 0);
+        float sr = std::sqrt(o[0] * o[0] + o[1] * o[1] + o[2] * o[2]);
+        if (sr > 1.f)
+            SAY(" surface %.2f over_surface %.2f", sr, r - sr);
+    }
     return 0;
 }
 
@@ -186,6 +197,42 @@ int c_abilities(void*, int argc, const char* const* argv, SkOut* out)
             game::teleport(av, p, game::orientation(av));
         p = game::position(av);
         SAY("at (%.2f %.2f %.2f)\n", p.x, p.y, p.z);
+        return 0;
+    }
+    if (argc > 1 && !strcmp(argv[1], "reach")) { // tests (BUG-0618): the game's own reach of each ability
+        // The ability use 0xD1E930 for melee / ranged attacks: gap = Ability_TargetGap(avatar spatial, target
+        // spatial, 1) (centre distance minus both radii), in reach when gap <= (ability +0xF4 + +0xA8) *
+        // Ability_RangeScale(0); else the game posts a walk-and-attack goal (0x20). Status 0 = usable (0xD49220).
+        uintptr_t gap_f = H->sym("SporeCoop::Ability_TargetGap"), scale_f = H->sym("SporeCoop::Ability_RangeScale"),
+                  st_f = H->sym("SporeCoop::AbilityBar_Status");
+        uint8_t* tc = *(uint8_t**)((uint8_t*)av + 0xE7C); // the target's combatant (creature +0x5A8)
+        float gap = -1.f;
+        if (tc && gap_f && skg::readable(tc - 0x5A8, 0x5B0)) {
+            uint8_t* t = tc - 0x5A8;
+            gap = ((float(__cdecl*)(void*, void*, bool))gap_f)((uint8_t*)av + 0xC0, t + 0xC0, true);
+            SAY("target %p dead=%d gap=%.2f\n", (void*)t, *(uint8_t*)(t + 0xB5E), gap);
+        } else
+            SAY("target none\n");
+        float sc = scale_f ? ((float(__cdecl*)(int))scale_f)(0) : 1.f;
+        int n = skg::vcall<int>(av, 0xB0 / 4);
+        for (int i = 0; i < n && i < 64; i++) {
+            uint8_t* a = skg::vcall<uint8_t*>(av, 0xB4 / 4, i);
+            if (!a || !skg::readable(a, 0x13C))
+                continue;
+            float reach = (*(float*)(a + 0xF4) + *(float*)(a + 0xA8)) * sc;
+            int st = st_f ? ((int(__cdecl*)(int))st_f)(i) : -1;
+            SAY("ab %d type=0x%X row=%d key=0x%X reach=%.2f min=%.2f/%.2f status=%d\n", i, *(uint32_t*)(a + 8),
+                *(int*)(a + 0xC), *(uint32_t*)(a + 0x38), reach, *(float*)(a + 0x134), *(float*)(a + 0x138), st);
+        }
+        // the HUD bar (AbilityBar_ptr): the keys 1..5 use the slots of the stance's row (row*0x28 + col*8)
+        if (uintptr_t bp = H->sym("SporeCoop::AbilityBar_ptr"))
+            if (uint8_t* bar = *(uint8_t**)bp; bar && skg::readable(bar, 0xD8))
+                for (int row = 0; row < 5; row++) {
+                    SAY("bar %d:", row);
+                    for (int col = 0; col < 5; col++)
+                        SAY(" %d", *(int*)(bar + row * 0x28 + col * 8));
+                    SAY("\n");
+                }
         return 0;
     }
     if (argc > 1 && !strcmp(argv[1], "halt")) { // tests (BUG-0408): it stops at once (a stop without slowing down)

@@ -3211,3 +3211,50 @@ BUG-0339, BUG-0611. GOG 2024, lab lanes 6/7. Follows [the host's NPC set while i
   Loading-mode start is "not started" (lab 20261106-140930 #1, #3) and the camera is 10.2 m from the avatar.
   Test creature_intro_camera (`twoinst.start(join_at=12.5)`: the guest joins 12.5 s after its menu's log line, about
   one start in three hits the Loading mode; SPORE_FIX_OFF goes to the guest before the join).
+## The avatar's attack: target, reach, the walk-and-use goal (2026-11-06, fix/w45-last)
+<a id="creature-attack-reach"></a>
+
+BUG-0618. GOG 2024, Ghidra + runtime on lane 4 (`coop.abilities reach`, out/w45last/hunt_probe.py of the branch).
+* ✔ (Ghidra) A key of the HUD bar runs `AbilityBar_Use` 0xD49560: `AbilityBar_Status` 0xD49220 (0 usable) then
+  `Ability_Use` 0xD1E930(avatar, index). For the melee / ranged attack kinds (types 0x1E-0x21, 0x3D, 0x3E, 0x41, 0x42,
+  0x48-0x4B) the target is the avatar's combat target **+0xE7C** (the target's combatant, creature +0x5A8); the gap is
+  `Ability_TargetGap` 0xD99A20(avatar +0xC0, target spatial, row == 1) = centre distance minus both radii (spatial vt
+  0x74); in reach when ability +0x134/+0x138 (min) <= gap <= (ability +0xF4 + +0xA8) * `Ability_RangeScale` 0xD38A30(0)
+  (1.0 for the fixture): the avatar attacks at once (0xC03D80). **Out of reach the game itself posts the goal 0x20**
+  (0xC032F0(0x20, 0, FLT_MAX, index): walk to the target, then use the ability). Status 3 = no target, 8 = recharging.
+* ✔ (runtime) A left click on an NPC in the combat stance only sets +0xE7C: the creature does not move (gap 39.4 m
+  for 20 s, both games). One key press then walks it to the target (gap 45 -> 13 m, 10 -> 1.0 m in 3 s) and it
+  bites; in reach a key works when the status is 0 (8 between bites): the guest killed an NPC alone with 7 hits in
+  12 s, the host likewise (6 -> 0 hp).
+* ✔ (runtime) The creature fixture's combat row of the bar (AbilityBar_ptr row 1) has **one** filled slot: key 1 =
+  ability 5 (type 0x1E, reach 1.0 m). Keys 2-4 do nothing in the combat stance. Ability 1 (type 0x1D, reach 100) is in
+  row 1 but on no bar slot.
+* ✔ Why play_creature's guest landed few hits (BUG-0618): the old bot clicked the target before every key (each
+  click cancels the game's walk-and-use goal), pressed keys 2-4 half of the time, and pressed while recharging.
+  Pressing in the game's reach: guest sent 47 / applied 47 hits for 64 key presses (lab 20261106-125018) against
+  39 for 282 (fix/w45-int2 20261106-054817) and 16 for 196 (rel/0.7.9 20261106-040221).
+* ~ The game clears +0xE7C often during a hunt (play_creature: `retarget_none` 183 / 258 times per 10 min): the bot
+  clicks the target again then; not looked into (each bite? the target's flee?).
+
+## A nest's animals inside the mound when the host is far (2026-11-06, fix/w45-last)
+<a id="creature-nest-mound-proxy"></a>
+
+BUG-0562 (player video: "a creature got stuck into the nest after backing away"). GOG 2024, lab lane 5,
+coop_npc_nest_backoff.py (`coop.ground x y z` prints the point's height over `cPlanetModel_SurfacePoint`, the surface
+with the collision objects: the terrain or a nest mound / rock).
+* ✔ (runtime, 9 cold runs) With the host's player 120 m from the fixture's nest at (-126 -488 -65) and the guest at the
+  nest, the host's game has the nest's NPC that stands nearest the mound's centre (#18, 0.2-2.9 m from it) 0.43-0.97 m
+  **inside** the mound, for the whole 10 s before the roar (every cold run); with the host's player at the nest
+  (npc_nest_backoff_near) every NPC stays within 0.05 m of the surface. Inferred from this and
+  #creature-out-of-view-ground: a game simulates creatures far from its own camera without the mound (on the plain
+  `GetHeightAt` terrain).
+* ✔ (runtime) The guest's proxy of it was drawn at the host's place, inside the guest's mound: on the guest's screen
+  11.2 and 13.3 s of 24 s, 0.47-0.76 m in it (`SPORE_FIX_OFF=npc.proxy_mound`, lab 20261106-131754; also
+  -130629). The guest's camera is at the nest, so its mound is solid there and the game does not lift a creature put
+  that far in it. Off the guest's screen the guest's game draws it on the plain terrain anyway (no matter the fix).
+* ✔ The roar's backing away (node 0x02D852E0) takes it out of the mound on the host within 3-5 s (moved 5-7 m); it
+  was the nest's resting place, not the back-off, that put it inside. The report's "after backing away" is consistent
+  with an NPC coming back to rest at its nest.
+* Fix `npc.proxy_mound` (npc.cpp): a proxy (not in the air, not dead) whose target or drawn place is 0.1-2.5 m under
+  this game's surface where that surface is over the plain terrain is put 5 cm under the surface (the game sets it
+  onto it). Counters `mound_lifts` / `mound_targets` in `coop.npc`.

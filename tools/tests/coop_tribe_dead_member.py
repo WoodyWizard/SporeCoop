@@ -12,7 +12,8 @@ game keeps the body, so the host's snapshot drops them and the guest removes its
 PASS: whenever the host's game has a citizen there, the guest's has one within 15 m too.
 SPORE_FIX_OFF=tribe.dead_body: must FAIL.
 
-  SPORE_LANE=4 python3 tools/tests/coop_tribe_dead_member.py [--all: every member of that tribe]
+  SPORE_LANE=4 python3 tools/tests/coop_tribe_dead_member.py [--all: every member of that tribe] [--player: a member of
+  the host's own tribe, BUG-0620; SPORE_FIX_OFF=tribe.member_body must FAIL]
 """
 import math
 import sys
@@ -30,6 +31,9 @@ def citizens_at(con, p, r=20.0):
 
 
 ALL = '--all' in sys.argv
+# BUG-0620: the victim is a member of the player tribe (the host's own): a player's member that dies leaves its
+# tribe's member list while the game keeps its body (an NPC tribe's stays in its tribe, knocked out)
+PLAYER = '--player' in sys.argv
 
 
 def main():
@@ -46,6 +50,15 @@ def main():
     if not pair:
         return ck.result()
     victim, attacker = pair
+    if PLAYER:
+        own = [i for i, m in hm.items() if m[3] == 'player']
+        ck(len(own) >= 2, f'the player tribe has two members ({len(own)})')
+        if len(own) < 2:
+            return ck.result()
+        victim = own[-1]
+        p0 = hm[victim][2]
+        attacker = min(npc, key=lambda i: math.dist(npc[i][2], p0))
+        npc = {**npc, victim: hm[victim]}
     p = npc[victim][2]
     print(f'  victim #{victim} at {worlddiff._fmt(p)}; host citizens there {len(citizens_at(host, p))}, guest '
           f'{len(citizens_at(guest, p))}', flush=True)
@@ -57,12 +70,15 @@ def main():
             print(f'  host: #{v}', host.call(f'coop.tribe pincer {v} {att} 1000')['out'].strip(), flush=True)
     else:
         print('  host:', host.call(f'coop.tribe pincer {victim} {attacker} 1000')['out'].strip(), flush=True)
-    t0, bad, host_body = time.time(), [], 0
+    t0, bad, host_body, in_guest_list = time.time(), [], 0, []
     while time.time() - t0 < (60 if ALL else 25):
         t = time.time() - t0
         hc, gc = citizens_at(host, p, 6), citizens_at(guest, p, 21)
-        lone = [q for q in hc if not any(math.dist(q, g) <= 15 for g in gc)]
+        # BUG-0620 (--player): a body lies still, its mirror where it is (3 m); the village's other members are near
+        lone = [q for q in hc if not any(math.dist(q, g) <= (3 if PLAYER else 15) for g in gc)]
         in_list = victim in members(host)
+        if PLAYER and t > 3 and victim in members(guest):  # BUG-0620: the guest's body is no member (not selectable)
+            in_guest_list.append(round(t, 1))
         if hc and not in_list:
             host_body += 1
         print(f'    {t:4.1f} s: host citizens within 6 m {len(hc)} (victim in its tribe: {in_list}), guest within 21 m '
@@ -71,6 +87,10 @@ def main():
             bad.append(t)
         time.sleep(2)
     print(f'  host samples with a body out of the member list: {host_body}', flush=True)
+    print('  host: ' + next((x for x in host.call('coop.tribe')['out'].splitlines() if 'tribe(host)' in x), ''), flush=True)
+    if PLAYER:
+        ck(host_body > 0, f'the host\'s game kept the body of its member out of the member list ({host_body} samples)')
+        ck(not in_guest_list, f'the body is no member of the guest\'s tribe either ({in_guest_list[:4]})')
     ck(not bad, f'every host citizen at the victim\'s place has a partner on the guest ({len(bad)} samples not: {bad[:5]})')
     ck.faults(host=host, guest=guest)
     return ck.result()

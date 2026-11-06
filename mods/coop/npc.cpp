@@ -170,6 +170,29 @@ COOP_FIX("npc.stale_proxy", "BUG-0009", g_stale_fix, "creature: a guest drops a 
 COOP_FIX("npc.world_despawn", "BUG-0009", g_world_despawn_fix, "creature: the host despawns its NPCs of a world it left at the guests");
 COOP_FIX("npc.play_death", "BUG-0015", g_death_fix, "creature: a guest's proxy of a killed NPC plays the death");
 void set_stall_fix(bool on) { g_stall_fix = on; }
+
+// BUG-0562 (docs/re/creature.md#creature-nest-mound-proxy): a game simulates the creatures far from its own camera
+// without the collision objects (a nest mound): the host's NPC of a nest the host's camera is not at stands on the
+// plain terrain, 0.4-0.7 m inside the mound, and the guest's proxy of it was drawn there, in the nest (the guest's
+// camera is at the nest: its mound is solid, and the game does not lift a creature put that far under). With
+// npc.proxy_mound a standing proxy's target under this game's surface (cPlanetModel_SurfacePoint: the mound) by more
+// than kMoundMin and less than kMoundMax, where that surface is over the plain terrain, is put kMoundSink under the
+// surface (the game sets it onto it). `coop.fix npc.proxy_mound off`: at the host's position (0.7.8).
+static bool g_proxy_mound_fix = true;
+COOP_FIX("npc.proxy_mound", "BUG-0562", g_proxy_mound_fix,
+         "creature: an animal of a nest the host is far from stands on its nest mound on the guest, not inside it");
+static uint32_t g_mound_lifts, g_mound_targets;
+static net::Vec3 proxy_on_mound(const net::Vec3& p)
+{
+    constexpr float kMoundMin = 0.1f, kMoundMax = 2.5f, kMoundSink = 0.05f;
+    if (!g_proxy_mound_fix || !game::in_creature_stage())
+        return p;
+    float r = std::sqrt(p.x * p.x + p.y * p.y + p.z * p.z), sr = game::surface_radius(p), g = game::ground_radius(p);
+    if (r < 1.f || sr <= 0.f || g <= 0.f || sr - r <= kMoundMin || sr - r >= kMoundMax || sr <= g + kMoundMin)
+        return p;
+    float k = (sr - kMoundSink) / r;
+    return {p.x * k, p.y * k, p.z * k};
+}
 // a killed proxy plays the game's death (BUG-0015); coop.npc deathfix off (= npc.play_death off): it
 // does not (tests: seeds the 0-health mirror that stands alive, BUG-0148)
 void set_death_fix(bool on) { g_death_fix = on; }
@@ -1741,6 +1764,13 @@ static void guest_tick(double now)
         // BUG-0550: the host's NPC is off its ground: at its height over the host's terrain, over this game's, not
         // grounded (drive::air_place); not walked (the walk is ended, it walks again after the landing)
         const bool air = g_air_fix && !px.killed && (s.flags & net::NF_AIR) && !(s.flags & net::NF_DEAD);
+        if (!air && !px.killed && !(s.flags & net::NF_DEAD)) { // BUG-0562: the host's NPC inside this game's mound
+            const net::Vec3 up = proxy_on_mound(s.pos);
+            if (up.x != s.pos.x || up.y != s.pos.y || up.z != s.pos.z) {
+                s.pos = up;
+                g_mound_targets++;
+            }
+        }
         if (air) {
             px.kinematic = false;
             drive::air_place(px.c, drive::at_sender_agl(s.pos, s.agl), s.rot, s.vel, px.drv, now);
@@ -1809,6 +1839,13 @@ static void guest_tick(double now)
                // (~2.5 km/s away from the planet; driven, it stayed ~80 m up: play_tribe.py)
             *(net::Vec3*)((uint8_t*)px.c + game::kVelOff) = {0, 0, 0};
             game::teleport(px.c, s.pos, s.rot);
+        }
+        if (!px.killed && !px.air && px.c) { // BUG-0562: drawn inside this game's nest mound: onto it
+            const net::Vec3 now_at = game::position(px.c), up = proxy_on_mound(now_at);
+            if (up.x != now_at.x || up.y != now_at.y || up.z != now_at.z) {
+                game::teleport(px.c, up, game::orientation(px.c));
+                g_mound_lifts++;
+            }
         }
         if ((s.flags & net::NF_DEAD) && !px.killed) {
             px.killed = true;
@@ -2567,11 +2604,12 @@ std::string status()
             spawned += px.c != nullptr;
         snprintf(b, sizeof b, "npc(guest): proxies=%u spawned=%u local_removed=%u hits_sent=%u damage_in=%u lost=%u host_away=%d "
                  "away_dropped=%u local_alive=%u in_nest=%u nests=%u stale_dropped=%u strays_removed=%u hatch_helped=%u "
-                 "deaths_played=%u kill_held=%u away_locals=%u unlisted=%u nospecies=%u leave_locals=%u thaw_kept=%u rxkeep_cut=%u\n",
+                 "deaths_played=%u kill_held=%u away_locals=%u unlisted=%u nospecies=%u leave_locals=%u thaw_kept=%u rxkeep_cut=%u mound_lifts=%u mound_targets=%u
+",
                  (unsigned)g_proxies.size(), spawned, g_removed_local, g_hits_sent, g_damage_in, g_proxy_lost, (int)g_host_away,
                  g_away_proxies, g_local_alive, g_proxies_in_nest, (unsigned)g_local_herds.size(), g_stale_dropped,
                  g_strays_removed, g_hatch_helped, g_deaths_played, (unsigned)g_kill.size(), g_away_locals, g_proxy_unlisted,
-                 g_proxy_nospecies, g_leave_locals, g_thaw_kept, g_rxkeep_cut);
+                 g_proxy_nospecies, g_leave_locals, g_thaw_kept, g_rxkeep_cut, g_mound_lifts, g_mound_targets);
     }
     return b + meat_status() + game::destroy_deferred_status() + "\n";
 }

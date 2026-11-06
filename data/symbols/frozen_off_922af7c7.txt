@@ -167,3 +167,6 @@ Terrain::cTerrainSphere::ClearAllStamps ; BUG-0332: the coop.terrain stamp probe
 Terrain::cTerrainSphere::RemoveStamp ; BUG-0332: the coop.terrain stamp probes (log-only hooks, terrain_diag.cpp), GOG 2024 only
 Simulator::Cell::ContactSolvePass ; BUG-0307: the contact solver probes and cell.contact_finite (cellsync.cpp), GOG 2024 only
 Simulator::Cell::ContactSolve ; BUG-0307: cell.contact_finite, the unit contact normal (cellsync.cpp), GOG 2024 only
+SporeCoop::AbilityBar_Status ; BUG-0618: coop.abilities reach (a test diagnostic of play_creature), GOG 2024 only
+SporeCoop::Ability_RangeScale ; BUG-0618: coop.abilities reach (a test diagnostic of play_creature), GOG 2024 only
+SporeCoop::Ability_TargetGap ; BUG-0618: coop.abilities reach (a test diagnostic of play_creature), GOG 2024 only

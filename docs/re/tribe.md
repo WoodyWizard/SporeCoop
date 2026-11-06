@@ -2025,3 +2025,48 @@ in Ghidra / objdump. ✔ = observed, ~ = read in the code but not seen running, 
   started M)". Test tribe_intro_camera (starts the intro by hand under a held box).
 * Related: BUG-0607 (a Creature guest's view from space after the same intro ended in the stage). Confirmed and covered by
   this fix: docs/re/creature.md#creature-intro-camera (the intro starts in the Loading mode after a menu load).
+## A dead member's body: out of the member list, still in the world (2026-11-06, fix/w45-last)
+<a id="tribe-member-body"></a>
+
+BUG-0620. GOG 2024, lab lane 5 (play_tribe + `coop_tribe_member_place.py --attach`, tribe_dead_player).
+* ✔ (runtime) A **player** tribe's member that dies leaves its tribe's member list (cTribe +0x340): its +0x1014
+  (mpOwnerTribe) reads 0, it is in no tribe's list, and the game keeps the body (dead flag +0xB5E = 1, adult, its last
+  order record still there, `coop.tribe who`) for 10-24 s more. An NPC tribe's member killed the same way stays in its
+  tribe, knocked out (BUG-0488's tribe_dead_member).
+* ✔ The mod's member set (host_tick) comes from the member lists only: the body left the snapshot at once and the
+  guest removed its mirror, so the detector saw a lone host citizen (`Tribe:unmatched:citizen`). Fixed by
+  `tribe.member_body`: such a body is sent with its last tribe and health 0 while the game keeps it (60 s at most).
+* ✔ BT node **0x05218BB3** = the creature fight node (node table .data 0x1583F40: enter 0xD69540, tick 0xD69740, exit
+  0xD673B0): play_tribe's "no movement" orders of members in it (a gather order to the leader, a social order) are
+  members in a fight that the game keeps fighting; not the gather stall of BUG-0531.
+* ~ `coop.tribe ai`'s order target check (tgt_listed) reads 0 for trees: a fruit tree (cTreeData, noun 0x6ABEE7E) is
+  no object of the game's object list.
+
+## The gather walk round an obstacle; play_tribe's idle orders (2026-11-06, fix/w45-last)
+<a id="tribe-gather-block"></a>
+
+BUG-0531. GOG 2024, lane 5, coop_tribe_gather_block.py and play_tribe (`coop.tribe ai`).
+* ✔ The gather node 0x0569236E's states as `coop.tribe ai` shows them on one gather (a guest's member put 6 m behind a
+  hut, the tree 21 m beyond it): 1 walking to the tree (walk mode 1, goal = the tree, r 6.7 m), 2 the last metres
+  (walk mode 3, a goal by the tree, r 0.1), 4 and 6 at the tree (walk mode 0), 2 again, 19 carrying home (walk mode 1,
+  goal the village, r 6.6; `carry=` read 0.0 there). The way round the hut was found by the game.
+* ✔ play_tribe's "no movement" orders (2 runs) were members in the fight node 0x05218BB3 (#tribe-member-body) or
+  already carrying food; none in 0x0569236E. The state 1 stall of 2026-11-05 was not seen again.
+
+## Carried food on a guest's screen: unbound copies (2026-11-06, fix/w45-last)
+<a id="tribe-carried-bundles"></a>
+
+BUG-0617 (after BUG-0548). GOG 2024, lane 5, coop_world_host.py --case bundle_carry, play_tribe with the detector.
+* ✔ A guest's copy of a carried bundle (wobj game_bundle, class bit 0x100) sits in the container of the guest's copy of
+  the carrier (creature +0x34) and moves with it; with the carrier walking it was 9.5-21.5 m from the host's bundle at
+  the next snapshot (the copy of the member lags, and the made copy starts at the host's place). Bound copies stay
+  bound by id however far; an unbound one stayed the guest's own for good (bundle_own) and kept being carried after
+  the host's member put its food down. Fix `wobj.bundle_carried` (bind within 8 m, no own carried copies).
+* ✔ The guest's tribe mirrors run no behaviour tree (`coop.tribe` ai_skipped = every tick), so a guest's game makes no
+  carried food of its own while the host plays.
+* ✔ The food mats' bundles (census own=held, `game_bundle_held`) are the tribes' food (tribe +0x20C), each game's own
+  container; compared through the state's food values, not as objects.
+* ✔ (2026-11-06, fix/w45-last, addition to #tribe-member-body) On the guest the body's mirror is taken out of its
+  tribe's member (+0x340) and selectable (+0x354, citizen +0xC0) vectors and its +0x1014 cleared, as the host's game
+  does: left in, play_tribe saw one member more on the guest and a guest's order to the body was rejected on the host
+  (lab 20261106-143257). The detached mirror is destroyed with DestroyInstance when the host's body goes.

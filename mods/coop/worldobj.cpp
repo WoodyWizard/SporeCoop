@@ -101,6 +101,8 @@ struct Kind {
     // the host object's class and that position (used instead of `make` when set)
     bool aux = false;
     int (*make_aux)(const net::Vec3& pos, uint32_t host, uint32_t cls, const net::Vec3& aux) = nullptr;
+    // BUG-0617: the bind distance of a class (nullptr: tol for all)
+    float (*tol_for)(uint32_t cls) = nullptr;
 };
 constexpr uint32_t kGone = 0xFFFFFFFFu; // the state of an object the host's game no longer has
 
@@ -586,6 +588,38 @@ static void bundle_collect(Items& out)
         out.push_back(it);
     }
 }
+const char* bundle_holder(void* b, void** carrier)
+{
+    *carrier = nullptr;
+    if (!b || IsBadReadPtr(b, 0x138))
+        return "held";
+    void* holder = field<void*>(b, 0x128);
+    if (holder && holder == ground_container())
+        return "ground";
+    if (holder && !IsBadReadPtr((uint8_t*)holder - 0x34, 0x40)) {
+        void* c = (uint8_t*)holder - 0x34;
+        bool is_c = false;
+        struct Q {
+            void* c;
+            bool* found;
+        } q{c, &is_c};
+        game::for_each_object(
+            [](void* o, uint32_t n, void* u) {
+                auto* q = (Q*)u;
+                if (o == q->c && is_creature_noun(n)) {
+                    *q->found = true;
+                    return false;
+                }
+                return true;
+            },
+            &q);
+        if (is_c) {
+            *carrier = c;
+            return "carried";
+        }
+    }
+    return "held";
+}
 static uint32_t g_bundles_made, g_bundles_carried, g_bundles_removed;
 static void bundle_remove(void* b)
 {
@@ -608,7 +642,19 @@ static void bundle_act(const Item& o, uint32_t now)
         bundle_remove(o.p); // a player of the guest's game took it from the ground
 }
 // guest: a bundle its own creature carries stays (its member's own load: the host gets the food through the shared food)
-static bool bundle_own(const Item& l, double) { return (l.cls & kBundleCarried) != 0; }
+// BUG-0617 (docs/re/tribe.md#tribe-carried-bundles): a guest's copy of a carried bundle is carried by the guest's copy of
+// the member, drawn 1-3.5 m behind the host's member: at the next snapshot it was often more than `tol` (3 m) from the
+// host's bundle, stayed unbound, and as an own carried bundle it stayed for good: the mirror kept carrying food the
+// host's member had delivered (`Tribe:guest_only:game_bundle_carried`), and with its hand full the next copy could not be
+// made (`host_only`). With wobj.bundle_carried a carried bundle binds (and its copy finds the carrier) within kCarriedTol and a guest's unbound carried
+// bundle is not kept (dropped as any own copy: the guest's members run no behaviour of their own while the host plays).
+// `coop.fix wobj.bundle_carried off`: as in 0.7.9 L2.
+static bool g_bundle_carried_fix = true;
+COOP_FIX("wobj.bundle_carried", "BUG-0617", g_bundle_carried_fix,
+         "tribe: the food a member carries on a guest's screen is the food the host's member carries");
+constexpr float kCarriedTol = 8.f;
+static bool bundle_own(const Item& l, double) { return !g_bundle_carried_fix && (l.cls & kBundleCarried) != 0; }
+static float bundle_tol(uint32_t cls) { return g_bundle_carried_fix && (cls & kBundleCarried) ? kCarriedTol : 3.f; }
 static int bundle_make(const net::Vec3& pos, uint32_t host, uint32_t cls, const net::Vec3& aux)
 {
     if (!g_bundle_fix || host == kGone || !a_CreateBundles || !bundle_mgr())
@@ -623,7 +669,7 @@ static int bundle_make(const net::Vec3& pos, uint32_t host, uint32_t cls, const 
             net::Vec3 at;
             float best;
             void* c;
-        } q{aux, 4.f, nullptr};
+        } q{aux, g_bundle_carried_fix ? kCarriedTol : 4.f, nullptr}; // BUG-0617: the copy of the carrier lags
         game::for_each_object(
             [](void* o, uint32_t n, void* u) {
                 auto* q = (Q*)u;
@@ -997,7 +1043,7 @@ static Kind g_kinds[] = {
     // BUG-0548 (0.7.9 L2): every food bundle that is no tribe's food, on the ground or carried
     {.name = "game_bundle", .fix = &g_bundle_fix, .stages = kStTribe | kStCiv, .tol = 3.f, .range = 160.f, .max = 30,
      .collect = bundle_collect, .behind = bundle_behind, .apply = bundle_apply, .acted = bundle_acted, .act = bundle_act,
-     .gone_acted = true, .drop_own = true, .own = bundle_own, .classes = true, .aux = true, .make_aux = bundle_make},
+     .gone_acted = true, .drop_own = true, .own = bundle_own, .classes = true, .aux = true, .make_aux = bundle_make, .tol_for = bundle_tol},
     // BUG-0540 (0.7.9 L2b): the cities' cultural targets at the host's places
     {.name = "cultural_target", .fix = &g_cult_fix, .stages = kStCiv | kStSpace, .tol = 3.f, .range = 400.f, .max = 48,
      .collect = cult_collect, .behind = none_behind, .apply = none_apply, .acted = none_acted, .act = none_act,
@@ -1260,7 +1306,7 @@ static void reconcile(int k, double now, bool fresh)
         auto bi = G.binds.find(id);
         if (bi == G.binds.end()) {
             Item* best = nullptr;
-            float bd = K.tol;
+            float bd = K.tol_for ? K.tol_for(ps.cls) : K.tol;
             for (auto& l : local) {
                 float d = net::dist(l.pos, ps.first);
                 if (d < bd && !used.count({l.p, l.id}) && (!K.classes || l.cls == ps.cls)) {

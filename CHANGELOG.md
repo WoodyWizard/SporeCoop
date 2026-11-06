@@ -21,6 +21,11 @@
   almost every creature around it at once, and they stayed gone while the next caption was up (BUG-0611).
 - Creature: creatures the host's game puts away while it stands still (the host's respawn at its nest) no longer
   stay on a guest's screen where they were, as creatures nobody else has (BUG-0339).
+- Tribe: a guest no longer sees tribe members carrying food that the host's members already put down (BUG-0617).
+- Tribe: when a member of a player's tribe dies, its body now lies on every player's screen as long as it does on the
+  host's; before, it vanished at once on the guests' screens (BUG-0620).
+- Creature: an animal resting at its nest no longer looks stuck inside the nest mound on a guest's screen when the
+  host is somewhere else on the planet (BUG-0562).
 - Civilization: after the host takes a city, its buildings stand at the same places on the guests' screens; before,
   a guest's game could tear one building down and put it up again every two seconds a few metres away (BUG-0602).
 - Spice geysers are now the same size on every player's screen (a geyser the host's game made during play was ten
