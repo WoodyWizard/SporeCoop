@@ -284,7 +284,14 @@ static void creature_drive(void* p, const net::PlayerState& s_in, drive::State& 
         return;
     }
     drive::path_update(ds, s.pos, now);
-    if (g_puppet_path_fix && drive::speed(s.vel) <= 0.3f)
+    // BUG-0408: the partner stopped (its own speed fell to 0.3 m/s or less after a walk): held where it stops for
+    // kStopHold s, not walked on with the path's velocity (that walk's goal ahead slid it 0.3-0.9 m past the stop)
+    const float own_sp = drive::speed(s.vel);
+    if (g_puppet_stop_fix && ds.kinematic && own_sp <= 0.3f && ds.tgt_sp > 0.3f)
+        ds.stop_until = now + kStopHold;
+    ds.tgt_sp = own_sp;
+    const bool holding = g_puppet_stop_fix && now < ds.stop_until && own_sp <= 0.3f;
+    if (g_puppet_path_fix && drive::speed(s.vel) <= 0.3f && !holding)
         s.vel = drive::path_velocity(ds);
     float sp = drive::speed(s.vel);
     bool walk = g_puppet_walk_fix && game::in_creature_stage() && sp > 0.3f && net::dist(game::position(p), s.pos) < 8.f;
@@ -324,7 +331,7 @@ static void creature_drive(void* p, const net::PlayerState& s_in, drive::State& 
         // it stands again: no walk to the goal ahead (a MoveTo to where it stands, not StopMovement: with
         // the placing by SetPosition, tried first, the stop put it back up to 3 m), the driving takes over
         game::air_hold(p, false);
-        if (ds.kinematic && g_puppet_stop_fix)
+        if (ds.kinematic && g_puppet_stop_fix && ds.stop_until < now)
             ds.stop_until = now + kStopHold; // BUG-0408: the walk ends here
         drive::walk_end(p, s.pos, ds, now);
         if (now < ds.stop_until && net::dist(game::position(p), s.pos) < kStopNear) {
@@ -340,7 +347,7 @@ static void creature_drive(void* p, const net::PlayerState& s_in, drive::State& 
             drive::step(p, s.pos, s.rot, s.vel, ds, now, 0, true, 4.f);
         }
     }
-    if (walk || air)
+    if ((walk && own_sp > 0.3f) || air)
         ds.stop_until = 0;
     if (game::herd_of(p) != game::avatar_herd()) {
         game::herd_quiet(game::herd_of(p)); // (the game may enable a herd again)
@@ -490,6 +497,7 @@ static void space_fill(void* u, net::PlayerState& st)
 bool ufo_ident_fix = true;
 COOP_FIX("drive.nudge_dt", "BUG-0175", drive::g_nudge_dt_fix, "creature, tribe: a mirror's pull to its place is per second, not per frame (low frame rates trailed more)");
 COOP_FIX("drive.lead", "BUG-0425", net::g_lead_fix, "creature, tribe, civ: the host's animals, tribe members and vehicles are shown where the host has them now, not 0.2 s behind");
+COOP_FIX("drive.lead_smooth", "BUG-0445", net::g_lead_smooth_fix, "creature, tribe: a host animal whose speed changes is not drawn jumping 1-3 m (the lead's step spread over 0.25 s)");
 COOP_FIX("drive.sender_agl", "BUG-0425", drive::g_sender_agl_fix, "creature, tribe: a partner or animal off the ground is drawn at its height over the sender's ground, over this game's ground");
 COOP_FIX("drive.own_height", "BUG-0329", drive::g_own_height_fix, "tribe: a member's or animal's mirror is driven at its own ground height, not the host's absolute one");
 COOP_FIX("fleet.type", "BUG-0111", ufo_ident_fix, "space: only our own puppets count as puppets, not any UfoType 6 ship (coop.fleet typefix)");

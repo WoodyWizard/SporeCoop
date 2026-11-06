@@ -3004,3 +3004,32 @@ BUG-0434 (follows docs/re/creature.md#creature-out-of-view-ground).
   (200 entries into the view): 0 frames drawn low on the screen (out/lab/20261106-045947, 2 runs), 200 with the switch
   off (out/lab/20261106-050722). The lift after the physics update holds until the frame is drawn, which the writes
   at the mod's frame (Present) never did: the grounding is in or before the physics update.
+
+## A hit NPC's proxy on the guest: who throws it (2026-11-06, fix/w45-remote-bodies-2)
+<a id="creature-hit-throw"></a>
+
+BUG-0409. Both games' own positions (coop.bodyrec) and the locomotion mode column of coop.npctrack (`lm` = +0x2B0,
+`gr` = +0x137) in body_trail_hits (a hit every 5 s on a walking NPC, every other one with a push of 3):
+* ✔ (static, Ghidra) cCreatureBase TakeDamage 0xC1A520 (SporeCoop::CreatureBase_TakeDamage): a type-0 hit on a
+  non-epic creature sets the velocity (creature+0x288, kVelOff) to 4 x (2 x up + push), queues an impulse and sets the
+  locomotion mode +0x2B0 = 3 (thrown) until it lands (0xC05210 in cCreatureAnimal::Update, then the reset
+  0xC06660, SporeCoop::Creature_LocoReset). Other writers of 3 (likely abilities): 0xC14F70, 0xC137B0, 0xC13B90,
+  0xC184D0, 0xC18CA0, 0xC19240, 0xC1B180, 0xB57D10, 0xF234B0.
+* ✔ (observed) The guest's game does NOT throw a living proxy: lm 3 on a guest proxy only after its death (the
+  death replay's local hit `game::apply_damage(..., type 0)`; the corpse is held where the host has it anyway). The
+  ticket's inference "the guest's game applies its own knockback" is disproved for 0.7.9 (npc::damage_filter keeps
+  every hit off a proxy).
+* ✔ (observed) The host's NPC thrown by a push hit moves 13-31 m/s for 0.3-0.9 s, sometimes without mode 3 (the host's
+  lm stayed 0 in run 20261106-045011 n18 while it moved 13-27 m/s). The guest's copy trailed it 2-4.8 m (a saw tooth of
+  one state period): the lead (net::SnapshotBuffer::lead_velocity) takes a path faster than 15 m/s for a teleport and
+  goes on with no velocity, the walk caps the speed, and NPC states go out every 0.1 s (npc.cpp kStateInterval).
+* Tried and dropped (2026-11-06): `npc.host_knockback`, the host flagging a thrown NPC (`NF_THROWN`: mode 3, or its
+  speed over the last 0.1-0.2 s between 9 and 45 m/s; one frame's step was too noisy: a Tribe animal pushed by its herd
+  was flagged and then placed instead of walked and jumped, npc_walk_tribe lab 20261106-052022), sending its state
+  every frame while thrown, the guest placing it on the host's path with velocity 0 (a throw speed written into the
+  locomotion carried it 6-8 m on after the throw, lab 20261106-045947) and the lead following the path up to 45 m/s.
+  Measured over 2-3 runs each (mean distance in the first second after a push hit, max per hit p90): on 0.59-0.90 m /
+  3.6-4.0 m, off 0.94 m / 3.9 m (out/lab 20261106-050936, -053713 on; -044526, -051608, -055638 off): no clear gain,
+  so the code was removed. The rest is the host's throw (13-31 m/s) shown one state period (0.1 s, npc.cpp
+  kStateInterval) plus the latency late: up to ~4 m for under 0.2 s, never held (the longest stretch over 2 m after
+  a hit 0.58 s in 56 hits with the old code).

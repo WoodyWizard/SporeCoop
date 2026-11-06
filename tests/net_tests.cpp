@@ -1333,6 +1333,44 @@ static void test_old_peer_split()
     CHECK(whole == 0 && notice == 1 && r.stats.frag_lost == 1);
 }
 
+// BUG-0445 (drive.lead_smooth): a new state with another speed does not move the lead target in one step
+static void test_lead_smooth()
+{
+    printf("the lead target does not step when a state reports another speed (BUG-0445)\n");
+    for (int on = 0; on < 2; on++) {
+        g_lead_smooth_fix = on == 1;
+        SnapshotBuffer b;
+        b.lead = true;
+        auto st = [](uint32_t ms, float x, float v) {
+            PlayerState s{};
+            s.time_ms = ms;
+            s.pos = {x, 0, 0};
+            s.vel = {v, 0, 0};
+            s.flags = PF_IN_WORLD;
+            return s;
+        };
+        // states every 0.1 s at 6.5 m/s, then one that says 3.7 m/s at the same path, arriving 0.3 s late (bunched)
+        b.push(st(1000, 0.f, 6.5f), 10.0);
+        b.push(st(1100, 0.65f, 6.5f), 10.1);
+        PlayerState a{}, c{};
+        b.sample(10.4, a);
+        b.push(st(1200, 1.3f, 3.7f), 10.4);
+        b.sample(10.4, c);
+        float step = std::fabs(c.pos.x - a.pos.x);
+        PlayerState e{};
+        b.sample(10.7, e); // after kLeadSmooth: the new state's own lead
+        PlayerState raw{};
+        b.sample_raw(10.7, raw);
+        printf("  smooth %s: step at the new state %.2f m, after 0.3 s %.2f m off the raw lead\n", on ? "on" : "off", step,
+               std::fabs(e.pos.x - raw.pos.x));
+        if (on)
+            CHECK(step < 0.05f && std::fabs(e.pos.x - raw.pos.x) < 0.01f);
+        else
+            CHECK(step > 0.5f);
+    }
+    g_lead_smooth_fix = true;
+}
+
 // BUG-0612: an unreliable message that can never fit a packet is counted (with its type and size), and the
 // messages queued after it still go out
 static void test_unreliable_too_big()
@@ -2671,6 +2709,7 @@ int main(int argc, char** argv)
     }
     test_buffer();
     test_unreliable_too_big();
+    test_lead_smooth();
     test_unreliable_chunks();
     test_dbpf();
     test_partprops();

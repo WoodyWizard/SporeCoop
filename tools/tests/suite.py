@@ -331,7 +331,7 @@ add('body_trail_civ', P + 'coop_body_trail.py --stage civ', minutes=4)  # BUG-04
 add('body_trail_player', 'SPORE_FPS=30 SPORE_NET=player ' + P + 'coop_body_trail.py --stage creature', minutes=4, fixture='creature')  # body_trail_creature at 30 fps over the player network (latency spikes, loss bursts)
 add('body_trail_tribe_player', 'SPORE_FPS=30 SPORE_NET=player ' + P + 'coop_body_trail.py --stage tribe', minutes=5, fixture='tribe')  # body_trail_tribe at 30 fps over the player network
 add('body_trail_civ_loss', 'SPORE_NET=burst ' + P + 'coop_body_trail.py --stage civ', minutes=4)  # body_trail_civ under loss bursts (BUG-0438)
-add('body_trail_hits', P + 'coop_body_trail.py --stage creature --hits', minutes=4, fixture='creature')  # BUG-0409: the guest's copies of hit NPCs (a hit every 5 s, with and without a push) stay with the host's bodies in the 3 s after each hit
+add('body_trail_hits', P + 'coop_body_trail.py --stage creature --hits', minutes=4, fixture='creature')  # BUG-0409: the guest's copies of hit NPCs (a hit every 5 s, with and without a push) are never held off the host's bodies in the 3 s after each hit (over 2 m at most 0.75 s, max 6 m)
 add('net_nan', P + 'coop_net_nan.py', minutes=3, fixture='creature')  # BUG-0614: a joined player's states with NaN / Inf never put its puppet nowhere on the host or the other guest (SPORE_FIX_OFF=game.finite_pose fails)
 add('npc_walk_slow_creature', P + 'coop_npc_walk_slow.py --fixture creature', minutes=3)  # BUG-0590: a Creature animal's proxy keeps up on a 4 fps guest (SPORE_FIX_OFF=npc.proxy_slow_frames fails)
 add('npc_walk_slow', P + 'coop_npc_walk_slow.py', minutes=3, fixture='tribe')  # BUG-0503: a Tribe animal's proxy keeps up on a 4 fps guest (SPORE_FIX_OFF=npc.proxy_slow_frames fails)

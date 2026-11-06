@@ -207,7 +207,6 @@ struct Proxy {
     double anim_fix_at = 0;  // BUG-0464: when the snapshot last played the host's animation on it
     double anim_rx_at = 0;   // BUG-0464: when the host's last start of an animation of it came
     bool air = false;        // BUG-0550: placed in the air (the host's NPC off its ground) last frame
-    bool thrown = false;     // BUG-0409: placed on the host's path while the host's NPC was thrown
     uint32_t airs = 0;       // BUG-0550 (coop.npc list): frames placed in the air
 };
 static std::map<uint16_t, Proxy> g_proxies;
@@ -266,15 +265,6 @@ static bool g_flock_fx_fix = true;
 COOP_FIX("npc.flock_hearts", "BUG-0556", g_flock_fx_fix, "creature: the host's summoned flock shows its hearts on the guest's screen too");
 static constexpr uint32_t kFlockFx = 0x6A17B05A;
 static uintptr_t a_StartFx2, a_StopFx;
-// BUG-0409: a type-0 hit (cCreatureBase TakeDamage 0xC1A520) throws a creature: velocity 4 x (2 up + push), an
-// impulse, locomotion mode +0x2B0 = 3 until it lands. A proxy thrown by the guest's own game (the dying proxy's local
-// hit, anything else that hits it there) flew off its host NPC's path while every placing was undone. The host's
-// knockback rules: a proxy whose host NPC is not in the air leaves mode 3 at once (the game's own reset 0xC06660).
-// Off: 0.7.8 (the guest's game throws it).
-static bool g_knock_fix = true;
-COOP_FIX("npc.host_knockback", "BUG-0409", g_knock_fix, "creature: the guest's game does not throw a host NPC's proxy by itself; the host's knockback is shown");
-static uintptr_t a_LocoReset;
-static uint32_t g_knock_resets = 0, g_knock_placed = 0;
 
 static bool update_filter(void* c)
 {
@@ -441,7 +431,6 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
     game::set_ai_target_picker(ai_target);
     a_StartFx2 = H->sym("Simulator::cCreatureBase::StartOrStopEffectFromPool2");
     a_StopFx = H->sym("Simulator::cCreatureBase::StopEffectFromPools");
-    a_LocoReset = H->sym("SporeCoop::Creature_LocoReset");
     game::set_behaviour_anim_listener(on_behaviour_anim); // BUG-0464
     fields::add_kind({fields::K_NPC, "npc", &g_scale_fix, kNpcFields, 1, npc_each, npc_mirror, nullptr}); // BUG-0461
     H->command_add(M, "coop.npctrack", "coop.npctrack start [radius m]|stop|count|dump [from] [n]|walk <id> x y z <m/s> - every frame: the guest's NPC proxies (tests, BUG-0361)",
@@ -645,52 +634,6 @@ std::string current_anims()
     return out;
 }
 
-// BUG-0409: the host's NPC is thrown (by a hit: locomotion mode 3; by a hit's push: 13-27 m/s without it): faster than
-// any walk or run (kThrownSpeed) and slower than a teleport (net::SnapshotBuffer::kThrownLead), between two states
-static constexpr float kThrownSpeed = 9.f; // (a creature runs at up to 6-8 m/s; one faster is placed on its path too, no harm)
-static bool thrown_now(uint16_t id, void* c)
-{
-    // the speed over the last 0.1-0.2 s (an anchor moved on every 0.1 s): one frame's step is too noisy (a Tribe animal
-    // pushed by its herd made 9+ m/s for a frame: placed instead of walked, it jumped, npc_walk_tribe lab 20261106-052022)
-    struct Last {
-        net::Vec3 p;
-        double t;
-        net::Vec3 p2;
-        double t2;
-        bool fast;
-        double at;
-    };
-    static std::unordered_map<uint16_t, Last> last;
-    double now = H->time_seconds();
-    net::Vec3 p = game::position(c);
-    if (last.size() > 4096)
-        last.clear();
-    auto it = last.find(id);
-    if (it == last.end()) {
-        last[id] = {p, now, p, now, false, now};
-        return *(int32_t*)((uint8_t*)c + game::kLocoModeOff) == 3;
-    }
-    Last& l = it->second;
-    if (now - l.at > 0.005) { // (once a frame: another guest's batch asks again)
-        if (now - l.t > 0.5)
-            l = {p, now, p, now, false, now};
-        double dt = now - l.t;
-        l.fast = false;
-        if (dt >= 0.08) {
-            float sp = net::dist(p, l.p) / (float)dt;
-            l.fast = sp > kThrownSpeed && sp < net::SnapshotBuffer::kThrownLead;
-        }
-        if (now - l.t2 >= 0.1) { // the anchor: the position 0.1-0.2 s ago
-            l.p = l.p2;
-            l.t = l.t2;
-            l.p2 = p;
-            l.t2 = now;
-        }
-        l.at = now;
-    }
-    return l.fast || *(int32_t*)((uint8_t*)c + game::kLocoModeOff) == 3;
-}
-
 static net::NpcState host_state(uint16_t id, void* c)
 {
     net::NpcState s;
@@ -700,7 +643,6 @@ static net::NpcState host_state(uint16_t id, void* c)
     s.vel = game::velocity(c);
     s.health = game::health(c);
     s.flags = (g_air_fix && !game::is_dead(c) && drive::body_airborne(c) ? net::NF_AIR : 0) | // BUG-0550
-              (g_knock_fix && !game::is_dead(c) && thrown_now(id, c) ? net::NF_THROWN : 0) |
               (game::is_dead(c) ? net::NF_DEAD : 0) | (game::impressed(c) ? net::NF_IMPRESSED : 0) |
               (game::pack_member(c) ? net::NF_PACK : 0) | // BUG-0556: the host's pack (a Summon Flock) is the party's
               (game::herd_of(c) && skg::readable(game::herd_of(c), 0x194) && skg::field<uint8_t>(game::herd_of(c), 0x192)
@@ -1320,9 +1262,7 @@ static void host_tick(double now, const std::vector<void*>& creatures)
                 known.erase(id);
                 k = false;
             }
-            // BUG-0409: a thrown NPC (13-27 m/s) is sent every frame, not every kStateInterval: the 0.1 s between two
-            // states was the guest's copy 2-3 m behind at the start of every throw
-            if (k && (send_states || (g_knock_fix && !game::is_dead(c) && thrown_now(id, c))))
+            if (k && send_states)
                 batch.push_back(host_state(id, c));
         }
         // unreliable batches that fit in one packet
@@ -1610,30 +1550,6 @@ static void guest_tick(double now)
         // BUG-0550: the host's NPC is off its ground: at its height over the host's terrain, over this game's, not
         // grounded (drive::air_place); not walked (the walk is ended, it walks again after the landing)
         const bool air = g_air_fix && !px.killed && (s.flags & net::NF_AIR) && !(s.flags & net::NF_DEAD);
-        if (g_knock_fix && a_LocoReset && !air && !px.killed && !(s.flags & net::NF_THROWN) &&
-            *(int32_t*)((uint8_t*)px.c + game::kLocoModeOff) == 3) { // BUG-0409: thrown by this game, not by the host
-            skg::thiscall<void>(a_LocoReset, px.c);
-            *(net::Vec3*)((uint8_t*)px.c + game::kVelOff) = s.vel;
-            g_knock_resets++;
-        }
-        // BUG-0409: the host's NPC is thrown along its ground by a hit (12-15 m/s for ~0.3 s): placed on the host's path
-        // (walked, it was held to its walk's speed and fell 3.6-3.9 m behind until the throw ended)
-        // Its velocity stays 0: the throw's speed written into the locomotion carried the proxy on 6-8 m past the host's
-        // NPC after the throw (seen: 20 m/s for 1.3 s, out/lab 20261106-045011)
-        if (g_knock_fix && !air && !px.killed && (s.flags & net::NF_THROWN) && !(s.flags & net::NF_DEAD)) {
-            drive::walk_end(px.c, s.pos, px.drv, now);
-            px.kinematic = false;
-            game::place(px.c, drive::out_of_ground(s.pos, rts), s.rot);
-            *(net::Vec3*)((uint8_t*)px.c + game::kVelOff) = net::Vec3{};
-            px.drv.last_step = now;
-            px.thrown = true;
-            g_knock_placed++;
-            placed = true;
-        } else if (px.thrown) {
-            px.thrown = false;
-            *(net::Vec3*)((uint8_t*)px.c + game::kVelOff) = net::Vec3{};
-            game::stop(px.c); // (and no walk of its own left from before the throw)
-        }
         if (air) {
             px.kinematic = false;
             drive::air_place(px.c, drive::at_sender_agl(s.pos, s.agl), s.rot, s.vel, px.drv, now);
@@ -2053,7 +1969,6 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         s.health = sp.health;
         px.buf.delay = 0.15;
         px.buf.lead = true; // BUG-0425 (drive.lead): where the host has it now
-        px.buf.thrown_flags = g_knock_fix ? net::NF_THROWN : 0; // BUG-0409
         px.buf.push(s, now);
         px.last_rx = now;
         break;
@@ -2365,11 +2280,11 @@ std::string status()
             spawned += px.c != nullptr;
         snprintf(b, sizeof b, "npc(guest): proxies=%u spawned=%u local_removed=%u hits_sent=%u damage_in=%u lost=%u host_away=%d "
                  "away_dropped=%u local_alive=%u in_nest=%u nests=%u stale_dropped=%u strays_removed=%u hatch_helped=%u "
-                 "deaths_played=%u kill_held=%u away_locals=%u unlisted=%u nospecies=%u knock_resets=%u knock_placed=%u\n",
+                 "deaths_played=%u kill_held=%u away_locals=%u unlisted=%u nospecies=%u\n",
                  (unsigned)g_proxies.size(), spawned, g_removed_local, g_hits_sent, g_damage_in, g_proxy_lost, (int)g_host_away,
                  g_away_proxies, g_local_alive, g_proxies_in_nest, (unsigned)g_local_herds.size(), g_stale_dropped,
                  g_strays_removed, g_hatch_helped, g_deaths_played, (unsigned)g_kill.size(), g_away_locals, g_proxy_unlisted,
-                 g_proxy_nospecies, g_knock_resets, g_knock_placed);
+                 g_proxy_nospecies);
     }
     return b + game::destroy_deferred_status() + "\n";
 }

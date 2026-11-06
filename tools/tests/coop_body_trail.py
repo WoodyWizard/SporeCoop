@@ -68,7 +68,10 @@ def walk_npcs(host, guest, rng, secs, around):
 NT0 = {}
 HIT_EVERY = 5.0  # s between two hits (--hits)
 HIT_WIN = 3.0  # s after a hit that are judged
-HIT_MAX, HIT_TRAIL = 3.0, 0.5  # m, s: the copy of a hit NPC within HIT_MAX of the host's body, over TRAIL_M m at most HIT_TRAIL s
+# m, s: the copy of a hit NPC within HIT_MAX of the host's body, over TRAIL_M m at most HIT_TRAIL s. A push throws the host's
+# NPC at 13-31 m/s for 0.3-0.9 s: shown one NPC state period (0.1 s) plus the latency late, the copy is up to ~4-5.5 m
+# off for under 0.2 s (docs/re/creature.md#creature-hit-throw); BUG-0409 was a copy HELD 4.8 m off for 1.1 s
+HIT_MAX, HIT_TRAIL = 6.0, 0.75
 
 
 def hit_checks(ck, host, guest, hr, gr, hits, t_first):

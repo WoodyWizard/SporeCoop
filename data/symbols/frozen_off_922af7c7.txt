@@ -152,4 +152,3 @@ SporeCoop::City_SetPartsOwner ; BUG-0593: the owner of a captured city's buildin
 SporeCoop::Creature_CombatVoice ; Tribe / Creature: a guest hears the combat voices of the host's members and animals (BUG-0600)
 SporeCoop::Creature_SetSprint ; Tribe / Creature: a guest sees and hears the sprint of the host's members and animals (BUG-0600)
 SporeCoop::AnimEvent_Handle ; the hit impacts of attacks (an animation event's effect on its target) are not relayed to the partner (BUG-0603)
-SporeCoop::Creature_LocoReset ; BUG-0409: npc.host_knockback's reset of a proxy the guest's game threw is off (GOG 2016 frozen)
