@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+- The game no longer risks a crash when SporeKit hooks a function while the game is already running (the first
+  test input, the first cell of Cell): the hook is written only once no game thread is inside the bytes it changes
+  (BUG-0403).
+
 ## [0.7.8] - 2026-11-05
 
 ### Changed

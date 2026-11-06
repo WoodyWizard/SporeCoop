@@ -267,6 +267,7 @@ For bug reports of players, who send a file, not a debugger session:
   frames, never the detour.
 * Still open (BUG-0403): the first write of the jmp itself can catch a thread inside the first 5
   bytes of a function hooked after boot (BUG-0202's crash, nanoseconds per call).
+  Fixed since (2026-11-05, fix/w45-crashes): see [the first jmp of a hook made at run time](#modkit-hook-first-write) (`kit.fix hookfirst`).
 
 ## Report screenshots (SporeKit 0.3.6, 2026-11-01, feat/w35-report-shot)
 <a id="modkit-report-shots"></a>
@@ -305,3 +306,35 @@ docs/REPORTING.md#reporting-shots):
 * Tests: `tests/jpeg_tests.cpp` + `tools/tests/jpeg_check.py` (`make test`: the encoder decoded by
   Pillow against its source, the shrink), `tools/tests/coop_report_shot.py` (lab `report_shot`).
 
+
+## The first jmp of a hook made at run time (2026-11-05, fix/w45-crashes)
+<a id="modkit-hook-first-write"></a>
+
+BUG-0403 (the rest of BUG-0202 / BUG-0398). MinHook writes a target's 5-byte jmp with plain stores; a
+hook made after boot (the devkit's input hooks at the first injected input, coop's Cell hooks at its
+first cell) can catch another thread between two of the function's first instructions, and that
+thread then runs the jmp's operand bytes as code.
+* ✔ Reproduced: `kit.test.hooknew 200 3 split` (functions whose first 5 bytes are five 1-byte
+  instructions, hooked for the first time while 3 threads call them) with `kit.fix hookfirst 0`
+  crashed the game within 1 s: an access violation at an address inside the test page (the jmp's
+  operand executed), thread of the test (out/lab/20261105-225321, crash report attached there).
+* Fix (`kit.fix hookfirst`, on): the vendored MinHook calls a SporeKit writer for the patch bytes
+  (`MH_SetPatchWriter`, a SporeKit patch of hook.c `EnableHookLL`; the page is already writable then,
+  so no VirtualProtect runs while a thread is suspended). After boot (frame index > 0) the writer
+  1. writes one byte, int3, at the entry; a vectored handler (registered before SporeKit's fault
+     logger, so no log line per trap) sends any thread that traps there to the trampoline (the
+     original first instructions, then a jmp back): the call goes on as before the hook;
+  2. suspends each other thread alone, reads its EIP with GetThreadContext and resumes it at once;
+     while one is inside the patched bytes (not at the entry) it is given time (Sleep 0 / 1, at most
+     ~2 s, else the int3 is taken back and the hook fails); nothing new can enter past the int3;
+  3. writes the other bytes, then the entry byte last.
+  MinHook's own thread freeze stays off: it deadlocked under Wine because VirtualProtect ran while a
+  suspended thread held ntdll's virtual-memory lock; here only GetThreadContext runs while a thread is
+  suspended, and only one thread is suspended at a time.
+* Measured (lane 4): 200 split hooks under 3 calling threads: 0 wrong results, 257 644 gate traps,
+  0 waits (no thread was found inside the bytes when its context was read), 7.3 s for the 200 hooks
+  (the traps dominate). `kit.test.hooknew` prints `live first writes / waits / gate traps / refused`.
+* Not covered: a thread whose return address lies inside the first 5 bytes (a 2-byte `call reg` in
+  the prologue) is not in them while it runs the callee and returns into the new jmp; MinHook's freeze
+  had the same limit. Boot hooks (frame 0) keep the plain stores (no other thread runs game code yet).
+* Test: `kit_hooksplit` (kit_freeze.py --case hooksplit; SPORE_FIX_OFF=hookfirst fails).
