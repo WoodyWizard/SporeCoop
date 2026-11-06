@@ -1895,3 +1895,11 @@ fixture to Tribe, as coop_tribe_snapshot.py).
   ground.
 * ? The 3.9-5.3 m of the campaign (#tribe-ground-height) were on planets the campaign made itself (Cell -> Creature
   -> Tribe); not measured with this probe there yet.
+* ✔ (runtime, 2026-11-06) In 4-player Cell -> Creature -> Tribe campaigns (campaign_ct) the guests' ground under the
+  host's members was higher in 2 of 4 runs: 5.1 m (out/lab/20261105-233903) and 5.9 m (out/lab/20261106-000530),
+  the same on all three guests; 0 in the two others. So the planets the campaign makes show it, the fixtures do not.
+  `CAMPAIGN_GROUND=1` makes the campaign sample `coop.ground` on every machine at a member / player and 15-200 m off
+  (noted above 0.5 m); `CAMPAIGN_SEED=<n>` replays a seed through the lab (the planet pick still differs).
+* ? Leads: the strings `mTerrainStampsToRemove` (0x14655A8, registered in 0x1322A30) and `mAppliedStamp`
+  (0x1469174): terrain stamps that placed objects apply and a list of stamps to remove, saved with the planet; not
+  followed (BUG-0332 stays open).

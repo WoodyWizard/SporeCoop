@@ -1,7 +1,7 @@
 ---
 id: BUG-0328
 title: Tribe: a guest that rejoins never gets the host NPCs it was sent while it still played its old copy (coverage 75%)
-status: open
+status: not-reproduced
 kind: desync
 stage: Tribe
 reported: 2026-10-30
@@ -9,7 +9,7 @@ source: lab 20261030-175722 campaign_tribe#1 (lane 7)
 role: guest
 versions: main de87f05
 fixed_in:
-branch:
+branch: fix/w45-tribe
 commits:
 tests: tribe_rejoin_npcs (coop_tribe_rejoin_npcs.py, a scenario)
 signature:
@@ -66,3 +66,9 @@ worktree (not in git).
   (out/lab/20261105-233526): the test does not catch the class either way, so npc.resync (BUG-0487) is not shown to be
   its fix. A 4-player Cell -> Tribe campaign (campaign_ct, the original report's kind of run) is the remaining check:
   see below.
+- 2026-11-06 (fix/w45-tribe): the remaining check done: four 4-player campaigns Cell -> Creature -> Tribe (campaign_ct,
+  each with a guest's leave and rejoin during the Tribe play: Bob, Carol, Bob, Carol) had no coverage finding after
+  the rejoin and ended RESULT OK (out/lab/20261105-233903, -235245, 20261106-000530, -001813). With the fixture runs
+  above (2 x 2 rounds) and the earlier replays: the loss of the one 2026-10-30 run (main de87f05, before npc.resync of
+  0.7.4, which re-asks for NPCs a guest gets states of and has no proxy of) was not seen again in 9 rejoins.
+  Status not-reproduced; tribe_rejoin_npcs stays as the regression scenario.

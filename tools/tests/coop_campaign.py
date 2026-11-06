@@ -298,6 +298,8 @@ class Campaign:
                 return
             tog = self.together()
             self.ids()
+            if os.environ.get('CAMPAIGN_GROUND') == '1' and hst in ('creature', 'tribe'):
+                self.ground_probe(host, hst)
             bad_stage, apart = [], []
             for g in self.guests:
                 if g not in alive:
@@ -403,6 +405,38 @@ class Campaign:
                         self.F.attach('census', f'{hst}:{k}', [f'both censuses: {os.path.relpath(path, lane.ROOT)}'])
         except (OSError, ValueError) as e:
             self.finding('info', f'check:{e!r}'[:80], f'a check could not read a game: {e!r}')
+
+    def ground_probe(self, host, hst):
+        """BUG-0332 (CAMPAIGN_GROUND=1): the game's own ground (coop.ground) on every machine at a place of the host's
+        (a tribe member in Tribe, a player in Creature) and 15-200 m off it: noted when a guest's differs by more than 0.5 m"""
+        try:
+            hs = cm.sample(host.con)
+            pref = [k for k in sorted(hs) if k[0] == ('t' if hst == 'tribe' else 'p')]  # a member / a player: the village
+            key = (pref or sorted(hs) or [None])[0]
+            if not key:
+                return
+            c = hs[key]
+            r = math.dist(c, (0, 0, 0))
+            a = (0.0, 0.0, 1.0) if abs(c[2] / r) < 0.9 else (1.0, 0.0, 0.0)
+            e = (a[1] * c[2] - a[2] * c[1], a[2] * c[0] - a[0] * c[2], a[0] * c[1] - a[1] * c[0])
+            el = math.dist(e, (0, 0, 0))
+            pts = [c] + [tuple((c[i] + d * e[i] / el) * r / math.dist([c[j] + d * e[j] / el for j in range(3)], (0, 0, 0))
+                               for i in range(3)) for d in (15, 30, 60, 100, 200)]
+
+            def gr(con, p):
+                m = re.search(r'ground (-?[\d.]+)', con.call('coop.ground %.2f %.2f %.2f' % tuple(p)))
+                return float(m.group(1)) if m else None
+            hg = [gr(host, p) for p in pts]
+            rows = []
+            for g in self.guests:
+                gg = [gr(g, p) for p in pts]
+                d = [round(b - a, 2) for a, b in zip(hg, gg) if a is not None and b is not None]
+                if d and max(abs(x) for x in d) > 0.5:
+                    rows.append(f'{g.name} {d}')
+            if rows:
+                self.note(f'ground ({hst}, at {key} and 15 / 30 / 60 / 100 / 200 m off; host {[h and round(h, 2) for h in hg]}): guest - host ' + '; '.join(rows))
+        except (OSError, ValueError, ZeroDivisionError) as e:
+            self.note(f'ground probe: {e!r}')
 
     def chiefs_overlap(self, p):
         """BUG-0340: pairs of players' chiefs whose bodies overlap on this player's own game
@@ -1292,7 +1326,7 @@ def main():
     ap.add_argument('--finale-from-galaxy', action='store_true',
                     help='tests (BUG-0335): the guests go to the galaxy view before their finale steps')
     ap.add_argument('--no-jump', dest='jump', action='store_false', help='stop at a stage change that does not finish')
-    ap.add_argument('--seed', type=int, default=None)
+    ap.add_argument('--seed', type=int, default=int(os.environ['CAMPAIGN_SEED']) if os.environ.get('CAMPAIGN_SEED') else None)  # CAMPAIGN_SEED: a lab replay
     a = ap.parse_args()
     seed = a.seed if a.seed is not None else random.randrange(1 << 30)
     run = time.strftime('%Y%m%d-%H%M%S')
