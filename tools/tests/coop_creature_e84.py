@@ -23,6 +23,8 @@ import os
 import re
 import time
 
+import campaign_lib
+import census
 import lane
 import twoinst
 from twoinst import Checks, Console, lane_state, sh, start, wait_guest_in, wait_up
@@ -177,6 +179,18 @@ def main():
     guest.call(lane.JOIN)
     wait_guest_in(host, guest, 120)
     wait_puppet(host)
+    # BUG-0412: the leave above handed the guest's proxies over to its own game; back in the session they go
+    # again and the host's NPCs come as proxies (census of both games, within 10 s)
+    t0, bad, own = time.time(), None, None
+    while time.time() - t0 < 10:
+        hc, gc = census.dump(host), census.dump(guest)
+        own = gc.count('c', ('local',))
+        bad = campaign_lib.census_problems(hc, gc)
+        if not own and not bad:
+            break
+        time.sleep(1)
+    ck(not own and not bad, f'after the rejoin the guest shows the host\'s NPCs, none of its own game '
+       f'({time.time() - t0:.0f} s: {own} own, {bad[:3] if bad else bad})')
     h2 = archless_herds(host)
     # the herd the save brought back is of the species the game gave the unknown creature after the
     # restart (the guest's creation is registered only when it joins): the first spawn may add one
