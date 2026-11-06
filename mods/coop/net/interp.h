@@ -241,11 +241,10 @@ public:
         bool ok = sample_raw(local_now, out);
         // BUG-0619: a sample before the newest state (the path velocity's sample 0.1 s back) is shifted by the same
         // offset, so the path is the shown one (an unshifted one gave the walk a 3-4 m/s path while it stood)
-        if (ok && !sm_used_ && lead && g_lead_fix && g_lead_smooth_fix && smooth_max > 0 && sm_have_) {
-            out.pos.x += sm_off_.x;
-            out.pos.y += sm_off_.y;
-            out.pos.z += sm_off_.z;
-        }
+        // A slow body's interpolated state (see sample_raw) goes through the same smoothing: the switch between the
+        // two is a jump of the raw target that the offset takes
+        if (ok && !sm_used_ && lead && g_lead_fix && g_lead_smooth_fix && smooth_max > 0)
+            smooth(local_now, out, out.vel);
         return ok;
     }
 
@@ -259,7 +258,17 @@ private:
         if (lead && g_lead_fix) {
             const double tl = local_now - offset_ + g_one_way;
             const Snap& n = snaps_.back();
-            if (tl >= n.t) {
+            // BUG-0619: with the smoothing, a body under kSmoothFast (it starts, stops, speeds up or slows down) is
+            // shown interpolated as without the lead: the lead moves the newest state on by its velocity for 0.2-0.45 s
+            // over a mobile network, so every change of speed between two states moved the target by 1-4 m/s x that,
+            // and the mirror's stop-and-go at 1-5 m/s was 11-22 % of the frames (0.7.8: 0-5 %). Hysteresis 1 m/s
+            bool use = true;
+            if (g_lead_smooth_fix && smooth_max > 0) {
+                float vs = dist(Vec3{}, lead_velocity());
+                sm_fast_ = vs >= kSmoothFast || (sm_fast_ && vs >= kSmoothFast - 1.f);
+                use = sm_fast_ || vs < 0.3f; // (standing: the lead is the newest state itself)
+            }
+            if (use && tl >= n.t) {
                 double dt = tl - n.t;
                 last_extrap = dt;
                 dt = std::min(dt, kMaxLead);
@@ -273,7 +282,8 @@ private:
                     smooth(local_now, out, last_extrap > kMaxLead ? Vec3{} : v);
                 return true;
             }
-            t = tl; // (a state from the future: the clock offset is late) interpolated there
+            if (use)
+                t = tl; // (a state from the future: the clock offset is late) interpolated there
         }
         if (t <= snaps_.front().t) {
             out = snaps_.front().s;
@@ -362,12 +372,11 @@ private:
                 if (d > smooth_max || stop) {
                     off = {};
                     snap_vel = true;
-                } else if (d > 1e-4f && std::max(dist(Vec3{}, v), dist(Vec3{}, sm_vel_)) >= kSmoothFast) {
-                    // closed only while the body is fast (kSmoothFast): closed while it speeds up or slows down, the
-                    // target ran 3-6 m/s faster than the body there and the walked mirror lagged and surged after it
-                    // (tribe_walk_mobile's stop-and-go check at 1-5 m/s: uneven 11-22 %, 0.7.8 2-5 %)
+                } else if (d > 1e-4f) {
                     float sp = std::max(dist(Vec3{}, v), dist(Vec3{}, sm_vel_));
-                    float nd = std::max(d * (float)std::exp(-dt / kSmoothTau), d - (kSmoothK * sp + kSmoothRate) * (float)dt);
+                    // (while slow, interpolated: at most half its speed + 1 m/s, inside the stop-and-go band's tolerance)
+                    float rate = sm_fast_ ? kSmoothK * sp + kSmoothRate : 0.5f * sp + 1.f;
+                    float nd = std::max(d * (float)std::exp(-dt / kSmoothTau), d - rate * (float)dt);
                     nd = std::max(nd, 0.f);
                     float k = nd / d;
                     float r = (k - 1.f) / (float)dt;
@@ -394,7 +403,7 @@ private:
         out.pos.y += sm_off_.y;
         out.pos.z += sm_off_.z;
     }
-    mutable bool sm_have_ = false, sm_used_ = false;
+    mutable bool sm_have_ = false, sm_used_ = false, sm_fast_ = false;
     mutable double sm_t_ = 0;
     mutable Vec3 sm_off_{}, sm_offv_{}, sm_vel_{}, sm_shown_{};
 
