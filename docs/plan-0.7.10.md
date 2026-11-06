@@ -21,7 +21,7 @@ their own agent from the start instead of the end of a package.
 
 | Package | Mechanism | Tickets |
 |---|---|---|
-| **P4 Creature** | A guest's avatar found ~14 m from where it joined, the guest's camera in space after the join, the host's creations on the guest, the previous creature version after the host's editor, the DNA budget message of a held editor request, the guest's editor showing the host's new parts | BUG-0333, 0607, 0200, 0457, 0581, 0283 |
+| **P4 Creature** | A guest's avatar found ~14 m from where it joined, the host's creations on the guest, the previous creature version after the host's editor, the DNA budget message of a held editor request, the guest's editor showing the host's new parts, a chat line lost in play_creature | BUG-0333, 0629, 0200, 0457, 0581, 0283 |
 | **V2 Civ and Space** | A guest's vehicle gift lost, vehicles of owner 0 after the chunk budget drop, the Space sync mismatch during a rescue, the zoom after a load, the ships' p90 near its limit | BUG-0325, 0206, 0547, 0182, 0190 |
 | **K2a Classes: state** | State sent but not applied, hits and world state without a relation / world filter, per-player state under a reused id, credits and effects dropped or undone; a relayed effect at the sender's ground height | classes BUG-0419, 0420, 0422, 0423; BUG-0608 |
 | **K2b Classes: content and limits** | Content the other game lacks, game rules copied by hand, mod input read globally, requests the mod builds incompletely, fixed-size game pools overrun, avatar-only rules a guest misses | classes BUG-0424, 0428, 0429, 0431, 0432, 0418 |
