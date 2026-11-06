@@ -1942,3 +1942,17 @@ GOG 2024 addresses (dc04aee5). Kind `game_bundle` of mods/coop/worldobj.cpp (BUG
 * ✔ host_bundle: the host's ground food lies at its place on the guest, the guest's copy of the member carries the
   food, the food a guest's member takes from the ground is gone on the host (PASS lab 20261106-044500, FAIL with
   `SPORE_FIX_OFF=wobj.bundle` lab 20261106-044559).
+
+## The host's extra ornament in Tribe: not reproduced (2026-11-06, fix/w45-world-objects)
+<a id="tribe-ornament-not-reproduced"></a>
+
+BUG-0528. GOG 2024 (dc04aee5).
+
+* ✔ The `tribe` fixture has 5 ornaments of noun 0x18C88E4 in both games, the same models (+0x228: 0x356EB8A x3,
+  0x5B9A06E, 0x5D97F762 the tribe's decoration of 0xC90080) at the same places; none changed in 80 s after the
+  guest's members were ordered to hunt (`coop.tribe act_npc 10`, lane 7). 0xCCEB90 releases a held object of model
+  0x356EB8A (the creature's +0xC0): these can be held.
+* ✔ No Tribe `ornament` detector row in play_tribe (lab 20261106-035845, 20261106-051335).
+* ? The makers of the noun (CreateInstance(0x18C88E4) call sites): 0xC90080, 0xCCEB90's caller 0xCD1D60, 0xD130D0,
+  0xD2FFD0, 0xD99F50, 0xC60440, 0xB41FE0, 0xBE6A50 (city decorations, docs/re/space.md#space-city-ornaments),
+  0xEC0F00, 0xF30B60, 0xF41A50, 0x1051860, 0xB25FC0. `coop.wobj raw 18C88E4 3000 576` prints the model of each.
