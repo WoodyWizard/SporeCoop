@@ -1268,8 +1268,8 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Not checked: who wrote the float; whether the heap was damaged in Creature or in the editors.
 * Next steps: a heap walk tripwire (PPMalloc chunk sizes) run once a second in a stress campaign
   would date the damage.
-* 2026-11-05 (fix/w45-crashes): not reproduced in 3 more stress campaigns (2 x campaign_tribe, 1 x
-  campaign_ct, SPORE_DETECTOR=20); the signature is in no other lab log; the grid's slot layout is
+* 2026-11-05 (fix/w45-crashes): not reproduced in 5 more Creature -> Tribe changes (2 x campaign_tribe, 3 x
+  campaign_ct, SPORE_DETECTOR=20; none took the original path, a share save during the change); the signature is in no other lab log; the grid's slot layout is
   in docs/re/tribe.md#tribe-flora-grid-slots.
 * Ticket: BUG-0359
 
