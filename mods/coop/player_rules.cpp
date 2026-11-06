@@ -423,7 +423,7 @@ typedef bool(SK_THISCALL* Release_t)(void*, void*, int, int);
 static Hold_t o_Hold;
 static Release_t o_Release;
 static uint32_t g_hold_tx, g_hold_rx, g_hold_done, g_hold_nocopy, g_drop_tx, g_drop_rx, g_put_tx, g_put_rx, g_hold_other;
-static uint32_t g_hold_last_noun;
+static uint32_t g_hold_last_noun, g_put_fast, g_put_near;
 struct Carried {        // the partner's copy of an object a player carries (or threw), in this game
     void* obj = nullptr;
     uint32_t noun = 0;
@@ -560,17 +560,20 @@ static void carry_tick(double now)
             it = g_thrown.erase(it);
             continue;
         }
-        // where it lies or creeps: sampled every 0.5 s; slower than 1 m/s (at rest, or creeping down a slope: a released
-        // rock rolled 20-30 m in 25 s there, each game's own physics elsewhere, lab 20261105-235138 / 20261106-000521)
-        // its position is sent when it is 0.3 m from the one sent last. Not its flight: the partner's copy following a
-        // fast flight by teleports hit the partner's own creature in its game (91 damage, lab 20261105-235733)
-        if (now - it->still_since >= 0.5) {
+        // where it is, 10 times a second when it is 0.3 m from the position sent last, also while it rolls fast (the
+        // integration run's rock rolled on at over 1 m/s for 40 s after its release on the nest mound: with only its
+        // slow points sent the copy lay 8.5 m from it, rel/0.7.9 out/lab/20261106-013035). The partner's copy follows
+        // with a held object's physics and never within 4 m of the partner's own creature (a copy with its own physics
+        // teleported along a flight hit that creature: 91 damage, lab 20261105-235733)
+        if (now - it->still_since >= 0.1) {
             float v = net::dist(p, it->last) / (float)(now - it->still_since);
             it->still_since = now;
             it->last = p;
             if (v > 0.05f)
                 it->t_moved = now;
-            if (v < 1.0f && net::dist(p, it->sent) > 0.3f) {
+            if (v >= 1.0f)
+                g_put_fast++;
+            if (net::dist(p, it->sent) > 0.3f || (v <= 0.05f && net::dist(p, it->sent) > 0.05f)) {
                 carry_send(K_PUT, own_id(), it->noun, &p);
                 g_put_tx++;
                 it->sent = p;
@@ -592,6 +595,7 @@ static void carry_tick(double now)
         // 142-348 damage: lab 20261106-001427, -002414); a copy left rolling there lies elsewhere (accepted)
         void* av = game::avatar();
         if (av && net::dist(game::position(av), it->pos) < 4.0f) {
+            g_put_near++;
             ++it;
             continue;
         }
@@ -708,8 +712,8 @@ static std::string carry_dump()
         out += b;
     }
     snprintf(b, sizeof b, "carry fix=%d hold_tx=%u hold_rx=%u done=%u nocopy=%u drop_tx=%u drop_rx=%u put_tx=%u put_rx=%u "
-             "other=%u last_noun=%08X\n", (int)g_carry_fix, g_hold_tx, g_hold_rx, g_hold_done, g_hold_nocopy, g_drop_tx,
-             g_drop_rx, g_put_tx, g_put_rx, g_hold_other, g_hold_last_noun);
+             "other=%u last_noun=%08X fast=%u near=%u\n", (int)g_carry_fix, g_hold_tx, g_hold_rx, g_hold_done, g_hold_nocopy,
+             g_drop_tx, g_drop_rx, g_put_tx, g_put_rx, g_hold_other, g_hold_last_noun, g_put_fast, g_put_near);
     return out + b;
 }
 

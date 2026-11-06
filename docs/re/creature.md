@@ -3033,3 +3033,14 @@ Follows #creature-hold-slots.
 * ~ Not covered: the flight itself (the partner sees the rock in the puppet's hand until it lands, then at the landing
   point), a throw at a creature (its damage is the thrower's game's), sticks (ornaments of sort 3: the worldobj
   `interactive_ornament` kind syncs their state, not checked together), fruit.
+
+### Carried rocks: the fast part of a roll (2026-11-06, fix/w45-creature-reports)
+<a id="creature-carry-fast"></a>
+
+* ✔ (runtime) A rock released by the nest mound of the creature fixture rolls on at over 1 m/s for up to 40 s: the
+  rel/0.7.9 integration run's copy lay 8.47 m off (rel/0.7.9 out/lab/20261106-013035) because only the points slower
+  than 1 m/s were sent; 100-143 samples a throw are faster (`coop.rules carry` fast=). The thrower now sends the
+  position 10 times a second whenever it moved 0.3 m (`creature.carry_relay`), at any speed; with the copy's held
+  physics and the 4 m guard no creature was hit: 16 of 16 PASS (out/lab/20261106-023016, -024443).
+* ✔ A creature teleported onto a rock (the lab's warm reset, gopos) takes 47-195 "hit by none" damage from it in its
+  game; seen with the relay off too (out/lab/20261106-025551): the test drops the rock 10 m from the start.

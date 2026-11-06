@@ -42,8 +42,8 @@ Creature_HoldObject / ReleaseObject of a rock or ornament are sent; the partner'
 object of that noun within 6 m of the position both games last agreed on) in the hold slot of the carrier's puppet,
 keeps it there after the release and puts it, with a held object's physics, at each point where the thrower's object
 comes to rest or creeps (for up to 60 s; never within 4 m of its own creature). `coop.fix creature.carry_relay off`:
-carried objects stay in the carrier's game (0.7.8). Not covered: the flight itself (seen in the puppet's hand until it
-lands), the throw's damage, sticks together with the worldobj ornament state, fruit.
+carried objects stay in the carrier's game (0.7.8). Since 2026-11-06 the copy also follows the flight (positions at 10 Hz
+at any speed). Not covered: the throw's damage, sticks together with the worldobj ornament state, fruit.
 
 ## Verification
 creature_carry (coop_creature_carry.py): the host, then the guest, holds the rock, carries it to the nest and lets go;
@@ -51,6 +51,17 @@ the other game must show the carrier's puppet holding a rock within 2.5 m of it,
 thrower's (two samples in a row within 15 s of the rest).
 - FAIL with `SPORE_FIX_OFF=creature.carry_relay`: out/lab/20261106-004127 (no rock in the puppet's hand; 68.44 m and
   22.65 m apart), 20261106-002005.
+- 2026-11-06 (follow-up after the rel/0.7.9 integration run, FAIL there: rel/0.7.9 out/lab/20261106-013035, "the host:
+  the thrown rock lies at the same place in the other game (8.47 m)"): cause observed: the thrower sent only the points
+  where its rock was slower than 1 m/s; that rock rolled on at over 1 m/s after its release on the nest mound for 40 s
+  (7 points in 41 s), and the copy stayed at the last slow one. Counted with the fix: 100-143 samples of over 1 m/s per
+  throw (`coop.rules carry` fast=) in every run. Fix: the position is sent 10 times a second whenever it is 0.3 m from
+  the last one sent, at any speed (the copy follows the flight too, with a held object's physics, never within 4 m of
+  the partner's own creature). The test drops the rock 10 m from the start (a warm reset put a creature onto it) and
+  keeps the other player 22 m off. PASS 8 of 8 in a row twice: out/lab/20261106-023016, out/lab/20261106-024443
+  (`--repeat 8 --retry 0`, 0.0-0.23 m); FAIL with `SPORE_FIX_OFF=creature.carry_relay`: out/lab/20261106-025551
+  (61.66 m / 21.53 m, no rock in the puppet's hand). "hit by none" damage of 47-195 on the guest at s 53-59 is in the
+  switch-off run as well (the test's teleports, not the relay).
 - PASS: out/lab/20261106-003953 (0.08 m / 0.05 m), 20261106-003813 (0.13 / 0.24 m); earlier builds of the fix failed on
   the copy's own physics (rolled 5-115 m: 20261106-002616, -002757) and crushed the guest's creature by repeated
   teleports (20261106-001427, -002414): see the docs.
