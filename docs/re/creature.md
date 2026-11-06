@@ -2936,9 +2936,12 @@ BUG-0465 (not fixed). GOG 2024, lab lane 5, creature fixture; follows #creature-
   with the monster (a green crocodile-like head with yellow spikes rising out of the water, mouth open, the camera
   on it: shot kraken_host_2.png), and 8-10 s later the avatar hatches at its nest (hp 10 -> 5, the death's
   penalty). `coop.drama start 6` without deep water shows only the caption (out/lab/20261105-140146).
-* ✔ The guest's game at the same time: its own camera at its own nest, no event, no new object, no effect
+* ~ superseded (2026-11-06): see #creature-sea-monster-relay. ✔ The guest's game at the same time: its own camera at its own nest, no event, no new object, no effect
   (`coop.effects log`); the host's puppet just dies there (PF_DEAD). The monster exists in the cinematic of the dying
   player's game only.
+* CORRECTION (2026-11-06, fix/w45-creature-reports): that run's own guest log has the monster: "effect: from 0 played
+  on other id 8A71529C ... game 1 active 1" (fix/w44-guest-player3 out/lab/20261105-140627, guest game log 14:07:10):
+  the world effect relay played it; the guest's camera was at its nest, so the shots had none.
 * ✔ Negative: the six world effects the host's game made during the cinematic (0x2F49E706, 0xAECAF472, 0x8B61750F
   from 0x6A254B; 0x8A71529C, 0xB3965D1D from 0x932EBE; 0x7484A8E4), each played alone at the avatar
   (`coop.effects load 1 60000 <id>`, out/lab/20261105-140852), are splashes, light and hearts, not the monster:
@@ -3044,3 +3047,31 @@ Follows #creature-hold-slots.
   physics and the 4 m guard no creature was hit: 16 of 16 PASS (out/lab/20261106-023016, -024443).
 * ✔ A creature teleported onto a rock (the lab's warm reset, gopos) takes 47-195 "hit by none" damage from it in its
   game; seen with the relay off too (out/lab/20261106-025551): the test drops the rock 10 m from the start.
+
+## The sea monster on the partner's screen: an effect of the death cinematic (2026-11-06, fix/w45-creature-reports)
+<a id="creature-sea-monster-relay"></a>
+
+BUG-0465 (fixed). GOG 2024, game data (read only), lab lanes 3/2.
+* ✔ (game data) The cinematics are the script `Spore_Game.package` (and PatchData) type 0x024A0E52, group 0x40890200,
+  instance 0x9EA3031A (32 KB of text, `state <name>` blocks). `state CRG_AvatarDied_SeaMonster` (its FNV-1 id 5E205931 is
+  the "caption cinematic" of #creature-deep-water): letterbox, `addActor "TheAvatar" avatar`, camera; state
+  `...SeaMonster0`: `startEffect "crg_seamonster_attack" crg_seamonster_attack -target "TheAvatar"` and
+  `startEffect "splash1" monster_water_splash -target "TheAvatar"`; then the avatar is moved to its nest, a freeze frame,
+  the text "Sea monster coming to get-cha.", CRG_Death_Restart. **The monster is the effect crg_seamonster_attack
+  0x8A71529C** (FNV-1 of the name), the splash 0xB3965D1D; no model, no creature, no noun. The type 0xB1B104 props of
+  group 0xF5F6FDE8 named like the cinematics (CRG_ClaimNest 63B7060A) are only their caption boxes.
+* ✔ (runtime) The world effect relay (BUG-0451, since 0.7.4: an effect the game makes at the local player, sent with
+  its position) sends both and the partner's game plays them (`creature.effects_relay off`: nothing on the guest's
+  screen, out/lab/20261106-031408). The report was of 0.7.3.4, before that relay.
+* ✔ (runtime) It was sent with the position only: identity rotation, scale 1 and transform flags 0 (the game then
+  ignores the rotation). The game's own transform of an effect is at effect **+0x9C**: {u16 flags (6 here), u16 change
+  counter, vec3 pos, f32 scale, 3x3 rotation row-major} (VisualEffect_SetTransform 0xA827B0 -> 0x537E10), the same layout
+  as MSG_EFFECT's 0x44 bytes. The host's monster stands with its third row along the planet's up (cos 0.975-0.979); the
+  guest's copy was 32 degrees off (cos 0.851, the world y axis) and drawn tilted, in pieces sideways out of the water
+  (out/lab/20261106-031307, -030327).
+* Fix `effects.world_xform` (effects.cpp): the effect's own transform is sent when it is readable and its position is
+  the one read (else the position-only one). The guest's monster then has the host's rotation and scale exactly and
+  rises upright out of the water on its screen (out/lab/20261106-031141, -030230). `coop.effects watch <id>` prints
+  the last own / received effect of an id with its transform; `coop.nest look <target> 0 <from>` puts the own creature
+  at a point facing a target (tests).
+* ? Not changed: the sound of the cinematic (music_crg_cin_waterdeath) and the freeze frame stay the dying player's.
