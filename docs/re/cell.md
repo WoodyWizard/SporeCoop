@@ -1641,3 +1641,51 @@ BUG-0604, BUG-0307, BUG-0606, BUG-0316. GOG 2024, Ghidra (`tools/ghidra/q.sh --b
   neither game (the host's own touch of the same token failed too); not the token's level (`coop.pool tokens`
   prints it; the food-progress level and the one under both failed), not its graphics object. Candidates not
   checked: the avatar's +0x178 / +0x17F or the token's +0x17B (0xE7B630's conditions).
+
+## The collision contact of two cells on one centre (2026-11-06, fix/w45-cell-nan)
+<a id="cell-contact-nan"></a>
+
+BUG-0307 (the first NaN of the own cell). GOG 2024, Ghidra (`tools/ghidra/q.sh --build 2024`) and
+`tools/tests/coop_cell_contact_nan.py` (suite `cell_contact_nan`), lane 4.
+
+* ✔ (Ghidra) Collisions 0xE7F260 does more after its pair loop: `Simulator::Cell::ContactSolvePass` 0xE654D0 runs 10
+  rounds of `Simulator::Cell::ContactSolve` 0xE58C90 over the contact pool (a contact of this frame, +0x3C ==
+  G+0x5160, is solved, an older one deleted). A contact: +4 / +8 the two cells' handles (the solver uses the heads
+  of their +0x36C chains, 0xE58C50), +0x0C point, +0x18 normal, +0x24 -depth, +0x28 accumulated impulse, +0x30 /
+  +0x34 effective mass `1 / (invA + invB)` (+0xBC), +0x38 target. One round: `x = (target - (vB - vA).n) * mass +
+  accum`, `accum' = max(x, 0)`, impulse `(accum' - accum) * n` through `Simulator::Cell::ApplyImpulse` 0xE560D0:
+  velocity +0x90 and, with a soft body, **every particle's velocity** += impulse * +0xBC; positions untouched. This is
+  the only game code between the own cell's last pair and our guest tick that writes +0x90 and the particle
+  velocities but not the positions: the mask 0x104, "at guest tick, finite at collision" of lab 20261105-142923
+  (the previous section's "after the collisions" was after the pair loop, before this solver).
+* ✔ (Ghidra) The contacts come from `Simulator::Cell::AddContact` 0xE66F30 (from 0xE67100, the executor 0xE7E7F0 of
+  HandleCollisionPair) with the normal, point and depth of the sphere tests that 0xE73DD0 picks by whether each cell
+  has a graphics object and a model (+0x248, +0xFC): 0xE6AD80 (both: their model spheres), 0xE73620 / 0xE738F0
+  (one), 0xE73BB0 (neither: one sphere each). All four skip the normal when two sphere centres are closer than
+  0.004 (squared distance under 1.5e-5; the depth becomes r1 + r2): 0xE73BB0 passes the first cell's centre
+  coordinates as the "normal", the other three pass whatever their stack slot held (the last normal of an earlier
+  call at the same depth, or other locals such as a contact point).
+* ✔ (runtime, host, `coop.pool stack2 12 <n>`: n cells without a soft body, 30 m from the own cell and 50+ m from
+  the origin, put on one centre at the start of 12 cell steps) the contact normal was (-70.16 -96.02 0), i.e. minus
+  the cell's centre; the solver's rounds overshoot by ~|n|^2 each: 2 cells flew off at 884 m/s, 4 cells reached
+  1e37 and inf (velocity mask 0x4) within one frame, positions finite (lab 20261106-111709, `cell.contact_finite`
+  off). With the fix: 1.0 and 2.4 m/s, finite (lab 20261106-111835).
+* ✔ (runtime) The own cell's first model sphere put exactly on another cell's (`coop.pool stack 20`, both with a
+  soft body, the soft-soft test 0xE6AD80) gave a unit normal (-0.93 0.37 0): the stack slot held the previous
+  call's normal, harmless; no NaN in that run.
+* ~ inferred, not reproduced on the own cell: the guest's 17 frames of mask 0x104 were such a contact of the own cell
+  with a sphere on one of its own, whose stack-slot normal held coordinates (~150 long at (74 141)). It repeated
+  while BUG-0307's heal put the own cell back on the same "last finite position" each frame, next to the same
+  cell. The graphics pool was full in that second (BUG-0355's line 12 ms later), so cells near the guest had no
+  graphics object: they take 0xE73620 / 0xE738F0 against the own cell, the paths with the stale slot.
+* ✔ 40 level changes on two games (`coop_cell_levelups.py`, food +-50 with both cells swimming, lab
+  20261106-110109, fix off): no non-finite contact and no own-cell probe line on either game. The level change
+  itself does not make the NaN.
+* CORRECTION (2026-11-06, fix/w45-cell-nan): the previous section and BUG-0307 placed the first NaN "at the
+  guest's level-up". ~ The log says otherwise: the NaN frames were at s 93.36-93.59 with food 96 and size 0.824;
+  the level change came with food 102 (s 95.06; the level table's step is 100) and the size 0.48 by s 100.
+* Fix `cell.contact_finite` (cellsync.cpp `h_ContactSolve`): before a contact is solved its normal is made a unit
+  vector (the unset one keeps its direction, a zero or non-finite one becomes +x), and a contact whose impulse is
+  still not finite is not applied. `coop.pool` prints `contacts_unit=` (normals made unit), `contacts_bad=` /
+  `contacts_bad_own=` (impulses not finite) and `contact_solves=`; the first 30 bad contacts are logged with both
+  cells. Probes `before the contact solver` / `contact solver` added to own_probe.

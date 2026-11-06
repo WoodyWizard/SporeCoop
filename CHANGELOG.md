@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### Fixed
+- Cell: two cells that end up exactly on top of each other no longer shoot off at hundreds of metres per second or
+  break a player's own cell for a moment (the game's collision left their push direction unset) (BUG-0307).
 - Civilization: after the host takes a city, its buildings stand at the same places on the guests' screens; before,
   a guest's game could tear one building down and put it up again every two seconds a few metres away (BUG-0602).
 - Spice geysers are now the same size on every player's screen (a geyser the host's game made during play was ten
