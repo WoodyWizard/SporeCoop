@@ -287,6 +287,8 @@ struct Pending {
     bool world = false;
     uint32_t id = 0;
     void* fx = nullptr;
+    bool hit = false; // BUG-0603: an attack's per-target hit impact at `pos`
+    net::Vec3 pos;
 };
 static Pending g_q[256];
 static uint32_t g_qh, g_qt;
@@ -344,6 +346,56 @@ static void on_world_effect(void* fx, uint32_t id)
     p.fx = fx;
     p.id = id;
     q_push(p);
+}
+
+// BUG-0603: the hit impact of an attack animation on one of its targets (game.cpp's hook of the animation event
+// handler's target branch). The game that runs the attacker makes it; a remote copy of the attacker plays the
+// relayed animation without targets and never does, so it is sent as a world effect at the hit spot.
+static bool g_hit_fix = true;
+COOP_FIX("effects.hit_targets", "BUG-0603", g_hit_fix,
+         "effects: the hit impacts of attacks (an attack animation's effect on each victim) show in the partner's game");
+static uint32_t g_hit_sent, g_hit_rate, g_hit_off;
+static void on_hit_effect(uint32_t id, const net::Vec3& pos)
+{
+    if (!id || !H)
+        return;
+    Pending p;
+    p.hit = true;
+    p.id = id;
+    p.pos = pos;
+    q_push(p);
+}
+static void process_hit(uint32_t id, const net::Vec3& p)
+{
+    if (!g_fix || !g_hit_fix || !C.sess || !C.sess->connected()) {
+        g_hit_off++;
+        return;
+    }
+    if (stage_off() || nobody_here()) {
+        g_hit_off++;
+        return;
+    }
+    if (g_main_world_fix && foreign_id(id)) // never a skin painter's id (BUG-0451)
+        return;
+    if (!take_token(now())) {
+        g_dropped++;
+        g_hit_rate++;
+        return;
+    }
+    g_hit_sent++;
+    g_sent++;
+    if (g_log)
+        H->log(M, SK_INFO, "effect: sent hit id %08X at %.2f %.2f %.2f", id, p.x, p.y, p.z);
+    uint8_t xf[0x44];
+    make_transform(xf, p);
+    net::Writer w;
+    w.u8(C.sess->my_id());
+    w.u8(0);
+    w.u8(5);
+    w.u32(id);
+    w.u32(0);
+    w.raw(xf, 0x44);
+    C.sess->send_event(net::MSG_EFFECT, w);
 }
 
 static void process_local(void* creature, const game::EffectEvent& ev)
@@ -619,7 +671,9 @@ void tick(double)
     uint64_t rx = 0;
     while (q_pop(p)) {
         rx++;
-        if (p.world)
+        if (p.hit)
+            process_hit(p.id, p.pos);
+        else if (p.world)
             process_world(p.fx, p.id);
         else
             process_local(p.creature, p.ev);
@@ -853,6 +907,7 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
     game::set_effect_relay_enabled(g_fix);
     game::set_effect_listener(on_local_effect);
     game::set_world_effect_listener(on_world_effect);
+    game::set_hit_effect_listener(on_hit_effect);
 }
 
 void on_session_end()
@@ -991,6 +1046,11 @@ std::string status()
              (unsigned long long)g_p_rx.n, g_p_rx.max * 1000, g_p_live.sum * 1000, g_p_live.max * 1000,
              g_p_rest.sum * 1000, g_p_relay.sum * 1000, g_p_relay.max * 1000, (unsigned long long)g_p_relay.n,
              g_p_fast.sum * 1000, (unsigned long long)g_p_slow.n, g_p_slow.sum * 1000);
+    s += b;
+    uint32_t hc = 0, hret = 0, hfx = 0;
+    game::hit_effect_calls(hc, hret, hfx);
+    snprintf(b, sizeof b, "effects hits: fix=%d seen=%u sent=%u off=%u rate=%u (event effects %u, on the animating object %u, last sent id %08X)\n",
+             (int)g_hit_fix, game::hit_effects_seen(), g_hit_sent, g_hit_off, g_hit_rate, hc, hfx, hret);
     s += b;
     snprintf(b, sizeof b, "effects world drops: no_pos=%u relayed=%u far=%u seen=%u rate=%u sent_probes=%u\n",
              g_w_no_pos, g_w_relayed, g_w_far, g_w_seen, g_w_rate, g_world_sent_probes);

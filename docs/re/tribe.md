@@ -1842,3 +1842,29 @@ the first four return addresses into the game's code: the creator of every effec
   4 of 4 (out/lab/20261105-135946, 2 runs); off 4 of 15 (only the animation effects' C656EAF8) and 0 of 4
   (out/lab/20261105-140001).
 * ~ NPCs of the Creature stage go through the same path (npc::id_of / npc::proxy); not tested there.
+
+## The hit impacts of the members' attacks on a guest (2026-11-05, fix/w45-tribe)
+<a id="tribe-hit-impacts"></a>
+
+BUG-0603. GOG 2024, Ghidra + runtime lane 9 (coop_tribe_hit_impacts.py, `coop.effects log on`: `fxanim:` lines with
+the effect's position, `fxhit:` lines).
+* ✔ (Ghidra) `SporeCoop::AnimEvent_Handle` 0x9A6D70 (cdecl, 21 arguments) has one caller, 0x9A7720, which resolves
+  the event's object specs (0x9A5560, up to three lists) and calls the handler once per resolved object: param 2 the
+  animating instance, param 3 the resolved object's instance (+0x18 its position, +0x2E4 its bones, 700 bytes each).
+  A spec that resolves to nothing makes no call (no effect).
+* CORRECTION (2026-11-05, fix/w45-tribe): the BUG-0603 inference "the per-target loop over param_18" (#tribe-mirror-fx)
+  is wrong: AnimEffect_SetTarget 0x9FBC10, the loop's only effect call, ran 0 times in a 40 s fight with 58 impact
+  sounds (lab 20261105-230956). The impacts come through the param_18 == 0 path (AnimEffect_Create from 0x9A72E3).
+* ✔ (runtime, lab 20261105-231448) In a 40 s fight 127 of the host's 477 animation-event effects were made for
+  another object than the animating one: 0x682E8D4B (25, sound 0xD05B58ED), 0x594BDFF9 (24), 0x7B5A2E62 (24),
+  0xF0D5A994 (18), 0xCFECC623 (18), 0x1EA65782, 0x46C9F053, 0xE19059E2 (5 each), 0x6532F5C6 (3), at the victim's
+  hit spot (1-3 m from the victim, the attacker next to it). The guest's game: 0 of 454 (every one on the animating
+  mirror: footsteps, the swing 0xE6D770B8..BF). So these specs resolve to the attack's target, which the guest's
+  mirror (its animation relayed by tribe.mirror_anims) does not have. ? How the game hands the attacker's animation
+  its target (not followed: the relay below does not need it).
+* Fix `effects.hit_targets`: game.cpp hooks AnimEvent_Handle (notes the two instances, thread local) and reports an
+  effect of AnimEffect_Create made inside it for another object; effects.cpp sends it as a world effect (pool 5, id
+  and position) to the players in the same place. Lab: the guest 52 of the host's 56 impact sounds (out/lab/
+  20261105-231808), off 0 of 53 (out/lab/20261105-231635).
+* Test pitfall: the fight of coop_tribe_fight_sounds.py's setup (attack an NPC tribe's member in its village) had
+  0-3 impacts in 40 s in 5 of 7 runs (the members still walking there); the new test puts the victim 9 m from them.

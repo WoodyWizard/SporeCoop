@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+- Tribe: the guest now sees and hears the blows of the host's tribe members land on their victims (the hit flashes
+  and their sounds), not only the swings (BUG-0603).
+
 ## [0.7.8] - 2026-11-05
 
 ### Changed
