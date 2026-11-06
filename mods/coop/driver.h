@@ -304,6 +304,12 @@ struct WalkPlace {
     bool catch_prop = false;
 };
 constexpr float kCatchTime = 0.25f;     // s
+// BUG-0619 (`coop.fix drive.catch_bound`): catch_prop's step was measured from where the game's own walk had taken the
+// body since the last placing, so a frame's drawn step was the walk (speed x dt) plus the placing's (2 x speed + 3)
+// x dt: 0.9-1.25 m per 32 ms frame for a 9 m/s Tribe member after a lead correction over a jittery network
+// (tribe_walk_mobile failed 5 of 6 with drive.lead). The placing now moves at most (speed + catch_up) x dt from where
+// it placed the body last frame, the error closed at most at twice the remote's speed + 3 m/s in all, as meant.
+inline bool g_catch_bound_fix = true;
 constexpr float kWalkLostErr = 0.75f;   // m
 constexpr double kWalkLostAfter = 0.15; // s
 
@@ -375,6 +381,14 @@ inline void walk_place(void* p, const net::Vec3& pos_in, const net::Quat& rot, c
     if (err > max_step) {
         float k = max_step / err;
         to = {cur.x + (pos.x - cur.x) * k, cur.y + (pos.y - cur.y) * k, cur.z + (pos.z - cur.z) * k};
+    }
+    if (g_catch_bound_fix && o.catch_prop && net::g_lead_fix && was && !ds.held) { // BUG-0619
+        float d = net::dist(to, ds.placed_to);
+        if (d > max_step && net::dist(cur, ds.placed_to) < 2.f * max_step + 0.5f) {
+            float k = max_step / d;
+            to = {ds.placed_to.x + (to.x - ds.placed_to.x) * k, ds.placed_to.y + (to.y - ds.placed_to.y) * k,
+                  ds.placed_to.z + (to.z - ds.placed_to.z) * k};
+        }
     }
     if (o.variant == 2 || ds.held) // held: closed at the same speed, but with the mark (the game keeps it)
         game::teleport(p, to, rot);
