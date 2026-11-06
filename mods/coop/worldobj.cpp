@@ -87,6 +87,15 @@ struct Kind {
     float vmax = 15.f; // m/s: a faster step between two snapshots is a jump (no velocity)
     // BUG-0490: guest, every frame, every bound copy is drawn where the host's is (nullptr: only `follow`)
     void (*drive)(const Item& local, const net::Vec3& host_pos, const net::Vec3& host_vel, double age, uint32_t host_st) = nullptr;
+    // 0.7.9 L2 (BUG-0497, BUG-0540): the host's places. Guest: a host object this game has no copy of within `tol`
+    // takes this game's nearest own copy without a partner within `relocate` m (of its class): `place` puts it at
+    // the host's place and it is bound, instead of the copy being removed and another made; a bound copy farther
+    // than `place_eps` m from the host's object is put there too (0: only when bound). `place_fix`: its switch
+    // (nullptr: always). Then `make` for the host objects still without a copy.
+    bool (*place)(const Item& local, const net::Vec3& host_pos, uint32_t host_st) = nullptr;
+    float relocate = 0;
+    float place_eps = 0;
+    bool* place_fix = nullptr;
 };
 constexpr uint32_t kGone = 0xFFFFFFFFu; // the state of an object the host's game no longer has
 
@@ -203,6 +212,67 @@ static bool tree_behind(uint32_t local, uint32_t host) { return (tree_mask(local
 static void tree_apply(const Item& l, uint32_t host) { tree_drop(l.p, tree_mask(l.st) & ~tree_mask(host)); }
 static bool tree_acted(uint32_t was, uint32_t now, uint32_t host) { return (tree_mask(was) & ~tree_mask(now) & tree_mask(host)) != 0; }
 static void tree_act(const Item& o, uint32_t now) { tree_drop(o.p, tree_mask(o.st) & ~tree_mask(now)); }
+
+// BUG-0497 (0.7.9 L2): a fruit on the ground in the host's game lies at the same place in a guest's. Each game's
+// fruit roll their own way when they fall (the same drop from the same tree came to rest 13 m apart, lab lane 7,
+// play_tribe), each game's creatures knock their own down, and the flora recycles the loose fruit farthest from
+// its own camera when its free fruit run out (Flora_TakeFruitForDrop 0xB08DF0), so the host's fruit had no copy
+// in the guest's game (coop.wobj `missing`) and the guest's own were removed (`dropped`). On: an own fruit within
+// 25 m is put at the host's place and kept (engine `place`), a bound one that rolled off is put back, and a host
+// fruit still without a copy is made the game's way: a free slot of the nearest tree gets its bit for the drop
+// (Flora_DropFruit 0xB09AE0 checks it and 0xB09790 makes the falling cFruit from the free fruit) and the tree's
+// mask is put back as it was (no fruit lost from the tree), then the fruit is put at the host's place.
+// `coop.fix wobj.fruit_place off`: bound by position only, the host's fruit without a copy stay missing (0.7.8).
+static bool g_fruit_place_fix = true;
+COOP_FIX("wobj.fruit_place", "BUG-0497", g_fruit_place_fix,
+         "creature / tribe: a fruit on the ground in the host's game lies at the same place in every game (moved there, or made from the nearest tree)");
+static bool fruit_rest(uint32_t s) { return s == 1 || s == 2; } // falling or on the ground (not held, not hidden)
+static bool fruit_place(const Item& l, const net::Vec3& hp, uint32_t host_st)
+{
+    if (!fruit_rest(host_st) || !fruit_rest(fruit_state(l.p)))
+        return false;
+    return game::set_object_position(l.p, hp);
+}
+static void tree_collect(Items& out);
+static bool is_tree(void* t);
+static uint32_t g_fruit_made_drops, g_fruit_made_fail;
+static int fruit_make(const net::Vec3& pos, uint32_t host)
+{
+    if (!g_fruit_place_fix || !fruit_rest(host) || !a_FloraGet || !a_DropFruit)
+        return 0;
+    void* fl = cdecl_call<void*>(a_FloraGet);
+    if (!fl)
+        return -1;
+    Items trees;
+    tree_collect(trees);
+    std::sort(trees.begin(), trees.end(), [&](const Item& a, const Item& b) { return net::dist(a.pos, pos) < net::dist(b.pos, pos); });
+    int tried = 0;
+    for (auto& t : trees) {
+        if (net::dist(t.pos, pos) > 60.f || tried++ >= 4)
+            break;
+        uint32_t lo = field<uint32_t>(t.p, 0x48), hi = field<uint32_t>(t.p, 0x4C);
+        for (int s = 0; s < 32; s++) {
+            if (lo >> s & 1)
+                continue; // a fruit hangs there
+            field<uint32_t>(t.p, 0x48) = lo | 1u << s;
+            void* f = thiscall<void*>(a_DropFruit, fl, t.p, s, 1); // 0: the tree has no slot s (DropFruit checks its count)
+            if (is_tree(t.p)) {
+                field<uint32_t>(t.p, 0x48) = lo;
+                field<uint32_t>(t.p, 0x4C) = hi;
+            }
+            if (!f)
+                break;
+            g_fruit_made_drops++;
+            if (IsBadReadPtr(f, 0x170) || game::noun_id(f) != kFruitNoun || !game::set_object_position(f, pos)) {
+                g_fruit_made_fail++;
+                return 0;
+            }
+            H->log(M, SK_INFO, "wobj: made the host's fruit at (%.1f %.1f %.1f) from tree slot %d", pos.x, pos.y, pos.z, s);
+            return 1;
+        }
+    }
+    return 0;
+}
 
 // ---------------------------------------------------------------- kind: interactive ornament (BUG-0459 / BUG-0473)
 // cInteractiveOrnament (noun 0x3A2511E, size 0x260): bones, skeletons, carcasses, rocks the avatar can use. They
@@ -580,7 +650,10 @@ static void space_vehicle_drive(const Item& l, const net::Vec3& hp, const net::V
 }
 
 static Kind g_kinds[] = {
-    {"fruit", &g_fruit_fix, kStCreature | kStTribe, 3.0f, 70.f, 48, fruit_collect, fruit_behind, fruit_apply, fruit_acted, fruit_act, true, true},
+    {.name = "fruit", .fix = &g_fruit_fix, .stages = kStCreature | kStTribe, .tol = 3.0f, .range = 70.f, .max = 48,
+     .collect = fruit_collect, .behind = fruit_behind, .apply = fruit_apply, .acted = fruit_acted, .act = fruit_act,
+     .gone_acted = true, .drop_own = true, .make = fruit_make, .place = fruit_place, .relocate = 25.f, .place_eps = 1.0f,
+     .place_fix = &g_fruit_place_fix},
     {"tree", &g_tree_fix, kStCreature | kStTribe, 0.5f, 70.f, 48, tree_collect, tree_behind, tree_apply, tree_acted, tree_act, false, false},
     {"herd", &g_herd_fix, kStCreature, 1.0f, 3000.f, 48, herd_collect, herd_behind, herd_apply, herd_acted, herd_act, false, false},
     {"interactive_ornament", &g_orn_fix, kStCreature, 1.5f, 90.f, 40, orn_collect, orn_behind, orn_apply, orn_acted, orn_act, false, false},
@@ -660,7 +733,7 @@ static GuestKind g_g[kKinds];
 static uint32_t g_epoch = 0;
 static double g_last_tx[16], g_last_guest = 0;
 struct Stat {
-    uint32_t tx = 0, rx = 0, bound = 0, applied = 0, dropped = 0, req_tx = 0, req_rx = 0, acted = 0, missing = 0, made = 0;
+    uint32_t tx = 0, rx = 0, bound = 0, applied = 0, dropped = 0, req_tx = 0, req_rx = 0, acted = 0, missing = 0, made = 0, placed = 0, relocated = 0;
 };
 static Stat g_st[kKinds];
 
@@ -801,6 +874,39 @@ static void reconcile(int k, double now, bool fresh)
     if (!fresh)
         return;
     // the snapshot: new binds, the host's state, the host's gone objects
+    bool placing = K.place && (!K.place_fix || *K.place_fix);
+    std::vector<uint32_t> unbound; // host objects without a copy within tol (bound in the second pass)
+    auto update = [&](uint32_t id, const Snap::Obj& ps, Bind& b) {
+        b.host_st = ps.second;
+        double dt = now - b.host_at;
+        if (b.host_at > 0 && dt > 0.3 && dt < 3.0) {
+            net::Vec3 v{(ps.first.x - b.host_pos.x) / (float)dt, (ps.first.y - b.host_pos.y) / (float)dt,
+                        (ps.first.z - b.host_pos.z) / (float)dt};
+            float sp = std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+            b.host_vel = sp < K.vmax ? v : net::Vec3{}; // (a jump: no velocity)
+        } else
+            b.host_vel = {};
+        b.host_pos = ps.first;
+        b.host_at = now;
+        auto f = by_key.find({b.p, b.serial});
+        if (f == by_key.end())
+            return;
+        if (K.behind(f->second->st, ps.second)) {
+            K.apply(*f->second, ps.second);
+            g_st[k].applied++;
+        }
+        if (placing && K.place_eps > 0 && net::dist(f->second->pos, ps.first) > K.place_eps && K.place(*f->second, ps.first, ps.second))
+            g_st[k].placed++;
+    };
+    auto bind = [&](uint32_t id, const Item& l) -> Bind& {
+        used.insert({l.p, l.id});
+        Bind b;
+        b.p = l.p;
+        b.serial = l.id;
+        b.local_st = l.st;
+        g_st[k].bound++;
+        return G.binds.emplace(id, b).first->second;
+    };
     for (auto& [id, ps] : S.objs) {
         auto bi = G.binds.find(id);
         if (bi == G.binds.end()) {
@@ -814,43 +920,42 @@ static void reconcile(int k, double now, bool fresh)
                 }
             }
             if (!best) {
-                g_st[k].missing++;
-                auto& m = G.made[id];
-                if (K.make && m.second < 3 && now - m.first > 3.0) {
-                    int r = K.make(ps.first, ps.second);
-                    if (r >= 0) {
-                        m.first = now;
-                        m.second++;
-                    }
-                    if (r > 0)
-                        g_st[k].made++; // bound at the next snapshot (this frame's list is older)
-                }
+                unbound.push_back(id);
                 continue;
             }
-            used.insert({best->p, best->id});
-            Bind b;
-            b.p = best->p;
-            b.serial = best->id;
-            b.local_st = best->st;
-            bi = G.binds.emplace(id, b).first;
-            g_st[k].bound++;
+            update(id, ps, bind(id, *best));
+            continue;
         }
-        Bind& b = bi->second;
-        b.host_st = ps.second;
-        double dt = now - b.host_at;
-        if (b.host_at > 0 && dt > 0.3 && dt < 3.0) {
-            net::Vec3 v{(ps.first.x - b.host_pos.x) / (float)dt, (ps.first.y - b.host_pos.y) / (float)dt,
-                        (ps.first.z - b.host_pos.z) / (float)dt};
-            float sp = std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
-            b.host_vel = sp < K.vmax ? v : net::Vec3{}; // (a jump: no velocity)
-        } else
-            b.host_vel = {};
-        b.host_pos = ps.first;
-        b.host_at = now;
-        auto f = by_key.find({b.p, b.serial});
-        if (f != by_key.end() && K.behind(f->second->st, ps.second)) {
-            K.apply(*f->second, ps.second);
-            g_st[k].applied++;
+        update(id, ps, bi->second);
+    }
+    for (uint32_t id : unbound) {
+        const Snap::Obj& ps = S.objs.at(id);
+        if (placing && K.relocate > 0) { // this game's own copy elsewhere: put at the host's place
+            Item* best = nullptr;
+            float bd = K.relocate;
+            for (auto& l : local) {
+                float d = net::dist(l.pos, ps.first);
+                if (d < bd && !used.count({l.p, l.id}) && (!K.classes || l.cls == ps.cls)) {
+                    bd = d;
+                    best = &l;
+                }
+            }
+            if (best && K.place(*best, ps.first, ps.second)) {
+                g_st[k].relocated++;
+                update(id, ps, bind(id, *best));
+                continue;
+            }
+        }
+        g_st[k].missing++;
+        auto& m = G.made[id];
+        if (K.make && m.second < 3 && now - m.first > 3.0) {
+            int r = K.make(ps.first, ps.second);
+            if (r >= 0) {
+                m.first = now;
+                m.second++;
+            }
+            if (r > 0)
+                g_st[k].made++; // bound at the next snapshot (this frame's list is older)
         }
     }
     for (auto bi = G.binds.begin(); bi != G.binds.end();) {
@@ -1030,12 +1135,12 @@ std::string status()
     std::string s = "wobj role=";
     s += is_host() ? "host" : is_guest() ? "guest" : "none";
     s += "\n";
-    char b[320];
+    char b[420];
     for (int k = 0; k < kKinds; k++) {
         const Stat& t = g_st[k];
-        snprintf(b, sizeof b, "kind %s fix=%d binds=%zu own=%zu snap_n=%zu snap_r=%.0f tx=%u rx=%u bound=%u applied=%u dropped=%u missing=%u made=%u req_tx=%u req_rx=%u acted=%u\n",
+        snprintf(b, sizeof b, "kind %s fix=%d binds=%zu own=%zu snap_n=%zu snap_r=%.0f tx=%u rx=%u bound=%u applied=%u dropped=%u missing=%u made=%u req_tx=%u req_rx=%u acted=%u placed=%u relocated=%u\n",
                  g_kinds[k].name, (int)*g_kinds[k].fix, g_g[k].binds.size(), g_g[k].own.size(), g_g[k].snap.objs.size(), g_g[k].snap.r,
-                 t.tx, t.rx, t.bound, t.applied, t.dropped, t.missing, t.made, t.req_tx, t.req_rx, t.acted);
+                 t.tx, t.rx, t.bound, t.applied, t.dropped, t.missing, t.made, t.req_tx, t.req_rx, t.acted, t.placed, t.relocated);
         s += b;
     }
     snprintf(b, sizeof b, "citizens walks=%u puts=%u far=%u; space citizens puts=%u; space vehicles drives=%u\n", g_cit_walks, g_cit_puts, g_cit_far,
@@ -1091,6 +1196,45 @@ static int c_wobj(void*, int argc, const char* const* argv, SkOut* out)
             n++;
         }
         H->out_printf(out, "end n=%d\n", n);
+        return 0;
+    }
+    if (!strcmp(a, "raw") && argc > 2) { // raw <noun hex> [r] [n bytes]: every object of a noun near the player with its first bytes
+        uint32_t noun = strtoul(argv[2], nullptr, 16);
+        float r = argc > 3 ? (float)atof(argv[3]) : 100.f;
+        int nb = argc > 4 ? atoi(argv[4]) : 0x140;
+        Items all;
+        collect_noun(noun, all, [](void*) { return 0u; });
+        for (auto& it : all) {
+            float d = net::dist(it.pos, me);
+            if (d > r)
+                continue;
+            H->out_printf(out, "obj %p ser=%u pos=(%.2f %.2f %.2f) dist=%.1f\n", it.p, it.id, it.pos.x, it.pos.y, it.pos.z, d);
+            for (int o = 0; o + 16 <= nb && !IsBadReadPtr((uint8_t*)it.p + o, 16); o += 16) {
+                const uint32_t* w = (const uint32_t*)((uint8_t*)it.p + o);
+                H->out_printf(out, "  +%03X %08X %08X %08X %08X\n", o, w[0], w[1], w[2], w[3]);
+            }
+        }
+        H->out_printf(out, "end\n");
+        return 0;
+    }
+    if (!strcmp(a, "move") && argc > 5) { // move <obj> x y z: this game's object put elsewhere (tests: a fruit that rolled its own way)
+        void* o = (void*)strtoul(argv[2], nullptr, 16);
+        net::Vec3 p{(float)atof(argv[3]), (float)atof(argv[4]), (float)atof(argv[5])};
+        bool ok = !IsBadReadPtr(o, 0x40) && game::object_alive(o) && game::set_object_position(o, p);
+        net::Vec3 now{};
+        game::object_position(o, now);
+        H->out_printf(out, "%s pos=(%.2f %.2f %.2f)\n", ok ? "moved" : "not moved", now.x, now.y, now.z);
+        return ok ? 0 : 1;
+    }
+    if (!strcmp(a, "mask") && argc > 3) { // mask <tree> <hex>: this game's fruit left on a tree (tests: a slot that fell here before)
+        void* t = (void*)strtoul(argv[2], nullptr, 16);
+        if (!is_tree(t)) {
+            H->out_printf(out, "no such tree\n");
+            return 1;
+        }
+        uint32_t before = field<uint32_t>(t, 0x48);
+        field<uint32_t>(t, 0x48) = strtoul(argv[3], nullptr, 16);
+        H->out_printf(out, "mask %X -> %X\n", before, field<uint32_t>(t, 0x48));
         return 0;
     }
     if (!strcmp(a, "use") && argc > 2) { // use <ornament>: the avatar uses it the game's way (OrnamentUsed + 0xD3353638)
