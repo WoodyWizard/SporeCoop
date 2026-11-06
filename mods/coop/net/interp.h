@@ -130,8 +130,8 @@ constexpr double kSmoothTau = 0.12; // s: e^-1 of a lead jump left after this
 constexpr float kSmoothRate = 3.f;  // m/s on top of kSmoothK x the body's speed
 constexpr float kSmoothK = 1.f;
 constexpr size_t kJitterN = 64;      // states (3-6 s)
-constexpr double kJitterHigh = 0.045; // s: no lead over this arrival jitter (IQR; netem mobile +-60 ms, player +-15 ms)
-constexpr double kJitterLow = 0.035;
+constexpr double kJitterHigh = 0.12; // s: no lead over this one-way latency (netem mobile 120 ms, player 45 ms)
+constexpr double kJitterLow = 0.10;
 constexpr double kSmoothVelTau = 0.1; // s
 
 class SnapshotBuffer {
@@ -187,21 +187,18 @@ public:
         }
         clock_.add(local_now - st, local_now);
         offset_ = clock_.value();
-        // BUG-0619: the arrival jitter: the interquartile range over the last kJitterN states of how late each
-        // arrived past the earliest one (the clock offset is the minimum of local - sender time). The IQR: the player
-        // network's latency spikes (+250 ms for 0.7 s every 7 s, ~10 % of the states) stay out of it, and a steady
-        // latency is no jitter. Tried before (lab 20261106-164638, -165647): the median lateness (a loaded local
-        // link 39-51 ms, mobile 51-62 ms) and the median lateness + one-way latency (player 150 ms, mobile 156-193
-        // ms) did not part the networks
+        // BUG-0619: the link's one-way latency, the median over the last kJitterN states (a latency spike of the
+        // player network, +250 ms for 0.7 s every 7 s, stays out of it). The states' arrival lateness did not part
+        // the networks in the lab: its median (a loaded local link 39-51 ms, mobile 51-62 ms), median + one-way
+        // (player 150 ms, mobile 156-193 ms) and IQR (local at lab load 10-15: 34-106 ms, mobile 45-103 ms; the
+        // guest's own frame times dominate it) (lab 20261106-164638, -165647, -170617)
         {
-            devs_[dev_n_++ % kJitterN] = (float)std::max(0.0, (local_now - st) - offset_);
+            devs_[dev_n_++ % kJitterN] = (float)g_one_way;
             if (dev_n_ >= 32) {
                 size_t n = std::min<size_t>(dev_n_, kJitterN);
                 std::array<float, kJitterN> d = devs_;
-                std::nth_element(d.begin(), d.begin() + n / 4, d.begin() + n);
-                float q1 = d[n / 4];
-                std::nth_element(d.begin(), d.begin() + 3 * n / 4, d.begin() + n);
-                jitter_ = d[3 * n / 4] - q1;
+                std::nth_element(d.begin(), d.begin() + n / 2, d.begin() + n);
+                jitter_ = d[n / 2];
                 jittery_ = jitter_ > kJitterHigh || (jittery_ && jitter_ > kJitterLow);
             }
         }
