@@ -422,6 +422,12 @@ class Campaign:
             el = math.dist(e, (0, 0, 0))
             pts = [c] + [tuple((c[i] + d * e[i] / el) * r / math.dist([c[j] + d * e[j] / el for j in range(3)], (0, 0, 0))
                                for i in range(3)) for d in (15, 30, 60, 100, 200)]
+            # far from the village: the six axis directions of the planet (is the difference local to the village?)
+            pts += [tuple(r * (1 if k == i else 0) * s for k in range(3)) for i in range(3) for s in (1, -1)]
+            if hst == 'tribe':  # every tribe's village (NPC tribes too: the 2026-11-05/06 differences were at NPC members)
+                pts += [tuple(float(m.group(i)) for i in (1, 2, 3)) for m in re.finditer(
+                    r'^tribe \d+(?: \(player\))? at \(([-\d.]+) ([-\d.]+) ([-\d.]+)\)', host.call('coop.tribe'), re.M)
+                    if math.dist([float(m.group(i)) for i in (1, 2, 3)], (0, 0, 0)) > 50]
 
             def gr(con, p):
                 m = re.search(r'ground (-?[\d.]+)', con.call('coop.ground %.2f %.2f %.2f' % tuple(p)))
@@ -433,8 +439,10 @@ class Campaign:
                 d = [round(b - a, 2) for a, b in zip(hg, gg) if a is not None and b is not None]
                 if d and max(abs(x) for x in d) > 0.5:
                     rows.append(f'{g.name} {d}')
-            if rows:
-                self.note(f'ground ({hst}, at {key} and 15 / 30 / 60 / 100 / 200 m off; host {[h and round(h, 2) for h in hg]}): guest - host ' + '; '.join(rows))
+            first = getattr(self, '_ground_seen', set())
+            self._ground_seen = first | {hst}
+            if rows or hst not in first:
+                self.note(f'ground ({hst}, at {key}, 15 / 30 / 60 / 100 / 200 m off, then +x -x +y -y +z -z, then the villages; host {[h and round(h, 2) for h in hg]}): guest - host ' + ('; '.join(rows) or 'all within 0.5 m'))
         except (OSError, ValueError, ZeroDivisionError) as e:
             self.note(f'ground probe: {e!r}')
 

@@ -23,6 +23,8 @@ from coop_tribe_gather_stall import pos_of
 from coop_tribe_snapshot import HISTORY_BTN, HISTORY_OK, Player, click, out
 from twoinst import Checks, start
 
+LIMIT = 0.5  # m: the two games' ground at the same direction (the fixture: within 0.2 m)
+
 
 def ground(con, p):
     m = re.search(r'ground ([-\d.]+)', out(con, f'coop.ground {p[0]:.2f} {p[1]:.2f} {p[2]:.2f}'))
@@ -46,6 +48,16 @@ def ring_points(c):
             s = r / math.dist(q, (0, 0, 0))
             pts.append((d, tuple(x * s for x in q)))
     return pts
+
+
+def villages(con):
+    """[(label, (x y z))] of every tribe's village on this game (`coop.tribe`: `tribe N (player) at (x y z)`)"""
+    res = []
+    for m in re.finditer(r'^tribe (\d+)( \(player\))? at \(([-\d.]+) ([-\d.]+) ([-\d.]+)\)', out(con, 'coop.tribe'), re.M):
+        c = tuple(float(m.group(i)) for i in (3, 4, 5))
+        if math.dist(c, (0, 0, 0)) > 50:  # a tribe without a place yet reports (0 0 0)
+            res.append((f'tribe {m.group(1)}' + (' (player)' if m.group(2) else ''), c))
+    return res
 
 
 def compare(host, guest, pts):
@@ -105,18 +117,23 @@ def main():
         return ck.result()
     c = tuple(sum(p[i] for p in ps) / len(ps) for i in range(3))
     print(f'  the village (the members\' centre on the host): ({c[0]:.1f} {c[1]:.1f} {c[2]:.1f})', flush=True)
-    pts = ring_points(c)
+    # BUG-0332: every tribe's village, the NPC tribes' too (in the campaigns the guests' ground was 5-6 m higher at
+    # NPC tribe members, not at the player's village)
+    places = [('the player tribe\'s members', c)] + villages(host)
     result = {}
     for k in range(2):
-        w = compare(host, guest, pts)
-        print(f'  sample {k + 1}: the largest |host - guest| ground per ring: '
-              + ', '.join(f'{d} m: {v:.2f}' for d, v in sorted(w.items())), flush=True)
-        for d, v in w.items():
-            result[d] = max(result.get(d, 0.0), v)
+        for name, at in places:
+            w = compare(host, guest, ring_points(at))
+            print(f'  sample {k + 1}, {name} at ({at[0]:.0f} {at[1]:.0f} {at[2]:.0f}): the largest |host - guest| ground '
+                  'per ring: ' + ', '.join(f'{d} m: {v:.2f}' for d, v in sorted(w.items())), flush=True)
+            for d, v in w.items():
+                if d <= 50:
+                    result[name] = max(result.get(name, 0.0), v)
         time.sleep(20)
-    near = max((v for d, v in result.items() if d <= 50), default=None)
-    ck(near is not None and near < 0.5, f'the guest\'s ground round the village is the host\'s (largest difference '
-       f'within 50 m {near if near is None else round(near, 2)} m < 0.5)')
+    worst = max(result.items(), key=lambda kv: kv[1], default=(None, None))
+    ck(worst[1] is not None and worst[1] < LIMIT, f'the guest\'s ground round every village ({len(places)}) is the '
+       f'host\'s (largest difference within 50 m {worst[1] if worst[1] is None else round(worst[1], 2)} m at '
+       f'{worst[0]}, < {LIMIT})')
     ck.faults(host=host, guest=guest)
     return ck.result()
 
