@@ -11,7 +11,8 @@
   by mistake since 0.7.5; it works again (BUG-0623).
 - Tribe and other stages: when a game was loaded within a few seconds of the galaxy menu coming up, the menu's
   intro flight could take over the host's view for good (the minimap and clicks no longer moved it); the intro is
-  now stopped the moment it starts outside the menu (BUG-0626).
+  now stopped the moment it starts outside the menu (BUG-0626). The same intro could leave a Creature guest's view on
+  the planet seen from space after its join (BUG-0607).
 - Civilization: a city the host's game founds instantly (and its vehicles) now appears on the guests' screens at
   once, not several seconds later (BUG-0624).
 - Cell: two cells that end up exactly on top of each other no longer shoot off at hundreds of metres per second or

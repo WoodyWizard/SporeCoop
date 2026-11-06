@@ -2023,4 +2023,5 @@ in Ghidra / objdump. ✔ = observed, ~ = read in the code but not seen running, 
   result; its state stays 5, "intro playing", until the menu comes up again). Lab 20261106-124712: the cold start's
   own intro under the box was "not started", the view followed the minimap. `coop.status`: "menu intro ended N (not
   started M)". Test tribe_intro_camera (starts the intro by hand under a held box).
-* Related: BUG-0607 (a Creature guest's view from space after the same intro ended in the stage).
+* Related: BUG-0607 (a Creature guest's view from space after the same intro ended in the stage). Confirmed and covered by
+  this fix: docs/re/creature.md#creature-intro-camera (the intro starts in the Loading mode after a menu load).

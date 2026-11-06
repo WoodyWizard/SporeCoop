@@ -822,6 +822,10 @@ static int SK_THISCALL h_PlayCinematic(void* mgr, const char* name, int a, int b
                game::mode_id());
         return 0; // as PlayCinematic without a cinematic (its caller, GalaxyGameEntry_IntroMessages, ignores it)
     }
+    // BUG-0607: when and in which mode it starts (the timer fires ~15.85 s after the menu came up; after a load
+    // requested just before, in the next frame, already in the Loading mode 01654C08)
+    if (name && !_stricmp(name, "GGE_intro"))
+        H->log(M, SK_INFO, "world: the galaxy menu intro starts (mode %08X)", game::mode_id());
     return o_PlayCinematic(mgr, name, a, b, c, d, e);
 }
 static void install_intro_hook()
