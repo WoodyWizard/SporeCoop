@@ -117,14 +117,16 @@ constexpr double kMaxLead = 0.6; // s ahead of the newest state
 // 3x the body's speed: Tribe member mirrors drew 0.9-1.25 m steps per 32 ms frame (tribe_walk_mobile). With the
 // fix the shown target is continuous: a new state's jump is kept as an offset to the raw lead (the target goes on
 // from where it was shown, with the velocity it had) and the offset decays exponentially (kSmoothTau) at most at
-// the body's speed + kSmoothRate (the target never moves faster than ~2x the body + 3 m/s). This is the closing
+// kSmoothK x the body's speed + kSmoothRate (the target never moves faster than 2.25x the body + 3 m/s: under the
+// 3x of a jump in tribe_walk at 9 m/s). This is the closing
 // walk_place's catch_prop did (an error closed in ~0.25 s at most at the speed + 3 m/s on top), measured on the
 // target's own path instead of from where the game's walk had put the body (which drew walk + catch-up). An
 // offset over the buffer's smooth_max is a real jump (the sender's body was put somewhere): taken at once.
 // Only buffers with smooth_max > 0 (the Tribe member mirrors). Off: the raw lead.
 inline bool g_lead_smooth_fix = true;
-constexpr double kSmoothTau = 0.15; // s: e^-1 of a lead jump left after this
-constexpr float kSmoothRate = 3.f;  // m/s on top of the body's speed
+constexpr double kSmoothTau = 0.1; // s: e^-1 of a lead jump left after this
+constexpr float kSmoothRate = 3.f;  // m/s on top of kSmoothK x the body's speed
+constexpr float kSmoothK = 1.25f;
 
 class SnapshotBuffer {
 public:
@@ -343,7 +345,7 @@ private:
                     off = {};
                 } else if (d > 1e-4f) {
                     float sp = std::max(dist(Vec3{}, v), dist(Vec3{}, sm_vel_));
-                    float nd = std::max(d * (float)std::exp(-dt / kSmoothTau), d - (sp + kSmoothRate) * (float)dt);
+                    float nd = std::max(d * (float)std::exp(-dt / kSmoothTau), d - (kSmoothK * sp + kSmoothRate) * (float)dt);
                     nd = std::max(nd, 0.f);
                     float k = nd / d;
                     off = {off.x * k, off.y * k, off.z * k};
