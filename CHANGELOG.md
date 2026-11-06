@@ -6,6 +6,8 @@
 - The game no longer risks a crash when SporeKit hooks a function while the game is already running (the first
   test input, the first cell of Cell): the hook is written only once no game thread is inside the bytes it changes
   (BUG-0403).
+- Cell: a guest whose pause menu was open while the others played, and who then left and joined again, no longer
+  crashes when the host's world is loaded (BUG-0308; the fix came with 0.7.3.2, now tested on this path).
 
 ## [0.7.8] - 2026-11-05
 

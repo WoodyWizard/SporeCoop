@@ -14,7 +14,7 @@
   hooknew    BUG-0398: 200 functions never hooked before are hooked while 3 threads call them: no
              thread reaches the detour before the hook's original pointer is set (the guest's main
              thread called address 0 when the first injected input hooked GetAsyncKeyState)
-  hooksplit  BUG-0403: 200 functions whose first 5 bytes are five instructions are hooked for the
+  hooksplit  BUG-0403: 1000 functions whose first 5 bytes are five instructions are hooked for the
              first time while 3 threads call them: no thread runs the jmp's bytes as code (no wrong
              result, no fault, the game lives)
 
@@ -121,11 +121,11 @@ def run_case(ck, case):
         ck(m is not None and m.group(1) == '0',
            f'no detour ran before its original was set ({m.group(1) if m else "?"} times; the game calls address 0 then)')
     elif case == 'hooksplit':
-        r, dt = timed('kit.test.hooknew 200 3 split', 90)
+        r, dt = timed('kit.test.hooknew 1000 3 split', 150)
         print(f'  hooksplit: {r["out"].strip() if r else "no answer"} ({dt:.1f} s)')
         m = re.search(r'wrong results (\d+)', r['out']) if r else None
-        ck(m is not None and re.search(r'\((\d+) hooked\)', r['out']).group(1) == '200',
-           'all 200 new hooks made (the game answered)')
+        ck(m is not None and re.search(r'\((\d+) hooked\)', r['out']).group(1) == '1000',
+           'all 1000 new hooks made (the game answered)')
         ck(m is not None and m.group(1) == '0',
            f'no call ran the jmp\'s bytes as code ({m.group(1) if m else "no answer"} wrong results)')
     ok, how = frames_go_on()

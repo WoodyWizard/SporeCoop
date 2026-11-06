@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: found on fix/w33-null-call (BUG-0398 analysis)
 role: any
 versions: 0.7.3.3
-fixed_in:
+fixed_in: unreleased
 branch: fix/w45-crashes
 commits: 1d80c9ea
 tests: kit_hooksplit

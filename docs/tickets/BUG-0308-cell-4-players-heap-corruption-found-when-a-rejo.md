@@ -1,19 +1,19 @@
 ---
 id: BUG-0308
 title: Cell, 4 players: heap corruption found when a rejoined guest's Cell pool is freed for the world reload (GeneralAllocator_FreeInternal from cObjectPool dtor under SimUpdate)
-status: open
+status: fixed
 kind: crash
 stage: Cell
 reported: 2026-10-30
 source: lab 20261030-104149 campaign_short#3
 role: guest
 versions: 0.7.3.1
-fixed_in:
-branch: fix/w13-cell
-commits: 4ae7640
-tests: campaign_short, cell_rejoin_leave
+fixed_in: unreleased
+branch: fix/w13-cell, fix/w22-cell, fix/w45-crashes
+commits: 4ae7640, 21b178c, 90f091b, 27245c9, 150439df, 3a5db144
+tests: campaign_short, cell_rejoin_leave, cell_pause_rejoin
 signature:
-docs: docs/re/cell.md#cell-leave-guard
+docs: docs/re/cell.md#cell-rejoin-paused-heap, docs/re/cell.md#cell-sap-pending, docs/re/cell.md#cell-leave-guard
 related: BUG-0295, BUG-0271, BUG-0028, BUG-0348
 ---
 
@@ -27,32 +27,39 @@ then `0x00DDA358` (data 0x18) and, while loading, `0x00DE81FE` under
 `cGameModeManager::ClearActiveMode`; the campaign then saw Dave stop drawing ("no frames for 10 s").
 
 ## Root cause
-Observed: the free of a pool's block (the Cell pool torn down by SimUpdate, a rebuild or the stage
-leave) found a corrupt heap header: the heap was damaged before, in or next to that block. Not known
-by whom. Candidates (inferred, not checked): a write past a pool's end while 900 mirrors were
-created again right after the rejoin, a stack/heap overrun of the BUG-0295 kind with another count,
-or a freed mirror written later. First time in the lab history (no other log has
-`cObjectPool::_dtor`).
+Observed (2026-11-05, fix/w45-crashes; docs/re/cell.md#cell-rejoin-paused-heap): BUG-0348's overflow
+of the cell broadphase's pending arrays. Dave's pause menu was open (the campaign log: "sync: not
+compared (pause menu open): Dave"; his position stood still at (33.6 47.8) from 12:39:51 to 12:40:51
+while his pool churned 900 -> 806 -> 900 -> 770 -> 900 mirrors): his game did not run SimUpdate's
+sweep while our guest code made mirrors from the host's states, so the endpoints piled up in the
+arrays of 2 x 4096 entries, which AddObject fills without a bound check; the leave and the rejoin
+(900 more mirrors at once) added to them, and the overflow wrote floats (endpoint coordinates) over
+the heap. The free of a Cell pool in the stage teardown then found the float header (0x41FAECC0 =
+31.37f). The same path on the lab with `cell.sap_pending` off gives the same three faults in the same
+order (FreeInternal+0x64 from the pool dtor with a float header, 0x00DDA358 data 0x18, then
+0x00DE81FE while loading): see Verification. Inferred: that Dave's pending count itself overflowed
+(0.7.3.1 had no counter of it).
+Earlier candidates (not the cause): our cell work in the leaving frames (guarded by cell.leave_guard,
+no fault without it in 24 rounds), BUG-0314's background cells.
 
 ## Fix
-Guard, not a proven fix (status stays open, as BUG-0292's guard): `coop.fix cell.leave_guard`
-(modes.cpp `cell_leaving()`): while `game::leaving_stage()` (quit posted for a world load or the menu,
-until the mode changes) the guest's state handler applies no MSG_CELL_STATE (no CreateCellObject, no
-field writes, no DestroyCell), `tick()` runs no guest / host / symbiosis tick and no background cull,
-and h_SimUpdate writes no puppet poses. Static evidence: cellsync's `in_cell()` and `avatar()` read
-the mode and the pool directly and stayed true through the leaving frames, unlike `game::avatar`
-(BUG-0264); docs/re/cell.md#cell-leave-guard. `coop.pool` prints `leave_writes=` / `leave_dropped=`.
+`coop.fix cell.sap_pending` (BUG-0348, fix/w22-cell 21b178c / 90f091b / 27245c9, released in 0.7.3.2):
+`cell_create` / `cell_spawn` make no cell while the pending list is near its arrays' end; the
+mirrors come with a later state once the game simulates again. Unchanged here; this branch adds the
+campaign guest's exact path as a test. The guard `cell.leave_guard` (4ae7640) stays.
 
 ## Verification
-The heap corruption itself was not reproduced. `coop_rejoin_loop.py --fixture cell --rounds 12 --gap
-0.3:1.5 --cell-leave` (suite cell_rejoin_leave): the guest leaves and rejoins inside Cell, the host's
-world arrives and the guest leaves the stage to load it, 12 times.
-* FAIL `SPORE_FIX_OFF=cell.leave_guard`: out/lab/20261030-143913 (lane 2): 1185 cell states / ticks
-  of ours ran on the guest's pool while it was being left (the window exists and is hit every round);
-  no fault in 12 rounds.
-* PASS: out/lab/20261030-143918 (lane 3): 0 ran, 932 skipped, no fault.
-* no-fail-run (for the crash): the corruption did not happen in 12 + 12 rounds with the old code;
-  what corrupted the heap in lab 20261030-104149 is not shown.
+Test `cell_pause_rejoin` (`coop_cell_pause.py --rounds 8 --rejoin`, 2 players: the mechanism needs
+one paused guest, not four): pause menu, 8 rounds of mirror churn, still paused the guest leaves and
+joins, the host's world arrives and the guest leaves Cell to load it.
+* FAIL `SPORE_FIX_OFF=cell.sap_pending`: out/lab/20261105-231554 (lane 4): pending 12 242 of 8 192
+  after the churn, 13 680 after the join; on leaving Cell the guest faulted at FreeInternal+0x64
+  (header 0x41557170 = 13.34f) from cObjectPool::_dtor < SimUpdate+0x750, then 0x00DDA358 (data
+  0x18), then 0x00DE81FE (map_uint32_uint32__get_+0xC1E): the three faults of the campaign log;
+  10 336 faults in all, the guest never came back with the world.
+* PASS: out/lab/20261105-231944 (lane 4): pending capped at 7 680 (mirrors held while paused: 77 285
+  / 85 481 held), the guest left Cell, loaded the host's world and was back in Cell in 8.3 s, no fault
+  on either game.
 
 ## History
 - 2026-10-30: opened.
@@ -67,3 +74,4 @@ world arrives and the guest leaves the stage to load it, 12 times.
   pool held 904 cells before the leave).
 - 2026-10-30 (fix/w13-cell): guard `cell.leave_guard` added (window confirmed: 1185 applied states / ticks in 12 rejoins without it); the crash not reproduced, stays open.
 - 2026-10-31 (fix/w22-cell): BUG-0348 reproduces this exact signature (FreeInternal+0x64 freeing pool G+0x8C, return 0xE7FA8D, then 0x00DDA358) by overflowing the cell broadphase's pending arrays (a guest that creates mirrors while its game does not simulate), guarded by `cell.sap_pending`; whether this report's guest was in that state is not shown, so it stays open.
+- 2026-11-05 (fix/w45-crashes): root cause observed: the campaign guest sat in the pause menu while its mirrors churned (BUG-0348's state); the same path with cell.sap_pending off reproduces the three faults in order; test cell_pause_rejoin; fixed by cell.sap_pending (0.7.3.2).
