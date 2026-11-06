@@ -341,9 +341,10 @@ thread then runs the jmp's operand bytes as code.
   From the console thread in the galaxy menu it had worked. ~ This may be what really froze
   MinHook's own thread freeze under Wine (it calls GetThreadContext on suspended threads too), rather
   than VirtualProtect as its patch comment says.
-* Measured (lane 4): 50 / 200 split hooks under 3 calling threads: 0 wrong results, 445 786 gate traps
-  for 50 hooks, 2.6 s (the 50 ms windows). `kit.test.hooknew` prints `live first writes / gate traps
-  / refused`.
+* Measured (lane 4): 1000 split hooks under 3 calling threads: 0 wrong results, 6.3-7.8 million
+  gate traps, 52 s (the 50 ms windows), 3 of 3 runs; with `kit.fix hookfirst 0` the game crashed in 3
+  of 3 (out/lab/20261105-232406 / 20261105-232220). `kit.test.hooknew` prints `live first writes /
+  gate traps / refused`.
 * Not covered: a thread whose return address lies inside the first 5 bytes (a 2-byte `call reg` in
   the prologue) is not in them while it runs the callee and returns into the new jmp; MinHook's freeze
   had the same limit. Boot hooks (frame 0) keep the plain stores (no other thread runs game code yet).
