@@ -8,7 +8,7 @@ reported: 2026-11-05
 source: player question and owner's manual test 2026-11-05 (0.7.7)
 role: guest
 versions: 0.7.7
-fixed_in: unreleased
+fixed_in: 0.7.8
 branch: fix/w44-coop-window
 commits: afebdb63
 tests: ui_explain (coop_ui_explain.py)
@@ -40,3 +40,4 @@ editor to pick it)", no arrows). Layout: out/lane6/shots/ui_explain_creation.png
 ## History
 - 2026-11-05: opened.
 - 2026-11-05: fixed on fix/w44-coop-window (core.ui_creation_hint).
+- 2026-11-05: released in 0.7.8.

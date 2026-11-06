@@ -8,7 +8,7 @@ reported: 2026-11-05
 source: lab long_creature_short 20261105-002102
 role: both
 versions: 0.7.7-dev
-fixed_in: unreleased
+fixed_in: 0.7.8
 branch: fix/w44-height
 commits: 9ce58786
 tests: own_ground
@@ -61,3 +61,4 @@ own_ground (coop_own_ground.py): FAIL with SPORE_FIX_OFF=creature.own_ground out
 ## History
 - 2026-11-05: opened.
 - 2026-11-05 (fix/w44-height): fixed (creature.own_ground); own_ground FAIL/PASS.
+- 2026-11-05: released in 0.7.8.

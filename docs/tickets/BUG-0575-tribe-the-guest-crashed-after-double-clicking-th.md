@@ -8,7 +8,7 @@ reported: 2026-11-04
 source: player report 2026-11-04 (Discord bug-reports, 0.7.5, Steam build)
 role: guest
 versions: 0.7.5
-fixed_in: unreleased
+fixed_in: 0.7.8
 branch: fix/w44-crashes
 commits: b37ea975, f3b238dc, 0570e27d
 tests: crash_model_fx (tools/tests/coop_crash_guards.py --case model_fx)
@@ -86,3 +86,4 @@ by the game's own "home" (? which control: not found).
 - 2026-11-04 (fix/w43-replay, step 0 of 0.7.7): replayed on 0.7.6 code; still open (T1), crash site analysed from the dump, not reproduced.
 - 2026-11-04 (fix/w43-transitions, T1): the call chain mapped to GOG 2024 (an object view's update); still not reproduced.
 - 2026-11-05 (fix/w44-crashes, X2): real call chain found (the report's names were stale), guard game.model_fx with a planted-state test (FAIL 20261105-101857, PASS 20261105-101523); the cause of the freed part not found; status fixed (guard, not verified against the player's crash).
+- 2026-11-05: released in 0.7.8.

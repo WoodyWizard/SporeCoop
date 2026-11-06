@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.7.8] - 2026-11-05
+
 ### Changed
 - The GOG 2016 build of Spore is no longer supported: please update the game through GOG (the current download
   is the 2024 build). SporeCoop still starts on GOG 2016, but it is not tested there and its bugs are not fixed.
@@ -38,7 +40,7 @@
 - Tribe: a guest hears the stage's hunting and fighting music of its tribe, as the host does (BUG-0568).
 - Tribe: a guest hears the fight's sounds of the host's villagers: their war cries going into a fight, their sighs
   coming out of it, the sprint and the effects of their attacks (BUG-0600; the hit impacts of the attack animations
-  are still missing: BUG-0603).
+  are still open, BUG-0603).
 - Tribe: in co-op new villages no longer appear as soon as the whole party has gathered the food one player's tribe
   needs alone: they come at one player's pace (BUG-0571).
 

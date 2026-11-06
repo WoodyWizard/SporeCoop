@@ -8,7 +8,7 @@ reported: 2026-11-05
 source: detector, rel/0.7.7 final check out/lab/20261105-015320 and 015350
 role: guest
 versions: 0.7.7-dev
-fixed_in: unreleased
+fixed_in: 0.7.8
 branch: fix/w44-world-state2
 commits: 49ba4925 8b405a1c
 tests: make test (tools_selftest.py worldstate)
@@ -42,3 +42,4 @@ final campaign_space 20261105-015350).
 ## History
 - 2026-11-05: opened.
 - 2026-11-05: fixed in the detector (fix/w44-world-state2).
+- 2026-11-05: released in 0.7.8.

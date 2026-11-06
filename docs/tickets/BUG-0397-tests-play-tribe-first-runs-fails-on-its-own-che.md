@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: lab runs on fix/w32-tribe-sync (out/lab/20261101-115510)
 role: both
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.8
 branch: fix/w44-tests
 commits: 27c23222 2e1860c0
 tests: play_tribe
@@ -72,3 +72,4 @@ through real clicks (9)" (the check wants 10 in 10 min). The same check failed i
 the worktrees' out/lab (0.7.4-0.7.8, e.g. rel/0.7.7 20261104-220200 with 8): the bot's own order rate, not a game
 fault. For G2 (0.7.8 plan): make the guest bot give a fixed minimum of orders, or scale the floor with its actions.
 - 2026-11-05 (fix/w44-tests, G2): the order floor failures were the bots' pace; the bots keep one order per 30 s.
+- 2026-11-05: released in 0.7.8.

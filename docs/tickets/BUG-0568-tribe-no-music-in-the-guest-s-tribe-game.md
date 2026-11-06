@@ -8,7 +8,7 @@ reported: 2026-11-04
 source: player report 2026-11-04 (Discord bug-reports, 0.7.5, Steam build)
 role: guest
 versions: 0.7.5
-fixed_in: unreleased
+fixed_in: 0.7.8
 branch: fix/w44-tribe-guest
 commits: 6236a107
 tests: tribe_theme_music (tools/tests/coop_tribe_theme_music.py)
@@ -58,3 +58,4 @@ Not reproduced (the lab games run muted). Not in the plan table: P1 (the guest a
 - 2026-11-04 (fix/w43-replay, step 0 of 0.7.7): replayed on 0.7.6 code; still open, not analysed (lab games are muted).
 - 2026-11-04 (fix/w43-guest-player, P1 of 0.7.7): not analysed in P1 (lab games are muted).
 - 2026-11-05 (fix/w44-tribe-guest, A1 of 0.7.8): analysed with the game's audio commands; the fight theme observed missing on the guest, fixed by tribe.theme_music; the report's exact path (live change + menu bounce) not replayed.
+- 2026-11-05: released in 0.7.8.

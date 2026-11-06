@@ -8,7 +8,7 @@ reported: 2026-11-05
 source: detector, rel/0.7.7 final check out/lab/20261105-015320 and 015350
 role: guest
 versions: 0.7.7-dev
-fixed_in: unreleased
+fixed_in: 0.7.8
 branch: fix/w44-world-state2
 commits: d21a18ff 040d4314 be1f1b6b 3567b106 cd2f986f 06f729dd
 tests: tribe_civ (coop_tribe_civ.py), make test (tools_selftest.py worldstate)
@@ -43,3 +43,4 @@ worlddiff.py, passes here.
 ## History
 - 2026-11-05: opened.
 - 2026-11-05: the detector skips the host's end of Tribe (fix/w44-world-state2).
+- 2026-11-05: released in 0.7.8.

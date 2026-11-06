@@ -8,7 +8,7 @@ reported: 2026-11-04
 source: player report 2026-11-04 (Discord bug-reports, 0.7.5, Steam build)
 role: guest
 versions: 0.7.5
-fixed_in: unreleased
+fixed_in: 0.7.8
 branch: fix/w44-tribe-guest
 commits: acc37291
 tests: tribe_mirror_anims (tools/tests/coop_tribe_mirror_anims.py)
@@ -56,3 +56,4 @@ Same mechanism as BUG-0564 (tribe_bounce_world out/lab/20261104-202045 FAIL). Pa
 - 2026-11-04 (fix/w43-replay, step 0 of 0.7.7): replayed on 0.7.6 code; still open (W2), the class reproduced by tribe_bounce_world.
 - 2026-11-04 (fix/w43-realign): analysed; covered by the W2 re-alignment (BUG-0564), not verified on its own: stays open until a test shows a village's members after a reload (coop_realign_planet.py checks villages, not their members).
 - 2026-11-05 (fix/w44-tribe-guest, A1 of 0.7.8): root cause observed (mirrors play no behaviour animation), fixed by tribe.mirror_anims.
+- 2026-11-05: released in 0.7.8.

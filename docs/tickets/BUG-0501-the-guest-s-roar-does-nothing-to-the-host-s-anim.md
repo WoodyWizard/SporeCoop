@@ -8,7 +8,7 @@ reported: 2026-11-03
 source: split from BUG-0462 (player report 2026-11-02)
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.8
 branch: fix/w44-guest-player2
 commits: 891eeac1
 tests: creature_roar (coop_creature_roar.py)
@@ -72,3 +72,4 @@ more in 10 s.
 - 2026-11-04: third look on fix/w42-creature-left (runtime, `coop.social abil`): no fixture creature has an ability of the area kinds 2 / 3 (all kind 0, one kind 1 type 0x1D); 0xC155D0 is the ability's effect spawner, not a stimulus. Still no test creature; not fixed. docs/re/creature.md#creature-leftovers-3.
 - 2026-11-04 (fix/w43-guest-player, P1 of 0.7.7): not fixed. New (Ghidra, from the BUG-0556 analysis): the ability handler 0xD8E840 runs kind 0x31 (roar: stimuli to the enemies around the roaring creature), 0x32 (siren song), 0x33 (summon flock -> drama kind 8). A guest's roar posts its stimuli to the AI-less proxies in its own game only; a fix is a guest -> host MSG_PLAYER_RULE kind that runs the same kind on the puppet in the host's game.
 - 2026-11-05 (fix/w44-guest-player2, P2 of 0.7.8): fixed (creature.roar_relay), test creature_roar.
+- 2026-11-05: released in 0.7.8.

@@ -8,7 +8,7 @@ reported: 2026-11-05
 source: lab (fix/w43-crashes) play_tribe with SPORE_DETECTOR=20, 20261105-003630
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.8
 branch: fix/w44-world-state2
 commits: 06a664f2 94022d49 bf250d06 e016c580
 tests: tribe_new_villages (coop_wsync_tribe.py villages)
@@ -57,3 +57,4 @@ not met: play_tribe is no check of this fix).
 ## History
 - 2026-11-05: opened.
 - 2026-11-05: fixed by wsync.tribe_pos (fix/w44-world-state2).
+- 2026-11-05: released in 0.7.8.

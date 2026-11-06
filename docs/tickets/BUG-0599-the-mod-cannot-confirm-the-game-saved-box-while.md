@@ -8,7 +8,7 @@ reported: 2026-11-05
 source: fix/w44-coop-window, coop_chat_pause.py experiment 2026-11-05
 role: host
 versions: 0.7.7
-fixed_in: unreleased
+fixed_in: 0.7.8
 branch: fix/w44-coop-window
 commits: 9cdebdf0
 tests: chat_pause (coop_chat_pause.py)
@@ -41,3 +41,4 @@ fails in both parts), PASS out/lab/20261105-100001.
 ## History
 - 2026-11-05: opened.
 - 2026-11-05: opened and fixed on fix/w44-coop-window (world.box_aside).
+- 2026-11-05: released in 0.7.8.

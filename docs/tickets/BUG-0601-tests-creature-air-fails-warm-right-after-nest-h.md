@@ -8,7 +8,7 @@ reported: 2026-11-05
 source: rel/0.7.8 lab 20261105-121717, fix/w44-guest-player2 20261105-121010
 role: guest
 versions: 0.7.8-dev
-fixed_in: unreleased
+fixed_in: 0.7.8
 branch: fix/w44-tests
 commits: 598d85a7 2e1860c0 aefb8de5
 tests: creature_air (coop_creature_air.py)
@@ -61,3 +61,4 @@ one call: it orders tests by their minutes).
 ## History
 - 2026-11-05: opened.
 - 2026-11-05 (fix/w44-tests, G2): the NPC walks out of reach of the airborne guest; the test keeps it in reach or takes the next one.
+- 2026-11-05: released in 0.7.8.

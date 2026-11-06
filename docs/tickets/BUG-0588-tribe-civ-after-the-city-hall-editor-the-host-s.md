@@ -8,7 +8,7 @@ reported: 2026-11-04
 source: lab (fix/w43-transitions, coop_tribe_civ.py)
 role: host
 versions: 0.7.6
-fixed_in: unreleased
+fixed_in: 0.7.8
 branch: fix/w44-world-state2
 commits: 724c27f7 d21a18ff 040d4314 94022d49 cd2f986f 06f729dd 9f7a1a8e
 tests: tribe_civ (coop_tribe_civ.py)
@@ -56,3 +56,4 @@ no-fail-run: the animals at (0 0 0) after the City Hall were seen once (lab 2026
 ## History
 - 2026-11-04: opened.
 - 2026-11-05: the sync-check and the detector skip the host's end of Tribe, the notice fixed (fix/w44-world-state2).
+- 2026-11-05: released in 0.7.8.

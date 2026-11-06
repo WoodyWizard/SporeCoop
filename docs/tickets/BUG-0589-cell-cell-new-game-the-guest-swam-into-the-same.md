@@ -8,7 +8,7 @@ reported: 2026-11-04
 source: lab fix/w43-tests 20261104-232622 cell_new_game (lane 3)
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.8
 branch: fix/w44-tests
 commits: ef4a921e 5181bc99 9fb49030 250e2ef3
 tests: cell_new_game
@@ -57,3 +57,4 @@ for its meat. Each try without points logs the cell's layer, level, size and the
 ## History
 - 2026-11-04: opened.
 - 2026-11-05 (fix/w44-tests, G2): decided a probe problem (teleport beside the food, no meat to find); probe fixed; BUG-0604 split off.
+- 2026-11-05: released in 0.7.8.

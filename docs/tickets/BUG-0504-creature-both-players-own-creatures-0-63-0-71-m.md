@@ -8,7 +8,7 @@ reported: 2026-11-03
 source: BUG-0500 analysis, lab 20261103-124913
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.8
 branch: fix/w44-height
 commits: 9ce58786
 tests: own_ground
@@ -45,3 +45,4 @@ caption itself not reproduced (see above).
 - 2026-11-03: opened.
 - 2026-11-03: not reproduced on fix/w41-creature-left (gopos to the spot + brain caption, gonpc next to 10 NPCs).
 - 2026-11-05 (fix/w44-height): fixed by creature.own_ground (BUG-0592); the caption case not rerun.
+- 2026-11-05: released in 0.7.8.

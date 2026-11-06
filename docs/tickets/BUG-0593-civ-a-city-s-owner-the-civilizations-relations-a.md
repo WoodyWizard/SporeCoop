@@ -8,7 +8,7 @@ reported: 2026-11-05
 source: detector, rel/0.7.7 final check out/lab/20261105-015320 and 015350
 role: guest
 versions: 0.7.7-dev
-fixed_in: unreleased
+fixed_in: 0.7.8
 branch: fix/w44-world-state2
 commits: 49ba4925 94022d49 9edaac57 51228919 66d28db1
 tests: wsync_civ (coop_wsync_civ.py)
@@ -64,3 +64,4 @@ planet:building_* rows (a building at another place, not its owner) are BUG-0602
 ## History
 - 2026-11-05: opened.
 - 2026-11-05: fixed by the wsync rows city_owner, civ_rel, civ_money (fix/w44-world-state2).
+- 2026-11-05: released in 0.7.8.

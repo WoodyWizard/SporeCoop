@@ -8,7 +8,7 @@ reported: 2026-11-04
 source: final check out/lab/20261104-135838 play_creature
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.8
 branch: fix/w44-height
 commits: 4b54c7a7, df579966
 tests: npc_air
@@ -51,3 +51,4 @@ after).
 - 2026-11-04: opened.
 - 2026-11-04 (fix/w43-tests): G1: not reached (no run, no change).
 - 2026-11-05 (fix/w44-height): fixed (npc.air, drive.sender_agl); npc_air FAIL/PASS.
+- 2026-11-05: released in 0.7.8.

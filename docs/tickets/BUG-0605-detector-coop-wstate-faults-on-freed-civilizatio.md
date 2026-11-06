@@ -8,7 +8,7 @@ reported: 2026-11-05
 source: lab rel/0.7.8 20261105-134715 campaign_space (detector run)
 role: guest
 versions: 0.7.8-dev
-fixed_in: unreleased
+fixed_in: 0.7.8
 branch: fix/w44-wstate-transition
 commits: 63598921
 tests: campaign_space
@@ -38,3 +38,4 @@ same check local_now uses. Regression: campaign_space with SPORE_DETECTOR=20 in 
 
 ## History
 - 2026-11-05: opened.
+- 2026-11-05: released in 0.7.8.

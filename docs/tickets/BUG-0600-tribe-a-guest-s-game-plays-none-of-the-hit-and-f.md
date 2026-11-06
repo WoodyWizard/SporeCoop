@@ -8,7 +8,7 @@ reported: 2026-11-05
 source: lab (fix/w44-tribe-guest, BUG-0568 analysis)
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.8
 branch: fix/w44-guest-player3
 commits: 625e1260
 tests: tribe_fight_sounds
@@ -60,3 +60,4 @@ sound id, the guest's game at least 80 % of the host's.
 ## History
 - 2026-11-05: opened.
 - 2026-11-05 (fix/w44-guest-player3, P2b of 0.7.8): analysed at runtime, fixed (mirror.fx); the animation per-target hit impacts split to BUG-0603.
+- 2026-11-05: released in 0.7.8.

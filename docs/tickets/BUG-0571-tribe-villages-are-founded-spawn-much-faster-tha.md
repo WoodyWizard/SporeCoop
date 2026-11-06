@@ -8,7 +8,7 @@ reported: 2026-11-04
 source: player report 2026-11-04 (Discord bug-reports, 0.7.5, Steam build)
 role: host
 versions: 0.7.5
-fixed_in: unreleased
+fixed_in: 0.7.8
 branch: fix/w44-tribe-guest
 commits: c9abc726
 tests: tribe_form_pace (tools/tests/coop_tribe_form_pace.py)
@@ -64,3 +64,4 @@ Not reproduced in the lab (a 10-minute forming count alone vs in a session was n
 - 2026-11-04 (fix/w43-replay, step 0 of 0.7.7): replayed on 0.7.6 code; still open (W2), not reproduced.
 - 2026-11-04 (fix/w43-realign): analysed, not reproduced, not fixed (no change to the host's controller).
 - 2026-11-05 (fix/w44-tribe-guest, A1 of 0.7.8): the controller's rule read and measured alone vs in a session (same); the party's food pace held to one player's by tribe.form_pace.
+- 2026-11-05: released in 0.7.8.

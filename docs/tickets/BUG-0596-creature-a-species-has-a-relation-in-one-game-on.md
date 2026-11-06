@@ -8,7 +8,7 @@ reported: 2026-11-05
 source: detector, rel/0.7.7 final check out/lab/20261105-015320 and 015350
 role: both
 versions: 0.7.7-dev
-fixed_in: unreleased
+fixed_in: 0.7.8
 branch: fix/w44-world-state2
 commits: d21a18ff be1f1b6b c43d2217 3567b106
 tests: make test (tools_selftest.py worldstate), long_creature_short
@@ -47,3 +47,4 @@ SPORE_DETECTOR=20 out/lab/20261105-123555: 34 Creature comparisons, no Creature:
 ## History
 - 2026-11-05: opened.
 - 2026-11-05: fixed in the detector (fix/w44-world-state2).
+- 2026-11-05: released in 0.7.8.

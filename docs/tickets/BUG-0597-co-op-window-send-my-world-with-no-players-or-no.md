@@ -8,7 +8,7 @@ reported: 2026-11-05
 source: owner's manual test 2026-11-05 (0.7.7)
 role: host
 versions: 0.7.7
-fixed_in: unreleased
+fixed_in: 0.7.8
 branch: fix/w44-coop-window
 commits: afebdb63
 tests: ui_explain (coop_ui_explain.py)
@@ -49,3 +49,4 @@ ui_explain_alone_world.png (English and Russian fit one line).
 ## History
 - 2026-11-05: opened.
 - 2026-11-05: fixed on fix/w44-coop-window (core.ui_share_explain).
+- 2026-11-05: released in 0.7.8.

@@ -8,7 +8,7 @@ reported: 2026-11-04
 source: final check out/lab/20261104-135838 play_creature
 role: host
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.8
 branch: fix/w44-coop-window
 commits: 9cdebdf0
 tests: chat_pause (coop_chat_pause.py)
@@ -49,3 +49,4 @@ in both players' chat).
 - 2026-11-04: opened.
 - 2026-11-04 (fix/w43-tests): G1: read coop_ui.cpp's locked-edit path (locked_edit_tick / locked_edit_apply); not reproduced, not changed.
 - 2026-11-05: fixed on fix/w44-coop-window (core.ui_locked_edit_keep), test coop_chat_pause.py.
+- 2026-11-05: released in 0.7.8.

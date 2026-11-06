@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: fix/w34-ability-pop regression (lab 20261101-171437)
 role: host
 versions: 0.7.3.3+
-fixed_in: unreleased
+fixed_in: 0.7.8
 branch: fix/w44-tests
 commits: 4f921102 f2037dd1
 tests: tools/tests/coop_team.py, tools/tests/coop_puppet_fight.py
@@ -54,3 +54,4 @@ switch.
 ## History
 - 2026-11-01: opened (fix/w34-ability-pop).
 - 2026-11-05 (fix/w44-tests, G2): root cause observed (the target was the host's own family), test fixed.
+- 2026-11-05: released in 0.7.8.

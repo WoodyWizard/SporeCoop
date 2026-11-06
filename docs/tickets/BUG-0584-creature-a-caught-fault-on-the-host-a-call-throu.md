@@ -8,7 +8,7 @@ reported: 2026-11-04
 source: long_creature (D0), lab 20261104-214938
 role: host
 versions: 0.7.6
-fixed_in: unreleased
+fixed_in: 0.7.8
 branch: fix/w44-crashes
 commits: b37ea975, f3b238dc, 0570e27d, 09461e63
 tests: crash_fruit_eat (tools/tests/coop_crash_guards.py --case fruit_pool)
@@ -70,3 +70,4 @@ Reproduced (fix/w44-crashes): crash_fruit_eat, the host eats a fruit of the save
 - 2026-11-04: opened.
 - 2026-11-05: analysed (fruit pool RE), not reproduced, no fix (fix/w43-crashes).
 - 2026-11-05 (fix/w44-crashes, X2): reproduced (crash_fruit_eat), root cause the mod's fruit_eat on a fruit of the save; fixed (wobj.fruit_saved) with a pool guard (game.fruit_pool); status fixed.
+- 2026-11-05: released in 0.7.8.
