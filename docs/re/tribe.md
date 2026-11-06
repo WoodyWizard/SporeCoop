@@ -1868,3 +1868,17 @@ the effect's position, `fxhit:` lines).
   20261105-231808), off 0 of 53 (out/lab/20261105-231635).
 * Test pitfall: the fight of coop_tribe_fight_sounds.py's setup (attack an NPC tribe's member in its village) had
   0-3 impacts in 40 s in 5 of 7 runs (the members still walking there); the new test puts the victim 9 m from them.
+
+## The gather's walk after an interruption (2026-11-05, fix/w45-tribe)
+<a id="tribe-gather-walk"></a>
+
+BUG-0531 (not reproduced, no fix). GOG 2024, lab lane 9, 'tribe' fixture.
+* ✔ (runtime) A gather order (`coop.tribe order <id> 2 <tree>`) to a fruit tree 60 m off: node 0x0569236E state 1,
+  walk mode 1, the walk's goal the tree itself with an arrival radius of 5.1-6.2 m (`coop.tribe ai`: r=); the
+  node memory's +8 (the tree) read 0 then.
+* ✔ A teleport of the walking member (game::teleport through `coop.tribe put`) does not end the walk: put 2.5 m short
+  of the goal (inside r) the gather went on at once (states 5, 2 at the tree: lab 20261105-232113); put 7.6 m short
+  (outside r) it walked on and reached the tree in 10 s (lab 20261105-232555). So a stall of state 1 needs the game's
+  own walk to stop with the member outside the goal's radius, which a test cannot make by moving the member.
+* ~ The play_tribe stall (goal 2.8 m off, standing) therefore had a goal with a radius under 2.8 m: not the tree goal
+  of this path (inferred).
