@@ -181,7 +181,7 @@ void set_stall_fix(bool on) { g_stall_fix = on; }
 static bool g_proxy_mound_fix = true;
 COOP_FIX("npc.proxy_mound", "BUG-0562", g_proxy_mound_fix,
          "creature: an animal of a nest the host is far from stands on its nest mound on the guest, not inside it");
-static uint32_t g_mound_lifts;
+static uint32_t g_mound_lifts, g_mound_targets;
 static net::Vec3 proxy_on_mound(const net::Vec3& p)
 {
     constexpr float kMoundMin = 0.1f, kMoundMax = 2.5f, kMoundSink = 0.05f;
@@ -1709,6 +1709,13 @@ static void guest_tick(double now)
         // BUG-0550: the host's NPC is off its ground: at its height over the host's terrain, over this game's, not
         // grounded (drive::air_place); not walked (the walk is ended, it walks again after the landing)
         const bool air = g_air_fix && !px.killed && (s.flags & net::NF_AIR) && !(s.flags & net::NF_DEAD);
+        if (!air && !px.killed && !(s.flags & net::NF_DEAD)) { // BUG-0562: the host's NPC inside this game's mound
+            const net::Vec3 up = proxy_on_mound(s.pos);
+            if (up.x != s.pos.x || up.y != s.pos.y || up.z != s.pos.z) {
+                s.pos = up;
+                g_mound_targets++;
+            }
+        }
         if (air) {
             px.kinematic = false;
             drive::air_place(px.c, drive::at_sender_agl(s.pos, s.agl), s.rot, s.vel, px.drv, now);
@@ -2535,11 +2542,11 @@ std::string status()
             spawned += px.c != nullptr;
         snprintf(b, sizeof b, "npc(guest): proxies=%u spawned=%u local_removed=%u hits_sent=%u damage_in=%u lost=%u host_away=%d "
                  "away_dropped=%u local_alive=%u in_nest=%u nests=%u stale_dropped=%u strays_removed=%u hatch_helped=%u "
-                 "deaths_played=%u kill_held=%u away_locals=%u unlisted=%u nospecies=%u leave_locals=%u mound_lifts=%u\n",
+                 "deaths_played=%u kill_held=%u away_locals=%u unlisted=%u nospecies=%u leave_locals=%u mound_lifts=%u mound_targets=%u\n",
                  (unsigned)g_proxies.size(), spawned, g_removed_local, g_hits_sent, g_damage_in, g_proxy_lost, (int)g_host_away,
                  g_away_proxies, g_local_alive, g_proxies_in_nest, (unsigned)g_local_herds.size(), g_stale_dropped,
                  g_strays_removed, g_hatch_helped, g_deaths_played, (unsigned)g_kill.size(), g_away_locals, g_proxy_unlisted,
-                 g_proxy_nospecies, g_leave_locals, g_mound_lifts);
+                 g_proxy_nospecies, g_leave_locals, g_mound_lifts, g_mound_targets);
     }
     return b + meat_status() + game::destroy_deferred_status() + "\n";
 }

@@ -47,6 +47,24 @@ def proxies(guest):
     return out
 
 
+def on_screen(guest):
+    """the proxy keys (n<id>) on the guest's screen"""
+    return {f.split()[1][1:] for f in guest.call('coop.targets all')['out'].splitlines()
+            if f.startswith('obj n') and len(f.split()) == 5}
+
+
+def look_at(guest, ids):
+    """turn the guest's camera (right-drags, as a player) until a proxy of the nest is on the screen"""
+    m = re.search(r'viewport x=\d+ y=\d+ w=(\d+) h=(\d+)', guest.call('coop.cam')['out'])
+    w, h = (int(m.group(1)), int(m.group(2))) if m else (1440, 1080)
+    for _ in range(12):
+        if on_screen(guest) & set(ids):
+            return True
+        guest.call(f'drag {w // 2} {h // 2} {w // 2 + 300} {h // 2} right')
+        time.sleep(0.4)
+    return False
+
+
 def away(p, frm, d):
     v = [p[i] - frm[i] for i in range(3)]
     n = math.sqrt(sum(x * x for x in v)) or 1.0
@@ -89,7 +107,15 @@ def main():
     ids = [n['id'] for n in at_nest]
     print(f'  nest at {worlddiff._fmt(best)}; its NPCs {ids}; the host player {"near" if a.host_near else "120 m away"}',
           flush=True)
-    rows = []   # (t, id, host over_surface, guest over_surface, guest-host distance, host dist to nest)
+    # the camera on the NPC deepest in its game's surface on the host (the one in the mound): a game puts a creature
+    # off its own screen on the plain terrain (docs/re/creature.md#creature-out-of-view-ground), so only what is on the
+    # guest's screen counts
+    hn0 = {n['id']: n for n in npcs(host)}
+    depth = {i: over_surface(host, hn0[i]['pos'])[1] for i in ids if i in hn0}
+    deep = min(depth, key=lambda i: depth[i] if depth[i] is not None else 9)
+    seen = look_at(guest, [deep])
+    print(f'  host NPCs over their surface: {depth}; the guest\'s camera on #{deep}: {seen}', flush=True)
+    rows = []   # (t, id, host over_surface, guest over_surface, guest-host distance, host dist to nest, on the guest's screen)
     start_pos = {n['id']: n['pos'] for n in at_nest}
     t0 = time.time()
 
@@ -98,13 +124,14 @@ def main():
         while time.time() - t1 < seconds:
             hn = {n['id']: n for n in npcs(host)}
             gp_ = proxies(guest)
+            vis = on_screen(guest)
             for i in ids:
                 if i not in hn or i not in gp_:
                     continue
                 hp_ = hn[i]['pos']
                 _, hs = over_surface(host, hp_)
                 _, gs = over_surface(guest, gp_[i]['at'])
-                rows.append((time.time() - t0, i, hs, gs, math.dist(hp_, gp_[i]['at']), math.dist(hp_, best)))
+                rows.append((time.time() - t0, i, hs, gs, math.dist(hp_, gp_[i]['at']), math.dist(hp_, best), i in vis))
             time.sleep(0.25)
 
     sample(IDLE)  # the NPCs at their nest (the host far: its game has them without the mound)
@@ -120,12 +147,14 @@ def main():
               f'guest over surface min {min((x[3] for x in r if x[3] is not None), default=0):.2f}; '
               f'guest from host max {max(x[4] for x in r):.1f} m; nearest the nest {min(x[5] for x in r):.1f} m', flush=True)
         for x in r[::6]:
-            print(f'      {x[0]:5.1f} s host {x[2]} guest {x[3]} apart {x[4]:.2f} nest {x[5]:.1f}', flush=True)
+            print(f'      {x[0]:5.1f} s host {x[2]} guest {x[3]} apart {x[4]:.2f} nest {x[5]:.1f} on screen {x[6]}', flush=True)
     dt = (IDLE + SECONDS) / max(1, len(rows) / max(1, len(ids)))
     sunk = {}
     for i in ids:
         r = [x for x in rows if x[1] == i]
-        sunk[i] = sum(1 for x in r if x[3] is not None and x[3] < -SUNK) * dt
+        sunk[i] = sum(1 for x in r if x[3] is not None and x[3] < -SUNK and x[6]) * dt  # what the guest sees
+        print(f'  #{i} on the guest: inside the surface {sum(1 for x in r if x[3] is not None and x[3] < -SUNK) * dt:.1f} s, '
+              f'of it on the screen {sunk[i]:.1f} s; on the screen {sum(1 for x in r if x[6]) * dt:.1f} s', flush=True)
     far = {i: max((x[4] for x in rows if x[1] == i), default=0) for i in ids}
     host_in = {i: sum(1 for x in rows if x[1] == i and x[2] is not None and x[2] < -SUNK) * dt for i in ids}
     print(f'  host NPCs inside their game\'s surface over {SUNK} m: { {i: round(v, 1) for i, v in host_in.items()} } s', flush=True)
@@ -134,8 +163,10 @@ def main():
     if not a.host_near:
         ck(any(v > 1.0 for v in host_in.values()), 'the host\'s game has an NPC of that nest inside its mound (the case: '
                                                    'the host far, its game without the mound there)')
+    vis = {i: sum(1 for x in rows if x[1] == i and x[6]) * dt for i in ids}
+    ck(vis.get(deep, 0) >= 3, f'the NPC in the mound (#{deep}) was on the guest\'s screen ({vis.get(deep, 0):.1f} s)')
     ck(any(v > 1.5 for v in moved.values()), f'the NPCs backed away from the guest ({ {i: round(v, 1) for i, v in moved.items()} } m)')
-    ck(all(v <= 1.0 for v in sunk.values()), f'on the guest no proxy is drawn more than {SUNK} m inside the surface for over 1 s '
+    ck(all(v <= 1.0 for v in sunk.values()), f'on the guest\'s screen no proxy is drawn more than {SUNK} m inside the surface for over 1 s '
                                               f'({ {i: round(v, 1) for i, v in sunk.items()} } s)')
     ck(all(v <= FOLLOW for v in far.values()), f'on the guest every proxy keeps within {FOLLOW} m of the host\'s NPC '
                                                 f'({ {i: round(v, 1) for i, v in far.items()} } m)')

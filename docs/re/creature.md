@@ -3173,3 +3173,26 @@ BUG-0618. GOG 2024, Ghidra + runtime on lane 4 (`coop.abilities reach`, out/w45l
   39 for 282 (fix/w45-int2 20261106-054817) and 16 for 196 (rel/0.7.9 20261106-040221).
 * ~ The game clears +0xE7C often during a hunt (play_creature: `retarget_none` 183 / 258 times per 10 min): the bot
   clicks the target again then; not looked into (each bite? the target's flee?).
+
+## A nest's animals inside the mound when the host is far (2026-11-06, fix/w45-last)
+<a id="creature-nest-mound-proxy"></a>
+
+BUG-0562 (player video: "a creature got stuck into the nest after backing away"). GOG 2024, lab lane 5,
+coop_npc_nest_backoff.py (`coop.ground x y z` prints the point's height over `cPlanetModel_SurfacePoint`, the surface
+with the collision objects: the terrain or a nest mound / rock).
+* ✔ (runtime, 9 cold runs) With the host's player 120 m from the fixture's nest at (-126 -488 -65) and the guest at the
+  nest, the host's game has the nest's NPC that stands nearest the mound's centre (#18, 0.2-2.9 m from it) 0.43-0.97 m
+  **inside** the mound, for the whole 10 s before the roar (every cold run); with the host's player at the nest
+  (npc_nest_backoff_near) every NPC stays within 0.05 m of the surface. Inferred from this and
+  #creature-out-of-view-ground: a game simulates creatures far from its own camera without the mound (on the plain
+  `GetHeightAt` terrain).
+* ✔ (runtime) The guest's proxy of it was drawn at the host's place, inside the guest's mound: on the guest's screen
+  11.2 and 13.3 s of 24 s, 0.47-0.76 m in it (`SPORE_FIX_OFF=npc.proxy_mound`, lab 20261106-131754; also
+  -130629). The guest's camera is at the nest, so its mound is solid there and the game does not lift a creature put
+  that far in it. Off the guest's screen the guest's game draws it on the plain terrain anyway (no matter the fix).
+* ✔ The roar's backing away (node 0x02D852E0) takes it out of the mound on the host within 3-5 s (moved 5-7 m); it
+  was the nest's resting place, not the back-off, that put it inside. The report's "after backing away" is consistent
+  with an NPC coming back to rest at its nest.
+* Fix `npc.proxy_mound` (npc.cpp): a proxy (not in the air, not dead) whose target or drawn place is 0.1-2.5 m under
+  this game's surface where that surface is over the plain terrain is put 5 cm under the surface (the game sets it
+  onto it). Counters `mound_lifts` / `mound_targets` in `coop.npc`.
