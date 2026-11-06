@@ -36,12 +36,35 @@ def stale_sample(host, guest, gap):
     centre = gw0.me
     h1 = worlddiff.dump(host, 250, centre) if centre else worlddiff.dump(host, 250)
     time.sleep(gap)
+    t_gw = time.time()
     gw = worlddiff.dump(guest, 250)
+    t_gw = (t_gw + time.time()) / 2
     h2 = worlddiff.dump(host, 250, gw.me) if gw.me else worlddiff.dump(host, 250)
     hid = set(ids(h1, own=('npc',))) | set(ids(h2, own=('npc',)))
     near = {i: x for i, x in ids(gw, own=('proxy',)).items()
             if gw.me and all(map(math.isfinite, x['pos'])) and math.dist(x['pos'], gw.me) <= 60.0}
-    stale = {i: x for i, x in near.items() if i not in hid}
+    cand = {i: x for i, x in near.items() if i not in hid}
+    # BUG-0480 (2026-11-06): a host cell born after the first host dump and destroyed just before the second (the
+    # game's cull 0xE7C3E6 removes cells of a deleted tile 0.9-1.7 s after they were made) is in neither dump, and
+    # its mirror was in the guest's dump because the guest is ~0.2 s behind. Stale is a mirror the host had stopped
+    # sending for STALE_AFTER s before the guest's dump (the host's `coop.pool cell` names its last send).
+    stale, lag = {}, []
+    for i, x in list(cand.items())[:60]:
+        out = host.call(f'coop.pool cell {i}')['out']
+        m = re.search(r'last sent ([\d.]+) s ago', out)
+        if m is None and not out.startswith('no such cell'):
+            continue  # the host has it now (born after its second dump)
+        before = None if m is None else float(m.group(1)) - (time.time() - t_gw)
+        if before is None or before >= STALE_AFTER:
+            stale[i] = x
+        else:
+            lag.append(before)
+    if len(cand) > 60:  # not asked: counted as stale only when every asked one was
+        if len(stale) == 60:
+            stale.update(dict(list(cand.items())[60:]))
+    if cand:
+        print(f'    {len(cand)} guest mirrors of host cells in neither host dump: {len(stale)} stale, {len(lag)} the '
+              f'host had sent up to {max(lag) if lag else 0:.2f} s before the guest\'s dump (on their way out)')
     # the other half of BUG-0480: host cells near the guest (in both host dumps, so not a cell born or
     # gone between them) that the guest's game has no mirror of
     both = set(ids(h1, own=('npc',))) & set(ids(h2, own=('npc',)))
@@ -57,6 +80,7 @@ def stale_sample(host, guest, gap):
 
 
 MISSING_R = 25.0
+STALE_AFTER = 1.0  # s: the guest's purge is one complete round (0.1 s) behind, 1 s after a lost chunk
 
 
 def pool(con):
@@ -117,8 +141,9 @@ def main():
                 print(f'    {len(lack)} host cells within {MISSING_R:g} m of the guest (in both host dumps) not mirrored: {ex}')
                 for k in list(lack)[:2]:
                     print(f'    guest: {guest.call(f"coop.pool cell {k}")["out"].strip()} | host: {host.call(f"coop.pool cell {k}")["out"].strip()}')
-            for k in list(stale)[:3]:  # what each game knows of it (the guest: its mirror entry; the host: the cell)
-                print(f'    guest: {guest.call(f"coop.pool cell {k}")["out"].strip()} | host: {host.call(f"coop.pool cell {k}")["out"].strip()}')
+            for k in list(stale)[:4]:  # what each game knows of it (the host first: when it last sent it; the guest: its mirror entry)
+                hs = host.call(f"coop.pool cell {k}")["out"].strip()
+                print(f'    host: {hs} | guest: {guest.call(f"coop.pool cell {k}")["out"].strip()}')
             if stale:
                 print('    host:', host.call('coop.pool statehold 0')['out'].strip())
                 print('    guest pool:', ' '.join(w for w in pool(guest).split() if w.startswith(('late_chunks=', 'rounds_partial=', 'host_of=', 'mirrors=', 'kept=', 'created=', 'destroyed='))))
