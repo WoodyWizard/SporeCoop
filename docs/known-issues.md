@@ -1028,10 +1028,13 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   cell_new_game#1), velocity and particle velocities NaN (mask 0x104) for 17 frames, after the collisions and
   before our guest tick; its camera stayed NaN (BUG-0604, fixed by cell.camera_heal). The writer of the NaN
   velocity is still not known (docs/re/cell.md#cell-view-nan).
+* 2026-11-06 (fix/w45-cell-nan): the writer found and fixed: the collision contact solver after the pair loop, fed
+  an unset (non-unit) contact normal when two collision spheres share a centre (docs/re/cell.md#cell-contact-nan,
+  `cell.contact_finite`). The address space drain is BUG-0621 now.
 * 2026-10-30 (fix/w13-cell): the coverage loss was the jumps of the NaN heals leaving background
   cells behind until the guest's pool hit its mirror cap (BUG-0314, fixed by `cell.bg_cull`). The
   first NaN and the address space drain are still not reproduced (docs/re/cell.md#cell-bg-leftovers).
-* Ticket: BUG-0307
+* Ticket: BUG-0307 (the NaN, fixed), BUG-0621 (the address space drain, open)
 
 ## Cell, 4 players: two one-off faults of the 4th player (2026-10-30, fix/w12-cell-fault)
 <a id="issue-cell-4th-player-faults"></a>
