@@ -128,7 +128,7 @@ inline bool g_lead_smooth_fix = true;
 constexpr double kSmoothTau = 0.12; // s: e^-1 of a lead jump left after this
 constexpr float kSmoothRate = 3.f;  // m/s on top of kSmoothK x the body's speed
 constexpr float kSmoothK = 1.f;
-constexpr float kSmoothMinSp = 3.f; // m/s
+constexpr float kSmoothFast = 5.f; // m/s
 constexpr double kSmoothVelTau = 0.1; // s
 
 class SnapshotBuffer {
@@ -362,10 +362,11 @@ private:
                 if (d > smooth_max || stop) {
                     off = {};
                     snap_vel = true;
-                } else if (d > 1e-4f) {
-                    // (at least kSmoothMinSp: a start's first states report a speed under the walk's, lead_velocity
-                    // caps it at their path, and the target crept at 3 m/s, in the stop-and-go band, for 0.2-0.5 s)
-                    float sp = std::max({dist(Vec3{}, v), dist(Vec3{}, sm_vel_), kSmoothMinSp});
+                } else if (d > 1e-4f && std::max(dist(Vec3{}, v), dist(Vec3{}, sm_vel_)) >= kSmoothFast) {
+                    // closed only while the body is fast (kSmoothFast): closed while it speeds up or slows down, the
+                    // target ran 3-6 m/s faster than the body there and the walked mirror lagged and surged after it
+                    // (tribe_walk_mobile's stop-and-go check at 1-5 m/s: uneven 11-22 %, 0.7.8 2-5 %)
+                    float sp = std::max(dist(Vec3{}, v), dist(Vec3{}, sm_vel_));
                     float nd = std::max(d * (float)std::exp(-dt / kSmoothTau), d - (kSmoothK * sp + kSmoothRate) * (float)dt);
                     nd = std::max(nd, 0.f);
                     float k = nd / d;
