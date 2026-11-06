@@ -2028,3 +2028,11 @@ Player reports 2026-11-04 (0.7.5, Discord bug-reports; not analysed yet):
   position: on a guest whose village ground is 5-6 m off the host's (BUG-0332, campaign planets only) it would be
   under or over the copies' feet (inferred, not seen; `CAMPAIGN_GROUND=1 tools/lab.py run campaign_ct` shows the
   ground difference when it happens)
+
+<a id="issue-tribe-lone-citizen"></a>
+
+* What happens: in play_tribe the host's game sometimes has a citizen near the guest that stands still for 10-20 s and
+  belongs to no tribe's member list; the mod does not mirror it, so the guest's game has nothing there (detector
+  `Tribe:unmatched:citizen`, 1-3 of ~31 samples a run). What it is is not known yet.
+* Reproduce: play_tribe with `SPORE_DETECTOR=20` and `coop_tribe_member_place.py --attach` (prints the object).
+* Ticket: BUG-0620

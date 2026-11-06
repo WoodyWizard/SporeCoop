@@ -4425,3 +4425,22 @@ G2 of 0.7.8 (BUG-0430 class). For each: which kind of fault it was and the evide
 * `join_during_host_editor` now checks the guest's planet while the host edits: its own creatures (census `local`,
   alive, AI on) within 70 m, at least 60 % of the proxies it showed before its leave; `SPORE_FIX_OFF=npc.leave_locals`
   fails (1 of 11, out/lab/20261106-015905). Their movement is printed, not checked (they idle at their nests).
+
+## Placement and scale tests of fix/w45-placement (2026-11-06)
+<a id="testing-placement-w45"></a>
+
+* `civ_city_layout` (coop_civ_city_layout.py, civ_npc, ~2 min): the host founds 3 cities, captures one, moves one
+  building off the guest's slot (`coop.civ bmove`, the state campaign_space showed), builds more; compares the game's
+  building lists (`coop.civ blist <i>`) and the guest's buildings_fixed. SPORE_FIX_OFF=civ.city_layout fails (BUG-0602).
+* `civ_vehicle_scale` / `node_scale` (~1 min each): one game's object gets the scale 10 the game gives it
+  (`coop.civ vscale`, `coop.fields scale`), the other game's copy is read back. SPORE_FIX_OFF=civ.vehicle_scale /
+  wobj.node_scale fail (BUG-0549, BUG-0485).
+* `civ_city_ground` (~2 min) and `tribe_civ_ground` (coop_tribe_civ.py --ground, ~4 min): `coop.ground` on a 10 m grid
+  round every city on both games (the BUG-0332 class in Civ; 0.00 m in every run so far).
+* `tribe_member_place` (quiet tribe fixture) and `coop_tribe_member_place.py --attach` (SPORE_LANE=N, started ~75 s
+  after a play_tribe of that lane): every 5 s the detector's compare of citizens, and for a lone host citizen the mod's
+  nearest member, the guest's mirror, the object's pointer, vtable, age and dead flag (BUG-0620). The extra console
+  load may matter: play_tribe failed once on the NPC proxies monitor rule (BUG-0503) with the watcher attached.
+* `tribe_dead_member` / `tribe_dead_tribe` (coop_tribe_dead_member.py [--all]): an NPC member, or every member of an
+  NPC tribe, killed on the host; the citizens at that place on both games (no host-only body: lab 20261106-072628,
+  20261106-072755).
