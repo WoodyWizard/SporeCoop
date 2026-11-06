@@ -55,3 +55,15 @@ stays as a regression check (suite tribe_gather_stall).
   the member out) happened; inferred: most of the 11 idles are repeated orders of the same stuck members. The check "the members act on the
   orders" measured the game here, not the bot: left as it is (G2 changed only the bots' order pace, BUG-0397).
   Not reproduced on purpose; still open.
+- 2026-11-05 (fix/w45-tribe, T2 of 0.7.9): time-boxed, no code change kept. The class fix (the walk-stall watch of
+  tribe.grab_spot, BUG-0505, extended to the gather node's state 1 behind `tribe.gather_stall`) was written and taken
+  out again: no run failed without it. The stall was made on purpose in a new test (a guest's member sent to gather
+  a fruit tree 60 m off, put by a teleport short of its walk's goal while it walked in state 1): with the watch off
+  the game's walk went on both times: put 2.5 m short (inside the tree goal's arrival radius r=6.2 m) it arrived at
+  once (states 5, 2: lab 20261105-232113); put 7.6 m short (outside r=5.1 m) it walked on and arrived 10 s later
+  (lab 20261105-232555). Observed: a tree goal of the gather has an arrival radius of 5-6 m (`coop.tribe ai`: r=), and
+  the gather's tree field +8 read 0 in state 1 (the tree is in the order record). Inferred: the play_tribe member
+  standing 2.8 m from its goal in state 1 had a goal that was not reached by the radius check (its r under 2.8 m:
+  not a tree goal, ~ an intermediate goal of an obstacle walk), so a watch keyed on the distance alone would not have
+  matched that state either. Next: catch it in play_tribe with `coop.tribe ai` of the stuck member (its r and walk
+  flags) before choosing a fix. Stays open.

@@ -1861,3 +1861,63 @@ Ghidra, GOG 2024 (BUG-0359, continuing [the flora grid free](#tribe-flora-grid-f
   0xB0818E) is in no other game log of out/lab of the main checkout and every worktree (searched every
   `*.game.log` with GeneralAllocator_FreeInternal: 24 files, the others are BUG-0308 / 0348 (Cell
   pools), Tribe / Civ effect creation, the editor's play-mode pictures and BUG-0605).
+## The hit impacts of the members' attacks on a guest (2026-11-05, fix/w45-tribe)
+<a id="tribe-hit-impacts"></a>
+
+BUG-0603. GOG 2024, Ghidra + runtime lane 9 (coop_tribe_hit_impacts.py, `coop.effects log on`: `fxanim:` lines with
+the effect's position, `fxhit:` lines).
+* ✔ (Ghidra) `SporeCoop::AnimEvent_Handle` 0x9A6D70 (cdecl, 21 arguments) has one caller, 0x9A7720, which resolves
+  the event's object specs (0x9A5560, up to three lists) and calls the handler once per resolved object: param 2 the
+  animating instance, param 3 the resolved object's instance (+0x18 its position, +0x2E4 its bones, 700 bytes each).
+  A spec that resolves to nothing makes no call (no effect).
+* CORRECTION (2026-11-05, fix/w45-tribe): the BUG-0603 inference "the per-target loop over param_18" (#tribe-mirror-fx)
+  is wrong: AnimEffect_SetTarget 0x9FBC10, the loop's only effect call, ran 0 times in a 40 s fight with 58 impact
+  sounds (lab 20261105-230956). The impacts come through the param_18 == 0 path (AnimEffect_Create from 0x9A72E3).
+* ✔ (runtime, lab 20261105-231448) In a 40 s fight 127 of the host's 477 animation-event effects were made for
+  another object than the animating one: 0x682E8D4B (25, sound 0xD05B58ED), 0x594BDFF9 (24), 0x7B5A2E62 (24),
+  0xF0D5A994 (18), 0xCFECC623 (18), 0x1EA65782, 0x46C9F053, 0xE19059E2 (5 each), 0x6532F5C6 (3), at the victim's
+  hit spot (1-3 m from the victim, the attacker next to it). The guest's game: 0 of 454 (every one on the animating
+  mirror: footsteps, the swing 0xE6D770B8..BF). So these specs resolve to the attack's target, which the guest's
+  mirror (its animation relayed by tribe.mirror_anims) does not have. ? How the game hands the attacker's animation
+  its target (not followed: the relay below does not need it).
+* Fix `effects.hit_targets`: game.cpp hooks AnimEvent_Handle (notes the two instances, thread local) and reports an
+  effect of AnimEffect_Create made inside it for another object; effects.cpp sends it as a world effect (pool 5, id
+  and position) to the players in the same place. Lab: the guest 52 of the host's 56 impact sounds (out/lab/
+  20261105-231808), off 0 of 53 (out/lab/20261105-231635).
+* Test pitfall: the fight of coop_tribe_fight_sounds.py's setup (attack an NPC tribe's member in its village) had
+  0-3 impacts in 40 s in 5 of 7 runs (the members still walking there); the new test puts the victim 9 m from them.
+
+## The gather's walk after an interruption (2026-11-05, fix/w45-tribe)
+<a id="tribe-gather-walk"></a>
+
+BUG-0531 (not reproduced, no fix). GOG 2024, lab lane 9, 'tribe' fixture.
+* ✔ (runtime) A gather order (`coop.tribe order <id> 2 <tree>`) to a fruit tree 60 m off: node 0x0569236E state 1,
+  walk mode 1, the walk's goal the tree itself with an arrival radius of 5.1-6.2 m (`coop.tribe ai`: r=); the
+  node memory's +8 (the tree) read 0 then.
+* ✔ A teleport of the walking member (game::teleport through `coop.tribe put`) does not end the walk: put 2.5 m short
+  of the goal (inside r) the gather went on at once (states 5, 2 at the tree: lab 20261105-232113); put 7.6 m short
+  (outside r) it walked on and reached the tree in 10 s (lab 20261105-232555). So a stall of state 1 needs the game's
+  own walk to stop with the member outside the goal's radius, which a test cannot make by moving the member.
+* ~ The play_tribe stall (goal 2.8 m off, standing) therefore had a goal with a radius under 2.8 m: not the tree goal
+  of this path (inferred).
+
+## The ground of a village made live, compared on both games (2026-11-05, fix/w45-tribe)
+<a id="tribe-village-ground"></a>
+
+BUG-0332 (not reproduced). GOG 2024, lab lane 9, coop_tribe_village_ground.py (the players' way from the `creature`
+fixture to Tribe, as coop_tribe_snapshot.py).
+* ✔ (runtime, out/lab/20261105-232737) After the live Creature -> Tribe change the game's own ground
+  (`coop.ground`, Simulator::cPlanetModel::GetHeightAt) at the new village (-175.3 -465.8 -85.4) and on rings of 10, 25,
+  50 and 100 m round it is the same on the host and the guest within 0.20 m (0.11 m at 100 m), twice 20 s apart. So
+  on this planet the village the host's game makes live and the one the guest loads from its save stand on the same
+  ground.
+* ? The 3.9-5.3 m of the campaign (#tribe-ground-height) were on planets the campaign made itself (Cell -> Creature
+  -> Tribe); not measured with this probe there yet.
+* ✔ (runtime, 2026-11-06) In 4-player Cell -> Creature -> Tribe campaigns (campaign_ct) the guests' ground under the
+  host's members was higher in 2 of 4 runs: 5.1 m (out/lab/20261105-233903) and 5.9 m (out/lab/20261106-000530),
+  the same on all three guests; 0 in the two others. So the planets the campaign makes show it, the fixtures do not.
+  `CAMPAIGN_GROUND=1` makes the campaign sample `coop.ground` on every machine at a member / player and 15-200 m off
+  (noted above 0.5 m); `CAMPAIGN_SEED=<n>` replays a seed through the lab (the planet pick still differs).
+* ? Leads: the strings `mTerrainStampsToRemove` (0x14655A8, registered in 0x1322A30) and `mAppliedStamp`
+  (0x1469174): terrain stamps that placed objects apply and a list of stamps to remove, saved with the planet; not
+  followed (BUG-0332 stays open).

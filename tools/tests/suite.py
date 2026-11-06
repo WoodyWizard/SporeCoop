@@ -306,6 +306,7 @@ add('tribe_chief_removed', P + 'coop_tribe_chief_removed.py', warm=True, minutes
 add('tribe_epic', P + 'coop_tribe_epic.py', warm=True, minutes=4, fixture='tribe')  # epic hitters, herd, save, chiefs after the session (BUG-0146, BUG-0121, BUG-0067; --nofix fails)
 add('tribe_editor_world', P + 'coop_tribe_editor_world.py', warm=True, minutes=5, fixture='tribe')  # an editor visit keeps the co-op epic tracked, out of the share save (BUG-0217; --nofix fails)
 add('tribe_snapshot', P + 'coop_tribe_snapshot.py', minutes=12)  # after the live Creature -> Tribe change the host's place is its planet, not snapshot.spo: the guest is together with it (BUG-0258; --nofix fails)
+add('tribe_village_ground', P + 'coop_tribe_village_ground.py', minutes=12)  # BUG-0332: after the live Creature -> Tribe change the ground round the new village is the host's in the guest's game (coop.ground on rings to 100 m)
 add('tribe_gameover', P + 'coop_tribe_gameover.py', minutes=4)  # a member added during the game-over caption (BUG-0172; --nofix fails)
 add('tribe_ko', P + 'coop_tribe_ko.py', warm=True, minutes=3, fixture='tribe')  # a knocked-out NPC member lies down on the guest (BUG-0173; --nofix fails)
 add('tribe_bounce_mirrors', P + 'coop_tribe_bounce_mirrors.py', warm=True, minutes=4, fixture='tribe')  # the guests mirror the host's tribe after its game over and bounce back (BUG-0288; --nofix fails)
@@ -631,3 +632,4 @@ add('tribe_mirror_anims', P + 'coop_tribe_mirror_anims.py', minutes=3, fixture='
 add('tribe_form_pace', P + 'coop_tribe_form_pace.py', minutes=3, fixture='tribe')  # BUG-0571: new villages at one player's food pace (party food over 100 x players), on the guest too (SPORE_FIX_OFF=tribe.form_pace fails)
 add('tribe_theme_music', P + 'coop_tribe_theme_music.py', minutes=3, fixture='tribe')  # BUG-0568: the guest's game plays the stage's fight theme music of its tribe (coop.audio; SPORE_FIX_OFF=tribe.theme_music fails)
 add('tribe_fight_sounds', P + 'coop_tribe_fight_sounds.py', minutes=3, fixture='tribe')  # BUG-0600: the guest's game plays the fight's effect sounds and the combat voices of the host's members (coop.audio per sound id, 80 %; SPORE_FIX_OFF=mirror.fx fails)
+add('tribe_hit_impacts', P + 'coop_tribe_hit_impacts.py', minutes=3, fixture='tribe')  # BUG-0603: the guest's game plays the hit impacts of the host's members' attacks (an attack animation's per-target effects; coop.audio per sound id, 80 %; SPORE_FIX_OFF=effects.hit_targets fails)

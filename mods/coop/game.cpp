@@ -715,6 +715,7 @@ void set_world_relay(bool on) { g_world_on.store(on, std::memory_order_relaxed);
 // effects of an animation on the partner's puppet, so the world create of such an effect must not
 // be relayed again. The wrapper is called on the main thread; the flag is thread local so a worker
 // thread can never read half of it (it replaces the caller-address check the old setter hook did).
+static void anim_event_effect(void* fx, uint32_t id);
 typedef int(SK_CDECL* AnimFxCreate_t)(void*, int, uint32_t, uint32_t, uint32_t, void**);
 static AnimFxCreate_t o_AnimFxCreate;
 static int SK_CDECL h_AnimFxCreate(void* world, int a, uint32_t id, uint32_t b, uint32_t c, void** out)
@@ -723,7 +724,79 @@ static int SK_CDECL h_AnimFxCreate(void* world, int a, uint32_t id, uint32_t b, 
     t_in_anim_fx = true;
     int r = o_AnimFxCreate(world, a, id, b, c, out);
     t_in_anim_fx = was;
+    if (out && *out) { // BUG-0603: an event's effect on another object than the animating one
+        anim_event_effect(*out, id);
+        if (g_fx_log && fx_main_thread()) {
+            net::Vec3 p{};
+            bool ok = effect_position(*out, p);
+            FxFrom f = fx_from();
+            H->log(M, SK_INFO, "fxanim: id %08X fx %p pos %d (%.2f %.2f %.2f) a %d b %08X c %08X from %X,%X,%X,%X", id, *out, ok ? 1 : 0,
+                   p.x, p.y, p.z, a, b, c, f.a[0], f.a[1], f.a[2], f.a[3]);
+        }
+    }
     return r;
+}
+
+// BUG-0603 (docs/re/tribe.md#tribe-hit-impacts): an animation event (the handler 0x9A6D70, called by 0x9A7720 once per
+// object the event's object spec resolves to) is made on an object of the event: param 2 is the animating instance,
+// param 3 the resolved object's instance. An attack's hit impact is resolved to the attack's target (the victim the
+// game gave the attacker's animation); a remote copy of the attacker (a guest's member mirror, a puppet, an NPC
+// proxy) plays the relayed animation without a target, the spec resolves to nothing and its game never makes the
+// impact. The hook notes the two instances for the effect wrapper above; an effect made for another object than
+// the animating one goes to the listener with its id and position (effects.cpp relays it as a world effect).
+typedef void(SK_CDECL* AnimEvent_t)(void*, void*, void*, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t,
+                                    uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t,
+                                    uint32_t, uint32_t, uint32_t, uint32_t);
+static AnimEvent_t o_AnimEvent;
+static HitEffectListener g_hit_listener;
+static uint32_t g_hit_seen, g_hit_calls, g_hit_last_other, g_hit_other_fx;
+static thread_local void* t_evt_self;
+static thread_local void* t_evt_obj;
+static thread_local bool t_in_evt;
+static void SK_CDECL h_AnimEvent(void* w, void* self, void* obj, uint32_t a4, uint32_t a5, uint32_t a6, uint32_t a7,
+                                 uint32_t a8, uint32_t a9, uint32_t a10, uint32_t a11, uint32_t a12, uint32_t a13,
+                                 uint32_t a14, uint32_t a15, uint32_t a16, uint32_t a17, uint32_t a18, uint32_t a19,
+                                 uint32_t a20, uint32_t a21)
+{
+    bool was = t_in_evt;
+    void *ws = t_evt_self, *wo = t_evt_obj;
+    t_in_evt = true;
+    t_evt_self = self;
+    t_evt_obj = obj;
+    o_AnimEvent(w, self, obj, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21);
+    t_in_evt = was;
+    t_evt_self = ws;
+    t_evt_obj = wo;
+}
+// from h_AnimFxCreate: an animation event's effect was made
+static void anim_event_effect(void* fx, uint32_t id)
+{
+    if (!t_in_evt || !fx_main_thread() || g_in_relay)
+        return;
+    g_hit_calls++;
+    if (!t_evt_obj || t_evt_obj == t_evt_self) { // on the animating object itself: its remote copies make it too
+        g_hit_other_fx++;
+        return;
+    }
+    if (!g_world_on.load(std::memory_order_relaxed) || !g_fx_relay_on.load(std::memory_order_relaxed))
+        return;
+    net::Vec3 p{};
+    if (!effect_position(fx, p))
+        return;
+    g_hit_seen++;
+    g_hit_last_other = id;
+    if (g_fx_log)
+        H->log(M, SK_INFO, "fxhit: fx %p id %08X self %p obj %p at %.2f %.2f %.2f", fx, id, t_evt_self, t_evt_obj, p.x, p.y, p.z);
+    if (g_hit_listener)
+        g_hit_listener(id, p);
+}
+void set_hit_effect_listener(HitEffectListener fn) { g_hit_listener = fn; }
+uint32_t hit_effects_seen() { return g_hit_seen; }
+void hit_effect_calls(uint32_t& calls, uint32_t& last_other_ret, uint32_t& other_fx)
+{
+    calls = g_hit_calls;
+    last_other_ret = g_hit_last_other;
+    other_fx = g_hit_other_fx;
 }
 
 static void report_effect(void* c, const EffectEvent& ev);
@@ -1141,6 +1214,12 @@ bool init(const SkHost* host, SkMod* mod)
         H->log(M, r ? SK_WARN : SK_INFO, "fxanim hook at %p: %d", (void*)a, r);
     } else {
         H->log(M, SK_WARN, "fxanim hook: no symbol (animation effects may be relayed twice)");
+    }
+    if (uintptr_t a = H->sym("SporeCoop::AnimEvent_Handle")) {
+        int r = H->hook_create(M, (void*)a, (void*)h_AnimEvent, (void**)&o_AnimEvent);
+        H->log(M, r ? SK_WARN : SK_INFO, "fxevent hook at %p: %d", (void*)a, r);
+    } else {
+        H->log(M, SK_WARN, "fxevent hook: no symbol (the attacks' hit impacts are not relayed)");
     }
     if (uintptr_t a = H->sym("Simulator::cCreatureBase::CreateEffect")) {
         int r = H->hook_create(M, (void*)a, (void*)h_CreateCreatureFx, (void**)&o_CreateCreatureFx);

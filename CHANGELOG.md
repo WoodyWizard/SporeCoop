@@ -8,6 +8,8 @@
   (BUG-0403).
 - Cell: a guest whose pause menu was open while the others played, and who then left and joined again, no longer
   crashes when the host's world is loaded (BUG-0308; the fix came with 0.7.3.2, now tested on this path).
+- Tribe: the guest now sees and hears the blows of the host's tribe members land on their victims (the hit flashes
+  and their sounds), not only the swings (BUG-0603).
 
 ## [0.7.8] - 2026-11-05
 

@@ -1133,7 +1133,8 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * What happens: after a guest's rejoin in Tribe (final lab 20261030-175722 campaign_tribe#1) it had
   75 % of the host's nearby objects, 6 NPCs missing, for the last ~50 s of the play.
 * Reproduce: not reproduced (3 replays of seed 612535391, `coop_tribe_rejoin_npcs.py`).
-* Known: suspected window while the guest loads the host's world (docs/tickets BUG-0328).
+* Known: suspected window while the guest loads the host's world (docs/tickets BUG-0328). Not reproduced in 9 rejoins
+  (2026-11-06, fix/w45-tribe): ticket status not-reproduced.
 * Ticket: BUG-0328
 
 ## Tribe: in a long campaign every guest shows tribe members 4-6 m off (2026-10-30, fix/w16-tribe)
@@ -2012,7 +2013,12 @@ Player reports 2026-11-04 (0.7.5, Discord bug-reports; not analysed yet):
   Fixed on fix/w44-guest-player3 (unreleased, `mirror.fx`) except the attack animations' hit impacts: BUG-0603.
 - BUG-0603: Tribe: a guest's game plays none of the hit impact effects of the members' attack animations (the
   animation event's per-target effects 0x682E8D4B / 0xF0D5A994 / 0xCFECC623, sound 0xD05B58ED; `coop_tribe_fight_sounds.py`
-  prints the host's plays). docs/re/tribe.md#tribe-mirror-fx.
+  prints the host's plays). docs/re/tribe.md#tribe-mirror-fx. (fixed on fix/w45-tribe, unreleased: effects.hit_targets,
+  the event's object is the attack's target: docs/re/tribe.md#tribe-hit-impacts)
 - BUG-0604: Cell: after the guest's level-up its screen showed only water (no cell drawn, nothing on screen for 7 min) in one cell_new_game run (`tools/lab.py run cell_new_game`; not analysed)
 - BUG-0606: Cell -> Creature, 4 players: every guest's sync-check found the host's cell 359-740 apart right after the
   campaign's food 1000 shortcut in the Cell advance (lab 20261105-233139 campaign_ct#1, once; not analysed).
+- BUG-0608: Tribe / Creature: a relayed world effect (a hit impact of BUG-0603) is made at the sender's absolute
+  position: on a guest whose village ground is 5-6 m off the host's (BUG-0332, campaign planets only) it would be
+  under or over the copies' feet (inferred, not seen; `CAMPAIGN_GROUND=1 tools/lab.py run campaign_ct` shows the
+  ground difference when it happens)

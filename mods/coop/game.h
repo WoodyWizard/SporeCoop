@@ -147,6 +147,12 @@ void set_effect_listener(EffectListener fn);
 // only on the game's main thread; the hooks call the original and return on every other thread.
 using WorldEffectListener = void (*)(void* effect, uint32_t id);
 void set_world_effect_listener(WorldEffectListener fn);
+// BUG-0603: an attack animation's per-target hit impact (an animation event effect pointed at its target's hit
+// spot) made by this game: the effect id and the world position (main thread only)
+using HitEffectListener = void (*)(uint32_t id, const net::Vec3& pos);
+void set_hit_effect_listener(HitEffectListener fn);
+uint32_t hit_effects_seen();
+void hit_effect_calls(uint32_t& calls, uint32_t& last_other_ret, uint32_t& other_fx); // diagnostics
 // the stage logic's gate for the world effect hooks (installed once in init); no work outside a
 // played stage. Never installs or removes a hook: a hook removed while the UI skinner's render
 // thread was inside it faulted (BUG-0451 review).
