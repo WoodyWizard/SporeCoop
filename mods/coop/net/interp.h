@@ -117,18 +117,21 @@ constexpr double kMaxLead = 0.6; // s ahead of the newest state
 // 3x the body's speed: Tribe member mirrors drew 0.9-1.25 m steps per 32 ms frame (tribe_walk_mobile). With the
 // fix the shown target is continuous: a new state's jump is kept as an offset to the raw lead (the target goes on
 // from where it was shown, with the velocity it had) and the offset decays exponentially (kSmoothTau) at most at
-// the body's speed + kSmoothRate (the target never moves faster than ~2x the body + 3 m/s). An offset over
-// kSmoothMax is a real jump (the sender's body was put somewhere): taken at once, as before. Off: the raw lead.
+// the body's speed + kSmoothRate (the target never moves faster than ~2x the body + 3 m/s). This is the closing
+// walk_place's catch_prop did (an error closed in ~0.25 s at most at the speed + 3 m/s on top), measured on the
+// target's own path instead of from where the game's walk had put the body (which drew walk + catch-up). An
+// offset over the buffer's smooth_max is a real jump (the sender's body was put somewhere): taken at once.
+// Only buffers with smooth_max > 0 (the Tribe member mirrors). Off: the raw lead.
 inline bool g_lead_smooth_fix = true;
-constexpr double kSmoothTau = 0.12; // s: e^-1 of a lead jump left after this
+constexpr double kSmoothTau = 0.15; // s: e^-1 of a lead jump left after this
 constexpr float kSmoothRate = 3.f;  // m/s on top of the body's speed
-constexpr float kSmoothMax = 4.f;   // m
 
 class SnapshotBuffer {
 public:
     double delay = 0.10;       // interpolation delay (s)
     bool lead = false;         // BUG-0425: shown where the sender has it now (g_lead_fix)
     double max_extrap = 0.25;  // extrapolation limit (s)
+    float smooth_max = 0;      // BUG-0619: a lead jump up to this (m) is smoothed (g_lead_smooth_fix); 0 = never
     // BUG-0499: > 0: no blend across a step between two snapshots faster than this (m/s): the sender's
     // creature was put somewhere else (the hatchling out of its egg 5-11 m, a respawn at the nest), not a
     // walk; nor across the death flag (the dead state at the place of the death, the next one at the nest).
@@ -246,7 +249,7 @@ public:
                 out.pos.y += v.y * (float)dt;
                 out.pos.z += v.z * (float)dt;
                 out.vel = v;
-                if (g_lead_smooth_fix)
+                if (g_lead_smooth_fix && smooth_max > 0)
                     smooth(local_now, out, last_extrap > kMaxLead ? Vec3{} : v);
                 return true;
             }
@@ -320,10 +323,10 @@ private:
                 float jump = dist(sm_off_, off);
                 if (jump > 0.05f)
                     last_lead_jump = jump;
-                if (d > kSmoothMax) {
+                if (d > smooth_max) {
                     off = {};
                 } else if (d > 1e-4f) {
-                    float sp = dist(Vec3{}, v);
+                    float sp = std::max(dist(Vec3{}, v), dist(Vec3{}, sm_vel_));
                     float nd = std::max(d * (float)std::exp(-dt / kSmoothTau), d - (sp + kSmoothRate) * (float)dt);
                     nd = std::max(nd, 0.f);
                     float k = nd / d;

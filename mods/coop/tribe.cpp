@@ -231,6 +231,9 @@ constexpr double kMirrorDelay = 0.2;  // s: the interpolation delay (the host se
 // tests (BUG-0481): `coop.tribe delay <s>` on a guest: a planted late mirror (play_tribe's sync check must fail)
 static double g_test_delay = kMirrorDelay;
 constexpr float kMirrorWalkMax = 8.f; // farther off: drive::step (it teleports at 8 m)
+// BUG-0619: a member's lead jump up to this is smoothed (a start known late over a mobile network: 2.9-4 m at 9 m/s;
+// the lead's cap kMaxLead x 9 m/s = 5.4 m)
+constexpr float kMirrorSmoothMax = 6.f; // m
 constexpr double kPathDt = 0.1;       // s: the interpolated path's velocity is taken over this
 static std::unordered_map<void*, uint16_t> g_gid_of;
 static std::unordered_set<uint16_t> g_cycle_ids;
@@ -1889,6 +1892,7 @@ static void guest_state(net::Reader& r)
             ps.vel = g.vel;
             g.buf.delay = g_test_delay;
             g.buf.lead = true; // BUG-0425 (drive.lead)
+            g.buf.smooth_max = kMirrorSmoothMax; // BUG-0619 (drive.lead_smooth)
             g.buf.push(ps, now);
         }
         if (c && !game::object_alive(c)) {
@@ -2060,7 +2064,9 @@ static void mirror_drive(GMember& g, double now)
         o.speed_after_goal = true;
         o.max_dt = 0.4; // a slow guest keeps up with its members (driver.h)
         o.ground = g_mirror_ground_fix; // BUG-0444
-        o.catch_prop = true; // BUG-0425
+        // BUG-0425; BUG-0619: with drive.lead_smooth the lead target closes the error itself (on its own path):
+        // catch_prop on top measured the catch-up from the game's walk and drew walk + catch-up (0.9-1.25 m frames)
+        o.catch_prop = !net::g_lead_smooth_fix;
         drive::walk_place(g.c, g.aim, rot, vel, g.ds, now, o);
         g_mirror_walks++;
         // BUG-0386 (diagnostics): a walked mirror held over 2 m off its aim for 1 s: what is around it, once per 10 s
