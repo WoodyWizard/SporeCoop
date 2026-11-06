@@ -53,3 +53,4 @@ sea monster needs a relay of the event (or death cause 9) to a cinematic / effec
 - 2026-11-04: fix/w41-infra: the event mapped (Drama Manager kind 6); kept per game by decision, not fixed.
 - 2026-11-05 (fix/w44-guest-player2, P2 of 0.7.8): not started (the time went to BUG-0501, BUG-0558, BUG-0496, BUG-0557).
 - 2026-11-05 (fix/w44-guest-player3, P2b of 0.7.8): reproduced at runtime (the monster is in the dying player's death cinematic only), not fixed: needs the cinematic's actor shown at the puppet.
+- 2026-11-05 (fix/w45-creature-reports, P3 of 0.7.9): not fixed; the time went to BUG-0557 / BUG-0383, BUG-0558 and BUG-0458 (by player impact: the monster is the drowning player's own death cinematic, seen by the partner as the puppet dying in deep water). Next step unchanged: read CRG_AvatarDied_SeaMonster's actors (the cinematic's data) and show that model at the puppet without the camera.

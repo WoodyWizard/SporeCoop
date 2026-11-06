@@ -2375,7 +2375,7 @@ std::string status()
         char b2[128]; // BUG-0512
         snprintf(b2, sizeof b2, "npc(host) pack: partner_targets_cleared=%u partner_stimuli_cleared=%u\n", g_pack_targets_cleared,
                  g_pack_stimuli_cleared);
-        return std::string(b) + b2 + game::destroy_deferred_status() + "\n" + meat_status();
+        return std::string(b) + b2 + meat_status() + game::destroy_deferred_status() + "\n";
     } else {
         unsigned spawned = 0;
         for (auto& [id, px] : g_proxies)
@@ -2388,7 +2388,7 @@ std::string status()
                  g_strays_removed, g_hatch_helped, g_deaths_played, (unsigned)g_kill.size(), g_away_locals, g_proxy_unlisted,
                  g_proxy_nospecies);
     }
-    return b + game::destroy_deferred_status() + "\n" + meat_status();
+    return b + meat_status() + game::destroy_deferred_status() + "\n";
 }
 
 } // namespace npc
