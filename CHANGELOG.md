@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+- A crash report (`crash-*.txt`) now says to send the one `SporeCoop-report-*.zip` from the same folder (it holds the
+  report and its `.dmp`); the `.txt` and `.dmp` alone are needed only when there is no such zip.
+
 ### Fixed
 - A guard against a crash when an NPC reacted to a creature that had just been destroyed (BUG-0456) was switched off
   by mistake since 0.7.5; it works again (BUG-0623).
