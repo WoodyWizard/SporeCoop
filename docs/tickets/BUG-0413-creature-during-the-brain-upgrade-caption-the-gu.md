@@ -48,3 +48,12 @@ them again until the host's states resume.
 
 ## History
 - 2026-11-01: opened.
+
+Update (2026-11-05, rel/0.7.8 final check out/lab/20261105-155603, play_creature and long_creature): the same class
+in another form. The host died and stood in its death cinematic for 45 s (busy=cinematic,input_lock,paused; such
+45 s deaths are common in older runs too); the guest respawned at its nest 130 m away meanwhile. npc.cpp host_tick
+sends nothing while no creature is updated (the frozen simulation, by design: the guests keep the old states), so the
+host's NPCs near the guest's new place (its family n4 n5 n34; n55 n60) were never made on the guest: sync-check
+"n: 3 missing on the guest" while the host was still frozen. Not a 0.7.8 regression (that code is old); it shows
+only when the guest moves far while the host is frozen. For 0.7.9 (L1): while the host's simulation is frozen, still
+send the NPCs near a guest that moved (their states do not change, so one snapshot of the newly near ones suffices).
