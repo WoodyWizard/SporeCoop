@@ -6,7 +6,6 @@
 
 #include "MinHook.h"
 
-#include <tlhelp32.h>
 
 namespace sk {
 
@@ -111,22 +110,23 @@ static int stub_hook(SkMod* mod, void* target, void* detour, void** original)
 // first instructions at that moment (the main thread polls GetAsyncKeyState every frame while the
 // console thread hooks it at the first injected input): a thread between two of those instructions
 // continues inside the new jmp (BUG-0202's crash). MinHook's own fix (suspend every thread, move its
-// IP) deadlocks under Wine because VirtualProtect then waits for a lock a suspended thread holds.
-// The writer below suspends no thread while it calls anything but GetThreadContext:
+// IP) is off: it froze under Wine. No thread is suspended here:
 //   1. one byte, int3, at the entry (where calls land): a thread that arrives traps, and the vectored
-//      handler below sends it to the trampoline (the original first instructions, then back);
-//   2. each other thread is suspended alone, its IP read and resumed at once; while one is inside the
-//      patched bytes (not at the entry) it is given time to leave (nothing new can enter: the int3);
+//      handler below sends it to the trampoline (the original first instructions, then back); nothing
+//      can reach the other patched bytes any more;
+//   2. a window (kGateWindowMs) for a thread that was between those bytes to run on out of them;
 //   3. the other bytes, then the entry byte last. Boot (frame 0) keeps the plain stores.
+// Left: a thread preempted inside the first bytes and not run again for the whole window.
 // `kit.fix hookfirst 0` = MinHook's plain stores at any time.
 struct Gate {
     uintptr_t entry;
     uintptr_t trampoline;
 };
 static const int kGates = 4096;
+static const DWORD kGateWindowMs = 50;
 static Gate g_gates[kGates];
 static volatile LONG g_ngates;
-static std::atomic<uint32_t> g_live_writes{0}, g_live_waits{0}, g_live_traps{0}, g_live_fails{0};
+static std::atomic<uint32_t> g_live_writes{0}, g_live_traps{0}, g_live_fails{0};
 
 static LONG CALLBACK gate_veh(EXCEPTION_POINTERS* ep)
 {
@@ -145,53 +145,6 @@ static LONG CALLBACK gate_veh(EXCEPTION_POINTERS* ep)
     return EXCEPTION_CONTINUE_SEARCH;
 }
 
-// every other thread of the process, one at a time: false when one stayed inside [lo, hi) (not at
-// entry) for about 2 s
-static bool threads_out_of(uintptr_t lo, uintptr_t hi, uintptr_t entry)
-{
-    std::vector<HANDLE> hs; // opened before any thread is suspended (no allocation while one is)
-    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
-    if (snap == INVALID_HANDLE_VALUE)
-        return false;
-    THREADENTRY32 te;
-    te.dwSize = sizeof te;
-    DWORD pid = GetCurrentProcessId(), self = GetCurrentThreadId();
-    if (Thread32First(snap, &te))
-        do {
-            if (te.th32OwnerProcessID == pid && te.th32ThreadID != self)
-                if (HANDLE h = OpenThread(THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT | THREAD_QUERY_INFORMATION,
-                                          FALSE, te.th32ThreadID))
-                    hs.push_back(h);
-            te.dwSize = sizeof te;
-        } while (Thread32Next(snap, &te));
-    CloseHandle(snap);
-    bool clear = true;
-    for (HANDLE h : hs) {
-        for (int tries = 0;; tries++) {
-            if (SuspendThread(h) == (DWORD)-1)
-                break; // gone
-            CONTEXT c;
-            memset(&c, 0, sizeof c);
-            c.ContextFlags = CONTEXT_CONTROL;
-            BOOL ok = GetThreadContext(h, &c);
-            ResumeThread(h);
-            if (!ok || c.Eip < lo || c.Eip >= hi || c.Eip == entry)
-                break;
-            if (tries >= 2000) {
-                clear = false;
-                break;
-            }
-            g_live_waits++;
-            Sleep(tries < 10 ? 0 : 1);
-        }
-        if (!clear)
-            break;
-    }
-    for (HANDLE h : hs)
-        CloseHandle(h);
-    return clear;
-}
-
 static BOOL WINAPI live_writer(LPVOID dst, const UINT8* bytes, SIZE_T n, LPVOID entry, LPVOID trampoline)
 {
     volatile uint8_t* d = (volatile uint8_t*)dst;
@@ -207,20 +160,20 @@ static BOOL WINAPI live_writer(LPVOID dst, const UINT8* bytes, SIZE_T n, LPVOID 
         veh = true;
     }
     LONG g = g_ngates;
-    if (g >= kGates)
-        return FALSE;
-    g_gates[g].entry = (uintptr_t)entry;
-    g_gates[g].trampoline = (uintptr_t)trampoline;
-    InterlockedIncrement(&g_ngates); // the gate is complete before the handler can read it
-    uint8_t old = d[ei];
-    d[ei] = 0xCC;
-    FlushInstructionCache(GetCurrentProcess(), dst, n);
-    if (!threads_out_of((uintptr_t)dst, (uintptr_t)dst + n, (uintptr_t)entry)) {
-        d[ei] = old; // a thread stays inside the first bytes: nothing is written
-        FlushInstructionCache(GetCurrentProcess(), dst, n);
+    if (g >= kGates) {
         g_live_fails++;
         return FALSE;
     }
+    g_gates[g].entry = (uintptr_t)entry;
+    g_gates[g].trampoline = (uintptr_t)trampoline;
+    InterlockedIncrement(&g_ngates); // the gate is complete before the handler can read it
+    d[ei] = 0xCC;
+    FlushInstructionCache(GetCurrentProcess(), dst, n);
+    // a thread between the first instructions when the int3 landed leaves them within a few
+    // instructions once it runs; the window lets a thread that was preempted there run again. No
+    // thread is suspended to read its IP: GetThreadContext of a suspended thread waited forever under
+    // Wine (the host froze when the main thread made the input hooks in Cell, 2026-11-05)
+    Sleep(kGateWindowMs);
     for (size_t i = 0; i < n; i++)
         if (i != ei)
             d[i] = bytes[i];
@@ -233,9 +186,9 @@ static BOOL WINAPI live_writer(LPVOID dst, const UINT8* bytes, SIZE_T n, LPVOID 
 
 std::string hooks_live_stats()
 {
-    char b[160];
-    snprintf(b, sizeof b, "live first writes %u, waits %u, gate traps %u, refused %u (hookfirst %s)",
-             g_live_writes.load(), g_live_waits.load(), g_live_traps.load(), g_live_fails.load(),
+    char b[256];
+    snprintf(b, sizeof b, "live first writes %u, gate traps %u, refused %u (hookfirst %s)",
+             g_live_writes.load(), g_live_traps.load(), g_live_fails.load(),
              fixed(g_fix_hookfirst) ? "on" : "off");
     return b;
 }

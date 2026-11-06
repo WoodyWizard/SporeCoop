@@ -319,21 +319,31 @@ thread then runs the jmp's operand bytes as code.
   crashed the game within 1 s: an access violation at an address inside the test page (the jmp's
   operand executed), thread of the test (out/lab/20261105-225321, crash report attached there).
 * Fix (`kit.fix hookfirst`, on): the vendored MinHook calls a SporeKit writer for the patch bytes
-  (`MH_SetPatchWriter`, a SporeKit patch of hook.c `EnableHookLL`; the page is already writable then,
-  so no VirtualProtect runs while a thread is suspended). After boot (frame index > 0) the writer
+  (`MH_SetPatchWriter`, a SporeKit patch of hook.c `EnableHookLL`). After boot (frame index > 0) the
+  writer
   1. writes one byte, int3, at the entry; a vectored handler (registered before SporeKit's fault
      logger, so no log line per trap) sends any thread that traps there to the trampoline (the
-     original first instructions, then a jmp back): the call goes on as before the hook;
-  2. suspends each other thread alone, reads its EIP with GetThreadContext and resumes it at once;
-     while one is inside the patched bytes (not at the entry) it is given time (Sleep 0 / 1, at most
-     ~2 s, else the int3 is taken back and the hook fails); nothing new can enter past the int3;
+     original first instructions, then a jmp back): the call goes on as before the hook, and no
+     thread can reach the other patched bytes any more;
+  2. waits 50 ms (`kGateWindowMs`): a thread that was between those bytes when the int3 landed runs on
+     out of them within a few instructions once it is scheduled;
   3. writes the other bytes, then the entry byte last.
-  MinHook's own thread freeze stays off: it deadlocked under Wine because VirtualProtect ran while a
-  suspended thread held ntdll's virtual-memory lock; here only GetThreadContext runs while a thread is
-  suspended, and only one thread is suspended at a time.
-* Measured (lane 4): 200 split hooks under 3 calling threads: 0 wrong results, 257 644 gate traps,
-  0 waits (no thread was found inside the bytes when its context was read), 7.3 s for the 200 hooks
-  (the traps dominate). `kit.test.hooknew` prints `live first writes / waits / gate traps / refused`.
+  No thread is suspended. Left: a thread preempted inside the first 5 bytes and not scheduled again
+  for the whole 50 ms (strictly less likely than before, when the write itself had to hit it).
+  Cost: 50 ms per first write after boot (the two input hooks, coop's Cell hooks: once per process).
+* ✔ Rejected first version (2026-11-05): suspend every other thread alone and read its EIP with
+  GetThreadContext before writing. GetThreadContext of a suspended thread **waits forever under
+  Wine 10** in some states: when the main thread made the input hooks in Cell (coop clicks the "game
+  saved" box) the host froze every time (lab 20261105-225531; a direct run: the main thread and one
+  other thread blocked in a read of their wineserver wait pipe, no log line from any thread after it,
+  the suspended thread never resumed). GetThreadContext on a helper thread with a 250 ms timeout did
+  not help: in a Cell session 63 reads never came back (8 per write, then the writes were refused).
+  From the console thread in the galaxy menu it had worked. ~ This may be what really froze
+  MinHook's own thread freeze under Wine (it calls GetThreadContext on suspended threads too), rather
+  than VirtualProtect as its patch comment says.
+* Measured (lane 4): 50 / 200 split hooks under 3 calling threads: 0 wrong results, 445 786 gate traps
+  for 50 hooks, 2.6 s (the 50 ms windows). `kit.test.hooknew` prints `live first writes / gate traps
+  / refused`.
 * Not covered: a thread whose return address lies inside the first 5 bytes (a 2-byte `call reg` in
   the prologue) is not in them while it runs the callee and returns into the new jmp; MinHook's freeze
   had the same limit. Boot hooks (frame 0) keep the plain stores (no other thread runs game code yet).
