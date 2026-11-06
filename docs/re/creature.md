@@ -2945,3 +2945,28 @@ BUG-0465 (not fixed). GOG 2024, lab lane 5, creature fixture; follows #creature-
   ~ inferred, the monster is a cinematic actor (a model of CRG_AvatarDied_SeaMonster's data), not an effect.
 * Not done: showing it on the partner's game needs that actor (the cinematic's model and animation) at the puppet
   without the cinematic's camera; the cinematic's data (its actors) was not read.
+
+## Remote bodies shown where the host has them now (2026-11-06, fix/w45-remote-bodies)
+<a id="creature-remote-lead"></a>
+
+BUG-0425 (M1), the trail part. Measured with both games' own positions at the same moment (`coop.bodyrec`: every
+synchronized body as drawn at the start of the mod's frame with QueryPerformanceCounter time, which is one clock
+for every Wine game on one PC; tools/tests/body_trail.py, docs/06-testing.md#testing-body-trail):
+
+* ✔ (observed) Before the fix every host body on a guest was behind the host's body by a time, not by a place:
+  distance over the host's speed p50 0.16-0.17 s, p90 0.23 s on a clean network (Creature NPC proxies, Tribe
+  animals), 0.21-0.32 s for Tribe members (their interpolation delay is 0.2 s), 0.207 s for NPCs over the player
+  network (45 ms one way): the interpolation delay (`net::SnapshotBuffer::delay`, 0.15 s NPCs, 0.2 s Tribe
+  members) plus the one-way latency. At 4-8 m/s that is 0.6-1.7 m (p90 0.78 m Creature, 1.17 m Tribe animals, 2.04 m
+  Tribe members, max 2.9-4.0 m; out/lab/20261106-013022). The guest's interpolated target was as far from the host's
+  body as the drawn copy (npc_walk tracks, target p50 0.74 vs drawn 0.77 m): the game's locomotion was not the cause
+  of this part; the copy followed its target, the target was late.
+* ✔ (observed) With `drive.lead` (net/interp.h `SnapshotBuffer::lead`, `g_lead_fix`): the newest state moved on by its
+  velocity for its age on the sender's clock plus half the round trip (`net::g_one_way`, set each frame from the
+  session's rtt), at most 0.35 s; lag p50 0.013-0.019 s, distance p90 0.12 m (Creature), 0.37 m (Tribe animals),
+  0.64 m (Tribe members) (out/lab/20261106-012156).
+* The velocity: the state's own while it moves, capped at 1.25x its path between the two newest states + 0.3 m/s
+  (a herd animal pushed by its mates reports a walk it does not make, BUG-0361), the path's for a body that moves
+  without a speed of its own (BUG-0394), none once it reported a stop or after a jump of the path (over 15 m/s).
+* Civ vehicles (`net::VelocityEstimate::at`) were already moved on to the present (their age + 0.03 s, at most 0.15 s):
+  lag p50 0.04 s, p90 0.93 m at 19 m/s on a clean network (out/lab/20261106-012156 body_trail_civ).

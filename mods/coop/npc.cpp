@@ -1571,6 +1571,7 @@ static void guest_tick(double now)
                     o.max_dt = 0.4; // BUG-0503 (as the Tribe mirrors, BUG-0365); Creature too (BUG-0590)
                 o.snap = 2.5f;
                 o.keep_lost = true;
+                o.catch_prop = true; // BUG-0425
                 o.variant = g_walk_variant;
                 drive::walk_place(px.c, s.pos, s.rot, vel, px.drv, now, o);
                 walked = true;

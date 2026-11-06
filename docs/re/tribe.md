@@ -1921,3 +1921,10 @@ fixture to Tribe, as coop_tribe_snapshot.py).
 * ? Leads: the strings `mTerrainStampsToRemove` (0x14655A8, registered in 0x1322A30) and `mAppliedStamp`
   (0x1469174): terrain stamps that placed objects apply and a list of stamps to remove, saved with the planet; not
   followed (BUG-0332 stays open).
+
+## Members and animals shown where the host has them now (2026-11-06, fix/w45-remote-bodies)
+<a id="tribe-remote-lead"></a>
+
+The guest's mirrors of the player tribe's members (tribe.mirror_time, 0.2 s delay) and the animals' proxies (0.15 s)
+were 0.17-0.32 s behind the host's bodies, p90 2.04 m (members) and 1.17 m (animals) while they walk; with
+`drive.lead` 0.64 m and 0.37 m. Details: docs/re/creature.md#creature-remote-lead (BUG-0410, BUG-0425).

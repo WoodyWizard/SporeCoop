@@ -2048,6 +2048,7 @@ static void mirror_drive(GMember& g, double now)
         o.speed_after_goal = true;
         o.max_dt = 0.4; // a slow guest keeps up with its members (driver.h)
         o.ground = g_mirror_ground_fix; // BUG-0444
+        o.catch_prop = true; // BUG-0425
         drive::walk_place(g.c, g.aim, rot, vel, g.ds, now, o);
         g_mirror_walks++;
         return;

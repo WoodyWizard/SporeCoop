@@ -110,7 +110,7 @@ private:
 // Off: interpolated at now - delay (0.7.8).
 inline bool g_lead_fix = true;
 inline double g_one_way = 0.03; // s
-constexpr double kMaxLead = 0.35; // s ahead of the newest state
+constexpr double kMaxLead = 0.6; // s ahead of the newest state
 
 class SnapshotBuffer {
 public:

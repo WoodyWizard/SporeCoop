@@ -21,6 +21,7 @@ Checks, per kind over the samples where the host's body moves (body_trail.MOVING
 * it is never more than TRAIL_M m off for longer than TRAIL_S s (a copy that falls behind and stays there).
 (SPORE_FIX_OFF=drive.lead must FAIL)"""
 import argparse
+import json
 import math
 import os
 import random
@@ -30,6 +31,7 @@ import time
 if '--stage' in sys.argv and sys.argv[sys.argv.index('--stage') + 1] == 'tribe':
     os.environ.setdefault('TRACK_FIXTURE', 'tribe')  # (coop_npc_walk reads it at import)
 import body_trail  # noqa: E402
+import lane  # noqa: E402
 import coop_npc_walk as nw  # noqa: E402
 from coop_sync import civ_state, round_city  # noqa: E402
 from fixtures import planet_of  # noqa: E402
@@ -41,6 +43,10 @@ from twoinst import Checks, start  # noqa: E402
 # (SPORE_FIX_OFF=drive.lead, lab 20261106-013022) p90 0.78 m (Creature NPCs), 1.17 m (Tribe animals), 2.04 m (Tribe
 # members); with it 0.12, 0.37, 0.64 m (lab 20261106-012156). Civ vehicles drive 10-20 m/s.
 LIMITS = {('creature', 'n'): (0.45, 1.0), ('tribe', 'n'): (0.7, 1.0), ('tribe', 't'): (1.0, 1.0), ('civ', 'v'): (2.5, 1.5)}
+# over a network with latency spikes and loss bursts (SPORE_NET=player: 45 ms, spikes of +250 ms for 0.7 s every 7 s,
+# 30 % loss for 1.5 s every 10 s) a walk's start is known a spike late: off (lab 20261106-014253) Tribe p90 1.73 m
+# animals / 2.71 m members, stretches over 2 m of 1.75 / 3.55 s; on 0.83 / 1.28 m, 0.33 / 0.67 s (lab 20261106-014554)
+NET_LIMITS = {('creature', 'n'): (0.6, 1.0), ('tribe', 'n'): (1.2, 1.0), ('tribe', 't'): (2.0, 1.0), ('civ', 'v'): (2.5, 1.5)}
 
 
 def walk_npcs(host, guest, rng, secs, around):
@@ -121,14 +127,17 @@ def main():
     for c in (host, guest):
         body_trail.record(c, False)
     hr, gr = body_trail.dump(host), body_trail.dump(guest)
-    print(f'  rows: host {len(hr)}, guest {len(gr)}', flush=True)
+    path = os.path.join(lane.out_dir('track'), f'body_trail_{a.stage}_{time.strftime("%Y%m%d-%H%M%S")}.json')
+    with open(path, 'w') as f:
+        json.dump({'host': hr, 'guest': gr}, f)
+    print(f'  rows: host {len(hr)}, guest {len(gr)}: {path}', flush=True)
     t_first = min((r[0] for r in hr), default=0)
     res = body_trail.analyse(hr, gr, kinds={'creature': 'n', 'tribe': 'nt', 'civ': 'v'}[a.stage])
     for line in body_trail.summary(res, t_first):
         print('  ' + line, flush=True)
     for kind in {'creature': 'n', 'tribe': 'nt', 'civ': 'v'}[a.stage]:
         r = res.get(kind)
-        lim, tr = LIMITS[(a.stage, kind)]
+        lim, tr = (NET_LIMITS if os.environ.get('SPORE_NET') else LIMITS)[(a.stage, kind)]
         ck(r is not None and r['n'] >= 200, f'{kind}: the host\'s bodies moved where the guest has copies '
            f'({r["n"] if r else 0} moving samples >= 200)')
         if not r or not r['n']:

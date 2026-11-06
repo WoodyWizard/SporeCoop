@@ -56,3 +56,7 @@ no-fail-run: open
 - 2026-11-01: opened.
 - 2026-11-04: fix/w41-puppet-look: not reproduced with 21 stops (10 abrupt); the hold not kept.
 - 2026-11-05 (fix/w44-height): not part of the height fix (a stop slide on the walk driving); not looked at again.
+- 2026-11-06 (fix/w45-remote-bodies, M1): a different mechanism from the class's trail (BUG-0425): a slide past the
+  stop point on the walk_end -> drive::step hand-over of the partner's puppet, not a target that is late. The lead
+  (drive.lead) is not given to the partner's puppet (it would add an overshoot of speed x latency at every stop, the
+  thing this ticket is about); not touched, stays open (not reproduced in 21 stops on 2026-11-04).

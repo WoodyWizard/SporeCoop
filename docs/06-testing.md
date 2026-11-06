@@ -4409,3 +4409,21 @@ G2 of 0.7.8 (BUG-0430 class). For each: which kind of fault it was and the evide
   two audits (0.25 s) in the last 3 s. A host snap shows as a large step (several m) just before; the lines of G2
   (lab 20261105-135000 play_tribe#2) had none (0.6-1.5 m per 0.25 s at 2.5-5.5 m/s): proxies falling behind a moving
   host NPC, a real desync. The gate and its window stay.
+
+## The guest's copy against the host's body at the same moment (2026-11-06, fix/w45-remote-bodies)
+<a id="testing-body-trail"></a>
+
+* `coop.bodyrec start|stop|count|dump [from] [n]` (mods/coop/coop.cpp, tests only, reads the game): every frame,
+  every synchronized body of `coop.sync` (p players, n NPCs, t Tribe members, v Civ vehicles, s ships, c cells) as
+  drawn (read at the start of the mod's frame, before messages and driving) with the absolute time
+  (`H->time_seconds()` = QueryPerformanceCounter: one clock for every game on one PC, so the host's and a guest's
+  rows line up without a clock offset). Ring of 400 000 rows.
+* `tools/tests/body_trail.py`: `analyse(host_rows, guest_rows)` interpolates the host's body at every guest row's time
+  and compares at the guest's distance from the planet's centre (the height is V1's rule, not measured here). Per
+  kind over the samples where the host's body moves (> 0.5 m/s): distance p50 / p90 / max, lag (distance over the
+  host's speed, s), the longest stretch over 2 m.
+* `tools/tests/coop_body_trail.py --stage creature|tribe|civ` (suite `body_trail_creature`, `_tribe`, `_civ`,
+  `_player`, `_tribe_player`, `_civ_loss`): the host walks NPCs / orders members / drives vehicles for 60 s and the
+  test checks the p90 distance and the longest stretch (BUG-0425; `SPORE_FIX_OFF=drive.lead` fails Creature and Tribe).
+* Measuring against the host's state that the guest received (npctrack's `tgt`, coop_sync's lag window) hides any
+  lag of the target itself: a copy that follows a late target passes those checks.

@@ -10,6 +10,9 @@
   crashes when the host's world is loaded (BUG-0308; the fix came with 0.7.3.2, now tested on this path).
 - Tribe: the guest now sees and hears the blows of the host's tribe members land on their victims (the hit flashes
   and their sounds), not only the swings (BUG-0603).
+- Creature and Tribe: the host's animals and tribe members no longer trail behind where the host sees them on the
+  guest's screen (they were 0.2-0.3 s late, 1-2 m behind a running animal or member): the guest now shows them where
+  the host has them at that moment (BUG-0425, BUG-0410).
 
 ## [0.7.8] - 2026-11-05
 

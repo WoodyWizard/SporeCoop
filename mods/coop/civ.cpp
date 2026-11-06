@@ -3381,7 +3381,9 @@ static void guest_tick(double now)
             continue;
         }
         net::Vec3 cur = veh_pos(g.v);
-        net::Vec3 want = g.est.at(now); // moved on with the estimated velocity (no lag behind the host)
+        // moved on with the estimated velocity (no lag behind the host); BUG-0425 (drive.lead): by the one-way latency
+        // the session measures (half the round trip), not a fixed 0.03 s
+        net::Vec3 want = g.est.at(now, net::g_lead_fix ? net::g_one_way : 0.03);
         float d = net::dist(cur, want);
         if (g.has_put) {
             g.pushed = net::dist(cur, g.put);

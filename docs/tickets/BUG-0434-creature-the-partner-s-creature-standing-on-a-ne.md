@@ -44,3 +44,7 @@ and hd 0.0 followed by hd 1.03. coop_puppet_fight.py lists these steps as `entry
 - 2026-11-01: opened (fix/w34-ability-pop).
 - 2026-11-04: fix/w41-puppet-look: still open.
 - 2026-11-05 (fix/w44-height): not part of the height fix: the culled puppet on a mound is grounded by the game's update outside the view; not looked at again.
+- 2026-11-06 (fix/w45-remote-bodies, M1): a different mechanism from the class's trail (BUG-0425): the game grounds a
+  culled creature on the plain terrain outside the view (docs/re/creature.md#creature-out-of-view-ground), one frame low
+  when it comes back into view; no placing or timing of ours runs between that update and the drawing, so the lead
+  (drive.lead) cannot change it. Not touched, stays open.
