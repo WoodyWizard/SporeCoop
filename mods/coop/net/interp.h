@@ -232,6 +232,21 @@ public:
     // Interpolated state at (now - delay) in sender time; with `lead` (g_lead_fix) the sender's state now.
     bool sample(double local_now, PlayerState& out) const
     {
+        sm_used_ = false;
+        bool ok = sample_raw(local_now, out);
+        // BUG-0619: a sample before the newest state (the path velocity's sample 0.1 s back) is shifted by the same
+        // offset, so the path is the shown one (an unshifted one gave the walk a 3-4 m/s path while it stood)
+        if (ok && !sm_used_ && lead && g_lead_fix && g_lead_smooth_fix && smooth_max > 0 && sm_have_) {
+            out.pos.x += sm_off_.x;
+            out.pos.y += sm_off_.y;
+            out.pos.z += sm_off_.z;
+        }
+        return ok;
+    }
+
+private:
+    bool sample_raw(double local_now, PlayerState& out) const
+    {
         if (snaps_.empty())
             return false;
         double t = local_now - offset_ - delay;
@@ -255,7 +270,6 @@ public:
             }
             t = tl; // (a state from the future: the clock offset is late) interpolated there
         }
-        sm_have_ = false;
         if (t <= snaps_.front().t) {
             out = snaps_.front().s;
             return true;
@@ -302,6 +316,7 @@ public:
         return true;
     }
 
+public:
     // diagnostics (BUG-0619): the smoothing's offset now (m) and the raw lead target's jump at the last new state
     float smooth_off() const { return sm_have_ ? dist(Vec3{}, sm_off_) : 0.f; }
     mutable float last_lead_jump = 0;
@@ -311,6 +326,7 @@ private:
     // local time (a later call at the same or an earlier time, the path velocity's sample, adds the same offset)
     void smooth(double local_now, PlayerState& out, const Vec3& v) const
     {
+        sm_used_ = true;
         if (local_now > sm_t_) {
             double dt = local_now - sm_t_;
             if (!sm_have_ || dt > 0.5) {
@@ -343,7 +359,7 @@ private:
         out.pos.y += sm_off_.y;
         out.pos.z += sm_off_.z;
     }
-    mutable bool sm_have_ = false;
+    mutable bool sm_have_ = false, sm_used_ = false;
     mutable double sm_t_ = 0;
     mutable Vec3 sm_off_{}, sm_vel_{}, sm_shown_{};
 
