@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### Fixed
+- Creature: an animal resting at its nest no longer looks stuck inside the nest mound on a guest's screen when the
+  host is somewhere else on the planet (BUG-0562).
 - Civilization: after the host takes a city, its buildings stand at the same places on the guests' screens; before,
   a guest's game could tear one building down and put it up again every two seconds a few metres away (BUG-0602).
 - Spice geysers are now the same size on every player's screen (a geyser the host's game made during play was ten
