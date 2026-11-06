@@ -2026,3 +2026,6 @@ Player reports 2026-11-04 (0.7.5, Discord bug-reports; not analysed yet):
   position: on a guest whose village ground is 5-6 m off the host's (BUG-0332, campaign planets only) it would be
   under or over the copies' feet (inferred, not seen; `CAMPAIGN_GROUND=1 tools/lab.py run campaign_ct` shows the
   ground difference when it happens)
+- BUG-0617: Tribe / Civ: food a tribe member carries lies 1-3.5 m behind on the guest while the member walks, a guest
+  member's own carried food is not in the host's game, and a few Civ bundles in other containers stay each game's own
+  (the detector's `game_bundle` rows left after BUG-0548; `SPORE_DETECTOR=20 tools/lab.py run play_tribe`)
