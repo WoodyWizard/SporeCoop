@@ -233,9 +233,12 @@ constexpr float kMirrorWalkMax = 8.f; // farther off: drive::step (it teleports 
 constexpr double kPathDt = 0.1;       // s: the interpolated path's velocity is taken over this
 static std::unordered_map<void*, uint16_t> g_gid_of;
 static std::unordered_set<uint16_t> g_cycle_ids;
-static std::unordered_set<uint8_t> g_cycle_chunks; // chunks of the current cycle received
+static net::CycleTracker g_cyc;                    // the cycle being received and its chunks (BUG-0612)
 static uint32_t g_incomplete;                      // cycles whose cleanup was skipped (a chunk missing)
-static uint16_t g_rx_cycle = 0xFFFF;
+// BUG-0612 (the older-cycle part of BUG-0425's umbrella): a late chunk of an older snapshot cycle started that cycle
+// again (the newer cycle's chunks forgotten, older states over newer ones). Off: 0.7.8 (any other cycle restarts).
+bool g_cycle_order_fix = true;
+COOP_FIX("net.cycle_order", "BUG-0612", g_cycle_order_fix, "net: a late chunk of an older Tribe / Civ snapshot cycle is dropped, not taken as a new cycle");
 static uint32_t g_spawned, g_removed, g_cmds_sent;
 static std::vector<void*> g_local_tribe_of; // host tribe index -> local tribe
 
@@ -892,12 +895,20 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
 // `coop.fix tribe.place_chiefs off`: chiefs stay where the game put them.
 static bool g_place_fix = true;
 COOP_FIX("tribe.place_chiefs", "BUG-0340", g_place_fix, "tribe: at arrival and after a rejoin every player's chief too close to another gets its own spot round the village");
+// BUG-0610: place_chiefs looked at every chief for 60 s after an arrival, also one that walked past another chief: a
+// member walking at 6-9 m/s on its player's order was teleported 9-22 m onto its spot (both games saw the jump). Only a
+// chief that stands is put on its spot now (as spread_chiefs). Off: 0.7.8 (walking chiefs too).
+static bool g_place_still_fix = true;
+COOP_FIX("tribe.place_still", "BUG-0610", g_place_still_fix, "tribe: the arrival's chief placing leaves a walking chief alone (it was teleported up to 22 m)");
+static uint32_t g_place_walking = 0; // chiefs left alone because they walked
 static double g_place_due = 0, g_place_until = 0;
 static uint32_t g_placed;
 static std::unordered_set<void*> g_placed_now; // chiefs placed in this arrival's window
+static std::unordered_map<void*, net::Vec3> g_place_first; // BUG-0610: where each chief stood at its first look
 static void arrival_place_due(double now)
 {
     g_placed_now.clear();
+    g_place_first.clear();
     g_place_due = now + 3.0;   // the split and the chiefs settle first
     g_place_until = now + 60.0; // a player still loading: the guests' games come in later
 }
@@ -1796,6 +1807,11 @@ static void guest_state(net::Reader& r)
     uint8_t chunk = r.u8(), chunks = r.u8(), nt = r.u8();
     if (!r.ok() || !net::cycle_chunk_ok(chunk, chunks))
         return;
+    bool started = false;
+    if (!g_cyc.begin(cycle, g_cycle_order_fix, &started))
+        return; // a late chunk of an older cycle
+    if (started)
+        g_cycle_ids.clear();
     std::vector<std::pair<net::Vec3, bool>> htribes;
     for (int i = 0; i < nt && r.ok(); i++) {
         net::Vec3 p;
@@ -1821,11 +1837,6 @@ static void guest_state(net::Reader& r)
                 g_local_tribe_of[i] = t;
             }
         }
-    }
-    if (cycle != g_rx_cycle) {
-        g_rx_cycle = cycle;
-        g_cycle_ids.clear();
-        g_cycle_chunks.clear();
     }
     double now = H->time_seconds();
     uint8_t n = r.u8();
@@ -1914,10 +1925,10 @@ static void guest_state(net::Reader& r)
     }
     if (!r.ok()) // a cut chunk does not count: the cycle stays incomplete, nothing is removed
         return;
-    g_cycle_chunks.insert(chunk);
+    g_cyc.add(chunk);
     if (chunk + 1 < chunks)
         return;
-    if (g_cycle_chunks.size() < chunks) { // a chunk of this cycle was lost or comes late: keep everything
+    if (!g_cyc.complete(chunks)) { // a chunk of this cycle was lost or comes late: keep everything
         g_incomplete++;
         return;
     }
@@ -2727,6 +2738,8 @@ static void place_chiefs(double now)
         void* b = ch[j].second;
         if (!game::object_alive(b))
             continue;
+        if (g_place_still_fix)
+            g_place_first.emplace(b, game::position(b)); // (the first look of this window)
         bool close = false;
         for (size_t i = 0; i < ch.size() && !close; i++) {
             void* a = ch[i].second;
@@ -2737,13 +2750,22 @@ static void place_chiefs(double now)
         }
         if (!close)
             continue;
+        if (g_place_still_fix) {
+            // a chief that walks, or walked since it was first looked at in this window, moves by its player's
+            // orders: not a chief stacked at the arrival (seen: walked next to the host's chief and put 13.8 m away)
+            if (drive::speed(game::velocity(b)) >= 0.3f || net::dist(game::position(b), g_place_first[b]) > 1.5f) {
+                if (g_placed_now.insert(b).second)
+                    g_place_walking++;
+                continue;
+            }
+        }
         if (g_placed_now.count(b))
             continue; // once per arrival
         g_placed_now.insert(b);
         put_chief(b, ring_spot(centre, ch[j].first));
         g_placed++;
-        H->log(M, SK_INFO, "tribe: %s's chief stood next to another one at the arrival: put on its own spot round the village",
-               C.sess->name_of(ch[j].first).c_str());
+        H->log(M, SK_INFO, "tribe: %s's chief stood next to another one at the arrival: put on its own spot round the village "
+                           "(t %.3f)", C.sess->name_of(ch[j].first).c_str(), H->time_seconds());
     }
 }
 
@@ -3124,10 +3146,10 @@ std::string status()
     else
         snprintf(b, sizeof b,
                  "tribe(guest): mirrors=%u spawned=%u removed=%u cmds_sent=%u rx=%u skipped=%u resets=%u "
-                 "local_tribes=%u player_tribe=%p unselected=%u incomplete=%u ai_skipped=%u/%u away_orders=%u local=%d mirror_walks=%u timed=%u "
+                 "local_tribes=%u player_tribe=%p unselected=%u incomplete=%u older_chunks=%u ai_skipped=%u/%u away_orders=%u local=%d mirror_walks=%u timed=%u "
                  "npc_tribes_made=%u failed=%u mirror_grounded=%u ours=%u/%u save_stripped=%u/%u forms_blocked=%u forms_run=%u unmapped_removed=%u\n",
                  (unsigned)g_gm.size(), g_spawned, g_removed, g_cmds_sent, g_rx, g_rx_skipped, g_resets,
-                 (unsigned)all_tribes().size(), player_tribe(), g_unselected, g_incomplete, g_bt_skipped, g_bt_calls, g_away_orders, (int)local_play(),
+                 (unsigned)all_tribes().size(), player_tribe(), g_unselected, g_incomplete, g_cyc.older, g_bt_skipped, g_bt_calls, g_away_orders, (int)local_play(),
                  g_mirror_walks, g_mirror_timed, g_npc_tribes_made, g_npc_tribes_failed, g_mirror_grounded, (unsigned)g_ours_c.size(),
                  (unsigned)g_ours_t.size(), g_save_stripped, g_save_saves, g_forms_blocked, g_forms_run, g_unmapped_removed);
     std::string out = b;
@@ -3141,9 +3163,9 @@ std::string status()
         chiefs += " " + std::to_string(o) + ":#" + std::to_string(member_id(c));
     snprintf(b, sizeof b,
              "tribe co-op: pincer=%u aura=%u chief_rescues=%u duet=%u heals=%u epics=%u epic_kills=%u epic=%p "
-             "chiefs=%s spread=%u placed=%u\n",
+             "chiefs=%s spread=%u placed=%u place_walking=%u\n",
              g_pincer_hits, g_aura_hits, g_chief_rescues, g_duet_ticks, g_heals, g_epics, g_epic_kills, g_epic,
-             chiefs.c_str(), g_spread_moves, g_placed);
+             chiefs.c_str(), g_spread_moves, g_placed, g_place_walking);
     out += b;
     // the chiefs' size in the game (spatial GetScale / their own scale) and the lifetime checks
     std::string scales;

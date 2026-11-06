@@ -50,6 +50,11 @@ struct ConnStats {
     uint32_t joined = 0;    // reliable messages received in pieces and joined
     uint32_t frag_lost = 0; // received pieces thrown away (a message above kMaxReliable, or a peer that never split)
     uint32_t too_big_old = 0; // reliable messages not sent: above one packet for a peer that cannot join pieces
+    // BUG-0612 (oversize part): unreliable messages that can never fit a packet (they were dropped without a word);
+    // the size and type of the last one, for the session's log line
+    uint32_t unrel_too_big = 0, unrel_too_big_logged = 0;
+    uint8_t unrel_too_big_type = 0;
+    uint32_t unrel_too_big_size = 0;
     // support diagnostics (diag_stats.cpp): datagram bytes both ways, packets lost (an ack kLostAfter
     // to kAckWindow packets later does not have them) and the round trip
     // samples since the last take_window()

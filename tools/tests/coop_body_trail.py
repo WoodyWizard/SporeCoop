@@ -19,8 +19,11 @@ SPORE_NET (netem) and SPORE_FPS work as in every test (packet loss, a slow guest
 Checks, per kind over the samples where the host's body moves (body_trail.MOVING):
 * the guest's copy is within LIMIT m of the host's body in 90 % of them;
 * it is never more than TRAIL_M m off for longer than TRAIL_S s (a copy that falls behind and stays there).
+* tribe: no member steps over 5 m in one frame on either game (BUG-0610: the arrival's chief placing teleported a
+  walking member; SPORE_FIX_OFF=tribe.place_still must FAIL).
 (SPORE_FIX_OFF=drive.lead must FAIL)"""
 import argparse
+import collections
 import json
 import math
 import os
@@ -62,11 +65,53 @@ def walk_npcs(host, guest, rng, secs, around):
     return ids, home
 
 
+HIT_EVERY = 5.0  # s between two hits (--hits)
+HIT_WIN = 3.0  # s after a hit that are judged
+HIT_MAX, HIT_TRAIL = 3.0, 0.5  # m, s: the copy of a hit NPC within HIT_MAX of the host's body, over TRAIL_M m at most HIT_TRAIL s
+
+
+def hit_checks(ck, host, guest, hr, gr, hits, t_first):
+    """BUG-0409: the guest's copy of a hit NPC against the host's body in the seconds after each hit, and the
+    locomotion mode (+0x2B0, 3 = thrown by a hit) the guest's game gave the proxy"""
+    def ntrack(con):
+        con.call('coop.npctrack stop')
+        return nw.dump(con)
+    gt, ht = ntrack(guest), ntrack(host)
+    worst, longest, n = [], [], 0
+    for key, th in hits:
+        win = lambda t: th - body_trail.GAP <= t <= th + HIT_WIN + body_trail.GAP  # noqa: E731
+        h = [x for x in hr if x[1] == key and win(x[0])]
+        g = [x for x in gr if x[1] == key and th <= x[0] <= th + HIT_WIN]
+        r = body_trail.analyse(h, g, kinds='n').get('n')
+        nid = int(key[1:])
+        g_lm = collections.Counter(x.get('lm') for x in gt if x['id'] == nid)
+        h_lm = collections.Counter(x.get('lm') for x in ht if x['id'] == nid)
+        if not r or not r['n']:
+            print(f'  hit {key} at {th - t_first:.1f} s: no moving samples (guest lm {dict(g_lm)}, host lm {dict(h_lm)})')
+            continue
+        n += r['n']
+        mx = max(r['dist'])
+        worst.append((mx, key, th - t_first))
+        longest.append((r['trail'][0], key, th - t_first))
+        print(f'  hit {key} at {th - t_first:.1f} s: off p90 {body_trail.pct(r["dist"], .9):.2f} max {mx:.2f} m, over '
+              f'{body_trail.TRAIL_M:g} m {r["trail"][0]:.2f} s; guest lm {dict(g_lm)}, host lm {dict(h_lm)}', flush=True)
+    ck(len(hits) >= 4 and n >= 100, f'hits: {len(hits)} hits of walking NPCs with {n} moving samples after them (>= 4, >= 100)')
+    if worst:
+        w = max(worst)
+        ck(w[0] <= HIT_MAX, f'hits: the guest\'s copy of a hit NPC within {HIT_MAX} m of the host\'s body in the {HIT_WIN:g} s '
+           f'after the hit (max {w[0]:.2f} m, {w[1]} hit at {w[2]:.1f} s)')
+        lg = max(longest)
+        ck(lg[0] <= HIT_TRAIL, f'hits: no copy of a hit NPC over {body_trail.TRAIL_M:g} m off for more than {HIT_TRAIL} s '
+           f'(longest {lg[0]:.2f} s, {lg[1]} hit at {lg[2]:.1f} s)')
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--stage', default='creature', choices=('creature', 'tribe', 'civ'))
     ap.add_argument('--secs', type=float, default=60)
     ap.add_argument('--seed', type=int, default=None)
+    ap.add_argument('--hits', action='store_true', help='creature: hit a walking NPC every HIT_EVERY s and judge the '
+                    'seconds after each hit (BUG-0409)')
     a = ap.parse_args()
     seed = a.seed if a.seed is not None else random.randrange(1 << 30)
     print(f'  seed {seed}', flush=True)
@@ -95,9 +140,12 @@ def main():
         print(f'  members {members}', flush=True)
     for c in (host, guest):
         body_trail.record(c, True)
+        if a.hits:
+            c.call('coop.npctrack start 150')
     tt0 = time.time()
     nxt = {}
     hit = False
+    hits = []  # (key, host time) of every hit (--hits)
     while time.time() - tt0 < a.secs:
         now = time.time()
         g = nw.avatar_pos(guest)
@@ -121,7 +169,16 @@ def main():
                     c = min(cities, key=lambda c: math.dist(c, p))
                     host.call('coop.civ move %d %.1f %.1f %.1f' % ((vid,) + round_city(p, c)))
             nxt['v'] = now + 1.0
-        if a.stage == 'creature' and not hit and now - tt0 > a.secs * 0.7:
+        if a.hits and ids and now >= nxt.get('hit', tt0 + 8):
+            i = ids[len(hits) % len(ids)]
+            push = 3.0 if len(hits) % 2 else 0.0
+            out = host.call(f'coop.npc hosthit {i} 0.5 {push}')['out'].strip()
+            th = body_trail.now(host)
+            if 'applied' in out:
+                hits.append((f'n{i}', th))
+            print(f'  hit #{i} push {push}: {out[:60]}', flush=True)
+            nxt['hit'] = now + HIT_EVERY
+        if a.stage == 'creature' and not a.hits and not hit and now - tt0 > a.secs * 0.7:
             for i in ids[:2]:
                 print(f'  hit #{i}:', host.call(f'coop.npc hosthit {i} 0.5')['out'].strip()[:80], flush=True)
             hit = True
@@ -137,6 +194,8 @@ def main():
     res = body_trail.analyse(hr, gr, kinds={'creature': 'n', 'tribe': 'nt', 'civ': 'v'}[a.stage])
     for line in body_trail.summary(res, t_first):
         print('  ' + line, flush=True)
+    if a.hits:
+        hit_checks(ck, host, guest, hr, gr, hits, t_first)
     for kind in {'creature': 'n', 'tribe': 'nt', 'civ': 'v'}[a.stage]:
         r = res.get(kind)
         lim, tr = (NET_LIMITS if os.environ.get('SPORE_NET') else LIMITS)[(a.stage, kind)]
@@ -149,6 +208,13 @@ def main():
            f'(p90 {p90:.2f} m, lag p90 {body_trail.pct(r["lag"], 0.9):.3f} s)')
         ck(r['trail'][0] <= tr, f'{kind}: no copy over {body_trail.TRAIL_M:g} m off the host\'s body for more than {tr} s '
            f'(longest {r["trail"][0]:.2f} s, {r["trail"][1]})')
+    if a.stage == 'tribe':
+        # BUG-0610: the arrival's chief placing (tribe.place_chiefs) teleported a walking member 9-22 m on the host,
+        # and the guest's copy followed (SPORE_FIX_OFF=tribe.place_still must FAIL)
+        for side, rows in (('host', hr), ('guest', gr)):
+            st = body_trail.steps(rows, 't')
+            ck(not st, f'{side}: no Tribe member steps over 5 m in one frame of its own game ({len(st)}'
+               + (': ' + ', '.join(f'{k} {d:.1f} m at {t - t_first:.1f} s' for d, k, t, _ in st[:3]) if st else '') + ')')
     ck.faults(host=host, guest=guest)
     return ck.result()
 

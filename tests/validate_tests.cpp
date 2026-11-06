@@ -90,6 +90,8 @@ static void test_chunks()
     }
 }
 
+static bool g_nofix = false;
+
 static void test_cycle()
 {
     printf("snapshot chunk numbers\n");
@@ -98,6 +100,33 @@ static void test_cycle()
     CHECK(!cycle_chunk_ok(0, 0));
     CHECK(!cycle_chunk_ok(3, 3));
     CHECK(!cycle_chunk_ok(255, 1));
+    // BUG-0612 (net.cycle_order): a late chunk of an older cycle is dropped, the newer cycle completes
+    CHECK(cycle_order(5, 4, true) == Cycle::Newer);
+    CHECK(cycle_order(3, 4, true) == Cycle::Older);
+    CHECK(cycle_order(4, 4, true) == Cycle::Same);
+    CHECK(cycle_order(0, 0xFFFF, true) == Cycle::Newer); // the counter wraps
+    CHECK(cycle_order(0xFFFF, 0, true) == Cycle::Older);
+    CHECK(cycle_order(9, 0, false) == Cycle::Newer);
+    const bool fix = !g_nofix;
+    CycleTracker t;
+    bool started = false;
+    CHECK(t.begin(5, fix, &started) && started);
+    t.add(0);
+    CHECK(t.begin(5, fix, &started) && !started);
+    t.add(1);
+    bool late = t.begin(4, fix); // cycle 4's last chunk, late (behind cycle 5's first two)
+    if (late)
+        t.add(2);
+    CHECK(!late);
+    if (t.begin(5, fix))
+        t.add(2);
+    CHECK(t.complete(3));
+    CHECK(t.older == (fix ? 1u : 0u));
+    t.reset();
+    CHECK(!t.have && t.count() == 0);
+    t.begin(1, fix);
+    t.add(200);
+    CHECK(t.count() == 1 && !t.complete(2));
 }
 
 static void test_space_origin()
@@ -182,7 +211,6 @@ static void test_give_target()
 
 // make test runs it with the fixes; `validate_tests --nofix` runs the checks of the wave 5 fixes
 // with their switches off: they must fail
-static bool g_nofix = false;
 
 static void test_give_pick_leave()
 {

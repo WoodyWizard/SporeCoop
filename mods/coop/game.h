@@ -15,6 +15,7 @@ constexpr uintptr_t kSpatialOff = 0xC0;     // cLocomotiveObject/cSpatialObject 
 constexpr uintptr_t kPosOff = 0xC0 + 0x04;  // cSpatialObject::mPosition
 constexpr uintptr_t kRotOff = 0xC0 + 0x10;  // cSpatialObject::mOrientation
 constexpr uintptr_t kVelOff = 0xC0 + 0x1C8; // cLocomotiveObject::mVelocity
+constexpr uintptr_t kLocoModeOff = 0x2B0; // BUG-0409: the locomotion mode (0 normal, 3 thrown by a hit: cCreatureBase TakeDamage 0xC1A520, 4 abducted)
 constexpr uintptr_t kCombatOff = 0x5A8;     // cCombatant subobject
 constexpr uintptr_t kMaxHpOff = 0x5A8 + 0x2C;
 constexpr uintptr_t kHpOff = 0x5A8 + 0x38;
