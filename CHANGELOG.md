@@ -19,6 +19,9 @@
   lost its place when the cell's movement glitched for a moment); the view comes back onto your cell (BUG-0604).
 - Cell: the end of the Cell stage no longer makes the co-op sync-check report the host's cell hundreds of metres
   off on every guest when nothing was wrong (BUG-0606).
+- Tribe: the ground round the villages is now the same for every player after the Creature -> Tribe change: the
+  host's game had its plateaus up to 14 m higher or lower than the guests' (tribe members and hit flashes there stood
+  off the ground on the other screens) (BUG-0332, BUG-0608).
 
 ## [0.7.8] - 2026-11-05
 

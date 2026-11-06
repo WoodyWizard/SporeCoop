@@ -6,10 +6,9 @@
 // villages, the tribe spawn markers, ...) into its heights differently from the full rebuild a load of the same
 // stamp list makes: the host's own reload of its Tribe save gave the guests' ground, 0.5-14 m off its live ground
 // (lab 20261106-043244). So the host's live ground differed from every guest's (they load its save). With the fix a
-// game asks its terrain for the full rebuild (the game's own path: sphere+0xA48 counted down by the sphere update
-// vt 0x9C 0xFAAD30, which writes the stamp lists and starts the generator 0xF9B860) once a burst of live stamp calls
-// is over, in the Tribe stage, so the live ground is the ground every load of the world gives; the world share
-// waits for it (busy()).
+// game rebuilds its terrain the way a load does (the planet editor's reload 0xF37390: stamp lists written to the
+// sphere's prop list and read back, then the generator 0xF9B860) once a burst of live stamp calls is over, in the
+// Tribe stage, so the live ground is the ground every load of the world gives; the world share waits for it (busy()).
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
@@ -36,7 +35,7 @@ double g_last_stamp;       // the time of the last live stamp call (apply, remov
 bool g_pending;            // a rebuild is due once the burst is over
 double g_asked_at;         // when the rebuild was asked (sphere+0xA48 = 1)
 uint32_t g_rebuilds, g_skipped_busy;
-constexpr double kQuiet = 0.3;   // s without a stamp call: the burst is over
+constexpr double kQuiet = 1.0;   // s without a stamp call: the burst is over (the Tribe start: two bursts 0.35 s apart)
 constexpr double kBusyMax = 8.0; // s: busy() gives up (never holds a share longer)
 
 struct Call {
@@ -342,7 +341,18 @@ void tick(double now)
         g_skipped_busy++;
         return;
     }
-    *(int32_t*)(t + 0xA48) = 1; // the sphere update (vt 0x9C) starts the rebuild in its next run
+    // as a load / the planet editor (0xF37390) does: the stamp lists written into the sphere's prop list (vt 0x80
+    // 0xFAA570), read back from it (vt 0x114 0xFA9CD0: the entries and brushes rebuilt as at a load) and the height
+    // generator started (0xF9B860(sphere, 0, 0, false, 1, 5.0): the stamp-rendering generator +0x74)
+    uintptr_t gen = H->sym("SporeCoop::TerrainSphere_StartGenerator");
+    void* pl = skg::readable(t + 0x28, 4) ? *(void**)(t + 0x28) : nullptr;
+    if (!gen || !pl) {
+        g_pending = false;
+        return;
+    }
+    skg::vcall<void>(t, 0x80 / 4);
+    skg::vcall<void>(t, 0x114 / 4, pl);
+    skg::thiscall<void>(gen, t, (void*)nullptr, (void*)nullptr, false, (uint8_t)1, 5.0f);
     g_pending = false;
     g_asked_at = now;
     g_rebuilds++;
@@ -363,7 +373,7 @@ bool busy()
     uint8_t* t = (uint8_t*)terrain();
     if (!t || !skg::readable(t + 0xA48, 4) || !skg::readable(t + 0xFC, 4))
         return false;
-    return *(int32_t*)(t + 0xA48) > 0 || *(uint32_t*)(t + 0xFC) != 0 || now - g_asked_at < 0.5;
+    return *(uint32_t*)(t + 0xFC) != 0 || now - g_asked_at < 0.5; // the generator runs (sphere+0xFC its object)
 }
 
 std::string stats()
