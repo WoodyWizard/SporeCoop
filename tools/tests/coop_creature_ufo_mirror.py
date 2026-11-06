@@ -82,6 +82,7 @@ def main():
         ck(not g, f'the guest\'s ship goes with the host\'s ({g})')
         shot(guest, 'ufo_mirror_guest_after')
     print('  guest: ' + guest.call('coop.rules ufo')['out'].strip().replace('\n', ' | '), flush=True)
+    print('  host: ' + host.call('coop.rules ufo')['out'].strip().replace('\n', ' | '), flush=True)
     ck.faults(host=host, guest=guest)
     return ck.result()
 

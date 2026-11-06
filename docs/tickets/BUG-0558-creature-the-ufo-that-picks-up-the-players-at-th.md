@@ -1,7 +1,7 @@
 ---
 id: BUG-0558
 title: Creature: the UFO that picks up the players at the end of Creature cannot pick up the guest (the guest does not see the ship)
-status: open
+status: fixed
 kind: bug
 stage: Creature
 reported: 2026-11-04
@@ -9,13 +9,13 @@ source: player report 2026-11-04 (Discord bug-reports, 0.7.5, Steam build)
 role: both
 versions: 0.7.5
 fixed_in:
-branch: fix/w44-guest-player2
-commits: 265ec57c
-tests:
+branch: fix/w44-guest-player2, fix/w45-creature-reports
+commits: 265ec57c, 946cc573
+tests: creature_ufo_mirror (coop_creature_ufo_mirror.py)
 signature:
-docs: docs/re/creature.md#creature-ufo-puppet, docs/re/creature.md#creature-ufo-pick, docs/known-issues.md#issue-ufo-puppet
+docs: docs/re/creature.md#creature-ufo-puppet, docs/re/creature.md#creature-ufo-pick, docs/known-issues.md#issue-ufo-puppet, docs/re/creature.md#creature-ufo-mirror
 related: BUG-0486
-switch: creature.ufo_puppet
+switch: creature.ufo_mirror, creature.ufo_puppet
 ---
 
 ## Report
@@ -47,12 +47,30 @@ Logs: the reports' sporekit.log of both players (host 17:26-20:15, guest 17:27-1
   pick never reached a candidate (out/lab/20261105-110417, -110601, -110850).
 
 ## Fix
+fix/w45-creature-reports (`creature.ufo_mirror`, player_rules.cpp, MSG_PLAYER_RULE kind 3): the host sends its drama
+ships' poses 10 times a second while it has any; the guest's game makes a ship of its own at each the way the event does
+(UFOAbductionEvent_SpawnUFO, type 7), never ticks it (no behaviour tree: it takes nothing in the guest's world), places
+it at the host's ship every frame (SetPositionAndOrientation and the ship's next position / destination) and destroys it
+through the deferred path when the host's ship is gone, no pose came for 1.5 s, or the guest leaves Creature.
+"The guest is taken": not done, and inferred not to be the game's rule: the ship's pick (0x0519E372) never takes the
+avatar nor a creature of the avatar's species profile, so in a game of one the player's creature is never abducted; the
+host's ship takes the host's animals and, with creature.ufo_puppet, not the guest's puppet (that guard is still not
+seen acting: the pick counted no candidate in the lab, `coop.rules ufo` seen=0).
+Earlier (P2):
 Partial, not verified: `player_rules.cpp` (`creature.ufo_puppet`): cCreatureAnimal_IsEpic answers "epic" for a
 partner's puppet when called from the pick node (return address 0xDC2B5F, `SporeCoop::UFOPick_IsEpicReturn`), so the
 host's ship never picks the guest's creature, as it never picks the host's own. Not done: the host's ship shown on the
 guest (a mirror ship). `coop.rules ufo` lists the ships, the puppets and the pick's answers.
 
 ## Verification
+creature_ufo_mirror (coop_creature_ufo_mirror.py): the host starts its UFO event (`coop.drama start 2`); the guest's
+game must have a UFO object (the game's object list, its spatial position) within 3 m of the host's ship within 3 s and
+in 8 samples over 4 s while the ship flies (~12 m/s), its own Drama Manager started nothing, and its ship goes within
+3 s of the host's.
+- FAIL with `SPORE_FIX_OFF=creature.ufo_mirror`: out/lab/20261105-232819 (no ship on the guest).
+- PASS: out/lab/20261105-232547 (0.24-1.85 m from the host's ship, gone with it after 80 s), 20261105-233338.
+- Before the fix of the ship's own flight (next position +0x718 / destination +0x750): out/lab/20261105-232301, the
+  guest's ship was put back to where it was made in every other frame (up to 49 m off).
 no-fail-run: the drama UFO does not reach its pick in the lab (its BT stops after ~7 s, seen=0 in `coop.rules ufo`
 with the puppet the only creature within 70 m: out/lab/20261105-110417 with the switch off). The probe test
 (coop_creature_ufo.py, the ship must never hover over the puppet) is not in the suite: it cannot fail here.
@@ -62,3 +80,4 @@ with the puppet the only creature within 70 m: out/lab/20261105-110417 with the 
 - 2026-11-04 (fix/w43-replay, step 0 of 0.7.7): replayed on 0.7.6 code; still open (T1), root cause observed in logs and code.
 - 2026-11-04 (fix/w43-transitions, T1): the ship's start and beam found (docs), not fixed; known issue.
 - 2026-11-05 (fix/w44-guest-player2, P2 of 0.7.8): the ship's target pick found (Ghidra), a guard behind creature.ufo_puppet; not verified at runtime (the lab's ship does not pick), still open.
+- 2026-11-05 (fix/w45-creature-reports, P3 of 0.7.9): the host's ship shown on the guest (creature.ufo_mirror); status fixed.
