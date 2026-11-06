@@ -45,7 +45,7 @@ Test only (tools/tests/play_civ.py, f66de16c): the vehicles of a nation whose ne
 
 ## Verification
 FAIL (the old audit): lab rel/0.7.9 20261106-105201 play_civ (the three problems above). PASS: lab
-20261106-125914 play_civ #1 (10.5 min, no problem). The two rechecks are counted (`vehicles_of_new_city`,
+20261106-125914 play_civ #1 and #2 (10.5 min each, no problem). The two rechecks are counted (`vehicles_of_new_city`,
 `final_buildings_rechecked`) so later runs show how often they apply.
 
 ## History

@@ -46,7 +46,8 @@ after the join): play_tribe lab 20261106-105201, fix/w45-village-ground 20261106
 (the first fix: ended in the same call, stuck). PASS: tribe_intro_camera 20261106-124712, 20261106-124833 (2),
 20261106-125051 (2), 20261106-125505 (2): the start's own intro "not started" (125505 #1 with the timing of 124414),
 the view follows the minimap. The by-hand intro of the test with the switch off did not reproduce the stuck view
-(125051, 125505), so the test makes no switch-off claim. play_tribe after the fix: see the INT3 report runs.
+(125051, 125505), so the test makes no switch-off claim. play_tribe after the fix: lab 20261106-125914 (#1 cold: the start's intro "not started", both
+minimaps OK; #2 warm OK), 20261106-132710 (cold on lane 2, intro not started at 1 s into the session, OK).
 
 ## History
 - 2026-11-06: opened.

@@ -14,7 +14,7 @@ commits:
 tests:
 signature:
 docs:
-related:
+related: BUG-0626
 ---
 
 ## Report
@@ -40,3 +40,4 @@ mirror (seen also before its first ship).
 ## History
 - 2026-11-06: opened.
 - 2026-11-06 (fix/w45-creature-reports): opened, not analysed.
+- 2026-11-06 (fix/w45-int3): likely the same intro as BUG-0626 (the galaxy menu intro started in a stage after a quick load and ended there); world.intro_at_once no longer starts it outside the menu. Not re-tested on the Creature guest.
