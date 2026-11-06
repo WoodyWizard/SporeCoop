@@ -127,7 +127,8 @@ constexpr double kMaxLead = 0.6; // s ahead of the newest state
 inline bool g_lead_smooth_fix = true;
 constexpr double kSmoothTau = 0.12; // s: e^-1 of a lead jump left after this
 constexpr float kSmoothRate = 3.f;  // m/s on top of kSmoothK x the body's speed
-constexpr float kSmoothK = 1.f;
+constexpr float kSmoothK = 0.75f;
+constexpr float kSmoothAcc = 60.f;  // m/s2: how fast the closing speed rises
 constexpr float kSmoothMinSp = 3.f; // m/s
 
 class SnapshotBuffer {
@@ -345,6 +346,7 @@ private:
             sm_offv_ = {};
             if (!sm_have_ || dt > 0.5) {
                 sm_off_ = {};
+                sm_ds_ = 0;
             } else {
                 Vec3 cont{sm_shown_.x + sm_vel_.x * (float)dt, sm_shown_.y + sm_vel_.y * (float)dt,
                           sm_shown_.z + sm_vel_.z * (float)dt};
@@ -359,12 +361,17 @@ private:
                 const bool stop = dist(Vec3{}, v) < 0.3f && dist(Vec3{}, sm_vel_) >= 0.3f;
                 if (d > smooth_max || stop) {
                     off = {};
+                    sm_ds_ = 0;
                 } else if (d > 1e-4f) {
                     // (at least kSmoothMinSp: a start's first states report a speed under the walk's, lead_velocity
                     // caps it at their path, and the target crept at 3 m/s, in the stop-and-go band, for 0.2-0.5 s)
                     float sp = std::max({dist(Vec3{}, v), dist(Vec3{}, sm_vel_), kSmoothMinSp});
-                    float nd = std::max(d * (float)std::exp(-dt / kSmoothTau), d - (kSmoothK * sp + kSmoothRate) * (float)dt);
-                    nd = std::max(nd, 0.f);
+                    // the closing speed eases in (kSmoothAcc): started at once, the target's speed rose by up to
+                    // 12 m/s in one frame, the walked mirror fell 0.5-0.8 m behind and closed that in one ~1 m frame
+                    float want = std::min(d / (float)kSmoothTau, kSmoothK * sp + kSmoothRate);
+                    float ds = std::min(want, sm_ds_ + kSmoothAcc * (float)dt);
+                    sm_ds_ = ds;
+                    float nd = std::max(d - ds * (float)dt, 0.f);
                     float k = nd / d;
                     float r = (k - 1.f) / (float)dt;
                     sm_offv_ = {off.x * r, off.y * r, off.z * r};
@@ -383,6 +390,7 @@ private:
     }
     mutable bool sm_have_ = false, sm_used_ = false;
     mutable double sm_t_ = 0;
+    mutable float sm_ds_ = 0; // m/s: the offset's closing speed
     mutable Vec3 sm_off_{}, sm_offv_{}, sm_vel_{}, sm_shown_{};
 
     struct Snap {

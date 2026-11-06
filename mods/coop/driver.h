@@ -302,6 +302,10 @@ struct WalkPlace {
     // latency late; its lead target is then 1-3 m ahead and was closed at catch_up (3 m/s): a Tribe member at
     // 9 m/s stayed 2-3 m behind for the first 0.75 s of every walk over the player network (p90 2.9-3.1 m)
     bool catch_prop = false;
+    // BUG-0619: > 0: the speed the placing's catch-up is measured by (the error closed per frame), when the walk goes
+    // faster than the remote itself (a Tribe member mirror walked at its smoothed target's speed, the lead's offset
+    // closing included: placed by that speed it closed a 0.5-0.8 m lag in one 1-1.3 m frame)
+    float place_speed = 0.f;
 };
 constexpr float kCatchTime = 0.25f;     // s
 constexpr float kWalkLostErr = 0.75f;   // m
@@ -370,7 +374,7 @@ inline void walk_place(void* p, const net::Vec3& pos_in, const net::Quat& rot, c
     float catch_up = o.catch_up;
     if (o.catch_prop && net::g_lead_fix)
         catch_up = std::max(catch_up, std::min(err / kCatchTime, sp + o.catch_up));
-    float max_step = (sp + catch_up) * (float)dt;
+    float max_step = ((o.place_speed > 0 ? std::min(sp, o.place_speed) : sp) + catch_up) * (float)dt;
     net::Vec3 to = pos;
     if (err > max_step) {
         float k = max_step / err;

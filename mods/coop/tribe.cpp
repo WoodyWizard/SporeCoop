@@ -206,6 +206,7 @@ struct GMember {
     net::SnapshotBuffer buf; // BUG-0365 (tribe.mirror_time): the host's states by its clock
     net::Vec3 aim;           // coop.track: where the driving aimed this frame
     float aim_speed = 0;     // and the host's speed of that state
+    float lead_speed = -1;   // BUG-0619: the raw lead's speed while the smoothed target drives it (-1: none)
     double held_since = 0, held_said = -1e9; // BUG-0386 (diagnostics)
     double anim_rx_at = 0, anim_fix_at = 0; // BUG-0569: the last relayed start, the last snapshot play
 };
@@ -1997,7 +1998,9 @@ static void mirror_target(GMember& g, double now, net::Vec3& pos, net::Quat& rot
         // BUG-0619 (drive.lead_smooth): the smoothed target's own velocity (its offset closing a late state's step
         // included): walked at the raw path's speed the mirror fell 0.5-1.4 m behind a closing target and surged
         // after it at 7-8 m/s when the closing ended (tribe_walk_mobile 20261106-140306 #3: uneven 16 %)
+        g.lead_speed = -1;
         if (g.buf.smooth_velocity(vel)) {
+            g.lead_speed = drive::speed(s.vel);
             age = 0;
             return;
         }
@@ -2020,6 +2023,7 @@ static void mirror_target(GMember& g, double now, net::Vec3& pos, net::Quat& rot
     rot = g.rot;
     vel = g.vel;
     age = now - g.seen;
+    g.lead_speed = -1;
 }
 
 // BUG-0444: this game's time is paused (cGameTimeManager +0x48 bit 0: after a cold join for 10-40 s, the pause
@@ -2074,6 +2078,8 @@ static void mirror_drive(GMember& g, double now)
         // BUG-0425; BUG-0619: with drive.lead_smooth the lead target closes the error itself (on its own path):
         // catch_prop on top measured the catch-up from the game's walk and drew walk + catch-up (0.9-1.25 m frames)
         o.catch_prop = !net::g_lead_smooth_fix;
+        if (g.lead_speed >= 0)
+            o.place_speed = std::max(g.lead_speed, 0.5f); // BUG-0619
         drive::walk_place(g.c, g.aim, rot, vel, g.ds, now, o);
         g_mirror_walks++;
         // BUG-0386 (diagnostics): a walked mirror held over 2 m off its aim for 1 s: what is around it, once per 10 s
