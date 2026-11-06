@@ -1956,3 +1956,49 @@ BUG-0528. GOG 2024 (dc04aee5).
 * ? The makers of the noun (CreateInstance(0x18C88E4) call sites): 0xC90080, 0xCCEB90's caller 0xCD1D60, 0xD130D0,
   0xD2FFD0, 0xD99F50, 0xC60440, 0xB41FE0, 0xBE6A50 (city decorations, docs/re/space.md#space-city-ornaments),
   0xEC0F00, 0xF30B60, 0xF41A50, 0x1051860, 0xB25FC0. `coop.wobj raw 18C88E4 3000 576` prints the model of each.
+## The terrain stamps of the Tribe start, live and loaded (2026-11-06, fix/w45-village-ground)
+<a id="tribe-terrain-stamps"></a>
+
+BUG-0332 (and BUG-0608). GOG 2024; runtime on lane 4/5 (creature_cadian fixture, the campaign's own planet), statics
+in Ghidra / objdump. ✔ = observed, ~ = read in the code but not seen running, ? = inferred.
+* ✔ The planet terrain (cPlanetModel+0x24, vtable 0x1490BA8) keeps lists of stamps: +0x770 (+0x784 when the stamp prop's
+  bool 0xC5AE63ED is set; a second family at +0x798), 0xAC-byte entries: +0x00 the Transform (u16 flags, u16, position
+  +4..+0xC = the stamp's level as a distance from the centre, scale +0x10, matrix +0x14), +0x38..+0x97 brush data,
+  +0x98 the stamp prop's key (instance, type 0x00B1B104, group at +0xA0), +0xA4 flags, +0xA8 the id. The save holds the
+  lists (prop lists 0x43B29E1/2 etc., vt 0x84 0xF9B790 -> vt 0x80 0xFAA570), no height map; a load rebuilds the heights.
+* ✔ `ApplyStamp` 0xFA6C10 (thiscall(terrain, Transform*, cPropList*) ret 8 -> id) is called at the live Creature ->
+  Tribe change ~56 times within 0.5 s: from 0x0109DFBF and 0x01091981 (the player's village), 0x010DDDEF (one per tribe
+  spawn marker, 4-6), 0x0106AD74 (~50, all of one prop list, key {E960A03F, 00B1B104, 0}); later from 0x0109DFBF for
+  every NPC village made (the controller's forming, the guests' copies: SpawnNpcTribe). They cut / fill plateaus:
+  e.g. 530 m -> 508.2 m over 60 m. The host's heights are final 0.9 s into the stage (`coop.terrain`, `--watch`).
+* ✔ The guest loads the host's Tribe save: its +0x770 list is the host's, entry for entry and byte for byte; its
+  heights still differ round some of the stamps by 0.4-14 m (patches near the spawn markers and NPC villages; e.g.
+  Creature 533.19 m, Tribe host 518.59, guest 532.49). Lab 20261106-033400 (3.08 m), 20261106-034853, 20261106-040512
+  (13.9 m), 20261106-042556 (13.48 m).
+* ✔ **The host's own load of its Tribe save gives exactly the guests' ground** (lab 20261106-043244, 12 of 12 points:
+  host live 508.06 / after its load 508.83 / guest 508.83, ...). So the game itself renders the stamps it applies live
+  differently from the full rebuild of the same list that every load makes; in co-op the host keeps its live ground
+  and every guest has the loaded one. That is BUG-0332 (5.1-5.9 m in the campaigns, where the members walked onto
+  such a patch: a new NPC village, "made it ... at 5.1 m").
+* ✔ Not the causes: the stamp lists (equal), the terrain manager's fresh-load flag [[0x16C8EB0]+0x1CD] (0 on the
+  guest), the height parameters (equal), RemoveStamp + ApplyStamp of all 169 entries on the guest and bumping the
+  version +0x814 (no rebuild starts: nothing changes), a late share save (the host's terrain is final before it).
+* ~ The rebuild: `0xF9B860` thiscall(sphere, a1, a2, bool a3, u8 a4, float a5) ret 0x14 picks a generator (+0xB8 while
+  0x1CD is set: no stamp steps; +0x30 with a3; else +0x74), whose step functions 0xFC1250 / 0xFC1480 load (0xFA9B00),
+  rebuild (0xFA60E0, 0xFA3BC0) and render (0xFA8670, 0xFA5E90) the stamps, then +0x818 = +0x814. The sphere update vt
+  0x9C 0xFAAD30 counts sphere+0xA48 down and at 0 calls vt 0x80 and 0xF9B860; the planet editor's reload 0xF37390 calls
+  vt 0x114 (0xFA9CD0, thiscall(sphere, cPropList*) ret 4: the lists read back) and then 0xF9B860(sphere, 0, 0, 0, 1, f).
+  ApplyStamp itself writes no height.
+* ✔ A rebuild started by the mod does not give the loaded ground either: sphere+0xA48 = 1 after the burst (lab
+  20261106-043944: 387 of 1499 points off, up to 4.25 m) or vt 0x80 + vt 0x114 + 0xF9B860 as 0xF37390 (lab
+  20261106-045023: 445 points, up to 20.8 m). ? The generator seems to render the stamps onto the heights it has, so
+  every rebuild moves the ground again; only a load starts from the planet's base.
+* ✔ Fix `tribe.host_reload` (world.cpp): after a live Creature -> Tribe change the host loads its own share save once
+  it has gone out to every guest (the game's own load through the galaxy menu, `load_slot`, as the guests do), so every
+  game has the ground any later load of that world gives. `coop.terrain [list | raw <id> | state | rebuild | dirty |
+  regen | reapply <from>]` (terrain_diag.cpp, log-only hooks on ApplyStamp / RemoveStamp / ClearAllStamps) are the
+  probes.
+* ? The same split may exist in Civ (cities stamp live through cCityData / cCity, 0xB99DFA ... 0xBECF7D): not
+  measured, the fix is limited to the Tribe stage.
+* BUG-0608 (a relayed world effect at the sender's absolute position) came only from the two grounds differing; with
+  one ground on every game the absolute position is on the receiver's ground too.

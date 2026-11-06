@@ -528,6 +528,24 @@ COOP_FIX("world.share_one_save", "BUG-0112", g_one_save_fix, "world: one save fo
 // A share save now waits until the stage has been playable for kShareSettle, and a share without
 // its box is sent only when a file of the slot was written after the save was posted (else: save
 // again, up to three times). Off: the old timing (0.7.3.0).
+// BUG-0332: the ground a game renders for the terrain stamps it applies live (the ~56 of a live Creature -> Tribe
+// change: villages, tribe spawn markers) is not the ground a load of the same save gives: every guest (it loads the
+// host's save) had plateaus 0.5-14 m off the host's, and the host's own reload of that save gave exactly the guests'
+// (lab 20261106-043244; docs/re/tribe.md#tribe-terrain-stamps). A rebuild started by the mod gave a third ground. So
+// after a live Creature -> Tribe change the host loads its own share save once it has gone out, as the guests do:
+// every game then has the ground any later load gives. Off: the host keeps its live ground (0.7.8).
+bool g_host_reload_fix = true;
+COOP_FIX("tribe.host_reload", "BUG-0332", g_host_reload_fix,
+         "tribe: after the live Creature -> Tribe change the host loads its own share save, so its ground is the guests'");
+static bool g_reload_due;     // set by the stage change, done after the next share save went out
+static uint32_t g_host_reloads;
+void host_reload_after_share()
+{
+    if (g_host_reload_fix)
+        g_reload_due = true;
+}
+uint32_t host_reloads() { return g_host_reloads; }
+
 bool g_share_settle_fix = true;
 COOP_FIX("world.share_settle", "BUG-0276", g_share_settle_fix, "world: a share save waits for a settled stage and is not sent stale");
 // BUG-0276 (reopened, wave 8): the settle clock above was the "playable since" of the via-menu load,
@@ -1134,6 +1152,19 @@ void tick(net::Session& s)
         g_pending.erase(g_pending.begin() + i); // p is invalid from here
         if (failed && g_share_failed)
             g_share_failed(fpeer, ftag, missing); // BUG-0231: coop.cpp retries
+        if (g_reload_due && !failed && g_pending.empty()) { // BUG-0332: the save has gone out to every guest
+            g_reload_due = false;
+            std::string planet, lerr;
+            bool miss = false;
+            std::wstring slot = game::mode_id() == modes::kTribe ? current_slot(planet, miss) : std::wstring();
+            if (!slot.empty() && !planet.empty() && !miss && load_slot(slot, planet, lerr, std::string())) {
+                g_host_reloads++;
+                H->log(M, SK_INFO, "world: the host loads its own share save of the new Tribe stage (%s), as the guests do: "
+                       "one ground for everybody (BUG-0332)", planet.c_str());
+            } else {
+                H->log(M, SK_WARN, "world: the host could not load its own Tribe share save (%s)", lerr.c_str());
+            }
+        }
     }
     for (auto& o : g_out) {
         if (o.done)

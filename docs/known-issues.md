@@ -1169,6 +1169,10 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   (drive.own_height, BUG-0329), so they look right, but the ground itself differs.
 * Reproduce: the full campaign (cell -> tribe); not on flat ground (creature_cadian fixture).
 * Ticket: BUG-0332
+* FIXED (2026-11-06, fix/w45-village-ground, unreleased): the host's live render of the Tribe start's terrain stamps
+  differs from the render every load gives; the host now loads its own share save after the live change
+  (tribe.host_reload). docs/re/tribe.md#tribe-terrain-stamps. Reproduced on creature_cadian with ground maps
+  (`tools/lab.py run tribe_village_cadian`).
 
 ## Cell: a guest's cell broadphase left ~1024 objects open (2026-10-31, fix/w20-cell)
 <a id="issue-cell-sap-broken-order"></a>
@@ -2039,3 +2043,5 @@ Player reports 2026-11-04 (0.7.5, Discord bug-reports; not analysed yet):
   `Tribe:unmatched:citizen`, 1-3 of ~31 samples a run). What it is is not known yet.
 * Reproduce: play_tribe with `SPORE_DETECTOR=20` and `coop_tribe_member_place.py --attach` (prints the object).
 * Ticket: BUG-0620
+  ground difference when it happens) (fixed on fix/w45-village-ground, unreleased: one ground for everybody,
+  tribe.host_reload of BUG-0332)

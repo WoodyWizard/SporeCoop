@@ -39,6 +39,9 @@
 - Civ: a city's cultural targets stand where the host's stand after a guest leaves and joins again (BUG-0540).
 - Space: the decorations around a planet's cities are the same in every player's game (the same cities have them, at
   the same places), instead of a different set on each screen (BUG-0541).
+- Tribe: the ground round the villages is now the same for every player after the Creature -> Tribe change: the
+  host's game had its plateaus up to 14 m higher or lower than the guests' (tribe members and hit flashes there stood
+  off the ground on the other screens) (BUG-0332, BUG-0608).
 
 ## [0.7.8] - 2026-11-05
 

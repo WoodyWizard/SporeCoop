@@ -4465,3 +4465,22 @@ count in a heap) for the kinds of mods/coop/worldobj.cpp that move or make the h
 * `tribe_dead_member` / `tribe_dead_tribe` (coop_tribe_dead_member.py [--all]): an NPC member, or every member of an
   NPC tribe, killed on the host; the citizens at that place on both games (no host-only body: lab 20261106-072628,
   20261106-072755).
+## The two games' ground: maps, stamps, a host reload (2026-11-06, fix/w45-village-ground)
+<a id="testing-ground-maps"></a>
+
+BUG-0332 (docs/re/tribe.md#tribe-terrain-stamps).
+* `tribe_village_cadian` (coop_tribe_village_ground.py `--fixture=creature_cadian --map --terrain`, ~8 min): the
+  players' way from the campaign planet's Creature to Tribe, then `coop.ground` on both games at 1499 points within
+  45 degrees of the village (`--map`, also before the change) and on rings to 100 m round every village and tribe
+  spawn marker (`coop.tribe markers`); `--terrain` compares the two games' stamp lists (`coop.terrain list`) and the
+  ground at each stamp. PASS: everything within 0.3 m. Other flags (RE): `--watch` (the host's terrain 0-14 s into
+  Tribe), `--host-reload` (the host loads its own save and is measured again), `--reapply`, `--dirty`, `--regen`,
+  `--npc-at=x,y,z;...` (`coop.tribe npc_tribe_at`: SpawnNpcTribe at a point). The test waits for the host's
+  tribe.host_reload load (`host_reloads=` in `coop.terrain`) before it measures.
+* The `creature` fixture's planet shows the difference at most 0.2 m; the campaign's planet (creature_cadian) shows
+  it in every run (0.6-14 m) but at other places: the tribe spawn markers are placed at random.
+* `tribe_form_ground` (coop_tribe_form_ground.py, tribe fixture, ~1 min): the host's controller forms a village
+  (`coop.res add food 250` first: tribe.form_pace holds it otherwise), the ground round it on both games.
+* campaign_ct: `CAMPAIGN_GROUND=1` now probes every member, every village, the spawn markers, the six axis points and
+  the Creature probe points again in Tribe (one line per stage, or when a guest differs by more than 0.5 m);
+  `CAMPAIGN_FORM=1` makes the host form two villages right after the tribe setup.
