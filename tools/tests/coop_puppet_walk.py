@@ -289,6 +289,7 @@ def windows(pup, top):
 
 
 BODY_STOPS = []  # (slide, key, t, e0) of every direction (bodyrec)
+BODY_PAST = 0.3  # m (BUG-0408: 0.50 / 0.88 m before creature.puppet_stop, lab 20261106-053105)
 STOP_MOVE, STOP_MOVES = 0.15, 0.1  # BUG-0408 (--stop-walk): m slid on after a stop, share of the stops
 STOP_SLIDE = 0.3  # m: a puppet drawn this far from where the walker stopped in the second after the stop slid past it
 
@@ -537,6 +538,11 @@ def direction(walker, observer, wname, oname, rng, secs, ck, stand=0, jumps=0.0,
           f'p90 {body_trail.pct([x[0] for x in sl], .9):.2f} max {max([x[0] for x in sl], default=0):.2f} m; '
           + ', '.join(f'{d:.2f} m at {t - min(x[0] for x in bw):.1f} s' for d, _, t, _ in sl[:4]), flush=True)
     BODY_STOPS.extend(sl)
+    if STOP_WALK and sl:
+        # BUG-0408 on both games' own positions: the puppet never goes past where the walker's own creature stopped
+        past = [x for x in sl if x[0] > BODY_PAST]
+        ck(not past, f'{oname} sees {wname}: the puppet does not go past where {wname}\'s own creature stopped (over '
+           f'{BODY_PAST} m after {len(past)} of {len(sl)} stops, coop.bodyrec)')
     path = os.path.join(lane.out_dir('track'), f'puppet_walk_{oname}_sees_{wname}_{time.strftime("%Y%m%d-%H%M%S")}.json')
     with open(path, 'w') as f:
         json.dump({'observer': obs, 'walker': wal}, f)

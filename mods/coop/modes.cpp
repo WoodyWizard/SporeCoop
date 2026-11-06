@@ -247,6 +247,7 @@ static bool g_puppet_stop_fix = true;
 COOP_FIX("creature.puppet_stop", "BUG-0408", g_puppet_stop_fix, "creature: the partner's creature stops where the partner stopped instead of sliding on");
 constexpr double kStopHold = 0.5; // s
 constexpr float kStopNear = 1.5f; // m
+constexpr float kStopSpeed = 4.f;  // m/s: the hold's own approach
 
 static void creature_drive(void* p, const net::PlayerState& s_in, drive::State& ds, double now)
 {
@@ -335,7 +336,13 @@ static void creature_drive(void* p, const net::PlayerState& s_in, drive::State& 
             ds.stop_until = now + kStopHold; // BUG-0408: the walk ends here
         drive::walk_end(p, s.pos, ds, now);
         if (now < ds.stop_until && net::dist(game::position(p), s.pos) < kStopNear) {
-            game::place(p, s.pos, s.rot); // BUG-0408: where the partner stopped, not where the game's walk slides
+            // BUG-0408: onto where the partner stopped, not where the game's walk slides; at most kStopSpeed m/s (put
+            // there at once, the puppet 0.5-1 m behind at the stop made a step)
+            net::Vec3 cur = game::position(p), to = s.pos;
+            float e = net::dist(cur, to), mx = kStopSpeed * (float)std::min(0.1, std::max(1.0 / 120, now - ds.last_step));
+            if (e > mx)
+                to = {cur.x + (to.x - cur.x) * mx / e, cur.y + (to.y - cur.y) * mx / e, cur.z + (to.z - cur.z) * mx / e};
+            game::place(p, to, s.rot);
             *(net::Vec3*)((uint8_t*)p + game::kVelOff) = net::Vec3{};
             ds.stop_holds++;
             ds.last_step = now;
@@ -497,7 +504,6 @@ static void space_fill(void* u, net::PlayerState& st)
 bool ufo_ident_fix = true;
 COOP_FIX("drive.nudge_dt", "BUG-0175", drive::g_nudge_dt_fix, "creature, tribe: a mirror's pull to its place is per second, not per frame (low frame rates trailed more)");
 COOP_FIX("drive.lead", "BUG-0425", net::g_lead_fix, "creature, tribe, civ: the host's animals, tribe members and vehicles are shown where the host has them now, not 0.2 s behind");
-COOP_FIX("drive.lead_smooth", "BUG-0445", net::g_lead_smooth_fix, "creature, tribe: a host animal whose speed changes is not drawn jumping 1-3 m (the lead's step spread over 0.25 s)");
 COOP_FIX("drive.sender_agl", "BUG-0425", drive::g_sender_agl_fix, "creature, tribe: a partner or animal off the ground is drawn at its height over the sender's ground, over this game's ground");
 COOP_FIX("drive.own_height", "BUG-0329", drive::g_own_height_fix, "tribe: a member's or animal's mirror is driven at its own ground height, not the host's absolute one");
 COOP_FIX("fleet.type", "BUG-0111", ufo_ident_fix, "space: only our own puppets count as puppets, not any UfoType 6 ship (coop.fleet typefix)");

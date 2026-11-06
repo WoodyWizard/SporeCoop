@@ -111,14 +111,6 @@ private:
 inline bool g_lead_fix = true;
 inline double g_one_way = 0.03; // s
 constexpr double kMaxLead = 0.6; // s ahead of the newest state
-// BUG-0445 (`coop.fix drive.lead_smooth`): a new state with another speed moved the lead target in one frame by the
-// change of speed x the lead time (seen: a Tribe animal's states 6.5 -> 3.7 -> 6.5 m/s, the target 1.8 m back and
-// 1.6 m on in two frames; the walk's snap then teleported the proxy 2.7 m on the guest's screen, npc_walk_tribe lab
-// 20261106-054409). With it the target's step at a new state is spread over kLeadSmooth s (a step over
-// kLeadSmoothMax m is a jump of the sender's body and is not spread). Off: the step at once (M1's lead).
-inline bool g_lead_smooth_fix = true;
-constexpr double kLeadSmooth = 0.25;     // s
-constexpr float kLeadSmoothMax = 5.f;    // m
 
 class SnapshotBuffer {
 public:
@@ -141,8 +133,6 @@ public:
         snaps_.clear();
         clock_.clear();
         have_raw_ = false;
-        smooth_off_ = {};
-        smooth_t_ = -1e9;
     }
 
     void push(const PlayerState& s, double local_now)
@@ -168,24 +158,9 @@ public:
             if (!snaps_.empty() && st <= snaps_.back().t)
                 return; // old or duplicate
         }
-        PlayerState before{};
-        const bool smooth = lead && g_lead_fix && g_lead_smooth_fix && !snaps_.empty() && sample_raw(local_now, before);
         clock_.add(local_now - st, local_now);
         offset_ = clock_.value();
         snaps_.push_back({st, s});
-        if (smooth) { // BUG-0445: where the target was a moment ago, against where the new state puts it
-            PlayerState after{};
-            if (sample_raw(local_now, after)) {
-                Vec3 d{before.pos.x - after.pos.x, before.pos.y - after.pos.y, before.pos.z - after.pos.z};
-                Vec3 left = smooth_left(local_now);
-                d = {d.x + left.x, d.y + left.y, d.z + left.z};
-                if (std::sqrt(d.x * d.x + d.y * d.y + d.z * d.z) < kLeadSmoothMax) {
-                    smooth_off_ = d;
-                    smooth_t_ = local_now;
-                } else
-                    smooth_off_ = {};
-            }
-        }
         while (snaps_.size() > 64)
             snaps_.pop_front();
     }
@@ -240,26 +215,6 @@ public:
 
     // Interpolated state at (now - delay) in sender time; with `lead` (g_lead_fix) the sender's state now.
     bool sample(double local_now, PlayerState& out) const
-    {
-        if (!sample_raw(local_now, out))
-            return false;
-        if (lead && g_lead_fix && g_lead_smooth_fix) {
-            Vec3 o = smooth_left(local_now);
-            out.pos = {out.pos.x + o.x, out.pos.y + o.y, out.pos.z + o.z};
-        }
-        return true;
-    }
-
-    // BUG-0445: what is left of the last state's step (linearly to 0 in kLeadSmooth s)
-    Vec3 smooth_left(double local_now) const
-    {
-        double k = 1.0 - (local_now - smooth_t_) / kLeadSmooth;
-        if (k <= 0 || k > 1)
-            return {};
-        return {smooth_off_.x * (float)k, smooth_off_.y * (float)k, smooth_off_.z * (float)k};
-    }
-
-    bool sample_raw(double local_now, PlayerState& out) const
     {
         if (snaps_.empty())
             return false;
@@ -339,8 +294,6 @@ private:
     int64_t ext_ms_ = 0;   // the sender time of the newest snapshot, unwrapped (BUG-0053)
     uint32_t last_raw_ = 0;
     bool have_raw_ = false;
-    Vec3 smooth_off_{};      // BUG-0445: the target's step at the last state, spread over kLeadSmooth
-    double smooth_t_ = -1e9;
 };
 
 // BUG-0122: the host's now_ms() after the last entry of a ship / vehicle snapshot chunk (older

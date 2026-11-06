@@ -4447,3 +4447,12 @@ G2 of 0.7.8 (BUG-0430 class). For each: which kind of fault it was and the evide
 * `coop.track` rows end with the creature's +0xF90 (drawn flag) and +0xEAC (LOD) (BUG-0434).
 * `coop_net_nan.py` (suite `net_nan`, BUG-0614): a scripted guest (fakepeer protocol) sends NaN / Inf states; its
   puppet must stay finite in both games' bodyrec rows.
+* `coop_mound_view.py` (suite `puppet_mound_view`, BUG-0434): the host on the fixture's nest mound, the guest 10 m away
+  turning its camera with right-drags for 60 s (~200 entries of the puppet into its view); fails on any frame on the
+  screen that draws the puppet on the plain terrain (hd < 0.1 m while ht > 0.5 m).
+* `coop_puppet_walk.py` now records both games' `coop.bodyrec` too: the puppet against the walker's own creature at
+  the same moment (`body_trail.analyse` on `p` keys) and `body_trail.stop_slides` (how far past the walker's stop the
+  puppet went). Suite `puppet_stops` (BUG-0408): `--dir both --guest-fps 30 --goto=-195,-465,-45 --stop-walk` over
+  SPORE_NET=player (its `stops` check: slid on over 0.15 m after at most 10 % of the stops).
+* The partner's puppet has no lead (M1, on purpose): its copy is 0.16-0.17 s (lag p50) behind the walker on a clean
+  lab, p90 0.8-0.9 m at walking speed (puppet_stops bodyrec lines, lab 20261106-053105).

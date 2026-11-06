@@ -1585,6 +1585,9 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * What happens: after the host hits an animal, the guest's game moves its copy 3-4 m in one frame (or throws it at
   8-11 m/s) against the placing; it stands 4.8 m off for 1.1 s or is put back 2.4-4 m in one frame.
 * Reproduce: npc_walk's flee phase (`coop.npc hosthit`), a few runs in 20.
+* Not reproduced (2026-11-06, fix/w45-remote-bodies-2): the guest's game never throws a living proxy (locomotion mode
+  column of coop.npctrack); after a push the copy is up to ~4 m off for under 0.2 s (the host's throw seen one state
+  period late), never held (body_trail_hits, 13 runs; docs/re/creature.md#creature-hit-throw).
 * Ticket: BUG-0409
 
 ## Creature: the partner's creature slides past a stop (2026-11-01, fix/w34-walk-stable)
@@ -1596,6 +1599,9 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Not reproduced again (2026-11-04, fix/w41-puppet-look): 21 stops of `coop_puppet_walk.py --stop-walk` on the slope
   (guest 30 fps, `player` network), 10 of them abrupt (`coop.abilities halt`): none slid on more than 0.05 m with the
   0.7.4 driving, so the hold after a stop (creature.puppet_stop, tried) was not kept.
+* FIXED (2026-11-06, fix/w45-remote-bodies-2, unreleased): seen again on both games' own positions (puppet_stops,
+  0.50 / 0.88 m past the stop, lab 20261106-053105); `creature.puppet_stop` holds the puppet where the partner stopped
+  from the moment its own speed falls (see BUG-0408).
 * Ticket: BUG-0408
 * Fixed (2026-11-01, fix/w33-unlocks): the party shares its collected parts (`parts.shared`, test
   `parts_shared`).
@@ -1649,6 +1655,8 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   coop_puppet_fight.py prints these steps as `entry`.
 * Known: the game puts every creature of ours outside the view on the plain terrain; writes at the mod's frame
   cannot keep it up (docs/re/creature.md#creature-out-of-view-ground).
+* FIXED (2026-11-06, fix/w45-remote-bodies-2, unreleased): `creature.culled_ground` lifts the puppet back after the
+  physics update (puppet_mound_view: 0 low frames, 200 with it off; docs/re/creature.md#creature-culled-ground-fix).
 * Ticket: BUG-0434
 
 ## Creature: on the lower part of a nest mound the partner's creature stands 0.4 m in the ground (2026-11-01, fix/w34-ability-pop)
@@ -1680,6 +1688,7 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Reproduce: `tools/lab.py run npc_walk_tribe --repeat 3`: "no jump of a moving proxy" fails in about 2 of 3 runs
   on lane 7 (also with main's own test file).
 * Not checked: whether the host's states arrive bunched (late) then, or the walk driving.
+* Not reproduced (2026-11-06, fix/w45-remote-bodies-2): 8 of 8 npc_walk_tribe runs passed on 0.7.9 (see BUG-0445).
 * Ticket: BUG-0445
 ## Civ: the mirror vehicles (and other objects the mod creates on a guest) go into the guest's save (2026-11-02, fix/w39-content-all)
 <a id="issue-civ-mirrors-in-save"></a>
