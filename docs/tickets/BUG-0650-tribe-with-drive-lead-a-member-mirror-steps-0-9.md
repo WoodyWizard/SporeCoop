@@ -71,3 +71,14 @@ of those pairs (windows 63-71 %), so tribe_walk_player is judged A/B. The lead w
   late walk ended 3 m off and the stand driving drew a 1.08 m frame; reverted); fixed with drive.lead_late (a late state
   brought in over time). Status fixed, fixed_in unreleased. New: BUG-0651 (under load the drive.lead_smooth rule turns
   the member lead off on any link).
+- 2026-11-06 (fix/w45-lead-player, asked by the orchestrator after integration run 20261106-200316): puppet_stops,
+  body_trail_civ and creature_carry checked A/B against SPORE_FIX_OFF=drive.lead at lab load 14-17 on 6 cores. The
+  Creature partner's puppet has no lead (its SnapshotBuffer has lead false, creature_drive's WalkPlace has catch_prop
+  false) and this branch changes only Tribe member buffers (smooth_max > 0). puppet_stops: lead on 0 of 4 (-220227,
+  -224148), lead off 0 of 3 (-221210: the same 'past the stop' 0.63-0.80 m and 'enough stops' failures). body_trail_civ:
+  lead on 0 of 3 (p90 5.7-6.7 m), lead off 0 of 3 (p90 5.0-8.0 m, lag 0.75-1.11 s): load, not the lead. creature_carry:
+  lead on 5 of 6 (-223740 2/2, -224148 1/1 lane 9; -230158 2/3 lane 6) after 0 of 3 in -220227 (lane 6 right after
+  body_trail_civ, 'host draws guest 8 m', 'holding the rock 61.5 m'), lead off 5 of 5 (-221210 3/3, -225833 2/2). The
+  failing repeat (-230158 #3) is the carry relay's hold message (the host's hold_rx 2 against the guest's hold_tx 3),
+  no position involved.
+
