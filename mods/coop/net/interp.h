@@ -471,6 +471,8 @@ private:
     }
 
 public:
+    // diagnostics (coop.bodyrec diag, K3): M1's raw lead target now (the newest state moved on to the sender's now)
+    Vec3 raw_lead(double local_now) const { return snaps_.empty() ? Vec3{} : lead_at(local_now - offset_ + g_one_way); }
     double late_behind(double local_now) const { return lt_have_ ? local_now - offset_ + g_one_way - lt_t_ : 0; }
     // diagnostics (BUG-0619): the smoothing's offset now (m) and the raw lead target's jump at the last new state
     double jitter() const { return jitter_; }

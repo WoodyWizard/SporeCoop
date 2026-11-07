@@ -3423,6 +3423,24 @@ void for_each_tracked(void (*fn)(const TrackMember& m, void* user), void* user)
     }
 }
 
+void for_each_diag(void (*fn)(const char* key, const net::Vec3& p, void* user), void* user)
+{
+    if (!active() || is_host())
+        return;
+    double now = H->time_seconds();
+    char k[8];
+    for (auto& [id, g] : g_gm) {
+        if (!g.c || !game::object_alive(g.c) || now - g.seen > 3.0 || g.buf.empty())
+            continue;
+        snprintf(k, sizeof k, "a%u", (unsigned)id);
+        fn(k, g.aim, user);
+        snprintf(k, sizeof k, "r%u", (unsigned)id);
+        fn(k, g.buf.raw_lead(now), user);
+        snprintf(k, sizeof k, "l%u", (unsigned)id);
+        fn(k, net::Vec3{(float)g.buf.late_behind(now), g.buf.jittery() ? 1.f : 0.f, g.ds.last_err}, user);
+    }
+}
+
 std::string status()
 {
     char b[640];

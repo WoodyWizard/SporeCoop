@@ -786,7 +786,7 @@ struct BodyRow {
     net::Vec3 p;
 };
 static std::deque<BodyRow> g_bodyrec;
-static bool g_bodyrec_on = false;
+static bool g_bodyrec_on = false, g_bodyrec_diag = false;
 static constexpr size_t kBodyRecMax = 400000;
 
 static void bodyrec_tick(double now)
@@ -800,6 +800,16 @@ static void bodyrec_tick(double now)
         r.p = e.pos;
         g_bodyrec.push_back(r);
     }
+    if (g_bodyrec_diag) // (K3 diagnostics: the driving's own targets, `coop.bodyrec start diag`)
+        tribe::for_each_diag(
+            [](const char* key, const net::Vec3& p, void* u) {
+                BodyRow r{};
+                r.t = *(double*)u;
+                snprintf(r.key, sizeof r.key, "%s", key);
+                r.p = p;
+                g_bodyrec.push_back(r);
+            },
+            &now);
     while (g_bodyrec.size() > kBodyRecMax)
         g_bodyrec.pop_front();
 }
@@ -810,6 +820,7 @@ int c_bodyrec(void*, int argc, const char* const* argv, SkOut* out)
     if (!strcmp(a, "start")) {
         g_bodyrec.clear();
         g_bodyrec_on = true;
+        g_bodyrec_diag = argc > 2 && !strcmp(argv[2], "diag");
     } else if (!strcmp(a, "stop"))
         g_bodyrec_on = false;
     else if (!strcmp(a, "dump")) { // dump [from] [n]: t key x y z (t: absolute s)
