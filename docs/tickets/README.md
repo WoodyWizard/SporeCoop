@@ -659,3 +659,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0647](BUG-0647-civ-the-guest-sees-the-host-s-ground-vehicles-as.md) | open | bug | Civ | 2026-11-06 |  | Civ: the guest sees the host's ground vehicles as creature-like monsters (the host's vehicle designs never reach it) |
 | [BUG-0648](BUG-0648-civ-the-guest-s-military-vehicles-cannot-shoot-a.md) | open | bug | Civ | 2026-11-06 |  | Civ: the guest's military vehicles cannot shoot an enemy city hall and do not capture the city |
 | [BUG-0649](BUG-0649-civ-the-guest-does-not-see-the-host-s-name-at-th.md) | open | bug | Civ | 2026-11-06 |  | Civ: the guest does not see the host's name at the host's camera (the host sees the guest's) |
+| [BUG-0650](BUG-0650-tribe-with-drive-lead-a-member-mirror-steps-0-9.md) | open | desync | Tribe | 2026-11-06 |  | Tribe: with drive.lead a member mirror steps 0.9 m per frame after a walk starts in a latency spike of the player network (tribe_walk_player) |

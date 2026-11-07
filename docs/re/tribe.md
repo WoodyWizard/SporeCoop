@@ -2059,15 +2059,17 @@ drawn position `d`, aim `tgt`, aim speed `rv`).
   on 6 cores): median 51-62 ms mobile vs 39-51 ms local, IQR 45-103 vs 34-106 ms (the guest's own frame times dominate
   it; 20261106-164638, -165647, -170617). The one-way latency (the session's half round trip, median of 64 states) does:
   mobile 123-149 ms, the player network and a local link under 100 ms (20261106-171543, -171546).
-* ✔ the fix, Tribe member mirrors only: (1) the lead target is continuous: a new state's jump of the raw lead stays as
-  an offset (the target goes on from where it was shown, with the velocity it had) that closes at d / 0.12 s, at most
-  at the speed + 3 m/s; its velocity follows the lead's in 0.1 s; a stop takes the target to
-  the stop at once; a jump over 6 m is taken at once; the path velocity's 0.1 s-back sample is shifted by the same
-  offset. The mirror walks at the target's velocity eased up at 40 m/s2 and at most 3 m/s over the lead, catch_prop
-  off, its placing held as above. (2) Over a one-way latency over 100 ms (until under 85 ms) a member mirror has no
-  lead: interpolated and driven as 0.7.8 (smooth, ~0.2 s + latency late); the switch goes through the offset. So over
-  a mobile network the members are late again but never jump or stop-and-go; over the player network and locally the
-  lead stays (body_trail_tribe members p90 0.86 m, body_trail_tribe_player 1.72 m, 20261106-171546).
+* ✔ the fix, Tribe member mirrors only: (1) over a one-way latency over 100 ms (until under 85 ms) no lead:
+  interpolated and driven as 0.7.8 (smooth, ~0.2 s + latency late); (2) under it M1's lead as merged (raw, catch_prop);
+  (3) a switch between the two goes through a decaying offset (closes at d / 0.12 s, at most the speed + 3 m/s; the
+  mirror walks at the target's velocity eased up at 40 m/s2, at most 3 m/s over the lead; the placing's step held to
+  (2 x lead speed + 3 - walk speed) x dt). Smoothing every lead step instead (no jumps) trailed more over the player
+  network (body_trail_tribe_player members p90 1.47-1.59 m and 1.1-1.8 s over 2 m, M1 1.14-1.27 m; 20261106-172428 /
+  -172431, -184547 / -184550). Final runs: tribe_walk_mobile 4 of 4, body_trail_tribe members p90 0.56-0.59 m,
+  body_trail_tribe_player 1.05-1.37 m, tribe_walk 2 of 2 (20261106-185808, -185811).
+* ~ over the player network (45 ms, spikes of +250 ms) M1's lead keeps its start steps when a walk starts in a spike
+  (3.6-3.8 m, then 0.87-0.95 m frames: tribe_walk_player 20261106-185808); smoothing them (over 1.5 m) made that test
+  stop-and-go and body_trail_tribe_player trail (-191334, -191337): not solved here.
 * ~ NPC proxies (npc.cpp, the other SnapshotBuffer::lead user) keep M1's lead and catch_prop (smooth_max 0): no test
   showed jumps there; not measured over the mobile network.
 * ~ under the lab load of the day (6-20 on 6 cores) body_trail_* fail for NPC animals too, which no part of this
