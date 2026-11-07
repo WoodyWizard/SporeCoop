@@ -4769,3 +4769,15 @@ rebuild to reallocate (more planets than the menu ever had: a cold guest, Game0 
 below the rollover's index; a warm rejoin (the same slot again) does not fault. `coop.menuslot <GameN>` (outside the
 frame) shows another slot's planets in the menu. A caught fault in every frame is named by SporeKit as `fault storm:`
 (an ERR line, one report per run): grep for it in any test that ends with a guest stuck in a menu.
+## The detector compares Cell positions in one world scale (2026-11-07, fix/w46-detector-scale)
+<a id="testing-detector-cell-scale"></a>
+
+BUG-0662. A Cell level change rescales every position about the origin over ~3 s (WorldScaleStep, BUG-0511), on
+each game at its own moment, so a comparison that fell into a change found 80-552 cells 7-14 m "apart"
+(`Cell:pos:cell`) with nothing to see. `coop.census all` now ends the Cell `me` line with the game's world scale
+(`me pos=(x y z) ok=1 wscale=<G+0x514C>`), and `worlddiff.diff` converts the guest's Cell positions (rows and `me`)
+into the host's scale (times guest scale / host scale, as the sync-check's `diag.cell_scale`, BUG-0606) before it
+compares. A real offset stays: a cell 10 m off in the host's scale is still a row. A dump without `wscale` (an older
+coop.dll) is compared raw. `SPORE_DETECTOR_CELL_SCALE=0`: raw positions (the old behaviour, to see the test fail).
+Cell sizes (`scale=` of the l rows) are not converted. Selftest: `tools_selftest.py worldstate` (BUG-0662 case;
+`SELFTEST_WORLDDIFF=<old tools/tests>` fails it).
