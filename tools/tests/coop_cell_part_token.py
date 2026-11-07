@@ -16,8 +16,9 @@ cell`), the token is gone in the host's game, and the host's game has the part t
 shared set, parts.shared_cell).
 
 Not every token can be collected at a given moment by either game: in about 15 of 20 tries the host's own touch
-of the same token failed too (lab 20261106-010456, -011422, -012210, -013445, -014745; neither the token's level nor its graphics object
-explained which). The test then tries the next token (at most 4); it FAILS only when the host's game collects
+of the same token failed too (lab 20261106-010456, -011422, -012210, -013445, -014745). CORRECTION (2026-11-07,
+fix/w46-part-token): the cause was the game's "Goldie's demise" tutorial, started by the test's own food steps, which
+leaves both avatars' collect locks set (see main); the test now marks it played first. The test then tries the next token (at most 4); it FAILS only when the host's game collects
 a token the guest's could not, or when the guest's collect does not reach the host. When no collectable
 token turns up it fails on "a part token one of the games can collect was found": a setup failure, not this
 bug (the suite runs it in 'extended' only).
@@ -88,16 +89,35 @@ def find_tokens(host, guest, tried):
     return []
 
 
+def locks(con):
+    m = re.search(r'own_locks=(\d+) anim=(-?\d+)', con.call('coop.pool tokens')['out'])
+    return f'{m.group(1)} anim {m.group(2)}' if m else '?'
+
+
 def touched(con, key):
-    """<con> swims onto token <key>: True when its game collected it (the button shows, the token is gone)"""
-    print(f'  {con.name if hasattr(con, "name") else ""}swimto:', con.call(f'coop.pool swimto {key} tp')['out'].strip(), flush=True)
-    return wait(lambda: button(con) == 1, 6)
+    """<con> swims onto token <key>: True when its game collected it (CollectPart 0xE5D7B0: the button shows AND a
+    part state changed; the button alone also comes back by itself, lab 20261107-020528 #1), None when its game has
+    no such token to touch"""
+    tl = next((l for l in con.call('coop.pool tokens')['out'].splitlines() if l.startswith(f'token {key} ')), '-')
+    print(f'  locks (+0x112 +0x113 +0x178 +0x17F) {locks(con)}; {tl}', flush=True)
+    p0 = parts(con)
+    r = con.call(f'coop.pool swimto {key} tp')['out'].strip()
+    print('  swimto:', r, flush=True)
+    if r.startswith('no such'):
+        return None
+    return wait(lambda: button(con) == 1 and parts(con) != p0, 8)
 
 
 def main():
     host, guest = start('cell')
     ck = Checks()
     ck(wait(lambda: playing(host) and playing(guest), 40), 'both games play (the hatch is over)')
+    # The food the search adds (`coop.pool food 40`) passes 120-150 once: the game's one-time "Goldie's demise"
+    # tutorial (AddFoodPoints 0xE7CE10 -> 0xE79720) then left both avatars' locks set (+0x178 among them) and
+    # 0xE7B630 collected no token in either game (lab 20261107-013013: own_locks 0010 on both before every touch;
+    # the FAILs of 20261106-231404 / 20261107-004042). The test marks it played on both games (S+0x68).
+    for con in (host, guest):
+        con.call('coop.pool mate nogoldie')
     tried, result = set(), None
     for attempt in range(4):
         found = find_tokens(host, guest, tried)
@@ -123,6 +143,9 @@ def main():
         wait(lambda: re.search(r'gfx=[1-9]', guest.call(f'coop.pool cell {key}')['out']), 10)
         print('  guest token:', ' | '.join(guest.call(f'coop.pool cell {key}')['out'].strip().splitlines())[:400], flush=True)
         got = touched(guest, key)
+        if got is None:  # the host's game removed it (it culls cells that move out of its active tiles) before the touch
+            print(f'  the guest\'s game has no {key} any more: next token', flush=True)
+            continue
         time.sleep(4)  # the shared set (resent every 3 s)
         b1, gp1, hp1 = button(guest), parts(guest), parts(host)
         gone = not host.call(f'coop.pool cell {key}')['out'].startswith('cell ')
