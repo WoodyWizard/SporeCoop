@@ -774,7 +774,13 @@ static bool end_menu_intro(bool any, const char* where)
     uint32_t id = *(uint32_t*)(cm + kCineId);
     if (id != kMenuIntroId && !any)
         return false;
-    H->log(M, SK_WARN, "world: cinematic %08X still playing %s: ended it", id, where);
+    // BUG-0654: the menu's own intro ended in the menu before a load is the designed step (about 1600 WARN lines
+    // in two days of lab runs, every one of them this case; "in a stage" stopped with BUG-0626): an INFO line.
+    // Any other cinematic, or the intro found in a stage, stays a WARN.
+    if (id == kMenuIntroId && game::mode_id() == modes::kMenu)
+        H->log(M, SK_INFO, "world: the galaxy menu intro (%08X) ended %s, in the menu (BUG-0654)", id, where);
+    else
+        H->log(M, SK_WARN, "world: cinematic %08X still playing %s: ended it", id, where);
     skg::thiscall<void>(end, cm);
     g_intros_ended++;
     return true;
@@ -846,6 +852,12 @@ bool cinematic_playing()
 {
     uint8_t* cm = (uint8_t*)cinematic_mgr();
     return cm && *(uint32_t*)(cm + kCineState);
+}
+
+uint32_t cinematic_id()
+{
+    uint8_t* cm = (uint8_t*)cinematic_mgr();
+    return cm && *(uint32_t*)(cm + kCineState) ? *(uint32_t*)(cm + kCineId) : 0;
 }
 
 bool time_paused()

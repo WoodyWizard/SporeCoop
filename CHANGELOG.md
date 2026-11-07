@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+### Fixed
+- Civilization: the guest sees the host's vehicles as the host designed them, not as some creation of its own with the
+  same number (BUG-0647).
+- Tribe: the guest's village grows with the host's hut upgrades: it no longer shows "12/6" and can have as many members
+  as the host's tribe (BUG-0645).
+- Tribe: the member portraits on the right of the guest's screen show the host's evolved creature, no white squares
+  (BUG-0643).
+- Tribe: the other villages have the same colours for the guest as for the host (BUG-0644).
+- Creature: the other species' nests evolve in the host's game only; a guest's nests show the same species as the
+  host's at the same moment, and a nest whose species the host wiped out no longer comes back as a new species on the
+  guest's map (BUG-0668, likely the "nest evolving on the host" of BUG-0639).
+- Tribe: a guest's game could fault and then stop responding to the co-op for good a moment after it loaded the
+  host's Tribe world again (it built one of the host's tool buildings into a tribe of the world it had just left); and
+  SporeKit now keeps the mod running after such a caught error even when a menu task was waiting (BUG-0672).
+- Tribe: the guest hears the music of the dance when the tribe parties at the fire pit (BUG-0646).
+- Tribe: a tribe member the guest buys at its hut always reaches the host's game and belongs to the guest
+  (BUG-0671).
+- Tribe: the other tribes have the same chief for the guest as for the host; the guest no longer sees a second chief
+  with a staff in place of a musician (BUG-0652).
+
+## [0.7.9] - 2026-11-07
+
 ### Changed
 - Civilization: the host's vehicles are drawn where the game is moving them on the guest's screen, no longer a step
   behind (found with BUG-0438).

@@ -701,7 +701,21 @@ static void coop_init();
 // the guest sets the host member's scale on its mirror. `coop.fix tribe.scale off`: own sizes (0.7.3.6).
 static bool g_scale_fix = true;
 COOP_FIX("tribe.scale", "BUG-0475", g_scale_fix, "tribe: a guest's mirror of a tribe member gets the host member's size");
-static const fields::Field kMemberFields[] = {fields::kScale};
+// BUG-0652: which member leads its tribe (the tribe's cCommunity::mpLeader +0x11C: the chief, staff 0xB, chief
+// size) is each game's own: after a mirror of the host's leader was made again (a load, a rejoin, the mirror
+// respawned) the guest's game had made another member the leader (cTribe::SetChieftain(0): the first adult), an
+// NPC tribe's musician (tool 6) there. That mirror kept the staff (tribe.leader_tool, BUG-0583: the warning
+// "fields: tribe_member_tool N tool: applied 6.000, the game reads 11.000" in 55 lab runs), the host's leader
+// mirror was a member with a staff too: the guest saw two chiefs and one musician less. The leader is a field of
+// the members (2 = leads, 1 = not: values under 0.001 are not sent); the guest's game makes the mirror of the
+// host's leader its tribe's leader with SetChieftain. In this kind (kid 2) it is applied before the tools (kid 5)
+// in the same pass: the old leader takes the host's tool at once. `coop.fix tribe.leader_sync off`: own leaders.
+static bool g_leader_sync_fix = true;
+COOP_FIX("tribe.leader_sync", "BUG-0652", g_leader_sync_fix, "tribe: a guest's game makes the mirror of the host's tribe leader its leader (staff, chief size): no second chief, the old one takes its tool");
+static float read_leader(void* c);
+static void apply_leader(void* c, float v);
+static const fields::Field kLeader{fields::F_LEADER, "leader", read_leader, apply_leader, 0.01f};
+static const fields::Field kMemberFields[] = {fields::kScale, kLeader};
 
 static void member_each(void (*cb)(uint16_t, void*, void*), void* u)
 {
@@ -729,6 +743,8 @@ static void* member_mirror(uint16_t id)
 // its mirror with the game's SetSpecializedTool. `coop.fix tribe.tool_hold off`: mirrors keep their own.
 constexpr uintptr_t kToolsOff = 0x36C;    // cTribe: vector<cTribeTool*> mTools
 constexpr uintptr_t kHeldToolOff = 0x102C; // cCreatureCitizen: mSpecializedTool
+static uintptr_t a_SetChieftain; // BUG-0652
+static uint16_t member_id(void* c);
 static uintptr_t a_SetSpecializedTool, a_ToolModelReset, a_SetToolPurchased, a_ToolLayout, a_IsLeader;
 static bool g_tool_hold_fix = true;
 COOP_FIX("tribe.tool_hold", "BUG-0514", g_tool_hold_fix, "tribe: a guest's mirror of a member holds the tool the host's member took (weapon, instrument, heal)");
@@ -761,6 +777,22 @@ static void apply_held_tool(void* c, float v)
     }
     thiscall<void>(a_SetSpecializedTool, c, t);
     g_tool_sets++;
+}
+// BUG-0652 (above kMemberFields)
+static uint32_t g_leaders_set;
+static float read_leader(void* c) { return is_leader(c) ? 2.f : 1.f; }
+static void apply_leader(void* c, float v)
+{
+    if (!g_leader_sync_fix || !a_SetChieftain || v < 1.5f || !is_citizen(c) || is_leader(c))
+        return;
+    void* tribe = F<void*>(c, 0x1014); // cCreatureCitizen: its tribe (+0x1010 its city: Civ, not here)
+    if (F<void*>(c, 0x1010) || !tribe || !skg::readable(tribe, 0x120))
+        return;
+    void* old = F<void*>(tribe, 0x11C);
+    thiscall<void>(a_SetChieftain, tribe, c);
+    if (g_leaders_set++ < 5)
+        H->log(M, SK_INFO, "tribe: member #%u leads its tribe here too, as in the host's game (the leader was %s, BUG-0652)",
+               member_id(c), old ? ("#" + std::to_string(member_id(old))).c_str() : "none");
 }
 static const fields::Field kHeldTool{fields::F_TOOL, "tool", read_held_tool, apply_held_tool, 0.01f};
 static const fields::Field kToolFields[] = {kHeldTool};
@@ -1068,12 +1100,13 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     H = host;
     M = mod;
     C = std::move(ctx);
-    fields::add_kind({fields::K_TRIBE_MEMBER, "tribe_member", &g_scale_fix, kMemberFields, 1, member_each, member_mirror,
+    fields::add_kind({fields::K_TRIBE_MEMBER, "tribe_member", &g_scale_fix, kMemberFields, 2, member_each, member_mirror,
                       [] { return active(); }});
     fields::add_kind({fields::K_TRIBE_TOOL, "tribe_member_tool", &g_tool_hold_fix, kToolFields, 1, member_each, member_mirror,
                       [] { return active(); }});
     a_SetSpecializedTool = H->sym("Simulator::cCreatureCitizen::SetSpecializedTool");
     a_IsLeader = H->sym("SporeCoop::Citizen_IsLeader");
+    a_SetChieftain = H->sym("SporeCoop::cTribe_SetChieftain");
     a_ToolModelReset = H->sym("SporeCoop::cTribeTool_PlacementReset");
     a_SetToolPurchased = H->sym("SporeCoop::cTribe_SetToolPurchased");
     a_ToolLayout = H->sym("SporeCoop::cTribe_ToolLayout");
@@ -4411,6 +4444,15 @@ std::string debug(const std::vector<std::string>& a)
             return "no such mirror";
         apply_held_tool(c, (float)atoi(a[2].c_str()));
         return "tool " + std::to_string(F<int>(c, kHeldToolOff)) + " leader=" + std::to_string((int)is_leader(c));
+    }
+    if (a.size() >= 2 && a[0] == "chief" && is_guest()) { // chief <member id>: tests (BUG-0652), this game's
+        // cTribe::SetChieftain on the mirror (the state a load or a respawned mirror left: another leader here)
+        void* c = member_mirror((uint16_t)atoi(a[1].c_str()));
+        void* tribe = c && is_citizen(c) ? F<void*>(c, 0x1014) : nullptr;
+        if (!tribe || !a_SetChieftain)
+            return "no such mirror";
+        thiscall<void>(a_SetChieftain, tribe, c);
+        return "leader=" + std::to_string((int)is_leader(c)) + " tool " + std::to_string(F<int>(c, kHeldToolOff));
     }
     if (a.size() >= 3 && a[0] == "settool" && is_host()) { // settool <member id> <type>: tests (BUG-0583), the game's
         // SetSpecializedTool on the host's member (any tribe's), as when it takes a rack's weapon

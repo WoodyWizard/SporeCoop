@@ -2196,3 +2196,13 @@ Each line: what the players saw, what the logs show; reproduce and details in th
 * Ticket: BUG-0671
 * Fixed (2026-11-07, fix/w46-herd-evo): the host owns the evolution (wsync.herd_evo, test nest_evolve);
   docs/re/creature.md#creature-herd-evolution-owner.
+
+## Space: a guest does not see the beam shots of the host's ships (2026-11-07, fix/w46-s1-sweep)
+<a id="issue-space-beams"></a>
+
+* What happens: the ships the host's game runs (the host's own, pirates, allies) fight in a guest's game without their
+  beams; the hits still come from the host. Mirrors never fire in a guest's game (squadron.cpp h_FireTool) and only Civ
+  shots are relayed (civ.shots, BUG-0477).
+* Reproduce: play_space with SPORE_DETECTOR=20; `tools/detector_report.py <run>` lists
+  `Space:host_only:default_beam_projectile`.
+* Ticket: BUG-0677
