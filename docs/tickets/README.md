@@ -680,3 +680,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0669](BUG-0669-tribe-the-guest-s-mirrors-of-walking-members-mak.md) | open | bug | Tribe | 2026-11-07 |  | Tribe: the guest's mirrors of walking members make almost no footstep sounds |
 | [BUG-0670](BUG-0670-civ-the-host-s-own-building-designs-resolve-to-t.md) | open | bug | Civ | 2026-11-07 |  | Civ: the host's own building designs resolve to the guest's own creations of the same id on the guest |
 | [BUG-0671](BUG-0671-tribe-a-member-the-guest-buys-is-made-in-the-gue.md) | open | bug | Tribe | 2026-11-07 |  | Tribe: a member the guest buys is made in the guest's game only and removed again |
+| [BUG-0673](BUG-0673-test-nest-species-the-host-s-console-spawned-npc.md) | open | test | Creature | 2026-11-07 |  | Test nest_species: the host's console-spawned NPC of its own creation is not in its NPC list |
