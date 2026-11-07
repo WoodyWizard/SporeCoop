@@ -9,6 +9,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <unordered_map>
 #include <utility>
 
 namespace cell_logic {
@@ -249,5 +250,45 @@ inline bool tile_list_has(const int32_t* begin, const int32_t* end, int32_t key)
     }
     return false;
 }
+
+// Class BUG-0420 (a world event on one cell acted on more than once): a once-only ledger of the cells
+// a player's game already acted on, by pool index (generation included), for `ttl` seconds.
+//  * BUG-0632: a guest's lethal bite (ACT_BREAK / ACT_KILL) arrives 2-3 times while the guest keeps
+//    biting the mirror; the host's break does not set the dying flag until its animation ends, so the
+//    second one broke the cell again (a second death, a second loot drop). The host applies a kill of
+//    an index once, the guest sends it once.
+//  * BUG-0636: the guest's mirror of a cell it ate was made again from the next state chunk before the
+//    host's state dropped it, and eaten again. The guest keeps a tombstone of the host indices it ate
+//    and makes no mirror of them until the host stops listing them (or the ttl ends).
+// `first(key, now, fix)`: true the first time (records it); with fix false always true (the old code).
+struct Once {
+    double ttl = 5.0;
+    std::unordered_map<uint32_t, double> at; // key -> when it was acted on
+
+    explicit Once(double t = 5.0) : ttl(t) {}
+    bool has(uint32_t key, double now) const
+    {
+        auto it = at.find(key);
+        return it != at.end() && now - it->second < ttl;
+    }
+    bool first(uint32_t key, double now, bool fix)
+    {
+        if (!fix)
+            return true;
+        if (has(key, now))
+            return false;
+        at[key] = now;
+        if (at.size() > 512)
+            prune(now);
+        return true;
+    }
+    void drop(uint32_t key) { at.erase(key); }
+    void prune(double now)
+    {
+        for (auto it = at.begin(); it != at.end();)
+            it = now - it->second >= ttl ? at.erase(it) : std::next(it);
+    }
+    void reset() { at.clear(); }
+};
 
 } // namespace cell_logic

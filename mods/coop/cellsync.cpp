@@ -228,6 +228,24 @@ static uint32_t g_solo_times, g_solo_released, g_solo_spawns, g_solo_sent, g_sol
 bool away_enabled() { return g_fix_away; }
 bool totals_resend_enabled() { return g_fix_resend; }
 static cell_logic::Rounds g_rounds;
+// Class BUG-0420: a world event on one cell acted on once (cell_logic::Once, docs/re/cell.md#cell-once).
+// BUG-0632: the guest keeps biting a mirror it broke (the host's break sets no dying flag until its
+// animation ends, the mirror still looks alive): it sent 2-3 lethal bites per kill 0.6 s apart and the
+// host broke the cell each time (two deaths, two loot drops on one spot). The guest sends a kill of a
+// host index once, the host applies a kill of an index once. Off: 0.7.9.
+static bool g_fix_kill_once = true;
+COOP_FIX("cell.kill_once", "BUG-0632", g_fix_kill_once, "cell: a guest's lethal bite on a host creature is sent once and applied once by the host (a second break dropped a second loot)");
+static cell_logic::Once g_kill_sent(10.0), g_kill_applied(10.0);
+static uint32_t g_kills_dup_sent, g_kills_dup_refused;
+// BUG-0636: the guest's mirror of a cell it ate (ACT_GONE) was made again from the next state chunk
+// before the host's state dropped it (one round trip) and the guest's game ate it again (its food
+// twice). The guest keeps a tombstone of the host indices it ate and mirrors them no more (5 s).
+// Off: 0.7.9.
+static bool g_fix_eat_once = true;
+COOP_FIX("cell.eat_once", "BUG-0636", g_fix_eat_once, "cell: a cell the guest ate is not mirrored again from a state sent before the host removed it (it was eaten twice)");
+static cell_logic::Once g_eaten(5.0);
+static uint32_t g_eaten_skipped, g_gone_again;
+static std::unordered_map<uint32_t, uint32_t> g_gone_sends; // tests: ACT_GONE sends per host index (last 512)
 static cell_logic::Meals g_meals;              // guest: meals sent, not yet in a host total
 static uint32_t g_late_chunks, g_rounds_partial; // guest: state chunks of an older round, rounds with a lost chunk
 static std::unordered_map<int, uint32_t> g_food_ack; // host: the last meal number of each guest it applied
@@ -837,8 +855,11 @@ static bool SK_CDECL h_KillCell(uint8_t* c, uint32_t killer, void* res, bool by_
         g_mirror_kills++;
         g_destroy_callers[((uintptr_t)__builtin_return_address(0) - H->rebase(0)) | 0x20000000u]++;
         if (!F<uint8_t>(c, kDying) && !F<uint8_t>(c, kDead)) {
-            send_act(hidx, ACT_KILL, (uint8_t)type, 0, false);
-            g_kills_sent++;
+            if (g_kill_sent.first(hidx, H->time_seconds(), g_fix_kill_once)) {
+                send_act(hidx, ACT_KILL, (uint8_t)type, 0, false);
+                g_kills_sent++;
+            } else
+                g_kills_dup_sent++; // BUG-0632: killed already, the host decides
         }
         return false;
     }
@@ -867,7 +888,10 @@ static void SK_CDECL h_Break(uint8_t* victim, uint8_t* attacker, float f)
         g_mirror_kills++;
         g_destroy_callers[((uintptr_t)__builtin_return_address(0) - H->rebase(0)) | 0x10000000u]++;
         int st = F<int>(victim, 0x18C);
-        if (attacker && attacker == avatar() && st != 7 && st != 8 && st != 9 && !F<uint8_t>(victim, kDead)) {
+        bool lethal = attacker && attacker == avatar() && st != 7 && st != 8 && st != 9 && !F<uint8_t>(victim, kDead);
+        if (lethal && !g_kill_sent.first(hidx, H->time_seconds(), g_fix_kill_once)) {
+            g_kills_dup_sent++; // BUG-0632: we broke it already, the host's death comes with its state
+        } else if (lethal) {
             effect(victim, "cell_death_break");
             send_act(hidx, ACT_BREAK, 0, 0, false);
             g_kills_sent++;
@@ -948,6 +972,11 @@ static void SK_CDECL h_Destroy(uint32_t idx, bool loot, float f, int x)
             // we ate it (or swallowed it): the host removes it the same way (with its loot, if the
             // game asked for loot) and adds what we got for it, once (not if someone ate it first)
             send_act(it->second, ACT_GONE, loot ? 1 : 0, g_pend_food, g_pend_plant);
+            if (++g_gone_sends[it->second] > 1)
+                g_gone_again++; // BUG-0636: the same host cell eaten again (a mirror made again)
+            if (g_gone_sends.size() > 512)
+                g_gone_sends.clear();
+            g_eaten.first(it->second, H->time_seconds(), g_fix_eat_once);
             g_pend_food = 0;
             g_eats_sent++;
             g_mirrors.erase(it->second);
@@ -2955,6 +2984,10 @@ static void guest_state(net::Reader& r)
                 H->log(M, SK_WARN, "coop: cell: host cell %08X arrived with a pose that is not finite: not mirrored (BUG-0292)", hidx);
             continue; // not in this round: its mirror goes with the round's purge
         }
+        if (g_fix_eat_once && g_eaten.has(hidx, now)) {
+            g_eaten_skipped++; // BUG-0636: we ate it, the host's state has not dropped it yet
+            continue;
+        }
         g_cycle_seen.insert(hidx);
         auto& m = g_mirrors[hidx];
         m.pos = p; m.vel = v; m.rot = q; m.size = size; m.hp = hp; m.seen = now;
@@ -3303,6 +3336,9 @@ static void forget_mirrors()
     g_touched.clear();
     g_puppet_seen.clear();
     g_rounds.reset();
+    g_kill_sent.reset();
+    g_kill_applied.reset();
+    g_eaten.reset();
 }
 
 // BUG-0070: the knockout ends with the session and with the stage. Before, a session ending within
@@ -3732,13 +3768,18 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             c = nullptr;
         uint8_t* pc = puppet_cell(from);
         const char* what = c ? kind_of(c) : "-";
+        bool alive = c && !F<uint8_t>(c, kDying) && !F<uint8_t>(c, kDead);
+        // BUG-0632: a second lethal bite of the same guest kill (or of two guests) is not a second death
+        bool again = kind != ACT_GONE && alive && !g_kill_applied.first(idx, H->time_seconds(), g_fix_kill_once);
+        if (again)
+            g_kills_dup_refused++;
         if (kind == ACT_GONE)
             trace::ev("eat", c ? "from applied" : food ? "from late" : "from gone", "from %u gone c%u (%s) food=%d %s meal=%u: %s",
                       from, idx, what, food, plant ? "plant" : "meat", e.meal,
                       c ? "applied" : food ? "refused (eaten first / not here): points taken back" : "not here, no points");
         else
             trace::ev("eat", "from kill", "from %u kill c%u (%s): %s", from, idx, what,
-                      c && !F<uint8_t>(c, kDying) && !F<uint8_t>(c, kDead) ? "applied" : "refused (gone or dying here)");
+                      again ? "refused (killed here already)" : alive ? "applied" : "refused (gone or dying here)");
         if (kind == ACT_GONE) {
             if (c) {
                 g_eats_in++;
@@ -3751,7 +3792,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
                 g_eats_late++;
                 g_food_sent = -1;
             }
-        } else if (c && !F<uint8_t>(c, kDying) && !F<uint8_t>(c, kDead)) {
+        } else if (alive && !again) {
             // the guest's bite killed it: the kill happens here, with the death and the loot
             g_kills_in++;
             if (kind == ACT_BREAK) { // the lethal bite: also a hit that arrived (hits_in)
@@ -4467,6 +4508,30 @@ std::string debug(const std::vector<std::string>& a)
         float dir[3] = {1, 0, 0};
         h_DamageCell(best, av, dir, 4, 0, 0.f);
         return "bit mirror " + std::to_string(F<uint32_t>(best, 0)) + " at " + std::to_string(bd);
+    }
+    if (!a.empty() && a[0] == "food_near") { // tests (BUG-0636): the nearest plant / meat cell of the host's pool within <max> m
+        float best = a.size() > 1 ? (float)atof(a[1].c_str()) : 30.f;
+        uint8_t* bc = nullptr;
+        uint32_t bkey = 0;
+        for_each_cell([&](uint8_t* c, uint32_t idx) {
+            const char* k = kind_of(c);
+            if (modes::cell_is_puppet(c) || c == av || (strcmp(k, "meat") && strcmp(k, "plant")) || F<uint8_t>(c, kDead))
+                return;
+            auto it = g_host_of.find(idx);
+            if (is_guest() && it == g_host_of.end())
+                return;
+            float d = net::dist(pos_of(c), pos_of(av));
+            if (d < best) {
+                best = d;
+                bc = c;
+                bkey = is_guest() ? it->second : idx;
+            }
+        });
+        if (!bc)
+            return "no food";
+        char b[96];
+        snprintf(b, sizeof b, "food c%u %s dist=%.1f\n", bkey, kind_of(bc), best);
+        return b;
     }
     if (!a.empty() && a[0] == "meat") { // every meat cell (on screen or not): key pos level size, sync key on a guest ('l' = local only)
         std::string o;
@@ -5432,7 +5497,10 @@ std::string status()
              (unsigned)g_starved.size(), g_tiles_fed, g_tiles_core, g_send_capped, g_mirror_capped, cells_live(), g_cells_peak, g_tile_level, g_nan_pop_skips, g_nan_heals);
     char j[96];
     snprintf(j, sizeof j, "cell_guest_fx: joins_after_load=%u bite_rings=%u\n", g_joins_load, g_bite_rings); // BUG-0352, BUG-0350
-    return b + std::string(d) + t + j;
+    char o[200]; // BUG-0632 / BUG-0636 (class BUG-0420)
+    snprintf(o, sizeof o, "cell_once: kill_once=%d eat_once=%d kills_dup_sent=%u kills_dup_refused=%u eaten_skipped=%u gone_again=%u\n",
+             (int)g_fix_kill_once, (int)g_fix_eat_once, g_kills_dup_sent, g_kills_dup_refused, g_eaten_skipped, g_gone_again);
+    return b + std::string(d) + t + j + o;
 }
 
 std::vector<syncdbg::Entry> sync_entries()
