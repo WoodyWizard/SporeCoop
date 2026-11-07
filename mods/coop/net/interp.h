@@ -163,9 +163,17 @@ constexpr int kLateSteps = 16; // candidate times between the earliest and the s
 // the no-lead rule was for. With the fix: no no-lead rule while drive.lead_late is on; the late target catches up at
 // 1 + kKeepRate x the real time (a mirror walking at that rate draws at most 2 x its speed + catch_up: tribe_walk's jump
 // is 3 x the top speed), and the mirror is walked at the target's rate with no proportional catch-up on top (driver.h
-// catch_prop: the 16.5 m/s + catch-up frames of BUG-0650). Off: 0.7.9.
+// catch_prop: the 16.5 m/s + catch-up frames of BUG-0650). And a new state steps the shown time back only as far as its
+// news was late: only when the lead had to go kLateNews s further than usual (the median of the last kHorizonN) past
+// the state before it when it came. drive.lead_late let every new state step back towards where the shown target was going and
+// never forward, so any speed change, turn or send jitter that made the body faster than the lead had it stepped it
+// back, one that made it slower did not step it on: with the lead kept on the shown target was still 0.07 s (p50) to
+// 0.23 s (p90) behind M1's raw lead, p90 2.12 m against the raw lead's 1.65 m (lab 20261107-080850 #1). A start in a
+// spike or after states lost or dropped as old (0.25-0.4 s over the usual) is brought in as before. Off: 0.7.9.
 inline bool g_lead_keep_fix = true;
 constexpr double kKeepRate = 1.0;
+constexpr size_t kHorizonN = 32;
+constexpr double kLateNews = 0.05; // s
 
 class SnapshotBuffer {
 public:
@@ -195,6 +203,8 @@ public:
         sm_have_ = false;
         lt_have_ = false;
         age_n_ = 0;
+        hz_n_ = 0;
+        lt_excess_ = 0;
     }
 
     void push(const PlayerState& s, double local_now)
@@ -236,6 +246,15 @@ public:
                 jitter_ = d[n / 2];
                 jittery_ = jitter_ > kJitterHigh || (jittery_ && jitter_ > kJitterLow);
             }
+        }
+        // BUG-0410 (g_lead_keep_fix): how much further than usual the lead had to go past the state before this one
+        if (!snaps_.empty()) {
+            const double h = local_now - offset_ + g_one_way - snaps_.back().t;
+            hz_[hz_n_++ % kHorizonN] = (float)h;
+            const size_t n = std::min<size_t>(hz_n_, kHorizonN);
+            std::array<float, kHorizonN> d = hz_;
+            std::nth_element(d.begin(), d.begin() + n / 2, d.begin() + n);
+            lt_excess_ = std::max(0.0, h - (double)d[n / 2]);
         }
         age_n_++; // BUG-0650: a new state for late_time
         lt_new_ = true;
@@ -456,7 +475,9 @@ private:
             // a new state: of [the state before it, the continuation] the time nearest where the shown target was
             // going (the path between the two interpolated: when a latency spike ends, the states sent in it come
             // after newer ones and are dropped; the newest is then the first walking state, 2-3 m from the stand)
-            const double earliest = snaps_.size() >= 2 ? snaps_[snaps_.size() - 2].t : snaps_.back().t;
+            double earliest = snaps_.size() >= 2 ? snaps_[snaps_.size() - 2].t : snaps_.back().t;
+            if (g_lead_keep_fix && lt_excess_ < kLateNews) // BUG-0410: news on time: no step back (a frame of slack)
+                earliest = std::max(earliest, std::min(cont, tl - 0.01));
             if (cont > earliest + 1e-3) {
                 // BUG-0651 (g_lead_keep_fix): going on at the body's own velocity (the lead's), not the shown target's: its
                 // catch-up velocity overshot, and after a frame that stepped back (velocity 0) every new state stepped
@@ -603,6 +624,10 @@ private:
     }
     // BUG-0650
     size_t age_n_ = 0; // states since clear()
+    // BUG-0410: the lead horizons at the last kHorizonN states and the newest one's excess over their median (s)
+    std::array<float, kHorizonN> hz_{};
+    size_t hz_n_ = 0;
+    double lt_excess_ = 0;
     mutable bool lt_have_ = false, lt_new_ = false;
     mutable float lt_rate_ = 1.f; // the shown sender time's rate this frame (catching up: 1 + kLateRate)
     mutable double lt_t_ = 0, lt_local_ = 0;

@@ -757,8 +757,67 @@ static float lead_keep_err(bool keep, double lat, double start_late, double* cat
     return n ? (float)(sum / n) : 99.f;
 }
 
+// BUG-0410 (drive.lead_keep): a member walking at a speed that changes (5-11 m/s, a 2 s period) along x, its states every
+// 0.1 s with 0-30 ms of send and arrival jitter on a 45 ms link, a guest at 30 fps: the mean distance of the shown
+// target from the sender's body now and how far the shown time is behind the lead's (p90)
+static float lead_ratchet_err(bool keep, double* behind_p90)
+{
+    const bool was = g_lead_keep_fix;
+    const double was_ow = g_one_way;
+    g_lead_keep_fix = keep;
+    SnapshotBuffer b;
+    b.delay = 0.2;
+    b.lead = true;
+    b.smooth_max = 6.f;
+    g_one_way = 0.06;
+    auto spd = [](double st) { return 8.0 + 3.0 * std::sin(st * 3.14159); };
+    std::vector<double> xs(1); // x at sender time i / 1000
+    for (int i = 1; i < 20000; i++)
+        xs.push_back(xs.back() + spd(i / 1000.0) / 1000.0);
+    auto x_at = [&](double st) { return (float)xs[std::min<size_t>(xs.size() - 1, (size_t)std::max(0.0, st * 1000.0))]; };
+    std::mt19937 rng(11);
+    std::uniform_real_distribution<double> U(0, 1);
+    std::vector<std::pair<double, PlayerState>> arr;
+    for (double st = 0; st < 19.0; st += 0.1 + 0.01 * U(rng)) {
+        PlayerState s;
+        s.time_ms = (uint32_t)(1000 + st * 1000.0 + 0.5);
+        s.mode = 0x1654C01;
+        s.world = 7;
+        s.flags = PF_IN_WORLD | PF_MOVING;
+        s.pos = {x_at(st), 0.f, 0.f};
+        s.vel = {(float)spd(st), 0.f, 0.f};
+        arr.push_back({10.0 + st + 0.045 + 0.03 * U(rng), s});
+    }
+    std::stable_sort(arr.begin(), arr.end(), [](auto& a, auto& c) { return a.first < c.first; });
+    size_t k = 0;
+    PlayerState o;
+    double sum = 0;
+    int n = 0;
+    std::vector<double> lb;
+    for (double now = 10.0; now < 28.0; now += 1.0 / 30) {
+        while (k < arr.size() && arr[k].first <= now)
+            b.push(arr[k].second, now), k++;
+        if (!b.sample(now, o) || now < 13.0)
+            continue;
+        sum += std::fabs(o.pos.x - x_at(now - 10.0 - 0.045 + 0.06));
+        n++;
+        lb.push_back(b.late_behind(now));
+    }
+    std::sort(lb.begin(), lb.end());
+    *behind_p90 = lb.empty() ? 99 : lb[lb.size() * 9 / 10];
+    g_lead_keep_fix = was;
+    g_one_way = was_ow;
+    return n ? (float)(sum / n) : 99.f;
+}
+
 static void test_lead_keep()
 {
+    {
+        double b_on, b_off;
+        float on = lead_ratchet_err(true, &b_on), off = lead_ratchet_err(false, &b_off);
+        printf("  speed changes on a jittery 45 ms link: mean target error keep %.2f m (behind the lead p90 %.3f s), "
+               "0.7.9 %.2f m (%.3f s)\n", on, b_on, off, b_off);
+    }
     printf("member lead over a 120 ms link and after a start known late (BUG-0651, BUG-0410)\n");
     double c_on, c_off;
     // a 120 ms one-way link (a loaded guest measures 110-150 ms on any link): 0.7.9 showed the members interpolated

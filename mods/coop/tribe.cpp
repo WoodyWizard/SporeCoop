@@ -273,6 +273,7 @@ struct GMember {
     bool jittery = false;    // BUG-0619 (diagnostics)
     float lead_sp = -1;      // BUG-0619: the raw lead's speed while the smoothed target drives it (-1: none)
     double held_since = 0, held_said = -1e9; // BUG-0386 (diagnostics)
+    double test_undo_until = 0; // tests (BUG-0386, `coop.tribe undo <id> <s>`): this game undoes the mirror's placing
     double anim_rx_at = 0, anim_fix_at = 0; // BUG-0569: the last relayed start, the last snapshot play
 };
 static std::unordered_map<uint16_t, GMember> g_gm;
@@ -297,6 +298,15 @@ constexpr double kMirrorDelay = 0.2;  // s: the interpolation delay (the host se
 // tests (BUG-0481): `coop.tribe delay <s>` on a guest: a planted late mirror (play_tribe's sync check must fail)
 static double g_test_delay = kMirrorDelay;
 constexpr float kMirrorWalkMax = 8.f; // farther off: drive::step (it teleports at 8 m)
+// BUG-0386 (`coop.fix tribe.mirror_keep`): a walked member mirror whose placing this game does not keep is moved by
+// teleports with the mark until it is on its path again (WalkPlace::keep_lost, the NPC proxies' rule of BUG-0361).
+// Observed (tribe_walk_mobile, fix/w45-remote-bodies-2 lab 20261106-172428 #2, track tribe_walk_guest_walks_173129,
+// the guest's own member 2 on the guest): from the frame its game's walk took over (game speed 0 -> 11-12 m/s) every
+// placing of 0.38-0.40 m was undone and the game moved it 0.03-0.04 m per frame for 0.9 s while its target walked on at
+// 9 m/s; the error grew to 8 m and drive::step teleported it. The placing was never counted as lost (under 0.5 m a
+// frame) and keep_lost was off for mirrors. Off: placed without the mark always (0.7.9).
+static bool g_mirror_keep_fix = true;
+COOP_FIX("tribe.mirror_keep", "BUG-0386", g_mirror_keep_fix, "tribe: a member mirror the guest's game holds back (its placing undone) is moved on its path by marked teleports, not left to fall 8 m behind");
 // BUG-0619: a member's lead jump up to this is smoothed (a start known late over a mobile network: 2.9-4 m at 9 m/s;
 // the lead's cap kMaxLead x 9 m/s = 5.4 m)
 constexpr float kMirrorSmoothMax = 6.f; // m
@@ -2327,7 +2337,15 @@ static void mirror_drive(GMember& g, double now)
             o.catch_prop = false;
         if (g.lead_sp >= 0)
             o.lead_speed = std::max(g.lead_sp, 0.5f); // BUG-0619
+        o.keep_lost = g_mirror_keep_fix; // BUG-0386
         drive::walk_place(g.c, g.aim, rot, vel, g.ds, now, o);
+        // tests (BUG-0386): a placing without the teleport mark is undone, the mirror crawls 0.04 m a frame towards its
+        // aim (what the guest's game did to the held mirror); a marked teleport (keep_lost's held) is kept
+        if (now < g.test_undo_until && !g.ds.held) {
+            net::Vec3 d = g.ds.drawn, to = g.aim;
+            float e = net::dist(d, to), k = e > 0.04f ? 0.04f / e : 1.f;
+            game::place(g.c, {d.x + (to.x - d.x) * k, d.y + (to.y - d.y) * k, d.z + (to.z - d.z) * k}, rot);
+        }
         g_mirror_walks++;
         // BUG-0386 (diagnostics): a walked mirror held over 2 m off its aim for 1 s: what is around it, once per 10 s
         if (g.ds.last_err > 2.f) {
@@ -4116,6 +4134,13 @@ std::string debug(const std::vector<std::string>& a)
     if (a.size() >= 2 && a[0] == "delay" && is_guest()) { // delay <s>: tests (BUG-0481), the mirrors' interpolation delay
         g_test_delay = std::max(0.0, std::min(3.0, atof(a[1].c_str())));
         return "mirrors follow the host's states " + std::to_string(g_test_delay) + " s back";
+    }
+    if (a.size() >= 3 && a[0] == "undo" && is_guest()) { // undo <id> <s>: tests (BUG-0386), placings of a mirror undone
+        auto it = g_gm.find((uint16_t)atoi(a[1].c_str()));
+        if (it == g_gm.end() || !it->second.c)
+            return "no mirror " + a[1];
+        it->second.test_undo_until = H->time_seconds() + std::max(0.0, std::min(10.0, atof(a[2].c_str())));
+        return "mirror " + a[1] + ": placings without the mark undone for " + a[2] + " s";
     }
     if (a.size() >= 2 && a[0] == "lift" && is_guest()) { // lift <m>: tests (BUG-0329), the host's members m higher
         g_test_lift = (float)atof(a[1].c_str());
