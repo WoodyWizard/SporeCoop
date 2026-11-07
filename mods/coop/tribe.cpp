@@ -280,8 +280,20 @@ struct GMember {
     double test_undo_until = 0; // tests (BUG-0386, `coop.tribe undo <id> <s>`): this game undoes the mirror's placing
     net::Vec3 test_undo_at{};   // and its walk: where it is held
     double anim_rx_at = 0, anim_fix_at = 0; // BUG-0569: the last relayed start, the last snapshot play
+    const char* not_made = nullptr; // BUG-0685: why no mirror was made for it last time (logged when it changes)
 };
 static std::unordered_map<uint16_t, GMember> g_gm;
+// BUG-0685: a guest's log says when a member mirror goes and why one is not made again (at most kMirrorLogMax lines;
+// a mirror's "not made" line only when its reason changes)
+constexpr uint32_t kMirrorLogMax = 60;
+static uint32_t g_mirror_logs;
+#define MIRROR_LOG(...) \
+    do { \
+        if (g_mirror_logs < kMirrorLogMax) { \
+            g_mirror_logs++; \
+            H->log(M, SK_INFO, __VA_ARGS__); \
+        } \
+    } while (0)
 // BUG-0365 (see mirror_drive)
 static bool g_mirror_walk_fix = true, g_mirror_time_fix = true;
 COOP_FIX("tribe.mirror_walk", "BUG-0365", g_mirror_walk_fix, "tribe: a guest's mirror of a walking member walks on the host's path instead of stop-and-go and surges");
@@ -1992,10 +2004,13 @@ static bool player_tribe_out(void* t)
     return true;
 }
 
+// BUG-0685: why the last spawn_member returned null (the mirror log names it)
+static const char* g_spawn_fail = "";
 static void* spawn_member(void* t, uint8_t age)
 {
     if (player_tribe_out(t)) {
         g_spawns_blocked++;
+        g_spawn_fail = "the player tribe is out (tribe.gameover guard: no member with health, input lock up)";
         return nullptr;
     }
     // SpawnMember (vt 0x98) returns null at the population cap: then create + add directly
@@ -2004,6 +2019,8 @@ static void* spawn_member(void* t, uint8_t age)
         c = thiscall<void*>(a_CreateCitizen, t, (int)age);
         if (c)
             thiscall<void>(a_AddMember, t, c, 1);
+        else
+            g_spawn_fail = "the game made no citizen (SpawnMember and CreateCitizen null)";
     }
     return c;
 }
@@ -2470,14 +2487,22 @@ static void guest_state(net::Reader& r)
             g.buf.push(ps, now);
         }
         if (c && !game::object_alive(c)) {
+            MIRROR_LOG("tribe: mirror #%u: its object is gone (not removed by the mod, BUG-0685)", id);
             g_gid_of.erase(c);
             g.c = c = nullptr;
         }
         if (c || m.body) // (no new mirror for a body)
             continue;
+        auto not_made = [&g, id](const char* why) {
+            if (g.not_made != why)
+                MIRROR_LOG("tribe: mirror #%u is not made: %s (BUG-0685)", id, why);
+            g.not_made = why;
+        };
         void* t = m.tribe < g_local_tribe_of.size() ? g_local_tribe_of[m.tribe] : nullptr;
-        if (!t)
+        if (!t) {
+            not_made("its tribe has no tribe of this game");
             continue;
+        }
         // bind to the nearest unbound local member of that tribe, else spawn one
         float best = 6.f;
         for (void* lc : members(t)) {
@@ -2490,15 +2515,21 @@ static void guest_state(net::Reader& r)
             }
         }
         if (!c) {
+            g_spawn_fail = "";
             c = spawn_member(t, m.age);
-            if (!c)
+            if (!c) {
+                not_made(g_spawn_fail);
                 continue;
+            }
             note_ours(g_ours_c, c); // BUG-0495
             // BUG-0444: the host's position (g.pos: with the tests' lift), onto this game's ground where that lies
             // higher (BUG-0329)
             game::teleport(c, g_mirror_ground_fix ? drive::out_of_ground(g.pos, true) : g.pos, m.rot);
             g_spawned++;
         }
+        if (g.not_made)
+            MIRROR_LOG("tribe: mirror #%u is made again (BUG-0685)", id);
+        g.not_made = nullptr;
         g.c = c;
         g_gid_of[c] = id;
     }
@@ -2516,6 +2547,8 @@ static void guest_state(net::Reader& r)
     for (auto it = g_gm.begin(); it != g_gm.end();) {
         if (!g_cycle_ids.count(it->first)) {
             if (it->second.c && game::object_alive(it->second.c)) {
+                MIRROR_LOG("tribe: mirror #%u goes: the host's snapshot has it no more%s (BUG-0685)", it->first,
+                           g_detached.count(it->second.c) ? " (a body)" : "");
                 remove_member(it->second.c);
                 g_removed++;
             }
@@ -2528,6 +2561,7 @@ static void guest_state(net::Reader& r)
         if (t)
             for (void* lc : members(t))
                 if (!g_gid_of.count(lc)) {
+                    MIRROR_LOG("tribe: a member of this game the host has not goes (leader %d, BUG-0685)", (int)is_leader(lc));
                     remove_member(lc);
                     g_removed++;
                 }
@@ -2732,6 +2766,7 @@ static void guest_tick(double now)
             continue;
         }
         if (g_fix_ko && game::is_dead(g.c)) { // back on its feet on the host
+            MIRROR_LOG("tribe: mirror #%u goes: dead here, back on its feet on the host (made again, BUG-0685)", id);
             g_gid_of.erase(g.c);
             remove_member(g.c);
             g.c = nullptr;
