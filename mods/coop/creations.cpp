@@ -40,7 +40,7 @@ static const KindInfo kInfo[kKinds] = {
     {"cell", 0x3D97A8E4, 0x40616200},     // cll
     {"ufo", 0x476A98C7, 0x40656200},      // ufo
 };
-constexpr uint32_t kBem = 0x1A99B06B, kMeta = 0x030BDEE3, kCreatureData = 0x0F43029A;
+constexpr uint32_t kBem = 0x1A99B06B, kMeta = 0x030BDEE3, kCreatureData = 0x0F43029A, kPng = 0x2F7D0004;
 constexpr uint32_t kEditorSavesArea = 0x11AC199;
 constexpr int kPrioPlayer = 1000, kPrioWorld = 2000; // EditorSaves is 1000; the list is searched highest first
 // BUG-0469 review: our copy of a model the game cannot build is registered under the model's OWN key,
@@ -1797,6 +1797,9 @@ static void send_bundle(int to, uint8_t owner, Kind k, uint32_t id, const std::v
 // The records of a creation from the package file the game reads it from (any registered package:
 // My Creations (DBPF), the Sporepedia cache Pollination.package (DBBF), one of ours). Read piece by
 // piece: Pollination grows to hundreds of MB and the game has little address space left.
+// BUG-0643: a creation's records go with its pictures (png); off: the model and the metadata only (0.7.8)
+static bool g_png_fix = true;
+COOP_FIX("creations.png", "BUG-0643", g_png_fix, "creations: the pictures of a creation go with it (the Tribe roster's member portraits on the guest)");
 static bool records_from_game(const Key& k, std::vector<dbpf::Record>& out)
 {
     void* rm = a_RmPtr ? *(void**)a_RmPtr : nullptr;
@@ -1823,8 +1826,11 @@ static bool records_from_game(const Key& k, std::vector<dbpf::Record>& out)
     bool ok = read_at(0, 96, hdr) && dbpf::index_info(hdr.data(), hdr.size(), info) && info.size < (64u << 20) &&
               read_at(info.offset, info.size, idx) && dbpf::parse_index(idx.data(), idx.size(), info, all);
     for (auto& e : all) {
-        if (!ok || e.key.instance != k.instance || e.key.group != k.group ||
-            (e.key.type != kBem && e.key.type != kMeta && e.key.type != k.type) || e.size > (4u << 20))
+        // BUG-0643: and its pictures (png in the model group and the thumbnail group +1): the Tribe roster's member
+        // portraits are the species' picture, a guest without them showed white squares
+        bool png = g_png_fix && e.key.type == kPng && (e.key.group == k.group || e.key.group == k.group + 1);
+        if (!ok || e.key.instance != k.instance || (e.key.group != k.group && !png) ||
+            (e.key.type != kBem && e.key.type != kMeta && e.key.type != k.type && !png) || e.size > (4u << 20))
             continue;
         dbpf::Record r;
         r.key = e.key;
@@ -1834,7 +1840,7 @@ static bool records_from_game(const Key& k, std::vector<dbpf::Record>& out)
     CloseHandle(f);
     bool model = false;
     for (auto& r : out)
-        model |= r.key.type != kMeta;
+        model |= r.key.type != kMeta && r.key.type != kPng;
     return model;
 }
 
@@ -2989,6 +2995,43 @@ std::string debug(const std::vector<std::string>& a)
         g_world_drop = a[1] != "off";
         return std::string("the host's world creations are dropped at the session end: ") + (g_world_drop ? "on" : "off") +
                " (dropped " + std::to_string(g_world_dropped) + ", registered " + std::to_string(g_world_pkgs.size()) + ")";
+    }
+    if (a.size() >= 2 && a[0] == "fakepng") { // fakepng <hex inst> [<hex group>]: tests (BUG-0643), a broken png answers
+        // the creature's png key above every package (what a game without the creation's picture has)
+        uint32_t inst = (uint32_t)strtoul(a[1].c_str(), nullptr, 16);
+        uint32_t grp = a.size() > 2 ? (uint32_t)strtoul(a[2].c_str(), nullptr, 16) : kInfo[kCreature].group;
+        if (!find_paths())
+            return "no folder";
+        dbpf::Record r;
+        r.key = {inst, kPng, grp};
+        r.data.assign(16, 0xAB);
+        std::wstring path = g_dir + L"\\fakepng_" + std::to_wstring(inst) + L"_" + std::to_wstring(grp) + L".package";
+        return package_for(path, {r}, kPrioModel) ? "fake png registered" : "cannot register";
+    }
+    if (a.size() >= 2 && a[0] == "sendown" && is_host()) { // sendown <hex crt inst>: tests (BUG-0643), the host's own
+        // creation to every guest as before an NPC of it (host_species_out)
+        uint32_t inst = (uint32_t)strtoul(a[1].c_str(), nullptr, 16);
+        unsigned n = 0;
+        for (auto& p : C.sess->players())
+            if (p.id != 0) {
+                g_own_sent[p.id].erase(inst);
+                host_species_out(p.id, {inst, kInfo[kCreature].type, kInfo[kCreature].group});
+                n++;
+            }
+        return "sent to " + std::to_string(n) + " guest(s)\n";
+    }
+    if (a.size() >= 2 && a[0] == "local") { // local <hex crt inst>: the key the host's creation has here
+        Key k = local_species({(uint32_t)strtoul(a[1].c_str(), nullptr, 16), kInfo[kCreature].type, kInfo[kCreature].group});
+        return "local " + hex(k.instance) + "\n";
+    }
+    if (a.size() >= 2 && a[0] == "png") { // png <hex inst> [<hex group>]: the picture this game answers for a creature key
+        Key k{(uint32_t)strtoul(a[1].c_str(), nullptr, 16), kPng,
+              a.size() > 2 ? (uint32_t)strtoul(a[2].c_str(), nullptr, 16) : kInfo[kCreature].group};
+        std::vector<dbpf::Record> recs;
+        void* rm = a_RmPtr ? *(void**)a_RmPtr : nullptr;
+        uint32_t key[3] = {k.instance, k.type, k.group}, real[3] = {};
+        bool known = rm && vcall<void*>(rm, 0x30 / 4, (const uint32_t*)key, real, (void*)nullptr) != nullptr;
+        return "png " + hex(k.instance) + " known=" + std::to_string((int)known) + "\n";
     }
     if (!a.empty() && a[0] == "designs") // BUG-0647: the host's own designs on this guest
         return design_status();
