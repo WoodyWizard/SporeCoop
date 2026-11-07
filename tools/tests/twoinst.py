@@ -432,7 +432,8 @@ def _menu_up_time(inst):
     return t.timestamp()
 
 
-def _start(fixture='creature', planet=None, load_args=(), join_in_intro=False, guest_creations=True, join_at=None):
+def _start(fixture='creature', planet=None, load_args=(), join_in_intro=False, guest_creations=True, join_at=None,
+           before_join=None):
     """kill, deploy, restore the fixture for the host, empty guest profile, start both,
     load the host game (tools/tests/load_game.py), host + join; returns (host, guest).
     With SPORE_WARM=1 (tools/lab.py) the running games of the lane are reused when they run the
@@ -440,13 +441,16 @@ def _start(fixture='creature', planet=None, load_args=(), join_in_intro=False, g
     join_in_intro: the guest joins while its galaxy menu plays the intro cinematic GGE_Intro (cold
     start only; the race behind the stuck guest movie, docs/re/space.md 7.9).
     join_at: the guest joins this many seconds after its galaxy menu came up (polled every 0.25 s; cold
-    start only), so that its load comes at a chosen moment of the menu's intro timer (BUG-0607)."""
+    start only), so that its load comes at a chosen moment of the menu's intro timer (BUG-0607).
+    before_join: called with the guest's console right before it joins (cold start only; BUG-0676: the guest's
+    first galaxy menu set up for the test)."""
     if planet is None and not load_args:
         planet = fixtures.planet_of(fixture)  # loaded by name (no menu clicks, warm-capable)
     st = lane_state()
     # warm only within the same save: a test starts from its fixture (stage switches in game work,
     # coop_stage_switch.py, but go through the galaxy menu and take longer)
-    if os.environ.get('SPORE_WARM') == '1' and planet and not join_in_intro and join_at is None and st.get('build') == build_id() \
+    if os.environ.get('SPORE_WARM') == '1' and planet and not join_in_intro and join_at is None and before_join is None \
+            and st.get('build') == build_id() \
             and st.get('fixture') == fixture and st.get('guest_creations', True) == guest_creations \
             and not st.get('fix_off') and not st.get('fps') and not PRESET_CHOICES \
             and alive(lane.HOST) and alive(lane.GUEST):
@@ -550,6 +554,8 @@ def _start(fixture='creature', planet=None, load_args=(), join_in_intro=False, g
             time.sleep(0.25)
         else:
             print('  (the guest menu intro did not start)', flush=True)
+    if before_join is not None:
+        before_join(guest)
     phases.append(('guest join', time.time() - t_start))
     guest.call(lane.JOIN)
     # the host saves before sharing and the game shows a modal "game saved" box (frames stop):

@@ -27,13 +27,14 @@ KitFix g_fix_longout{"longout", "a command's printf output is not cut at 8 KB (u
 KitFix g_fix_frameunwind{"frameunwind", "a frame cut off by a fault the game's handler caught does not stop every later frame (BUG-0667)", 1};
 KitFix g_fix_outpump{"outpump", "a task for outside the frame waits for the frame's end: no endless repost in the game's message pump after a cut-off frame (BUG-0672)", 1};
 KitFix g_fix_presentlost{"presentlost", "one long frame (a hitch over 2 s) is not taken for Present lost: the fallback needs game loop passes without Present too (BUG-0653)", 1};
+KitFix g_fix_faultstorm{"faultstorm", "one fault the game catches over and over (the same place, 300 times in 10 s) is named in the log and writes one report (BUG-0676)", 1};
 KitFix g_fix_logprune{"logprune", "only the newest crash reports, dumps, reports and archives stay in mods\\logs (BUG-0137)", 1};
 
 std::vector<KitFix*> kit_fixes() { return {&g_fix_stackdump, &g_fix_cheatwait, &g_fix_reentry, &g_fix_hookkeep,
                                        &g_fix_stackov,   &g_fix_crashsafe, &g_fix_logprune, &g_fix_iniutf, &g_fix_hookpark,
                                        &g_fix_crashtid, &g_fix_iniencode, &g_fix_inilock,
                                        &g_fix_exitwait, &g_fix_hookorig, &g_fix_hookfirst, &g_fix_initfail, &g_fix_hangloop, &g_fix_longout,
-                                       &g_fix_frameunwind, &g_fix_outpump, &g_fix_presentlost}; }
+                                       &g_fix_frameunwind, &g_fix_outpump, &g_fix_presentlost, &g_fix_faultstorm}; }
 
 KitFix* kit_fix_find(const char* name)
 {

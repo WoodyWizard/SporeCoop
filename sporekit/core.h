@@ -219,6 +219,7 @@ const std::string& diag_files_text();
 void diag_install();          // the crash filter, ExitProcess log
 void diag_after_device();     // GPU and other hooks into the log (once)
 void diag_hang_report(const char* why);
+void diag_storm_report(const char* why); // BUG-0676: one fault caught in every frame (once per run)
 void diag_init_failed(int result);      // BUG-0521: App::cSporeApp::Init returned 0 (the game ends) // the watchdog: no frames while focused (once per run)
 void diag_crash_test(const char* where); // tests: "thread" (unhandled) | "main"
 // watchdog.cpp
@@ -263,6 +264,7 @@ struct KitFix {
 };
 extern KitFix g_fix_outpump;     // BUG-0672: outside tasks wait for the frame's end, no repost loop in the game's message pump
 extern KitFix g_fix_frameunwind; // BUG-0667: a frame cut off by a caught fault does not stop the later ones
+extern KitFix g_fix_faultstorm; // BUG-0676: a fault caught in every frame is named once and writes one report
 extern KitFix g_fix_longout;   // BUG-0388: a command's printf output is not cut at 8 KB
 extern KitFix g_fix_stackdump; // BUG-0050: copy a suspended thread's stack, resume, then format
 extern KitFix g_fix_cheatwait; // BUG-0065: commands that wait for the main thread refuse to run on it

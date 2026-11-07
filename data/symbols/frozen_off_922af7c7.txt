@@ -183,3 +183,6 @@ SporeCoop::cHerd_EvolvedSpecies ; BUG-0668: the guest's nests do not take the ho
 SporeCoop::TribeStage_BabyBorn ; BUG-0671: a guest's hut baby is not relayed to the host (GOG 2024 only)
 SporeCoop::AnimatedCreature_SetEpicFlag ; BUG-0669: a guest's proxy of an epic gets no epic footsteps (GOG 2024 only)
 SporeCoop::AudioSystem_SetFloat ; BUG-0669: coop.audio lists no float parameters (GOG 2024 only)
+SporeCoop::GGE_RebuildPlanets ; BUG-0676: the galaxy menu's rollover guard is off (GOG 2024 only)
+SporeCoop::GalaxyGameEntry_ptr ; BUG-0676: the galaxy menu's rollover guard is off (GOG 2024 only)
+SporeCoop::GGE_PlanetSet_ptr ; BUG-0676: the galaxy menu's rollover guard is off (GOG 2024 only)

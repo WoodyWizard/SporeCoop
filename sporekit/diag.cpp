@@ -966,6 +966,21 @@ void diag_hang_report(const char* why)
     report_step("the archive", [&] { mark_problem(bundle_for_problem(why, p), "stopped responding"); });
 }
 
+// BUG-0676: one fault the game's handler catches in every frame (a fault storm): the game runs on but cannot get past
+// it (a mode whose exit stopped half-way keeps faulting in its frame). A report and a mark once per run, so the player
+// and the lab get a report of a game that looks stuck but never crashes.
+void diag_storm_report(const char* why)
+{
+    static std::atomic<int> once{0};
+    if (once++)
+        return;
+    std::string p;
+    if (!report_step("the fault storm report", [&] { p = diag_write_report(why, nullptr); }))
+        return;
+    report_step("the mark", [&] { mark_problem(p, "kept faulting"); });
+    report_step("the log line", [&] { logf(&g_kit_mod, SK_ERROR, "fault storm report: %s", p.c_str()); });
+}
+
 // BUG-0521: the game's own start (App::cSporeApp::Init) failed and the game is about to end with
 // ExitProcess(0): no fault, no error code, so neither the crash filter nor exit_report says anything
 // and the player saw the game close. A report and a mark (the next start names it), a log line, and a
