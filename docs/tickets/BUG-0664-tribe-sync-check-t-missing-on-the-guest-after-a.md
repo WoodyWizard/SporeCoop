@@ -45,6 +45,8 @@ tribe_dead_rejoin: FAIL with `SPORE_FIX_OFF=tribe.sync_bodies` out/lab/20261107-
 guest (t3)") and out/lab/20261107-014224 (2 of 2: 5 and 6 mismatches of 6 checks); PASS with the fix
 out/lab/20261107-014244 (2 of 2: 7 checks ok, the body sent in 6 of 6 samples). A/B with tribe.member_body off too
 (0.7.8 behaviour): 0 mismatches, out/lab/20261107-014701.
+Regression with the fix: play_tribe out/lab/20261107-014721 (OK), tribe_coop + tribe_dead_player
+out/lab/20261107-015219 (OK 2/2); make -j8 and make test pass.
 
 ## History
 - 2026-11-07: opened.
