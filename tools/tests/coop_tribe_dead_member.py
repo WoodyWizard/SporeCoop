@@ -80,7 +80,7 @@ def eat_then_die(host, guest, ck, victim, attacker):
     if node != EAT_NODE:
         return
     print('  host:', host.call(f'coop.tribe pincer {victim} {attacker} 1000')['out'].strip(), flush=True)
-    t1, gone, f0 = time.time(), None, frame(guest)
+    t1, gone = time.time(), None
     while time.time() - t1 < 75 and gone is None:
         time.sleep(3)
         st = next((x for x in guest.call('coop.tribe')['out'].splitlines() if 'tribe(guest)' in x), '')
@@ -92,9 +92,10 @@ def eat_then_die(host, guest, ck, victim, attacker):
         if not in_g and det and int(det.group(1)) > 0:
             gone = time.time() - t1
     ck(gone is not None, f'the body went on the guest ({gone and round(gone, 1)} s after the kill)')
+    f0 = frame(guest)
     time.sleep(5)
     f1 = frame(guest)
-    ck(f1 > f0 + 30, f'the guest draws frames after the body went (frame {f0} -> {f1})')
+    ck(f1 > f0 + 30, f'the guest runs frames 5 s later (frame {f0} -> {f1})')
 
 
 TRIBE_MODE = 0x1654C02

@@ -260,6 +260,7 @@ struct KitFix {
     const char* what;
     volatile LONG on;
 };
+extern KitFix g_fix_frameunwind; // BUG-0667: a frame cut off by a caught fault does not stop the later ones
 extern KitFix g_fix_longout;   // BUG-0388: a command's printf output is not cut at 8 KB
 extern KitFix g_fix_stackdump; // BUG-0050: copy a suspended thread's stack, resume, then format
 extern KitFix g_fix_cheatwait; // BUG-0065: commands that wait for the main thread refuse to run on it
