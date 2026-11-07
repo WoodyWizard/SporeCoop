@@ -265,7 +265,10 @@ void set_time_of_day(const net::Quat& q);
 
 // ---- DNA (cCreatureGameData evolution points, a global) ----
 float dna();
-void dna_add_raw(float delta);              // original AddEvolutionPoints, not reported
+void dna_add_raw(float delta);              // a shared change, not reported: a gain through the original
+                                            // AddEvolutionPoints (DNA + the evolution bar), a spend the DNA only (BUG-0630)
+void dna_set_raw(float total);              // SetEvolutionPoints: the DNA only, as the game's editor spends it
+float evolution_bar();                      // cPlayer +0x10F0, the stage's total earned (NAN without a player)
 using DnaListener = bool (*)(float& delta); // return false to swallow a gain; may change it (BUG-0510 pace)
 void set_dna_listener(DnaListener fn);
 

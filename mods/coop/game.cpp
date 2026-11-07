@@ -1846,10 +1846,41 @@ float dna()
     return get ? cdecl_call<float>(get) : 0.f;
 }
 
+// BUG-0630: AddEvolutionPoints (0xD2E8A0) adds its delta to the DNA AND, without a sign check, to cPlayer +0x10F0
+// (the stage's evolution bar, the total earned: the brain-level and migration thresholds read it). The game spends
+// DNA with SetEvolutionPoints (0xD2E480, the DNA only: the editor's result 0xD445AA), so in a game of one a spend
+// never lowers the bar. The mod moved every shared change (the host's total on a guest, a guest's spend on the host,
+// the own editor's price) through AddEvolutionPoints: each editor spend lowered the other player's bar by the amount
+// (players: "the evolution bar reset to almost 0", "halved"). With the fix a negative change (a spend, anyone's)
+// writes the DNA only, never below 0; a gain still goes through AddEvolutionPoints and raises the bar as the game's
+// rewards do. Off (`coop.fix creature.bar_spend off`): 0.7.8, every change through AddEvolutionPoints.
+static bool g_bar_spend_fix = true;
+COOP_FIX("creature.bar_spend", "BUG-0630", g_bar_spend_fix,
+         "creature: a DNA spend shared between players (an editor's price) moves the DNA only, not the evolution bar");
+
 void dna_add_raw(float delta)
 {
+    if (g_bar_spend_fix && delta < 0) {
+        if (uintptr_t set = H->sym("Simulator::cCreatureGameData::SetEvolutionPoints")) {
+            cdecl_call<void>(set, std::max(0.f, dna() + delta));
+            return;
+        }
+    }
     if (o_AddEvo)
         o_AddEvo(delta);
+}
+
+void dna_set_raw(float total)
+{
+    if (uintptr_t set = H->sym("Simulator::cCreatureGameData::SetEvolutionPoints"))
+        cdecl_call<void>(set, std::max(0.f, total));
+}
+
+float evolution_bar()
+{
+    void* nm = noun_manager();
+    void* p = nm && skg::readable((uint8_t*)nm + 0x74, 4) ? *(void**)((uint8_t*)nm + 0x74) : nullptr; // cPlayer
+    return p && skg::readable((uint8_t*)p + 0x10F0, 8) ? *(float*)((uint8_t*)p + 0x10F0) : NAN;
 }
 
 void set_dna_listener(DnaListener fn) { g_dna_listener = fn; }
