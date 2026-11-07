@@ -1762,3 +1762,80 @@ BUG-0316, BUG-0666. GOG 2024, Ghidra and lane 3.
   0xE5EC10 (the hatch 0xE6EB60, anim 0x2B, G+0x51DB), 0xE72C80 (anim 0x2E, event 0x1F, G+0x5158 = 3). No write of 0
   to +0x178 was found statically. `coop.pool tokens` prints `locks16c=` (the bytes +0x16C..+0x189) and the event at
   G+0x5194 (type, timers); `coop.pool mate` prints `goldie_done=` (S+0x68), `mate nogoldie` sets it.
+## A guest's kill and meal once; the host's level-change wipe and a partner's screen (2026-11-06, fix/w46-cell-p0)
+<a id="cell-once"></a>
+
+BUG-0632, BUG-0636, BUG-0635 (player report 2026-11-06, 0.7.8). GOG 2024, lanes 2 and 3.
+
+* ✔ (runtime, `coop_cell_once.py --case kill`) A host's break (BreakOrSwallow from a guest's ACT_BREAK) plays its
+  animation before the dying flag and the loot (event 5 -> 0xE7ADD0); meanwhile the guest's mirror still looks
+  alive (hp 0, no dying / dead flag in the state, its own animation state not 7/8/9 because the break did not run
+  there), so every further bite of the guest's game on it is lethal again and sent again. The host broke the same
+  cell 3-4 times (two or more deaths, two or more loot drops on one spot: the "giant piece of meat"). The third
+  one in the players' log was refused only because the cell was gone by then.
+* ✔ (runtime, `--case eat`, SPORE_NET delay=150) A cell the guest ate is erased from the guest's mirror maps
+  (h_Destroy) and sent as ACT_GONE; state chunks the host sent before it heard of the meal still list the index,
+  and the guest's mirror pass made it again 30-100 ms later; the guest's game ate it again (1-3 times per meal
+  with the mouth on the spot). The host counts the food once ("not here, no points" / points taken back).
+* Class BUG-0420 mechanism: `cell_logic::Once` (cell_logic.h, unit test `once` in tests/cell_tests.cpp), a
+  once-only ledger of pool indices (generation included, so a reused slot is another key) with a ttl.
+  `cell.kill_once`: the guest sends a kill / break of a host index once (10 s), the host applies one once (10 s).
+  `cell.eat_once`: the guest's tombstone of eaten host indices (5 s): no mirror is made of them. `coop.pool` prints
+  `cell_once: ... kills_dup_sent kills_dup_refused eaten_skipped gone_again`.
+
+<a id="cell-levelup-view"></a>
+* ✔ (Ghidra) RemoveCellsOfOldScale 0xE7CD10 destroys (DestroyCell(idx, 0, 0, 0)) every pool cell with level != -1
+  for which 0xE5CDE0 is true (and that heads its +0x36C chain), then PopulateTile 0xE7C6C0 for every tile object.
+  0xE5CDE0 (EAX = the cell): false for the mate G+0x51D4 and the avatar G+0x411C; a foreground cell (+0x35C ==
+  G+0x40FC): true when the sphere at +0x4C with radius 1.7 x +0x58 does not touch the visible box
+  Simulator::Cell::ViewBoxes; a background cell: by the frustum. It runs only when the world scale tier changes:
+  `coop.pool food 50` (one level) made no wipe in the fixture, `+-150` (three levels) one wipe each time (host
+  394-995 cells destroyed).
+* ✔ (runtime, `coop_cell_levelup_view.py`, the guest 30 m from the host) On the host the wipe keeps only what is in
+  the HOST's view: 82-163 of the destroyed cells per wipe were inside the guest's visible box, and the guest lost
+  100% of the cells on its screen on every change (up and down), while the host's own game lost 0-36% on a level
+  down and ~90% on a level up (lab 20261106-220609). So a level-up replaces most of the screen in a single
+  player's game too (the cells of the old tier go, also those the wipe kept: the tiles of the new level), but a
+  level down keeps most of it; the guest lost all of it both ways. Fix `cell.levelup_keep` (cellsync.cpp h_Wipe /
+  h_Destroy, host): inside the wipe a cell within +-15 x +-11 (+ its 1.7 x size radius) of a partner's cell is
+  kept, as 0xE5CDE0 keeps the host's view (121-170 kept per wipe); the guest then loses about what the host loses
+  (60% vs 52% over 6 changes, lab 20261106-220831).
+
+### The player's own species as NPCs; an own-cell rebuild at level 10 (BUG-0637)
+<a id="cell-own-species"></a>
+
+* ✔ (runtime, `coop.pool species`, Cell fixture at food 924 = level 10) the game populates the level with NPCs of
+  the player's own cell (S+0x10): 6-8 creatures of model 4DA56CA5 (the fixture's own cell) next to the level's
+  species (levels 9-11). After an own-cell change (`coop.creations choose cell`, S+0x10 and RebuildLevel) they are of
+  the new cell (BAF1AD40 x16-18), none of the previous one is left, and every creature is of levels 9-11 (labs
+  20261106-221411, -221722). A rebuild populates about twice as many creatures as the level had after its slow
+  growth (39 -> 73-78).
+
+### The guest's cell against the host's NPCs and the partner (BUG-0634)
+<a id="cell-push"></a>
+
+* ✔ (runtime, `coop_cell_push.py`, `coop.pool gap`) A guest's own cell swimming into a mirror of the host's NPC
+  (AI-locked, placed at the host's pose, with its soft body) is pushed off as the host's cell is by its own NPC:
+  closest centre distance 0.67 vs 0.65 of the two sizes (median of 6 each, 46-114 collision pairs per push; lab
+  20261106-222954). Pairs with a partner's puppet are dropped on both games (h_Pair, `pairs_skipped`), so the
+  partners swim through each other; with both players on the same cell model the partner looks like an NPC of the
+  own species.
+
+### Part tokens: the host's collect after a guest's kill (BUG-0633)
+<a id="cell-token-collect"></a>
+
+* ✔ (Ghidra) 0xE7B630 is the executor's interaction kind 0x12 (0xE7E7F0 case 0x12, then 0xE67100); its conditions
+  read the avatar's +0x112 / +0x113 / +0x178 / +0x17F and the token's +0x17B, nothing of the part's state:
+  CollectPart 0xE5D7B0 runs for a part already unlocked too (it sets S+0x34+4*part = 2, the mate button S+0x69, the
+  mission counter S+0x94 up to 6). `coop.pool tokens` prints `lock17b=` per token and `own_locks=` (+0x112 +0x113
+  +0x178 +0x17F) with the animation +0x18C.
+* ✔ (runtime) A guest's kill next to the host sets none of the host's locks (`own_locks=0000` for 4 s after each of 4
+  guest kills, lab 20261106-215829). A collect sets +0x178 / +0x17F during its animation 0x31 (49) and clears them.
+* ✔ (runtime, `coop_cell_once.py --case token`) the host collected 11 of 14 tokens of its pool moved 4 m next to it
+  (labs 20261106-220209 and its retry); the 3 misses were tokens moving at 1.5-6 m/s that were 10-20 m away when
+  the touch came (pushed off; the tp puts the cell next to the token, the swim then chases it).
+  CORRECTION (2026-11-06, fix/w46-cell-p0): the "about 15 tokens collected by neither game" above came from
+  touches of tokens that had moved; tokens touched in place are collected (all 11).
+* ✔ (runtime, `--case drop`) 32 guest kills of creatures next to the host at levels 1-4 (16 with `cell.kill_once`
+  off, every kill broken 1-4 times; 16 with it on) dropped no part token at all (labs 20261106-222600,
+  20261106-222027): the fixture's creatures carry no part in their loot; the tokens of the pool come with its tiles.

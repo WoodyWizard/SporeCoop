@@ -2134,3 +2134,12 @@ Each line: what the players saw, what the logs show; reproduce and details in th
 * Reproduce: Cell fixture, `coop.pool food 50` four times, `coop.pool tokens` shows `own_locks=0010`.
 * Known: docs/re/cell.md#cell-goldie. Not known: whether a player's game clears them (input, the cinematic's end).
 * Ticket: BUG-0666
+## Tests: the detector compares Cell positions across two world scales in a level change (2026-11-06, fix/w46-cell-p0)
+<a id="issue-detector-cell-scale"></a>
+
+* What happens: a `Cell:pos:cell` row (80-552 cells 7-14 m apart) in the one comparison that falls into a world
+  scale tier change; filed under BUG-0480 by detector_report.py.
+* Reproduce: `SPORE_DETECTOR=20 tools/lab.py run cell_levelup_view --lane N` (lab 20261106-224058 #1).
+* Known: inferred to be BUG-0606's cause (raw positions of two games in different scales); worlddiff has no
+  diag.cell_scale conversion. The guest draws the cells where they are.
+* Ticket: BUG-0662

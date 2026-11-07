@@ -1,7 +1,7 @@
 ---
 id: BUG-0634
 title: Cell: the guest's cell swims through other cells (not a ghost: it still bites and is bitten)
-status: open
+status: not-reproduced
 kind: bug
 stage: Cell
 reported: 2026-11-06
@@ -9,11 +9,11 @@ source: player report 2026-11-06 (Discord, 0.7.8): discord-2026-11-06/M0ng0r-01
 role: guest
 versions: 0.7.8
 fixed_in:
-branch:
+branch: fix/w46-cell-p0
 commits:
-tests:
+tests: cell_push (coop_cell_push.py)
 signature:
-docs:
+docs: docs/re/cell.md#cell-push
 related: BUG-0342
 ---
 
@@ -31,11 +31,22 @@ puppet is expected; through NPC mirrors it may be mirrors without a soft body (`
 docs/re/cell.md) that push weakly or not at all. Not verified.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+None. The guest's cell is pushed by the NPC cells (the host's mirrors) as the host's own cell is by its own NPCs
+(Verification). What it swims through is the partner's cell: a pair with a partner's puppet is dropped on both
+games by design (h_Pair, docs/re/cell.md#cell-push: the partner's cell is simulated on its owner's machine; a
+collision there would bite, eat and push it twice). In the report both players played the same cell (2912DEEB:
+the guest used "the world's own"), so the host's cell looked like one more NPC of the guest's own species (the
+game populates NPCs of the player's species, docs/re/cell.md#cell-own-species). Making partners solid to each other
+would be a new feature (a push sent to the owner), not this report's bug.
 
 ## Verification
-<!-- Lab: cell_new_game guest steers into NPC mirrors and the puppet; count the own collision pairs with mirrors
-     (`coop.pool collide`) for soft and bare mirrors. -->
-
+* Lab `coop_cell_push.py` (each player in turn swims its own cell into an NPC creature of about its size,
+  `coop.pool swimto` held for 3 s, the closest centre distance against the two sizes): out/lab/20261106-222954,
+  6 pushes each: guest median 0.67, host 0.65 of the two sizes (guest 0.50-1.25, host 0.45-1.36), 46-114 own
+  collision pairs per push on both. The guest's mirrors with soft bodies (particles 4/4) and the host's NPCs push
+  alike. Earlier probe runs found too few creatures of the size (20261106-215829, -220209: 1 push each, guest 0.40,
+  host 0.91).
+* Not a ghost: the report's guest bit and was bitten all session (BUG-0342's ghost ruled out in the intake).
 ## History
 - 2026-11-06: opened. From the Discord report 2026-11-06 (0.7.8), the players' logs read in fix/w45-intake.
+- 2026-11-06: not reproduced in fix/w46-cell-p0: the guest is pushed by NPC mirrors as the host by its NPCs (lab 20261106-222954); the partner's cell is passed through by design.
