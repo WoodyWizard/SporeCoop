@@ -505,6 +505,7 @@ bool ufo_ident_fix = true;
 COOP_FIX("drive.nudge_dt", "BUG-0175", drive::g_nudge_dt_fix, "creature, tribe: a mirror's pull to its place is per second, not per frame (low frame rates trailed more)");
 COOP_FIX("drive.lead", "BUG-0425", net::g_lead_fix, "creature, tribe, civ: the host's animals, tribe members and vehicles are shown where the host has them now, not 0.2 s behind");
 COOP_FIX("drive.lead_smooth", "BUG-0619", net::g_lead_smooth_fix, "tribe, creature: a remote body's lead target goes on smoothly after a late state (Tribe members jumped ~1 m per frame over a jittery network)");
+COOP_FIX("drive.lead_late", "BUG-0650", net::g_lead_late_fix, "tribe: a member's state that arrives late (a latency spike) is brought in over time, not at once (members jumped ~0.9 m per frame at a walk start in a spike)");
 COOP_FIX("drive.sender_agl", "BUG-0425", drive::g_sender_agl_fix, "creature, tribe: a partner or animal off the ground is drawn at its height over the sender's ground, over this game's ground");
 COOP_FIX("drive.own_height", "BUG-0329", drive::g_own_height_fix, "tribe: a member's or animal's mirror is driven at its own ground height, not the host's absolute one");
 COOP_FIX("fleet.type", "BUG-0111", ufo_ident_fix, "space: only our own puppets count as puppets, not any UfoType 6 ship (coop.fleet typefix)");

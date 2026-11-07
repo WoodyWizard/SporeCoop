@@ -2069,7 +2069,8 @@ drawn position `d`, aim `tgt`, aim speed `rv`).
   body_trail_tribe_player 1.05-1.37 m, tribe_walk 2 of 2 (20261106-185808, -185811).
 * ~ over the player network (45 ms, spikes of +250 ms) M1's lead keeps its start steps when a walk starts in a spike
   (3.6-3.8 m, then 0.87-0.95 m frames: tribe_walk_player 20261106-185808); smoothing them (over 1.5 m) made that test
-  stop-and-go and body_trail_tribe_player trail (-191334, -191337): not solved here.
+  stop-and-go and body_trail_tribe_player trail (-191334, -191337): not solved here. Solved since by bringing a late
+  state in over time (BUG-0650): docs/re/tribe.md#tribe-lead-late.
 * ~ NPC proxies (npc.cpp, the other SnapshotBuffer::lead user) keep M1's lead and catch_prop (smooth_max 0): no test
   showed jumps there; not measured over the mobile network.
 * ~ under the lab load of the day (6-20 on 6 cores) body_trail_* fail for NPC animals too, which no part of this
@@ -2141,3 +2142,38 @@ BUG-0617 (after BUG-0548). GOG 2024, lane 5, coop_world_host.py --case bundle_ca
   tribe's member (+0x340) and selectable (+0x354, citizen +0xC0) vectors and its +0x1014 cleared, as the host's game
   does: left in, play_tribe saw one member more on the guest and a guest's order to the body was rejected on the host
   (lab 20261106-143257). The detached mirror is destroyed with DestroyInstance when the host's body goes.
+
+## A late state brought in over time: the member lead at a walk start in a latency spike (2026-11-06, fix/w45-lead-player)
+<a id="tribe-lead-late"></a>
+
+BUG-0650, `coop.fix drive.lead_late` (net/interp.h SnapshotBuffer::late_time / lead_at; Tribe member mirrors only,
+smooth_max > 0, over a link under drive.lead_smooth's 100 ms one-way rule). Measured on tribe_walk_player (both games at
+30 fps, SPORE_NET=player: 45 ms, +-15 ms, +250 ms for 0.7 s every 7 s) from the per-frame track JSON.
+
+* ✔ observed (M3, docs/re/tribe.md#tribe-lead-smooth): a walk that starts in a spike is known 0.3-0.4 s late; M1's lead
+  shows the newest state moved on to the sender's now, so the target stepped 3.6-3.8 m in one frame from the stand and
+  catch_prop drew 0.87-0.95 m frames (the test's limit 3 x 9 m/s x dt = 0.86 m at 32 ms).
+* ✔ observed: bounding catch_prop's drawn step instead (`drive.lead_draw`, tried, reverted: walk + placing <= 2.5 x the
+  speed + 1 m/s) left a short walk known late 3 m behind its target when it stopped; the stand driving (drive::step) then
+  closed it in a 1.08 m frame as the next walk started (lab 20261106-200630 #2, member 2 at 10.47 s). Closing a late start
+  at any speed the body can be drawn at needs the time the walk lasts: the target itself has to start where the body is.
+* ✔ observed (net_tests test_lead_late): when a spike ends, the states sent in it arrive after newer ones and are dropped
+  as old (netem orders by send time + delay), so the first walking state that is kept can be 2.7 m from the stand. A
+  shown time that steps back only to the newest state's own time still jumped 2.7 m there; back to the state before it
+  (the path between the two interpolated) 0.45-0.55 m per 1/30 s frame (M1 3.3-3.6 m).
+* ✔ the fix: the lead target has its own sender time. It advances at the real time's rate; when a new state arrives it
+  may step back (never forward) to as early as the state before the newest: of that span (17 candidates) the time whose
+  target is nearest where the shown target was going (a state as expected: the lead's own time, nothing changes; the
+  first state of a start known late: the path from the last standing state). Then it catches up with the lead at 1.5x
+  the real time but at most 3 m/s over the body's speed, and the velocity the mirror walks at is scaled by the same rate
+  meanwhile (walked at the state's speed the mirror fell behind a faster target and catch_prop surged after it). At
+  1.5x without the 3 m/s cap an 11 m/s member's target ran 16.5 m/s and walk + catch_prop drew 0.94-0.96 m frames
+  (lab 20261106-212040 #2, member 7 at 34.8 s). Catching up takes lateness x speed / 3 m/s (0.35 s late at 9 m/s: ~1 s;
+  ~0.1 s late on a calm link: 0.3 s).
+* ✔ observed (guest logs): under a lab load over ~10 on 6 cores the one-way latency drive.lead_smooth reads is 110-150
+  ms on a local link too and the member lead goes off (BUG-0651); body_trail_tribe(_player) then fail for members on
+  the old and the new code alike (p90 2.4-3.2 m, lag p50 0.4-0.7 s; 20261106-210300, -210310).
+* ~ the remaining target steps over 1.5 m in tribe_walk_player are at stops (a stop state known late: the lead had gone
+  on past it) and at members the host's own game put somewhere (rv 0): not walk starts; no drawn jump in those runs.
+* ~ under lab loads of 9-19 on 6 cores tribe_walk_player fails now and then for 0.7.8 too (windows 63-71 %, uneven
+  11 %): judge it only A/B at the same time on the other lane pair.
