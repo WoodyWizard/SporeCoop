@@ -200,6 +200,7 @@ add('nest_species', P + 'coop_nest_species.py', minutes=4)  # the guest owns ano
 add('migration', P + 'coop_migration.py', minutes=5)  # brain upgrade, editors, migration; both claim the new nest: no fault on the guest (0xC6AE60)
 add('migration_heal', P + 'coop_migration.py --heal', minutes=6)  # BUG-0496: after the migration both players heal at the new home nest (the game's own health)
 add('nest_follow', P + 'coop_nest_follow.py', minutes=7)  # BUG-0640, BUG-0496: the host's species migrates, the guest's own game claims the same new nest (cinematic, herd = respawn, heal) without a forced world (SPORE_FIX_OFF=wsync.creature_nest fails)
+add('nest_follow_own', P + 'coop_nest_follow.py --own', minutes=8)  # BUG-0642: the same with the guest on its own creature (another species than the world's): claim, home and heal hold for it
 add('migration_probe', P + 'coop_migration_probe.py --editor', ('extended',), minutes=6)  # BUG-0640 probe: migration property, nest herd, cinematics on both games after DNA and the editors (prints only)
 add('select', P + 'coop_select.py', ('smoke',), warm=True, minutes=3, fixture='creature')
 add('social_console', P + 'coop_social_console.py', warm=True, minutes=3, fixture='creature')  # digits typed in the open cheat console play no social ability (BUG-0149; --without-fix fails)

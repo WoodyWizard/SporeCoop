@@ -12,9 +12,14 @@ The players' way, creature fixture, no forced world share (coop_migration.py sha
 PASS, on the guest's game: its own game claims that nest (CRG_ClaimNest), its avatar lives in the herd of that nest (the
 respawn place and the home of its family), and that nest heals it (BUG-0496, the game's own health).
 
-  coop_nest_follow.py     (SPORE_FIX_OFF=wsync.creature_nest: the guest's game never claims: FAILS)"""
+  coop_nest_follow.py [--own]  (SPORE_FIX_OFF=wsync.creature_nest: the guest's game never claims: FAILS)
+  --own (BUG-0642): the guest plays its own creature (chosen in the co-op window), another species than the world's:
+        the nest rules (claim, home, heal) are the player species' and hold for it too."""
 import re
+import sys
 import time
+
+import creations_state
 
 from coop_migration import (CINE_CLAIM, CINE_MIGRATE, DONE, avatar_herd, cinematic, confirm_captions, eax, in_world,
                             migration, mode, new_nest, total_dna, vec3, wait)
@@ -36,6 +41,21 @@ def near(a, b, d=30):
 def main():
     host, guest = start()
     ck = Checks()
+    if '--own' not in sys.argv:
+        return run(host, guest, ck)
+    st0 = creations_state.save(guest)
+    own = creations_state.choose_own(guest)
+    ck(own, f'the guest chose its own creature {own}')
+    ok = wait(lambda: re.search(r'key=0x([0-9A-F]{8})', guest.call('coop.avatar')['out']) and
+              re.search(r'key=0x([0-9A-F]{8})', guest.call('coop.avatar')['out']).group(1) == own, 40)
+    ck(ok, f"the guest plays its own creature, not the world's species ({guest.call('coop.avatar')['out'].strip()[:80]})")
+    try:
+        return run(host, guest, ck)
+    finally:
+        creations_state.restore(guest, st0)
+
+
+def run(host, guest, ck):
     home0 = herd_nest_pos(host), herd_nest_pos(guest)
     print(f'  home nests before: host {home0[0]}, guest {home0[1]}', flush=True)
 
