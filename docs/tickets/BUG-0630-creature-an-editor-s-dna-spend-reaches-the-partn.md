@@ -10,7 +10,7 @@ role: both
 versions: 0.7.8
 fixed_in: unreleased
 branch: fix/w45-evo-bar
-commits:
+commits: 28a59ba4, bae4ff10
 tests: evo_bar, evo_bar_editors
 signature:
 docs: docs/re/creature.md#creature-evolution-bar, docs/re/creature.md#creature-bar-spend
@@ -60,17 +60,32 @@ Class: BUG-0419 (state sent but not applied the way the owner's game has it: the
 the bar not).
 
 ## Fix
-<!-- Proposed: move the shared DNA so the bar follows only gains: a negative delta (a spend, anyone's) through
-     SetEvolutionPoints (DNA only), a positive one through AddEvolutionPoints as now; better, the host sends its
-     cPlayer +0x10F0 with MSG_DNA and the guests set it (one bar, the host's), the way wsync's goal row does in Tribe.
-     Behind a switch (creature.bar_spend). -->
+One shared method: `game::dna_add_raw` (game.cpp), the path of every shared DNA change of the mod (the host's total
+on a guest, MSG_DNA and the late g_dna_pending; a guest's spend on the host, MSG_DNA_ADD < 0 and the owed spend; the
+guest's own editor price, creations.own_editor_dna). A negative change (a spend, anyone's) is written with
+`SetEvolutionPoints` (the DNA only, clamped at 0), as the game's own editor does; a gain still goes through the
+original AddEvolutionPoints, so the rewards of every player raise every bar as before (and the brain-level /
+migration thresholds read the same bar). Switch `creature.bar_spend` (`coop.fix creature.bar_spend off`: 0.7.8).
+`coop.dna bar` prints `bar=` (cPlayer +0x10F0); `coop.dna spend N` (SetEvolutionPoints, the game's editor way: tests).
+
+Observed in the lab (not only inferred): with the switch off, a host spend lowered the guest's bar by the spend and
+the reverse, two spends at once lowered both bars by both, and in the reported case (both editors at once, a pool of
+45, a mouth of 25 each) the host's bar fell 45 -> 25 and the guest's 45 -> 0 (the guest's own editor price was also
+charged through AddEvolutionPoints: its own bar lost it too, not only the partner's).
+
+Not covered (inferred, not seen): a host total holding a gain and a larger spend in the same tick reaches a guest as one
+net negative change, whose gain part then does not reach the guest's bar (the host's has it). The "overspend by 12"
+of the report (two editors on one pool) is clamped at 0 on both games (checked), not prevented.
 
 ## Verification
-<!-- Lab: two games in Creature (fixture after the first brain level), read cPlayer +0x10F0 on both (`coop.wsync`
-     dump or a new `coop.dna bar`), the host opens its editor and spends 100 (or `call
-     Simulator::cCreatureGameData::SetEvolutionPoints`), check the guest's +0x10F0 unchanged; the guest's own editor
-     spend, check the host's +0x10F0 unchanged; both editors at once (the reported case). Without the fix the
-     partner's bar falls by the spend. -->
+FAIL: SPORE_FIX_OFF=creature.bar_spend evo_bar, lab 20261106-174018 (lane 4: host spends 30, guest bar 130 -> 100;
+guest spends 30, host bar 130 -> 100; both 20 at once, both bars 100 -> 80; overspend 80 -> 73).
+FAIL: SPORE_FIX_OFF=creature.bar_spend evo_bar_editors, lab 20261106-175633 (lane 5: both editors, host bar 45 -> 25,
+guest bar 45 -> 0; also lab 20261106-175242).
+PASS: evo_bar, lab 20261106-174215 (lane 4: bars stay 130 on both through every spend, DNA 130 -> 0 the same on both,
+gains raised both bars with the DNA); evo_bar_editors, lab 20261106-175613 (lane 4: both bars 45, DNA 0 on both).
+Regression: REGRESSION_RUN
 
 ## History
 - 2026-11-06: opened from the Discord report 2026-11-06 (0.7.8); root cause from the logs and the disassembly (fix/w45-intake).
+- 2026-11-06: fixed on fix/w45-evo-bar (creature.bar_spend), tests evo_bar and evo_bar_editors.

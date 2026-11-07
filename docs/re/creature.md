@@ -3288,6 +3288,6 @@ BUG-0630, GOG 2024 (dc04aee5), lab lane 4.
 * Fix `creature.bar_spend` (game.cpp `dna_add_raw`, the one path every shared change takes: the host's total on a
   guest, a guest's spend on the host, the owed spend, the own editor's price): a negative change is written with
   SetEvolutionPoints (the DNA only, never below 0), a gain still goes through the original AddEvolutionPoints.
-  `coop.dna` prints `bar=` (cPlayer +0x10F0).
+  `coop.dna bar` prints `bar=` (cPlayer +0x10F0).
 * ~ not covered: a host total that holds a gain and a spend at once (both in one tick of the host, or a total a guest
   applies late: g_dna_pending) reaches a guest as one net change; when the spend is larger the gain does not reach the guest's bar (the host's does get it).

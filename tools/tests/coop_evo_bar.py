@@ -2,7 +2,7 @@
 """A DNA spend of one player leaves the other player's evolution bar alone (BUG-0630).
 
 The game's evolution bar is cPlayer +0x10F0 (the total earned in the stage: the brain-level and migration
-thresholds read it; `coop.dna` prints it as bar=). The game adds to it in AddEvolutionPoints (every reward) and
+thresholds read it; `coop.dna bar` prints it as bar=). The game adds to it in AddEvolutionPoints (every reward) and
 never lowers it: its editor spends with SetEvolutionPoints (the DNA only). 0.7.8 moved the shared DNA with
 AddEvolutionPoints for spends too, so each editor spend of one player lowered the other's bar by the amount
 (players, Discord 2026-11-06: "our evolution bar just got reset to almost 0", "my evolution bar was halved").
@@ -34,7 +34,7 @@ CASE = sys.argv[sys.argv.index('--case') + 1] if '--case' in sys.argv else 'scri
 
 def read(con):
     """(DNA, bar) of this game"""
-    out = con.call('coop.dna')['out'] or ''
+    out = con.call('coop.dna bar')['out'] or ''
     d = re.search(r'dna=(-?[\d.]+)', out)
     b = re.search(r'bar=(-?[\d.]+|nan|-nan)', out)
     num = lambda m: float(m.group(1)) if m and 'nan' not in m.group(1) else None
