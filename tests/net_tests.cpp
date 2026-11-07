@@ -822,8 +822,60 @@ static float lead_ratchet_err(bool keep, double* behind_p90)
     return n ? (float)(sum / n) : 99.f;
 }
 
+// BUG-0674 (drive.lead_keep): a member walking +x at 9 m/s turns round at sender time 3.0; the states of [2.95, 3.3) come
+// 0.35 s late (a spike), so the lead goes on the old way meanwhile. Returns how long (s) the shown target is over 2 m from
+// the sender's body after the first late state arrived
+static double lead_turn_over2(bool keep)
+{
+    const bool was = g_lead_keep_fix;
+    const double was_ow = g_one_way;
+    g_lead_keep_fix = keep;
+    SnapshotBuffer b;
+    b.delay = 0.2;
+    b.lead = true;
+    b.smooth_max = 6.f;
+    g_one_way = 0.05;
+    auto x_at = [](double st) { return st < 3.0 ? (float)st * 9.f : (float)(6.0 - st) * 9.f; };
+    std::vector<std::pair<double, PlayerState>> arr;
+    for (int i = 0; i < 180; i++) {
+        double st = i / 30.0;
+        PlayerState s;
+        s.time_ms = (uint32_t)(1000 + st * 1000.0 + 0.5);
+        s.mode = 0x1654C01;
+        s.world = 7;
+        s.flags = PF_IN_WORLD | PF_MOVING;
+        s.pos = {x_at(st), 0.f, 0.f};
+        s.vel = {st < 3.0 ? 9.f : -9.f, 0.f, 0.f};
+        arr.push_back({10.0 + st + 0.05 + (st >= 2.95 && st < 3.3 ? 0.35 : 0.0), s});
+    }
+    std::stable_sort(arr.begin(), arr.end(), [](auto& a, auto& c) { return a.first < c.first; });
+    size_t k = 0;
+    PlayerState o;
+    double over = 0, known = -1;
+    for (double now = 10.0; now < 15.9; now += 1.0 / 30) {
+        while (k < arr.size() && arr[k].first <= now) {
+            if (known < 0 && arr[k].second.vel.x < 0)
+                known = now;
+            b.push(arr[k].second, arr[k].first), k++;
+        }
+        if (!b.sample(now, o))
+            continue;
+        if (known >= 0 && std::fabs(o.pos.x - x_at(now - 10.0)) > 2.f)
+            over += 1.0 / 30;
+    }
+    g_lead_keep_fix = was;
+    g_one_way = was_ow;
+    return over;
+}
+
 static void test_lead_keep()
 {
+    {
+        double on = lead_turn_over2(true), off = lead_turn_over2(false);
+        printf("  a turn round inside a spike: the target over 2 m off for %.2f s after the news (0.7.9 %.2f s)\n", on, off);
+        CHECK(off > 0.4);
+        CHECK(on < 0.1);
+    }
     {
         double b_on, b_off;
         float on = lead_ratchet_err(true, &b_on), off = lead_ratchet_err(false, &b_off);

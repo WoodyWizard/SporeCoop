@@ -188,6 +188,7 @@ constexpr double kKeepTau = 0.25; // s
 constexpr double kKeepHigh = 0.13, kKeepLow = 0.115; // s: the no-lead rule's one-way latency line with the fix
 constexpr size_t kHorizonN = 32;
 constexpr double kLateNews = 0.05; // s
+constexpr float kLateLost = 1.5f;  // m
 
 class SnapshotBuffer {
 public:
@@ -517,6 +518,12 @@ private:
                     }
                 }
                 t = best < cont ? best : t;
+                // BUG-0674 (g_lead_keep_fix): no point of the new path is near where the shown target was going (the lead
+                // went on the old way through a spike while the body turned round: 8 m off): continuity is lost anyway, so
+                // the shown time is the lead's at once and the body closes the error (catch_prop). Stepped back, the shown
+                // time went 0.75 s behind and the mirror 4.7 m behind that target (lab 20261107-110506 #1, member 2)
+                if (g_lead_keep_fix && bd > kLateLost)
+                    t = tl;
             }
             lt_new_ = false;
         }
