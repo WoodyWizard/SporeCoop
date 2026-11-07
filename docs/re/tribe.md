@@ -2242,3 +2242,25 @@ BUG-0667. GOG 2024, disassembly + lab lane 4 (`coop_tribe_dead_member.py --eat`,
 * ✔ Hardening (tribe.body_teardown, guest): SetTribe(null) is recorded (citizen -> old tribe); the citizen teardown
   0xC27CD0 with +0x1014 null puts back the detached body's tribe or the recorded one (AddRef first) when it is still a
   world's tribe, else it empties the tree's stack (ai+0x1DC = 0: no exit runs) and logs it (8 times).
+* CORRECTION (2026-11-07, fix/w46-tribe-fault): the teardown fallback above set the depth (ai+0x1DC) to 0, which does
+  not stop the exits: long_tribe_short on rel/0.7.9 (20261107-043030) logged it for 3 citizens and still faulted in
+  0xDA7FB0. 0xBC8850 skips the exits only when the stack's first word ai+0x1D0 is -1; the fallback now fills the
+  0x418-byte stack with 0xFF as 0xBC8850 leaves it. 0xC0D500 (SporeCoop::Citizen_BTTerminate, cdecl(creature)) is the
+  tree's end; ~ superseded: "0xC0D500(citizen) (a timer on +0xB4C)" in Citizen_IdleWalk's .sym line.
+* ✔ (runtime, diagnostics lab 20261107-052358) the citizens left without a tribe at long_tribe_short's menu exit are
+  detached bodies (bodies of members killed in the session's play, still lying when the guest leaves): `detached 1,
+  left tribe 0, tribes listed 0`. The world's teardown destroys the tribes (their members through RemoveMember with the
+  tribe set) before the objects outside the lists, so a body's tribe is no world's tribe any more by then.
+  No SetTribe(null) of the guest's game was seen in that run.
+* ✔ Source fix (tribe.body_teardown): detach_body ends the body's tree with Citizen_BTTerminate while +0x1014 is still
+  set (the exits release their spots as the host's dying member's did), and the BT tick stays skipped for detached
+  bodies (also while the host is away). Repro `coop_tribe_dead_member.py --eat --menu` (suite tribe_body_menu): the
+  eating mirror's member dies on the host, the guest leaves to the main menu while the body lies: with the fix off the
+  fault at 0xAC9C7D and the two space-gfx faults of the following world load (lab 20261107-053541), as in
+  long_tribe_short; with it no fault and no fallback line (20261107-053655).
+* ✔ A/B: long_tribe_short on v0.7.8 passed (rel/0.7.8 worktree, lab 20261107-052252): new in 0.7.9 (detach_body).
+* ? (runtime, long_tribe_short x3 lab 20261107-053815, all PASS, 0 faults) at the later menu exit (after the guest's
+  restart and reload, s ~600) 1-2 citizens were still torn down with no tribe in node 0x04861814 (depth 2) that were
+  neither detached nor taken out by a SetTribe(null) of this game: the fallback ended their trees without exits. Inferred
+  origin: bodies that came with the received world without a tribe (the only other writer of +0x1014 is the reader
+  0xC03370 that copies +0x1010 / +0x1014 from a record); not checked. Whether 0x04861814's exit reads the tribe: not checked.

@@ -10,7 +10,7 @@ role: guest
 versions: rel/0.7.9 75599275
 fixed_in: unreleased
 branch: fix/w46-tribe-fault
-commits: d893d8f6 39231fee ea7ece1a
+commits: d893d8f6 39231fee ea7ece1a 991dad47
 tests: coop_tribe_dead_member.py --eat (suite tribe_body_teardown)
 signature: 0xC0000005 at 0x00AC9C7D (labelled Relevance_InsideEnter+0xF4D) data 0x39C, ecx 0x394, esi 0xD; calls 00C27E9C 00C988FA 00DB0C6E 00BC87D0 00BC887D 00C0D596 00C20013 (cTribe_ToolLayout < cTribe_ReleaseSlot < eat node exit 0xDB0C40 < BT shutdown 0xC0D500 < citizen teardown 0xC1FFE0)
 docs: docs/re/tribe.md#tribe-body-teardown
@@ -61,6 +61,16 @@ New in 0.7.9 (BUG-0620's detach, commit e485cc7a; v0.7.8 has no detach_body).
   an entry on that thread at or above it (a nested call is always deeper) means the frame was cut off by a caught fault:
   the flags are cleared, a warning is logged, frames go on. Off: the flags stay (SporeKit 0.3.11).
 
+Follow-up (2026-11-07, after the merge 640be4eb): long_tribe_short failed on rel/0.7.9 (lab 20261107-043030, lane 9):
+the fallback logged 3 citizens with no tribe at the menu exit and the exit 0xDA7FB0 still faulted, then the world load
+from the galaxy menu faulted twice in space gfx and the guest stayed loading. Two causes:
+* the fallback set the tree's depth (ai+0x1DC) to 0, which does not stop the exits: 0xBC8850 skips them only when the
+  stack's first word ai+0x1D0 is -1. It now fills the 0x418-byte stack with 0xFF as the game leaves it.
+* the source (diagnostics, lab 20261107-052358): those citizens are detached bodies still lying when the guest leaves
+  to the menu. The world's teardown removes the tribes first, so their tribe can no longer be put back. Fix (same switch):
+  detach_body ends the body's behaviour tree with Citizen_BTTerminate (0xC0D500) while +0x1014 is still set (the node
+  exits release their spots as the host's dying member's did), and a detached body's BT tick stays skipped.
+
 ## Verification
 `coop_tribe_dead_member.py --eat` (suite `tribe_body_teardown`, lane 4):
 * FAIL with `SPORE_FIX_OFF=tribe.body_teardown` on SporeKit without frameunwind (d893d8f6): lab run 20261107-031255
@@ -74,10 +84,20 @@ New in 0.7.9 (BUG-0620's detach, commit e485cc7a; v0.7.8 has no detach_body).
   tribe_dead_rejoin, tribe_body_teardown, tribe_dead_member, tribe_dead_player. long_tribe_short logged the teardown
   guard once ("citizen ... torn down with no tribe in node 04861814 (depth 2): its tree's exits skipped") at the menu
   exit, with no fault; the run before that guard (20261107-032137) faulted there (0xDA7FC9).
-* Negative: `--eat --menu` (the mirror in the eat node, then Exit to Main Menu) passed with the fix off (lab run
+* Menu path, `coop_tribe_dead_member.py --eat --menu` (suite `tribe_body_menu`: the body lies out of its tribe when
+  the guest leaves to the main menu): FAIL with `SPORE_FIX_OFF=tribe.body_teardown` lab run 20261107-053541 (0xAC9C7D,
+  then 0xC70A20 and 0x10350D7 at the world load, as in long_tribe_short); PASS 20261107-053655 and in 20261107-053835.
+* A/B: long_tribe_short on v0.7.8 passed (rel/0.7.8 worktree, lab 20261107-052252); new in 0.7.9.
+* Gate (991dad47): lane 5 lab 20261107-053835 8/8 (play_tribe, tribe_coop, tribe_dead_rejoin, tribe_body_teardown,
+  tribe_dead_member, tribe_dead_player, detect_tribe, tribe_body_menu); long_tribe_short x3 lane 4 lab 20261107-053815.
+  long_tribe_short x3: 3/3 PASS, 0 faults on both games; the teardown fallback still logged 1-2 citizens in node
+  0x04861814 with no tribe (not detached, no SetTribe(null) seen; inferred: bodies loaded without a tribe with the
+  received world) at the later menu exit and ended their trees without exits (docs/re/tribe.md#tribe-body-teardown).
+* (before) Negative: `--eat --menu` (the mirror in the eat node, then Exit to Main Menu) passed with the fix off (lab run
   20261107-035000): not a repro of the menu path, dropped.
 
 ## History
 - 2026-11-07: opened (long_tribe on rel/0.7.9, lab 20261107-021641).
 - 2026-11-07: fix/w46-tribe-fault: reproduced (tribe_body_teardown), new in 0.7.9 (BUG-0620's detach_body); fixed
   (tribe.body_teardown) and the freeze after a caught frame fault fixed in SporeKit (kit.frameunwind).
+- 2026-11-07: long_tribe_short failed after the merge (rel/0.7.9 lab 20261107-043030): the fallback did not stop the exits and the bodies outlived their tribes at the menu exit; fixed at the source (detach ends the tree), test tribe_body_menu.
