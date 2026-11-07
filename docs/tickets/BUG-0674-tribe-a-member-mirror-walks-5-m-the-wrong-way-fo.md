@@ -1,6 +1,6 @@
 ---
 id: BUG-0674
-title: Tribe: a member mirror walks 5 m the wrong way for 0.5 s at a walk start on the guest (body_trail_tribe_player, 8.9 m off)
+title: Tribe: a member mirror goes on the wrong way for 0.5 s when the host's member turns round inside a latency spike (body_trail_tribe_player: 8-9 m off, over 2 m 1.0-1.2 s)
 status: open
 kind: desync
 stage: Tribe
@@ -23,7 +23,9 @@ body_trail_tribe_player#1 of lab 20261107-102038 (fix/w46-k3-bodies 6baee26a, la
 How to reproduce: tools/lab.py run body_trail_tribe_player --repeat 3 --retry 0 with SPORE_BODYREC_DIAG=1 (the aim / raw lead rows show whether the target went the wrong way); seen once in 9 runs of this branch.
 
 ## Root cause
-Not analysed. Inferred: the lead target went the wrong way: M1's lead_velocity (net/interp.h) takes the state's own velocity, capped in speed by the path between the two newest states but not in direction; a state whose game velocity points against its path (a member turning at a walk start, or the guest's frame hitch) would be extrapolated the wrong way for up to kMaxLead. Not confirmed (that run had no diag rows).
+Observed (lab 20261107-102038 #2, member 1 at 19.4-20.6 s, coop.bodyrec rows of both games): the host's member walked 1.4 m one way (0.29 m a frame) and turned round at 19.6 s; the guest's mirror went on in the first direction at ~12 m/s for 0.55 s (4.6 m), 8.5 m off at 20.25 s, then came back in ~0.6 s; over 2 m 1.18 s. #1 (member 2 at 3.8-5.0 s) is the same shape (5 m the other way, 8.9 m off). That is the lead extrapolating the newest state for up to kMaxLead 0.6 s while no newer state comes (the player network's +250 ms spikes and 30 % loss bursts) and the body reversing meanwhile: error up to 2 x speed x gap. Inferred: 0.7.9 had it too wherever the lead was on (M1's raw lead goes the same way); the interpolated 0.7.8 driving never overshoots but is 0.2 s + latency late everywhere. Options (not done): extrapolate past the usual horizon at a falling speed (costs lag on straight walks in every spike), or close errors over ~5 m faster.
+
+How to tell it in a run: a member's worst samples of 8-9 m at 4-10 m/s in body_trail_tribe_player while its p90 is fine.
 
 ## Fix
 <!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
@@ -35,3 +37,4 @@ Not analysed. Inferred: the lead target went the wrong way: M1's lead_velocity (
 ## History
 - 2026-11-07: opened.
 - 2026-11-07: opened (fix/w46-k3-bodies, K3), not fixed there.
+- 2026-11-07 (fix/w46-k3-bodies): cause observed in the two runs (the lead's extrapolation through a spike while the host's member turned round); a known limit of the lead, left open for 0.7.11.

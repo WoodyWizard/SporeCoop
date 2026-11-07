@@ -307,6 +307,7 @@ constexpr float kMirrorWalkMax = 8.f; // farther off: drive::step (it teleports 
 // 9 m/s; the error grew to 8 m and drive::step teleported it. The placing was never counted as lost (under 0.5 m a
 // frame) and keep_lost was off for mirrors. Off: placed without the mark always (0.7.9).
 static bool g_mirror_keep_fix = true;
+constexpr float kKeepNear = 1.5f; // m (BUG-0651, see mirror_drive)
 COOP_FIX("tribe.mirror_keep", "BUG-0386", g_mirror_keep_fix, "tribe: a member mirror the guest's game holds back (its placing undone) is moved on its path by marked teleports, not left to fall 8 m behind");
 // BUG-0619: a member's lead jump up to this is smoothed (a start known late over a mobile network: 2.9-4 m at 9 m/s;
 // the lead's cap kMaxLead x 9 m/s = 5.4 m)
@@ -2334,7 +2335,9 @@ static void mirror_drive(GMember& g, double now)
         // catch-up from the game's walk and drew walk + catch-up, 0.9-1.25 m frames), nor without the lead (0.7.8)
         o.catch_prop = g.lead_sp < 0 && !(net::g_lead_smooth_fix && g.buf.lead_off());
         // BUG-0651 (drive.lead_keep): walked at the catching-up target's rate (up to 2x), no proportional catch-up on top
-        if (net::g_lead_keep_fix && g.buf.late_catching())
+        // while it is near the target; a big error (a turn round inside a spike: 6-9 m, BUG-0674) is closed as before,
+        // else it took 0.6 s at the speed + 3 m/s and the stretch over 2 m ran 1.0-1.2 s (lab 20261107-102038)
+        if (net::g_lead_keep_fix && g.buf.late_catching() && net::dist(game::position(g.c), g.aim) < kKeepNear)
             o.catch_prop = false;
         if (g.lead_sp >= 0)
             o.lead_speed = std::max(g.lead_sp, 0.5f); // BUG-0619
