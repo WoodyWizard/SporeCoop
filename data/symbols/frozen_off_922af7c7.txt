@@ -181,3 +181,6 @@ SporeCoop::cTribe_MaxPopulation ; BUG-0645: the guest's player tribe level row a
 SporeCoop::CreatureGame_HerdEvolveOn ; BUG-0668: the guest's own NPC herd evolution is not turned off (GOG 2024 only)
 SporeCoop::cHerd_EvolvedSpecies ; BUG-0668: the guest's nests do not take the host's species (GOG 2024 only)
 SporeCoop::TribeStage_BabyBorn ; BUG-0671: a guest's hut baby is not relayed to the host (GOG 2024 only)
+SporeCoop::GGE_RebuildPlanets ; BUG-0676: the galaxy menu's rollover guard is off (GOG 2024 only)
+SporeCoop::GalaxyGameEntry_ptr ; BUG-0676: the galaxy menu's rollover guard is off (GOG 2024 only)
+SporeCoop::GGE_PlanetSet_ptr ; BUG-0676: the galaxy menu's rollover guard is off (GOG 2024 only)
