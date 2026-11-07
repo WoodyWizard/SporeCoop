@@ -143,11 +143,14 @@ constexpr double kSmoothVelTau = 0.1; // s
 // target has its own sender time (lt_t_): it goes on at the real time's rate and, when a new state arrives, may step
 // back to as early as the state before the newest: of that span the time whose target is nearest where the shown target
 // was going (a state as expected, a walk at the same velocity: the lead's own time, no change; the first state of a
-// start: the path from the last standing state, no start step). Then it catches up with the lead at 1 + kLateRate x the real time (the
-// target and the velocity the mirror walks at run at 1 + kLateRate x the body's speed for that time). Member mirrors only (smooth_max > 0).
+// start: the path from the last standing state, no start step). Then it catches up with the lead at 1 + kLateRate x the real time, at most
+// kLateExtra m/s over the body's speed (the target and the velocity the mirror walks at run at that rate meanwhile). Member mirrors only (smooth_max > 0).
 // Off: M1's lead (the target at the sender's time now at once).
 inline bool g_lead_late_fix = true;
 constexpr double kLateRate = 0.5;
+// and never more than this over the body's own speed (m/s): caught up at 1.5 x 11 m/s the target ran 16.5 m/s and the
+// mirror's walk + catch_prop on top drew 0.94-0.96 m frames (tribe_walk_player 20261106-212040 #2, member 7 at 34.8 s)
+constexpr double kLateExtra = 3.0;
 constexpr int kLateSteps = 16; // candidate times between the earliest and the shown time's continuation
 
 class SnapshotBuffer {
@@ -430,8 +433,10 @@ private:
         if (local_now <= lt_local_)
             return std::min(tl, lt_t_ - (lt_local_ - local_now));
         const double adv = local_now - lt_local_;
+        const Vec3 lv = lead_velocity();
+        const double rate = 1.0 + std::min(kLateRate, kLateExtra / std::max(0.1, (double)dist(Vec3{}, lv)));
         double cont = std::min(tl, lt_t_ + adv);
-        double t = std::min(tl, lt_t_ + adv * (1.0 + kLateRate));
+        double t = std::min(tl, lt_t_ + adv * rate);
         if (lt_new_) {
             // a new state: of [the state before it, the continuation] the time nearest where the shown target was
             // going (the path between the two interpolated: when a latency spike ends, the states sent in it come
@@ -454,7 +459,7 @@ private:
             }
             lt_new_ = false;
         }
-        lt_rate_ = (float)std::max(1.0, std::min(1.0 + kLateRate, (t - lt_t_) / adv));
+        lt_rate_ = (float)std::max(1.0, std::min(rate, (t - lt_t_) / adv));
         Vec3 p = lead_at(t);
         lt_vel_ = {(p.x - lt_pos_.x) / (float)adv, (p.y - lt_pos_.y) / (float)adv, (p.z - lt_pos_.z) / (float)adv};
         if (dist(Vec3{}, lt_vel_) > 15.f)
