@@ -3099,8 +3099,10 @@ struct Took {
 };
 static std::vector<Took> g_took;
 static bool is_mirror(void* v) { return v && (g_gv_of.count(v) || g_kill_later.count(v)); }
+static void host_buildings_keys(bool own);
 static void save_start()
 {
+    host_buildings_keys(true); // BUG-0670: no key of ours in the save
     if (!g_fix_save_strip || !is_guest() || game::mode_id() != modes::kCiv || !nm())
         return;
     for (void* civ : vec_of(thiscall<void*>(a_GetAllCivs, nm())))
@@ -3124,6 +3126,7 @@ static void save_start()
 }
 static void save_end()
 {
+    host_buildings_keys(false); // BUG-0670
     for (auto& t : g_took) { // back at the end of the list (the capacity is the one they left)
         void**& e = F<void**>(t.civ, t.off + 4);
         if (e < F<void**>(t.civ, t.off + 8))
@@ -3426,6 +3429,126 @@ static bool bound_design(void* v)
     return true;
 }
 
+// BUG-0670 (docs/re/civ.md#civ-host-buildings): a building's model is the design key cCity::SetBuildingModel
+// (0xBDB940) reads from its civilization itself (GetDesignKey), then the building's model object's SetModelKey
+// (vt 0x94 of +0x34, the key at +0x34 +0x90 as for vehicles). The host's player civilization names its building
+// designs by keys of the host's own My Creations; the guest's copy of it names the same keys, which the guest's game
+// resolved to the guest's own creation of that id: other city halls, houses, factories than the host's (the class of
+// BUG-0647). On a guest every building of every city is checked once a second (built by build_in_city, by the
+// guest's own planner, or loaded with the host's world): a design of the host's own (asked with
+// creations::host_design, the BUG-0647 path) gets the host's records under a key of ours, and the building's model
+// object that key (SetModelKey). The building's own key is written back while the game saves and when the session
+// ends (no key of ours in a save). `coop.fix civ.host_buildings off`: the guest's own creation of that id (0.7.9).
+static bool g_host_buildings_fix = true;
+COOP_FIX("civ.host_buildings", "BUG-0670", g_host_buildings_fix,
+         "civ: a guest's buildings of the host's civilization show the host's own building designs, not the guest's creation of the same id");
+constexpr uintptr_t kBModelKey = 0x34 + 0x90; // (the vehicles' kVModelKey: the same spatial model object)
+constexpr uint32_t kBuildingModelType = 0x2399BE55;
+struct BldRekey {
+    uint32_t orig[3];
+    uint32_t ours;
+};
+static std::unordered_map<void*, BldRekey> g_bld_rekeyed; // guest: building -> its own key (live buildings only read)
+static double g_bld_sweep_at = -100;
+static unsigned g_bld_rekeys, g_bld_pending, g_bld_restored;
+static std::vector<void*> city_buildings_all()
+{
+    std::vector<void*> out;
+    if (!nm())
+        return out;
+    for (void* city : all_cities())
+        for (void* b : vec_of((uint8_t*)city + kCityBuildings))
+            if (b)
+                out.push_back(b);
+    return out;
+}
+static void set_building_key(void* b, const uint32_t* k)
+{
+    vcall<void>((uint8_t*)b + 0x34, 0x94 / 4, k);
+}
+static void host_buildings_tick(double now)
+{
+    if (!g_host_buildings_fix || !is_guest() || game::mode_id() != modes::kCiv || now - g_bld_sweep_at < 1.0)
+        return;
+    g_bld_sweep_at = now;
+    unsigned pending = 0;
+    for (void* b : city_buildings_all()) {
+        uint32_t* mk = &F<uint32_t>(b, kBModelKey);
+        if (!mk[0] || mk[0] == 0xFFFFFFFFu || mk[1] != kBuildingModelType)
+            continue;
+        auto it = g_bld_rekeyed.find(b);
+        if (it != g_bld_rekeyed.end() && it->second.ours == mk[0])
+            continue; // ours already
+        bool wait = false;
+        creations::Key hk = creations::host_design({mk[0], mk[1], mk[2]}, creations::kMkBuilding, &wait);
+        if (wait) {
+            pending++;
+            continue;
+        }
+        if (hk.instance == mk[0])
+            continue; // not the host's own (a premade, a generated design): as it is
+        creations::Model m = creations::ensure_model(hk, creations::kMkBuilding);
+        if (!m.key.instance)
+            continue; // cannot be built here: it keeps the model it has
+        BldRekey r{{mk[0], mk[1], mk[2]}, m.key.instance};
+        uint32_t k[3] = {m.key.instance, m.key.type, m.key.group};
+        set_building_key(b, k);
+        g_bld_rekeyed[b] = r;
+        g_bld_rekeys++;
+        H->log(M, SK_INFO, "civ: a building's model %08X is the host's own design: %08X here (BUG-0670)", r.orig[0], k[0]);
+    }
+    g_bld_pending = pending;
+}
+// the buildings of ours get their own keys back (raw: the save writes the key, no model is rebuilt) / ours again
+static void host_buildings_keys(bool own)
+{
+    if (g_bld_rekeyed.empty() || !nm())
+        return;
+    for (void* b : city_buildings_all()) {
+        auto it = g_bld_rekeyed.find(b);
+        if (it == g_bld_rekeyed.end())
+            continue;
+        uint32_t* mk = &F<uint32_t>(b, kBModelKey);
+        if (own && mk[0] == it->second.ours) {
+            mk[0] = it->second.orig[0];
+            g_bld_restored++;
+        } else if (!own && mk[0] == it->second.orig[0])
+            mk[0] = it->second.ours;
+    }
+}
+static void host_buildings_session_end()
+{
+    if (g_bld_rekeyed.empty() || !nm())
+        return;
+    for (void* b : city_buildings_all()) { // the guest's game plays on alone: its own designs
+        auto it = g_bld_rekeyed.find(b);
+        if (it != g_bld_rekeyed.end() && F<uint32_t>(b, kBModelKey) == it->second.ours)
+            set_building_key(b, it->second.orig);
+    }
+    g_bld_rekeyed.clear();
+}
+static std::string host_buildings_list()
+{
+    std::string out;
+    char b[200];
+    int ci = 0;
+    for (void* city : all_cities()) {
+        for (void* bl : vec_of((uint8_t*)city + kCityBuildings)) {
+            if (!bl)
+                continue;
+            const uint32_t* mk = &F<uint32_t>(bl, kBModelKey);
+            auto it = g_bld_rekeyed.find(bl);
+            snprintf(b, sizeof b, "  bld city=%d %p noun=%08X model=%08X/%08X/%08X own=%08X\n", ci, bl, game::noun_id(bl), mk[0],
+                     mk[1], mk[2], it == g_bld_rekeyed.end() ? 0u : it->second.orig[0]);
+            out += b;
+        }
+        ci++;
+    }
+    snprintf(b, sizeof b, "host buildings: fix=%d rekeys=%u pending=%u restored=%u now=%zu\n", (int)g_host_buildings_fix,
+             g_bld_rekeys, g_bld_pending, g_bld_restored, g_bld_rekeyed.size());
+    return out + b;
+}
+
 static void guest_state(net::Reader& r)
 {
     uint16_t cycle = r.u16();
@@ -3553,6 +3676,7 @@ static void guest_state(net::Reader& r)
 static void guest_tick(double now)
 {
     guest_fire(now); // BUG-0477
+    host_buildings_tick(now); // BUG-0670
     for (auto it = g_kill_later.begin(); it != g_kill_later.end();) {
         void* v = *it;
         if (!exists(v) || F<uint8_t>(v, kVDead) || g_gv_of.count(v)) { // gone, or a mirror again
@@ -3744,6 +3868,7 @@ static void clear_coop_tables(bool restore_speed)
 
 void on_session_end()
 {
+    host_buildings_session_end(); // BUG-0670
     caption_disarm(); // BUG-0224
     if (g_fix_boost)
         clear_coop_tables(true);
@@ -3777,6 +3902,7 @@ void on_world_change()
     if (m == modes::kEdit || m == modes::kEditor)
         return;
     g_world_resets++;
+    g_bld_rekeyed.clear(); // BUG-0670 (the buildings are freed)
     caption_disarm();
     clear_coop_tables(false); // nothing to restore: the vehicles are gone
     // BUG-0223: the tables are forgotten here, not through on_session_end (its restoring clear
@@ -4138,6 +4264,19 @@ std::string debug(const std::vector<std::string>& a)
         k[0] = (uint32_t)strtoul(a[4].c_str(), nullptr, 16);
         k[1] = 0x24682294;
         k[2] = 0x40646200;
+        return "design set";
+    }
+    if (!a.empty() && a[0] == "bmodels") // tests (BUG-0670): every city's buildings and their model keys
+        return host_buildings_list();
+    if (a.size() >= 4 && a[0] == "bdesign") { // bdesign <hex pol> <house|factory|fun|hall> <hex inst>: tests (BUG-0670)
+        void* civ = thiscall<void*>(a_CivByPol, nm(), (uint32_t)strtoul(a[1].c_str(), nullptr, 16));
+        uint32_t did = a[2] == "factory" ? 0x47C10953 : a[2] == "fun" ? 0x72C49181 : a[2] == "hall" ? 0x99E92F05 : 0x4E3F7777;
+        uint32_t* k = civ ? thiscall<uint32_t*>(a_DesignKey, civ, (int)did) : nullptr;
+        if (!k)
+            return "no design slot";
+        k[0] = (uint32_t)strtoul(a[3].c_str(), nullptr, 16);
+        k[1] = kBuildingModelType;
+        k[2] = 0x40636200;
         return "design set";
     }
     if (a.size() >= 4 && a[0] == "vdesign") { // vdesign <hex pol> <purpose> <loco>: that civ's design key (BUG-0647)
