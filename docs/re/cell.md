@@ -1740,3 +1740,25 @@ BUG-0480. GOG 2024, lane 7, `coop_cell_gone.py --case play` (cold starts), Ghidr
   hooks made after boot) act only on a hook made after the first frame: none was made before the fault (the input
   hooks come with the first injected key, the Cell model hooks of modes.cpp ensure_model_hook with the first mirror
   or puppet cell, both in a session). Not reproduced in 13 cold loads: see BUG-0622.
+
+## Goldie's demise and the avatar's collect locks (2026-11-07, fix/w46-part-token)
+<a id="cell-goldie"></a>
+
+BUG-0316, BUG-0666. GOG 2024, Ghidra and lane 3.
+
+* ✔ (Ghidra) AddFoodPoints 0xE7CE10 first checks S+0x68 == 0, 0x77 < food (before the add) < 0x97, at most 4
+  of the 13 part states S+0x34.. non-zero and difficulty S+0x7C != 2, then calls **0xE79720 (Goldie's demise)**:
+  DestroyCell of the cells within 5 m and 15 m of the avatar (0xE78B20), two new cells (Goldie at G+0x516C with
+  +0x354, its eater with +0x22C = Goldie and +0x230 = 1000), G+0x518C = 1, S+0x68 = 1, an event of type 0x24 (15 s)
+  at G+0x5194 and G+0x5198, the cinematic "goldies_demise". Event 0x24 (dispatcher 0xE7E130) -> 0xE794F0: stops the
+  cinematic, DestroyCell(Goldie, loot) (the first part token), the avatar's +0x170 = Goldie, G+0x518C = 0.
+* ✔ (runtime) after it both avatars keep +0x16C, +0x178, +0x17B, +0x17C set with the animation +0x18C at 0 for 30+ s
+  (own meals and swimming do not clear them), with and without a session; 0xE7B630 (the token collect) needs
+  +0x178 == 0, so no token can be collected. A meal from 190 across 200 does not start the tutorial (outside its
+  window). ? What clears them in a player's game is not known (BUG-0666).
+* The other lock writers found (Ghidra, `88 xx 78 01 00 00` / `C6 8x 78 01 00 00 01`): 0xE59A70 (the collect
+  animation 0x31: +0x178 +0x17F), 0xE59AF0, 0xE59010 (hurt), 0xE59170 / 0xE591C0 (death, anim 7), 0xE59260 (break,
+  anim 8), 0xE59500 (anim 9), 0xE598E0 (anim 0x29), 0xE599B0 (level-up zoom 0x1D, from 0xE72B40), 0xE53C50, 0xE58890,
+  0xE5EC10 (the hatch 0xE6EB60, anim 0x2B, G+0x51DB), 0xE72C80 (anim 0x2E, event 0x1F, G+0x5158 = 3). No write of 0
+  to +0x178 was found statically. `coop.pool tokens` prints `locks16c=` (the bytes +0x16C..+0x189) and the event at
+  G+0x5194 (type, timers); `coop.pool mate` prints `goldie_done=` (S+0x68), `mate nogoldie` sets it.
