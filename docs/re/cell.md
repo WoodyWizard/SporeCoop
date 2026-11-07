@@ -1799,3 +1799,22 @@ BUG-0632, BUG-0636, BUG-0635 (player report 2026-11-06, 0.7.8). GOG 2024, lanes 
   20261106-222954). Pairs with a partner's puppet are dropped on both games (h_Pair, `pairs_skipped`), so the
   partners swim through each other; with both players on the same cell model the partner looks like an NPC of the
   own species.
+
+### Part tokens: the host's collect after a guest's kill (BUG-0633)
+<a id="cell-token-collect"></a>
+
+* ✔ (Ghidra) 0xE7B630 is the executor's interaction kind 0x12 (0xE7E7F0 case 0x12, then 0xE67100); its conditions
+  read the avatar's +0x112 / +0x113 / +0x178 / +0x17F and the token's +0x17B, nothing of the part's state:
+  CollectPart 0xE5D7B0 runs for a part already unlocked too (it sets S+0x34+4*part = 2, the mate button S+0x69, the
+  mission counter S+0x94 up to 6). `coop.pool tokens` prints `lock17b=` per token and `own_locks=` (+0x112 +0x113
+  +0x178 +0x17F) with the animation +0x18C.
+* ✔ (runtime) A guest's kill next to the host sets none of the host's locks (`own_locks=0000` for 4 s after each of 4
+  guest kills, lab 20261106-215829). A collect sets +0x178 / +0x17F during its animation 0x31 (49) and clears them.
+* ✔ (runtime, `coop_cell_once.py --case token`) the host collected 11 of 14 tokens of its pool moved 4 m next to it
+  (labs 20261106-220209 and its retry); the 3 misses were tokens moving at 1.5-6 m/s that were 10-20 m away when
+  the touch came (pushed off; the tp puts the cell next to the token, the swim then chases it).
+  CORRECTION (2026-11-06, fix/w46-cell-p0): the "about 15 tokens collected by neither game" above came from
+  touches of tokens that had moved; tokens touched in place are collected (all 11).
+* ✔ (runtime, `--case drop`) 32 guest kills of creatures next to the host at levels 1-4 (16 with `cell.kill_once`
+  off, every kill broken 1-4 times; 16 with it on) dropped no part token at all (labs 20261106-222600,
+  20261106-222027): the fixture's creatures carry no part in their loot; the tokens of the pool come with its tiles.
