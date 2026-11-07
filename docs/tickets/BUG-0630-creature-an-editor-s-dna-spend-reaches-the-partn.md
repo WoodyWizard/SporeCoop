@@ -10,7 +10,7 @@ role: both
 versions: 0.7.8
 fixed_in: unreleased
 branch: fix/w45-evo-bar
-commits: 28a59ba4, bae4ff10
+commits: 28a59ba4, bae4ff10, 33b71ae0
 tests: evo_bar, evo_bar_editors
 signature:
 docs: docs/re/creature.md#creature-evolution-bar, docs/re/creature.md#creature-bar-spend
@@ -84,7 +84,12 @@ FAIL: SPORE_FIX_OFF=creature.bar_spend evo_bar_editors, lab 20261106-175633 (lan
 guest bar 45 -> 0; also lab 20261106-175242).
 PASS: evo_bar, lab 20261106-174215 (lane 4: bars stay 130 on both through every spend, DNA 130 -> 0 the same on both,
 gains raised both bars with the DNA); evo_bar_editors, lab 20261106-175613 (lane 4: both bars 45, DNA 0 on both).
-Regression: REGRESSION_RUN
+Final code (33b71ae0): PASS creature, evo_bar, evo_bar_editors, dna_spend, lab 20261106-183513 (lanes 4/5); FAIL
+SPORE_FIX_OFF=creature.bar_spend evo_bar, lab 20261106-183940 (the same bars as 174018).
+Regression: lab 20261106-180001 (lanes 4/5, SPORE_DETECTOR=20): smoke + play_creature, dna_resend, dna_spend, dna_pace,
+editor_sync_guest, editor_sync_host, vote, dna_notice, dna_away, away_editor, migration, creature_e84, evo_bar,
+evo_bar_editors: 27/28; `creature` failed only on the first form of `coop.dna` (it parses "dna=<n>" alone), fixed in
+33b71ae0 and passed in 20261106-183513. The detector of that run: only known Tribe signatures (BUG-0497, 0488, 0475).
 
 ## History
 - 2026-11-06: opened from the Discord report 2026-11-06 (0.7.8); root cause from the logs and the disassembly (fix/w45-intake).

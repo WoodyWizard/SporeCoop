@@ -3283,6 +3283,12 @@ BUG-0630, GOG 2024 (dc04aee5), lab lane 4.
   as the editor's result) left the spender's bar (cPlayer +0x10F0) at 130 and lowered the partner's to 100, in both
   directions; two spends of 20 at once lowered both bars by 40; an overspend lowered them by the part above 0 only
   (the guest clamps its delta to the DNA it has).
+* ✔ (runtime, lab 20261106-175633, switch off) the reported case: both editors of one evolution vote at once, a pool
+  of 45, a mouth of 25 each: the host's bar 45 -> 25, the guest's 45 -> 0 (its own editor's price, charged by the
+  mod through AddEvolutionPoints, lowered its own bar too, then the host's total took the rest). The pool ends at 0
+  on both (overspent, clamped). With the fix (lab 20261106-175613) both bars stay 45.
+* ✔ the DNA read with GetEvolutionPoints inside an editor stays the stage's value until the editor's result (45 in
+  both editors after a part was added): a test checks the price after the return, not in the editor.
 * ✔ gains: a game reward on either player (`coop.dna gain`, AddEvolutionPoints through the hook) raised the DNA and
   the bar together on both games (bar == DNA after a fresh fixture: the fixture starts with 0 and 0).
 * Fix `creature.bar_spend` (game.cpp `dna_add_raw`, the one path every shared change takes: the host's total on a
