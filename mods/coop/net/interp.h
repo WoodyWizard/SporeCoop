@@ -141,14 +141,14 @@ constexpr double kSmoothVelTau = 0.1; // s
 // of the player network, +250 ms: 0.3-0.4 s after it was sent) moved that target 3.6-3.8 m in one frame from where the
 // standing state had it, and catch_prop closed it in 0.87-0.95 m frames (tribe_walk_player). With the fix the shown
 // target has its own sender time (lt_t_): it goes on at the real time's rate and, when a new state arrives, may step
-// back to as early as the newest state's own time: of that span the time whose target is nearest where the shown target
+// back to as early as the state before the newest: of that span the time whose target is nearest where the shown target
 // was going (a state as expected, a walk at the same velocity: the lead's own time, no change; the first state of a
-// start: the state itself, no start step). Then it catches up with the lead at 1 + kLateRate x the real time (the
+// start: the path from the last standing state, no start step). Then it catches up with the lead at 1 + kLateRate x the real time (the
 // target and the velocity the mirror walks at run at 1 + kLateRate x the body's speed for that time). Member mirrors only (smooth_max > 0).
 // Off: M1's lead (the target at the sender's time now at once).
 inline bool g_lead_late_fix = true;
 constexpr double kLateRate = 0.5;
-constexpr int kLateSteps = 8; // candidate times between the earliest and the shown time's continuation
+constexpr int kLateSteps = 16; // candidate times between the earliest and the shown time's continuation
 
 class SnapshotBuffer {
 public:
@@ -433,9 +433,10 @@ private:
         double cont = std::min(tl, lt_t_ + adv);
         double t = std::min(tl, lt_t_ + adv * (1.0 + kLateRate));
         if (lt_new_) {
-            // a new state: of [the newest state's time, the continuation] the time nearest where the shown
-            // target was going
-            const double earliest = snaps_.back().t;
+            // a new state: of [the state before it, the continuation] the time nearest where the shown target was
+            // going (the path between the two interpolated: when a latency spike ends, the states sent in it come
+            // after newer ones and are dropped; the newest is then the first walking state, 2-3 m from the stand)
+            const double earliest = snaps_.size() >= 2 ? snaps_[snaps_.size() - 2].t : snaps_.back().t;
             if (cont > earliest + 1e-3) {
                 Vec3 want{lt_pos_.x + lt_vel_.x * (float)adv, lt_pos_.y + lt_vel_.y * (float)adv,
                           lt_pos_.z + lt_vel_.z * (float)adv};

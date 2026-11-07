@@ -629,6 +629,78 @@ static void test_interp_gap()
     }
 }
 
+// BUG-0650 (drive.lead_late): a Tribe member's walk that starts in a latency spike (its first walking state 0.35 s
+// late instead of 0.05 s) moved M1's lead target 3 m in one frame; with the fix the target steps no more than a walk
+// and is at the lead again within 1.5 s
+static float lead_late_max_step(bool fix, double spike_end, float* end_err)
+{
+    const bool was = g_lead_late_fix;
+    const double was_ow = g_one_way;
+    g_lead_late_fix = fix;
+    SnapshotBuffer b;
+    b.delay = 0.2;
+    b.lead = true;
+    b.smooth_max = 6.f;
+    g_one_way = 0.05;
+    // the sender sends every 1/30 s; the body stands until sender time 3.0, then walks at 9 m/s along x
+    auto state = [](double st) {
+        PlayerState s;
+        s.time_ms = (uint32_t)(1000 + st * 1000.0 + 0.5);
+        s.mode = 0x1654C01;
+        s.world = 7;
+        s.flags = PF_IN_WORLD;
+        float x = st > 3.0 ? (float)(st - 3.0) * 9.f : 0.f;
+        s.pos = {x, 0.f, 0.f};
+        s.vel = {st > 3.0 ? 9.f : 0.f, 0.f, 0.f};
+        if (st > 3.0)
+            s.flags |= PF_MOVING;
+        return s;
+    };
+    // arrival: 0.05 s late, 0.35 s for the states sent in [2.95, spike_end) (the spike; the states sent after it come
+    // before the last of the spike's, which are dropped as old)
+    std::vector<std::pair<double, PlayerState>> arr;
+    for (int i = 0; i < 180; i++) {
+        double st = i / 30.0;
+        double lat = st >= 2.95 && st < spike_end ? 0.35 : 0.05;
+        arr.push_back({10.0 + st + lat, state(st)});
+    }
+    std::stable_sort(arr.begin(), arr.end(), [](auto& a, auto& c) { return a.first < c.first; });
+    size_t k = 0;
+    float max_step = 0;
+    Vec3 last{};
+    bool have = false;
+    PlayerState o;
+    for (double now = 10.0; now < 15.9; now += 1.0 / 30) {
+        while (k < arr.size() && arr[k].first <= now)
+            b.push(arr[k].second, arr[k].first), k++;
+        if (!b.sample(now, o))
+            continue;
+        if (have && now > 12.5 && now < 14.0)
+            max_step = std::max(max_step, dist(last, o.pos));
+        last = o.pos;
+        have = true;
+    }
+    // where the sender's body is now (+ one-way): sender time now - 10 + 0.05
+    *end_err = std::fabs(o.pos.x - (float)((15.9 - 1.0 / 30 - 10.0 + 0.05 - 3.0) * 9.0));
+    g_lead_late_fix = was;
+    g_one_way = was_ow;
+    return max_step;
+}
+
+static void test_lead_late()
+{
+    printf("lead target of a walk known late (BUG-0650)\n");
+    for (double spike_end : {3.3, 3.65}) { // the walk's first states: after the spike / late, in order
+        float err_on = 0, err_off = 0;
+        float on = lead_late_max_step(true, spike_end, &err_on), off = lead_late_max_step(false, spike_end, &err_off);
+        printf("  spike to %.2f s: max target step per 1/30 s frame: fix %.2f m (end error %.2f), M1 %.2f m (%.2f)\n",
+               spike_end, on, err_on, off, err_off);
+        CHECK(off > 2.f);     // M1: the start known 0.35 s late jumps 2.7-3.3 m
+        CHECK(on < 0.6f);     // under 2 x the walk (9 m/s x 1/30 s); the test draws a jump at 3 x
+        CHECK(err_on < 0.5f); // and it is at the lead again
+    }
+}
+
 static void test_discovery()
 {
     Session host;
@@ -2706,6 +2778,7 @@ int main(int argc, char** argv)
     test_big_snapshot();
     test_interp();
     test_interp_gap();
+    test_lead_late();
     test_discovery();
     test_lobby_roles();
     test_shared_ledger();
