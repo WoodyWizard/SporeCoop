@@ -337,6 +337,59 @@ static void SK_THISCALL h_ReleaseSlot(void* t, int type, int slot)
     }
     o_ReleaseSlot(t, type, slot);
 }
+// BUG-0667: on a guest a citizen torn down with no tribe gets back the tribe it left last (the game's SetTribe(null),
+// e.g. a member's death in this game's own play while the host was away, or detach_body), so the exits of the
+// behaviour nodes still active on it (a mirror's tree is skipped: eat 0x0461300F, 0x0551759F, ...) find it; with no
+// such tribe left, its tree's stack is emptied first (no exit runs, none can read the null tribe). long_tribe_short
+// (20261107-032137): the guest left the world for the menu, the eat exit's slot release was skipped, the next exit
+// (0xDA7FB0, reads tribe+0x26C) faulted.
+static std::unordered_map<void*, void*> g_left_tribe; // guest: citizen -> the tribe its SetTribe(null) took it out of
+static uint32_t g_teardown_tribe_back, g_teardown_bt_emptied;
+using SetTribe_t = void(SK_THISCALL*)(void*, void*);
+static SetTribe_t o_SetTribe;
+static void SK_THISCALL h_SetTribe(void* c, void* t)
+{
+    if (g_body_teardown_fix && is_guest()) {
+        void* old = F<void*>(c, 0x1014);
+        if (!t && old)
+            g_left_tribe[c] = old;
+        else if (t)
+            g_left_tribe.erase(c);
+    }
+    o_SetTribe(c, t);
+}
+using CitizenTeardown_t = void(SK_THISCALL*)(void*);
+static CitizenTeardown_t o_CitizenTeardown;
+static void SK_THISCALL h_CitizenTeardown(void* c)
+{
+    if (g_body_teardown_fix && !F<void*>(c, 0x1014) && (is_guest() || g_left_tribe.count(c) || g_detached.count(c))) {
+        auto tribes = all_tribes();
+        auto listed = [&](void* t) { return t && std::find(tribes.begin(), tribes.end(), t) != tribes.end(); };
+        void* t = nullptr;
+        bool add_ref = false;
+        if (auto it = g_detached.find(c); it != g_detached.end() && listed(it->second))
+            t = it->second; // detach_body kept the reference
+        else if (auto it2 = g_left_tribe.find(c); it2 != g_left_tribe.end() && listed(it2->second))
+            t = it2->second, add_ref = true; // SetTribe(null) released it
+        if (t) {
+            if (add_ref)
+                vcall<void>(t, 0); // AddRef: the teardown releases +0x1014 (0xC27CF3)
+            F<void*>(c, 0x1014) = t;
+            g_teardown_tribe_back++;
+        } else {
+            uint8_t* ai = F<uint8_t*>(c, 0xB4C);
+            if (ai && skg::readable(ai, 0x620) && *(int*)(ai + 0x1DC) > 0) {
+                if (g_teardown_bt_emptied++ < 8)
+                    H->log(M, SK_WARN, "tribe: citizen %p torn down with no tribe in node %08X (depth %d): its tree's exits "
+                           "skipped (BUG-0667)", c, *(uint32_t*)(ai + 0x1D8), *(int*)(ai + 0x1DC));
+                *(int*)(ai + 0x1DC) = 0;
+            }
+        }
+    }
+    g_detached.erase(c);
+    g_left_tribe.erase(c);
+    o_CitizenTeardown(c);
+}
 // behaviour tree tick (shared by every creature kind): skipped for citizen mirrors on guests
 static int SK_CDECL h_BTTick(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t self, uint32_t a5, uint32_t a6,
                              uint32_t a7, uint32_t a8)
@@ -981,6 +1034,10 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
         H->hook_create(M, (void*)a, (void*)h_RingsUpdate, (void**)&o_RingsUpdate);
     if (uintptr_t a = H->sym("SporeCoop::cTribe_ReleaseSlot")) // BUG-0667 (optional)
         H->hook_create(M, (void*)a, (void*)h_ReleaseSlot, (void**)&o_ReleaseSlot);
+    if (uintptr_t a = H->sym("Simulator::cCreatureCitizen::SetTribe")) // BUG-0667 (optional)
+        H->hook_create(M, (void*)a, (void*)h_SetTribe, (void**)&o_SetTribe);
+    if (uintptr_t a = H->sym("SporeCoop::cCreatureCitizen_Teardown")) // BUG-0667 (optional)
+        H->hook_create(M, (void*)a, (void*)h_CitizenTeardown, (void**)&o_CitizenTeardown);
     a_Form = H->sym("SporeCoop::NpcTribeController_FormTribe"); // BUG-0483 (optional)
     a_NpcCtrl = H->sym("Simulator::cNpcTribeController::Get");
     if (a_Form)
@@ -3217,7 +3274,7 @@ void on_session_end()
         if (game::object_alive(c))
             restore_body_tribe(c, t);
     g_detached.clear();
-    g_bt_local.clear();
+    g_bt_local.clear(); // (g_left_tribe stays until the world goes: its citizens are torn down later)
     theme_forget(); // BUG-0568
     clear_coop_tables(true);
     g_split_for.clear();
@@ -3239,6 +3296,7 @@ void on_world_change()
     g_resets++;
     forget_world_tables(); // every citizen of the old world is freed: nothing to restore
     g_detached.clear(); // (BUG-0667: freed with the world)
+    g_left_tribe.clear();
     g_bt_local.clear();
     g_split_for.clear();
     g_hm.clear();
@@ -3343,11 +3401,12 @@ std::string status()
         snprintf(b, sizeof b,
                  "tribe(guest): mirrors=%u spawned=%u removed=%u cmds_sent=%u rx=%u skipped=%u resets=%u "
                  "local_tribes=%u player_tribe=%p unselected=%u incomplete=%u older_chunks=%u ai_skipped=%u/%u away_orders=%u local=%d mirror_walks=%u timed=%u "
-                 "npc_tribes_made=%u failed=%u mirror_grounded=%u ours=%u/%u save_stripped=%u/%u forms_blocked=%u forms_run=%u unmapped_removed=%u bodies_detached=%u teardown_restored=%u slot_null_skipped=%u\n",
+                 "npc_tribes_made=%u failed=%u mirror_grounded=%u ours=%u/%u save_stripped=%u/%u forms_blocked=%u forms_run=%u unmapped_removed=%u bodies_detached=%u teardown_restored=%u slot_null_skipped=%u teardown_tribe_back=%u teardown_bt_emptied=%u\n",
                  (unsigned)g_gm.size(), g_spawned, g_removed, g_cmds_sent, g_rx, g_rx_skipped, g_resets,
                  (unsigned)all_tribes().size(), player_tribe(), g_unselected, g_incomplete, g_cyc.older, g_bt_skipped, g_bt_calls, g_away_orders, (int)local_play(),
                  g_mirror_walks, g_mirror_timed, g_npc_tribes_made, g_npc_tribes_failed, g_mirror_grounded, (unsigned)g_ours_c.size(),
-                 (unsigned)g_ours_t.size(), g_save_stripped, g_save_saves, g_forms_blocked, g_forms_run, g_unmapped_removed, g_bodies_detached, g_teardown_restored, g_slot_null_skipped);
+                 (unsigned)g_ours_t.size(), g_save_stripped, g_save_saves, g_forms_blocked, g_forms_run, g_unmapped_removed, g_bodies_detached, g_teardown_restored, g_slot_null_skipped, g_teardown_tribe_back,
+                 g_teardown_bt_emptied);
     std::string out = b;
     if (!g_last_cmd.empty())
         out += "tribe last order: " + g_last_cmd + "\n";
