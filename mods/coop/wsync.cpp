@@ -900,16 +900,23 @@ static std::vector<HerdRef> npc_herds()
         &u);
     return u.v;
 }
+// 134 nests on the fixture's planet: more than one packet. Each send carries the nests whose generation, species or
+// bits changed in the last 3 s first, then a window of the others that moves on once a second (all of them within
+// ~5 s); a guest merges the entries by home (on_message), so it holds every nest the host sent.
+static uint64_t home_key(uint32_t x, uint32_t y, uint32_t z) { return ((uint64_t)x * 0x9E3779B1u) ^ ((uint64_t)y << 21) ^ z; }
 static bool r_herd_evo(Table& out)
 {
     if (!game::avatar())
         return false;
     auto hs = npc_herds();
-    net::Vec3 a = game::position(game::avatar());
-    auto d2 = [&](const HerdRef& r) { return (r.x - a.x) * (r.x - a.x) + (r.y - a.y) * (r.y - a.y) + (r.z - a.z) * (r.z - a.z); };
-    std::sort(hs.begin(), hs.end(), [&](const HerdRef& p, const HerdRef& q) { return d2(p) < d2(q); });
-    if ((int)hs.size() > kHerdEvoMax)
-        hs.resize(kHerdEvoMax);
+    std::sort(hs.begin(), hs.end(), [](const HerdRef& p, const HerdRef& q) { return p.x != q.x ? p.x < q.x : p.z < q.z; });
+    struct Seen {
+        uint32_t v3, key;
+        double changed;
+    };
+    static std::map<uint64_t, Seen> seen;
+    double now = H->time_seconds();
+    std::vector<Entry> all, changed, rest;
     for (auto& r : hs) {
         void* sp = game::herd_species(r.h);
         Entry e;
@@ -918,7 +925,23 @@ static bool r_herd_evo(Table& out)
         e.v[3] = (uint32_t)(F<int32_t>(r.h, 0xF0) & 0xFF) | (F<uint8_t>(r.h, 0x85) ? 0x100u : 0) | (F<uint8_t>(r.h, 0x190) ? 0x200u : 0);
         e.v[4] = F<uint32_t>(r.h, 0x94);
         e.v[5] = species_group(sp);
-        out.push_back(e);
+        auto it = seen.find(home_key(e.v[0], e.v[1], e.v[2]));
+        if (it == seen.end())
+            seen[home_key(e.v[0], e.v[1], e.v[2])] = {e.v[3], e.key, -100};
+        else if (it->second.v3 != e.v[3] || it->second.key != e.key)
+            it->second = {e.v[3], e.key, now};
+        bool recent = it != seen.end() && now - it->second.changed < 3.0;
+        (recent ? changed : rest).push_back(e);
+    }
+    for (auto& e : changed)
+        if ((int)out.size() < kHerdEvoMax)
+            out.push_back(e);
+    int room = kHerdEvoMax - (int)out.size();
+    if (room > 0 && !rest.empty()) {
+        size_t pages = (rest.size() + room - 1) / room;
+        size_t start = ((size_t)now % pages) * room;
+        for (size_t i = start; i < rest.size() && (int)out.size() < kHerdEvoMax; i++)
+            out.push_back(rest[i]);
     }
     return true;
 }
@@ -1188,7 +1211,20 @@ void on_message(uint8_t type, uint8_t from, net::Reader& rd)
             return;
         for (int i = 0; i < kNRows; i++)
             if (kRows[i].id == id && kRows[i].nv == nv) {
-                g_guest[i].want = std::move(t);
+                if (kRows[i].sync == s_herd_evo && g_guest[i].mode == mode && g_guest[i].t >= 0) {
+                    // BUG-0668: a window of the nests: merged by home into what the guest holds
+                    Table& w = g_guest[i].want;
+                    for (auto& x : t) {
+                        auto it = std::find_if(w.begin(), w.end(), [&](const Entry& y) {
+                            return y.v[0] == x.v[0] && y.v[1] == x.v[1] && y.v[2] == x.v[2];
+                        });
+                        if (it != w.end())
+                            *it = x;
+                        else if (w.size() < 512)
+                            w.push_back(x);
+                    }
+                } else
+                    g_guest[i].want = std::move(t);
                 g_guest[i].mode = mode;
                 g_guest[i].t = now;
                 g_guest[i].received++;
