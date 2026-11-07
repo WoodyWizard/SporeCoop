@@ -49,3 +49,5 @@ died on the host between the guest's selection and the gift, or a command raced 
 Update (2026-11-05, rel/0.7.8 integration out/lab/20261105-134715 play_civ): "guest commands: sent 68, the host
 executed 67 and rejected 1" ("rejected command kind 0 from player 1" at s 254); the same PROBLEM in 5 of 35
 play_civ logs kept in the worktrees (0.7.4-0.7.8). Not new in 0.7.8.
+
+- 2026-11-07 (rel/0.7.10 integration): play_civ lane 4 (lab 20261107-124806): "did not happen: guest sees [1, 5, 6] owned by the partner and no longer selected"; still open, in plan-0.7.11 V2.
