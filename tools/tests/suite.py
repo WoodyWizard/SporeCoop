@@ -592,13 +592,13 @@ for _st in ('creature', 'tribe'):
 # BUG-0631 / BUG-0621: the address space census over a played session (docs/06-testing.md#testing-mem-census)
 add('mem_census', P + 'coop_mem_census.py --minutes 20', ('extended',), minutes=30, timeout=2700, fixture='creature')
 add('mem_census_solo', P + 'coop_mem_census.py --minutes 20 --solo', ('extended',), minutes=30, timeout=2700, fixture='creature')
-add('mem_census_tour_solo', P + 'coop_mem_census.py --minutes 20 --solo --tour host', ('extended',), minutes=30, timeout=2700, fixture='creature')
-add('mem_census_tour_guest', P + 'coop_mem_census.py --minutes 20 --tour guest', ('extended',), minutes=30, timeout=2700, fixture='creature')
-add('mem_census_tour_both', P + 'coop_mem_census.py --minutes 20 --tour host,guest', ('extended',), minutes=30, timeout=2700, fixture='creature')
+add('mem_census_tour_solo', P + 'coop_mem_census.py --minutes 20 --solo --tour host', ('extended',), minutes=30, timeout=2700, fixture='creature', gates={'off': ('sync-check', 'monitor')})  # the tour's teleports put the partner far from where the other game draws it for a moment: its own doing
+add('mem_census_tour_guest', P + 'coop_mem_census.py --minutes 20 --tour guest', ('extended',), minutes=30, timeout=2700, fixture='creature', gates={'off': ('sync-check', 'monitor')})  # the tour's teleports put the partner far from where the other game draws it for a moment: its own doing
+add('mem_census_tour_both', P + 'coop_mem_census.py --minutes 20 --tour host,guest', ('extended',), minutes=30, timeout=2700, fixture='creature', gates={'off': ('sync-check', 'monitor')})  # the tour's teleports put the partner far from where the other game draws it for a moment: its own doing
 add('mem_census_cell_crowd', P + 'coop_mem_census.py --fixture cell --crowd 1000 --minutes 8 --sample 2 --max-slope 3', ('extended',), minutes=15, fixture='cell')  # BUG-0621: a crowd of 1000 cells around the host's for 8 min: no game loses over 3 MB/min of address space (SPORE_FIX_OFF=cell.gfx_full,cell.spare fails: the host 8 MB/min)
-add('mem_census_tour_guest_10', P + 'coop_mem_census.py --minutes 10 --sample 5 --tour guest', ('extended',), minutes=18, fixture='creature')
-add('mem_census_tour_solo_10', P + 'coop_mem_census.py --minutes 10 --sample 5 --solo --tour host', ('extended',), minutes=18, fixture='creature')
-add('mem_census_tour_guest_places', P + 'coop_mem_census.py --minutes 24 --sample 4 --tour guest --places 12', ('extended',), minutes=30, timeout=2700, fixture='creature')
+add('mem_census_tour_guest_10', P + 'coop_mem_census.py --minutes 10 --sample 5 --tour guest', ('extended',), minutes=18, fixture='creature', gates={'off': ('sync-check', 'monitor')})  # the tour's teleports put the partner far from where the other game draws it for a moment: its own doing
+add('mem_census_tour_solo_10', P + 'coop_mem_census.py --minutes 10 --sample 5 --solo --tour host', ('extended',), minutes=18, fixture='creature', gates={'off': ('sync-check', 'monitor')})  # the tour's teleports put the partner far from where the other game draws it for a moment: its own doing
+add('mem_census_tour_guest_places', P + 'coop_mem_census.py --minutes 24 --sample 4 --tour guest --places 12', ('extended',), minutes=30, timeout=2700, fixture='creature', gates={'off': ('sync-check', 'monitor')})  # the tour's teleports put the partner far from where the other game draws it for a moment: its own doing
 add('mem_census_respawn', P + 'coop_mem_census.py --minutes 10 --sample 2.5 --respawn --hop 10', ('extended',), minutes=18, fixture='creature')
 add('mem_census_civ', P + 'coop_mem_census.py --fixture civ_npc --idle --minutes 10 --sample 2', ('extended',), minutes=18, fixture='civ_npc')
 add('mem_census_civ_solo', P + 'coop_mem_census.py --fixture civ_npc --idle --solo --minutes 10 --sample 2', ('extended',), minutes=18, fixture='civ_npc')

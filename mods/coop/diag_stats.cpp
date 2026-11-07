@@ -10,6 +10,7 @@
 #include <cstddef>
 #include <cstdio>
 #include <map>
+#include <vector>
 
 #include "fixes.h"
 #include "modes.h"
@@ -591,32 +592,38 @@ std::string command(const std::vector<std::string>& a)
         return std::string(p ? "reserved " : "not reserved ") + std::to_string(mb) + " MB (" + std::to_string(s_reserved_mb) +
                " MB in all)\n";
     }
-    if (a.size() >= 2 && a[0] == "fill") { // tests (coop_mem_reserve.py, BUG-0631): reserve <piece> MB blocks, never freed,
-        // until the free address space is under <left> MB: a full and fragmented space as after a long session
+    if (a.size() >= 2 && a[0] == "fill") { // tests (coop_mem_reserve.py, BUG-0631): the address space as hours of play
+        // leave it: every free block of <piece> MB or more reserved (never freed), then every other one given back
+        // until <left> MB are free: holes of one piece, no big free block
         int left = std::max(0, atoi(a[1].c_str())), piece = a.size() > 2 ? std::max(1, std::min(64, atoi(a[2].c_str()))) : 16;
-        int n = 0;
-        for (int i = 0; i < 4096; i++) {
+        std::vector<void*> got;
+        while (got.size() < 8192)
+            if (void* p = VirtualAlloc(nullptr, (SIZE_T)piece << 20, MEM_RESERVE, PAGE_NOACCESS))
+                got.push_back(p);
+            else
+                break;
+        std::sort(got.begin(), got.end());
+        auto free_mb = [] {
             MEMORY_BASIC_INFORMATION mbi;
-            uint64_t free = 0;
+            uint64_t f = 0;
             for (uintptr_t p = 0x10000; p < 0xFFFF0000u && VirtualQuery((void*)p, &mbi, sizeof mbi) == sizeof mbi;) {
                 if (mbi.State == MEM_FREE)
-                    free += mbi.RegionSize;
+                    f += mbi.RegionSize;
                 uintptr_t next = (uintptr_t)mbi.BaseAddress + mbi.RegionSize;
                 if (next <= p)
                     break;
                 p = next;
             }
-            if ((int)(free >> 20) < left)
-                break;
-            int batch = std::max(1, (int)(((free >> 20) - left) / piece / 2));
-            bool any = false;
-            for (int k = 0; k < batch; k++)
-                if (VirtualAlloc(nullptr, (SIZE_T)piece << 20, MEM_RESERVE, PAGE_NOACCESS))
-                    any = true, n++;
-            if (!any)
-                break;
+            return (int)(f >> 20);
+        };
+        int freed = 0, have = free_mb();
+        for (size_t i = 0; i < got.size() && have < left; i += 2) { // every other one: the holes do not merge
+            VirtualFree(got[i], 0, MEM_RELEASE);
+            freed++;
+            have += piece;
         }
-        return "filled: " + std::to_string(n) + " blocks of " + std::to_string(piece) + " MB reserved\n";
+        return "filled: " + std::to_string(got.size() - freed) + " blocks of " + std::to_string(piece) + " MB kept, " +
+               std::to_string(freed) + " given back, " + std::to_string(free_mb()) + " MB free\n";
     }
     if (a.size() >= 1 && a[0] == "reserve" && a.size() == 1) {
         char b[160];
