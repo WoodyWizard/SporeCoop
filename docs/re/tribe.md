@@ -2302,12 +2302,13 @@ per member mirror `a<id>` (the driving's aim), `r<id>` (M1's raw lead: the newes
 * ✔ fix (tribe.mirror_keep): keep_lost for walked member mirrors: an error over 0.75 m that grows for 0.15 s moves it by
   teleports with the mark at the catch-up speed until it is within 0.2 m. Test: body_trail_tribe_hold (`coop.tribe undo
   <id> <s>` plants the hold: the game's walk and every unmarked placing undone, 0.04 m a frame; marked teleports kept).
-* ✔ observed (BUG-0445, npc_walk_tribe at 30 fps over SPORE_NET=player, lab 20261107-103414 #1, track
-  out/lane7/track/npc_walk_tribe_20261107-103605.json): 6 one-frame jumps of 2.5-3.4 m of walked animal proxies, each the
-  frame after the proxy's lead target itself stepped 2.1-3.4 m (a walking state known late) and walk_place's snap
-  (2.5 m) teleported it there: BUG-0650's mechanism on the NPC proxies, whose buffers had no drive.lead_late. Fix
-  `coop.fix drive.lead_late_npc`: SnapshotBuffer::late_lead for the proxies (late_time without smooth_max's rules: no
-  no-lead rule, no offset smoothing), the catch-up frames bounded by WalkPlace::lead_speed as the members'.
+* ✔ observed (BUG-0445, npc_walk_tribe at 30 fps over SPORE_NET=player, labs 20261107-103414, -112016 / -112016-2,
+  tracks out/lane6|7/track/npc_walk_tribe_*.json): one-frame jumps of 2.5-5.6 m of walked animal proxies, each the frame
+  after the proxy's lead target stepped as far (the host's NPC moving smoothly at 0.2 m a frame) and walk_place's snap
+  (2.5 m) teleported it there. Some are a walking state known late (BUG-0650's case), most the lead's extrapolation
+  through a spike or loss burst (up to kMaxLead 0.6 s at the old speed) while the NPC slowed or turned: 4-5 m off when
+  the next state came. ✔ tried and reverted: drive.lead_late for the proxies' buffers (`drive.lead_late_npc`): it failed
+  on and off alike at the same time (-112016 lane 6 on, -112016-2 lane 7 off). Open as BUG-0674 (the lead through a gap).
 * ✔ (BUG-0410) with drive.lead_keep a frame of a catching-up mirror is held to 2 x its own speed + catch_up
   (WalkPlace::lead_speed): unbounded, the game's walk at 13-17 m/s plus catch_prop drew 1.0-1.4 m frames
   (tribe_walk_player lab 20261107-102038 #3); with catch_prop off instead a 6-9 m error took 0.6 s to close.

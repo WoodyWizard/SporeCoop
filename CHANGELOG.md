@@ -8,8 +8,6 @@
 - Tribe: a citizen the guest's own game held back no longer falls up to 8 m behind and jumps back; it is kept on its
   path (BUG-0386).
 - Civilization: the host's vehicles are no longer drawn a step behind on the guest's screen (BUG-0438).
-- Creature and Tribe: on a connection with latency spikes the host's animals no longer jump 2-3 m on the guest's screen
-  when they start to walk (BUG-0445).
 
 ## [0.7.9] - 2026-11-07
 
