@@ -106,10 +106,14 @@ def main():
             first_diff = first_diff or (round(time.time() - t0), d[:4])
         print(f'  [{time.time() - t0:4.0f}s] host nests evolved {sum(1 for v in hs.values() if v[1] > 0)}/{len(hs)}, '
               f'compared {n}, differ {len(d)} {d[:3]}; extinct nest host {he and he[1:4]} guest {ge and ge[1:4]}', flush=True)
+    hs, gs = herds(host), herds(guest)
+    thr = [(k, v[3], g[3]) for k, v in hs.items() for kk, g in gs.items() if near(k, kk) and v[1] > 0 and v[3] != g[3]]
+    print(f'  evolved nests whose threshold +0x94 differs (home, host, guest): {thr[:4]}', flush=True)
     print('  guest wsync:', [l for l in guest.call('coop.wsync')['out'].splitlines() if 'herd_evo' in l], flush=True)
     ck(evolved_host > 0, f'the host\'s game evolved NPC nests after the DNA ({evolved_host})')
     ck(samples >= 3 and bad == 0, f'every guest nest has the host\'s generation and species in every sample ({samples - bad}/{samples}'
        f' samples equal; first difference {first_diff})')
+    ck(not thr, f'every evolved guest nest has the host\'s next threshold +0x94 ({len(thr)} differ)')
     ck(not extinct_evolved, f'the nest extinct on the host is not evolved in the guest\'s game ({extinct_evolved[:3]})')
     for c in (host, guest):
         c.call('coop.team on')
