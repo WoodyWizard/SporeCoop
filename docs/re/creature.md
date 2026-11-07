@@ -3434,3 +3434,13 @@ BUG-0640, BUG-0496, BUG-0641. GOG 2024, Ghidra (out/ghidra-2024) and the Discord
   (player_rules.cpp): after the game's hit, a spit on the partner's puppet (host) or on an NPC's mirror (guest) is
   sent to the game of the charge (K_SPIT_PLAYER / K_SPIT_NPC), which stuns its own creature when it is charging.
   `coop.rules use <type> <from> <to>` plays an ability of a type (tests), `coop.rules charging <who>` reads +0xE8C.
+* ✔ (the report, the host's log) Where the host's migration started: the brain grew in play at s ~1140 (max health
+  23 -> 33, no editor), the host's creature died at s 1246 and came back as a hatchling (16/16, half of 33) with its
+  family's creatures moved (npc 235-239 of the player species): the respawn's stage return (0xD43DE0) runs
+  CreatureGame_AfterEditor, whose threshold check started the migration then; the goal card shows it at s 1321. The
+  guest's respawn in the same second came before its own brain upgrade (s ~1265), so its game had no migration, and
+  it had no later stage return before the host claimed. So a migration starts in each game at its own next editor
+  or respawn after the threshold: the games migrate at different times or one never does. ~ Inferred: the in-place
+  decision after the editor (s 792, "migration 0 -> 0") was right then; it is not where this case is decided.
+* ✔ (lab 20261107-073825 / 073828, coop_nest_follow.py --editor) After the evolution vote with both editors each
+  game's AfterEditor migrates by itself: the guest claimed the new nest also with `wsync.creature_nest` off.
