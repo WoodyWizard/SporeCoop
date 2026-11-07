@@ -64,3 +64,4 @@ copy is made 3 s after the host's bundle first comes). Civ (play_civ lab 2026110
 - 2026-11-06: opened.
 - 2026-11-06 (fix/w45-world-objects): opened.
 - 2026-11-06 (fix/w45-last, L5 of 0.7.9): census holder groups in the detector; unbound carried copies kept for good found and fixed (wobj.bundle_carried); test host_bundle_carry.
+- 2026-11-06 (orchestrator, log sweep): play_tribe unmatched:game_bundle on rel/0.7.9 2-23 rows a run (20, 11, 23, 2) vs 16-19 on 0.7.8: the claim is to be confirmed in the 0.7.9 final check by twin runs (play_tribe x4, with and without SPORE_FIX_OFF of its switch).
