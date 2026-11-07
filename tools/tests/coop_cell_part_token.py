@@ -95,11 +95,17 @@ def locks(con):
 
 
 def touched(con, key):
-    """<con> swims onto token <key>: True when its game collected it (the button shows, the token is gone)"""
+    """<con> swims onto token <key>: True when its game collected it (CollectPart 0xE5D7B0: the button shows AND a
+    part state changed; the button alone also comes back by itself, lab 20261107-020528 #1), None when its game has
+    no such token to touch"""
     tl = next((l for l in con.call('coop.pool tokens')['out'].splitlines() if l.startswith(f'token {key} ')), '-')
     print(f'  locks (+0x112 +0x113 +0x178 +0x17F) {locks(con)}; {tl}', flush=True)
-    print(f'  {con.name if hasattr(con, "name") else ""}swimto:', con.call(f'coop.pool swimto {key} tp')['out'].strip(), flush=True)
-    return wait(lambda: button(con) == 1, 6)
+    p0 = parts(con)
+    r = con.call(f'coop.pool swimto {key} tp')['out'].strip()
+    print('  swimto:', r, flush=True)
+    if r.startswith('no such'):
+        return None
+    return wait(lambda: button(con) == 1 and parts(con) != p0, 8)
 
 
 def main():
@@ -137,6 +143,9 @@ def main():
         wait(lambda: re.search(r'gfx=[1-9]', guest.call(f'coop.pool cell {key}')['out']), 10)
         print('  guest token:', ' | '.join(guest.call(f'coop.pool cell {key}')['out'].strip().splitlines())[:400], flush=True)
         got = touched(guest, key)
+        if got is None:  # the host's game removed it (it culls cells that move out of its active tiles) before the touch
+            print(f'  the guest\'s game has no {key} any more: next token', flush=True)
+            continue
         time.sleep(4)  # the shared set (resent every 3 s)
         b1, gp1, hp1 = button(guest), parts(guest), parts(host)
         gone = not host.call(f'coop.pool cell {key}')['out'].startswith('cell ')
