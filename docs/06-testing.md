@@ -4698,3 +4698,12 @@ task for outside the frame queued just before). Turn the hold off at the end (`s
 session or world change. Frames are checked with the `frame` command 5 s and 15 s later. With `kit.outpump` off a caught
 fault inside a frame with an outside task pending freezes the mod (the game's message loop never returns): any test can
 show that, this one does on purpose.
+
+## A console NPC is no saved stray (2026-11-07, fix/w46-misc)
+<a id="testing-console-npc"></a>
+
+BUG-0673. `coop.npc spawn <hex>` makes its creature in a herd of its own (game::create_herd, no archetype): no tuning
+(+0xE84), the look of a saved partner's puppet. From 0.7.8 on `npc.stray_ids` (BUG-0385) gave such a creature no NPC
+id, so nest_species, creature_desync and old_species never saw it in the host's `coop.npc list` (nest_species failed
+4 of 4 on rel/0.7.10). The creatures of `coop.npc spawn` are exempt from both stray rules now (`tools.console_npc`;
+off: nest_species FAILs, 20261107-113816; on: PASS 20261107-113618). Tests no longer need `coop.npc strays off` for them.
