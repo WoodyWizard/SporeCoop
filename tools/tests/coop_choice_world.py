@@ -158,14 +158,22 @@ def run(host, guest, ck):
         guest.call('click %d %d' % DONE)
     ok = wait(lambda: 'Creature' in mode(guest) and avatar(guest), 180, 2)
     ck(ok, f'the guest plays Creature in the host\'s world ({mode(guest).strip()})')
-    time.sleep(10)  # the creation swap after the load (the report: 3 s after the load)
-    g_av, h_pup = avatar(guest), puppet(host, 1)
-    print(f'  host avatar {h_av}, guest avatar {g_av}, host shows the guest as {h_pup}, other world\'s choice {other}',
+    # the creation swap came 3 s after the load in the report, 25 s in the lab (20261106-230447): 45 s of samples
+    t0, bad, seen = time.time(), [], []
+    while time.time() - t0 < 45:
+        g_av, h_pup = avatar(guest), puppet(host, 1)
+        seen.append((round(time.time() - t0), g_av, h_pup))
+        if g_av != h_av or (time.time() - t0 > 10 and h_pup != h_av):
+            bad.append(seen[-1])
+        time.sleep(3)
+    print(f'  host avatar {h_av}, other world\'s choice {other}; samples (s, guest avatar, host shows the guest): {seen}',
           flush=True)
     print('  guest:', guest.call('coop.creations worlds')['out'].strip(), flush=True)
-    ck(g_av == h_av and g_av != other,
-       f"the guest plays the world's species {h_av} after the load, not the other world's chosen {other} (guest {g_av})")
-    ck(wait(lambda: puppet(host, 1) == h_av, 20), f"the host's game shows the guest with the world's species ({puppet(host, 1)})")
+    ck(not [b for b in bad if b[1] != h_av],
+       f"for 45 s after the load the guest plays the world's species {h_av}, not the other world's chosen {other} "
+       f"(other: {[b for b in bad if b[1] != h_av][:3]})")
+    ck(not [b for b in bad if b[2] != h_av],
+       f"the host's game shows the guest with the world's species (other: {[b for b in bad if b[2] != h_av][:3]})")
     shot(guest, 'choice_world_guest.png')
     shot(host, 'choice_world_host.png')
     ck.faults(host=host, guest=guest)
