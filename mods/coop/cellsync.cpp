@@ -906,6 +906,33 @@ static void SK_CDECL h_Break(uint8_t* victim, uint8_t* attacker, float f)
     o_Break(victim, attacker, f);
 }
 
+// BUG-0635: RemoveCellsOfOldScale 0xE7CD10 (a level change) on the host destroys every cell outside the HOST's visible box (0xE5CDE0: the sphere
+// pos +0x4C, 1.7 x size +0x58 against Simulator::Cell::ViewBoxes, the background ones by the frustum)
+// and repopulates the tiles: the cells a partner had on its screen vanished there and new ones came
+// at other places (a churn after every level-up, a single player keeps what is in its view). With
+// cell.levelup_keep the host's wipe keeps a cell inside any partner's visible box as it keeps the
+// ones in its own (the box +-10 x +-7.5 around the partner's cell, with a margin for its camera).
+// Off: 0.7.9 (only the host's view is kept).
+static bool g_fix_levelup_keep = true;
+COOP_FIX("cell.levelup_keep", "BUG-0635", g_fix_levelup_keep, "cell: a level change on the host keeps the cells on a partner's screen, as a single player keeps the cells in its view (they vanished on the guest and new ones came)");
+static bool g_in_wipe; // host: inside RemoveCellsOfOldScale
+static uint32_t g_wipe_kept, g_wipe_destroyed, g_wipe_near_lost; // host: per session (tests)
+// host: is the cell's sphere inside a partner's visible box (as 0xE5CDE0 tests the host's own box)?
+static bool in_partner_view(uint8_t* c)
+{
+    float r = 1.7f * F<float>(c, kSize);
+    if (!std::isfinite(r))
+        return false;
+    for (int id = 1; id < 4; id++) {
+        uint8_t* pc = puppet_cell(id);
+        if (!pc)
+            continue;
+        float dx = std::fabs(F<float>(c, kPos) - F<float>(pc, kPos)), dy = std::fabs(F<float>(c, kPos + 4) - F<float>(pc, kPos + 4));
+        if (dx <= 15.f + r && dy <= 11.f + r)
+            return true;
+    }
+    return false;
+}
 using Destroy_t = void(SK_CDECL*)(uint32_t, bool, float, int);
 static Destroy_t o_Destroy;
 static uint32_t g_dbg_destroys, g_dbg_expect, g_dbg_freed, g_dbg_nogfx, g_dbg_alive; // RE (BUG-0355)
@@ -951,6 +978,18 @@ static void SK_CDECL h_Destroy(uint32_t idx, bool loot, float f, int x)
             F<uint8_t>(c, kDead) = 0;
             F<uint8_t>(c, kDying) = 0;
             return;
+        }
+    }
+    if (g_in_wipe && is_host()) { // BUG-0635: the host's level change and a partner's screen
+        uint8_t* c = modes::cell_at(idx);
+        if (c && c != avatar() && !modes::cell_is_puppet(c)) {
+            bool in_view = in_partner_view(c);
+            if (in_view && g_fix_levelup_keep) {
+                g_wipe_kept++;
+                return;
+            }
+            g_wipe_destroyed++;
+            g_wipe_near_lost += in_view;
         }
     }
     if (is_guest() && !g_our_destroy && in_cell()) {
@@ -1409,7 +1448,9 @@ static void SK_CDECL h_Wipe()
 {
     if (is_guest() && in_cell())
         g_wipes++; // h_Destroy keeps the mirrors (not touched by us): the host's state replaces them
+    g_in_wipe = is_host() && in_cell();
     o_Wipe();
+    g_in_wipe = false;
 }
 
 using Populate_t = int(SK_CDECL*)(float, int, int, void*, void*, void*, int);
@@ -4509,6 +4550,22 @@ std::string debug(const std::vector<std::string>& a)
         h_DamageCell(best, av, dir, 4, 0, 0.f);
         return "bit mirror " + std::to_string(F<uint32_t>(best, 0)) + " at " + std::to_string(bd);
     }
+    if (a.size() >= 2 && a[0] == "gap") { // tests (BUG-0634): our cell and the cell <key>: centre distance, sizes, own pairs so far
+        uint32_t key = (uint32_t)strtoul(a[1].c_str() + (a[1][0] == 'c' ? 1 : 0), nullptr, 10);
+        uint8_t* c = nullptr;
+        if (is_guest()) {
+            auto it = g_mirrors.find(key);
+            c = it != g_mirrors.end() && it->second.local ? modes::cell_at(it->second.local) : nullptr;
+        } else
+            c = modes::cell_at(key);
+        if (!c)
+            return "no such cell";
+        char b[200];
+        snprintf(b, sizeof b, "gap %s d=%.3f own=%.3f other=%.3f own_pairs=%u particles=%d/%d ailock=%d dead=%d\n", a[1].c_str(),
+                 net::dist(pos_of(c), pos_of(av)), F<float>(av, kSize), F<float>(c, kSize), g_own_pairs, F<int>(av, 0x250), F<int>(c, 0x250),
+                 F<uint8_t>(c, kAiLock), F<uint8_t>(c, kDead) | F<uint8_t>(c, kDying));
+        return b;
+    }
     if (!a.empty() && a[0] == "food_near") { // tests (BUG-0636): the nearest plant / meat cell of the host's pool within <max> m
         float best = a.size() > 1 ? (float)atof(a[1].c_str()) : 30.f;
         uint8_t* bc = nullptr;
@@ -4745,11 +4802,13 @@ std::string debug(const std::vector<std::string>& a)
         for (size_t i = 0; i < v.size() && i < 20; i++) {
             auto it = g_host_of.find(F<uint32_t>(v[i].second, 0));
             uint32_t key = is_guest() && it != g_host_of.end() ? it->second : F<uint32_t>(v[i].second, 0);
-            snprintf(b, sizeof b, "token c%u pos=(%.1f %.1f) dist=%.1f size=%.2f level=%d\n", key, pos_of(v[i].second).x, pos_of(v[i].second).y,
-                     v[i].first, F<float>(v[i].second, kSize), F<int>(v[i].second, kLevel));
+            snprintf(b, sizeof b, "token c%u pos=(%.1f %.1f) dist=%.1f size=%.2f level=%d lock17b=%d\n", key, pos_of(v[i].second).x, pos_of(v[i].second).y,
+                     v[i].first, F<float>(v[i].second, kSize), F<int>(v[i].second, kLevel), F<uint8_t>(v[i].second, 0x17B));
             o += b;
         }
-        snprintf(b, sizeof b, "tokens=%u own_level=%d\n", (unsigned)v.size(), F<int>(av, kLevel));
+        // 0xE7B630 collects a token only while our cell's +0x112 / +0x113 / +0x178 / +0x17F and the token's +0x17B are 0
+        snprintf(b, sizeof b, "tokens=%u own_level=%d own_locks=%d%d%d%d anim=%d\n", (unsigned)v.size(), F<int>(av, kLevel), F<uint8_t>(av, 0x112),
+                 F<uint8_t>(av, 0x113), F<uint8_t>(av, 0x178), F<uint8_t>(av, 0x17F), F<int>(av, 0x18C));
         return o + b;
     }
     if (!a.empty() && a[0] == "mate") { // tests: the mating-call button (S+0x69), the mate, where it is
@@ -5497,9 +5556,10 @@ std::string status()
              (unsigned)g_starved.size(), g_tiles_fed, g_tiles_core, g_send_capped, g_mirror_capped, cells_live(), g_cells_peak, g_tile_level, g_nan_pop_skips, g_nan_heals);
     char j[96];
     snprintf(j, sizeof j, "cell_guest_fx: joins_after_load=%u bite_rings=%u\n", g_joins_load, g_bite_rings); // BUG-0352, BUG-0350
-    char o[200]; // BUG-0632 / BUG-0636 (class BUG-0420)
-    snprintf(o, sizeof o, "cell_once: kill_once=%d eat_once=%d kills_dup_sent=%u kills_dup_refused=%u eaten_skipped=%u gone_again=%u\n",
-             (int)g_fix_kill_once, (int)g_fix_eat_once, g_kills_dup_sent, g_kills_dup_refused, g_eaten_skipped, g_gone_again);
+    char o[300]; // BUG-0632 / BUG-0636 (class BUG-0420), BUG-0635
+    snprintf(o, sizeof o, "cell_once: kill_once=%d eat_once=%d kills_dup_sent=%u kills_dup_refused=%u eaten_skipped=%u gone_again=%u wipe_kept=%u wipe_destroyed=%u wipe_near_lost=%u\n",
+             (int)g_fix_kill_once, (int)g_fix_eat_once, g_kills_dup_sent, g_kills_dup_refused, g_eaten_skipped, g_gone_again,
+             g_wipe_kept, g_wipe_destroyed, g_wipe_near_lost);
     return b + std::string(d) + t + j + o;
 }
 

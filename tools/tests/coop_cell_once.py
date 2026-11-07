@@ -127,15 +127,45 @@ def eat_case(host, guest, ck, rounds):
     ck(done >= rounds, f'the guest ate {done} of {rounds} cells')
 
 
+def locks(con):
+    m = re.search(r'own_locks=(\d+) anim=(-?\d+)', con.call('coop.pool tokens')['out'])
+    return (m.group(1), int(m.group(2))) if m else ('?', -1)
+
+
+def token_case(host, guest, ck, rounds):
+    """probe (BUG-0633): the host's own collect locks after a guest's kill next to it"""
+    for i in range(rounds):
+        k = guest.call('coop.pool kill')['out']
+        m = re.match(r'bit (c\d+) ', k)
+        if not m:
+            guest.call('coop.pool tp 30 0')
+            host.call('coop.pool tp 2 1')
+            time.sleep(2)
+            continue
+        key = m.group(1)
+        guest.call(f'coop.pool swimto {key} tp')
+        host.call('coop.pool tp 2 1')
+        time.sleep(0.5)
+        print(f'  before kill {i}: host locks {locks(host)}', flush=True)
+        for _ in range(12):
+            r = guest.call(f'coop.pool kill {key}')['out']
+            if 'dying' in r or r == 'gone' or stat(guest)['kills_sent'] > 0 and 'hp=0' in r:
+                break
+            time.sleep(0.6)
+        for t in range(8):
+            print(f'    +{t * 0.5:.1f} s host locks {locks(host)} guest locks {locks(guest)}', flush=True)
+            time.sleep(0.5)
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--case', choices=('kill', 'eat'), required=True)
+    ap.add_argument('--case', choices=('kill', 'eat', 'token'), required=True)
     ap.add_argument('--rounds', type=int, default=4)
     a = ap.parse_args()
     host, guest = start('cell')
     ck = Checks()
     time.sleep(3)
-    (kill_case if a.case == 'kill' else eat_case)(host, guest, ck, a.rounds)
+    {'kill': kill_case, 'eat': eat_case, 'token': token_case}[a.case](host, guest, ck, a.rounds)
     g = stat(guest)
     h = stat(host)
     print(f'  guest: kills_sent={g["kills_sent"]} dup_sent={g["kills_dup_sent"]} eats_sent={g["eats_sent"]} gone_again={g["gone_again"]} '
