@@ -1740,3 +1740,42 @@ BUG-0480. GOG 2024, lane 7, `coop_cell_gone.py --case play` (cold starts), Ghidr
   hooks made after boot) act only on a hook made after the first frame: none was made before the fault (the input
   hooks come with the first injected key, the Cell model hooks of modes.cpp ensure_model_hook with the first mirror
   or puppet cell, both in a session). Not reproduced in 13 cold loads: see BUG-0622.
+
+## A guest's kill and meal once; the host's level-change wipe and a partner's screen (2026-11-06, fix/w46-cell-p0)
+<a id="cell-once"></a>
+
+BUG-0632, BUG-0636, BUG-0635 (player report 2026-11-06, 0.7.8). GOG 2024, lanes 2 and 3.
+
+* ✔ (runtime, `coop_cell_once.py --case kill`) A host's break (BreakOrSwallow from a guest's ACT_BREAK) plays its
+  animation before the dying flag and the loot (event 5 -> 0xE7ADD0); meanwhile the guest's mirror still looks
+  alive (hp 0, no dying / dead flag in the state, its own animation state not 7/8/9 because the break did not run
+  there), so every further bite of the guest's game on it is lethal again and sent again. The host broke the same
+  cell 3-4 times (two or more deaths, two or more loot drops on one spot: the "giant piece of meat"). The third
+  one in the players' log was refused only because the cell was gone by then.
+* ✔ (runtime, `--case eat`, SPORE_NET delay=150) A cell the guest ate is erased from the guest's mirror maps
+  (h_Destroy) and sent as ACT_GONE; state chunks the host sent before it heard of the meal still list the index,
+  and the guest's mirror pass made it again 30-100 ms later; the guest's game ate it again (1-3 times per meal
+  with the mouth on the spot). The host counts the food once ("not here, no points" / points taken back).
+* Class BUG-0420 mechanism: `cell_logic::Once` (cell_logic.h, unit test `once` in tests/cell_tests.cpp), a
+  once-only ledger of pool indices (generation included, so a reused slot is another key) with a ttl.
+  `cell.kill_once`: the guest sends a kill / break of a host index once (10 s), the host applies one once (10 s).
+  `cell.eat_once`: the guest's tombstone of eaten host indices (5 s): no mirror is made of them. `coop.pool` prints
+  `cell_once: ... kills_dup_sent kills_dup_refused eaten_skipped gone_again`.
+
+<a id="cell-levelup-view"></a>
+* ✔ (Ghidra) RemoveCellsOfOldScale 0xE7CD10 destroys (DestroyCell(idx, 0, 0, 0)) every pool cell with level != -1
+  for which 0xE5CDE0 is true (and that heads its +0x36C chain), then PopulateTile 0xE7C6C0 for every tile object.
+  0xE5CDE0 (EAX = the cell): false for the mate G+0x51D4 and the avatar G+0x411C; a foreground cell (+0x35C ==
+  G+0x40FC): true when the sphere at +0x4C with radius 1.7 x +0x58 does not touch the visible box
+  Simulator::Cell::ViewBoxes; a background cell: by the frustum. It runs only when the world scale tier changes:
+  `coop.pool food 50` (one level) made no wipe in the fixture, `+-150` (three levels) one wipe each time (host
+  394-995 cells destroyed).
+* ✔ (runtime, `coop_cell_levelup_view.py`, the guest 30 m from the host) On the host the wipe keeps only what is in
+  the HOST's view: 82-163 of the destroyed cells per wipe were inside the guest's visible box, and the guest lost
+  100% of the cells on its screen on every change (up and down), while the host's own game lost 0-36% on a level
+  down and ~90% on a level up (lab 20261106-220609). So a level-up replaces most of the screen in a single
+  player's game too (the cells of the old tier go, also those the wipe kept: the tiles of the new level), but a
+  level down keeps most of it; the guest lost all of it both ways. Fix `cell.levelup_keep` (cellsync.cpp h_Wipe /
+  h_Destroy, host): inside the wipe a cell within +-15 x +-11 (+ its 1.7 x size radius) of a partner's cell is
+  kept, as 0xE5CDE0 keeps the host's view (121-170 kept per wipe); the guest then loses about what the host loses
+  (60% vs 52% over 6 changes, lab 20261106-220831).

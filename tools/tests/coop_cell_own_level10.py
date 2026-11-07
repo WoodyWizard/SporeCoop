@@ -5,10 +5,12 @@ cells in the host's world that do not belong to the level?
 Two games in the Cell fixture. The host's shared food goes to the player's report (924: level 10). The host's
 pool is listed by creature model and level (`coop.pool species`) a while after the level change (the
 level's own population), then the host's own cell is changed with the co-op window's arrows
-(`coop.creations next cell`, `prev cell`: the level is rebuilt) and listed again, and once more after the
-guest left and joined again. Checked in the host's game: after the rebuild no creature model the level did
-not have before, no creature of a level outside the level's range (IsTileActive: the level base and the next five), and the
-host's own species and the guest's cell are not among the NPCs.
+(`coop.creations choose cell`: a premade cell, then the first one again, as the window's arrows do: the level is
+rebuilt each time) and listed again.
+Checked in the host's game: after the rebuild no creature of a level outside the level's range (IsTileActive:
+the level base and the next five), no creature model the level did not have before other than the player's own
+species (the game populates NPCs of the player's species, also in a single player's game), and no NPC of the
+previous own cell is left.
 
   coop_cell_own_level10.py [--food 924]
 """
@@ -52,7 +54,8 @@ def main():
     seen_models = set(base[1])
     gown = species(guest)[0][0]
     rows = []
-    for cmd in ('next cell', 'prev cell'):
+    orig = base[0][0]
+    for cmd in ('choose cell BAF1AD40', f'choose cell {orig}'):  # a premade cell (the test profiles have no own ones), then back
         r = host.call(f'coop.creations {cmd}')['out'].strip()
         print(f'  host: coop.creations {cmd}: {r[:160]}', flush=True)
         time.sleep(8)
@@ -60,13 +63,18 @@ def main():
         show(f'host after {cmd}', sp)
         show(f'guest after {cmd}', species(guest))
         rows.append((cmd, sp))
+    prev = orig
     for cmd, (own, m) in rows:
         lv0 = own[2]
-        new = [k for k in m if k not in seen_models]
+        new = [k for k in m if k not in seen_models and k != own[0]]
         odd = [(k, lv) for k, (n, lv) in m.items() if any(l < lv0 - 1 or l > lv0 + 5 for l in lv if l >= 0)]
         ck(not odd, f'after {cmd}: every creature of the host\'s pool belongs to the level (food level {lv0}; outside: {odd})')
-        ck(own[0] not in m and gown not in m, f'  the players\' cells ({own[0]}, guest {gown}) are not NPCs of the level')
-        print(f'  after {cmd}: models not seen before the change: {new}', flush=True)
+        # the game populates NPCs of the player's own species (8 of the fixture's own cell before any change, as in a
+        # single player's game): after a change they are of the new species, none of the previous one is left
+        ck(prev == own[0] or prev not in m, f'  no NPC of the previous own cell {prev} is left (own species now {own[0]} x{m.get(own[0], (0,))[0]})')
+        ck(not new, f'  no creature model the level did not have before, other than the own species ({new})')
+        prev = own[0]
+    host.call('coop.creations unchoose cell')
     ck.faults(host=host, guest=guest)
     return ck.result()
 

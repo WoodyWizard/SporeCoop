@@ -7,6 +7,12 @@
   report and its `.dmp`); the `.txt` and `.dmp` alone are needed only when there is no such zip.
 
 ### Fixed
+- Cell: a guest's kill now happens once in the host's world: biting a dying creature again no longer kills it a
+  second time with a second drop of meat (BUG-0632).
+- Cell: a guest can no longer eat the same plant or piece of meat twice (it came back for a moment right after it
+  was eaten) (BUG-0636).
+- Cell: after a level change the cells on the guest's screen no longer all vanish and get replaced; the guest keeps
+  what is on its screen as the host does (BUG-0635).
 - Creature: spending DNA in an editor no longer lowers the other players' evolution bar (the bar could drop to almost
   nothing after both players used their editors, or be halved); a spend now takes only the shared DNA, as in a game
   of one, and the bar keeps everything the party earned (BUG-0630).
