@@ -1779,3 +1779,13 @@ BUG-0632, BUG-0636, BUG-0635 (player report 2026-11-06, 0.7.8). GOG 2024, lanes 
   h_Destroy, host): inside the wipe a cell within +-15 x +-11 (+ its 1.7 x size radius) of a partner's cell is
   kept, as 0xE5CDE0 keeps the host's view (121-170 kept per wipe); the guest then loses about what the host loses
   (60% vs 52% over 6 changes, lab 20261106-220831).
+
+### The player's own species as NPCs; an own-cell rebuild at level 10 (BUG-0637)
+<a id="cell-own-species"></a>
+
+* ✔ (runtime, `coop.pool species`, Cell fixture at food 924 = level 10) the game populates the level with NPCs of
+  the player's own cell (S+0x10): 6-8 creatures of model 4DA56CA5 (the fixture's own cell) next to the level's
+  species (levels 9-11). After an own-cell change (`coop.creations choose cell`, S+0x10 and RebuildLevel) they are of
+  the new cell (BAF1AD40 x16-18), none of the previous one is left, and every creature is of levels 9-11 (labs
+  20261106-221411, -221722). A rebuild populates about twice as many creatures as the level had after its slow
+  growth (39 -> 73-78).
