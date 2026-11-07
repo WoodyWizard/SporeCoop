@@ -8,7 +8,7 @@ reported: 2026-11-05
 source: detector, campaign_space lab 20261105-132636 (fix/w44-world-state2); rel/0.7.7 final 20261105-015350
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.9
 branch: fix/w45-placement
 commits: a42f6e5f, 03b802ec, 76f7ab66
 tests: civ_city_layout (coop_civ_city_layout.py)
@@ -63,3 +63,5 @@ moved=1, no more replacing). Detector before: campaign_space out/lab/20261106-06
 - 2026-11-06 (fix/w45-placement): regression with SPORE_DETECTOR=20: smoke out/lab/20261106-074134 (14/14), play_tribe out/lab/20261106-073013, play_civ / play_space and the touched tests out/lab/20261106-080336 (9/9; play_civ: no planet:building or scale:vehicle row, the guest's buildings_fixed=+0/-8 off_slot=0).
 - 2026-11-06: Discord report 2026-11-06 (0.7.8, discord-2026-11-06/M0ng0r-17): "city's buildings get reshuffled after I place them or switch their places": the guest's buildings_fixed stays +0..+21 until the first capture (s 6279), then climbs +46 / +146 / +443 / +806 / +1202-1201 (s 6370..6700, 3-5 destroy-and-rebuild pairs a second), captures at s 6279, 6424, 6585, 6791: this ticket's mechanism; 0.7.8 has no civ.city_layout. Not covered by this ticket's text: the guest's own buildings moving in its own planner; check with the 0.7.9 fix.
 - 2026-11-06 (orchestrator, log sweep): campaign_space (24-30 building_industry rows a run on 0.7.8) not yet run with the fix; it runs in the 0.7.9 final check.
+- 2026-11-07 (orchestrator, final check): campaign_space on rel/0.7.9 out/lab/20261106-231404 OK with SPORE_DETECTOR=20: 0 Civilization:planet:building_industry rows (230 detector rows in all), against 24-36 rows in each of the three rel/0.7.8 runs (out/lab/20261105-134715, -151211, -155603 in the rel/0.7.8 worktree). Confirmed.
+- 2026-11-07: released in 0.7.9.

@@ -8,7 +8,7 @@ reported: 2026-11-04
 source: lab, coop_civ_tribe_left (fix/w42-civ-left, out/lab/20261104-131223)
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.9
 branch: fix/w45-world-objects
 commits: 6a642757, c3097c62, 03c81177
 tests: host_bundle, host_bundle_civ (tools/tests/coop_world_host.py --case bundle / bundle_civ)
@@ -56,3 +56,4 @@ and faulted the host on a null vtable, lab 20261106-042445). Switch `coop.fix wo
 - 2026-11-04: opened.
 - 2026-11-04 (fix/w42-civ-left): opened.
 - 2026-11-06 (fix/w45-world-objects): fixed for ground and carried food (Tribe, Civ), tests host_bundle and host_bundle_civ; rows left in BUG-0617.
+- 2026-11-07: released in 0.7.9.

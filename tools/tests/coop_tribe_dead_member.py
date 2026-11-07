@@ -13,15 +13,33 @@ PASS: whenever the host's game has a citizen there, the guest's has one within 1
 SPORE_FIX_OFF=tribe.dead_body: must FAIL.
 
   SPORE_LANE=4 python3 tools/tests/coop_tribe_dead_member.py [--all: every member of that tribe] [--player: a member of
-  the host's own tribe, BUG-0620; SPORE_FIX_OFF=tribe.member_body must FAIL]
+  the host's own tribe, BUG-0620; SPORE_FIX_OFF=tribe.member_body must FAIL] [--rejoin: BUG-0664, below]
+
+--rejoin (BUG-0664): the guest leaves and joins again; once the host has saved the world for it, the host's own
+member is killed, so the guest loads a world where that member is a body out of its tribe's list on the host. The
+host's sync-check is asked again and again while the body lies there. PASS: no MISMATCH (long_tribe on rel/0.7.9:
+"t: 1 missing on the guest" twice, after the restart and after the rejoin). SPORE_FIX_OFF=tribe.sync_bodies must FAIL.
+
+--eat (BUG-0667): before the host's own member is killed, the guest's mirror of it starts eating at its food mat in the
+guest's own game (`coop.tribe localbt` + `coop.tribe eat`: its tree runs as while the host is away, long_tribe's
+editor visit), so the eat node 0x0461300F is active on the mirror when its body is destroyed. PASS: the body goes on the
+guest with no caught fault and the guest keeps drawing frames. SPORE_FIX_OFF=tribe.body_teardown must FAIL (the fault
+at 0xAC9C7D, data 0x39C; long_tribe's guest froze after it).
+--eat --menu (BUG-0667, long_tribe_short 20261107-043030): as --eat, but once the guest has taken the body out of its
+tribe (bodies_detached), the guest leaves to the main menu through the pause menu (Exit to Main Menu, Don't Save x2)
+while the body still lies: the world's teardown destroys the tribes first and the body after them. PASS: no caught
+fault, the guest reaches the main menu and runs frames. SPORE_FIX_OFF=tribe.body_teardown must FAIL.
 """
 import math
+import re
 import sys
 import time
 
+import lane
+
 import worlddiff
 from coop_tribe import members
-from twoinst import Checks, start
+from twoinst import Checks, start, wait_guest_in
 
 
 def citizens_at(con, p, r=20.0):
@@ -33,7 +51,151 @@ def citizens_at(con, p, r=20.0):
 ALL = '--all' in sys.argv
 # BUG-0620: the victim is a member of the player tribe (the host's own): a player's member that dies leaves its
 # tribe's member list while the game keeps its body (an NPC tribe's stays in its tribe, knocked out)
-PLAYER = '--player' in sys.argv
+PLAYER = '--player' in sys.argv or '--rejoin' in sys.argv
+REJOIN = '--rejoin' in sys.argv  # BUG-0664
+EAT = '--eat' in sys.argv  # BUG-0667
+MENU = '--menu' in sys.argv  # BUG-0667: the guest leaves to the main menu while the body lies
+if EAT:
+    PLAYER = True
+EAT_NODE = 0x0461300F
+
+
+def guest_node(con, i):
+    m = re.search(r'node=([0-9A-Fa-f]{8})', con.call(f'coop.tribe ai {i}')['out'])
+    return int(m.group(1), 16) if m else None
+
+
+def frame(con):
+    m = re.search(r'frame=(\d+)', con.call('frame').get('out', ''))
+    return int(m.group(1)) if m else -1
+
+
+def menu_exit(guest, ck):
+    """the guest leaves its world to the main menu as a player does (coop_long_session's menu event)"""
+    import uifind
+    if 'open=1' in guest.call('coop.uistate').get('out', ''):
+        guest.call('key f9')
+    for _ in range(3):
+        guest.call('key esc')
+        time.sleep(1.2)
+        if uifind.shown(guest, 'Resume Game'):
+            break
+    ok = uifind.press(guest, 'Exit to Main Menu', 'Do you want to save your game?') \
+        and uifind.press(guest, "Don't Save", 'Are you sure?') and uifind.press(guest, "Don't Save")
+    ck(ok, 'the guest chose Exit to Main Menu, Don\'t Save')
+    t0, seen = time.time(), False
+    while ok and time.time() - t0 < 60 and not seen:
+        seen = 'GalaxyGameEntry' in guest.call('game.mode').get('out', '')
+        time.sleep(1)
+    ck(seen, f'the guest is in the main menu ({time.time() - t0:.1f} s)')
+    f0 = frame(guest)
+    time.sleep(5)
+    f1 = frame(guest)
+    ck(f1 > f0 + 30, f'the guest runs frames 5 s later (frame {f0} -> {f1})')
+
+
+def eat_then_die(host, guest, ck, victim, attacker):
+    """BUG-0667: the mirror's eat node is active when the guest destroys the body"""
+    print('  guest:', guest.call(f'coop.tribe localbt {victim} 1')['out'].strip(), flush=True)
+    node, t0 = None, time.time()
+    while time.time() - t0 < 30 and node != EAT_NODE:
+        if int(time.time() - t0) % 6 == 0:
+            print('  guest:', guest.call(f'coop.tribe eat {victim}')['out'].strip(), flush=True)
+        time.sleep(1)
+        node = guest_node(guest, victim)
+    print('  guest: ' + guest.call(f'coop.tribe localbt {victim} 0')['out'].strip() + f'; node {node and hex(node)} after '
+          f'{time.time() - t0:.1f} s: {guest.call(f"coop.tribe ai {victim}")["out"].strip()[:160]}', flush=True)
+    ck(node == EAT_NODE, f'the guest\'s mirror of #{victim} is in the eat node (node {node and hex(node)})')
+    if node != EAT_NODE:
+        return
+    print('  host:', host.call(f'coop.tribe pincer {victim} {attacker} 1000')['out'].strip(), flush=True)
+    t1, gone = time.time(), None
+    while time.time() - t1 < 75 and gone is None:
+        time.sleep(3)
+        st = next((x for x in guest.call('coop.tribe')['out'].splitlines() if 'tribe(guest)' in x), '')
+        det = re.search(r'bodies_detached=(\d+)', st)
+        in_g = victim in members(guest) or guest_node(guest, victim) is not None
+        print(f'    {time.time() - t1:4.1f} s: guest has the mirror {in_g}, '
+              f'{det.group(0) if det else ""} {" ".join(re.findall(r"(?:teardown_restored|slot_null_skipped)=\d+", st))}',
+              flush=True)
+        if MENU and det and int(det.group(1)) > 0 and in_g:  # the body lies, out of its tribe: leave the world
+            print('  guest: the body is out of its tribe; to the main menu', flush=True)
+            return menu_exit(guest, ck)
+        if not in_g and det and int(det.group(1)) > 0:
+            gone = time.time() - t1
+    ck(gone is not None, f'the body went on the guest ({gone and round(gone, 1)} s after the kill)')
+    f0 = frame(guest)
+    time.sleep(5)
+    f1 = frame(guest)
+    ck(f1 > f0 + 30, f'the guest runs frames 5 s later (frame {f0} -> {f1})')
+
+
+TRIBE_MODE = 0x1654C02
+
+
+def guest_mode(con):
+    try:
+        return int(con.call('game.mode')['out'].split()[0], 16)
+    except (OSError, ValueError, IndexError):
+        return -1
+
+
+def sync_counts(con):
+    m = re.search(r'checks (\d+) ok (\d+) differs (\d+) mismatch (\d+)', con.call('coop.diag sync')['out'])
+    return tuple(int(x) for x in m.groups()) if m else (0, 0, 0, 0)
+
+
+def bodies_sent(con):
+    m = re.search(r'bodies_sent=(\d+)', con.call('coop.tribe')['out'])
+    return int(m.group(1)) if m else 0
+
+
+def sync_keys(con):
+    return {ln.split()[0] for ln in con.call('coop.sync')['out'].splitlines() if ln.split() and ln.split()[0][:1] == 't'}
+
+
+def rejoin_with_body(host, guest, ck, victim, attacker):
+    """BUG-0664: the guest joins a world in which the host's member died (its body lies, out of the member list)"""
+    host.call('coop.diag sync 600')  # only the checks asked below
+    c0 = sync_counts(host)
+    guest.call('coop.leave')
+    time.sleep(3)
+    guest.call(lane.JOIN)
+    t0 = time.time()
+    # the host saves the world for the guest first (its frames stop under the saved box): kill after that, so the
+    # guest's world still has the member alive and only the host's snapshot names its body
+    while time.time() - t0 < 60 and guest_mode(guest) == TRIBE_MODE:
+        time.sleep(0.3)
+    print(f'  guest left its world after {time.time() - t0:.1f} s', flush=True)
+    print('  host:', host.call(f'coop.tribe pincer {victim} {attacker} 1000')['out'].strip(), flush=True)
+    together = wait_guest_in(host, guest, 150)
+    ck(together, f'the guest is in the host\'s world again ({time.time() - t0:.1f} s)')
+    body_checks, missing = 0, []
+    t1, sent = time.time(), bodies_sent(host)
+    while time.time() - t1 < 24:
+        in_list = victim in members(host)
+        hk, gk = sync_keys(host), sync_keys(guest)
+        key = f't{victim}'
+        # the host's game keeps the body: its snapshot still sends one (tribe.member_body, bodies_sent grows)
+        now_sent = bodies_sent(host)
+        body = not in_list and now_sent > sent
+        sent = now_sent
+        print(f'    {time.time() - t1:4.1f} s: victim in its tribe {in_list}, body sent {body}, host lists {key} '
+              f'{key in hk}, guest {key in gk}; host t {len(hk)} guest t {len(gk)}', flush=True)
+        if body:
+            body_checks += 1
+            if key in hk and key not in gk:
+                missing.append(round(time.time() - t1, 1))
+            host.call('coop.diag sync now')
+        time.sleep(4)
+    time.sleep(5)
+    c1 = sync_counts(host)
+    print(f'  host sync-checks: {c1[0] - c0[0]}, ok {c1[1] - c0[1]}, differs {c1[2] - c0[2]}, mismatch {c1[3] - c0[3]}; '
+          f'samples with the body: {body_checks}, guest without its key: {missing[:6]}', flush=True)
+    host.call('coop.diag sync on')
+    ck(body_checks > 0, f'the host\'s body lay out of its member list after the guest joined ({body_checks} samples)')
+    ck(c1[0] > c0[0], f'the host ran sync-checks ({c1[0] - c0[0]})')
+    ck(c1[3] == c0[3], f'no sync-check MISMATCH while the body lay there ({c1[3] - c0[3]})')
 
 
 def main():
@@ -59,6 +221,14 @@ def main():
         p0 = hm[victim][2]
         attacker = min(npc, key=lambda i: math.dist(npc[i][2], p0))
         npc = {**npc, victim: hm[victim]}
+    if EAT:
+        eat_then_die(host, guest, ck, victim, attacker)
+        ck.faults(host=host, guest=guest)
+        return ck.result()
+    if REJOIN:
+        rejoin_with_body(host, guest, ck, victim, attacker)
+        ck.faults(host=host, guest=guest)
+        return ck.result()
     p = npc[victim][2]
     print(f'  victim #{victim} at {worlddiff._fmt(p)}; host citizens there {len(citizens_at(host, p))}, guest '
           f'{len(citizens_at(guest, p))}', flush=True)

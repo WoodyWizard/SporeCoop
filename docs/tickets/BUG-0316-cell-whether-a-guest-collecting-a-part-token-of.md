@@ -52,3 +52,4 @@ is in 'extended' for that setup flakiness.
 ## History
 - 2026-10-30: opened.
 - 2026-11-06 (fix/w45-cell): checked in the game: the guest gets the part and the button (not a bug), test cell_part_token.
+- 2026-11-07 (fix/w46-part-token): cell_part_token failed on rel/0.7.9 (20261106-231404, 20261107-004042): not a regression (no Cell change since its passes; 7 of 12 fix/w45-cell runs failed too). The test's own food steps started the game's Goldie's demise tutorial, which left both avatars' collect locks set (+0x178; lab 20261107-013013, own_locks 0010 before every touch; BUG-0666, docs/re/cell.md#cell-goldie). The test now marks the tutorial played (`coop.pool mate nogoldie`), counts a collect only with a part state change and skips a token culled before the touch: PASS 3/3 out/lab/20261107-021412 (the guest collects part 7, the host has it, the token is gone on the host).

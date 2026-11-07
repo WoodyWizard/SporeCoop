@@ -236,6 +236,26 @@ static void partner_tiles()
     CHECK(m.x0 == 80 && m.x1 == 120 && m.y0 == 35 && m.y1 == 65);
 }
 
+// BUG-0632 / BUG-0636 (class BUG-0420): an event on one cell is acted on once within the ttl
+static void once()
+{
+    for (bool fix : {true, false}) {
+        Once o(5.0);
+        CHECK(o.first(7, 0.0, fix));
+        CHECK(o.first(7, 0.6, fix) == !fix); // the second break 0.6 s later: refused with the fix
+        CHECK(o.first(8, 0.6, fix));         // another cell is its own
+        CHECK(o.first(7, 5.1, fix));         // after the ttl the index may come again (a reused slot)
+    }
+    Once o(5.0);
+    o.first(1, 0.0, true);
+    CHECK(o.has(1, 1.0) && !o.has(1, 6.0));
+    o.drop(1);
+    CHECK(!o.has(1, 1.0));
+    for (uint32_t k = 0; k < 600; k++)
+        o.first(k, (double)k, true);
+    CHECK(o.at.size() <= 512); // bounded: old entries pruned
+}
+
 int main(int argc, char** argv)
 {
     for (int i = 1; i < argc; i++)
@@ -251,6 +271,7 @@ int main(int argc, char** argv)
     meals_away();
     numerics();
     partner_tiles();
+    once();
     if (g_fail) {
         printf("cell_tests: %d FAILED\n", g_fail);
         return 1;

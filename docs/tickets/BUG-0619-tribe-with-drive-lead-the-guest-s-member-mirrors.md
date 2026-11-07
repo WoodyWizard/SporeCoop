@@ -8,7 +8,7 @@ reported: 2026-11-06
 source: fix/w45-remote-bodies-2 regression runs
 role: guest
 versions: unreleased (rel/0.7.9 + drive.lead)
-fixed_in: unreleased
+fixed_in: 0.7.9
 branch: fix/w45-remote-bodies-2
 commits: fce3ec36..42951bdc (25 BUG-0619 commits of M3 on fix/w45-remote-bodies-2; final rule 911d7b86, 923a098e)
 tests: tribe_walk_mobile (tools/tests/coop_tribe_walk.py --fps 30, SPORE_NET=mobile)
@@ -78,3 +78,8 @@ and teleported 8.1 m: BUG-0386 (evidence there).
 - 2026-11-06 (M3, later): final: no member lead over 100 ms one-way, M1's lead under it (always smoothing it trailed
   more over the player network). tribe_walk_player (not in this ticket's list) still has M1's start jumps over the player
   network's latency spikes: BUG-0650.
+- 2026-11-06 (fix/w45-lead-player): the lead under the 100 ms rule (M1's raw lead) now goes through drive.lead_late
+  (BUG-0650, docs/re/tribe.md#tribe-lead-late): a late state is brought in over time, no start step at a walk known
+  late. This ticket's rule and its switch are unchanged; tribe_walk_mobile runs with the lead off (unchanged by it).
+  New: BUG-0651 (under load the rule turns the member lead off on any link).
+- 2026-11-07: released in 0.7.9.

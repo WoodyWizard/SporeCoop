@@ -8,7 +8,7 @@ reported: 2026-11-02
 source: player reports on Discord 2026-11-02 (bug-reports forum, 0.7.3.4, GOG host + Steam guest)
 role: host
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.9
 branch: fix/w45-creature-reports
 commits: b2522091
 tests: creature_carry (coop_creature_carry.py)
@@ -75,3 +75,4 @@ thrower's (two samples in a row within 15 s of the rest).
 - 2026-11-05 (fix/w44-guest-player2, P2 of 0.7.8): not started (the time went to BUG-0501, BUG-0558, BUG-0496, BUG-0557).
 - 2026-11-05 (fix/w44-guest-player3, P2b of 0.7.8): not reached (the time went to BUG-0600 and BUG-0465).
 - 2026-11-06 (fix/w45-creature-reports, P3 of 0.7.9): reproduced in the lab; fixed behind creature.carry_relay.
+- 2026-11-07: released in 0.7.9.

@@ -32,3 +32,4 @@ Detector rows Civilization:planet:village / tribe_hut / tribe_tool / tribe_food_
 
 ## History
 - 2026-11-06: opened from the lab log sweep follow-up; checked in the 0.7.9 final check.
+- 2026-11-07 (orchestrator): A/B at the same time, play_civ x3 with SPORE_DETECTOR=20, run 20261107-014048 in both trees: rel/0.7.9 (lane 6) 3/3 OK, the four planet rows of 12/20/8 lines; v0.7.8 (lane 9) 1/3 OK, 12/8/4 lines. Each row is the same n=1 case on both versions (the guest's planet has one village more, with its hut, tool and food mat). Not a 0.7.9 regression; the count varies a lot between runs. Stays open for 0.7.10.

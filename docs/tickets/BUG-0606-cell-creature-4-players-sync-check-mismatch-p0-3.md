@@ -8,7 +8,7 @@ reported: 2026-11-05
 source: lab fix/w45-crashes 20261105-233139 campaign_ct#1
 role: guest
 versions: 0.7.8
-fixed_in: unreleased
+fixed_in: 0.7.9
 branch: fix/w45-cell
 commits: e6e8164b, 0d9e7d10
 tests: campaign_ct, cell_end_sync
@@ -52,3 +52,4 @@ cell_end_sync PASS again in the regression run lab 20261106-015141 (23/23; play_
 ## History
 - 2026-11-05: opened.
 - 2026-11-06 (fix/w45-cell): a sync-check artifact (world scales), fix diag.cell_scale, test cell_end_sync.
+- 2026-11-07: released in 0.7.9.

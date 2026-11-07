@@ -8,7 +8,7 @@ reported: 2026-11-06
 source: rel/0.7.9 integration run out/lab/20261106-040221 (fix/w45-int2)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.9
 branch: fix/w45-last
 commits: df408715, 48cbb0f2, 2c012d76, 3c7dd711
 tests: play_creature
@@ -66,3 +66,4 @@ Earlier: no-fail-run: a flaky bot outcome, not reproduced in 3 runs on lane 3 (0
 - 2026-11-06: opened.
 - 2026-11-06 (fix/w45-int2): analysed, diagnostics added; open as a test flake (the bot's landing rate).
 - 2026-11-06 (fix/w45-last, L5 of 0.7.9): root cause in the game (attack reach, the walk-and-use goal, one combat key); the bot attacks in the game's reach and the pack hunts together; 4 runs in a row pass.
+- 2026-11-07: released in 0.7.9.

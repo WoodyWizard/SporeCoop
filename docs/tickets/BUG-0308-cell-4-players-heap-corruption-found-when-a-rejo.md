@@ -8,7 +8,7 @@ reported: 2026-10-30
 source: lab 20261030-104149 campaign_short#3
 role: guest
 versions: 0.7.3.1
-fixed_in: unreleased
+fixed_in: 0.7.9
 branch: fix/w13-cell, fix/w22-cell, fix/w45-crashes
 commits: 4ae7640, 21b178c, 90f091b, 27245c9, 150439df, 3a5db144
 tests: campaign_short, cell_rejoin_leave, cell_pause_rejoin
@@ -75,3 +75,4 @@ joins, the host's world arrives and the guest leaves Cell to load it.
 - 2026-10-30 (fix/w13-cell): guard `cell.leave_guard` added (window confirmed: 1185 applied states / ticks in 12 rejoins without it); the crash not reproduced, stays open.
 - 2026-10-31 (fix/w22-cell): BUG-0348 reproduces this exact signature (FreeInternal+0x64 freeing pool G+0x8C, return 0xE7FA8D, then 0x00DDA358) by overflowing the cell broadphase's pending arrays (a guest that creates mirrors while its game does not simulate), guarded by `cell.sap_pending`; whether this report's guest was in that state is not shown, so it stays open.
 - 2026-11-05 (fix/w45-crashes): root cause observed: the campaign guest sat in the pause menu while its mirrors churned (BUG-0348's state); the same path with cell.sap_pending off reproduces the three faults in order; test cell_pause_rejoin; fixed by cell.sap_pending (0.7.3.2).
+- 2026-11-07: released in 0.7.9.

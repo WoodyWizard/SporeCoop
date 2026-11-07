@@ -8,7 +8,7 @@ reported: 2026-11-06
 source: detector, play_tribe (fix/w45-placement)
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.9
 branch: fix/w45-last
 commits: ef1058d0, 1a891434, e485cc7a, 6c567738
 tests: tribe_dead_player (coop_tribe_dead_member.py --player), tribe_member_place (coop_tribe_member_place.py; --attach over play_tribe)
@@ -61,3 +61,4 @@ out/lab/20261106-144737 (2 of 2).
 ## History
 - 2026-11-06: opened.
 - 2026-11-06 (fix/w45-last, L5 of 0.7.9): the lone citizen named (a dead player member out of its tribe's list); fixed by tribe.member_body; test tribe_dead_player.
+- 2026-11-07: released in 0.7.9.

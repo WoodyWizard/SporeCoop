@@ -8,7 +8,7 @@ reported: 2026-11-06
 source: lab rel/0.7.9 20261106-105201 civ_city_layout (sync-check gate), INT3 reruns 20261106-122407
 role: guest
 versions: 0.7.9 1e155b53
-fixed_in: unreleased
+fixed_in: 0.7.9
 branch: fix/w45-int3
 commits: 56a7ee58, 30b2aa04
 tests: civ_city_layout, civ_city_burst
@@ -50,3 +50,4 @@ instant founding).
 ## History
 - 2026-11-06: opened.
 - 2026-11-06 (fix/w45-int3): fixed (civ.instant_found), found by the third integration run of 0.7.9.
+- 2026-11-07: released in 0.7.9.

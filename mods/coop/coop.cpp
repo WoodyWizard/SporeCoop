@@ -1,7 +1,7 @@
 // SporeCoop mod: creature-stage co-op ("pack" mode). See docs/03-gameplay.md.
 // the release version (tools/package.sh names the zip after it)
 #ifndef COOP_VERSION
-#define COOP_VERSION "0.7.8"
+#define COOP_VERSION "0.7.9"
 #endif
 
 #include <winsock2.h>
@@ -5429,6 +5429,7 @@ void support_init()
         return std::string();
     };
     support::init(H, M, p);
+    memcensus::init(H, M); // BUG-0631: coop.memcensus (tests)
     H->subscribe(M, SK_EV_SHUTDOWN, [](void*, int, void*) { support::on_shutdown(); }, nullptr);
     H->command_add(M, "coop.diag",
                    "coop.diag [status | sync now|on|off|<s>|force shift|drop|ghost|dna|off | summary | mark <text> | "

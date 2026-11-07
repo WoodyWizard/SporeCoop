@@ -8,7 +8,7 @@ reported: 2026-11-03
 source: divergence detector, nightly run 2026-11-03 (out/lab/20261103-012624, report out/detector/20261103-0236.md)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.9
 branch: fix/w40-cell-evo, fix/w45-leftovers
 commits: 34b41821 f68e3316 2191c794
 tests: cell_gone, cell_gone_probe, cell_gone_play (extended), coop_cell_gone.py
@@ -75,3 +75,4 @@ state is lost, so the new oracle can fail). Detector: play_cell 0 Cell findings 
 - 2026-11-03: opened.
 - 2026-11-03: fix/w40-cell-evo: lifecycle checked under loss (no hole found), detector bracketed; the 28-49 mirror events left open.
 - 2026-11-06: fix/w45-leftovers: the remaining events were cells the game culls ~1 s after making them (0xE7C3E6), the mirrors 0.1-0.2 s behind; the oracle uses the host's last send; no host cell near the guest unmirrored; fixed (test).
+- 2026-11-07: released in 0.7.9.

@@ -8,7 +8,7 @@ reported: 2026-10-30
 source: lab 20261030-210914 campaign#1 / campaign#3
 role: guest
 versions: main be725db
-fixed_in: unreleased
+fixed_in: 0.7.9
 branch: fix/w45-village-ground
 commits: 5168d50e d8eec122 e44422c6 eba073b2 717e3f28 3b5c3171 a2be5bca 985190d5 59f73dd3 02a767e1 08307861 4ecf75cb bbe9fc59 f155bdde 05931ba3 bc30ba92 
 tests: tribe_village_cadian (coop_tribe_village_ground.py --fixture=creature_cadian --map --terrain), tribe_village_ground, tribe_form_ground (coop_tribe_form_ground.py), campaign_ct (CAMPAIGN_GROUND=1, CAMPAIGN_FORM=1)
@@ -91,3 +91,4 @@ PASS: every point within 0.3 m.
   guests had logged "made it ... at 5.1 m / 5.9 m" for the host's new NPC village: the spot. Reproduced on the
   creature_cadian fixture with ground maps; terrain stamp hooks; root cause: live stamp render != loaded render (the
   host's own reload gives the guests' ground). Fixed with tribe.host_reload.
+- 2026-11-07: released in 0.7.9.

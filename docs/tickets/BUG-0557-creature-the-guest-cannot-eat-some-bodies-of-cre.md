@@ -8,7 +8,7 @@ reported: 2026-11-04
 source: player report 2026-11-04 (Discord bug-reports, 0.7.5, Steam build)
 role: both
 versions: 0.7.5
-fixed_in: unreleased
+fixed_in: 0.7.9
 branch: fix/w44-guest-player2, fix/w45-creature-reports
 commits: 2ce39e6a, 7f2c5dcd
 tests: creature_eat (coop_creature_eat.py)
@@ -73,3 +73,4 @@ body shows the same meat within 5 % (or both gone).
 - 2026-11-04 (fix/w43-guest-player, P1 of 0.7.7): not fixed, not reproduced: no time left in P1 for the pack-kill case; no eat predicate of the player was found on the way.
 - 2026-11-05 (fix/w44-guest-player2, P2 of 0.7.8): the eat rule found (meat +0xB84), the guest's bodies have it; not reproduced, not fixed.
 - 2026-11-05 (fix/w45-creature-reports, P3 of 0.7.9): reproduced (eating is per game); fixed behind npc.body_meat.
+- 2026-11-07: released in 0.7.9.

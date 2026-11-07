@@ -170,6 +170,35 @@ static double g_last_present_t;  // last Present seen (or the device creation)
 static bool g_loop_frames;       // frames come from the game loop now
 static bool g_in_loop_frame;
 static int g_frames_mode = -1;   // 0 auto, 1 loop: ignore Present (tests of the fallback), -1 unread
+// BUG-0667: a fault inside the frame's work (a mod's SK_EV_FRAME handler calling the game) that the game's own
+// handler catches unwinds past this file's frames: g_in_frame / g_in_loop_frame stayed set, every later Present and
+// game loop pass took itself for a nested call, and no frame ran again (no mod tick, the frame counter stopped: the
+// game "froze" for the lab and its partner while it drew on). The frame's stack address is kept; an entry on the same
+// thread at that depth or above it (not nested inside the frame) means the frame was cut off: the flags are cleared
+// and the frames go on. `kit.fix frameunwind 0`: the flags stay (0.3.11).
+static uintptr_t g_frame_sp;     // stack address of the frame being run
+static DWORD g_frame_tid;
+static uint32_t g_frames_cut;
+
+static bool frame_cut_off(uintptr_t sp)
+{
+    if (!fixed(g_fix_frameunwind) || !(g_in_frame || g_in_loop_frame) || GetCurrentThreadId() != g_frame_tid ||
+        sp < g_frame_sp)
+        return false;
+    g_in_frame = g_in_loop_frame = false;
+    g_overlay_active = false;
+    g_frames_cut++;
+    SKLOG(SK_WARN, "frames: the frame %llu was cut off by a fault the game's handler caught (%u so far); frames go on "
+                   "(BUG-0667)", (unsigned long long)g_frame, g_frames_cut);
+    return true;
+}
+
+static void frame_enter(bool loop, uintptr_t sp)
+{
+    g_frame_sp = sp;
+    g_frame_tid = GetCurrentThreadId();
+    (loop ? g_in_loop_frame : g_in_frame) = true;
+}
 
 static int frames_mode_read()
 {
@@ -210,7 +239,8 @@ static void frame_common()
 
 static void on_frame_begin_present()
 {
-    if (g_in_frame || g_in_loop_frame)
+    uintptr_t sp = (uintptr_t)__builtin_frame_address(0);
+    if ((g_in_frame || g_in_loop_frame) && !frame_cut_off(sp))
         return;
     if (frames_mode_read() == 1)
         return; // frames=loop: as if another overlay had taken Present
@@ -219,7 +249,7 @@ static void on_frame_begin_present()
         g_loop_frames = false;
         SKLOG(SK_INFO, "frames: Present reaches SporeKit again; frames come from Present");
     }
-    g_in_frame = true;
+    frame_enter(false, sp);
     frame_common();
 
     // overlay pass
@@ -250,6 +280,9 @@ static int g_present_depth; // device Present may call the swapchain Present int
 // called on the main thread after every App::Canvas::Tick (gamehooks.cpp)
 void frame_from_game_loop()
 {
+    uintptr_t sp = (uintptr_t)__builtin_frame_address(0);
+    if ((g_in_frame || g_in_loop_frame) && !g_present_depth)
+        frame_cut_off(sp);
     if (!g_dev || g_in_frame || g_in_loop_frame || g_present_depth)
         return;
     bool forced = frames_mode_read() == 1;
@@ -269,7 +302,7 @@ void frame_from_game_loop()
                            "frames come from the game loop (App::Canvas::Tick), on-screen labels are off",
                   kPresentLostSec);
     }
-    g_in_loop_frame = true;
+    frame_enter(true, sp);
     frame_common();
     g_in_loop_frame = false;
 }

@@ -107,3 +107,49 @@ BUG-0454 / BUG-0371: three host crashes in the creature editor at `RenderWare::R
 * Fix (`game.null_raster_fill`, gamefixes.cpp): Fill on a null raster returns 0, Fill's own failure
   return (Raster_Lock failed, 0x11F047D). Not verified in the game: the lab's GPU never fails a
   texture; the skin may stay without paint for that bake.
+
+## The game's address space over a session: what grows (2026-11-06, fix/w46-addr-space)
+<a id="graphics-address-space"></a>
+
+BUG-0631 (a host crashed in Civ after ~2 h with the 2 GB space full), BUG-0621 (a Cell guest 3502 -> 1427 MB in 6 min).
+Measured with the census (docs/06-testing.md#testing-mem-census) on lanes 4 / 5 (Wine: 4 GB, so nothing ran out; the
+numbers are the growth).
+* ✔ The game's heap is EA's GeneralAllocator (MallocInternal 0x927E70, MallocAlignedInternal 0x928570): it grows by
+  VirtualAlloc'ed 16 MB segments and MMapMalloc 0x9271A0 (VirtualAlloc MEM_RESERVE|MEM_COMMIT, MEM_TOP_DOWN when
+  `this+0x498`) for big blocks; `this+0x48C` / `+0x488` count the mapped bytes / blocks. Freed memory goes back to the
+  segments, segments are not given back: the heap is a high-water mark. A 16 MB step in a census is one segment.
+* ✔ Almost all growth during play is `priv:by:sporeapp.exe` (the game's heap); the graphics (d3d9.dll = DXVK here) took
+  one 16 MB block in 10 min of Tribe; our DLLs nothing measurable (the "coop.dll" caller of one 16 MB segment was a
+  stale return address of the tracker itself, fixed in the tracker).
+* ✔ Skin textures: allocations of 5.3 MB each from the Skinner code (callers 0x513D4B / 0x5600C0 through operator
+  new 0x42E148, which names its EASTL allocator "Editor"): one per creature skin painted (a 1024x1024 RGBA texture
+  with its mip chain is 5.3 MB). Others seen: material / shader code around 0x7200C8..0x738862, ModelBake
+  0x47667E, resource reads (cPropManager::ReadResource 0x6AEED7), effects (Swarm::EffectWorld::CreateEffect
+  0xA71408).
+* ✔ Creature, two players, the play_creature bots, 20 min (lab 20261106-200638): host -16 MB free, guest -7; the same
+  with the guest's session left (not a clean solo: the guest joined again) -24 / -10. Normal lab play does not drain.
+* ✔ Creature, the guest goes to a new place of the planet every 20 s (61 places, lab 20261106-202803): the host's heap
+  +62 MB, the guest's +28; the same with `npc.view_centres` off (the host keeps nothing alive around the guest,
+  BUG-0280; lab 20261106-204954, 10 min) host +3, guest +4 against +28 / +51 with it on (20261106-204949). The host
+  pays for what lives around its partner (herds, nests, spawns and their models and skins) and the guest for the
+  proxies of the host's NPCs it then shows.
+* ✔ It is a cache, not a leak: the guest cycling over the same 12 places for 24 min (6 rounds, lab 20261106-210804):
+  host +28 MB in the first round, +3 MB in the 5 rounds after, guest +33 MB then 0. Removing and showing the partner's
+  puppet 60 times (`coop.puppet respawn`, 20261106-211958) cost 0 MB on the host, +6 MB on the guest once.
+* ✔ Civ and Tribe idle for 10 min (two players, 20261106-213314; solo 20261106-213316): flat after the load. play_civ
+  10 min (lab 20261106-214428): host 3442 -> 3378, guest 3401 -> 3316 MB, most of it in the first 4 minutes
+  (new vehicle and building models); play_tribe 10 min (20261106-214428-2): host 3450 -> 3403, guest 3427 -> 3389.
+* Recorded lab results (every `*.game.log` of the main checkout and the worktrees, per-minute perf lines, a stage stay
+  of over 4 min): median loss Creature host 4.5 / guest 3.3 MB/min, Tribe 4.8 / 3.8, Civ 5.4 / 4.7, Space 2.2 / 3.9,
+  Cell 0.9 / 0.1; the host loses more than the guest in every planet stage.
+* ✔ Cell (BUG-0621): a crowd of 1000 of the host's cells around its own (`coop.pool crowd 1000 8` every 20 s, lab
+  20261106-210201) with BUG-0355's fixes off (cell.gfx_full, cell.spare): the host loses 8 MB/min, linear, from
+  effects and animations (Swarm::EffectWorld::CreateEffect 0xA71408, Anim::AnimatedCreature::PlayAnimation 0xA0F707:
+  the per-frame CreateSoftBody calls on a full graphics pool set up the cell again and play an animation each time,
+  BUG-0355); with them on (20261106-211056) 0. The 4-player guest of BUG-0621 (0.7.3.1, before BUG-0355's fix in
+  0.7.3.2) had 900 mirrors on screen: the same case.
+* Inferred (the player's host, Discord 2026-11-06): its 740 MB in 50 min of Creature are this cache filled by two
+  players exploring a planet with many species (each new species: a skin of 5.3 MB, its models and materials, on
+  both games), twice on the host because it also keeps the world around its partner alive. Stage changes give little
+  back (the heap's segments stay).
+* Negative: no allocation of ours grows; no growth per puppet, per mirror or per revisit.

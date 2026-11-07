@@ -172,3 +172,7 @@ SporeCoop::Ability_RangeScale ; BUG-0618: coop.abilities reach (a test diagnosti
 SporeCoop::Ability_TargetGap ; BUG-0618: coop.abilities reach (a test diagnostic of play_creature), GOG 2024 only
 SporeCoop::CreatureGame_NestHerdFor ; BUG-0640: wsync.creature_nest, the guest's migration to the host's new nest (wsync.cpp), GOG 2024 only
 SporeCoop::Player_SetProperty ; BUG-0640: wsync.creature_nest, the guest's migration state (wsync.cpp), GOG 2024 only
+SporeCoop::cTribe_ReleaseSlot ; BUG-0667: the null-tribe guard of a layout spot release is off (GOG 2024 only)
+Simulator::cCreatureCitizen::SetTribe ; BUG-0667: the teardown tribe record is off (GOG 2024 only)
+SporeCoop::cCreatureCitizen_Teardown ; BUG-0667: a citizen torn down with no tribe is not repaired (GOG 2024 only)
+SporeCoop::Citizen_BTTerminate ; BUG-0667: a detached body's tree is not ended (GOG 2024 only)

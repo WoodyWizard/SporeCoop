@@ -8,7 +8,7 @@ reported: 2026-11-06
 source: lab rel/0.7.9 20261106-105201 play_tribe; also fix/w45-village-ground 20261106-050921, fix/w43-transitions 20261104-225940
 role: host
 versions: 0.7.8, 0.7.9
-fixed_in: unreleased
+fixed_in: 0.7.9
 branch: fix/w45-int3
 commits: 38b9771c, 30b2aa04, 10e66552
 tests: tribe_intro_camera, play_tribe
@@ -52,3 +52,4 @@ minimaps OK; #2 warm OK), 20261106-132710 (cold on lane 2, intro not started at 
 ## History
 - 2026-11-06: opened.
 - 2026-11-06 (fix/w45-int3): fixed (world.intro_at_once); BUG-0607 is likely the same intro on a Creature guest (not re-tested).
+- 2026-11-07: released in 0.7.9.

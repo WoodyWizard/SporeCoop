@@ -8,7 +8,7 @@ reported: 2026-11-03
 source: fix/w40-world-objects (coop.wobj missing counter, lane 9)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.9
 branch: fix/w45-world-objects
 commits: 250fda1a, 9ec9fc1e
 tests: host_fruit (tools/tests/coop_world_host.py --case fruit)
@@ -52,3 +52,4 @@ both games.
 ## History
 - 2026-11-03: opened.
 - 2026-11-06 (fix/w45-world-objects): fixed (place / relocate / make from a tree slot), test host_fruit.
+- 2026-11-07: released in 0.7.9.

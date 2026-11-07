@@ -1034,7 +1034,10 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * 2026-10-30 (fix/w13-cell): the coverage loss was the jumps of the NaN heals leaving background
   cells behind until the guest's pool hit its mirror cap (BUG-0314, fixed by `cell.bg_cull`). The
   first NaN and the address space drain are still not reproduced (docs/re/cell.md#cell-bg-leftovers).
-* Ticket: BUG-0307 (the NaN, fixed), BUG-0621 (the address space drain, open)
+* 2026-11-06 (fix/w46-addr-space): the address space drain is BUG-0355's per-frame soft body calls on a full cell
+  graphics pool (8.3 MB/min with cell.gfx_full off in a crowd of 1000 cells, 0 with it on: test
+  mem_census_cell_crowd; docs/re/graphics.md#graphics-address-space), fixed in 0.7.3.2.
+* Ticket: BUG-0307 (the NaN, fixed), BUG-0621 (the address space drain, fixed by BUG-0355 in 0.7.3.2)
 
 ## Cell, 4 players: two one-off faults of the 4th player (2026-10-30, fix/w12-cell-fault)
 <a id="issue-cell-4th-player-faults"></a>
@@ -2089,7 +2092,10 @@ Each line: what the players saw, what the logs show; reproduce and details in th
   the host's halved; the bars differ by one tier) (BUG-0630, docs/re/creature.md#creature-evolution-bar).
 - Civ: the host's game crashed after ~2 h in one process with its 2 GB address space full (largest block 12 MB), in a
   model's vertex blend writing through a null buffer at +0x3995F0; ~740 MB of the drain in Creature (BUG-0631, see
-  BUG-0621).
+  BUG-0621). 2026-11-06 (fix/w46-addr-space): the drain is the game's own cache of what it loaded (skins, models), the
+  host filling it with its partner's surroundings too (no leak of the mod); core.mem_reserve gives a kept block back
+  with a notice to save and restart (docs/re/graphics.md#graphics-address-space). Still open by nature: a long
+  session on the 2 GB space (large-address flag off) can still fill it; see the ticket for the flag.
 - Cell: a guest's kill is applied twice on the host (a giant piece of meat) (BUG-0632).
 - Cell: the host cannot collect the part a kill dropped (BUG-0633).
 - Cell: the guest's cell swims through other cells (BUG-0634).
@@ -2110,7 +2116,36 @@ Each line: what the players saw, what the logs show; reproduce and details in th
 - Civ: the guest sees the host's ground vehicles as creature-like monsters (BUG-0647).
 - Civ: the guest's military vehicles cannot shoot an enemy city hall nor capture it (BUG-0648).
 - Civ: the guest does not see the host's name at the host's camera (BUG-0649).
-- Tribe (unreleased drive.lead): over a network with latency spikes a member mirror can step ~0.9 m per frame for
-  2-3 frames when a walk starts in a spike (tribe_walk_player, 2 of 4 runs; BUG-0650).
 - Also seen on 0.7.8, fixed unreleased in 0.7.9: the guest does not see the drama UFO (BUG-0558), city buildings
   rebuilt again and again after captures (BUG-0602).
+
+## Tribe: a guest that joins while a member's body lies on the host shows no body (2026-11-07, fix/w46-tribe-missing)
+<a id="issue-tribe-join-body"></a>
+
+* What happens: tribe.member_body (BUG-0620) lets a mirror the guest already has lie where the host's body lies, but
+  a guest spawns no mirror for a body entry: a guest that joins or reloads the world while the body lies on the host
+  (10-20 s, at most 60 s) has none for it (the sync-check leaves bodies out since BUG-0664).
+* Reproduce: tribe_dead_rejoin (`coop_tribe_dead_member.py --rejoin`): the guest's `coop.sync` never lists the body's
+  key; watch the victim's place with `coop.census all` on both games.
+* Known: inferred from the code (tribe.cpp, "no new mirror for a body"); not checked whether the shared save (written
+  before the death in the test) or a later one holds the body as an object of the guest's own world.
+* Not checked: what the guest's screen shows at the body's place.
+* Next steps: 0.7.10.
+* Ticket: BUG-0665
+## Cell: no part token can be collected after the Goldie's demise tutorial (2026-11-07, fix/w46-part-token)
+<a id="issue-cell-goldie-locks"></a>
+
+* What happens: in the lab, after the shared food passes 120-150 (the game's one-time tutorial goldies_demise), both
+  avatars keep +0x178 (and +0x16C, +0x17B, +0x17C) set and neither game collects a part token.
+* Reproduce: Cell fixture, `coop.pool food 50` four times, `coop.pool tokens` shows `own_locks=0010`.
+* Known: docs/re/cell.md#cell-goldie. Not known: whether a player's game clears them (input, the cinematic's end).
+* Ticket: BUG-0666
+## Tests: the detector compares Cell positions across two world scales in a level change (2026-11-06, fix/w46-cell-p0)
+<a id="issue-detector-cell-scale"></a>
+
+* What happens: a `Cell:pos:cell` row (80-552 cells 7-14 m apart) in the one comparison that falls into a world
+  scale tier change; filed under BUG-0480 by detector_report.py.
+* Reproduce: `SPORE_DETECTOR=20 tools/lab.py run cell_levelup_view --lane N` (lab 20261106-224058 #1).
+* Known: inferred to be BUG-0606's cause (raw positions of two games in different scales); worlddiff has no
+  diag.cell_scale conversion. The guest draws the cells where they are.
+* Ticket: BUG-0662

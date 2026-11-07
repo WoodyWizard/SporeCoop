@@ -8,7 +8,7 @@ reported: 2026-11-06
 source: lab rel/0.7.9 20261106-105201 play_civ
 role: 
 versions: 0.7.9 1e155b53
-fixed_in: unreleased
+fixed_in: 0.7.9
 branch: fix/w45-int3
 commits: f66de16c, 5bb3f4b8
 tests: play_civ
@@ -50,3 +50,4 @@ FAIL (the old audit): lab rel/0.7.9 20261106-105201 play_civ (the three problems
 
 ## History
 - 2026-11-06: opened.
+- 2026-11-07: released in 0.7.9.

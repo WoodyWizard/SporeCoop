@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: player report 2026-11-01 (host F9 note at s 1777)
 role: both
 versions: 0.7.3.3
-fixed_in: unreleased
+fixed_in: 0.7.9
 branch: fix/w30-npc-walk, feat/w33-tests-creature, fix/w45-creature-reports
 commits: 7f2c5dcd
 tests: tools/tests/coop_npc_corpse.py (suite corpse_positions, corpse_positions_player), creature_eat (coop_creature_eat.py)
@@ -72,3 +72,4 @@ puts a killed proxy where the host's body is every frame).
   dead before its proxy was made); fixed behind `npc.dead_proxy`. Positions themselves matched (0.00 m) in every kind.
 - 2026-11-04: fix/w41-puppet-look: checked again, no new cause.
 - 2026-11-05 (fix/w45-creature-reports, P3 of 0.7.9): the eaten-body cause reproduced and fixed with BUG-0557 (npc.body_meat); status fixed for the class.
+- 2026-11-07: released in 0.7.9.

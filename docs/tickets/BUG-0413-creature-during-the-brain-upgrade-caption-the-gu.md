@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: transition_net, lab 20261101-145528 (feat/w33-tests-session)
 role: guest
 versions: main a05d1f6
-fixed_in: unreleased
+fixed_in: 0.7.9
 branch: fix/w45-one-game-objects
 commits: 3f8ec9a3
 tests: npc_frozen_death, npc_frozen_caption (coop_npc_frozen.py)
@@ -71,3 +71,4 @@ host's NPCs near the guest's new place (its family n4 n5 n34; n55 n60) were neve
 only when the guest moves far while the host is frozen. For 0.7.9 (L1): while the host's simulation is frozen, still
 send the NPCs near a guest that moved (their states do not change, so one snapshot of the newly near ones suffices).
 - 2026-11-06 (fix/w45-one-game-objects, L1): the frozen host runs the guests' relevance (npc.frozen_send); death caption case reproduced and fixed, brain caption loss not reproduced on the fixture (diagnostic log added).
+- 2026-11-07: released in 0.7.9.

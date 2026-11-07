@@ -4564,3 +4564,102 @@ BUG-0332 (docs/re/tribe.md#tribe-terrain-stamps).
   4`), standing carriers bind both ways; BUG-0617), `tribe_gather_block` (a probe, BUG-0531: no stall seen),
   `npc_nest_backoff` / `npc_nest_backoff_near` (BUG-0562). play_creature's bot: the pack hunts together (no own hunt
   while the partner leads one).
+
+## The shared headless Xwayland saturates under a full lab load (2026-11-06, fix/w46-tribe-fps)
+<a id="testing-xwayland-saturation"></a>
+
+Every lane's games draw through the one Xwayland of the headless shell (`:2`). With 10-14 games running (a 4-lane
+final check with 4-game campaign tests, plus other lanes) that Xwayland used 97.7 % of a core (one thread) and the
+games of the heaviest stage starved: in Tribe both games of a lane fell to 2-9 fps with 130-200 hitches of 300-600 ms
+per minute while each game used only 5-7 % CPU (waiting, not computing). Cell and Creature games of the same run kept
+25-66 fps. A 40-min test then fails with "the console stopped answering" or "FROZE" without a crash (BUG-0663).
+Evidence: v0.7.8 and 0.7.9 run side by side (`long_tribe_short`, lab 20261106-235016 in rel/0.7.8 and
+fix/w46-tribe-fps) collapsed identically at the same moment. Before reading such a failure as a regression: check
+the Xwayland's CPU (`pgrep -x Xwayland`, its `/proc/<pid>/stat` ticks over 10 s; ~1000 ticks = one full core) and
+run the A/B at equal load, or rerun on a quiet machine (1-2 lanes).
+
+## A guest that joins while a member's body lies: tribe_dead_rejoin (2026-11-07, fix/w46-tribe-missing)
+<a id="testing-tribe-dead-rejoin"></a>
+
+`coop_tribe_dead_member.py --rejoin` (suite `tribe_dead_rejoin`, ~2 min cold, ~1.5 min warm): the guest leaves and
+joins again; once it has left its world (the host saved for it) the host kills one of its own members
+(`coop.tribe pincer ... 1000`), so the guest loads a world where that member is a body out of its tribe's list on the
+host. For 24 s the host's `coop.tribe` bodies_sent tells whether the body is still sent, and the host's sync-check is
+asked (`coop.diag sync now`) at each such sample. PASS: no MISMATCH. It is the short repro of long_tribe's "t: 1
+missing on the guest" after its restart and rejoin events (45 min -> 2 min). With `SPORE_FIX_OFF=tribe.sync_bodies`
+it fails 5-6 checks of 6 (BUG-0664, docs/re/tribe.md#tribe-sync-bodies).
+
+## A body's mirror torn down with an active eat node: tribe_body_teardown (2026-11-07, fix/w46-tribe-fault)
+<a id="testing-tribe-body-teardown"></a>
+
+`coop_tribe_dead_member.py --eat` (suite `tribe_body_teardown`, ~1.5 min cold): on the guest `coop.tribe localbt <id> 1`
+lets one mirror's behaviour tree run (as while the host is away), `coop.tribe eat <id>` orders its Eat at its tribe's
+food mat in the guest's game (node 0x0461300F within ~1 s, read by `coop.tribe ai`), then `localbt <id> 0`; the host
+kills that member of its own tribe (`coop.tribe pincer`), and the test waits until the guest's mirror of the body is
+gone (~33 s: the host's game keeps the body, tribe.member_body) and checks the guest still runs frames 5 s later and
+caught no fault. It is the short repro of long_tribe's guest fault at 0xAC9C7D and its "FROZE" (BUG-0667,
+docs/re/tribe.md#tribe-body-teardown). `SPORE_FIX_OFF=tribe.body_teardown`: the fault (FAIL); with
+`SPORE_FIX_OFF=tribe.body_teardown,kit.frameunwind` (or a SporeKit before it) also "FROZE": SporeKit's frame flag stayed
+set after the game's handler unwound the frame, so frames stopped while the game went on.
+* Pitfall: after a caught fault in a frame, a game's `frame` count standing still is not proof the game hangs: look at
+  the watchdog's main-thread stack (App::Canvas::Tick pumping messages = the game runs) and for SporeKit's "the frame
+  N was cut off by a fault" line.
+## The Cell reports of 2026-11-06: kills and meals once, the level-change wipe, tokens (2026-11-06, fix/w46-cell-p0)
+<a id="testing-w46-cell"></a>
+
+* `coop_cell_once.py --case kill` (suite cell_kill_once, ~1.5 min cold): the guest bites a creature to death next to
+  the host with the game's Bite and bites on for 1.5 s; the host's game must break each one once (`npc_deaths`).
+  `SPORE_FIX_OFF=cell.kill_once` fails (3-4 breaks per kill). BUG-0632.
+* `--case eat` (suite cell_eat_once, `SPORE_NET="delay=150"`): the guest eats a plant / meat cell (`coop.pool
+  food_near`, `eat`) and repeats the eat every 40 ms for 1.5 s; it must find nothing to eat again.
+  `SPORE_FIX_OFF=cell.eat_once` fails (1-3 eaten again per meal). BUG-0636. Without the delay the window is too
+  short to show it.
+* `coop_cell_levelup_view.py` (suite cell_levelup_view, ~2 min): the guest 30 m from the host, the food +-150 (one
+  level is no wipe: RemoveCellsOfOldScale runs only when the world scale tier changes); each game's screen before
+  and the cells of it still alive 5 s after (`coop.pool alive`). `SPORE_FIX_OFF=cell.levelup_keep` fails (the guest
+  loses 100% of its screen). A level-up replaces ~90% of the screen in both games anyway (the game's own). BUG-0635.
+* `coop_cell_push.py` (suite cell_push): each player swims into a creature of its size (`coop.pool gap near`,
+  `gap <key>`): the guest is pushed as the host. BUG-0634.
+* `coop_cell_own_level10.py` (suite cell_own_level10, ~3 min): the host's food to 924 (level 10), `coop.creations
+  choose cell BAF1AD40` and back, `coop.pool species` (creature models with their levels). The game populates NPCs of
+  the player's own cell (6-8 at level 10): the test checks no NPC of the previous own cell is left. BUG-0637.
+* `coop_cell_once.py --case token` (suite cell_token_probe, extended) and `--case drop` (no suite: the fixture's
+  kills drop no part token, so it always fails on its setup): BUG-0633.
+## The address space census: what fills the game's 2 GB (2026-11-06, fix/w46-addr-space)
+<a id="testing-mem-census"></a>
+
+BUG-0631 / BUG-0621. The per-minute `perf:` line says how much address space is free; the census says **what** took it.
+* `coop.memcensus [depth] [grain] [top]` (any thread, read-only): a VirtualQuery walk grouped by allocation
+  (AllocationBase): `census free_mb= block_mb= regions= allocs= tracked=`, then `cat <kind> n= res_kb= com_kb=` per kind
+  (`image:sporeapp.exe | image:coop | image:sporekit.dll | image:other`, `mapped:lt1M | ge1M | ge16M`,
+  `priv:by:<module>` for private allocations whose maker is known, `priv:untracked:<size>` for the others) and
+  `who <module+rva><<module+rva>... n= res_kb= com_kb=` (the callers, deepest first, of the tracked private allocations).
+* `coop.memcensus track on|off`: a hook on ntdll's NtAllocateVirtualMemory / NtFreeVirtualMemory (test tool, never on
+  by default) remembers every new reservation with up to 6 return addresses found on the stack outside ntdll,
+  kernelbase, kernel32, the CRT, the game's allocator (GeneralAllocator: MallocInternal, MallocAlignedInternal,
+  MMapMalloc and their helpers, its operator new) and the tracker itself. So `priv:by:sporeapp.exe` is the game's own
+  heap (its allocator reserves 16 MB segments and MMapMalloc's big blocks with VirtualAlloc), `priv:by:d3d9.dll` the
+  graphics, `priv:by:coop*.dll` / `sporekit.dll` ours (their CRT heap grows through the same call). Only reservations
+  made while the tracker is on have a maker: compare two censuses of one game, not one census alone. The stack scan is
+  a heuristic (a stale return address can show as a caller; the game's own frames are named only to the nearest
+  `.sym` entry, which is often far away).
+* `tools/tests/coop_mem_census.py` (suite `mem_census*`, extended): both games switch the tracker on, a scripted
+  session runs, a census every `--sample` minutes, at the end the growth per kind and per caller between the first and
+  the last census (`MEMCENSUS {json}` lines with the series). Sessions: the play_creature bots (default), `--solo`
+  (the guest's game is closed first: `coop.leave` alone was not enough, the guest joined again), `--idle`, `--tour
+  host|guest` (that avatar goes to a new place of the planet every `--hop` s with `coop.abilities goto`, the same
+  sequence in every run), `--places N` (the tour cycles over N places: a cache fills in the first round, a leak grows
+  every round), `--respawn` (`coop.puppet respawn` on both every `--hop` s), `--crowd N` (Cell: `coop.pool crowd N 8`
+  every `--hop` s, over 256 cells in the active area: BUG-0355's case).
+* Under Wine the lanes' games have 4 GB (`of 4095 MB` in the perf line) although the GOG 2024 exe has the
+  large-address flag off (Windows: 2 GB): a lab game never runs out; judge the loss, not the free MB.
+* Noise to expect in a census diff: `mapped:ge1M` -24 MB (mappings of the start released in the first minutes),
+  `priv:untracked:ge16M` +-16 MB (one block of before the tracker freed or taken), the game heap growing in 16 MB
+  segments (a step of 16 MB is one segment, not 16 MB of new objects).
+* Gate findings of the census tests: the tours (`--tour`) put the partner 12-36 m off its own game's ground for 2
+  monitor lines on some hops (`drawn` / `ground`, sync-check `p apart`): the teleports' own doing, BUG-0658; the tour
+  entries run with the sync-check and monitor gates off. `mem_census_cell_crowd` with BUG-0355's fixes off had one
+  sync-check `c: 11 missing on the guest` right after a `coop.pool crowd` moved ~300 cells at once (lab
+  20261106-210201); none in the other off run or the two on runs. Its FAIL run (fix off) also loses 8.3 MB/min: that
+  is the bug the test catches, and `mem_reserve`'s FAIL run (core.mem_reserve off) trips the mem-low gate on purpose
+  (260 MB free, largest block 16 MB, planted with `coop.diag fill`).

@@ -2,9 +2,16 @@
 
 ## [Unreleased]
 
+## [0.7.9] - 2026-11-07
+
 ### Changed
+- Tribe and Civilization: the citizens of the player tribe and the host's vehicles trail less on the guest's screen
+  (the guest shows them nearer where the host has them); they can still fall 2-3 m behind on a busy connection, work
+  on that continues (BUG-0410, BUG-0438).
 - A crash report (`crash-*.txt`) now says to send the one `SporeCoop-report-*.zip` from the same folder (it holds the
   report and its `.dmp`); the `.txt` and `.dmp` alone are needed only when there is no such zip.
+- SporeKit keeps running the mod after an error that the game itself catches; before, such an error could stop the mod
+  for the rest of the session while the game went on (found with BUG-0667).
 
 ### Fixed
 - Creature: a guest who was still in its own Cell editor when the host entered the Creature stage no longer plays a
@@ -15,6 +22,16 @@
   healing at the new nest (BUG-0640, BUG-0496).
 - Creature: a spit now stops a charge between players: your spit stops a charging creature of the host's world, and
   a creature's spit stops your charge (BUG-0641).
+- Cell: a guest's kill now happens once in the host's world: biting a dying creature again no longer kills it a
+  second time with a second drop of meat (BUG-0632).
+- Cell: a guest can no longer eat the same plant or piece of meat twice (it came back for a moment right after it
+  was eaten) (BUG-0636).
+- Cell: after a level change the cells on the guest's screen no longer all vanish and get replaced; the guest keeps
+  what is on its screen as the host does (BUG-0635).
+- Long sessions: the game keeps a block of memory for the end of a long session. When Spore (a 32-bit game) runs
+  low on memory, it gets that block back and you are told to save and restart, instead of crashing a few minutes
+  later (a host crashed in Civilization after two hours of play). Spore keeps every creature, model and texture it
+  loads until it is closed, and in co-op the host also loads what lives around the other players (BUG-0631).
 - Creature: spending DNA in an editor no longer lowers the other players' evolution bar (the bar could drop to almost
   nothing after both players used their editors, or be halved); a spend now takes only the shared DNA, as in a game
   of one, and the bar keeps everything the party earned (BUG-0630).
@@ -62,9 +79,7 @@
   and their sounds), not only the swings (BUG-0603).
 - Creature and Tribe: the host's animals and tribe members no longer trail behind where the host sees them on the
   guest's screen (they were 0.2-0.3 s late, 1-2 m behind a running animal or member): the guest now shows them where
-  the host has them at that moment (BUG-0425, BUG-0410).
-- Civilization: the host's vehicles no longer fall several metres behind on the guest's screen when the connection
-  drops packets for a moment (BUG-0438).
+  the host has them at that moment (BUG-0425).
 - Creature: a body one player eats is eaten on the other player's screen too, so the guest can eat the bodies the
   players killed and no longer finds bodies it already ate standing whole on the host's screen (BUG-0557, BUG-0383).
 - Creature: the guest now sees the UFO that visits the host's world, where the host sees it (BUG-0558).

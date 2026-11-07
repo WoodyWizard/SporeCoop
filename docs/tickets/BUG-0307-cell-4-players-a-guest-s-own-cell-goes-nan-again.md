@@ -8,7 +8,7 @@ reported: 2026-10-30
 source: lab 20261030-104149 campaign#2
 role: guest
 versions: 0.7.3.1
-fixed_in: unreleased
+fixed_in: 0.7.9
 branch: fix/w12-cell-fault, fix/w45-cell-nan
 commits: 251c7cc2, e5adadb5, 4075f89e
 tests: cell_contact_nan, cell_levelups, cell_nan_all, cell_churn, campaign, cell_4p, cell_nan_drain, cell_jumps, cell_view_nan
@@ -119,3 +119,4 @@ the 1-3 of the original run).
 - 2026-11-06 (fix/w45-cell-nan): the writer of the NaN found (the contact solver fed the game's unset normal of two
   cells on one centre) and fixed (`cell.contact_finite`, test cell_contact_nan); the address space drain split off as
   BUG-0621. Status fixed.
+- 2026-11-07: released in 0.7.9.

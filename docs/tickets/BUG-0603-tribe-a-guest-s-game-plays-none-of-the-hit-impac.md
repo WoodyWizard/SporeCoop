@@ -8,7 +8,7 @@ reported: 2026-11-05
 source: lab (fix/w44-guest-player3, BUG-0600 analysis)
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.9
 branch: fix/w45-tribe
 commits: a0b44e09
 tests: tribe_hit_impacts (coop_tribe_hit_impacts.py)
@@ -66,3 +66,4 @@ guest's game played, per sound id, at least 80 % of the host's (`coop.audio`, th
 ## History
 - 2026-11-05: opened (fix/w44-guest-player3, P2b of 0.7.8), analysed, not fixed.
 - 2026-11-05 (fix/w45-tribe, T2 of 0.7.9): root cause corrected (the event's object, not a target list); fixed behind effects.hit_targets.
+- 2026-11-07: released in 0.7.9.

@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: player report 2026-11-01 (host log 13:35:01)
 role: guest
 versions: 0.7.3.3
-fixed_in: unreleased
+fixed_in: 0.7.9
 branch: fix/w45-one-game-objects
 commits: 3f8ec9a3 450f3ab1
 tests: creature_e84 (coop_creature_e84.py, step 2)
@@ -54,3 +54,4 @@ showed as one sync-check mismatch.
   creature (creations_state.choose_own, restored at the end), the save waits for the puppet as that creature, the
   message says what is missing. PASS out/lab/20261106-054422, twin FAIL with SPORE_FIX_OFF=npc.stray_ids
   out/lab/20261106-054618 (#5); FAIL before the change on lane 3 out/lab/20261106-051910.
+- 2026-11-07: released in 0.7.9.

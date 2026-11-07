@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: lab
 role: host
 versions: 0.7.3.3
-fixed_in: unreleased
+fixed_in: 0.7.9
 branch: fix/w45-remote-bodies-2
 commits: aed2f801, 462fc0f0, 2f3cba6f, 42967676
 tests: puppet_stops (coop_puppet_walk.py --dir both --guest-fps 30 --goto=-195,-465,-45 --stop-walk --secs 45, SPORE_NET=player)
@@ -42,3 +42,4 @@ puppet_stops judges the slide on coop.bodyrec (past where the walker's own creat
   (drive.lead) is not given to the partner's puppet (it would add an overshoot of speed x latency at every stop, the
   thing this ticket is about); not touched, stays open (not reproduced in 21 stops on 2026-11-04).
 - 2026-11-06 (fix/w45-remote-bodies-2, M2): reproduced on both games' own positions (coop.bodyrec in coop_puppet_walk, suite puppet_stops); creature.puppet_stop again, the hold from the target's own stop; FAIL 20261106-083248, PASS 20261106-083011.
+- 2026-11-07: released in 0.7.9.

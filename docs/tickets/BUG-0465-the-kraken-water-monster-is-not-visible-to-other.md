@@ -8,7 +8,7 @@ reported: 2026-11-02
 source: player reports on Discord 2026-11-02 (bug-reports forum, 0.7.3.4, GOG host + Steam guest)
 role: host
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.9
 branch: fix/w45-creature-reports
 commits: 7d4481bd
 tests: creature_sea_monster (coop_creature_sea_monster.py)
@@ -78,3 +78,4 @@ planet's up). The guest stands on the shore 65 m away and turns its camera to th
 - 2026-11-05 (fix/w44-guest-player3, P2b of 0.7.8): reproduced at runtime (the monster is in the dying player's death cinematic only), not fixed: needs the cinematic's actor shown at the puppet.
 - 2026-11-05 (fix/w45-creature-reports, P3 of 0.7.9): not fixed; the time went to BUG-0557 / BUG-0383, BUG-0558 and BUG-0458 (by player impact: the monster is the drowning player's own death cinematic, seen by the partner as the puppet dying in deep water). Next step unchanged: read CRG_AvatarDied_SeaMonster's actors (the cinematic's data) and show that model at the puppet without the camera.
 - 2026-11-06 (fix/w45-creature-reports, follow-up of P3): the monster found (an effect of the death cinematic), shown upright on the partner (effects.world_xform); fixed.
+- 2026-11-07: released in 0.7.9.

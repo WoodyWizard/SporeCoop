@@ -2069,7 +2069,8 @@ drawn position `d`, aim `tgt`, aim speed `rv`).
   body_trail_tribe_player 1.05-1.37 m, tribe_walk 2 of 2 (20261106-185808, -185811).
 * ~ over the player network (45 ms, spikes of +250 ms) M1's lead keeps its start steps when a walk starts in a spike
   (3.6-3.8 m, then 0.87-0.95 m frames: tribe_walk_player 20261106-185808); smoothing them (over 1.5 m) made that test
-  stop-and-go and body_trail_tribe_player trail (-191334, -191337): not solved here.
+  stop-and-go and body_trail_tribe_player trail (-191334, -191337): not solved here. Solved since by bringing a late
+  state in over time (BUG-0650): docs/re/tribe.md#tribe-lead-late.
 * ~ NPC proxies (npc.cpp, the other SnapshotBuffer::lead user) keep M1's lead and catch_prop (smooth_max 0): no test
   showed jumps there; not measured over the mobile network.
 * ~ under the lab load of the day (6-20 on 6 cores) body_trail_* fail for NPC animals too, which no part of this
@@ -2141,3 +2142,125 @@ BUG-0617 (after BUG-0548). GOG 2024, lane 5, coop_world_host.py --case bundle_ca
   tribe's member (+0x340) and selectable (+0x354, citizen +0xC0) vectors and its +0x1014 cleared, as the host's game
   does: left in, play_tribe saw one member more on the guest and a guest's order to the body was rejected on the host
   (lab 20261106-143257). The detached mirror is destroyed with DestroyInstance when the host's body goes.
+
+## A late state brought in over time: the member lead at a walk start in a latency spike (2026-11-06, fix/w45-lead-player)
+<a id="tribe-lead-late"></a>
+
+BUG-0650, `coop.fix drive.lead_late` (net/interp.h SnapshotBuffer::late_time / lead_at; Tribe member mirrors only,
+smooth_max > 0, over a link under drive.lead_smooth's 100 ms one-way rule). Measured on tribe_walk_player (both games at
+30 fps, SPORE_NET=player: 45 ms, +-15 ms, +250 ms for 0.7 s every 7 s) from the per-frame track JSON.
+
+* ✔ observed (M3, docs/re/tribe.md#tribe-lead-smooth): a walk that starts in a spike is known 0.3-0.4 s late; M1's lead
+  shows the newest state moved on to the sender's now, so the target stepped 3.6-3.8 m in one frame from the stand and
+  catch_prop drew 0.87-0.95 m frames (the test's limit 3 x 9 m/s x dt = 0.86 m at 32 ms).
+* ✔ observed: bounding catch_prop's drawn step instead (`drive.lead_draw`, tried, reverted: walk + placing <= 2.5 x the
+  speed + 1 m/s) left a short walk known late 3 m behind its target when it stopped; the stand driving (drive::step) then
+  closed it in a 1.08 m frame as the next walk started (lab 20261106-200630 #2, member 2 at 10.47 s). Closing a late start
+  at any speed the body can be drawn at needs the time the walk lasts: the target itself has to start where the body is.
+* ✔ observed (net_tests test_lead_late): when a spike ends, the states sent in it arrive after newer ones and are dropped
+  as old (netem orders by send time + delay), so the first walking state that is kept can be 2.7 m from the stand. A
+  shown time that steps back only to the newest state's own time still jumped 2.7 m there; back to the state before it
+  (the path between the two interpolated) 0.45-0.55 m per 1/30 s frame (M1 3.3-3.6 m).
+* ✔ the fix: the lead target has its own sender time. It advances at the real time's rate; when a new state arrives it
+  may step back (never forward) to as early as the state before the newest: of that span (17 candidates) the time whose
+  target is nearest where the shown target was going (a state as expected: the lead's own time, nothing changes; the
+  first state of a start known late: the path from the last standing state). Then it catches up with the lead at 1.5x
+  the real time but at most 3 m/s over the body's speed, and the velocity the mirror walks at is scaled by the same rate
+  meanwhile (walked at the state's speed the mirror fell behind a faster target and catch_prop surged after it). At
+  1.5x without the 3 m/s cap an 11 m/s member's target ran 16.5 m/s and walk + catch_prop drew 0.94-0.96 m frames
+  (lab 20261106-212040 #2, member 7 at 34.8 s). Catching up takes lateness x speed / 3 m/s (0.35 s late at 9 m/s: ~1 s;
+  ~0.1 s late on a calm link: 0.3 s).
+* ✔ observed (guest logs): under a lab load over ~10 on 6 cores the one-way latency drive.lead_smooth reads is 110-150
+  ms on a local link too and the member lead goes off (BUG-0651); body_trail_tribe(_player) then fail for members on
+  the old and the new code alike (p90 2.4-3.2 m, lag p50 0.4-0.7 s; 20261106-210300, -210310).
+* ~ the remaining target steps over 1.5 m in tribe_walk_player are at stops (a stop state known late: the lead had gone
+  on past it) and at members the host's own game put somewhere (rv 0): not walk starts; no drawn jump in those runs.
+* ~ under lab loads of 9-19 on 6 cores tribe_walk_player fails now and then for 0.7.8 too (windows 63-71 %, uneven
+  11 %): judge it only A/B at the same time on the other lane pair.
+
+## Bodies and the sync-check after a join (2026-11-07, fix/w46-tribe-missing)
+<a id="tribe-sync-bodies"></a>
+
+BUG-0664. GOG 2024, lab lanes 4-5 (tribe_dead_rejoin), long_tribe out/lab/20261107-004042 of rel/0.7.9.
+* ✔ (logs) long_tribe on rel/0.7.9 failed the sync-check gate twice, 12 s after the guest's restart and 6 s after its
+  rejoin had loaded the host's world: "t: 1 missing on the guest (t10)" / "(t8)"; on the host, too, `t10 here: not
+  listed` (in no tribe's member list, `coop.tribe`), and the host's `bodies_sent` counter grew across both joins
+  (1778 -> 1903 -> 1979 around s 1850-1900, 1979 -> 2055 -> 2212 around s 2300-2330, 0 in between): the key was a body
+  sent by tribe.member_body (#tribe-member-body).
+* ✔ (code) the host's `sync_entries` listed every live object of `g_hm`, bodies included; a guest spawns no mirror for
+  a body entry (only lets a mirror it already had lie there), so a guest that joined or reloaded the world while a body
+  lay on the host had none. 0.7.8 dropped the body from `g_hm` at once: no such key, no mismatch (long_tribe on 0.7.8
+  and 0.7.7: 0 MISMATCH lines).
+* ✔ tribe.sync_bodies: both sides leave bodies (host: `body_since != 0`, guest: the entry's body bit) out of the
+  sync-check; the check compares members. `coop.fix tribe.sync_bodies off`: the host lists them again.
+* ? a guest that joins while a body lies on the host does not show that body (at most the 10-20 s the game keeps it);
+  not checked whether the shared save holds it.
+
+## A body's mirror destroyed without its tribe: the eat node's exit (2026-11-07, fix/w46-tribe-fault)
+<a id="tribe-body-teardown"></a>
+
+BUG-0667. GOG 2024, disassembly + lab lane 4 (`coop_tribe_dead_member.py --eat`, suite tribe_body_teardown).
+* ✔ (disassembly) `cTribe_ReleaseSlot` 0xC988E0, thiscall(tribe, layout type, slot) ret 8: calls
+  cTribe_ToolLayout(tribe+0x394, &type) **before** it checks the slot, so it faults with tribe = null whatever the slot
+  (0xAC9C7D `mov edi,[ecx+8]`, ecx 0x394, data 0x39C). The claim's twin of 0xC98860.
+* ✔ (disassembly) BT action table entry at .data 0x1593B20: node **0x0461300F** (eat) enter 0xDB0B10, tick 0xDABD80,
+  exit **0xDB0C40**. The exit reads the tribe by 0xC230B0 (`mov eax,[ecx+0x1014]; ret`) and releases spot
+  `memory+0x10` of layout type **0xD** (the food mat's spots) with 0xC988E0. (The table in section 4 lists tick 0xDABDE0
+  for eat: not checked which one is right; the entry read here has 0xDABD80.)
+* ✔ (disassembly) A citizen's teardown 0xC1FFE0 (DestroyInstance 0xB22560 -> ... -> 0xC1CA40 cleanup) clears its
+  container (+0x34), calls vt 0xBC and 0xC0D500 on it (the behaviour tree's shutdown: the active nodes' exits run), then
+  frees the tree (+0xB4C). Neither 0xC1FFE0 nor the destructor 0xC1BD30 reads +0x1014 itself.
+* ✔ (disassembly) cTribe::RemoveMember (vt 0x9C, GOG 2024 0xC96070) destroys the member (0xB22560 at 0xC96150) with
+  its +0x1014 still set: the game's own path never tears a citizen down without its tribe.
+* ✔ (runtime, lab 20261107-031255) A guest's mirror runs its tree only while the host is away (local_play, or
+  `coop.tribe localbt`); an eat order then puts it in 0x0461300F within 1 s and the node stays active when the tree is
+  skipped again. The host's member dies (tribe.member_body), the guest detaches the mirror (+0x1014 = 0, #tribe-member-body),
+  and when the host's body goes the guest's DestroyInstance runs the eat exit: the fault of long_tribe
+  (20261107-021641: s 1013, after the editor visit at 14.9 min, so the mirror's eat came from the guest's own play then).
+* ✔ Fix `tribe.body_teardown`: the detached body gets its tribe (kept by detach_body) back right before it is
+  destroyed when the tribe is still one of the world's; at session end the bodies left in the world get it back too
+  (the game tears them down later); a cTribe_ReleaseSlot with this = null is skipped (detour, warned 8 times).
+* ✔ (runtime) Why one caught fault "froze" the guest: SporeKit's per-frame work (d3d9hook.cpp on_frame_begin_present ->
+  SK_EV_FRAME -> coop's tick -> tribe on_message -> remove_member) runs under `g_in_frame`. The game's own handler
+  caught the fault and unwound past SporeKit's frames, so `g_in_frame` stayed true: every later Present and game loop pass
+  returned at once (no mod tick, no frame counter). The game itself went on (the watchdog's stack 30 s later: the main
+  thread in App::Canvas::Tick's message pump), but the lab saw no frames and the host saw the guest's state age grow.
+  Fixed in SporeKit (`kit.fix frameunwind`): an entry on the frame's thread at or above the cut-off frame's stack
+  address clears the flags (a nested call is always deeper) and logs "the frame N was cut off by a fault".
+* ? Any other mod state a cut-off frame leaves half done (a loop over g_gm stopped in the middle) is not reset; the
+  next snapshot cycle rebuilds the tribe's.
+* ✔ (disassembly) citizen+0x1014 is an intrusive pointer: SetTribe 0xC23040 AddRefs the new tribe (vt 0) and Releases
+  the old (vt 4); the citizen teardown vt 0xC4 = 0xC27CD0 runs 0xC1FFE0 first and only then releases and zeroes +0x1010
+  and +0x1014. detach_body's raw clear keeps the reference (the raw restore before the destroy is balanced).
+* ✔ (runtime, long_tribe_short 20261107-032137, with the slot guard) when the guest left the world for the menu one
+  citizen was torn down with no tribe: the eat exit's release was skipped, then the exit **0xDA7FB0** of node
+  **0x0551759F** (enter 0xDAE230, tick 0xDA7F20; reads tribe+0x26C) faulted. Not one of the detached bodies (the one of
+  that run had been destroyed with its tribe). ? which citizen: a member whose tribe the guest's own game cleared
+  (SetTribe(null), e.g. a death in its local play during the editor visit) is the inferred candidate.
+* ✔ (runtime, lab 20261107-035000, negative) a mirror in the eat node torn down by the guest's Exit to Main Menu does not
+  fault with the fix off: the game's world teardown destroys members with their tribe set.
+* ✔ Hardening (tribe.body_teardown, guest): SetTribe(null) is recorded (citizen -> old tribe); the citizen teardown
+  0xC27CD0 with +0x1014 null puts back the detached body's tribe or the recorded one (AddRef first) when it is still a
+  world's tribe, else it empties the tree's stack (ai+0x1DC = 0: no exit runs) and logs it (8 times).
+* CORRECTION (2026-11-07, fix/w46-tribe-fault): the teardown fallback above set the depth (ai+0x1DC) to 0, which does
+  not stop the exits: long_tribe_short on rel/0.7.9 (20261107-043030) logged it for 3 citizens and still faulted in
+  0xDA7FB0. 0xBC8850 skips the exits only when the stack's first word ai+0x1D0 is -1; the fallback now fills the
+  0x418-byte stack with 0xFF as 0xBC8850 leaves it. 0xC0D500 (SporeCoop::Citizen_BTTerminate, cdecl(creature)) is the
+  tree's end; ~ superseded: "0xC0D500(citizen) (a timer on +0xB4C)" in Citizen_IdleWalk's .sym line.
+* ✔ (runtime, diagnostics lab 20261107-052358) the citizens left without a tribe at long_tribe_short's menu exit are
+  detached bodies (bodies of members killed in the session's play, still lying when the guest leaves): `detached 1,
+  left tribe 0, tribes listed 0`. The world's teardown destroys the tribes (their members through RemoveMember with the
+  tribe set) before the objects outside the lists, so a body's tribe is no world's tribe any more by then.
+  No SetTribe(null) of the guest's game was seen in that run.
+* ✔ Source fix (tribe.body_teardown): detach_body ends the body's tree with Citizen_BTTerminate while +0x1014 is still
+  set (the exits release their spots as the host's dying member's did), and the BT tick stays skipped for detached
+  bodies (also while the host is away). Repro `coop_tribe_dead_member.py --eat --menu` (suite tribe_body_menu): the
+  eating mirror's member dies on the host, the guest leaves to the main menu while the body lies: with the fix off the
+  fault at 0xAC9C7D and the two space-gfx faults of the following world load (lab 20261107-053541), as in
+  long_tribe_short; with it no fault and no fallback line (20261107-053655).
+* ✔ A/B: long_tribe_short on v0.7.8 passed (rel/0.7.8 worktree, lab 20261107-052252): new in 0.7.9 (detach_body).
+* ? (runtime, long_tribe_short x3 lab 20261107-053815, all PASS, 0 faults) at the later menu exit (after the guest's
+  restart and reload, s ~600) 1-2 citizens were still torn down with no tribe in node 0x04861814 (depth 2) that were
+  neither detached nor taken out by a SetTribe(null) of this game: the fallback ended their trees without exits. Inferred
+  origin: bodies that came with the received world without a tribe (the only other writer of +0x1014 is the reader
+  0xC03370 that copies +0x1010 / +0x1014 from a record); not checked. Whether 0x04861814's exit reads the tribe: not checked.

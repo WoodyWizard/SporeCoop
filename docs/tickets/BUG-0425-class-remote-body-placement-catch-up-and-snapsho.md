@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: generalisation audits 2026-11-01 (docs/generalisation-plan.md)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.9
 branch: fix/w44-height, fix/w45-remote-bodies
 commits: 4b54c7a7, df579966, 9ce58786, de9c4d8d, 261e990c, a71e319b, 440a5c2c, 391562e1, 29330917, 391562e1, 29330917
 tests: npc_air, own_ground, body_trail_creature, body_trail_tribe, body_trail_player, body_trail_tribe_player, body_trail_civ, body_trail_civ_loss
@@ -65,3 +65,4 @@ Trail part: FAIL (SPORE_FIX_OFF=drive.lead) out/lab/20261106-013022 (body_trail_
 - 2026-11-01: opened.
 - 2026-11-05 (fix/w44-height): the height part done (BUG-0550, BUG-0592, BUG-0504); left open for the other parts.
 - 2026-11-06 (fix/w45-remote-bodies, M1): the trail part measured and fixed (drive.lead); the rest split to BUG-0612.
+- 2026-11-07: released in 0.7.9.

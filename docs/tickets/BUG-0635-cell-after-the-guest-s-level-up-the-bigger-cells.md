@@ -1,20 +1,21 @@
 ---
 id: BUG-0635
 title: Cell: after the guest's level-up the bigger cells near it vanish and others appear (mirrors freed by the rebuild, made again)
-status: open
+status: fixed
 kind: desync
 stage: Cell
 reported: 2026-11-06
 source: player report 2026-11-06 (Discord, 0.7.8): discord-2026-11-06/M0ng0r-02, M0ng0r-03
 role: guest
 versions: 0.7.8
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w46-cell-p0
+commits: 47969057 1180b8f8 1a4de972
+tests: cell_levelup_view (coop_cell_levelup_view.py)
 signature:
-docs:
+docs: docs/re/cell.md#cell-levelup-view
 related: BUG-0604, BUG-0511, BUG-0519
+switch: cell.levelup_keep
 ---
 
 ## Report
@@ -33,11 +34,30 @@ next state makes them again at other places or sizes: cells vanish and reappear.
 MSG_CELL_STATE, fixed 0.7.4), BUG-0519 (puppet scale, fixed 0.7.5).
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+Observed cause (Ghidra + lab, docs/re/cell.md#cell-levelup-view): a level change that moves the world scale tier
+runs RemoveCellsOfOldScale 0xE7CD10 in each game, which destroys every cell outside THAT game's visible box
+(0xE5CDE0) and populates the tiles again. The guest's game keeps its mirrors (h_Destroy, not touched), but the
+host's wipe destroyed the host's cells on the guest's screen (82-163 per wipe), and the next state made other
+cells there: the guest lost its whole screen on every change, a single player (the host's own view) keeps most of
+it on a level down. Not the rebuild of BUG-0604 / 0511 / 0519.
+
+`cell.levelup_keep` (cellsync.cpp h_Wipe / h_Destroy, host): inside the host's wipe a cell whose sphere touches a
+partner's visible box (+-15 x +-11 around the partner's cell, the box +-10 x +-7.5 with a margin for its camera) is
+kept, as the game keeps the host's own view. `coop.fix cell.levelup_keep off`: 0.7.9. A level-up still replaces
+most of the screen, in both games alike (the cells of the old tier leave in a single player's game too).
 
 ## Verification
-<!-- Lab: cell_new_game; record the mirrors' host indices and positions around a guest level-up: ids that disappear
-     and come back within a few seconds reproduce it. -->
+* FAIL (`SPORE_FIX_OFF=cell.levelup_keep`): out/lab/20261106-220609: the guest lost 100% of the cells on its screen
+  on each of 6 changes (host 0-36% on a level down, ~90% up; average 100% vs 42%).
+* PASS: out/lab/20261106-220831 (guest 60%, host 52%; 121-170 cells kept per wipe), 20261106-221058 (29% vs 24%).
+* The final test (the guest teleported once, SPORE_DETECTOR=20): FAIL off out/lab/20261106-224735 (guest 81%, host
+  39%); PASS out/lab/20261106-224058 #1 / #2 (40% vs 43%, 56% vs 55%); the detector shows only BUG-0480 rows and one
+  Cell:pos:cell row inside a level change (BUG-0662, a detector artefact), no churn row.
+* Area tests with the fixes: out/lab/20261106-223316 (cell_new_game, cell_levelups, cell_sync, cell_meat, cell_gone
+  all OK).
+* Earlier runs with one-level steps (no wipe at all) and an on-screen measure: 20261106-215819, -220056, -220333
+  (the test was changed to three-level steps and to cells removed from each game's world).
 
 ## History
 - 2026-11-06: opened. From the Discord report 2026-11-06 (0.7.8), the players' logs read in fix/w45-intake.
+- 2026-11-06: fixed in fix/w46-cell-p0 (cell.levelup_keep): the host's level-change wipe keeps the cells on a partner's screen; FAIL 20261106-220609, PASS 20261106-220831, -221058.

@@ -8,7 +8,7 @@ reported: 2026-11-06
 source: L4 agent, every game log since 0.7.5 (hook_create 00B22560 failed)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.9
 branch: rel/0.7.9
 commits: 64f66aea
 tests: civ_tribe_left, creature (lab gate "hook not made", tools/lab.py)
@@ -36,3 +36,4 @@ no-fail-run: a hook conflict at startup, not behaviour. Before: rel/0.7.8 out/la
 
 ## History
 - 2026-11-06: opened.
+- 2026-11-07: released in 0.7.9.

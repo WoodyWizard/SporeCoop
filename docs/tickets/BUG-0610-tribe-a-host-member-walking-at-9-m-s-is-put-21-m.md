@@ -8,7 +8,7 @@ reported: 2026-11-06
 source: fix/w45-remote-bodies body_trail_tribe_player
 role: host
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.9
 branch: fix/w45-remote-bodies-2
 commits: db4b6090
 tests: body_trail_tribe, body_trail_tribe_player, tribe_chiefs_apart
@@ -38,3 +38,4 @@ body_trail_tribe now checks one-frame steps over 5 m of a member on both games' 
 ## History
 - 2026-11-06: opened.
 - 2026-11-06 (fix/w45-remote-bodies-2, M2): root cause is the mod's place_chiefs (static RE + log/track timing); fixed with tribe.place_still; FAIL 20261106-042658, PASS 20261106-042100.
+- 2026-11-07: released in 0.7.9.

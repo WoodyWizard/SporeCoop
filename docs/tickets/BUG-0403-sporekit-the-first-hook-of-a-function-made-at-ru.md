@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: found on fix/w33-null-call (BUG-0398 analysis)
 role: any
 versions: 0.7.3.3
-fixed_in: unreleased
+fixed_in: 0.7.9
 branch: fix/w45-crashes
 commits: 1d80c9ea, 912afcd7, 9d9b1a1d, 66c155ce
 tests: kit_hooksplit
@@ -68,3 +68,4 @@ Test `kit_hooksplit` (kit_freeze.py --case hooksplit: 1000 functions whose first
 ## History
 - 2026-11-01: opened (fix/w33-null-call).
 - 2026-11-05 (fix/w45-crashes): reproduced with split prologues (kit.test.hooknew ... split), fixed by an int3 gate and a 50 ms window before the bytes are written (`kit.fix hookfirst`; the first version with GetThreadContext froze the host under Wine and was replaced); kit_hooksplit FAIL 3/3, PASS 3/3.
+- 2026-11-07: released in 0.7.9.
