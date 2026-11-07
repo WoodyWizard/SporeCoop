@@ -281,6 +281,15 @@ COOP_FIX("civ.extrap", "BUG-0186", g_extrap_fix,
          "civ: a mirrored vehicle is moved on at most 0.15 s past its last state (a host hitch no longer throws it ahead)");
 constexpr double kVehAhead = 0.15;
 constexpr double kVehLead = 0.3; // BUG-0425
+// BUG-0438 (K3): a mirrored vehicle is placed where its target is when the frame is drawn. guest_tick moved it half
+// way from where it stood to the target every frame (StopMovement + Teleport: the game does not move it), so a vehicle
+// at 15-20 m/s was drawn a frame's glide plus the frame the placing shows up in behind its own target: 0.4-1.8 m (p50)
+// between the drawn vehicle and the target, more than the target's own error (coop.bodyrec diag rows, body_trail_civ_loss,
+// lab 20261107-074040). With the fix the vehicle goes on with the target's velocity and only the rest (a new state's
+// correction, a push) is glided half per frame, aimed one frame ahead (the last frame's time, at most 0.1 s). Off: 0.7.9.
+static bool g_place_now_fix = true;
+COOP_FIX("civ.place_now", "BUG-0438", g_place_now_fix,
+         "civ: a mirrored vehicle is drawn on its target, not half a step and a frame behind it");
 static bool g_vel_cap_fix = true;
 COOP_FIX("civ.vel_cap", "BUG-0186", g_vel_cap_fix,
          "civ: a vehicle step faster than twice its top speed is taken as a jump, not a speed to extrapolate");
@@ -3524,18 +3533,24 @@ static void guest_tick(double now)
             g.has_put = false;
         return; // the last states would stop every order for 3 s (StopMovement below)
     }
+    static double last_tick = 0; // BUG-0438: the last frame's time (the placing shows up a frame later)
+    const double fdt = std::min(std::max(now - last_tick, 0.0), 0.1);
+    last_tick = now;
     for (auto& [id, g] : g_gv) {
         if (!g.v || !game::object_alive(g.v) || now - g.seen > 3.0) {
             g.has_put = false;
             continue;
         }
-        net::Vec3 cur = veh_pos(g.v);
+        const net::Vec3 at = veh_pos(g.v);
+        net::Vec3 cur = at;
         // moved on with the estimated velocity (no lag behind the host); BUG-0425 (drive.lead): by the one-way latency
         // the session measures (half the round trip), not a fixed 0.03 s
-        net::Vec3 want = g.est.at(now, net::g_lead_fix ? net::g_one_way : 0.03);
+        net::Vec3 want = g.est.at(now + (g_place_now_fix ? fdt : 0.0), net::g_lead_fix ? net::g_one_way : 0.03);
+        if (g_place_now_fix && g.has_put) // BUG-0438: on with the target's velocity, only the rest glided below
+            cur = {cur.x + g.est.vel.x * (float)fdt, cur.y + g.est.vel.y * (float)fdt, cur.z + g.est.vel.z * (float)fdt};
         float d = net::dist(cur, want);
         if (g.has_put) {
-            g.pushed = net::dist(cur, g.put);
+            g.pushed = net::dist(at, g.put);
             if (g.pushed > g.pushed_max || now - g.pushed_at > 5.0) {
                 g.pushed_max = g.pushed;
                 g.pushed_at = now;

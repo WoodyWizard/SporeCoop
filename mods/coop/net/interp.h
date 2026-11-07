@@ -152,6 +152,20 @@ constexpr double kLateRate = 0.5;
 // mirror's walk + catch_prop on top drew 0.94-0.96 m frames (tribe_walk_player 20261106-212040 #2, member 7 at 34.8 s)
 constexpr double kLateExtra = 3.0;
 constexpr int kLateSteps = 16; // candidate times between the earliest and the shown time's continuation
+// BUG-0410, BUG-0651 (K3, `coop.fix drive.lead_keep`): the member lead stays on over any link and a late state is
+// caught up at up to twice the body's speed. In 0.7.9 the lead went off over a one-way latency over 100 ms (BUG-0619's
+// rule against the mobile network's stop-and-go, from before drive.lead_late): the player network measures 80-101 ms and
+// a loaded guest 110-150 ms on any link (the round trip counts both games' frame times), so the members were shown
+// interpolated, 0.2 s + latency late, for whole runs (body_trail_tribe_player p90 3.2-3.4 m, coop.bodyrec diag rows,
+// lab 20261107-073841 #1, #3), and where the lead was on, drive.lead_late's catch-up at 1.33x (+3 m/s at 9 m/s) kept the
+// shown target 0.25-0.3 s behind for 0.75 s after every start known late (a latency spike, a loss burst): p90 2.36 m
+// against M1's raw lead 1.20 m (-073841 #2). drive.lead_late brings any late state in without a step, which is what
+// the no-lead rule was for. With the fix: no no-lead rule while drive.lead_late is on; the late target catches up at
+// 1 + kKeepRate x the real time (a mirror walking at that rate draws at most 2 x its speed + catch_up: tribe_walk's jump
+// is 3 x the top speed), and the mirror is walked at the target's rate with no proportional catch-up on top (driver.h
+// catch_prop: the 16.5 m/s + catch-up frames of BUG-0650). Off: 0.7.9.
+inline bool g_lead_keep_fix = true;
+constexpr double kKeepRate = 1.0;
 
 class SnapshotBuffer {
 public:
@@ -302,7 +316,7 @@ private:
         if (lead && g_lead_fix) {
             double tl = local_now - offset_ + g_one_way;
             const Snap& n = snaps_.back();
-            const bool late = g_lead_late_fix && g_lead_smooth_fix && smooth_max > 0 && !jittery_;
+            const bool late = g_lead_late_fix && g_lead_smooth_fix && smooth_max > 0 && (!jittery_ || g_lead_keep_fix);
             if (late)
                 tl = late_time(local_now, tl);
             // BUG-0619: no lead over a jittery link (jitter_ over kJitterHigh until it is under kJitterLow again): the lead
@@ -312,7 +326,7 @@ private:
             // smooth, ~0.2 s late); the switch goes through the smoothing
             bool use = true;
             if (g_lead_smooth_fix && smooth_max > 0)
-                use = !jittery_;
+                use = !jittery_ || late; // BUG-0651 (g_lead_keep_fix): kept on while drive.lead_late brings late states in
             if (use && tl >= n.t) {
                 double dt = tl - n.t;
                 last_extrap = dt;
@@ -434,7 +448,8 @@ private:
             return std::min(tl, lt_t_ - (lt_local_ - local_now));
         const double adv = local_now - lt_local_;
         const Vec3 lv = lead_velocity();
-        const double rate = 1.0 + std::min(kLateRate, kLateExtra / std::max(0.1, (double)dist(Vec3{}, lv)));
+        const double rate = g_lead_keep_fix ? 1.0 + kKeepRate
+                                            : 1.0 + std::min(kLateRate, kLateExtra / std::max(0.1, (double)dist(Vec3{}, lv)));
         double cont = std::min(tl, lt_t_ + adv);
         double t = std::min(tl, lt_t_ + adv * rate);
         if (lt_new_) {
@@ -443,8 +458,11 @@ private:
             // after newer ones and are dropped; the newest is then the first walking state, 2-3 m from the stand)
             const double earliest = snaps_.size() >= 2 ? snaps_[snaps_.size() - 2].t : snaps_.back().t;
             if (cont > earliest + 1e-3) {
-                Vec3 want{lt_pos_.x + lt_vel_.x * (float)adv, lt_pos_.y + lt_vel_.y * (float)adv,
-                          lt_pos_.z + lt_vel_.z * (float)adv};
+                // BUG-0651 (g_lead_keep_fix): going on at the body's own velocity (the lead's), not the shown target's: its
+                // catch-up velocity overshot, and after a frame that stepped back (velocity 0) every new state stepped
+                // it back again (the target stood every other frame 0.07-0.1 s behind, net_tests test_lead_late)
+                const Vec3 wv = g_lead_keep_fix ? lv : lt_vel_;
+                Vec3 want{lt_pos_.x + wv.x * (float)adv, lt_pos_.y + wv.y * (float)adv, lt_pos_.z + wv.z * (float)adv};
                 double best = cont;
                 float bd = dist(lead_at(cont), want);
                 for (int i = 0; i < kLateSteps; i++) {
@@ -477,6 +495,10 @@ public:
     // diagnostics (BUG-0619): the smoothing's offset now (m) and the raw lead target's jump at the last new state
     double jitter() const { return jitter_; }
     bool jittery() const { return jittery_; }
+    // BUG-0651: the member lead is off (interpolated, 0.7.8) because of the link's latency
+    bool lead_off() const { return jittery_ && !(g_lead_keep_fix && g_lead_late_fix && g_lead_smooth_fix && smooth_max > 0); }
+    // BUG-0651: the late lead target catches up (runs faster than the body) this frame
+    bool late_catching() const { return lt_have_ && lt_rate_ > 1.01f; }
     float smooth_off() const { return sm_have_ ? dist(Vec3{}, sm_off_) : 0.f; }
     // BUG-0619: true when the last sample(now) was the smoothed lead; `v` then is the shown target's velocity (the
     // lead's plus the offset's decay): the speed the mirror must walk at to stay on it

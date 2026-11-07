@@ -696,9 +696,84 @@ static void test_lead_late()
         printf("  spike to %.2f s: max target step per 1/30 s frame: fix %.2f m (end error %.2f), M1 %.2f m (%.2f)\n",
                spike_end, on, err_on, off, err_off);
         CHECK(off > 2.f);     // M1: the start known 0.35 s late jumps 2.7-3.3 m
-        CHECK(on < 0.6f);     // under 2 x the walk (9 m/s x 1/30 s); the test draws a jump at 3 x
+        // under 2 x the walk (9 m/s x 1/30 s; drive.lead_keep catches up at 2 x: + one frame's step back); the test
+        // draws a jump at 3 x
+        CHECK(on < (g_lead_keep_fix ? 0.7f : 0.6f));
         CHECK(err_on < 0.5f); // and it is at the lead again
     }
+}
+
+// BUG-0651, BUG-0410 (drive.lead_keep): a Tribe member walking at 9 m/s, its states every 1/30 s, `lat` s late (one
+// way); a walk that starts at sender time 3.0 is known `start_late` s late (a spike). Returns the mean distance of the
+// shown target from the sender's body now (sender time = local - 10 - lat + one-way, where the lead shows it) over
+// local 12.5-15.5 s, and in *catch_s how long after the late start's arrival the target is within 0.3 m of it
+static float lead_keep_err(bool keep, double lat, double start_late, double* catch_s)
+{
+    const bool was = g_lead_keep_fix;
+    const double was_ow = g_one_way;
+    g_lead_keep_fix = keep;
+    SnapshotBuffer b;
+    b.delay = 0.2;
+    b.lead = true;
+    b.smooth_max = 6.f;
+    g_one_way = lat;
+    auto x_at = [](double st) { return st > 3.0 ? (float)(st - 3.0) * 9.f : 0.f; };
+    std::vector<std::pair<double, PlayerState>> arr;
+    for (int i = 0; i < 210; i++) {
+        double st = i / 30.0;
+        PlayerState s;
+        s.time_ms = (uint32_t)(1000 + st * 1000.0 + 0.5);
+        s.mode = 0x1654C01;
+        s.world = 7;
+        s.flags = PF_IN_WORLD | (st > 3.0 ? PF_MOVING : 0);
+        s.pos = {x_at(st), 0.f, 0.f};
+        s.vel = {st > 3.0 ? 9.f : 0.f, 0.f, 0.f};
+        arr.push_back({10.0 + st + lat + (st >= 2.95 && st < 3.3 ? start_late : 0.0), s});
+    }
+    std::stable_sort(arr.begin(), arr.end(), [](auto& a, auto& c) { return a.first < c.first; });
+    size_t k = 0;
+    PlayerState o;
+    double sum = 0, known = -1;
+    int n = 0;
+    *catch_s = 99;
+    for (double now = 10.0; now < 16.9; now += 1.0 / 30) {
+        while (k < arr.size() && arr[k].first <= now) {
+            if (known < 0 && arr[k].second.flags & PF_MOVING)
+                known = now;
+            b.push(arr[k].second, arr[k].first), k++;
+        }
+        if (!b.sample(now, o))
+            continue;
+        float err = std::fabs(o.pos.x - x_at(now - 10.0));
+        if (now > 13.5 && now < 16.5) {
+            sum += err;
+            n++;
+        }
+        if (known >= 0 && *catch_s > 90 && err < 0.3f)
+            *catch_s = now - known;
+    }
+    g_lead_keep_fix = was;
+    g_one_way = was_ow;
+    return n ? (float)(sum / n) : 99.f;
+}
+
+static void test_lead_keep()
+{
+    printf("member lead over a 120 ms link and after a start known late (BUG-0651, BUG-0410)\n");
+    double c_on, c_off;
+    // a 120 ms one-way link (a loaded guest measures 110-150 ms on any link): 0.7.9 showed the members interpolated
+    float on = lead_keep_err(true, 0.12, 0.0, &c_on), off = lead_keep_err(false, 0.12, 0.0, &c_off);
+    printf("  one-way 120 ms: mean target error keep %.2f m, 0.7.9 %.2f m\n", on, off);
+    CHECK(off > 1.5f); // 0.2 s + 0.12 s late at 9 m/s
+    CHECK(on < 0.3f);
+    // a 45 ms link, the walk's start known 0.3 s late (a spike of the player network): caught up at 2x, not 1.33x
+    on = lead_keep_err(true, 0.045, 0.3, &c_on);
+    off = lead_keep_err(false, 0.045, 0.3, &c_off);
+    printf("  start 0.3 s late: within 0.3 m of the body %.2f s after it is known (0.7.9 %.2f s); mean error %.2f / %.2f m\n",
+           c_on, c_off, on, off);
+    CHECK(c_off > 0.8);
+    CHECK(c_on < 0.5);
+    CHECK(on < 0.15f);
 }
 
 static void test_discovery()
@@ -2779,6 +2854,7 @@ int main(int argc, char** argv)
     test_interp();
     test_interp_gap();
     test_lead_late();
+    test_lead_keep();
     test_discovery();
     test_lobby_roles();
     test_shared_ledger();

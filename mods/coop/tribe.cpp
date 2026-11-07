@@ -2224,8 +2224,8 @@ static void mirror_target(GMember& g, double now, net::Vec3& pos, net::Quat& rot
         // included): walked at the raw path's speed the mirror fell 0.5-1.4 m behind a closing target and surged
         // after it at 7-8 m/s when the closing ended (tribe_walk_mobile 20261106-140306 #3: uneven 16 %)
         g.lead_sp = -1;
-        if (g.buf.jittery() != g.jittery) { // (diagnostics: the lead switched off / on by the link's jitter)
-            g.jittery = g.buf.jittery();
+        if (g.buf.lead_off() != g.jittery) { // (diagnostics: the lead switched off / on by the link's jitter)
+            g.jittery = g.buf.lead_off();
             static unsigned said = 0; // (BUG-0650: 400 lines; 12 did not cover one test run)
             if (said++ < 400)
                 H->log(M, SK_INFO, "tribe: mirror #%u lead %s (one-way latency %.0f ms, BUG-0619)", g.id,
@@ -2321,7 +2321,10 @@ static void mirror_drive(GMember& g, double now)
         o.ground = g_mirror_ground_fix; // BUG-0444
         // BUG-0425; BUG-0619: not while the smoothed target closes the error itself (catch_prop on top measured the
         // catch-up from the game's walk and drew walk + catch-up, 0.9-1.25 m frames), nor without the lead (0.7.8)
-        o.catch_prop = g.lead_sp < 0 && !(net::g_lead_smooth_fix && g.buf.jittery());
+        o.catch_prop = g.lead_sp < 0 && !(net::g_lead_smooth_fix && g.buf.lead_off());
+        // BUG-0651 (drive.lead_keep): walked at the catching-up target's rate (up to 2x), no proportional catch-up on top
+        if (net::g_lead_keep_fix && g.buf.late_catching())
+            o.catch_prop = false;
         if (g.lead_sp >= 0)
             o.lead_speed = std::max(g.lead_sp, 0.5f); // BUG-0619
         drive::walk_place(g.c, g.aim, rot, vel, g.ds, now, o);
@@ -3437,7 +3440,7 @@ void for_each_diag(void (*fn)(const char* key, const net::Vec3& p, void* user), 
         snprintf(k, sizeof k, "r%u", (unsigned)id);
         fn(k, g.buf.raw_lead(now), user);
         snprintf(k, sizeof k, "l%u", (unsigned)id);
-        fn(k, net::Vec3{(float)g.buf.late_behind(now), g.buf.jittery() ? 1.f : 0.f, g.ds.last_err}, user);
+        fn(k, net::Vec3{(float)g.buf.late_behind(now), g.buf.lead_off() ? 1.f : 0.f, g.ds.last_err}, user);
     }
 }
 
