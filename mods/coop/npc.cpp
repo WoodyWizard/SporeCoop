@@ -563,6 +563,39 @@ static void proxy_tuning(Proxy& px)
     g_tunings_set++;
 }
 
+// BUG-0669 (docs/re/tribe.md#tribe-epic-steps): the footsteps of an animated creature play (0xA01000 ->
+// FUN_009A6BD0) while its animation blends a gait in (+0xFAC of the animation's owner) or always while it moves when
+// its animation's epic flag (AnimatedCreature +0x17C -> +0x2D5) is set; the game sets that flag from the tuning's
+// isEpic (+0x388) only when the creature's model is set up (0xC21D50 -> 0xA04C00). A proxy gets the host's tuning
+// later (proxy_tuning: SetTuning does not touch the animation), so the guest's copy of the host's epic walked
+// silently (tribe fixture: the host's game played 35-52 footsteps of its epic 0654E5CB a minute, the guest's none).
+// The proxy's animation flag follows its tuning now, while the host's NPC walks: a proxy that stands still turns a
+// little every frame under the mod's facing (its animation's turn +0x166C up to 1 rad/s where the host's was 0), which
+// passes the footsteps' gate with the flag (first try: 256 footsteps on the guest against the host's 38 a minute).
+// `coop.fix npc.epic_steps off`: as Create left it (0.7.9).
+static bool g_epic_steps_fix = true;
+COOP_FIX("npc.epic_steps", "BUG-0669", g_epic_steps_fix,
+         "creature: the guest hears the footsteps of the host's epic creatures (their animation's epic flag)");
+static uint32_t g_epic_steps_set = 0;
+static void proxy_epic_steps(void* c, bool moving)
+{
+    static uintptr_t set = H->sym("SporeCoop::AnimatedCreature_SetEpicFlag");
+    if (!g_epic_steps_fix || !c || !set || !skg::readable((uint8_t*)c + 0xB54, 4) || !skg::readable((uint8_t*)c + 0xE84, 4))
+        return;
+    uint8_t* t = *(uint8_t**)((uint8_t*)c + 0xE84);
+    uint8_t* ac = *(uint8_t**)((uint8_t*)c + 0xB54);
+    if (!ac || !skg::readable(ac + 0x17C, 4))
+        return;
+    uint8_t* cid = *(uint8_t**)(ac + 0x17C);
+    if (!cid || !skg::readable(cid + 0x2D5, 1))
+        return;
+    uint8_t want = moving && t && skg::readable(t + 0x388, 1) && t[0x388] ? 1 : 0;
+    if (cid[0x2D5] == want)
+        return;
+    skg::thiscall<void>(set, ac, (uint32_t)want);
+    g_epic_steps_set++;
+}
+
 // tests: a proxy without tuning, as Create makes one in a herd of ours (the species' nest herd not found yet:
 // lane 9, the first proxies of species 06805133 after a join); the fix gives it the host's again
 std::string debug_untune(uint16_t id)
@@ -573,13 +606,19 @@ std::string debug_untune(uint16_t id)
         return "no proxy " + std::to_string(id) + "\n";
     skg::thiscall<void>(set, it->second.c, (void*)nullptr);
     it->second.tuning_set = 0;
+    // BUG-0669: and its animation's epic flag as the model setup of a creature without tuning leaves it (0)
+    static uintptr_t epic = H->sym("SporeCoop::AnimatedCreature_SetEpicFlag");
+    uint8_t* ac = skg::readable((uint8_t*)it->second.c + 0xB54, 4) ? *(uint8_t**)((uint8_t*)it->second.c + 0xB54) : nullptr;
+    if (epic && ac && skg::readable(ac + 0x17C, 4) && *(void**)(ac + 0x17C))
+        skg::thiscall<void>(epic, ac, 0u);
     return "proxy " + std::to_string(id) + " has no tuning now\n";
 }
 
 std::string tuning_status()
 {
     char b[120];
-    snprintf(b, sizeof b, "npc tuning: fix=%d set=%u missing=%u\n", (int)g_tuning_fix, g_tunings_set, g_tunings_missing);
+    snprintf(b, sizeof b, "npc tuning: fix=%d set=%u missing=%u epic_steps=%u\n", (int)g_tuning_fix, g_tunings_set, g_tunings_missing,
+             g_epic_steps_set);
     return b;
 }
 
@@ -1729,6 +1768,7 @@ static void guest_tick(double now)
             game::teleport(px.c, rts_stage() ? drive::out_of_ground(s.pos) : s.pos, s.rot);
         }
         proxy_tuning(px);
+        proxy_epic_steps(px.c, rv_rep > 0.3f); // BUG-0669 (the host's NPC walks)
         if (now < px.manual_until) {
             if (px.c && (px.manual_mode & 1) && now - px.manual_last > 0.1) {
                 game::set_speed(px.c, px.manual_speed);
