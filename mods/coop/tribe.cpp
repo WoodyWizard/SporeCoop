@@ -1027,6 +1027,8 @@ static void theme_hooks_install(); // BUG-0568 (the Tribe theme music relay, bel
 static void party_hooks_install(); // BUG-0646 (the fire pit party music relay, below)
 static void party_forget();
 static void SK_THISCALL h_BabyBorn(void*, float, float, float); // BUG-0671 (below)
+static void baby_tick(double now);
+static void baby_forget();
 static void save_start();
 static void save_end();
 
@@ -1528,6 +1530,7 @@ static void host_tick(double now)
     if (now - g_last_send < 0.12)
         return;
     g_last_send = now;
+    baby_tick(now); // BUG-0671
     void* pt = player_tribe();
     auto tribes = all_tribes();
     std::vector<uint8_t> players;
@@ -1687,21 +1690,66 @@ static void give_on_host(uint8_t from, uint8_t to, const std::vector<uint16_t>& 
 }
 
 // BUG-0671: "a member the guest buys is made in the guest's game only and removed again". A click on the own hut
-// (food 10, the game's own price) makes a baby a few seconds later: the stage's message 0x63BBC42 (from data, no code
+// (food 10, the game's own price) makes a baby some seconds later: the stage's message 0x63BBC42 (from data, no code
 // sends it) reaches SporeCoop::TribeStage_BabyBorn (0xCD74A0), which spawns the member (cTribe vt 0x98), plays its cry and
-// fills the HUD. On a guest the baby was a member of its own game that the host never had: the mirror reconcile removed it
-// (lab 20261107-103440 for the click, the ticket for the removal). With tribe.guest_baby a guest's game makes no baby
-// of its own: it sends the place (MSG_TRIBE_CMD kind CMD_BABY) and the host's game makes it by the same function, the
-// new member is the buyer's, and the guest gets its mirror. The food was paid in the guest's game (the shared food
-// sends it to the host). The stage's first entry (its +0x3A3 mating flag 0) is left alone. `coop.fix
-// tribe.guest_baby off`: the guest's game makes its own baby (0.7.9).
+// fills the HUD. A guest's game makes a baby of its own there, which the mirror reconcile removes (the host never has
+// it). The host got one only because the world effects relay (effects.other_stages) replays the guest's hut effect in
+// the host's game, whose message makes the host's baby too (lab: with the relay off the guest paid 10 food and the host
+// had no new member, 20261107-104533); its owner was the next in the turn split, not the buyer.
+// With tribe.guest_baby a guest's game makes no baby of its own while it mirrors the host's tribe: it sends the place
+// (MSG_TRIBE_CMD kind CMD_BABY) and the host's game makes the member, the buyer's, and the guest gets its mirror. The
+// host takes a baby its own game makes within kBabyPair s at that place (the relayed effect's) as that one instead of a
+// second, and makes it itself (the same function) when none comes. The food was paid in the guest's game (the shared
+// food). `coop.fix tribe.guest_baby off`: the guest's game makes its own baby (0.7.9).
 static bool g_guest_baby_fix = true;
 COOP_FIX("tribe.guest_baby", "BUG-0671", g_guest_baby_fix, "tribe: a tribe member the guest buys at its hut is born in the host's game and is the guest's");
-static uint32_t g_babies_sent, g_babies_made;
+static constexpr double kBabyPair = 4.0;
+static constexpr float kBabyNear = 6.0f;
+struct BabyAsk {
+    uint8_t from;
+    net::Vec3 pos;
+    double t;
+};
+struct BabyMade {
+    void* c;
+    net::Vec3 pos;
+    double t;
+};
+static std::vector<BabyAsk> g_baby_asks;   // host: guests' babies its game did not make yet
+static std::vector<BabyMade> g_baby_made;  // host: babies its own game made lately that no guest claimed
+static uint32_t g_babies_sent, g_babies_made, g_babies_paired, g_babies_local;
+static uintptr_t g_baby_from; // the last caller (tests: which path made it)
+static bool baby_near(const net::Vec3& a, const net::Vec3& b)
+{
+    float dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z;
+    return dx * dx + dy * dy + dz * dz < kBabyNear * kBabyNear;
+}
+static void baby_give(void* c, uint8_t from)
+{
+    auto it = g_hm.find(c);
+    if (it != g_hm.end())
+        it->second.owner = from;
+    else
+        g_born_for[c] = from;
+}
+// host: the new members of the player tribe that one call of the game's function made
+static std::vector<void*> baby_call(void* stage, const net::Vec3& p)
+{
+    std::vector<void*> out;
+    void* pt = player_tribe();
+    auto before = pt ? members(pt) : std::vector<void*>{};
+    o_BabyBorn(stage, p.x, p.y, p.z);
+    if (pt)
+        for (void* c : members(pt))
+            if (std::find(before.begin(), before.end(), c) == before.end())
+                out.push_back(c);
+    return out;
+}
 static void SK_THISCALL h_BabyBorn(void* stage, float x, float y, float z)
 {
-    if (g_ok && g_guest_baby_fix && is_guest() && !local_play() && game::mode_id() == modes::kTribe && stage &&
-        F<uint8_t>(stage, 0x3A3)) {
+    g_baby_from = (uintptr_t)__builtin_return_address(0);
+    bool on = g_ok && g_guest_baby_fix && game::mode_id() == modes::kTribe && stage;
+    if (on && is_guest() && !local_play() && !g_gm.empty()) {
         net::Writer w;
         w.u8(CMD_BABY); w.u8(0); w.u32(0);
         write_target(w, Target{});
@@ -1711,24 +1759,67 @@ static void SK_THISCALL h_BabyBorn(void* stage, float x, float y, float z)
         g_cmds_sent++;
         return;
     }
-    o_BabyBorn(stage, x, y, z);
+    g_babies_local++;
+    if (!(on && is_host())) {
+        o_BabyBorn(stage, x, y, z);
+        return;
+    }
+    net::Vec3 p{x, y, z};
+    double now = H->time_seconds();
+    for (void* c : baby_call(stage, p)) {
+        auto a = std::find_if(g_baby_asks.begin(), g_baby_asks.end(), [&](const BabyAsk& k) { return baby_near(k.pos, p); });
+        if (a != g_baby_asks.end()) { // the guest's baby, made here by its relayed effect
+            baby_give(c, a->from);
+            g_baby_asks.erase(a);
+            g_babies_paired++;
+        } else {
+            g_baby_made.push_back({c, p, now});
+        }
+    }
 }
 static void baby_on_host(uint8_t from, const net::Vec3& pos)
 {
-    static uintptr_t a_Stage = H->sym("SporeCoop::cTribeUI_Get");
-    void* stage = a_Stage ? skg::cdecl_call<void*>(a_Stage) : nullptr;
-    void* pt = player_tribe();
-    if (!o_BabyBorn || !stage || !pt || !std::isfinite(pos.x) || !std::isfinite(pos.y) || !std::isfinite(pos.z)) {
+    if (!o_BabyBorn || !std::isfinite(pos.x) || !std::isfinite(pos.y) || !std::isfinite(pos.z) || std::fabs(pos.x) > 1e6 ||
+        std::fabs(pos.y) > 1e6 || std::fabs(pos.z) > 1e6 || g_baby_asks.size() >= 16) {
         g_cmds_rejected++;
         return;
     }
-    auto before = members(pt);
-    o_BabyBorn(stage, pos.x, pos.y, pos.z);
-    for (void* c : members(pt))
-        if (std::find(before.begin(), before.end(), c) == before.end()) {
-            g_born_for[c] = from;
+    auto m = std::find_if(g_baby_made.begin(), g_baby_made.end(), [&](const BabyMade& k) { return baby_near(k.pos, pos); });
+    if (m != g_baby_made.end()) { // the host's game made it already (the relayed effect came first)
+        if (game::object_alive(m->c))
+            baby_give(m->c, from);
+        g_baby_made.erase(m);
+        g_babies_paired++;
+        return;
+    }
+    g_baby_asks.push_back({from, pos, H->time_seconds()});
+}
+static void baby_tick(double now)
+{
+    g_baby_made.erase(std::remove_if(g_baby_made.begin(), g_baby_made.end(), [&](const BabyMade& k) { return now - k.t > kBabyPair; }),
+                      g_baby_made.end());
+    for (size_t i = 0; i < g_baby_asks.size();) {
+        if (now - g_baby_asks[i].t < kBabyPair) {
+            i++;
+            continue;
+        }
+        BabyAsk k = g_baby_asks[i];
+        g_baby_asks.erase(g_baby_asks.begin() + i);
+        static uintptr_t a_Stage = H->sym("SporeCoop::cTribeUI_Get");
+        void* stage = a_Stage ? skg::cdecl_call<void*>(a_Stage) : nullptr;
+        if (!stage || !player_tribe() || !net::is_player(*C.sess, k.from))
+            continue;
+        for (void* c : baby_call(stage, k.pos)) { // none came: the host's game makes it (null at the cap: none)
+            baby_give(c, k.from);
             g_babies_made++;
         }
+    }
+}
+static void baby_forget()
+{
+    g_born_for.clear();
+    g_baby_asks.clear();
+    g_baby_made.clear();
 }
 
 static void host_command(uint8_t from, net::Reader& r)
@@ -3502,7 +3593,7 @@ void on_session_end()
     g_bt_local.clear(); // (g_left_tribe stays until the world goes: its citizens are torn down later)
     theme_forget(); // BUG-0568
     party_forget(); // BUG-0646
-    g_born_for.clear(); // BUG-0671
+    baby_forget(); // BUG-0671
     clear_coop_tables(true);
     g_split_for.clear();
     g_hm.clear();
@@ -3521,7 +3612,7 @@ void on_world_change()
 {
     theme_forget(); // BUG-0568
     party_forget(); // BUG-0646
-    g_born_for.clear(); // BUG-0671
+    baby_forget(); // BUG-0671
     g_resets++;
     forget_world_tables(); // every citizen of the old world is freed: nothing to restore
     g_detached.clear(); // (BUG-0667: freed with the world)
@@ -4432,7 +4523,8 @@ std::string debug(const std::vector<std::string>& a)
                " sent=" + std::to_string(g_theme_sent) + " rx=" + std::to_string(g_theme_rx) + " played=" + std::to_string(g_theme_played) +
                "\nparty fix=" + std::to_string((int)g_party_fix) + " sent=" + std::to_string(g_party_sent) + " rx=" +
                std::to_string(g_party_rx) + " played=" + std::to_string(g_party_played) + " stopped=" + std::to_string(g_party_stopped) +
-               "\nbaby fix=" + std::to_string((int)g_guest_baby_fix) + " sent=" + std::to_string(g_babies_sent) + " made=" + std::to_string(g_babies_made);
+               "\nbaby fix=" + std::to_string((int)g_guest_baby_fix) + " sent=" + std::to_string(g_babies_sent) + " made=" + std::to_string(g_babies_made) + " paired=" + std::to_string(g_babies_paired) +
+               " local=" + std::to_string(g_babies_local) + " from=" + [] { char b[16]; snprintf(b, sizeof b, "%X", (unsigned)g_baby_from); return std::string(b); }();
     }
     if (!a.empty() && a[0] == "form_pace") // tests (BUG-0571): the last decision of tribe.form_pace
         return "form_pace fix=" + std::to_string((int)g_form_pace_fix) + " held=" + std::to_string(g_forms_paced) + " last: " +

@@ -5,17 +5,21 @@ A left click on the own hut costs food 10 (the game's price) and a baby is born 
 0x63BBC42 -> SporeCoop::TribeStage_BabyBorn 0xCD74A0, which spawns the member). On a guest that member was one of
 its own game only: the mirror reconcile removed it and the host's game never had it.
 
-1. Two games on the tribe fixture; the host's tribe at level 2 (cap 12); the host's game gets food 60 (the shared
-   food gives the guest's game the same).
+1. Two games on the tribe fixture; the host's tribe at level 2 (cap 12) with an even number of members (the next
+   new member in the turn split would be the host's); the host's game gets food 60 (the shared food gives the
+   guest's game the same).
 2. The guest's player left-clicks its own hut, as a player does (the mouse, after hovering).
 3. Up to 20 s: the members of the host's player tribe (the game's own list) and the guest's game's own list.
 PASS: the host's game has one member more, the guest's game shows it (the same count), the new member is the
 guest's (its owner in the host's split), food went down by the price once on the host.
 
-SPORE_FIX_OFF=tribe.guest_baby: the host never gets a member (FAIL).
+SPORE_FIX_OFF=tribe.guest_baby: the guest's game makes a baby of its own (removed again); the host's game makes one only
+through the world effects relay (the guest's hut effect replayed there), owned by the turn split: the host's (FAIL).
+With --no-effects (that relay off) and the fix off the host gets no member at all (FAIL); with the fix on it makes it.
 
   SPORE_LANE=5 python3 tools/tests/coop_tribe_guest_baby.py
 """
+import argparse
 import re
 import time
 
@@ -58,10 +62,20 @@ def hut(con):
 
 
 def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--no-effects', action='store_true', help='the world effects relay off (the host must make it itself)')
+    a = ap.parse_args()
     host, guest = start('tribe')
     ck = Checks()
+    if a.no_effects:
+        for c in (host, guest):
+            print(' ', c.call('coop.fix effects.other_stages off')['out'].strip(), flush=True)
     time.sleep(5)
     print(' ', host.call('coop.tribe level 2')['out'].strip(), flush=True)
+    # an even number of members: the next new one is the host's in the turn split, so the owner shows who bought it
+    if player(host)[0] % 2:
+        print(' ', host.call('coop.tribe spawn 1')['out'].strip(), flush=True)
+        time.sleep(2)
     n0, pt = player(host)
     f = food(host) or 0
     print('  food:', host.call(f'call SporeCoop::cTribe_AddFood thiscall 0x{pt:X} {int(60 - f)}')['out'].strip()

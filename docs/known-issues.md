@@ -2169,6 +2169,8 @@ Each line: what the players saw, what the logs show; reproduce and details in th
   (docs/re/tribe.md#tribe-dance-music).
 * Not checked: the dance at night with a goal open (the report's moment).
 * Next steps: one host run with the dance, `coop.audio` on both games.
+* Fixed unreleased (2026-11-07, fix/w46-tribe-dance): the party music 0x19DC06DF is relayed (`tribe.party_music`,
+  docs/re/tribe.md#tribe-party-music).
 * Ticket: BUG-0646
 
 ## Tribe: the guest's mirrors make almost no footstep sounds (2026-11-07, fix/w46-tribe-civ)
@@ -2189,4 +2191,6 @@ Each line: what the players saw, what the logs show; reproduce and details in th
 <a id="issue-tribe-guest-member"></a>
 
 * What happens: the guest's game makes the member, the mirror reconcile removes it, the host has none.
+* Fixed unreleased (2026-11-07, fix/w46-tribe-dance): the host makes it and it is the guest's (`tribe.guest_baby`,
+  docs/re/tribe.md#tribe-guest-baby).
 * Ticket: BUG-0671

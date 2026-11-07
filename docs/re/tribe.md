@@ -2325,3 +2325,50 @@ BUG-0646, BUG-0669. Lab lane 4, `coop.audio`.
 * ? The dance with music the host saw at night (report s 5218, a conquer goal open, an epic coming) was not seen in the lab;
   its trigger and its sound path are not known (not the theme manager in these 3 min, not an animation of the members: the
   guest's mirrors played the same animations).
+
+## The fire pit party and its music (2026-11-07, fix/w46-tribe-dance)
+<a id="tribe-party-music"></a>
+
+BUG-0646. GOG 2024, Ghidra and lab lane 4. CORRECTION (2026-11-07, fix/w46-tribe-dance) of
+docs/re/tribe.md#tribe-dance-music: the dance music is neither the theme manager nor an animation sound; it is the party
+behaviour's own procedural sound, and a party order does start it in the lab (it needs no night or goal).
+* ✔ (Ghidra) A party at the own fire pit (CitizenAction 12 Party, a click on the fire pit "Firepit - Throw Party $5", the
+  tool name 0xC9D220 of type 10) is the game behaviour **cTribeGameBehaviorParty** (factory 0xD791C0, 0x110 bytes, ctor
+  0xD79120, vtables 0x147BEB0 / 0x147BE9C, type id 0xF09B40E0). Tick `SporeCoop::TribeParty_Tick` 0xD793F0 (vt 0x18): lays the
+  members out round the fire pit (cCommunityLayout::SetParameters), walks each to its slot (per-member state 1 walking, 3
+  there), then dances them (states 4 / 5: anims of the table 0x158441C 0x2C39904, 0x2C39801, 0x2C39812, 0x2C39812,
+  0x2C39813, 0x2C39830, 0x2C39521; 7 done -> vt 0x44 leaves). When every member stands at its slot: +0x94 = 2 and, once,
+  +0x90 = a new track (AudioSystem vt 0x20) and **Audio::PlayProceduralAudio(0x19DC06DF, +0x90, the fire pit's position)**
+  (call 0xD79E7C, return 0xD79E81: the only use of 0x19DC06DF in the exe). Exit 0xD78F80 (vt 0x24): tribe +0x554
+  (partying, 0xC8E950 / 0xC8E960) = 0, Audio::StopAudio(+0x90, 0). CanJoin 0xD78E10 (vt 0x30): a player tribe citizen, the
+  target a type 10 tool of its tribe (tool +0x1F8, 0xC9DB70), the tribe not partying.
+* ✔ (runtime, lab 20261107-102952) `coop.tribe party` with the host's own members selected (DoActionForObjects(sel, 12,
+  fire pit)): tribe +0x554 = 1 for ~25 s, the host's game played 0x19DC06DF (caller 0xD79E81), the guest's none; the
+  guest's mirrors played the dance animations (tribe.mirror_anims). The "DoActionForObjects returned 0" of the earlier
+  attempt is its normal answer (1 only for an empty selection).
+* Fix `tribe.party_music`: Audio::PlayProceduralAudio and Audio::StopAudio hooked; the host relays a play of 0x19DC06DF and
+  the stop of its track (MSG_NPC_ANIM kinds 7 / 8); a guest plays it on its own new track and stops it. Test
+  tribe_party_music (lab 20261107-103745 FAIL off, 20261107-103611 PASS: the guest's game played it 3 s after the host's
+  and stopped when the host's stopped, 21 s later).
+* ? A guest that joins during a party does not hear it until the next party (the play is sent once).
+
+## A member the guest buys at its hut (2026-11-07, fix/w46-tribe-dance)
+<a id="tribe-guest-baby"></a>
+
+BUG-0671. GOG 2024, Ghidra and lab lane 5.
+* ✔ (runtime, lab 20261107-103440) A left click on the own hut costs food 10 at once (15 -> 5) and a baby is born 5-8 s
+  later; with 5 food the click does nothing. Right clicks on the hut give no baby.
+* ✔ (Ghidra) The birth is `SporeCoop::TribeStage_BabyBorn` 0xCD74A0, thiscall(TribeStage = cTribeUI_Get, x, y, z) ret 0xC
+  (SpawnMember(0), the cry "vcode_baby_born_cry", HUD +0x14, stage +0x3A3 = 1). Callers: the stage enter 0xCD78F0 (the first
+  baby, +0x3A3 0) and the stage message handler 0xCD81F0 for message **0x63BBC42** (place at data +0x28 -> +4). No code
+  pushes the id (only the handler's compare and the stage's listener list 0x1477470): it comes from data. The cursor
+  "cursor-mate" (0x5498863) is loaded (0xCCE790) but never set by code. Where the click charges the food was not found (?).
+* ✔ (runtime) Both games called it from the message path (return 0xCD8ED3) after the guest's click (lab 20261107-104338):
+  the guest's game made its own baby (removed by the mirror reconcile), and the host's game made one because the world
+  effects relay (effects.other_stages, BUG-0451) replays the guest's hut effect there, whose data sends the message. With
+  that relay off the guest paid 10 food and the host got nothing (lab 20261107-104533): the BUG-0671 symptom. Its owner was
+  the next in the turn split (the host's with an even member count, lab 20261107-104918).
+* Fix `tribe.guest_baby`: a guest that mirrors the host's tribe makes no baby: it sends the place (MSG_TRIBE_CMD kind 3);
+  the host pairs it with a baby its own game makes within 4 s within 6 m (the relayed effect's) or makes it itself with
+  0xCD74A0, and the member is the buyer's. Test tribe_guest_baby (FAIL 20261107-104918, PASS 20261107-104809) and
+  tribe_guest_baby_noeffects (the relay off: see the ticket).
