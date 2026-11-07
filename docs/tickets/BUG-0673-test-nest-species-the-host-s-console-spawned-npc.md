@@ -10,7 +10,7 @@ role:
 versions: 0.7.10
 fixed_in: unreleased
 branch: fix/w46-misc
-commits:
+commits: e71313b2
 tests: nest_species
 signature:
 docs: docs/06-testing.md#testing-console-npc

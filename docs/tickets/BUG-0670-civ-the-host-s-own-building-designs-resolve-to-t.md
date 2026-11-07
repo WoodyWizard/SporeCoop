@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.9
 fixed_in: unreleased
 branch: fix/w46-misc
-commits:
+commits: cfd3464e
 tests: civ_host_building
 signature:
 docs: docs/re/civ.md#civ-host-buildings

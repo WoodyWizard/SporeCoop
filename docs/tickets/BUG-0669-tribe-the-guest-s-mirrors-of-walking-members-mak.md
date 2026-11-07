@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.9
 fixed_in: unreleased
 branch: fix/w46-misc
-commits:
+commits: 05f4de4a
 tests: tribe_footsteps
 signature:
 docs: docs/re/tribe.md#tribe-epic-steps
