@@ -8,7 +8,7 @@ reported: 2026-11-07
 source: lab long_tribe on rel/0.7.9 (run 20261107-021641, lane 6)
 role: guest
 versions: rel/0.7.9 75599275
-fixed_in: unreleased
+fixed_in: 0.7.9
 branch: fix/w46-tribe-fault
 commits: d893d8f6 39231fee ea7ece1a 991dad47
 tests: coop_tribe_dead_member.py --eat (suite tribe_body_teardown)
@@ -101,3 +101,4 @@ from the galaxy menu faulted twice in space gfx and the guest stayed loading. Tw
 - 2026-11-07: fix/w46-tribe-fault: reproduced (tribe_body_teardown), new in 0.7.9 (BUG-0620's detach_body); fixed
   (tribe.body_teardown) and the freeze after a caught frame fault fixed in SporeKit (kit.frameunwind).
 - 2026-11-07: long_tribe_short failed after the merge (rel/0.7.9 lab 20261107-043030): the fallback did not stop the exits and the bodies outlived their tribes at the menu exit; fixed at the source (detach ends the tree), test tribe_body_menu.
+- 2026-11-07: released in 0.7.9.

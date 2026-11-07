@@ -8,7 +8,7 @@ reported: 2026-11-06
 source: fix/w45-world-objects play_tribe / play_civ SPORE_DETECTOR=20 (lab 20261106-051335, 20261106-051337)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.9
 branch: fix/w45-last
 commits: ef1058d0, 20236abd, 3c7dd711, 1a891434, 4d2df7df, 564496c8
 tests: host_bundle_carry (coop_world_host.py --case bundle_carry), play_tribe / play_civ with SPORE_DETECTOR=20, tools_selftest.py (worlddiff bundle groups)
@@ -66,3 +66,4 @@ copy is made 3 s after the host's bundle first comes). Civ (play_civ lab 2026110
 - 2026-11-06 (fix/w45-last, L5 of 0.7.9): census holder groups in the detector; unbound carried copies kept for good found and fixed (wobj.bundle_carried); test host_bundle_carry.
 - 2026-11-06 (orchestrator, log sweep): play_tribe unmatched:game_bundle on rel/0.7.9 2-23 rows a run (20, 11, 23, 2) vs 16-19 on 0.7.8: the claim is to be confirmed in the 0.7.9 final check by twin runs (play_tribe x4, with and without SPORE_FIX_OFF of its switch).
 - 2026-11-07 (orchestrator): play_tribe x2 with SPORE_DETECTOR=20, fix on (out/lab/20261107-021641-2): Tribe:unmatched:game_bundle 9 / 30 lines, host_only 6 / 2; fix off SPORE_FIX_OFF=wobj.bundle_carried (out/lab/20261107-023842): 12 / 5, host_only 4 / 1. In organic play the bundle rows are not fewer with the fix: they have another cause (moved to BUG-0661). The carried-bundle case stays fixed by its own twins (host_bundle_carry FAIL 20261106-141416 off, PASS with the fix; OK again in 20261107-021641).
+- 2026-11-07: released in 0.7.9.

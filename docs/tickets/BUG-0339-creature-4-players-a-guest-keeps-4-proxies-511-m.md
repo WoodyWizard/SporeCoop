@@ -8,7 +8,7 @@ reported: 2026-10-31
 source: lab 20261031-083425 campaign#2 08:53
 role: guest
 versions: main 39f4004
-fixed_in: unreleased
+fixed_in: 0.7.9
 branch: fix/w45-leftovers
 commits: 34b41821 add442d0
 tests: npc_frozen_pooled (coop_npc_frozen.py --case pooled)
@@ -81,3 +81,4 @@ returns the creature at (0 0 0), the guest's proxy objects by net id).
 - 2026-10-31: fix/w21-creature: the new diagnostic fired in 3 of 3 creature_npc_dash runs (out/lab/20261031-105509 #1/#2, 20261031-105513): "npc 3 (species 06805133) is updated at the planet's centre: herd 00000000, 505 m from where it was a frame before, dead=1". So the game keeps updating a pooled **corpse** at (0 0 0) and the host keeps it as an NPC: the lead for a reproduction (the campaign's four were alive=1, not checked whether the same path). Next: a test that kills an NPC, waits for its pool and compares both censuses; then the host-side fix (an NPC updated at the centre is not mirrored).
 - 2026-10-31: fix/w21-creature (second time box, 45 min): no FAIL run. Tries on lane 5 with a test that waits for a host NPC the guest mirrors at the planet's centre (out/lab/20261031-110136, -110519, -110756, -110937, -111118, -111446): killing an NPC next to both players did not get its corpse pooled in 150 s; a guest 200 m from the host had no NPC of the host around it to mirror; the save's corpse (NPC 3/4, species 06805133, at (-180 -466 -72) next to the nest) goes to the centre ~58 s after the load in runs where nobody stands at it (3 of 3 creature_npc_dash runs, host log), but with the guest standing next to it it was not pooled. So the corpse case is real on the host but was never mirrored by a guest in a test. The host-side fix (an NPC updated at the centre is not mirrored, `npc.centre`) was written but not shipped: no FAIL run to prove it. Seen on the way: right after a (warm/cold) start a guest's `coop.npc gopos` was undone within 15 s ("guest 1 m from the host" twice; it held when repeated 8 s later), likely the same as BUG-0333 (an avatar placed near the host after the join).
 - 2026-11-06: fix/w45-leftovers: the freeze path found (pooled during a freeze: no despawn), fix npc.frozen_pooled, test npc_frozen_pooled; fixed.
+- 2026-11-07: released in 0.7.9.

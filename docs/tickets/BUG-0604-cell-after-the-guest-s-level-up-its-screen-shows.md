@@ -8,7 +8,7 @@ reported: 2026-11-05
 source: lab fix/w44-tests 20261105-142923 cell_new_game#1 (lane 9)
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.9
 branch: fix/w45-cell
 commits: 2aa5f9fc, 0d9e7d10
 tests: cell_new_game, cell_view_nan
@@ -59,3 +59,4 @@ cell_view_nan PASS again in the regression run lab 20261106-015141 (with play_ce
 - 2026-11-05: opened.
 - 2026-11-06 (fix/w45-cell): root cause (the NaN camera after a NaN velocity), fix cell.camera_heal, test cell_view_nan.
 - 2026-11-06: Discord report 2026-11-06 (0.7.8, discord-2026-11-06/M0ng0r-02, -03): "after growing, bigger cells near the guest disappear and new ones spawn"; the logs show no NaN and cells on the guest's screen after its level-up (not this ticket's symptom): new ticket BUG-0635.
+- 2026-11-07: released in 0.7.9.

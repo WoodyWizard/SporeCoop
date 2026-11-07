@@ -8,7 +8,7 @@ reported: 2026-11-04
 source: divergence detector (BUG-0484 split)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.9
 branch: fix/w45-world-objects
 commits: c3097c62
 tests: host_cultural (tools/tests/coop_world_host.py --case cultural)
@@ -48,3 +48,4 @@ host_cultural (civ_npc, a rejoin after 60 s, the targets near the guest compared
 - 2026-11-04: opened.
 - 2026-11-04 (fix/w42-civ-left): opened (split from BUG-0484).
 - 2026-11-06 (fix/w45-world-objects): fixed (kind cultural_target), test host_cultural.
+- 2026-11-07: released in 0.7.9.

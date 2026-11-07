@@ -8,7 +8,7 @@ reported: 2026-11-06
 source: BUG-0612 split (fix/w45-remote-bodies-2)
 role: host
 versions: 0.7.8
-fixed_in: unreleased
+fixed_in: 0.7.9
 branch: fix/w45-remote-bodies-2
 commits: 33ae8911
 tests: net_nan (tools/tests/coop_net_nan.py)
@@ -32,3 +32,4 @@ no-fail-run: the bad states did not reach a body without the guard either (FAIL 
 ## History
 - 2026-11-06: opened.
 - 2026-11-06 (fix/w45-remote-bodies-2, M2): opened from BUG-0612; guard added (game.finite_pose); the lab showed the old code tolerating NaN on the player path (no visible bug); kept as a defence with its test.
+- 2026-11-07: released in 0.7.9.

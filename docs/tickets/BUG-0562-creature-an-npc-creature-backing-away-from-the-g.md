@@ -8,7 +8,7 @@ reported: 2026-11-04
 source: player report 2026-11-04 (Discord bug-reports, 0.7.5, Steam build)
 role: guest
 versions: 0.7.5
-fixed_in: unreleased
+fixed_in: 0.7.9
 branch: fix/w45-last
 commits: ef1058d0, 2c012d76, 20236abd, 694c8cf3
 tests: npc_nest_backoff (coop_npc_nest_backoff.py), npc_nest_backoff_near
@@ -65,3 +65,4 @@ the host's animal 0.54-0.72 m in the mound, 0 s on the guest). Control npc_nest_
 - 2026-11-05 (fix/w44-guest-player3, P2b of 0.7.8): not reached (the time went to BUG-0600 and BUG-0465).
 - 2026-11-06 (fix/w45-creature-reports, P3 of 0.7.9): not reproduced (video only); likely the 0.7.8 height class or BUG-0434; npc_walk run as the regression check; left open.
 - 2026-11-06 (fix/w45-last, L5 of 0.7.9): reproduced (the host's nest animal inside the mound when the host is far, drawn so on the guest's screen); fixed by npc.proxy_mound; test npc_nest_backoff.
+- 2026-11-07: released in 0.7.9.

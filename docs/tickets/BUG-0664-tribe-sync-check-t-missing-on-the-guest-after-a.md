@@ -8,7 +8,7 @@ reported: 2026-11-07
 source: lab long_tribe 20261107-004042 (rel/0.7.9)
 role: guest
 versions: 0.7.9-dev
-fixed_in: unreleased
+fixed_in: 0.7.9
 branch: fix/w46-tribe-missing
 commits: f165530b, 8ec44b21
 tests: tribe_dead_rejoin (coop_tribe_dead_member.py --rejoin)
@@ -51,3 +51,4 @@ out/lab/20261107-015219 (OK 2/2); make -j8 and make test pass.
 ## History
 - 2026-11-07: opened.
 - 2026-11-07 (fix/w46-tribe-missing): a 0.7.9 regression of tribe.member_body; fixed by tribe.sync_bodies; test tribe_dead_rejoin.
+- 2026-11-07: released in 0.7.9.

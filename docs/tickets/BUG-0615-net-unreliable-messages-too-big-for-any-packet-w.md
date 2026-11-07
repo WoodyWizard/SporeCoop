@@ -8,7 +8,7 @@ reported: 2026-11-06
 source: BUG-0612 split (fix/w45-remote-bodies-2)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.9
 branch: fix/w45-remote-bodies-2
 commits: db4b6090
 tests: net_tests (make test)
@@ -32,3 +32,4 @@ no-fail-run: diagnostics only (the message was dropped before and is dropped now
 ## History
 - 2026-11-06: opened.
 - 2026-11-06 (fix/w45-remote-bodies-2, M2): opened from BUG-0612 and fixed (counted and logged).
+- 2026-11-07: released in 0.7.9.

@@ -8,7 +8,7 @@ reported: 2026-11-06
 source: lab, fix/w45-creature-reports (creature_ufo_mirror shots)
 role: guest
 versions: 0.7.8
-fixed_in: unreleased
+fixed_in: 0.7.9
 branch: fix/w45-intro-camera (fix: fix/w45-int3, world.intro_at_once)
 commits: 38b9771c, 30b2aa04 (the fix, BUG-0626), 35d60ac6, c4bd21dd (test, log, docs)
 tests: creature_intro_camera
@@ -57,3 +57,4 @@ Regression: smoke 20261106-143141 (14/14), play_creature (SPORE_DETECTOR=20) and
 - 2026-11-06 (fix/w45-creature-reports): opened, not analysed.
 - 2026-11-06 (fix/w45-int3): likely the same intro as BUG-0626 (the galaxy menu intro started in a stage after a quick load and ended there); world.intro_at_once no longer starts it outside the menu. Not re-tested on the Creature guest.
 - 2026-11-06 (fix/w45-intro-camera): reproduced (Loading-mode intro, camera at (0, -1000, 500)); fixed by world.intro_at_once; test creature_intro_camera.
+- 2026-11-07: released in 0.7.9.

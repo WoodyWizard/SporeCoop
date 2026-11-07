@@ -8,7 +8,7 @@ reported: 2026-11-06
 source: fix/w45-remote-bodies-2 regression runs (M3)
 role: guest
 versions: unreleased (rel/0.7.9 + drive.lead)
-fixed_in: unreleased
+fixed_in: 0.7.9
 branch: fix/w45-lead-player
 commits: 19e4513f, 154f49db, a85c740f, e471b3f6, 9530af70 (drive.lead_draw cad93096 tried, reverted fdbab153)
 tests: tribe_walk_player (tools/tests/coop_tribe_walk.py --fps 30, SPORE_NET=player), net_tests test_lead_late
@@ -81,4 +81,4 @@ of those pairs (windows 63-71 %), so tribe_walk_player is judged A/B. The lead w
   body_trail_civ, 'host draws guest 8 m', 'holding the rock 61.5 m'), lead off 5 of 5 (-221210 3/3, -225833 2/2). The
   failing repeat (-230158 #3) is the carry relay's hold message (the host's hold_rx 2 against the guest's hold_tx 3),
   no position involved.
-
+- 2026-11-07: released in 0.7.9.

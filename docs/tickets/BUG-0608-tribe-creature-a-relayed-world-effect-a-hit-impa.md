@@ -8,7 +8,7 @@ reported: 2026-11-06
 source: fix/w45-tribe (T2 of 0.7.9), inferred from BUG-0332 and BUG-0603
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.9
 branch: fix/w45-village-ground
 commits: bbe9fc59 (the BUG-0332 fix)
 tests: tribe_village_cadian (the two grounds, BUG-0332)
@@ -48,3 +48,4 @@ there); the effect's position is the sender's absolute one, which is on the grou
 ## History
 - 2026-11-06: opened.
 - 2026-11-06 (fix/w45-village-ground): same mechanism as BUG-0332; fixed by tribe.host_reload.
+- 2026-11-07: released in 0.7.9.

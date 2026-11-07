@@ -8,7 +8,7 @@ reported: 2026-11-01
 source: fix/w34-ability-pop (BUG-0414 analysis)
 role: guest
 versions: 0.7.3.3+
-fixed_in: unreleased
+fixed_in: 0.7.9
 branch: fix/w45-remote-bodies-2
 commits: 13376c7e, 37703e65
 tests: puppet_mound_view (tools/tests/coop_mound_view.py), puppet_fight_player
@@ -43,3 +43,4 @@ puppet_mound_view (the host on the fixture's nest mound, the guest 10 m away tur
   when it comes back into view; no placing or timing of ours runs between that update and the drawing, so the lead
   (drive.lead) cannot change it. Not touched, stays open.
 - 2026-11-06 (fix/w45-remote-bodies-2, M2): F90 / LOD probe disproved the simple-path theory; fixed by a lift after the physics update (creature.culled_ground); FAIL 20261106-050722, PASS 20261106-045947.
+- 2026-11-07: released in 0.7.9.

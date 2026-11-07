@@ -8,7 +8,7 @@ reported: 2026-11-06
 source: player report 2026-11-06 (Discord, 0.7.8): discord-2026-11-06/M0ng0r-08, M0ng0r-09, Sterben-05
 role: both
 versions: 0.7.8
-fixed_in: unreleased
+fixed_in: 0.7.9
 branch: fix/w45-evo-bar
 commits: 28a59ba4, bae4ff10, 33b71ae0
 tests: evo_bar, evo_bar_editors
@@ -94,3 +94,4 @@ evo_bar_editors: 27/28; `creature` failed only on the first form of `coop.dna` (
 ## History
 - 2026-11-06: opened from the Discord report 2026-11-06 (0.7.8); root cause from the logs and the disassembly (fix/w45-intake).
 - 2026-11-06: fixed on fix/w45-evo-bar (creature.bar_spend), tests evo_bar and evo_bar_editors.
+- 2026-11-07: released in 0.7.9.

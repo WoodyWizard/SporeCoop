@@ -8,7 +8,7 @@ reported: 2026-11-06
 source: BUG-0425 umbrella (split by fix/w45-remote-bodies)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.9
 branch: fix/w45-remote-bodies-2
 commits: db4b6090, 33ae8911
 tests: validate_tests, net_tests, net_nan
@@ -43,3 +43,4 @@ no-fail-run: an umbrella; each part has its own verification (BUG-0616: validate
 ## History
 - 2026-11-06: opened.
 - 2026-11-06 (fix/w45-remote-bodies-2, M2): split into BUG-0614, BUG-0615, BUG-0616 (fixed) and the existing BUG-0190 / BUG-0388 / BUG-0414 / BUG-0376 (closed before); closed as the umbrella.
+- 2026-11-07: released in 0.7.9.

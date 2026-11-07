@@ -8,7 +8,7 @@ reported: 2026-11-04
 source: divergence detector (space_play, out/lab/20261104-104326 of fix/w42-space-planets; rel/0.7.5 out/lab/20261104-013517)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.9
 branch: fix/w45-world-objects
 commits: 4ff16746, c73a0a14
 tests: host_space_ornament (tools/tests/coop_world_host.py --case ornament)
@@ -54,3 +54,4 @@ both games' lists):
 ## History
 - 2026-11-04: opened.
 - 2026-11-06 (fix/w45-world-objects): fixed (kind city_ornament), test host_space_ornament.
+- 2026-11-07: released in 0.7.9.

@@ -8,7 +8,7 @@ reported: 2026-11-06
 source: fix/w45-remote-bodies (M1)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.9
 branch: fix/w45-remote-bodies-2
 commits: 6cf7d39b
 tests: any test with SPORE_DETECTOR=<s> (body_trail_creature, body_trail_tribe, play_*)
@@ -37,3 +37,4 @@ FAIL (the class shows as rows; SPORE_DETECTOR=10 SPORE_FIX_OFF=drive.lead): out/
 ## History
 - 2026-11-06: opened.
 - 2026-11-06 (fix/w45-remote-bodies-2, M2): detector trail rows from coop.bodyrec; FAIL 20261106-041119, PASS 20261106-041542 / -042100.
+- 2026-11-07: released in 0.7.9.

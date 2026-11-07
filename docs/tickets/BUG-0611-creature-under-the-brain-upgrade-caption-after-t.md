@@ -8,7 +8,7 @@ reported: 2026-11-06
 source: split from BUG-0413 (fix/w45-one-game-objects)
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.9
 branch: fix/w45-leftovers
 commits: 34b41821 add442d0
 tests: npc_frozen_thaw (coop_npc_frozen.py --case thaw), npc_frozen_live (--case live, extended)
@@ -61,3 +61,4 @@ the scenario test).
 ## History
 - 2026-11-06: opened.
 - 2026-11-06: fix/w45-leftovers: the stale rule after a freeze found, fix npc.thaw_stale, tests npc_frozen_thaw / npc_frozen_live; fixed.
+- 2026-11-07: released in 0.7.9.
