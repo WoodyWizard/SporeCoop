@@ -1,7 +1,7 @@
 ---
 id: BUG-0639
 title: Creature: the guest can attack the creatures of a nest that is evolving on the host
-status: open
+status: not-reproduced
 kind: bug
 stage: Creature
 reported: 2026-11-06
@@ -9,12 +9,12 @@ source: player report 2026-11-06 (Discord, 0.7.8): discord-2026-11-06/M0ng0r-05
 role: guest
 versions: 0.7.8
 fixed_in:
-branch:
-commits:
-tests:
+branch: fix/w46-creature-p0
+commits: 5a310d25, fc639e24, 3ce217e3
+tests: family_attack (coop_family_attack.py), nest_evolve_probe (coop_nest_evolve_probe.py)
 signature:
 docs:
-related: BUG-0464, BUG-0460, BUG-0418
+related: BUG-0464, BUG-0460, BUG-0418, BUG-0640, BUG-0668
 ---
 
 ## Report
@@ -32,12 +32,31 @@ Not determined: which nest the player meant (the screenshot was not decisive). R
 animations relayed, fixed 0.7.4), BUG-0460 (nest state, fixed 0.7.4).
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+Not fixed: not reproduced. `coop.nest evolve` (nest.cpp) prints every herd's evolution fields on either game for the
+next report; the probes nest_evolve_probe and migration_probe (extended suite) and the test family_attack stay.
 
 ## Verification
-<!-- Lab: make a herd evolve on the host (+0x85 should-evolve, +0xF0 generation, docs/re/creature.md#creature-npc-anims)
-     next to the guest; check whether the host's game accepts the guest's hits on those members and whether the
-     host's own avatar can hit them; the same next to the host's family nest with the guest on its own creature. -->
+no-fail-run: not reproduced, after three attempts:
+* Reading (b), the guest's own creature against the family nest (the guest played its own creature 'Brogity'; the
+  host's game had the goal "Migrate to a new nest"): family_attack, out/lab/20261107-081513: the guest bites a family
+  member with real input 15 times, with the world's species and with its own creature: the host's member keeps 10.0
+  hp, and vt 0xD4 (friendly) is (1, 0, 0) in both games. The guest cannot attack the family.
+* Reading (a), an NPC nest evolving: nest_evolve_probe. The first run (out/lab/20261107-080730) printed only herds with
+  +0x85 = 1 or a generation, and +0x85 is 1 from the herd's constructor 0xC6C2B0 for every herd: the rows were the
+  family's, the NPC herds' evolution was filtered out (and the guest's mirrors were not read: wrong row format). The
+  fixed probe (out/lab/20261107-081734): +250 DNA evolves every NPC herd (generation +0xF0 0 -> 1, a new species) at
+  once on the host and within 18 s on the guest, with other thresholds +0x94 in each game; a nest the host's avatar
+  made extinct stays generation 0 on the host and evolves to a new species on the guest: a desync, opened as
+  BUG-0668. The guest's mirrors of the killed nest were the host's dead members (0 hp, dead); no live mirror of an
+  evolving member was hit, so the report's "can attack them" was not seen. migration_probe (out/lab/20261107-081510):
+  no family herd evolution with the editors.
+* The report's logs: at the mark (s 1321) the host had just killed the 4th member of species 06539227 (its hunt card
+  "The Squibble species is extinct!"); its log has no evolve line; members of that species were pooled by the host's
+  game at s 1325 (BUG-0339 lines), during the guest's 9 s freeze. Inferred: what the guest saw was the
+  migration desync (BUG-0640, fixed: the host's game had migrated, the guest's never did) or the pooled members still
+  shown for a moment, or the herd evolution running apart in the two games (BUG-0668), not a rule that shields an
+  evolving nest on the host.
 
 ## History
 - 2026-11-06: opened. From the Discord report 2026-11-06 (0.7.8), the players' logs read in fix/w45-intake.
+- 2026-11-07 (fix/w46-creature-p0, P0-Creature of 0.7.10): closed not-reproduced: family_attack PASS 20261107-081513 (the guest cannot hurt the family, own creature too), nest_evolve_probe 20261107-081734: the NPC herds evolve in each game apart (new ticket BUG-0668), no shielded evolving member seen; likely causes BUG-0640 (fixed) and BUG-0668.

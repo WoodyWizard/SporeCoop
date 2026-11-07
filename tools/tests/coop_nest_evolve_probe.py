@@ -52,7 +52,25 @@ def main():
         if any(f'herd {h}' in l and 'extinct=1' in l for l in host.call('coop.nest evolve')['out'].splitlines()):
             break
     if not a.no_dna:
+        # the guest waits at the next nest: right after the DNA its herd evolves on the host; the guest hits a live
+        # mirror of it at once and the host's game says whether its member took the hit (an "evolving" member)
+        h2, home2 = (ns[1][1], ns[1][3]) if len(ns) > 1 else (None, None)
+        if home2:
+            guest.call('coop.npc gopos %.2f %.2f %.2f' % (home2[0] + 8, home2[1], home2[2] + 2))
+            time.sleep(4)
         print('  host:', host.call('coop.dna add 250')['out'].strip().splitlines()[0], flush=True)
+        if home2:
+            for _ in range(3):
+                ms = [m for m in near_mirrors(guest, home2, 30) if not m[3]]
+                rows = [l for l in host.call('coop.nest evolve')['out'].splitlines() if h2 in l]
+                print(f'  next nest {h2}: host {rows[:1]}; guest live mirrors {ms[:3]}', flush=True)
+                if ms:
+                    hp0 = re.search(rf'#{ms[0][0]} \S+ species=\S+ hp=([\d.]+)', host.call('coop.npc list')['out'])
+                    print('  guest hits', ms[0], ':', guest.call(f'coop.npc hit {ms[0][0]} 3')['out'].strip(), flush=True)
+                    time.sleep(2)
+                    hp1 = re.search(rf'#{ms[0][0]} \S+ species=\S+ hp=([\d.]+)', host.call('coop.npc list')['out'])
+                    print(f'  the host\'s member #{ms[0][0]} hp {hp0 and hp0.group(1)} -> {hp1 and hp1.group(1)}', flush=True)
+                time.sleep(4)
     t0, last = time.time(), 0
     while time.time() - t0 < a.secs:
         if time.time() - last >= 15:

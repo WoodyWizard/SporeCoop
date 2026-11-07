@@ -3444,3 +3444,29 @@ BUG-0640, BUG-0496, BUG-0641. GOG 2024, Ghidra (out/ghidra-2024) and the Discord
   decision after the editor (s 792, "migration 0 -> 0") was right then; it is not where this case is decided.
 * ✔ (lab 20261107-073825 / 073828, coop_nest_follow.py --editor) After the evolution vote with both editors each
   game's AfterEditor migrates by itself: the guest claimed the new nest also with `wsync.creature_nest` off.
+
+## NPC herd evolution in the two games, the spit counter across the games (2026-11-07, fix/w46-creature-p0)
+<a id="creature-herd-evolution-desync"></a>
+
+BUG-0668, BUG-0639, BUG-0641. GOG 2024, Ghidra (out/ghidra-2024) and lanes 2-3 (creature fixture).
+
+* ✔ (Ghidra) The cHerd constructor 0xC6C2B0 sets +0x85 (mbShouldEvolve) = 1 and +0x94 (mDNAEvolutionThreshold) =
+  FLT_MAX for every herd; the herd init 0xC6EA90 sets generation +0xF0 = 0 and builds mEvolvedSpeciesProfileKeys
+  +0xA8 (the species chain). +0x85 = 1 is no "evolving now" flag. ? What advances +0xF0 was not found (no `inc`/`add`
+  on +0xF0 in the cHerd code).
+* ✔ (runtime, nest_evolve_probe out/lab/20261107-081734) +250 DNA for the pack evolves every NPC herd: generation 0 ->
+  1 and a new species, on the host at once, on the guest within 18 s, with other thresholds +0x94 in each game (289 /
+  183 for one nest). A herd the host's avatar made extinct (+0x190 = 1) stays generation 0 with +0x85 = 0 on the host,
+  and evolves to a new species on the guest (BUG-0668). The family's herds keep generation 0. The editors alone
+  (migration_probe 20261107-081510) evolve no herd.
+* ✔ (runtime, family_attack 20261107-081513) A guest, with the world's species and with its own creature, cannot hurt a
+  family member: 15 bites with real input, the host's member keeps its health; vt 0xD4 answers 1 on both games.
+* ✔ (runtime, spit_charge) Across the games the spit reaches the charge's game after the charge's own hit: in every
+  try the charging NPC (or the guest's creature) was not charging any more when the spit arrived (`a spit from the
+  partner's game ... charging now 0`, out/lab/20261107-080138). The hit on a mirror or a puppet returns false
+  (CreatureAttackTarget), while the game's spit rule in 0xC20390 runs before the damage either way.
+  CORRECTION (2026-11-07, fix/w46-creature-p0): `creature.spit_counter` (section creature-nest-follow above) sent the
+  spit only for a hit that returned true (nothing was ever sent: out/lab/20261107-075402); it now sends for every
+  spit hit, and the charge's game stuns its creature when it charges now or its charge hit within the last 1 s.
+* ✔ Fixture: the creature fixture's creatures (host and guest) have neither a spit (0x20) nor a charge (0x1F); its NPCs
+  have both; the guest profile's own creature 29021371 has both (types 10 11 1D 1E 1F 20 21 22 23 24 25 28 31 32 33 D E).
