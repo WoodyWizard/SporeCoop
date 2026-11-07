@@ -61,3 +61,6 @@ most of the screen, in both games alike (the cells of the old tier leave in a si
 ## History
 - 2026-11-06: opened. From the Discord report 2026-11-06 (0.7.8), the players' logs read in fix/w45-intake.
 - 2026-11-06: fixed in fix/w46-cell-p0 (cell.levelup_keep): the host's level-change wipe keeps the cells on a partner's screen; FAIL 20261106-220609, PASS 20261106-220831, -221058.
+* 2026-11-07, rel/0.7.10 3c81fb62: out/lab/20261107-161122 failed once (guest 61% vs host 39%, the test's own
+  threshold); the next 4 runs passed (guest 36-73%, host 33-57%). Fix off loses 81-100%: the fix holds, the
+  comparison with the host's own loss is noisy. Reopen if the guest loses over 80% again.
