@@ -44,7 +44,7 @@ Off: rel/0.7.9's drive.lead_late and no-lead rule.
 ## Verification
 FAIL (SPORE_FIX_OFF=drive.lead_keep), body_trail_tribe_player: out/lab/20261107-114838-2 0 of 3 (p90 2.24 / 2.00 / 1.81 m, over 2 m 1.06-1.13 s; lane 7), out/lab/20261107-080850-2 0 of 3 (p90 2.85 / 2.62 / 2.71 m); rel/0.7.9 code out/lab/20261107-073841 0 of 3.
 PASS (final code), at the same time as the first FAIL run: out/lab/20261107-114838 3 of 3 (p90 1.32 / 1.59 / 1.77 m, over 2 m at most 0.91 s; lane 6, lab load 25-35 on 6 cores). Earlier versions of the fix: -094647-2 3 of 3, -100645 2 of 3, -102038 0 of 3 (the stretches of BUG-0674's turn, fixed after), -110506 2 of 3.
-Regression with the fix: tribe_walk_mobile out/lab/20261107-100645-2 3 of 3, -110506 2 of 2; tribe_walk_player -114838 2 of 2 (more in the report), -111106 1 of 2 (a held mirror's catch-up frames of 0.91 m, then bounded); body_trail_tribe -111106 2 of 2; net_tests test_lead_keep and test_lead_late (make test).
+Regression with the fix: tribe_walk_mobile out/lab/20261107-100645-2 3 of 3, -110506 2 of 2; tribe_walk_player -114838 3 of 3, tribe_walk_mobile -115442 2 of 2, body_trail_tribe -115442 2 of 2, tribe_walk -120427-2 2 of 2, -111106 1 of 2 (a held mirror's catch-up frames of 0.91 m, then bounded); body_trail_tribe -111106 2 of 2; net_tests test_lead_keep and test_lead_late (make test).
 
 ## History
 - 2026-11-01: opened.

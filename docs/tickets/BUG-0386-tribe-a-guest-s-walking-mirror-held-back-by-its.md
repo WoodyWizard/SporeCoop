@@ -34,7 +34,7 @@ Observed (2026-11-07, fix/w46-k3-bodies, the per-frame track of fix/w45-remote-b
 
 ## Verification
 FAIL (SPORE_FIX_OFF=tribe.mirror_keep): body_trail_tribe_hold out/lab/20261107-083228-2 (0 of 3: held copies 7.7 m and 19.9 m off, over 2 m up to 0.99 s), out/lab/20261107-081649-2 #2 (6.5 m, over 2 m 1.88 s; #1 there ran an earlier hook that undid the placing only).
-PASS: body_trail_tribe_hold out/lab/20261107-101948 (3 of 3: held copies at most 2.9-3.4 m off, over 2 m at most 0.12 s), out/lab/20261107-082140 #1 (3.8 m, 0.21 s; #2 there 6.0 m for under 0.32 s failed the first 4 m gate, now 7 m). tribe_walk_mobile with the fix: out/lab/20261107-100645-2 3 of 3.
+PASS, final code: body_trail_tribe_hold out/lab/20261107-120427 (3 of 3); earlier code out/lab/20261107-101948 (3 of 3: held copies at most 2.9-3.4 m off, over 2 m at most 0.12 s), out/lab/20261107-082140 #1 (3.8 m, 0.21 s; #2 there 6.0 m for under 0.32 s failed the first 4 m gate, now 7 m). tribe_walk_mobile with the fix: out/lab/20261107-100645-2 3 of 3.
 
 ## History
 - 2026-11-01: opened.
