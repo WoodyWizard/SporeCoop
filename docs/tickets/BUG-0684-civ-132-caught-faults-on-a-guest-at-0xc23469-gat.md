@@ -55,3 +55,8 @@ The fault address was never seen before in any lab log of any version.
 
 ## History
 - 2026-11-07: opened.
+- 2026-11-07 (fix/w46-final-triage): play_civ x3 on rel/0.7.10 e7d1734c, lane 9 (lab rel/0.7.10 20261107-151820): 0 faults in
+  all three, and no wobj bundle was made on the guest in any of them (the precondition, the host's food bundles next to a
+  guest's old village, did not come up), so this A/B cannot tell the versions apart; v0.7.9 not run for the same reason.
+  The verdict rests on the code: worldobj.cpp is identical in v0.7.9. #3 failed "no problems (1)" on another class (a
+  host vehicle purchase that made no vehicle, the BUG-0325 family).
