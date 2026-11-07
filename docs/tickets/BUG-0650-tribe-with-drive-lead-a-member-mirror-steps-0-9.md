@@ -56,7 +56,11 @@ m/s (0.35 s late at 9 m/s: ~1 s; on a calm link ~0.1 s late: 0.3 s). Also: the m
 FAIL (SPORE_FIX_OFF=drive.lead_late, M1 + M3 as in rel/0.7.9): tribe_walk_player out/lab/20261106-204537 0 of 3 (jumps 4
 and 9 per view, 0.90-0.96 m in 31-33 ms frames); also M1 out/lab/20261106-200650 0 of 3 (1 jump 0.94 m + windows /
 uneven). net_tests test_lead_late: M1's target steps 3.30 / 3.61 m per 1/30 s frame, the fix 0.40 / 0.47 m.
-PASS: RESULTS_PLACEHOLDER
+PASS, final code (9530af70) A/B with 0.7.8 (SPORE_FIX_OFF=drive.lead) at the same time on the other lane pair:
+tribe_walk_player out/lab/20261106-213003 (lane 9) 3 of 3, 0 jumps in 12 views / 0.7.8 -213013 (lane 6) 3 of 3.
+The v3 code (without the 3 m/s cap): -205426 3 of 3; lanes swapped -212040 2 of 3 (the 16.5 m/s catch-up jump, fixed
+in v4) / 0.7.8 -212050 3 of 3. v2 (stepped back only to the newest state): -202600 2 of 3 / 0.7.8 -202615 2 of 3,
+swapped -203602 3 of 3 / 0.7.8 -203617 2 of 3; no jump in any v2 run. net_tests test_lead_late passes (make test).
 Lab load 9-19 on 6 cores during all of these (a release batch on the other lanes); 0.7.8 itself failed 1-2 of 3 in some
 of those pairs (windows 63-71 %), so tribe_walk_player is judged A/B. The lead was on for most of the walks (guest log:
 `lead on (one-way latency 79-84 ms)`, off for 10-15 s per run when the spikes or the load pushed the median over 100 ms).
