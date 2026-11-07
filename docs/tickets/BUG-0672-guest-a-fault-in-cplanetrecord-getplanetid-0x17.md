@@ -10,7 +10,7 @@ role: guest
 versions: rel/0.7.10 94066205
 fixed_in: unreleased
 branch: fix/w46-tribe-load
-commits: d612408c 76281c96
+commits: d612408c 76281c96 06d0b643
 tests: coop_tribe_world_map.py (suite tribe_world_map)
 signature: 0xC0000005 at 0x00CE6AE7 (labelled cPlanetRecord_GetPlanetID+0x17) data 0x554, eax 0, esi = a tribe of the world before the load, edi = tool type; calls 00CE6BCA 00C98A71 (Species_FootprintScale < cTribe_LayoutToolSpots 0xC98940 < cTribeTool_SetPosition 0xC9DB80 < coop make_tool)
 docs: docs/re/tribe.md#tribe-stale-map-tool
