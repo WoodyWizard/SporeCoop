@@ -191,8 +191,21 @@ COOP_FIX("tribe.member_body", "BUG-0620", g_member_body_fix,
          "tribe: the body of a member that died lies in every player's game as long as in the host's");
 constexpr double kBodyMax = 60.0;
 constexpr uint8_t kBodyBit = 0x80; // in a snapshot entry's age byte: a body (the guest takes it out of its tribe too)
-static std::unordered_set<void*> g_detached; // guest: mirrors taken out of their tribe as bodies (destroyed on removal)
+// guest: mirrors taken out of their tribe as bodies (destroyed on removal) -> the tribe they were taken out of
+static std::unordered_map<void*, void*> g_detached;
 static uint32_t g_bodies_detached;
+// BUG-0667 (docs/re/tribe.md#tribe-body-teardown): a detached body's mirror was destroyed (DestroyInstance) with its
+// +0x1014 cleared. The citizen's teardown (0xC1FFE0) shuts its behaviour tree down, and the exit of a node still active
+// there reads the tribe: the eat node 0x0461300F's exit 0xDB0C40 releases its food mat spot through
+// cTribe_ReleaseSlot(citizen+0x1014 = null) and faulted in cTribe_ToolLayout's map lookup (0xAC9C7D, data 0x39C). A
+// mirror's tree runs only while the host is away (local_play), so the node stayed active from then until the destroy
+// (long_tribe on rel/0.7.9, the guest froze after the fault). The game's own RemoveMember destroys a member with its
+// tribe still set. tribe.body_teardown: the body gets its tribe back right before it is destroyed (when that tribe
+// still exists), and a slot release with no tribe is skipped. Off: destroyed with no tribe, no guard (0.7.9 before).
+static bool g_body_teardown_fix = true;
+COOP_FIX("tribe.body_teardown", "BUG-0667", g_body_teardown_fix,
+         "tribe: a guest destroys a dead member's body with its tribe set (its behaviour tree's exits need it), never faults there");
+static uint32_t g_teardown_restored, g_slot_null_skipped;
 // guest: the mirror leaves its tribe's member and selectable lists as the host's body left its own (not selectable, not
 // counted as a member), the object stays until the host's body goes
 static void detach_body(void* c)
@@ -216,7 +229,7 @@ static void detach_body(void* c)
     }
     F<uint8_t>(c, 0x12C) = 0; // (not selected)
     F<void*>(c, 0x1014) = nullptr;
-    g_detached.insert(c);
+    g_detached[c] = t;
     g_bodies_detached++;
 }
 static uint32_t g_bodies_sent;
@@ -310,12 +323,27 @@ uint8_t owner_of(void* c)
 using BTTick_t = int(SK_CDECL*)(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
 static BTTick_t o_BTTick;
 static uint32_t g_bt_skipped, g_bt_calls; // diagnostics (coop.tribe): mirrors' AI ticks skipped / all ticks
+// tests (BUG-0667): `coop.tribe localbt <member id> 1|0` on a guest: that mirror's tree runs as while the host is away
+static std::unordered_set<void*> g_bt_local;
+// BUG-0667: cTribe_ReleaseSlot (a behaviour node's exit giving a layout spot back) with no tribe is skipped
+using ReleaseSlot_t = void(SK_THISCALL*)(void*, int, int);
+static ReleaseSlot_t o_ReleaseSlot;
+static void SK_THISCALL h_ReleaseSlot(void* t, int type, int slot)
+{
+    if (!t && g_body_teardown_fix) {
+        if (g_slot_null_skipped++ < 8)
+            H->log(M, SK_WARN, "tribe: a layout spot release (type %d, slot %d) with no tribe skipped (BUG-0667)", type, slot);
+        return;
+    }
+    o_ReleaseSlot(t, type, slot);
+}
 // behaviour tree tick (shared by every creature kind): skipped for citizen mirrors on guests
 static int SK_CDECL h_BTTick(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t self, uint32_t a5, uint32_t a6,
                              uint32_t a7, uint32_t a8)
 {
     g_bt_calls++;
-    if (is_guest() && is_citizen((void*)self) && game::mode_id() == modes::kTribe && !local_play()) {
+    if (is_guest() && is_citizen((void*)self) && game::mode_id() == modes::kTribe && !local_play() &&
+        !g_bt_local.count((void*)self)) {
         g_bt_skipped++;
         return 0;
     }
@@ -951,6 +979,8 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     a_TribeUI = H->sym("SporeCoop::TribeUI_ptr");
     if (uintptr_t a = H->sym("SporeCoop::TribeTargetRings_Update"))
         H->hook_create(M, (void*)a, (void*)h_RingsUpdate, (void**)&o_RingsUpdate);
+    if (uintptr_t a = H->sym("SporeCoop::cTribe_ReleaseSlot")) // BUG-0667 (optional)
+        H->hook_create(M, (void*)a, (void*)h_ReleaseSlot, (void**)&o_ReleaseSlot);
     a_Form = H->sym("SporeCoop::NpcTribeController_FormTribe"); // BUG-0483 (optional)
     a_NpcCtrl = H->sym("Simulator::cNpcTribeController::Get");
     if (a_Form)
@@ -1541,13 +1571,29 @@ static void* spawn_member(void* t, uint8_t age)
     return c;
 }
 
+// BUG-0667: a detached body's tribe back into its +0x1014 for its teardown, when that tribe is still one of the world's
+static void restore_body_tribe(void* c, void* t)
+{
+    if (!g_body_teardown_fix || !t || F<void*>(c, kOwnerTribeOff))
+        return;
+    auto tribes = all_tribes();
+    if (std::find(tribes.begin(), tribes.end(), t) == tribes.end())
+        return;
+    F<void*>(c, kOwnerTribeOff) = t;
+    g_teardown_restored++;
+}
+
 static void remove_member(void* c)
 {
     void* t = F<void*>(c, kOwnerTribeOff);
     if (t)
         vcall<void>(t, 0x9C / 4, c, 1); // RemoveMember(c, destroy)
-    else if (g_detached.erase(c)) // BUG-0620: a body out of its tribe: the object itself
+    else if (auto it = g_detached.find(c); it != g_detached.end()) { // BUG-0620: a body out of its tribe: the object
+        void* bt = it->second;
+        g_detached.erase(it);
+        restore_body_tribe(c, bt); // BUG-0667
         game::destroy_instance(c);
+    }
 }
 
 // BUG-0495: the objects the mod makes on a guest (the members it spawns as mirrors of the host's, and the
@@ -3167,6 +3213,11 @@ void before_save()
 
 void on_session_end()
 {
+    for (auto& [c, t] : g_detached) // BUG-0667: the bodies stay in this world; the game tears them down later
+        if (game::object_alive(c))
+            restore_body_tribe(c, t);
+    g_detached.clear();
+    g_bt_local.clear();
     theme_forget(); // BUG-0568
     clear_coop_tables(true);
     g_split_for.clear();
@@ -3187,6 +3238,8 @@ void on_world_change()
     theme_forget(); // BUG-0568
     g_resets++;
     forget_world_tables(); // every citizen of the old world is freed: nothing to restore
+    g_detached.clear(); // (BUG-0667: freed with the world)
+    g_bt_local.clear();
     g_split_for.clear();
     g_hm.clear();
     g_hm_by_id.clear();
@@ -3290,11 +3343,11 @@ std::string status()
         snprintf(b, sizeof b,
                  "tribe(guest): mirrors=%u spawned=%u removed=%u cmds_sent=%u rx=%u skipped=%u resets=%u "
                  "local_tribes=%u player_tribe=%p unselected=%u incomplete=%u older_chunks=%u ai_skipped=%u/%u away_orders=%u local=%d mirror_walks=%u timed=%u "
-                 "npc_tribes_made=%u failed=%u mirror_grounded=%u ours=%u/%u save_stripped=%u/%u forms_blocked=%u forms_run=%u unmapped_removed=%u bodies_detached=%u\n",
+                 "npc_tribes_made=%u failed=%u mirror_grounded=%u ours=%u/%u save_stripped=%u/%u forms_blocked=%u forms_run=%u unmapped_removed=%u bodies_detached=%u teardown_restored=%u slot_null_skipped=%u\n",
                  (unsigned)g_gm.size(), g_spawned, g_removed, g_cmds_sent, g_rx, g_rx_skipped, g_resets,
                  (unsigned)all_tribes().size(), player_tribe(), g_unselected, g_incomplete, g_cyc.older, g_bt_skipped, g_bt_calls, g_away_orders, (int)local_play(),
                  g_mirror_walks, g_mirror_timed, g_npc_tribes_made, g_npc_tribes_failed, g_mirror_grounded, (unsigned)g_ours_c.size(),
-                 (unsigned)g_ours_t.size(), g_save_stripped, g_save_saves, g_forms_blocked, g_forms_run, g_unmapped_removed, g_bodies_detached);
+                 (unsigned)g_ours_t.size(), g_save_stripped, g_save_saves, g_forms_blocked, g_forms_run, g_unmapped_removed, g_bodies_detached, g_teardown_restored, g_slot_null_skipped);
     std::string out = b;
     if (!g_last_cmd.empty())
         out += "tribe last order: " + g_last_cmd + "\n";
@@ -3823,6 +3876,27 @@ std::string debug(const std::vector<std::string>& a)
                  t, in_members >= 0 ? "yes" : "no", in_members, in_any, n_tribes, player_tribe(), ow == 0xFF ? -1 : ow, id_of(c),
                  F<uint8_t>(c, 0xB34), F<uint8_t>(c, 0xB5E), F<uint32_t>(c, 0xB28), F<void*>(c, 0x1010));
         return std::string(b) + ai_line(c);
+    }
+    if (a.size() >= 3 && a[0] == "localbt" && is_guest()) { // localbt <member id> 1|0: tests (BUG-0667), that mirror's
+        // behaviour tree runs on this guest as while the host is away (local_play), or is skipped again
+        void* c = member_mirror((uint16_t)atoi(a[1].c_str()));
+        if (!c)
+            return "no such mirror";
+        if (atoi(a[2].c_str()))
+            g_bt_local.insert(c);
+        else
+            g_bt_local.erase(c);
+        return std::string("mirror's tree ") + (g_bt_local.count(c) ? "runs" : "skipped");
+    }
+    if (a.size() >= 2 && a[0] == "eat" && is_guest()) { // eat <member id>: tests (BUG-0667), the mirror's own Eat
+        // (CitizenAction 0) at its tribe's food mat (+0x260) in this game, as a click on the mat gives it
+        void* c = member_mirror((uint16_t)atoi(a[1].c_str()));
+        void* t = c ? F<void*>(c, kOwnerTribeOff) : nullptr;
+        void* mat = t ? F<void*>(t, 0x260) : nullptr;
+        if (!mat)
+            return "no such mirror or no food mat";
+        void* rec = thiscall<void*>(a_DoAction, c, 0, mat, (void*)nullptr);
+        return std::string("eat ordered (rec ") + (rec ? "made" : "none") + ")";
     }
     if (a.size() >= 2 && a[0] == "ai") { // ai <member id>: BUG-0505, the member's order record, node and walk
         void* c = local_of((uint16_t)atoi(a[1].c_str()));
