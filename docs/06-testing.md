@@ -4564,3 +4564,25 @@ BUG-0332 (docs/re/tribe.md#tribe-terrain-stamps).
   4`), standing carriers bind both ways; BUG-0617), `tribe_gather_block` (a probe, BUG-0531: no stall seen),
   `npc_nest_backoff` / `npc_nest_backoff_near` (BUG-0562). play_creature's bot: the pack hunts together (no own hunt
   while the partner leads one).
+
+## The Cell reports of 2026-11-06: kills and meals once, the level-change wipe, tokens (2026-11-06, fix/w46-cell-p0)
+<a id="testing-w46-cell"></a>
+
+* `coop_cell_once.py --case kill` (suite cell_kill_once, ~1.5 min cold): the guest bites a creature to death next to
+  the host with the game's Bite and bites on for 1.5 s; the host's game must break each one once (`npc_deaths`).
+  `SPORE_FIX_OFF=cell.kill_once` fails (3-4 breaks per kill). BUG-0632.
+* `--case eat` (suite cell_eat_once, `SPORE_NET="delay=150"`): the guest eats a plant / meat cell (`coop.pool
+  food_near`, `eat`) and repeats the eat every 40 ms for 1.5 s; it must find nothing to eat again.
+  `SPORE_FIX_OFF=cell.eat_once` fails (1-3 eaten again per meal). BUG-0636. Without the delay the window is too
+  short to show it.
+* `coop_cell_levelup_view.py` (suite cell_levelup_view, ~2 min): the guest 30 m from the host, the food +-150 (one
+  level is no wipe: RemoveCellsOfOldScale runs only when the world scale tier changes); each game's screen before
+  and the cells of it still alive 5 s after (`coop.pool alive`). `SPORE_FIX_OFF=cell.levelup_keep` fails (the guest
+  loses 100% of its screen). A level-up replaces ~90% of the screen in both games anyway (the game's own). BUG-0635.
+* `coop_cell_push.py` (suite cell_push): each player swims into a creature of its size (`coop.pool gap near`,
+  `gap <key>`): the guest is pushed as the host. BUG-0634.
+* `coop_cell_own_level10.py` (suite cell_own_level10, ~3 min): the host's food to 924 (level 10), `coop.creations
+  choose cell BAF1AD40` and back, `coop.pool species` (creature models with their levels). The game populates NPCs of
+  the player's own cell (6-8 at level 10): the test checks no NPC of the previous own cell is left. BUG-0637.
+* `coop_cell_once.py --case token` (suite cell_token_probe, extended) and `--case drop` (no suite: the fixture's
+  kills drop no part token, so it always fails on its setup): BUG-0633.
