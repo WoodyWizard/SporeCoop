@@ -313,6 +313,17 @@ bool g_cycle_order_fix = true;
 COOP_FIX("net.cycle_order", "BUG-0612", g_cycle_order_fix, "net: a late chunk of an older Tribe / Civ snapshot cycle is dropped, not taken as a new cycle");
 static uint32_t g_spawned, g_removed, g_cmds_sent;
 static std::vector<void*> g_local_tribe_of; // host tribe index -> local tribe
+// BUG-0672 (tribe.world_map): the mapping outlived the world it was made in. After a load (a warm reset, a received
+// world) the guest's wobj tool kind made the host's tool in tribe index i before the new world's first tribe state had
+// mapped it again: tribe_of_index gave the old world's freed tribe (its species +0x18CC already released), and the
+// tool's SetPosition (0xC9DB80) re-laid that tribe's spots (0xC98940 type 6), which read the species' size: the fault
+// at 0xCE6AE7 (data 0x554). On: the mapping is dropped with the world and an entry is used only while it is one of
+// this world's tribes. Off: 0.7.9.
+static bool g_world_map_fix = true;
+COOP_FIX("tribe.world_map", "BUG-0672", g_world_map_fix,
+         "tribe: right after a world load the guest never builds the host's tool buildings into a tribe of the old world");
+static uint32_t g_map_stale_skipped;
+static bool g_state_hold; // tests (BUG-0672): the guest ignores the host's tribe states (the mapping is not renewed)
 
 uint8_t owner_of(void* c)
 {
@@ -824,7 +835,16 @@ static void* tribe_of_index(int i)
         auto ts = all_tribes();
         return i < (int)ts.size() && i < 32 ? ts[i] : nullptr;
     }
-    return i < (int)g_local_tribe_of.size() ? g_local_tribe_of[i] : nullptr;
+    void* t = i < (int)g_local_tribe_of.size() ? g_local_tribe_of[i] : nullptr;
+    if (t && g_world_map_fix) { // BUG-0672: a tribe of this world only (the entry may be of a world that is gone)
+        auto ts = all_tribes();
+        if (std::find(ts.begin(), ts.end(), t) == ts.end()) {
+            if (g_map_stale_skipped++ < 8)
+                H->log(M, SK_WARN, "tribe: the host's tribe %d maps to %p, no tribe of this world: not used (BUG-0672)", i, t);
+            return nullptr;
+        }
+    }
+    return t;
 }
 
 void for_each_tool(bool all, ToolFn fn, void* user)
@@ -3215,8 +3235,35 @@ static void drop_foreign_selection()
     }
 }
 
+// tests (BUG-0672): `coop.tribe frametool <tribe index> <type> <metres>`: the host's tool made in this game's tribe of
+// that index the way the wobj tool kind makes it (make_tool), from the next frame's tick (inside SporeKit's frame, as the
+// wobj snapshot runs), with a task for outside the frame queued just before (as one often is)
+struct FrameTool {
+    bool armed = false;
+    int ix = 0, type = 0;
+    float metres = 10.f;
+};
+static FrameTool g_frame_tool;
+static void frame_tool_run()
+{
+    FrameTool f = g_frame_tool;
+    g_frame_tool.armed = false;
+    void* t = f.ix >= 0 && f.ix < (int)g_local_tribe_of.size() ? g_local_tribe_of[f.ix] : nullptr;
+    net::Vec3 c = t ? tribe_pos(t) : net::Vec3{};
+    float l = std::sqrt(c.x * c.x + c.y * c.y + c.z * c.z);
+    H->log(M, SK_INFO, "tribe: tests: frametool tribe %d (mapped to %p) type %d", f.ix, t, f.type);
+    H->run_outside_frame([](void*) {}, nullptr);
+    if (l < 1.f)
+        return;
+    net::Vec3 p{c.x + 0.3f * f.metres, c.y, c.z};
+    void* tool = make_tool(f.ix, f.type, p);
+    H->log(M, SK_INFO, "tribe: tests: frametool made %p", tool);
+}
+
 void tick(double now)
 {
+    if (g_frame_tool.armed && is_guest())
+        frame_tool_run();
     if (!active())
         return;
     drop_foreign_selection();
@@ -3238,7 +3285,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         if (!is_guest() || game::mode_id() != modes::kTribe)
             g_rx_skipped++;
     }
-    if (type == net::MSG_TRIBE_STATE && is_guest() && game::mode_id() == modes::kTribe)
+    if (type == net::MSG_TRIBE_STATE && is_guest() && game::mode_id() == modes::kTribe && !g_state_hold)
         guest_state(r);
     else if (type == net::MSG_TRIBE_CMD && is_host() && game::mode_id() == modes::kTribe)
         host_command(from, r);
@@ -3317,6 +3364,8 @@ void on_session_end()
     g_npc_tribe_made.clear(); // BUG-0381
     g_npc_tribe_tried.clear();
     g_player_members_seen = 0;
+    if (g_world_map_fix)
+        g_local_tribe_of.clear(); // BUG-0672: the old world's tribes are freed; the next tribe state maps the new ones
 }
 
 // a world of the Tribe stage is gone (a load, a received world, the stage left, the game-over
@@ -3425,7 +3474,7 @@ void for_each_tracked(void (*fn)(const TrackMember& m, void* user), void* user)
 
 std::string status()
 {
-    char b[640];
+    char b[1024];
     if (C.sess && C.sess->role() == net::Role::Host)
         snprintf(b, sizeof b, "tribe(host): members=%u cmds_done=%u rejected=%u gifts=%u unselected=%u bodies_sent=%u\n",
                  (unsigned)g_hm.size(), g_cmds_done, g_cmds_rejected, g_gifts, g_unselected, g_bodies_sent);
@@ -3433,12 +3482,12 @@ std::string status()
         snprintf(b, sizeof b,
                  "tribe(guest): mirrors=%u spawned=%u removed=%u cmds_sent=%u rx=%u skipped=%u resets=%u "
                  "local_tribes=%u player_tribe=%p unselected=%u incomplete=%u older_chunks=%u ai_skipped=%u/%u away_orders=%u local=%d mirror_walks=%u timed=%u "
-                 "npc_tribes_made=%u failed=%u mirror_grounded=%u ours=%u/%u save_stripped=%u/%u forms_blocked=%u forms_run=%u unmapped_removed=%u bodies_detached=%u teardown_restored=%u slot_null_skipped=%u teardown_tribe_back=%u teardown_bt_emptied=%u\n",
+                 "npc_tribes_made=%u failed=%u mirror_grounded=%u ours=%u/%u save_stripped=%u/%u forms_blocked=%u forms_run=%u unmapped_removed=%u bodies_detached=%u teardown_restored=%u slot_null_skipped=%u teardown_tribe_back=%u teardown_bt_emptied=%u map_stale_skipped=%u\n",
                  (unsigned)g_gm.size(), g_spawned, g_removed, g_cmds_sent, g_rx, g_rx_skipped, g_resets,
                  (unsigned)all_tribes().size(), player_tribe(), g_unselected, g_incomplete, g_cyc.older, g_bt_skipped, g_bt_calls, g_away_orders, (int)local_play(),
                  g_mirror_walks, g_mirror_timed, g_npc_tribes_made, g_npc_tribes_failed, g_mirror_grounded, (unsigned)g_ours_c.size(),
                  (unsigned)g_ours_t.size(), g_save_stripped, g_save_saves, g_forms_blocked, g_forms_run, g_unmapped_removed, g_bodies_detached, g_teardown_restored, g_slot_null_skipped, g_teardown_tribe_back,
-                 g_teardown_bt_emptied);
+                 g_teardown_bt_emptied, g_map_stale_skipped);
     std::string out = b;
     if (!g_last_cmd.empty())
         out += "tribe last order: " + g_last_cmd + "\n";
@@ -3967,6 +4016,31 @@ std::string debug(const std::vector<std::string>& a)
                  t, in_members >= 0 ? "yes" : "no", in_members, in_any, n_tribes, player_tribe(), ow == 0xFF ? -1 : ow, id_of(c),
                  F<uint8_t>(c, 0xB34), F<uint8_t>(c, 0xB5E), F<uint32_t>(c, 0xB28), F<void*>(c, 0x1010));
         return std::string(b) + ai_line(c);
+    }
+    if (a.size() >= 3 && a[0] == "frametool" && is_guest()) {
+        g_frame_tool.ix = atoi(a[1].c_str());
+        g_frame_tool.type = atoi(a[2].c_str());
+        g_frame_tool.metres = a.size() >= 4 ? (float)atof(a[3].c_str()) : 10.f;
+        g_frame_tool.armed = true;
+        char b[96];
+        snprintf(b, sizeof b, "frametool armed: tribe %d type %d (mapped=%u)", g_frame_tool.ix, g_frame_tool.type,
+                 (unsigned)g_local_tribe_of.size());
+        return b;
+    }
+    if (a.size() >= 2 && a[0] == "statehold" && is_guest()) { // statehold 1|0: tests (BUG-0672), the host's tribe
+        // states are ignored (the mapping of host tribe index -> this game's tribe stays as it is, as before the first
+        // state of a new world)
+        g_state_hold = atoi(a[1].c_str()) != 0;
+        char b[96];
+        snprintf(b, sizeof b, "tribe states %s; mapped=%u stale_skipped=%u map=", g_state_hold ? "held" : "taken",
+                 (unsigned)g_local_tribe_of.size(), g_map_stale_skipped);
+        std::string out = b;
+        void* pt = player_tribe();
+        for (size_t i = 0; i < g_local_tribe_of.size() && i < 32; i++) {
+            snprintf(b, sizeof b, "%u:%p%s ", (unsigned)i, g_local_tribe_of[i], g_local_tribe_of[i] && g_local_tribe_of[i] == pt ? "(p)" : "");
+            out += b;
+        }
+        return out;
     }
     if (a.size() >= 3 && a[0] == "localbt" && is_guest()) { // localbt <member id> 1|0: tests (BUG-0667), that mirror's
         // behaviour tree runs on this guest as while the host is away (local_play), or is skipped again

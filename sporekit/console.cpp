@@ -56,9 +56,28 @@ void run_outside_frame_from(const void* code, std::function<void()> fn)
         PostMessageW(w, WM_SK_PUMP_OUT, 0, 0);
 }
 
+// BUG-0672: the repost at once looped for ever when the frame flag stayed set after a fault the game's handler caught
+// (kit.fix frameunwind clears it after App::Canvas::Tick, but Canvas::Tick's PeekMessage loop got the reposted message
+// back every time and never returned: no frame ran again). With kit.fix outpump the tasks wait for the frame's end
+// (d3d9hook.cpp: the end of a frame, of Present, or the cut-off), which posts the message again.
+static bool g_out_deferred;
+
+void outside_tasks_resume()
+{
+    if (!g_out_deferred)
+        return;
+    g_out_deferred = false;
+    if (HWND w = (HWND)game_window())
+        PostMessageW(w, WM_SK_PUMP_OUT, 0, 0);
+}
+
 void pump_outside_tasks()
 {
     if (in_frame()) { // called from a message dispatched inside Present: try again later
+        if (fixed(g_fix_outpump)) {
+            g_out_deferred = true;
+            return;
+        }
         if (HWND w = (HWND)game_window())
             PostMessageW(w, WM_SK_PUMP_OUT, 0, 0);
         return;

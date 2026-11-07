@@ -176,6 +176,7 @@ static int g_frames_mode = -1;   // 0 auto, 1 loop: ignore Present (tests of the
 // game "froze" for the lab and its partner while it drew on). The frame's stack address is kept; an entry on the same
 // thread at that depth or above it (not nested inside the frame) means the frame was cut off: the flags are cleared
 // and the frames go on. `kit.fix frameunwind 0`: the flags stay (0.3.11).
+static int g_present_depth; // device Present may call the swapchain Present internally
 static uintptr_t g_frame_sp;     // stack address of the frame being run
 static DWORD g_frame_tid;
 static uint32_t g_frames_cut;
@@ -190,6 +191,8 @@ static bool frame_cut_off(uintptr_t sp)
     g_frames_cut++;
     SKLOG(SK_WARN, "frames: the frame %llu was cut off by a fault the game's handler caught (%u so far); frames go on "
                    "(BUG-0667)", (unsigned long long)g_frame, g_frames_cut);
+    if (!g_present_depth)
+        outside_tasks_resume(); // BUG-0672
     return true;
 }
 
@@ -275,7 +278,6 @@ static void on_frame_begin_present()
     g_in_frame = false;
 }
 
-static int g_present_depth; // device Present may call the swapchain Present internally
 
 // called on the main thread after every App::Canvas::Tick (gamehooks.cpp)
 void frame_from_game_loop()
@@ -305,6 +307,7 @@ void frame_from_game_loop()
     frame_enter(true, sp);
     frame_common();
     g_in_loop_frame = false;
+    outside_tasks_resume(); // BUG-0672
 }
 
 const char* frame_source()
@@ -326,6 +329,8 @@ static HRESULT WINAPI h_Present(IDirect3DDevice9* dev, const RECT* a, const RECT
     g_present_depth++;
     HRESULT hr = o_Present(dev, a, b, w, r);
     g_present_depth--;
+    if (!g_present_depth && !g_in_frame && !g_in_loop_frame)
+        outside_tasks_resume(); // BUG-0672: tasks a message inside this Present held back
     return hr;
 }
 
@@ -343,6 +348,8 @@ static HRESULT WINAPI h_SwapPresent(IDirect3DSwapChain9* sc, const RECT* a, cons
     g_present_depth++;
     HRESULT hr = o_SwapPresent(sc, a, b, w, r, f);
     g_present_depth--;
+    if (!g_present_depth && !g_in_frame && !g_in_loop_frame)
+        outside_tasks_resume(); // BUG-0672
     return hr;
 }
 
