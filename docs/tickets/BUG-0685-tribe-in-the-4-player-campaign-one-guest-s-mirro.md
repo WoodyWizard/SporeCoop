@@ -1,19 +1,19 @@
 ---
 id: BUG-0685
 title: Tribe: in the 4-player campaign one guest's mirror of the host member #4 (the leader the guest's game took by tribe.leader_sync) is gone for 33 s+ (sync-check t: 1 missing on the guest)
-status: open
+status: fixed
 kind: desync
 stage: Tribe
 reported: 2026-11-07
 source: lab 20261107-141346 campaign (rel/0.7.10 e7d1734c, lane 2)
 role: guest
 versions: 0.7.10
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w46-tribe-leader
+commits: f4e96be8 a64ded85
+tests: tribe_leader_ko
 signature: sync-check: MISMATCH with the host (Tribe 9652F8AD, 33 objects compared): t: 1 missing on the guest (t4); guest `t4 here: not listed`, host `t4 here: #4 ... dead=0 ... tool=11 leader=1`
-docs:
+docs: docs/re/tribe.md#tribe-guest-game-over, docs/06-testing.md#testing-guest-game-over
 related: BUG-0652, BUG-0664, BUG-0645
 ---
 
@@ -26,28 +26,40 @@ The 4-player campaign on rel/0.7.10 (lab 20261107-141346, lane 2, 98 min) failed
 * guest (Bob) and the host at s 2056: `t: 1 apart (t29 9.4)`, once (campaign.guest.game.log 2262).
 
 ## Root cause
-Not found. Observed:
-* #4 is the host's member that leads its tribe (staff, tool 11). On every guest tribe.leader_sync (BUG-0652, new in
-  0.7.10) made its mirror the guest tribe's leader again and again: `member #4 leads its tribe here too ... (the leader
-  was none)` at s 1635, 1644 (Carol's rejoin), 1996 and 2349 on Carol (the log stops after 5 lines), the same on the
-  other two guests: the guest tribe kept losing its leader.
-* From s 2960 Carol's game was paused (`busy=input_lock,paused`, only on Carol); its mirrors went 3 -> 2 between s 2950
-  and s 2980 (removed 68 -> 69) and #4 was not made again while the host kept sending it (no body bit: the host lists it).
-* On the guest a mirror whose object is gone is made again on the next snapshot unless it is a body, its tribe is
-  not mapped (`g_local_tribe_of[m.tribe]` null) or `spawn_member` fails (tribe.cpp ~2470-2500); no log line says which.
-Inferred candidates, none checked: the guest's game removes or replaces the leader mirror (its own chief rule after
-SetChieftain) and spawn_member fails while the game is paused or the tribe is at its population cap
-(wsync.tribe_level, BUG-0645, new in 0.7.10); or a lost mapping of that tribe. The t29 "apart" is the BUG-0410/0674
-class. No 0.7.9 full campaign log exists to compare (rel/0.7.9 has none); tribe t-missing lines before were only after
-joins (BUG-0664) and the tests that hold states.
+Not a 0.7.10 regression: the same with `tribe.leader_sync` and `wsync.tribe_level` off (lab 20261107-164852); the
+code paths (the citizen damage hook, the BUG-0172/0288 guard) are as in 0.7.9.
+
+Observed (lab, tribe_leader_ko, docs/re/tribe.md#tribe-guest-game-over): a guest's game runs its own game-over rule on
+its player tribe of mirrors. With the host's tribe down to its chief, a blow of the guest's own game (the citizen's
+TakeDamage) that took the chief's mirror to 0 raised the guest's input lock at once and its caption "Alas! Your
+population has fallen below the minimum ..." 12-19 s later, while the host's chief stood with full health (the mod put
+the mirror's health back at once: the game over stayed). Its OK reloads the guest's own last save.
+
+Observed in the campaign: the host's tribe was down to its chief (#4) and one more entry (bodies); only on Carol the
+input lock and the pause came up at s 2950-2960 (`busy=input_lock,paused`, no cinematic: a caption that waits), and
+#4's mirror went and was not made again for 47 s while the host kept sending it. `campaign_tc2` with the new log lines:
+the campaign's repeated "(the leader was none)" lines are the KO replacements of the host's chief's mirror (`mirror #1
+goes: dead here, back on its feet on the host`), not a leader the guest's game lost.
+
+Inferred (the campaign logs had no per-mirror lines): Carol's own game over from such a blow; with her lock up
+tribe.gameover's guard (a guest with the input lock up and no member with health = "the player tribe is out") refused
+#4's new mirror. The new log lines (`mirror #N is not made: the player tribe is out ...`) name this next time.
 
 ## Fix
-<!-- needs a dedicated agent: a removal/spawn-failure log line per mirror, then a repro (tribe_leader_sync with a pause
-     and a full tribe) and `SPORE_FIX_OFF=tribe.leader_sync` / `wsync.tribe_level` A/B -->
+`tribe.mirror_blow` (mods/coop/tribe.cpp h_CitizenTD): on a guest (not while the host is away) a blow of its own game
+never takes a member mirror below 0.3 health; the host's game decides when a member falls (tribe.ko plays it). Off:
+the game's blow (0.7.10). Diagnostics: a guest logs when a member mirror goes and why one is not made again
+(`tribe: mirror #N goes: ...`, `mirror #N is not made: <why>`, `mirror #N is made again`, at most 60 lines);
+`coop.tribe` lifetime `mirror_blows_kept=`. Test hook `coop.tribe hurt <id> <dmg>` (guest).
+Not changed: the guard itself (a guest's input lock from another caption with no mirror with health still blocks
+mirrors; not seen).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+tribe_leader_ko (lane 5): FAIL with `SPORE_FIX_OFF=tribe.mirror_blow` out/lab/20261107-164611 (the guest's lock 1 at
+once, the caption at 18.8 s); FAIL with `SPORE_FIX_OFF=tribe.mirror_blow,tribe.leader_sync,wsync.tribe_level`
+out/lab/20261107-164852 (not a 0.7.10 regression); PASS out/lab/20261107-164728 and out/lab/20261107-165013 (with
+tribe_coop, tribe_bounce_mirrors, tribe_ko, tribe_leader_sync, tribe_gameover: 6/6). make test passes.
 
 ## History
 - 2026-11-07: opened.
+- 2026-11-07: fixed on fix/w46-tribe-leader (tribe.mirror_blow); not a 0.7.10 regression.

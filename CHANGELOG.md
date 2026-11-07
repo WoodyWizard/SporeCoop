@@ -7,6 +7,9 @@
   behind (found with BUG-0438).
 
 ### Fixed
+- Tribe: when the host's tribe was down to its chief, a hit in a guest's own game on that chief could end the guest's
+  game on its own ("Alas! Your population has fallen below the minimum ...", its OK reloads the guest's own save), and
+  the guest then no longer saw the host's chief; only the host's game decides now when a member falls (BUG-0685).
 - Tribe and Creature: the guest hears the footsteps of the host's epic creatures (BUG-0669).
 - Civilization: the guest sees the host's own city buildings (city hall, houses, factories, entertainment) as the
   host designed them, not some creation of its own with the same number (BUG-0670).
