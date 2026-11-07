@@ -4663,3 +4663,15 @@ BUG-0631 / BUG-0621. The per-minute `perf:` line says how much address space is 
   20261106-210201); none in the other off run or the two on runs. Its FAIL run (fix off) also loses 8.3 MB/min: that
   is the bug the test catches, and `mem_reserve`'s FAIL run (core.mem_reserve off) trips the mem-low gate on purpose
   (260 MB free, largest block 16 MB, planted with `coop.diag fill`).
+
+## coop.bodyrec diag: where a remote body's driving aimed (2026-11-07, fix/w46-k3-bodies)
+<a id="testing-bodyrec-diag"></a>
+
+`coop.bodyrec start diag` (coop_body_trail.py with SPORE_BODYREC_DIAG=1) also records on a guest, every frame, the
+driving's own targets next to the drawn bodies: per Tribe member mirror `a<id>` (the aim), `r<id>` (M1's raw lead),
+`l<id>` (lead lateness s + one frame, 1 = no lead, the walk error m); per Civ vehicle mirror `w<id>` (its target) and
+`e<id>` (state age s, the estimate's speed, the error). body_trail.analyse skips these keys. With them a trail splits
+into the target's error (aim vs the host's body at the same moment) and the walk's (drawn vs aim): BUG-0410, BUG-0438
+were mostly the first. A Civ or Tribe trail test at a lab load over ~10 on 6 cores measures the games' frame rate
+(16-20 fps: states every 0.14-0.39 s): judge such runs only A/B against the switch off at the same time.
+`coop.tribe undo <id> <s>` (guest, tests): the mirror's walk and unmarked placings are undone for s seconds (BUG-0386).

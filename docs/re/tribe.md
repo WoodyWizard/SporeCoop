@@ -2264,3 +2264,41 @@ BUG-0667. GOG 2024, disassembly + lab lane 4 (`coop_tribe_dead_member.py --eat`,
   neither detached nor taken out by a SetTribe(null) of this game: the fallback ended their trees without exits. Inferred
   origin: bodies that came with the received world without a tribe (the only other writer of +0x1014 is the reader
   0xC03370 that copies +0x1010 / +0x1014 from a record); not checked. Whether 0x04861814's exit reads the tribe: not checked.
+
+## The member lead kept on, and a mirror the guest's game holds back (2026-11-07, fix/w46-k3-bodies)
+<a id="tribe-lead-keep"></a>
+
+BUG-0410, BUG-0651 (`coop.fix drive.lead_keep`, net/interp.h) and BUG-0386 (`coop.fix tribe.mirror_keep`, tribe.cpp
+mirror_drive). Measured with `coop.bodyrec start diag` (SPORE_BODYREC_DIAG=1 for coop_body_trail.py): the guest records
+per member mirror `a<id>` (the driving's aim), `r<id>` (M1's raw lead: the newest state moved on to the sender's now) and
+`l<id>` (x: how far the shown lead's sender time is behind M1's, plus one guest frame; y: 1 = no lead; z: walk error).
+
+* ✔ observed (body_trail_tribe_player, rel/0.7.9 code, lab 20261107-073841, load 8-16 on 6 cores): in 2 of 3 runs the
+  member lead was off for the whole run (`l` y = 1): the one-way latency BUG-0619's rule reads (half the round trip of
+  the acks, both games' frame times included) was over 100 ms; members shown interpolated, 0.2 s + latency late, p90
+  3.2-3.4 m (aim 3.5 m, the raw lead would have been 2.3 m). The 0.7.9 final check run 20261107-012856 #2 had it off
+  for 25 s of 60. The player network alone reads 80-101 ms: on the rule's edge (BUG-0651).
+* ✔ observed (the third run, lead on 83 % of the time): with the lead on the aim was p50 0.60 / p90 2.36 m off the host's
+  member against the raw lead's 0.25 / 1.20 m: drive.lead_late's catch-up at 1.33x (at most +3 m/s) kept the shown time
+  0.25-0.3 s behind for ~0.75 s after every start known late (a spike, a loss burst).
+* ✔ observed (net_tests, a catch-up at 2x): drive.lead_late's "where the shown target was going" used the shown target's
+  own velocity; after a frame that stepped back (velocity 0) the next state stepped it back again and the target stood
+  every other frame 0.07-0.1 s behind. Going on at the lead's velocity instead: no stall.
+* ✔ fix (drive.lead_keep): no no-lead rule while drive.lead_late is on (it brings a late state in without a step, which
+  the rule was for); the late target catches up at 2x the real time and the mirror is walked at that rate without
+  catch_prop on top (at most 2 x speed + 3 m/s drawn, tribe_walk's jump is 3 x the top speed); a new state steps the
+  shown time back only when its news was late (the lead had to go over kLateNews 0.05 s further than the median of the
+  last 32 horizons past the state before it). net_tests test_lead_keep: over a 120 ms one-way link 0.7.9 2.88 m mean
+  target error, the fix 0.00 m; a start known 0.3 s late within 0.3 m after 0.40 s (0.7.9 1.10 s).
+* ✔ observed (lab 20261107-081649, lead kept on): aim p90 1.62-2.34 m against the raw lead's 1.36-2.15 m: the lead's
+  cost is gone; what is left at a load of 12 on 6 cores is the raw lead itself (states every 0.1-0.2 s from a host at
+  16-20 fps) and the walk behind the aim (p90 0.7-0.9 m).
+* ✔ observed (BUG-0386, the track of fix/w45-remote-bodies-2 lab 20261106-172428 #2, tribe_walk_guest_walks_173129,
+  the guest's own member 2): from the frame its game's walk took over (game speed 0 -> 11-12 m/s) every placing of
+  0.38-0.40 m was undone and the game moved it 0.03-0.04 m a frame for 0.9 s while its target walked on at 9 m/s; the
+  error grew to 8 m and drive::step teleported it. walk_place never counted the placing as lost (under its 0.5 m a
+  frame) and keep_lost (BUG-0361's rule for NPC proxies) was off for mirrors. ? what holds the body there is not known
+  (no object within 3 m in the probe lines; static RE: creature pairs are not in the gameplay contact handler).
+* ✔ fix (tribe.mirror_keep): keep_lost for walked member mirrors: an error over 0.75 m that grows for 0.15 s moves it by
+  teleports with the mark at the catch-up speed until it is within 0.2 m. Test: body_trail_tribe_hold (`coop.tribe undo
+  <id> <s>` plants the hold: the game's walk and every unmarked placing undone, 0.04 m a frame; marked teleports kept).

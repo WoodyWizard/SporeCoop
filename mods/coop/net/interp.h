@@ -172,6 +172,7 @@ constexpr int kLateSteps = 16; // candidate times between the earliest and the s
 // spike or after states lost or dropped as old (0.25-0.4 s over the usual) is brought in as before. Off: 0.7.9.
 inline bool g_lead_keep_fix = true;
 constexpr double kKeepRate = 1.0;
+constexpr double kKeepTau = 0.25; // s
 constexpr size_t kHorizonN = 32;
 constexpr double kLateNews = 0.05; // s
 
@@ -467,7 +468,10 @@ private:
             return std::min(tl, lt_t_ - (lt_local_ - local_now));
         const double adv = local_now - lt_local_;
         const Vec3 lv = lead_velocity();
-        const double rate = g_lead_keep_fix ? 1.0 + kKeepRate
+        // BUG-0410 (g_lead_keep_fix): the rate grows with how far the shown time is behind (kKeepTau s behind: 2x), so a
+        // spike's 0.3 s is caught up in ~0.3 s and the mobile network's 20-60 ms of jitter at 1.1-1.2x: a rate that went
+        // 1x -> 2x -> 1x with every late state drew stop-and-go there (tribe_walk_mobile uneven 11-15 %, lab 20261107-094647)
+        const double rate = g_lead_keep_fix ? 1.0 + std::min(kKeepRate, std::max(0.0, tl - lt_t_) / kKeepTau)
                                             : 1.0 + std::min(kLateRate, kLateExtra / std::max(0.1, (double)dist(Vec3{}, lv)));
         double cont = std::min(tl, lt_t_ + adv);
         double t = std::min(tl, lt_t_ + adv * rate);
