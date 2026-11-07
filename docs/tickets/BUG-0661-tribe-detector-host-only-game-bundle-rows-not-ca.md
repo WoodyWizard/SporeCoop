@@ -32,3 +32,4 @@ play_tribe Tribe:host_only:game_bundle rel/0.7.8 1-2 rows of n2, rel/0.7.9 2-5 r
 
 ## History
 - 2026-11-06: opened from the lab log sweep follow-up; planned for 0.7.10.
+- 2026-11-07 (orchestrator): also takes the organic play_tribe Tribe:unmatched:game_bundle rows that BUG-0617's fix does not change (on 9/30 lines, off 12/5: out/lab/20261107-021641-2, -023842).
