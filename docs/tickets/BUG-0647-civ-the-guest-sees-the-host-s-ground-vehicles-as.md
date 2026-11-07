@@ -1,19 +1,19 @@
 ---
 id: BUG-0647
 title: Civ: the guest sees the host's ground vehicles as creature-like monsters (the host's vehicle designs never reach it)
-status: open
+status: fixed
 kind: bug
 stage: Civ
 reported: 2026-11-06
 source: player report 2026-11-06 (Discord, 0.7.8): discord-2026-11-06/Sterben-09, M0ng0r-15
 role: guest
 versions: 0.7.8
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w46-tribe-civ
+commits: 142b991e
+tests: civ_host_design
 signature:
-docs:
+docs: docs/re/civ.md#civ-host-designs
 related: BUG-0424, BUG-0469
 ---
 
@@ -33,12 +33,17 @@ guest's game never received; the guest's own creations use the same key range (o
 creations), so the key resolves to another creation of the guest's (the instance collision in docs/re/creations.md) or
 the missing model falls back to something else. Class BUG-0424 (content the other game lacks).
 
+Observed 2026-11-07 (lab, fix/w46-tribe-civ): with another vehicle model under the host's design id in the guest's My Creations, the guest's mirror of the host's vehicle was built from the guest's own model (its bem hash 76023C9D, the host's DD673F46), for a new vehicle and for a vehicle of the loaded world the guest binds. The key is the host civ's design key (cCivilization::GetDesignKey, the same key in the guest's copy of the save); the vehicle's model key is at +0xC4.
+
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+`creations.host_designs` (BUG-0647): the guest asks the host for every vehicle design key a mirror needs; the host sends the records of a design of its own My Creations (or says it is not its own); the guest registers them under a key of its own (0x7D......, as the host's own species) and builds the mirror from it; a bound vehicle of the loaded world is re-keyed (SetModelKey, vt 0x94 of +0x34). No mirror is made while the answer is out (20 s at most). Off: the design key as it is.
 
 ## Verification
-<!-- Lab: host and guest with their own profiles; the host makes its vehicle in the Tribe -> Civ editor; compare the
-     mirror's design key and model resource on the guest with the host's. -->
+Test civ_host_design (coop_civ_host_design.py): the host's and the guest's My Creations hold different vehicle models under one id that both civs name as their military land design; the guest's mirror shows the host's model (the bem the guest's game answers for the mirror's model key), new and after a world load.
+- FAIL (SPORE_FIX_OFF=creations.host_designs): out/lab/20261107-074609 (the mirror shows 76023C9D, the guest's own).
+- PASS: out/lab/20261107-074448, out/lab/20261107-074935.
+- Not verified: the look on the screen (the check is the model record the game answers); buildings: BUG-0670.
 
 ## History
 - 2026-11-06: opened. From the Discord report 2026-11-06 (0.7.8), the players' logs read in fix/w45-intake.
+- 2026-11-07: fixed in fix/w46-tribe-civ (creations.host_designs).

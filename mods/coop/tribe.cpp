@@ -4035,6 +4035,24 @@ std::string debug(const std::vector<std::string>& a)
         int r = thiscall<int>(a_DoActionForObjects, (void*)nullptr, (void*)vec, 3, u.tool, (void*)nullptr);
         return "grab ordered (ret " + std::to_string(r) + ") " + g_last_cmd;
     }
+    if (!a.empty() && a[0] == "party") { // party: tests (BUG-0646), the selected members party at the own fire pit
+        // (a click on the fire pit: CitizenAction 12 Party with the tool of type 10, docs/re/tribe.md 2)
+        void* pt = player_tribe();
+        void* pit = nullptr;
+        if (pt)
+            for (void** it = F<void**>(pt, kToolsOff); it && it < F<void**>(pt, kToolsOff + 4); ++it)
+                if (*it && tool_type(*it) == 10)
+                    pit = *it;
+        if (!pit)
+            return "no fire pit";
+        std::vector<void*> sel;
+        for (auto& [c, hm] : g_hm)
+            if (F<uint8_t>(c, kSelectedOff))
+                sel.push_back((uint8_t*)c + 0xC0);
+        void* vec[3] = {sel.data(), sel.data() + sel.size(), sel.data() + sel.size()};
+        int r = thiscall<int>(a_DoActionForObjects, (void*)nullptr, (void*)vec, 12, pit, (void*)nullptr);
+        return "party ordered (" + std::to_string(sel.size()) + " selected, ret " + std::to_string(r) + ")";
+    }
     if (a.size() >= 3 && (a[0] == "act" || a[0] == "act_npc")) { // act <action> <member id | npc id>
         void* t = a[0] == "act" ? local_of((uint16_t)atoi(a[2].c_str())) : npc::proxy((uint16_t)atoi(a[2].c_str()));
         int action = atoi(a[1].c_str());

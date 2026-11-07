@@ -1,19 +1,19 @@
 ---
 id: BUG-0643
 title: Tribe: the guest's tribe roster shows white squares instead of the members' portraits
-status: open
+status: fixed
 kind: bug
 stage: Tribe
 reported: 2026-11-06
 source: player report 2026-11-06 (Discord, 0.7.8): discord-2026-11-06/M0ng0r-12
 role: guest
 versions: 0.7.8
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w46-tribe-civ
+commits: 80846470
+tests: tribe_portraits
 signature:
-docs:
+docs: docs/re/tribe.md#tribe-portraits
 related: BUG-0424, BUG-0431, BUG-0642
 ---
 
@@ -30,12 +30,17 @@ Inferred: the member portraits come from the species thumbnail, which the guest'
 species or for the host's species registered without a picture. Class BUG-0424 (content the other game lacks) or
 BUG-0431 (objects the mod builds incompletely).
 
+Observed 2026-11-07 (lab lane 5): the roster portraits are the species' png {0x2F7D0004, 0x40626200, species}: a broken png there gives the failed-image square in every slot. The host's own creations (here: the species after the host's Creature -> Tribe editor, "Sterben evolved the species" in the guest's lobby) reached the guest with bem, metadata and creaturedata only: no png on the guest.
+
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+`creations.png` (BUG-0643): a creation's records include its pictures (png in the model group and the thumbnail group +1), for every bundle (the host's own species, player creations). Off: as 0.7.8.
 
 ## Verification
-<!-- Lab: tribe fixture with the guest playing its own creature (`coop.creations choose`); screenshot / read the
-     roster panel's icons on the guest. -->
+Test tribe_portraits (coop_tribe_portraits.py): the host's tribe becomes the host's own TigerHorse (not in the guest's My Creations), the guest's game starts again and joins; the guest's game answers the species' png.
+- FAIL (SPORE_FIX_OFF=creations.png): out/lab/20261107-081042.
+- PASS: out/lab/20261107-081214, out/lab/20261107-080546 (the leave/join variant of the test).
+- Not verified: the portrait on the screen (in the lab the roster kept the fixture species' portraits after the species change, docs/re/tribe.md#tribe-portraits).
 
 ## History
 - 2026-11-06: opened. From the Discord report 2026-11-06 (0.7.8), the players' logs read in fix/w45-intake.
+- 2026-11-07: fixed in fix/w46-tribe-civ (creations.png).

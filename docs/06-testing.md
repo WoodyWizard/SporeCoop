@@ -4663,3 +4663,27 @@ BUG-0631 / BUG-0621. The per-minute `perf:` line says how much address space is 
   20261106-210201); none in the other off run or the two on runs. Its FAIL run (fix off) also loses 8.3 MB/min: that
   is the bug the test catches, and `mem_reserve`'s FAIL run (core.mem_reserve off) trips the mem-low gate on purpose
   (260 MB free, largest block 16 MB, planted with `coop.diag fill`).
+
+## The Tribe and Civ reports of 2026-11-06: designs, level, portraits, colours, attacks (2026-11-07, fix/w46-tribe-civ)
+<a id="testing-w46-tribe-civ"></a>
+
+* `civ_host_design` (BUG-0647, ~1 min, cold): writes a vehicle model into each lane profile's My Creations under one test
+  id before the start (another base game model for the guest: two players with a creation of that id), makes both civs
+  name it (`coop.civ setdesign`), the host spawns a vehicle; the guest's mirror's model key (`coop.civ` veh lines
+  `model=`, vehicle +0xC4) must answer the host's bem (`coop.creations modelhash`), also after the guest joins again (a
+  bound vehicle of the loaded world). `SPORE_FIX_OFF=creations.host_designs` fails.
+* `tribe_level` (BUG-0645): `coop.tribe level 2` on the host; the guest's `coop.tribe` player line `level= cap= hud_cap=`
+  (cTribe_MaxPopulation and the HUD). `SPORE_FIX_OFF=wsync.tribe_level` fails.
+* `tribe_portraits` (BUG-0643, ~1.5 min): the host's tribe becomes the host's own TigerHorse (`coop.tribe setspecies`),
+  the guest's game is killed and started again (the game keeps the pictures it drew per process) and joins; the guest's
+  game must answer the species' png (`coop.creations png`). The roster column's white pixels are printed only (the
+  guest's sky is white for a moment after the load). `SPORE_FIX_OFF=creations.png` fails. `coop.creations fakepng <inst>`
+  registers a broken picture (the failed-image square in the roster, when done before the first load).
+* `tribe_colors` (BUG-0644): `coop.tribe npc_tribe`, then `coop.tribe color <i> <id>` on the guest; every village's
+  `color=` must be the host's within 8 s. `SPORE_FIX_OFF=wsync.tribe_color` fails.
+* `civ_guest_attack` (BUG-0648, ~2.5 min, regression only): the host gives two military vehicles to the guest, the guest
+  attacks an NPC city with real clicks (city, crosshair, as play_civ); the host's city loses hit points and its capture
+  meter rises. `coop.civ attack` now also works on a guest (the guest game's own SetOrder, sent to the host);
+  `coop.civ tables` prints `last_order=` of the guest.
+* `coop.audio` comparisons of an idle Tribe village (BUG-0646): footsteps (0x4A776923) are host-only (BUG-0669); a 30 s
+  day (`call 0x00BC29A0 thiscall <cTimeOfDay::Get()> 0x41F00000`) did not bring the fire dance in 3 min.
