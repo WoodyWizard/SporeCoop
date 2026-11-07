@@ -854,6 +854,12 @@ bool cinematic_playing()
     return cm && *(uint32_t*)(cm + kCineState);
 }
 
+uint32_t cinematic_id()
+{
+    uint8_t* cm = (uint8_t*)cinematic_mgr();
+    return cm && *(uint32_t*)(cm + kCineState) ? *(uint32_t*)(cm + kCineId) : 0;
+}
+
 bool time_paused()
 {
     static uintptr_t get = H->sym("Simulator::cGameTimeManager::Get");

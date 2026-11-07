@@ -12,6 +12,7 @@
 #include "fixes.h"
 #include "game.h"
 #include "sporekit_game.hpp"
+#include "world.h"
 
 namespace gamefixes {
 
@@ -87,8 +88,11 @@ static std::atomic<unsigned> g_cam_skipped{0};
 static void __fastcall lookat_guard(void* obj, void*, void* target, int a, int instant)
 {
     if (!obj) {
+        // BUG-0656: the reason in the line: all 7 lab cases (2026-11-01..05) had the galaxy menu intro (8915F9BB)
+        // playing into the stage (BUG-0607 / BUG-0626; none in 1905 Tribe loads since that fix)
         if (++g_cam_skipped <= 4)
-            H->log(M, SK_WARN, "game fixes: skipped the tribe camera set-up without a simulator camera");
+            H->log(M, SK_WARN, "game fixes: skipped the tribe camera set-up without a simulator camera (mode %08X, cinematic %08X)",
+                   game::mode_id(), world::cinematic_id());
         return;
     }
     g_lookat_orig(obj, target, a, instant);

@@ -132,6 +132,10 @@ IGNORE = {'hit_sphere', 'solar_hit_sphere', 'game_terrain_cursor', 'species_goal
           # player's camera (28 rocks on the walking guest only, 30-75 m ahead of it, never on the host that
           # stood 1 m from it at the start; 1-2 plants 8-14 m from the own player only): not a desync
           'rock', 'game_plant'}
+# BUG-0657: in Space the objects of a planet's surface are loaded only by a game whose camera is on that planet
+SPACE_PLANET_LOD = {'city', 'city_walls', 'city_territory', 'civilization', 'vehicle', 'herd', 'ornament', 'turret',
+                    'building_city_hall', 'building_industry', 'building_house', 'building_entertainment',
+                    'inter_city_road', 'game_plant', 'rock', 'interactive_ornament', 'nest'}
 MOVING = {'creature', 'citizen', 'herd', 'vehicle', 'ufo', 'tribe_tool'}
 # BUG-0617: a food bundle is compared by where it is (census own=ground|carried|held, mods/coop/census.cpp): carried
 # food moves with its member (~7 m/s; the guest's copy of the member is drawn 1-3.5 m behind the host's, coop_world_host.py
@@ -409,8 +413,11 @@ def diff_state(hs, gs, stage):
         if hs.dna is not None and gs.dna is not None and _differs(hs.dna, gs.dna, 5.0, 0.1):
             add('Creature:state', 'dna', 1, f'DNA {hs.dna:.0f} on the host, {gs.dna:.0f} on the guest')
         common = set(hs.species) & set(gs.species)
+        ga = getattr(gs, 'after', None)
         for kind in ('relation', 'impressed', 'killed'):
             bad = [k for k in sorted(common) if hs.species[k][kind] != gs.species[k][kind]]
+            if ga is not None:  # BUG-0657: also in the guest's second dump (a kill the guest's game counts a moment later)
+                bad = [k for k in bad if k not in ga.species or ga.species[k][kind] != hs.species[k][kind]]
             if bad:
                 k = bad[0]
                 add('Creature:state', f'species_{kind}', len(bad), f'{len(bad)} species with another {kind} (e.g. {k}: '
@@ -731,6 +738,11 @@ def diff(host, guest, area=None):
         # Space: a planet's life (creatures, citizens) is loaded only by a game whose camera is on that
         # planet (level of detail): the whole-list counts differ by design; the area compare still runs
         if stage == 'Space' and noun_name(noun) in ('creature', 'citizen'):
+            continue
+        # BUG-0657: the same for a planet's civilization (a host on a planet's surface, its guest in orbit or in the
+        # star system: 9 cities with their walls, territories and buildings, 40 vehicles, 178 herds in the host's
+        # game only, rel/0.7.8 space_play 20261105-111032): the area compare still runs
+        if stage == 'Space' and noun_name(noun) in SPACE_PLANET_LOD:
             continue
         h, g = host.nouns.get(noun, 0), guest.nouns.get(noun, 0)
         if (h == 0) != (g == 0) and max(h, g) >= 1:

@@ -730,6 +730,28 @@ def test_worldstate():
     gs.after = worlddiff.State(cr.format('guest', ''))
     out = {f'{w}:{k}' for w, k, _, _ in worlddiff.diff_state(hs, gs, 'Creature')}
     check(out == {'Creature:state:species_only'}, f'a record the guest still lacks 1.5 s later: species_only ({out})')
+    # BUG-0657: a kill the host's game counted, the guest's a moment later: no species_killed row when the guest's second
+    # dump has it; a count still different there: species_killed
+    k1, k0 = rec.replace('killed=0', 'killed=1'), rec
+    hs, gs = worlddiff.State(cr.format('host', k1)), worlddiff.State(cr.format('guest', k0))
+    gs.after = worlddiff.State(cr.format('guest', k1))
+    out = {f'{w}:{k}' for w, k, _, _ in worlddiff.diff_state(hs, gs, 'Creature')}
+    check(out == set(), f'a kill on its way to the guest: no species_killed row ({out})')
+    gs.after = worlddiff.State(cr.format('guest', k0))
+    out = {f'{w}:{k}' for w, k, _, _ in worlddiff.diff_state(hs, gs, 'Creature')}
+    check(out == {'Creature:state:species_killed'}, f'a kill the guest still lacks 1.5 s later: species_killed ({out})')
+    # BUG-0657: Space: a planet's city in the host's game only (its camera on the planet, the guest's in orbit) is level of
+    # detail, not a desync; a ship type in one game only still is
+    sh = 'census v1 role={} me={} mode=Space modeid=01654C05 world=80AE3044 t=1.0\nme pos=(1.0 2.0 3.0) ok=1'
+    city = 'obj o{} key=00000000 alive=1 hp=-1.0 ai=-1 own= owner=-1 pos=(5.0 2.0 3.0) noun={} ser={} scale=1.00'
+    UFO = '018EBADC'
+    h = worlddiff.World('\n'.join([sh.format('host', 0), city.format(1, UFO, 1), city.format(2, '0436F342', 2),
+                                    city.format(3, '024630D7', 3), f'nouns {UFO}=1 0436F342=9 018C7C97=9 024630D7=1',
+                                    'end objects=3']))
+    g = worlddiff.World('\n'.join([sh.format('guest', 1), city.format(1, UFO, 5), f'nouns {UFO}=1', 'end objects=1']))
+    out = sorted(f['sig'] for f in worlddiff.diff(h, g))
+    check('Space:noun_only_host:turret' not in out and 'Space:noun_only_host:default_beam_projectile' in out,
+          f'Space: a turret of a planet in the host game only is level of detail, a beam is not ({out})')
     # through diff(): the state rows come with the area compare, also when there is no centre
     h, g = worlddiff.World('census v1 role=host me=0 mode=Tribe modeid=01654C02 world=A3930F03 t=1.0'), \
         worlddiff.World('census v1 role=guest me=1 mode=Tribe modeid=01654C02 world=A3930F03 t=1.0')

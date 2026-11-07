@@ -74,6 +74,7 @@ bool menu_intro_playing();
 // a cinematic or a caption of the game plays (cCinematicManager +0x2C): the HUD is hidden, an editor
 // opened meanwhile came up without its interface (coop.cpp own editor)
 bool cinematic_playing();
+uint32_t cinematic_id(); // the playing cinematic's registry id (0: none), BUG-0656
 // ends the cinematic that plays (EndCinematic: stop, release the input lock, post its end message);
 // outside the frame. True if one played (BUG-0404: a cinematic left playing in an editor keeps it
 // without its buttons)
