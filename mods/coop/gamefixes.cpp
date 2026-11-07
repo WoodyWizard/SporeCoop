@@ -1127,6 +1127,7 @@ COOP_FIX("game.menu_hover", "BUG-0676", g_menu_hover_fix,
          "gamefixes: the galaxy menu forgets the planet under the mouse when it rebuilds its planets (a load after it faulted at 0xDF6D93)");
 static std::atomic<unsigned> g_menu_rollouts{0}, g_menu_dropped{0}, g_menu_rebuilds{0};
 static int g_menu_hover_arm = -1; // tests (coop.menuhover arm <i>): the next rebuild first puts the mouse on entry i
+static bool g_menu_hover_watch;   // tests: the armed rebuild logs the rollover before and after
 
 struct MenuPlanets {
     uint8_t* gge = nullptr;
@@ -1172,6 +1173,7 @@ static void __fastcall menu_rebuild_guard(void* set, void*)
                    g_menu_hover_arm, e, (unsigned)m.count(), m.cap > m.begin ? (unsigned)((m.cap - m.begin) / 0xBC) : 0u);
         }
         g_menu_hover_arm = -1;
+        g_menu_hover_watch = true;
     }
     void* hover = m.gge ? at<void*>(m.gge, 0xF8) : nullptr;
     if (g_menu_hover_fix && hover && !at<void*>(m.gge, 0xFC) && m.entry((uint8_t*)hover)) {
@@ -1181,7 +1183,16 @@ static void __fastcall menu_rebuild_guard(void* set, void*)
             H->log(M, SK_INFO, "game fixes: the galaxy menu rebuilds its planets with the mouse on planet %p: rolled out first (BUG-0676, %u)",
                    hover, n);
     }
+    void* hover_in = hover;
     g_menu_rebuild_orig(set);
+    if (g_menu_hover_watch && m.gge) {
+        g_menu_hover_watch = false;
+        MenuPlanets now = menu_planets(set);
+        uint8_t* h = at<uint8_t*>(now.gge, 0xF8);
+        H->log(M, SK_WARN, "game fixes: tests: menu rollover %p before the rebuild, %p after (%s; panel %p; %u entries at %p, were at %p)",
+               hover_in, h, now.entry(h) ? "a planet of the list" : "no planet of the list", h && readable(h + 0xB8, 4) ? at<void*>(h, 0xB8) : nullptr,
+               (unsigned)now.count(), now.begin, m.begin);
+    }
     if (!g_menu_hover_fix || !m.gge)
         return;
     MenuPlanets now = menu_planets(set);

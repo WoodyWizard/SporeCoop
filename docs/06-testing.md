@@ -4709,3 +4709,15 @@ into the target's error (aim vs the host's body at the same moment) and the walk
 were mostly the first. A Civ or Tribe trail test at a lab load over ~10 on 6 cores measures the games' frame rate
 (16-20 fps: states every 0.14-0.39 s): judge such runs only A/B against the switch off at the same time.
 `coop.tribe undo <id> <s>` (guest, tests): the mirror's walk and unmarked placings are undone for s seconds (BUG-0386).
+## The galaxy menu's rollover over a load, and fault storms (2026-11-07, fix/w46-rejoin-crash)
+<a id="testing-menu-rollover"></a>
+
+BUG-0676, `coop_menu_hover.py` (suite menu_hover, ~1 min on a cold lane; cold only). `twoinst.start(...,
+before_join=fn)` calls fn(guest) right before the guest joins (cold start, so the guest's first galaxy menu can be set
+up; the guest's menu makes its planets ~15 s after it came up: poll `coop.menuhover` for `rebuilds 0`). `coop.menuhover
+[arm <i> | off]` prints the menu's planets (count, panels, room = capacity) and its rollover / picked planet; `arm i`
+makes the next planet rebuild put the mouse on planet i first and log the rollover after it. The fault needs the
+rebuild to reallocate (more planets than the menu ever had: a cold guest, Game0 6 -> the co-op slot 7) or to shrink
+below the rollover's index; a warm rejoin (the same slot again) does not fault. `coop.menuslot <GameN>` (outside the
+frame) shows another slot's planets in the menu. A caught fault in every frame is named by SporeKit as `fault storm:`
+(an ERR line, one report per run): grep for it in any test that ends with a guest stuck in a menu.

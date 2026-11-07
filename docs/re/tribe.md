@@ -2463,3 +2463,37 @@ per member mirror `a<id>` (the driving's aim), `r<id>` (M1's raw lead: the newes
   (tribe_walk_player lab 20261107-102038 #3); with catch_prop off instead a 6-9 m error took 0.6 s to close.
 * ~ BUG-0674: a member that turns round inside a latency spike is extrapolated the old way for up to kMaxLead (8-9 m
   off for ~1 s); a limit of the lead itself, open.
+
+## The galaxy menu's rollover planet across a planet rebuild (2026-11-07, fix/w46-rejoin-crash)
+<a id="tribe-menu-rollover"></a>
+
+BUG-0676. GOG 2024, Ghidra + lab lane 6. Not Tribe code: the guest's galaxy menu while it loads a received Tribe world
+(chaos_tribe_awful 20261107-113600 #1). Not the BUG-0672 class (no state of an old world): it was the guest's first
+load after a cold start; the "rejoin" of the ticket's title came minutes later, with the guest already stuck.
+* ✔ (Ghidra) the fault 0xDF6D93 is the first read of **GGE_PanelSetState 0xDF6D80** (thiscall(panel, state) ret 4:
+  `cmp [esi+0x2C], ebp`), panel = null. The call chain 0xDF7C2C < 0xDE825C < 0x7D86D6 < 0x81530F < 0x7D8D6A: the planet
+  set's rollover (vt 0x5C 0xDF7BF0) called with 0 by the galaxy menu's exit 0xDE8160 (old mode vt 0x1C from the mode
+  switch 0x7D8670 < cGameModeManager::SetActiveModeAt, i.e. LoadGameByName leaving the menu). 0xDF7BF0 rolls the old
+  planet out with `0xDF6D80(1)` on old->+0xB8 without a null check.
+* ✔ (Ghidra) the old planet is `[0x16A1344]+0xF8` (GalaxyGameEntry_ptr), a pointer into the planet set's vector
+  (`[0x16A15FC]` +0x08..+0x10, 0xBC-byte entries, +0xB8 the panel). Only 0xDF7BF0 writes it. **GGE_RebuildPlanets
+  0xDF95A0** clears every entry (0xDF94E0: panels freed, +0xB8 = 0), resizes (0xDE9DD0: a larger count reallocates and
+  frees the old storage) and refills, and leaves +0xF8 / +0xFC alone. It runs on 0x625D27D, which
+  cStarManager::ReadStarsFromSaveDB sends at 0xBB98F6: the mod's load_now calls ReadStarsFromSaveDB right before
+  LoadGameByName (world.cpp, the star manager kept the old slot's stars).
+* ✔ (runtime, 20261107-125914, fix off) a cold guest's menu shows its empty slot Game0 (6 planets, room for 6); the
+  rollover is put on planet 5 (`coop.menuhover arm 5`), the received world's slot has 7: the rebuild reallocates, the
+  rollover points into the freed block ("no planet of the list; panel 00015E08"), the exit faults in 0xDF6D80
+  (0x8102B2 here: the freed block held a stale value, not 0 as in the lab run; the same calls 00DF7C2C 00DE825C 007D86D6
+  0081530F). With the old storage kept (the same count) the rollover stays valid and nothing faults (20261107-125449).
+* ✔ (runtime + Ghidra) **why 22939 faults**: the exit 0xDE8160 had released +0x184 (= 0) before the fault and never
+  finished; the mode switch never set the new mode (0x7D8670 writes +0x28 after the exit), so the half torn-down menu
+  stayed the active mode and its planet set's frame 0xDF8700 called 0xE01320 on [GGE+0x184] = 0 in every frame: a
+  fault at 0xE01323 (data 8) each frame that the game's handler catches (16540 in 5 min in the forced run). The guest
+  stays "Galaxy menu ... busy=loading" with frames from the game loop, never a crash, never a report.
+* In the game alone the mouse rests on a planet whenever the camera of the menu (the intro flight) brings one under it;
+  the game's own 0x625D27C path (0xDE8A80: ReadStarsFromSaveDB + rebuild) has the same flaw.
+* Fix `game.menu_hover` (gamefixes.cpp, hook on GGE_RebuildPlanets): before the rebuild the rollover planet is rolled
+  out the game's way (vt 0x5C(0)); after it a +0xF8 / +0xFC that names no entry of the new vector (with a panel) is
+  dropped, each with a log line. Off: the game's code. SporeKit `kit.fix faultstorm` (0.3.12: nothing): the same
+  fault 300 times in 10 s logs `fault storm: ...` once per place and writes one report per run (mark "kept faulting").

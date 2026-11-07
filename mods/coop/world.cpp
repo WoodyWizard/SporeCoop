@@ -217,6 +217,34 @@ static void save_write_watch()
 }
 
 static void install_intro_hook();
+// coop.menuslot <GameN> (tests, BUG-0676): the galaxy menu shows the planets of another save slot, as when the player
+// picks that slot: the save database moves there and the star manager reads its stars (the menu rebuilds its planets
+// on the message 0x625D27D that sends). Outside the frame (it rebuilds UI).
+static int c_menuslot(void*, int argc, const char* const* argv, SkOut* out)
+{
+    if (argc < 2 || game::mode_id() != modes::kMenu) {
+        H->out_printf(out, "usage: coop.menuslot <GameN> (in the galaxy menu)\n");
+        return 1;
+    }
+    void* db = skg::cdecl_call<void*>(H->sym("Resource::GetDatabaseByID"), 0x4729A47u);
+    uintptr_t starget = H->sym("Simulator::cStarManager::Get"), readstars = H->sym("Simulator::cStarManager::ReadStarsFromSaveDB");
+    if (!db || !starget || !readstars) {
+        H->out_printf(out, "no save database / star manager\n");
+        return 1;
+    }
+    std::u16string dir;
+    for (wchar_t c : games_dir() + L"\\" + widen(argv[1]) + L"\\")
+        dir += (char16_t)(c == L'\\' ? L'/' : c);
+    skg::vcall<bool>(db, 0x1C / 4); // Close
+    bool set = skg::vcall<bool>(db, 0x2C / 4, dir.c_str()); // SetLocation
+    bool open = set && skg::vcall<bool>(db, 0x18 / 4, 3, 6, 0); // Open(ReadWrite, CD::Default, autoOpen=false)
+    if (open)
+        if (void* sm = skg::cdecl_call<void*>(starget))
+            skg::thiscall<void>(readstars, sm);
+    H->out_printf(out, "galaxy menu: slot %s (SetLocation %d, Open %d)\n", argv[1], set, open);
+    return open ? 0 : 1;
+}
+
 void init(const SkHost* host, SkMod* mod, std::function<void(const std::string&)> feed)
 {
     H = host;
@@ -227,6 +255,8 @@ void init(const SkHost* host, SkMod* mod, std::function<void(const std::string&)
                    "queue: shares for these players in one frame, each with a save",
                    c_worldfix, nullptr, SK_CMD_MAIN_THREAD);
     savestrip::set_write_watch(save_write_watch);
+    H->command_add(M, "coop.menuslot", "coop.menuslot <GameN> - tests: the galaxy menu shows that save slot's planets (BUG-0676)",
+                   c_menuslot, nullptr, SK_CMD_OUTSIDE_FRAME);
     install_intro_hook(); // BUG-0626
 }
 

@@ -7,6 +7,8 @@
   behind (found with BUG-0438).
 
 ### Fixed
+- Joining: a guest whose mouse rested on a planet of the galaxy menu while the host's world arrived no longer stays
+  stuck in the menu (it faulted in every frame); a game that faults over and over now writes a report (BUG-0676).
 - Creature: a guest who was still in its own Cell editor when the host entered the Creature stage no longer plays a
   creature it once chose in another world; a creature chosen in the co-op window now holds only in the world it was
   chosen (or played) in (BUG-0638).

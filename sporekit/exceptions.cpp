@@ -18,6 +18,8 @@ struct ExcRec {
     uint32_t regs[8];
     uint32_t stack[12];
     uint32_t rets[10]; // likely return addresses into the exe found deeper on the stack (0 = none)
+    uint32_t mark;     // count at the start of the fault storm window (BUG-0676)
+    bool storm;        // named as a fault storm already
 };
 
 // a dword on the stack that points just after a call instruction in the exe's code
@@ -229,8 +231,47 @@ void exceptions_fault_test()
     page[0] = 1;
 }
 
+// BUG-0676: a fault the game's handler catches lets the game go on; when the same place faults in every frame (the
+// galaxy menu's exit cut off half-way: 22939 faults at 0xE01323 in 5 min, no crash, no report, a guest stuck in the
+// menu) the log had one line at the first fault and nothing after it. Every 10 s the counts are compared: 300 more of
+// one fault is a storm: one ERR line per place and one report per run. `kit.fix faultstorm 0`: nothing (0.3.12).
+static const uint32_t kStormFaults = 300;
+static const double kStormWindow = 10.0;
+static void storm_check()
+{
+    static double since = -1;
+    double now = now_seconds();
+    if (since < 0)
+        since = now;
+    if (now - since < kStormWindow)
+        return;
+    double span = now - since;
+    since = now;
+    char text[320] = "";
+    {
+        std::lock_guard<std::mutex> lk(g_mu);
+        ThreadFlag tf(SK_TF_IN_EXC);
+        for (auto& r : g_recs) {
+            uint32_t n = r.count - r.mark;
+            r.mark = r.count;
+            if (r.storm || n < kStormFaults || text[0]) // one per check; another one at the next
+                continue;
+            r.storm = true;
+            snprintf(text, sizeof text, "fault storm: 0x%08lX at 0x%08X %s (data 0x%08X) %u times in %.0f s (%u in all, "
+                     "%u faults of every kind): the game's handler catches it and the game cannot get past it",
+                     r.code, (unsigned)r.eip, r.where.c_str(), (unsigned)r.addr, n, span, r.count, g_total.load());
+        }
+    }
+    if (!text[0])
+        return;
+    logf(&g_kit_mod, SK_ERROR, "%s (BUG-0676)", text);
+    diag_storm_report(text);
+}
+
 void exceptions_pump()
 {
+    if (fixed(g_fix_faultstorm))
+        storm_check();
     if (!g_mod_fault.exchange(false))
         return;
     char t[256];
