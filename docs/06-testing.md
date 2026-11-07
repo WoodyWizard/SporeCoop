@@ -4663,3 +4663,15 @@ BUG-0631 / BUG-0621. The per-minute `perf:` line says how much address space is 
   20261106-210201); none in the other off run or the two on runs. Its FAIL run (fix off) also loses 8.3 MB/min: that
   is the bug the test catches, and `mem_reserve`'s FAIL run (core.mem_reserve off) trips the mem-low gate on purpose
   (260 MB free, largest block 16 MB, planted with `coop.diag fill`).
+
+## A guest's tribe mapping held over a reload (2026-11-07, fix/w46-tribe-load)
+<a id="testing-tribe-world-map"></a>
+
+BUG-0672, `coop_tribe_world_map.py` (suite tribe_world_map, ~70 s on a cold lane). A rare race (the first tool
+snapshot of a new world before its first tribe state) is made certain with two guest test commands: `coop.tribe
+statehold 1` (the host's tribe states are ignored: the mapping host tribe index -> local tribe stays as it was) and
+`coop.tribe frametool <index> <type> [m]` (make_tool from the next frame's tick, as the wobj snapshot runs it, with a
+task for outside the frame queued just before). Turn the hold off at the end (`statehold 0`): it is not reset by a
+session or world change. Frames are checked with the `frame` command 5 s and 15 s later. With `kit.outpump` off a caught
+fault inside a frame with an outside task pending freezes the mod (the game's message loop never returns): any test can
+show that, this one does on purpose.
