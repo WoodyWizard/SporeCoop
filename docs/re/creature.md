@@ -3398,3 +3398,77 @@ BUG-0630, GOG 2024 (dc04aee5), lab lane 4.
   `coop.dna bar` prints `bar=` (cPlayer +0x10F0).
 * ~ not covered: a host total that holds a gain and a spend at once (both in one tick of the host, or a total a guest
   applies late: g_dna_pending) reaches a guest as one net change; when the spend is larger the gain does not reach the guest's bar (the host's does get it).
+
+## The migration on a guest, the spit that stops a charge (2026-11-06, fix/w46-creature-p0)
+<a id="creature-nest-follow"></a>
+
+BUG-0640, BUG-0496, BUG-0641. GOG 2024, Ghidra (out/ghidra-2024) and the Discord report of 2026-11-06 (0.7.8).
+
+* ✔ The migration property 0x514A219 is written in exactly two functions (scan of the constant): set to 1 (and
+  0x54FB6BF to the DNA total) only by `CreatureGame_AfterEditor` 0xD40FA0 (from the "back from the editor" message
+  and from the stage entry 0xD43DE0); set to 2 by `CreatureGame_NestTick` 0xD41510 (state 1, avatar adult 0xC0B8D0, the
+  goal cards 0x3A5E2B34 / 0x51BC3D0 not both of state 5 -> the goal "Migrate to a new nest"); removed by
+  `CreatureGame_JoinNestHerd` 0xD40C70. Readers: 0xD7B120 (no direct caller), 0xD2FFD0 (the cursor choice),
+  0xB6BEAC. The setter is `SporeCoop::Player_SetProperty` 0xC7A0A0 (thiscall(cPlayer, key, value) ret 8).
+* ✔ The claim (NestTick, state 2, the creature game's +0xDE mating-call flag clear): the herd of
+  `CreatureGame_NestHerdFor(1)` (not the avatar's herd) within the range [0x1582FA4] of the avatar -> JoinNestHerd,
+  CRG_ClaimNest, the goal's 25 DNA. JoinNestHerd has three more callers: 0xD2EDA0 (a dialog answer 0x5107B1A, no
+  direct caller), 0xD8D270 (a behaviour node: an animation 0xED41B225 at a nest, then JoinNestHerd and the stimulus
+  0x200000 to the members; no direct caller) and 0xD6D560. ? Which player action reaches those was not looked up.
+* ✔ (the report) The host's game had the goal "Migrate to a new nest" on its goal cards at s 1321 (its screenshot)
+  and claimed the second nest at s ~1619 (its avatar's nest distance 398 -> 21 m, +25 DNA halved by the pace), while
+  its in-place decision after the editor (s 792) had read the property as 0: the property can be set after that read
+  (the decision is not where the migration is seen). The guest's game never had a migration: no world went (the
+  evolution in place, BUG-0508), its respawn stayed at the first nest for the rest of the session.
+* Fix `wsync.creature_nest` (row 11 of wsync.cpp, Creature): the host sends its migration state and its home nest
+  (its avatar's herd's nest, Herd_NestPosition). A guest with no migration of its own whose home nest is the one the
+  host migrates from (host state 1/2), or not the one the host lives in (host state 0, after its claim), and whose
+  own `NestHerdFor(1)` is another nest (for state 0: the host's) gets property 0x514A219 = 1 and its avatar herd's brain
+  range emptied (+0x120 = 5, +0x124 = -1), as AfterEditor does: its own NestTick sets the goal and claims on arrival
+  (cinematic, DNA, the herd = the respawn place and the family). A guest whose state stays 1 for 15 s while the host's
+  is not (a world saved during CRG_SpeciesMigrate leaves its creature a hatchling, section 16) gets state 2.
+* ✔ The spit stops a charge in the ability hit 0xC20390 itself: for an ability of type 0x20 (spit), when the target
+  creature's current ability (+0xE8C, an index for vt 0xB4; -1 none) has type 0x1F (charge), the target's vt 0x94
+  (CreatureStun) with the spit's seconds (ability +0x80). The charge runs in its owner's game only (the mirror and the
+  puppet run no ability), so neither direction worked across the games. Fix `creature.spit_counter`
+  (player_rules.cpp): after the game's hit, a spit on the partner's puppet (host) or on an NPC's mirror (guest) is
+  sent to the game of the charge (K_SPIT_PLAYER / K_SPIT_NPC), which stuns its own creature when it is charging.
+  `coop.rules use <type> <from> <to>` plays an ability of a type (tests), `coop.rules charging <who>` reads +0xE8C.
+* ✔ (the report, the host's log) Where the host's migration started: the brain grew in play at s ~1140 (max health
+  23 -> 33, no editor), the host's creature died at s 1246 and came back as a hatchling (16/16, half of 33) with its
+  family's creatures moved (npc 235-239 of the player species): the respawn's stage return (0xD43DE0) runs
+  CreatureGame_AfterEditor, whose threshold check started the migration then; the goal card shows it at s 1321. The
+  guest's respawn in the same second came before its own brain upgrade (s ~1265), so its game had no migration, and
+  it had no later stage return before the host claimed. So a migration starts in each game at its own next editor
+  or respawn after the threshold: the games migrate at different times or one never does. ~ Inferred: the in-place
+  decision after the editor (s 792, "migration 0 -> 0") was right then; it is not where this case is decided.
+* ✔ (lab 20261107-073825 / 073828, coop_nest_follow.py --editor) After the evolution vote with both editors each
+  game's AfterEditor migrates by itself: the guest claimed the new nest also with `wsync.creature_nest` off.
+
+## NPC herd evolution in the two games, the spit counter across the games (2026-11-07, fix/w46-creature-p0)
+<a id="creature-herd-evolution-desync"></a>
+
+BUG-0668, BUG-0639, BUG-0641. GOG 2024, Ghidra (out/ghidra-2024) and lanes 2-3 (creature fixture).
+
+* ✔ (Ghidra) The cHerd constructor 0xC6C2B0 sets +0x85 (mbShouldEvolve) = 1 and +0x94 (mDNAEvolutionThreshold) =
+  FLT_MAX for every herd; the herd init 0xC6EA90 sets generation +0xF0 = 0 and builds mEvolvedSpeciesProfileKeys
+  +0xA8 (the species chain). +0x85 = 1 is no "evolving now" flag. ? What advances +0xF0 was not found (no `inc`/`add`
+  on +0xF0 in the cHerd code).
+* ✔ (runtime, nest_evolve_probe out/lab/20261107-081734) +250 DNA for the pack evolves every NPC herd: generation 0 ->
+  1 and a new species, on the host at once, on the guest within 18 s, with other thresholds +0x94 in each game (289 /
+  183 for one nest). A herd the host's avatar made extinct (+0x190 = 1) stays generation 0 with +0x85 = 0 on the host,
+  and evolves to a new species on the guest (BUG-0668). The family's herds keep generation 0. The editors alone
+  (migration_probe 20261107-081510) evolve no herd.
+* ✔ (runtime, nest_evolve_probe 20261107-082348) An evolving herd (generation 1 at the DNA) keeps its members with the
+  old species at first; the guest's hits on their mirrors land in the host's game (6.0 -> 3.0 -> 0.0): no shield.
+* ✔ (runtime, family_attack 20261107-081513) A guest, with the world's species and with its own creature, cannot hurt a
+  family member: 15 bites with real input, the host's member keeps its health; vt 0xD4 answers 1 on both games.
+* ✔ (runtime, spit_charge) Across the games the spit reaches the charge's game after the charge's own hit: in every
+  try the charging NPC (or the guest's creature) was not charging any more when the spit arrived (`a spit from the
+  partner's game ... charging now 0`, out/lab/20261107-080138). The hit on a mirror or a puppet returns false
+  (CreatureAttackTarget), while the game's spit rule in 0xC20390 runs before the damage either way.
+  CORRECTION (2026-11-07, fix/w46-creature-p0): `creature.spit_counter` (section creature-nest-follow above) sent the
+  spit only for a hit that returned true (nothing was ever sent: out/lab/20261107-075402); it now sends for every
+  spit hit, and the charge's game stuns its creature when it charges now or its charge hit within the last 1 s.
+* ✔ Fixture: the creature fixture's creatures (host and guest) have neither a spit (0x20) nor a charge (0x1F); its NPCs
+  have both; the guest profile's own creature 29021371 has both (types 10 11 1D 1E 1F 20 21 22 23 24 25 28 31 32 33 D E).

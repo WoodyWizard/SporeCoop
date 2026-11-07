@@ -29,6 +29,8 @@ enum Kind : uint8_t {
     K_HOLD = 4,        // any -> host -> others {u8 player, u32 noun, vec3 where it lay}: the player's creature picked it up (BUG-0458)
     K_DROP = 5,        // any -> host -> others {u8 player, u32 noun}: it let go of it (thrown or put down)
     K_PUT = 6,         // any -> host -> others {u8 player, u32 noun, vec3 pos}: where it came to rest in the thrower's game
+    K_SPIT_PLAYER = 7, // host -> guest {u8 player, f32 seconds}: an NPC's spit hit the guest's puppet (BUG-0641)
+    K_SPIT_NPC = 8,    // guest -> host {u16 npc id, f32 seconds}: the guest's spit hit a host NPC's mirror (BUG-0641)
 };
 
 static bool is_host() { return C.sess && C.sess->role() == net::Role::Host && C.sess->connected(); }
@@ -127,6 +129,7 @@ static uint32_t g_hit_idx = 0; // its ability index
 static void* g_hit_attacker_fwd() { return g_hit_attacker; }
 
 static bool hit_body(void* attacker, void* target, uint32_t idx, uint32_t a4);
+static void spit_after_hit(void* attacker, void* victim, uint32_t idx); // BUG-0641 (below)
 
 static bool SK_THISCALL h_AttackTarget(void* attacker, void* target, uint32_t idx, uint32_t a4)
 {
@@ -135,6 +138,8 @@ static bool SK_THISCALL h_AttackTarget(void* attacker, void* target, uint32_t id
     g_hit_attacker = attacker;
     g_hit_idx = idx;
     bool r = hit_body(attacker, target, idx, a4);
+    if (target) // (the game's spit rule in 0xC20390 runs before the damage, whatever the hit returns)
+        spit_after_hit(attacker, (uint8_t*)target - game::kCombatOff, idx); // BUG-0641
     g_hit_attacker = was;
     g_hit_idx = was_idx;
     return r;
@@ -164,6 +169,113 @@ static bool hit_body(void* attacker, void* target, uint32_t idx, uint32_t a4)
         }
     }
     return o_AttackTarget(attacker, target, idx, a4);
+}
+
+// ---------------------------------------------------------------- BUG-0641
+// A spit stops a charge: the ability hit 0xC20390, for an ability of type 0x20 (spit), stuns the target (vt 0x94,
+// CreatureStun, the spit's seconds at ability +0x80) when the target's current ability (creature +0xE8C, an index
+// into vt 0xB4) is a charge (type 0x1F). The charge runs in its owner's game only: a guest's spit hit the mirror of a
+// charging host NPC (no ability running there) and an NPC's spit hit the puppet of a charging guest on the host: the
+// rule found no charge either way. Now the hit's game sends the spit to the charge's game, which applies the same
+// rule to its own creature (the NPC on the host, the avatar on the guest).
+// `coop.fix creature.spit_counter off`: a spit stops only a charge of the game's own creatures (0.7.9).
+static bool g_spit_fix = true;
+COOP_FIX("creature.spit_counter", "BUG-0641", g_spit_fix, "creature: a spit stops a charge of the partner's creature or of a host NPC");
+static uint32_t g_spit_seen, g_spit_sent, g_spit_got, g_spit_stopped;
+constexpr uint32_t kSpitType = 0x20, kChargeType = 0x1F;
+constexpr uintptr_t kCurAbility = 0xE8C; // creature: the ability running now (index, -1 none)
+static uint8_t* ability_of(void* c, int idx)
+{
+    if (!c || idx < 0 || idx >= skg::vcall<int>(c, 0xB0 / 4))
+        return nullptr;
+    uint8_t* ab = skg::vcall<uint8_t*>(c, 0xB4 / 4, idx);
+    return ab && skg::readable(ab, 0x84) ? ab : nullptr;
+}
+static bool charging(void* c)
+{
+    if (!c || !skg::readable((uint8_t*)c + kCurAbility, 4))
+        return false;
+    uint8_t* ab = ability_of(c, *(int*)((uint8_t*)c + kCurAbility));
+    return ab && *(uint32_t*)(ab + 8) == kChargeType;
+}
+// The charge's own hit ends it (the charger reaches its target): a spit the partner's game landed on the mirror while
+// the charge ran there arrives here up to a round trip and the mirror's lag later. A charge that hit within
+// kSpitGraceMs counts as running for a spit from the partner's game (the charges' last hits, by creature).
+constexpr uint32_t kSpitGraceMs = 1000;
+struct ChargeHit {
+    void* c;
+    uint32_t ms;
+};
+static ChargeHit g_charge_hits[16];
+static uint32_t g_spit_late; // spits that stopped a charge that had just hit
+static void note_charge_hit(void* c)
+{
+    ChargeHit* slot = &g_charge_hits[0];
+    for (auto& h : g_charge_hits) {
+        if (h.c == c) {
+            slot = &h;
+            break;
+        }
+        if (h.ms < slot->ms)
+            slot = &h;
+    }
+    *slot = {c, GetTickCount()};
+}
+static bool charged_just_now(void* c)
+{
+    for (auto& h : g_charge_hits)
+        if (h.c == c && GetTickCount() - h.ms <= kSpitGraceMs)
+            return true;
+    return false;
+}
+// after the game's hit: a spit on the partner's creature or an NPC's mirror goes to the game that runs its charge
+static void spit_after_hit(void* attacker, void* victim, uint32_t idx)
+{
+    if (!g_spit_fix || !attacker || !victim || !game::in_creature_stage())
+        return;
+    uint8_t* ab = ability_of(attacker, (int)idx);
+    if (ab && *(uint32_t*)(ab + 8) == kChargeType)
+        note_charge_hit(attacker);
+    if (!ab || *(uint32_t*)(ab + 8) != kSpitType)
+        return;
+    g_spit_seen++;
+    float secs = *(float*)(ab + 0x80);
+    if (!std::isfinite(secs) || secs <= 0 || secs > 30)
+        return;
+    net::Writer w;
+    if (is_host()) {
+        uint8_t p = puppet_player(victim);
+        if (p == 0xFF || puppet_player(attacker) != 0xFF)
+            return; // (a partner's spit on a puppet is that partner's game's)
+        w.u8(K_SPIT_PLAYER);
+        w.u8(p);
+        w.f32(secs);
+        C.sess->send_reliable_to(p, net::MSG_PLAYER_RULE, w);
+    } else if (is_guest()) {
+        if (attacker != game::avatar() || !npc::is_proxy(victim))
+            return;
+        w.u8(K_SPIT_NPC);
+        w.u16(npc::id_of(victim));
+        w.f32(secs);
+        C.sess->send_reliable_to(0, net::MSG_PLAYER_RULE, w);
+    } else
+        return;
+    g_spit_sent++;
+}
+static void spit_rx(void* c, float secs)
+{
+    g_spit_got++;
+    if (!o_Stun || !c || game::is_dead(c))
+        return;
+    bool now = charging(c), late = !now && charged_just_now(c);
+    if (g_spit_got <= 20)
+        H->log(M, SK_INFO, "rules: a spit from the partner's game on %p (%.1f s): charging now %d, its charge hit just before %d",
+               c, secs, (int)now, (int)late);
+    if (!now && !late)
+        return;
+    o_Stun(c, secs); // the game's own rule: the charge's creature is stunned
+    g_spit_stopped++;
+    g_spit_late += late;
 }
 
 bool air_hit_now() { return g_air_hit; }
@@ -912,6 +1024,17 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         o_Stun(c, secs);
         g_stun_got_npc++;
         g_stun_last = secs;
+    } else if (kind == K_SPIT_PLAYER || kind == K_SPIT_NPC) { // BUG-0641
+        bool to_player = kind == K_SPIT_PLAYER;
+        uint8_t p = to_player ? r.u8() : 0;
+        uint16_t id = to_player ? 0 : r.u16();
+        float secs = r.f32();
+        if (!r.ok() || !std::isfinite(secs) || secs <= 0 || secs > 30 || !game::in_creature_stage())
+            return;
+        if (to_player && from == 0 && is_guest() && p == C.sess->my_id())
+            spit_rx(game::avatar(), secs);
+        else if (!to_player && from != 0 && is_host())
+            spit_rx(npc::host_npc(id), secs);
     } else if (kind == K_HOLD || kind == K_DROP || kind == K_PUT) {
         carry_rx(kind, from, r);
     } else if (kind == K_UFO) {
@@ -950,6 +1073,9 @@ std::string status()
     std::string out = b;
     snprintf(b, sizeof b, "player_rules: air fix=%d dropped=%u passed=%u guest_dropped=%u hook=%d\n", (int)g_air_fix,
              g_air_dropped, g_air_passed, g_air_dropped_guest, (int)(o_AttackTarget != nullptr));
+    out += b;
+    snprintf(b, sizeof b, "player_rules: spit fix=%d seen=%u sent=%u got=%u stopped=%u late=%u\n", (int)g_spit_fix, g_spit_seen, g_spit_sent,
+             g_spit_got, g_spit_stopped, g_spit_late);
     out += b;
     snprintf(b, sizeof b, "player_rules: allies fix=%d answers=%u hook=%d\n", (int)g_allies_fix, g_allies_answers,
              (int)(o_Friendly != nullptr));
@@ -1004,6 +1130,48 @@ static int c_rules(void*, int argc, const char* const* argv, SkOut* out)
         skg::vcall<void>(n, 0x84 / 4, (uint8_t*)p + game::kCombatOff, 1, 0);
         int r = skg::thiscall<int>(pa, n, idx, (void*)nullptr);
         H->out_printf(out, "charge ability %d played: %d\n", idx, r);
+        return 0;
+    }
+    if (argc > 4 && !strcmp(argv[1], "use")) { // tests (BUG-0641): use <type hex> <from> <to>: me | p<player> | <npc id>
+        auto who = [](const char* a) -> void* {
+            if (!strcmp(a, "me"))
+                return game::avatar();
+            if (a[0] == 'p')
+                return C.puppet_of ? C.puppet_of((uint8_t)atoi(a + 1)) : nullptr;
+            uint16_t id = (uint16_t)atoi(a);
+            return is_host() ? npc::host_npc(id) : npc::proxy(id);
+        };
+        uint32_t type = (uint32_t)strtoul(argv[2], nullptr, 16);
+        void* a = who(argv[3]);
+        void* t = who(argv[4]);
+        uintptr_t pa = H->sym("Simulator::cCreatureBase::PlayAbility");
+        if (!a || !t || !pa) {
+            H->out_printf(out, "no attacker, target or PlayAbility\n");
+            return 1;
+        }
+        int idx = -1, cnt = skg::vcall<int>(a, 0xB0 / 4);
+        for (int i = 0; i < cnt && idx < 0; i++) {
+            uint8_t* ab = skg::vcall<uint8_t*>(a, 0xB4 / 4, i);
+            if (ab && skg::readable(ab, 0x10) && *(uint32_t*)(ab + 8) == type)
+                idx = i;
+        }
+        if (idx < 0) {
+            H->out_printf(out, "no ability of type %X\n", type);
+            return 1;
+        }
+        skg::vcall<void>(a, 0x84 / 4, (uint8_t*)t + game::kCombatOff, 1, 0);
+        int r = skg::thiscall<int>(pa, a, idx, (void*)nullptr);
+        H->out_printf(out, "ability %d (type %X) played: %d\n", idx, type, r);
+        return 0;
+    }
+    if (argc > 2 && !strcmp(argv[1], "charging")) { // tests (BUG-0641): charging me|p<player>|<npc id>: runs a charge now
+        void* c = !strcmp(argv[2], "me") ? game::avatar()
+                  : argv[2][0] == 'p'     ? (C.puppet_of ? C.puppet_of((uint8_t)atoi(argv[2] + 1)) : nullptr)
+                  : is_host()             ? npc::host_npc((uint16_t)atoi(argv[2]))
+                                          : npc::proxy((uint16_t)atoi(argv[2]));
+        int cur = c && skg::readable((uint8_t*)c + kCurAbility, 4) ? *(int*)((uint8_t*)c + kCurAbility) : -2;
+        uint8_t* ab = ability_of(c, cur);
+        H->out_printf(out, "charging=%d current=%d type=%X\n", (int)charging(c), cur, ab ? *(uint32_t*)(ab + 8) : 0u);
         return 0;
     }
     if (argc > 4 && !strcmp(argv[1], "nests")) { // tests (BUG-0561): herds of species <inst> <type> <group>: mbBestFriends

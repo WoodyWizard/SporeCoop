@@ -170,6 +170,7 @@ add('sync', P + 'coop_sync.py', warm=True, minutes=6)
 add('lan_dedup', P + 'coop_lan_dedup.py', warm=True, minutes=3, fixture='creature')  # a host on two network addresses is one row in the guest's LAN list (BUG-0210; SPORE_FIX_OFF=net.lan_dedup fails)
 add('sync_lowfps', P + 'coop_sync.py --fps 15 civ tribe', warm=True, minutes=5)  # the guest at 15 fps: vehicles, citizens and animals within the sync limits (BUG-0175 regression; the fix's FAIL/PASS is npc_tests)
 add('creations', P + 'coop_creations.py', minutes=4)  # BUG-0345: a guest plays its own creature when chosen or already played in this world, else the world's species; the notice on both games (SPORE_FIX_OFF=creations.guest_world_species fails)
+add('choice_world', P + 'coop_choice_world.py', minutes=8, fixture='cell')  # BUG-0638: a guest in its own Cell editor while the host enters Creature plays the world's species after the load, not a creature chosen in another world; the host shows it so (SPORE_FIX_OFF=creations.choice_world fails)
 add('net_robust', P + 'coop_net_robust.py', minutes=4)  # malformed messages from a joined player (BUG-0201)
 add('chat_long', P + 'coop_chat_long.py', warm=True, minutes=2, fixture='creature')  # a reliable message bigger than a packet is split, nothing behind it stalls (BUG-0034)
 add('creations_cell', P + 'coop_creations_cell.py', minutes=4)
@@ -198,6 +199,11 @@ add('alt_enter', P + 'coop_alt_enter.py', minutes=4)  # Alt+Enter / Alt+Shift+En
 add('nest_species', P + 'coop_nest_species.py', minutes=4)  # the guest owns another creation under the key of the host's: the host's species at its nests, its table
 add('migration', P + 'coop_migration.py', minutes=5)  # brain upgrade, editors, migration; both claim the new nest: no fault on the guest (0xC6AE60)
 add('migration_heal', P + 'coop_migration.py --heal', minutes=6)  # BUG-0496: after the migration both players heal at the new home nest (the game's own health)
+add('nest_follow', P + 'coop_nest_follow.py', minutes=8)  # BUG-0640, BUG-0496: the host's species migrates, the guest's own game claims the same new nest (cinematic, herd = respawn, heal) without a forced world (SPORE_FIX_OFF=wsync.creature_nest fails)
+add('nest_follow_own', P + 'coop_nest_follow.py --own', minutes=8)  # BUG-0642: the same with the guest on its own creature (another species than the world's): claim, home and heal hold for it
+add('migration_probe', P + 'coop_migration_probe.py --editor', ('extended',), minutes=6)  # BUG-0640 probe: migration property, nest herd, cinematics on both games after DNA and the editors (prints only)
+add('nest_evolve_probe', P + 'coop_nest_evolve_probe.py', ('extended',), minutes=6)  # BUG-0639 probe: an NPC nest after its species died out and after the brain upgrade, on both games (prints only)
+add('family_attack', P + 'coop_family_attack.py', ('extended',), minutes=5, fixture='creature')  # BUG-0639: the guest (world species, then its own creature) bites a family member with real input: the host's family member keeps its health, the guest's game answers it as friendly like the host's
 add('select', P + 'coop_select.py', ('smoke',), warm=True, minutes=3, fixture='creature')
 add('social_console', P + 'coop_social_console.py', warm=True, minutes=3, fixture='creature')  # digits typed in the open cheat console play no social ability (BUG-0149; --without-fix fails)
 add('creature_kills', P + 'coop_creature_kills.py', minutes=3)  # a guest's kill dies on the guest too (no 0 hp mirror standing), NPCs notice the partner
@@ -422,6 +428,7 @@ add('creature_ufo_mirror', P + 'coop_creature_ufo_mirror.py', warm=True, minutes
 add('creature_carry', P + 'coop_creature_carry.py', warm=True, minutes=4, fixture='creature')  # BUG-0458: a rock the host (then the guest) picks up is held by its puppet in the other game, and lands at the same place after the throw (SPORE_FIX_OFF=creature.carry_relay fails)
 add('creature_sea_monster', P + 'coop_creature_sea_monster.py', minutes=4, fixture='creature')  # BUG-0465: the host drowns in deep water; the guest's game plays the sea monster (crg_seamonster_attack) where it took him, with the host's orientation and size (SPORE_FIX_OFF=effects.world_xform fails)
 add('creature_stun', P + 'coop_creature_stun.py', warm=True, minutes=3, fixture='creature')  # BUG-0554: an NPC's charge stuns the guest's own creature (stimulus 0x1000 in its behaviour tree), the guest's stun of a proxy stuns the host's NPC (SPORE_FIX_OFF=creature.stun_relay fails)
+add('spit_charge', P + 'coop_spit_charge.py', minutes=4, fixture='creature')  # BUG-0641: a spit stops a charge across the games: the guest's spit on a charging host NPC, a host NPC's spit on the guest's charge (SPORE_FIX_OFF=creature.spit_counter fails)
 add('tribe_target_ring', P + 'coop_tribe_target_ring.py', warm=True, minutes=4, fixture='tribe')  # BUG-0570: the guest's HUD rings the enemy its selected members attack (SPORE_FIX_OFF=tribe.target_ring fails)
 add('creature_air', P + 'coop_creature_air.py', warm=True, minutes=4, fixture='creature')  # BUG-0555: an NPC that bites the guest on the ground lands no melee hit while the guest's creature is in the air (SPORE_FIX_OFF=creature.air_immune fails)
 add('creature_flock', P + 'coop_creature_flock.py', warm=True, minutes=3, fixture='creature')  # BUG-0556: the host's Summon Flock (the game's event kind 8) is friendly (vt 0xD4) and wears its hearts in the guest's own game (SPORE_FIX_OFF=creature.party_allies,npc.flock_hearts fails)

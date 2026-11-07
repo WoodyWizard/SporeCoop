@@ -1,7 +1,7 @@
 ---
 id: BUG-0642
 title: Creature: a creature chosen in the co-op window changes only the own avatar, the nest and the family stay the world's species
-status: open
+status: wontfix
 kind: feature
 stage: Creature
 reported: 2026-11-06
@@ -9,9 +9,9 @@ source: player report 2026-11-06 (Discord, 0.7.8): text only (Discord 2026-11-06
 role: both
 versions: 0.7.8
 fixed_in:
-branch:
-commits:
-tests:
+branch: fix/w46-creature-p0
+commits: 61706c54
+tests: nest_follow_own (coop_nest_follow.py --own)
 signature:
 docs:
 related: BUG-0418, BUG-0640, BUG-0345, BUG-0536
@@ -30,11 +30,19 @@ family's look (cosmetic) or should the rules follow the avatar's species.
 Related: BUG-0344, BUG-0345, BUG-0536 (wontfix, the BUG-0345 default), BUG-0418.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+Not changed (by design): the nest, the family, the eggs, the claim and the heal are the world's player species' rules,
+and they hold for a guest playing its own creature: its game claims the migrated nest, lives in its herd and heals
+there like with the world's species. The co-op window's creature is the player's look (the avatar), as the window
+says; the family keeps the world species' look.
 
 ## Verification
-<!-- Lab: the guest picks its own creature in the co-op window; check its home nest's members, eggs and the minimap
-     nest (the world species), and that a migration can still be claimed with the own creature. -->
+coop_nest_follow.py --own (suite nest_follow_own): the guest chooses its own creature (290225CD, another species than
+the world's), the host migrates (the report's way), the guest's own game claims the host's new nest
+(CRG_ClaimNest), its avatar's herd is that nest's, and the nest heals it (3.5 -> 21.0): out/lab/20261107-074827 PASS.
+family_attack (out/lab/20261107-081513): with its own creature the guest's game answers the family as friendly (vt
+0xD4) like the host's and the family takes no damage from it.
+* Not verified: the family showing the own creature's look (not wanted, a design choice).
 
 ## History
 - 2026-11-06: opened. From the Discord report 2026-11-06 (0.7.8), the players' logs read in fix/w45-intake.
+- 2026-11-07 (fix/w46-creature-p0, P0-Creature of 0.7.10): closed wontfix (by design: the own creature is the avatar's look, the nest rules hold for it): nest_follow_own PASS 20261107-074827.

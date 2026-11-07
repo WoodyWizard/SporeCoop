@@ -1,7 +1,7 @@
 ---
 id: BUG-0496
 title: Creature: the guest gets no heal at its home nest (split from BUG-0460)
-status: open
+status: not-reproduced
 kind: bug
 stage: Creature
 reported: 2026-11-03
@@ -9,9 +9,9 @@ source: player report 2026-11-02 (BUG-0460), split on fix/w40-world-objects
 role: guest
 versions: 
 fixed_in:
-branch: fix/w44-guest-player2
+branch: fix/w46-creature-p0
 commits: 2ce39e6a
-tests: nest_heal (coop_nest_heal.py), migration_heal (coop_migration.py --heal)
+tests: nest_heal (coop_nest_heal.py), migration_heal (coop_migration.py --heal), nest_follow (coop_nest_follow.py)
 signature:
 docs: docs/re/creature.md#creature-nest-heal, docs/re/creature.md#creature-nest-heal-fight
 related:
@@ -40,11 +40,18 @@ Not reproduced (fix/w41-creature-left, 2026-11-03). Observed (lab 20261103-23580
   nest the guest's game had in another state then (BUG-0460, fixed in 0.7.4 by wobj.herd), not the heal.
 
 ## Fix
-Not fixed: not reproduced. `coop.rules heal` (player_rules.cpp) prints the heal's inputs on any game (the flag, health,
-food, cinematic, BT node, running Fight events) for the next report or test.
+Not fixed: not reproduced. The BUG-0640 fix (`wsync.creature_nest`) gives the guest the host's new nest as its home
+and respawn place; the heal itself needed no change (it is any friendly nest's, not the home nest's).
 
 ## Verification
-no-fail-run: not reproduced (out/lab/20261105-111330; after a migration out/lab/20261105-233707, test migration_heal); nest_heal and migration_heal stay the regression guards.
+no-fail-run: not reproduced. The heal works at a friendly nest whether or not it is the guest's home:
+* nest_follow with `SPORE_FIX_OFF=wsync.creature_nest` (out/lab/20261107-074327): the guest's game had NOT migrated (its
+  home still the first nest) and the host's new nest healed it all the same (hp 3.3 -> 15.0 in 12 s); with the fix
+  (out/lab/20261107-074330, 074824, own creature 074827) 3.6 -> 15.0, 3.5 -> 21.0.
+* Earlier: out/lab/20261103-235806, 20261105-111330, 20261105-233707 (migration_heal).
+* Inferred: the reports (0.7.3.4 "nest is not extinct and I don't get any heals", 0.7.8 the respawn at the old nest)
+  were the nest state (BUG-0460, fixed 0.7.4) and the missing migration (BUG-0640, fixed now), not the heal.
+  nest_heal, migration_heal and nest_follow stay the guards.
 
 ## History
 - 2026-11-03: opened.
@@ -54,3 +61,4 @@ no-fail-run: not reproduced (out/lab/20261105-111330; after a migration out/lab/
 - 2026-11-05 (fix/w44-guest-player2, P2 of 0.7.8): the avatar's heal found (Ghidra: +0xFB8, 0xC02E10, the Fight event gate); not reproduced, not fixed.
 - 2026-11-05 (fix/w45-creature-reports, P3 of 0.7.9): the migrated nest heals both players too (migration_heal); not reproduced, not fixed, left open.
 - 2026-11-06: Discord report 2026-11-06 (0.7.8, discord-2026-11-06/M0ng0r-07): the guest's respawn stayed at the first nest after the host migrated twice (no claim on the guest): BUG-0640; the heal at the home nest may share that cause.
+- 2026-11-07 (fix/w46-creature-p0, P0-Creature of 0.7.10): closed not-reproduced: the heal holds at the host's new nest also with the BUG-0640 fix off (out/lab/20261107-074327); the respawn half is BUG-0640.

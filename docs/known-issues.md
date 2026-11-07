@@ -2149,3 +2149,13 @@ Each line: what the players saw, what the logs show; reproduce and details in th
 * Known: inferred to be BUG-0606's cause (raw positions of two games in different scales); worlddiff has no
   diag.cell_scale conversion. The guest draws the cells where they are.
 * Ticket: BUG-0662
+## Creature: each game evolves the NPC nests by itself (2026-11-07, fix/w46-creature-p0)
+<a id="issue-herd-evolution-apart"></a>
+
+* What happens: after the pack's DNA crosses the nests' evolution thresholds, every NPC herd gets its next
+  generation (a new species) in each game at its own threshold; a nest the host's game keeps extinct evolves to a
+  new species in the guest's game.
+* Reproduce: `tools/lab.py run nest_evolve_probe --lane N` (lab 20261107-081734), compare the `coop.nest evolve` rows.
+* Known: docs/re/creature.md#creature-herd-evolution-desync. Not known: what advances the generation +0xF0, and what
+  the guest's screen shows at such a nest (the creatures are the host's NPCs).
+* Ticket: BUG-0668
