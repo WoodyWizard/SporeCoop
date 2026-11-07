@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Fixed
+- Tribe: on a connection with latency spikes or a busy PC the player tribe's citizens no longer trail 2-3 m behind on
+  the guest's screen; they are shown where the host has them now (BUG-0410).
+- Tribe: a citizen the guest's own game held back no longer falls up to 8 m behind and jumps back; it is kept on its
+  path (BUG-0386).
+- Civilization: the host's vehicles are no longer drawn a step behind on the guest's screen (BUG-0438).
+
 ## [0.7.9] - 2026-11-07
 
 ### Changed
