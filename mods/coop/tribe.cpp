@@ -2337,7 +2337,9 @@ static void mirror_drive(GMember& g, double now)
         // a frame draws at most 2 x the body's own speed + catch_up (WalkPlace::lead_speed, BUG-0619's bound): without it
         // the game's walk at 13-17 m/s plus catch_prop's closing drew 1.0-1.4 m frames (tribe_walk_player 20261107-102038
         // #3); with catch_prop off instead a 6-9 m error (BUG-0674) took 0.6 s to close
-        if (net::g_lead_keep_fix && g.buf.late_catching() && g.lead_sp < 0)
+        // (and always: a mirror held by its game and moved by keep_lost's marked teleports, BUG-0386, caught up in 0.91 m
+        // frames at 12.8 m/s, tribe_walk_player 20261107-111106 #2)
+        if (net::g_lead_keep_fix && g.lead_sp < 0)
             o.lead_speed = std::max(sp / g.buf.late_rate(), 0.5f);
         o.keep_lost = g_mirror_keep_fix; // BUG-0386
         drive::walk_place(g.c, g.aim, rot, vel, g.ds, now, o);
