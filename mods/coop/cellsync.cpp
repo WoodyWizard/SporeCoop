@@ -4598,6 +4598,26 @@ std::string debug(const std::vector<std::string>& a)
         }
         return out + "\n";
     }
+    if (a.size() >= 2 && a[0] == "gap" && a[1] == "near") { // tests (BUG-0634): the nearest creature of 0.4-2.5 x our size
+        float best = 1e9f, my = std::max(F<float>(av, kSize), 0.01f);
+        uint32_t bkey = 0;
+        for_each_cell([&](uint8_t* c, uint32_t idx) {
+            if (c == av || modes::cell_is_puppet(c) || F<uint8_t>(c, kDead) || F<uint8_t>(c, kDying) || strcmp(kind_of(c), "creature") ||
+                F<void*>(c, kQuery) != fg_query())
+                return;
+            float r = F<float>(c, kSize) / my, d = net::dist(pos_of(c), pos_of(av));
+            auto it = g_host_of.find(idx);
+            if (r < 0.4f || r > 2.5f || d >= best || (is_guest() && it == g_host_of.end()))
+                return;
+            best = d;
+            bkey = is_guest() ? it->second : idx;
+        });
+        if (!bkey)
+            return "no creature";
+        char b[64];
+        snprintf(b, sizeof b, "near c%u d=%.1f\n", bkey, best);
+        return b;
+    }
     if (a.size() >= 2 && a[0] == "gap") { // tests (BUG-0634): our cell and the cell <key>: centre distance, sizes, own pairs so far
         uint32_t key = (uint32_t)strtoul(a[1].c_str() + (a[1][0] == 'c' ? 1 : 0), nullptr, 10);
         uint8_t* c = nullptr;

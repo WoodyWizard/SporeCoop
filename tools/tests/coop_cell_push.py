@@ -23,13 +23,9 @@ def gap(con, key):
     return (float(m.group(1)), float(m.group(2)), float(m.group(3)), int(m.group(4)), m.group(5) + '/' + m.group(6)) if m else None
 
 
-def nearest_creature(con, ratio=(0.4, 2.5)):
-    out = con.call('coop.pool see 400')['out']
-    for l in out.splitlines():
-        f = l.split()
-        if len(f) > 3 and f[0] == 'see' and f[2] == 'creature' and ratio[0] <= float(f[3]) <= ratio[1]:
-            return f[1]
-    return None
+def nearest_creature(con):
+    m = re.match(r'near (c\d+) d=([\d.]+)', con.call('coop.pool gap near')['out'])
+    return m.group(1) if m and float(m.group(2)) < 40 else None
 
 
 def push(con, key):
@@ -64,7 +60,7 @@ def main():
         who, con = ('host', host) if i % 2 == 0 else ('guest', guest)
         key = nearest_creature(con)
         if not key:
-            print(f'  {who}: no creature of its size on screen ({con.call("coop.pool see 400")["out"].count("creature")} creatures)')
+            print(f'  {who}: no creature of its size within 40 m')
             con.call(f'coop.pool goto {(-1) ** i * 30} {(i % 3) * 20 - 20}')  # swim somewhere else (the partner follows)
             time.sleep(4)
             (guest if who == 'host' else host).call('coop.pool tp 3 0')
