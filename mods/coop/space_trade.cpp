@@ -749,9 +749,10 @@ static void drop(uint32_t id)
 // back in Space: pay what is owed, once. Taken from this very game (the same cEmpire) or saved
 // since it was taken: it comes back. Else a load brought back a game from before it was taken,
 // which still has it: nothing to pay (it would be doubled).
+static bool inv_restore_pending();
 static void pay_owed()
 {
-    if (g_owed.empty() || !here())
+    if (g_owed.empty() || !here() || inv_restore_pending()) // BUG-0678: not into a hold about to be replaced
         return;
     if (spaceext::owed_id()) { // BUG-0225: kept items wait for their game; decide again only when needed
         double now = H->time_seconds();
@@ -1156,15 +1157,28 @@ static std::map<std::string, KeptInv> g_kept_inv; // host: player name -> its ow
 static uint32_t g_kept_inv_epoch, g_inv_serial, g_inv_holds, g_inv_sent_back, g_inv_done;
 // guest
 static bool g_inv_join_seen;
-static uint32_t g_inv_join_epoch, g_inv_fresh_epoch, g_inv_applied_epoch, g_inv_sent;
+static uint32_t g_inv_join_epoch, g_inv_fresh_epoch, g_inv_applied_epoch, g_inv_none_epoch, g_inv_sent;
 static std::vector<uint8_t> g_inv_last;
-static double g_inv_next;
+static double g_inv_next, g_inv_fresh_t;
+
+// guest: a world loaded from the host whose hold may still be replaced by the kept one (no answer yet to its
+// fresh hold); at most 20 s after it went (a host without the fix never answers)
+static bool inv_restore_pending()
+{
+    if (!g_keep_items_fix || !spaceext::connected() || spaceext::is_host() || !spaceext::in_space())
+        return false;
+    uint32_t e = spaceext::world_epoch();
+    if (!e || e == g_inv_join_epoch || e == g_inv_applied_epoch || e == g_inv_none_epoch)
+        return false;
+    return e != g_inv_fresh_epoch || H->time_seconds() - g_inv_fresh_t < 20.0;
+}
 
 static void send_kept_inv(uint8_t id, KeptInv& k)
 {
     net::Writer w;
     w.u8(id);
     w.u32(k.serial = ++g_inv_serial);
+    w.u8(1); // a hold follows
     put_inv(w, k.inv);
     spaceext::send(K_INV_KEPT, w);
     k.restoring = true;
@@ -1209,6 +1223,8 @@ static void inv_tick(double now)
     if (!fresh && b == g_inv_last)
         return;
     g_inv_last = std::move(b);
+    if (fresh)
+        g_inv_fresh_t = now;
     g_inv_fresh_epoch = e;
     net::Writer w;
     w.u8(0);
@@ -1244,6 +1260,13 @@ static void inv_message(uint8_t kind, uint8_t origin, uint32_t id, net::Reader& 
             send_kept_inv(origin, k);
             return;
         }
+        if (fresh) { // nothing kept (a first join): the guest keeps the save's hold, no restore to wait for
+            net::Writer w;
+            w.u8(origin);
+            w.u32(0);
+            w.u8(0);
+            spaceext::send(K_INV_KEPT, w);
+        }
         if (k.restoring)
             return; // the old copy, sent before it got its own back
         k.inv = std::move(v);
@@ -1254,10 +1277,15 @@ static void inv_message(uint8_t kind, uint8_t origin, uint32_t id, net::Reader& 
     // K_INV_KEPT, for me
     if (spaceext::is_host())
         return;
+    uint32_t e = spaceext::world_epoch();
+    if (!r.u8()) { // nothing kept for me: the hold of this world is mine
+        if (r.ok() && e == g_inv_fresh_epoch)
+            g_inv_none_epoch = e;
+        return;
+    }
     Inv v;
     if (!get_inv(r, v))
         return;
-    uint32_t e = spaceext::world_epoch();
     int failed = 0;
     if (g_keep_items_fix && spaceext::in_space() && inventory() && e != g_inv_applied_epoch && e != g_inv_join_epoch) {
         failed = apply_inv(v);
@@ -1284,6 +1312,7 @@ static void inv_session_end()
 {
     g_inv_join_seen = false;
     g_inv_fresh_epoch = 0;
+    g_inv_none_epoch = 0;
     g_inv_last.clear();
     g_inv_next = 0;
     for (auto& [n, k] : g_kept_inv)
