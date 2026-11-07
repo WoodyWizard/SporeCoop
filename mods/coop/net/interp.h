@@ -136,6 +136,7 @@ constexpr size_t kJitterN = 64;      // states (3-6 s)
 constexpr double kJitterHigh = 0.10; // s: no lead over this one-way latency (measured: netem mobile 123-149 ms, player and local under 0.1)
 constexpr double kJitterLow = 0.085;
 constexpr double kSmoothVelTau = 0.1; // s
+constexpr float kSmoothJump = 1.5f; // m
 
 class SnapshotBuffer {
 public:
@@ -307,7 +308,16 @@ private:
                     // interpolated state until that offset is closed. Smoothed always, the members trailed more over
                     // the player network (body_trail_tribe_player p90 1.47-1.59 m and 1.1-1.8 s over 2 m, M1's
                     // 1.14-1.27 m, lab 20261106-172428 / -172431, -184547 / -184550)
-                    if (!sm_last_lead_ || sm_closing_) {
+                    // ... and after a new state's step of the lead over kSmoothJump (a walk's start in a latency spike
+                    // of the player network: 3.6-3.8 m, then catch_prop drew 0.87-0.95 m frames, tribe_walk_player lab
+                    // 20261106-185808); catch_prop keeps a step under it within the frame limit
+                    bool big = false;
+                    if (sm_have_ && local_now > sm_t_ && local_now - sm_t_ <= 0.5) {
+                        float ddt = (float)(local_now - sm_t_);
+                        big = dist(Vec3{sm_shown_.x + sm_vel_.x * ddt, sm_shown_.y + sm_vel_.y * ddt, sm_shown_.z + sm_vel_.z * ddt},
+                                   out.pos) > kSmoothJump;
+                    }
+                    if (!sm_last_lead_ || sm_closing_ || big) {
                         sm_closing_ = true;
                         smooth(local_now, out, last_extrap > kMaxLead ? Vec3{} : v, true);
                         if (dist(Vec3{}, sm_off_) < 0.05f)
