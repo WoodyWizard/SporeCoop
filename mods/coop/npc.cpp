@@ -1000,6 +1000,8 @@ struct NpcTrackRow {
     float sx = 0, sy = 0;
     float ag = 0; // BUG-0550: the drawn position's height over this game's terrain (m)
     float mag = 0; // and the model's (AnimatedCreature +0x04)
+    int32_t lm = -1; // BUG-0409: the locomotion mode (+0x2B0: 0 normal, 3 thrown by a hit, 4 abducted)
+    int8_t gr = -1;  // the grounded byte (+0x137)
 };
 static std::deque<NpcTrackRow> g_ntrack;
 static bool g_ntrack_on = false;
@@ -1051,6 +1053,8 @@ static void ntrack_push(uint16_t id, void* c, uint8_t how, uint8_t flags, uint16
     x.sy = sc[1];
     x.ag = drive::over_ground(drawn);
     x.mag = drive::over_ground(x.m);
+    x.lm = *(int32_t*)((uint8_t*)c + game::kLocoModeOff);
+    x.gr = (int8_t)*((uint8_t*)c + 0x137);
     g_ntrack.push_back(x);
     while (g_ntrack.size() > kNtrackMax)
         g_ntrack.pop_front();
@@ -1074,14 +1078,14 @@ static int c_npctrack(void*, int argc, const char* const* argv, SkOut* out)
     } else if (!strcmp(a, "stop"))
         g_ntrack_on = false;
     else if (!strcmp(a, "dump")) {
-        // dump [from] [n] (how: 0 driven, 1 placed, 2 killed, 3 walked, 4 an NPC of the host itself, 5 in the air): t id how flags tp dx dy dz px py pz tx ty tz gv rv da anim gait gait2 moving ss vis sx sy mx my mz ag mag
+        // dump [from] [n] (how: 0 driven, 1 placed, 2 killed, 3 walked, 4 an NPC of the host itself, 5 in the air): t id how flags tp dx dy dz px py pz tx ty tz gv rv da anim gait gait2 moving ss vis sx sy mx my mz ag mag lm gr
         size_t from = argc > 2 ? (size_t)atol(argv[2]) : 0, n = argc > 3 ? (size_t)atol(argv[3]) : 2000;
         for (size_t i = from; i < g_ntrack.size() && i < from + n; i++) {
             const auto& x = g_ntrack[i];
-            H->out_printf(out, "%.4f %u %u %u %u %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.2f %.2f %.1f %08X %d %d %d %d %d %.0f %.0f %.3f %.3f %.3f %.3f %.3f\n",
+            H->out_printf(out, "%.4f %u %u %u %u %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.2f %.2f %.1f %08X %d %d %d %d %d %.0f %.0f %.3f %.3f %.3f %.3f %.3f %d %d\n",
                           x.t, x.id, x.how, x.flags, x.tp, x.d.x, x.d.y, x.d.z, x.p.x, x.p.y, x.p.z, x.tgt.x, x.tgt.y,
                           x.tgt.z, x.gv, x.rv, x.da, x.anim, x.gait, x.gait2, x.moving, x.speed_state, x.vis, x.sx, x.sy, x.m.x,
-                          x.m.y, x.m.z, x.ag, x.mag);
+                          x.m.y, x.m.z, x.ag, x.mag, x.lm, x.gr);
         }
         return 0;
     } else if (!strcmp(a, "objects")) {
@@ -1796,6 +1800,7 @@ static void guest_tick(double now)
                     o.max_dt = 0.4; // BUG-0503 (as the Tribe mirrors, BUG-0365); Creature too (BUG-0590)
                 o.snap = 2.5f;
                 o.keep_lost = true;
+                o.catch_prop = true; // BUG-0425
                 o.variant = g_walk_variant;
                 drive::walk_place(px.c, s.pos, s.rot, vel, px.drv, now, o);
                 walked = true;
@@ -2245,6 +2250,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         s.flags = sp.flags;
         s.health = sp.health;
         px.buf.delay = 0.15;
+        px.buf.lead = true; // BUG-0425 (drive.lead): where the host has it now
         px.buf.push(s, now);
         px.last_rx = now;
         break;
@@ -3142,6 +3148,24 @@ void monitor_tick(double now)
                         g - r, p.x, p.y, p.z, now - a.under_since, net::dist(p, t),
                         px.kinematic ? "placed on the host's path" : "driven", now < px.manual_until ? ", test walk" : "",
                         now - px.made_at, px.made_agl);
+        if (off && now - a.off_since >= 2.0 && g_audit_stuck.count(id) == 0 && g_audit_stuck.empty()) {
+            // BUG-0440 / BUG-0386 (diagnostics): the driving's own view (its error to the target it walks to, the place
+            // lost / held by the game, teleports) and the nearest other proxy (a herd mate holding it?)
+            float near_d = 1e9f;
+            uint16_t near_id = 0;
+            for (auto& [oid, ox] : g_proxies)
+                if (oid != id && ox.c && !ox.killed && game::object_alive(ox.c)) {
+                    float d = net::dist(game::position(ox.c), p);
+                    if (d < near_d) {
+                        near_d = d;
+                        near_id = oid;
+                    }
+                }
+            trace::line("npc", "proxy %u: walk err %.2f m, held %d, place lost %u, teleports %u, walked %d, nearest proxy %u at "
+                        "%.1f m; objects within 3 m: %s (BUG-0440)", id, px.drv.last_err, (int)px.drv.held, (unsigned)px.drv.place_lost,
+                        (unsigned)px.drv.teleports, (int)px.drv.kinematic, near_id, near_d,
+                        game::objects_near(p, 3.f, px.c).c_str());
+        }
         if (off && now - a.off_since >= 2.0 && g_audit_stuck.insert(id).second && g_audit_stuck.size() == 1)
             trace::line("npc", "proxy %u (species %08X) %.1f m off the host's NPC for %.1f s at (%.1f %.1f %.1f), host's speed "
                         "%.1f m/s (%s%s); went off at %.1f m, the proxy moved %.1f m since; the host's NPC's largest step "

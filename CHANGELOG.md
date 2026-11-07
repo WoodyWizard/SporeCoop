@@ -10,6 +10,17 @@
 - Creature: spending DNA in an editor no longer lowers the other players' evolution bar (the bar could drop to almost
   nothing after both players used their editors, or be halved); a spend now takes only the shared DNA, as in a game
   of one, and the bar keeps everything the party earned (BUG-0630).
+- Creature: when the partner stops, its creature on your screen stops where the partner stopped instead of sliding
+  on half a metre or more (BUG-0408).
+- Creature: the partner standing on a nest mound no longer drops to the ground for a frame each time it comes into
+  your view when you turn the camera (BUG-0434).
+- Tribe: in the first minute after a player joins, a chief walking past (or stopping next to) another player's chief
+  is no longer teleported to the other side of the village, on both screens (BUG-0610).
+- Tribe and Civilization: a late network packet no longer makes the guest's tribe members or vehicles jump back to an
+  older place for a moment or skips the removal of ones that are gone (BUG-0616).
+- A broken position from another player's game (not a number) can no longer be written into a creature, vehicle or
+  ship; such a state is dropped (BUG-0614). Messages too big to send are now written to the log instead of being
+  dropped without a word (BUG-0615).
 - A guard against a crash when an NPC reacted to a creature that had just been destroyed (BUG-0456) was switched off
   by mistake since 0.7.5; it works again (BUG-0623).
 - Tribe and other stages: when a game was loaded within a few seconds of the galaxy menu coming up, the menu's
@@ -41,6 +52,11 @@
   crashes when the host's world is loaded (BUG-0308; the fix came with 0.7.3.2, now tested on this path).
 - Tribe: the guest now sees and hears the blows of the host's tribe members land on their victims (the hit flashes
   and their sounds), not only the swings (BUG-0603).
+- Creature and Tribe: the host's animals and tribe members no longer trail behind where the host sees them on the
+  guest's screen (they were 0.2-0.3 s late, 1-2 m behind a running animal or member): the guest now shows them where
+  the host has them at that moment (BUG-0425, BUG-0410).
+- Civilization: the host's vehicles no longer fall several metres behind on the guest's screen when the connection
+  drops packets for a moment (BUG-0438).
 - Creature: a body one player eats is eaten on the other player's screen too, so the guest can eat the bodies the
   players killed and no longer finds bodies it already ate standing whole on the host's screen (BUG-0557, BUG-0383).
 - Creature: the guest now sees the UFO that visits the host's world, where the host sees it (BUG-0558).

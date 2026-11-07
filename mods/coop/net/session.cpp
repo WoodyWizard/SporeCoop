@@ -310,6 +310,12 @@ std::string Session::status() const
                  p->conn.stats.acked, p->conn.stats.resends, (unsigned)p->conn.pending_reliable());
         s += b;
     }
+    for (auto& p : peers_)
+        if (p->conn.stats.unrel_too_big) { // BUG-0612
+            snprintf(b, sizeof b, "peer %u: unreliable_too_big=%u (last type %u, %u bytes)\n", p->id, p->conn.stats.unrel_too_big,
+                     p->conn.stats.unrel_too_big_type, p->conn.stats.unrel_too_big_size);
+            s += b;
+        }
     // BUG-0219: a line of its own after the session block, never inside a peer line
     for (auto& p : peers_)
         if ((p->accepted || role_ == Role::Client) && !p->conn.peer_split) {
@@ -721,6 +727,12 @@ void Session::flush(uint32_t now)
         for (int i = 0; (i < burst || (i < burst + 64 && p->conn.unreliable_queued() > 0)) && p->conn.build_packet(now, pkt); i++)
             tr_->send_to(p->conn.remote, pkt.data(), pkt.size());
         p->conn.drop_unreliable();
+        auto& st = p->conn.stats; // BUG-0612: an unreliable message too big for any packet, said (the first, then 1 in 100)
+        if (st.unrel_too_big != st.unrel_too_big_logged && (st.unrel_too_big_logged == 0 || st.unrel_too_big % 100 == 0)) {
+            logf(cb, "net: an unreliable message of type %u (%u bytes) is too big for a packet: dropped (%u so far, peer %u)",
+                 st.unrel_too_big_type, st.unrel_too_big_size, st.unrel_too_big, p->id);
+            st.unrel_too_big_logged = st.unrel_too_big;
+        }
     }
 }
 

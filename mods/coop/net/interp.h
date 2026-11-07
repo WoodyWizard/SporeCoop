@@ -2,6 +2,7 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstring>
 #include <deque>
@@ -97,10 +98,51 @@ private:
     bool have_ = false;
 };
 
+// BUG-0425 (M1, `coop.fix drive.lead`): the one rule for where a remote body is shown. A guest showed every host
+// body interpolated at (now - delay) of the host's clock: the delay (0.10-0.15 s) plus the one-way latency behind
+// the host's body (measured with both games' own positions at the same moment, coop_body_trail.py: 0.17-0.21 s,
+// 0.8-1.2 m behind a walking or running NPC, the target as far behind as the drawn proxy). With the lead a body
+// is shown where the sender has it NOW: its newest state moved on by its velocity for the state's age on the
+// sender's clock plus the one-way latency (g_one_way: half the round trip, set by the session every frame),
+// at most kMaxLead s ahead of that state (a loss burst: it stands at the end of its lead until the next state).
+// The velocity is the state's own while it moves, never faster than its path between the two newest states
+// (a herd animal pushed by its mates, one against a rock: its game reports a walk it does not make), the path's
+// for a body that moves without a speed of its own (BUG-0394), none once it reported a stop.
+// Off: interpolated at now - delay (0.7.8).
+inline bool g_lead_fix = true;
+inline double g_one_way = 0.03; // s
+constexpr double kMaxLead = 0.6; // s ahead of the newest state
+// BUG-0619 (`coop.fix drive.lead_smooth`): the lead target does not jump. Every new state moves the lead
+// target at once (its age, velocity and the one-way latency change from state to state; over a jittery network,
+// 60 ms of jitter, 0.3-1.5 m at a walk's start and end) and the driving caught up the jump within ~0.25 s at up to
+// 3x the body's speed: Tribe member mirrors drew 0.9-1.25 m steps per 32 ms frame (tribe_walk_mobile). With the
+// fix the shown target is continuous: a new state's jump is kept as an offset to the raw lead (the target goes on
+// from where it was shown, with the velocity it had) and the offset decays exponentially (kSmoothTau) at most at
+// kSmoothK x the body's speed + kSmoothRate (the target never moves faster than 2x the body + 3 m/s: what the walked
+// mirror reaches in a frame, its walk + its speed + catch_up; 1.25x left it behind and it surged, tribe_walk_mobile
+// lab 20261106-134346 #2: 0.1 s windows at 1.45x p90). This is the closing
+// walk_place's catch_prop did (an error closed in ~0.25 s at most at the speed + 3 m/s on top), measured on the
+// target's own path instead of from where the game's walk had put the body (which drew walk + catch-up). An
+// offset over the buffer's smooth_max is a real jump (the sender's body was put somewhere): taken at once.
+// And no lead at all over a link whose one-way latency (median of the last kJitterN states) is over kJitterHigh
+// (until under kJitterLow): there the lead extrapolates 0.2-0.3 s, every change of speed between two states moved the
+// target and the mirror went stop-and-go whatever the closing (docs/re/tribe.md#tribe-lead-smooth); shown
+// interpolated as 0.7.8 (smooth, late). Only buffers with smooth_max > 0 (the Tribe member mirrors). Off: M1's lead.
+inline bool g_lead_smooth_fix = true;
+constexpr double kSmoothTau = 0.12; // s: e^-1 of a lead jump left after this
+constexpr float kSmoothRate = 3.f;  // m/s on top of kSmoothK x the body's speed
+constexpr float kSmoothK = 1.f;
+constexpr size_t kJitterN = 64;      // states (3-6 s)
+constexpr double kJitterHigh = 0.10; // s: no lead over this one-way latency (measured: netem mobile 123-149 ms, player and local under 0.1)
+constexpr double kJitterLow = 0.085;
+constexpr double kSmoothVelTau = 0.1; // s
+
 class SnapshotBuffer {
 public:
     double delay = 0.10;       // interpolation delay (s)
+    bool lead = false;         // BUG-0425: shown where the sender has it now (g_lead_fix)
     double max_extrap = 0.25;  // extrapolation limit (s)
+    float smooth_max = 0;      // BUG-0619: a lead jump up to this (m) is smoothed (g_lead_smooth_fix); 0 = never
     // BUG-0499: > 0: no blend across a step between two snapshots faster than this (m/s): the sender's
     // creature was put somewhere else (the hatchling out of its egg 5-11 m, a respawn at the nest), not a
     // walk; nor across the death flag (the dead state at the place of the death, the next one at the nest).
@@ -114,9 +156,13 @@ public:
 
     void clear()
     {
+        jitter_ = 0;
+        dev_n_ = 0;
+        jittery_ = false;
         snaps_.clear();
         clock_.clear();
         have_raw_ = false;
+        sm_have_ = false;
     }
 
     void push(const PlayerState& s, double local_now)
@@ -144,6 +190,21 @@ public:
         }
         clock_.add(local_now - st, local_now);
         offset_ = clock_.value();
+        // BUG-0619: the link's one-way latency, the median over the last kJitterN states (a latency spike of the
+        // player network, +250 ms for 0.7 s every 7 s, stays out of it). The states' arrival lateness did not part
+        // the networks in the lab: its median (a loaded local link 39-51 ms, mobile 51-62 ms), median + one-way
+        // (player 150 ms, mobile 156-193 ms) and IQR (local at lab load 10-15: 34-106 ms, mobile 45-103 ms; the
+        // guest's own frame times dominate it) (lab 20261106-164638, -165647, -170617)
+        {
+            devs_[dev_n_++ % kJitterN] = (float)g_one_way;
+            if (dev_n_ >= 32) {
+                size_t n = std::min<size_t>(dev_n_, kJitterN);
+                std::array<float, kJitterN> d = devs_;
+                std::nth_element(d.begin(), d.begin() + n / 2, d.begin() + n);
+                jitter_ = d[n / 2];
+                jittery_ = jitter_ > kJitterHigh || (jittery_ && jitter_ > kJitterLow);
+            }
+        }
         snaps_.push_back({st, s});
         while (snaps_.size() > 64)
             snaps_.pop_front();
@@ -165,13 +226,105 @@ public:
         return n;
     }
 
-    // Interpolated state at (now - delay) in sender time.
+    // BUG-0425: the velocity the lead moves the newest state on with (see g_lead_fix)
+    Vec3 lead_velocity() const
+    {
+        const Snap& n = snaps_.back();
+        auto len = [](const Vec3& v) { return std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z); };
+        float sn = len(n.s.vel), ps = -1;
+        Vec3 pv{};
+        const Snap* pr = snaps_.size() >= 2 ? &snaps_[snaps_.size() - 2] : nullptr;
+        if (pr) {
+            double dt = n.t - pr->t;
+            if (dt > 0.02 && dt < 0.5 && pr->s.mode == n.s.mode && pr->s.world == n.s.world &&
+                !((pr->s.flags ^ n.s.flags) & (PF_IN_WORLD | PF_DEAD))) {
+                float k = (float)(1.0 / dt);
+                pv = {(n.s.pos.x - pr->s.pos.x) * k, (n.s.pos.y - pr->s.pos.y) * k, (n.s.pos.z - pr->s.pos.z) * k};
+                ps = len(pv);
+                if (ps > 15.f || (jump_speed > 0 && ps > jump_speed))
+                    return {}; // the sender's body was put somewhere: no walk to go on with
+            }
+        }
+        if (sn > 0.3f) {
+            float cap = ps >= 0 ? ps * 1.25f + 0.3f : sn;
+            if (sn > cap) {
+                float k = cap / sn;
+                return {n.s.vel.x * k, n.s.vel.y * k, n.s.vel.z * k};
+            }
+            return n.s.vel;
+        }
+        if (pr && len(pr->s.vel) <= 0.3f && ps > 0.5f)
+            return pv; // it moves without a speed of its own (BUG-0394)
+        return {};
+    }
+
+    // Interpolated state at (now - delay) in sender time; with `lead` (g_lead_fix) the sender's state now.
     bool sample(double local_now, PlayerState& out) const
+    {
+        sm_used_ = sm_lead_out_ = false;
+        bool ok = sample_raw(local_now, out);
+        // BUG-0619: a sample before the newest state (the path velocity's sample 0.1 s back) is shifted by the same
+        // offset, so the path is the shown one (an unshifted one gave the walk a 3-4 m/s path while it stood)
+        // A slow body's interpolated state (see sample_raw) goes through the same smoothing: the switch between the
+        // two is a jump of the raw target that the offset takes
+        if (ok && !sm_lead_out_ && lead && g_lead_fix && g_lead_smooth_fix && smooth_max > 0)
+            smooth(local_now, out, out.vel, false);
+        return ok;
+    }
+
+private:
+    bool sample_raw(double local_now, PlayerState& out) const
     {
         if (snaps_.empty())
             return false;
         double t = local_now - offset_ - delay;
         last_extrap = 0;
+        if (lead && g_lead_fix) {
+            const double tl = local_now - offset_ + g_one_way;
+            const Snap& n = snaps_.back();
+            // BUG-0619: no lead over a jittery link (jitter_ over kJitterHigh until it is under kJitterLow again): the lead
+            // moves a state on by its age, and states 0-120 ms late (mobile: 60 ms jitter) made the lead target step
+            // 1-4 m at every start, speed change and stop; closing that at any speed the mirror can show was the
+            // stop-and-go the test sees (uneven 11-22 %; 0.7.8 2-5 %). There it is shown as 0.7.8 (interpolated,
+            // smooth, ~0.2 s late); the switch goes through the smoothing
+            bool use = true;
+            if (g_lead_smooth_fix && smooth_max > 0)
+                use = !jittery_;
+            if (use && tl >= n.t) {
+                double dt = tl - n.t;
+                last_extrap = dt;
+                dt = std::min(dt, kMaxLead);
+                Vec3 v = lead_velocity();
+                out = n.s;
+                out.pos.x += v.x * (float)dt;
+                out.pos.y += v.y * (float)dt;
+                out.pos.z += v.z * (float)dt;
+                out.vel = v;
+                sm_lead_out_ = true;
+                if (g_lead_smooth_fix && smooth_max > 0) {
+                    // the lead's own new states as M1's (raw, closed by walk_place's catch_prop: over a link under
+                    // kJitterHigh its start step is 1-1.5 m, under a jump); smoothed only after a switch from the
+                    // interpolated state until that offset is closed. Smoothed always, the members trailed more over
+                    // the player network (body_trail_tribe_player p90 1.47-1.59 m and 1.1-1.8 s over 2 m, M1's
+                    // 1.14-1.27 m, lab 20261106-172428 / -172431, -184547 / -184550)
+                    if (!sm_last_lead_ || sm_closing_) {
+                        sm_closing_ = true;
+                        smooth(local_now, out, last_extrap > kMaxLead ? Vec3{} : v, true);
+                        if (dist(Vec3{}, sm_off_) < 0.05f)
+                            sm_closing_ = false;
+                    } else if (local_now > sm_t_) {
+                        sm_have_ = true;
+                        sm_off_ = {};
+                        sm_t_ = local_now;
+                        sm_vel_ = last_extrap > kMaxLead ? Vec3{} : v;
+                        sm_shown_ = out.pos;
+                    }
+                }
+                return true;
+            }
+            if (use)
+                t = tl; // (a state from the future: the clock offset is late) interpolated there
+        }
         if (t <= snaps_.front().t) {
             out = snaps_.front().s;
             return true;
@@ -218,7 +371,120 @@ public:
         return true;
     }
 
+public:
+    // diagnostics (BUG-0619): the smoothing's offset now (m) and the raw lead target's jump at the last new state
+    double jitter() const { return jitter_; }
+    bool jittery() const { return jittery_; }
+    float smooth_off() const { return sm_have_ ? dist(Vec3{}, sm_off_) : 0.f; }
+    // BUG-0619: true when the last sample(now) was the smoothed lead; `v` then is the shown target's velocity (the
+    // lead's plus the offset's decay): the speed the mirror must walk at to stay on it
+    bool smooth_velocity(Vec3& v) const
+    {
+        if (!sm_used_)
+            return false;
+        v = {sm_vel_.x + sm_offv_.x, sm_vel_.y + sm_offv_.y, sm_vel_.z + sm_offv_.z};
+        return true;
+    }
+    mutable float last_lead_jump = 0;
+
 private:
+    // BUG-0619 (g_lead_smooth_fix): `out` (the raw lead at local_now) plus the decaying offset. Advanced once per
+    // local time (a later call at the same or an earlier time, the path velocity's sample, adds the same offset)
+    // is_lead: `out` is the raw lead (its new states jump: absorbed); else the interpolated state (continuous: an
+    // offset left from a switch only closes, and the driving is 0.7.8's, smooth_velocity false)
+    void smooth(double local_now, PlayerState& out, const Vec3& v, bool is_lead) const
+    {
+        sm_used_ = is_lead;
+        if (!is_lead) {
+            if (local_now > sm_t_ && sm_have_) {
+                double dt = local_now - sm_t_;
+                if (sm_last_lead_) { // the switch from the lead: its step back taken as an offset
+                    Vec3 cont{sm_shown_.x + sm_vel_.x * (float)dt, sm_shown_.y + sm_vel_.y * (float)dt,
+                              sm_shown_.z + sm_vel_.z * (float)dt};
+                    sm_off_ = {cont.x - out.pos.x, cont.y - out.pos.y, cont.z - out.pos.z};
+                    if (dist(Vec3{}, sm_off_) > smooth_max)
+                        sm_off_ = {};
+                    sm_last_lead_ = false;
+                }
+                float d = dist(Vec3{}, sm_off_);
+                float nd = dt > 0.5 ? 0.f : std::max(0.f, std::max(d * (float)std::exp(-dt / kSmoothTau), d - (kSmoothK * dist(Vec3{}, v) + kSmoothRate) * (float)dt));
+                float k = d > 1e-4f ? nd / d : 0.f;
+                sm_off_ = {sm_off_.x * k, sm_off_.y * k, sm_off_.z * k};
+                sm_t_ = local_now;
+                sm_vel_ = v;
+                sm_shown_ = {out.pos.x + sm_off_.x, out.pos.y + sm_off_.y, out.pos.z + sm_off_.z};
+            } else if (!sm_have_) {
+                sm_have_ = true;
+                sm_off_ = {};
+                sm_t_ = local_now;
+                sm_vel_ = v;
+                sm_shown_ = out.pos;
+            }
+            out.pos.x += sm_off_.x;
+            out.pos.y += sm_off_.y;
+            out.pos.z += sm_off_.z;
+            return;
+        }
+        if (local_now > sm_t_) {
+            double dt = local_now - sm_t_;
+            sm_offv_ = {};
+            bool snap_vel = !sm_have_ || dt > 0.5;
+            if (snap_vel) {
+                sm_off_ = {};
+            } else {
+                Vec3 cont{sm_shown_.x + sm_vel_.x * (float)dt, sm_shown_.y + sm_vel_.y * (float)dt,
+                          sm_shown_.z + sm_vel_.z * (float)dt};
+                Vec3 off{cont.x - out.pos.x, cont.y - out.pos.y, cont.z - out.pos.z};
+                float d = dist(Vec3{}, off);
+                float jump = dist(sm_off_, off);
+                if (jump > 0.05f)
+                    last_lead_jump = jump;
+                // a stop (the newest state stands, the one before walked): the target goes to the stop at once, as
+                // the raw lead (the mirror stops there by drive::step); smoothed, an overshoot of the lead slid back
+                // at kSmoothRate (3 m/s) and the mirror walked back to its stop
+                const bool stop = dist(Vec3{}, v) < 0.3f && dist(Vec3{}, sm_vel_) >= 0.3f;
+                if (d > smooth_max || stop) {
+                    off = {};
+                    snap_vel = true;
+                } else if (d > 1e-4f) {
+                    float sp = std::max(dist(Vec3{}, v), dist(Vec3{}, sm_vel_));
+                    float rate = kSmoothK * sp + kSmoothRate;
+                    float nd = std::max(d * (float)std::exp(-dt / kSmoothTau), d - rate * (float)dt);
+                    nd = std::max(nd, 0.f);
+                    float k = nd / d;
+                    float r = (k - 1.f) / (float)dt;
+                    sm_offv_ = {off.x * r, off.y * r, off.z * r};
+                    off = {off.x * k, off.y * k, off.z * k};
+                }
+                sm_off_ = off;
+            }
+            sm_have_ = true;
+            sm_last_lead_ = true;
+            sm_t_ = local_now;
+            // the shown velocity follows the lead's in kSmoothVelTau (not at once): every state changes the lead's
+            // velocity (its speed, capped by the path between two states) and the target's speed stepped 8 -> 1 -> 5 m/s
+            // in three frames, which the walked mirror followed a frame late (tribe_walk_mobile: uneven 11-12 %)
+            // (at once from a stand, a stop or a real jump)
+            if (snap_vel || dist(Vec3{}, sm_vel_) < 0.3f)
+                sm_vel_ = v;
+            else {
+                float b = (float)std::min(1.0, dt / kSmoothVelTau);
+                sm_vel_ = {sm_vel_.x + (v.x - sm_vel_.x) * b, sm_vel_.y + (v.y - sm_vel_.y) * b, sm_vel_.z + (v.z - sm_vel_.z) * b};
+            }
+            sm_shown_ = {out.pos.x + sm_off_.x, out.pos.y + sm_off_.y, out.pos.z + sm_off_.z};
+        }
+        out.pos.x += sm_off_.x;
+        out.pos.y += sm_off_.y;
+        out.pos.z += sm_off_.z;
+    }
+    mutable bool sm_have_ = false, sm_used_ = false, sm_last_lead_ = false, sm_closing_ = false, sm_lead_out_ = false;
+    double jitter_ = 0; // s (BUG-0619)
+    std::array<float, kJitterN> devs_{};
+    size_t dev_n_ = 0;
+    bool jittery_ = false;
+    mutable double sm_t_ = 0;
+    mutable Vec3 sm_off_{}, sm_offv_{}, sm_vel_{}, sm_shown_{};
+
     struct Snap {
         double t;
         PlayerState s;

@@ -614,6 +614,8 @@ struct TrackSample {
     // BUG-0436: its size on the observer's screen, pixels per metre (a point 1 m over it projected), 0 when not known:
     // the game animates a creature far from its camera without its walk gait
     float ppm = 0;
+    // BUG-0434: the physics' simple-path inputs (PhysicsManager_Update 0xB4C5D5): the drawn flag +0xF90, the LOD +0xEAC
+    int8_t f90 = -1, lod = -1;
 };
 static std::deque<TrackSample> g_track;
 // tests (BUG-0367): `coop.track lift <m>`: this game takes the partners' Creature states <m> further from
@@ -677,6 +679,10 @@ static TrackSample& track_one(uint8_t who, void* c, const net::PlayerState* s, u
     };
     x.hd = over(x.d);
     x.ht = s ? over(x.tgt) : x.hd;
+    if (game::noun_id(c) == 0x18EB45Eu) { // a creature
+        x.f90 = (int8_t)*((uint8_t*)c + 0xF90);
+        x.lod = (int8_t)*(int32_t*)((uint8_t*)c + 0xEAC);
+    }
     while (g_track.size() >= kTrackMax)
         g_track.pop_front();
     g_track.push_back(x);
@@ -759,13 +765,87 @@ int c_track(void*, int argc, const char* const* argv, SkOut* out)
         size_t from = argc > 2 ? (size_t)atol(argv[2]) : 0, n = argc > 3 ? (size_t)atol(argv[3]) : 2000;
         for (size_t i = from; i < g_track.size() && i < from + n; i++) {
             const auto& x = g_track[i];
-            SAY("%.4f %u %u %u %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.2f %.2f %08X %d %d %d %d %d %.0f %.0f %.3f %.3f %u %u %08X %.1f\n", x.t,
+            SAY("%.4f %u %u %u %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.2f %.2f %08X %d %d %d %d %d %.0f %.0f %.3f %.3f %u %u %08X %.1f %d %d\n", x.t,
                 x.who, x.flags, x.tp, x.p.x, x.p.y, x.p.z, x.d.x, x.d.y, x.d.z, x.tgt.x, x.tgt.y, x.tgt.z, x.gv, x.rv,
-                x.anim, x.gait, x.gait2, x.moving, x.speed_state, x.vis, x.sx, x.sy, x.hd, x.ht, (unsigned)x.id, x.ranims, x.ranim, x.ppm);
+                x.anim, x.gait, x.gait2, x.moving, x.speed_state, x.vis, x.sx, x.sy, x.hd, x.ht, (unsigned)x.id, x.ranims, x.ranim, x.ppm, x.f90, x.lod);
         }
         return 0;
     }
     SAY("track %s samples=%u\n", g_track_on ? "on" : "off", (unsigned)g_track.size());
+    return 0;
+}
+
+// ---- coop.bodyrec (BUG-0425, M1): every synchronized body (sync_all: players, NPCs, Tribe members, Civ vehicles,
+// ships, cells) as this game drew it (read at the start of the mod's frame, before any message or driving), with the
+// absolute time (H->time_seconds: QueryPerformanceCounter, one clock for every game on one PC). A test records on
+// the host and on a guest and compares the guest's copy with the host's body at the same moment
+// (tools/tests/body_trail.py), the game's own positions on both machines, not our bookkeeping.
+struct BodyRow {
+    double t;
+    char key[8];
+    net::Vec3 p;
+};
+static std::deque<BodyRow> g_bodyrec;
+static bool g_bodyrec_on = false;
+static constexpr size_t kBodyRecMax = 400000;
+
+static void bodyrec_tick(double now)
+{
+    if (!g_bodyrec_on || !g_sess.connected())
+        return;
+    for (auto& e : sync_all()) {
+        BodyRow r{};
+        r.t = now;
+        snprintf(r.key, sizeof r.key, "%s", e.key.c_str());
+        r.p = e.pos;
+        g_bodyrec.push_back(r);
+    }
+    while (g_bodyrec.size() > kBodyRecMax)
+        g_bodyrec.pop_front();
+}
+
+int c_bodyrec(void*, int argc, const char* const* argv, SkOut* out)
+{
+    const char* a = argc > 1 ? argv[1] : "count";
+    if (!strcmp(a, "start")) {
+        g_bodyrec.clear();
+        g_bodyrec_on = true;
+    } else if (!strcmp(a, "stop"))
+        g_bodyrec_on = false;
+    else if (!strcmp(a, "dump")) { // dump [from] [n]: t key x y z (t: absolute s)
+        size_t from = argc > 2 ? (size_t)atol(argv[2]) : 0, n = argc > 3 ? (size_t)atol(argv[3]) : 2000;
+        for (size_t i = from; i < g_bodyrec.size() && i < from + n; i++) {
+            const auto& x = g_bodyrec[i];
+            SAY("%.4f %s %.3f %.3f %.3f\n", x.t, x.key, x.p.x, x.p.y, x.p.z);
+        }
+        return 0;
+    } else if (!strcmp(a, "since")) { // since <t> [n] [step]: rows after absolute time t, one frame per step s
+        // (BUG-0609: the divergence detector reads the rows of its last period, the ring index moves as it drops rows)
+        double t0 = argc > 2 ? atof(argv[2]) : 0.0, step = argc > 4 ? atof(argv[4]) : 0.0;
+        size_t n = argc > 3 ? (size_t)atol(argv[3]) : 2000, said = 0;
+        auto it = std::upper_bound(g_bodyrec.begin(), g_bodyrec.end(), t0,
+                                   [](double t, const BodyRow& r) { return t < r.t; });
+        double kept = -1e300, last = -1e300;
+        for (; it != g_bodyrec.end() && said < n; ++it) {
+            if (it->t != last) { // a new frame: keep it when step s passed since the last kept one
+                if (it->t < kept + step) {
+                    double ft = it->t;
+                    while (it != g_bodyrec.end() && it->t == ft)
+                        ++it;
+                    if (it == g_bodyrec.end())
+                        break;
+                    --it;
+                    continue;
+                }
+                kept = last = it->t;
+            }
+            SAY("%.4f %s %.3f %.3f %.3f\n", it->t, it->key, it->p.x, it->p.y, it->p.z);
+            said++;
+        }
+        return 0;
+    } else if (!strcmp(a, "on")) // on: record without clearing (the detector; a test's `start` clears)
+        g_bodyrec_on = true;
+    SAY("bodyrec %s samples=%u now=%.4f\n", g_bodyrec_on ? "on" : "off", (unsigned)g_bodyrec.size(), H->time_seconds());
     return 0;
 }
 
@@ -3035,6 +3115,7 @@ void on_frame(void*, int, void*)
         avatar_change_check();
     monitor_frame_start(now); // the puppets as drawn, before any driving (docs/06-testing.md#testing-monitor)
     npc::monitor_tick(now);   // the proxies as drawn
+    bodyrec_tick(now);        // coop.bodyrec (tests, BUG-0425): every body as drawn
     modes::own_ground_tick(now); // BUG-0592: the own creature not left in the ground
     // BUG-0231: the world a joining guest hears in WELCOME (before the host's first state); the
     // values of the last frame, as every message of this update sees them. Not switched: 0.7.3.0
@@ -3043,6 +3124,11 @@ void on_frame(void*, int, void*)
         g_sess.world = host_world::welcome_world(g_mode, g_world);
     g_sess.update();
     lobby_tick(now);
+    if (g_sess.role() == net::Role::Client) { // BUG-0425 (drive.lead): the one-way latency to the host, half its round trip
+        int rtt = g_sess.rtt_of(0);
+        if (rtt >= 0)
+            net::g_one_way = std::min(std::max(rtt / 2000.0, 0.0), 0.15);
+    }
     vote_tick(now);
     submit_tick(now);
     own_editor_tick(now);
@@ -4020,6 +4106,8 @@ void setup_callbacks()
         g_remotes.erase(it);
     };
     g_sess.cb.player_state = [](const net::PlayerState& s) {
+        if (game::pose_bad(s.pos, s.rot, s.vel)) // BUG-0614: never into the buffer (its velocity is written raw)
+            return;
         auto& r = g_remotes[s.id];
         r.id = s.id;
         if (r.name.empty())
@@ -4244,8 +4332,8 @@ int c_status(void*, int, const char* const*, SkOut* out)
                 : g_mode == modes::kCell   ? *(uint32_t*)((uint8_t*)r.puppet + 0xFC) // cell model
                                            : 0u);
             if (g_mode == modes::kCreature)
-                SAY("   drive err=%.2f speed=%.2f nudges=%u kept=%u teleports=%u walk_goals=%u jumps=%u airs=%u\n", r.drv.last_err,
-                    r.drv.last_speed, r.drv.nudges, r.drv.nudges_kept, r.drv.teleports, r.drv.goals, r.drv.jumps, r.drv.airs);
+                SAY("   drive err=%.2f speed=%.2f nudges=%u kept=%u teleports=%u walk_goals=%u jumps=%u airs=%u stop_holds=%u\n", r.drv.last_err,
+                    r.drv.last_speed, r.drv.nudges, r.drv.nudges_kept, r.drv.teleports, r.drv.goals, r.drv.jumps, r.drv.airs, r.drv.stop_holds);
         }
         // tests (BUG-0507): the puppet the mod holds is a live creature in the game's own object list
         if (r.puppet && creature_puppet(r.puppet_adapter))
@@ -6128,6 +6216,8 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                        return 0;
                    },
                    nullptr, MT);
+    H->command_add(M, "coop.bodyrec", "coop.bodyrec start|stop|count|dump [from] [n] - every frame: every synchronized body as drawn, absolute time (tests, BUG-0425)",
+                   c_bodyrec, nullptr, MT);
     H->command_add(M, "coop.sync", "coop.sync - pose of every synchronized object (key x y z qx qy qz qw), tests",
                    [](void*, int, const char* const*, SkOut* out) {
                        std::vector<syncdbg::Entry> v = sync_all();

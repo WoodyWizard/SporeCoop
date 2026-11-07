@@ -9,7 +9,7 @@ source: found by tribe_walk_mobile (fix/w30-tribe-walk)
 role: guest
 versions: unreleased
 fixed_in:
-branch:
+branch: fix/w45-remote-bodies-2
 commits:
 tests: tribe_walk_mobile (tools/tests/coop_tribe_walk.py)
 signature:
@@ -27,18 +27,27 @@ other mirrors were 9 m away. The per-frame track: out/lane3/track/tribe_walk_gue
 (not in git). Seen once in 14 direction-views with the fix.
 
 ## Root cause
-Not found. Inferred: something in the guest's own game (a rock, a tree, a building whose place differs
-from the host's, or the citizen's collision) pushes the placed mirror back every frame (game::place
-teleports it, the next update moves it back), until it is free and the collision resolution plus the
-catch-up move it on fast. Not checked: what it collided with.
+Not found (2026-11-06, fix/w45-remote-bodies-2). Static RE (GOG 2024): creature-vs-creature contact pairs are skipped by the creature stage's gameplay contact handler (0xD3A450: type 2 pairs of two creatures, noun 0x18EB45E, are not handled; creature-vs-object goes to 0xD3A0D0, the bump of rocks and ornaments): what pushes a placed mirror back is not in the gameplay code (inferred: Havok's own solver or the locomotion's avoidance). No per-creature flag that takes one creature out of collision was found (candidates: the loco force list at creature+0xC0, add 0xC44140, clear 0xC441A0; a phantom registration like the eggs' 0xB48870). Observed: the same kind of hold on NPC proxies (BUG-0440's single audit lines: place lost while a herd mate is 3.3 m away).
 
 ## Fix
-Open. Ideas: find the blocker (coop.targets objs at that moment); cap the catch-up after a block; take
-mirrors out of the guest's collision.
+No fix: not reproduced on 0.7.9.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+no-fail-run: tribe_walk_mobile (30 fps, mobile network) passed with drive.lead on out/lab/20261106-053105 and the runs of this branch's final code (see the report), and with it off out/lab/20261106-062826 (2 runs); M1: no stretch over 2 m longer than 0.79 s in 9 body_trail Tribe runs. One FAIL (out/lab/20261106-063850: member jumps and stop-and-go with 369 target corrections) was with a tried lead smoothing (BUG-0445, removed). Needed for a fix: the function that separates creatures or a collision flag (above).
 
 ## History
 - 2026-11-01: opened.
+- 2026-11-06 (fix/w45-remote-bodies, M1): a different mechanism from the class's lag (BUG-0425): the guest's own game
+  holds the placed mirror back (an obstacle or collision only there). With drive.lead a mirror's error is closed in
+  ~0.25 s, at most at twice its speed + 3 m/s (catch_prop): a release after a hold is a faster catch-up, not slower. Not
+  seen in 9 body_trail Tribe runs (longest stretch over 2 m 0.13-0.79 s); the blocker not found; open.
+- 2026-11-06 (fix/w45-remote-bodies-2, M2): static RE of the contact handling (creature pairs skipped, the separating function not found); not reproduced in the runs; closed not-reproduced with the blocker named.
+- 2026-11-06 (fix/w45-remote-bodies-2, M2, later the same day): seen again by the new detector trail rows (BUG-0609) in play_tribe of the regression (out/lab/20261106-071756): `Tribe:trail:member`, member t13 over 2 m off the host's member for 2.34 s while the other members' copies were within p90 0.56 m (lag p50 0.012 s): a single mirror held back, this ticket's case, not the class's lag. Status back to open, blocked: what holds it is not found (see Root cause); the next step is a probe at that moment (`SPORE_DETECTOR=20 SPORE_DETECTOR_DIAG='coop.npctrack objects 5'` style dump of the objects within 3 m of the held mirror on both games, and the mirror's driver state), or the creature separation function.
+- 2026-11-06 (fix/w45-remote-bodies-2, M2): the probe is in (commit 0b19dfc4): a walked member mirror more than 2 m off its aim for 1 s logs `tribe: mirror #N held ... objects within 3 m: <noun@dist ...> (BUG-0386)`, and the proxies' audit line (BUG-0440) lists the objects within 3 m too (game::objects_near). First lines (out/lab/20261106-113612, with a tried BUG-0619 catch-up cap that itself slowed the mirrors): 26 holds, `place lost 0` and no object within 3 m in most (2 with noun 018C8F0C / 018C6D19 / 018C431C at 2.8-2.9 m): those holds were the catch-up cap, not an obstacle. A hold with the M1 driving and an object list was not caught yet.
+- 2026-11-06 (fix/w45-remote-bodies-2, M3, BUG-0619 runs): reproduced on rel/0.7.9 + drive.lead with and without
+  drive.lead_smooth, always the guest's own member 2 seen by the guest: its game walks the mirror (gv 11-12 m/s) but it
+  moves 0.03-0.04 m per 33 ms frame for 0.9 s while its target walks on at 9 m/s, the error grows to 8.1 m, then the
+  driver teleports it (tp 0 -> 1): out/lab/20261106-172428 tribe_walk_mobile#2 (t 23.07-24.00 s), -170614 #1 (8.13 m at
+  62.15 s and 8.11 m at 1.22 s), -130123 #1 (8.31 / 9.39 m, drive.lead_smooth off); body_trail_tribe -164638 ("guest:
+  Tribe member steps over 5 m: t2 8.0 m at 3.5 s"). The BUG-0386 probe did not log (it needs over 2 m for 1 s in
+  walk_place). Track files: out/lane9/track/tribe_walk_guest_walks_*.json of those runs.

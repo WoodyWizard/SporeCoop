@@ -4415,6 +4415,52 @@ G2 of 0.7.8 (BUG-0430 class). For each: which kind of fault it was and the evide
   (lab 20261105-135000 play_tribe#2) had none (0.6-1.5 m per 0.25 s at 2.5-5.5 m/s): proxies falling behind a moving
   host NPC, a real desync. The gate and its window stay.
 
+## The guest's copy against the host's body at the same moment (2026-11-06, fix/w45-remote-bodies)
+<a id="testing-body-trail"></a>
+
+* `coop.bodyrec start|stop|count|dump [from] [n]` (mods/coop/coop.cpp, tests only, reads the game): every frame,
+  every synchronized body of `coop.sync` (p players, n NPCs, t Tribe members, v Civ vehicles, s ships, c cells) as
+  drawn (read at the start of the mod's frame, before messages and driving) with the absolute time
+  (`H->time_seconds()` = QueryPerformanceCounter: one clock for every game on one PC, so the host's and a guest's
+  rows line up without a clock offset). Ring of 400 000 rows.
+* `tools/tests/body_trail.py`: `analyse(host_rows, guest_rows)` interpolates the host's body at every guest row's time
+  and compares at the guest's distance from the planet's centre (the height is V1's rule, not measured here). Per
+  kind over the samples where the host's body moves (> 0.5 m/s): distance p50 / p90 / max, lag (distance over the
+  host's speed, s), the longest stretch over 2 m.
+* `tools/tests/coop_body_trail.py --stage creature|tribe|civ` (suite `body_trail_creature`, `_tribe`, `_civ`,
+  `_player`, `_tribe_player`, `_civ_loss`): the host walks NPCs / orders members / drives vehicles for 60 s and the
+  test checks the p90 distance and the longest stretch (BUG-0425; `SPORE_FIX_OFF=drive.lead` fails Creature and Tribe).
+* Measuring against the host's state that the guest received (npctrack's `tgt`, coop_sync's lag window) hides any
+  lag of the target itself: a copy that follows a late target passes those checks.
+
+## The detector's trail rows and the body_trail additions (2026-11-06, fix/w45-remote-bodies-2)
+<a id="testing-detector-trail"></a>
+
+* BUG-0609: with `SPORE_DETECTOR=<s>` the monitor also starts `coop.bodyrec on` (records without clearing a test's own
+  rows) on the host and every guest and, every period, reads the rows since the last one (`coop.bodyrec since <t> [n]
+  [step]`: one frame per 50 ms) and runs `body_trail.detect_findings`: a `<stage>:trail:<kind>` row (npc, member,
+  vehicle, player, ship) when the guest's copies of a kind are late (lag p50 > 0.14 s) and off (dist p90 > 0.5 m) at
+  the same moment, or one copy stayed over 2 m off for 1.5 s. `SPORE_DETECTOR_TRAIL=0`: off. Measured per 10 s: without
+  drive.lead lag p50 0.15-0.23 s in every window, with it 0.013-0.132 s (labs 20261106-041119 / -041542 / -042100); the p90 lag
+  is spread by the detector's own census dumps (both games hitch), so the median is used.
+* `body_trail.steps(rows)`: one-frame steps over 5 m of a member in one game's own rows; body_trail_tribe fails on any
+  (BUG-0610: the arrival's chief placing teleported a walking chief; it was in 11 of M1's 13 tribe tracks).
+* `coop_body_trail.py --hits` (suite `body_trail_hits`, BUG-0409): the host hits a walking NPC every 5 s (every other
+  one with a push of 3), the 3 s after each hit are judged on both games' bodyrec rows (max 3 m, over 2 m at most
+  0.5 s); the npctrack rows of both games (with the locomotion mode `lm` = +0x2B0 and grounded `gr` columns) go to
+  out/laneN/track/body_trail_hits_npctrack_*.json.
+* `coop.track` rows end with the creature's +0xF90 (drawn flag) and +0xEAC (LOD) (BUG-0434).
+* `coop_net_nan.py` (suite `net_nan`, BUG-0614): a scripted guest (fakepeer protocol) sends NaN / Inf states; its
+  puppet must stay finite in both games' bodyrec rows.
+* `coop_mound_view.py` (suite `puppet_mound_view`, BUG-0434): the host on the fixture's nest mound, the guest 10 m away
+  turning its camera with right-drags for 60 s (~200 entries of the puppet into its view); fails on any frame on the
+  screen that draws the puppet on the plain terrain (hd < 0.1 m while ht > 0.5 m).
+* `coop_puppet_walk.py` now records both games' `coop.bodyrec` too: the puppet against the walker's own creature at
+  the same moment (`body_trail.analyse` on `p` keys) and `body_trail.stop_slides` (how far past the walker's stop the
+  puppet went). Suite `puppet_stops` (BUG-0408): `--dir both --guest-fps 30 --goto=-195,-465,-45 --stop-walk` over
+  SPORE_NET=player (its `stops` check: slid on over 0.15 m after at most 10 % of the stops).
+* The partner's puppet has no lead (M1, on purpose): its copy is 0.16-0.17 s (lag p50) behind the walker on a clean
+  lab, p90 0.8-0.9 m at walking speed (puppet_stops bodyrec lines, lab 20261106-053105).
 ## NPCs while the host's game stands still, a guest's leave and rejoin (2026-11-06, fix/w45-one-game-objects)
 <a id="testing-npc-gaps"></a>
 

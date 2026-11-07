@@ -1,7 +1,7 @@
 ---
 id: BUG-0445
 title: Tribe: walked animal proxies step 2.6-3.1 m in one frame on the guest's screen (npc_walk_tribe fails 4 of 6 on lane 7)
-status: open
+status: not-reproduced
 kind: desync
 stage: Tribe
 reported: 2026-11-01
@@ -9,7 +9,7 @@ source: lab 20261101-180236, 20261101-183139, 20261101-184014 npc_walk_tribe, la
 role: guest
 versions: main 6ac351e
 fixed_in:
-branch:
+branch: fix/w45-remote-bodies-2
 commits:
 tests: npc_walk_tribe (tools/tests/coop_npc_walk.py)
 signature:
@@ -31,16 +31,13 @@ How to reproduce: `tools/lab.py run npc_walk_tribe --repeat 3 --lane N`; the tes
 screen (id, t, m, frame ms)`; the per-frame rows are in out/laneN/track/npc_walk_tribe_*.json.
 
 ## Root cause
-Not analysed (outside fix/w35-monitor-gates's task). Several proxies stepping in the same frame suggests a late
-or bunched state of the host (the test also counts "windows left out because the host's path itself jumped",
-148 in 20261101-180236), which the Tribe walk driving (npc.walk_tribe) does not smooth.
+Not reproduced on 0.7.9 (rel/0.7.9 + M1's drive.lead). Observed (2026-11-06, fix/w45-remote-bodies-2): npc_walk_tribe passed 8 of 8 runs on code without this branch's tried changes: out/lab/20261106-060825 (3 runs), 20261106-061720 (3 runs, with a tried lead smoothing switched off: the same code), 20261106-060427 (2 runs, drive.lead off); M1's 20261106-021152 (1). The 4 FAILs seen on this branch (20261106-052022 x2, 20261106-053713 x2) came from a tried BUG-0409 change (NF_THROWN: Tribe animals flagged as thrown by a one-frame speed, placed instead of walked, extra states sent every frame), since removed: in 053713 the 2.74 m step was the lead target moving 1.8 m back and 1.6 m on in two frames between states of 6.5, 3.7 and 6.5 m/s (bunched extra states), then walk_place's snap (err > 2.5 m). Inferred for the 2026-11-01 failures (several proxies stepping in the same frame): late / bunched host states with the 0.7.3 walk driving (npc.walk_tribe before BUG-0503 / BUG-0425); not seen since.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+None needed on 0.7.9. A lead smoothing (drive.lead_smooth: a new state's step of the lead target spread over 0.25 s) was written and removed: no run without it failed.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+no-fail-run: not reproduced in 8 runs (out/lab/20261106-060825, -061720, -060427); the test stays in the suite.
 
 ## History
 - 2026-11-01: opened (fix/w35-monitor-gates, seen in its regression runs).
@@ -48,3 +45,7 @@ or bunched state of the host (the test also counts "windows left out because the
 - 2026-11-05 (fix/w44-tests, G2): the proxies gate lines of BUG-0440 seen in G2 (out/lab/20261105-135000 play_tribe#2)
   were proxies falling behind a host NPC that walked or ran at its speed, with no jump of the host's NPC (the audit
   line's largest host step 0.6-1.5 m per 0.25 s); this ticket's one-frame steps of 2.6-3.1 m were not looked at.
+- 2026-11-06 (fix/w45-remote-bodies, M1): npc_walk_tribe passed with drive.lead (out/lab/20261106-021152, one run).
+  The lead removes the 0.15 s delay of the target, not the guest's own collisions (this ticket's steps of several
+  proxies in the same frame: the herd pushing, inferred). Not reproduced, not marked fixed (one run).
+- 2026-11-06 (fix/w45-remote-bodies-2, M2): 8 of 8 PASS on 0.7.9 code; the branch's own FAILs traced to a tried BUG-0409 change (removed); closed not-reproduced.

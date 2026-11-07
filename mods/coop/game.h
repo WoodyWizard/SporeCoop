@@ -15,6 +15,7 @@ constexpr uintptr_t kSpatialOff = 0xC0;     // cLocomotiveObject/cSpatialObject 
 constexpr uintptr_t kPosOff = 0xC0 + 0x04;  // cSpatialObject::mPosition
 constexpr uintptr_t kRotOff = 0xC0 + 0x10;  // cSpatialObject::mOrientation
 constexpr uintptr_t kVelOff = 0xC0 + 0x1C8; // cLocomotiveObject::mVelocity
+constexpr uintptr_t kLocoModeOff = 0x2B0; // BUG-0409: the locomotion mode (0 normal, 3 thrown by a hit: cCreatureBase TakeDamage 0xC1A520, 4 abducted)
 constexpr uintptr_t kCombatOff = 0x5A8;     // cCombatant subobject
 constexpr uintptr_t kMaxHpOff = 0x5A8 + 0x2C;
 constexpr uintptr_t kHpOff = 0x5A8 + 0x38;
@@ -86,6 +87,11 @@ void set_defer_keeps_puppet(bool on); // tests (off: a deferred puppet leaves th
 bool cinematic_playing(); // cCinematicManager +0x2C != 0 (W2: no destroy of a village meanwhile)
 bool destroy_pending(void* c);     // queued by destroy_creature, still there
 std::string destroy_deferred_status();
+// BUG-0614 (game.finite_pose): a received pose with NaN / Inf; counted, false with the switch off
+// BUG-0434 (creature.culled_ground): this frame's target of a puppet, lifted to after the physics update when the game grounds it
+void mound_hold(void* c, const net::Vec3& tgt);
+void after_physics();
+bool pose_bad(const net::Vec3& pos, const net::Quat& rot, const net::Vec3& vel);
 void teleport(void* c, const net::Vec3& pos, const net::Quat& rot);
 // BUG-0360: teleport without the teleport mark (+0xB5D, set by vt 0x44 0xC0C040): the locomotion takes
 // the position, the animation's walk gait goes on (with the mark it restarts every frame)
@@ -276,6 +282,8 @@ void set_dna_listener(DnaListener fn);
 // cGameNounManager::mNouns (+0x78) lists every cGameData (list node at object+0xC)
 void* noun_manager();
 void for_each_object(bool (*fn)(void* obj, uint32_t noun, void* user), void* user);
+// BUG-0386 / BUG-0440 (diagnostics): "noun@dist" of every placed object within r m of pos but `self`, nearest first
+std::string objects_near(const net::Vec3& pos, float r, void* self, int max_n = 8);
 uint32_t noun_id(void* obj);                    // ISimulatorSerializable::GetNounID (vt 0x20)
 void* cast(void* obj, uint32_t type);           // Object::Cast (vt 0x0C)
 bool object_position(void* obj, net::Vec3& out); // via cSpatialObject (TYPE 0x1186577), position +4

@@ -102,8 +102,17 @@ void Connection::deliver_reliable(uint8_t type, uint8_t flags, const uint8_t* p,
     deliver(type, pr);
 }
 
+// the packet header (magic, protocol, connection, seq, ack, ack bits, count) and a message's (type, flags, size)
+static constexpr size_t kPacketHeader = 4 + 2 + 4 + 2 + 2 + 16 + 1, kMsgHeader = 4;
+
 void Connection::send_unreliable(uint8_t type, const Writer& w, bool first)
 {
+    if (kPacketHeader + kMsgHeader + w.data.size() > kMaxPacket) { // never fits a packet: counted (BUG-0612)
+        stats.unrel_too_big++;
+        stats.unrel_too_big_type = type;
+        stats.unrel_too_big_size = (uint32_t)w.data.size();
+        return;
+    }
     if (first)
         unrel_out_.emplace(unrel_out_.begin(), type, w.data);
     else

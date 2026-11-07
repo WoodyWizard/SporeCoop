@@ -1333,6 +1333,39 @@ static void test_old_peer_split()
     CHECK(whole == 0 && notice == 1 && r.stats.frag_lost == 1);
 }
 
+// BUG-0612: an unreliable message that can never fit a packet is counted (with its type and size), and the
+// messages queued after it still go out
+static void test_unreliable_too_big()
+{
+    printf("an unreliable message too big for any packet is counted, the rest sent (BUG-0612)\n");
+    Connection a, b;
+    Writer big, small;
+    for (int i = 0; i < 1300; i++)
+        big.u8((uint8_t)i);
+    small.u32(7);
+    a.send_unreliable(MSG_PLAYER_STATE, big);
+    a.send_unreliable(MSG_CHAT, small);
+    std::vector<uint8_t> pkt;
+    int got_small = 0, got_big = 0;
+    uint32_t now = 1000;
+    for (int i = 0; i < 4 && a.build_packet(now, pkt); i++)
+        b.on_packet(pkt.data(), pkt.size(), now, [&](uint8_t t, Reader& m) {
+            got_small += t == MSG_CHAT && m.left() == 4;
+            got_big += t == MSG_PLAYER_STATE;
+        });
+    CHECK(got_small == 1 && got_big == 0);
+    CHECK(a.stats.unrel_too_big == 1 && a.stats.unrel_too_big_type == MSG_PLAYER_STATE && a.stats.unrel_too_big_size == 1300);
+    // the largest message that fits is sent
+    Writer edge;
+    for (int i = 0; i < (int)kMaxPacket - 31 - 4; i++)
+        edge.u8(1);
+    a.send_unreliable(MSG_CHAT, edge);
+    int got_edge = 0;
+    for (int i = 0; i < 4 && a.build_packet(now + 10, pkt); i++)
+        b.on_packet(pkt.data(), pkt.size(), now + 10, [&](uint8_t t, Reader& m) { got_edge += t == MSG_CHAT && m.left() == edge.size(); });
+    CHECK(got_edge == 1 && a.stats.unrel_too_big == 1);
+}
+
 // BUG-0219 in a session: a guest whose HELLO has no extension (0.7.2) gets long chat lines cut
 // between two characters (from the host and relayed), no species table, and is announced once
 static void test_old_peer_session()
@@ -2651,6 +2684,7 @@ int main(int argc, char** argv)
         return g_fail ? 1 : 0;
     }
     test_buffer();
+    test_unreliable_too_big();
     test_unreliable_chunks();
     test_dbpf();
     test_partprops();

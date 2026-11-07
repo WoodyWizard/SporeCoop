@@ -237,6 +237,18 @@ static bool g_puppet_mound_fix = true;
 COOP_FIX("creature.puppet_mound", "BUG-0435", g_puppet_mound_fix, "creature: the partner's creature on a nest mound stands on the mound, not in it");
 constexpr float kMoundMin = 0.1f; // m over GetHeightAt
 
+// BUG-0408: when the partner stopped, walk_end gave the puppet a MoveTo to where the partner stands and drive::step
+// took over without placing it: the game's walk slowed down over ~0.4 s and slid 0.4-0.9 m past the stop (both games'
+// own positions, coop.bodyrec: 2 of 14 stops of puppet_stops, lab 20261106-053105; on a slope it rose 0.1 m over the
+// ground and played the fall animation). With creature.puppet_stop the puppet is placed where the partner stands for
+// kStopHold s after a walk (while it is within kStopNear of it and the partner stands), as it was placed on the path
+// while it walked. Off: 0.7.8. (Tried on 2026-11-04 and dropped then: no test failed without it.)
+static bool g_puppet_stop_fix = true;
+COOP_FIX("creature.puppet_stop", "BUG-0408", g_puppet_stop_fix, "creature: the partner's creature stops where the partner stopped instead of sliding on");
+constexpr double kStopHold = 0.5; // s
+constexpr float kStopNear = 1.5f; // m
+constexpr float kStopSpeed = 4.f;  // m/s: the hold's own approach
+
 static void creature_drive(void* p, const net::PlayerState& s_in, drive::State& ds, double now)
 {
     puppet_sneak(p, s_in);
@@ -253,6 +265,7 @@ static void creature_drive(void* p, const net::PlayerState& s_in, drive::State& 
             s.pos = {s.pos.x * k, s.pos.y * k, s.pos.z * k};
         } else
             s.pos = drive::on_own_ground(s.pos);
+        game::mound_hold(p, s.pos); // BUG-0434
     }
     if (g_puppet_deep_fix && game::in_creature_stage())
         s.pos = drive::out_of_ground(s.pos, true); // BUG-0513: 3-15 m under this game's ground
@@ -272,7 +285,14 @@ static void creature_drive(void* p, const net::PlayerState& s_in, drive::State& 
         return;
     }
     drive::path_update(ds, s.pos, now);
-    if (g_puppet_path_fix && drive::speed(s.vel) <= 0.3f)
+    // BUG-0408: the partner stopped (its own speed fell to 0.3 m/s or less after a walk): held where it stops for
+    // kStopHold s, not walked on with the path's velocity (that walk's goal ahead slid it 0.3-0.9 m past the stop)
+    const float own_sp = drive::speed(s.vel);
+    if (g_puppet_stop_fix && ds.kinematic && own_sp <= 0.3f && ds.tgt_sp > 0.3f)
+        ds.stop_until = now + kStopHold;
+    ds.tgt_sp = own_sp;
+    const bool holding = g_puppet_stop_fix && now < ds.stop_until && own_sp <= 0.3f;
+    if (g_puppet_path_fix && drive::speed(s.vel) <= 0.3f && !holding)
         s.vel = drive::path_velocity(ds);
     float sp = drive::speed(s.vel);
     bool walk = g_puppet_walk_fix && game::in_creature_stage() && sp > 0.3f && net::dist(game::position(p), s.pos) < 8.f;
@@ -312,12 +332,30 @@ static void creature_drive(void* p, const net::PlayerState& s_in, drive::State& 
         // it stands again: no walk to the goal ahead (a MoveTo to where it stands, not StopMovement: with
         // the placing by SetPosition, tried first, the stop put it back up to 3 m), the driving takes over
         game::air_hold(p, false);
+        if (ds.kinematic && g_puppet_stop_fix && ds.stop_until < now)
+            ds.stop_until = now + kStopHold; // BUG-0408: the walk ends here
         drive::walk_end(p, s.pos, ds, now);
-        // a partner's creature: lunges and charges move it faster than a puppet can walk, and attack
-        // animations undo the nudges (~10-20 % of them in fights): it trailed by 5-8 m after a fight
-        // move (play_creature.py 2026-10-23); snap at 4 m instead of 8
-        drive::step(p, s.pos, s.rot, s.vel, ds, now, 0, true, 4.f);
+        if (now < ds.stop_until && net::dist(game::position(p), s.pos) < kStopNear) {
+            // BUG-0408: onto where the partner stopped, not where the game's walk slides; at most kStopSpeed m/s (put
+            // there at once, the puppet 0.5-1 m behind at the stop made a step)
+            net::Vec3 cur = game::position(p), to = s.pos;
+            float e = net::dist(cur, to), mx = kStopSpeed * (float)std::min(0.1, std::max(1.0 / 120, now - ds.last_step));
+            if (e > mx)
+                to = {cur.x + (to.x - cur.x) * mx / e, cur.y + (to.y - cur.y) * mx / e, cur.z + (to.z - cur.z) * mx / e};
+            game::place(p, to, s.rot);
+            *(net::Vec3*)((uint8_t*)p + game::kVelOff) = net::Vec3{};
+            ds.stop_holds++;
+            ds.last_step = now;
+            ds.track = drive::Track{};
+        } else {
+            // a partner's creature: lunges and charges move it faster than a puppet can walk, and attack
+            // animations undo the nudges (~10-20 % of them in fights): it trailed by 5-8 m after a fight
+            // move (play_creature.py 2026-10-23); snap at 4 m instead of 8
+            drive::step(p, s.pos, s.rot, s.vel, ds, now, 0, true, 4.f);
+        }
     }
+    if ((walk && own_sp > 0.3f) || air)
+        ds.stop_until = 0;
     if (game::herd_of(p) != game::avatar_herd()) {
         game::herd_quiet(game::herd_of(p)); // (the game may enable a herd again)
         game::herd_home(game::herd_of(p), game::position(p));
@@ -465,6 +503,8 @@ static void space_fill(void* u, net::PlayerState& st)
 
 bool ufo_ident_fix = true;
 COOP_FIX("drive.nudge_dt", "BUG-0175", drive::g_nudge_dt_fix, "creature, tribe: a mirror's pull to its place is per second, not per frame (low frame rates trailed more)");
+COOP_FIX("drive.lead", "BUG-0425", net::g_lead_fix, "creature, tribe, civ: the host's animals, tribe members and vehicles are shown where the host has them now, not 0.2 s behind");
+COOP_FIX("drive.lead_smooth", "BUG-0619", net::g_lead_smooth_fix, "tribe, creature: a remote body's lead target goes on smoothly after a late state (Tribe members jumped ~1 m per frame over a jittery network)");
 COOP_FIX("drive.sender_agl", "BUG-0425", drive::g_sender_agl_fix, "creature, tribe: a partner or animal off the ground is drawn at its height over the sender's ground, over this game's ground");
 COOP_FIX("drive.own_height", "BUG-0329", drive::g_own_height_fix, "tribe: a member's or animal's mirror is driven at its own ground height, not the host's absolute one");
 COOP_FIX("fleet.type", "BUG-0111", ufo_ident_fix, "space: only our own puppets count as puppets, not any UfoType 6 ship (coop.fleet typefix)");

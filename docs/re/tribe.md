@@ -1922,6 +1922,30 @@ fixture to Tribe, as coop_tribe_snapshot.py).
   (0x1469174): terrain stamps that placed objects apply and a list of stamps to remove, saved with the planet; not
   followed (BUG-0332 stays open).
 
+## Members and animals shown where the host has them now (2026-11-06, fix/w45-remote-bodies)
+<a id="tribe-remote-lead"></a>
+
+The guest's mirrors of the player tribe's members (tribe.mirror_time, 0.2 s delay) and the animals' proxies (0.15 s)
+were 0.17-0.32 s behind the host's bodies, p90 2.04 m (members) and 1.17 m (animals) while they walk; with
+`drive.lead` 0.64 m and 0.37 m. Details: docs/re/creature.md#creature-remote-lead (BUG-0410, BUG-0425).
+
+## The arrival's chief placing teleported walking chiefs (2026-11-06, fix/w45-remote-bodies-2)
+<a id="tribe-place-chiefs-walking"></a>
+
+BUG-0610. CORRECTION (2026-11-06, fix/w45-remote-bodies-2): the ticket said "the host's own game put its member 21 m
+away"; it was the mod's own `place_chiefs` (tribe.cpp, `tribe.place_chiefs`, BUG-0340), not the game.
+* ✔ (observed) Every one-frame jump of a walking member on the host in M1's 13 body_trail_tribe tracks (9-22 m, always
+  t2, the guest's chief) fell within ~1 s of the host's log line "tribe: Bob's chief stood next to another one at the
+  arrival: put on its own spot round the village"; one line and one jump per run. The guest's copy followed 0.25 s
+  later (the next state). No game-side teleport of a walking citizen was found (41 indirect vt+0x44 calls in
+  0xC00000-0xDB0000 do not resolve to the creature Teleport 0xC0C040).
+* ✔ `place_chiefs` looked at every chief for 60 s after an arrival (every 2 s) and teleported one closer to another chief
+  than their radii + 1 m, with no speed check (spread_chiefs has one): a chief walking past the host's chief on its
+  player's order, or one that walked there and stopped (13.8 m, lab 20261106-041542 with the first fix that only left
+  walking chiefs alone), was put on its ring spot.
+* Fix `tribe.place_still`: a chief is placed only while it stands AND has not moved more than 1.5 m since the first
+  look of this arrival's window (a chief stacked at the arrival stands where it came in). The log line carries the
+  game's time (`t <H->time_seconds()>`, the clock of `coop.bodyrec`).
 ## Food bundles of the host on every game (2026-11-06, fix/w45-world-objects)
 <a id="tribe-host-bundles"></a>
 
@@ -2003,6 +2027,53 @@ in Ghidra / objdump. ✔ = observed, ~ = read in the code but not seen running, 
 * BUG-0608 (a relayed world effect at the sender's absolute position) came only from the two grounds differing; with
   one ground on every game the absolute position is on the receiver's ground too.
 
+## A member mirror's lead target without jumps (2026-11-06, fix/w45-remote-bodies-2)
+<a id="tribe-lead-smooth"></a>
+
+BUG-0619, `coop.fix drive.lead_smooth` (net/interp.h SnapshotBuffer::smooth and the latency rule, tribe.cpp
+mirror_target / mirror_drive, driver.h WalkPlace::lead_speed). Measured on tribe_walk_mobile (both games at 30 fps,
+netem mobile: 120 ms one-way, +-60 ms jitter, 3 % loss) from the per-frame track JSON (out/laneN/track/tribe_walk_*.json:
+drawn position `d`, aim `tgt`, aim speed `rv`).
+
+* ✔ observed: with drive.lead (docs/re/tribe.md#tribe-remote-lead) every "jump" of a member mirror (0.88-0.97 m in
+  a 32 ms frame, over the test's 3 x 9 m/s x dt) comes 1-3 frames after the lead target itself jumped 2.7-4.8 m in one
+  frame at the start of a walk (target steps: 0.0, then 2.7-4.8 m, then 0.29 m = 9 m/s), 12 of 12 decomposed jumps
+  (lab 20261106-130123, -064239): the first walking state arrives a latency + jitter late and the lead moves it on by
+  its velocity x (its age + the one-way latency), up to 0.45 s x 9 m/s. The target is steady in the jump frames; the
+  jump is catch_prop's catch-up (from where the game's walk had put the body) on top of the walk.
+* ✔ observed: what the player sees in a frame is the placing's step from where the game's walk had the body plus
+  the game's walk of the NEXT frame. A bound on the placing from the last placing (M2's v1; here (speed + 3) x dt)
+  still drew 0.9-1.3 m frames when the walk's speed rose that frame (20261106-145657, -145700). Held instead to
+  (2 x lead speed + 3 - walk speed) x dt from the walked position: no jump in 24 of 24 views (20261106-151828,
+  -151831).
+* ✔ observed: a mirror walked at its target's closing speed (18-21 m/s) does not reach it (fell 0.5-3 m behind and
+  closed in ~1 m frames, 20261106-141403, -142519).
+* ✔ observed: with the jumps gone a smoothed lead still fails the stop-and-go check (1-5 m/s frames whose drawn step
+  is off the target's by more than half + 1 m/s: 11-22 %, limit 10 %) in about half the runs over the mobile network,
+  where 0.7.8 passes at the same time (20261106-154457 0 of 3 vs SPORE_FIX_OFF=drive.lead -154500 3 of 3, lanes
+  swapped -155349 / -155352 the same): the lead moves each state on by 0.2-0.3 s there, so every change of speed between
+  two states moves the target (speeding up: the target runs v + a x L), and whatever the closing (exponential 0.1-0.15
+  s, at most 1-1.25 x the speed + 3 m/s, eased 60 m/s2, the target's velocity blended over 0.1 s, closing only while
+  over 5 m/s, interpolated while under 5 m/s) the mirror lags and surges in those frames.
+* ✔ observed: the arrival lateness of the states does not tell a mobile link from a local one at the lab's load (6-15
+  on 6 cores): median 51-62 ms mobile vs 39-51 ms local, IQR 45-103 vs 34-106 ms (the guest's own frame times dominate
+  it; 20261106-164638, -165647, -170617). The one-way latency (the session's half round trip, median of 64 states) does:
+  mobile 123-149 ms, the player network and a local link under 100 ms (20261106-171543, -171546).
+* ✔ the fix, Tribe member mirrors only: (1) over a one-way latency over 100 ms (until under 85 ms) no lead:
+  interpolated and driven as 0.7.8 (smooth, ~0.2 s + latency late); (2) under it M1's lead as merged (raw, catch_prop);
+  (3) a switch between the two goes through a decaying offset (closes at d / 0.12 s, at most the speed + 3 m/s; the
+  mirror walks at the target's velocity eased up at 40 m/s2, at most 3 m/s over the lead; the placing's step held to
+  (2 x lead speed + 3 - walk speed) x dt). Smoothing every lead step instead (no jumps) trailed more over the player
+  network (body_trail_tribe_player members p90 1.47-1.59 m and 1.1-1.8 s over 2 m, M1 1.14-1.27 m; 20261106-172428 /
+  -172431, -184547 / -184550). Final runs: tribe_walk_mobile 4 of 4, body_trail_tribe members p90 0.56-0.59 m,
+  body_trail_tribe_player 1.05-1.37 m, tribe_walk 2 of 2 (20261106-185808, -185811).
+* ~ over the player network (45 ms, spikes of +250 ms) M1's lead keeps its start steps when a walk starts in a spike
+  (3.6-3.8 m, then 0.87-0.95 m frames: tribe_walk_player 20261106-185808); smoothing them (over 1.5 m) made that test
+  stop-and-go and body_trail_tribe_player trail (-191334, -191337): not solved here.
+* ~ NPC proxies (npc.cpp, the other SnapshotBuffer::lead user) keep M1's lead and catch_prop (smooth_max 0): no test
+  showed jumps there; not measured over the mobile network.
+* ~ under the lab load of the day (6-20 on 6 cores) body_trail_* fail for NPC animals too, which no part of this
+  touches (p90 1.0-1.8 m against M1's quiet 0.37 m): judge those only A/B under one load.
 ## The galaxy menu intro in a stage leaves the host's view stuck (2026-11-06, fix/w45-int3)
 <a id="tribe-intro-camera"></a>
 

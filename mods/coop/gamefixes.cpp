@@ -393,6 +393,7 @@ static void __fastcall phys_update_guard(void* mgr, void*, uint32_t dt)
         }
     }
     g_phys_orig(mgr, dt);
+    game::after_physics(); // BUG-0434 (creature.culled_ground)
 }
 
 std::string arm_physics_orphan()

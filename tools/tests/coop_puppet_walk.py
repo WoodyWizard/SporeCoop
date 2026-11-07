@@ -25,6 +25,8 @@ The drawn position is the puppet's position before the mod's frame (the mod runs
   PUPPET_WALK_CMDS="cmd;cmd": console commands on both games before the walks (experiments)
   (SPORE_FIX_OFF=creature.puppet_walk must FAIL)"""
 import argparse
+
+import body_trail  # noqa: E402
 import math
 import random
 import re
@@ -77,7 +79,8 @@ def dump(con):
                          'tgt': tuple(map(float, f[10:13])), 'gv': float(f[13]), 'rv': float(f[14]),
                          'anim': f[15], 'gait': int(f[16]), 'gait2': int(f[17]), 'moving': int(f[18]),
                          'ss': int(f[19]), 'vis': int(f[20]), 'sx': float(f[21]), 'sy': float(f[22]),
-                         'ppm': float(f[28]) if len(f) > 28 else None})
+                         'ppm': float(f[28]) if len(f) > 28 else None,
+                         'f90': int(f[29]) if len(f) > 30 else None, 'lod': int(f[30]) if len(f) > 30 else None})
     return rows
 
 
@@ -285,6 +288,8 @@ def windows(pup, top):
     return win, hitch, tj, legacy
 
 
+BODY_STOPS = []  # (slide, key, t, e0) of every direction (bodyrec)
+BODY_PAST = 0.3  # m (BUG-0408: 0.50 / 0.88 m before creature.puppet_stop, lab 20261106-053105)
 STOP_MOVE, STOP_MOVES = 0.15, 0.1  # BUG-0408 (--stop-walk): m slid on after a stop, share of the stops
 STOP_SLIDE = 0.3  # m: a puppet drawn this far from where the walker stopped in the second after the stop slid past it
 
@@ -486,6 +491,7 @@ def direction(walker, observer, wname, oname, rng, secs, ck, stand=0, jumps=0.0,
     time.sleep(2.0)
     for c in (walker, observer):
         c.call('coop.track start')
+        body_trail.record(c, True)  # BUG-0408: both games' own positions on one clock
     time.sleep(0.5)
     log = []
     if MOUND:  # BUG-0435: the walker first stands on the lower part of the nest mound, then walks from there
@@ -520,7 +526,23 @@ def direction(walker, observer, wname, oname, rng, secs, ck, stand=0, jumps=0.0,
     shot(observer, f'puppet_walk_{oname}_sees_{wname}')
     for c in (walker, observer):
         c.call('coop.track stop')
+        body_trail.record(c, False)
     obs, wal = dump(observer), dump(walker)
+    # BUG-0408 / BUG-0425: the observer's puppet against the walker's own creature AT THE SAME MOMENT (coop.bodyrec)
+    bw, bo = body_trail.dump(walker), body_trail.dump(observer)
+    bres = body_trail.analyse(bw, bo, kinds='p')
+    for line in body_trail.summary(bres, min((x[0] for x in bw), default=0)):
+        print(f'  {oname} sees {wname} (bodyrec): ' + line, flush=True)
+    sl = body_trail.stop_slides(bw, bo)
+    print(f'  {oname} sees {wname} (bodyrec): {len(sl)} stops, past the stop p50 {body_trail.pct([x[0] for x in sl], .5):.2f} '
+          f'p90 {body_trail.pct([x[0] for x in sl], .9):.2f} max {max([x[0] for x in sl], default=0):.2f} m; '
+          + ', '.join(f'{d:.2f} m at {t - min(x[0] for x in bw):.1f} s' for d, _, t, _ in sl[:4]), flush=True)
+    BODY_STOPS.extend(sl)
+    if STOP_WALK and sl:
+        # BUG-0408 on both games' own positions: the puppet never goes past where the walker's own creature stopped
+        past = [x for x in sl if x[0] > BODY_PAST]
+        ck(not past, f'{oname} sees {wname}: the puppet does not go past where {wname}\'s own creature stopped (over '
+           f'{BODY_PAST} m after {len(past)} of {len(sl)} stops, coop.bodyrec)')
     path = os.path.join(lane.out_dir('track'), f'puppet_walk_{oname}_sees_{wname}_{time.strftime("%Y%m%d-%H%M%S")}.json')
     with open(path, 'w') as f:
         json.dump({'observer': obs, 'walker': wal}, f)
@@ -546,9 +568,13 @@ def direction(walker, observer, wname, oname, rng, secs, ck, stand=0, jumps=0.0,
           f'slid on after the stop (drawn way less the path\'s) p50 {pct(sl, 0.5):.2f} p90 {pct(sl, 0.9):.2f} max '
           f'{max(sl, default=0):.2f} m, over {STOP_MOVE} m in {sum(1 for x in sl if x > STOP_MOVE)}', flush=True)
     if STOP_WALK:  # BUG-0408
-        ck(len(st) >= 8 and sum(1 for x in sl if x > STOP_MOVE) <= STOP_MOVES * len(st),
-           f'{r["label"]}: the puppet stops where the walker stopped (slid on over {STOP_MOVE} m after '
-           f'{sum(1 for x in sl if x > STOP_MOVE)} of {len(st)} stops <= {STOP_MOVES:.0%})')
+        # (2026-11-06) the slide is judged on both games' own positions (coop.bodyrec, direction(): past where the
+        # walker's own creature stopped). This measure compares the drawn way with the TARGET's after the target stood:
+        # a puppet 0.16 s (0.6 m) behind that walks up to where the partner stopped counted as sliding (13 of 14 stops
+        # with creature.puppet_stop's 4 m/s approach, lab 20261106-081748, while bodyrec showed 0.09 m at most past the
+        # stop); it is printed, not judged
+        ck(len(st) >= 8, f'{r["label"]}: enough stops to judge ({len(st)} >= 8; slid on over {STOP_MOVE} m after the '
+           f'target stood: {sum(1 for x in sl if x > STOP_MOVE)}, not judged)')
     print(f'    walk gait (animation gait state > 0) in {r["gait"]:.0%} of the frames, in {r["near_gait"]:.0%} of the '
           f'{r["near"]} on the observer\'s screen; the walker\'s own avatar while it moves: '
           f'{r["own_gait"]:.0%}', flush=True)

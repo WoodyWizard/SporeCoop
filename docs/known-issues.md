@@ -1356,6 +1356,8 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   pushed it back), then moved ~1 m per frame for three frames to catch up. Cause not found (an obstacle
   on the guest is the guess).
 * Reproduce: `tools/lab.py run tribe_walk_mobile --repeat 5 --retry 0`, look for "no jump" failures.
+* Seen again (2026-11-06, fix/w45-remote-bodies-2): the detector's trail rows (BUG-0609) caught one member mirror
+  over 2 m off for 2.34 s in play_tribe (out/lab/20261106-071756); what holds it is still not found.
 * Ticket: BUG-0386
 ## Creature: after an editor a guest asks the host for its own previous creature and gets nothing (2026-11-01, player report)
 <a id="issue-own-old-species"></a>
@@ -1491,7 +1493,8 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Seen: play_tribe, citizens on the guest p90 1.89 / 1.98 m from the host's (limit 1.5 m) in both runs;
   animals 1.0 m.
 * Reproduce: `SPORE_LANE=N python3 tools/tests/play_tribe.py --minutes 10 --seed 789470738`.
-* Ticket: BUG-0410
+* Ticket: BUG-0410 (fixed on fix/w45-remote-bodies, unreleased: drive.lead, the 0.2 s mirror delay was the trail;
+  docs/re/tribe.md#tribe-remote-lead)
 
 ## Creature: a guest that left, or rejoins while the host edits, has no creatures (2026-11-01, feat/w33-tests-session)
 <a id="known-empty-planet-after-leave"></a>
@@ -1599,6 +1602,9 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * What happens: after the host hits an animal, the guest's game moves its copy 3-4 m in one frame (or throws it at
   8-11 m/s) against the placing; it stands 4.8 m off for 1.1 s or is put back 2.4-4 m in one frame.
 * Reproduce: npc_walk's flee phase (`coop.npc hosthit`), a few runs in 20.
+* Not reproduced (2026-11-06, fix/w45-remote-bodies-2): the guest's game never throws a living proxy (locomotion mode
+  column of coop.npctrack); after a push the copy is up to ~4 m off for under 0.2 s (the host's throw seen one state
+  period late), never held (body_trail_hits, 13 runs; docs/re/creature.md#creature-hit-throw).
 * Ticket: BUG-0409
 
 ## Creature: the partner's creature slides past a stop (2026-11-01, fix/w34-walk-stable)
@@ -1610,6 +1616,9 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Not reproduced again (2026-11-04, fix/w41-puppet-look): 21 stops of `coop_puppet_walk.py --stop-walk` on the slope
   (guest 30 fps, `player` network), 10 of them abrupt (`coop.abilities halt`): none slid on more than 0.05 m with the
   0.7.4 driving, so the hold after a stop (creature.puppet_stop, tried) was not kept.
+* FIXED (2026-11-06, fix/w45-remote-bodies-2, unreleased): seen again on both games' own positions (puppet_stops,
+  0.50 / 0.88 m past the stop, lab 20261106-053105; FAIL 20261106-083248 off, PASS 20261106-083011); `creature.puppet_stop` holds the puppet where the partner stopped
+  from the moment its own speed falls (see BUG-0408).
 * Ticket: BUG-0408
 * Fixed (2026-11-01, fix/w33-unlocks): the party shares its collected parts (`parts.shared`, test
   `parts_shared`).
@@ -1663,6 +1672,8 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   coop_puppet_fight.py prints these steps as `entry`.
 * Known: the game puts every creature of ours outside the view on the plain terrain; writes at the mod's frame
   cannot keep it up (docs/re/creature.md#creature-out-of-view-ground).
+* FIXED (2026-11-06, fix/w45-remote-bodies-2, unreleased): `creature.culled_ground` lifts the puppet back after the
+  physics update (puppet_mound_view: 0 low frames, 200 with it off; docs/re/creature.md#creature-culled-ground-fix).
 * Ticket: BUG-0434
 
 ## Creature: on the lower part of a nest mound the partner's creature stands 0.4 m in the ground (2026-11-01, fix/w34-ability-pop)
@@ -1694,6 +1705,7 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Reproduce: `tools/lab.py run npc_walk_tribe --repeat 3`: "no jump of a moving proxy" fails in about 2 of 3 runs
   on lane 7 (also with main's own test file).
 * Not checked: whether the host's states arrive bunched (late) then, or the walk driving.
+* Not reproduced (2026-11-06, fix/w45-remote-bodies-2): 8 of 8 npc_walk_tribe runs passed on 0.7.9 (see BUG-0445).
 * Ticket: BUG-0445
 ## Civ: the mirror vehicles (and other objects the mod creates on a guest) go into the guest's save (2026-11-02, fix/w39-content-all)
 <a id="issue-civ-mirrors-in-save"></a>
@@ -2038,6 +2050,17 @@ Player reports 2026-11-04 (0.7.5, Discord bug-reports; not analysed yet):
 - BUG-0608: Tribe / Creature: a relayed world effect (a hit impact of BUG-0603) is made at the sender's absolute
   position: on a guest whose village ground is 5-6 m off the host's (BUG-0332, campaign planets only) it would be
   under or over the copies' feet (inferred, not seen; `CAMPAIGN_GROUND=1 tools/lab.py run campaign_ct` shows the
+  ground difference when it happens)
+
+## A remote body's error at the start of a walk over a bad network (2026-11-06, fix/w45-remote-bodies)
+<a id="known-walk-start-latency"></a>
+
+* Seen: body_trail_tribe_player (SPORE_NET=player): with drive.lead the guest's copies are within 0.2-0.8 m of the
+  host's bodies once they walk, but 1.9-2.3 m (p90) in the first 0.75 s of a Tribe member's walk: the guest knows a
+  start one latency (and a spike) late. What is left is the latency itself.
+* Reproduce: `tools/lab.py run body_trail_tribe_player`; per-time analysis of the track JSON it writes
+  (docs/re/creature.md#creature-remote-lead).
+* Tickets: BUG-0425 (fixed part), BUG-0612 (the class's other parts)
   ground difference when it happens) (fixed on fix/w45-village-ground, unreleased: one ground for everybody,
   tribe.host_reload of BUG-0332)
 - BUG-0617: Tribe / Civ: food a tribe member carries lies 1-3.5 m behind on the guest while the member walks, a guest
@@ -2087,5 +2110,7 @@ Each line: what the players saw, what the logs show; reproduce and details in th
 - Civ: the guest sees the host's ground vehicles as creature-like monsters (BUG-0647).
 - Civ: the guest's military vehicles cannot shoot an enemy city hall nor capture it (BUG-0648).
 - Civ: the guest does not see the host's name at the host's camera (BUG-0649).
+- Tribe (unreleased drive.lead): over a network with latency spikes a member mirror can step ~0.9 m per frame for
+  2-3 frames when a walk starts in a spike (tribe_walk_player, 2 of 4 runs; BUG-0650).
 - Also seen on 0.7.8, fixed unreleased in 0.7.9: the guest does not see the drama UFO (BUG-0558), city buildings
   rebuilt again and again after captures (BUG-0602).

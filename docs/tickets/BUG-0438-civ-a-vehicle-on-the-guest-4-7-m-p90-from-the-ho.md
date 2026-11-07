@@ -1,20 +1,20 @@
 ---
 id: BUG-0438
 title: civ: a vehicle on the guest 4-7 m (p90) from the host's under loss bursts (sync_burst, sync_fps15burst)
-status: open
+status: fixed
 kind: desync
 stage: Civ
 reported: 2026-11-01
 source: players suite, lab 20261101-160125 (feat/w33-tests-session)
 role: guest
 versions: main a05d1f6
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w45-remote-bodies
+commits: a71e319b, 391562e1
+tests: body_trail_civ, body_trail_civ_loss, sync_civ_loss
 signature:
-docs:
-related:
+docs: docs/re/creature.md#creature-remote-lead
+related: BUG-0425, BUG-0186
 ---
 
 ## Report
@@ -30,13 +30,22 @@ How to reproduce: `SPORE_LANE=N SPORE_NET=burst python3 tools/tests/coop_sync.py
 ## Root cause
 Not analysed. Inferred: during a burst the mirror extrapolates the vehicle (civ.extrap, civ.vel_cap) from
 its last state; a driving vehicle that turns or stops meanwhile is several metres off until the next state.
+Observed (2026-11-06, fix/w45-remote-bodies, coop_body_trail.py --stage civ: both games' own positions at the same
+moment): the mirror is moved on with its estimated velocity at most kVehAhead 0.15 s past its last state (civ.extrap,
+BUG-0186). A state's age is the send interval (0.1-0.13 s at 30 fps) plus the latency and a frame, so whenever states
+come late (a loss burst, a loaded host) the mirror stops at 0.15 s and falls behind by the rest: lag p50 0.09-0.22 s,
+p90 0.22-0.49 s, the vehicle p90 2.8-5.5 m behind at 15-25 m/s (labs 20261106-021152, 20261106-031151). The velocity
+estimate after a turn (this ticket's inference) is a smaller part: with the longer limit the p90 is 1.8 m.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+drive.lead (BUG-0425): a mirrored vehicle is moved on to the host's now as every remote body, up to kVehLead 0.3 s
+past its state (longer is a host hitch: BUG-0186 stays), by the measured one-way latency (net::g_one_way).
+`coop.fix drive.lead off`: 0.15 s and 0.03 s as before.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+FAIL (SPORE_FIX_OFF=drive.lead) out/lab/20261106-031151: body_trail_civ_loss p90 5.45 m, 2.35 s over 2 m; body_trail_civ
+p90 6.10 m. PASS out/lab/20261106-032341: body_trail_civ_loss p90 1.86 m (lag p90 0.17 s), body_trail_civ 1.82 m;
+civ_mirror_place (BUG-0186) passes there too.
 
 ## History
 - 2026-11-01: opened.
@@ -53,4 +62,4 @@ its last state; a driving vehicle that turns or stops meanwhile is several metre
   inside a burst, and with n=1 and 16 samples one such moment decides the p90. Next: send the vehicle's own
   velocity (or its order target) in the state instead of estimating it; and sample more vehicles / rounds
   in coop_sync for Civ so one burst does not decide a run. Status stays open.
-
+- 2026-11-06 (fix/w45-remote-bodies, M1): root cause observed (the 0.15 s extrapolation limit), fixed by drive.lead.

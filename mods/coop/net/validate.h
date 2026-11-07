@@ -56,6 +56,56 @@ inline Chunk chunk_add(ChunkRx& rx, uint32_t id, uint32_t total, uint32_t off, c
 // a chunk number that can belong to the cycle: chunks > 0 and chunk < chunks
 inline bool cycle_chunk_ok(uint8_t chunk, uint8_t chunks) { return chunks > 0 && chunk < chunks; }
 
+// BUG-0612 (part: older cycles, net.cycle_order): the cycle a chunk belongs to against the cycle being received.
+// A chunk of an OLDER cycle that comes late (a loss burst, reordering) used to start that cycle again: the newer
+// cycle's chunks were forgotten (it never completed, so nothing was cleaned up) and the older states overwrote the
+// newer ones. Cycles are u16 counters that wrap: "older" is within half the range behind.
+enum class Cycle { Same, Newer, Older };
+inline Cycle cycle_order(uint16_t cycle, uint16_t current, bool have_current)
+{
+    if (!have_current)
+        return Cycle::Newer;
+    if (cycle == current)
+        return Cycle::Same;
+    return (uint16_t)(cycle - current) < 0x8000 ? Cycle::Newer : Cycle::Older;
+}
+
+// one tracker for the chunked snapshots of Tribe and Civ: which chunks of the current cycle came
+struct CycleTracker {
+    uint16_t cur = 0;
+    bool have = false;
+    uint64_t got[4] = {0, 0, 0, 0}; // chunk bits 0..255
+    uint32_t older = 0;             // chunks of an older cycle dropped
+    // a chunk of `cycle` came: false = drop it (an older cycle); a newer cycle starts empty (`started` true)
+    bool begin(uint16_t cycle, bool keep_order, bool* started = nullptr)
+    {
+        Cycle o = cycle_order(cycle, cur, have);
+        if (o == Cycle::Older && keep_order) {
+            older++;
+            return false;
+        }
+        if (started)
+            *started = o != Cycle::Same;
+        if (o != Cycle::Same) {
+            cur = cycle;
+            have = true;
+            got[0] = got[1] = got[2] = got[3] = 0;
+        }
+        return true;
+    }
+    void add(uint8_t chunk) { got[chunk >> 6] |= 1ull << (chunk & 63); }
+    unsigned count() const
+    {
+        unsigned n = 0;
+        for (uint64_t g : got)
+            for (uint64_t x = g; x; x &= x - 1)
+                n++;
+        return n;
+    }
+    bool complete(uint8_t chunks) const { return count() >= chunks; }
+    void reset() { *this = CycleTracker{}; }
+};
+
 // ---- MSG_SPACE: u8 kind, u8 origin, payload (spacecoop.cpp, space_ext.h) ----
 // kinds only the host sends: contracts K_STATE 20 / K_RESULT 22, diplomacy K_SNAP 32, rivalry
 // K_STATE 50 / K_EVENT 52 / K_SET 57

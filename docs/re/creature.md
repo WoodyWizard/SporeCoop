@@ -2949,6 +2949,107 @@ BUG-0465 (not fixed). GOG 2024, lab lane 5, creature fixture; follows #creature-
 * Not done: showing it on the partner's game needs that actor (the cinematic's model and animation) at the puppet
   without the cinematic's camera; the cinematic's data (its actors) was not read.
 
+## Remote bodies shown where the host has them now (2026-11-06, fix/w45-remote-bodies)
+<a id="creature-remote-lead"></a>
+
+BUG-0425 (M1), the trail part. Measured with both games' own positions at the same moment (`coop.bodyrec`: every
+synchronized body as drawn at the start of the mod's frame with QueryPerformanceCounter time, which is one clock
+for every Wine game on one PC; tools/tests/body_trail.py, docs/06-testing.md#testing-body-trail):
+
+* ✔ (observed) Before the fix every host body on a guest was behind the host's body by a time, not by a place:
+  distance over the host's speed p50 0.16-0.17 s, p90 0.23 s on a clean network (Creature NPC proxies, Tribe
+  animals), 0.21-0.32 s for Tribe members (their interpolation delay is 0.2 s), 0.207 s for NPCs over the player
+  network (45 ms one way): the interpolation delay (`net::SnapshotBuffer::delay`, 0.15 s NPCs, 0.2 s Tribe
+  members) plus the one-way latency. At 4-8 m/s that is 0.6-1.7 m (p90 0.78 m Creature, 1.17 m Tribe animals, 2.04 m
+  Tribe members, max 2.9-4.0 m; out/lab/20261106-013022). The guest's interpolated target was as far from the host's
+  body as the drawn copy (npc_walk tracks, target p50 0.74 vs drawn 0.77 m): the game's locomotion was not the cause
+  of this part; the copy followed its target, the target was late.
+* ✔ (observed) With `drive.lead` (net/interp.h `SnapshotBuffer::lead`, `g_lead_fix`): the newest state moved on by its
+  velocity for its age on the sender's clock plus half the round trip (`net::g_one_way`, set each frame from the
+  session's rtt), at most 0.6 s; lag p50 0.013-0.019 s, distance p90 0.12 m (Creature), 0.37 m (Tribe animals),
+  0.64 m (Tribe members) (out/lab/20261106-012156).
+* The velocity: the state's own while it moves, capped at 1.25x its path between the two newest states + 0.3 m/s
+  (a herd animal pushed by its mates reports a walk it does not make, BUG-0361), the path's for a body that moves
+  without a speed of its own (BUG-0394), none once it reported a stop or after a jump of the path (over 15 m/s).
+* ✔ (observed) Over the player network (netem `player`: 45 ms, +250 ms spikes, 30 % loss bursts) the rest of the
+  error is at the start of a walk: the host's body starts, the guest knows it a latency (and a spike) later and its
+  lead target is then 1-3 m ahead. Tribe members' error by time since the host's member started to walk: p90 1.9 m in
+  the first 0.25 s, 2.9-3.1 m at 0.25-0.75 s, 0.7 m after 2 s (closed at walk_place's catch_up 3 m/s). With
+  `WalkPlace::catch_prop` (the error closed in ~0.25 s, at most at twice the remote's speed + 3 m/s) 2.3 / 1.7 m at
+  0.25-0.75 s. What is left is the latency itself (a start cannot be shown before it is known).
+* kMaxLead: 0.35 s and 0.6 s gave the same p90 over the player network (one run each); 0.6 s keeps a body moving
+  through a 250 ms spike.
+* Civ vehicles (`net::VelocityEstimate::at`) were already moved on to the present (their age + 0.03 s), but at most
+  0.15 s (civ.extrap, BUG-0186): lag p50 0.04 s, p90 0.93 m at 19 m/s on a clean idle lab (out/lab/20261106-012156),
+  but whenever states come late (loss bursts, a loaded lab) the 0.15 s ran out: lag p90 0.22-0.49 s, p90 2.8-5.5 m
+  (20261106-021152, 20261106-031151, BUG-0438). Under drive.lead the limit is kVehLead 0.3 s and the latency the
+  measured one way: p90 1.8-1.9 m, lag p90 0.15-0.17 s (20261106-032341).
+
+## A culled creature on a mound: lifted after the physics update (2026-11-06, fix/w45-remote-bodies-2)
+<a id="creature-culled-ground-fix"></a>
+
+BUG-0434 (follows docs/re/creature.md#creature-out-of-view-ground).
+* ✔ (observed, out/lab/20261106-042950 puppet_fight_player, new coop.track columns) the puppet on the nest mound was
+  drawn at 0.0 m over GetHeightAt in every frame off the observer's screen (target 0.77-1.04 m) while creature+0xF90
+  (the view's drawn flag) was 1 and +0xEAC (LOD, Creature_GetLod 0xC0C450) 2 in every row: the physics manager's
+  simple path (PhysicsManager_Update 0xB4C370: simple = F90 == 0 || LOD == 0, then only 0xB4A820, which clamps to
+  the plain terrain) is NOT what grounds it in this case. ~ superseded hypothesis of the first RE pass.
+* Static (likely): PhysicsManager_Update switches on mgr+0x20 (0: only the Havok step 0xB57D10; 1: 0xB4A820 simple
+  for every body; else the per-body loop); 0xB4A820 switches on the owner's motion type +0x1F0 and compares the body's
+  bottom with GetHeightAt and the sea level (owner +0x77 = on the plain ground); nothing in it reads a view flag. The
+  +0xB58 bit 0x800 is a fade state machine of CreatureView_Update (0xE8CB55-0xE8CC50), tested only in an ability tick.
+  ? Which object's state follows the screen: inferred, the nest mound's collision is loaded only while it is drawn
+  (the mound and the puppet leave the screen together).
+* ✔ Fix `creature.culled_ground` (game.cpp after_physics, called from gamefixes' PhysicsManager_Update hook after the
+  game's update): a puppet whose target this frame (creature_drive, after puppet_ground / puppet_mound) stands
+  > 0.3 m over GetHeightAt and that the game put within 0.1 m of it is lifted back to its target's height over the
+  ground (2754 lifts in 60 s of camera turns). puppet_mound_view: the host on the mound, the guest turning its camera
+  (200 entries into the view): 0 frames drawn low on the screen (out/lab/20261106-045947, 2 runs), 200 with the switch
+  off (out/lab/20261106-050722). The lift after the physics update holds until the frame is drawn, which the writes
+  at the mod's frame (Present) never did: the grounding is in or before the physics update.
+
+## A hit NPC's proxy on the guest: who throws it (2026-11-06, fix/w45-remote-bodies-2)
+<a id="creature-hit-throw"></a>
+
+BUG-0409. Both games' own positions (coop.bodyrec) and the locomotion mode column of coop.npctrack (`lm` = +0x2B0,
+`gr` = +0x137) in body_trail_hits (a hit every 5 s on a walking NPC, every other one with a push of 3):
+* ✔ (static, Ghidra) cCreatureBase TakeDamage 0xC1A520 (SporeCoop::CreatureBase_TakeDamage): a type-0 hit on a
+  non-epic creature sets the velocity (creature+0x288, kVelOff) to 4 x (2 x up + push), queues an impulse and sets the
+  locomotion mode +0x2B0 = 3 (thrown) until it lands (0xC05210 in cCreatureAnimal::Update, then the reset
+  0xC06660, SporeCoop::Creature_LocoReset). Other writers of 3 (likely abilities): 0xC14F70, 0xC137B0, 0xC13B90,
+  0xC184D0, 0xC18CA0, 0xC19240, 0xC1B180, 0xB57D10, 0xF234B0.
+* ✔ (observed) The guest's game does NOT throw a living proxy: lm 3 on a guest proxy only after its death (the
+  death replay's local hit `game::apply_damage(..., type 0)`; the corpse is held where the host has it anyway). The
+  ticket's inference "the guest's game applies its own knockback" is disproved for 0.7.9 (npc::damage_filter keeps
+  every hit off a proxy).
+* ✔ (observed) The host's NPC thrown by a push hit moves 13-31 m/s for 0.3-0.9 s, sometimes without mode 3 (the host's
+  lm stayed 0 in run 20261106-045011 n18 while it moved 13-27 m/s). The guest's copy trailed it 2-4.8 m (a saw tooth of
+  one state period): the lead (net::SnapshotBuffer::lead_velocity) takes a path faster than 15 m/s for a teleport and
+  goes on with no velocity, the walk caps the speed, and NPC states go out every 0.1 s (npc.cpp kStateInterval).
+* Tried and dropped (2026-11-06): `npc.host_knockback`, the host flagging a thrown NPC (`NF_THROWN`: mode 3, or its
+  speed over the last 0.1-0.2 s between 9 and 45 m/s; one frame's step was too noisy: a Tribe animal pushed by its herd
+  was flagged and then placed instead of walked and jumped, npc_walk_tribe lab 20261106-052022), sending its state
+  every frame while thrown, the guest placing it on the host's path with velocity 0 (a throw speed written into the
+  locomotion carried it 6-8 m on after the throw, lab 20261106-045947) and the lead following the path up to 45 m/s.
+  Measured over 2-3 runs each (mean distance in the first second after a push hit, max per hit p90): on 0.59-0.90 m /
+  3.6-4.0 m, off 0.94 m / 3.9 m (out/lab 20261106-050936, -053713 on; -044526, -051608, -055638 off): no clear gain,
+  so the code was removed. The rest is the host's throw (13-31 m/s) shown one state period (0.1 s, npc.cpp
+  kStateInterval) plus the latency late: up to ~4 m for under 0.2 s, never held (the longest stretch over 2 m after
+  a hit 0.58 s in 56 hits with the old code).
+
+## Creature collisions: the contact handler skips creature pairs (2026-11-06, fix/w45-remote-bodies-2)
+<a id="creature-contact-pairs"></a>
+
+BUG-0386, BUG-0440 (static, Ghidra, GOG 2024; not seen at runtime):
+* ✔ The creature stage's physics contact callback is 0xD3A450 (its only xref 0xD43A08, the stage setup; likely):
+  type 1 (one body): an egg (noun 0x2A034CD) hit with an impulse over 10 goes to SetState(4); type 2 (a pair):
+  creature vs non-creature -> 0xD3A0D0 (bumps cRocks and sort-6 ornaments), non-creature pairs -> 0xD38DD0;
+  creature vs creature (both noun 0x18EB45E) is skipped.
+* ? So what pushes a placed mirror or proxy back (a herd mate next to it: BUG-0440's audit line `place lost 281`,
+  nearest proxy 3.3 m) is Havok's own solving or the locomotion's avoidance (inferred). Not found: a per-creature
+  flag that takes one creature out of collision. Candidates: the loco force list (creature+0xC0, add 0xC44140,
+  clear 0xC441A0, its callers 0xC06660, 0xC26D70 citizen, 0xC3E210, 0xC44770, 0xCA3010 vehicle, 0xD5F730), the
+  "useGameplayPhantom" registration 0xB48870 (eggs; creatures likely have a similar phantom).
 ## Player reports of 0.7.9: bodies eaten in one game, the host's UFO on the guest (2026-11-05, fix/w45-creature-reports)
 <a id="creature-p3-reports"></a>
 

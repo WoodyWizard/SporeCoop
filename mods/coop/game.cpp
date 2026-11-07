@@ -103,6 +103,7 @@ static void air_reassert(void* c, int where);
 typedef int(SK_THISCALL* AcPlay_t)(void*, uint32_t, int);
 static AcPlay_t o_AcPlay;
 static int SK_THISCALL h_AcPlay(void* ac, uint32_t id, int a);
+
 static std::vector<void*> g_our_herds; // made by create_herd (puppets, proxies); diagnostics only
 
 // ---- registry via cCreatureAnimal::Update (thiscall, int deltaTime) ----
@@ -1626,8 +1627,117 @@ std::string destroy_deferred_status()
 
 static void* spatial(void* c) { return ptr_add<void>(c, kSpatialOff); }
 
+// BUG-0614: a pose that came from another player (a state, a snapshot) reached the game unchecked outside Cell: a NaN
+// or Inf position put the body nowhere (the game's physics and camera then work with NaN). Every write of a position
+// or orientation into a body is checked here, once for all stages. Off: 0.7.8 (written as received).
+static bool g_finite_fix = true;
+COOP_FIX("game.finite_pose", "BUG-0614", g_finite_fix, "all: a position or rotation with NaN / Inf is never written into a body");
+uint32_t g_nonfinite_drops = 0; // writes refused (coop.sync, tests)
+
+static bool finite_v(const net::Vec3& v) { return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z); }
+static bool finite_q(const net::Quat& q) { return std::isfinite(q.x) && std::isfinite(q.y) && std::isfinite(q.z) && std::isfinite(q.w); }
+static bool pose_refused(const net::Vec3* p, const net::Quat* q)
+{
+    if (!g_finite_fix || ((!p || finite_v(*p)) && (!q || finite_q(*q))))
+        return false;
+    g_nonfinite_drops++;
+    return true;
+}
+
+// BUG-0434: the game puts a creature that is off the observer's screen on the plain terrain (GetHeightAt) while it
+// stands on raised ground (a nest mound): with the camera turned away the partner's puppet on a mound was drawn
+// 0.8-1 m low in every frame off the screen and in the first frame back in view (the update before that frame's
+// drawing still grounded it; writes at the mod's frame were undone by it). Not the physics' simple path
+// (+0xF90 = 1, LOD +0xEAC = 2 in every such frame, out/lab/20261106-042950). After the physics manager's update
+// (SporeCoop::PhysicsManager_Update, hooked by gamefixes.cpp for BUG-0449) a puppet whose target stands > 0.3 m over GetHeightAt and that was put within
+// 0.1 m of it is lifted back to its target's height over the ground. Off: 0.7.8.
+static bool g_culled_ground_fix = true;
+COOP_FIX("creature.culled_ground", "BUG-0434", g_culled_ground_fix, "creature: the partner's creature on a nest mound stays on it while off the screen (no low frame when it comes into view)");
+struct MoundHold {
+    void* c;
+    net::Vec3 tgt;
+    double t;
+};
+static std::vector<MoundHold> g_mound;
+uint32_t g_mound_lifts = 0;
+
+void mound_hold(void* c, const net::Vec3& tgt)
+{
+    double now = H->time_seconds();
+    for (auto& m : g_mound)
+        if (m.c == c) {
+            m.tgt = tgt;
+            m.t = now;
+            return;
+        }
+    if (g_mound.size() < 16)
+        g_mound.push_back({c, tgt, now});
+}
+
+void after_physics() // gamefixes.cpp's hook of the physics update (BUG-0449), after the game's update
+{
+    if (!g_culled_ground_fix || g_mound.empty())
+        return;
+    double now = H->time_seconds();
+    for (size_t i = 0; i < g_mound.size();) {
+        auto& m = g_mound[i];
+        if (now - m.t > 0.5 || !creature_listed(m.c)) {
+            g_mound.erase(g_mound.begin() + i);
+            continue;
+        }
+        i++;
+        net::Vec3 p = position(m.c);
+        float gp = ground_radius(p), gt = ground_radius(m.tgt);
+        float rp = std::sqrt(p.x * p.x + p.y * p.y + p.z * p.z), rt = std::sqrt(m.tgt.x * m.tgt.x + m.tgt.y * m.tgt.y + m.tgt.z * m.tgt.z);
+        if (gp <= 1.f || gt <= 1.f || rp <= 1.f || rt - gt < 0.3f || rp - gp > 0.1f || std::sqrt((p.x - m.tgt.x) * (p.x - m.tgt.x) + (p.y - m.tgt.y) * (p.y - m.tgt.y) + (p.z - m.tgt.z) * (p.z - m.tgt.z)) > 2.5f)
+            continue;
+        float k = (gp + (rt - gt)) / rp;
+        set_position(m.c, {p.x * k, p.y * k, p.z * k});
+        g_mound_lifts++;
+    }
+}
+
+std::string objects_near(const net::Vec3& pos, float r, void* self, int max_n)
+{
+    struct U {
+        net::Vec3 p;
+        float r;
+        void* self;
+        std::vector<std::pair<float, uint32_t>> v;
+    } u{pos, r, self, {}};
+    for_each_object(
+        [](void* o, uint32_t noun, void* up) {
+            auto* u = (U*)up;
+            if (o == u->self || u->v.size() > 256)
+                return true;
+            net::Vec3 q;
+            if (!object_position(o, q))
+                return true;
+            float d = std::sqrt((q.x - u->p.x) * (q.x - u->p.x) + (q.y - u->p.y) * (q.y - u->p.y) + (q.z - u->p.z) * (q.z - u->p.z));
+            if (d <= u->r)
+                u->v.push_back({d, noun});
+            return true;
+        },
+        &u);
+    std::sort(u.v.begin(), u.v.end());
+    std::string out;
+    char b[40];
+    for (int i = 0; i < (int)u.v.size() && i < max_n; i++) {
+        snprintf(b, sizeof b, "%s%08X@%.1f", out.empty() ? "" : " ", u.v[i].second, u.v[i].first);
+        out += b;
+    }
+    return out.empty() ? "none" : out;
+}
+
+bool pose_bad(const net::Vec3& pos, const net::Quat& rot, const net::Vec3& vel)
+{
+    return pose_refused(&pos, &rot) || pose_refused(&vel, nullptr);
+}
+
 void teleport(void* c, const net::Vec3& pos, const net::Quat& rot)
 {
+    if (pose_refused(&pos, &rot))
+        return;
     Vector3 p{pos.x, pos.y, pos.z};
     Quaternion q{rot.x, rot.y, rot.z, rot.w};
     vcall<void>(spatial(c), 0x44 / 4, &p, &q);
@@ -1635,6 +1745,8 @@ void teleport(void* c, const net::Vec3& pos, const net::Quat& rot)
 
 void place(void* c, const net::Vec3& pos, const net::Quat& rot)
 {
+    if (pose_refused(&pos, &rot))
+        return;
     teleport(c, pos, rot);
     field<uint8_t>(c, 0xB5D) = 0;
 }
@@ -1686,25 +1798,31 @@ static int SK_THISCALL h_AcPlay(void* ac, uint32_t id, int a)
 std::string air_status()
 {
     char b[180];
-    snprintf(b, sizeof b, "air hold: held=%u regrounded update=%u anim=%u idle=%u bt=%u low=%u\n", (unsigned)g_air.size(),
-             g_air_regrounded[0], g_air_regrounded[1], g_air_regrounded[2], g_air_regrounded[3], g_air_regrounded[4]);
+    snprintf(b, sizeof b, "air hold: held=%u regrounded update=%u anim=%u idle=%u bt=%u low=%u nonfinite_refused=%u mound_lifts=%u\n", (unsigned)g_air.size(),
+             g_air_regrounded[0], g_air_regrounded[1], g_air_regrounded[2], g_air_regrounded[3], g_air_regrounded[4], g_nonfinite_drops, g_mound_lifts);
     return b;
 }
 
 void set_position(void* c, const net::Vec3& pos)
 {
+    if (pose_refused(&pos, nullptr))
+        return;
     Vector3 p{pos.x, pos.y, pos.z};
     vcall<void>(spatial(c), 0x38 / 4, &p);
 }
 
 void set_orientation(void* c, const net::Quat& rot)
 {
+    if (pose_refused(nullptr, &rot))
+        return;
     Quaternion q{rot.x, rot.y, rot.z, rot.w};
     vcall<void>(spatial(c), 0x3C / 4, &q);
 }
 
 void move_to(void* c, const net::Vec3& dst, float stop_dist)
 {
+    if (pose_refused(&dst, nullptr))
+        return;
     Vector3 p{dst.x, dst.y, dst.z};
     // cLocomotiveObject::MoveTo(const Vector3&, float goalStop, float acceptableStop, bool)
     vcall<void>(spatial(c), 0xE0 / 4, &p, stop_dist, stop_dist * 2.f, 0);
