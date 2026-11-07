@@ -2091,8 +2091,8 @@ static void mirror_target(GMember& g, double now, net::Vec3& pos, net::Quat& rot
         g.lead_sp = -1;
         if (g.buf.jittery() != g.jittery) { // (diagnostics: the lead switched off / on by the link's jitter)
             g.jittery = g.buf.jittery();
-            static unsigned said = 0;
-            if (said++ < 12)
+            static unsigned said = 0; // (BUG-0650: 400 lines; 12 did not cover one test run)
+            if (said++ < 400)
                 H->log(M, SK_INFO, "tribe: mirror #%u lead %s (one-way latency %.0f ms, BUG-0619)", g.id,
                        g.jittery ? "off" : "on", g.buf.jitter() * 1000.0);
         }

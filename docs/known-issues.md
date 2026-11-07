@@ -2110,7 +2110,5 @@ Each line: what the players saw, what the logs show; reproduce and details in th
 - Civ: the guest sees the host's ground vehicles as creature-like monsters (BUG-0647).
 - Civ: the guest's military vehicles cannot shoot an enemy city hall nor capture it (BUG-0648).
 - Civ: the guest does not see the host's name at the host's camera (BUG-0649).
-- Tribe (unreleased drive.lead): over a network with latency spikes a member mirror can step ~0.9 m per frame for
-  2-3 frames when a walk starts in a spike (tribe_walk_player, 2 of 4 runs; BUG-0650).
 - Also seen on 0.7.8, fixed unreleased in 0.7.9: the guest does not see the drama UFO (BUG-0558), city buildings
   rebuilt again and again after captures (BUG-0602).
