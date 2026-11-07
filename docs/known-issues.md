@@ -2222,3 +2222,14 @@ Each line: what the players saw, what the logs show; reproduce and details in th
 * Not checked: a guest that joins under another name (another player to the host).
 * Next steps: a side file on the host per Space save (as docs/11-rivals.md#rivals-guest-colonies designs for colonies).
 * Ticket: BUG-0679
+
+## Monitor: the Cell drawn invariant during a level change (2026-11-07, fix/w46-detector-scale)
+<a id="known-monitor-cell-drawn-scale"></a>
+
+* What happens: cell_levelup_view can fail the lab gate on `MONITOR-VIOLATION drawn ... (limit 17.0 m, Cell)` right
+  after a level change (1 of 4 runs, lab 20261107-143741 #1, 18.0 m).
+* Inferred: the monitor's drawn invariant compares positions of two games in two world scales while the rescale runs
+  (the class of BUG-0662 / BUG-0606); the partner line carries no scale.
+* Reproduce: `tools/lab.py run cell_levelup_view --repeat 4`.
+* Next steps: add the sender's scale to the partner line (or skip a pair whose scales differ) as worlddiff does.
+* Ticket: BUG-0681
