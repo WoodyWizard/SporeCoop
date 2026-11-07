@@ -22,6 +22,7 @@ that differs on matched objects (alive, scale, hp, model). Matching: by net id w
 (creature npc/proxy, Cell cell index), else by noun and the nearest position.
 """
 import collections
+import copy
 import math
 import os
 import re
@@ -111,7 +112,7 @@ NOUNS = {  # GameNounIDs of the Spore ModAPI (Simulator/SimulatorEnums.h); unkno
 OBJ = re.compile(r'obj ([a-z])(-?\d+) key=([0-9A-F]{8}) alive=(-?\d+) hp=(\S+) ai=(-?\d+) own=(\S*) owner=(-?\d+) '
                  r'pos=\(([-\d.e+na]+) ([-\d.e+na]+) ([-\d.e+na]+)\)(?: noun=([0-9A-F]{8}) ser=(\d+) scale=(\S+))?')
 HEAD = re.compile(r'census v1 role=(\S+) me=(\d+) mode=(.*?) modeid=([0-9A-F]+) world=([0-9A-F]+) t=([\d.]+)')
-ME = re.compile(r'me pos=\(([-\d.e+na]+) ([-\d.e+na]+) ([-\d.e+na]+)\) ok=(\d)')
+ME = re.compile(r'me pos=\(([-\d.e+na]+) ([-\d.e+na]+) ([-\d.e+na]+)\) ok=(\d)(?: wscale=(\S+))?')
 
 # compare area around the guest's own player (m) and the position tolerance of a match, per stage
 AREA = {'Cell': 40.0, 'Creature': 70.0, 'Tribe': 90.0, 'Civilization': 160.0, 'Space': 120.0}
@@ -119,6 +120,10 @@ TOL_STATIC, TOL_MOVING = 3.0, 15.0
 # BUG-0480: Cell: the host dumped before and after the guest, CELL_GAP s apart (SPORE_DETECTOR_BRACKET=0: one host dump)
 CELL_BRACKET = os.environ.get('SPORE_DETECTOR_BRACKET', '1') != '0'
 CELL_GAP = 1.5
+# BUG-0662: Cell: a level change rescales every position about the origin (WorldScaleStep, BUG-0511), on each game at
+# its own moment; the guest's positions are compared in the host's world scale (census `me ... wscale=`, the
+# sync-check's diag.cell_scale, BUG-0606). SPORE_DETECTOR_CELL_SCALE=0: raw positions (0.7.9)
+CELL_SCALE = os.environ.get('SPORE_DETECTOR_CELL_SCALE', '1') != '0'
 # BUG-0596: a guest's Creature state is read twice, CELL_GAP s apart (SPORE_DETECTOR_BRACKET=0: once)
 STATE_BRACKET = CELL_BRACKET
 # objects that belong to one game by design (per-player logic, invisible helpers): never compared
@@ -170,6 +175,7 @@ class World:
     def __init__(self, text, who=''):
         self.who, self.role, self.mode, self.modeid, self.world, self.t = who, None, None, None, None, 0.0
         self.me, self.rows, self.nouns, self.complete = None, [], {}, False
+        self.wscale = None  # Cell: the game's world scale its positions are in (BUG-0662), None when not given
         self.vts = {}  # noun -> Ghidra address of a vtable of its class
         for line in text.splitlines():
             line = line.strip()
@@ -191,6 +197,9 @@ class World:
             if m:
                 if m.group(4) == '1':
                     self.me = tuple(_f(m.group(i)) for i in (1, 2, 3))
+                if m.group(5):
+                    s = _f(m.group(5))
+                    self.wscale = s if math.isfinite(s) and s > 0 else None
                 continue
             if line.startswith('nouns'):
                 for kv in line.split()[1:]:
@@ -596,9 +605,32 @@ def _own_ship_scale(w, ufos):
     return s if math.dist(x['pos'], w.me) < 5.0 and math.isfinite(s) and s > 1e-3 else None
 
 
+def _in_scale(w, k):
+    """a copy of World w with every position times k (BUG-0662: the guest's Cell world in the host's scale)"""
+    c = copy.copy(w)
+    c.rows = [dict(x, pos=tuple(v * k for v in x['pos'])) for x in w.rows]
+    c.me = tuple(v * k for v in w.me) if w.me else w.me
+    c.wscale = w.wscale / k if w.wscale else w.wscale
+    return c
+
+
+def cell_scale_factor(host, guest):
+    """guest scale / host scale when both Cell dumps give their scale and they differ, else None"""
+    if not CELL_SCALE or host.mode != 'Cell' or guest.mode != 'Cell' or not host.wscale or not guest.wscale:
+        return None
+    k = guest.wscale / host.wscale
+    return k if abs(k - 1.0) > 1e-4 else None
+
+
 def diff(host, guest, area=None):
     out = []
     stage = host.mode or '?'
+    # BUG-0662: during a level change the two games' Cell positions are in two world scales (each game rescales at
+    # its own moment, over ~3 s): the guest's are converted into the host's (pos x scale is the same for a cell at
+    # rest through a change), so a cell 7-14 m "apart" only by the scale is no row and a real offset still is
+    k = cell_scale_factor(host, guest)
+    if k is not None:
+        guest = _in_scale(guest, k)
 
     def add(what, kind, n, text):
         out.append(Finding(sig=f'{stage}:{what}:{kind}', stage=stage, n=n, text=text))

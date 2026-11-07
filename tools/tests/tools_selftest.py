@@ -752,6 +752,21 @@ def test_worldstate():
     out = sorted(f['sig'] for f in worlddiff.diff(h, g))
     check('Space:noun_only_host:turret' not in out and 'Space:noun_only_host:default_beam_projectile' in out,
           f'Space: a turret of a planet in the host game only is level of detail, a beam is not ({out})')
+    # BUG-0662: Cell: during a level change each game's positions are in its own world scale (census `me ... wscale=`):
+    # the guest's are compared in the host's scale; a cell off by the scale alone is no row, a cell really 10 m off is
+    ch = 'census v1 role={} me={} mode=Cell modeid=01654C00 world=00000000 t=1.0\nme pos=({:.2f} {:.2f} 0.0) ok=1 wscale={}'
+    cl = 'obj l{} key=0A000001 alive=1 hp=10.0 ai=1 own={} owner=-1 pos=({:.2f} {:.2f} 0.0) noun=00000000 ser=0 scale=1.000'
+    k = 1.05  # guest scale / host scale: a guest position is the host's / k
+    h = worlddiff.World('\n'.join([ch.format('host', 0, 140.0, 70.0, 1.0), cl.format(1, 'npc', 140.0, 70.0),
+                                    cl.format(2, 'npc', 150.0, 80.0), 'end objects=2']))
+    g = worlddiff.World('\n'.join([ch.format('guest', 1, 140.0 / k, 70.0 / k, k), cl.format(1, 'proxy', 140.0 / k, 70.0 / k),
+                                    cl.format(2, 'proxy', 150.0 / k + 10.0, 80.0 / k), 'end objects=2']))
+    rows = [f['text'] for f in worlddiff.diff(h, g) if f['sig'] == 'Cell:pos:cell']
+    check(len(rows) == 1 and rows[0].startswith('cell 2:'),
+          f'Cell: positions compared in one world scale: the cell off by the scale only is no row, the one 10 m off is ({rows})')
+    g.wscale = None  # a dump without the scale (an older coop.dll): raw positions (cell 1 7 m off, cell 2 3 m)
+    rows = [f['text'] for f in worlddiff.diff(h, g) if f['sig'] == 'Cell:pos:cell']
+    check(len(rows) == 1 and rows[0].startswith('cell 1:'), f'Cell: no scale in a dump: raw positions compared ({rows})')
     # through diff(): the state rows come with the area compare, also when there is no centre
     h, g = worlddiff.World('census v1 role=host me=0 mode=Tribe modeid=01654C02 world=A3930F03 t=1.0'), \
         worlddiff.World('census v1 role=guest me=1 mode=Tribe modeid=01654C02 world=A3930F03 t=1.0')

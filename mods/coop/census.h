@@ -16,7 +16,8 @@
 //
 // `coop.census all [r]` (the divergence detector, docs/sync-architecture-plan.md, tools/tests/worlddiff.py)
 // adds, after the v1 rows:
-//   me pos=(x y z) ok=<0|1>                       the own player's position (the compare area's centre)
+//   me pos=(x y z) ok=<0|1> [wscale=<f>]          the own player's position (the compare area's centre); Cell: the
+//       game's world scale G+0x514C the positions are in (BUG-0662)
 //   obj g-1 key=... pos=(x y z) noun=<hex> ser=<n> scale=<f>   every other placed game object (cGameData
 //       with a cSpatialObject) within r m of the own player (default 250), at most 6000
 //   obj l<id> key=<model> alive= hp= ai= own=<npc|proxy|local> owner=-1 pos=(...) scale=<size>  Cell: the
@@ -72,4 +73,5 @@ std::string wstate(); // Space: `emp <pol> rel= flags=` per NPC empire with a re
 }
 namespace cellsync {
 void census_rows(std::vector<census::Row>& out); // the foreground cells (cellsync.cpp)
+float scale_now(); // the own world scale in Cell, 0 outside (cellsync.h; BUG-0662: `me ... wscale=`)
 }

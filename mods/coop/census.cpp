@@ -174,7 +174,12 @@ static int c_census(void*, int argc, const char* const* argv, SkOut* out)
     if (!buf.empty())
         SAY("%s", buf.c_str());
     if (all) {
-        SAY("me pos=(%.1f %.1f %.1f) ok=%d\n", me.x, me.y, me.z, have_me ? 1 : 0);
+        // BUG-0662: Cell: the world scale these positions are in (a level change rescales each game at its own
+        // moment; worlddiff compares in one scale)
+        if (mode == modes::kCell)
+            SAY("me pos=(%.1f %.1f %.1f) ok=%d wscale=%.6g\n", me.x, me.y, me.z, have_me ? 1 : 0, cellsync::scale_now());
+        else
+            SAY("me pos=(%.1f %.1f %.1f) ok=%d\n", me.x, me.y, me.z, have_me ? 1 : 0);
         std::string ln = "nouns";
         for (auto& [k, v] : nouns) {
             char b[48];
