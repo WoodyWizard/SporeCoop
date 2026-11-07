@@ -58,6 +58,11 @@ def main():
     ap.add_argument('--solo', action='store_true')
     ap.add_argument('--idle', action='store_true', help='nobody plays (the games stand)')
     ap.add_argument('--seed', type=int, default=None)
+    ap.add_argument('--tour', default='', help='host, guest or host,guest: that avatar goes to a new place of the '
+                    'planet every --hop seconds (a fixed sequence: comparable runs), nobody else plays')
+    ap.add_argument('--hop', type=float, default=20)
+    ap.add_argument('--crowd', type=int, default=0, help='Cell: the host puts this many of its cells around its own '
+                    '(`coop.pool crowd N 8`, BUG-0355 / BUG-0621: over 256 cells in the active area) every --hop s')
     a = ap.parse_args()
     seed = a.seed if a.seed is not None else random.randrange(1 << 30)
     print(f'  mem census: {a.fixture}, {a.minutes} min, solo={a.solo} idle={a.idle}, seed {seed}', flush=True)
@@ -74,7 +79,10 @@ def main():
     t0 = time.time()
     deadline = t0 + a.minutes * 60
     players = []
-    if not a.idle and a.fixture == 'creature':
+    tour = [w for w in a.tour.split(',') if w]
+    hops = random.Random(1)  # the same places in every run
+    next_hop = t0
+    if not tour and not a.crowd and not a.idle and a.fixture == 'creature':
         import play_creature as pc
         world, sh = pc.World(lane.HOST), pc.Shared()
         sh.exit_result = None
@@ -85,8 +93,28 @@ def main():
     series = {w: [(0.0, first[w]['free_mb'], first[w]['block_mb'])] for w in games}
     last = dict(first)
     next_at = t0 + a.sample * 60
+    nhops = 0
+    if a.crowd:
+        host.call('coop.pool food 300')
     while time.time() < deadline and not Monitor.events:
         time.sleep(5)
+        if a.crowd and time.time() >= next_hop:
+            next_hop += a.hop
+            nhops += 1
+            r = host.call(f'coop.pool crowd {a.crowd} 8')
+            if nhops <= 2:
+                print(f'  crowd {nhops}: {r.get("out", "").strip()[:80]} | guest {guest.call("coop.pool")["out"].strip()[:80]}',
+                      flush=True)
+        if tour and time.time() >= next_hop:
+            next_hop += a.hop
+            v = [hops.gauss(0, 1) for _ in range(3)]
+            n = max(1e-6, sum(x * x for x in v) ** 0.5)
+            d = [x / n * 1000 for x in v]
+            nhops += 1
+            for w in tour:
+                r = games[w].call('coop.abilities goto %.1f %.1f %.1f' % tuple(d))
+                if nhops <= 2 or not r.get('ok', True):
+                    print(f'  hop {nhops} {w}: {r.get("out", "").strip()[:60]}', flush=True)
         if time.time() >= next_at or time.time() >= deadline:
             next_at += a.sample * 60
             for w, c in games.items():
@@ -100,6 +128,8 @@ def main():
                 top = diff(first[w], last[w], 'cat', 4)
                 print(f'  {m:5.1f} min {w}: free {last[w]["free_mb"]} MB block {last[w]["block_mb"]} MB | '
                       + ', '.join(f'{r[3]} {r[0] / 1024:+.0f} MB' for r in top), flush=True)
+    if tour:
+        print(f'  {nhops} hops of {",".join(tour)}', flush=True)
     for p in players:
         p.join(120)
         if p.error:
