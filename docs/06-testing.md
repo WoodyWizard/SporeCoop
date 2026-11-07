@@ -4564,3 +4564,16 @@ BUG-0332 (docs/re/tribe.md#tribe-terrain-stamps).
   4`), standing carriers bind both ways; BUG-0617), `tribe_gather_block` (a probe, BUG-0531: no stall seen),
   `npc_nest_backoff` / `npc_nest_backoff_near` (BUG-0562). play_creature's bot: the pack hunts together (no own hunt
   while the partner leads one).
+
+## The shared headless Xwayland saturates under a full lab load (2026-11-06, fix/w46-tribe-fps)
+<a id="testing-xwayland-saturation"></a>
+
+Every lane's games draw through the one Xwayland of the headless shell (`:2`). With 10-14 games running (a 4-lane
+final check with 4-game campaign tests, plus other lanes) that Xwayland used 97.7 % of a core (one thread) and the
+games of the heaviest stage starved: in Tribe both games of a lane fell to 2-9 fps with 130-200 hitches of 300-600 ms
+per minute while each game used only 5-7 % CPU (waiting, not computing). Cell and Creature games of the same run kept
+25-66 fps. A 40-min test then fails with "the console stopped answering" or "FROZE" without a crash (BUG-0663).
+Evidence: v0.7.8 and 0.7.9 run side by side (`long_tribe_short`, lab 20261106-235016 in rel/0.7.8 and
+fix/w46-tribe-fps) collapsed identically at the same moment. Before reading such a failure as a regression: check
+the Xwayland's CPU (`pgrep -x Xwayland`, its `/proc/<pid>/stat` ticks over 10 s; ~1000 ticks = one full core) and
+run the A/B at equal load, or rerun on a quiet machine (1-2 lanes).
