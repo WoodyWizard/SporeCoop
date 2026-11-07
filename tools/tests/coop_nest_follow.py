@@ -3,10 +3,12 @@
 2026-11-06, 0.7.8: "after going to the new nest I didn't get DNA or the cutscene, and because of that my spawn point
 wasn't there either"; the guest's respawn stayed at the first nest after two migrations of the host).
 
-The players' way, creature fixture, no forced world share (coop_migration.py shares the world once more by hand):
+The report's way (the host's log s 1140-1321), creature fixture, no forced world share:
   1. the pack earns DNA for a bigger brain (the host's AddEvolutionPoints, the shared total), the brain upgrade
-     captions, the evolution vote, both players leave their editors with "done";
-  2. the host's game plays CRG_SpeciesMigrate, the host confirms it: the goal "Migrate to a new nest";
+     captions, no editor;
+  2. the host's creature dies and respawns at the nest: its game's stage return (CreatureGame_AfterEditor) starts
+     the migration (CRG_SpeciesMigrate, the goal "Migrate to a new nest"); the guest's game has no such return;
+     (--editor: instead the evolution vote and both editors: each game migrates by itself, the fix is not needed);
   3. the guest plays on (in place, or after the world the host sends for the migration);
   4. the host goes to its new nest and claims it (CRG_ClaimNest); then the guest goes there.
 PASS, on the guest's game: its own game claims that nest (CRG_ClaimNest), its avatar lives in the herd of that nest (the
@@ -20,6 +22,7 @@ import sys
 import time
 
 import creations_state
+import uifind
 
 from coop_migration import (CINE_CLAIM, CINE_MIGRATE, DONE, avatar_herd, cinematic, confirm_captions, eax, in_world,
                             migration, mode, new_nest, total_dna, vec3, wait)
@@ -36,6 +39,48 @@ def herd_nest_pos(con):
 
 def near(a, b, d=30):
     return bool(a and b) and sum((x - y) ** 2 for x, y in zip(a, b)) < d * d
+
+
+def editors(host, guest, ck):
+    """the evolution vote, both editors (each game's AfterEditor runs: both migrate by themselves)"""
+    m0 = mode(host)
+    print('  ', host.call('coop.vote editor')['out'].strip().splitlines()[0], flush=True)
+    time.sleep(2)
+    gu = Ui(guest, 'guest')
+    gu.wait(lambda s: s['ready']['vis'], 10, 'ready button')
+    gu.click('ready')
+    ck(wait(lambda: mode(host) != m0 and mode(guest) != m0, 60), 'both players are in their editors')
+    host.call('wait.frames 200 60000')
+    guest.call('wait.frames 200 60000')
+    host.call('click %d %d' % DONE)
+    ck(wait(lambda: cinematic(host) == CINE_MIGRATE, 60), "back from the editor the host's species migrates (CRG_SpeciesMigrate)")
+    guest.call('click %d %d' % DONE)
+    time.sleep(10)
+    ck(confirm_captions(host, CINE_MIGRATE), 'the host confirmed the migration caption')
+
+
+def host_respawn(host, ck):
+    """the report's way (s 1246 of the host's log): the brain grew in play, no editor; the host's creature dies and
+    respawns at the nest: the stage's return runs CreatureGame_AfterEditor, whose threshold check starts the
+    migration in the host's game only"""
+    print('  host:', host.call('coop.team die')['out'].strip()[:100], flush=True)
+    back = False
+    for _ in range(60):
+        if uifind.shown(host, 'You were killed'):
+            host.call('key enter')
+        c = cinematic(host)
+        if c:
+            host.call('key enter')
+        if migration(host) in (1, 2):
+            back = True
+            break
+        time.sleep(1)
+    ck(back, f"the host's creature died and respawned: its game starts the migration (state {migration(host)})")
+    for _ in range(10):
+        c = cinematic(host)
+        if c:
+            confirm_captions(host, c)
+        time.sleep(2)
 
 
 def main():
@@ -68,21 +113,11 @@ def run(host, guest, ck):
         c = cinematic(con)
         if c:
             confirm_captions(con, c)
-    m0 = mode(host)
-    print('  ', host.call('coop.vote editor')['out'].strip().splitlines()[0], flush=True)
-    time.sleep(2)
-    gu = Ui(guest, 'guest')
-    gu.wait(lambda s: s['ready']['vis'], 10, 'ready button')
-    gu.click('ready')
-    ck(wait(lambda: mode(host) != m0 and mode(guest) != m0, 60), 'both players are in their editors')
-    host.call('wait.frames 200 60000')
-    guest.call('wait.frames 200 60000')
-    host.call('click %d %d' % DONE)
-    ck(wait(lambda: cinematic(host) == CINE_MIGRATE, 60), "back from the editor the host's species migrates (CRG_SpeciesMigrate)")
-    guest.call('click %d %d' % DONE)
-    time.sleep(10)
-    ck(confirm_captions(host, CINE_MIGRATE), 'the host confirmed the migration caption')
-    ck(wait(lambda: migration(host) == 2, 30), f'the host has the goal "Migrate to a new nest" (state {migration(host)})')
+    if '--editor' in sys.argv:
+        editors(host, guest, ck)
+    else:
+        host_respawn(host, ck)
+    ck(wait(lambda: migration(host) == 2, 40), f'the host has the goal "Migrate to a new nest" (state {migration(host)})')
 
     # 3. the guest plays on (no world forced)
     ck(wait(lambda: in_world(guest), 150, 2), "the guest plays in the host's world")
