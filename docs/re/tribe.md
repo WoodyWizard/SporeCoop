@@ -2264,3 +2264,38 @@ BUG-0667. GOG 2024, disassembly + lab lane 4 (`coop_tribe_dead_member.py --eat`,
   neither detached nor taken out by a SetTribe(null) of this game: the fallback ended their trees without exits. Inferred
   origin: bodies that came with the received world without a tribe (the only other writer of +0x1014 is the reader
   0xC03370 that copies +0x1010 / +0x1014 from a record); not checked. Whether 0x04861814's exit reads the tribe: not checked.
+
+## A tool made in the old world's tribe right after a load (2026-11-07, fix/w46-tribe-load)
+<a id="tribe-stale-map-tool"></a>
+
+BUG-0672. GOG 2024, disassembly + lab lane 9 (`coop_tribe_world_map.py`, suite tribe_world_map).
+* ✔ (disassembly) the fault 0xCE6AE7 is in 0xCE6AE0, called by **Species_FootprintScale 0xCE6BC0** (thiscall(tuning
+  .data 0x1581208, cSpeciesProfile*) ret 4): it reads the species' size +0x554 / +0x558 / +0x55C with no null check. The
+  label "cPlanetRecord_GetPlanetID+0x17" is only the function before it (0xCE6AD0).
+* ✔ (disassembly) the return 0xC98A71 is in **cTribe_LayoutToolSpots 0xC98940** (thiscall(tribe, tool type) ret 4),
+  not in cTribe_ReleaseSlot 0xC988E0 ("+0x191" was the nearest symbol): for a type other than 0xA / 0xC / 0xD it calls
+  GetTribeToolData(type) and Species_FootprintScale(tribe +0x18CC, the tribe's species). So with eax = 0 the tribe's
+  species was null. The tribe's own callers pass 0xC / 0xD only; type 6 comes from **cTribeTool_SetPosition 0xC9DB80**
+  (spatial vtable slot .rdata 0x1474778) and 0xC9D700 (slot 0x14747A4), which re-lay the tool's tribe (+0x1C4) for the
+  tool's type (+0x1C8). Not the BUG-0667 detour and not Citizen_BTTerminate.
+* ✔ (code) the guest's wobj tool kind (BUG-0523) makes the host's tool in `tribe_of_index(i)`, the mapping host tribe
+  index -> this game's tribe, which only guest_state (each tribe state) rebuilt. on_world_change did not clear it, so
+  between a load and the new world's first tribe state it named the old world's tribes, freed by the load (their memory
+  still readable, the species reference already released: +0x18CC = 0). make_tool's distance check (150 m from the
+  tribe's place) passes on a warm reset: the same save, the same places. CreateTool and SetTribe on the freed tribe ran,
+  the tool's SetPosition faulted.
+* ✔ (runtime, lab 20261107-094944) forced (`coop.tribe statehold 1`: the guest ignores tribe states; leave, join, load;
+  `coop.tribe frametool 1 6`): the same fault, esi = the old tribe 1, edi = 6, the same calls 00CE6BCA 00C98A71.
+  After the load the mapping's old player tribe was no longer the player tribe (no "(p)").
+* ✔ (runtime, 20261107-095148, kit.outpump on) the tool stays in the world with the freed tribe: the game faults on it
+  in every pass (1221 times in 40 s, Present no longer reached SporeKit, frames from the game loop).
+* ✔ Fix `tribe.world_map`: on_world_change clears the mapping; tribe_of_index uses an entry only while it is one of the
+  world's tribes (all_tribes), else logs it (8 times) and returns null.
+* ✔ (runtime + disassembly) **why kit.fix frameunwind did not restart the frames**: the fault is inside SporeKit's frame
+  (coop's tick from SK_EV_FRAME, the frame was cut off), but a task for outside the frame was queued: its WM_SK_PUMP_OUT
+  reached h_WndProc -> pump_outside_tasks, which saw in_frame() (the flag still set) and posted the message again at
+  once. App::Canvas::Tick's message loop (0x848362 .. 0x848404: PeekMessage, Translate, DispatchMessage while a message
+  is there) never ran dry, so h_CanvasTick never got to frame_from_game_loop, where frameunwind clears the flag (the
+  watchdog stack: Canvas::Tick+0x106 < DispatchMessage < h_WndProc < pump_outside_tasks < PostMessage). BUG-0667's
+  runs had no outside task pending at the fault. Fix `kit.fix outpump` (SporeKit): inside a frame the task waits; the
+  frame's end, Present's end or the cut-off posts the message again. Off: the old repost (since the first co-op UI).

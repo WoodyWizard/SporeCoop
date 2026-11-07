@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+- Tribe: a guest's game could fault and then stop responding to the co-op for good a moment after it loaded the
+  host's Tribe world again (it built one of the host's tool buildings into a tribe of the world it had just left); and
+  SporeKit now keeps the mod running after such a caught error even when a menu task was waiting (BUG-0672).
+
 ## [0.7.9] - 2026-11-07
 
 ### Changed
