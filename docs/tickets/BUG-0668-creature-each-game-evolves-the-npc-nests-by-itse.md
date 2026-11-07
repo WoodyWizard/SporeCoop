@@ -56,9 +56,9 @@ Switch `coop.fix wsync.herd_evo off` (SPORE_FIX_OFF=wsync.herd_evo): each game e
 ## Verification
 coop_nest_evolve.py (suite full, `nest_evolve`): the host's avatar makes the nearest nest extinct, +250 DNA, then
 every 5 s for 60 s both games' own herds (`coop.nest evolve`) are compared nest by nest.
-* FAIL with SPORE_FIX_OFF=wsync.herd_evo: out/lab/20261107-095730, out/lab/20261107-100058, out/lab/20261107-100333
+* FAIL with SPORE_FIX_OFF=wsync.herd_evo: out/lab/20261107-095730, out/lab/20261107-100058, out/lab/20261107-100333, out/lab/20261107-105600
   (the extinct nest gen 1 / a new species on the guest; 21 thresholds differ in the last).
-* PASS: out/lab/20261107-100043, out/lab/20261107-100318 (134 nests compared, 21 evolved on the host, 0 differ in
+* PASS: out/lab/20261107-100043, out/lab/20261107-100318, out/lab/20261107-100728 (134 nests compared, 21 evolved on the host, 0 differ in
   every sample, the extinct nest stays gen 0 on the guest). (20261107-095709 failed with a first version that sent
   only the 30 nearest nests: 10 far nests stayed gen 0 on the guest.)
 * Not verified: a guest's minimap icon of the nest seen on screen; a second evolution (gen 2) of the same nests.
@@ -66,3 +66,4 @@ every 5 s for 60 s both games' own herds (`coop.nest evolve`) are compared nest 
 ## History
 - 2026-11-07: opened.
 - 2026-11-07 (fix/w46-herd-evo): fixed: wsync.herd_evo; FAIL 20261107-095730 / 100058 / 100333, PASS 20261107-100043 / 100318.
+- 2026-11-07 (fix/w46-herd-evo): regressions PASS: out/lab/20261107-100728 (play_creature, family_attack, evolve_world, wsync_transitions, nest_evolve), 20261107-100748 (detect_creature, creature, migration, nest_follow, nest_heal), smoke 20261107-103109 13/14 (creature: guest stuck in the Galaxy menu at the join, rerun PASS 20261107-105356); make test PASS.
