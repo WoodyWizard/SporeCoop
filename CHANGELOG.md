@@ -7,6 +7,14 @@
   report and its `.dmp`); the `.txt` and `.dmp` alone are needed only when there is no such zip.
 
 ### Fixed
+- Creature: a guest who was still in its own Cell editor when the host entered the Creature stage no longer plays a
+  creature it once chose in another world; a creature chosen in the co-op window now holds only in the world it was
+  chosen (or played) in (BUG-0638).
+- Creature: when the species migrates to a new nest, the guest's game migrates too, even without loading the host's
+  world: the goal, the "You have claimed this nest" scene and its DNA when the guest gets there, and its respawn and
+  healing at the new nest (BUG-0640, BUG-0496).
+- Creature: a spit now stops a charge between players: your spit stops a charging creature of the host's world, and
+  a creature's spit stops your charge (BUG-0641).
 - Creature: spending DNA in an editor no longer lowers the other players' evolution bar (the bar could drop to almost
   nothing after both players used their editors, or be halved); a spend now takes only the shared DNA, as in a game
   of one, and the bar keeps everything the party earned (BUG-0630).
