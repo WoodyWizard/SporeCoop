@@ -1217,9 +1217,18 @@ static bool g_stray_ids_fix = true;
 COOP_FIX("npc.stray_ids", "BUG-0385", g_stray_ids_fix,
          "creature: a saved partner's puppet loaded with the world is never sent to the guests as an NPC");
 static bool own_kind_herd(void* h);
+// BUG-0673: `coop.npc spawn` (tests) builds its creature in a herd of its own (game::create_herd) without
+// an archetype, so it has no tuning (+0xE84) and looks like the saved puppet of BUG-0385: npc.stray_ids
+// gave it no NPC id (nest_species, creature_desync, old_species never saw it in the host's list) and the
+// stray pass removed it. A creature of the console is the test's NPC and is neither (cleared with the world).
+// `coop.fix tools.console_npc off`: treated as a saved stray (0.7.9).
+static std::unordered_set<void*> g_console_npcs;
+static bool g_console_npc_fix = true;
+COOP_FIX("tools.console_npc", "BUG-0673", g_console_npc_fix,
+         "tests: an NPC made by coop.npc spawn is an NPC of the host's world, not a saved partner's puppet");
 static bool saved_stray(void* c)
 {
-    return c && !IsBadReadPtr(c, 0x1680) && !*(void**)((uint8_t*)c + 0xE84) && game::species_profile(c) &&
+    return c && !g_console_npcs.count(c) && !IsBadReadPtr(c, 0x1680) && !*(void**)((uint8_t*)c + 0xE84) && game::species_profile(c) &&
            !game::destroy_pending(c) && own_kind_herd(game::herd_of(c));
 }
 static uint32_t g_frozen_spawns = 0, g_frozen_despawns = 0, g_frozen_retired = 0;
@@ -1932,7 +1941,7 @@ static void remove_saved_strays(double now)
     game::for_each_object(
         [](void* o, uint32_t noun, void* u) {
             auto* a = (Acc*)u;
-            if (noun != 0x18EB45Eu || o == a->av || !game::object_alive(o) || IsBadReadPtr(o, 0x1680) ||
+            if (noun != 0x18EB45Eu || o == a->av || g_console_npcs.count(o) || !game::object_alive(o) || IsBadReadPtr(o, 0x1680) ||
                 *(void**)((uint8_t*)o + 0xE84) || !game::species_profile(o) || game::is_puppet(o) || is_proxy(o) ||
                 game::destroy_pending(o))
                 return true;
@@ -2180,6 +2189,7 @@ void on_world_change()
     g_kill.clear();
     g_host_npcs.clear();
     g_host_by_id.clear();
+    g_console_npcs.clear();
     g_ai_target.clear();
     teamplay::reset();
     for (auto& [g, ks] : g_known)
@@ -2896,7 +2906,10 @@ void* debug_spawn(uint32_t instance)
     net::Vec3 p = game::position(av);
     p.x += 4.f;
     void* herd = game::create_herd(p, sp);
-    return herd ? game::spawn_creature(p, sp, herd) : nullptr;
+    void* c = herd ? game::spawn_creature(p, sp, herd) : nullptr;
+    if (c && g_console_npc_fix)
+        g_console_npcs.insert(c); // BUG-0673: not a saved stray
+    return c;
 }
 
 // host (tests, BUG-0044): dead NPC #id's object becomes a living creature of its species again, the
