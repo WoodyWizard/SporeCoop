@@ -2195,3 +2195,37 @@ BUG-0664. GOG 2024, lab lanes 4-5 (tribe_dead_rejoin), long_tribe out/lab/202611
   sync-check; the check compares members. `coop.fix tribe.sync_bodies off`: the host lists them again.
 * ? a guest that joins while a body lies on the host does not show that body (at most the 10-20 s the game keeps it);
   not checked whether the shared save holds it.
+
+## A body's mirror destroyed without its tribe: the eat node's exit (2026-11-07, fix/w46-tribe-fault)
+<a id="tribe-body-teardown"></a>
+
+BUG-0667. GOG 2024, disassembly + lab lane 4 (`coop_tribe_dead_member.py --eat`, suite tribe_body_teardown).
+* ✔ (disassembly) `cTribe_ReleaseSlot` 0xC988E0, thiscall(tribe, layout type, slot) ret 8: calls
+  cTribe_ToolLayout(tribe+0x394, &type) **before** it checks the slot, so it faults with tribe = null whatever the slot
+  (0xAC9C7D `mov edi,[ecx+8]`, ecx 0x394, data 0x39C). The claim's twin of 0xC98860.
+* ✔ (disassembly) BT action table entry at .data 0x1593B20: node **0x0461300F** (eat) enter 0xDB0B10, tick 0xDABD80,
+  exit **0xDB0C40**. The exit reads the tribe by 0xC230B0 (`mov eax,[ecx+0x1014]; ret`) and releases spot
+  `memory+0x10` of layout type **0xD** (the food mat's spots) with 0xC988E0. (The table in section 4 lists tick 0xDABDE0
+  for eat: not checked which one is right; the entry read here has 0xDABD80.)
+* ✔ (disassembly) A citizen's teardown 0xC1FFE0 (DestroyInstance 0xB22560 -> ... -> 0xC1CA40 cleanup) clears its
+  container (+0x34), calls vt 0xBC and 0xC0D500 on it (the behaviour tree's shutdown: the active nodes' exits run), then
+  frees the tree (+0xB4C). Neither 0xC1FFE0 nor the destructor 0xC1BD30 reads +0x1014 itself.
+* ✔ (disassembly) cTribe::RemoveMember (vt 0x9C, GOG 2024 0xC96070) destroys the member (0xB22560 at 0xC96150) with
+  its +0x1014 still set: the game's own path never tears a citizen down without its tribe.
+* ✔ (runtime, lab 20261107-031255) A guest's mirror runs its tree only while the host is away (local_play, or
+  `coop.tribe localbt`); an eat order then puts it in 0x0461300F within 1 s and the node stays active when the tree is
+  skipped again. The host's member dies (tribe.member_body), the guest detaches the mirror (+0x1014 = 0, #tribe-member-body),
+  and when the host's body goes the guest's DestroyInstance runs the eat exit: the fault of long_tribe
+  (20261107-021641: s 1013, after the editor visit at 14.9 min, so the mirror's eat came from the guest's own play then).
+* ✔ Fix `tribe.body_teardown`: the detached body gets its tribe (kept by detach_body) back right before it is
+  destroyed when the tribe is still one of the world's; at session end the bodies left in the world get it back too
+  (the game tears them down later); a cTribe_ReleaseSlot with this = null is skipped (detour, warned 8 times).
+* ✔ (runtime) Why one caught fault "froze" the guest: SporeKit's per-frame work (d3d9hook.cpp on_frame_begin_present ->
+  SK_EV_FRAME -> coop's tick -> tribe on_message -> remove_member) runs under `g_in_frame`. The game's own handler
+  caught the fault and unwound past SporeKit's frames, so `g_in_frame` stayed true: every later Present and game loop pass
+  returned at once (no mod tick, no frame counter). The game itself went on (the watchdog's stack 30 s later: the main
+  thread in App::Canvas::Tick's message pump), but the lab saw no frames and the host saw the guest's state age grow.
+  Fixed in SporeKit (`kit.fix frameunwind`): an entry on the frame's thread at or above the cut-off frame's stack
+  address clears the flags (a nested call is always deeper) and logs "the frame N was cut off by a fault".
+* ? Any other mod state a cut-off frame leaves half done (a loop over g_gm stopped in the middle) is not reset; the
+  next snapshot cycle rebuilds the tribe's.
