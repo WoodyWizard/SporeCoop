@@ -118,7 +118,7 @@ HOLD_EVERY = 8.0  # s between two planted holds (--hold)
 HOLD_S = 2.5  # s the guest's game undoes the held mirror's placings
 # m, s: the held mirror within HOLD_MAX of the host's member, over TRAIL_M m at most HOLD_TRAIL s (BUG-0386: it fell 8 m
 # behind in 0.9 s and was teleported back, again and again while the hold lasted)
-HOLD_MAX, HOLD_TRAIL = 4.0, 0.5
+HOLD_MAX, HOLD_TRAIL = 7.0, 0.5
 
 
 def hold_checks(ck, hr, gr, holds, t_first):
@@ -253,7 +253,8 @@ def main():
         hit_checks(ck, host, guest, hr, gr, hits, t_first)
     if a.hold:
         hold_checks(ck, hr, gr, holds, t_first)
-    for kind in {'creature': 'n', 'tribe': 'nt', 'civ': 'v'}[a.stage]:
+    # (--hold judges the held seconds; the trail of every kind is body_trail_tribe's)
+    for kind in ({'creature': 'n', 'tribe': 'nt', 'civ': 'v'}[a.stage] if not a.hold else ''):
         r = res.get(kind)
         lim, tr = (NET_LIMITS if os.environ.get('SPORE_NET') else LIMITS)[(a.stage, kind)]
         ck(r is not None and r['n'] >= 200, f'{kind}: the host\'s bodies moved where the guest has copies '

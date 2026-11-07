@@ -274,6 +274,7 @@ struct GMember {
     float lead_sp = -1;      // BUG-0619: the raw lead's speed while the smoothed target drives it (-1: none)
     double held_since = 0, held_said = -1e9; // BUG-0386 (diagnostics)
     double test_undo_until = 0; // tests (BUG-0386, `coop.tribe undo <id> <s>`): this game undoes the mirror's placing
+    net::Vec3 test_undo_at{};   // and its walk: where it is held
     double anim_rx_at = 0, anim_fix_at = 0; // BUG-0569: the last relayed start, the last snapshot play
 };
 static std::unordered_map<uint16_t, GMember> g_gm;
@@ -2339,12 +2340,18 @@ static void mirror_drive(GMember& g, double now)
             o.lead_speed = std::max(g.lead_sp, 0.5f); // BUG-0619
         o.keep_lost = g_mirror_keep_fix; // BUG-0386
         drive::walk_place(g.c, g.aim, rot, vel, g.ds, now, o);
-        // tests (BUG-0386): a placing without the teleport mark is undone, the mirror crawls 0.04 m a frame towards its
-        // aim (what the guest's game did to the held mirror); a marked teleport (keep_lost's held) is kept
-        if (now < g.test_undo_until && !g.ds.held) {
-            net::Vec3 d = g.ds.drawn, to = g.aim;
-            float e = net::dist(d, to), k = e > 0.04f ? 0.04f / e : 1.f;
-            game::place(g.c, {d.x + (to.x - d.x) * k, d.y + (to.y - d.y) * k, d.z + (to.z - d.z) * k}, rot);
+        // tests (BUG-0386): the game's walk and a placing without the teleport mark are undone, the mirror crawls 0.04 m
+        // a frame towards its aim (what the guest's game did to the held mirror); a marked teleport (keep_lost's held) is
+        // kept, the hold goes on from there
+        if (now < g.test_undo_until) {
+            if (g.ds.held)
+                g.test_undo_at = g.ds.placed_to;
+            else {
+                net::Vec3 d = g.test_undo_at, to = g.aim;
+                float e = net::dist(d, to), k = e > 0.04f ? 0.04f / e : 1.f;
+                g.test_undo_at = {d.x + (to.x - d.x) * k, d.y + (to.y - d.y) * k, d.z + (to.z - d.z) * k};
+                game::place(g.c, g.test_undo_at, rot);
+            }
         }
         g_mirror_walks++;
         // BUG-0386 (diagnostics): a walked mirror held over 2 m off its aim for 1 s: what is around it, once per 10 s
@@ -4140,6 +4147,7 @@ std::string debug(const std::vector<std::string>& a)
         if (it == g_gm.end() || !it->second.c)
             return "no mirror " + a[1];
         it->second.test_undo_until = H->time_seconds() + std::max(0.0, std::min(10.0, atof(a[2].c_str())));
+        it->second.test_undo_at = game::position(it->second.c);
         return "mirror " + a[1] + ": placings without the mark undone for " + a[2] + " s";
     }
     if (a.size() >= 2 && a[0] == "lift" && is_guest()) { // lift <m>: tests (BUG-0329), the host's members m higher
