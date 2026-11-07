@@ -2112,3 +2112,12 @@ Each line: what the players saw, what the logs show; reproduce and details in th
 - Civ: the guest does not see the host's name at the host's camera (BUG-0649).
 - Also seen on 0.7.8, fixed unreleased in 0.7.9: the guest does not see the drama UFO (BUG-0558), city buildings
   rebuilt again and again after captures (BUG-0602).
+
+## Cell: no part token can be collected after the Goldie's demise tutorial (2026-11-07, fix/w46-part-token)
+<a id="issue-cell-goldie-locks"></a>
+
+* What happens: in the lab, after the shared food passes 120-150 (the game's one-time tutorial goldies_demise), both
+  avatars keep +0x178 (and +0x16C, +0x17B, +0x17C) set and neither game collects a part token.
+* Reproduce: Cell fixture, `coop.pool food 50` four times, `coop.pool tokens` shows `own_locks=0010`.
+* Known: docs/re/cell.md#cell-goldie. Not known: whether a player's game clears them (input, the cinematic's end).
+* Ticket: BUG-0666
