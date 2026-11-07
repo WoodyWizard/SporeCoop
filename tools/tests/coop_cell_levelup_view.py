@@ -49,9 +49,12 @@ def main():
     host.call('coop.pool invulnfor 600')
     guest.call('coop.pool invulnfor 600')
     lost = {'host': [], 'guest': []}
+    # once, then both stay (a teleport each round, right before a lab hitch, left the host's picture of the guest
+    # 30 m behind for two trace lines: the monitor's drawn gate, lab 20261106-223318)
+    guest.call('coop.pool tp 30 0')
+    time.sleep(10)  # the guest's mirrors around its new place, the host's picture of it there
     for i in range(a.rounds):
-        guest.call('coop.pool tp 30 0')
-        time.sleep(5)  # the guest's mirrors around its new place
+        time.sleep(3)
         s0 = {'host': screen(host), 'guest': screen(guest)}
         w0 = once(host)
         host.call(f'coop.pool food {150 if i % 2 == 0 else -150}')  # three levels: one change of the world scale
