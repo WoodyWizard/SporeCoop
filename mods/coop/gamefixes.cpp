@@ -1109,6 +1109,119 @@ static void __cdecl areas_init_guard()
         ensure_save_areas();
 }
 
+// BUG-0676: the galaxy menu (GalaxyGameEntry, global [0x16A1344]) keeps the planet under the mouse at +0xF8 (the
+// rollover, set by the planet set's vt 0x5C 0xDF7BF0) and the picked one at +0xFC, both pointers into the planet set's
+// entry vector ([0x16A15FC] +0x08..+0x0C, 0xBC bytes each, +0xB8 the entry's info panel). Its planet rebuild
+// (SporeCoop::GGE_RebuildPlanets 0xDF95A0, also on 0x625D27D, which cStarManager::ReadStarsFromSaveDB sends) clears every
+// entry (+0xB8 = 0, the panels freed), resizes the vector (a reallocation frees the old one) and refills it, but leaves
+// both pointers alone. Leaving the menu (its exit 0xDE8160) then rolls the old planet out (vt 0x5C(0)) and calls
+// 0xDF6D80 on its panel without a check: a guest that loaded a received world while the mouse rested on a planet faulted
+// at 0xDF6D93 (data 0x2C); the exit stopped half-way and the menu's frame faulted at 0xE01323 in every frame after
+// (chaos_tribe_awful, 22939 faults). The guard rolls the planet out the game's own way before the rebuild and drops a
+// pointer that names no entry of the new vector after it. Off: the game's code alone (0.7.9).
+using MenuRebuildFn = void(__thiscall*)(void*);
+static MenuRebuildFn g_menu_rebuild_orig;
+static uintptr_t g_gge_ptr;
+static bool g_menu_hover_fix = true;
+COOP_FIX("game.menu_hover", "BUG-0676", g_menu_hover_fix,
+         "gamefixes: the galaxy menu forgets the planet under the mouse when it rebuilds its planets (a load after it faulted at 0xDF6D93)");
+static std::atomic<unsigned> g_menu_rollouts{0}, g_menu_dropped{0}, g_menu_rebuilds{0};
+static int g_menu_hover_arm = -1; // tests (coop.menuhover arm <i>): the next rebuild first puts the mouse on entry i
+
+struct MenuPlanets {
+    uint8_t* gge = nullptr;
+    void* set = nullptr;
+    uint8_t *begin = nullptr, *end = nullptr, *cap = nullptr;
+    size_t count() const { return begin && end > begin ? (size_t)(end - begin) / 0xBC : 0; }
+    bool entry(const uint8_t* p) const // a live entry of the vector with its panel
+    {
+        return p && p >= begin && p < end && (size_t)(p - begin) % 0xBC == 0 && readable(p + 0xB8, 4) && at<void*>(p, 0xB8);
+    }
+};
+
+static MenuPlanets menu_planets(void* set)
+{
+    MenuPlanets m;
+    m.gge = g_gge_ptr && readable((void*)g_gge_ptr, 4) ? *(uint8_t**)g_gge_ptr : nullptr;
+    if (m.gge && !readable(m.gge + 0xF8, 8))
+        m.gge = nullptr;
+    m.set = set;
+    if (set && readable(set, 0x14)) {
+        m.begin = at<uint8_t*>(set, 8);
+        m.end = at<uint8_t*>(set, 0xC);
+        m.cap = at<uint8_t*>(set, 0x10);
+    }
+    return m;
+}
+
+static void* menu_planet_set()
+{
+    uintptr_t p = H->sym("SporeCoop::GGE_PlanetSet_ptr");
+    return p && readable((void*)p, 4) ? *(void**)p : nullptr;
+}
+
+static void __fastcall menu_rebuild_guard(void* set, void*)
+{
+    g_menu_rebuilds++;
+    MenuPlanets m = menu_planets(set);
+    if (g_menu_hover_arm >= 0 && m.gge && (size_t)g_menu_hover_arm < m.count() && !at<void*>(m.gge, 0xFC)) {
+        uint8_t* e = m.begin + (size_t)g_menu_hover_arm * 0xBC;
+        if (m.entry(e)) {
+            skg::vcall<void>(set, 0x5C / 4, (void*)e); // the rollover, as the mouse over the planet
+            H->log(M, SK_WARN, "game fixes: tests: the mouse is on menu planet %d (%p) before the rebuild (%u entries, room for %u)",
+                   g_menu_hover_arm, e, (unsigned)m.count(), m.cap > m.begin ? (unsigned)((m.cap - m.begin) / 0xBC) : 0u);
+        }
+        g_menu_hover_arm = -1;
+    }
+    void* hover = m.gge ? at<void*>(m.gge, 0xF8) : nullptr;
+    if (g_menu_hover_fix && hover && !at<void*>(m.gge, 0xFC) && m.entry((uint8_t*)hover)) {
+        skg::vcall<void>(set, 0x5C / 4, (void*)nullptr); // the game's roll-out: hides the panel, +0xF8 = 0
+        unsigned n = ++g_menu_rollouts;
+        if (n <= 8 || n % 100 == 0)
+            H->log(M, SK_INFO, "game fixes: the galaxy menu rebuilds its planets with the mouse on planet %p: rolled out first (BUG-0676, %u)",
+                   hover, n);
+    }
+    g_menu_rebuild_orig(set);
+    if (!g_menu_hover_fix || !m.gge)
+        return;
+    MenuPlanets now = menu_planets(set);
+    for (uint32_t off : {0xF8u, 0xFCu}) {
+        uint8_t* p = at<uint8_t*>(now.gge, off);
+        if (!p || now.entry(p))
+            continue;
+        *(void**)(now.gge + off) = nullptr;
+        unsigned n = ++g_menu_dropped;
+        if (n <= 8 || n % 100 == 0)
+            H->log(M, SK_WARN, "game fixes: the galaxy menu's %s planet %p is no planet of the rebuilt list (%u entries at %p): dropped (BUG-0676, %u)",
+                   off == 0xF8 ? "rollover" : "picked", p, (unsigned)now.count(), now.begin, n);
+    }
+}
+
+// coop.menuhover [arm <i> | off]: the galaxy menu's planets, its rollover / picked planet; tests: arm the rollover
+static int c_menuhover(void*, int argc, const char* const* argv, SkOut* out)
+{
+    char b[512];
+    if (argc >= 3 && !strcmp(argv[1], "arm")) {
+        g_menu_hover_arm = atoi(argv[2]);
+        snprintf(b, sizeof b, "armed: the next planet rebuild of the galaxy menu puts the mouse on planet %d first\n", g_menu_hover_arm);
+        H->out_printf(out, "%s", b);
+        return 0;
+    }
+    if (argc >= 2 && !strcmp(argv[1], "off"))
+        g_menu_hover_arm = -1;
+    MenuPlanets m = menu_planets(menu_planet_set());
+    int panels = 0;
+    for (size_t i = 0; i < m.count(); i++)
+        panels += m.entry(m.begin + i * 0xBC);
+    snprintf(b, sizeof b,
+             "menu=%p set=%p planets=%u (panels %d, room %u) begin=%p rollover=%p picked=%p | rebuilds %u rolled out %u dropped %u%s\n",
+             m.gge, m.set, (unsigned)m.count(), panels, m.cap > m.begin ? (unsigned)((m.cap - m.begin) / 0xBC) : 0u, m.begin,
+             m.gge ? at<void*>(m.gge, 0xF8) : nullptr, m.gge ? at<void*>(m.gge, 0xFC) : nullptr, g_menu_rebuilds.load(),
+             g_menu_rollouts.load(), g_menu_dropped.load(), g_menu_hover_arm >= 0 ? " (armed)" : "");
+    H->out_printf(out, "%s", b);
+    return 0;
+}
+
 void frame()
 {
     fxcut_frame();
@@ -1235,6 +1348,15 @@ void init(const SkHost* host, SkMod* mod)
     if (!fruit)
         g_take_fruit_orig = nullptr;
     H->log(M, SK_INFO, "game fixes: fruit pool guard %s", fruit ? "on" : "off");
+    uintptr_t mr = H->sym("SporeCoop::GGE_RebuildPlanets");
+    g_gge_ptr = H->sym("SporeCoop::GalaxyGameEntry_ptr");
+    bool menu = mr && g_gge_ptr && H->sym("SporeCoop::GGE_PlanetSet_ptr") &&
+                H->hook_create(M, (void*)mr, (void*)&menu_rebuild_guard, (void**)&g_menu_rebuild_orig) == 0;
+    if (!menu)
+        g_menu_rebuild_orig = nullptr;
+    H->log(M, SK_INFO, "game fixes: galaxy menu rollover guard %s", menu ? "on" : "off");
+    H->command_add(M, "coop.menuhover", "coop.menuhover [arm <i> | off] - the galaxy menu's planets and its rollover; tests: the next rebuild puts the mouse on planet i first (BUG-0676)",
+                   c_menuhover, nullptr, SK_CMD_MAIN_THREAD);
     H->command_add(M, "coop.fxlist", "coop.fxlist [creature] - a creature's attached effects (BUG-0575)", c_fxlist, nullptr,
                    SK_CMD_MAIN_THREAD);
     H->command_add(M, "coop.fxcut", "coop.fxcut - tests (BUG-0575): the next model with a running attached effect has it stopped and given a freed part",
@@ -1271,7 +1393,9 @@ std::string status()
            ", ship models defaulted " + std::to_string(g_ufo_defaulted.load()) + " (SetVisible without a model skipped " +
            std::to_string(g_ufo_invisible_skipped.load()) + ")" + ", broken model effects dropped " +
            std::to_string(g_model_fx_dropped.load()) + " (tests: planted " + std::to_string(g_fxcut_planted) + ", dropped " + std::to_string(g_fxcut_done) + ")" +
-           ", freed fruit taken out of the pool " + std::to_string(g_fruit_dropped.load()) + "\n";
+           ", freed fruit taken out of the pool " + std::to_string(g_fruit_dropped.load()) +
+           ", galaxy menu rollovers rolled out before a rebuild " + std::to_string(g_menu_rollouts.load()) + " (stale dropped " +
+           std::to_string(g_menu_dropped.load()) + ")\n";
 }
 
 } // namespace gamefixes
