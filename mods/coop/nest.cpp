@@ -627,6 +627,36 @@ static int c_nest(void*, int argc, const char* const* argv, SkOut* out)
         H->out_printf(out, ok ? "eaten\n" : "no such egg\n");
         return ok ? 0 : 1;
     }
+    if (!strcmp(a, "evolve")) { // tests (BUG-0639): every herd's evolution fields: +0x85 mbShouldEvolve, +0xF0 generation,
+        // +0xA8 evolved species keys (count), +0x94 DNA threshold, +0x190 extinct, members, home, distance
+        void* av = game::avatar();
+        struct U {
+            net::Vec3 c;
+            SkOut* out;
+        } u{av ? game::position(av) : net::Vec3{}, out};
+        game::for_each_object(
+            [](void* o, uint32_t noun, void* p) {
+                auto* u = (U*)p;
+                if (noun != game::kHerdNoun || IsBadReadPtr(o, 0x220))
+                    return true;
+                void** b = field<void**>(o, 0x40);
+                void** e = field<void**>(o, 0x44);
+                void** kb = field<void**>(o, 0xA8);
+                void** ke = field<void**>(o, 0xAC);
+                auto& h = field<net::Vec3>(o, 0x34);
+                void* sp = game::herd_species(o);
+                H->out_printf(u->out,
+                              "herd %p should_evolve=%d gen=%d evolved_keys=%d threshold=%.0f extinct=%d members=%d species=%p "
+                              "home=(%.0f %.0f %.0f) dist=%.0f\n",
+                              o, (int)field<uint8_t>(o, 0x85), field<int>(o, 0xF0),
+                              kb && ke >= kb ? (int)((uint8_t*)ke - (uint8_t*)kb) / 12 : -1, field<float>(o, 0x94),
+                              (int)field<uint8_t>(o, 0x190), b && e >= b ? (int)(e - b) : -1, sp, h.x, h.y, h.z,
+                              net::dist(h, u->c));
+                return true;
+            },
+            &u);
+        return 0;
+    }
     if (!strcmp(a, "respawn") && argc > 3) { // tests: herd <hex>'s respawn time (+0x11C mRespawnRate, ms)
         void* h = (void*)strtoul(argv[2], nullptr, 16);
         if (IsBadReadPtr(h, 0x220) || game::noun_id(h) != game::kHerdNoun) {

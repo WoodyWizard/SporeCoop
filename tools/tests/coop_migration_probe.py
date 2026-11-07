@@ -21,9 +21,21 @@ def row(con):
             f'nestherd={h or 0:#x} nest={tuple(round(x) for x in pos) if pos else None} | {sp}')
 
 
+def evolving(con):
+    """herds with an evolution pending or done (BUG-0639)"""
+    return [l for l in con.call('coop.nest evolve')['out'].splitlines()
+            if 'should_evolve=1' in l or (' gen=' in l and ' gen=0 ' not in l)]
+
+
 def watch(host, guest, secs, label):
     t0 = time.time()
+    last = 0
     while time.time() - t0 < secs:
+        if time.time() - last > 20:
+            last = time.time()
+            for who, con in (('host', host), ('guest', guest)):
+                for l in evolving(con)[:8]:
+                    print(f'  [{label} {time.time() - t0:5.0f}s] {who} evolve: {l}', flush=True)
         print(f'  [{label} {time.time() - t0:5.0f}s] host  {row(host)}', flush=True)
         print(f'  [{label} {time.time() - t0:5.0f}s] guest {row(guest)}', flush=True)
         for con in (host, guest):

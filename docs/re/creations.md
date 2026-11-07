@@ -1148,3 +1148,16 @@ fix/w40-cell-evo 20261103-161211, rel/0.7.4 20261103-204638), so the editor star
 a config start budget, whatever the held post did. GetEvolutionPoints reads the same value inside the editor (40 -> 40
 while the part is bought: the editor keeps its own count until done, the result's +0x34 then sets it).
 ? Not looked at: where the Creature editor takes its start budget (OnEnter or the stage's DNA); no re-post needed.
+
+## A guest's choice holds only in its world (2026-11-06, fix/w46-creature-p0)
+<a id="creations-choice-world"></a>
+
+BUG-0638. ✔ (the report) A guest with an explicit creature in choices.ini (chosen in another world two days before)
+was in its own Cell editor when the host entered Creature; it never got the host's Cell -> Creature editor (the one
+that would have replaced the choice), and after the load `mine()` returned the old choice: "a species from another
+world". The world crc (`modes::current_world`, the save's name) is the same for the Cell and the Creature stage of a
+world. Fix `creations.choice_world`: a guest's choice of a creation holds only in a world whose worlds.ini record is
+that creation; a choice is recorded for the world it is made in (as playing it records it, BUG-0345). In another
+world the guest's default applies (this world's record, the host's evolved species, the world's species). "The
+world's own" still holds everywhere. Lab: the guest's swap to the old choice came 25 s after the load
+(20261106-230447), 3 s in the report.
