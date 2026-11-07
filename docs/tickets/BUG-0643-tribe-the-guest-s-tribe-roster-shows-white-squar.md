@@ -44,3 +44,4 @@ Test tribe_portraits (coop_tribe_portraits.py): the host's tribe becomes the hos
 ## History
 - 2026-11-06: opened. From the Discord report 2026-11-06 (0.7.8), the players' logs read in fix/w45-intake.
 - 2026-11-07: fixed in fix/w46-tribe-civ (creations.png).
+- 2026-11-07 (fix/w46-final-triage): suite.py allows the gate finding the test makes on purpose (lab 20261107-141346: tribe_portraits, monitor puppet `hidden: state older than 5 s` while the killed guest game was silent before its restart).

@@ -85,3 +85,4 @@ Test coop_tribe_world_map.py (suite tribe_world_map), lane 9, runs in the fix/w4
 - Not seen before in any lab log of any worktree. Rerun 20261107-082717: tribe_play 4/4 PASS (rare).
 - Questions: is it the 0.7.9 tribe.body_teardown detour or code new in 0.7.10 (P0-Cell, M1 merged)?
   Why did frameunwind not get frames going again (the fault may be outside SporeKit's frame)?
+- 2026-11-07 (fix/w46-final-triage): suite.py allows the gate finding the test makes on purpose (lab 20261107-141346: tribe_world_map, sync-check `t: 7 missing on the guest` at s 32.0, 0.5 s after the test let the held tribe states in again).
