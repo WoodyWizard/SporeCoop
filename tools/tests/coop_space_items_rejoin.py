@@ -6,11 +6,11 @@ host's items appear". Every player flies in a copy of the host's save; a guest t
 again loads the host's share save, whose player inventory (cSimulatorSpaceGame +0x40) is the host's.
 The host keeps each guest's own hold (space_trade.cpp, K_INV) and gives it back when it rejoins.
 
-1. Both play the `space` fixture. The two holds are made different: the guest gets spice A and sets a
-   tool's charges to one value; the host gets spice B and sets the same tool's charges to another.
+1. Both play the `space` fixture. The two holds are made different: the guest gets spice A and an Antimatter Bomb
+   with 9 charges and the interstellar drive; the host gets spice B and the bomb with 3 charges.
 2. The guest leaves, joins again and loads the host's world.
 3. In the rejoined guest's game (`coop.space trade inv`: the game's cPlayerInventory items) the hold is the
-   one it had before it left: its spice A, its tool charges, no spice B of the host.
+   one it had before it left: its spice A, its bomb's charges, its drive, no spice B of the host.
 4. The host's game still has its own hold (spice B, its charges, no spice A).
 PASS: 1 to 4. SPORE_FIX_OFF=space.keep_items: the rejoined guest has the host's hold (FAIL).
 
@@ -22,6 +22,8 @@ import time
 import lane
 from coop_space_map import no_movie, sp, wait
 from twoinst import Checks, start, wait_guest_in
+
+BOMB = '144DF50A'  # Antimatter Bomb (a tool with charges)
 
 
 def inv(con):
@@ -39,14 +41,6 @@ def inv(con):
 
 def spice_keys(con):
     return [m.group(1) for m in re.finditer(r'^spice \d+ ([0-9A-F]+)', sp(con, 'trade spices'), re.M)]
-
-
-def ammo_tool(items):
-    """a tool with charges and room to change them: (key, ammo)"""
-    for (t, k), (c, a) in sorted(items.items()):
-        if t == 2 and a >= 2:
-            return k
-    return None
 
 
 def epoch(con):
@@ -67,24 +61,29 @@ def main():
     g0, gslots = inv(guest)
     h0, hslots = inv(host)
     print(f'  start: host {len(h0)} items {hslots} slots, guest {len(g0)} items {gslots} slots', flush=True)
+    print('  guest hold: ' + sp(guest, 'trade inv').replace('\n', ' | '), flush=True)
+    print('  guest tools: ' + sp(guest, 'trade all').replace('\n', ' | '), flush=True)
     keys = spice_keys(guest)
     ck(len(keys) >= 2, f'the game knows at least two spices ({len(keys)})')
-    tool = ammo_tool(g0)
-    ck(tool is not None, f'the guest has a tool with charges ({tool})')
-    if len(keys) < 2 or not tool:
+    tool = BOMB  # both get it, with other charges
+    print('  guest drive (the host has none): ' + sp(guest, 'tool add interstellardrive'), flush=True)
+    print('  bombs: guest ' + sp(guest, 'tool add', '0x' + BOMB) + ', host ' + sp(host, 'tool add', '0x' + BOMB), flush=True)
+    if len(keys) < 2:
         return ck.result()
     sa, sb = (4, keys[0]), (4, keys[1])
     # 1. different holds
-    print('  guest: ' + sp(guest, 'trade spice 0 7') + ' ' + sp(guest, f'trade ammo {tool} 1'), flush=True)
-    print('  host: ' + sp(host, 'trade spice 1 5') + ' ' + sp(host, f'trade ammo {tool} 2'), flush=True)
+    print('  guest: ' + sp(guest, 'trade spice 0 7') + ' ' + sp(guest, f'trade ammo {tool} 9'), flush=True)
+    print('  host: ' + sp(host, 'trade spice 1 5') + ' ' + sp(host, f'trade ammo {tool} 3'), flush=True)
     g1, _ = inv(guest)
     h1, _ = inv(host)
     tk = (2, tool)
-    watch = [sa, sb, tk]
+    drive = [k for k in g1 if k[0] == 2 and k not in h1]
+    watch = [sa, sb, tk] + drive
     print(f'  guest before leaving: {brief(g1, watch)}', flush=True)
     print(f'  host before: {brief(h1, watch)}', flush=True)
-    ck(sa in g1 and sb not in g1 and g1[tk][1] == 1, 'the guest\'s hold: its spice A, no spice B, its tool at 1 charge')
-    ck(sb in h1 and h1[tk][1] == 2, 'the host\'s hold: its spice B, its tool at 2 charges')
+    ck(sa in g1 and sb not in g1 and g1.get(tk, (0, 0))[1] == 9, 'the guest\'s hold: its spice A, no spice B, its bomb at 9 charges')
+    ck(len(drive) == 1, f'the guest has a tool the host lacks: {drive}')
+    ck(sb in h1 and h1.get(tk, (0, 0))[1] == 3, 'the host\'s hold: its spice B, its bomb at 3 charges')
     time.sleep(4)  # the guest's hold reaches the host
     print('  host: ' + sp(host, 'trade kept').replace('\n', ' | '), flush=True)
 
