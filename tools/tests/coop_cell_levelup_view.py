@@ -7,11 +7,11 @@ player keeps what is on its screen. In co-op the guest's cells are the host's: t
 the cells in the host's view, so a guest away from the host saw its whole screen replaced.
 
 Two games in the Cell fixture, the guest 30 m from the host (outside the host's view, inside the tiles
-the host populates around it). Each round the host changes the shared food by +50 / -50 (both games
-change level); before and 5 s after, each game's own screen is read (`coop.pool see`: the cells the game
-draws inside the window, by host index). Checked in the guest's game: the share of the cells on its screen
-that are gone after the change is about what the host loses from its own screen (cells swimming out of the
-window, eaten), not the whole screen.
+the host populates around it). Each round the host changes the shared food by +150 / -150 (both games
+change level three times: one change of the world scale); before and 5 s after, each game's own screen is read (`coop.pool see`: the cells the game
+draws inside the window, by host index) and 5 s after the change which of them still exist in that game
+(`coop.pool alive`). Checked in the guest's game: the share of the cells on its screen that are gone is
+about what the host's game removes from its own screen, not the whole screen.
 
   coop_cell_levelup_view.py [--rounds 6]   (SPORE_FIX_OFF=cell.levelup_keep: fails)
 """
@@ -27,9 +27,16 @@ def screen(con):
     return {l.split()[1] for l in out.splitlines() if l.startswith('see ')}
 
 
+def alive(con, keys):
+    if not keys:
+        return set()
+    out = con.call('coop.pool alive ' + ','.join(sorted(keys)))['out']
+    return set(out.split()[1:])
+
+
 def once(con):
     out = con.call('coop.pool')['out']
-    return {k: int(v) for k, v in re.findall(r'\b(wipe_kept|wipe_destroyed|wipe_near_lost)=(\d+)', out)}
+    return {k: int(v) for k, v in re.findall(r'\b(wipe_calls|wipe_kept|wipe_destroyed|wipe_near_lost)=(\d+)', out)}
 
 
 def main():
@@ -47,9 +54,10 @@ def main():
         time.sleep(5)  # the guest's mirrors around its new place
         s0 = {'host': screen(host), 'guest': screen(guest)}
         w0 = once(host)
-        host.call(f'coop.pool food {50 if i % 2 == 0 else -50}')
+        host.call(f'coop.pool food {150 if i % 2 == 0 else -150}')  # three levels: one change of the world scale
         time.sleep(5)
-        s1 = {'host': screen(host), 'guest': screen(guest)}
+        s1 = {'host': alive(host, s0['host']), 'guest': alive(guest, s0['guest'])}  # still in that game's world
+        n1 = {'host': screen(host), 'guest': screen(guest)}
         w1 = once(host)
         parts = []
         for who in ('host', 'guest'):
@@ -58,9 +66,9 @@ def main():
                 continue
             gone = len(s0[who] - s1[who]) / len(s0[who])
             lost[who].append(gone)
-            parts.append(f'{who}: {len(s0[who])} on screen, {len(s0[who] - s1[who])} gone ({gone:.0%}), {len(s1[who] - s0[who])} new')
+            parts.append(f'{who}: {len(s0[who])} on screen, {len(s0[who] - s1[who])} gone ({gone:.0%}), {len(n1[who] - s0[who])} new on screen')
         print(f'  change {i + 1} ({"up" if i % 2 == 0 else "down"}): ' + '; '.join(parts) +
-              f' | host wipe kept {w1.get("wipe_kept", 0) - w0.get("wipe_kept", 0)}, '
+              f' | host wipes {w1.get("wipe_calls", 0) - w0.get("wipe_calls", 0)}, kept {w1.get("wipe_kept", 0) - w0.get("wipe_kept", 0)}, '
               f'destroyed {w1.get("wipe_destroyed", 0) - w0.get("wipe_destroyed", 0)} '
               f'(on the partner\'s screen {w1.get("wipe_near_lost", 0) - w0.get("wipe_near_lost", 0)})', flush=True)
     ck(len(lost['guest']) >= a.rounds // 2, f'the guest had cells on its screen in {len(lost["guest"])} of {a.rounds} changes')

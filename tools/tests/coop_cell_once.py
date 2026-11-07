@@ -133,39 +133,117 @@ def locks(con):
 
 
 def token_case(host, guest, ck, rounds):
-    """probe (BUG-0633): the host's own collect locks after a guest's kill next to it"""
+    """probe (BUG-0633): which part tokens of the host's pool its own cell can collect, with 0xE7B630's locks
+    (our cell's +0x112 +0x113 +0x178 +0x17F, the token's +0x17B) and the token's level / size"""
+    from coop_cell_part_token import find_tokens, button, wait
+    tried, got = set(), []
     for i in range(rounds):
-        k = guest.call('coop.pool kill')['out']
-        m = re.match(r'bit (c\d+) ', k)
-        if not m:
+        found = find_tokens(host, guest, tried)
+        if not found:
+            break
+        key = found[0][0]
+        tried.add(key)
+        host.call('coop.pool mate nobutton')
+        mv = host.call(f'coop.pool tokens to 0 {key}')['out']
+        line = next((l for l in host.call('coop.pool tokens')['out'].splitlines() if l.startswith(f'token {key} ')), '')
+        own = locks(host)
+        print(f'  token {key}: {mv.splitlines()[0] if mv else ""} | {line} | host locks {own}', flush=True)
+        print('   ', host.call(f'coop.pool cell {key}')['out'].strip().replace(chr(10), ' | ')[:300], flush=True)
+        host.call(f'coop.pool swimto {key} tp')
+        ok = wait(lambda: button(host) == 1, 6)
+        after = host.call(f'coop.pool cell {key}')['out'].strip()[:80]
+        print(f'    collected by the host: {bool(ok)} (button {button(host)}); token now: {after}; host locks {locks(host)}', flush=True)
+        got.append(bool(ok))
+    print(f'  tokens collected {sum(got)} of {len(got)}', flush=True)
+
+
+def guest_kill(host, guest):
+    """the guest bites the nearest creature to death next to the host and bites on for 1.5 s (as kill_case);
+    returns its key or None"""
+    k = guest.call('coop.pool kill')['out']
+    m = re.match(r'bit (c\d+) ', k)
+    if not m:
+        return None
+    key = m.group(1)
+    guest.call(f'coop.pool swimto {key} tp')
+    host.call('coop.pool tp 2 1')
+    time.sleep(0.5)
+    h0 = stat(host)['kills_in']
+    for _ in range(12):
+        r = guest.call(f'coop.pool kill {key}')['out']
+        if r == 'gone' or stat(host)['kills_in'] > h0:
+            break
+        time.sleep(0.6)
+    if stat(host)['kills_in'] <= h0:
+        return None
+    t0 = time.time()
+    while time.time() - t0 < 1.5:
+        if guest.call(f'coop.pool kill {key}')['out'] == 'gone':
+            break
+        time.sleep(0.3)
+    return key
+
+
+def token_keys(con):
+    return {m.group(1): float(m.group(2)) for m in re.finditer(r'^token (c\d+) .* dist=([\d.]+)', con.call('coop.pool tokens')['out'], re.M)}
+
+
+def drop_case(host, guest, ck, rounds):
+    """BUG-0633: the part tokens a guest's kill drops in the host's world can be collected by the host"""
+    from coop_cell_part_token import button, wait
+    kills, dropped, collected, failed = 0, 0, 0, []
+    for i in range(rounds * 6):
+        if kills >= rounds * 4 or dropped >= rounds:
+            break
+        if i % 6 == 5:
+            host.call('coop.pool food 40')  # a new level: other creatures, other loot tables
+            time.sleep(6)
+        before = token_keys(host)
+        key = guest_kill(host, guest)
+        if not key:
             guest.call('coop.pool tp 30 0')
             host.call('coop.pool tp 2 1')
             time.sleep(2)
             continue
-        key = m.group(1)
-        guest.call(f'coop.pool swimto {key} tp')
+        kills += 1
+        time.sleep(3.0)  # the break's animation and its loot (event 5)
+        new = [k for k, d in token_keys(host).items() if k not in before and d < 25]
+        print(f'  kill {kills} of {key}: {len(new)} new part tokens in the host\'s world {new}', flush=True)
+        for t in new:
+            dropped += 1
+            host.call('coop.pool mate nobutton')
+            line = next((l for l in host.call('coop.pool tokens')['out'].splitlines() if l.startswith(f'token {t} ')), '')
+            host.call(f'coop.pool tokens to 0 {t}')
+            got = False
+            for _ in range(3):  # a drifting token: swim onto it again
+                host.call(f'coop.pool swimto {t} tp')
+                if wait(lambda: button(host) == 1, 3):
+                    got = True
+                    break
+                if not host.call(f'coop.pool cell {t}')['out'].startswith('cell '):
+                    break
+            collected += got
+            if not got:
+                failed.append(t)
+            print(f'    token {t} ({line}): collected by the host {got}; host locks {locks(host)}', flush=True)
+            time.sleep(4.5)  # the collect animation (0x31) and its locks end
+        guest.call('coop.pool tp 20 0')
         host.call('coop.pool tp 2 1')
-        time.sleep(0.5)
-        print(f'  before kill {i}: host locks {locks(host)}', flush=True)
-        for _ in range(12):
-            r = guest.call(f'coop.pool kill {key}')['out']
-            if 'dying' in r or r == 'gone' or stat(guest)['kills_sent'] > 0 and 'hp=0' in r:
-                break
-            time.sleep(0.6)
-        for t in range(8):
-            print(f'    +{t * 0.5:.1f} s host locks {locks(host)} guest locks {locks(guest)}', flush=True)
-            time.sleep(0.5)
+        time.sleep(1)
+    print(f'  {kills} guest kills, {dropped} part tokens dropped, {collected} collected by the host', flush=True)
+    ck(dropped >= 1, f'the guest\'s kills dropped part tokens in the host\'s world ({dropped})')
+    ck(collected == dropped, f'the host collected every part token a guest\'s kill dropped ({collected} of {dropped}; not: {failed})')
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--case', choices=('kill', 'eat', 'token'), required=True)
+    ap.add_argument('--case', choices=('kill', 'eat', 'token', 'drop'), required=True)
     ap.add_argument('--rounds', type=int, default=4)
     a = ap.parse_args()
     host, guest = start('cell')
     ck = Checks()
     time.sleep(3)
-    {'kill': kill_case, 'eat': eat_case, 'token': token_case}[a.case](host, guest, ck, a.rounds)
+    {'kill': kill_case, 'eat': eat_case, 'token': token_case, 'drop': drop_case}[a.case](host, guest, ck, a.rounds)
     g = stat(guest)
     h = stat(host)
     print(f'  guest: kills_sent={g["kills_sent"]} dup_sent={g["kills_dup_sent"]} eats_sent={g["eats_sent"]} gone_again={g["gone_again"]} '

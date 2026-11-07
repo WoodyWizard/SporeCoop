@@ -10,6 +10,7 @@
 #include <cstring>
 #include <deque>
 #include <map>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -916,7 +917,7 @@ static void SK_CDECL h_Break(uint8_t* victim, uint8_t* attacker, float f)
 static bool g_fix_levelup_keep = true;
 COOP_FIX("cell.levelup_keep", "BUG-0635", g_fix_levelup_keep, "cell: a level change on the host keeps the cells on a partner's screen, as a single player keeps the cells in its view (they vanished on the guest and new ones came)");
 static bool g_in_wipe; // host: inside RemoveCellsOfOldScale
-static uint32_t g_wipe_kept, g_wipe_destroyed, g_wipe_near_lost; // host: per session (tests)
+static uint32_t g_wipe_kept, g_wipe_destroyed, g_wipe_near_lost, g_wipe_calls; // host: per session (tests)
 // host: is the cell's sphere inside a partner's visible box (as 0xE5CDE0 tests the host's own box)?
 static bool in_partner_view(uint8_t* c)
 {
@@ -1449,6 +1450,7 @@ static void SK_CDECL h_Wipe()
     if (is_guest() && in_cell())
         g_wipes++; // h_Destroy keeps the mirrors (not touched by us): the host's state replaces them
     g_in_wipe = is_host() && in_cell();
+    g_wipe_calls++;
     o_Wipe();
     g_in_wipe = false;
 }
@@ -4349,6 +4351,30 @@ std::string debug(const std::vector<std::string>& a)
         uint8_t* s0 = S();
         return "deaths=" + std::to_string(s0 ? F<int32_t>(s0, 0x70) : -1);
     }
+    if (!a.empty() && a[0] == "species") { // tests (BUG-0637): the creature models of the pool (foreground, alive): model count levels
+        std::map<uint32_t, std::pair<int, std::set<int>>> m;
+        for_each_cell([&](uint8_t* c, uint32_t) {
+            if (c == av || modes::cell_is_puppet(c) || F<uint8_t>(c, kDead) || F<uint8_t>(c, kDying) || strcmp(kind_of(c), "creature") ||
+                F<void*>(c, kQuery) != fg_query())
+                return;
+            auto& e = m[F<uint32_t>(c, kModelKey)];
+            e.first++;
+            e.second.insert(F<int>(c, kLevel));
+        });
+        std::string out;
+        char b[96];
+        snprintf(b, sizeof b, "own model=%08X level=%d food_level=%d\n", av ? F<uint32_t>(av, kModelKey) : 0, av ? F<int>(av, kLevel) : -1,
+                 g_tile_level);
+        out = b;
+        for (auto& [k, e] : m) {
+            std::string lv;
+            for (int l : e.second)
+                lv += (lv.empty() ? "" : ",") + std::to_string(l);
+            snprintf(b, sizeof b, "model %08X n=%d levels=%s\n", k, e.first, lv.c_str());
+            out += b;
+        }
+        return out;
+    }
     if (!a.empty() && a[0] == "npcs") { // tests (BUG-0205): the creatures within <r> m: local index, mirror, AI lock, pos
         uint8_t* av = avatar();
         if (!av)
@@ -4549,6 +4575,28 @@ std::string debug(const std::vector<std::string>& a)
         float dir[3] = {1, 0, 0};
         h_DamageCell(best, av, dir, 4, 0, 0.f);
         return "bit mirror " + std::to_string(F<uint32_t>(best, 0)) + " at " + std::to_string(bd);
+    }
+    if (a.size() >= 2 && a[0] == "alive") { // tests (BUG-0635): which of the host indices k1,k2,... are alive cells here (mirrors on a guest)
+        std::string out = "alive";
+        const char* p = a[1].c_str();
+        while (*p) {
+            while (*p == ',' || *p == 'c')
+                p++;
+            char* e = nullptr;
+            uint32_t key = (uint32_t)strtoul(p, &e, 10);
+            if (e == p)
+                break;
+            p = e;
+            uint8_t* c = nullptr;
+            if (is_guest()) {
+                auto it = g_mirrors.find(key);
+                c = it != g_mirrors.end() && it->second.local ? modes::cell_at(it->second.local) : nullptr;
+            } else
+                c = modes::cell_at(key);
+            if (c && !F<uint8_t>(c, kDead) && !F<uint8_t>(c, kDying))
+                out += " c" + std::to_string(key);
+        }
+        return out + "\n";
     }
     if (a.size() >= 2 && a[0] == "gap") { // tests (BUG-0634): our cell and the cell <key>: centre distance, sizes, own pairs so far
         uint32_t key = (uint32_t)strtoul(a[1].c_str() + (a[1][0] == 'c' ? 1 : 0), nullptr, 10);
@@ -5557,9 +5605,9 @@ std::string status()
     char j[96];
     snprintf(j, sizeof j, "cell_guest_fx: joins_after_load=%u bite_rings=%u\n", g_joins_load, g_bite_rings); // BUG-0352, BUG-0350
     char o[300]; // BUG-0632 / BUG-0636 (class BUG-0420), BUG-0635
-    snprintf(o, sizeof o, "cell_once: kill_once=%d eat_once=%d kills_dup_sent=%u kills_dup_refused=%u eaten_skipped=%u gone_again=%u wipe_kept=%u wipe_destroyed=%u wipe_near_lost=%u\n",
+    snprintf(o, sizeof o, "cell_once: kill_once=%d eat_once=%d kills_dup_sent=%u kills_dup_refused=%u eaten_skipped=%u gone_again=%u wipe_calls=%u wipe_kept=%u wipe_destroyed=%u wipe_near_lost=%u\n",
              (int)g_fix_kill_once, (int)g_fix_eat_once, g_kills_dup_sent, g_kills_dup_refused, g_eaten_skipped, g_gone_again,
-             g_wipe_kept, g_wipe_destroyed, g_wipe_near_lost);
+             g_wipe_calls, g_wipe_kept, g_wipe_destroyed, g_wipe_near_lost);
     return b + std::string(d) + t + j + o;
 }
 

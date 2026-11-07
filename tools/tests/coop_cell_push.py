@@ -23,7 +23,7 @@ def gap(con, key):
     return (float(m.group(1)), float(m.group(2)), float(m.group(3)), int(m.group(4)), m.group(5) + '/' + m.group(6)) if m else None
 
 
-def nearest_creature(con, ratio=(0.6, 1.8)):
+def nearest_creature(con, ratio=(0.4, 2.5)):
     out = con.call('coop.pool see 400')['out']
     for l in out.splitlines():
         f = l.split()
@@ -65,16 +65,17 @@ def main():
         key = nearest_creature(con)
         if not key:
             print(f'  {who}: no creature of its size on screen ({con.call("coop.pool see 400")["out"].count("creature")} creatures)')
-            con.call('coop.pool tp 25 0' if who == 'guest' else 'coop.pool tp -25 0')
-            time.sleep(3)
+            con.call(f'coop.pool goto {(-1) ** i * 30} {(i % 3) * 20 - 20}')  # swim somewhere else (the partner follows)
+            time.sleep(4)
+            (guest if who == 'host' else host).call('coop.pool tp 3 0')
+            time.sleep(2)
             continue
         con.call(f'coop.pool swimto {key} tp')
         time.sleep(0.3)
         r, info, pairs = push(con, key)
         res[who].append(r)
         print(f'  {who} into {key}: closest {r:.2f} of the two sizes ({info}), own pairs +{pairs}', flush=True)
-        con.call('coop.pool tp 20 0' if who == 'guest' else 'coop.pool tp -20 0')
-        time.sleep(1.5)
+        time.sleep(1.0)
     for who in ('host', 'guest'):
         ck(len(res[who]) >= a.rounds // 2, f'{who}: {len(res[who])} pushes')
     h = sorted(res['host'])[len(res['host']) // 2] if res['host'] else 0
