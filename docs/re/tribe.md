@@ -2284,12 +2284,20 @@ per member mirror `a<id>` (the driving's aim), `r<id>` (M1's raw lead: the newes
 * ✔ observed (net_tests, a catch-up at 2x): drive.lead_late's "where the shown target was going" used the shown target's
   own velocity; after a frame that stepped back (velocity 0) the next state stepped it back again and the target stood
   every other frame 0.07-0.1 s behind. Going on at the lead's velocity instead: no stall.
-* ✔ fix (drive.lead_keep): no no-lead rule while drive.lead_late is on (it brings a late state in without a step, which
-  the rule was for); the late target catches up at 2x the real time and the mirror is walked at that rate without
-  catch_prop on top (at most 2 x speed + 3 m/s drawn, tribe_walk's jump is 3 x the top speed); a new state steps the
-  shown time back only when its news was late (the lead had to go over kLateNews 0.05 s further than the median of the
-  last 32 horizons past the state before it). net_tests test_lead_keep: over a 120 ms one-way link 0.7.9 2.88 m mean
-  target error, the fix 0.00 m; a start known 0.3 s late within 0.3 m after 0.40 s (0.7.9 1.10 s).
+* ✔ fix (drive.lead_keep), final: BUG-0619's no-lead rule stays for the mobile network but its line is 130 ms (back
+  under 115 ms) instead of 100 / 85 ms; the late target catches up at 1 + lag / 0.25 s (at most 2x), going on at the
+  lead's velocity; a new state steps the shown time back only when its news was late (the lead had to go over kLateNews
+  0.05 s further than the median of the last 32 horizons past the state before it) and not at all when no point of the
+  new path is within 1.5 m of where the shown target was going (a turn round inside a spike: the lead's time at once);
+  a mirror's drawn step is always held to 2 x its own speed + catch_up (WalkPlace::lead_speed). net_tests
+  test_lead_keep: over a 110 ms one-way link 0.7.9 2.79 m mean target error, the fix 0.00 m; a start known 0.3 s late
+  within 0.3 m after 0.53 s (0.7.9 1.10 s); a turn round in a spike over 2 m 0.00 s after the news (0.7.9 0.67 s).
+* ✔ observed: with the lead kept on over any link (a first version) tribe_walk_mobile went stop-and-go and drew 0.9 m
+  jumps (1 of 3, 1 of 3 against 3 of 3 with the rule, labs 20261107-094647, -095652-2 / -095652); the latency the rule
+  reads does not part the mobile network (109-126 ms at the switch) from a loaded guest (100-150 ms): BUG-0651 stays for
+  a heavily loaded guest.
+* ✔ result: body_trail_tribe_player 3 of 3 with the fix (p90 1.32-1.77 m) against 0 of 3 off (2.24 / 2.00 / 1.81 m,
+  over 2 m 1.06-1.13 s) at the same time on the other lane (labs 20261107-114838 / -114838-2, lab load 25-35).
 * ✔ observed (lab 20261107-081649, lead kept on): aim p90 1.62-2.34 m against the raw lead's 1.36-2.15 m: the lead's
   cost is gone; what is left at a load of 12 on 6 cores is the raw lead itself (states every 0.1-0.2 s from a host at
   16-20 fps) and the walk behind the aim (p90 0.7-0.9 m).
