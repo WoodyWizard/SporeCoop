@@ -98,6 +98,15 @@ static bool g_chosen[kKinds]; // the player chose (even "none")
 static bool g_guest_world_fix = true;
 COOP_FIX("creations.guest_world_species", "BUG-0345", g_guest_world_fix,
          "creations: a guest plays its own creation by default only in a world it played it in (or chose it); else the world's species");
+// BUG-0638: a guest's explicit choice (choices.ini) held in every world: a guest that missed the host's
+// Cell -> Creature editor (it was in its own Cell editor) played a creature it had chosen in another
+// world two days before. Now a guest's chosen creation holds only in a world it is recorded for
+// (worlds.ini: the choice records the world it is made in, as playing it does); in another world the
+// guest plays its default (this world's record, the host's evolved species, the world's species). An
+// explicit "the world's own" still holds everywhere. Off: a choice holds in every world (0.7.9).
+static bool g_choice_world_fix = true;
+COOP_FIX("creations.choice_world", "BUG-0638", g_choice_world_fix,
+         "creations: a guest's chosen own creation holds only in a world it chose or played it in");
 static std::map<std::pair<int, uint32_t>, uint32_t> g_world_rec; // (kind, world) -> creation instance (cache)
 static std::set<std::pair<int, uint32_t>> g_world_read;           // read from the file already
 static std::set<std::tuple<int, uint32_t, uint32_t>> g_own_told;  // notices given (kind, world, creation)
@@ -1253,6 +1262,13 @@ static Key avatar_species_key()
     return {k[0], k[1], k[2]};
 }
 
+// BUG-0638: the guest's explicit choice was made (or played) in this world; outside a world it holds
+static bool choice_here(int k)
+{
+    uint32_t w = modes::current_world();
+    return !w || world_record(k, w) == g_choice[k].instance;
+}
+
 static bool host_world_key(Kind k, uint32_t inst); // a creation of the host's world (BUG-0278)
 static bool records_from_game(const Key& k, std::vector<dbpf::Record>& out); // its records, any registered package
 static bool own_option(Kind k, const Key& key)
@@ -1274,6 +1290,8 @@ Option mine(Kind k)
     if (g_pre_editor_fix && chosen && guest && k != kUfo && g_choice[k].instance &&
         host_world_key(k, g_choice[k].instance) && !own_option(k, g_choice[k]))
         chosen = false;
+    if (g_choice_world_fix && chosen && guest && k != kUfo && g_choice[k].instance && !choice_here(k))
+        chosen = false; // BUG-0638: chosen in another world: this world's default
     if (g_pre_editor_fix && chosen && guest && k != kUfo && !g_choice[k].instance) {
         auto h = g_applied.find({0, (uint8_t)k});
         Key a = h != g_applied.end() && h->second.orig.instance ? h->second.orig
@@ -2671,6 +2689,8 @@ void choose(Kind k, const Key& key)
     g_chosen[k] = true;
     g_choice[k] = key;
     g_choice_epoch[k] = choice_epoch_now(k);
+    if (g_choice_world_fix && k != kUfo && key.instance && C.sess && C.sess->role() == net::Role::Client)
+        world_record_set(k, modes::current_world(), key.instance); // BUG-0638: the world it is chosen in
     if (find_paths()) {
         std::wstring v = key.instance ? std::wstring(L"0x") + std::to_wstring(0) : L"0";
         wchar_t hx[16];
@@ -2980,7 +3000,9 @@ std::string trace_line(Kind k)
 {
     bool guest = C.sess && C.sess->role() == net::Role::Client;
     Option o = mine(k);
-    const char* origin = g_chosen[k] && k != kUfo ? (g_choice[k].instance ? "choices.ini" : "choices.ini: the world's own")
+    bool other_world = guest && g_choice_world_fix && g_chosen[k] && k != kUfo && g_choice[k].instance && !choice_here(k);
+    const char* origin = other_world ? "the world's default (the choices.ini creation is of another world, BUG-0638)"
+                         : g_chosen[k] && k != kUfo ? (g_choice[k].instance ? "choices.ini" : "choices.ini: the world's own")
                          : k == kUfo                ? "own empire"
                          : guest && !g_opts[k].empty() && g_guest_world_fix ? (world_record(k, modes::current_world()) ? "this world's record (worlds.ini)" : "the world's species (no own one played in this world)")
                          : guest && !g_opts[k].empty() ? "newest own creation"
