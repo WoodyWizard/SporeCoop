@@ -2159,3 +2159,5 @@ Each line: what the players saw, what the logs show; reproduce and details in th
 * Known: docs/re/creature.md#creature-herd-evolution-desync. Not known: what advances the generation +0xF0, and what
   the guest's screen shows at such a nest (the creatures are the host's NPCs).
 * Ticket: BUG-0668
+* Fixed (2026-11-07, fix/w46-herd-evo): the host owns the evolution (wsync.herd_evo, test nest_evolve);
+  docs/re/creature.md#creature-herd-evolution-owner.

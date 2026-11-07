@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+- Creature: the other species' nests evolve in the host's game only; a guest's nests show the same species as the
+  host's at the same moment, and a nest whose species the host wiped out no longer comes back as a new species on the
+  guest's map (BUG-0668, likely the "nest evolving on the host" of BUG-0639).
+
 ## [0.7.9] - 2026-11-07
 
 ### Changed

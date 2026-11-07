@@ -3472,3 +3472,42 @@ BUG-0668, BUG-0639, BUG-0641. GOG 2024, Ghidra (out/ghidra-2024) and lanes 2-3 (
   spit hit, and the charge's game stuns its creature when it charges now or its charge hit within the last 1 s.
 * ✔ Fixture: the creature fixture's creatures (host and guest) have neither a spit (0x20) nor a charge (0x1F); its NPCs
   have both; the guest profile's own creature 29021371 has both (types 10 11 1D 1E 1F 20 21 22 23 24 25 28 31 32 33 D E).
+
+## The NPC herd evolution, owned by the host (2026-11-07, fix/w46-herd-evo)
+<a id="creature-herd-evolution-owner"></a>
+
+BUG-0668, BUG-0639. GOG 2024, Ghidra (out/ghidra-2024) and lanes 2-3 (creature fixture). Answers the open "?" of
+section creature-herd-evolution-desync (what advances +0xF0).
+
+* ✔ (Ghidra) The evolution step is in CreatureGame_Update 0xD45740 (thiscall, ret 8, the creature game's frame): after
+  updating the enabled herds it collects every herd with all of: the creature game's +0x48 set (0xD45B19), herd +0x85
+  mbShouldEvolve, species +0xA4 != cSpeciesManager_PlayerSpecies 0x4DF490, the byte CreatureGame_HerdEvolveOn
+  0x1582DF4 (the tuning bool property 0x9040F372, written once by the tuning load 0xD3D979, read only at 0xD45A41),
+  0 < +0x94 mDNAEvolutionThreshold < the DNA total (CreatureGame_DNATotal 0xD2E360, +0x10F0 of the getter), and
+  gen +0xF0 < min(gen + 1, the profile's generations, 0x4E00C0(+0x88, gen) +0x3C4..+0x3C8). For each: gen + 1, the
+  species cHerd_EvolvedSpecies 0xC6AD90(gen) = GetSpeciesProfile(+0xA8[gen]) (the chain built by cHerd_Init 0xC6EA90,
+  from the save); a species extinct on the planet (0xC74040) is replaced (0xB97750, 0xB9A8A0) and its key written to
+  +0xA8[gen]; then +0xF0, +0xA4, cHerd_ApplyProfile 0xC6E3A0(profile(gen), 1) and the members' +0x1004 = the new key.
+  +0x48 is cleared after a pass that had candidates.
+* ✔ (Ghidra) cHerd_ApplyProfile draws +0x94 at random in the profile's range (0x4DF340 of profile +0x318), also the
+  target size +0xF4 and other fields; it runs at the herd init, at the evolution and from 0xACF320 / 0xAD4E4B / 0xC90080
+  / 0xD7EA30. That is why the two games had other thresholds from the start, and why a host herd's threshold changes
+  without a new generation (289 -> 389 in out/lab/20261107-081734).
+* ✔ (runtime, nest_evolve, off: out/lab/20261107-095730, 20261107-100058, 20261107-100333) The chain is the same in both
+  games: after +250 DNA all 21 host nests that evolved have the same generation and species key on the guest (its own
+  step, at its own moment). The only species difference is the herd the host's game made extinct: +0x85 = 0 there (it
+  is not evolved), generation 1, species 065CBBBA on the guest. Thresholds of the 21 evolved nests differ in all of them.
+* ✔ (runtime) 134 nests on the fixture's planet (100 NPC nests with another species): more than one packet.
+* Fix (wsync.herd_evo, row 12 `herd_evo`): the host sends per NPC nest home +0x34, generation, +0x85, +0x190, +0x94 and
+  the species key (instance, group), changed nests first then a moving window of 30 (all within ~5 s); the guest merges
+  them by home, sets CreatureGame_HerdEvolveOn = 0 while it is a guest in Creature (the game's value back otherwise), and
+  takes the host's values: key into +0xA8[gen], +0xF0, +0xA4 = cHerd_EvolvedSpecies(gen), +0x94, +0x85. Not called on
+  the guest: cHerd_ApplyProfile (its fields drive spawning and respawn, which the guest's nests do not do: the members
+  are the host's NPC mirrors) and the members' +0x1004 (the mirrors follow the host's NPCs).
+* ✔ (runtime, nest_evolve PASS out/lab/20261107-100043, 20261107-100318) every guest nest has the host's generation and
+  species in every sample from 15 s after the DNA, the evolved nests have the host's threshold, the extinct nest stays
+  generation 0 with the host's species.
+* BUG-0639 in a game of one: the game has no shield for an evolving nest (its members take hits, out/lab/20261107-082348)
+  and the family is friendly (CreatureFriendly 0xC0C3B0 via IsPlayerSpecies, family_attack). With the fix the guest's
+  nests are the host's (generation, species, extinct), so its game uses the host's nest for every rule that reads the
+  herd (minimap 0xD425A0, the friendly-nest test 0xC6ABF0).

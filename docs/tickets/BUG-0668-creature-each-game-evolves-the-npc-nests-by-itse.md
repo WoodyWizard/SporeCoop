@@ -1,7 +1,7 @@
 ---
 id: BUG-0668
 title: Creature: each game evolves the NPC nests by itself: other thresholds, and a nest extinct on the host evolves to a new species on the guest
-status: open
+status: fixed
 kind: desync
 stage: Creature
 reported: 2026-11-07
@@ -9,11 +9,11 @@ source: found in the lab, fix/w46-creature-p0 (BUG-0639 probe)
 role: both
 versions: 0.7.9
 fixed_in:
-branch:
+branch: fix/w46-herd-evo
 commits:
-tests: nest_evolve_probe (coop_nest_evolve_probe.py)
+tests: nest_evolve (coop_nest_evolve.py), nest_evolve_probe (coop_nest_evolve_probe.py)
 signature:
-docs: docs/re/creature.md#creature-herd-evolution-desync
+docs: docs/re/creature.md#creature-herd-evolution-desync, docs/re/creature.md#creature-herd-evolution-owner
 related: BUG-0639, BUG-0464, BUG-0460, BUG-0640
 ---
 
@@ -36,14 +36,33 @@ Inferred: the herd evolution (cHerd generation +0xF0 from mEvolvedSpeciesProfile
 +0x94) runs in each game; no row carries the host's generation, species or thresholds to the guest (wobj.herd, BUG-0460,
 carries the extinct state only). Fix idea: the host's herd generation / species key / threshold as a host-owned row,
 the guest's own evolution step suppressed. Possibly the cause of BUG-0639 ("for the host the nest is evolving").
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+Observed (Ghidra, fix/w46-herd-evo): the step is in CreatureGame_Update 0xD45740: while the creature game's +0x48 is
+set and the tuning byte CreatureGame_HerdEvolveOn 0x1582DF4 is on, every herd with +0x85, a species other than the
+player's and 0 < +0x94 < the DNA total (0xD2E360) gets gen + 1, species cHerd_EvolvedSpecies 0xC6AD90(gen) (the save's
+chain +0xA8) and cHerd_ApplyProfile 0xC6E3A0(profile, 1), which draws a new random threshold +0x94. Each game runs it
+on its own. Observed (runtime, switch off, out/lab/20261107-095730): the chain is the same on both games (all 21
+evolved nests get the same species key on the guest), the thresholds differ, and the herd extinct on the host (+0x85 =
+0 there, so not evolved) is evolved on the guest (gen 1, species 065CBBBA instead of 065CB8AB). Not found: what clears
++0x85 on the host's extinct herd (not needed: the row carries it). docs/re/creature.md#creature-herd-evolution-owner.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+wsync row 12 `herd_evo` (mods/coop/wsync.cpp): the host sends per NPC nest (home +0x34) the generation, species key,
++0x94, +0x85 and +0x190, changed nests first, then a window of 30 that moves once a second (100 nests on the fixture's
+planet: one packet holds ~35); the guest merges by home. On the guest CreatureGame_HerdEvolveOn is 0 while it is a guest
+in Creature (its own step off; the game's value comes back after the session), and each nest takes the host's
+generation and species (the key into +0xA8[gen], +0xF0, +0xA4 = cHerd_EvolvedSpecies(gen)), threshold and +0x85.
+Switch `coop.fix wsync.herd_evo off` (SPORE_FIX_OFF=wsync.herd_evo): each game evolves its own nests (0.7.9).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+coop_nest_evolve.py (suite full, `nest_evolve`): the host's avatar makes the nearest nest extinct, +250 DNA, then
+every 5 s for 60 s both games' own herds (`coop.nest evolve`) are compared nest by nest.
+* FAIL with SPORE_FIX_OFF=wsync.herd_evo: out/lab/20261107-095730, out/lab/20261107-100058, out/lab/20261107-100333
+  (the extinct nest gen 1 / a new species on the guest; 21 thresholds differ in the last).
+* PASS: out/lab/20261107-100043, out/lab/20261107-100318 (134 nests compared, 21 evolved on the host, 0 differ in
+  every sample, the extinct nest stays gen 0 on the guest). (20261107-095709 failed with a first version that sent
+  only the 30 nearest nests: 10 far nests stayed gen 0 on the guest.)
+* Not verified: a guest's minimap icon of the nest seen on screen; a second evolution (gen 2) of the same nests.
 
 ## History
 - 2026-11-07: opened.
+- 2026-11-07 (fix/w46-herd-evo): fixed: wsync.herd_evo; FAIL 20261107-095730 / 100058 / 100333, PASS 20261107-100043 / 100318.
