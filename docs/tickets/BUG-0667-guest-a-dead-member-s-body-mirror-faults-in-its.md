@@ -1,7 +1,7 @@
 ---
 id: BUG-0667
 title: guest: a dead member's body mirror faults in its eat node's exit when destroyed (0xAC9C7D data 0x39C under cTribe slot release 0xC988E0), then the game froze
-status: open
+status: fixed
 kind: crash
 stage: Tribe
 reported: 2026-11-07
@@ -10,7 +10,7 @@ role: guest
 versions: rel/0.7.9 75599275
 fixed_in: unreleased
 branch: fix/w46-tribe-fault
-commits:
+commits: d893d8f6 39231fee ea7ece1a
 tests: coop_tribe_dead_member.py --eat (suite tribe_body_teardown)
 signature: 0xC0000005 at 0x00AC9C7D (labelled Relevance_InsideEnter+0xF4D) data 0x39C, ecx 0x394, esi 0xD; calls 00C27E9C 00C988FA 00DB0C6E 00BC87D0 00BC887D 00C0D596 00C20013 (cTribe_ToolLayout < cTribe_ReleaseSlot < eat node exit 0xDB0C40 < BT shutdown 0xC0D500 < citizen teardown 0xC1FFE0)
 docs: docs/re/tribe.md#tribe-body-teardown
@@ -53,13 +53,31 @@ New in 0.7.9 (BUG-0620's detach, commit e485cc7a; v0.7.8 has no detach_body).
   the game's RemoveMember destroys); at session end the bodies left in the world get it back too; a cTribe_ReleaseSlot
   (0xC988E0, new .sym entry) with this = null is skipped by a detour (warned 8 times). Off: destroyed with no tribe, no
   detour (rel/0.7.9 before).
+  Added after long_tribe_short 20261107-032137 (a citizen with no tribe torn down at the menu exit, another node's
+  exit 0xDA7FB0 faulted after the skipped release): on a guest SetTribe(null) is recorded and the citizen teardown
+  (vt 0xC4, 0xC27CD0) with no tribe puts back the detached or recorded tribe (AddRef for the recorded one), else it
+  empties the tree's stack so no exit runs. Same switch.
 * `kit.fix frameunwind` (sporekit/d3d9hook.cpp, the "never freeze" part): the frame keeps its stack address and thread;
   an entry on that thread at or above it (a nested call is always deeper) means the frame was cut off by a caught fault:
   the flags are cleared, a warning is logged, frames go on. Off: the flags stay (SporeKit 0.3.11).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+`coop_tribe_dead_member.py --eat` (suite `tribe_body_teardown`, lane 4):
+* FAIL with `SPORE_FIX_OFF=tribe.body_teardown` on SporeKit without frameunwind (d893d8f6): lab run 20261107-031255
+  (the fault at 0xAC9C7D data 0x39C, same chain as long_tribe, then "guest: FROZE", watchdog stack in Canvas::Tick).
+* FAIL with `SPORE_FIX_OFF=tribe.body_teardown,kit.frameunwind` (final code): lab run 20261107-042104 (fault, FROZE,
+  the guest's frame count stood still 4000 -> 4000).
+* FAIL with `SPORE_FIX_OFF=tribe.body_teardown` only: lab run 20261107-031958 (the fault, but "the frame 3867 was cut off
+  by a fault ... frames go on": no freeze, the body went, frames ran: kit.frameunwind alone keeps the game going).
+* PASS: lab runs 20261107-031815 and 20261107-035147 (no fault, teardown_restored=1, the body went after ~33 s).
+* Regression (final code c88e9045, lab run 20261107-035147, 7/7): long_tribe_short, play_tribe, tribe_coop,
+  tribe_dead_rejoin, tribe_body_teardown, tribe_dead_member, tribe_dead_player. long_tribe_short logged the teardown
+  guard once ("citizen ... torn down with no tribe in node 04861814 (depth 2): its tree's exits skipped") at the menu
+  exit, with no fault; the run before that guard (20261107-032137) faulted there (0xDA7FC9).
+* Negative: `--eat --menu` (the mirror in the eat node, then Exit to Main Menu) passed with the fix off (lab run
+  20261107-035000): not a repro of the menu path, dropped.
 
 ## History
-- 2026-11-07: opened.
+- 2026-11-07: opened (long_tribe on rel/0.7.9, lab 20261107-021641).
+- 2026-11-07: fix/w46-tribe-fault: reproduced (tribe_body_teardown), new in 0.7.9 (BUG-0620's detach_body); fixed
+  (tribe.body_teardown) and the freeze after a caught frame fault fixed in SporeKit (kit.frameunwind).

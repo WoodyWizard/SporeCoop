@@ -2229,3 +2229,16 @@ BUG-0667. GOG 2024, disassembly + lab lane 4 (`coop_tribe_dead_member.py --eat`,
   address clears the flags (a nested call is always deeper) and logs "the frame N was cut off by a fault".
 * ? Any other mod state a cut-off frame leaves half done (a loop over g_gm stopped in the middle) is not reset; the
   next snapshot cycle rebuilds the tribe's.
+* ✔ (disassembly) citizen+0x1014 is an intrusive pointer: SetTribe 0xC23040 AddRefs the new tribe (vt 0) and Releases
+  the old (vt 4); the citizen teardown vt 0xC4 = 0xC27CD0 runs 0xC1FFE0 first and only then releases and zeroes +0x1010
+  and +0x1014. detach_body's raw clear keeps the reference (the raw restore before the destroy is balanced).
+* ✔ (runtime, long_tribe_short 20261107-032137, with the slot guard) when the guest left the world for the menu one
+  citizen was torn down with no tribe: the eat exit's release was skipped, then the exit **0xDA7FB0** of node
+  **0x0551759F** (enter 0xDAE230, tick 0xDA7F20; reads tribe+0x26C) faulted. Not one of the detached bodies (the one of
+  that run had been destroyed with its tribe). ? which citizen: a member whose tribe the guest's own game cleared
+  (SetTribe(null), e.g. a death in its local play during the editor visit) is the inferred candidate.
+* ✔ (runtime, lab 20261107-035000, negative) a mirror in the eat node torn down by the guest's Exit to Main Menu does not
+  fault with the fix off: the game's world teardown destroys members with their tribe set.
+* ✔ Hardening (tribe.body_teardown, guest): SetTribe(null) is recorded (citizen -> old tribe); the citizen teardown
+  0xC27CD0 with +0x1014 null puts back the detached body's tribe or the recorded one (AddRef first) when it is still a
+  world's tribe, else it empties the tree's stack (ai+0x1DC = 0: no exit runs) and logs it (8 times).
