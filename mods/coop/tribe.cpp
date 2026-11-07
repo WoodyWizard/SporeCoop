@@ -4101,6 +4101,18 @@ std::string debug(const std::vector<std::string>& a)
         g_test_lift = (float)atof(a[1].c_str());
         return "members of the host taken " + a[1] + " m further from the planet's centre";
     }
+    if (a.size() >= 2 && a[0] == "level" && is_host()) { // level <0..7>: tests (BUG-0645), the stores of the hut upgrade
+        void* pt = player_tribe();
+        int lv = atoi(a[1].c_str());
+        if (!pt || lv < 0 || lv > 7)
+            return "no player tribe / level 0..7";
+        F<int>(pt, 0x38) = lv; // 0xFF0260, as the upgrade 0xCDA4F0 sets it
+        uintptr_t hudp = H->sym("SporeCoop::TribeHud_ptr");
+        void* hud = hudp && skg::readable((void*)hudp, 4) ? *(void**)hudp : nullptr;
+        if (hud && skg::readable(hud, 0x14) && a_MaxPop)
+            F<int>(hud, 0x10) = thiscall<int>(a_MaxPop, pt);
+        return "level " + std::to_string(lv);
+    }
     if (a.size() >= 2 && a[0] == "spawn" && is_host()) { // spawn <n>: test setup, n more adults in the player tribe
         void* pt = player_tribe();
         int n = 0;
@@ -4311,10 +4323,14 @@ std::string list()
         net::Vec3 p = tribe_pos(tribes[ti]);
         auto ms = members(tribes[ti]);
         TribeInfo ti_info = tribe_info(tribes[ti]); // the members' species (BUG-0381 tests)
-        snprintf(b, sizeof b, "tribe %u%s at (%.0f %.0f %.0f): %u members species=%08X archetype=%d made=%d level=%d cap=%d\n",
+        uintptr_t hudp = tribes[ti] == pt ? H->sym("SporeCoop::TribeHud_ptr") : 0; // BUG-0645: the HUD's cap
+        void* hud = hudp && skg::readable((void*)hudp, 4) ? *(void**)hudp : nullptr;
+        snprintf(b, sizeof b, "tribe %u%s at (%.0f %.0f %.0f): %u members species=%08X archetype=%d made=%d level=%d cap=%d "
+                 "hud_cap=%d\n",
                  (unsigned)ti, tribes[ti] == pt ? " (player)" : "", p.x, p.y, p.z, (unsigned)ms.size(), ti_info.key.instance,
                  ti_info.arch == 0xFF ? -1 : (int)ti_info.arch, (int)ours_in(g_ours_t, tribes[ti]), F<int>(tribes[ti], 0x38),
-                 a_MaxPop ? thiscall<int>(a_MaxPop, tribes[ti]) : -1);
+                 a_MaxPop ? thiscall<int>(a_MaxPop, tribes[ti]) : -1,
+                 hud && skg::readable(hud, 0x14) ? F<int>(hud, 0x10) : -1);
         out += b;
         for (void* c : ms) {
             net::Vec3 cp = game::position(c);

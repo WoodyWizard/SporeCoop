@@ -273,6 +273,7 @@ add('civ_host_design', P + 'coop_civ_host_design.py', minutes=4)  # the guest's 
 add('civ_vehicle_scale', P + 'coop_civ_vehicle_scale.py', warm=True, minutes=3, fixture='civ_npc')  # a guest's mirror vehicle has the host vehicle's size (BUG-0549; --nofix fails)
 add('node_scale', P + 'coop_node_scale.py', warm=True, minutes=3, fixture='creature')  # a spice node has the host's size on the guest (BUG-0485; --nofix fails)
 add('civ_city_ground', P + 'coop_civ_city_ground.py', warm=True, minutes=5, fixture='civ_npc')  # the ground round the cities is the same on both games, loaded and after a live founding / capture (BUG-0332 class in Civ)
+add('tribe_level', P + 'coop_tribe_level.py', warm=True, minutes=3, fixture='tribe')  # the guest's player tribe has the host's level and population cap (BUG-0645; --nofix / SPORE_FIX_OFF=wsync.tribe_level fails)
 add('tribe_member_place', P + 'coop_tribe_member_place.py', warm=True, minutes=5, fixture='tribe')  # every host member near the guest is a member at that place on the guest (BUG-0488)
 add('tribe_dead_member', P + 'coop_tribe_dead_member.py', warm=True, minutes=3, fixture='tribe')  # an NPC member killed on the host lies there on the guest too (BUG-0488; SPORE_FIX_OFF=tribe.dead_body fails)
 add('tribe_dead_player', P + 'coop_tribe_dead_member.py --player', warm=True, minutes=3, fixture='tribe')  # BUG-0620: a member of the host's own tribe killed on the host: its body (out of the member list) lies on the guest too while the host's game keeps it (SPORE_FIX_OFF=tribe.member_body fails)

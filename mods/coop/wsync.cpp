@@ -733,6 +733,48 @@ static std::string f_city(const Entry& e)
     return g_fmt;
 }
 
+// ---- row: the player tribe's level (BUG-0645, docs/re/tribe.md#tribe-level): cTribe +0x38, set by the hut upgrade
+// 0xCDA4F0 (the TRG_Upgrade cinematic) from the goal progress when it passes a threshold of prop 0x16D19C8A; the
+// population cap is the level's (cTribe_MaxPopulation 0xC8EC70: 6, 9, 12, 15, 30, 45, 60) and the upgrade copies
+// it into the Tribe HUD (+0x10 of [0x169B41C]). A guest gets the goal progress (tribe_goal) but its game never runs
+// the upgrade: its tribe stayed at level 0, cap 6, with the host's 12 members ("12/6", and no member could be added).
+static bool g_tribe_level_fix = true;
+COOP_FIX("wsync.tribe_level", "BUG-0645", g_tribe_level_fix, "wsync: a guest's player tribe has the host's level and population cap (the hut upgrades)");
+static bool r_tlevel(Table& out)
+{
+    void* t = player_tribe();
+    if (!t)
+        return false;
+    Entry e;
+    e.v[0] = F<uint32_t>(t, 0x38);
+    out.push_back(e);
+    return true;
+}
+static int s_tlevel(const Table& want, bool apply)
+{
+    void* t = player_tribe();
+    if (want.empty() || !t || want[0].v[0] >= 8)
+        return 0;
+    uint32_t w = want[0].v[0];
+    uintptr_t capf = S("SporeCoop::cTribe_MaxPopulation"), hudp = S("SporeCoop::TribeHud_ptr");
+    void* hud = hudp && R((void*)hudp, 4) ? *(void**)hudp : nullptr;
+    int cap = capf ? skg::thiscall<int>(capf, t) : -1;
+    bool hud_off = hud && R(hud, 0x14) && cap >= 0 && F<int>(hud, 0x10) != cap;
+    if (F<uint32_t>(t, 0x38) == w && !hud_off)
+        return 0;
+    if (apply) {
+        *(uint32_t*)((uint8_t*)t + 0x38) = w; // the game's own setter is this one store (0xFF0260)
+        if (hud && R(hud, 0x14) && capf)
+            *(int*)((uint8_t*)hud + 0x10) = skg::thiscall<int>(capf, t);
+    }
+    return 1;
+}
+static std::string f_tlevel(const Entry& e)
+{
+    snprintf(g_fmt, sizeof g_fmt, "level=%u", e.v[0]);
+    return g_fmt;
+}
+
 static const Row kRows[] = {
     {1, "tod", 4, &g_tod_fix, sky, r_tod, s_tod, true, f_tod},
     {2, "day", 1, &g_tod_fix, sky, r_day, s_day, false, f_day},
@@ -744,6 +786,7 @@ static const Row kRows[] = {
     {8, "civ_rel", 1, &g_civ_rel_fix, civ_mode, r_civ_rel, s_civ_rel, false, f_civ_rel},
     {9, "civ_money", 1, &g_civ_money_fix, civ_mode, r_civ_money, s_civ_money, false, f_civ_money},
     {10, "city_owner", 4, &g_city_owner_fix, civ_mode, r_city, s_city, false, f_city},
+    {11, "tribe_level", 1, &g_tribe_level_fix, tribe_mode, r_tlevel, s_tlevel, false, f_tlevel},
 };
 constexpr int kNRows = sizeof kRows / sizeof kRows[0];
 
