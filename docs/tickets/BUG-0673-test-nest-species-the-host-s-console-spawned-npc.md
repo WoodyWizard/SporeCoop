@@ -10,7 +10,7 @@ role:
 versions: 0.7.10
 fixed_in: unreleased
 branch: fix/w46-misc
-commits: e71313b2
+commits: e71313b2, ba0cc08f
 tests: nest_species
 signature:
 docs: docs/06-testing.md#testing-console-npc
@@ -32,7 +32,10 @@ remove_saved_strays. Switch (tests): `coop.fix tools.console_npc off` (the 0.7.9
 
 ## Verification
 nest_species: FAIL with SPORE_FIX_OFF=tools.console_npc: out/lab/20261107-113816 ("the host mirrors it (None)");
-PASS: out/lab/20261107-113618.
+PASS: out/lab/20261107-113618, and with ba0cc08f (the mark kept over world changes; creature_desync turns
+npc.stray_ids off after its crash and reload, when the companion comes from the save without the mark):
+nest_species and creature_desync PASS out/lab/20261107-131332 (creature_desync failed after its editors in
+out/lab/20261107-120856 before ba0cc08f).
 
 ## History
 - 2026-11-07: opened.
