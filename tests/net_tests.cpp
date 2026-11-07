@@ -818,13 +818,16 @@ static void test_lead_keep()
         printf("  speed changes on a jittery 45 ms link: mean target error keep %.2f m (behind the lead p90 %.3f s), "
                "0.7.9 %.2f m (%.3f s)\n", on, b_on, off, b_off);
     }
-    printf("member lead over a 120 ms link and after a start known late (BUG-0651, BUG-0410)\n");
+    printf("member lead over a 110 ms link and after a start known late (BUG-0651, BUG-0410)\n");
     double c_on, c_off;
-    // a 120 ms one-way link (a loaded guest measures 110-150 ms on any link): 0.7.9 showed the members interpolated
-    float on = lead_keep_err(true, 0.12, 0.0, &c_on), off = lead_keep_err(false, 0.12, 0.0, &c_off);
-    printf("  one-way 120 ms: mean target error keep %.2f m, 0.7.9 %.2f m\n", on, off);
-    CHECK(off > 1.5f); // 0.2 s + 0.12 s late at 9 m/s
+    // a 110 ms one-way link (the player network under load reads 100-115 ms): 0.7.9 showed the members interpolated
+    float on = lead_keep_err(true, 0.11, 0.0, &c_on), off = lead_keep_err(false, 0.11, 0.0, &c_off);
+    printf("  one-way 110 ms: mean target error keep %.2f m, 0.7.9 %.2f m\n", on, off);
+    CHECK(off > 1.5f); // 0.2 s + 0.11 s late at 9 m/s
     CHECK(on < 0.3f);
+    // over 130 ms (the mobile network) no lead with the fix either
+    on = lead_keep_err(true, 0.14, 0.0, &c_on);
+    CHECK(on > 1.5f);
     // a 45 ms link, the walk's start known 0.3 s late (a spike of the player network): caught up at up to 2x, not 1.33x
     on = lead_keep_err(true, 0.045, 0.3, &c_on);
     off = lead_keep_err(false, 0.045, 0.3, &c_off);

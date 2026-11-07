@@ -152,15 +152,20 @@ constexpr double kLateRate = 0.5;
 // mirror's walk + catch_prop on top drew 0.94-0.96 m frames (tribe_walk_player 20261106-212040 #2, member 7 at 34.8 s)
 constexpr double kLateExtra = 3.0;
 constexpr int kLateSteps = 16; // candidate times between the earliest and the shown time's continuation
-// BUG-0410, BUG-0651 (K3, `coop.fix drive.lead_keep`): the member lead stays on over any link and a late state is
-// caught up at up to twice the body's speed. In 0.7.9 the lead went off over a one-way latency over 100 ms (BUG-0619's
+// BUG-0410, BUG-0651 (K3, `coop.fix drive.lead_keep`): the member lead stays on up to a 130 ms one-way latency and a
+// late state is caught up at up to twice the body's speed. In 0.7.9 the lead went off over a one-way latency over 100 ms (BUG-0619's
 // rule against the mobile network's stop-and-go, from before drive.lead_late): the player network measures 80-101 ms and
 // a loaded guest 110-150 ms on any link (the round trip counts both games' frame times), so the members were shown
 // interpolated, 0.2 s + latency late, for whole runs (body_trail_tribe_player p90 3.2-3.4 m, coop.bodyrec diag rows,
 // lab 20261107-073841 #1, #3), and where the lead was on, drive.lead_late's catch-up at 1.33x (+3 m/s at 9 m/s) kept the
 // shown target 0.25-0.3 s behind for 0.75 s after every start known late (a latency spike, a loss burst): p90 2.36 m
 // against M1's raw lead 1.20 m (-073841 #2). drive.lead_late brings any late state in without a step, which is what
-// the no-lead rule was for. With the fix: no no-lead rule while drive.lead_late is on; the late target catches up at
+// the no-lead rule was for, but over the mobile network (120 ms, 60 ms jitter) the lead kept on drew stop-and-go and
+// 0.9 m jumps again (tribe_walk_mobile 1 of 3 and 1 of 3 against 3 of 3 with the rule, lab 20261107-094647,
+// -095652-2 / -095652), and the latency the rule reads does not part that link from a loaded guest (mobile 109-126 ms
+// at the switch, the player network under load 100-150 ms). With the fix the rule's line is kKeepHigh (130 ms, back
+// under kKeepLow 115 ms) instead of 100 / 85 ms: the player network and a guest under a moderate load keep the lead,
+// the mobile network and a heavily loaded guest do not (BUG-0651 stays for those); the late target catches up at
 // 1 + kKeepRate x the real time (a mirror walking at that rate draws at most 2 x its speed + catch_up: tribe_walk's jump
 // is 3 x the top speed), and the mirror is walked at the target's rate with no proportional catch-up on top (driver.h
 // catch_prop: the 16.5 m/s + catch-up frames of BUG-0650). And a new state steps the shown time back only as far as its
@@ -173,6 +178,7 @@ constexpr int kLateSteps = 16; // candidate times between the earliest and the s
 inline bool g_lead_keep_fix = true;
 constexpr double kKeepRate = 1.0;
 constexpr double kKeepTau = 0.25; // s
+constexpr double kKeepHigh = 0.13, kKeepLow = 0.115; // s: the no-lead rule's one-way latency line with the fix
 constexpr size_t kHorizonN = 32;
 constexpr double kLateNews = 0.05; // s
 
@@ -245,7 +251,10 @@ public:
                 std::array<float, kJitterN> d = devs_;
                 std::nth_element(d.begin(), d.begin() + n / 2, d.begin() + n);
                 jitter_ = d[n / 2];
-                jittery_ = jitter_ > kJitterHigh || (jittery_ && jitter_ > kJitterLow);
+                // BUG-0651 (g_lead_keep_fix): the rule's line moved over what the player network and a moderately loaded
+                // guest read (80-115 ms); the mobile network (110-150 ms) stays under it
+                const double hi = g_lead_keep_fix ? kKeepHigh : kJitterHigh, lo = g_lead_keep_fix ? kKeepLow : kJitterLow;
+                jittery_ = jitter_ > hi || (jittery_ && jitter_ > lo);
             }
         }
         // BUG-0410 (g_lead_keep_fix): how much further than usual the lead had to go past the state before this one
@@ -336,7 +345,7 @@ private:
         if (lead && g_lead_fix) {
             double tl = local_now - offset_ + g_one_way;
             const Snap& n = snaps_.back();
-            const bool late = g_lead_late_fix && g_lead_smooth_fix && smooth_max > 0 && (!jittery_ || g_lead_keep_fix);
+            const bool late = g_lead_late_fix && g_lead_smooth_fix && smooth_max > 0 && !jittery_;
             if (late)
                 tl = late_time(local_now, tl);
             // BUG-0619: no lead over a jittery link (jitter_ over kJitterHigh until it is under kJitterLow again): the lead
@@ -346,7 +355,7 @@ private:
             // smooth, ~0.2 s late); the switch goes through the smoothing
             bool use = true;
             if (g_lead_smooth_fix && smooth_max > 0)
-                use = !jittery_ || late; // BUG-0651 (g_lead_keep_fix): kept on while drive.lead_late brings late states in
+                use = !jittery_;
             if (use && tl >= n.t) {
                 double dt = tl - n.t;
                 last_extrap = dt;
@@ -521,7 +530,7 @@ public:
     double jitter() const { return jitter_; }
     bool jittery() const { return jittery_; }
     // BUG-0651: the member lead is off (interpolated, 0.7.8) because of the link's latency
-    bool lead_off() const { return jittery_ && !(g_lead_keep_fix && g_lead_late_fix && g_lead_smooth_fix && smooth_max > 0); }
+    bool lead_off() const { return jittery_; }
     // BUG-0651: the late lead target catches up (runs faster than the body) this frame
     bool late_catching() const { return lt_have_ && lt_rate_ > 1.01f; }
     float smooth_off() const { return sm_have_ ? dist(Vec3{}, sm_off_) : 0.f; }
