@@ -2184,9 +2184,9 @@ static void mirror_drive(GMember& g, double now)
         o.speed_after_goal = true;
         o.max_dt = 0.4; // a slow guest keeps up with its members (driver.h)
         o.ground = g_mirror_ground_fix; // BUG-0444
-        // BUG-0425; BUG-0619: with drive.lead_smooth the lead target closes the error itself (on its own path):
-        // catch_prop on top measured the catch-up from the game's walk and drew walk + catch-up (0.9-1.25 m frames)
-        o.catch_prop = !net::g_lead_smooth_fix;
+        // BUG-0425; BUG-0619: not while the smoothed target closes the error itself (catch_prop on top measured the
+        // catch-up from the game's walk and drew walk + catch-up, 0.9-1.25 m frames), nor without the lead (0.7.8)
+        o.catch_prop = g.lead_sp < 0 && !(net::g_lead_smooth_fix && g.buf.jittery());
         if (g.lead_sp >= 0)
             o.lead_speed = std::max(g.lead_sp, 0.5f); // BUG-0619
         drive::walk_place(g.c, g.aim, rot, vel, g.ds, now, o);

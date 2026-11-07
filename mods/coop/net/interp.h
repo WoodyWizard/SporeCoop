@@ -261,13 +261,13 @@ public:
     // Interpolated state at (now - delay) in sender time; with `lead` (g_lead_fix) the sender's state now.
     bool sample(double local_now, PlayerState& out) const
     {
-        sm_used_ = false;
+        sm_used_ = sm_lead_out_ = false;
         bool ok = sample_raw(local_now, out);
         // BUG-0619: a sample before the newest state (the path velocity's sample 0.1 s back) is shifted by the same
         // offset, so the path is the shown one (an unshifted one gave the walk a 3-4 m/s path while it stood)
         // A slow body's interpolated state (see sample_raw) goes through the same smoothing: the switch between the
         // two is a jump of the raw target that the offset takes
-        if (ok && !sm_used_ && lead && g_lead_fix && g_lead_smooth_fix && smooth_max > 0)
+        if (ok && !sm_lead_out_ && lead && g_lead_fix && g_lead_smooth_fix && smooth_max > 0)
             smooth(local_now, out, out.vel, false);
         return ok;
     }
@@ -300,8 +300,26 @@ private:
                 out.pos.y += v.y * (float)dt;
                 out.pos.z += v.z * (float)dt;
                 out.vel = v;
-                if (g_lead_smooth_fix && smooth_max > 0)
-                    smooth(local_now, out, last_extrap > kMaxLead ? Vec3{} : v, true);
+                sm_lead_out_ = true;
+                if (g_lead_smooth_fix && smooth_max > 0) {
+                    // the lead's own new states as M1's (raw, closed by walk_place's catch_prop: over a link under
+                    // kJitterHigh its start step is 1-1.5 m, under a jump); smoothed only after a switch from the
+                    // interpolated state until that offset is closed. Smoothed always, the members trailed more over
+                    // the player network (body_trail_tribe_player p90 1.47-1.59 m and 1.1-1.8 s over 2 m, M1's
+                    // 1.14-1.27 m, lab 20261106-172428 / -172431, -184547 / -184550)
+                    if (!sm_last_lead_ || sm_closing_) {
+                        sm_closing_ = true;
+                        smooth(local_now, out, last_extrap > kMaxLead ? Vec3{} : v, true);
+                        if (dist(Vec3{}, sm_off_) < 0.05f)
+                            sm_closing_ = false;
+                    } else if (local_now > sm_t_) {
+                        sm_have_ = true;
+                        sm_off_ = {};
+                        sm_t_ = local_now;
+                        sm_vel_ = last_extrap > kMaxLead ? Vec3{} : v;
+                        sm_shown_ = out.pos;
+                    }
+                }
                 return true;
             }
             if (use)
@@ -459,7 +477,7 @@ private:
         out.pos.y += sm_off_.y;
         out.pos.z += sm_off_.z;
     }
-    mutable bool sm_have_ = false, sm_used_ = false, sm_last_lead_ = false;
+    mutable bool sm_have_ = false, sm_used_ = false, sm_last_lead_ = false, sm_closing_ = false, sm_lead_out_ = false;
     double jitter_ = 0; // s (BUG-0619)
     std::array<float, kJitterN> devs_{};
     size_t dev_n_ = 0;
