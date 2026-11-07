@@ -1,14 +1,14 @@
 ---
 id: BUG-0438
 title: civ: a vehicle on the guest 4-7 m (p90) from the host's under loss bursts (sync_burst, sync_fps15burst)
-status: fixed
+status: open
 kind: desync
 stage: Civ
 reported: 2026-11-01
 source: players suite, lab 20261101-160125 (feat/w33-tests-session)
 role: guest
 versions: main a05d1f6
-fixed_in: unreleased
+fixed_in:
 branch: fix/w45-remote-bodies
 commits: a71e319b, 391562e1
 tests: body_trail_civ, body_trail_civ_loss, sync_civ_loss
@@ -63,3 +63,4 @@ civ_mirror_place (BUG-0186) passes there too.
   velocity (or its order target) in the state instead of estimating it; and sample more vehicles / rounds
   in coop_sync for Civ so one burst does not decide a run. Status stays open.
 - 2026-11-06 (fix/w45-remote-bodies, M1): root cause observed (the 0.15 s extrapolation limit), fixed by drive.lead.
+- 2026-11-07 (orchestrator, 0.7.9 final check on a quiet lab): reopened, the claim does not hold: body_trail_civ_loss 1 of 2 with the lead (p90 3.35 m in #2, out/lab/20261107-012856) and 1 of 2 with SPORE_FIX_OFF=drive.lead (p90 4.03 m, out/lab/20261107-012856-2); FAIL in the final check 20261106-231404 (5.30 m) and the rerun 20261107-004042 (2.54 m). The lead is better than or equal to 0.7.8 behaviour, so it ships as an improvement (CHANGELOG Changed), the rest goes to 0.7.10 K3.

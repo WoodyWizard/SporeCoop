@@ -1,14 +1,14 @@
 ---
 id: BUG-0410
 title: tribe: the player tribe's citizens on the guest 1.9-2.0 m (p90) from the host's in play_tribe (limit 1.5 m)
-status: fixed
+status: open
 kind: desync
 stage: Tribe
 reported: 2026-11-01
 source: play_tribe, labs 20261101-134020 and 20261101-145528 (feat/w33-tests-session)
 role: guest
 versions: main a05d1f6
-fixed_in: unreleased
+fixed_in:
 branch: fix/w45-remote-bodies
 commits: de9c4d8d, 261e990c, a71e319b, 440a5c2c, 391562e1, 29330917, 391562e1, 29330917
 tests: body_trail_tribe, body_trail_tribe_player, play_tribe
@@ -46,3 +46,4 @@ FAIL out/lab/20261106-013022 (body_trail_creature p90 0.78 m, body_trail_tribe a
 ## History
 - 2026-11-01: opened.
 - 2026-11-06 (fix/w45-remote-bodies, M1): root cause observed (the 0.2 s delay), fixed by drive.lead.
+- 2026-11-07 (orchestrator, 0.7.9 final check on a quiet lab): reopened, the claim does not hold: body_trail_tribe_player 2 of 2 FAIL with the lead (p90 2.14 / 2.81 m, longest over 2 m 1.49 / 2.91 s, out/lab/20261107-012856) and 2 of 2 FAIL with SPORE_FIX_OFF=drive.lead (p90 2.77 / 2.97 m, 2.96 / 4.17 s, out/lab/20261107-012856-2), also FAIL in the final check 20261106-231404 and the rerun 20261107-004042. The lead is better than or equal to 0.7.8 behaviour, so it ships as an improvement (CHANGELOG Changed), the rest goes to 0.7.10 K3.

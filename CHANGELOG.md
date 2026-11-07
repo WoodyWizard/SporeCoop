@@ -3,6 +3,9 @@
 ## [Unreleased]
 
 ### Changed
+- Tribe and Civilization: the citizens of the player tribe and the host's vehicles trail less on the guest's screen
+  (the guest shows them nearer where the host has them); they can still fall 2-3 m behind on a busy connection, work
+  on that continues (BUG-0410, BUG-0438).
 - A crash report (`crash-*.txt`) now says to send the one `SporeCoop-report-*.zip` from the same folder (it holds the
   report and its `.dmp`); the `.txt` and `.dmp` alone are needed only when there is no such zip.
 
@@ -54,9 +57,7 @@
   and their sounds), not only the swings (BUG-0603).
 - Creature and Tribe: the host's animals and tribe members no longer trail behind where the host sees them on the
   guest's screen (they were 0.2-0.3 s late, 1-2 m behind a running animal or member): the guest now shows them where
-  the host has them at that moment (BUG-0425, BUG-0410).
-- Civilization: the host's vehicles no longer fall several metres behind on the guest's screen when the connection
-  drops packets for a moment (BUG-0438).
+  the host has them at that moment (BUG-0425).
 - Creature: a body one player eats is eaten on the other player's screen too, so the guest can eat the bodies the
   players killed and no longer finds bodies it already ate standing whole on the host's screen (BUG-0557, BUG-0383).
 - Creature: the guest now sees the UFO that visits the host's world, where the host sees it (BUG-0558).
